@@ -7132,6 +7132,14 @@ static void tgl_init_clock_gating(struct drm_i915_private *dev_priv)
 			 0, DFR_DISABLE);
 }
 
+static void dg1_init_clock_gating(struct drm_i915_private *dev_priv)
+{
+	/* Wa_1409836686:dg1[a0] */
+	if (IS_DG1_REVID(dev_priv, DG1_REVID_A0, DG1_REVID_A0))
+		I915_WRITE(GEN9_CLKGATE_DIS_3, I915_READ(GEN9_CLKGATE_DIS_3) |
+			   DPT_GATING_DIS);
+}
+
 static void cnp_init_clock_gating(struct drm_i915_private *dev_priv)
 {
 	if (!HAS_PCH_CNP(dev_priv))
@@ -7577,7 +7585,9 @@ static void nop_init_clock_gating(struct drm_i915_private *dev_priv)
  */
 void intel_init_clock_gating_hooks(struct drm_i915_private *dev_priv)
 {
-	if (IS_GEN(dev_priv, 12))
+	if (IS_DG1(dev_priv))
+		dev_priv->display.init_clock_gating = dg1_init_clock_gating;
+	else if (IS_GEN(dev_priv, 12))
 		dev_priv->display.init_clock_gating = tgl_init_clock_gating;
 	else if (IS_GEN(dev_priv, 11))
 		dev_priv->display.init_clock_gating = icl_init_clock_gating;
