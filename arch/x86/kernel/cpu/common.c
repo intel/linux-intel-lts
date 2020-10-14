@@ -479,6 +479,19 @@ static __init int x86_nofsgsbase_setup(char *arg)
 }
 __setup("nofsgsbase", x86_nofsgsbase_setup);
 
+static bool use_hwrand_iwkey;
+
+static __init int setup_hwrand_iwkey(char *arg)
+{
+	/* Require an exact match without trailing characters. */
+	if (strlen(arg))
+		return 0;
+
+	use_hwrand_iwkey = true;
+	return 1;
+}
+__setup("keylocker.use_hwrand", setup_hwrand_iwkey);
+
 static __always_inline void setup_keylocker(struct cpuinfo_x86 *c)
 {
 	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
@@ -493,8 +506,7 @@ static __always_inline void setup_keylocker(struct cpuinfo_x86 *c)
 		if (!check_keylocker_readiness())
 			goto disable_keylocker;
 
-		make_iwkeydata();
-
+		make_iwkeydata(use_hwrand_iwkey);
 		iwkeyloaded = load_iwkey();
 		if (!iwkeyloaded) {
 			pr_err("x86/keylocker: Fail to load internal key\n");

@@ -13,6 +13,7 @@
 #include <asm/fpu/types.h>
 
 static bool iwkeybackup_available;
+static bool iwkey_hwrand_available;
 
 bool check_keylocker_readiness(void)
 {
@@ -33,6 +34,8 @@ bool check_keylocker_readiness(void)
 		pr_debug("x86/keylocker: no key backup support with possible S3/4\n");
 		return false;
 	}
+
+	iwkey_hwrand_available = (ecx & KL_CPUID_ECX_RAND);
 	return true;
 }
 
@@ -41,16 +44,24 @@ bool check_keylocker_readiness(void)
 
 static struct iwkey {
 	bool valid;
+	bool hwrand;
 	struct reg_128_bit value[LOADIWKEY_NUM_OPERANDS];
 } iwkeydata;
 
-void make_iwkeydata(void)
+void make_iwkeydata(bool use_hwrand)
 {
 	int i;
 
 	for (i = 0; i < LOADIWKEY_NUM_OPERANDS; i++)
 		get_random_bytes(&iwkeydata.value[i], sizeof(struct reg_128_bit));
 
+	if (use_hwrand && iwkey_hwrand_available && iwkeybackup_available) {
+		iwkeydata.hwrand = true;
+	} else {
+		if (use_hwrand)
+			pr_warn("x86/keylocker: hardware random key not fully supported\n");
+		iwkeydata.hwrand = false;
+	}
 	iwkeydata.valid = true;
 }
 
@@ -63,12 +74,16 @@ void invalidate_iwkeydata(void)
 }
 
 #define IWKEY_SW_PROVIDED	0
+#define IWKEY_HW_RANDOM		BIT(1)
+
+#define LOADIWKEY_HWRANDOM_RETRY	10
 
 bool load_iwkey(void)
 {
-	u32 keysource = IWKEY_SW_PROVIDED;
 	struct reg_128_bit zeros = { 0 };
+	unsigned int retry;
 	bool err = true;
+	u32 keysource;
 
 	if (!iwkeydata.valid)
 		return false;
@@ -76,12 +91,26 @@ bool load_iwkey(void)
 	asm ("movdqu %0, %%xmm0; movdqu %1, %%xmm1; movdqu %2, %%xmm2;"
 	     :: "m"(iwkeydata.value[0]), "m"(iwkeydata.value[1]), "m"(iwkeydata.value[2]));
 
-	asm volatile (LOADIWKEY CC_SET(z)
-		      : CC_OUT(z) (err)
-		      : "a"(keysource));
+	if (iwkeydata.hwrand) {
+		keysource = IWKEY_HW_RANDOM;
+		retry = LOADIWKEY_HWRANDOM_RETRY;
+	} else {
+		keysource = IWKEY_SW_PROVIDED;
+		retry = 0;
+	}
+
+	do {
+		asm volatile (LOADIWKEY CC_SET(z)
+			      : CC_OUT(z) (err)
+			      : "a"(keysource));
+		retry--;
+	} while (err && retry > 0);
 
 	asm ("movdqu %0, %%xmm0; movdqu %0, %%xmm1; movdqu %0, %%xmm2;"
 	     :: "m"(zeros));
+
+	if (iwkeydata.hwrand)
+		invalidate_iwkeydata();
 
 	return err ? false : true;
 }

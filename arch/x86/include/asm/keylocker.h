@@ -30,7 +30,7 @@ void backup_iwkey(void);
 bool load_iwkey(void);
 bool copy_iwkey(void);
 
-void make_iwkeydata(void);
+void make_iwkeydata(bool use_hwrandom);
 #ifdef CONFIG_X86_KL
 void invalidate_iwkeydata(void);
 #else

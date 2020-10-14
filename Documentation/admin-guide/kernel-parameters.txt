@@ -2128,6 +2128,10 @@
 			parameter KASAN will print report only for the first
 			invalid access.
 
+	keylocker.use_hwrand
+			[x86] Use on-chip hardware random number generator for
+			the CPU internal key.
+
 	keepinitrd	[HW,ARM]
 
 	kernelcore=	[KNL,X86,IA-64,PPC]
