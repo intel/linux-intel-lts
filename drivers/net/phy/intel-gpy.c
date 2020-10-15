@@ -117,6 +117,25 @@ static int gpy_config_aneg(struct phy_device *phydev)
 	if (ret > 0)
 		changed = true;
 
+	/* Cisco SGMII specification 1.8 specify that SGMI auto negotiation
+	 * supports speed of 10/100/1000Mbps. So, for 2.5Gbps, SGMI auto
+	 * negotiation should be disabled.
+	 */
+	if (MDIO_AN_10GBT_CTRL_ADV2_5G &
+	    linkmode_adv_to_mii_10gbt_adv_t(phydev->advertising)) {
+		ret = phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+					     GPY_VSPEC1_SGMII_CTRL,
+					     GPY_SGMII_ANEN, 0);
+		if (ret < 0)
+			return ret;
+	} else {
+		ret = phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+					     GPY_VSPEC1_SGMII_CTRL,
+					     GPY_SGMII_ANEN, GPY_SGMII_ANEN);
+		if (ret < 0)
+			return ret;
+	}
+
 	return changed ? genphy_restart_aneg(phydev) : 0;
 }
 
