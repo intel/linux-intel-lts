@@ -820,5 +820,5 @@ static struct pci_driver intel_qep_driver = {
 module_pci_driver(intel_qep_driver);
 
 MODULE_AUTHOR("Felipe Balbi (Intel)");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel Quadrature Encoder Driver");
