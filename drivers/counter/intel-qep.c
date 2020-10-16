@@ -157,8 +157,8 @@ static void intel_qep_init(struct intel_qep *qep, bool reset)
 
 static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 {
-	struct intel_qep	*qep = _qep;
-	u32			stat;
+	struct intel_qep *qep = _qep;
+	u32 stat;
 
 	mutex_lock(&qep->lock);
 
@@ -195,8 +195,8 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 
 static irqreturn_t intel_qep_irq(int irq, void *_qep)
 {
-	struct intel_qep	*qep = _qep;
-	u32			stat;
+	struct intel_qep *qep = _qep;
+	u32 stat;
 
 	stat = intel_qep_readl(qep->regs, INTEL_QEPINT_STAT);
 	if (stat) {
@@ -674,11 +674,11 @@ static const struct counter_device_ext intel_qep_ext[] = {
 
 static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 {
-	struct intel_qep	*qep;
-	struct device		*dev = &pci->dev;
-	void __iomem		*regs;
-	int			ret;
-	int			irq;
+	struct intel_qep *qep;
+	struct device *dev = &pci->dev;
+	void __iomem *regs;
+	int ret;
+	int irq;
 
 	qep = devm_kzalloc(dev, sizeof(*qep), GFP_KERNEL);
 	if (!qep)
@@ -754,8 +754,8 @@ err_irq_vectors:
 
 static void intel_qep_remove(struct pci_dev *pci)
 {
-	struct intel_qep	*qep = pci_get_drvdata(pci);
-	struct device		*dev = &pci->dev;
+	struct intel_qep *qep = pci_get_drvdata(pci);
+	struct device *dev = &pci->dev;
 
 	pm_runtime_forbid(dev);
 	pm_runtime_get_noresume(dev);
