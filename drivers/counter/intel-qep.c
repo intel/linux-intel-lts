@@ -119,16 +119,6 @@ static inline void intel_qep_writel(void __iomem *base, u32 offset, u32 value)
 	writel(value, base + offset);
 }
 
-static const struct pci_device_id intel_qep_id_table[] = {
-	/* EHL */
-	{ PCI_VDEVICE(INTEL, 0x4bc3), },
-	{ PCI_VDEVICE(INTEL, 0x4b81), },
-	{ PCI_VDEVICE(INTEL, 0x4b82), },
-	{ PCI_VDEVICE(INTEL, 0x4b83), },
-	{  } /* Terminating Entry */
-};
-MODULE_DEVICE_TABLE(pci, intel_qep_id_table);
-
 static void intel_qep_init(struct intel_qep *qep, bool reset)
 {
 	u32 reg;
@@ -806,6 +796,16 @@ static const struct dev_pm_ops intel_qep_pm_ops = {
 	SET_RUNTIME_PM_OPS(intel_qep_runtime_suspend, intel_qep_runtime_resume,
 				NULL)
 };
+
+static const struct pci_device_id intel_qep_id_table[] = {
+	/* EHL */
+	{ PCI_VDEVICE(INTEL, 0x4bc3), },
+	{ PCI_VDEVICE(INTEL, 0x4b81), },
+	{ PCI_VDEVICE(INTEL, 0x4b82), },
+	{ PCI_VDEVICE(INTEL, 0x4b83), },
+	{  } /* Terminating Entry */
+};
+MODULE_DEVICE_TABLE(pci, intel_qep_id_table);
 
 static struct pci_driver intel_qep_driver = {
 	.name		= "intel-qep",
