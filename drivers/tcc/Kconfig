@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+
+menuconfig X86_TCC_PTCM
+    tristate "TCC_PTCM interface driver"
+    depends on X86 && ACPI
+    help
+      Select this option to access PTCM feature.
+
+      If unsure, say N.
