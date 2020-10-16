@@ -5,6 +5,8 @@
  * Copyright (C) 2019-2020 Intel Corporation
  *
  * Author: Felipe Balbi (Intel)
+ * Author: Jarkko Nikula <jarkko.nikula@linux.intel.com>
+ * Author: Raymond Tan <raymond.tan@intel.com>
  */
 #include <linux/bitops.h>
 #include <linux/counter.h>
@@ -820,5 +822,7 @@ static struct pci_driver intel_qep_driver = {
 module_pci_driver(intel_qep_driver);
 
 MODULE_AUTHOR("Felipe Balbi (Intel)");
+MODULE_AUTHOR("Jarkko Nikula <jarkko.nikula@linux.intel.com>");
+MODULE_AUTHOR("Raymond Tan <raymond.tan@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel Quadrature Encoder Driver");
