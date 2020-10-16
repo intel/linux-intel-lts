@@ -1,0 +1,9 @@
+#
+# kConfig for Asmedia 28xx/18xx GPIO driver
+#
+
+config GPIO_ASM_28XX
+	tristate "Asmedia 28xx/18xx GPIO driver"
+	default m
+	help
+	  Enable this option to get the THB emc in the IA host

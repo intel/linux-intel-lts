@@ -488,4 +488,5 @@ source "drivers/misc/habanalabs/Kconfig"
 source "drivers/misc/uacce/Kconfig"
 source "drivers/misc/pvpanic/Kconfig"
 source "drivers/misc/vpumgr/Kconfig"
+source "drivers/misc/Gpio-asm28xx/Kconfig"
 endmenu
