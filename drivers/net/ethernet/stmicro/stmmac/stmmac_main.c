@@ -6481,12 +6481,10 @@ static int stmmac_hw_init(struct stmmac_priv *priv)
 
 #ifndef CONFIG_ARCH_KEEMBAY
 	/* Initialize TSN capability */
-	if (priv->hw->tsn_info.cap.est_support) {
-		stmmac_tsnif_setup(priv, priv->hw);
-		ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
-		if (ret)
-			return ret;
-	}
+	stmmac_tsnif_setup(priv, priv->hw);
+	ret = stmmac_tsn_init(priv, priv->hw, priv->dev);
+	if (ret)
+		return ret;
 #endif
 
 	/* Get the HW capability (new GMAC newer than 3.50a) */

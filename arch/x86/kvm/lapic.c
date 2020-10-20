@@ -2707,7 +2707,7 @@ void kvm_apic_accept_events(struct kvm_vcpu *vcpu)
 
 	/*
 	 * INITs are latched while CPU is in specific states
-	 * (SMM, VMX non-root mode, SVM with GIF=0).
+	 * (SMM, SVM with GIF=0).
 	 * Because a CPU cannot be in these states immediately
 	 * after it has processed an INIT signal (and thus in
 	 * KVM_MP_STATE_INIT_RECEIVED state), just eat SIPIs
@@ -2715,7 +2715,8 @@ void kvm_apic_accept_events(struct kvm_vcpu *vcpu)
 	 */
 	if (is_smm(vcpu) || kvm_x86_ops->apic_init_signal_blocked(vcpu)) {
 		WARN_ON_ONCE(vcpu->arch.mp_state == KVM_MP_STATE_INIT_RECEIVED);
-		if (test_bit(KVM_APIC_SIPI, &apic->pending_events))
+		if (test_bit(KVM_APIC_SIPI, &apic->pending_events) &&
+		    !is_guest_mode(vcpu))
 			clear_bit(KVM_APIC_SIPI, &apic->pending_events);
 		return;
 	}

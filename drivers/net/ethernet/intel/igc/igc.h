@@ -10,80 +10,13 @@
 #include <linux/vmalloc.h>
 #include <linux/ethtool.h>
 #include <linux/sctp.h>
+#include <linux/ptp_clock_kernel.h>
+#include <linux/timecounter.h>
+#include <linux/net_tstamp.h>
 
 #include "igc_hw.h"
 
-/* forward declaration */
-void igc_set_ethtool_ops(struct net_device *);
-
-struct igc_adapter;
-struct igc_ring;
-
-void igc_up(struct igc_adapter *adapter);
-void igc_down(struct igc_adapter *adapter);
-int igc_setup_tx_resources(struct igc_ring *ring);
-int igc_setup_rx_resources(struct igc_ring *ring);
-void igc_free_tx_resources(struct igc_ring *ring);
-void igc_free_rx_resources(struct igc_ring *ring);
-unsigned int igc_get_max_rss_queues(struct igc_adapter *adapter);
-void igc_set_flag_queue_pairs(struct igc_adapter *adapter,
-			      const u32 max_rss_queues);
-int igc_reinit_queues(struct igc_adapter *adapter);
-void igc_write_rss_indir_tbl(struct igc_adapter *adapter);
-bool igc_has_link(struct igc_adapter *adapter);
-void igc_reset(struct igc_adapter *adapter);
-int igc_set_spd_dplx(struct igc_adapter *adapter, u32 spd, u8 dplx);
-int igc_add_mac_steering_filter(struct igc_adapter *adapter,
-				const u8 *addr, u8 queue, u8 flags);
-int igc_del_mac_steering_filter(struct igc_adapter *adapter,
-				const u8 *addr, u8 queue, u8 flags);
-void igc_update_stats(struct igc_adapter *adapter);
-
-extern char igc_driver_name[];
-extern char igc_driver_version[];
-
-#define IGC_REGS_LEN			740
-#define IGC_RETA_SIZE			128
-
-/* Interrupt defines */
-#define IGC_START_ITR			648 /* ~6000 ints/sec */
-#define IGC_FLAG_HAS_MSI		BIT(0)
-#define IGC_FLAG_QUEUE_PAIRS		BIT(3)
-#define IGC_FLAG_DMAC			BIT(4)
-#define IGC_FLAG_NEED_LINK_UPDATE	BIT(9)
-#define IGC_FLAG_MEDIA_RESET		BIT(10)
-#define IGC_FLAG_MAS_ENABLE		BIT(12)
-#define IGC_FLAG_HAS_MSIX		BIT(13)
-#define IGC_FLAG_VLAN_PROMISC		BIT(15)
-#define IGC_FLAG_RX_LEGACY		BIT(16)
-
-#define IGC_FLAG_RSS_FIELD_IPV4_UDP	BIT(6)
-#define IGC_FLAG_RSS_FIELD_IPV6_UDP	BIT(7)
-
-#define IGC_MRQC_ENABLE_RSS_MQ		0x00000002
-#define IGC_MRQC_RSS_FIELD_IPV4_UDP	0x00400000
-#define IGC_MRQC_RSS_FIELD_IPV6_UDP	0x00800000
-
-#define IGC_START_ITR			648 /* ~6000 ints/sec */
-#define IGC_4K_ITR			980
-#define IGC_20K_ITR			196
-#define IGC_70K_ITR			56
-
-#define IGC_DEFAULT_ITR		3 /* dynamic */
-#define IGC_MAX_ITR_USECS	10000
-#define IGC_MIN_ITR_USECS	10
-#define NON_Q_VECTORS		1
-#define MAX_MSIX_ENTRIES	10
-
-/* TX/RX descriptor defines */
-#define IGC_DEFAULT_TXD		256
-#define IGC_DEFAULT_TX_WORK	128
-#define IGC_MIN_TXD		80
-#define IGC_MAX_TXD		4096
-
-#define IGC_DEFAULT_RXD		256
-#define IGC_MIN_RXD		80
-#define IGC_MAX_RXD		4096
+void igc_ethtool_set_ops(struct net_device *);
 
 /* Transmit and receive queues */
 #define IGC_MAX_RX_QUEUES		4
@@ -92,116 +25,12 @@ extern char igc_driver_version[];
 #define MAX_Q_VECTORS			8
 #define MAX_STD_JUMBO_FRAME_SIZE	9216
 
-/* Supported Rx Buffer Sizes */
-#define IGC_RXBUFFER_256		256
-#define IGC_RXBUFFER_2048		2048
-#define IGC_RXBUFFER_3072		3072
+#define MAX_ETYPE_FILTER		8
+#define IGC_RETA_SIZE			128
 
-#define AUTO_ALL_MODES		0
-#define IGC_RX_HDR_LEN			IGC_RXBUFFER_256
-
-/* RX and TX descriptor control thresholds.
- * PTHRESH - MAC will consider prefetch if it has fewer than this number of
- *           descriptors available in its onboard memory.
- *           Setting this to 0 disables RX descriptor prefetch.
- * HTHRESH - MAC will only prefetch if there are at least this many descriptors
- *           available in host memory.
- *           If PTHRESH is 0, this should also be 0.
- * WTHRESH - RX descriptor writeback threshold - MAC will delay writing back
- *           descriptors until either it has this many to write back, or the
- *           ITR timer expires.
- */
-#define IGC_RX_PTHRESH			8
-#define IGC_RX_HTHRESH			8
-#define IGC_TX_PTHRESH			8
-#define IGC_TX_HTHRESH			1
-#define IGC_RX_WTHRESH			4
-#define IGC_TX_WTHRESH			16
-
-#define IGC_RX_DMA_ATTR \
-	(DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
-
-#define IGC_TS_HDR_LEN			16
-
-#define IGC_SKB_PAD			(NET_SKB_PAD + NET_IP_ALIGN)
-
-#if (PAGE_SIZE < 8192)
-#define IGC_MAX_FRAME_BUILD_SKB \
-	(SKB_WITH_OVERHEAD(IGC_RXBUFFER_2048) - IGC_SKB_PAD - IGC_TS_HDR_LEN)
-#else
-#define IGC_MAX_FRAME_BUILD_SKB (IGC_RXBUFFER_2048 - IGC_TS_HDR_LEN)
-#endif
-
-/* How many Rx Buffers do we bundle into one write to the hardware ? */
-#define IGC_RX_BUFFER_WRITE	16 /* Must be power of 2 */
-
-/* VLAN info */
-#define IGC_TX_FLAGS_VLAN_MASK	0xffff0000
-
-/* igc_test_staterr - tests bits within Rx descriptor status and error fields */
-static inline __le32 igc_test_staterr(union igc_adv_rx_desc *rx_desc,
-				      const u32 stat_err_bits)
-{
-	return rx_desc->wb.upper.status_error & cpu_to_le32(stat_err_bits);
-}
-
-enum igc_state_t {
-	__IGC_TESTING,
-	__IGC_RESETTING,
-	__IGC_DOWN,
-	__IGC_PTP_TX_IN_PROGRESS,
-};
-
-enum igc_tx_flags {
-	/* cmd_type flags */
-	IGC_TX_FLAGS_VLAN	= 0x01,
-	IGC_TX_FLAGS_TSO	= 0x02,
-	IGC_TX_FLAGS_TSTAMP	= 0x04,
-
-	/* olinfo flags */
-	IGC_TX_FLAGS_IPV4	= 0x10,
-	IGC_TX_FLAGS_CSUM	= 0x20,
-};
-
-enum igc_boards {
-	board_base,
-};
-
-/* The largest size we can write to the descriptor is 65535.  In order to
- * maintain a power of two alignment we have to limit ourselves to 32K.
- */
-#define IGC_MAX_TXD_PWR		15
-#define IGC_MAX_DATA_PER_TXD	BIT(IGC_MAX_TXD_PWR)
-
-/* Tx Descriptors needed, worst case */
-#define TXD_USE_COUNT(S)	DIV_ROUND_UP((S), IGC_MAX_DATA_PER_TXD)
-#define DESC_NEEDED	(MAX_SKB_FRAGS + 4)
-
-/* wrapper around a pointer to a socket buffer,
- * so a DMA handle can be stored along with the buffer
- */
-struct igc_tx_buffer {
-	union igc_adv_tx_desc *next_to_watch;
-	unsigned long time_stamp;
-	struct sk_buff *skb;
-	unsigned int bytecount;
-	u16 gso_segs;
-	__be16 protocol;
-
-	DEFINE_DMA_UNMAP_ADDR(dma);
-	DEFINE_DMA_UNMAP_LEN(len);
-	u32 tx_flags;
-};
-
-struct igc_rx_buffer {
-	dma_addr_t dma;
-	struct page *page;
-#if (BITS_PER_LONG > 32) || (PAGE_SIZE >= 65536)
-	__u32 page_offset;
-#else
-	__u16 page_offset;
-#endif
-	__u16 pagecnt_bias;
+enum igc_mac_filter_type {
+	IGC_MAC_FILTER_TYPE_DST = 0,
+	IGC_MAC_FILTER_TYPE_SRC
 };
 
 struct igc_tx_queue_stats {
@@ -257,7 +86,10 @@ struct igc_ring {
 	u16 count;                      /* number of desc. in the ring */
 	u8 queue_index;                 /* logical index of the ring*/
 	u8 reg_idx;                     /* physical index of the ring */
-	bool launchtime_enable;		/* true if LaunchTime is enabled */
+	bool launchtime_enable;         /* true if LaunchTime is enabled */
+
+	u32 start_time;
+	u32 end_time;
 
 	/* everything past this point are written often */
 	u16 next_to_clean;
@@ -281,74 +113,12 @@ struct igc_ring {
 	};
 } ____cacheline_internodealigned_in_smp;
 
-struct igc_q_vector {
-	struct igc_adapter *adapter;    /* backlink */
-	void __iomem *itr_register;
-	u32 eims_value;                 /* EIMS mask value */
-
-	u16 itr_val;
-	u8 set_itr;
-
-	struct igc_ring_container rx, tx;
-
-	struct napi_struct napi;
-
-	struct rcu_head rcu;    /* to avoid race with update stats on free */
-	char name[IFNAMSIZ + 9];
-	struct net_device poll_dev;
-
-	/* for dynamic allocation of rings associated with this q_vector */
-	struct igc_ring ring[0] ____cacheline_internodealigned_in_smp;
-};
-
-#define MAX_ETYPE_FILTER		(4 - 1)
-
-enum igc_filter_match_flags {
-	IGC_FILTER_FLAG_ETHER_TYPE =	0x1,
-	IGC_FILTER_FLAG_VLAN_TCI   =	0x2,
-	IGC_FILTER_FLAG_SRC_MAC_ADDR =	0x4,
-	IGC_FILTER_FLAG_DST_MAC_ADDR =	0x8,
-};
-
-/* RX network flow classification data structure */
-struct igc_nfc_input {
-	/* Byte layout in order, all values with MSB first:
-	 * match_flags - 1 byte
-	 * etype - 2 bytes
-	 * vlan_tci - 2 bytes
-	 */
-	u8 match_flags;
-	__be16 etype;
-	__be16 vlan_tci;
-	u8 src_addr[ETH_ALEN];
-	u8 dst_addr[ETH_ALEN];
-};
-
-struct igc_nfc_filter {
-	struct hlist_node nfc_node;
-	struct igc_nfc_input filter;
-	unsigned long cookie;
-	u16 etype_reg_index;
-	u16 sw_idx;
-	u16 action;
-};
-
-struct igc_mac_addr {
-	u8 addr[ETH_ALEN];
-	u8 queue;
-	u8 state; /* bitmask */
-};
-
-#define IGC_MAC_STATE_DEFAULT		0x1
-#define IGC_MAC_STATE_IN_USE		0x2
-#define IGC_MAC_STATE_SRC_ADDR		0x4
-#define IGC_MAC_STATE_QUEUE_STEERING	0x8
-
-#define IGC_MAX_RXNFC_FILTERS		16
-
 /* Board specific private data structure */
 struct igc_adapter {
 	struct net_device *netdev;
+
+	struct ethtool_eee eee;
+	u16 eee_advert;
 
 	unsigned long state;
 	unsigned int flags;
@@ -370,6 +140,8 @@ struct igc_adapter {
 	struct timer_list dma_err_timer;
 	struct timer_list phy_info_timer;
 
+	u32 wol;
+	u32 en_mng_pt;
 	u16 link_speed;
 	u16 link_duplex;
 
@@ -391,6 +163,9 @@ struct igc_adapter {
 	u32 max_frame_size;
 	u32 min_frame_size;
 
+	ktime_t base_time;
+	ktime_t cycle_time;
+
 	/* OS defined structs */
 	struct pci_dev *pdev;
 	/* lock for statistics */
@@ -411,27 +186,284 @@ struct igc_adapter {
 	u32 tx_hwtstamp_timeouts;
 	u32 tx_hwtstamp_skipped;
 	u32 rx_hwtstamp_cleared;
-	u32 *shadow_vfta;
 
 	u32 rss_queues;
 	u32 rss_indir_tbl_init;
 
-	/* RX network flow classification support */
-	struct hlist_head nfc_filter_list;
-	struct hlist_head cls_flower_list;
-	unsigned int nfc_filter_count;
-
-	/* lock for RX network flow classification filter */
-	spinlock_t nfc_lock;
-	bool etype_bitmap[MAX_ETYPE_FILTER];
-
-	struct igc_mac_addr *mac_table;
+	/* Any access to elements in nfc_rule_list is protected by the
+	 * nfc_rule_lock.
+	 */
+	struct mutex nfc_rule_lock;
+	struct list_head nfc_rule_list;
+	unsigned int nfc_rule_count;
 
 	u8 rss_indir_tbl[IGC_RETA_SIZE];
 
 	unsigned long link_check_timeout;
 	struct igc_info ei;
+
+	u32 test_icr;
+
+	struct ptp_clock *ptp_clock;
+	struct ptp_clock_info ptp_caps;
+	struct work_struct ptp_tx_work;
+	/* Access to ptp_tx_skb and ptp_tx_start is protected by the
+	 * ptp_tx_lock.
+	 */
+	spinlock_t ptp_tx_lock;
+	struct sk_buff *ptp_tx_skb;
+	struct hwtstamp_config tstamp_config;
+	unsigned long ptp_tx_start;
+	unsigned int ptp_flags;
+	/* System time value lock */
+	spinlock_t tmreg_lock;
+	struct cyclecounter cc;
+	struct timecounter tc;
+	struct timespec64 prev_ptp_time; /* Pre-reset PTP clock */
+	ktime_t ptp_reset_start; /* Reset time in clock mono */
 };
+
+void igc_up(struct igc_adapter *adapter);
+void igc_down(struct igc_adapter *adapter);
+int igc_open(struct net_device *netdev);
+int igc_close(struct net_device *netdev);
+int igc_setup_tx_resources(struct igc_ring *ring);
+int igc_setup_rx_resources(struct igc_ring *ring);
+void igc_free_tx_resources(struct igc_ring *ring);
+void igc_free_rx_resources(struct igc_ring *ring);
+unsigned int igc_get_max_rss_queues(struct igc_adapter *adapter);
+void igc_set_flag_queue_pairs(struct igc_adapter *adapter,
+			      const u32 max_rss_queues);
+int igc_reinit_queues(struct igc_adapter *adapter);
+void igc_write_rss_indir_tbl(struct igc_adapter *adapter);
+bool igc_has_link(struct igc_adapter *adapter);
+void igc_reset(struct igc_adapter *adapter);
+int igc_set_spd_dplx(struct igc_adapter *adapter, u32 spd, u8 dplx);
+void igc_update_stats(struct igc_adapter *adapter);
+
+/* igc_dump declarations */
+void igc_rings_dump(struct igc_adapter *adapter);
+void igc_regs_dump(struct igc_adapter *adapter);
+
+extern char igc_driver_name[];
+extern char igc_driver_version[];
+
+#define IGC_REGS_LEN			740
+
+/* flags controlling PTP/1588 function */
+#define IGC_PTP_ENABLED		BIT(0)
+
+/* Flags definitions */
+#define IGC_FLAG_HAS_MSI		BIT(0)
+#define IGC_FLAG_QUEUE_PAIRS		BIT(3)
+#define IGC_FLAG_DMAC			BIT(4)
+#define IGC_FLAG_PTP			BIT(8)
+#define IGC_FLAG_WOL_SUPPORTED		BIT(8)
+#define IGC_FLAG_NEED_LINK_UPDATE	BIT(9)
+#define IGC_FLAG_MEDIA_RESET		BIT(10)
+#define IGC_FLAG_MAS_ENABLE		BIT(12)
+#define IGC_FLAG_HAS_MSIX		BIT(13)
+#define IGC_FLAG_EEE			BIT(14)
+#define IGC_FLAG_VLAN_PROMISC		BIT(15)
+#define IGC_FLAG_RX_LEGACY		BIT(16)
+#define IGC_FLAG_TSN_QBV_ENABLED	BIT(17)
+
+#define IGC_FLAG_RSS_FIELD_IPV4_UDP	BIT(6)
+#define IGC_FLAG_RSS_FIELD_IPV6_UDP	BIT(7)
+
+#define IGC_MRQC_ENABLE_RSS_MQ		0x00000002
+#define IGC_MRQC_RSS_FIELD_IPV4_UDP	0x00400000
+#define IGC_MRQC_RSS_FIELD_IPV6_UDP	0x00800000
+
+/* Interrupt defines */
+#define IGC_START_ITR			648 /* ~6000 ints/sec */
+#define IGC_4K_ITR			980
+#define IGC_20K_ITR			196
+#define IGC_70K_ITR			56
+
+#define IGC_DEFAULT_ITR		3 /* dynamic */
+#define IGC_MAX_ITR_USECS	10000
+#define IGC_MIN_ITR_USECS	10
+#define NON_Q_VECTORS		1
+#define MAX_MSIX_ENTRIES	10
+
+/* TX/RX descriptor defines */
+#define IGC_DEFAULT_TXD		256
+#define IGC_DEFAULT_TX_WORK	128
+#define IGC_MIN_TXD		80
+#define IGC_MAX_TXD		4096
+
+#define IGC_DEFAULT_RXD		256
+#define IGC_MIN_RXD		80
+#define IGC_MAX_RXD		4096
+
+/* Supported Rx Buffer Sizes */
+#define IGC_RXBUFFER_256		256
+#define IGC_RXBUFFER_2048		2048
+#define IGC_RXBUFFER_3072		3072
+
+#define AUTO_ALL_MODES		0
+#define IGC_RX_HDR_LEN			IGC_RXBUFFER_256
+
+/* Transmit and receive latency (for PTP timestamps) */
+#define IGC_I225_TX_LATENCY_10		240
+#define IGC_I225_TX_LATENCY_100		58
+#define IGC_I225_TX_LATENCY_1000	80
+#define IGC_I225_TX_LATENCY_2500	1325
+#define IGC_I225_RX_LATENCY_10		6450
+#define IGC_I225_RX_LATENCY_100		185
+#define IGC_I225_RX_LATENCY_1000	300
+#define IGC_I225_RX_LATENCY_2500	1485
+
+/* RX and TX descriptor control thresholds.
+ * PTHRESH - MAC will consider prefetch if it has fewer than this number of
+ *           descriptors available in its onboard memory.
+ *           Setting this to 0 disables RX descriptor prefetch.
+ * HTHRESH - MAC will only prefetch if there are at least this many descriptors
+ *           available in host memory.
+ *           If PTHRESH is 0, this should also be 0.
+ * WTHRESH - RX descriptor writeback threshold - MAC will delay writing back
+ *           descriptors until either it has this many to write back, or the
+ *           ITR timer expires.
+ */
+#define IGC_RX_PTHRESH			8
+#define IGC_RX_HTHRESH			8
+#define IGC_TX_PTHRESH			8
+#define IGC_TX_HTHRESH			1
+#define IGC_RX_WTHRESH			4
+#define IGC_TX_WTHRESH			16
+
+#define IGC_RX_DMA_ATTR \
+	(DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
+
+#define IGC_TS_HDR_LEN			16
+
+#define IGC_SKB_PAD			(NET_SKB_PAD + NET_IP_ALIGN)
+
+#if (PAGE_SIZE < 8192)
+#define IGC_MAX_FRAME_BUILD_SKB \
+	(SKB_WITH_OVERHEAD(IGC_RXBUFFER_2048) - IGC_SKB_PAD - IGC_TS_HDR_LEN)
+#else
+#define IGC_MAX_FRAME_BUILD_SKB (IGC_RXBUFFER_2048 - IGC_TS_HDR_LEN)
+#endif
+
+/* How many Rx Buffers do we bundle into one write to the hardware ? */
+#define IGC_RX_BUFFER_WRITE	16 /* Must be power of 2 */
+
+/* VLAN info */
+#define IGC_TX_FLAGS_VLAN_MASK	0xffff0000
+
+/* igc_test_staterr - tests bits within Rx descriptor status and error fields */
+static inline __le32 igc_test_staterr(union igc_adv_rx_desc *rx_desc,
+				      const u32 stat_err_bits)
+{
+	return rx_desc->wb.upper.status_error & cpu_to_le32(stat_err_bits);
+}
+
+enum igc_state_t {
+	__IGC_TESTING,
+	__IGC_RESETTING,
+	__IGC_DOWN,
+};
+
+enum igc_tx_flags {
+	/* cmd_type flags */
+	IGC_TX_FLAGS_VLAN	= 0x01,
+	IGC_TX_FLAGS_TSO	= 0x02,
+	IGC_TX_FLAGS_TSTAMP	= 0x04,
+
+	/* olinfo flags */
+	IGC_TX_FLAGS_IPV4	= 0x10,
+	IGC_TX_FLAGS_CSUM	= 0x20,
+};
+
+enum igc_boards {
+	board_base,
+};
+
+/* The largest size we can write to the descriptor is 65535.  In order to
+ * maintain a power of two alignment we have to limit ourselves to 32K.
+ */
+#define IGC_MAX_TXD_PWR		15
+#define IGC_MAX_DATA_PER_TXD	BIT(IGC_MAX_TXD_PWR)
+
+/* Tx Descriptors needed, worst case */
+#define TXD_USE_COUNT(S)	DIV_ROUND_UP((S), IGC_MAX_DATA_PER_TXD)
+#define DESC_NEEDED	(MAX_SKB_FRAGS + 4)
+
+/* wrapper around a pointer to a socket buffer,
+ * so a DMA handle can be stored along with the buffer
+ */
+struct igc_tx_buffer {
+	union igc_adv_tx_desc *next_to_watch;
+	unsigned long time_stamp;
+	struct sk_buff *skb;
+	unsigned int bytecount;
+	u16 gso_segs;
+	__be16 protocol;
+
+	DEFINE_DMA_UNMAP_ADDR(dma);
+	DEFINE_DMA_UNMAP_LEN(len);
+	u32 tx_flags;
+};
+
+struct igc_rx_buffer {
+	dma_addr_t dma;
+	struct page *page;
+#if (BITS_PER_LONG > 32) || (PAGE_SIZE >= 65536)
+	__u32 page_offset;
+#else
+	__u16 page_offset;
+#endif
+	__u16 pagecnt_bias;
+};
+
+struct igc_q_vector {
+	struct igc_adapter *adapter;    /* backlink */
+	void __iomem *itr_register;
+	u32 eims_value;                 /* EIMS mask value */
+
+	u16 itr_val;
+	u8 set_itr;
+
+	struct igc_ring_container rx, tx;
+
+	struct napi_struct napi;
+
+	struct rcu_head rcu;    /* to avoid race with update stats on free */
+	char name[IFNAMSIZ + 9];
+	struct net_device poll_dev;
+
+	/* for dynamic allocation of rings associated with this q_vector */
+	struct igc_ring ring[] ____cacheline_internodealigned_in_smp;
+};
+
+enum igc_filter_match_flags {
+	IGC_FILTER_FLAG_ETHER_TYPE =	0x1,
+	IGC_FILTER_FLAG_VLAN_TCI   =	0x2,
+	IGC_FILTER_FLAG_SRC_MAC_ADDR =	0x4,
+	IGC_FILTER_FLAG_DST_MAC_ADDR =	0x8,
+};
+
+struct igc_nfc_filter {
+	u8 match_flags;
+	u16 etype;
+	u16 vlan_tci;
+	u8 src_addr[ETH_ALEN];
+	u8 dst_addr[ETH_ALEN];
+};
+
+struct igc_nfc_rule {
+	struct list_head list;
+	struct igc_nfc_filter filter;
+	u32 location;
+	u16 action;
+};
+
+/* IGC supports a total of 32 NFC rules: 16 MAC address based,, 8 VLAN priority
+ * based, and 8 ethertype based.
+ */
+#define IGC_MAX_RXNFC_RULES		32
 
 /* igc_desc_unused - calculate if we have unused descriptors */
 static inline u16 igc_desc_unused(const struct igc_ring *ring)
@@ -507,12 +539,22 @@ static inline s32 igc_read_phy_reg(struct igc_hw *hw, u32 offset, u16 *data)
 	return 0;
 }
 
-/* forward declaration */
 void igc_reinit_locked(struct igc_adapter *);
-int igc_add_filter(struct igc_adapter *adapter,
-		   struct igc_nfc_filter *input);
-int igc_erase_filter(struct igc_adapter *adapter,
-		     struct igc_nfc_filter *input);
+struct igc_nfc_rule *igc_get_nfc_rule(struct igc_adapter *adapter,
+				      u32 location);
+int igc_add_nfc_rule(struct igc_adapter *adapter, struct igc_nfc_rule *rule);
+void igc_del_nfc_rule(struct igc_adapter *adapter, struct igc_nfc_rule *rule);
+
+void igc_ptp_init(struct igc_adapter *adapter);
+void igc_ptp_reset(struct igc_adapter *adapter);
+void igc_ptp_suspend(struct igc_adapter *adapter);
+void igc_ptp_stop(struct igc_adapter *adapter);
+void igc_ptp_rx_pktstamp(struct igc_q_vector *q_vector, void *va,
+			 struct sk_buff *skb);
+int igc_ptp_set_ts_config(struct net_device *netdev, struct ifreq *ifr);
+int igc_ptp_get_ts_config(struct net_device *netdev, struct ifreq *ifr);
+void igc_ptp_tx_hang(struct igc_adapter *adapter);
+void igc_ptp_read(struct igc_adapter *adapter, struct timespec64 *ts);
 
 #define igc_rx_pg_size(_ring) (PAGE_SIZE << igc_rx_pg_order(_ring))
 
