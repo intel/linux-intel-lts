@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/misc/intel,hddl-client.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+
+title: Intel hddl client device to handle platform management in Bay series
+
+maintainers:
+  - Udhayakumar C <udhayakumar.c@intel.com>
+
+description: |
+  The HDDL client driver acts as an software RTC to sync with network time.
+  It abstracts xlink protocol to communicate with remote host. This driver
+  exports the details about sensors available in the platform to remote
+  host as xlink packets.
+  This driver also handles device connect/disconnect events and identifies
+  board id and soc id using gpio's based on platform configuration.
+
+select: false
+
+properties:
+  compatible:
+    items:
+      - const: intel,hddl-client
+
+  reg:
+    minItems: 4
+    maxItems: 4
+
+  xlink_chan:
+    minItems: 1
+    maxItems: 1
+    description: xlink channel number used for communication
+                 with remote host for time sync and sharing sensor
+                 details available in platform.
+
+  i2c_xlink_chan:
+    minItems: 1
+    maxItems: 1
+    description: xlink channel number used for communication
+                 with remote host for xlink i2c smbus.
+
+  sensor_name:
+    type: object
+    description:
+      Details about sensors and its configuration on local host and remote
+      host.
+
+    properties:
+      compatible:
+        items:
+          - const: intel_tsens
+
+      reg:
+        description: i2c slave address for sensor.
+
+      local-host:
+        minItems: 1
+        maxItems: 1
+        description: enable bit 0 to register sensor as i2c slave
+                     in local host (normal i2c client)
+                     enable bit 1 to mimic sensor as i2c slave
+                     in local host (onchip sensors as i2c slave)
+                     enable bit 2 to register i2c slave as xlink smbus slave
+                     in local host.
+      remote-host:
+        minItems: 1
+        maxItems: 1
+        description: enable bit 0 to register sensor as i2c slave
+                     in remote host (normal i2c client)
+                     enable bit 1 to mimic sensor as i2c slave
+                     in remote host (onchip sensors as i2c slave)
+                     enable bit 2 to register i2c slave as xlink smbus slave
+                     in remote host.
+
+      bus:
+        minItems: 1
+        maxItems: 1
+        description: i2c bus number for the i2c client device.
+
+    required:
+      - compatible
+      - reg
+      - local-host
+      - remote-host
+      - bus
+
+required:
+  - compatible
+  - reg
+  - xlink_chan
+  - i2c_xlink_chan
+
+additionalProperties: false
+
+examples:
+  - |
+    hddl_dev: hddl@20320000 {
+       compatible = "intel,hddl-client";
+       #address-cells = <2>;
+       #size-cells = <2>;
+       status = "disabled";
+       reg = <0x0 0x20320000 0x0 0x800>;
+       xlink_chan = <1080>;
+       i2c_xlink_chan = <1081>;
+       kmb_xlink_tj {
+         status = "okay";
+         compatible = "intel_tsens";
+         local-host = <0x3>;
+         remote-host = <0x3>;
+         bus = <0x1>;
+      };
+    };
