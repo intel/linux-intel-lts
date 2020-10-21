@@ -13,3 +13,16 @@ config INTEL_TSENS_LOCAL_HOST
 	  management controller.
 	  Say Y if using a processor that includes the Intel VPU such as
 	  Keem Bay.  If unsure, say N.
+
+config INTEL_TSENS_IA_HOST
+	tristate "Temperature sensor driver for intel tsens remote host"
+	depends on I2C && THERMAL
+	depends on I2C_SMBUS
+	help
+	  This option enables tsens i2c and thermal local Host driver.
+
+	  This driver is used for reading thermal data via I2C SMBUS
+	  and registers itself to thermal framework, which can be
+	  used by thermal daemon in remote IA host
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
