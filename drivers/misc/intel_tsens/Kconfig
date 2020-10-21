@@ -28,6 +28,18 @@ config INTEL_TSENS_I2C_SLAVE
 	  management controller
 	  Say Y if using a processor that includes the Intel VPU such as
 	  Keem Bay.  If unsure, say N.
+
+config KEEMBAY_THERMAL
+	tristate "Temperature sensor driver for intel Keem Bay"
+	depends on INTEL_TSENS_LOCAL_HOST && ARCH_KEEMBAY
+	help
+	  Enable this option if you want to have support for Keem Bay
+	  thermal management sensors.
+
+	  This driver is used for reading onchip temperature sensor
+	  values from Keem Bay SoC.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
 config INTEL_TSENS_IA_HOST
 	tristate "Temperature sensor driver for intel tsens remote host"
 	depends on I2C && THERMAL
