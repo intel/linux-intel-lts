@@ -12,3 +12,15 @@ config HDDL_DEVICE_CLIENT
 	  the device connect/disconnect programming sequence.
 	  Say Y if using a processor that includes the Intel VPU such as
 	  Keem Bay.  If unsure, say N.
+
+config HDDL_DEVICE_SERVER
+	tristate "Support for hddl device server"
+	depends on XLINK_CORE && !HDDL_DEVICE_CLIENT
+	help
+	  This option enables HDDL device server module.
+
+	  This driver is used for sharing time sync data to local host and
+	  retrives the sensors available on the platform. This also handles
+	  the device connect/disconnect programming sequence.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
