@@ -20,6 +20,7 @@ fit into other categories.
    eeprom
    c2port
    dw-xdata-pcie
+   hddl_device_client.rst
    ibmvmc
    ics932s401
    isl29003
