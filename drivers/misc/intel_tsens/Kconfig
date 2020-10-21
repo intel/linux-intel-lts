@@ -1,0 +1,15 @@
+# Copyright (C) 2020 Intel Corporation
+# SPDX-License-Identifier: GPL-2.0-only
+
+config INTEL_TSENS_LOCAL_HOST
+	bool "Temperature sensor driver for intel tsens"
+	select THERMAL
+	help
+	  This option enables tsens thermal local Host driver.
+
+	  This driver is used for reporting thermal data via thermal
+	  framework.
+	  Enable this option if you want to have support for thermal
+	  management controller.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
