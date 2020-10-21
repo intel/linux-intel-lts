@@ -62,3 +62,4 @@ obj-$(CONFIG_HISI_HIKEY_USB)	+= hisi_hikey_usb.o
 obj-$(CONFIG_VPUMGR)		+= vpumgr/
 obj-y                           += intel_tsens/
 obj-$(CONFIG_XLINK_SMBUS)	+= xlink-smbus/
+obj-y				+= hddl_device/
