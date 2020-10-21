@@ -79,6 +79,7 @@ Hardware Monitoring Kernel Drivers
    ir38064
    isl68137
    it87
+   intel_tsens_sensor.rst
    jc42
    k10temp
    k8temp
