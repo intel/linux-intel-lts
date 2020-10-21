@@ -490,4 +490,6 @@ source "drivers/misc/pvpanic/Kconfig"
 source "drivers/misc/vpumgr/Kconfig"
 source "drivers/misc/Gpio-asm28xx/Kconfig"
 source "drivers/misc/gna/Kconfig"
+source "drivers/misc/noc/Kconfig"
+source "drivers/misc/intel_tsens/Kconfig"
 endmenu
