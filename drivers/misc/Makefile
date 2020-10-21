@@ -62,3 +62,5 @@ obj-$(CONFIG_HI6421V600_IRQ)	+= hi6421v600-irq.o
 obj-$(CONFIG_VPUMGR)		+= vpumgr/
 obj-$(CONFIG_HOST_KMB_TJ)       += Gpio-asm28xx/
 obj-$(CONFIG_INTEL_GNA)		+= gna/
+obj-$(CONFIG_NOC_DSS)		+= noc/
+obj-y                           += intel_tsens/
