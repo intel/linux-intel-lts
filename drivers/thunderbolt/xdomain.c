@@ -30,6 +30,10 @@ struct xdomain_request_work {
 	struct tb *tb;
 };
 
+bool tb_xdomain_enabled = true;
+module_param_named(xdomain, tb_xdomain_enabled, bool, 0444);
+MODULE_PARM_DESC(xdomain, "allow XDomain protocol (default: true)");
+
 /* Serializes access to the properties and protocol handlers below */
 static DEFINE_MUTEX(xdomain_lock);
 
