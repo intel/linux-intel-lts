@@ -6,7 +6,7 @@
  * Authors: Lai Poey Seng <poey.seng.lai@intel.com>
  *          Vineetha G. Jaya Kumaran <vineetha.g.jaya.kumaran@intel.com>
  *
- * Limitation:
+ * Limitations:
  * - Upon disabling a channel, the currently running
  *   period will not be completed. However, upon
  *   reconfiguration of the duty cycle/period, the
@@ -23,13 +23,13 @@
 #include <linux/regmap.h>
 
 #define KMB_TOTAL_PWM_CHANNELS		6
-#define KMB_PWM_COUNT_MAX		0xffff
+#define KMB_PWM_COUNT_MAX		U16_MAX
 #define KMB_PWM_EN_BIT			BIT(31)
 
 /* Mask */
 #define KMB_PWM_HIGH_MASK		GENMASK(31, 16)
 #define KMB_PWM_LOW_MASK		GENMASK(15, 0)
-#define KMB_PWM_REPEAT_COUNT_MASK	GENMASK(15, 0)
+#define KMB_PWM_LEADIN_MASK		GENMASK(30, 0)
 
 /* PWM Register offset */
 #define KMB_PWM_LEADIN_OFFSET(ch)	(0x00 + 4 * (ch))
@@ -45,6 +45,22 @@ struct keembay_pwm {
 static inline struct keembay_pwm *to_keembay_pwm_dev(struct pwm_chip *chip)
 {
 	return container_of(chip, struct keembay_pwm, chip);
+}
+
+static void keembay_clk_unprepare(void *data)
+{
+	clk_disable_unprepare(data);
+}
+
+static int keembay_clk_enable(struct device *dev, struct clk *clk)
+{
+	int ret;
+
+	ret = clk_prepare_enable(clk);
+	if (ret)
+		return ret;
+
+	return devm_add_action_or_reset(dev, keembay_clk_unprepare, clk);
 }
 
 static inline void keembay_pwm_update_bits(struct keembay_pwm *priv, u32 mask,
@@ -72,29 +88,26 @@ static void keembay_pwm_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
 				  struct pwm_state *state)
 {
 	struct keembay_pwm *priv = to_keembay_pwm_dev(chip);
-	unsigned long long pwm_h_count, pwm_l_count;
+	unsigned long long high, low;
 	unsigned long clk_rate;
-	u32 buff;
+	u32 highlow;
 
 	clk_rate = clk_get_rate(priv->clk);
 
 	/* Read channel enabled status */
-	buff = readl(priv->base + KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
-	if (buff & KMB_PWM_EN_BIT)
+	highlow = readl(priv->base + KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
+	if (highlow & KMB_PWM_EN_BIT)
 		state->enabled = true;
 	else
 		state->enabled = false;
 
 	/* Read period and duty cycle */
-	buff = readl(priv->base + KMB_PWM_HIGHLOW_OFFSET(pwm->hwpwm));
-	pwm_l_count = FIELD_GET(KMB_PWM_LOW_MASK, buff) * NSEC_PER_SEC;
-	pwm_h_count = FIELD_GET(KMB_PWM_HIGH_MASK, buff) * NSEC_PER_SEC;
-	state->duty_cycle = DIV_ROUND_UP_ULL(pwm_h_count, clk_rate);
-	state->period = DIV_ROUND_UP_ULL(pwm_h_count + pwm_l_count, clk_rate);
-
-	/* Read repetition count */
-	buff = readl(priv->base + KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
-	state->count = buff & KMB_PWM_REPEAT_COUNT_MASK;
+	highlow = readl(priv->base + KMB_PWM_HIGHLOW_OFFSET(pwm->hwpwm));
+	low = FIELD_GET(KMB_PWM_LOW_MASK, highlow) * NSEC_PER_SEC;
+	high = FIELD_GET(KMB_PWM_HIGH_MASK, highlow) * NSEC_PER_SEC;
+	state->duty_cycle = DIV_ROUND_UP_ULL(high, clk_rate);
+	state->period = DIV_ROUND_UP_ULL(high + low, clk_rate);
+	state->polarity = PWM_POLARITY_NORMAL;
 }
 
 static int keembay_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
@@ -102,64 +115,52 @@ static int keembay_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 {
 	struct keembay_pwm *priv = to_keembay_pwm_dev(chip);
 	struct pwm_state current_state;
-	u16 pwm_h_count, pwm_l_count;
 	unsigned long long div;
 	unsigned long clk_rate;
 	u32 pwm_count = 0;
+	u16 high, low;
+
+	if (state->polarity != PWM_POLARITY_NORMAL)
+		return -EINVAL;
+
+	/*
+	 * Configure the pwm repeat count as infinite at (15:0) and leadin
+	 * low time as 0 at (30:16), which is in terms of clock cycles.
+	 */
+	keembay_pwm_update_bits(priv, KMB_PWM_LEADIN_MASK, 0,
+				KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
 
 	keembay_pwm_get_state(chip, pwm, &current_state);
 
-	if (state->polarity != PWM_POLARITY_NORMAL)
-		return -ENOSYS;
-
-	if (!state->enabled && current_state.enabled) {
-		keembay_pwm_disable(priv, pwm->hwpwm);
+	if (!state->enabled) {
+		if (current_state.enabled)
+			keembay_pwm_disable(priv, pwm->hwpwm);
 		return 0;
 	}
 
-	if (state->count != current_state.count) {
-		if (state->count > KMB_PWM_COUNT_MAX)
-			return -EINVAL;
-
-		keembay_pwm_update_bits(priv, KMB_PWM_REPEAT_COUNT_MASK,
-					state->count,
-					KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
-	}
-
 	/*
-	 * The upper 16 bits of the KMB_PWM_HIGHLOW_OFFSET register contain
-	 * the high time of the waveform, while the last 16 bits contain
-	 * the low time of the waveform, in terms of clock cycles.
-	 *
-	 * high time = clock rate * duty cycle
-	 * low time =  clock rate * (period - duty cycle)
-	 *
-	 * e.g. For period 50us, duty cycle 30us, and clock rate 500MHz:
-	 * high time = 500MHz * 30us = 0x3A98
-	 * low time = 500MHz * 20us = 0x2710
-	 * Value written to KMB_PWM_HIGHLOW_OFFSET = 0x3A982710
+	 * The upper 16 bits and lower 16 bits of the KMB_PWM_HIGHLOW_OFFSET
+	 * register contain the high time and low time of waveform accordingly.
+	 * All the values are in terms of clock cycles.
 	 */
 
 	clk_rate = clk_get_rate(priv->clk);
-
-	/* Configure waveform high time */
 	div = clk_rate * state->duty_cycle;
-	div = DIV_ROUND_CLOSEST_ULL(div, NSEC_PER_SEC);
+	div = DIV_ROUND_DOWN_ULL(div, NSEC_PER_SEC);
 	if (div > KMB_PWM_COUNT_MAX)
 		return -ERANGE;
 
-	pwm_h_count = div;
-
-	/* Configure waveform low time */
-	div = clk_rate * (state->period - state->duty_cycle);
-	div = DIV_ROUND_CLOSEST_ULL(div, NSEC_PER_SEC);
+	high = div;
+	div = clk_rate * state->period;
+	div = DIV_ROUND_DOWN_ULL(div, NSEC_PER_SEC);
+	div = div - high;
 	if (div > KMB_PWM_COUNT_MAX)
 		return -ERANGE;
 
-	pwm_l_count = div;
+	low = div;
 
-	pwm_count = FIELD_PREP(KMB_PWM_HIGH_MASK, pwm_h_count) |
-		    FIELD_PREP(KMB_PWM_LOW_MASK, pwm_l_count);
+	pwm_count = FIELD_PREP(KMB_PWM_HIGH_MASK, high) |
+		    FIELD_PREP(KMB_PWM_LOW_MASK, low);
 
 	writel(pwm_count, priv->base + KMB_PWM_HIGHLOW_OFFSET(pwm->hwpwm));
 
@@ -179,13 +180,13 @@ static int keembay_pwm_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct keembay_pwm *priv;
-	int ret, ch;
+	int ret;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
-	priv->clk = devm_clk_get(&pdev->dev, NULL);
+	priv->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(priv->clk))
 		return dev_err_probe(dev, PTR_ERR(priv->clk), "Failed to get clock\n");
 
@@ -193,20 +194,18 @@ static int keembay_pwm_probe(struct platform_device *pdev)
 	if (IS_ERR(priv->base))
 		return PTR_ERR(priv->base);
 
+	ret = keembay_clk_enable(dev, priv->clk);
+	if (ret)
+		return ret;
+
 	priv->chip.base = -1;
 	priv->chip.dev = dev;
 	priv->chip.ops = &keembay_pwm_ops;
 	priv->chip.npwm = KMB_TOTAL_PWM_CHANNELS;
 
 	ret = pwmchip_add(&priv->chip);
-	if (ret) {
-		dev_err(dev, "Failed to add PWM chip: %pe\n", ERR_PTR(ret));
-		return ret;
-	}
-
-	/* Ensure enable bit for each channel is cleared at boot */
-	for (ch = 0; ch < KMB_TOTAL_PWM_CHANNELS; ch++)
-		keembay_pwm_disable(priv, ch);
+	if (ret)
+		return dev_err_probe(dev, ret, "Failed to add PWM chip\n");
 
 	platform_set_drvdata(pdev, priv);
 
