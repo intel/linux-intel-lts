@@ -23,6 +23,11 @@
 #define CPU_STEPPING	boot_cpu_data.x86_stepping
 #endif
 
+/* EHL SoC revision ID */
+#define EHL_PCI_PCH_A0	0x00
+#define EHL_PCI_PCH_A1	0x01
+#define EHL_PCI_PCH_B0	0x10
+
 /*
  * This struct is used to associate PCI Function of MAC controller on a board,
  * discovered via DMI, with the address of PHY connected to the MAC. The
@@ -355,7 +360,10 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 204860000;
 
-	plat->dma_cfg->pch_intr_wa = 1;
+	if (pdev->revision == EHL_PCI_PCH_A0 ||
+	    pdev->revision == EHL_PCI_PCH_A1 ||
+	    pdev->revision == EHL_PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -373,7 +381,10 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 200000000;
 
-	plat->dma_cfg->pch_intr_wa = 1;
+	if (pdev->revision == EHL_PCI_PCH_A0 ||
+	    pdev->revision == EHL_PCI_PCH_A1 ||
+	    pdev->revision == EHL_PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
 
 	return ehl_common_data(pdev, plat);
 }
