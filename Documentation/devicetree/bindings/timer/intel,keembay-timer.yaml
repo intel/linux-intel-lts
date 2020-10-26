@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/timer/intel,keembay-timer.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Intel Keem Bay SoC Timers
+
+maintainers:
+  - Wan Ahmad Zainie <wan.ahmad.zainie.wan.mohamad@intel.com>
+  - Vijayakannan Ayyathurai <vijayakannan.ayyathurai@intel.com>
+
+description:
+  Intel Keem Bay SoC Timers block contains 8 32-bit general purpose timers,
+  a free running 64-bit counter, a random number generator and a watchdog
+  timer. Each gpt can generate an individual interrupt.
+
+properties:
+  compatible:
+    enum:
+      - intel,keembay-timer
+
+  reg:
+    maxItems: 3
+
+  clocks:
+    maxItems: 1
+
+  interrupts:
+    maxItems: 1
+
+required:
+  - compatible
+  - reg
+  - interrupts
+  - clocks
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #include <dt-bindings/interrupt-controller/irq.h>
+    #define KEEM_BAY_A53_TIM
+
+    timer@20330010 {
+        compatible = "intel,keembay-timer";
+        reg = <0x20330010 0xc>,
+              <0x203300e8 0xc>,
+              <0x20331000 0xc>;
+        clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+        interrupts = <GIC_SPI 3 IRQ_TYPE_LEVEL_HIGH>;
+    };
