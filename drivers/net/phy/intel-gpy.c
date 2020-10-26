@@ -276,6 +276,12 @@ static int gpy_set_wol(struct phy_device *phydev,
 		if (ret < 0)
 			return ret;
 
+		/* Clear the interrupt status register */
+		ret = phy_read(phydev, GPY_ISTAT);
+
+		if (ret < 0)
+			return ret;
+
 	} else {
 		/* Disable magic packet matching */
 		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
@@ -295,6 +301,9 @@ static int gpy_set_wol(struct phy_device *phydev,
 
 		/* Clear the interrupt status register */
 		ret = phy_read(phydev, GPY_ISTAT);
+
+		if (ret < 0)
+			return ret;
 	} else {
 		/* Disable the link state change interrupt */
 		ret = phy_clear_bits(phydev, GPY_IMASK, GPY_INTR_LSTC);
