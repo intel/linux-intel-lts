@@ -84,14 +84,14 @@ module_param(enable_decode, bool, 0);
 MODULE_PARM_DESC(enable_decode, "Enable Decode"
 		"(default 1)");
 
-bool enable_dec400 = 0;
+bool enable_dec400;
 module_param(enable_dec400, bool, 0);
 MODULE_PARM_DESC(enable_dec400, "Enable DEC400/L2"
-		"(default 1)");
+		"(default 0)");
 
 bool enable_irqmode = 1;
 module_param(enable_irqmode, bool, 0);
-MODULE_PARM_DESC(enable_dec400, "Enable IRQ Mode"
+MODULE_PARM_DESC(enable_irqmode, "Enable IRQ Mode"
         "(default 1)");
 
 /* temp no usage now */
