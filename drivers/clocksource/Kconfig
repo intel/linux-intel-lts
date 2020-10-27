@@ -444,6 +444,7 @@ config ATMEL_TCB_CLKSRC
 config CLKSRC_EXYNOS_MCT
 	bool "Exynos multi core timer driver" if COMPILE_TEST
 	depends on ARM || ARM64
+	select GENERIC_CLOCKSOURCE_VDSO
 	help
 	  Support for Multi Core Timer controller on Exynos SoCs.
 
