@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/pci/intel,keembay-pcie-ep.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+
+title: Intel Keem Bay PCIe EP controller
+
+maintainers:
+  - Wan Ahmad Zainie <wan.ahmad.zainie.wan.mohamad@intel.com>
+
+properties:
+  compatible:
+      const: intel,keembay-pcie-ep
+
+  reg:
+    items:
+      - description: DesignWare PCIe registers
+      - description: PCIe configuration space
+      - description: Keem Bay specific registers
+
+  reg-names:
+    items:
+      - const: dbi
+      - const: addr_space
+      - const: apb
+
+  interrupts:
+    items:
+      - description: PCIe interrupt
+      - description: PCIe event interrupt
+      - description: PCIe error interrupt
+      - description: PCIe memory access interrupt
+
+  interrupt-names:
+    items:
+      - const: intr
+      - const: ev_intr
+      - const: err_intr
+      - const: mem_access_intr
+
+  num-ib-windows:
+    description: Number of inbound address translation windows
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  num-ob-windows:
+    description: Number of outbound address translation windows
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  num-lanes:
+    description: Number of lanes to use.
+    $ref: /schemas/types.yaml#/definitions/uint32
+    enum: [ 1, 2, 4, 8 ]
+
+required:
+  - compatible
+  - reg
+  - reg-names
+  - interrupts
+  - interrupt-names
+  - num-ib-windows
+  - num-ob-windows
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #include <dt-bindings/interrupt-controller/irq.h>
+  - |
+    pcie-ep@37000000 {
+          compatible = "intel,keembay-pcie-ep";
+          reg = <0x37000000 0x00800000>,
+                <0x36000000 0x01000000>,
+                <0x37800000 0x00000200>;
+          reg-names = "dbi", "addr_space", "apb";
+          interrupts = <GIC_SPI 107 IRQ_TYPE_LEVEL_HIGH>,
+                       <GIC_SPI 108 IRQ_TYPE_EDGE_RISING>,
+                       <GIC_SPI 109 IRQ_TYPE_LEVEL_HIGH>,
+                       <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
+          interrupt-names = "intr", "ev_intr", "err_intr",
+                       "mem_access_intr";
+          num-ib-windows = <4>;
+          num-ob-windows = <4>;
+          num-lanes = <2>;
+    };
