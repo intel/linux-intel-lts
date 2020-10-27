@@ -337,14 +337,14 @@ static int dwc_pci_runtime_suspend(struct device *dev)
 	j1 = j0 + delay;
 
 	cgsr_reg = dwc_readl(dwc->base, DWC_TIM_CGSR);
-	dwc_writel(dwc->base, DWC_TIM_CGSR_CG, DWC_TIM_CGSR);
+	dwc_writel(dwc->base, DWC_TIM_CGSR, DWC_TIM_CGSR_CG);
 
 	d0i3c_reg = dwc_readl(dwc->base, DWC_TIM_D0I3C);
 
 	if (d0i3c_reg & DWC_TIM_D0I3_CIP) {
 		dev_info(dev, "%s d0i3c CIP detected", __func__);
 	} else {
-		dwc_writel(dwc->base, DWC_TIM_D0I3_EN, DWC_TIM_D0I3C);
+		dwc_writel(dwc->base, DWC_TIM_D0I3C, DWC_TIM_D0I3_EN);
 		d0i3c_reg = dwc_readl(dwc->base, DWC_TIM_D0I3C);
 	}
 
@@ -375,8 +375,7 @@ static int dwc_pci_runtime_resume(struct device *dev)
 	cgsr_reg = dwc_readl(dwc->base, DWC_TIM_CGSR);
 
 	if (cgsr_reg & DWC_TIM_CGSR_CG)
-		dwc_writel(dwc->base, (cgsr_reg & ~DWC_TIM_CGSR_CG),
-							DWC_TIM_CGSR);
+		dwc_writel(dwc->base, DWC_TIM_CGSR, (cgsr_reg & ~DWC_TIM_CGSR_CG));
 
 	d0i3c_reg = dwc_readl(dwc->base, DWC_TIM_D0I3C);
 
@@ -390,7 +389,7 @@ static int dwc_pci_runtime_resume(struct device *dev)
 		if (d0i3c_reg & DWC_TIM_D0I3_RR)
 			d0i3c_reg |= DWC_TIM_D0I3_RR;
 
-		dwc_writel(dwc->base, d0i3c_reg, DWC_TIM_D0I3C);
+		dwc_writel(dwc->base, DWC_TIM_D0I3C, d0i3c_reg);
 		d0i3c_reg = dwc_readl(dwc->base, DWC_TIM_D0I3C);
 	}
 
