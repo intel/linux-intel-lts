@@ -194,23 +194,20 @@ static u32 notrace exynos4_read_count_32(void)
 	return readl_relaxed(reg_base + EXYNOS4_MCT_G_CNT_L);
 }
 
-static u64 exynos4_frc_read(struct clocksource *cs)
-{
-	return exynos4_read_count_32();
-}
-
 static void exynos4_frc_resume(struct clocksource *cs)
 {
 	exynos4_mct_frc_start();
 }
 
-static struct clocksource mct_frc = {
-	.name		= "mct-frc",
-	.rating		= 450,	/* use value higher than ARM arch timer */
-	.read		= exynos4_frc_read,
-	.mask		= CLOCKSOURCE_MASK(32),
-	.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
-	.resume		= exynos4_frc_resume,
+static struct clocksource_user_mmio mct_frc = {
+	.mmio.clksrc = {
+		.name		= "mct-frc",
+		.rating		= 450,	/* use value higher than ARM arch timer */
+		.read		= clocksource_mmio_readl_up,
+		.mask		= CLOCKSOURCE_MASK(32),
+		.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
+		.resume		= exynos4_frc_resume,
+	},
 };
 
 static u64 notrace exynos4_read_sched_clock(void)
@@ -231,6 +228,8 @@ static cycles_t exynos4_read_current_timer(void)
 
 static int __init exynos4_clocksource_init(void)
 {
+	struct clocksource_mmio_regs mmr;
+
 	exynos4_mct_frc_start();
 
 #if defined(CONFIG_ARM)
@@ -239,8 +238,13 @@ static int __init exynos4_clocksource_init(void)
 	register_current_timer_delay(&exynos4_delay_timer);
 #endif
 
-	if (clocksource_register_hz(&mct_frc, clk_rate))
-		panic("%s: can't register clocksource\n", mct_frc.name);
+	mmr.reg_upper = NULL;
+	mmr.reg_lower = reg_base + EXYNOS4_MCT_G_CNT_L;
+	mmr.bits_upper = 0;
+	mmr.bits_lower = 32;
+	mmr.revmap = NULL;
+	if (clocksource_user_mmio_init(&mct_frc, &mmr, clk_rate))
+		panic("%s: can't register clocksource\n", mct_frc.mmio.clksrc.name);
 
 	sched_clock_register(exynos4_read_sched_clock, 32, clk_rate);
 
