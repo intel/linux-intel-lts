@@ -439,6 +439,7 @@ config CLKSRC_EXYNOS_MCT
 	bool "Exynos multi core timer driver" if COMPILE_TEST
 	depends on ARM || ARM64
 	depends on ARCH_ARTPEC || ARCH_EXYNOS || COMPILE_TEST
+	imply GENERIC_CLOCKSOURCE_VDSO
 	help
 	  Support for Multi Core Timer controller on Exynos SoCs.
 
