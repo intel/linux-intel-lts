@@ -157,7 +157,8 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	struct drm_gem_object *obj;
 	hantro_fence_t *fence = NULL;
 	unsigned long timeout = arg->timeout;
-	int ret;
+	unsigned long fenceid = -1;
+	int ret = 0;
 
 	obj = hantro_gem_object_lookup(dev, file_priv, arg->handle);
 	if (!obj)
@@ -184,19 +185,26 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	}
 
 	/* Expose the fence via the dma-buf */
-	ret = 0;
-	dma_resv_lock(resv, NULL);
-
+	ret = -ENOMEM;
 	fence = alloc_fence(hantro_fence_context_alloc(1));
-	if (!fence) {
-		ret = -ENOMEM;
-		dma_resv_unlock(resv);
+	if (!fence)
 		goto err;
-	}
+
+	mutex_lock(&fence_mutex);
+	ret = idr_alloc(&fence_idr, fence, 1, 0, GFP_KERNEL);
+	mutex_unlock(&fence_mutex);
+	if (ret >= 0)
+		fenceid = ret;
+	else
+		goto err;
+
+	dma_resv_lock(resv, NULL);
+	ret = 0;
 	if (arg->flags & HANTRO_FENCE_WRITE) {
 		dma_resv_add_excl_fence(resv, fence);
-	} else {
-		/* I'm not sure if 1 fence is enough, pass compilation first */
+	}
+	else {
+		/*I'm not sure if 1 fence is enough, pass compilation first*/
 		ret = hantro_reserve_obj_shared(resv, 1);
 		if (ret == 0)
 			dma_resv_add_shared_fence(resv, fence);
@@ -205,20 +213,20 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 
 	/* Record the fence in our idr for later signaling */
 	if (ret == 0) {
-		mutex_lock(&fence_mutex);
-		ret = idr_alloc(&fence_idr, fence, 1, 0, GFP_KERNEL);
-		mutex_unlock(&fence_mutex);
-		if (ret > 0) {
-			arg->fence_handle = ret;
-			ret = 0;
-		}
+		arg->fence_handle = fenceid;
+		hantro_unref_drmobj(obj);
+		return ret;
 	}
-
-	if (ret) {
+err:
+	if (fenceid >= 0) {
+		mutex_lock(&fence_mutex);
+		idr_remove(&fence_idr, fenceid);
+		mutex_unlock(&fence_mutex);
+	}
+	if (fence) {
 		hantro_fence_signal(fence);
 		hantro_fence_put(fence);
 	}
-err:
 	hantro_unref_drmobj(obj);
 	return ret;
 }
@@ -235,15 +243,16 @@ int hantro_testbufvalid(struct drm_device *dev, void *data,
 	if (!obj)
 		return -ENOENT;
 
-	hantro_unref_drmobj(obj);
 	if (!obj->dma_buf) {
 		if (hantro_dev.drm_dev == obj->dev) {
 			struct drm_gem_hantro_object *hobj =
 				to_drm_gem_hantro_obj(obj);
 
 			resv = &hobj->kresv;
-		} else
+		} else {
+			hantro_unref_drmobj(obj);
 			return -ENOENT;
+		}
 	} else
 		resv = obj->dma_buf->resv;
 
@@ -252,6 +261,7 @@ int hantro_testbufvalid(struct drm_device *dev, void *data,
 		arg->ready = 0;
 	else
 		arg->ready = 1;
+	hantro_unref_drmobj(obj);
 	return 0;
 }
 
