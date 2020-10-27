@@ -7,6 +7,7 @@
 
 #include <linux/bitops.h>
 #include <linux/idr.h>
+#include <linux/bits.h>
 #include <linux/interrupt.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/module.h>
@@ -36,6 +37,13 @@
 #define TIM_CLKSRC_MASK_BITS		64
 
 #define TIMER_NAME_SIZE			25
+#define TIM_CLKSRC_BITS			SZ_64
+
+struct keembay_init_data {
+	struct timer_of	*cfg;
+	void __iomem	*base;
+	u32		mask;
+};
 
 /* Provides a unique ID for each timer */
 static DEFINE_IDA(keembay_timer_ida);
@@ -205,6 +213,70 @@ err_iounmap:
 	return ret;
 }
 
+static struct timer_of keembay_ce_to = {
+	.flags	= TIMER_OF_IRQ | TIMER_OF_BASE | TIMER_OF_CLOCK,
+	.clkevt = {
+		.name			= "keembay_timer",
+		.features		= CLOCK_EVT_FEAT_PERIODIC |
+					  CLOCK_EVT_FEAT_ONESHOT,
+		.rating			= TIM_RATING,
+		.set_next_event		= keembay_timer_set_next_event,
+		.set_state_periodic	= keembay_timer_periodic,
+		.set_state_shutdown	= keembay_timer_shutdown,
+	},
+	.of_irq = {
+		.handler = keembay_timer_isr,
+		.flags = IRQF_TIMER | IRQF_IRQPOLL,
+	},
+};
+
+static int __init keembay_init_pre(struct device_node *np,
+				   struct keembay_init_data *data)
+{
+	u32 val;
+	int ret;
+
+	data->base = of_iomap(np, 1);
+	if (!data->base)
+		return -ENXIO;
+
+	val = readl(data->base + TIM_CONFIG_OFFSET);
+	if (!(val & data->mask)) {
+		iounmap(data->base);
+		return -ENODEV;
+	}
+
+	ret = timer_of_init(np, data->cfg);
+	if (ret)
+		iounmap(data->base);
+
+	return ret;
+}
+
+static int __init keembay_timer_init(struct device_node *np)
+{
+	struct keembay_init_data data;
+	u32 val;
+	int ret;
+
+	data.mask = TIM_CONFIG_PRESCALER_ENABLE;
+	data.cfg = &keembay_ce_to;
+	ret = keembay_init_pre(np, &data);
+	if (ret)
+		return ret;
+
+	val = readl(data.base + TIM_RELOAD_VAL_OFFSET);
+	keembay_ce_to.of_clk.rate = keembay_ce_to.of_clk.rate / (val + 1);
+
+	keembay_timer_disable(timer_of_base(&keembay_ce_to));
+
+	keembay_ce_to.clkevt.cpumask = cpumask_of(0);
+	clockevents_config_and_register(&keembay_ce_to.clkevt,
+					timer_of_rate(&keembay_ce_to), 1,
+					U32_MAX);
+	return 0;
+}
+
 static struct timer_of keembay_cs_to = {
 	.flags	= TIMER_OF_BASE | TIMER_OF_CLOCK,
 };
@@ -253,3 +325,25 @@ static int __init keembay_clocksource_init(struct device_node *np)
 
 TIMER_OF_DECLARE(keembay_clockevent, "intel,keembay-timer", keembay_clockevent_init);
 TIMER_OF_DECLARE(keembay_clocksource, "intel,keembay-counter", keembay_clocksource_init);
+
+static int __init keembay_counter_init(struct device_node *np)
+{
+	struct keembay_init_data data;
+	int ret;
+
+	data.mask = TIM_CONFIG_ENABLE;
+	data.cfg = &keembay_cs_to;
+	ret = keembay_init_pre(np, &data);
+	if (ret)
+		return ret;
+
+	if (of_device_is_compatible(np, "intel,keembay-counter"))
+		keembay_counter.name = "keembay_sys_counter";
+
+	return clocksource_register_hz(&keembay_counter,
+				       timer_of_rate(&keembay_cs_to));
+}
+
+TIMER_OF_DECLARE(keembay_timer, "intel,keembay-timer", keembay_timer_init);
+TIMER_OF_DECLARE(keembay_sys_counter, "intel,keembay-counter",
+		 keembay_counter_init);
