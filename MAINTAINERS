@@ -2060,7 +2060,7 @@ F:	Documentation/devicetree/bindings/arm/intel,keembay.yaml
 F:	arch/arm64/boot/dts/intel/keembay-evm.dts
 F:	arch/arm64/boot/dts/intel/keembay-soc.dtsi
 
-ARM KEEMBAY XLINK PCIE SUPPORT
+ARM/INTEL KEEMBAY XLINK PCIE SUPPORT
 M:	Srikanth Thokala <srikanth.thokala@intel.com>
 M:	Mark Gross <mgross@linux.intel.com>
 S:	Maintained
