@@ -45,6 +45,8 @@ static irqreturn_t intel_xpcie_err_interrupt(int irq, void *args)
 
 	xpcie_epf = container_of(xpcie, struct xpcie_epf, xpcie);
 	val = ioread32(xpcie_epf->apb_base + PCIE_REGS_PCIE_ERR_INTR_FLAGS);
+	if (val & LINK_REQ_RST_FLG)
+		intel_xpcie_ep_dma_reset(xpcie_epf->epf);
 
 	iowrite32(val, xpcie_epf->apb_base + PCIE_REGS_PCIE_ERR_INTR_FLAGS);
 
@@ -325,7 +327,16 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 		goto err_cleanup_bars;
 	}
 
+	ret = intel_xpcie_ep_dma_init(epf);
+	if (ret) {
+		dev_err(&epf->dev, "DMA initialization failed\n");
+		goto err_free_err_irq;
+	}
+
 	return 0;
+
+err_free_err_irq:
+	free_irq(xpcie_epf->irq_err, &xpcie_epf->xpcie);
 
 err_cleanup_bars:
 	intel_xpcie_cleanup_bars(epf);
@@ -335,11 +346,9 @@ err_cleanup_bars:
 
 static void intel_xpcie_epf_unbind(struct pci_epf *epf)
 {
-	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
 	struct pci_epc *epc = epf->epc;
 
-	free_irq(xpcie_epf->irq, &xpcie_epf->xpcie);
-	free_irq(xpcie_epf->irq_err, &xpcie_epf->xpcie);
+	intel_xpcie_ep_dma_uninit(epf);
 
 	pci_epc_stop(epc);
 
