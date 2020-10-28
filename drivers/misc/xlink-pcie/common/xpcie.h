@@ -71,6 +71,7 @@ struct xpcie_mmio {
 struct xpcie {
 	u32 status;
 	bool legacy_a0;
+	void *bar0;
 	void *mmio;
 	void *bar4;
 
