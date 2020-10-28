@@ -1,11 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/*****************************************************************************
- *
+/*
  * Intel Keem Bay XLink PCIe Driver
  *
- * Copyright (C) 2020 Intel Corporation
- *
- ****************************************************************************/
+ * Copyright (C) 2021 Intel Corporation
+ */
 
 #ifndef XPCIE_CORE_HEADER_
 #define XPCIE_CORE_HEADER_
@@ -33,6 +31,9 @@
 /* Status encoding of the transfer descriptors */
 #define XPCIE_DESC_STATUS_SUCCESS	(0)
 #define XPCIE_DESC_STATUS_ERROR		(0xFFFF)
+
+#define HOST_RX_BD_COUNT_THRESHOLD	(64)
+#define MAX_HOST_RX_BD_COUNT		(3 * HOST_RX_BD_COUNT_THRESHOLD)
 
 /* Layout transfer descriptors used by device and host */
 struct xpcie_transfer_desc {
