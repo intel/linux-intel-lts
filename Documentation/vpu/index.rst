@@ -16,3 +16,4 @@ This documentation contains information for the Intel VPU stack.
    vpu-stack-overview
    xlink-pcie
    xlink-ipc
+   xlink-core

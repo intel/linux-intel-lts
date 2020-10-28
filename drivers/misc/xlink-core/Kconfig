@@ -1,0 +1,35 @@
+config XLINK_CORE
+	tristate "Support for XLINK CORE"
+	depends on ((XLINK_PCIE_RH_DRIVER || XBAY_XLINK_PCIE_RH_DRIVER) || \
+                    (XLINK_LOCAL_HOST && \
+                    (XLINK_PCIE_LH_DRIVER || XBAY_XLINK_PCIE_RH_DRIVER)))
+	help
+	  XLINK CORE enables the communication/control subsystem.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called xlink.ko.
+
+config XLINK_LOCAL_HOST
+	tristate "Support for XLINK LOCAL HOST"
+	depends on XLINK_IPC
+	help
+	  XLINK LOCAL HOST enables local host functionality for
+	  the communication/control Sub-System.
+
+	  Enable this config when building the kernel for the Intel Vision
+	  Processing Unit (VPU) Local Host core.
+
+	  If building for a Remote Host kernel, say N.
+
+config XLINK_PSS
+	tristate "Support for XLINK PSS (Pre-Silicon Solution)"
+	depends on XLINK_LOCAL_HOST
+	help
+	  XLINK PSS enables the communication/control subsystem on a PSS platform.
+
+	  Enable this config when building the kernel for the Intel Vision
+	  Processing Unit (VPU) in a simulated environment.
+
+	  If building for a VPU silicon, say N.
