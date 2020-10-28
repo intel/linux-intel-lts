@@ -27,6 +27,7 @@
 #include <linux/xlink-ipc.h>
 #endif
 
+#include "xlink-dispatcher.h"
 #include "xlink-multiplexer.h"
 #include "xlink-platform.h"
 
@@ -165,12 +166,83 @@ static int is_channel_for_device(u16 chan, u32 sw_device_id,
 	return 0;
 }
 
+static int is_enough_space_in_channel(struct open_channel *opchan,
+				      u32 size)
+{
+	if (opchan->tx_packet_level >= ((XLINK_PACKET_QUEUE_CAPACITY / 100) * THR_UPR)) {
+		pr_info("Packet queue limit reached\n");
+		return 0;
+	}
+	if (opchan->tx_up_limit == 0) {
+		if ((opchan->tx_fill_level + size)
+				> ((opchan->chan->size / 100) * THR_UPR)) {
+			opchan->tx_up_limit = 1;
+			return 0;
+		}
+	}
+	if (opchan->tx_up_limit == 1) {
+		if ((opchan->tx_fill_level + size)
+				< ((opchan->chan->size / 100) * THR_LWR)) {
+			opchan->tx_up_limit = 0;
+			return 1;
+		} else {
+			return 0;
+		}
+	}
+	return 1;
+}
+
 static int is_control_channel(u16 chan)
 {
 	if (chan == IP_CONTROL_CHANNEL || chan == VPU_CONTROL_CHANNEL)
 		return 1;
 	else
 		return 0;
+}
+
+static struct open_channel *get_channel(u32 link_id, u16 chan)
+{
+	if (!xmux->channels[link_id][chan].opchan)
+		return NULL;
+	mutex_lock(&xmux->channels[link_id][chan].opchan->lock);
+	return xmux->channels[link_id][chan].opchan;
+}
+
+static void release_channel(struct open_channel *opchan)
+{
+	if (opchan)
+		mutex_unlock(&opchan->lock);
+}
+
+static int add_packet_to_channel(struct open_channel *opchan,
+				 struct packet_queue *queue,
+				 void *buffer, u32 size,
+				 dma_addr_t paddr)
+{
+	struct packet *pkt;
+
+	if (queue->count < queue->capacity) {
+		pkt = kzalloc(sizeof(*pkt), GFP_KERNEL);
+		if (!pkt)
+			return X_LINK_ERROR;
+		pkt->data = buffer;
+		pkt->length = size;
+		pkt->paddr = paddr;
+		list_add_tail(&pkt->list, &queue->head);
+		queue->count++;
+		opchan->rx_fill_level += pkt->length;
+	}
+	return X_LINK_SUCCESS;
+}
+
+static struct packet *get_packet_from_channel(struct packet_queue *queue)
+{
+	struct packet *pkt = NULL;
+	// get first packet in queue
+	if (!list_empty(&queue->head))
+		pkt = list_first_entry(&queue->head, struct packet, list);
+
+	return pkt;
 }
 
 static int release_packet_from_channel(struct open_channel *opchan,
@@ -348,15 +420,42 @@ enum xlink_error xlink_multiplexer_destroy(void)
 	return X_LINK_SUCCESS;
 }
 
+static int compl_wait(struct completion *compl, struct open_channel *opchan)
+{
+	int rc;
+	unsigned long tout = msecs_to_jiffies(opchan->chan->timeout);
+
+	if (opchan->chan->timeout == 0) {
+		rc = wait_for_completion_interruptible(compl);
+		if (rc < 0)	// wait interrupted
+			rc = X_LINK_ERROR;
+	} else {
+		rc = wait_for_completion_interruptible_timeout(compl, tout);
+		if (rc == 0)
+			rc = X_LINK_TIMEOUT;
+		else if (rc < 0)	// wait interrupted
+			rc = X_LINK_ERROR;
+		else if (rc > 0)
+			rc = X_LINK_SUCCESS;
+	}
+	return rc;
+}
+
 enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 				      int *event_queued)
 {
+	struct open_channel *opchan = NULL;
+	struct packet *pkt = NULL;
 	int rc = X_LINK_SUCCESS;
+	u32 link_id = 0;
+	u32 size = 0;
 	u16 chan = 0;
+	u32 save_timeout = 0;
 
 	if (!xmux || !event)
 		return X_LINK_ERROR;
 
+	link_id = event->link_id;
 	chan = event->header.chan;
 
 	// verify channel ID is in range
@@ -372,9 +471,404 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 	if (is_control_channel(chan))
 		return X_LINK_ERROR;
 
-	if (chan < XLINK_IPC_MAX_CHANNELS && event->interface == IPC_INTERFACE)
+	if (chan < XLINK_IPC_MAX_CHANNELS && event->interface == IPC_INTERFACE) {
 		// event should be handled by passthrough
 		rc = xlink_passthrough(event);
+		return rc;
+	}
+	// event should be handled by dispatcher
+	switch (event->header.type) {
+	case XLINK_WRITE_REQ:
+	case XLINK_WRITE_VOLATILE_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan || opchan->chan->status != CHAN_OPEN) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			event->header.timeout = opchan->chan->timeout;
+			while (!is_enough_space_in_channel(opchan,
+							   event->header.size)) {
+				if (opchan->chan->mode == RXN_TXB ||
+				    opchan->chan->mode == RXB_TXB) {
+					// channel is blocking,
+					// wait for packet to be released
+					mutex_unlock(&opchan->lock);
+					rc = compl_wait(&opchan->pkt_released, opchan);
+					mutex_lock(&opchan->lock);
+				} else {
+					rc = X_LINK_CHAN_FULL;
+					break;
+				}
+			}
+			if (rc == X_LINK_SUCCESS) {
+				opchan->tx_fill_level += event->header.size;
+				opchan->tx_packet_level++;
+				xlink_dispatcher_event_add(EVENT_TX, event);
+				*event_queued = 1;
+				if (opchan->chan->mode == RXN_TXB ||
+				    opchan->chan->mode == RXB_TXB) {
+					// channel is blocking,
+					// wait for packet to be consumed
+					mutex_unlock(&opchan->lock);
+					rc = compl_wait(&opchan->pkt_consumed, opchan);
+					mutex_lock(&opchan->lock);
+				}
+			}
+		}
+		release_channel(opchan);
+		break;
+	case XLINK_READ_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan || opchan->chan->status != CHAN_OPEN) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			event->header.timeout = opchan->chan->timeout;
+			if (opchan->chan->mode == RXB_TXN ||
+			    opchan->chan->mode == RXB_TXB) {
+				// channel is blocking, wait for packet to become available
+				mutex_unlock(&opchan->lock);
+				rc = compl_wait(&opchan->pkt_available, opchan);
+				mutex_lock(&opchan->lock);
+			}
+			if (rc == X_LINK_SUCCESS) {
+				pkt = get_packet_from_channel(&opchan->rx_queue);
+				if (pkt) {
+					*(u32 **)event->pdata = (u32 *)pkt->data;
+					*event->length = pkt->length;
+					xlink_dispatcher_event_add(EVENT_TX, event);
+					*event_queued = 1;
+				} else {
+					rc = X_LINK_ERROR;
+				}
+			}
+		}
+		release_channel(opchan);
+		break;
+	case XLINK_READ_TO_BUFFER_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan || opchan->chan->status != CHAN_OPEN) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			event->header.timeout = opchan->chan->timeout;
+			if (opchan->chan->mode == RXB_TXN ||
+			    opchan->chan->mode == RXB_TXB) {
+				// channel is blocking, wait for packet to become available
+				mutex_unlock(&opchan->lock);
+				rc = compl_wait(&opchan->pkt_available, opchan);
+				mutex_lock(&opchan->lock);
+			}
+			if (rc == X_LINK_SUCCESS) {
+				pkt = get_packet_from_channel(&opchan->rx_queue);
+				if (pkt) {
+					memcpy(event->data, pkt->data, pkt->length);
+					*event->length = pkt->length;
+					xlink_dispatcher_event_add(EVENT_TX, event);
+					*event_queued = 1;
+				} else {
+					rc = X_LINK_ERROR;
+				}
+			}
+		}
+		release_channel(opchan);
+		break;
+	case XLINK_RELEASE_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			rc = release_packet_from_channel(opchan,
+							 &opchan->rx_queue,
+							 event->data,
+							 &size);
+			if (rc) {
+				rc = X_LINK_ERROR;
+			} else {
+				event->header.size = size;
+				xlink_dispatcher_event_add(EVENT_TX, event);
+				*event_queued = 1;
+			}
+		}
+		release_channel(opchan);
+		break;
+	case XLINK_OPEN_CHANNEL_REQ:
+		if (xmux->channels[link_id][chan].status == CHAN_CLOSED) {
+			xmux->channels[link_id][chan].size = event->header.size;
+			xmux->channels[link_id][chan].timeout = event->header.timeout;
+			xmux->channels[link_id][chan].mode = (uintptr_t)event->data;
+			rc = multiplexer_open_channel(link_id, chan);
+			if (rc) {
+				rc = X_LINK_ERROR;
+			} else {
+				opchan = get_channel(link_id, chan);
+				if (!opchan) {
+					rc = X_LINK_COMMUNICATION_FAIL;
+				} else {
+					xlink_dispatcher_event_add(EVENT_TX, event);
+					*event_queued = 1;
+					mutex_unlock(&opchan->lock);
+					save_timeout = opchan->chan->timeout;
+					opchan->chan->timeout = OPEN_CHANNEL_TIMEOUT_MSEC;
+					rc = compl_wait(&opchan->opened, opchan);
+					opchan->chan->timeout = save_timeout;
+					if (rc == 0) {
+						xmux->channels[link_id][chan].status = CHAN_OPEN;
+						release_channel(opchan);
+					} else {
+						multiplexer_close_channel(opchan);
+					}
+				}
+			}
+		} else if (xmux->channels[link_id][chan].status == CHAN_OPEN_PEER) {
+			/* channel already open */
+			xmux->channels[link_id][chan].status = CHAN_OPEN; // opened locally
+			xmux->channels[link_id][chan].size = event->header.size;
+			xmux->channels[link_id][chan].timeout = event->header.timeout;
+			xmux->channels[link_id][chan].mode = (uintptr_t)event->data;
+			rc = multiplexer_open_channel(link_id, chan);
+		} else {
+			/* channel already open */
+			rc = X_LINK_ALREADY_OPEN;
+		}
+		break;
+	case XLINK_CLOSE_CHANNEL_REQ:
+		if (xmux->channels[link_id][chan].status == CHAN_OPEN) {
+			opchan = get_channel(link_id, chan);
+			if (!opchan)
+				return X_LINK_COMMUNICATION_FAIL;
+			rc = multiplexer_close_channel(opchan);
+			if (rc)
+				rc = X_LINK_ERROR;
+			else
+				xmux->channels[link_id][chan].status = CHAN_CLOSED;
+		} else {
+			/* can't close channel not open */
+			rc = X_LINK_ERROR;
+		}
+		break;
+	case XLINK_PING_REQ:
+		break;
+	case XLINK_WRITE_RESP:
+	case XLINK_WRITE_VOLATILE_RESP:
+	case XLINK_READ_RESP:
+	case XLINK_READ_TO_BUFFER_RESP:
+	case XLINK_RELEASE_RESP:
+	case XLINK_OPEN_CHANNEL_RESP:
+	case XLINK_CLOSE_CHANNEL_RESP:
+	case XLINK_PING_RESP:
+	default:
+		rc = X_LINK_ERROR;
+	}
+return rc;
+}
+
+enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
+{
+	struct xlink_event *passthru_event = NULL;
+	struct open_channel *opchan = NULL;
+	int rc = X_LINK_SUCCESS;
+	dma_addr_t paddr = 0;
+	void *buffer = NULL;
+	size_t size = 0;
+	u32 link_id;
+	u16 chan;
+
+	if (!xmux || !event)
+		return X_LINK_ERROR;
+
+	link_id = event->link_id;
+	chan = event->header.chan;
+
+	switch (event->header.type) {
+	case XLINK_WRITE_REQ:
+	case XLINK_WRITE_VOLATILE_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan) {
+			// if we receive data on a closed channel - flush/read the data
+			buffer = xlink_platform_allocate(xmux->dev, &paddr,
+							 event->header.size,
+							 XLINK_PACKET_ALIGNMENT,
+							 XLINK_NORMAL_MEMORY);
+			if (buffer) {
+				size = event->header.size;
+				xlink_platform_read(event->interface,
+						    event->handle->sw_device_id,
+						    buffer, &size, 1000, NULL);
+				xlink_platform_deallocate(xmux->dev, buffer,
+							  paddr,
+							  event->header.size,
+							  XLINK_PACKET_ALIGNMENT,
+							  XLINK_NORMAL_MEMORY);
+			} else {
+				pr_err("Fatal error: can't allocate memory in line:%d func:%s\n", __LINE__, __func__);
+			}
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			event->header.timeout = opchan->chan->timeout;
+			buffer = xlink_platform_allocate(xmux->dev, &paddr,
+							 event->header.size,
+							 XLINK_PACKET_ALIGNMENT,
+							 XLINK_NORMAL_MEMORY);
+			if (buffer) {
+				size = event->header.size;
+				rc = xlink_platform_read(event->interface,
+							 event->handle->sw_device_id,
+							 buffer, &size,
+							 opchan->chan->timeout,
+							 NULL);
+				if (rc || event->header.size != size) {
+					xlink_platform_deallocate(xmux->dev, buffer,
+								  paddr,
+								  event->header.size,
+								  XLINK_PACKET_ALIGNMENT,
+								  XLINK_NORMAL_MEMORY);
+					rc = X_LINK_ERROR;
+					release_channel(opchan);
+					break;
+				}
+				event->paddr = paddr;
+				event->data = buffer;
+				if (add_packet_to_channel(opchan, &opchan->rx_queue,
+							  event->data,
+							  event->header.size,
+							  paddr)) {
+					xlink_platform_deallocate(xmux->dev,
+								  buffer, paddr,
+								  event->header.size,
+								  XLINK_PACKET_ALIGNMENT,
+								  XLINK_NORMAL_MEMORY);
+					rc = X_LINK_ERROR;
+					release_channel(opchan);
+					break;
+				}
+				event->header.type = XLINK_WRITE_VOLATILE_RESP;
+				xlink_dispatcher_event_add(EVENT_RX, event);
+				//complete regardless of mode/timeout
+				complete(&opchan->pkt_available);
+			} else {
+				// failed to allocate buffer
+				rc = X_LINK_ERROR;
+			}
+		}
+		release_channel(opchan);
+		break;
+	case XLINK_READ_REQ:
+	case XLINK_READ_TO_BUFFER_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+			break;
+		}
+		event->header.timeout = opchan->chan->timeout;
+		event->header.type = XLINK_READ_TO_BUFFER_RESP;
+		xlink_dispatcher_event_add(EVENT_RX, event);
+		//complete regardless of mode/timeout
+		complete(&opchan->pkt_consumed);
+		release_channel(opchan);
+		break;
+	case XLINK_RELEASE_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			event->header.timeout = opchan->chan->timeout;
+			opchan->tx_fill_level -= event->header.size;
+			opchan->tx_packet_level--;
+			event->header.type = XLINK_RELEASE_RESP;
+			xlink_dispatcher_event_add(EVENT_RX, event);
+			//complete regardless of mode/timeout
+			complete(&opchan->pkt_released);
+		}
+		release_channel(opchan);
+		break;
+	case XLINK_OPEN_CHANNEL_REQ:
+		if (xmux->channels[link_id][chan].status == CHAN_CLOSED) {
+			xmux->channels[link_id][chan].size = event->header.size;
+			xmux->channels[link_id][chan].timeout = event->header.timeout;
+			//xmux->channels[link_id][chan].mode = *(enum xlink_opmode *)event->data;
+			rc = multiplexer_open_channel(link_id, chan);
+			if (rc) {
+				rc = X_LINK_ERROR;
+			} else {
+				opchan = get_channel(link_id, chan);
+				if (!opchan) {
+					rc = X_LINK_COMMUNICATION_FAIL;
+				} else {
+					xmux->channels[link_id][chan].status = CHAN_OPEN_PEER;
+					complete(&opchan->opened);
+					passthru_event = xlink_create_event(link_id,
+									    XLINK_OPEN_CHANNEL_RESP,
+									    event->handle,
+									    chan,
+									    0,
+									    opchan->chan->timeout);
+					if (!passthru_event) {
+						rc = X_LINK_ERROR;
+						release_channel(opchan);
+						break;
+					}
+					xlink_dispatcher_event_add(EVENT_RX,
+								   passthru_event);
+				}
+				release_channel(opchan);
+			}
+		} else {
+			/* channel already open */
+			opchan = get_channel(link_id, chan);
+			if (!opchan) {
+				rc = X_LINK_COMMUNICATION_FAIL;
+			} else {
+				passthru_event = xlink_create_event(link_id,
+								    XLINK_OPEN_CHANNEL_RESP,
+								    event->handle,
+								    chan, 0, 0);
+				if (!passthru_event) {
+					release_channel(opchan);
+					rc = X_LINK_ERROR;
+					break;
+				}
+				xlink_dispatcher_event_add(EVENT_RX,
+							   passthru_event);
+			}
+			release_channel(opchan);
+		}
+		rc = xlink_passthrough(event);
+		if (rc == 0)
+			xlink_destroy_event(event); // event is handled and can now be freed
+		break;
+	case XLINK_CLOSE_CHANNEL_REQ:
+	case XLINK_PING_REQ:
+		break;
+	case XLINK_WRITE_RESP:
+	case XLINK_WRITE_VOLATILE_RESP:
+		opchan = get_channel(link_id, chan);
+		if (!opchan)
+			rc = X_LINK_COMMUNICATION_FAIL;
+		else
+			xlink_destroy_event(event); // event is handled and can now be freed
+		release_channel(opchan);
+		break;
+	case XLINK_READ_RESP:
+	case XLINK_READ_TO_BUFFER_RESP:
+	case XLINK_RELEASE_RESP:
+		xlink_destroy_event(event); // event is handled and can now be freed
+		break;
+	case XLINK_OPEN_CHANNEL_RESP:
+		opchan = get_channel(link_id, chan);
+		if (!opchan) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			xlink_destroy_event(event); // event is handled and can now be freed
+			complete(&opchan->opened);
+		}
+		release_channel(opchan);
+		break;
+	case XLINK_CLOSE_CHANNEL_RESP:
+	case XLINK_PING_RESP:
+		xlink_destroy_event(event); // event is handled and can now be freed
+		break;
+	default:
+		rc = X_LINK_ERROR;
+	}
+
 	return rc;
 }
 
