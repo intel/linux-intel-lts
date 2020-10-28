@@ -495,4 +495,5 @@ source "drivers/misc/xlink-smbus/Kconfig"
 source "drivers/misc/hddl_device/Kconfig"
 source "drivers/misc/i3c_test/Kconfig"
 source "drivers/misc/xlink-usb/Kconfig"
+source "drivers/misc/xlink-pcie/Kconfig"
 endmenu
