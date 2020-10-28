@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/*****************************************************************************
- *
+/*
  * Intel Keem Bay XLink PCIe Driver
  *
- * Copyright (C) 2020 Intel Corporation
- *
- ****************************************************************************/
+ * Copyright (C) 2021 Intel Corporation
+ */
 
 #include "util.h"
 
@@ -36,8 +34,36 @@ static size_t intel_xpcie_doorbell_offset(struct xpcie *xpcie,
 		return XPCIE_MMIO_DTOH_RX_DOORBELL;
 	if (dirt == FROM_DEVICE && type == DEV_EVENT)
 		return XPCIE_MMIO_DTOH_EVENT_DOORBELL;
+	if (dirt == TO_DEVICE && type == PARTIAL_DATA_RECEIVED)
+		return XPCIE_MMIO_HTOD_PARTIAL_RX_DOORBELL;
+	if (dirt == TO_DEVICE && type == RX_BD_COUNT)
+		return XPCIE_MMIO_HTOD_RX_BD_LIST_COUNT;
 
 	return 0;
+}
+
+void intel_xpcie_update_device_flwctl(struct xpcie *xpcie,
+				      enum xpcie_doorbell_direction dirt,
+				      enum xpcie_doorbell_type type,
+				      int value)
+{
+	size_t offset = intel_xpcie_doorbell_offset(xpcie, dirt, type);
+
+	if (dirt == TO_DEVICE && type == RX_BD_COUNT)
+		intel_xpcie_iowrite32(value, xpcie->mmio + offset);
+}
+
+u32 intel_xpcie_get_device_flwctl(struct xpcie *xpcie,
+				  enum xpcie_doorbell_direction dirt,
+				  enum xpcie_doorbell_type type)
+{
+	size_t offset = intel_xpcie_doorbell_offset(xpcie, dirt, type);
+	u32 ret = 0;
+
+	if (dirt == TO_DEVICE && type == RX_BD_COUNT)
+		ret = intel_xpcie_ioread32(xpcie->mmio + offset);
+
+	return ret;
 }
 
 void intel_xpcie_set_doorbell(struct xpcie *xpcie,
@@ -146,6 +172,14 @@ void intel_xpcie_list_cleanup(struct xpcie_list *list)
 	list->head = NULL;
 	list->tail = NULL;
 	spin_unlock(&list->lock);
+}
+
+bool intel_xpcie_list_empty(struct xpcie_list *list)
+{
+	if (list && !list->head && !list->tail)
+		return false;
+
+	return true;
 }
 
 int intel_xpcie_list_put(struct xpcie_list *list, struct xpcie_buf_desc *bd)
@@ -338,6 +372,7 @@ void intel_xpcie_add_bd_to_interface(struct xpcie *xpcie,
 	mutex_lock(&inf->rlock);
 	inf->data_avail = true;
 	mutex_unlock(&inf->rlock);
+
 	wake_up_interruptible(&inf->rx_waitq);
 }
 

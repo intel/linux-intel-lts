@@ -1,11 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/*****************************************************************************
- *
+/*
  * Intel Keem Bay XLink PCIe Driver
  *
- * Copyright (C) 2020 Intel Corporation
- *
- ****************************************************************************/
+ * Copyright (C) 2021 Intel Corporation
+ */
 
 #ifndef XPCIE_HEADER_
 #define XPCIE_HEADER_
@@ -41,12 +39,13 @@ struct xpcie_mmio {
 	u8 legacy_a0;
 	u8 htod_tx_doorbell;
 	u8 htod_rx_doorbell;
+	u8 htod_partial_rx_doorbell;
 	u8 htod_event_doorbell;
 	u8 dtoh_tx_doorbell;
 	u8 dtoh_rx_doorbell;
 	u8 dtoh_event_doorbell;
-	u8 reserved;
 	u32 cap_offset;
+	u32 htod_rx_bd_list_count;
 	u8 magic[XPCIE_MAGIC_STRLEN];
 } __packed;
 
@@ -59,12 +58,16 @@ struct xpcie_mmio {
 	(offsetof(struct xpcie_mmio, htod_rx_doorbell))
 #define XPCIE_MMIO_HTOD_EVENT_DOORBELL \
 	(offsetof(struct xpcie_mmio, htod_event_doorbell))
+#define XPCIE_MMIO_HTOD_PARTIAL_RX_DOORBELL \
+	(offsetof(struct xpcie_mmio, htod_partial_rx_doorbell))
 #define XPCIE_MMIO_DTOH_TX_DOORBELL \
 	(offsetof(struct xpcie_mmio, dtoh_tx_doorbell))
 #define XPCIE_MMIO_DTOH_RX_DOORBELL \
 	(offsetof(struct xpcie_mmio, dtoh_rx_doorbell))
 #define XPCIE_MMIO_DTOH_EVENT_DOORBELL \
 	(offsetof(struct xpcie_mmio, dtoh_event_doorbell))
+#define XPCIE_MMIO_HTOD_RX_BD_LIST_COUNT \
+	(offsetof(struct xpcie_mmio, htod_rx_bd_list_count))
 #define XPCIE_MMIO_CAP_OFF	(offsetof(struct xpcie_mmio, cap_offset))
 #define XPCIE_MMIO_MAGIC_OFF	(offsetof(struct xpcie_mmio, magic))
 
