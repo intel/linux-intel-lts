@@ -67,3 +67,4 @@ obj-$(CONFIG_XLINK_SMBUS)	+= xlink-smbus/
 obj-y				+= hddl_device/
 obj-$(CONFIG_I3C_TEST) 		+= i3c_test/
 obj-y				+= xlink-usb/
+obj-y                           += xlink-pcie/
