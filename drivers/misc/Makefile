@@ -63,3 +63,4 @@ obj-$(CONFIG_HISI_HIKEY_USB)	+= hisi_hikey_usb.o
 obj-$(CONFIG_HI6421V600_IRQ)	+= hi6421v600-irq.o
 obj-$(CONFIG_VPUMGR)		+= vpumgr/
 obj-$(CONFIG_INTEL_GNA)		+= gna/
+obj-y                           += xlink-pcie/
