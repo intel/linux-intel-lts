@@ -156,7 +156,7 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 
 	stat = qep->interrupt;
 	if (stat & INTEL_QEPINT_FIFOCRIT) {
-		if (INTEL_QEP_OP_MODE_QEP == qep->op_mode) {
+		if (qep->op_mode == INTEL_QEP_OP_MODE_QEP) {
 			dev_dbg(qep->dev, "Phase Error detected\n");
 			qep->phase_error = true;
 		} else
