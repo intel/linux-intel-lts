@@ -20,6 +20,38 @@
 
 #define KEEMBAY_XPCIE_STEPPING_MAXLEN 8
 
+#define DMA_CHAN_NUM		(4)
+
+#define XPCIE_NUM_TX_DESCS	(64)
+#define XPCIE_NUM_RX_DESCS	(64)
+
+extern bool dma_ll_mode;
+
+struct xpcie_dma_ll_desc {
+	u32 dma_ch_control1;
+	u32 dma_transfer_size;
+	union {
+		struct {
+			u32 dma_sar_low;
+			u32 dma_sar_high;
+		};
+		phys_addr_t src_addr;
+	};
+	union {
+		struct {
+			u32 dma_dar_low;
+			u32 dma_dar_high;
+		};
+		phys_addr_t dst_addr;
+	};
+} __packed;
+
+struct xpcie_dma_ll_desc_buf {
+	struct xpcie_dma_ll_desc *virt;
+	dma_addr_t phys;
+	size_t size;
+};
+
 struct xpcie_epf {
 	struct pci_epf *epf;
 	void *vaddr[BAR_5 + 1];
@@ -34,6 +66,15 @@ struct xpcie_epf {
 	void __iomem *dma_base;
 	void __iomem *dbi_base;
 	char stepping[KEEMBAY_XPCIE_STEPPING_MAXLEN];
+
+	struct xpcie_dma_ll_desc_buf	tx_desc_buf[DMA_CHAN_NUM];
+	struct xpcie_dma_ll_desc_buf	rx_desc_buf[DMA_CHAN_NUM];
 };
+
+int intel_xpcie_ep_dma_init(struct pci_epf *epf);
+int intel_xpcie_ep_dma_uninit(struct pci_epf *epf);
+int intel_xpcie_ep_dma_reset(struct pci_epf *epf);
+int intel_xpcie_ep_dma_read_ll(struct pci_epf *epf, int chan, int descs_num);
+int intel_xpcie_ep_dma_write_ll(struct pci_epf *epf, int chan, int descs_num);
 
 #endif /* XPCIE_EPF_HEADER_ */
