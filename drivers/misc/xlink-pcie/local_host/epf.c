@@ -9,6 +9,7 @@
 
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/reboot.h>
 
 #include "epf.h"
 
@@ -20,6 +21,12 @@
 #define LBC_CII_EVENT_FLAG		BIT(18)
 #define PCIE_REGS_PCIE_ERR_INTR_FLAGS	0x24
 #define LINK_REQ_RST_FLG		BIT(15)
+
+#define PCIE_REGS_PCIE_SYS_CFG_CORE	0x7C
+#define PCIE_CFG_PBUS_NUM_OFFSET	8
+#define PCIE_CFG_PBUS_NUM_MASK		0xFF
+#define PCIE_CFG_PBUS_DEV_NUM_OFFSET	16
+#define PCIE_CFG_PBUS_DEV_NUM_MASK	0x1F
 
 static struct pci_epf_header xpcie_header = {
 	.vendorid = PCI_VENDOR_ID_INTEL,
@@ -36,6 +43,45 @@ static const struct pci_epf_device_id xpcie_epf_ids[] = {
 	},
 	{},
 };
+
+u32 xlink_sw_id;
+
+int intel_xpcie_copy_from_host_ll(struct xpcie *xpcie, int chan, int descs_num)
+{
+	struct xpcie_epf *xpcie_epf = container_of(xpcie,
+						   struct xpcie_epf, xpcie);
+	struct pci_epf *epf = xpcie_epf->epf;
+
+	return intel_xpcie_ep_dma_read_ll(epf, chan, descs_num);
+}
+
+int intel_xpcie_copy_to_host_ll(struct xpcie *xpcie, int chan, int descs_num)
+{
+	struct xpcie_epf *xpcie_epf = container_of(xpcie,
+						   struct xpcie_epf, xpcie);
+	struct pci_epf *epf = xpcie_epf->epf;
+
+	return intel_xpcie_ep_dma_write_ll(epf, chan, descs_num);
+}
+
+void intel_xpcie_register_host_irq(struct xpcie *xpcie, irq_handler_t func)
+{
+	struct xpcie_epf *xpcie_epf = container_of(xpcie,
+						   struct xpcie_epf, xpcie);
+
+	xpcie_epf->core_irq_callback = func;
+}
+
+int intel_xpcie_raise_irq(struct xpcie *xpcie, enum xpcie_doorbell_type type)
+{
+	struct xpcie_epf *xpcie_epf = container_of(xpcie,
+						   struct xpcie_epf, xpcie);
+	struct pci_epf *epf = xpcie_epf->epf;
+
+	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, type, 1);
+
+	return pci_epc_raise_irq(epf->epc, epf->func_no, PCI_EPC_IRQ_MSI, 1);
+}
 
 static irqreturn_t intel_xpcie_err_interrupt(int irq, void *args)
 {
@@ -57,6 +103,7 @@ static irqreturn_t intel_xpcie_host_interrupt(int irq, void *args)
 {
 	struct xpcie_epf *xpcie_epf;
 	struct xpcie *xpcie = args;
+	u8 event;
 	u32 val;
 
 	xpcie_epf = container_of(xpcie, struct xpcie_epf, xpcie);
@@ -64,6 +111,18 @@ static irqreturn_t intel_xpcie_host_interrupt(int irq, void *args)
 	if (val & LBC_CII_EVENT_FLAG) {
 		iowrite32(LBC_CII_EVENT_FLAG,
 			  xpcie_epf->apb_base + PCIE_REGS_PCIE_INTR_FLAGS);
+
+		event = intel_xpcie_get_doorbell(xpcie, TO_DEVICE, DEV_EVENT);
+		if (unlikely(event != NO_OP)) {
+			intel_xpcie_set_doorbell(xpcie, TO_DEVICE,
+						 DEV_EVENT, NO_OP);
+			if (event == REQUEST_RESET)
+				orderly_reboot();
+			return IRQ_HANDLED;
+		}
+
+		if (likely(xpcie_epf->core_irq_callback))
+			xpcie_epf->core_irq_callback(irq, xpcie);
 	}
 
 	return IRQ_HANDLED;
@@ -269,6 +328,7 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
 	const struct pci_epc_features *features;
 	struct pci_epc *epc = epf->epc;
+	u32 bus_num, dev_num;
 	struct device *dev;
 	size_t align = SZ_16K;
 	int ret;
@@ -300,12 +360,12 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 
 	if (!strcmp(xpcie_epf->stepping, "A0")) {
 		xpcie_epf->xpcie.legacy_a0 = true;
-		iowrite32(1, (void __iomem *)xpcie_epf->xpcie.mmio +
-			     XPCIE_MMIO_LEGACY_A0);
+		intel_xpcie_iowrite32(1, xpcie_epf->xpcie.mmio +
+					 XPCIE_MMIO_LEGACY_A0);
 	} else {
 		xpcie_epf->xpcie.legacy_a0 = false;
-		iowrite32(0, (void __iomem *)xpcie_epf->xpcie.mmio +
-			     XPCIE_MMIO_LEGACY_A0);
+		intel_xpcie_iowrite32(0, xpcie_epf->xpcie.mmio +
+					 XPCIE_MMIO_LEGACY_A0);
 	}
 
 	/* Enable interrupt */
@@ -330,13 +390,46 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	ret = intel_xpcie_ep_dma_init(epf);
 	if (ret) {
 		dev_err(&epf->dev, "DMA initialization failed\n");
-		goto err_free_err_irq;
+		goto err_cleanup_bars;
 	}
+
+	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_READY);
+
+	ret = ioread32(xpcie_epf->apb_base + PCIE_REGS_PCIE_SYS_CFG_CORE);
+	bus_num = (ret >> PCIE_CFG_PBUS_NUM_OFFSET) & PCIE_CFG_PBUS_NUM_MASK;
+	dev_num = (ret >> PCIE_CFG_PBUS_DEV_NUM_OFFSET) &
+			PCIE_CFG_PBUS_DEV_NUM_MASK;
+
+	xlink_sw_id = FIELD_PREP(XLINK_DEV_INF_TYPE_MASK,
+				 XLINK_DEV_INF_PCIE) |
+		      FIELD_PREP(XLINK_DEV_PHYS_ID_MASK,
+				 bus_num << 8 | dev_num) |
+		      FIELD_PREP(XLINK_DEV_TYPE_MASK, XLINK_DEV_TYPE_KMB) |
+		      FIELD_PREP(XLINK_DEV_PCIE_ID_MASK, XLINK_DEV_PCIE_0) |
+		      FIELD_PREP(XLINK_DEV_FUNC_MASK, XLINK_DEV_FUNC_VPU);
+
+	ret = intel_xpcie_core_init(&xpcie_epf->xpcie);
+	if (ret) {
+		dev_err(&epf->dev, "Core component configuration failed\n");
+		goto err_uninit_dma;
+	}
+
+	intel_xpcie_iowrite32(XPCIE_STATUS_UNINIT,
+			      xpcie_epf->xpcie.mmio + XPCIE_MMIO_HOST_STATUS);
+	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_RUN);
+	intel_xpcie_set_doorbell(&xpcie_epf->xpcie, FROM_DEVICE,
+				 DEV_EVENT, NO_OP);
+	memcpy(xpcie_epf->xpcie.mmio + XPCIE_MMIO_MAGIC_OFF, XPCIE_MAGIC_YOCTO,
+	       strlen(XPCIE_MAGIC_YOCTO));
 
 	return 0;
 
-err_free_err_irq:
-	free_irq(xpcie_epf->irq_err, &xpcie_epf->xpcie);
+err_uninit_dma:
+	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_ERROR);
+	memcpy(xpcie_epf->xpcie.mmio + XPCIE_MMIO_MAGIC_OFF, XPCIE_MAGIC_YOCTO,
+	       strlen(XPCIE_MAGIC_YOCTO));
+
+	intel_xpcie_ep_dma_uninit(epf);
 
 err_cleanup_bars:
 	intel_xpcie_cleanup_bars(epf);
@@ -346,7 +439,11 @@ err_cleanup_bars:
 
 static void intel_xpcie_epf_unbind(struct pci_epf *epf)
 {
+	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
 	struct pci_epc *epc = epf->epc;
+
+	intel_xpcie_core_cleanup(&xpcie_epf->xpcie);
+	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_READY);
 
 	intel_xpcie_ep_dma_uninit(epf);
 
@@ -379,8 +476,11 @@ static void intel_xpcie_epf_shutdown(struct device *dev)
 	xpcie_epf = epf_get_drvdata(epf);
 
 	/* Notify host in case PCIe hot plug not supported */
-	if (xpcie_epf)
+	if (xpcie_epf && xpcie_epf->xpcie.status == XPCIE_STATUS_RUN) {
+		intel_xpcie_set_doorbell(&xpcie_epf->xpcie, FROM_DEVICE,
+					 DEV_EVENT, DEV_SHUTDOWN);
 		pci_epc_raise_irq(epf->epc, epf->func_no, PCI_EPC_IRQ_MSI, 1);
+	}
 }
 
 static struct pci_epf_ops ops = {
