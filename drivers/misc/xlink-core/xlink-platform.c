@@ -61,6 +61,11 @@ static inline int xlink_ipc_get_device_mode(u32 sw_device_id, u32 *power_mode)
 static inline int xlink_ipc_set_device_mode(u32 sw_device_id, u32 power_mode)
 { return -1; }
 
+static inline int xlink_ipc_register_for_events(u32 sw_device_id,
+						int (*callback)(u32 sw_device_id, u32 event))
+{ return -1; }
+static inline int xlink_ipc_unregister_for_events(u32 sw_device_id)
+{ return -1; }
 #endif /* CONFIG_XLINK_LOCAL_HOST */
 
 /*
@@ -100,6 +105,13 @@ static int (*open_chan_fcts[NMB_OF_INTERFACES])(u32, u32) = {
 
 static int (*close_chan_fcts[NMB_OF_INTERFACES])(u32, u32) = {
 		xlink_ipc_close_channel, NULL, NULL, NULL};
+static int (*register_for_events_fcts[NMB_OF_INTERFACES])(u32,
+						   int (*callback)(u32 sw_device_id, u32 event)) = {
+								   xlink_ipc_register_for_events,
+								   xlink_pcie_register_device_event,
+								   NULL, NULL};
+static int (*unregister_for_events_fcts[NMB_OF_INTERFACES])(u32) = {
+		xlink_ipc_unregister_for_events, xlink_pcie_unregister_device_event, NULL, NULL};
 
 /*
  * xlink low-level driver interface
@@ -210,6 +222,21 @@ int xlink_platform_close_channel(u32 interface, u32 sw_device_id,
 		return -1;
 
 	return close_chan_fcts[interface](sw_device_id, channel);
+}
+
+int xlink_platform_register_for_events(u32 interface, u32 sw_device_id,
+				       xlink_device_event_cb event_notif_fn)
+{
+	if (interface >= NMB_OF_INTERFACES || !register_for_events_fcts[interface])
+		return -1;
+	return register_for_events_fcts[interface](sw_device_id, event_notif_fn);
+}
+
+int xlink_platform_unregister_for_events(u32 interface, u32 sw_device_id)
+{
+	if (interface >= NMB_OF_INTERFACES || !unregister_for_events_fcts[interface])
+		return -1;
+	return unregister_for_events_fcts[interface](sw_device_id);
 }
 
 void *xlink_platform_allocate(struct device *dev, dma_addr_t *handle,

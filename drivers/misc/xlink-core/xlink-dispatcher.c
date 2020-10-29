@@ -5,18 +5,18 @@
  * Copyright (C) 2018-2019 Intel Corporation
  *
  */
-#include <linux/init.h>
-#include <linux/module.h>
+#include <linux/completion.h>
 #include <linux/device.h>
+#include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/slab.h>
 #include <linux/kthread.h>
 #include <linux/list.h>
-#include <linux/semaphore.h>
+#include <linux/module.h>
 #include <linux/mutex.h>
-#include <linux/completion.h>
-#include <linux/sched/signal.h>
 #include <linux/platform_device.h>
+#include <linux/sched/signal.h>
+#include <linux/semaphore.h>
+#include <linux/slab.h>
 
 #include "xlink-dispatcher.h"
 #include "xlink-multiplexer.h"
@@ -34,21 +34,22 @@ enum dispatcher_state {
 
 /* queue for dispatcher tx thread event handling */
 struct event_queue {
+	struct list_head head;	/* head of event linked list */
 	u32 count;		/* number of events in the queue */
 	u32 capacity;		/* capacity of events in the queue */
-	struct list_head head;	/* head of event linked list */
 	struct mutex lock;	/* locks queue while accessing */
 };
 
 /* dispatcher servicing a single link to a device */
 struct dispatcher {
 	u32 link_id;			/* id of link being serviced */
+	int interface;			/* underlying interface of link */
 	enum dispatcher_state state;	/* state of the dispatcher */
 	struct xlink_handle *handle;	/* xlink device handle */
-	int interface;			/* underlying interface of link */
 	struct task_struct *rxthread;	/* kthread servicing rx */
 	struct task_struct *txthread;	/* kthread servicing tx */
 	struct event_queue queue;	/* xlink event queue */
+	struct event_queue buff_queue;	/* xlink buffer event queue */
 	struct semaphore event_sem;	/* signals tx kthread of events */
 	struct completion rx_done;	/* sync start/stop of rx kthread */
 	struct completion tx_done;	/* sync start/stop of tx thread */
@@ -81,9 +82,65 @@ static struct dispatcher *get_dispatcher_by_id(u32 id)
 	return &xlinkd->dispatchers[id];
 }
 
+struct xlink_event *xlink_create_event(u32 link_id,
+			enum xlink_event_type type,
+			struct xlink_handle *handle,
+			u16 chan, u32 size,
+			u32 timeout)
+{
+	struct xlink_event *new_event;
+
+	new_event = alloc_event(link_id);
+	if (!new_event)
+		return NULL;
+
+	new_event->link_id = link_id;
+	new_event->handle = handle;
+	new_event->interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	new_event->user_data = 0;
+	new_event->header.magic = XLINK_EVENT_HEADER_MAGIC;
+	new_event->header.id = XLINK_INVALID_EVENT_ID;
+	new_event->header.type = type;
+	new_event->header.chan = chan;
+	new_event->header.size = size;
+	new_event->header.timeout = timeout;
+
+	return new_event;
+}
+
+inline void xlink_destroy_event(struct xlink_event *event)
+{
+	free_event(event);
+}
+
+static struct xlink_event *event_dequeue_buffer(struct event_queue *queue)
+{
+	struct xlink_event *event = NULL;
+
+	mutex_lock(&queue->lock);
+	if (!list_empty(&queue->head)) {
+		event = list_first_entry(&queue->head,
+					 struct xlink_event, list);
+		list_del(&event->list);
+		queue->count--;
+	}
+	mutex_unlock(&queue->lock);
+	return event;
+}
+
+static int event_enqueue_buffer(struct event_queue *queue, struct xlink_event *event)
+{
+	mutex_lock(&queue->lock);
+	list_add_tail(&event->list, &queue->head);
+	queue->count++;
+	mutex_unlock(&queue->lock);
+
+	return 0;
+}
+
 static u32 event_generate_id(void)
 {
-	static u32 id = 0xa; // TODO: temporary solution
+	static u32 id = 0xa;
 
 	return id++;
 }
@@ -103,10 +160,37 @@ static struct xlink_event *event_dequeue(struct event_queue *queue)
 	return event;
 }
 
+struct xlink_event *alloc_event(uint32_t link_id)
+{
+	struct xlink_event *new_event;
+	struct dispatcher *disp;
+
+	disp = get_dispatcher_by_id(link_id);
+	if (!disp)
+		return NULL;
+
+	new_event = event_dequeue_buffer(&disp->buff_queue);
+	if (!new_event)
+		return NULL;
+
+	return new_event;
+}
+
+void free_event(struct xlink_event *event)
+{
+	struct dispatcher *disp;
+
+	disp = get_dispatcher_by_id(event->link_id);
+	if (!disp)
+		return;
+
+	event_enqueue_buffer(&disp->buff_queue, event);
+}
+
 static struct xlink_event *dispatcher_event_get(struct dispatcher *disp)
 {
-	int rc = 0;
 	struct xlink_event *event = NULL;
+	int rc;
 
 	// wait until an event is available
 	rc = down_interruptible(&disp->event_sem);
@@ -124,16 +208,19 @@ static int is_valid_event_header(struct xlink_event *event)
 static int dispatcher_event_send(struct xlink_event *event)
 {
 	static int error_printed;
-	size_t event_header_size = sizeof(event->header);
 	int rc;
+	size_t event_header_size = sizeof(event->header) -
+					XLINK_MAX_CONTROL_DATA_PCIE_SIZE;
+	size_t transfer_size = 0;
 
-	// write event header
-	// printk(KERN_DEBUG "Sending event: type = 0x%x, id = 0x%x\n",
-			// event->header.type, event->header.id);
+	if (event->header.type == XLINK_WRITE_CONTROL_REQ)
+		event_header_size += event->header.size;
+	transfer_size = event_header_size;
+
 	rc = xlink_platform_write(event->interface,
 				  event->handle->sw_device_id, &event->header,
 				  &event_header_size, event->header.timeout, NULL);
-	if (rc || event_header_size != sizeof(event->header)) {
+	if (rc || event_header_size != transfer_size) {
 		if (!error_printed)
 			pr_err("Write header failed %d\n", rc);
 		error_printed = 1;
@@ -147,8 +234,10 @@ static int dispatcher_event_send(struct xlink_event *event)
 					  event->handle->sw_device_id, event->data,
 					  &event->header.size, event->header.timeout,
 					  NULL);
-		if (rc)
+		if (rc) {
 			pr_err("Write data failed %d\n", rc);
+			return rc;
+		}
 		if (event->user_data == 1) {
 			if (event->paddr != 0) {
 				xlink_platform_deallocate(xlinkd->dev,
@@ -175,7 +264,6 @@ static int xlink_dispatcher_rxthread(void *context)
 	size_t size;
 	int rc;
 
-	// printk(KERN_DEBUG "dispatcher rxthread started\n");
 	event = xlink_create_event(disp->link_id, 0, disp->handle, 0, 0, 0);
 	if (!event)
 		return -1;
@@ -183,12 +271,14 @@ static int xlink_dispatcher_rxthread(void *context)
 	allow_signal(SIGTERM); // allow thread termination while waiting on sem
 	complete(&disp->rx_done);
 	while (!kthread_should_stop()) {
-		size = sizeof(event->header);
+		size = sizeof(event->header) -
+				XLINK_MAX_CONTROL_DATA_PCIE_SIZE;
 		rc = xlink_platform_read(disp->interface,
 					 disp->handle->sw_device_id,
 					 &event->header, &size,
 					 DISPATCHER_RX_TIMEOUT_MSEC, NULL);
-		if (rc || size != (int)sizeof(event->header))
+		if (rc || (size != (int)(sizeof(event->header) -
+				XLINK_MAX_CONTROL_DATA_PCIE_SIZE)))
 			continue;
 		if (is_valid_event_header(event)) {
 			event->link_id = disp->link_id;
@@ -202,7 +292,6 @@ static int xlink_dispatcher_rxthread(void *context)
 			}
 		}
 	}
-	// printk(KERN_INFO "dispatcher rxthread stopped\n");
 	complete(&disp->rx_done);
 	do_exit(0);
 	return 0;
@@ -213,7 +302,6 @@ static int xlink_dispatcher_txthread(void *context)
 	struct dispatcher *disp = (struct dispatcher *)context;
 	struct xlink_event *event;
 
-	// printk(KERN_DEBUG "dispatcher txthread started\n");
 	allow_signal(SIGTERM); // allow thread termination while waiting on sem
 	complete(&disp->tx_done);
 	while (!kthread_should_stop()) {
@@ -224,7 +312,6 @@ static int xlink_dispatcher_txthread(void *context)
 		dispatcher_event_send(event);
 		xlink_destroy_event(event); // free handled event
 	}
-	// printk(KERN_INFO "dispatcher txthread stopped\n");
 	complete(&disp->tx_done);
 	do_exit(0);
 	return 0;
@@ -235,8 +322,35 @@ static int xlink_dispatcher_txthread(void *context)
  *
  */
 
+static void deinit_buffers(struct event_queue *queue)
+{
+	int j;
+
+	for (j = 0; j < queue->capacity; j++) {
+		kfree(event_dequeue_buffer(queue));
+	}
+}
+
+static int init_buffers(struct event_queue *queue)
+{
+	struct xlink_event *new_event;
+	int rc = -1, j;
+
+	for (j = 0; j < queue->capacity; j++) {
+		// allocate new event
+		new_event = kzalloc(sizeof(*new_event), GFP_KERNEL);
+		if (!new_event)
+			break;
+		rc = event_enqueue_buffer(queue, new_event);
+		if (rc == -1)
+			break;
+	}
+	return rc;
+}
+
 enum xlink_error xlink_dispatcher_init(void *dev)
 {
+	struct dispatcher *dsp;
 	int i;
 
 	xlinkd = kzalloc(sizeof(*xlinkd), GFP_KERNEL);
@@ -245,16 +359,21 @@ enum xlink_error xlink_dispatcher_init(void *dev)
 
 	xlinkd->dev = (struct device *)dev;
 	for (i = 0; i < XLINK_MAX_CONNECTIONS; i++) {
-		xlinkd->dispatchers[i].link_id = i;
-		sema_init(&xlinkd->dispatchers[i].event_sem, 0);
-		init_completion(&xlinkd->dispatchers[i].rx_done);
-		init_completion(&xlinkd->dispatchers[i].tx_done);
-		INIT_LIST_HEAD(&xlinkd->dispatchers[i].queue.head);
-		mutex_init(&xlinkd->dispatchers[i].queue.lock);
-		xlinkd->dispatchers[i].queue.count = 0;
-		xlinkd->dispatchers[i].queue.capacity =
-				XLINK_EVENT_QUEUE_CAPACITY;
-		xlinkd->dispatchers[i].state = XLINK_DISPATCHER_INIT;
+		dsp = &xlinkd->dispatchers[i];
+		dsp->link_id = i;
+		sema_init(&dsp->event_sem, 0);
+		init_completion(&dsp->rx_done);
+		init_completion(&dsp->tx_done);
+		INIT_LIST_HEAD(&dsp->queue.head);
+		mutex_init(&dsp->queue.lock);
+		dsp->queue.count = 0;
+		dsp->queue.capacity = XLINK_EVENT_QUEUE_CAPACITY;
+		INIT_LIST_HEAD(&xlinkd->dispatchers[i].buff_queue.head);
+		mutex_init(&xlinkd->dispatchers[i].buff_queue.lock);
+		xlinkd->dispatchers[i].buff_queue.count = 0;
+		xlinkd->dispatchers[i].buff_queue.capacity = 1024;
+		init_buffers(&xlinkd->dispatchers[i].buff_queue);
+		dsp->state = XLINK_DISPATCHER_INIT;
 	}
 	mutex_init(&xlinkd->lock);
 
@@ -317,7 +436,7 @@ enum xlink_error xlink_dispatcher_event_add(enum xlink_event_origin origin,
 {
 	struct dispatcher *disp;
 
-	// get dispatcher by handle
+	// get dispatcher by link id
 	disp = get_dispatcher_by_id(event->link_id);
 	if (!disp)
 		return X_LINK_ERROR;
@@ -430,8 +549,8 @@ enum xlink_error xlink_dispatcher_destroy(void)
 			}
 			xlink_destroy_event(event);
 		}
-		// destroy dispatcher
 		mutex_destroy(&disp->queue.lock);
+		deinit_buffers(&xlinkd->dispatchers[i].buff_queue);
 	}
 	mutex_destroy(&xlinkd->lock);
 	return X_LINK_SUCCESS;
