@@ -112,7 +112,8 @@ static inline u32 intel_qep_readl(struct intel_qep *qep, u32 offset)
 	return readl(qep->regs + offset);
 }
 
-static inline void intel_qep_writel(struct intel_qep *qep, u32 offset, u32 value)
+static inline void intel_qep_writel(struct intel_qep *qep,
+				    u32 offset, u32 value)
 {
 	writel(value, qep->regs + offset);
 }
@@ -226,8 +227,8 @@ static const enum counter_count_function intel_qep_count_functions[] = {
 };
 
 static int intel_qep_count_read(struct counter_device *counter,
-		struct counter_count *count,
-		unsigned long *val)
+				struct counter_count *count,
+				unsigned long *val)
 {
 	struct intel_qep *const qep = counter->priv;
 	unsigned long cntval;
@@ -239,14 +240,15 @@ static int intel_qep_count_read(struct counter_device *counter,
 }
 
 static int intel_qep_count_write(struct counter_device *counter,
-		struct counter_count *count,
-		unsigned long val)
+				 struct counter_count *count,
+				 unsigned long val)
 {
 	return 0;
 }
 
 static int intel_qep_function_get(struct counter_device *counter,
-		struct counter_count *count, size_t *function)
+				  struct counter_count *count,
+				  size_t *function)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -261,7 +263,8 @@ static int intel_qep_function_get(struct counter_device *counter,
 }
 
 static int intel_qep_function_set(struct counter_device *counter,
-		struct counter_count *count, size_t function)
+				  struct counter_count *count,
+				  size_t function)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -281,8 +284,9 @@ static int intel_qep_function_set(struct counter_device *counter,
 }
 
 static int intel_qep_action_get(struct counter_device *counter,
-		struct counter_count *count, struct counter_synapse *synapse,
-		size_t *action)
+				struct counter_count *count,
+				struct counter_synapse *synapse,
+				size_t *action)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -297,8 +301,9 @@ static int intel_qep_action_get(struct counter_device *counter,
 }
 
 static int intel_qep_action_set(struct counter_device *counter,
-		struct counter_count *count,
-		struct counter_synapse *synapse, size_t action)
+				struct counter_count *count,
+				struct counter_synapse *synapse,
+				size_t action)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -364,7 +369,8 @@ static struct counter_synapse intel_qep_count_synapses[] = {
 };
 
 static ssize_t ceiling_read(struct counter_device *counter,
-		struct counter_count *count, void *priv, char *buf)
+			    struct counter_count *count,
+			    void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -375,8 +381,8 @@ static ssize_t ceiling_read(struct counter_device *counter,
 }
 
 static ssize_t ceiling_write(struct counter_device *counter,
-		struct counter_count *count, void *priv, const char *buf,
-		size_t len)
+			     struct counter_count *count,
+			     void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 max;
@@ -396,7 +402,8 @@ static ssize_t ceiling_write(struct counter_device *counter,
 }
 
 static ssize_t enable_read(struct counter_device *counter,
-		struct counter_count *count, void *priv, char *buf)
+			   struct counter_count *count,
+			   void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 
@@ -404,8 +411,8 @@ static ssize_t enable_read(struct counter_device *counter,
 }
 
 static ssize_t enable_write(struct counter_device *counter,
-		struct counter_count *count, void *priv, const char *buf,
-		size_t len)
+			    struct counter_count *count,
+			    void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -437,7 +444,8 @@ static ssize_t enable_write(struct counter_device *counter,
 }
 
 static ssize_t direction_read(struct counter_device *counter,
-		struct counter_count *count, void *priv, char *buf)
+			      struct counter_count *count,
+			      void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 
@@ -446,7 +454,8 @@ static ssize_t direction_read(struct counter_device *counter,
 }
 
 static ssize_t phase_error_read(struct counter_device *counter,
-		struct counter_count *count, void *priv, char *buf)
+				struct counter_count *count,
+				void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 
@@ -455,7 +464,8 @@ static ssize_t phase_error_read(struct counter_device *counter,
 }
 
 static ssize_t operating_mode_read(struct counter_device *counter,
-		struct counter_count *count, void *priv, char *buf)
+				   struct counter_count *count,
+				   void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 
@@ -464,8 +474,8 @@ static ssize_t operating_mode_read(struct counter_device *counter,
 }
 
 static ssize_t operating_mode_write(struct counter_device *counter,
-		struct counter_count *count, void *priv, const char *buf,
-		size_t len)
+				    struct counter_count *count,
+				    void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -493,7 +503,8 @@ static ssize_t operating_mode_write(struct counter_device *counter,
 }
 
 static ssize_t capture_data_read(struct counter_device *counter,
-		struct counter_count *count, void *priv, char *buf)
+				 struct counter_count *count,
+				 void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -504,7 +515,8 @@ static ssize_t capture_data_read(struct counter_device *counter,
 }
 
 static ssize_t capture_mode_read(struct counter_device *counter,
-		struct counter_count *count, void *priv, char *buf)
+				 struct counter_count *count,
+				 void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 
@@ -513,8 +525,8 @@ static ssize_t capture_mode_read(struct counter_device *counter,
 }
 
 static ssize_t capture_mode_write(struct counter_device *counter,
-		struct counter_count *count, void *priv, const char *buf,
-		size_t len)
+				  struct counter_count *count,
+				  void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -564,7 +576,8 @@ static struct counter_count intel_qep_counter_count[] = {
 	},
 };
 
-static ssize_t noise_read(struct counter_device *counter, void *priv, char *buf)
+static ssize_t noise_read(struct counter_device *counter,
+			  void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -579,8 +592,8 @@ static ssize_t noise_read(struct counter_device *counter, void *priv, char *buf)
 	return snprintf(buf, PAGE_SIZE, "%d\n", INTEL_QEPFLT_MAX_COUNT(reg));
 }
 
-static ssize_t noise_write(struct counter_device *counter, void *priv,
-		const char *buf, size_t len)
+static ssize_t noise_write(struct counter_device *counter,
+			   void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -612,13 +625,14 @@ static ssize_t noise_write(struct counter_device *counter, void *priv,
 	return len;
 }
 
-static ssize_t preset_read(struct counter_device *counter, void *priv, char *buf)
+static ssize_t preset_read(struct counter_device *counter,
+			   void *priv, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "0\n");
 }
 
-static ssize_t preset_enable_read(struct counter_device *counter, void *priv,
-		char *buf)
+static ssize_t preset_enable_read(struct counter_device *counter,
+				  void *priv, char *buf)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
@@ -628,8 +642,8 @@ static ssize_t preset_enable_read(struct counter_device *counter, void *priv,
 			!(reg & INTEL_QEPCON_COUNT_RST_MODE));
 }
 
-static ssize_t preset_enable_write(struct counter_device *counter, void *priv,
-		const char *buf, size_t len)
+static ssize_t preset_enable_write(struct counter_device *counter,
+				   void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
