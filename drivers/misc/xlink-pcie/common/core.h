@@ -8,15 +8,11 @@
 #ifndef XPCIE_CORE_HEADER_
 #define XPCIE_CORE_HEADER_
 
-#include <linux/io.h>
-#include <linux/types.h>
-#include <linux/workqueue.h>
-#include <linux/slab.h>
-#include <linux/mutex.h>
-#include <linux/mempool.h>
 #include <linux/dma-mapping.h>
-#include <linux/cache.h>
+#include <linux/mutex.h>
+#include <linux/slab.h>
 #include <linux/wait.h>
+#include <linux/workqueue.h>
 
 #include <linux/xlink_drv_inf.h>
 
@@ -65,6 +61,7 @@ struct xpcie_buf_desc {
 struct xpcie_stream {
 	size_t frag;
 	struct xpcie_pipe pipe;
+	struct xpcie_buf_desc **ddr;
 };
 
 struct xpcie_list {
@@ -82,6 +79,9 @@ struct xpcie_interface {
 	struct xpcie_list read;
 	struct xpcie_buf_desc *partial_read;
 	bool data_avail;
+#ifdef XLINK_PCIE_REMOTE
+	atomic_t available_bd_cnt;
+#endif
 	wait_queue_head_t rx_waitq;
 };
 
