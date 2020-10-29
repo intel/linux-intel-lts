@@ -8,6 +8,7 @@
 #ifndef XPCIE_HEADER_
 #define XPCIE_HEADER_
 
+#include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pci_ids.h>
@@ -100,6 +101,11 @@ struct xpcie {
 
 	struct delayed_work rx_event;
 	struct delayed_work tx_event;
+
+#ifdef XLINK_PCIE_REMOTE
+	struct tasklet_struct rx_tasklet;
+	struct hrtimer free_rx_bd_timer;
+#endif
 };
 
 #endif /* XPCIE_HEADER_ */

@@ -184,10 +184,17 @@ bool intel_xpcie_list_empty(struct xpcie_list *list)
 
 int intel_xpcie_list_put(struct xpcie_list *list, struct xpcie_buf_desc *bd)
 {
+#ifdef XLINK_PCIE_REMOTE
+	unsigned long flags = 0;
+#endif
+
 	if (!bd)
 		return -EINVAL;
-
+#ifdef XLINK_PCIE_REMOTE
+	spin_lock_irqsave(&list->lock, flags);
+#else
 	spin_lock(&list->lock);
+#endif
 	if (list->head)
 		list->tail->next = bd;
 	else
@@ -199,8 +206,11 @@ int intel_xpcie_list_put(struct xpcie_list *list, struct xpcie_buf_desc *bd)
 		list->buffers++;
 		bd = bd->next;
 	}
+#ifdef XLINK_PCIE_REMOTE
+	spin_unlock_irqrestore(&list->lock, flags);
+#else
 	spin_unlock(&list->lock);
-
+#endif
 	return 0;
 }
 
@@ -233,8 +243,13 @@ int intel_xpcie_list_put_head(struct xpcie_list *list,
 struct xpcie_buf_desc *intel_xpcie_list_get(struct xpcie_list *list)
 {
 	struct xpcie_buf_desc *bd;
+#ifdef XLINK_PCIE_REMOTE
+	unsigned long flags = 0;
 
+	spin_lock_irqsave(&list->lock, flags);
+#else
 	spin_lock(&list->lock);
+#endif
 	bd = list->head;
 	if (list->head) {
 		list->head = list->head->next;
@@ -244,8 +259,11 @@ struct xpcie_buf_desc *intel_xpcie_list_get(struct xpcie_list *list)
 		list->bytes -= bd->length;
 		list->buffers--;
 	}
+#ifdef XLINK_PCIE_REMOTE
+	spin_unlock_irqrestore(&list->lock, flags);
+#else
 	spin_unlock(&list->lock);
-
+#endif
 	return bd;
 }
 
@@ -368,11 +386,14 @@ void intel_xpcie_add_bd_to_interface(struct xpcie *xpcie,
 	inf = xpcie->interfaces + bd->interface;
 
 	intel_xpcie_list_put(&inf->read, bd);
-
+#ifdef XLINK_PCIE_REMOTE
+	atomic_inc(&inf->available_bd_cnt);
+	inf->data_avail = true;
+#else
 	mutex_lock(&inf->rlock);
 	inf->data_avail = true;
 	mutex_unlock(&inf->rlock);
-
+#endif
 	wake_up_interruptible(&inf->rx_waitq);
 }
 
