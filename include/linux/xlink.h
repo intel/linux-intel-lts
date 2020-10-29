@@ -78,6 +78,10 @@ enum xlink_error xlink_write_data(struct xlink_handle *handle,
 enum xlink_error xlink_write_volatile(struct xlink_handle *handle,
 				      u16 chan, u8 const *message, u32 size);
 
+enum xlink_error xlink_write_control_data(struct xlink_handle *handle,
+					  u16 chan, u8 const *message,
+					  u32 size);
+
 enum xlink_error xlink_read_data(struct xlink_handle *handle,
 				 u16 chan, u8 **message, u32 *size);
 
@@ -89,6 +93,29 @@ enum xlink_error xlink_release_data(struct xlink_handle *handle,
 				    u16 chan, u8 * const data_addr);
 
 enum xlink_error xlink_disconnect(struct xlink_handle *handle);
+
+enum xlink_error xlink_get_device_list(u32 *sw_device_id_list, u32 *num_devices);
+
+enum xlink_error xlink_get_device_name(struct xlink_handle *handle, char *name,
+				       size_t name_size);
+
+enum xlink_error xlink_get_device_status(struct xlink_handle *handle,
+					 u32 *device_status);
+
+enum xlink_error xlink_boot_device(struct xlink_handle *handle,
+				   const char *binary_name);
+
+enum xlink_error xlink_reset_device(struct xlink_handle *handle);
+
+enum xlink_error xlink_set_device_mode(struct xlink_handle *handle,
+				       enum xlink_device_power_mode power_mode);
+
+enum xlink_error xlink_get_device_mode(struct xlink_handle *handle,
+				       enum xlink_device_power_mode *power_mode);
+
+enum xlink_error xlink_start_vpu(char *filename); /* depreciated */
+
+enum xlink_error xlink_stop_vpu(void); /* depreciated */
 
 /* API functions to be implemented
  *
