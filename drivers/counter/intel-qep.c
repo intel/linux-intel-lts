@@ -101,7 +101,7 @@ struct intel_qep {
 	struct pci_dev *pci;
 	struct device *dev;
 	void __iomem *regs;
-	u32 interrupt;
+	u32 int_stat;
 	int direction;
 	bool enabled;
 	bool phase_error;
@@ -154,7 +154,7 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 
 	mutex_lock(&qep->lock);
 
-	stat = qep->interrupt;
+	stat = qep->int_stat;
 	if (stat & INTEL_QEPINT_FIFOCRIT) {
 		if (qep->op_mode == INTEL_QEP_OP_MODE_QEP) {
 			dev_dbg(qep->dev, "Phase Error detected\n");
@@ -194,7 +194,7 @@ static irqreturn_t intel_qep_irq(int irq, void *_qep)
 
 	stat = intel_qep_readl(qep->regs, INTEL_QEPINT_STAT);
 	if (stat) {
-		qep->interrupt = stat;
+		qep->int_stat = stat;
 		intel_qep_writel(qep->regs, INTEL_QEPINT_MASK, 0xffffffff);
 		intel_qep_writel(qep->regs, INTEL_QEPINT_STAT, stat);
 		return IRQ_WAKE_THREAD;
