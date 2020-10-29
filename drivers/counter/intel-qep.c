@@ -98,7 +98,6 @@
 struct intel_qep {
 	struct counter_device counter;
 	struct mutex lock;
-	struct pci_dev *pci;
 	struct device *dev;
 	void __iomem *regs;
 	u32 int_stat;
@@ -692,7 +691,6 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	if (!regs)
 		return -ENOMEM;
 
-	qep->pci = pci;
 	qep->dev = dev;
 	qep->regs = regs;
 	mutex_init(&qep->lock);
