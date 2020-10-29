@@ -14,6 +14,7 @@
 #define XLINK_MAX_BUF_SIZE		128U
 #define XLINK_MAX_DATA_SIZE		(1024U * 1024U * 1024U)
 #define XLINK_MAX_CONTROL_DATA_SIZE	100U
+#define XLINK_MAX_CONTROL_DATA_PCIE_SIZE 484U
 #define XLINK_MAX_CONNECTIONS		24
 #define XLINK_PACKET_ALIGNMENT		64
 #define XLINK_INVALID_EVENT_ID		0xDEADBEEF
@@ -102,6 +103,8 @@ enum xlink_event_type {
 	XLINK_CLOSE_CHANNEL_REQ,
 	XLINK_PING_REQ,
 	XLINK_WRITE_CONTROL_REQ,
+	XLINK_DATA_READY_CALLBACK_REQ,
+	XLINK_DATA_CONSUMED_CALLBACK_REQ,
 	XLINK_REQ_LAST,
 	// response events
 	XLINK_WRITE_RESP = 0x10,
@@ -113,6 +116,8 @@ enum xlink_event_type {
 	XLINK_CLOSE_CHANNEL_RESP,
 	XLINK_PING_RESP,
 	XLINK_WRITE_CONTROL_RESP,
+	XLINK_DATA_READY_CALLBACK_RESP,
+	XLINK_DATA_CONSUMED_CALLBACK_RESP,
 	XLINK_RESP_LAST,
 };
 
@@ -123,7 +128,7 @@ struct xlink_event_header {
 	u32 chan;
 	size_t size;
 	u32 timeout;
-	u8  control_data[XLINK_MAX_CONTROL_DATA_SIZE];
+	u8  control_data[XLINK_MAX_CONTROL_DATA_PCIE_SIZE];
 };
 
 struct xlink_event {
@@ -142,36 +147,7 @@ struct xlink_event {
 	struct list_head list;
 };
 
-static inline struct xlink_event *xlink_create_event(u32 link_id,
-						     enum xlink_event_type type,
-						     struct xlink_handle *handle,
-						     u32 chan, u32 size, u32 timeout)
-{
-	struct xlink_event *new_event = NULL;
+struct xlink_event *alloc_event(u32 link_id);
+void free_event(struct xlink_event *event);
 
-	// allocate new event
-	new_event = kzalloc(sizeof(*new_event), GFP_KERNEL);
-	if (!new_event)
-		return NULL;
-
-	// set event context
-	new_event->link_id	= link_id;
-	new_event->handle	= handle;
-	new_event->interface	= get_interface_from_sw_device_id(handle->sw_device_id);
-	new_event->user_data	= 0;
-
-	// set event header
-	new_event->header.magic	= XLINK_EVENT_HEADER_MAGIC;
-	new_event->header.id	= XLINK_INVALID_EVENT_ID;
-	new_event->header.type	= type;
-	new_event->header.chan	= chan;
-	new_event->header.size	= size;
-	new_event->header.timeout = timeout;
-	return new_event;
-}
-
-static inline void xlink_destroy_event(struct xlink_event *event)
-{
-	kfree(event);
-}
 #endif /* __XLINK_DEFS_H */
