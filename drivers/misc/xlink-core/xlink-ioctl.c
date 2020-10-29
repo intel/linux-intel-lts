@@ -203,6 +203,34 @@ int ioctl_read_data(unsigned long arg)
 	return copy_result_to_user(rd.return_code, rc);
 }
 
+int ioctl_read_to_buffer(unsigned long arg)
+{
+	struct xlink_handle		devh	= {};
+	struct xlinkreadtobuffer	rdtobuf = {};
+	int rc = 0;
+	u32 size;
+	u8 volbuf[XLINK_MAX_BUF_SIZE]; // buffer for volatile transactions
+
+	if (copy_from_user(&rdtobuf, (void __user *)arg,
+			   sizeof(struct xlinkreadtobuffer)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)rdtobuf.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	rc = xlink_read_data_to_buffer(&devh, rdtobuf.chan,
+				       (u8 *)volbuf, &size);
+	if (!rc) {
+		if (copy_to_user((void __user *)rdtobuf.pmessage, (void *)volbuf,
+				 size))
+			return -EFAULT;
+		if (copy_to_user((void __user *)rdtobuf.size, (void *)&size,
+				 sizeof(size)))
+			return -EFAULT;
+	}
+
+	return copy_result_to_user(rdtobuf.return_code, rc);
+}
+
 int ioctl_write_data(unsigned long arg)
 {
 	struct xlink_handle	devh	= {};
@@ -301,6 +329,26 @@ int ioctl_close_channel(unsigned long arg, void *session)
 	return rc;
 }
 
+int ioctl_start_vpu(unsigned long arg)
+{
+	struct xlinkstartvpu	startvpu = {};
+	char filename[64];
+	int rc = 0;
+
+	if (copy_from_user(&startvpu, (void __user *)arg,
+			   sizeof(struct xlinkstartvpu)))
+		return -EFAULT;
+	if (startvpu.namesize > sizeof(filename))
+		return -EINVAL;
+	memset(filename, 0, sizeof(filename));
+	if (copy_from_user(filename, (void __user *)startvpu.filename,
+			   startvpu.namesize))
+		return -EFAULT;
+	rc = xlink_start_vpu(filename);
+
+	return copy_result_to_user(startvpu.return_code, rc);
+}
+
 int ioctl_disconnect(unsigned long arg)
 {
 	struct xlink_handle	devh	= {};
@@ -316,4 +364,170 @@ int ioctl_disconnect(unsigned long arg)
 	rc = xlink_disconnect(&devh);
 
 	return copy_result_to_user(con.return_code, rc);
+}
+
+int ioctl_get_device_name(unsigned long arg)
+{
+	struct xlink_handle		devh	= {};
+	struct xlinkgetdevicename	devn	= {};
+	char name[XLINK_MAX_DEVICE_NAME_SIZE];
+	int rc = 0;
+
+	if (copy_from_user(&devn, (void __user *)arg,
+			   sizeof(struct xlinkgetdevicename)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)devn.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	if (devn.name_size <= XLINK_MAX_DEVICE_NAME_SIZE) {
+		rc = xlink_get_device_name(&devh, name, devn.name_size);
+		if (!rc) {
+			if (copy_to_user((void __user *)devn.name, (void *)name,
+					 devn.name_size))
+				return -EFAULT;
+		}
+	} else {
+		rc = X_LINK_ERROR;
+	}
+
+	return copy_result_to_user(devn.return_code, rc);
+}
+
+int ioctl_get_device_list(unsigned long arg)
+{
+	struct xlinkgetdevicelist	devl	= {};
+	u32 sw_device_id_list[XLINK_MAX_DEVICE_LIST_SIZE];
+	u32 num_devices = 0;
+	int rc = 0;
+
+	if (copy_from_user(&devl, (void __user *)arg,
+			   sizeof(struct xlinkgetdevicelist)))
+		return -EFAULT;
+	rc = xlink_get_device_list(sw_device_id_list, &num_devices);
+	if (!rc && num_devices <= XLINK_MAX_DEVICE_LIST_SIZE) {
+		/* TODO: this next copy is dangerous! we have no idea
+		 * how large the devl.sw_device_id_list buffer is
+		 * provided by the user. if num_devices is too large,
+		 * the copy will overflow the buffer.
+		 */
+		if (copy_to_user((void __user *)devl.sw_device_id_list,
+				 (void *)sw_device_id_list,
+				 (sizeof(*sw_device_id_list)
+				 * num_devices)))
+			return -EFAULT;
+		if (copy_to_user((void __user *)devl.num_devices, (void *)&num_devices,
+				 (sizeof(num_devices))))
+			return -EFAULT;
+	}
+
+	return copy_result_to_user(devl.return_code, rc);
+}
+
+int ioctl_get_device_status(unsigned long arg)
+{
+	struct xlink_handle		devh	= {};
+	struct xlinkgetdevicestatus	devs	= {};
+	u32 device_status = 0;
+	int rc = 0;
+
+	if (copy_from_user(&devs, (void __user *)arg,
+			   sizeof(struct xlinkgetdevicestatus)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)devs.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	rc = xlink_get_device_status(&devh, &device_status);
+	if (!rc) {
+		if (copy_to_user((void __user *)devs.device_status,
+				 (void *)&device_status,
+				 sizeof(device_status)))
+			return -EFAULT;
+	}
+
+	return copy_result_to_user(devs.return_code, rc);
+}
+
+int ioctl_boot_device(unsigned long arg)
+{
+	struct xlink_handle		devh	= {};
+	struct xlinkbootdevice		boot	= {};
+	char filename[64];
+	int rc = 0;
+
+	if (copy_from_user(&boot, (void __user *)arg,
+			   sizeof(struct xlinkbootdevice)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)boot.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	if (boot.binary_name_size > sizeof(filename))
+		return -EINVAL;
+	memset(filename, 0, sizeof(filename));
+	if (copy_from_user(filename, (void __user *)boot.binary_name,
+			   boot.binary_name_size))
+		return -EFAULT;
+	rc = xlink_boot_device(&devh, filename);
+
+	return copy_result_to_user(boot.return_code, rc);
+}
+
+int ioctl_reset_device(unsigned long arg)
+{
+	struct xlink_handle		devh	= {};
+	struct xlinkresetdevice		res	= {};
+	int rc = 0;
+
+	if (copy_from_user(&res, (void __user *)arg,
+			   sizeof(struct xlinkresetdevice)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)res.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	rc = xlink_reset_device(&devh);
+
+	return copy_result_to_user(res.return_code, rc);
+}
+
+int ioctl_get_device_mode(unsigned long arg)
+{
+	struct xlink_handle	devh	= {};
+	struct xlinkdevmode	devm	= {};
+	u32 device_mode = 0;
+	int rc = 0;
+
+	if (copy_from_user(&devm, (void __user *)arg,
+			   sizeof(struct xlinkdevmode)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)devm.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	rc = xlink_get_device_mode(&devh, &device_mode);
+	if (!rc) {
+		if (copy_to_user((void __user *)devm.device_mode, (void *)&device_mode,
+				 sizeof(device_mode)))
+			return -EFAULT;
+	}
+
+	return copy_result_to_user(devm.return_code, rc);
+}
+
+int ioctl_set_device_mode(unsigned long arg)
+{
+	struct xlink_handle	devh	= {};
+	struct xlinkdevmode	devm	= {};
+	u32 device_mode = 0;
+	int rc = 0;
+
+	if (copy_from_user(&devm, (void __user *)arg,
+			   sizeof(struct xlinkdevmode)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)devm.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	if (copy_from_user(&device_mode, (void __user *)devm.device_mode,
+			   sizeof(device_mode)))
+		return -EFAULT;
+	rc = xlink_set_device_mode(&devh, device_mode);
+
+	return copy_result_to_user(devm.return_code, rc);
 }

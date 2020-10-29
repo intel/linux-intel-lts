@@ -480,6 +480,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 	switch (event->header.type) {
 	case XLINK_WRITE_REQ:
 	case XLINK_WRITE_VOLATILE_REQ:
+	case XLINK_WRITE_CONTROL_REQ:
 		opchan = get_channel(link_id, chan);
 		if (!opchan || opchan->chan->status != CHAN_OPEN) {
 			rc = X_LINK_COMMUNICATION_FAIL;
@@ -648,6 +649,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 		break;
 	case XLINK_WRITE_RESP:
 	case XLINK_WRITE_VOLATILE_RESP:
+	case XLINK_WRITE_CONTROL_RESP:
 	case XLINK_READ_RESP:
 	case XLINK_READ_TO_BUFFER_RESP:
 	case XLINK_RELEASE_RESP:
@@ -750,6 +752,46 @@ enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
 		}
 		release_channel(opchan);
 		break;
+	case XLINK_WRITE_CONTROL_REQ:
+		opchan = get_channel(link_id, chan);
+		if (!opchan) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			event->header.timeout = opchan->chan->timeout;
+			buffer = xlink_platform_allocate(xmux->dev, &paddr,
+							 event->header.size,
+							 XLINK_PACKET_ALIGNMENT,
+							 XLINK_NORMAL_MEMORY);
+			if (buffer) {
+				size = event->header.size;
+				memcpy(buffer, event->header.control_data, size);
+				event->paddr = paddr;
+				event->data = buffer;
+				if (add_packet_to_channel(opchan,
+							  &opchan->rx_queue,
+							  event->data,
+							  event->header.size,
+							  paddr)) {
+					xlink_platform_deallocate(xmux->dev,
+								  buffer, paddr,
+								  event->header.size,
+								  XLINK_PACKET_ALIGNMENT,
+								  XLINK_NORMAL_MEMORY);
+					rc = X_LINK_ERROR;
+					release_channel(opchan);
+					break;
+				}
+				event->header.type = XLINK_WRITE_CONTROL_RESP;
+				xlink_dispatcher_event_add(EVENT_RX, event);
+				// channel blocking, notify waiting threads of available packet
+				complete(&opchan->pkt_available);
+			} else {
+				// failed to allocate buffer
+				rc = X_LINK_ERROR;
+			}
+		}
+		release_channel(opchan);
+		break;
 	case XLINK_READ_REQ:
 	case XLINK_READ_TO_BUFFER_REQ:
 		opchan = get_channel(link_id, chan);
@@ -839,6 +881,7 @@ enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
 		break;
 	case XLINK_WRITE_RESP:
 	case XLINK_WRITE_VOLATILE_RESP:
+	case XLINK_WRITE_CONTROL_RESP:
 		opchan = get_channel(link_id, chan);
 		if (!opchan)
 			rc = X_LINK_COMMUNICATION_FAIL;
@@ -914,6 +957,18 @@ enum xlink_error xlink_passthrough(struct xlink_event *event)
 			rc = xlink_platform_write(IPC_INTERFACE,
 						  event->handle->sw_device_id,
 						  event->data,
+						  &event->header.size, 0, &ipc);
+		} else {
+			/* channel not open */
+			rc = X_LINK_ERROR;
+		}
+		break;
+	case XLINK_WRITE_CONTROL_REQ:
+		if (xmux->channels[link_id][chan].ipc_status == CHAN_OPEN) {
+			ipc.is_volatile = 1;
+			rc = xlink_platform_write(IPC_INTERFACE,
+						  event->handle->sw_device_id,
+						  event->header.control_data,
 						  &event->header.size, 0, &ipc);
 		} else {
 			/* channel not open */
@@ -1004,6 +1059,7 @@ enum xlink_error xlink_passthrough(struct xlink_event *event)
 	case XLINK_PING_REQ:
 	case XLINK_WRITE_RESP:
 	case XLINK_WRITE_VOLATILE_RESP:
+	case XLINK_WRITE_CONTROL_RESP:
 	case XLINK_READ_RESP:
 	case XLINK_READ_TO_BUFFER_RESP:
 	case XLINK_RELEASE_RESP:
