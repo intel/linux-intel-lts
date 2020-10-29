@@ -12,10 +12,18 @@
 int ioctl_connect(unsigned long arg);
 int ioctl_open_channel(unsigned long arg, void *sess_ctx);
 int ioctl_read_data(unsigned long arg);
+int ioctl_read_to_buffer(unsigned long arg);
 int ioctl_write_data(unsigned long arg);
 int ioctl_write_volatile_data(unsigned long arg);
 int ioctl_release_data(unsigned long arg);
 int ioctl_close_channel(unsigned long arg, void *sess_ctx);
+int ioctl_start_vpu(unsigned long arg);
 int ioctl_disconnect(unsigned long arg);
-
+int ioctl_get_device_name(unsigned long arg);
+int ioctl_get_device_list(unsigned long arg);
+int ioctl_get_device_status(unsigned long arg);
+int ioctl_boot_device(unsigned long arg);
+int ioctl_reset_device(unsigned long arg);
+int ioctl_get_device_mode(unsigned long arg);
+int ioctl_set_device_mode(unsigned long arg);
 #endif /* XLINK_IOCTL_H_ */

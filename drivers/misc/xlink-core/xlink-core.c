@@ -306,6 +306,9 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case XL_READ_DATA:
 		rc = ioctl_read_data(arg);
 		break;
+	case XL_READ_TO_BUFFER:
+		rc = ioctl_read_to_buffer(arg);
+		break;
 	case XL_WRITE_DATA:
 		rc = ioctl_write_data(arg);
 		break;
@@ -318,8 +321,38 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case XL_CLOSE_CHANNEL:
 		rc = ioctl_close_channel(arg, sess_ctx);
 		break;
+	case XL_START_VPU:
+		rc = ioctl_start_vpu(arg);
+		break;
+	case XL_STOP_VPU:
+		rc = xlink_stop_vpu();
+		break;
+	case XL_RESET_VPU:
+		rc = xlink_stop_vpu();
+		break;
 	case XL_DISCONNECT:
 		rc = ioctl_disconnect(arg);
+		break;
+	case XL_GET_DEVICE_NAME:
+		rc = ioctl_get_device_name(arg);
+		break;
+	case XL_GET_DEVICE_LIST:
+		rc = ioctl_get_device_list(arg);
+		break;
+	case XL_GET_DEVICE_STATUS:
+		rc = ioctl_get_device_status(arg);
+		break;
+	case XL_BOOT_DEVICE:
+		rc = ioctl_boot_device(arg);
+		break;
+	case XL_RESET_DEVICE:
+		rc = ioctl_reset_device(arg);
+		break;
+	case XL_GET_DEVICE_MODE:
+		rc = ioctl_get_device_mode(arg);
+		break;
+	case XL_SET_DEVICE_MODE:
+		rc = ioctl_set_device_mode(arg);
 		break;
 	}
 	if (rc)
@@ -331,6 +364,30 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 /*
  * xlink Kernel API.
  */
+enum xlink_error xlink_stop_vpu(void)
+{
+#ifdef CONFIG_XLINK_LOCAL_HOST
+	int rc;
+
+	rc = xlink_ipc_reset_device(0x0); // stop vpu slice 0
+	if (rc)
+		return X_LINK_ERROR;
+#endif
+	return X_LINK_SUCCESS;
+}
+EXPORT_SYMBOL_GPL(xlink_stop_vpu);
+enum xlink_error xlink_start_vpu(char *filename)
+{
+#ifdef CONFIG_XLINK_LOCAL_HOST
+	int rc;
+
+	rc = xlink_ipc_boot_device(0x0, filename); // start vpu slice 0
+	if (rc)
+		return X_LINK_ERROR;
+#endif
+	return X_LINK_SUCCESS;
+}
+EXPORT_SYMBOL_GPL(xlink_start_vpu);
 
 enum xlink_error xlink_initialize(void)
 {
@@ -569,6 +626,34 @@ enum xlink_error xlink_write_data_user(struct xlink_handle *handle,
 	return rc;
 }
 
+enum xlink_error xlink_write_control_data(struct xlink_handle *handle,
+					  u16 chan, u8 const *pmessage,
+					  u32 size)
+{
+	struct xlink_event *event;
+	struct xlink_link *link;
+	int event_queued = 0;
+	enum xlink_error rc;
+
+	if (!xlink || !handle)
+		return X_LINK_ERROR;
+	if (size > XLINK_MAX_CONTROL_DATA_SIZE)
+		return X_LINK_ERROR;
+	link = get_link_by_sw_device_id(handle->sw_device_id);
+	if (!link)
+		return X_LINK_ERROR;
+	event = xlink_create_event(link->id, XLINK_WRITE_CONTROL_REQ,
+				   &link->handle, chan, size, 0);
+	if (!event)
+		return X_LINK_ERROR;
+	memcpy(event->header.control_data, pmessage, size);
+	rc = xlink_multiplexer_tx(event, &event_queued);
+	if (!event_queued)
+		xlink_destroy_event(event);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(xlink_write_control_data);
+
 enum xlink_error xlink_write_volatile(struct xlink_handle *handle,
 				      u16 chan, u8 const *message, u32 size)
 {
@@ -752,6 +837,156 @@ enum xlink_error xlink_disconnect(struct xlink_handle *handle)
 }
 EXPORT_SYMBOL_GPL(xlink_disconnect);
 
+enum xlink_error xlink_get_device_list(u32 *sw_device_id_list,
+				       u32 *num_devices)
+{
+	u32 interface_nmb_devices = 0;
+	enum xlink_error rc;
+	int i;
+
+	if (!xlink)
+		return X_LINK_ERROR;
+	if (!sw_device_id_list || !num_devices)
+		return X_LINK_ERROR;
+	/* loop through each interface and combine the lists */
+	for (i = 0; i < NMB_OF_INTERFACES; i++) {
+		rc = xlink_platform_get_device_list(i, sw_device_id_list,
+						    &interface_nmb_devices);
+		if (!rc) {
+			*num_devices += interface_nmb_devices;
+			sw_device_id_list += interface_nmb_devices;
+		}
+		interface_nmb_devices = 0;
+	}
+	return X_LINK_SUCCESS;
+}
+EXPORT_SYMBOL_GPL(xlink_get_device_list);
+enum xlink_error xlink_get_device_name(struct xlink_handle *handle, char *name,
+				       size_t name_size)
+{
+	enum xlink_error rc;
+	int interface;
+
+	if (!xlink || !handle)
+		return X_LINK_ERROR;
+	if (!name || !name_size)
+		return X_LINK_ERROR;
+	interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	if (interface == NULL_INTERFACE)
+		return X_LINK_ERROR;
+	rc = xlink_platform_get_device_name(interface, handle->sw_device_id,
+					    name, name_size);
+	if (rc)
+		rc = X_LINK_ERROR;
+	else
+		rc = X_LINK_SUCCESS;
+	return rc;
+}
+EXPORT_SYMBOL_GPL(xlink_get_device_name);
+enum xlink_error xlink_get_device_status(struct xlink_handle *handle,
+					 u32 *device_status)
+{
+	enum xlink_error rc;
+	u32 interface;
+
+	if (!xlink)
+		return X_LINK_ERROR;
+	if (!device_status)
+		return X_LINK_ERROR;
+	interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	if (interface == NULL_INTERFACE)
+		return X_LINK_ERROR;
+	rc = xlink_platform_get_device_status(interface, handle->sw_device_id,
+					      device_status);
+	if (rc)
+		rc = X_LINK_ERROR;
+	else
+		rc = X_LINK_SUCCESS;
+	return rc;
+}
+EXPORT_SYMBOL_GPL(xlink_get_device_status);
+enum xlink_error xlink_boot_device(struct xlink_handle *handle,
+				   const char *binary_name)
+{
+	enum xlink_error rc;
+	u32 interface;
+
+	if (!xlink || !handle)
+		return X_LINK_ERROR;
+	if (!binary_name)
+		return X_LINK_ERROR;
+	interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	if (interface == NULL_INTERFACE)
+		return X_LINK_ERROR;
+	rc = xlink_platform_boot_device(interface, handle->sw_device_id,
+					binary_name);
+	if (rc)
+		rc = X_LINK_ERROR;
+	else
+		rc = X_LINK_SUCCESS;
+	return rc;
+}
+EXPORT_SYMBOL_GPL(xlink_boot_device);
+enum xlink_error xlink_reset_device(struct xlink_handle *handle)
+{
+	enum xlink_error rc;
+	u32 interface;
+
+	if (!xlink || !handle)
+		return X_LINK_ERROR;
+	interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	if (interface == NULL_INTERFACE)
+		return X_LINK_ERROR;
+	rc = xlink_platform_reset_device(interface, handle->sw_device_id);
+	if (rc)
+		rc = X_LINK_ERROR;
+	else
+		rc = X_LINK_SUCCESS;
+	return rc;
+}
+EXPORT_SYMBOL_GPL(xlink_reset_device);
+enum xlink_error xlink_set_device_mode(struct xlink_handle *handle,
+				       enum xlink_device_power_mode power_mode)
+{
+	enum xlink_error rc;
+	u32 interface;
+
+	if (!xlink || !handle)
+		return X_LINK_ERROR;
+	interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	if (interface == NULL_INTERFACE)
+		return X_LINK_ERROR;
+	rc = xlink_platform_set_device_mode(interface, handle->sw_device_id,
+					    power_mode);
+	if (rc)
+		rc = X_LINK_ERROR;
+	else
+		rc = X_LINK_SUCCESS;
+	return rc;
+}
+EXPORT_SYMBOL_GPL(xlink_set_device_mode);
+
+enum xlink_error xlink_get_device_mode(struct xlink_handle *handle,
+				       enum xlink_device_power_mode *power_mode)
+{
+	enum xlink_error rc;
+	u32 interface;
+
+	if (!xlink || !handle)
+		return X_LINK_ERROR;
+	interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	if (interface == NULL_INTERFACE)
+		return X_LINK_ERROR;
+	rc = xlink_platform_get_device_mode(interface, handle->sw_device_id,
+					    power_mode);
+	if (rc)
+		rc = X_LINK_ERROR;
+	else
+		rc = X_LINK_SUCCESS;
+	return rc;
+}
+
+EXPORT_SYMBOL_GPL(xlink_get_device_mode);
 static void kmb_xlink_exit(void)
 {
 	kmb_xlink_remove();

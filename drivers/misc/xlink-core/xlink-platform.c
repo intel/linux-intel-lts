@@ -33,6 +33,20 @@ static inline int xlink_ipc_read(u32 sw_device_id, void *data,
 				 size_t * const size, u32 timeout, void *context)
 { return -1; }
 
+static inline int xlink_ipc_get_device_list(u32 *sw_device_id_list,
+					    u32 *num_devices)
+{ return -1; }
+static inline int xlink_ipc_get_device_name(u32 sw_device_id,
+					    char *device_name, size_t name_size)
+{ return -1; }
+static inline int xlink_ipc_get_device_status(u32 sw_device_id,
+					      u32 *device_status)
+{ return -1; }
+static inline int xlink_ipc_boot_device(u32 sw_device_id,
+					const char *binary_path)
+{ return -1; }
+static inline int xlink_ipc_reset_device(u32 sw_device_id)
+{ return -1; }
 static inline int xlink_ipc_open_channel(u32 sw_device_id,
 					 u32 channel)
 { return -1; }
@@ -58,6 +72,23 @@ static int (*write_fcts[NMB_OF_INTERFACES])(u32, void *, size_t * const, u32) = 
 static int (*read_fcts[NMB_OF_INTERFACES])(u32, void *, size_t * const, u32) = {
 		NULL, xlink_pcie_read, NULL, NULL};
 
+static int (*reset_fcts[NMB_OF_INTERFACES])(u32) = {
+		xlink_ipc_reset_device, xlink_pcie_reset_device, NULL, NULL};
+static int (*boot_fcts[NMB_OF_INTERFACES])(u32, const char *) = {
+		xlink_ipc_boot_device, xlink_pcie_boot_device, NULL, NULL};
+static int (*dev_name_fcts[NMB_OF_INTERFACES])(u32, char *, size_t) = {
+		xlink_ipc_get_device_name, xlink_pcie_get_device_name,
+		NULL, NULL};
+static int (*dev_list_fcts[NMB_OF_INTERFACES])(u32 *, u32 *) = {
+		xlink_ipc_get_device_list, xlink_pcie_get_device_list,
+		NULL, NULL};
+static int (*dev_status_fcts[NMB_OF_INTERFACES])(u32, u32 *) = {
+		xlink_ipc_get_device_status, xlink_pcie_get_device_status,
+		NULL, NULL};
+static int (*dev_set_mode_fcts[NMB_OF_INTERFACES])(u32, u32) = {
+		NULL, NULL, NULL, NULL};
+static int (*dev_get_mode_fcts[NMB_OF_INTERFACES])(u32, u32 *) = {
+		NULL, NULL, NULL, NULL};
 static int (*open_chan_fcts[NMB_OF_INTERFACES])(u32, u32) = {
 		xlink_ipc_open_channel, NULL, NULL, NULL};
 
@@ -100,6 +131,61 @@ int xlink_platform_read(u32 interface, u32 sw_device_id, void *data,
 		return -1;
 
 	return read_fcts[interface](sw_device_id, data, size, timeout);
+}
+
+int xlink_platform_reset_device(u32 interface, u32 sw_device_id)
+{
+	if (interface >= NMB_OF_INTERFACES || !reset_fcts[interface])
+		return -1;
+	return reset_fcts[interface](sw_device_id);
+}
+
+int xlink_platform_boot_device(u32 interface, u32 sw_device_id,
+			       const char *binary_name)
+{
+	if (interface >= NMB_OF_INTERFACES || !boot_fcts[interface])
+		return -1;
+	return boot_fcts[interface](sw_device_id, binary_name);
+}
+
+int xlink_platform_get_device_name(u32 interface, u32 sw_device_id,
+				   char *device_name, size_t name_size)
+{
+	if (interface >= NMB_OF_INTERFACES || !dev_name_fcts[interface])
+		return -1;
+	return dev_name_fcts[interface](sw_device_id, device_name, name_size);
+}
+
+int xlink_platform_get_device_list(u32 interface,
+				   u32 *sw_device_id_list, u32 *num_devices)
+{
+	if (interface >= NMB_OF_INTERFACES || !dev_list_fcts[interface])
+		return -1;
+	return dev_list_fcts[interface](sw_device_id_list, num_devices);
+}
+
+int xlink_platform_get_device_status(u32 interface, u32 sw_device_id,
+				     u32 *device_status)
+{
+	if (interface >= NMB_OF_INTERFACES || !dev_status_fcts[interface])
+		return -1;
+	return dev_status_fcts[interface](sw_device_id, device_status);
+}
+
+int xlink_platform_set_device_mode(u32 interface, u32 sw_device_id,
+				   u32 power_mode)
+{
+	if (interface >= NMB_OF_INTERFACES || !dev_set_mode_fcts[interface])
+		return -1;
+	return dev_set_mode_fcts[interface](sw_device_id, power_mode);
+}
+
+int xlink_platform_get_device_mode(u32 interface, u32 sw_device_id,
+				   u32 *power_mode)
+{
+	if (interface >= NMB_OF_INTERFACES || !dev_get_mode_fcts[interface])
+		return -1;
+	return dev_get_mode_fcts[interface](sw_device_id, power_mode);
 }
 
 int xlink_platform_open_channel(u32 interface, u32 sw_device_id,
