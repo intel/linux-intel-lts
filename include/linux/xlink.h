@@ -70,6 +70,12 @@ enum xlink_error xlink_open_channel(struct xlink_handle *handle,
 				    u16 chan, enum xlink_opmode mode,
 				    u32 data_size, u32 timeout);
 
+enum xlink_error xlink_data_available_event(struct xlink_handle *handle,
+					    u16 chan,
+					    xlink_event data_available_event);
+enum xlink_error xlink_data_consumed_event(struct xlink_handle *handle,
+					   u16 chan,
+					   xlink_event data_consumed_event);
 enum xlink_error xlink_close_channel(struct xlink_handle *handle, u16 chan);
 
 enum xlink_error xlink_write_data(struct xlink_handle *handle,
@@ -113,9 +119,14 @@ enum xlink_error xlink_set_device_mode(struct xlink_handle *handle,
 enum xlink_error xlink_get_device_mode(struct xlink_handle *handle,
 				       enum xlink_device_power_mode *power_mode);
 
-enum xlink_error xlink_start_vpu(char *filename); /* depreciated */
+enum xlink_error xlink_register_device_event(struct xlink_handle *handle,
+					     u32 *event_list, u32 num_events,
+					     xlink_device_event_cb event_notif_fn);
+enum xlink_error xlink_unregister_device_event(struct xlink_handle *handle,
+					       u32 *event_list, u32 num_events);
+enum xlink_error xlink_start_vpu(char *filename); /* deprecated */
 
-enum xlink_error xlink_stop_vpu(void); /* depreciated */
+enum xlink_error xlink_stop_vpu(void); /* deprecated */
 
 /* API functions to be implemented
  *

@@ -114,15 +114,6 @@ static int copy_result_to_user(u32 *where, int rc)
 	return rc;
 }
 
-static enum xlink_error xlink_write_volatile_user(struct xlink_handle *handle,
-						  u16 chan, u8 const *message, u32 size)
-{
-	enum xlink_error rc = 0;
-
-	rc = do_xlink_write_volatile(handle, chan, message, size, 1);
-	return rc;
-}
-
 int ioctl_connect(unsigned long arg)
 {
 	struct xlink_handle	devh	= {};
@@ -250,6 +241,42 @@ int ioctl_write_data(unsigned long arg)
 	return copy_result_to_user(wr.return_code, rc);
 }
 
+int ioctl_write_control_data(unsigned long arg)
+{
+	struct xlink_handle	devh	= {};
+	struct xlinkwritedata	wr	= {};
+	u8 *control_buf;
+	int rc = 0;
+
+	if (copy_from_user(&wr, (void __user *)arg,
+			   sizeof(struct xlinkwritedata)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)wr.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+
+	if (wr.size <= XLINK_MAX_CONTROL_DATA_PCIE_SIZE) {
+		control_buf = kzalloc(XLINK_MAX_CONTROL_DATA_PCIE_SIZE,
+				      GFP_KERNEL);
+		if (!control_buf)
+			return -ENOMEM;
+		if (copy_from_user(control_buf,
+				   (void __user *)wr.pmessage, wr.size)) {
+			kfree(control_buf);
+			return -EFAULT;
+		}
+		rc = xlink_write_control_data(&devh, wr.chan,
+					      control_buf, wr.size);
+		kfree(control_buf);
+		rc = copy_result_to_user(wr.return_code, rc);
+	} else {
+		rc = X_LINK_ERROR;
+		rc = copy_result_to_user(wr.return_code, rc);
+	}
+
+	return rc;
+}
+
 int ioctl_write_volatile_data(unsigned long arg)
 {
 	struct xlink_handle	devh	= {};
@@ -347,6 +374,14 @@ int ioctl_start_vpu(unsigned long arg)
 	rc = xlink_start_vpu(filename);
 
 	return copy_result_to_user(startvpu.return_code, rc);
+}
+
+int ioctl_stop_vpu(void)
+{
+	int rc = 0;
+
+	rc = xlink_stop_vpu();
+	return rc;
 }
 
 int ioctl_disconnect(unsigned long arg)
@@ -530,4 +565,111 @@ int ioctl_set_device_mode(unsigned long arg)
 	rc = xlink_set_device_mode(&devh, device_mode);
 
 	return copy_result_to_user(devm.return_code, rc);
+}
+
+int ioctl_register_device_event(unsigned long arg)
+{
+	struct xlink_handle	devh	= {};
+	struct xlinkregdevevent	regdevevent = {};
+	u32 num_events = 0;
+	u32 *ev_list;
+	int rc = 0;
+
+	if (copy_from_user(&regdevevent, (void __user *)arg,
+			   sizeof(struct xlinkregdevevent)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)regdevevent.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	num_events = regdevevent.num_events;
+	if (num_events > 0 && num_events <= NUM_REG_EVENTS) {
+		ev_list = kzalloc((num_events * sizeof(u32)), GFP_KERNEL);
+		if (ev_list) {
+			if (copy_from_user(ev_list,
+					   (void __user *)regdevevent.event_list,
+					   (num_events * sizeof(u32)))) {
+				kfree(ev_list);
+				return -EFAULT;
+			}
+			rc = xlink_register_device_event_user(&devh,
+							      ev_list,
+							      num_events,
+							      NULL);
+			kfree(ev_list);
+		} else {
+			rc = X_LINK_ERROR;
+		}
+	} else {
+		rc = X_LINK_ERROR;
+	}
+
+	return copy_result_to_user(regdevevent.return_code, rc);
+}
+
+int ioctl_unregister_device_event(unsigned long arg)
+{
+	struct xlink_handle	devh	= {};
+	struct xlinkregdevevent	regdevevent = {};
+	u32 num_events = 0;
+	u32 *ev_list;
+	int rc = 0;
+
+	if (copy_from_user(&regdevevent, (void __user *)arg,
+			   sizeof(struct xlinkregdevevent)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)regdevevent.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	num_events = regdevevent.num_events;
+	if (num_events <= NUM_REG_EVENTS) {
+		ev_list = kzalloc((num_events * sizeof(u32)), GFP_KERNEL);
+		if (copy_from_user(ev_list,
+				   (void __user *)regdevevent.event_list,
+				   (num_events * sizeof(u32)))) {
+			kfree(ev_list);
+			return -EFAULT;
+		}
+		rc = xlink_unregister_device_event(&devh, ev_list, num_events);
+		kfree(ev_list);
+	} else {
+		rc = X_LINK_ERROR;
+	}
+
+	return copy_result_to_user(regdevevent.return_code, rc);
+}
+
+int ioctl_data_ready_callback(unsigned long arg)
+{
+	struct xlink_handle	devh	= {};
+	struct xlinkcallback	cb	= {};
+	int rc = 0;
+
+	if (copy_from_user(&cb, (void __user *)arg,
+			   sizeof(struct xlinkcallback)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)cb.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	CHANNEL_SET_USER_BIT(cb.chan); // set MSbit for user space call
+	rc = xlink_data_available_event(&devh, cb.chan, cb.callback);
+
+	return copy_result_to_user(cb.return_code, rc);
+}
+
+int ioctl_data_consumed_callback(unsigned long arg)
+{
+	struct xlink_handle	devh	= {};
+	struct xlinkcallback	cb	= {};
+	int rc = 0;
+
+	if (copy_from_user(&cb, (void __user *)arg,
+			   sizeof(struct xlinkcallback)))
+		return -EFAULT;
+	if (copy_from_user(&devh, (void __user *)cb.handle,
+			   sizeof(struct xlink_handle)))
+		return -EFAULT;
+	CHANNEL_SET_USER_BIT(cb.chan); // set MSbit for user space call
+	rc = xlink_data_consumed_event(&devh, cb.chan, cb.callback);
+
+	return copy_result_to_user(cb.return_code, rc);
 }
