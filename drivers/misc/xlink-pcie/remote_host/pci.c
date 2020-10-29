@@ -208,10 +208,8 @@ static void xpcie_device_poll(struct work_struct *work)
 {
 	struct xpcie_dev *xdev = container_of(work, struct xpcie_dev,
 					      wait_event.work);
-	u32 dev_status = intel_xpcie_ioread32(xdev->xpcie.mmio +
-					      XPCIE_MMIO_DEV_STATUS);
 
-	if (dev_status < XPCIE_STATUS_RUN)
+	if (intel_xpcie_get_device_status(&xdev->xpcie) < XPCIE_STATUS_RUN)
 		schedule_delayed_work(&xdev->wait_event,
 				      msecs_to_jiffies(100));
 	else
@@ -224,9 +222,10 @@ static int intel_xpcie_pci_prepare_dev_reset(struct xpcie_dev *xdev,
 	if (mutex_lock_interruptible(&xdev->lock))
 		return -EINTR;
 
-	if (xdev->core_irq_callback)
+	if (xdev->core_irq_callback) {
 		xdev->core_irq_callback = NULL;
-
+		intel_xpcie_core_cleanup(&xdev->xpcie);
+	}
 	xdev->xpcie.status = XPCIE_STATUS_OFF;
 	if (notify)
 		intel_xpcie_pci_raise_irq(xdev, DEV_EVENT, REQUEST_RESET);
@@ -326,6 +325,8 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 	xdev->core_irq_callback = NULL;
 	intel_xpcie_pci_irq_cleanup(xdev);
 
+	intel_xpcie_core_cleanup(&xdev->xpcie);
+
 	intel_xpcie_pci_unmap_bar(xdev);
 	pci_release_regions(xdev->pci);
 	pci_disable_device(xdev->pci);
@@ -359,6 +360,7 @@ int intel_xpcie_pci_raise_irq(struct xpcie_dev *xdev,
 {
 	u16 pci_status;
 
+	intel_xpcie_set_doorbell(&xdev->xpcie, TO_DEVICE, type, value);
 	pci_read_config_word(xdev->pci, PCI_STATUS, &pci_status);
 
 	return 0;
@@ -445,7 +447,43 @@ int intel_xpcie_pci_connect_device(u32 id)
 		goto connect_cleanup;
 	}
 
+	rc = intel_xpcie_core_init(&xdev->xpcie);
+	if (rc < 0) {
+		dev_err(&xdev->pci->dev, "failed to sync with device\n");
+		goto connect_cleanup;
+	}
+
 connect_cleanup:
 	mutex_unlock(&xdev->lock);
 	return rc;
+}
+
+int intel_xpcie_pci_read(u32 id, void *data, size_t *size, u32 timeout)
+{
+	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(id);
+
+	if (!xdev)
+		return -ENODEV;
+
+	return intel_xpcie_core_read(&xdev->xpcie, data, size, timeout);
+}
+
+int intel_xpcie_pci_write(u32 id, void *data, size_t *size, u32 timeout)
+{
+	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(id);
+
+	if (!xdev)
+		return -ENODEV;
+
+	return intel_xpcie_core_write(&xdev->xpcie, data, size, timeout);
+}
+
+int intel_xpcie_pci_reset_device(u32 id)
+{
+	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(id);
+
+	if (!xdev)
+		return -ENOMEM;
+
+	return intel_xpcie_pci_prepare_dev_reset(xdev, true);
 }
