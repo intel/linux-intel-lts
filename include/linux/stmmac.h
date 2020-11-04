@@ -245,11 +245,9 @@ struct plat_stmmacenet_data {
 	bool serdes_pse_sgmii_wa;
 	u32 dma_bit_mask;
 	/* TX and RX PHY latency (ns) */
-	u64 phy_tx_latency_2500;
 	u64 phy_tx_latency_1000;
 	u64 phy_tx_latency_100;
 	u64 phy_tx_latency_10;
-	u64 phy_rx_latency_2500;
 	u64 phy_rx_latency_1000;
 	u64 phy_rx_latency_100;
 	u64 phy_rx_latency_10;

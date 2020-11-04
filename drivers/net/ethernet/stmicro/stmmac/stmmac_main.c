@@ -485,9 +485,6 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 		case SPEED_1000:
 			adjust = priv->plat->phy_tx_latency_1000;
 			break;
-		case SPEED_2500:
-			adjust = priv->plat->phy_tx_latency_2500;
-			break;
 		}
 
 		/* Correct the clk domain crossing CDC error */
@@ -542,9 +539,6 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 			break;
 		case SPEED_1000:
 			adjust = priv->plat->phy_rx_latency_1000;
-			break;
-		case SPEED_2500:
-			adjust = priv->plat->phy_rx_latency_2500;
 			break;
 		}
 

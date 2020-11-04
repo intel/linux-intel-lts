@@ -524,16 +524,6 @@ static int tgl_common_data(struct pci_dev *pdev,
 	/* Maximum TX XDP queue */
 	plat->max_combined = 2;
 
-	/* TX and RX Marvell 88E2110 PHY latency (ns) */
-	plat->phy_tx_latency_10 = 6652;
-	plat->phy_tx_latency_100 = 1152;
-	plat->phy_tx_latency_1000 = 297;
-	plat->phy_tx_latency_2500 = 2772;
-	plat->phy_rx_latency_10 = 12490;
-	plat->phy_rx_latency_100 = 1472;
-	plat->phy_rx_latency_1000 = 405;
-	plat->phy_rx_latency_2500 = 2638;
-
 	plat->clk_ptp_rate = 200000000;
 	ret = intel_mgbe_common_data(pdev, plat);
 	if (ret)
