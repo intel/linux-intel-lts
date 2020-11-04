@@ -314,14 +314,6 @@ static int ehl_common_data(struct pci_dev *pdev,
 	/* Maximum TX XDP queue */
 	plat->max_combined = 4;
 
-	/* TX and RX PHY latency (ns) */
-	plat->phy_tx_latency_10 = 6066;
-	plat->phy_tx_latency_100 = 657;
-	plat->phy_tx_latency_1000 = 224;
-	plat->phy_rx_latency_10 = 2130;
-	plat->phy_rx_latency_100 = 362;
-	plat->phy_rx_latency_1000 = 231;
-
 	ret = intel_mgbe_common_data(pdev, plat);
 	if (ret)
 		return ret;

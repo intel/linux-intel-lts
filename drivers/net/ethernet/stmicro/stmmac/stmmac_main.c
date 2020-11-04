@@ -475,18 +475,6 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 	}
 
 	if (found) {
-		switch (priv->speed) {
-		case SPEED_10:
-			adjust = priv->plat->phy_tx_latency_10;
-			break;
-		case SPEED_100:
-			adjust = priv->plat->phy_tx_latency_100;
-			break;
-		case SPEED_1000:
-			adjust = priv->plat->phy_tx_latency_1000;
-			break;
-		}
-
 		/* Correct the clk domain crossing CDC error */
 		adjust += -(2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate));
 
@@ -529,18 +517,6 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 	/* Check if timestamp is available */
 	if (stmmac_get_rx_timestamp_status(priv, p, np, priv->adv_ts)) {
 		stmmac_get_timestamp(priv, desc, priv->adv_ts, &ns);
-
-		switch (priv->speed) {
-		case SPEED_10:
-			adjust = priv->plat->phy_rx_latency_10;
-			break;
-		case SPEED_100:
-			adjust = priv->plat->phy_rx_latency_100;
-			break;
-		case SPEED_1000:
-			adjust = priv->plat->phy_rx_latency_1000;
-			break;
-		}
 
 		/* Correct the clk domain crossing CDC error */
 		adjust += 2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate);
