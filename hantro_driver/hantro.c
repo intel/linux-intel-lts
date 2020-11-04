@@ -66,6 +66,7 @@
 #define DRIVER_MINOR	1
 
 struct hantro_device_handle hantro_dev;
+static struct class_compat *media_class = NULL;
 static ssize_t get_allocation_status(struct device *dev, int sliceidx,
 				     char *buf);
 
@@ -2370,6 +2371,9 @@ static int hantro_drm_probe(struct platform_device *pdev)
 			create_debugfs(pslice, sliceidx, result == 0);
 		}
 	}
+        result = class_compat_create_link(media_class, &pdev->dev,
+			pdev->dev.parent);
+
 
 	return 0;
 }
@@ -2382,6 +2386,9 @@ static int hantro_drm_remove(struct platform_device *pdev)
 	// hantro_reset_control(pdev, false);
 
 	hantro_clock_control(pdev, false);
+        class_compat_remove_link(media_class, &pdev->dev,
+		pdev->dev.parent);
+
 
 	return 0;
 }
@@ -2486,6 +2493,9 @@ void __exit hantro_cleanup(void)
 	platform_driver_unregister(&hantro_drm_platform_driver);
 	drm_dev_put(hantro_dev.drm_dev);
 	pr_info("hantro driver removed\n");
+        class_compat_unregister(media_class);
+	media_class = NULL;
+
 }
 
 int __init hantro_init(void)
@@ -2504,6 +2514,22 @@ int __init hantro_init(void)
 	hantrodec400_init();
 	hantro_dev.config = 0;
 	hantro_dev.debugfs_root = debugfs_create_dir("hantro", NULL);
+
+        if (media_class == NULL)
+		media_class = class_compat_register("media");
+
+	if (media_class == NULL) {
+		return -ENOMEM;
+	}
+
+	if (IS_ERR_OR_NULL(media_class)) {
+		result = PTR_ERR(media_class);
+		media_class = NULL;
+		pr_info(KERN_ERR"[%s]: couldn't create driver class, return=%d\n", DRIVER_NAME, result);
+		result = (result == 0) ? -ENOMEM : result;
+		return result;
+	}
+
 
 	result = platform_driver_register(&hantro_drm_platform_driver);
 	if (result < 0) {
