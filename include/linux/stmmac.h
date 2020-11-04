@@ -253,15 +253,6 @@ struct plat_stmmacenet_data {
 	u64 phy_rx_latency_1000;
 	u64 phy_rx_latency_100;
 	u64 phy_rx_latency_10;
-	/* xPCS TX and RX latency (ns) */
-	u64 xpcs_tx_latency_2500;
-	u64 xpcs_tx_latency_1000;
-	u64 xpcs_tx_latency_100;
-	u64 xpcs_tx_latency_10;
-	u64 xpcs_rx_latency_2500;
-	u64 xpcs_rx_latency_1000;
-	u64 xpcs_rx_latency_100;
-	u64 xpcs_rx_latency_10;
 	bool eee_timer;
 	struct mdio_board_info *intel_bi;
 	struct dwxpcs_platform_data *xpcs_pdata;

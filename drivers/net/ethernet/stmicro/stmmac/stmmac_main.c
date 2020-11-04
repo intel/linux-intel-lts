@@ -477,20 +477,16 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 	if (found) {
 		switch (priv->speed) {
 		case SPEED_10:
-			adjust += priv->plat->phy_tx_latency_10;
-			adjust += priv->plat->xpcs_tx_latency_10;
+			adjust = priv->plat->phy_tx_latency_10;
 			break;
 		case SPEED_100:
-			adjust += priv->plat->phy_tx_latency_100;
-			adjust += priv->plat->xpcs_tx_latency_100;
+			adjust = priv->plat->phy_tx_latency_100;
 			break;
 		case SPEED_1000:
-			adjust += priv->plat->phy_tx_latency_1000;
-			adjust += priv->plat->xpcs_tx_latency_1000;
+			adjust = priv->plat->phy_tx_latency_1000;
 			break;
 		case SPEED_2500:
-			adjust += priv->plat->phy_tx_latency_2500;
-			adjust += priv->plat->xpcs_tx_latency_2500;
+			adjust = priv->plat->phy_tx_latency_2500;
 			break;
 		}
 
@@ -539,20 +535,16 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 
 		switch (priv->speed) {
 		case SPEED_10:
-			adjust += priv->plat->phy_rx_latency_10;
-			adjust += priv->plat->xpcs_rx_latency_10;
+			adjust = priv->plat->phy_rx_latency_10;
 			break;
 		case SPEED_100:
-			adjust += priv->plat->phy_rx_latency_100;
-			adjust += priv->plat->xpcs_rx_latency_100;
+			adjust = priv->plat->phy_rx_latency_100;
 			break;
 		case SPEED_1000:
-			adjust += priv->plat->phy_rx_latency_1000;
-			adjust += priv->plat->xpcs_rx_latency_1000;
+			adjust = priv->plat->phy_rx_latency_1000;
 			break;
 		case SPEED_2500:
-			adjust += priv->plat->phy_rx_latency_2500;
-			adjust += priv->plat->xpcs_rx_latency_2500;
+			adjust = priv->plat->phy_rx_latency_2500;
 			break;
 		}
 

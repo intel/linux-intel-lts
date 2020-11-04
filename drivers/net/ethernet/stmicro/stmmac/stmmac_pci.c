@@ -80,14 +80,6 @@ static void ehl_sgmii_path_latency_data(struct plat_stmmacenet_data *plat)
 	plat->phy_rx_latency_10 = 5902;
 	plat->phy_rx_latency_100 = 821;
 	plat->phy_rx_latency_1000 = 343;
-
-	/* xPCS TX and RX latency (ns) */
-	plat->xpcs_tx_latency_10 = 856;
-	plat->xpcs_tx_latency_100 = 136;
-	plat->xpcs_tx_latency_1000 = 56;
-	plat->xpcs_rx_latency_10 = 7084;
-	plat->xpcs_rx_latency_100 = 784;
-	plat->xpcs_rx_latency_1000 = 160;
 }
 
 static void ehl_rgmii_path_latency_data(struct plat_stmmacenet_data *plat)
