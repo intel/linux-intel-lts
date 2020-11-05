@@ -64,10 +64,7 @@ static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 		if (ret < 0)
 			return ret;
 
-		/* C45 access to restart autonegotiation is not supported
-		 * in the GPY PHYs, hence use C22 access for this.
-		 */
-		ret = genphy_restart_aneg(phydev);
+		ret = genphy_c45_restart_aneg(phydev);
 		if (ret < 0)
 			return ret;
 	}
@@ -136,7 +133,7 @@ static int gpy_config_aneg(struct phy_device *phydev)
 			return ret;
 	}
 
-	return changed ? genphy_restart_aneg(phydev) : 0;
+	return genphy_c45_check_and_restart_aneg(phydev, changed);
 }
 
 static int gpy_ack_interrupt(struct phy_device *phydev)
