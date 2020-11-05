@@ -1774,7 +1774,7 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 	int sliceidx = -1;
 	static char optype[64];
 	static char profile[64];
-	static char *unkown = "Unknown";
+	static char *unknown = "Unknown";
 	static char *optypes[] = { "Decode", "Encode" };
 
 	static char *profiles[] = {
@@ -1803,6 +1803,13 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 		"VAProfileVP9Profile2",
 		"VAProfileVP9Profile3"
 	};
+ 
+	/** \brief Profile ID used for video processing. */
+        static char *hantro_profiles[] = {
+		"HANTROProfileHEVCMSt",
+		"HANTROProfileH264H10"
+	};
+
 
 	sliceidx = findslice_bydev(kdev);
 	buf_used += snprintf(
@@ -1812,7 +1819,7 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 	/* Go through all open drm files */
 	list_for_each_entry(file, &ddev->filelist, lhead) {
 		mutex_lock(&ddev->struct_mutex);
-		/* Traverse through cma objects added to file's driver_priv checkout hantro_recordmem */
+		/* Tranverse through cma objects added to file's driver_priv checkout hantro_recordmem */
 		data = (struct file_data *)file->driver_priv;
 		if (data && data->clients) {
 			idr_for_each_entry(data->clients, client, handle) {
@@ -1823,18 +1830,23 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 							strncpy(profile,
 								profiles[client->profile],
 								strlen(profiles[client->profile]));
-						else
-							strncpy(profile, unkown,
-								strlen(unkown));
 
-						if (client->codec == 0 ||
-						    client->codec == 1)
+                                                else {
+							if (client->profile >= 100 && client->profile <= 101)
+								strncpy(profile, hantro_profiles[client->profile - 100],
+									strlen(hantro_profiles[client->profile - 100]));
+							else
+								strncpy(profile, unknown, strlen(unknown));
+						}
+
+
+						if (client->codec == 0 || client->codec == 1)
 							strncpy(optype,
 								optypes[client->codec],
 								strlen(optypes[client->codec]));
 						else
-							strncpy(optype, unkown,
-								strlen(unkown));
+							strncpy(optype, unknown,
+								strlen(unknown));
 						buf_used += snprintf(
 							buf + buf_used,
 							PAGE_SIZE,
@@ -1852,8 +1864,7 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 								buf + buf_used,
 								PAGE_SIZE,
 								" ....\n");
-							noprint =
-								true; //print ... only one time
+							noprint = true; //print ... only one time
 						}
 					}
 					client_count++;
