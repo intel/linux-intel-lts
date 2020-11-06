@@ -55,3 +55,6 @@
 
 # CVE-2019-19377
 0001-btrfs-Don-t-submit-any-btree-write-bio-if-the-fs-has.patch
+
+# CVE-2020-27675
+0001-xen-events-avoid-removing-an-event-channel-while-han.patch
