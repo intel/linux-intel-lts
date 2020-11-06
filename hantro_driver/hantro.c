@@ -1814,7 +1814,7 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 	sliceidx = findslice_bydev(kdev);
 	buf_used += snprintf(
 		buf + buf_used, PAGE_SIZE,
-		"  File Id  : ContextId : Slice :  Operation   :           Codec             :   Resolution  \n");
+		"  File Id  : ContextId : Slice :  Operation   :                Codec                    :  Resolution  \n");
 	mutex_lock(&ddev->filelist_mutex);
 	/* Go through all open drm files */
 	list_for_each_entry(file, &ddev->filelist, lhead) {
@@ -1829,14 +1829,14 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 						    client->profile <= 22)
 							strncpy(profile,
 								profiles[client->profile],
-								strlen(profiles[client->profile]));
+								strlen(profiles[client->profile]) + 1);
 
                                                 else {
 							if (client->profile >= 100 && client->profile <= 101)
 								strncpy(profile, hantro_profiles[client->profile - 100],
-									strlen(hantro_profiles[client->profile - 100]));
+									strlen(hantro_profiles[client->profile - 100]) + 1);
 							else
-								strncpy(profile, unknown, strlen(unknown));
+								strncpy(profile, unknown, strlen(unknown) + 1);
 						}
 
 
@@ -1850,7 +1850,7 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 						buf_used += snprintf(
 							buf + buf_used,
 							PAGE_SIZE,
-							"%10p  %10x %5d\t  %s (%d)\t %20s (%d)\t%ldx%ld\n",
+							"%10p  %10x %5d\t  %s (%d)\t %-32s (%d)\t   %ldx%ld\n",
 							file, client->clientid,
 							client->sliceid, optype,
 							client->codec, profile,
