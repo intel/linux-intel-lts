@@ -24,7 +24,7 @@
 #define __HANTRO_PRIV_H__
 #include "hantro.h"
 #include "hantro_slice.h"
-
+#include "trace.h"
 #define HANTRO_GEM_FLAG_IMPORT		(1 << 0)
 #define HANTRO_GEM_FLAG_EXPORT		(1 << 1)
 #define HANTRO_GEM_FLAG_EXPORTUSED	(1 << 2)

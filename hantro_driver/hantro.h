@@ -34,7 +34,7 @@
 #include <drm/drm_auth.h>
 #include <linux/version.h>
 #include <linux/dma-fence.h>
-
+#include <linux/sched/clock.h>
 #include <linux/platform_device.h>
 #include <linux/dma-contiguous.h>
 #include <linux/dma-mapping.h>

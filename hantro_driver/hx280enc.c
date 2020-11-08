@@ -41,8 +41,7 @@
 #include <linux/timer.h>
 #include "hx280enc.h"
 #include <linux/irq.h>
-
-static u32 resouce_shared;
+static u32 resource_shared;
 extern bool enable_encode;
 extern bool enable_irqmode;
 /*------------------------------------------------------------------------
@@ -260,22 +259,31 @@ static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 {
 	struct slice_info *parentslice = getparentslice(dev, CORE_ENC);
 	u32 core_info_tmp = 0;
+	int ret = 0;
 
+	START_TIME;
 	PDEBUG("hx280enc: ReserveEncoder\n");
 	/* If HW resources are shared inter cores, just make sure only one is using the HW */
-	if (resouce_shared) {
-		if (down_interruptible(&parentslice->enc_core_sem))
-			return -ERESTARTSYS;
+	if (resource_shared) {
+		if (down_interruptible(&parentslice->enc_core_sem)) {
+			ret = -ERESTARTSYS;
+			nodenum = 0xffffffff;
+			goto out;
+		}
 	}
 
 	/* lock a core that has specified core id */
 	if (wait_event_interruptible(parentslice->enc_hw_queue,
-				     GetWorkableCore(dev, core_info,
-						     &core_info_tmp,
-						     nodenum) != 0))
-		return -ERESTARTSYS;
+					 GetWorkableCore(dev, core_info,
+							 &core_info_tmp,
+							 nodenum) != 0)) {
+		nodenum = 0xffffffff;
+		ret = -ERESTARTSYS;
+	}
 
-	return 0;
+out:
+	trace_enc_reserve(dev->sliceidx, nodenum, (sched_clock() - start) / 1000);
+	return ret;
 }
 
 static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
@@ -317,8 +325,9 @@ static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 
 	wake_up_interruptible_all(&parentslice->enc_hw_queue);
 
-	if (resouce_shared)
+	if (resource_shared)
 		up(&parentslice->enc_core_sem);
+	trace_enc_release(dev->sliceidx, nodenum);
 }
 
 long hantroenc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -449,7 +458,7 @@ int hantroenc_release(void)
 			dev = dev->next;
 		}
 		wake_up_interruptible_all(&parentslice->enc_hw_queue);
-		if (resouce_shared)
+		if (resource_shared)
 			up(&parentslice->enc_core_sem);
 	}
 	return 0;
@@ -461,7 +470,7 @@ int __init hantroenc_init(void)
 	sram_base = 0;
 	sram_size = 0;
 	hantroenc_major = 0;
-	resouce_shared = 0;
+	resource_shared = 0;
 	bencprobed = 0;
 
 	return 0;
@@ -484,6 +493,7 @@ int hantroenc_probe(dtbnode *pnode)
 	memset(pcore, 0, sizeof(struct hantroenc_t));
 	pcore->core_cfg.base_addr = pnode->ioaddr;
 	pcore->core_cfg.iosize = pnode->iosize;
+	pcore->sliceidx = pnode->sliceidx;
 
 	result = ReserveIO(pcore);
 	if (result < 0) {

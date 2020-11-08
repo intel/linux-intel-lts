@@ -144,8 +144,11 @@ static int hantro_drm_fb_create_handle(struct drm_framebuffer *fb,
 				       unsigned int *handle)
 {
 	struct hantro_drm_fb *vsi_fb = (struct hantro_drm_fb *)fb;
+	int ret;
 
-	return drm_gem_handle_create(file_priv, vsi_fb->obj[0], handle);
+	ret = drm_gem_handle_create(file_priv, vsi_fb->obj[0], handle);
+	trace_gem_handle_create(*handle);
+	return ret;
 }
 
 static int hantro_drm_fb_dirty(struct drm_framebuffer *fb,
@@ -210,11 +213,12 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	 * We could choose to use CMA or page alloc by module parameter later.
 	 */
 
-	if (region == CODEC_RESERVED && pslice->codec_rsvmem != NULL)
+	if (region == CODEC_RESERVED && pslice->codec_rsvmem != NULL) {
 		mem_dev = pslice->codec_rsvmem;
-	else
+	} else {
 		mem_dev = pslice->dev;
-
+		region = PIXEL_CMA;
+	}
 	cma_obj->vaddr = dma_alloc_coherent(
 		mem_dev, args->size, &cma_obj->paddr, GFP_KERNEL | GFP_DMA);
 #ifdef DMA_DEBUG_ALLOC
@@ -251,11 +255,8 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	init_hantro_resv(&cma_obj->kresv, cma_obj);
 	cma_obj->handle = args->handle;
 	cma_obj->memdev = mem_dev;
-#ifdef DMA_DEBUG_ALLOC
-	pr_info("%s:%d,%lx:%llx:%llx\n", __func__, sliceidx,
-		(unsigned long)mem_dev, cma_obj->paddr, args->size);
-#endif
-
+	trace_gem_handle_create(args->handle);
+	trace_cma_alloc(sliceidx, region, (void *)cma_obj->paddr, args->handle, args->size);
 out:
 	mutex_unlock(&dev->struct_mutex);
 	if (ret == -ENOMEM) {
@@ -316,6 +317,7 @@ static int hantro_destroy_dumb(struct drm_device *dev, void *data,
 		hantro_unrecordmem(file_priv, cma_obj);
 
 	drm_gem_handle_delete(file_priv, args->handle);
+	trace_gem_handle_delete(args->handle);
 	hantro_unref_drmobj(obj);
 	mutex_unlock(&dev->struct_mutex);
 	return 0;
@@ -334,11 +336,13 @@ static int hantro_release_dumb(struct drm_device *dev,
 
 	if (cma_obj->flag & HANTRO_GEM_FLAG_EXPORT) {
 		drm_gem_handle_delete(file_priv, cma_obj->handle);
+		trace_gem_handle_delete(cma_obj->handle);
 		hantro_unref_drmobj(obj);
 		return 0;
 	}
 	drm_gem_object_release(gemobj);
 	drm_gem_handle_delete(file_priv, cma_obj->handle);
+	trace_gem_handle_delete(cma_obj->handle);
 	pslice = getslicenode(cma_obj->sliceidx);
 	if (!pslice)
 		return 0;
@@ -347,11 +351,7 @@ static int hantro_release_dumb(struct drm_device *dev,
 		dma_free_coherent(cma_obj->memdev, cma_obj->base.size,
 				  cma_obj->vaddr, cma_obj->paddr);
 
-#ifdef DMA_DEBUG_ALLOC
-	pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx,
-		(unsigned long)cma_obj->memdev, cma_obj->paddr, cma_obj->base.size);
-#endif
-
+	trace_cma_free(cma_obj->sliceidx, (void *) cma_obj->paddr, cma_obj->handle);
 	dma_resv_fini(&cma_obj->kresv);
 	kfree(cma_obj);
 
@@ -606,7 +606,10 @@ static int hantro_gem_prime_mmap(struct drm_gem_object *obj,
 static struct drm_gem_object *
 hantro_drm_gem_prime_import(struct drm_device *dev, struct dma_buf *dma_buf)
 {
-	return drm_gem_prime_import(dev, dma_buf);
+	struct drm_gem_object *obj;
+	obj = drm_gem_prime_import(dev, dma_buf);
+	trace_prime_dmabuf_import((void *) dma_buf, (void *) obj);
+	return obj;
 }
 
 static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
@@ -642,11 +645,7 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 		dma_free_coherent(cma_obj->memdev, cma_obj->base.size,
 				  cma_obj->vaddr, cma_obj->paddr);
 
-#ifdef DMA_DEBUG_ALLOC
-		pr_info("%s:%d,%lx:%llx:%lx\n", __func__, cma_obj->sliceidx,
-			(unsigned long)cma_obj->memdev, cma_obj->paddr,
-			cma_obj->base.size);
-#endif
+		trace_cma_free(cma_obj->sliceidx, (void *) cma_obj->paddr, cma_obj->handle);
 	}
 	dma_resv_fini(&cma_obj->kresv);
 	kfree(cma_obj);
@@ -664,6 +663,7 @@ static int hantro_gem_close(struct drm_device *dev, void *data,
 		return -EINVAL;
 
 	ret = drm_gem_handle_delete(file_priv, args->handle);
+	trace_gem_handle_delete(args->handle);
 	hantro_unref_drmobj(obj);
 	return ret;
 }
@@ -685,6 +685,7 @@ static int hantro_gem_open(struct drm_device *dev, void *data,
 		return -ENOENT;
 
 	ret = drm_gem_handle_create(file_priv, obj, &handle);
+	trace_gem_handle_create(handle);
 	hantro_unref_drmobj(obj);
 	if (ret)
 		return ret;
@@ -746,7 +747,7 @@ static int hantro_add_client(struct drm_device *dev, void *data,
 	mutex_lock(&dev->struct_mutex);
 	ret = idr_alloc(file_attr->clients, client, 1, 0, GFP_KERNEL);
 	mutex_unlock(&dev->struct_mutex);
-
+	trace_client_add((void *)file_attr, attrib->sliceid, attrib->clientid, attrib->codec, attrib->profile, attrib->width, attrib->height);
 	return (ret > 0 ? 0 : -ENOMEM);
 }
 
@@ -769,6 +770,7 @@ static int hantro_remove_client(struct drm_device *dev, void *data,
 			break;
 		}
 	}
+	trace_client_remove((void *)file_attr, attrib->clientid);
 	mutex_unlock(&dev->struct_mutex);
 	return 0;
 }
@@ -832,6 +834,7 @@ static int hantro_drm_open(struct drm_device *dev, struct drm_file *file)
 {
 	struct file_data *data;
 
+	trace_drm_file_open((void *) dev, (void *) file);
 	data = kzalloc(sizeof(struct file_data), GFP_KERNEL);
 	data->clients = kzalloc(sizeof(struct idr), GFP_KERNEL);
 	data->list = kzalloc(sizeof(struct idr), GFP_KERNEL);
@@ -858,6 +861,7 @@ static void hantro_drm_postclose(struct drm_device *dev, struct drm_file *file)
 	struct hantro_client *client;
 	void *obj;
 
+	trace_drm_file_close((void *)dev, (void *) file);
 	mutex_lock(&dev->struct_mutex);
 	if (priv->list) {
 		idr_for_each_entry(priv->list, obj, id) {
@@ -897,9 +901,10 @@ static int hantro_handle_to_fd(struct drm_device *dev, void *data,
 	struct drm_gem_hantro_object *cma_obj;
 
 	obj = hantro_gem_object_lookup(dev, file_priv, primeargs->handle);
-	if (obj == NULL)
+	if (obj == NULL) {
+		__trace_hantro_err("handle not found!! (handle = %-3d, fd = %-3d,)", primeargs->handle, -1);
 		return -ENOENT;
-
+	}
 	ret = drm_gem_prime_handle_to_fd(dev, file_priv, primeargs->handle,
 					 primeargs->flags, &primeargs->fd);
 
@@ -907,6 +912,7 @@ static int hantro_handle_to_fd(struct drm_device *dev, void *data,
 		cma_obj = to_drm_gem_hantro_obj(obj);
 		cma_obj->flag |= HANTRO_GEM_FLAG_EXPORT;
 	}
+	trace_prime_handle_to_fd(obj, primeargs->handle, primeargs->fd, ret);
 	hantro_unref_drmobj(obj);
 	return ret;
 }
@@ -915,9 +921,11 @@ static int hantro_fd_to_handle(struct drm_device *dev, void *data,
 			       struct drm_file *file_priv)
 {
 	struct drm_prime_handle *primeargs = (struct drm_prime_handle *)data;
-
-	return drm_gem_prime_fd_to_handle(dev, file_priv, primeargs->fd,
+	int ret = 0;
+	ret = drm_gem_prime_fd_to_handle(dev, file_priv, primeargs->fd,
 					  &primeargs->handle);
+	trace_prime_fd_to_handle(primeargs->fd, primeargs->handle, ret);
+	return ret;
 }
 
 static int hantro_fb_create2(struct drm_device *dev, void *data,
@@ -1117,6 +1125,7 @@ static int hantro_getprimeaddr(struct drm_device *dev, void *data,
 	cma_obj = (struct drm_gem_hantro_object *)dma_buf->priv;
 	*input = cma_obj->paddr;
 	dma_buf_put(dma_buf);
+	trace_prime_dmabuf_put((void *)cma_obj->paddr, (void *)dma_buf, fd);
 	return 0;
 }
 
@@ -1583,6 +1592,7 @@ static void hantro_release(struct drm_device *dev)
 
 static void hantro_gem_dmabuf_release(struct dma_buf *dma_buf)
 {
+	trace_prime_drm_dmabuf_release(dma_buf);
 	return drm_gem_dmabuf_release(dma_buf);
 }
 
@@ -1640,6 +1650,7 @@ static struct dma_buf *hantro_prime_export(struct drm_gem_object *obj,
 					   int flags)
 {
 	struct drm_gem_hantro_object *cma_obj;
+	struct dma_buf *dmabuf;
 	struct dma_buf_export_info exp_info = {
 		.exp_name	= KBUILD_MODNAME,
 		.owner		= obj->dev->driver->fops->owner,
@@ -1651,7 +1662,9 @@ static struct dma_buf *hantro_prime_export(struct drm_gem_object *obj,
 	cma_obj = to_drm_gem_hantro_obj(obj);
 	exp_info.resv = &cma_obj->kresv;
 	exp_info.size = cma_obj->num_pages << PAGE_SHIFT;
-	return drm_gem_dmabuf_export(obj->dev, &exp_info);
+	dmabuf = drm_gem_dmabuf_export(obj->dev, &exp_info);
+	trace_prime_dmabuf_export((void *)cma_obj->paddr, cma_obj->handle, (void *)dmabuf);
+	return dmabuf;
 }
 
 static void hantro_close_object(struct drm_gem_object *obj,
@@ -1660,8 +1673,10 @@ static void hantro_close_object(struct drm_gem_object *obj,
 	struct drm_gem_hantro_object *cma_obj;
 
 	cma_obj = to_drm_gem_hantro_obj(obj);
-	if (obj->dma_buf && (cma_obj->flag & HANTRO_GEM_FLAG_EXPORTUSED))
+	if (obj->dma_buf && (cma_obj->flag & HANTRO_GEM_FLAG_EXPORTUSED)) {
 		dma_buf_put(obj->dma_buf);
+		trace_prime_dmabuf_put((void *)cma_obj->paddr, (void *)obj->dma_buf, -1);
+	}
 }
 
 static int hantro_gem_prime_handle_to_fd(struct drm_device *dev,

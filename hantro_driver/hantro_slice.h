@@ -68,6 +68,7 @@ struct cache_dev_t {
 	u32 parentid; /* parent codec core's core_id */
 	void *parentcore; /* either struct hantroenc_t or struct hantrodec_t, or slice itself */
 	void *parentslice;
+	int sliceidx;
 	struct cache_dev_t *next;
 };
 
@@ -120,6 +121,7 @@ struct hantroenc_t {
 	int irqlist[4];
 	char irq_name[4][32];
 	void *parentslice;
+	int sliceidx;
 	struct hantroenc_t *next;
 };
 
@@ -156,11 +158,11 @@ struct hantrodec_t {
 	u32 dec_regs[DEC_IO_SIZE_MAX / 4];
 	int irqlist[4];
 	char irq_name[4][32];
-	u32 sliceidx;
 
 	struct file *dec_owner;
 	struct file *pp_owner;
 	void *parentslice;
+	u32 sliceidx;
 	struct hantrodec_t *next;
 };
 

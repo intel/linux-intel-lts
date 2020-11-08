@@ -471,17 +471,21 @@ static long ReserveDecoder(struct hantrodec_t *dev, struct file *filp,
 	long core = -1;
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
 
+	START_TIME;
 	PDEBUG("hantrodec: ReserveDecoder\n");
 	/* reserve a core */
-	if (down_interruptible(&parentslice->dec_core_sem))
-		return -ERESTARTSYS;
-
+	if (down_interruptible(&parentslice->dec_core_sem)) {
+		core = -ERESTARTSYS;
+		goto out;
+	}
 	/* lock a core that has specific format*/
 	if (wait_event_interruptible(parentslice->hw_queue,
 				     GetDecCoreAny(&core, dev, filp, format) !=
 					     0))
-		return -ERESTARTSYS;
+		core = -ERESTARTSYS;
 
+out:
+	trace_dec_reserve(dev->sliceidx, core, (sched_clock() - start) / 1000);
 	return core;
 }
 
@@ -521,6 +525,7 @@ static void ReleaseDecoder(struct hantrodec_t *dev, long core)
 	up(&parentslice->dec_core_sem);
 
 	wake_up_interruptible_all(&parentslice->hw_queue);
+	trace_dec_release(dev->sliceidx, KCORE(core));
 }
 
 static long ReservePostProcessor(struct hantrodec_t *dev, struct file *filp)

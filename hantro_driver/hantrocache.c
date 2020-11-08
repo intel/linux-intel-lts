@@ -128,15 +128,18 @@ static int GetWorkableCore(struct cache_dev_t *dev, struct file *filp)
 static long ReserveCore(struct cache_dev_t *dev, struct file *filp)
 {
 	struct slice_info *parentslice;
+	int ret = 0;
 
+	START_TIME;
 	parentslice = getparentslice(dev, CORE_CACHE);
 
 	/* lock a core that has specified core id */
 	if (wait_event_interruptible(parentslice->cache_hw_queue,
 				     GetWorkableCore(dev, filp) != 0))
-		return -ERESTARTSYS;
+		ret = -ERESTARTSYS;
 
-	return 0;
+	trace_cache_reserve(dev->sliceidx, (sched_clock() - start) / 1000);
+	return ret;
 }
 
 static void ReleaseCore(struct cache_dev_t *dev)
@@ -156,6 +159,7 @@ static void ReleaseCore(struct cache_dev_t *dev)
 	spin_unlock_irqrestore(&parentslice->cache_owner_lock, flags);
 
 	wake_up_interruptible_all(&parentslice->cache_hw_queue);
+	trace_cache_release(dev->sliceidx);
 }
 
 long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -343,6 +347,7 @@ int cache_probe(dtbnode *pnode)
 	pccore->core_cfg.iosize = pnode->iosize;
 	pccore->core_cfg.client = type;
 	pccore->core_cfg.dir = dir;
+	pccore->sliceidx = pnode->sliceidx;
 
 	result = ReserveIO(pccore);
 	if (result < 0) {

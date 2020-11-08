@@ -155,15 +155,19 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	struct hantro_acquirebuf *arg = data;
 	struct dma_resv *resv;
 	struct drm_gem_object *obj;
+	struct drm_gem_hantro_object *cma_obj;
 	hantro_fence_t *fence = NULL;
 	unsigned long timeout = arg->timeout;
 	unsigned long fenceid = -1;
 	int ret = 0;
 
+	START_TIME;
 	obj = hantro_gem_object_lookup(dev, file_priv, arg->handle);
-	if (!obj)
-		return -ENOENT;
-
+	if (!obj) {
+		ret = -ENOENT;
+		trace_fence_acquirebuf(0x0, arg->handle, -1, 0, ret);
+		return ret;
+	}
 	if (!obj->dma_buf) {
 		if (hantro_dev.drm_dev == obj->dev) {
 			struct drm_gem_hantro_object *hobj =
@@ -202,8 +206,7 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	ret = 0;
 	if (arg->flags & HANTRO_FENCE_WRITE) {
 		dma_resv_add_excl_fence(resv, fence);
-	}
-	else {
+	} else {
 		/*I'm not sure if 1 fence is enough, pass compilation first*/
 		ret = hantro_reserve_obj_shared(resv, 1);
 		if (ret == 0)
@@ -214,8 +217,7 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	/* Record the fence in our idr for later signaling */
 	if (ret == 0) {
 		arg->fence_handle = fenceid;
-		hantro_unref_drmobj(obj);
-		return ret;
+		goto out;
 	}
 err:
 	if (fenceid >= 0) {
@@ -227,6 +229,9 @@ err:
 		hantro_fence_signal(fence);
 		hantro_fence_put(fence);
 	}
+out:
+	cma_obj = (struct drm_gem_hantro_object *)obj;
+	trace_fence_acquirebuf((void *)cma_obj->paddr, arg->handle,  arg->fence_handle, (sched_clock() - start) / 1000, ret);
 	hantro_unref_drmobj(obj);
 	return ret;
 }
@@ -281,6 +286,7 @@ int hantro_releasebuf(struct drm_device *dev, void *data,
 	if (hantro_fence_is_signaled(fence))
 		ret = -ETIMEDOUT;
 
+	trace_fence_releasebuf(arg->fence_handle, ret);
 	hantro_fence_signal(fence);
 	hantro_fence_put(fence);
 	mutex_lock(&fence_mutex);

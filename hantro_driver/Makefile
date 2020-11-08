@@ -7,7 +7,7 @@ hantrodriver-objs = hantro.o hx280enc.o hantrodec.o hantro_fence.o hantrocache.o
 KDIR := /* Path to kernel source */ 
 PWD := $(shell pwd)
 default:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules CFLAGS_hantro.o="-DUSE_CMA=0 -DUSE_HW=1 "
+	$(MAKE) -C $(KDIR) M=$(PWD) modules CFLAGS_hantro.o="-DUSE_CMA=0 -DUSE_HW=1 " CFLAGS_trace.o="-I$(PWD)"
 
 clean::
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
