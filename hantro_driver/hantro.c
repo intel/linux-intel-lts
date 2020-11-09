@@ -49,6 +49,7 @@
 #include <linux/of_irq.h>
 #include <linux/reset.h>
 #include <linux/clk.h>
+#include <linux/delay.h>
 
 #ifdef ENABLE_DEBUG
 #define DBG(...) pr_info(__VA_ARGS__)
@@ -94,6 +95,9 @@ bool enable_irqmode = 1;
 module_param(enable_irqmode, bool, 0);
 MODULE_PARM_DESC(enable_irqmode, "Enable IRQ Mode"
         "(default 1)");
+
+// framecount array to hold data for 4 slices
+int framecount[MAX_SLICES][3];
 
 /* temp no usage now */
 static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
@@ -1896,11 +1900,35 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 	return buf_used;
 }
 
+static ssize_t fps_show(struct device *kdev,
+				      struct device_attribute *attr, char *buf)
+{
+	int sliceidx = findslice_bydev(kdev);
+	int framecount_internal[4][3];
+	u64 start;
+	int buf_size = 0, i = 0, diff;
+
+	if (sliceidx < 0)
+		return 0;
+	memset(framecount, 0, sizeof(framecount)); //reset counter
+	start = sched_clock();
+	// wait for 1 sec
+	msleep(1000);
+	memcpy(framecount_internal, framecount, sizeof(framecount_internal)); //copy snapshot
+	diff = (sched_clock() - start) / 1000000; // diff in ms
+
+	for (i = 0 ; i < 4; i++) {
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "Slice %d:\n\tDecode %-4d fps\n\tEncode %-4d fps\n\n", i,  (framecount_internal[i][NODE_TYPE_DEC] * 1000) / diff, (framecount_internal[i][NODE_TYPE_ENC] * 1000) / diff);
+	}
+	return buf_size;
+}
+
 static DEVICE_ATTR(BWDecRead, 0444, bandwidthDecRead_show, NULL);
 static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
 static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
 static DEVICE_ATTR(BWEncWrite, 0444, bandwidthEncWrite_show, NULL);
 static DEVICE_ATTR(clients, 0444, clients_show, NULL);
+static DEVICE_ATTR(fps, 0444, fps_show, NULL);
 
 static struct attribute *hantro_attrs[] = {
 	&dev_attr_BWDecRead.attr,
@@ -1908,6 +1936,7 @@ static struct attribute *hantro_attrs[] = {
 	&dev_attr_BWEncRead.attr,
 	&dev_attr_BWEncWrite.attr,
 	&dev_attr_clients.attr,
+	&dev_attr_fps.attr,
 	NULL,
 };
 

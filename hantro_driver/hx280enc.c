@@ -44,6 +44,7 @@
 static u32 resource_shared;
 extern bool enable_encode;
 extern bool enable_irqmode;
+extern int framecount[MAX_SLICES][3];
 /*------------------------------------------------------------------------
  *****************************PORTING LAYER********************************
  *-------------------------------------------------------------------------
@@ -279,6 +280,8 @@ static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 							 nodenum) != 0)) {
 		nodenum = 0xffffffff;
 		ret = -ERESTARTSYS;
+	} else {
+		framecount[dev->sliceidx][NODE_TYPE_ENC]++;
 	}
 
 out:

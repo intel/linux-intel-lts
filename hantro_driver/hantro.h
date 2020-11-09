@@ -62,6 +62,7 @@ extern bool verbose;
 /* node type for NODETYPE(id), apply to be expanded */
 #define NODE_TYPE_DEC	1
 #define NODE_TYPE_ENC	2
+#define MAX_SLICES 4
 
 typedef enum {
 	VC8000E,

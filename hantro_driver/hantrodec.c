@@ -78,6 +78,8 @@ static int bdecprobed;
 extern bool verbose;
 extern bool enable_decode;
 extern bool enable_irqmode;
+extern int framecount[MAX_SLICES][3];
+
 #undef PDEBUG
 #define PDEBUG(fmt, arg...)                                                    \
 	do {                                                                   \
@@ -481,9 +483,11 @@ static long ReserveDecoder(struct hantrodec_t *dev, struct file *filp,
 	/* lock a core that has specific format*/
 	if (wait_event_interruptible(parentslice->hw_queue,
 				     GetDecCoreAny(&core, dev, filp, format) !=
-					     0))
+					     0)) {
 		core = -ERESTARTSYS;
-
+    } else {
+        framecount[dev->sliceidx][NODE_TYPE_DEC]++;
+    }
 out:
 	trace_dec_reserve(dev->sliceidx, core, (sched_clock() - start) / 1000);
 	return core;
