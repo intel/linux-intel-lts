@@ -25,6 +25,7 @@
 #define GPY_VSPEC1_SGMII_CTRL	0x8
 #define GPY_VSPEC1_SGMII_STS	0x9
 #define GPY_SGMII_ANEN		BIT(12)		/* Aneg enable */
+#define GPY_SGMII_ANRS		BIT(9)		/* Restart Aneg */
 #define GPY_SGMII_ANOK		BIT(5)		/* Aneg complete */
 #define GPY_SGMII_LS		BIT(2)		/* Link status */
 #define GPY_SGMII_DR_MASK	GENMASK(1, 0)	/* Data rate */
@@ -93,6 +94,7 @@ static int gpy_soft_reset(struct phy_device *phydev)
 static int gpy_config_aneg(struct phy_device *phydev)
 {
 	bool changed = false;
+	u16 retries = 200;
 	u32 adv;
 	int ret;
 
@@ -133,7 +135,69 @@ static int gpy_config_aneg(struct phy_device *phydev)
 			return ret;
 	}
 
-	return genphy_c45_check_and_restart_aneg(phydev, changed);
+	ret = genphy_c45_check_and_restart_aneg(phydev, changed);
+	if (ret < 0)
+		return ret;
+
+	/* 2.5Gbps doesn`t use SGMII AN, so return. */
+	if (MDIO_AN_10GBT_CTRL_ADV2_5G &
+	    linkmode_adv_to_mii_10gbt_adv_t(phydev->advertising))
+		return ret;
+
+	/* NOTE:
+	 * There is a design constraint in Intel GPY where SGMII AN is only
+	 * triggered by GPY FW if there is change of speed. If, PHY link
+	 * partner`s speed is still same even after PHY TPI is down and up
+	 * again, GPY FW wouldn`t retrigger SGMII AN and hence no new in-band
+	 * message from GPY to MAC side SGMII.
+	 * This could cause an issue during power up, when PHY is up prior to
+	 * MAC. At this condition, once MAC side SGMII is up, MAC side SGMII
+	 * wouldn`t receive new in-band message from GPY with correct link
+	 * status, speed and duplex info.
+	 *
+	 * 1) If PHY is already up and TPI link status is still down (such as
+	 *    hard reboot), TPI link status is polled for 4 seconds before
+	 *    retriggerring SGMII AN.
+	 * 2) If PHY is already up and TPI link status is also up (such as soft
+	 *    reboot), polling of TPI link status is not needed and SGMII AN is
+	 *    immediately retriggered.
+	 * 3) Other conditions such as PHY is down, speed change etc, skip
+	 *    retriggering SGMII AN. Note: in case of speed change, GPY FW will
+	 *    initiate SGMII AN.
+	 */
+
+	if (phydev->state != PHY_UP)
+		return ret;
+
+	ret = phy_read(phydev, MII_BMSR);
+	if (ret < 0)
+		return ret;
+
+	/* Check TPI link status */
+	if (!(ret & BMSR_LSTATUS)) {
+		/* Poll up to 4 seconds (200 * 20ms) */
+		do {
+			ret = phy_read(phydev, MII_BMSR);
+			if (ret & BMSR_LSTATUS)
+				break;
+			msleep(20);
+		} while (--retries);
+
+		if (!retries)
+			return ret;
+	}
+
+	/* Trigger SGMII AN.
+	 * TODO: Register 30.8[9] is not self-cleared. Need to reverify with
+	 * official GPY FW.
+	 */
+	ret = phy_read_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL);
+	if (ret < 0)
+		return ret;
+	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL,
+			    ret | GPY_SGMII_ANRS);
+
+	return ret;
 }
 
 static int gpy_ack_interrupt(struct phy_device *phydev)
