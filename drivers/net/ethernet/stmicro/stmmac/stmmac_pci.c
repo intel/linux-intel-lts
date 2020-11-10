@@ -23,6 +23,11 @@
 #define CPU_STEPPING	boot_cpu_data.x86_stepping
 #endif
 
+/* EHL SoC revision ID */
+#define EHL_PCI_PCH_A0	0x00
+#define EHL_PCI_PCH_A1	0x01
+#define EHL_PCI_PCH_B0	0x10
+
 /*
  * This struct is used to associate PCI Function of MAC controller on a board,
  * discovered via DMI, with the address of PHY connected to the MAC. The
@@ -64,36 +69,6 @@ static int stmmac_pci_find_phy_addr(struct pci_dev *pdev,
 			return func_data->phy_addr;
 
 	return -ENODEV;
-}
-
-static void ehl_sgmii_path_latency_data(struct plat_stmmacenet_data *plat)
-{
-	/* SGMII TX and RX PHY latency (ns) */
-	plat->phy_tx_latency_10 = 5385;
-	plat->phy_tx_latency_100 = 666;
-	plat->phy_tx_latency_1000 = 219;
-	plat->phy_rx_latency_10 = 5902;
-	plat->phy_rx_latency_100 = 821;
-	plat->phy_rx_latency_1000 = 343;
-
-	/* xPCS TX and RX latency (ns) */
-	plat->xpcs_tx_latency_10 = 856;
-	plat->xpcs_tx_latency_100 = 136;
-	plat->xpcs_tx_latency_1000 = 56;
-	plat->xpcs_rx_latency_10 = 7084;
-	plat->xpcs_rx_latency_100 = 784;
-	plat->xpcs_rx_latency_1000 = 160;
-}
-
-static void ehl_rgmii_path_latency_data(struct plat_stmmacenet_data *plat)
-{
-	/* RGMII TX and RX PHY latency (ns) */
-	plat->phy_tx_latency_10 = 6066;
-	plat->phy_tx_latency_100 = 656;
-	plat->phy_tx_latency_1000 = 224;
-	plat->phy_rx_latency_10 = 2130;
-	plat->phy_rx_latency_100 = 362;
-	plat->phy_rx_latency_1000 = 231;
 }
 
 static void common_default_data(struct plat_stmmacenet_data *plat)
@@ -350,12 +325,14 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 			  struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
-	ehl_sgmii_path_latency_data(plat);
 
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 204860000;
 
-	plat->dma_cfg->pch_intr_wa = 1;
+	if (pdev->revision == EHL_PCI_PCH_A0 ||
+	    pdev->revision == EHL_PCI_PCH_A1 ||
+	    pdev->revision == EHL_PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -368,12 +345,14 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 			  struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII;
-	ehl_rgmii_path_latency_data(plat);
 
 	/* Set PTP clock rate for EHL as 200MHz */
 	plat->clk_ptp_rate = 200000000;
 
-	plat->dma_cfg->pch_intr_wa = 1;
+	if (pdev->revision == EHL_PCI_PCH_A0 ||
+	    pdev->revision == EHL_PCI_PCH_A1 ||
+	    pdev->revision == EHL_PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -448,8 +427,6 @@ static int ehl_pse0_rgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII_ID;
-	ehl_rgmii_path_latency_data(plat);
-
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -461,8 +438,6 @@ static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
-	ehl_sgmii_path_latency_data(plat);
-
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -513,8 +488,6 @@ static int ehl_pse1_rgmii1g_data(struct pci_dev *pdev,
 {
 	plat->pdev = pdev;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII_ID;
-	ehl_rgmii_path_latency_data(plat);
-
 	return ehl_pse1_common_data(pdev, plat);
 }
 
@@ -526,8 +499,6 @@ static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
-	ehl_sgmii_path_latency_data(plat);
-
 	return ehl_pse1_common_data(pdev, plat);
 }
 
@@ -544,16 +515,6 @@ static int tgl_common_data(struct pci_dev *pdev,
 	plat->tx_queues_to_use = 4;
 	/* Maximum TX XDP queue */
 	plat->max_combined = 2;
-
-	/* TX and RX Marvell 88E2110 PHY latency (ns) */
-	plat->phy_tx_latency_10 = 6652;
-	plat->phy_tx_latency_100 = 1152;
-	plat->phy_tx_latency_1000 = 297;
-	plat->phy_tx_latency_2500 = 2772;
-	plat->phy_rx_latency_10 = 12490;
-	plat->phy_rx_latency_100 = 1472;
-	plat->phy_rx_latency_1000 = 405;
-	plat->phy_rx_latency_2500 = 2638;
 
 	plat->clk_ptp_rate = 200000000;
 	ret = intel_mgbe_common_data(pdev, plat);

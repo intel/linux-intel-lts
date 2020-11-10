@@ -475,25 +475,6 @@ void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 	}
 
 	if (found) {
-		switch (priv->speed) {
-		case SPEED_10:
-			adjust += priv->plat->phy_tx_latency_10;
-			adjust += priv->plat->xpcs_tx_latency_10;
-			break;
-		case SPEED_100:
-			adjust += priv->plat->phy_tx_latency_100;
-			adjust += priv->plat->xpcs_tx_latency_100;
-			break;
-		case SPEED_1000:
-			adjust += priv->plat->phy_tx_latency_1000;
-			adjust += priv->plat->xpcs_tx_latency_1000;
-			break;
-		case SPEED_2500:
-			adjust += priv->plat->phy_tx_latency_2500;
-			adjust += priv->plat->xpcs_tx_latency_2500;
-			break;
-		}
-
 		/* Correct the clk domain crossing CDC error */
 		adjust += -(2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate));
 
@@ -536,25 +517,6 @@ void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 	/* Check if timestamp is available */
 	if (stmmac_get_rx_timestamp_status(priv, p, np, priv->adv_ts)) {
 		stmmac_get_timestamp(priv, desc, priv->adv_ts, &ns);
-
-		switch (priv->speed) {
-		case SPEED_10:
-			adjust += priv->plat->phy_rx_latency_10;
-			adjust += priv->plat->xpcs_rx_latency_10;
-			break;
-		case SPEED_100:
-			adjust += priv->plat->phy_rx_latency_100;
-			adjust += priv->plat->xpcs_rx_latency_100;
-			break;
-		case SPEED_1000:
-			adjust += priv->plat->phy_rx_latency_1000;
-			adjust += priv->plat->xpcs_rx_latency_1000;
-			break;
-		case SPEED_2500:
-			adjust += priv->plat->phy_rx_latency_2500;
-			adjust += priv->plat->xpcs_rx_latency_2500;
-			break;
-		}
 
 		/* Correct the clk domain crossing CDC error */
 		adjust += 2 * (NSEC_PER_SEC / priv->plat->clk_ptp_rate);
@@ -3298,25 +3260,25 @@ static void stmmac_free_irq(struct net_device *dev,
 			if (priv->rx_irq[j] > 0)
 				free_irq(priv->rx_irq[j], &priv->rx_queue[j]);
 		}
+	case REQ_IRQ_ERR_SFTY_UE:
 		if (priv->sfty_ue_irq > 0 && priv->sfty_ue_irq != dev->irq)
 			free_irq(priv->sfty_ue_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_SFTY_UE:
+	case REQ_IRQ_ERR_SFTY_CE:
 		if (priv->sfty_ce_irq > 0 && priv->sfty_ce_irq != dev->irq)
 			free_irq(priv->sfty_ce_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_SFTY_CE:
+	case REQ_IRQ_ERR_LPI:
 		if (priv->lpi_irq > 0 && priv->lpi_irq != dev->irq)
 			free_irq(priv->lpi_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_LPI:
+	case REQ_IRQ_ERR_WOL:
 		if (priv->wol_irq > 0 && priv->wol_irq != dev->irq)
 			free_irq(priv->wol_irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_WOL:
+	case REQ_IRQ_ERR_MAC:
 		free_irq(dev->irq, dev);
 		/* fall through */
-	case REQ_IRQ_ERR_MAC:
 	case REQ_IRQ_ERR_NO:
 		/* If MAC IRQ request error, no more IRQ to free */
 		break;

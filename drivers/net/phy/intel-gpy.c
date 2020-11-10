@@ -117,6 +117,25 @@ static int gpy_config_aneg(struct phy_device *phydev)
 	if (ret > 0)
 		changed = true;
 
+	/* Cisco SGMII specification 1.8 specify that SGMI auto negotiation
+	 * supports speed of 10/100/1000Mbps. So, for 2.5Gbps, SGMI auto
+	 * negotiation should be disabled.
+	 */
+	if (MDIO_AN_10GBT_CTRL_ADV2_5G &
+	    linkmode_adv_to_mii_10gbt_adv_t(phydev->advertising)) {
+		ret = phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+					     GPY_VSPEC1_SGMII_CTRL,
+					     GPY_SGMII_ANEN, 0);
+		if (ret < 0)
+			return ret;
+	} else {
+		ret = phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+					     GPY_VSPEC1_SGMII_CTRL,
+					     GPY_SGMII_ANEN, GPY_SGMII_ANEN);
+		if (ret < 0)
+			return ret;
+	}
+
 	return changed ? genphy_restart_aneg(phydev) : 0;
 }
 
@@ -257,6 +276,12 @@ static int gpy_set_wol(struct phy_device *phydev,
 		if (ret < 0)
 			return ret;
 
+		/* Clear the interrupt status register */
+		ret = phy_read(phydev, GPY_ISTAT);
+
+		if (ret < 0)
+			return ret;
+
 	} else {
 		/* Disable magic packet matching */
 		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2,
@@ -276,6 +301,9 @@ static int gpy_set_wol(struct phy_device *phydev,
 
 		/* Clear the interrupt status register */
 		ret = phy_read(phydev, GPY_ISTAT);
+
+		if (ret < 0)
+			return ret;
 	} else {
 		/* Disable the link state change interrupt */
 		ret = phy_clear_bits(phydev, GPY_IMASK, GPY_INTR_LSTC);
@@ -304,21 +332,6 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.set_loopback	= genphy_loopback,
 		.get_wol	= gpy_get_wol,
 		.set_wol	= gpy_set_wol,
-		/* @TODO:
-		 * 1. latencies are not symmetrical, we need to update these
-		 *    values after getting correct values from CHD.
-		 * 2. Need to add latencies for GPY115.
-		 */
-		.latencies	= {
-					.tx_latency_2500 = 1772,
-					.tx_latency_1000 = 903,
-					.tx_latency_100	 = 5084,
-					.tx_latency_10	 = 45895,
-					.rx_latency_2500 = 1772,
-					.rx_latency_1000 = 903,
-					.rx_latency_100	 = 5084,
-					.rx_latency_10	 = 45895,
-				  },
 	},
 };
 module_phy_driver(intel_gpy_drivers);
