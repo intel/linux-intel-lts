@@ -3545,6 +3545,8 @@ static int igc_sw_init(struct igc_adapter *adapter)
 	adapter->min_frame_size = ETH_ZLEN + ETH_FCS_LEN;
 
 	mutex_init(&adapter->nfc_rule_lock);
+	mutex_init(&adapter->ptm_time_lock);
+
 	INIT_LIST_HEAD(&adapter->nfc_rule_list);
 	adapter->nfc_rule_count = 0;
 

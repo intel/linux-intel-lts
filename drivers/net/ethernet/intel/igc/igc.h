@@ -13,6 +13,7 @@
 #include <linux/ptp_clock_kernel.h>
 #include <linux/timecounter.h>
 #include <linux/net_tstamp.h>
+#include <linux/timekeeping.h>
 
 #include "igc_hw.h"
 
@@ -217,6 +218,12 @@ struct igc_adapter {
 	struct timecounter tc;
 	struct timespec64 prev_ptp_time; /* Pre-reset PTP clock */
 	ktime_t ptp_reset_start; /* Reset time in clock mono */
+	struct system_time_snapshot prev_snapshot;
+	struct system_time_snapshot curr_snapshot;
+	struct delayed_work ptm_report;
+	struct mutex ptm_time_lock; /* protects host and device timestamps */
+	ktime_t ptm_device_time;
+	struct system_counterval_t ptm_host_time;
 };
 
 void igc_up(struct igc_adapter *adapter);
