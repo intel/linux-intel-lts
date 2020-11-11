@@ -78,7 +78,6 @@ static int bdecprobed;
 extern bool verbose;
 extern bool enable_decode;
 extern bool enable_irqmode;
-extern int framecount[MAX_SLICES][3];
 
 #undef PDEBUG
 #define PDEBUG(fmt, arg...)                                                    \
@@ -486,7 +485,7 @@ static long ReserveDecoder(struct hantrodec_t *dev, struct file *filp,
 					     0)) {
 		core = -ERESTARTSYS;
     } else {
-        framecount[dev->sliceidx][NODE_TYPE_DEC]++;
+        perfdata[dev->sliceidx][NODE_TYPE_DEC][core].last_resv = sched_clock();
     }
 out:
 	trace_dec_reserve(dev->sliceidx, core, (sched_clock() - start) / 1000);
@@ -499,7 +498,10 @@ static void ReleaseDecoder(struct hantrodec_t *dev, long core)
 	unsigned long flags;
 	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
 
-	PDEBUG("hantrodec: ReleaseDecoder\n");
+    PDEBUG("hantrodec: ReleaseDecoder\n");
+    perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].count++;
+    perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].totaltime +=
+                (sched_clock() - (perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].last_resv == 0 ? sched_clock() : perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].last_resv));
 	status = ioread32((void *)(dev->hwregs + HANTRODEC_IRQ_STAT_DEC_OFF));
 
 	/* make sure HW is disabled */

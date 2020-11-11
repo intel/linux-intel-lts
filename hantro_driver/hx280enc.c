@@ -44,7 +44,6 @@
 static u32 resource_shared;
 extern bool enable_encode;
 extern bool enable_irqmode;
-extern int framecount[MAX_SLICES][3];
 /*------------------------------------------------------------------------
  *****************************PORTING LAYER********************************
  *-------------------------------------------------------------------------
@@ -281,7 +280,7 @@ static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 		nodenum = 0xffffffff;
 		ret = -ERESTARTSYS;
 	} else {
-		framecount[dev->sliceidx][NODE_TYPE_ENC]++;
+		perfdata[dev->sliceidx][NODE_TYPE_ENC][KCORE((*core_info))].last_resv = sched_clock();
 	}
 
 out:
@@ -296,6 +295,11 @@ static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 	u32 i = 0, core_id;
 	u8 core_mapping = 0;
 	struct slice_info *parentslice = getparentslice(dev, CORE_ENC);
+
+	core_id = KCORE((*core_info));
+	perfdata[dev->sliceidx][NODE_TYPE_ENC][core_id].count++;
+    	perfdata[dev->sliceidx][NODE_TYPE_ENC][core_id].totaltime +=
+		 (sched_clock() - (perfdata[dev->sliceidx][NODE_TYPE_ENC][core_id].last_resv == 0 ? sched_clock() : perfdata[dev->sliceidx][NODE_TYPE_ENC][core_id].last_resv));
 
 	core_num = ((*core_info >> CORE_INFO_AMOUNT_OFFSET) & 0x7) + 1;
 

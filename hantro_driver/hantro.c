@@ -96,8 +96,7 @@ module_param(enable_irqmode, bool, 0);
 MODULE_PARM_DESC(enable_irqmode, "Enable IRQ Mode"
         "(default 1)");
 
-// framecount array to hold data for 4 slices
-int framecount[MAX_SLICES][3];
+struct performance_data perfdata[MAX_SLICES][NODE_TYPES + 1][MAX_CORES];
 
 /* temp no usage now */
 static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
@@ -1912,25 +1911,50 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 	return buf_used;
 }
 
-static ssize_t fps_show(struct device *kdev,
-				      struct device_attribute *attr, char *buf)
+static ssize_t fps_show(struct device *kdev, struct device_attribute *attr, char *buf)
 {
 	int sliceidx = findslice_bydev(kdev);
-	int framecount_internal[4][3];
-	u64 start;
-	int buf_size = 0, i = 0, diff;
+	struct performance_data perfdata_internal[MAX_SLICES][NODE_TYPES + 1][MAX_CORES];
+	int buf_size = 0, i = 0, j = 0, diff;
+	int core_fps[MAX_CORES];
+	u64 start, totaltime[MAX_CORES];
 
 	if (sliceidx < 0)
 		return 0;
-	memset(framecount, 0, sizeof(framecount)); //reset counter
+	for (i = 0; i < MAX_SLICES; i++) {
+		for (j = 0; j < MAX_CORES; j++) {
+			perfdata[i][NODE_TYPE_DEC][j].count = 0;
+			perfdata[i][NODE_TYPE_DEC][j].totaltime = 0;
+			perfdata[i][NODE_TYPE_ENC][j].count = 0;
+			perfdata[i][NODE_TYPE_ENC][j].totaltime = 0;
+		}
+	}
 	start = sched_clock();
 	// wait for 1 sec
 	msleep(1000);
-	memcpy(framecount_internal, framecount, sizeof(framecount_internal)); //copy snapshot
+	memcpy(perfdata_internal, perfdata, sizeof(perfdata_internal)); //copy snapshot
 	diff = (sched_clock() - start) / 1000000; // diff in ms
 
-	for (i = 0 ; i < 4; i++) {
-		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "Slice %d:\n\tDecode %-4d fps\n\tEncode %-4d fps\n\n", i,  (framecount_internal[i][NODE_TYPE_DEC] * 1000) / diff, (framecount_internal[i][NODE_TYPE_ENC] * 1000) / diff);
+	for (i = 0 ; i < MAX_SLICES; i++) {
+		// calculate decode fps
+		core_fps[0] = (perfdata_internal[i][NODE_TYPE_DEC][0].count * 1000) / (diff == 0 ? 1 : diff);
+		core_fps[1] = (perfdata_internal[i][NODE_TYPE_DEC][1].count * 1000) / (diff == 0 ? 1 : diff);
+		// calculate decode core busy time
+		totaltime[0] = perfdata_internal[i][NODE_TYPE_DEC][0].totaltime / 1000000;
+		totaltime[1] = perfdata_internal[i][NODE_TYPE_DEC][1].totaltime / 1000000;
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "Slice %d:\n", i);
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "\tDecode %4d fps \n", core_fps[0] + core_fps[1]);
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "\t\tCore [0] %4d fps (%lld%%)\n", core_fps[0], (totaltime[0] * 100) / diff);
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "\t\tCore [1] %4d fps (%lld%%)\n\n", core_fps[1], (totaltime[1] * 100) / diff);
+		//calculate encode fps
+		core_fps[0] = (perfdata_internal[i][NODE_TYPE_ENC][1].count * 1000) / (diff == 0 ? 1 : diff);
+		core_fps[1] = (perfdata_internal[i][NODE_TYPE_ENC][2].count * 1000) / (diff == 0 ? 1 : diff);
+		//calculate encode core busy time
+		totaltime[0] = perfdata_internal[i][NODE_TYPE_ENC][1].totaltime / 1000000;
+		totaltime[1] = perfdata_internal[i][NODE_TYPE_ENC][2].totaltime / 1000000;
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "\tEncode %4d fps \n", core_fps[0] + core_fps[1]);
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "\t\tCore [0] %4d fps (%lld%%)\n", core_fps[0], (totaltime[0] * 100) / diff);
+		buf_size += snprintf(buf + buf_size, PAGE_SIZE, "\t\tCore [1] %4d fps (%lld%%)\n\n", core_fps[1], (totaltime[1] * 100) / diff);
 	}
 	return buf_size;
 }

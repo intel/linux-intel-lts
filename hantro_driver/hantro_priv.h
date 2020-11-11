@@ -39,6 +39,19 @@
 #define NODENAME_CACHE		"cache"
 #define NODENAME_DEC400		"dec400"
 
+#define MAX_SLICES 4
+#define NODE_TYPES 2  //encoder & decoder
+#define MAX_CORES 4   // max core per slice
+
+// framecount array to hold data for 4 slices
+typedef struct performance_data {
+        int count;
+        u64 last_resv;
+        u64 totaltime;
+} performance_data;
+
+extern struct performance_data perfdata[MAX_SLICES][NODE_TYPES + 1][MAX_CORES];
+
 typedef struct dtbnode {
 	struct device_node *ofnode;
 	int type;
