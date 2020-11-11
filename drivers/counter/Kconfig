@@ -82,9 +82,9 @@ config MICROCHIP_TCB_CAPTURE
 	  module will be called microchip-tcb-capture.
 
 config INTEL_QEP
-	tristate "Intel Quadrature Encoder"
+	tristate "Intel Quadrature Encoder Peripheral driver"
 	depends on PCI
 	help
-	  Support for Intel Quadrature Encoder Devices
+	  Support for Intel Quadrature Encoder Peripheral driver.
 
 endif # COUNTER

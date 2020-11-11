@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Intel Quadrature Encoder Driver
+ * Intel Quadrature Encoder Peripheral driver
  *
  * Copyright (C) 2019-2020 Intel Corporation
  *
@@ -809,4 +809,4 @@ MODULE_AUTHOR("Felipe Balbi (Intel)");
 MODULE_AUTHOR("Jarkko Nikula <jarkko.nikula@linux.intel.com>");
 MODULE_AUTHOR("Raymond Tan <raymond.tan@intel.com>");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Intel Quadrature Encoder Driver");
+MODULE_DESCRIPTION("Intel Quadrature Encoder Peripheral driver");
