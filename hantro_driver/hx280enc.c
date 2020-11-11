@@ -285,7 +285,7 @@ static long ReserveEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 	}
 
 out:
-	trace_enc_reserve(dev->sliceidx, nodenum, (sched_clock() - start) / 1000);
+	trace_enc_reserve(dev->sliceidx, KCORE((*core_info)), (sched_clock() - start) / 1000);
 	return ret;
 }
 
@@ -330,7 +330,7 @@ static void ReleaseEncoder(struct hantroenc_t *dev, u32 *core_info, u32 nodenum)
 
 	if (resource_shared)
 		up(&parentslice->enc_core_sem);
-	trace_enc_release(dev->sliceidx, nodenum);
+	trace_enc_release(dev->sliceidx, KCORE((*core_info)));
 }
 
 long hantroenc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)

@@ -3,7 +3,7 @@
 #export CROSS_COMPILE=aarch64-linux-gnu-
 
 obj-m := hantrodriver.o
-hantrodriver-objs = hantro.o hx280enc.o hantrodec.o hantro_fence.o hantrocache.o hantrodec400.o slicemgr.o
+hantrodriver-objs = hantro.o hx280enc.o hantrodec.o hantro_fence.o hantrocache.o hantrodec400.o slicemgr.o trace.o
 KDIR := /* Path to kernel source */ 
 PWD := $(shell pwd)
 default:

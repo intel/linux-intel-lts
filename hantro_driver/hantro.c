@@ -268,6 +268,7 @@ out:
 
 		get_allocation_status(cma_obj->memdev, sliceidx, buf);
 		pr_info("Slice %d out of memory\n%s", sliceidx, buf);
+		__trace_hantro_err("Slice %d out of memory; region = %d", sliceidx, region);
 		kfree(buf);
 	}
 
@@ -340,6 +341,7 @@ static int hantro_release_dumb(struct drm_device *dev,
 
 	if (cma_obj->flag & HANTRO_GEM_FLAG_EXPORT) {
 		drm_gem_handle_delete(file_priv, cma_obj->handle);
+		__trace_hantro_msg("deleting exported handle %d", cma_obj->handle);
 		trace_gem_handle_delete(cma_obj->handle);
 		hantro_unref_drmobj(obj);
 		return 0;
@@ -436,6 +438,7 @@ static int hantro_mmap(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_pgoff = 0;
 	if (dma_mmap_coherent(dev, vma, cma_obj->vaddr, cma_obj->paddr,
 			      page_num << PAGE_SHIFT)) {
+		__trace_hantro_err("unable to map memory; paddr = %p, handle = %d", cma_obj->paddr, cma_obj->handle);
 		mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
 		return -EAGAIN;
 	}
@@ -545,6 +548,7 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 		}
 	}
 	if (drm_gem_object_init(dev, obj, attach->dmabuf->size) != 0) {
+		__trace_hantro_err("import sg table failed");
 		kfree(cma_obj);
 		return ERR_PTR(-ENOMEM);
 	}
@@ -864,12 +868,17 @@ static void hantro_drm_postclose(struct drm_device *dev, struct drm_file *file)
 	struct file_data *priv = (struct file_data *)file->driver_priv;
 	struct hantro_client *client;
 	void *obj;
+	int printonce = 1;
 
 	trace_drm_file_close((void *)dev, (void *) file);
 	mutex_lock(&dev->struct_mutex);
 	if (priv->list) {
 		idr_for_each_entry(priv->list, obj, id) {
 			if (obj) {
+				if (printonce) {
+					__trace_hantro_err("memory leak detected");
+					printonce = 0;
+				}
 				hantro_release_dumb(dev, file, obj);
 				idr_remove(priv->list, id);
 			}
@@ -1687,7 +1696,10 @@ static int hantro_gem_prime_handle_to_fd(struct drm_device *dev,
 					 struct drm_file *filp, uint32_t handle,
 					 uint32_t flags, int *prime_fd)
 {
-	return drm_gem_prime_handle_to_fd(dev, filp, handle, flags, prime_fd);
+	int ret;
+	ret = drm_gem_prime_handle_to_fd(dev, filp, handle, flags, prime_fd);
+	trace_prime_handle_to_fd(NULL, handle, *prime_fd, ret);
+	return ret;
 }
 
 static const struct vm_operations_struct hantro_drm_gem_cma_vm_ops = {
@@ -2443,7 +2455,6 @@ static int hantro_drm_remove(struct platform_device *pdev)
 	hantro_clock_control(pdev, false);
         class_compat_remove_link(media_class, &pdev->dev,
 		pdev->dev.parent);
-
 
 	return 0;
 }
