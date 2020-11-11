@@ -769,7 +769,7 @@ static void intel_qep_remove(struct pci_dev *pci)
 	counter_unregister(&qep->counter);
 }
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 static int intel_qep_resume(struct device *dev)
 {
 	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
@@ -781,22 +781,7 @@ static int intel_qep_resume(struct device *dev)
 }
 #endif
 
-#ifdef CONFIG_PM
-static int intel_qep_runtime_resume(struct device *dev)
-{
-	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
-	struct intel_qep *qep = pci_get_drvdata(pdev);
-
-	intel_qep_init(qep, false);
-
-	return 0;
-}
-#endif
-
-static const struct dev_pm_ops intel_qep_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(NULL, intel_qep_resume)
-	SET_RUNTIME_PM_OPS(NULL, intel_qep_runtime_resume, NULL)
-};
+static UNIVERSAL_DEV_PM_OPS(intel_qep_pm_ops, NULL, intel_qep_resume, NULL);
 
 static const struct pci_device_id intel_qep_id_table[] = {
 	/* EHL */
