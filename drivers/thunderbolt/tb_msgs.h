@@ -498,8 +498,8 @@ struct icm_usb4_switch_op {
 
 struct icm_usb4_switch_op_response {
 	struct icm_pkg_header hdr;
-	u32 route_hi;
 	u32 route_lo;
+	u32 route_hi;
 	u32 metadata;
 	u16 opcode;
 	u16 status;
