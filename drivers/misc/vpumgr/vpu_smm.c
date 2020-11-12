@@ -63,7 +63,6 @@ struct vpusmm_impbuf {
 static void vpusmm_insert_impbuf(struct vpumgr_smm *sess,
 				 struct vpusmm_impbuf *new_item)
 {
-	struct device *dev = sess->vdev->sdev;
 	struct rb_root *root = &sess->imp_rb;
 	struct rb_node **iter = &root->rb_node, *parent = NULL;
 	struct dma_buf *value = new_item->dmabuf;
@@ -72,9 +71,6 @@ static void vpusmm_insert_impbuf(struct vpumgr_smm *sess,
 	while (*iter) {
 		parent = *iter;
 		item = rb_entry(parent, struct vpusmm_impbuf, node);
-
-		if (item->dmabuf == value)
-			dev_err(dev, " %s error: insert exist dmabuf!\n", __func__);
 
 		if (item->dmabuf > value)
 			iter = &(*iter)->rb_left;
@@ -260,7 +256,6 @@ static int mmap_vpusmm(struct dma_buf *dmabuf, struct vm_area_struct *vma)
 {
 	struct vpusmm_buffer *buff = dmabuf->priv;
 	unsigned long vm_size;
-	int rc;
 
 	vm_size = vma->vm_end - vma->vm_start;
 	if (vm_size > PAGE_ALIGN(buff->size))
@@ -269,12 +264,8 @@ static int mmap_vpusmm(struct dma_buf *dmabuf, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_IO | VM_DONTEXPAND | VM_DONTDUMP;
 	vma->vm_pgoff = 0;
 
-	rc = dma_mmap_attrs(buff->dev, vma, buff->cookie, buff->dma_addr,
+	return dma_mmap_attrs(buff->dev, vma, buff->cookie, buff->dma_addr,
 			    buff->size, buff->dma_attrs);
-	if (rc < 0)
-		return rc;
-
-	return 0;
 }
 
 static void *vmap_vpusmm(struct dma_buf *dmabuf)
@@ -299,7 +290,7 @@ static const struct dma_buf_ops vpusmm_dmabuf_ops =  {
  * sess will hold additional refcount to the dmabuf
  * on request of passing it to VPU side for processing
  */
-long smm_alloc(struct vpumgr_smm *sess, struct vpumgr_args_alloc *arg)
+int smm_alloc(struct vpumgr_smm *sess, struct vpumgr_args_alloc *arg)
 {
 	struct vpumgr_device *vdev = sess->vdev;
 	const int flags = O_RDWR | O_CLOEXEC;
@@ -369,7 +360,7 @@ failed:
 	return retval;
 }
 
-long smm_import(struct vpumgr_smm *sess, struct vpumgr_args_import *arg)
+int smm_import(struct vpumgr_smm *sess, struct vpumgr_args_import *arg)
 {
 	struct device *dev = sess->vdev->sdev;
 	enum dma_data_direction direction;
@@ -400,10 +391,11 @@ long smm_import(struct vpumgr_smm *sess, struct vpumgr_args_import *arg)
 	return 0;
 }
 
-long smm_unimport(struct vpumgr_smm *sess, int *p_dmabuf_fd)
+int smm_unimport(struct vpumgr_smm *sess, int *p_dmabuf_fd)
 {
-	struct vpusmm_impbuf *item = NULL;
+	struct vpusmm_impbuf *item;
 	struct dma_buf *dmabuf;
+	int rc = 0;
 
 	dmabuf = dma_buf_get(*p_dmabuf_fd);
 	if (IS_ERR(dmabuf))
@@ -411,23 +403,26 @@ long smm_unimport(struct vpumgr_smm *sess, int *p_dmabuf_fd)
 
 	mutex_lock(&sess->imp_rb_lock);
 	item = vpusmm_find_impbuf(sess, dmabuf);
-	if (item) {
-		item->refcount--;
-		if (item->refcount <= 0) {
-			rb_erase(&item->node, &sess->imp_rb);
-			dma_buf_unmap_attachment(item->attach, item->sgt, item->direction);
-			dma_buf_detach(item->dmabuf, item->attach);
-			dma_buf_put(item->dmabuf);
-			kfree(item);
-		}
+	if (!item) {
+		rc = -EINVAL;
+		goto exit;
 	}
-	mutex_unlock(&sess->imp_rb_lock);
 
+	item->refcount--;
+	if (item->refcount <= 0) {
+		rb_erase(&item->node, &sess->imp_rb);
+		dma_buf_unmap_attachment(item->attach, item->sgt, item->direction);
+		dma_buf_detach(item->dmabuf, item->attach);
+		dma_buf_put(item->dmabuf);
+		kfree(item);
+	}
+exit:
+	mutex_unlock(&sess->imp_rb_lock);
 	dma_buf_put(dmabuf);
-	return 0;
+	return rc;
 }
 
-long smm_ptr2vpu(struct vpumgr_smm *sess, unsigned long *arg)
+int smm_ptr2vpu(struct vpumgr_smm *sess, unsigned long *arg)
 {
 	struct device *dev = sess->vdev->sdev;
 	struct task_struct *task = current;

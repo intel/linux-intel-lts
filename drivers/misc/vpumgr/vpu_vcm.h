@@ -15,7 +15,7 @@ struct vpumgr_device;
 #define VCTX_MSG_REPLY              3
 
 /* Maximal payload size supported for request or reply */
-#define VCM_PAYLOAD_SIZE            8180
+#define VCM_PAYLOAD_SIZE            (8192 - 5 * sizeof(u32))
 
 /**
  * struct vcm_msg: VPU context manager message

@@ -20,10 +20,10 @@ int smm_fini(struct vpumgr_device *vdev);
 int smm_open(struct vpumgr_smm *sess, struct vpumgr_device *vdev);
 int smm_close(struct vpumgr_smm *sess);
 
-long smm_alloc(struct vpumgr_smm *sess, struct vpumgr_args_alloc *arg);
-long smm_import(struct vpumgr_smm *sess, struct vpumgr_args_import *arg);
-long smm_unimport(struct vpumgr_smm *sess, int *p_dmabuf_fd);
-long smm_ptr2vpu(struct vpumgr_smm *sess, unsigned long *arg);
+int smm_alloc(struct vpumgr_smm *sess, struct vpumgr_args_alloc *arg);
+int smm_import(struct vpumgr_smm *sess, struct vpumgr_args_import *arg);
+int smm_unimport(struct vpumgr_smm *sess, int *p_dmabuf_fd);
+int smm_ptr2vpu(struct vpumgr_smm *sess, unsigned long *arg);
 
 int smm_debugfs_stats_show(struct seq_file *file, struct vpumgr_smm *sess);
 

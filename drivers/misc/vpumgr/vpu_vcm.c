@@ -21,7 +21,7 @@
 #define VCM_XLINK_CHANNEL           1
 #define VCM_XLINK_CHAN_SIZE         128
 
-static const int msg_header_size = (uintptr_t)(&((struct vcm_msg *)(0))->payload.data);
+static const int msg_header_size = offsetof(struct vcm_msg, payload.data);
 
 struct vpu_cmd {
 	struct work_struct work;
@@ -35,6 +35,7 @@ struct vpu_cmd {
 
 static int vcm_vpu_link_init(struct vcm_dev *pvcm)
 {
+	struct vpumgr_device *vdev = container_of(pvcm, struct vpumgr_device, vcm);
 	enum xlink_error rc;
 
 	pvcm->ipc_xlink_handle.dev_type = VPUIP_DEVICE;
@@ -57,55 +58,89 @@ static int vcm_vpu_link_init(struct vcm_dev *pvcm)
 
 	rc = 0;
 exit:
-	pr_info("%s: rc = %d\n", __func__, rc);
-	return rc != X_LINK_SUCCESS;
+	dev_info(vdev->dev, "%s: rc = %d\n", __func__, rc);
+	return -(int)rc;
 }
 
 static int vcm_vpu_link_fini(struct vcm_dev *pvcm)
 {
-	enum xlink_error rc;
-
-	rc = xlink_close_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL);
-	if (rc)
-		goto exit;
-
-	rc = xlink_disconnect(&pvcm->ipc_xlink_handle);
-	if (rc)
-		goto exit;
-exit:
-	pr_info("%s: rc = %d\n", __func__, rc);
-	return rc != X_LINK_SUCCESS;
+	xlink_close_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL);
+	xlink_disconnect(&pvcm->ipc_xlink_handle);
+	return 0;
 }
 
+/*
+ * Send a vcm_msg by xlink.
+ * Given limited xlink payload size, packing is also performed.
+ */
+static int vcm_send(struct xlink_handle *xlnk_handle, struct vcm_msg *req)
+{
+	struct vpumgr_device *vdev;
+	enum xlink_error rc;
+	u8 *ptr = (u8 *)req;
+	u32 size = 0;
+	u32 len = req->size;
+
+	vdev = container_of(xlnk_handle, struct vpumgr_device, vcm.ipc_xlink_handle);
+	if (len > sizeof(*req))
+		return -EINVAL;
+	do {
+		size = len > VCM_XLINK_CHAN_SIZE ? VCM_XLINK_CHAN_SIZE : len;
+		rc = xlink_write_volatile(xlnk_handle, VCM_XLINK_CHANNEL, ptr, size);
+		if (rc != X_LINK_SUCCESS) {
+			dev_warn(vdev->dev, "%s xlink_write_volatile error %d\n", __func__, rc);
+			return -EINVAL;
+		}
+		ptr += size;
+		len -= size;
+	} while (len > 0);
+
+	return 0;
+}
+
+/*
+ * Receives a vcm_msg by xlink.
+ * Given limited xlink payload size, unpacking is also performed.
+ */
 static int vcm_recv(struct xlink_handle *xlnk_handle, struct vcm_msg *rep)
 {
+	struct vpumgr_device *vdev;
 	enum xlink_error rc;
-	u64 size; /* xlink_read_data_to_buffer() actually write size_t into size; */
+	u64 size;
 	u32 total_size = 0;
 	u32 rx_size = 0;
 	u8 *ptr = (u8 *)rep;
 
+	vdev = container_of(xlnk_handle, struct vpumgr_device, vcm.ipc_xlink_handle);
 	do {
+		/* workaround for a bug in xlink_read_data_to_buffer()
+		 * although it's last argument is declared to be of type (u32 *), the
+		 * function actually writes 64-bit value into that address.
+		 */
 		rc = xlink_read_data_to_buffer(xlnk_handle, VCM_XLINK_CHANNEL, ptr, (u32 *)&size);
 		if (rc != X_LINK_SUCCESS) {
-			pr_err("%s: xlink_read_data_to_buffer failed, rc:%d\n", __func__, rc);
+			dev_warn(vdev->dev, "%s: xlink_read_data_to_buffer failed, rc:%d\n",
+				 __func__, rc);
 			return -EPIPE;
 		}
 
 		if (total_size == 0) {
 			if (size < msg_header_size) {
-				pr_err("%s: first packet is too small (%llu)\n", __func__, size);
+				dev_warn(vdev->dev, "%s: first packet is too small (%llu)\n",
+					 __func__, size);
 				return -EINVAL;
 			}
 
 			total_size = rep->size;
 			if (total_size > sizeof(*rep)) {
-				pr_err("%s: packet size (%u) is too big\n", __func__, total_size);
+				dev_warn(vdev->dev, "%s: packet size (%u) is too big\n",
+					 __func__, total_size);
 				return -EINVAL;
 			}
 			if (total_size < size) {
-				pr_err("%s: first packet is smaller than claimed (%llu)\n",
-				       __func__, size);
+				dev_warn(vdev->dev,
+					 "%s: first packet is smaller than claimed (%llu)\n",
+					 __func__, size);
 				return -EINVAL;
 			}
 		}
@@ -114,32 +149,11 @@ static int vcm_recv(struct xlink_handle *xlnk_handle, struct vcm_msg *rep)
 		rx_size += size;
 	} while (rx_size < total_size);
 
-	if (rx_size != total_size)
-		pr_warn("%s: actuall size %u exceeds claimed size %ud\n",
-			__func__, rx_size, total_size);
-
-	return 0;
-}
-
-static int vcm_send(struct xlink_handle *xlnk_handle, struct vcm_msg *req)
-{
-	enum xlink_error rc;
-	u8 *ptr = (u8 *)req;
-	u32 size = 0;
-	u32 len = req->size;
-
-	if (len > sizeof(*req))
+	if (rx_size != total_size) {
+		dev_warn(vdev->dev, "%s: actuall size %u exceeds claimed size %ud\n",
+			 __func__, rx_size, total_size);
 		return -EINVAL;
-	do {
-		size = len > VCM_XLINK_CHAN_SIZE ? VCM_XLINK_CHAN_SIZE : len;
-		rc = xlink_write_volatile(xlnk_handle, VCM_XLINK_CHANNEL, ptr, size);
-		if (rc != X_LINK_SUCCESS) {
-			pr_err("%s xlink_write_volatile error %d\n", __func__, rc);
-			return -EINVAL;
-		}
-		ptr += size;
-		len -= size;
-	} while (len > 0);
+	}
 
 	return 0;
 }
@@ -226,10 +240,19 @@ static void vpu_cmd_submit(struct work_struct *work)
 	struct vpu_cmd *p = container_of(work, struct vpu_cmd, work);
 
 	p->submit_err = vcm_send(p->handle, &p->msg);
-	if (p->submit_err)
-		complete(&p->complete);
 }
 
+/*
+ * vcm_submit() - Submit a command to VPU
+ * @v:         Pointer to local vpu context data structure.
+ * @cmd:       Command code
+ * @data_in:   Data arguments
+ * @in_len:    Length of the data arguments
+ * @submit_id: On return, this will containe a newly allocated
+ *             vpu-device-wise unique ID for the submitted command
+ *
+ * Submit a command to corresponding vpu context running on firmware to execute
+ */
 int vcm_submit(struct vpumgr_ctx *v,
 	       u32 cmd, const void *data_in, u32 in_len, s32 *submit_id)
 {
@@ -240,6 +263,9 @@ int vcm_submit(struct vpumgr_ctx *v,
 
 	if (!v->vdev->vcm.enabled)
 		return -ENOENT;
+
+	if (in_len > VCM_PAYLOAD_SIZE)
+		return -EINVAL;
 
 	vcmd = kvmalloc(sizeof(*vcmd), GFP_KERNEL);
 	if (!vcmd)
@@ -274,6 +300,7 @@ int vcm_submit(struct vpumgr_ctx *v,
 	vcmd->msg.size = msg_header_size + in_len;
 	vcmd->msg.ctx = ctx;
 	vcmd->msg.cmd = cmd;
+	vcmd->msg.rc = 0;
 	INIT_WORK(&vcmd->work, vpu_cmd_submit);
 
 	if (!queue_work(pvcm->wq, &vcmd->work)) {
@@ -288,6 +315,18 @@ remove_msgid:
 	return rc;
 }
 
+/*
+ * vcm_wait() - Wait a submitted command to finish
+ * @v:          Pointer to local vpu context data structure.
+ * @submit_id:  Unique ID of the submitted command to wait for
+ * @vpu_rc:     Return code of the submitted commands
+ * @data_out:   Return data payload of the submitted command
+ * @p_out_len:  Length of the returned paylaod
+ * @timeout_ms: Time in milliseconds before the wait expires
+ *
+ * Wait for a submitted command to finish and retrieves the
+ * return code and outputs on success with timeout.
+ */
 int vcm_wait(struct vpumgr_ctx *v, s32 submit_id,
 	     s32 *vpu_rc, void *data_out, u32 *p_out_len, u32 timeout_ms)
 {
@@ -312,17 +351,25 @@ int vcm_wait(struct vpumgr_ctx *v, s32 submit_id,
 		return -EINVAL;
 	}
 
-	rc = wait_for_completion_interruptible_timeout(&vcmd->complete, timeout);
-	if (rc < 0)
-		goto exit;
-	if (rc == 0) {
-		rc = -ETIMEDOUT;
-		goto exit;
-	}
-
+	/* wait for submission work to be done */
+	flush_work(&vcmd->work);
 	rc = vcmd->submit_err;
 	if (rc)
 		goto exit;
+
+	/* wait for reply */
+	rc = wait_for_completion_interruptible_timeout(&vcmd->complete, timeout);
+	if (rc < 0)
+		goto exit;
+	else if (rc == 0) {
+		rc = -ETIMEDOUT;
+		goto exit;
+	} else {
+		/* wait_for_completion_interruptible_timeout return positive
+		 * rc on success, but we return zero as success.
+		 */
+		rc = 0;
+	}
 
 	if (vpu_rc)
 		*vpu_rc = vcmd->msg.rc;
@@ -454,6 +501,8 @@ static int vcm_rxthread(void *param)
 				dev_warn(dev, "reply msg #%u's ctx (%u) mismatches vcmd ctx (%u)\n",
 					 msg->id, msg->ctx, vcmd->msg.ctx);
 
+			vcmd->submit_err = 0;
+
 			/* submit corresponding to msg->id is done, do post process */
 			memcpy(&vcmd->msg, msg, msg->size);
 			complete(&vcmd->complete);
@@ -498,7 +547,7 @@ int vcm_init(struct vpumgr_device *vdev, u32 sw_dev_id)
 			       (void *)vdev, "vcmrx");
 	if (IS_ERR(rxthread)) {
 		rc = PTR_ERR(rxthread);
-		goto wq_destroy;
+		goto destroy_idr;
 	}
 
 	pvcm->rxthread = get_task_struct(rxthread);
@@ -506,7 +555,8 @@ int vcm_init(struct vpumgr_device *vdev, u32 sw_dev_id)
 	pvcm->enabled = true;
 	return 0;
 
-wq_destroy:
+destroy_idr:
+	idr_destroy(&pvcm->msg_idr);
 	destroy_workqueue(pvcm->wq);
 vpu_link_fini:
 	vcm_vpu_link_fini(pvcm);

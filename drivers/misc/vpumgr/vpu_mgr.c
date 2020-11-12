@@ -57,6 +57,7 @@ static u32 get_sw_device_id(int vpu_ipc_id)
 	u32 sw_id_list[MAX_SW_DEV_CNT];
 	enum xlink_error rc;
 	u32 num = 0;
+	u32 swid;
 	int i;
 
 	rc = xlink_get_device_list(sw_id_list, &num);
@@ -66,10 +67,10 @@ static u32 get_sw_device_id(int vpu_ipc_id)
 	}
 
 	for (i = 0; i < num; i++) {
-		pr_debug("sw_id_list[%d] 0x%08x\n", i, sw_id_list[i]);
-		if (SWDEVID_INTERFACE(sw_id_list[i]) == IPC_INTERFACE &&
-		    SWDEVID_VPU_IPC_ID(sw_id_list[i]) ==  vpu_ipc_id)
-			return sw_id_list[i];
+		swid = sw_id_list[i];
+		if (SWDEVID_INTERFACE(swid) == IPC_INTERFACE &&
+		    SWDEVID_VPU_IPC_ID(swid) ==  vpu_ipc_id)
+			return swid;
 	}
 	return XLINK_INVALID_SW_DEVID;
 }
@@ -80,11 +81,11 @@ static int vpumgr_open(struct inode *inode, struct file *filp)
 	struct vpumgr_device *vdev;
 	int rc;
 
-	vdev = container_of(inode->i_cdev, struct vpumgr_device, cdev);
 	vpriv = kzalloc(sizeof(*vpriv), GFP_KERNEL);
 	if (!vpriv)
 		return -ENOMEM;
 
+	vdev = container_of(inode->i_cdev, struct vpumgr_device, cdev);
 	rc = smm_open(&vpriv->smm, vdev);
 	if (rc)
 		goto free_priv;
@@ -102,7 +103,7 @@ static int vpumgr_open(struct inode *inode, struct file *filp)
 	mutex_unlock(&vdev->client_mutex);
 
 	filp->private_data = vpriv;
-	return rc;
+	return 0;
 
 close_smm:
 	smm_close(&vpriv->smm);
@@ -124,6 +125,7 @@ static int vpumgr_release(struct inode *inode, struct file *filp)
 	mutex_unlock(&vdev->client_mutex);
 
 	kfree(vpriv);
+	filp->private_data = NULL;
 	return 0;
 }
 
@@ -135,7 +137,7 @@ static long vpumgr_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct vpumgr_vcm_submit *vs;
 	struct vpumgr_vcm_wait *vw;
 	char tmp[128];
-	long rc = 0;
+	int rc = 0;
 
 	if (_IOC_TYPE(cmd) != VPUMGR_MAGIC || _IOC_NR(cmd) >= _IOC_NR(VPUMGR_IOCTL_END))
 		return -EINVAL;
