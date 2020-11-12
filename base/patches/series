@@ -47,20 +47,8 @@
 # CVE-2020-15780
 0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
 
-# CVE-2019-19770
-0001-block-revert-back-to-synchronous-request_queue-remov.patch
-0002-block-move-main-block-debugfs-initialization-to-its-.patch
-0003-blktrace-move-blktrace-debugfs-creation-to-helper-fu.patch
-0004-blktrace-fix-debugfs-use-after-free.patch
-
 # CVE-2019-19815
 0001-f2fs-support-swap-file-w-DIO.patch
 
 # CVE-2020-12656
 0001-sunrpc-check-that-domain-table-is-empty-at-module-un.patch
-
-# CVE-2019-19377
-0001-btrfs-Don-t-submit-any-btree-write-bio-if-the-fs-has.patch
-
-# CVE-2020-27675
-0001-xen-events-avoid-removing-an-event-channel-while-han.patch
