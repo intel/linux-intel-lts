@@ -483,4 +483,5 @@ source "drivers/misc/habanalabs/Kconfig"
 source "drivers/misc/uacce/Kconfig"
 source "drivers/misc/xlink-core/Kconfig"
 source "drivers/misc/xlink-ipc/Kconfig"
+source "drivers/misc/vpumgr/Kconfig"
 endmenu

@@ -59,3 +59,4 @@ obj-$(CONFIG_XILINX_SDFEC)	+= xilinx_sdfec.o
 obj-$(CONFIG_XLINK_CORE)	+= xlink-core/
 obj-$(CONFIG_XLINK_IPC)		+= xlink-ipc/
 obj-$(CONFIG_HISI_HIKEY_USB)	+= hisi_hikey_usb.o
+obj-$(CONFIG_VPUMGR)		+= vpumgr/

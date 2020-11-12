@@ -1,0 +1,9 @@
+config VPUMGR
+	tristate "VPU Manager"
+	depends on ARM64 && XLINK_CORE
+	help
+	  VPUMGR manages life-cycle of VPU related resources which were
+	  dynamically allocated on demands of user-space application
+
+	  Select y or m if you have a processor including the Intel
+	  Vision Processor (VPU) on it.
