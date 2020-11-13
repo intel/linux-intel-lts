@@ -68,8 +68,7 @@
 
 struct hantro_device_handle hantro_dev;
 static struct class_compat *media_class = NULL;
-static ssize_t get_allocation_status(struct device *dev, int sliceidx,
-				     char *buf);
+static int mem_usage_internal(unsigned int sliceidx, struct device *memdev, u32 *pused_mem, u32 *pallocations, struct seq_file *s);
 
 bool verbose;
 module_param(verbose, bool, 0);
@@ -233,6 +232,7 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 		//if it was codec reserved memory, then try allocating from pixel cma
 		if (region == CODEC_RESERVED) {
 			mem_dev = pslice->dev;
+			region = PIXEL_CMA;
 			cma_obj->vaddr = dma_alloc_coherent(
 				mem_dev, args->size, &cma_obj->paddr, GFP_KERNEL | GFP_DMA);
 		}
@@ -263,12 +263,16 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 out:
 	mutex_unlock(&dev->struct_mutex);
 	if (ret == -ENOMEM) {
-		char *buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+		int used_mem0 = 0, alloc_count0 = 0;
+		int used_mem1 = 0, alloc_count1 = 0;
+		mem_usage_internal(sliceidx, pslice->dev, &used_mem0, &alloc_count0, NULL);
+		if (pslice->codec_rsvmem)
+			mem_usage_internal(sliceidx, pslice->codec_rsvmem, &used_mem1, &alloc_count1, NULL);
 
-		get_allocation_status(cma_obj->memdev, sliceidx, buf);
-		pr_info("Slice %d out of memory\n%s", sliceidx, buf);
-		__trace_hantro_err("Slice %d out of memory; region = %d", sliceidx, region);
-		kfree(buf);
+		pr_info("Slice %d out of memory. Request for CMA %d\n CMA 0: %dK in %d allocations\n CMA 1: %dK in %d allocations",
+					sliceidx, region, used_mem0/1024, alloc_count0, used_mem1/1024, alloc_count1);
+		__trace_hantro_err("Slice %d out of memory; region = %d;  CMA 0: %dK in %d allocations\n CMA 1: %dK in %d allocations",
+					 sliceidx, region, used_mem0/1024, alloc_count0, used_mem1/1024, alloc_count1);
 	}
 
 	return ret;
@@ -1910,6 +1914,24 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 
 	return buf_used;
 }
+//print mem usage summary through sysfs
+static ssize_t mem_usage_show(struct device *kdev,
+				     struct device_attribute *attr, char *buf)
+{
+	int sliceidx = findslice_bydev(kdev);
+	struct slice_info *pslice;
+	int used_mem0 = 0, alloc_count0 = 0;
+	int used_mem1 = 0, alloc_count1 = 0;
+
+	if (sliceidx < 0)
+		return 0;
+	pslice = getslicenode(sliceidx);
+	mem_usage_internal(sliceidx, pslice->dev, &used_mem0, &alloc_count0, NULL);
+	if (pslice->codec_rsvmem)
+		mem_usage_internal(sliceidx, pslice->codec_rsvmem, &used_mem1, &alloc_count1, NULL);
+	return snprintf(buf, PAGE_SIZE, "Slice %d mem usage:\n\tCMA 0: %dK in %d allocations\n\tCMA 1: %dK in %d allocations\n",
+				sliceidx, used_mem0/1024, alloc_count0, used_mem1/1024, alloc_count1);
+}
 
 static ssize_t fps_show(struct device *kdev, struct device_attribute *attr, char *buf)
 {
@@ -1964,6 +1986,7 @@ static DEVICE_ATTR(BWDecWrite, 0444, bandwidthDecWrite_show, NULL);
 static DEVICE_ATTR(BWEncRead, 0444, bandwidthEncRead_show, NULL);
 static DEVICE_ATTR(BWEncWrite, 0444, bandwidthEncWrite_show, NULL);
 static DEVICE_ATTR(clients, 0444, clients_show, NULL);
+static DEVICE_ATTR(mem_usage, 0444, mem_usage_show, NULL);
 static DEVICE_ATTR(fps, 0444, fps_show, NULL);
 
 static struct attribute *hantro_attrs[] = {
@@ -1972,6 +1995,7 @@ static struct attribute *hantro_attrs[] = {
 	&dev_attr_BWEncRead.attr,
 	&dev_attr_BWEncWrite.attr,
 	&dev_attr_clients.attr,
+	&dev_attr_mem_usage.attr,
 	&dev_attr_fps.attr,
 	NULL,
 };
@@ -1980,16 +2004,17 @@ static const struct attribute_group hantro_attr_group = {
 	.attrs = hantro_attrs,
 };
 
-static ssize_t get_allocation_status(struct device *dev, int sliceidx,
-				     char *buf)
+static int mem_usage_internal(unsigned int sliceidx, struct device *memdev,
+				     u32 *pused_mem, u32 *pallocations, struct seq_file *s)
 {
 	struct drm_device *ddev = hantro_dev.drm_dev;
 	struct drm_file *file;
 	struct file_data *data;
 	struct drm_gem_hantro_object *cma_obj;
-	int buf_used = 0, alloc_count = 0;
+	int alloc_count = 0;
 	ssize_t mem_used = 0;
 
+	if (s) seq_printf(s, " Physical Addr   :  Virtual Addr       : Size\n");
 	mutex_lock(&ddev->filelist_mutex);
 	// Go through all open drm files
 	list_for_each_entry(file, &ddev->filelist, lhead) {
@@ -2004,7 +2029,8 @@ static ssize_t get_allocation_status(struct device *dev, int sliceidx,
 			if (gobj) {
 				cma_obj = to_drm_gem_hantro_obj(gobj);
 				if (cma_obj && cma_obj->sliceidx == sliceidx &&
-				    cma_obj->memdev == dev) {
+				    (memdev == 0 ? 1 : (cma_obj->memdev == memdev))) {
+					   if (s) seq_printf(s, " 0x%-13llx :  0x%-15p  : %ldK\n", cma_obj->paddr, cma_obj->vaddr, cma_obj->base.size/1024);
 					mem_used += cma_obj->base.size;
 					alloc_count++;
 				}
@@ -2012,68 +2038,23 @@ static ssize_t get_allocation_status(struct device *dev, int sliceidx,
 		}
 		mutex_unlock(&ddev->struct_mutex);
 	}
-
 	mutex_unlock(&ddev->filelist_mutex);
-	buf_used += snprintf(buf + buf_used, PAGE_SIZE,
-			     "\n%ldK in %d allocations; device=%p\n\n",
-			     mem_used / 1024, alloc_count, dev);
-
-	return buf_used;
-}
-static int mem_usage_debugfs_internal(struct seq_file *s, struct device *dev,
-				      int sliceidx)
-{
-	struct drm_device *ddev = hantro_dev.drm_dev;
-	struct drm_file *file;
-	struct file_data *data;
-	struct drm_gem_hantro_object *cma_obj;
-
-	int alloc_count = 0;
-	ssize_t mem_used = 0;
-
-	seq_printf(s, " Physical Addr   :  Virtual Addr       : Size\n");
-	mutex_lock(&ddev->filelist_mutex);
-	// Go through all open drm files
-	list_for_each_entry(file, &ddev->filelist, lhead) {
-		struct drm_gem_object *gobj;
-		int handle;
-
-
-		mutex_lock(&ddev->struct_mutex);
-		// Traverse through cma objects added to file's driver_priv
-		// checkout hantro_recordmem
-		data = (struct file_data *)file->driver_priv;
-		idr_for_each_entry(data->list, gobj, handle) {
-			if (gobj) {
-				cma_obj = to_drm_gem_hantro_obj(gobj);
-				if (cma_obj && cma_obj->sliceidx ==  sliceidx && cma_obj->memdev == dev) {
-					   seq_printf(s, " 0x%-13llx :  0x%-15p  : %ldK\n", cma_obj->paddr, cma_obj->vaddr, cma_obj->base.size/1024);
-					   mem_used += cma_obj->base.size;
-					   alloc_count++;
-				}
-			}
-		}
-		mutex_unlock(&ddev->struct_mutex);
-	}
-
-	mutex_unlock(&ddev->filelist_mutex);
-	seq_printf(s, "\n%ldK in %d allocations\n\n", mem_used / 1024,
-		   alloc_count);
-
+	if (s) seq_printf(s, "\n%ldK in %d allocations\n\n", mem_used / 1024, alloc_count);
+	if (pused_mem) *pused_mem = mem_used;
+	if (pallocations) *pallocations = alloc_count;
 	return 0;
 }
-
+//print mem_usage details through debugfs
 static int mem_usage_debugfs_show(struct seq_file *s, void *v)
 {
 	struct slice_info *pslice = s->private;
 	int sliceidx = findslice_bydev(pslice->dev);
-
 	seq_printf(s, "Memory usage for slice %d:\n", sliceidx);
 	seq_printf(s, "Pixel CMA:\n");
-	mem_usage_debugfs_internal(s, pslice->dev, sliceidx);
+	mem_usage_internal(sliceidx, pslice->dev, NULL, NULL, s);
 	if (pslice && pslice->codec_rsvmem != NULL) {
 		seq_printf(s, "Codec CMA:\n");
-		mem_usage_debugfs_internal(s, pslice->codec_rsvmem, sliceidx);
+		mem_usage_internal(sliceidx, pslice->codec_rsvmem, NULL, NULL, s);
 	}
 	return 0;
 }
