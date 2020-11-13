@@ -70,7 +70,7 @@ static void ecc_free_digits_space(u64 *space)
 	kfree_sensitive(space);
 }
 
-static struct ecc_point *ecc_alloc_point(unsigned int ndigits)
+struct ecc_point *ecc_alloc_point(unsigned int ndigits)
 {
 	struct ecc_point *p = kmalloc(sizeof(*p), GFP_KERNEL);
 
@@ -95,8 +95,9 @@ err_alloc_x:
 	kfree(p);
 	return NULL;
 }
+EXPORT_SYMBOL(ecc_alloc_point);
 
-static void ecc_free_point(struct ecc_point *p)
+void ecc_free_point(struct ecc_point *p)
 {
 	if (!p)
 		return;
@@ -105,6 +106,7 @@ static void ecc_free_point(struct ecc_point *p)
 	kfree_sensitive(p->y);
 	kfree_sensitive(p);
 }
+EXPORT_SYMBOL(ecc_free_point);
 
 static void vli_clear(u64 *vli, unsigned int ndigits)
 {
@@ -154,7 +156,7 @@ static unsigned int vli_num_digits(const u64 *vli, unsigned int ndigits)
 }
 
 /* Counts the number of bits required for vli. */
-static unsigned int vli_num_bits(const u64 *vli, unsigned int ndigits)
+unsigned int vli_num_bits(const u64 *vli, unsigned int ndigits)
 {
 	unsigned int i, num_digits;
 	u64 digit;
@@ -169,6 +171,7 @@ static unsigned int vli_num_bits(const u64 *vli, unsigned int ndigits)
 
 	return ((num_digits - 1) * 64 + i);
 }
+EXPORT_SYMBOL(vli_num_bits);
 
 /* Set dest from unaligned bit string src. */
 void vli_from_be64(u64 *dest, const void *src, unsigned int ndigits)
@@ -933,11 +936,12 @@ EXPORT_SYMBOL(vli_mod_inv);
 /* ------ Point operations ------ */
 
 /* Returns true if p_point is the point at infinity, false otherwise. */
-static bool ecc_point_is_zero(const struct ecc_point *point)
+bool ecc_point_is_zero(const struct ecc_point *point)
 {
 	return (vli_is_zero(point->x, point->ndigits) &&
 		vli_is_zero(point->y, point->ndigits));
 }
+EXPORT_SYMBOL(ecc_point_is_zero);
 
 /* Point multiplication algorithm using Montgomery's ladder with co-Z
  * coordinates. From https://eprint.iacr.org/2011/338.pdf
@@ -1281,8 +1285,7 @@ void ecc_point_mult_shamir(const struct ecc_point *result,
 }
 EXPORT_SYMBOL(ecc_point_mult_shamir);
 
-static inline void ecc_swap_digits(const u64 *in, u64 *out,
-				   unsigned int ndigits)
+void ecc_swap_digits(const u64 *in, u64 *out, unsigned int ndigits)
 {
 	const __be64 *src = (__force __be64 *)in;
 	int i;
@@ -1290,6 +1293,7 @@ static inline void ecc_swap_digits(const u64 *in, u64 *out,
 	for (i = 0; i < ndigits; i++)
 		out[i] = be64_to_cpu(src[ndigits - 1 - i]);
 }
+EXPORT_SYMBOL(ecc_swap_digits);
 
 static int __ecc_is_key_valid(const struct ecc_curve *curve,
 			      const u64 *private_key, unsigned int ndigits)
