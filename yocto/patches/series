@@ -6,6 +6,3 @@
 
 # CVE-2020-26541
 0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
-
-# CVE-2020-27675
-0001-xen-events-avoid-removing-an-event-channel-while-han.patch
