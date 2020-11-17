@@ -46,11 +46,24 @@
 #define KMB_IMX219_DGAIN_DEFAULT   0x0100
 #define KMB_IMX219_DGAIN_STEP      1
 
+#define KMB_IMX219_FPS_MAX       30
+#define KMB_IMX219_FPS_MIN       15
+#define KMB_IMX219_FPS_DEFAULT   30
+#define KMB_IMX219_FPS_STEP      1
+
 #define KMB_IMX219_REG_A_CIT		0x015A
 #define KMB_IMX219_REG_SIZE_A_CIT	2
 #define KMB_IMX219_EXPOSURE_MIN		1
 #define KMB_IMX219_EXPOSURE_STEP	1
 #define KMB_IMX219_EXPOSURE_DEFAULT	0x640
+
+#define IMX219_REG_FRM_LENGTH_LINES_A_MSB  (0x0160) /// Frame lenght lines 15-8
+#define IMX219_REG_FRM_LENGTH_LINES_A_LSB  (0x0161) /// Frame lenght lines 7-0
+
+#define IMX219_REG_FRM_LENGTH_LINES_B_MSB  (0x0260) /// Frame lenght lines 15-8
+#define IMX219_REG_FRM_LENGTH_LINES_B_LSB  (0x0261) /// Frame lenght lines 7-0
+
+#define IMX219_REG_FRM_LENGTH_LINES_SIZE 2
 
 #define V4L2_CLUSTER_SIZE 3
 #define V4L2_CTRL_HNDL_SIZE (V4L2_CLUSTER_SIZE + 3)
@@ -152,6 +165,7 @@ struct kmb_imx219 {
 		struct v4l2_ctrl *exp_ctrl;
 		struct v4l2_ctrl *again_ctrl;
 		struct v4l2_ctrl *dgain_ctrl;
+		struct v4l2_ctrl *fps_ctrl;
 	};
 	u32 fps;
 	u32 lpfr;
@@ -324,8 +338,8 @@ kmb_imx219_write_reg(struct kmb_imx219 *kmb_imx219, u16 reg, u32 len, u32 val)
 
 	if (len > 4) {
 		dev_err_ratelimited(kmb_imx219->dev,
-				    "write reg 0x%4.4x invalid len %d",
-				    reg, len);
+							"write reg 0x%4.4x invalid len %d",
+							reg, len);
 		return -EINVAL;
 	}
 
@@ -360,7 +374,7 @@ kmb_imx219_write_reg(struct kmb_imx219 *kmb_imx219, u16 reg, u32 len, u32 val)
  * Return: 0 if successful
  */
 static int kmb_imx219_write_regs(struct kmb_imx219 *kmb_imx219,
-			     const struct kmb_imx219_reg *regs, u32 len)
+								 const struct kmb_imx219_reg *regs, u32 len)
 {
 	int ret;
 	u32 i;
@@ -376,6 +390,23 @@ static int kmb_imx219_write_regs(struct kmb_imx219 *kmb_imx219,
 	return 0;
 }
 
+static void kmb_imx219_set_lpfr(struct kmb_imx219 *kmb_imx219)
+{
+	int ret;
+	u32 lpfr = kmb_imx219->lpfr;
+
+	dev_dbg(kmb_imx219->dev, "Write FPS %d lpfr %d",
+			kmb_imx219->fps, kmb_imx219->lpfr);
+
+	ret = kmb_imx219_write_reg(kmb_imx219,
+							   IMX219_REG_FRM_LENGTH_LINES_A_MSB,
+							   IMX219_REG_FRM_LENGTH_LINES_SIZE,
+							   lpfr);
+	if (ret) {
+		dev_err(kmb_imx219->dev, "kmb_imx219_set_lpfr A I2C write failed \n");
+	}
+}
+
 /**
  * kmb_imx219_update_fps - Update current sensor mode to match the selected FPS
  * @kmb_imx219: pointer to imx219 device
@@ -388,6 +419,7 @@ static void kmb_imx219_update_fps(struct kmb_imx219 *kmb_imx219,
 {
 	u32 lpfr = (mode->lpfr * mode->fps.def) / kmb_imx219->fps;
 
+
 	if (lpfr > KMB_IMX219_LPFR_MAX)
 		lpfr = KMB_IMX219_LPFR_MAX;
 
@@ -397,7 +429,9 @@ static void kmb_imx219_update_fps(struct kmb_imx219 *kmb_imx219,
 	kmb_imx219->lpfr = lpfr;
 
 	dev_dbg(kmb_imx219->dev, "Selected FPS %d lpfr %d",
-		kmb_imx219->fps, lpfr);
+		kmb_imx219->fps, kmb_imx219->lpfr);
+
+	kmb_imx219_set_lpfr(kmb_imx219);
 }
 
 /**
@@ -426,6 +460,51 @@ static int kmb_imx219_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	return 0;
 }
 
+static int kmb_imx219_set_frame_ctrl(struct kmb_imx219 *kmb_imx219,
+									 u32 exposure,
+									 u32 analog_gain,
+									 u32 digital_gain,
+									 u32 fps)
+{
+	int ret;
+
+	kmb_imx219->fps = fps;
+	kmb_imx219_update_fps(kmb_imx219, kmb_imx219->cur_mode);
+
+	// -------------------- Analaog GAIN -----------------------------------
+	ret = kmb_imx219_write_reg(kmb_imx219, KMB_IMX219_REG_AGAIN,
+							   KMB_IMX219_REG_SIZE_AGAIN, analog_gain);
+	if (ret) {
+		dev_err(kmb_imx219->dev, "kmb_imx219_set_ctrl AGAIN sensor write fail \n");
+		return ret;
+	}
+
+	// -------------------- Digital GAIN -----------------------------------
+	ret = kmb_imx219_write_reg(kmb_imx219, KMB_IMX219_REG_DGAIN,
+							   KMB_IMX219_REG_SIZE_DGAIN, digital_gain);
+	if (ret) {
+		dev_err(kmb_imx219->dev, "kmb_imx219_set_ctrl DGAIN sensor write fail \n");
+		return ret;
+	}
+
+	// -------------------- INTEGRATION TIME (EXPOSURE) -------------
+	// CIT reg value can be: 1 to frame_length_lines-4
+	if (0) {
+		if (exposure < 1)
+			exposure = 1;
+		if (exposure > kmb_imx219->lpfr - 4)
+			exposure = kmb_imx219->lpfr - 4;
+	}
+	ret = kmb_imx219_write_reg(kmb_imx219, KMB_IMX219_REG_A_CIT,
+							   KMB_IMX219_REG_SIZE_A_CIT, exposure);
+	if (ret) {
+		dev_err(kmb_imx219->dev, "kmb_imx219_set_ctrl DGAIN sensor write fail \n");
+		return ret;
+	}
+
+	return 0;
+}
+
 /**
  * kmb_imx219_set_ctrl - Set subdevice control. Supported controls:
  *                       V4L2_CID_ANALOGUE_GAIN
@@ -440,11 +519,7 @@ static int kmb_imx219_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct kmb_imx219 *kmb_imx219 =
 		container_of(ctrl->handler, struct kmb_imx219, ctrl_handler);
-	u32 exposure = 0;
-	u32 analog_gain = 0;
-	u32 digital_gain = 0;
-	u32 lpfr = 0;
-	int ret;
+	int ret = 0;
 
 	/* Set exposure and gain only if sensor is in power on state */
 	if (!pm_runtime_get_if_in_use(kmb_imx219->dev))
@@ -453,57 +528,31 @@ static int kmb_imx219_set_ctrl(struct v4l2_ctrl *ctrl)
 	/* Handle the cluster for both controls */
 	switch (ctrl->id) {
 	case V4L2_CID_EXPOSURE:
-		exposure = ctrl->val;
+	case V4L2_CID_ANALOGUE_GAIN:
+	case V4L2_CID_GAIN:
+	case V4L2_CID_AUDIO_TREBLE: { // used for FPS
+		u32 exposure = 0;
+		u32 analog_gain = 0;
+		u32 digital_gain = 0;
+		u32 fps = 0;
+		exposure = kmb_imx219->exp_ctrl->val;
 		analog_gain = kmb_imx219->again_ctrl->val;
 		digital_gain = kmb_imx219->dgain_ctrl->val;
-		//TODO: remove debug printfs
-		dev_dbg(kmb_imx219->dev, "---|||--- V211  \n");
+		fps = kmb_imx219->fps_ctrl->val;
 		dev_dbg(kmb_imx219->dev, "---|||--- exposure = 0x%x \n", exposure);
 		dev_dbg(kmb_imx219->dev, "---|||--- analog_gain = 0x%x  \n", analog_gain);
 		dev_dbg(kmb_imx219->dev, "---|||--- digital_gain = 0x%x  \n", digital_gain);
-
-	break;
+		dev_dbg(kmb_imx219->dev, "---|||--- fps = 0x%x  \n", fps);
+		ret = kmb_imx219_set_frame_ctrl(kmb_imx219, exposure, analog_gain, digital_gain, fps);
+	} break;
 	default:
-		dev_err(kmb_imx219->dev, "Invalid control %d", ctrl->id);
+		dev_err(kmb_imx219->dev, "Invalid control %d\n", ctrl->id);
 		ret = -EINVAL;
 		goto error_pm_runtime_put;
 	}
 
-
-	// -------------------- AGAIN -----------------------------------
-    ret = kmb_imx219_write_reg(kmb_imx219, KMB_IMX219_REG_AGAIN,
-			KMB_IMX219_REG_SIZE_AGAIN, analog_gain);
-	if (ret) {
-		dev_err(kmb_imx219->dev, "kmb_imx219_set_ctrl AGAIN sensor write fail \n");
-		goto error_pm_runtime_put;
-	}
-
-	// -------------------- DGAIN -----------------------------------
-	ret = kmb_imx219_write_reg(kmb_imx219, KMB_IMX219_REG_DGAIN,
-		KMB_IMX219_REG_SIZE_DGAIN, digital_gain);
-	if (ret) {
-		dev_err(kmb_imx219->dev, "kmb_imx219_set_ctrl DGAIN sensor write fail \n");
-		goto error_pm_runtime_put;
-	}
-
-	// -------------------- INTEGRATION TIME / EXPOSURE -------------
-	// CIT reg value can be: 1 to frame_length_lines-4
-	lpfr = kmb_imx219->lpfr;
-
-	if (exposure < 1)
-		exposure = 1;
-	if (exposure >  lpfr - 4)
-		exposure = lpfr - 4;
-
-	ret = kmb_imx219_write_reg(kmb_imx219, KMB_IMX219_REG_A_CIT,
-			KMB_IMX219_REG_SIZE_A_CIT, exposure);
-	if (ret) {
-		dev_err(kmb_imx219->dev, "kmb_imx219_set_ctrl DGAIN sensor write fail \n");
-		goto error_pm_runtime_put;
-	}
-
 	pm_runtime_put(kmb_imx219->dev);
-	return 0;
+	return ret;
 
 error_pm_runtime_put:
 	pm_runtime_put(kmb_imx219->dev);
@@ -798,11 +847,7 @@ kmb_imx219_set_pad_format(struct v4l2_subdev *sd,
 		return -EINVAL;
 	}
 
-	kmb_imx219->fps = mode->fps.def;
-	kmb_imx219->lpfr = mode->lpfr;
-
 	kmb_imx219_update_fps(kmb_imx219, mode);
-
 	kmb_imx219_fill_pad_format(kmb_imx219, mode, fmt);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
@@ -844,6 +889,8 @@ static int kmb_imx219_start_streaming(struct kmb_imx219 *kmb_imx219)
 		dev_err(kmb_imx219->dev, "fail to setup handler");
 		return ret;
 	}
+
+	//kmb_imx219_set_lpfr(kmb_imx219);
 
 	/* Start streaming */
 	ret = kmb_imx219_write_reg(kmb_imx219, KMB_IMX219_REG_MODE_SELECT,
@@ -933,10 +980,6 @@ static int kmb_imx219_get_frame_interval(struct v4l2_subdev *sd,
 	interval->interval.denominator = kmb_imx219->fps;
 	mutex_unlock(&kmb_imx219->mutex);
 
-	dev_dbg(kmb_imx219->dev, "Get frame interval %d/%d",
-		interval->interval.numerator,
-		interval->interval.denominator);
-
 	return 0;
 }
 
@@ -968,7 +1011,7 @@ static int kmb_imx219_set_frame_interval(struct v4l2_subdev *sd,
 	}
 
 	kmb_imx219->fps = (u32) (interval->interval.denominator /
-				     interval->interval.numerator);
+			 interval->interval.numerator);
 
 	kmb_imx219_update_fps(kmb_imx219, kmb_imx219->cur_mode);
 
@@ -1145,6 +1188,14 @@ static int kmb_imx219_init_controls(struct kmb_imx219 *kmb_imx219)
 						   KMB_IMX219_DGAIN_MAX,
 						   KMB_IMX219_DGAIN_STEP,
 						   KMB_IMX219_DGAIN_DEFAULT);
+
+	kmb_imx219->fps_ctrl = v4l2_ctrl_new_std(ctrl_hdlr,
+											 &kmb_imx219_ctrl_ops,
+											 V4L2_CID_AUDIO_TREBLE,
+											 KMB_IMX219_FPS_MIN,
+											 KMB_IMX219_FPS_MAX,
+											 KMB_IMX219_FPS_STEP,
+											 KMB_IMX219_FPS_DEFAULT);
 
 	v4l2_ctrl_cluster(V4L2_CLUSTER_SIZE, &kmb_imx219->exp_ctrl);
 
