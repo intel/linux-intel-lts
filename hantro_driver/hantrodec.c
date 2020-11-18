@@ -583,7 +583,7 @@ static void ReleasePostProcessor(struct hantrodec_t *dev, long core)
 
 static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
 {
-	long ret = 0, i;
+	long ret = 0;
 
 	PDEBUG("hantrodec: DecFlushRegs\n");
 	ret = copy_from_user(dev->dec_regs, core->regs,
@@ -595,8 +595,7 @@ static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
 
 	/* write all regs but the status reg[1] to hardware */
 	iowrite32(0x0, (void *)(dev->hwregs + 4));
-	for (i = 2; i <= HANTRO_VC8000D_LAST_REG; i++)
-		iowrite32(dev->dec_regs[i], (void *)(dev->hwregs + i * 4));
+	memcpy(((void *)(dev->hwregs + 0x8)), &dev->dec_regs[2], (HANTRO_VC8000D_LAST_REG - 2 ) * 4);
 
 	/* write the status register, which may start the decoder */
 	iowrite32(dev->dec_regs[1], (void *)(dev->hwregs + 4));
@@ -605,11 +604,9 @@ static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
 
 static long DecRefreshRegs(struct hantrodec_t *dev, struct core_desc *core)
 {
-	long ret, i;
+	long ret;
 
-	for (i = 0; i <= HANTRO_VC8000D_LAST_REG; i++)
-		dev->dec_regs[i] = ioread32((void *)(dev->hwregs + i * 4));
-
+	memcpy(dev->dec_regs, (void *)dev->hwregs, HANTRO_VC8000D_LAST_REG * 4);
 	ret = copy_to_user(core->regs, dev->dec_regs,
 			   HANTRO_VC8000D_LAST_REG * 4);
 	if (ret) {
