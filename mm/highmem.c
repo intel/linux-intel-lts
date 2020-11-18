@@ -444,6 +444,11 @@ void *__kmap_local_pfn_prot(unsigned long pfn, pgprot_t prot)
 	unsigned long vaddr;
 	int idx;
 
+	/*
+	 * Disable migration so resulting virtual address is stable
+	 * accross preemption.
+	 */
+	migrate_disable();
 	preempt_disable();
 	idx = arch_kmap_local_map_idx(kmap_local_idx_push(), pfn);
 	vaddr = __fix_to_virt(FIX_KMAP_BEGIN + idx);
@@ -497,6 +502,7 @@ void kunmap_local_indexed(void *vaddr)
 	arch_kmap_local_post_unmap(addr);
 	kmap_local_idx_pop();
 	preempt_enable();
+	migrate_enable();
 }
 EXPORT_SYMBOL(kunmap_local_indexed);
 #endif
