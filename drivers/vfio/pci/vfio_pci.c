@@ -35,6 +35,15 @@
 #define DRIVER_AUTHOR   "Alex Williamson <alex.williamson@redhat.com>"
 #define DRIVER_DESC     "VFIO PCI - User Level meta-driver"
 
+#define VFIO_MAX_PM_DEV 32
+struct vfio_pm_devs {
+	struct {
+		unsigned short	vendor;
+		unsigned short	device;
+	} ids[VFIO_MAX_PM_DEV];
+	u32 count;
+};
+
 static char ids[1024] __initdata;
 module_param_string(ids, ids, sizeof(ids), 0);
 MODULE_PARM_DESC(ids, "Initial PCI IDs to add to the vfio driver, format is \"vendor:device[:subvendor[:subdevice[:class[:class_mask]]]]\" and multiple comma separated entries can be specified");
@@ -54,6 +63,10 @@ static bool disable_idle_d3;
 module_param(disable_idle_d3, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(disable_idle_d3,
 		 "Disable using the PCI D3 low power state for idle, unused devices");
+
+static char pm_restore_ids[1024] __initdata;
+module_param_string(pm_restore_ids, pm_restore_ids, sizeof(pm_restore_ids), 0);
+MODULE_PARM_DESC(pm_restore_ids, "comma separated device in format of \"vendor:device\"");
 
 static inline bool vfio_vga_disabled(void)
 {
@@ -209,10 +222,48 @@ static bool vfio_pci_nointx(struct pci_dev *pdev)
 	return false;
 }
 
+static struct vfio_pm_devs pm_devs = {0};
+
+static void __init vfio_pci_fill_pm_ids(void)
+{
+	char *p, *id;
+	int idx = 0;
+
+	/* no ids passed actually */
+	if (pm_restore_ids[0] == '\0')
+		return;
+
+	/* add ids specified in the module parameter */
+	p = pm_restore_ids;
+	while ((id = strsep(&p, ","))) {
+		unsigned int vendor, device = PCI_ANY_ID;
+		int fields;
+
+		if (!strlen(id))
+			continue;
+
+		fields = sscanf(id, "%x:%x", &vendor, &device);
+
+		if (fields != 2) {
+			pr_warn("invalid vendor:device string \"%s\"\n", id);
+			continue;
+		}
+
+		if (idx < VFIO_MAX_PM_DEV) {
+			pm_devs.ids[idx].vendor = vendor;
+			pm_devs.ids[idx].device = device;
+			pm_devs.count++;
+			idx++;
+			pr_info("add [%04x:%04x] for needs_pm_restore\n",
+				vendor, device);
+		}
+	}
+}
+
 static void vfio_pci_probe_power_state(struct vfio_pci_device *vdev)
 {
 	struct pci_dev *pdev = vdev->pdev;
-	u16 pmcsr;
+	u16 pmcsr, idx;
 
 	if (!pdev->pm_cap)
 		return;
@@ -220,6 +271,17 @@ static void vfio_pci_probe_power_state(struct vfio_pci_device *vdev)
 	pci_read_config_word(pdev, pdev->pm_cap + PCI_PM_CTRL, &pmcsr);
 
 	vdev->needs_pm_restore = !(pmcsr & PCI_PM_CTRL_NO_SOFT_RESET);
+
+	for (idx = 0; idx < pm_devs.count; idx++) {
+		if (vdev->pdev->vendor == pm_devs.ids[idx].vendor &&
+		    vdev->pdev->device == pm_devs.ids[idx].device) {
+			vdev->needs_pm_restore = true;
+			pr_info("force [%04x:%04x] to needs_pm_restore\n",
+				vdev->pdev->vendor, vdev->pdev->device);
+			break;
+		}
+	}
+
 }
 
 /*
@@ -1999,6 +2061,7 @@ static int __init vfio_pci_init(void)
 		goto out_driver;
 
 	vfio_pci_fill_ids();
+	vfio_pci_fill_pm_ids();
 
 	return 0;
 
