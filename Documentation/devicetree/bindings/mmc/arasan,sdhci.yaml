@@ -83,7 +83,7 @@ properties:
       - const: intel,keembay-sdhci-5.1-sd       # Intel Keem Bay SD controller
         description:
           For this device it is strongly suggested to include
-          arasan,soc-ctl-syscon.
+          arasan,soc-ctl-syscon, phys, vmmc-supply, vqmmc-supply and sdvrail-supply.
       - const: intel,keembay-sdhci-5.1-sdio     # Intel Keem Bay SDIO controller
         description:
           For this device it is strongly suggested to include
@@ -299,5 +299,10 @@ examples:
           clock-names = "clk_xin", "clk_ahb";
           clocks = <&scmi_clk KEEM_BAY_PSS_AUX_SD0>,
                    <&scmi_clk KEEM_BAY_PSS_SD0>;
+          phys = <&sd0_phy>;
+          phy-names = "phy_arasan";
           arasan,soc-ctl-syscon = <&sd0_phy_syscon>;
+          vmmc-supply = <&reg_sd0_vcc>;
+          vqmmc-supply = <&reg_sd0_vqcc>;
+          sdvrail-supply = <&regulator_rail>;
     };
