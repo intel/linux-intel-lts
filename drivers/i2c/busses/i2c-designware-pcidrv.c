@@ -93,13 +93,13 @@ static struct dw_scl_sda_cfg hsw_config = {
 /* Elkhartlake HCNT/LCNT/SDA hold time */
 static struct dw_scl_sda_cfg ehl_config = {
 	.ss_hcnt = 0x190,
-	.fs_hcnt = 0x3C,
+	.fs_hcnt = 0x4E,
 	.fp_hcnt = 0x1A,
-	.hs_hcnt = 0xB,
+	.hs_hcnt = 0x1F,
 	.ss_lcnt = 0x1d6,
-	.fs_lcnt = 0x82,
+	.fs_lcnt = 0x96,
 	.fp_lcnt = 0x32,
-	.hs_lcnt = 0xE,
+	.hs_lcnt = 0x36,
 	.sda_hold = 0x1E,
 };
 
