@@ -2786,7 +2786,7 @@ static ssize_t smk_write_relabel_self(struct file *file, const char __user *buf,
 			rc = -ENOMEM;
 			goto out;
 		}
-		tsp = new->security;
+		tsp = smack_cred(new);
 		smk_destroy_label_list(&tsp->smk_relabel);
 		list_splice(&list_tmp, &tsp->smk_relabel);
 		commit_creds(new);
