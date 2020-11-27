@@ -11,6 +11,8 @@
 
 #include "vpu_vcm.h"
 
+#define FWNAME_MAX_LENGTH  128
+
 /* there will be one such device for each HW instance */
 struct vpumgr_device {
 	struct device *sdev;
@@ -24,6 +26,8 @@ struct vpumgr_device {
 
 	struct mutex client_mutex; /* protect client_list */
 	struct list_head client_list;
+
+	char fwname[FWNAME_MAX_LENGTH];
 };
 
 #define XLINK_INVALID_SW_DEVID  0xDEADBEEF

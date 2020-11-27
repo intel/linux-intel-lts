@@ -61,6 +61,9 @@ struct vcm_dev {
 
 	struct mutex msg_idr_lock; /* protects msg_idr */
 	struct idr msg_idr;
+
+	struct mutex fwboot_mutex; /* protect firmware boot-up */
+	int fwuser_cnt;
 };
 
 struct vpumgr_ctx {
