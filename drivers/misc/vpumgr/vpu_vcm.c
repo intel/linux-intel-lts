@@ -49,13 +49,6 @@ static int vcm_vpu_link_init(struct vcm_dev *pvcm)
 	if (rc != X_LINK_SUCCESS)
 		goto exit;
 
-	rc = xlink_open_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL,
-				RXB_TXB, VCM_XLINK_CHAN_SIZE, XLINK_IPC_TIMEOUT);
-	if (rc != X_LINK_SUCCESS && rc != X_LINK_ALREADY_OPEN) {
-		xlink_disconnect(&pvcm->ipc_xlink_handle);
-		goto exit;
-	}
-
 	rc = 0;
 exit:
 	dev_info(vdev->dev, "%s: rc = %d\n", __func__, rc);
@@ -64,7 +57,6 @@ exit:
 
 static int vcm_vpu_link_fini(struct vcm_dev *pvcm)
 {
-	xlink_close_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL);
 	xlink_disconnect(&pvcm->ipc_xlink_handle);
 	return 0;
 }
@@ -422,58 +414,6 @@ static int vcm_call(struct vpumgr_ctx *v,
 	return vcm_wait(v, submit_id, res_rc, data_out, p_out_len, 1000);
 }
 
-int vcm_open(struct vpumgr_ctx *v, struct vpumgr_device *vdev)
-{
-	struct device *dev = vdev->sdev;
-	int rep_rc, rc;
-
-	v->vdev = vdev;
-
-	if (!vdev->vcm.enabled)
-		return 0;
-
-	rc = vcm_call(v, VCTX_MSG_CREATE, NULL, 0, &rep_rc, NULL, NULL);
-
-	if (rc != 0 || rep_rc < 0)
-		dev_err(dev, "%s: Vpu context create with rc:%d and vpu reply rc:%d\n",
-			__func__, rc, rep_rc);
-	if (rc)
-		return rc;
-	if (rep_rc < 0)
-		return -ENXIO;
-
-	v->vpu_ctx_id = rep_rc;
-	v->total_vcmds = 0;
-	return 0;
-}
-
-int vcm_close(struct vpumgr_ctx *v)
-{
-	struct device *dev = v->vdev->sdev;
-	int rep_rc, rc;
-
-	if (!v->vdev->vcm.enabled)
-		return 0;
-
-	rc = vcm_call(v, VCTX_MSG_DESTROY, NULL, 0, &rep_rc, NULL, NULL);
-	dev_dbg(dev, "vpu context %d is destroyed with rc:%d and vpu reply rc:%d\n",
-		v->vpu_ctx_id, rc, rep_rc);
-
-	/* remove submit belongs to this context */
-	vcmd_clean_ctx(&v->vdev->vcm, v);
-	return 0;
-}
-
-int vcm_debugfs_stats_show(struct seq_file *file, struct vpumgr_ctx *v)
-{
-	if (!v->vdev->vcm.enabled)
-		return 0;
-	seq_printf(file, "\tvpu context: #%d\n", v->vpu_ctx_id);
-	seq_printf(file, "\t\tNum of completed cmds: %llu\n", v->total_vcmds);
-	seq_printf(file, "\t\tNum of on-going cmds: %d\n", vcmd_count_ctx(&v->vdev->vcm, v));
-	return 0;
-}
-
 static int vcm_rxthread(void *param)
 {
 	struct vpumgr_device *vdev = param;
@@ -516,10 +456,144 @@ static int vcm_rxthread(void *param)
 	return rc;
 }
 
-int vcm_init(struct vpumgr_device *vdev, u32 sw_dev_id)
+static int vpu_connection_up(struct vpumgr_device *vdev)
 {
 	struct vcm_dev *pvcm = &vdev->vcm;
 	struct task_struct *rxthread;
+	struct device *dev = vdev->dev;
+	enum xlink_error xlink_err;
+	int rc;
+
+	mutex_lock(&pvcm->fwboot_mutex);
+	if (pvcm->fwuser_cnt == 0) {
+		/* boot-up firmware under protection of fwboot_mutex */
+		if (vdev->fwname[0] != '\0') {
+			xlink_err = xlink_boot_device(&pvcm->ipc_xlink_handle, vdev->fwname);
+			if (xlink_err != X_LINK_SUCCESS) {
+				dev_err(dev, "%s: failed to boot-up VPU with firmware %s, rc %d\n",
+					__func__, vdev->fwname, (int)xlink_err);
+				rc = -EFAULT;
+				goto exit;
+			}
+		}
+
+		/* try to (re)open xlink channel after firmware boot-up */
+		xlink_err = xlink_open_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL,
+					       RXB_TXB, VCM_XLINK_CHAN_SIZE, XLINK_IPC_TIMEOUT);
+		if (xlink_err != X_LINK_SUCCESS && xlink_err != X_LINK_ALREADY_OPEN) {
+			dev_err(dev, "%s: failed to open xlink channel %d, rc %d\n",
+				__func__, VCM_XLINK_CHANNEL, (int)xlink_err);
+			rc = -EFAULT;
+			goto exit;
+		}
+
+		rxthread = kthread_run(vcm_rxthread, (void *)vdev, "vcmrx");
+		if (IS_ERR(rxthread)) {
+			rc = PTR_ERR(rxthread);
+			goto error_close_channel;
+		}
+
+		pvcm->rxthread = get_task_struct(rxthread);
+
+		dev_info(dev, "%s: success\n", __func__);
+	}
+	pvcm->fwuser_cnt++;
+	mutex_unlock(&pvcm->fwboot_mutex);
+	return 0;
+
+error_close_channel:
+	xlink_close_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL);
+exit:
+	mutex_unlock(&pvcm->fwboot_mutex);
+	return rc;
+}
+
+static void vpu_connection_down(struct vpumgr_device *vdev)
+{
+	struct vcm_dev *pvcm = &vdev->vcm;
+	struct device *dev = vdev->dev;
+
+	mutex_lock(&pvcm->fwboot_mutex);
+	pvcm->fwuser_cnt--;
+	if (pvcm->fwuser_cnt == 0) {
+		xlink_close_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL);
+		kthread_stop(pvcm->rxthread);
+		put_task_struct(pvcm->rxthread);
+		pvcm->rxthread = NULL;
+
+		dev_info(dev, "%s: success\n", __func__);
+	}
+	mutex_unlock(&pvcm->fwboot_mutex);
+}
+
+int vcm_open(struct vpumgr_ctx *v, struct vpumgr_device *vdev)
+{
+	struct device *dev = vdev->sdev;
+	int rep_rc, rc;
+
+	v->vdev = vdev;
+
+	if (!vdev->vcm.enabled)
+		return 0;
+
+	rc = vpu_connection_up(vdev);
+	if (rc)
+		return rc;
+
+	rc = vcm_call(v, VCTX_MSG_CREATE, NULL, 0, &rep_rc, NULL, NULL);
+
+	if (rc != 0 || rep_rc < 0)
+		dev_err(dev, "%s: Vpu context create with rc:%d and vpu reply rc:%d\n",
+			__func__, rc, rep_rc);
+	if (rc)
+		goto connection_down;
+	if (rep_rc < 0) {
+		rc = -ENXIO;
+		goto connection_down;
+	}
+
+	v->vpu_ctx_id = rep_rc;
+	v->total_vcmds = 0;
+	return 0;
+
+connection_down:
+	vpu_connection_down(vdev);
+	return rc;
+}
+
+int vcm_close(struct vpumgr_ctx *v)
+{
+	struct vpumgr_device *vdev = v->vdev;
+	struct device *dev = vdev->sdev;
+	int rep_rc = 0, rc;
+
+	if (!vdev->vcm.enabled)
+		return 0;
+
+	rc = vcm_call(v, VCTX_MSG_DESTROY, NULL, 0, &rep_rc, NULL, NULL);
+	dev_dbg(dev, "vpu context %d is destroyed with rc:%d and vpu reply rc:%d\n",
+		v->vpu_ctx_id, rc, rep_rc);
+
+	/* remove submit belongs to this context */
+	vcmd_clean_ctx(&vdev->vcm, v);
+
+	vpu_connection_down(vdev);
+	return 0;
+}
+
+int vcm_debugfs_stats_show(struct seq_file *file, struct vpumgr_ctx *v)
+{
+	if (!v->vdev->vcm.enabled)
+		return 0;
+	seq_printf(file, "\tvpu context: #%d\n", v->vpu_ctx_id);
+	seq_printf(file, "\t\tNum of completed cmds: %llu\n", v->total_vcmds);
+	seq_printf(file, "\t\tNum of on-going cmds: %d\n", vcmd_count_ctx(&v->vdev->vcm, v));
+	return 0;
+}
+
+int vcm_init(struct vpumgr_device *vdev, u32 sw_dev_id)
+{
+	struct vcm_dev *pvcm = &vdev->vcm;
 	int rc = 0;
 
 	if (sw_dev_id == XLINK_INVALID_SW_DEVID) {
@@ -541,23 +615,13 @@ int vcm_init(struct vpumgr_device *vdev, u32 sw_dev_id)
 	}
 
 	mutex_init(&pvcm->msg_idr_lock);
+	mutex_init(&pvcm->fwboot_mutex);
 	idr_init(&pvcm->msg_idr);
 
-	rxthread = kthread_run(vcm_rxthread,
-			       (void *)vdev, "vcmrx");
-	if (IS_ERR(rxthread)) {
-		rc = PTR_ERR(rxthread);
-		goto destroy_idr;
-	}
-
-	pvcm->rxthread = get_task_struct(rxthread);
-
+	pvcm->fwuser_cnt = 0;
 	pvcm->enabled = true;
 	return 0;
 
-destroy_idr:
-	idr_destroy(&pvcm->msg_idr);
-	destroy_workqueue(pvcm->wq);
 vpu_link_fini:
 	vcm_vpu_link_fini(pvcm);
 exit:
@@ -572,13 +636,10 @@ int vcm_fini(struct vpumgr_device *vdev)
 	if (!pvcm->enabled)
 		return 0;
 
-	vcm_vpu_link_fini(pvcm);
-
-	kthread_stop(pvcm->rxthread);
-	put_task_struct(pvcm->rxthread);
-
 	idr_destroy(&pvcm->msg_idr);
 	destroy_workqueue(pvcm->wq);
+	mutex_destroy(&pvcm->fwboot_mutex);
 	mutex_destroy(&pvcm->msg_idr_lock);
+	vcm_vpu_link_fini(pvcm);
 	return 0;
 }

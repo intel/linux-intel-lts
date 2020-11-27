@@ -5,6 +5,7 @@
  * Copyright (C) 2020-2021 Intel Corporation
  *
  */
+#include <linux/ctype.h>
 #include <linux/debugfs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -216,6 +217,38 @@ static int vpumgr_debugfs_stats_show(struct seq_file *file, void *offset)
 	return 0;
 }
 
+static ssize_t fwname_show(struct device *device,
+			   struct device_attribute *attr,
+			   char *buf)
+{
+	struct vpumgr_device *vdev = dev_get_drvdata(device);
+
+	return scnprintf(buf, PAGE_SIZE, "%s", vdev->fwname);
+}
+
+static ssize_t fwname_store(struct device *device,
+			    struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	struct vpumgr_device *vdev = dev_get_drvdata(device);
+	int i;
+
+	if (count > sizeof(vdev->fwname) - 1)
+		return -EINVAL;
+
+	for (i = 0; i < count; i++) {
+		if (buf[i] == '\r' || buf[i] == '\n')
+			break;
+		vdev->fwname[i] = buf[i];
+	}
+	vdev->fwname[i] = '\0';
+
+	return count;
+}
+
+static const char *default_fwname = "vpu_nvr.bin";
+static struct device_attribute fwname_attr = __ATTR_RW(fwname);
+
 static const struct of_device_id keembay_vpumgr_of_match[] = {
 	{ .compatible = "intel,keembay-vpu-mgr"},
 	{ .compatible = "intel,keembay-vpusmm"},
@@ -251,6 +284,7 @@ static int vpumgr_driver_probe(struct platform_device *pdev)
 	vdev->devnum = MKDEV(MAJOR(vpumgr_devnum), vpu_ipc_id);
 	vdev->pdev = pdev;
 	vdev->dev = dev;
+	scnprintf(vdev->fwname, sizeof(vdev->fwname), "%s", default_fwname);
 
 	dev_dbg(dev, "dev->devnum %u, id %u, major %u\n",
 		vdev->devnum, vpu_ipc_id,  MAJOR(vdev->devnum));
@@ -275,9 +309,13 @@ static int vpumgr_driver_probe(struct platform_device *pdev)
 	debugfs_create_devm_seqfile(dev, "stats", vdev->debugfs_root,
 				    vpumgr_debugfs_stats_show);
 
-	rc = smm_init(vdev);
+	rc = device_create_file(dev, &fwname_attr);
 	if (rc)
 		goto remove_debugfs;
+
+	rc = smm_init(vdev);
+	if (rc)
+		goto remove_sysfs;
 
 	rc = vcm_init(vdev, ipc_sw_device_id);
 	if (rc)
@@ -291,6 +329,8 @@ static int vpumgr_driver_probe(struct platform_device *pdev)
 
 fini_smm:
 	smm_fini(vdev);
+remove_sysfs:
+	device_remove_file(dev, &fwname_attr);
 remove_debugfs:
 	debugfs_remove_recursive(vdev->debugfs_root);
 	cdev_del(&vdev->cdev);
@@ -306,6 +346,7 @@ static int vpumgr_driver_remove(struct platform_device *pdev)
 	mutex_destroy(&vdev->client_mutex);
 	vcm_fini(vdev);
 	smm_fini(vdev);
+	device_remove_file(vdev->dev, &fwname_attr);
 	debugfs_remove_recursive(vdev->debugfs_root);
 	cdev_del(&vdev->cdev);
 	device_destroy(vpumgr_class, vdev->devnum);
