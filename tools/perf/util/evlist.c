@@ -1623,7 +1623,7 @@ void perf_evlist__to_front(struct evlist *evlist,
 	list_splice(&move, &evlist->core.entries);
 }
 
-struct evsel *perf_evlist__get_tracking_event(struct evlist *evlist)
+struct evsel *evlist__get_tracking_event(struct evlist *evlist)
 {
 	struct evsel *evsel;
 
@@ -1635,8 +1635,7 @@ struct evsel *perf_evlist__get_tracking_event(struct evlist *evlist)
 	return evlist__first(evlist);
 }
 
-void perf_evlist__set_tracking_event(struct evlist *evlist,
-				     struct evsel *tracking_evsel)
+void evlist__set_tracking_event(struct evlist *evlist, struct evsel *tracking_evsel)
 {
 	struct evsel *evsel;
 
