@@ -189,7 +189,7 @@ static int evsel__alloc_stats(struct evsel *evsel, bool alloc_raw)
 	return 0;
 }
 
-int perf_evlist__alloc_stats(struct evlist *evlist, bool alloc_raw)
+int evlist__alloc_stats(struct evlist *evlist, bool alloc_raw)
 {
 	struct evsel *evsel;
 
@@ -201,11 +201,11 @@ int perf_evlist__alloc_stats(struct evlist *evlist, bool alloc_raw)
 	return 0;
 
 out_free:
-	perf_evlist__free_stats(evlist);
+	evlist__free_stats(evlist);
 	return -1;
 }
 
-void perf_evlist__free_stats(struct evlist *evlist)
+void evlist__free_stats(struct evlist *evlist)
 {
 	struct evsel *evsel;
 
@@ -216,7 +216,7 @@ void perf_evlist__free_stats(struct evlist *evlist)
 	}
 }
 
-void perf_evlist__reset_stats(struct evlist *evlist)
+void evlist__reset_stats(struct evlist *evlist)
 {
 	struct evsel *evsel;
 
@@ -226,7 +226,7 @@ void perf_evlist__reset_stats(struct evlist *evlist)
 	}
 }
 
-void perf_evlist__reset_prev_raw_counts(struct evlist *evlist)
+void evlist__reset_prev_raw_counts(struct evlist *evlist)
 {
 	struct evsel *evsel;
 
@@ -250,7 +250,7 @@ static void evsel__copy_prev_raw_counts(struct evsel *evsel)
 	evsel->counts->aggr = evsel->prev_raw_counts->aggr;
 }
 
-void perf_evlist__copy_prev_raw_counts(struct evlist *evlist)
+void evlist__copy_prev_raw_counts(struct evlist *evlist)
 {
 	struct evsel *evsel;
 
@@ -258,7 +258,7 @@ void perf_evlist__copy_prev_raw_counts(struct evlist *evlist)
 		evsel__copy_prev_raw_counts(evsel);
 }
 
-void perf_evlist__save_aggr_prev_raw_counts(struct evlist *evlist)
+void evlist__save_aggr_prev_raw_counts(struct evlist *evlist)
 {
 	struct evsel *evsel;
 

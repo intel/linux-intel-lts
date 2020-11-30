@@ -1861,7 +1861,7 @@ static void perf_sample__fprint_metric(struct perf_script *script,
 	u64 val;
 
 	if (!evsel->stats)
-		perf_evlist__alloc_stats(script->session->evlist, false);
+		evlist__alloc_stats(script->session->evlist, false);
 	if (evsel_script(evsel->leader)->gnum++ == 0)
 		perf_stat__reset_shadow_stats();
 	val = sample->period * evsel->scale;
@@ -3329,7 +3329,7 @@ static int set_maps(struct perf_script *script)
 
 	perf_evlist__set_maps(&evlist->core, script->cpus, script->threads);
 
-	if (perf_evlist__alloc_stats(evlist, true))
+	if (evlist__alloc_stats(evlist, true))
 		return -ENOMEM;
 
 	script->allocated = true;
@@ -3961,7 +3961,7 @@ out_delete:
 		zfree(&script.ptime_range);
 	}
 
-	perf_evlist__free_stats(session->evlist);
+	evlist__free_stats(session->evlist);
 	perf_session__delete(session);
 
 	if (script_started)
