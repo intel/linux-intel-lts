@@ -1475,7 +1475,7 @@ static int evsel__process_group_data(struct evsel *leader, int cpu, int thread, 
 	for (i = 1; i < nr; i++) {
 		struct evsel *counter;
 
-		counter = perf_evlist__id2evsel(leader->evlist, v[i].id);
+		counter = evlist__id2evsel(leader->evlist, v[i].id);
 		if (!counter)
 			return -EINVAL;
 
