@@ -1192,7 +1192,7 @@ u64 evlist__combined_branch_type(struct evlist *evlist)
 	return branch_type;
 }
 
-bool perf_evlist__valid_read_format(struct evlist *evlist)
+bool evlist__valid_read_format(struct evlist *evlist)
 {
 	struct evsel *first = evlist__first(evlist), *pos = first;
 	u64 read_format = first->core.attr.read_format;
@@ -1714,7 +1714,7 @@ state_err:
 	return;
 }
 
-bool perf_evlist__exclude_kernel(struct evlist *evlist)
+bool evlist__exclude_kernel(struct evlist *evlist)
 {
 	struct evsel *evsel;
 

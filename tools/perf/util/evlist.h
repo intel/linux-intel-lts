@@ -163,8 +163,7 @@ void evlist__close(struct evlist *evlist);
 struct callchain_param;
 
 void evlist__set_id_pos(struct evlist *evlist);
-void perf_evlist__config(struct evlist *evlist, struct record_opts *opts,
-			 struct callchain_param *callchain);
+void evlist__config(struct evlist *evlist, struct record_opts *opts, struct callchain_param *callchain);
 int record_opts__config(struct record_opts *opts);
 
 int evlist__prepare_workload(struct evlist *evlist, struct target *target,
@@ -217,7 +216,7 @@ int evlist__parse_sample_timestamp(struct evlist *evlist, union perf_event *even
 
 bool evlist__valid_sample_type(struct evlist *evlist);
 bool evlist__valid_sample_id_all(struct evlist *evlist);
-bool perf_evlist__valid_read_format(struct evlist *evlist);
+bool evlist__valid_read_format(struct evlist *evlist);
 
 void evlist__splice_list_tail(struct evlist *evlist, struct list_head *list);
 
@@ -327,7 +326,7 @@ struct evsel *evlist__find_evsel_by_str(struct evlist *evlist, const char *str);
 
 struct evsel *evlist__event2evsel(struct evlist *evlist, union perf_event *event);
 
-bool perf_evlist__exclude_kernel(struct evlist *evlist);
+bool evlist__exclude_kernel(struct evlist *evlist);
 
 void evlist__force_leader(struct evlist *evlist);
 
