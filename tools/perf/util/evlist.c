@@ -1529,8 +1529,7 @@ int evlist__start_workload(struct evlist *evlist)
 	return 0;
 }
 
-int perf_evlist__parse_sample(struct evlist *evlist, union perf_event *event,
-			      struct perf_sample *sample)
+int evlist__parse_sample(struct evlist *evlist, union perf_event *event, struct perf_sample *sample)
 {
 	struct evsel *evsel = perf_evlist__event2evsel(evlist, event);
 
@@ -1539,9 +1538,7 @@ int perf_evlist__parse_sample(struct evlist *evlist, union perf_event *event,
 	return evsel__parse_sample(evsel, event, sample);
 }
 
-int perf_evlist__parse_sample_timestamp(struct evlist *evlist,
-					union perf_event *event,
-					u64 *timestamp)
+int evlist__parse_sample_timestamp(struct evlist *evlist, union perf_event *event, u64 *timestamp)
 {
 	struct evsel *evsel = perf_evlist__event2evsel(evlist, event);
 
