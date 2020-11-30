@@ -1265,8 +1265,7 @@ bool evlist__sample_id_all(struct evlist *evlist)
 	return first->core.attr.sample_id_all;
 }
 
-void perf_evlist__set_selected(struct evlist *evlist,
-			       struct evsel *evsel)
+void evlist__set_selected(struct evlist *evlist, struct evsel *evsel)
 {
 	evlist->selected = evsel;
 }
