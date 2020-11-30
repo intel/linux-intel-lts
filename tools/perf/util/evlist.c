@@ -202,13 +202,12 @@ void perf_evlist__splice_list_tail(struct evlist *evlist,
 int __evlist__set_tracepoints_handlers(struct evlist *evlist,
 				       const struct evsel_str_handler *assocs, size_t nr_assocs)
 {
-	struct evsel *evsel;
 	size_t i;
 	int err;
 
 	for (i = 0; i < nr_assocs; i++) {
 		// Adding a handler for an event not in this evlist, just ignore it.
-		evsel = perf_evlist__find_tracepoint_by_name(evlist, assocs[i].name);
+		struct evsel *evsel = evlist__find_tracepoint_by_name(evlist, assocs[i].name);
 		if (evsel == NULL)
 			continue;
 
@@ -305,8 +304,7 @@ int __evlist__add_default_attrs(struct evlist *evlist, struct perf_event_attr *a
 	return evlist__add_attrs(evlist, attrs, nr_attrs);
 }
 
-struct evsel *
-perf_evlist__find_tracepoint_by_id(struct evlist *evlist, int id)
+struct evsel *evlist__find_tracepoint_by_id(struct evlist *evlist, int id)
 {
 	struct evsel *evsel;
 
@@ -319,9 +317,7 @@ perf_evlist__find_tracepoint_by_id(struct evlist *evlist, int id)
 	return NULL;
 }
 
-struct evsel *
-perf_evlist__find_tracepoint_by_name(struct evlist *evlist,
-				     const char *name)
+struct evsel *evlist__find_tracepoint_by_name(struct evlist *evlist, const char *name)
 {
 	struct evsel *evsel;
 
@@ -1676,9 +1672,7 @@ void perf_evlist__set_tracking_event(struct evlist *evlist,
 	tracking_evsel->tracking = true;
 }
 
-struct evsel *
-perf_evlist__find_evsel_by_str(struct evlist *evlist,
-			       const char *str)
+struct evsel *evlist__find_evsel_by_str(struct evlist *evlist, const char *str)
 {
 	struct evsel *evsel;
 
