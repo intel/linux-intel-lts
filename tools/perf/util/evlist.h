@@ -196,8 +196,7 @@ void evlist__toggle_enable(struct evlist *evlist);
 void evlist__disable_evsel(struct evlist *evlist, char *evsel_name);
 void evlist__enable_evsel(struct evlist *evlist, char *evsel_name);
 
-int perf_evlist__enable_event_idx(struct evlist *evlist,
-				  struct evsel *evsel, int idx);
+int evlist__enable_event_idx(struct evlist *evlist, struct evsel *evsel, int idx);
 
 void perf_evlist__set_selected(struct evlist *evlist,
 			       struct evsel *evsel);
