@@ -28,7 +28,7 @@
 #define WDT_UNLOCK		0xf1d0dead
 #define WDT_LOAD_MAX		U32_MAX
 #define WDT_LOAD_MIN		1
-#define WDT_TIMEOUT		5
+#define WDT_TIMEOUT		10
 
 static unsigned int timeout = WDT_TIMEOUT;
 module_param(timeout, int, 0);
