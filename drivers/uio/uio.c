@@ -413,10 +413,10 @@ static int uio_get_minor(struct uio_device *idev)
 	return retval;
 }
 
-static void uio_free_minor(struct uio_device *idev)
+static void uio_free_minor(unsigned long minor)
 {
 	mutex_lock(&minor_lock);
-	idr_remove(&uio_idr, idev->minor);
+	idr_remove(&uio_idr, minor);
 	mutex_unlock(&minor_lock);
 }
 
@@ -559,6 +559,22 @@ static __poll_t uio_poll(struct file *filep, poll_table *wait)
 		return EPOLLIN | EPOLLRDNORM;
 	return 0;
 }
+
+#ifdef CONFIG_PCI_MSI
+static long uio_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+{
+	struct uio_listener *listener = filep->private_data;
+	struct uio_device *idev = listener->dev;
+
+	if (!idev->info)
+		return -EIO;
+
+	if (!idev->info->ioctl)
+		return -ENOTTY;
+
+	return idev->info->ioctl(idev->info, cmd, arg);
+}
+#endif
 
 static ssize_t uio_read(struct file *filep, char __user *buf,
 			size_t count, loff_t *ppos)
@@ -821,6 +837,9 @@ static const struct file_operations uio_fops = {
 	.write		= uio_write,
 	.mmap		= uio_mmap,
 	.poll		= uio_poll,
+#ifdef CONFIG_PCI_MSI
+	.unlocked_ioctl	= uio_ioctl,
+#endif
 	.fasync		= uio_fasync,
 	.llseek		= noop_llseek,
 };
@@ -990,7 +1009,7 @@ err_request_irq:
 err_uio_dev_add_attributes:
 	device_del(&idev->dev);
 err_device_create:
-	uio_free_minor(idev);
+	uio_free_minor(idev->minor);
 	put_device(&idev->dev);
 	return ret;
 }
@@ -1004,11 +1023,13 @@ EXPORT_SYMBOL_GPL(__uio_register_device);
 void uio_unregister_device(struct uio_info *info)
 {
 	struct uio_device *idev;
+	unsigned long minor;
 
 	if (!info || !info->uio_dev)
 		return;
 
 	idev = info->uio_dev;
+	minor = idev->minor;
 
 	mutex_lock(&idev->info_lock);
 	uio_dev_del_attributes(idev);
@@ -1024,7 +1045,7 @@ void uio_unregister_device(struct uio_info *info)
 
 	device_unregister(&idev->dev);
 
-	uio_free_minor(idev);
+	uio_free_minor(minor);
 
 	return;
 }

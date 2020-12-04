@@ -977,8 +977,11 @@ static int dwc_alloc_chan_resources(struct dma_chan *chan)
 
 	dev_vdbg(chan2dev(chan), "%s\n", __func__);
 
+	pm_runtime_get_sync(dw->dma.dev);
+
 	/* ASSERT:  channel is idle */
 	if (dma_readl(dw, CH_EN) & dwc->mask) {
+		pm_runtime_put_sync_suspend(dw->dma.dev);
 		dev_dbg(chan2dev(chan), "DMA channel not idle?\n");
 		return -EIO;
 	}
@@ -995,6 +998,7 @@ static int dwc_alloc_chan_resources(struct dma_chan *chan)
 	 * We need controller-specific data to set up slave transfers.
 	 */
 	if (chan->private && !dw_dma_filter(chan, chan->private)) {
+		pm_runtime_put_sync_suspend(dw->dma.dev);
 		dev_warn(chan2dev(chan), "Wrong controller-specific data\n");
 		return -EINVAL;
 	}
@@ -1037,6 +1041,8 @@ static void dwc_free_chan_resources(struct dma_chan *chan)
 	dw->in_use &= ~dwc->mask;
 	if (!dw->in_use)
 		do_dw_dma_off(dw);
+
+	pm_runtime_put_sync_suspend(dw->dma.dev);
 
 	dev_vdbg(chan2dev(chan), "%s: done\n", __func__);
 }

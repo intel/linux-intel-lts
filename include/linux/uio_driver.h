@@ -46,6 +46,15 @@ struct uio_mem {
 
 #define MAX_UIO_MAPS	5
 
+#ifdef CONFIG_PCI_MSI
+struct uio_msix_data {
+	int fd;
+	int vector;
+};
+#define UIO_MSIX_DATA	_IOW('u', 100, struct uio_msix_data)
+#endif
+
+
 struct uio_portio;
 
 /**
@@ -109,6 +118,10 @@ struct uio_info {
 	int (*open)(struct uio_info *info, struct inode *inode);
 	int (*release)(struct uio_info *info, struct inode *inode);
 	int (*irqcontrol)(struct uio_info *info, s32 irq_on);
+#ifdef CONFIG_PCI_MSI
+	int (*ioctl)(struct uio_info *info, unsigned int cmd,
+			unsigned long arg);
+#endif
 };
 
 extern int __must_check
