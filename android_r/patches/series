@@ -36,9 +36,6 @@
 # CVE-2020-15780
 0003-ACPI-configfs-Disallow-loading-ACPI-tables-when-lock.patch
 
-# CVE-2019-19815
-0001-f2fs-support-swap-file-w-DIO.patch
-
 # CVE-2020-12656
 0001-sunrpc-check-that-domain-table-is-empty-at-module-un.patch
 
