@@ -225,6 +225,8 @@ int kmb_setup_crtc(struct drm_device *drm)
 	struct kmb_plane *primary;
 	int ret;
 
+	memset(kmb->init_disp_cfg, 0, sizeof(kmb->init_disp_cfg));
+
 	primary = kmb_plane_init(drm);
 	if (IS_ERR(primary))
 		return PTR_ERR(primary);

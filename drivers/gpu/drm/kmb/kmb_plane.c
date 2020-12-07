@@ -71,23 +71,43 @@ static const u32 kmb_formats_v[] = {
 
 static unsigned int check_pixel_format(struct drm_plane *plane, u32 format)
 {
+	struct kmb_drm_private *kmb;
+	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
 	int i;
+	int plane_id = kmb_plane->id;
+	struct disp_cfg init_disp_cfg;
 
+	kmb = to_kmb(plane->dev);
+	init_disp_cfg = kmb->init_disp_cfg[plane_id];
+	/* Due to HW limitations, changing pixel format after initial
+	 * plane configuration is not supported.
+	 */
+	if (init_disp_cfg.format && init_disp_cfg.format != format) {
+		DRM_DEBUG("Cannot change format after initial plane configuration");
+		return -EINVAL;
+	}
 	for (i = 0; i < plane->format_count; i++) {
 		if (plane->format_types[i] == format)
 			return 0;
 	}
+
 	return -EINVAL;
 }
 
 static int kmb_plane_atomic_check(struct drm_plane *plane,
 				  struct drm_plane_state *state)
 {
+	struct kmb_drm_private *kmb;
+	struct kmb_plane *kmb_plane = to_kmb_plane(plane);
+	int plane_id = kmb_plane->id;
+	struct disp_cfg init_disp_cfg;
 	struct drm_framebuffer *fb;
 	int ret;
 	struct drm_crtc_state *crtc_state;
 	bool can_position;
 
+	kmb = to_kmb(plane->dev);
+	init_disp_cfg = kmb->init_disp_cfg[plane_id];
 	fb = state->fb;
 	if (!fb || !state->crtc)
 		return 0;
@@ -100,6 +120,16 @@ static int kmb_plane_atomic_check(struct drm_plane *plane,
 		return -EINVAL;
 	if (state->crtc_w < KMB_MIN_WIDTH || state->crtc_h < KMB_MIN_HEIGHT)
 		return -EINVAL;
+
+	/* Due to HW limitations, changing plane height or width after
+	 * initial plane configuration is not supported.
+	 */
+	if ((init_disp_cfg.width && init_disp_cfg.height) &&
+	    (init_disp_cfg.width != fb->width ||
+	    init_disp_cfg.height != fb->height)) {
+		DRM_DEBUG("Cannot change plane height or width after initial configuration");
+		return -EINVAL;
+	}
 	can_position = (plane->type == DRM_PLANE_TYPE_OVERLAY);
 	crtc_state =
 		drm_atomic_get_existing_crtc_state(state->state, state->crtc);
@@ -292,6 +322,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	unsigned char plane_id;
 	int num_planes, i;
 	static dma_addr_t addr[MAX_SUB_PLANES];
+	struct disp_cfg *init_disp_cfg;
 	struct viv_vidmem_metadata *md = NULL;
 	struct drm_gem_object *gem_obj;
 
@@ -315,6 +346,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	}
 	spin_unlock_irq(&kmb->irq_lock);
 
+	init_disp_cfg = &kmb->init_disp_cfg[plane_id];
 	src_w = (plane->state->src_w >> 16);
 	src_h = plane->state->src_h >> 16;
 	crtc_x = plane->state->crtc_x;
@@ -469,6 +501,16 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 
 	/* Enable DMA */
 	kmb_write_lcd(kmb, LCD_LAYERn_DMA_CFG(plane_id), dma_cfg);
+
+	/* Save initial display config */
+	if (!init_disp_cfg->width ||
+	    !init_disp_cfg->height ||
+	    !init_disp_cfg->format) {
+		init_disp_cfg->width = width;
+		init_disp_cfg->height = height;
+		init_disp_cfg->format = fb->format->format;
+	}
+
 	drm_dbg(&kmb->drm, "dma_cfg=0x%x LCD_DMA_CFG=0x%x\n", dma_cfg,
 		kmb_read_lcd(kmb, LCD_LAYERn_DMA_CFG(plane_id)));
 
