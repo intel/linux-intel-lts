@@ -26,8 +26,7 @@
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
 
 # CVE-2019-10220
-0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
-0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
+0001-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
 
 # CVE-2019-20908
 0001-UBUNTU-SAUCE-efi-lockdown-Add-the-ability-to-lock-do.patch
