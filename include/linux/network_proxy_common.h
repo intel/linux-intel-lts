@@ -100,6 +100,8 @@ struct np_mib {
 	unsigned char ipv4_addr[NP_IPV4_ADDR_BYTES];
 	unsigned char ipv6_addr[NP_IPV6_ADDR_ARRAY][NP_IPV6_ADDR_BYTES];
 	unsigned short tcp_port[NP_TCP_PORT_ARRAY];
+	unsigned int ipv6_addr_sz;
+	unsigned int tcp_port_sz;
 };
 
 /* Network Proxy Agent Info */
