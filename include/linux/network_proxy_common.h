@@ -54,6 +54,7 @@
 #define NP_RL_T_MDNS			11
 #define NP_RL_T_MDNS_WRITE_RR		12
 #define NP_RL_T_MDNS_READ_RR		13
+#define NP_RL_T_IPV4_SUBNET		14
 
 /* Network Proxy Fixed Classifier Value (2 bytes) */
 #define NP_RL_CLS_ENABLE		BIT(15)
@@ -102,6 +103,7 @@ struct np_mib {
 	unsigned short tcp_port[NP_TCP_PORT_ARRAY];
 	unsigned int ipv6_addr_sz;
 	unsigned int tcp_port_sz;
+	unsigned char ipv4_subnet[NP_IPV4_ADDR_BYTES];
 };
 
 /* Network Proxy Agent Info */
