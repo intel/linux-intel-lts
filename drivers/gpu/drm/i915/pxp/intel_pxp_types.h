@@ -38,6 +38,8 @@ struct intel_pxp_session {
 	 *            session to know if it's valid.
 	 */
 	bool is_valid;
+
+	u32 tag;
 };
 
 /**
@@ -130,6 +132,7 @@ struct intel_pxp {
 	DECLARE_BITMAP(reserved_sessions, INTEL_PXP_MAX_HWDRM_SESSIONS);
 	struct intel_pxp_session *hwdrm_sessions[INTEL_PXP_MAX_HWDRM_SESSIONS];
 	struct intel_pxp_session arb_session;
+	u8 next_tag_id[INTEL_PXP_MAX_HWDRM_SESSIONS];
 
 	/** @session_work: worker that manages session events. */
 	struct work_struct session_work;
