@@ -177,7 +177,15 @@ static int byt_serial_setup(struct lpss8250 *lpss, struct uart_port *port)
 
 	return 0;
 }
+static void ehl_set_termios(struct uart_port *p, struct ktermios *termios,
+			    struct ktermios *old)
+{
+	p->status &= ~UPSTAT_AUTOCTS;
+	if (termios->c_cflag & CRTSCTS)
+		p->status |= UPSTAT_AUTOCTS;
 
+	serial8250_do_set_termios(p, termios, old);
+}
 static int ehl_serial_setup(struct lpss8250 *lpss, struct uart_port *port)
 {
 	struct dw_dma_slave *param = &lpss->dma_param;
@@ -187,6 +195,8 @@ static int ehl_serial_setup(struct lpss8250 *lpss, struct uart_port *port)
 	param->dst_id = 1;
 	param->dma_dev = &pdev->dev;
 	lpss->dma_maxburst = 8;
+
+	port->set_termios = ehl_set_termios;
 
 	return 0;
 }
