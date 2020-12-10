@@ -28,6 +28,7 @@
 #define V4L2_CID_SYNC_MODE			(V4L2_CID_USER_BASE | 0x7)
 #define V4L2_CID_SYNC_START			(V4L2_CID_USER_BASE | 0x8)
 #define V4L2_CID_ROW_TIME_NS			(V4L2_CID_USER_BASE | 0x9)
+#define V4L2_CID_SYNC_TYPE			(V4L2_CID_USER_BASE | 0xA)
 
 /* MIPI Specification YUV 8 Bit 420 (DT 0x18) */
 #define V4L2_PIX_FMT_YUV420_MIPI8	v4l2_fourcc('Y', 'U', 'V', '8')
@@ -98,16 +99,27 @@ enum kmb_camera_mode {
 };
 
 /**
- * kmb_hw_sync_mode - KMB sensor hw sync mode
+ * kmb_sync_mode - KMB sensor sync mode
  *
- * @KMB_HW_SYNC_NONE: No hw sync
- * @KMB_HW_SYNC_MAIN: HW main sync mode
- * @KMB_HW_SYNC_AUX: HW auxiliary sync mode
+ * @KMB_SYNC_NONE: No sync
+ * @KMB_SYNC_MAIN: Main sync mode
+ * @KMB_SYNC_AUX: Auxiliary sync mode
  */
-enum kmb_hw_sync_mode {
-	KMB_HW_SYNC_NONE = 0,
-	KMB_HW_SYNC_MAIN = 1,
-	KMB_HW_SYNC_AUX = 2
+enum kmb_sync_mode {
+	KMB_SYNC_NONE = 0,
+	KMB_SYNC_MAIN = 1,
+	KMB_SYNC_AUX = 2
+};
+
+/**
+ * kmb_sync_type - KMB sensor sync type
+ *
+ * @KMB_SYNC_TYPE_HW: HW sync with XVS
+ * @KMB_SYNC_TYPE_SW: SW sync with start stream command on shared CCI
+ */
+enum kmb_sync_type {
+	KMB_SYNC_TYPE_HW = 0,
+	KMB_SYNC_TYPE_SW = 1,
 };
 
 /**
