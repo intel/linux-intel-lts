@@ -107,6 +107,10 @@
 #define KMB_IMX412_3DOL_GET_1ST_MAX_EXP(x)	\
 	(((x * 4) / 3) - (3 * 22) - 4)
 
+#define KMB_IMX412_MAIN_I2C		0x10
+#define KMB_IMX412_AUX_ADD_EN_2ND	0x3010
+#define KMB_IMX412_AUX_ADD_ACK_2ND	0x3011
+
 /**
  * struct kmb_imx412_reg - KMB imx412 Sensor register
  * @address: Register address
@@ -182,6 +186,7 @@ struct kmb_imx412_mode {
  * struct kmb_imx412 - KMB imx412 Sensor device structure
  * @dev: pointer to generic device
  * @client: pointer to i2c client
+ * @broadcast_client: pointer to i2c auxiliary client
  * @sd: V4L2 sub-device
  * @pad: Media pad. Only one pad supported
  * @reset_gpio: Sensor reset gpio
@@ -198,8 +203,9 @@ struct kmb_imx412_mode {
  * @again_ctrl1: Pointer to short analog gain control
  * @exp_ctrl2: Pointer to very short exposure control
  * @again_ctrl2: Pointer to very short analog gain control
- * @sync_enable_ctrl: Pointer to hardware sync enable control
+ * @sync_mode_ctrl: Pointer to sync mode control
  * @sync_start_ctrl: Pointer to sync start control
+ * @sync_type_ctrl: Pointer to sync type control
  * @num_lanes: Number of data lanes
  * @fps: FPS to be applied on next stream on
  * @lpfr: Lines per frame for long exposure frame
@@ -210,10 +216,12 @@ struct kmb_imx412_mode {
  * @streaming_mode: Current selected streaming mode
  * @streaming: Flag indicating streaming state
  * @sync_mode: Sensor sync mode
+ * @sync_type: Sensor sync type - sw or hw
  */
 struct kmb_imx412 {
 	struct device *dev;
 	struct i2c_client *client;
+	struct i2c_client *broadcast_client;
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct gpio_desc *reset_gpio;
@@ -232,8 +240,9 @@ struct kmb_imx412 {
 		struct v4l2_ctrl *exp_ctrl2;
 		struct v4l2_ctrl *again_ctrl2;
 	};
-	struct v4l2_ctrl *sync_enable_ctrl;
+	struct v4l2_ctrl *sync_mode_ctrl;
 	struct v4l2_ctrl *sync_start_ctrl;
+	struct v4l2_ctrl *sync_type_ctrl;
 	u32 num_lanes;
 	u32 fps;
 	u32 lpfr;
@@ -243,7 +252,8 @@ struct kmb_imx412 {
 	struct mutex mutex;
 	enum kmb_imx412_streaming_mode streaming_mode;
 	bool streaming;
-	enum kmb_hw_sync_mode sync_mode;
+	enum kmb_sync_mode sync_mode;
+	enum kmb_sync_type sync_type;
 };
 
 static const s64 link_freq[] = {
@@ -1739,8 +1749,8 @@ kmb_imx412_read_reg(struct kmb_imx412 *kmb_imx412, u16 reg, u32 len, u32 *val)
 }
 
 /**
- * kmb_imx412_write_reg - Write register
- * @kmb_imx412: pointer to imx412 device
+ * kmb_imx412_i2c_write - Write register to i2c client
+ * @client: i2c client to write to
  * @reg: Register address
  * @len: Length of bytes. Max supported bytes is 4
  * @val: Register value
@@ -1748,16 +1758,18 @@ kmb_imx412_read_reg(struct kmb_imx412 *kmb_imx412, u16 reg, u32 len, u32 *val)
  * Return: 0 if successful
  */
 static int
-kmb_imx412_write_reg(struct kmb_imx412 *kmb_imx412, u16 reg, u32 len, u32 val)
+kmb_imx412_i2c_write(struct i2c_client *client, u16 reg, u32 len, u32 val)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&kmb_imx412->sd);
 	int buf_i, val_i;
 	u8 buf[6], *val_p;
 	__be32 val_be;
 	int ret;
 
+	if (WARN_ON(!client))
+		return -ENODEV;
+
 	if (len > 4) {
-		dev_err_ratelimited(kmb_imx412->dev,
+		dev_err_ratelimited(&client->dev,
 				    "write reg 0x%4.4x invalid len %d",
 				    reg, len);
 		return -EINVAL;
@@ -1776,13 +1788,50 @@ kmb_imx412_write_reg(struct kmb_imx412 *kmb_imx412, u16 reg, u32 len, u32 val)
 
 	ret = i2c_master_send(client, buf, len + 2);
 	if (ret != len + 2) {
-		dev_err_ratelimited(kmb_imx412->dev,
-				"write reg 0x%4.4x return err %d",
-				reg, ret);
+		dev_err_ratelimited(&client->dev,
+				    "write reg 0x%4.4x return err %d",
+				    reg, ret);
 		return -EIO;
 	}
 
 	return 0;
+}
+
+/**
+ * kmb_imx412_write_reg - Write register to primary i2c client
+ * @kmb_imx412: pointer to imx412 device
+ * @reg: Register address
+ * @len: Length of bytes. Max supported bytes is 4
+ * @val: Register value
+ *
+ * Return: 0 if successful
+ */
+static int
+kmb_imx412_write_reg(struct kmb_imx412 *kmb_imx412, u16 reg, u32 len, u32 val)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&kmb_imx412->sd);
+
+	return kmb_imx412_i2c_write(client, reg, len, val);
+}
+
+/**
+ * kmb_imx412_i2c_broadcast - Broadcast on auxiliary i2c client. This is done
+ *                            when dual camera on a shared i2c bus without XVS
+ *                            is enabled and the Streaming command to both
+ *                            sensors is sent at the same time.
+ * @kmb_imx412: pointer to imx412 device
+ * @reg: Register address
+ * @len: Length of bytes. Max supported bytes is 4
+ * @val: Register value
+ *
+ * Return: 0 if successful
+ */
+static int
+kmb_imx412_i2c_broadcast(struct kmb_imx412 *kmb_imx412, u16 reg, u32 len,
+			 u32 val)
+{
+	return kmb_imx412_i2c_write(kmb_imx412->broadcast_client,
+				    reg, len, val);
 }
 
 /**
@@ -1855,10 +1904,51 @@ static int kmb_imx412_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	try_fmt->height = kmb_imx412->cur_mode->height;
 	try_fmt->code = kmb_imx412->cur_mode->code;
 	try_fmt->field = V4L2_FIELD_NONE;
+	kmb_imx412->sync_type = KMB_SYNC_TYPE_HW;
 
 	mutex_unlock(&kmb_imx412->mutex);
 
 	return 0;
+}
+
+/**
+ * kmb_imx412_open - Handle synchronous starting of more than one sensors
+ *
+ * @kmb_imx412: pointer to kmb_imx412 device
+ *
+ * Return: 0 if successful
+ */
+static int kmb_imx412_sync_start(struct kmb_imx412 *kmb_imx412)
+{
+	int ret = 0;
+
+	dev_dbg(kmb_imx412->dev, "V4L2_CID_SYNC_START");
+
+	switch (kmb_imx412->sync_type) {
+	case KMB_SYNC_TYPE_HW:
+		ret = kmb_imx412_write_reg(kmb_imx412,
+					   KMB_IMX412_REG_MODE_SELECT,
+					   1, KMB_IMX412_MODE_STREAMING);
+		if (ret)
+			dev_err(kmb_imx412->dev, "Failed to start streaming!");
+		break;
+	case KMB_SYNC_TYPE_SW:
+		if (kmb_imx412->sync_mode == KMB_SYNC_MAIN) {
+			ret =
+			kmb_imx412_i2c_broadcast(kmb_imx412,
+						 KMB_IMX412_REG_MODE_SELECT,
+						 1, KMB_IMX412_MODE_STREAMING);
+			if (ret)
+				dev_err(kmb_imx412->dev,
+					"Failed to broadcast start streaming!");
+		}
+		break;
+	default:
+		ret = -EINVAL;
+		dev_err(kmb_imx412->dev, "Invalid sync type!");
+	}
+
+	return ret;
 }
 
 /**
@@ -1886,16 +1976,16 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 		dev_dbg(kmb_imx412->dev, "V4L2_CID_SYNC_MODE %d", ctrl->val);
 		return 0;
 	case V4L2_CID_SYNC_START:
-		if (kmb_imx412->sync_mode != KMB_HW_SYNC_NONE) {
-			ret = kmb_imx412_write_reg(kmb_imx412,
-						KMB_IMX412_REG_MODE_SELECT,
-						1, KMB_IMX412_MODE_STREAMING);
-			if (ret)
-				dev_err(kmb_imx412->dev,
-					"Fail to start streaming");
-		}
-		dev_dbg(kmb_imx412->dev, "V4L2_CID_SYNC_START");
+		if (kmb_imx412->sync_mode == KMB_SYNC_NONE)
+			return -EINVAL;
+
+		ret = kmb_imx412_sync_start(kmb_imx412);
 		return ret;
+	case V4L2_CID_SYNC_TYPE:
+		kmb_imx412->sync_type = ctrl->val;
+
+		dev_dbg(kmb_imx412->dev, "V4L2_CID_SYNC_TYPE %d", ctrl->val);
+		return 0;
 	}
 
 	/* Set exposure and gain only if sensor is in power on state */
@@ -2135,22 +2225,33 @@ static const struct v4l2_ctrl_ops kmb_imx412_ctrl_ops = {
 	.s_ctrl = kmb_imx412_set_ctrl,
 };
 
-static const struct v4l2_ctrl_config hw_sync_enable = {
+static const struct v4l2_ctrl_config sync_mode = {
 	.ops = &kmb_imx412_ctrl_ops,
 	.id = V4L2_CID_SYNC_MODE,
 	.name = "V4L2_CID_SYNC_MODE",
 	.type = V4L2_CTRL_TYPE_INTEGER,
-	.min = KMB_HW_SYNC_NONE,
-	.max = KMB_HW_SYNC_AUX,
-	.def = KMB_HW_SYNC_NONE,
+	.min = KMB_SYNC_NONE,
+	.max = KMB_SYNC_AUX,
+	.def = KMB_SYNC_NONE,
 	.step = 1,
 };
 
-static const struct v4l2_ctrl_config hw_sync_start = {
+static const struct v4l2_ctrl_config sync_start = {
 	.ops = &kmb_imx412_ctrl_ops,
 	.id = V4L2_CID_SYNC_START,
 	.name = "V4L2_CID_SYNC_START",
 	.type = V4L2_CTRL_TYPE_BUTTON,
+};
+
+static const struct v4l2_ctrl_config sync_type = {
+	.ops = &kmb_imx412_ctrl_ops,
+	.id = V4L2_CID_SYNC_TYPE,
+	.name = "V4L2_CID_SYNC_TYPE",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.min = KMB_SYNC_TYPE_HW,
+	.max = KMB_SYNC_TYPE_SW,
+	.def = KMB_SYNC_TYPE_HW,
+	.step = 1,
 };
 
 /**
@@ -2720,6 +2821,33 @@ kmb_imx412_set_pad_format(struct v4l2_subdev *sd,
 }
 
 /**
+ * kmb_imx412_prepare_for_broadcast - Prepare sensor registers specific for
+ *                                    starting streaming through i2c broadcast
+ *                                    command
+ * @kmb_imx412: pointer to kmb_imx412 device
+ *
+ * Return: 0 if successful
+ */
+static int kmb_imx412_prepare_for_broadcast(struct kmb_imx412 *kmb_imx412)
+{
+	int ret = 0;
+
+	ret = kmb_imx412_write_reg(kmb_imx412,
+				   KMB_IMX412_AUX_ADD_EN_2ND, 1, 1);
+	if (ret)
+		return ret;
+
+	if (kmb_imx412->sync_mode == KMB_SYNC_MAIN) {
+		ret = kmb_imx412_write_reg(kmb_imx412,
+					   KMB_IMX412_AUX_ADD_ACK_2ND, 1, 1);
+		if (ret)
+			return ret;
+	}
+
+	return ret;
+}
+
+/**
  * kmb_imx412_start_streaming - Start sensor stream
  * @kmb_imx412: pointer to kmb_imx412 device
  *
@@ -2753,8 +2881,14 @@ static int kmb_imx412_start_streaming(struct kmb_imx412 *kmb_imx412)
 		return ret;
 	}
 
+	if (kmb_imx412->sync_type == KMB_SYNC_TYPE_SW) {
+		ret = kmb_imx412_prepare_for_broadcast(kmb_imx412);
+		if (ret)
+			return ret;
+	}
+
 	/* Start streaming only when hw sync is not enabled  */
-	if (kmb_imx412->sync_mode == KMB_HW_SYNC_NONE) {
+	if (kmb_imx412->sync_mode == KMB_SYNC_NONE) {
 		ret = kmb_imx412_write_reg(kmb_imx412,
 					KMB_IMX412_REG_MODE_SELECT,
 					1, KMB_IMX412_MODE_STREAMING);
@@ -3148,13 +3282,15 @@ static int kmb_imx412_init_controls(struct kmb_imx412 *kmb_imx412)
 		kmb_imx412->row_time_ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	/* HW sync controls */
-	kmb_imx412->sync_enable_ctrl = v4l2_ctrl_new_custom(ctrl_hdlr,
-							    &hw_sync_enable,
-							     NULL);
+	kmb_imx412->sync_mode_ctrl = v4l2_ctrl_new_custom(ctrl_hdlr,
+							  &sync_mode,
+							  NULL);
 	kmb_imx412->sync_start_ctrl = v4l2_ctrl_new_custom(ctrl_hdlr,
-							   &hw_sync_start,
+							   &sync_start,
 							   NULL);
-
+	kmb_imx412->sync_type_ctrl = v4l2_ctrl_new_custom(ctrl_hdlr,
+							  &sync_type,
+							  NULL);
 	if (ctrl_hdlr->error) {
 		ret = ctrl_hdlr->error;
 		dev_err(kmb_imx412->dev, "control init failed: %d", ret);
@@ -3401,35 +3537,88 @@ static int kmb_imx412_platform_suspend(struct device *dev)
 /**
  * kmb_imx412_get_i2c_client - Get I2C client
  * @kmb_imx412: pointer to kmb_imx412 device
+ * @info: i2c board info
+ * @addr_list: i2c address list
  *
- * Return: 0 if successful
+ * Return: handle to new i2c client if successful, NULL otherwise
  */
-static int kmb_imx412_get_i2c_client(struct kmb_imx412 *kmb_imx412)
+static struct i2c_client *
+kmb_imx412_get_i2c_client(struct kmb_imx412 *kmb_imx412,
+			  struct i2c_board_info *info,
+			  const unsigned short *addr_list)
 {
-	struct i2c_board_info info = {
-		I2C_BOARD_INFO("kmb-imx412-sensor-p", 0x1A)};
-	const unsigned short addr_list[] = {0x1A, 0x10,
-		0x36, 0x37, I2C_CLIENT_END};
 	struct i2c_adapter *i2c_adp;
 	struct device_node *phandle;
+	struct i2c_client *new_client;
 
 	phandle = of_parse_phandle(kmb_imx412->dev->of_node, "i2c-bus", 0);
 	if (!phandle)
-		return -ENODEV;
+		return NULL;
 
 	i2c_adp = of_get_i2c_adapter_by_node(phandle);
 	of_node_put(phandle);
 	if (!i2c_adp)
-		return -EPROBE_DEFER;
+		return NULL;
 
-	kmb_imx412->client = i2c_new_scanned_device(i2c_adp, &info, addr_list,
-						    NULL);
+	new_client = i2c_new_scanned_device(i2c_adp, info, addr_list, NULL);
 	i2c_put_adapter(i2c_adp);
-	if (IS_ERR(kmb_imx412->client))
-		return PTR_ERR(kmb_imx412->client);
 
-	dev_dbg(kmb_imx412->dev, "Detected on i2c address %x", info.addr);
-	return 0;
+	return new_client;
+}
+
+/**
+ * kmb_imx412_get_main_i2c_client - Get main I2C client
+ * @kmb_imx412: pointer to kmb_imx412 device
+ * @main_addr: pointer or address on which device was detected
+ *
+ * Return: none
+ */
+static void kmb_imx412_get_main_i2c_client(struct kmb_imx412 *kmb_imx412,
+					   unsigned short *main_addr)
+{
+	struct i2c_board_info info = {
+		I2C_BOARD_INFO("kmb-imx412-sensor-p", KMB_IMX412_MAIN_I2C)};
+	const unsigned short addr_list[] = {KMB_IMX412_MAIN_I2C, 0x1A,
+					    I2C_CLIENT_END};
+
+	kmb_imx412->client = kmb_imx412_get_i2c_client(kmb_imx412, &info,
+						       addr_list);
+
+	if (kmb_imx412->client) {
+		dev_dbg(kmb_imx412->dev, "Detected on i2c address %x",
+			info.addr);
+		*main_addr = info.addr;
+	}
+}
+
+/**
+ * kmb_imx412_get_broadcast_i2c_client - Get broadcast I2C client
+ * @kmb_imx412: pointer to kmb_imx412 device
+ *
+ * Return: none
+ */
+static void kmb_imx412_get_broadcast_i2c_client(struct kmb_imx412 *kmb_imx412)
+{
+	struct i2c_board_info info = {
+		I2C_BOARD_INFO("kmb-imx412-sensor-p", 0x36)};
+	const unsigned short addr_list[] = {0x36, I2C_CLIENT_END};
+	int ret;
+
+	ret = kmb_imx412_write_reg(kmb_imx412,
+				   KMB_IMX412_AUX_ADD_EN_2ND, 1, 1);
+	if (ret)
+		return;
+
+	ret = kmb_imx412_write_reg(kmb_imx412,
+				   KMB_IMX412_AUX_ADD_ACK_2ND, 1, 1);
+	if (ret) {
+		dev_err(kmb_imx412->dev, "failed to write add ack 2nd!");
+		return;
+	}
+
+	kmb_imx412->broadcast_client = kmb_imx412_get_i2c_client(kmb_imx412,
+								 &info,
+								 addr_list);
 }
 
 /**
@@ -3442,6 +3631,7 @@ static int kmb_imx412_pdev_probe(struct platform_device *pdev)
 {
 	struct kmb_imx412 *kmb_imx412;
 	struct gpio_descs *detect_gpios;
+	unsigned short main_addr;
 	int ret;
 
 	kmb_imx412 = devm_kzalloc(&pdev->dev, sizeof(*kmb_imx412), GFP_KERNEL);
@@ -3492,9 +3682,9 @@ static int kmb_imx412_pdev_probe(struct platform_device *pdev)
 		goto error_put_detect_gpios;
 	}
 
-	ret = kmb_imx412_get_i2c_client(kmb_imx412);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to get i2c %d\n", ret);
+	kmb_imx412_get_main_i2c_client(kmb_imx412, &main_addr);
+	if (!kmb_imx412->client) {
+		dev_dbg(&pdev->dev, "failed to get i2c!");
 		goto error_sensor_power_off;
 	}
 
@@ -3502,6 +3692,9 @@ static int kmb_imx412_pdev_probe(struct platform_device *pdev)
 	i2c_set_clientdata(kmb_imx412->client, &kmb_imx412->sd);
 	v4l2_i2c_subdev_set_name(&kmb_imx412->sd, kmb_imx412->client,
 				 KMB_IMX412_DRV_NAME, pdev->name);
+
+	if (main_addr == KMB_IMX412_MAIN_I2C)
+		kmb_imx412_get_broadcast_i2c_client(kmb_imx412);
 
 	/* Check module identity */
 	ret = kmb_imx412_detect(kmb_imx412);
@@ -3571,6 +3764,8 @@ error_media_entity:
 error_handler_free:
 	v4l2_ctrl_handler_free(kmb_imx412->sd.ctrl_handler);
 error_unregister_i2c_dev:
+	if (kmb_imx412->broadcast_client)
+		i2c_unregister_device(kmb_imx412->broadcast_client);
 	if (kmb_imx412->client)
 		i2c_unregister_device(kmb_imx412->client);
 error_sensor_power_off:
@@ -3604,6 +3799,11 @@ static int kmb_imx412_pdev_remove(struct platform_device *pdev)
 
 	if (kmb_imx412->client)
 		i2c_unregister_device(kmb_imx412->client);
+
+	if (kmb_imx412->broadcast_client) {
+		i2c_unregister_device(kmb_imx412->broadcast_client);
+		kmb_imx412->broadcast_client = NULL;
+	}
 
 	mutex_destroy(&kmb_imx412->mutex);
 

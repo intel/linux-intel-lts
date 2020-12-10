@@ -161,7 +161,7 @@ struct kmb_ov9282 {
 	const struct kmb_ov9282_mode *cur_mode;
 	struct mutex mutex;
 	bool streaming;
-	enum kmb_hw_sync_mode sync_mode;
+	enum kmb_sync_mode sync_mode;
 };
 
 static const s64 link_freq[] = {
@@ -536,7 +536,7 @@ static int kmb_ov9282_set_ctrl(struct v4l2_ctrl *ctrl)
 		dev_dbg(kmb_ov9282->dev, "V4L2_CID_SYNC_MODE %d", ctrl->val);
 		return 0;
 	case V4L2_CID_SYNC_START:
-		if (kmb_ov9282->sync_mode != KMB_HW_SYNC_NONE) {
+		if (kmb_ov9282->sync_mode != KMB_SYNC_NONE) {
 			ret = kmb_ov9282_write_reg(kmb_ov9282,
 						KMB_OV9282_REG_MODE_SELECT,
 						1, KMB_OV9282_MODE_STREAMING);
@@ -614,9 +614,9 @@ static const struct v4l2_ctrl_config hw_sync_enable = {
 	.id = V4L2_CID_SYNC_MODE,
 	.name = "V4L2_CID_SYNC_MODE",
 	.type = V4L2_CTRL_TYPE_INTEGER,
-	.min = KMB_HW_SYNC_NONE,
-	.max = KMB_HW_SYNC_AUX,
-	.def = KMB_HW_SYNC_NONE,
+	.min = KMB_SYNC_NONE,
+	.max = KMB_SYNC_AUX,
+	.def = KMB_SYNC_NONE,
 	.step = 1,
 };
 
@@ -907,7 +907,7 @@ static int kmb_ov9282_start_streaming(struct kmb_ov9282 *kmb_ov9282)
 	}
 
 	switch (kmb_ov9282->sync_mode) {
-	case KMB_HW_SYNC_MAIN:
+	case KMB_SYNC_MAIN:
 		ret = kmb_ov9282_write_regs(kmb_ov9282, kmb_ov9282_main,
 				ARRAY_SIZE(kmb_ov9282_main));
 		if (ret) {
@@ -916,7 +916,7 @@ static int kmb_ov9282_start_streaming(struct kmb_ov9282 *kmb_ov9282)
 			return ret;
 		}
 		break;
-	case KMB_HW_SYNC_AUX:
+	case KMB_SYNC_AUX:
 		ret = kmb_ov9282_write_regs(kmb_ov9282, kmb_ov9282_aux,
 				ARRAY_SIZE(kmb_ov9282_aux));
 		if (ret) {
@@ -937,7 +937,7 @@ static int kmb_ov9282_start_streaming(struct kmb_ov9282 *kmb_ov9282)
 	}
 
 	/* Start streaming only when hw sync is not enabled  */
-	if (kmb_ov9282->sync_mode == KMB_HW_SYNC_NONE) {
+	if (kmb_ov9282->sync_mode == KMB_SYNC_NONE) {
 		ret = kmb_ov9282_write_reg(kmb_ov9282,
 					KMB_OV9282_REG_MODE_SELECT,
 					1, KMB_OV9282_MODE_STREAMING);
