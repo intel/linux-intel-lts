@@ -109,31 +109,6 @@ static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
 	return 0;
 }
 
-static int hantro_recordmem(struct drm_file *priv, void *obj, int size)
-{
-	int ret;
-	struct file_data *data = (struct file_data *)priv->driver_priv;
-	struct idr *list = (struct idr *)data->list;
-
-	ret = idr_alloc(list, obj, 1, 0, GFP_KERNEL);
-	return (ret > 0 ? 0 : -ENOMEM);
-}
-
-static void hantro_unrecordmem(struct drm_file *priv, void *obj)
-{
-	int id;
-	struct file_data *data = (struct file_data *)priv->driver_priv;
-	struct idr *list = (struct idr *)data->list;
-	void *gemobj;
-
-	idr_for_each_entry(list, gemobj, id) {
-		if (gemobj == obj) {
-			idr_remove(list, id);
-			break;
-		}
-	}
-}
-
 static void hantro_drm_fb_destroy(struct drm_framebuffer *fb)
 {
 	struct hantro_drm_fb *vsi_fb = (struct hantro_drm_fb *)fb;
@@ -199,6 +174,7 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 		goto out;
 	}
 	obj = &cma_obj->base;
+	cma_obj->dmapriv.self = cma_obj;
 	out_size = in_size = sizeof(*args);
 	args->pitch = ALIGN(min_pitch, 64);
 	args->size = (__u64)args->pitch * (__u64)args->height;
@@ -252,8 +228,7 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	drm_gem_object_init(dev, obj, args->size);
 
 	ret = drm_gem_handle_create(file_priv, obj, &args->handle);
-	if (ret == 0)
-		ret = hantro_recordmem(file_priv, cma_obj, args->size);
+	drm_gem_object_put_unlocked(obj);
 	if (ret) {
 		dma_free_coherent(mem_dev, args->size, cma_obj->vaddr,
 				  cma_obj->paddr);
@@ -326,49 +301,9 @@ static int hantro_destroy_dumb(struct drm_device *dev, void *data,
 	hantro_unref_drmobj(obj);
 
 	cma_obj = to_drm_gem_hantro_obj(obj);
-	if ((cma_obj->flag & HANTRO_GEM_FLAG_IMPORT) == 0)
-		hantro_unrecordmem(file_priv, cma_obj);
 
 	drm_gem_handle_delete(file_priv, args->handle);
-	trace_gem_handle_delete(args->handle);
-	hantro_unref_drmobj(obj);
 	mutex_unlock(&dev->struct_mutex);
-	return 0;
-}
-
-static int hantro_release_dumb(struct drm_device *dev,
-			       struct drm_file *file_priv, void *obj)
-{
-	struct drm_gem_object *gemobj = obj;
-	struct drm_gem_hantro_object *cma_obj;
-	struct slice_info *pslice;
-
-	cma_obj = to_drm_gem_hantro_obj(gemobj);
-
-	drm_gem_free_mmap_offset(&cma_obj->base);
-
-	if (cma_obj->flag & HANTRO_GEM_FLAG_EXPORT) {
-		drm_gem_handle_delete(file_priv, cma_obj->handle);
-		__trace_hantro_msg("deleting exported handle %d", cma_obj->handle);
-		trace_gem_handle_delete(cma_obj->handle);
-		hantro_unref_drmobj(obj);
-		return 0;
-	}
-	drm_gem_object_release(gemobj);
-	drm_gem_handle_delete(file_priv, cma_obj->handle);
-	trace_gem_handle_delete(cma_obj->handle);
-	pslice = getslicenode(cma_obj->sliceidx);
-	if (!pslice)
-		return 0;
-
-	if (cma_obj->vaddr)
-		dma_free_coherent(cma_obj->memdev, cma_obj->base.size,
-				  cma_obj->vaddr, cma_obj->paddr);
-
-	trace_cma_free(cma_obj->sliceidx, (void *) cma_obj->paddr, cma_obj->handle);
-	dma_resv_fini(&cma_obj->kresv);
-	kfree(cma_obj);
-
 	return 0;
 }
 
@@ -421,7 +356,7 @@ static int hantro_mmap(struct file *filp, struct vm_area_struct *vma)
 	} else
 		dev = obj->dev->dev;
 
-	if ((cma_obj->flag & HANTRO_GEM_FLAG_IMPORT) == 0) {
+	if (1) {
 		address = (unsigned long)cma_obj->vaddr;
 		if (address == 0) {
 			mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
@@ -455,12 +390,6 @@ static int hantro_mmap(struct file *filp, struct vm_area_struct *vma)
 	cma_obj->pages = pages;
 	mutex_unlock(&hantro_dev.drm_dev->struct_mutex);
 	return ret;
-}
-
-static int hantro_gem_open_obj(struct drm_gem_object *obj,
-			       struct drm_file *filp)
-{
-	return 0;
 }
 
 static int hantro_device_open(struct inode *inode, struct file *filp)
@@ -563,12 +492,11 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 	cma_obj->paddr = sg_dma_address(sgt->sgl);
 	cma_obj->vaddr = dma_buf_vmap(attach->dmabuf);
 	cma_obj->sgt = sgt;
-	cma_obj->flag |= HANTRO_GEM_FLAG_IMPORT;
 	cma_obj->num_pages = attach->dmabuf->size >> PAGE_SHIFT;
-	cma_obj->meta_data_info =
-		((struct drm_gem_hantro_object *)attach->dmabuf->priv)
-			->meta_data_info;
-
+	cma_obj->dmapriv.meta_data =
+		*((struct viv_vidmem_metadata  *)attach->dmabuf->priv);
+	cma_obj->dmapriv.self = cma_obj;
+	cma_obj->dmapriv.meta_data.magic = HANTRO_IMAGE_VIV_META_DATA_MAGIC;
 	return obj;
 }
 
@@ -594,9 +522,6 @@ static int hantro_gem_prime_mmap(struct drm_gem_object *obj,
 	if (page_num > cma_obj->num_pages)
 		return -EINVAL;
 
-	if ((cma_obj->flag & HANTRO_GEM_FLAG_IMPORT) != 0)
-		return -EINVAL;
-
 	if ((unsigned long)cma_obj->vaddr == 0)
 		return -EINVAL;
 
@@ -619,15 +544,6 @@ static int hantro_gem_prime_mmap(struct drm_gem_object *obj,
 	return ret;
 }
 
-static struct drm_gem_object *
-hantro_drm_gem_prime_import(struct drm_device *dev, struct dma_buf *dma_buf)
-{
-	struct drm_gem_object *obj;
-	obj = drm_gem_prime_import(dev, dma_buf);
-	trace_prime_dmabuf_import((void *) dma_buf, (void *) obj);
-	return obj;
-}
-
 static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 {
 	struct drm_gem_hantro_object *cma_obj;
@@ -647,8 +563,6 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 		cma_obj->pages = NULL;
 	}
 
-	drm_gem_free_mmap_offset(gem_obj);
-	drm_gem_object_release(gem_obj);
 	if (gem_obj->import_attach) {
 		if (cma_obj->vaddr)
 			dma_buf_vunmap(gem_obj->import_attach->dmabuf,
@@ -663,6 +577,7 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 
 		trace_cma_free(cma_obj->sliceidx, (void *) cma_obj->paddr, cma_obj->handle);
 	}
+	drm_gem_object_release(gem_obj);
 	dma_resv_fini(&cma_obj->kresv);
 	kfree(cma_obj);
 }
@@ -861,57 +776,193 @@ static int hantro_drm_open(struct drm_device *dev, struct drm_file *file)
 	file->driver_priv = data;
 	return 0;
 }
+/********************dma buf related code *****************************/
 
-/*
- * This function is used to treat abnormal condition such as Ctrl^c or assert.
- * We can't release memory or drm resources in normal way.
- * In kernel document it's suggested driver_priv
- * be used in this call back. In abnormal situation many kernel data
- * structures might be unavaible, e.g. hantro_gem_object_lookup is not
- * working. So we have to save every gem obj info by ourselves.
- */
-static void hantro_drm_postclose(struct drm_device *dev, struct drm_file *file)
+static struct drm_gem_object * hantro_get_gem_from_dmabuf(struct dma_buf *dma_buf)
 {
-	int id;
-	struct file_data *priv = (struct file_data *)file->driver_priv;
-	struct hantro_client *client;
-	void *obj;
-	int printonce = 1;
+	struct drm_gem_hantro_object *cma_obj =
+		(struct drm_gem_hantro_object *)(((struct dmapriv *)dma_buf->priv)->self);
 
-	trace_drm_file_close((void *)dev, (void *) file);
-	mutex_lock(&dev->struct_mutex);
-	if (priv->list) {
-		idr_for_each_entry(priv->list, obj, id) {
-			if (obj) {
-				if (printonce) {
-					__trace_hantro_err("memory leak detected");
-					printonce = 0;
-				}
-				hantro_release_dumb(dev, file, obj);
-				idr_remove(priv->list, id);
-			}
-		}
-		idr_destroy(priv->list);
-		kfree(priv->list);
-		priv->list = NULL;
-	}
+	if (cma_obj)
+		return &cma_obj->base;
 
-	if (priv->clients) {
-		idr_for_each_entry(priv->clients, client, id) {
-			if (obj) {
-				kfree(client);
-				idr_remove(priv->clients, id);
-			}
-		}
-		idr_destroy(priv->clients);
-		kfree(priv->clients);
-		priv->clients = NULL;
-	}
-
-	kfree(priv);
-	file->driver_priv = NULL;
-	mutex_unlock(&dev->struct_mutex);
+	return NULL;
 }
+
+static void hantro_gem_dmabuf_release(struct dma_buf *dma_buf)
+{
+	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
+
+	if (obj) {
+		drm_gem_object_put_unlocked(obj);
+		drm_dev_put(obj->dev);
+	}
+}
+
+static struct sg_table *
+hantro_gem_map_dma_buf(struct dma_buf_attachment *attach,
+		       enum dma_data_direction dir)
+{
+	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(attach->dmabuf);
+	struct sg_table *sgt;
+
+	if (WARN_ON(dir == DMA_NONE))
+		return ERR_PTR(-EINVAL);
+	if (WARN_ON(!obj))
+		return ERR_PTR(-EINVAL);
+
+	sgt = obj->dev->driver->gem_prime_get_sg_table(obj);
+
+	if (!dma_map_sg_attrs(attach->dev, sgt->sgl, sgt->nents, dir,
+			      DMA_ATTR_SKIP_CPU_SYNC)) {
+		sg_free_table(sgt);
+		kfree(sgt);
+		sgt = ERR_PTR(-ENOMEM);
+	}
+
+	return sgt;
+}
+
+static int hantro_gem_dmabuf_mmap(struct dma_buf *dma_buf,
+				  struct vm_area_struct *vma)
+{
+	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
+	struct drm_device *dev;
+
+	if (!obj)
+		return -EINVAL;
+	dev = obj->dev;
+	if (!dev->driver->gem_prime_mmap)
+		return -ENOSYS;
+
+	return dev->driver->gem_prime_mmap(obj, vma);
+}
+
+static void *hantro_gem_dmabuf_vmap(struct dma_buf *dma_buf)
+{
+	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
+	void *vaddr = NULL;
+
+	/*****drm_gem_vmap part*****/
+	if (obj)
+		vaddr = obj->dev->driver->gem_prime_vmap(obj);
+	/****************************/
+
+	return vaddr;
+}
+
+static void hantro_gem_dmabuf_vunmap(struct dma_buf *dma_buf, void *vaddr)
+{
+	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
+
+	if (!vaddr)
+		return;
+	if (obj) {
+		if (obj->funcs && obj->funcs->vunmap)
+			obj->funcs->vunmap(obj, vaddr);
+		else if (obj->dev->driver->gem_prime_vunmap)
+			obj->dev->driver->gem_prime_vunmap(obj, vaddr);
+
+	}
+}
+
+static const struct dma_buf_ops hantro_dmabuf_ops = {
+	.cache_sgt_mapping = true,
+	.map_dma_buf	= hantro_gem_map_dma_buf,
+	.unmap_dma_buf	= drm_gem_unmap_dma_buf,
+	.release	= hantro_gem_dmabuf_release,
+	.mmap		= hantro_gem_dmabuf_mmap,
+	.vmap		= hantro_gem_dmabuf_vmap,
+	.vunmap		= hantro_gem_dmabuf_vunmap,
+};
+
+static struct drm_gem_object *
+hantro_drm_gem_prime_import(struct drm_device *dev, struct dma_buf *dma_buf)
+{
+	struct device *attach_dev = dev->dev;
+	struct dma_buf_attachment *attach;
+	struct sg_table *sgt;
+	struct drm_gem_object *obj;
+	struct drm_gem_hantro_object *cma_obj;
+	int ret;
+
+	if (dma_buf->ops == &hantro_dmabuf_ops) {
+		obj = hantro_get_gem_from_dmabuf(dma_buf);
+		if (obj && obj->dev == dev) {
+			drm_gem_object_get(obj);
+			return obj;
+		}
+	}
+
+	if (!dev->driver->gem_prime_import_sg_table)
+		return ERR_PTR(-EINVAL);
+
+	attach = dma_buf_attach(dma_buf, attach_dev);
+	if (IS_ERR(attach))
+		return ERR_CAST(attach);
+
+	get_dma_buf(dma_buf);
+
+	sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+	if (IS_ERR(sgt)) {
+		ret = PTR_ERR(sgt);
+		goto fail_detach;
+	}
+
+	obj = dev->driver->gem_prime_import_sg_table(dev, attach, sgt);
+	if (IS_ERR(obj)) {
+		ret = PTR_ERR(obj);
+		goto fail_unmap;
+	}
+
+	cma_obj = to_drm_gem_hantro_obj(obj);
+	attach->priv = &cma_obj->dmapriv.meta_data;
+	obj->import_attach = attach;
+	obj->resv = dma_buf->resv;
+
+	return obj;
+
+fail_unmap:
+	dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+fail_detach:
+	dma_buf_detach(dma_buf, attach);
+	dma_buf_put(dma_buf);
+
+	return ERR_PTR(ret);
+}
+
+
+static struct dma_buf *hantro_prime_export(struct drm_gem_object *obj,
+					   int flags)
+{
+	struct dma_buf *dma_buf;
+	struct drm_gem_hantro_object *cma_obj;
+	struct drm_device *dev = obj->dev;
+	struct dma_buf_export_info exp_info = {
+		.exp_name	= KBUILD_MODNAME,
+		.owner		= dev->driver->fops->owner,
+		.ops		= &hantro_dmabuf_ops,
+		.flags		= flags,
+	};
+
+	cma_obj = to_drm_gem_hantro_obj(obj);
+	exp_info.resv = &cma_obj->kresv;
+	exp_info.size = cma_obj->num_pages << PAGE_SHIFT;
+	exp_info.priv = &cma_obj->dmapriv.meta_data;
+
+	dma_buf = dma_buf_export(&exp_info);
+	if (IS_ERR(dma_buf))
+		return dma_buf;
+
+	drm_dev_get(dev);
+	drm_gem_object_get(&cma_obj->base);
+
+	trace_prime_dmabuf_export((void *)cma_obj->paddr, cma_obj->handle, (void *)dma_buf);
+
+	return dma_buf;
+}
+
+/********************dma buf related code end*****************************/
 
 static int hantro_handle_to_fd(struct drm_device *dev, void *data,
 			       struct drm_file *file_priv)
@@ -942,10 +993,33 @@ static int hantro_fd_to_handle(struct drm_device *dev, void *data,
 			       struct drm_file *file_priv)
 {
 	struct drm_prime_handle *primeargs = (struct drm_prime_handle *)data;
-	int ret = 0;
+	int32_t ret = 0;
+	struct dma_buf *dma_buf;
+	struct drm_gem_object *obj;
+	struct drm_gem_hantro_object *cma_obj;
+
+	primeargs->flags = 0;
 	ret = drm_gem_prime_fd_to_handle(dev, file_priv, primeargs->fd,
 					  &primeargs->handle);
+
+	/*Just for debugging to get object*/
+	if (ret == 0) {
+		dma_buf = dma_buf_get(primeargs->fd);
+		if (IS_ERR(dma_buf))
+			return PTR_ERR(dma_buf);
+		obj = dma_buf->priv;
+		cma_obj = to_drm_gem_hantro_obj(obj);
+		//Only set the flag to debug
+		cma_obj->flag |= HANTRO_GEM_FLAG_IMPORT;
+		dma_buf_put(dma_buf);
+		pr_debug("client[%p]import  gem name[%u] gem size[%zu] handle_cnt[%d] refcnt[%d] flag[0x%x]\n",
+				file_priv, obj->name, obj->size,
+				obj->handle_count,
+				kref_read(&obj->refcount), cma_obj->flag);
+	}
+
 	trace_prime_fd_to_handle(primeargs->fd, primeargs->handle, ret);
+
 	return ret;
 }
 
@@ -1180,16 +1254,18 @@ static int hantro_ptr_to_phys(struct drm_device *dev, void *data,
 static int hantro_query_metadata(struct drm_device *dev, void *data,
 				 struct drm_file *file_priv)
 {
-	struct hantro_metainfo_params *metadata_info_p = (struct hantro_metainfo_params *)data;
+	struct hantro_metadata_params *metadata_p =
+		(struct hantro_metadata_params *)data;
 	struct drm_gem_object *obj = NULL;
 	struct drm_gem_hantro_object *cma_obj = NULL;
 
-	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->handle);
-	if (obj == NULL)
+	obj = hantro_gem_object_lookup(dev, file_priv, metadata_p->handle);
+	if (!obj)
 		return -ENOENT;
 	cma_obj = to_drm_gem_hantro_obj(obj);
 
-	memcpy(&metadata_info_p->info, &cma_obj->meta_data_info, sizeof(struct dec_buf_info));
+	memcpy(&metadata_p->meta_data, &cma_obj->dmapriv.meta_data,
+	       sizeof(struct viv_vidmem_metadata));
 
 	hantro_unref_drmobj(obj);
 
@@ -1199,16 +1275,18 @@ static int hantro_query_metadata(struct drm_device *dev, void *data,
 static int hantro_update_metadata(struct drm_device *dev, void *data,
 				  struct drm_file *file_priv)
 {
-	struct hantro_metainfo_params *metadata_info_p = (struct hantro_metainfo_params *)data;
+	struct hantro_metadata_params *metadata_p =
+		(struct hantro_metadata_params *)data;
 	struct drm_gem_object *obj = NULL;
 	struct drm_gem_hantro_object *cma_obj = NULL;
 
-	obj = hantro_gem_object_lookup(dev, file_priv, metadata_info_p->handle);
-	if (obj == NULL)
+	obj = hantro_gem_object_lookup(dev, file_priv, metadata_p->handle);
+	if (!obj)
 		return -ENOENT;
 	cma_obj = to_drm_gem_hantro_obj(obj);
 
-	memcpy(&cma_obj->meta_data_info, &metadata_info_p->info, sizeof(struct dec_buf_info));
+	memcpy(&cma_obj->dmapriv.meta_data, &metadata_p->meta_data,
+	       sizeof(struct viv_vidmem_metadata));
 
 	hantro_unref_drmobj(obj);
 
@@ -1542,37 +1620,26 @@ static long hantro_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EINVAL;
 	ioctl = &hantro_ioctls[nr];
 
-	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
-		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
-		if (copy_from_user(kdata, (void __user *)arg, sizeof(struct hantro_metainfo_params)) != 0)
-			return  -EFAULT;
-	} else {
-		if (copy_from_user(kdata, (void __user *)arg, in_size) != 0)
-			return -EFAULT;
-	}
+	if (copy_from_user(kdata, (void __user *)arg, in_size) != 0)
+		return -EFAULT;
 
 	if (cmd == DRM_IOCTL_MODE_SETCRTC ||
 	    cmd == DRM_IOCTL_MODE_GETRESOURCES ||
-	    cmd == DRM_IOCTL_SET_CLIENT_CAP || cmd == DRM_IOCTL_MODE_GETCRTC ||
+	    cmd == DRM_IOCTL_SET_CLIENT_CAP ||
+	    cmd == DRM_IOCTL_MODE_GETCRTC ||
 	    cmd == DRM_IOCTL_MODE_GETENCODER ||
-	    cmd == DRM_IOCTL_MODE_GETCONNECTOR || cmd == DRM_IOCTL_MODE_GETFB) {
+	    cmd == DRM_IOCTL_MODE_GETCONNECTOR ||
+	    cmd == DRM_IOCTL_MODE_GETFB) {
 		retcode = drm_ioctl(filp, cmd, arg);
 		return retcode;
 	}
 	func = ioctl->func;
-	if (func == NULL)
+		if (!func)
 		return -EINVAL;
 	retcode = func(dev, kdata, file_priv);
 
-	if((cmd == DRM_IOCTL_HANTRO_UPDATE_METADATA) ||
-		(cmd == DRM_IOCTL_HANTRO_QUERY_METADATA) ) {
-		if (copy_to_user((void __user *)arg, kdata, sizeof(struct hantro_metainfo_params)) != 0) {
-			retcode = -EFAULT;
-		}
-	} else {
-		if (copy_to_user((void __user *)arg, kdata, out_size) != 0)
-			retcode = -EFAULT;
-	}
+	if (copy_to_user((void __user *)arg, kdata, out_size) != 0)
+		retcode = -EFAULT;
 
 	return retcode;
 }
@@ -1611,95 +1678,6 @@ static void hantro_release(struct drm_device *dev)
 {
 }
 
-static void hantro_gem_dmabuf_release(struct dma_buf *dma_buf)
-{
-	trace_prime_drm_dmabuf_release(dma_buf);
-	return drm_gem_dmabuf_release(dma_buf);
-}
-
-static int hantro_gem_map_attach(struct dma_buf *dma_buf,
-				 struct dma_buf_attachment *attach)
-{
-	int ret;
-	struct drm_gem_hantro_object *cma_obj =
-		(struct drm_gem_hantro_object *)dma_buf->priv;
-
-	ret = drm_gem_map_attach(dma_buf, attach);
-	if (ret == 0)
-		cma_obj->flag |= HANTRO_GEM_FLAG_EXPORTUSED;
-
-	return ret;
-}
-
-static void hantro_gem_map_detach(struct dma_buf *dma_buf,
-				  struct dma_buf_attachment *attach)
-{
-	drm_gem_map_detach(dma_buf, attach);
-}
-
-static struct sg_table *
-hantro_gem_map_dma_buf(struct dma_buf_attachment *attach,
-		       enum dma_data_direction dir)
-{
-	return drm_gem_map_dma_buf(attach, dir);
-}
-
-static int hantro_gem_dmabuf_mmap(struct dma_buf *dma_buf,
-				  struct vm_area_struct *vma)
-{
-	return drm_gem_dmabuf_mmap(dma_buf, vma);
-}
-
-static void *hantro_gem_dmabuf_vmap(struct dma_buf *dma_buf)
-{
-	return drm_gem_dmabuf_vmap(dma_buf);
-}
-
-static const struct dma_buf_ops hantro_dmabuf_ops = {
-	.attach		= hantro_gem_map_attach,
-	.detach		= hantro_gem_map_detach,
-	.map_dma_buf	= hantro_gem_map_dma_buf,
-	.unmap_dma_buf	= drm_gem_unmap_dma_buf,
-	.release	= hantro_gem_dmabuf_release,
-	.mmap		= hantro_gem_dmabuf_mmap,
-	.vmap		= hantro_gem_dmabuf_vmap,
-	.vunmap		= drm_gem_dmabuf_vunmap,
-};
-
-static struct drm_driver hantro_drm_driver;
-static struct dma_buf *hantro_prime_export(struct drm_gem_object *obj,
-					   int flags)
-{
-	struct drm_gem_hantro_object *cma_obj;
-	struct dma_buf *dmabuf;
-	struct dma_buf_export_info exp_info = {
-		.exp_name	= KBUILD_MODNAME,
-		.owner		= obj->dev->driver->fops->owner,
-		.ops		= &hantro_dmabuf_ops,
-		.flags		= flags,
-		.priv		= obj,
-	};
-
-	cma_obj = to_drm_gem_hantro_obj(obj);
-	exp_info.resv = &cma_obj->kresv;
-	exp_info.size = cma_obj->num_pages << PAGE_SHIFT;
-	dmabuf = drm_gem_dmabuf_export(obj->dev, &exp_info);
-	trace_prime_dmabuf_export((void *)cma_obj->paddr, cma_obj->handle, (void *)dmabuf);
-	return dmabuf;
-}
-
-static void hantro_close_object(struct drm_gem_object *obj,
-				struct drm_file *file_priv)
-{
-	struct drm_gem_hantro_object *cma_obj;
-
-	cma_obj = to_drm_gem_hantro_obj(obj);
-	if (obj->dma_buf && (cma_obj->flag & HANTRO_GEM_FLAG_EXPORTUSED)) {
-		dma_buf_put(obj->dma_buf);
-		trace_prime_dmabuf_put((void *)cma_obj->paddr, (void *)obj->dma_buf, -1);
-	}
-}
-
 static int hantro_gem_prime_handle_to_fd(struct drm_device *dev,
 					 struct drm_file *filp, uint32_t handle,
 					 uint32_t flags, int *prime_fd)
@@ -1721,13 +1699,10 @@ static struct drm_driver hantro_drm_driver = {
 	.driver_features		= DRIVER_GEM | DRIVER_RENDER,
 	.get_vblank_counter		= hantro_vblank_no_hw_counter,
 	.open				= hantro_drm_open,
-	.postclose			= hantro_drm_postclose,
 	.release			= hantro_release,
 	.dumb_destroy			= drm_gem_dumb_destroy,
 	.dumb_create			= hantro_gem_dumb_create_internal,
 	.dumb_map_offset		= hantro_gem_dumb_map_offset,
-	.gem_open_object		= hantro_gem_open_obj,
-	.gem_close_object		= hantro_close_object,
 	.gem_prime_export		= hantro_prime_export,
 	.gem_prime_import		= hantro_drm_gem_prime_import,
 	.prime_handle_to_fd		= hantro_gem_prime_handle_to_fd,
@@ -2156,8 +2131,9 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 			ioaddress <<= 32;
 			ioaddress |= reg_u32[0];
 		}
-	} else
+	} else {
 		ioaddress = reg_u32[0];
+	}
 	if (ns == 2) {
 		if (!endian) {
 			iosize = reg_u32[na];
@@ -2168,8 +2144,9 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 			iosize <<= 32;
 			iosize |= reg_u32[na];
 		}
-	} else
+	} else {
 		iosize = reg_u32[na];
+	}
 	pnode->ioaddr = ioaddress;
 	pnode->iosize = iosize;
 	fwnode_property_read_string(fwnode, "reg-names", &reg_name);
@@ -2605,7 +2582,7 @@ void __exit hantro_cleanup(void)
 	platform_driver_unregister(&hantro_drm_platform_driver);
 	drm_dev_put(hantro_dev.drm_dev);
 	pr_info("hantro driver removed\n");
-        class_compat_unregister(media_class);
+	class_compat_unregister(media_class);
 	media_class = NULL;
 
 }
