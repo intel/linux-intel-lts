@@ -796,7 +796,8 @@ static inline bool tb_switch_is_ice_lake(const struct tb_switch *sw)
 
 static inline bool tb_switch_is_tiger_lake(const struct tb_switch *sw)
 {
-	if (sw->config.vendor_id == PCI_VENDOR_ID_INTEL) {
+	if (sw->config.vendor_id == PCI_VENDOR_ID_INTEL ||
+	    sw->config.vendor_id == 0x8087) {
 		switch (sw->config.device_id) {
 		case PCI_DEVICE_ID_INTEL_TGL_NHI0:
 		case PCI_DEVICE_ID_INTEL_TGL_NHI1:
