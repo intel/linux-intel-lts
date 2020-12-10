@@ -634,6 +634,10 @@ int tb_port_set_initial_credits(struct tb_port *port, u32 credits)
 	u32 data;
 	int ret;
 
+	/* Only set LCA for USB4 lane adapters */
+	if (tb_switch_is_usb4(port->sw) && !tb_port_is_null(port))
+		return 0;
+
 	ret = tb_port_read(port, &data, TB_CFG_PORT, ADP_CS_5, 1);
 	if (ret)
 		return ret;
