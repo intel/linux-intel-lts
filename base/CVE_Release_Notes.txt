@@ -460,6 +460,7 @@ CVEs fixed in 4.19.124:
   CVE-2020-10711: caf6c20c6421ca687751d27b96c8021c655e56e6 netlabel: cope with NULL catmap
   CVE-2020-12770: 34fcb4291e234468f9bf9d4b851c9f522f3bbb13 scsi: sg: add sg_remove_request in sg_write
   CVE-2020-13143: a105bb549252e3e8bd9db0bdd81cdd6a853e4238 USB: gadget: fix illegal array access in binding with UDC
+  CVE-2020-27786: a507658fdb2ad8ca282b0eb42f2a40b805deb1e6 ALSA: rawmidi: Fix racy buffer resize under concurrent accesses
 
 CVEs fixed in 4.19.125:
   CVE-2019-18814: f1738ae012a106c6c8fa7d33ed47fb478d9d3c75 apparmor: Fix use-after-free in aa_audit_rule_init
@@ -578,8 +579,17 @@ CVEs fixed in 4.19.156:
 CVEs fixed in 4.19.157:
   CVE-2020-8694: 900281e167f45e0c0e5df6e59fa00334b5e38133 powercap: restrict energy meter to root access
 
+CVEs fixed in 4.19.158:
+  CVE-2020-14351: 1cbfb60332f4e62224440f6d38a6b3114b2355f0 perf/core: Fix race in the perf_mmap_close() function
+
+CVEs fixed in 4.19.159:
+  CVE-2020-25669: 8bf2e8fe8a8e2e05246215697bb55f8901faef44 Input: sunkbd - avoid use-after-free in teardown paths
+
+CVEs fixed in 4.19.160:
+  CVE-2020-28941: 3560603ef82f11277143a433170bca05bd9288a8 speakup: Do not let the line discipline be used several times
+
  
-CVEs Fixed in this 4.19.157 LTS 4.19 release 
+CVEs Fixed in this 4.19.160 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -618,11 +628,6 @@ CVEs Fixed in this 4.19.157 LTS 4.19 release
 0002-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
 0003-uaccess-implement-a-proper-unsafe_copy_to_user-and-s.patch
 
-# CVE-2019-19770
-0005-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
-0006-debugfs-simplify-__debugfs_remove_file.patch
-0007-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
-
 # CVE-2019-20908
 0001-UBUNTU-SAUCE-efi-lockdown-Add-the-ability-to-lock-do.patch
 0002-efi-Restrict-efivar_ssdt_load-when-the-kernel-is-loc.patch
@@ -635,5 +640,8 @@ CVEs Fixed in this 4.19.157 LTS 4.19 release
 
 # CVE-2020-12656
 0001-sunrpc-check-that-domain-table-is-empty-at-module-un.patch
+
+# CVE-2020-29372
+0001-mm-check-that-mm-is-still-valid-in-madvise.patch
  
 ================
