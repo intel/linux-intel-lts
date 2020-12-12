@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/regulator/keembay-regulator.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Keem Bay SD regulator
+
+maintainers:
+  - Muhammad Husaini Zulkifli <Muhammad.Husaini.Zulkifli@intel.com>
+
+allOf:
+  - $ref: "regulator.yaml#"
+
+properties:
+  compatible:
+    const: regulator-keembay-sd
+
+  regulator-name: true
+
+required:
+  - compatible
+  - regulator-name
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    regulator_rail {
+      compatible = "regulator-keembay-sd";
+
+      regulator-name = "sd-volt-rail";
+      regulator-min-microvolt = <1800000>;
+      regulator-max-microvolt = <3300000>;
+    };
+...
