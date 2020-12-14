@@ -1131,6 +1131,8 @@ int dma_buf_begin_cpu_access(struct dma_buf *dmabuf,
 	if (WARN_ON(!dmabuf))
 		return -EINVAL;
 
+	might_lock(&dmabuf->resv->lock.base);
+
 	if (dmabuf->ops->begin_cpu_access)
 		ret = dmabuf->ops->begin_cpu_access(dmabuf, direction);
 
@@ -1163,6 +1165,8 @@ int dma_buf_end_cpu_access(struct dma_buf *dmabuf,
 	int ret = 0;
 
 	WARN_ON(!dmabuf);
+
+	might_lock(&dmabuf->resv->lock.base);
 
 	if (dmabuf->ops->end_cpu_access)
 		ret = dmabuf->ops->end_cpu_access(dmabuf, direction);
