@@ -166,7 +166,12 @@ static void dwmac4_dma_init(void __iomem *ioaddr,
 
 	if (dma_cfg->multi_msi_en) {
 		value &= ~DMA_BUS_MODE_INTM_MASK;
-		value |= (DMA_BUS_MODE_INTM_MODE1 << DMA_BUS_MODE_INTM_SHIFT);
+		if (dma_cfg->pch_intr_wa)
+			value |= (DMA_BUS_MODE_INTM_MODE0 <<
+				  DMA_BUS_MODE_INTM_SHIFT);
+		else
+			value |= (DMA_BUS_MODE_INTM_MODE1 <<
+				  DMA_BUS_MODE_INTM_SHIFT);
 	}
 
 	if (dma_cfg->dche)
