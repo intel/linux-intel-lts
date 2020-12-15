@@ -619,6 +619,11 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
 
+	if (pdev->revision == PCI_PCH_A0 ||
+	    pdev->revision == PCI_PCH_A1 ||
+	    pdev->revision == PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
+
 	return ehl_common_data(pdev, plat);
 }
 
@@ -631,6 +636,11 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 {
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII;
+
+	if (pdev->revision == PCI_PCH_A0 ||
+	    pdev->revision == PCI_PCH_A1 ||
+	    pdev->revision == PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -735,6 +745,8 @@ static int tgl_common_data(struct pci_dev *pdev,
 	plat->safety_feat_cfg->prtyen = 0;
 	plat->safety_feat_cfg->tmouten = 0;
 
+	plat->dma_cfg->pch_intr_wa = 1;
+
 	return intel_mgbe_common_data(pdev, plat);
 }
 
@@ -769,12 +781,22 @@ static struct stmmac_pci_info tgl_sgmii1g_phy1_info = {
 static int adls_sgmii_phy0_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
+	int ret;
+
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 
 	/* SerDes power up and power down are done in BIOS for ADL */
 
-	return tgl_common_data(pdev, plat);
+	ret = tgl_common_data(pdev, plat);
+	if (ret)
+		return ret;
+
+	/* Override: Only perform workaround on A0 & A1 stepping for ADL */
+	if (pdev->revision == PCI_PCH_A0 || pdev->revision == PCI_PCH_A1)
+		plat->dma_cfg->pch_intr_wa = 1;
+
+	return 0;
 }
 
 static struct stmmac_pci_info adls_sgmii1g_phy0_info = {
@@ -784,12 +806,21 @@ static struct stmmac_pci_info adls_sgmii1g_phy0_info = {
 static int adls_sgmii_phy1_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
+	int ret;
 	plat->bus_id = 2;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 
 	/* SerDes power up and power down are done in BIOS for ADL */
 
-	return tgl_common_data(pdev, plat);
+	ret = tgl_common_data(pdev, plat);
+	if (ret)
+		return ret;
+
+	/* Override: Only perform workaround on A0 & A1 stepping for ADL */
+	if (pdev->revision == PCI_PCH_A0 || pdev->revision == PCI_PCH_A1)
+		plat->dma_cfg->pch_intr_wa = 1;
+
+	return 0;
 }
 
 static struct stmmac_pci_info adls_sgmii1g_phy1_info = {
