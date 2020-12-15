@@ -50,4 +50,10 @@
 #define PCH_PTP_CLK_FREQ_19_2MHZ	(GMAC_GPO0)
 #define PCH_PTP_CLK_FREQ_200MHZ		(0)
 
+/* REVERTME - HARDWARE WORKAROUND */
+/* SoC revision ID */
+#define PCI_PCH_A0 0x00
+#define PCI_PCH_A1 0x01
+#define PCI_PCH_B0 0x10
+
 #endif /* __DWMAC_INTEL_H__ */
