@@ -254,12 +254,15 @@ static void __maybe_unused ish_resume_handler(struct work_struct *work)
 {
 	struct pci_dev *pdev = to_pci_dev(ish_resume_device);
 	struct ishtp_device *dev = pci_get_drvdata(pdev);
+	uint32_t fwsts = dev->ops->get_fw_status(dev);
 	int ret;
 
 	/* Check the NO_D3 flag to distinguish the resume paths */
-	if (pdev->dev_flags & PCI_DEV_FLAGS_NO_D3) {
+	if ((pdev->dev_flags & PCI_DEV_FLAGS_NO_D3) && IPC_IS_ISH_ILUP(fwsts)) {
 		pdev->dev_flags &= ~PCI_DEV_FLAGS_NO_D3;
 		disable_irq_wake(pdev->irq);
+
+		ish_set_host_ready(dev);
 
 		ishtp_send_resume(dev);
 
