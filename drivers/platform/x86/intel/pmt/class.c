@@ -223,6 +223,7 @@ static int intel_pmt_populate_entry(struct intel_pmt_entry *entry,
 				return -EINVAL;
 		}
 
+		dev_dbg(dev, "LOCAL base address 0x%lx\b", entry->base_addr);
 		break;
 	case ACCESS_BARID:
 		/*
@@ -232,6 +233,8 @@ static int intel_pmt_populate_entry(struct intel_pmt_entry *entry,
 		 */
 		entry->base_addr = pci_resource_start(pci_dev, bir) +
 				   GET_ADDRESS(header->base_offset);
+
+		dev_dbg(dev, "BARID base address 0x%lx\b", entry->base_addr);
 		break;
 	default:
 		dev_err(dev, "Unsupported access type %d\n",
@@ -256,6 +259,8 @@ static int intel_pmt_dev_register(struct intel_pmt_entry *entry,
 	ret = xa_alloc(ns->xa, &entry->devid, entry, PMT_XA_LIMIT, GFP_KERNEL);
 	if (ret)
 		return ret;
+
+	dev_dbg(parent, "%s: Create %s%d\n", __func__, ns->name, entry->devid);
 
 	dev = device_create(&intel_pmt_class, parent, MKDEV(0, 0), entry,
 			    "%s%d", ns->name, entry->devid);
@@ -285,12 +290,15 @@ static int intel_pmt_dev_register(struct intel_pmt_entry *entry,
 	res.flags = IORESOURCE_MEM;
 	res.name = NULL;
 
+	dev_dbg(parent, "%s: Mapping resource %pr\n", __func__, &res);
+
 	entry->base = devm_ioremap_resource(dev, &res);
 	if (IS_ERR(entry->base)) {
 		ret = PTR_ERR(entry->base);
 		goto fail_ioremap;
 	}
 
+	dev_dbg(parent, "%s: Base mapped to %px\n", __func__, entry->base);
 	sysfs_bin_attr_init(&entry->pmt_bin_attr);
 	entry->pmt_bin_attr.attr.name = ns->name;
 	entry->pmt_bin_attr.attr.mode = 0440;

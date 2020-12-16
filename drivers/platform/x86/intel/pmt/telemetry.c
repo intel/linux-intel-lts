@@ -55,10 +55,12 @@ static bool pmt_telem_region_overlaps(struct intel_pmt_entry *entry,
 	if (intel_pmt_is_early_client_hw(dev)) {
 		u32 type = TELEM_TYPE(readl(entry->disc_table));
 
+		pr_debug("%s: is early client hardware, telem_type %u\n", __func__, type);
 		if ((type == TELEM_TYPE_PUNIT_FIXED) ||
 		    (guid == TELEM_CLIENT_FIXED_BLOCK_GUID))
 			return true;
-	}
+	} else
+		pr_debug("%s: is not early client hardware\n", __func__);
 
 	return false;
 }
@@ -107,8 +109,10 @@ static void pmt_telem_ep_release(struct kref *kref)
 {
 	struct telem_endpoint *ep;
 
+	pr_debug("%s: begin release kref\n", __func__);
 	ep = container_of(kref, struct telem_endpoint, kref);
 	kfree(ep);
+	pr_debug("%s: end release kref for %px\n", __func__, ep);
 }
 
 /*
@@ -148,6 +152,7 @@ struct telem_endpoint *pmt_telem_register_endpoint(int devid)
 
 	kref_get(&entry->ep->kref);
 
+	pr_debug("%s: kref for [%px] is now %d\n", __func__, entry, kref_read(&entry->ep->kref));
 	mutex_unlock(&list_lock);
 
 	return entry->ep;
@@ -157,6 +162,7 @@ EXPORT_SYMBOL_GPL(pmt_telem_register_endpoint);
 void pmt_telem_unregister_endpoint(struct telem_endpoint *ep)
 {
 	kref_put(&ep->kref, pmt_telem_ep_release);
+	pr_debug("%s: kref for [%px] is now %d\n", __func__, ep, kref_read(&ep->kref));
 }
 EXPORT_SYMBOL(pmt_telem_unregister_endpoint);
 
@@ -200,6 +206,9 @@ pmt_telem_read(struct telem_endpoint *ep, u32 id, u64 *data, u32 count)
 
 	if ((offset + NUM_BYTES_QWORD(count)) > size)
 		return -EINVAL;
+
+	pr_debug("%s: Reading id %d, offset 0x%x, count %d, base %px\n",
+		 __func__, id, SAMPLE_ID_OFFSET(id), count, ep->base);
 
 	pm_runtime_get_sync(&ep->parent->dev);
 	memcpy_fromio(data, ep->base + offset, NUM_BYTES_QWORD(count));
@@ -258,8 +267,11 @@ static void pmt_telem_remove(struct auxiliary_device *auxdev)
 	struct intel_pmt_entry *entry;
 	int i;
 
+	dev_dbg(&auxdev->dev, "%s\n", __func__);
+
 	for (i = 0, entry = priv->entry; i < priv->num_entries; i++, entry++) {
 		kref_put(&priv->entry[i].ep->kref, pmt_telem_ep_release);
+		dev_dbg(&auxdev->dev, "kref count of ep #%d [%px] is %d\n", i, entry->ep, kref_read(&entry->ep->kref));
 		intel_pmt_dev_destroy(&priv->entry[i], &pmt_telem_ns);
 	}
 }
@@ -282,6 +294,7 @@ static int pmt_telem_probe(struct auxiliary_device *auxdev, const struct auxilia
 	for (i = 0, entry = &priv->entry[priv->num_entries];
 	     i < intel_vsec_dev->num_resources;
 	     i++, entry++) {
+		dev_dbg(&auxdev->dev, "Getting resource %d\n", i);
 		ret = intel_pmt_dev_create(entry, &pmt_telem_ns, intel_vsec_dev, i);
 		if (ret < 0)
 			goto abort_probe;
@@ -296,6 +309,8 @@ static int pmt_telem_probe(struct auxiliary_device *auxdev, const struct auxilia
 		ret = pmt_telem_add_endpoint(&auxdev->dev, priv, entry);
 		if (ret)
 			goto abort_probe;
+
+		dev_dbg(&auxdev->dev, "kref count of ep #%d [%px] is %d\n", i, entry->ep, kref_read(&entry->ep->kref));
 	}
 
 	return 0;
