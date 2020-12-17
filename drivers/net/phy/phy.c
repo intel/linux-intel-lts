@@ -1075,11 +1075,8 @@ void phy_stop(struct phy_device *phydev)
 	struct net_device *dev = phydev->attached_dev;
 	enum phy_state old_state;
 
-	if (!phy_is_started(phydev) && phydev->state != PHY_DOWN) {
-		WARN(1, "called from state %s\n",
-		     phy_state_to_str(phydev->state));
+	if (!phy_is_started(phydev) && phydev->state != PHY_DOWN)
 		return;
-	}
 
 	mutex_lock(&phydev->lock);
 	old_state = phydev->state;
