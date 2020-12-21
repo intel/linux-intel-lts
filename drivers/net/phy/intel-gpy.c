@@ -9,6 +9,7 @@
 #include <linux/phy.h>
 #include <linux/netdevice.h>
 
+#define GPY_FW			0x1E	/* Firmware version */
 #define GPY_IMASK		0x19	/* interrupt mask */
 #define GPY_ISTAT		0x1A	/* interrupt status */
 #define GPY_INTR_WOL		BIT(15)	/* Wake-on-LAN */
@@ -66,6 +67,18 @@ static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 		if (ret < 0)
 			return ret;
 	}
+
+	return 0;
+}
+
+static int gpy_config_init(struct phy_device *phydev)
+{
+	int fw_ver = 0;
+
+	/* Show GPY PHY FW version in dmesg */
+	fw_ver = phy_read(phydev, GPY_FW);
+	phydev_info(phydev, "Firmware Version: 0x%04X (%s)", fw_ver,
+		    (fw_ver & 8000) ? "release" : "test");
 
 	return 0;
 }
@@ -360,6 +373,7 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.phy_id		= INTEL_PHY_ID_GPY,
 		.phy_id_mask	= INTEL_PHY_ID_MASK,
 		.name		= "INTEL(R) Ethernet Network Connection GPY",
+		.config_init	= gpy_config_init,
 		.get_features	= genphy_c45_pma_read_abilities,
 		.suspend	= genphy_suspend,
 		.resume		= genphy_resume,
