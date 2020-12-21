@@ -73,14 +73,25 @@ static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 
 static int gpy_config_init(struct phy_device *phydev)
 {
-	int fw_ver = 0;
+	int ret, fw_ver = 0;
 
 	/* Show GPY PHY FW version in dmesg */
 	fw_ver = phy_read(phydev, GPY_FW);
 	phydev_info(phydev, "Firmware Version: 0x%04X (%s)", fw_ver,
 		    (fw_ver & 8000) ? "release" : "test");
 
-	return 0;
+	/* In GPY PHY FW, by default EEE mode is enabled. So, disable EEE mode
+	 * during power up. Ethtool must be used to enable or disable it.
+	 */
+	ret = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV);
+	if (ret <= 0)
+		return ret;
+
+	ret = phy_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, 0);
+	if (ret < 0)
+		return ret;
+
+	return genphy_c45_restart_aneg(phydev);
 }
 
 static int gpy_config_aneg(struct phy_device *phydev)
