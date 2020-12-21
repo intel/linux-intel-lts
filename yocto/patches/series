@@ -2,7 +2,7 @@
 0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
 
 # CVE-2019-19770
-0001-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
+# 0001-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
 
 # CVE-2020-26541
-0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
+# 0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
