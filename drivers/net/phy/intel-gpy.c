@@ -190,17 +190,10 @@ static int gpy_config_aneg(struct phy_device *phydev)
 			return ret;
 	}
 
-	/* Trigger SGMII AN.
-	 * TODO: Register 30.8[9] is not self-cleared. Need to reverify with
-	 * official GPY FW.
-	 */
-	ret = phy_read_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL);
-	if (ret < 0)
-		return ret;
-	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL,
-			    ret | GPY_SGMII_ANRS);
-
-	return ret;
+	/* Trigger SGMII AN. */
+	return phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+				      GPY_VSPEC1_SGMII_CTRL, GPY_SGMII_ANRS,
+				      GPY_SGMII_ANRS);
 }
 
 static int gpy_ack_interrupt(struct phy_device *phydev)
