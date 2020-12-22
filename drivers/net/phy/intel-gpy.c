@@ -25,6 +25,7 @@
 #define GPY_VSPEC1_SGMII_CTRL	0x8
 #define GPY_VSPEC1_SGMII_STS	0x9
 #define GPY_SGMII_ANEN		BIT(12)		/* Aneg enable */
+#define GPY_SGMII_ANRS		BIT(9)		/* Restart Aneg */
 #define GPY_SGMII_ANOK		BIT(5)		/* Aneg complete */
 #define GPY_SGMII_LS		BIT(2)		/* Link status */
 #define GPY_SGMII_DR_MASK	GENMASK(1, 0)	/* Data rate */
@@ -37,9 +38,6 @@
 #define GPY_VSPEV2_WOL_AD01	0xe08		/* WOL addr Byte5:Byte6 */
 #define GPY_VSPEV2_WOL_AD23	0xe09		/* WOL addr Byte3:Byte4 */
 #define GPY_VSPEV2_WOL_AD45	0xe0a		/* WOL addr Byte1:Byte2 */
-
-/* WA for Q-SPEC GPY115 PHY ID */
-#define INTEL_PHY_ID_GPY115_C22		0x67C9DE00
 
 static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 {
@@ -64,10 +62,7 @@ static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 		if (ret < 0)
 			return ret;
 
-		/* C45 access to restart autonegotiation is not supported
-		 * in the GPY PHYs, hence use C22 access for this.
-		 */
-		ret = genphy_restart_aneg(phydev);
+		ret = genphy_c45_restart_aneg(phydev);
 		if (ret < 0)
 			return ret;
 	}
@@ -75,27 +70,10 @@ static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 	return 0;
 }
 
-static int gpy_soft_reset(struct phy_device *phydev)
-{
-	int ret;
-	int phy_id;
-
-	ret = phy_read(phydev, MII_PHYSID1);
-	phy_id = ret << 16;
-
-	ret = phy_read(phydev, MII_PHYSID2);
-	phy_id |= ret;
-
-	/* WA for GPY115 which need a soft reset even after a hard reset */
-	if (phy_id == INTEL_PHY_ID_GPY115_C22)
-		return genphy_soft_reset(phydev);
-
-	return genphy_no_soft_reset(phydev);
-}
-
 static int gpy_config_aneg(struct phy_device *phydev)
 {
 	bool changed = false;
+	u16 retries = 200;
 	u32 adv;
 	int ret;
 
@@ -136,7 +114,69 @@ static int gpy_config_aneg(struct phy_device *phydev)
 			return ret;
 	}
 
-	return changed ? genphy_restart_aneg(phydev) : 0;
+	ret = genphy_c45_check_and_restart_aneg(phydev, changed);
+	if (ret < 0)
+		return ret;
+
+	/* 2.5Gbps doesn`t use SGMII AN, so return. */
+	if (MDIO_AN_10GBT_CTRL_ADV2_5G &
+	    linkmode_adv_to_mii_10gbt_adv_t(phydev->advertising))
+		return ret;
+
+	/* NOTE:
+	 * There is a design constraint in Intel GPY where SGMII AN is only
+	 * triggered by GPY FW if there is change of speed. If, PHY link
+	 * partner`s speed is still same even after PHY TPI is down and up
+	 * again, GPY FW wouldn`t retrigger SGMII AN and hence no new in-band
+	 * message from GPY to MAC side SGMII.
+	 * This could cause an issue during power up, when PHY is up prior to
+	 * MAC. At this condition, once MAC side SGMII is up, MAC side SGMII
+	 * wouldn`t receive new in-band message from GPY with correct link
+	 * status, speed and duplex info.
+	 *
+	 * 1) If PHY is already up and TPI link status is still down (such as
+	 *    hard reboot), TPI link status is polled for 4 seconds before
+	 *    retriggerring SGMII AN.
+	 * 2) If PHY is already up and TPI link status is also up (such as soft
+	 *    reboot), polling of TPI link status is not needed and SGMII AN is
+	 *    immediately retriggered.
+	 * 3) Other conditions such as PHY is down, speed change etc, skip
+	 *    retriggering SGMII AN. Note: in case of speed change, GPY FW will
+	 *    initiate SGMII AN.
+	 */
+
+	if (phydev->state != PHY_UP)
+		return ret;
+
+	ret = phy_read(phydev, MII_BMSR);
+	if (ret < 0)
+		return ret;
+
+	/* Check TPI link status */
+	if (!(ret & BMSR_LSTATUS)) {
+		/* Poll up to 4 seconds (200 * 20ms) */
+		do {
+			ret = phy_read(phydev, MII_BMSR);
+			if (ret & BMSR_LSTATUS)
+				break;
+			msleep(20);
+		} while (--retries);
+
+		if (!retries)
+			return ret;
+	}
+
+	/* Trigger SGMII AN.
+	 * TODO: Register 30.8[9] is not self-cleared. Need to reverify with
+	 * official GPY FW.
+	 */
+	ret = phy_read_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL);
+	if (ret < 0)
+		return ret;
+	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL,
+			    ret | GPY_SGMII_ANRS);
+
+	return ret;
 }
 
 static int gpy_ack_interrupt(struct phy_device *phydev)
@@ -323,7 +363,7 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.get_features	= genphy_c45_pma_read_abilities,
 		.aneg_done	= genphy_c45_aneg_done,
 		.set_eee	= gpy_set_eee,
-		.soft_reset	= gpy_soft_reset,
+		.soft_reset	= genphy_no_soft_reset,
 		.ack_interrupt	= gpy_ack_interrupt,
 		.did_interrupt	= gpy_did_interrupt,
 		.config_intr	= gpy_config_intr,

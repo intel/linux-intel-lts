@@ -27,12 +27,13 @@
 #include <linux/sched/clock.h>
 #include <asm/cpu_device_id.h>
 #include <asm/intel-family.h>
+#include <asm/mach_traps.h>
 
 #include "edac_mc.h"
 #include "edac_module.h"
 #include "igen6_edac.h"
 
-#define IGEN6_REVISION	"v1.1.5"
+#define IGEN6_REVISION	"v1.1.6"
 
 #define EDAC_MOD_STR	"igen6_edac"
 #define IGEN6_NMI_NAME	"igen6_ibecc"
@@ -59,6 +60,11 @@
 #define IGEN6_ERRSTS_OFF		0xc8
 #define IGEN6_ERRSTS_CE			BIT_ULL(6)
 #define IGEN6_ERRSTS_UE			BIT_ULL(7)
+
+/* Error Command */
+#define ERRCMD_OFFSET			0xca
+#define ERRCMD_CE			BIT_ULL(6)
+#define ERRCMD_UE			BIT_ULL(7)
 
 #define IGEN6_ECC_BASE			(ibecc_cfg->ibecc_offset)
 #define IGEN6_ECCACTIVATE_OFF		IGEN6_ECC_BASE
@@ -453,6 +459,27 @@ static void errsts_clear(void)
 	pci_write_config_word(igen6_pvt->pdev, IGEN6_ERRSTS_OFF, errsts);
 }
 
+static int errcmd_enable_error_reporting(bool enable)
+{
+	u16 errcmd;
+	int rc;
+
+	rc = pci_read_config_word(igen6_pvt->pdev, ERRCMD_OFFSET, &errcmd);
+	if (rc)
+		return rc;
+
+	if (enable)
+		errcmd |= ERRCMD_CE | ERRCMD_UE;
+	else
+		errcmd &= ~(ERRCMD_CE | ERRCMD_UE);
+
+	rc = pci_write_config_word(igen6_pvt->pdev, ERRCMD_OFFSET, errcmd);
+	if (rc)
+		return rc;
+
+	return 0;
+}
+
 static u64 ecclog_check(void)
 {
 	u64 ecclog = ecclog_read();
@@ -502,6 +529,7 @@ static void ecclog_irq_work_cb(struct irq_work *irq_work)
 
 static int ecclog_nmi_handler(unsigned int cmd, struct pt_regs *regs)
 {
+	unsigned char reason;
 	u64 delta, ecclog;
 
 	raw_spin_lock(&ecclog_lock);
@@ -527,6 +555,19 @@ static int ecclog_nmi_handler(unsigned int cmd, struct pt_regs *regs)
 	last_handle_jiffies = jiffies;
 
 	raw_spin_unlock(&ecclog_lock);
+
+	/*
+	 * Both In-Band ECC correctable error and uncorrectable error are
+	 * reported by SERR# NMI. The NMI generic code (see pci_serr_error())
+	 * doesn't clear the bit NMI_REASON_CLEAR_SERR (in port 0x61) to
+	 * re-enable the SERR# NMI after NMI handling. So clear this bit here
+	 * to re-enable SERR# NMI for receiving future In-Band ECC errors.
+	 */
+	reason  = x86_platform.get_nmi_reason() & NMI_REASON_CLEAR_MASK;
+	reason |= NMI_REASON_CLEAR_SERR;
+	outb(reason, NMI_REASON_PORT);
+	reason &= ~NMI_REASON_CLEAR_SERR;
+	outb(reason, NMI_REASON_PORT);
 
 	return NMI_HANDLED;
 }
@@ -837,9 +878,17 @@ static int igen6_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto fail2;
 	}
 
+	/* Enable error reporting */
+	rc = errcmd_enable_error_reporting(true);
+	if (rc) {
+		igen6_printk(KERN_ERR, "Failed to enable error reporting\n");
+		goto fail3;
+	}
+
 	igen6_debug_setup();
 	return 0;
-
+fail3:
+	unregister_nmi_handler(NMI_LOCAL, IGEN6_NMI_NAME);
 fail2:
 	gen_pool_destroy(ecclog_pool);
 fail1:
@@ -859,6 +908,7 @@ static void igen6_remove(struct pci_dev *pdev)
 	edac_dbg(2, "\n");
 
 	igen6_debug_teardown();
+	errcmd_enable_error_reporting(false);
 	unregister_nmi_handler(NMI_LOCAL, IGEN6_NMI_NAME);
 	irq_work_sync(&ecclog_irq_work);
 	flush_work(&ecclog_work);
