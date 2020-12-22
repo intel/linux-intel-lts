@@ -78,6 +78,7 @@ static int bdecprobed;
 extern bool verbose;
 extern bool enable_decode;
 extern bool enable_irqmode;
+extern bool platform_kmb;
 
 #undef PDEBUG
 #define PDEBUG(fmt, arg...)                                                    \
@@ -1556,7 +1557,7 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
 
 	if (!handled)
-		pr_info("IRQ received, but not hantrodec's!\n");
+		PDEBUG("IRQ received, but not hantrodec's!\n");
 
 	(void)hwregs;
 	return IRQ_RETVAL(handled);

@@ -95,6 +95,11 @@ module_param(enable_irqmode, bool, 0);
 MODULE_PARM_DESC(enable_irqmode, "Enable IRQ Mode"
         "(default 1)");
 
+bool platform_kmb = 0;
+module_param(platform_kmb, bool, 0);
+MODULE_PARM_DESC(platform_kmb, "Enable KMB Features"
+        "(default 0)");
+
 struct performance_data perfdata[MAX_SLICES][NODE_TYPES + 1][MAX_CORES];
 
 /* temp no usage now */
@@ -1846,9 +1851,15 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 
 
 	sliceidx = findslice_bydev(kdev);
-	buf_used += snprintf(
-		buf + buf_used, PAGE_SIZE,
-		"  File Id  : ContextId : Slice :  Operation   :                Codec                    :  Resolution  \n");
+	if (!platform_kmb)
+		buf_used += snprintf(
+			buf + buf_used, PAGE_SIZE,
+			"  File Id  : ContextId : Slice :  Operation   :                Codec                    :  Resolution  \n");
+	else
+		buf_used += snprintf(
+			buf + buf_used, PAGE_SIZE,
+			"  File Id  : ContextId :  Operation   :                Codec                    :  Resolution  \n");
+
 	mutex_lock(&ddev->filelist_mutex);
 	/* Go through all open drm files */
 	list_for_each_entry(file, &ddev->filelist, lhead) {
@@ -1881,16 +1892,30 @@ static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
 						else
 							strncpy(optype, unknown,
 								strlen(unknown));
-						buf_used += snprintf(
-							buf + buf_used,
-							PAGE_SIZE,
-							"%10p  %10x %5d\t  %s (%d)\t %-32s (%d)\t   %ldx%ld\n",
-							file, client->clientid,
-							client->sliceid, optype,
-							client->codec, profile,
-							client->profile,
-							client->width,
-							client->height);
+
+						if (!platform_kmb)
+							buf_used += snprintf(
+								buf + buf_used,
+								PAGE_SIZE,
+								"%10p  %10x %5d\t  %s (%d)\t %-32s (%d)\t   %ldx%ld\n",
+								file, client->clientid,
+								client->sliceid, optype,
+								client->codec, profile,
+								client->profile,
+								client->width,
+								client->height);
+						else
+							buf_used += snprintf(
+								buf + buf_used,
+								PAGE_SIZE,
+								"%10p  %10x\t  %s (%d)\t %-32s (%d)\t   %ldx%ld\n",
+								file, client->clientid,
+								optype,
+								client->codec, profile,
+								client->profile,
+								client->width,
+								client->height);
+
 					} else {
 						// optimization to save buf space due to a PAGE_SIZE mem only
 						if (noprint == false) {
@@ -2049,7 +2074,10 @@ static int mem_usage_debugfs_show(struct seq_file *s, void *v)
 {
 	struct slice_info *pslice = s->private;
 	int sliceidx = findslice_bydev(pslice->dev);
-	seq_printf(s, "Memory usage for slice %d:\n", sliceidx);
+
+	if (!platform_kmb)
+		seq_printf(s, "Memory usage for slice %d:\n", sliceidx);
+
 	seq_printf(s, "Pixel CMA:\n");
 	mem_usage_internal(sliceidx, pslice->dev, NULL, NULL, s);
 	if (pslice && pslice->codec_rsvmem != NULL) {
@@ -2257,9 +2285,17 @@ static int hantro_clock_control(struct platform_device *pdev, bool enable)
 					pr_info("hantro: default clock frequency of clock_name = %s is %ld\n",
 						clock_names[i],
 						clk_get_rate(dev_clk));
-				clk_set_rate(dev_clk, 800000000);
-				if (verbose)
-					pr_info("hantro: set 800 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
+				if (platform_kmb)
+					clk_set_rate(dev_clk, 700000000);
+				else
+					clk_set_rate(dev_clk, 800000000);
+				if (verbose) {
+					if (platform_kmb)
+						pr_info("hantro: set 700 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
+					else
+						pr_info("hantro: set 800 Mhz clock frequency of clock_name = %s is %ld\n", clock_names[i], clk_get_rate(dev_clk));
+				}
+
 			} else {
 				clk_disable_unprepare(dev_clk);
 			}
@@ -2414,10 +2450,12 @@ static int hantro_drm_probe(struct platform_device *pdev)
 
 	/* TBH PO:  We have to enable and set hantro clocks first before de-asserting the reset of media SS cores and MMU */
 	hantro_clock_control(pdev, true);
-	hantro_reset_control(pdev, true);
+	if (!platform_kmb)
+		hantro_reset_control(pdev, true);
 
 	/* Check the status of media MMU, whether it is enabled/disabled after reset de-assert of MMU */
-	hantro_mmu_control(pdev);
+	if (!platform_kmb)
+		hantro_mmu_control(pdev);
 
 	if (dev->of_node) {
 		/* probe from system DTB */
@@ -2477,6 +2515,9 @@ static const struct of_device_id hantro_of_match[] = {
 	/*to match dtb, else reg io will fail*/
 	{
 		.compatible = "thunderbay,hantro",
+	},
+	{
+		.compatible = "kmb,hantro",
 	},
 	{ /* sentinel */ }
 };

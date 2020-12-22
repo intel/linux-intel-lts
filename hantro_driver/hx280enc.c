@@ -41,16 +41,21 @@
 #include <linux/timer.h>
 #include "hx280enc.h"
 #include <linux/irq.h>
+
 static u32 resource_shared;
 extern bool enable_encode;
 extern bool enable_irqmode;
+extern bool platform_kmb;
+
 /*------------------------------------------------------------------------
  *****************************PORTING LAYER********************************
  *-------------------------------------------------------------------------
  */
 
-#define HANTRO_VC8KE_REG_BWREAD		216
-#define HANTRO_VC8KE_REG_BWWRITE	220
+#define HANTRO_VC8KE_REG_BWREAD			216
+#define HANTRO_VC8KE_REG_BWREAD_KMB		215
+#define HANTRO_VC8KE_REG_BWWRITE		220
+#define HANTRO_VC8KE_REG_BWWRITE_KMB		219
 #define VC8KE_BURSTWIDTH 16
 
 static int bencprobed;
@@ -144,30 +149,58 @@ u32 hantroenc_readbandwidth(int sliceidx, int isreadBW)
 		for (i = 0; i < slicen; i++) {
 			pcore = get_encnodes(i, 0);
 			while (pcore != NULL) {
-				if (isreadBW)
-					bandwidth += ioread32((
-						void *)(pcore->hwregs +
-							HANTRO_VC8KE_REG_BWREAD *
-								4));
-				else
-					bandwidth += ioread32((
-						void *)(pcore->hwregs +
-							HANTRO_VC8KE_REG_BWWRITE *
-								4));
+				if (isreadBW) {
+					if (platform_kmb)
+						bandwidth += ioread32((
+							void *)(pcore->hwregs +
+								HANTRO_VC8KE_REG_BWREAD_KMB *
+									4));
+					else
+						bandwidth += ioread32((
+							void *)(pcore->hwregs +
+								HANTRO_VC8KE_REG_BWREAD *
+									4));
+				} else {
+					if (platform_kmb)
+						bandwidth += ioread32((
+							void *)(pcore->hwregs +
+								HANTRO_VC8KE_REG_BWWRITE_KMB *
+									4));
+					else
+						bandwidth += ioread32((
+							void *)(pcore->hwregs +
+								HANTRO_VC8KE_REG_BWWRITE *
+									4));
+				}
 				pcore = pcore->next;
 			}
 		}
 	} else {
 		pcore = get_encnodes(sliceidx, 0);
 		while (pcore != NULL) {
-			if (isreadBW)
-				bandwidth += ioread32(
-					(void *)(pcore->hwregs +
-						 HANTRO_VC8KE_REG_BWREAD * 4));
-			else
-				bandwidth += ioread32(
-					(void *)(pcore->hwregs +
-						 HANTRO_VC8KE_REG_BWWRITE * 4));
+			if (isreadBW) {
+				if (platform_kmb)
+					bandwidth += ioread32(
+						(void *)(pcore->hwregs +
+							 HANTRO_VC8KE_REG_BWREAD_KMB *
+								4));
+				else
+					bandwidth += ioread32(
+						(void *)(pcore->hwregs +
+							 HANTRO_VC8KE_REG_BWREAD *
+								4));
+			} else {
+				if (platform_kmb)
+					bandwidth += ioread32(
+						(void *)(pcore->hwregs +
+							 HANTRO_VC8KE_REG_BWWRITE_KMB *
+								4));
+				else
+					bandwidth += ioread32(
+						(void *)(pcore->hwregs +
+							 HANTRO_VC8KE_REG_BWWRITE *
+								4));
+			}
 			pcore = pcore->next;
 		}
 	}

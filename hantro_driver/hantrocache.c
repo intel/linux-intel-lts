@@ -59,6 +59,7 @@
 static int bcacheprobed;
 extern bool enable_dec400;
 extern bool enable_irqmode;
+extern bool platform_kmb;
 
 /*------------------------------END-------------------------------------*/
 
@@ -170,7 +171,7 @@ long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long long tmp64;
 	struct cache_dev_t *pccore;
 
-	if (enable_dec400 == 0)
+	if (platform_kmb == 0 && enable_dec400 == 0)
 		return -EFAULT;
 	switch (cmd) {
 	case CACHE_IOCGHWOFFSET:
@@ -259,7 +260,7 @@ long hantrocache_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 int cache_open(struct inode *inode, struct file *filp)
 {
-	if (enable_dec400 == 0)
+	if (platform_kmb == 0 && enable_dec400 == 0)
 		return 0;
 
 	return 0;
@@ -270,7 +271,7 @@ int cache_release(struct file *filp)
 	int i, slicen = get_slicenumber();
 	struct cache_dev_t *dev;
 
-	if (enable_dec400 == 0)
+	if (platform_kmb == 0 && enable_dec400 == 0)
 		return 0;
 
 	for (i = 0; i < slicen; i++) {
@@ -334,7 +335,7 @@ int cache_probe(dtbnode *pnode)
 	struct cache_dev_t *pccore;
 	int type, dir;
 
-	if (enable_dec400 == 0)
+	if (platform_kmb == 0 && enable_dec400 == 0)
 		return 0;
 	cache_getcachetype(pnode->ofnode->name, &type, &dir);
 	if (type == -1 || dir == -1)
