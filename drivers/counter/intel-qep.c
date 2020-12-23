@@ -723,13 +723,9 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->op_mode = INTEL_QEP_OP_MODE_QEP;
 	qep->cap_mode = 0;
 
-	ret = counter_register(&qep->counter);
-	if (ret)
-		return ret;
-
 	ret = pci_alloc_irq_vectors(pci, 1, 1, PCI_IRQ_ALL_TYPES);
 	if (ret < 0)
-		goto err_irq_vectors;
+		return ret;
 
 	irq = pci_irq_vector(pci, 0);
 	ret = devm_request_threaded_irq(&pci->dev, irq, intel_qep_irq,
@@ -743,13 +739,10 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	pm_runtime_put_noidle(dev);
 	pm_runtime_allow(dev);
 
-	return 0;
+	return devm_counter_register(&pci->dev, &qep->counter);
 
 err_irq:
 	pci_free_irq_vectors(pci);
-
-err_irq_vectors:
-	counter_unregister(&qep->counter);
 
 	return ret;
 }
@@ -765,7 +758,6 @@ static void intel_qep_remove(struct pci_dev *pci)
 	intel_qep_writel(qep, INTEL_QEPCON, 0);
 	devm_free_irq(&pci->dev, pci_irq_vector(pci, 0), qep);
 	pci_free_irq_vectors(pci);
-	counter_unregister(&qep->counter);
 }
 
 #ifdef CONFIG_PM
