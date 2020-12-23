@@ -61,6 +61,7 @@
 #define INTEL_QEPINT_WDT		BIT(0)
 
 #define INTEL_QEPINT_MASK_DEFAULT	INTEL_QEPINT_WDT
+#define INTEL_QEPINT_MASK_ALL		GENMASK(5, 0)
 
 #define INTEL_QEP_DIRECTION_FORWARD	1
 #define INTEL_QEP_DIRECTION_BACKWARD	!INTEL_QEP_DIRECTION_FORWARD
@@ -190,7 +191,7 @@ static irqreturn_t intel_qep_irq(int irq, void *_qep)
 	stat = intel_qep_readl(qep, INTEL_QEPINT_STAT);
 	if (stat) {
 		qep->int_stat = stat;
-		intel_qep_writel(qep, INTEL_QEPINT_MASK, 0xffffffff);
+		intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
 		intel_qep_writel(qep, INTEL_QEPINT_STAT, stat);
 		return IRQ_WAKE_THREAD;
 	}
