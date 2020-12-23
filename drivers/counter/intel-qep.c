@@ -59,7 +59,8 @@
 #define INTEL_QEPINT_QEPRST_UP		BIT(2)
 #define INTEL_QEPINT_QEPRST_DOWN	BIT(1)
 #define INTEL_QEPINT_WDT		BIT(0)
-#define INTEL_QEPINT_DEFAULT_MASK	INTEL_QEPINT_WDT
+
+#define INTEL_QEPINT_MASK_DEFAULT	INTEL_QEPINT_WDT
 
 #define INTEL_QEP_DIRECTION_FORWARD	1
 #define INTEL_QEP_DIRECTION_BACKWARD	!INTEL_QEP_DIRECTION_FORWARD
@@ -139,7 +140,7 @@ static void intel_qep_init(struct intel_qep *qep, bool reset)
 
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 
-	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_DEFAULT_MASK);
+	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_DEFAULT);
 
 	qep->direction = INTEL_QEP_DIRECTION_FORWARD;
 }
@@ -175,7 +176,7 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 	if (stat & INTEL_QEPINT_QEPRST_DOWN)
 		qep->direction = INTEL_QEP_DIRECTION_BACKWARD;
 
-	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_DEFAULT_MASK);
+	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_DEFAULT);
 	mutex_unlock(&qep->lock);
 
 	return IRQ_HANDLED;
