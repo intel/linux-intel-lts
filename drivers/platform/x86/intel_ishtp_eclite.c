@@ -14,6 +14,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/suspend.h>
 #include <linux/types.h>
 #include <linux/uuid.h>
 #include <linux/uaccess.h>
@@ -80,10 +81,9 @@ struct ishtp_opregion_dev {
 	struct acpi_handle *acpi_handle;
 	unsigned int dsm_event_id;
 	unsigned int ish_link_ready;
-	unsigned int ish_pm_suspended;
 	unsigned int ish_read_done;
+	unsigned int acpi_init_done;
 	wait_queue_head_t read_wait;
-	wait_queue_head_t link_wait;
 	struct work_struct event_work;
 	struct work_struct reset_work;
 };
@@ -120,19 +120,9 @@ static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 	header.event = opr_dev->opr_context.cmd_area.event_id;
 	len = sizeof(header);
 
-	rv = wait_event_interruptible_timeout(opr_dev->link_wait,
-					      (opr_dev->ish_link_ready &&
-					       !opr_dev->ish_pm_suspended),
-					      5 * HZ);
-	if (!rv) {
-		dev_err(cl_data_to_dev(opr_dev),
-			"[ish_rd] timeout, Link not ready\n");
-		return -EIO;
-	}
-
 	opr_dev->ish_read_done = false;
 
-	if (!opr_dev->ish_link_ready || opr_dev->ish_pm_suspended)
+	if (!opr_dev->ish_link_ready)
 		return -EIO;
 
 	rv = ishtp_cl_send(opr_dev->ecl_ishtp_cl, (uint8_t *)&header, len);
@@ -148,7 +138,7 @@ static int ecl_ish_cl_read(struct ishtp_opregion_dev *opr_dev)
 
 	rv = wait_event_interruptible_timeout(opr_dev->read_wait,
 					      opr_dev->ish_read_done,
-					      5 * HZ);
+					      2 * HZ);
 	if (!rv) {
 		dev_err(cl_data_to_dev(opr_dev),
 			"[ish_rd] No response from firmware\n");
@@ -181,6 +171,9 @@ static int ecl_ish_cl_write(struct ishtp_opregion_dev *opr_dev)
 	memcpy(message.payload,
 	       opr_dev->opr_context.data_area.data + message.header.offset,
 	       message.header.data_len);
+
+	if (!opr_dev->ish_link_ready)
+		return -EIO;
 
 	dev_dbg(cl_data_to_dev(opr_dev),
 		"[ish_wr] off : %x, len : %x\n",
@@ -298,13 +291,25 @@ static int acpi_opregion_init(struct ishtp_opregion_dev *opr_dev)
 		acpi_remove_address_space_handler(opr_dev->acpi_handle,
 						  ECLITE_CMD_OPREGION_ID,
 						  ecl_opregion_cmd_handler);
-
 		return -ENODEV;
 	}
+	opr_dev->acpi_init_done = true;
 
 	dev_dbg(cl_data_to_dev(opr_dev), "Opregion handlers are installed\n");
 
 	return 0;
+}
+
+static void acpi_opregion_deinit(struct ishtp_opregion_dev *opr_dev)
+{
+	acpi_remove_address_space_handler(opr_dev->acpi_handle,
+					  ECLITE_CMD_OPREGION_ID,
+					  ecl_opregion_cmd_handler);
+
+	acpi_remove_address_space_handler(opr_dev->acpi_handle,
+					  ECLITE_DATA_OPREGION_ID,
+					  ecl_opregion_data_handler);
+	opr_dev->acpi_init_done = false;
 }
 
 static void ecl_acpi_invoke_dsm(struct work_struct *work)
@@ -314,6 +319,8 @@ static void ecl_acpi_invoke_dsm(struct work_struct *work)
 
 	opr_dev = container_of(work, struct ishtp_opregion_dev, event_work);
 
+	if (!opr_dev->acpi_init_done)
+		return;
 	obj = acpi_evaluate_dsm(opr_dev->acpi_handle, &ecl_acpi_guid, 0,
 				opr_dev->dsm_event_id, NULL);
 	if (!obj) {
@@ -357,7 +364,7 @@ static void ecl_ish_process_rx_event(struct ishtp_opregion_dev *opr_dev)
 }
 
 static int ecl_ish_cl_enable_events(struct ishtp_opregion_dev *opr_dev,
-				     bool config_enable)
+				    bool config_enable)
 {
 	struct ecl_message message = { 0 };
 	int len;
@@ -491,15 +498,19 @@ static void ecl_ishtp_cl_reset_handler(struct work_struct *work)
 	}
 
 	ishtp_register_event_cb(cl_device, ecl_ishtp_cl_event_cb);
-
-	ecl_ish_cl_enable_events(opr_dev, true);
-
 	dev_info(cl_data_to_dev(opr_dev),
 			"[ish_rst] Reset Success. Link ready.\n");
 
 	opr_dev->ish_link_ready = true;
 
-	wake_up_interruptible(&opr_dev->link_wait);
+	if (opr_dev->acpi_init_done)
+		return;
+
+	rv = acpi_opregion_init(opr_dev);
+	if (rv) {
+		dev_err(cl_data_to_dev(opr_dev),
+				"ACPI opregion init failed\n");
+	}
 }
 
 static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
@@ -523,7 +534,6 @@ static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
 	opr_dev->cl_device = cl_device;
 
 	init_waitqueue_head(&opr_dev->read_wait);
-	init_waitqueue_head(&opr_dev->link_wait);
 	INIT_WORK(&opr_dev->event_work, ecl_acpi_invoke_dsm);
 	INIT_WORK(&opr_dev->reset_work, ecl_ishtp_cl_reset_handler);
 
@@ -542,7 +552,6 @@ static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
 	ishtp_get_device(cl_device);
 
 	opr_dev->ish_link_ready = true;
-	opr_dev->ish_pm_suspended = false;
 
 	/* Now find ACPI device and init opregion handlers */
 	rv = acpi_opregion_init(opr_dev);
@@ -555,10 +564,7 @@ static int ecl_ishtp_cl_probe(struct ishtp_cl_device *cl_device)
 	/* Reprobe devices depending on ECLite - battery, fan, etc. */
 	acpi_walk_dep_device_list(opr_dev->acpi_handle);
 
-	ecl_ish_cl_enable_events(opr_dev, true);
-
 	return 0;
-
 err_exit:
 	ishtp_set_connection_state(ecl_ishtp_cl, ISHTP_CL_DISCONNECTING);
 	ishtp_cl_disconnect(ecl_ishtp_cl);
@@ -575,15 +581,8 @@ static int ecl_ishtp_cl_remove(struct ishtp_cl_device *cl_device)
 	struct ishtp_opregion_dev *opr_dev =
 		ishtp_get_client_data(ecl_ishtp_cl);
 
-	ecl_ish_cl_enable_events(opr_dev, false);
-
-	acpi_remove_address_space_handler(opr_dev->acpi_handle,
-					  ECLITE_CMD_OPREGION_ID,
-					  ecl_opregion_cmd_handler);
-
-	acpi_remove_address_space_handler(opr_dev->acpi_handle,
-					  ECLITE_DATA_OPREGION_ID,
-					  ecl_opregion_data_handler);
+	if (opr_dev->acpi_init_done)
+		acpi_opregion_deinit(opr_dev);
 
 	cancel_work_sync(&opr_dev->reset_work);
 	cancel_work_sync(&opr_dev->event_work);
@@ -615,7 +614,10 @@ static int ecl_ishtp_cl_suspend(struct device *device)
 	struct ishtp_opregion_dev *opr_dev =
 		ishtp_get_client_data(ecl_ishtp_cl);
 
-	opr_dev->ish_pm_suspended = true;
+	if (acpi_target_system_state() == ACPI_STATE_S0)
+		return 0;
+
+	acpi_opregion_deinit(opr_dev);
 	ecl_ish_cl_enable_events(opr_dev, false);
 
 	return 0;
@@ -623,14 +625,10 @@ static int ecl_ishtp_cl_suspend(struct device *device)
 
 static int ecl_ishtp_cl_resume(struct device *device)
 {
-	struct ishtp_cl_device *cl_device = ishtp_dev_to_cl_device(device);
-	struct ishtp_cl *ecl_ishtp_cl = ishtp_get_drvdata(cl_device);
-	struct ishtp_opregion_dev *opr_dev =
-		ishtp_get_client_data(ecl_ishtp_cl);
-
-	ecl_ish_cl_enable_events(opr_dev, true);
-	opr_dev->ish_pm_suspended = false;
-
+	/* A reset is expected to call after an Sx. At this point
+	 * we are not sure if the link is up or not to restore anything,
+	 * so do nothing in resume path
+	 */
 	return 0;
 }
 
