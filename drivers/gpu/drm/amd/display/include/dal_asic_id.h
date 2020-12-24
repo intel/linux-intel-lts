@@ -206,7 +206,6 @@ enum {
 #define ASICREV_IS_SIENNA_CICHLID_P(eChipRev)        ((eChipRev >= NV_SIENNA_CICHLID_P_A0) && (eChipRev < NV_DIMGREY_CAVEFISH_P_A0))
 #define ASICREV_IS_DIMGREY_CAVEFISH_P(eChipRev)        ((eChipRev >= NV_DIMGREY_CAVEFISH_P_A0) && (eChipRev < NV_UNKNOWN))
 #define GREEN_SARDINE_A0 0xA1
-
 #ifndef ASICREV_IS_GREEN_SARDINE
 #define ASICREV_IS_GREEN_SARDINE(eChipRev) ((eChipRev >= GREEN_SARDINE_A0) && (eChipRev < 0xFF))
 #endif
@@ -214,10 +213,13 @@ enum {
 #define DEVICE_ID_VGH_163F 0x163F
 #define VANGOGH_A0 0x01
 #define VANGOGH_UNKNOWN 0xFF
-#endif
 
 #ifndef ASICREV_IS_VANGOGH
 #define ASICREV_IS_VANGOGH(eChipRev) ((eChipRev >= VANGOGH_A0) && (eChipRev < VANGOGH_UNKNOWN))
+#endif
+#define GREEN_SARDINE_A0 0xA1
+#ifndef ASICREV_IS_GREEN_SARDINE
+#define ASICREV_IS_GREEN_SARDINE(eChipRev) ((eChipRev >= GREEN_SARDINE_A0) && (eChipRev < 0xFF))
 #endif
 
 /*
