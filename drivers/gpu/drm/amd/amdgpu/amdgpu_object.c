@@ -1539,7 +1539,7 @@ u64 amdgpu_bo_print_info(int id, struct amdgpu_bo *bo, struct seq_file *m)
 	seq_printf(m, "\t\t0x%08x: %12lld byte %s",
 			id, size, placement);
 
-	pin_count = READ_ONCE(bo->pin_count);
+	pin_count = READ_ONCE(bo->tbo.pin_count);
 	if (pin_count)
 		seq_printf(m, " pin count %d", pin_count);
 
