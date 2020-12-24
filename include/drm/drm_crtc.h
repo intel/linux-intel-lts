@@ -1290,6 +1290,6 @@ static inline struct drm_crtc *drm_crtc_find(struct drm_device *dev,
 	list_for_each_entry_reverse(crtc, &(dev)->mode_config.crtc_list, head)
 
 int drm_crtc_create_scaling_filter_property(struct drm_crtc *crtc,
-                                            unsigned int supported_filters);
+					    unsigned int supported_filters);
 
 #endif /* __DRM_CRTC_H__ */

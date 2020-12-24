@@ -1029,7 +1029,6 @@ void virtio_gpu_cmd_transfer_to_host_3d(struct virtio_gpu_device *vgdev,
 
 	if (virtio_gpu_is_shmem(bo) && use_dma_api) {
 		struct virtio_gpu_object_shmem *shmem = to_virtio_gpu_shmem(bo);
-
 		dma_sync_sgtable_for_device(vgdev->vdev->dev.parent,
 					    shmem->pages, DMA_TO_DEVICE);
 	}
