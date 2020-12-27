@@ -785,10 +785,10 @@ static const struct pci_device_id intel_qep_id_table[] = {
 MODULE_DEVICE_TABLE(pci, intel_qep_id_table);
 
 static struct pci_driver intel_qep_driver = {
-	.name		= "intel-qep",
-	.id_table	= intel_qep_id_table,
-	.probe		= intel_qep_probe,
-	.remove		= intel_qep_remove,
+	.name = "intel-qep",
+	.id_table = intel_qep_id_table,
+	.probe = intel_qep_probe,
+	.remove = intel_qep_remove,
 	.driver = {
 		.pm = &intel_qep_pm_ops,
 	}
