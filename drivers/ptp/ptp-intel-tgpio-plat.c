@@ -459,7 +459,7 @@ static int intel_tgpio_enable(struct ptp_clock_info *info,
 	}
 	case PTP_CLK_REQ_PEROUT:
 	{
-		if (!tgpio->pin_state[req->extts.index] && on)
+		if (!tgpio->pin_state[req->perout.index] && on)
 			pm_runtime_get_sync(tgpio->dev->parent);
 
 		spin_lock_irqsave(&tgpio->lock, flags);
