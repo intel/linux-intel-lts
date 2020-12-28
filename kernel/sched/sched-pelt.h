@@ -13,7 +13,7 @@ static const u32 runnable_avg_yN_inv[] __maybe_unused = {
 	0x8b95c1e3, 0x88980e80, 0x85aac367, 0x82cd8698,
 };
 
-static const u32 runnable_avg_yN_sum[] = {
+static const u32 runnable_avg_yN_sum[] __maybe_unused = {
 	    0, 1002,  1982,  2941,  3880,  4798,  5697,  6576,  7437,  8279,  9103,
 	 9909, 10698, 11470, 12226, 12966, 13690, 14398, 15091, 15769, 16433, 17082,
 	17718, 18340, 18949, 19545, 20128, 20698, 21256, 21802, 22336, 22859, 23371,
