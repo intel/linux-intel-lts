@@ -98,6 +98,14 @@ config ACPI_SLEEP
 	depends on ACPI_SYSTEM_POWER_STATES_SUPPORT
 	default y
 
+config ACPI_MEDIATOR
+       tristate "ACPI MEDIATOR -- loadable modules only"
+       depends on ACPI && m
+       help
+         Build a acpi mediator interface.
+	 It is called by host QEMU to execute ACPI methods in hos
+	 on behalf of guests running inside the QEMU.
+
 config ACPI_REV_OVERRIDE_POSSIBLE
 	bool "Allow supported ACPI revision to be overridden"
 	depends on X86
