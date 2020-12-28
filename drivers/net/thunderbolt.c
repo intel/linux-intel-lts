@@ -8,6 +8,7 @@
  *          Mika Westerberg <mika.westerberg@linux.intel.com>
  */
 
+#include <linux/acpi.h>
 #include <linux/atomic.h>
 #include <linux/highmem.h>
 #include <linux/if_vlan.h>
@@ -866,7 +867,7 @@ static int tbnet_open(struct net_device *dev)
 	eof_mask = BIT(TBIP_PDF_FRAME_END);
 
 	ring = tb_ring_alloc_rx(xd->tb->nhi, -1, TBNET_RING_SIZE,
-				RING_FLAG_FRAME, sof_mask, eof_mask,
+				RING_FLAG_FRAME, 0, sof_mask, eof_mask,
 				tbnet_start_poll, net);
 	if (!ring) {
 		netdev_err(dev, "failed to allocate Rx ring\n");
@@ -1324,9 +1325,24 @@ static struct tb_service_driver tbnet_driver = {
 	.id_table = tbnet_ids,
 };
 
+static bool tbnet_granted(void)
+{
+#ifdef CONFIG_ACPI
+	if (osc_sb_native_usb4_support_confirmed && osc_sb_native_usb4_control)
+		return osc_sb_native_usb4_control & OSC_USB_USB4_NET;
+#endif
+	return true;
+}
+
 static int __init tbnet_init(void)
 {
 	int ret;
+
+	/* Only register the driver and the properties if the platform
+	 * firmware gave us control of the USB4 networking.
+	 */
+	if (!tbnet_granted())
+		return 0;
 
 	tbnet_dir = tb_property_create_dir(&tbnet_dir_uuid);
 	if (!tbnet_dir)
@@ -1354,6 +1370,8 @@ module_init(tbnet_init);
 
 static void __exit tbnet_exit(void)
 {
+	if (!tbnet_granted())
+		return;
 	tb_unregister_service_driver(&tbnet_driver);
 	tb_unregister_property_dir("network", tbnet_dir);
 	tb_property_free_dir(tbnet_dir);
