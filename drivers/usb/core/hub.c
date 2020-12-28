@@ -4876,6 +4876,7 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 		retval = usb_get_bos_descriptor(udev);
 		if (!retval) {
 			udev->lpm_capable = usb_device_supports_lpm(udev);
+			udev->lpm_disable_count = 1;
 			usb_set_lpm_parameters(udev);
 		}
 	}
@@ -5771,16 +5772,6 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
 	 */
 	usb_disable_usb2_hardware_lpm(udev);
 
-	/* Disable LPM while we reset the device and reinstall the alt settings.
-	 * Device-initiated LPM, and system exit latency settings are cleared
-	 * when the device is reset, so we have to set them up again.
-	 */
-	ret = usb_unlocked_disable_lpm(udev);
-	if (ret) {
-		dev_err(&udev->dev, "%s Failed to disable LPM\n", __func__);
-		goto re_enumerate_no_bos;
-	}
-
 	bos = udev->bos;
 	udev->bos = NULL;
 
@@ -5882,8 +5873,6 @@ done:
 re_enumerate:
 	usb_release_bos_descriptor(udev);
 	udev->bos = bos;
-re_enumerate_no_bos:
-	/* LPM state doesn't matter when we're about to destroy the device. */
 	hub_port_logical_disconnect(parent_hub, port1);
 	return -ENODEV;
 }
