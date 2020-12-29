@@ -20,7 +20,7 @@
  *    http://www.gnu.org/copyleft/gpl.html
  */
 
-#define HANTRO_TRACE
+// #define HANTRO_TRACE
 #ifdef HANTRO_TRACE
 #if !defined(__HANTRO_DRIVER_TRACE) || defined(TRACE_HEADER_MULTI_READ)
 #define __HANTRO_DRIVER_TRACE

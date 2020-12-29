@@ -39,6 +39,7 @@
 #include <asm/set_memory.h>
 #endif
 /* Our header */
+#include "../drm_internal.h"
 #include "hantro_priv.h"
 #include "hx280enc.h"
 #include "hantrodec.h"
