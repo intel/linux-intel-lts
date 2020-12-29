@@ -34,7 +34,6 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-#include <linux/dma-contiguous.h>
 #include <drm/drm_modeset_helper.h>
 #ifdef __amd64__
 #include <asm/set_memory.h>
@@ -228,7 +227,7 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	drm_gem_object_init(dev, obj, args->size);
 
 	ret = drm_gem_handle_create(file_priv, obj, &args->handle);
-	drm_gem_object_put_unlocked(obj);
+	drm_gem_object_put(obj);
 	if (ret) {
 		dma_free_coherent(mem_dev, args->size, cma_obj->vaddr,
 				  cma_obj->paddr);
@@ -794,7 +793,7 @@ static void hantro_gem_dmabuf_release(struct dma_buf *dma_buf)
 	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
 
 	if (obj) {
-		drm_gem_object_put_unlocked(obj);
+		drm_gem_object_put(obj);
 		drm_dev_put(obj->dev);
 	}
 }

@@ -32,7 +32,7 @@
 #define hantro_access_ok(a, b, c) access_ok(b, c)
 #define hantro_reserve_obj_shared(a, b) dma_resv_reserve_shared(a, b)
 #define hantro_ref_drmobj drm_gem_object_get
-#define hantro_unref_drmobj drm_gem_object_put_unlocked
+#define hantro_unref_drmobj drm_gem_object_put
 
 #define NODENAME_DECODER	"decoder"
 #define NODENAME_ENCODER	"encoder"
