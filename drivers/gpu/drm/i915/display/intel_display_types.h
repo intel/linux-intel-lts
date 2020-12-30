@@ -1463,6 +1463,9 @@ struct intel_dp {
 		bool rgb_to_ycbcr;
 	} dfp;
 
+	/* To control wakeup latency, e.g. for irq-driven dp aux transfers. */
+	struct pm_qos_request pm_qos;
+
 	/* Display stream compression testing */
 	bool force_dsc_en;
 
