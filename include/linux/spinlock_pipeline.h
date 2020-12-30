@@ -10,6 +10,8 @@
 # error "Please don't include this file directly. Use spinlock.h."
 #endif
 
+#include <dovetail/spinlock.h>
+
 #define hard_spin_lock_irqsave(__rlock, __flags)		\
 	do {							\
 		(__flags) = __hard_spin_lock_irqsave(__rlock);	\
@@ -31,20 +33,24 @@
  */
 #define hard_lock_acquire(__rlock, __try, __ip)				\
 	do {								\
+		hard_spin_lock_prepare(__rlock);			\
 		if (irq_pipeline_debug_locking()) {			\
 			spin_acquire(&(__rlock)->dep_map, 0, __try, __ip); \
 			LOCK_CONTENDED(__rlock, do_raw_spin_trylock, do_raw_spin_lock); \
-		} else							\
+		} else {						\
 			do_raw_spin_lock(__rlock);			\
+		}							\
 	} while (0)
 
 #define hard_lock_acquire_nested(__rlock, __subclass, __ip)		\
 	do {								\
+		hard_spin_lock_prepare(__rlock);			\
 		if (irq_pipeline_debug_locking()) {			\
 			spin_acquire(&(__rlock)->dep_map, __subclass, 0, __ip); \
 			LOCK_CONTENDED(__rlock, do_raw_spin_trylock, do_raw_spin_lock); \
-		} else							\
+		} else {						\
 			do_raw_spin_lock(__rlock);			\
+		}							\
 	} while (0)
 
 #define hard_trylock_acquire(__rlock, __try, __ip)			\
@@ -58,6 +64,7 @@
 		if (irq_pipeline_debug_locking())			\
 			spin_release(&(__rlock)->dep_map, __ip);	\
 		do_raw_spin_unlock(__rlock);				\
+		hard_spin_unlock_finish(__rlock);			\
 	} while (0)
 
 #if defined(CONFIG_SMP) || defined(CONFIG_DEBUG_SPINLOCK)
@@ -138,10 +145,15 @@ unsigned long __hard_spin_lock_irqsave(struct raw_spinlock *rlock)
 static inline
 int hard_spin_trylock(struct raw_spinlock *rlock)
 {
+	hard_spin_trylock_prepare(rlock);
+
 	if (do_raw_spin_trylock(rlock)) {
 		hard_trylock_acquire(rlock, 1, _THIS_IP_);
 		return 1;
 	}
+
+	hard_spin_trylock_fail(rlock);
+
 	return 0;
 }
 
@@ -213,9 +225,9 @@ int hard_spin_is_contended(struct raw_spinlock *rlock)
  * In the pipeline entry context, the regular preemption and root
  * stall logic do not apply since we may actually have preempted any
  * critical section of the kernel which is protected by regular
- * locking (spin or stall), or we may even have preempted the head
- * stage. Therefore, we just need to grab the raw spinlock underlying
- * a hybrid spinlock to exclude other CPUs.
+ * locking (spin or stall), or we may even have preempted the
+ * out-of-band stage. Therefore, we just need to grab the raw spinlock
+ * underlying a hybrid spinlock to exclude other CPUs.
  *
  * NOTE: When entering the pipeline, IRQs are already hard disabled.
  */
@@ -307,10 +319,12 @@ int __hybrid_spin_trylock(struct raw_spinlock *rlock);
 static inline int hybrid_spin_trylock(struct raw_spinlock *rlock)
 {
 	if (in_pipeline()) {
+		hard_spin_trylock_prepare(rlock);
 		if (do_raw_spin_trylock(rlock)) {
 			hard_trylock_acquire(rlock, 1, _THIS_IP_);
 			return 1;
 		}
+		hard_spin_trylock_fail(rlock);
 		return 0;
 	}
 
@@ -324,13 +338,17 @@ int __hybrid_spin_trylock_irqsave(struct raw_spinlock *rlock,
 	({								\
 		int __ret = 1;						\
 		if (in_pipeline()) {					\
+			hard_spin_trylock_prepare(__rlock);		\
 			if (do_raw_spin_trylock(__rlock)) {		\
 				hard_trylock_acquire(__rlock, 1, _THIS_IP_); \
 				(__flags) = hard_local_save_flags();	\
-			} else						\
+			} else {					\
+				hard_spin_trylock_fail(__rlock);	\
 				__ret = 0;				\
-		} else							\
+			}						\
+		} else {						\
 			__ret = __hybrid_spin_trylock_irqsave(__rlock, &(__flags)); \
+		}							\
 		__ret;							\
 	})
 

@@ -172,12 +172,14 @@ int __hybrid_spin_trylock(struct raw_spinlock *rlock)
 	lock = container_of(rlock, struct hybrid_spinlock, rlock);
 	__flags = hard_local_irq_save();
 
+	hard_spin_trylock_prepare(rlock);
 	if (do_raw_spin_trylock(rlock)) {
 		lock->hwflags = __flags;
 		hard_trylock_acquire(rlock, 1, _RET_IP_);
 		return 1;
 	}
 
+	hard_spin_trylock_fail(rlock);
 	hard_local_irq_restore(__flags);
 
 	if (running_inband())
@@ -205,11 +207,14 @@ int __hybrid_spin_trylock_irqsave(struct raw_spinlock *rlock,
 		preempt_disable();
 	}
 
+	hard_spin_trylock_prepare(rlock);
 	if (do_raw_spin_trylock(rlock)) {
 		hard_trylock_acquire(rlock, 1, _RET_IP_);
 		lock->hwflags = __flags;
 		return 1;
 	}
+
+	hard_spin_trylock_fail(rlock);
 
 	if (inband && !*flags) {
 		trace_hardirqs_on();
