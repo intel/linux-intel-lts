@@ -98,11 +98,11 @@
 # CVE-2020-25284
 0016-rbd-require-global-CAP_SYS_ADMIN-for-mapping-and-unm.patch
 
-# CVE-2020-25211
-0017-netfilter-ctnetlink-add-a-range-check-for-l3-l4-prot.patch
-
-# CVE-2020-14386
-0018-net-packet-fix-overflow-in-tpacket_rcv.patch
-
 # CVE-2018-7754
 0019-printk-hash-addresses-printed-with-p.patch
+
+# CVE-2020-29569
+0001-PATCH-xen-blkback-set-ring-xenblkd-to-NULL-after-kth.patch
+
+# CVE-2020-29372
+0001-mm-check-that-mm-is-still-valid-in-madvise.patch
