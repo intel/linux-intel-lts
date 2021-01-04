@@ -68,6 +68,7 @@ u32 dw_readl(struct dw_i2c_dev *dev, int offset)
 	else
 		return value;
 }
+EXPORT_SYMBOL(dw_readl);
 
 void dw_writel(struct dw_i2c_dev *dev, u32 b, int offset)
 {
@@ -81,6 +82,7 @@ void dw_writel(struct dw_i2c_dev *dev, u32 b, int offset)
 		writel_relaxed(b, dev->base + offset);
 	}
 }
+EXPORT_SYMBOL(dw_writel);
 
 /**
  * i2c_dw_set_reg_access() - Set register access flags
