@@ -4955,8 +4955,8 @@ pci_ers_result_t amdgpu_pci_error_detected(struct pci_dev *pdev, pci_channel_sta
 	case pci_channel_io_normal:
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	/* Fatal error, prepare for slot reset */
-	case pci_channel_io_frozen:		
-		/*		
+	case pci_channel_io_frozen:
+		/*
 		 * Cancel and wait for all TDRs in progress if failing to
 		 * set  adev->in_gpu_reset in amdgpu_device_lock_adev
 		 *
@@ -5047,7 +5047,7 @@ pci_ers_result_t amdgpu_pci_slot_reset(struct pci_dev *pdev)
 		goto out;
 	}
 
-	adev->in_pci_err_recovery = true;	
+	adev->in_pci_err_recovery = true;
 	r = amdgpu_device_pre_asic_reset(adev, NULL, &need_full_reset);
 	adev->in_pci_err_recovery = false;
 	if (r)
