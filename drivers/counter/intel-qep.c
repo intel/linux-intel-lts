@@ -60,11 +60,11 @@
 #define INTEL_QEPINT_QEPRST_DOWN	BIT(1)
 #define INTEL_QEPINT_WDT		BIT(0)
 
-#define INTEL_QEPINT_MASK_DEFAULT	INTEL_QEPINT_WDT
+#define INTEL_QEPINT_MASK_DEFAULT	(INTEL_QEPINT_WDT | \
+					INTEL_QEPINT_QEPRST_DOWN | \
+					INTEL_QEPINT_QEPRST_UP | \
+					INTEL_QEPINT_QEPDIR)
 #define INTEL_QEPINT_MASK_ALL		GENMASK(5, 0)
-
-#define INTEL_QEP_DIRECTION_FORWARD	1
-#define INTEL_QEP_DIRECTION_BACKWARD	!INTEL_QEP_DIRECTION_FORWARD
 
 #define INTEL_QEP_OP_MODE_QEP		0
 #define INTEL_QEP_OP_MODE_CC		1
@@ -101,7 +101,6 @@ struct intel_qep {
 	struct device *dev;
 	void __iomem *regs;
 	u32 int_stat;
-	int direction;
 	bool enabled;
 	bool phase_error;
 	int op_mode;
@@ -142,8 +141,6 @@ static void intel_qep_init(struct intel_qep *qep, bool reset)
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 
 	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_DEFAULT);
-
-	qep->direction = INTEL_QEP_DIRECTION_FORWARD;
 }
 
 static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
@@ -167,15 +164,6 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 
 	if (stat & INTEL_QEPINT_FIFOENTRY)
 		dev_dbg(qep->dev, "Fifo Entry\n");
-
-	if (stat & INTEL_QEPINT_QEPDIR)
-		qep->direction = !qep->direction;
-
-	if (stat & INTEL_QEPINT_QEPRST_UP)
-		qep->direction = INTEL_QEP_DIRECTION_FORWARD;
-
-	if (stat & INTEL_QEPINT_QEPRST_DOWN)
-		qep->direction = INTEL_QEP_DIRECTION_BACKWARD;
 
 	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_DEFAULT);
 	mutex_unlock(&qep->lock);
@@ -442,16 +430,6 @@ static ssize_t enable_write(struct counter_device *counter,
 	return len;
 }
 
-static ssize_t direction_read(struct counter_device *counter,
-			      struct counter_count *count,
-			      void *priv, char *buf)
-{
-	struct intel_qep *qep = counter_to_qep(counter);
-
-	return snprintf(buf, PAGE_SIZE, "%s\n", qep->direction ?
-			"forward" : "backward");
-}
-
 static ssize_t phase_error_read(struct counter_device *counter,
 				struct counter_count *count,
 				void *priv, char *buf)
@@ -555,7 +533,6 @@ static ssize_t capture_mode_write(struct counter_device *counter,
 static const struct counter_count_ext intel_qep_count_ext[] = {
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(ceiling),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(enable),
-	INTEL_QEP_COUNTER_COUNT_EXT_RO(direction),
 	INTEL_QEP_COUNTER_COUNT_EXT_RO(phase_error),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(operating_mode),
 	INTEL_QEP_COUNTER_COUNT_EXT_RO(capture_data),
