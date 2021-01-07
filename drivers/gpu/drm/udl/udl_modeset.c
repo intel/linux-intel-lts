@@ -303,10 +303,8 @@ static int udl_handle_damage(struct drm_framebuffer *fb, int x, int y,
 	}
 
 	urb = udl_get_urb(dev);
-	if (!urb) {
-		ret = -ENOMEM;
+	if (!urb)
 		goto out_drm_gem_shmem_vunmap;
-	}
 	cmd = urb->transfer_buffer;
 
 	for (i = clip.y1; i < clip.y2; i++) {
