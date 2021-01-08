@@ -5,6 +5,7 @@
 
 #include <linux/clk.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/spinlock.h>
 #include <linux/console.h>
 #include <linux/list.h>
@@ -18,6 +19,7 @@
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_irq.h>
@@ -28,7 +30,13 @@
 #include "kmb_dsi.h"
 #include "kmb_regs.h"
 
-static int kmb_display_clk_enable(struct kmb_drm_private *kmb)
+/* Module Parameters */
+static bool console;
+module_param(console, bool, 0400);
+MODULE_PARM_DESC(console,
+		 "Enable framebuffer console support (0=disable [default], 1=on)");
+
+int kmb_display_clk_enable(struct kmb_drm_private *kmb)
 {
 	int ret = 0;
 
@@ -546,6 +554,9 @@ static int kmb_probe(struct platform_device *pdev)
 	ret = drm_dev_register(&kmb->drm, 0);
 	if (ret)
 		goto err_register;
+
+	if (console)
+		drm_fbdev_generic_setup(&kmb->drm, 32);
 
 	return 0;
 
