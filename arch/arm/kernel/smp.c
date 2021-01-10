@@ -764,8 +764,8 @@ static unsigned int get_ipi_count(unsigned int irq, unsigned int cpu)
 	return per_cpu(ipi_counts[irq - ipi_irq_base], cpu);
 }
 
-void irq_pipeline_send_remote(unsigned int irq,
-			      const struct cpumask *cpumask)
+void irq_send_oob_ipi(unsigned int irq,
+		const struct cpumask *cpumask)
 {
 	unsigned int sgi = irq - ipi_irq_base;
 
@@ -777,7 +777,7 @@ void irq_pipeline_send_remote(unsigned int irq,
 	/* Out-of-band IPI (SGI1-2). */
 	__smp_cross_call(cpumask, sgi);
 }
-EXPORT_SYMBOL_GPL(irq_pipeline_send_remote);
+EXPORT_SYMBOL_GPL(irq_send_oob_ipi);
 
 #else
 
