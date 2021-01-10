@@ -53,12 +53,12 @@ void handle_apic_irq(struct irq_desc *desc)
 	handle_oob_irq(desc);
 }
 
-void irq_pipeline_send_remote(unsigned int ipi,
-			      const struct cpumask *cpumask)
+void irq_send_oob_ipi(unsigned int ipi,
+		const struct cpumask *cpumask)
 {
 	apic->send_IPI_mask_allbutself(cpumask,	apicm_irq_vector(ipi));
 }
-EXPORT_SYMBOL_GPL(irq_pipeline_send_remote);
+EXPORT_SYMBOL_GPL(irq_send_oob_ipi);
 
 void uv_bau_message_interrupt(struct pt_regs *regs);
 
