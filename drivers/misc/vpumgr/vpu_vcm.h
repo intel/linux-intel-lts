@@ -64,6 +64,8 @@ struct vcm_dev {
 
 	struct mutex fwboot_mutex; /* protect firmware boot-up */
 	int fwuser_cnt;
+
+	bool xlink_closing;
 };
 
 struct vpumgr_ctx {
