@@ -6,6 +6,7 @@
 #include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-buf.h>
+#include <linux/dma-buf-map.h>
 #include <linux/dma-direct.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
@@ -268,11 +269,16 @@ static int mmap_vpusmm(struct dma_buf *dmabuf, struct vm_area_struct *vma)
 			    buff->size, buff->dma_attrs);
 }
 
-static void *vmap_vpusmm(struct dma_buf *dmabuf)
+static int vmap_vpusmm(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
 	struct vpusmm_buffer *buff = dmabuf->priv;
+	void *vaddr = buff->cookie;
 
-	return buff->cookie;
+	if (IS_ERR(vaddr))
+		return PTR_ERR(vaddr);
+
+	dma_buf_map_set_vaddr(map, vaddr);
+	return 0;
 }
 
 static const struct dma_buf_ops vpusmm_dmabuf_ops =  {
