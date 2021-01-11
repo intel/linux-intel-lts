@@ -111,8 +111,10 @@ static int vcm_recv(struct xlink_handle *xlnk_handle, struct vcm_msg *rep)
 		 */
 		rc = xlink_read_data_to_buffer(xlnk_handle, VCM_XLINK_CHANNEL, ptr, (u32 *)&size);
 		if (rc != X_LINK_SUCCESS) {
-			dev_warn(vdev->dev, "%s: xlink_read_data_to_buffer failed, rc:%d\n",
-				 __func__, rc);
+			if (!vdev->vcm.xlink_closing)
+				dev_warn(vdev->dev,
+					 "%s: xlink_read_data_to_buffer failed, rc:%d\n",
+					 __func__, rc);
 			return -EPIPE;
 		}
 
@@ -468,6 +470,10 @@ static int vpu_connection_up(struct vpumgr_device *vdev)
 	if (pvcm->fwuser_cnt == 0) {
 		/* boot-up firmware under protection of fwboot_mutex */
 		if (vdev->fwname[0] != '\0') {
+
+			/* ensure VPU state is reset/stopped before re-boot */
+			xlink_reset_device(&pvcm->ipc_xlink_handle);
+
 			xlink_err = xlink_boot_device(&pvcm->ipc_xlink_handle, vdev->fwname);
 			if (xlink_err != X_LINK_SUCCESS) {
 				dev_err(dev, "%s: failed to boot-up VPU with firmware %s, rc %d\n",
@@ -476,6 +482,8 @@ static int vpu_connection_up(struct vpumgr_device *vdev)
 				goto exit;
 			}
 		}
+
+		pvcm->xlink_closing = false;
 
 		/* try to (re)open xlink channel after firmware boot-up */
 		xlink_err = xlink_open_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL,
@@ -495,7 +503,7 @@ static int vpu_connection_up(struct vpumgr_device *vdev)
 
 		pvcm->rxthread = get_task_struct(rxthread);
 
-		dev_info(dev, "%s: success\n", __func__);
+		dev_dbg(dev, "%s: success\n", __func__);
 	}
 	pvcm->fwuser_cnt++;
 	mutex_unlock(&pvcm->fwboot_mutex);
@@ -516,12 +524,13 @@ static void vpu_connection_down(struct vpumgr_device *vdev)
 	mutex_lock(&pvcm->fwboot_mutex);
 	pvcm->fwuser_cnt--;
 	if (pvcm->fwuser_cnt == 0) {
+		pvcm->xlink_closing = true;
 		xlink_close_channel(&pvcm->ipc_xlink_handle, VCM_XLINK_CHANNEL);
 		kthread_stop(pvcm->rxthread);
 		put_task_struct(pvcm->rxthread);
 		pvcm->rxthread = NULL;
 
-		dev_info(dev, "%s: success\n", __func__);
+		dev_dbg(dev, "%s: success\n", __func__);
 	}
 	mutex_unlock(&pvcm->fwboot_mutex);
 }
