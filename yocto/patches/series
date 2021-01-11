@@ -9,6 +9,3 @@
 
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
-
-# CVE-2020-29569
-0001-PATCH-xen-blkback-set-ring-xenblkd-to-NULL-after-kth.patch
