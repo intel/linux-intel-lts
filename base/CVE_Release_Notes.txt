@@ -451,6 +451,7 @@ CVEs fixed in 4.19.119:
   CVE-2019-19768: 473d7f5ed75b8c3750f0c6b442c8e23090d6da8f blktrace: Protect q->blk_trace with RCU
   CVE-2020-0067: ed523cbd4a6594edf123dc03ec9d70ea4f793671 f2fs: fix to avoid memory leakage in f2fs_listxattr
   CVE-2020-11884: 215d1f3928713d6eaec67244bcda72105b898000 s390/mm: fix page table upgrade vs 2ndary address mode accesses
+  CVE-2020-12114: f511dc75d22e0c000fc70b54f670c2c17f5fba9a make struct mountpoint bear the dentry reference to mountpoint, not struct mount
   CVE-2020-12464: 45ea77b75a604da875186519fea94997175c38e3 USB: core: Fix free-while-in-use bug in the USB S-Glibrary
   CVE-2020-1749: 5dd6835278454a7c7a045462253625de7c16b13e net: ipv6_stub: use ip6_dst_lookup_flow instead of ip6_dst_lookup
 
@@ -600,8 +601,13 @@ CVEs fixed in 4.19.163:
   CVE-2020-29660: 361e822b7d8a9d06d88f7cea0fdb0fb6e41c4d45 tty: Fix ->session locking
   CVE-2020-29661: 13f10a78097df2f14d4e1fd390dbaa3e28502ca7 tty: Fix ->pgrp locking in tiocspgrp()
 
+CVEs fixed in 4.19.164:
+  CVE-2020-27815: c7e31b2fecfe0ebd5bd6a8274b2fbfb9c9401738 jfs: Fix array index bounds check in dbAdjTree
+  CVE-2020-29568: 9039eb22f99545fa80a5897496452cf9962e3289 xen/xenbus: Allow watches discard events before queueing
+  CVE-2020-29569: 014ee1c7d184acb8986152014a570ba7c69d3616 xen-blkback: set ring->xenblkd to NULL after kthread_stop()
+
  
-CVEs Fixed in this 4.19.163 LTS 4.19 release 
+CVEs Fixed in this 4.19.165 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -656,7 +662,7 @@ CVEs Fixed in this 4.19.163 LTS 4.19 release
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
 
-# CVE-2020-29569
-0001-xen-blkback-set-ring-xenblkd-to-NULL-after-kthread_s.patch
+# CVE-2020-36158
+0001-mwifiex-Fix-possible-buffer-overflows-in-mwifiex_cmd.patch
  
 ================
