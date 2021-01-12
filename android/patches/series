@@ -45,5 +45,5 @@
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
 
-# CVE-2020-29569
-0001-xen-blkback-set-ring-xenblkd-to-NULL-after-kthread_s.patch
+# CVE-2020-36158
+0001-mwifiex-Fix-possible-buffer-overflows-in-mwifiex_cmd.patch
