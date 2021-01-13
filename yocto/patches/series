@@ -1,5 +1,2 @@
 # CVE-2020-26541
 0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
-
-# CVE-2020-29569
-0001-PATCH-xen-blkback-set-ring-xenblkd-to-NULL-after-kth.patch
