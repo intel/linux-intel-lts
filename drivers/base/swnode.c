@@ -866,33 +866,25 @@ EXPORT_SYMBOL_GPL(fwnode_remove_software_node);
 /**
  * device_add_software_node - Assign software node to a device
  * @dev: The device the software node is meant for.
- * @node: The software node.
+ * @swnode: The software node.
  *
- * This function will make @node the secondary firmware node pointer of @dev. If
- * @dev has no primary node, then @node will become the primary node. The
- * function will register @node automatically if it wasn't already registered.
+ * This function will register @swnode and make it the secondary firmware node
+ * pointer of @dev. If @dev has no primary node, then @swnode will become the primary
+ * node.
  */
-int device_add_software_node(struct device *dev, const struct software_node *node)
+int device_add_software_node(struct device *dev, const struct software_node *swnode)
 {
-	struct swnode *swnode;
 	int ret;
 
 	/* Only one software node per device. */
 	if (dev_to_swnode(dev))
 		return -EBUSY;
 
-	swnode = software_node_to_swnode(node);
-	if (swnode) {
-		kobject_get(&swnode->kobj);
-	} else {
-		ret = software_node_register(node);
-		if (ret)
-			return ret;
+	ret = software_node_register(swnode);
+	if (ret)
+		return ret;
 
-		swnode = software_node_to_swnode(node);
-	}
-
-	set_secondary_fwnode(dev, &swnode->fwnode);
+	set_secondary_fwnode(dev, software_node_fwnode(swnode));
 
 	return 0;
 }
