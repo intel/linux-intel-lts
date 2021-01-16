@@ -1,0 +1,10 @@
+# Copyright (C) 2019 Intel Corporation
+# SPDX-License-Identifier: GPL-2.0-only
+
+
+config NOC_DSS
+	tristate "Enable DSS NOC probing"
+	depends on ARM64
+	default y
+	help
+	  DSS noc measurements are enabled
