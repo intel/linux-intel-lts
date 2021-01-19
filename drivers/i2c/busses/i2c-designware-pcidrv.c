@@ -27,6 +27,14 @@
 
 #define DRIVER_NAME "i2c-designware-pci"
 
+#define PSE_I2C_D0I3C 0x1000
+#define PSE_I2C_CGSR 0x1004
+
+#define PSE_I2C_D0I3_CIP BIT(0)
+#define PSE_I2C_D0I3_EN BIT(2)
+#define PSE_I2C_D0I3_RR BIT(3)
+#define PSE_I2C_CGSR_CG BIT(16)
+
 enum dw_pci_ctl_id_t {
 	medfield,
 	merrifield,
@@ -197,7 +205,7 @@ static struct dw_pci_controller dw_pci_controllers[] = {
 	},
 };
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int i2c_dw_pci_suspend(struct device *dev)
 {
 	struct dw_i2c_dev *i_dev = dev_get_drvdata(dev);
@@ -220,8 +228,87 @@ static int i2c_dw_pci_resume(struct device *dev)
 }
 #endif
 
-static UNIVERSAL_DEV_PM_OPS(i2c_dw_pm_ops, i2c_dw_pci_suspend,
-			    i2c_dw_pci_resume, NULL);
+#ifdef CONFIG_PM
+static int i2c_dw_pci_runtime_suspend(struct device *dev)
+{
+	struct dw_i2c_dev *i_dev = dev_get_drvdata(dev);
+	unsigned long j0, j1, delay;
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	i_dev->suspended = true;
+	i_dev->disable(i_dev);
+
+	delay = msecs_to_jiffies(100);
+	j0 = jiffies;
+	j1 = j0 + delay;
+
+	cgsr_reg = dw_readl(i_dev, PSE_I2C_CGSR);
+	dw_writel(i_dev, PSE_I2C_CGSR_CG, PSE_I2C_CGSR);
+
+	d0i3c_reg = dw_readl(i_dev, PSE_I2C_D0I3C);
+
+	if (d0i3c_reg & PSE_I2C_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		dw_writel(i_dev, PSE_I2C_D0I3_EN, PSE_I2C_D0I3C);
+		d0i3c_reg = dw_readl(i_dev, PSE_I2C_D0I3C);
+	}
+
+	while (time_before(jiffies, j1)) {
+		d0i3c_reg = dw_readl(i_dev, PSE_I2C_D0I3C);
+		if (!(d0i3c_reg & PSE_I2C_D0I3_CIP))
+			break;
+	}
+
+	if (d0i3c_reg & PSE_I2C_D0I3_CIP)
+		dev_info(dev, "%s: timeout waiting CIP to be cleared",
+								__func__);
+
+	return 0;
+}
+
+static int i2c_dw_pci_runtime_resume(struct device *dev)
+{
+	struct dw_i2c_dev *i_dev = dev_get_drvdata(dev);
+	int ret;
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	cgsr_reg = dw_readl(i_dev, PSE_I2C_CGSR);
+
+	if (cgsr_reg & PSE_I2C_CGSR_CG)
+		dw_writel(i_dev, (cgsr_reg & ~PSE_I2C_CGSR_CG), PSE_I2C_CGSR);
+
+	d0i3c_reg = dw_readl(i_dev, PSE_I2C_D0I3C);
+
+	if (d0i3c_reg & PSE_I2C_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+
+		if (d0i3c_reg & PSE_I2C_D0I3_EN)
+			d0i3c_reg &= ~PSE_I2C_D0I3_EN;
+
+		if (d0i3c_reg & PSE_I2C_D0I3_RR)
+			d0i3c_reg |= PSE_I2C_D0I3_RR;
+
+		dw_writel(i_dev, d0i3c_reg, PSE_I2C_D0I3C);
+		d0i3c_reg = dw_readl(i_dev, PSE_I2C_D0I3C);
+	}
+
+	ret = i_dev->init(i_dev);
+	i_dev->suspended = false;
+
+	return ret;
+}
+#endif
+
+static const struct dev_pm_ops i2c_dw_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(i2c_dw_pci_suspend,
+				i2c_dw_pci_resume)
+	SET_RUNTIME_PM_OPS(i2c_dw_pci_runtime_suspend,
+			i2c_dw_pci_runtime_resume, NULL)
+};
 
 static u32 i2c_dw_get_clk_rate_khz(struct dw_i2c_dev *dev)
 {

@@ -1757,6 +1757,19 @@ static void stmmac_clean_tx_queue(struct stmmac_priv *priv, u32 queue)
 		stmmac_skb_clean_tx_queue(priv, tx_q);
 }
 
+/**
+ * stmmac_free_tx_skbufs - free TX skb buffers
+ * @priv: private structure
+ */
+static void stmmac_free_tx_skbufs(struct stmmac_priv *priv)
+{
+	u32 tx_queue_cnt = priv->plat->tx_queues_to_use;
+	u32 queue;
+
+	for (queue = 0; queue < tx_queue_cnt; queue++)
+		stmmac_clean_tx_queue(priv, queue);
+}
+
 static void free_dma_rx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 {
 	struct stmmac_rx_queue *rx_q = &priv->rx_queue[queue];
@@ -1812,16 +1825,16 @@ static void free_dma_tx_desc_resources_q(struct stmmac_priv *priv, u32 queue)
 	/* Free DMA regions of consistent memory previously allocated */
 	if (priv->extend_desc)
 		dma_free_coherent(priv->device, priv->dma_tx_size *
-					sizeof(struct dma_extended_desc),
-					tx_q->dma_etx, tx_q->dma_tx_phy);
+			sizeof(struct dma_extended_desc),
+			tx_q->dma_etx, tx_q->dma_tx_phy);
 	else if (tx_q->tbs & STMMAC_TBS_AVAIL)
 		dma_free_coherent(priv->device, priv->dma_tx_size *
-					sizeof(struct dma_enhanced_tx_desc),
-					tx_q->dma_enhtx, tx_q->dma_tx_phy);
+			sizeof(struct dma_enhanced_tx_desc),
+			tx_q->dma_enhtx, tx_q->dma_tx_phy);
 	else
 		dma_free_coherent(priv->device, priv->dma_tx_size *
-					sizeof(struct dma_desc),
-					tx_q->dma_tx, tx_q->dma_tx_phy);
+			sizeof(struct dma_desc),
+			tx_q->dma_tx, tx_q->dma_tx_phy);
 
 	kfree(tx_q->tx_skbuff_dma);
 	kfree(tx_q->tx_skbuff);
@@ -3635,6 +3648,7 @@ static int stmmac_open(struct net_device *dev)
 		}
 	}
 
+
 	phylink_start(priv->phylink);
 
 	stmmac_enable_all_queues(priv);
@@ -3695,9 +3709,6 @@ static int stmmac_release(struct net_device *dev)
 	 */
 	pm_runtime_get_sync(priv->device);
 
-	if (priv->eee_enabled)
-		del_timer_sync(&priv->eee_ctrl_timer);
-
 	/* Stop and disconnect the PHY */
 	phylink_stop(priv->phylink);
 	phylink_disconnect_phy(priv->phylink);
@@ -3709,6 +3720,11 @@ static int stmmac_release(struct net_device *dev)
 
 	/* Free the IRQ lines */
 	stmmac_free_irq(dev, REQ_IRQ_ERR_ALL, 0);
+
+	if (priv->eee_enabled) {
+		priv->tx_path_in_lpi_mode = false;
+		del_timer_sync(&priv->eee_ctrl_timer);
+	}
 
 	/* Start phy converter after MDIO bus IRQ handling is up */
 	if (priv->plat->remove_phy_conv) {
@@ -7119,14 +7135,19 @@ int stmmac_suspend(struct device *dev)
 	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
 		del_timer_sync(&priv->tx_queue[chan].txtimer);
 
+	if (priv->eee_enabled) {
+		priv->tx_path_in_lpi_mode = false;
+		del_timer_sync(&priv->eee_ctrl_timer);
+	}
+
 	/* Remove phy converter */
 	if (priv->plat->remove_phy_conv) {
 		ret = priv->plat->remove_phy_conv(priv->mii,
 						  priv->plat->intel_bi);
 		if (ret < 0) {
 			netdev_err(priv->dev,
-				   "%s: ERROR: remove phy conv (error: %d)\n",
-				   __func__, ret);
+				"%s: ERROR: remove phy conv (error: %d)\n",
+				__func__, ret);
 		}
 	}
 
@@ -7411,6 +7432,7 @@ int stmmac_resume(struct device *dev)
 
 	stmmac_reset_queues_param(priv);
 
+	stmmac_free_tx_skbufs(priv);
 	stmmac_clear_descriptors(priv);
 
 	stmmac_hw_setup(ndev, false, false);

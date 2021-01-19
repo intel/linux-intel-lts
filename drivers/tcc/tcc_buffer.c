@@ -448,6 +448,8 @@ static void tcc_free_memslot(struct memory_slot_info *p_memslot)
 	struct memory_slot_info *pre_slot;
 	struct memory_slot_info *next_slot;
 	void *vaddr;
+	struct psram *p_psram;
+	u32 is_first = 0, is_last = 0;
 
 	mutex_lock(&tccbuffer_mutex);
 	device_destroy(tcc_buffer_class, MKDEV(tcc_buffer_device_major, p_memslot->minor));
@@ -459,19 +461,37 @@ static void tcc_free_memslot(struct memory_slot_info *p_memslot)
 		memset(vaddr, 0, p_memslot->size);
 		memunmap(vaddr);
 	}
-	pre_slot = list_prev_entry(p_memslot, node);
-	next_slot = list_next_entry(p_memslot, node);
 
-	if (pre_slot->status == MEM_FREE) {
+	list_for_each_entry(p_psram, &p_tcc_config->psrams, node) {
+		if (p_psram->config.size > 0) {
+			if (list_is_first(&p_memslot->node, &p_psram->memslots))
+				is_first = 1;
+			if (list_is_last(&p_memslot->node, &p_psram->memslots))
+				is_last = 1;
+		}
+	}
+
+	if (is_first == 0)
+		pre_slot = list_prev_entry(p_memslot, node);
+
+	if (is_last == 0)
+		next_slot = list_next_entry(p_memslot, node);
+
+	if ((is_first == 0) && (pre_slot->status == MEM_FREE)) {
 		pre_slot->size += p_memslot->size;
-		if (next_slot->status == MEM_FREE) {
+		if ((is_last == 0) && (next_slot->status == MEM_FREE)) {
 			pre_slot->size += next_slot->size;
 			list_del(&next_slot->node);
 			kfree(next_slot);
 		}
 		list_del(&p_memslot->node);
 		kfree(p_memslot);
+	} else if ((is_last == 0) && (next_slot->status == MEM_FREE)) {
+		p_memslot->size += next_slot->size;
+		list_del(&next_slot->node);
+		kfree(next_slot);
 	}
+
 	mutex_unlock(&tccbuffer_mutex);
 }
 
@@ -616,6 +636,10 @@ static long tcc_buffer_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 		if (ret != 0)
 			return -EFAULT;
 
+		if (req_mem.size & (PAGE_SIZE - 1)) {
+			pr_err("size must be page-aligned!");
+			return -EINVAL;
+		}
 		req_mem.devnode = tcc_allocate_memslot(req_mem.id, req_mem.size);
 
 		if (req_mem.devnode == UNDEFINED_DEVNODE)

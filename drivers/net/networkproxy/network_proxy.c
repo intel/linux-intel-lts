@@ -234,6 +234,7 @@ static int netprox_process_mib_rule_read(struct np_rules *rule, void *content,
 	case NP_RL_T_IPV6:
 	case NP_RL_T_SNMP_COMMUNITY_STR:
 	case NP_RL_T_TCP_WAKE_PORT:
+	case NP_RL_T_IPV4_SUBNET:
 		ret = netprox_read_from_agent(rule, content, size);
 		break;
 	default:
@@ -382,6 +383,7 @@ static int netprox_send_netdev_mib(int rule_type)
 	case NP_RL_T_MAC_ADDR:
 		size = sizeof(struct np_rules) + NP_MAC_ADDR_BYTES;
 		break;
+	case NP_RL_T_IPV4_SUBNET:
 	case NP_RL_T_IPV4:
 		indevice = ndev->ip_ptr;
 		if (indevice) {
@@ -452,6 +454,11 @@ static int netprox_send_netdev_mib(int rule_type)
 			ptr += NP_IPV6_ADDR_BYTES;
 		}
 		break;
+	case NP_RL_T_IPV4_SUBNET:
+		indevice = ndev->ip_ptr;
+		inifaddr = indevice->ifa_list;
+		memcpy(ptr, (void *)&inifaddr->ifa_mask, NP_IPV4_ADDR_BYTES);
+		break;
 	default:
 		ret = -EPERM;
 		pr_err("unknown MIB type\n");
@@ -486,6 +493,9 @@ static int netprox_process_classifier_rule_write(struct np_rules *rule,
 			ret = netprox_send_netdev_mib(NP_RL_T_MAC_ADDR);
 			if (ret == 0)
 				ret = netprox_send_netdev_mib(NP_RL_T_IPV4);
+			if (ret == 0)
+				ret =
+				netprox_send_netdev_mib(NP_RL_T_IPV4_SUBNET);
 		}
 		break;
 	case NP_RL_T_IPV6:

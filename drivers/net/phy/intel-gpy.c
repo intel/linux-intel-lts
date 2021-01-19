@@ -9,6 +9,7 @@
 #include <linux/phy.h>
 #include <linux/netdevice.h>
 
+#define GPY_FW			0x1E	/* Firmware version */
 #define GPY_IMASK		0x19	/* interrupt mask */
 #define GPY_ISTAT		0x1A	/* interrupt status */
 #define GPY_INTR_WOL		BIT(15)	/* Wake-on-LAN */
@@ -68,6 +69,29 @@ static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 	}
 
 	return 0;
+}
+
+static int gpy_config_init(struct phy_device *phydev)
+{
+	int ret, fw_ver = 0;
+
+	/* Show GPY PHY FW version in dmesg */
+	fw_ver = phy_read(phydev, GPY_FW);
+	phydev_info(phydev, "Firmware Version: 0x%04X (%s)", fw_ver,
+		    (fw_ver & 8000) ? "release" : "test");
+
+	/* In GPY PHY FW, by default EEE mode is enabled. So, disable EEE mode
+	 * during power up. Ethtool must be used to enable or disable it.
+	 */
+	ret = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV);
+	if (ret <= 0)
+		return ret;
+
+	ret = phy_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, 0);
+	if (ret < 0)
+		return ret;
+
+	return genphy_c45_restart_aneg(phydev);
 }
 
 static int gpy_config_aneg(struct phy_device *phydev)
@@ -166,17 +190,10 @@ static int gpy_config_aneg(struct phy_device *phydev)
 			return ret;
 	}
 
-	/* Trigger SGMII AN.
-	 * TODO: Register 30.8[9] is not self-cleared. Need to reverify with
-	 * official GPY FW.
-	 */
-	ret = phy_read_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL);
-	if (ret < 0)
-		return ret;
-	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, GPY_VSPEC1_SGMII_CTRL,
-			    ret | GPY_SGMII_ANRS);
-
-	return ret;
+	/* Trigger SGMII AN. */
+	return phy_modify_mmd_changed(phydev, MDIO_MMD_VEND1,
+				      GPY_VSPEC1_SGMII_CTRL, GPY_SGMII_ANRS,
+				      GPY_SGMII_ANRS);
 }
 
 static int gpy_ack_interrupt(struct phy_device *phydev)
@@ -360,7 +377,10 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.phy_id		= INTEL_PHY_ID_GPY,
 		.phy_id_mask	= INTEL_PHY_ID_MASK,
 		.name		= "INTEL(R) Ethernet Network Connection GPY",
+		.config_init	= gpy_config_init,
 		.get_features	= genphy_c45_pma_read_abilities,
+		.suspend	= genphy_suspend,
+		.resume		= genphy_resume,
 		.aneg_done	= genphy_c45_aneg_done,
 		.set_eee	= gpy_set_eee,
 		.soft_reset	= genphy_no_soft_reset,

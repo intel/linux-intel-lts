@@ -62,8 +62,9 @@
 #define AN_STAT_SGMII_AN_LNKSTS		BIT(4)	/* Link Status */
 
 /* SR MII MMD Control defines */
-#define AN_CL37_EN		BIT(12)	/* Enable Clause 37 auto-nego */
 #define SGMII_SPEED_SS13	BIT(13)	/* SGMII speed along with SS6 */
+#define AN_CL37_EN		BIT(12)	/* Enable Clause 37 auto-nego */
+#define ANRS_CL37		BIT(9)	/* Restart Clause 37 auto-nego */
 #define SGMII_SPEED_SS6		BIT(6)	/* SGMII speed along with SS13 */
 
 /* VR MII EEE Control defines */
@@ -219,6 +220,7 @@ static void dwxpcs_init(struct dwxpcs_priv *priv)
 static int dwxpcs_read_status(struct phy_device *phydev)
 {
 	struct dwxpcs_priv *priv = (struct dwxpcs_priv *)phydev->priv;
+	struct pcs_stats *pcs_stats = &priv->stats;
 	struct mii_bus *bus = priv->mdiodev->bus;
 	int xpcs_addr = priv->mdiodev->addr;
 	int pcs_mode = priv->pdata->mode;
@@ -245,6 +247,17 @@ static int dwxpcs_read_status(struct phy_device *phydev)
 		phydata &= ~BMCR_FULLDPLX;
 		phydata |= phydev->duplex ? BMCR_FULLDPLX : 0;
 		xpcs_write(XPCS_MDIO_MII_MMD, MII_BMCR, phydata);
+	} else if (pcs_mode == DWXPCS_MODE_SGMII_AN) {
+		/* Just in case PHY`s link is up but xPCS`s link is still down,
+		 * try to retrigger xPCS SGMII AN to recover.
+		 */
+		if (phydev->link && !pcs_stats->link) {
+			phydata = xpcs_read(XPCS_MDIO_MII_MMD,
+					    MDIO_MII_MMD_CTRL);
+			phydata |= ANRS_CL37;
+			xpcs_write(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_CTRL,
+				   phydata);
+		}
 	}
 
 	return 0;
