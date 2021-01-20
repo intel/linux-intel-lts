@@ -658,28 +658,6 @@ static inline enum buddy get_free_buddy(struct z3fold_header *zhdr, int chunks)
 	return bud;
 }
 
-static inline enum buddy get_free_buddy(struct z3fold_header *zhdr, int chunks)
-{
-	enum buddy bud = HEADLESS;
-
-	if (zhdr->middle_chunks) {
-		if (!zhdr->first_chunks &&
-		    chunks <= zhdr->start_middle - ZHDR_CHUNKS)
-			bud = FIRST;
-		else if (!zhdr->last_chunks)
-			bud = LAST;
-	} else {
-		if (!zhdr->first_chunks)
-			bud = FIRST;
-		else if (!zhdr->last_chunks)
-			bud = LAST;
-		else
-			bud = MIDDLE;
-	}
-
-	return bud;
-}
-
 static inline void *mchunk_memmove(struct z3fold_header *zhdr,
 				unsigned short dst_chunk)
 {
