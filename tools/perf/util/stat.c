@@ -229,7 +229,7 @@ void perf_evlist__reset_prev_raw_counts(struct evlist *evlist)
 		evsel__reset_prev_raw_counts(evsel);
 }
 
-static void perf_evsel__copy_prev_raw_counts(struct evsel *evsel)
+static void evsel__copy_prev_raw_counts(struct evsel *evsel)
 {
 	int ncpus = evsel__nr_cpus(evsel);
 	int nthreads = perf_thread_map__nr(evsel->core.threads);
@@ -250,7 +250,7 @@ void perf_evlist__copy_prev_raw_counts(struct evlist *evlist)
 	struct evsel *evsel;
 
 	evlist__for_each_entry(evlist, evsel)
-		perf_evsel__copy_prev_raw_counts(evsel);
+		evsel__copy_prev_raw_counts(evsel);
 }
 
 void perf_evlist__save_aggr_prev_raw_counts(struct evlist *evlist)
@@ -313,7 +313,7 @@ static int check_per_pkg(struct evsel *counter,
 	if (!(vals->run && vals->ena))
 		return 0;
 
-	s = cpu_map__get_socket(cpus, cpu, NULL);
+	s = cpu_map__get_socket(cpus, cpu, NULL).socket;
 	if (s < 0)
 		return -1;
 

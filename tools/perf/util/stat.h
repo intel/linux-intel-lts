@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/resource.h>
+#include "cpumap.h"
 #include "rblist.h"
 
 struct perf_cpu_map;
@@ -99,7 +100,7 @@ struct runtime_stat {
 	struct rblist value_list;
 };
 
-typedef int (*aggr_get_id_t)(struct perf_stat_config *config,
+typedef struct aggr_cpu_id (*aggr_get_id_t)(struct perf_stat_config *config,
 			     struct perf_cpu_map *m, int cpu);
 
 struct perf_stat_config {
@@ -122,6 +123,7 @@ struct perf_stat_config {
 	bool			 metric_no_group;
 	bool			 metric_no_merge;
 	bool			 stop_read_counter;
+	bool			 quiet;
 	FILE			*output;
 	unsigned int		 interval;
 	unsigned int		 timeout;
@@ -137,9 +139,9 @@ struct perf_stat_config {
 	const char		*csv_sep;
 	struct stats		*walltime_nsecs_stats;
 	struct rusage		 ru_data;
-	struct perf_cpu_map		*aggr_map;
+	struct cpu_aggr_map	*aggr_map;
 	aggr_get_id_t		 aggr_get_id;
-	struct perf_cpu_map		*cpus_aggr_map;
+	struct cpu_aggr_map	*cpus_aggr_map;
 	u64			*walltime_run;
 	struct rblist		 metric_events;
 	int			 ctl_fd;
@@ -169,7 +171,7 @@ struct evlist;
 
 struct perf_aggr_thread_value {
 	struct evsel *counter;
-	int id;
+	struct aggr_cpu_id id;
 	double uval;
 	u64 val;
 	u64 run;

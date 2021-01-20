@@ -87,8 +87,8 @@ struct evsel_str_handler {
 };
 
 struct evlist *evlist__new(void);
-struct evlist *perf_evlist__new_default(void);
-struct evlist *perf_evlist__new_dummy(void);
+struct evlist *evlist__new_default(void);
+struct evlist *evlist__new_dummy(void);
 void evlist__init(struct evlist *evlist, struct perf_cpu_map *cpus,
 		  struct perf_thread_map *threads);
 void evlist__exit(struct evlist *evlist);
@@ -168,7 +168,7 @@ struct evsel *perf_evlist__id2evsel_strict(struct evlist *evlist,
 
 struct perf_sample_id *perf_evlist__id2sid(struct evlist *evlist, u64 id);
 
-void perf_evlist__toggle_bkw_mmap(struct evlist *evlist, enum bkw_mmap_state state);
+void evlist__toggle_bkw_mmap(struct evlist *evlist, enum bkw_mmap_state state);
 
 void evlist__mmap_consume(struct evlist *evlist, int idx);
 
@@ -209,7 +209,9 @@ size_t evlist__mmap_size(unsigned long pages);
 
 void evlist__disable(struct evlist *evlist);
 void evlist__enable(struct evlist *evlist);
-void perf_evlist__toggle_enable(struct evlist *evlist);
+void evlist__toggle_enable(struct evlist *evlist);
+void evlist__disable_evsel(struct evlist *evlist, char *evsel_name);
+void evlist__enable_evsel(struct evlist *evlist, char *evsel_name);
 
 int perf_evlist__enable_event_idx(struct evlist *evlist,
 				  struct evsel *evsel, int idx);
@@ -220,8 +222,8 @@ void perf_evlist__set_selected(struct evlist *evlist,
 int perf_evlist__create_maps(struct evlist *evlist, struct target *target);
 int perf_evlist__apply_filters(struct evlist *evlist, struct evsel **err_evsel);
 
-void __perf_evlist__set_leader(struct list_head *list);
-void perf_evlist__set_leader(struct evlist *evlist);
+void __evlist__set_leader(struct list_head *list);
+void evlist__set_leader(struct evlist *evlist);
 
 u64 __evlist__combined_sample_type(struct evlist *evlist);
 u64 evlist__combined_sample_type(struct evlist *evlist);
@@ -355,11 +357,10 @@ struct evsel *perf_evlist__event2evsel(struct evlist *evlist,
 
 bool perf_evlist__exclude_kernel(struct evlist *evlist);
 
-void perf_evlist__force_leader(struct evlist *evlist);
+void evlist__force_leader(struct evlist *evlist);
 
-struct evsel *perf_evlist__reset_weak_group(struct evlist *evlist,
-						 struct evsel *evsel,
-						bool close);
+struct evsel *evlist__reset_weak_group(struct evlist *evlist, struct evsel *evsel, bool close);
+
 #define EVLIST_CTL_CMD_ENABLE_TAG  "enable"
 #define EVLIST_CTL_CMD_DISABLE_TAG "disable"
 #define EVLIST_CTL_CMD_ACK_TAG     "ack\n"
