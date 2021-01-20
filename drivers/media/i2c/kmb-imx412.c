@@ -86,6 +86,31 @@
 #define KMB_IMX412_REG_DOL_ANA_GAIN_3RD_FRM_STEP	1
 #define KMB_IMX412_REG_DOL_ANA_GAIN_3RD_FRM_DEFAULT	0
 
+/* Digital gain controls */
+#define KMB_IMX412_REG_DGAIN		0x020E
+#define KMB_IMX412_DGAIN_MIN		256
+#define KMB_IMX412_DGAIN_MAX		4095
+#define KMB_IMX412_DGAIN_STEP		1
+#define KMB_IMX412_DGAIN_DEFAULT	256
+
+#define KMB_IMX412_REG_DOL_DIG_GAIN_1ST_FRM		0x00F6
+#define KMB_IMX412_REG_DOL_DIG_GAIN_1ST_FRM_MIN		256
+#define KMB_IMX412_REG_DOL_DIG_GAIN_1ST_FRM_MAX		4095
+#define KMB_IMX412_REG_DOL_DIG_GAIN_1ST_FRM_STEP	1
+#define KMB_IMX412_REG_DOL_DIG_GAIN_1ST_FRM_DEFAULT	256
+
+#define KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM		0x00F8
+#define KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_MIN		256
+#define KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_MAX		4095
+#define KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_STEP	1
+#define KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_DEFAULT	256
+
+#define KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM		0x00FA
+#define KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_MIN		256
+#define KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_MAX		4095
+#define KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_STEP	1
+#define KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_DEFAULT	256
+
 /* Group hold register */
 #define KMB_IMX412_REG_HOLD	0x0104
 
@@ -200,11 +225,15 @@ struct kmb_imx412_mode {
  * @row_time_ctrl: Pointer to row time control
  * @exp_ctrl: Pointer to exposure control
  * @again_ctrl: Pointer to analog gain control
+ * @dgain_ctrl: Pointer to digital gain control
  * @exp_ctrl1: Pointer to short exposure control
  * @again_ctrl1: Pointer to short analog gain control
+ * @dgain_ctrl1: Pointer to short digital gain control
  * @exp_ctrl2: Pointer to very short exposure control
  * @again_ctrl2: Pointer to very short analog gain control
+ * @dgain_ctrl2: Pointer to very short digital gain control
  * @sync_mode_ctrl: Pointer to sync mode control
+ * @sync_enable_ctrl: Pointer to hardware sync enable control
  * @sync_start_ctrl: Pointer to sync start control
  * @sync_type_ctrl: Pointer to sync type control
  * @num_lanes: Number of data lanes
@@ -236,10 +265,13 @@ struct kmb_imx412 {
 	struct {
 		struct v4l2_ctrl *exp_ctrl;
 		struct v4l2_ctrl *again_ctrl;
+		struct v4l2_ctrl *dgain_ctrl;
 		struct v4l2_ctrl *exp_ctrl1;
 		struct v4l2_ctrl *again_ctrl1;
+		struct v4l2_ctrl *dgain_ctrl1;
 		struct v4l2_ctrl *exp_ctrl2;
 		struct v4l2_ctrl *again_ctrl2;
+		struct v4l2_ctrl *dgain_ctrl2;
 	};
 	struct v4l2_ctrl *sync_mode_ctrl;
 	struct v4l2_ctrl *sync_start_ctrl;
@@ -2275,8 +2307,9 @@ static int kmb_imx412_sync_start(struct kmb_imx412 *kmb_imx412)
 /**
  * kmb_imx412_set_ctrl - Set subdevice control. Supported controls:
  *                       V4L2_CID_ANALOGUE_GAIN
+ *                       V4L2_CID_DIGITAL_GAIN
  *                       V4L2_CID_EXPOSURE
- *                       Both controls are in one cluster.
+ *                       All three controls are in one cluster.
  *
  * @ctrl: pointer to v4l2_ctrl structure
  *
@@ -2288,6 +2321,7 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 		container_of(ctrl->handler, struct kmb_imx412, ctrl_handler);
 	u32 exposure[3] = {0};
 	u32 analog_gain[3] = {0};
+	u32 digital_gain[3] = {0};
 	u32 lpfr = 0;
 	int ret = 0;
 
@@ -2318,12 +2352,16 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 		/* Handle the cluster for both controls */
 		exposure[0] = ctrl->val;
 		analog_gain[0] = kmb_imx412->again_ctrl->val;
+		digital_gain[0] = kmb_imx412->dgain_ctrl->val;
 
 		exposure[1] = kmb_imx412->exp_ctrl1->val;
 		analog_gain[1] = kmb_imx412->again_ctrl1->val;
+		digital_gain[1] = kmb_imx412->dgain_ctrl1->val;
 
 		exposure[2] = kmb_imx412->exp_ctrl2->val;
 		analog_gain[2] = kmb_imx412->again_ctrl2->val;
+		digital_gain[2] = kmb_imx412->dgain_ctrl2->val;
+
 		break;
 	default:
 		dev_err(kmb_imx412->dev, "Invalid control %x", ctrl->id);
@@ -2342,8 +2380,8 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 			exposure[0] = KMB_IMX412_EXPOSURE_MIN;
 
 		dev_dbg(kmb_imx412->dev,
-			"Set long exp %u analog gain %u lpfr %u",
-			exposure[0], analog_gain[0], lpfr);
+			"Set long exp %u again %u dgain %u lpfr %u",
+			exposure[0], analog_gain[0], digital_gain[0], lpfr);
 		break;
 	case KMB_IMX412_2DOL_HDR:
 		if (exposure[0] > KMB_IMX412_2DOL_GET_1ST_MAX_EXP(lpfr))
@@ -2361,12 +2399,12 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 		exposure[1] = ALIGN(exposure[1], 2);
 
 		dev_dbg(kmb_imx412->dev,
-			"Set long exp %u analog gain %u lpfr %u",
-			exposure[0], analog_gain[0], lpfr);
+			"Set long exp %u again %u dgain %u lpfr %u",
+			exposure[0], analog_gain[0], digital_gain[0], lpfr);
 
 		dev_dbg(kmb_imx412->dev,
-			"Set short exp %u analog gain %u",
-			exposure[1], analog_gain[1]);
+			"Set short exp %u again %u dgain %u",
+			exposure[1], analog_gain[1], digital_gain[1]);
 		break;
 	case KMB_IMX412_3DOL_HDR:
 		if (exposure[0] > KMB_IMX412_3DOL_GET_1ST_MAX_EXP(lpfr))
@@ -2392,16 +2430,16 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 		exposure[2] = ALIGN(exposure[2], 2);
 
 		dev_dbg(kmb_imx412->dev,
-			"Set long exp %u analog gain %u lpfr %u",
-			exposure[0], analog_gain[0], lpfr);
+			"Set long exp %u again %u dgain %u lpfr %u",
+			exposure[0], analog_gain[0], digital_gain[0], lpfr);
 
 		dev_dbg(kmb_imx412->dev,
-			"Set middle exp %u analog gain %u",
-			exposure[1], analog_gain[1]);
+			"Set middle exp %u again %u dgain %u",
+			exposure[1], analog_gain[1], digital_gain[1]);
 
 		dev_dbg(kmb_imx412->dev,
-			"Set short exp %u analog gain %u",
-			exposure[2], analog_gain[2]);
+			"Set short exp %u again %u dgain %u",
+			exposure[2], analog_gain[2], digital_gain[2]);
 		break;
 	default:
 		dev_err(kmb_imx412->dev, "Invalid sensor mode %d",
@@ -2433,6 +2471,12 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 					   2, analog_gain[0]);
 		if (ret)
 			goto error_release_group_hold;
+
+		ret = kmb_imx412_write_reg(kmb_imx412, KMB_IMX412_REG_DGAIN,
+					   2, digital_gain[0]);
+		if (ret)
+			goto error_release_group_hold;
+
 		break;
 	case KMB_IMX412_2DOL_HDR:
 		ret = kmb_imx412_write_reg(kmb_imx412,
@@ -2467,6 +2511,18 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 					KMB_IMX412_REG_DOL_ANA_GAIN_2ND_FRM,
 					2,
 					analog_gain[1]);
+		if (ret)
+			goto error_release_group_hold;
+
+		ret = kmb_imx412_write_reg(kmb_imx412,
+					   KMB_IMX412_REG_DOL_DIG_GAIN_1ST_FRM,
+					   2, digital_gain[0]);
+		if (ret)
+			goto error_release_group_hold;
+
+		ret = kmb_imx412_write_reg(kmb_imx412,
+					   KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM,
+					   2, digital_gain[1]);
 		if (ret)
 			goto error_release_group_hold;
 		break;
@@ -2524,6 +2580,24 @@ static int kmb_imx412_set_ctrl(struct v4l2_ctrl *ctrl)
 					KMB_IMX412_REG_DOL_ANA_GAIN_3RD_FRM,
 					2,
 					analog_gain[2]);
+		if (ret)
+			goto error_release_group_hold;
+
+		ret = kmb_imx412_write_reg(kmb_imx412,
+					   KMB_IMX412_REG_DOL_DIG_GAIN_1ST_FRM,
+					   2, digital_gain[0]);
+		if (ret)
+			goto error_release_group_hold;
+
+		ret = kmb_imx412_write_reg(kmb_imx412,
+					   KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM,
+					   2, digital_gain[1]);
+		if (ret)
+			goto error_release_group_hold;
+
+		ret = kmb_imx412_write_reg(kmb_imx412,
+					   KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM,
+					   2, digital_gain[2]);
 		if (ret)
 			goto error_release_group_hold;
 		break;
@@ -2616,6 +2690,18 @@ static const struct v4l2_ctrl_config again_short = {
 	.menu_skip_mask = 0,
 };
 
+static const struct v4l2_ctrl_config dgain_short = {
+	.ops = &kmb_imx412_ctrl_ops,
+	.id = V4L2_CID_DIGITAL_GAIN_SHORT,
+	.name = "V4L2_CID_DIGITAL_GAIN_SHORT",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.min = KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_MIN,
+	.max = KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_MAX,
+	.def = KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_DEFAULT,
+	.step = KMB_IMX412_REG_DOL_DIG_GAIN_2ND_FRM_STEP,
+	.menu_skip_mask = 0,
+};
+
 static const struct v4l2_ctrl_config exposure_short = {
 	.ops = &kmb_imx412_ctrl_ops,
 	.id = V4L2_CID_EXPOSURE_SHORT,
@@ -2637,6 +2723,18 @@ static const struct v4l2_ctrl_config again_very_short = {
 	.max = KMB_IMX412_REG_DOL_ANA_GAIN_3RD_FRM_MAX,
 	.def = KMB_IMX412_REG_DOL_ANA_GAIN_3RD_FRM_DEFAULT,
 	.step = KMB_IMX412_REG_DOL_ANA_GAIN_3RD_FRM_STEP,
+	.menu_skip_mask = 0,
+};
+
+static const struct v4l2_ctrl_config dgain_very_short = {
+	.ops = &kmb_imx412_ctrl_ops,
+	.id = V4L2_CID_DIGITAL_GAIN_VERY_SHORT,
+	.name = "V4L2_CID_DIGITAL_GAIN_VERY_SHORT",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.min = KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_MIN,
+	.max = KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_MAX,
+	.def = KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_DEFAULT,
+	.step = KMB_IMX412_REG_DOL_DIG_GAIN_3RD_FRM_STEP,
 	.menu_skip_mask = 0,
 };
 
@@ -3517,7 +3615,7 @@ static int kmb_imx412_init_controls(struct kmb_imx412 *kmb_imx412)
 	u32 vblank;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 13);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 16);
 	if (ret)
 		return ret;
 
@@ -3541,12 +3639,24 @@ static int kmb_imx412_init_controls(struct kmb_imx412 *kmb_imx412)
 						   KMB_IMX412_AGAIN_STEP,
 						   KMB_IMX412_AGAIN_DEFAULT);
 
+	kmb_imx412->dgain_ctrl = v4l2_ctrl_new_std(ctrl_hdlr,
+						   &kmb_imx412_ctrl_ops,
+						   V4L2_CID_DIGITAL_GAIN,
+						   KMB_IMX412_DGAIN_MIN,
+						   KMB_IMX412_DGAIN_MAX,
+						   KMB_IMX412_DGAIN_STEP,
+						   KMB_IMX412_DGAIN_DEFAULT);
+
 	kmb_imx412->exp_ctrl1 = v4l2_ctrl_new_custom(ctrl_hdlr,
 						     &exposure_short,
 						     NULL);
 
 	kmb_imx412->again_ctrl1 = v4l2_ctrl_new_custom(ctrl_hdlr,
 						       &again_short,
+						       NULL);
+
+	kmb_imx412->dgain_ctrl1 = v4l2_ctrl_new_custom(ctrl_hdlr,
+						       &dgain_short,
 						       NULL);
 
 	kmb_imx412->exp_ctrl2 = v4l2_ctrl_new_custom(ctrl_hdlr,
@@ -3557,7 +3667,11 @@ static int kmb_imx412_init_controls(struct kmb_imx412 *kmb_imx412)
 						       &again_very_short,
 						       NULL);
 
-	v4l2_ctrl_cluster(6, &kmb_imx412->exp_ctrl);
+	kmb_imx412->dgain_ctrl2 = v4l2_ctrl_new_custom(ctrl_hdlr,
+						       &dgain_very_short,
+						       NULL);
+
+	v4l2_ctrl_cluster(9, &kmb_imx412->exp_ctrl);
 
 	/* Read only controls */
 	kmb_imx412->pclk_ctrl = v4l2_ctrl_new_std(ctrl_hdlr,
