@@ -121,4 +121,27 @@
 #define SMC_SC_VDEV_KICK_VQ	SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 24)
 #define SMC_NC_VDEV_KICK_VQ	SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 25)
 
+/*
+ * SM Wall is a shared memory buffer established between secure and non-secure
+ * side that allows for secure side to publish certain state that non-secure
+ * side might acts on. One known example is a state of per CPU timer on
+ * platforms that require migration to broadcast timer in deep idle states.
+ *
+ * SMC_FC_GET_WALL_SIZE - retrieves the size of memory buffer that will be
+ * required to setup the SM Wall object.
+ *
+ * SMC_SC_SETUP_WALL - specifies location, size and attributes of memory buffer
+ * allocated by non-secure side to setup the SM Wall object.
+ *
+ * SMC_SC_DESTROY_WALL - notifies secure side that previously specifies SM Wall
+ * object should be released usually as part of normal shutdown sequence.
+ */
+#define SMC_FC_GET_WALL_SIZE	SMC_FASTCALL_NR(SMC_ENTITY_SECURE_MONITOR, 20)
+#define SMC_SC_SETUP_WALL	SMC_STDCALL_NR(SMC_ENTITY_SECURE_MONITOR,  12)
+#define SMC_SC_DESTROY_WALL	SMC_STDCALL_NR(SMC_ENTITY_SECURE_MONITOR,  13)
+
+/* Max entity defined as SMC_NUM_ENTITIES(64) */
+#define	SMC_ENTITY_SMC_X86	63	/* Used for customized SMC calls */
+#define	SMC_SC_LK_TIMER	SMC_STDCALL_NR(SMC_ENTITY_SMC_X86, 0)
+
 #endif /* __LINUX_TRUSTY_SMCALL_H */
