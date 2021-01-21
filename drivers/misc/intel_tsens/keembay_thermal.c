@@ -39,9 +39,6 @@ static void kmb_sensor_read_temp(void __iomem *regs_val,
 {
 	int reg_val, kmb_raw_index;
 
-	/* clear the bit of TSENS_EN and re-enable again */
-	iowrite32(0x00, regs_val + AON_TSENS_CFG);
-	iowrite32(CFG_MASK_MANUAL, regs_val + AON_TSENS_CFG);
 	reg_val = ioread32(regs_val + offset);
 	if (reg_val & sample_valid_mask) {
 		reg_val = (reg_val >> bit_shift) & sample_value;
