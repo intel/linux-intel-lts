@@ -87,4 +87,40 @@ static inline void trusty_nop_init(struct trusty_nop *nop,
 void trusty_enqueue_nop(struct device *dev, struct trusty_nop *nop);
 void trusty_dequeue_nop(struct device *dev, struct trusty_nop *nop);
 
+void trusty_update_wall_info(struct device *dev, void *va, size_t sz);
+void *trusty_wall_base(struct device *dev);
+void *trusty_wall_per_cpu_item_ptr(struct device *dev, unsigned int cpu,
+				   u32 item_id, size_t exp_sz);
+
+enum {
+	VMM_ID_EVMM = 0,
+	VMM_ID_ACRN,
+	VMM_SUPPORTED_NUM
+};
+
+static const char *vmm_signature[] = {
+	[VMM_ID_EVMM] = "EVMMEVMMEVMM",
+	[VMM_ID_ACRN] = "ACRNACRNACRN"
+};
+
+/* Detect VMM and return vmm_id */
+static inline int trusty_detect_vmm(void)
+{
+#if IS_ENABLED(CONFIG_TRUSTY)
+	int i;
+	for (i = 0; i < VMM_SUPPORTED_NUM; i++) {
+		if (hypervisor_cpuid_base(vmm_signature[i], 0))
+			return i;
+	}
+#endif
+	return -EINVAL;
+}
+
+/* High 32 bits of unsigned 64-bit integer*/
+#ifdef CONFIG_64BIT
+#define HIULINT(x) ((x) >> 32)
+#else
+#define HIULINT(x) 0
+#endif
+
 #endif

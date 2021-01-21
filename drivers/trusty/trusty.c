@@ -872,11 +872,13 @@ static int trusty_probe(struct platform_device *pdev)
 		INIT_WORK(&tw->work, work_func);
 	}
 
+#ifdef CONFIG_OF_EARLY_FLATTREE
 	ret = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to add children: %d\n", ret);
 		goto err_add_children;
 	}
+#endif
 
 	return 0;
 
@@ -944,14 +946,165 @@ static struct platform_driver trusty_driver = {
 	},
 };
 
+#ifndef CONFIG_OF_EARLY_FLATTREE
+
+void trusty_dev_release(struct device *dev)
+{
+	dev_dbg(dev, "%s() is called()\n", __func__);
+	return;
+}
+
+static struct device_node trusty_timer_node = {
+	.name = "trusty-timer",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_wall_node = {
+	.name = "trusty-wall",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_irq_node = {
+	.name = "trusty-irq",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_virtio_node = {
+	.name = "trusty-virtio",
+	.sibling = &trusty_irq_node,
+};
+
+static struct device_node trusty_log_node = {
+	.name = "trusty-log",
+	.sibling = &trusty_virtio_node,
+};
+
+static struct device_node trusty_x86_64_node = {
+	.name = "trusty_x86_64",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_node = {
+	.name = "trusty",
+	.child = &trusty_log_node,
+};
+
+static struct platform_device trusty_platform_dev = {
+	.name = "trusty",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.of_node = &trusty_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_x86_64 = {
+	.name = "trusty_x86_64",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_x86_64_node,
+	},
+};
+
+
+static struct platform_device trusty_platform_dev_log = {
+	.name = "trusty-log",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_log_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_virtio = {
+	.name = "trusty-virtio",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_virtio_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_irq = {
+	.name = "trusty-irq",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_irq_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_wall = {
+	.name = "trusty-wall",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_wall_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_timer = {
+	.name = "trusty-timer",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev_wall.dev,
+		.of_node = &trusty_timer_node,
+	},
+};
+
+static struct platform_device *trusty_devices[] __initdata = {
+	&trusty_platform_dev,
+	&trusty_platform_dev_x86_64,
+	&trusty_platform_dev_log,
+	&trusty_platform_dev_virtio,
+	&trusty_platform_dev_wall,
+	&trusty_platform_dev_timer
+};
+#endif
+
 static int __init trusty_driver_init(void)
 {
-	return platform_driver_register(&trusty_driver);
+	int vmm_id;
+	int ret;
+
+	vmm_id = trusty_detect_vmm();
+	if (vmm_id < 0) {
+		printk(KERN_ERR "Cannot detect VMM which supports trusty!");
+		return -EINVAL;
+	}
+
+#ifndef CONFIG_OF_EARLY_FLATTREE
+	ret = platform_add_devices(trusty_devices, ARRAY_SIZE(trusty_devices));
+	if (ret) {
+		printk(KERN_ERR "%s(): platform_add_devices() failed, ret %d\n", __func__, ret);
+		return ret;
+	}
+#endif
+
+	ret = platform_driver_register(&trusty_driver);
+	return ret;
 }
 
 static void __exit trusty_driver_exit(void)
 {
 	platform_driver_unregister(&trusty_driver);
+#ifndef CONFIG_OF_EARLY_FLATTREE
+	platform_device_unregister(&trusty_platform_dev);
+#endif
 }
 
 subsys_initcall(trusty_driver_init);

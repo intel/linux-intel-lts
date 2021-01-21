@@ -7,7 +7,7 @@ menu "Trusty driver"
 
 config TRUSTY
 	tristate "Trusty core driver"
-	depends on ARM || ARM64 || X86
+	depends on ARM || ARM64 || X86_64
 	help
 	  Trusty is a secure OS that provides a Trusted Execution Environment
 	  (TEE) for Android.  Trusty runs on the same processor as Linux but is
@@ -23,7 +23,7 @@ if TRUSTY
 
 config TRUSTY_IRQ
 	tristate "Trusty IRQ support"
-	default y
+	default n
 	help
 	  Enable forwarding of IRQs from Linux to Trusty.  This module retrieves
 	  from Trusty a list of IRQs that Trusty uses, and it registers handlers
@@ -46,7 +46,7 @@ config TRUSTY_LOG
 
 config TRUSTY_TEST
 	tristate "Trusty stdcall test"
-	default y
+	default m
 	help
 	  Allow running tests of the Trusty stdcall interface.  Running these
 	  tests is initiated by userspace writing to a sysfs file.
@@ -78,11 +78,22 @@ config TRUSTY_VIRTIO_IPC
 
 config TRUSTY_X86_64
 	tristate "Trusty x86_64 driver"
-	select OF
-	select OF_EARLY_FLATTREE
+	default y
 	help
-	Enable Trusty Intel architecture implementation.
-	default n
+	  Enable Trusty Intel architecture implementation.
+
+config TRUSTY_BACKUP_TIMER
+	tristate "Trusty backup timer"
+	depends on TRUSTY_X86_64
+	default y
+	help
+	  This module adds support for Trusty backup timer. Trusty backup
+	  timer might be required on platforms that might loose state of
+	  secure timer in deep idle state.
+
+	  If you choose to build a module, it'll be called trusty-timer.
+	  Say N if unsure.
+
 
 endif # TRUSTY
 

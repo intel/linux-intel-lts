@@ -63,6 +63,11 @@ struct trusty_x86_64_irq_s {
 	unsigned int vector;
 	struct irqaction *action;
 } trusty_x86_64_irq[] = {
+/*
+ * Comment out all IRQs which planed to be reserved, since CIV design is
+ * different from Google Trusty IA solution design.
+ */
+/*
 	{
 		.irq = 1,
 		.vector = 0x21,
@@ -78,23 +83,21 @@ struct trusty_x86_64_irq_s {
 		.vector = 0x23,
 		.action = &tmp_action,
 	},
+*/
 };
 
-struct smc_ret8 trusty_smc8(unsigned long r0, unsigned long r1,
-			    unsigned long r2, unsigned long r3,
-			    unsigned long r4, unsigned long r5,
-			    unsigned long r6, unsigned long r7) {
-	struct smc_ret8 ret;
-
+static long trusty_smc8_binder(void *args)
+{
+	struct smc_ret8 *para = (struct smc_ret8*)args;
 	register unsigned long smc_id asm("rax") = IKGT_SMC_HC_ID;
-	register unsigned long arg0 asm("rdi") = r0;
-	register unsigned long arg1 asm("rsi") = r1;
-	register unsigned long arg2 asm("rdx") = r2;
-	register unsigned long arg3 asm("rcx") = r3;
-	register unsigned long arg4 asm("r8")  = r4;
-	register unsigned long arg5 asm("r9")  = r5;
-	register unsigned long arg6 asm("r10") = r6;
-	register unsigned long arg7 asm("r11") = r7;
+	register unsigned long arg0 asm("rdi") = para->r0;
+	register unsigned long arg1 asm("rsi") = para->r1;
+	register unsigned long arg2 asm("rdx") = para->r2;
+	register unsigned long arg3 asm("rcx") = para->r3;
+	register unsigned long arg4 asm("r8")  = para->r4;
+	register unsigned long arg5 asm("r9")  = para->r5;
+	register unsigned long arg6 asm("r10") = para->r6;
+	register unsigned long arg7 asm("r11") = para->r7;
 
 	__asm__ __volatile__ (
 			"vmcall\n\r"
@@ -104,16 +107,27 @@ struct smc_ret8 trusty_smc8(unsigned long r0, unsigned long r1,
 				"r" (arg4), "r" (arg5), "r" (arg6), "r" (arg7)
 			: "memory");
 
-	ret.r0 = arg0;
-	ret.r1 = arg1;
-	ret.r2 = arg2;
-	ret.r3 = arg3;
-	ret.r4 = arg4;
-	ret.r5 = arg5;
-	ret.r6 = arg6;
-	ret.r7 = arg7;
+	para->r0 = arg0;
+	para->r1 = arg1;
+	para->r2 = arg2;
+	para->r3 = arg3;
+	para->r4 = arg4;
+	para->r5 = arg5;
+	para->r6 = arg6;
+	para->r7 = arg7;
 
-	return ret;
+	return 0;
+}
+
+struct smc_ret8 trusty_smc8(unsigned long r0, unsigned long r1,
+			    unsigned long r2, unsigned long r3,
+			    unsigned long r4, unsigned long r5,
+			    unsigned long r6, unsigned long r7) {
+	struct smc_ret8 para = {r0, r1, r2, r3, r4, r5, r6, r7};
+
+	work_on_cpu(0, trusty_smc8_binder, (void *)&para);
+
+	return para;
 }
 
 static const struct of_device_id trusty_x86_64_of_match[] = {
@@ -123,7 +137,7 @@ static const struct of_device_id trusty_x86_64_of_match[] = {
 
 static int trusty_x86_64_probe(struct platform_device *pdev)
 {
-	int ret;
+	int ret = 0;
 	struct device_node *node = pdev->dev.of_node;
 
 	dev_dbg(&pdev->dev, "Initializing trusty x86_64 driver\n");
@@ -133,13 +147,15 @@ static int trusty_x86_64_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_OF_EARLY_FLATTREE
 	ret = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to add children: %d\n", ret);
 		return ret;
 	}
+#endif
 
-	return 0;
+	return ret;
 }
 
 static int trusty_x86_64_remove_child(struct device *dev, void *data)
@@ -225,7 +241,11 @@ static int __init trusty_x86_64_irq_init(void)
 		setup_irq(irq_status->irq, irq_status->action);
 		cfg = irq_cfg(irq_status->irq);
 
-		BUG_ON(!cfg || (cfg->vector != irq_status->vector));
+		if (!cfg || (cfg->vector != irq_status->vector)) {
+			printk(KERN_ERR "trusty-x86_64: Failed to setup irq(%d)\n", irq_status->irq);
+        } else {
+			printk(KERN_INFO "trusty-x86_64: Succed to reserve irq(%d)\n", irq_status->irq);
+		}
 	}
 
 	return 0;
