@@ -49,24 +49,49 @@ struct trusty_state {
 	struct mutex share_memory_msg_lock; /* protects share_memory_msg */
 };
 
+struct trusty_std_call32_args {
+	struct device *dev;
+	u32 smcnr;
+	u32 a0;
+	u32 a1;
+	u32 a2;
+};
+
 static inline unsigned long smc(unsigned long r0, unsigned long r1,
 				unsigned long r2, unsigned long r3)
 {
 	return trusty_smc8(r0, r1, r2, r3, 0, 0, 0, 0).r0;
 }
 
-s32 trusty_fast_call32(struct device *dev, u32 smcnr, u32 a0, u32 a1, u32 a2)
+static long trusty_fast_call32_work(void *args)
 {
-	struct trusty_state *s = platform_get_drvdata(to_platform_device(dev));
+	struct trusty_std_call32_args *smc_arg = args;
+	struct trusty_state *s;
+
+	s = platform_get_drvdata(to_platform_device(smc_arg->dev));
 
 	if (WARN_ON(!s))
 		return SM_ERR_INVALID_PARAMETERS;
-	if (WARN_ON(!SMC_IS_FASTCALL(smcnr)))
+	if (WARN_ON(!SMC_IS_FASTCALL(smc_arg->smcnr)))
 		return SM_ERR_INVALID_PARAMETERS;
-	if (WARN_ON(SMC_IS_SMC64(smcnr)))
+	if (WARN_ON(SMC_IS_SMC64(smc_arg->smcnr)))
 		return SM_ERR_INVALID_PARAMETERS;
 
-	return smc(smcnr, a0, a1, a2);
+	return smc(smc_arg->smcnr, smc_arg->a0, smc_arg->a1, smc_arg->a2);
+
+}
+
+s32 trusty_fast_call32(struct device *dev, u32 smcnr, u32 a0, u32 a1, u32 a2)
+{
+	struct trusty_std_call32_args args = {
+		.dev = dev,
+		.smcnr = smcnr,
+		.a0 = a0,
+		.a1 = a1,
+		.a2 = a2,
+	};
+
+	return work_on_cpu(0, trusty_fast_call32_work, (void *)&args);
 }
 EXPORT_SYMBOL(trusty_fast_call32);
 
@@ -181,10 +206,24 @@ static void trusty_std_call_cpu_idle(struct trusty_state *s)
 	}
 }
 
-s32 trusty_std_call32(struct device *dev, u32 smcnr, u32 a0, u32 a1, u32 a2)
+static long trusty_std_call32_work(void *args)
 {
-	int ret;
-	struct trusty_state *s = platform_get_drvdata(to_platform_device(dev));
+	long ret;
+	struct device *dev;
+	u32 smcnr, a0, a1, a2;
+	struct trusty_state *s;
+	struct trusty_std_call32_args *work_args;
+
+	BUG_ON(!args);
+
+	work_args = (struct trusty_std_call32_args *)args;
+	a0 = work_args->a0;
+	a1 = work_args->a1;
+	a2 = work_args->a2;
+	dev = work_args->dev;
+	smcnr = work_args->smcnr;
+
+	s = (struct trusty_state *)platform_get_drvdata(to_platform_device(dev));
 
 	if (WARN_ON(SMC_IS_FASTCALL(smcnr)))
 		return SM_ERR_INVALID_PARAMETERS;
@@ -226,7 +265,52 @@ s32 trusty_std_call32(struct device *dev, u32 smcnr, u32 a0, u32 a1, u32 a2)
 
 	return ret;
 }
+
+s32 trusty_std_call32(struct device *dev, u32 smcnr, u32 a0, u32 a1, u32 a2)
+{
+	struct trusty_std_call32_args args = {
+		.dev = dev,
+		.smcnr = smcnr,
+		.a0 = a0,
+		.a1 = a1,
+		.a2 = a2,
+	};
+
+	return work_on_cpu(0, trusty_std_call32_work, (void *)&args);
+}
 EXPORT_SYMBOL(trusty_std_call32);
+
+static long trusty_smc8_work(void *args)
+{
+	struct smc_ret8 *smc_arg = args;
+	struct smc_ret8 smc_ret;
+
+	smc_ret = trusty_smc8(smc_arg->r0, smc_arg->r1, smc_arg->r2, smc_arg->r3,
+				smc_arg->r4, smc_arg->r5, smc_arg->r6, smc_arg->r7);
+
+	smc_arg->r0 = smc_ret.r0;
+	smc_arg->r1 = smc_ret.r1;
+	smc_arg->r2 = smc_ret.r2;
+	smc_arg->r3 = smc_ret.r3;
+	smc_arg->r4 = smc_ret.r4;
+	smc_arg->r5 = smc_ret.r5;
+	smc_arg->r6 = smc_ret.r6;
+	smc_arg->r7 = smc_ret.r7;
+
+	return 0;
+}
+
+struct smc_ret8 trusty_smc8_wrapper(unsigned long r0, unsigned long r1,
+				unsigned long r2, unsigned long r3,
+				unsigned long r4, unsigned long r5,
+				unsigned long r6, unsigned long r7)
+{
+	struct smc_ret8 smc_ret = {r0, r1, r2, r3, r4, r5, r6,  r7};
+
+	work_on_cpu(0, trusty_smc8_work, (void*)&smc_ret);
+
+	return smc_ret;
+}
 
 int trusty_share_memory(struct device *dev, u64 *id,
 			struct scatterlist *sglist, unsigned int nents,
@@ -344,10 +428,10 @@ int trusty_transfer_memory(struct device *dev, u64 *id,
 			u32 smc = lend ? SMC_FC_FFA_MEM_LEND :
 					 SMC_FC_FFA_MEM_SHARE;
 			/* First fragment */
-			smc_ret = trusty_smc8(smc, total_len,
+			smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_MEM_SHARE, total_len,
 					      fragment_len, 0, 0, 0, 0, 0);
 		} else {
-			smc_ret = trusty_smc8(SMC_FC_FFA_MEM_FRAG_TX,
+			smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_MEM_FRAG_TX,
 					      cookie_low, cookie_high,
 					      fragment_len, 0, 0, 0, 0);
 		}
@@ -461,7 +545,7 @@ int trusty_reclaim_memory(struct device *dev, u64 id,
 
 	mutex_lock(&s->share_memory_msg_lock);
 
-	smc_ret = trusty_smc8(SMC_FC_FFA_MEM_RECLAIM, (u32)id, id >> 32, 0, 0,
+	smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_MEM_RECLAIM, (u32)id, id >> 32, 0, 0,
 			      0, 0, 0);
 	if (smc_ret.r0 != SMC_FC_FFA_SUCCESS) {
 		dev_err(s->dev, "%s: SMC_FC_FFA_MEM_RECLAIM failed 0x%lx 0x%lx 0x%lx",
@@ -543,7 +627,7 @@ static int trusty_init_msg_buf(struct trusty_state *s, struct device *dev)
 		return 0;
 
 	/* Get supported FF-A version and check if it is compatible */
-	smc_ret = trusty_smc8(SMC_FC_FFA_VERSION, FFA_CURRENT_VERSION, 0, 0,
+	smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_VERSION, FFA_CURRENT_VERSION, 0, 0,
 			      0, 0, 0, 0);
 	if (FFA_VERSION_TO_MAJOR(smc_ret.r0) != FFA_CURRENT_VERSION_MAJOR) {
 		dev_err(s->dev,
@@ -554,7 +638,7 @@ static int trusty_init_msg_buf(struct trusty_state *s, struct device *dev)
 	}
 
 	/* Check that SMC_FC_FFA_MEM_SHARE is implemented */
-	smc_ret = trusty_smc8(SMC_FC_FFA_FEATURES, SMC_FC_FFA_MEM_SHARE, 0, 0,
+	smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_FEATURES, SMC_FC_FFA_MEM_SHARE, 0, 0,
 			      0, 0, 0, 0);
 	if (smc_ret.r0 != SMC_FC_FFA_SUCCESS) {
 		dev_err(s->dev,
@@ -570,7 +654,7 @@ static int trusty_init_msg_buf(struct trusty_state *s, struct device *dev)
 	 * Hardcode 0x8000 for the secure os.
 	 * TODO: Use FF-A call or device tree to configure this dynamically
 	 */
-	smc_ret = trusty_smc8(SMC_FC_FFA_ID_GET, 0, 0, 0, 0, 0, 0, 0);
+	smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_ID_GET, 0, 0, 0, 0, 0, 0, 0);
 	if (smc_ret.r0 != SMC_FC_FFA_SUCCESS) {
 		dev_err(s->dev,
 			"%s: SMC_FC_FFA_ID_GET failed 0x%lx 0x%lx 0x%lx\n",
@@ -604,7 +688,7 @@ static int trusty_init_msg_buf(struct trusty_state *s, struct device *dev)
 		goto err_unaligned_rx_buf;
 	}
 
-	smc_ret = trusty_smc8(SMC_FCZ_FFA_RXTX_MAP, tx_paddr, rx_paddr, 1, 0,
+	smc_ret = trusty_smc8_wrapper(SMC_FCZ_FFA_RXTX_MAP, tx_paddr, rx_paddr, 1, 0,
 			      0, 0, 0);
 	if (smc_ret.r0 != SMC_FC_FFA_SUCCESS) {
 		dev_err(s->dev, "%s: SMC_FCZ_FFA_RXTX_MAP failed 0x%lx 0x%lx 0x%lx\n",
@@ -634,7 +718,7 @@ static void trusty_free_msg_buf(struct trusty_state *s, struct device *dev)
 {
 	struct smc_ret8 smc_ret;
 
-	smc_ret = trusty_smc8(SMC_FC_FFA_RXTX_UNMAP, 0, 0, 0, 0, 0, 0, 0);
+	smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_RXTX_UNMAP, 0, 0, 0, 0, 0, 0, 0);
 	if (smc_ret.r0 != SMC_FC_FFA_SUCCESS) {
 		dev_err(s->dev, "%s: SMC_FC_FFA_RXTX_UNMAP failed 0x%lx 0x%lx 0x%lx\n",
 			__func__, smc_ret.r0, smc_ret.r1, smc_ret.r2);
@@ -897,15 +981,19 @@ static int trusty_probe(struct platform_device *pdev)
 		INIT_WORK(&tw->work, work_func);
 	}
 
+#ifdef CONFIG_OF_EARLY_FLATTREE
 	ret = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to add children: %d\n", ret);
 		goto err_add_children;
 	}
+#endif
 
 	return 0;
 
+#ifdef CONFIG_OF_EARLY_FLATTREE
 err_add_children:
+#endif
 	for_each_possible_cpu(cpu) {
 		struct trusty_work *tw = per_cpu_ptr(s->nop_works, cpu);
 
@@ -969,14 +1057,165 @@ static struct platform_driver trusty_driver = {
 	},
 };
 
+#ifndef CONFIG_OF_EARLY_FLATTREE
+
+void trusty_dev_release(struct device *dev)
+{
+	dev_dbg(dev, "%s() is called()\n", __func__);
+	return;
+}
+
+static struct device_node trusty_timer_node = {
+	.name = "trusty-timer",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_wall_node = {
+	.name = "trusty-wall",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_irq_node = {
+	.name = "trusty-irq",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_virtio_node = {
+	.name = "trusty-virtio",
+	.sibling = &trusty_irq_node,
+};
+
+static struct device_node trusty_log_node = {
+	.name = "trusty-log",
+	.sibling = &trusty_virtio_node,
+};
+
+static struct device_node trusty_x86_64_node = {
+	.name = "trusty_x86_64",
+	.sibling = NULL,
+};
+
+static struct device_node trusty_node = {
+	.name = "trusty",
+	.child = &trusty_log_node,
+};
+
+static struct platform_device trusty_platform_dev = {
+	.name = "trusty",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.of_node = &trusty_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_x86_64 = {
+	.name = "trusty_x86_64",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_x86_64_node,
+	},
+};
+
+
+static struct platform_device trusty_platform_dev_log = {
+	.name = "trusty-log",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_log_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_virtio = {
+	.name = "trusty-virtio",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_virtio_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_irq = {
+	.name = "trusty-irq",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_irq_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_wall = {
+	.name = "trusty-wall",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev.dev,
+		.of_node = &trusty_wall_node,
+	},
+};
+
+static struct platform_device trusty_platform_dev_timer = {
+	.name = "trusty-timer",
+	.id = -1,
+	.num_resources = 0,
+	.dev = {
+		.release = trusty_dev_release,
+		.parent = &trusty_platform_dev_wall.dev,
+		.of_node = &trusty_timer_node,
+	},
+};
+
+static struct platform_device *trusty_devices[] __initdata = {
+	&trusty_platform_dev,
+	&trusty_platform_dev_x86_64,
+	&trusty_platform_dev_log,
+	&trusty_platform_dev_virtio,
+	&trusty_platform_dev_wall,
+	&trusty_platform_dev_timer
+};
+#endif
+
 static int __init trusty_driver_init(void)
 {
-	return platform_driver_register(&trusty_driver);
+	int vmm_id;
+	int ret;
+
+	vmm_id = trusty_detect_vmm();
+	if (vmm_id < 0) {
+		printk(KERN_ERR "Cannot detect VMM which supports trusty!");
+		return -EINVAL;
+	}
+
+#ifndef CONFIG_OF_EARLY_FLATTREE
+	ret = platform_add_devices(trusty_devices, ARRAY_SIZE(trusty_devices));
+	if (ret) {
+		printk(KERN_ERR "%s(): platform_add_devices() failed, ret %d\n", __func__, ret);
+		return ret;
+	}
+#endif
+
+	ret = platform_driver_register(&trusty_driver);
+	return ret;
 }
 
 static void __exit trusty_driver_exit(void)
 {
 	platform_driver_unregister(&trusty_driver);
+#ifndef CONFIG_OF_EARLY_FLATTREE
+	platform_device_unregister(&trusty_platform_dev);
+#endif
 }
 
 subsys_initcall(trusty_driver_init);
