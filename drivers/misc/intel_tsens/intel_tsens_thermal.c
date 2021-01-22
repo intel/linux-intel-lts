@@ -121,10 +121,9 @@ static int intel_tsens_add_pdev(struct intel_tsens_priv *priv)
 	return 0;
 }
 
-static int intel_tsens_thermal_get_temp(struct thermal_zone_device *tz,
+static int intel_tsens_thermal_get_temp(struct intel_tsens *tsens,
 					int *temp)
 {
-	struct intel_tsens *tsens = (struct intel_tsens *)tz->devdata;
 	struct intel_tsens_priv *priv =
 		(struct intel_tsens_priv *)tsens->pdata;
 	struct intel_tsens_plat_data *plat_data;
@@ -172,116 +171,15 @@ static int intel_tsens_thermal_get_temp(struct thermal_zone_device *tz,
 	return -EINVAL;
 }
 
-static int intel_tsens_thermal_get_trip_type(struct thermal_zone_device *tz,
-					     int trip,
-					     enum thermal_trip_type *type)
+static int intel_tsens_themal_of_get_temp(void *data, int *temp)
 {
-	struct intel_tsens *tsens = (struct intel_tsens *)tz->devdata;
+	struct intel_tsens *tsens = (struct intel_tsens *)data;
 
-	*type = tsens->trip_info[trip]->trip_type;
-	return 0;
+	return intel_tsens_thermal_get_temp(tsens, temp);
 }
 
-static int intel_tsens_thermal_get_trip_temp(struct thermal_zone_device *tz,
-					     int trip, int *temp)
-{
-	struct intel_tsens *tsens = (struct intel_tsens *)tz->devdata;
-
-	*temp = tsens->trip_info[trip]->temp;
-	return 0;
-}
-
-/* Refer https://lwn.net/Articles/242046/
- * how to receive this event in userspace
- */
-static int intel_tsens_notify_user_space(struct thermal_zone_device *tz,
-					 int trip)
-{
-	char *thermal_prop[5];
-	int i, ret = 0;
-
-	mutex_lock(&tz->lock);
-	thermal_prop[0] = kasprintf(GFP_KERNEL, "NAME=%s", tz->type);
-	thermal_prop[1] = kasprintf(GFP_KERNEL, "TEMP=%d",
-				    tz->emul_temperature);
-	thermal_prop[2] = kasprintf(GFP_KERNEL, "TRIP=%d", trip);
-	thermal_prop[3] = kasprintf(GFP_KERNEL, "EVENT=%d", tz->notify_event);
-	thermal_prop[4] = NULL;
-	if (thermal_prop[0] && thermal_prop[1] &&
-	    thermal_prop[2] && thermal_prop[3]) {
-		kobject_uevent_env(&tz->device.kobj, KOBJ_CHANGE,
-				   thermal_prop);
-	} else {
-		ret = -ENOMEM;
-	}
-	for (i = 0; i < 4; ++i)
-		kfree(thermal_prop[i]);
-	mutex_unlock(&tz->lock);
-	return ret;
-}
-
-static int intel_tsens_thermal_notify(struct thermal_zone_device *tz,
-				      int trip, enum thermal_trip_type type)
-{
-	intel_tsens_notify_user_space(tz, trip);
-
-	if (type == THERMAL_TRIP_PASSIVE || type == THERMAL_TRIP_CRITICAL)
-		return 1;
-	return 0;
-}
-
-static int intel_tsens_thermal_bind(struct thermal_zone_device *tz,
-				    struct thermal_cooling_device *cdev)
-{
-	struct intel_tsens *tsens = (struct intel_tsens *)tz->devdata;
-	struct intel_tsens_priv *priv =
-		(struct intel_tsens_priv *)tsens->pdata;
-	int ret = -EINVAL;
-
-	/*
-	 * Check here thermal device zone name and cdev name to match,
-	 * then call the bind device
-	 */
-	if (!strncmp(tz->type, cdev->type, THERMAL_NAME_LENGTH) == 0) {
-		ret = thermal_zone_bind_cooling_device
-				(tz,
-				THERMAL_TRIP_PASSIVE,
-				cdev,
-				THERMAL_NO_LIMIT,
-				THERMAL_NO_LIMIT,
-				THERMAL_WEIGHT_DEFAULT);
-		if (ret) {
-			dev_err(&priv->pdev->dev,
-				"binding zone %s with cdev %s failed:%d\n",
-				tz->type, cdev->type, ret);
-		}
-	}
-	return ret;
-}
-
-static int intel_tsens_thermal_unbind(struct thermal_zone_device *tz,
-				      struct thermal_cooling_device *cdev)
-{
-	int ret;
-
-	ret = thermal_zone_unbind_cooling_device(tz, 0, cdev);
-	if (ret) {
-		dev_err(&tz->device,
-			"unbinding zone %s with cdev %s failed:%d\n",
-			tz->type, cdev->type, ret);
-	}
-	return ret;
-}
-
-static struct thermal_zone_device_ops tsens_thermal_ops = {
-	.bind = intel_tsens_thermal_bind,
-	.unbind = intel_tsens_thermal_unbind,
-	.get_temp = intel_tsens_thermal_get_temp,
-	.get_trip_type	= intel_tsens_thermal_get_trip_type,
-	.get_trip_temp	= intel_tsens_thermal_get_trip_temp,
-	.notify		= intel_tsens_thermal_notify,
-/*	.set_emul_temp = tsens_thermal_emulation */
-
+static struct thermal_zone_of_device_ops tsens_thermal_of_ops = {
+	.get_temp = intel_tsens_themal_of_get_temp,
 };
 
 static int intel_tsens_get_temp(int type, int *temp, void *pdata)
@@ -295,7 +193,7 @@ static int intel_tsens_get_temp(int type, int *temp, void *pdata)
 		return -EINVAL;
 	}
 
-	return intel_tsens_thermal_get_temp(priv->intel_tsens[type]->tz, temp);
+	return intel_tsens_thermal_get_temp(priv->intel_tsens[type], temp);
 }
 
 struct intel_tsens_i2c_plat_data i2c_plat_data = {
@@ -324,14 +222,9 @@ static int intel_tsens_add_thermal_zones(struct intel_tsens_priv *priv)
 		struct intel_tsens *tsens = priv->intel_tsens[i];
 
 		tsens->tz =
-		thermal_zone_device_register(tsens->name,
-					     tsens->n_trips,
-					     0,
-					     tsens,
-					     &tsens_thermal_ops,
-					     NULL,
-					     tsens->passive_delay,
-					     tsens->polling_delay);
+		devm_thermal_zone_of_sensor_register(&priv->pdev->dev,
+						     i,	priv->intel_tsens[i],
+						     &tsens_thermal_of_ops);
 		if (IS_ERR(tsens->tz)) {
 			dev_err(&priv->pdev->dev,
 				"failed to register thermal zone device %s\n",
