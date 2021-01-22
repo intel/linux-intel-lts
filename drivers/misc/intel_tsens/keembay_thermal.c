@@ -46,7 +46,7 @@ static void kmb_sensor_read_temp(void __iomem *regs_val,
 		if (kmb_raw_index < 0)
 			reg_val = raw_kmb[0];
 		else if (kmb_raw_index > (raw_kmb_size - 1))
-			reg_val = raw_kmb[raw_kmb_size - 1];
+			reg_val = -255;
 		else
 			reg_val = raw_kmb[kmb_raw_index];
 		*temp = reg_val;
