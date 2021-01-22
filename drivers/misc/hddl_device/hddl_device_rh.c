@@ -128,10 +128,11 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct intel_hddl_device_priv *priv = file->private_data;
 	u32 __user *user_ptr = (u32 __user *)arg;
 	struct device *dev = &priv->pdev->dev;
-	struct sw_id_soft_reset soft_reset;
-	struct sw_id_hddl_data swid_data;
+	struct sw_id_hddl_status swid_status;
 	struct intel_hddl_clients **clients;
+	struct sw_id_soft_reset soft_reset;
 	struct intel_hddl_clients *client;
+	struct sw_id_hddl_data swid_data;
 	int i, rc;
 
 	if (!user_ptr) {
@@ -205,6 +206,28 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		swid_data.return_id = 1;
 		if (copy_to_user(user_ptr,
 				 &swid_data, sizeof(struct sw_id_hddl_data)))
+			return -EFAULT;
+		break;
+	case HDDL_READ_STATUS:
+		if (copy_from_user(&swid_status, user_ptr,
+				   sizeof(struct sw_id_hddl_status)))
+			return -EFAULT;
+		for (i = 0; i < priv->ndevs; i++) {
+			if (clients[i]->xlink_dev.sw_device_id ==
+					swid_status.sw_id) {
+				client = clients[i];
+				break;
+			}
+		}
+		if (!client) {
+			dev_err(dev, "device to get status not found %d",
+				swid_status.sw_id);
+			return -ENODEV;
+		}
+		swid_status.status = client->status;
+		swid_status.return_id = 1;
+		if (copy_to_user(user_ptr, &swid_status,
+				 sizeof(struct sw_id_hddl_status)))
 			return -EFAULT;
 		break;
 	default:
@@ -591,10 +614,12 @@ static int intel_hddl_device_connect_task(void *data)
 	c->chan_num = priv->xlink_chan;
 	c->i2c_chan_num = priv->i2c_xlink_chan;
 	c->smbus_adap = priv->smbus_adap;
+	c->status = HDDL_DEV_STATUS_START;
 	if (intel_hddl_open_xlink_device(&priv->pdev->dev, c)) {
 		dev_err(&priv->pdev->dev, "HDDL open xlink dev failed\n");
 		return -ENODEV;
 	}
+	c->status = HDDL_DEV_STATUS_XLINK_OPENED;
 	ktime_get_real_ts64(&ts);
 	rc = xlink_write_volatile(xlink, c->chan_num, (u8 *)&ts,
 				  sizeof(struct timespec64));
@@ -604,7 +629,7 @@ static int intel_hddl_device_connect_task(void *data)
 			rc);
 		return rc;
 	}
-
+	c->status = HDDL_DEV_STATUS_UPDATED_TIMESTAMP;
 	size = sizeof(c->board_info);
 	rc = intel_hddl_get_xlink_data(&priv->pdev->dev,
 				       xlink, c->chan_num,
@@ -621,24 +646,27 @@ static int intel_hddl_device_connect_task(void *data)
 			rc);
 		return rc;
 	}
-
+	c->status = HDDL_DEV_STATUS_UPDATED_BOARD_INFO;
 	rc = intel_hddl_tsens_data(c);
 	if (rc) {
 		dev_err(&priv->pdev->dev, "HDDL: tsens data not rcvd\n");
 		goto close_xlink_dev;
 	}
+	c->status = HDDL_DEV_STATUS_UPDATED_THERMAL_INFO;
 	rc = intel_hddl_register_xlink_i2c_adap(&priv->pdev->dev, c);
 	if (rc) {
 		dev_err(&priv->pdev->dev,
 			"HDDL: register xlink i2c adapter failed\n");
 		goto close_xlink_dev;
 	}
+	c->status = HDDL_DEV_STATUS_UPDATED_I2C_ADAPTERS;
 	rc = intel_hddl_i2c_register_clients(&priv->pdev->dev, c);
 	if (rc) {
 		dev_err(&priv->pdev->dev,
 			"HDDL: register i2c clients failed\n");
 		goto remove_xlink_i2c_adap;
 	}
+	c->status = HDDL_DEV_STATUS_CONNECTED;
 	while (!kthread_should_stop())
 		msleep_interruptible(HDDL_NEW_DEV_POLL_TIME);
 

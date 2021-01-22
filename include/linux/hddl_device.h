@@ -24,6 +24,7 @@
 #define HDDL_MAGIC 'x'
 #define HDDL_READ_SW_ID_DATA		_IOW(HDDL_MAGIC, 'a', void*)
 #define HDDL_SOFT_RESET		_IOW(HDDL_MAGIC, 'b', void*)
+#define HDDL_READ_STATUS	_IOW(HDDL_MAGIC, 'c', void*)
 
 struct sw_id_hddl_data {
 	u32 board_id;
@@ -52,9 +53,21 @@ enum hddl_device {
 
 enum hddl_device_status {
 	HDDL_DEV_STATUS_START,
+	HDDL_DEV_STATUS_XLINK_OPENED,
+	HDDL_DEV_STATUS_UPDATED_TIMESTAMP,
+	HDDL_DEV_STATUS_UPDATED_BOARD_INFO,
+	HDDL_DEV_STATUS_HANDSHAKE_COMPLETED,
+	HDDL_DEV_STATUS_UPDATED_THERMAL_INFO,
+	HDDL_DEV_STATUS_UPDATED_I2C_ADAPTERS,
 	HDDL_DEV_STATUS_CONNECTED,
 	HDDL_DEV_STATUS_DISCONNECTED,
 	HDDL_DEV_STATUS_END,
+};
+
+struct sw_id_hddl_status {
+	uint32_t sw_id;
+	enum hddl_device_status status;
+	uint32_t return_id;
 };
 
 enum hddl_msg_type {
