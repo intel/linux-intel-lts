@@ -602,6 +602,62 @@ static int intel_hddl_get_ids(struct platform_device *pdev,
 	return 0;
 }
 
+static int hddl_get_socreset_data(struct platform_device *pdev,
+				  struct intel_hddl_client_priv *priv,
+				  struct device_node *np)
+{
+	struct device_node *soc_node;
+
+	for_each_child_of_node(np, soc_node) {
+		struct intel_hddl_board_info *board_info = &priv->board_info;
+		int soc_id;
+
+		of_property_read_u32(soc_node, "id", &soc_id);
+		if (board_info->soc_id == soc_id) {
+			const char *name;
+
+			of_property_read_string_index(soc_node, "io-exp-name",
+						      0, &name);
+			strcpy(board_info->iox_name, name);
+			of_property_read_u32_index(soc_node, "io-exp-addr",
+						   0, &board_info->iox_addr);
+			of_property_read_u32_index(soc_node, "io-exp-addr",
+						   1, &board_info->iox_pin);
+			of_property_read_u32_index(soc_node, "pci-switch",
+						   0, &board_info->pci_pin);
+			return 0;
+		}
+	}
+	return -EINVAL;
+}
+
+static int hddl_get_board_reset_data(struct platform_device *pdev,
+				     struct intel_hddl_client_priv *priv)
+{
+	struct device_node *s_node;
+	struct device_node *np;
+	int n_boards;
+
+	s_node = of_parse_phandle(pdev->dev.of_node, "soc-reset", 0);
+	if (!s_node)
+		return -EINVAL;
+	n_boards = of_get_child_count(s_node);
+	if (n_boards == 0) {
+		dev_err(&pdev->dev, "Board reset data not available in dt\n");
+		return -EINVAL;
+	}
+
+	for_each_child_of_node(s_node, np) {
+		int id;
+
+		of_property_read_u32(np, "id", &id);
+		if (priv->board_info.board_id == id) {
+			return hddl_get_socreset_data(pdev, priv, np);
+		}
+	}
+	return -EINVAL;
+}
+
 static int intel_hddl_config_dt(struct intel_hddl_client_priv *priv)
 {
 	struct platform_device *pdev = priv->pdev;
@@ -632,6 +688,11 @@ static int intel_hddl_config_dt(struct intel_hddl_client_priv *priv)
 	ret = intel_hddl_get_ids(pdev, priv);
 	if (ret) {
 		dev_err(&pdev->dev, "Unable to get board/soc id");
+		return ret;
+	}
+	ret = hddl_get_board_reset_data(pdev, priv);
+	if (ret) {
+		dev_err(&pdev->dev, "Unable to get reset data");
 		return ret;
 	}
 	ret = hddl_get_onchip_sensors(pdev, priv);
