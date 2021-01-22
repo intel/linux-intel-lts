@@ -27,8 +27,12 @@
 #define HDDL_READ_STATUS	_IOW(HDDL_MAGIC, 'c', void*)
 
 struct sw_id_hddl_data {
-	u32 board_id;
-	u32 soc_id;
+	char iox_name[15];
+	uint32_t board_id;
+	uint32_t soc_id;
+	uint32_t iox_addr;
+	uint32_t iox_pin;
+	uint32_t pci_pin;
 	u32 soc_adaptor_no[2];
 	u32 sw_id;
 	u32 return_id;
@@ -88,8 +92,12 @@ struct intel_hddl_tsens_msg {
 } __packed __aligned(HDDL_ALIGN);
 
 struct intel_hddl_board_info {
+	char iox_name[15];
 	int board_id;
 	int soc_id;
+	int iox_addr;
+	int iox_pin;
+	int pci_pin;
 } __packed __aligned(HDDL_ALIGN);
 
 struct intel_tsens_data {
