@@ -290,6 +290,10 @@ static int intel_tsens_get_temp(int type, int *temp, void *pdata)
 
 	if (!priv)
 		return -EINVAL;
+	if (type >= priv->n_sens) {
+		dev_err(&priv->pdev->dev, "Invalid sensor type");
+		return -EINVAL;
+	}
 
 	return intel_tsens_thermal_get_temp(priv->intel_tsens[type]->tz, temp);
 }

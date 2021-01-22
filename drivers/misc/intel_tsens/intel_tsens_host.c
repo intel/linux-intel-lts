@@ -68,47 +68,61 @@ static int intel_tsens_get_temp(struct thermal_zone_device *zone,
 {
 	struct intel_tsens_host *tsens =
 		(struct intel_tsens_host *)zone->devdata;
+	struct mutex *sync_unregister_mutex;
 	struct i2c_client *i2c_c;
 	int status, sensor_type;
 	u8 i2c_val;
 	s32 val;
 
-	if (strstr(zone->type, "smb"))
+	if (strstr(zone->type, "smb")) {
+		sync_unregister_mutex = &tsens->sync_smb_unregister;
+		mutex_lock(sync_unregister_mutex);
 		i2c_c = tsens->i2c_smbus;
-	else
+	} else {
+		sync_unregister_mutex = &tsens->sync_xlk_unregister;
+		mutex_lock(sync_unregister_mutex);
 		i2c_c = tsens->i2c_xlk;
-
+	}
 	*temp = -255;
+	if (!i2c_c) {
+		mutex_unlock(sync_unregister_mutex);
+		return -EINVAL;
+	}
 	sensor_type = tsens->t_data->sensor_type | TSENS_READ_BYTE0;
 	status = tsens_i2c_smbus_read_byte_data(i2c_c,
 						sensor_type,
 						&i2c_val);
 	if (status < 0)
-		return status;
+		goto unlock_and_exit;
 	val = i2c_val;
 	sensor_type = tsens->t_data->sensor_type | TSENS_READ_BYTE1;
 	status = tsens_i2c_smbus_read_byte_data(i2c_c,
 						sensor_type,
 						&i2c_val);
 	if (status < 0)
-		return status;
+		goto unlock_and_exit;
 	val |= (i2c_val << 8);
 	sensor_type = tsens->t_data->sensor_type | TSENS_READ_BYTE2;
 	status = tsens_i2c_smbus_read_byte_data(i2c_c,
 						sensor_type,
 						&i2c_val);
 	if (status < 0)
-		return status;
+		goto unlock_and_exit;
 	val |= (i2c_val << 16);
 	sensor_type = tsens->t_data->sensor_type | TSENS_READ_BYTE3;
 	status = tsens_i2c_smbus_read_byte_data(i2c_c,
 						sensor_type,
 						&i2c_val);
 	if (status < 0)
-		return status;
+		goto unlock_and_exit;
 	val |= (i2c_val << 24);
 	*temp = val;
+	mutex_unlock(sync_unregister_mutex);
 	return 0;
+
+unlock_and_exit:
+	mutex_unlock(sync_unregister_mutex);
+	return status;
 }
 
 static int intel_tsens_thermal_get_trip_type(struct thermal_zone_device *zone,
@@ -246,12 +260,16 @@ static void intel_tsens_remove_tz(struct intel_hddl_clients *d)
 		struct intel_tsens_host *tsens = d->tsens[i];
 
 		if (tsens->tz_smbus) {
+			mutex_lock(&tsens->sync_smb_unregister);
+			tsens->i2c_smbus = NULL;
 			thermal_zone_device_unregister(tsens->tz_smbus);
-			tsens->tz_smbus = NULL;
+			mutex_unlock(&tsens->sync_smb_unregister);
 		}
 		if (tsens->tz_xlk) {
-			thermal_zone_device_unregister(tsens->tz_xlk);
+			mutex_lock(&tsens->sync_xlk_unregister);
 			tsens->tz_xlk = NULL;
+			thermal_zone_device_unregister(tsens->tz_xlk);
+			mutex_unlock(&tsens->sync_xlk_unregister);
 		}
 	}
 }
@@ -275,6 +293,7 @@ static int intel_tsens_tj_probe(struct i2c_client *client,
 					  tsens->t_data->name,
 					  i2c_str, device_id);
 			tsens->i2c_smbus = client;
+			mutex_init(&tsens->sync_smb_unregister);
 			ret = intel_tsens_add_tz(tsens,
 						 &tsens->tz_smbus,
 						 tsens->sensor_name_smbus,
@@ -298,6 +317,7 @@ static int intel_tsens_tj_probe(struct i2c_client *client,
 					  tsens->t_data->name,
 					  i2c_str, device_id);
 			tsens->i2c_xlk = client;
+			mutex_init(&tsens->sync_xlk_unregister);
 			ret = intel_tsens_add_tz(tsens,
 						 &tsens->tz_xlk,
 						 tsens->sensor_name_xlk,

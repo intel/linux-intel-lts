@@ -25,6 +25,8 @@ struct intel_tsens_host {
 	struct i2c_client *i2c_smbus;
 	struct thermal_zone_device *tz_xlk;
 	struct thermal_zone_device *tz_smbus;
+	struct mutex sync_smb_unregister;
+	struct mutex sync_xlk_unregister;
 };
 
 struct intel_tsens_host_plat_data {
