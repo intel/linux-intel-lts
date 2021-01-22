@@ -710,7 +710,7 @@ static void igc_ptm_start(struct igc_adapter *adapter)
 
 	ctrl = IGC_PTM_CTRL_EN |
 		IGC_PTM_CTRL_SHRT_CYC(20) |
-		IGC_PTM_CTRL_PTM_TO(110);
+		IGC_PTM_CTRL_PTM_TO(255);
 
 	cycle_ctrl = IGC_PTM_CYCLE_CTRL_CYC_TIME(IGC_PTM_CYCLE_TIME_MSECS) |
 		IGC_PTM_CYCLE_CTRL_AUTO_CYC_EN;
