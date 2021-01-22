@@ -148,6 +148,29 @@ static int intel_tsens_thermal_get_trip_temp(struct thermal_zone_device *zone,
 	return 0;
 }
 
+static int intel_tsens_thermal_set_trip_temp(struct thermal_zone_device *tz,
+					     int trip, int temp)
+{
+	struct intel_tsens_host *tsens =
+		(struct intel_tsens_host *)tz->devdata;
+	int i;
+
+	if (temp < 0 || trip >= tsens->t_data->n_trips)
+		return -EINVAL;
+	if (tsens->trip_info[trip]->trip_type == THERMAL_TRIP_CRITICAL)
+		return -EPERM;
+	/* do not allow passive to be set higher than critical */
+	for (i = 0; i < tsens->t_data->n_trips; i++) {
+		if (tsens->trip_info[i]->trip_type == THERMAL_TRIP_CRITICAL) {
+			if (temp > tsens->trip_info[i]->temp)
+				return -EINVAL;
+			break;
+		}
+	}
+	tsens->trip_info[trip]->temp = temp;
+	return 0;
+}
+
 static int intel_tsens_thermal_notify(struct thermal_zone_device *tz,
 				      int trip, enum thermal_trip_type type)
 {
@@ -224,6 +247,7 @@ static struct thermal_zone_device_ops tsens_thermal_ops = {
 	.get_temp = intel_tsens_get_temp,
 	.get_trip_type	= intel_tsens_thermal_get_trip_type,
 	.get_trip_temp	= intel_tsens_thermal_get_trip_temp,
+	.set_trip_temp	= intel_tsens_thermal_set_trip_temp,
 	.notify		= intel_tsens_thermal_notify,
 };
 
@@ -233,11 +257,11 @@ static int intel_tsens_add_tz(struct intel_tsens_host *tsens,
 			      struct device *dev,
 			      int i)
 {
-	int ret;
+	int ret, mask = (BIT(tsens->t_data->n_trips) - 1);
 
 	*tz =  thermal_zone_device_register(name,
 					    tsens->t_data->n_trips,
-					    0, tsens,
+					    mask, tsens,
 					    &tsens_thermal_ops,
 					    NULL,
 					    tsens->t_data->passive_delay,
