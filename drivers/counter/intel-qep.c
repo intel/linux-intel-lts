@@ -228,13 +228,6 @@ static int intel_qep_count_read(struct counter_device *counter,
 	return 0;
 }
 
-static int intel_qep_count_write(struct counter_device *counter,
-				 struct counter_count *count,
-				 unsigned long val)
-{
-	return 0;
-}
-
 static int intel_qep_function_get(struct counter_device *counter,
 				  struct counter_count *count,
 				  size_t *function)
@@ -319,7 +312,6 @@ static int intel_qep_action_set(struct counter_device *counter,
 
 static const struct counter_ops intel_qep_counter_ops = {
 	.count_read = intel_qep_count_read,
-	.count_write = intel_qep_count_write,
 
 	.function_get = intel_qep_function_get,
 	.function_set = intel_qep_function_set,
