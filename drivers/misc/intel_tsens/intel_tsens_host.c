@@ -118,7 +118,8 @@ static int intel_tsens_thermal_get_trip_type(struct thermal_zone_device *zone,
 	struct intel_tsens_host *tsens =
 		(struct intel_tsens_host *)zone->devdata;
 
-	*type = tsens->trip_info[trip]->trip_type;
+	if (tsens->trip_info[trip]->trip_type != THERMAL_TRIP_CRITICAL)
+		*type = tsens->trip_info[trip]->trip_type;
 	return 0;
 }
 
@@ -128,7 +129,8 @@ static int intel_tsens_thermal_get_trip_temp(struct thermal_zone_device *zone,
 	struct intel_tsens_host *tsens =
 		(struct intel_tsens_host *)zone->devdata;
 
-	*temp = tsens->trip_info[trip]->temp;
+	if (tsens->trip_info[trip]->trip_type != THERMAL_TRIP_CRITICAL)
+		*temp = tsens->trip_info[trip]->temp;
 	return 0;
 }
 
