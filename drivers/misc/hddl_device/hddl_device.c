@@ -413,7 +413,7 @@ static int intel_hddl_device_probe(struct intel_hddl_clients *d)
 	char device_name[XLINK_MAX_DEVICE_NAME_SIZE];
 	int rc;
 
-	if (d->status == HDDL_DEV_STATUS_CONNECTED)
+	if (d->status != HDDL_DEV_STATUS_DISCONNECTED)
 		return 0;
 	rc = xlink_get_device_name(&d->xlink_dev,
 				   device_name, XLINK_MAX_DEVICE_NAME_SIZE);
@@ -432,7 +432,6 @@ static int intel_hddl_device_probe(struct intel_hddl_clients *d)
 		dev_err(&d->pdev->dev, "failed to create thread\n");
 		return -EFAULT;
 	}
-	d->status = HDDL_DEV_STATUS_CONNECTED;
 
 	return 0;
 }
