@@ -199,6 +199,10 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		swid_data.board_id = client->board_info.board_id;
 		swid_data.soc_id = client->board_info.soc_id;
+		swid_data.iox_addr = client->board_info.iox_addr;
+		swid_data.iox_pin = client->board_info.iox_pin;
+		swid_data.pci_pin = client->board_info.pci_pin;
+		strcpy(swid_data.iox_name, client->board_info.iox_name);
 		if (client->adap[0])
 			swid_data.soc_adaptor_no[0] = client->adap[0]->nr;
 		if (client->adap[1])
