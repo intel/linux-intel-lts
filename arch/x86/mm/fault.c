@@ -803,26 +803,27 @@ static bool is_vsyscall_vaddr(unsigned long vaddr)
 static inline void cond_reenable_irqs_user(void)
 {
 	if (running_inband())
-		local_irq_enable_full();
-	else
-		hard_local_irq_enable();
+		unstall_inband_nocheck();
+
+	hard_local_irq_enable();
 }
 
 static inline void cond_reenable_irqs_kernel(irqentry_state_t state,
 					struct pt_regs *regs)
 {
-	if (regs->flags & X86_EFLAGS_IF)
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (state.stage_info & IRQENTRY_INBAND_STALLED)
+			unstall_inband_nocheck();
 		hard_local_irq_enable();
-	if (state.stage_info & IRQENTRY_INBAND_STALLED)
-		local_irq_enable();
+	}
 }
 
 static inline void cond_disable_irqs(void)
 {
+	hard_local_irq_disable();
+
 	if (running_inband())
-		local_irq_disable_full();
-	else
-		hard_local_irq_disable();
+		stall_inband_nocheck();
 }
 
 #else  /* !CONFIG_DOVETAIL */
