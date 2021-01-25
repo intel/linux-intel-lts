@@ -1,5 +1,2 @@
 # CVE-2020-26541
 0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
-
-# CVE-2020-36158
-0001-mwifiex-Fix-possible-buffer-overflows-in-mwifiex_cmd.patch
