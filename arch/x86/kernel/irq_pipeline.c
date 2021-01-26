@@ -235,57 +235,12 @@ void arch_handle_irq(struct pt_regs *regs, u8 vector, bool irq_movable)
 	generic_pipeline_irq(irq, regs);
 }
 
-static irqentry_state_t
-kernel_exit_check_downgrade(struct pt_regs *regs)
-{
-	irqentry_state_t ret = {
-		.exit_rcu = false,
-		.stage_info = 0,
-	};
-
-	if (running_oob())
-		return ret;
-
-	/*
-	 * The interrupt preempted some task running out-of-band, but
-	 * the latter switched back in-band before returning to
-	 * us. RCU should be watching, so we need to exit the kernel
-	 * in an orderly fashion, unwinding the original in-band
-	 * context before it moved out-of-band.
-	 */
-	if (irq_pipeline_debug()) {
-		WARN_ON_ONCE(!rcu_is_watching());
-		WARN_ON_ONCE(irqs_disabled());
-	}
-
-	local_irq_disable();
-
-	ret.exit_rcu = true;
-	ret.stage_info = IRQENTRY_INBAND_STALLED;
-
-	return ret;
-}
-
 noinstr void arch_pipeline_entry(struct pt_regs *regs, u8 vector)
 {
 	struct irq_stage_data *prevd;
 	irqentry_state_t state;
 
-	if (running_oob()) {
-		instrumentation_begin();
-		prevd = handle_irq_pipelined_prepare(regs);
-		arch_handle_irq(regs, vector, false);
-		handle_irq_pipelined_finish(prevd, regs);
-		state = kernel_exit_check_downgrade(regs);
-		instrumentation_end();
-		if (state.exit_rcu) {
-			irqentry_exit(regs, state);
-			WARN_ON_ONCE(irq_pipeline_debug() && need_resched());
-		}
-		return;
-	}
-
-	if (unlikely(irqs_disabled())) {
+	if (unlikely(running_oob() || irqs_disabled())) {
 		instrumentation_begin();
 		prevd = handle_irq_pipelined_prepare(regs);
 		arch_handle_irq(regs, vector, false);
