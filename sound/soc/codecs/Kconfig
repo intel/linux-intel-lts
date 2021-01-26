@@ -159,6 +159,7 @@ config SND_SOC_ALL_CODECS
 	imply SND_SOC_RT274
 	imply SND_SOC_RT286
 	imply SND_SOC_RT298
+	imply SND_SOC_TDF8532
 	imply SND_SOC_RT1011
 	imply SND_SOC_RT1015
 	imply SND_SOC_RT1015P
@@ -1147,6 +1148,10 @@ config SND_SOC_RT286
 config SND_SOC_RT298
 	tristate
 	depends on I2C
+
+config SND_SOC_TDF8532
+        tristate
+        depends on I2C
 
 config SND_SOC_RT1011
 	tristate
