@@ -1,0 +1,138 @@
+From f526627372c9518b7674608175344a828af52a09 Mon Sep 17 00:00:00 2001
+From: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Date: Fri, 10 Nov 2017 14:26:27 +0000
+Subject: [PATCH 2/8] drm/i915: Define an engine class enum for the uABI
+
+We want to be able to report back to userspace details about an engine's
+class, and in return for userspace to be able to request actions
+regarding certain classes of engines. To isolate the uABI from any
+variations between hw generations, we define an abstract class for the
+engines and internally map onto the hw.
+
+v2: Remove MAX from the uABI; keep it internal if we need it, but don't
+let userspace make the mistake of using it themselves.
+v3: s/OTHER/INVALID/
+  The use of OTHER is ill-defined, so remove it from the uABI as any
+  future new type of engine can define a class to suit it. But keep a
+  reserved value for an invalid class, so that we can always
+  unambiguously express when something doesn't belong to the
+  classification.
+
+Signed-off-by: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Lionel Landwerlin <lionel.g.landwerlin@intel.com>
+Reviewed-by: Joonas Lahtinen <joonas.lahtinen@linux.intel.com> #v2
+Reviewed-by: Lionel Landwerlin <lionel.g.landwerlin@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20171110142634.10551-1-chris@chris-wilson.co.uk
+---
+ drivers/gpu/drm/i915/intel_engine_cs.c  | 10 +++++++++-
+ drivers/gpu/drm/i915/intel_ringbuffer.h |  5 ++++-
+ include/uapi/drm/i915_drm.h             | 16 ++++++++++++++++
+ 3 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_engine_cs.c b/drivers/gpu/drm/i915/intel_engine_cs.c
+index 1fe6c56dad7a..2d6c62c4b192 100644
+--- a/drivers/gpu/drm/i915/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/intel_engine_cs.c
+@@ -46,6 +46,8 @@ struct engine_class_info {
+ 	const char *name;
+ 	int (*init_legacy)(struct intel_engine_cs *engine);
+ 	int (*init_execlists)(struct intel_engine_cs *engine);
++
++	u8 uabi_class;
+ };
+ 
+ static const struct engine_class_info intel_engine_classes[] = {
+@@ -53,21 +55,25 @@ static const struct engine_class_info intel_engine_classes[] = {
+ 		.name = "rcs",
+ 		.init_execlists = logical_render_ring_init,
+ 		.init_legacy = intel_init_render_ring_buffer,
++		.uabi_class = I915_ENGINE_CLASS_RENDER,
+ 	},
+ 	[COPY_ENGINE_CLASS] = {
+ 		.name = "bcs",
+ 		.init_execlists = logical_xcs_ring_init,
+ 		.init_legacy = intel_init_blt_ring_buffer,
++		.uabi_class = I915_ENGINE_CLASS_COPY,
+ 	},
+ 	[VIDEO_DECODE_CLASS] = {
+ 		.name = "vcs",
+ 		.init_execlists = logical_xcs_ring_init,
+ 		.init_legacy = intel_init_bsd_ring_buffer,
++		.uabi_class = I915_ENGINE_CLASS_VIDEO,
+ 	},
+ 	[VIDEO_ENHANCEMENT_CLASS] = {
+ 		.name = "vecs",
+ 		.init_execlists = logical_xcs_ring_init,
+ 		.init_legacy = intel_init_vebox_ring_buffer,
++		.uabi_class = I915_ENGINE_CLASS_VIDEO_ENHANCE,
+ 	},
+ };
+ 
+@@ -208,13 +214,15 @@ intel_engine_setup(struct drm_i915_private *dev_priv,
+ 	WARN_ON(snprintf(engine->name, sizeof(engine->name), "%s%u",
+ 			 class_info->name, info->instance) >=
+ 		sizeof(engine->name));
+-	engine->uabi_id = info->uabi_id;
+ 	engine->hw_id = engine->guc_id = info->hw_id;
+ 	engine->mmio_base = info->mmio_base;
+ 	engine->irq_shift = info->irq_shift;
+ 	engine->class = info->class;
+ 	engine->instance = info->instance;
+ 
++	engine->uabi_id = info->uabi_id;
++	engine->uabi_class = class_info->uabi_class;
++
+ 	engine->context_size = __intel_engine_context_size(dev_priv,
+ 							   engine->class);
+ 	if (WARN_ON(engine->context_size > BIT(20)))
+diff --git a/drivers/gpu/drm/i915/intel_ringbuffer.h b/drivers/gpu/drm/i915/intel_ringbuffer.h
+index 45182b7976a5..6370d635a005 100644
+--- a/drivers/gpu/drm/i915/intel_ringbuffer.h
++++ b/drivers/gpu/drm/i915/intel_ringbuffer.h
+@@ -288,11 +288,14 @@ struct intel_engine_execlists {
+ struct intel_engine_cs {
+ 	struct drm_i915_private *i915;
+ 	char name[INTEL_ENGINE_CS_MAX_NAME];
++
+ 	enum intel_engine_id id;
+-	unsigned int uabi_id;
+ 	unsigned int hw_id;
+ 	unsigned int guc_id;
+ 
++	u8 uabi_id;
++	u8 uabi_class;
++
+ 	u8 class;
+ 	u8 instance;
+ 	u32 context_size;
+diff --git a/include/uapi/drm/i915_drm.h b/include/uapi/drm/i915_drm.h
+index c689bcb0df3b..23c362211a11 100644
+--- a/include/uapi/drm/i915_drm.h
++++ b/include/uapi/drm/i915_drm.h
+@@ -86,6 +86,22 @@ enum i915_mocs_table_index {
+ 	I915_MOCS_CACHED,
+ };
+ 
++/*
++ * Different engines serve different roles, and there may be more than one
++ * engine serving each role. enum drm_i915_gem_engine_class provides a
++ * classification of the role of the engine, which may be used when requesting
++ * operations to be performed on a certain subset of engines, or for providing
++ * information about that group.
++ */
++enum drm_i915_gem_engine_class {
++	I915_ENGINE_CLASS_RENDER	= 0,
++	I915_ENGINE_CLASS_COPY		= 1,
++	I915_ENGINE_CLASS_VIDEO		= 2,
++	I915_ENGINE_CLASS_VIDEO_ENHANCE	= 3,
++
++	I915_ENGINE_CLASS_INVALID	= -1
++};
++
+ /* Each region is a minimum of 16k, and there are at most 255 of them.
+  */
+ #define I915_NR_TEX_REGIONS 255	/* table size 2k - maximum due to use
+-- 
+2.17.1
+

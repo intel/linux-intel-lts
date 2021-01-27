@@ -1,0 +1,112 @@
+From 86e5ce62df767516ab30abd8d75946afb4479df2 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Tue, 24 Oct 2017 23:08:55 +0100
+Subject: [PATCH 1/8] drm/i915: Use same test for eviction and submitting
+ kernel context
+
+During evict, we wish to idle the GPU if we see that the GGTT is full.
+However, our test for idle in i915_gem_evict_something() and in
+i915_gem_switch_to_kernel_context() do not match leading to
+disappointment - we never believe that we are idle and keep trying to
+flush the GGTT ad infinitum.
+
+Bugzilla: https://bugs.freedesktop.org/show_bug.cgi?id=103438
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Cc: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Cc: Mika Kuoppala <mika.kuoppala@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20171024220855.30155-2-chris@chris-wilson.co.uk
+Reviewed-by: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+---
+ drivers/gpu/drm/i915/i915_gem_context.c | 7 +++----
+ drivers/gpu/drm/i915/i915_gem_evict.c   | 3 ++-
+ drivers/gpu/drm/i915/intel_engine_cs.c  | 6 ++++++
+ drivers/gpu/drm/i915/intel_ringbuffer.h | 2 ++
+ 4 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem_context.c b/drivers/gpu/drm/i915/i915_gem_context.c
+index e3c1bb139db5..e54412d49af9 100644
+--- a/drivers/gpu/drm/i915/i915_gem_context.c
++++ b/drivers/gpu/drm/i915/i915_gem_context.c
+@@ -947,7 +947,7 @@ int i915_switch_context(struct drm_i915_gem_request *req)
+ 	return do_rcs_switch(req);
+ }
+ 
+-static bool engine_has_kernel_context(struct intel_engine_cs *engine)
++static bool engine_has_idle_kernel_context(struct intel_engine_cs *engine)
+ {
+ 	struct i915_gem_timeline *timeline;
+ 
+@@ -963,8 +963,7 @@ static bool engine_has_kernel_context(struct intel_engine_cs *engine)
+ 			return false;
+ 	}
+ 
+-	return (!engine->last_retired_context ||
+-		i915_gem_context_is_kernel(engine->last_retired_context));
++	return intel_engine_has_kernel_context(engine);
+ }
+ 
+ int i915_gem_switch_to_kernel_context(struct drm_i915_private *dev_priv)
+@@ -981,7 +980,7 @@ int i915_gem_switch_to_kernel_context(struct drm_i915_private *dev_priv)
+ 		struct drm_i915_gem_request *req;
+ 		int ret;
+ 
+-		if (engine_has_kernel_context(engine))
++		if (engine_has_idle_kernel_context(engine))
+ 			continue;
+ 
+ 		req = i915_gem_request_alloc(engine, dev_priv->kernel_context);
+diff --git a/drivers/gpu/drm/i915/i915_gem_evict.c b/drivers/gpu/drm/i915/i915_gem_evict.c
+index e161d383b526..8f77032e0154 100644
+--- a/drivers/gpu/drm/i915/i915_gem_evict.c
++++ b/drivers/gpu/drm/i915/i915_gem_evict.c
+@@ -42,7 +42,7 @@ static bool ggtt_is_idle(struct drm_i915_private *i915)
+ 	       return false;
+ 
+        for_each_engine(engine, i915, id) {
+-	       if (engine->last_retired_context != i915->kernel_context)
++	       if (!intel_engine_has_kernel_context(engine))
+ 		       return false;
+        }
+ 
+@@ -69,6 +69,7 @@ static int ggtt_flush(struct drm_i915_private *i915)
+ 	if (err)
+ 		return err;
+ 
++	GEM_BUG_ON(!ggtt_is_idle(i915));
+ 	return 0;
+ }
+ 
+diff --git a/drivers/gpu/drm/i915/intel_engine_cs.c b/drivers/gpu/drm/i915/intel_engine_cs.c
+index 52166ff74b19..1fe6c56dad7a 100644
+--- a/drivers/gpu/drm/i915/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/intel_engine_cs.c
+@@ -1625,6 +1625,12 @@ bool intel_engines_are_idle(struct drm_i915_private *dev_priv)
+ 	return true;
+ }
+ 
++bool intel_engine_has_kernel_context(const struct intel_engine_cs *engine)
++{
++	return (!engine->last_retired_context ||
++		i915_gem_context_is_kernel(engine->last_retired_context));
++}
++
+ void intel_engines_reset_default_submission(struct drm_i915_private *i915)
+ {
+ 	struct intel_engine_cs *engine;
+diff --git a/drivers/gpu/drm/i915/intel_ringbuffer.h b/drivers/gpu/drm/i915/intel_ringbuffer.h
+index 9b62189958bf..45182b7976a5 100644
+--- a/drivers/gpu/drm/i915/intel_ringbuffer.h
++++ b/drivers/gpu/drm/i915/intel_ringbuffer.h
+@@ -895,6 +895,8 @@ static inline u32 *gen8_emit_pipe_control(u32 *batch, u32 flags, u32 offset)
+ bool intel_engine_is_idle(struct intel_engine_cs *engine);
+ bool intel_engines_are_idle(struct drm_i915_private *dev_priv);
+ 
++bool intel_engine_has_kernel_context(const struct intel_engine_cs *engine);
++
+ void intel_engines_mark_idle(struct drm_i915_private *i915);
+ void intel_engines_reset_default_submission(struct drm_i915_private *i915);
+ 
+-- 
+2.17.1
+

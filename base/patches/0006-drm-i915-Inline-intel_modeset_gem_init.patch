@@ -1,0 +1,66 @@
+From 840d11c14e4c293b52b6037b8ef92725d0de2639 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Fri, 10 Nov 2017 14:26:31 +0000
+Subject: [PATCH 6/8] drm/i915: Inline intel_modeset_gem_init()
+
+intel_modeset_gem_init() now only sets up the legacy overlay, so let's
+remove the function and call the setup directly during driver load. This
+should help us find a better point in the initialisation sequence for it
+later.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Reviewed-by: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Reviewed-by: Mika Kuoppala <mika.kuoppala@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20171110142634.10551-5-chris@chris-wilson.co.uk
+---
+ drivers/gpu/drm/i915/i915_drv.c      | 2 +-
+ drivers/gpu/drm/i915/i915_drv.h      | 1 -
+ drivers/gpu/drm/i915/intel_display.c | 7 -------
+ 3 files changed, 1 insertion(+), 9 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.c b/drivers/gpu/drm/i915/i915_drv.c
+index fb274227fef2..ef6485e45d78 100644
+--- a/drivers/gpu/drm/i915/i915_drv.c
++++ b/drivers/gpu/drm/i915/i915_drv.c
+@@ -684,7 +684,7 @@ static int i915_load_modeset_init(struct drm_device *dev)
+ 	if (ret)
+ 		goto cleanup_uc;
+ 
+-	intel_modeset_gem_init(dev);
++	intel_setup_overlay(dev_priv);
+ 
+ 	if (INTEL_INFO(dev_priv)->num_pipes == 0)
+ 		return 0;
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index 7df83a672189..efbf32c74f06 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -4045,7 +4045,6 @@ void intel_device_info_dump(struct drm_i915_private *dev_priv);
+ /* modesetting */
+ extern void intel_modeset_init_hw(struct drm_device *dev);
+ extern int intel_modeset_init(struct drm_device *dev);
+-extern void intel_modeset_gem_init(struct drm_device *dev);
+ extern void intel_modeset_cleanup(struct drm_device *dev);
+ extern int intel_connector_register(struct drm_connector *);
+ extern void intel_connector_unregister(struct drm_connector *);
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 52081db8db53..c45c333f057e 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -15725,13 +15725,6 @@ void intel_display_resume(struct drm_device *dev)
+ 		drm_atomic_state_put(state);
+ }
+ 
+-void intel_modeset_gem_init(struct drm_device *dev)
+-{
+-	struct drm_i915_private *dev_priv = to_i915(dev);
+-
+-	intel_setup_overlay(dev_priv);
+-}
+-
+ int intel_connector_register(struct drm_connector *connector)
+ {
+ 	struct intel_connector *intel_connector = to_intel_connector(connector);
+-- 
+2.17.1
+

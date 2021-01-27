@@ -106,3 +106,13 @@
 
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
+
+# CVE-2020-8832
+0001-drm-i915-Use-same-test-for-eviction-and-submitting-k.patch
+0002-drm-i915-Define-an-engine-class-enum-for-the-uABI.patch
+0003-drm-i915-Force-the-switch-to-the-i915-kernel_context.patch
+0004-drm-i915-Move-GT-powersaving-init-to-i915_gem_init.patch
+0005-drm-i915-Move-intel_init_clock_gating-to-i915_gem_in.patch
+0006-drm-i915-Inline-intel_modeset_gem_init.patch
+0007-drm-i915-Mark-the-context-state-as-dirty-written.patch
+0008-drm-i915-Record-the-default-hw-state-after-reset-upo.patch

@@ -1,0 +1,94 @@
+From 1992be84681ae7489315d1f25ce316de23c44055 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Fri, 10 Nov 2017 14:26:28 +0000
+Subject: [PATCH 3/8] drm/i915: Force the switch to the i915->kernel_context
+
+In the next few patches, we will have a hard requirement that we emit a
+context-switch to the perma-pinned i915->kernel_context (so that we can
+save the HW state using that context-switch). As the first context
+itself may be classed as a kernel context, we want to be explicit in our
+comparison. For an extra-layer of finesse, we can check the last
+unretired context on the engine; as well as the last retired context
+when idle.
+
+v2: verbose verbosity
+v3: Always force the switch, even when the engine is idle, and update
+the assert that this happens before suspend.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Reviewed-by: Joonas Lahtinen <joonas.lahtinen@linux.intel.com> #v1
+Reviewed-by: Mika Kuoppala <mika.kuoppala@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20171110142634.10551-2-chris@chris-wilson.co.uk
+---
+ drivers/gpu/drm/i915/i915_gem.c        | 10 ++++++----
+ drivers/gpu/drm/i915/intel_engine_cs.c | 26 ++++++++++++++++++++++++--
+ 2 files changed, 30 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
+index ead0a0df81a0..9034a1d77b8e 100644
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -4516,14 +4516,16 @@ void __i915_gem_object_release_unless_active(struct drm_i915_gem_object *obj)
+ 		i915_gem_object_put(obj);
+ }
+ 
+-static void assert_kernel_context_is_current(struct drm_i915_private *dev_priv)
++static void assert_kernel_context_is_current(struct drm_i915_private *i915)
+ {
++	struct i915_gem_context *kernel_context = i915->kernel_context;
+ 	struct intel_engine_cs *engine;
+ 	enum intel_engine_id id;
+ 
+-	for_each_engine(engine, dev_priv, id)
+-		GEM_BUG_ON(engine->last_retired_context &&
+-			   !i915_gem_context_is_kernel(engine->last_retired_context));
++	for_each_engine(engine, i915, id) {
++		GEM_BUG_ON(__i915_gem_active_peek(&engine->timeline->last_request));
++		GEM_BUG_ON(engine->last_retired_context != kernel_context);
++	}
+ }
+ 
+ void i915_gem_sanitize(struct drm_i915_private *i915)
+diff --git a/drivers/gpu/drm/i915/intel_engine_cs.c b/drivers/gpu/drm/i915/intel_engine_cs.c
+index 2d6c62c4b192..7cb4797fd6e5 100644
+--- a/drivers/gpu/drm/i915/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/intel_engine_cs.c
+@@ -1633,10 +1633,32 @@ bool intel_engines_are_idle(struct drm_i915_private *dev_priv)
+ 	return true;
+ }
+ 
++/**
++ * intel_engine_has_kernel_context:
++ * @engine: the engine
++ *
++ * Returns true if the last context to be executed on this engine, or has been
++ * executed if the engine is already idle, is the kernel context
++ * (#i915.kernel_context).
++ */
+ bool intel_engine_has_kernel_context(const struct intel_engine_cs *engine)
+ {
+-	return (!engine->last_retired_context ||
+-		i915_gem_context_is_kernel(engine->last_retired_context));
++	const struct i915_gem_context * const kernel_context =
++		engine->i915->kernel_context;
++	struct drm_i915_gem_request *rq;
++
++	lockdep_assert_held(&engine->i915->drm.struct_mutex);
++
++	/*
++	 * Check the last context seen by the engine. If active, it will be
++	 * the last request that remains in the timeline. When idle, it is
++	 * the last executed context as tracked by retirement.
++	 */
++	rq = __i915_gem_active_peek(&engine->timeline->last_request);
++	if (rq)
++		return rq->ctx == kernel_context;
++	else
++		return engine->last_retired_context == kernel_context;
+ }
+ 
+ void intel_engines_reset_default_submission(struct drm_i915_private *i915)
+-- 
+2.17.1
+

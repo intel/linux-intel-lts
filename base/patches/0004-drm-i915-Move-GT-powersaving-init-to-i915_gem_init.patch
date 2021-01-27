@@ -1,0 +1,72 @@
+From 66e3499edd1787731447d6c41a1e0f7707252f46 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Fri, 10 Nov 2017 14:26:29 +0000
+Subject: [PATCH 4/8] drm/i915: Move GT powersaving init to i915_gem_init()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+GT powersaving is tightly coupled to the request infrastructure. To
+avoid complications with the order of initialisation in the next patch
+(where we want to send requests to hw during GEM init) move the
+powersaving initialisation into the purview of i915_gem_init().
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Ville Syrjälä <ville.syrjala@linux.intel.com>
+Reviewed-by: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20171110142634.10551-3-chris@chris-wilson.co.uk
+---
+ drivers/gpu/drm/i915/i915_gem.c      | 2 ++
+ drivers/gpu/drm/i915/intel_display.c | 2 --
+ drivers/gpu/drm/i915/intel_pm.c      | 2 --
+ 3 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
+index 9034a1d77b8e..a066abc20fea 100644
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -4857,6 +4857,8 @@ int i915_gem_init(struct drm_i915_private *dev_priv)
+ 	if (ret)
+ 		goto out_unlock;
+ 
++	intel_init_gt_powersave(dev_priv);
++
+ 	ret = i915_gem_init_hw(dev_priv);
+ 	if (ret == -EIO) {
+ 		/* Allow engine initialisation to fail by marking the GPU as
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index d0d07d859f05..55b7fe56b911 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -15729,8 +15729,6 @@ void intel_modeset_gem_init(struct drm_device *dev)
+ {
+ 	struct drm_i915_private *dev_priv = to_i915(dev);
+ 
+-	intel_init_gt_powersave(dev_priv);
+-
+ 	intel_init_clock_gating(dev_priv);
+ 
+ 	intel_setup_overlay(dev_priv);
+diff --git a/drivers/gpu/drm/i915/intel_pm.c b/drivers/gpu/drm/i915/intel_pm.c
+index 8b2073e7910d..64118e16db7e 100644
+--- a/drivers/gpu/drm/i915/intel_pm.c
++++ b/drivers/gpu/drm/i915/intel_pm.c
+@@ -8104,7 +8104,6 @@ void intel_init_gt_powersave(struct drm_i915_private *dev_priv)
+ 		intel_runtime_pm_get(dev_priv);
+ 	}
+ 
+-	mutex_lock(&dev_priv->drm.struct_mutex);
+ 	mutex_lock(&dev_priv->pcu_lock);
+ 
+ 	i915_rc6_ctx_wa_init(dev_priv);
+@@ -8148,7 +8147,6 @@ void intel_init_gt_powersave(struct drm_i915_private *dev_priv)
+ 	dev_priv->rps.boost_freq = dev_priv->rps.max_freq;
+ 
+ 	mutex_unlock(&dev_priv->pcu_lock);
+-	mutex_unlock(&dev_priv->drm.struct_mutex);
+ 
+ 	intel_autoenable_gt_powersave(dev_priv);
+ }
+-- 
+2.17.1
+

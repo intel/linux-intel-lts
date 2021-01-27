@@ -1,0 +1,124 @@
+From 8a3ed9b5d849324fe5ae62cee2a4efce04a15546 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Fri, 10 Nov 2017 14:26:32 +0000
+Subject: [PATCH 7/8] drm/i915: Mark the context state as dirty/written
+
+In the next few patches, we will want to both copy out of the context
+image and write a valid image into a new context. To be completely safe,
+we should then couple in our domain tracking to ensure that we don't
+have any issues with stale data remaining in unwanted cachelines.
+
+Historically, we omitted the .write=true from the call to set-gtt-domain
+in i915_switch_context() in order to avoid a stall between every request
+as we would want to wait for the previous context write from the gpu.
+Since then, we limit the set-gtt-domain to only occur when we first bind
+the vma, so once in use we will never stall, and we are sure to flush
+the context following a load from swap.
+
+Equally we never applied the lessons learnt from ringbuffer submission
+to execlists; so time to apply the flush of the lrc after load as well.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Acked-by: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Reviewed-by: Mika Kuoppala <mika.kuoppala@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20171110142634.10551-6-chris@chris-wilson.co.uk
+---
+ drivers/gpu/drm/i915/intel_lrc.c        | 32 ++++++++++++++++++-------
+ drivers/gpu/drm/i915/intel_ringbuffer.c |  7 +++---
+ 2 files changed, 27 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_lrc.c b/drivers/gpu/drm/i915/intel_lrc.c
+index 772e577adf44..a9097b0b4052 100644
+--- a/drivers/gpu/drm/i915/intel_lrc.c
++++ b/drivers/gpu/drm/i915/intel_lrc.c
+@@ -1133,12 +1133,34 @@ static void execlists_schedule(struct drm_i915_gem_request *request, int prio)
+ 	spin_unlock_irq(&engine->timeline->lock);
+ }
+ 
++static int __context_pin(struct i915_gem_context *ctx, struct i915_vma *vma)
++{
++	unsigned int flags;
++	int err;
++
++	/*
++	 * Clear this page out of any CPU caches for coherent swap-in/out.
++	 * We only want to do this on the first bind so that we do not stall
++	 * on an active context (which by nature is already on the GPU).
++	 */
++	if (!(vma->flags & I915_VMA_GLOBAL_BIND)) {
++		err = i915_gem_object_set_to_gtt_domain(vma->obj, true);
++		if (err)
++			return err;
++	}
++
++	flags = PIN_GLOBAL | PIN_HIGH;
++	if (ctx->ggtt_offset_bias)
++		flags |= PIN_OFFSET_BIAS | ctx->ggtt_offset_bias;
++
++	return i915_vma_pin(vma, 0, GEN8_LR_CONTEXT_ALIGN, flags);
++}
++
+ static struct intel_ring *
+ execlists_context_pin(struct intel_engine_cs *engine,
+ 		      struct i915_gem_context *ctx)
+ {
+ 	struct intel_context *ce = &ctx->engine[engine->id];
+-	unsigned int flags;
+ 	void *vaddr;
+ 	int ret;
+ 
+@@ -1155,11 +1177,7 @@ execlists_context_pin(struct intel_engine_cs *engine,
+ 	}
+ 	GEM_BUG_ON(!ce->state);
+ 
+-	flags = PIN_GLOBAL | PIN_HIGH;
+-	if (ctx->ggtt_offset_bias)
+-		flags |= PIN_OFFSET_BIAS | ctx->ggtt_offset_bias;
+-
+-	ret = i915_vma_pin(ce->state, 0, GEN8_LR_CONTEXT_ALIGN, flags);
++	ret = __context_pin(ctx, ce->state);
+ 	if (ret)
+ 		goto err;
+ 
+@@ -1179,8 +1197,6 @@ execlists_context_pin(struct intel_engine_cs *engine,
+ 	ce->lrc_reg_state[CTX_RING_BUFFER_START+1] =
+ 		i915_ggtt_offset(ce->ring->vma);
+ 
+-	ce->state->obj->mm.dirty = true;
+-
+ 	i915_gem_context_get(ctx);
+ out:
+ 	return ce->ring;
+diff --git a/drivers/gpu/drm/i915/intel_ringbuffer.c b/drivers/gpu/drm/i915/intel_ringbuffer.c
+index 455643254731..056fba815983 100644
+--- a/drivers/gpu/drm/i915/intel_ringbuffer.c
++++ b/drivers/gpu/drm/i915/intel_ringbuffer.c
+@@ -1362,12 +1362,13 @@ static int context_pin(struct i915_gem_context *ctx)
+ 	struct i915_vma *vma = ctx->engine[RCS].state;
+ 	int ret;
+ 
+-	/* Clear this page out of any CPU caches for coherent swap-in/out.
++	/*
++	 * Clear this page out of any CPU caches for coherent swap-in/out.
+ 	 * We only want to do this on the first bind so that we do not stall
+ 	 * on an active context (which by nature is already on the GPU).
+ 	 */
+ 	if (!(vma->flags & I915_VMA_GLOBAL_BIND)) {
+-		ret = i915_gem_object_set_to_gtt_domain(vma->obj, false);
++		ret = i915_gem_object_set_to_gtt_domain(vma->obj, true);
+ 		if (ret)
+ 			return ret;
+ 	}
+@@ -1443,8 +1444,6 @@ intel_ring_context_pin(struct intel_engine_cs *engine,
+ 		ret = context_pin(ctx);
+ 		if (ret)
+ 			goto err;
+-
+-		ce->state->obj->mm.dirty = true;
+ 	}
+ 
+ 	/* The kernel context is only used as a placeholder for flushing the
+-- 
+2.17.1
+
