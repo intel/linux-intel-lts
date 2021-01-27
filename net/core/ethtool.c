@@ -50,6 +50,31 @@ int ethtool_op_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
 }
 EXPORT_SYMBOL(ethtool_op_get_ts_info);
 
+/**
+ * ethtool_frag_size_to_mult() - Convert from a Frame Preemption
+ * Additional Fragment size in bytes to a multiplier.
+ * @frag_size: minimum non-final fragment size in bytes.
+ *
+ * The multiplier is defined as:
+ *	"A 2-bit integer value used to indicate the minimum size of
+ *	non-final fragments supported by the receiver on the given port
+ *	associated with the local System. This value is expressed in units
+ *	of 64 octets of additional fragment length."
+ *	Equivalent to `30.14.1.7 aMACMergeAddFragSize` from the IEEE 802.3-2018
+ *	standard.
+ *
+ * Return: the multiplier is a number in the [0, 2] interval.
+ */
+u8 ethtool_frag_size_to_mult(u32 frag_size)
+{
+	u8 mult = (frag_size / 64) - 1;
+
+	mult = clamp_t(u8, mult, 0, 3);
+
+	return mult;
+}
+EXPORT_SYMBOL(ethtool_frag_size_to_mult);
+
 /* Handlers for each ethtool command */
 
 #define ETHTOOL_DEV_FEATURE_WORDS	((NETDEV_FEATURE_COUNT + 31) / 32)
@@ -2556,6 +2581,36 @@ static int ethtool_set_fecparam(struct net_device *dev, void __user *useraddr)
 	return dev->ethtool_ops->set_fecparam(dev, &fecparam);
 }
 
+static int ethtool_get_preempt(struct net_device *dev, void __user *useraddr)
+{
+	struct ethtool_fp fpparam = { .cmd = ETHTOOL_GFP };
+	int rc;
+
+	if (!dev->ethtool_ops->get_preempt)
+		return -EOPNOTSUPP;
+
+	rc = dev->ethtool_ops->get_preempt(dev, &fpparam);
+	if (rc)
+		return rc;
+
+	if (copy_to_user(useraddr, &fpparam, sizeof(fpparam)))
+		return -EFAULT;
+	return 0;
+}
+
+static int ethtool_set_preempt(struct net_device *dev, void __user *useraddr)
+{
+	struct ethtool_fp fpparam;
+
+	if (!dev->ethtool_ops->set_preempt)
+		return -EOPNOTSUPP;
+
+	if (copy_from_user(&fpparam, useraddr, sizeof(fpparam)))
+		return -EFAULT;
+
+	return dev->ethtool_ops->set_preempt(dev, &fpparam);
+}
+
 /* The main entry point in this file.  Called from net/core/dev_ioctl.c */
 
 int dev_ethtool(struct net *net, struct ifreq *ifr)
@@ -2830,6 +2885,12 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 		break;
 	case ETHTOOL_SFECPARAM:
 		rc = ethtool_set_fecparam(dev, useraddr);
+		break;
+	case ETHTOOL_GFP:
+		rc = ethtool_get_preempt(dev, useraddr);
+		break;
+	case ETHTOOL_SFP:
+		rc = ethtool_set_preempt(dev, useraddr);
 		break;
 	default:
 		rc = -EOPNOTSUPP;
