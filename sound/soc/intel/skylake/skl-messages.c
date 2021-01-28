@@ -2596,8 +2596,9 @@ int skl_create_pipeline(struct skl_sst *ctx, struct skl_pipe *pipe)
 	}
 
 	pipe->state = SKL_PIPE_CREATED;
+#ifdef CONFIG_DEBUG_FS
 	skl_dbg_event(ctx, pipe->state);
-
+#endif /* CONFIG_DEBUG_FS */
 	return 0;
 }
 
@@ -2646,7 +2647,9 @@ int skl_delete_pipe(struct skl_sst *ctx, struct skl_pipe *pipe)
 	}
 
 	pipe->state = SKL_PIPE_INVALID;
+#ifdef CONFIG_DEBUG_FS
 	skl_dbg_event(ctx, pipe->state);
+#endif /* CONFIG_DEBUG_FS */
 	ret = skl_notify_tplg_change(ctx, SKL_TPLG_CHG_NOTIFY_PIPELINE_DELETE);
 	if (ret < 0)
 		dev_warn(ctx->dev,
