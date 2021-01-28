@@ -73,6 +73,7 @@ struct trusty_x86_64_irq_s {
 		.vector = 0x21,
 		.action = &tmp_action,
 	},
+*/
 	{
 		.irq = 3,
 		.vector = 0x22,
@@ -83,21 +84,22 @@ struct trusty_x86_64_irq_s {
 		.vector = 0x23,
 		.action = &tmp_action,
 	},
-*/
 };
 
-static long trusty_smc8_binder(void *args)
-{
-	struct smc_ret8 *para = (struct smc_ret8*)args;
+struct smc_ret8 trusty_smc8(unsigned long r0, unsigned long r1,
+			    unsigned long r2, unsigned long r3,
+			    unsigned long r4, unsigned long r5,
+			    unsigned long r6, unsigned long r7) {
+	struct smc_ret8 para = {r0, r1, r2, r3, r4, r5, r6, r7};
 	register unsigned long smc_id asm("rax") = IKGT_SMC_HC_ID;
-	register unsigned long arg0 asm("rdi") = para->r0;
-	register unsigned long arg1 asm("rsi") = para->r1;
-	register unsigned long arg2 asm("rdx") = para->r2;
-	register unsigned long arg3 asm("rcx") = para->r3;
-	register unsigned long arg4 asm("r8")  = para->r4;
-	register unsigned long arg5 asm("r9")  = para->r5;
-	register unsigned long arg6 asm("r10") = para->r6;
-	register unsigned long arg7 asm("r11") = para->r7;
+	register unsigned long arg0 asm("rdi") = para.r0;
+	register unsigned long arg1 asm("rsi") = para.r1;
+	register unsigned long arg2 asm("rdx") = para.r2;
+	register unsigned long arg3 asm("rcx") = para.r3;
+	register unsigned long arg4 asm("r8")  = para.r4;
+	register unsigned long arg5 asm("r9")  = para.r5;
+	register unsigned long arg6 asm("r10") = para.r6;
+	register unsigned long arg7 asm("r11") = para.r7;
 
 	__asm__ __volatile__ (
 			"vmcall\n\r"
@@ -107,25 +109,14 @@ static long trusty_smc8_binder(void *args)
 				"r" (arg4), "r" (arg5), "r" (arg6), "r" (arg7)
 			: "memory");
 
-	para->r0 = arg0;
-	para->r1 = arg1;
-	para->r2 = arg2;
-	para->r3 = arg3;
-	para->r4 = arg4;
-	para->r5 = arg5;
-	para->r6 = arg6;
-	para->r7 = arg7;
-
-	return 0;
-}
-
-struct smc_ret8 trusty_smc8(unsigned long r0, unsigned long r1,
-			    unsigned long r2, unsigned long r3,
-			    unsigned long r4, unsigned long r5,
-			    unsigned long r6, unsigned long r7) {
-	struct smc_ret8 para = {r0, r1, r2, r3, r4, r5, r6, r7};
-
-	work_on_cpu(0, trusty_smc8_binder, (void *)&para);
+	para.r0 = arg0;
+	para.r1 = arg1;
+	para.r2 = arg2;
+	para.r3 = arg3;
+	para.r4 = arg4;
+	para.r5 = arg5;
+	para.r6 = arg6;
+	para.r7 = arg7;
 
 	return para;
 }
