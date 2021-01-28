@@ -143,9 +143,7 @@ static void dwmac4_rx_queue_priority(struct mac_device_info *hw,
 
 	value = readl(ioaddr + base_register);
 
-	if (!value)
-		value &= ~GMAC_RXQCTRL_PSRQX_MASK(queue);
-
+	value &= ~GMAC_RXQCTRL_PSRQX_MASK(queue);
 	value |= (prio << GMAC_RXQCTRL_PSRQX_SHIFT(queue)) &
 						GMAC_RXQCTRL_PSRQX_MASK(queue);
 	writel(value, ioaddr + base_register);
