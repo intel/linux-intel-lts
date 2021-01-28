@@ -857,7 +857,6 @@ int xlink_ipc_get_device_mode(u32 sw_device_id, u32 *power_mode)
 			pr_info("%s:Error IPC write %d\n", __func__, rc);
 			goto getdev_error;
 		}
-		pr_info("%s:GET_DEVICE_PWR_MODE_REQ\n", __func__);
 		memset(databuf, 0, sizeof(databuf));
 		rc = xlink_ipc_read(sw_device_id, databuf, &size, CONTROL_CHAN_TIMEOUT, &ipc);
 		if (rc || size > XLINK_MAX_BUF_SIZE) {
@@ -868,8 +867,6 @@ int xlink_ipc_get_device_mode(u32 sw_device_id, u32 *power_mode)
 		} else {
 			if (cmd->command == GET_DEVICE_PWR_MODE_RESP) {
 				*power_mode = cmd->data[1];
-				pr_info("%s:GET_DEVICE_PWR_MODE_RESP mode=%d %s\n", __func__,
-					cmd->data[1], (cmd->data[0]) ? "Fail" : "OK");
 				rc = (cmd->data[0]) ? EINVAL : 0;
 			} else {
 				rc = EINVAL;
@@ -918,7 +915,6 @@ int xlink_ipc_set_device_mode(u32 sw_device_id, u32 power_mode)
 			pr_info("%s:Error IPC write %d\n", __func__, rc);
 			goto setdev_error;
 		}
-		pr_info("%s:SET_DEVICE_PWR_MODE mode=%d\n", __func__, power_mode);
 		memset(databuf, 0, sizeof(databuf));
 		// wait for response
 		rc = xlink_ipc_read(sw_device_id, databuf, &size, CONTROL_CHAN_TIMEOUT, &ipc);
@@ -929,8 +925,6 @@ int xlink_ipc_set_device_mode(u32 sw_device_id, u32 power_mode)
 			goto setdev_error;
 		} else {
 			if (cmd->command == SET_DEVICE_PWR_MODE_RESP) {
-				pr_info("%s:SET_DEVICE_PWR_MODE_RESP rc=%d %s\n", __func__,
-					cmd->data[0], (cmd->data[0]) ? "Fail" : "OK");
 				rc = (cmd->data[0]) ? EINVAL : 0;
 			} else {
 				pr_info("%s:Error command not expected cmd=%d\n",
