@@ -705,12 +705,21 @@ TRACE_EVENT(i915_multi_domains,
 			   __entry->global = req->global_seqno;
 			   __entry->prio_req = req->sched.attr.priority;
 			   __entry->prio_ctx = req->sched.attr.priority;
+#ifdef CONFIG_DEBUG_FS
 			   __entry->shadow_ctx = is_shadow_context(req->gem_context);
+#else
+			   __entry->shadow_ctx = false;
+#endif /* CONFIG_DEBUG_FS */
 			   __entry->hw_id = req->gem_context->hw_id;
+#ifdef CONFIG_DEBUG_FS
 			   __entry->vgt_id = get_vgt_id(req->gem_context);
 			   __entry->pid = is_shadow_context(req->gem_context) ?
 				get_pid_shadowed(req->gem_context, req->engine) :
 				pid_nr(req->gem_context->pid);
+#else
+			   __entry->vgt_id = -1;
+			   __entry->pid = pid_nr(req->gem_context->pid);
+#endif /* CONFIG_DEBUG_FS */
 			   ),
 
 	    TP_printk("dev=%u, ring=%u, ctx=%u, seqno=%u, global=%u, "
