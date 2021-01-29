@@ -481,6 +481,8 @@ static void kmb_isp_ipc_event(struct kmb_isp *kmb_isp,
 		(struct kmb_isp_cfg_event_data *) v4l2_evt.u.data;
 
 	prv_data->valid = evt_priv.valid;
+	prv_data->ts = evt_priv.ts;
+
 	if (evt_priv.valid)
 		prv_data->index = evt_priv.index;
 
@@ -700,6 +702,7 @@ static int kmb_isp_worker_thread(void *isp)
 			evt_priv.index = 0;
 			evt_priv.valid = 0;
 		}
+		evt_priv.ts = cfg_evt.EvInfo.ts;
 
 		switch (cfg_evt.ctrl) {
 		case IC_EVENT_TYPE_READOUT_START:
