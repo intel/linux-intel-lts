@@ -8,3 +8,4 @@ obj-$(CONFIG_EEPROM_93XX46)	+= eeprom_93xx46.o
 obj-$(CONFIG_EEPROM_DIGSY_MTC_CFG) += digsy_mtc_eeprom.o
 obj-$(CONFIG_EEPROM_IDT_89HPESX) += idt_89hpesx.o
 obj-$(CONFIG_EEPROM_EE1004)	+= ee1004.o
+obj-$(CONFIG_EEPROM_GT24C64A)	+= kmb-gt24c64a.o
