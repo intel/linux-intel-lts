@@ -130,4 +130,14 @@ config EEPROM_EE1004
 	  This driver can also be built as a module.  If so, the module
 	  will be called ee1004.
 
+config EEPROM_GT24C64A
+	tristate "I2C EEPROM for Keem Bay Camera"
+	depends on I2C && SYSFS
+	select NVMEM
+	select NVMEM_SYSFS
+	select REGMAP_I2C
+	help
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-gt24c64a.
+
 endmenu
