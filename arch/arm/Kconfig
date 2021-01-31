@@ -234,6 +234,10 @@ config NEED_RET_TO_USER
 config ARCH_MTD_XIP
 	bool
 
+# Limited I-pipe compat (syscall routing only).
+config IPIPE_COMPAT
+	bool
+
 config ARM_PATCH_PHYS_VIRT
 	bool "Patch physical to virtual translations at runtime" if EMBEDDED
 	default y

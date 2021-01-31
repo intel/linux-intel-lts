@@ -259,9 +259,18 @@ ENTRY(vector_swi)
 local_restart:
 #ifdef CONFIG_DOVETAIL
 	ldr	r10, [tsk, #TI_LOCAL_FLAGS]	@ tsk(r9) is callee-saved
+#ifdef CONFIG_IPIPE_COMPAT
+	ldr	r0, =#0xf0042			@ old syscall signature
+	cmp	scno, r0
+	bne	1f
+	or	scno, scno, #__OOB_SYSCALL_BIT	@ force in oob marker
+	b	fastcall_entry
+1:
+#endif	
 	ldr	r0, =#__OOB_SYSCALL_BIT
 	ands	r0, scno, r0
 	beq	slow_path
+fastcall_try:
 	tst	r10, #_TLF_OOB
 	beq	slow_path
 	mov	r0, sp				@ regs
