@@ -58,10 +58,12 @@
  *
  * @valid: flag to indicate whether index is valid
  * @index: isp configuration buffer index
+ * @ts: isp event timestamp with nano seconds resolution
  */
 struct kmb_isp_cfg_event_data {
 	__u8 valid;
 	__u8 index;
+	__u64 ts;
 };
 
 /**
