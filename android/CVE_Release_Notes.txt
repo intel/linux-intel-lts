@@ -489,6 +489,7 @@ CVEs fixed in 4.19.129:
   CVE-2020-10767: 5d9d55cf4733c5ced8e1d19ea242a128ab9612d2 x86/speculation: Avoid force-disabling IBPB based on STIBP and enhanced IBRS.
   CVE-2020-10768: 52c419ba4c96880abd61b38e6e08e4ecd17350f3 x86/speculation: PR_SPEC_FORCE_DISABLE enforcement for indirect branches.
   CVE-2020-29368: 453d8a481b127edfa7fb76af1bc7586b7a63bdd2 mm: thp: make the THP mapcount atomic against __split_huge_pmd_locked()
+  CVE-2021-0342: 75e36c19ff10836e5d03f87cf17793cf83b59430 tun: correct header offsets in napi frags mode
 
 CVEs fixed in 4.19.130:
   CVE-2020-12771: 2ee8f6e72269eb06649ebab3da6bbf59aed3eabe bcache: fix potential deadlock problem in btree_gc_coalesce
@@ -655,8 +656,5 @@ CVEs Fixed in this 4.19.165 LTS 4.19 release
 
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
-
-# CVE-2020-36158
-0001-mwifiex-Fix-possible-buffer-overflows-in-mwifiex_cmd.patch
  
 ================
