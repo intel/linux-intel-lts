@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config I3C_TEST
+	tristate "KMB I3C test driver"
+	default m
+	depends on I3C
+	select REGMAP_I3C
+	help
+		Keembay I3C test driver for introspect

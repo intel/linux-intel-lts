@@ -539,7 +539,7 @@ static int dw_i3c_clk_cfg(struct dw_i3c_master *master)
 	writel(scl_timing, master->regs + SCL_I3C_PP_TIMING);
 
 	if (!(readl(master->regs + DEVICE_CTRL) & DEV_CTRL_I2C_SLAVE_PRESENT))
-		writel(BUS_I3C_MST_FREE(lcnt), master->regs + BUS_FREE_TIMING);
+		writel(0x50, master->regs + BUS_FREE_TIMING);
 
 	lcnt = DIV_ROUND_UP(I3C_BUS_TLOW_OD_MIN_NS, core_period);
 	scl_timing = SCL_I3C_TIMING_HCNT(hcnt) | SCL_I3C_TIMING_LCNT(lcnt);
