@@ -68,3 +68,4 @@ obj-$(CONFIG_NOC_DSS)		+= noc/
 obj-y                           += intel_tsens/
 obj-$(CONFIG_XLINK_SMBUS)	+= xlink-smbus/
 obj-y				+= hddl_device/
+obj-$(CONFIG_I3C_TEST) 		+= i3c_test/

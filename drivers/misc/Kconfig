@@ -496,4 +496,5 @@ source "drivers/misc/noc/Kconfig"
 source "drivers/misc/intel_tsens/Kconfig"
 source "drivers/misc/xlink-smbus/Kconfig"
 source "drivers/misc/hddl_device/Kconfig"
+source "drivers/misc/i3c_test/Kconfig"
 endmenu
