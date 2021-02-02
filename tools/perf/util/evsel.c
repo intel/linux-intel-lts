@@ -1012,6 +1012,11 @@ struct evsel_config_term *__evsel__get_config_term(struct evsel *evsel, enum evs
 	return found_term;
 }
 
+void __weak arch_evsel__set_sample_weight(struct evsel *evsel)
+{
+	evsel__set_sample_bit(evsel, WEIGHT);
+}
+
 /*
  * The enable_on_exec/disabled value strategy:
  *
@@ -1166,7 +1171,7 @@ void evsel__config(struct evsel *evsel, struct record_opts *opts,
 	}
 
 	if (opts->sample_weight)
-		evsel__set_sample_bit(evsel, WEIGHT);
+		arch_evsel__set_sample_weight(evsel);
 
 	attr->task  = track;
 	attr->mmap  = track;
@@ -1738,6 +1743,10 @@ static int evsel__open_cpu(struct evsel *evsel, struct perf_cpu_map *cpus,
 	}
 
 fallback_missing_features:
+	if (perf_missing_features.weight_struct) {
+		evsel__set_sample_bit(evsel, WEIGHT);
+		evsel__reset_sample_bit(evsel, WEIGHT_STRUCT);
+	}
 	if (perf_missing_features.clockid_wrong)
 		evsel->core.attr.clockid = CLOCK_MONOTONIC; /* should always work */
 	if (perf_missing_features.clockid) {
@@ -1876,7 +1885,12 @@ try_fallback:
 	 * Must probe features in the order they were added to the
 	 * perf_event_attr interface.
 	 */
-	if (!perf_missing_features.code_page_size &&
+	if (!perf_missing_features.weight_struct &&
+	    (evsel->core.attr.sample_type & PERF_SAMPLE_WEIGHT_STRUCT)) {
+		perf_missing_features.weight_struct = true;
+		pr_debug2("switching off weight struct support\n");
+		goto fallback_missing_features;
+	} else if (!perf_missing_features.code_page_size &&
 	    (evsel->core.attr.sample_type & PERF_SAMPLE_CODE_PAGE_SIZE)) {
 		perf_missing_features.code_page_size = true;
 		pr_debug2_peo("Kernel has no PERF_SAMPLE_CODE_PAGE_SIZE support, bailing out\n");
@@ -2324,9 +2338,15 @@ int evsel__parse_sample(struct evsel *evsel, union perf_event *event,
 		}
 	}
 
-	if (type & PERF_SAMPLE_WEIGHT) {
+	if (type & PERF_SAMPLE_WEIGHT_TYPE) {
+		union perf_sample_weight weight;
+
 		OVERFLOW_CHECK_u64(array);
-		data->weight = *array;
+		weight.full = *array;
+		if (type & PERF_SAMPLE_WEIGHT)
+			data->weight = weight.full;
+		else
+			data->weight = weight.var1_dw;
 		array++;
 	}
 
