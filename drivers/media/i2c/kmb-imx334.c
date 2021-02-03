@@ -426,8 +426,9 @@ static const struct kmb_imx334_reg mode_hdr_3dol_3840x2160_regs[] = {
 	{0x3059, 0x21},
 	{0x305C, 0x0D},
 	{0x3060, 0x50},
-	{0x3068, 0x43},
-	{0x306C, 0x56},
+	{0x3068, 0x6D},
+	{0x3069, 0x00},
+	{0x306C, 0x80},
 	{0x306D, 0x00},
 	{0x314C, 0x29},
 	{0x314D, 0x01},
@@ -581,15 +582,15 @@ static const struct kmb_imx334_mode hdr_3dol_supported_modes[] = {
 		.width = 3840,
 		.height = 2160,
 		.ppln = 4400,
-		.lpfr[0] = 27000,
-		.lpfr[1] = 2305,
-		.lpfr[2] = 2456,
+		.lpfr[0] = 13500,
+		.lpfr[1] = 109,
+		.lpfr[2] = 128,
 		.skip_lines = 20,
 		.pclk = 594000000,
 		.code = MEDIA_BUS_FMT_SRGGB12_1X12,
 		.fps = {
 			.def = 10,
-			.max = 30,
+			.max = 15,
 			.min = 1,
 			.step = 5,
 		},
@@ -877,7 +878,7 @@ static int kmb_imx334_set_ctrl(struct v4l2_ctrl *ctrl)
 			exposure[1] = 3;
 
 		shutter[1] = lpfr[1] - exposure[1];
-		shutter[1] -= (shutter[1] % 3) + 1;
+		shutter[1] -= (shutter[1] % 3) - 1;
 
 		dev_dbg(kmb_imx334->dev,
 			"Set middle exp %u analog gain %u sh1 %u lpfr %u",
@@ -889,7 +890,7 @@ static int kmb_imx334_set_ctrl(struct v4l2_ctrl *ctrl)
 			exposure[2] = 3;
 
 		shutter[2] = lpfr[2] - exposure[2];
-		shutter[2] -= (shutter[2] % 3) + 2;
+		shutter[2] -= (shutter[2] % 3) - 2;
 
 		dev_dbg(kmb_imx334->dev,
 			"Set very short exp %u analog gain %u sh2 %u lpfr %u",
