@@ -56,4 +56,5 @@ obj-$(CONFIG_PVPANIC)   	+= pvpanic.o
 obj-$(CONFIG_HABANA_AI)		+= habanalabs/
 obj-$(CONFIG_UACCE)		+= uacce/
 obj-$(CONFIG_XILINX_SDFEC)	+= xilinx_sdfec.o
+obj-$(CONFIG_XLINK_CORE)	+= xlink-core/
 obj-$(CONFIG_HISI_HIKEY_USB)	+= hisi_hikey_usb.o
