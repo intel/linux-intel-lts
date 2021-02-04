@@ -1,0 +1,30 @@
+config XLINK_USB_LH_DRIVER
+	tristate "XLink USB Local Host driver"
+	depends on TTY
+	select USB_LIBCOMPOSITE
+	select USB_U_XLINK
+	select USB_F_VPUUSB
+	select USB_GADGET
+	help
+	  This option enables XLink USB Local Host driver.
+
+          This driver exposes a char device for use.
+
+          Choose M here to compile this driver as a module.
+
+config USB_U_XLINK
+	tristate
+
+config USB_F_VPUUSB
+	tristate
+
+config XLINK_USB_RH_DRIVER
+	tristate "XLink USB Remote Host driver"
+	depends on TTY
+	depends on !XLINK_USB_LH_DRIVER
+	help
+	  This driver supports USB modems and ISDN adapters which support the
+	  Communication Device Class Abstract Control Model interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cdc-acm.
