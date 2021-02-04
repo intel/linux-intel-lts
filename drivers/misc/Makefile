@@ -66,3 +66,4 @@ obj-y				+= hddl_device/
 obj-$(CONFIG_I3C_TEST) 		+= i3c_test/
 obj-$(CONFIG_NOC_DSS)		+= noc/
 obj-y                           += xlink-pcie/
+obj-y				+= xlink-usb/
