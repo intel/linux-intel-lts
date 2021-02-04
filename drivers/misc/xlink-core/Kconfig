@@ -1,0 +1,18 @@
+config XLINK_CORE
+	tristate "Support for XLINK CORE"
+	depends on (XLINK_PCIE_LH_DRIVER || XLINK_PCIE_RH_DRIVER || XBAY_XLINK_PCIE_LH_DRIVER || XBAY_XLINK_PCIE_RH_DRIVER)
+	help
+	  XLINK CORE enables the communication/control Sub-System.
+
+config XLINK_LOCAL_HOST
+	tristate "Support for XLINK LOCAL HOST"
+	depends on XLINK_CORE && XLINK_IPC
+	help
+	  XLINK LOCAL HOST enables local host functionality for
+	  the communication/control Sub-System.
+
+config XLINK_PSS
+	tristate "Support for XLINK PSS"
+	depends on XLINK_LOCAL_HOST
+	help
+	  XLINK PSS enables the communication/control Sub-System on a PSS platform.

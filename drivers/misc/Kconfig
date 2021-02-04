@@ -489,4 +489,5 @@ source "drivers/misc/uacce/Kconfig"
 source "drivers/misc/pvpanic/Kconfig"
 source "drivers/misc/vpumgr/Kconfig"
 source "drivers/misc/gna/Kconfig"
+source "drivers/misc/xlink-core/Kconfig"
 endmenu
