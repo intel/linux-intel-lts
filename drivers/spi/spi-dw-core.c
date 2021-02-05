@@ -137,14 +137,16 @@ static inline u32 rx_max(struct dw_spi *dws)
 static void dw_writer(struct dw_spi *dws)
 {
 	u32 max = tx_max(dws);
-	u16 txw = 0;
+	u32 txw = 0;
 
 	while (max--) {
 		if (dws->tx) {
 			if (dws->n_bytes == 1)
 				txw = *(u8 *)(dws->tx);
-			else
+			else if (dws->n_bytes == 2)
 				txw = *(u16 *)(dws->tx);
+			else
+				txw = *(u32 *)(dws->tx);
 
 			dws->tx += dws->n_bytes;
 		}
@@ -156,15 +158,17 @@ static void dw_writer(struct dw_spi *dws)
 static void dw_reader(struct dw_spi *dws)
 {
 	u32 max = rx_max(dws);
-	u16 rxw;
+	u32 rxw;
 
 	while (max--) {
 		rxw = dw_read_io_reg(dws, DW_SPI_DR);
 		if (dws->rx) {
 			if (dws->n_bytes == 1)
 				*(u8 *)(dws->rx) = rxw;
-			else
+			else if (dws->n_bytes == 2)
 				*(u16 *)(dws->rx) = rxw;
+			else
+				*(u32 *)(dws->rx) = rxw;
 
 			dws->rx += dws->n_bytes;
 		}
@@ -864,7 +868,7 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 
 	master->use_gpio_descriptors = true;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LOOP;
-	master->bits_per_word_mask =  SPI_BPW_RANGE_MASK(4, 16);
+	master->bits_per_word_mask =  SPI_BPW_RANGE_MASK(4, 32);
 	master->bus_num = dws->bus_num;
 	master->num_chipselect = dws->num_cs;
 	master->setup = dw_spi_setup;
