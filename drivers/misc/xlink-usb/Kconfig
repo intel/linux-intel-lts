@@ -22,7 +22,7 @@ config XLINK_USB_RH_DRIVER
 	tristate "XLink USB Remote Host driver"
 	depends on TTY
 	depends on !XLINK_USB_LH_DRIVER
-	---help---
+	help
 	  This driver supports USB modems and ISDN adapters which support the
 	  Communication Device Class Abstract Control Model interface.
 
