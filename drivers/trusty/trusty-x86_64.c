@@ -13,6 +13,7 @@
 
 #define IKGT_SMC_HC_ID 0x74727500
 
+#ifdef TRUSTY_X86_OWNS_INTR
 static irqreturn_t stub_action(int cpl, void *dev_id)
 {
 	return IRQ_NONE;
@@ -67,13 +68,11 @@ struct trusty_x86_64_irq_s {
  * Comment out all IRQs which planed to be reserved, since CIV design is
  * different from Google Trusty IA solution design.
  */
-/*
 	{
 		.irq = 1,
 		.vector = 0x21,
 		.action = &tmp_action,
 	},
-*/
 	{
 		.irq = 3,
 		.vector = 0x22,
@@ -85,6 +84,7 @@ struct trusty_x86_64_irq_s {
 		.action = &tmp_action,
 	},
 };
+#endif
 
 struct smc_ret8 trusty_smc8(unsigned long r0, unsigned long r1,
 			    unsigned long r2, unsigned long r3,
@@ -182,6 +182,7 @@ static void __exit trusty_x86_64_driver_exit(void)
 	platform_driver_unregister(&trusty_x86_64_driver);
 }
 
+#ifdef TRUSTY_X86_OWNS_INTR
 int trusty_x86_64_release_reserved_vector(unsigned int vector)
 {
 	int idx;
@@ -243,6 +244,7 @@ static int __init trusty_x86_64_irq_init(void)
 }
 
 core_initcall(trusty_x86_64_irq_init);
+#endif
 
 subsys_initcall(trusty_x86_64_driver_init);
 module_exit(trusty_x86_64_driver_exit);
