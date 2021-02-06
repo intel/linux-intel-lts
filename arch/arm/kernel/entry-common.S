@@ -263,8 +263,8 @@ local_restart:
 	ldr	r0, =#0xf0042			@ old syscall signature
 	cmp	scno, r0
 	bne	1f
-	or	scno, scno, #__OOB_SYSCALL_BIT	@ force in oob marker
-	b	fastcall_entry
+	add	scno, scno, #__OOB_SYSCALL_BIT	@ force in oob marker
+	b	fastcall_try
 1:
 #endif	
 	ldr	r0, =#__OOB_SYSCALL_BIT
