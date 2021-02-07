@@ -144,7 +144,7 @@ static inline u32 hash_irq(unsigned int irq)
 }
 
 static __always_inline
-struct irq_desc *cached_irq_to_desc(unsigned int irq)
+struct irq_desc *irq_to_cached_desc(unsigned int irq)
 {
 	int hval = hash_irq(irq);
 	struct irq_desc *desc = desc_cache[hval];
@@ -166,7 +166,7 @@ void uncache_irq_desc(unsigned int irq)
 
 #else
 
-static struct irq_desc *cached_irq_to_desc(unsigned int irq)
+static struct irq_desc *irq_to_cached_desc(unsigned int irq)
 {
 	return irq_to_desc(irq);
 }
@@ -1080,7 +1080,7 @@ int generic_pipeline_irq(unsigned int irq, struct pt_regs *regs)
 	trace_irq_pipeline_entry(irq);
 
 	old_regs = set_irq_regs(regs);
-	desc = cached_irq_to_desc(irq);
+	desc = irq_to_cached_desc(irq);
 
 	if (irq_pipeline_debug()) {
 		if (!hard_irqs_disabled()) {
@@ -1190,7 +1190,7 @@ int irq_inject_pipeline(unsigned int irq)
 	struct irq_desc *desc;
 	unsigned long flags;
 
-	desc = cached_irq_to_desc(irq);
+	desc = irq_to_cached_desc(irq);
 	if (desc == NULL)
 		return -EINVAL;
 
@@ -1267,7 +1267,7 @@ respin:
 		 */
 		barrier();
 
-		desc = cached_irq_to_desc(irq);
+		desc = irq_to_cached_desc(irq);
 
 		if (stage == &inband_stage) {
 			hard_local_irq_enable();
