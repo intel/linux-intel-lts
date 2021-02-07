@@ -1429,7 +1429,7 @@ static int dwxgmac3_est_configure(void __iomem *ioaddr, struct stmmac_est *cfg,
 }
 
 static void dwxgmac3_fpe_configure(void __iomem *ioaddr, u32 num_txq,
-				   u32 num_rxq, bool enable)
+				   u32 num_rxq, u32 txqpec, bool enable)
 {
 	u32 value;
 
