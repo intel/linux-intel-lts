@@ -3485,6 +3485,7 @@ static void icl_pll_enable(struct drm_i915_private *dev_priv,
 			   i915_reg_t enable_reg)
 {
 	u32 val;
+	struct intel_uncore *uncore = &dev_priv->uncore;
 
 	val = I915_READ(enable_reg);
 	val |= PLL_ENABLE;
@@ -3493,6 +3494,11 @@ static void icl_pll_enable(struct drm_i915_private *dev_priv,
 	/* Timeout is actually 600us. */
 	if (intel_de_wait_for_set(dev_priv, enable_reg, PLL_LOCK, 1))
 		DRM_ERROR("PLL %d not locked\n", pll->info->id);
+
+	/* Wa_14010685332:icl */
+	if (INTEL_PCH_TYPE(dev_priv) == PCH_MCC) {
+		intel_uncore_rmw(uncore, SOUTH_CHICKEN1, SBCLK_RUN_REFCLK_DIS, 0);
+	}
 }
 
 static void combo_pll_enable(struct drm_i915_private *dev_priv,
@@ -3575,6 +3581,7 @@ static void icl_pll_disable(struct drm_i915_private *dev_priv,
 			    i915_reg_t enable_reg)
 {
 	u32 val;
+	struct intel_uncore *uncore = &dev_priv->uncore;
 
 	/* The first steps are done by intel_ddi_post_disable(). */
 
@@ -3604,6 +3611,11 @@ static void icl_pll_disable(struct drm_i915_private *dev_priv,
 	 */
 	if (intel_de_wait_for_clear(dev_priv, enable_reg, PLL_POWER_STATE, 1))
 		DRM_ERROR("PLL %d Power not disabled\n", pll->info->id);
+
+	/* Wa_14010685332:icl */
+	if (INTEL_PCH_TYPE(dev_priv) == PCH_MCC) {
+		intel_uncore_rmw(uncore, SOUTH_CHICKEN1, SBCLK_RUN_REFCLK_DIS, SBCLK_RUN_REFCLK_DIS);
+	}
 }
 
 static void combo_pll_disable(struct drm_i915_private *dev_priv,
