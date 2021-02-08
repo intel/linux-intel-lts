@@ -641,7 +641,7 @@ int ima_calc_buffer_hash(const void *buf, loff_t len,
 	return calc_buffer_shash(buf, len, hash);
 }
 
-static void __init ima_pcrread(u32 idx, u8 *pcr)
+static void ima_pcrread(u32 idx, u8 *pcr)
 {
 	if (!ima_tpm_chip)
 		return;
