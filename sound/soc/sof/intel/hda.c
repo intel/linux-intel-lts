@@ -296,13 +296,17 @@ static char *hda_model;
 module_param(hda_model, charp, 0444);
 MODULE_PARM_DESC(hda_model, "Use the given HDA board model.");
 
-static int dmic_num_override = -1;
-module_param_named(dmic_num, dmic_num_override, int, 0444);
+#if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA) || IS_ENABLED(CONFIG_SND_SOC_SOF_INTEL_SOUNDWIRE)
+static int hda_dmic_num = -1;
+module_param_named(dmic_num, hda_dmic_num, int, 0444);
 MODULE_PARM_DESC(dmic_num, "SOF HDA DMIC number");
+#endif
 
+#if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA)
 static bool hda_codec_use_common_hdmi = IS_ENABLED(CONFIG_SND_HDA_CODEC_HDMI);
 module_param_named(use_common_hdmi, hda_codec_use_common_hdmi, bool, 0444);
 MODULE_PARM_DESC(use_common_hdmi, "SOF HDA use common HDMI codec driver");
+#endif
 
 static const struct hda_dsp_msg_code hda_dsp_rom_msg[] = {
 	{HDA_DSP_ROM_FW_MANIFEST_LOADED, "status: manifest loaded"},
@@ -566,7 +570,9 @@ static int hda_init(struct snd_sof_dev *sdev)
 	return ret;
 }
 
-static int check_dmic_num(struct snd_sof_dev *sdev)
+#if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA) || IS_ENABLED(CONFIG_SND_SOC_SOF_INTEL_SOUNDWIRE)
+
+static int check_nhlt_dmic(struct snd_sof_dev *sdev)
 {
 	struct nhlt_acpi_table *nhlt;
 	int dmic_num = 0;
@@ -649,8 +655,12 @@ static int dmic_topology_fixup(struct snd_sof_dev *sdev,
 	const char *dmic_str;
 	int dmic_num;
 
-	/* first check for DMICs (using NHLT or module parameter) */
-	dmic_num = check_dmic_num(sdev);
+	/* first check NHLT for DMICs */
+	dmic_num = check_nhlt_dmic(sdev);
+
+	/* allow for module parameter override */
+	if (hda_dmic_num != -1)
+		dmic_num = hda_dmic_num;
 
 	switch (dmic_num) {
 	case 1:
@@ -1042,9 +1052,9 @@ static void hda_generic_machine_select(struct snd_sof_dev *sdev,
 	struct snd_sof_pdata *pdata = sdev->pdata;
 	const char *tplg_filename;
 	const char *idisp_str;
-	const char *dmic_str;
 	int dmic_num = 0;
 	int codec_num = 0;
+	int ret;
 	int i;
 
 	/* codec detection */
@@ -1068,10 +1078,6 @@ static void hda_generic_machine_select(struct snd_sof_dev *sdev,
 		 */
 		if (!*mach && codec_num <= 2) {
 			hda_mach = snd_soc_acpi_intel_hda_machines;
-
-			/* topology: use the info from hda_machines */
-			pdata->tplg_filename =
-				hda_mach->sof_tplg_filename;
 
 			dev_info(bus->dev, "using HDA machine driver %s now\n",
 				 hda_mach->drv_name);
@@ -1107,7 +1113,6 @@ static void hda_generic_machine_select(struct snd_sof_dev *sdev,
 		mach_params = &(*mach)->mach_params;
 		mach_params->codec_mask = bus->codec_mask;
 		mach_params->common_hdmi_codec_drv = hda_codec_use_common_hdmi;
-		mach_params->dmic_num = dmic_num;
 	}
 }
 #else
@@ -1205,7 +1210,6 @@ static struct snd_soc_acpi_mach *hda_sdw_machine_select(struct snd_sof_dev *sdev
 {
 	struct snd_sof_pdata *pdata = sdev->pdata;
 	const struct snd_soc_acpi_link_adr *link;
-	struct hdac_bus *bus = sof_to_bus(sdev);
 	struct snd_soc_acpi_mach *mach;
 	struct sof_intel_hda_dev *hdev;
 	u32 link_mask;
@@ -1255,6 +1259,7 @@ static struct snd_soc_acpi_mach *hda_sdw_machine_select(struct snd_sof_dev *sdev
 		if (mach && mach->link_mask) {
 			int dmic_num = 0;
 
+			pdata->machine = mach;
 			mach->mach_params.links = mach->links;
 			mach->mach_params.link_mask = mach->link_mask;
 			mach->mach_params.platform = dev_name(sdev->dev);
@@ -1284,8 +1289,9 @@ static struct snd_soc_acpi_mach *hda_sdw_machine_select(struct snd_sof_dev *sdev
 				"SoundWire machine driver %s topology %s\n",
 				mach->drv_name,
 				pdata->tplg_filename);
-
-			return mach;
+		} else {
+			dev_info(sdev->dev,
+				 "No SoundWire machine driver found\n");
 		}
 
 		dev_info(sdev->dev, "No SoundWire machine driver found\n");
