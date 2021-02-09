@@ -47,6 +47,17 @@ enum xpcie_stage {
 #define XPCIE_BOOT_MAGIC_STRLEN (16)
 #define XPCIE_BOOT_DEST_STRLEN (128)
 
+#define XPCIE_IO_COMM_MAGIC_OFF (offsetof(struct xpcie_bootio, magic))
+#define XPCIE_IO_COMM_MF_READY_OFF (offsetof(struct xpcie_bootio, mf_ready))
+#define XPCIE_IO_COMM_MF_LEN_OFF (offsetof(struct xpcie_bootio, mf_len))
+#define XPCIE_IO_COMM_MF_START_OFF (offsetof(struct xpcie_bootio, mf_start))
+#define XPCIE_IO_COMM_INT_ENABLE_OFF (offsetof(struct xpcie_bootio, int_enable))
+#define XPCIE_IO_COMM_INT_MASK_OFF (offsetof(struct xpcie_bootio, int_mask))
+#define XPCIE_IO_COMM_INT_IDENTITY_OFF (offsetof(struct xpcie_bootio, int_identity))
+#define XPCIE_IO_COMM_MF_OFF (offsetof(struct xpcie_bootio, mf_offset))
+#define XPCIE_IO_COMM_MF_DEST_OFF (offsetof(struct xpcie_bootio, mf_dest))
+#define XPCIE_IO_COMM_DEV_ID_OFF (offsetof(struct xpcie_bootio, dev_id))
+
 struct xpcie_bootio {
 	u8 magic[XPCIE_BOOT_MAGIC_STRLEN];
 	u32 mf_ready;

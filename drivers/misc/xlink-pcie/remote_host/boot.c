@@ -28,7 +28,7 @@ enum xpcie_stage intel_xpcie_check_magic(struct xpcie_dev *xdev)
 {
 	char magic[XPCIE_BOOT_MAGIC_STRLEN];
 
-	memcpy_fromio(magic, xdev->xpcie.io_comm->magic,
+	memcpy_fromio(magic, xdev->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
 		      XPCIE_BOOT_MAGIC_STRLEN);
 
 	if (strlen(magic) == 0)
@@ -57,7 +57,6 @@ enum xpcie_stage intel_xpcie_check_magic(struct xpcie_dev *xdev)
 	if (!strncmp(magic, XPCIE_BOOT_MAGIC_YOCTO,
 		     strlen(XPCIE_BOOT_MAGIC_YOCTO)))
 		return STAGE_OS;
-
 	return STAGE_UNINIT;
 }
 
@@ -70,7 +69,7 @@ static int xpcie_device_wait_status(struct xpcie_dev *xdev, u32 image_id,
 	if (timeout_ms == 0)
 		timeout_ms = STATUS_TIMEOUT;
 
-	iowrite32(image_id, &xdev->xpcie.io_comm->mf_ready);
+	iowrite32(image_id, xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_READY_OFF);
 
 	while (status != XPCIE_BOOT_STATUS_DOWNLOADED) {
 		mdelay(1);
@@ -79,7 +78,7 @@ static int xpcie_device_wait_status(struct xpcie_dev *xdev, u32 image_id,
 			return -ETIME;
 		}
 
-		status = ioread32(&xdev->xpcie.io_comm->mf_ready);
+		status = ioread32(xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_READY_OFF);
 
 		switch (status) {
 		case XPCIE_BOOT_STATUS_INVALID:
@@ -100,8 +99,10 @@ static int xpcie_device_wait_status(struct xpcie_dev *xdev, u32 image_id,
 
 static void xpcie_device_enable_irq(struct xpcie_dev *xdev)
 {
-	iowrite32(XPCIE_INT_ENABLE, &xdev->xpcie.io_comm->int_enable);
-	iowrite32(~XPCIE_INT_MASK, &xdev->xpcie.io_comm->int_mask);
+	iowrite32(XPCIE_INT_ENABLE,
+		  xdev->xpcie.io_comm + XPCIE_IO_COMM_INT_ENABLE_OFF);
+	iowrite32(~XPCIE_INT_MASK,
+		  xdev->xpcie.io_comm + XPCIE_IO_COMM_INT_MASK_OFF);
 }
 
 static int xpcie_device_transfer(struct xpcie_dev *xdev, u32 image_id,
@@ -109,12 +110,14 @@ static int xpcie_device_transfer(struct xpcie_dev *xdev, u32 image_id,
 {
 	int rc;
 
-	_iowrite64(addr, &xdev->xpcie.io_comm->mf_start);
-	iowrite32(size, &xdev->xpcie.io_comm->mf_len);
+	_iowrite64(addr,
+		   xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_START_OFF);
+	iowrite32(size,
+		  xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_LEN_OFF);
 
 	if (image_id == XPCIE_BOOT_RAW_ID)
 		_iowrite64(xdev->partition_offset,
-			   &xdev->xpcie.io_comm->mf_offset);
+			   xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_OFF);
 
 	rc = xpcie_device_wait_status(xdev, image_id, 0);
 	if (!rc)
@@ -209,7 +212,8 @@ static int xpcie_device_flashless_boot(struct xpcie_dev *xdev)
 		return -EIO;
 	}
 
-	iowrite32(XPCIE_BOOT_STATUS_DONE, &xdev->xpcie.io_comm->mf_ready);
+	iowrite32(XPCIE_BOOT_STATUS_DONE,
+		  xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_READY_OFF);
 
 	return 0;
 }
@@ -222,7 +226,8 @@ static int xpcie_device_fip(struct xpcie_dev *xdev)
 		return -EIO;
 	}
 
-	iowrite32(XPCIE_BOOT_STATUS_DONE, &xdev->xpcie.io_comm->mf_ready);
+	iowrite32(XPCIE_BOOT_STATUS_DONE,
+		  xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_READY_OFF);
 
 	return 0;
 }
@@ -389,7 +394,8 @@ static int intel_xpcie_pci_erase_partition(struct xpcie_dev *xdev,
 			goto erase_error;
 	}
 
-	memcpy_toio(xdev->xpcie.io_comm->mf_dest, partition, len);
+	memcpy_toio(xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_DEST_OFF,
+		    partition, len);
 
 	rc = xpcie_device_wait_status(xdev, XPCIE_BOOT_ERASE_ID, ERASE_TIMEOUT);
 
@@ -420,8 +426,8 @@ static int intel_xpcie_pci_flash_partition_start(struct xpcie_dev *xdev,
 			(XPCIE_BOOT_DEST_STRLEN - 1) : name_len);
 	xdev->partition_offset = 0;
 
-	memcpy_toio(xdev->xpcie.io_comm->mf_dest, xdev->partition_name,
-		    XPCIE_BOOT_DEST_STRLEN);
+	memcpy_toio(xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_DEST_OFF,
+		    xdev->partition_name, XPCIE_BOOT_DEST_STRLEN);
 
 start_error:
 	intel_xpcie_boot_access_exit(xdev);
@@ -479,7 +485,8 @@ static int intel_xpcie_pci_flash_done(struct xpcie_dev *xdev)
 			goto done_error;
 	}
 
-	iowrite32(XPCIE_BOOT_STATUS_DONE, &xdev->xpcie.io_comm->mf_ready);
+	iowrite32(XPCIE_BOOT_STATUS_DONE,
+		  xdev->xpcie.io_comm + XPCIE_IO_COMM_MF_READY_OFF);
 
 	kfree(xdev->dma_buf);
 	xdev->dma_buf = NULL;

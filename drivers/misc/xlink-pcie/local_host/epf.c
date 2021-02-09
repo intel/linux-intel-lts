@@ -422,15 +422,15 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_RUN);
 	intel_xpcie_set_doorbell(&xpcie_epf->xpcie, FROM_DEVICE,
 				 DEV_EVENT, NO_OP);
-	memcpy(xpcie_epf->xpcie.mmio + XPCIE_MMIO_MAGIC_OFF, XPCIE_MAGIC_YOCTO,
-	       strlen(XPCIE_MAGIC_YOCTO));
+	memcpy(xpcie_epf->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
+	       XPCIE_BOOT_MAGIC_YOCTO, strlen(XPCIE_BOOT_MAGIC_YOCTO));
 
 	return 0;
 
 err_uninit_dma:
 	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_ERROR);
-	memcpy(xpcie_epf->xpcie.mmio + XPCIE_MMIO_MAGIC_OFF, XPCIE_MAGIC_YOCTO,
-	       strlen(XPCIE_MAGIC_YOCTO));
+	memcpy(xpcie_epf->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
+	       XPCIE_BOOT_MAGIC_YOCTO, strlen(XPCIE_BOOT_MAGIC_YOCTO));
 
 	intel_xpcie_ep_dma_uninit(epf);
 
