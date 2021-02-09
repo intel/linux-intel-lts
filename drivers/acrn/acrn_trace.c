@@ -87,7 +87,7 @@ struct acrn_trace {
 	struct miscdevice miscdev;
 	char name[24];
 	shared_buf_t *sbuf;
-	refcount_t open_cnt;
+	atomic_t open_cnt;
 	uint16_t pcpu_id;
 };
 
@@ -110,10 +110,10 @@ static int acrn_trace_open(struct inode *inode, struct file *filep)
 	pr_debug("%s, cpu %d\n", __func__, dev->pcpu_id);
 
 	/* More than one reader at the same time could get data messed up */
-	if (refcount_read(&dev->open_cnt))
+	if (atomic_read(&dev->open_cnt))
 		return -EBUSY;
 
-	refcount_inc(&dev->open_cnt);
+	atomic_inc(&dev->open_cnt);
 
 	return 0;
 }
@@ -130,7 +130,7 @@ static int acrn_trace_release(struct inode *inode, struct file *filep)
 
 	pr_debug("%s, cpu %d\n", __func__, dev->pcpu_id);
 
-	refcount_dec(&dev->open_cnt);
+	atomic_dec(&dev->open_cnt);
 
 	return 0;
 }

@@ -1017,6 +1017,12 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
 		return -EINVAL;
 	}
 
+	if (vcpu >= refcount_read(&client->ref_vm->vcpu_num)) {
+		pr_err("vhm-ioreq: vcpu %lld overflow\n", vcpu);
+		acrn_ioreq_put_client(client);
+		return -EINVAL;
+	}
+
 	clear_bit(vcpu, client->ioreqs_map);
 	if (!vhm_req) {
 		vhm_req = acrn_ioreq_get_reqbuf(client_id);
