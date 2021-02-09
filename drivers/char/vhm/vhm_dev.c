@@ -283,6 +283,7 @@ get_platform_info_done:
 		acrn_ioeventfd_init(vm->vmid);
 		acrn_irqfd_init(vm->vmid);
 		acrn_mempool_free(created_vm);
+		atomic_set(&vm->vcpu_num, 0);
 
 		pr_info("vhm: VM %ld created\n", vm->vmid);
 		break;
@@ -344,7 +345,7 @@ create_vm_fail:
 			acrn_mempool_free(cv);
 			return -EFAULT;
 		}
-		refcount_inc(&vm->vcpu_num);
+		atomic_inc(&vm->vcpu_num);
 		acrn_mempool_free(cv);
 
 		return ret;
