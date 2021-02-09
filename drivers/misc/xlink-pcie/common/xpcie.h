@@ -27,22 +27,13 @@
 #define XPCIE_STATUS_ERROR     (0xFFFFFFFF)
 #define XPCIE_STATUS_UNINIT    (0)
 
-#ifdef XLINK_PCIE_LOCAL
-#define XPCIE_STATUS_READY     (1)
-#define XPCIE_STATUS_RECOVERY  (2)
-#define XPCIE_STATUS_OFF       (3)
-#define XPCIE_STATUS_RUN       (4)
-#else
-#define XPCIE_STATUS_ERROR	(0xFFFFFFFF)
-#define XPCIE_STATUS_UNINIT	(0)
 #define XPCIE_STATUS_BOOT_FW	(1)
 #define XPCIE_STATUS_BOOT_OS	(2)
 #define XPCIE_STATUS_READY	(3)
 #define XPCIE_STATUS_RECOVERY	(4)
-#define XPCIE_STATUS_OFF	(5)
-#define XPCIE_STATUS_RUN	(6)
+#define XPCIE_STATUS_RUN	(5)
+#define XPCIE_STATUS_OFF	(6)
 #define XPCIE_STATUS_BOOT_PRE_OS (7)
-#endif
 
 #define XPCIE_MAGIC_STRLEN	(16)
 #define XPCIE_MAGIC_YOCTO	"VPUYOCTO"
@@ -60,7 +51,6 @@ struct xpcie_mmio {
 	u8 dtoh_event_doorbell;
 	u8 reserved;
 	u32 cap_offset;
-	u8 magic[XPCIE_MAGIC_STRLEN];
 } __packed;
 
 #define XPCIE_MMIO_DEV_STATUS	(offsetof(struct xpcie_mmio, device_status))
@@ -79,23 +69,15 @@ struct xpcie_mmio {
 #define XPCIE_MMIO_DTOH_EVENT_DOORBELL \
 	(offsetof(struct xpcie_mmio, dtoh_event_doorbell))
 #define XPCIE_MMIO_CAP_OFF	(offsetof(struct xpcie_mmio, cap_offset))
-#define XPCIE_MMIO_MAGIC_OFF	(offsetof(struct xpcie_mmio, magic))
 
 struct xpcie {
 	u32 status;
 	bool legacy_a0;
-#ifdef XLINK_PCIE_REMOTE
-	void __iomem *bar0;
+	void *bar0;
 	/* IO communication space */
-	struct xpcie_bootio __iomem *io_comm;
-	void *mmio; /* XLink memory space */
-	void __iomem *bar4;
-#else
-	/* IO communication space */
-	struct xpcie_bootio *io_comm;
+	void *io_comm;
 	void *mmio; /* XLink memory space */
 	void *bar4;
-#endif
 
 	struct workqueue_struct *rx_wq;
 	struct workqueue_struct *tx_wq;
