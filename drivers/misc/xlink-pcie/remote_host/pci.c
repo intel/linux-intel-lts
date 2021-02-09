@@ -405,14 +405,12 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 int intel_xpcie_pci_register_irq(struct xpcie_dev *xdev,
 				 irq_handler_t irq_handler)
 {
-	int rc;
-
-	if (xdev->xpcie.status != XPCIE_STATUS_READY)
+	if (xdev->xpcie.status != XPCIE_STATUS_READY) {
 		return -EINVAL;
-
+	}
 	xdev->core_irq_callback = irq_handler;
 
-	return rc;
+	return 0;
 }
 
 int intel_xpcie_pci_raise_irq(struct xpcie_dev *xdev,
