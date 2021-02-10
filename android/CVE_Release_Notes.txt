@@ -584,6 +584,7 @@ CVEs fixed in 4.19.156:
   CVE-2019-19770: 8a78b4c0d6292d32d76b4268b5a33ae089a5d791 blktrace: fix debugfs use after free
   CVE-2020-25704: 29a975bcc107d68e379a55048813ddf3e7b120b8 perf/core: Fix a memory leak in perf_event_parse_addr_filter()
   CVE-2020-28974: 6612b754ac0c85ca8b1181b5d3ea4461a8c1bbcb vt: Disable KD_FONT_OP_COPY
+  CVE-2020-35508: b177d2d915cea2d0a590f0034a20299dd1ee3ef2 fork: fix copy_process(CLONE_PARENT) race with the exiting ->real_parent
 
 CVEs fixed in 4.19.157:
   CVE-2020-8694: 900281e167f45e0c0e5df6e59fa00334b5e38133 powercap: restrict energy meter to root access
@@ -607,8 +608,24 @@ CVEs fixed in 4.19.164:
   CVE-2020-29568: 9039eb22f99545fa80a5897496452cf9962e3289 xen/xenbus: Allow watches discard events before queueing
   CVE-2020-29569: 014ee1c7d184acb8986152014a570ba7c69d3616 xen-blkback: set ring->xenblkd to NULL after kthread_stop()
 
+CVEs fixed in 4.19.166:
+  CVE-2020-36158: b35029a1f24fe511af750537e6565dcf68e5c862 mwifiex: Fix possible buffer overflows in mwifiex_cmd_802_11_ad_hoc_start
+
+CVEs fixed in 4.19.167:
+  CVE-2020-28374: fff1180d24e68d697f98642d71444316036a81ff scsi: target: Fix XCOPY NAA identifier lookup
+
+CVEs fixed in 4.19.170:
+  CVE-2021-3178: a08c2e586ad047fcea3f75664cca0915c77934fe nfsd4: readdirplus shouldn't return parent of export
+
+CVEs fixed in 4.19.172:
+  CVE-2020-27825: acfa7ad7b7f6489e2bed20880ce090fdabdbb841 tracing: Fix race in trace_open and buffer resize call
+  CVE-2021-3347: 72f38fffa4758b878f819f8a47761b3f03443f36 futex: Ensure the correct return value from futex_lock_pi()
+
+CVEs fixed in 4.19.173:
+  CVE-2021-3348: 424838c0f727f1d11ce2ccaabba96f4346c03906 nbd: freeze the queue while we're adding connections
+
  
-CVEs Fixed in this 4.19.165 LTS 4.19 release 
+CVEs Fixed in this 4.19.174 LTS 4.19 release 
 ====================================================
 # CVE-2018-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
