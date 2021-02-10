@@ -680,6 +680,23 @@ bool mei_cldev_enabled(const struct mei_cl_device *cldev)
 EXPORT_SYMBOL_GPL(mei_cldev_enabled);
 
 /**
+ * mei_cldev_get_capabilities - obtain client capabilities
+ *
+ * @cldev: mei client device
+ *
+ * Return: client capabilities bitmap
+ */
+u32 mei_cldev_get_capabilities(const struct mei_cl_device *cldev)
+{
+	u32 cap = 0;
+
+	if (!mei_cl_vt_support_check(cldev->cl))
+		cap |= MEI_CLDEV_CAPABILITY_VTAG;
+
+	return cap;
+}
+
+/**
  * mei_cl_bus_module_get - acquire module of the underlying
  *    hw driver.
  *
