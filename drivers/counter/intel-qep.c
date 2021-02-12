@@ -425,8 +425,7 @@ static ssize_t enable_write(struct counter_device *counter,
 		qep->enabled = false;
 		mutex_unlock(&qep->lock);
 
-		pm_runtime_mark_last_busy(qep->dev);
-		pm_runtime_put_autosuspend(qep->dev);
+		pm_runtime_put(qep->dev);
 	}
 
 	return len;
@@ -721,9 +720,7 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	if (ret)
 		goto err_irq;
 
-	pm_runtime_set_autosuspend_delay(dev, 1000);
-	pm_runtime_use_autosuspend(dev);
-	pm_runtime_put_noidle(dev);
+	pm_runtime_put(dev);
 	pm_runtime_allow(dev);
 
 	return devm_counter_register(&pci->dev, &qep->counter);
@@ -740,7 +737,7 @@ static void intel_qep_remove(struct pci_dev *pci)
 	struct device *dev = &pci->dev;
 
 	pm_runtime_forbid(dev);
-	pm_runtime_get_noresume(dev);
+	pm_runtime_get(dev);
 
 	intel_qep_writel(qep, INTEL_QEPCON, 0);
 	devm_free_irq(&pci->dev, pci_irq_vector(pci, 0), qep);
