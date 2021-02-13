@@ -917,9 +917,9 @@ static int vc4_plane_mode_set(struct drm_plane *plane,
 		if (!vc4_state->is_unity) {
 			vc4_dlist_write(vc4_state,
 					VC4_SET_FIELD(vc4_state->crtc_w,
-						      SCALER5_POS1_SCL_WIDTH) |
+						      SCALER_POS1_SCL_WIDTH) |
 					VC4_SET_FIELD(vc4_state->crtc_h,
-						      SCALER5_POS1_SCL_HEIGHT));
+						      SCALER_POS1_SCL_HEIGHT));
 		}
 
 		/* Position Word 2: Source Image Size */
