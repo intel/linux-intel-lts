@@ -3374,7 +3374,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	prb_for_each_info(dumper->cur_seq, prb, seq, &info, &line_count) {
 		if (info.seq >= dumper->next_seq)
 			break;
-		len += get_record_print_text_size(&info, line_count, true, time);
+		len += get_record_print_text_size(&info, line_count, syslog, time);
 	}
 
 	/*
@@ -3386,7 +3386,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	prb_for_each_info(dumper->cur_seq, prb, seq, &info, &line_count) {
 		if (len <= size || info.seq >= dumper->next_seq)
 			break;
-		len -= get_record_print_text_size(&info, line_count, true, time);
+		len -= get_record_print_text_size(&info, line_count, syslog, time);
 	}
 
 	/* Keep track of the last message for the next iteration. */
