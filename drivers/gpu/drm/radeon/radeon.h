@@ -830,6 +830,7 @@ struct radeon_ib {
 };
 
 struct radeon_ring {
+	struct radeon_device	*rdev;
 	struct radeon_bo	*ring_obj;
 	volatile uint32_t	*ring;
 	unsigned		rptr_offs;
