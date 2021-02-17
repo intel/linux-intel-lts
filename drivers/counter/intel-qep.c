@@ -102,7 +102,6 @@ struct intel_qep {
 	void __iomem *regs;
 	u32 int_stat;
 	bool enabled;
-	bool phase_error;
 	int op_mode;
 	int cap_mode;
 };
@@ -154,14 +153,7 @@ static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
 
 	stat = qep->int_stat;
 	if (stat & INTEL_QEPINT_FIFOCRIT) {
-		if (qep->op_mode == INTEL_QEP_OP_MODE_QEP) {
-			dev_dbg(qep->dev, "Phase Error detected\n");
-			qep->phase_error = true;
-		} else {
-			dev_dbg(qep->dev, "Fifo Critical\n");
-		}
-	} else {
-		qep->phase_error = false;
+		dev_dbg(qep->dev, "Fifo Critical\n");
 	}
 
 	if (stat & INTEL_QEPINT_FIFOENTRY)
@@ -431,16 +423,6 @@ static ssize_t enable_write(struct counter_device *counter,
 	return len;
 }
 
-static ssize_t phase_error_read(struct counter_device *counter,
-				struct counter_count *count,
-				void *priv, char *buf)
-{
-	struct intel_qep *qep = counter_to_qep(counter);
-
-	return snprintf(buf, PAGE_SIZE, "%s\n", qep->phase_error ?
-			"error" : "no_error");
-}
-
 static ssize_t operating_mode_read(struct counter_device *counter,
 				   struct counter_count *count,
 				   void *priv, char *buf)
@@ -538,7 +520,6 @@ static ssize_t capture_mode_write(struct counter_device *counter,
 static const struct counter_count_ext intel_qep_count_ext[] = {
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(ceiling),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(enable),
-	INTEL_QEP_COUNTER_COUNT_EXT_RO(phase_error),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(operating_mode),
 	INTEL_QEP_COUNTER_COUNT_EXT_RO(capture_data),
 	INTEL_QEP_COUNTER_COUNT_EXT_RW(capture_mode),
@@ -705,7 +686,6 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->counter.num_ext = ARRAY_SIZE(intel_qep_ext);
 	qep->counter.priv = qep;
 	qep->enabled = false;
-	qep->phase_error = false;
 	qep->op_mode = INTEL_QEP_OP_MODE_QEP;
 	qep->cap_mode = 0;
 
