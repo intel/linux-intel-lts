@@ -68,12 +68,6 @@
 	.write = _name##_write, \
 }
 
-#define INTEL_QEP_COUNTER_EXT_RO(_name) \
-{ \
-	.name = #_name, \
-	.read = _name##_read, \
-}
-
 #define INTEL_QEP_COUNTER_COUNT_EXT_RW(_name) \
 { \
 	.name = #_name, \
@@ -438,12 +432,6 @@ static ssize_t noise_write(struct counter_device *counter,
 	return len;
 }
 
-static ssize_t preset_read(struct counter_device *counter,
-			   void *priv, char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "0\n");
-}
-
 static ssize_t preset_enable_read(struct counter_device *counter,
 				  void *priv, char *buf)
 {
@@ -487,7 +475,6 @@ static ssize_t preset_enable_write(struct counter_device *counter,
 
 static const struct counter_device_ext intel_qep_ext[] = {
 	INTEL_QEP_COUNTER_EXT_RW(noise),
-	INTEL_QEP_COUNTER_EXT_RO(preset),
 	INTEL_QEP_COUNTER_EXT_RW(preset_enable)
 };
 
