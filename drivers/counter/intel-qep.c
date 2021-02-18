@@ -10,7 +10,6 @@
  */
 #include <linux/bitops.h>
 #include <linux/counter.h>
-#include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -60,10 +59,6 @@
 #define INTEL_QEPINT_QEPRST_DOWN	BIT(1)
 #define INTEL_QEPINT_WDT		BIT(0)
 
-#define INTEL_QEPINT_MASK_DEFAULT	(INTEL_QEPINT_WDT | \
-					INTEL_QEPINT_QEPRST_DOWN | \
-					INTEL_QEPINT_QEPRST_UP | \
-					INTEL_QEPINT_QEPDIR)
 #define INTEL_QEPINT_MASK_ALL		GENMASK(5, 0)
 
 #define INTEL_QEP_COUNTER_EXT_RW(_name) \
@@ -91,7 +86,6 @@ struct intel_qep {
 	struct mutex lock;
 	struct device *dev;
 	void __iomem *regs;
-	u32 int_stat;
 	bool enabled;
 };
 
@@ -129,45 +123,8 @@ static void intel_qep_init(struct intel_qep *qep, bool reset)
 
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 
-	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_DEFAULT);
+	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
 	mutex_unlock(&qep->lock);
-}
-
-static irqreturn_t intel_qep_irq_thread(int irq, void *_qep)
-{
-	struct intel_qep *qep = _qep;
-	u32 stat;
-
-	mutex_lock(&qep->lock);
-
-	stat = qep->int_stat;
-	if (stat & INTEL_QEPINT_FIFOCRIT) {
-		dev_dbg(qep->dev, "Fifo Critical\n");
-	}
-
-	if (stat & INTEL_QEPINT_FIFOENTRY)
-		dev_dbg(qep->dev, "Fifo Entry\n");
-
-	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_DEFAULT);
-	mutex_unlock(&qep->lock);
-
-	return IRQ_HANDLED;
-}
-
-static irqreturn_t intel_qep_irq(int irq, void *_qep)
-{
-	struct intel_qep *qep = _qep;
-	u32 stat;
-
-	stat = intel_qep_readl(qep, INTEL_QEPINT_STAT);
-	if (stat) {
-		qep->int_stat = stat;
-		intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
-		intel_qep_writel(qep, INTEL_QEPINT_STAT, stat);
-		return IRQ_WAKE_THREAD;
-	}
-
-	return IRQ_HANDLED;
 }
 
 enum intel_qep_synapse_action {
@@ -540,7 +497,6 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	struct device *dev = &pci->dev;
 	void __iomem *regs;
 	int ret;
-	int irq;
 
 	qep = devm_kzalloc(dev, sizeof(*qep), GFP_KERNEL);
 	if (!qep)
@@ -579,24 +535,10 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->counter.priv = qep;
 	qep->enabled = false;
 
-	ret = pci_alloc_irq_vectors(pci, 1, 1, PCI_IRQ_ALL_TYPES);
-	if (ret < 0)
-		return ret;
-
-	irq = pci_irq_vector(pci, 0);
-	ret = devm_request_threaded_irq(&pci->dev, irq, intel_qep_irq,
-			intel_qep_irq_thread, IRQF_SHARED | IRQF_TRIGGER_RISING,
-			"intel-qep", qep);
-	if (ret)
-		goto err_irq;
-
 	pm_runtime_put(dev);
 	pm_runtime_allow(dev);
 
 	return devm_counter_register(&pci->dev, &qep->counter);
-
-err_irq:
-	pci_free_irq_vectors(pci);
 
 	return ret;
 }
@@ -610,8 +552,6 @@ static void intel_qep_remove(struct pci_dev *pci)
 	pm_runtime_get(dev);
 
 	intel_qep_writel(qep, INTEL_QEPCON, 0);
-	devm_free_irq(&pci->dev, pci_irq_vector(pci, 0), qep);
-	pci_free_irq_vectors(pci);
 }
 
 #ifdef CONFIG_PM
