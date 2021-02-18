@@ -154,11 +154,11 @@ static int sys_get_curr_temp(struct thermal_zone_device *tzd, int *temp)
 	u32 eax, edx;
 
 	rdmsr_on_cpu(pkgdev->cpu, MSR_IA32_PACKAGE_THERM_STATUS, &eax, &edx);
-	if (eax & 0x80000000) {
+	//Remove the BIT31 checking
 		*temp = pkgdev->tj_max - ((eax >> 16) & 0x7f) * 1000;
 		pr_debug("sys_get_curr_temp %d\n", *temp);
 		return 0;
-	}
+
 	return -EINVAL;
 }
 
