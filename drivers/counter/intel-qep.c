@@ -68,13 +68,6 @@
 	.write = _name##_write, \
 }
 
-#define INTEL_QEP_COUNTER_COUNT_EXT_RW(_name) \
-{ \
-	.name = #_name, \
-	.read = _name##_read, \
-	.write = _name##_write, \
-}
-
 struct intel_qep {
 	struct counter_device counter;
 	struct mutex lock;
@@ -364,8 +357,8 @@ static ssize_t enable_write(struct counter_device *counter,
 }
 
 static const struct counter_count_ext intel_qep_count_ext[] = {
-	INTEL_QEP_COUNTER_COUNT_EXT_RW(ceiling),
-	INTEL_QEP_COUNTER_COUNT_EXT_RW(enable),
+	INTEL_QEP_COUNTER_EXT_RW(ceiling),
+	INTEL_QEP_COUNTER_EXT_RW(enable),
 };
 
 static struct counter_count intel_qep_counter_count[] = {
