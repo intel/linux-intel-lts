@@ -125,6 +125,29 @@ static int igc_ptp_settime_i225(struct ptp_clock_info *ptp,
 static int igc_ptp_feature_enable_i225(struct ptp_clock_info *ptp,
 				       struct ptp_clock_request *rq, int on)
 {
+	struct igc_adapter *igc =
+		container_of(ptp, struct igc_adapter, ptp_caps);
+	struct igc_hw *hw = &igc->hw;
+	unsigned long flags;
+	u32 tsim;
+
+	switch (rq->type) {
+	case PTP_CLK_REQ_PPS:
+		spin_lock_irqsave(&igc->tmreg_lock, flags);
+		tsim = rd32(IGC_TSIM);
+		if (on)
+			tsim |= IGC_TSICR_SYS_WRAP;
+		else
+			tsim &= ~IGC_TSICR_SYS_WRAP;
+		igc->pps_sys_wrap_on = on;
+		wr32(IGC_TSIM, tsim);
+		spin_unlock_irqrestore(&igc->tmreg_lock, flags);
+		return 0;
+
+	default:
+		break;
+	}
+
 	return -EOPNOTSUPP;
 }
 
@@ -652,6 +675,7 @@ void igc_ptp_init(struct igc_adapter *adapter)
 			break;
 
 		adapter->ptp_caps.getcrosststamp = igc_ptp_getcrosststamp;
+		adapter->ptp_caps.pps = 1;
 		break;
 	default:
 		adapter->ptp_clock = NULL;
@@ -804,7 +828,9 @@ void igc_ptp_reset(struct igc_adapter *adapter)
 
 		wr32(IGC_TSAUXC, 0x0);
 		wr32(IGC_TSSDP, 0x0);
-		wr32(IGC_TSIM, IGC_TSICR_INTERRUPTS);
+		wr32(IGC_TSIM,
+		     IGC_TSICR_INTERRUPTS |
+		     (adapter->pps_sys_wrap_on ? IGC_TSICR_SYS_WRAP : 0));
 		wr32(IGC_IMS, IGC_IMS_TS);
 
 		igc_ptm_start(adapter);
