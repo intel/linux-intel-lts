@@ -401,11 +401,10 @@ static ssize_t noise_write(struct counter_device *counter,
 	ret = kstrtou32(buf, 0, &max);
 	if (ret < 0)
 		return ret;
+	if (max > INTEL_QEPFLT_MAX_COUNT(max))
+		return -EINVAL;
 
 	pm_runtime_get_sync(qep->dev);
-
-	if (max > 0x1fffff)
-		max = 0x1ffff;
 
 	mutex_lock(&qep->lock);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
