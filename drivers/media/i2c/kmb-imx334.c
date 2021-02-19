@@ -34,6 +34,11 @@
 #define KMB_IMX334_Y_SIZE_ID	0x3308
 #define KMB_IMX334_Y_SIZE	0x8408
 
+/* Serial number */
+#define KMB_IMX334_SERIAL_ADDR		0x3910
+#define KMB_IMX334_SERIAL_STEP		1
+#define KMB_IMX334_SERIAL_READ_SIZE	8
+
 /* Exposure control */
 #define KMB_IMX334_REG_SHUTTER		0x3058
 #define KMB_IMX334_EXPOSURE_MIN		1
@@ -153,6 +158,7 @@ struct kmb_imx334_mode {
  * @pclk_ctrl: Pointer to pixel clock control
  * @hblank_ctrl: Pointer to horizontal blanking control
  * @vblank_ctrl: Pointer to vertical blanking control
+ * @serial_num_ctrl: Pointer to sensor serial number control
  * @exp_ctrl: Pointer to exposure control
  * @again_ctrl: Pointer to analog gain control
  * @exp1_ctrl: Pointer to short exposure control
@@ -161,6 +167,7 @@ struct kmb_imx334_mode {
  * @again2_ctrl: Pointer to very short analog gain control
  * @fps: FPS to be applied on next stream on
  * @lpfr: Lines per frame for long exposure frame
+ * @serial: Sensor serial number
  * @cur_mode: Pointer to current selected sensor mode
  * @mutex: Mutex for serializing sensor controls
  * @streaming_mode: Selected streaming sensor mode
@@ -177,6 +184,7 @@ struct kmb_imx334 {
 	struct v4l2_ctrl *pclk_ctrl;
 	struct v4l2_ctrl *hblank_ctrl;
 	struct v4l2_ctrl *vblank_ctrl;
+	struct v4l2_ctrl *serial_num_ctrl;
 	struct {
 		struct v4l2_ctrl *exp_ctrl;
 		struct v4l2_ctrl *again_ctrl;
@@ -187,6 +195,7 @@ struct kmb_imx334 {
 	};
 	u32 fps;
 	u32 lpfr;
+	u64 serial;
 	const struct kmb_imx334_mode *cur_mode;
 	struct mutex mutex;
 	enum kmb_imx334_streaming_mode streaming_mode;
@@ -959,6 +968,36 @@ error_release_group_hold:
 	kmb_imx334_write_reg(kmb_imx334, KMB_IMX334_REG_HOLD, 1, 0);
 error_pm_runtime_put:
 	pm_runtime_put(kmb_imx334->dev);
+	return ret;
+}
+
+/**
+ * kmb_imx334_get_serial - Reads sensor serial number
+ * @kmb_imx334: pointer to kmb_imx334 device
+ *
+ * Return: 0 if successful
+ */
+static int kmb_imx334_get_serial(struct kmb_imx334 *kmb_imx334)
+{
+	int ret = 0, i;
+	u32 val;
+	u64 serial_num = 0;
+
+	for (i = 0; i < KMB_IMX334_SERIAL_READ_SIZE; i++) {
+
+		ret = kmb_imx334_read_reg(kmb_imx334,
+					  KMB_IMX334_SERIAL_ADDR + i, 1, &val);
+		if (ret) {
+			dev_err(kmb_imx334->dev,
+				"Cannot read serial number address");
+			return ret;
+		}
+
+		serial_num = (serial_num << 8) | val;
+	}
+
+	kmb_imx334->serial = serial_num;
+
 	return ret;
 }
 
@@ -1744,8 +1783,19 @@ static int kmb_imx334_init_controls(struct kmb_imx334 *kmb_imx334)
 	u32 vblank;
 	int ret;
 
+	const struct v4l2_ctrl_config serial_number = {
+		.id = V4L2_CID_SENSOR_SERIAL_NUMBER,
+		.name = "V4L2_CID_SENSOR_SERIAL_NUMBER",
+		.min = kmb_imx334->serial,
+		.max = kmb_imx334->serial,
+		.def = kmb_imx334->serial,
+		.step = KMB_IMX334_SERIAL_STEP,
+		.type = V4L2_CTRL_TYPE_INTEGER64,
+		.menu_skip_mask = 0,
+	};
+
 	ctrl_hdlr = &kmb_imx334->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 10);
 	if (ret)
 		return ret;
 
@@ -1788,6 +1838,13 @@ static int kmb_imx334_init_controls(struct kmb_imx334 *kmb_imx334)
 	v4l2_ctrl_cluster(6, &kmb_imx334->exp_ctrl);
 
 	/* Read only controls */
+	kmb_imx334->serial_num_ctrl = v4l2_ctrl_new_custom(ctrl_hdlr,
+							   &serial_number,
+							   NULL);
+
+	if (kmb_imx334->serial_num_ctrl)
+		kmb_imx334->serial_num_ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
 	kmb_imx334->pclk_ctrl = v4l2_ctrl_new_std(ctrl_hdlr,
 						  &kmb_imx334_ctrl_ops,
 						  V4L2_CID_PIXEL_RATE,
@@ -2157,6 +2214,11 @@ static int kmb_imx334_pdev_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to find sensor: %d", ret);
 		goto error_unregister_i2c_dev;
 	}
+
+	ret = kmb_imx334_get_serial(kmb_imx334);
+	if (ret)
+		dev_err(&pdev->dev,
+			"failed to read sensor serial number: %d", ret);
 
 	/* Set default mode to max resolution */
 	kmb_imx334->cur_mode = &supported_modes[0];
