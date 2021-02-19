@@ -231,6 +231,8 @@ struct igc_adapter {
 	struct mutex ptm_time_lock; /* protects host and device timestamps */
 	ktime_t ptm_device_time;
 	struct system_counterval_t ptm_host_time;
+
+	bool pps_sys_wrap_on;
 };
 
 void igc_up(struct igc_adapter *adapter);
