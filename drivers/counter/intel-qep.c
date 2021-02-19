@@ -147,8 +147,10 @@ static int intel_qep_count_read(struct counter_device *counter,
 	struct intel_qep *const qep = counter->priv;
 	unsigned long cntval;
 
+	pm_runtime_get_sync(qep->dev);
 	cntval = intel_qep_readl(qep, INTEL_QEPCOUNT);
 	*val = cntval;
+	pm_runtime_put(qep->dev);
 
 	return 0;
 }
@@ -160,11 +162,13 @@ static int intel_qep_function_get(struct counter_device *counter,
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
 
+	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	if (reg & INTEL_QEPCON_SWPAB)
 		*function = INTEL_QEP_ENCODER_MODE_SWAPPED;
 	else
 		*function = INTEL_QEP_ENCODER_MODE_NORMAL;
+	pm_runtime_put(qep->dev);
 
 	return 0;
 }
@@ -200,7 +204,9 @@ static int intel_qep_action_get(struct counter_device *counter,
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
 
+	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
+	pm_runtime_put(qep->dev);
 
 	*action = (reg & synapse->signal->id) ?
 		INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE :
@@ -285,7 +291,9 @@ static ssize_t ceiling_read(struct counter_device *counter,
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
 
+	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPMAX);
+	pm_runtime_put(qep->dev);
 
 	return snprintf(buf, PAGE_SIZE, "%u\n", reg);
 }
@@ -380,12 +388,16 @@ static ssize_t noise_read(struct counter_device *counter,
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
 
+	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 
-	if (!(reg & INTEL_QEPCON_FLT_EN))
+	if (!(reg & INTEL_QEPCON_FLT_EN)) {
+		pm_runtime_put(qep->dev);
 		return snprintf(buf, PAGE_SIZE, "0\n");
+	}
 
 	reg = intel_qep_readl(qep, INTEL_QEPFLT);
+	pm_runtime_put(qep->dev);
 
 	return snprintf(buf, PAGE_SIZE, "%d\n", INTEL_QEPFLT_MAX_COUNT(reg));
 }
@@ -430,7 +442,9 @@ static ssize_t preset_enable_read(struct counter_device *counter,
 	struct intel_qep *qep = counter_to_qep(counter);
 	u32 reg;
 
+	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
+	pm_runtime_put(qep->dev);
 	return snprintf(buf, PAGE_SIZE, "%d\n",
 			!(reg & INTEL_QEPCON_COUNT_RST_MODE));
 }
