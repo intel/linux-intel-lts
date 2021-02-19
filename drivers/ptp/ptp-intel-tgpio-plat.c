@@ -139,8 +139,13 @@ struct intel_tgpio {
 	u32			pin_state[TGPIO_MAX_PIN];
 	u32			saved_ctl_regs[TGPIO_MAX_PIN];
 	u64			saved_piv_regs[TGPIO_MAX_PIN];
+	bool                    busy[TGPIO_MAX_PIN];
+	struct completion       transact_comp[TGPIO_MAX_PIN];
 };
 #define to_intel_tgpio(i)	(container_of((i), struct intel_tgpio, info))
+
+#define ts64_to_ptp_clock_time(x) ((struct ptp_clock_time){.sec = (x).tv_sec, \
+				    .nsec = (x).tv_nsec})
 
 static inline u64 to_intel_tgpio_time(struct ptp_clock_time *t)
 {
@@ -485,7 +490,7 @@ static int intel_tgpio_get_time_fn(ktime_t *device_time,
 
 	intel_tgpio_get_time(tgpio, &ts);
 	*device_time = timespec64_to_ktime(ts);
-	cycles = intel_tgpio_readq(tgpio->base, LXTS_ART_LOW_GLOBAL);
+	cycles = read_art();
 	*system_counter = convert_art_to_tsc(cycles);
 
 	pm_runtime_put(tgpio->dev->parent);
@@ -500,6 +505,51 @@ static int intel_tgpio_getcrosststamp(struct ptp_clock_info *info,
 
 	return get_device_system_crosststamp(intel_tgpio_get_time_fn, tgpio,
 			NULL, cts);
+}
+
+static int intel_tgpio_counttstamp(struct ptp_clock_info *info,
+				   struct ptp_event_count_tstamp *count)
+{
+	struct intel_tgpio *tgpio = to_intel_tgpio(info);
+	u32                 dt_hi_s;
+	u32                 dt_hi_e;
+	u32                 dt_lo;
+	struct timespec64   dt_ts;
+	struct timespec64   tsc_now;
+
+	spin_lock(&tgpio->lock);
+	while (tgpio->busy[count->index]) {
+		spin_unlock(&tgpio->lock);
+		wait_for_completion(&tgpio->transact_comp[count->index]);
+		spin_lock(&tgpio->lock);
+	}
+
+	tgpio->busy[count->index] = true;
+	spin_unlock(&tgpio->lock);
+
+	tsc_now = get_tsc_ns_now(NULL);
+	dt_hi_s = convert_tsc_ns_to_art(&tsc_now) >> 32;
+
+	/* Reading lower 32-bit word of Time Capture Value (TCV) loads */
+	/* the event time and event count capture */
+	dt_lo = intel_tgpio_readl(tgpio->base, TGPIOTCV31_0(count->index));
+	count->event_count = intel_tgpio_readl(tgpio->base,
+					      TGPIOECCV63_32(count->index));
+	count->event_count <<= 32;
+	count->event_count |= intel_tgpio_readl(tgpio->base,
+						TGPIOECCV31_0(count->index));
+	dt_hi_e = intel_tgpio_readl(tgpio->base, TGPIOTCV63_32(count->index));
+
+	if (dt_hi_e != dt_hi_s && dt_lo >> 31)
+		dt_ts = convert_art_to_tsc_ns(((u64)dt_hi_s << 32) | dt_lo);
+	else
+		dt_ts = convert_art_to_tsc_ns(((u64)dt_hi_e << 32) | dt_lo);
+
+	count->device_time = ts64_to_ptp_clock_time(dt_ts);
+
+	tgpio->busy[count->index] = false;
+
+	return 0;
 }
 
 static int intel_tgpio_verify(struct ptp_clock_info *ptp, unsigned int pin,
@@ -522,6 +572,7 @@ static const struct ptp_clock_info intel_tgpio_info = {
 	.settime64	= intel_tgpio_settime64,
 	.enable		= intel_tgpio_enable,
 	.getcrosststamp	= intel_tgpio_getcrosststamp,
+	.counttstamp    = intel_tgpio_counttstamp,
 	.verify		= intel_tgpio_verify,
 };
 
