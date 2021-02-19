@@ -1283,6 +1283,58 @@ int unsynchronized_tsc(void)
 	return 0;
 }
 
+/**
+ * convert_tsc_to_art() - Returns ART value associated with system counter
+ *
+ * Converts input TSC to the corresponding ART value using conversion
+ * factors discovered by detect_art()
+ *
+ * Return:
+ * u64 ART value
+ */
+int convert_tsc_to_art(
+	const struct system_counterval_t *system_counter, u64 *art)
+{
+	u64 tmp, res, rem;
+
+	if (system_counter->cs != art_related_clocksource)
+		return -EINVAL;
+
+	res = system_counter->cycles - art_to_tsc_offset;
+	rem = do_div(res, art_to_tsc_numerator);
+
+	*art = res * art_to_tsc_denominator;
+	tmp = rem * art_to_tsc_denominator;
+
+	do_div(tmp, art_to_tsc_numerator);
+	*art += tmp;
+
+	return 0;
+}
+EXPORT_SYMBOL(convert_tsc_to_art);
+
+/**
+ * read_art() - Returns current ART value
+ *
+ * Converts the current TSC to the current ART value using conversion
+ * factors discovered by detect_art()
+ *
+ * Return:
+ * u64 ART value
+ */
+u64 read_art(void)
+{
+	struct system_counterval_t tsc;
+	u64 art = 0;
+
+	tsc.cs = art_related_clocksource;
+	tsc.cycles = read_tsc(NULL);
+	convert_tsc_to_art(&tsc, &art);
+
+	return art;
+}
+EXPORT_SYMBOL(read_art);
+
 /*
  * Convert ART to TSC given numerator/denominator found in detect_art()
  */
