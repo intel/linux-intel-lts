@@ -31,6 +31,8 @@ extern struct system_counterval_t convert_art_to_tsc(u64 art);
 extern struct system_counterval_t convert_art_ns_to_tsc(u64 art_ns);
 extern struct timespec64 get_tsc_ns_now(struct system_counterval_t
 					*system_counter);
+extern int convert_tsc_to_art(const struct system_counterval_t *tsc, u64 *art);
+extern u64 read_art(void);
 extern u64 convert_tsc_ns_to_art(struct timespec64 *tsc_ns);
 extern u64 convert_tsc_ns_to_art_duration(struct timespec64 *tsc_ns);
 extern struct timespec64 convert_art_to_tsc_ns(u64 art);
