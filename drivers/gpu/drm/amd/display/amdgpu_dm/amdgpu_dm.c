@@ -7870,14 +7870,14 @@ static int dm_force_atomic_commit(struct drm_connector *connector)
 
 	ret = PTR_ERR_OR_ZERO(conn_state);
 	if (ret)
-		goto out;
+		goto err;
 
 	/* Attach crtc to drm_atomic_state*/
 	crtc_state = drm_atomic_get_crtc_state(state, &disconnected_acrtc->base);
 
 	ret = PTR_ERR_OR_ZERO(crtc_state);
 	if (ret)
-		goto out;
+		goto err;
 
 	/* force a restore */
 	crtc_state->mode_changed = true;
@@ -7887,15 +7887,17 @@ static int dm_force_atomic_commit(struct drm_connector *connector)
 
 	ret = PTR_ERR_OR_ZERO(plane_state);
 	if (ret)
-		goto out;
+		goto err;
+
 
 	/* Call commit internally with the state we just constructed */
 	ret = drm_atomic_commit(state);
+	if (!ret)
+		return 0;
 
-out:
+err:
+	DRM_ERROR("Restoring old state failed with %i\n", ret);
 	drm_atomic_state_put(state);
-	if (ret)
-		DRM_ERROR("Restoring old state failed with %i\n", ret);
 
 	return ret;
 }
