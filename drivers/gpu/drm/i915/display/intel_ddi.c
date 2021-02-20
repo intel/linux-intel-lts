@@ -2597,9 +2597,6 @@ static void icl_mg_phy_ddi_vswing_sequence(struct intel_encoder *encoder,
 	u32 n_entries, val;
 	int ln, rate = 0;
 
-	if (enc_to_dig_port(encoder)->tc_mode == TC_PORT_TBT_ALT)
-		return;
-
 	if (type != INTEL_OUTPUT_HDMI) {
 		struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
 
@@ -2743,9 +2740,6 @@ tgl_dkl_phy_ddi_vswing_sequence(struct intel_encoder *encoder, int link_clock,
 	const struct tgl_dkl_phy_ddi_buf_trans *ddi_translations;
 	u32 n_entries, val, ln, dpcnt_mask, dpcnt_val;
 	int rate = 0;
-
-	if (enc_to_dig_port(encoder)->tc_mode == TC_PORT_TBT_ALT)
-		return;
 
 	if (type != INTEL_OUTPUT_HDMI) {
 		struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
