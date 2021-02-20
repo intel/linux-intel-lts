@@ -182,7 +182,6 @@ struct intel_overlay {
 	struct intel_crtc *crtc;
 	struct i915_vma *vma;
 	struct i915_vma *old_vma;
-	struct intel_frontbuffer *frontbuffer;
 	bool active;
 	bool pfit_active;
 	u32 pfit_vscale_ratio; /* shifted-point number, (1<<12) == 1.0 */
@@ -283,19 +282,21 @@ static void intel_overlay_flip_prepare(struct intel_overlay *overlay,
 				       struct i915_vma *vma)
 {
 	enum pipe pipe = overlay->crtc->pipe;
-	struct intel_frontbuffer *frontbuffer = NULL;
+	struct intel_frontbuffer *from = NULL, *to = NULL;
 
 	drm_WARN_ON(&overlay->i915->drm, overlay->old_vma);
 
+	if (overlay->vma)
+		from = intel_frontbuffer_get(overlay->vma->obj);
 	if (vma)
-		frontbuffer = intel_frontbuffer_get(vma->obj);
+		to = intel_frontbuffer_get(vma->obj);
 
-	intel_frontbuffer_track(overlay->frontbuffer, frontbuffer,
-				INTEL_FRONTBUFFER_OVERLAY(pipe));
+	intel_frontbuffer_track(from, to, INTEL_FRONTBUFFER_OVERLAY(pipe));
 
-	if (overlay->frontbuffer)
-		intel_frontbuffer_put(overlay->frontbuffer);
-	overlay->frontbuffer = frontbuffer;
+	if (to)
+		intel_frontbuffer_put(to);
+	if (from)
+		intel_frontbuffer_put(from);
 
 	intel_frontbuffer_flip_prepare(overlay->i915,
 				       INTEL_FRONTBUFFER_OVERLAY(pipe));
