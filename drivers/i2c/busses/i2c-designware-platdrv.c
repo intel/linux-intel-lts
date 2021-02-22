@@ -134,6 +134,8 @@ static int mscc_twi_set_sda_hold_time(struct dw_i2c_dev *dev)
 static int dw_i2c_of_configure(struct platform_device *pdev)
 {
 	struct dw_i2c_dev *dev = platform_get_drvdata(pdev);
+	struct device_node *np = dev->dev->of_node;
+	u32 val;
 
 	switch (dev->flags & MODEL_MASK) {
 	case MODEL_MSCC_OCELOT:
@@ -144,6 +146,18 @@ static int dw_i2c_of_configure(struct platform_device *pdev)
 	default:
 		break;
 	}
+
+	if (!of_property_read_u32(np, "i2c-fast-plus-hcnt", &val))
+		dev->fp_hcnt = (u16)val;
+
+	if (!of_property_read_u32(np, "i2c-fast-plus-lcnt", &val))
+		dev->fp_lcnt = (u16)val;
+
+	if (!of_property_read_u32(np, "i2c-high-speed-hcnt", &val))
+		dev->hs_hcnt = (u16)val;
+
+	if (!of_property_read_u32(np, "i2c-high-speed-lcnt", &val))
+		dev->hs_lcnt = (u16)val;
 
 	return 0;
 }
