@@ -2037,7 +2037,7 @@ static struct igc_ring *igc_xdp_get_tx_ring(struct igc_adapter *adapter,
 
 static int igc_xdp_xmit_back(struct igc_adapter *adapter, struct xdp_buff *xdp)
 {
-	struct xdp_frame *xdpf = xdp_convert_buff_to_frame(xdp);
+	struct xdp_frame *xdpf = convert_to_xdp_frame(xdp);
 	int cpu = smp_processor_id();
 	struct netdev_queue *nq;
 	struct igc_ring *ring;
@@ -2130,7 +2130,7 @@ static void igc_finalize_xdp(struct igc_adapter *adapter, int status)
 	}
 
 	if (status & IGC_XDP_REDIRECT)
-		xdp_do_flush();
+		xdp_do_flush_map();
 }
 
 static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
@@ -2185,7 +2185,6 @@ static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
 			xdp.data_end = xdp.data + size;
 			xdp.data_hard_start = pktbuf - igc_rx_offset(rx_ring);
 			xdp_set_data_meta_invalid(&xdp);
-			xdp.frame_sz = truesize;
 			xdp.rxq = &rx_ring->xdp_rxq;
 
 			skb = igc_xdp_run_prog(adapter, &xdp);
