@@ -66,11 +66,10 @@
 #define PLATFORM_SIP_SVC_DSS_NOC_PROBE_WRITE        (0x8200ff29)
 
 /* Following information should come from DTSI */
-unsigned long __iomem *KMB_NOC_BASE;
 int f_offset[] = {0x44, 0x80, 0xbc, 0xf8}; //Filter_offsets
 int c_offset[] = {0x134, 0x148, 0x15c, 0x170}; //Counter offsets
 
-static inline u32 noc_readl(void __iomem *base, u32 offset)
+static inline u32 noc_readl(u32 offset)
 {
 	struct arm_smccc_res res;
 
@@ -79,7 +78,7 @@ static inline u32 noc_readl(void __iomem *base, u32 offset)
 	return res.a1;
 }
 
-static inline void noc_writel(void __iomem *base, u32 offset, u32 value)
+static inline void noc_writel(u32 offset, u32 value)
 {
 	struct arm_smccc_res res;
 
@@ -95,47 +94,44 @@ int flex_noc_setup(enum noc_type noc, enum noc_counter counter, int trace_port)
 		return -EINVAL;
 
 	//Stop ongoing stats
-	noc_writel(KMB_NOC_BASE, MAINCTL, 0); //MAINCTL.StatEn = 0
-	noc_writel(KMB_NOC_BASE, CFGCTL, 0); //CFGCTL.GlobalEn = 0
+	noc_writel(MAINCTL, 0); //MAINCTL.StatEn = 0
+	noc_writel(CFGCTL, 0); //CFGCTL.GlobalEn = 0
 
 	//Setup trace port
-	noc_writel(KMB_NOC_BASE, TRACEPORTSEL, trace_port);
+	noc_writel(TRACEPORTSEL, trace_port);
 	//COUNTERS_0_PORTSEL
-	noc_writel(KMB_NOC_BASE, (c_offset[counter] + C_PORTSEL), trace_port);
+	noc_writel((c_offset[counter] + C_PORTSEL), trace_port);
 	//COUNTERS_1_PORTSEL
-	noc_writel(KMB_NOC_BASE,
-			(c_offset[counter+1] + C_PORTSEL), trace_port);
+	noc_writel((c_offset[counter+1] + C_PORTSEL), trace_port);
 
 	//Setup counter sources & triggers
 	//COUNTERS_0_SRC (8 - Count BYTES 14 - FiltBytes)
-	noc_writel(KMB_NOC_BASE, (c_offset[counter] + C_SRC), 0x00000014);
+	noc_writel((c_offset[counter] + C_SRC), 0x00000014);
 	//COUNTERS_0_ALARMMODE - OFF
-	noc_writel(KMB_NOC_BASE,
-			(c_offset[counter] + C_ALARMMODE), 0x00000002);
+	noc_writel((c_offset[counter] + C_ALARMMODE), 0x00000002);
 	//COUNTERS_1_SRC  (Carry from C0)
-	noc_writel(KMB_NOC_BASE, (c_offset[counter+1] + C_SRC), 0x00000010);
+	noc_writel((c_offset[counter+1] + C_SRC), 0x00000010);
 	//COUNTERS_1_ALARMMODE - MAX
-	noc_writel(KMB_NOC_BASE,
-			(c_offset[counter+1] + C_ALARMMODE), 0x00000002);
+	noc_writel((c_offset[counter+1] + C_ALARMMODE), 0x00000002);
 
 	//Setup filters
 	// Always Filter 0 is used for all counters ?
 	//Filter 0 Route_id_base
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_ROUTEIDBASE), 0);
+	noc_writel((f_offset[counter/2] + F_ROUTEIDBASE), 0);
 	//Filter 0 Route_id_mask
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_ROUTEIDMASK), 0);
+	noc_writel((f_offset[counter/2] + F_ROUTEIDMASK), 0);
 	//Filter 0 Address Base Low
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_ADDRBASE_LOW), 0);
+	noc_writel((f_offset[counter/2] + F_ADDRBASE_LOW), 0);
 	//Filter 0 Address Base High
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_ADDRBASE_HIGH), 0);
+	noc_writel((f_offset[counter/2] + F_ADDRBASE_HIGH), 0);
 	//Filter 0 window size
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_WINDOWSIZE), 0xffffffff);
+	noc_writel((f_offset[counter/2] + F_WINDOWSIZE), 0xffffffff);
 	//Filter 0 opcode=0xF
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_OPCODE), 0xF);
+	noc_writel((f_offset[counter/2] + F_OPCODE), 0xF);
 	//Filter 0 status
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_STATUS), 0x3);
+	noc_writel((f_offset[counter/2] + F_STATUS), 0x3);
 	//Filter 0 length
-	noc_writel(KMB_NOC_BASE, (f_offset[counter/2] + F_LENGTH), 0xF);
+	noc_writel((f_offset[counter/2] + F_LENGTH), 0xF);
 
 	return 0;
 }
@@ -151,20 +147,20 @@ enum noc_status flexnoc_probe_start(enum noc_type noc, int capture_time)
 	//TBD : Convert capture_time in msec to statperiod;
 	statperiod = 0x1B;
 
-	noc_writel(KMB_NOC_BASE, MAINCTL, 0x00000008); //MAINCTL.StatEn = 1
-	noc_writel(KMB_NOC_BASE, FILTERLUT, 0x00000001); //FilterLUT = 1
+	noc_writel(MAINCTL, 0x00000008); //MAINCTL.StatEn = 1
+	noc_writel(FILTERLUT, 0x00000001); //FilterLUT = 1
 
-	noc_writel(KMB_NOC_BASE, STATALARMMIN, 0x00000000); //STATALARMMIN
+	noc_writel(STATALARMMIN, 0x00000000); //STATALARMMIN
 	//STATALARMMAX - Saturation value
-	noc_writel(KMB_NOC_BASE, STATALARMMAX, 0x00000001);
-	noc_writel(KMB_NOC_BASE, STATALARMEN, 0x00000001); //STATALARMEN
+	noc_writel(STATALARMMAX, 0x00000001);
+	noc_writel(STATALARMEN, 0x00000001); //STATALARMEN
 
 	//MAINCTL .StatEn = 1; .AlarmEn = 1 FiltByteAlwaysChainableEn = 1
-	noc_writel(KMB_NOC_BASE, MAINCTL, 0x00000098);
+	noc_writel(MAINCTL, 0x00000098);
 	// STATPERIOD - 2**duration cycles
-	noc_writel(KMB_NOC_BASE, STATPERIOD, statperiod);
-	noc_writel(KMB_NOC_BASE, FILTERLUT, 0x00000001); //FilterLUT = 1
-	noc_writel(KMB_NOC_BASE, CFGCTL, 0x00000001); //CFGCTL.GlobalEn = 1
+	noc_writel(STATPERIOD, statperiod);
+	noc_writel(FILTERLUT, 0x00000001); //FilterLUT = 1
+	noc_writel(CFGCTL, 0x00000001); //CFGCTL.GlobalEn = 1
 
 	return NOC_PROBE_CAPTURE_STARTED;
 }
@@ -185,19 +181,18 @@ enum noc_status flexnoc_counter_capture(enum noc_type noc,
 	j1 = j0 + delay;
 
 	while (time_before(jiffies, j1)) {
-		c0_0 = noc_readl(KMB_NOC_BASE, (c_offset[counter] + C_VAL));
+		c0_0 = noc_readl((c_offset[counter] + C_VAL));
 		usleep_range(10000, 11000);
-		c0_1 = noc_readl(KMB_NOC_BASE, (c_offset[counter] + C_VAL));
+		c0_1 = noc_readl((c_offset[counter] + C_VAL));
 
 
 		/* If mainctrl is zero , return error */
-		if(0 == noc_readl(KMB_NOC_BASE, MAINCTL)) {
+		if (0 == noc_readl(MAINCTL))
 			return NOC_PROBE_ERR_IN_PROGRESS;
-		}
 
 		/* If counters are zero, keep reading */
-		if(0 == c0_0 || 0 == c0_1) {
-			continue;
+		if (0 == c0_0 && 0 == c0_1) {
+			break;
 		}
 		else if(c0_0 != c0_1) {
 			continue;
@@ -211,8 +206,8 @@ enum noc_status flexnoc_counter_capture(enum noc_type noc,
 	if (c0_0 != c0_1)
 		return NOC_PROBE_ERR_IN_PROGRESS;
 
-	c0_0 = noc_readl(KMB_NOC_BASE, (c_offset[counter] + C_VAL));
-	c0_1 = noc_readl(KMB_NOC_BASE, (c_offset[counter+1] + C_VAL));
+	c0_0 = noc_readl((c_offset[counter] + C_VAL));
+	c0_1 = noc_readl((c_offset[counter+1] + C_VAL));
 
 	*value = (c0_0 | (c0_1 << 16));
 
