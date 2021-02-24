@@ -514,10 +514,10 @@ static void igc_ptm_report_work(struct work_struct *work)
 		/* An error occurred, log it. */
 		igc_ptm_log_error(adapter, stat);
 
-		/* And clear the status bit to force another cycle to
-		 * run.
+		/* Clear the error bits[1:5] and set VALID bit[0] to start the
+		 * next PTM cycle. Status error bits are RW1C write on clear.
 		 */
-		wr32(IGC_PTM_STAT, IGC_PTM_STAT_VALID);
+		wr32(IGC_PTM_STAT, stat | IGC_PTM_STAT_VALID);
 	}
 
 	/* reschedule to check later. */
