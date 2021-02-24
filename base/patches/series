@@ -50,3 +50,11 @@
 
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
+
+# CVE-2020-16120
+0001-ovl-verify-permissions-in-ovl_path_open.patch
+0002-ovl-pass-correct-flags-for-opening-real-directory.patch
+0003-ovl-switch-to-mounter-creds-in-readdir.patch
+0004-ovl-check-permission-to-open-real-file.patch
+0005-ovl-call-secutiry-hook-in-ovl_real_ioctl.patch
+0006-ovl-do-not-fail-because-of-O_NOATIME.patch
