@@ -4134,9 +4134,6 @@ void igc_down(struct igc_adapter *adapter)
 	wr32(IGC_RCTL, rctl & ~IGC_RCTL_EN);
 	/* flush and sleep below */
 
-	/* set trans_start so we don't get spurious watchdogs during reset */
-	netif_trans_update(netdev);
-
 	netif_carrier_off(netdev);
 	netif_tx_stop_all_queues(netdev);
 
