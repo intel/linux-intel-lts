@@ -52,3 +52,11 @@
 0004-ovl-check-permission-to-open-real-file.patch
 0005-ovl-call-secutiry-hook-in-ovl_real_ioctl.patch
 0006-ovl-do-not-fail-because-of-O_NOATIME.patch
+
+# CVE-2021-26930
+0001-xen-blkback-fix-error-handling-in-xen_blkbk_map.patch
+
+# CVE-2021-26931
+0001-xen-blkback-don-t-handle-error-by-BUG.patch
+0002-xen-netback-don-t-handle-error-by-BUG.patch
+0003-xen-scsiback-don-t-handle-error-by-BUG.patch

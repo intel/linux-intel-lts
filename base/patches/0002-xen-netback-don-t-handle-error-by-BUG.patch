@@ -1,0 +1,42 @@
+From ffc2c2370fd7c20f13785f40c9d97d02e0a3bfeb Mon Sep 17 00:00:00 2001
+From: nanli2x <nanli2x@intel.com>
+Date: Wed, 24 Feb 2021 14:25:43 -0500
+Subject: [PATCH 2/3] xen-netback: don't "handle" error by BUG()
+
+In particular -ENOMEM may come back here, from set_foreign_p2m_mapping().
+Don't make problems worse, the more that handling elsewhere (together
+with map's status fields now indicating whether a mapping wasn't even
+attempted, and hence has to be considered failed) doesn't require this
+odd way of dealing with errors.
+
+This is part of XSA-362.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Cc: stable@vger.kernel.org
+Reviewed-by: Juergen Gross <jgross@suse.com>
+---
+ drivers/net/xen-netback/netback.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/net/xen-netback/netback.c b/drivers/net/xen-netback/netback.c
+index f228298c3bd0..b29a1b279fff 100644
+--- a/drivers/net/xen-netback/netback.c
++++ b/drivers/net/xen-netback/netback.c
+@@ -1326,13 +1326,11 @@ int xenvif_tx_action(struct xenvif_queue *queue, int budget)
+ 		return 0;
+ 
+ 	gnttab_batch_copy(queue->tx_copy_ops, nr_cops);
+-	if (nr_mops != 0) {
++	if (nr_mops != 0)
+ 		ret = gnttab_map_refs(queue->tx_map_ops,
+ 				      NULL,
+ 				      queue->pages_to_map,
+ 				      nr_mops);
+-		BUG_ON(ret);
+-	}
+ 
+ 	work_done = xenvif_tx_submit(queue);
+ 
+-- 
+2.17.1
+
