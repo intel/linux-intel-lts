@@ -12292,6 +12292,7 @@ Q:	http://patchwork.ozlabs.org/project/linux-mtd/list/
 C:	irc://irc.oftc.net/mtd
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/mtd/linux.git mtd/fixes
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/mtd/linux.git mtd/next
+F:	Documentation/ABI/testing/sysfs-devices-intel-spi
 F:	Documentation/devicetree/bindings/mtd/
 F:	drivers/mtd/
 F:	include/linux/mtd/
