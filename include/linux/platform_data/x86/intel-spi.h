@@ -21,11 +21,15 @@ enum intel_spi_type {
  * @type: Type which this controller is compatible with
  * @set_writeable: Try to make the chip writeable (optional)
  * @data: Data to be passed to @set_writeable can be %NULL
+ * @is_bios_locked: report if the device is locked by BIOS
+ * @bios_unlock: handler to unlock the bios
  */
 struct intel_spi_boardinfo {
 	enum intel_spi_type type;
 	bool (*set_writeable)(void __iomem *base, void *data);
 	void *data;
+	bool (*is_bios_locked)(struct device *dev);
+	int (*bios_unlock)(struct device *dev);
 };
 
 #endif /* INTEL_SPI_PDATA_H */

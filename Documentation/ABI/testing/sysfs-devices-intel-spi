@@ -1,0 +1,16 @@
+What:		/sys/devices/.../is_protected
+Date:		Jun 2021
+Contact:	Tomas Winkler <tomas.winkler@intel.com>
+Description:
+		The /sys/devices/.../is_protected attribute allows the user
+		space to check if the intel-spi controller is write protected
+		from the host.
+
+What:		/sys/devices/.../bios_lock
+Date:		Jun 2021
+Contact:	Tomas Winkler <tomas.winkler@intel.com>
+Description:
+		The /sys/devices/.../bios_lock attribute allows the user
+		space to check if the intel-spi controller is locked by bios
+		for writes. It is possible to unlock the bios lock by writing
+		"unlock" to the file.
