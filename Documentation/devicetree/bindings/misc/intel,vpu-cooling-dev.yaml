@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+# Copyright (C) 2020 Intel Corporation
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/soc/intel/intel,vpu-cooling-dev.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+
+title: Movidius VPU Cooling Device
+
+maintainers:
+  - Demakkanavar, Kenchappa <kenchappa.demakkanavar@intel.com>
+
+description:
+  Movidius VPU coooling driver is thermal cooling agent registered
+  to thermal framework. This driver communicates with vpu to get/set
+  power modes based on the thermal driver requested states.
+
+properties:
+  compatible:
+    const: intel,vpu-cooling-dev
+
+  intel,vpu-ipc-id:
+    $ref: "/schemas/types.yaml#/definitions/uint32"
+    description: The numeric ID identifying the VPU within the xLink stack.
+
+  #cooling-cells:
+    const: 2
+	description: If used as a cooling device, must be <2>
+    Also see:
+    Documentation/devicetree/bindings/thermal/thermal-cooling-devices.yaml
+    min and max states are derived from the speed-map of the fan..
+
+required:
+  - compatible
+  - intel,vpu-ipc-id:
+  - #cooling-cells
+
+additionalProperties: false
+
+examples:
+  - |
+    vpu-cooling-device {
+        compatible = "intel,vpu-cooling-dev";
+        intel,vpu-ipc-id = < 0x00 >;
+        status = "okay";
+        #cooling-cells = < 0x02 >;
+    };
