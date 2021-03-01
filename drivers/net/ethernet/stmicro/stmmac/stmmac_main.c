@@ -61,6 +61,10 @@
 #define	TSO_MAX_BUFF_SIZE	(SZ_16K - 1)
 
 /* Module parameters */
+static int del_est = 1;
+module_param(del_est, int, 0644);
+MODULE_PARM_DESC(del_est, "Delete est settings when deleting tc TAPRIO qdisc");
+
 #define TX_TIMEO	5000
 static int watchdog = TX_TIMEO;
 module_param(watchdog, int, 0644);
@@ -5933,6 +5937,7 @@ static int stmmac_setup_tc(struct net_device *ndev, enum tc_setup_type type,
 	case TC_SETUP_QDISC_CBS:
 		return stmmac_tc_setup_cbs(priv, priv, type_data);
 	case TC_SETUP_QDISC_TAPRIO:
+		priv->est_hw_del_wa = del_est;
 		return stmmac_tc_setup_taprio(priv, priv, type_data);
 	case TC_SETUP_QDISC_ETF:
 		return stmmac_tc_setup_etf(priv, priv, type_data);
