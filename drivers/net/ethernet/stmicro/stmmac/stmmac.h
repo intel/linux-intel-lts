@@ -285,6 +285,9 @@ struct stmmac_priv {
 	char int_name_rx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 14];
 	char int_name_tx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 18];
 
+	/* WA for skipping disabling EST during TAPRIO deletion */
+	bool est_hw_del_wa;
+
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dbgfs_dir;
 #endif
