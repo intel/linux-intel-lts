@@ -2,22 +2,8 @@
 /*
  *    Hantro driver DMA_BUF fence operation.
  *
- *    Copyright (c) 2017, VeriSilicon Inc.
- *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Copyright (c) 2017 - 2020, VeriSilicon Inc.
+ *    Copyright (c) 2020 - 2021, Intel Corporation
  */
 
 #include "hantro_priv.h"
@@ -26,6 +12,7 @@
 /* for fence's seqno, maybe each domain should hold one */
 static unsigned long seqno;
 DEFINE_IDR(fence_idr);
+/* fence mutex struct */
 struct mutex fence_mutex;
 
 static const char *hantro_fence_get_driver_name(hantro_fence_t *fence)
@@ -35,7 +22,7 @@ static const char *hantro_fence_get_driver_name(hantro_fence_t *fence)
 
 static const char *hantro_fence_get_timeline_name(hantro_fence_t *fence)
 {
-	return " "; /* it shoud correspond to six domains later */
+	return " "; /* it should correspond to six domains later */
 }
 
 static bool hantro_fence_enable_signaling(hantro_fence_t *fence)
@@ -65,24 +52,26 @@ static void hantro_fence_free(hantro_fence_t *fence)
 }
 
 const static hantro_fence_op_t hantro_fenceops = {
-	.get_driver_name	= hantro_fence_get_driver_name,
-	.get_timeline_name	= hantro_fence_get_timeline_name,
-	.enable_signaling	= hantro_fence_enable_signaling,
-	.signaled		= hantro_fence_signaled,
-	.wait			= hantro_fence_default_wait,
-	.release		= hantro_fence_free,
+	.get_driver_name = hantro_fence_get_driver_name,
+	.get_timeline_name = hantro_fence_get_timeline_name,
+	.enable_signaling = hantro_fence_enable_signaling,
+	.signaled = hantro_fence_signaled,
+	.wait = hantro_fence_default_wait,
+	.release = hantro_fence_free,
 };
 
 static hantro_fence_t *alloc_fence(unsigned int ctxno)
 {
 	hantro_fence_t *fobj;
+	/* spinlock for fence */
 	spinlock_t *lock;
 
 	fobj = kzalloc(sizeof(hantro_fence_t), GFP_KERNEL);
-	if (fobj == NULL)
+	if (!fobj)
 		return NULL;
+
 	lock = kzalloc(sizeof(*lock), GFP_KERNEL);
-	if (lock == NULL) {
+	if (!lock) {
 		kfree(fobj);
 		return NULL;
 	}
@@ -94,7 +83,7 @@ static hantro_fence_t *alloc_fence(unsigned int ctxno)
 	return fobj;
 }
 
-static int isHantrofence(hantro_fence_t *fence)
+static int is_hantro_fence(hantro_fence_t *fence)
 {
 	return (fence->ops == &hantro_fenceops);
 }
@@ -113,21 +102,21 @@ int hantro_waitfence(hantro_fence_t *pfence)
 	if (test_bit(HANTRO_FENCE_FLAG_SIGNAL_BIT, &pfence->flags))
 		return 0;
 
-	if (isHantrofence(pfence))
+	if (is_hantro_fence(pfence))
 		/* need self check */
 		return 0;
 	else
 		return hantro_fence_wait_timeout(pfence, true, 30 * HZ);
 }
 
-/* it's obselete, left here for compiling compatible */
+/* it's obsolete, left here for compiling compatible */
 int hantro_setdomain(struct drm_device *dev, void *data,
 		     struct drm_file *file_priv)
 {
 	return 0;
 }
 
-void initFenceData(void)
+void init_fence_data(void)
 {
 	seqno = 0;
 	mutex_init(&fence_mutex);
@@ -141,7 +130,7 @@ static int fence_idr_fini(int id, void *p, void *data)
 	return 0;
 }
 
-void releaseFenceData(void)
+void release_fence_data(void)
 {
 	mutex_lock(&fence_mutex);
 	idr_for_each(&fence_idr, fence_idr_fini, NULL);
@@ -168,8 +157,9 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 		trace_fence_acquirebuf(0x0, arg->handle, -1, 0, ret);
 		return ret;
 	}
+
 	if (!obj->dma_buf) {
-		if (hantro_dev.drm_dev == obj->dev) {
+		if (hantro_drm.drm_dev == obj->dev) {
 			struct drm_gem_hantro_object *hobj =
 				to_drm_gem_hantro_obj(obj);
 
@@ -178,8 +168,10 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 			ret = -ENOENT;
 			goto err;
 		}
-	} else
+
+	} else {
 		resv = obj->dma_buf->resv;
+	}
 
 	/* Check for a stalled fence */
 	if (!dma_resv_wait_timeout_rcu(resv, arg->flags & HANTRO_FENCE_WRITE, 1,
@@ -212,6 +204,7 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 		if (ret == 0)
 			dma_resv_add_shared_fence(resv, fence);
 	}
+
 	dma_resv_unlock(resv);
 
 	/* Record the fence in our idr for later signaling */
@@ -219,19 +212,24 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 		arg->fence_handle = fenceid;
 		goto out;
 	}
+
 err:
 	if (fenceid >= 0) {
 		mutex_lock(&fence_mutex);
 		idr_remove(&fence_idr, fenceid);
 		mutex_unlock(&fence_mutex);
 	}
+
 	if (fence) {
 		hantro_fence_signal(fence);
 		hantro_fence_put(fence);
 	}
+
 out:
 	cma_obj = (struct drm_gem_hantro_object *)obj;
-	trace_fence_acquirebuf((void *)cma_obj->paddr, arg->handle,  arg->fence_handle, (sched_clock() - start) / 1000, ret);
+	trace_fence_acquirebuf((void *)cma_obj->paddr, arg->handle,
+			       arg->fence_handle,
+			       (sched_clock() - start) / 1000, ret);
 	hantro_unref_drmobj(obj);
 	return ret;
 }
@@ -249,7 +247,7 @@ int hantro_testbufvalid(struct drm_device *dev, void *data,
 		return -ENOENT;
 
 	if (!obj->dma_buf) {
-		if (hantro_dev.drm_dev == obj->dev) {
+		if (hantro_drm.drm_dev == obj->dev) {
 			struct drm_gem_hantro_object *hobj =
 				to_drm_gem_hantro_obj(obj);
 
@@ -258,14 +256,17 @@ int hantro_testbufvalid(struct drm_device *dev, void *data,
 			hantro_unref_drmobj(obj);
 			return -ENOENT;
 		}
-	} else
+
+	} else {
 		resv = obj->dma_buf->resv;
+	}
 
 	/* Check for a stalled fence */
 	if (dma_resv_wait_timeout_rcu(resv, 1, 1, 0) <= 0)
 		arg->ready = 0;
 	else
 		arg->ready = 1;
+
 	hantro_unref_drmobj(obj);
 	return 0;
 }
@@ -283,6 +284,7 @@ int hantro_releasebuf(struct drm_device *dev, void *data,
 
 	if (!fence || IS_ERR(fence))
 		return -ENOENT;
+
 	if (hantro_fence_is_signaled(fence))
 		ret = -ETIMEDOUT;
 

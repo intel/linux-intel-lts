@@ -2,53 +2,17 @@
 /*
  *    Hantro dec400 controller hardware driver.
  *
- *    Copyright (c) 2017, VeriSilicon Inc.
- *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Copyright (c) 2017 - 2020, VeriSilicon Inc.
+ *    Copyright (c) 2020 - 2021, Intel Corporation
  */
 
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/mm.h>
-#include <linux/slab.h>
-#include <linux/fs.h>
-#include <linux/errno.h>
-#include <linux/moduleparam.h>
-#include <linux/interrupt.h>
-#include <linux/sched.h>
-#include <linux/semaphore.h>
-#include <linux/spinlock.h>
-#include <asm/io.h>
-#include <linux/pci.h>
-#include <asm/uaccess.h>
-#include <linux/ioport.h>
-#include <asm/irq.h>
-#include <linux/version.h>
-#include <linux/vmalloc.h>
-#include <linux/uaccess.h>
+#include "hantro_priv.h"
+#include "hantro_dec400.h"
 
-#include "hantrodec400.h"
-#include "hantro_slice.h"
+static u32 dec400_regs
+	[1568]; /* for hantro_dec400_flush_regs use, else too big frame */
 
-extern bool enable_dec400;
-static u32 dec400_regs[1568]; /* for hantro_dec400FlushRegs use, else too big frame */
-static int dec400probed;
-
-static void dec400_ResetAsic(struct dec400_t *dev)
+static void dec400_reset_asic(struct dec400_t *dev)
 {
 	int i;
 
@@ -56,13 +20,13 @@ static void dec400_ResetAsic(struct dec400_t *dev)
 		iowrite32(0, (void *)(dev->hwregs + i));
 }
 
-static int hantro_dec400WriteRegs(struct dec400_t *dev, struct core_desc *core)
+static int hantro_dec400_write_regs(struct dec400_t *dev,
+				    struct core_desc *core)
 {
 	u32 data;
 	int ret = 0;
 
 	ret = copy_from_user(&data, core->regs + core->reg_id, sizeof(u32));
-
 	if (ret) {
 		pr_err("copy_from_user failed, returned %d\n", ret);
 		return -EFAULT;
@@ -72,22 +36,23 @@ static int hantro_dec400WriteRegs(struct dec400_t *dev, struct core_desc *core)
 	return 0;
 }
 
-static int hantro_dec400ReadRegs(struct dec400_t *dev, struct core_desc *core)
+static int hantro_dec400_read_regs(struct dec400_t *dev, struct core_desc *core)
 {
 	u32 data;
 	int ret = 0;
 
 	data = ioread32((void *)(dev->hwregs + core->reg_id * sizeof(u32)));
-
 	ret = copy_to_user(core->regs + core->reg_id, &data, sizeof(u32));
 	if (ret) {
 		pr_err("copy_to_user failed, returned %d\n", ret);
 		return -EFAULT;
 	}
+
 	return 0;
 }
 
-static int hantro_dec400FlushRegs(struct dec400_t *dev, struct core_desc *core)
+static int hantro_dec400_flush_regs(struct dec400_t *dev,
+				    struct core_desc *core)
 {
 	int ret = 0, i;
 
@@ -111,12 +76,15 @@ static int hantro_dec400FlushRegs(struct dec400_t *dev, struct core_desc *core)
 	for (i = 800; i < 832; i++)
 		iowrite32(dec400_regs[i],
 			  (void *)(dev->hwregs + i * sizeof(u32)));
+
 	for (i = 864; i < 896; i++)
 		iowrite32(dec400_regs[i],
 			  (void *)(dev->hwregs + i * sizeof(u32)));
+
 	for (i = 928; i < 1184; i++)
 		iowrite32(dec400_regs[i],
 			  (void *)(dev->hwregs + i * sizeof(u32)));
+
 	/* gcregAHBDECIntrEnblEx */
 	iowrite32(dec400_regs[1254],
 		  (void *)(dev->hwregs + 1254 * sizeof(u32)));
@@ -125,16 +93,18 @@ static int hantro_dec400FlushRegs(struct dec400_t *dev, struct core_desc *core)
 	for (i = 1312; i < 1376; i++)
 		iowrite32(dec400_regs[i],
 			  (void *)(dev->hwregs + i * sizeof(u32)));
+
 	for (i = 1504; i < 1568; i++)
 		iowrite32(dec400_regs[i],
 			  (void *)(dev->hwregs + i * sizeof(u32)));
 
 	return 0;
 }
+
 long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret;
-	u32 id, slice, node, type;
+	u32 id, deviceid, node, type;
 	struct dec400_t *pdec400;
 	struct core_desc coredesc;
 
@@ -148,18 +118,21 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %d\n", ret);
 			return -EFAULT;
 		}
-		slice = SLICE(id);
+
+		deviceid = DEVICE_ID(id);
 		type = NODETYPE(id);
 		node = KCORE(id);
-		pdec400 = get_dec400nodebytype(slice, type, node);
-		if (pdec400 == NULL)
+		pdec400 = get_dec400nodebytype(deviceid, type, node);
+		if (!pdec400)
 			return -EINVAL;
+
 		ret = __put_user(pdec400->core_cfg.dec400corebase,
 				 (unsigned long long *)arg);
 		if (ret) {
 			pr_err("copy_to_user failed, returned %d\n", ret);
 			return -EFAULT;
 		}
+
 		return 0;
 	case DEC400_IOCGHWIOSIZE:
 		ret = copy_from_user(&id, (void *)arg, sizeof(u32));
@@ -168,17 +141,19 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		}
 
-		slice = SLICE(id);
+		deviceid = DEVICE_ID(id);
 		type = NODETYPE(id);
 		node = KCORE(id);
-		pdec400 = get_dec400nodebytype(slice, type, node);
-		if (pdec400 == NULL)
+		pdec400 = get_dec400nodebytype(deviceid, type, node);
+		if (!pdec400)
 			return -EFAULT;
+
 		ret = __put_user(pdec400->core_cfg.iosize, (unsigned int *)arg);
 		if (ret) {
 			pr_err("copy_to_user failed, returned %d\n", ret);
 			return -EFAULT;
 		}
+
 		return 0;
 	case DEC400_IOCS_DEC_WRITE_REG:
 		ret = copy_from_user(&coredesc, (void *)arg,
@@ -187,14 +162,15 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %d\n", ret);
 			return -EFAULT;
 		}
-		slice = SLICE(coredesc.id);
+
+		deviceid = DEVICE_ID(coredesc.id);
 		type = NODETYPE(coredesc.id);
 		node = KCORE(coredesc.id);
-		pdec400 = get_dec400nodebytype(slice, type, node);
-		if (pdec400 == NULL)
+		pdec400 = get_dec400nodebytype(deviceid, type, node);
+		if (!pdec400)
 			return -EFAULT;
 
-		return hantro_dec400WriteRegs(pdec400, &coredesc);
+		return hantro_dec400_write_regs(pdec400, &coredesc);
 	case DEC400_IOCS_DEC_READ_REG:
 		ret = copy_from_user(&coredesc, (void *)arg,
 				     sizeof(struct core_desc));
@@ -202,14 +178,15 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %d\n", ret);
 			return -EFAULT;
 		}
-		slice = SLICE(coredesc.id);
+
+		deviceid = DEVICE_ID(coredesc.id);
 		type = NODETYPE(coredesc.id);
 		node = KCORE(coredesc.id);
-		pdec400 = get_dec400nodebytype(slice, type, node);
-		if (pdec400 == NULL)
+		pdec400 = get_dec400nodebytype(deviceid, type, node);
+		if (!pdec400)
 			return -EFAULT;
 
-		return hantro_dec400ReadRegs(pdec400, &coredesc);
+		return hantro_dec400_read_regs(pdec400, &coredesc);
 	case DEC400_IOCS_DEC_PUSH_REG:
 		ret = copy_from_user(&coredesc, (void *)arg,
 				     sizeof(struct core_desc));
@@ -217,14 +194,15 @@ long hantrodec400_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %d\n", ret);
 			return -EFAULT;
 		}
-		slice = SLICE(coredesc.id);
+
+		deviceid = DEVICE_ID(coredesc.id);
 		type = NODETYPE(coredesc.id);
 		node = KCORE(coredesc.id);
-		pdec400 = get_dec400nodebytype(slice, type, node);
-		if (pdec400 == NULL)
+		pdec400 = get_dec400nodebytype(deviceid, type, node);
+		if (!pdec400)
 			return -EFAULT;
 
-		return hantro_dec400FlushRegs(pdec400, &coredesc);
+		return hantro_dec400_flush_regs(pdec400, &coredesc);
 	default:
 		return -EINVAL;
 	}
@@ -238,16 +216,14 @@ int hantro_dec400_probe(dtbnode *pnode)
 	if (enable_dec400 == 0)
 		return 0;
 
-	pdec400 = vmalloc(sizeof(struct dec400_t));
-	if (pdec400 == NULL) {
-		pr_err("DEC400: failed to alloc node\n");
-		return -ENOMEM;
-	}
+	pdec400 = vmalloc(sizeof(*pdec400));
+	if (!pdec400)
+		return -EINVAL;
+
 	pdec400->core_cfg.dec400corebase = pnode->ioaddr;
 	pdec400->core_cfg.iosize = pnode->iosize;
-	pdec400->core_cfg.sliceidx = pnode->sliceidx;
+	pdec400->core_cfg.deviceidx = pnode->deviceidx;
 	pdec400->core_cfg.parentaddr = pnode->parentaddr;
-
 	if (!request_mem_region(pdec400->core_cfg.dec400corebase,
 				pdec400->core_cfg.iosize, "hantrodec400")) {
 		vfree(pdec400);
@@ -257,45 +233,45 @@ int hantro_dec400_probe(dtbnode *pnode)
 
 	pdec400->hwregs = ioremap(pdec400->core_cfg.dec400corebase,
 				  pdec400->core_cfg.iosize);
-
-	if (pdec400->hwregs == NULL) {
+	if (!pdec400->hwregs) {
 		release_mem_region(pdec400->core_cfg.dec400corebase,
 				   pdec400->core_cfg.iosize);
 		vfree(pdec400);
 		pr_err("DEC400: failed to map HW regs\n");
 		return -ENODEV;
 	}
-	dec400_ResetAsic(pdec400);
-	add_dec400node(pnode->sliceidx, pdec400);
+
+	dec400_reset_asic(pdec400);
+	add_dec400node(pnode->pdevice, pdec400);
 	pr_info("hantrodec400: HW at base <0x%llx>\n",
 		pdec400->core_cfg.dec400corebase);
-
 	return 0;
 }
 
-void __exit hantro_dec400_cleanup(void)
+void hantrodec400_remove(struct device_info *pdevice)
 {
-	int i, slicen = get_slicenumber();
 	struct dec400_t *dev, *pp;
 
-	for (i = 0; i < slicen; i++) {
-		dev = get_dec400nodes(i, 0);
-		while (dev != NULL) {
-			if (dev->hwregs) {
-				iounmap((void *)dev->hwregs);
-				release_mem_region(dev->core_cfg.dec400corebase,
-						   dev->core_cfg.iosize);
-			}
-			pp = dev->next;
-			vfree(dev);
-			dev = pp;
+	dev = get_dec400nodes(pdevice->deviceid, 0);
+	while (dev) {
+		if (dev->hwregs) {
+			iounmap((void *)dev->hwregs);
+			release_mem_region(dev->core_cfg.dec400corebase,
+					   dev->core_cfg.iosize);
 		}
+
+		pp = dev->next;
+		vfree(dev);
+		dev = pp;
 	}
-	dec400probed = 0;
 }
 
 int __init hantrodec400_init(void)
 {
-	dec400probed = 0;
+	return 0;
+}
+
+int __exit hantrodec400_cleanup(void)
+{
 	return 0;
 }

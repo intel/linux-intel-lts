@@ -1,0 +1,9 @@
+config DRM_HANTRO_UNIFY
+	tristate "Hantro Driver Unified"
+	depends on DRM
+	default m
+	select DRM_PANEL
+	select DRM_KMS_HELPER
+	help
+	  Choose this option if your system supports VPU Media Hantro.
+	  This driver supports H264/H265 video and JPEG encode/decode.

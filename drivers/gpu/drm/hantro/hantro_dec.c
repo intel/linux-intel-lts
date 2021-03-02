@@ -2,50 +2,15 @@
 /*
  *    Hantro decoder hardware driver.
  *
- *    Copyright (c) 2017, VeriSilicon Inc.
- *
- *    This program is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU General Public License
- *    as published by the Free Software Foundation; either version 2
- *    of the License, or (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You may obtain a copy of the GNU General Public License
- *    Version 2 or later at the following locations:
- *    http://www.opensource.org/licenses/gpl-license.html
- *    http://www.gnu.org/copyleft/gpl.html
+ *    Copyright (c) 2017 - 2020, VeriSilicon Inc.
+ *    Copyright (c) 2020 - 2021, Intel Corporation
  */
 
-#include "hantrodec.h"
-#include "dwl_defs.h"
-#include <linux/io.h>
-#include <linux/uaccess.h>
-#include <linux/errno.h>
-#include <linux/fs.h>
-#include <linux/init.h>
-#include <linux/interrupt.h>
-#include <linux/ioport.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
-#include <linux/module.h>
-#include <linux/moduleparam.h>
-#include <linux/pci.h>
-#include <linux/sched.h>
-#include <linux/semaphore.h>
-#include <linux/spinlock.h>
-#include <linux/slab.h>
-#include <linux/version.h>
-#include <linux/wait.h>
-#include <linux/timer.h>
-#include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/of_irq.h>
-#include <linux/platform_device.h>
-#include <linux/pm_runtime.h>
+#include "hantro_priv.h"
+#include "hantro_dec.h"
+#include "hantro_dwl_defs.h"
+
+#define KMB_VC8000D_PAGE_LUT           0x20889000
 
 /* hantro G1 regs config including dec and pp */
 #define HANTRO_PP_ORG_REGS		41
@@ -70,16 +35,9 @@
 #define IS_G2(hw_id)		(((hw_id) == 0x6732) ? 1 : 0)
 #define IS_VC8000D(hw_id)	(((hw_id) == 0x8001) ? 1 : 0)
 
-static const int DecHwId[] = { 0x6731, /* G1 */
-			       0x6732, /* G2 */
-			       0x8001 };
-
-static int bdecprobed;
-extern bool verbose;
-extern bool enable_decode;
-extern bool enable_irqmode;
-extern bool platform_kmb;
-
+static const int dec_hwid[] = { 0x6731, /* G1 */
+				0x6732, /* G2 */
+				0x8001 };
 #undef PDEBUG
 #define PDEBUG(fmt, arg...)                                                    \
 	do {                                                                   \
@@ -92,11 +50,9 @@ struct hantrodec_ctrl {
 	int cores;
 };
 
-static int ReserveIO(struct hantrodec_t *core, struct hantrodec_t **auxcore);
-static void ReleaseIO(struct hantrodec_t *);
-
-static void ResetAsic(struct hantrodec_t *dev);
-
+static int reserve_io(struct hantrodec_t *core, struct hantrodec_t **auxcore);
+static void release_io(struct hantrodec_t *);
+static void reset_asic(struct hantrodec_t *dev);
 
 /* IRQ handler */
 static irqreturn_t hantrodec_isr(int irq, void *dev_id);
@@ -119,64 +75,64 @@ atomic_t irq_tx = ATOMIC_INIT(0);
 
 static u32 timeout;
 
-static struct hantrodec_t *getcoreCtrl(u32 id)
+static struct hantrodec_t *get_core_ctrl(u32 id)
 {
 	struct hantrodec_t *pcore;
-	u32 slice = SLICE(id);
+	u32 deviceid = DEVICE_ID(id);
 	u32 node = KCORE(id);
 
-	PDEBUG("hantrodec: getcoreCtrl\n");
-	pcore = get_decnodes(slice, node);
+	PDEBUG("hantrodec: %s\n", __func__);
+	pcore = get_decnode_bydeviceid(deviceid, node);
 	return pcore;
 }
 
-u32 hantrodec_readbandwidth(int sliceidx, int isreadBW)
+u32 hantrodec_readbandwidth(struct device_info *pdevice, int is_read_bw)
 {
-	int i, slicen = get_slicenumber();
+	int i, devcnt = get_devicecount();
 	u32 bandwidth = 0;
 	struct hantrodec_t *dev;
 
-	if (sliceidx < 0) {
-		for (i = 0; i < slicen; i++) {
-			dev = get_decnodes(i, 0);
-			while (dev != NULL) {
-				if (isreadBW)
-					bandwidth += ioread32((
-						void *)(dev->hwregs +
-							HANTRO_VC8KD_REG_BWREAD *
-								4));
+	if (!pdevice) {
+		for (i = 0; i < devcnt; i++) {
+			dev = get_decnode_bydeviceid(i, 0);
+			while (dev) {
+				if (is_read_bw)
+					bandwidth +=
+						ioread32((void *)(dev->hwregs +
+								  HANTRO_VC8KD_REG_BWREAD * 4));
 				else
-					bandwidth += ioread32((
-						void *)(dev->hwregs +
-							HANTRO_VC8KD_REG_BWWRITE *
-								4));
+					bandwidth +=
+						ioread32((void *)(dev->hwregs +
+								  HANTRO_VC8KD_REG_BWWRITE * 4));
+
 				dev = dev->next;
 			}
 		}
 	} else {
-		dev = get_decnodes(sliceidx, 0);
-		while (dev != NULL) {
-			if (isreadBW)
-				bandwidth += ioread32(
-					(void *)(dev->hwregs +
-						 HANTRO_VC8KD_REG_BWREAD * 4));
+		dev = get_decnode(pdevice, 0);
+		while (dev) {
+			if (is_read_bw)
+				bandwidth +=
+					ioread32((void *)(dev->hwregs +
+							  HANTRO_VC8KD_REG_BWREAD * 4));
 			else
-				bandwidth += ioread32(
-					(void *)(dev->hwregs +
-						 HANTRO_VC8KD_REG_BWWRITE * 4));
+				bandwidth +=
+					ioread32((void *)(dev->hwregs +
+							  HANTRO_VC8KD_REG_BWWRITE * 4));
+
 			dev = dev->next;
 		}
 	}
 	return bandwidth * VC8KD_BURSTWIDTH;
 }
 
-static void ReadCoreConfig(struct hantrodec_t *dev)
+static void read_core_config(struct hantrodec_t *dev)
 {
 	int c = dev->core_id;
 	u32 reg, tmp, mask;
 	struct hantrodec_t *next;
 
-	PDEBUG("hantrodec: ReadCoreConfig\n");
+	PDEBUG("hantrodec: %s\n", __func__);
 	dev->cfg = 0;
 
 	/* Decoder configuration */
@@ -186,55 +142,66 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 		tmp = (reg >> DWL_H264_E) & 0x3U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has H264\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 		tmp = (reg >> DWL_JPEG_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has JPEG\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_JPEG_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG4_E) & 0x3U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has MPEG4\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_MPEG4_DEC : 0;
 
 		tmp = (reg >> DWL_VC1_E) & 0x3U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has VC1\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VC1_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG2_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has MPEG2\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_MPEG2_DEC : 0;
 
 		tmp = (reg >> DWL_VP6_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has VP6\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VP6_DEC : 0;
 
-		reg = ioread32(
-			(void *)(dev->hwregs + HANTRODEC_SYNTH_CFG_2 * 4));
+		reg = ioread32((void *)(dev->hwregs +
+					HANTRODEC_SYNTH_CFG_2 * 4));
 
 		/* VP7 and WEBP is part of VP8 */
 		mask = (1 << DWL_VP8_E) | (1 << DWL_VP7_E) | (1 << DWL_WEBP_E);
 		tmp = (reg & mask);
 		if (tmp & (1 << DWL_VP8_E))
 			PDEBUG("hantrodec: core[%d] has VP8\n", c);
+
 		if (tmp & (1 << DWL_VP7_E))
 			PDEBUG("hantrodec: core[%d] has VP7\n", c);
+
 		if (tmp & (1 << DWL_WEBP_E))
 			PDEBUG("hantrodec: core[%d] has WebP\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VP8_DEC : 0;
 
 		tmp = (reg >> DWL_AVS_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has AVS\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_AVS_DEC : 0;
 
 		tmp = (reg >> DWL_RV_E) & 0x03U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has RV\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_RV_DEC : 0;
 
 		/* Post-processor configuration */
@@ -243,6 +210,7 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 		tmp = (reg >> DWL_G1_PP_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has PP\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_PP : 0;
 	} else if ((IS_G2(dev->hw_id))) {
 		reg = ioread32((void *)(dev->hwregs + HANTRODEC_CFG_STAT * 4));
@@ -250,106 +218,124 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 		tmp = (reg >> DWL_G2_HEVC_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has HEVC\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_HEVC_DEC : 0;
 
 		tmp = (reg >> DWL_G2_VP9_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has VP9\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VP9_DEC : 0;
 
 		/* Post-processor configuration */
-		reg = ioread32(
-			(void *)(dev->hwregs + HANTRODECPP_SYNTH_CFG * 4));
+		reg = ioread32((void *)(dev->hwregs +
+					HANTRODECPP_SYNTH_CFG * 4));
 
 		tmp = (reg >> DWL_G2_PP_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has PP\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_PP : 0;
-	} else if ((IS_VC8000D(dev->hw_id)) && dev->its_main_core_id == NULL) {
+	} else if ((IS_VC8000D(dev->hw_id)) && !dev->its_main_core_id) {
 		reg = ioread32((void *)(dev->hwregs + HANTRODEC_SYNTH_CFG * 4));
 
 		tmp = (reg >> DWL_H264_E) & 0x3U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has H264\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 		tmp = (reg >> DWL_H264HIGH10_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has H264HIGH10\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 		tmp = (reg >> DWL_JPEG_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has JPEG\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_JPEG_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG4_E) & 0x3U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has MPEG4\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_MPEG4_DEC : 0;
 
 		tmp = (reg >> DWL_VC1_E) & 0x3U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has VC1\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VC1_DEC : 0;
 
 		tmp = (reg >> DWL_MPEG2_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has MPEG2\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_MPEG2_DEC : 0;
 
 		tmp = (reg >> DWL_VP6_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has VP6\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VP6_DEC : 0;
 
-		reg = ioread32(
-			(void *)(dev->hwregs + HANTRODEC_SYNTH_CFG_2 * 4));
+		reg = ioread32((void *)(dev->hwregs +
+					HANTRODEC_SYNTH_CFG_2 * 4));
 
 		/* VP7 and WEBP is part of VP8 */
 		mask = (1 << DWL_VP8_E) | (1 << DWL_VP7_E) | (1 << DWL_WEBP_E);
 		tmp = (reg & mask);
 		if (tmp & (1 << DWL_VP8_E))
 			PDEBUG("hantrodec: core[%d] has VP8\n", c);
+
 		if (tmp & (1 << DWL_VP7_E))
 			PDEBUG("hantrodec: core[%d] has VP7\n", c);
+
 		if (tmp & (1 << DWL_WEBP_E))
 			PDEBUG("hantrodec: core[%d] has WebP\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VP8_DEC : 0;
 
 		tmp = (reg >> DWL_AVS_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has AVS\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_AVS_DEC : 0;
 
 		tmp = (reg >> DWL_RV_E) & 0x03U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has RV\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_RV_DEC : 0;
 
-		reg = ioread32(
-			(void *)(dev->hwregs + HANTRODEC_SYNTH_CFG_3 * 4));
+		reg = ioread32((void *)(dev->hwregs +
+					HANTRODEC_SYNTH_CFG_3 * 4));
 
 		tmp = (reg >> DWL_HEVC_E) & 0x07U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has HEVC\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_HEVC_DEC : 0;
 
 		tmp = (reg >> DWL_VP9_E) & 0x07U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has VP9\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_VP9_DEC : 0;
 
 		/* Post-processor configuration */
-		reg = ioread32(
-			(void *)(dev->hwregs + HANTRODECPP_CFG_STAT * 4));
+		reg = ioread32((void *)(dev->hwregs +
+					HANTRODECPP_CFG_STAT * 4));
 
 		tmp = (reg >> DWL_PP_E) & 0x01U;
 		if (tmp)
 			PDEBUG("hantrodec: core[%d] has PP\n", c);
+
 		dev->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_PP : 0;
 
-		if (dev->its_aux_core_id != NULL) {
+		if (dev->its_aux_core_id) {
 			/* set main_core_id and aux_core_id */
 			next = dev->its_aux_core_id;
 			reg = ioread32((void *)(next->hwregs +
@@ -359,76 +345,75 @@ static void ReadCoreConfig(struct hantrodec_t *dev)
 			if (tmp)
 				PDEBUG("hantrodec: core[%d] has pipeline H264\n",
 				       c);
+
 			next->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_H264_DEC : 0;
 
 			tmp = (reg >> DWL_JPEG_PIPELINE_E) & 0x01U;
 			if (tmp)
 				PDEBUG("hantrodec: core[%d] has pipeline JPEG\n",
 				       c);
+
 			next->cfg |= tmp ? 1 << DWL_CLIENT_TYPE_JPEG_DEC : 0;
 		}
 	}
 	dev->cfg_backup = dev->cfg;
 }
 
-static int CoreHasFormat(const u32 cfg, u32 format)
+static int core_has_format(const u32 cfg, u32 format)
 {
 	return (cfg & (1 << format)) ? 1 : 0;
 }
 
-static int GetDecCore(long core, struct hantrodec_t *dev, struct file *filp,
-		      unsigned long format)
+static int get_dec_core(long core, struct hantrodec_t *dev, struct file *filp,
+			unsigned long format)
 {
 	int success = 0;
 	unsigned long flags;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
-	PDEBUG("hantrodec: GetDecCore\n");
-	spin_lock_irqsave(&parentslice->owner_lock, flags);
-	if (CoreHasFormat(dev->cfg, format) &&
-	    dev->dec_owner == NULL) {
+	PDEBUG("hantrodec: %s\n", __func__);
+	spin_lock_irqsave(&parentdevice->owner_lock, flags);
+	if (core_has_format(dev->cfg, format) && !dev->dec_owner) {
 		dev->dec_owner = filp;
-		((struct slice_info *)(dev->parentslice))->dec_irq &=
+		((struct device_info *)(dev->parentdevice))->dec_irq &=
 			~(1 << core);
 		success = 1;
-
 		/*
 		 * If one main core takes one format which doesn't supported
 		 * by aux core, set aux core's cfg to none video format support,
 		 * else if aux support, set aux core's cfg only support the format
 		 * which main core takes
 		 */
-		if (dev->its_aux_core_id != NULL) {
-			if (!CoreHasFormat(dev->its_aux_core_id->cfg, format))
+		if (dev->its_aux_core_id) {
+			if (!core_has_format(dev->its_aux_core_id->cfg, format))
 				dev->its_aux_core_id->cfg = 0;
 			else
 				dev->its_aux_core_id->cfg = (1 << format);
 		}
+
 		/*
 		 * If one aux core takes one format,
 		 * set main core's cfg only support the format which aux core takes
 		 */
-		else if (dev->its_main_core_id != NULL) {
+		else if (dev->its_main_core_id)
 			dev->its_main_core_id->cfg = (1 << format);
-		}
 	}
 
-	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
+	spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 	return success;
 }
 
-static int GetDecCoreAny(long *core, struct hantrodec_t *dev, struct file *filp,
-			 unsigned long format)
+static int get_dec_core_any(long *core, struct hantrodec_t *dev,
+			    struct file *filp, unsigned long format)
 {
 	int success = 0;
 	long c = 0;
 
 	*core = -1;
 
-	while (dev != NULL) {
+	while (dev) {
 		/* a free core that has format */
-		if (GetDecCore(c, dev, filp, format)) {
+		if (get_dec_core(c, dev, filp, format)) {
 			success = 1;
 			*core = c;
 			PDEBUG("get core %ld:%d,fp=%lx, pid=%d", c,
@@ -436,6 +421,7 @@ static int GetDecCoreAny(long *core, struct hantrodec_t *dev, struct file *filp,
 			       (int)current->pid);
 			break;
 		}
+
 		c++;
 		dev = dev->next;
 	}
@@ -443,68 +429,92 @@ static int GetDecCoreAny(long *core, struct hantrodec_t *dev, struct file *filp,
 	return success;
 }
 
-static int GetDecCoreID(struct hantrodec_t *dev, struct file *filp,
-			unsigned long format)
+static int get_dec_coreid(struct hantrodec_t *dev, struct file *filp,
+			  unsigned long format)
 {
 	long c = 0;
 	unsigned long flags;
 	int core_id = -1;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
-	PDEBUG("hantrodec: GetDecCoreID\n");
-	while (dev != NULL) {
+	PDEBUG("hantrodec: %s\n", __func__);
+	while (dev) {
 		/* a core that has format */
-		spin_lock_irqsave(&parentslice->owner_lock, flags);
-		if (CoreHasFormat(dev->cfg_backup, format)) {
+		spin_lock_irqsave(&parentdevice->owner_lock, flags);
+		if (core_has_format(dev->cfg_backup, format)) {
 			core_id = c;
-			spin_unlock_irqrestore(&parentslice->owner_lock, flags);
+			spin_unlock_irqrestore(&parentdevice->owner_lock,
+					       flags);
 			break;
 		}
-		spin_unlock_irqrestore(&parentslice->owner_lock, flags);
+
+		spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 		dev = dev->next;
 		c++;
 	}
+
 	return core_id;
 }
 
-static long ReserveDecoder(struct hantrodec_t *dev, struct file *filp,
-			   unsigned long format)
+static long reserve_decoder(struct hantrodec_t *dev, struct file *filp,
+			    unsigned long format)
 {
 	long core = -1;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
+	struct hantrodec_t *reserved_core = NULL;
 
 	START_TIME;
-	PDEBUG("hantrodec: ReserveDecoder\n");
 	/* reserve a core */
-	if (down_interruptible(&parentslice->dec_core_sem)) {
+	if (down_interruptible(&parentdevice->dec_core_sem)) {
 		core = -ERESTARTSYS;
 		goto out;
 	}
+
 	/* lock a core that has specific format*/
-	if (wait_event_interruptible(parentslice->hw_queue,
-				     GetDecCoreAny(&core, dev, filp, format) !=
-					     0)) {
+	if (wait_event_interruptible(parentdevice->hw_queue,
+				     get_dec_core_any(&core, dev, filp,
+						      format) != 0)) {
 		core = -ERESTARTSYS;
-    } else {
-        perfdata[dev->sliceidx][NODE_TYPE_DEC][core].last_resv = sched_clock();
-    }
+		goto out;
+	}
+
+	reserved_core = get_decnode(parentdevice, KCORE(core));
+	if (!reserved_core) {
+		pr_err("Core not found");
+		goto out;
+	}
+
+	if (reserved_core->dev_clk &&
+	    parentdevice->thermal_data.clk_freq != reserved_core->clk_freq) {
+		PDEBUG("Reserve decoder:  setting to %ld for device %d, core %ld\n",
+		       parentdevice->thermal_data.clk_freq,
+		       parentdevice->deviceid, core);
+		clk_set_rate(reserved_core->dev_clk,
+			     parentdevice->thermal_data.clk_freq);
+		reserved_core->clk_freq = parentdevice->thermal_data.clk_freq;
+	}
+
+	reserved_core->perf_data.last_resv = sched_clock();
 out:
-	trace_dec_reserve(dev->sliceidx, core, (sched_clock() - start) / 1000);
+	trace_dec_reserve(dev->deviceidx, core, (sched_clock() - start) / 1000);
 	return core;
 }
 
-static void ReleaseDecoder(struct hantrodec_t *dev, long core)
+static void release_decoder(struct hantrodec_t *dev, long core)
 {
 	u32 status;
 	unsigned long flags;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
+	struct hantrodec_t *reserved_core = NULL;
 
-    PDEBUG("hantrodec: ReleaseDecoder\n");
-    perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].count++;
-    perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].totaltime +=
-                (sched_clock() - (perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].last_resv == 0 ? sched_clock() : perfdata[dev->sliceidx][NODE_TYPE_DEC][KCORE(core)].last_resv));
+	PDEBUG("hantrodec: %s\n", __func__);
+	reserved_core = get_decnode(parentdevice, KCORE(core));
+	reserved_core->perf_data.count++;
+	reserved_core->perf_data.totaltime +=
+		(sched_clock() - (reserved_core->perf_data.last_resv == 0 ?
+					  sched_clock() :
+					  reserved_core->perf_data.last_resv));
 	status = ioread32((void *)(dev->hwregs + HANTRODEC_IRQ_STAT_DEC_OFF));
-
 	/* make sure HW is disabled */
 	if (status & HANTRODEC_DEC_E) {
 		pr_info("hantrodec: DEC[%lx] still enabled -> reset, status = 0x%x [offset=%x]\n",
@@ -515,78 +525,68 @@ static void ReleaseDecoder(struct hantrodec_t *dev, long core)
 			  (void *)(dev->hwregs + HANTRODEC_IRQ_STAT_DEC_OFF));
 	}
 
-	spin_lock_irqsave(&parentslice->owner_lock, flags);
-
+	spin_lock_irqsave(&parentdevice->owner_lock, flags);
 	/* If aux core released, revert main core's config back */
-	if (dev->its_main_core_id != NULL)
+	if (dev->its_main_core_id)
 		dev->its_main_core_id->cfg = dev->its_main_core_id->cfg_backup;
 
 	/* If main core released, revert aux core's config back */
-	if (dev->its_aux_core_id != NULL)
+	if (dev->its_aux_core_id)
 		dev->its_aux_core_id->cfg = dev->its_aux_core_id->cfg_backup;
 
 	dev->dec_owner = NULL;
-
-	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
-	up(&parentslice->dec_core_sem);
-
-	wake_up_interruptible_all(&parentslice->hw_queue);
-	trace_dec_release(dev->sliceidx, KCORE(core));
+	spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
+	up(&parentdevice->dec_core_sem);
+	wake_up_interruptible_all(&parentdevice->hw_queue);
+	trace_dec_release(dev->deviceidx, KCORE(core));
 }
 
-static long ReservePostProcessor(struct hantrodec_t *dev, struct file *filp)
+static long reserve_post_processor(struct hantrodec_t *dev, struct file *filp)
 {
 	unsigned long flags;
 	long core = 0;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
 	/* single core PP only */
-	if (down_interruptible(&parentslice->pp_core_sem))
+	if (down_interruptible(&parentdevice->pp_core_sem))
 		return -ERESTARTSYS;
 
-	spin_lock_irqsave(&parentslice->owner_lock, flags);
-	if (dev != NULL)
+	spin_lock_irqsave(&parentdevice->owner_lock, flags);
+	if (dev)
 		dev->pp_owner = filp;
 
-	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
+	spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 	return core;
 }
 
-static void ReleasePostProcessor(struct hantrodec_t *dev, long core)
+static void release_post_processor(struct hantrodec_t *dev, long core)
 {
 	unsigned long flags;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
 	u32 status = ioread32((void *)(dev->hwregs + HANTRO_IRQ_STAT_PP_OFF));
 
 	/* make sure HW is disabled */
 	if (status & HANTRO_PP_E) {
 		pr_info("hantrodec: PP[%li] still enabled -> reset\n", core);
-
 		/* disable IRQ */
 		status |= HANTRO_PP_IRQ_DISABLE;
-
 		/* disable postprocessor */
 		status &= (~HANTRO_PP_E);
 		iowrite32(0x10, (void *)(dev->hwregs + HANTRO_IRQ_STAT_PP_OFF));
 	}
 
-	spin_lock_irqsave(&parentslice->owner_lock, flags);
-
+	spin_lock_irqsave(&parentdevice->owner_lock, flags);
 	dev->pp_owner = NULL;
-
-	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
-	up(&parentslice->pp_core_sem);
+	spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
+	up(&parentdevice->pp_core_sem);
 }
 
-static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
+static long dec_flush_regs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long ret = 0;
 
-	PDEBUG("hantrodec: DecFlushRegs\n");
+	PDEBUG("hantrodec: %s\n", __func__);
 	ret = copy_from_user(dev->dec_regs, core->regs,
 			     HANTRO_VC8000D_REGS * 4);
 	if (ret) {
@@ -596,59 +596,59 @@ static long DecFlushRegs(struct hantrodec_t *dev, struct core_desc *core)
 
 	/* write all regs but the status reg[1] to hardware */
 	iowrite32(0x0, (void *)(dev->hwregs + 4));
-	memcpy(((void *)(dev->hwregs + 0x8)), &dev->dec_regs[2], (HANTRO_VC8000D_LAST_REG - 2 ) * 4);
+	memcpy(((void *)(dev->hwregs + 0x8)), &dev->dec_regs[2],
+	       (HANTRO_VC8000D_LAST_REG - 2) * 4);
 
 	/* write the status register, which may start the decoder */
 	iowrite32(dev->dec_regs[1], (void *)(dev->hwregs + 4));
 	return 0;
 }
 
-static long DecRefreshRegs(struct hantrodec_t *dev, struct core_desc *core)
+static long dec_refresh_regs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long ret;
 
 	memcpy(dev->dec_regs, (void *)dev->hwregs, HANTRO_VC8000D_LAST_REG * 4);
 	ret = copy_to_user(core->regs, dev->dec_regs,
 			   HANTRO_VC8000D_LAST_REG * 4);
+	dev->perf_data.hwcycles += ioread32((void *)dev->hwregs + (63 * 4));
 	if (ret) {
 		pr_info("copy_to_user failed, returned %li\n", ret);
 		return -EFAULT;
 	}
+
 	return 0;
 }
 
-static int CheckDecIrq(struct hantrodec_t *dev, int id)
+static int check_dec_irq(struct hantrodec_t *dev, int id)
 {
 	unsigned long flags;
 	int rdy = 0;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 	const u32 irq_mask = (1 << id);
 
-	spin_lock_irqsave(&parentslice->owner_lock, flags);
-
-	if (parentslice->dec_irq & irq_mask) {
+	spin_lock_irqsave(&parentdevice->owner_lock, flags);
+	if (parentdevice->dec_irq & irq_mask) {
 		/* reset the wait condition(s) */
-		PDEBUG("hantrodec: CheckDecIRQ\n");
-		parentslice->dec_irq &= ~irq_mask;
+		PDEBUG("hantrodec: %s\n", __func__);
+		parentdevice->dec_irq &= ~irq_mask;
 		rdy = 1;
 	}
 
-	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
+	spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 	return rdy;
 }
 
-static long WaitDecReadyAndRefreshRegs(struct hantrodec_t *dev,
-				       struct core_desc *Core)
+static long wait_dec_ready_and_refresh_regs(struct hantrodec_t *dev,
+					    struct core_desc *core)
 {
-	u32 id = KCORE(Core->id);
+	u32 id = KCORE(core->id);
 	long ret;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
 	PDEBUG("wait_event_interruptible DEC[%d]\n", id);
-
-	ret = wait_event_interruptible_timeout(parentslice->dec_wait_queue,
-					       CheckDecIrq(dev, id),
+	ret = wait_event_interruptible_timeout(parentdevice->dec_wait_queue,
+					       check_dec_irq(dev, id),
 					       msecs_to_jiffies(10));
 	if (ret == -ERESTARTSYS) {
 		pr_err("DEC[%d]  failed to wait_event_interruptible interrupted\n",
@@ -659,17 +659,17 @@ static long WaitDecReadyAndRefreshRegs(struct hantrodec_t *dev,
 		timeout = 1;
 		return -EBUSY;
 	}
-	atomic_inc(&irq_tx);
 
+	atomic_inc(&irq_tx);
 	/* refresh registers */
-	return DecRefreshRegs(dev, Core);
+	return dec_refresh_regs(dev, core);
 }
 
-static long DecWriteRegs(struct hantrodec_t *dev, struct core_desc *core)
+static long dec_write_regs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long ret = 0, i;
 
-	PDEBUG("hantrodec: DecWriteRegs\n");
+	PDEBUG("hantrodec: %s\n", __func__);
 	i = core->reg_id;
 	ret = copy_from_user(dev->dec_regs + core->reg_id,
 			     core->regs + core->reg_id, 4);
@@ -677,30 +677,34 @@ static long DecWriteRegs(struct hantrodec_t *dev, struct core_desc *core)
 		pr_info("copy_from_user failed, returned %li\n", ret);
 		return -EFAULT;
 	}
+
 	iowrite32(dev->dec_regs[i], (void *)dev->hwregs + i * 4);
 	return 0;
 }
 
-u32 *hantrodec_getRegAddr(u32 coreid, u32 regid)
+u32 *hantrodec_get_reg_addr(u32 coreid, u32 regid)
 {
 	int i;
-	struct hantrodec_t *dev = get_decnodes(SLICE(coreid), KCORE(coreid));
+	struct hantrodec_t *dev =
+		get_decnode_bydeviceid(DEVICE_ID(coreid), KCORE(coreid));
 
-	if (dev == NULL)
+	if (!dev)
 		return NULL;
 
 	for (i = 0; i < coreid; i++)
 		dev = dev->next;
+
 	if (regid * 4 >= dev->iosize)
 		return NULL;
+
 	return (u32 *)(dev->hwregs + regid * 4);
 }
 
-static long DecReadRegs(struct hantrodec_t *dev, struct core_desc *core)
+static long dec_read_regs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long ret, i;
 
-	PDEBUG("hantrodec: DecReadRegs\n");
+	PDEBUG("hantrodec: %s\n", __func__);
 	i = core->reg_id;
 	/* user has to know exactly what they are asking for */
 
@@ -715,17 +719,18 @@ static long DecReadRegs(struct hantrodec_t *dev, struct core_desc *core)
 		pr_info("copy_to_user failed, returned %li\n", ret);
 		return -EFAULT;
 	}
+
 	return 0;
 }
 
-static long PPFlushRegs(struct hantrodec_t *dev, struct core_desc *Core)
+static long pp_flush_regs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long ret = 0;
 	u32 i;
 
-	/* copy original dec regs to kernal space */
+	/* copy original dec regs to kernel space */
 	ret = copy_from_user(dev->dec_regs + HANTRO_PP_ORG_FIRST_REG,
-			     Core->regs + HANTRO_PP_ORG_FIRST_REG,
+			     core->regs + HANTRO_PP_ORG_FIRST_REG,
 			     HANTRO_PP_ORG_REGS * 4);
 	if (ret) {
 		pr_err("copy_from_user failed, returned %li\n", ret);
@@ -736,27 +741,28 @@ static long PPFlushRegs(struct hantrodec_t *dev, struct core_desc *Core)
 	/* both original and extended regs need to be written */
 	for (i = HANTRO_PP_ORG_FIRST_REG + 1; i <= HANTRO_PP_ORG_LAST_REG; i++)
 		iowrite32(dev->dec_regs[i], (void *)dev->hwregs + i * 4);
+
 	/* write the stat reg, which may start the PP */
 	iowrite32(dev->dec_regs[HANTRO_PP_ORG_FIRST_REG],
 		  (void *)dev->hwregs + HANTRO_PP_ORG_FIRST_REG * 4);
-
 	return 0;
 }
 
-static long PPRefreshRegs(struct hantrodec_t *dev, struct core_desc *Core)
+static long pp_refresh_regs(struct hantrodec_t *dev, struct core_desc *core)
 {
 	long i, ret;
 	/* user has to know exactly what they are asking for */
-	if (Core->size != (HANTRO_PP_ORG_REGS * 4))
+	if (core->size != (HANTRO_PP_ORG_REGS * 4))
 		return -EFAULT;
 
 	/* read all registers from hardware */
 	/* both original and extended regs need to be read */
 	for (i = HANTRO_PP_ORG_FIRST_REG; i <= HANTRO_PP_ORG_LAST_REG; i++)
 		dev->dec_regs[i] = ioread32((void *)dev->hwregs + i * 4);
+
 	/* put registers to user space*/
 	/* put original registers to user space*/
-	ret = copy_to_user(Core->regs + HANTRO_PP_ORG_FIRST_REG,
+	ret = copy_to_user(core->regs + HANTRO_PP_ORG_FIRST_REG,
 			   dev->dec_regs + HANTRO_PP_ORG_FIRST_REG,
 			   HANTRO_PP_ORG_REGS * 4);
 	if (ret) {
@@ -767,84 +773,73 @@ static long PPRefreshRegs(struct hantrodec_t *dev, struct core_desc *Core)
 	return 0;
 }
 
-static int CheckPPIrq(struct hantrodec_t *dev, int id)
+static int check_pp_irq(struct hantrodec_t *dev, int id)
 {
 	unsigned long flags;
 	int rdy = 0;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
-
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 	const u32 irq_mask = (1 << id);
 
-	spin_lock_irqsave(&parentslice->owner_lock, flags);
-
-	if (parentslice->pp_irq & irq_mask) {
+	spin_lock_irqsave(&parentdevice->owner_lock, flags);
+	if (parentdevice->pp_irq & irq_mask) {
 		/* reset the wait condition(s) */
-		parentslice->pp_irq &= ~irq_mask;
+		parentdevice->pp_irq &= ~irq_mask;
 		rdy = 1;
 	}
 
-	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
+	spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 	return rdy;
 }
 
-static long WaitPPReadyAndRefreshRegs(struct hantrodec_t *dev,
-				      struct core_desc *Core)
+static long wait_pp_ready_and_refresh_regs(struct hantrodec_t *dev,
+					   struct core_desc *core)
 {
-	u32 id = Core->id;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	u32 id = core->id;
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
 	PDEBUG("wait_event_interruptible PP[%d]\n", id);
-
-	if (wait_event_interruptible(parentslice->pp_wait_queue,
-				     CheckPPIrq(dev, id))) {
+	if (wait_event_interruptible(parentdevice->pp_wait_queue,
+				     check_pp_irq(dev, id))) {
 		pr_err("PP[%d]  failed to wait_event_interruptible interrupted\n",
 		       id);
 		return -ERESTARTSYS;
 	}
 
 	atomic_inc(&irq_tx);
-
 	/* refresh registers */
-	return PPRefreshRegs(dev, Core);
+	return pp_refresh_regs(dev, core);
 }
 
-static int CheckCoreIrq(struct hantrodec_t *dev, const struct file *filp,
-			u32 *id)
+static int check_core_irq(struct hantrodec_t *dev, const struct file *filp,
+			  u32 *id)
 {
 	unsigned long flags;
 	int rdy = 0, n = 0;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
-	while (dev != NULL) {
+	while (dev) {
 		u32 irq_mask = (1 << n);
 
-		spin_lock_irqsave(&parentslice->owner_lock, flags);
-
-		if (parentslice->dec_irq & irq_mask) {
+		spin_lock_irqsave(&parentdevice->owner_lock, flags);
+		if (parentdevice->dec_irq & irq_mask) {
 			if (*id == n) {
 				/* we have an IRQ for our client */
-
 				/* reset the wait condition(s) */
-				parentslice->dec_irq &= ~irq_mask;
-
+				parentdevice->dec_irq &= ~irq_mask;
 				/* signal ready Core no. for our client */
 				rdy = 1;
-				spin_unlock_irqrestore(&parentslice->owner_lock,
-						       flags);
+				spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 				break;
-			} else if (dev->dec_owner == NULL) {
+			} else if (!dev->dec_owner) {
 				/* zombie IRQ */
 				pr_info("IRQ on Core[%d], but no owner!!!\n",
 					n);
-
 				/* reset the wait condition(s) */
-				parentslice->dec_irq &= ~irq_mask;
+				parentdevice->dec_irq &= ~irq_mask;
 			}
 		}
 
-		spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
+		spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 		n++; /* next Core */
 		dev = dev->next;
 	}
@@ -852,15 +847,15 @@ static int CheckCoreIrq(struct hantrodec_t *dev, const struct file *filp,
 	return rdy;
 }
 
-static long WaitCoreReady(struct hantrodec_t *dev, const struct file *filp,
-			  u32 *id)
+static long wait_core_ready(struct hantrodec_t *dev, const struct file *filp,
+			    u32 *id)
 {
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
 	PDEBUG("wait_event_interruptible CORE\n");
 
-	if (wait_event_interruptible(parentslice->dec_wait_queue,
-				     CheckCoreIrq(dev, filp, id))) {
+	if (wait_event_interruptible(parentdevice->dec_wait_queue,
+				     check_core_irq(dev, filp, id))) {
 		pr_err("CORE  failed to wait_event_interruptible interrupted\n");
 		return -ERESTARTSYS;
 	}
@@ -881,7 +876,7 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int i, ret;
 	u32 hw_id, id;
-	u32 slice, node;
+	u32 deviceid, node;
 	long tmp = 0;
 	unsigned long long tmp64;
 	struct core_desc core;
@@ -893,28 +888,32 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (_IOC_NR(cmd)) {
 	case _IOC_NR(HANTRODEC_IOC_CLI): {
 		id = arg;
-		pcore = getcoreCtrl(id);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(id);
+		if (!pcore)
 			return -EFAULT;
+
 		for (i = 0; i < 4; i++)
 			if (pcore->irqlist[i] > 0)
 				disable_irq(pcore->irqlist[i]);
+
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOC_STI): {
 		id = arg;
-		pcore = getcoreCtrl(id);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(id);
+		if (!pcore)
 			return -EFAULT;
+
 		for (i = 0; i < 4; i++)
 			if (pcore->irqlist[i] > 0)
 				enable_irq(pcore->irqlist[i]);
+
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOCGHWOFFSET): {
 		__get_user(id, (unsigned long *)arg);
-		pcore = getcoreCtrl(id);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(id);
+		if (!pcore)
 			return -EFAULT;
 
 		__put_user(pcore->multicorebase_actual,
@@ -925,21 +924,23 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		__u32 io_size;
 
 		__get_user(id, (__u32 *)arg);
-		pcore = getcoreCtrl(id);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(id);
+		if (!pcore)
 			return -EFAULT;
+
 		io_size = pcore->iosize;
 		__put_user(io_size, (u32 *)arg);
 
 		return 0;
 	}
 	case _IOC_NR(HANTRODEC_IOC_MC_OFFSETS): {
-		__get_user(slice, (__u32 *)arg);
-		pcore = get_decnodes(slice, 0);
-		if (pcore == NULL)
+		__get_user(deviceid, (__u32 *)arg);
+		pcore = get_decnode_bydeviceid(deviceid, 0);
+		if (!pcore)
 			return -EFAULT;
+
 		i = 0;
-		while (pcore != NULL) {
+		while (pcore) {
 			tmp = copy_to_user(((unsigned long long *)arg) + i,
 					   &pcore->multicorebase_actual,
 					   sizeof(pcore->multicorebase_actual));
@@ -948,14 +949,16 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				       tmp);
 				return -EFAULT;
 			}
+
 			pcore = pcore->next;
 			i++;
 		}
+
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOC_MC_CORES):
 		id = (u32)arg;
-		id = get_slicecorenum(id, CORE_DEC);
+		id = get_devicecorenum(id, CORE_DEC);
 		PDEBUG("cores=%d\n", id);
 		return id;
 	case _IOC_NR(HANTRODEC_IOCS_DEC_PUSH_REG): {
@@ -966,10 +969,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_info("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
-		DecFlushRegs(pcore, &core);
+
+		dec_flush_regs(pcore, &core);
 		break;
 	}
 
@@ -981,11 +986,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_info("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
 
-		DecWriteRegs(pcore, &core);
+		dec_write_regs(pcore, &core);
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOCS_PP_PUSH_REG): {
@@ -996,10 +1002,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
-		PPFlushRegs(pcore, &core);
+
+		pp_flush_regs(pcore, &core);
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOCS_DEC_PULL_REG): {
@@ -1009,10 +1017,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
-		return DecRefreshRegs(pcore, &core);
+
+		return dec_refresh_regs(pcore, &core);
 	}
 	case _IOC_NR(HANTRODEC_IOCS_DEC_READ_REG): {
 		tmp = copy_from_user(&core, (void *)arg,
@@ -1021,10 +1031,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_info("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
-		return DecReadRegs(pcore, &core);
+
+		return dec_read_regs(pcore, &core);
 	}
 	case _IOC_NR(HANTRODEC_IOCS_PP_PULL_REG): {
 		tmp = copy_from_user(&core, (void *)arg,
@@ -1033,55 +1045,59 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
-		return PPRefreshRegs(pcore, &core);
+
+		return pp_refresh_regs(pcore, &core);
 	}
 	case _IOC_NR(HANTRODEC_IOCH_DEC_RESERVE): {
 		__get_user(tmp64, (unsigned long long *)arg);
-		slice = tmp64 >> 32;
+		deviceid = tmp64 >> 32;
 		PDEBUG("Reserve DEC core, format = %i\n", (u32)tmp64);
-		pcore = getcoreCtrl(slice << 16);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(deviceid << 16);
+		if (!pcore)
 			return -EFAULT;
-		ret = ReserveDecoder(pcore, filp, tmp64 & 0xffffffff);
+
+		ret = reserve_decoder(pcore, filp, tmp64 & 0xffffffff);
 		if (ret < 0)
 			return -EFAULT;
 		else
-			return ret | (slice << 16);
+			return ret | (deviceid << 16);
 	}
 	case _IOC_NR(HANTRODEC_IOCT_DEC_RELEASE): {
-		pcore = getcoreCtrl((u32)arg);
-		if (pcore == NULL)
+		pcore = get_core_ctrl((u32)arg);
+		if (!pcore)
 			return -EFAULT;
+
 		if (pcore->dec_owner != filp) {
 			pr_err("bogus DEC release, Core = %li\n", arg);
 			return -EFAULT;
 		}
 
 		PDEBUG("Release DEC, core = %li\n", arg);
-
-		ReleaseDecoder(pcore, arg);
-
+		release_decoder(pcore, arg);
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOCQ_PP_RESERVE):
 		id = (u32)arg;
-		pcore = get_decnodes(SLICE(id), 0);
-		if (pcore == NULL)
+		pcore = get_decnode_bydeviceid(DEVICE_ID(id), 0);
+		if (!pcore)
 			return -EFAULT;
-		return ReservePostProcessor(pcore, filp);
+
+		return reserve_post_processor(pcore, filp);
 	case _IOC_NR(HANTRODEC_IOCT_PP_RELEASE): {
-		pcore = getcoreCtrl(arg);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(arg);
+		if (!pcore)
 			return -EFAULT;
+
 		if (arg != 0 || pcore->pp_owner != filp) {
 			pr_err("bogus PP release %li\n", arg);
 			return -EFAULT;
 		}
-		ReleasePostProcessor(pcore, arg);
 
+		release_post_processor(pcore, arg);
 		break;
 	}
 	case _IOC_NR(HANTRODEC_IOCX_DEC_WAIT): {
@@ -1091,11 +1107,12 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
 
-		return WaitDecReadyAndRefreshRegs(pcore, &core);
+		return wait_dec_ready_and_refresh_regs(pcore, &core);
 	}
 	case _IOC_NR(HANTRODEC_IOCX_PP_WAIT): {
 		tmp = copy_from_user(&core, (void *)arg,
@@ -1104,85 +1121,90 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("copy_from_user failed, returned %li\n", tmp);
 			return -EFAULT;
 		}
-		pcore = getcoreCtrl(core.id);
-		if (pcore == NULL)
+
+		pcore = get_core_ctrl(core.id);
+		if (!pcore)
 			return -EFAULT;
 
-		return WaitPPReadyAndRefreshRegs(pcore, &core);
+		return wait_pp_ready_and_refresh_regs(pcore, &core);
 	}
 	case _IOC_NR(HANTRODEC_IOCG_CORE_WAIT): {
 		id = (u32)arg;
-		slice = SLICE(id);
+		deviceid = DEVICE_ID(id);
 		node = KCORE(id);
-		pcore = get_decnodes(slice, 0);
-		if (pcore == NULL)
+		pcore = get_decnode_bydeviceid(deviceid, 0);
+		if (!pcore)
 			return -EFAULT;
-		tmp = WaitCoreReady(pcore, filp, &node);
+
+		tmp = wait_core_ready(pcore, filp, &node);
 		return tmp;
 	}
 	case _IOC_NR(HANTRODEC_IOX_ASIC_ID): {
 		id = (u32)arg;
-		pcore = getcoreCtrl(id);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(id);
+		if (!pcore)
 			return 0;
+
 		id = ioread32((void *)pcore->hwregs);
 		return id;
 	}
 	case _IOC_NR(HANTRODEC_IOCG_CORE_ID): {
 		PDEBUG("Get DEC Core_id, format = %li\n", arg);
 		__get_user(tmp64, (unsigned long long *)arg);
-		slice = tmp64 >> 32;
-		pcore = get_decnodes(slice, 0);
-		if (pcore == NULL)
+		deviceid = tmp64 >> 32;
+		pcore = get_decnode_bydeviceid(deviceid, 0);
+		if (!pcore)
 			return -EFAULT;
-		tmp = GetDecCoreID(pcore, filp, tmp64 & 0xffffffff);
+
+		tmp = get_dec_coreid(pcore, filp, tmp64 & 0xffffffff);
 		return tmp;
 	}
 	case _IOC_NR(HANTRODEC_IOX_ASIC_BUILD_ID): {
 		__get_user(id, (int *)arg);
-		pcore = getcoreCtrl(id);
-		if (pcore == NULL)
+		pcore = get_core_ctrl(id);
+		if (!pcore)
 			return -EFAULT;
+
 		hw_id = ioread32((void *)(pcore->hwregs));
-		if (IS_G1(hw_id >> 16) || IS_G2(hw_id >> 16))
+		if (IS_G1(hw_id >> 16) || IS_G2(hw_id >> 16)) {
 			__put_user(hw_id, (u32 *)arg);
-		else {
+		} else {
 			hw_id = ioread32((void *)(pcore->hwregs +
 						  HANTRODEC_HW_BUILD_ID_OFF));
 			__put_user(hw_id, (u32 *)arg);
 		}
+
 		return 0;
 	}
 	case _IOC_NR(HANTRODEC_DEBUG_STATUS): {
-		struct slice_info *parentslice;
+		struct device_info *parentdevice;
 
 		PDEBUG("hantrodec: IRQs received/sent2user = %d / %d\n",
 		       atomic_read(&irq_rx), atomic_read(&irq_tx));
-		slice = get_slicenumber();
-		for (i = 0; i < (int)slice; i++) {
-			pcore = get_decnodes(i, 0);
-			if (pcore == NULL)
+		deviceid = get_devicecount();
+		for (i = 0; i < (int)deviceid; i++) {
+			pcore = get_decnode_bydeviceid(i, 0);
+			if (!pcore)
 				continue;
-			parentslice = getparentslice(pcore, CORE_DEC);
-			PDEBUG("hantrodec: slice %d dec_irq     = 0x%08x\n", i,
-			       parentslice->dec_irq);
-			PDEBUG("hantrodec: slice %d pp_irq      = 0x%08x\n", i,
-			       parentslice->pp_irq);
 
+			parentdevice = getparentdevice(pcore, CORE_DEC);
+			PDEBUG("hantrodec: device %d dec_irq     = 0x%08x\n", i,
+			       parentdevice->dec_irq);
+			PDEBUG("hantrodec: device %d pp_irq      = 0x%08x\n", i,
+			       parentdevice->pp_irq);
 			id = 0;
-			while (pcore != NULL) {
-				PDEBUG("hantrodec: slice %d dec_core[%i] %s\n",
+			while (pcore) {
+				PDEBUG("hantrodec: device %d dec_core[%i] %s\n",
 				       i, id,
-				       pcore->dec_owner == NULL ? "FREE" :
-								  "RESERVED");
-				PDEBUG("hantrodec: slice %d pp_core[%i]  %s\n",
+				       !pcore->dec_owner ? "FREE" : "RESERVED");
+				PDEBUG("hantrodec: device %d pp_core[%i]  %s\n",
 				       i, id,
-				       pcore->pp_owner == NULL ? "FREE" :
-								 "RESERVED");
+				       !pcore->pp_owner ? "FREE" : "RESERVED");
 				pcore = pcore->next;
 				id++;
 			}
 		}
+
 		break;
 	}
 	default:
@@ -1201,43 +1223,36 @@ long hantrodec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  */
 int hantrodec_release(struct file *filp)
 {
-	int n, i, slicen = get_slicenumber();
+	int n, i, devicecnt = get_devicecount();
 	struct hantrodec_t *pcore;
 
 	if (enable_decode == 0)
 		return 0;
 
-	PDEBUG("hantrodec_release\n");
-	for (i = 0; i < slicen; i++) {
-		pcore = get_decnodes(i, 0);
+	PDEBUG("hantrodec: %s\n", __func__);
+	for (i = 0; i < devicecnt; i++) {
+		pcore = get_decnode_bydeviceid(i, 0);
 		n = 0;
-		while (pcore != NULL) {
+		while (pcore) {
 			if (pcore->dec_owner == filp) {
-				PDEBUG("releasing slice %d dec Core %i lock\n",
+				PDEBUG("releasing device %d dec Core %i lock\n",
 				       i, n);
-				ReleaseDecoder(pcore, n);
+				release_decoder(pcore, n);
 			}
+
 			n++;
 			pcore = pcore->next;
 		}
 
-		pcore = get_decnodes(i, 0);
-		if (pcore != NULL && pcore->pp_owner == filp) {
-			PDEBUG("releasing slice %d pp Core %i lock\n", i, 0);
-			ReleasePostProcessor(pcore, n);
+		pcore = get_decnode_bydeviceid(i, 0);
+		if (pcore && pcore->pp_owner == filp) {
+			PDEBUG("releasing device %d pp Core %i lock\n", i, 0);
+			release_post_processor(pcore, n);
 		}
 	}
 
 	return 0;
 }
-
-/*---------------------------------------------------------------------------
- *Function name   : hantrodec_init
- *Description     : Initialize the driver
- *
- *Return type     : int
- *---------------------------------------------------------------------------
- */
 
 int hantrodec_open(struct inode *inode, struct file *filp)
 {
@@ -1247,10 +1262,125 @@ int hantrodec_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-int __init hantrodec_init(void)
+static void setup_dec_lut(void)
 {
-	bdecprobed = 0;
+	u8 *dec_page_lut_regs;
 
+	if (hantro_drm.dec_page_lut_regs) {
+		pr_info("hantrodec: page_lut already reserved\n");
+		return;
+	}
+
+	/* Register and set the page lookup table for read */
+	if (!request_mem_region(KMB_VC8000D_PAGE_LUT, 0x100,
+				"hantrodec_pagelut_read")) {
+		pr_err("hantrodec: failed to reserve page lookup table registers\n");
+		return;
+	}
+
+	dec_page_lut_regs = (u8 *)ioremap(KMB_VC8000D_PAGE_LUT, 0x100);
+	if (!dec_page_lut_regs) {
+		pr_err("hantrodec: failed to ioremap page lookup table registers\n");
+		return;
+	}
+
+	/* Set VDEC RD Page LUT AXI ID 0-15 to 0x4 */
+	iowrite32(0x04040404, (void *)dec_page_lut_regs);
+	pr_info("hantrodec: RD AXI ID 3:0 = %x\n",
+		ioread32((void *)dec_page_lut_regs));
+	iowrite32(0x04040404, (void *)dec_page_lut_regs + 0x4);
+	pr_info("hantrodec: RD AXI ID 7:4 = %x\n",
+		ioread32((void *)dec_page_lut_regs + 0x4));
+	iowrite32(0x04040404, (void *)dec_page_lut_regs + 0x8);
+	pr_info("hantrodec: RD AXI ID 11:8 = %x\n",
+		ioread32((void *)dec_page_lut_regs + 0x8));
+	iowrite32(0x04040404, (void *)dec_page_lut_regs + 0xc);
+	pr_info("hantrodec: RD AXI ID 15:12 = %x\n",
+		ioread32((void *)dec_page_lut_regs + 0xc));
+
+#ifdef STATIC_AXI_WR
+	iowrite32(0x04, (void *)dec_page_lut_regs + 0x10);
+	pr_info("hantrodec: WR AXI ID 0 = %x\n",
+		ioread32((void *)dec_page_lut_regs + 0x10));
+#else /* dynamic WR AXI ID */
+	/* Set sw_dec_axi_wr_id_e to 1 */
+	//iowrite32(1<<13, (void *) pcore->hwregs + 0xE8);
+	//pr_info("hantrodec: sw_dec_axi_wr_id_e  = %x\n",
+	//	ioread32((void *) pcore->hwregs + 0xE8));
+
+	/* Set WR Page LUT AXI ID 0-3, 6-15 to 0x4 and WR Page LUT AXI ID 4,5 to 0x0 */
+	iowrite32(0x04040400, (void *)dec_page_lut_regs + 0x10);
+	pr_info("hantrodec: page_lut_regs WR AXI ID 3:0= %x\n",
+		ioread32((void *)dec_page_lut_regs + 0x10));
+	iowrite32(0x04040000, (void *)dec_page_lut_regs + 0x14);
+	pr_info("hantrodec: page_lut_regs WR AXI ID 7:4= %x\n",
+		ioread32((void *)dec_page_lut_regs + 0x14));
+	iowrite32(0x04040404, (void *)dec_page_lut_regs + 0x18);
+	pr_info("hantrodec: page_lut_regs WR AXI ID 11:8= %x\n",
+		ioread32((void *)dec_page_lut_regs + 0x18));
+	iowrite32(0x04040404, (void *)dec_page_lut_regs + 0x1c);
+	pr_info("hantrodec: page_lut_regs WR AXI ID 15:12= %x\n",
+		ioread32((void *)dec_page_lut_regs + 0x1c));
+#endif
+	pr_info("hantrodec: page_lut reserved\n");
+
+	hantro_drm.dec_page_lut_regs = dec_page_lut_regs;
+}
+
+/*---------------------------------------------------------------------------
+ *Function name   : hantrodec_init
+ *Description     : Initialize the driver
+ *
+ *Return type     : int
+ *---------------------------------------------------------------------------
+ */
+int hantrodec_init(void)
+{
+	if (hantro_drm.device_type == DEVICE_KEEMBAY) {
+		if (enable_dec_lut)
+			setup_dec_lut();
+	}
+
+	return 0;
+}
+
+int hantrodec_cleanup(void)
+{
+	if (hantro_drm.dec_page_lut_regs) {
+		iounmap((void *)hantro_drm.dec_page_lut_regs);
+		hantro_drm.dec_page_lut_regs = NULL;
+		release_mem_region(KMB_VC8000D_PAGE_LUT, 0x100);
+	}
+
+	return 0;
+}
+
+static void disable_dec_clock(struct hantrodec_t *pcore)
+{
+	if (!pcore->dev_clk)
+		return;
+
+	clk_disable_unprepare(pcore->dev_clk);
+	clk_put(pcore->dev_clk);
+	pcore->dev_clk = NULL;
+}
+
+static int init_dec_clock(struct hantrodec_t *pcore, dtbnode *pnode)
+{
+	if (strlen(pnode->clock_name) == 0)
+		return 0;
+
+	pcore->dev_clk = clk_get(pnode->pdevice->dev, pnode->clock_name);
+	if (IS_ERR(pcore->dev_clk) || !pcore->dev_clk) {
+		pr_err("%s: clock %s not found. err = %ld", __func__,
+		       pnode->clock_name, PTR_ERR(pcore->dev_clk));
+		pcore->dev_clk = NULL;
+		return -EINVAL;
+	}
+
+	clk_prepare_enable(pcore->dev_clk);
+	pcore->clk_freq = pnode->pdevice->thermal_data.clk_freq;
+	clk_set_rate(pcore->dev_clk, pcore->clk_freq);
 	return 0;
 }
 
@@ -1263,31 +1393,35 @@ int hantrodec_probe(dtbnode *pnode)
 	if (enable_decode == 0)
 		return 0;
 
-	pcore = vmalloc(sizeof(struct hantrodec_t));
-	if (pcore == NULL)
+	pcore = vmalloc(sizeof(*pcore));
+	if (!pcore)
 		return -ENOMEM;
 
 	memset(pcore, 0, sizeof(struct hantrodec_t));
-	pcore->multicorebase = pcore->multicorebase_actual = pnode->ioaddr;
+	pcore->multicorebase = pnode->ioaddr;
+	pcore->multicorebase_actual = pnode->ioaddr;
 	pcore->iosize = pnode->iosize;
 	auxcore = NULL;
-	result = ReserveIO(pcore, &auxcore);
+	result = reserve_io(pcore, &auxcore);
 	if (result < 0) {
 		vfree(pcore);
 		return -ENODEV;
 	}
 
-	ReadCoreConfig(pcore);
-	ResetAsic(pcore);
-	pcore->dec_owner = pcore->pp_owner = NULL;
-	pcore->sliceidx = pnode->sliceidx;
+	read_core_config(pcore);
+	reset_asic(pcore);
+	pcore->dec_owner = NULL;
+	pcore->pp_owner = NULL;
+	pcore->deviceidx = pnode->deviceidx;
 
-	if (auxcore != NULL) {
-		ReadCoreConfig(auxcore);
-		ResetAsic(auxcore);
-		auxcore->dec_owner = auxcore->pp_owner = NULL;
-		auxcore->sliceidx = pcore->sliceidx;
+	if (auxcore) {
+		read_core_config(auxcore);
+		reset_asic(auxcore);
+		auxcore->dec_owner = NULL;
+		auxcore->pp_owner = NULL;
+		auxcore->deviceidx = pcore->deviceidx;
 	}
+
 	irqn = 0;
 	for (i = 0; i < 4; i++)
 		pcore->irqlist[i] = -1;
@@ -1295,18 +1429,20 @@ int hantrodec_probe(dtbnode *pnode)
 		for (i = 0; i < 4; i++) {
 			if (pnode->irq[i] > 0) {
 				strcpy(pcore->irq_name[i], pnode->irq_name[i]);
-				result = request_irq(pnode->irq[i], hantrodec_isr,
-						     IRQF_SHARED, pcore->irq_name[i],
+				result = request_irq(pnode->irq[i],
+						     hantrodec_isr, IRQF_SHARED,
+						     pcore->irq_name[i],
 						     (void *)pcore);
 				if (result != 0) {
 					pr_err("dec can't reserve irq %d\n",
-						pnode->irq[i]);
-					ReleaseIO(pcore);
+					       pnode->irq[i]);
+					release_io(pcore);
 					vfree(pcore);
 					if (auxcore) {
-						ReleaseIO(auxcore);
+						release_io(auxcore);
 						vfree(auxcore);
 					}
+
 					return -ENODEV;
 				} else {
 					pcore->irqlist[irqn] = pnode->irq[i];
@@ -1315,60 +1451,53 @@ int hantrodec_probe(dtbnode *pnode)
 			}
 		}
 	}
-	add_decnode(pnode->sliceidx, pcore);
-	if (auxcore != NULL)
-		add_decnode(pnode->sliceidx, auxcore);
+
+	init_dec_clock(pcore, pnode);
+	add_decnode(pnode->pdevice, pcore);
+	if (auxcore)
+		add_decnode(pnode->pdevice, auxcore);
 
 	return 0;
 }
 
-/*---------------------------------------------------------------------------
- *Function name   : hantrodec_cleanup
- *Description     : clean up
- *
- *Return type     : int
- *---------------------------------------------------------------------------
- */
-void __exit hantrodec_cleanup(void)
+void hantrodec_remove(struct device_info *pdevice)
 {
-	int slicen = get_slicenumber();
 	struct hantrodec_t *dev, *next;
-	int n, i;
+	int i;
 
-	for (n = 0; n < slicen; n++) {
-		/* free the IRQ */
-		dev = get_decnodes(n, 0);
-		while (dev != NULL) {
-			/* reset hardware */
-			ResetAsic(dev);
-			for (i = 0; i < 4; i++)
-				if (dev->irqlist[i] > 0)
-					free_irq(dev->irqlist[i], (void *)dev);
-			ReleaseIO(dev);
-			next = dev->next;
-			vfree(dev);
-			dev = next;
-		}
+	/* free the IRQ */
+	dev = get_decnode(pdevice, 0);
+	while (dev) {
+		/* reset hardware */
+		disable_dec_clock(dev);
+		reset_asic(dev);
+		for (i = 0; i < 4; i++)
+			if (dev->irqlist[i] > 0)
+				free_irq(dev->irqlist[i], (void *)dev);
+
+		release_io(dev);
+		next = dev->next;
+		vfree(dev);
+		dev = next;
 	}
-	bdecprobed = 0;
 }
 
 /*---------------------------------------------------------------------------
- *Function name   : CheckHwId
+ *Function name   : check_hw_id
  *Return type     : int
  *---------------------------------------------------------------------------
  */
-static int CheckHwId(struct hantrodec_t *dev)
+static int check_hw_id(struct hantrodec_t *dev)
 {
 	long hwid;
-	size_t num_hw = sizeof(DecHwId) / sizeof(*DecHwId);
+	size_t num_hw = sizeof(dec_hwid) / sizeof(*dec_hwid);
 	int found = 0;
 
 	hwid = readl(dev->hwregs);
 	hwid = (hwid >> 16) & 0xFFFF; /* product version only */
 
 	while (num_hw--) {
-		if (hwid == DecHwId[num_hw]) {
+		if (hwid == dec_hwid[num_hw]) {
 			pr_info("hantrodec: HW at base <0x%llx> with ID 0x%lx\n",
 				dev->multicorebase_actual, hwid);
 			found = 1;
@@ -1388,19 +1517,19 @@ static int CheckHwId(struct hantrodec_t *dev)
 }
 
 /*---------------------------------------------------------------------------
- *Function name   : ReserveIO
+ *Function name   : reserve_io
  *Description     : IO reserve
  *
  *Return type     : int
  *---------------------------------------------------------------------------
  */
-static int ReserveIO(struct hantrodec_t *core, struct hantrodec_t **auxcore)
+static int reserve_io(struct hantrodec_t *core, struct hantrodec_t **auxcore)
 {
 	int result;
 	long hwid;
 	u32 reg;
 
-	PDEBUG("hantrodec: ReserveIO\n");
+	PDEBUG("hantrodec: %s\n", __func__);
 	if (!request_mem_region(core->multicorebase_actual, core->iosize,
 				core->reg_name)) {
 		pr_info("hantrodec: failed to reserve HW regs %llx, %x\n",
@@ -1409,16 +1538,16 @@ static int ReserveIO(struct hantrodec_t *core, struct hantrodec_t **auxcore)
 	}
 
 	core->hwregs = (u8 *)ioremap(core->multicorebase_actual, core->iosize);
-
-	if (core->hwregs == NULL) {
+	if (!core->hwregs) {
 		pr_info("hantrodec: failed to ioremap HW regs\n");
 		release_mem_region(core->multicorebase_actual, core->iosize);
 		return -EBUSY;
 	}
+
 	core->its_main_core_id = NULL;
 	core->its_aux_core_id = NULL;
 	/* check for correct HW */
-	result = CheckHwId(core);
+	result = check_hw_id(core);
 	if (!result) {
 		result = -ENXIO;
 		goto error;
@@ -1426,25 +1555,24 @@ static int ReserveIO(struct hantrodec_t *core, struct hantrodec_t **auxcore)
 
 	/* product version only */
 	hwid = ((readl(core->hwregs)) >> 16) & 0xFFFF;
-
 	if (IS_VC8000D(hwid)) {
 		reg = readl(core->hwregs + HANTRODEC_SYNTH_CFG_2_OFF);
 		if (((reg >> DWL_H264_PIPELINE_E) & 0x01U) ||
 		    ((reg >> DWL_JPEG_PIPELINE_E) & 0x01U)) {
-			*auxcore = vmalloc(sizeof(struct hantrodec_t));
-			if (*auxcore == NULL) {
+			*auxcore = vmalloc(sizeof(*auxcore));
+			if (!*auxcore) {
 				result = -ENOMEM;
 				goto error;
 			}
+
 			memset(*auxcore, 0, sizeof(struct hantrodec_t));
 			(*auxcore)->multicorebase_actual =
 				core->multicorebase_actual + 0x800;
 			(*auxcore)->multicorebase =
 				(*auxcore)->multicorebase_actual;
 			(*auxcore)->iosize = core->iosize;
-			if (!request_mem_region(
-				    (*auxcore)->multicorebase_actual,
-				    (*auxcore)->iosize, "hantrodec0")) {
+			if (!request_mem_region((*auxcore)->multicorebase_actual,
+						(*auxcore)->iosize, "hantrodec0")) {
 				pr_info("hantrodec: failed to reserve HW regs\n");
 				result = -EBUSY;
 				vfree(*auxcore);
@@ -1455,12 +1583,10 @@ static int ReserveIO(struct hantrodec_t *core, struct hantrodec_t **auxcore)
 			(*auxcore)->hwregs =
 				(u8 *)ioremap((*auxcore)->multicorebase_actual,
 					      (*auxcore)->iosize);
-
-			if ((*auxcore)->hwregs == NULL) {
+			if (!(*auxcore)->hwregs) {
 				pr_info("hantrodec: failed to ioremap HW regs\n");
-				release_mem_region(
-					(*auxcore)->multicorebase_actual,
-					(*auxcore)->iosize);
+				release_mem_region((*auxcore)->multicorebase_actual,
+						   (*auxcore)->iosize);
 				vfree(*auxcore);
 				*auxcore = NULL;
 				result = -EBUSY;
@@ -1474,7 +1600,7 @@ static int ReserveIO(struct hantrodec_t *core, struct hantrodec_t **auxcore)
 	}
 
 	if (*auxcore) {
-		result = CheckHwId(*auxcore);
+		result = check_hw_id(*auxcore);
 		if (!result) {
 			result = -ENXIO;
 			goto error;
@@ -1484,12 +1610,13 @@ static int ReserveIO(struct hantrodec_t *core, struct hantrodec_t **auxcore)
 	return 0;
 
 error:
-	ReleaseIO(core);
+	release_io(core);
 	if (*auxcore) {
-		ReleaseIO(*auxcore);
+		release_io(*auxcore);
 		vfree(*auxcore);
 		*auxcore = NULL;
 	}
+
 	return result;
 }
 
@@ -1500,11 +1627,12 @@ error:
  *Return type     : void
  *---------------------------------------------------------------------------
  */
-static void ReleaseIO(struct hantrodec_t *dev)
+static void release_io(struct hantrodec_t *dev)
 {
-	PDEBUG("hantrodec: ReleaseIO\n");
+	PDEBUG("hantrodec: %s\n", __func__);
 	if (dev->hwregs)
 		iounmap((void *)dev->hwregs);
+
 	release_mem_region(dev->multicorebase_actual, dev->iosize);
 }
 
@@ -1520,16 +1648,14 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 	unsigned long flags;
 	unsigned int handled = 0;
 	int i = 0;
-
 	u8 *hwregs;
 	struct hantrodec_t *dev = (struct hantrodec_t *)dev_id;
 	u32 irq_status_dec;
-	struct slice_info *parentslice = getparentslice(dev, CORE_DEC);
+	struct device_info *parentdevice = getparentdevice(dev, CORE_DEC);
 
-	dev = getfirst_decnodes(parentslice);
-	spin_lock_irqsave(&parentslice->owner_lock, flags);
-
-	while (dev != NULL) {
+	dev = getfirst_decnodes(parentdevice);
+	spin_lock_irqsave(&parentdevice->owner_lock, flags);
+	while (dev) {
 		u8 *hwregs = dev->hwregs;
 
 		/* interrupt status register read */
@@ -1545,17 +1671,17 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 
 			atomic_inc(&irq_rx);
 
-			parentslice->dec_irq |= (1 << i);
+			parentdevice->dec_irq |= (1 << i);
 
-			wake_up_interruptible_all(&parentslice->dec_wait_queue);
+			wake_up_interruptible_all(&parentdevice->dec_wait_queue);
 			handled++;
 		}
+
 		i++;
 		dev = dev->next;
 	}
 
-	spin_unlock_irqrestore(&parentslice->owner_lock, flags);
-
+	spin_unlock_irqrestore(&parentdevice->owner_lock, flags);
 	if (!handled)
 		PDEBUG("IRQ received, but not hantrodec's!\n");
 
@@ -1564,23 +1690,22 @@ static irqreturn_t hantrodec_isr(int irq, void *dev_id)
 }
 
 /*---------------------------------------------------------------------------
- *Function name   : ResetAsic
+ *Function name   : reset_asic
  *Description     : reset asic
  *
  *Return type     :
  *---------------------------------------------------------------------------
  */
-static void ResetAsic(struct hantrodec_t *dev)
+static void reset_asic(struct hantrodec_t *dev)
 {
 	int i;
 	u32 status;
 	int size = MIN(DEC_IO_SIZE_MAX, dev->iosize);
 
-	PDEBUG("hantrodec: ResetAsic\n");
+	PDEBUG("hantrodec: %s\n", __func__);
 	status = ioread32((void *)dev->hwregs + HANTRODEC_IRQ_STAT_DEC_OFF);
-
 	if (status & HANTRODEC_DEC_E) {
-		pr_info("hantrodec: ResetAsic abort with IRQ disabled\n");
+		pr_info("hantrodec: %s abort with IRQ disabled\n", __func__);
 		/* abort with IRQ disabled */
 		status = HANTRODEC_DEC_ABORT | HANTRODEC_DEC_IRQ_DISABLE;
 		iowrite32(status,
