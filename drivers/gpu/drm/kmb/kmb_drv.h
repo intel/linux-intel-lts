@@ -49,6 +49,7 @@ struct kmb_drm_private {
 	int				kmb_under_flow;
 	int				kmb_flush_done;
 	int				layer_no;
+	struct viv_vidmem_metadata	*md_info;
 };
 
 static inline struct kmb_drm_private *to_kmb(const struct drm_device *dev)

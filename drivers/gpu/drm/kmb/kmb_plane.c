@@ -11,12 +11,16 @@
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_managed.h>
 #include <drm/drm_plane_helper.h>
+
+#include <linux/dma-buf.h>
 
 #include "kmb_drv.h"
 #include "kmb_plane.h"
 #include "kmb_regs.h"
+#include "kmb_vidmem.h"
 
 const u32 layer_irqs[] = {
 	LCD_INT_VL0,
@@ -286,8 +290,10 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	unsigned int ctrl = 0, val = 0, out_format = 0;
 	unsigned int src_w, src_h, crtc_x, crtc_y;
 	unsigned char plane_id;
-	int num_planes;
+	int num_planes, i;
 	static dma_addr_t addr[MAX_SUB_PLANES];
+	struct viv_vidmem_metadata *md = NULL;
+	struct drm_gem_object *gem_obj;
 
 	if (!plane || !plane->state || !state)
 		return;
@@ -317,6 +323,16 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	drm_dbg(&kmb->drm,
 		"src_w=%d src_h=%d, fb->format->format=0x%x fb->flags=0x%x\n",
 		  src_w, src_h, fb->format->format, fb->flags);
+	gem_obj = drm_gem_fb_get_obj(fb, plane_id);
+	if (gem_obj && gem_obj->import_attach &&
+	    gem_obj->import_attach->dmabuf &&
+	    gem_obj->import_attach->dmabuf->priv) {
+		md = gem_obj->import_attach->dmabuf->priv;
+
+		/* Check if metadata is coming from hantro driver */
+		if (md->magic != HANTRO_IMAGE_VIV_META_DATA_MAGIC)
+			md = NULL;
+	}
 
 	width = fb->width;
 	height = fb->height;
@@ -324,6 +340,11 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	drm_dbg(&kmb->drm, "dma_len=%d ", dma_len);
 	kmb_write_lcd(kmb, LCD_LAYERn_DMA_LEN(plane_id), dma_len);
 	kmb_write_lcd(kmb, LCD_LAYERn_DMA_LEN_SHADOW(plane_id), dma_len);
+	if (md) {
+		for (i = 0; i < 3; i++)
+			fb->pitches[i] = md->plane[i].stride;
+	}
+
 	kmb_write_lcd(kmb, LCD_LAYERn_DMA_LINE_VSTRIDE(plane_id),
 		      fb->pitches[0]);
 	kmb_write_lcd(kmb, LCD_LAYERn_DMA_LINE_WIDTH(plane_id),
@@ -331,18 +352,22 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 
 	addr[Y_PLANE] = drm_fb_cma_get_gem_addr(fb, plane->state, 0);
 	kmb_write_lcd(kmb, LCD_LAYERn_DMA_START_ADDR(plane_id),
-		      addr[Y_PLANE] + fb->offsets[0]);
+		      addr[Y_PLANE]);
 	val = get_pixel_format(fb->format->format);
 	val |= get_bits_per_pixel(fb->format);
 	/* Program Cb/Cr for planar formats */
 	if (num_planes > 1) {
 		kmb_write_lcd(kmb, LCD_LAYERn_DMA_CB_LINE_VSTRIDE(plane_id),
-			      width * fb->format->cpp[0]);
+				fb->pitches[1]);
 		kmb_write_lcd(kmb, LCD_LAYERn_DMA_CB_LINE_WIDTH(plane_id),
 			      (width * fb->format->cpp[0]));
 
 		addr[U_PLANE] = drm_fb_cma_get_gem_addr(fb, plane->state,
 							U_PLANE);
+		if (md) {
+			addr[U_PLANE] += md->plane[1].offset -
+					 (addr[U_PLANE] - addr[Y_PLANE]);
+		}
 		/* check if Cb/Cr is swapped*/
 		if (num_planes == 3 && (val & LCD_LAYER_CRCB_ORDER))
 			kmb_write_lcd(kmb,
@@ -356,7 +381,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 		if (num_planes == 3) {
 			kmb_write_lcd(kmb,
 				      LCD_LAYERn_DMA_CR_LINE_VSTRIDE(plane_id),
-				      ((width) * fb->format->cpp[0]));
+				      fb->pitches[2]);
 
 			kmb_write_lcd(kmb,
 				      LCD_LAYERn_DMA_CR_LINE_WIDTH(plane_id),
@@ -365,6 +390,11 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 			addr[V_PLANE] = drm_fb_cma_get_gem_addr(fb,
 								plane->state,
 								V_PLANE);
+			if (md) {
+				addr[V_PLANE] +=
+					md->plane[2].offset -
+					(addr[V_PLANE] - addr[Y_PLANE]);
+			}
 
 			/* check if Cb/Cr is swapped*/
 			if (val & LCD_LAYER_CRCB_ORDER)
