@@ -28,7 +28,7 @@ static ssize_t bandwidth_dec_read_show(struct device *kdev,
 		return 0;
 
 	bandwidth = hantrodec_readbandwidth(pdevinfo, 1);
-	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
+	return snprintf(buf, PAGE_SIZE, "%u\n", bandwidth);
 }
 
 static ssize_t bandwidth_dec_write_show(struct device *kdev,
@@ -43,7 +43,7 @@ static ssize_t bandwidth_dec_write_show(struct device *kdev,
 		return 0;
 
 	bandwidth = hantrodec_readbandwidth(pdevinfo, 0);
-	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
+	return snprintf(buf, PAGE_SIZE, "%u\n", bandwidth);
 }
 
 static ssize_t bandwidth_enc_read_show(struct device *kdev,
@@ -57,7 +57,7 @@ static ssize_t bandwidth_enc_read_show(struct device *kdev,
 		return 0;
 
 	bandwidth = hantroenc_readbandwidth(pdevinfo, 1);
-	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
+	return snprintf(buf, PAGE_SIZE, "%u\n", bandwidth);
 }
 
 static ssize_t bandwidth_enc_write_show(struct device *kdev,
@@ -72,7 +72,7 @@ static ssize_t bandwidth_enc_write_show(struct device *kdev,
 		return 0;
 
 	bandwidth = hantroenc_readbandwidth(pdevinfo, 0);
-	return snprintf(buf, PAGE_SIZE, "%d\n", bandwidth);
+	return snprintf(buf, PAGE_SIZE, "%u\n", bandwidth);
 }
 
 static ssize_t clients_show(struct device *kdev, struct device_attribute *attr,
