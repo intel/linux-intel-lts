@@ -84,7 +84,6 @@ struct netlink_ext_ack;
 u32 ethtool_op_get_link(struct net_device *dev);
 int ethtool_op_get_ts_info(struct net_device *dev, struct ethtool_ts_info *eti);
 
-
 /* Link extended state and substate. */
 struct ethtool_link_ext_state_info {
 	enum ethtool_link_ext_state link_ext_state;
@@ -413,21 +412,6 @@ struct ethtool_module_eeprom {
 	u8	bank;
 	u8	i2c_address;
 	u8	*data;
-};
-
-/**
- * struct ethtool_fp - Frame Preemption information
- *
- * @enabled: Enable frame preemption.
- * @add_frag_size: Minimum size for additional (non-final) fragments
- * in bytes, for the value defined in the IEEE 802.3-2018 standard see
- * ethtool_frag_size_to_mult().
- */
-struct ethtool_fp {
-	u8 enabled;
-	u32 add_frag_size;
-	u8 disable_verify;
-	u8 verified;
 };
 
 /**
