@@ -1317,8 +1317,13 @@ static unsigned int intel_linear_alignment(const struct drm_i915_private *dev_pr
 		return 0;
 }
 
-static unsigned int intel_surf_alignment(const struct drm_framebuffer *fb,
-					 int color_plane)
+static bool has_async_flips(struct drm_i915_private *i915)
+{
+	return INTEL_GEN(i915) >= 5;
+}
+
+unsigned int intel_surf_alignment(const struct drm_framebuffer *fb,
+				  int color_plane)
 {
 	struct drm_i915_private *dev_priv = to_i915(fb->dev);
 
@@ -1331,7 +1336,7 @@ static unsigned int intel_surf_alignment(const struct drm_framebuffer *fb,
 	case DRM_FORMAT_MOD_LINEAR:
 		return intel_linear_alignment(dev_priv);
 	case I915_FORMAT_MOD_X_TILED:
-		if (INTEL_GEN(dev_priv) >= 9)
+		if (has_async_flips(dev_priv))
 			return 256 * 1024;
 		return 0;
 	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
@@ -1585,10 +1590,10 @@ static u32 intel_adjust_aligned_offset(int *x, int *y,
  * Adjust the tile offset by moving the difference into
  * the x/y offsets.
  */
-static u32 intel_plane_adjust_aligned_offset(int *x, int *y,
-					     const struct intel_plane_state *state,
-					     int color_plane,
-					     u32 old_offset, u32 new_offset)
+u32 intel_plane_adjust_aligned_offset(int *x, int *y,
+				      const struct intel_plane_state *state,
+				      int color_plane,
+				      u32 old_offset, u32 new_offset)
 {
 	return intel_adjust_aligned_offset(x, y, state->hw.fb, color_plane,
 					   state->hw.rotation,
@@ -3086,6 +3091,8 @@ static int skl_check_main_surface(struct intel_plane_state *plane_state)
 		}
 	}
 
+	drm_WARN_ON(&dev_priv->drm, x > 8191 || y > 8191);
+
 	plane_state->color_plane[0].offset = offset;
 	plane_state->color_plane[0].x = x;
 	plane_state->color_plane[0].y = y;
@@ -3157,6 +3164,8 @@ static int skl_check_nv12_aux_surface(struct intel_plane_state *plane_state)
 			return -EINVAL;
 		}
 	}
+
+	drm_WARN_ON(&i915->drm, x > 8191 || y > 8191);
 
 	plane_state->color_plane[uv_plane].offset = offset;
 	plane_state->color_plane[uv_plane].x = x;
@@ -14771,8 +14780,7 @@ static void intel_mode_config_init(struct drm_i915_private *i915)
 
 	mode_config->funcs = &intel_mode_funcs;
 
-	if (INTEL_GEN(i915) >= 9)
-		mode_config->async_page_flip = true;
+	mode_config->async_page_flip = has_async_flips(i915);
 
 	/*
 	 * Maximum framebuffer dimensions, chosen to match

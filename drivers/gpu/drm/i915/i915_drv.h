@@ -1125,11 +1125,8 @@ struct drm_i915_private {
 	} wm;
 
 	struct dram_info {
-		bool valid;
-		bool is_16gb_dimm;
+		bool wm_lv_0_adjust_needed;
 		u8 num_channels;
-		u8 ranks;
-		u32 bandwidth_kbps;
 		bool symmetric_memory;
 		enum intel_dram_type {
 			INTEL_DRAM_UNKNOWN,
@@ -1138,6 +1135,7 @@ struct drm_i915_private {
 			INTEL_DRAM_LPDDR3,
 			INTEL_DRAM_LPDDR4
 		} type;
+		u8 num_qgv_points;
 	} dram_info;
 
 	struct intel_bw_info {
@@ -1802,8 +1800,6 @@ int i915_gem_init_userptr(struct drm_i915_private *dev_priv);
 void i915_gem_cleanup_userptr(struct drm_i915_private *dev_priv);
 void i915_gem_init_early(struct drm_i915_private *dev_priv);
 void i915_gem_cleanup_early(struct drm_i915_private *dev_priv);
-int i915_gem_freeze(struct drm_i915_private *dev_priv);
-int i915_gem_freeze_late(struct drm_i915_private *dev_priv);
 
 struct intel_memory_region *i915_gem_shmem_setup(struct drm_i915_private *i915);
 

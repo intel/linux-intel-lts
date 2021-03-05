@@ -65,6 +65,7 @@
 #include "gem/i915_gem_context.h"
 #include "gem/i915_gem_ioctls.h"
 #include "gem/i915_gem_mman.h"
+#include "gem/i915_gem_pm.h"
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_pm.h"
 #include "gt/intel_rc6.h"
@@ -609,13 +610,14 @@ static int i915_driver_hw_probe(struct drm_i915_private *dev_priv)
 		goto err_msi;
 
 	intel_opregion_setup(dev_priv);
-	/*
-	 * Fill the dram structure to get the system raw bandwidth and
-	 * dram info. This will be used for memory latency calculation.
-	 */
-	intel_dram_detect(dev_priv);
 
 	intel_pcode_init(dev_priv);
+
+	/*
+	 * Fill the dram structure to get the system dram info. This will be
+	 * used for memory latency calculation.
+	 */
+	intel_dram_detect(dev_priv);
 
 	intel_bw_init_hw(dev_priv);
 

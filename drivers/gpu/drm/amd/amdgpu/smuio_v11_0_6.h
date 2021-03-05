@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Red Hat Inc.
+ * Copyright 2021 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,18 +19,12 @@
  * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
  *
- * Authors: Ben Skeggs <bskeggs@redhat.com>
  */
-#include "priv.h"
+#ifndef __SMUIO_V11_0_6_H__
+#define __SMUIO_V11_0_6_H__
 
-static const struct nvkm_subdev_func
-gm200_ibus = {
-	.intr = gk104_ibus_intr,
-};
+#include "soc15_common.h"
 
-int
-gm200_ibus_new(struct nvkm_device *device, int index,
-	       struct nvkm_subdev **pibus)
-{
-	return nvkm_subdev_new_(&gm200_ibus, device, index, pibus);
-}
+extern const struct amdgpu_smuio_funcs smuio_v11_0_6_funcs;
+
+#endif /* __SMUIO_V11_0_6_H__ */
