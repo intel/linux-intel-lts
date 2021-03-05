@@ -95,6 +95,16 @@ static inline void keembay_pcie_writel(struct keembay_pcie *pcie, u32 offset,
 	writel(value, pcie->apb_base + offset);
 }
 
+static unsigned int keembay_ep_func_select(struct dw_pcie_ep *ep, u8 func_no)
+{
+	unsigned int func_offset = 0;
+
+	if (ep->ops->func_conf_select)
+		func_offset = ep->ops->func_conf_select(ep, func_no);
+
+	return func_offset;
+}
+
 static void keembay_ep_reset_assert(struct keembay_pcie *pcie)
 {
 	gpiod_set_value_cansleep(pcie->reset, 1);
@@ -433,6 +443,8 @@ static const struct dw_pcie_ep_ops keembay_pcie_ep_ops = {
 	.get_features	= keembay_pcie_get_features,
 };
 
+static struct pci_epc_ops keembay_epc_ops;
+
 static inline struct clk *keembay_pcie_probe_clock(struct device *dev,
 						   const char *id, u64 rate)
 {
@@ -530,6 +542,81 @@ static int keembay_pcie_add_pcie_port(struct keembay_pcie *pcie,
 	return ret;
 }
 
+static int keembay_ep_inbound_atu(struct dw_pcie_ep *ep, u8 func_no,
+				  enum pci_barno bar, dma_addr_t cpu_addr,
+				  enum dw_pcie_as_type as_type)
+{
+	int ret;
+	u32 free_win;
+	struct dw_pcie *pci = to_dw_pcie_from_ep(ep);
+
+	free_win = find_first_zero_bit(ep->ib_window_map, ep->num_ib_windows);
+	if (free_win >= ep->num_ib_windows) {
+		dev_err(pci->dev, "No free inbound window\n");
+		return -EINVAL;
+	}
+
+	ret = dw_pcie_prog_inbound_atu(pci, func_no, free_win, bar, cpu_addr,
+				       as_type);
+	if (ret < 0) {
+		dev_err(pci->dev, "Failed to program IB window\n");
+		return ret;
+	}
+
+	ep->bar_to_atu[bar] = free_win;
+	set_bit(free_win, ep->ib_window_map);
+
+	return 0;
+}
+
+static int keembay_ep_set_bar(struct pci_epc *epc, u8 func_no,
+			      struct pci_epf_bar *epf_bar)
+{
+	int ret;
+	struct dw_pcie_ep *ep = epc_get_drvdata(epc);
+	struct dw_pcie *pci = to_dw_pcie_from_ep(ep);
+	enum pci_barno bar = epf_bar->barno;
+	size_t size = epf_bar->size;
+	int flags = epf_bar->flags;
+	enum dw_pcie_as_type as_type;
+	u32 reg;
+	unsigned int func_offset = 0;
+	u64 host_addr;
+
+	func_offset = keembay_ep_func_select(ep, func_no);
+
+	reg = PCI_BASE_ADDRESS_0 + (4 * bar) + func_offset;
+
+	if (!(flags & PCI_BASE_ADDRESS_SPACE))
+		as_type = DW_PCIE_AS_MEM;
+	else
+		as_type = DW_PCIE_AS_IO;
+
+	host_addr = dw_pcie_readl_dbi(pci, reg) & ~0xF;
+	if (flags & PCI_BASE_ADDRESS_MEM_TYPE_64)
+		host_addr |= (u64)dw_pcie_readl_dbi(pci, reg + 4) << 32;
+
+	ret = keembay_ep_inbound_atu(ep, func_no, bar,
+				     epf_bar->phys_addr, as_type);
+	if (ret)
+		return ret;
+
+	dw_pcie_dbi_ro_wr_en(pci);
+
+	dw_pcie_writel_dbi2(pci, reg, lower_32_bits(size - 1));
+	dw_pcie_writel_dbi(pci, reg, lower_32_bits(host_addr) | flags);
+
+	if (flags & PCI_BASE_ADDRESS_MEM_TYPE_64) {
+		dw_pcie_writel_dbi2(pci, reg + 4, upper_32_bits(size - 1));
+		dw_pcie_writel_dbi(pci, reg + 4, upper_32_bits(host_addr));
+	}
+
+	ep->epf_bar[bar] = epf_bar;
+	dw_pcie_dbi_ro_wr_dis(pci);
+
+	return 0;
+}
+
 static int keembay_pcie_add_pcie_ep(struct keembay_pcie *pcie,
 				    struct platform_device *pdev)
 {
@@ -556,6 +643,14 @@ static int keembay_pcie_add_pcie_ep(struct keembay_pcie *pcie,
 	ret = dw_pcie_ep_init(ep);
 	if (ret)
 		dev_err(dev, "Failed to initialize endpoint: %d\n", ret);
+
+	/*
+	 * Use Keembay version set_bar for setting BAR with the addresses
+	 * already set in BAR registers when Linux boots
+	 */
+	keembay_epc_ops = *ep->epc->ops;
+	keembay_epc_ops.set_bar = keembay_ep_set_bar;
+	ep->epc->ops = &keembay_epc_ops;
 
 	return ret;
 }
