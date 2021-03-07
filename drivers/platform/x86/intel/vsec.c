@@ -421,6 +421,8 @@ static const struct dev_pm_ops intel_vsec_pm_ops = {};
 #endif
 
 #define PCI_DEVICE_ID_INTEL_VSEC_ADL		0x467d
+#define PCI_DEVICE_ID_INTEL_VSEC_ATS_M150	0x56C0
+#define PCI_DEVICE_ID_INTEL_VSEC_ATS_M75	0x56C1
 #define PCI_DEVICE_ID_INTEL_VSEC_DG1		0x490e
 #define PCI_DEVICE_ID_INTEL_VSEC_DG2_G10	0x4f93
 #define PCI_DEVICE_ID_INTEL_VSEC_DG2_G11	0x4f95
@@ -431,6 +433,8 @@ static const struct dev_pm_ops intel_vsec_pm_ops = {};
 #define PCI_DEVICE_ID_INTEL_VSEC_TGL		0x9a0d
 static const struct pci_device_id intel_vsec_pci_ids[] = {
 	{ PCI_DEVICE_DATA(INTEL, VSEC_ADL, &tgl_info) },
+	{ PCI_DEVICE_DATA(INTEL, VSEC_ATS_M150, &dg2_info) },
+	{ PCI_DEVICE_DATA(INTEL, VSEC_ATS_M75, &dg2_info) },
 	{ PCI_DEVICE_DATA(INTEL, VSEC_DG1, &dg1_info) },
 	{ PCI_DEVICE_DATA(INTEL, VSEC_DG2_G10, &dg2_info) },
 	{ PCI_DEVICE_DATA(INTEL, VSEC_DG2_G11, &dg2_info) },
