@@ -1,4 +1,4 @@
-From 078a26841b604e4af7ed5d3d5448971a936d843c Mon Sep 17 00:00:00 2001
+From 41bfff57f5af241b6ed621747f41bbd8c4cc7053 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Tue, 2 Jun 2020 22:20:25 +0200
 Subject: [PATCH 3/6] ovl: switch to mounter creds in readdir
@@ -12,7 +12,7 @@ Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
  1 file changed, 22 insertions(+), 6 deletions(-)
 
 diff --git a/fs/overlayfs/readdir.c b/fs/overlayfs/readdir.c
-index 45a6da807481..f9446e24f98d 100644
+index 02dc0818d377..110ae74067de 100644
 --- a/fs/overlayfs/readdir.c
 +++ b/fs/overlayfs/readdir.c
 @@ -735,8 +735,10 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
@@ -67,7 +67,7 @@ index 45a6da807481..f9446e24f98d 100644
 +	err = 0;
 +
 +out:
-+	revert_creds(old_cred);
++	ovl_revert_creds(old_cred);
 +	return err;
  }
  
@@ -82,7 +82,7 @@ index 45a6da807481..f9446e24f98d 100644
 +
 +	old_cred = ovl_override_creds(file_inode(file)->i_sb);
 +	res = ovl_path_open(realpath, O_RDONLY | (file->f_flags & O_LARGEFILE));
-+	revert_creds(old_cred);
++	ovl_revert_creds(old_cred);
 +
 +	return res;
  }
