@@ -727,10 +727,13 @@ static void rcar_du_crtc_atomic_enable(struct drm_crtc *crtc,
 	 */
 	if (rcdu->info->lvds_clk_mask & BIT(rcrtc->index) &&
 	    rstate->outputs == BIT(RCAR_DU_OUTPUT_DPAD0)) {
-		struct drm_bridge *bridge = rcdu->lvds[rcrtc->index];
+		struct rcar_du_encoder *encoder =
+			rcdu->encoders[RCAR_DU_OUTPUT_LVDS0 + rcrtc->index];
 		const struct drm_display_mode *mode =
 			&crtc->state->adjusted_mode;
+		struct drm_bridge *bridge;
 
+		bridge = drm_bridge_chain_get_first_bridge(&encoder->base);
 		rcar_lvds_clk_enable(bridge, mode->clock * 1000);
 	}
 
@@ -756,12 +759,15 @@ static void rcar_du_crtc_atomic_disable(struct drm_crtc *crtc,
 
 	if (rcdu->info->lvds_clk_mask & BIT(rcrtc->index) &&
 	    rstate->outputs == BIT(RCAR_DU_OUTPUT_DPAD0)) {
-		struct drm_bridge *bridge = rcdu->lvds[rcrtc->index];
+		struct rcar_du_encoder *encoder =
+			rcdu->encoders[RCAR_DU_OUTPUT_LVDS0 + rcrtc->index];
+		struct drm_bridge *bridge;
 
 		/*
 		 * Disable the LVDS clock output, see
 		 * rcar_du_crtc_atomic_enable().
 		 */
+		bridge = drm_bridge_chain_get_first_bridge(&encoder->base);
 		rcar_lvds_clk_disable(bridge);
 	}
 
