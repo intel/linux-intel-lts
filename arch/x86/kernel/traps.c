@@ -1025,7 +1025,7 @@ static __always_inline void exc_debug_user(struct pt_regs *regs,
 		goto out;
 
 	/* It's safe to allow irq's after DR6 has been saved */
-	local_irq_enable();
+	local_irq_enable_full();
 
 	if (v8086_mode(regs)) {
 		handle_vm86_trap((struct kernel_vm86_regs *)regs, 0, X86_TRAP_DB);
@@ -1038,7 +1038,7 @@ static __always_inline void exc_debug_user(struct pt_regs *regs,
 		send_sigtrap(regs, 0, get_si_code(dr6));
 
 out_irq:
-	local_irq_disable();
+	local_irq_disable_full();
 out:
 	instrumentation_end();
 	irqentry_exit_to_user_mode(regs);
