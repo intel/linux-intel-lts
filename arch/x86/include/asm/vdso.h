@@ -45,6 +45,24 @@ extern void __init init_vdso_image(const struct vdso_image *image);
 
 extern int map_vdso_once(const struct vdso_image *image, unsigned long addr);
 
-#endif /* __ASSEMBLER__ */
+#else /* __ASSEMBLER__ */
 
+/*
+ * ENDBR is an instruction for the Indirect Branch Tracking (IBT) component
+ * of CET.  IBT prevents attacks by ensuring that (most) indirect branches
+ * function calls may only land at ENDBR instructions.  Branches that don't
+ * follow the rules will result in control flow (#CF) exceptions.
+ * ENDBR is a noop when IBT is unsupported or disabled.  Most ENDBR
+ * instructions are inserted automatically by the compiler, but branch
+ * targets written in assembly must have ENDBR added manually.
+ */
+#ifdef CONFIG_X86_IBT
+#define ENDBR64 endbr64
+#define ENDBR32 endbr32
+#else
+#define ENDBR64
+#define ENDBR32
+#endif
+
+#endif /* __ASSEMBLER__ */
 #endif /* _ASM_X86_VDSO_H */
