@@ -219,7 +219,7 @@ static u64 trusty_virtio_get_features(struct virtio_device *vdev)
 {
 	struct trusty_vdev *tvdev = vdev_to_tvdev(vdev);
 
-	return tvdev->vdev_descr->dfeatures | (1ULL << VIRTIO_F_IOMMU_PLATFORM);
+	return tvdev->vdev_descr->dfeatures | (1ULL << VIRTIO_F_ACCESS_PLATFORM);
 }
 
 static int trusty_virtio_finalize_features(struct virtio_device *vdev)
@@ -228,10 +228,10 @@ static int trusty_virtio_finalize_features(struct virtio_device *vdev)
 	u64 features = vdev->features;
 
 	/*
-	 * We set VIRTIO_F_IOMMU_PLATFORM to enable the dma mapping hooks. The
+	 * We set VIRTIO_F_ACCESS_PLATFORM to enable the dma mapping hooks. The
 	 * other side does not need to know.
 	 */
-	features &= ~(1ULL << VIRTIO_F_IOMMU_PLATFORM);
+	features &= ~(1ULL << VIRTIO_F_ACCESS_PLATFORM);
 
 	/* Make sure we don't have any features > 32 bits! */
 	if (WARN_ON((u32)vdev->features != features))
