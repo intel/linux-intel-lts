@@ -280,7 +280,6 @@ static void __inband_irq_enable(void)
 	flags = hard_local_irq_save();
 
 	unstall_inband_nocheck();
-	trace_hardirqs_on();
 
 	p = this_inband_staged();
 	if (unlikely(stage_irqs_pending(p) && !in_pipeline())) {
@@ -329,7 +328,6 @@ notrace void inband_irq_disable(void)
 {
 	check_inband_stage();
 	stall_inband_nocheck();
-	trace_hardirqs_off();
 }
 EXPORT_SYMBOL(inband_irq_disable);
 
@@ -358,13 +356,8 @@ EXPORT_SYMBOL(inband_irqs_disabled);
  */
 trace_on_debug unsigned long inband_irq_save(void)
 {
-	unsigned long flags;
-
 	check_inband_stage();
-	flags = test_and_stall_inband_nocheck();
-	trace_hardirqs_off();
-
-	return flags;
+	return test_and_stall_inband_nocheck();
 }
 EXPORT_SYMBOL(inband_irq_save);
 
