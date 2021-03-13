@@ -122,11 +122,9 @@ static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 	 */
 
 	cortex_a76_erratum_1463225_svc_handler();
+	WARN_ON_ONCE(dovetail_debug() &&
+		     running_inband() && test_inband_stall());
 	local_daif_restore(DAIF_PROCCTX);
-	if (running_inband()) {
-		unstall_inband();
-		user_exit();
-	}
 
 	ret = pipeline_syscall(scno, regs);
 	if (ret > 0)
