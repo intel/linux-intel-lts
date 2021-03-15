@@ -15,7 +15,7 @@ ldp \ra, \rb, [sp], #16
 
 lr .req x30
 
-ENTRY(trusty_smc8)
+SYM_FUNC_START(trusty_smc8)
     /*
      * Save x8 (return value ptr) and lr. The SMC calling convention says el3
      * does not need to preserve x8. The normal ABI does not require either x8
@@ -32,4 +32,4 @@ ENTRY(trusty_smc8)
     stp     x6, x7, [x8], #16
 
     ret
-ENDPROC(trusty_smc8)
+SYM_FUNC_END(trusty_smc8)
