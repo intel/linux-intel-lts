@@ -13,7 +13,7 @@
 
 #define IKGT_SMC_HC_ID 0x74727500
 
-#ifdef TRUSTY_X86_OWNS_INTR
+#if 0
 static irqreturn_t stub_action(int cpl, void *dev_id)
 {
 	return IRQ_NONE;
@@ -182,7 +182,7 @@ static void __exit trusty_x86_64_driver_exit(void)
 	platform_driver_unregister(&trusty_x86_64_driver);
 }
 
-#ifdef TRUSTY_X86_OWNS_INTR
+#if 0
 int trusty_x86_64_release_reserved_vector(unsigned int vector)
 {
 	int idx;
