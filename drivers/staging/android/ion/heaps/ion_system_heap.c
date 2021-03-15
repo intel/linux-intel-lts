@@ -6,6 +6,10 @@
  */
 
 #include <asm/page.h>
+#ifdef CONFIG_X86
+#include <asm/set_memory.h>
+#endif
+
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/highmem.h>
@@ -136,6 +140,10 @@ static int ion_system_heap_allocate(struct ion_heap *heap,
 	sg = table->sgl;
 	list_for_each_entry_safe(page, tmp_page, &pages, lru) {
 		sg_set_page(sg, page, page_size(page), 0);
+#ifdef CONFIG_X86
+		if (!(buffer->flags & ION_FLAG_CACHED))
+			set_memory_wc((unsigned long)page_address(sg_page(sg)), PAGE_ALIGN(sg->length) / PAGE_SIZE);
+#endif
 		sg = sg_next(sg);
 		list_del(&page->lru);
 	}
@@ -167,8 +175,13 @@ static void ion_system_heap_free(struct ion_buffer *buffer)
 	if (!(buffer->private_flags & ION_PRIV_FLAG_SHRINKER_FREE))
 		ion_buffer_zero(buffer);
 
-	for_each_sgtable_sg(table, sg, i)
+	for_each_sgtable_sg(table, sg, i) {
+#ifdef CONFIG_X86
+		if (!(buffer->flags & ION_FLAG_CACHED))
+			set_memory_wb((unsigned long)page_address(sg_page(sg)), PAGE_ALIGN(sg->length) / PAGE_SIZE);
+#endif
 		free_buffer_page(sys_heap, buffer, sg_page(sg));
+	}
 	sg_free_table(table);
 	kfree(table);
 }

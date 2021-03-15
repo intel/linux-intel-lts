@@ -3,7 +3,10 @@
 #define _ASM_X86_SET_MEMORY_H
 
 #include <asm/page.h>
+#include <asm/pgtable_types.h>
 #include <asm-generic/set_memory.h>
+
+#include <linux/printk.h>
 
 /*
  * The set_memory_* API can be used to change various attributes of a virtual
