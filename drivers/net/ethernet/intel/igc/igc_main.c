@@ -495,8 +495,7 @@ int igc_setup_rx_resources(struct igc_ring *rx_ring)
 	u8 index = rx_ring->queue_index;
 	int size, desc_len, res;
 
-	res = xdp_rxq_info_reg(&rx_ring->xdp_rxq, ndev, index,
-			       rx_ring->q_vector->napi.napi_id);
+	res = xdp_rxq_info_reg(&rx_ring->xdp_rxq, ndev, index);
 	if (res < 0) {
 		netdev_err(ndev, "Failed to register xdp_rxq index %u\n",
 			   index);
