@@ -808,6 +808,7 @@ static inline temp_mm_state_t use_temporary_mm(struct mm_struct *mm)
 	temp_mm_state_t temp_state;
 
 	lockdep_assert_irqs_disabled();
+	WARN_ON_ONCE(irq_pipeline_debug() && !hard_irqs_disabled());
 
 	/*
 	 * Make sure not to be in TLB lazy mode, as otherwise we'll end up
@@ -817,12 +818,6 @@ static inline temp_mm_state_t use_temporary_mm(struct mm_struct *mm)
 	if (this_cpu_read(cpu_tlbstate.is_lazy))
 		leave_mm(smp_processor_id());
 
-	/*
-	 * unuse_temporary_mm() assumes hardirqs were off on entry to
-	 * use_temporary_mm(), assert this condition.
-	 */
-	WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled());
-	hard_cond_local_irq_disable();
 	temp_state.mm = this_cpu_read(cpu_tlbstate.loaded_mm);
 	switch_mm_irqs_off(NULL, mm, current);
 
@@ -847,7 +842,6 @@ static inline void unuse_temporary_mm(temp_mm_state_t prev_state)
 {
 	lockdep_assert_irqs_disabled();
 	switch_mm_irqs_off(NULL, prev_state.mm, current);
-	hard_cond_local_irq_enable();
 
 	/*
 	 * Restore the breakpoints if they were disabled before the temporary mm
