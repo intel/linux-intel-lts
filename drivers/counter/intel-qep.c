@@ -528,8 +528,6 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	pm_runtime_allow(dev);
 
 	return devm_counter_register(&pci->dev, &qep->counter);
-
-	return ret;
 }
 
 static void intel_qep_remove(struct pci_dev *pci)
