@@ -94,6 +94,7 @@
 #define IGC_CTRL_SLU		0x00000040  /* Set link up (Force Link) */
 #define IGC_CTRL_FRCSPD		0x00000800  /* Force Speed */
 #define IGC_CTRL_FRCDPX		0x00001000  /* Force Duplex */
+#define IGC_CTRL_VME		0x40000000  /* IEEE VLAN mode enable */
 
 #define IGC_CTRL_RFCE		0x08000000  /* Receive Flow Control enable */
 #define IGC_CTRL_TFCE		0x10000000  /* Transmit flow control enable */
@@ -189,6 +190,7 @@
 #define IGC_STATUS_SPEED_100	0x00000040      /* Speed 100Mb/s */
 #define IGC_STATUS_SPEED_1000	0x00000080      /* Speed 1000Mb/s */
 #define IGC_STATUS_SPEED_2500	0x00400000	/* Speed 2.5Gb/s */
+#define IGC_STATUS_VME		0x40000000	/* IEEE VLAN mode enable */
 
 #define SPEED_10		10
 #define SPEED_100		100
@@ -323,8 +325,11 @@
 /* Receive Descriptor bit definitions */
 #define IGC_RXD_STAT_EOP	0x02	/* End of Packet */
 #define IGC_RXD_STAT_IXSM	0x04	/* Ignore checksum */
+#define IGC_RXD_STAT_VP		0x08	/* IEEE VLAN Packet */
 #define IGC_RXD_STAT_UDPCS	0x10	/* UDP xsum calculated */
 #define IGC_RXD_STAT_TCPCS	0x20	/* TCP xsum calculated */
+
+#define IGC_RXDEXT_STATERR_LB	0x00040000
 
 /* Advanced Receive Descriptor bit definitions */
 #define IGC_RXDADV_STAT_TSIP	0x08000 /* timestamp in packet */
