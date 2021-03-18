@@ -30,6 +30,9 @@
 #define XPCIE_DESC_STATUS_SUCCESS	(0)
 #define XPCIE_DESC_STATUS_ERROR		(0xFFFF)
 
+#define HOST_RX_BD_COUNT_THRESHOLD	(64)
+#define MAX_HOST_RX_BD_COUNT		(3 * HOST_RX_BD_COUNT_THRESHOLD)
+
 /* Layout transfer descriptors used by device and host */
 struct xpcie_transfer_desc {
 	u64 address;
@@ -78,6 +81,9 @@ struct xpcie_interface {
 	struct xpcie_list read;
 	struct xpcie_buf_desc *partial_read;
 	bool data_avail;
+#ifdef XLINK_PCIE_REMOTE
+	atomic_t available_bd_cnt;
+#endif
 	wait_queue_head_t rx_waitq;
 };
 

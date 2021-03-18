@@ -7,10 +7,14 @@
  *
  ****************************************************************************/
 
-#include "pci.h"
+#include <linux/atomic.h>
+#include <linux/jiffies.h>
 
+#include "pci.h"
 #include "../common/core.h"
 #include "../common/util.h"
+
+#define RX_BD_HRTIMER_DELAY_USEC	(4000 * 1000) /* 4 sec delay */
 
 static int intel_xpcie_map_dma(struct xpcie *xpcie, struct xpcie_buf_desc *bd,
 			       int direction)
@@ -93,8 +97,11 @@ static int intel_xpcie_txrx_init(struct xpcie *xpcie,
 	struct xpcie_stream *tx = &xpcie->tx;
 	struct xpcie_stream *rx = &xpcie->rx;
 	int tx_pool_size, rx_pool_size;
+	struct xpcie_interface *inf;
 	struct xpcie_buf_desc *bd;
 	int rc, index, ndesc;
+
+	inf = &xpcie->interfaces[0];
 
 	xpcie->txrx = cap;
 	xpcie->fragment_size = intel_xpcie_ioread32(&cap->fragment_size);
@@ -176,6 +183,9 @@ static int intel_xpcie_txrx_init(struct xpcie *xpcie,
 		intel_xpcie_set_td_length(td, bd->length);
 	}
 
+	atomic_set(&inf->available_bd_cnt, 0);
+	intel_xpcie_update_device_flwctl(xpcie, TO_DEVICE, RX_BD_COUNT, 0);
+
 	return 0;
 
 error:
@@ -208,17 +218,54 @@ static void intel_xpcie_start_rx(struct xpcie *xpcie, unsigned long delay)
 	queue_delayed_work(xpcie->rx_wq, &xpcie->rx_event, delay);
 }
 
-static void intel_xpcie_rx_event_handler(struct work_struct *work)
+static enum
+hrtimer_restart free_rx_bd_timer_cb(struct hrtimer *free_rx_bd_timer)
 {
-	struct xpcie *xpcie = container_of(work, struct xpcie, rx_event.work);
-	struct xpcie_dev *xdev = container_of(xpcie, struct xpcie_dev, xpcie);
+	struct xpcie *xpcie = container_of(free_rx_bd_timer,
+					   struct xpcie, free_rx_bd_timer);
+	struct xpcie_dev *xdev = container_of(xpcie,
+					       struct xpcie_dev, xpcie);
+	struct xpcie_interface *inf = &xpcie->interfaces[0];
+	struct xpcie_stream *rx = &xpcie->rx;
+	struct xpcie_buf_desc *bd;
+	int count = 0;
+
+	bd = (inf->partial_read) ?
+				  inf->partial_read :
+				  intel_xpcie_list_get(&inf->read);
+	while (bd) {
+		intel_xpcie_free_rx_bd(xpcie, bd);
+		bd = intel_xpcie_list_get(&inf->read);
+		count++;
+	}
+	inf->partial_read = bd;
+	inf->data_avail = false;
+
+	intel_xpcie_set_tdr_head(&rx->pipe, 0);
+	intel_xpcie_set_tdr_tail(&rx->pipe, 0);
+	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_SENT, 0);
+	intel_xpcie_set_doorbell(xpcie, TO_DEVICE, DATA_RECEIVED, 1);
+	intel_xpcie_pci_raise_irq(xdev, DATA_RECEIVED, 1);
+
+	return HRTIMER_NORESTART;
+}
+
+static void intel_xpcie_rx_tasklet_func(unsigned long xpcie_ptr)
+{
+	unsigned long period_us = RX_BD_HRTIMER_DELAY_USEC;
+	struct xpcie *xpcie = (struct xpcie *)xpcie_ptr;
 	struct xpcie_buf_desc *bd, *replacement = NULL;
-	unsigned long delay = msecs_to_jiffies(1);
 	struct xpcie_stream *rx = &xpcie->rx;
 	struct xpcie_transfer_desc *td;
 	u32 head, tail, ndesc, length;
+	struct xpcie_interface *inf;
+	struct xpcie_dev *xdev;
 	u16 status, interface;
+	ktime_t free_rx_bd_tp;
 	int rc;
+
+	xdev = container_of(xpcie, struct xpcie_dev, xpcie);
+	inf = &xpcie->interfaces[0];
 
 	if (intel_xpcie_get_device_status(xpcie) != XPCIE_STATUS_RUN)
 		return;
@@ -233,7 +280,12 @@ static void intel_xpcie_rx_event_handler(struct work_struct *work)
 
 		replacement = intel_xpcie_alloc_rx_bd(xpcie);
 		if (!replacement) {
-			delay = msecs_to_jiffies(20);
+			if (!hrtimer_active(&xpcie->free_rx_bd_timer)) {
+				free_rx_bd_tp =
+					ktime_set(0, period_us * 1000ULL);
+				hrtimer_start(&xpcie->free_rx_bd_timer,
+					      free_rx_bd_tp, HRTIMER_MODE_REL);
+			}
 			break;
 		}
 
@@ -262,6 +314,10 @@ static void intel_xpcie_rx_event_handler(struct work_struct *work)
 			bd->next = NULL;
 
 			intel_xpcie_add_bd_to_interface(xpcie, bd);
+			intel_xpcie_update_device_flwctl(xpcie,
+							 TO_DEVICE,
+							 RX_BD_COUNT,
+					atomic_read(&inf->available_bd_cnt));
 		}
 
 		rx->ddr[head] = replacement;
@@ -272,11 +328,12 @@ static void intel_xpcie_rx_event_handler(struct work_struct *work)
 
 	if (intel_xpcie_get_tdr_head(&rx->pipe) != head) {
 		intel_xpcie_set_tdr_head(&rx->pipe, head);
-		intel_xpcie_pci_raise_irq(xdev, DATA_RECEIVED, 1);
+		if (head != tail)
+			intel_xpcie_pci_raise_irq(xdev,
+						  PARTIAL_DATA_RECEIVED, 1);
+		else
+			intel_xpcie_pci_raise_irq(xdev, DATA_RECEIVED, 1);
 	}
-
-	if (!replacement)
-		intel_xpcie_start_rx(xpcie, delay);
 }
 
 static void intel_xpcie_tx_event_handler(struct work_struct *work)
@@ -359,7 +416,7 @@ static irqreturn_t intel_xpcie_interrupt(int irq, void *args)
 
 	if (intel_xpcie_get_doorbell(xpcie, FROM_DEVICE, DATA_SENT)) {
 		intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_SENT, 0);
-		intel_xpcie_start_rx(xpcie, 0);
+		tasklet_schedule(&xpcie->rx_tasklet);
 	}
 	if (intel_xpcie_get_doorbell(xpcie, FROM_DEVICE, DATA_RECEIVED)) {
 		intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_RECEIVED, 0);
@@ -387,19 +444,26 @@ static int intel_xpcie_events_init(struct xpcie *xpcie)
 		return -ENOMEM;
 	}
 
-	INIT_DELAYED_WORK(&xpcie->rx_event, intel_xpcie_rx_event_handler);
+	tasklet_init(&xpcie->rx_tasklet, intel_xpcie_rx_tasklet_func,
+		     (uintptr_t)xpcie);
 	INIT_DELAYED_WORK(&xpcie->tx_event, intel_xpcie_tx_event_handler);
+
+	hrtimer_init(&xpcie->free_rx_bd_timer, CLOCK_MONOTONIC,
+		     HRTIMER_MODE_REL);
+	xpcie->free_rx_bd_timer.function = free_rx_bd_timer_cb;
 
 	return 0;
 }
 
 static void intel_xpcie_events_cleanup(struct xpcie *xpcie)
 {
-	cancel_delayed_work_sync(&xpcie->rx_event);
+	tasklet_kill(&xpcie->rx_tasklet);
 	cancel_delayed_work_sync(&xpcie->tx_event);
 
 	destroy_workqueue(xpcie->rx_wq);
 	destroy_workqueue(xpcie->tx_wq);
+
+	hrtimer_cancel(&xpcie->free_rx_bd_timer);
 }
 
 int intel_xpcie_core_init(struct xpcie *xpcie)
@@ -462,6 +526,7 @@ int intel_xpcie_core_read(struct xpcie *xpcie, void *buffer, size_t *length,
 	struct xpcie_buf_desc *bd;
 	size_t remaining, len;
 	long jiffies_passed = 0;
+	int bd_val;
 	int ret;
 
 	if (*length == 0)
@@ -474,30 +539,24 @@ int intel_xpcie_core_read(struct xpcie *xpcie, void *buffer, size_t *length,
 	remaining = len;
 	*length = 0;
 
-	ret = mutex_lock_interruptible(&inf->rlock);
-	if (ret < 0)
-		return -EINTR;
-
 	do {
-		while (!inf->data_avail) {
-			mutex_unlock(&inf->rlock);
+		if (!inf->partial_read &&
+		    (intel_xpcie_list_empty(&inf->read))) {
 			if (timeout_ms == 0) {
-				ret = wait_event_interruptible(inf->rx_waitq,
-							       inf->data_avail);
+				ret =
+			wait_event_interruptible(inf->rx_waitq,
+						 (!intel_xpcie_list_empty(&inf->read) ||
+						  atomic_read(&inf->available_bd_cnt)));
 			} else {
 				ret =
 			wait_event_interruptible_timeout(inf->rx_waitq,
-							 inf->data_avail,
-							 jiffies_timeout -
-							 jiffies_passed);
+							 (!intel_xpcie_list_empty(&inf->read) ||
+							 atomic_read(&inf->available_bd_cnt)),
+							 jiffies_timeout - jiffies_passed);
 				if (ret == 0)
 					return -ETIME;
 			}
 			if (ret < 0 || xpcie->stop_flag)
-				return -EINTR;
-
-			ret = mutex_lock_interruptible(&inf->rlock);
-			if (ret < 0)
 				return -EINTR;
 		}
 
@@ -517,23 +576,29 @@ int intel_xpcie_core_read(struct xpcie *xpcie, void *buffer, size_t *length,
 			if (bd->length == 0) {
 				intel_xpcie_free_rx_bd(xpcie, bd);
 				bd = intel_xpcie_list_get(&inf->read);
+
+				bd_val =
+				atomic_dec_return(&inf->available_bd_cnt);
+				intel_xpcie_update_device_flwctl(xpcie,
+								 TO_DEVICE,
+								 RX_BD_COUNT,
+								 bd_val);
+
+				if (hrtimer_active(&xpcie->free_rx_bd_timer)) {
+					hrtimer_cancel
+						(&xpcie->free_rx_bd_timer);
+				}
 			}
 		}
 
 		/* save for next time */
 		inf->partial_read = bd;
 
-		if (!bd)
-			inf->data_avail = false;
-
 		*length = len - remaining;
 
 		jiffies_passed = (long)jiffies - (long)jiffies_start;
 	} while (remaining > 0 && (jiffies_passed < jiffies_timeout ||
 				   timeout_ms == 0));
-
-	mutex_unlock(&inf->rlock);
-
 	return 0;
 }
 
