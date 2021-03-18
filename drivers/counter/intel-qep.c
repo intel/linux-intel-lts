@@ -89,11 +89,10 @@ static inline void intel_qep_writel(struct intel_qep *qep,
 	writel(value, qep->regs + offset);
 }
 
-static void intel_qep_init(struct intel_qep *qep, bool reset)
+static void intel_qep_init(struct intel_qep *qep)
 {
 	u32 reg;
 
-	mutex_lock(&qep->lock);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	reg &= ~INTEL_QEPCON_EN;
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
@@ -102,16 +101,13 @@ static void intel_qep_init(struct intel_qep *qep, bool reset)
 	/* make sure peripheral is disabled by reading one more time */
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 
-	if (reset) {
-		reg &= ~(INTEL_QEPCON_OP_MODE | INTEL_QEPCON_FLT_EN);
-		reg |= INTEL_QEPCON_EDGE_A | INTEL_QEPCON_EDGE_B |
-			INTEL_QEPCON_EDGE_INDX | INTEL_QEPCON_COUNT_RST_MODE;
-	}
+	reg &= ~(INTEL_QEPCON_OP_MODE | INTEL_QEPCON_FLT_EN);
+	reg |= INTEL_QEPCON_EDGE_A | INTEL_QEPCON_EDGE_B |
+	       INTEL_QEPCON_EDGE_INDX | INTEL_QEPCON_COUNT_RST_MODE;
 
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 
 	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
-	mutex_unlock(&qep->lock);
 }
 
 enum intel_qep_synapse_action {
@@ -509,7 +505,7 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->regs = regs;
 	mutex_init(&qep->lock);
 
-	intel_qep_init(qep, true);
+	intel_qep_init(qep);
 	pci_set_drvdata(pci, qep);
 
 	qep->counter.name = pci_name(pci);
@@ -546,8 +542,6 @@ static int intel_qep_resume(struct device *dev)
 {
 	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
 	struct intel_qep *qep = pci_get_drvdata(pdev);
-
-	intel_qep_init(qep, false);
 
 	return 0;
 }
