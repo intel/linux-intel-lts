@@ -612,7 +612,7 @@ int dwmac5_est_configure(void __iomem *ioaddr, struct stmmac_est *cfg,
 }
 
 void dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
-			  u32 txqcnt)
+			  struct stmmac_extra_stats *x, u32 txqcnt)
 {
 	u32 status, value, feqn, hbfq, hbfs, btrl;
 	u32 txqcnt_mask = (1 << txqcnt) - 1;
@@ -628,11 +628,15 @@ void dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 	if (status & CGCE) {
 		/* Clear Interrupt */
 		writel(CGCE, ioaddr + MTL_EST_STATUS);
+
+		x->mtl_est_cgce++;
 	}
 
 	if (status & HLBS) {
 		value = readl(ioaddr + MTL_EST_SCH_ERR);
 		value &= txqcnt_mask;
+
+		x->mtl_est_hlbs++;
 
 		/* Clear Interrupt */
 		writel(value, ioaddr + MTL_EST_SCH_ERR);
@@ -653,6 +657,8 @@ void dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 		hbfq = (value & SZ_CAP_HBFQ_MASK(txqcnt)) >> SZ_CAP_HBFQ_SHIFT;
 		hbfs = value & SZ_CAP_HBFS_MASK;
 
+		x->mtl_est_hlbf++;
+
 		/* Clear Interrupt */
 		writel(feqn, ioaddr + MTL_EST_FRM_SZ_ERR);
 
@@ -662,6 +668,11 @@ void dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 	}
 
 	if (status & BTRE) {
+		if ((status & BTRL) == BTRL_MAX)
+			x->mtl_est_btrlm++;
+		else
+			x->mtl_est_btre++;
+
 		btrl = (status & BTRL) >> BTRL_SHIFT;
 
 		if (net_ratelimit())
