@@ -370,6 +370,7 @@ static void intel_xpcie_tx_event_handler(struct work_struct *work)
 	struct xpcie_transfer_desc *td;
 	int descs_num = 0, chan = 0, rc;
 	size_t buffers = 0, bytes = 0;
+	int bd_val = 0;
 	u64 address;
 
 	if (intel_xpcie_get_host_status(xpcie) != XPCIE_STATUS_RUN)
@@ -384,6 +385,16 @@ static void intel_xpcie_tx_event_handler(struct work_struct *work)
 
 	/* add new entries */
 	while (XPCIE_CIRCULAR_INC(tail, ndesc) != head) {
+		/*
+		 * Tx flow control
+		 * Check remote host Rx bd count is more than threshold.
+		 */
+		bd_val = intel_xpcie_get_device_flwctl(xpcie, TO_DEVICE,
+						       RX_BD_COUNT);
+		if (bd_val < MAX_HOST_RX_BD_COUNT &&
+		    bd_val >= HOST_RX_BD_COUNT_THRESHOLD)
+			continue;
+
 		bd = intel_xpcie_list_get(&xpcie->write);
 		if (!bd)
 			break;
@@ -465,6 +476,15 @@ static irqreturn_t intel_xpcie_core_irq_cb(int irq, void *args)
 		intel_xpcie_set_doorbell(xpcie, TO_DEVICE, DATA_RECEIVED, 0);
 		if (xpcie->tx_pending)
 			intel_xpcie_start_tx(xpcie, 0);
+	}
+	if (intel_xpcie_get_doorbell(xpcie, TO_DEVICE,
+				     PARTIAL_DATA_RECEIVED)) {
+		intel_xpcie_set_doorbell(xpcie, TO_DEVICE,
+					 PARTIAL_DATA_RECEIVED, 0);
+		if (xpcie->tx_pending)
+			intel_xpcie_start_tx(xpcie, 0);
+		else
+			intel_xpcie_raise_irq(xpcie, DATA_SENT);
 	}
 
 	return IRQ_HANDLED;
