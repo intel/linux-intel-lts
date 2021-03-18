@@ -74,6 +74,10 @@ struct intel_qep {
 	struct device *dev;
 	void __iomem *regs;
 	bool enabled;
+	/* Context save registers */
+	u32 qepcon;
+	u32 qepflt;
+	u32 qepmax;
 };
 
 #define counter_to_qep(c)	(container_of((c), struct intel_qep, counter))
@@ -538,16 +542,48 @@ static void intel_qep_remove(struct pci_dev *pci)
 }
 
 #ifdef CONFIG_PM
+static int intel_qep_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct intel_qep *qep = pci_get_drvdata(pdev);
+
+	qep->qepcon = intel_qep_readl(qep, INTEL_QEPCON);
+	qep->qepflt = intel_qep_readl(qep, INTEL_QEPFLT);
+	qep->qepmax = intel_qep_readl(qep, INTEL_QEPMAX);
+
+	return 0;
+}
+
 static int intel_qep_resume(struct device *dev)
 {
 	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
 	struct intel_qep *qep = pci_get_drvdata(pdev);
 
+	/*
+	 * Make sure peripheral is disabled when restoring registers and
+	 * control register bits that are writable only when the peripheral
+	 * is disabled
+	 */
+	intel_qep_writel(qep, INTEL_QEPCON, 0);
+	intel_qep_readl(qep, INTEL_QEPCON);
+
+	intel_qep_writel(qep, INTEL_QEPFLT, qep->qepflt);
+	intel_qep_writel(qep, INTEL_QEPMAX, qep->qepmax);
+	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
+
+	/* Restore all other control register bits except enable status */
+	intel_qep_writel(qep, INTEL_QEPCON, qep->qepcon & ~INTEL_QEPCON_EN);
+	intel_qep_readl(qep, INTEL_QEPCON);
+
+	/* Restore enable status */
+	intel_qep_writel(qep, INTEL_QEPCON, qep->qepcon);
+
 	return 0;
 }
 #endif
 
-static UNIVERSAL_DEV_PM_OPS(intel_qep_pm_ops, NULL, intel_qep_resume, NULL);
+static UNIVERSAL_DEV_PM_OPS(intel_qep_pm_ops,
+			    intel_qep_suspend, intel_qep_resume, NULL);
 
 static const struct pci_device_id intel_qep_id_table[] = {
 	/* EHL */
