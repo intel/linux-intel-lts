@@ -181,22 +181,27 @@ static int intel_qep_function_set(struct counter_device *counter,
 				  size_t function)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
+	int ret = 0;
 	u32 reg;
 
 	mutex_lock(&qep->lock);
-	pm_runtime_get_sync(qep->dev);
+	if (qep->enabled) {
+		ret = -EBUSY;
+		goto out;
+	}
 
+	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	if (function == INTEL_QEP_ENCODER_MODE_SWAPPED)
 		reg |= INTEL_QEPCON_SWPAB;
 	else
 		reg &= ~INTEL_QEPCON_SWPAB;
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
-
 	pm_runtime_put(qep->dev);
-	mutex_unlock(&qep->lock);
 
-	return 0;
+out:
+	mutex_unlock(&qep->lock);
+	return ret;
 }
 
 static int intel_qep_action_get(struct counter_device *counter,
@@ -224,11 +229,16 @@ static int intel_qep_action_set(struct counter_device *counter,
 				size_t action)
 {
 	struct intel_qep *qep = counter_to_qep(counter);
+	int ret = 0;
 	u32 reg;
 
 	mutex_lock(&qep->lock);
-	pm_runtime_get_sync(qep->dev);
+	if (qep->enabled) {
+		ret = -EBUSY;
+		goto out;
+	}
 
+	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 
 	if (action == INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE)
@@ -237,11 +247,11 @@ static int intel_qep_action_set(struct counter_device *counter,
 		reg &= ~synapse->signal->id;
 
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
-
 	pm_runtime_put(qep->dev);
-	mutex_unlock(&qep->lock);
 
-	return 0;
+out:
+	mutex_unlock(&qep->lock);
+	return ret;
 }
 
 static const struct counter_ops intel_qep_counter_ops = {
@@ -313,13 +323,22 @@ static ssize_t ceiling_write(struct counter_device *counter,
 	if (ret < 0)
 		return ret;
 
+	mutex_lock(&qep->lock);
+	if (qep->enabled) {
+		ret = -EBUSY;
+		goto out;
+	}
+
 	pm_runtime_get_sync(qep->dev);
 
 	intel_qep_writel(qep, INTEL_QEPMAX, max);
 
 	pm_runtime_put(qep->dev);
+	ret = len;
 
-	return len;
+out:
+	mutex_unlock(&qep->lock);
+	return ret;
 }
 
 static ssize_t enable_read(struct counter_device *counter,
@@ -416,6 +435,11 @@ static ssize_t noise_write(struct counter_device *counter,
 		return -EINVAL;
 
 	mutex_lock(&qep->lock);
+	if (qep->enabled) {
+		ret = -EBUSY;
+		goto out;
+	}
+
 	pm_runtime_get_sync(qep->dev);
 
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
@@ -430,9 +454,11 @@ static ssize_t noise_write(struct counter_device *counter,
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 
 	pm_runtime_put(qep->dev);
-	mutex_unlock(&qep->lock);
+	ret = len;
 
-	return len;
+out:
+	mutex_unlock(&qep->lock);
+	return ret;
 }
 
 static ssize_t preset_enable_read(struct counter_device *counter,
@@ -461,6 +487,11 @@ static ssize_t preset_enable_write(struct counter_device *counter,
 		return ret;
 
 	mutex_lock(&qep->lock);
+	if (qep->enabled) {
+		ret = -EBUSY;
+		goto out;
+	}
+
 	pm_runtime_get_sync(qep->dev);
 
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
@@ -473,9 +504,12 @@ static ssize_t preset_enable_write(struct counter_device *counter,
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 
 	pm_runtime_put(qep->dev);
+	ret = len;
+
+out:
 	mutex_unlock(&qep->lock);
 
-	return len;
+	return ret;
 }
 
 static const struct counter_device_ext intel_qep_ext[] = {
