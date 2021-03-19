@@ -102,7 +102,10 @@ static void intel_qep_init(struct intel_qep *qep)
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 	qep->enabled = false;
 
-	/* make sure peripheral is disabled by reading one more time */
+	/*
+	 * Make sure peripheral is disabled by flushing the write with
+	 * a dummy read
+	 */
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 
 	reg &= ~(INTEL_QEPCON_OP_MODE | INTEL_QEPCON_FLT_EN);
