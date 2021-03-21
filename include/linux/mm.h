@@ -3183,17 +3183,6 @@ unsigned long wp_shared_mapping_range(struct address_space *mapping,
 				      pgoff_t first_index, pgoff_t nr);
 #endif
 
-#ifdef CONFIG_DOVETAIL
-int commit_vma(struct mm_struct *mm, struct vm_area_struct *vma);
-int force_commit_memory(void);
-#else
-static inline
-int commit_vma(struct mm_struct *mm, struct vm_area_struct *vma)
-{
-	return 0;
-}
-#endif
-
 extern int sysctl_nr_trim_pages;
 
 /**
