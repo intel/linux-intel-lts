@@ -23,7 +23,6 @@
 #include <linux/swapops.h>
 #include <linux/mmu_notifier.h>
 #include <linux/migrate.h>
-#include <linux/dovetail.h>
 #include <linux/perf_event.h>
 #include <linux/pkeys.h>
 #include <linux/ksm.h>
@@ -359,7 +358,6 @@ unsigned long change_protection(struct vm_area_struct *vma, unsigned long start,
 		       unsigned long cp_flags)
 {
 	unsigned long pages;
-	bool prot_numa = cp_flags & MM_CP_PROT_NUMA;
 
 	BUG_ON((cp_flags & MM_CP_UFFD_WP_ALL) == MM_CP_UFFD_WP_ALL);
 
@@ -368,12 +366,6 @@ unsigned long change_protection(struct vm_area_struct *vma, unsigned long start,
 	else
 		pages = change_protection_range(vma, start, end, newprot,
 						cp_flags);
-
-	if (dovetailing() && !prot_numa &&
-	    test_bit(MMF_VM_PINNED, &vma->vm_mm->flags) &&
-	    ((vma->vm_flags | vma->vm_mm->def_flags) & VM_LOCKED) &&
-	    (vma->vm_flags & (VM_READ | VM_WRITE | VM_EXEC)))
-		commit_vma(vma->vm_mm, vma);
 
 	return pages;
 }
