@@ -33,6 +33,7 @@
 #include <linux/highmem.h>
 #include <linux/idr.h>
 #include <linux/platform_data/x86/apple.h>
+#include <linux/pci.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/spi.h>
@@ -40,6 +41,18 @@ EXPORT_TRACEPOINT_SYMBOL(spi_transfer_start);
 EXPORT_TRACEPOINT_SYMBOL(spi_transfer_stop);
 
 #include "internals.h"
+
+static bool pse_dma_quirk;
+
+static void quirk_pse_dma(struct pci_dev *dev)
+{
+	pse_dma_quirk = true;
+}
+
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x4b84, quirk_pse_dma);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x4b85, quirk_pse_dma);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x4b86, quirk_pse_dma);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x4b87, quirk_pse_dma);
 
 static DEFINE_IDR(spi_master_idr);
 
@@ -925,6 +938,12 @@ static int __spi_map_msg(struct spi_controller *ctlr, struct spi_message *msg)
 	else
 		rx_dev = ctlr->dev.parent;
 
+	/* Hack for PSE SPI */
+	if (pse_dma_quirk) {
+		tx_dev = ctlr->dev.parent;
+		rx_dev = ctlr->dev.parent;
+	}
+
 	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
 		if (!ctlr->can_dma(ctlr, msg->spi, xfer))
 			continue;
@@ -971,6 +990,12 @@ static int __spi_unmap_msg(struct spi_controller *ctlr, struct spi_message *msg)
 		rx_dev = ctlr->dma_rx->device->dev;
 	else
 		rx_dev = ctlr->dev.parent;
+
+	/* Hack fo PSE SPI */
+	if (pse_dma_quirk) {
+		tx_dev = ctlr->dev.parent;
+		rx_dev = ctlr->dev.parent;
+	}
 
 	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
 		if (!ctlr->can_dma(ctlr, msg->spi, xfer))

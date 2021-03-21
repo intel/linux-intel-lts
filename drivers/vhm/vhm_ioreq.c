@@ -964,7 +964,7 @@ int acrn_ioreq_distribute_request(struct vhm_vm *vm)
 	struct ioreq_client *client;
 	int i, vcpu_num;
 
-	vcpu_num = refcount_read(&vm->vcpu_num);
+	vcpu_num = atomic_read(&vm->vcpu_num);
 	for (i = 0; i < vcpu_num; i++) {
 		req = vm->req_buf->req_queue + i;
 
@@ -1017,7 +1017,7 @@ int acrn_ioreq_complete_request(int client_id, uint64_t vcpu,
 		return -EINVAL;
 	}
 
-	if (vcpu >= refcount_read(&client->ref_vm->vcpu_num)) {
+	if (vcpu >= atomic_read(&client->ref_vm->vcpu_num)) {
 		pr_err("vhm-ioreq: vcpu %lld overflow\n", vcpu);
 		acrn_ioreq_put_client(client);
 		return -EINVAL;

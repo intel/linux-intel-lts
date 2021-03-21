@@ -180,6 +180,14 @@ static int byt_serial_setup(struct lpss8250 *lpss, struct uart_port *port)
 
 static int ehl_serial_setup(struct lpss8250 *lpss, struct uart_port *port)
 {
+	struct dw_dma_slave *param = &lpss->dma_param;
+	struct pci_dev *pdev = to_pci_dev(port->dev);
+
+	param->src_id = 0;
+	param->dst_id = 1;
+	param->dma_dev = &pdev->dev;
+	lpss->dma_maxburst = 8;
+
 	return 0;
 }
 
@@ -276,6 +284,8 @@ static int lpss8250_dma_setup(struct lpss8250 *lpss, struct uart_8250_port *port
 
 	if (!lpss->dma_param.dma_dev)
 		return 0;
+
+	pr_info("%s Enabling DMA for device %s, channel request happened during PORT is opened", __func__, dev_name(dev));
 
 	rx_param = devm_kzalloc(dev, sizeof(*rx_param), GFP_KERNEL);
 	if (!rx_param)

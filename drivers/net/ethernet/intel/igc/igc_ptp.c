@@ -16,6 +16,8 @@
 #define IGC_SYSTIM_OVERFLOW_PERIOD	(HZ * 60 * 9)
 #define IGC_PTP_TX_TIMEOUT		(HZ * 15)
 
+#define IGC_PTM_CYCLE_TIME_MSECS 50
+
 /* SYSTIM read access for I225 */
 void igc_ptp_read(struct igc_adapter *adapter, struct timespec64 *ts)
 {
@@ -428,6 +430,107 @@ unlock:
 	spin_unlock(&adapter->ptp_tx_lock);
 }
 
+static struct system_counterval_t igc_device_tstamp_to_system(u64 tstamp)
+{
+#if !IS_ENABLED(CONFIG_X86_TSC)
+	return (struct system_counterval_t) { };
+#else
+	return convert_art_ns_to_tsc(tstamp);
+#endif
+}
+
+static void igc_ptm_gather_report(struct igc_adapter *adapter)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u32 t2_curr_h, t2_curr_l;
+	ktime_t t1, t2_curr;
+
+	t1 = ktime_set(rd32(IGC_PTM_T1_TIM0_H),
+		       rd32(IGC_PTM_T1_TIM0_L));
+
+	t2_curr_l = rd32(IGC_PTM_CURR_T2_L);
+	t2_curr_h = rd32(IGC_PTM_CURR_T2_H);
+
+	/* FIXME: There's an ambiguity on what endianness some PCIe PTM
+	 * messages should use. Find a more robust way to handle this.
+	 */
+	t2_curr_h = be32_to_cpu(t2_curr_h);
+
+	t2_curr = ((s64)t2_curr_h << 32 | t2_curr_l);
+
+	wr32(IGC_PTM_STAT, IGC_PTM_STAT_VALID);
+
+	mutex_lock(&adapter->ptm_time_lock);
+
+	/* Because get_device_system_crosststamp() requires that the
+	 * historic timestamp is before the PTM device/host
+	 * timestamps, we keep track of the current and previous
+	 * snapshot (historic timestamp).
+	 */
+	memcpy(&adapter->prev_snapshot,
+	       &adapter->curr_snapshot, sizeof(adapter->prev_snapshot));
+	ktime_get_snapshot(&adapter->curr_snapshot);
+
+	adapter->ptm_device_time = t1;
+	adapter->ptm_host_time = igc_device_tstamp_to_system(t2_curr);
+	mutex_unlock(&adapter->ptm_time_lock);
+
+	mod_delayed_work(system_wq, &adapter->ptm_report,
+			 msecs_to_jiffies(IGC_PTM_CYCLE_TIME_MSECS));
+}
+
+static void igc_ptm_log_error(struct igc_adapter *adapter, u32 ptm_stat)
+{
+	struct net_device *netdev = adapter->netdev;
+
+	switch (ptm_stat) {
+	case IGC_PTM_STAT_RET_ERR:
+		netdev_err(netdev, "PTM Error: Root port timeout\n");
+		break;
+	case IGC_PTM_STAT_BAD_PTM_RES:
+		netdev_err(netdev, "PTM Error: Bad response, PTM Response Data expected\n");
+		break;
+	case IGC_PTM_STAT_T4M1_OVFL:
+		netdev_err(netdev, "PTM Error: T4 minus T1 overflow\n");
+		break;
+	case IGC_PTM_STAT_ADJUST_1ST:
+		netdev_err(netdev, "PTM Error: 1588 timer adjusted during first PTM cycle\n");
+		break;
+	case IGC_PTM_STAT_ADJUST_CYC:
+		netdev_err(netdev, "PTM Error: 1588 timer adjusted during non-first PTM cycle\n");
+		break;
+	}
+}
+
+static void igc_ptm_report_work(struct work_struct *work)
+{
+	struct igc_adapter *adapter = container_of(to_delayed_work(work),
+						   struct igc_adapter,
+						   ptm_report);
+	struct igc_hw *hw = &adapter->hw;
+	u32 stat;
+
+	stat = rd32(IGC_PTM_STAT);
+
+	if (stat & IGC_PTM_STAT_VALID) {
+		igc_ptm_gather_report(adapter);
+		return;
+	}
+
+	if (stat & ~IGC_PTM_STAT_VALID) {
+		/* An error occurred, log it. */
+		igc_ptm_log_error(adapter, stat);
+
+		/* Clear the error bits[1:5] and set VALID bit[0] to start the
+		 * next PTM cycle. Status error bits are RW1C write on clear.
+		 */
+		wr32(IGC_PTM_STAT, stat | IGC_PTM_STAT_VALID);
+	}
+
+	/* reschedule to check later. */
+	mod_delayed_work(system_wq, &adapter->ptm_report, msecs_to_jiffies(1));
+}
+
 /**
  * igc_ptp_set_ts_config - set hardware time stamping config
  * @netdev: network interface device structure
@@ -473,6 +576,53 @@ int igc_ptp_get_ts_config(struct net_device *netdev, struct ifreq *ifr)
 		-EFAULT : 0;
 }
 
+static int igc_phc_get_syncdevicetime(ktime_t *device,
+				      struct system_counterval_t *system,
+				      void *ctx)
+{
+	struct igc_adapter *adapter = ctx;
+
+	mutex_lock(&adapter->ptm_time_lock);
+
+	*device = adapter->ptm_device_time;
+	*system = adapter->ptm_host_time;
+
+	mutex_unlock(&adapter->ptm_time_lock);
+	return 0;
+}
+
+static int igc_ptp_getcrosststamp(struct ptp_clock_info *ptp,
+				  struct system_device_crosststamp *cts)
+{
+	struct igc_adapter *adapter = container_of(ptp, struct igc_adapter,
+						   ptp_caps);
+
+	return get_device_system_crosststamp(igc_phc_get_syncdevicetime,
+					     adapter, &adapter->prev_snapshot, cts);
+}
+
+static bool igc_is_ptm_supported(struct igc_adapter *adapter)
+{
+#if IS_ENABLED(CONFIG_X86_TSC) && IS_ENABLED(CONFIG_PCIE_PTM)
+	return adapter->pdev->ptm_enabled;
+#endif
+	return false;
+}
+
+static bool igc_ptm_init(struct igc_adapter *adapter)
+{
+	if (!igc_is_ptm_supported(adapter))
+		return false;
+
+	INIT_DELAYED_WORK(&adapter->ptm_report, igc_ptm_report_work);
+
+	/* Get a snapshot of system clocks to use as historic value. */
+	ktime_get_snapshot(&adapter->prev_snapshot);
+	ktime_get_snapshot(&adapter->curr_snapshot);
+
+	return true;
+}
+
 /**
  * igc_ptp_init - Initialize PTP functionality
  * @adapter: Board private structure
@@ -495,6 +645,11 @@ void igc_ptp_init(struct igc_adapter *adapter)
 		adapter->ptp_caps.gettimex64 = igc_ptp_gettimex64_i225;
 		adapter->ptp_caps.settime64 = igc_ptp_settime_i225;
 		adapter->ptp_caps.enable = igc_ptp_feature_enable_i225;
+
+		if (!igc_ptm_init(adapter))
+			break;
+
+		adapter->ptp_caps.getcrosststamp = igc_ptp_getcrosststamp;
 		break;
 	default:
 		adapter->ptp_clock = NULL;
@@ -540,6 +695,47 @@ static void igc_ptp_time_restore(struct igc_adapter *adapter)
 	igc_ptp_write_i225(adapter, &ts);
 }
 
+static void igc_ptm_stop(struct igc_adapter *adapter)
+{
+	struct igc_hw *hw = &adapter->hw;
+
+	wr32(IGC_PTM_CYCLE_CTRL, 0);
+	wr32(IGC_PTM_CTRL, 0);
+
+	cancel_delayed_work_sync(&adapter->ptm_report);
+}
+
+static void igc_ptm_start(struct igc_adapter *adapter)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u32 cycle_ctrl, ctrl;
+
+	if (!igc_is_ptm_supported(adapter))
+		return;
+
+	wr32(IGC_PCIE_DIG_DELAY, IGC_PCIE_DIG_DELAY_DEFAULT);
+	wr32(IGC_PCIE_PHY_DELAY, IGC_PCIE_PHY_DELAY_DEFAULT);
+
+	ctrl = IGC_PTM_CTRL_EN |
+		IGC_PTM_CTRL_SHRT_CYC(20) |
+		IGC_PTM_CTRL_PTM_TO(255);
+
+	cycle_ctrl = IGC_PTM_CYCLE_CTRL_CYC_TIME(IGC_PTM_CYCLE_TIME_MSECS) |
+		IGC_PTM_CYCLE_CTRL_AUTO_CYC_EN;
+
+	wr32(IGC_PTM_CYCLE_CTRL, cycle_ctrl);
+	wr32(IGC_PTM_CTRL, ctrl);
+
+	/* The cycle only starts "for real" when software notifies
+	 * that it has read the registers, this is done by setting
+	 * VALID bit.
+	 */
+	wr32(IGC_PTM_STAT, IGC_PTM_STAT_VALID);
+
+	schedule_delayed_work(&adapter->ptm_report,
+			      msecs_to_jiffies(IGC_PTM_CYCLE_TIME_MSECS));
+}
+
 /**
  * igc_ptp_suspend - Disable PTP work items and prepare for suspend
  * @adapter: Board private structure
@@ -551,6 +747,8 @@ void igc_ptp_suspend(struct igc_adapter *adapter)
 {
 	if (!(adapter->ptp_flags & IGC_PTP_ENABLED))
 		return;
+
+	igc_ptm_stop(adapter);
 
 	cancel_work_sync(&adapter->ptp_tx_work);
 
@@ -592,6 +790,10 @@ void igc_ptp_reset(struct igc_adapter *adapter)
 {
 	struct igc_hw *hw = &adapter->hw;
 	unsigned long flags;
+	u32 timadj;
+
+	if (!(adapter->ptp_flags & IGC_PTP_ENABLED))
+		return;
 
 	/* reset the tstamp_config */
 	igc_ptp_set_timestamp_mode(adapter, &adapter->tstamp_config);
@@ -600,10 +802,17 @@ void igc_ptp_reset(struct igc_adapter *adapter)
 
 	switch (adapter->hw.mac.type) {
 	case igc_i225:
+		timadj = rd32(IGC_TIMADJ);
+		timadj |= IGC_TIMADJ_ADJUST_METH;
+		wr32(IGC_TIMADJ, timadj);
+
 		wr32(IGC_TSAUXC, 0x0);
 		wr32(IGC_TSSDP, 0x0);
 		wr32(IGC_TSIM, IGC_TSICR_INTERRUPTS);
 		wr32(IGC_IMS, IGC_IMS_TS);
+
+		igc_ptm_start(adapter);
+
 		break;
 	default:
 		/* No work to do. */

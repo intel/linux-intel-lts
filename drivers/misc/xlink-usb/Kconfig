@@ -6,6 +6,7 @@
 config XLINK_USB_LH_DRIVER
 	tristate "XLink USB Local Host driver"
 	depends on TTY
+	depends on USB
 	select USB_LIBCOMPOSITE
 	select USB_U_XLINK
 	select USB_F_VPUUSB
@@ -27,6 +28,7 @@ config USB_F_VPUUSB
 config XLINK_USB_RH_DRIVER
 	tristate "XLink USB Remote Host driver"
 	depends on TTY
+	depends on USB
 	depends on !XLINK_USB_LH_DRIVER
 	help
 	  This option enables XLink USB Remote Host driver.

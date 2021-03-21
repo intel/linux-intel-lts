@@ -108,7 +108,7 @@ struct vhm_vm {
 	refcount_t refcnt;
 	struct mutex hugepage_lock;
 	struct hlist_head hugepage_hlist[HUGEPAGE_HLIST_ARRAY_SIZE];
-	refcount_t vcpu_num;
+	atomic_t vcpu_num;
 	int max_gfn;
 	spinlock_t ioreq_client_lock;
 	struct list_head ioreq_client_list;
