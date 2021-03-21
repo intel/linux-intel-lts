@@ -28,11 +28,26 @@ void inband_task_init(struct task_struct *p)
 void dovetail_init_altsched(struct dovetail_altsched_context *p)
 {
 	struct task_struct *tsk = current;
+	struct mm_struct *mm = tsk->mm;
 
 	check_inband_stage();
 	p->task = tsk;
-	p->active_mm = tsk->mm;
+	p->active_mm = mm;
 	p->borrowed_mm = false;
+
+	/*
+	 * Make sure the current process will not share any private
+	 * page with its child upon fork(), sparing it the random
+	 * latency induced by COW. MMF_DOVETAILED is never cleared once
+	 * set. We serialize with dup_mmap() which holds the mm write
+	 * lock.
+	 */
+	if (!(tsk->flags & PF_KTHREAD) &&
+		!test_bit(MMF_DOVETAILED, &mm->flags)) {
+		mmap_write_lock(mm);
+		__set_bit(MMF_DOVETAILED, &mm->flags);
+		mmap_write_unlock(mm);
+	}
 }
 EXPORT_SYMBOL_GPL(dovetail_init_altsched);
 

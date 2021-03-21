@@ -804,6 +804,14 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 		return 1;
 
 	/*
+	 * If the source mm belongs to a Dovetail-enabled process, we
+	 * don't want to impose the COW-induced latency on it: make
+	 * sure the child gets its own copy of the page.
+	 */
+	if (dovetailing() && test_bit(MMF_DOVETAILED, &src_mm->flags))
+		goto do_copy;
+
+	/*
 	 * What we want to do is to check whether this page may
 	 * have been pinned by the parent process.  If so,
 	 * instead of wrprotect the pte on both sides, we copy
@@ -821,6 +829,7 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 	if (likely(!page_maybe_dma_pinned(page)))
 		return 1;
 
+do_copy:
 	new_page = *prealloc;
 	if (!new_page)
 		return -EAGAIN;
@@ -5245,66 +5254,6 @@ long copy_huge_page_from_user(struct page *dst_page,
 	return ret_val;
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE || CONFIG_HUGETLBFS */
-
-#ifdef CONFIG_DOVETAIL
-
-int commit_vma(struct mm_struct *mm, struct vm_area_struct *vma)
-{
-	unsigned int gup_flags;
-	int ret, npages;
-
-	if (vma->vm_flags & (VM_IO | VM_PFNMAP))
-		return 0;
-
-	if (!((vma->vm_flags & VM_DONTEXPAND) ||
-	    is_vm_hugetlb_page(vma) || vma == get_gate_vma(mm))) {
-		ret = populate_vma_page_range(vma, vma->vm_start, vma->vm_end,
-					      NULL);
-		return ret < 0 ? ret : 0;
-	}
-
-	gup_flags = (vma->vm_flags & (VM_WRITE | VM_SHARED)) == VM_WRITE
-		? FOLL_WRITE : 0;
-	npages = DIV_ROUND_UP(vma->vm_end, PAGE_SIZE) - vma->vm_start/PAGE_SIZE;
-	ret = get_user_pages(vma->vm_start, npages, gup_flags, NULL, NULL);
-	if (ret < 0)
-		return ret;
-
-	return ret == npages ? 0 : -EFAULT;
-}
-
-int force_commit_memory(void)
-{
-	struct task_struct *tsk = current;
-	struct vm_area_struct *vma;
-	struct mm_struct *mm;
-	int ret = 0;
-
-	mm = get_task_mm(tsk);
-	if (!mm)
-		return -EPERM;
-
-	mmap_write_lock(mm);
-	if (test_bit(MMF_VM_PINNED, &mm->flags))
-		goto done_mm;
-
-	for (vma = mm->mmap; vma; vma = vma->vm_next) {
-		if (is_cow_mapping(vma->vm_flags) &&
-		    (vma->vm_flags & VM_WRITE)) {
-			ret = commit_vma(mm, vma);
-			if (ret < 0)
-				goto done_mm;
-		}
-	}
-	set_bit(MMF_VM_PINNED, &mm->flags);
-done_mm:
-	mmap_write_unlock(mm);
-	mmput(mm);
-
-	return ret;
-}
-
-#endif
 
 #if USE_SPLIT_PTE_PTLOCKS && ALLOC_SPLIT_PTLOCKS
 
