@@ -50,7 +50,6 @@ struct urb_list {
 struct udl_device {
 	struct drm_device drm;
 	struct device *dev;
-	struct device *dmadev;
 	struct usb_device *udev;
 
 	struct drm_simple_display_pipe display_pipe;
