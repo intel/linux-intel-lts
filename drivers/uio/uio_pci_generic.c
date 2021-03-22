@@ -255,14 +255,31 @@ err_verify:
 
 static void remove(struct pci_dev *pdev)
 {
+#ifdef CONFIG_PCI_MSI
+	int i, irq;
+	struct eventfd_ctx *evt;
+#endif
 	struct uio_pci_generic_dev *gdev = pci_get_drvdata(pdev);
 
 	uio_unregister_device(&gdev->info);
-	pci_disable_device(pdev);
+
 #ifdef CONFIG_PCI_MSI
-	if (gdev->msix_info.entries != NULL)
+	if (gdev->msix_info.entries != NULL) {
+		for (i = 0; i < gdev->msix_info.nvecs; i++) {
+			irq = gdev->msix_info.entries[i].vector;
+			evt = gdev->msix_info.evts[i];
+			if (evt) {
+				free_irq(irq, evt);
+				eventfd_ctx_put(evt);
+				gdev->msix_info.evts[i] = NULL;
+			}
+		}
+		pci_disable_msix(pdev);
 		kfree(gdev->msix_info.entries);
+		gdev->msix_info.entries = NULL;
+	}
 #endif
+	pci_disable_device(pdev);
 	kfree(gdev);
 }
 
