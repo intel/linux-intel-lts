@@ -939,7 +939,7 @@ static void fini_hash_table(struct intel_engine_cs *engine)
  * struct intel_engine_cs based on whether the platform requires software
  * command parsing.
  */
-int intel_engine_init_cmd_parser(struct intel_engine_cs *engine)
+void intel_engine_init_cmd_parser(struct intel_engine_cs *engine)
 {
 	const struct drm_i915_cmd_table *cmd_tables;
 	int cmd_table_count;
@@ -947,7 +947,7 @@ int intel_engine_init_cmd_parser(struct intel_engine_cs *engine)
 
 	if (!IS_GEN(engine->i915, 7) && !(IS_GEN(engine->i915, 9) &&
 					  engine->class == COPY_ENGINE_CLASS))
-		return 0;
+		return;
 
 	switch (engine->class) {
 	case RENDER_CLASS:
@@ -1012,19 +1012,19 @@ int intel_engine_init_cmd_parser(struct intel_engine_cs *engine)
 		break;
 	default:
 		MISSING_CASE(engine->class);
-		goto out;
+		return;
 	}
 
 	if (!validate_cmds_sorted(engine, cmd_tables, cmd_table_count)) {
 		drm_err(&engine->i915->drm,
 			"%s: command descriptions are not sorted\n",
 			engine->name);
-		goto out;
+		return;
 	}
 	if (!validate_regs_sorted(engine)) {
 		drm_err(&engine->i915->drm,
 			"%s: registers are not sorted\n", engine->name);
-		goto out;
+		return;
 	}
 
 	ret = init_hash_table(engine, cmd_tables, cmd_table_count);
@@ -1032,17 +1032,10 @@ int intel_engine_init_cmd_parser(struct intel_engine_cs *engine)
 		drm_err(&engine->i915->drm,
 			"%s: initialised failed!\n", engine->name);
 		fini_hash_table(engine);
-		goto out;
+		return;
 	}
 
 	engine->flags |= I915_ENGINE_USING_CMD_PARSER;
-
-out:
-	if (intel_engine_requires_cmd_parser(engine) &&
-	    !intel_engine_using_cmd_parser(engine))
-		return -EINVAL;
-
-	return 0;
 }
 
 /**
