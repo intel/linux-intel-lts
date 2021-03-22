@@ -1115,7 +1115,7 @@ static void kmb_isp_discard_all_configs(struct kmb_isp *kmb_isp)
 {
 	struct kmb_isp_cfg_data *buf;
 	struct list_head *pos, *next;
-	struct kmb_isp_cfg_event_data event;
+	struct kmb_isp_cfg_event_data event = {0};
 
 	event.valid = 1;
 	mutex_lock(&kmb_isp->cfg_q_lock);
