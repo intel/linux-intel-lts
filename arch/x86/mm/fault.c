@@ -18,6 +18,7 @@
 #include <linux/uaccess.h>		/* faulthandler_disabled()	*/
 #include <linux/efi.h>			/* efi_recover_from_page_fault()*/
 #include <linux/mm_types.h>
+#include <linux/irqstage.h>
 
 #include <asm/cpufeature.h>		/* boot_cpu_has, ...		*/
 #include <asm/traps.h>			/* dotraplinkage, ...		*/
@@ -798,7 +799,7 @@ static bool is_vsyscall_vaddr(unsigned long vaddr)
 	return unlikely((vaddr & PAGE_MASK) == VSYSCALL_ADDR);
 }
 
-#ifdef CONFIG_DOVETAIL
+#ifdef CONFIG_IRQ_PIPELINE
 
 static inline void cond_reenable_irqs_user(void)
 {
@@ -826,7 +827,7 @@ static inline void cond_disable_irqs(void)
 		stall_inband_nocheck();
 }
 
-#else  /* !CONFIG_DOVETAIL */
+#else  /* !CONFIG_IRQ_PIPELINE */
 
 static inline void cond_reenable_irqs_user(void)
 {
@@ -842,10 +843,10 @@ static inline void cond_reenable_irqs_kernel(irqentry_state_t state,
 
 static inline void cond_disable_irqs(void)
 {
-	local_irq_disable_full();
+	local_irq_disable();
 }
 
-#endif  /* !CONFIG_DOVETAIL */
+#endif  /* !CONFIG_IRQ_PIPELINE */
 
 static void
 __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
