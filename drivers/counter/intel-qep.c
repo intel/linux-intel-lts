@@ -573,7 +573,8 @@ static void intel_qep_remove(struct pci_dev *pci)
 	struct device *dev = &pci->dev;
 
 	pm_runtime_forbid(dev);
-	pm_runtime_get(dev);
+	if (!qep->enabled)
+		pm_runtime_get(dev);
 
 	intel_qep_writel(qep, INTEL_QEPCON, 0);
 }
