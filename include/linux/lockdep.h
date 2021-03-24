@@ -574,10 +574,8 @@ do {									\
 
 #define lockdep_assert_irqs_disabled()					\
 do {									\
-	WARN_ON_ONCE(__lockdep_enabled &&				\
-		((running_oob() && !hard_irqs_disabled()) ||		\
-		(running_inband() && this_cpu_read(hardirqs_enabled) &&\
-		 (!irqs_pipelined() || !hard_irqs_disabled()))));	\
+	WARN_ON_ONCE(__lockdep_enabled && !hard_irqs_disabled() &&	\
+		(running_oob() || this_cpu_read(hardirqs_enabled)));	\
 } while (0)
 
 #define lockdep_save_irqs_state(__state)				\
