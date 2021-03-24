@@ -134,6 +134,7 @@ static void dwmac410_dma_init_channel(void __iomem *ioaddr,
 	value = readl(ioaddr + DMA_CHAN_CONTROL(chan));
 	if (dma_cfg->pblx8)
 		value = value | DMA_BUS_MODE_PBL;
+
 	writel(value, ioaddr + DMA_CHAN_CONTROL(chan));
 
 	/* Mask interrupts by writing to CSR7 */
