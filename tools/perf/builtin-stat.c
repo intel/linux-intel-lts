@@ -67,6 +67,7 @@
 #include "util/top.h"
 #include "util/affinity.h"
 #include "util/pfm.h"
+#include "util/bpf_counter.h"
 #include "asm/bug.h"
 
 #include <linux/time64.h>
@@ -134,6 +135,19 @@ static const char *topdown_metric_attrs[] = {
 	"topdown-bad-spec",
 	"topdown-fe-bound",
 	"topdown-be-bound",
+	NULL,
+};
+
+static const char *topdown_metric_L2_attrs[] = {
+	"slots",
+	"topdown-retiring",
+	"topdown-bad-spec",
+	"topdown-fe-bound",
+	"topdown-be-bound",
+	"topdown-heavy-ops",
+	"topdown-br-mispredict",
+	"topdown-fetch-lat",
+	"topdown-mem-bound",
 	NULL,
 };
 
@@ -409,12 +423,32 @@ static int read_affinity_counters(struct timespec *rs)
 	return 0;
 }
 
+static int read_bpf_map_counters(void)
+{
+	struct evsel *counter;
+	int err;
+
+	evlist__for_each_entry(evsel_list, counter) {
+		err = bpf_counter__read(counter);
+		if (err)
+			return err;
+	}
+	return 0;
+}
+
 static void read_counters(struct timespec *rs)
 {
 	struct evsel *counter;
+	int err;
 
-	if (!stat_config.stop_read_counter && (read_affinity_counters(rs) < 0))
-		return;
+	if (!stat_config.stop_read_counter) {
+		if (target__has_bpf(&target))
+			err = read_bpf_map_counters();
+		else
+			err = read_affinity_counters(rs);
+		if (err < 0)
+			return;
+	}
 
 	evlist__for_each_entry(evsel_list, counter) {
 		if (counter->err)
@@ -496,11 +530,22 @@ static bool handle_interval(unsigned int interval, int *times)
 	return false;
 }
 
-static void enable_counters(void)
+static int enable_counters(void)
 {
+	struct evsel *evsel;
+	int err;
+
+	if (target__has_bpf(&target)) {
+		evlist__for_each_entry(evsel_list, evsel) {
+			err = bpf_counter__enable(evsel);
+			if (err)
+				return err;
+		}
+	}
+
 	if (stat_config.initial_delay < 0) {
 		pr_info(EVLIST_DISABLED_MSG);
-		return;
+		return 0;
 	}
 
 	if (stat_config.initial_delay > 0) {
@@ -518,6 +563,7 @@ static void enable_counters(void)
 		if (stat_config.initial_delay > 0)
 			pr_info(EVLIST_ENABLED_MSG);
 	}
+	return 0;
 }
 
 static void disable_counters(void)
@@ -534,7 +580,7 @@ static void disable_counters(void)
 static volatile int workload_exec_errno;
 
 /*
- * perf_evlist__prepare_workload will send a SIGUSR1
+ * evlist__prepare_workload will send a SIGUSR1
  * if the fork fails, since we asked by setting its
  * want_signal to true.
  */
@@ -720,12 +766,11 @@ static int __run_perf_stat(int argc, const char **argv, int run_idx)
 	const bool forks = (argc > 0);
 	bool is_pipe = STAT_RECORD ? perf_stat.data.is_pipe : false;
 	struct affinity affinity;
-	int i, cpu;
+	int i, cpu, err;
 	bool second_pass = false;
 
 	if (forks) {
-		if (perf_evlist__prepare_workload(evsel_list, &target, argv, is_pipe,
-						  workload_exec_failed_signal) < 0) {
+		if (evlist__prepare_workload(evsel_list, &target, argv, is_pipe, workload_exec_failed_signal) < 0) {
 			perror("failed to prepare workload");
 			return -1;
 		}
@@ -737,6 +782,13 @@ static int __run_perf_stat(int argc, const char **argv, int run_idx)
 
 	if (affinity__setup(&affinity) < 0)
 		return -1;
+
+	if (target__has_bpf(&target)) {
+		evlist__for_each_entry(evsel_list, counter) {
+			if (bpf_counter__load(counter, &target))
+				return -1;
+		}
+	}
 
 	evlist__for_each_cpu (evsel_list, i, cpu) {
 		affinity__set(&affinity, cpu);
@@ -843,7 +895,7 @@ try_again_reset:
 			return -1;
 	}
 
-	if (perf_evlist__apply_filters(evsel_list, &counter)) {
+	if (evlist__apply_filters(evsel_list, &counter)) {
 		pr_err("failed to set filter \"%s\" on event %s with %d (%s)\n",
 			counter->filter, evsel__name(counter), errno,
 			str_error_r(errno, msg, sizeof(msg)));
@@ -851,7 +903,7 @@ try_again_reset:
 	}
 
 	if (STAT_RECORD) {
-		int err, fd = perf_data__fd(&perf_stat.data);
+		int fd = perf_data__fd(&perf_stat.data);
 
 		if (is_pipe) {
 			err = perf_header__write_pipe(perf_data__fd(&perf_stat.data));
@@ -876,8 +928,10 @@ try_again_reset:
 	clock_gettime(CLOCK_MONOTONIC, &ref_time);
 
 	if (forks) {
-		perf_evlist__start_workload(evsel_list);
-		enable_counters();
+		evlist__start_workload(evsel_list);
+		err = enable_counters();
+		if (err)
+			return -1;
 
 		if (interval || timeout || evlist__ctlfd_initialized(evsel_list))
 			status = dispatch_events(forks, timeout, interval, &times);
@@ -896,7 +950,9 @@ try_again_reset:
 		if (WIFSIGNALED(status))
 			psignal(WTERMSIG(status), argv[0]);
 	} else {
-		enable_counters();
+		err = enable_counters();
+		if (err)
+			return -1;
 		status = dispatch_events(forks, timeout, interval, &times);
 	}
 
@@ -1087,6 +1143,10 @@ static struct option stat_options[] = {
 		   "stat events on existing process id"),
 	OPT_STRING('t', "tid", &target.tid, "tid",
 		   "stat events on existing thread id"),
+#ifdef HAVE_BPF_SKEL
+	OPT_STRING('b', "bpf-prog", &target.bpf_str, "bpf-prog-id",
+		   "stat events on existing bpf program id"),
+#endif
 	OPT_BOOLEAN('a', "all-cpus", &target.system_wide,
 		    "system-wide collection from all CPUs"),
 	OPT_BOOLEAN('g', "group", &group,
@@ -1155,7 +1215,9 @@ static struct option stat_options[] = {
 	OPT_BOOLEAN(0, "metric-no-merge", &stat_config.metric_no_merge,
 		       "don't try to share events between metrics in a group"),
 	OPT_BOOLEAN(0, "topdown", &topdown_run,
-			"measure topdown level 1 statistics"),
+			"measure top-down statistics"),
+	OPT_UINTEGER(0, "td-level", &stat_config.topdown_level,
+			"Set the metrics level for the top-down statistics (0: max level)"),
 	OPT_BOOLEAN(0, "smi-cost", &smi_cost,
 			"measure SMI cost"),
 	OPT_CALLBACK('M', "metrics", &evsel_list, "metric/metric group list",
@@ -1708,17 +1770,30 @@ static int add_default_attributes(void)
 	}
 
 	if (topdown_run) {
+		const char **metric_attrs = topdown_metric_attrs;
+		unsigned int max_level = 1;
 		char *str = NULL;
 		bool warn = false;
 
 		if (!force_metric_only)
 			stat_config.metric_only = true;
 
-		if (topdown_filter_events(topdown_metric_attrs, &str, 1) < 0) {
+		if (pmu_have_event("cpu", topdown_metric_L2_attrs[5])) {
+			metric_attrs = topdown_metric_L2_attrs;
+			max_level = 2;
+		}
+
+		if (stat_config.topdown_level > max_level) {
+			pr_err("Invalid top-down metrics level. The max level is %u.\n", max_level);
+			return -1;
+		} else if (!stat_config.topdown_level)
+			stat_config.topdown_level = max_level;
+
+		if (topdown_filter_events(metric_attrs, &str, 1) < 0) {
 			pr_err("Out of memory\n");
 			return -1;
 		}
-		if (topdown_metric_attrs[0] && str) {
+		if (metric_attrs[0] && str) {
 			if (!stat_config.interval && !stat_config.metric_only) {
 				fprintf(stat_config.output,
 					"Topdown accuracy may decrease when measuring long periods.\n"
@@ -1780,6 +1855,9 @@ setup_metrics:
 				return -1;
 		}
 		if (evlist__add_default_attrs(evsel_list, default_attrs1) < 0)
+			return -1;
+
+		if (arch_evlist__add_default_attrs(evsel_list) < 0)
 			return -1;
 	}
 
@@ -2066,11 +2144,12 @@ int cmd_stat(int argc, const char **argv)
 		"perf stat [<options>] [<command>]",
 		NULL
 	};
-	int status = -EINVAL, run_idx;
+	int status = -EINVAL, run_idx, err;
 	const char *mode;
 	FILE *output = stderr;
 	unsigned int interval, timeout;
 	const char * const stat_subcommands[] = { "record", "report" };
+	char errbuf[BUFSIZ];
 
 	setlocale(LC_ALL, "");
 
@@ -2181,6 +2260,12 @@ int cmd_stat(int argc, const char **argv)
 	} else if (big_num_opt == 0) /* User passed --no-big-num */
 		stat_config.big_num = false;
 
+	err = target__validate(&target);
+	if (err) {
+		target__strerror(&target, err, errbuf, BUFSIZ);
+		pr_warning("%s\n", errbuf);
+	}
+
 	setup_system_wide(argc);
 
 	/*
@@ -2251,12 +2336,10 @@ int cmd_stat(int argc, const char **argv)
 			goto out;
 	}
 
-	target__validate(&target);
-
 	if ((stat_config.aggr_mode == AGGR_THREAD) && (target.system_wide))
 		target.per_thread = true;
 
-	if (perf_evlist__create_maps(evsel_list, &target) < 0) {
+	if (evlist__create_maps(evsel_list, &target) < 0) {
 		if (target__has_task(&target)) {
 			pr_err("Problems finding threads of monitor\n");
 			parse_options_usage(stat_usage, stat_options, "p", 1);
@@ -2383,9 +2466,10 @@ int cmd_stat(int argc, const char **argv)
 		 * tools remain  -acme
 		 */
 		int fd = perf_data__fd(&perf_stat.data);
-		int err = perf_event__synthesize_kernel_mmap((void *)&perf_stat,
-							     process_synthesized_event,
-							     &perf_stat.session->machines.host);
+
+		err = perf_event__synthesize_kernel_mmap((void *)&perf_stat,
+							 process_synthesized_event,
+							 &perf_stat.session->machines.host);
 		if (err) {
 			pr_warning("Couldn't synthesize the kernel mmap record, harmless, "
 				   "older tools may produce warnings about this file\n.");

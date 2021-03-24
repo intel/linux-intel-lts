@@ -224,7 +224,7 @@ int evlist__expand_cgroup(struct evlist *evlist, const char *str,
 	}
 
 	/* save original events and init evlist */
-	perf_evlist__splice_list_tail(orig_list, &evlist->core.entries);
+	evlist__splice_list_tail(orig_list, &evlist->core.entries);
 	evlist->core.nr_entries = 0;
 
 	if (metric_events) {
@@ -280,7 +280,7 @@ int evlist__expand_cgroup(struct evlist *evlist, const char *str,
 				break;
 		}
 
-		perf_evlist__splice_list_tail(evlist, &tmp_list->core.entries);
+		evlist__splice_list_tail(evlist, &tmp_list->core.entries);
 		tmp_list->core.nr_entries = 0;
 
 		if (!p) {

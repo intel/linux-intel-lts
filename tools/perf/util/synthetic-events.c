@@ -1384,7 +1384,7 @@ size_t perf_event__sample_event_size(const struct perf_sample *sample, u64 type,
 		}
 	}
 
-	if (type & PERF_SAMPLE_WEIGHT)
+	if (type & PERF_SAMPLE_WEIGHT_TYPE)
 		result += sizeof(u64);
 
 	if (type & PERF_SAMPLE_DATA_SRC)
@@ -1410,6 +1410,9 @@ size_t perf_event__sample_event_size(const struct perf_sample *sample, u64 type,
 		result += sizeof(u64);
 
 	if (type & PERF_SAMPLE_DATA_PAGE_SIZE)
+		result += sizeof(u64);
+
+	if (type & PERF_SAMPLE_CODE_PAGE_SIZE)
 		result += sizeof(u64);
 
 	if (type & PERF_SAMPLE_AUX) {
@@ -1555,8 +1558,12 @@ int perf_event__synthesize_sample(union perf_event *event, u64 type, u64 read_fo
 		}
 	}
 
-	if (type & PERF_SAMPLE_WEIGHT) {
+	if (type & PERF_SAMPLE_WEIGHT_TYPE) {
 		*array = sample->weight;
+		if (type & PERF_SAMPLE_WEIGHT_STRUCT) {
+			*array &= 0xffffffff;
+			*array |= ((u64)sample->ins_lat << 32);
+		}
 		array++;
 	}
 
@@ -1593,6 +1600,11 @@ int perf_event__synthesize_sample(union perf_event *event, u64 type, u64 read_fo
 
 	if (type & PERF_SAMPLE_DATA_PAGE_SIZE) {
 		*array = sample->data_page_size;
+		array++;
+	}
+
+	if (type & PERF_SAMPLE_CODE_PAGE_SIZE) {
+		*array = sample->code_page_size;
 		array++;
 	}
 
@@ -1651,7 +1663,7 @@ int perf_event__synthesize_id_index(struct perf_tool *tool, perf_event__handler_
 
 			e->id = evsel->core.id[j];
 
-			sid = perf_evlist__id2sid(evlist, e->id);
+			sid = evlist__id2sid(evlist, e->id);
 			if (!sid) {
 				free(ev);
 				return -ENOENT;

@@ -2263,8 +2263,7 @@ static int process_total_mem(struct feat_fd *ff, void *data __maybe_unused)
 	return 0;
 }
 
-static struct evsel *
-perf_evlist__find_by_index(struct evlist *evlist, int idx)
+static struct evsel *evlist__find_by_index(struct evlist *evlist, int idx)
 {
 	struct evsel *evsel;
 
@@ -2276,16 +2275,14 @@ perf_evlist__find_by_index(struct evlist *evlist, int idx)
 	return NULL;
 }
 
-static void
-perf_evlist__set_event_name(struct evlist *evlist,
-			    struct evsel *event)
+static void evlist__set_event_name(struct evlist *evlist, struct evsel *event)
 {
 	struct evsel *evsel;
 
 	if (!event->name)
 		return;
 
-	evsel = perf_evlist__find_by_index(evlist, event->idx);
+	evsel = evlist__find_by_index(evlist, event->idx);
 	if (!evsel)
 		return;
 
@@ -2313,7 +2310,7 @@ process_event_desc(struct feat_fd *ff, void *data __maybe_unused)
 	}
 
 	for (evsel = events; evsel->core.attr.size; evsel++)
-		perf_evlist__set_event_name(session->evlist, evsel);
+		evlist__set_event_name(session->evlist, evsel);
 
 	if (!session->data->is_pipe)
 		free_event_desc(events);
@@ -3766,8 +3763,7 @@ static int evsel__prepare_tracepoint_event(struct evsel *evsel, struct tep_handl
 	return 0;
 }
 
-static int perf_evlist__prepare_tracepoint_events(struct evlist *evlist,
-						  struct tep_handle *pevent)
+static int evlist__prepare_tracepoint_events(struct evlist *evlist, struct tep_handle *pevent)
 {
 	struct evsel *pos;
 
@@ -3882,8 +3878,7 @@ int perf_session__read_header(struct perf_session *session)
 	perf_header__process_sections(header, fd, &session->tevent,
 				      perf_file_section__process);
 
-	if (perf_evlist__prepare_tracepoint_events(session->evlist,
-						   session->tevent.pevent))
+	if (evlist__prepare_tracepoint_events(session->evlist, session->tevent.pevent))
 		goto out_delete_evlist;
 
 	return 0;
@@ -4031,7 +4026,7 @@ int perf_event__process_event_update(struct perf_tool *tool __maybe_unused,
 
 	evlist = *pevlist;
 
-	evsel = perf_evlist__id2evsel(evlist, ev->id);
+	evsel = evlist__id2evsel(evlist, ev->id);
 	if (evsel == NULL)
 		return -EINVAL;
 
@@ -4104,8 +4099,7 @@ int perf_event__process_tracing_data(struct perf_session *session,
 		return -1;
 	}
 
-	perf_evlist__prepare_tracepoint_events(session->evlist,
-					       session->tevent.pevent);
+	evlist__prepare_tracepoint_events(session->evlist, session->tevent.pevent);
 
 	return size_read + padding;
 }

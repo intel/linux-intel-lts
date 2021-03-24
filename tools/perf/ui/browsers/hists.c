@@ -3494,7 +3494,7 @@ static int perf_evsel_menu__run(struct evsel_menu *menu,
 				continue;
 			pos = menu->selection;
 browse_hists:
-			perf_evlist__set_selected(evlist, pos);
+			evlist__set_selected(evlist, pos);
 			/*
 			 * Give the calling tool a chance to populate the non
 			 * default evsel resorted hists tree.
@@ -3597,7 +3597,7 @@ static int __perf_evlist__tui_browse_hists(struct evlist *evlist,
 				    hbt, warn_lost_event);
 }
 
-static bool perf_evlist__single_entry(struct evlist *evlist)
+static bool evlist__single_entry(struct evlist *evlist)
 {
 	int nr_entries = evlist->core.nr_entries;
 
@@ -3623,7 +3623,7 @@ int perf_evlist__tui_browse_hists(struct evlist *evlist, const char *help,
 {
 	int nr_entries = evlist->core.nr_entries;
 
-	if (perf_evlist__single_entry(evlist)) {
+	if (evlist__single_entry(evlist)) {
 single_entry: {
 		struct evsel *first = evlist__first(evlist);
 

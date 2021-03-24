@@ -151,16 +151,16 @@ static int do_test(struct bpf_object *obj, int (*func)(void),
 		return TEST_FAIL;
 	}
 
-	err = perf_evlist__create_maps(evlist, &opts.target);
+	err = evlist__create_maps(evlist, &opts.target);
 	if (err < 0) {
 		pr_debug("Not enough memory to create thread/cpu maps\n");
 		goto out_delete_evlist;
 	}
 
-	perf_evlist__splice_list_tail(evlist, &parse_state.list);
+	evlist__splice_list_tail(evlist, &parse_state.list);
 	evlist->nr_groups = parse_state.nr_groups;
 
-	perf_evlist__config(evlist, &opts, NULL);
+	evlist__config(evlist, &opts, NULL);
 
 	err = evlist__open(evlist);
 	if (err < 0) {

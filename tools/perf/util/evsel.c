@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <perf/evsel.h>
 #include "asm/bug.h"
+#include "bpf_counter.h"
 #include "callchain.h"
 #include "cgroup.h"
 #include "counts.h"
@@ -45,6 +46,7 @@
 #include "string2.h"
 #include "memswap.h"
 #include "util.h"
+#include "hashmap.h"
 #include "../perf-sys.h"
 #include "util/parse-branch-options.h"
 #include <internal/xyarray.h>
@@ -247,6 +249,7 @@ void evsel__init(struct evsel *evsel,
 	evsel->bpf_obj	   = NULL;
 	evsel->bpf_fd	   = -1;
 	INIT_LIST_HEAD(&evsel->config_terms);
+	INIT_LIST_HEAD(&evsel->bpf_counter_list);
 	perf_evsel__object.init(evsel);
 	evsel->sample_size = __evsel__sample_size(attr->sample_type);
 	evsel__calc_id_pos(evsel);
@@ -1012,6 +1015,11 @@ struct evsel_config_term *__evsel__get_config_term(struct evsel *evsel, enum evs
 	return found_term;
 }
 
+void __weak arch_evsel__set_sample_weight(struct evsel *evsel)
+{
+	evsel__set_sample_bit(evsel, WEIGHT);
+}
+
 /*
  * The enable_on_exec/disabled value strategy:
  *
@@ -1166,7 +1174,7 @@ void evsel__config(struct evsel *evsel, struct record_opts *opts,
 	}
 
 	if (opts->sample_weight)
-		evsel__set_sample_bit(evsel, WEIGHT);
+		arch_evsel__set_sample_weight(evsel);
 
 	attr->task  = track;
 	attr->mmap  = track;
@@ -1190,6 +1198,9 @@ void evsel__config(struct evsel *evsel, struct record_opts *opts,
 
 	if (opts->sample_data_page_size)
 		evsel__set_sample_bit(evsel, DATA_PAGE_SIZE);
+
+	if (opts->sample_code_page_size)
+		evsel__set_sample_bit(evsel, CODE_PAGE_SIZE);
 
 	if (opts->record_switch_events)
 		attr->context_switch = track;
@@ -1366,6 +1377,7 @@ void evsel__exit(struct evsel *evsel)
 {
 	assert(list_empty(&evsel->core.node));
 	assert(evsel->evlist == NULL);
+	bpf_counter__destroy(evsel);
 	evsel__free_counts(evsel);
 	perf_evsel__free_fd(&evsel->core);
 	perf_evsel__free_id(&evsel->core);
@@ -1377,7 +1389,9 @@ void evsel__exit(struct evsel *evsel)
 	zfree(&evsel->group_name);
 	zfree(&evsel->name);
 	zfree(&evsel->pmu_name);
-	zfree(&evsel->per_pkg_mask);
+	evsel__zero_per_pkg(evsel);
+	hashmap__free(evsel->per_pkg_mask);
+	evsel->per_pkg_mask = NULL;
 	zfree(&evsel->metric_events);
 	perf_evsel__object.fini(evsel);
 }
@@ -1472,7 +1486,7 @@ static int evsel__process_group_data(struct evsel *leader, int cpu, int thread, 
 	for (i = 1; i < nr; i++) {
 		struct evsel *counter;
 
-		counter = perf_evlist__id2evsel(leader->evlist, v[i].id);
+		counter = evlist__id2evsel(leader->evlist, v[i].id);
 		if (!counter)
 			return -EINVAL;
 
@@ -1735,6 +1749,10 @@ static int evsel__open_cpu(struct evsel *evsel, struct perf_cpu_map *cpus,
 	}
 
 fallback_missing_features:
+	if (perf_missing_features.weight_struct) {
+		evsel__set_sample_bit(evsel, WEIGHT);
+		evsel__reset_sample_bit(evsel, WEIGHT_STRUCT);
+	}
 	if (perf_missing_features.clockid_wrong)
 		evsel->core.attr.clockid = CLOCK_MONOTONIC; /* should always work */
 	if (perf_missing_features.clockid) {
@@ -1780,6 +1798,8 @@ retry_open:
 					     group_fd, flags);
 
 			FD(evsel, cpu, thread) = fd;
+
+			bpf_counter__install_pe(evsel, cpu, fd);
 
 			if (unlikely(test_attr__enabled)) {
 				test_attr__open(&evsel->core.attr, pid, cpus->map[cpu],
@@ -1873,7 +1893,17 @@ try_fallback:
 	 * Must probe features in the order they were added to the
 	 * perf_event_attr interface.
 	 */
-        if (!perf_missing_features.data_page_size &&
+	if (!perf_missing_features.weight_struct &&
+	    (evsel->core.attr.sample_type & PERF_SAMPLE_WEIGHT_STRUCT)) {
+		perf_missing_features.weight_struct = true;
+		pr_debug2("switching off weight struct support\n");
+		goto fallback_missing_features;
+	} else if (!perf_missing_features.code_page_size &&
+	    (evsel->core.attr.sample_type & PERF_SAMPLE_CODE_PAGE_SIZE)) {
+		perf_missing_features.code_page_size = true;
+		pr_debug2_peo("Kernel has no PERF_SAMPLE_CODE_PAGE_SIZE support, bailing out\n");
+		goto out_close;
+	} else if (!perf_missing_features.data_page_size &&
 	    (evsel->core.attr.sample_type & PERF_SAMPLE_DATA_PAGE_SIZE)) {
 		perf_missing_features.data_page_size = true;
 		pr_debug2_peo("Kernel has no PERF_SAMPLE_DATA_PAGE_SIZE support, bailing out\n");
@@ -2316,9 +2346,17 @@ int evsel__parse_sample(struct evsel *evsel, union perf_event *event,
 		}
 	}
 
-	if (type & PERF_SAMPLE_WEIGHT) {
+	if (type & PERF_SAMPLE_WEIGHT_TYPE) {
+		union perf_sample_weight weight;
+
 		OVERFLOW_CHECK_u64(array);
-		data->weight = *array;
+		weight.full = *array;
+		if (type & PERF_SAMPLE_WEIGHT)
+			data->weight = weight.full;
+		else {
+			data->weight = weight.var1_dw;
+			data->ins_lat = weight.var2_w;
+		}
 		array++;
 	}
 
@@ -2366,6 +2404,12 @@ int evsel__parse_sample(struct evsel *evsel, union perf_event *event,
 	data->data_page_size = 0;
 	if (type & PERF_SAMPLE_DATA_PAGE_SIZE) {
 		data->data_page_size = *array;
+		array++;
+	}
+
+	data->code_page_size = 0;
+	if (type & PERF_SAMPLE_CODE_PAGE_SIZE) {
+		data->code_page_size = *array;
 		array++;
 	}
 
@@ -2678,6 +2722,8 @@ int evsel__open_strerror(struct evsel *evsel, struct target *target,
 	"We found oprofile daemon running, please stop it and try again.");
 		break;
 	case EINVAL:
+		if (evsel->core.attr.sample_type & PERF_SAMPLE_CODE_PAGE_SIZE && perf_missing_features.code_page_size)
+			return scnprintf(msg, size, "Asking for the code page size isn't supported by this kernel.");
 		if (evsel->core.attr.sample_type & PERF_SAMPLE_DATA_PAGE_SIZE && perf_missing_features.data_page_size)
 			return scnprintf(msg, size, "Asking for the data page size isn't supported by this kernel.");
 		if (evsel->core.attr.write_backward && perf_missing_features.write_backward)
@@ -2689,6 +2735,9 @@ int evsel__open_strerror(struct evsel *evsel, struct target *target,
 		if (perf_missing_features.aux_output)
 			return scnprintf(msg, size, "The 'aux_output' feature is not supported, update the kernel.");
 		break;
+	case ENODATA:
+		return scnprintf(msg, size, "Cannot collect data source with the load latency event alone. "
+				 "Please add an auxiliary event in front of the load latency event.");
 	default:
 		break;
 	}
@@ -2733,4 +2782,17 @@ int evsel__store_ids(struct evsel *evsel, struct evlist *evlist)
 		return -ENOMEM;
 
 	return store_evsel_ids(evsel, evlist);
+}
+
+void evsel__zero_per_pkg(struct evsel *evsel)
+{
+	struct hashmap_entry *cur;
+	size_t bkt;
+
+	if (evsel->per_pkg_mask) {
+		hashmap__for_each_entry(evsel->per_pkg_mask, cur, bkt)
+			free((char *)cur->key);
+
+		hashmap__clear(evsel->per_pkg_mask);
+	}
 }

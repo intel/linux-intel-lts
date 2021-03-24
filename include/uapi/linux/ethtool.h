@@ -370,6 +370,25 @@ struct ethtool_eee {
 };
 
 /**
+ * struct ethtool_fp - Frame Preemption information
+ * @cmd: ETHTOOL_{G,S}FP
+ * @fp_supported: If frame preemption is supported.
+ * @fp_enabled: If frame preemption should be advertised to the link partner
+ *	as enabled.
+ * @supported_queues_mask: Bitmask indicating which queues support being
+ *	configured as preemptible (bit 0 -> queue 0, bit N -> queue N).
+ * @preemptible_queues_mask: Bitmask indicating which queues are
+ *	configured as preemptible (bit 0 -> queue 0, bit N -> queue N).
+ * @min_frag_size: Minimum size for all non-final fragment size.
+ */
+struct ethtool_fp {
+	__u32	cmd;
+	__u8	enabled;
+	__u32	add_frag_size;
+	__u32	reserved[2];
+};
+
+/**
  * struct ethtool_modinfo - plugin module eeprom information
  * @cmd: %ETHTOOL_GMODULEINFO
  * @type: Standard the module information conforms to %ETH_MODULE_SFF_xxxx
@@ -1512,6 +1531,9 @@ enum ethtool_fec_config_bits {
 #define ETHTOOL_PHY_STUNABLE	0x0000004f /* Set PHY tunable configuration */
 #define ETHTOOL_GFECPARAM	0x00000050 /* Get FEC settings */
 #define ETHTOOL_SFECPARAM	0x00000051 /* Set FEC settings */
+
+#define ETHTOOL_GFP		0x00000052 /* Get Frame Preemption settings */
+#define ETHTOOL_SFP		0x00000053 /* Set Frame Preemption settings */
 
 /* compatibility with older code */
 #define SPARC_ETH_GSET		ETHTOOL_GSET

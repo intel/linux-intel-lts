@@ -378,8 +378,8 @@ static int process_sample_event(struct machine *machine,
 	struct thread *thread;
 	int ret;
 
-	if (perf_evlist__parse_sample(evlist, event, &sample)) {
-		pr_debug("perf_evlist__parse_sample failed\n");
+	if (evlist__parse_sample(evlist, event, &sample)) {
+		pr_debug("evlist__parse_sample failed\n");
 		return -1;
 	}
 
@@ -651,7 +651,7 @@ static int do_test_code_reading(bool try_kcore)
 			goto out_put;
 		}
 
-		perf_evlist__config(evlist, &opts, NULL);
+		evlist__config(evlist, &opts, NULL);
 
 		evsel = evlist__first(evlist);
 
