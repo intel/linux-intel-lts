@@ -101,7 +101,6 @@ static void intel_qep_init(struct intel_qep *qep)
 	reg &= ~INTEL_QEPCON_EN;
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 	qep->enabled = false;
-
 	/*
 	 * Make sure peripheral is disabled by flushing the write with
 	 * a dummy read
@@ -111,9 +110,7 @@ static void intel_qep_init(struct intel_qep *qep)
 	reg &= ~(INTEL_QEPCON_OP_MODE | INTEL_QEPCON_FLT_EN);
 	reg |= INTEL_QEPCON_EDGE_A | INTEL_QEPCON_EDGE_B |
 	       INTEL_QEPCON_EDGE_INDX | INTEL_QEPCON_COUNT_RST_MODE;
-
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
-
 	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
 }
 
@@ -240,12 +237,10 @@ static int intel_qep_action_set(struct counter_device *counter,
 
 	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
-
 	if (action == INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE)
 		reg |= synapse->signal->id;
 	else
 		reg &= ~synapse->signal->id;
-
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 	pm_runtime_put(qep->dev);
 
@@ -330,9 +325,7 @@ static ssize_t ceiling_write(struct counter_device *counter,
 	}
 
 	pm_runtime_get_sync(qep->dev);
-
 	intel_qep_writel(qep, INTEL_QEPMAX, max);
-
 	pm_runtime_put(qep->dev);
 	ret = len;
 
@@ -408,12 +401,10 @@ static ssize_t noise_read(struct counter_device *counter,
 
 	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
-
 	if (!(reg & INTEL_QEPCON_FLT_EN)) {
 		pm_runtime_put(qep->dev);
 		return snprintf(buf, PAGE_SIZE, "0\n");
 	}
-
 	reg = intel_qep_readl(qep, INTEL_QEPFLT);
 	pm_runtime_put(qep->dev);
 
@@ -441,18 +432,14 @@ static ssize_t noise_write(struct counter_device *counter,
 	}
 
 	pm_runtime_get_sync(qep->dev);
-
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
-
 	if (max == 0) {
 		reg &= ~INTEL_QEPCON_FLT_EN;
 	} else {
 		reg |= INTEL_QEPCON_FLT_EN;
 		intel_qep_writel(qep, INTEL_QEPFLT, max);
 	}
-
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
-
 	pm_runtime_put(qep->dev);
 	ret = len;
 
@@ -493,16 +480,13 @@ static ssize_t preset_enable_write(struct counter_device *counter,
 	}
 
 	pm_runtime_get_sync(qep->dev);
-
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
-
 	if (val)
 		reg &= ~INTEL_QEPCON_COUNT_RST_MODE;
 	else
 		reg |= INTEL_QEPCON_COUNT_RST_MODE;
 
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
-
 	pm_runtime_put(qep->dev);
 	ret = len;
 
