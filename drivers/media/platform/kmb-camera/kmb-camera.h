@@ -14,7 +14,7 @@
 #include "kmb-video.h"
 #include "kmb-isp.h"
 
-#define KMB_MAX_SENSOR_COUNT	10
+#define KMB_MAX_SENSOR_COUNT	11
 #define KMB_MAX_OUTPUT_COUNT	6
 #define KMB_MAX_OUTPUT_NAME_LEN	16
 
