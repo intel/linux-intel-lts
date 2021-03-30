@@ -204,6 +204,10 @@ static bool check_for_readability(struct ptp_pin_desc *pin_desc, size_t size)
 	int i;
 	unsigned int flags = PTP_PINDESC_INPUTPOLL;
 
+	/* Skip checking as there are no programmable pins */
+	if (size < 1)
+		return true;
+
 	for (i = 0; i < size && flags != 0; ++i)
 		flags &= pin_desc[i].flags;
 
