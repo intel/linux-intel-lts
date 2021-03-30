@@ -425,6 +425,8 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	memcpy(xpcie_epf->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
 	       XPCIE_BOOT_MAGIC_YOCTO, strlen(XPCIE_BOOT_MAGIC_YOCTO));
 
+	intel_xpcie_raise_irq(&xpcie_epf->xpcie, NO_OP);
+
 	return 0;
 
 err_uninit_dma:
@@ -434,6 +436,7 @@ err_uninit_dma:
 
 	intel_xpcie_ep_dma_uninit(epf);
 
+	intel_xpcie_raise_irq(&xpcie_epf->xpcie, NO_OP);
 err_cleanup_bars:
 	intel_xpcie_cleanup_bars(epf);
 
