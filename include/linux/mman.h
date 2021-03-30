@@ -114,7 +114,7 @@ static inline bool arch_validate_prot(unsigned long prot, unsigned long addr)
  *
  * Returns true if the VM_* flags are valid.
  */
-static inline bool arch_validate_flags(unsigned long flags)
+static inline bool arch_validate_flags(struct vm_area_struct *vma, unsigned long flags)
 {
 	return true;
 }

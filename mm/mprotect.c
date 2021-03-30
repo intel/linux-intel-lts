@@ -611,7 +611,7 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 		}
 
 		/* Allow architectures to sanity-check the new flags */
-		if (!arch_validate_flags(newflags)) {
+		if (!arch_validate_flags(vma, newflags)) {
 			error = -EINVAL;
 			goto out;
 		}

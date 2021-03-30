@@ -1852,7 +1852,7 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 	}
 
 	/* Allow architectures to sanity-check the vm_flags */
-	if (!arch_validate_flags(vma->vm_flags)) {
+	if (!arch_validate_flags(vma, vma->vm_flags)) {
 		error = -EINVAL;
 		if (file)
 			goto unmap_and_free_vma;
