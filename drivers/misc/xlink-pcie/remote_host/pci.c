@@ -184,6 +184,8 @@ static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
 	event = intel_xpcie_get_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT);
 	if (event == DEV_SHUTDOWN || event == 0xFF) {
 		schedule_delayed_work(&xdev->shutdown_event, 0);
+		dev_warn(&xdev->pci->dev,
+			 "Device shutting down, evnt rx'ed %x\n", event);
 		return IRQ_HANDLED;
 	}
 
@@ -199,6 +201,9 @@ static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
 		wake_up_interruptible(&xdev->waitqueue);
 	} else if (stage == STAGE_RECOV) {
 		xdev->xpcie.status = XPCIE_STATUS_RECOVERY;
+		wake_up_interruptible(&xdev->waitqueue);
+	} else if (stage == STAGE_OS) {
+		xdev->xpcie.status = XPCIE_STATUS_READY;
 		wake_up_interruptible(&xdev->waitqueue);
 	}
 
@@ -252,17 +257,17 @@ static void xpcie_device_poll(struct work_struct *work)
 {
 	struct xpcie_dev *xdev = container_of(work, struct xpcie_dev,
 					      wait_event.work);
-	enum xpcie_stage stage = intel_xpcie_check_magic(xdev);
 
-	if (stage == STAGE_RECOV) {
-		xdev->xpcie.status = XPCIE_STATUS_RECOVERY;
-		wake_up_interruptible(&xdev->waitqueue);
-	} else if (stage == STAGE_OS) {
-		xdev->xpcie.status = XPCIE_STATUS_READY;
-		wake_up_interruptible(&xdev->waitqueue);
-		return;
+	if (!xdev->delay_wa_bar2_init) {
+	    xdev->delay_wa_bar2_init = true;
+	    schedule_delayed_work(&xdev->wait_event, msecs_to_jiffies(110));
+
+	    return;
 	}
-	schedule_delayed_work(&xdev->wait_event, msecs_to_jiffies(100));
+
+	xdev->delay_wa_xlink_connect = true;
+
+	return;
 }
 
 static int intel_xpcie_pci_prepare_dev_reset(struct xpcie_dev *xdev,
@@ -298,6 +303,9 @@ static int xpcie_device_init(struct xpcie_dev *xdev)
 
 	INIT_DELAYED_WORK(&xdev->wait_event, xpcie_device_poll);
 	INIT_DELAYED_WORK(&xdev->shutdown_event, xpcie_device_shutdown);
+
+	xdev->delay_wa_bar2_init = false;
+	xdev->delay_wa_xlink_connect = false;
 
 	rc = intel_xpcie_pci_irq_init(xdev);
 	if (rc)
@@ -381,6 +389,9 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 {
 	if (mutex_lock_interruptible(&xdev->lock))
 		return -EINTR;
+
+	xdev->delay_wa_bar2_init = false;
+	xdev->delay_wa_xlink_connect = false;
 
 	intel_xpcie_pci_cleanup_recovery_sysfs(xdev);
 	cancel_delayed_work(&xdev->wait_event);
@@ -488,6 +499,9 @@ int intel_xpcie_pci_connect_device(u32 id)
 
 	xdev = intel_xpcie_get_device_by_id(id);
 	if (!xdev)
+		return -ENODEV;
+
+	if (!xdev->delay_wa_xlink_connect)
 		return -ENODEV;
 
 	if (mutex_lock_interruptible(&xdev->lock))

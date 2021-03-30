@@ -46,6 +46,9 @@ struct xpcie_dev {
 
 	struct xpcie xpcie;
 	xlink_device_event event_fn;
+
+	bool delay_wa_bar2_init;
+	bool delay_wa_xlink_connect;
 };
 
 static inline struct device *xpcie_to_dev(struct xpcie *xpcie)
