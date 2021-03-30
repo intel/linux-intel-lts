@@ -204,6 +204,7 @@ static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
 		wake_up_interruptible(&xdev->waitqueue);
 	} else if (stage == STAGE_OS) {
 		xdev->xpcie.status = XPCIE_STATUS_READY;
+		intel_xpcie_set_host_status(&xdev->xpcie, XPCIE_STATUS_READY);
 		wake_up_interruptible(&xdev->waitqueue);
 	}
 
