@@ -29,6 +29,8 @@
 #define PCIE_CFG_PBUS_DEV_NUM_OFFSET	16
 #define PCIE_CFG_PBUS_DEV_NUM_MASK	0x1F
 
+#define SEND_HBEAT_INTVL		1	/* 1 sec */
+
 static struct pci_epf_header xpcie_header = {
 	.vendorid = PCI_VENDOR_ID_INTEL,
 	.deviceid = PCI_DEVICE_ID_INTEL_KEEMBAY,
@@ -267,6 +269,27 @@ static int intel_xpcie_setup_bars(struct pci_epf *epf, size_t align)
 	return 0;
 }
 
+static void intel_xpcie_send_hbeat_msg(struct work_struct *work)
+{
+	struct xpcie_epf *xpcie_epf = container_of(work,
+						 struct xpcie_epf,
+						 hbeat_event.work);
+	u32 host_status = intel_xpcie_get_host_status(&xpcie_epf->xpcie);
+
+	if (host_status == MXLK_STATUS_READY ||
+	    host_status == MXLK_STATUS_RUN ||
+	    host_status == MXLK_STATUS_ERROR) {
+		dev_info(&xpcie_epf->epf->dev,
+			 "Heartbeat msg stopped, host_sts=%d\n",
+			 host_status);
+		return;
+	}
+
+	intel_xpcie_raise_irq(&xpcie_epf->xpcie, NO_OP);
+	schedule_delayed_work(&xpcie_epf->hbeat_event,
+			      msecs_to_jiffies(SEND_HBEAT_INTVL * 1000));
+}
+
 static int intel_xpcie_epf_get_platform_data(struct device *dev,
 					     struct xpcie_epf *xpcie_epf)
 {
@@ -425,6 +448,13 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	memcpy(xpcie_epf->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
 	       XPCIE_BOOT_MAGIC_YOCTO, strlen(XPCIE_BOOT_MAGIC_YOCTO));
 
+	if (bus_num || dev_num) {
+		schedule_delayed_work(&xpcie_epf->hbeat_event, 0);
+		dev_info(&epf->dev,
+			 "Heartbeat msg started, dev_sts=%d\n",
+			 xpcie_epf->xpcie.status);
+	}
+
 	intel_xpcie_raise_irq(&xpcie_epf->xpcie, NO_OP);
 
 	return 0;
@@ -470,6 +500,8 @@ static int intel_xpcie_epf_probe(struct pci_epf *epf)
 	epf->header = &xpcie_header;
 	xpcie_epf->epf = epf;
 	epf_set_drvdata(epf, xpcie_epf);
+
+	INIT_DELAYED_WORK(&xpcie_epf->hbeat_event, intel_xpcie_send_hbeat_msg);
 
 	return 0;
 }

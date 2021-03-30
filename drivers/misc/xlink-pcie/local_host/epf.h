@@ -76,6 +76,8 @@ struct xpcie_epf {
 
 	struct xpcie_dma_ll_desc_buf	tx_desc_buf[DMA_CHAN_NUM];
 	struct xpcie_dma_ll_desc_buf	rx_desc_buf[DMA_CHAN_NUM];
+
+	struct delayed_work hbeat_event;
 };
 
 static inline struct device *xpcie_to_dev(struct xpcie *xpcie)
