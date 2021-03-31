@@ -9,24 +9,6 @@
 
 # CVE-2019-12381
 0001-ip_sockglue-Fix-missing-check-bug-in-ip_ra_control-CVE-2019-12381.patch
-
-# CVE-2019-3874
-0001-sctp-implement-memory-accounting-on-rx-path-CVE-2019-3874.patch
-
-# CVE-2019-15098
-0001-Fix-a-NULL-ptr-deref-bug-in-ath6kl_usb_alloc_urb_fro-CVE-2019-15098.patch
-
-# CVE-2019-15099
-0001-ath10k-Fix-a-NULL-ptr-deref-bug-in-ath10k_usb_alloc-CVE-2019-15099.patch
-
-# CVE-2019-18808
-0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-CVE-2019-18808.patch
- 
-# CVE-2019-15291
-0001-media-b2c2-flexcop-usb-add-sanity-checking-CVE-2019-15291.patch
- 
-# CVE-2019-19083
-0001-drm-amd-display-memory-leak-CVE-2019-19083.patch
  
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
