@@ -24,6 +24,7 @@ enum xpcie_doorbell_type {
 	DEV_EVENT,
 	PARTIAL_DATA_RECEIVED,
 	RX_BD_COUNT,
+	HOST_STATUS,
 };
 
 enum xpcie_event_type {
