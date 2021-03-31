@@ -180,11 +180,10 @@ void intel_xpcie_list_cleanup(struct xpcie_list *list)
 
 bool intel_xpcie_list_empty(struct xpcie_list *list)
 {
-	if (!list) {
-		if (!list->head && !list->tail)
-			return true;
-	}
-	return false;
+	if (list && !list->head && !list->tail)
+		return false;
+
+	return true;
 }
 
 int intel_xpcie_list_put(struct xpcie_list *list, struct xpcie_buf_desc *bd)

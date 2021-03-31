@@ -541,16 +541,16 @@ int intel_xpcie_core_read(struct xpcie *xpcie, void *buffer, size_t *length,
 
 	do {
 		if (!inf->partial_read &&
-		    (intel_xpcie_list_empty(&inf->read))) {
+		    (!intel_xpcie_list_empty(&inf->read))) {
 			if (timeout_ms == 0) {
 				ret =
 			wait_event_interruptible(inf->rx_waitq,
-						 (!intel_xpcie_list_empty(&inf->read) ||
+						 (intel_xpcie_list_empty(&inf->read) ||
 						  atomic_read(&inf->available_bd_cnt)));
 			} else {
 				ret =
 			wait_event_interruptible_timeout(inf->rx_waitq,
-							 (!intel_xpcie_list_empty(&inf->read) ||
+							 (intel_xpcie_list_empty(&inf->read) ||
 							 atomic_read(&inf->available_bd_cnt)),
 							 jiffies_timeout - jiffies_passed);
 				if (ret == 0)

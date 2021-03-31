@@ -181,6 +181,30 @@ static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
 	enum xpcie_stage stage;
 	u8 event;
 
+	stage = intel_xpcie_check_magic(xdev);
+	if (stage == STAGE_ROM) {
+		xdev->xpcie.status = XPCIE_STATUS_BOOT_FW;
+		wake_up_interruptible(&xdev->waitqueue);
+		return IRQ_HANDLED;
+	} else if (stage == STAGE_UBOOT) {
+		xdev->xpcie.status = XPCIE_STATUS_BOOT_OS;
+		wake_up_interruptible(&xdev->waitqueue);
+		return IRQ_HANDLED;
+	} else if (stage == STAGE_RECOV) {
+		xdev->xpcie.status = XPCIE_STATUS_RECOVERY;
+		wake_up_interruptible(&xdev->waitqueue);
+		return IRQ_HANDLED;
+	} else if (stage == STAGE_OS) {
+		if ((xdev->xpcie.status != XPCIE_STATUS_READY)
+		     && (xdev->xpcie.status != XPCIE_STATUS_RUN)) {
+			xdev->xpcie.status = XPCIE_STATUS_READY;
+			intel_xpcie_set_host_status(&xdev->xpcie,
+						    XPCIE_STATUS_READY);
+			wake_up_interruptible(&xdev->waitqueue);
+			return IRQ_HANDLED;
+		}
+	}
+
 	event = intel_xpcie_get_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT);
 	if (event == DEV_SHUTDOWN || event == 0xFF) {
 		schedule_delayed_work(&xdev->shutdown_event, 0);
@@ -191,22 +215,6 @@ static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
 
 	if (likely(xdev->core_irq_callback))
 		return xdev->core_irq_callback(irq, args);
-
-	stage = intel_xpcie_check_magic(xdev);
-	if (stage == STAGE_ROM) {
-		xdev->xpcie.status = XPCIE_STATUS_BOOT_FW;
-		wake_up_interruptible(&xdev->waitqueue);
-	} else if (stage == STAGE_UBOOT) {
-		xdev->xpcie.status = XPCIE_STATUS_BOOT_OS;
-		wake_up_interruptible(&xdev->waitqueue);
-	} else if (stage == STAGE_RECOV) {
-		xdev->xpcie.status = XPCIE_STATUS_RECOVERY;
-		wake_up_interruptible(&xdev->waitqueue);
-	} else if (stage == STAGE_OS) {
-		xdev->xpcie.status = XPCIE_STATUS_READY;
-		intel_xpcie_set_host_status(&xdev->xpcie, XPCIE_STATUS_READY);
-		wake_up_interruptible(&xdev->waitqueue);
-	}
 
 	return IRQ_HANDLED;
 }
