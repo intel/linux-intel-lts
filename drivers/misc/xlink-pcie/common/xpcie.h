@@ -39,6 +39,9 @@
 #define XPCIE_MAGIC_STRLEN	(16)
 #define XPCIE_MAGIC_YOCTO	"VPUYOCTO"
 
+#define XPCIE_HOST_DRV_LOAD	(0)
+#define XPCIE_HOST_DRV_UNLOAD	(1)
+
 /* MMIO layout and offsets shared between device and host */
 struct xpcie_mmio {
 	u32 device_status;
@@ -51,6 +54,9 @@ struct xpcie_mmio {
 	u8 dtoh_tx_doorbell;
 	u8 dtoh_rx_doorbell;
 	u8 dtoh_event_doorbell;
+	u8 htod_host_status;
+	u8 reserved1;
+	u16 reserved2;
 	u32 cap_offset;
 	u32 htod_rx_bd_list_count;
 } __packed;
@@ -62,6 +68,8 @@ struct xpcie_mmio {
 	(offsetof(struct xpcie_mmio, htod_tx_doorbell))
 #define XPCIE_MMIO_HTOD_RX_DOORBELL \
 	(offsetof(struct xpcie_mmio, htod_rx_doorbell))
+#define XPCIE_MMIO_HTOD_HOST_STATUS \
+	(offsetof(struct xpcie_mmio, htod_host_status))
 #define XPCIE_MMIO_HTOD_EVENT_DOORBELL \
 	(offsetof(struct xpcie_mmio, htod_event_doorbell))
 #define XPCIE_MMIO_HTOD_PARTIAL_RX_DOORBELL \
@@ -102,6 +110,10 @@ struct xpcie {
 	bool tx_pending;
 	bool stop_flag;
 
+#ifdef XLINK_PCIE_LOCAL
+	wait_queue_head_t host_st_waitqueue;
+	bool no_host_driver;
+#endif
 	struct xpcie_list rx_pool;
 	struct xpcie_list tx_pool;
 
