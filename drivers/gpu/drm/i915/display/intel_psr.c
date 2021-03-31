@@ -551,7 +551,7 @@ static void hsw_activate_psr2(struct intel_dp *intel_dp)
 
 	if (dev_priv->psr.psr2_sel_fetch_enabled) {
 		/* WA 1408330847 */
-		if (IS_TGL_DISP_REVID(dev_priv, TGL_REVID_A0, TGL_REVID_A0) ||
+		if (IS_TGL_DISP_STEPPING(dev_priv, STEP_A0, STEP_A0) ||
 		    IS_RKL_REVID(dev_priv, RKL_REVID_A0, RKL_REVID_A0))
 			intel_de_rmw(dev_priv, CHICKEN_PAR1_1,
 				     DIS_RAM_BYPASS_PSR2_MAN_TRACK,
@@ -717,6 +717,12 @@ static bool intel_psr2_config_valid(struct intel_dp *intel_dp,
 
 	if (!dev_priv->psr.sink_psr2_support)
 		return false;
+
+	/* JSL and EHL only supports eDP 1.3 */
+	if (IS_JSL_EHL(dev_priv)) {
+		drm_dbg_kms(&dev_priv->drm, "PSR2 not supported by phy\n");
+		return false;
+	}
 
 	if (!transcoder_has_psr2(dev_priv, crtc_state->cpu_transcoder)) {
 		drm_dbg_kms(&dev_priv->drm,
@@ -1110,7 +1116,7 @@ static void intel_psr_disable_locked(struct intel_dp *intel_dp)
 
 	/* WA 1408330847 */
 	if (dev_priv->psr.psr2_sel_fetch_enabled &&
-	    (IS_TGL_DISP_REVID(dev_priv, TGL_REVID_A0, TGL_REVID_A0) ||
+	    (IS_TGL_DISP_STEPPING(dev_priv, STEP_A0, STEP_A0) ||
 	     IS_RKL_REVID(dev_priv, RKL_REVID_A0, RKL_REVID_A0)))
 		intel_de_rmw(dev_priv, CHICKEN_PAR1_1,
 			     DIS_RAM_BYPASS_PSR2_MAN_TRACK, 0);
