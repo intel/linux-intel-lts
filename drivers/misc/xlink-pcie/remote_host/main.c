@@ -13,6 +13,8 @@
 #define HW_ID_LO_MASK	GENMASK(7, 0)
 #define HW_ID_HI_MASK	GENMASK(15, 8)
 
+static bool driver_unload;
+
 static const struct pci_device_id xpcie_pci_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_KEEMBAY), 0 },
 	{ 0 }
@@ -71,7 +73,9 @@ static void intel_xpcie_remove(struct pci_dev *pdev)
 					  XPCIE_HOST_DRV_UNLOAD);
 		intel_xpcie_pci_cleanup(xdev);
 		intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_DISCONNECTED);
-		intel_xpcie_remove_device(xdev);
+
+		if (driver_unload)
+			intel_xpcie_remove_device(xdev);
 	}
 }
 
@@ -89,6 +93,7 @@ static int __init intel_xpcie_init_module(void)
 
 static void __exit intel_xpcie_exit_module(void)
 {
+	driver_unload = true;
 	pci_unregister_driver(&xpcie_driver);
 }
 

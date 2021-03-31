@@ -277,9 +277,9 @@ static void intel_xpcie_send_hbeat_msg(struct work_struct *work)
 	struct xpcie *xpcie = &xpcie_epf->xpcie;
 	u32 host_status = intel_xpcie_get_host_status(&xpcie_epf->xpcie);
 	int ret = 0;
-	if (host_status == MXLK_STATUS_READY ||
-	    host_status == MXLK_STATUS_RUN ||
-	    host_status == MXLK_STATUS_ERROR)
+	if (host_status == XPCIE_STATUS_READY ||
+	    host_status == XPCIE_STATUS_RUN ||
+	    host_status == XPCIE_STATUS_ERROR)
 	{
 		dev_info(&xpcie_epf->epf->dev,
 			 "Heartbeat msg stopped, host_sts=%d\n",
