@@ -3,3 +3,6 @@
 
 # CVE-2020-16120
 0001-ovl-do-not-fail-because-of-O_NOATIME.patch
+
+# CVE-2021-29264
+0001-gianfar-fix-jumbo-packets-napi-rx-overrun-crash.patch
