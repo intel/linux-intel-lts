@@ -486,6 +486,11 @@ static irqreturn_t intel_xpcie_core_irq_cb(int irq, void *args)
 		else
 			intel_xpcie_raise_irq(xpcie, DATA_SENT);
 	}
+	if ((XPCIE_HOST_DRV_UNLOAD ==
+	     intel_xpcie_get_doorbell(xpcie, TO_DEVICE, HOST_STATUS))) {
+		xpcie->no_host_driver = true;
+		wake_up_interruptible(&xpcie->host_st_waitqueue);
+	}
 
 	return IRQ_HANDLED;
 }

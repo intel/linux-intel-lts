@@ -30,6 +30,8 @@ static size_t intel_xpcie_doorbell_offset(struct xpcie *xpcie,
 		return XPCIE_MMIO_HTOD_RX_DOORBELL;
 	if (dirt == TO_DEVICE && type == DEV_EVENT)
 		return XPCIE_MMIO_HTOD_EVENT_DOORBELL;
+	if (dirt == TO_DEVICE && type == HOST_STATUS)
+		return XPCIE_MMIO_HTOD_HOST_STATUS;
 	if (dirt == FROM_DEVICE && type == DATA_SENT)
 		return XPCIE_MMIO_DTOH_TX_DOORBELL;
 	if (dirt == FROM_DEVICE && type == DATA_RECEIVED)
@@ -375,6 +377,10 @@ int intel_xpcie_interfaces_init(struct xpcie *xpcie)
 	init_waitqueue_head(&xpcie->tx_waitq);
 	xpcie->no_tx_buffer = false;
 
+#ifdef XLINK_PCIE_LOCAL
+	init_waitqueue_head(&xpcie->host_st_waitqueue);
+	xpcie->no_host_driver = false;
+#endif
 	for (index = 0; index < XPCIE_NUM_INTERFACES; index++)
 		intel_xpcie_interface_init(xpcie, index);
 

@@ -56,6 +56,8 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 		intel_xpcie_list_add_device(xdev);
 
 	intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_CONNECTED);
+	intel_xpcie_set_doorbell(&xdev->xpcie, TO_DEVICE, HOST_STATUS,
+				 XPCIE_HOST_DRV_LOAD);
 
 	return ret;
 }
@@ -65,6 +67,8 @@ static void intel_xpcie_remove(struct pci_dev *pdev)
 	struct xpcie_dev *xdev = pci_get_drvdata(pdev);
 
 	if (xdev) {
+		intel_xpcie_pci_raise_irq(xdev, HOST_STATUS,
+					  XPCIE_HOST_DRV_UNLOAD);
 		intel_xpcie_pci_cleanup(xdev);
 		intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_DISCONNECTED);
 		intel_xpcie_remove_device(xdev);

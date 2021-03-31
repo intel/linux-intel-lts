@@ -401,7 +401,7 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 	intel_xpcie_pci_irq_cleanup(xdev);
 
 	intel_xpcie_core_cleanup(&xdev->xpcie);
-
+	intel_xpcie_set_host_status(&xdev->xpcie, XPCIE_STATUS_OFF);
 	intel_xpcie_pci_unmap_bar(xdev);
 	pci_release_regions(xdev->pci);
 	pci_disable_device(xdev->pci);
