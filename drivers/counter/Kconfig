@@ -85,6 +85,10 @@ config INTEL_QEP
 	tristate "Intel Quadrature Encoder Peripheral driver"
 	depends on PCI
 	help
-	  Support for Intel Quadrature Encoder Peripheral driver.
+	  Select this option to enable the Intel Quadrature Encoder Peripheral
+	  driver.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called intel-qep.
 
 endif # COUNTER
