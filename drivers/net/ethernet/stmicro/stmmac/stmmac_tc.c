@@ -617,8 +617,6 @@ static int tc_del_flow(struct stmmac_priv *priv,
 		       struct flow_cls_offload *cls)
 {
 	struct stmmac_flow_entry *entry = tc_find_flow(priv, cls, false);
-	u32 rx_queues_count = priv->plat->rx_queues_to_use;
-	u32 queue;
 	int ret;
 
 	if (!entry || !entry->in_use)
@@ -631,10 +629,6 @@ static int tc_del_flow(struct stmmac_priv *priv,
 		ret = stmmac_config_l3_filter(priv, priv->hw, entry->idx, false,
 					      false, false, false, 0);
 	}
-
-	/* Set all Rx queues' VLAN tag priority to default */
-	for (queue = 0; queue < rx_queues_count; queue++)
-		stmmac_rx_queue_prio(priv, priv->hw, 0, queue);
 
 	entry->in_use = false;
 	entry->cookie = 0;
