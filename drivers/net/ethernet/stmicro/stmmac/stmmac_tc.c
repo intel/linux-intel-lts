@@ -515,44 +515,6 @@ static int tc_add_ports_flow(struct stmmac_priv *priv,
 	return 0;
 }
 
-#define STMMAC_TC_H_MIN(h) ((h) & TC_H_MIN_MASK)
-#define STMMAC_TC_H_MIN_PRIORITY	0xFFE0U
-
-static int tc_add_vlan_flow(struct stmmac_priv *priv,
-			    struct flow_cls_offload *cls,
-			    struct stmmac_flow_entry *entry)
-{
-	struct flow_rule *rule = flow_cls_offload_flow_rule(cls);
-	struct flow_dissector *dissector = rule->match.dissector;
-	struct flow_match_vlan match;
-	u32 hw_match;
-	int queue;
-	u32 prio;
-
-	/* Nothing to do here */
-	if (!dissector_uses_key(dissector, FLOW_DISSECTOR_KEY_VLAN))
-		return -EINVAL;
-
-	/* Assumes flower qdisc vlan filter is used for RX flow control only */
-	queue  = STMMAC_TC_H_MIN(cls->classid) - STMMAC_TC_H_MIN_PRIORITY;
-	if (queue < 0 && queue < priv->plat->rx_queues_to_use)
-		return -EINVAL;
-
-	flow_rule_match_vlan(rule, &match);
-
-	hw_match = match.key->vlan_priority & match.mask->vlan_priority;
-	if (hw_match) {
-		/* Write to a single rx_queue register. Only 1 priority-queue
-		 * can be written at a time with a limit of 4 priority-queues
-		 * configured simultaneously
-		 */
-		prio = BIT(match.key->vlan_priority);
-		stmmac_rx_queue_prio(priv, priv->hw, prio, queue);
-	}
-
-	return 0;
-}
-
 static struct stmmac_flow_entry *tc_find_flow(struct stmmac_priv *priv,
 					      struct flow_cls_offload *cls,
 					      bool get_free)
@@ -578,7 +540,6 @@ static struct {
 	{ .fn = tc_add_basic_flow },
 	{ .fn = tc_add_ip4_flow },
 	{ .fn = tc_add_ports_flow },
-	{ .fn = tc_add_vlan_flow },
 };
 
 static int tc_add_flow(struct stmmac_priv *priv,
@@ -596,7 +557,7 @@ static int tc_add_flow(struct stmmac_priv *priv,
 
 	ret = tc_parse_flow_actions(priv, &rule->action, entry);
 	if (ret)
-		netdev_dbg(priv->dev, "no actions were requested\n");
+		return ret;
 
 	for (i = 0; i < ARRAY_SIZE(tc_flow_parsers); i++) {
 		ret = tc_flow_parsers[i].fn(priv, cls, entry);
