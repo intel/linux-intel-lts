@@ -31,7 +31,7 @@ hantro_gem_map_dma_buf(struct dma_buf_attachment *attach,
 	if (WARN_ON(!obj))
 		return ERR_PTR(-EINVAL);
 
-	sgt = obj->dev->driver->gem_prime_get_sg_table(obj);
+	sgt = obj->funcs->get_sg_table(obj);
 	if (!dma_map_sg_attrs(attach->dev, sgt->sgl, sgt->nents, dir,
 			      DMA_ATTR_SKIP_CPU_SYNC)) {
 		sg_free_table(sgt);
@@ -58,20 +58,12 @@ static int hantro_gem_dmabuf_mmap(struct dma_buf *dma_buf,
 	return dev->driver->gem_prime_mmap(obj, vma);
 }
 
-static void *hantro_gem_dmabuf_vmap(struct dma_buf *dma_buf)
+static int hantro_gem_dmabuf_vmap(struct dma_buf *dma_buf, struct dma_buf_map *map)
 {
-	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
-	void *vaddr = NULL;
-
-	/*****drm_gem_vmap part*****/
-	if (obj)
-		vaddr = obj->dev->driver->gem_prime_vmap(obj);
-	/****************************/
-
-	return vaddr;
+  return drm_gem_dmabuf_vmap(dma_buf, map);
 }
 
-static void hantro_gem_dmabuf_vunmap(struct dma_buf *dma_buf, void *vaddr)
+static void hantro_gem_dmabuf_vunmap(struct dma_buf *dma_buf, struct dma_buf_map *vaddr)
 {
 	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
 
@@ -81,8 +73,8 @@ static void hantro_gem_dmabuf_vunmap(struct dma_buf *dma_buf, void *vaddr)
 	if (obj) {
 		if (obj->funcs && obj->funcs->vunmap)
 			obj->funcs->vunmap(obj, vaddr);
-		else if (obj->dev->driver->gem_prime_vunmap)
-			obj->dev->driver->gem_prime_vunmap(obj, vaddr);
+		else if (obj->funcs->vunmap)
+			obj->funcs->vunmap(obj, vaddr);
 	}
 }
 

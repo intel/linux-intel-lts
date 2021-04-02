@@ -12,6 +12,10 @@
 #include "hantro_cache.h"
 #include "hantro_dec400.h"
 
+#include "../drm_internal.h"
+
+static struct drm_gem_object_funcs hantro_gem_object_funcs;
+
 extern const struct dma_buf_ops hantro_dmabuf_ops;
 
 int hantro_recordmem(struct device_info *pdevice, void *obj, int size)
@@ -110,6 +114,7 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 
 	obj = &cma_obj->base;
 	cma_obj->dmapriv.self = cma_obj;
+	obj->funcs = &hantro_gem_object_funcs;
 	cma_obj->num_pages = args->size >> PAGE_SHIFT;
 	cma_obj->pdevice = pdevice;
 
@@ -258,12 +263,15 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 {
 	struct drm_gem_hantro_object *cma_obj;
 	struct drm_gem_object *obj;
+	struct dma_buf_map map;
+	int ret;
 
 	cma_obj = kzalloc(sizeof(*cma_obj), GFP_KERNEL);
 	if (!cma_obj)
 		return ERR_PTR(-ENOMEM);
 
 	obj = &cma_obj->base;
+	obj->funcs = &hantro_gem_object_funcs;
 	if (sgt->nents > 1) {
 		/* check if the entries in the sg_table are contiguous */
 		dma_addr_t next_addr = sg_dma_address(sgt->sgl);
@@ -294,7 +302,11 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 	}
 
 	cma_obj->paddr = sg_dma_address(sgt->sgl);
-	cma_obj->vaddr = dma_buf_vmap(attach->dmabuf);
+	ret = dma_buf_vmap(attach->dmabuf, &map);
+	if (ret)
+		return ERR_PTR(ret);
+	cma_obj->vaddr = map.vaddr;
+	
 	cma_obj->sgt = sgt;
 	cma_obj->flag |= HANTRO_GEM_FLAG_FOREIGN_IMPORTED;
 	cma_obj->num_pages = attach->dmabuf->size >> PAGE_SHIFT;
@@ -305,14 +317,16 @@ hantro_gem_prime_import_sg_table(struct drm_device *dev,
 	return obj;
 }
 
-static void *hantro_gem_prime_vmap(struct drm_gem_object *obj)
+static int hantro_gem_prime_vmap(struct drm_gem_object *obj, struct dma_buf_map *map)
 {
 	struct drm_gem_hantro_object *cma_obj = to_drm_gem_hantro_obj(obj);
 
-	return cma_obj->vaddr;
+	dma_buf_map_set_vaddr(map, cma_obj->vaddr);
+
+	return 0;
 }
 
-static void hantro_gem_prime_vunmap(struct drm_gem_object *obj, void *vaddr)
+static void hantro_gem_prime_vunmap(struct drm_gem_object *obj, struct dma_buf_map *map)
 {
 }
 
@@ -1398,6 +1412,12 @@ static int hantro_device_open(struct inode *inode, struct file *filp)
 	return ret;
 }
 
+static int hantro_gem_open_obj(struct drm_gem_object *obj,
+			       struct drm_file *filp)
+{
+	return 0;
+}
+
 static int hantro_device_release(struct inode *inode, struct file *filp)
 {
 	cache_release(filp);
@@ -1530,6 +1550,17 @@ static void hantro_release(struct drm_device *dev)
 {
 }
 
+static void hantro_close_object(struct drm_gem_object *obj,
+				struct drm_file *file_priv)
+{
+	struct drm_gem_hantro_object *cma_obj;
+
+	cma_obj = to_drm_gem_hantro_obj(obj);
+	if (obj->dma_buf && (cma_obj->flag & HANTRO_GEM_FLAG_EXPORTUSED)) {
+		dma_buf_put(obj->dma_buf);
+	}
+}
+
 static int hantro_gem_prime_handle_to_fd(struct drm_device *dev,
 					 struct drm_file *filp, u32 handle,
 					 u32 flags, int *prime_fd)
@@ -1560,7 +1591,6 @@ static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
 }
 
 static struct drm_driver hantro_drm_driver = {
-	//these two are related with controlD and renderD
 	.driver_features = DRIVER_GEM | DRIVER_RENDER,
 	.get_vblank_counter = hantro_vblank_no_hw_counter,
 	.open = hantro_drm_open,
@@ -1569,23 +1599,28 @@ static struct drm_driver hantro_drm_driver = {
 	.dumb_destroy = drm_gem_dumb_destroy,
 	.dumb_create = hantro_gem_dumb_create_internal,
 	.dumb_map_offset = hantro_gem_dumb_map_offset,
-	.gem_prime_export = hantro_prime_export,
 	.gem_prime_import = hantro_drm_gem_prime_import,
 	.prime_handle_to_fd = hantro_gem_prime_handle_to_fd,
 	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
 	.gem_prime_import_sg_table = hantro_gem_prime_import_sg_table,
-	.gem_prime_get_sg_table = hantro_gem_prime_get_sg_table,
-	.gem_prime_vmap = hantro_gem_prime_vmap,
-	.gem_prime_vunmap = hantro_gem_prime_vunmap,
 	.gem_prime_mmap = hantro_gem_prime_mmap,
-	.gem_free_object_unlocked = hantro_gem_free_object,
-	.gem_vm_ops = &hantro_drm_gem_cma_vm_ops,
 	.fops = &hantro_fops,
 	.name = DRIVER_NAME,
 	.desc = DRIVER_DESC,
 	.date = DRIVER_DATE,
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
+};
+
+static struct drm_gem_object_funcs hantro_gem_object_funcs = {
+	.free = hantro_gem_free_object,
+	.open = hantro_gem_open_obj,
+	.close = hantro_close_object,
+	.export = hantro_prime_export,
+	.get_sg_table = hantro_gem_prime_get_sg_table,
+	.vmap = hantro_gem_prime_vmap,
+	.vunmap = hantro_gem_prime_vunmap,
+	.vm_ops = &hantro_drm_gem_cma_vm_ops,
 };
 
 struct drm_device *create_hantro_drm(struct device *dev)
