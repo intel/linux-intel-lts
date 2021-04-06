@@ -558,6 +558,53 @@ static int hddl_get_onchip_sensors(struct platform_device *pdev,
 	return 0;
 }
 
+static int intel_hddl_get_board_type(struct platform_device *pdev,
+				     struct intel_hddl_client_priv *priv)
+{
+	int ret = 0;
+	struct device_node *np_bios;
+	const char *board_type;
+	const char *board_type_var = NULL;
+
+	np_bios = of_find_node_by_name(NULL, "bios");
+	if (np_bios) {
+		if (of_property_read_bool(np_bios,
+					  "system-product-name-variant")) {
+			board_type_var = NULL;
+			ret = of_property_read_string(np_bios, "system-product-name-variant", &board_type_var);
+			if (ret < 0 || !board_type_var) {
+				dev_err(&pdev->dev,
+					"failed to get board variant %d",
+					ret);
+				return ret;
+			 }
+			dev_info(&pdev->dev,
+				"Board type var is %s\n", board_type_var);
+		}
+
+		ret = of_property_read_string(np_bios, "system-product-name", &board_type);
+		if (ret < 0 || !board_type) {
+			dev_err(&pdev->dev,
+				"failed to get board type %d",
+				ret);
+			return ret;
+		} else {
+			strncpy(priv->board_info.board_type, board_type, 15);
+			if (board_type_var)
+				strncat(priv->board_info.board_type,
+					board_type_var,
+					15 - strlen(priv->board_info.board_type));
+			dev_info(&pdev->dev,
+					"Board type is %s\n", priv->board_info.board_type);
+		}
+	} else {
+		dev_err(&pdev->dev,
+			"node pointer for bios is not found\n");
+		ret = -EINVAL;
+	}
+	return ret;
+}
+
 static int intel_hddl_get_ids(struct platform_device *pdev,
 			      struct intel_hddl_client_priv *priv)
 {
@@ -684,6 +731,12 @@ static int intel_hddl_config_dt(struct intel_hddl_client_priv *priv)
 				   &priv->i2c_xlink_chan);
 	if (ret) {
 		dev_err(&pdev->dev, "i2c xlink channel not available in dt");
+		return ret;
+	}
+
+	ret = intel_hddl_get_board_type(pdev, priv);
+	if (ret) {
+		dev_err(&pdev->dev, "Unable to get board type");
 		return ret;
 	}
 	ret = intel_hddl_get_ids(pdev, priv);
