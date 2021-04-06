@@ -59,6 +59,7 @@ struct intel_hddl_client_priv {
 	struct intel_hddl_i2c_devs **i2c_devs;
 	struct intel_tsens **tsens;
 	struct intel_hddl_board_info board_info;
+	bool soc_reset_available;
 };
 
 static struct intel_hddl_client_priv *g_priv;
@@ -690,11 +691,16 @@ static int intel_hddl_config_dt(struct intel_hddl_client_priv *priv)
 		dev_err(&pdev->dev, "Unable to get board/soc id");
 		return ret;
 	}
-	ret = hddl_get_board_reset_data(pdev, priv);
-	if (ret) {
-		dev_err(&pdev->dev, "Unable to get reset data");
-		return ret;
-	}
+	priv->soc_reset_available = of_property_read_bool(np, "soc-reset");
+	if (priv->soc_reset_available) {
+		ret = hddl_get_board_reset_data(pdev, priv);
+		if (ret) {
+			dev_err(&pdev->dev, "Unable to get reset data");
+			return ret;
+		}
+	} else
+		dev_err(&pdev->dev, "This platform does not support soc-reset\n");
+
 	ret = hddl_get_onchip_sensors(pdev, priv);
 	if (ret) {
 		dev_err(&pdev->dev, "Onchip sensor config failed");
