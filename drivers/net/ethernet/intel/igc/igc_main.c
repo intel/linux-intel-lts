@@ -122,7 +122,7 @@ void igc_reset(struct igc_adapter *adapter)
 	igc_ptp_reset(adapter);
 
 	/* Re-enable TSN offloading, where applicable. */
-	igc_tsn_reset(adapter);
+	igc_tsn_offload_apply(adapter);
 
 	igc_get_phy_info(hw);
 }
@@ -5250,11 +5250,6 @@ static int igc_save_frame_preemption(struct igc_adapter *adapter,
 	u32 preempt;
 	int i;
 
-	/* What we want here is just to save the configuration, so
-	 * when frame preemption is enabled via ethtool, which queues
-	 * are marked as preemptible is saved.
-	 */
-
 	preempt = qopt->preemptible_queues;
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
@@ -5282,6 +5277,18 @@ static int igc_tsn_enable_qbv_scheduling(struct igc_adapter *adapter,
 	return igc_tsn_offload_apply(adapter);
 }
 
+static int igc_tsn_enable_frame_preemption(struct igc_adapter *adapter,
+					   struct tc_preempt_qopt_offload *qopt)
+{
+	int err;
+
+	err = igc_save_frame_preemption(adapter, qopt);
+	if (err)
+		return err;
+
+	return igc_tsn_offload_apply(adapter);
+}
+
 static int igc_setup_tc(struct net_device *dev, enum tc_setup_type type,
 			void *type_data)
 {
@@ -5295,7 +5302,7 @@ static int igc_setup_tc(struct net_device *dev, enum tc_setup_type type,
 		return igc_tsn_enable_launchtime(adapter, type_data);
 
 	case TC_SETUP_PREEMPT:
-		return igc_save_frame_preemption(adapter, type_data);
+		return igc_tsn_enable_frame_preemption(adapter, type_data);
 
 	default:
 		return -EOPNOTSUPP;
