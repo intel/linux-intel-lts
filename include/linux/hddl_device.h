@@ -28,6 +28,7 @@
 
 struct sw_id_hddl_data {
 	char iox_name[15];
+	char board_type[15];
 	uint32_t board_id;
 	uint32_t soc_id;
 	uint32_t iox_addr;
@@ -93,6 +94,7 @@ struct intel_hddl_tsens_msg {
 
 struct intel_hddl_board_info {
 	char iox_name[15];
+	char board_type[15];
 	int board_id;
 	int soc_id;
 	int iox_addr;
