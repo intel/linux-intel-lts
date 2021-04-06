@@ -391,7 +391,7 @@ int intel_hddl_register_xlink_i2c_adap(struct device *dev,
 
 		memset(&xlink_i2c_info, 0, sizeof(xlink_i2c_info));
 		xlink_i2c_info.name = "i2c_xlink";
-		xlink_i2c_info.id = c->board_info.board_id << 4 |
+		xlink_i2c_info.id = c->board_info.board_id << 5 |
 					soc_id << 2 | i;
 		c->xlink_i2c_ch[i] =
 			c->i2c_chan_num + (soc_id * 2) + i;
