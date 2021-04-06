@@ -134,6 +134,8 @@ static int intel_tsens_thermal_get_trip_type(struct thermal_zone_device *zone,
 
 	if (tsens->trip_info[trip]->trip_type != THERMAL_TRIP_CRITICAL)
 		*type = tsens->trip_info[trip]->trip_type;
+	else
+		*type = THERMAL_TRIP_PASSIVE;
 	return 0;
 }
 
