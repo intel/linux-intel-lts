@@ -33,3 +33,7 @@
 0004-ovl-check-permission-to-open-real-file.patch
 0005-ovl-call-secutiry-hook-in-ovl_real_ioctl.patch
 0006-ovl-do-not-fail-because-of-O_NOATIME.patch
+
+# CVE-2020-12364
+# CVE-2020-12363
+0001-drm-i915-disable-guc.patch

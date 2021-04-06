@@ -1,0 +1,32 @@
+From 1211b64e48376de3bbe5a485621a40f7dbbe773e Mon Sep 17 00:00:00 2001
+From: Junxiao Chang <junxiao.chang@intel.com>
+Date: Tue, 6 Apr 2021 17:25:58 +0800
+Subject: [PATCH] drm/i915: disable guc
+
+This is to workaround CVE issue which is related with guc.
+
+Signed-off-by: Junxiao Chang <junxiao.chang@intel.com>
+---
+ drivers/gpu/drm/i915/intel_uc.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/intel_uc.c b/drivers/gpu/drm/i915/intel_uc.c
+index b1b3e81b6e24..f42eaf2a1216 100644
+--- a/drivers/gpu/drm/i915/intel_uc.c
++++ b/drivers/gpu/drm/i915/intel_uc.c
+@@ -167,6 +167,12 @@ void intel_uc_init_early(struct drm_i915_private *i915)
+ 	struct intel_guc *guc = &i915->guc;
+ 	struct intel_huc *huc = &i915->huc;
+ 
++	// CVE workaround - disable guc
++	if (i915_modparams.enable_guc) {
++		DRM_WARN("enable_guc is forced to 0\n");
++		i915_modparams.enable_guc = 0;
++	}
++
+ 	intel_guc_init_early(guc);
+ 	intel_huc_init_early(huc);
+ 
+-- 
+2.17.1
+
