@@ -690,6 +690,12 @@ int intel_xpcie_core_write(struct xpcie *xpcie, void *buffer,
 	if (ret < 0)
 		return -EINTR;
 
+	if (intel_xpcie_list_try_packing(&xpcie->write, buffer, len)) {
+		*length = len;
+		mutex_unlock(&xpcie->wlock);
+		return 0;
+	}
+
 	do {
 		bd = intel_xpcie_alloc_tx_bd(xpcie);
 		head = bd;

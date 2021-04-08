@@ -9,6 +9,9 @@
 
 #include "util.h"
 
+/*Set the PCIE TX queue threashold when try packing*/
+#define PACKING_QUEUE_DEPTH  (1)
+
 void intel_xpcie_set_device_status(struct xpcie *xpcie, u32 status)
 {
 	xpcie->status = status;
@@ -436,4 +439,24 @@ void *intel_xpcie_cap_find(struct xpcie *xpcie, u32 start, u16 id)
 
 	/* If we reached here, the capability list is corrupted */
 	return NULL;
+}
+
+bool intel_xpcie_list_try_packing(struct xpcie_list *list, void *data,
+					size_t size)
+{
+	struct xpcie_buf_desc *bd_tail;
+	bool is_packed = false;
+
+	spin_lock(&list->lock);
+	if (list->tail && list->buffers >= PACKING_QUEUE_DEPTH) {
+		bd_tail = list->tail;
+		if ((bd_tail->length + size) <= bd_tail->true_len) {
+			memcpy((bd_tail->data + bd_tail->length), data, size);
+			bd_tail->length += size;
+			list->bytes += size;
+			is_packed = true;
+		}
+	}
+	spin_unlock(&list->lock);
+	return is_packed;
 }
