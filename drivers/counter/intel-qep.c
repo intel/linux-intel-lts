@@ -143,11 +143,9 @@ static int intel_qep_count_read(struct counter_device *counter,
 				unsigned long *val)
 {
 	struct intel_qep *const qep = counter->priv;
-	unsigned long cntval;
 
 	pm_runtime_get_sync(qep->dev);
-	cntval = intel_qep_readl(qep, INTEL_QEPCOUNT);
-	*val = cntval;
+	*val = intel_qep_readl(qep, INTEL_QEPCOUNT);
 	pm_runtime_put(qep->dev);
 
 	return 0;
