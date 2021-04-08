@@ -917,8 +917,12 @@ static void spi_set_cs(struct spi_device *spi, bool enable, bool force)
 		}
 		/* Some SPI masters need both GPIO CS & slave_select */
 		if ((spi->controller->flags & SPI_MASTER_GPIO_SS) &&
-		    spi->controller->set_cs)
-			spi->controller->set_cs(spi, !enable);
+		    spi->controller->set_cs) {
+			if (spi->cs_gpiod)
+				spi->controller->set_cs(spi, enable1);
+			else
+				spi->controller->set_cs(spi, !enable);
+		}
 	} else if (spi->controller->set_cs) {
 		spi->controller->set_cs(spi, !enable);
 	}
