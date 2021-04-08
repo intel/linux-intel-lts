@@ -477,9 +477,12 @@ static int intel_pmc_tgpio_counttstamp
 	struct intel_pmc_tgpio_t	*tgpio = to_intel_pmc_tgpio(info);
 	u32                              dt_hi_s;
 	u32                              dt_hi_e;
-	u32				 dt_lo;
+	static u32			 dt_lo;
+	u32				 dt_lo_prev;
+	int				 err = 0;
 	struct timespec64		 dt_ts;
 	struct timespec64		 tsc_now;
+	unsigned long long               prev_count;
 
 	mutex_lock(&intel_pmc_tgpio->lock);
 	while (intel_pmc_tgpio->pin[count->index].busy) {
@@ -493,6 +496,9 @@ static int intel_pmc_tgpio_counttstamp
 
 	tsc_now = get_tsc_ns_now(NULL);
 	dt_hi_s = convert_tsc_ns_to_art(&tsc_now) >> 32;
+
+	dt_lo_prev = dt_lo;
+	prev_count = count->event_count;
 
 	/* Reading lower 32-bit word of Time Capture Value (TCV) loads */
 	/* the event time and event count capture */
@@ -511,12 +517,15 @@ static int intel_pmc_tgpio_counttstamp
 
 	count->device_time = ts64_to_ptp_clock_time(dt_ts);
 
+	if (count->event_count == prev_count || dt_lo_prev == dt_lo)
+		err = -EAGAIN;
+
 	mutex_lock(&intel_pmc_tgpio->lock);
 	intel_pmc_tgpio->pin[count->index].busy = false;
 	complete(&intel_pmc_tgpio->pin[count->index].transact_comp);
 	mutex_unlock(&intel_pmc_tgpio->lock);
 
-	return 0;
+	return err;
 }
 
 static int intel_pmc_tgpio_verify(
