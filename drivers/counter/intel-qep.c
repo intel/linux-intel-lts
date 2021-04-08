@@ -160,11 +160,11 @@ static int intel_qep_function_get(struct counter_device *counter,
 
 	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
+	pm_runtime_put(qep->dev);
 	if (reg & INTEL_QEPCON_SWPAB)
 		*function = INTEL_QEP_ENCODER_MODE_SWAPPED;
 	else
 		*function = INTEL_QEP_ENCODER_MODE_NORMAL;
-	pm_runtime_put(qep->dev);
 
 	return 0;
 }
