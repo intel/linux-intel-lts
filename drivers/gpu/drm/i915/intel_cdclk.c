@@ -2242,7 +2242,9 @@ static int intel_compute_min_cdclk(struct drm_atomic_state *state)
 	struct drm_i915_private *dev_priv = to_i915(state->dev);
 	struct intel_crtc *crtc;
 	struct intel_crtc_state *crtc_state;
-	int min_cdclk, i;
+	int min_cdclk, i, max_portclk = 0, least_portclk;
+	u32 scaled_mincdclk;
+	uint_fixed_16_16_t scale_ratio;
 	enum pipe pipe;
 
 	memcpy(intel_state->min_cdclk, dev_priv->min_cdclk,
@@ -2250,6 +2252,11 @@ static int intel_compute_min_cdclk(struct drm_atomic_state *state)
 
 	for_each_new_intel_crtc_in_state(intel_state, crtc, crtc_state, i) {
 		min_cdclk = intel_crtc_compute_min_cdclk(crtc_state);
+		if (crtc_state->port_clock != 0) {
+			max_portclk = max(crtc_state->port_clock, max_portclk);
+			least_portclk = min(crtc_state->port_clock,
+					max_portclk);
+		}
 		if (min_cdclk < 0)
 			return min_cdclk;
 
@@ -2259,7 +2266,16 @@ static int intel_compute_min_cdclk(struct drm_atomic_state *state)
 	min_cdclk = 0;
 	for_each_pipe(dev_priv, pipe)
 		min_cdclk = max(intel_state->min_cdclk[pipe], min_cdclk);
-
+	DRM_DEBUG("min CDCLK %d\n", min_cdclk);
+	scaled_mincdclk = min_cdclk;
+	scale_ratio = div_fixed16((uint32_t)max_portclk,
+			(uint32_t)least_portclk);
+	if (least_portclk != max_portclk)
+		scaled_mincdclk = mul_round_up_u32_fixed16(
+				(uint32_t)min_cdclk*2, scale_ratio);
+	if (scaled_mincdclk < dev_priv->max_cdclk_freq)
+		min_cdclk = (int)scaled_mincdclk;
+	DRM_DEBUG("Scaled min CDCLK %d\n", scaled_mincdclk);
 	return min_cdclk;
 }
 
