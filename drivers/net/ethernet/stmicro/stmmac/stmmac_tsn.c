@@ -1228,10 +1228,12 @@ int tsn_fpe_set_enable(struct mac_device_info *hw, struct net_device *dev,
 	}
 
 	if (info->fpe_cfg.enable != enable) {
-		if (enable)
+		if (enable) {
 			tsnif_fpe_send_mpacket(hw, ioaddr, MPACKET_VERIFY);
-		else
+		} else {
 			info->fpe_cfg.lo_fpe_state = FPE_STATE_OFF;
+			info->fpe_cfg.lp_fpe_state = FPE_STATE_OFF;
+		}
 
 		info->fpe_cfg.enable = enable;
 	}
