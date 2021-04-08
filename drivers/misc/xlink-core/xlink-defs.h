@@ -10,11 +10,13 @@
 
 #include <linux/slab.h>
 #include <linux/xlink.h>
+#include "xlink-trace.h"
 
 #define XLINK_MAX_BUF_SIZE 128U
 #define XLINK_MAX_DATA_SIZE (1024U * 1024U * 1024U)
 #define XLINK_MAX_CONTROL_DATA_SIZE 100U
-#define XLINK_MAX_CONNECTIONS 16
+#define XLINK_MAX_CONTROL_DATA_PCIE_SIZE 484U
+#define XLINK_MAX_CONNECTIONS 24
 #define XLINK_PACKET_ALIGNMENT 64
 #define XLINK_INVALID_EVENT_ID 0xDEADBEEF
 #define XLINK_INVALID_CHANNEL_ID 0xDEAD
@@ -23,7 +25,7 @@
 #define XLINK_EVENT_HEADER_MAGIC 0x786C6E6B
 #define XLINK_PING_TIMEOUT_MS 5000U
 #define XLINK_MAX_DEVICE_NAME_SIZE 128
-#define XLINK_MAX_DEVICE_LIST_SIZE 8
+#define XLINK_MAX_DEVICE_LIST_SIZE 24
 #define XLINK_INVALID_LINK_ID 0xDEADBEEF
 #define XLINK_INVALID_SW_DEVICE_ID 0xDEADBEEF
 
@@ -133,7 +135,7 @@ struct xlink_event_header {
 	uint16_t chan;
 	size_t size;
 	uint32_t timeout;
-	uint8_t  control_data[XLINK_MAX_CONTROL_DATA_SIZE];
+	uint8_t  control_data[XLINK_MAX_CONTROL_DATA_PCIE_SIZE];
 };
 
 struct xlink_event {
@@ -152,38 +154,7 @@ struct xlink_event {
 	struct list_head list;
 };
 
-static inline struct xlink_event *xlink_create_event(uint32_t link_id,
-		enum xlink_event_type type,	struct xlink_handle *handle,
-		uint16_t chan, uint32_t size, uint32_t timeout)
-{
-	struct xlink_event *new_event = NULL;
-
-	// allocate new event
-	new_event = kzalloc(sizeof(*new_event), GFP_KERNEL);
-	if (!new_event)
-		return NULL;
-
-	// set event context
-	new_event->link_id = link_id;
-	new_event->handle = handle;
-	new_event->interface = get_interface_from_sw_device_id(
-			handle->sw_device_id);
-	new_event->user_data = 0;
-
-	// set event header
-	new_event->header.magic = XLINK_EVENT_HEADER_MAGIC;
-	new_event->header.id = XLINK_INVALID_EVENT_ID;
-	new_event->header.type = type;
-	new_event->header.chan = chan;
-	new_event->header.size = size;
-	new_event->header.timeout = timeout;
-	return new_event;
-}
-
-static inline void xlink_destroy_event(struct xlink_event *event)
-{
-	if (event)
-		kfree(event);
-}
+extern struct xlink_event *alloc_event(uint32_t link_id);
+extern void free_event(struct xlink_event *event);
 
 #endif /* __XLINK_DEFS_H */

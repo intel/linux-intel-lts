@@ -10,6 +10,8 @@
 
 #include <uapi/misc/xlink_uapi.h>
 
+#define XLINK_WRITE_CONTROL_MAX_DATA_SIZE 484
+
 enum xlink_dev_type {
 	HOST_DEVICE = 0,	// used when communicating to either Remote or Local host
 	VPUIP_DEVICE		// used when communicating to vpu ip
