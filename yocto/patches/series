@@ -1,9 +1,3 @@
-# CVE-2019-18808
-0003-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
-
-# CVE-2019-19770
-0001-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
-
 # CVE-2020-26541
 0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
 
@@ -17,3 +11,12 @@
 0004-ovl-check-permission-to-open-real-file.patch
 0005-ovl-call-secutiry-hook-in-ovl_real_ioctl.patch
 0006-ovl-do-not-fail-because-of-O_NOATIME.patch
+
+# CVE-2020-12364
+# CVE-2020-12363
+0001-drm-i915-huc-update-TGL-HuC-to-v7.0.12.patch
+0002-drm-i915-rkl-Add-RKL-platform-info-and-PCI-ids.patch
+0003-drm-i915-rkl-Re-use-TGL-GuC-HuC-firmware.patch
+0004-drm-i915-Update-TGL-and-RKL-HuC-firmware-versions.patch
+0005-drm-i915-guc-add-a-helper-to-allocate-and-map-guc-vm.patch
+0006-drm-i915-guc-Update-to-use-firmware-v49.0.1.patch

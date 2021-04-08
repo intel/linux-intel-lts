@@ -1,0 +1,38 @@
+From 3a47ad506f182babcf0cc3d24641d54334148b93 Mon Sep 17 00:00:00 2001
+From: Daniele Ceraolo Spurio <daniele.ceraolospurio@intel.com>
+Date: Fri, 28 Feb 2020 17:20:41 -0800
+Subject: [PATCH 1/6] drm/i915/huc: update TGL HuC to v7.0.12
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Update to the latest available TGL HuC, which includes changes required
+by the media team.
+
+Signed-off-by: Daniele Ceraolo Spurio <daniele.ceraolospurio@intel.com>
+Cc: Tony Ye <tony.ye@intel.com>
+Cc: Michal Wajdeczko <michal.wajdeczko@intel.com>
+Cc: Anusha Srivatsa <anusha.srivatsa@intel.com>
+Reviewed-by: José Roberto de Souza <jose.souza@intel.com>
+Acked-by: Tony Ye <tony.ye@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20200229012042.27487-1-daniele.ceraolospurio@intel.com
+---
+ drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
+index 66a30ab7044a..03e01ce97748 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
++++ b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
+@@ -43,7 +43,7 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
+  * features.
+  */
+ #define INTEL_UC_FIRMWARE_DEFS(fw_def, guc_def, huc_def) \
+-	fw_def(TIGERLAKE,   0, guc_def(tgl, 35, 2, 0), huc_def(tgl,  7, 0, 3)) \
++	fw_def(TIGERLAKE,   0, guc_def(tgl, 35, 2, 0), huc_def(tgl,  7, 0, 12)) \
+ 	fw_def(ELKHARTLAKE, 0, guc_def(ehl, 33, 0, 4), huc_def(ehl,  9, 0, 0)) \
+ 	fw_def(ICELAKE,     0, guc_def(icl, 33, 0, 0), huc_def(icl,  9, 0, 0)) \
+ 	fw_def(COFFEELAKE,  5, guc_def(cml, 33, 0, 0), huc_def(cml,  4, 0, 0)) \
+-- 
+2.17.1
+

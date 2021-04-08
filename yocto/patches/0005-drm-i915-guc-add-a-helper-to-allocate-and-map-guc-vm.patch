@@ -1,0 +1,211 @@
+From ca802bf4d1b1d68a2c30d2b7c21f2d58b7e1bfe2 Mon Sep 17 00:00:00 2001
+From: Daniele Ceraolo Spurio <daniele.ceraolospurio@intel.com>
+Date: Thu, 5 Dec 2019 14:02:40 -0800
+Subject: [PATCH 5/6] drm/i915/guc: add a helper to allocate and map guc vma
+
+We already have a couple of use-cases in the code and another one will
+come in one of the later patches in the series.
+
+v2: use the new function for the CT object as well
+
+Signed-off-by: Daniele Ceraolo Spurio <daniele.ceraolospurio@intel.com>
+Cc: Michal Wajdeczko <michal.wajdeczko@intel.com>
+Cc: John Harrison <John.C.Harrison@Intel.com>
+Cc: Matthew Brost <matthew.brost@intel.com>
+Reviewed-by: Chris Wilson <chris@chris-wilson.co.uk> #v1
+Reviewed-by: John Harrison <John.C.Harrison@Intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20191205220243.27403-2-daniele.ceraolospurio@intel.com
+---
+ drivers/gpu/drm/i915/gt/uc/intel_guc.c        | 34 +++++++++++++++++++
+ drivers/gpu/drm/i915/gt/uc/intel_guc.h        |  2 ++
+ drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c    | 21 +++---------
+ drivers/gpu/drm/i915/gt/uc/intel_guc_ct.c     | 25 +++-----------
+ .../gpu/drm/i915/gt/uc/intel_guc_submission.c | 22 ++++--------
+ 5 files changed, 52 insertions(+), 52 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc.c b/drivers/gpu/drm/i915/gt/uc/intel_guc.c
+index 3ee4a4e7689d..922a19635d20 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_guc.c
++++ b/drivers/gpu/drm/i915/gt/uc/intel_guc.c
+@@ -704,3 +704,37 @@ struct i915_vma *intel_guc_allocate_vma(struct intel_guc *guc, u32 size)
+ 	i915_gem_object_put(obj);
+ 	return vma;
+ }
++
++/**
++ * intel_guc_allocate_and_map_vma() - Allocate and map VMA for GuC usage
++ * @guc:	the guc
++ * @size:	size of area to allocate (both virtual space and memory)
++ * @out_vma:	return variable for the allocated vma pointer
++ * @out_vaddr:	return variable for the obj mapping
++ *
++ * This wrapper calls intel_guc_allocate_vma() and then maps the allocated
++ * object with I915_MAP_WB.
++ *
++ * Return:	0 if successful, a negative errno code otherwise.
++ */
++int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
++				   struct i915_vma **out_vma, void **out_vaddr)
++{
++	struct i915_vma *vma;
++	void *vaddr;
++
++	vma = intel_guc_allocate_vma(guc, size);
++	if (IS_ERR(vma))
++		return PTR_ERR(vma);
++
++	vaddr = i915_gem_object_pin_map(vma->obj, I915_MAP_WB);
++	if (IS_ERR(vaddr)) {
++		i915_vma_unpin_and_release(&vma, 0);
++		return PTR_ERR(vaddr);
++	}
++
++	*out_vma = vma;
++	*out_vaddr = vaddr;
++
++	return 0;
++}
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc.h b/drivers/gpu/drm/i915/gt/uc/intel_guc.h
+index e6400204a2bd..bf438f820c35 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_guc.h
++++ b/drivers/gpu/drm/i915/gt/uc/intel_guc.h
+@@ -149,6 +149,8 @@ int intel_guc_auth_huc(struct intel_guc *guc, u32 rsa_offset);
+ int intel_guc_suspend(struct intel_guc *guc);
+ int intel_guc_resume(struct intel_guc *guc);
+ struct i915_vma *intel_guc_allocate_vma(struct intel_guc *guc, u32 size);
++int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
++				   struct i915_vma **out_vma, void **out_vaddr);
+ 
+ static inline bool intel_guc_is_supported(struct intel_guc *guc)
+ {
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c b/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c
+index 05ca90456a2c..101728006ae9 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c
++++ b/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c
+@@ -136,32 +136,19 @@ static void __guc_ads_init(struct intel_guc *guc)
+ int intel_guc_ads_create(struct intel_guc *guc)
+ {
+ 	const u32 size = PAGE_ALIGN(sizeof(struct __guc_ads_blob));
+-	struct i915_vma *vma;
+-	void *blob;
+ 	int ret;
+ 
+ 	GEM_BUG_ON(guc->ads_vma);
+ 
+-	vma = intel_guc_allocate_vma(guc, size);
+-	if (IS_ERR(vma))
+-		return PTR_ERR(vma);
++	ret = intel_guc_allocate_and_map_vma(guc, size, &guc->ads_vma,
++					     (void **)&guc->ads_blob);
+ 
+-	blob = i915_gem_object_pin_map(vma->obj, I915_MAP_WB);
+-	if (IS_ERR(blob)) {
+-		ret = PTR_ERR(blob);
+-		goto err_vma;
+-	}
+-
+-	guc->ads_vma = vma;
+-	guc->ads_blob = blob;
++	if (ret)
++		return ret;
+ 
+ 	__guc_ads_init(guc);
+ 
+ 	return 0;
+-
+-err_vma:
+-	i915_vma_unpin_and_release(&guc->ads_vma, 0);
+-	return ret;
+ }
+ 
+ void intel_guc_ads_destroy(struct intel_guc *guc)
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc_ct.c b/drivers/gpu/drm/i915/gt/uc/intel_guc_ct.c
+index b49115517510..5fb7f957edf9 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_guc_ct.c
++++ b/drivers/gpu/drm/i915/gt/uc/intel_guc_ct.c
+@@ -125,7 +125,6 @@ static int guc_action_deregister_ct_buffer(struct intel_guc *guc,
+ static int ctch_init(struct intel_guc *guc,
+ 		     struct intel_guc_ct_channel *ctch)
+ {
+-	struct i915_vma *vma;
+ 	void *blob;
+ 	int err;
+ 	int i;
+@@ -154,20 +153,13 @@ static int ctch_init(struct intel_guc *guc,
+ 	 * other code will need updating as well.
+ 	 */
+ 
+-	/* allocate vma */
+-	vma = intel_guc_allocate_vma(guc, PAGE_SIZE);
+-	if (IS_ERR(vma)) {
+-		err = PTR_ERR(vma);
+-		goto err_out;
++	err = intel_guc_allocate_and_map_vma(guc, PAGE_SIZE, &ctch->vma, &blob);
++	if (err) {
++		CT_DEBUG_DRIVER("CT: channel %d initialization failed; err=%d\n",
++				ctch->owner, err);
++		return err;
+ 	}
+-	ctch->vma = vma;
+ 
+-	/* map first page */
+-	blob = i915_gem_object_pin_map(vma->obj, I915_MAP_WB);
+-	if (IS_ERR(blob)) {
+-		err = PTR_ERR(blob);
+-		goto err_vma;
+-	}
+ 	CT_DEBUG_DRIVER("CT: vma base=%#x\n",
+ 			intel_guc_ggtt_offset(guc, ctch->vma));
+ 
+@@ -179,13 +171,6 @@ static int ctch_init(struct intel_guc *guc,
+ 	}
+ 
+ 	return 0;
+-
+-err_vma:
+-	i915_vma_unpin_and_release(&ctch->vma, 0);
+-err_out:
+-	CT_DEBUG_DRIVER("CT: channel %d initialization failed; err=%d\n",
+-			ctch->owner, err);
+-	return err;
+ }
+ 
+ static void ctch_fini(struct intel_guc *guc,
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c b/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c
+index 717239e4e642..3c0cbd37cc42 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c
++++ b/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c
+@@ -317,23 +317,15 @@ static void guc_proc_desc_fini(struct intel_guc_client *client)
+ 
+ static int guc_stage_desc_pool_create(struct intel_guc *guc)
+ {
+-	struct i915_vma *vma;
+-	void *vaddr;
+-
+-	vma = intel_guc_allocate_vma(guc,
+-				     PAGE_ALIGN(sizeof(struct guc_stage_desc) *
+-				     GUC_MAX_STAGE_DESCRIPTORS));
+-	if (IS_ERR(vma))
+-		return PTR_ERR(vma);
++	u32 size = PAGE_ALIGN(sizeof(struct guc_stage_desc) *
++			      GUC_MAX_STAGE_DESCRIPTORS);
++	int ret;
+ 
+-	vaddr = i915_gem_object_pin_map(vma->obj, I915_MAP_WB);
+-	if (IS_ERR(vaddr)) {
+-		i915_vma_unpin_and_release(&vma, 0);
+-		return PTR_ERR(vaddr);
+-	}
++	ret = intel_guc_allocate_and_map_vma(guc, size, &guc->stage_desc_pool,
++					     &guc->stage_desc_pool_vaddr);
++	if (ret)
++		return ret;
+ 
+-	guc->stage_desc_pool = vma;
+-	guc->stage_desc_pool_vaddr = vaddr;
+ 	ida_init(&guc->stage_ids);
+ 
+ 	return 0;
+-- 
+2.17.1
+

@@ -1,0 +1,36 @@
+From bb54e6fc9af6f8eebad83a618927e2f9bff3d5ee Mon Sep 17 00:00:00 2001
+From: Matt Roper <matthew.d.roper@intel.com>
+Date: Mon, 4 May 2020 15:52:08 -0700
+Subject: [PATCH 3/6] drm/i915/rkl: Re-use TGL GuC/HuC firmware
+
+RKL uses the same GuC and HuC as TGL and should load the same firmwares.
+
+Bspec: 50668
+Cc: Anusha Srivatsa <anusha.srivatsa@intel.com>
+Signed-off-by: Matt Roper <matthew.d.roper@intel.com>
+Reviewed-by: Anusha Srivatsa <anusha.srivatsa@intel.com>
+Signed-off-by: Lucas De Marchi <lucas.demarchi@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20200504225227.464666-4-matthew.d.roper@intel.com
+---
+ drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
+index 03e01ce97748..2550cf615397 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
++++ b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
+@@ -41,8 +41,11 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
+  * TGL 35.2 is interface-compatible with 33.0 for previous Gens. The deltas
+  * between 33.0 and 35.2 are only related to new additions to support new Gen12
+  * features.
++ *
++ * Note that RKL uses the same firmware as TGL.
+  */
+ #define INTEL_UC_FIRMWARE_DEFS(fw_def, guc_def, huc_def) \
++	fw_def(ROCKETLAKE,  0, guc_def(tgl, 35, 2, 0), huc_def(tgl,  7, 0, 12)) \
+ 	fw_def(TIGERLAKE,   0, guc_def(tgl, 35, 2, 0), huc_def(tgl,  7, 0, 12)) \
+ 	fw_def(ELKHARTLAKE, 0, guc_def(ehl, 33, 0, 4), huc_def(ehl,  9, 0, 0)) \
+ 	fw_def(ICELAKE,     0, guc_def(icl, 33, 0, 0), huc_def(icl,  9, 0, 0)) \
+-- 
+2.17.1
+
