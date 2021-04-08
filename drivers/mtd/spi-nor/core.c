@@ -3062,9 +3062,12 @@ static const struct flash_info *spi_nor_get_flash_info(struct spi_nor *nor,
 			 * marked read-only, and we don't want to lose that
 			 * information, even if it's not 100% accurate.
 			 */
-			dev_warn(nor->dev, "found %s, expected %s\n",
-				 jinfo->name, info->name);
-			info = jinfo;
+			if ((info->id_len >= jinfo->id_len) &&
+					memcmp(info->id, jinfo->id, info->id_len)) {
+				dev_warn(nor->dev, "found %s, expected %s\n",
+						jinfo->name, info->name);
+				info = jinfo;
+			}
 		}
 	}
 
