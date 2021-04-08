@@ -27,7 +27,7 @@
 // xlink version number
 #define XLINK_VERSION_MAJOR		0
 #define XLINK_VERSION_MINOR		1
-#define XLINK_VERSION_REVISION	2
+#define XLINK_VERSION_REVISION	3
 #define XLINK_VERSION_SUB_REV	"a"
 
 // timeout in milliseconds used to wait for the reay message from the VPU
@@ -380,6 +380,7 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	uint32_t size;
 	uint8_t reladdr;
 	uint8_t volbuf[XLINK_MAX_BUF_SIZE];
+	uint8_t *control_buf;
 	char filename[64];
 	char name[XLINK_MAX_DEVICE_NAME_SIZE];
 	uint32_t sw_device_id_list[XLINK_MAX_DEVICE_LIST_SIZE];
@@ -525,14 +526,30 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&devH, (struct xlink_handle *)wr.handle,
 				sizeof(struct xlink_handle)))
 			return -EFAULT;
-		if (wr.size <= XLINK_MAX_CONTROL_DATA_SIZE) {
-			if (copy_from_user(volbuf, (char *)wr.pmessage, wr.size))
+		if (wr.size <= XLINK_MAX_CONTROL_DATA_PCIE_SIZE) {
+			control_buf = (uint8_t *)kzalloc(
+					XLINK_MAX_CONTROL_DATA_PCIE_SIZE,
+					GFP_KERNEL);
+			if (!control_buf)
+				return -ENOMEM;
+			if (copy_from_user(control_buf,
+					(char *)wr.pmessage, wr.size)) {
+				kfree(control_buf);
 				return -EFAULT;
-			rc = xlink_write_control_data(&devH, wr.chan, volbuf, wr.size);
-			if (copy_to_user(wr.return_code, (void *)&rc, sizeof(rc)))
+			}
+			rc = xlink_write_control_data(&devH, wr.chan,
+						control_buf, wr.size);
+			kfree(control_buf);
+			if (copy_to_user(wr.return_code, (void *)&rc,
+						sizeof(rc)))
 				return -EFAULT;
 		} else {
-			return -EFAULT;
+			//return -EFAULT;
+			rc = X_LINK_ERROR;
+			if (copy_to_user(wr.return_code, (void *)&rc,
+						sizeof(rc)))
+				return -EFAULT;
+			return X_LINK_ERROR;
 		}
 		break;
 	case XL_RELEASE_DATA:
@@ -932,6 +949,7 @@ enum xlink_error xlink_open_channel(struct xlink_handle *handle,
 	if (!xlink || !handle)
 		return X_LINK_ERROR;
 
+	trace_xlink_open_channel(handle->sw_device_id, chan);
 	link = get_link_by_sw_device_id(handle->sw_device_id);
 	if (!link)
 		return X_LINK_ERROR;
@@ -946,6 +964,7 @@ enum xlink_error xlink_open_channel(struct xlink_handle *handle,
 	if (!event_queued) {
 		xlink_destroy_event(event);
 	}
+	trace_xlink_open_channel_completion(handle->sw_device_id, chan);
 	return rc;
 }
 EXPORT_SYMBOL(xlink_open_channel);
@@ -961,6 +980,7 @@ enum xlink_error xlink_close_channel(struct xlink_handle *handle,
 	if (!xlink || !handle)
 		return X_LINK_ERROR;
 
+	trace_xlink_close_channel(handle->sw_device_id, chan);
 	link = get_link_by_sw_device_id(handle->sw_device_id);
 	if (!link)
 		return X_LINK_ERROR;
@@ -974,6 +994,7 @@ enum xlink_error xlink_close_channel(struct xlink_handle *handle,
 	if (!event_queued) {
 		xlink_destroy_event(event);
 	}
+	trace_xlink_close_channel(handle->sw_device_id, chan);
 	return rc;
 }
 EXPORT_SYMBOL(xlink_close_channel);
@@ -989,6 +1010,7 @@ enum xlink_error xlink_write_data(struct xlink_handle *handle,
 	if (!xlink || !handle)
 		return X_LINK_ERROR;
 
+	trace_xlink_write_data(handle->sw_device_id, chan, size);
 	if (size > XLINK_MAX_DATA_SIZE)
 		return X_LINK_ERROR;
 
@@ -1014,6 +1036,7 @@ enum xlink_error xlink_write_data(struct xlink_handle *handle,
 			xlink_destroy_event(event);
 		}
 	}
+	trace_xlink_write_data_completion(handle->sw_device_id, chan, size);
 	return rc;
 }
 EXPORT_SYMBOL(xlink_write_data);
@@ -1031,6 +1054,7 @@ static enum xlink_error xlink_write_data_user(struct xlink_handle *handle,
 	if (!xlink || !handle)
 		return X_LINK_ERROR;
 
+	trace_xlink_write_data_user(handle->sw_device_id, chan, size);
 	if (size > XLINK_MAX_DATA_SIZE)
 		return X_LINK_ERROR;
 
@@ -1074,6 +1098,8 @@ static enum xlink_error xlink_write_data_user(struct xlink_handle *handle,
 			xlink_destroy_event(event);
 		}
 	}
+	trace_xlink_write_data_user_completion(handle->sw_device_id,
+							chan, size);
 	return rc;
 }
 
@@ -1088,8 +1114,15 @@ enum xlink_error xlink_write_control_data(struct xlink_handle *handle,
 	if (!xlink || !handle)
 		return X_LINK_ERROR;
 
-	if (size > XLINK_MAX_CONTROL_DATA_SIZE)
-		return X_LINK_ERROR; // TODO: XLink Paramater Error
+	trace_xlink_write_control(handle->sw_device_id, chan, size);
+	if (chan < XLINK_IPC_MAX_CHANNELS) {
+		if (size > XLINK_MAX_CONTROL_DATA_SIZE)
+			return X_LINK_ERROR; // TODO: XLink Parameter Error
+	}
+	if (chan >= XLINK_IPC_MAX_CHANNELS) {
+		if (size > XLINK_MAX_CONTROL_DATA_PCIE_SIZE)
+			return X_LINK_ERROR; // TODO: XLink Parameter Error
+	}
 
 	link = get_link_by_sw_device_id(handle->sw_device_id);
 	if (!link)
@@ -1105,6 +1138,7 @@ enum xlink_error xlink_write_control_data(struct xlink_handle *handle,
 	if (!event_queued) {
 		xlink_destroy_event(event);
 	}
+	trace_xlink_write_control_completion(handle->sw_device_id, chan, size);
 	return rc;
 }
 EXPORT_SYMBOL(xlink_write_control_data);
@@ -1193,12 +1227,16 @@ enum xlink_error xlink_read_data(struct xlink_handle *handle,
 	if (!xlink || !handle)
 		return X_LINK_ERROR;
 
+	trace_xlink_read(handle->sw_device_id, chan, *size);
 	link = get_link_by_sw_device_id(handle->sw_device_id);
 	if (!link)
 		return X_LINK_ERROR;
 
+	trace_xlink_read_mutex(handle->sw_device_id, chan, *size);
 	event = xlink_create_event(link->id, XLINK_READ_REQ, &link->handle, chan,
 			*size, 0);
+
+	trace_xlink_read_alloc_event(handle->sw_device_id, chan, *size);
 	if (!event)
 		return X_LINK_ERROR;
 
@@ -1208,6 +1246,7 @@ enum xlink_error xlink_read_data(struct xlink_handle *handle,
 	if (!event_queued) {
 		xlink_destroy_event(event);
 	}
+	trace_xlink_read_data_completion(handle->sw_device_id, chan, *size);
 	return rc;
 }
 EXPORT_SYMBOL(xlink_read_data);
