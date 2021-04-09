@@ -2618,6 +2618,35 @@ static int stmmac_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 				priv->dev->stats.tx_packets++;
 				priv->xstats.tx_pkt_n++;
 				priv->xstats.txq_stats[queue].tx_pkt_n++;
+
+				switch (queue) {
+				case 0x0:
+					priv->xstats.q0_tx_pkt_n++;
+					break;
+				case 0x1:
+					priv->xstats.q1_tx_pkt_n++;
+					break;
+				case 0x2:
+					priv->xstats.q2_tx_pkt_n++;
+					break;
+				case 0x3:
+					priv->xstats.q3_tx_pkt_n++;
+					break;
+				case 0x4:
+					priv->xstats.q4_tx_pkt_n++;
+					break;
+				case 0x5:
+					priv->xstats.q5_tx_pkt_n++;
+					break;
+				case 0x6:
+					priv->xstats.q6_tx_pkt_n++;
+					break;
+				case 0x7:
+					priv->xstats.q7_tx_pkt_n++;
+					break;
+				default:
+					break;
+				}
 			}
 			if (skb &&
 			    skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS) {
@@ -5502,6 +5531,35 @@ drain_data:
 
 	priv->xstats.rx_pkt_n += count;
 	priv->xstats.rxq_stats[queue].rx_pkt_n += count;
+
+	switch (queue) {
+	case 0x0:
+		priv->xstats.q0_rx_pkt_n += count;
+		break;
+	case 0x1:
+		priv->xstats.q1_rx_pkt_n += count;
+		break;
+	case 0x2:
+		priv->xstats.q2_rx_pkt_n += count;
+		break;
+	case 0x3:
+		priv->xstats.q3_rx_pkt_n += count;
+		break;
+	case 0x4:
+		priv->xstats.q4_rx_pkt_n += count;
+		break;
+	case 0x5:
+		priv->xstats.q5_rx_pkt_n += count;
+		break;
+	case 0x6:
+		priv->xstats.q6_rx_pkt_n += count;
+		break;
+	case 0x7:
+		priv->xstats.q7_rx_pkt_n += count;
+		break;
+	default:
+		break;
+	}
 
 	return count;
 }
