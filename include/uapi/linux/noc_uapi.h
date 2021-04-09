@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*  Copyright (C) 2020 Intel Corporation
  *
  *  Sec Class: Intel Confidential (IC)
@@ -8,11 +8,9 @@
  *  This document contains proprietary information belonging to Intel.
  *  Passing on and copying of this document, use and
  *  communication of its contents is not permitted without prior written/
- *  authorisation.
+ *  authorization.
  *
  *  Purpose: KMB NOC header for user space access.
- *
- *  Authors:
  *
  */
 
@@ -28,7 +26,7 @@
 
 enum noc_ss_type {
 	DSS_NOC = 0,
-	CSS_NOC
+	NOC_TYPE_MAX
 };
 
 struct flexnoc_setup {
@@ -46,8 +44,8 @@ struct flexnoc_probestart {
 
 struct flexnoc_countercapture {
 	enum noc_ss_type noc_type;
-	__u16 counter;
 	__u32 bw_res;
+	__u16 counter;
 	__u16 ret_id;
 };
 

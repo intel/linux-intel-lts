@@ -4,7 +4,7 @@
 
 config NOC_DSS
 	tristate "Enable DSS NOC probing"
-	depends on ARM64
+	depends on ARCH_KEEMBAY
 	default y
 	help
-	  DSS noc measurements are enabled
+	  Enable this option for DSS bandwidth measurements using noc

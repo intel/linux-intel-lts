@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*  Copyright (C) 2020 Intel Corporation
  *
  *  Sec Class: Intel Confidential (IC)
@@ -8,73 +8,34 @@
  *  This document contains proprietary information belonging to Intel.
  *  Passing on and copying of this document, use and
  *  communication of its contents is not permitted without prior written/
- *  authorisation.
+ *  authorization.
  *
  *  Purpose: KMB NOC probe bandwidth measurement interface
  *
- *
  */
-
-#include <linux/types.h>
+#include <linux/arm-smccc.h>
+#include <linux/compiler_types.h>
 #include <linux/device.h>
 #include <linux/delay.h>
+#include <linux/fs.h>
 #include <linux/io.h>
-#include <linux/of_device.h>
 #include <linux/module.h>
-#include <linux/compiler_types.h>
-#include <linux/arm-smccc.h>
+#include <linux/noc_uapi.h>
+#include <linux/of_device.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
 #include "noc_driver.h"
 
-/* NOC Control Registers */
-#define ID_COREID          0x0000 /* MAIN_PROBE_ID_COREID */
-#define ID_REVISIONID      0x0004 /* MAIN_PROBE_ID_REVISIONID */
-#define MAINCTL            0x0008 /* Probe global control bits */
-#define CFGCTL             0x000C /* MAIN_PROBE_CFGCTL */
-#define TRACEPORTSEL       0x0010 /* MAIN_PROBE_TRACEPORTSEL */
-#define FILTERLUT          0x0014 /* MAIN_PROBE_FILTERLUT */
-#define TRACEALARMEN       0x0018 /* MAIN_PROBE_TRACEALARMEN */
-#define TRACEALARMSTATUS   0x001C /* MAIN_PROBE_TRACEALARMSTATUS */
-#define TRACEALARMCLR      0x0020 /* MAIN_PROBE_TRACEALARMCLR */
-#define STATPERIOD         0x0024 /* MAIN_PROBE_STATPERIOD */
-#define STATGO             0x0028 /* MAIN_PROBE_STATGO */
-#define STATALARMMIN       0x002C /* MAIN_PROBE_STATALARMMIN */
-#define STATALARMMAX       0x0030 /* MAIN_PROBE_STATALARMMAX */
-#define STATALARMSTATUS    0x0034 /* MAIN_PROBE_STATALARMSTATUS */
-#define STATALARMCLR       0x0038 /* MAIN_PROBE_STATALARMCLR */
-#define STATALARMEN        0x003C /* MAIN_PROBE_STATALARMEN */
-
-/* NOC Filter Registers */
-#define F_ROUTEIDBASE      0x0000 /* Offset for FILTERS_n_ROUTEIDBASE */
-#define F_ROUTEIDMASK      0x0004 /* Offset for FILTERS_n_ROUTEIDMASK */
-#define F_ADDRBASE_LOW     0x0008 /* Offset for FILTERS_n_ADDRBASE_LOW */
-#define F_ADDRBASE_HIGH    0x000C /* Offset for FILTERS_n_ADDRBASE_HIGH */
-#define F_WINDOWSIZE       0x0010 /* Offset for FILTERS_n_WINDOWSIZE */
-#define F_OPCODE           0x001C /* Offset for FILTERS_n_OPCODE */
-#define F_STATUS           0x0020 /* Offset for FILTERS_n_STATUS */
-#define F_LENGTH           0x0024 /* Offset for FILTERS_n_LENGTH */
-#define F_URGENCY          0x0028 /* Offset for FILTERS_n_URGENCY */
-#define F_USERBASE         0x002C /* Offset for FILTERS_n_USERBASE */
-#define F_USERMASK         0x0030 /* Offset for FILTERS_n_USERMASK */
-
-/* NOC Counter Registers */
-#define C_PORTSEL         0x0000 /* Offset for COUNTERS_n_PORTSEL */
-#define C_SRC             0x0004 /* Offset for COUNTERS_n_SRC */
-#define C_ALARMMODE       0x0008 /* Offset for COUNTERS_n_ALARMMODE */
-#define C_VAL             0x000C /* Offset for COUNTERS_n_VAL */
-
-#define PLATFORM_SIP_SVC_DSS_NOC_PROBE_READ         (0x8200ff28)
-#define PLATFORM_SIP_SVC_DSS_NOC_PROBE_WRITE        (0x8200ff29)
-
-/* Following information should come from DTSI */
-int f_offset[] = {0x44, 0x80, 0xbc, 0xf8}; //Filter_offsets
-int c_offset[] = {0x134, 0x148, 0x15c, 0x170}; //Counter offsets
+/* Filter and counter offset */
+static const int f_offset[] = {0x44, 0x80, 0xbc, 0xf8};
+static const int c_offset[] = {0x134, 0x148, 0x15c, 0x170};
 
 static inline u32 noc_readl(u32 offset)
 {
 	struct arm_smccc_res res;
 
 	arm_smccc_smc(PLATFORM_SIP_SVC_DSS_NOC_PROBE_READ, offset,
-			0, 0, 0, 0, 0, 0, &res);
+		      0, 0, 0, 0, 0, 0, &res);
 	return res.a1;
 }
 
@@ -82,123 +43,126 @@ static inline void noc_writel(u32 offset, u32 value)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_smc(PLATFORM_SIP_SVC_DSS_NOC_PROBE_WRITE, offset, value,
-			0, 0, 0, 0, 0, &res);
+	arm_smccc_smc(PLATFORM_SIP_SVC_DSS_NOC_PROBE_WRITE, offset,
+		      value, 0, 0, 0, 0, 0, &res);
 }
 
-
-int flex_noc_setup(enum noc_type noc, enum noc_counter counter, int trace_port)
+/**
+ * flex_noc_setup() - Setup two counters for the NOC probe
+ * @noc: NOC type to setup counters
+ * @counter: Counter number to set up counter n and n+1
+ * @trace_port: trace port number to setup counters
+ *
+ * This function will setup the counters for the trace port given.
+ */
+int flex_noc_setup(enum noc_ss_type noc, enum noc_counter counter, int trace_port)
 {
 	/* Validate params */
-	if ((noc >= NOC_TYPE_MAX) || (counter >= NOC_COUNTER_MAX))
+	if (noc >= NOC_TYPE_MAX || counter >= NOC_COUNTER_MAX)
 		return -EINVAL;
 
-	//Stop ongoing stats
-	noc_writel(MAINCTL, 0); //MAINCTL.StatEn = 0
-	noc_writel(CFGCTL, 0); //CFGCTL.GlobalEn = 0
+	/* Stop ongoing stats */
+	noc_writel(MAINCTL, 0);
+	noc_writel(CFGCTL, 0);
 
-	//Setup trace port
+	/* Setup trace port and counters port select */
 	noc_writel(TRACEPORTSEL, trace_port);
-	//COUNTERS_0_PORTSEL
 	noc_writel((c_offset[counter] + C_PORTSEL), trace_port);
-	//COUNTERS_1_PORTSEL
-	noc_writel((c_offset[counter+1] + C_PORTSEL), trace_port);
+	noc_writel((c_offset[counter + 1] + C_PORTSEL), trace_port);
 
-	//Setup counter sources & triggers
-	//COUNTERS_0_SRC (8 - Count BYTES 14 - FiltBytes)
-	noc_writel((c_offset[counter] + C_SRC), 0x00000014);
-	//COUNTERS_0_ALARMMODE - OFF
-	noc_writel((c_offset[counter] + C_ALARMMODE), 0x00000002);
-	//COUNTERS_1_SRC  (Carry from C0)
-	noc_writel((c_offset[counter+1] + C_SRC), 0x00000010);
-	//COUNTERS_1_ALARMMODE - MAX
-	noc_writel((c_offset[counter+1] + C_ALARMMODE), 0x00000002);
+	/* Setup counter sources & triggers, Alarm mode - OFF */
+	noc_writel((c_offset[counter] + C_SRC), COUNTERS_0_SRC_VAL);
+	noc_writel((c_offset[counter] + C_ALARMMODE), COUNTERS_ALARMMODE_VAL);
+	noc_writel((c_offset[counter + 1] + C_SRC), COUNTERS_1_SRC_VAL);
+	noc_writel((c_offset[counter + 1] + C_ALARMMODE),
+		   COUNTERS_ALARMMODE_VAL);
 
-	//Setup filters
-	// Always Filter 0 is used for all counters ?
-	//Filter 0 Route_id_base
-	noc_writel((f_offset[counter/2] + F_ROUTEIDBASE), 0);
-	//Filter 0 Route_id_mask
-	noc_writel((f_offset[counter/2] + F_ROUTEIDMASK), 0);
-	//Filter 0 Address Base Low
-	noc_writel((f_offset[counter/2] + F_ADDRBASE_LOW), 0);
-	//Filter 0 Address Base High
-	noc_writel((f_offset[counter/2] + F_ADDRBASE_HIGH), 0);
-	//Filter 0 window size
-	noc_writel((f_offset[counter/2] + F_WINDOWSIZE), 0xffffffff);
-	//Filter 0 opcode=0xF
-	noc_writel((f_offset[counter/2] + F_OPCODE), 0xF);
-	//Filter 0 status
-	noc_writel((f_offset[counter/2] + F_STATUS), 0x3);
-	//Filter 0 length
-	noc_writel((f_offset[counter/2] + F_LENGTH), 0xF);
+	/* Setup filters - RouteID mask, addr base, window size */
+	noc_writel((f_offset[counter / 2] + F_ROUTEIDBASE), 0);
+	noc_writel((f_offset[counter / 2] + F_ROUTEIDMASK), 0);
+	noc_writel((f_offset[counter / 2] + F_ADDRBASE_LOW), 0);
+	noc_writel((f_offset[counter / 2] + F_ADDRBASE_HIGH), 0);
+	noc_writel((f_offset[counter / 2] + F_WINDOWSIZE), FILTER_WINDOW_VAL);
+	noc_writel((f_offset[counter / 2] + F_OPCODE), FILTER_OPCODE_VAL);
+	noc_writel((f_offset[counter / 2] + F_STATUS), FILTER_STATUS_VAL);
+	noc_writel((f_offset[counter / 2] + F_LENGTH), FILTER_OPCODE_VAL);
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(flex_noc_setup);
 
-enum noc_status flexnoc_probe_start(enum noc_type noc, int capture_time)
+/**
+ * flexnoc_probe_start() - Start two counters for the NOC probe
+ * @noc: NOC type to setup counters
+ *
+ * This function will start the counters.  When this
+ * function returns NOC_PROBE_CAPTURE_STARTED, it is guaranteed that NOC
+ * is setup for probing counters.
+ *
+ */
+enum noc_status flexnoc_probe_start(enum noc_ss_type noc)
 {
-	int statperiod;
-
 	if (noc >= NOC_TYPE_MAX)
 		return NOC_PROBE_ERR_INVALID_ARGS;
 
-	//TBD : Convert capture_time in msec to statperiod;
-	statperiod = 0x1B;
-
-	noc_writel(MAINCTL, 0x00000008); //MAINCTL.StatEn = 1
-	noc_writel(FILTERLUT, 0x00000001); //FilterLUT = 1
-
-	noc_writel(STATALARMMIN, 0x00000000); //STATALARMMIN
-	//STATALARMMAX - Saturation value
-	noc_writel(STATALARMMAX, 0x00000001);
-	noc_writel(STATALARMEN, 0x00000001); //STATALARMEN
-
-	//MAINCTL .StatEn = 1; .AlarmEn = 1 FiltByteAlwaysChainableEn = 1
-	noc_writel(MAINCTL, 0x00000098);
-	// STATPERIOD - 2**duration cycles
-	noc_writel(STATPERIOD, statperiod);
-	noc_writel(FILTERLUT, 0x00000001); //FilterLUT = 1
-	noc_writel(CFGCTL, 0x00000001); //CFGCTL.GlobalEn = 1
+	/* Setting up probe */
+	noc_writel(MAINCTL, (1 << MAINCTL_STATEN_POS));
+	noc_writel(FILTERLUT, 1);
+	noc_writel(STATALARMMIN, 0);
+	noc_writel(STATALARMMAX, 1);
+	noc_writel(STATALARMEN, 1);
+	noc_writel(MAINCTL, ((1 << MAINCTL_STATEN_POS) |
+			     (1 << MAINCTL_ALARM_EN_POS) |
+			     (1 << MAINCTL_ALWAYS_CHAINABLE_POS)));
+	noc_writel(STATPERIOD, NOC_STATPERIOD_VAL);
+	noc_writel(FILTERLUT, 0x00000001);
+	noc_writel(CFGCTL, 0x00000001);
 
 	return NOC_PROBE_CAPTURE_STARTED;
 }
-EXPORT_SYMBOL_GPL(flexnoc_probe_start);
 
-enum noc_status flexnoc_counter_capture(enum noc_type noc,
-			enum noc_counter counter, u32  *value)
+/**
+ * flexnoc_counterp_capture() - Capture the counter statistic values
+ * @noc: NOC type to setup counters
+ * @counter:  Counter number to capture statistics values for n and n+1
+ * @value: statistics values read are returned in this address passed
+ *
+ * This function will return the statistics value of started counters.
+ * When this function returns NOC_PROBE_COMPLETED, it is guaranteed that NOC
+ * counters are idle and finished probing.
+ * Algo : The values should not returned when counters are active/running.
+ * Once the counter is frozen, the values are good to read. There is an
+ * iteration logic implemented to check this. An maximum timeout config
+ * is provided to for capture timeout - NOC_CAPTURE_TIMEOUT_MSEC
+ *
+ */
+enum noc_status flexnoc_counter_capture(enum noc_ss_type noc,
+					enum noc_counter counter, u32  *value)
 {
 	u32 c0_0, c0_1;
-	unsigned long j0,j1,delay;
+	unsigned long j0, j1, delay;
 
-	if ((noc >= NOC_TYPE_MAX) || (counter >= NOC_COUNTER_MAX)
-		|| (NULL == value))
+	if (noc >= NOC_TYPE_MAX ||
+	    counter >= NOC_COUNTER_MAX  ||
+	    !value)
 		return NOC_PROBE_ERR_INVALID_ARGS;
 
-	delay = msecs_to_jiffies(2000);
+	delay = msecs_to_jiffies(NOC_CAPTURE_TIMEOUT_MSEC);
 	j0 = jiffies;
 	j1 = j0 + delay;
-
 	while (time_before(jiffies, j1)) {
 		c0_0 = noc_readl((c_offset[counter] + C_VAL));
 		usleep_range(10000, 11000);
 		c0_1 = noc_readl((c_offset[counter] + C_VAL));
-
-
 		/* If mainctrl is zero , return error */
-		if (0 == noc_readl(MAINCTL))
+		if (noc_readl(MAINCTL) == 0)
 			return NOC_PROBE_ERR_IN_PROGRESS;
-
 		/* If counters are zero, keep reading */
 		if (0 == c0_0 && 0 == c0_1) {
 			break;
-		}
-		else if(c0_0 != c0_1) {
+		} else if (c0_0 != c0_1) {
 			continue;
-		}
-		else {
-			/* Couters look good break the while */
+		} else {
+			/* counters look good break the while */
 			break;
 		}
 	}
@@ -207,22 +171,132 @@ enum noc_status flexnoc_counter_capture(enum noc_type noc,
 		return NOC_PROBE_ERR_IN_PROGRESS;
 
 	c0_0 = noc_readl((c_offset[counter] + C_VAL));
-	c0_1 = noc_readl((c_offset[counter+1] + C_VAL));
-
+	c0_1 = noc_readl((c_offset[counter + 1] + C_VAL));
 	*value = (c0_0 | (c0_1 << 16));
 
 	return NOC_PROBE_COMPLETED;
 }
-EXPORT_SYMBOL_GPL(flexnoc_counter_capture);
+
+/* NOC device - ioctl implementation for handling user commands */
+static long noc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	int rc = 0;
+	void __user *argp = (void __user *)arg;
+	struct flexnoc_setup setup_data = {0};
+	struct flexnoc_probestart probe_data = {0};
+	struct flexnoc_countercapture capture_data = {0};
+
+	if (!arg) {
+		pr_err("NOC: Null pointer from user\n");
+		return -EINVAL;
+	}
+	switch (cmd) {
+	case NOC_SETUP:
+		if (copy_from_user(&setup_data,
+				   argp, sizeof(struct flexnoc_setup))) {
+			return -EFAULT;
+		}
+		rc =  flex_noc_setup(setup_data.noc_type, setup_data.counter,
+				     setup_data.traceport);
+		setup_data.ret_id = rc;
+
+		if (copy_to_user(argp,
+				 &setup_data, sizeof(struct flexnoc_setup))) {
+			return -EFAULT;
+		}
+	break;
+	case NOC_PROBE_START:
+		if (copy_from_user(&probe_data, argp,
+				   sizeof(struct flexnoc_probestart))) {
+			return -EFAULT;
+		}
+		rc = flexnoc_probe_start(probe_data.noc_type);
+		probe_data.ret_id = rc;
+
+		if (copy_to_user(argp,
+				 &probe_data, sizeof(struct flexnoc_probestart))) {
+			return -EFAULT;
+		}
+	break;
+	case NOC_COUNTER_CAPTURE:
+		if (copy_from_user(&capture_data, argp,
+				   sizeof(struct flexnoc_countercapture))) {
+			return -EFAULT;
+		}
+		rc = flexnoc_counter_capture(capture_data.noc_type,
+					     capture_data.counter,
+					     &capture_data.bw_res);
+		capture_data.ret_id = rc;
+
+		if (copy_to_user(argp, &capture_data,
+				 sizeof(struct flexnoc_countercapture))) {
+			return -EFAULT;
+		}
+	break;
+	default:
+		return -EINVAL;
+		break;
+	}
+	return 0;
+}
+
+static const struct file_operations noc_fops = {
+	.owner  = THIS_MODULE,
+	.unlocked_ioctl = noc_ioctl,
+};
+
+int intel_noc_cdev_init(struct noc_device *nocdev)
+{
+	/*Allocating Major number*/
+	if ((alloc_chrdev_region(&nocdev->cdev, 0, 1, "nocdev")) < 0) {
+		pr_err("Cannot allocate major number\n");
+		return -EINVAL;
+	}
+
+	/*Creating cdev structure*/
+	cdev_init(&nocdev->noc_cdev, &noc_fops);
+
+	/*Adding character device to the system*/
+	if ((cdev_add(&nocdev->noc_cdev, nocdev->cdev, 1)) < 0) {
+		pr_err("Cannot add the device to the system\n");
+		goto r_class;
+	}
+
+	/*Creating struct class*/
+	nocdev->dev_class = class_create(THIS_MODULE, "noc_class");
+	if (!nocdev->dev_class) {
+		pr_err("Cannot create the struct class\n");
+		cdev_del(&nocdev->noc_cdev);
+		goto r_class;
+	}
+
+	/*Creating device */
+	if ((device_create(nocdev->dev_class, NULL, nocdev->cdev,
+			   NULL, "noc")) == NULL) {
+		pr_err("Cannot create NOC Device\n");
+		goto r_device;
+	}
+
+	return 0;
+
+r_device:
+	class_destroy(nocdev->dev_class);
+r_class:
+	unregister_chrdev_region(nocdev->cdev, 1);
+	return -EINVAL;
+}
 
 static int noc_probe(struct platform_device *pdev)
 {
 	struct noc_device *cdev;
 	int ret;
 
-	/*  Char dev init */
+	/* Char dev init */
 	cdev = devm_kzalloc(&pdev->dev,
-			sizeof(struct noc_device), GFP_KERNEL);
+			    sizeof(struct noc_device), GFP_KERNEL);
+	if (!cdev)
+		return -ENOMEM;
+
 	ret = intel_noc_cdev_init(cdev);
 	if (ret) {
 		dev_err(&pdev->dev, "NOC char device init failed\n");
@@ -235,10 +309,8 @@ static int noc_probe(struct platform_device *pdev)
 
 static int noc_remove(struct platform_device *pdev)
 {
-	//TBD : Call char device remove
 	return 0;
 }
-
 
 static struct platform_driver noc_driver = {
 	.probe = noc_probe,
@@ -248,8 +320,7 @@ static struct platform_driver noc_driver = {
 	},
 };
 
-
-//Module init changes starts form here
+/* Module init of NOC device */
 static struct platform_device *intel_noc_pdev;
 
 static int __init noc_driver_module_init(void)
@@ -263,7 +334,6 @@ static int __init noc_driver_module_init(void)
 		pr_err("NOC: platform driver register failed\n");
 		return -EINVAL;
 	}
-
 	memset(&pdevinfo, 0, sizeof(pdevinfo));
 	pdevinfo.name = "noc";
 
@@ -279,13 +349,14 @@ static int __init noc_driver_module_init(void)
 static void noc_driver_module_exit(void)
 {
 	platform_driver_unregister(&noc_driver);
-	if (NULL != intel_noc_pdev)
+	if (!intel_noc_pdev)
 		platform_device_unregister(intel_noc_pdev);
 }
 
 module_init(noc_driver_module_init);
 module_exit(noc_driver_module_exit);
 
-MODULE_DESCRIPTION("KeemBay NOC Device driver");
+MODULE_DESCRIPTION("Keem Bay NOC Device driver");
 MODULE_AUTHOR("Pandith N <pandith.n@intel.com>");
+MODULE_AUTHOR("Sudarshan Ravula <sudarshan.ravula@intel.com>");
 MODULE_LICENSE("GPL v2");
