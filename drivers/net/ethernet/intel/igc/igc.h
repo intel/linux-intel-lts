@@ -93,7 +93,6 @@ struct igc_ring {
 	u8 queue_index;                 /* logical index of the ring*/
 	u8 reg_idx;                     /* physical index of the ring */
 	bool launchtime_enable;         /* true if LaunchTime is enabled */
-	bool preemptible;		/* true if not express */
 
 	u32 start_time;
 	u32 end_time;
@@ -175,8 +174,6 @@ struct igc_adapter {
 
 	ktime_t base_time;
 	ktime_t cycle_time;
-	bool frame_preemption_active;
-	u32 add_frag_size;
 
 	/* OS defined structs */
 	struct pci_dev *pdev;
@@ -294,10 +291,6 @@ extern char igc_driver_name[];
 #define IGC_FLAG_VLAN_PROMISC		BIT(15)
 #define IGC_FLAG_RX_LEGACY		BIT(16)
 #define IGC_FLAG_TSN_QBV_ENABLED	BIT(17)
-#define IGC_FLAG_TSN_PREEMPT_ENABLED	BIT(18)
-
-#define IGC_FLAG_TSN_ANY_ENABLED \
-	(IGC_FLAG_TSN_QBV_ENABLED | IGC_FLAG_TSN_PREEMPT_ENABLED)
 
 #define IGC_FLAG_RSS_FIELD_IPV4_UDP	BIT(6)
 #define IGC_FLAG_RSS_FIELD_IPV6_UDP	BIT(7)
@@ -345,11 +338,6 @@ extern char igc_driver_name[];
 #define IGC_I225_RX_LATENCY_100		185
 #define IGC_I225_RX_LATENCY_1000	300
 #define IGC_I225_RX_LATENCY_2500	1485
-
-/* From the datasheet section 8.12.4 Tx Qav Control TQAVCTRL,
- * MIN_FRAG initial value.
- */
-#define IGC_I225_MIN_FRAG_SIZE_DEFAULT	68
 
 /* RX and TX descriptor control thresholds.
  * PTHRESH - MAC will consider prefetch if it has fewer than this number of
