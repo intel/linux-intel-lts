@@ -503,7 +503,7 @@ int sof_machine_check(struct snd_sof_dev *sdev)
 	/* find machine */
 	snd_sof_machine_select(sdev);
 	if (sof_pdata->machine) {
-		snd_sof_set_mach_params(sof_pdata->machine, sdev->dev);
+		snd_sof_set_mach_params(sof_pdata->machine, sdev);
 		return 0;
 	}
 
@@ -528,7 +528,7 @@ int sof_machine_check(struct snd_sof_dev *sdev)
 		return ret;
 
 	sof_pdata->machine = mach;
-	snd_sof_set_mach_params(sof_pdata->machine, sdev->dev);
+	snd_sof_set_mach_params(sof_pdata->machine, sdev);
 
 	return 0;
 }
