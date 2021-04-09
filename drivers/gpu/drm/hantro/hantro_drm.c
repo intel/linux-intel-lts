@@ -1584,15 +1584,19 @@ static const struct vm_operations_struct hantro_drm_gem_cma_vm_ops = {
 };
 
 /* temp no usage now */
+#ifdef CONFIG_DRM_LEGACY
 static u32 hantro_vblank_no_hw_counter(struct drm_device *dev,
 				       unsigned int pipe)
 {
 	return 0;
 }
+#endif
 
 static struct drm_driver hantro_drm_driver = {
 	.driver_features = DRIVER_GEM | DRIVER_RENDER,
+#ifdef CONFIG_DRM_LEGACY
 	.get_vblank_counter = hantro_vblank_no_hw_counter,
+#endif
 	.open = hantro_drm_open,
 	.postclose = hantro_drm_postclose,
 	.release = hantro_release,
