@@ -171,7 +171,6 @@ struct tcc_ptct_psram_v2 {
 struct tcc_ptct_mhlatency_v2 {
 	u32 cache_level;
 	u32 latency;
-	u32 latency_VT;
 	u32 *cacheids;
 };
 
@@ -404,9 +403,9 @@ static int tcc_parse_ptct(void)
 		} else if ((ptct_format == FORMAT_V2) && (entry_type == PTCT_V2_MEMORY_HIERARCHY_LATENCY)) {
 			entry_mhl_v2 = (struct tcc_ptct_mhlatency_v2 *)(tbl_swap + ENTRY_HEADER_SIZE);
 			if (entry_mhl_v2->cache_level == RGN_L2)
-				p_tcc_config->l2_latency = entry_mhl_v2->latency_VT;
+				p_tcc_config->l2_latency = entry_mhl_v2->latency;
 			else if (entry_mhl_v2->cache_level == RGN_L3)
-				p_tcc_config->l3_latency = entry_mhl_v2->latency_VT;
+				p_tcc_config->l3_latency = entry_mhl_v2->latency;
 		}
 
 		offset += entry_size / sizeof(u32);
