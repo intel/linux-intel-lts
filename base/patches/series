@@ -1,35 +1,17 @@
 # CVE-2016-10723
 0001-mm-oom-remove-sleep-from-under-oom_lock-CVE-2016-10723.patch
 
-# CVE-2017-18232
-0001-scsi-libsas-direct-call-probe-and-destruct-CVE-2017-18232.patch
-
 # CVE-2019-11811
 0001-ipmi_si-fix-use-after-free-of-resource-name-CVE-2019-11811.patch
 
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
 
-# CVE-2019-3846
-0004-mwifiex-use-total_ie_len-in-mwifiex_update_bss_desc-CVE-2019-3846.patch
-
 # CVE-2019-12455
 0001-clk-sunxi-fix-a-missing-check-bug-in-sunxi_divs_clk_CVE-2019-12455.patch
 
 # CVE-2019-12378
 0002-ipv6_sockglue-Fix-a-missing-check-bug-in-ip6_ra_cont-CVE-2019-12378.patch
-
-# CVE-2019-15098
-0001-Fix-a-NULL-ptr-deref-bug-in-ath6kl_usb_alloc_urb_fro-CVE-2019-15098.patch
-
-# CVE-2019-15099
-0001-ath10k-Fix-a-NULL-ptr-deref-bug-in-ath10k_usb_alloc_CVE-2019-15099.patch
-
-# CVE-2019-18808
-0001-crypto-ccp-Release-all-allocated-memory-if-sha-type-.patch
-
-# CVE-2019-19060
-0001-iio-imu-adis16400-release-allocated-memory-on-failur.patch
 
 # CVE-2019-19067
 0001-drm-amdgpu-fix-multiple-memory-leaks-in-acp_hw_init.patch
@@ -39,18 +21,6 @@
 
 # CVE-2019-19602
 0001-x86-fpu-Don-t-cache-access-to-fpu_fpregs_owner_ctx.patch
-
-# CVE-2019-19770
-0001-debugfs-add-support-for-more-elaborate-d_fsdata.patch
-0002-debugfs-implement-per-file-removal-protection.patch
-0003-debugfs-debugfs_real_fops-drop-__must_hold-sparse-an.patch
-0004-debugfs-convert-to-debugfs_file_get-and-put.patch
-0005-IB-hfi1-convert-to-debugfs_file_get-and-put.patch
-0006-debugfs-call-debugfs_real_fops-only-after-debugfs_fi.patch
-0007-debugfs-defer-debugfs_fsdata-allocation-to-first-usa.patch
-0008-debugfs-debugfs_use_start-finish-do-not-exist-anymor.patch
-0009-debugfs-simplify-__debugfs_remove_file.patch
-0010-simple_recursive_removal-kernel-side-rm-rf-for-ramfs.patch
 
 # CVE-2019-10220
 0012-Convert-filldir-64-from-__put_user-to-unsafe_put_use.patch
@@ -95,14 +65,8 @@
 0014-f2fs-support-F2FS_IOC_PRECACHE_EXTENTS.patch
 0015-f2fs-support-swap-file-w-DIO.patch
 
-# CVE-2020-25284
-0016-rbd-require-global-CAP_SYS_ADMIN-for-mapping-and-unm.patch
-
 # CVE-2018-7754
 0019-printk-hash-addresses-printed-with-p.patch
-
-# CVE-2020-29569
-0001-PATCH-xen-blkback-set-ring-xenblkd-to-NULL-after-kth.patch
 
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
@@ -116,3 +80,10 @@
 0006-drm-i915-Inline-intel_modeset_gem_init.patch
 0007-drm-i915-Mark-the-context-state-as-dirty-written.patch
 0008-drm-i915-Record-the-default-hw-state-after-reset-upo.patch
+
+# CVE-2020-12364
+0001-drm-i915-disable-guc.patch
+
+# CVE-2021-29264
+0001-gianfar-simplify-FCS-handling-and-fix-memory-leak.patch
+0002-gianfar-fix-jumbo-packets-napi-rx-overrun-crash.patch

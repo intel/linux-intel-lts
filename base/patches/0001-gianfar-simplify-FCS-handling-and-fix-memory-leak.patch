@@ -1,0 +1,72 @@
+From 4b9a57f1a9392fc0f97025d5f23e4f61340f96a6 Mon Sep 17 00:00:00 2001
+From: Andy Spencer <aspencer@spacex.com>
+Date: Thu, 22 Feb 2018 11:05:33 -0800
+Subject: [PATCH 1/2] gianfar: simplify FCS handling and fix memory leak
+
+Previously, buffer descriptors containing only the frame check sequence
+(FCS) were skipped and not added to the skb. However, the page reference
+count was still incremented, leading to a memory leak.
+
+Fixing this inside gfar_add_rx_frag() is difficult due to reserved
+memory handling and page reuse. Instead, move the FCS handling to
+gfar_process_frame() and trim off the FCS before passing the skb up the
+networking stack.
+
+Signed-off-by: Andy Spencer <aspencer@spacex.com>
+Signed-off-by: Jim Gruen <jgruen@spacex.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/ethernet/freescale/gianfar.c | 23 +++++++----------------
+ 1 file changed, 7 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/ethernet/freescale/gianfar.c b/drivers/net/ethernet/freescale/gianfar.c
+index b3b7b98eb32c..8db0924ec681 100644
+--- a/drivers/net/ethernet/freescale/gianfar.c
++++ b/drivers/net/ethernet/freescale/gianfar.c
+@@ -2932,29 +2932,17 @@ static bool gfar_add_rx_frag(struct gfar_rx_buff *rxb, u32 lstatus,
+ {
+ 	int size = lstatus & BD_LENGTH_MASK;
+ 	struct page *page = rxb->page;
+-	bool last = !!(lstatus & BD_LFLAG(RXBD_LAST));
+-
+-	/* Remove the FCS from the packet length */
+-	if (last)
+-		size -= ETH_FCS_LEN;
+ 
+ 	if (likely(first)) {
+ 		skb_put(skb, size);
+ 	} else {
+ 		/* the last fragments' length contains the full frame length */
+-		if (last)
++		if (lstatus & BD_LFLAG(RXBD_LAST))
+ 			size -= skb->len;
+ 
+-		/* Add the last fragment if it contains something other than
+-		 * the FCS, otherwise drop it and trim off any part of the FCS
+-		 * that was already received.
+-		 */
+-		if (size > 0)
+-			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
+-					rxb->page_offset + RXBUF_ALIGNMENT,
+-					size, GFAR_RXB_TRUESIZE);
+-		else if (size < 0)
+-			pskb_trim(skb, skb->len + size);
++		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
++				rxb->page_offset + RXBUF_ALIGNMENT,
++				size, GFAR_RXB_TRUESIZE);
+ 	}
+ 
+ 	/* try reuse page */
+@@ -3067,6 +3055,9 @@ static void gfar_process_frame(struct net_device *ndev, struct sk_buff *skb)
+ 	if (priv->padding)
+ 		skb_pull(skb, priv->padding);
+ 
++	/* Trim off the FCS */
++	pskb_trim(skb, skb->len - ETH_FCS_LEN);
++
+ 	if (ndev->features & NETIF_F_RXCSUM)
+ 		gfar_rx_checksum(skb, fcb);
+ 
+-- 
+2.17.1
+
