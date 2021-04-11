@@ -2537,7 +2537,10 @@ static bool stmmac_xdp_xmit_zc(struct stmmac_priv *priv, u32 queue, u32 budget)
 
 		tx_q->tx_count_frames++;
 
-		if (!priv->tx_coal_frames[queue])
+		if (unlikely(priv->hwts_all)) {
+			stmmac_enable_tx_timestamp(priv, tx_desc);
+			set_ic = true;
+		} else if (!priv->tx_coal_frames[queue])
 			set_ic = false;
 		else if (tx_q->tx_count_frames % priv->tx_coal_frames[queue] == 0)
 			set_ic = true;
@@ -2678,6 +2681,14 @@ static int stmmac_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 				stmmac_get_tx_hwtstamp(priv, p,
 						       &shhwtstamp.hwtstamp);
 				skb_tstamp_tx(skb, &shhwtstamp);
+			} else if (unlikely(priv->hwts_all) &&
+				   tx_q->tx_skbuff_dma[entry].buf_type ==
+				   STMMAC_TXBUF_T_XSK_TX) {
+				ktime_t tx_hwtstamp = { 0 };
+
+				stmmac_get_tx_hwtstamp(priv, p, &tx_hwtstamp);
+				trace_printk("XDP TX HW TS %llu\n",
+					     tx_hwtstamp);
 			}
 		}
 
