@@ -528,23 +528,18 @@ bool stmmac_eee_init(struct stmmac_priv *priv)
 /* stmmac_get_tx_hwtstamp - get HW TX timestamps
  * @priv: driver private structure
  * @p : descriptor pointer
- * @skb : the socket buffer
+ * @hwtstamp: hardware timestamp
  * Description :
  * This function will read timestamp from the descriptor & pass it to stack.
  * and also perform some sanity checks.
  */
 static void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
-				   struct dma_desc *p, struct sk_buff *skb)
+				   struct dma_desc *p, ktime_t *hwtstamp)
 {
-	struct skb_shared_hwtstamps shhwtstamp;
 	bool found = false;
 	u64 ns = 0;
 
 	if (!priv->hwts_tx_en)
-		return;
-
-	/* exit if skb doesn't support hw tstamp */
-	if (likely(!skb || !(skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS)))
 		return;
 
 	/* check tx tstamp status */
@@ -558,12 +553,8 @@ static void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 	if (found) {
 		ns -= priv->plat->cdc_error_adj;
 
-		memset(&shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
-		shhwtstamp.hwtstamp = ns_to_ktime(ns);
-
+		*hwtstamp = ns_to_ktime(ns);
 		netdev_dbg(priv->dev, "get valid TX hw timestamp %llu\n", ns);
-		/* pass tstamp to stack */
-		skb_tstamp_tx(skb, &shhwtstamp);
 	}
 }
 
@@ -571,15 +562,14 @@ static void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
  * @priv: driver private structure
  * @p : descriptor pointer
  * @np : next descriptor pointer
- * @skb : the socket buffer
+ * @hwtstamp: hardware timestamp
  * Description :
  * This function will read received packet's timestamp from the descriptor
  * and pass it to stack. It also perform some sanity checks.
  */
 static void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
-				   struct dma_desc *np, struct sk_buff *skb)
+				   struct dma_desc *np, ktime_t *hwtstamp)
 {
-	struct skb_shared_hwtstamps *shhwtstamp = NULL;
 	struct dma_desc *desc = p;
 	u64 ns = 0;
 
@@ -596,10 +586,9 @@ static void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 		ns -= priv->plat->cdc_error_adj;
 
 		netdev_dbg(priv->dev, "get valid RX hw timestamp %llu\n", ns);
-		shhwtstamp = skb_hwtstamps(skb);
-		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
-		shhwtstamp->hwtstamp = ns_to_ktime(ns);
+		*hwtstamp = ns_to_ktime(ns);
 	} else  {
+		*hwtstamp = 0;
 		netdev_dbg(priv->dev, "cannot get RX hw timestamp\n");
 	}
 }
@@ -2597,8 +2586,16 @@ static int stmmac_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 				priv->xstats.tx_pkt_n++;
 				priv->xstats.txq_stats[queue].tx_pkt_n++;
 			}
-			if (skb)
-				stmmac_get_tx_hwtstamp(priv, p, skb);
+			if (skb &&
+			    skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS) {
+				struct skb_shared_hwtstamps shhwtstamp;
+
+				memset(&shhwtstamp, 0,
+				       sizeof(struct skb_shared_hwtstamps));
+				stmmac_get_tx_hwtstamp(priv, p,
+						       &shhwtstamp.hwtstamp);
+				skb_tstamp_tx(skb, &shhwtstamp);
+			}
 		}
 
 		if (likely(tx_q->tx_skbuff_dma[entry].buf &&
@@ -4844,6 +4841,7 @@ static void stmmac_dispatch_skb_zc(struct stmmac_priv *priv, u32 queue,
 				   struct dma_desc *p, struct dma_desc *np,
 				   struct xdp_buff *xdp)
 {
+	struct skb_shared_hwtstamps *shhwtstamp = NULL;
 	struct stmmac_channel *ch = &priv->channel[queue];
 	unsigned int len = xdp->data_end - xdp->data;
 	enum pkt_hash_types hash_type;
@@ -4857,7 +4855,10 @@ static void stmmac_dispatch_skb_zc(struct stmmac_priv *priv, u32 queue,
 		return;
 	}
 
-	stmmac_get_rx_hwtstamp(priv, p, np, skb);
+	shhwtstamp = skb_hwtstamps(skb);
+	memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
+	stmmac_get_rx_hwtstamp(priv, p, np, &shhwtstamp->hwtstamp);
+
 	stmmac_rx_vlan(priv->dev, skb);
 	skb->protocol = eth_type_trans(skb, priv->dev);
 
@@ -5157,6 +5158,7 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
 				    rx_q->dma_rx_phy, desc_size);
 	}
 	while (count < limit) {
+		struct skb_shared_hwtstamps *shhwtstamp = NULL;
 		unsigned int buf1_len = 0, buf2_len = 0;
 		enum pkt_hash_types hash_type;
 		struct stmmac_rx_buffer *buf;
@@ -5358,7 +5360,10 @@ drain_data:
 
 		/* Got entire packet into SKB. Finish it. */
 
-		stmmac_get_rx_hwtstamp(priv, p, np, skb);
+		shhwtstamp = skb_hwtstamps(skb);
+		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
+		stmmac_get_rx_hwtstamp(priv, p, np, &shhwtstamp->hwtstamp);
+
 		stmmac_rx_vlan(priv->dev, skb);
 		skb->protocol = eth_type_trans(skb, priv->dev);
 
