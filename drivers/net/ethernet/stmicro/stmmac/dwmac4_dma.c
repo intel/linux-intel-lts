@@ -446,8 +446,6 @@ static void dwmac4_get_hw_feature(void __iomem *ioaddr,
 	dma_cap->aux_snapshot_n =
 		(hw_cap & GMAC_HW_FEAT_AUXSNAPNUM) >> 28;
 
-	dma_cap->l3l4fnum = (hw_cap & GMAC_HWFEAT_L3L4FNUM) >> 27;
-
 	/* MAC HW feature3 */
 	hw_cap = readl(ioaddr + GMAC_HW_FEATURE3);
 

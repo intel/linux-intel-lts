@@ -87,11 +87,7 @@ static int gpy_config_init(struct phy_device *phydev)
 	if (ret <= 0)
 		return ret;
 
-	ret = phy_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, 0);
-	if (ret < 0)
-		return ret;
-
-	return genphy_c45_restart_aneg(phydev);
+	return phy_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, 0);
 }
 
 static int gpy_config_aneg(struct phy_device *phydev)

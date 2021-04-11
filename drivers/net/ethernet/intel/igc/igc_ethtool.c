@@ -130,12 +130,29 @@ static void igc_ethtool_get_drvinfo(struct net_device *netdev,
 				    struct ethtool_drvinfo *drvinfo)
 {
 	struct igc_adapter *adapter = netdev_priv(netdev);
+	struct igc_hw *hw = &adapter->hw;
+	u16 nvm_version = 0;
+	u16 gphy_version;
 
-	strlcpy(drvinfo->driver,  igc_driver_name, sizeof(drvinfo->driver));
+	strscpy(drvinfo->driver, igc_driver_name, sizeof(drvinfo->driver));
 	strlcpy(drvinfo->version, igc_driver_version, sizeof(drvinfo->version));
 
-	/* add fw_version here */
-	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
+	/* NVM image version is reported as firmware version for i225 device */
+	hw->nvm.ops.read(hw, IGC_NVM_DEV_STARTER, 1, &nvm_version);
+
+	/* gPHY firmware version is reported as PHY FW version */
+	gphy_version = igc_read_phy_fw_version(hw);
+
+	scnprintf(adapter->fw_version,
+		  sizeof(adapter->fw_version),
+		  "%x:%x",
+		  nvm_version,
+		  gphy_version);
+
+	strscpy(drvinfo->fw_version, adapter->fw_version,
+		sizeof(drvinfo->fw_version));
+
+	strscpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
 
 	drvinfo->n_priv_flags = IGC_PRIV_FLAGS_STR_LEN;
@@ -554,7 +571,6 @@ static int igc_ethtool_set_eeprom(struct net_device *netdev,
 	if (ret_val == 0)
 		hw->nvm.ops.update(hw);
 
-	/* check if need: igc_set_fw_version(adapter); */
 	kfree(eeprom_buff);
 	return ret_val;
 }
@@ -1671,7 +1687,6 @@ static int igc_ethtool_set_preempt(struct net_device *netdev,
 				   struct ethtool_fp *fpcmd)
 {
 	struct igc_adapter *adapter = netdev_priv(netdev);
-	int i;
 
 	if (fpcmd->add_frag_size < 68 || fpcmd->add_frag_size > 260)
 		return -EINVAL;
@@ -1679,27 +1694,6 @@ static int igc_ethtool_set_preempt(struct net_device *netdev,
 	adapter->frame_preemption_active = fpcmd->enabled;
 	adapter->add_frag_size = fpcmd->add_frag_size;
 
-	if (!adapter->frame_preemption_active)
-		goto done;
-
-	/* Enabling frame preemption requires TSN mode to be enabled,
-	 * which requires a schedule to be active. So, if there isn't
-	 * a schedule already configured, configure a simple one, with
-	 * all queues open, with 1ms cycle time.
-	 */
-	if (adapter->base_time)
-		goto done;
-
-	adapter->cycle_time = NSEC_PER_MSEC;
-
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		struct igc_ring *ring = adapter->tx_ring[i];
-
-		ring->start_time = 0;
-		ring->end_time = NSEC_PER_MSEC;
-	}
-
-done:
 	return igc_tsn_offload_apply(adapter);
 }
 

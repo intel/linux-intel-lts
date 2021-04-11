@@ -43,9 +43,6 @@ static int igc_tsn_disable_offload(struct igc_adapter *adapter)
 	u32 tqavctrl, rxpbs;
 	int i;
 
-	adapter->base_time = 0;
-	adapter->cycle_time = 0;
-	adapter->frame_preemption_active = false;
 	adapter->add_frag_size = IGC_I225_MIN_FRAG_SIZE_DEFAULT;
 
 	wr32(IGC_TXPBS, I225_TXPBSIZE_DEFAULT);
@@ -63,13 +60,6 @@ static int igc_tsn_disable_offload(struct igc_adapter *adapter)
 	wr32(IGC_TQAVCTRL, tqavctrl);
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
-		struct igc_ring *ring = adapter->tx_ring[i];
-
-		ring->start_time = 0;
-		ring->end_time = 0;
-		ring->launchtime_enable = false;
-		ring->preemptible = false;
-
 		wr32(IGC_TXQCTL(i), 0);
 		wr32(IGC_STQT(i), 0);
 		wr32(IGC_ENDQT(i), NSEC_PER_MSEC);
@@ -83,29 +73,46 @@ static int igc_tsn_disable_offload(struct igc_adapter *adapter)
 	return 0;
 }
 
-static int igc_tsn_update_params(struct igc_adapter *adapter)
+static int igc_tsn_enable_offload(struct igc_adapter *adapter)
 {
 	struct igc_hw *hw = &adapter->hw;
-	unsigned int flags;
-	u8 frag_size_mult;
-	u32 tqavctrl;
+	u32 tqavctrl, baset_l, baset_h;
+	u32 sec, nsec, cycle, rxpbs;
+	ktime_t base_time, systim;
+	u32 frag_size_mult;
 	int i;
 
-	flags = igc_tsn_new_flags(adapter) & IGC_FLAG_TSN_ANY_ENABLED;
-	if (!flags)
-		return 0;
+	wr32(IGC_TSAUXC, 0);
+	wr32(IGC_DTXMXPKTSZ, IGC_DTXMXPKTSZ_TSN);
+	wr32(IGC_TXPBS, IGC_TXPBSIZE_TSN);
 
-	tqavctrl = rd32(IGC_TQAVCTRL) &
-		~(IGC_TQAVCTRL_MIN_FRAG_MASK | IGC_TQAVCTRL_PREEMPT_ENA);
+	rxpbs = rd32(IGC_RXPBS) & ~IGC_RXPBSIZE_SIZE_MASK;
+	rxpbs |= IGC_RXPBSIZE_TSN;
 
-	if (adapter->frame_preemption_active)
-		tqavctrl |= IGC_TQAVCTRL_PREEMPT_ENA;
+	wr32(IGC_RXPBS, rxpbs);
 
-	frag_size_mult = ethtool_frag_size_to_mult(adapter->add_frag_size);
+	cycle = adapter->cycle_time;
+	base_time = adapter->base_time;
 
-	tqavctrl |= frag_size_mult << IGC_TQAVCTRL_MIN_FRAG_SHIFT;
+	wr32(IGC_QBVCYCLET_S, cycle);
+	wr32(IGC_QBVCYCLET, cycle);
 
-	wr32(IGC_TQAVCTRL, tqavctrl);
+	nsec = rd32(IGC_SYSTIML);
+	sec = rd32(IGC_SYSTIMH);
+
+	systim = ktime_set(sec, nsec);
+
+	if (ktime_compare(systim, base_time) > 0) {
+		s64 n;
+
+		n = div64_s64(ktime_sub_ns(systim, base_time), cycle);
+		base_time = ktime_add_ns(base_time, (n + 1) * cycle);
+	}
+
+	baset_h = div_s64_rem(base_time, NSEC_PER_SEC, &baset_l);
+
+	wr32(IGC_BASET_H, baset_h);
+	wr32(IGC_BASET_L, baset_l);
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct igc_ring *ring = adapter->tx_ring[i];
@@ -133,60 +140,19 @@ static int igc_tsn_update_params(struct igc_adapter *adapter)
 		wr32(IGC_TXQCTL(i), txqctl);
 	}
 
-	adapter->flags = igc_tsn_new_flags(adapter);
+	tqavctrl = rd32(IGC_TQAVCTRL) &
+		~(IGC_TQAVCTRL_MIN_FRAG_MASK | IGC_TQAVCTRL_PREEMPT_ENA);
 
-	return 0;
-}
-
-static int igc_tsn_enable_offload(struct igc_adapter *adapter)
-{
-	struct igc_hw *hw = &adapter->hw;
-	u32 baset_l, baset_h, tqavctrl;
-	u32 sec, nsec, cycle, rxpbs;
-	ktime_t base_time, systim;
-
-	tqavctrl = rd32(IGC_TQAVCTRL);
 	tqavctrl |= IGC_TQAVCTRL_TRANSMIT_MODE_TSN | IGC_TQAVCTRL_ENHANCED_QAV;
 
+	if (adapter->frame_preemption_active)
+		tqavctrl |= IGC_TQAVCTRL_PREEMPT_ENA;
+
+	frag_size_mult = ethtool_frag_size_to_mult(adapter->add_frag_size);
+
+	tqavctrl |= frag_size_mult << IGC_TQAVCTRL_MIN_FRAG_SHIFT;
+
 	wr32(IGC_TQAVCTRL, tqavctrl);
-
-	wr32(IGC_TSAUXC, 0);
-	wr32(IGC_DTXMXPKTSZ, IGC_DTXMXPKTSZ_TSN);
-	wr32(IGC_TXPBS, IGC_TXPBSIZE_TSN);
-
-	rxpbs = rd32(IGC_RXPBS) & ~IGC_RXPBSIZE_SIZE_MASK;
-	rxpbs |= IGC_RXPBSIZE_TSN;
-
-	wr32(IGC_RXPBS, rxpbs);
-
-	if (!adapter->base_time)
-		goto done;
-
-	cycle = adapter->cycle_time;
-	base_time = adapter->base_time;
-
-	wr32(IGC_QBVCYCLET_S, cycle);
-	wr32(IGC_QBVCYCLET, cycle);
-
-	nsec = rd32(IGC_SYSTIML);
-	sec = rd32(IGC_SYSTIMH);
-
-	systim = ktime_set(sec, nsec);
-
-	if (ktime_compare(systim, base_time) > 0) {
-		s64 n;
-
-		n = div64_s64(ktime_sub_ns(systim, base_time), cycle);
-		base_time = ktime_add_ns(base_time, (n + 1) * cycle);
-	}
-
-	baset_h = div_s64_rem(base_time, NSEC_PER_SEC, &baset_l);
-
-	wr32(IGC_BASET_H, baset_h);
-	wr32(IGC_BASET_L, baset_l);
-
-done:
-	igc_tsn_update_params(adapter);
 
 	return 0;
 }
@@ -212,24 +178,17 @@ int igc_tsn_reset(struct igc_adapter *adapter)
 
 int igc_tsn_offload_apply(struct igc_adapter *adapter)
 {
-	unsigned int new_flags, old_flags;
+	int err;
 
-	old_flags = adapter->flags;
-	new_flags = igc_tsn_new_flags(adapter);
+	if (netif_running(adapter->netdev)) {
+		schedule_work(&adapter->reset_task);
+		return 0;
+	}
 
-	if (old_flags == new_flags)
-		return igc_tsn_update_params(adapter);
+	err = igc_tsn_enable_offload(adapter);
+	if (err < 0)
+		return err;
 
-	/* Enabling features work without resetting the adapter */
-	if (new_flags > old_flags)
-		return igc_tsn_enable_offload(adapter);
-
-	adapter->flags = new_flags;
-
-	if (!netif_running(adapter->netdev))
-		return igc_tsn_enable_offload(adapter);
-
-	schedule_work(&adapter->reset_task);
-
+	adapter->flags = igc_tsn_new_flags(adapter);
 	return 0;
 }

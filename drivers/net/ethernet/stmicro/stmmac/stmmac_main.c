@@ -3633,7 +3633,6 @@ static int stmmac_open(struct net_device *dev)
 		const void *intel_pdata = priv->plat->intel_bi->platform_data;
 
 		pdata = (struct dwxpcs_platform_data *)intel_pdata;
-		pdata->irq = priv->phy_conv_irq;
 		pdata->ext_phy_addr = priv->plat->phy_addr;
 		pdata->speed_2500_en = priv->plat->speed_2500_en;
 
@@ -5499,15 +5498,11 @@ static int stmmac_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 {
 	struct stmmac_priv *priv = cb_priv;
 	int ret = -EOPNOTSUPP;
-	struct flow_cls_offload *cls;
-
-	cls = (struct flow_cls_offload *)type_data;
 
 	if (!tc_cls_can_offload_and_chain0(priv->dev, type_data))
 		return ret;
 
-	if (cls->command == FLOW_CLS_REPLACE)
-		stmmac_disable_all_queues(priv);
+	stmmac_disable_all_queues(priv);
 
 	switch (type) {
 	case TC_SETUP_CLSU32:
@@ -5520,8 +5515,7 @@ static int stmmac_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 		break;
 	}
 
-	if (cls->command == FLOW_CLS_REPLACE)
-		stmmac_enable_all_queues(priv);
+	stmmac_enable_all_queues(priv);
 	return ret;
 }
 
@@ -6677,7 +6671,6 @@ int stmmac_dvr_probe(struct device *device,
 	priv->dev->irq = res->irq;
 	priv->wol_irq = res->wol_irq;
 	priv->lpi_irq = res->lpi_irq;
-	priv->phy_conv_irq = res->phy_conv_irq;
 	priv->sfty_ce_irq = res->sfty_ce_irq;
 	priv->sfty_ue_irq = res->sfty_ue_irq;
 	for (i = 0; i < MTL_MAX_RX_QUEUES; i++)
@@ -7325,7 +7318,6 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 		const void *intel_pdata = priv->plat->intel_bi->platform_data;
 
 		pdata = (struct dwxpcs_platform_data *)intel_pdata;
-		pdata->irq = priv->phy_conv_irq;
 		pdata->ext_phy_addr = priv->plat->phy_addr;
 		pdata->speed_2500_en = priv->plat->speed_2500_en;
 
@@ -7471,7 +7463,6 @@ int stmmac_resume(struct device *dev)
 		const void *intel_pdata = priv->plat->intel_bi->platform_data;
 
 		pdata = (struct dwxpcs_platform_data *)intel_pdata;
-		pdata->irq = priv->phy_conv_irq;
 		pdata->ext_phy_addr = priv->plat->phy_addr;
 		pdata->speed_2500_en = priv->plat->speed_2500_en;
 
