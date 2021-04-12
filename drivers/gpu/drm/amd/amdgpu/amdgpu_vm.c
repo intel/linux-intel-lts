@@ -342,7 +342,7 @@ static void amdgpu_vm_bo_base_init(struct amdgpu_vm_bo_base *base,
 		amdgpu_vm_bo_idle(base);
 
 	if (bo->preferred_domains &
-	    amdgpu_mem_type_to_domain(bo->tbo.mem.mem_type))
+	    amdgpu_mem_type_to_domain(bo->tbo.resource->mem_type))
 		return;
 
 	/*
@@ -658,10 +658,11 @@ void amdgpu_vm_move_to_lru_tail(struct amdgpu_device *adev,
 		if (!bo->parent)
 			continue;
 
-		ttm_bo_move_to_lru_tail(&bo->tbo, &bo->tbo.mem,
+		ttm_bo_move_to_lru_tail(&bo->tbo, bo->tbo.resource,
 					&vm->lru_bulk_move);
 		if (shadow)
-			ttm_bo_move_to_lru_tail(&shadow->tbo, &shadow->tbo.mem,
+			ttm_bo_move_to_lru_tail(&shadow->tbo,
+						shadow->tbo.resource,
 						&vm->lru_bulk_move);
 	}
 	spin_unlock(&adev->mman.bdev.lru_lock);
@@ -1674,7 +1675,6 @@ int amdgpu_vm_bo_update_mapping(struct amdgpu_device *adev,
 	struct amdgpu_vm_update_params params;
 	struct amdgpu_res_cursor cursor;
 	enum amdgpu_sync_mode sync_mode;
-	uint64_t pfn;
 	int r, idx;
 
 	if (!drm_dev_enter(&adev->ddev, &idx))
@@ -1859,10 +1859,10 @@ int amdgpu_vm_bo_update(struct amdgpu_device *adev, struct amdgpu_bo_va *bo_va,
 			struct drm_gem_object *gobj = dma_buf->priv;
 			struct amdgpu_bo *abo = gem_to_amdgpu_bo(gobj);
 
-			if (abo->tbo.mem.mem_type == TTM_PL_VRAM)
+			if (abo->tbo.resource->mem_type == TTM_PL_VRAM)
 				bo = gem_to_amdgpu_bo(gobj);
 		}
-		mem = &bo->tbo.mem;
+		mem = bo->tbo.resource;
 		if (mem->mem_type == TTM_PL_TT ||
 		    mem->mem_type == AMDGPU_PL_PREEMPT)
 			pages_addr = bo->tbo.ttm->dma_address;
@@ -1923,7 +1923,7 @@ int amdgpu_vm_bo_update(struct amdgpu_device *adev, struct amdgpu_bo_va *bo_va,
 	 * next command submission.
 	 */
 	if (bo && bo->tbo.base.resv == vm->root.base.bo->tbo.base.resv) {
-		uint32_t mem_type = bo->tbo.mem.mem_type;
+		uint32_t mem_type = bo->tbo.resource->mem_type;
 
 		if (!(bo->preferred_domains &
 		      amdgpu_mem_type_to_domain(mem_type)))
