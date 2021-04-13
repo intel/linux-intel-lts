@@ -299,7 +299,7 @@ static ssize_t ceiling_read(struct counter_device *counter,
 	reg = intel_qep_readl(qep, INTEL_QEPMAX);
 	pm_runtime_put(qep->dev);
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", reg);
+	return sysfs_emit(buf, "%u\n", reg);
 }
 
 static ssize_t ceiling_write(struct counter_device *counter,
@@ -336,7 +336,7 @@ static ssize_t enable_read(struct counter_device *counter,
 {
 	struct intel_qep *qep = counter->priv;
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", qep->enabled);
+	return sysfs_emit(buf, "%u\n", qep->enabled);
 }
 
 static ssize_t enable_write(struct counter_device *counter,
@@ -399,12 +399,12 @@ static ssize_t noise_read(struct counter_device *counter,
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	if (!(reg & INTEL_QEPCON_FLT_EN)) {
 		pm_runtime_put(qep->dev);
-		return snprintf(buf, PAGE_SIZE, "0\n");
+		return sysfs_emit(buf, "0\n");
 	}
 	reg = intel_qep_readl(qep, INTEL_QEPFLT);
 	pm_runtime_put(qep->dev);
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", INTEL_QEPFLT_MAX_COUNT(reg));
+	return sysfs_emit(buf, "%u\n", INTEL_QEPFLT_MAX_COUNT(reg));
 }
 
 static ssize_t noise_write(struct counter_device *counter,
@@ -453,8 +453,7 @@ static ssize_t preset_enable_read(struct counter_device *counter,
 	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	pm_runtime_put(qep->dev);
-	return snprintf(buf, PAGE_SIZE, "%d\n",
-			!(reg & INTEL_QEPCON_COUNT_RST_MODE));
+	return sysfs_emit(buf, "%u\n", !(reg & INTEL_QEPCON_COUNT_RST_MODE));
 }
 
 static ssize_t preset_enable_write(struct counter_device *counter,
