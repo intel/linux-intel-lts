@@ -202,9 +202,9 @@ static enum drm_mode_status
 		return MODE_BAD_HVALUE;
 	}
 	refresh = drm_mode_vrefresh(mode);
-	if (refresh < KMB_MIN_VREFRESH) {
-		DRM_DEBUG("refresh = %d less than %d",
-			  refresh, KMB_MIN_VREFRESH);
+	if (refresh < KMB_MIN_VREFRESH || refresh > KMB_MAX_VREFRESH) {
+		DRM_DEBUG("refresh = %d less than %d or greater than %d",
+			  refresh, KMB_MIN_VREFRESH, KMB_MAX_VREFRESH);
 		return MODE_BAD;
 	}
 

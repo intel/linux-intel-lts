@@ -30,6 +30,7 @@
 #define KMB_FB_MIN_WIDTH		1
 #define KMB_FB_MIN_HEIGHT		1
 #define KMB_MIN_VREFRESH		59    /*vertical refresh in Hz */
+#define KMB_MAX_VREFRESH		60    /*vertical refresh in Hz */
 #define KMB_LCD_DEFAULT_CLK		200000000
 #define KMB_SYS_CLK_MHZ			500
 
