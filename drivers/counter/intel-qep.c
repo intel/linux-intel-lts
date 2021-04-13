@@ -345,11 +345,11 @@ static ssize_t enable_write(struct counter_device *counter,
 {
 	struct intel_qep *qep = counter->priv;
 	u32 reg;
-	u32 val;
+	bool val;
 	int ret;
 
-	ret = kstrtou32(buf, 0, &val);
-	if (ret < 0)
+	ret = kstrtobool(buf, &val);
+	if (ret)
 		return ret;
 
 	mutex_lock(&qep->lock);
@@ -461,11 +461,11 @@ static ssize_t preset_enable_write(struct counter_device *counter,
 {
 	struct intel_qep *qep = counter->priv;
 	u32 reg;
-	u32 val;
+	bool val;
 	int ret;
 
-	ret = kstrtou32(buf, 0, &val);
-	if (ret < 0)
+	ret = kstrtobool(buf, &val);
+	if (ret)
 		return ret;
 
 	mutex_lock(&qep->lock);
