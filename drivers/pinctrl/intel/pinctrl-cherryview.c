@@ -567,7 +567,7 @@ static const struct intel_pinctrl_soc_data *chv_soc_data[] = {
  * See Intel Atom Z8000 Processor Series Specification Update (Rev. 005),
  * errata #CHT34, for further information.
  */
-static DEFINE_RAW_SPINLOCK(chv_lock);
+static DEFINE_HARD_SPINLOCK(chv_lock);
 
 static u32 chv_pctrl_readl(struct intel_pinctrl *pctrl, unsigned int offset)
 {
@@ -629,7 +629,7 @@ static void chv_pin_dbg_show(struct pinctrl_dev *pctldev, struct seq_file *s,
 	struct intel_pinctrl *pctrl = pinctrl_dev_get_drvdata(pctldev);
 	u32 ctrl0, ctrl1;
 
-	scoped_guard(raw_spinlock_irqsave, &chv_lock) {
+	scoped_guard(hard_spinlock_irqsave, &chv_lock) {
 		ctrl0 = chv_readl(pctrl, offset, CHV_PADCTRL0);
 		ctrl1 = chv_readl(pctrl, offset, CHV_PADCTRL1);
 	}
@@ -668,7 +668,7 @@ static int chv_pinmux_set_mux(struct pinctrl_dev *pctldev,
 
 	grp = &pctrl->soc->groups[group];
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	/* Check first that the pad is not locked */
 	for (i = 0; i < grp->grp.npins; i++) {
@@ -744,7 +744,7 @@ static int chv_gpio_request_enable(struct pinctrl_dev *pctldev,
 	struct intel_pinctrl *pctrl = pinctrl_dev_get_drvdata(pctldev);
 	u32 value;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	if (chv_pad_locked(pctrl, offset)) {
 		value = chv_readl(pctrl, offset, CHV_PADCTRL0);
@@ -793,7 +793,7 @@ static void chv_gpio_disable_free(struct pinctrl_dev *pctldev,
 {
 	struct intel_pinctrl *pctrl = pinctrl_dev_get_drvdata(pctldev);
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	if (chv_pad_locked(pctrl, offset))
 		return;
@@ -808,7 +808,7 @@ static int chv_gpio_set_direction(struct pinctrl_dev *pctldev,
 	struct intel_pinctrl *pctrl = pinctrl_dev_get_drvdata(pctldev);
 	u32 ctrl0;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	ctrl0 = chv_readl(pctrl, offset, CHV_PADCTRL0) & ~CHV_PADCTRL0_GPIOCFG_MASK;
 	if (input)
@@ -839,7 +839,7 @@ static int chv_config_get(struct pinctrl_dev *pctldev, unsigned int pin,
 	u16 arg = 0;
 	u32 term;
 
-	scoped_guard(raw_spinlock_irqsave, &chv_lock) {
+	scoped_guard(hard_spinlock_irqsave, &chv_lock) {
 		ctrl0 = chv_readl(pctrl, pin, CHV_PADCTRL0);
 		ctrl1 = chv_readl(pctrl, pin, CHV_PADCTRL1);
 	}
@@ -919,7 +919,7 @@ static int chv_config_set_pull(struct intel_pinctrl *pctrl, unsigned int pin,
 {
 	u32 ctrl0, pull;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	ctrl0 = chv_readl(pctrl, pin, CHV_PADCTRL0);
 
@@ -980,7 +980,7 @@ static int chv_config_set_oden(struct intel_pinctrl *pctrl, unsigned int pin,
 {
 	u32 ctrl1;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	ctrl1 = chv_readl(pctrl, pin, CHV_PADCTRL1);
 
@@ -1101,7 +1101,7 @@ static int chv_gpio_get(struct gpio_chip *chip, unsigned int offset)
 	struct intel_pinctrl *pctrl = gpiochip_get_data(chip);
 	u32 ctrl0, cfg;
 
-	scoped_guard(raw_spinlock_irqsave, &chv_lock)
+	scoped_guard(hard_spinlock_irqsave, &chv_lock)
 		ctrl0 = chv_readl(pctrl, offset, CHV_PADCTRL0);
 
 	cfg = ctrl0 & CHV_PADCTRL0_GPIOCFG_MASK;
@@ -1117,7 +1117,7 @@ static void chv_gpio_set(struct gpio_chip *chip, unsigned int offset, int value)
 	struct intel_pinctrl *pctrl = gpiochip_get_data(chip);
 	u32 ctrl0;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	ctrl0 = chv_readl(pctrl, offset, CHV_PADCTRL0);
 
@@ -1134,7 +1134,7 @@ static int chv_gpio_get_direction(struct gpio_chip *chip, unsigned int offset)
 	struct intel_pinctrl *pctrl = gpiochip_get_data(chip);
 	u32 ctrl0, direction;
 
-	scoped_guard(raw_spinlock_irqsave, &chv_lock)
+	scoped_guard(hard_spinlock_irqsave, &chv_lock)
 		ctrl0 = chv_readl(pctrl, offset, CHV_PADCTRL0);
 
 	direction = ctrl0 & CHV_PADCTRL0_GPIOCFG_MASK;
@@ -1176,7 +1176,7 @@ static void chv_gpio_irq_ack(struct irq_data *d)
 	irq_hw_number_t hwirq = irqd_to_hwirq(d);
 	u32 intr_line;
 
-	guard(raw_spinlock)(&chv_lock);
+	guard(hard_spinlock)(&chv_lock);
 
 	intr_line = chv_readl(pctrl, hwirq, CHV_PADCTRL0);
 	intr_line &= CHV_PADCTRL0_INTSEL_MASK;
@@ -1189,7 +1189,7 @@ static void chv_gpio_irq_mask_unmask(struct gpio_chip *gc, irq_hw_number_t hwirq
 	struct intel_pinctrl *pctrl = gpiochip_get_data(gc);
 	u32 value, intr_line;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	intr_line = chv_readl(pctrl, hwirq, CHV_PADCTRL0);
 	intr_line &= CHV_PADCTRL0_INTSEL_MASK;
@@ -1241,7 +1241,7 @@ static unsigned chv_gpio_irq_startup(struct irq_data *d)
 	 * read back the values from hardware now, set correct flow handler
 	 * and update mappings before the interrupt is being used.
 	 */
-	scoped_guard(raw_spinlock_irqsave, &chv_lock) {
+	scoped_guard(hard_spinlock_irqsave, &chv_lock) {
 		struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
 		struct intel_pinctrl *pctrl = gpiochip_get_data(gc);
 		struct device *dev = pctrl->dev;
@@ -1333,7 +1333,7 @@ static int chv_gpio_irq_type(struct irq_data *d, unsigned int type)
 	u32 value;
 	int ret;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	ret = chv_gpio_set_intr_line(pctrl, hwirq);
 	if (ret)
@@ -1388,7 +1388,7 @@ static const struct irq_chip chv_gpio_irq_chip = {
 	.irq_mask	= chv_gpio_irq_mask,
 	.irq_unmask	= chv_gpio_irq_unmask,
 	.irq_set_type	= chv_gpio_irq_type,
-	.flags		= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_IMMUTABLE,
+	.flags		= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_IMMUTABLE | IRQCHIP_PIPELINE_SAFE,
 	GPIOCHIP_IRQ_RESOURCE_HELPERS,
 };
 
@@ -1405,7 +1405,7 @@ static void chv_gpio_irq_handler(struct irq_desc *desc)
 
 	chained_irq_enter(chip, desc);
 
-	scoped_guard(raw_spinlock_irqsave, &chv_lock)
+	scoped_guard(hard_spinlock_irqsave, &chv_lock)
 		pending = chv_pctrl_readl(pctrl, CHV_INTSTAT);
 
 	for_each_set_bit(intr_line, &pending, community->nirqs) {
@@ -1596,7 +1596,7 @@ static acpi_status chv_pinctrl_mmio_access_handler(u32 function,
 {
 	struct intel_pinctrl *pctrl = region_context;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	if (function == ACPI_WRITE)
 		chv_pctrl_writel(pctrl, address, *value);
@@ -1709,7 +1709,7 @@ static int chv_pinctrl_suspend_noirq(struct device *dev)
 	struct intel_community_context *cctx = &pctrl->context.communities[0];
 	int i;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	cctx->saved_intmask = chv_pctrl_readl(pctrl, CHV_INTMASK);
 
@@ -1736,7 +1736,7 @@ static int chv_pinctrl_resume_noirq(struct device *dev)
 	struct intel_community_context *cctx = &pctrl->context.communities[0];
 	int i;
 
-	guard(raw_spinlock_irqsave)(&chv_lock);
+	guard(hard_spinlock_irqsave)(&chv_lock);
 
 	/*
 	 * Mask all interrupts before restoring per-pin configuration
