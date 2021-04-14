@@ -1482,10 +1482,10 @@ static int kmb_imx219_get_i2c_client(struct kmb_imx219 *kmb_imx219)
 		return -EPROBE_DEFER;
 
 	kmb_imx219->client =
-		i2c_new_probed_device(i2c_adp, &info, addr_list, NULL);
+		i2c_new_scanned_device(i2c_adp, &info, addr_list, NULL);
 	i2c_put_adapter(i2c_adp);
-	if (!kmb_imx219->client)
-		return -ENODEV;
+	if (IS_ERR(kmb_imx219->client))
+		return PTR_ERR(kmb_imx219->client);
 
 	dev_dbg(kmb_imx219->dev, "Detected on i2c address %x", info.addr);
 	return 0;
