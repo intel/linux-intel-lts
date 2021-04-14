@@ -5673,6 +5673,8 @@ static void stmmac_common_interrupt(struct stmmac_priv *priv)
 			else
 				netif_carrier_off(priv->dev);
 		}
+
+		stmmac_timestamp_interrupt(priv, priv);
 	}
 }
 
