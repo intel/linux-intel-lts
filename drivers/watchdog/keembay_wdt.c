@@ -23,12 +23,19 @@
 #define TIM_WDOG_EN		0x8
 #define TIM_SAFE		0xc
 
-#define WDT_ISR_MASK		GENMASK(9, 8)
-#define WDT_ISR_CLEAR		0x8200ff18
+#define WDT_TH_INT_MASK		BIT_MASK(8)
+#define WDT_TO_INT_MASK		BIT_MASK(9)
+#define WDT_INT_CLEAR_SMC	0x8200ff18
+
 #define WDT_UNLOCK		0xf1d0dead
+#define WDT_DISABLE		0x0
+#define WDT_ENABLE		0x1
+
 #define WDT_LOAD_MAX		U32_MAX
 #define WDT_LOAD_MIN		1
+
 #define WDT_TIMEOUT		5
+#define WDT_PRETIMEOUT		4
 
 static unsigned int timeout = WDT_TIMEOUT;
 module_param(timeout, int, 0);
@@ -60,14 +67,31 @@ static inline void keembay_wdt_writel(struct keembay_wdt *wdt, u32 offset, u32 v
 	writel(val, wdt->base + offset);
 }
 
-static void keembay_wdt_set_timeout_reg(struct watchdog_device *wdog)
+static int keembay_wdt_start(struct watchdog_device *wdog)
+{
+	struct keembay_wdt *wdt = watchdog_get_drvdata(wdog);
+
+	keembay_wdt_writel(wdt, TIM_WDOG_EN, WDT_ENABLE);
+	return 0;
+}
+
+static int keembay_wdt_stop(struct watchdog_device *wdog)
+{
+	struct keembay_wdt *wdt = watchdog_get_drvdata(wdog);
+
+	keembay_wdt_writel(wdt, TIM_WDOG_EN, WDT_DISABLE);
+	return 0;
+}
+
+static int keembay_wdt_ping(struct watchdog_device *wdog)
 {
 	struct keembay_wdt *wdt = watchdog_get_drvdata(wdog);
 
 	keembay_wdt_writel(wdt, TIM_WATCHDOG, wdog->timeout * wdt->rate);
+	return 0;
 }
 
-static void keembay_wdt_set_pretimeout_reg(struct watchdog_device *wdog)
+static int keembay_wdt_update_pretimeout(struct watchdog_device *wdog)
 {
 	struct keembay_wdt *wdt = watchdog_get_drvdata(wdog);
 	u32 th_val = 0;
@@ -76,50 +100,30 @@ static void keembay_wdt_set_pretimeout_reg(struct watchdog_device *wdog)
 		th_val = wdog->timeout - wdog->pretimeout;
 
 	keembay_wdt_writel(wdt, TIM_WATCHDOG_INT_THRES, th_val * wdt->rate);
-}
-
-static int keembay_wdt_start(struct watchdog_device *wdog)
-{
-	struct keembay_wdt *wdt = watchdog_get_drvdata(wdog);
-
-	keembay_wdt_set_timeout_reg(wdog);
-	keembay_wdt_writel(wdt, TIM_WDOG_EN, 1);
-
-	return 0;
-}
-
-static int keembay_wdt_stop(struct watchdog_device *wdog)
-{
-	struct keembay_wdt *wdt = watchdog_get_drvdata(wdog);
-
-	keembay_wdt_writel(wdt, TIM_WDOG_EN, 0);
-
-	return 0;
-}
-
-static int keembay_wdt_ping(struct watchdog_device *wdog)
-{
-	keembay_wdt_set_timeout_reg(wdog);
-
 	return 0;
 }
 
 static int keembay_wdt_set_timeout(struct watchdog_device *wdog, u32 t)
 {
-	wdog->timeout = t;
-	keembay_wdt_set_timeout_reg(wdog);
+	struct keembay_wdt *wdt = watchdog_get_drvdata(wdog);
+	u32 actual = min(t, wdog->max_timeout);
+
+	wdog->timeout = actual;
+
+	keembay_wdt_writel(wdt, TIM_WATCHDOG, wdog->timeout * wdt->rate);
+	keembay_wdt_update_pretimeout(wdog);
 
 	return 0;
 }
 
 static int keembay_wdt_set_pretimeout(struct watchdog_device *wdog, u32 t)
 {
-	if (t > wdog->timeout)
+	if (t != 0 && (t < wdog->min_timeout || t >= wdog->timeout))
 		return -EINVAL;
 
 	wdog->pretimeout = t;
-	keembay_wdt_set_pretimeout_reg(wdog);
 
+	keembay_wdt_update_pretimeout(wdog);
 	return 0;
 }
 
@@ -139,9 +143,8 @@ static irqreturn_t keembay_wdt_to_isr(int irq, void *dev_id)
 	struct keembay_wdt *wdt = dev_id;
 	struct arm_smccc_res res;
 
-	keembay_wdt_writel(wdt, TIM_WATCHDOG, 1);
-	arm_smccc_smc(WDT_ISR_CLEAR, WDT_ISR_MASK, 0, 0, 0, 0, 0, 0, &res);
-	dev_crit(wdt->wdd.parent, "Intel Keem Bay non-sec wdt timeout.\n");
+	arm_smccc_smc(WDT_INT_CLEAR_SMC, WDT_TO_INT_MASK, 0, 0, 0, 0, 0, 0, &res);
+	dev_crit(wdt->wdd.parent, "Intel Keem Bay non-secure wdt timeout.\n");
 	emergency_restart();
 
 	return IRQ_HANDLED;
@@ -152,19 +155,24 @@ static irqreturn_t keembay_wdt_th_isr(int irq, void *dev_id)
 	struct keembay_wdt *wdt = dev_id;
 	struct arm_smccc_res res;
 
-	arm_smccc_smc(WDT_ISR_CLEAR, WDT_ISR_MASK, 0, 0, 0, 0, 0, 0, &res);
-	dev_crit(wdt->wdd.parent, "Intel Keem Bay non-sec wdt pre-timeout.\n");
+	/* Set Pre-Timeout to Zero to avoid TH interrupt getting triggered
+	 * for every tick until timeout
+	 */
+	keembay_wdt_set_pretimeout(&wdt->wdd, 0);
+
+	arm_smccc_smc(WDT_INT_CLEAR_SMC, WDT_TH_INT_MASK, 0, 0, 0, 0, 0, 0, &res);
+	dev_crit(wdt->wdd.parent, "Intel Keem Bay non-secure wdt pre-timeout.\n");
 	watchdog_notify_pretimeout(&wdt->wdd);
 
 	return IRQ_HANDLED;
 }
 
 static const struct watchdog_info keembay_wdt_info = {
-	.identity	= "Intel Keem Bay Watchdog Timer",
-	.options	= WDIOF_SETTIMEOUT |
-			  WDIOF_PRETIMEOUT |
-			  WDIOF_MAGICCLOSE |
-			  WDIOF_KEEPALIVEPING,
+	.identity = "Intel Keem Bay Watchdog Timer",
+	.options  = WDIOF_SETTIMEOUT |
+		    WDIOF_PRETIMEOUT |
+		    WDIOF_MAGICCLOSE |
+		    WDIOF_KEEPALIVEPING,
 };
 
 static const struct watchdog_ops keembay_wdt_ops = {
@@ -224,11 +232,13 @@ static int keembay_wdt_probe(struct platform_device *pdev)
 	wdt->wdd.min_timeout	= WDT_LOAD_MIN;
 	wdt->wdd.max_timeout	= WDT_LOAD_MAX / wdt->rate;
 	wdt->wdd.timeout	= WDT_TIMEOUT;
+	wdt->wdd.pretimeout	= WDT_PRETIMEOUT;
 
 	watchdog_set_drvdata(&wdt->wdd, wdt);
 	watchdog_set_nowayout(&wdt->wdd, nowayout);
 	watchdog_init_timeout(&wdt->wdd, timeout, dev);
 	keembay_wdt_set_timeout(&wdt->wdd, wdt->wdd.timeout);
+	keembay_wdt_set_pretimeout(&wdt->wdd, wdt->wdd.pretimeout);
 
 	ret = devm_watchdog_register_device(dev, &wdt->wdd);
 	if (ret)
@@ -255,7 +265,7 @@ static int __maybe_unused keembay_wdt_resume(struct device *dev)
 {
 	struct keembay_wdt *wdt = dev_get_drvdata(dev);
 
-	if (watchdog_active(&wdt->wdd))
+	if (!watchdog_active(&wdt->wdd))
 		return keembay_wdt_start(&wdt->wdd);
 
 	return 0;
@@ -273,9 +283,9 @@ MODULE_DEVICE_TABLE(of, keembay_wdt_match);
 static struct platform_driver keembay_wdt_driver = {
 	.probe		= keembay_wdt_probe,
 	.driver		= {
-		.name		= "keembay_wdt",
-		.of_match_table	= keembay_wdt_match,
-		.pm		= &keembay_wdt_pm_ops,
+			  .name		  = "keembay_wdt",
+			  .of_match_table = keembay_wdt_match,
+			  .pm		  = &keembay_wdt_pm_ops,
 	},
 };
 
