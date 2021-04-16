@@ -93,7 +93,7 @@ struct igc_ring {
 	u8 queue_index;                 /* logical index of the ring*/
 	u8 reg_idx;                     /* physical index of the ring */
 	bool launchtime_enable;         /* true if LaunchTime is enabled */
-	bool preemptible;		/* true if not express */
+	bool preemptible;               /* true if not express */
 
 	u32 start_time;
 	u32 end_time;
@@ -229,6 +229,8 @@ struct igc_adapter {
 	struct timecounter tc;
 	struct timespec64 prev_ptp_time; /* Pre-reset PTP clock */
 	ktime_t ptp_reset_start; /* Reset time in clock mono */
+
+	char fw_version[32];
 	struct system_time_snapshot prev_snapshot;
 	struct system_time_snapshot curr_snapshot;
 	struct delayed_work ptm_report;
@@ -388,6 +390,7 @@ extern char igc_driver_name[];
 
 /* VLAN info */
 #define IGC_TX_FLAGS_VLAN_MASK	0xffff0000
+#define IGC_TX_FLAGS_VLAN_SHIFT	16
 
 /* igc_test_staterr - tests bits within Rx descriptor status and error fields */
 static inline __le32 igc_test_staterr(union igc_adv_rx_desc *rx_desc,

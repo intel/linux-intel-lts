@@ -43,9 +43,6 @@ static int igc_tsn_disable_offload(struct igc_adapter *adapter)
 	u32 tqavctrl, rxpbs;
 	int i;
 
-	adapter->base_time = 0;
-	adapter->cycle_time = 0;
-	adapter->frame_preemption_active = false;
 	adapter->add_frag_size = IGC_I225_MIN_FRAG_SIZE_DEFAULT;
 
 	wr32(IGC_TXPBS, I225_TXPBSIZE_DEFAULT);
@@ -63,13 +60,6 @@ static int igc_tsn_disable_offload(struct igc_adapter *adapter)
 	wr32(IGC_TQAVCTRL, tqavctrl);
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
-		struct igc_ring *ring = adapter->tx_ring[i];
-
-		ring->start_time = 0;
-		ring->end_time = 0;
-		ring->launchtime_enable = false;
-		ring->preemptible = false;
-
 		wr32(IGC_TXQCTL(i), 0);
 		wr32(IGC_STQT(i), 0);
 		wr32(IGC_ENDQT(i), NSEC_PER_MSEC);
@@ -83,72 +73,14 @@ static int igc_tsn_disable_offload(struct igc_adapter *adapter)
 	return 0;
 }
 
-static int igc_tsn_update_params(struct igc_adapter *adapter)
-{
-	struct igc_hw *hw = &adapter->hw;
-	unsigned int flags;
-	u8 frag_size_mult;
-	u32 tqavctrl;
-	int i;
-
-	flags = igc_tsn_new_flags(adapter) & IGC_FLAG_TSN_ANY_ENABLED;
-	if (!flags)
-		return 0;
-
-	tqavctrl = rd32(IGC_TQAVCTRL) &
-		~(IGC_TQAVCTRL_MIN_FRAG_MASK | IGC_TQAVCTRL_PREEMPT_ENA);
-
-	if (adapter->frame_preemption_active)
-		tqavctrl |= IGC_TQAVCTRL_PREEMPT_ENA;
-
-	frag_size_mult = ethtool_frag_size_to_mult(adapter->add_frag_size);
-
-	tqavctrl |= frag_size_mult << IGC_TQAVCTRL_MIN_FRAG_SHIFT;
-
-	wr32(IGC_TQAVCTRL, tqavctrl);
-
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		struct igc_ring *ring = adapter->tx_ring[i];
-		u32 txqctl = 0;
-
-		wr32(IGC_STQT(i), ring->start_time);
-		wr32(IGC_ENDQT(i), ring->end_time);
-
-		if (adapter->base_time) {
-			/* If we have a base_time we are in "taprio"
-			 * mode and we need to be strict about the
-			 * cycles: only transmit a packet if it can be
-			 * completed during that cycle.
-			 */
-			txqctl |= IGC_TXQCTL_STRICT_CYCLE |
-				IGC_TXQCTL_STRICT_END;
-		}
-
-		if (ring->launchtime_enable)
-			txqctl |= IGC_TXQCTL_QUEUE_MODE_LAUNCHT;
-
-		if (adapter->frame_preemption_active && ring->preemptible)
-			txqctl |= IGC_TXQCTL_PREEMPTIBLE;
-
-		wr32(IGC_TXQCTL(i), txqctl);
-	}
-
-	adapter->flags = igc_tsn_new_flags(adapter);
-
-	return 0;
-}
-
 static int igc_tsn_enable_offload(struct igc_adapter *adapter)
 {
 	struct igc_hw *hw = &adapter->hw;
-	u32 baset_l, baset_h, tqavctrl;
+	u32 tqavctrl, baset_l, baset_h;
 	u32 sec, nsec, cycle, rxpbs;
 	ktime_t base_time, systim;
-
-	tqavctrl = rd32(IGC_TQAVCTRL);
-	tqavctrl |= IGC_TQAVCTRL_TRANSMIT_MODE_TSN | IGC_TQAVCTRL_ENHANCED_QAV;
-
-	wr32(IGC_TQAVCTRL, tqavctrl);
+	u32 frag_size_mult;
+	int i;
 
 	wr32(IGC_TSAUXC, 0);
 	wr32(IGC_DTXMXPKTSZ, IGC_DTXMXPKTSZ_TSN);
@@ -158,9 +90,6 @@ static int igc_tsn_enable_offload(struct igc_adapter *adapter)
 	rxpbs |= IGC_RXPBSIZE_TSN;
 
 	wr32(IGC_RXPBS, rxpbs);
-
-	if (!adapter->base_time)
-		goto done;
 
 	cycle = adapter->cycle_time;
 	base_time = adapter->base_time;
@@ -185,8 +114,45 @@ static int igc_tsn_enable_offload(struct igc_adapter *adapter)
 	wr32(IGC_BASET_H, baset_h);
 	wr32(IGC_BASET_L, baset_l);
 
-done:
-	igc_tsn_update_params(adapter);
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		struct igc_ring *ring = adapter->tx_ring[i];
+		u32 txqctl = 0;
+
+		wr32(IGC_STQT(i), ring->start_time);
+		wr32(IGC_ENDQT(i), ring->end_time);
+
+		if (adapter->base_time) {
+			/* If we have a base_time we are in "taprio"
+			 * mode and we need to be strict about the
+			 * cycles: only transmit a packet if it can be
+			 * completed during that cycle.
+			 */
+			txqctl |= IGC_TXQCTL_STRICT_CYCLE |
+				IGC_TXQCTL_STRICT_END;
+		}
+
+		if (ring->launchtime_enable)
+			txqctl |= IGC_TXQCTL_QUEUE_MODE_LAUNCHT;
+
+		if (adapter->frame_preemption_active && ring->preemptible)
+			txqctl |= IGC_TXQCTL_PREEMPTABLE;
+
+		wr32(IGC_TXQCTL(i), txqctl);
+	}
+
+	tqavctrl = rd32(IGC_TQAVCTRL) &
+		~(IGC_TQAVCTRL_MIN_FRAG_MASK | IGC_TQAVCTRL_PREEMPT_ENA);
+
+	tqavctrl |= IGC_TQAVCTRL_TRANSMIT_MODE_TSN | IGC_TQAVCTRL_ENHANCED_QAV;
+
+	if (adapter->frame_preemption_active)
+		tqavctrl |= IGC_TQAVCTRL_PREEMPT_ENA;
+
+	frag_size_mult = ethtool_frag_size_to_mult(adapter->add_frag_size);
+
+	tqavctrl |= frag_size_mult << IGC_TQAVCTRL_MIN_FRAG_SHIFT;
+
+	wr32(IGC_TQAVCTRL, tqavctrl);
 
 	return 0;
 }
@@ -212,24 +178,17 @@ int igc_tsn_reset(struct igc_adapter *adapter)
 
 int igc_tsn_offload_apply(struct igc_adapter *adapter)
 {
-	unsigned int new_flags, old_flags;
+	int err;
 
-	old_flags = adapter->flags;
-	new_flags = igc_tsn_new_flags(adapter);
+	if (netif_running(adapter->netdev)) {
+		schedule_work(&adapter->reset_task);
+		return 0;
+	}
 
-	if (old_flags == new_flags)
-		return igc_tsn_update_params(adapter);
+	err = igc_tsn_enable_offload(adapter);
+	if (err < 0)
+		return err;
 
-	/* Enabling features work without resetting the adapter */
-	if (new_flags > old_flags)
-		return igc_tsn_enable_offload(adapter);
-
-	adapter->flags = new_flags;
-
-	if (!netif_running(adapter->netdev))
-		return igc_tsn_enable_offload(adapter);
-
-	schedule_work(&adapter->reset_task);
-
+	adapter->flags = igc_tsn_new_flags(adapter);
 	return 0;
 }
