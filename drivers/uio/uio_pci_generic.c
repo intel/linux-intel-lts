@@ -27,6 +27,7 @@
 #include <linux/errno.h>
 #include <linux/interrupt.h>
 #include <linux/eventfd.h>
+#include <linux/uaccess.h>
 #endif
 
 #define DRIVER_VERSION	"0.01.0"
