@@ -105,6 +105,7 @@ struct kmb_imx219_reg_list {
  * @lpfr: Lines per frame
  * @skip_lines: Top lines to be skipped
  * @pclk: Sensor pixel clock
+ * @num_lanes: Data lanes number
  * @def: Default frames per second
  * @min: Min frames per second
  * @max: Max frames per second
@@ -119,6 +120,7 @@ struct kmb_imx219_mode {
 	u32 lpfr;
 	u32 skip_lines;
 	u64 pclk;
+	u32 num_lanes;
 	struct {
 		u32 def;
 		u32 min;
@@ -143,6 +145,7 @@ struct kmb_imx219_mode {
  * @exp_ctrl: Pointer to exposure control
  * @again_ctrl: Pointer to analog gain control
  * @dgain_ctrl: Pointer to analog gain control
+ * @num_lanes: Number of data lanes
  * @fps: FPS to be applied on next stream on
  * @lpfr: Lines per frame for long exposure frame
  * @cur_mode: Pointer to current selected sensor mode
@@ -167,6 +170,7 @@ struct kmb_imx219 {
 		struct v4l2_ctrl *dgain_ctrl;
 		struct v4l2_ctrl *fps_ctrl;
 	};
+	u32 num_lanes;
 	u32 fps;
 	u32 lpfr;
 	const struct kmb_imx219_mode *cur_mode;
@@ -177,66 +181,129 @@ struct kmb_imx219 {
 
 /* Sensor mode registers */
 static const struct kmb_imx219_reg mode_4L_3280x2464_RAW10_30Hz_regs[] = {
-	    {0x30EB, 0x05},
-	    {0x30EB, 0x0C},
-	    {0x300A, 0xFF},
-	    {0x300B, 0xFF},
-	    {0x30EB, 0x05},
-	    {0x30EB, 0x09},
+	{0x30EB, 0x05},
+	{0x30EB, 0x0C},
+	{0x300A, 0xFF},
+	{0x300B, 0xFF},
+	{0x30EB, 0x05},
+	{0x30EB, 0x09},
 
-	    {0x0114, 0x03},
-	    {0x0128, 0x00},
-	    {0x012A, 0x18},
-	    {0x012B, 0x00},
-	    {0x0152, 0x00},
+	{0x0114, 0x03},
+	{0x0128, 0x00},
+	{0x012A, 0x18},
+	{0x012B, 0x00},
+	{0x0152, 0x00},
 
-	    {0x0160, 0x0A},
-	    {0x0161, 0x83},
-	    {0x0162, 0x0D},
-	    {0x0163, 0x78},
-	    {0x0164, 0x00},
-	    {0x0165, 0x00},
-	    {0x0166, 0x0C},
-	    {0x0167, 0xCF},
-	    {0x0168, 0x00},
-	    {0x0169, 0x00},
-	    {0x016A, 0x09},
-	    {0x016B, 0x9F},
-	    {0x016C, 0x0C},
-	    {0x016D, 0xD0},
-	    {0x016E, 0x09},
-	    {0x016F, 0xA0},
-	    {0x0170, 0x01},
-	    {0x0171, 0x01},
-	    {0x0174, 0x00},
-	    {0x0175, 0x00},
-	    {0x018C, 0x0A},
-	    {0x018D, 0x0A},
+	{0x0160, 0x0A},
+	{0x0161, 0x83},
+	{0x0162, 0x0D},
+	{0x0163, 0x78},
+	{0x0164, 0x00},
+	{0x0165, 0x00},
+	{0x0166, 0x0C},
+	{0x0167, 0xCF},
+	{0x0168, 0x00},
+	{0x0169, 0x00},
+	{0x016A, 0x09},
+	{0x016B, 0x9F},
+	{0x016C, 0x0C},
+	{0x016D, 0xD0},
+	{0x016E, 0x09},
+	{0x016F, 0xA0},
+	{0x0170, 0x01},
+	{0x0171, 0x01},
+	{0x0174, 0x00},
+	{0x0175, 0x00},
+	{0x018C, 0x0A},
+	{0x018D, 0x0A},
 
-	    {0x0301, 0x05},
-	    {0x0303, 0x01},
-	    {0x0304, 0x03},
-	    {0x0305, 0x03},
-	    {0x0306, 0x00},
-	    {0x0307, 0x57},
-	    {0x0309, 0x0A},
-	    {0x030B, 0x01},
-	    {0x030C, 0x00},
-	    {0x030D, 0x5A},
+	{0x0301, 0x05},
+	{0x0303, 0x01},
+	{0x0304, 0x03},
+	{0x0305, 0x03},
+	{0x0306, 0x00},
+	{0x0307, 0x57},
+	{0x0309, 0x0A},
+	{0x030B, 0x01},
+	{0x030C, 0x00},
+	{0x030D, 0x5A},
 
-	    {0x455E, 0x00},
-	    {0x471E, 0x4B},
-	    {0x4767, 0x0F},
-	    {0x4750, 0x14},
-	    {0x4540, 0x00},
-	    {0x47B4, 0x14},
-	    {0x4713, 0x30},
-	    {0x478B, 0x10},
-	    {0x478F, 0x10},
-	    {0x4793, 0x10},
-	    {0x4797, 0x0E},
-	    {0x479B, 0x0E},
-	    {0x5041, 0x00},
+	{0x455E, 0x00},
+	{0x471E, 0x4B},
+	{0x4767, 0x0F},
+	{0x4750, 0x14},
+	{0x4540, 0x00},
+	{0x47B4, 0x14},
+	{0x4713, 0x30},
+	{0x478B, 0x10},
+	{0x478F, 0x10},
+	{0x4793, 0x10},
+	{0x4797, 0x0E},
+	{0x479B, 0x0E},
+	{0x5041, 0x00},
+};
+
+static const struct kmb_imx219_reg mode_2L_3280x2464_RAW10_21Hz_regs[] = {
+	{0x30EB, 0x05},
+	{0x30EB, 0x0C},
+	{0x300A, 0xFF},
+	{0x300B, 0xFF},
+	{0x30EB, 0x05},
+	{0x30EB, 0x09},
+
+	{0x0114, 0x01},
+	{0x0128, 0x00},
+	{0x012A, 0x18},
+	{0x012B, 0x00},
+
+	{0x0160, 0x09},
+	{0x0161, 0xC1},
+	{0x0162, 0x0D},
+	{0x0163, 0x78},
+	{0x0164, 0x00},
+	{0x0165, 0x00},
+	{0x0166, 0x0C},
+	{0x0167, 0xCF},
+	{0x0168, 0x00},
+	{0x0169, 0x00},
+	{0x016A, 0x09},
+	{0x016B, 0x9F},
+	{0x016C, 0x0C},
+	{0x016D, 0xD0},
+	{0x016E, 0x09},
+	{0x016F, 0xA0},
+	{0x0170, 0x01},
+	{0x0171, 0x01},
+	{0x0174, 0x00},
+	{0x0175, 0x00},
+	{0x018C, 0x0A},
+	{0x018D, 0x0A},
+
+	{0x0301, 0x05},
+	{0x0303, 0x01},
+	{0x0304, 0x03},
+	{0x0305, 0x03},
+	{0x0306, 0x00},
+	{0x0307, 0x39},
+	{0x0309, 0x0A},
+	{0x030B, 0x01},
+	{0x030C, 0x00},
+	{0x030D, 0x72},
+
+	{0x455E, 0x00},
+	{0x471E, 0x4B},
+	{0x4767, 0x0F},
+	{0x4750, 0x14},
+	{0x4540, 0x00},
+	{0x47B4, 0x14},
+	{0x4713, 0x30},
+	{0x478B, 0x10},
+	{0x478F, 0x10},
+	{0x4793, 0x10},
+	{0x4797, 0x0E},
+	{0x479B, 0x0E},
+
+	{0x5041, 0x00},
 };
 
 /* Supported sensor mode configurations */
@@ -250,6 +317,7 @@ static const struct kmb_imx219_mode supported_modes[] = {
 		.pclk = 278400000,
 
 		.code = MEDIA_BUS_FMT_SRGGB10_1X10,
+		.num_lanes = 4,
 		.fps = {
 			.def = 30,
 			.max = 30,
@@ -261,6 +329,27 @@ static const struct kmb_imx219_mode supported_modes[] = {
 			.regs = mode_4L_3280x2464_RAW10_30Hz_regs,
 		},
 	},
+	{
+		.width = 3280,
+		.height = 2464,
+		.ppln = 3448,
+		.lpfr = 2497,
+		.skip_lines = 0,
+		.pclk = 182400000,
+
+		.code = MEDIA_BUS_FMT_SRGGB10_1X10,
+		.num_lanes = 2,
+		.fps = {
+			.def = 21,
+			.max = 21,
+			.min = 15,
+			.step = 1,
+		},
+		.reg_list = {
+			.num_of_regs = ARRAY_SIZE(mode_2L_3280x2464_RAW10_21Hz_regs),
+			.regs = mode_2L_3280x2464_RAW10_21Hz_regs,
+		},
+	}
 };
 
 /**
@@ -565,6 +654,35 @@ static const struct v4l2_ctrl_ops kmb_imx219_ctrl_ops = {
 };
 
 /**
+ * kmb_imx219_parse_mipi_lanes - Parse mipi number of data lanes from dt
+ * @kmb_imx219: pointer to kmb camera device
+ *
+ * Return: 0 if successful
+ */
+static inline int kmb_imx219_parse_mipi_lanes(struct kmb_imx219 *kmb_imx219)
+{
+	struct fwnode_handle *fwnode = NULL;
+	struct v4l2_fwnode_endpoint ep_data;
+	struct fwnode_handle *cam_fwnode = dev_fwnode(kmb_imx219->dev);
+	int ret;
+
+	fwnode = fwnode_graph_get_next_endpoint(cam_fwnode, fwnode);
+
+	memset(&ep_data, 0, sizeof(ep_data));
+	ep_data.bus_type = V4L2_MBUS_CSI2_DPHY;
+	ret = v4l2_fwnode_endpoint_parse(fwnode, &ep_data);
+	if (ret) {
+		dev_err(kmb_imx219->dev, "No endpoint to parse in this fwnode");
+		return -ENOENT;
+	}
+
+	kmb_imx219->num_lanes = ep_data.bus.mipi_csi2.num_data_lanes;
+	dev_dbg(kmb_imx219->dev, "num_data_lanes %d\n", kmb_imx219->num_lanes);
+
+	return 0;
+}
+
+/**
  * kmb_imx219_get_camera_mode_by_fmt - Get the most appropriate camera
  *         mode that meets the code and resolution criteria
  * @kmb_imx219: pointer to kmb_imx219 device
@@ -594,20 +712,29 @@ kmb_imx219_get_camera_mode_by_fmt(struct kmb_imx219 *kmb_imx219, u32 code,
 }
 
 /**
- * kmb_imx219_select_camera_mode - Select the most appropriate camera mode
- * @fmt: V4L2 sub-device format need to be set
+ * kmb_imx219_filter_supported_modes - Filter supported sensor modes
+ * @kmb_imx219: pointer to kmb_imx219 device
  *
- * Return: pointer to the most appropriate camera mode
+ * Filter supported sensor modes based on number of CSI-2 lanes detected
+ *
+ * Return: 0 if successful
  */
-static const struct kmb_imx219_mode *
-kmb_imx219_select_camera_mode(struct kmb_imx219 *kmb_imx219,
-			      struct v4l2_subdev_format *fmt)
+static const struct kmb_imx219_mode *kmb_imx219_filter_supported_modes(struct kmb_imx219 *kmb_imx219)
 {
+	static const struct kmb_imx219_mode *modes;
+	int num_modes;
+	int i;
 
-		return v4l2_find_nearest_size(supported_modes,
-				ARRAY_SIZE(supported_modes),
-				width, height,
-				fmt->format.width, fmt->format.height);
+
+	modes = supported_modes;
+	num_modes = ARRAY_SIZE(supported_modes);
+
+	for (i = 0; i < num_modes; i++) {
+		if (kmb_imx219->num_lanes == modes[i].num_lanes)
+			return &modes[i];
+	}
+
+	return NULL;
 }
 
 /**
@@ -837,10 +964,7 @@ kmb_imx219_set_pad_format(struct v4l2_subdev *sd,
 
 	mutex_lock(&kmb_imx219->mutex);
 
-	/* Currently only one format is supported */
-	fmt->format.code = supported_modes[0].code;
-
-	mode = kmb_imx219_select_camera_mode(kmb_imx219, fmt);
+	mode = kmb_imx219_filter_supported_modes(kmb_imx219);
 	if (!mode) {
 		dev_err(sd->dev, "No camera mode was selected!");
 		mutex_unlock(&kmb_imx219->mutex);
@@ -1363,6 +1487,12 @@ static int kmb_imx219_i2c_probe(struct i2c_client *client,
 		goto error_media_entity;
 	}
 
+	ret = kmb_imx219_parse_mipi_lanes(kmb_imx219);
+	if (ret < 0) {
+		dev_err(kmb_imx219->dev, "Fail to parse device tree\n");
+		goto error_media_entity;
+	}
+
 	pm_runtime_set_active(&client->dev);
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
@@ -1599,6 +1729,12 @@ static int kmb_imx219_pdev_probe(struct platform_device *pdev)
 	if (ret < 0) {
 		dev_err(&pdev->dev,
 				"failed to register async subdev: %d", ret);
+		goto error_media_entity;
+	}
+
+	ret = kmb_imx219_parse_mipi_lanes(kmb_imx219);
+	if (ret < 0) {
+		dev_err(kmb_imx219->dev, "Fail to parse device tree\n");
 		goto error_media_entity;
 	}
 
