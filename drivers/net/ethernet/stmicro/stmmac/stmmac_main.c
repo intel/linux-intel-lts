@@ -3700,20 +3700,48 @@ out:
 static int stmmac_release(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
+	bool suspended = pm_runtime_suspended(priv->device);
 	u32 chan;
 	int ret;
 
-	/* Use pm_runtime_get_sync() call paired with pm_runtime_put() call to
-	 * ensure that the device is not put into runtime suspend during the
-	 * operation.
+	/* For suspended device/port, skip the release operation that already
+	 * done in stmmac_suspend().
 	 */
-	pm_runtime_get_sync(priv->device);
+	if (!suspended) {
+		/* Use pm_runtime_get_sync() call paired with pm_runtime_put()
+		 * call to ensure that the device is not put into runtime
+		 * suspend during the operation.
+		 */
+		pm_runtime_get_sync(priv->device);
 
-	/* Stop and disconnect the PHY */
-	phylink_stop(priv->phylink);
-	phylink_disconnect_phy(priv->phylink);
+		/* Stop and disconnect the PHY */
+		phylink_stop(priv->phylink);
+		phylink_disconnect_phy(priv->phylink);
 
-	stmmac_disable_all_queues(priv);
+		stmmac_disable_all_queues(priv);
+
+		if (priv->plat->remove_phy_conv) {
+			ret = priv->plat->remove_phy_conv(priv->mii,
+							priv->plat->intel_bi);
+			if (ret < 0) {
+				netdev_err(priv->dev,
+					   "%s: ERROR: remove phy conv (error: %d)\n",
+					   __func__, ret);
+				goto out;
+			}
+		}
+
+		/* Stop TX/RX DMA and clear the descriptors */
+		stmmac_stop_all_dma(priv);
+		stmmac_stop_mac_tx(priv, priv->ioaddr);
+		stmmac_stop_mac_rx(priv, priv->ioaddr);
+
+		/* Disable the MAC Rx/Tx */
+		stmmac_mac_set(priv, priv->ioaddr, false);
+
+		netif_carrier_off(dev);
+		netif_tx_stop_all_queues(dev);
+	}
 
 	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
 		stmmac_remove_txtimer_q(priv, chan);
@@ -3726,31 +3754,8 @@ static int stmmac_release(struct net_device *dev)
 		del_timer_sync(&priv->eee_ctrl_timer);
 	}
 
-	/* Start phy converter after MDIO bus IRQ handling is up */
-	if (priv->plat->remove_phy_conv) {
-		ret = priv->plat->remove_phy_conv(priv->mii,
-						  priv->plat->intel_bi);
-		if (ret < 0) {
-			netdev_err(priv->dev,
-				   "%s: ERROR: remove phy conv (error: %d)\n",
-				   __func__, ret);
-			goto out;
-		}
-	}
-
-	/* Stop TX/RX DMA and clear the descriptors */
-	stmmac_stop_all_dma(priv);
-	stmmac_stop_mac_tx(priv, priv->ioaddr);
-	stmmac_stop_mac_rx(priv, priv->ioaddr);
-
 	/* Release and free the Rx/Tx resources */
 	free_dma_desc_resources(priv);
-
-	/* Disable the MAC Rx/Tx */
-	stmmac_mac_set(priv, priv->ioaddr, false);
-
-	netif_carrier_off(dev);
-	netif_tx_stop_all_queues(dev);
 
 	stmmac_release_ptp(priv);
 
@@ -3761,7 +3766,8 @@ static int stmmac_release(struct net_device *dev)
 		stmmac_netproxy_deregister(dev);
 #endif
 out:
-	pm_runtime_put(priv->device);
+	if (!suspended)
+		pm_runtime_put(priv->device);
 	return 0;
 }
 
