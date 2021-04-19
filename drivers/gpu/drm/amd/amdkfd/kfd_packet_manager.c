@@ -345,7 +345,7 @@ fail_create_runlist_ib:
 }
 
 int pm_send_query_status(struct packet_manager *pm, uint64_t fence_address,
-			uint64_t fence_value)
+			uint32_t fence_value)
 {
 	uint32_t *buffer, size;
 	int retval = 0;
