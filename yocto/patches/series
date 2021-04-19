@@ -20,3 +20,9 @@
 0004-drm-i915-Update-TGL-and-RKL-HuC-firmware-versions.patch
 0005-drm-i915-guc-add-a-helper-to-allocate-and-map-guc-vm.patch
 0006-drm-i915-guc-Update-to-use-firmware-v49.0.1.patch
+
+# CVE-2020-36311
+0001-KVM-SVM-Periodically-schedule-when-unregistering-reg.patch
+
+# CVE-2020-36310
+0001-KVM-SVM-avoid-infinite-loop-on-NPF-from-bad-address.patch

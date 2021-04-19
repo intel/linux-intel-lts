@@ -1,0 +1,56 @@
+From 405d3978387fe22875edb05b7c19138ddd6d5303 Mon Sep 17 00:00:00 2001
+From: nanli2x <nanli2x@intel.com>
+Date: Fri, 16 Apr 2021 01:41:36 -0400
+Subject: [PATCH] KVM: SVM: avoid infinite loop on NPF from bad address
+
+When a nested page fault is taken from an address that does not have
+a memslot associated to it, kvm_mmu_do_page_fault returns RET_PF_EMULATE
+(via mmu_set_spte) and kvm_mmu_page_fault then invokes svm_need_emulation_on_page_fault.
+
+The default answer there is to return false, but in this case this just
+causes the page fault to be retried ad libitum.  Since this is not a
+fast path, and the only other case where it is taken is an erratum,
+just stick a kvm_vcpu_gfn_to_memslot check in there to detect the
+common case where the erratum is not happening.
+
+This fixes an infinite loop in the new set_memory_region_test.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm.c  | 7 +++++++
+ virt/kvm/kvm_main.c | 1 +
+ 2 files changed, 8 insertions(+)
+
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index b9d14fdbd2d8..ed17c7a74a41 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -7175,6 +7175,13 @@ static bool svm_need_emulation_on_page_fault(struct kvm_vcpu *vcpu)
+ 	bool smap = cr4 & X86_CR4_SMAP;
+ 	bool is_user = svm_get_cpl(vcpu) == 3;
+ 
++	/*
++	 * If RIP is invalid, go ahead with emulation which will cause an
++	 * internal error exit.
++	 */
++	if (!kvm_vcpu_gfn_to_memslot(vcpu, kvm_rip_read(vcpu) >> PAGE_SHIFT))
++	return true;
++
+ 	/*
+ 	 * Detect and workaround Errata 1096 Fam_17h_00_0Fh.
+ 	 *
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index 048b555c5acc..b3ba68f20f22 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -1389,6 +1389,7 @@ struct kvm_memory_slot *kvm_vcpu_gfn_to_memslot(struct kvm_vcpu *vcpu, gfn_t gfn
+ {
+ 	return __gfn_to_memslot(kvm_vcpu_memslots(vcpu), gfn);
+ }
++EXPORT_SYMBOL_GPL(kvm_vcpu_gfn_to_memslot);
+ 
+ bool kvm_is_visible_gfn(struct kvm *kvm, gfn_t gfn)
+ {
+-- 
+2.17.1
+
