@@ -215,7 +215,7 @@ static int imx_drm_bind(struct device *dev)
 
 	ret = drmm_mode_config_init(drm);
 	if (ret)
-		goto err_kms;
+		return ret;
 
 	ret = drm_vblank_init(drm, MAX_CRTC);
 	if (ret)
