@@ -35,11 +35,15 @@
 #define MDIO_MII_MMD_PSE_SYM		0x2
 #define MDIO_MII_MMD_PSE_BOTH		0x3
 
-/* Enable 2.5G Mode */
-#define MDIO_MII_MMD_DIGI_CTRL_1_EN_2_5G_MODE	BIT(2)
-
-/* Automatic Speed Mode Change for MAC side SGMII AN */
-#define MDIO_MII_MMD_DIGI_CTRL_1_MAC_AUTO_SW	BIT(9)
+/* MII MMD Digital Control1 defines */
+#define MDIO_MII_MMD_DIGI_CTRL_1_MAC_AUTO_SW	BIT(9) /* Automatic Speed Mode
+							* Change for MAC side
+							* SGMII AN
+							*/
+#define	MDIO_MII_MMD_DIGI_CTRL_1_PRE_EMP	BIT(6) /* Enable pre-emption
+							* packet for 10/100Mbps
+							*/
+#define MDIO_MII_MMD_DIGI_CTRL_1_EN_2_5G_MODE	BIT(2) /* Enable 2.5G Mode */
 
 /* MII MMD AN Control defines */
 #define MDIO_MII_MMD_AN_CTRL_TX_CONFIG_SHIFT	3 /* TX Config shift */
@@ -155,10 +159,15 @@ static void dwxpcs_init(struct dwxpcs_priv *priv)
 		 *    enabled)
 		 * 4) VR_MII_DIG_CTRL1 Bit(9) [MAC_AUTO_SW] = 1b (Automatic
 		 *    speed/duplex mode change by HW after SGMII AN complete)
+		 *
 		 * Note: Since it is MAC side SGMII, there is no need to set
 		 *	 SR_MII_AN_ADV. MAC side SGMII receives AN Tx Config
 		 *	 from PHY about the link state change after C28 AN
 		 *	 is completed between PHY and Link Partner.
+		 *
+		 * For pre-emption, the setting is :-
+		 * 1) VR_MII_DIG_CTRL1 Bit(6) [PRE_EMP] = 1b (Enable pre-emption
+		 *    packet for 10/100Mbps)
 		 */
 		phydata = xpcs_read(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_AN_CTRL);
 		phydata &= ~MDIO_MII_MMD_AN_CTRL_PCS_MD;
@@ -173,7 +182,8 @@ static void dwxpcs_init(struct dwxpcs_priv *priv)
 
 		phydata = xpcs_read(XPCS_MDIO_MII_MMD,
 				    MDIO_MII_MMD_DIGITAL_CTRL_1);
-		phydata |= MDIO_MII_MMD_DIGI_CTRL_1_MAC_AUTO_SW;
+		phydata |= (MDIO_MII_MMD_DIGI_CTRL_1_MAC_AUTO_SW |
+			    MDIO_MII_MMD_DIGI_CTRL_1_PRE_EMP);
 		xpcs_write(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_DIGITAL_CTRL_1,
 			   phydata);
 	} else {
