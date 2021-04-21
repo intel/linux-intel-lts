@@ -77,6 +77,11 @@ struct xpcie_epf {
 	struct xpcie_dma_ll_desc_buf	tx_desc_buf[DMA_CHAN_NUM];
 	struct xpcie_dma_ll_desc_buf	rx_desc_buf[DMA_CHAN_NUM];
 
+	struct hrtimer			free_tx_dma_timer;
+	struct hrtimer			free_rx_dma_timer;
+	bool				rx_dma_waitcomplete;
+	bool				tx_dma_waitcomplete;
+
 	struct delayed_work hbeat_event;
 };
 
@@ -102,4 +107,9 @@ int intel_xpcie_copy_from_host_ll(struct xpcie *xpcie,
 				  int chan, int descs_num);
 int intel_xpcie_copy_to_host_ll(struct xpcie *xpcie,
 				int chan, int descs_num);
+
+/* Functions Declarations */
+enum hrtimer_restart free_tx_dma_timer_cb(struct hrtimer *free_tx_dma_timer);
+enum hrtimer_restart free_rx_dma_timer_cb(struct hrtimer *free_rx_dma_timer);
+
 #endif /* XPCIE_EPF_HEADER_ */
