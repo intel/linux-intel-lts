@@ -6,6 +6,7 @@
  * Copyright (C) 2020 Intel Corporation
  *
  ****************************************************************************/
+#include <linux/jiffies.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/wait.h>
@@ -155,6 +156,10 @@ static u32 dma_chan_offset[2][DMA_CHAN_NUM] = {
 	{ 0x200, 0x400, 0x600, 0x800 },
 	{ 0x300, 0x500, 0x700, 0x900 }
 };
+
+/* Function declarations */
+int intel_xpcie_ep_dma_reset_write_engine(struct pci_epf *epf);
+int intel_xpcie_ep_dma_reset_read_engine(struct pci_epf *epf);
 
 static void __iomem *intel_xpcie_ep_get_dma_base(struct pci_epf *epf)
 {
@@ -338,14 +343,73 @@ intel_xpcie_ep_dma_setup_ll_descs(struct __iomem pcie_dma_chan * dma_chan,
 		  (void __iomem *)&dma_chan->dma_llp_high);
 }
 
+enum hrtimer_restart free_rx_dma_timer_cb(struct hrtimer *free_rx_dma_timer)
+{
+	struct xpcie_epf *xpcie_epf =
+		container_of(free_rx_dma_timer, struct xpcie_epf, free_rx_dma_timer);
+	void __iomem *dma_base = xpcie_epf->dma_base;
+	struct pcie_dma_reg *dma_reg = (struct pcie_dma_reg *)dma_base;
+	int func_no = xpcie_epf->epf->func_no;
+	void __iomem *err_status;
+
+	pr_info("RX_DMA_TIMER_CB---------> START \n");
+	err_status = &dma_reg->dma_read_int_status;
+	pr_info("RX_DMA_TIMER_CB: dma_read_int_status: 0x%x, func_no: 0x%x\n",
+		ioread32(err_status), func_no);
+	err_status = &dma_reg->dma_read_err_status_low;
+	pr_info("RX_DMA_TIMER_CB: dma_read_err_status_low: 0x%x, func_no: 0x%x\n",
+		ioread32(err_status), func_no);
+
+	/* RESET DMA READ_ENGINE */
+	intel_xpcie_ep_dma_reset_read_engine(xpcie_epf->epf);
+
+	xpcie_epf->rx_dma_waitcomplete = true;
+	pr_info("RX_DMA_TIMER_CB ---------> END \n");
+
+	return HRTIMER_NORESTART;
+}
+
+enum hrtimer_restart free_tx_dma_timer_cb(struct hrtimer *free_tx_dma_timer)
+{
+	struct xpcie_epf *xpcie_epf =
+		container_of(free_tx_dma_timer, struct xpcie_epf, free_tx_dma_timer);
+	void __iomem *dma_base = xpcie_epf->dma_base;
+	struct pcie_dma_reg *dma_reg = (struct pcie_dma_reg *)dma_base;
+	int func_no = xpcie_epf->epf->func_no;
+	void __iomem *err_status;
+	int rc = 0;
+
+	pr_info("TX_DMA_TIMER_CB---------> START \n");
+	err_status = &dma_reg->dma_write_int_status;
+	pr_info("TX_DMA_TIMER_CB: dma_write_int_status: 0x%x, func_no: 0x%x\n",
+			ioread32(err_status), func_no);
+	rc = intel_xpcie_ep_dma_err_status(&dma_reg->dma_write_err_status, func_no);
+	if (rc != 0) {
+		pr_info("TX_DMA_TIMER_CB: dma err \n");
+	}
+	err_status = &dma_reg->dma_write_err_status;
+	pr_info("TX_DMA_TIMER_CB: dma_write_err_status: 0x%x, func_no: 0x%x \n",
+			ioread32(err_status), func_no);
+
+	/* RESET DMA WRITE_ENGINE */
+	intel_xpcie_ep_dma_reset_write_engine(xpcie_epf->epf);
+
+	xpcie_epf->tx_dma_waitcomplete = true;
+	pr_info("TX_DMA_TIMER_CB ---------> END \n");
+
+	return HRTIMER_NORESTART;
+}
+
 int intel_xpcie_ep_dma_write_ll(struct pci_epf *epf, int chan, int descs_num)
 {
 	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+	unsigned long dma_time_period_us = 2000 * 1000; //2 sec delay
 	void __iomem *dma_base = xpcie_epf->dma_base;
 	struct __iomem pcie_dma_chan * dma_chan;
 	struct xpcie_dma_ll_desc_buf *desc_buf;
 	struct __iomem pcie_dma_reg * dma_reg =
 				(struct __iomem pcie_dma_reg *)(dma_base);
+	ktime_t free_tx_dma_tp;
 	int i, rc;
 
 	if (descs_num <= 0 || descs_num > XPCIE_NUM_TX_DESCS)
@@ -361,6 +425,13 @@ int intel_xpcie_ep_dma_write_ll(struct pci_epf *epf, int chan, int descs_num)
 
 	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num);
 
+	if (!hrtimer_active(&xpcie_epf->free_tx_dma_timer)) {
+		free_tx_dma_tp = ktime_set(0, dma_time_period_us * 1000ULL);
+		hrtimer_start(&xpcie_epf->free_tx_dma_timer,
+			      free_tx_dma_tp, HRTIMER_MODE_REL);
+		xpcie_epf->tx_dma_waitcomplete = false;
+	}
+
 	/* Start DMA transfer. */
 	rc = intel_xpcie_ep_dma_doorbell(xpcie_epf, chan,
 					 (void __iomem *)
@@ -370,12 +441,19 @@ int intel_xpcie_ep_dma_write_ll(struct pci_epf *epf, int chan, int descs_num)
 
 	/* Wait for DMA transfer to complete. */
 	for (i = 0; i < DMA_POLLING_TIMEOUT; i++) {
-		usleep_range(5, 10);
-		if (ioread32((void __iomem *)&dma_reg->dma_write_int_status) &
-		    (DMA_DONE_INTERRUPT_CH_MASK(chan) |
-		     DMA_ABORT_INTERRUPT_CH_MASK(chan)))
+		if ((ioread32((void __iomem *)&dma_reg->dma_write_int_status) &
+		     (DMA_DONE_INTERRUPT_CH_MASK(chan) |
+		      DMA_ABORT_INTERRUPT_CH_MASK(chan))) ||
+			(xpcie_epf->tx_dma_waitcomplete == true)) {
+			if (hrtimer_active(&xpcie_epf->free_tx_dma_timer)) {
+				hrtimer_cancel(&xpcie_epf->free_tx_dma_timer);
+				xpcie_epf->tx_dma_waitcomplete = false;
+			}
 			break;
+		}
+		usleep_range(5, 10);
 	}
+
 	if (i == DMA_POLLING_TIMEOUT) {
 		dev_err(&xpcie_epf->epf->dev, "DMA Wr timeout\n");
 		rc = -ETIME;
@@ -407,11 +485,13 @@ cleanup:
 int intel_xpcie_ep_dma_read_ll(struct pci_epf *epf, int chan, int descs_num)
 {
 	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+	unsigned long dma_time_period_us = 2000 * 1000; //2 sec delay
 	void __iomem *dma_base = xpcie_epf->dma_base;
 	struct xpcie_dma_ll_desc_buf *desc_buf;
 	struct __iomem pcie_dma_reg * dma_reg =
 				(struct __iomem pcie_dma_reg *)(dma_base);
 	struct __iomem pcie_dma_chan * dma_chan;
+	ktime_t free_rx_dma_tp;
 	int i, rc;
 
 	if (descs_num <= 0 || descs_num > XPCIE_NUM_RX_DESCS)
@@ -427,6 +507,13 @@ int intel_xpcie_ep_dma_read_ll(struct pci_epf *epf, int chan, int descs_num)
 
 	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num);
 
+	if (!hrtimer_active(&xpcie_epf->free_rx_dma_timer)) {
+		free_rx_dma_tp = ktime_set(0, dma_time_period_us * 1000ULL);
+		hrtimer_start(&xpcie_epf->free_rx_dma_timer,
+			      free_rx_dma_tp, HRTIMER_MODE_REL);
+		xpcie_epf->rx_dma_waitcomplete = false;
+	}
+
 	/* Start DMA transfer. */
 	rc = intel_xpcie_ep_dma_doorbell(xpcie_epf, chan,
 					 (void __iomem *)
@@ -436,11 +523,17 @@ int intel_xpcie_ep_dma_read_ll(struct pci_epf *epf, int chan, int descs_num)
 
 	/* Wait for DMA transfer to complete. */
 	for (i = 0; i < DMA_POLLING_TIMEOUT; i++) {
-		usleep_range(5, 10);
-		if (ioread32((void __iomem *)&dma_reg->dma_read_int_status) &
-		    (DMA_DONE_INTERRUPT_CH_MASK(chan) |
-		     DMA_ABORT_INTERRUPT_CH_MASK(chan)))
+		if ((ioread32((void __iomem *)&dma_reg->dma_read_int_status) &
+		     (DMA_DONE_INTERRUPT_CH_MASK(chan) |
+		      DMA_ABORT_INTERRUPT_CH_MASK(chan))) ||
+			(xpcie_epf->rx_dma_waitcomplete == true)) {
+			if (hrtimer_active(&xpcie_epf->free_rx_dma_timer)) {
+				hrtimer_cancel(&xpcie_epf->free_rx_dma_timer);
+				xpcie_epf->rx_dma_waitcomplete = false;
+			}
 			break;
+		}
+		usleep_range(5, 10);
 	}
 	if (i == DMA_POLLING_TIMEOUT) {
 		dev_err(&xpcie_epf->epf->dev, "DMA Rd timeout\n");
@@ -531,6 +624,32 @@ static int intel_xpcie_ep_dma_alloc_ll_descs_mem(struct xpcie_epf *xpcie_epf)
 		xpcie_epf->tx_desc_buf[i].size = tx_size;
 		xpcie_epf->rx_desc_buf[i].size = rx_size;
 	}
+	return 0;
+}
+
+int intel_xpcie_ep_dma_reset_read_engine(struct pci_epf *epf)
+{
+	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+
+	/* Disable the DMA write engine. */
+	if (intel_xpcie_ep_dma_disable(xpcie_epf->dma_base, READ_ENGINE))
+		return -EBUSY;
+
+	intel_xpcie_ep_dma_enable(xpcie_epf->dma_base, READ_ENGINE);
+
+	return 0;
+}
+
+int intel_xpcie_ep_dma_reset_write_engine(struct pci_epf *epf)
+{
+	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+
+	/* Disable the DMA write engine. */
+	if (intel_xpcie_ep_dma_disable(xpcie_epf->dma_base, WRITE_ENGINE))
+		return -EBUSY;
+
+	intel_xpcie_ep_dma_enable(xpcie_epf->dma_base, WRITE_ENGINE);
+
 	return 0;
 }
 

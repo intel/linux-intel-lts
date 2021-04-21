@@ -497,6 +497,9 @@ static irqreturn_t intel_xpcie_core_irq_cb(int irq, void *args)
 
 static int intel_xpcie_events_init(struct xpcie *xpcie)
 {
+	struct xpcie_epf *xpcie_epf = container_of(xpcie,
+						   struct xpcie_epf, xpcie);
+
 	xpcie->rx_wq = alloc_ordered_workqueue(XPCIE_DRIVER_NAME,
 					       WQ_MEM_RECLAIM | WQ_HIGHPRI);
 	if (!xpcie->rx_wq) {
@@ -519,17 +522,31 @@ static int intel_xpcie_events_init(struct xpcie *xpcie)
 	INIT_DELAYED_WORK(&xpcie->rx_event, intel_xpcie_rx_event_handler);
 	INIT_DELAYED_WORK(&xpcie->tx_event, intel_xpcie_tx_event_handler);
 
+	hrtimer_init(&xpcie_epf->free_tx_dma_timer,
+		     CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	xpcie_epf->free_tx_dma_timer.function = free_tx_dma_timer_cb;
+
+	hrtimer_init(&xpcie_epf->free_rx_dma_timer,
+		     CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	xpcie_epf->free_rx_dma_timer.function = free_rx_dma_timer_cb;
+
 	return 0;
 }
 
 static void intel_xpcie_events_cleanup(struct xpcie *xpcie)
 {
+	struct xpcie_epf *xpcie_epf = container_of(xpcie,
+						   struct xpcie_epf, xpcie);
+
 	cancel_delayed_work_sync(&xpcie->rx_event);
 	cancel_delayed_work_sync(&xpcie->tx_event);
 
 	destroy_workqueue(xpcie->rx_wq);
 	if (!xpcie->legacy_a0)
 		destroy_workqueue(xpcie->tx_wq);
+
+	hrtimer_cancel(&xpcie_epf->free_tx_dma_timer);
+	hrtimer_cancel(&xpcie_epf->free_rx_dma_timer);
 }
 
 int intel_xpcie_core_init(struct xpcie *xpcie)
