@@ -137,6 +137,7 @@ struct kmb_imx219_mode {
  * @sd: V4L2 sub-device
  * @pad: Media pad. Only one pad supported
  * @reset_gpio: Sensor reset gpio
+ * @power_gpio: Sensor power gpio
  * @inclk: Sensor input clock
  * @ctrl_handler: V4L2 control handler
  * @pclk_ctrl: Pointer to pixel clock control
@@ -159,6 +160,7 @@ struct kmb_imx219 {
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct gpio_desc *reset_gpio;
+	struct gpio_desc *power_gpio;
 	struct clk *inclk;
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_ctrl *pclk_ctrl;
@@ -1157,6 +1159,16 @@ static int kmb_imx219_set_frame_interval(struct v4l2_subdev *sd,
 static int kmb_imx219_power_on(struct kmb_imx219 *kmb_imx219)
 {
 	int ret;
+
+	/* request optional power pin */
+	kmb_imx219->power_gpio =
+		gpiod_get_optional(kmb_imx219->dev, "power", GPIOD_OUT_HIGH);
+	if (IS_ERR(kmb_imx219->power_gpio)) {
+		ret = PTR_ERR(kmb_imx219->power_gpio);
+		dev_err(kmb_imx219->dev, "failed to get power gpio %d", ret);
+		return ret;
+	}
+	gpiod_put(kmb_imx219->power_gpio);
 
 	/* request optional reset pin */
 	kmb_imx219->reset_gpio =
