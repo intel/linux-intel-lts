@@ -174,9 +174,9 @@ struct intel_hddl_clients **
 		if (!cls)
 			return NULL;
 	} else {
-		cls = devm_kcalloc(dev, num_devices,
-				   sizeof(struct intel_hddl_clients *),
-				   GFP_KERNEL);
+		cls = kcalloc(num_devices,
+			      sizeof(struct intel_hddl_clients *),
+			      GFP_KERNEL);
 		if (!cls)
 			return NULL;
 		/*
