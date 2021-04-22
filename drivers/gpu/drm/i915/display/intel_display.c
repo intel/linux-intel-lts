@@ -17550,7 +17550,6 @@ int intel_modeset_init(struct drm_i915_private *i915)
 	ret = intel_initial_commit(dev);
 	if (ret)
 		DRM_DEBUG_KMS("Initial commit in probe failed.\n");
-		return ret;
 
 	/* Only enable hotplug handling once the fbdev is fully set up. */
 	intel_hpd_init(i915);
