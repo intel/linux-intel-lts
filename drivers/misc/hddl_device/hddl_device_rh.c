@@ -197,7 +197,7 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				swid_data.sw_id);
 			return -ENODEV;
 		}
-		strcpy(swid_data.board_type, d->board_info.board_type);
+		strcpy(swid_data.board_type, client->board_info.board_type);
 		swid_data.board_id = client->board_info.board_id;
 		swid_data.soc_id = client->board_info.soc_id;
 		swid_data.iox_addr = client->board_info.iox_addr;
