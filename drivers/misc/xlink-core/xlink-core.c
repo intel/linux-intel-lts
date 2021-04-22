@@ -14,6 +14,7 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 #include <linux/kref.h>
+#include <linux/idr.h>
 
 #ifdef CONFIG_XLINK_LOCAL_HOST
 #include <linux/xlink-ipc.h>
@@ -54,6 +55,142 @@ static struct mutex get_device_mode_lock;
 static struct mutex set_device_mode_lock;
 
 
+enum session_res_type {
+    SC_RES_CHAN = 0,
+    SC_RES_NUM
+};
+/*
+ * Resources allocated by current user-space process
+ * will be maintained in the session context for leakge
+ * handling due to app-bugs or unexpected app-crashes.
+ * The struct idr is introduced to record:
+ *        1. xlink channels opened by current process
+ *        2. link_id/connection used by current process
+ *        Others if needed
+ * The session need to mutext to protect operations on id
+ */
+
+struct session_context {
+	struct mutex lock;
+	uint16_t chan;
+	uint32_t sw_device_id;
+	void *ptr;
+	struct list_head list;
+};
+
+static bool session_check_id_existing(struct session_context *ctx, enum session_res_type type, int id, void *ptr)
+{
+	struct xlink_handle *pdevH = (struct xlink_handle *)ptr;
+	struct session_context *sess = NULL;
+	bool item_found = false;
+
+	mutex_lock(&ctx->lock);
+	list_for_each_entry(sess, &ctx->list, list) {
+		if (sess->sw_device_id == pdevH->sw_device_id && sess->chan == id) {
+			item_found = true;
+			break;
+		}
+	}
+	mutex_unlock(&ctx->lock);
+	return item_found;
+}
+
+static enum xlink_error session_res_add(struct session_context *ctx, enum session_res_type type, int id, void *ptr)
+{
+	bool is_existing = false;
+	struct xlink_handle *pdevH = (struct xlink_handle *)ptr;
+	struct session_context *sess = NULL;
+
+	is_existing = session_check_id_existing(ctx, type, id, ptr);
+	/*Same channel opened for more than once in one process.
+	 *It is unexpected behavior and warning log would be printed.
+	 */
+	if (unlikely(is_existing)) {
+		pr_info("Multiple %s  %d\n", type == SC_RES_CHAN ? "open channel":"connect link_id in one process\n", id);
+		return X_LINK_ERROR;
+	}
+	mutex_lock(&ctx->lock);
+	sess = kzalloc(sizeof(*sess), GFP_KERNEL);
+	if (!sess) {
+		mutex_unlock(&ctx->lock);
+		return X_LINK_ERROR;
+	}
+	sess->chan = id;
+	sess->sw_device_id = pdevH->sw_device_id;
+	sess->ptr = ptr;
+	list_add_tail(&sess->list, &ctx->list);
+	mutex_unlock(&ctx->lock);
+	return X_LINK_SUCCESS;
+}
+
+static enum xlink_error session_res_rm(struct session_context *ctx, enum session_res_type type, int id, void *ptr)
+{
+	struct xlink_handle *pdevH = (struct xlink_handle *)ptr;
+	struct session_context *sess = NULL;
+	uint8_t item_found = 0;
+
+	// find sw_device_id/channel in context list
+	mutex_lock(&ctx->lock);
+	list_for_each_entry(sess, &ctx->list, list) {
+		if (sess->sw_device_id == pdevH->sw_device_id && sess->chan == id) {
+			item_found = 1;
+			break;
+		}
+	}
+	if (!sess || !item_found) {
+		mutex_unlock(&ctx->lock);
+		return X_LINK_ERROR;
+	}
+	list_del(&sess->list);
+	kfree(sess);
+	mutex_unlock(&ctx->lock);
+	return X_LINK_SUCCESS;
+}
+
+static int xlink_open (struct inode *inode, struct file *filp)
+{
+	// create context data for recording & leakage handling
+	struct session_context *ctx;
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(ctx)) {
+		return PTR_ERR(ctx);
+	}
+	INIT_LIST_HEAD(&ctx->list);
+	mutex_init(&ctx->lock);
+	filp->private_data = ctx;
+	return 0;
+}
+
+static int xlink_release_chans(int id, void *ptr)
+{
+	int rc = 0;
+	struct xlink_handle *pdevH = (struct xlink_handle *)ptr;
+
+	if (pdevH) {
+		rc = xlink_close_channel(pdevH, id);
+		pr_info("[xlink-core]: xlink_close_channel(%d) rc=%d\n", id, rc);
+	}
+	return 0;
+}
+
+static int xlink_release(struct inode *inode, struct file *filp)
+{
+	struct session_context *ctx = (struct session_context *)filp->private_data;
+	struct session_context *sess = NULL, *tmp = NULL;
+
+	mutex_lock(&ctx->lock);
+	list_for_each_entry_safe(sess, tmp, &ctx->list, list) {
+		xlink_release_chans(sess->chan, sess->ptr);
+		list_del(&sess->list);
+		kfree(sess);
+	}
+	mutex_unlock(&ctx->lock);
+	mutex_destroy(&ctx->lock);
+	kfree(ctx);
+	return 0;
+}
+
 static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 static enum xlink_error xlink_write_data_user(struct xlink_handle *handle,
 		uint16_t chan, uint8_t const *pmessage, uint32_t size);
@@ -75,6 +212,8 @@ static struct mutex dev_event_lock;
 static const struct file_operations fops = {
 		.owner 			= THIS_MODULE,
 		.unlocked_ioctl = xlink_ioctl,
+		.open           = xlink_open,
+		.release        = xlink_release,
 };
 
 struct xlink_link {
@@ -381,6 +520,7 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	uint8_t volbuf[XLINK_MAX_BUF_SIZE];
 	uint8_t *control_buf;
 	char filename[64];
+	struct session_context *sess_ctx = (struct session_context *)file->private_data;
 	char name[XLINK_MAX_DEVICE_NAME_SIZE];
 	uint32_t sw_device_id_list[XLINK_MAX_DEVICE_LIST_SIZE];
 	uint32_t num_devices = 0;
@@ -413,6 +553,10 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		rc = xlink_open_channel(&devH, op.chan, op.mode, op.data_size,
 				op.timeout);
+		if (X_LINK_SUCCESS == rc) {
+			link = get_link_by_sw_device_id(devH.sw_device_id);
+			rc = session_res_add(sess_ctx, SC_RES_CHAN, op.chan, (void *)&link->handle);
+		}
 		if (copy_to_user(op.return_code, (void *)&rc, sizeof(rc)))
 			return -EFAULT;
 		break;
@@ -574,9 +718,21 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&devH, (struct xlink_handle *)op.handle,
 				sizeof(struct xlink_handle)))
 			return -EFAULT;
-		rc = xlink_close_channel(&devH, op.chan);
-		if (copy_to_user(op.return_code, (void *)&rc, sizeof(rc)))
+		link = get_link_by_sw_device_id(devH.sw_device_id);
+		if (!session_check_id_existing(sess_ctx, SC_RES_CHAN, op.chan, (void *)&link->handle)) {
+			pr_info("Unexpected behavior to close channel not opened in process"
+					"-chan %d\n", op.chan);
+			rc = X_LINK_COMMUNICATION_NOT_OPEN;
+			if (copy_to_user(op.return_code, (void *)&rc, sizeof(rc)))
 			return -EFAULT;
+		} else {
+			rc = xlink_close_channel(&devH, op.chan);
+			if (X_LINK_SUCCESS == rc)
+				rc = session_res_rm(sess_ctx, SC_RES_CHAN, op.chan, (void *)&link->handle);
+
+			if (copy_to_user(op.return_code, (void *)&rc, sizeof(rc)))
+				return -EFAULT;
+		}
 		break;
 	case XL_START_VPU:
 		if (copy_from_user(&startvpu, (int32_t *)arg,
