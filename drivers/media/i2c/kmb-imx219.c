@@ -28,6 +28,11 @@
 #define KMB_IMX219_REG_ID          0x0000
 #define KMB_IMX219_ID              0x0219
 
+/* Serial number */
+#define KMB_IMX219_SERIAL_ADDR		0x0162  // Dummy serial addr for now
+#define KMB_IMX219_SERIAL_STEP		1
+#define KMB_IMX219_SERIAL_READ_SIZE	8
+
 /* Lines per frame */
 #define KMB_IMX219_LPFR_MAX        0xFFFE
 
@@ -66,7 +71,7 @@
 #define IMX219_REG_FRM_LENGTH_LINES_SIZE 2
 
 #define V4L2_CLUSTER_SIZE 3
-#define V4L2_CTRL_HNDL_SIZE (V4L2_CLUSTER_SIZE + 3)
+#define V4L2_CTRL_HNDL_SIZE (V4L2_CLUSTER_SIZE + 4)
 
 /* Input clock rate */
 #define KMB_IMX219_INCLK_RATE	24000000
@@ -143,12 +148,14 @@ struct kmb_imx219_mode {
  * @pclk_ctrl: Pointer to pixel clock control
  * @hblank_ctrl: Pointer to horizontal blanking control
  * @vblank_ctrl: Pointer to vertical blanking control
+ * @serial_num_ctrl: Pointer to sensor serial number
  * @exp_ctrl: Pointer to exposure control
  * @again_ctrl: Pointer to analog gain control
  * @dgain_ctrl: Pointer to analog gain control
  * @num_lanes: Number of data lanes
  * @fps: FPS to be applied on next stream on
  * @lpfr: Lines per frame for long exposure frame
+ * @serial: Sensor serial number
  * @cur_mode: Pointer to current selected sensor mode
  * @mutex: Mutex for serializing sensor controls
  * @streaming: Flag indicating streaming state
@@ -166,6 +173,7 @@ struct kmb_imx219 {
 	struct v4l2_ctrl *pclk_ctrl;
 	struct v4l2_ctrl *hblank_ctrl;
 	struct v4l2_ctrl *vblank_ctrl;
+	struct v4l2_ctrl *serial_num_ctrl;
 	struct {
 		struct v4l2_ctrl *exp_ctrl;
 		struct v4l2_ctrl *again_ctrl;
@@ -175,6 +183,7 @@ struct kmb_imx219 {
 	u32 num_lanes;
 	u32 fps;
 	u32 lpfr;
+	u64 serial;
 	const struct kmb_imx219_mode *cur_mode;
 	struct mutex mutex;
 
@@ -647,6 +656,36 @@ static int kmb_imx219_set_ctrl(struct v4l2_ctrl *ctrl)
 
 error_pm_runtime_put:
 	pm_runtime_put(kmb_imx219->dev);
+	return ret;
+}
+
+/**
+ * kmb_imx219_get_serial - Reads sensor serial number
+ * @kmb_imx219: pointer to kmb_imx219 device
+ *
+ * Return: 0 if successful
+ */
+static int kmb_imx219_get_serial(struct kmb_imx219 *kmb_imx219)
+{
+	int ret = 0, i;
+	u32 val;
+	u64 serial_num = 0;
+
+	for (i = 0; i < KMB_IMX219_SERIAL_READ_SIZE; i++) {
+
+		ret = kmb_imx219_read_reg(kmb_imx219,
+					  KMB_IMX219_SERIAL_ADDR + i, 1, &val);
+		if (ret) {
+			dev_err(kmb_imx219->dev,
+				"Cannot read serial number address");
+			return ret;
+		}
+
+		serial_num = (serial_num << 8) | val;
+	}
+
+	kmb_imx219->serial = serial_num;
+
 	return ret;
 }
 
@@ -1292,6 +1331,17 @@ static int kmb_imx219_init_controls(struct kmb_imx219 *kmb_imx219)
 	u32 vblank;
 	int ret;
 
+	const struct v4l2_ctrl_config serial_number = {
+		.id = V4L2_CID_SENSOR_SERIAL_NUMBER,
+		.name = "V4L2_CID_SENSOR_SERIAL_NUMBER",
+		.min = kmb_imx219->serial,
+		.max = kmb_imx219->serial,
+		.def = kmb_imx219->serial,
+		.step = KMB_IMX219_SERIAL_STEP,
+		.type = V4L2_CTRL_TYPE_INTEGER64,
+		.menu_skip_mask = 0,
+	};
+
 	ctrl_hdlr = &kmb_imx219->ctrl_handler;
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, V4L2_CTRL_HNDL_SIZE);
 	if (ret)
@@ -1336,6 +1386,13 @@ static int kmb_imx219_init_controls(struct kmb_imx219 *kmb_imx219)
 	v4l2_ctrl_cluster(V4L2_CLUSTER_SIZE, &kmb_imx219->exp_ctrl);
 
 	/* Read only controls */
+	kmb_imx219->serial_num_ctrl = v4l2_ctrl_new_custom(ctrl_hdlr,
+							   &serial_number,
+							   NULL);
+
+	if (kmb_imx219->serial_num_ctrl)
+		kmb_imx219->serial_num_ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
 	kmb_imx219->pclk_ctrl = v4l2_ctrl_new_std(ctrl_hdlr,
 						  &kmb_imx219_ctrl_ops,
 						  V4L2_CID_PIXEL_RATE,
@@ -1710,6 +1767,11 @@ static int kmb_imx219_pdev_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to find sensor: %d", ret);
 		goto error_unregister_i2c_dev;
 	}
+
+	ret = kmb_imx219_get_serial(kmb_imx219);
+	if (ret)
+		dev_err(&pdev->dev,
+			"failed to read sensor serial number: %d", ret);
 
 	/* Set default mode to max resolution */
 	kmb_imx219->cur_mode = &supported_modes[0];
