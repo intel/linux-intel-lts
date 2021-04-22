@@ -4000,7 +4000,7 @@ kmb_imx412_get_i2c_client(struct kmb_imx412 *kmb_imx412,
 	new_client = i2c_new_scanned_device(i2c_adp, info, addr_list, NULL);
 	i2c_put_adapter(i2c_adp);
 
-	return new_client;
+	return IS_ERR(new_client) ? NULL : new_client;
 }
 
 /**
