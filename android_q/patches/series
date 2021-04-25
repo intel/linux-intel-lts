@@ -44,3 +44,6 @@
 # CVE-2020-12364
 # CVE-2020-12363
 0001-drm-i915-disable-guc.patch
+
+# CVE-2020-36311
+0001-KVM-SVM-Periodically-schedule-when-unregistering-reg.patch
