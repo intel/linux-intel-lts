@@ -23,6 +23,8 @@
  */
 
 #include <linux/dma-mapping.h>
+#include <drm/ttm/ttm_range_manager.h>
+
 #include "amdgpu.h"
 #include "amdgpu_vm.h"
 #include "amdgpu_res_cursor.h"
@@ -367,9 +369,9 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
 	struct amdgpu_vram_mgr *mgr = to_vram_mgr(man);
 	struct amdgpu_device *adev = to_amdgpu_device(mgr);
 	uint64_t vis_usage = 0, mem_bytes, max_bytes;
+	struct ttm_range_mgr_node *node;
 	struct drm_mm *mm = &mgr->mm;
 	enum drm_mm_insert_mode mode;
-	struct drm_mm_node *nodes;
 	unsigned i;
 	int r;
 
@@ -384,8 +386,8 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
 	/* bail out quickly if there's likely not enough VRAM for this BO */
 	mem_bytes = (u64)mem->num_pages << PAGE_SHIFT;
 	if (atomic64_add_return(mem_bytes, &mgr->usage) > max_bytes) {
-		atomic64_sub(mem_bytes, &mgr->usage);
-		return -ENOSPC;
+		r = -ENOSPC;
+		goto error_sub;
 	}
 
 	if (place->flags & TTM_PL_FLAG_CONTIGUOUS) {
@@ -403,12 +405,14 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
 		num_nodes = DIV_ROUND_UP(mem->num_pages, pages_per_node);
 	}
 
-	nodes = kvmalloc_array((uint32_t)num_nodes, sizeof(*nodes),
-			       GFP_KERNEL | __GFP_ZERO);
-	if (!nodes) {
-		atomic64_sub(mem_bytes, &mgr->usage);
-		return -ENOMEM;
+	node = kvmalloc(struct_size(node, mm_nodes, num_nodes),
+			GFP_KERNEL | __GFP_ZERO);
+	if (!node) {
+		r = -ENOMEM;
+		goto error_sub;
 	}
+
+	ttm_resource_init(tbo, place, &node->base);
 
 	mode = DRM_MM_INSERT_BEST;
 	if (place->flags & TTM_PL_FLAG_TOPDOWN)
@@ -423,13 +427,14 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
 	i = 0;
 	spin_lock(&mgr->lock);
 	while (pages_left) {
-		uint32_t alignment = mem->page_alignment;
+		uint32_t alignment = tbo->page_alignment;
 
 		if (pages >= pages_per_node)
 			alignment = pages_per_node;
 
-		r = drm_mm_insert_node_in_range(mm, &nodes[i], pages, alignment,
-						0, place->fpfn, lpfn, mode);
+		r = drm_mm_insert_node_in_range(mm, &node->mm_nodes[i], pages,
+						alignment, 0, place->fpfn,
+						lpfn, mode);
 		if (unlikely(r)) {
 			if (pages > pages_per_node) {
 				if (is_power_of_2(pages))
@@ -438,11 +443,11 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
 					pages = rounddown_pow_of_two(pages);
 				continue;
 			}
-			goto error;
+			goto error_free;
 		}
 
-		vis_usage += amdgpu_vram_mgr_vis_size(adev, &nodes[i]);
-		amdgpu_vram_mgr_virt_start(mem, &nodes[i]);
+		vis_usage += amdgpu_vram_mgr_vis_size(adev, &node->mm_nodes[i]);
+		amdgpu_vram_mgr_virt_start(mem, &node->mm_nodes[i]);
 		pages_left -= pages;
 		++i;
 
@@ -460,16 +465,17 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
 		node->base.bus.caching = ttm_write_combined;
 
 	atomic64_add(vis_usage, &mgr->vis_usage);
-	mem->mm_node = nodes;
+	mem->mm_node = &node->mm_nodes[0];
 	return 0;
 
-error:
+error_free:
 	while (i--)
-		drm_mm_remove_node(&nodes[i]);
+		drm_mm_remove_node(&node->mm_nodes[i]);
 	spin_unlock(&mgr->lock);
-	atomic64_sub(mem->num_pages << PAGE_SHIFT, &mgr->usage);
+	kvfree(node);
 
-	kvfree(nodes);
+error_sub:
+	atomic64_sub(mem_bytes, &mgr->usage);
 	return r;
 }
 
@@ -486,12 +492,16 @@ static void amdgpu_vram_mgr_del(struct ttm_resource_manager *man,
 {
 	struct amdgpu_vram_mgr *mgr = to_vram_mgr(man);
 	struct amdgpu_device *adev = to_amdgpu_device(mgr);
-	struct drm_mm_node *nodes = mem->mm_node;
+	struct ttm_range_mgr_node *node;
 	uint64_t usage = 0, vis_usage = 0;
 	unsigned pages = mem->num_pages;
+	struct drm_mm_node *nodes;
 
 	if (!mem->mm_node)
 		return;
+
+	node = to_ttm_range_mgr_node(mem);
+	nodes = &node->mm_nodes[0];
 
 	spin_lock(&mgr->lock);
 	while (pages) {
@@ -507,8 +517,7 @@ static void amdgpu_vram_mgr_del(struct ttm_resource_manager *man,
 	atomic64_sub(usage, &mgr->usage);
 	atomic64_sub(vis_usage, &mgr->vis_usage);
 
-	kvfree(mem->mm_node);
-	mem->mm_node = NULL;
+	kvfree(node);
 }
 
 /**
