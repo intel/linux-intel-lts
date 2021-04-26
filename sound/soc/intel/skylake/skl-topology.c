@@ -4837,10 +4837,18 @@ static int skl_tplg_get_int_tkn(struct device *dev,
 		break;
 
 	case SKL_TKN_U32_DMA_SIZE:
-		skl->cfg.dmacfg.size = tkn_elem->value;
 		break;
 
 	case SKL_TKN_U32_DMA_IDX:
+		if (tkn_elem->value >= SKL_MAX_DMA_CFG) {
+			dev_err(dev, "Invalid dma_idx:%d\n", tkn_elem->value);
+			return -EINVAL;
+		}
+
+		if (tkn_elem->value >= dma_cfg_idx)
+			skl->cfg.dmacfg.size = tkn_elem->value *
+					       sizeof(struct skl_dma_config);
+
 		dma_cfg_idx = tkn_elem->value;
 		break;
 
