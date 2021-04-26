@@ -48,7 +48,7 @@
 
 #define AZX_REG_VS_EM2_L1SEN		BIT(13)
 #define SKL_MAX_DMACTRL		7
-#define SKL_MAX_DMA_CFG		24
+#define SKL_MAX_DMA_CFG		32
 #define BXT_INSTANCE_ID		0
 #define BXT_BASE_FW_MODULE_ID	0
 
