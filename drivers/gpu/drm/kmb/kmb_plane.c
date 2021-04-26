@@ -325,6 +325,7 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	struct disp_cfg *init_disp_cfg;
 	struct viv_vidmem_metadata *md = NULL;
 	struct drm_gem_object *gem_obj;
+	unsigned int cb_stride, cr_stride;
 
 	if (!plane || !plane->state || !state)
 		return;
@@ -389,8 +390,11 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 	val |= get_bits_per_pixel(fb->format);
 	/* Program Cb/Cr for planar formats */
 	if (num_planes > 1) {
-		kmb_write_lcd(kmb, LCD_LAYERn_DMA_CB_LINE_VSTRIDE(plane_id),
-				fb->pitches[1]);
+		cb_stride = (md != NULL) ? fb->pitches[1] :
+			width*fb->format->cpp[0];
+		kmb_write_lcd(kmb,
+			      LCD_LAYERn_DMA_CB_LINE_VSTRIDE(plane_id),
+			      cb_stride);
 		kmb_write_lcd(kmb, LCD_LAYERn_DMA_CB_LINE_WIDTH(plane_id),
 			      (width * fb->format->cpp[0]));
 
@@ -411,9 +415,11 @@ static void kmb_plane_atomic_update(struct drm_plane *plane,
 					addr[U_PLANE]);
 
 		if (num_planes == 3) {
+			cr_stride = (md != NULL) ? fb->pitches[2] :
+				width*fb->format->cpp[0];
 			kmb_write_lcd(kmb,
 				      LCD_LAYERn_DMA_CR_LINE_VSTRIDE(plane_id),
-				      fb->pitches[2]);
+			              cr_stride);
 
 			kmb_write_lcd(kmb,
 				      LCD_LAYERn_DMA_CR_LINE_WIDTH(plane_id),
