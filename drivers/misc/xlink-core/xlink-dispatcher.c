@@ -123,6 +123,7 @@ static int is_valid_event_header(struct xlink_event *event)
 
 static int dispatcher_event_send(struct xlink_event *event)
 {
+	static int error_printed;
 	size_t event_header_size = sizeof(event->header);
 	int rc;
 
@@ -133,11 +134,14 @@ static int dispatcher_event_send(struct xlink_event *event)
 				  event->handle->sw_device_id, &event->header,
 				  &event_header_size, event->header.timeout, NULL);
 	if (rc || event_header_size != sizeof(event->header)) {
-		pr_err("Write header failed %d\n", rc);
+		if (!error_printed)
+			pr_err("Write header failed %d\n", rc);
+		error_printed = 1;
 		return rc;
 	}
 	if (event->header.type == XLINK_WRITE_REQ ||
 	    event->header.type == XLINK_WRITE_VOLATILE_REQ) {
+		error_printed = 0;
 		// write event data
 		rc = xlink_platform_write(event->interface,
 					  event->handle->sw_device_id, event->data,
