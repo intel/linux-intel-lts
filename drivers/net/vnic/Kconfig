@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config INTEL_ISHTP_VNIC
+	tristate "Intel ISHTP VNIC controller"
+	depends on INTEL_ISH_HID
+	depends on NET
+	help
+	  If you say Y here, you get support for communicating with
+	  Intel Programmable Services Engine (PSE) using a virtual newtwork
+	  interface over ISH Transport Protocol (ISHTP) on Intel Elkhart Lake
+	  platforms.
