@@ -138,11 +138,6 @@ static void xfrm_hash_resize(struct work_struct *work)
 		return;
 	}
 
-	/* XXX - the locking which protects the sequence counter appears
-	 * to be broken here. The sequence counter is global, but the
-	 * spinlock used for the sequence counter write serialization is
-	 * per network namespace...
-	 */
 	spin_lock_bh(&net->xfrm.xfrm_state_lock);
 	write_seqcount_begin(&net->xfrm.xfrm_state_hash_generation);
 
