@@ -52,6 +52,7 @@ struct dispatcher {
 	struct semaphore event_sem;	/* signals tx kthread of events */
 	struct completion rx_done;	/* sync start/stop of rx kthread */
 	struct completion tx_done;	/* sync start/stop of tx thread */
+	struct mutex disp_mutex;
 };
 
 /* xlink dispatcher system component */
@@ -100,20 +101,6 @@ static struct xlink_event *event_dequeue(struct event_queue *queue)
 	}
 	mutex_unlock(&queue->lock);
 	return event;
-}
-
-static int event_enqueue(struct event_queue *queue, struct xlink_event *event)
-{
-	int rc = -1;
-
-	mutex_lock(&queue->lock);
-	if (queue->count < ((queue->capacity / 10) * 7)) {
-		list_add_tail(&event->list, &queue->head);
-		queue->count++;
-		rc = 0;
-	}
-	mutex_unlock(&queue->lock);
-	return rc;
 }
 
 static struct xlink_event *dispatcher_event_get(struct dispatcher *disp)
@@ -288,6 +275,7 @@ enum xlink_error xlink_dispatcher_start(int id, struct xlink_handle *handle)
 	// set the dispatcher context
 	disp->handle = handle;
 	disp->interface = get_interface_from_sw_device_id(handle->sw_device_id);
+	mutex_init(&disp->disp_mutex);
 
 	// run dispatcher thread to handle and write outgoing packets
 	disp->txthread = kthread_run(xlink_dispatcher_txthread,
@@ -315,6 +303,7 @@ r_rxthread:
 r_txthread:
 	disp->state = XLINK_DISPATCHER_STOPPED;
 r_error:
+	mutex_destroy(&disp->disp_mutex);
 	mutex_unlock(&xlinkd->lock);
 	return X_LINK_ERROR;
 }
@@ -323,7 +312,6 @@ enum xlink_error xlink_dispatcher_event_add(enum xlink_event_origin origin,
 					    struct xlink_event *event)
 {
 	struct dispatcher *disp;
-	int rc;
 
 	// get dispatcher by handle
 	disp = get_dispatcher_by_id(event->link_id);
@@ -338,12 +326,13 @@ enum xlink_error xlink_dispatcher_event_add(enum xlink_event_origin origin,
 	if (origin == EVENT_TX)
 		event->header.id = event_generate_id();
 	event->origin = origin;
-	rc = event_enqueue(&disp->queue, event);
-	if (rc)
-		return X_LINK_CHAN_FULL;
 
-	// notify dispatcher tx thread of new event
-	up(&disp->event_sem);
+	mutex_lock(&disp->disp_mutex);
+	dispatcher_event_send(event);
+	//event is handled and can now be freed
+	xlink_destroy_event(event);
+	mutex_unlock(&disp->disp_mutex);
+
 	return X_LINK_SUCCESS;
 }
 
@@ -364,21 +353,29 @@ enum xlink_error xlink_dispatcher_stop(int id)
 
 	if (disp->rxthread) {
 		// stop dispatcher rx thread
+		/* Using get_task_struct to ensure disp->rxthread explicitly
+		 * realeased as we wanted
+		 */
+		get_task_struct(disp->rxthread);
 		send_sig(SIGTERM, disp->rxthread, 0);
 		rc = kthread_stop(disp->rxthread);
+		put_task_struct(disp->rxthread);
 		if (rc)
 			goto r_thread;
 	}
 	wait_for_completion(&disp->rx_done);
 	if (disp->txthread) {
 		// stop dispatcher tx thread
+		get_task_struct(disp->txthread);
 		send_sig(SIGTERM, disp->txthread, 0);
 		rc = kthread_stop(disp->txthread);
+		put_task_struct(disp->txthread);
 		if (rc)
 			goto r_thread;
 	}
 	wait_for_completion(&disp->tx_done);
 	disp->state = XLINK_DISPATCHER_STOPPED;
+	mutex_destroy(&disp->disp_mutex);
 	mutex_unlock(&xlinkd->lock);
 	return X_LINK_SUCCESS;
 
