@@ -677,6 +677,7 @@ Example of bash shell script to enable and disable events during measurements:
  wait -n ${perf_pid}
  exit $?
 
+include::intel-hybrid.txt[]
 
 SEE ALSO
 --------
