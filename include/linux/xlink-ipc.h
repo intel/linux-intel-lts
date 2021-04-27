@@ -45,4 +45,8 @@ int xlink_ipc_register_for_events(u32 sw_device_id,
 
 int xlink_ipc_unregister_for_events(u32 sw_device_id);
 
+int xlink_ipc_get_device_mode(u32 sw_device_id, u32 *power_mode);
+
+int xlink_ipc_set_device_mode(u32 sw_device_id, u32 power_mode);
+
 #endif /* _XLINK_IPC_H_ */
