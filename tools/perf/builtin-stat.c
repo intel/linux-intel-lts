@@ -68,6 +68,7 @@
 #include "util/affinity.h"
 #include "util/pfm.h"
 #include "util/bpf_counter.h"
+#include "util/pmu-hybrid.h"
 #include "asm/bug.h"
 
 #include <linux/time64.h>
@@ -2353,6 +2354,9 @@ int cmd_stat(int argc, const char **argv)
 	}
 
 	evlist__check_cpu_maps(evsel_list);
+
+	if (perf_pmu__has_hybrid())
+		stat_config.no_merge = true;
 
 	/*
 	 * Initialize thread_map with comm names,
