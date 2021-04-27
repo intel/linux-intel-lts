@@ -345,7 +345,7 @@ static ssize_t enable_write(struct counter_device *counter,
 {
 	struct intel_qep *qep = counter->priv;
 	u32 reg;
-	bool val;
+	bool val, changed;
 	int ret;
 
 	ret = kstrtobool(buf, &val);
@@ -353,21 +353,27 @@ static ssize_t enable_write(struct counter_device *counter,
 		return ret;
 
 	mutex_lock(&qep->lock);
-	if (val && !qep->enabled) {
-		pm_runtime_get_sync(qep->dev);
-		reg = intel_qep_readl(qep, INTEL_QEPCON);
-		reg |= INTEL_QEPCON_EN;
-		intel_qep_writel(qep, INTEL_QEPCON, reg);
-		qep->enabled = true;
-	} else if (!val && qep->enabled) {
-		reg = intel_qep_readl(qep, INTEL_QEPCON);
-		reg &= ~INTEL_QEPCON_EN;
-		intel_qep_writel(qep, INTEL_QEPCON, reg);
-		qep->enabled = false;
-		pm_runtime_put(qep->dev);
-	}
-	mutex_unlock(&qep->lock);
+	changed = val ^ qep->enabled;
+	if (!changed)
+		goto out;
 
+	pm_runtime_get_sync(qep->dev);
+	reg = intel_qep_readl(qep, INTEL_QEPCON);
+	if (val) {
+		/* Enable peripheral and keep runtime PM always on */
+		reg |= INTEL_QEPCON_EN;
+		pm_runtime_get_noresume(qep->dev);
+	} else {
+		/* Let runtime PM be idle and disable peripheral */
+		pm_runtime_put_noidle(qep->dev);
+		reg &= ~INTEL_QEPCON_EN;
+	}
+	intel_qep_writel(qep, INTEL_QEPCON, reg);
+	pm_runtime_put(qep->dev);
+	qep->enabled = val;
+
+out:
+	mutex_unlock(&qep->lock);
 	return len;
 }
 
