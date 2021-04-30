@@ -124,6 +124,10 @@ struct xpcie {
 	struct tasklet_struct rx_tasklet;
 	struct hrtimer free_rx_bd_timer;
 #endif
+
+	struct device_attribute debug;
+	bool debug_enable;
+	struct xpcie_debug_stats stats;
 };
 
 #endif /* XPCIE_HEADER_ */

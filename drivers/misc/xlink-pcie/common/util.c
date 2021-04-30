@@ -442,7 +442,7 @@ void *intel_xpcie_cap_find(struct xpcie *xpcie, u32 start, u16 id)
 }
 
 bool intel_xpcie_list_try_packing(struct xpcie_list *list, void *data,
-					size_t size)
+				  size_t size)
 {
 	struct xpcie_buf_desc *bd_tail;
 	bool is_packed = false;
@@ -459,4 +459,98 @@ bool intel_xpcie_list_try_packing(struct xpcie_list *list, void *data,
 	}
 	spin_unlock(&list->lock);
 	return is_packed;
+}
+
+#ifdef XLINK_PCIE_REMOTE
+#include "../remote_host/pci.h"
+#else
+#include "../local_host/epf.h"
+#endif
+
+static ssize_t debug_show(struct device *dev, struct device_attribute *attr,
+			  char *buf)
+{
+#ifndef XLINK_PCIE_REMOTE
+	struct pci_epf *epf = to_pci_epf(dev);
+	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+	struct xpcie *xpcie = &xpcie_epf->xpcie;
+#else
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct xpcie_dev *xdev = pci_get_drvdata(pdev);
+	struct xpcie *xpcie = &xdev->xpcie;
+#endif
+	size_t bytes, tx_list_num, rx_list_num, tx_pool_num, rx_pool_num;
+
+	if (!xpcie->debug_enable)
+		return 0;
+
+	intel_xpcie_list_info(&xpcie->write, &bytes, &tx_list_num);
+	intel_xpcie_list_info(&xpcie->interfaces[0].read, &bytes, &rx_list_num);
+	intel_xpcie_list_info(&xpcie->tx_pool, &bytes, &tx_pool_num);
+	intel_xpcie_list_info(&xpcie->rx_pool, &bytes, &rx_pool_num);
+
+	snprintf(buf, 4096,
+		 "tx_krn, cnts %zu bytes %zu\n"
+		 "tx_usr, cnts %zu bytes %zu\n"
+		 "rx_krn, cnts %zu bytes %zu\n"
+		 "rx_usr, cnts %zu bytes %zu\n"
+		 "tx_list %zu tx_pool %zu\n"
+		 "rx_list %zu rx_pool %zu\n"
+		 "interrupts %zu, send_ints %zu\n"
+		 "rx runs %zu tx runs %zu\n",
+		 xpcie->stats.tx_krn.cnts, xpcie->stats.tx_krn.bytes,
+		 xpcie->stats.tx_usr.cnts, xpcie->stats.tx_usr.bytes,
+		 xpcie->stats.rx_krn.cnts, xpcie->stats.rx_krn.bytes,
+		 xpcie->stats.rx_usr.cnts, xpcie->stats.rx_usr.bytes,
+		 tx_list_num, tx_pool_num, rx_list_num, rx_pool_num,
+		 xpcie->stats.interrupts, xpcie->stats.send_ints,
+		 xpcie->stats.rx_event_runs, xpcie->stats.tx_event_runs
+	 );
+
+	return strlen(buf);
+}
+
+static ssize_t debug_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+#ifndef XLINK_PCIE_REMOTE
+	struct pci_epf *epf = to_pci_epf(dev);
+	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+	struct xpcie *xpcie = &xpcie_epf->xpcie;
+#else
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct xpcie_dev *xdev = pci_get_drvdata(pdev);
+	struct xpcie *xpcie = &xdev->xpcie;
+#endif
+	long value;
+
+	if (kstrtol(buf, 10, &value))
+		pr_warn("%s: Invalid args\n", __func__);
+
+	xpcie->debug_enable = value ? true : false;
+
+	if (!xpcie->debug_enable)
+		memset(&xpcie->stats, 0, sizeof(struct xpcie_debug_stats));
+
+	return count;
+}
+
+void intel_xpcie_init_debug(struct xpcie *xpcie, struct device *dev)
+{
+	DEVICE_ATTR_RW(debug);
+	memset(&xpcie->stats, 0, sizeof(struct xpcie_debug_stats));
+	xpcie->debug = dev_attr_debug;
+	device_create_file(dev, &xpcie->debug);
+}
+
+void intel_xpcie_uninit_debug(struct xpcie *xpcie, struct device *dev)
+{
+	device_remove_file(dev, &xpcie->debug);
+	memset(&xpcie->stats, 0, sizeof(struct xpcie_debug_stats));
+}
+
+void intel_xpcie_debug_incr(struct xpcie *xpcie, size_t *attr, size_t v)
+{
+	if (unlikely(xpcie->debug_enable))
+		*attr += v;
 }

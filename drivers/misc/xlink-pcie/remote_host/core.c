@@ -267,6 +267,8 @@ static void intel_xpcie_rx_tasklet_func(unsigned long xpcie_ptr)
 	xdev = container_of(xpcie, struct xpcie_dev, xpcie);
 	inf = &xpcie->interfaces[0];
 
+	intel_xpcie_debug_incr(xpcie, &xpcie->stats.rx_event_runs, 1);
+
 	if (intel_xpcie_get_device_status(xpcie) != XPCIE_STATUS_RUN)
 		return;
 
@@ -313,6 +315,11 @@ static void intel_xpcie_rx_tasklet_func(unsigned long xpcie_ptr)
 			bd->length = length;
 			bd->next = NULL;
 
+			intel_xpcie_debug_incr(xpcie,
+					       &xpcie->stats.rx_krn.cnts, 1);
+			intel_xpcie_debug_incr(xpcie,
+					       &xpcie->stats.rx_krn.bytes,
+					       bd->length);
 			intel_xpcie_add_bd_to_interface(xpcie, bd);
 			intel_xpcie_update_device_flwctl(xpcie,
 							 TO_DEVICE,
@@ -346,6 +353,8 @@ static void intel_xpcie_tx_event_handler(struct work_struct *work)
 	struct xpcie_buf_desc *bd;
 	size_t bytes, buffers;
 	u16 status;
+
+	intel_xpcie_debug_incr(xpcie, &xpcie->stats.tx_event_runs, 1);
 
 	if (intel_xpcie_get_device_status(xpcie) != XPCIE_STATUS_RUN)
 		return;
@@ -392,12 +401,17 @@ static void intel_xpcie_tx_event_handler(struct work_struct *work)
 		intel_xpcie_set_td_interface(td, bd->interface);
 		intel_xpcie_set_td_status(td, XPCIE_DESC_STATUS_ERROR);
 
+		intel_xpcie_debug_incr(xpcie, &xpcie->stats.tx_krn.cnts, 1);
+		intel_xpcie_debug_incr(xpcie, &xpcie->stats.tx_krn.bytes,
+				       bd->length);
+
 		tail = XPCIE_CIRCULAR_INC(tail, ndesc);
 	}
 
 	if (intel_xpcie_get_tdr_tail(&tx->pipe) != tail) {
 		intel_xpcie_set_tdr_tail(&tx->pipe, tail);
 		intel_xpcie_pci_raise_irq(xdev, DATA_SENT, 1);
+		intel_xpcie_debug_incr(xpcie, &xpcie->stats.send_ints, 1);
 	}
 
 	intel_xpcie_list_info(&xpcie->write, &bytes, &buffers);
@@ -417,6 +431,7 @@ static irqreturn_t intel_xpcie_interrupt(int irq, void *args)
 	if (intel_xpcie_get_doorbell(xpcie, FROM_DEVICE, DATA_SENT)) {
 		intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_SENT, 0);
 		tasklet_schedule(&xpcie->rx_tasklet);
+		intel_xpcie_debug_incr(xpcie, &xdev->xpcie.stats.interrupts, 1);
 	}
 	if (intel_xpcie_get_doorbell(xpcie, FROM_DEVICE, DATA_RECEIVED)) {
 		intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_RECEIVED, 0);
@@ -535,6 +550,8 @@ int intel_xpcie_core_read(struct xpcie *xpcie, void *buffer, size_t *length,
 	if (xpcie->status != XPCIE_STATUS_RUN)
 		return -ENODEV;
 
+	intel_xpcie_debug_incr(xpcie, &xpcie->stats.rx_usr.cnts, 1);
+
 	len = *length;
 	remaining = len;
 	*length = 0;
@@ -572,6 +589,10 @@ int intel_xpcie_core_read(struct xpcie *xpcie, void *buffer, size_t *length,
 			remaining -= bcopy;
 			bd->data += bcopy;
 			bd->length -= bcopy;
+
+			intel_xpcie_debug_incr(xpcie,
+					       &xpcie->stats.rx_usr.bytes,
+					       bcopy);
 
 			if (bd->length == 0) {
 				intel_xpcie_free_rx_bd(xpcie, bd);
@@ -623,6 +644,8 @@ int intel_xpcie_core_write(struct xpcie *xpcie, void *buffer, size_t *length,
 	remaining = len;
 	*length = 0;
 
+	intel_xpcie_debug_incr(xpcie, &xpcie->stats.tx_usr.cnts, 1);
+
 	ret = mutex_lock_interruptible(&xpcie->wlock);
 	if (ret < 0)
 		return -EINTR;
@@ -671,6 +694,10 @@ int intel_xpcie_core_write(struct xpcie *xpcie, void *buffer, size_t *length,
 			remaining -= bcopy;
 			bd->length = bcopy;
 			bd->interface = inf->id;
+
+			intel_xpcie_debug_incr(xpcie,
+					       &xpcie->stats.tx_usr.bytes,
+					       bcopy);
 
 			if (remaining) {
 				bd->next = intel_xpcie_alloc_tx_bd(xpcie);
