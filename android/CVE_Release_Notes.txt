@@ -662,8 +662,19 @@ CVEs fixed in 4.19.184:
   CVE-2021-29647: 5f09be2a1a35cb8bd6c178d5f205b7265bd68646 net: qrtr: fix a kernel-infoleak in qrtr_recvmsg()
   CVE-2021-29650: 81bc258370c6eeb1f41d350325e8a2c8e20fafad netfilter: x_tables: Use correct memory barriers.
 
+CVEs fixed in 4.19.185:
+  CVE-2021-3483: 89a2c28a3b67c7d918218f57e4bb7b591f7e5d0f firewire: nosy: Fix a use-after-free bug in nosy_ioctl()
+
+CVEs fixed in 4.19.186:
+  CVE-2021-29154: 5f26f1f838aa960045c712e13dbab8ff451fed74 bpf, x86: Validate computation of branch displacements for x86-64
+
+CVEs fixed in 4.19.187:
+  CVE-2020-25670: adbb1d218c5f56dbae052765da83c0f57fce2a31 nfc: fix refcount leak in llcp_sock_bind()
+  CVE-2020-25671: c14b50185cd0d5ba6d7a5eb8acf9fbcc3663416d nfc: fix refcount leak in llcp_sock_connect()
+  CVE-2020-25672: 301a4264d6ab56d2b9230066b060d7ceaa000d68 nfc: fix memory leak in llcp_sock_connect()
+
  
-CVEs Fixed in this 4.19.184 LTS 4.19 release 
+CVEs Fixed in this 4.19.188 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -711,5 +722,8 @@ CVEs Fixed in this 4.19.184 LTS 4.19 release
 # CVE-2020-12364
 # CVE-2020-12364
 0001-drm-i915-disable-guc.patch
+
+# CVE-2020-36311
+0001-KVM-SVM-Periodically-schedule-when-unregistering-reg.patch
  
 ================
