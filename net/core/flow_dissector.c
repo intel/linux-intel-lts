@@ -1026,6 +1026,9 @@ proto_again:
 			key_control->addr_type = FLOW_DISSECTOR_KEY_IPV4_ADDRS;
 		}
 
+		__skb_flow_dissect_ipv4(skb, flow_dissector,
+					target_container, data, iph);
+
 		if (ip_is_fragment(iph)) {
 			key_control->flags |= FLOW_DIS_IS_FRAGMENT;
 
@@ -1041,9 +1044,6 @@ proto_again:
 				}
 			}
 		}
-
-		__skb_flow_dissect_ipv4(skb, flow_dissector,
-					target_container, data, iph);
 
 		break;
 	}
