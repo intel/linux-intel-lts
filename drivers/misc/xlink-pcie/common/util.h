@@ -80,6 +80,10 @@ int intel_xpcie_interfaces_init(struct xpcie *xpcie);
 void intel_xpcie_add_bd_to_interface(struct xpcie *xpcie,
 				     struct xpcie_buf_desc *bd);
 void *intel_xpcie_cap_find(struct xpcie *xpcie, u32 start, u16 id);
+void intel_xpcie_init_debug(struct xpcie *xpcie, struct device *dev);
+void intel_xpcie_uninit_debug(struct xpcie *xpcie, struct device *dev);
+void intel_xpcie_debug_incr(struct xpcie *xpcie, size_t *attr, size_t v);
+
 bool intel_xpcie_list_try_packing(struct xpcie_list *list, void *data,
 					size_t size);
 #endif /* XPCIE_UTIL_HEADER_ */

@@ -371,6 +371,8 @@ int intel_xpcie_pci_init(struct xpcie_dev *xdev, struct pci_dev *pdev)
 		goto error_dma_mask;
 	}
 
+	intel_xpcie_init_debug(&xdev->xpcie, &xdev->pci->dev);
+
 	rc = xpcie_device_init(xdev);
 	if (!rc)
 		goto init_exit;
