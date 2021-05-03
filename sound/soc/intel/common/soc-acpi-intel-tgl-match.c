@@ -313,11 +313,9 @@ static struct snd_soc_acpi_codecs tgl_max98373_amp = {
 struct snd_soc_acpi_mach snd_soc_acpi_intel_tgl_machines[] = {
 	{
 		.id = "10EC1308",
-		.drv_name = "sof_sdw",
-		.link_mask = 0x1, /* RT711 on SoundWire link0 */
-		.links = tgl_i2s_rt1308,
+		.drv_name = "tgl_rt1308",
 		.sof_fw_filename = "sof-tgl.ri",
-		.sof_tplg_filename = "sof-tgl-rt711-i2s-rt1308.tplg",
+		.sof_tplg_filename = "sof-tgl-rt1308.tplg"
 	},
 	{
 		.id = "10EC5682",
