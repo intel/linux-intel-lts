@@ -1435,11 +1435,33 @@ static int keembay_gpio_add_pin_ranges(struct gpio_chip *chip)
 	return ret;
 }
 
+static void keembay_gpio_irq_ack(struct irq_data *data)
+{
+	/*
+	 *
+	 *    IRQ ack is not possible from the SOC perspective.
+	 *
+	 *    The IP by itself is used for handling interrupts which doesn?t come in short-time
+	 *
+	 *    and not used as protocol or communication interrupts.
+	 *
+	 *    All the interrupts are threaded IRQ interrupts
+	 *
+	 *    But this function is expected to be present
+	 *
+	 *    when gpio IP getting registered with irq framework
+	 *
+	 *    Otherwise handle_edge_irq() will fail.
+	 *
+	 */
+}
+
 static struct irq_chip keembay_gpio_irqchip = {
 	.name = "keembay-gpio",
 	.irq_enable = keembay_gpio_irq_enable,
 	.irq_disable = keembay_gpio_irq_disable,
 	.irq_set_type = keembay_gpio_irq_set_type,
+	.irq_ack = keembay_gpio_irq_ack,
 };
 
 static int keembay_gpiochip_probe(struct keembay_pinctrl *kpc,
