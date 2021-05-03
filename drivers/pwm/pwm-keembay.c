@@ -29,7 +29,8 @@
 /* Mask */
 #define KMB_PWM_HIGH_MASK		GENMASK(31, 16)
 #define KMB_PWM_LOW_MASK		GENMASK(15, 0)
-#define KMB_PWM_LEADIN_MASK		GENMASK(30, 0)
+#define KMB_PWM_LEADIN_MASK		GENMASK(30, 16)
+#define KEEMBAY_PWM_RPT_CNT_MASK GENMASK(15, 0)
 
 /* PWM Register offset */
 #define KMB_PWM_LEADIN_OFFSET(ch)	(0x00 + 4 * (ch))
@@ -125,23 +126,32 @@ static int keembay_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	u32 pwm_count = 0;
 	u16 high, low;
 
-	if (state->polarity != PWM_POLARITY_NORMAL)
-		return -EINVAL;
-
-	/*
-	 * Configure the pwm repeat count as infinite at (15:0) and leadin
-	 * low time as 0 at (30:16), which is in terms of clock cycles.
-	 */
-	keembay_pwm_update_bits(priv, KMB_PWM_LEADIN_MASK, 0,
-				KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
-
-	keembay_pwm_get_state(chip, pwm, &current_state);
-
 	if (!state->enabled) {
 		if (current_state.enabled)
 			keembay_pwm_disable(priv, pwm->hwpwm);
 		return 0;
 	}
+
+	if (state->polarity != PWM_POLARITY_NORMAL)
+		return -EINVAL;
+
+	if (state->count > KMB_PWM_COUNT_MAX)
+		return -EINVAL;
+	/*
+	 * Configure the pwm repeat count as infinite at (15:0) and leadin
+	 * low time as 0 at (30:16), which is in terms of clock cycles.
+	 * To configure the leadin low time as 0 at (30:16)
+	 */
+	keembay_pwm_update_bits(priv, KMB_PWM_LEADIN_MASK, 0,
+				KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
+
+	/*
+	 * To configure the pwm repeat count  at (15:0)
+	 */
+	keembay_pwm_update_bits(priv, KEEMBAY_PWM_RPT_CNT_MASK, state->count,
+				KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
+
+	keembay_pwm_get_state(chip, pwm, &current_state);
 
 	/*
 	 * The upper 16 bits and lower 16 bits of the KMB_PWM_HIGHLOW_OFFSET
