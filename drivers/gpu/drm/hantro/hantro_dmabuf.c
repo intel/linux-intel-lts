@@ -60,7 +60,9 @@ static int hantro_gem_dmabuf_mmap(struct dma_buf *dma_buf,
 
 static int hantro_gem_dmabuf_vmap(struct dma_buf *dma_buf, struct dma_buf_map *map)
 {
-  return drm_gem_dmabuf_vmap(dma_buf, map);
+	struct drm_gem_object *obj = hantro_get_gem_from_dmabuf(dma_buf);
+
+	return obj->funcs->vmap(obj, map);
 }
 
 static void hantro_gem_dmabuf_vunmap(struct dma_buf *dma_buf, struct dma_buf_map *vaddr)

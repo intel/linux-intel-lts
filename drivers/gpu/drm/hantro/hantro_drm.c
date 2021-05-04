@@ -113,8 +113,8 @@ static int hantro_gem_dumb_create_internal(struct drm_file *file_priv,
 	args->size = PAGE_ALIGN(args->size);
 
 	obj = &cma_obj->base;
-	cma_obj->dmapriv.self = cma_obj;
 	obj->funcs = &hantro_gem_object_funcs;
+	cma_obj->dmapriv.self = cma_obj;
 	cma_obj->num_pages = args->size >> PAGE_SHIFT;
 	cma_obj->pdevice = pdevice;
 
@@ -369,6 +369,7 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 {
 	struct drm_gem_hantro_object *cma_obj;
 	struct device_info *pdevice;
+
 	/*
 	 * dma buf imported from others,
 	 * release data structures allocated by ourselves
@@ -384,10 +385,12 @@ static void hantro_gem_free_object(struct drm_gem_object *gem_obj)
 		cma_obj->pages = NULL;
 	}
 
+	struct dma_buf_map map = DMA_BUF_MAP_INIT_VADDR(cma_obj->vaddr);
+
 	if (gem_obj->import_attach) {
 		if (cma_obj->vaddr)
 			dma_buf_vunmap(gem_obj->import_attach->dmabuf,
-				       cma_obj->vaddr);
+				       &map);
 
 		drm_prime_gem_destroy(gem_obj, cma_obj->sgt);
 	} else if (cma_obj->vaddr) {
@@ -1412,12 +1415,6 @@ static int hantro_device_open(struct inode *inode, struct file *filp)
 	return ret;
 }
 
-static int hantro_gem_open_obj(struct drm_gem_object *obj,
-			       struct drm_file *filp)
-{
-	return 0;
-}
-
 static int hantro_device_release(struct inode *inode, struct file *filp)
 {
 	cache_release(filp);
@@ -1550,17 +1547,6 @@ static void hantro_release(struct drm_device *dev)
 {
 }
 
-static void hantro_close_object(struct drm_gem_object *obj,
-				struct drm_file *file_priv)
-{
-	struct drm_gem_hantro_object *cma_obj;
-
-	cma_obj = to_drm_gem_hantro_obj(obj);
-	if (obj->dma_buf && (cma_obj->flag & HANTRO_GEM_FLAG_EXPORTUSED)) {
-		dma_buf_put(obj->dma_buf);
-	}
-}
-
 static int hantro_gem_prime_handle_to_fd(struct drm_device *dev,
 					 struct drm_file *filp, u32 handle,
 					 u32 flags, int *prime_fd)
@@ -1618,8 +1604,6 @@ static struct drm_driver hantro_drm_driver = {
 
 static struct drm_gem_object_funcs hantro_gem_object_funcs = {
 	.free = hantro_gem_free_object,
-	.open = hantro_gem_open_obj,
-	.close = hantro_close_object,
 	.export = hantro_prime_export,
 	.get_sg_table = hantro_gem_prime_get_sg_table,
 	.vmap = hantro_gem_prime_vmap,
