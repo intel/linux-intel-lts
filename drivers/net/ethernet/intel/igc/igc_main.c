@@ -1571,6 +1571,14 @@ static bool igc_request_tx_tstamp(struct igc_adapter *adapter, struct sk_buff *s
 	return false;
 }
 
+static bool igc_is_ptp_packet(struct sk_buff *skb)
+{
+	__be16 protocol = vlan_get_protocol(skb);
+
+	/* FIXME: also handle UDP packets */
+	return protocol == htons(ETH_P_1588);
+}
+
 static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 				       struct igc_ring *tx_ring)
 {
@@ -1647,15 +1655,20 @@ done:
 
 	if (unlikely(test_bit(IGC_RING_FLAG_TX_HWTSTAMP, &tx_ring->flags) &&
 		     skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)) {
+		struct igc_adapter *adapter = netdev_priv(tx_ring->netdev);
+		bool is_ptp = igc_is_ptp_packet(skb);
 		unsigned long flags;
 		u32 tstamp_flags;
 
 		spin_lock_irqsave(&adapter->ptp_tx_lock, flags);
-		if (igc_request_tx_tstamp(adapter, skb, &tstamp_flags)) {
+		if (is_ptp && igc_request_tx_tstamp(adapter, skb, &tstamp_flags)) {
 			skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 			tx_flags |= IGC_TX_FLAGS_TSTAMP | tstamp_flags;
 			if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP_USE_CYCLES)
 				tx_flags |= IGC_TX_FLAGS_TSTAMP_TIMER_1;
+		} else if (!is_ptp) {
+			skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
+			tx_flags |= IGC_TX_FLAGS_DMA_TSTAMP;
 		} else {
 			adapter->tx_hwtstamp_skipped++;
 		}
@@ -3185,6 +3198,12 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 		if (tx_buffer->type == IGC_TX_BUFFER_TYPE_XSK &&
 		    tx_buffer->xsk_pending_ts)
 			break;
+		if (eop_desc->wb.status & cpu_to_le32(IGC_TXD_STAT_TS_STAT) &&
+		    tx_buffer->tx_flags & IGC_TX_FLAGS_DMA_TSTAMP) {
+			u64 tstamp = le64_to_cpu(eop_desc->wb.dma_tstamp);
+
+			igc_ptp_tx_dma_tstamp(adapter, tx_buffer->skb, tstamp);
+		}
 
 		/* clear next_to_watch to prevent false hangs */
 		tx_buffer->next_to_watch = NULL;

@@ -315,6 +315,7 @@
 #define IGC_TXD_CMD_DEXT	0x20000000 /* Desc extension (0 = legacy) */
 #define IGC_TXD_CMD_VLE		0x40000000 /* Add VLAN tag */
 #define IGC_TXD_STAT_DD		0x00000001 /* Descriptor Done */
+#define IGC_TXD_STAT_TS_STAT    0x00000002 /* DMA Timestamp in packet */
 #define IGC_TXD_CMD_TCP		0x01000000 /* TCP packet */
 #define IGC_TXD_CMD_IP		0x02000000 /* IP packet */
 #define IGC_TXD_CMD_TSE		0x04000000 /* TCP Seg enable */
@@ -558,6 +559,7 @@
 #define IGC_TQAVCTRL_ENHANCED_QAV	0x00000008
 #define IGC_TQAVCTRL_FUTSCDDIS		0x00000080
 #define IGC_TQAVCTRL_PREEMPT_ENA	0x00000002
+#define IGC_TQAVCTRL_1588_STAT_EN	0x00000004
 #define IGC_TQAVCTRL_MIN_FRAG_MASK	0x0000C000
 #define IGC_TQAVCTRL_MIN_FRAG_SHIFT	14
 
