@@ -16,7 +16,7 @@ union igc_adv_tx_desc {
 		__le32 olinfo_status;
 	} read;
 	struct {
-		__le64 rsvd;       /* Reserved */
+		__le64 dma_tstamp;
 		__le32 nxtseq_seed;
 		__le32 status;
 	} wb;
