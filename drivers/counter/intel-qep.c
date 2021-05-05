@@ -112,19 +112,6 @@ static void intel_qep_init(struct intel_qep *qep)
 	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
 }
 
-enum intel_qep_synapse_action {
-	INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE,
-	INTEL_QEP_SYNAPSE_ACTION_FALLING_EDGE,
-};
-
-static enum counter_synapse_action intel_qep_synapse_actions[] = {
-	[INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE] =
-	COUNTER_SYNAPSE_ACTION_RISING_EDGE,
-
-	[INTEL_QEP_SYNAPSE_ACTION_FALLING_EDGE] =
-	COUNTER_SYNAPSE_ACTION_FALLING_EDGE,
-};
-
 enum intel_qep_count_function {
 	INTEL_QEP_ENCODER_MODE_NORMAL,
 	INTEL_QEP_ENCODER_MODE_SWAPPED,
@@ -197,10 +184,9 @@ out:
 	return ret;
 }
 
-static int intel_qep_action_get(struct counter_device *counter,
-				struct counter_count *count,
-				struct counter_synapse *synapse,
-				size_t *action)
+static ssize_t intel_qep_signal_invert_read(struct counter_device *counter,
+					    struct counter_signal *signal,
+					    void *priv, char *buf)
 {
 	struct intel_qep *qep = counter->priv;
 	u32 reg;
@@ -209,21 +195,22 @@ static int intel_qep_action_get(struct counter_device *counter,
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	pm_runtime_put(qep->dev);
 
-	*action = (reg & synapse->signal->id) ?
-		INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE :
-		INTEL_QEP_SYNAPSE_ACTION_FALLING_EDGE;
-
-	return 0;
+	return sysfs_emit(buf, "%u\n", !(reg & signal->id));
 }
 
-static int intel_qep_action_set(struct counter_device *counter,
-				struct counter_count *count,
-				struct counter_synapse *synapse,
-				size_t action)
+static ssize_t intel_qep_signal_invert_write(struct counter_device *counter,
+					     struct counter_signal *signal,
+					     void *priv, const char *buf,
+					     size_t len)
 {
 	struct intel_qep *qep = counter->priv;
-	int ret = 0;
+	bool invert;
+	int ret;
 	u32 reg;
+
+	ret = kstrtobool(buf, &invert);
+	if (ret < 0)
+		return ret;
 
 	mutex_lock(&qep->lock);
 	if (qep->enabled) {
@@ -233,12 +220,13 @@ static int intel_qep_action_set(struct counter_device *counter,
 
 	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
-	if (action == INTEL_QEP_SYNAPSE_ACTION_RISING_EDGE)
-		reg |= synapse->signal->id;
+	if (invert == true)
+		reg &= ~signal->id;
 	else
-		reg &= ~synapse->signal->id;
+		reg |= signal->id;
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 	pm_runtime_put(qep->dev);
+	ret = len;
 
 out:
 	mutex_unlock(&qep->lock);
@@ -250,40 +238,45 @@ static const struct counter_ops intel_qep_counter_ops = {
 
 	.function_get = intel_qep_function_get,
 	.function_set = intel_qep_function_set,
+};
 
-	.action_get = intel_qep_action_get,
-	.action_set = intel_qep_action_set,
+static const struct counter_signal_ext intel_qep_signal_ext[] = {
+	{
+		.name = "invert",
+		.read = intel_qep_signal_invert_read,
+		.write = intel_qep_signal_invert_write,
+	},
 };
 
 static struct counter_signal intel_qep_signals[] = {
 	{
 		.id = INTEL_QEPCON_EDGE_A,
 		.name = "Phase A",
+		.ext = intel_qep_signal_ext,
+		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
 	},
 	{
 		.id = INTEL_QEPCON_EDGE_B,
 		.name = "Phase B",
+		.ext = intel_qep_signal_ext,
+		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
 	},
 	{
 		.id = INTEL_QEPCON_EDGE_INDX,
 		.name = "Index",
+		.ext = intel_qep_signal_ext,
+		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
 	},
 };
 
 static struct counter_synapse intel_qep_count_synapses[] = {
 	{
-		.actions_list = intel_qep_synapse_actions,
-		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
 		.signal = &intel_qep_signals[0],
 	},
 	{
-		.actions_list = intel_qep_synapse_actions,
-		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
 		.signal = &intel_qep_signals[1],
 	},
 	{
-		.actions_list = intel_qep_synapse_actions,
-		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
 		.signal = &intel_qep_signals[2],
 	},
 };
