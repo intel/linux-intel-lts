@@ -3633,6 +3633,7 @@ static int stmmac_open(struct net_device *dev)
 		const void *intel_pdata = priv->plat->intel_bi->platform_data;
 
 		pdata = (struct dwxpcs_platform_data *)intel_pdata;
+		pdata->irq = priv->phy_conv_irq;
 		pdata->ext_phy_addr = priv->plat->phy_addr;
 		pdata->speed_2500_en = priv->plat->speed_2500_en;
 
@@ -6671,6 +6672,7 @@ int stmmac_dvr_probe(struct device *device,
 	priv->dev->irq = res->irq;
 	priv->wol_irq = res->wol_irq;
 	priv->lpi_irq = res->lpi_irq;
+	priv->phy_conv_irq = res->phy_conv_irq;
 	priv->sfty_ce_irq = res->sfty_ce_irq;
 	priv->sfty_ue_irq = res->sfty_ue_irq;
 	for (i = 0; i < MTL_MAX_RX_QUEUES; i++)
@@ -7318,6 +7320,7 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 		const void *intel_pdata = priv->plat->intel_bi->platform_data;
 
 		pdata = (struct dwxpcs_platform_data *)intel_pdata;
+		pdata->irq = priv->phy_conv_irq;
 		pdata->ext_phy_addr = priv->plat->phy_addr;
 		pdata->speed_2500_en = priv->plat->speed_2500_en;
 
@@ -7463,6 +7466,7 @@ int stmmac_resume(struct device *dev)
 		const void *intel_pdata = priv->plat->intel_bi->platform_data;
 
 		pdata = (struct dwxpcs_platform_data *)intel_pdata;
+		pdata->irq = priv->phy_conv_irq;
 		pdata->ext_phy_addr = priv->plat->phy_addr;
 		pdata->speed_2500_en = priv->plat->speed_2500_en;
 
