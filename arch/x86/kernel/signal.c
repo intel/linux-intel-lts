@@ -135,6 +135,9 @@ static int restore_sigcontext(struct pt_regs *regs,
 	 */
 	if (unlikely(!(uc_flags & UC_STRICT_RESTORE_SS) && user_64bit_mode(regs)))
 		force_valid_ss(regs);
+
+	if (uc_flags & UC_WAIT_ENDBR)
+		ibt_set_wait_endbr();
 #endif
 
 	return fpu__restore_sig((void __user *)sc.fpstate,
@@ -449,6 +452,9 @@ static unsigned long frame_uc_flags(struct pt_regs *regs)
 
 	if (likely(user_64bit_mode(regs)))
 		flags |= UC_STRICT_RESTORE_SS;
+
+	if (ibt_get_clear_wait_endbr())
+		flags |= UC_WAIT_ENDBR;
 
 	return flags;
 }

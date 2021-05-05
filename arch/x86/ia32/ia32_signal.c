@@ -129,6 +129,7 @@ COMPAT_SYSCALL_DEFINE0(rt_sigreturn)
 {
 	struct pt_regs *regs = current_pt_regs();
 	struct rt_sigframe_ia32 __user *frame;
+	unsigned int uc_flags;
 	sigset_t set;
 
 	frame = (struct rt_sigframe_ia32 __user *)(regs->sp - 4);
@@ -137,6 +138,11 @@ COMPAT_SYSCALL_DEFINE0(rt_sigreturn)
 		goto badframe;
 	if (__get_user(set.sig[0], (__u64 __user *)&frame->uc.uc_sigmask))
 		goto badframe;
+	if (__get_user(uc_flags, &frame->uc.uc_flags))
+		goto badframe;
+
+	if (uc_flags & UC_WAIT_ENDBR)
+		ibt_set_wait_endbr();
 
 	set_current_blocked(&set);
 
@@ -312,6 +318,7 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 			compat_sigset_t *set, struct pt_regs *regs)
 {
 	struct rt_sigframe_ia32 __user *frame;
+	unsigned int uc_flags = 0;
 	void __user *restorer;
 	void __user *fp = NULL;
 
@@ -339,6 +346,9 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 	if (setup_signal_shadow_stack(1, restorer))
 		return -EFAULT;
 
+	if (ibt_get_clear_wait_endbr())
+		uc_flags |= UC_WAIT_ENDBR;
+
 	if (!user_access_begin(frame, sizeof(*frame)))
 		return -EFAULT;
 
@@ -348,9 +358,8 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 
 	/* Create the ucontext.  */
 	if (static_cpu_has(X86_FEATURE_XSAVE))
-		unsafe_put_user(UC_FP_XSTATE, &frame->uc.uc_flags, Efault);
-	else
-		unsafe_put_user(0, &frame->uc.uc_flags, Efault);
+		uc_flags |= UC_FP_XSTATE;
+	unsafe_put_user(uc_flags, &frame->uc.uc_flags, Efault);
 	unsafe_put_user(0, &frame->uc.uc_link, Efault);
 	unsafe_compat_save_altstack(&frame->uc.uc_stack, regs->sp, Efault);
 

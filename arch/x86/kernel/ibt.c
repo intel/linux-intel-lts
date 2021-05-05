@@ -56,3 +56,44 @@ void ibt_disable(void)
 	ibt_set_clear_msr_bits(0, CET_ENDBR_EN);
 	current->thread.shstk.ibt = 0;
 }
+
+int ibt_get_clear_wait_endbr(void)
+{
+	u64 msr_val = 0;
+
+	if (!current->thread.shstk.ibt)
+		return 0;
+
+	fpregs_lock();
+
+	if (!test_thread_flag(TIF_NEED_FPU_LOAD)) {
+		if (!rdmsrl_safe(MSR_IA32_U_CET, &msr_val))
+			wrmsrl(MSR_IA32_U_CET, msr_val & ~CET_WAIT_ENDBR);
+	} else {
+		struct cet_user_state *cet;
+
+		/*
+		 * If !TIF_NEED_FPU_LOAD and get_xsave_addr() returns zero,
+		 * XFEATURE_CET_USER is in init state (cet is not active).
+		 * Return zero status.
+		 */
+		cet = get_xsave_addr(&current->thread.fpu.state.xsave,
+				     XFEATURE_CET_USER);
+		if (cet) {
+			msr_val = cet->user_cet;
+			cet->user_cet = msr_val & ~CET_WAIT_ENDBR;
+		}
+	}
+
+	fpregs_unlock();
+
+	return msr_val & CET_WAIT_ENDBR;
+}
+
+int ibt_set_wait_endbr(void)
+{
+	if (!current->thread.shstk.ibt)
+		return 0;
+
+	return ibt_set_clear_msr_bits(CET_WAIT_ENDBR, 0);
+}

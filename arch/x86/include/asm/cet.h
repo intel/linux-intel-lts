@@ -46,9 +46,13 @@ static inline int restore_signal_shadow_stack(void) { return 0; }
 #ifdef CONFIG_X86_IBT
 int ibt_setup(void);
 void ibt_disable(void);
+int ibt_get_clear_wait_endbr(void);
+int ibt_set_wait_endbr(void);
 #else
 static inline int ibt_setup(void) { return 0; }
 static inline void ibt_disable(void) {}
+static inline int ibt_get_clear_wait_endbr(void) { return 0; }
+static inline int ibt_set_wait_endbr(void) { return 0; }
 #endif
 
 #ifdef CONFIG_X86_SHADOW_STACK
