@@ -207,6 +207,37 @@ int hantrocache_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+void release_l2cache(struct cache_dev_t *dev, long core)
+{
+	/* If L2Cache is enabled, disable cache/shaper. */
+	u32 asic_id;
+
+	asic_id = ioread32(dev->hwregs);
+	asic_id = (asic_id >> 16) & 0x3;
+
+	if (asic_id != 2) {
+		/* Disable cache if it exists. */
+		PDEBUG(KERN_INFO "hantrodec: DEC[%li] disabled L2Cache\n", core);
+		iowrite32(0, (void *)(dev->hwregs + L2CACHE_E_OFF));
+	}
+
+	if (asic_id != 1) {
+		int i = 0, tmp;
+
+		/* Disable shaper if it exists. */
+		iowrite32(0, (void *)(dev->hwregs + SHAPER_E_OFF));
+		/* Check shaper abort interrupt */
+		for (i = 0; i < 100; i++) {
+			tmp = ioread32((void *)(dev->hwregs + SHAPER_INT_OFF));
+			if (tmp & 0x2) {
+				PDEBUG(KERN_INFO "hantrodec: DEC[%li] disabled shaper DONE\n", core);
+				iowrite32(tmp, (void *)(dev->hwregs + SHAPER_INT_OFF));
+				break;
+			}
+		}
+	}
+}
+
 void hantrocache_release(struct file *file)
 {
 	int i, devicecnt = get_device_count();
@@ -219,7 +250,8 @@ void hantrocache_release(struct file *file)
 		dev = get_cache_nodes(i, 0);
 		while (dev) {
 			if (dev->cacheowner == file && dev->is_reserved) {
-				reset_asic(dev);
+				PDEBUG("release cache core %d:%d", devicecnt, i);
+				release_l2cache(dev, dev->core_id);
 				release_core(dev);
 			}
 

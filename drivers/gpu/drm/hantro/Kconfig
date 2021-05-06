@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-config DRM_HANTRO
+config DRM_HANTRO_UNIFY
 	tristate "Hantro DRM"
 	depends on DRM
 	depends on ARM64

@@ -1341,9 +1341,9 @@ static int hantro_device_open(struct inode *inode, struct file *file)
 
 static int hantro_device_release(struct inode *inode, struct file *file)
 {
-	hantrocache_release(file);
 	hantrodec_release(file);
 	hantroenc_release();
+	hantrocache_release(file);
 	return drm_release(inode, file);
 }
 
