@@ -2021,7 +2021,7 @@ static int i915_psr_sink_status_show(struct seq_file *m, void *data)
 	struct drm_connector *connector = m->private;
 	struct drm_i915_private *dev_priv = to_i915(connector->dev);
 	struct intel_dp *intel_dp =
-		enc_to_intel_dp(&intel_attached_encoder(connector)->base);
+		enc_to_intel_dp(&intel_attached_encoder(to_intel_connector(connector))->base);
 	int ret;
 
 	if (!CAN_PSR(dev_priv)) {
@@ -3059,7 +3059,7 @@ static int i915_dp_mst_info(struct seq_file *m, void *unused)
 		if (connector->connector_type != DRM_MODE_CONNECTOR_DisplayPort)
 			continue;
 
-		intel_encoder = intel_attached_encoder(connector);
+		intel_encoder = intel_attached_encoder(to_intel_connector(connector));
 		if (!intel_encoder || intel_encoder->type == INTEL_OUTPUT_DP_MST)
 			continue;
 
@@ -4189,7 +4189,7 @@ static int i915_drrs_ctl_set(void *data, u64 val)
 			      drm_connector_mask(connector)))
 				continue;
 
-			encoder = intel_attached_encoder(connector);
+			encoder = intel_attached_encoder(to_intel_connector(connector));
 			if (encoder->type != INTEL_OUTPUT_EDP)
 				continue;
 
@@ -4400,7 +4400,7 @@ static int i915_dpcd_show(struct seq_file *m, void *data)
 {
 	struct drm_connector *connector = m->private;
 	struct intel_dp *intel_dp =
-		enc_to_intel_dp(&intel_attached_encoder(connector)->base);
+		enc_to_intel_dp(&intel_attached_encoder(to_intel_connector(connector))->base);
 	u8 buf[16];
 	ssize_t err;
 	int i;
@@ -4435,7 +4435,7 @@ static int i915_panel_show(struct seq_file *m, void *data)
 {
 	struct drm_connector *connector = m->private;
 	struct intel_dp *intel_dp =
-		enc_to_intel_dp(&intel_attached_encoder(connector)->base);
+		enc_to_intel_dp(&intel_attached_encoder(to_intel_connector(connector))->base);
 
 	if (connector->status != connector_status_connected)
 		return -ENODEV;
@@ -4513,7 +4513,7 @@ static int i915_dsc_fec_support_show(struct seq_file *m, void *data)
 		} else if (ret) {
 			break;
 		}
-		intel_dp = enc_to_intel_dp(&intel_attached_encoder(connector)->base);
+		intel_dp = enc_to_intel_dp(&intel_attached_encoder(to_intel_connector(connector))->base);
 		crtc_state = to_intel_crtc_state(crtc->state);
 		seq_printf(m, "DSC_Enabled: %s\n",
 			   yesno(crtc_state->dsc.compression_enable));
@@ -4540,7 +4540,7 @@ static ssize_t i915_dsc_fec_support_write(struct file *file,
 	int ret;
 	struct drm_connector *connector =
 		((struct seq_file *)file->private_data)->private;
-	struct intel_encoder *encoder = intel_attached_encoder(connector);
+	struct intel_encoder *encoder = intel_attached_encoder(to_intel_connector(connector));
 	struct intel_dp *intel_dp = enc_to_intel_dp(&encoder->base);
 
 	if (len == 0)

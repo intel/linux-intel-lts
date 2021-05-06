@@ -180,7 +180,7 @@ static struct intel_sdvo *to_sdvo(struct intel_encoder *encoder)
 	return container_of(encoder, struct intel_sdvo, base);
 }
 
-static struct intel_sdvo *intel_attached_sdvo(struct drm_connector *connector)
+static struct intel_sdvo *intel_attached_sdvo(struct intel_connector *connector)
 {
 	return to_sdvo(intel_attached_encoder(connector));
 }
@@ -1267,6 +1267,13 @@ static void i9xx_adjust_sdvo_tv_clock(struct intel_crtc_state *pipe_config)
 	pipe_config->clock_set = true;
 }
 
+static bool intel_has_hdmi_sink(struct intel_sdvo *sdvo,
+				const struct drm_connector_state *conn_state)
+{
+	return sdvo->has_hdmi_monitor &&
+		READ_ONCE(to_intel_digital_connector_state(conn_state)->force_audio) != HDMI_AUDIO_OFF_DVI;
+}
+
 static int intel_sdvo_compute_config(struct intel_encoder *encoder,
 				     struct intel_crtc_state *pipe_config,
 				     struct drm_connector_state *conn_state)
@@ -1322,12 +1329,15 @@ static int intel_sdvo_compute_config(struct intel_encoder *encoder,
 	pipe_config->pixel_multiplier =
 		intel_sdvo_get_pixel_multiplier(adjusted_mode);
 
-	if (intel_sdvo_state->base.force_audio != HDMI_AUDIO_OFF_DVI)
-		pipe_config->has_hdmi_sink = intel_sdvo->has_hdmi_monitor;
+	pipe_config->has_hdmi_sink = intel_has_hdmi_sink(intel_sdvo, conn_state);
 
-	if (intel_sdvo_state->base.force_audio == HDMI_AUDIO_ON ||
-	    (intel_sdvo_state->base.force_audio == HDMI_AUDIO_AUTO && intel_sdvo->has_hdmi_audio))
-		pipe_config->has_audio = true;
+	if (pipe_config->has_hdmi_sink) {
+		if (intel_sdvo_state->base.force_audio == HDMI_AUDIO_AUTO)
+			pipe_config->has_audio = intel_sdvo->has_hdmi_audio;
+		else
+			pipe_config->has_audio =
+				intel_sdvo_state->base.force_audio == HDMI_AUDIO_ON;
+	}
 
 	if (intel_sdvo_state->base.broadcast_rgb == INTEL_BROADCAST_RGB_AUTO) {
 		/*
@@ -1551,7 +1561,7 @@ static bool intel_sdvo_connector_get_hw_state(struct intel_connector *connector)
 {
 	struct intel_sdvo_connector *intel_sdvo_connector =
 		to_intel_sdvo_connector(&connector->base);
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(&connector->base);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
 	u16 active_outputs = 0;
 
 	intel_sdvo_get_active_outputs(intel_sdvo, &active_outputs);
@@ -1823,7 +1833,7 @@ static enum drm_mode_status
 intel_sdvo_mode_valid(struct drm_connector *connector,
 		      struct drm_display_mode *mode)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct intel_sdvo_connector *intel_sdvo_connector =
 		to_intel_sdvo_connector(connector);
 	int max_dotclk = to_i915(connector->dev)->max_dotclk_freq;
@@ -1923,12 +1933,11 @@ static void intel_sdvo_enable_hotplug(struct intel_encoder *encoder)
 
 static enum intel_hotplug_state
 intel_sdvo_hotplug(struct intel_encoder *encoder,
-		   struct intel_connector *connector,
-		   bool irq_received)
+		   struct intel_connector *connector)
 {
 	intel_sdvo_enable_hotplug(encoder);
 
-	return intel_encoder_hotplug(encoder, connector, irq_received);
+	return intel_encoder_hotplug(encoder, connector);
 }
 
 static bool
@@ -1941,7 +1950,7 @@ intel_sdvo_multifunc_encoder(struct intel_sdvo *intel_sdvo)
 static struct edid *
 intel_sdvo_get_edid(struct drm_connector *connector)
 {
-	struct intel_sdvo *sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	return drm_get_edid(connector, &sdvo->ddc);
 }
 
@@ -1959,7 +1968,7 @@ intel_sdvo_get_analog_edid(struct drm_connector *connector)
 static enum drm_connector_status
 intel_sdvo_tmds_sink_detect(struct drm_connector *connector)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct intel_sdvo_connector *intel_sdvo_connector =
 		to_intel_sdvo_connector(connector);
 	enum drm_connector_status status;
@@ -2028,7 +2037,7 @@ static enum drm_connector_status
 intel_sdvo_detect(struct drm_connector *connector, bool force)
 {
 	u16 response;
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct intel_sdvo_connector *intel_sdvo_connector = to_intel_sdvo_connector(connector);
 	enum drm_connector_status ret;
 
@@ -2175,7 +2184,7 @@ static const struct drm_display_mode sdvo_tv_modes[] = {
 
 static void intel_sdvo_get_tv_modes(struct drm_connector *connector)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	const struct drm_connector_state *conn_state = connector->state;
 	struct intel_sdvo_sdtv_resolution_request tv_res;
 	u32 reply = 0, format_map = 0;
@@ -2215,7 +2224,7 @@ static void intel_sdvo_get_tv_modes(struct drm_connector *connector)
 
 static void intel_sdvo_get_lvds_modes(struct drm_connector *connector)
 {
-	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *intel_sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	struct drm_i915_private *dev_priv = to_i915(connector->dev);
 	struct drm_display_mode *newmode;
 
@@ -2379,7 +2388,7 @@ intel_sdvo_connector_atomic_set_property(struct drm_connector *connector,
 static int
 intel_sdvo_connector_register(struct drm_connector *connector)
 {
-	struct intel_sdvo *sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *sdvo = intel_attached_sdvo(to_intel_connector(connector));
 	int ret;
 
 	ret = intel_connector_register(connector);
@@ -2394,7 +2403,7 @@ intel_sdvo_connector_register(struct drm_connector *connector)
 static void
 intel_sdvo_connector_unregister(struct drm_connector *connector)
 {
-	struct intel_sdvo *sdvo = intel_attached_sdvo(connector);
+	struct intel_sdvo *sdvo = intel_attached_sdvo(to_intel_connector(connector));
 
 	sysfs_remove_link(&connector->kdev->kobj,
 			  sdvo->ddc.dev.kobj.name);
@@ -2710,6 +2719,7 @@ intel_sdvo_dvi_init(struct intel_sdvo *intel_sdvo, int device)
 		 * Some SDVO devices have one-shot hotplug interrupts.
 		 * Ensure that they get re-enabled when an interrupt happens.
 		 */
+		intel_connector->polled = DRM_CONNECTOR_POLL_HPD;
 		intel_encoder->hotplug = intel_sdvo_hotplug;
 		intel_sdvo_enable_hotplug(intel_encoder);
 	} else {
@@ -2933,7 +2943,7 @@ static void intel_sdvo_output_cleanup(struct intel_sdvo *intel_sdvo)
 
 	list_for_each_entry_safe(connector, tmp,
 				 &dev->mode_config.connector_list, head) {
-		if (intel_attached_encoder(connector) == &intel_sdvo->base) {
+		if (intel_attached_encoder(to_intel_connector(connector)) == &intel_sdvo->base) {
 			drm_connector_unregister(connector);
 			intel_connector_destroy(connector);
 		}

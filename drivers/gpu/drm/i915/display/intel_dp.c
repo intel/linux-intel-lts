@@ -146,7 +146,7 @@ bool intel_dp_is_edp(struct intel_dp *intel_dp)
 	return intel_dig_port->base.type == INTEL_OUTPUT_EDP;
 }
 
-static struct intel_dp *intel_attached_dp(struct drm_connector *connector)
+static struct intel_dp *intel_attached_dp(struct intel_connector *connector)
 {
 	return enc_to_intel_dp(&intel_attached_encoder(connector)->base);
 }
@@ -614,7 +614,7 @@ static enum drm_mode_status
 intel_dp_mode_valid(struct drm_connector *connector,
 		    struct drm_display_mode *mode)
 {
-	struct intel_dp *intel_dp = intel_attached_dp(connector);
+	struct intel_dp *intel_dp = intel_attached_dp(to_intel_connector(connector));
 	struct intel_connector *intel_connector = to_intel_connector(connector);
 	struct drm_display_mode *fixed_mode = intel_connector->panel.fixed_mode;
 	struct drm_i915_private *dev_priv = to_i915(connector->dev);
@@ -2426,9 +2426,6 @@ intel_dp_compute_config(struct intel_encoder *encoder,
 
 	intel_psr_compute_config(intel_dp, pipe_config);
 
-	intel_hdcp_transcoder_config(intel_connector,
-				     pipe_config->cpu_transcoder);
-
 	return 0;
 }
 
@@ -3000,7 +2997,7 @@ void intel_edp_backlight_off(const struct drm_connector_state *old_conn_state)
 static void intel_edp_backlight_power(struct intel_connector *connector,
 				      bool enable)
 {
-	struct intel_dp *intel_dp = intel_attached_dp(&connector->base);
+	struct intel_dp *intel_dp = intel_attached_dp(connector);
 	intel_wakeref_t wakeref;
 	bool is_enabled;
 
@@ -5135,14 +5132,13 @@ int intel_dp_retrain_link(struct intel_encoder *encoder,
  */
 static enum intel_hotplug_state
 intel_dp_hotplug(struct intel_encoder *encoder,
-		 struct intel_connector *connector,
-		 bool irq_received)
+		 struct intel_connector *connector)
 {
 	struct drm_modeset_acquire_ctx ctx;
 	enum intel_hotplug_state state;
 	int ret;
 
-	state = intel_encoder_hotplug(encoder, connector, irq_received);
+	state = intel_encoder_hotplug(encoder, connector);
 
 	drm_modeset_acquire_init(&ctx, 0);
 
@@ -5165,7 +5161,7 @@ intel_dp_hotplug(struct intel_encoder *encoder,
 	 * Keeping it consistent with intel_ddi_hotplug() and
 	 * intel_hdmi_hotplug().
 	 */
-	if (state == INTEL_HOTPLUG_UNCHANGED && irq_received)
+	if (state == INTEL_HOTPLUG_UNCHANGED && !connector->hotplug_retries)
 		state = INTEL_HOTPLUG_RETRY;
 
 	return state;
@@ -5615,7 +5611,7 @@ intel_dp_detect(struct drm_connector *connector,
 		bool force)
 {
 	struct drm_i915_private *dev_priv = to_i915(connector->dev);
-	struct intel_dp *intel_dp = intel_attached_dp(connector);
+	struct intel_dp *intel_dp = intel_attached_dp(to_intel_connector(connector));
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
 	struct intel_encoder *encoder = &dig_port->base;
 	enum drm_connector_status status;
@@ -5719,7 +5715,7 @@ out:
 static void
 intel_dp_force(struct drm_connector *connector)
 {
-	struct intel_dp *intel_dp = intel_attached_dp(connector);
+	struct intel_dp *intel_dp = intel_attached_dp(to_intel_connector(connector));
 	struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
 	struct intel_encoder *intel_encoder = &dig_port->base;
 	struct drm_i915_private *dev_priv = to_i915(intel_encoder->base.dev);
@@ -5754,7 +5750,7 @@ static int intel_dp_get_modes(struct drm_connector *connector)
 	}
 
 	/* if eDP has no EDID, fall back to fixed mode */
-	if (intel_dp_is_edp(intel_attached_dp(connector)) &&
+	if (intel_dp_is_edp(intel_attached_dp(to_intel_connector(connector))) &&
 	    intel_connector->panel.fixed_mode) {
 		struct drm_display_mode *mode;
 
@@ -5772,7 +5768,7 @@ static int intel_dp_get_modes(struct drm_connector *connector)
 static int
 intel_dp_connector_register(struct drm_connector *connector)
 {
-	struct intel_dp *intel_dp = intel_attached_dp(connector);
+	struct intel_dp *intel_dp = intel_attached_dp(to_intel_connector(connector));
 	int ret;
 
 	ret = intel_connector_register(connector);
@@ -5794,7 +5790,7 @@ intel_dp_connector_register(struct drm_connector *connector)
 static void
 intel_dp_connector_unregister(struct drm_connector *connector)
 {
-	struct intel_dp *intel_dp = intel_attached_dp(connector);
+	struct intel_dp *intel_dp = intel_attached_dp(to_intel_connector(connector));
 
 	drm_dp_cec_unregister_connector(&intel_dp->aux);
 	drm_dp_aux_unregister(&intel_dp->aux);
@@ -7615,7 +7611,7 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 	if (INTEL_GEN(dev_priv) >= 11)
 		connector->ycbcr_420_allowed = true;
 
-	intel_encoder->hpd_pin = intel_hpd_pin_default(dev_priv, port);
+	intel_connector->polled = DRM_CONNECTOR_POLL_HPD;
 
 	intel_dp_aux_init(intel_dp);
 
@@ -7727,6 +7723,7 @@ bool intel_dp_init(struct drm_i915_private *dev_priv,
 	}
 	intel_encoder->cloneable = 0;
 	intel_encoder->port = port;
+	intel_encoder->hpd_pin = intel_hpd_pin_default(dev_priv, port);
 
 	intel_dig_port->hpd_pulse = intel_dp_hpd_pulse;
 

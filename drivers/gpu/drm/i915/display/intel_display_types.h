@@ -131,8 +131,7 @@ struct intel_encoder {
 	u16 cloneable;
 	u8 pipe_mask;
 	enum intel_hotplug_state (*hotplug)(struct intel_encoder *encoder,
-					    struct intel_connector *connector,
-					    bool irq_received);
+					    struct intel_connector *connector);
 	enum intel_output_type (*compute_output_type)(struct intel_encoder *,
 						      struct intel_crtc_state *,
 						      struct drm_connector_state *);
@@ -420,6 +419,9 @@ struct intel_connector {
 	/* Cached EDID for eDP and LVDS. May hold ERR_PTR for invalid EDID. */
 	struct edid *edid;
 	struct edid *detect_edid;
+
+	/* Number of times hotplug detection was tried after an HPD interrupt */
+	int hotplug_retries;
 
 	/* since POLL and HPD connectors may use the same HPD line keep the native
 	   state of connector->polled in case hotplug storm detection changes it */
@@ -1438,9 +1440,9 @@ struct intel_load_detect_pipe {
 };
 
 static inline struct intel_encoder *
-intel_attached_encoder(struct drm_connector *connector)
+intel_attached_encoder(struct intel_connector *connector)
 {
-	return to_intel_connector(connector)->encoder;
+	return connector->encoder;
 }
 
 static inline bool intel_encoder_is_dig_port(struct intel_encoder *encoder)
@@ -1469,9 +1471,9 @@ enc_to_dig_port(struct drm_encoder *encoder)
 }
 
 static inline struct intel_digital_port *
-conn_to_dig_port(struct intel_connector *connector)
+intel_attached_dig_port(struct intel_connector *connector)
 {
-	return enc_to_dig_port(&intel_attached_encoder(&connector->base)->base);
+	return enc_to_dig_port(&intel_attached_encoder(connector)->base);
 }
 
 static inline struct intel_dp_mst_encoder *
