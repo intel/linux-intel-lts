@@ -232,3 +232,13 @@ Description:
 		Read-only attribute that indicates the device-specific name of
 		Signal Y. If possible, this should match the name of the
 		respective signal as it appears in the device datasheet.
+
+What:		/sys/bus/counter/devices/counterX/signalY/invert
+KernelVersion:	5.14
+Contact:	linux-iio@vger.kernel.org
+Description:
+		Whether signal Y inversion is enabled. Valid attribute values
+		are boolean.
+
+		For counter devices that have feature to control inversion of
+		signal Y.
