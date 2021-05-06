@@ -30,7 +30,7 @@
  */
 /* node type for NODETYPE(id), apply to be expanded */
 
-typedef enum {
+enum cache_client_type {
 	VC8000E,
 	VC8000D_0,
 	VC8000D_1,
@@ -38,33 +38,17 @@ typedef enum {
 	DECODER_G1_1,
 	DECODER_G2_0,
 	DECODER_G2_1,
-} cache_client_type;
+};
 
-typedef enum {
+enum driver_cache_dir {
 	DIR_RD = 0,
 	DIR_WR,
 	DIR_BI
-} driver_cache_dir;
+};
 
 struct hantro_drm_fb {
 	struct drm_framebuffer fb;
 	struct drm_gem_object *obj[4];
-};
-
-#define VSI_META_MAGIC		0x34636565
-
-/**
- * The memta data location information exchange IOCTRL parameters.
- */
-struct hantro_metainfo_params {
-	int handle; /* the handle of current bo */
-	struct viv_vidmem_metadata info; /* the meta data */
-};
-
-struct dmapriv {
-	struct viv_vidmem_metadata meta_data_info;
-	u32 magic_num; //should be VSI_META_MAGIC
-	void *self; //ptr of parent cma obj
 };
 
 struct drm_gem_hantro_object {
@@ -86,7 +70,7 @@ struct drm_gem_hantro_object {
 	unsigned int ctxno;
 	int handle;
 	int fd;
-	struct device_info *pdevice;
+	struct device_info *pdevinfo;
 	struct drm_file *file_priv;
 	int flag;
 	/* common meta information for dec400, MUST next to base */
@@ -138,7 +122,7 @@ struct hantro_releasebuf {
 
 struct core_desc {
 	__u32 id; /* id of the core */
-	__u32 *regs; /* pointer to user registers */
+	__u32 __user *regs; /* pointer to user registers */
 	__u32 size; /* size of register space */
 	__u32 reg_id;
 };
@@ -153,12 +137,10 @@ struct hantro_client {
 	struct drm_file *file;
 };
 
-/************* some cache related defines   ************/
 /* Define Cache&Shaper Offset from common base */
 #define SHAPER_OFFSET			(0x8 << 2)
 #define CACHE_ONLY_OFFSET		(0x8 << 2)
 #define CACHE_WITH_SHAPER_OFFSET	(0x80 << 2)
-/************* some cache related defines  end ************/
 
 /* Ioctl definitions */
 /* hantro drm related */
@@ -179,10 +161,15 @@ struct hantro_client {
 	DRM_IOWR(HANTRO_IOCTL_START + 8, unsigned long *)
 #define DRM_IOCTL_HANTRO_PTR_PHYADDR                                           \
 	DRM_IOWR(HANTRO_IOCTL_START + 9, unsigned long *)
+
+/* hantro metadata related */
+#define HANTROMETADATA_IOC_START DRM_IO(HANTRO_IOCTL_START + 10)
 #define DRM_IOCTL_HANTRO_QUERY_METADATA                                        \
 	DRM_IOWR(HANTRO_IOCTL_START + 10, struct hantro_metainfo_params)
 #define DRM_IOCTL_HANTRO_UPDATE_METADATA                                       \
 	DRM_IOWR(HANTRO_IOCTL_START + 11, struct hantro_metainfo_params)
+#define HANTROMETADATA_IOC_END DRM_IO(HANTRO_IOCTL_START + 11)
+
 #define DRM_IOCTL_HANTRO_ADD_CLIENT                                            \
 	DRM_IOWR(HANTRO_IOCTL_START + 12, struct hantro_client)
 #define DRM_IOCTL_HANTRO_REMOVE_CLIENT                                         \

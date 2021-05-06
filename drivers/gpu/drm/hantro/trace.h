@@ -6,8 +6,7 @@
  *    Copyright (c) 2020 - 2021, Intel Corporation
  */
 
-#define HANTRO_TRACE
-#ifdef HANTRO_TRACE
+#if defined(CONFIG_DRM_HANTRO_TRACEPOINTS)
 #if !defined(__HANTRO_DRIVER_TRACE) || defined(TRACE_HEADER_MULTI_READ)
 #define __HANTRO_DRIVER_TRACE
 #include <linux/tracepoint.h>
@@ -299,6 +298,8 @@ TRACE_EVENT(hantro_err,
 #define TRACE_INCLUDE_FILE trace
 #include <trace/define_trace.h>
 
+void __trace_hantro_msg(const char *fmt, ...);
+void __trace_hantro_err(const char *fmt, ...);
 #else
 
 #define START_TIME
@@ -327,8 +328,6 @@ TRACE_EVENT(hantro_err,
 #define trace_prime_dmabuf_export(obj, dev, file)
 #define trace_prime_dmabuf_put(paddr, dmabuf, fd)
 #define trace_prime_drm_dmabuf_release(dmabuf)
-
+#define __trace_hantro_msg(fmt, args...)
+#define __trace_hantro_err(fmt, args...)
 #endif
-
-void __trace_hantro_msg(const char *fmt, ...);
-void __trace_hantro_err(const char *fmt, ...);

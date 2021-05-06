@@ -53,7 +53,7 @@ static int hantro_gem_dmabuf_mmap(struct dma_buf *dma_buf,
 
 	dev = obj->dev;
 	if (!dev->driver->gem_prime_mmap)
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 
 	return dev->driver->gem_prime_mmap(obj, vma);
 }

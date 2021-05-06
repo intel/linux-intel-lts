@@ -8,24 +8,22 @@
 
 #include "hantro_priv.h"
 
-/* fence related code */
-/* for fence's seqno, maybe each domain should hold one */
 static unsigned long seqno;
-DEFINE_IDR(fence_idr);
+static DEFINE_IDR(fence_idr);
 /* fence mutex struct */
-struct mutex fence_mutex;
+static struct mutex fence_mutex;
 
-static const char *hantro_fence_get_driver_name(hantro_fence_t *fence)
+static const char *hantro_fence_get_driver_name(struct dma_fence *fence)
 {
 	return "hantro";
 }
 
-static const char *hantro_fence_get_timeline_name(hantro_fence_t *fence)
+static const char *hantro_fence_get_timeline_name(struct dma_fence *fence)
 {
-	return " "; /* it should correspond to six domains later */
+	return " ";
 }
 
-static bool hantro_fence_enable_signaling(hantro_fence_t *fence)
+static bool hantro_fence_enable_signaling(struct dma_fence *fence)
 {
 	if (test_bit(HANTRO_FENCE_FLAG_ENABLE_SIGNAL_BIT, &fence->flags))
 		return true;
@@ -33,7 +31,7 @@ static bool hantro_fence_enable_signaling(hantro_fence_t *fence)
 		return false;
 }
 
-static bool hantro_fence_signaled(hantro_fence_t *fobj)
+static bool hantro_fence_signaled(struct dma_fence *fobj)
 {
 	unsigned long irqflags;
 	bool ret;
@@ -44,14 +42,14 @@ static bool hantro_fence_signaled(hantro_fence_t *fobj)
 	return ret;
 }
 
-static void hantro_fence_free(hantro_fence_t *fence)
+static void hantro_fence_free(struct dma_fence *fence)
 {
 	kfree(fence->lock);
 	fence->lock = NULL;
 	dma_fence_free(fence);
 }
 
-const static hantro_fence_op_t hantro_fenceops = {
+static const struct dma_fence_ops hantro_fenceops = {
 	.get_driver_name = hantro_fence_get_driver_name,
 	.get_timeline_name = hantro_fence_get_timeline_name,
 	.enable_signaling = hantro_fence_enable_signaling,
@@ -60,13 +58,13 @@ const static hantro_fence_op_t hantro_fenceops = {
 	.release = hantro_fence_free,
 };
 
-static hantro_fence_t *alloc_fence(unsigned int ctxno)
+static struct dma_fence *alloc_fence(unsigned int ctxno)
 {
-	hantro_fence_t *fobj;
+	struct dma_fence *fobj;
 	/* spinlock for fence */
 	spinlock_t *lock;
 
-	fobj = kzalloc(sizeof(hantro_fence_t), GFP_KERNEL);
+	fobj = kzalloc(sizeof(*fobj), GFP_KERNEL);
 	if (!fobj)
 		return NULL;
 
@@ -83,11 +81,6 @@ static hantro_fence_t *alloc_fence(unsigned int ctxno)
 	return fobj;
 }
 
-static int is_hantro_fence(hantro_fence_t *fence)
-{
-	return (fence->ops == &hantro_fenceops);
-}
-
 int init_hantro_resv(struct dma_resv *presv,
 		     struct drm_gem_hantro_object *cma_obj)
 {
@@ -97,19 +90,6 @@ int init_hantro_resv(struct dma_resv *presv,
 	return 0;
 }
 
-int hantro_waitfence(hantro_fence_t *pfence)
-{
-	if (test_bit(HANTRO_FENCE_FLAG_SIGNAL_BIT, &pfence->flags))
-		return 0;
-
-	if (is_hantro_fence(pfence))
-		/* need self check */
-		return 0;
-	else
-		return hantro_fence_wait_timeout(pfence, true, 30 * HZ);
-}
-
-/* it's obsolete, left here for compiling compatible */
 int hantro_setdomain(struct drm_device *dev, void *data,
 		     struct drm_file *file_priv)
 {
@@ -145,16 +125,16 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	struct dma_resv *resv;
 	struct drm_gem_object *obj;
 	struct drm_gem_hantro_object *cma_obj;
-	hantro_fence_t *fence = NULL;
+	struct dma_fence *fence = NULL;
 	unsigned long timeout = arg->timeout;
-	unsigned long fenceid = -1;
+	long fenceid = -1;
 	int ret = 0;
 
 	START_TIME;
 	obj = hantro_gem_object_lookup(dev, file_priv, arg->handle);
 	if (!obj) {
 		ret = -ENOENT;
-		trace_fence_acquirebuf(0x0, arg->handle, -1, 0, ret);
+		trace_fence_acquirebuf(NULL, arg->handle, -1, 0, ret);
 		return ret;
 	}
 
@@ -199,7 +179,6 @@ int hantro_acquirebuf(struct drm_device *dev, void *data,
 	if (arg->flags & HANTRO_FENCE_WRITE) {
 		dma_resv_add_excl_fence(resv, fence);
 	} else {
-		/*I'm not sure if 1 fence is enough, pass compilation first*/
 		ret = hantro_reserve_obj_shared(resv, 1);
 		if (ret == 0)
 			dma_resv_add_shared_fence(resv, fence);
@@ -275,7 +254,7 @@ int hantro_releasebuf(struct drm_device *dev, void *data,
 		      struct drm_file *file_priv)
 {
 	struct hantro_releasebuf *arg = data;
-	hantro_fence_t *fence;
+	struct dma_fence *fence;
 	int ret = 0;
 
 	mutex_lock(&fence_mutex);

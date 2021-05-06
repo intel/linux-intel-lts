@@ -12,37 +12,28 @@
 #include "hantro_dec.h"
 #include "hantro_cache.h"
 #include "hantro_dec400.h"
-
-#ifdef ENABLE_DEBUG
-#define DBG(...) pr_info(__VA_ARGS__)
-#else
-#define DBG(...)
-#endif
+#include "hantro_cooling.h"
 
 struct hantro_drm_handle hantro_drm;
 
-long tbh_freq_table[3] = { 800000000, 400000000, 200000000 };
 long kmb_freq_table[3] = { 700000000, 500000000, 250000000 };
+long tbh_freq_table[3] = { 800000000, 400000000, 200000000 };
 
 bool verbose;
 module_param(verbose, bool, 0);
 MODULE_PARM_DESC(verbose, "Verbose log operations (default 0)");
 
+bool enable_lut;
+module_param(enable_lut, bool, 0);
+MODULE_PARM_DESC(enable_lut, "Enable Page Table LUT(default 0)");
+
 bool enable_encode = 1;
 module_param(enable_encode, bool, 0);
 MODULE_PARM_DESC(enable_encode, "Enable Encode(default 1)");
 
-bool enable_enc_lut;
-module_param(enable_enc_lut, bool, 0);
-MODULE_PARM_DESC(enable_enc_lut, "Enable Encode LUT(default 0)");
-
 bool enable_decode = 1;
 module_param(enable_decode, bool, 0);
 MODULE_PARM_DESC(enable_decode, "Enable Decode(default 1)");
-
-bool enable_dec_lut;
-module_param(enable_dec_lut, bool, 0);
-MODULE_PARM_DESC(enable_dec_lut, "Enable Decode LUT(default 0)");
 
 bool enable_dec400;
 module_param(enable_dec400, bool, 0);
@@ -96,15 +87,13 @@ static int unlink_device_drm(struct device_info *pdevinfo)
 
 		while (tmpdev->next && tmpdev->next != pdevinfo)
 			tmpdev = tmpdev->next;
-
-		tmpdev->next = tmpdev->next;
 	}
 
 	mutex_unlock(&hantro_drm.hantro_mutex);
 	return 0;
 }
 
-struct device_info *get_deviceinfo(int deviceid)
+struct device_info *get_device_info(int deviceid)
 {
 	struct device_info *tmpdev;
 
@@ -119,14 +108,7 @@ struct device_info *get_deviceinfo(int deviceid)
 	return tmpdev;
 }
 
-#ifndef virt_to_bus
-static inline unsigned long virt_to_bus(void *address)
-{
-	return (unsigned long)address;
-}
-#endif
-
-static int getclockname(dtbnode *pnode)
+static int get_clock_name(struct dtbnode *pnode)
 {
 	const char *nodename;
 
@@ -147,28 +129,28 @@ static int getclockname(dtbnode *pnode)
 
 		if (strstr(nodename, "encoderB") == nodename)
 			sprintf(pnode->clock_name, "clk_xin_jpeg");
-	} else {
+	} else if (hantro_drm.device_type == DEVICE_THUNDERBAY) {
 		if (strstr(nodename, "decoderA") == nodename)
 			sprintf(pnode->clock_name, "vc8000da_aclk_computess%d",
-				pnode->pdevice->deviceid);
+				pnode->pdevinfo->deviceid);
 
 		if (strstr(nodename, "decoderB") == nodename)
 			sprintf(pnode->clock_name, "vc8000db_aclk_computess%d",
-				pnode->pdevice->deviceid);
+				pnode->pdevinfo->deviceid);
 
 		if (strstr(nodename, "encoderA") == nodename)
 			sprintf(pnode->clock_name, "vc8000ej_aclk_computess%d",
-				pnode->pdevice->deviceid);
+				pnode->pdevinfo->deviceid);
 
 		if (strstr(nodename, "encoderB") == nodename)
 			sprintf(pnode->clock_name, "vc8000e_aclk_computess%d",
-				pnode->pdevice->deviceid);
+				pnode->pdevinfo->deviceid);
 	}
 
 	return -EINVAL;
 }
 
-static int getnodetype(const char *name)
+static int get_node_type(const char *name)
 {
 	if (strstr(name, NODENAME_DECODER) == name)
 		return CORE_DEC;
@@ -185,10 +167,10 @@ static int getnodetype(const char *name)
 	return CORE_UNKNOWN;
 }
 
-static dtbnode *trycreatenode(struct platform_device *pdev,
-			      struct device_node *ofnode,
-			      struct device_info *pdevice, int parenttype,
-			      phys_addr_t parentaddr)
+static struct dtbnode *try_create_node(struct platform_device *pdev,
+				       struct device_node *ofnode,
+				       struct device_info *pdevinfo, int parenttype,
+				       phys_addr_t parentaddr)
 {
 	struct fwnode_handle *fwnode;
 	struct resource r;
@@ -197,18 +179,18 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 	u32 reg_u32[4];
 	const char *reg_name;
 	u64 ioaddress, iosize;
-	dtbnode *pnode = kzalloc(sizeof(dtbnode), GFP_KERNEL);
+	struct dtbnode *pnode = kzalloc(sizeof(*pnode), GFP_KERNEL);
 
 	if (!pnode)
 		return NULL;
 
-	pnode->type = getnodetype(ofnode->name);
+	pnode->type = get_node_type(ofnode->name);
 	pnode->parentaddr = parentaddr;
 	pnode->parenttype = parenttype;
-	pnode->pdevice = pdevice;
+	pnode->pdevinfo = pdevinfo;
 	pnode->ofnode = ofnode;
 	fwnode = &ofnode->fwnode;
-	getclockname(pnode);
+	get_clock_name(pnode);
 
 	na = of_n_addr_cells(ofnode);
 	ns = of_n_size_cells(ofnode);
@@ -264,7 +246,7 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 			else
 				strcpy(pnode->irq_name[i], "hantro_irq");
 
-			DBG("irq %s: mapping = %lld\n", r.name, r.end);
+			PDEBUG("irq %s: mapping = %lld\n", r.name, r.end);
 		} else {
 			pnode->irq[i] = -1;
 		}
@@ -278,10 +260,10 @@ static dtbnode *trycreatenode(struct platform_device *pdev,
 		ret = hantroenc_probe(pnode);
 		break;
 	case CORE_CACHE:
-		ret = cache_probe(pnode);
+		ret = hantrocache_probe(pnode);
 		break;
 	case CORE_DEC400:
-		ret = hantro_dec400_probe(pnode);
+		ret = hantrodec400_probe(pnode);
 		break;
 	default:
 		ret = -EINVAL;
@@ -301,7 +283,7 @@ static void hantro_mmu_control(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	u64 mmu_tcu_smmu_cr0;
-	u8 *mmu_tcu_smmu_cr0_register;
+	u8 __iomem *mmu_tcu_smmu_cr0_register;
 	int is_mmu_enabled, count = 0;
 
 	count = device_property_read_u64(dev, "mmu-tcu-reg",
@@ -314,11 +296,11 @@ static void hantro_mmu_control(struct platform_device *pdev)
 		}
 
 		mmu_tcu_smmu_cr0_register =
-			(u8 *)ioremap(mmu_tcu_smmu_cr0, 0x32);
+			ioremap(mmu_tcu_smmu_cr0, 0x32);
 		if (!mmu_tcu_smmu_cr0_register) {
 			pr_info("mmu_tcu_smmu_cr0_register: failed to ioremap mmu_tcu_smmu_cr0_register\n");
 		} else {
-			is_mmu_enabled = ioread32((void *)(mmu_tcu_smmu_cr0_register));
+			is_mmu_enabled = ioread32(mmu_tcu_smmu_cr0_register);
 			if (is_mmu_enabled)
 				pr_info("hantro_init: Media MMU600 is enabled, is_mmu_enabled = %d\n",
 					is_mmu_enabled);
@@ -339,7 +321,7 @@ static int hantro_clock_control(struct device *dev, bool enable)
 	int i = 0, ret = 0, count = 0;
 	unsigned long rate;
 
-	// Read clock names
+	/* Read clock names */
 	count = device_property_read_string_array(dev, "clock-names", NULL, 0);
 	if (count > 0) {
 		clock_names = kcalloc(count, sizeof(*clock_names), GFP_KERNEL);
@@ -355,7 +337,7 @@ static int hantro_clock_control(struct device *dev, bool enable)
 		}
 
 		for (i = 0; i < count; i++) {
-			DBG("hantro: clock_name = %s\n", clock_names[i]);
+			PDEBUG("hantro: clock_name = %s\n", clock_names[i]);
 			dev_clk = clk_get(dev, clock_names[i]);
 			if (enable) {
 				clk_prepare_enable(dev_clk);
@@ -388,92 +370,6 @@ static int hantro_clock_control(struct device *dev, bool enable)
 	return 0;
 }
 
-static int hantro_cooling_get_max_state(struct thermal_cooling_device *cdev,
-					unsigned long *state)
-{
-	struct device_info *pdevice = cdev->devdata;
-
-	if (!pdevice)
-		return -EINVAL;
-
-	*state = pdevice->thermal_data.media_clk_max_state;
-	return 0;
-}
-
-static int hantro_cooling_set_cur_state(struct thermal_cooling_device *cdev,
-					unsigned long state)
-{
-	struct device_info *pdevice = cdev->devdata;
-
-	if (!pdevice || state > pdevice->thermal_data.media_clk_max_state)
-		return -EINVAL;
-
-	if (state == pdevice->thermal_data.media_clk_state ||
-	    state > 2) //only	3 states supported
-		return 0;
-
-	pdevice->thermal_data.media_clk_state = state;
-
-	if (hantro_drm.device_type == DEVICE_KEEMBAY)
-		pdevice->thermal_data.clk_freq = kmb_freq_table[state];
-	else if (hantro_drm.device_type == DEVICE_THUNDERBAY)
-		pdevice->thermal_data.clk_freq = tbh_freq_table[state];
-
-	pr_info("set_cur_state: %ld for device %d\n",
-		pdevice->thermal_data.clk_freq, pdevice->deviceid);
-	return 0;
-}
-
-static int hantro_cooling_get_cur_state(struct thermal_cooling_device *cdev,
-					unsigned long *state)
-{
-	struct device_info *pdevice = cdev->devdata;
-
-	if (!pdevice)
-		return -EINVAL;
-
-	*state = pdevice->thermal_data.media_clk_state;
-	return 0;
-}
-
-static const struct thermal_cooling_device_ops hantro_cooling_ops = {
-	.get_max_state = hantro_cooling_get_max_state,
-	.get_cur_state = hantro_cooling_get_cur_state,
-	.set_cur_state = hantro_cooling_set_cur_state,
-};
-
-int setup_thermal_cooling(struct device_info *pdevice)
-{
-	int result;
-	char thermal_str[64];
-	struct device_node *np = pdevice->dev->of_node;
-
-	if (!pdevice) {
-		pr_warn("Device info NULL\n");
-		return -EINVAL;
-	}
-
-	pdevice->thermal_data.media_clk_max_state = 3;
-	if (hantro_drm.device_type == DEVICE_KEEMBAY)
-		pdevice->thermal_data.clk_freq = kmb_freq_table[0];
-	else
-		pdevice->thermal_data.clk_freq = tbh_freq_table[0];
-
-	sprintf(thermal_str, "media-cooling%d", pdevice->deviceid);
-	pdevice->thermal_data.cooling_dev = devm_thermal_of_cooling_device_register(pdevice->dev,
-										    np,
-										    thermal_str,
-										    pdevice,
-										    &hantro_cooling_ops);
-	if (IS_ERR(pdevice->thermal_data.cooling_dev)) {
-		result = PTR_ERR(pdevice->thermal_data.cooling_dev);
-		dev_err(pdevice->dev,
-			"failed to register thermal zone device %d", result);
-	}
-
-	return 0;
-}
-
 /* hantro_reset_clock to de-assert/assert the media SS cores and MMU */
 static int hantro_reset_control(struct platform_device *pdev, bool deassert)
 {
@@ -482,7 +378,7 @@ static int hantro_reset_control(struct platform_device *pdev, bool deassert)
 	struct reset_control *dev_reset = NULL;
 	int i = 0, ret = 0, count = 0;
 
-	// Read reset names
+	/* Read reset names */
 	count = device_property_read_string_array(dev, "reset-names", NULL, 0);
 	if (count > 0) {
 		reset_names = kcalloc(count, sizeof(*reset_names), GFP_KERNEL);
@@ -525,24 +421,24 @@ static int hantro_reset_control(struct platform_device *pdev, bool deassert)
 	return 0;
 }
 
-int hantro_analyze_subnode(struct platform_device *pdev,
-			   struct device_node *pofnode,
-			   struct device_info *pdevice)
+static int hantro_analyze_subnode(struct platform_device *pdev,
+				  struct device_node *pofnode,
+				  struct device_info *pdevinfo)
 {
-	dtbnode *head, *nhead, *newtail, *node;
+	struct dtbnode *head, *nhead, *newtail, *node;
 
-	head = kzalloc(sizeof(dtbnode), GFP_KERNEL);
+	head = kzalloc(sizeof(*head), GFP_KERNEL);
 	if (!head)
 		return -ENOMEM;
 
 	head->type = CORE_DEVICE;
 	head->parenttype = CORE_DEVICE;
 	head->ofnode = pofnode;
-	head->dev = pdevice->dev;
+	head->pdevinfo = pdevinfo;
 	head->ioaddr = -1;
 	head->iosize = 0;
 	head->next = NULL;
-	/*this is a wide first tree structure iteration, result is stored in device info */
+	/* this is a wide first tree structure iteration, result is stored in device info */
 	while (head) {
 		nhead = NULL;
 		newtail = NULL;
@@ -550,8 +446,8 @@ int hantro_analyze_subnode(struct platform_device *pdev,
 			struct device_node *child, *ofnode = head->ofnode;
 
 			for_each_child_of_node(ofnode, child) {
-				node = trycreatenode(pdev, child, pdevice,
-						     head->type, head->ioaddr);
+				node = try_create_node(pdev, child, pdevinfo,
+						       head->type, head->ioaddr);
 				if (node) {
 					if (!nhead) {
 						nhead = node;
@@ -617,20 +513,18 @@ err:
 	return rc;
 }
 
-void set_device_type(struct device_info *pdevinfo)
+static void set_device_type(struct device_info *pdevinfo)
 {
 	struct device_node *ofnode = NULL;
 	struct fwnode_handle *fwnode;
 	const char *compat_name;
 
-	if (!pdevinfo || !pdevinfo)
+	if (!pdevinfo || !pdevinfo->dev)
 		return;
 
 	ofnode = pdevinfo->dev->of_node;
-	if (!ofnode) {
-		//hantro_drm->type = DEVICE_UNKNOWN;
+	if (!ofnode)
 		return;
-	}
 
 	fwnode = &ofnode->fwnode;
 	fwnode_property_read_string(fwnode, "compatible", &compat_name);
@@ -640,7 +534,7 @@ void set_device_type(struct device_info *pdevinfo)
 		hantro_drm.device_type = DEVICE_THUNDERBAY;
 }
 
-int init_device_info(struct device *dev, struct device_info *pdevinfo)
+static int init_device_info(struct device *dev, struct device_info *pdevinfo)
 {
 	if (!pdevinfo)
 		return -EINVAL;
@@ -681,7 +575,7 @@ int init_device_info(struct device *dev, struct device_info *pdevinfo)
 	return 0;
 }
 
-int get_reserved_mem_size(struct device_info *pdevice)
+static int get_reserved_mem_size(struct device_info *pdevice)
 {
 	struct device *dev = pdevice->dev;
 	struct device_node *memnp;
@@ -741,18 +635,31 @@ static int hantro_drm_probe(struct platform_device *pdev)
 		hantro_reset_control(pdev, true);
 		hantro_mmu_control(pdev);
 	}
+
 	result = of_reserved_mem_device_init(dev);
+	if (result)
+		return result;
+
 	dma_set_mask(dev, DMA_BIT_MASK(48));
 	dma_set_coherent_mask(dev, DMA_BIT_MASK(48));
 	hantro_analyze_subnode(pdev, dev->of_node, pdevinfo);
-	result = init_codec_rsvd_mem(pdevinfo->dev, pdevinfo, "codec_reserved",
-				     1);
+	result = init_codec_rsvd_mem(pdevinfo->dev, pdevinfo, "codec_reserved", 1);
+	if (result) {
+		dev_err(pdevinfo->dev, "Failed to set up codec reserved memory.\n");
+		return result;
+	}
+
 	get_reserved_mem_size(pdevinfo);
 	create_debugfs(pdevinfo, result == 0);
 	link_device_drm(pdevinfo);
 	result = create_sysfs(pdevinfo);
+	if (result)
+		pr_info("Failed to create sysfs.\n");
+
 	result = class_compat_create_link(hantro_drm.media_class, &pdev->dev,
 					  pdev->dev.parent);
+	if (result)
+		pr_info("Failed to create compatibility class link.\n");
 
 	idr_init(&pdevinfo->clients);
 	idr_init(&pdevinfo->allocations);
@@ -807,14 +714,13 @@ MODULE_DEVICE_TABLE(platform, hantro_drm_platform_ids);
 
 static const struct of_device_id hantro_of_match[] = {
 	/*to match dtb, else reg io will fail*/
-	{ .compatible = "thunderbay,hantro" },
 	{ .compatible = "kmb,hantro" },
+	{ .compatible = "thunderbay,hantro" },
 	{ /* sentinel */ }
 };
 
 static int hantro_pm_suspend(struct device *kdev)
 {
-	/* what should we do on HW? Disable IRQ, slow down clock, disable DMA, etc? */
 	return 0;
 }
 
@@ -824,20 +730,8 @@ static int hantro_pm_resume(struct device *kdev)
 }
 
 static const struct dev_pm_ops hantro_pm_ops = {
-	/* since we only support S3, only several interfaces should be supported
-	 * echo -n "freeze" (or sth else) > /sys/power/state will trigger them
-	 * current suspend and resume seem to be enough
-	 * maybe suspend_noirq and resume_noirq will be inserted in future
-	 */
-	//.prepare
 	.suspend = hantro_pm_suspend,
-	//.suspend_late
-	//.suspend_noirq
-
-	//.resume_noirq
-	//.resume_early
 	.resume = hantro_pm_resume,
-	//.complete
 };
 
 static struct platform_driver hantro_drm_platform_driver = {
@@ -858,15 +752,13 @@ static const struct platform_device_info hantro_platform_info = {
 	.dma_mask = DMA_BIT_MASK(48),
 };
 
-void __exit hantro_cleanup(void)
+static void __exit hantro_cleanup(void)
 {
 	debugfs_remove(hantro_drm.debugfs_root);
 	release_fence_data();
 
 	hantrodec_cleanup();
 	hantroenc_cleanup();
-	hantrocache_cleanup();
-	hantrodec400_cleanup();
 
 	drm_dev_unregister(hantro_drm.drm_dev);
 	platform_device_unregister(hantro_drm.platformdev);
@@ -878,7 +770,7 @@ void __exit hantro_cleanup(void)
 	pr_info("hantro driver removed\n");
 }
 
-int __init hantro_init(void)
+static int __init hantro_init(void)
 {
 	int result, i;
 
@@ -922,19 +814,17 @@ int __init hantro_init(void)
 	}
 
 	init_fence_data();
-	for (i = 0; i < get_devicecount(); i++) {
-		struct device_info *pdevice = get_deviceinfo(i);
+	for (i = 0; i < get_device_count(); i++) {
+		struct device_info *pdevinfo = get_device_info(i);
 
-		hantro_drm.config |= pdevice->config;
+		hantro_drm.config |= pdevinfo->config;
 	}
 
 	hantrodec_init();
 	hantroenc_init();
-	hantrocache_init();
-	hantrodec400_init();
 
 	if (verbose)
-		device_printdebug();
+		device_print_debug();
 
 	pr_info("hantro device created\n");
 	return result;
@@ -945,5 +835,8 @@ module_exit(hantro_cleanup);
 
 /* module description */
 MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Verisilicon");
+MODULE_AUTHOR("VeriSilicon");
+MODULE_AUTHOR("Mehmood, Arshad <arshad.mehmood@intel.com>");
+MODULE_AUTHOR("Murugasen Krishnan, Kuhanh <kuhanh.murugasen.krishnan@intel.com>");
+MODULE_AUTHOR("Hoe, Sheng Yang <sheng.yang.hoe@intel.com>");
 MODULE_DESCRIPTION("Hantro DRM manager");
