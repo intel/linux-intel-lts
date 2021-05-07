@@ -646,6 +646,10 @@ static int nv_reg_base_init(struct amdgpu_device *adev)
 		}
 
 		amdgpu_discovery_harvest_ip(adev);
+		if (nv_is_headless_sku(adev->pdev)) {
+			adev->harvest_ip_mask |= AMD_HARVEST_IP_VCN_MASK;
+			adev->harvest_ip_mask |= AMD_HARVEST_IP_JPEG_MASK;
+		}
 
 		return 0;
 	}
