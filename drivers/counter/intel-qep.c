@@ -233,11 +233,25 @@ out:
 	return ret;
 }
 
+static enum counter_synapse_action intel_qep_synapse_actions[] = {
+	COUNTER_SYNAPSE_ACTION_BOTH_EDGES,
+};
+
+static int intel_qep_action_get(struct counter_device *counter,
+				struct counter_count *count,
+				struct counter_synapse *synapse,
+				size_t *action)
+{
+	*action = 0;
+	return 0;
+}
+
 static const struct counter_ops intel_qep_counter_ops = {
 	.count_read = intel_qep_count_read,
 
 	.function_get = intel_qep_function_get,
 	.function_set = intel_qep_function_set,
+	.action_get = intel_qep_action_get,
 };
 
 static const struct counter_signal_ext intel_qep_signal_ext[] = {
@@ -271,12 +285,18 @@ static struct counter_signal intel_qep_signals[] = {
 
 static struct counter_synapse intel_qep_count_synapses[] = {
 	{
+		.actions_list = intel_qep_synapse_actions,
+		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
 		.signal = &intel_qep_signals[0],
 	},
 	{
+		.actions_list = intel_qep_synapse_actions,
+		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
 		.signal = &intel_qep_signals[1],
 	},
 	{
+		.actions_list = intel_qep_synapse_actions,
+		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
 		.signal = &intel_qep_signals[2],
 	},
 };
