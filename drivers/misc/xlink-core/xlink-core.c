@@ -555,7 +555,12 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				op.timeout);
 		if (X_LINK_SUCCESS == rc) {
 			link = get_link_by_sw_device_id(devH.sw_device_id);
-			rc = session_res_add(sess_ctx, SC_RES_CHAN, op.chan, (void *)&link->handle);
+			if (!link) {
+				pr_err("XL_OPEN_CHANNEL - Link is missing! sw_device_id = 0x%x, channel: %d\n", devH.sw_device_id, op.chan);
+				rc = X_LINK_COMMUNICATION_NOT_OPEN;
+			} else {
+				rc = session_res_add(sess_ctx, SC_RES_CHAN, op.chan, (void *)&link->handle);
+			}
 		}
 		if (copy_to_user(op.return_code, (void *)&rc, sizeof(rc)))
 			return -EFAULT;
@@ -719,6 +724,13 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				sizeof(struct xlink_handle)))
 			return -EFAULT;
 		link = get_link_by_sw_device_id(devH.sw_device_id);
+		if (!link) {
+			pr_err("XL_CLOSE_CHANNEL - Link is missing! sw_device_id = 0x%x, channel: %d\n", devH.sw_device_id, op.chan);
+			rc = X_LINK_COMMUNICATION_NOT_OPEN;
+			if (copy_to_user(op.return_code, (void *)&rc, sizeof(rc)))
+				return -EFAULT;
+			break;
+		}
 		if (!session_check_id_existing(sess_ctx, SC_RES_CHAN, op.chan, (void *)&link->handle)) {
 			pr_info("Unexpected behavior to close channel not opened in process"
 					"-chan %d\n", op.chan);
