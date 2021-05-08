@@ -321,6 +321,10 @@ static int hantro_clock_control(struct device *dev, bool enable)
 	int i = 0, ret = 0, count = 0;
 	unsigned long rate;
 
+	if ((hantro_drm.device_type != DEVICE_KEEMBAY) &&
+			(hantro_drm.device_type != DEVICE_THUNDERBAY))
+		return -EINVAL;
+
 	/* Read clock names */
 	count = device_property_read_string_array(dev, "clock-names", NULL, 0);
 	if (count > 0) {
