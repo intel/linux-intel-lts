@@ -989,7 +989,7 @@ int vpu_read (void *data, size_t *size, unsigned int timeout_ms)
 }
 EXPORT_SYMBOL_GPL(vpu_read);
 
-int * vpu_read_swid (void *data)
+int *vpu_read_swid(void)
 {
 	struct gs_port *port;
 	port = ports[PORT_NUM].port;

@@ -353,7 +353,7 @@ int mxlk_trigger_reset(void *arg)
 int intr = 0;
 static irqreturn_t keembay_usb_irq_handler(int irq, void *arg)
 {
-	int *data = vpu_read_swid(data);
+	int *data = vpu_read_swid();
 	if (data != 0) {
 		if (*(data) == 0)
 			mxlk_trigger_reset(arg);

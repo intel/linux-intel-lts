@@ -69,7 +69,7 @@ void vpu_disconnect(struct gserial *);
 int vpu_start_io(struct gs_port *);
 
 int vpu_read (void *data, size_t *size, unsigned int timeout_ms);
-int * vpu_read_swid (void *data);
+int *vpu_read_swid(void);
 int vpu_write1 (const char *buf, size_t *size, unsigned int timeout_ms);
 int vpu_close1 (int size);
 int usb_sw_id (int pid);
