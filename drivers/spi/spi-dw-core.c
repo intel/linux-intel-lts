@@ -16,6 +16,7 @@
 #include <linux/spi/spi-mem.h>
 #include <linux/string.h>
 #include <linux/of.h>
+#include <linux/pm_runtime.h>
 
 #include "spi-dw.h"
 
@@ -927,6 +928,11 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 		}
 	}
 
+	pm_runtime_set_autosuspend_delay(dev, 50);
+	pm_runtime_use_autosuspend(dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+
 	ret = spi_register_controller(master);
 	if (ret) {
 		dev_err(&master->dev, "problem registering spi master\n");
@@ -937,6 +943,9 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 	return 0;
 
 err_dma_exit:
+	pm_runtime_put_noidle(dev);
+	pm_runtime_disable(dev);
+
 	if (dws->dma_ops && dws->dma_ops->dma_exit)
 		dws->dma_ops->dma_exit(dws);
 	spi_enable_chip(dws, 0);
