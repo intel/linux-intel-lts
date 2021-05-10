@@ -120,6 +120,7 @@ static int fpe_start_wq(struct mac_device_info *hw, struct net_device *dev)
 	char *name;
 
 	clear_bit(__FPE_TASK_SCHED, &info->task_state);
+	clear_bit(__FPE_REMOVING, &info->task_state);
 
 	name = info->wq_name;
 	sprintf(name, "%s-fpe", dev->name);
