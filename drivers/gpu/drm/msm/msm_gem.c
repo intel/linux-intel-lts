@@ -756,7 +756,7 @@ int msm_gem_sync_object(struct drm_gem_object *obj,
 	struct dma_fence *fence;
 	int i, ret;
 
-	fobj = dma_resv_get_list(obj->resv);
+	fobj = dma_resv_shared_list(obj->resv);
 	if (!fobj || (fobj->shared_count == 0)) {
 		fence = dma_resv_excl_fence(obj->resv);
 		/* don't need to wait on our own fences, since ring is fifo */
@@ -949,7 +949,7 @@ void msm_gem_describe(struct drm_gem_object *obj, struct seq_file *m,
 	}
 
 	rcu_read_lock();
-	fobj = rcu_dereference(robj->fence);
+	fobj = dma_resv_shared_list(robj);
 	if (fobj) {
 		unsigned int i, shared_count = fobj->shared_count;
 
