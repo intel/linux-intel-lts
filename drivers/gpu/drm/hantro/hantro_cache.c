@@ -521,9 +521,6 @@ static irqreturn_t cache_isr(int irq, void *dev_id)
 		handled++;
 	}
 
-	if (!handled)
-		pr_info("IRQ received, but not cache's!\n");
-
 	return IRQ_HANDLED;
 }
 
