@@ -279,6 +279,7 @@ noinstr void arch_pipeline_entry(struct pt_regs *regs, u8 vector)
 		instrumentation_begin();
 		prevd = handle_irq_pipelined_prepare(regs);
 		arch_handle_irq(regs, vector, false);
+		kvm_set_cpu_l1tf_flush_l1d();
 		handle_irq_pipelined_finish(prevd, regs);
 		if (running_inband() && user_mode(regs)) {
 			stall_inband_nocheck();
