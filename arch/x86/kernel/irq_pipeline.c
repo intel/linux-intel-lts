@@ -240,11 +240,50 @@ noinstr void arch_pipeline_entry(struct pt_regs *regs, u8 vector)
 	struct irq_stage_data *prevd;
 	irqentry_state_t state;
 
+	/*
+	 * The tricky one: we distinguish the following cases:
+	 *
+	 * [1] entry from oob context, either kernel or user code was
+	 * preempted by the IRQ, the in-band (virtual) interrupt state
+	 * is 'undefined' (could be either stalled/unstalled, it is
+	 * not relevant).
+	 *
+	 * [2] entry from in-band context while the stage is stalled,
+	 * which means that some kernel code was preempted by the IRQ
+	 * since in-band user code cannot run with interrupts
+	 * (virtually) disabled.
+	 *
+	 * [3] entry from in-band context while the stage is
+	 * unstalled: the common case for IRQ entry. Kernel or user
+	 * code may have been preempted, we handle the event
+	 * identically.
+	 *
+	 * [1] and [2] are processed almost the same way, except for
+	 * one key aspect: the potential stage demotion of the
+	 * preempted task which originally entered [1] on the oob
+	 * stage, then left it for the in-band stage as a result of
+	 * handling the IRQ (such demotion normally happens during
+	 * handle_irq_pipelined_finish() if required). In this
+	 * particular case, we want to run the common IRQ epilogue
+	 * code before returning to user mode, so that all pending
+	 * in-band work (_TIF_WORK_*) is carried out for the task
+	 * which is about to exit kernel mode.
+	 *
+	 * If the task runs in-band at the exit point and a user mode
+	 * context was preempted, then case [2] is excluded by
+	 * definition so we know for sure that we just observed a
+	 * stage demotion, therefore we have to run the work loop by
+	 * calling irqentry_exit_to_user_mode().
+	 */
 	if (unlikely(running_oob() || irqs_disabled())) {
 		instrumentation_begin();
 		prevd = handle_irq_pipelined_prepare(regs);
 		arch_handle_irq(regs, vector, false);
 		handle_irq_pipelined_finish(prevd, regs);
+		if (running_inband() && user_mode(regs)) {
+			stall_inband_nocheck();
+			irqentry_exit_to_user_mode(regs);
+		}
 		instrumentation_end();
 		return;
 	}
