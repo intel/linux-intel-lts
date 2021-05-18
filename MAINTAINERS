@@ -9677,6 +9677,19 @@ S:	Maintained
 F:	arch/x86/include/asm/intel_telemetry.h
 F:	drivers/platform/x86/intel/telemetry/
 
+INTEL THUNDER BAY RESET DRIVER
+M:	MP Sureshkumar <sureshkumar.mp@intel.com>
+M:	Shruthi Sanil <shruthi.sanil@intel.com>
+L:	linux-kernel@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/reset/intel,thunderbay-reset.yaml
+F:	drivers/reset/Kconfig
+F:	drivers/reset/Makefile
+F:	drivers/reset/reset-thunderbay.c
+F:	include/dt-bindings/reset/thunderbay-reset.h
+F:	include/linux/reset/reset-thunderbay-ss.h
+F:	include/linux/reset/reset-thunderbay.h
+
 INTEL UNCORE FREQUENCY CONTROL
 M:	Srinivas Pandruvada <srinivas.pandruvada@linux.intel.com>
 L:	platform-driver-x86@vger.kernel.org

@@ -231,6 +231,15 @@ config RESET_SUNXI
 	help
 	  This enables the reset driver for Allwinner SoCs.
 
+config RESET_THUNDERBAY
+	tristate "Intel Thunder Bay SoC reset driver"
+	depends on ARCH_THUNDERBAY || COMPILE_TEST
+	help
+	  This enables the reset driver support for Intel Thunder Bay SoC
+	  peripherals with memory mapped reset-registers. If you wish to use
+	  the reset framework for such memory-mapped devices, say Y here.
+	  Otherwise, say N.
+
 config RESET_TI_SCI
 	tristate "TI System Control Interface (TI-SCI) reset driver"
 	depends on TI_SCI_PROTOCOL
