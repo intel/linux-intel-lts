@@ -104,6 +104,13 @@ COMPAT_SYSCALL_DEFINE0(sigreturn)
 	struct sigframe_ia32 __user *frame = (struct sigframe_ia32 __user *)(regs->sp-8);
 	sigset_t set;
 
+	/*
+	 * Verify legacy sigreturn does not have IBT enabled.
+	 */
+#ifdef CONFIG_X86_IBT
+	if (current->thread.shstk.ibt)
+		goto badframe;
+#endif
 	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__get_user(set.sig[0], &frame->sc.oldmask)
