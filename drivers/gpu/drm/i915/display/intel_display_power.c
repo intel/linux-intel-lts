@@ -5645,7 +5645,11 @@ static void bxt_display_core_init(struct drm_i915_private *dev_priv, bool resume
 	gen9_dbuf_enable(dev_priv);
 
 	if (resume && dev_priv->dmc.dmc_payload)
+<<<<<<< HEAD
 		intel_dmc_load_program(dev_priv);
+=======
+		intel_csr_load_program(dev_priv);
+>>>>>>> c24760cf42c3c... drm/i915/dmc: s/intel_csr/intel_dmc
 }
 
 static void bxt_display_core_uninit(struct drm_i915_private *dev_priv)
@@ -5711,7 +5715,11 @@ static void cnl_display_core_init(struct drm_i915_private *dev_priv, bool resume
 	gen9_dbuf_enable(dev_priv);
 
 	if (resume && dev_priv->dmc.dmc_payload)
+<<<<<<< HEAD
 		intel_dmc_load_program(dev_priv);
+=======
+		intel_csr_load_program(dev_priv);
+>>>>>>> c24760cf42c3c... drm/i915/dmc: s/intel_csr/intel_dmc
 }
 
 static void cnl_display_core_uninit(struct drm_i915_private *dev_priv)
@@ -5868,7 +5876,11 @@ static void icl_display_core_init(struct drm_i915_private *dev_priv,
 		tgl_bw_buddy_init(dev_priv);
 
 	if (resume && dev_priv->dmc.dmc_payload)
+<<<<<<< HEAD
 		intel_dmc_load_program(dev_priv);
+=======
+		intel_csr_load_program(dev_priv);
+>>>>>>> c24760cf42c3c... drm/i915/dmc: s/intel_csr/intel_dmc
 
 	/* Wa_14011508470 */
 	if (DISPLAY_VER(dev_priv) == 12) {
