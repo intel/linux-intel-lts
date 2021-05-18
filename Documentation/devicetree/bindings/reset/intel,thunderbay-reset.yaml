@@ -1,0 +1,146 @@
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/reset/intel,thunderbay-reset.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Intel, Thunder Bay Peripheral Reset Controller Device Tree Bindings
+
+maintainers:
+  - MP Sureshkumar <sureshkumar.mp@intel.com>
+  - Shruthi Sanil <shruthi.sanil@intel.com>
+
+properties:
+  compatible:
+    enum:
+      - intel,thunderbay-comss-rst
+      - intel,thunderbay-cpuss-rst
+      - intel,thunderbay-memss-rst
+      - intel,thunderbay-pcie-rst
+      - intel,thunderbay-pss-rst1
+      - intel,thunderbay-pss-rst2
+
+  reg:
+    description: |
+      Physical base address and length of Reset registers.
+      It contains 4 unsigned 32-bit integer. The first 2 integers
+      combine to become an unsigned 64-bit physical address.
+      The last 2 integers combine the length of the reset registers memory.
+    maxItems: 1
+
+  "#reset-cells":
+    const: 1
+    description: |
+      This additional argument passed to that reset controller is the
+      offset of the bit controlling this particular reset line in the
+      register.
+
+required:
+  - compatible
+  - reg
+  - "#reset-cells"
+
+additionalProperties: false
+
+examples:
+  - |
+    rst {
+        #address-cells = <2>;
+        #size-cells = <2>;
+
+        rst_cpuss: reset-controller@88830040 {
+          compatible = "intel,thunderbay-cpuss-rst";
+          reg = <0x0 0x88830040 0x0 0x10>;
+          #reset-cells = <1>;
+        };
+
+        rst_pss1: reset-controller@80430000 {
+          compatible = "intel,thunderbay-pss-rst1";
+          reg = <0x0 0x80430000 0x0 0x10404>;
+          #reset-cells = <1>;
+        };
+
+        rst_pss2: reset-controller@80441000 {
+          compatible = "intel,thunderbay-pss-rst2";
+          reg = <0x0 0x80441000 0x0 0xE004>;
+          #reset-cells = <1>;
+        };
+
+        rst_pcie: reset-controller@82800000 {
+          compatible = "intel,thunderbay-pcie-rst";
+          reg = <0x0 0x82800000 0x0 0x10>;
+          #reset-cells = <1>;
+        };
+
+        rst_comss0: reset-controller@185520000 {
+          compatible = "intel,thunderbay-comss-rst";
+          reg = <0x1 0x85520000 0x0 0x1010>;
+          #reset-cells = <1>;
+        };
+
+        rst_comss1: reset-controller@285520000 {
+          compatible = "intel,thunderbay-comss-rst";
+          reg = <0x2 0x85520000 0x0 0x1010>;
+          #reset-cells = <1>;
+        };
+
+        rst_comss2: reset-controller@385520000 {
+          compatible = "intel,thunderbay-comss-rst";
+          reg = <0x3 0x85520000 0x0 0x1010>;
+          #reset-cells = <1>;
+        };
+
+        rst_comss3: reset-controller@485520000 {
+          compatible = "intel,thunderbay-comss-rst";
+          reg = <0x4 0x85520000 0x0 0x1010>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss0_0: reset-controller@184400000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x1 0x84400000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss0_1: reset-controller@184410000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x1 0x84410000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss1_0: reset-controller@284400000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x2 0x84400000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss1_1: reset-controller@284410000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x2 0x84410000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss2_0: reset-controller@384400000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x3 0x84400000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss2_1: reset-controller@384410000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x3 0x84410000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss3_0: reset-controller@484400000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x4 0x84400000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+
+        rst_memss3_1: reset-controller@484410000 {
+          compatible = "intel,thunderbay-memss-rst";
+          reg = <0x4 0x84410000 0x0 0x30>;
+          #reset-cells = <1>;
+        };
+    };
