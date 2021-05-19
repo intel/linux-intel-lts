@@ -5032,7 +5032,10 @@ static void igc_watchdog_task(struct work_struct *work)
 				adapter->tx_timeout_factor = 14;
 				break;
 			case SPEED_100:
+			case SPEED_1000:
+			case SPEED_2500:
 				/* maybe add some timeout factor ? */
+				adapter->tx_timeout_factor = 7;
 				break;
 			}
 
