@@ -62,11 +62,11 @@ static int igc_tsn_disable_offload(struct igc_adapter *adapter)
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		wr32(IGC_TXQCTL(i), 0);
 		wr32(IGC_STQT(i), 0);
-		wr32(IGC_ENDQT(i), NSEC_PER_MSEC);
+		wr32(IGC_ENDQT(i), NSEC_PER_SEC);
 	}
 
-	wr32(IGC_QBVCYCLET_S, NSEC_PER_MSEC);
-	wr32(IGC_QBVCYCLET, NSEC_PER_MSEC);
+	wr32(IGC_QBVCYCLET_S, NSEC_PER_SEC);
+	wr32(IGC_QBVCYCLET, NSEC_PER_SEC);
 
 	adapter->flags &= ~IGC_FLAG_TSN_ANY_ENABLED;
 

@@ -5543,13 +5543,13 @@ static int igc_tsn_clear_schedule(struct igc_adapter *adapter)
 	int i;
 
 	adapter->base_time = 0;
-	adapter->cycle_time = NSEC_PER_MSEC;
+	adapter->cycle_time = NSEC_PER_SEC;
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct igc_ring *ring = adapter->tx_ring[i];
 
 		ring->start_time = 0;
-		ring->end_time = NSEC_PER_MSEC;
+		ring->end_time = NSEC_PER_SEC;
 	}
 
 	return 0;
