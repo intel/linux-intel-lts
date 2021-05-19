@@ -74,6 +74,7 @@ irqreturn_t netproxy_isr_thread(int irq, void *dev_id)
 	int i;
 	void __iomem *pkt_content;
 	void __iomem *a2h_mem_ptr = priv->ioaddr + NETWORK_PROXY_SHMEM_OFFSET;
+	unsigned long flags;
 	u32 value;
 
 	/* Get A2H memory pool header */
@@ -97,9 +98,7 @@ irqreturn_t netproxy_isr_thread(int irq, void *dev_id)
 			goto err_skb;
 		}
 
-		skb = __netdev_alloc_skb_ip_align(priv->dev,
-						  a2h_pkt_hdr.pkt_len,
-						  GFP_KERNEL);
+		skb = napi_alloc_skb(&ch->rx_napi, a2h_pkt_hdr.pkt_len);
 		if (!skb) {
 			netdev_err(priv->dev,
 				   "Netprox failed to submit a2h packets.\n");
@@ -114,7 +113,9 @@ irqreturn_t netproxy_isr_thread(int irq, void *dev_id)
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 
 		/* Submit skbuf to queue 0 */
+		skb_record_rx_queue(skb, 0);
 		napi_gro_receive(&ch->rx_napi, skb);
+		skb = NULL;
 
 		/* Move the pointer the next A2H packet header */
 		a2h_mem_ptr += NP_A2H_PKT_MAX + a2h_pkt_hdr_len;
@@ -137,6 +138,13 @@ err_skb:
 	priv->networkproxy_exit = 0;
 
 	netif_device_attach(ndev);
+
+	if (napi_schedule_prep(&ch->rx_napi)) {
+		spin_lock_irqsave(&ch->lock, flags);
+		stmmac_disable_dma_irq(priv, priv->ioaddr, 0, 1, 0);
+		spin_unlock_irqrestore(&ch->lock, flags);
+		__napi_schedule_irqoff(&ch->rx_napi);
+	}
 
 	return IRQ_HANDLED;
 }
