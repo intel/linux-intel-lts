@@ -392,25 +392,8 @@ out:
 	return len;
 }
 
-static const struct counter_count_ext intel_qep_count_ext[] = {
-	INTEL_QEP_COUNTER_EXT_RW(ceiling),
-	INTEL_QEP_COUNTER_EXT_RW(enable),
-};
-
-static struct counter_count intel_qep_counter_count[] = {
-	{
-		.id = 0,
-		.name = "Channel 1 Count",
-		.functions_list = intel_qep_count_functions,
-		.num_functions = ARRAY_SIZE(intel_qep_count_functions),
-		.synapses = intel_qep_count_synapses,
-		.num_synapses = ARRAY_SIZE(intel_qep_count_synapses),
-		.ext = intel_qep_count_ext,
-		.num_ext = ARRAY_SIZE(intel_qep_count_ext),
-	},
-};
-
 static ssize_t spike_filter_ns_read(struct counter_device *counter,
+				    struct counter_count *count,
 				    void *priv, char *buf)
 {
 	struct intel_qep *qep = counter->priv;
@@ -429,6 +412,7 @@ static ssize_t spike_filter_ns_read(struct counter_device *counter,
 }
 
 static ssize_t spike_filter_ns_write(struct counter_device *counter,
+				     struct counter_count *count,
 				     void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter->priv;
@@ -480,6 +464,7 @@ out:
 }
 
 static ssize_t preset_enable_read(struct counter_device *counter,
+				  struct counter_count *count,
 				  void *priv, char *buf)
 {
 	struct intel_qep *qep = counter->priv;
@@ -492,6 +477,7 @@ static ssize_t preset_enable_read(struct counter_device *counter,
 }
 
 static ssize_t preset_enable_write(struct counter_device *counter,
+				   struct counter_count *count,
 				   void *priv, const char *buf, size_t len)
 {
 	struct intel_qep *qep = counter->priv;
@@ -526,9 +512,24 @@ out:
 	return ret;
 }
 
-static const struct counter_device_ext intel_qep_ext[] = {
+static const struct counter_count_ext intel_qep_count_ext[] = {
+	INTEL_QEP_COUNTER_EXT_RW(ceiling),
+	INTEL_QEP_COUNTER_EXT_RW(enable),
 	INTEL_QEP_COUNTER_EXT_RW(spike_filter_ns),
 	INTEL_QEP_COUNTER_EXT_RW(preset_enable)
+};
+
+static struct counter_count intel_qep_counter_count[] = {
+	{
+		.id = 0,
+		.name = "Channel 1 Count",
+		.functions_list = intel_qep_count_functions,
+		.num_functions = ARRAY_SIZE(intel_qep_count_functions),
+		.synapses = intel_qep_count_synapses,
+		.num_synapses = ARRAY_SIZE(intel_qep_count_synapses),
+		.ext = intel_qep_count_ext,
+		.num_ext = ARRAY_SIZE(intel_qep_count_ext),
+	},
 };
 
 static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
@@ -570,8 +571,6 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 	qep->counter.num_counts = ARRAY_SIZE(intel_qep_counter_count);
 	qep->counter.signals = intel_qep_signals;
 	qep->counter.num_signals = ARRAY_SIZE(intel_qep_signals);
-	qep->counter.ext = intel_qep_ext;
-	qep->counter.num_ext = ARRAY_SIZE(intel_qep_ext);
 	qep->counter.priv = qep;
 	qep->enabled = false;
 
