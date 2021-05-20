@@ -176,7 +176,7 @@ struct igc_adapter {
 	ktime_t base_time;
 	ktime_t cycle_time;
 	bool frame_preemption_active;
-	u8 add_frag_size;
+	u32 add_frag_size;
 
 	/* OS defined structs */
 	struct pci_dev *pdev;

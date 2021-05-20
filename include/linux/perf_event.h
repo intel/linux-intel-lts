@@ -260,15 +260,16 @@ struct perf_event;
 /**
  * pmu::capabilities flags
  */
-#define PERF_PMU_CAP_NO_INTERRUPT		0x01
-#define PERF_PMU_CAP_NO_NMI			0x02
-#define PERF_PMU_CAP_AUX_NO_SG			0x04
-#define PERF_PMU_CAP_EXTENDED_REGS		0x08
-#define PERF_PMU_CAP_EXCLUSIVE			0x10
-#define PERF_PMU_CAP_ITRACE			0x20
-#define PERF_PMU_CAP_HETEROGENEOUS_CPUS		0x40
-#define PERF_PMU_CAP_NO_EXCLUDE			0x80
-#define PERF_PMU_CAP_AUX_OUTPUT			0x100
+#define PERF_PMU_CAP_NO_INTERRUPT		0x0001
+#define PERF_PMU_CAP_NO_NMI			0x0002
+#define PERF_PMU_CAP_AUX_NO_SG			0x0004
+#define PERF_PMU_CAP_EXTENDED_REGS		0x0008
+#define PERF_PMU_CAP_EXCLUSIVE			0x0010
+#define PERF_PMU_CAP_ITRACE			0x0020
+#define PERF_PMU_CAP_HETEROGENEOUS_CPUS		0x0040
+#define PERF_PMU_CAP_NO_EXCLUDE			0x0080
+#define PERF_PMU_CAP_AUX_OUTPUT			0x0100
+#define PERF_PMU_CAP_EXTENDED_HW_TYPE		0x0200
 
 struct perf_output_handle;
 
@@ -1546,6 +1547,18 @@ struct perf_pmu_events_ht_attr {
 	u64					id;
 	const char				*event_str_ht;
 	const char				*event_str_noht;
+};
+
+struct perf_pmu_events_hybrid_attr {
+	struct device_attribute			attr;
+	u64					id;
+	const char				*event_str;
+	u64					pmu_type;
+};
+
+struct perf_pmu_format_hybrid_attr {
+	struct device_attribute			attr;
+	u64					pmu_type;
 };
 
 ssize_t perf_event_sysfs_show(struct device *dev, struct device_attribute *attr,
