@@ -584,7 +584,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 					if (!opchan) {
 						pr_err("link %u, channel %u in invalid state\n",
 						       link_id, chan);
-						return X_LINK_COMMUNICATION_FAIL;
+						rc = X_LINK_COMMUNICATION_FAIL;
 					}
 				} else {
 					rc = X_LINK_CHAN_FULL;
@@ -612,7 +612,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 						if (!opchan) {
 							pr_err("link %u, channel %u in invalid state\n",
 							       link_id, chan);
-							return X_LINK_COMMUNICATION_FAIL;
+							rc = X_LINK_COMMUNICATION_FAIL;
 						}
 					}
 				}
@@ -638,7 +638,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 				if (!opchan) {
 					pr_err("link %u, channel %u in invalid state\n",
 					       link_id, chan);
-					return X_LINK_COMMUNICATION_FAIL;
+					rc = X_LINK_COMMUNICATION_FAIL;
 				}
 			}
 			if (rc == X_LINK_SUCCESS) {
@@ -677,7 +677,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 				if (!opchan) {
 					pr_err("link %u, channel %u in invalid state\n",
 					       link_id, chan);
-					return X_LINK_COMMUNICATION_FAIL;
+					rc = X_LINK_COMMUNICATION_FAIL;
 				}
 			}
 			if (rc == X_LINK_SUCCESS) {
@@ -773,6 +773,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 					if (!opchan) {
 						pr_err("link %u, channel %u in invalid state\n",
 						       link_id, chan);
+						mutex_unlock(&xmux->channels[link_id][chan].lock);
 						return X_LINK_COMMUNICATION_FAIL;
 						}
 					if (rc == 0) {
