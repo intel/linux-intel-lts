@@ -293,7 +293,7 @@ static void intel_tsens_remove_tz(struct intel_hddl_clients *d)
 		}
 		if (tsens->tz_xlk) {
 			mutex_lock(&tsens->sync_xlk_unregister);
-			tsens->tz_xlk = NULL;
+			tsens->i2c_xlk = NULL;
 			thermal_zone_device_unregister(tsens->tz_xlk);
 			mutex_unlock(&tsens->sync_xlk_unregister);
 		}
