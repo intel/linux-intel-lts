@@ -158,6 +158,8 @@ static s32 xlink_smbus_xfer(struct i2c_adapter *adap, u16 addr,
 	if (!adap)
 		return -ENODEV;
 	adapt_data = i2c_get_adapdata(adap);
+	if (!adapt_data)
+		return -ENODEV;
 	dev = &adapt_data->adap->dev;
 
 	if (!data)
