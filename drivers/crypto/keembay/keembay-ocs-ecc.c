@@ -54,16 +54,16 @@
 #define OCS_ECC_OP_SIZE_256		0
 
 /* ECC Instruction : for ECC_COMMAND */
-#define OCS_ECC_INST_WRITE_AX		(0x01 << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_WRITE_AY		(0x02 << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_WRITE_BX_D		(0x03 << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_WRITE_BY_L		(0x04 << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_WRITE_P		(0x05 << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_WRITE_A		(0x06 << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_CALC_D_IDX_A	(0x08 << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_CALC_A_POW_B_MODP	(0xB  << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_CALC_A_MUL_B_MODP	(0xB  << HW_OCS_ECC_COMMAND_INS_BP)
-#define OCS_ECC_INST_CALC_A_ADD_B_MODP	(0xB  << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_WRITE_AX		(0x1 << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_WRITE_AY		(0x2 << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_WRITE_BX_D		(0x3 << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_WRITE_BY_L		(0x4 << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_WRITE_P		(0x5 << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_WRITE_A		(0x6 << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_CALC_D_IDX_A	(0x8 << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_CALC_A_POW_B_MODP	(0xB << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_CALC_A_MUL_B_MODP	(0xC  << HW_OCS_ECC_COMMAND_INS_BP)
+#define OCS_ECC_INST_CALC_A_ADD_B_MODP	(0xD << HW_OCS_ECC_COMMAND_INS_BP)
 
 #define ECC_ENABLE_INTR			1
 
@@ -329,12 +329,10 @@ static int kmb_ecc_do_scalar_op(struct ocs_ecc_dev *ecc_dev, u64 *scalar_out,
 	u32 op_size = (ndigits > ECC_CURVE_NIST_P256_DIGITS) ?
 		      OCS_ECC_OP_SIZE_384 : OCS_ECC_OP_SIZE_256;
 	size_t nbytes = digits_to_bytes(ndigits);
-	size_t data_size_u8;
 	int rc;
 
 	/* Wait engine to be idle before starting new operation. */
 	rc = ocs_ecc_wait_idle(ecc_dev);
-
 	if (rc)
 		return rc;
 
@@ -358,9 +356,7 @@ static int kmb_ecc_do_scalar_op(struct ocs_ecc_dev *ecc_dev, u64 *scalar_out,
 	if (rc)
 		return rc;
 
-	data_size_u8 = digits_to_bytes(ndigits);
-
-	ocs_ecc_read_cx_out(ecc_dev, scalar_out, data_size_u8);
+	ocs_ecc_read_cx_out(ecc_dev, scalar_out, nbytes);
 
 	if (vli_is_zero(scalar_out, ndigits))
 		return -EINVAL;
@@ -373,9 +369,9 @@ static int kmb_ocs_ecc_is_pubkey_valid_partial(struct ocs_ecc_dev *ecc_dev,
 					       const struct ecc_curve *curve,
 					       struct ecc_point *pk)
 {
-	u64 xxx[KMB_ECC_VLI_MAX_DIGITS];
-	u64 yy[KMB_ECC_VLI_MAX_DIGITS];
-	u64 w[KMB_ECC_VLI_MAX_DIGITS];
+	u64 xxx[KMB_ECC_VLI_MAX_DIGITS] = { 0 };
+	u64 yy[KMB_ECC_VLI_MAX_DIGITS] = { 0 };
+	u64 w[KMB_ECC_VLI_MAX_DIGITS] = { 0 };
 	int rc;
 
 	if (WARN_ON(pk->ndigits != curve->g.ndigits))
@@ -398,7 +394,7 @@ static int kmb_ocs_ecc_is_pubkey_valid_partial(struct ocs_ecc_dev *ecc_dev,
 	/* Compute y^2 -> store in yy */
 	rc = kmb_ecc_do_scalar_op(ecc_dev, yy, pk->y, pk->y, curve, pk->ndigits,
 				  OCS_ECC_INST_CALC_A_MUL_B_MODP);
-	if (!rc)
+	if (rc)
 		goto exit;
 
 	/* x^3 */
@@ -407,27 +403,27 @@ static int kmb_ocs_ecc_is_pubkey_valid_partial(struct ocs_ecc_dev *ecc_dev,
 	/* Load the next stage.*/
 	rc = kmb_ecc_do_scalar_op(ecc_dev, xxx, pk->x, w, curve, pk->ndigits,
 				  OCS_ECC_INST_CALC_A_POW_B_MODP);
-	if (!rc)
+	if (rc)
 		goto exit;
 
 	/* Do a*x -> store in w. */
 	rc = kmb_ecc_do_scalar_op(ecc_dev, w, curve->a, pk->x, curve,
 				  pk->ndigits,
 				  OCS_ECC_INST_CALC_A_MUL_B_MODP);
-	if (!rc)
+	if (rc)
 		goto exit;
 
 	/* Do ax + b == w + b; store in w. */
 	rc = kmb_ecc_do_scalar_op(ecc_dev, w, w, curve->b, curve,
 				  pk->ndigits,
 				  OCS_ECC_INST_CALC_A_ADD_B_MODP);
-	if (!rc)
+	if (rc)
 		goto exit;
 
 	/* x^3 + ax + b == x^3 + w -> store in w. */
 	rc = kmb_ecc_do_scalar_op(ecc_dev, w, xxx, w, curve, pk->ndigits,
 				  OCS_ECC_INST_CALC_A_ADD_B_MODP);
-	if (!rc)
+	if (rc)
 		goto exit;
 
 	/* Compare y^2 == x^3 + a·x + b. */
@@ -639,7 +635,7 @@ static int kmb_ecc_do_shared_secret(struct ocs_ecc_ctx *tctx,
 	 * Check 2: Verify key is in the range [1, p-1].
 	 * Check 3: Verify that y^2 == (x^3 + a·x + b) mod p
 	 */
-	rc = kmb_ocs_ecc_is_pubkey_valid_partial(tctx->ecc_dev, curve, pk);
+	rc = kmb_ocs_ecc_is_pubkey_valid_partial(ecc_dev, curve, pk);
 	if (rc)
 		goto exit_free_pk;
 
@@ -681,12 +677,7 @@ exit_free_result:
 exit_free_pk:
 	ecc_free_point(pk);
 
-	if (rc)
-		return rc;
-
-	crypto_finalize_kpp_request(ecc_dev->engine, req, 0);
-
-	return 0;
+	return rc;
 }
 
 /* Compute public key. */
@@ -734,14 +725,7 @@ static int kmb_ecc_do_public_key(struct ocs_ecc_ctx *tctx,
 exit:
 	ecc_free_point(pk);
 
-	/* If there was an error, return. */
-	if (rc)
-		return rc;
-
-	/* Otherwise finalize request. */
-	crypto_finalize_kpp_request(tctx->ecc_dev->engine, req, 0);
-
-	return 0;
+	return rc;
 }
 
 static int kmb_ocs_ecc_do_one_request(struct crypto_engine *engine,
@@ -749,11 +733,17 @@ static int kmb_ocs_ecc_do_one_request(struct crypto_engine *engine,
 {
 	struct kpp_request *req = container_of(areq, struct kpp_request, base);
 	struct ocs_ecc_ctx *tctx = kmb_ocs_ecc_tctx(req);
+	struct ocs_ecc_dev *ecc_dev = tctx->ecc_dev;
+	int rc;
 
 	if (req->src)
-		return kmb_ecc_do_shared_secret(tctx, req);
+		rc = kmb_ecc_do_shared_secret(tctx, req);
 	else
-		return kmb_ecc_do_public_key(tctx, req);
+		rc = kmb_ecc_do_public_key(tctx, req);
+
+	crypto_finalize_kpp_request(ecc_dev->engine, req, rc);
+
+	return 0;
 }
 
 static int kmb_ocs_ecdh_generate_public_key(struct kpp_request *req)
