@@ -235,7 +235,7 @@ out:
 	return ret;
 }
 
-static enum counter_synapse_action intel_qep_synapse_actions[] = {
+static const enum counter_synapse_action intel_qep_synapse_actions[] = {
 	COUNTER_SYNAPSE_ACTION_BOTH_EDGES,
 };
 
