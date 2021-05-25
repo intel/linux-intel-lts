@@ -91,7 +91,7 @@ static void idma32_initialize_chan_xbar(struct dw_dma_chan *dwc)
 	value = readl(misc + DMA_XBAR_SEL(dwc->chan.chan_id));
 
 	/* DEVFN selection */
-	value &= XBAR_SEL_DEVID_MASK;
+	value &= ~XBAR_SEL_DEVID_MASK;
 	value |= idma32_get_slave_devid(dwc);
 
 	switch (dwc->direction) {
