@@ -424,6 +424,7 @@ static int intel_hddl_device_probe(struct intel_hddl_clients *d)
 		return -ENODEV;
 	}
 
+	d->status = HDDL_DEV_STATUS_START;
 	d->hddl_dev_connect_task =
 		kthread_run((intel_hddl_connect_task)d->task,
 			    (void *)d,
@@ -447,11 +448,10 @@ void intel_hddl_device_remove(struct intel_hddl_clients *d)
 	 * and returs if the device is already disconnected.
 	 */
 	mutex_lock(&d->lock);
-	if (d->status == HDDL_DEV_STATUS_DISCONNECTED) {
+	if (d->status != HDDL_DEV_STATUS_CONNECTED) {
 		mutex_unlock(&d->lock);
 		return;
 	}
-
 	for (i = 0; i < d->n_clients; i++)
 		intel_hddl_free_i2c_client(d, d->i2c_devs[i]);
 	intel_hddl_unregister_pdev(d);
