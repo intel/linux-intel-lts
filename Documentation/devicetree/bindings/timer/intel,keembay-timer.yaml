@@ -1,0 +1,180 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/timer/intel,keembay-timer.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Intel Keem Bay SoC Timers
+
+maintainers:
+  - Shruthi Sanil <shruthi.sanil@intel.com>
+
+description: |
+  The Intel Keem Bay timer driver supports clocksource and clockevent
+  features for the timer IP used in Intel Keembay SoC.
+  The timer block supports 1 free running counter and 8 timers.
+  The free running counter can be used as a clocksouce and
+  the timers can be used as clockevent. Each timer is capable of
+  generating inividual interrupt.
+  Both the features are enabled through the timer general config register.
+
+  The parent node represents the common general configuration details and
+  the child nodes represents the counter and timers.
+
+properties:
+  reg:
+    description: General configuration register address and length.
+    maxItems: 1
+
+  "#address-cells":
+    const: 2
+
+  "#size-cells":
+    const: 2
+
+  ranges: true
+
+required:
+  - compatible
+  - reg
+  - "#address-cells"
+  - "#size-cells"
+  - ranges
+
+patternProperties:
+  "^counter@[0-9a-f]+$":
+    type: object
+    description: Properties for Intel Keem Bay counter
+
+    properties:
+      compatible:
+        enum:
+          - intel,keembay-counter
+
+      reg:
+        maxItems: 1
+
+      clocks:
+        maxItems: 1
+
+    required:
+      - compatible
+      - reg
+      - clocks
+
+  "^timer@[0-9a-f]+$":
+    type: object
+    description: Properties for Intel Keem Bay timer
+
+    properties:
+      compatible:
+        enum:
+          - intel,keembay-timer
+
+      reg:
+        maxItems: 1
+
+      interrupts:
+        maxItems: 1
+
+      clocks:
+        maxItems: 1
+
+    required:
+      - compatible
+      - reg
+      - interrupts
+      - clocks
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #include <dt-bindings/interrupt-controller/irq.h>
+    #define KEEM_BAY_A53_TIM
+
+    soc {
+        #address-cells = <0x2>;
+        #size-cells = <0x2>;
+
+        gpt@20331000 {
+            reg = <0x0 0x20331000 0x0 0xc>;
+            #address-cells = <0x2>;
+            #size-cells = <0x2>;
+            ranges;
+
+            counter@203300e8 {
+                compatible = "intel,keembay-counter";
+                reg = <0x0 0x203300e8 0x0 0x8>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330010 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330010 0x0 0xc>;
+                interrupts = <GIC_SPI 0x3 IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330020 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330020 0x0 0xc>;
+                interrupts = <GIC_SPI 0x4 IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330030 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330030 0x0 0xc>;
+                interrupts = <GIC_SPI 0x5 IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330040 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330040 0x0 0xc>;
+                interrupts = <GIC_SPI 0x6 IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330050 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330050 0x0 0xc>;
+                interrupts = <GIC_SPI 0x7 IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330060 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330060 0x0 0xc>;
+                interrupts = <GIC_SPI 0x8 IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330070 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330070 0x0 0xc>;
+                interrupts = <GIC_SPI 0x9 IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+
+            timer@20330080 {
+                compatible = "intel,keembay-timer";
+                reg = <0x0 0x20330080 0x0 0xc>;
+                interrupts = <GIC_SPI 0xa IRQ_TYPE_LEVEL_HIGH>;
+                clocks = <&scmi_clk KEEM_BAY_A53_TIM>;
+                status = "okay";
+            };
+        };
+    };
+
+...
