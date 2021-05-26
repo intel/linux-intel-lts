@@ -3,3 +3,6 @@
 
 # CVE-2020-16120
 0001-ovl-do-not-fail-because-of-O_NOATIME.patch
+
+# CVE-2020-24504
+0001-ice-create-scheduler-aggregator-node-config-and-move.patch
