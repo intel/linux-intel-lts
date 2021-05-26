@@ -416,8 +416,10 @@ static int intel_hddl_i2c_register_clients(struct device *dev,
 		rc = intel_hddl_get_xlink_data(dev,
 					       xlink, c->chan_num,
 					       (u8 *)&i2c_data, &size);
-		if (rc)
+		if (rc) {
+			dev_err(dev, "xlink_read data failed[HDDL_GET_I2C_DEVS] %d\n", i);
 			return rc;
+		}
 
 		strcpy(i2c->name, i2c_data.name);
 		i2c->addr = i2c_data.addr;
@@ -453,6 +455,7 @@ static int intel_hddl_i2c_register_clients(struct device *dev,
 				       xlink, c->chan_num,
 				       (u8 *)&msg, &size);
 	if (rc) {
+		dev_err(dev, "xlink_read data failed[HDDL_GET_SENS_COMPLETE] %d\n", msg.sensor_type);
 		mutex_unlock(&priv->lock);
 		return rc;
 	}
@@ -481,6 +484,7 @@ static int intel_hddl_i2c_register_clients(struct device *dev,
 					       xlink, c->chan_num,
 					       (u8 *)&msg, &size);
 		if (rc) {
+			dev_err(dev, "xlink_read_data_to_buffer[HDDL_GET_SENS_COMPLETE] failed\n");
 			mutex_unlock(&priv->lock);
 			return rc;
 		}
@@ -514,9 +518,10 @@ static int intel_hddl_tsens_data(struct intel_hddl_clients *c)
 	rc = intel_hddl_get_xlink_data(&priv->pdev->dev,
 				       xlink, c->chan_num,
 				       (u8 *)&nsens, &size);
-	if (rc)
+	if (rc) {
+		dev_err(&priv->pdev->dev, "xlink_read_data_to_buffer_failed[intel_hddl_tsens_data]\n");
 		return rc;
-
+	}
 	c->nsens = nsens;
 	p_tsens = devm_kcalloc(&priv->pdev->dev, nsens,
 			       sizeof(struct intel_tsens_host *),
@@ -619,10 +624,9 @@ static int intel_hddl_device_connect_task(void *data)
 	c->chan_num = priv->xlink_chan;
 	c->i2c_chan_num = priv->i2c_xlink_chan;
 	c->smbus_adap = priv->smbus_adap;
-	c->status = HDDL_DEV_STATUS_START;
 	if (intel_hddl_open_xlink_device(&priv->pdev->dev, c)) {
 		dev_err(&priv->pdev->dev, "HDDL open xlink dev failed\n");
-		return -ENODEV;
+		goto exit_connect_task;
 	}
 	c->status = HDDL_DEV_STATUS_XLINK_OPENED;
 	ktime_get_real_ts64(&ts);
@@ -632,7 +636,7 @@ static int intel_hddl_device_connect_task(void *data)
 		dev_err(&priv->pdev->dev,
 			"xlink write data failed rc = %d\n",
 			rc);
-		return rc;
+		goto close_xlink_dev;
 	}
 	c->status = HDDL_DEV_STATUS_UPDATED_TIMESTAMP;
 	size = sizeof(c->board_info);
@@ -640,7 +644,7 @@ static int intel_hddl_device_connect_task(void *data)
 				       xlink, c->chan_num,
 				       (u8 *)&c->board_info, &size);
 	if (rc)
-		return rc;
+		goto close_xlink_dev;
 	board_info_rcvd.board_id = ~(c->board_info.board_id);
 	rc = xlink_write_volatile(xlink, c->chan_num,
 				  (u8 *)&board_info_rcvd,
@@ -649,7 +653,7 @@ static int intel_hddl_device_connect_task(void *data)
 		dev_err(&priv->pdev->dev,
 			"xlink write data failed rc = %d\n",
 			rc);
-		return rc;
+		goto close_xlink_dev;
 	}
 	c->status = HDDL_DEV_STATUS_UPDATED_BOARD_INFO;
 	rc = intel_hddl_tsens_data(c);
@@ -681,6 +685,8 @@ remove_xlink_i2c_adap:
 	intel_hddl_xlink_remove_i2c_adap(&priv->pdev->dev, c);
 close_xlink_dev:
 	intel_hddl_close_xlink_device(&priv->pdev->dev, c);
+exit_connect_task:
+	c->status = HDDL_DEV_STATUS_DISCONNECTED;
 	return rc;
 }
 
