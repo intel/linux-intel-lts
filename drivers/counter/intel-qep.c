@@ -114,19 +114,6 @@ static void intel_qep_init(struct intel_qep *qep)
 	intel_qep_writel(qep, INTEL_QEPINT_MASK, INTEL_QEPINT_MASK_ALL);
 }
 
-enum intel_qep_count_function {
-	INTEL_QEP_ENCODER_MODE_NORMAL,
-	INTEL_QEP_ENCODER_MODE_SWAPPED,
-};
-
-static const enum counter_count_function intel_qep_count_functions[] = {
-	[INTEL_QEP_ENCODER_MODE_NORMAL] =
-	COUNTER_COUNT_FUNCTION_QUADRATURE_X4,
-
-	[INTEL_QEP_ENCODER_MODE_SWAPPED] =
-	COUNTER_COUNT_FUNCTION_QUADRATURE_X4_SWAPPED,
-};
-
 static int intel_qep_count_read(struct counter_device *counter,
 				struct counter_count *count,
 				unsigned long *val)
@@ -139,6 +126,19 @@ static int intel_qep_count_read(struct counter_device *counter,
 
 	return 0;
 }
+
+enum intel_qep_count_function {
+	INTEL_QEP_ENCODER_MODE_NORMAL,
+	INTEL_QEP_ENCODER_MODE_SWAPPED,
+};
+
+static const enum counter_count_function intel_qep_count_functions[] = {
+	[INTEL_QEP_ENCODER_MODE_NORMAL] =
+	COUNTER_COUNT_FUNCTION_QUADRATURE_X4,
+
+	[INTEL_QEP_ENCODER_MODE_SWAPPED] =
+	COUNTER_COUNT_FUNCTION_QUADRATURE_X4_SWAPPED,
+};
 
 static int intel_qep_function_get(struct counter_device *counter,
 				  struct counter_count *count,
