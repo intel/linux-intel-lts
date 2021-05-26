@@ -197,7 +197,7 @@ static ssize_t intel_qep_signal_invert_read(struct counter_device *counter,
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	pm_runtime_put(qep->dev);
 
-	return sysfs_emit(buf, "%u\n", !(reg & signal->id));
+	return sysfs_emit(buf, "%u\n", !(reg & (uintptr_t)signal->priv));
 }
 
 static ssize_t intel_qep_signal_invert_write(struct counter_device *counter,
@@ -223,9 +223,9 @@ static ssize_t intel_qep_signal_invert_write(struct counter_device *counter,
 	pm_runtime_get_sync(qep->dev);
 	reg = intel_qep_readl(qep, INTEL_QEPCON);
 	if (invert == true)
-		reg &= ~signal->id;
+		reg &= ~(uintptr_t)signal->priv;
 	else
-		reg |= signal->id;
+		reg |= (uintptr_t)signal->priv;
 	intel_qep_writel(qep, INTEL_QEPCON, reg);
 	pm_runtime_put(qep->dev);
 	ret = len;
@@ -266,22 +266,25 @@ static const struct counter_signal_ext intel_qep_signal_ext[] = {
 
 static struct counter_signal intel_qep_signals[] = {
 	{
-		.id = INTEL_QEPCON_EDGE_A,
+		.id = 0,
 		.name = "Phase A",
 		.ext = intel_qep_signal_ext,
 		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
+		.priv = (void *)INTEL_QEPCON_EDGE_A,
 	},
 	{
-		.id = INTEL_QEPCON_EDGE_B,
+		.id = 1,
 		.name = "Phase B",
 		.ext = intel_qep_signal_ext,
 		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
+		.priv = (void *)INTEL_QEPCON_EDGE_B,
 	},
 	{
-		.id = INTEL_QEPCON_EDGE_INDX,
+		.id = 2,
 		.name = "Index",
 		.ext = intel_qep_signal_ext,
 		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
+		.priv = (void *)INTEL_QEPCON_EDGE_INDX,
 	},
 };
 
