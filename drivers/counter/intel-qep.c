@@ -264,28 +264,18 @@ static const struct counter_signal_ext intel_qep_signal_ext[] = {
 	},
 };
 
+#define INTEL_QEP_SIGNAL(_id, _name, _priv) {		\
+	.id = (_id),					\
+	.name = (_name),				\
+	.ext = intel_qep_signal_ext,			\
+	.num_ext = ARRAY_SIZE(intel_qep_signal_ext),	\
+	.priv = (void *)_priv,				\
+}
+
 static struct counter_signal intel_qep_signals[] = {
-	{
-		.id = 0,
-		.name = "Phase A",
-		.ext = intel_qep_signal_ext,
-		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
-		.priv = (void *)INTEL_QEPCON_EDGE_A,
-	},
-	{
-		.id = 1,
-		.name = "Phase B",
-		.ext = intel_qep_signal_ext,
-		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
-		.priv = (void *)INTEL_QEPCON_EDGE_B,
-	},
-	{
-		.id = 2,
-		.name = "Index",
-		.ext = intel_qep_signal_ext,
-		.num_ext = ARRAY_SIZE(intel_qep_signal_ext),
-		.priv = (void *)INTEL_QEPCON_EDGE_INDX,
-	},
+	INTEL_QEP_SIGNAL(0, "Phase A", INTEL_QEPCON_EDGE_A),
+	INTEL_QEP_SIGNAL(1, "Phase B", INTEL_QEPCON_EDGE_A),
+	INTEL_QEP_SIGNAL(2, "Index", INTEL_QEPCON_EDGE_A),
 };
 
 static struct counter_synapse intel_qep_count_synapses[] = {
