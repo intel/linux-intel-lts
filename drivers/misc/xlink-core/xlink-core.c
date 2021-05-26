@@ -1877,11 +1877,12 @@ static enum xlink_error do_xlink_register_device_event(
 						"already registered\n", handle->sw_device_id, event);
 				continue;
 			}
-		}
-		if (callback_registered(event_notif_fn)) {
-			pr_info("xlink-core: Callback 0x%x -"
-					"already registered\n", event_notif_fn);
-			continue;
+		} else {
+			if (callback_registered(event_notif_fn)) {
+				pr_info("xlink-core: Callback 0x%px -"
+						"already registered\n", event_notif_fn);
+				continue;
+			}
 		}
 		pr_info("xlink-core:Events: sw_device_id 0x%x"
 				" event %d fn %px user_flag %d\n",
