@@ -278,22 +278,16 @@ static struct counter_signal intel_qep_signals[] = {
 	INTEL_QEP_SIGNAL(2, "Index", INTEL_QEPCON_EDGE_A),
 };
 
+#define INTEL_QEP_SYNAPSE(_signal_id) {				\
+	.actions_list = intel_qep_synapse_actions,		\
+	.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),	\
+	.signal = &intel_qep_signals[(_signal_id)],		\
+}
+
 static struct counter_synapse intel_qep_count_synapses[] = {
-	{
-		.actions_list = intel_qep_synapse_actions,
-		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
-		.signal = &intel_qep_signals[0],
-	},
-	{
-		.actions_list = intel_qep_synapse_actions,
-		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
-		.signal = &intel_qep_signals[1],
-	},
-	{
-		.actions_list = intel_qep_synapse_actions,
-		.num_actions = ARRAY_SIZE(intel_qep_synapse_actions),
-		.signal = &intel_qep_signals[2],
-	},
+	INTEL_QEP_SYNAPSE(0),
+	INTEL_QEP_SYNAPSE(1),
+	INTEL_QEP_SYNAPSE(2),
 };
 
 static ssize_t ceiling_read(struct counter_device *counter,
