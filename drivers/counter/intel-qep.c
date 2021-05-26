@@ -201,7 +201,6 @@ static int intel_qep_action_get(struct counter_device *counter,
 
 static const struct counter_ops intel_qep_counter_ops = {
 	.count_read = intel_qep_count_read,
-
 	.function_get = intel_qep_function_get,
 	.function_set = intel_qep_function_set,
 	.action_get = intel_qep_action_get,
