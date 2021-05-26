@@ -1818,6 +1818,18 @@ static bool event_registered(uint32_t sw_dev_id, uint32_t event,
 return false;
 }
 
+static bool callback_registered(xlink_device_event_cb event_notif_fn)
+{
+	struct event_info *events = NULL;
+
+	list_for_each_entry(events, &ev_info.list, list) {
+		if (events->event_notif_fn == event_notif_fn) {
+			return true;
+		}
+	}
+return false;
+}
+
 static enum xlink_error xlink_register_device_event_user(
 		struct xlink_handle *handle, uint32_t *event_list, uint32_t num_events,
 		xlink_device_event_cb event_notif_fn)
@@ -1866,8 +1878,13 @@ static enum xlink_error do_xlink_register_device_event(
 				continue;
 			}
 		}
-		pr_info("xlink-core:Events : sw_device_id 0x%x"
-				" event %d fn %p user_flag %d\n",
+		if (callback_registered(event_notif_fn)) {
+			pr_info("xlink-core: Callback 0x%x -"
+					"already registered\n", event_notif_fn);
+			continue;
+		}
+		pr_info("xlink-core:Events: sw_device_id 0x%x"
+				" event %d fn %px user_flag %d\n",
 				events->sw_device_id, events->event_type,
 				events->event_notif_fn, events->user_flag);
 		list_add_tail(&events->list, &ev_info.list);
