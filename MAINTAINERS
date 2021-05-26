@@ -9565,6 +9565,11 @@ F:	drivers/crypto/keembay/keembay-ocs-hcu-core.c
 F:	drivers/crypto/keembay/ocs-hcu.c
 F:	drivers/crypto/keembay/ocs-hcu.h
 
+INTEL KEEM BAY TIMER SUPPORT
+M:	Shruthi Sanil <shruthi.sanil@intel.com>
+S:	Maintained
+F:	drivers/clocksource/timer-keembay.c
+
 INTEL MANAGEMENT ENGINE (mei)
 M:	Tomas Winkler <tomas.winkler@intel.com>
 L:	linux-kernel@vger.kernel.org
