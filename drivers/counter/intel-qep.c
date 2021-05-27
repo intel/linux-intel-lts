@@ -127,63 +127,17 @@ static int intel_qep_count_read(struct counter_device *counter,
 	return 0;
 }
 
-enum intel_qep_count_function {
-	INTEL_QEP_ENCODER_MODE_NORMAL,
-	INTEL_QEP_ENCODER_MODE_SWAPPED,
-};
-
 static const enum counter_count_function intel_qep_count_functions[] = {
-	[INTEL_QEP_ENCODER_MODE_NORMAL] =
 	COUNTER_COUNT_FUNCTION_QUADRATURE_X4,
-
-	[INTEL_QEP_ENCODER_MODE_SWAPPED] =
-	COUNTER_COUNT_FUNCTION_QUADRATURE_X4_SWAPPED,
 };
 
 static int intel_qep_function_get(struct counter_device *counter,
 				  struct counter_count *count,
 				  size_t *function)
 {
-	struct intel_qep *qep = counter->priv;
-	u32 reg;
-
-	pm_runtime_get_sync(qep->dev);
-	reg = intel_qep_readl(qep, INTEL_QEPCON);
-	pm_runtime_put(qep->dev);
-	if (reg & INTEL_QEPCON_SWPAB)
-		*function = INTEL_QEP_ENCODER_MODE_SWAPPED;
-	else
-		*function = INTEL_QEP_ENCODER_MODE_NORMAL;
+	*function = 0;
 
 	return 0;
-}
-
-static int intel_qep_function_set(struct counter_device *counter,
-				  struct counter_count *count,
-				  size_t function)
-{
-	struct intel_qep *qep = counter->priv;
-	int ret = 0;
-	u32 reg;
-
-	mutex_lock(&qep->lock);
-	if (qep->enabled) {
-		ret = -EBUSY;
-		goto out;
-	}
-
-	pm_runtime_get_sync(qep->dev);
-	reg = intel_qep_readl(qep, INTEL_QEPCON);
-	if (function == INTEL_QEP_ENCODER_MODE_SWAPPED)
-		reg |= INTEL_QEPCON_SWPAB;
-	else
-		reg &= ~INTEL_QEPCON_SWPAB;
-	intel_qep_writel(qep, INTEL_QEPCON, reg);
-	pm_runtime_put(qep->dev);
-
-out:
-	mutex_unlock(&qep->lock);
-	return ret;
 }
 
 static const enum counter_synapse_action intel_qep_synapse_actions[] = {
@@ -202,7 +156,6 @@ static int intel_qep_action_get(struct counter_device *counter,
 static const struct counter_ops intel_qep_counter_ops = {
 	.count_read = intel_qep_count_read,
 	.function_get = intel_qep_function_get,
-	.function_set = intel_qep_function_set,
 	.action_get = intel_qep_action_get,
 };
 
