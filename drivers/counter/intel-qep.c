@@ -305,7 +305,7 @@ static ssize_t spike_filter_ns_write(struct counter_device *counter,
 
 	/*
 	 * Spike filter length is (MAX_COUNT + 2) clock periods.
-	 * Disable filter when user space writes 0, enable for valid
+	 * Disable filter when userspace writes 0, enable for valid
 	 * nanoseconds values and error out otherwise.
 	 */
 	length /= INTEL_QEP_CLK_PERIOD_NS;
