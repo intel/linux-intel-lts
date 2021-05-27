@@ -1818,12 +1818,14 @@ static bool event_registered(uint32_t sw_dev_id, uint32_t event,
 return false;
 }
 
-static bool callback_registered(xlink_device_event_cb event_notif_fn)
+static bool callback_registered(uint32_t sw_dev_id, uint32_t event, xlink_device_event_cb event_notif_fn)
 {
 	struct event_info *events = NULL;
 
 	list_for_each_entry(events, &ev_info.list, list) {
-		if (events->event_notif_fn == event_notif_fn) {
+		if (events->sw_device_id == sw_dev_id &&
+				events->event_type == event &&
+				events->event_notif_fn == event_notif_fn) {
 			return true;
 		}
 	}
@@ -1878,7 +1880,7 @@ static enum xlink_error do_xlink_register_device_event(
 				continue;
 			}
 		} else {
-			if (callback_registered(event_notif_fn)) {
+			if (callback_registered(handle->sw_device_id, event, event_notif_fn)) {
 				pr_info("xlink-core: Callback 0x%px -"
 						"already registered\n", event_notif_fn);
 				continue;
