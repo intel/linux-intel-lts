@@ -25,6 +25,9 @@ int tpm_read_log_of(struct tpm_chip *chip)
 	struct tpm_bios_log *log;
 	u32 size;
 	u64 base;
+#ifdef CONFIG_ARCH_KEEMBAY
+	void *vaddr;
+#endif
 
 	log = &chip->log;
 	if (chip->dev.parent && chip->dev.parent->of_node)
@@ -65,7 +68,18 @@ int tpm_read_log_of(struct tpm_chip *chip)
 		return -EIO;
 	}
 
+#ifdef CONFIG_ARCH_KEEMBAY
+	vaddr = memremap(base, size, MEMREMAP_WB);
+	if (!vaddr) {
+		dev_err(&chip->dev, "Couldn't map Event log memory resource.\n");
+		return -EADDRNOTAVAIL;
+	}
+
+	log->bios_event_log = kmemdup(vaddr, size, GFP_KERNEL);
+	memunmap(vaddr);
+#else
 	log->bios_event_log = kmemdup(__va(base), size, GFP_KERNEL);
+#endif
 	if (!log->bios_event_log)
 		return -ENOMEM;
 
