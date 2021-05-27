@@ -489,6 +489,9 @@ static int intel_pmc_tgpio_counttstamp(struct ptp_clock_info *info,
 	u32 dt_lo;
 	struct timespec64 dt_ts;
 	struct timespec64 tsc_now;
+	static u32 dt_lo_prev[2] = { 0, 0 };
+	static struct timespec64 dt_ts_prev[2] = {{ 0, 0 }};
+	static unsigned long long prev_count[2] = { 0, 0 };
 
 	mutex_lock(&intel_pmc_tgpio->lock);
 	while (intel_pmc_tgpio->pin[count->index].busy) {
@@ -518,7 +521,20 @@ static int intel_pmc_tgpio_counttstamp(struct ptp_clock_info *info,
 	else
 		dt_ts = convert_art_to_tsc_ns(((u64)dt_hi_e << 32) | dt_lo);
 
+	/* Return previous device time if the event_count
+	 * isn't incremented with TCV value
+	 */
+	if (count->event_count == prev_count[count->index] ||
+			dt_lo_prev[count->index] == dt_lo) {
+		count->event_count = prev_count[count->index];
+		dt_lo = dt_lo_prev[count->index];
+		dt_ts = dt_ts_prev[count->index];
+	}
+
 	count->device_time = ts64_to_ptp_clock_time(dt_ts);
+	prev_count[count->index] = count->event_count;
+	dt_lo_prev[count->index] = dt_lo;
+	dt_ts_prev[count->index] = dt_ts;
 
 	mutex_lock(&intel_pmc_tgpio->lock);
 	intel_pmc_tgpio->pin[count->index].busy = false;
