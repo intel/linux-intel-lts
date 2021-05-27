@@ -159,75 +159,15 @@ static const struct counter_ops intel_qep_counter_ops = {
 	.action_get = intel_qep_action_get,
 };
 
-static ssize_t intel_qep_signal_invert_read(struct counter_device *counter,
-					    struct counter_signal *signal,
-					    void *priv, char *buf)
-{
-	struct intel_qep *qep = counter->priv;
-	u32 reg;
-
-	pm_runtime_get_sync(qep->dev);
-	reg = intel_qep_readl(qep, INTEL_QEPCON);
-	pm_runtime_put(qep->dev);
-
-	return sysfs_emit(buf, "%u\n", !(reg & (uintptr_t)signal->priv));
-}
-
-static ssize_t intel_qep_signal_invert_write(struct counter_device *counter,
-					     struct counter_signal *signal,
-					     void *priv, const char *buf,
-					     size_t len)
-{
-	struct intel_qep *qep = counter->priv;
-	bool invert;
-	int ret;
-	u32 reg;
-
-	ret = kstrtobool(buf, &invert);
-	if (ret < 0)
-		return ret;
-
-	mutex_lock(&qep->lock);
-	if (qep->enabled) {
-		ret = -EBUSY;
-		goto out;
-	}
-
-	pm_runtime_get_sync(qep->dev);
-	reg = intel_qep_readl(qep, INTEL_QEPCON);
-	if (invert == true)
-		reg &= ~(uintptr_t)signal->priv;
-	else
-		reg |= (uintptr_t)signal->priv;
-	intel_qep_writel(qep, INTEL_QEPCON, reg);
-	pm_runtime_put(qep->dev);
-	ret = len;
-
-out:
-	mutex_unlock(&qep->lock);
-	return ret;
-}
-
-static const struct counter_signal_ext intel_qep_signal_ext[] = {
-	{
-		.name = "invert",
-		.read = intel_qep_signal_invert_read,
-		.write = intel_qep_signal_invert_write,
-	},
-};
-
-#define INTEL_QEP_SIGNAL(_id, _name, _priv) {		\
-	.id = (_id),					\
-	.name = (_name),				\
-	.ext = intel_qep_signal_ext,			\
-	.num_ext = ARRAY_SIZE(intel_qep_signal_ext),	\
-	.priv = (void *)_priv,				\
+#define INTEL_QEP_SIGNAL(_id, _name) {				\
+	.id = (_id),						\
+	.name = (_name),					\
 }
 
 static struct counter_signal intel_qep_signals[] = {
-	INTEL_QEP_SIGNAL(0, "Phase A", INTEL_QEPCON_EDGE_A),
-	INTEL_QEP_SIGNAL(1, "Phase B", INTEL_QEPCON_EDGE_B),
-	INTEL_QEP_SIGNAL(2, "Index", INTEL_QEPCON_EDGE_INDX),
+	INTEL_QEP_SIGNAL(0, "Phase A"),
+	INTEL_QEP_SIGNAL(1, "Phase B"),
+	INTEL_QEP_SIGNAL(2, "Index"),
 };
 
 #define INTEL_QEP_SYNAPSE(_signal_id) {				\
