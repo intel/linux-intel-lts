@@ -63,11 +63,11 @@
 
 #define INTEL_QEP_CLK_PERIOD_NS		10
 
-#define INTEL_QEP_COUNTER_EXT_RW(_name) \
-{ \
-	.name = #_name, \
-	.read = _name##_read, \
-	.write = _name##_write, \
+#define INTEL_QEP_COUNTER_EXT_RW(_name)				\
+{								\
+	.name = #_name,						\
+	.read = _name##_read,					\
+	.write = _name##_write,					\
 }
 
 struct intel_qep {
