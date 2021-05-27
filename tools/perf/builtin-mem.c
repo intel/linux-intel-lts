@@ -64,6 +64,7 @@ static const char * const *record_mem_usage = __usage;
 static int __cmd_record(int argc, const char **argv, struct perf_mem *mem)
 {
 	int rec_argc, i = 0, j, tmp_nr = 0;
+	int start, end;
 	const char **rec_argv;
 	char **rec_tmp;
 	int ret;
@@ -143,9 +144,11 @@ static int __cmd_record(int argc, const char **argv, struct perf_mem *mem)
 	if (mem->data_page_size)
 		rec_argv[i++] = "--data-page-size";
 
+	start = i;
 	ret = perf_mem_events__record_args(rec_argv, &i, rec_tmp, &tmp_nr);
 	if (ret)
 		goto out;
+	end = i;
 
 	if (all_user)
 		rec_argv[i++] = "--all-user";
@@ -159,10 +162,9 @@ static int __cmd_record(int argc, const char **argv, struct perf_mem *mem)
 	if (verbose > 0) {
 		pr_debug("calling: record ");
 
-		while (rec_argv[j]) {
+		for (j = start; j < end; j++)
 			pr_debug("%s ", rec_argv[j]);
-			j++;
-		}
+
 		pr_debug("\n");
 	}
 
