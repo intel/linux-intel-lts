@@ -273,8 +273,8 @@ static const struct counter_signal_ext intel_qep_signal_ext[] = {
 
 static struct counter_signal intel_qep_signals[] = {
 	INTEL_QEP_SIGNAL(0, "Phase A", INTEL_QEPCON_EDGE_A),
-	INTEL_QEP_SIGNAL(1, "Phase B", INTEL_QEPCON_EDGE_A),
-	INTEL_QEP_SIGNAL(2, "Index", INTEL_QEPCON_EDGE_A),
+	INTEL_QEP_SIGNAL(1, "Phase B", INTEL_QEPCON_EDGE_B),
+	INTEL_QEP_SIGNAL(2, "Index", INTEL_QEPCON_EDGE_INDX),
 };
 
 #define INTEL_QEP_SYNAPSE(_signal_id) {				\
