@@ -57,6 +57,59 @@ static const struct debugfs_reg32 dw_spi_dbgfs_regs[] = {
 	DW_SPI_DBGFS_REG("RX_SAMPLE_DLY", DW_SPI_RX_SAMPLE_DLY),
 };
 
+static u8 dw_spi_update_tmode(struct dw_spi *dws)
+{
+	if (!dws->tx)
+		return SPI_TMOD_RO;
+
+	if (!dws->rx)
+		return SPI_TMOD_TO;
+
+	return SPI_TMOD_TR;
+}
+
+static u8 dw_spi_get_spimode(struct spi_transfer *transfer)
+{
+	u8 width = 1;
+
+	if (transfer->tx_buf)
+		width = transfer->tx_nbits;
+	if (transfer->rx_buf)
+		width = transfer->rx_nbits;
+
+	switch (width) {
+	case SPI_NBITS_QUAD:
+		return SSI_QUAD_SPI;
+	case SPI_NBITS_DUAL:
+		return SSI_DUAL_SPI;
+	default:
+		return SSI_STD_SPI;
+	}
+}
+
+static void dw_spi_dual_quad_config(struct dw_spi *dws, struct spi_device *spi,
+	struct dw_spi_cfg *cfg, struct spi_transfer *transfer)
+{
+	if (dws->caps & DW_SPI_CAP_DWC_SSI) {
+		struct chip_data *chip = spi_get_ctldata(spi);
+
+		/* Adjust Transfer Mode for DUAL and QUAD */
+		if (dw_spi_get_spimode(transfer)) {
+			cfg->tmode = dw_spi_update_tmode(dws);
+			/* Default values for Dual/Quad mode */
+			if (dws->tx)
+				dw_writel(dws, DW_SPI_CS_OVERRIDE, 0x20A);
+			else
+				dw_writel(dws, DW_SPI_CS_OVERRIDE, 0);
+		}
+
+		/* CTRLR0[23:22] SPI Frame Format */
+		chip->cr0 &= ~DWC_SSI_CTRLR0_SPI_FRF_MASK;
+		chip->cr0 |= dw_spi_get_spimode(transfer) << DWC_SSI_CTRLR0_SPI_FRF_OFFSET;
+	}
+
+}
+
 static int dw_spi_debugfs_init(struct dw_spi *dws)
 {
 	char name[32];
@@ -116,17 +169,20 @@ static inline u32 tx_max(struct dw_spi *dws)
 
 	tx_room = dws->fifo_len - dw_readl(dws, DW_SPI_TXFLR);
 
-	/*
-	 * Another concern is about the tx/rx mismatch, we
-	 * though to use (dws->fifo_len - rxflr - txflr) as
-	 * one maximum value for tx, but it doesn't cover the
-	 * data which is out of tx/rx fifo and inside the
-	 * shift registers. So a control from sw point of
-	 * view is taken.
-	 */
-	rxtx_gap = dws->fifo_len - (dws->rx_len - dws->tx_len);
+	if (dws->rx) {
+		/*
+		 * Another concern is about the tx/rx mismatch, we
+		 * though to use (dws->fifo_len - rxflr - txflr) as
+		 * one maximum value for tx, but it doesn't cover the
+		 * data which is out of tx/rx fifo and inside the
+		 * shift registers. So a control from sw point of
+		 * view is taken.
+		 */
+		rxtx_gap = dws->fifo_len - (dws->rx_len - dws->tx_len);
 
-	return min3((u32)dws->tx_len, tx_room, rxtx_gap);
+		return min3((u32)dws->tx_len, tx_room, rxtx_gap);
+	} else
+		return min((u32)dws->tx_len, tx_room);
 }
 
 /* Return the max entries we should read out of rx fifo */
@@ -163,16 +219,14 @@ static void dw_reader(struct dw_spi *dws)
 
 	while (max--) {
 		rxw = dw_read_io_reg(dws, DW_SPI_DR);
-		if (dws->rx) {
-			if (dws->n_bytes == 1)
-				*(u8 *)(dws->rx) = rxw;
-			else if (dws->n_bytes == 2)
-				*(u16 *)(dws->rx) = rxw;
-			else
-				*(u32 *)(dws->rx) = rxw;
+		if (dws->n_bytes == 1)
+			*(u8 *)(dws->rx) = rxw;
+		else if (dws->n_bytes == 2)
+			*(u16 *)(dws->rx) = rxw;
+		else
+			*(u32 *)(dws->rx) = rxw;
 
-			dws->rx += dws->n_bytes;
-		}
+		dws->rx += dws->n_bytes;
 		--dws->rx_len;
 	}
 }
@@ -213,6 +267,11 @@ int dw_spi_check_status(struct dw_spi *dws, bool raw)
 }
 EXPORT_SYMBOL_GPL(dw_spi_check_status);
 
+static inline bool dw_spi_ctlr_busy(struct dw_spi *dws)
+{
+	return dw_readl(dws, DW_SPI_SR) & SR_BUSY;
+}
+
 static irqreturn_t dw_spi_transfer_handler(struct dw_spi *dws)
 {
 	u16 irq_status = dw_readl(dws, DW_SPI_ISR);
@@ -229,12 +288,13 @@ static irqreturn_t dw_spi_transfer_handler(struct dw_spi *dws)
 	 * final stage of the transfer. By doing so we'll get the next IRQ
 	 * right when the leftover incoming data is received.
 	 */
-	dw_reader(dws);
-	if (!dws->rx_len) {
-		spi_mask_intr(dws, 0xff);
-		spi_finalize_current_transfer(dws->master);
-	} else if (dws->rx_len <= dw_readl(dws, DW_SPI_RXFTLR)) {
-		dw_writel(dws, DW_SPI_RXFTLR, dws->rx_len - 1);
+	if (dws->rx) {
+		dw_reader(dws);
+		if (!dws->rx_len) {
+			spi_mask_intr(dws, 0xff);
+			spi_finalize_current_transfer(dws->master);
+		} else if (dws->rx_len <= dw_readl(dws, DW_SPI_RXFTLR))
+			dw_writel(dws, DW_SPI_RXFTLR, dws->rx_len - 1);
 	}
 
 	/*
@@ -242,10 +302,21 @@ static irqreturn_t dw_spi_transfer_handler(struct dw_spi *dws)
 	 * disabled after the data transmission is finished so not to
 	 * have the TXE IRQ flood at the final stage of the transfer.
 	 */
-	if (irq_status & SPI_INT_TXEI) {
-		dw_writer(dws);
-		if (!dws->tx_len)
+	if ((irq_status & SPI_INT_TXEI)) {
+		if (dws->tx_len)
+			dw_writer(dws);
+		else {
 			spi_mask_intr(dws, SPI_INT_TXEI);
+			if ((!dws->rx)) {
+				/* Check for transfer completion in Transmit only mode */
+				if (!(dw_readl(dws, DW_SPI_TXFLR)) &&
+					(!(dw_spi_ctlr_busy(dws)))) {
+					/* Finalize transfer, if transfer is complete */
+					spi_finalize_current_transfer(dws->master);
+				} else
+					spi_umask_intr(dws, SPI_INT_TXEI);
+			}
+		}
 	}
 
 	return IRQ_HANDLED;
@@ -419,14 +490,21 @@ static int dw_spi_transfer_one(struct spi_controller *master,
 	dws->dma_mapped = 0;
 	dws->n_bytes = DIV_ROUND_UP(transfer->bits_per_word, BITS_PER_BYTE);
 	dws->tx = (void *)transfer->tx_buf;
-	dws->tx_len = transfer->len / dws->n_bytes;
 	dws->rx = transfer->rx_buf;
-	dws->rx_len = dws->tx_len;
+	dws->tx_len = transfer->len / dws->n_bytes;
+	if (dws->rx)
+		dws->rx_len = dws->tx_len;
+	else {
+		cfg.tmode = SPI_TMOD_TO;
+		dws->rx_len = 0;
+	}
 
 	/* Ensure the data above is visible for all CPUs */
 	smp_mb();
 
 	spi_enable_chip(dws, 0);
+
+	dw_spi_dual_quad_config(dws, spi, &cfg, transfer);
 
 	dw_spi_update_config(dws, spi, &cfg);
 
@@ -479,7 +557,7 @@ static int dw_spi_adjust_mem_op_size(struct spi_mem *mem, struct spi_mem_op *op)
 static bool dw_spi_supports_mem_op(struct spi_mem *mem,
 				   const struct spi_mem_op *op)
 {
-	if (op->data.buswidth > 1 || op->addr.buswidth > 1 ||
+	if (op->data.buswidth > 4 || op->addr.buswidth > 1 ||
 	    op->dummy.buswidth > 1 || op->cmd.buswidth > 1)
 		return false;
 
@@ -600,11 +678,6 @@ static int dw_spi_write_then_read(struct dw_spi *dws, struct spi_device *spi)
 	}
 
 	return 0;
-}
-
-static inline bool dw_spi_ctlr_busy(struct dw_spi *dws)
-{
-	return dw_readl(dws, DW_SPI_SR) & SR_BUSY;
 }
 
 static int dw_spi_wait_mem_op_done(struct dw_spi *dws)
@@ -868,7 +941,8 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 	dw_spi_init_mem_ops(dws);
 
 	master->use_gpio_descriptors = true;
-	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LOOP;
+	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LOOP |
+		SPI_TX_DUAL | SPI_RX_DUAL | SPI_TX_QUAD | SPI_RX_QUAD;
 	master->bits_per_word_mask =  SPI_BPW_RANGE_MASK(4, 32);
 	master->bus_num = dws->bus_num;
 	master->num_chipselect = dws->num_cs;

@@ -1226,7 +1226,7 @@ static int keembay_gpio_set_direction_in(struct gpio_chip *gc, unsigned int pin)
 
 	raw_spin_lock_irqsave(&kpc->lock, flags);
 	val = keembay_read_reg(kpc->base1 + KEEMBAY_GPIO_MODE, pin);
-	val |= FIELD_PREP(KEEMBAY_GPIO_MODE_DIR_MASK, 1);
+	val |= KEEMBAY_GPIO_MODE_DIR;
 	keembay_write_reg(val, kpc->base1 + KEEMBAY_GPIO_MODE, pin);
 	raw_spin_unlock_irqrestore(&kpc->lock, flags);
 
@@ -1242,7 +1242,7 @@ static int keembay_gpio_set_direction_out(struct gpio_chip *gc,
 
 	raw_spin_lock_irqsave(&kpc->lock, flags);
 	val = keembay_read_reg(kpc->base1 + KEEMBAY_GPIO_MODE, pin);
-	val &= FIELD_PREP(KEEMBAY_GPIO_MODE_DIR_MASK, 0);
+	val &= ~KEEMBAY_GPIO_MODE_DIR;
 	keembay_write_reg(val, kpc->base1 + KEEMBAY_GPIO_MODE, pin);
 	raw_spin_unlock_irqrestore(&kpc->lock, flags);
 	keembay_gpio_set(gc, pin, value);

@@ -64,6 +64,8 @@
 #define SPI_CFS_OFFSET			12
 
 /* Bit fields in CTRLR0 based on DWC_ssi_databook.pdf v1.01a */
+#define DWC_SSI_CTRLR0_SPI_FRF_OFFSET	22
+#define DWC_SSI_CTRLR0_SPI_FRF_MASK	GENMASK(23, 22)
 #define DWC_SSI_CTRLR0_SRL_OFFSET	13
 #define DWC_SSI_CTRLR0_TMOD_OFFSET	10
 #define DWC_SSI_CTRLR0_TMOD_MASK	GENMASK(11, 10)
@@ -121,6 +123,12 @@ enum dw_ssi_type {
 #define DW_SPI_CAP_CS_OVERRIDE		BIT(0)
 #define DW_SPI_CAP_KEEMBAY_MST		BIT(1)
 #define DW_SPI_CAP_DWC_SSI		BIT(2)
+
+enum dw_ssi_spi_mode {
+	SSI_STD_SPI = 0,
+	SSI_DUAL_SPI,
+	SSI_QUAD_SPI,
+};
 
 /* Slave spi_transfer/spi_mem_op related */
 struct dw_spi_cfg {
