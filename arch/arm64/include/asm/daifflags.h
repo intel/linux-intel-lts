@@ -137,6 +137,9 @@ static inline void local_daif_inherit(struct pt_regs *regs)
 	if (interrupts_enabled(regs))
 		trace_hardirqs_on_pipelined();
 
+	if (system_uses_irq_prio_masking())
+		gic_write_pmr(regs->pmr_save);
+
 	/*
 	 * We can't use local_daif_restore(regs->pstate) here as
 	 * system_has_prio_mask_debugging() won't restore the I bit if it can

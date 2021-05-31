@@ -276,14 +276,6 @@ static void noinstr el1_dbg(struct pt_regs *regs, unsigned long esr)
 {
 	unsigned long far = read_sysreg(far_el1);
 
-	/*
-	 * The CPU masked interrupts, and we are leaving them masked during
-	 * do_debug_exception(). Update PMR as if we had called
-	 * local_daif_mask().
-	 */
-	if (system_uses_irq_prio_masking())
-		gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
-
 	arm64_enter_el1_dbg(regs);
 	do_debug_exception(far, esr, regs);
 	arm64_exit_el1_dbg(regs);
@@ -462,9 +454,6 @@ static void noinstr el0_dbg(struct pt_regs *regs, unsigned long esr)
 	/* Only watchpoints write FAR_EL1, otherwise its UNKNOWN */
 	unsigned long far = read_sysreg(far_el1);
 
-	if (system_uses_irq_prio_masking())
-		gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
-
 	enter_from_user_mode();
 	do_debug_exception(far, esr, regs);
 	local_daif_restore(DAIF_PROCCTX_NOIRQ);
@@ -472,9 +461,6 @@ static void noinstr el0_dbg(struct pt_regs *regs, unsigned long esr)
 
 static void noinstr el0_svc(struct pt_regs *regs)
 {
-	if (system_uses_irq_prio_masking())
-		gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
-
 	enter_from_user_mode();
 	do_el0_svc(regs);
 }
@@ -549,9 +535,6 @@ static void noinstr el0_cp15(struct pt_regs *regs, unsigned long esr)
 
 static void noinstr el0_svc_compat(struct pt_regs *regs)
 {
-	if (system_uses_irq_prio_masking())
-		gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
-
 	enter_from_user_mode();
 	do_el0_svc_compat(regs);
 }
