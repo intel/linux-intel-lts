@@ -32,6 +32,7 @@
 #include "gt/intel_gt_requests.h"
 #include "gt/mock_engine.h"
 #include "intel_memory_region.h"
+#include "intel_region_ttm.h"
 
 #include "mock_request.h"
 #include "mock_gem_device.h"
@@ -71,6 +72,7 @@ static void mock_device_release(struct drm_device *dev)
 	mock_fini_ggtt(&i915->ggtt);
 	destroy_workqueue(i915->wq);
 
+	intel_region_ttm_device_fini(i915);
 	intel_gt_driver_late_release(&i915->gt);
 	intel_memory_regions_driver_release(i915);
 
@@ -117,6 +119,7 @@ struct drm_i915_private *mock_gem_device(void)
 #endif
 	struct drm_i915_private *i915;
 	struct pci_dev *pdev;
+	int ret;
 
 	pdev = kzalloc(sizeof(*pdev), GFP_KERNEL);
 	if (!pdev)
@@ -179,6 +182,10 @@ struct drm_i915_private *mock_gem_device(void)
 	atomic_inc(&i915->gt.wakeref.count); /* disable; no hw support */
 	i915->gt.awake = -ENODEV;
 
+	ret = intel_region_ttm_device_init(i915);
+	if (ret)
+		goto err_ttm;
+
 	i915->wq = alloc_ordered_workqueue("mock", 0);
 	if (!i915->wq)
 		goto err_drv;
@@ -202,6 +209,7 @@ struct drm_i915_private *mock_gem_device(void)
 	intel_engines_driver_register(i915);
 
 	i915->do_release = true;
+	ida_init(&i915->selftest.mock_region_instances);
 
 	return i915;
 
@@ -210,6 +218,8 @@ err_context:
 err_unlock:
 	destroy_workqueue(i915->wq);
 err_drv:
+	intel_region_ttm_device_fini(i915);
+err_ttm:
 	intel_gt_driver_late_release(&i915->gt);
 	intel_memory_regions_driver_release(i915);
 	drm_mode_config_cleanup(&i915->drm);
