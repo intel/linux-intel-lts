@@ -416,7 +416,7 @@ DEFINE_SHOW_ATTRIBUTE(ttm_tt_debugfs_shrink);
 #endif
 
 
-/**
+/*
  * ttm_tt_mgr_init - register with the MM shrinker
  *
  * Register with the MM shrinker for swapping out BOs.
