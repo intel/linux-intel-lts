@@ -55,3 +55,6 @@
 
 # CVE-2021-20177
 0001-netfilter-add-and-use-nf_hook_slow_list.patch
+
+# CVE-2019-0149
+0001-i40e-Add-bounds-check-for-ch-array.patch
