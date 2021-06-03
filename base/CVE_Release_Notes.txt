@@ -650,6 +650,7 @@ CVEs fixed in 4.19.179:
 CVEs fixed in 4.19.181:
   CVE-2021-28660: eda4378094de16090d74eacea3d8c10f7719ed25 staging: rtl8188eu: prevent ->ssid overflow in rtw_wx_set_scan()
   CVE-2021-29265: c6b0ca71d3cd561decd39c1c4132c2d10a496e1a usbip: fix stub_dev usbip_sockfd_store() races leading to gpf
+  CVE-2021-33033: a44af1c69737f9e64d5134c34eb9d5c4c2e04da1 cipso,calipso: resolve a number of problems with the DOI refcounts
 
 CVEs fixed in 4.19.183:
   CVE-2021-28964: 12dc6889bcff1bc2921a1587afca55ca4091b73e btrfs: fix race when cloning extent buffer during rewind of an old root
@@ -661,6 +662,7 @@ CVEs fixed in 4.19.184:
   CVE-2021-29264: 9943741c2792a7f1d091aad38f496ed6eb7681c4 gianfar: fix jumbo packets+napi+rx overrun crash
   CVE-2021-29647: 5f09be2a1a35cb8bd6c178d5f205b7265bd68646 net: qrtr: fix a kernel-infoleak in qrtr_recvmsg()
   CVE-2021-29650: 81bc258370c6eeb1f41d350325e8a2c8e20fafad netfilter: x_tables: Use correct memory barriers.
+  CVE-2021-31916: 76aa61c55279fdaa8d428236ba8834edf313b372 dm ioctl: fix out of bounds array access when no devices
 
 CVEs fixed in 4.19.185:
   CVE-2021-3483: 89a2c28a3b67c7d918218f57e4bb7b591f7e5d0f firewire: nosy: Fix a use-after-free bug in nosy_ioctl()
@@ -672,9 +674,19 @@ CVEs fixed in 4.19.187:
   CVE-2020-25670: adbb1d218c5f56dbae052765da83c0f57fce2a31 nfc: fix refcount leak in llcp_sock_bind()
   CVE-2020-25671: c14b50185cd0d5ba6d7a5eb8acf9fbcc3663416d nfc: fix refcount leak in llcp_sock_connect()
   CVE-2020-25672: 301a4264d6ab56d2b9230066b060d7ceaa000d68 nfc: fix memory leak in llcp_sock_connect()
+  CVE-2020-25673: eab391e0766ed88262160b14bb7131f331f6af1a nfc: Avoid endless loops caused by repeated llcp_sock_connect()
+
+CVEs fixed in 4.19.189:
+  CVE-2020-29374: 5e24029791e809d641e9ea46a1f99806484e53fc gup: document and work around "COW can break either way" issue
+  CVE-2021-23133: 301084de76eb5bfedddda41ec33e2913e90c99e7 net/sctp: fix race condition in sctp_destroy_sock
+
+CVEs fixed in 4.19.191:
+  CVE-2021-32399: 35113c4c9fa7c970ff456982e381dc9e9594154a bluetooth: eliminate the potential race condition when removing the HCI controller
+  CVE-2021-33034: 75e26178e26f910f7f26c79c2824b726eecf0dfb Bluetooth: verify AMP hci_chan before amp_destroy
+  CVE-2021-3506: bfa08a47cea2a9fab077c7135b9cfdf04e69c67a f2fs: fix to avoid out-of-bounds memory access
 
  
-CVEs Fixed in this 4.19.188 LTS 4.19 release 
+CVEs Fixed in this 4.19.192 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -725,5 +737,23 @@ CVEs Fixed in this 4.19.188 LTS 4.19 release
 
 # CVE-2020-36311
 0001-KVM-SVM-Periodically-schedule-when-unregistering-reg.patch
+
+# CVE-2021-29155
+0001-bpf-Move-off_reg-into-sanitize_ptr_alu.patch
+0002-bpf-Ensure-off_reg-has-no-mixed-signed-bounds-for-al.patch
+0003-bpf-Rework-ptr_limit-into-alu_limit-and-add-common-e.patch
+0004-bpf-Improve-verifier-error-messages-for-users.patch
+0005-bpf-Refactor-and-streamline-bounds-check-into-helper.patch
+0006-bpf-Move-sanitize_val_alu-out-of-op-switch.patch
+0007-bpf-Tighten-speculative-pointer-arithmetic-mask.patch
+
+# CVE-2020-36322
+0001-fuse-fix-bad-inode.patch
+
+# CVE-2021-20177
+0001-netfilter-add-and-use-nf_hook_slow_list.patch
+
+# CVE-2019-0149
+0001-i40e-Add-bounds-check-for-ch-array.patch
  
 ================
