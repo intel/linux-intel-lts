@@ -221,8 +221,6 @@
 
 #define ADV7533_REG_CEC_OFFSET		0x70
 
-#define KMB
-
 enum adv7511_input_clock {
 	ADV7511_INPUT_CLOCK_1X,
 	ADV7511_INPUT_CLOCK_2X,

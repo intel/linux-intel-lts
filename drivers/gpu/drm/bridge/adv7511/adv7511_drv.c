@@ -896,10 +896,6 @@ static void adv7511_bridge_mode_set(struct drm_bridge *bridge,
 	struct adv7511 *adv = bridge_to_adv7511(bridge);
 
 	adv7511_mode_set(adv, mode, adj_mode);
-
-#ifdef KMB
-	adv7511_power_on(adv);
-#endif
 }
 
 static int adv7511_bridge_attach(struct drm_bridge *bridge,
