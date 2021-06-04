@@ -201,6 +201,12 @@ config MARVELL_10G_PHY
 	help
 	  Support for the Marvell Alaska MV88X3310 and compatible PHYs.
 
+config MXL_GPHY
+	tristate "Maxlinear PHYs"
+	help
+	  Support for the Maxlinear GPY115, GPY211, GPY212, GPY215,
+	  GPY241, GPY245 PHYs.
+
 config MICREL_PHY
 	tristate "Micrel PHYs"
 	help
