@@ -813,6 +813,7 @@ static int adls_sgmii_phy0_data(struct pci_dev *pdev,
 {
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	plat->skip_reset = 1;
 
 	/* SerDes power up and power down are done in BIOS for ADL */
 
@@ -828,6 +829,7 @@ static int adls_sgmii_phy1_data(struct pci_dev *pdev,
 {
 	plat->bus_id = 2;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	plat->skip_reset = 1;
 
 	/* SerDes power up and power down are done in BIOS for ADL */
 
