@@ -187,11 +187,7 @@ static void stmmac_verify_args(void)
 		eee_timer = STMMAC_DEFAULT_LPI_TIMER;
 }
 
-/**
- * stmmac_disable_all_queues - Disable all queues
- * @priv: driver private structure
- */
-static void stmmac_disable_all_queues(struct stmmac_priv *priv)
+static void __stmmac_disable_all_queues(struct stmmac_priv *priv)
 {
 	u32 rx_queues_cnt = priv->plat->rx_queues_to_use;
 	u32 tx_queues_cnt = priv->plat->tx_queues_to_use;
@@ -215,14 +211,12 @@ static void stmmac_disable_all_queues(struct stmmac_priv *priv)
 }
 
 /**
- * stmmac_enable_all_queues - Enable all queues
+ * stmmac_disable_all_queues - Disable all queues
  * @priv: driver private structure
  */
-static void stmmac_enable_all_queues(struct stmmac_priv *priv)
+static void stmmac_disable_all_queues(struct stmmac_priv *priv)
 {
 	u32 rx_queues_cnt = priv->plat->rx_queues_to_use;
-	u32 tx_queues_cnt = priv->plat->tx_queues_to_use;
-	u32 maxq = max(rx_queues_cnt, tx_queues_cnt);
 	struct stmmac_rx_queue *rx_q;
 	u32 queue;
 
@@ -234,6 +228,20 @@ static void stmmac_enable_all_queues(struct stmmac_priv *priv)
 			break;
 		}
 	}
+
+	__stmmac_disable_all_queues(priv);
+}
+
+/**
+ * stmmac_enable_all_queues - Enable all queues
+ * @priv: driver private structure
+ */
+static void stmmac_enable_all_queues(struct stmmac_priv *priv)
+{
+	u32 rx_queues_cnt = priv->plat->rx_queues_to_use;
+	u32 tx_queues_cnt = priv->plat->tx_queues_to_use;
+	u32 maxq = max(rx_queues_cnt, tx_queues_cnt);
+	u32 queue;
 
 	for (queue = 0; queue < maxq; queue++) {
 		struct stmmac_channel *ch = &priv->channel[queue];
@@ -1736,7 +1744,7 @@ static int __init_dma_rx_desc_rings(struct stmmac_priv *priv, u32 queue, gfp_t f
 	}
 
 	rx_q->cur_rx = 0;
-	rx_q->dirty_rx = (-1 & (priv->dma_rx_size - 1));
+	rx_q->dirty_rx = 0;
 
 	/* Setup the chained descriptor addresses */
 	if (priv->mode == STMMAC_CHAIN_MODE) {
@@ -5886,7 +5894,7 @@ static int stmmac_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 	if (!tc_cls_can_offload_and_chain0(priv->dev, type_data))
 		return ret;
 
-	stmmac_disable_all_queues(priv);
+	__stmmac_disable_all_queues(priv);
 
 	switch (type) {
 	case TC_SETUP_CLSU32:
