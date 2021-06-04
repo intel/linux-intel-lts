@@ -10748,6 +10748,12 @@ W:	https://linuxtv.org
 T:	git git://linuxtv.org/media_tree.git
 F:	drivers/media/radio/radio-maxiradio*
 
+MAXLINEAR ETHERNET PHY DRIVER
+M:	Xu Liang <lxu@maxlinear.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+F:	drivers/net/phy/mxl-gpy.c
+
 MCAN MMIO DEVICE DRIVER
 M:	Dan Murphy <dmurphy@ti.com>
 M:	Sriram Dash <sriram.dash@samsung.com>
