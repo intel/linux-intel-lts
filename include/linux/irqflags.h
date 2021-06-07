@@ -242,14 +242,14 @@ do {						\
 
 #define local_irq_disable_full()		\
 	do {					\
-		local_irq_disable();		\
 		hard_local_irq_disable();	\
+		local_irq_disable();		\
 	} while (0)
 
 #define local_irq_save_full(__flags)		\
   	do {					\
-		local_irq_save(__flags);	\
 		hard_local_irq_disable();	\
+		local_irq_save(__flags);	\
 	} while (0)
 
 #define local_irq_restore_full(__flags)			\
