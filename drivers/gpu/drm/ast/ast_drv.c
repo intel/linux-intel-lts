@@ -30,7 +30,6 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 
-#include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_helper.h>
@@ -139,7 +138,6 @@ static void ast_pci_remove(struct pci_dev *pdev)
 	struct drm_device *dev = pci_get_drvdata(pdev);
 
 	drm_dev_unregister(dev);
-	drm_atomic_helper_shutdown(dev);
 }
 
 static int ast_drm_freeze(struct drm_device *dev)
