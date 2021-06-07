@@ -367,13 +367,13 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 	irqentry_state_t ret = {
 		.exit_rcu = false,
 #ifdef CONFIG_IRQ_PIPELINE
-		.stage_info = 0,
+		.stage_info = IRQENTRY_INBAND_STALLED,
 #endif
 	};
 
 #ifdef CONFIG_IRQ_PIPELINE
 	if (running_oob()) {
-		ret.stage_info = IRQENTRY_OOB_ENTRY;
+		ret.stage_info = IRQENTRY_OOB;
 		return ret;
 	}
 #endif
@@ -382,7 +382,7 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 #ifdef CONFIG_IRQ_PIPELINE
 		WARN_ON_ONCE(irq_pipeline_debug() && irqs_disabled());
 		stall_inband_nocheck();
-		ret.stage_info = IRQENTRY_INBAND_STALLED;
+		ret.stage_info = IRQENTRY_INBAND_UNSTALLED;
 #endif
 		irqentry_enter_from_user_mode(regs);
 		return ret;
@@ -395,7 +395,7 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 	 * irqs are off on entry, we have to stall the in-band stage.
 	 */
 	if (!test_and_stall_inband_nocheck())
-		ret.stage_info = IRQENTRY_INBAND_STALLED;
+		ret.stage_info = IRQENTRY_INBAND_UNSTALLED;
 #endif
 
 	/*
@@ -470,7 +470,7 @@ static inline
 bool irqexit_may_preempt_schedule(irqentry_state_t state,
 				struct pt_regs *regs)
 {
-	return !!(state.stage_info & IRQENTRY_INBAND_STALLED);
+	return state.stage_info == IRQENTRY_INBAND_UNSTALLED;
 }
 
 #else
@@ -534,7 +534,7 @@ out:
 	 * irqentry_enter() raised it in order to mirror the hardware
 	 * state.
 	 */
-	if (state.stage_info & IRQENTRY_INBAND_STALLED)
+	if (state.stage_info == IRQENTRY_INBAND_UNSTALLED)
 		unstall_inband();
 #endif
 	return;
