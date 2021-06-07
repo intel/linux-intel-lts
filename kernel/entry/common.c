@@ -524,9 +524,11 @@ out:
 	/*
 	 * If pipelining interrupts, clear the in-band stall bit if
 	 * irqentry_enter() raised it in order to mirror the hardware
-	 * state.
+	 * state. Also clear it when we where coming from oob, thus went
+	 * through a migration that was caused by taking, e.g., a fault.
 	 */
-	if (state.stage_info == IRQENTRY_INBAND_UNSTALLED)
+	if (state.stage_info == IRQENTRY_INBAND_UNSTALLED ||
+	    state.stage_info == IRQENTRY_OOB)
 		unstall_inband();
 #endif
 	return;
