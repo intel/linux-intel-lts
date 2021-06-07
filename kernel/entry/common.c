@@ -365,6 +365,7 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 
 #ifdef CONFIG_IRQ_PIPELINE
 	if (running_oob()) {
+		WARN_ON_ONCE(irq_pipeline_debug() && oob_irqs_disabled());
 		ret.stage_info = IRQENTRY_OOB;
 		return ret;
 	}
