@@ -162,7 +162,7 @@ static irqentry_state_t pipeline_enter_rcu(void)
 {
 	irqentry_state_t state = {
 		.exit_rcu = false,
-		.stage_info = 0,
+		.stage_info = IRQENTRY_INBAND_UNSTALLED,
 	};
 
 	if (!IS_ENABLED(CONFIG_TINY_RCU) && is_idle_task(current)) {

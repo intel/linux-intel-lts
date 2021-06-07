@@ -347,6 +347,12 @@ void irqentry_enter_from_user_mode(struct pt_regs *regs);
  */
 void irqentry_exit_to_user_mode(struct pt_regs *regs);
 
+enum irqentry_info {
+	IRQENTRY_INBAND_UNSTALLED = 0,
+	IRQENTRY_INBAND_STALLED,
+	IRQENTRY_OOB,
+};
+
 #ifndef irqentry_state
 /**
  * struct irqentry_state - Opaque object for exception state storage
@@ -354,6 +360,7 @@ void irqentry_exit_to_user_mode(struct pt_regs *regs);
  *            exit path has to invoke rcu_irq_exit().
  * @lockdep: Used exclusively in the irqentry_nmi_*() calls; ensures that
  *           lockdep state is restored correctly on exit from nmi.
+ * @stage_info: Information about pipeline state and current stage on IRQ entry.
  *
  * This opaque object is filled in by the irqentry_*_enter() functions and
  * must be passed back into the corresponding irqentry_*_exit() functions
@@ -369,9 +376,7 @@ typedef struct irqentry_state {
 		bool	lockdep;
 	};
 #ifdef CONFIG_IRQ_PIPELINE
-#define IRQENTRY_INBAND_STALLED	BIT(0)
-#define IRQENTRY_OOB_ENTRY	BIT(1)
-	int	stage_info;
+	enum irqentry_info stage_info;
 #endif
 } irqentry_state_t;
 #endif

@@ -813,7 +813,7 @@ static inline void cond_reenable_irqs_kernel(irqentry_state_t state,
 					struct pt_regs *regs)
 {
 	if (regs->flags & X86_EFLAGS_IF) {
-		if (state.stage_info & IRQENTRY_INBAND_STALLED)
+		if (state.stage_info == IRQENTRY_INBAND_UNSTALLED)
 			unstall_inband_nocheck();
 		hard_local_irq_enable();
 	}
