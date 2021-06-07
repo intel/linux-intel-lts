@@ -623,7 +623,6 @@ static void output_poll_execute(struct work_struct *work)
 	struct drm_connector_list_iter conn_iter;
 	enum drm_connector_status old_status;
 	bool repoll = false, changed;
-	u64 old_epoch_counter;
 
 	if (!dev->mode_config.poll_enabled)
 		return;
@@ -660,9 +659,8 @@ static void output_poll_execute(struct work_struct *work)
 
 		repoll = true;
 
-		old_epoch_counter = connector->epoch_counter;
 		connector->status = drm_helper_probe_detect(connector, NULL, false);
-		if (old_epoch_counter != connector->epoch_counter) {
+		if (old_status != connector->status) {
 			const char *old, *new;
 
 			/*
@@ -691,9 +689,6 @@ static void output_poll_execute(struct work_struct *work)
 				      connector->base.id,
 				      connector->name,
 				      old, new);
-			DRM_DEBUG_KMS("[CONNECTOR:%d:%s] epoch counter %llu -> %llu\n",
-				      connector->base.id, connector->name,
-				      old_epoch_counter, connector->epoch_counter);
 
 			changed = true;
 		}
