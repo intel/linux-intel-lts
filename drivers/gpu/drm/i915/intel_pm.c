@@ -2992,7 +2992,7 @@ int ilk_wm_max_level(const struct drm_i915_private *dev_priv)
 
 static void intel_print_wm_latency(struct drm_i915_private *dev_priv,
 				   const char *name,
-				   const u16 wm[])
+				   const u16 wm[8])
 {
 	int level, max_level = ilk_wm_max_level(dev_priv);
 
