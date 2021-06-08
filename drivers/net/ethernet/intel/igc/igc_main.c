@@ -2791,6 +2791,7 @@ static int igc_clean_rx_irq_zc(struct igc_q_vector *q_vector, const int budget)
 	u16 cleaned_count = igc_desc_unused(ring);
 	int total_bytes = 0, total_packets = 0;
 	u16 ntc = ring->next_to_clean;
+	struct igc_md_desc *md;
 	struct bpf_prog *prog;
 	bool failure = false;
 	int xdp_status = 0;
@@ -2833,6 +2834,14 @@ static int igc_clean_rx_irq_zc(struct igc_q_vector *q_vector, const int budget)
 		}
 
 		bi->xdp->data_end = bi->xdp->data + size;
+		if (adapter->btf_enabled) {
+			md = bi->xdp->data - sizeof(*md);
+			md->timestamp = timestamp;
+			bi->xdp->data_meta = md;
+		} else {
+			xdp_set_data_meta_invalid(bi->xdp);
+		}
+
 		xsk_buff_dma_sync_for_cpu(bi->xdp, ring->xsk_pool);
 
 		res = __igc_xdp_run_prog(adapter, prog, bi->xdp);
