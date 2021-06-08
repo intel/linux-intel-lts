@@ -45,6 +45,7 @@ struct dw_dma_slave {
  *		(in bytes, power of 2)
  * @multi_block: Multi block transfers supported by hardware per channel.
  * @protctl: Protection control signals setting per channel.
+ * @quirks: Optional platform quirks.
  */
 struct dw_dma_platform_data {
 	unsigned int	nr_channels;
@@ -63,6 +64,8 @@ struct dw_dma_platform_data {
 #define CHAN_PROTCTL_CACHEABLE		BIT(2)
 #define CHAN_PROTCTL_MASK		GENMASK(2, 0)
 	unsigned char	protctl;
+#define DW_DMA_QUIRK_XBAR_PRESENT	BIT(0)
+	unsigned int	quirks;
 };
 
 #endif /* _PLATFORM_DATA_DMA_DW_H */
