@@ -1338,7 +1338,8 @@ static const struct phylink_pcs_ops xpcs_phylink_ops = {
 };
 
 static struct dw_xpcs *xpcs_create(struct mdio_device *mdiodev,
-				   phy_interface_t interface)
+				   phy_interface_t interface,
+				   bool skip_reset)
 {
 	struct dw_xpcs *xpcs;
 	u32 xpcs_id;
@@ -1378,9 +1379,16 @@ static struct dw_xpcs *xpcs_create(struct mdio_device *mdiodev,
 		if (xpcs->dev_flag != DW_DEV_TXGBE) {
 			xpcs->pcs.poll = true;
 
-			ret = xpcs_soft_reset(xpcs, compat);
-			if (ret)
-				goto out;
+			if (!skip_reset) {
+				dev_warn(&xpcs->mdiodev->dev, "%s: xpcs reset\n",
+					 __func__);
+				ret = xpcs_soft_reset(xpcs, compat);
+				if (ret)
+					goto out;
+			} else {
+				dev_warn(&xpcs->mdiodev->dev, "%s: skip xpcs reset\n",
+					  __func__);
+			}
 		}
 
 		return xpcs;
@@ -1404,7 +1412,8 @@ void xpcs_destroy(struct dw_xpcs *xpcs)
 EXPORT_SYMBOL_GPL(xpcs_destroy);
 
 struct dw_xpcs *xpcs_create_mdiodev(struct mii_bus *bus, int addr,
-				    phy_interface_t interface)
+				    phy_interface_t interface,
+				    bool skip_reset)
 {
 	struct mdio_device *mdiodev;
 	struct dw_xpcs *xpcs;
@@ -1413,7 +1422,7 @@ struct dw_xpcs *xpcs_create_mdiodev(struct mii_bus *bus, int addr,
 	if (IS_ERR(mdiodev))
 		return ERR_CAST(mdiodev);
 
-	xpcs = xpcs_create(mdiodev, interface);
+	xpcs = xpcs_create(mdiodev, interface, skip_reset);
 
 	/* xpcs_create() has taken a refcount on the mdiodev if it was
 	 * successful. If xpcs_create() fails, this will free the mdio
