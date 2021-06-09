@@ -10,7 +10,6 @@ enum dwxpcs_pcs_mode {
 };
 
 struct dwxpcs_platform_data {
-	int irq;
 	enum dwxpcs_pcs_mode mode;
 	int ext_phy_addr;
 	bool speed_2500_en;
