@@ -343,6 +343,8 @@ __visible noinstr void syscall_exit_to_user_mode(struct pt_regs *regs)
 
 noinstr void irqentry_enter_from_user_mode(struct pt_regs *regs)
 {
+	WARN_ON_ONCE(irq_pipeline_debug() && irqs_disabled());
+	stall_inband_nocheck();
 	enter_from_user_mode(regs);
 }
 
@@ -373,8 +375,6 @@ noinstr irqentry_state_t irqentry_enter(struct pt_regs *regs)
 
 	if (user_mode(regs)) {
 #ifdef CONFIG_IRQ_PIPELINE
-		WARN_ON_ONCE(irq_pipeline_debug() && irqs_disabled());
-		stall_inband_nocheck();
 		ret.stage_info = IRQENTRY_INBAND_UNSTALLED;
 #endif
 		irqentry_enter_from_user_mode(regs);
