@@ -21,6 +21,7 @@
 #define DRIVER_MINOR			2
 
 /* Platform definitions */
+#define KMB_CRTC_MIN_VFP		4
 #define KMB_CRTC_MAX_WIDTH		1920 /* max width in pixels */
 #define KMB_CRTC_MAX_HEIGHT		1080 /* max height in pixels */
 #define KMB_CRTC_MIN_WIDTH		1920
