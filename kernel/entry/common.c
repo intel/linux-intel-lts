@@ -477,8 +477,57 @@ bool irqexit_may_preempt_schedule(irqentry_state_t state,
 
 #endif
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+static bool irqentry_syncstage(irqentry_state_t state) /* hard irqs off */
+{
+	/*
+	 * If pipelining interrupts, enable in-band IRQs then
+	 * synchronize the interrupt log on exit if:
+	 *
+	 * - irqentry_enter() stalled the stage in order to mirror the
+	 * hardware state.
+	 *
+	 * - we where coming from oob, thus went through a stage migration
+	 * that was caused by taking a CPU exception, e.g., a fault.
+	 *
+	 * We run before preempt_schedule_irq() may be called later on
+	 * by preemptible kernels, so that any rescheduling request
+	 * triggered by in-band IRQ handlers is considered.
+	 */
+	if (state.stage_info == IRQENTRY_INBAND_UNSTALLED ||
+		state.stage_info == IRQENTRY_OOB) {
+		unstall_inband_nocheck();
+		synchronize_pipeline_on_irq();
+		stall_inband_nocheck();
+		return true;
+	}
+
+	return false;
+}
+
+static void irqentry_unstall(void)
+{
+	unstall_inband_nocheck();
+}
+
+#else
+
+static bool irqentry_syncstage(irqentry_state_t state)
+{
+	return false;
+}
+
+static void irqentry_unstall(void)
+{
+}
+
+#endif
+
 noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
 {
+	bool synchronized = false;
+
 	if (running_oob())
 		return;
 
@@ -488,7 +537,11 @@ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
 	if (user_mode(regs)) {
 		irqentry_exit_to_user_mode(regs);
 		return;
-	} else if (irqexit_may_preempt_schedule(state, regs)) {
+	}
+
+	synchronized = irqentry_syncstage(state);
+
+	if (irqexit_may_preempt_schedule(state, regs)) {
 		/*
 		 * If RCU was not watching on entry this needs to be done
 		 * carefully and needs the same ordering of lockdep/tracing
@@ -521,17 +574,9 @@ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
 	}
 
 out:
-#ifdef CONFIG_IRQ_PIPELINE
-	/*
-	 * If pipelining interrupts, clear the in-band stall bit if
-	 * irqentry_enter() raised it in order to mirror the hardware
-	 * state. Also clear it when we where coming from oob, thus went
-	 * through a migration that was caused by taking, e.g., a fault.
-	 */
-	if (state.stage_info == IRQENTRY_INBAND_UNSTALLED ||
-	    state.stage_info == IRQENTRY_OOB)
-		unstall_inband();
-#endif
+	if (synchronized)
+		irqentry_unstall();
+
 	return;
 }
 
