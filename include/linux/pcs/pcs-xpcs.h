@@ -36,7 +36,8 @@ void xpcs_validate(struct dw_xpcs *xpcs, unsigned long *supported,
 int xpcs_config_eee(struct dw_xpcs *xpcs, int mult_fact_100ns,
 		    int enable);
 struct dw_xpcs *xpcs_create(struct mdio_device *mdiodev,
-			    phy_interface_t interface);
+			    phy_interface_t interface,
+			    bool skip_reset);
 void xpcs_destroy(struct dw_xpcs *xpcs);
 
 #endif /* __LINUX_PCS_XPCS_H */
