@@ -626,6 +626,14 @@ struct drm_gem_open {
 };
 
 #define DRM_CAP_DUMB_BUFFER		0x1
+/**
+ * DRM_CAP_VBLANK_HIGH_CRTC
+ *
+ * If set to 1, the kernel supports specifying a :ref:`CRTC index<crtc_index>`
+ * in the high bits of &drm_wait_vblank_request.type.
+ *
+ * Starting kernel version 2.6.39, this capability is always set to 1.
+ */
 #define DRM_CAP_VBLANK_HIGH_CRTC	0x2
 #define DRM_CAP_DUMB_PREFERRED_DEPTH	0x3
 #define DRM_CAP_DUMB_PREFER_SHADOW	0x4
