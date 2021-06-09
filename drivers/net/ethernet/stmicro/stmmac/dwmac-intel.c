@@ -803,6 +803,8 @@ static int adls_sgmii_phy0_data(struct pci_dev *pdev,
 	if (pdev->revision == PCI_PCH_A0 || pdev->revision == PCI_PCH_A1)
 		plat->dma_cfg->pch_intr_wa = 1;
 
+	plat->skip_xpcs_reset = 1;
+
 	return 0;
 }
 
@@ -826,6 +828,8 @@ static int adls_sgmii_phy1_data(struct pci_dev *pdev,
 	/* Override: Only perform workaround on A0 & A1 stepping for ADL */
 	if (pdev->revision == PCI_PCH_A0 || pdev->revision == PCI_PCH_A1)
 		plat->dma_cfg->pch_intr_wa = 1;
+
+	plat->skip_xpcs_reset = 1;
 
 	return 0;
 }
