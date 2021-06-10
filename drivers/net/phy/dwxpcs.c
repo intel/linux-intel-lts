@@ -223,6 +223,7 @@ static void dwxpcs_init(struct dwxpcs_priv *priv)
 static int dwxpcs_read_status(struct phy_device *phydev)
 {
 	struct dwxpcs_priv *priv = (struct dwxpcs_priv *)phydev->priv;
+	bool speed_2500_en = priv->pdata->speed_2500_en;
 	struct pcs_stats *pcs_stats = &priv->stats;
 	struct mii_bus *bus = priv->mdiodev->bus;
 	int xpcs_addr = priv->mdiodev->addr;
@@ -250,11 +251,12 @@ static int dwxpcs_read_status(struct phy_device *phydev)
 		phydata &= ~BMCR_FULLDPLX;
 		phydata |= phydev->duplex ? BMCR_FULLDPLX : 0;
 		xpcs_write(XPCS_MDIO_MII_MMD, MII_BMCR, phydata);
-	} else if (pcs_mode == DWXPCS_MODE_SGMII_AN) {
+	} else if (pcs_mode == DWXPCS_MODE_SGMII_AN && !speed_2500_en) {
 		/* Just in case PHY`s link is up but xPCS`s link is still down,
 		 * try to retrigger xPCS SGMII AN to recover.
 		 */
-		if (phydev->link && !pcs_stats->link) {
+		phydata = xpcs_read(XPCS_MDIO_MII_MMD, MDIO_MII_MMD_AN_STAT);
+		if (phydev->link && !(phydata & AN_STAT_SGMII_AN_LNKSTS)) {
 			phydata = xpcs_read(XPCS_MDIO_MII_MMD,
 					    MDIO_MII_MMD_CTRL);
 			phydata |= ANRS_CL37;
