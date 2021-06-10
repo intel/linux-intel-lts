@@ -196,7 +196,6 @@ static bool ptrace_freeze_traced(struct task_struct *task)
 	spin_lock_irq(&task->sighand->siglock);
 	if (task_is_traced(task) && !looks_like_a_spurious_pid(task) &&
 	    !__fatal_signal_pending(task)) {
-		task->state = __TASK_TRACED;
 		unsigned long flags;
 
 		raw_spin_lock_irqsave(&task->pi_lock, flags);
