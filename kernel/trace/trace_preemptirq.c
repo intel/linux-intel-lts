@@ -124,6 +124,8 @@ void trace_hardirqs_off_pipelined(void)
 	if (running_inband())
 		trace_hardirqs_off();
 }
+EXPORT_SYMBOL(trace_hardirqs_off_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_off_pipelined);
 
 void trace_hardirqs_on_pipelined(void)
 {
@@ -142,6 +144,8 @@ void trace_hardirqs_on_pipelined(void)
 		unstall_inband_nocheck();
 	}
 }
+EXPORT_SYMBOL(trace_hardirqs_on_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_on_pipelined);
 
 #else
 
@@ -149,11 +153,15 @@ void trace_hardirqs_off_pipelined(void)
 {
 	trace_hardirqs_off();
 }
+EXPORT_SYMBOL(trace_hardirqs_off_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_off_pipelined);
 
 void trace_hardirqs_on_pipelined(void)
 {
 	trace_hardirqs_on();
 }
+EXPORT_SYMBOL(trace_hardirqs_on_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_on_pipelined);
 
 #endif
 
