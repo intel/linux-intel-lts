@@ -36,3 +36,9 @@
 0006-bpf-Move-sanitize_val_alu-out-of-op-switch.patch
 0007-bpf-Tighten-speculative-pointer-arithmetic-mask.patch
 0008-bpf-Update-selftests-to-reflect-new-error-states.patch
+
+# CVE-2021-20177
+0001-netfilter-add-and-use-nf_hook_slow_list.patch
+
+# CVE-2020-24504
+0001-ice-create-scheduler-aggregator-node-config-and-move.patch
