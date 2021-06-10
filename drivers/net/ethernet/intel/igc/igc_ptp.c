@@ -781,6 +781,30 @@ void igc_ptp_tx_dma_tstamp(struct igc_adapter *adapter,
 	skb_tstamp_tx(skb, &shhwtstamps);
 }
 
+ktime_t igc_tx_dma_hw_tstamp(struct igc_adapter *adapter, u64 tstamp)
+{
+	struct skb_shared_hwtstamps shhwtstamps;
+	int adjust = 0;
+
+	igc_ptp_dma_time_to_hwtstamp(adapter, &shhwtstamps, tstamp);
+
+	switch (adapter->link_speed) {
+	case SPEED_10:
+		adjust = IGC_I225_TX_LATENCY_10;
+		break;
+	case SPEED_100:
+		adjust = IGC_I225_TX_LATENCY_100;
+		break;
+	case SPEED_1000:
+		adjust = IGC_I225_TX_LATENCY_1000;
+		break;
+	case SPEED_2500:
+		adjust = IGC_I225_TX_LATENCY_2500;
+		break;
+	}
+	return ktime_add_ns(shhwtstamps.hwtstamp, adjust);
+}
+
 /**
  * igc_ptp_tx_work
  * @work: pointer to work struct
