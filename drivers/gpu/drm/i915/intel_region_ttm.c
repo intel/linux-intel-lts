@@ -4,12 +4,14 @@
  */
 #include <drm/ttm/ttm_bo_driver.h>
 #include <drm/ttm/ttm_device.h>
+#include <drm/ttm/ttm_range_manager.h>
 
 #include "i915_drv.h"
 #include "i915_scatterlist.h"
 
 #include "intel_region_ttm.h"
 
+#include "gem/i915_gem_ttm.h" /* For the funcs/ops export only */
 /**
  * DOC: TTM support structure
  *
@@ -18,9 +20,6 @@
  * the managers to struct sg_table, Basically providing the mapping from
  * i915 GEM regions to TTM memory types and resource managers.
  */
-
-/* A Zero-initialized driver for now. We don't have a TTM backend yet. */
-static struct ttm_device_funcs i915_ttm_bo_driver;
 
 /**
  * intel_region_ttm_device_init - Initialize a TTM device
@@ -32,7 +31,7 @@ int intel_region_ttm_device_init(struct drm_i915_private *dev_priv)
 {
 	struct drm_device *drm = &dev_priv->drm;
 
-	return ttm_device_init(&dev_priv->bdev, &i915_ttm_bo_driver,
+	return ttm_device_init(&dev_priv->bdev, i915_ttm_driver(),
 			       drm->dev, drm->anon_inode->i_mapping,
 			       drm->vma_offset_manager, false, false);
 }
@@ -64,14 +63,15 @@ static int intel_region_to_ttm_type(struct intel_memory_region *mem)
 	return type;
 }
 
-static void *intel_region_ttm_node_reserve(struct intel_memory_region *mem,
-					   resource_size_t offset,
-					   resource_size_t size)
+static struct ttm_resource *
+intel_region_ttm_node_reserve(struct intel_memory_region *mem,
+			      resource_size_t offset,
+			      resource_size_t size)
 {
 	struct ttm_resource_manager *man = mem->region_private;
 	struct ttm_place place = {};
-	struct ttm_resource res = {};
 	struct ttm_buffer_object mock_bo = {};
+	struct ttm_resource *res;
 	int ret;
 
 	/*
@@ -87,12 +87,12 @@ static void *intel_region_ttm_node_reserve(struct intel_memory_region *mem,
 
 	place.fpfn = offset >> PAGE_SHIFT;
 	place.lpfn = place.fpfn + (size >> PAGE_SHIFT);
-	res.num_pages = size >> PAGE_SHIFT;
+	mock_bo.base.size = size;
 	ret = man->func->alloc(man, &mock_bo, &place, &res);
 	if (ret == -ENOSPC)
 		ret = -ENXIO;
 
-	return ret ? ERR_PTR(ret) : res.mm_node;
+	return ret ? ERR_PTR(ret) : res;
 }
 
 /**
@@ -101,13 +101,11 @@ static void *intel_region_ttm_node_reserve(struct intel_memory_region *mem,
  * @node: The opaque node representing an allocation.
  */
 void intel_region_ttm_node_free(struct intel_memory_region *mem,
-				void *node)
+				struct ttm_resource *res)
 {
 	struct ttm_resource_manager *man = mem->region_private;
-	struct ttm_resource res = {};
 
-	res.mm_node = node;
-	man->func->free(man, &res);
+	man->func->free(man, res);
 }
 
 static const struct intel_memory_region_private_ops priv_ops = {
@@ -167,11 +165,18 @@ void intel_region_ttm_fini(struct intel_memory_region *mem)
  * Return: A malloced sg_table on success, an error pointer on failure.
  */
 struct sg_table *intel_region_ttm_node_to_st(struct intel_memory_region *mem,
-					     void *node)
+					     struct ttm_resource *res)
 {
-	return i915_sg_from_mm_node(node, mem->region.start);
+	struct ttm_range_mgr_node *range_node =
+		container_of(res, typeof(*range_node), base);
+
+	GEM_WARN_ON(!mem->is_range_manager);
+	return i915_sg_from_mm_node(&range_node->mm_nodes[0],
+				    mem->region.start);
+
 }
 
+#ifdef CONFIG_DRM_I915_SELFTEST
 /**
  * intel_region_ttm_node_alloc - Allocate memory resources from a region
  * @mem: The memory region,
@@ -187,14 +192,15 @@ struct sg_table *intel_region_ttm_node_to_st(struct intel_memory_region *mem,
  *
  * Return: A valid pointer on success, an error pointer on failure.
  */
-void *intel_region_ttm_node_alloc(struct intel_memory_region *mem,
-				  resource_size_t size,
-				  unsigned int flags)
+struct ttm_resource *
+intel_region_ttm_node_alloc(struct intel_memory_region *mem,
+			    resource_size_t size,
+			    unsigned int flags)
 {
 	struct ttm_resource_manager *man = mem->region_private;
 	struct ttm_place place = {};
-	struct ttm_resource res = {};
 	struct ttm_buffer_object mock_bo = {};
+	struct ttm_resource *res;
 	int ret;
 
 	/*
@@ -202,7 +208,7 @@ void *intel_region_ttm_node_alloc(struct intel_memory_region *mem,
 	 * manager and contigous and min page size would be fulfilled
 	 * by default if size is min page size aligned.
 	 */
-	res.num_pages = size >> PAGE_SHIFT;
+	mock_bo.base.size = size;
 
 	if (mem->is_range_manager) {
 		if (size >= SZ_1G)
@@ -216,5 +222,6 @@ void *intel_region_ttm_node_alloc(struct intel_memory_region *mem,
 	ret = man->func->alloc(man, &mock_bo, &place, &res);
 	if (ret == -ENOSPC)
 		ret = -ENXIO;
-	return ret ? ERR_PTR(ret) : res.mm_node;
+	return ret ? ERR_PTR(ret) : res;
 }
+#endif

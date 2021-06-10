@@ -60,11 +60,11 @@ struct intel_memory_region_ops {
 };
 
 struct intel_memory_region_private_ops {
-	void *(*reserve)(struct intel_memory_region *mem,
-			 resource_size_t offset,
-			 resource_size_t size);
+	struct ttm_resource * (*reserve)(struct intel_memory_region *mem,
+					 resource_size_t offset,
+					 resource_size_t size);
 	void (*free)(struct intel_memory_region *mem,
-		     void *node);
+		     struct ttm_resource *res);
 };
 
 struct intel_memory_region {
@@ -101,7 +101,6 @@ struct intel_memory_region {
 	struct {
 		struct mutex lock; /* Protects access to objects */
 		struct list_head list;
-		struct list_head purgeable;
 	} objects;
 
 	size_t chunk_size;
