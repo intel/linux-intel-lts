@@ -166,7 +166,8 @@ static int vpu_cooling_get_cur_state(struct thermal_cooling_device
 				xlinkerror, device_status);
 			vpu_cdev_priv_data->err_flags.g_err_status_logged = 1;
 		}
-		return VPU_COOLING_FAILED;
+		*state = (unsigned long)POWER_SUSPENDED;
+		return VPU_COOLING_SUCCESS;
 	}
 
 	/* mode to state mapping is one-to-one */
