@@ -13,25 +13,21 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/pci.h>
-#include <linux/pci_ids.h>
 #include <linux/slab.h>
-#include <linux/bitops.h>
 #include <linux/irq_work.h>
 #include <linux/llist.h>
 #include <linux/genalloc.h>
 #include <linux/edac.h>
-#include <linux/processor.h>
-#include <linux/sched/clock.h>
-#include <linux/nmi.h>
-#include <asm/cpu_device_id.h>
-#include <asm/intel-family.h>
+#include <linux/bits.h>
+#include <linux/io.h>
 #include <asm/mach_traps.h>
+#include <asm/nmi.h>
+#include <asm/mce.h>
 
 #include "edac_mc.h"
 #include "edac_module.h"
-#include "igen6_edac.h"
 
-#define IGEN6_REVISION	"v2.2"
+#define IGEN6_REVISION	"v2.4"
 
 #define EDAC_MOD_STR	"igen6_edac"
 #define IGEN6_NMI_NAME	"igen6_ibecc"
@@ -45,7 +41,7 @@
 
 #define GET_BITFIELD(v, lo, hi) (((v) & GENMASK_ULL(hi, lo)) >> (lo))
 
-#define NUM_IMC				1 /* Max memory controllers */
+#define NUM_IMC				2 /* Max memory controllers */
 #define NUM_CHANNELS			2 /* Max channels */
 #define NUM_DIMMS			2 /* Max DIMMs per channel */
 
@@ -53,18 +49,25 @@
 
 /* Size of physical memory */
 #define TOM_OFFSET			0xa0
-/* Top of upper usable DRAM */
-#define TOUUD_OFFSET			0xa8
 /* Top of low usable DRAM */
 #define TOLUD_OFFSET			0xbc
 /* Capability register C */
 #define CAPID_C_OFFSET			0xec
 #define CAPID_C_IBECC			BIT(15)
 
+/* Capability register E */
+#define CAPID_E_OFFSET			0xf0
+#define CAPID_E_IBECC			BIT(12)
+
 /* Error Status */
 #define ERRSTS_OFFSET			0xc8
 #define ERRSTS_CE			BIT_ULL(6)
 #define ERRSTS_UE			BIT_ULL(7)
+
+/* Error Command */
+#define ERRCMD_OFFSET			0xca
+#define ERRCMD_CE			BIT_ULL(6)
+#define ERRCMD_UE			BIT_ULL(7)
 
 /* IBECC MMIO base address */
 #define IBECC_BASE			(res_cfg->ibecc_base)
@@ -80,8 +83,7 @@
 #define ECC_ERROR_LOG_SYND(v)		GET_BITFIELD(v, 46, 61)
 
 /* Host MMIO base address */
-#define MCHBAR_HI_OFFSET		0x4c
-#define MCHBAR_LO_OFFSET		0x48
+#define MCHBAR_OFFSET			0x48
 #define MCHBAR_EN			BIT_ULL(0)
 #define MCHBAR_BASE(v)			(GET_BITFIELD(v, 16, 38) << 16)
 #define MCHBAR_SIZE			0x10000
@@ -112,17 +114,20 @@
 #define CHANNEL_HASH_LSB_MASK_BIT(v)	GET_BITFIELD(v, 24, 26)
 #define CHANNEL_HASH_MODE(v)		GET_BITFIELD(v, 28, 28)
 
-#define igen6_getreg(imc, type, off)		\
-	(*(type *)((imc)->window + (off)))
-#define igen6_setreg(imc, type, off, v)		\
-	(*(type *)((imc)->window + (off)) = (v))
+/* Parameters for memory slice decode stage */
+#define MEM_SLICE_HASH_MASK(v)		(GET_BITFIELD(v, 6, 19) << 6)
+#define MEM_SLICE_HASH_LSB_MASK_BIT(v)	GET_BITFIELD(v, 24, 26)
 
 static struct res_config {
+	bool machine_check;
 	int num_imc;
+	u32 cmf_base;
+	u32 cmf_size;
+	u32 ms_hash_offset;
 	u32 ibecc_base;
 	bool (*ibecc_available)(struct pci_dev *pdev);
 	/* Convert error address logged in IBECC to system physical address */
-	u64 (*err_addr_to_sys_addr)(u64 eaddr);
+	u64 (*err_addr_to_sys_addr)(u64 eaddr, int mc);
 	/* Convert error address logged in IBECC to integrated memory controller address */
 	u64 (*err_addr_to_imc_addr)(u64 eaddr);
 } *res_cfg;
@@ -131,7 +136,9 @@ struct igen6_imc {
 	int mc;
 	struct mem_ctl_info *mci;
 	struct pci_dev *pdev;
+	struct device dev;
 	void __iomem *window;
+	u64 size;
 	u64 ch_s_size;
 	int ch_l_map;
 	u64 dimm_s_size[NUM_CHANNELS];
@@ -141,10 +148,11 @@ struct igen6_imc {
 
 static struct igen6_pvt {
 	struct igen6_imc imc[NUM_IMC];
+	u64 ms_hash;
+	u64 ms_s_size;
+	int ms_l_map;
 } *igen6_pvt;
 
-/* The top of upper usable DRAM */
-static u64 igen6_touud;
 /* The top of low usable DRAM */
 static u32 igen6_tolud;
 /* The size of physical memory */
@@ -168,12 +176,12 @@ struct ecclog_node {
 
 /*
  * In the NMI handler, the driver uses the lock-less memory allocator
- * to allocate memory to store the ECC error logs and links the logs
+ * to allocate memory to store the IBECC error logs and links the logs
  * to the lock-less list. Delay printk() and the work of error reporting
  * to EDAC core in a worker.
  */
 #define ECCLOG_POOL_SIZE	PAGE_SIZE
-LLIST_HEAD(ecclog_llist);
+static LLIST_HEAD(ecclog_llist);
 static struct gen_pool *ecclog_pool;
 static char ecclog_buf[ECCLOG_POOL_SIZE];
 static struct irq_work ecclog_irq_work;
@@ -198,6 +206,9 @@ static struct work_struct ecclog_work;
 #define DID_ICL_SKU11	0x4589
 #define DID_ICL_SKU12	0x458d
 
+/* Compute die IDs for Tiger Lake with IBECC */
+#define DID_TGL_SKU	0x9a14
+
 static bool ehl_ibecc_available(struct pci_dev *pdev)
 {
 	u32 v;
@@ -208,7 +219,7 @@ static bool ehl_ibecc_available(struct pci_dev *pdev)
 	return !!(CAPID_C_IBECC & v);
 }
 
-static u64 ehl_err_addr_to_sys_addr(u64 eaddr)
+static u64 ehl_err_addr_to_sys_addr(u64 eaddr, int mc)
 {
 	return eaddr;
 }
@@ -238,20 +249,103 @@ static bool icl_ibecc_available(struct pci_dev *pdev)
 		(boot_cpu_data.x86_stepping >= 1);
 }
 
+static bool tgl_ibecc_available(struct pci_dev *pdev)
+{
+	u32 v;
+
+	if (pci_read_config_dword(pdev, CAPID_E_OFFSET, &v))
+		return false;
+
+	return !(CAPID_E_IBECC & v);
+}
+
+static u64 mem_addr_to_sys_addr(u64 maddr)
+{
+	if (maddr < igen6_tolud)
+		return maddr;
+
+	if (igen6_tom <= _4GB)
+		return maddr - igen6_tolud + _4GB;
+
+	if (maddr < _4GB)
+		return maddr - igen6_tolud + igen6_tom;
+
+	return maddr;
+}
+
+static u64 mem_slice_hash(u64 addr, u64 mask, u64 hash_init, int intlv_bit)
+{
+	u64 hash_addr = addr & mask, hash = hash_init;
+	u64 intlv = (addr >> intlv_bit) & 1;
+	int i;
+
+	for (i = 6; i < 20; i++)
+		hash ^= (hash_addr >> i) & 1;
+
+	return hash ^ intlv;
+}
+
+static u64 tgl_err_addr_to_mem_addr(u64 eaddr, int mc)
+{
+	u64 maddr, hash, mask, ms_s_size;
+	int intlv_bit;
+	u32 ms_hash;
+
+	ms_s_size = igen6_pvt->ms_s_size;
+	if (eaddr >= ms_s_size)
+		return eaddr + ms_s_size;
+
+	ms_hash = igen6_pvt->ms_hash;
+
+	mask = MEM_SLICE_HASH_MASK(ms_hash);
+	intlv_bit = MEM_SLICE_HASH_LSB_MASK_BIT(ms_hash) + 6;
+
+	maddr = GET_BITFIELD(eaddr, intlv_bit, 63) << (intlv_bit + 1) |
+		GET_BITFIELD(eaddr, 0, intlv_bit - 1);
+
+	hash = mem_slice_hash(maddr, mask, mc, intlv_bit);
+
+	return maddr | (hash << intlv_bit);
+}
+
+static u64 tgl_err_addr_to_sys_addr(u64 eaddr, int mc)
+{
+	u64 maddr = tgl_err_addr_to_mem_addr(eaddr, mc);
+
+	return mem_addr_to_sys_addr(maddr);
+}
+
+static u64 tgl_err_addr_to_imc_addr(u64 eaddr)
+{
+	return eaddr;
+}
+
 static struct res_config ehl_cfg = {
-	.num_imc	 = 1,
-	.ibecc_base	 = 0xdc00,
-	.ibecc_available = ehl_ibecc_available,
-	.err_addr_to_sys_addr  = ehl_err_addr_to_sys_addr,
-	.err_addr_to_imc_addr  = ehl_err_addr_to_imc_addr,
+	.num_imc		= 1,
+	.ibecc_base		= 0xdc00,
+	.ibecc_available	= ehl_ibecc_available,
+	.err_addr_to_sys_addr	= ehl_err_addr_to_sys_addr,
+	.err_addr_to_imc_addr	= ehl_err_addr_to_imc_addr,
 };
 
 static struct res_config icl_cfg = {
-	.num_imc	 = 1,
-	.ibecc_base	 = 0xd800,
-	.ibecc_available = icl_ibecc_available,
-	.err_addr_to_sys_addr  = ehl_err_addr_to_sys_addr,
-	.err_addr_to_imc_addr  = ehl_err_addr_to_imc_addr,
+	.num_imc		= 1,
+	.ibecc_base		= 0xd800,
+	.ibecc_available	= icl_ibecc_available,
+	.err_addr_to_sys_addr	= ehl_err_addr_to_sys_addr,
+	.err_addr_to_imc_addr	= ehl_err_addr_to_imc_addr,
+};
+
+static struct res_config tgl_cfg = {
+	.machine_check		= true,
+	.num_imc		= 2,
+	.cmf_base		= 0x11000,
+	.cmf_size		= 0x800,
+	.ms_hash_offset		= 0xac,
+	.ibecc_base		= 0xd400,
+	.ibecc_available	= tgl_ibecc_available,
+	.err_addr_to_sys_addr	= tgl_err_addr_to_sys_addr,
+	.err_addr_to_imc_addr	= tgl_err_addr_to_imc_addr,
 };
 
 static const struct pci_device_id igen6_pci_tbl[] = {
@@ -270,23 +364,10 @@ static const struct pci_device_id igen6_pci_tbl[] = {
 	{ PCI_VDEVICE(INTEL, DID_ICL_SKU10), (kernel_ulong_t)&icl_cfg },
 	{ PCI_VDEVICE(INTEL, DID_ICL_SKU11), (kernel_ulong_t)&icl_cfg },
 	{ PCI_VDEVICE(INTEL, DID_ICL_SKU12), (kernel_ulong_t)&icl_cfg },
+	{ PCI_VDEVICE(INTEL, DID_TGL_SKU), (kernel_ulong_t)&tgl_cfg },
 	{ },
 };
 MODULE_DEVICE_TABLE(pci, igen6_pci_tbl);
-
-static BLOCKING_NOTIFIER_HEAD(ibecc_err_handler_chain);
-
-int ibecc_err_register_notifer(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_register(&ibecc_err_handler_chain, nb);
-}
-EXPORT_SYMBOL_GPL(ibecc_err_register_notifer);
-
-int ibecc_err_unregister_notifer(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_unregister(&ibecc_err_handler_chain, nb);
-}
-EXPORT_SYMBOL_GPL(ibecc_err_unregister_notifer);
 
 static enum dev_type get_width(int dimm_l, u32 mad_dimm)
 {
@@ -381,7 +462,7 @@ static int igen6_decode(struct decoded_addr *res)
 	}
 
 	/* Decode channel */
-	hash   = igen6_getreg(imc, u32, CHANNEL_HASH_OFFSET);
+	hash   = readl(imc->window + CHANNEL_HASH_OFFSET);
 	s_size = imc->ch_s_size;
 	l_map  = imc->ch_l_map;
 	decode_addr(addr, hash, s_size, l_map, &idx, &sub_addr);
@@ -389,7 +470,7 @@ static int igen6_decode(struct decoded_addr *res)
 	res->channel_addr = sub_addr;
 
 	/* Decode sub-channel/DIMM */
-	hash   = igen6_getreg(imc, u32, CHANNEL_EHASH_OFFSET);
+	hash   = readl(imc->window + CHANNEL_EHASH_OFFSET);
 	s_size = imc->dimm_s_size[idx];
 	l_map  = imc->dimm_l_map[idx];
 	decode_addr(res->channel_addr, hash, s_size, l_map, &idx, &sub_addr);
@@ -405,7 +486,6 @@ static void igen6_output_error(struct decoded_addr *res,
 	enum hw_event_mc_err_type type = ecclog & ECC_ERROR_LOG_UE ?
 					 HW_EVENT_ERR_UNCORRECTED :
 					 HW_EVENT_ERR_CORRECTED;
-	struct ibecc_err_info e;
 
 	edac_mc_handle_error(type, mci, 1,
 			     res->sys_addr >> PAGE_SHIFT,
@@ -413,13 +493,6 @@ static void igen6_output_error(struct decoded_addr *res,
 			     ECC_ERROR_LOG_SYND(ecclog),
 			     res->channel_idx, res->sub_channel_idx,
 			     -1, "", "");
-
-	/* Notify other handlers for further IBECC error handling */
-	memset(&e, 0, sizeof(e));
-	e.type	   = type;
-	e.sys_addr = res->sys_addr;
-	e.ecc_log  = ecclog;
-	blocking_notifier_call_chain(&ibecc_err_handler_chain, 0, &e);
 }
 
 static struct gen_pool *ecclog_gen_pool_create(void)
@@ -453,13 +526,20 @@ static int ecclog_gen_pool_add(int mc, u64 ecclog)
 	return 0;
 }
 
+/*
+ * Either the memory-mapped I/O status register ECC_ERROR_LOG or the PCI
+ * configuration space status register ERRSTS can indicate whether a
+ * correctable error or an uncorrectable error occurred. We only use the
+ * ECC_ERROR_LOG register to check error type, but need to clear both
+ * registers to enable future error events.
+ */
 static u64 ecclog_read_and_clear(struct igen6_imc *imc)
 {
-	u64 ecclog = igen6_getreg(imc, u64, ECC_ERROR_LOG_OFFSET);
+	u64 ecclog = readq(imc->window + ECC_ERROR_LOG_OFFSET);
 
 	if (ecclog & (ECC_ERROR_LOG_CE | ECC_ERROR_LOG_UE)) {
-		/* Clear CE/UE bits in the IBECC register by writing 1 to it */
-		igen6_setreg(imc, u64, ECC_ERROR_LOG_OFFSET, ecclog);
+		/* Clear CE/UE bits by writing 1s */
+		writeq(ecclog, imc->window + ECC_ERROR_LOG_OFFSET);
 		return ecclog;
 	}
 
@@ -475,9 +555,31 @@ static void errsts_clear(struct igen6_imc *imc)
 		return;
 	}
 
-	/* Clear CE/UE bits in the PCI ERRSTS register by writing 1 to it */
+	/* Clear CE/UE bits by writing 1s */
 	if (errsts & (ERRSTS_CE | ERRSTS_UE))
 		pci_write_config_word(imc->pdev, ERRSTS_OFFSET, errsts);
+}
+
+static int errcmd_enable_error_reporting(bool enable)
+{
+	struct igen6_imc *imc = &igen6_pvt->imc[0];
+	u16 errcmd;
+	int rc;
+
+	rc = pci_read_config_word(imc->pdev, ERRCMD_OFFSET, &errcmd);
+	if (rc)
+		return rc;
+
+	if (enable)
+		errcmd |= ERRCMD_CE | ERRSTS_UE;
+	else
+		errcmd &= ~(ERRCMD_CE | ERRSTS_UE);
+
+	rc = pci_write_config_word(imc->pdev, ERRCMD_OFFSET, errcmd);
+	if (rc)
+		return rc;
+
+	return 0;
 }
 
 static int ecclog_handler(void)
@@ -488,6 +590,8 @@ static int ecclog_handler(void)
 
 	for (i = 0; i < res_cfg->num_imc; i++) {
 		imc = &igen6_pvt->imc[i];
+
+		/* errsts_clear() isn't NMI-safe. Delay it in the IRQ context */
 
 		ecclog = ecclog_read_and_clear(imc);
 		if (!ecclog)
@@ -519,7 +623,7 @@ static void ecclog_work_cb(struct work_struct *work)
 		eaddr = ECC_ERROR_LOG_ADDR(node->ecclog) <<
 			ECC_ERROR_LOG_ADDR_SHIFT;
 		res.mc	     = node->mc;
-		res.sys_addr = res_cfg->err_addr_to_sys_addr(eaddr);
+		res.sys_addr = res_cfg->err_addr_to_sys_addr(eaddr, res.mc);
 		res.imc_addr = res_cfg->err_addr_to_imc_addr(eaddr);
 
 		mci = igen6_pvt->imc[res.mc].mci;
@@ -553,7 +657,13 @@ static int ecclog_nmi_handler(unsigned int cmd, struct pt_regs *regs)
 	if (!ecclog_handler())
 		return NMI_DONE;
 
-	/* Re-enable the PCI SERR error line */
+	/*
+	 * Both In-Band ECC correctable error and uncorrectable error are
+	 * reported by SERR# NMI. The NMI generic code (see pci_serr_error())
+	 * doesn't clear the bit NMI_REASON_CLEAR_SERR (in port 0x61) to
+	 * re-enable the SERR# NMI after NMI handling. So clear this bit here
+	 * to re-enable SERR# NMI for receiving future In-Band ECC errors.
+	 */
 	reason  = x86_platform.get_nmi_reason() & NMI_REASON_CLEAR_MASK;
 	reason |= NMI_REASON_CLEAR_SERR;
 	outb(reason, NMI_REASON_PORT);
@@ -563,9 +673,60 @@ static int ecclog_nmi_handler(unsigned int cmd, struct pt_regs *regs)
 	return NMI_HANDLED;
 }
 
+static int ecclog_mce_handler(struct notifier_block *nb, unsigned long val,
+			      void *data)
+{
+	struct mce *mce = (struct mce *)data;
+	char *type;
+
+	if (mce->kflags & MCE_HANDLED_CEC)
+		return NOTIFY_DONE;
+
+	/*
+	 * Ignore unless this is a memory related error.
+	 * We don't check the bit MCI_STATUS_ADDRV of MCi_STATUS here,
+	 * since this bit isn't set on some CPU (e.g., Tiger Lake UP3).
+	 */
+	if ((mce->status & 0xefff) >> 7 != 1)
+		return NOTIFY_DONE;
+
+	if (mce->mcgstatus & MCG_STATUS_MCIP)
+		type = "Exception";
+	else
+		type = "Event";
+
+	edac_dbg(0, "CPU %d: Machine Check %s: 0x%llx Bank %d: 0x%llx\n",
+		 mce->extcpu, type, mce->mcgstatus,
+		 mce->bank, mce->status);
+	edac_dbg(0, "TSC 0x%llx\n", mce->tsc);
+	edac_dbg(0, "ADDR 0x%llx\n", mce->addr);
+	edac_dbg(0, "MISC 0x%llx\n", mce->misc);
+	edac_dbg(0, "PROCESSOR %u:0x%x TIME %llu SOCKET %u APIC 0x%x\n",
+		 mce->cpuvendor, mce->cpuid, mce->time,
+		 mce->socketid, mce->apicid);
+	/*
+	 * We just use the Machine Check for the memory error notification.
+	 * Each memory controller is associated with an IBECC instance.
+	 * Directly read and clear the error information(error address and
+	 * error type) on all the IBECC instances so that we know on which
+	 * memory controller the memory error(s) occurred.
+	 */
+	if (!ecclog_handler())
+		return NOTIFY_DONE;
+
+	mce->kflags |= MCE_HANDLED_EDAC;
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block ecclog_mce_dec = {
+	.notifier_call	= ecclog_mce_handler,
+	.priority	= MCE_PRIO_EDAC,
+};
+
 static bool igen6_check_ecc(struct igen6_imc *imc)
 {
-	u32 activate = igen6_getreg(imc, u32, IBECC_ACTIVATE_OFFSET);
+	u32 activate = readl(imc->window + IBECC_ACTIVATE_OFFSET);
 
 	return !!(activate & IBECC_ACTIVATE_EN);
 }
@@ -583,19 +744,21 @@ static int igen6_get_dimm_config(struct mem_ctl_info *mci)
 
 	edac_dbg(2, "\n");
 
-	mad_inter = igen6_getreg(imc, u32, MAD_INTER_CHANNEL_OFFSET);
+	mad_inter = readl(imc->window + MAD_INTER_CHANNEL_OFFSET);
 	mtype = get_memory_type(mad_inter);
 	ecc = igen6_check_ecc(imc);
 	imc->ch_s_size = MAD_INTER_CHANNEL_CH_S_SIZE(mad_inter);
 	imc->ch_l_map  = MAD_INTER_CHANNEL_CH_L_MAP(mad_inter);
 
 	for (i = 0; i < NUM_CHANNELS; i++) {
-		mad_intra = igen6_getreg(imc, u32, MAD_INTRA_CH0_OFFSET + i * 4);
-		mad_dimm  = igen6_getreg(imc, u32, MAD_DIMM_CH0_OFFSET + i * 4);
+		mad_intra = readl(imc->window + MAD_INTRA_CH0_OFFSET + i * 4);
+		mad_dimm  = readl(imc->window + MAD_DIMM_CH0_OFFSET + i * 4);
 
 		imc->dimm_l_size[i] = MAD_DIMM_CH_DIMM_L_SIZE(mad_dimm);
 		imc->dimm_s_size[i] = MAD_DIMM_CH_DIMM_S_SIZE(mad_dimm);
 		imc->dimm_l_map[i]  = MAD_INTRA_CH_DIMM_L_MAP(mad_intra);
+		imc->size += imc->dimm_s_size[i];
+		imc->size += imc->dimm_l_size[i];
 		ndimms = 0;
 
 		for (j = 0; j < NUM_DIMMS; j++) {
@@ -612,7 +775,7 @@ static int igen6_get_dimm_config(struct mem_ctl_info *mci)
 			if (!dsize)
 				continue;
 
-			dimm->grain = 32;
+			dimm->grain = 64;
 			dimm->mtype = mtype;
 			dimm->dtype = dtype;
 			dimm->nr_pages  = MiB_TO_PAGES(dsize >> 20);
@@ -626,87 +789,42 @@ static int igen6_get_dimm_config(struct mem_ctl_info *mci)
 		}
 
 		if (ndimms && !ecc) {
-			igen6_printk(KERN_ERR, "MC%d ECC is disabled\n", mc);
+			igen6_printk(KERN_ERR, "MC%d In-Band ECC is disabled\n", mc);
 			return -ENODEV;
 		}
 	}
 
-	return 0;
-}
-
-#define PCI_RD_U32(pdev, w, v)						    \
-	do {								    \
-		if (pci_read_config_dword(pdev, w, v)) {		    \
-			igen6_printk(KERN_ERR, "Failed to read 0x%x\n", w); \
-			goto fail;					    \
-		}							    \
-	} while (0)
-
-static int igen6_pci_setup(struct pci_dev *pdev, struct res_config *cfg,
-			   u64 *mchbar)
-{
-	union  {
-		u64 v;
-		struct {
-			u32 v_lo;
-			u32 v_hi;
-		};
-	} u;
-
-	edac_dbg(2, "\n");
-
-	if (!cfg->ibecc_available(pdev)) {
-		edac_dbg(2, "No In-Band ECC IP\n");
-		return -ENODEV;
-	}
-
-	PCI_RD_U32(pdev, TOUUD_OFFSET, &u.v_lo);
-	PCI_RD_U32(pdev, TOUUD_OFFSET + 4, &u.v_hi);
-	igen6_touud = u.v & GENMASK_ULL(38, 20);
-
-	PCI_RD_U32(pdev, TOLUD_OFFSET, &igen6_tolud);
-	igen6_tolud &= GENMASK(31, 20);
-
-	PCI_RD_U32(pdev, TOM_OFFSET, &u.v_lo);
-	PCI_RD_U32(pdev, TOM_OFFSET + 4, &u.v_hi);
-	igen6_tom = u.v & GENMASK_ULL(38, 20);
-
-	PCI_RD_U32(pdev, MCHBAR_LO_OFFSET, &u.v_lo);
-	PCI_RD_U32(pdev, MCHBAR_HI_OFFSET, &u.v_hi);
-	if (!(u.v & MCHBAR_EN)) {
-		igen6_printk(KERN_ERR, "MCHBAR is disabled\n");
-		return -ENODEV;
-	}
-
-	*mchbar = MCHBAR_BASE(u.v);
+	edac_dbg(0, "MC %d, total size %llu MiB\n", mc, imc->size >> 20);
 
 	return 0;
-fail:
-	return -ENODEV;
 }
 
 #ifdef CONFIG_EDAC_DEBUG
+/* Top of upper usable DRAM */
+static u64 igen6_touud;
+#define TOUUD_OFFSET	0xa8
+
 static void igen6_reg_dump(struct igen6_imc *imc)
 {
 	int i;
 
 	edac_dbg(2, "CHANNEL_HASH     : 0x%x\n",
-		 igen6_getreg(imc, u32, CHANNEL_HASH_OFFSET));
+		 readl(imc->window + CHANNEL_HASH_OFFSET));
 	edac_dbg(2, "CHANNEL_EHASH    : 0x%x\n",
-		 igen6_getreg(imc, u32, CHANNEL_EHASH_OFFSET));
+		 readl(imc->window + CHANNEL_EHASH_OFFSET));
 	edac_dbg(2, "MAD_INTER_CHANNEL: 0x%x\n",
-		 igen6_getreg(imc, u32, MAD_INTER_CHANNEL_OFFSET));
+		 readl(imc->window + MAD_INTER_CHANNEL_OFFSET));
 	edac_dbg(2, "ECC_ERROR_LOG    : 0x%llx\n",
-		 igen6_getreg(imc, u64, ECC_ERROR_LOG_OFFSET));
+		 readq(imc->window + ECC_ERROR_LOG_OFFSET));
 
 	for (i = 0; i < NUM_CHANNELS; i++) {
 		edac_dbg(2, "MAD_INTRA_CH%d    : 0x%x\n", i,
-			 igen6_getreg(imc, u32, MAD_INTRA_CH0_OFFSET + i * 4));
+			 readl(imc->window + MAD_INTRA_CH0_OFFSET + i * 4));
 		edac_dbg(2, "MAD_DIMM_CH%d     : 0x%x\n", i,
-			 igen6_getreg(imc, u32, MAD_DIMM_CH0_OFFSET + i * 4));
+			 readl(imc->window + MAD_DIMM_CH0_OFFSET + i * 4));
 	}
-	edac_dbg(2, "TOUUD            : 0x%llx", igen6_touud);
 	edac_dbg(2, "TOLUD            : 0x%x", igen6_tolud);
+	edac_dbg(2, "TOUUD            : 0x%llx", igen6_touud);
 	edac_dbg(2, "TOM              : 0x%llx", igen6_tom);
 }
 
@@ -756,6 +874,73 @@ static void igen6_debug_setup(void) {}
 static void igen6_debug_teardown(void) {}
 #endif
 
+static int igen6_pci_setup(struct pci_dev *pdev, u64 *mchbar)
+{
+	union  {
+		u64 v;
+		struct {
+			u32 v_lo;
+			u32 v_hi;
+		};
+	} u;
+
+	edac_dbg(2, "\n");
+
+	if (!res_cfg->ibecc_available(pdev)) {
+		edac_dbg(2, "No In-Band ECC IP\n");
+		goto fail;
+	}
+
+	if (pci_read_config_dword(pdev, TOLUD_OFFSET, &igen6_tolud)) {
+		igen6_printk(KERN_ERR, "Failed to read TOLUD\n");
+		goto fail;
+	}
+
+	igen6_tolud &= GENMASK(31, 20);
+
+	if (pci_read_config_dword(pdev, TOM_OFFSET, &u.v_lo)) {
+		igen6_printk(KERN_ERR, "Failed to read lower TOM\n");
+		goto fail;
+	}
+
+	if (pci_read_config_dword(pdev, TOM_OFFSET + 4, &u.v_hi)) {
+		igen6_printk(KERN_ERR, "Failed to read upper TOM\n");
+		goto fail;
+	}
+
+	igen6_tom = u.v & GENMASK_ULL(38, 20);
+
+	if (pci_read_config_dword(pdev, MCHBAR_OFFSET, &u.v_lo)) {
+		igen6_printk(KERN_ERR, "Failed to read lower MCHBAR\n");
+		goto fail;
+	}
+
+	if (pci_read_config_dword(pdev, MCHBAR_OFFSET + 4, &u.v_hi)) {
+		igen6_printk(KERN_ERR, "Failed to read upper MCHBAR\n");
+		goto fail;
+	}
+
+	if (!(u.v & MCHBAR_EN)) {
+		igen6_printk(KERN_ERR, "MCHBAR is disabled\n");
+		goto fail;
+	}
+
+	*mchbar = MCHBAR_BASE(u.v);
+
+#ifdef CONFIG_EDAC_DEBUG
+	if (pci_read_config_dword(pdev, TOUUD_OFFSET, &u.v_lo))
+		edac_dbg(2, "Failed to read lower TOUUD\n");
+	else if (pci_read_config_dword(pdev, TOUUD_OFFSET + 4, &u.v_hi))
+		edac_dbg(2, "Failed to read upper TOUUD\n");
+	else
+		igen6_touud = u.v & GENMASK_ULL(38, 20);
+#endif
+
+	return 0;
+fail:
+	return -ENODEV;
+}
+
 static int igen6_register_mci(int mc, u64 mchbar, struct pci_dev *pdev)
 {
 	struct edac_mc_layer layers[2];
@@ -797,10 +982,21 @@ static int igen6_register_mci(int mc, u64 mchbar, struct pci_dev *pdev)
 	mci->edac_cap = EDAC_FLAG_SECDED;
 	mci->mod_name = EDAC_MOD_STR;
 	mci->dev_name = pci_name(pdev);
-	mci->pdev = &pdev->dev;
 	mci->pvt_info = &igen6_pvt->imc[mc];
 
 	imc = mci->pvt_info;
+	device_initialize(&imc->dev);
+	/*
+	 * EDAC core uses mci->pdev(pointer of structure device) as
+	 * memory controller ID. The client SoCs attach one or more
+	 * memory controllers to single pci_dev (single pci_dev->dev
+	 * can be for multiple memory controllers).
+	 *
+	 * To make mci->pdev unique, assign pci_dev->dev to mci->pdev
+	 * for the first memory controller and assign a unique imc->dev
+	 * to mci->pdev for each non-first memory controller.
+	 */
+	mci->pdev = mc ? &imc->dev : &pdev->dev;
 	imc->mc	= mc;
 	imc->pdev = pdev;
 	imc->window = window;
@@ -830,13 +1026,14 @@ fail:
 
 static void igen6_unregister_mcis(void)
 {
-	struct igen6_imc *imc = igen6_pvt->imc;
 	struct mem_ctl_info *mci;
+	struct igen6_imc *imc;
 	int i;
 
 	edac_dbg(2, "\n");
 
-	for (i = 0; i < NUM_IMC; i++, imc++) {
+	for (i = 0; i < res_cfg->num_imc; i++) {
+		imc = &igen6_pvt->imc[i];
 		mci = imc->mci;
 		if (!mci)
 			continue;
@@ -846,6 +1043,77 @@ static void igen6_unregister_mcis(void)
 		edac_mc_free(mci);
 		iounmap(imc->window);
 	}
+}
+
+static int igen6_mem_slice_setup(u64 mchbar)
+{
+	struct igen6_imc *imc = &igen6_pvt->imc[0];
+	u64 base = mchbar + res_cfg->cmf_base;
+	u32 offset = res_cfg->ms_hash_offset;
+	u32 size = res_cfg->cmf_size;
+	u64 ms_s_size, ms_hash;
+	void __iomem *cmf;
+	int ms_l_map;
+
+	edac_dbg(2, "\n");
+
+	if (imc[0].size < imc[1].size) {
+		ms_s_size = imc[0].size;
+		ms_l_map  = 1;
+	} else {
+		ms_s_size = imc[1].size;
+		ms_l_map  = 0;
+	}
+
+	igen6_pvt->ms_s_size = ms_s_size;
+	igen6_pvt->ms_l_map  = ms_l_map;
+
+	edac_dbg(0, "ms_s_size: %llu MiB, ms_l_map %d\n",
+		 ms_s_size >> 20, ms_l_map);
+
+	cmf = ioremap(base, size);
+	if (!cmf) {
+		igen6_printk(KERN_ERR, "Failed to ioremap cmf 0x%llx\n", base);
+		return -ENODEV;
+	}
+
+	ms_hash = readq(cmf + offset);
+	igen6_pvt->ms_hash = ms_hash;
+
+	edac_dbg(0, "MEM_SLICE_HASH: 0x%llx\n", ms_hash);
+
+	iounmap(cmf);
+
+	return 0;
+}
+
+static int register_err_handler(void)
+{
+	int rc;
+
+	if (res_cfg->machine_check) {
+		mce_register_decode_chain(&ecclog_mce_dec);
+		return 0;
+	}
+
+	rc = register_nmi_handler(NMI_SERR, ecclog_nmi_handler,
+				  0, IGEN6_NMI_NAME);
+	if (rc) {
+		igen6_printk(KERN_ERR, "Failed to register NMI handler\n");
+		return rc;
+	}
+
+	return 0;
+}
+
+static void unregister_err_handler(void)
+{
+	if (res_cfg->machine_check) {
+		mce_unregister_decode_chain(&ecclog_mce_dec);
+		return;
+	}
+
+	unregister_nmi_handler(NMI_SERR, IGEN6_NMI_NAME);
 }
 
 static int igen6_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -861,12 +1129,18 @@ static int igen6_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	res_cfg = (struct res_config *)ent->driver_data;
 
-	rc = igen6_pci_setup(pdev, res_cfg, &mchbar);
+	rc = igen6_pci_setup(pdev, &mchbar);
 	if (rc)
 		goto fail;
 
 	for (i = 0; i < res_cfg->num_imc; i++) {
 		rc = igen6_register_mci(i, mchbar, pdev);
+		if (rc)
+			goto fail2;
+	}
+
+	if (res_cfg->num_imc > 1) {
+		rc = igen6_mem_slice_setup(mchbar);
 		if (rc)
 			goto fail2;
 	}
@@ -883,15 +1157,21 @@ static int igen6_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Check if any pending errors before registering the NMI handler */
 	ecclog_handler();
 
-	rc = register_nmi_handler(NMI_SERR, ecclog_nmi_handler,
-				  0, IGEN6_NMI_NAME);
-	if (rc) {
-		igen6_printk(KERN_ERR, "Failed to register NMI handler\n");
+	rc = register_err_handler();
+	if (rc)
 		goto fail3;
+
+	/* Enable error reporting */
+	rc = errcmd_enable_error_reporting(true);
+	if (rc) {
+		igen6_printk(KERN_ERR, "Failed to enable error reporting\n");
+		goto fail4;
 	}
 
 	igen6_debug_setup();
 	return 0;
+fail4:
+	unregister_nmi_handler(NMI_SERR, IGEN6_NMI_NAME);
 fail3:
 	gen_pool_destroy(ecclog_pool);
 fail2:
@@ -906,7 +1186,8 @@ static void igen6_remove(struct pci_dev *pdev)
 	edac_dbg(2, "\n");
 
 	igen6_debug_teardown();
-	unregister_nmi_handler(NMI_SERR, IGEN6_NMI_NAME);
+	errcmd_enable_error_reporting(false);
+	unregister_err_handler();
 	irq_work_sync(&ecclog_irq_work);
 	flush_work(&ecclog_work);
 	gen_pool_destroy(ecclog_pool);
