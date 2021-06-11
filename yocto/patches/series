@@ -27,16 +27,6 @@
 # CVE-2020-36310
 0001-KVM-SVM-avoid-infinite-loop-on-NPF-from-bad-address.patch
 
-# CVE-2021-29155
-0001-bpf-Move-off_reg-into-sanitize_ptr_alu.patch
-0002-bpf-Ensure-off_reg-has-no-mixed-signed-bounds-for-al.patch
-0003-bpf-Rework-ptr_limit-into-alu_limit-and-add-common-e.patch
-0004-bpf-Improve-verifier-error-messages-for-users.patch
-0005-bpf-Refactor-and-streamline-bounds-check-into-helper.patch
-0006-bpf-Move-sanitize_val_alu-out-of-op-switch.patch
-0007-bpf-Tighten-speculative-pointer-arithmetic-mask.patch
-0008-bpf-Update-selftests-to-reflect-new-error-states.patch
-
 # CVE-2021-20177
 0001-netfilter-add-and-use-nf_hook_slow_list.patch
 
