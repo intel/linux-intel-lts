@@ -88,6 +88,16 @@ static inline int arch_enable_oob_stage(void)
 	return 0;
 }
 
+#define arch_kentry_get_irqstate(__regs)		\
+	({						\
+		to_svc_pt_regs(__regs)->irqstate;	\
+	})
+
+#define arch_kentry_set_irqstate(__regs, __irqstate)		\
+	do {							\
+		to_svc_pt_regs(__regs)->irqstate = __irqstate;	\
+	} while (0)
+
 #else /* !CONFIG_IRQ_PIPELINE */
 
 static inline unsigned long arch_local_irq_save(void)
