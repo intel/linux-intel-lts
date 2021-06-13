@@ -1296,6 +1296,73 @@ respin:
 	}
 }
 
+#ifndef CONFIG_GENERIC_ENTRY
+
+/*
+ * These helpers are normally called from the kernel entry/exit code
+ * in the asm section by architectures which do not use the generic
+ * kernel entry code, in order to save the interrupt and lockdep
+ * states for the in-band stage on entry, restoring them when leaving
+ * the kernel.  The per-architecture arch_kentry_set/get_irqstate()
+ * calls determine where this information should be kept while running
+ * in kernel context, indexed on the current register frame.
+ */
+
+#define KENTRY_STALL_BIT      BIT(0) /* Tracks INBAND_STALL_BIT */
+#define KENTRY_LOCKDEP_BIT    BIT(1) /* Tracks hardirqs_enabled */
+
+asmlinkage __visible noinstr void kentry_enter_pipelined(struct pt_regs *regs)
+{
+	long irqstate = 0;
+
+	WARN_ON(irq_pipeline_debug() && !hard_irqs_disabled());
+
+	if (!running_inband())
+		return;
+
+	if (lockdep_read_irqs_state())
+		irqstate |= KENTRY_LOCKDEP_BIT;
+
+	if (irqs_disabled())
+		irqstate |= KENTRY_STALL_BIT;
+	else
+		trace_hardirqs_off();
+
+	arch_kentry_set_irqstate(regs, irqstate);
+}
+
+asmlinkage void __visible noinstr kentry_exit_pipelined(struct pt_regs *regs)
+{
+	long irqstate;
+
+	WARN_ON(irq_pipeline_debug() && !hard_irqs_disabled());
+
+	if (!running_inband())
+		return;
+
+	/*
+	 * If the in-band stage of the kernel is current but the IRQ
+	 * is not going to be delivered because the latter is stalled,
+	 * keep the tracing logic unaware of the receipt, so that no
+	 * false positive is triggered in lockdep (e.g. IN-HARDIRQ-W
+	 * -> HARDIRQ-ON-W). In this case, we still have to restore
+	 * the lockdep irq state independently, since it might not be
+	 * in sync with the stall bit (e.g. raw_local_irq_disable/save
+	 * do flip the stall bit, but are not tracked by lockdep).
+	 */
+
+	irqstate = arch_kentry_get_irqstate(regs);
+	if (!(irqstate & KENTRY_STALL_BIT)) {
+		stall_inband_nocheck();
+		trace_hardirqs_on();
+		unstall_inband_nocheck();
+	} else {
+		lockdep_write_irqs_state(!!(irqstate & KENTRY_LOCKDEP_BIT));
+	}
+}
+
+#endif /* !CONFIG_GENERIC_ENTRY */
+
 /**
  *      run_oob_call - escalate function call to the oob stage
  *      @fn:    address of routine

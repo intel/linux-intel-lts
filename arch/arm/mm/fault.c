@@ -36,70 +36,47 @@
  * interrupt state we received on entry, then turn hardirqs back on to
  * allow code which does not require strict serialization to be
  * preempted by an out-of-band activity.
- *
- * TRACING: the entry code already told lockdep and tracers about the
- * hard interrupt state on entry to fault handlers, so no need to
- * reflect changes to that state via calls to trace_hardirqs_*
- * helpers. From the main kernel's point of view, there is no change.
  */
 static inline
 unsigned long fault_entry(int exception, struct pt_regs *regs)
 {
 	unsigned long flags;
-	int nosync = 1;
 
 	trace_ARM_trap_entry(exception, regs);
 
-	/*
-	 * CAUTION: The co-kernel might demote the current context to
-	 * the in-band stage as a result of handling this trap,
-	 * returning with hard irqs on.
-	 */
+	flags = hard_local_save_flags();
+
 	oob_trap_notify(exception, regs);
 
-	flags = hard_local_irq_save();
-
-	if (hard_irqs_disabled_flags(flags))
-		nosync = test_and_stall_inband();
+	/*
+	 * CAUTION: The co-kernel might have to demote the current
+	 * context to the in-band stage as a result of handling this
+	 * trap, returning with hard irqs on. We expect stall_inband()
+	 * to complain loudly if we are still running oob afterwards.
+	 */
+	if (raw_irqs_disabled_flags(flags)) {
+		stall_inband();
+		trace_hardirqs_off();
+	}
 
 	hard_local_irq_enable();
 
-	return irqs_merge_flags(flags, nosync);
+	return flags;
 }
 
 static inline
 void fault_exit(int exception, struct pt_regs *regs,
-		unsigned long combo)
+		unsigned long flags)
 {
-	unsigned long flags;
-	int nosync;
-
 	WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled());
 
-	oob_trap_unwind(exception, regs);
-
 	/*
-	 * '!nosync' here means that we had to turn on the stall bit
-	 * in fault_entry() to mirror the hard interrupt state,
-	 * because hard irqs were off but the stall bit was
-	 * clear. Conversely, nosync in fault_exit() means that the
-	 * stall bit state currently reflects the hard interrupt state
-	 * we received on fault_entry().
-	 *
-	 * No hard_local_irq_restore() below, ever, but
-	 * hard_local_irq_{enable|disable}() exclusively. See
-	 * unlock_stage() for an explanation.
+	 * We expect kentry_exit_pipelined() to clear the stall bit if
+	 * kentry_enter_pipelined() observed it that way.
 	 */
-	flags = irqs_split_flags(combo, &nosync);
-	if (!nosync) {
-		hard_local_irq_disable();
-		unstall_inband();
-		if (!hard_irqs_disabled_flags(flags))
-			hard_local_irq_enable();
-	} else if (hard_irqs_disabled_flags(flags))
-		hard_local_irq_disable();
-
+	oob_trap_unwind(exception, regs);
 	trace_ARM_trap_exit(exception, regs);
+	hard_local_irq_restore(flags);
 }
 
 #else	/* !CONFIG_IRQ_PIPELINE */
