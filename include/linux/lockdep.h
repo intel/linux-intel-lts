@@ -578,12 +578,10 @@ do {									\
 		(running_oob() || this_cpu_read(hardirqs_enabled)));	\
 } while (0)
 
-#define lockdep_save_irqs_state(__state)				\
-do {									\
-	(__state) = this_cpu_read(hardirqs_enabled);			\
-} while (0)
+#define lockdep_read_irqs_state()					\
+	({ this_cpu_read(hardirqs_enabled); })
 
-#define lockdep_restore_irqs_state(__state)				\
+#define lockdep_write_irqs_state(__state)				\
 do {									\
 	this_cpu_write(hardirqs_enabled, __state);			\
 } while (0)
@@ -616,8 +614,8 @@ do {									\
 
 # define lockdep_assert_irqs_enabled() do { } while (0)
 # define lockdep_assert_irqs_disabled() do { } while (0)
-# define lockdep_save_irqs_state(__state) do { (void)(__state); } while (0)
-# define lockdep_restore_irqs_state(__state) do { (void)(__state); } while (0)
+# define lockdep_read_irqs_state() 0
+# define lockdep_write_irqs_state(__state) do { (void)(__state); } while (0)
 # define lockdep_assert_in_irq() do { } while (0)
 
 # define lockdep_assert_preemption_enabled() do { } while (0)
