@@ -14,6 +14,7 @@
 #include <linux/pci.h>
 #include <linux/mdio.h>
 
+#include <linux/btf.h>
 #include <net/ipv6.h>
 
 #include "igc.h"
@@ -6905,6 +6906,12 @@ static int igc_bpf(struct net_device *dev, struct netdev_bpf *bpf)
 	case XDP_SETUP_XSK_POOL:
 		return igc_xdp_setup_pool(adapter, bpf->xsk.pool,
 					  bpf->xsk.queue_id);
+	case XDP_SETUP_MD_BTF:
+		return igc_xdp_set_btf_md(dev, bpf->btf_enable);
+	case XDP_QUERY_MD_BTF:
+		bpf->btf_id = igc_xdp_query_btf(dev, &bpf->btf_enable);
+		return 0;
+
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -7475,6 +7482,10 @@ static void igc_remove(struct pci_dev *pdev)
 
 	if (IS_ENABLED(CONFIG_IGC_LEDS))
 		igc_led_free(adapter);
+	if (adapter->btf) {
+		adapter->btf_enabled = 0;
+		btf_unregister(adapter->btf);
+	}
 
 	/* Release control of h/w to f/w.  If f/w is AMT enabled, this
 	 * would have already happened in close and is redundant.
