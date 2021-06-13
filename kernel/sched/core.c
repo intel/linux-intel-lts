@@ -8684,7 +8684,7 @@ bool dovetail_context_switch(struct dovetail_altsched_context *out,
 	 * state maintained by lockdep must be preserved across
 	 * switches.
 	 */
-	lockdep_save_irqs_state(lockdep_irqs);
+	lockdep_irqs = lockdep_read_irqs_state();
 
 	switch_to(prev, next, last);
 	barrier();
@@ -8709,7 +8709,7 @@ bool dovetail_context_switch(struct dovetail_altsched_context *out,
 		else
 			preempt_count_sub(STAGE_OFFSET);
 
-		lockdep_restore_irqs_state(lockdep_irqs);
+		lockdep_write_irqs_state(lockdep_irqs);
 
 		/*
 		 * Fixup the interrupt state conversely to what
@@ -8723,7 +8723,7 @@ bool dovetail_context_switch(struct dovetail_altsched_context *out,
 		if (IS_ENABLED(CONFIG_HAVE_PERCPU_PREEMPT_COUNT))
 			preempt_count_set(pc);
 
-		lockdep_restore_irqs_state(lockdep_irqs);
+		lockdep_write_irqs_state(lockdep_irqs);
 	}
 
 	arch_dovetail_switch_finish(leave_inband);
