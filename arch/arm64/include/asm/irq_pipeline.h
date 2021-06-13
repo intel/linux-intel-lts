@@ -88,6 +88,17 @@ static inline int arch_enable_oob_stage(void)
 	return 0;
 }
 
+/*
+ * We use neither the generic entry code nor
+ * kentry_enter/exit_pipelined yet. We still build a no-op version of
+ * the latter for now, until we enventually switch to using whichever
+ * of them is available first.
+ */
+#define arch_kentry_get_irqstate(__regs)	0
+
+#define arch_kentry_set_irqstate(__regs, __irqstate)	\
+	do { (void)__irqstate; } while (0)
+
 #else  /* !CONFIG_IRQ_PIPELINE */
 
 static inline unsigned long arch_local_irq_save(void)

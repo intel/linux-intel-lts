@@ -192,8 +192,11 @@ ENDPROC(__und_invalid)
 	uaccess_entry tsk, r0, r1, r2, \uaccess
 
 	.if \trace
-#ifdef CONFIG_TRACE_IRQFLAGS
-	bl	trace_hardirqs_off_pipelined
+#ifdef CONFIG_IRQ_PIPELINE
+	mov	r0, sp
+	bl	kentry_enter_pipelined
+#elif defined(CONFIG_TRACE_IRQFLAGS)
+	bl	trace_hardirqs_off
 #endif
 	.endif
 	.endm
