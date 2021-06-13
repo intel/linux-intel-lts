@@ -252,6 +252,8 @@ struct igc_adapter {
 	ktime_t ptm_device_time;
 	struct system_counterval_t ptm_host_time;
 	struct bpf_prog *xdp_prog;
+	struct btf *btf;
+	u8 btf_enabled;
 
 	bool pps_sys_wrap_on;
 
