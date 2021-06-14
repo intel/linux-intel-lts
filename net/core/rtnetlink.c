@@ -1459,8 +1459,9 @@ static int rtnl_xdp_report_one(struct sk_buff *skb, struct net_device *dev,
 
 static int rtnl_xdp_fill(struct sk_buff *skb, struct net_device *dev)
 {
+	u32 prog_id, md_btf_id;
+	u8 md_btf_enabled = 0;
 	struct nlattr *xdp;
-	u32 prog_id;
 	int err;
 	u8 mode;
 
@@ -1492,6 +1493,10 @@ static int rtnl_xdp_fill(struct sk_buff *skb, struct net_device *dev)
 		if (err)
 			goto err_cancel;
 	}
+
+	md_btf_id = dev_xdp_query_md_btf(dev, &md_btf_enabled);
+	nla_put_u32(skb, IFLA_XDP_MD_BTF_ID, md_btf_id);
+	nla_put_u8(skb, IFLA_XDP_MD_BTF_STATE, md_btf_enabled);
 
 	nla_nest_end(skb, xdp);
 	return 0;
@@ -1939,6 +1944,8 @@ static const struct nla_policy ifla_xdp_policy[IFLA_XDP_MAX + 1] = {
 	[IFLA_XDP_ATTACHED]	= { .type = NLA_U8 },
 	[IFLA_XDP_FLAGS]	= { .type = NLA_U32 },
 	[IFLA_XDP_PROG_ID]	= { .type = NLA_U32 },
+	[IFLA_XDP_MD_BTF_ID]	= { .type = NLA_U32 },
+	[IFLA_XDP_MD_BTF_STATE] = { .type = NLA_U8 },
 };
 
 static const struct rtnl_link_ops *linkinfo_to_kind_ops(const struct nlattr *nla)
@@ -2954,6 +2961,15 @@ static int do_setlink(const struct sk_buff *skb,
 						nla_get_s32(xdp[IFLA_XDP_FD]),
 						expected_fd,
 						xdp_flags);
+			if (err)
+				goto errout;
+			status |= DO_SETLINK_NOTIFY;
+		}
+
+		if (xdp[IFLA_XDP_MD_BTF_STATE]) {
+			u8 enable = nla_get_u8(xdp[IFLA_XDP_MD_BTF_STATE]);
+
+			err = dev_xdp_setup_md_btf(dev, extack, enable);
 			if (err)
 				goto errout;
 			status |= DO_SETLINK_NOTIFY;
