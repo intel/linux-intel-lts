@@ -225,6 +225,8 @@ const struct btf_type *btf_type_by_id(const struct btf *btf, u32 type_id);
 const char *btf_name_by_offset(const struct btf *btf, u32 offset);
 struct btf *btf_parse_vmlinux(void);
 struct btf *bpf_prog_get_target_btf(const struct bpf_prog *prog);
+struct btf *btf_register(const char *name, void *btf_data, u32 btf_data_size);
+void btf_unregister(struct btf *btf);
 #else
 static inline const struct btf_type *btf_type_by_id(const struct btf *btf,
 						    u32 type_id)
@@ -236,6 +238,13 @@ static inline const char *btf_name_by_offset(const struct btf *btf,
 {
 	return NULL;
 }
+static inline struct btf *
+btf_register(const char *name, void *btf_data, u32 btf_data_size)
+{
+	return NULL;
+}
+
+static inline void btf_unregister(struct btf *btf) { }
 #endif
 
 #endif

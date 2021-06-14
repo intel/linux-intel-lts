@@ -4686,6 +4686,95 @@ errout:
 
 #endif /* CONFIG_DEBUG_INFO_BTF_MODULES */
 
+/* TODO: resue btf_parse_raw in btf_parse_module */
+static struct btf *btf_parse_raw(const char *name, const void *data, unsigned int data_size)
+{
+	struct btf_verifier_env *env = NULL;
+	struct bpf_verifier_log *log;
+	struct btf *btf = NULL;
+	int err;
+
+	env = kzalloc(sizeof(*env), GFP_KERNEL | __GFP_NOWARN);
+	if (!env)
+		return ERR_PTR(-ENOMEM);
+
+	log = &env->log;
+	log->level = BPF_LOG_KERNEL;
+
+	btf = kzalloc(sizeof(*btf), GFP_KERNEL | __GFP_NOWARN);
+	if (!btf) {
+		err = -ENOMEM;
+		goto errout;
+	}
+	env->btf = btf;
+	btf->kernel_btf = true;
+	snprintf(btf->name, sizeof(btf->name), "%s", name);
+
+	btf->data = kvmalloc(data_size, GFP_KERNEL | __GFP_NOWARN);
+	if (!btf->data) {
+		err = -ENOMEM;
+		goto errout;
+	}
+	memcpy(btf->data, data, data_size);
+	btf->data_size = data_size;
+
+	err = btf_parse_hdr(env);
+	if (err)
+		goto errout;
+
+	btf->nohdr_data = btf->data + btf->hdr.hdr_len;
+
+	err = btf_parse_str_sec(env);
+	if (err)
+		goto errout;
+
+	err = btf_check_all_metas(env);
+	if (err)
+		goto errout;
+
+	btf_verifier_env_free(env);
+	refcount_set(&btf->refcnt, 1);
+	return btf;
+
+errout:
+	btf_verifier_env_free(env);
+	if (btf) {
+		kvfree(btf->data);
+		kvfree(btf->types);
+		kfree(btf);
+	}
+	return ERR_PTR(err);
+}
+
+/* TODO: resue btf_register in btf_module_notify */
+struct btf *btf_register(const char *name, void *btf_data, u32 btf_data_size)
+{
+	struct btf *btf;
+	int err;
+
+	btf = btf_parse_raw(name, btf_data, btf_data_size);
+	if (IS_ERR(btf))
+		return btf;
+
+	err = btf_alloc_id(btf);
+	if (err) {
+		btf_free(btf);
+		btf = ERR_PTR(err);
+	}
+	return btf;
+}
+EXPORT_SYMBOL(btf_register);
+
+void btf_unregister(struct btf *btf)
+{
+	if (IS_ERR(btf))
+		return;
+
+	/* btf_put since btf might be held by user */
+	btf_put(btf);
+}
+EXPORT_SYMBOL(btf_unregister);
+
 struct btf *bpf_prog_get_target_btf(const struct bpf_prog *prog)
 {
 	struct bpf_prog *tgt_prog = prog->aux->dst_prog;
@@ -5997,6 +6086,7 @@ u32 btf_obj_id(const struct btf *btf)
 {
 	return btf->id;
 }
+EXPORT_SYMBOL(btf_obj_id);
 
 bool btf_is_kernel(const struct btf *btf)
 {
