@@ -9862,6 +9862,59 @@ u32 dev_get_min_mp_channel_count(const struct net_device *dev)
 }
 
 /**
+ *	dev_xdp_query_md_btf - Query meta data btf of a device
+ *	@dev: device
+ *	@enabled: 1 if enabled, 0 otherwise
+ *
+ *	Returns btf id > 0 if valid
+ */
+u32 dev_xdp_query_md_btf(struct net_device *dev, u8 *enabled)
+{
+	struct netdev_bpf xdp;
+	bpf_op_t ndo_bpf;
+
+	ndo_bpf = dev->netdev_ops->ndo_bpf;
+	if (!ndo_bpf)
+		return 0;
+
+	memset(&xdp, 0, sizeof(xdp));
+	xdp.command = XDP_QUERY_MD_BTF;
+
+	if (ndo_bpf(dev, &xdp))
+		return 0; /* 0 is an invalid btf id */
+
+	*enabled = xdp.btf_enable;
+	return xdp.btf_id;
+}
+
+/**
+ *	dev_xdp_setup_md_btf - enable or disable meta data btf for a device
+ *	@dev: device
+ *	@extack: netlink extended ack
+ *	@enable: 1 to enable, 0 to disable
+ *
+ *	Returns 0 on success
+ */
+int dev_xdp_setup_md_btf(struct net_device *dev, struct netlink_ext_ack *extack,
+			 u8 enable)
+{
+	struct netdev_bpf xdp;
+	bpf_op_t ndo_bpf;
+
+	ndo_bpf = dev->netdev_ops->ndo_bpf;
+	if (!ndo_bpf)
+		return -EOPNOTSUPP;
+
+	memset(&xdp, 0, sizeof(xdp));
+
+	xdp.command = XDP_SETUP_MD_BTF;
+	xdp.btf_enable = enable;
+	xdp.extack = extack;
+
+	return ndo_bpf(dev, &xdp);
+}
+
+/**
  * dev_index_reserve() - allocate an ifindex in a namespace
  * @net: the applicable net namespace
  * @ifindex: requested ifindex, pass %0 to get one allocated
