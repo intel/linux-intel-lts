@@ -40,6 +40,11 @@
 #define GPY_VSPEV2_WOL_AD23	0xe09		/* WOL addr Byte3:Byte4 */
 #define GPY_VSPEV2_WOL_AD45	0xe0a		/* WOL addr Byte1:Byte2 */
 
+#define GPY_FW_MINOR_MASK	GENMASK(7, 0)
+#define GPY_FW_MINOR_PHY_LB_FIX	0x73
+
+static bool phy_loopback_supported = true;
+
 static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 {
 	int cap, old_adv, adv = 0, ret;
@@ -73,12 +78,19 @@ static int gpy_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
 
 static int gpy_config_init(struct phy_device *phydev)
 {
-	int ret, fw_ver = 0;
+	int ret, fw_minor = 0;
 
 	/* Show GPY PHY FW version in dmesg */
-	fw_ver = phy_read(phydev, GPY_FW);
-	phydev_info(phydev, "Firmware Version: 0x%04X (%s)", fw_ver,
-		    (fw_ver & 8000) ? "release" : "test");
+	ret = phy_read(phydev, GPY_FW);
+	if (ret < 0)
+		return ret;
+	phydev_info(phydev, "Firmware Version: 0x%04X (%s)", ret,
+		    (ret & 8000) ? "release" : "test");
+
+	/* Minor version number of 0x73 onwards has the phy loopback fix. */
+	fw_minor = ret & GPY_FW_MINOR_MASK;
+	if (fw_minor < GPY_FW_MINOR_PHY_LB_FIX)
+		phy_loopback_supported = false;
 
 	/* In GPY PHY FW, by default EEE mode is enabled. So, disable EEE mode
 	 * during power up. Ethtool must be used to enable or disable it.
@@ -368,6 +380,24 @@ static int gpy_set_wol(struct phy_device *phydev,
 	return ret;
 }
 
+static int gpy_loopback(struct phy_device *phydev, bool enable)
+{
+	int ret;
+
+	if (!phy_loopback_supported)
+		return -EOPNOTSUPP;
+
+	ret = genphy_loopback(phydev, enable);
+	if (!ret) {
+		/* It takes some time for PHY device to switch
+		 * into/out-of loopback mode.
+		 */
+		msleep(100);
+	}
+
+	return ret;
+}
+
 static struct phy_driver intel_gpy_drivers[] = {
 	{
 		.phy_id		= INTEL_PHY_ID_GPY,
@@ -385,9 +415,9 @@ static struct phy_driver intel_gpy_drivers[] = {
 		.config_intr	= gpy_config_intr,
 		.config_aneg	= gpy_config_aneg,
 		.read_status	= gpy_read_status,
-		.set_loopback	= genphy_loopback,
 		.get_wol	= gpy_get_wol,
 		.set_wol	= gpy_set_wol,
+		.set_loopback	= gpy_loopback,
 	},
 };
 module_phy_driver(intel_gpy_drivers);
