@@ -157,40 +157,40 @@ enum TCC_MAILBOX_TYPE {
 
 /* Support mmio32 and mmio64 formats only. */
 struct tcc_register_s {
-	enum TCC_REG_PHASE e_phase;     /* IN: enum'd above */
-	enum TCC_REG_FORMAT e_format;   /* IN: enum'd above, determines which structure format to use */
+	enum TCC_REG_PHASE e_phase;		/* IN: enum'd above */
+	enum TCC_REG_FORMAT e_format;	/* IN: enum'd above, determines which structure format to use */
 	union {
 		struct {
-			u32 base;               /* IN: ECAM format B:D:F:R of BAR (add this to ECAM_BASE) */
-			u32 addr;               /* IN: offset from BAR */
-			u32 mask;               /* IN: data bit-mask (1's are valid) */
-			u32 data;               /* OUT: data value */
+			u32 base;		/* IN: ECAM format B:D:F:R of BAR (add this to ECAM_BASE) */
+			u32 addr;		/* IN: offset from BAR */
+			u32 mask;		/* IN: data bit-mask (1's are valid) */
+			u32 data;		/* OUT: data value */
 		} mmio32;
 		struct {
-			u64 base;               /* IN: ECAM format B:D:F:R of BAR (add this to ECAM_BASE) */
-			u64 addr;               /* IN: offset from BAR */
-			u64 mask;               /* IN: data bit-mask (1's are valid) */
-			u64 data;               /* OUT: data value */
+			u64 base;		/* IN: ECAM format B:D:F:R of BAR (add this to ECAM_BASE) */
+			u64 addr;		/* IN: offset from BAR */
+			u64 mask;		/* IN: data bit-mask (1's are valid) */
+			u64 data;		/* OUT: data value */
 		} mmio64;
 		struct {
-			u32 apic_id;            /* IN: APIC ID of logical CPU corresponding to this MSR value */
-			u32 addr;               /* IN: ECX value */
-			u64 mask;               /* IN: EDX:EAX data bit-mask (1's are valid) */
-			u64 data;               /* OUT: EDX:EAX data value */
+			u32 apic_id;	/* IN: APIC ID of logical CPU corresponding to this MSR value */
+			u32 addr;		/* IN: ECX value */
+			u64 mask;		/* IN: EDX:EAX data bit-mask (1's are valid) */
+			u64 data;		/* OUT: EDX:EAX data value */
 		} msr;
 		struct {
 			enum TCC_IOSFSB_NETWORK e_iosfsb_network; /* IN: which IOSFSB network to use */
-			u8 port;                /* IN: IOSFSB Port ID */
-			u8 type;                /* IN: IOSFSB Register Type (Command) */
-			u32 addr;               /* IN: register address */
-			u32 mask;               /* IN: data bit-mask (1's are valid) */
-			u32 data;               /* IN: data value */
+			u8 port;		/* IN: IOSFSB Port ID */
+			u8 type;		/* IN: IOSFSB Register Type (Command) */
+			u32 addr;		/* IN: register address */
+			u32 mask;		/* IN: data bit-mask (1's are valid) */
+			u32 data;		/* IN: data value */
 		} iosfsb;
 		struct {
-			enum TCC_MAILBOX_TYPE e_type;   /* IN: Mailbox type */
-			u32 addr;               /* IN: register address */
-			u32 mask;               /* IN: data bit-mask (1's are valid) */
-			u32 data;               /* OUT: data value */
+			enum TCC_MAILBOX_TYPE e_type;	/* IN: Mailbox type */
+			u32 addr;		/* IN: register address */
+			u32 mask;		/* IN: data bit-mask (1's are valid) */
+			u32 data;		/* OUT: data value */
 		} mailbox;
 	} info;
 };
