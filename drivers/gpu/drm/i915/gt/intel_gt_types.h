@@ -24,6 +24,7 @@
 #include "intel_reset_types.h"
 #include "intel_rc6_types.h"
 #include "intel_rps_types.h"
+#include "intel_migrate_types.h"
 #include "intel_wakeref.h"
 
 struct drm_i915_private;
@@ -173,6 +174,7 @@ struct intel_gt {
 	struct i915_vma *scratch;
 
 	const struct intel_mmio_range *steering_table[NUM_STEERING_TYPES];
+	struct intel_migrate migrate;
 
 	struct intel_gt_info {
 		intel_engine_mask_t engine_mask;
