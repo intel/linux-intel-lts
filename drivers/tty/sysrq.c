@@ -151,12 +151,18 @@ static const struct sysrq_key_op sysrq_unraw_op = {
 
 static void sysrq_handle_crash(int key)
 {
-	/* release the RCU read lock before crashing */
-	rcu_read_unlock();
+	char *killer = NULL;
 
 	trace_android_vh_sysrq_crash(current);
-
-	panic("sysrq triggered crash\n");
+	/* we need to release the RCU read lock here,
+	 * otherwise we get an annoying
+	 * 'BUG: sleeping function called from invalid context'
+	 * complaint from the kernel before the panic.
+	 */
+	rcu_read_unlock();
+	panic_on_oops = 1;	/* force panic */
+	wmb();
+	*killer = 1;
 }
 static const struct sysrq_key_op sysrq_crash_op = {
 	.handler	= sysrq_handle_crash,
