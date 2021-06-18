@@ -814,7 +814,7 @@ static u64 read_hpet(struct clocksource *cs)
 	if (arch_spin_is_locked(&old.lock))
 		goto contended;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	if (arch_spin_trylock(&hpet.lock)) {
 		new.value = hpet_readl(HPET_COUNTER);
 		/*
@@ -822,10 +822,10 @@ static u64 read_hpet(struct clocksource *cs)
 		 */
 		WRITE_ONCE(hpet.value, new.value);
 		arch_spin_unlock(&hpet.lock);
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		return (u64)new.value;
 	}
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 contended:
 	/*
