@@ -2,7 +2,7 @@
 /*
  * Intel Safety Island(ISI) Mailbox communication
  * driver
- *
+ * Version : 1.0
  * Copyright (c) 2019, Intel Corp.
  */
 #include <linux/cdev.h>
@@ -35,7 +35,6 @@
 #define DB_IN_REG 0x14U
 #define DB_IN_BIT 0x0U
 
-/* Interrupt Status Register */
 /* Interrupt Status Register */
 #define INTR_STATUS_REG 0x34U
 #define DB_IN_CLR_INTR_STS_BIT 0x0U
@@ -794,6 +793,7 @@ static int reg_dereg_async_notify(unsigned int cmd, struct isi_wl_proc *wl_proc,
 		return ret;
 
 	mutex_lock(&wl_proc->p_wl_ctx->wl_ctx_lock);
+	wl_proc->async_cmd_req_bitmap = cmd_req_bitmap;
 	wl_proc->p_wl_ctx->async_cmd_req_bitmap = cmd_req_bitmap;
 	mutex_unlock(&wl_proc->p_wl_ctx->wl_ctx_lock);
 
@@ -1195,6 +1195,7 @@ static int isi_dev_release(struct inode *p_inode, struct file *p_file)
 	struct isi_wl_ctx *pos, *wl_ctxt;
 	struct isi_wl_proc *wl_proc;
 	struct hlist_node *h_node, *prev_node;
+	unsigned long flags;
 
 	/* Get current tgid */
 	tgid = current->tgid;
@@ -1219,6 +1220,14 @@ static int isi_dev_release(struct inode *p_inode, struct file *p_file)
 							wl_proc_node);
 						proc_waitlist_del_safe(pctx,
 								       wl_proc);
+						spin_lock_irqsave(
+							&pctx->proc_waitlist_lock,
+							flags);
+						hlist_del_init(
+							&wl_proc->waiting_wl_proc_node_async);
+						spin_unlock_irqrestore(
+							&pctx->proc_waitlist_lock,
+							flags);
 						hlist_del_init(
 							&wl_proc->wl_proc_node);
 						kfree(wl_proc->tx_buf);
