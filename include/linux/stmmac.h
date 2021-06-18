@@ -207,7 +207,6 @@ struct plat_stmmacenet_data {
 	int msi_mac_vec;
 	int msi_wol_vec;
 	int msi_lpi_vec;
-	int msi_phy_conv_vec;
 	int msi_sfty_ce_vec;
 	int msi_sfty_ue_vec;
 	int msi_rx_base_vec;
