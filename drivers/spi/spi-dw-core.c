@@ -90,6 +90,47 @@ static inline void dw_spi_debugfs_remove(struct dw_spi *dws)
 }
 #endif /* CONFIG_DEBUG_FS */
 
+static void dw_spi_microwire_reg_update(struct spi_controller *master,
+		struct spi_transfer *transfer)
+{
+	struct dw_spi *dws = spi_controller_get_devdata(master);
+	u32 ctrlr1      = 0;
+	u32 mwcr        = 0;
+	u16 txlevel     = 0;
+	u8 imask        = 0;
+
+	/* MWCR [0] Microwire Transfer Mode */
+	if (dws->mwmod == SSI_SEQUENTIAL_TRANSFER)
+		mwcr = 1 << DW_SPI_MWCR_MWMOD_OFFSET;
+
+	/* MWCR [1] Microwire Control */
+	mwcr |= (dws->mdd) << DW_SPI_MWCR_MDD_OFFSET;
+
+	dw_writel(dws, DW_SPI_MWCR, mwcr);
+
+	if (dws->mdd == SSI_TRANSMIT_DATA) {
+		/* TXFTLR [5:0] Transmit FIFO Threshold */
+		txlevel = min_t(u16, dws->fifo_len / 2, dws->tx_len);
+		dw_writel(dws, DW_SPI_TXFTLR, txlevel);
+
+		/* IMR Interrupt Mask Register */
+		imask |= SPI_INT_TXEI | SPI_INT_TXOI |
+			SPI_INT_RXUI | SPI_INT_RXOI;
+	} else {
+		/* IMR Interrupt Mask Register */
+		imask |= SPI_INT_TXEI | SPI_INT_TXOI | SPI_INT_RXFI |
+			SPI_INT_RXUI | SPI_INT_RXOI;
+
+		/* CTRL1 NDF [15:0] Number of Data Frames */
+		if (dws->mwmod == SSI_SEQUENTIAL_TRANSFER) {
+			ctrlr1 |= (dws->len - 1) << DW_SPI_CTRLR1_NDF_OFFSET;
+			dw_writel(dws, DW_SPI_CTRLR1, ctrlr1);
+		}
+	}
+
+	spi_umask_intr(dws, imask);
+}
+
 void dw_spi_set_cs(struct spi_device *spi, bool enable)
 {
 	struct dw_spi *dws = spi_controller_get_devdata(spi->controller);
@@ -104,10 +145,30 @@ void dw_spi_set_cs(struct spi_device *spi, bool enable)
 	 */
 	if (cs_high == enable)
 		dw_writel(dws, DW_SPI_SER, BIT(spi->chip_select));
-	else
-		dw_writel(dws, DW_SPI_SER, 0);
+	else {
+		if ((dws->caps & DW_SPI_KEEMBAY_NO_CS_LOW) == 0)
+			dw_writel(dws, DW_SPI_SER, 0);
+	}
 }
 EXPORT_SYMBOL_GPL(dw_spi_set_cs);
+
+static void microwire_ssi_write_control_word(struct dw_spi *dws)
+{
+	u16 txw = 0;
+
+	if (dws->dw_ssi_cfs >= 1 && dws->dw_ssi_cfs <= 8)
+		txw = (u8)(dws->rcv_cword);
+	else
+		txw = (u16)(dws->rcv_cword);
+
+	if (dws->cont_non_sequential) {
+		/* For cont-non-sequential will write more control words */
+		dw_write_io_reg(dws, DW_SPI_DR, txw);
+		dw_write_io_reg(dws, DW_SPI_DR, txw);
+	} else {
+		dw_write_io_reg(dws, DW_SPI_DR, txw);
+	}
+}
 
 /* Return the max entries we can fill into tx fifo */
 static inline u32 tx_max(struct dw_spi *dws)
@@ -222,6 +283,33 @@ static irqreturn_t dw_spi_transfer_handler(struct dw_spi *dws)
 		return IRQ_HANDLED;
 	}
 
+	if (dws->type == SSI_NS_MICROWIRE) {
+		if (dws->mdd == SSI_TRANSMIT_DATA) {
+			if (irq_status & SPI_INT_TXEI) {
+				spi_mask_intr(dws, SPI_INT_TXEI);
+				dw_writer(dws);
+				spi_finalize_current_transfer(dws->master);
+				return IRQ_HANDLED;
+			}
+		} else {
+			if (irq_status & SPI_INT_TXEI) {
+				spi_mask_intr(dws, SPI_INT_TXEI);
+				microwire_ssi_write_control_word(dws);
+			} else if (irq_status & SPI_INT_RXFI) {
+				spi_mask_intr(dws, SPI_INT_RXFI);
+				dw_reader(dws);
+				spi_umask_intr(dws, SPI_INT_RXFI);
+
+				if (dws->rx_end == dws->rx) {
+					spi_mask_intr(dws, SPI_INT_RXFI);
+					spi_finalize_current_transfer(dws->master);
+					return IRQ_HANDLED;
+				}
+			}
+		}
+		return IRQ_HANDLED;
+	}
+
 	/*
 	 * Read data from the Rx FIFO every time we've got a chance executing
 	 * this method. If there is nothing left to receive, terminate the
@@ -288,7 +376,7 @@ static u32 dw_spi_prepare_cr0(struct dw_spi *dws, struct spi_device *spi)
 		cr0 |= ((spi->mode & SPI_LOOP) ? 1 : 0) << SPI_SRL_OFFSET;
 	} else {
 		/* CTRLR0[ 7: 6] Frame Format */
-		cr0 |= SSI_MOTO_SPI << DWC_SSI_CTRLR0_FRF_OFFSET;
+		cr0 |= dws->type << DWC_SSI_CTRLR0_FRF_OFFSET;
 
 		/*
 		 * SPI mode (SCPOL|SCPH)
@@ -325,6 +413,9 @@ void dw_spi_update_config(struct dw_spi *dws, struct spi_device *spi,
 	else
 		/* CTRLR0[11:10] Transfer Mode */
 		cr0 |= cfg->tmode << DWC_SSI_CTRLR0_TMOD_OFFSET;
+
+	if (dws->type == SSI_NS_MICROWIRE)
+		cr0 |= (dws->dw_ssi_cfs - 1) << DWC_SPI_CTRLR0_CFS_OFFSET;
 
 	dw_writel(dws, DW_SPI_CTRLR0, cr0);
 
@@ -422,6 +513,8 @@ static int dw_spi_transfer_one(struct spi_controller *master,
 	dws->tx_len = transfer->len / dws->n_bytes;
 	dws->rx = transfer->rx_buf;
 	dws->rx_len = dws->tx_len;
+	dws->rx_end = dws->rx + transfer->len;
+	dws->len = transfer->len;
 
 	/* Ensure the data above is visible for all CPUs */
 	smp_mb();
@@ -445,6 +538,11 @@ static int dw_spi_transfer_one(struct spi_controller *master,
 			return ret;
 	}
 
+	if (dws->type == SSI_NS_MICROWIRE) {
+		dw_spi_microwire_reg_update(master, transfer);
+		dws->transfer_handler = dw_spi_transfer_handler;
+	}
+
 	spi_enable_chip(dws, 1);
 
 	if (dws->dma_mapped)
@@ -452,7 +550,8 @@ static int dw_spi_transfer_one(struct spi_controller *master,
 	else if (dws->irq == IRQ_NOTCONNECTED)
 		return dw_spi_poll_transfer(dws, transfer);
 
-	dw_spi_irq_setup(dws);
+	if (dws->type != SSI_NS_MICROWIRE)
+		dw_spi_irq_setup(dws);
 
 	return 1;
 }
@@ -911,7 +1010,11 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 	master->max_speed_hz = dws->max_freq;
 	master->dev.of_node = dev->of_node;
 	master->dev.fwnode = dev->fwnode;
-	master->flags = SPI_MASTER_GPIO_SS;
+	if (dws->type == SSI_NS_MICROWIRE)
+		master->flags =  SPI_CONTROLLER_HALF_DUPLEX |
+			SPI_MASTER_GPIO_SS;
+	else
+		master->flags = SPI_MASTER_GPIO_SS;
 	master->auto_runtime_pm = true;
 
 	/* Get default rx sample delay */
