@@ -216,13 +216,12 @@ static int dw_spi_dwc_ssi_init(struct platform_device *pdev,
 	return 0;
 }
 
+
 static int dw_spi_keembay_init(struct platform_device *pdev,
 			       struct dw_spi_mmio *dwsmmio)
 {
-	/*
-	 * Set MST to make keem bay SPI as master.
-	 */
-	dwsmmio->dws.caps = DW_SPI_CAP_DWC_MST | DW_SPI_CAP_DWC_SSI;
+	dwsmmio->dws.caps = DW_SPI_CAP_DWC_MST | DW_SPI_CAP_DWC_SSI |
+				DW_SPI_KEEMBAY_NO_CS_LOW;
 
 	return 0;
 }
@@ -265,6 +264,7 @@ static int dw_spi_mmio_probe(struct platform_device *pdev)
 	struct dw_spi *dws;
 	int ret;
 	int num_cs;
+	int ssi_type;
 
 	dwsmmio = devm_kzalloc(&pdev->dev, sizeof(struct dw_spi_mmio),
 			GFP_KERNEL);
@@ -320,6 +320,18 @@ static int dw_spi_mmio_probe(struct platform_device *pdev)
 	device_property_read_u32(&pdev->dev, "num-cs", &num_cs);
 
 	dws->num_cs = num_cs;
+
+	ssi_type = SSI_MOTO_SPI;
+	device_property_read_u32(&pdev->dev, "dw,ssi-type", &ssi_type);
+	dws->type = ssi_type;
+
+	/* Property used for Microwire IP */
+	device_property_read_u32(&pdev->dev, "dw,ssi-mdd", &dws->mdd);
+	device_property_read_u32(&pdev->dev, "dw,ssi-cfs", &dws->dw_ssi_cfs);
+	device_property_read_u32(&pdev->dev, "dw,ssi-mwmod", &dws->mwmod);
+	device_property_read_u32(&pdev->dev, "dw,ssi-cword", &dws->rcv_cword);
+	if (of_property_read_bool(pdev->dev.of_node, "cont-non-sequential"))
+		dws->cont_non_sequential = true;
 
 	init_func = device_get_match_data(&pdev->dev);
 	if (init_func) {
