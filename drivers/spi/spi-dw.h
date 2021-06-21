@@ -73,6 +73,7 @@
 #define DWC_SSI_CTRLR0_SCPH_OFFSET	8
 #define DWC_SSI_CTRLR0_FRF_OFFSET	6
 #define DWC_SSI_CTRLR0_DFS_OFFSET	0
+#define DWC_SPI_CTRLR0_CFS_OFFSET       16
 
 /*
  * For Keem Bay, CTRLR0[31] is used to select controller mode.
@@ -83,6 +84,12 @@
 
 /* Bit fields in CTRLR1 */
 #define SPI_NDF_MASK			GENMASK(15, 0)
+
+#define DW_SPI_MWCR_MDD_OFFSET                  1
+#define DW_SPI_MWCR_MWMOD_OFFSET                0
+
+/* Bit fields in CTRLR1 based on DWC_ssi_databook.pdf v1.01a */
+#define DW_SPI_CTRLR1_NDF_OFFSET        0
 
 /* Bit fields in SR, 7 bits */
 #define SR_MASK				0x7f		/* cover 7 bits */
@@ -123,6 +130,7 @@ enum dw_ssi_type {
 #define DW_SPI_CAP_CS_OVERRIDE		BIT(0)
 #define DW_SPI_CAP_KEEMBAY_MST		BIT(1)
 #define DW_SPI_CAP_DWC_SSI		BIT(2)
+#define DW_SPI_KEEMBAY_NO_CS_LOW        BIT(3)
 
 enum dw_ssi_spi_mode {
 	SSI_STD_SPI = 0,
@@ -136,6 +144,16 @@ struct dw_spi_cfg {
 	u8 dfs;
 	u32 ndf;
 	u32 freq;
+};
+
+enum dw_ssi_ctrl {
+	SSI_RECEIVES_DATA = 0,
+	SSI_TRANSMIT_DATA,
+};
+
+enum dw_ssi_mwmod {
+	SSI_NON_SEQUENTIAL_TRANSFER = 0,
+	SSI_SEQUENTIAL_TRANSFER,
 };
 
 struct dw_spi;
@@ -152,6 +170,15 @@ struct dw_spi_dma_ops {
 struct dw_spi {
 	struct spi_controller	*master;
 
+	enum                    dw_ssi_type     type;
+
+	/* Start of Microwire property */
+	enum                    dw_ssi_ctrl     mdd;
+	int                     dw_ssi_cfs;
+	enum                    dw_ssi_mwmod    mwmod;
+	bool                    cont_non_sequential;
+	int                     rcv_cword;
+
 	void __iomem		*regs;
 	unsigned long		paddr;
 	int			irq;
@@ -167,9 +194,11 @@ struct dw_spi {
 	void (*set_cs)(struct spi_device *spi, bool enable);
 
 	/* Current message transfer state info */
+	size_t                  len;
 	void			*tx;
 	unsigned int		tx_len;
 	void			*rx;
+	void                    *rx_end;
 	unsigned int		rx_len;
 	u8			buf[SPI_BUF_SIZE];
 	int			dma_mapped;
