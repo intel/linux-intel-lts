@@ -219,6 +219,7 @@ static int dw_spi_keembay_init(struct platform_device *pdev,
 {
 	dwsmmio->dws.caps = DW_SPI_CAP_KEEMBAY_MST | DW_SPI_CAP_DWC_SSI |
 				DW_SPI_KEEMBAY_NO_CS_LOW;
+	dw_spi_dma_setup_generic(&dwsmmio->dws);
 
 	return 0;
 }
