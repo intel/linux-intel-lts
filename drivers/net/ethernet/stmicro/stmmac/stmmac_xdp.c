@@ -73,6 +73,7 @@ static int stmmac_xdp_disable_pool(struct stmmac_priv *priv, u16 queue)
 	if (need_update) {
 		stmmac_disable_rx_queue(priv, queue);
 		stmmac_disable_tx_queue(priv, queue);
+		synchronize_rcu();
 		napi_disable(&ch->rxtx_napi);
 	}
 
