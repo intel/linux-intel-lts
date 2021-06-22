@@ -107,12 +107,15 @@ void dw8250_do_set_termios(struct uart_port *p, struct ktermios *termios, struct
 EXPORT_SYMBOL_GPL(dw8250_do_set_termios);
 static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 {
+	u32 re_en, de_en;
 	u32 lcr = 0;
 	u32 tcr;
 
 	/* Clearing unsupported flags. */
 	rs485->flags &= SER_RS485_ENABLED | SER_RS485_9BIT_ENABLED |
-			SER_RS485_9BIT_TX_ADDR | SER_RS485_9BIT_RX_ADDR | SER_RS485_RX_DURING_TX;
+			SER_RS485_9BIT_TX_ADDR | SER_RS485_9BIT_RX_ADDR |
+			SER_RS485_RX_DURING_TX | SER_RS485_RX_OR_TX |
+			SER_RS485_SW_TX_MODE;
 
 	tcr = dw8250_readl_ext(p, DW_UART_TCR);
 	/* Reset previous Transfer Mode */
@@ -122,12 +125,28 @@ static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
 	if (rs485->flags & SER_RS485_ENABLED) {
 
 		/* Using SER_RS485_RX_DURING_TX to indicate Full Duplex Mode */
-		if (rs485->flags & SER_RS485_RX_DURING_TX)
+		if (rs485->flags & SER_RS485_RX_DURING_TX) {
 			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(0);
-		else
+			re_en = 1;
+			de_en = 1;
+		}
+		/* Using SER_RS485_RX_OR_TX to indicate SW Half Duplex Mode */
+		else if (rs485->flags & SER_RS485_RX_OR_TX) {
+			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(1);
+			if (rs485->flags & SER_RS485_SW_TX_MODE) {
+				re_en = 0;
+				de_en = 1;
+			} else {
+				re_en = 1;
+				de_en = 0;
+			}
+		} else {
 			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(2);
-		dw8250_writel_ext(p, DW_UART_DE_EN, 1);
-		dw8250_writel_ext(p, DW_UART_RE_EN, 1);
+			re_en = 1;
+			de_en = 1;
+		}
+		dw8250_writel_ext(p, DW_UART_DE_EN, de_en);
+		dw8250_writel_ext(p, DW_UART_RE_EN, re_en);
 	} else {
 		tcr &= ~(DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(3));
 		dw8250_writel_ext(p, DW_UART_DE_EN, 0);
