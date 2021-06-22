@@ -122,6 +122,7 @@ struct serial_rs485 {
 							   sending */
 #define SER_RS485_RTS_AFTER_SEND	(1 << 2)	/* Logical level for
 							   RTS pin after sent*/
+#define SER_RS485_RX_OR_TX		(1 << 3)
 #define SER_RS485_RX_DURING_TX		(1 << 4)
 #define SER_RS485_TERMINATE_BUS		(1 << 5)	/* Enable bus
 							   termination
@@ -132,6 +133,7 @@ struct serial_rs485 {
 							   in padding */
 #define SER_RS485_9BIT_RX_ADDR		(1 << 8)	/* RX address available
 							   in padding */
+#define SER_RS485_SW_TX_MODE		(1 << 9)
 	__u32	delay_rts_before_send;	/* Delay before send (milliseconds) */
 	__u32	delay_rts_after_send;	/* Delay after send (milliseconds) */
 	__u32	padding[5];		/* Memory is cheap, new structs
