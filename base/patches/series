@@ -48,15 +48,6 @@
 # CVE-2020-36311
 0001-KVM-SVM-Periodically-schedule-when-unregistering-reg.patch
 
-# CVE-2021-29155
-0001-bpf-Move-off_reg-into-sanitize_ptr_alu.patch
-0002-bpf-Ensure-off_reg-has-no-mixed-signed-bounds-for-al.patch
-0003-bpf-Rework-ptr_limit-into-alu_limit-and-add-common-e.patch
-0004-bpf-Improve-verifier-error-messages-for-users.patch
-0005-bpf-Refactor-and-streamline-bounds-check-into-helper.patch
-0006-bpf-Move-sanitize_val_alu-out-of-op-switch.patch
-0007-bpf-Tighten-speculative-pointer-arithmetic-mask.patch
-
 # CVE-2020-36322
 0001-fuse-fix-bad-inode.patch
 
