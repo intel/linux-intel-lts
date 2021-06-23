@@ -76,12 +76,20 @@ static int intel_tsens_get_temp(struct thermal_zone_device *zone,
 
 	if (strstr(zone->type, "smb")) {
 		sync_unregister_mutex = &tsens->sync_smb_unregister;
-		mutex_lock(sync_unregister_mutex);
-		i2c_c = tsens->i2c_smbus;
+		if (mutex_trylock(sync_unregister_mutex) == 1) {
+			i2c_c = tsens->i2c_smbus;
+		} else {
+			*temp = -255;
+			return -EINVAL;
+		}
 	} else {
 		sync_unregister_mutex = &tsens->sync_xlk_unregister;
-		mutex_lock(sync_unregister_mutex);
-		i2c_c = tsens->i2c_xlk;
+		if (mutex_trylock(sync_unregister_mutex) == 1) {
+			i2c_c = tsens->i2c_xlk;
+		} else {
+			*temp = -255;
+			return -EINVAL;
+		}
 	}
 	*temp = -255;
 	if (!i2c_c) {
@@ -173,29 +181,29 @@ static int intel_tsens_thermal_set_trip_temp(struct thermal_zone_device *tz,
 	return 0;
 }
 
-static int intel_tsens_thermal_notify(struct thermal_zone_device *tz,
-				      int trip, enum thermal_trip_type type)
-{
-	int ret = 0;
-
-	switch (type) {
-	case THERMAL_TRIP_ACTIVE:
-		dev_warn(&tz->device,
-			 "zone %s reached to active temperature %d\n",
-			 tz->type, tz->temperature);
-		ret = 1;
-		break;
-	case THERMAL_TRIP_CRITICAL:
-		dev_warn(&tz->device,
-			 "zone %s reached to critical temperature %d\n",
-			 tz->type, tz->temperature);
-		ret = 1;
-		break;
-	default:
-		break;
-	}
-	return ret;
-}
+// static int intel_tsens_thermal_notify(struct thermal_zone_device *tz,
+// 				      int trip, enum thermal_trip_type type)
+// {
+// 	int ret = 0;
+//
+// 	switch (type) {
+// 	case THERMAL_TRIP_ACTIVE:
+// 		dev_warn(&tz->device,
+// 			 "zone %s reached to active temperature %d\n",
+// 			 tz->type, tz->temperature);
+// 		ret = 1;
+// 		break;
+// 	case THERMAL_TRIP_CRITICAL:
+// 		dev_warn(&tz->device,
+// 			 "zone %s reached to critical temperature %d\n",
+// 			 tz->type, tz->temperature);
+// 		ret = 1;
+// 		break;
+// 	default:
+// 		break;
+// 	}
+// 	return ret;
+// }
 
 static int intel_tsens_bind(struct thermal_zone_device *tz,
 			    struct thermal_cooling_device *cdev)
@@ -250,7 +258,7 @@ static struct thermal_zone_device_ops tsens_thermal_ops = {
 	.get_trip_type	= intel_tsens_thermal_get_trip_type,
 	.get_trip_temp	= intel_tsens_thermal_get_trip_temp,
 	.set_trip_temp	= intel_tsens_thermal_set_trip_temp,
-	.notify		= intel_tsens_thermal_notify,
+	//.notify		= intel_tsens_thermal_notify,
 };
 
 static int intel_tsens_add_tz(struct intel_tsens_host *tsens,
