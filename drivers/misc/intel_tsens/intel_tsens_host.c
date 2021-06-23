@@ -76,13 +76,21 @@ static int intel_tsens_get_temp(struct thermal_zone_device *zone,
 
 	if (strstr(zone->type, "smb")) {
 		sync_unregister_mutex = &tsens->sync_smb_unregister;
-		mutex_lock(sync_unregister_mutex);
-		i2c_c = tsens->i2c_smbus;
+		if (mutex_trylock(sync_unregister_mutex) == 1) {
+			i2c_c = tsens->i2c_smbus;
+		} else {
+			*temp = -255;
+			return -EINVAL;
+		}
 	}
 	else {
 		sync_unregister_mutex = &tsens->sync_xlk_unregister;
-		mutex_lock(sync_unregister_mutex);
-		i2c_c = tsens->i2c_xlk;
+		if (mutex_trylock(sync_unregister_mutex) == 1) {
+			i2c_c = tsens->i2c_xlk;
+		} else {
+			*temp = -255;
+			return -EINVAL;
+		}
 	}
 	*temp = -255;
 	if (!i2c_c) {
