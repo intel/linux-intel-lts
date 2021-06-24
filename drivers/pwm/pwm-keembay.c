@@ -70,7 +70,7 @@ static int keembay_clk_enable(struct device *dev, struct clk *clk)
  * for all valid masks (e.g. KMB_PWM_LEADIN_MASK) that they are ok.
  */
 static __always_inline void keembay_pwm_update_bits(struct keembay_pwm *priv, u32 mask,
-					   u32 val, u32 offset)
+						    u32 val, u32 offset)
 {
 	u32 buff = readl(priv->base + offset);
 
@@ -126,12 +126,6 @@ static int keembay_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	u32 pwm_count = 0;
 	u16 high, low;
 
-	if (!state->enabled) {
-		if (current_state.enabled)
-			keembay_pwm_disable(priv, pwm->hwpwm);
-		return 0;
-	}
-
 	if (state->polarity != PWM_POLARITY_NORMAL)
 		return -EINVAL;
 
@@ -152,6 +146,12 @@ static int keembay_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 				KMB_PWM_LEADIN_OFFSET(pwm->hwpwm));
 
 	keembay_pwm_get_state(chip, pwm, &current_state);
+
+	if (!state->enabled) {
+		if (current_state.enabled)
+			keembay_pwm_disable(priv, pwm->hwpwm);
+		return 0;
+	}
 
 	/*
 	 * The upper 16 bits and lower 16 bits of the KMB_PWM_HIGHLOW_OFFSET

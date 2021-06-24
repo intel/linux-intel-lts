@@ -1143,7 +1143,7 @@ static int keembay_pinconf_set(struct pinctrl_dev *pctldev, unsigned int pin,
 			return -EINVAL;
 		}
 	}
-	return ret;
+	return 0;
 }
 
 static const struct pinctrl_ops keembay_pctlops = {
@@ -1295,6 +1295,19 @@ static void keembay_gpio_clear_irq(struct irq_data *data, unsigned long pos,
 	unsigned long trig = irqd_get_trigger_type(data);
 	struct keembay_gpio_irq *irq = &kpc->irq[src];
 	unsigned long val;
+
+	/*
+	 * Checking the value of pos/KEEMBAY_GPIO_NUM_IRQ is in proper range otherwise
+	 * returning as size becomes invalid.
+	 */
+	if ((pos / KEEMBAY_GPIO_NUM_IRQ) >= KEEMBAY_GPIO_MAX_PER_IRQ)
+		return;
+
+	/*
+	 * First reading the value of val for initialization from the KEEMBAY_GPIO_INT_CFG
+	 *register as it handles other interrupts as well.
+	 */
+	val = keembay_read_reg(kpc->base1 + KEEMBAY_GPIO_INT_CFG, src);
 
 	bitmap_set_value8(&val, 0, pos);
 	keembay_write_reg(val, kpc->base1 + KEEMBAY_GPIO_INT_CFG, src);
