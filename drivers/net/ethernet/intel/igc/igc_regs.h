@@ -242,6 +242,8 @@
 #define IGC_QBVCYCLET		0x331C
 #define IGC_QBVCYCLET_S		0x3320
 
+#define IGC_GTXOFFSET		0x3310
+
 #define IGC_STQT(_n)		(0x3324 + 0x4 * (_n))
 #define IGC_ENDQT(_n)		(0x3334 + 0x4 * (_n))
 #define IGC_DTXMXPKTSZ		0x355C
