@@ -8,3 +8,9 @@ config NOC_DSS
 	default y
 	help
 	  Enable this option for DSS bandwidth measurements using noc
+
+	  Add support for Network on chip (NOC) counters. Enable features
+	  to configure nd capture NOC probe counters, needed for DSS
+	  bandwidth measurement.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.

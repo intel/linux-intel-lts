@@ -1,16 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
+// SPDX-License-Identifier: GPL-2.0-only
 /*  Copyright (C) 2020 Intel Corporation
  *
- *  Sec Class: Intel Confidential (IC)
- *
- *  All rights reserved.
- *
- *  This document contains proprietary information belonging to Intel.
- *  Passing on and copying of this document, use and
- *  communication of its contents is not permitted without prior written/
- *  authorization.
- *
- *  Purpose: KMB NOC probe bandwidth measurement interface
+ *  Purpose: Keem Bay NOC probe bandwidth measurement interface
  *
  */
 #include <linux/arm-smccc.h>
@@ -29,6 +20,7 @@
 /* Filter and counter offset */
 static const int f_offset[] = {0x44, 0x80, 0xbc, 0xf8};
 static const int c_offset[] = {0x134, 0x148, 0x15c, 0x170};
+static struct noc_device noc_dev;
 
 static inline u32 noc_readl(u32 offset)
 {
@@ -57,9 +49,12 @@ static inline void noc_writel(u32 offset, u32 value)
  */
 int flex_noc_setup(enum noc_ss_type noc, enum noc_counter counter, int trace_port)
 {
-	/* Validate params */
+	int offset;
+
 	if (noc >= NOC_TYPE_MAX || counter >= NOC_COUNTER_MAX)
 		return -EINVAL;
+
+	offset = f_offset[counter / 2];
 
 	/* Stop ongoing stats */
 	noc_writel(MAINCTL, 0);
@@ -78,14 +73,14 @@ int flex_noc_setup(enum noc_ss_type noc, enum noc_counter counter, int trace_por
 		   COUNTERS_ALARMMODE_VAL);
 
 	/* Setup filters - RouteID mask, addr base, window size */
-	noc_writel((f_offset[counter / 2] + F_ROUTEIDBASE), 0);
-	noc_writel((f_offset[counter / 2] + F_ROUTEIDMASK), 0);
-	noc_writel((f_offset[counter / 2] + F_ADDRBASE_LOW), 0);
-	noc_writel((f_offset[counter / 2] + F_ADDRBASE_HIGH), 0);
-	noc_writel((f_offset[counter / 2] + F_WINDOWSIZE), FILTER_WINDOW_VAL);
-	noc_writel((f_offset[counter / 2] + F_OPCODE), FILTER_OPCODE_VAL);
-	noc_writel((f_offset[counter / 2] + F_STATUS), FILTER_STATUS_VAL);
-	noc_writel((f_offset[counter / 2] + F_LENGTH), FILTER_OPCODE_VAL);
+	noc_writel((offset + F_ROUTEIDBASE), 0);
+	noc_writel((offset + F_ROUTEIDMASK), 0);
+	noc_writel((offset + F_ADDRBASE_LOW), 0);
+	noc_writel((offset + F_ADDRBASE_HIGH), 0);
+	noc_writel((offset + F_WINDOWSIZE), FILTER_WINDOW_VAL);
+	noc_writel((offset + F_OPCODE), FILTER_OPCODE_VAL);
+	noc_writel((offset + F_STATUS), FILTER_STATUS_VAL);
+	noc_writel((offset + F_LENGTH), FILTER_OPCODE_VAL);
 
 	return 0;
 }
@@ -138,8 +133,8 @@ enum noc_status flexnoc_probe_start(enum noc_ss_type noc)
 enum noc_status flexnoc_counter_capture(enum noc_ss_type noc,
 					enum noc_counter counter, u32  *value)
 {
-	u32 c0_0, c0_1;
 	unsigned long j0, j1, delay;
+	u32 c0_0, c0_1;
 
 	if (noc >= NOC_TYPE_MAX ||
 	    counter >= NOC_COUNTER_MAX  ||
@@ -149,7 +144,7 @@ enum noc_status flexnoc_counter_capture(enum noc_ss_type noc,
 	delay = msecs_to_jiffies(NOC_CAPTURE_TIMEOUT_MSEC);
 	j0 = jiffies;
 	j1 = j0 + delay;
-	while (time_before(jiffies, j1)) {
+	do {
 		c0_0 = noc_readl((c_offset[counter] + C_VAL));
 		usleep_range(10000, 11000);
 		c0_1 = noc_readl((c_offset[counter] + C_VAL));
@@ -165,7 +160,7 @@ enum noc_status flexnoc_counter_capture(enum noc_ss_type noc,
 			/* counters look good break the while */
 			break;
 		}
-	}
+	} while (time_before(jiffies, j1));
 
 	if (c0_0 != c0_1)
 		return NOC_PROBE_ERR_IN_PROGRESS;
@@ -177,14 +172,13 @@ enum noc_status flexnoc_counter_capture(enum noc_ss_type noc,
 	return NOC_PROBE_COMPLETED;
 }
 
-/* NOC device - ioctl implementation for handling user commands */
 static long noc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	int rc = 0;
+	struct flexnoc_countercapture capture_data;
 	void __user *argp = (void __user *)arg;
-	struct flexnoc_setup setup_data = {0};
-	struct flexnoc_probestart probe_data = {0};
-	struct flexnoc_countercapture capture_data = {0};
+	struct flexnoc_probestart probe_data;
+	struct flexnoc_setup setup_data;
+	int rc;
 
 	if (!arg) {
 		pr_err("NOC: Null pointer from user\n");
@@ -193,7 +187,7 @@ static long noc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case NOC_SETUP:
 		if (copy_from_user(&setup_data,
-				   argp, sizeof(struct flexnoc_setup))) {
+				   argp, sizeof(setup_data))) {
 			return -EFAULT;
 		}
 		rc =  flex_noc_setup(setup_data.noc_type, setup_data.counter,
@@ -201,26 +195,26 @@ static long noc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		setup_data.ret_id = rc;
 
 		if (copy_to_user(argp,
-				 &setup_data, sizeof(struct flexnoc_setup))) {
+				 &setup_data, sizeof(setup_data))) {
 			return -EFAULT;
 		}
 	break;
 	case NOC_PROBE_START:
 		if (copy_from_user(&probe_data, argp,
-				   sizeof(struct flexnoc_probestart))) {
+				   sizeof(probe_data))) {
 			return -EFAULT;
 		}
 		rc = flexnoc_probe_start(probe_data.noc_type);
 		probe_data.ret_id = rc;
 
 		if (copy_to_user(argp,
-				 &probe_data, sizeof(struct flexnoc_probestart))) {
+				 &probe_data, sizeof(probe_data))) {
 			return -EFAULT;
 		}
 	break;
 	case NOC_COUNTER_CAPTURE:
 		if (copy_from_user(&capture_data, argp,
-				   sizeof(struct flexnoc_countercapture))) {
+				   sizeof(capture_data))) {
 			return -EFAULT;
 		}
 		rc = flexnoc_counter_capture(capture_data.noc_type,
@@ -229,13 +223,12 @@ static long noc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		capture_data.ret_id = rc;
 
 		if (copy_to_user(argp, &capture_data,
-				 sizeof(struct flexnoc_countercapture))) {
+				 sizeof(capture_data))) {
 			return -EFAULT;
 		}
 	break;
 	default:
 		return -EINVAL;
-		break;
 	}
 	return 0;
 }
@@ -245,112 +238,62 @@ static const struct file_operations noc_fops = {
 	.unlocked_ioctl = noc_ioctl,
 };
 
-int intel_noc_cdev_init(struct noc_device *nocdev)
+static int intel_noc_cdev_init(struct noc_device *nocdev)
 {
-	/*Allocating Major number*/
 	if ((alloc_chrdev_region(&nocdev->cdev, 0, 1, "nocdev")) < 0) {
-		pr_err("Cannot allocate major number\n");
+		pr_err("Cannot allocate major number for NOC\n");
 		return -EINVAL;
 	}
 
-	/*Creating cdev structure*/
 	cdev_init(&nocdev->noc_cdev, &noc_fops);
-
-	/*Adding character device to the system*/
 	if ((cdev_add(&nocdev->noc_cdev, nocdev->cdev, 1)) < 0) {
-		pr_err("Cannot add the device to the system\n");
+		pr_err("Cannot add NOC device to the system\n");
 		goto r_class;
 	}
 
-	/*Creating struct class*/
 	nocdev->dev_class = class_create(THIS_MODULE, "noc_class");
 	if (!nocdev->dev_class) {
-		pr_err("Cannot create the struct class\n");
+		pr_err("Cannot create the NOC class\n");
 		cdev_del(&nocdev->noc_cdev);
 		goto r_class;
 	}
 
-	/*Creating device */
 	if ((device_create(nocdev->dev_class, NULL, nocdev->cdev,
 			   NULL, "noc")) == NULL) {
-		pr_err("Cannot create NOC Device\n");
-		goto r_device;
+		pr_err("Cannot create NOC device\n");
+		cdev_del(&nocdev->noc_cdev);
+		goto r_cdev;
 	}
 
 	return 0;
 
-r_device:
+r_cdev:
 	class_destroy(nocdev->dev_class);
 r_class:
 	unregister_chrdev_region(nocdev->cdev, 1);
 	return -EINVAL;
 }
 
-static int noc_probe(struct platform_device *pdev)
+static void intel_noc_cdev_exit(struct noc_device *nocdev)
 {
-	struct noc_device *cdev;
-	int ret;
-
-	/* Char dev init */
-	cdev = devm_kzalloc(&pdev->dev,
-			    sizeof(struct noc_device), GFP_KERNEL);
-	if (!cdev)
-		return -ENOMEM;
-
-	ret = intel_noc_cdev_init(cdev);
-	if (ret) {
-		dev_err(&pdev->dev, "NOC char device init failed\n");
-		devm_kfree(&pdev->dev, cdev);
-		return -EINVAL;
-	}
-
-	return 0;
+	cdev_del(&nocdev->noc_cdev);
+	class_destroy(nocdev->dev_class);
+	unregister_chrdev_region(nocdev->cdev, 1);
 }
-
-static int noc_remove(struct platform_device *pdev)
-{
-	return 0;
-}
-
-static struct platform_driver noc_driver = {
-	.probe = noc_probe,
-	.remove = noc_remove,
-	.driver = {
-		.name = "noc",
-	},
-};
-
-/* Module init of NOC device */
-static struct platform_device *intel_noc_pdev;
 
 static int __init noc_driver_module_init(void)
 {
 	int ret;
-	struct platform_device_info pdevinfo;
-	struct platform_device *pd;
 
-	ret = platform_driver_register(&noc_driver);
-	if (ret) {
-		pr_err("NOC: platform driver register failed\n");
-		return -EINVAL;
-	}
-	memset(&pdevinfo, 0, sizeof(pdevinfo));
-	pdevinfo.name = "noc";
-
-	pd = platform_device_register_full(&pdevinfo);
-	if (IS_ERR(pd)) {
-		pr_err("NOC: platform device register failed\n");
-		return -EINVAL;
-	}
-	intel_noc_pdev = pd;
-	return 0;
+	ret = intel_noc_cdev_init(&noc_dev);
+	if (ret)
+		pr_err("NOC char device init failed\n");
+	return ret;
 }
 
 static void noc_driver_module_exit(void)
 {
-	platform_driver_unregister(&noc_driver);
-	if (!intel_noc_pdev)
-		platform_device_unregister(intel_noc_pdev);
+	intel_noc_cdev_exit(&noc_dev);
 }
 
 module_init(noc_driver_module_init);
@@ -359,4 +302,4 @@ module_exit(noc_driver_module_exit);
 MODULE_DESCRIPTION("Keem Bay NOC Device driver");
 MODULE_AUTHOR("Pandith N <pandith.n@intel.com>");
 MODULE_AUTHOR("Sudarshan Ravula <sudarshan.ravula@intel.com>");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
