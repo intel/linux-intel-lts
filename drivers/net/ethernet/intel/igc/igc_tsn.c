@@ -99,6 +99,8 @@ static int igc_tsn_enable_offload(struct igc_adapter *adapter)
 	u32 frag_size_mult;
 	int i;
 
+	wr32(IGC_GTXOFFSET, 1500);
+
 	wr32(IGC_TSAUXC, 0);
 	wr32(IGC_DTXMXPKTSZ, IGC_DTXMXPKTSZ_TSN);
 	wr32(IGC_TXPBS, IGC_TXPBSIZE_TSN);
