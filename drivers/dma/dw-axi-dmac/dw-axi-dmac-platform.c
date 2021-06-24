@@ -476,10 +476,9 @@ static void dma_chan_free_chan_resources(struct dma_chan *dchan)
 
 static int dw_axi_dma_set_hw_channel(struct axi_dma_chan *chan, bool set)
 {
-	unsigned long reg_value;
-	unsigned long reg_set;
-	unsigned long val;
 	struct axi_dma_chip *chip = chan->chip;
+	unsigned long reg_value;
+	unsigned long val;
 
 	if (!chip->apb_regs) {
 		dev_dbg(chip->dev, "apb_regs not initialized\n");
@@ -491,13 +490,10 @@ static int dw_axi_dma_set_hw_channel(struct axi_dma_chan *chan, bool set)
 	 * Lock the DMA channel by assign a handshake number to the channel.
 	 * Unlock the DMA channel by assign 0x3F to the channel.
 	 */
-	if (set) {
-		reg_set = UNUSED_CHANNEL;
+	if (set)
 		val = chan->hw_handshake_num;
-	} else {
-		reg_set = chan->hw_handshake_num;
+	else
 		val = UNUSED_CHANNEL;
-	}
 
 	reg_value = lo_hi_readq(chip->apb_regs + DMAC_APB_HW_HS_SEL_0);
 
