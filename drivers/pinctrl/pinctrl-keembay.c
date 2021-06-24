@@ -1144,7 +1144,7 @@ static int keembay_pinconf_set(struct pinctrl_dev *pctldev, unsigned int pin,
 		if (ret)
 			return ret;
 	}
-	return ret;
+	return 0;
 }
 
 static const struct pinctrl_ops keembay_pctlops = {

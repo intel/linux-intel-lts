@@ -117,7 +117,7 @@ static s32 handle_slave_mode(struct i2c_client *slave, struct xlink_msg *msg)
 			i2c_slave_event(slave,
 					I2C_SLAVE_READ_REQUESTED,
 					&temp);
-			msg->data.word |= temp;
+			msg->data.word |= (u16)temp;
 		} else if (msg->protocol == I2C_SMBUS_BLOCK_DATA) {
 			int i;
 
@@ -344,6 +344,9 @@ static int xlink_i2c_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct i2c_adapter *adap;
 	u32 rc;
+
+	if ((pdev->id & 0x3) >= HDDL_XLINK_I2C_END)
+		return -EINVAL;
 
 	dev_dbg(dev, "Registering xlink SMBus adapter...\n");
 
