@@ -17,6 +17,7 @@ struct drm_i915_private;
 struct drm_i915_gem_object;
 struct intel_memory_region;
 struct sg_table;
+struct ttm_resource;
 
 enum intel_memory_type {
 	INTEL_MEMORY_SYSTEM = I915_MEMORY_CLASS_SYSTEM,
@@ -59,11 +60,11 @@ struct intel_memory_region_ops {
 };
 
 struct intel_memory_region_private_ops {
-	void *(*reserve)(struct intel_memory_region *mem,
-			 resource_size_t offset,
-			 resource_size_t size);
+	struct ttm_resource *(*reserve)(struct intel_memory_region *mem,
+					resource_size_t offset,
+					resource_size_t size);
 	void (*free)(struct intel_memory_region *mem,
-		     void *node);
+		     struct ttm_resource *res);
 };
 
 struct intel_memory_region {

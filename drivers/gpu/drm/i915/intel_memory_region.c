@@ -30,7 +30,7 @@ static const struct {
 
 struct intel_region_reserve {
 	struct list_head link;
-	void *node;
+	struct ttm_resource *res;
 };
 
 struct intel_memory_region *
@@ -78,7 +78,7 @@ void intel_memory_region_unreserve(struct intel_memory_region *mem)
 	mutex_lock(&mem->mm_lock);
 	list_for_each_entry_safe(reserve, next, &mem->reserved, link) {
 		list_del(&reserve->link);
-		mem->priv_ops->free(mem, reserve->node);
+		mem->priv_ops->free(mem, reserve->res);
 		kfree(reserve);
 	}
 	mutex_unlock(&mem->mm_lock);
@@ -106,9 +106,9 @@ int intel_memory_region_reserve(struct intel_memory_region *mem,
 	if (!reserve)
 		return -ENOMEM;
 
-	reserve->node = mem->priv_ops->reserve(mem, offset, size);
-	if (IS_ERR(reserve->node)) {
-		ret = PTR_ERR(reserve->node);
+	reserve->res = mem->priv_ops->reserve(mem, offset, size);
+	if (IS_ERR(reserve->res)) {
+		ret = PTR_ERR(reserve->res);
 		kfree(reserve);
 		return ret;
 	}
