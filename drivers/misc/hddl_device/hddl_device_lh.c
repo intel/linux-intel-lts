@@ -236,6 +236,7 @@ static int intel_hddl_i2c_register_clients(struct device *dev,
 			dev_err(&priv->pdev->dev,
 				"xlink write data failed rc = %d\n",
 				rc);
+			kfree(data);
 			return rc;
 		}
 		kfree(data);
@@ -309,6 +310,7 @@ static int intel_hddl_send_tsens_data(struct intel_hddl_clients *c)
 			dev_err(&priv->pdev->dev,
 				"xlink write data failed rc = %d\n",
 				rc);
+			kfree(data);
 			return rc;
 		}
 		kfree(data);
@@ -545,7 +547,7 @@ static int hddl_get_onchip_sensors(struct platform_device *pdev,
 		if (!tsens)
 			return -ENOMEM;
 		priv->tsens[i] = tsens;
-		strcpy(tsens->data.name, np->name);
+		strncpy(tsens->data.name, np->name, HDDL_I2C_STRING_SIZE - 1);
 		if (hddl_tsens_config_sensors(np, priv, i)) {
 			dev_err(&pdev->dev,
 				"Missing sensor info in dts for %s\n",
@@ -666,7 +668,7 @@ static int hddl_get_socreset_data(struct platform_device *pdev,
 
 			of_property_read_string_index(soc_node, "io-exp-name",
 						      0, &name);
-			strcpy(board_info->iox_name, name);
+			strncpy(board_info->iox_name, name, HDDL_STRING_SIZE - 1);
 			of_property_read_u32_index(soc_node, "io-exp-addr",
 						   0, &board_info->iox_addr);
 			of_property_read_u32_index(soc_node, "io-exp-addr",
@@ -785,9 +787,9 @@ static int intel_hddl_config_dt(struct intel_hddl_client_priv *priv)
 			of_property_read_string_index(s_node, "compatible", 0,
 						      &name);
 			if (name) {
-				strcpy(i2c_dev->name, name);
-				strcpy(i2c_dev->board_info.type,
-				       i2c_dev->name);
+				strncpy(i2c_dev->name, name, HDDL_I2C_STRING_SIZE - 1);
+				strncpy(i2c_dev->board_info.type,
+					i2c_dev->name, HDDL_I2C_STRING_SIZE - 1);
 			}
 			/**
 			 * below dt params are optional.
