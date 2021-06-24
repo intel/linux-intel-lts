@@ -73,7 +73,7 @@ static int keembay_clk_enable(struct device *dev, struct clk *clk)
  * for all valid masks (e.g. KMB_PWM_LEADIN_MASK) that they are ok.
  */
 static __always_inline void keembay_pwm_update_bits(struct keembay_pwm *priv, u32 mask,
-					   u32 val, u32 offset)
+						    u32 val, u32 offset)
 {
 	u32 buff = readl(priv->base + offset);
 
