@@ -28,6 +28,7 @@
 #include <linux/prefetch.h>
 #include <linux/sched.h>
 #include <linux/sched/clock.h>
+#include <linux/sched/mm.h>
 #include <linux/sched/signal.h>
 
 #include "gem/i915_gem_context.h"
