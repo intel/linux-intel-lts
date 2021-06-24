@@ -465,8 +465,8 @@ void intel_hddl_device_remove(struct intel_hddl_clients *d)
 static int intel_hddl_device_event_notify(u32 sw_device_id,
 					  uint32_t event_type)
 {
+	struct intel_hddl_clients *client = NULL;
 	struct intel_hddl_clients **clients;
-	struct intel_hddl_clients *client;
 	int i, ret = 0;
 	int ndevs = 0;
 

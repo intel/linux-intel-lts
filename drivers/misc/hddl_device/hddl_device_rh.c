@@ -127,11 +127,11 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct intel_hddl_device_priv *priv = file->private_data;
 	u32 __user *user_ptr = (u32 __user *)arg;
+	struct intel_hddl_clients *client = NULL;
 	struct device *dev = &priv->pdev->dev;
 	struct sw_id_hddl_status swid_status;
 	struct intel_hddl_clients **clients;
 	struct sw_id_soft_reset soft_reset;
-	struct intel_hddl_clients *client;
 	struct sw_id_hddl_data swid_data;
 	int i, rc;
 
@@ -184,6 +184,7 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&swid_data, user_ptr,
 				   sizeof(struct sw_id_hddl_data)))
 			return -EFAULT;
+
 		for (i = 0; i < priv->ndevs; i++) {
 			if (clients[i]->xlink_dev.sw_device_id ==
 					swid_data.sw_id) {
@@ -197,13 +198,13 @@ static long hddl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				swid_data.sw_id);
 			return -ENODEV;
 		}
-		strcpy(swid_data.board_type, client->board_info.board_type);
+		strncpy(swid_data.board_type, client->board_info.board_type, HDDL_STRING_SIZE - 1);
 		swid_data.board_id = client->board_info.board_id;
 		swid_data.soc_id = client->board_info.soc_id;
 		swid_data.iox_addr = client->board_info.iox_addr;
 		swid_data.iox_pin = client->board_info.iox_pin;
 		swid_data.pci_pin = client->board_info.pci_pin;
-		strcpy(swid_data.iox_name, client->board_info.iox_name);
+		strncpy(swid_data.iox_name, client->board_info.iox_name, HDDL_STRING_SIZE - 1);
 		if (client->adap[0])
 			swid_data.soc_adaptor_no[0] = client->adap[0]->nr;
 		if (client->adap[1])
@@ -248,7 +249,7 @@ static int hddl_open(struct inode *inode, struct file *filp)
 	priv = container_of(inode->i_cdev,
 			    struct intel_hddl_device_priv, hddl_cdev);
 	if (!priv) {
-		dev_err(&priv->pdev->dev, "Device open failed\n");
+		pr_err("HDDL: Device open failed\n");
 		return -ENODEV;
 	}
 	filp->private_data = priv;
@@ -624,7 +625,8 @@ static int intel_hddl_device_connect_task(void *data)
 	c->chan_num = priv->xlink_chan;
 	c->i2c_chan_num = priv->i2c_xlink_chan;
 	c->smbus_adap = priv->smbus_adap;
-	if (intel_hddl_open_xlink_device(&priv->pdev->dev, c)) {
+	rc = intel_hddl_open_xlink_device(&priv->pdev->dev, c);
+	if (rc) {
 		dev_err(&priv->pdev->dev, "HDDL open xlink dev failed\n");
 		goto exit_connect_task;
 	}
