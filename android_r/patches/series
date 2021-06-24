@@ -49,3 +49,6 @@
 
 # CVE-2019-0149
 0001-i40e-Add-bounds-check-for-ch-array.patch
+
+# CVE-2021-34693
+0001-can-bcm-fix-infoleak-in-struct-bcm_msg_head.patch
