@@ -26,9 +26,12 @@
 #define HDDL_SOFT_RESET		_IOW(HDDL_MAGIC, 'b', void*)
 #define HDDL_READ_STATUS	_IOW(HDDL_MAGIC, 'c', void*)
 
+#define HDDL_STRING_SIZE 16
+#define HDDL_I2C_STRING_SIZE 20
+
 struct sw_id_hddl_data {
-	char iox_name[15];
-	char board_type[15];
+	char iox_name[HDDL_STRING_SIZE];
+	char board_type[HDDL_STRING_SIZE];
 	uint32_t board_id;
 	uint32_t soc_id;
 	uint32_t iox_addr;
@@ -93,8 +96,8 @@ struct intel_hddl_tsens_msg {
 } __packed __aligned(HDDL_ALIGN);
 
 struct intel_hddl_board_info {
-	char iox_name[15];
-	char board_type[15];
+	char iox_name[HDDL_STRING_SIZE];
+	char board_type[HDDL_STRING_SIZE];
 	int board_id;
 	int soc_id;
 	int iox_addr;
@@ -111,7 +114,7 @@ struct intel_tsens_data {
 } __packed __aligned(HDDL_ALIGN);
 
 struct intel_hddl_i2c_devs_data {
-	char name[20];
+	char name[HDDL_I2C_STRING_SIZE];
 	u32 addr;
 	u32 bus;
 	int enabled;
@@ -120,7 +123,7 @@ struct intel_hddl_i2c_devs_data {
 } __packed __aligned(HDDL_ALIGN);
 
 struct intel_hddl_i2c_devs {
-	char name[20];
+	char name[HDDL_I2C_STRING_SIZE];
 	u32 addr;
 	u32 bus;
 	int enabled;
