@@ -14,7 +14,6 @@
 #include <linux/of.h>
 #include <linux/regmap.h>
 
-
 static const struct i3c_device_id i3c_test_ids[] = {
 	I3C_CLASS(0x0, (void *)ST_LSM6DSO_ID),
 	{ /* sentinel */ },
@@ -33,25 +32,28 @@ static int i3c_test_write(struct i3c_device *i3cdev, const void *data,
 		},
 	};
 
-
 	ret = i3c_device_do_priv_xfers(i3cdev, xfers, 1);
 	return ret;
 }
 
 static int i3c_test_read(struct i3c_device *i3cdev, void *reg,
-			size_t reg_size, void *val, size_t val_size)
+			 size_t reg_size, void *val, size_t val_size)
 {
-	struct i3c_priv_xfer xfers[1];
 	char rbuff[4];
-	int ret = 0;
 
-	xfers[0].rnw = true;
-	xfers[0].len = val_size;
-	xfers[0].data.in = (void *)rbuff;
+	struct i3c_priv_xfer xfers[] = {
+		{
+			.rnw = true,
+			.len = val_size,
+			.data.in = (void *)rbuff,
+		},
+	};
+
+	int ret = 0;
 
 	ret = i3c_device_do_priv_xfers(i3cdev, xfers, 1);
 	dev_info(&i3cdev->dev, "read done: %d, %d, %d, %d\n", rbuff[0],
-						rbuff[1], rbuff[2], rbuff[3]);
+		 rbuff[1], rbuff[2], rbuff[3]);
 	return ret;
 }
 
@@ -66,9 +68,9 @@ static int i3c_test_probe(struct i3c_device *i3cdev)
 	dev_info(&i3cdev->dev, "i3c_test: %s, dcr: %x\n", __func__, info.dcr);
 	dev_info(&i3cdev->dev, "i3c_test: %s, pid: %llx\n", __func__, info.pid);
 	dev_info(&i3cdev->dev, "i3c_test: %s, static address: %x\n",
-			__func__, info.static_addr);
+		 __func__, info.static_addr);
 	dev_info(&i3cdev->dev, "i3c_test: %s, dyn_addr: %x\n",
-			__func__, info.dyn_addr);
+		 __func__, info.dyn_addr);
 
 	dev_info(&i3cdev->dev, "i3c_test probe done\n");
 	for (speed = 0; speed < 5; speed++) {
