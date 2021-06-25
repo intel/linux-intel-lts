@@ -400,7 +400,7 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 	ctrl &= ~(TGPIOCTL_TS | TGPIOCTL_EP | TGPIOCTL_DIR |
 			TGPIOCTL_PWS  | TGPIOCTL_IEC_EC | TGPIOCTL_ICS);
 
-	if (on) {
+	if (on || (perout->flags & PTP_PEROUT_ONE_SHOT)) {
 		struct ptp_clock_time *period = &perout->period;
 		struct ptp_clock_time *start = &perout->start;
 
@@ -511,11 +511,6 @@ static int intel_tgpio_counttstamp(struct ptp_clock_info *info,
 				   struct ptp_event_count_tstamp *count)
 {
 	struct intel_tgpio *tgpio = to_intel_tgpio(info);
-	u32                 dt_hi_s;
-	u32                 dt_hi_e;
-	u32                 dt_lo;
-	struct timespec64   dt_ts;
-	struct timespec64   tsc_now;
 
 	spin_lock(&tgpio->lock);
 	while (tgpio->busy[count->index]) {
@@ -527,25 +522,17 @@ static int intel_tgpio_counttstamp(struct ptp_clock_info *info,
 	tgpio->busy[count->index] = true;
 	spin_unlock(&tgpio->lock);
 
-	tsc_now = get_tsc_ns_now(NULL);
-	dt_hi_s = convert_tsc_ns_to_art(&tsc_now) >> 32;
-
 	/* Reading lower 32-bit word of Time Capture Value (TCV) loads */
 	/* the event time and event count capture */
-	dt_lo = intel_tgpio_readl(tgpio->base, TGPIOTCV31_0(count->index));
+	count->device_time.nsec = intel_tgpio_readl(tgpio->base,
+						    TGPIOTCV31_0(count->index));
 	count->event_count = intel_tgpio_readl(tgpio->base,
 					      TGPIOECCV63_32(count->index));
 	count->event_count <<= 32;
 	count->event_count |= intel_tgpio_readl(tgpio->base,
 						TGPIOECCV31_0(count->index));
-	dt_hi_e = intel_tgpio_readl(tgpio->base, TGPIOTCV63_32(count->index));
-
-	if (dt_hi_e != dt_hi_s && dt_lo >> 31)
-		dt_ts = convert_art_to_tsc_ns(((u64)dt_hi_s << 32) | dt_lo);
-	else
-		dt_ts = convert_art_to_tsc_ns(((u64)dt_hi_e << 32) | dt_lo);
-
-	count->device_time = ts64_to_ptp_clock_time(dt_ts);
+	count->device_time.sec = intel_tgpio_readl(tgpio->base,
+						   TGPIOTCV63_32(count->index));
 
 	tgpio->busy[count->index] = false;
 
