@@ -1256,18 +1256,17 @@ int convert_tsc_to_art(const struct system_counterval_t *system_counter,
 {
 	u64 tmp, res, rem;
 
-	if (system_counter->cs != art_related_clocksource)
+	if ((system_counter->cs != art_related_clocksource) ||
+	    !art_to_tsc_numerator)
 		return -EINVAL;
 
 	res = system_counter->cycles - art_to_tsc_offset;
-	if (art_to_tsc_numerator)
-		rem = do_div(res, art_to_tsc_numerator);
+	rem = do_div(res, art_to_tsc_numerator);
 
 	*art = res * art_to_tsc_denominator;
 	tmp = rem * art_to_tsc_denominator;
 
-	if (art_to_tsc_numerator)
-		do_div(tmp, art_to_tsc_numerator);
+	do_div(tmp, art_to_tsc_numerator);
 	*art += tmp;
 
 	return 0;
