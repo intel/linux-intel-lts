@@ -308,6 +308,8 @@
 #define IGC_TXD_DTYP_C		0x00000000 /* Context Descriptor */
 #define IGC_TXD_POPTS_IXSM	0x01       /* Insert IP checksum */
 #define IGC_TXD_POPTS_TXSM	0x02       /* Insert TCP/UDP checksum */
+#define IGC_TXD_POPTS_SMD_V	0x10       /* Transmitted packet is a SMD-Verify */
+#define IGC_TXD_POPTS_SMD_R	0x20       /* Transmitted packet is a SMD-Response */
 #define IGC_TXD_CMD_EOP		0x01000000 /* End of Packet */
 #define IGC_TXD_CMD_IC		0x04000000 /* Insert Checksum */
 #define IGC_TXD_CMD_DEXT	0x20000000 /* Desc extension (0 = legacy) */
@@ -371,8 +373,19 @@
 
 #define IGC_RXDEXT_STATERR_LB	0x00040000
 
+#define IGC_RXD_STAT_SMD_V	0x2000  /* Received packet is SMD-Verify packet */
+#define IGC_RXD_STAT_SMD_R	0x4000  /* Received packet is SMD-Response packet */
+
 /* Advanced Receive Descriptor bit definitions */
 #define IGC_RXDADV_STAT_TSIP	0x08000 /* timestamp in packet */
+
+#define IGC_RXDADV_STAT_SMD_TYPE_MASK	0x06000
+#define IGC_RXDADV_STAT_SMD_TYPE_SHIFT	13
+
+#define IGC_SMD_TYPE_SFD		0x0
+#define IGC_SMD_TYPE_SMD_V		0x1
+#define IGC_SMD_TYPE_SMD_R		0x2
+#define IGC_SMD_TYPE_COMPLETE		0x3
 
 #define IGC_RXDEXT_STATERR_L4E		0x20000000
 #define IGC_RXDEXT_STATERR_IPE		0x40000000

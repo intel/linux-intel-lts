@@ -30,6 +30,11 @@
 #define IGC_XDP_TX		BIT(1)
 #define IGC_XDP_REDIRECT	BIT(2)
 
+#define IGC_FP_TIMEOUT msecs_to_jiffies(100)
+#define IGC_MAX_VERIFY_CNT 3
+
+#define IGC_FP_SMD_FRAME_SIZE 60
+
 static int debug = -1;
 
 MODULE_DESCRIPTION(DRV_SUMMARY);
@@ -2448,6 +2453,79 @@ unmap:
 	return -ENOMEM;
 }
 
+static int igc_fp_init_smd_frame(struct igc_ring *ring, struct igc_tx_buffer *buffer,
+				 struct sk_buff *skb)
+{
+	dma_addr_t dma;
+	unsigned int size;
+
+	size = skb_headlen(skb);
+
+	dma = dma_map_single(ring->dev, skb->data, size, DMA_TO_DEVICE);
+	if (dma_mapping_error(ring->dev, dma)) {
+		netdev_err_once(ring->netdev, "Failed to map DMA for TX\n");
+		return -ENOMEM;
+	}
+
+	buffer->skb = skb;
+	buffer->protocol = 0;
+	buffer->bytecount = skb->len;
+	buffer->gso_segs = 1;
+	buffer->time_stamp = jiffies;
+	dma_unmap_len_set(buffer, len, skb->len);
+	dma_unmap_addr_set(buffer, dma, dma);
+
+	return 0;
+}
+
+static int igc_fp_init_tx_descriptor(struct igc_ring *ring,
+				     struct sk_buff *skb, int type)
+{
+	struct igc_tx_buffer *buffer;
+	union igc_adv_tx_desc *desc;
+	u32 cmd_type, olinfo_status;
+	int err;
+
+	if (!igc_desc_unused(ring))
+		return -EBUSY;
+
+	buffer = &ring->tx_buffer_info[ring->next_to_use];
+	err = igc_fp_init_smd_frame(ring, buffer, skb);
+	if (err)
+		return err;
+
+	cmd_type = IGC_ADVTXD_DTYP_DATA | IGC_ADVTXD_DCMD_DEXT |
+		   IGC_ADVTXD_DCMD_IFCS | IGC_TXD_DCMD |
+		   buffer->bytecount;
+	olinfo_status = buffer->bytecount << IGC_ADVTXD_PAYLEN_SHIFT;
+
+	switch (type) {
+	case IGC_SMD_TYPE_SMD_V:
+		olinfo_status |= (IGC_TXD_POPTS_SMD_V << 8);
+		break;
+	case IGC_SMD_TYPE_SMD_R:
+		olinfo_status |= (IGC_TXD_POPTS_SMD_R << 8);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	desc = IGC_TX_DESC(ring, ring->next_to_use);
+	desc->read.cmd_type_len = cpu_to_le32(cmd_type);
+	desc->read.olinfo_status = cpu_to_le32(olinfo_status);
+	desc->read.buffer_addr = cpu_to_le64(dma_unmap_addr(buffer, dma));
+
+	netdev_tx_sent_queue(txring_txq(ring), skb->len);
+
+	buffer->next_to_watch = desc;
+
+	ring->next_to_use++;
+	if (ring->next_to_use == ring->count)
+		ring->next_to_use = 0;
+
+	return 0;
+}
+
 static struct igc_ring *igc_xdp_get_tx_ring(struct igc_adapter *adapter,
 					    int cpu)
 {
@@ -2577,6 +2655,19 @@ static void igc_update_rx_stats(struct igc_q_vector *q_vector,
 	q_vector->rx.total_bytes += bytes;
 }
 
+static int igc_rx_desc_smd_type(union igc_adv_rx_desc *rx_desc)
+{
+	u32 status = le32_to_cpu(rx_desc->wb.upper.status_error);
+
+	return (status & IGC_RXDADV_STAT_SMD_TYPE_MASK)
+		>> IGC_RXDADV_STAT_SMD_TYPE_SHIFT;
+}
+
+static bool igc_check_smd_frame(struct igc_rx_buffer *rx_buffer, unsigned int size)
+{
+	return size == 60;
+}
+
 static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
 {
 	unsigned int total_bytes = 0, total_packets = 0;
@@ -2592,6 +2683,7 @@ static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
 		union igc_adv_rx_desc *rx_desc;
 		unsigned int size, truesize;
 		int pkt_offset = 0;
+		int smd_type;
 		void *pktbuf;
 
 		/* return some buffers to hardware, one at a time is too slow */
@@ -2620,6 +2712,22 @@ static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
 			ctx.rx_ts = pktbuf;
 			pkt_offset = IGC_TS_HDR_LEN;
 			size -= IGC_TS_HDR_LEN;
+		}
+
+		smd_type = igc_rx_desc_smd_type(rx_desc);
+
+		if (smd_type == IGC_SMD_TYPE_SMD_V || smd_type == IGC_SMD_TYPE_SMD_R) {
+			if (igc_check_smd_frame(rx_buffer, size)) {
+				adapter->fp_received_smd_v = smd_type == IGC_SMD_TYPE_SMD_V;
+				adapter->fp_received_smd_r = smd_type == IGC_SMD_TYPE_SMD_R;
+				schedule_delayed_work(&adapter->fp_verification_work, 0);
+			}
+
+			/* Advance the ring next-to-clean */
+			igc_is_non_eop(rx_ring, rx_desc);
+
+			cleaned_count++;
+			continue;
 		}
 
 		if (!skb) {
@@ -6548,6 +6656,107 @@ static int igc_tsn_enable_cbs(struct igc_adapter *adapter,
 	return igc_tsn_offload_apply(adapter);
 }
 
+/* I225 doesn't send the SMD frames automatically, we need to handle
+ * them ourselves.
+ */
+static int igc_xmit_smd_frame(struct igc_adapter *adapter, int type)
+{
+	int cpu = smp_processor_id();
+	struct netdev_queue *nq;
+	struct igc_ring *ring;
+	struct sk_buff *skb;
+	void *data;
+	int err;
+
+	if (!netif_running(adapter->netdev))
+		return -ENOTCONN;
+
+	/* FIXME: rename this function to something less specific, as
+	 * it can be used outside XDP.
+	 */
+	ring = igc_xdp_get_tx_ring(adapter, cpu);
+	nq = txring_txq(ring);
+
+	skb = alloc_skb(IGC_FP_SMD_FRAME_SIZE, GFP_KERNEL);
+	if (!skb)
+		return -ENOMEM;
+
+	data = skb_put(skb, IGC_FP_SMD_FRAME_SIZE);
+	memset(data, 0, IGC_FP_SMD_FRAME_SIZE);
+
+	__netif_tx_lock(nq, cpu);
+
+	err = igc_fp_init_tx_descriptor(ring, skb, type);
+
+	igc_flush_tx_descriptors(ring);
+
+	__netif_tx_unlock(nq);
+
+	return err;
+}
+
+static void igc_fp_verification_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct igc_adapter *adapter;
+	int err;
+
+	adapter = container_of(dwork, struct igc_adapter, fp_verification_work);
+
+	if (adapter->fp_disable_verify)
+		goto done;
+
+	switch (adapter->fp_tx_state) {
+	case FRAME_PREEMPTION_STATE_START:
+		adapter->fp_received_smd_r = false;
+		err = igc_xmit_smd_frame(adapter, IGC_SMD_TYPE_SMD_V);
+		if (err < 0)
+			netdev_err(adapter->netdev, "Error sending SMD-V frame\n");
+
+		adapter->fp_tx_state = FRAME_PREEMPTION_STATE_SENT;
+		adapter->fp_start = jiffies;
+		schedule_delayed_work(&adapter->fp_verification_work, IGC_FP_TIMEOUT);
+		break;
+
+	case FRAME_PREEMPTION_STATE_SENT:
+		if (adapter->fp_received_smd_r) {
+			adapter->fp_tx_state = FRAME_PREEMPTION_STATE_DONE;
+			adapter->fp_received_smd_r = false;
+			break;
+		}
+
+		if (time_is_before_jiffies(adapter->fp_start + IGC_FP_TIMEOUT)) {
+			adapter->fp_verify_cnt++;
+			netdev_warn(adapter->netdev, "Timeout waiting for SMD-R frame\n");
+
+			if (adapter->fp_verify_cnt > IGC_MAX_VERIFY_CNT) {
+				adapter->fp_verify_cnt = 0;
+				adapter->fp_tx_state = FRAME_PREEMPTION_STATE_FAILED;
+				netdev_err(adapter->netdev,
+					   "Exceeded number of attempts for frame preemption verification\n");
+			} else {
+				adapter->fp_tx_state = FRAME_PREEMPTION_STATE_START;
+			}
+			schedule_delayed_work(&adapter->fp_verification_work, IGC_FP_TIMEOUT);
+		}
+
+		break;
+
+	case FRAME_PREEMPTION_STATE_FAILED:
+	case FRAME_PREEMPTION_STATE_DONE:
+		break;
+	}
+
+done:
+	if (adapter->fp_received_smd_v) {
+		err = igc_xmit_smd_frame(adapter, IGC_SMD_TYPE_SMD_R);
+		if (err < 0)
+			netdev_err(adapter->netdev, "Error sending SMD-R frame\n");
+
+		adapter->fp_received_smd_v = false;
+	}
+}
+
 static int igc_tc_query_caps(struct igc_adapter *adapter,
 			     struct tc_query_caps_base *base)
 {
@@ -7122,6 +7331,7 @@ static int igc_probe(struct pci_dev *pdev,
 
 	INIT_WORK(&adapter->reset_task, igc_reset_task);
 	INIT_WORK(&adapter->watchdog_task, igc_watchdog_task);
+	INIT_DELAYED_WORK(&adapter->fp_verification_work, igc_fp_verification_work);
 
 	hrtimer_init(&adapter->hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	adapter->hrtimer.function = &igc_qbv_scheduling_timer;
@@ -7147,6 +7357,12 @@ static int igc_probe(struct pci_dev *pdev,
 	igc_ptp_init(adapter);
 
 	igc_tsn_clear_schedule(adapter);
+
+	/* FIXME: This sets the default to not do the verification
+	 * automatically, when we have support in multiple
+	 * controllers, this default can be changed.
+	 */
+	adapter->fp_disable_verify = true;
 
 	/* reset the hardware with the new settings */
 	igc_reset(adapter);
