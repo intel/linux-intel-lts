@@ -2455,6 +2455,7 @@ int netdev_txq_to_tc(struct net_device *dev, unsigned int txq);
 void netdev_reset_tc(struct net_device *dev);
 int netdev_set_tc_queue(struct net_device *dev, u8 tc, u16 count, u16 offset);
 int netdev_set_num_tc(struct net_device *dev, u8 num_tc);
+u32 netdev_tc_map_to_queue_mask(struct net_device *dev, u32 tc_mask);
 
 static inline
 int netdev_get_num_tc(struct net_device *dev)
