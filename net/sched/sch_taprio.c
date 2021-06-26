@@ -1512,25 +1512,6 @@ static void taprio_offload_config_changed(struct taprio_sched *q)
 	switch_schedules(q, &admin, &oper);
 }
 
-static u32 tc_map_to_queue_mask(struct net_device *dev, u32 tc_mask)
-{
-	u32 i, queue_mask = 0;
-
-	for (i = 0; i < dev->num_tc; i++) {
-		u32 offset, count;
-
-		if (!(tc_mask & BIT(i)))
-			continue;
-
-		offset = dev->tc_to_txq[i].offset;
-		count = dev->tc_to_txq[i].count;
-
-		queue_mask |= GENMASK(offset + count - 1, offset);
-	}
-
-	return queue_mask;
-}
-
 static void taprio_sched_to_offload(struct net_device *dev,
 				    struct sched_gate_list *sched,
 				    struct tc_taprio_qopt_offload *offload,
@@ -1548,9 +1529,10 @@ static void taprio_sched_to_offload(struct net_device *dev,
 
 		e->command = entry->command;
 		e->interval = entry->interval;
+
 		if (caps->gate_mask_per_txq)
-			e->gate_mask = tc_map_to_queue_mask(dev,
-							    entry->gate_mask);
+			e->gate_mask = netdev_tc_map_to_queue_mask(dev,
+							entry->gate_mask);
 		else
 			e->gate_mask = entry->gate_mask;
 
@@ -2012,14 +1994,15 @@ static int taprio_change(struct Qdisc *sch, struct nlattr *opt,
 	if (tb[TCA_TAPRIO_ATTR_PREEMPT_TCS]) {
 		u32 preempt = nla_get_u32(tb[TCA_TAPRIO_ATTR_PREEMPT_TCS]);
 		struct tc_preempt_qopt_offload qopt = { };
+		u32 all_tcs_mask = GENMASK(dev->num_tc, 0);
 
-		if (preempt == U32_MAX) {
+		if ((preempt & all_tcs_mask) == all_tcs_mask) {
 			NL_SET_ERR_MSG(extack, "At least one queue must be not be preemptible");
 			err = -EINVAL;
 			goto free_sched;
 		}
 
-		qopt.preemptible_queues = tc_map_to_queue_mask(dev, preempt);
+		qopt.preemptible_queues = netdev_tc_map_to_queue_mask(dev, preempt);
 
 		err = dev->netdev_ops->ndo_setup_tc(dev, TC_SETUP_PREEMPT,
 						    &qopt);
