@@ -212,6 +212,9 @@ struct igc_adapter {
 	 */
 	spinlock_t qbv_tx_lock;
 
+	bool frame_preemption_active;
+	u32 add_frag_size;
+
 	/* OS defined structs */
 	struct pci_dev *pdev;
 	/* lock for statistics */
