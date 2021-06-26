@@ -263,6 +263,9 @@ struct igc_adapter {
 	u8 num_tc;
 	u16 queue_per_tc[IGC_MAX_TX_QUEUES];
 
+	bool frame_preemption_active;
+	u32 add_frag_size;
+
 	/* OS defined structs */
 	struct pci_dev *pdev;
 	/* lock for statistics */
