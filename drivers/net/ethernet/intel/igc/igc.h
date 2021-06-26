@@ -186,6 +186,9 @@ struct igc_adapter {
 	ktime_t cycle_time;
 	bool qbv_enable;
 
+	bool frame_preemption_active;
+	u32 add_frag_size;
+
 	/* OS defined structs */
 	struct pci_dev *pdev;
 	/* lock for statistics */
