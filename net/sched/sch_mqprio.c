@@ -26,6 +26,7 @@ struct mqprio_sched {
 	u16 shaper;
 	int hw_offload;
 	u32 flags;
+	u32 preemptible_tcs;
 	u64 min_rate[TC_QOPT_MAX_QUEUE];
 	u64 max_rate[TC_QOPT_MAX_QUEUE];
 	u32 fp[TC_QOPT_MAX_QUEUE];
@@ -98,6 +99,13 @@ static void mqprio_destroy(struct Qdisc *sch)
 	struct mqprio_sched *priv = qdisc_priv(sch);
 	unsigned int ntx;
 
+	if (priv->preemptible_tcs && dev->netdev_ops->ndo_setup_tc) {
+		struct tc_preempt_qopt_offload preempt = { };
+
+		dev->netdev_ops->ndo_setup_tc(dev, TC_SETUP_PREEMPT,
+						    &preempt);
+	}
+
 	if (priv->qdiscs) {
 		for (ntx = 0;
 		     ntx < dev->num_tx_queues && priv->qdiscs[ntx];
@@ -161,6 +169,7 @@ nla_policy mqprio_tc_entry_policy[TCA_MQPRIO_TC_ENTRY_MAX + 1] = {
 static const struct nla_policy mqprio_policy[TCA_MQPRIO_MAX + 1] = {
 	[TCA_MQPRIO_MODE]	= { .len = sizeof(u16) },
 	[TCA_MQPRIO_SHAPER]	= { .len = sizeof(u16) },
+	[TCA_MQPRIO_PREEMPT_TCS] = { .type = NLA_U32 },
 	[TCA_MQPRIO_MIN_RATE64]	= { .type = NLA_NESTED },
 	[TCA_MQPRIO_MAX_RATE64]	= { .type = NLA_NESTED },
 	[TCA_MQPRIO_TC_ENTRY]	= { .type = NLA_NESTED },
@@ -258,10 +267,17 @@ static int mqprio_parse_nlattr(struct Qdisc *sch, struct tc_mqprio_qopt *qopt,
 			return err;
 	}
 
-	if (!qopt->hw) {
-		NL_SET_ERR_MSG(extack,
-			       "mqprio TCA_OPTIONS can only contain netlink attributes in hardware mode");
-		return -EINVAL;
+	if (tb[TCA_MQPRIO_PREEMPT_TCS]) {
+		u32 preempt = nla_get_u32(tb[TCA_MQPRIO_PREEMPT_TCS]);
+		u32 all_tcs_mask = GENMASK(qopt->num_tc, 0);
+
+		if ((preempt & all_tcs_mask) == all_tcs_mask) {
+			NL_SET_ERR_MSG(extack,
+				"At least one traffic class must be not be preemptible");
+			return -EINVAL;
+		}
+
+		priv->preemptible_tcs = preempt;
 	}
 
 	if (tb[TCA_MQPRIO_MODE]) {
@@ -387,6 +403,9 @@ static int mqprio_init(struct Qdisc *sch, struct nlattr *opt,
 			return err;
 	}
 
+	if (!qopt->hw && priv->flags)
+		return -EINVAL;
+
 	/* pre-allocate qdisc, attachment can't fail */
 	priv->qdiscs = kcalloc(dev->num_tx_queues, sizeof(priv->qdiscs[0]),
 			       GFP_KERNEL);
@@ -424,6 +443,18 @@ static int mqprio_init(struct Qdisc *sch, struct nlattr *opt,
 	/* Always use supplied priority mappings */
 	for (i = 0; i < TC_BITMASK + 1; i++)
 		netdev_set_prio_tc_map(dev, i, qopt->prio_tc_map[i]);
+
+	if (priv->preemptible_tcs) {
+		struct tc_preempt_qopt_offload preempt = { };
+
+		preempt.preemptible_queues =
+			netdev_tc_map_to_queue_mask(dev, priv->preemptible_tcs);
+
+		err = dev->netdev_ops->ndo_setup_tc(dev, TC_SETUP_PREEMPT,
+						    &preempt);
+		if (err)
+			return err;
+	}
 
 	sch->flags |= TCQ_F_MQROOT;
 	return 0;
@@ -598,6 +629,10 @@ static int mqprio_dump(struct Qdisc *sch, struct sk_buff *skb)
 	if ((priv->flags & TC_MQPRIO_F_MIN_RATE ||
 	     priv->flags & TC_MQPRIO_F_MAX_RATE) &&
 	    (dump_rates(priv, &opt, skb) != 0))
+		goto nla_put_failure;
+
+	if (priv->preemptible_tcs &&
+	    nla_put_u32(skb, TCA_MQPRIO_PREEMPT_TCS, priv->preemptible_tcs))
 		goto nla_put_failure;
 
 	if (mqprio_dump_tc_entries(priv, skb))
