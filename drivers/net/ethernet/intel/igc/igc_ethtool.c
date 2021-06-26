@@ -1678,6 +1678,8 @@ static int igc_ethtool_get_preempt(struct net_device *netdev,
 
 	fpcmd->enabled = adapter->frame_preemption_active;
 	fpcmd->add_frag_size = adapter->add_frag_size;
+	fpcmd->verified = adapter->fp_tx_state == FRAME_PREEMPTION_STATE_DONE;
+	fpcmd->disable_verify = adapter->fp_disable_verify;
 
 	return 0;
 }
@@ -1694,10 +1696,22 @@ static int igc_ethtool_set_preempt(struct net_device *netdev,
 		return -EINVAL;
 	}
 
-	adapter->frame_preemption_active = fpcmd->enabled;
-	adapter->add_frag_size = fpcmd->add_frag_size;
+	if (!fpcmd->disable_verify && adapter->fp_disable_verify) {
+		adapter->fp_tx_state = FRAME_PREEMPTION_STATE_START;
+		schedule_delayed_work(&adapter->fp_verification_work, msecs_to_jiffies(10));
+	}
 
-	return igc_tsn_offload_apply(adapter);
+	adapter->fp_disable_verify = fpcmd->disable_verify;
+
+	if (adapter->frame_preemption_active != fpcmd->enabled ||
+	    adapter->add_frag_size != fpcmd->add_frag_size) {
+		adapter->frame_preemption_active = fpcmd->enabled;
+		adapter->add_frag_size = fpcmd->add_frag_size;
+
+		return igc_tsn_offload_apply(adapter);
+	}
+
+	return 0;
 }
 
 static int igc_ethtool_begin(struct net_device *netdev)
