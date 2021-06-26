@@ -131,6 +131,13 @@ struct igc_ring {
 	struct xsk_buff_pool *xsk_pool;
 } ____cacheline_internodealigned_in_smp;
 
+enum frame_preemption_state {
+	FRAME_PREEMPTION_STATE_FAILED,
+	FRAME_PREEMPTION_STATE_DONE,
+	FRAME_PREEMPTION_STATE_START,
+	FRAME_PREEMPTION_STATE_SENT,
+};
+
 /* Board specific private data structure */
 struct igc_adapter {
 	struct net_device *netdev;
@@ -250,6 +257,14 @@ struct igc_adapter {
 		struct timespec64 start;
 		struct timespec64 period;
 	} perout[IGC_N_PEROUT];
+
+	struct delayed_work fp_verification_work;
+	unsigned long fp_start;
+	bool fp_received_smd_v;
+	bool fp_received_smd_r;
+	unsigned int fp_verify_cnt;
+	enum frame_preemption_state fp_tx_state;
+	bool fp_disable_verify;
 };
 
 void igc_up(struct igc_adapter *adapter);
