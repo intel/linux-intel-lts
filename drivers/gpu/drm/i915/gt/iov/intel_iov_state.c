@@ -67,6 +67,7 @@ void intel_iov_state_release(struct intel_iov *iov)
 static void pf_reset_vf_state(struct intel_iov *iov, u32 vfid)
 {
 	iov->pf.state.data[vfid].state = 0;
+	iov->pf.state.data[vfid].paused = false;
 }
 
 /**
@@ -373,6 +374,7 @@ static void pf_handle_vf_flr(struct intel_iov *iov, u32 vfid)
 		return;
 	}
 
+	iov->pf.state.data[vfid].paused = false;
 	dev_info(dev, "VF%u FLR\n", vfid);
 
 	for_each_gt(gt, iov_to_i915(iov), gtid)
@@ -391,6 +393,7 @@ static void pf_handle_vf_pause_done(struct intel_iov *iov, u32 vfid)
 {
 	struct device *dev = iov_to_dev(iov);
 
+	iov->pf.state.data[vfid].paused = true;
 	dev_info(dev, "VF%u %s\n", vfid, "paused");
 }
 
@@ -524,7 +527,13 @@ int intel_iov_state_pause_vf(struct intel_iov *iov, u32 vfid)
  */
 int intel_iov_state_resume_vf(struct intel_iov *iov, u32 vfid)
 {
-	return pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_RESUME);
+	int err = pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_RESUME);
+
+	if (err < 0)
+		return err;
+
+	iov->pf.state.data[vfid].paused = false;
+	return 0;
 }
 
 /**
