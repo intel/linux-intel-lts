@@ -7034,6 +7034,8 @@ int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 
 	stmmac_clean_all_tx_rings(priv);
 
+	stmmac_tsn_hw_unsetup(priv, priv->hw, ndev);
+
 	mutex_unlock(&priv->lock);
 
 	priv->speed = SPEED_UNKNOWN;
@@ -7192,6 +7194,8 @@ int stmmac_suspend(struct device *dev)
 	}
 
 	stmmac_clean_all_tx_rings(priv);
+
+	stmmac_tsn_hw_unsetup(priv, priv->hw, ndev);
 
 	mutex_unlock(&priv->lock);
 
