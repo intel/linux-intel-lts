@@ -59,7 +59,7 @@ struct isi_generic_packet_header {
 /**
  * These all requests are coming from ISI to HOST.
  */
-enum icul_asynch_request_type {
+enum smcl_asynch_request_type {
 	/**
      * This command will tell host to reboot itself.
      * Applies to: SCI/SNI*/
@@ -96,7 +96,7 @@ enum icul_asynch_request_type {
 
 	/**
      * Whenever ERR_0 or ERR1 is asserted, host is notified with this command,
-     *      HOST can respond by calling icul_ieh_error_sen() API
+     *      HOST can respond by calling smcl_ieh_error_sen() API
      * Applies to: SCI */
 	REQ_IEH_ERROR_GET,
 
@@ -129,7 +129,7 @@ struct isi_asynch_cmd_request {
 	enum isi_driver_instance driver_inst;
 	uint32_t workload_id;
 	uint32_t number_of_requests;
-	enum icul_asynch_request_type *requests;
+	enum smcl_asynch_request_type *requests;
 };
 
 /*
@@ -139,7 +139,7 @@ struct isi_asynch_cmd_request {
 struct isi_asynch_data {
 	enum isi_driver_instance driver_inst;
 	uint32_t workload_id;
-	enum icul_asynch_request_type request_type;
+	enum smcl_asynch_request_type request_type;
 	struct isi_generic_packet_header header_buffer;
 	uint32_t data_size;
 	uint32_t *data_buffer;
