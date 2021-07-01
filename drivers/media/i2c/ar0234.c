@@ -24,10 +24,10 @@
 #define AR0234_LINK_FREQ_22_5MHZ	22500000ULL
 
 #define FSERIAL_CLK_4_LANE		240000000ULL
-#define FSERIAL_CLK_2_LANE		144000000ULL
+#define FSERIAL_CLK_2_LANE		180000000ULL /* use as pixel rate */
 
 #define PIX_CLK_4_LANE			60000000ULL
-#define PIX_CLK_2_LANE			18000000ULL
+#define PIX_CLK_2_LANE			45000000ULL
 
 #define AR0234_REG_CHIP_ID		0x3000
 #define AR0234_CHIP_ID			0x0A56
@@ -1480,7 +1480,7 @@ static u64 get_hblank(struct ar0234 *ar0234)
 	 * for pixel clock is ar0234 internal,
 	 * return hblank in the numbers of pixel rate.
 	 */
-	hblank = 0x128 * (pixel_rate / pixel_clk);
+	hblank = 0x384 * (pixel_rate / pixel_clk);
 
 	return hblank;
 }
