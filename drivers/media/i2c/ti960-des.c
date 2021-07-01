@@ -743,6 +743,9 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 		va->sub_devs[k].phy_i2c_addr = info->phy_i2c_addr;
 		va->sub_devs[k].alias_i2c_addr = info->board_info.addr;
 		va->sub_devs[k].ser_i2c_addr = info->ser_alias;
+		snprintf(va->sub_devs[k].sd->name, sizeof(va->sd.name), "%s %c",
+			va->subdev_pdata[k].module_name,
+			va->subdev_pdata[k].suffix);
 		memcpy(va->sub_devs[k].sd_name,
 				va->subdev_pdata[k].module_name,
 				min(sizeof(va->sub_devs[k].sd_name) - 1,
