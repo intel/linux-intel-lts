@@ -624,6 +624,14 @@ static int imx390_start_streaming(struct imx390 *imx390)
 {
 	int ret;
 	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
+	const struct imx390_reg_list *reg_list;
+
+	reg_list = &imx390->cur_mode->reg_list;
+	ret = imx390_write_reg_list(imx390, reg_list);
+	if (ret) {
+		dev_err(&client->dev, "failed to set stream mode");
+		return ret;
+	}
 
 	ret = imx390_write_reg(imx390, IMX390_REG_STANDBY,
 			       IMX390_REG_VALUE_08BIT, 0);
@@ -736,7 +744,6 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 {
 	struct imx390 *imx390 = to_imx390(sd);
 	const struct imx390_mode *mode;
-	const struct imx390_reg_list *reg_list;
 	int ret = 0;
 	s32 vblank_def;
 	s64 hblank;
@@ -785,13 +792,6 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 					 IMX390_VTS_MAX - mode->height, 1,
 					 vblank_def);
 		//__v4l2_ctrl_s_ctrl(imx390->vblank, vblank_def);
-	}
-
-	reg_list = &imx390->cur_mode->reg_list;
-	ret = imx390_write_reg_list(imx390, reg_list);
-	if (ret) {
-		mutex_unlock(&imx390->mutex);
-		return ret;
 	}
 
 	mutex_unlock(&imx390->mutex);
