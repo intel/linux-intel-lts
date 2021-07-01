@@ -8,6 +8,8 @@
 
 #include <media/ipu-isys.h>
 
+#include <media/crlmodule.h>
+#include <media/ti960.h>
 #include <media/ar0234.h>
 #include <media/imx390.h>
 
@@ -154,53 +156,108 @@ static struct ipu_isys_subdev_info ar0234_sd_4 = {
 };
 
 #define IMX390_LANES       4
-#define IMX390_I2C_ADDRESS 0x1e
+#define IMX390_I2C_ADDRESS 0x1a
+#define IMX390_I2C_ADDRESS_8BIT 0x34
 
-static struct ipu_isys_csi2_config imx390_csi2_cfg_1 = {
-	.nlanes = IMX390_LANES,
+#if IS_ENABLED(CONFIG_VIDEO_TI960)
+#define TI960_I2C_ADAPTER	2
+#define TI960_I2C_ADAPTER_2	4
+#define TI960_LANES	4
+
+#define IMX390A_ADDRESS		0x44
+#define IMX390B_ADDRESS		0x45
+#define IMX390C_ADDRESS		0x46
+#define IMX390D_ADDRESS		0x47
+
+#define IMX390A_SER_ADDRESS	0x40
+#define IMX390B_SER_ADDRESS	0x41
+#define IMX390C_SER_ADDRESS	0x42
+#define IMX390D_SER_ADDRESS	0x43
+
+static struct crlmodule_platform_data imx390_pdata_stub = {
+	.lanes = 4,
+	.gpio_powerup_seq = {0, 0xa, -1, -1},
+	.module_flags = CRL_MODULE_FL_POWERUP,
+	//.module_flags = CRL_MODULE_FL_INIT_SER | CRL_MODULE_FL_POWERUP,
+	.fsin = 3, /* gpio 0 used for FSIN */
+};
+
+static struct ipu_isys_csi2_config ti960_csi2_cfg = {
+	.nlanes = TI960_LANES,
 	.port = 1,
 };
 
-static struct imx390_platform_data imx390_pdata_1 = {
-	.port = 1,
-	.lanes = 4,
-	.i2c_slave_address = IMX390_I2C_ADDRESS,
+static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
+	.nlanes = TI960_LANES,
+	.port = 4,
+};
+
+static struct ti960_subdev_info ti960_subdevs[] = {
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390A_ADDRESS,
+			.platform_data = &imx390_pdata_stub,
+		},
+		.rx_port = 0,
+		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390A_SER_ADDRESS,
+		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390B_ADDRESS,
+			.platform_data = &imx390_pdata_stub,
+		},
+		.rx_port = 1,
+		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390B_SER_ADDRESS,
+		.suffix = 'b',
+	},
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390C_ADDRESS,
+			.platform_data = &imx390_pdata_stub,
+		},
+		.rx_port = 2,
+		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390C_SER_ADDRESS,
+		.suffix = 'c',
+	},
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390D_ADDRESS,
+			.platform_data = &imx390_pdata_stub,
+		},
+		.rx_port = 3,
+		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390D_SER_ADDRESS,
+		.suffix = 'd',
+	},
+};
+
+static struct ti960_pdata ti960_pdata = {
+	.subdev_info = ti960_subdevs,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs),
+	.reset_gpio = 0,
 	.suffix = 'a',
 };
 
-static struct ipu_isys_subdev_info imx390_sd_1 = {
-	.csi2 = &imx390_csi2_cfg_1,
+static struct ipu_isys_subdev_info ti960_sd = {
+	.csi2 = &ti960_csi2_cfg,
 	.i2c = {
-	.board_info = {
-		I2C_BOARD_INFO("imx390", IMX390_I2C_ADDRESS),
-		.platform_data = &imx390_pdata_1,
-	},
-	.i2c_adapter_bdf = "0000:00:15.3",
-	},
+		.board_info = {
+			 .type = "ti960",
+			 .addr = TI960_I2C_ADDRESS,
+			 .platform_data = &ti960_pdata,
+		},
+		.i2c_adapter_bdf = "0000:00:15.3",
+	}
 };
-
-static struct ipu_isys_csi2_config imx390_csi2_cfg_2 = {
-	.nlanes = IMX390_LANES,
-	.port = 2,
-};
-
-static struct imx390_platform_data imx390_pdata_2 = {
-	.port = 2,
-	.lanes = 4,
-	.i2c_slave_address = IMX390_I2C_ADDRESS,
-	.suffix = 'b',
-};
-
-static struct ipu_isys_subdev_info imx390_sd_2 = {
-	.csi2 = &imx390_csi2_cfg_2,
-	.i2c = {
-	.board_info = {
-		I2C_BOARD_INFO("imx390", IMX390_I2C_ADDRESS),
-		.platform_data = &imx390_pdata_2,
-	},
-	.i2c_adapter_bdf = "0000:00:19.1",
-	},
-};
+#endif
 
 static struct ipu_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
@@ -212,8 +269,9 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&ar0234_sd_2,
 		&ar0234_sd_3,
 		&ar0234_sd_4,
-		&imx390_sd_1,
-		&imx390_sd_2,
+#if IS_ENABLED(CONFIG_VIDEO_TI960)
+		&ti960_sd,
+#endif
 		NULL,
 	},
 	.clk_map = clk_mapping,

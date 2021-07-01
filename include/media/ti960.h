@@ -12,7 +12,7 @@
 
 #define TI960_NAME "ti960"
 
-#define TI960_I2C_ADDRESS	0x38
+#define TI960_I2C_ADDRESS	0x32
 
 #define PIXEL_ORDER_GRBG	0
 #define PIXEL_ORDER_RGGB	1
@@ -38,7 +38,7 @@
 #define TI960_MIN_WIDTH		640
 #define TI960_MIN_HEIGHT	480
 #define TI960_MAX_WIDTH		1920
-#define TI960_MAX_HEIGHT	1080
+#define TI960_MAX_HEIGHT	1200
 
 struct ti960_csi_data_format {
 	u32 code;

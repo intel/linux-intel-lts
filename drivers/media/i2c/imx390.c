@@ -415,7 +415,8 @@ static int imx390_update_digital_gain(struct imx390 *imx390, u32 d_gain)
 
 static u64 get_pixel_rate(struct imx390 *imx390)
 {
-	u64 pixel_rate;
+	u64 pixel_rate = 0;
+
 	return pixel_rate;
 }
 
@@ -425,9 +426,7 @@ static u64 get_pixel_rate(struct imx390 *imx390)
  */
 static u64 get_hblank(struct imx390 *imx390)
 {
-	u64 hblank;
-	u64 pixel_rate;
-	u64 pixel_clk;
+	u64 hblank = 0;
 
 	return hblank;
 }
@@ -818,6 +817,23 @@ static int imx390_get_format(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int imx390_get_frame_desc(struct v4l2_subdev *sd,
+	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
+{
+	unsigned int i;
+
+	desc->num_entries = V4L2_FRAME_DESC_ENTRY_MAX;
+
+	for (i = 0; i < desc->num_entries; i++) {
+		desc->entry[i].flags = 0;
+		desc->entry[i].pixelcode = MEDIA_BUS_FMT_FIXED;
+		desc->entry[i].length = 0;
+		desc->entry[i].bus.csi2.channel = i;
+	}
+
+	return 0;
+}
+
 static int imx390_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_pad_config *cfg,
 				 struct v4l2_subdev_mbus_code_enum *code)
@@ -892,6 +908,7 @@ static const struct v4l2_subdev_video_ops imx390_video_ops = {
 static const struct v4l2_subdev_pad_ops imx390_pad_ops = {
 	.set_fmt = imx390_set_format,
 	.get_fmt = imx390_get_format,
+	.get_frame_desc = imx390_get_frame_desc,
 	.enum_mbus_code = imx390_enum_mbus_code,
 	.enum_frame_size = imx390_enum_frame_size,
 	.enum_frame_interval = imx390_enum_frame_interval,

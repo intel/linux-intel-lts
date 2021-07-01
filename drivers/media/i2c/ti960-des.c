@@ -127,6 +127,31 @@ static struct regmap_config ti960_reg_config16 = {
 	.reg_format_endian = REGMAP_ENDIAN_BIG,
 };
 
+int bus_switch(struct ti960 *va)
+{
+	int ret;
+	int retry, timeout = 10;
+	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
+
+	dev_dbg(&client->dev, "bus switch");
+	client->addr = 0x70;
+	for (retry = 0; retry < timeout; retry++) {
+		ret = i2c_smbus_write_byte(client, 0x01);
+		if (ret < 0)
+			usleep_range(5000, 6000);
+		else
+			break;
+	}
+
+	client->addr = TI960_I2C_ADDRESS;
+	if (retry >= timeout) {
+		dev_err(&client->dev, "bus switch failed");
+		return -EREMOTEIO;
+	}
+
+	return 0;
+}
+
 static int ti960_reg_read(struct ti960 *va, unsigned char reg, unsigned int *val)
 {
 	int ret, retry, timeout = 10;
@@ -450,6 +475,7 @@ static int ti960_get_frame_desc(struct v4l2_subdev *sd,
 		}
 	} else
 		dev_err(sd->dev, "can't find the frame desc\n");
+
 	return 0;
 }
 
@@ -1216,9 +1242,15 @@ static int ti960_init(struct ti960 *va)
 	int i, rval;
 	unsigned int val;
 
+#ifdef TI960_RESET_NEEDED
+	/* TI960 PDB pulled up to high by HW design in some board */
 	gpio_set_value(reset_gpio, 1);
 	usleep_range(2000, 3000);
 	dev_err(va->sd.dev, "Setting reset gpio %d to 1.\n", reset_gpio);
+#endif
+
+	bus_switch(va);
+	usleep_range(8000, 9000);
 
 	rval = ti960_reg_read(va, TI960_DEVID, &val);
 	if (rval) {
@@ -1241,6 +1273,10 @@ static int ti960_init(struct ti960 *va)
 	usleep_range(10000, 11000);
 
 	for (i = 0; i < ARRAY_SIZE(ti960_init_settings); i++) {
+		if (ti960_init_settings[i].reg == 0) {
+			usleep_range(ti960_init_settings[i].val * 1000, ti960_init_settings[i].val * 1000);
+			continue;
+		}
 		rval = regmap_write(va->regmap8,
 			ti960_init_settings[i].reg,
 			ti960_init_settings[i].val);
@@ -1386,12 +1422,25 @@ static int ti960_probe(struct i2c_client *client,
 		return rval;
 	}
 
+#ifdef TI960_RESET_NEEDED
 	if (devm_gpio_request_one(va->sd.dev, va->pdata->reset_gpio, 0,
 				  "ti960 reset") != 0) {
 		dev_err(va->sd.dev, "Unable to acquire gpio %d\n",
 			va->pdata->reset_gpio);
 		return -ENODEV;
 	}
+#endif
+
+	rval = devm_gpio_request_one(&client->dev,
+			258,
+			GPIOF_OUT_INIT_LOW, "Cam");
+	if (rval) {
+		dev_err(&client->dev, "camera power GPIO pin request failed!\n");
+		return rval;
+	}
+
+	/* pull up GPPC_B23 to high for FPD link power */
+	gpio_set_value(258, 1);
 
 	rval = ti960_init(va);
 	if (rval) {
