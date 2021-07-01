@@ -180,6 +180,8 @@ struct imx390 {
 
 	/* Current mode */
 	const struct imx390_mode *cur_mode;
+	/* Previous mode */
+	const struct imx390_mode *pre_mode;
 
 	/* To serialize asynchronus callbacks */
 	struct mutex mutex;
@@ -626,12 +628,16 @@ static int imx390_start_streaming(struct imx390 *imx390)
 	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
 	const struct imx390_reg_list *reg_list;
 
-	reg_list = &imx390->cur_mode->reg_list;
-	ret = imx390_write_reg_list(imx390, reg_list);
-	if (ret) {
-		dev_err(&client->dev, "failed to set stream mode");
-		return ret;
-	}
+	if (imx390->cur_mode != imx390->pre_mode) {
+		reg_list = &imx390->cur_mode->reg_list;
+		ret = imx390_write_reg_list(imx390, reg_list);
+		if (ret) {
+			dev_err(&client->dev, "failed to set stream mode");
+			return ret;
+		}
+		imx390->pre_mode = imx390->cur_mode;
+	} else
+		dev_dbg(&client->dev, "same mode, skip write reg list");
 
 	ret = imx390_write_reg(imx390, IMX390_REG_STANDBY,
 			       IMX390_REG_VALUE_08BIT, 0);
@@ -988,6 +994,7 @@ static int imx390_probe(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd;
 	struct imx390 *imx390;
+	const struct imx390_reg_list *reg_list;
 	int ret;
 
 	imx390 = devm_kzalloc(&client->dev, sizeof(*imx390), GFP_KERNEL);
@@ -1029,7 +1036,18 @@ static int imx390_probe(struct i2c_client *client)
 				imx390->platform_data->suffix);
 
 	mutex_init(&imx390->mutex);
-	imx390->cur_mode = &supported_modes[0];
+
+	/* 1920x1200 default */
+	imx390->cur_mode = &supported_modes[1];
+	imx390->pre_mode = imx390->cur_mode;
+
+	reg_list = &imx390->cur_mode->reg_list;
+	ret = imx390_write_reg_list(imx390, reg_list);
+	if (ret) {
+		dev_err(&client->dev, "failed to apply preset mode");
+		return ret;
+	}
+
 	ret = imx390_init_controls(imx390);
 	if (ret) {
 		dev_err(&client->dev, "failed to init controls: %d", ret);
