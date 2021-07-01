@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2014 - 2020 Intel Corporation
+// Copyright (C) 2014 - 2021 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/module.h>
@@ -43,6 +43,37 @@ static const u32 csi2_be_soc_supported_codes_pad[] = {
 	MEDIA_BUS_FMT_SRGGB8_1X8,
 	0,
 };
+
+/*
+ * Raw bayer format pixel order MUST BE MAINTAINED in groups of four codes.
+ * Otherwise pixel order calculation below WILL BREAK!
+ */
+static const u32 csi2_be_soc_supported_raw_bayer_codes_pad[] = {
+	MEDIA_BUS_FMT_SBGGR12_1X12,
+	MEDIA_BUS_FMT_SGBRG12_1X12,
+	MEDIA_BUS_FMT_SGRBG12_1X12,
+	MEDIA_BUS_FMT_SRGGB12_1X12,
+	MEDIA_BUS_FMT_SBGGR10_1X10,
+	MEDIA_BUS_FMT_SGBRG10_1X10,
+	MEDIA_BUS_FMT_SGRBG10_1X10,
+	MEDIA_BUS_FMT_SRGGB10_1X10,
+	MEDIA_BUS_FMT_SBGGR8_1X8,
+	MEDIA_BUS_FMT_SGBRG8_1X8,
+	MEDIA_BUS_FMT_SGRBG8_1X8,
+	MEDIA_BUS_FMT_SRGGB8_1X8,
+	0,
+};
+
+static int get_supported_code_index(u32 code)
+{
+	int i;
+
+	for (i = 0; csi2_be_soc_supported_raw_bayer_codes_pad[i]; i++) {
+		if (csi2_be_soc_supported_raw_bayer_codes_pad[i] == code)
+			return i;
+	}
+	return -EINVAL;
+}
 
 static const u32 *csi2_be_soc_supported_codes[NR_OF_CSI2_BE_SOC_PADS];
 
@@ -100,9 +131,9 @@ ipu_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
 	if (sel->target == V4L2_SEL_TGT_CROP &&
 	    pad->flags & MEDIA_PAD_FL_SOURCE &&
 	    asd->valid_tgts[sel->pad].crop) {
-		struct v4l2_rect *r;
 		enum isys_subdev_prop_tgt tgt =
 		    IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP;
+		struct v4l2_rect *r;
 		unsigned int sink_pad = 0;
 		int i;
 
@@ -187,7 +218,8 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 					      fmt->pad, fmt->which);
 	} else if (sd->entity.pads[fmt->pad].flags & MEDIA_PAD_FL_SOURCE) {
 		struct v4l2_mbus_framefmt *sink_ffmt;
-		struct v4l2_rect *r;
+		struct v4l2_rect *r = __ipu_isys_get_selection(sd, cfg,
+			V4L2_SEL_TGT_CROP, fmt->pad, fmt->which);
 		struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 		unsigned int sink_pad = 0;
 		int i;
@@ -200,12 +232,9 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 		sink_ffmt = __ipu_isys_get_ffmt(sd, cfg, sink_pad,
 						fmt->stream,
 						fmt->which);
-		r = __ipu_isys_get_selection(sd, cfg, V4L2_SEL_TGT_CROP,
-					     fmt->pad, fmt->which);
-
+		ffmt->code = sink_ffmt->code;
 		ffmt->width = r->width;
 		ffmt->height = r->height;
-		ffmt->code = sink_ffmt->code;
 		ffmt->field = sink_ffmt->field;
 
 #ifdef IPU_ISYS_YUV422_I420
