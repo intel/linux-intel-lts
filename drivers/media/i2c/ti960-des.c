@@ -13,7 +13,6 @@
 #include <media/media-device.h>
 #include <media/media-entity.h>
 #include <media/ti960.h>
-#include <media/crlmodule.h>
 #include <media/v4l2-device.h>
 #include <media/videobuf2-core.h>
 
@@ -36,7 +35,7 @@ struct ti960 {
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct ti960_pdata *pdata;
 	struct ti960_subdev sub_devs[NR_OF_TI960_SINK_PADS];
-	struct crlmodule_platform_data subdev_pdata[NR_OF_TI960_SINK_PADS];
+	struct ti960_subdev_pdata subdev_pdata[NR_OF_TI960_SINK_PADS];
 	const char *name;
 
 	struct mutex mutex;
@@ -641,8 +640,8 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 	for (i = 0, k = 0; i < va->pdata->subdev_num; i++) {
 		struct ti960_subdev_info *info =
 			&va->pdata->subdev_info[i];
-		struct crlmodule_platform_data *pdata =
-			(struct crlmodule_platform_data *)
+		struct ti960_subdev_pdata *pdata =
+			(struct ti960_subdev_pdata *)
 			info->board_info.platform_data;
 
 		if (k >= va->nsinks)
@@ -692,18 +691,18 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 				TI953_RESET_CTL, TI953_DIGITAL_RESET_1);
 		msleep(50);
 
-		if (va->subdev_pdata[k].module_flags & CRL_MODULE_FL_INIT_SER) {
+		if (va->subdev_pdata[k].module_flags & TI960_FL_INIT_SER) {
 			rval = ti953_init(&va->sd, info->rx_port, info->ser_alias);
 			if (rval)
 				return rval;
 		}
 
-		if (va->subdev_pdata[k].module_flags & CRL_MODULE_FL_POWERUP) {
+		if (va->subdev_pdata[k].module_flags & TI960_FL_POWERUP) {
 			ti953_reg_write(&va->sd, info->rx_port, info->ser_alias,
 					TI953_GPIO_INPUT_CTRL, TI953_GPIO_OUT_EN);
 
 			/* boot sequence */
-			for (m = 0; m < CRL_MAX_GPIO_POWERUP_SEQ; m++) {
+			for (m = 0; m < TI960_MAX_GPIO_POWERUP_SEQ; m++) {
 				if (va->subdev_pdata[k].gpio_powerup_seq[m] < 0)
 					break;
 				ti953_reg_write(&va->sd, info->rx_port, info->ser_alias,
@@ -1003,7 +1002,7 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 					i, enable);
 				return rval;
 			}
-			if (va->subdev_pdata[j].module_flags & CRL_MODULE_FL_RESET) {
+			if (va->subdev_pdata[j].module_flags & TI960_FL_RESET) {
 				rval = reset_sensor(va, rx_port, ser_alias,
 						va->subdev_pdata[j].reset);
 				if (rval)
@@ -1045,7 +1044,7 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 					return rval;
 				}
 
-				if (va->subdev_pdata[i].module_flags & CRL_MODULE_FL_RESET) {
+				if (va->subdev_pdata[i].module_flags & TI960_FL_RESET) {
 					rx_port = va->sub_devs[i].rx_port;
 					ser_alias = va->sub_devs[i].ser_i2c_addr;
 					rval = reset_sensor(va, rx_port, ser_alias,

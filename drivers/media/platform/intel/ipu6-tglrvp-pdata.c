@@ -8,7 +8,6 @@
 
 #include <media/ipu-isys.h>
 
-#include <media/crlmodule.h>
 #include <media/ti960.h>
 #include <media/ar0234.h>
 #include <media/imx390.h>
@@ -176,17 +175,17 @@ static struct ipu_isys_subdev_info ar0234_sd_4 = {
 #define IMX390C_SER_ADDRESS	0x42
 #define IMX390D_SER_ADDRESS	0x43
 
-static struct crlmodule_platform_data imx390_d3rcm_pdata_stub = {
+static struct ti960_subdev_pdata imx390_d3rcm_pdata_stub = {
 	.lanes = 4,
 	.gpio_powerup_seq = {0, 0xa, -1, -1},
-	.module_flags = CRL_MODULE_FL_POWERUP,
+	.module_flags = TI960_FL_POWERUP,
 	.fsin = 0, /* gpio 0 used for FSIN */
 };
 
-static struct crlmodule_platform_data imx390_d3cm_pdata_stub = {
+static struct ti960_subdev_pdata imx390_d3cm_pdata_stub = {
 	.lanes = 4,
 	.gpio_powerup_seq = {0, 0x9, -1, -1},
-	.module_flags = CRL_MODULE_FL_POWERUP,
+	.module_flags = TI960_FL_POWERUP,
 	.fsin = 3, /* gpio 3 used for FSIN */
 };
 
@@ -201,6 +200,7 @@ static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
 };
 
 static struct ti960_subdev_info ti960_subdevs[] = {
+#if IS_ENABLED(CONFIG_VIDEO_IMX390)
 	/* D3RCM */
 	{
 		.board_info = {
@@ -291,6 +291,7 @@ static struct ti960_subdev_info ti960_subdevs[] = {
 		.ser_alias = IMX390D_SER_ADDRESS,
 		.suffix = 'd',
 	},
+#endif
 };
 
 static struct ti960_pdata ti960_pdata = {

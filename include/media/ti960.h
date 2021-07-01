@@ -64,4 +64,43 @@ struct ti960_pdata {
 	const char suffix;
 };
 
+#define TI960_MAX_GPIO_POWERUP_SEQ        4
+
+/* set this flag if this module needs serializer initialization */
+#define TI960_FL_INIT_SER	BIT(0)
+/* set this flag if this module has extra powerup sequence */
+#define TI960_FL_POWERUP	BIT(1)
+/* set this flag if this module needs reset signal */
+#define TI960_FL_RESET	BIT(2)
+
+struct ti960_subdev_pdata {
+	unsigned short i2c_addr;
+	unsigned short i2c_adapter;
+
+	unsigned int lanes;		/* Number of CSI-2 lanes */
+
+	/* specify gpio pins of Deser for PWDN, FSIN, RESET. */
+	int xshutdown;
+	int fsin;
+	int reset;
+
+	/* specify gpio pins boot timing. */
+	/* Bit 3 write 0/1 on GPIO3
+	 * Bit 2 write 0/1 on GPIO2
+	 * Bit 1 write 0/1 on GPIO1
+	 * Bit 0 write 0/1 on GPIO0
+	 */
+	char gpio_powerup_seq[TI960_MAX_GPIO_POWERUP_SEQ];
+
+	/* module_flags can be:
+	 * TI960_FL_INIT_SER
+	 * TI960_FL_POWERUP
+	 * TI960_FL_RESET
+	 */
+	unsigned int module_flags;
+
+	char module_name[16]; /* module name from ACPI */
+	char suffix; /* suffix to identify multi sensors, abcd.. */
+};
+
 #endif
