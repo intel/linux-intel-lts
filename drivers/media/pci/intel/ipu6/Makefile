@@ -28,11 +28,11 @@ intel-ipu6-isys-objs			+= ../ipu-isys.o \
 					   ipu6-isys-csi2.o \
 					   ipu6-isys-gpc.o \
 					   ../ipu-isys-csi2-be-soc.o \
-					   ../ipu-isys-csi2-be.o \
 					   ../ipu-fw-isys.o \
 					   ../ipu-isys-video.o \
 					   ../ipu-isys-queue.o \
 					   ../ipu-isys-subdev.o
+intel-ipu6-isys-objs			+= ../ipu-isys-csi2-be.o
 
 ifdef CONFIG_VIDEO_INTEL_IPU_TPG
 intel-ipu6-isys-objs                    += ../ipu-isys-tpg.o

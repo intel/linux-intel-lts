@@ -66,9 +66,9 @@ struct ipu_isys_csi2_be_soc {
 
 int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 			  struct ipu_isys *isys);
+void ipu_isys_csi2_be_cleanup(struct ipu_isys_csi2_be *csi2_be);
 int ipu_isys_csi2_be_soc_init(struct ipu_isys_csi2_be_soc *csi2_be_soc,
 			      struct ipu_isys *isys);
-void ipu_isys_csi2_be_cleanup(struct ipu_isys_csi2_be *csi2_be);
 void ipu_isys_csi2_be_soc_cleanup(struct ipu_isys_csi2_be_soc *csi2_be);
 
 #endif /* IPU_ISYS_CSI2_BE_H */
