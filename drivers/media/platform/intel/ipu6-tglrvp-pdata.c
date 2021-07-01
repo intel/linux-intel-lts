@@ -154,11 +154,109 @@ static struct ipu_isys_subdev_info ar0234_sd_4 = {
 	.fixup_spdata = ar0234_fixup_spdata,
 };
 
+#if IS_ENABLED(CONFIG_VIDEO_IMX390)
 #define IMX390_LANES       4
 #define IMX390_D3RCM_I2C_ADDRESS 0x1a
 #define IMX390_D3RCM_I2C_ADDRESS_8BIT (IMX390_D3RCM_I2C_ADDRESS << 1)
 #define IMX390_D3CM_I2C_ADDRESS 0x21
 #define IMX390_D3CM_I2C_ADDRESS_8BIT (IMX390_D3CM_I2C_ADDRESS << 1)
+#define IMX390_I2C_ADDRESS_3 0x1e
+#define IMX390_I2C_ADDRESS_8BIT_3 (IMX390_I2C_ADDRESS_3 << 1)
+#define IMX390_I2C_ADDRESS_4 0x20
+#define IMX390_I2C_ADDRESS_8BIT_4 (IMX390_I2C_ADDRESS_4 << 1)
+
+static struct ipu_isys_csi2_config imx390_csi2_cfg_1 = {
+	.nlanes = IMX390_LANES,
+	.port = 1,
+};
+
+static struct imx390_platform_data imx390_pdata_1 = {
+	.port = 1,
+	.lanes = 4,
+	.i2c_slave_address = IMX390_I2C_ADDRESS_3,
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info imx390_sd_1 = {
+	.csi2 = &imx390_csi2_cfg_1,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("imx390", IMX390_I2C_ADDRESS_3),
+		.platform_data = &imx390_pdata_1,
+	},
+	.i2c_adapter_bdf = "0000:00:15.3",
+	},
+};
+
+static struct ipu_isys_csi2_config imx390_csi2_cfg_2 = {
+	.nlanes = IMX390_LANES,
+	.port = 2,
+};
+
+static struct imx390_platform_data imx390_pdata_2 = {
+	.port = 2,
+	.lanes = 4,
+	.i2c_slave_address = IMX390_I2C_ADDRESS_3,
+	.suffix = 'b',
+};
+
+static struct ipu_isys_subdev_info imx390_sd_2 = {
+	.csi2 = &imx390_csi2_cfg_2,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("imx390", IMX390_I2C_ADDRESS_3),
+		.platform_data = &imx390_pdata_2,
+	},
+	.i2c_adapter_bdf = "0000:00:19.1",
+	},
+};
+
+static struct ipu_isys_csi2_config imx390_csi2_cfg_3 = {
+	.nlanes = IMX390_LANES,
+	.port = 1,
+};
+
+static struct imx390_platform_data imx390_pdata_3 = {
+	.port = 1,
+	.lanes = 4,
+	.i2c_slave_address = IMX390_I2C_ADDRESS_4,
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info imx390_sd_3 = {
+	.csi2 = &imx390_csi2_cfg_1,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("imx390", IMX390_I2C_ADDRESS_4),
+		.platform_data = &imx390_pdata_1,
+	},
+	.i2c_adapter_bdf = "0000:00:15.3",
+	},
+};
+
+static struct ipu_isys_csi2_config imx390_csi2_cfg_4 = {
+	.nlanes = IMX390_LANES,
+	.port = 2,
+};
+
+static struct imx390_platform_data imx390_pdata_4 = {
+	.port = 2,
+	.lanes = 4,
+	.i2c_slave_address = IMX390_I2C_ADDRESS_4,
+	.suffix = 'b',
+};
+
+static struct ipu_isys_subdev_info imx390_sd_4 = {
+	.csi2 = &imx390_csi2_cfg_2,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("imx390", IMX390_I2C_ADDRESS_4),
+		.platform_data = &imx390_pdata_2,
+	},
+	.i2c_adapter_bdf = "0000:00:19.1",
+	},
+};
+#endif
 
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 #define TI960_I2C_ADAPTER	2
@@ -324,6 +422,12 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&ar0234_sd_2,
 		&ar0234_sd_3,
 		&ar0234_sd_4,
+#if IS_ENABLED(CONFIG_VIDEO_IMX390)
+		&imx390_sd_1,
+		&imx390_sd_2,
+		&imx390_sd_3,
+		&imx390_sd_4,
+#endif
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 		&ti960_sd,
 #endif
