@@ -344,7 +344,7 @@ static void lt6911uxc_i2c_rd(struct v4l2_subdev *sd, u16 reg, u8 *values, u32 n)
 
 static u8 lt6911uxc_i2c_rd8(struct v4l2_subdev *sd, u16 reg)
 {
-	u8 val;
+	u8 val = 0;
 
 	lt6911uxc_i2c_rd(sd, reg, &val, 1);
 
@@ -354,7 +354,7 @@ static u8 lt6911uxc_i2c_rd8(struct v4l2_subdev *sd, u16 reg)
 
 static u16 lt6911uxc_i2c_rd16(struct v4l2_subdev *sd, u16 reg)
 {
-	u16 val;
+	u16 val = 0;
 	u8 tmp;
 
 	lt6911uxc_i2c_rd(sd, reg, (u8 *)&val, 2);
