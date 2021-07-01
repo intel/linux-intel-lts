@@ -1440,7 +1440,7 @@ static int ti960_probe(struct i2c_client *client,
 #endif
 
 	rval = devm_gpio_request_one(&client->dev,
-			258,
+			175,
 			GPIOF_OUT_INIT_LOW, "Cam");
 	if (rval) {
 		dev_err(&client->dev, "camera power GPIO pin request failed!\n");
@@ -1448,7 +1448,7 @@ static int ti960_probe(struct i2c_client *client,
 	}
 
 	/* pull up GPPC_B23 to high for FPD link power */
-	gpio_set_value(258, 1);
+	gpio_set_value(175, 1);
 
 	rval = ti960_init(va);
 	if (rval) {
