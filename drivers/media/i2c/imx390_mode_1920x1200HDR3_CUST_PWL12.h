@@ -2,7 +2,7 @@
  * @author George Vigelette <gvigelette@d3engineering.com>
  *
  * imx390 v4l2 driver for tgl
- */
+ **/
 
 #ifndef __GRBG_1920x1200_HDR3_CUST_PWL12_M4_30_27M_H
 #define __GRBG_1920x1200_HDR3_CUST_PWL12_M4_30_27M_H
@@ -1032,7 +1032,11 @@ static const struct imx390_reg imx390_mode_1920x1200HDR3_CUST_PWL12[] = {
 {0x2D50, 0x80},
 {0x2D54, 0x00},
 {0x2D5B, 0x58},
+{0x2D64, 0x66}, // GRBG
+{0x2D65, 0x80}, // GRBG
+{0x2DFC, 0x00}, // disable spmg
 {0x2DFD, 0x01},
+{0x2E24, 0x01}, // disable spmg
 {0x3000, 0x00},
 {0x3001, 0x00},
 {0x3002, 0x23},
