@@ -651,7 +651,7 @@ static int imx390_start_streaming(struct imx390 *imx390)
 			IMX390_REG_VALUE_08BIT, 0);
 		if (ret)
 			dev_err(&client->dev, "retry to write STANDBY");
-	} while (!ret || !retries--);
+	} while (ret && retries--);
 
 	if (ret) {
 		dev_err(&client->dev, "failed to set stream");
