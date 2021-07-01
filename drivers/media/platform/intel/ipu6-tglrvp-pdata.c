@@ -11,6 +11,7 @@
 #include <media/ti960.h>
 #include <media/ar0234.h>
 #include <media/imx390.h>
+#include <media/lt6911uxc.h>
 
 #include "ipu.h"
 
@@ -414,6 +415,63 @@ static struct ipu_isys_subdev_info ti960_sd = {
 };
 #endif
 
+#define LT6911UXC_LANES       4
+#define LT6911UXC_I2C_ADDRESS 0x2B
+
+static struct ipu_isys_csi2_config lt6911uxc_csi2_cfg_1 = {
+	.nlanes = LT6911UXC_LANES,
+	.port = 1,
+};
+
+static struct lt6911uxc_platform_data lt6911uxc_pdata_1 = {
+	.port = 1,
+	.lanes = LT6911UXC_LANES,
+	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
+	.irq_pin = 258,
+	.irq_pin_name = "C2",
+	.irq_pin_flags = IRQF_TRIGGER_RISING
+		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info  lt6911uxc_sd_1 = {
+	.csi2 = &lt6911uxc_csi2_cfg_1,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("lt6911uxc", LT6911UXC_I2C_ADDRESS),
+		.platform_data = &lt6911uxc_pdata_1,
+	},
+	.i2c_adapter_bdf = "0000:00:15.3",
+	},
+};
+
+static struct ipu_isys_csi2_config lt6911uxc_csi2_cfg_2 = {
+	.nlanes = LT6911UXC_LANES,
+	.port = 2,
+};
+
+static struct lt6911uxc_platform_data lt6911uxc_pdata_2 = {
+	.port = 2,
+	.lanes = LT6911UXC_LANES,
+	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
+	.irq_pin = 258,
+	.irq_pin_name = "C2",
+	.irq_pin_flags = IRQF_TRIGGER_RISING
+		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+	.suffix = 'b',
+};
+
+static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {
+	.csi2 = &lt6911uxc_csi2_cfg_2,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("lt6911uxc", LT6911UXC_I2C_ADDRESS),
+		.platform_data = &lt6911uxc_pdata_2,
+	},
+	.i2c_adapter_bdf = "0000:00:19.1",
+	},
+};
+
 static struct ipu_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
 };
@@ -433,6 +491,8 @@ static struct ipu_isys_subdev_pdata pdata = {
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 		&ti960_sd,
 #endif
+		&lt6911uxc_sd_1,
+		&lt6911uxc_sd_2,
 		NULL,
 	},
 	.clk_map = clk_mapping,
