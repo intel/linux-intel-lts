@@ -624,7 +624,7 @@ static void imx390_update_pad_format(const struct imx390_mode *mode,
 
 static int imx390_start_streaming(struct imx390 *imx390)
 {
-	int ret;
+	int retries, ret;
 	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
 	const struct imx390_reg_list *reg_list;
 
@@ -639,8 +639,20 @@ static int imx390_start_streaming(struct imx390 *imx390)
 	} else
 		dev_dbg(&client->dev, "same mode, skip write reg list");
 
-	ret = imx390_write_reg(imx390, IMX390_REG_STANDBY,
-			       IMX390_REG_VALUE_08BIT, 0);
+	/*
+	 * WA: i2c write to IMX390_REG_STANDBY no response randomly,
+	 * pipeline fails to start.
+	 * retries 1000 times, wait for i2c recover, pipeline started
+	 * with extra delay, instead of fails.
+	 */
+	retries = 1000;
+	do {
+		ret = imx390_write_reg(imx390, IMX390_REG_STANDBY,
+			IMX390_REG_VALUE_08BIT, 0);
+		if (ret)
+			dev_err(&client->dev, "retry to write STANDBY");
+	} while (!ret || !retries--);
+
 	if (ret) {
 		dev_err(&client->dev, "failed to set stream");
 		return ret;
