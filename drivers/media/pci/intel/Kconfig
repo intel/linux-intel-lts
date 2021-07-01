@@ -29,64 +29,7 @@ config VIDEO_INTEL_IPU_SOC
 	  Used for real SoC hardware driver development
 	  Select for SOC platform
 
-config VIDEO_INTEL_IPU_FPGA
-	bool "Compile for FPGA"
-	help
-	  Select for FPGA platform
-
-config VIDEO_INTEL_IPU_MOCK
-	bool "Compile for Mock driver"
-	help
-	  Select for mock solution
-
 endchoice
-
-config VIDEO_INTEL_IPU_FW_LIB
-	bool "Compile firmware library"
-	help
-	  If selected, the firmware hostlib css would be compiled
-
-choice
-	prompt "intel ipu firmware library type"
-	depends on VIDEO_INTEL_IPU_FW_LIB
-	default VIDEO_INTEL_IPU_FW_LIB_IPU6
-
-config VIDEO_INTEL_IPU_FW_LIB_IPU6
-	bool "Compile for IPU6 driver"
-	help
-	  For sixth generation Intel imaging processing unit.
-
-	  To compile this driver, say Y here! Please select the proper option,
-	  it conflicts with other choice.
-
-config VIDEO_INTEL_IPU_FW_LIB_IPU6SE
-	bool "Compile for IPU6SE driver"
-	help
-	  Slim enhanced sixth generation Intel imaging processing unit found
-	  in Intel SoC.
-
-	  To compile this driver, say Y here! Please select the proper option,
-	  it conflicts with other choice.
-
-config VIDEO_INTEL_IPU_FW_LIB_IPU6EP
-	bool "Compile for IPU6EP driver"
-	help
-	  For sixth generation EP Intel imaging processing unit.
-
-	  To compile this driver, say Y here! Please select the proper option,
-	  it conflicts with other choice.
-
-endchoice
-
-config VIDEO_INTEL_IPU_TPG
-	bool "Compile for TPG driver"
-	help
-	  If selected, TPG device nodes would be created.
-
-	  Recommended for driver developers only.
-
-	  If you want to the TPG devices exposed to user as media entity,
-	  you must select this option, otherwise no.
 
 config VIDEO_INTEL_IPU_WERROR
 	bool "Force GCC to throw an error instead of a warning when compiling"
