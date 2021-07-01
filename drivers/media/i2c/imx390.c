@@ -122,6 +122,8 @@ struct imx390_mode {
 	/* Frame height in pixels */
 	u32 height;
 
+	bool hdr_en;
+
 	/* Horizontal timining size */
 	u32 hts;
 
@@ -189,7 +191,7 @@ struct imx390 {
 };
 
 #include "imx390-mode-1280x960-CROP.h"
-#include "imx390_mode_1920x1200HDR3_PWL12.h"
+#include "imx390_mode_1920x1200HDR3_CUST_PWL12.h"
 
 static int imx390_group_hold_enable(struct imx390 *imx390, s32 val);
 
@@ -204,6 +206,7 @@ static const struct imx390_mode supported_modes[] = {
 	{
 		.width = 1280,
 		.height = 960,
+		.hdr_en = false,
 		.hts = 2464,
 		.vts_def = 2435,
 		.vts_min = 2435,
@@ -220,6 +223,7 @@ static const struct imx390_mode supported_modes[] = {
 	{
 		.width = 1920,
 		.height = 1200,
+		.hdr_en = true,
 		.hts = 2464,
 		.vts_def = 2435,
 		.vts_min = 2435,
@@ -228,8 +232,8 @@ static const struct imx390_mode supported_modes[] = {
 		.fps = 30,
 		.bpp = 12,
 		.reg_list = {
-			.num_of_regs = ARRAY_SIZE(imx390_mode_1920x1200HDR3_PWL12),
-			.regs = imx390_mode_1920x1200HDR3_PWL12,
+			.num_of_regs = ARRAY_SIZE(imx390_mode_1920x1200HDR3_CUST_PWL12),
+			.regs = imx390_mode_1920x1200HDR3_CUST_PWL12,
 		},
 		.link_freq_index = -1,
 	},
@@ -311,6 +315,10 @@ static int imx390_is_hdr(struct imx390 *imx390)
 {
 	// int mode_ix = self->s_data->sensor_mode_id;
 	// return imx390_modes_formats[mode_ix].hdr_en;
+
+	if (imx390->cur_mode->hdr_en)
+		return 1;
+
 	return 0;
 }
 
