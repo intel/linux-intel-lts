@@ -95,7 +95,8 @@ static const struct ti953_register_write ti953_init_settings[] = {
 
 static const struct ti953_register_write ti953_init_settings_clk[] = {
 	{0x06, 0x41},
-	{0x07, 0x28},
+	/* WA: set N to 0x25 for 30 fps */
+	{0x07, 0x25},
 };
 
 static const struct ti953_register_devid ti953_FPD3_RX_ID[] = {
@@ -116,5 +117,6 @@ int ti953_reg_read(struct v4l2_subdev *sd, unsigned short rx_port,
 bool ti953_detect(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
 
 int ti953_init(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
+int ti953_init_clk(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
 
 #endif

@@ -113,6 +113,15 @@ int ti953_init(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short se
 		}
 	}
 
+	ti953_init_clk(sd, rx_port, ser_alias);
+
+	return 0;
+}
+
+int ti953_init_clk(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias)
+{
+	int i, rval;
+
 	for (i = 0; i < ARRAY_SIZE(ti953_init_settings_clk); i++) {
 		rval = ti953_reg_write(sd, rx_port, ser_alias,
 			ti953_init_settings_clk[i].reg,

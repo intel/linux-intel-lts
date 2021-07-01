@@ -697,6 +697,12 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 				return rval;
 		}
 
+		if (va->subdev_pdata[k].module_flags & TI960_FL_INIT_SER_CLK) {
+			rval = ti953_init_clk(&va->sd, info->rx_port, info->ser_alias);
+			if (rval)
+				return rval;
+		}
+
 		if (va->subdev_pdata[k].module_flags & TI960_FL_POWERUP) {
 			ti953_reg_write(&va->sd, info->rx_port, info->ser_alias,
 					TI953_GPIO_INPUT_CTRL, TI953_GPIO_OUT_EN);

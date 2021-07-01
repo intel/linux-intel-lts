@@ -276,14 +276,14 @@ static struct ipu_isys_subdev_info imx390_sd_4 = {
 static struct ti960_subdev_pdata imx390_d3rcm_pdata_stub = {
 	.lanes = 4,
 	.gpio_powerup_seq = {0, 0xa, -1, -1},
-	.module_flags = TI960_FL_POWERUP,
+	.module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK,
 	.fsin = 0, /* gpio 0 used for FSIN */
 };
 
 static struct ti960_subdev_pdata imx390_d3cm_pdata_stub = {
 	.lanes = 4,
 	.gpio_powerup_seq = {0, 0x9, -1, -1},
-	.module_flags = TI960_FL_POWERUP,
+	.module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK,
 	.fsin = 3, /* gpio 3 used for FSIN */
 };
 

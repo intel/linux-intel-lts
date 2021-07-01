@@ -72,6 +72,8 @@ struct ti960_pdata {
 #define TI960_FL_POWERUP	BIT(1)
 /* set this flag if this module needs reset signal */
 #define TI960_FL_RESET	BIT(2)
+/* set this flag if it need to init serial clk only */
+#define TI960_FL_INIT_SER_CLK	BIT(4)
 
 struct ti960_subdev_pdata {
 	unsigned short i2c_addr;
