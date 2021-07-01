@@ -446,13 +446,15 @@ phys_addr_t ipu_mmu_iova_to_phys(struct ipu_mmu_info *mmu_info,
 {
 	unsigned long flags;
 	u32 *l2_pt;
+	phys_addr_t phy_addr;
 
 	spin_lock_irqsave(&mmu_info->lock, flags);
 	l2_pt = TBL_VIRT_ADDR(mmu_info->pgtbl[iova >> ISP_L1PT_SHIFT]);
+	phy_addr = (phys_addr_t)l2_pt[(iova & ISP_L2PT_MASK) >> ISP_L2PT_SHIFT];
+	phy_addr <<= ISP_PAGE_SHIFT;
 	spin_unlock_irqrestore(&mmu_info->lock, flags);
 
-	return (phys_addr_t)l2_pt[(iova & ISP_L2PT_MASK) >> ISP_L2PT_SHIFT]
-	    << ISP_PAGE_SHIFT;
+	return phy_addr;
 }
 
 /*
