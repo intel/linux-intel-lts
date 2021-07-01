@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2020 Intel Corporation */
+/* Copyright (C) 2013 - 2021 Intel Corporation */
 
 #ifndef IPU_MMU_H
 #define IPU_MMU_H
@@ -44,7 +44,7 @@ struct ipu_mmu {
 	struct list_head vma_list;
 
 	struct page *trash_page;
-	dma_addr_t iova_addr_trash;
+	dma_addr_t iova_trash_page;
 
 	bool ready;
 	spinlock_t ready_lock;	/* Serialize access to bool ready */
