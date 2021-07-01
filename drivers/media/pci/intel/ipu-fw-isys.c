@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2021 Intel Corporation
 
 #include <asm/cacheflush.h>
 
@@ -479,6 +479,12 @@ void ipu_fw_isys_set_params(struct ipu_fw_isys_stream_cfg_data_abi *stream_cfg)
 		    N_IPU_FW_ISYS_MIPI_DATA_TYPE;
 		stream_cfg->input_pins[i].mipi_decompression =
 		    IPU_FW_ISYS_MIPI_COMPRESSION_TYPE_NO_COMPRESSION;
+		/*
+		 * CSI BE can be used to crop and change bayer order.
+		 * NOTE: currently it only crops first and last lines in height.
+		 */
+		if (stream_cfg->crop.top_offset & 1)
+			stream_cfg->input_pins[i].crop_first_and_last_lines = 1;
 		stream_cfg->input_pins[i].capture_mode =
 			IPU_FW_ISYS_CAPTURE_MODE_REGULAR;
 	}
