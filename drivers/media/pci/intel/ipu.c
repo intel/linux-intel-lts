@@ -31,6 +31,10 @@
 enum ipu_version ipu_ver;
 EXPORT_SYMBOL(ipu_ver);
 
+static int isys_freq_overwrite = -1;
+module_param(isys_freq_overwrite, int, 0444);
+MODULE_PARM_DESC(isys_freq_overwrite, "overwrite isys freq default value");
+
 static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    struct device *parent,
 					    struct ipu_buttress_ctrl *ctrl,
@@ -603,6 +607,14 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (IS_ERR(isp->isys)) {
 		rval = PTR_ERR(isp->isys);
 		goto out_ipu_bus_del_devices;
+	}
+
+	if ((isys_freq_overwrite >= IPU_IS_FREQ_MIN) && (isys_freq_overwrite <= IPU_IS_FREQ_MAX)) {
+		u64 val = isys_freq_overwrite;
+
+		do_div(val, BUTTRESS_IS_FREQ_STEP);
+		dev_info(&isp->pdev->dev, "isys freq overwrite to %d\n", isys_freq_overwrite);
+		isys_ctrl->divisor = val;
 	}
 
 	psys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*psys_ctrl), GFP_KERNEL);
