@@ -24,8 +24,8 @@
 #define IMX390_REG_VALUE_08BIT		1
 #define IMX390_REG_VALUE_16BIT		2
 
-#define IMX390_REG_CHIP_ID		0x3000
-#define IMX390_CHIP_ID			0x0A56
+#define IMX390_REG_CHIP_ID		0x0330
+#define IMX390_CHIP_ID			0x0
 
 /* vertical-timings from sensor */
 #define IMX390_REG_VTS			0x300A
@@ -933,13 +933,14 @@ static int imx390_identify_module(struct imx390 *imx390)
 	int ret;
 	u32 val;
 
-	return 0;
-
 	ret = imx390_read_reg(imx390, IMX390_REG_CHIP_ID,
 			      IMX390_REG_VALUE_08BIT, &val);
 	if (ret)
 		return ret;
 
+	return 0;
+
+	/* chip id not known yet */
 	if (val != IMX390_CHIP_ID) {
 		dev_err(&client->dev, "chip id mismatch: %x!=%x",
 			IMX390_CHIP_ID, val);

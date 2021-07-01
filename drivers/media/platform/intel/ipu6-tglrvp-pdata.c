@@ -156,8 +156,10 @@ static struct ipu_isys_subdev_info ar0234_sd_4 = {
 };
 
 #define IMX390_LANES       4
-#define IMX390_I2C_ADDRESS 0x1a
-#define IMX390_I2C_ADDRESS_8BIT 0x34
+#define IMX390_D3RCM_I2C_ADDRESS 0x1a
+#define IMX390_D3RCM_I2C_ADDRESS_8BIT (IMX390_D3RCM_I2C_ADDRESS << 1)
+#define IMX390_D3CM_I2C_ADDRESS 0x21
+#define IMX390_D3CM_I2C_ADDRESS_8BIT (IMX390_D3CM_I2C_ADDRESS << 1)
 
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 #define TI960_I2C_ADAPTER	2
@@ -174,12 +176,18 @@ static struct ipu_isys_subdev_info ar0234_sd_4 = {
 #define IMX390C_SER_ADDRESS	0x42
 #define IMX390D_SER_ADDRESS	0x43
 
-static struct crlmodule_platform_data imx390_pdata_stub = {
+static struct crlmodule_platform_data imx390_d3rcm_pdata_stub = {
 	.lanes = 4,
 	.gpio_powerup_seq = {0, 0xa, -1, -1},
 	.module_flags = CRL_MODULE_FL_POWERUP,
-	//.module_flags = CRL_MODULE_FL_INIT_SER | CRL_MODULE_FL_POWERUP,
-	.fsin = 3, /* gpio 0 used for FSIN */
+	.fsin = 0, /* gpio 0 used for FSIN */
+};
+
+static struct crlmodule_platform_data imx390_d3cm_pdata_stub = {
+	.lanes = 4,
+	.gpio_powerup_seq = {0, 0x9, -1, -1},
+	.module_flags = CRL_MODULE_FL_POWERUP,
+	.fsin = 3, /* gpio 3 used for FSIN */
 };
 
 static struct ipu_isys_csi2_config ti960_csi2_cfg = {
@@ -193,14 +201,15 @@ static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
 };
 
 static struct ti960_subdev_info ti960_subdevs[] = {
+	/* D3RCM */
 	{
 		.board_info = {
 			.type = "imx390",
 			.addr = IMX390A_ADDRESS,
-			.platform_data = &imx390_pdata_stub,
+			.platform_data = &imx390_d3rcm_pdata_stub,
 		},
 		.rx_port = 0,
-		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.phy_i2c_addr = IMX390_D3RCM_I2C_ADDRESS_8BIT,
 		.ser_alias = IMX390A_SER_ADDRESS,
 		.suffix = 'a',
 	},
@@ -208,10 +217,10 @@ static struct ti960_subdev_info ti960_subdevs[] = {
 		.board_info = {
 			.type = "imx390",
 			.addr = IMX390B_ADDRESS,
-			.platform_data = &imx390_pdata_stub,
+			.platform_data = &imx390_d3rcm_pdata_stub,
 		},
 		.rx_port = 1,
-		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.phy_i2c_addr = IMX390_D3RCM_I2C_ADDRESS_8BIT,
 		.ser_alias = IMX390B_SER_ADDRESS,
 		.suffix = 'b',
 	},
@@ -219,10 +228,10 @@ static struct ti960_subdev_info ti960_subdevs[] = {
 		.board_info = {
 			.type = "imx390",
 			.addr = IMX390C_ADDRESS,
-			.platform_data = &imx390_pdata_stub,
+			.platform_data = &imx390_d3rcm_pdata_stub,
 		},
 		.rx_port = 2,
-		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.phy_i2c_addr = IMX390_D3RCM_I2C_ADDRESS_8BIT,
 		.ser_alias = IMX390C_SER_ADDRESS,
 		.suffix = 'c',
 	},
@@ -230,10 +239,55 @@ static struct ti960_subdev_info ti960_subdevs[] = {
 		.board_info = {
 			.type = "imx390",
 			.addr = IMX390D_ADDRESS,
-			.platform_data = &imx390_pdata_stub,
+			.platform_data = &imx390_d3rcm_pdata_stub,
 		},
 		.rx_port = 3,
-		.phy_i2c_addr = IMX390_I2C_ADDRESS_8BIT,
+		.phy_i2c_addr = IMX390_D3RCM_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390D_SER_ADDRESS,
+		.suffix = 'd',
+	},
+	/* D3CM */
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390A_ADDRESS,
+			.platform_data = &imx390_d3cm_pdata_stub,
+		},
+		.rx_port = 0,
+		.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390A_SER_ADDRESS,
+		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390B_ADDRESS,
+			.platform_data = &imx390_d3cm_pdata_stub,
+		},
+		.rx_port = 1,
+		.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390B_SER_ADDRESS,
+		.suffix = 'b',
+	},
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390C_ADDRESS,
+			.platform_data = &imx390_d3cm_pdata_stub,
+		},
+		.rx_port = 2,
+		.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS_8BIT,
+		.ser_alias = IMX390C_SER_ADDRESS,
+		.suffix = 'c',
+	},
+	{
+		.board_info = {
+			.type = "imx390",
+			.addr = IMX390D_ADDRESS,
+			.platform_data = &imx390_d3cm_pdata_stub,
+		},
+		.rx_port = 3,
+		.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS_8BIT,
 		.ser_alias = IMX390D_SER_ADDRESS,
 		.suffix = 'd',
 	},

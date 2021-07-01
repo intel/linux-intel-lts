@@ -706,10 +706,10 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 			for (m = 0; m < CRL_MAX_GPIO_POWERUP_SEQ; m++) {
 				if (va->subdev_pdata[k].gpio_powerup_seq[m] < 0)
 					break;
-				msleep(50);
 				ti953_reg_write(&va->sd, info->rx_port, info->ser_alias,
 						TI953_LOCAL_GPIO_DATA,
 						va->subdev_pdata[k].gpio_powerup_seq[m]);
+				msleep(50);
 			}
 		}
 
