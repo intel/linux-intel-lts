@@ -415,7 +415,7 @@ static int imx390_update_digital_gain(struct imx390 *imx390, u32 d_gain)
 
 static u64 get_pixel_rate(struct imx390 *imx390)
 {
-	u64 pixel_rate = 0;
+	u64 pixel_rate = 72000000;
 
 	return pixel_rate;
 }
