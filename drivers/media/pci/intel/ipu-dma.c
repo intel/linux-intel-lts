@@ -183,8 +183,6 @@ static void *ipu_dma_alloc(struct device *dev, size_t size,
 
 	*dma_handle = iova->pfn_lo << PAGE_SHIFT;
 
-	mmu->tlb_invalidate(mmu);
-
 	info->pages = pages;
 	info->size = size;
 	list_add(&info->list, &mmu->vma_list);
