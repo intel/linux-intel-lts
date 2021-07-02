@@ -13,7 +13,6 @@
 #include <media/media-device.h>
 #include <media/media-entity.h>
 #include <media/ti964.h>
-#include <media/crlmodule.h>
 #include <media/v4l2-device.h>
 #include <media/videobuf2-core.h>
 
@@ -34,7 +33,7 @@ struct ti964 {
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct ti964_pdata *pdata;
 	struct ti964_subdev sub_devs[NR_OF_TI964_SINK_PADS];
-	struct crlmodule_platform_data subdev_pdata[NR_OF_TI964_SINK_PADS];
+	struct ti964_platform_data subdev_pdata[NR_OF_TI964_SINK_PADS];
 	const char *name;
 
 	struct mutex mutex;
@@ -465,8 +464,8 @@ static int ti964_registered(struct v4l2_subdev *subdev)
 	for (i = 0, k = 0; i < va->pdata->subdev_num; i++) {
 		struct ti964_subdev_info *info =
 			&va->pdata->subdev_info[i];
-		struct crlmodule_platform_data *pdata =
-			(struct crlmodule_platform_data *)
+		struct ti964_platform_data *pdata =
+			(struct ti964_platform_data *)
 			info->board_info.platform_data;
 
 		if (k >= va->nsinks)

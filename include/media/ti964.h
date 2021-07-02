@@ -56,4 +56,16 @@ struct ti964_pdata {
 	const char suffix; /* suffix for multi aggregators, abcd... */
 };
 
+struct ti964_platform_data {
+	unsigned short i2c_addr;
+	unsigned short i2c_adapter;
+
+	/* specify gpio pins of Deser for PWDN, FSIN, RESET. */
+	int xshutdown;
+
+	char module_name[16]; /* module name from ACPI */
+	char suffix; /* suffix to identify multi sensors, abcd.. */
+	unsigned int high_framevalid_flags; /* high framevaild flags*/
+};
+
 #endif
