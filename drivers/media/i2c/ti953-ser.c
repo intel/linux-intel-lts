@@ -13,7 +13,6 @@
 #include <media/media-device.h>
 #include <media/media-entity.h>
 #include <media/ti960.h>
-#include <media/crlmodule.h>
 #include <media/v4l2-device.h>
 #include <media/videobuf2-core.h>
 
