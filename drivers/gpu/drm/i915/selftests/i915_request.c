@@ -1391,8 +1391,8 @@ static int live_breadcrumbs_smoketest(void *arg)
 
 	for (n = 0; n < smoke[0].ncontexts; n++) {
 		smoke[0].contexts[n] = live_context(i915, file);
-		if (IS_ERR(smoke[0].contexts[n])) {
-			ret = PTR_ERR(smoke[0].contexts[n]);
+		if (!smoke[0].contexts[n]) {
+			ret = -ENOMEM;
 			goto out_contexts;
 		}
 	}
