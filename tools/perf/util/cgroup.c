@@ -415,7 +415,7 @@ int evlist__expand_cgroup(struct evlist *evlist, const char *str,
 
 			if (evsel__is_group_leader(pos))
 				leader = evsel;
-			evsel->leader = leader;
+			evsel__set_leader(evsel, leader);
 
 			evlist__add(tmp_list, evsel);
 		}
