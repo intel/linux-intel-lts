@@ -118,18 +118,17 @@ int drm_getunique(struct drm_device *dev, void *data,
 		  struct drm_file *file_priv)
 {
 	struct drm_unique *u = data;
-	struct drm_master *master;
+	struct drm_master *master = file_priv->master;
 
-	mutex_lock(&dev->master_mutex);
-	master = file_priv->master;
+	mutex_lock(&master->dev->master_mutex);
 	if (u->unique_len >= master->unique_len) {
 		if (copy_to_user(u->unique, master->unique, master->unique_len)) {
-			mutex_unlock(&dev->master_mutex);
+			mutex_unlock(&master->dev->master_mutex);
 			return -EFAULT;
 		}
 	}
 	u->unique_len = master->unique_len;
-	mutex_unlock(&dev->master_mutex);
+	mutex_unlock(&master->dev->master_mutex);
 
 	return 0;
 }
