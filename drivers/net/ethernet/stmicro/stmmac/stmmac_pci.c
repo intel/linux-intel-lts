@@ -175,6 +175,11 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->ftos = 0;  /* Fetch Time Offset */
 	plat->fgos = 0;  /* Fetch GSN Offset */
 
+	plat->vlan_fail_q_en = true;
+
+	/* Use the last Rx queue */
+	plat->vlan_fail_q = plat->rx_queues_to_use - 1;
+
 	plat->rx_sched_algorithm = MTL_RX_ALGORITHM_SP;
 
 	for (i = 0; i < plat->rx_queues_to_use; i++) {
