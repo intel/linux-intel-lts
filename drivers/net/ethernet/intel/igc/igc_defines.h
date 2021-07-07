@@ -546,7 +546,7 @@
 #define IGC_TQAVCC_IDLESLOPE_MASK	0xFFFF
 #define IGC_TQAVCC_KEEP_CREDITS		BIT(30)
 
-#define IGC_MAX_SR_QUEUES			2
+#define IGC_MAX_SR_QUEUES		2
 
 /* Receive Checksum Control */
 #define IGC_RXCSUM_CRCOFL	0x00000800   /* CRC32 offload enable */

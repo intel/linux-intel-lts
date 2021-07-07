@@ -5961,9 +5961,9 @@ static int igc_save_cbs_params(struct igc_adapter *adapter, int queue,
 			       bool enable, int idleslope, int sendslope,
 			       int hicredit, int locredit)
 {
-	struct igc_ring *ring = adapter->tx_ring[queue];
 	bool cbs_status[IGC_MAX_SR_QUEUES] = { false };
 	struct net_device *netdev = adapter->netdev;
+	struct igc_ring *ring;
 	int i;
 
 	/* i225 has two sets of credit-based shaper logic.
@@ -5971,6 +5971,8 @@ static int igc_save_cbs_params(struct igc_adapter *adapter, int queue,
 	 */
 	if (queue < 0 || queue > 1)
 		return -EINVAL;
+
+	ring = adapter->tx_ring[queue];
 
 	/* Only express queues can be assigned CBS.
 	 * NOTE: FPE can be activated anytime on the queues marked
