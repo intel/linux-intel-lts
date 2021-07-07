@@ -7003,7 +7003,6 @@ static int __bnxt_hwrm_func_qcaps(struct bnxt *bp)
 
 		pf->fw_fid = le16_to_cpu(resp->fid);
 		pf->port_id = le16_to_cpu(resp->port_id);
-		bp->dev->dev_port = pf->port_id;
 		memcpy(pf->mac_addr, resp->mac_address, ETH_ALEN);
 		pf->first_vf_id = le16_to_cpu(resp->first_vf_id);
 		pf->max_vfs = le16_to_cpu(resp->max_vfs);
@@ -10611,6 +10610,8 @@ static void bnxt_fw_init_one_p3(struct bnxt *bp)
 	bnxt_hwrm_coal_params_qcaps(bp);
 }
 
+static int bnxt_probe_phy(struct bnxt *bp, bool fw_dflt);
+
 static int bnxt_fw_init_one(struct bnxt *bp)
 {
 	int rc;
@@ -10625,6 +10626,9 @@ static int bnxt_fw_init_one(struct bnxt *bp)
 		netdev_err(bp->dev, "Firmware init phase 2 failed\n");
 		return rc;
 	}
+	rc = bnxt_probe_phy(bp, false);
+	if (rc)
+		return rc;
 	rc = bnxt_approve_mac(bp, bp->dev->dev_addr, false);
 	if (rc)
 		return rc;
@@ -11959,6 +11963,7 @@ init_err_cleanup:
 init_err_pci_clean:
 	bnxt_free_hwrm_short_cmd_req(bp);
 	bnxt_free_hwrm_resources(bp);
+	bnxt_ethtool_free(bp);
 	kfree(bp->fw_health);
 	bp->fw_health = NULL;
 	bnxt_cleanup_pci(bp);
