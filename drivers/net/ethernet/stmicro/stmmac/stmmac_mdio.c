@@ -403,7 +403,8 @@ int stmmac_xpcs_setup(struct mii_bus *bus)
 	struct mdio_device *mdiodev;
 	struct stmmac_priv *priv;
 	struct dw_xpcs *xpcs;
-	int mode, addr;
+	phy_interface_t mode;
+	int addr;
 
 	priv = netdev_priv(ndev);
 	mode = priv->plat->phy_interface;
