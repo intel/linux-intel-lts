@@ -125,3 +125,9 @@ obj-$(CONFIG_VIDEO_RDACM20)	+= rdacm20-camera_module.o
 obj-$(CONFIG_VIDEO_ST_MIPID02) += st-mipid02.o
 
 obj-$(CONFIG_SDR_MAX2175) += max2175.o
+obj-$(CONFIG_VIDEO_TI964) += ti964.o
+ti960-objs      :=      ti953-ser.o ti960-des.o
+obj-$(CONFIG_VIDEO_TI960) += ti960.o
+obj-$(CONFIG_VIDEO_AR0234) += ar0234.o
+obj-$(CONFIG_VIDEO_IMX390) += imx390.o
+obj-$(CONFIG_VIDEO_LT6911UXC) += lt6911uxc.o

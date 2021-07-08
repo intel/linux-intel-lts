@@ -719,6 +719,53 @@ endmenu
 menu "Camera sensor devices"
 	visible if MEDIA_CAMERA_SUPPORT
 
+config VIDEO_OV01A1S
+        tristate "OmniVision OV01A1S sensor support"
+        depends on POWER_CTRL_LOGIC
+        depends on VIDEO_V4L2 && I2C
+        depends on ACPI || COMPILE_TEST
+        select MEDIA_CONTROLLER
+        select VIDEO_V4L2_SUBDEV_API
+        select V4L2_FWNODE
+        help
+          This is a Video4Linux2 sensor driver for the OmniVision
+          OV01A1S camera.
+
+          To compile this driver as a module, choose M here: the
+          module will be called ov01a1s.
+
+config VIDEO_AR0234
+        tristate "OnSemi AR0234 sensor support"
+        depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+        depends on MEDIA_CAMERA_SUPPORT
+        help
+          This is a Video4Linux2 sensor-level driver for the OnSemi
+          ar0234 camera.
+
+          AR0234 is a 2Mp Digital image sensor with global shutter.
+
+config VIDEO_TI960
+        tristate "TI960 driver support"
+        depends on I2C && VIDEO_V4L2
+        help
+          This is a driver for TI960 Deserializer.
+
+config VIDEO_IMX390
+        depends on I2C && VIDEO_V4L2
+        tristate "IMX390 Camera Driver"
+        help
+          This is a Video4Linux2 sensor-level driver for Sony IMX390 camera.
+
+config VIDEO_LT6911UXC
+        tristate "Lontium LT6911UXC decoder"
+        depends on VIDEO_V4L2 && I2C && VIDEO_V4L2_SUBDEV_API
+        help
+          This is a Video4Linux2 sensor-level driver for the Lontium
+          LT6911UXC HDMI to MIPI CSI-2 bridge.
+
+          To compile this driver as a module, choose M here: the
+          module will be called lt6911uxc.
+
 config VIDEO_APTINA_PLL
 	tristate
 

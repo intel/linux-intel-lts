@@ -13,6 +13,7 @@
 #include <linux/ptp_clock_kernel.h>
 #include <linux/timecounter.h>
 #include <linux/net_tstamp.h>
+#include <linux/leds.h>
 #include <linux/timekeeping.h>
 
 #include "igc_hw.h"
@@ -33,6 +34,8 @@ void igc_ethtool_set_ops(struct net_device *);
 #define IGC_N_EXTTS	2
 #define IGC_N_PEROUT	2
 #define IGC_N_SDP	4
+
+#define MAX_FLEX_FILTER			32
 
 enum igc_mac_filter_type {
 	IGC_MAC_FILTER_TYPE_DST = 0,
@@ -97,6 +100,13 @@ struct igc_ring {
 
 	u32 start_time;
 	u32 end_time;
+
+	/* CBS parameters */
+	bool cbs_enable;                /* indicates if CBS is enabled */
+	s32 idleslope;                  /* idleSlope in kbps */
+	s32 sendslope;                  /* sendSlope in kbps */
+	s32 hicredit;                   /* hiCredit in bytes */
+	s32 locredit;                   /* loCredit in bytes */
 
 	/* everything past this point are written often */
 	u16 next_to_clean;
@@ -250,7 +260,16 @@ struct igc_adapter {
 		struct timespec64 start;
 		struct timespec64 period;
 	} perout[IGC_N_PEROUT];
+
+	/* LEDs */
+	struct mutex led_mutex;
+	struct led_classdev led0;
+	struct led_classdev led1;
+	struct led_classdev led2;
 };
+
+#define led_to_igc(ldev, led)	\
+	container_of(ldev, struct igc_adapter, led)
 
 void igc_up(struct igc_adapter *adapter);
 void igc_down(struct igc_adapter *adapter);
@@ -301,9 +320,11 @@ extern char igc_driver_name[];
 #define IGC_FLAG_RX_LEGACY		BIT(16)
 #define IGC_FLAG_TSN_QBV_ENABLED	BIT(17)
 #define IGC_FLAG_TSN_PREEMPT_ENABLED	BIT(18)
+#define IGC_FLAG_TSN_QAV_ENABLED	BIT(19)
 
 #define IGC_FLAG_TSN_ANY_ENABLED \
-	(IGC_FLAG_TSN_QBV_ENABLED | IGC_FLAG_TSN_PREEMPT_ENABLED)
+	(IGC_FLAG_TSN_QBV_ENABLED | IGC_FLAG_TSN_PREEMPT_ENABLED | \
+	 IGC_FLAG_TSN_QAV_ENABLED)
 
 #define IGC_FLAG_RSS_FIELD_IPV4_UDP	BIT(6)
 #define IGC_FLAG_RSS_FIELD_IPV6_UDP	BIT(7)
@@ -499,18 +520,28 @@ struct igc_q_vector {
 };
 
 enum igc_filter_match_flags {
-	IGC_FILTER_FLAG_ETHER_TYPE =	0x1,
-	IGC_FILTER_FLAG_VLAN_TCI   =	0x2,
-	IGC_FILTER_FLAG_SRC_MAC_ADDR =	0x4,
-	IGC_FILTER_FLAG_DST_MAC_ADDR =	0x8,
+	IGC_FILTER_FLAG_ETHER_TYPE =	BIT(0),
+	IGC_FILTER_FLAG_VLAN_TCI   =	BIT(1),
+	IGC_FILTER_FLAG_SRC_MAC_ADDR =	BIT(2),
+	IGC_FILTER_FLAG_DST_MAC_ADDR =	BIT(3),
+	IGC_FILTER_FLAG_USER_DATA =	BIT(4),
+	IGC_FILTER_FLAG_VLAN_ETYPE =	BIT(5),
 };
 
 struct igc_nfc_filter {
 	u8 match_flags;
 	u16 etype;
+	__be16 vlan_etype;
 	u16 vlan_tci;
 	u8 src_addr[ETH_ALEN];
 	u8 dst_addr[ETH_ALEN];
+	u8 user_data[8];
+	u8 user_mask[8];
+	u8 flex_index;
+	u8 rx_queue;
+	u8 prio;
+	u8 immediate_irq;
+	u8 drop;
 };
 
 struct igc_nfc_rule {
@@ -518,12 +549,24 @@ struct igc_nfc_rule {
 	struct igc_nfc_filter filter;
 	u32 location;
 	u16 action;
+	bool flex;
 };
 
-/* IGC supports a total of 32 NFC rules: 16 MAC address based,, 8 VLAN priority
- * based, and 8 ethertype based.
+/* IGC supports a total of 32 NFC rules: 16 MAC address based, 8 VLAN priority
+ * based, 8 ethertype based and 32 Flex filter based rules.
  */
-#define IGC_MAX_RXNFC_RULES		32
+#define IGC_MAX_RXNFC_RULES		64
+
+struct igc_flex_filter {
+	u8 index;
+	u8 data[128];
+	u8 mask[16];
+	u8 length;
+	u8 rx_queue;
+	u8 prio;
+	u8 immediate_irq;
+	u8 drop;
+};
 
 /* igc_desc_unused - calculate if we have unused descriptors */
 static inline u16 igc_desc_unused(const struct igc_ring *ring)

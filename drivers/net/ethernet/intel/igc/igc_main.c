@@ -991,19 +991,28 @@ static int igc_write_mc_addr_list(struct net_device *netdev)
 
 static __le32 igc_tx_launchtime(struct igc_adapter *adapter, ktime_t txtime)
 {
-	ktime_t cycle_time = adapter->cycle_time;
-	ktime_t base_time = adapter->base_time;
-	u32 launchtime;
+	ktime_t now = ktime_get_clocktai();
+	struct timespec64 launchtime;
+	ktime_t baset_est;
+	s64 n;
 
-	/* FIXME: when using ETF together with taprio, we may have a
-	 * case where 'delta' is larger than the cycle_time, this may
-	 * cause problems if we don't read the current value of
-	 * IGC_BASET, as the value writen into the launchtime
-	 * descriptor field may be misinterpreted.
+	n = div64_s64(ktime_sub_ns(now, adapter->base_time), adapter->cycle_time);
+
+	/* The BASET registers are increased by cycle-time everytime
+	 * value of systim registers(SYSTIM) cross the current system time,
+	 * so they point to a time one cycle in the future
 	 */
-	div_s64_rem(ktime_sub_ns(txtime, base_time), cycle_time, &launchtime);
+	baset_est = ktime_add_ns(adapter->base_time, adapter->cycle_time * (n + 1));
 
-	return cpu_to_le32(launchtime);
+	if (baset_est == txtime) {
+		txtime -= 1000;
+		baset_est -= adapter->cycle_time;
+	}
+
+	baset_est = ktime_sub_ns(txtime, baset_est);
+	launchtime = ktime_to_timespec64(baset_est);
+
+	return cpu_to_le32(launchtime.tv_nsec);
 }
 
 static void igc_tx_ctxtdesc(struct igc_ring *tx_ring,
@@ -3109,10 +3118,319 @@ static void igc_del_etype_filter(struct igc_adapter *adapter, u16 etype)
 		   etype);
 }
 
+static int igc_flex_filter_select(struct igc_adapter *adapter,
+				  struct igc_flex_filter *input,
+				  u32 *fhft)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u8 fhft_index;
+	u32 fhftsl;
+
+	if (input->index >= MAX_FLEX_FILTER) {
+		dev_err(&adapter->pdev->dev, "Wrong Flex Filter index selected!\n");
+		return -EINVAL;
+	}
+
+	/* Indirect table select register */
+	fhftsl = rd32(IGC_FHFTSL);
+	fhftsl &= ~IGC_FHFTSL_FTSL_MASK;
+	switch (input->index) {
+	case 0 ... 7:
+		fhftsl |= 0x00;
+		break;
+	case 8 ... 15:
+		fhftsl |= 0x01;
+		break;
+	case 16 ... 23:
+		fhftsl |= 0x02;
+		break;
+	case 24 ... 31:
+		fhftsl |= 0x03;
+		break;
+	}
+	wr32(IGC_FHFTSL, fhftsl);
+
+	/* Normalize index down to host table register */
+	fhft_index = input->index % 8;
+
+	*fhft = (fhft_index < 4) ? IGC_FHFT(fhft_index) :
+		IGC_FHFT_EXT(fhft_index - 4);
+
+	return 0;
+}
+
+static int igc_write_flex_filter_ll(struct igc_adapter *adapter,
+				    struct igc_flex_filter *input)
+{
+	struct device *dev = &adapter->pdev->dev;
+	struct igc_hw *hw = &adapter->hw;
+	u8 *data = input->data;
+	u8 *mask = input->mask;
+	u32 queuing;
+	u32 fhft;
+	u32 wufc;
+	int ret;
+	int i;
+
+	/* Length has to be aligned to 8. Otherwise the filter will fail. Bail
+	 * out early to avoid surprises later.
+	 */
+	if (input->length % 8 != 0) {
+		dev_err(dev, "The length of a flex filter has to be 8 byte aligned!\n");
+		return -EINVAL;
+	}
+
+	/* Select corresponding flex filter register and get base for host table. */
+	ret = igc_flex_filter_select(adapter, input, &fhft);
+	if (ret)
+		return ret;
+
+	/* When adding a filter globally disable flex filter feature. That is
+	 * recommended within the datasheet.
+	 */
+	wufc = rd32(IGC_WUFC);
+	wufc &= ~IGC_WUFC_FLEX_HQ;
+	wr32(IGC_WUFC, wufc);
+
+	/* Configure filter */
+	queuing = input->length & IGC_FHFT_LENGTH_MASK;
+	queuing |= (input->rx_queue << IGC_FHFT_QUEUE_SHIFT) & IGC_FHFT_QUEUE_MASK;
+	queuing |= (input->prio << IGC_FHFT_PRIO_SHIFT) & IGC_FHFT_PRIO_MASK;
+
+	if (input->immediate_irq)
+		queuing |= IGC_FHFT_IMM_INT;
+
+	if (input->drop)
+		queuing |= IGC_FHFT_DROP;
+
+	wr32(fhft + 0xFC, queuing);
+
+	/* Write data (128 byte) and mask (128 bit) */
+	for (i = 0; i < 16; ++i) {
+		const size_t data_idx = i * 8;
+		const size_t row_idx = i * 16;
+		u32 dw0 =
+			(data[data_idx + 0] << 0) |
+			(data[data_idx + 1] << 8) |
+			(data[data_idx + 2] << 16) |
+			(data[data_idx + 3] << 24);
+		u32 dw1 =
+			(data[data_idx + 4] << 0) |
+			(data[data_idx + 5] << 8) |
+			(data[data_idx + 6] << 16) |
+			(data[data_idx + 7] << 24);
+		u32 tmp;
+
+		/* Write row: dw0, dw1 and mask */
+		wr32(fhft + row_idx, dw0);
+		wr32(fhft + row_idx + 4, dw1);
+
+		/* mask is only valid for MASK(7, 0) */
+		tmp = rd32(fhft + row_idx + 8);
+		tmp &= ~GENMASK(7, 0);
+		tmp |= mask[i];
+		wr32(fhft + row_idx + 8, tmp);
+	}
+
+	/* Enable filter. */
+	wufc |= IGC_WUFC_FLEX_HQ;
+	if (input->index > 8) {
+		/* Filter 0-7 are enabled via WUFC. The other 24 filters are not. */
+		u32 wufc_ext = rd32(IGC_WUFC_EXT);
+
+		wufc_ext |= (IGC_WUFC_EXT_FLX8 << (input->index - 8));
+
+		wr32(IGC_WUFC_EXT, wufc_ext);
+	} else {
+		wufc |= (IGC_WUFC_FLX0 << input->index);
+	}
+	wr32(IGC_WUFC, wufc);
+
+	dev_dbg(&adapter->pdev->dev, "Added flex filter %u to HW.\n",
+		input->index);
+
+	return 0;
+}
+
+static void igc_flex_filter_add_field(struct igc_flex_filter *flex,
+				      const void *src, unsigned int offset,
+				      size_t len, const void *mask)
+{
+	int i;
+
+	/* data */
+	memcpy(&flex->data[offset], src, len);
+
+	/* mask */
+	for (i = 0; i < len; ++i) {
+		const unsigned int idx = i + offset;
+		const u8 *ptr = mask;
+
+		if (mask) {
+			if (ptr[i] & 0xff)
+				flex->mask[idx / 8] |= BIT(idx % 8);
+
+			continue;
+		}
+
+		flex->mask[idx / 8] |= BIT(idx % 8);
+	}
+}
+
+static int igc_find_avail_flex_filter_slot(struct igc_adapter *adapter)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u32 wufc, wufc_ext;
+	int i;
+
+	wufc = rd32(IGC_WUFC);
+	wufc_ext = rd32(IGC_WUFC_EXT);
+
+	for (i = 0; i < MAX_FLEX_FILTER; i++) {
+		if (i < 8) {
+			if (!(wufc & (IGC_WUFC_FLX0 << i)))
+				return i;
+		} else {
+			if (!(wufc_ext & (IGC_WUFC_EXT_FLX8 << (i - 8))))
+				return i;
+		}
+	}
+
+	return -ENOSPC;
+}
+
+static bool igc_flex_filter_in_use(struct igc_adapter *adapter)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u32 wufc, wufc_ext;
+
+	wufc = rd32(IGC_WUFC);
+	wufc_ext = rd32(IGC_WUFC_EXT);
+
+	if (wufc & IGC_WUFC_FILTER_MASK)
+		return true;
+
+	if (wufc_ext & IGC_WUFC_EXT_FILTER_MASK)
+		return true;
+
+	return false;
+}
+
+static int igc_add_flex_filter(struct igc_adapter *adapter,
+			       struct igc_nfc_rule *rule)
+{
+	struct igc_flex_filter flex = { };
+	struct igc_nfc_filter *filter = &rule->filter;
+	unsigned int eth_offset, user_offset;
+	int ret, index;
+	bool vlan;
+
+	index = igc_find_avail_flex_filter_slot(adapter);
+	if (index < 0)
+		return -ENOSPC;
+
+	/* Construct the flex filter:
+	 *  -> dest_mac [6]
+	 *  -> src_mac [6]
+	 *  -> tpid [2]
+	 *  -> vlan tci [2]
+	 *  -> ether type [2]
+	 *  -> user data [8]
+	 *  -> = 26 bytes => 32 length
+	 */
+	flex.index    = index;
+	flex.length   = 32;
+	flex.rx_queue = rule->action;
+
+	vlan = rule->filter.vlan_tci || rule->filter.vlan_etype;
+	eth_offset = vlan ? 16 : 12;
+	user_offset = vlan ? 18 : 14;
+
+	/* Add destination MAC  */
+	if (rule->filter.match_flags & IGC_FILTER_FLAG_DST_MAC_ADDR)
+		igc_flex_filter_add_field(&flex, &filter->dst_addr, 0,
+					  ETH_ALEN, NULL);
+
+	/* Add source MAC */
+	if (rule->filter.match_flags & IGC_FILTER_FLAG_SRC_MAC_ADDR)
+		igc_flex_filter_add_field(&flex, &filter->src_addr, 6,
+					  ETH_ALEN, NULL);
+
+	/* Add VLAN etype */
+	if (rule->filter.match_flags & IGC_FILTER_FLAG_VLAN_ETYPE)
+		igc_flex_filter_add_field(&flex, &filter->vlan_etype, 12,
+					  sizeof(filter->vlan_etype),
+					  NULL);
+
+	/* Add VLAN TCI */
+	if (rule->filter.match_flags & IGC_FILTER_FLAG_VLAN_TCI)
+		igc_flex_filter_add_field(&flex, &filter->vlan_tci, 14,
+					  sizeof(filter->vlan_tci), NULL);
+
+	/* Add Ether type */
+	if (rule->filter.match_flags & IGC_FILTER_FLAG_ETHER_TYPE) {
+		__be16 etype = cpu_to_be16(filter->etype);
+
+		igc_flex_filter_add_field(&flex, &etype, eth_offset,
+					  sizeof(etype), NULL);
+	}
+
+	/* Add user data */
+	if (rule->filter.match_flags & IGC_FILTER_FLAG_USER_DATA)
+		igc_flex_filter_add_field(&flex, &filter->user_data,
+					  user_offset,
+					  sizeof(filter->user_data),
+					  filter->user_mask);
+
+	/* Add it down to the hardware and enable it. */
+	ret = igc_write_flex_filter_ll(adapter, &flex);
+	if (ret)
+		return ret;
+
+	filter->flex_index = index;
+
+	return 0;
+}
+
+static void igc_del_flex_filter(struct igc_adapter *adapter,
+				u16 reg_index)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u32 wufc;
+
+	/* Just disable the filter. The filter table itself is kept
+	 * intact. Another flex_filter_add() should override the "old" data
+	 * then.
+	 */
+	if (reg_index > 8) {
+		u32 wufc_ext = rd32(IGC_WUFC_EXT);
+
+		wufc_ext &= ~(IGC_WUFC_EXT_FLX8 << (reg_index - 8));
+		wr32(IGC_WUFC_EXT, wufc_ext);
+	} else {
+		wufc = rd32(IGC_WUFC);
+
+		wufc &= ~(IGC_WUFC_FLX0 << reg_index);
+		wr32(IGC_WUFC, wufc);
+	}
+
+	if (igc_flex_filter_in_use(adapter))
+		return;
+
+	/* No filters are in use, we may disable flex filters */
+	wufc = rd32(IGC_WUFC);
+	wufc &= ~IGC_WUFC_FLEX_HQ;
+	wr32(IGC_WUFC, wufc);
+}
+
 static int igc_enable_nfc_rule(struct igc_adapter *adapter,
-			       const struct igc_nfc_rule *rule)
+			       struct igc_nfc_rule *rule)
 {
 	int err;
+
+	if (rule->flex) {
+		return igc_add_flex_filter(adapter, rule);
+	}
 
 	if (rule->filter.match_flags & IGC_FILTER_FLAG_ETHER_TYPE) {
 		err = igc_add_etype_filter(adapter, rule->filter.etype,
@@ -3150,6 +3468,11 @@ static int igc_enable_nfc_rule(struct igc_adapter *adapter,
 static void igc_disable_nfc_rule(struct igc_adapter *adapter,
 				 const struct igc_nfc_rule *rule)
 {
+	if (rule->flex) {
+		igc_del_flex_filter(adapter, rule->filter.flex_index);
+		return;
+	}
+
 	if (rule->filter.match_flags & IGC_FILTER_FLAG_ETHER_TYPE)
 		igc_del_etype_filter(adapter, rule->filter.etype);
 
@@ -5032,7 +5355,10 @@ static void igc_watchdog_task(struct work_struct *work)
 				adapter->tx_timeout_factor = 14;
 				break;
 			case SPEED_100:
+			case SPEED_1000:
+			case SPEED_2500:
 				/* maybe add some timeout factor ? */
+				adapter->tx_timeout_factor = 7;
 				break;
 			}
 
@@ -5543,13 +5869,13 @@ static int igc_tsn_clear_schedule(struct igc_adapter *adapter)
 	int i;
 
 	adapter->base_time = 0;
-	adapter->cycle_time = NSEC_PER_MSEC;
+	adapter->cycle_time = NSEC_PER_SEC;
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct igc_ring *ring = adapter->tx_ring[i];
 
 		ring->start_time = 0;
-		ring->end_time = NSEC_PER_MSEC;
+		ring->end_time = NSEC_PER_SEC;
 	}
 
 	return 0;
@@ -5631,6 +5957,82 @@ static int igc_tsn_enable_qbv_scheduling(struct igc_adapter *adapter,
 	return igc_tsn_offload_apply(adapter);
 }
 
+static int igc_save_cbs_params(struct igc_adapter *adapter, int queue,
+			       bool enable, int idleslope, int sendslope,
+			       int hicredit, int locredit)
+{
+	bool cbs_status[IGC_MAX_SR_QUEUES] = { false };
+	struct net_device *netdev = adapter->netdev;
+	struct igc_ring *ring;
+	int i;
+
+	/* i225 has two sets of credit-based shaper logic.
+	 * Supporting it only on the top two priority queues
+	 */
+	if (queue < 0 || queue > 1)
+		return -EINVAL;
+
+	ring = adapter->tx_ring[queue];
+
+	/* Only express queues can be assigned CBS.
+	 * NOTE: FPE can be activated anytime on the queues marked
+	 *       premptable. Disallowing CBS to avoid future
+	 *       invalid state.
+	 */
+	if (ring->preemptible)
+		return -EOPNOTSUPP;
+
+	for (i = 0; i < IGC_MAX_SR_QUEUES; i++)
+		if (adapter->tx_ring[i])
+			cbs_status[i] = adapter->tx_ring[i]->cbs_enable;
+
+	/* CBS should be enabled on the highest priority queue first inorder
+	 * for the CBS algorithm to operate as intended.
+	 */
+	if (enable) {
+		if (queue == 1 && !cbs_status[0]) {
+			netdev_err(netdev,
+				   "Enabling CBS on queue1 before queue0\n");
+			return -EINVAL;
+		}
+	} else {
+		if (queue == 0 && cbs_status[1]) {
+			netdev_err(netdev,
+				   "Disabling CBS on queue0 before queue1\n");
+			return -EINVAL;
+		}
+	}
+
+	ring->cbs_enable = enable;
+	ring->idleslope = idleslope;
+	ring->sendslope = sendslope;
+	ring->hicredit = hicredit;
+	ring->locredit = locredit;
+
+	return 0;
+}
+
+static int igc_tsn_enable_cbs(struct igc_adapter *adapter,
+			      struct tc_cbs_qopt_offload *qopt)
+{
+	struct igc_hw *hw = &adapter->hw;
+	int err;
+
+	if (hw->mac.type != igc_i225)
+		return -EOPNOTSUPP;
+
+	if (qopt->queue < 0 || qopt->queue > 1)
+		return -EINVAL;
+
+	err = igc_save_cbs_params(adapter, qopt->queue, qopt->enable,
+				  qopt->idleslope, qopt->sendslope,
+				  qopt->hicredit, qopt->locredit);
+	if (err)
+		return err;
+
+	return igc_tsn_offload_apply(adapter);
+}
+
 static int igc_setup_tc(struct net_device *dev, enum tc_setup_type type,
 			void *type_data)
 {
@@ -5645,6 +6047,9 @@ static int igc_setup_tc(struct net_device *dev, enum tc_setup_type type,
 
 	case TC_SETUP_PREEMPT:
 		return igc_save_frame_preemption(adapter, type_data);
+
+	case TC_SETUP_QDISC_CBS:
+		return igc_tsn_enable_cbs(adapter, type_data);
 
 	default:
 		return -EOPNOTSUPP;
@@ -5870,6 +6275,134 @@ int igc_set_spd_dplx(struct igc_adapter *adapter, u32 spd, u8 dplx)
 err_inval:
 	netdev_err(adapter->netdev, "Unsupported Speed/Duplex configuration\n");
 	return -EINVAL;
+}
+
+static void igc_select_led(struct igc_adapter *adapter, int led,
+			   u32 *mask, u32 *shift)
+{
+	switch (led) {
+	case 0:
+		*mask  = IGC_LEDCTL_LED0_MODE_MASK;
+		*shift = IGC_LEDCTL_LED0_MODE_SHIFT;
+		break;
+	case 1:
+		*mask  = IGC_LEDCTL_LED1_MODE_MASK;
+		*shift = IGC_LEDCTL_LED1_MODE_SHIFT;
+		break;
+	case 2:
+		*mask  = IGC_LEDCTL_LED2_MODE_MASK;
+		*shift = IGC_LEDCTL_LED2_MODE_SHIFT;
+		break;
+	default:
+		*mask = *shift = 0;
+		dev_err(&adapter->pdev->dev, "Unknown led %d selected!", led);
+	}
+}
+
+static void igc_led_set(struct igc_adapter *adapter, int led, u16 brightness)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u32 shift, mask, ledctl;
+
+	igc_select_led(adapter, led, &mask, &shift);
+
+	mutex_lock(&adapter->led_mutex);
+	ledctl = rd32(IGC_LEDCTL);
+	ledctl &= ~mask;
+	ledctl |= brightness << shift;
+	wr32(IGC_LEDCTL, ledctl);
+	mutex_unlock(&adapter->led_mutex);
+}
+
+static enum led_brightness igc_led_get(struct igc_adapter *adapter, int led)
+{
+	struct igc_hw *hw = &adapter->hw;
+	u32 shift, mask, ledctl;
+
+	igc_select_led(adapter, led, &mask, &shift);
+
+	mutex_lock(&adapter->led_mutex);
+	ledctl = rd32(IGC_LEDCTL);
+	mutex_unlock(&adapter->led_mutex);
+
+	return (ledctl & mask) >> shift;
+}
+
+static void igc_led0_set(struct led_classdev *ldev, enum led_brightness b)
+{
+	struct igc_adapter *adapter = led_to_igc(ldev, led0);
+
+	igc_led_set(adapter, 0, b);
+}
+
+static enum led_brightness igc_led0_get(struct led_classdev *ldev)
+{
+	struct igc_adapter *adapter = led_to_igc(ldev, led0);
+
+	return igc_led_get(adapter, 0);
+}
+
+static void igc_led1_set(struct led_classdev *ldev, enum led_brightness b)
+{
+	struct igc_adapter *adapter = led_to_igc(ldev, led1);
+
+	igc_led_set(adapter, 1, b);
+}
+
+static enum led_brightness igc_led1_get(struct led_classdev *ldev)
+{
+	struct igc_adapter *adapter = led_to_igc(ldev, led1);
+
+	return igc_led_get(adapter, 1);
+}
+
+static void igc_led2_set(struct led_classdev *ldev, enum led_brightness b)
+{
+	struct igc_adapter *adapter = led_to_igc(ldev, led2);
+
+	igc_led_set(adapter, 2, b);
+}
+
+static enum led_brightness igc_led2_get(struct led_classdev *ldev)
+{
+	struct igc_adapter *adapter = led_to_igc(ldev, led2);
+
+	return igc_led_get(adapter, 2);
+}
+
+static int igc_led_setup(struct igc_adapter *adapter)
+{
+	/* Setup */
+	mutex_init(&adapter->led_mutex);
+
+	adapter->led0.name	     = "igc_led0";
+	adapter->led0.max_brightness = 15;
+	adapter->led0.brightness_set = igc_led0_set;
+	adapter->led0.brightness_get = igc_led0_get;
+
+	adapter->led1.name	     = "igc_led1";
+	adapter->led1.max_brightness = 15;
+	adapter->led1.brightness_set = igc_led1_set;
+	adapter->led1.brightness_get = igc_led1_get;
+
+	adapter->led2.name	     = "igc_led2";
+	adapter->led2.max_brightness = 15;
+	adapter->led2.brightness_set = igc_led2_set;
+	adapter->led2.brightness_get = igc_led2_get;
+
+	/* Register leds */
+	led_classdev_register(&adapter->pdev->dev, &adapter->led0);
+	led_classdev_register(&adapter->pdev->dev, &adapter->led1);
+	led_classdev_register(&adapter->pdev->dev, &adapter->led2);
+
+	return 0;
+}
+
+static void igc_led_destroy(struct igc_adapter *adapter)
+{
+	led_classdev_unregister(&adapter->led0);
+	led_classdev_unregister(&adapter->led1);
+	led_classdev_unregister(&adapter->led2);
 }
 
 /**
@@ -6106,6 +6639,8 @@ static int igc_probe(struct pci_dev *pdev,
 
 	pm_runtime_put_noidle(&pdev->dev);
 
+	igc_led_setup(adapter);
+
 	return 0;
 
 err_register:
@@ -6145,6 +6680,8 @@ static void igc_remove(struct pci_dev *pdev)
 	igc_flush_nfc_rules(adapter);
 
 	igc_ptp_stop(adapter);
+
+	igc_led_destroy(adapter);
 
 	set_bit(__IGC_DOWN, &adapter->state);
 
