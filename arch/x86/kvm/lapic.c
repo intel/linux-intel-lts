@@ -1095,6 +1095,8 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 			kvm_make_request(KVM_REQ_EVENT, vcpu);
 			kvm_vcpu_kick(vcpu);
 		}
+
+		kvm_vcpu_kick(vcpu);
 		break;
 
 	case APIC_DM_REMRD:
