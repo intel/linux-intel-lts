@@ -476,7 +476,7 @@ config SND_SOC_INTEL_TGL_RT1308_MACH
 	depends on MFD_INTEL_LPSS || COMPILE_TEST
 	select SND_SOC_RT1308
 	select SND_SOC_DMIC
-	select SND_SOC_HDAC_HDMI if SND_SOC_SOF_HDA_COMMON
+	depends on SND_HDA_CODEC_HDMI && SND_SOC_SOF_HDA_AUDIO_CODEC
 	help
 	   This adds support for ASoC machine driver for Tigerlake platforms
 	   with RT1308 I2S audio codec.
