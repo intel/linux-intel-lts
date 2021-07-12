@@ -126,7 +126,7 @@ static bool intel_get_gvt_attrs(struct attribute_group ***intel_vgpu_type_groups
 	return true;
 }
 
-static int intel_gvt_init_vgpu_type_groups(struct intel_gvt *gvt)
+static bool intel_gvt_init_vgpu_type_groups(struct intel_gvt *gvt)
 {
 	int i, j;
 	struct intel_vgpu_type *type;
@@ -144,7 +144,7 @@ static int intel_gvt_init_vgpu_type_groups(struct intel_gvt *gvt)
 		gvt_vgpu_type_groups[i] = group;
 	}
 
-	return 0;
+	return true;
 
 unwind:
 	for (j = 0; j < i; j++) {
@@ -152,7 +152,7 @@ unwind:
 		kfree(group);
 	}
 
-	return -ENOMEM;
+	return false;
 }
 
 static void intel_gvt_cleanup_vgpu_type_groups(struct intel_gvt *gvt)
@@ -312,7 +312,7 @@ int intel_gvt_init_device(struct drm_i915_private *i915)
 
 	gvt_dbg_core("init gvt device\n");
 
-	idr_init(&gvt->vgpu_idr);
+	idr_init_base(&gvt->vgpu_idr, 1);
 	spin_lock_init(&gvt->scheduler.mmio_context_lock);
 	mutex_init(&gvt->lock);
 	mutex_init(&gvt->sched_lock);
@@ -360,7 +360,7 @@ int intel_gvt_init_device(struct drm_i915_private *i915)
 		goto out_clean_thread;
 
 	ret = intel_gvt_init_vgpu_type_groups(gvt);
-	if (ret) {
+	if (ret == false) {
 		gvt_err("failed to init vgpu type groups: %d\n", ret);
 		goto out_clean_types;
 	}
@@ -406,7 +406,16 @@ out_clean_idr:
 }
 
 int
-intel_gvt_register_hypervisor(struct intel_gvt_mpt *m)
+intel_gvt_pm_resume(struct intel_gvt *gvt)
+{
+	intel_gvt_restore_fence(gvt);
+	intel_gvt_restore_mmio(gvt);
+	intel_gvt_restore_ggtt(gvt);
+	return 0;
+}
+
+int
+intel_gvt_register_hypervisor(const struct intel_gvt_mpt *m)
 {
 	int ret;
 	void *gvt;

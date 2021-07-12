@@ -17,9 +17,10 @@ unsigned int perf_mem_events__loads_ldlat = 30;
 
 #define E(t, n, s) { .tag = t, .name = n, .sysfs_name = s }
 
-struct perf_mem_event perf_mem_events[PERF_MEM_EVENTS__MAX] = {
-	E("ldlat-loads",	"cpu/mem-loads,ldlat=%u/P",	"mem-loads"),
-	E("ldlat-stores",	"cpu/mem-stores/P",		"mem-stores"),
+static struct perf_mem_event perf_mem_events[PERF_MEM_EVENTS__MAX] = {
+	E("ldlat-loads",	"cpu/mem-loads,ldlat=%u/P",	"cpu/events/mem-loads"),
+	E("ldlat-stores",	"cpu/mem-stores/P",		"cpu/events/mem-stores"),
+	E(NULL,			NULL,				NULL),
 };
 #undef E
 
@@ -28,19 +29,36 @@ struct perf_mem_event perf_mem_events[PERF_MEM_EVENTS__MAX] = {
 static char mem_loads_name[100];
 static bool mem_loads_name__init;
 
+struct perf_mem_event * __weak perf_mem_events__ptr(int i)
+{
+	if (i >= PERF_MEM_EVENTS__MAX)
+		return NULL;
+
+	return &perf_mem_events[i];
+}
+
 char * __weak perf_mem_events__name(int i)
 {
+	struct perf_mem_event *e = perf_mem_events__ptr(i);
+
+	if (!e)
+		return NULL;
+
 	if (i == PERF_MEM_EVENTS__LOAD) {
 		if (!mem_loads_name__init) {
 			mem_loads_name__init = true;
 			scnprintf(mem_loads_name, sizeof(mem_loads_name),
-				  perf_mem_events[i].name,
-				  perf_mem_events__loads_ldlat);
+				  e->name, perf_mem_events__loads_ldlat);
 		}
 		return mem_loads_name;
 	}
 
-	return (char *)perf_mem_events[i].name;
+	return (char *)e->name;
+}
+
+__weak bool is_mem_loads_aux_event(struct evsel *leader __maybe_unused)
+{
+	return false;
 }
 
 int perf_mem_events__parse(const char *str)
@@ -61,7 +79,10 @@ int perf_mem_events__parse(const char *str)
 
 	while (tok) {
 		for (j = 0; j < PERF_MEM_EVENTS__MAX; j++) {
-			struct perf_mem_event *e = &perf_mem_events[j];
+			struct perf_mem_event *e = perf_mem_events__ptr(j);
+
+			if (!e->tag)
+				continue;
 
 			if (strstr(e->tag, tok))
 				e->record = found = true;
@@ -90,10 +111,17 @@ int perf_mem_events__init(void)
 
 	for (j = 0; j < PERF_MEM_EVENTS__MAX; j++) {
 		char path[PATH_MAX];
-		struct perf_mem_event *e = &perf_mem_events[j];
+		struct perf_mem_event *e = perf_mem_events__ptr(j);
 		struct stat st;
 
-		scnprintf(path, PATH_MAX, "%s/devices/cpu/events/%s",
+		/*
+		 * If the event entry isn't valid, skip initialization
+		 * and "e->supported" will keep false.
+		 */
+		if (!e->tag)
+			continue;
+
+		scnprintf(path, PATH_MAX, "%s/devices/%s",
 			  mnt, e->sysfs_name);
 
 		if (!stat(path, &st))
@@ -108,10 +136,10 @@ void perf_mem_events__list(void)
 	int j;
 
 	for (j = 0; j < PERF_MEM_EVENTS__MAX; j++) {
-		struct perf_mem_event *e = &perf_mem_events[j];
+		struct perf_mem_event *e = perf_mem_events__ptr(j);
 
 		fprintf(stderr, "%-13s%-*s%s\n",
-			e->tag,
+			e->tag ?: "",
 			verbose > 0 ? 25 : 0,
 			verbose > 0 ? perf_mem_events__name(j) : "",
 			e->supported ? ": available" : "");
@@ -309,6 +337,29 @@ int perf_mem__lck_scnprintf(char *out, size_t sz, struct mem_info *mem_info)
 	return l;
 }
 
+int perf_mem__blk_scnprintf(char *out, size_t sz, struct mem_info *mem_info)
+{
+	size_t l = 0;
+	u64 mask = PERF_MEM_BLK_NA;
+
+	sz -= 1; /* -1 for null termination */
+	out[0] = '\0';
+
+	if (mem_info)
+		mask = mem_info->data_src.mem_blk;
+
+	if (!mask || (mask & PERF_MEM_BLK_NA)) {
+		l += scnprintf(out + l, sz - l, " N/A");
+		return l;
+	}
+	if (mask & PERF_MEM_BLK_DATA)
+		l += scnprintf(out + l, sz - l, " Data");
+	if (mask & PERF_MEM_BLK_ADDR)
+		l += scnprintf(out + l, sz - l, " Addr");
+
+	return l;
+}
+
 int perf_script__meminfo_scnprintf(char *out, size_t sz, struct mem_info *mem_info)
 {
 	int i = 0;
@@ -320,6 +371,8 @@ int perf_script__meminfo_scnprintf(char *out, size_t sz, struct mem_info *mem_in
 	i += perf_mem__tlb_scnprintf(out + i, sz - i, mem_info);
 	i += scnprintf(out + i, sz - i, "|LCK ");
 	i += perf_mem__lck_scnprintf(out + i, sz - i, mem_info);
+	i += scnprintf(out + i, sz - i, "|BLK ");
+	i += perf_mem__blk_scnprintf(out + i, sz - i, mem_info);
 
 	return i;
 }
@@ -332,6 +385,7 @@ int c2c_decode_stats(struct c2c_stats *stats, struct mem_info *mi)
 	u64 lvl    = data_src->mem_lvl;
 	u64 snoop  = data_src->mem_snoop;
 	u64 lock   = data_src->mem_lock;
+	u64 blk    = data_src->mem_blk;
 	/*
 	 * Skylake might report unknown remote level via this
 	 * bit, consider it when evaluating remote HITMs.
@@ -350,6 +404,9 @@ do {				\
 	stats->nr_entries++;
 
 	if (lock & P(LOCK, LOCKED)) stats->locks++;
+
+	if (blk & P(BLK, DATA)) stats->blk_data++;
+	if (blk & P(BLK, ADDR)) stats->blk_addr++;
 
 	if (op & P(OP, LOAD)) {
 		/* load */
@@ -462,6 +519,8 @@ void c2c_add_stats(struct c2c_stats *stats, struct c2c_stats *add)
 	stats->rmt_hit		+= add->rmt_hit;
 	stats->lcl_dram		+= add->lcl_dram;
 	stats->rmt_dram		+= add->rmt_dram;
+	stats->blk_data		+= add->blk_data;
+	stats->blk_addr		+= add->blk_addr;
 	stats->nomap		+= add->nomap;
 	stats->noparse		+= add->noparse;
 }

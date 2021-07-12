@@ -247,6 +247,8 @@ int pm_init(struct packet_manager *pm, struct device_queue_manager *dqm)
 	case CHIP_NAVI14:
 	case CHIP_SIENNA_CICHLID:
 	case CHIP_NAVY_FLOUNDER:
+	case CHIP_VANGOGH:
+	case CHIP_DIMGREY_CAVEFISH:
 		pm->pmf = &kfd_v9_pm_funcs;
 		break;
 	default:
@@ -345,7 +347,7 @@ fail_create_runlist_ib:
 }
 
 int pm_send_query_status(struct packet_manager *pm, uint64_t fence_address,
-			uint64_t fence_value)
+			uint32_t fence_value)
 {
 	uint32_t *buffer, size;
 	int retval = 0;

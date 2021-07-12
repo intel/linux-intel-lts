@@ -130,6 +130,7 @@ static u32 amdgpu_fence_read(struct amdgpu_ring *ring)
  *
  * @ring: ring the fence is associated with
  * @f: resulting fence object
+ * @flags: flags to pass into the subordinate .emit_fence() call
  *
  * Emits a fence command on the requested ring (all asics).
  * Returns 0 on success, -ENOMEM on failure.
@@ -187,6 +188,7 @@ int amdgpu_fence_emit(struct amdgpu_ring *ring, struct dma_fence **f,
  *
  * @ring: ring the fence is associated with
  * @s: resulting sequence number
+ * @timeout: the timeout for waiting in usecs
  *
  * Emits a fence command on the requested ring (all asics).
  * Used For polling fence.
@@ -294,7 +296,7 @@ bool amdgpu_fence_process(struct amdgpu_ring *ring)
 /**
  * amdgpu_fence_fallback - fallback for hardware interrupts
  *
- * @work: delayed work item
+ * @t: timer context used to obtain the pointer to ring structure
  *
  * Checks for fence activity.
  */
@@ -310,7 +312,6 @@ static void amdgpu_fence_fallback(struct timer_list *t)
 /**
  * amdgpu_fence_wait_empty - wait for all fences to signal
  *
- * @adev: amdgpu device pointer
  * @ring: ring index the fence is associated with
  *
  * Wait for all fences on the requested ring to signal (all asics).
@@ -532,8 +533,6 @@ void amdgpu_fence_driver_fini(struct amdgpu_device *adev)
 
 		if (!ring || !ring->fence_drv.initialized)
 			continue;
-		if (!ring->no_scheduler)
-			drm_sched_fini(&ring->sched);
 		r = amdgpu_fence_wait_empty(ring);
 		if (r) {
 			/* no need to trigger GPU reset as we are unloading */
@@ -542,7 +541,8 @@ void amdgpu_fence_driver_fini(struct amdgpu_device *adev)
 		if (ring->fence_drv.irq_src)
 			amdgpu_irq_put(adev, ring->fence_drv.irq_src,
 				       ring->fence_drv.irq_type);
-
+		if (!ring->no_scheduler)
+			drm_sched_fini(&ring->sched);
 		del_timer_sync(&ring->fence_drv.fallback_timer);
 		for (j = 0; j <= ring->fence_drv.num_fences_mask; ++j)
 			dma_fence_put(ring->fence_drv.fences[j]);
@@ -640,7 +640,7 @@ static const char *amdgpu_fence_get_timeline_name(struct dma_fence *f)
 
 /**
  * amdgpu_fence_enable_signaling - enable signalling on fence
- * @fence: fence
+ * @f: fence
  *
  * This function is called with fence_queue lock held, and adds a callback
  * to fence_queue that checks if this fence is signaled, and if so it
@@ -676,7 +676,7 @@ static void amdgpu_fence_free(struct rcu_head *rcu)
 /**
  * amdgpu_fence_release - callback that fence can be freed
  *
- * @fence: fence
+ * @f: fence
  *
  * This function is called when the reference count becomes zero.
  * It just RCU schedules freeing up the fence.
@@ -741,7 +741,7 @@ static int amdgpu_debugfs_fence_info(struct seq_file *m, void *data)
 	return 0;
 }
 
-/**
+/*
  * amdgpu_debugfs_gpu_recover - manually trigger a gpu reset & recover
  *
  * Manually trigger a gpu reset at the next fence wait.

@@ -420,7 +420,7 @@ static void ltdc_crtc_update_clut(struct drm_crtc *crtc)
 }
 
 static void ltdc_crtc_atomic_enable(struct drm_crtc *crtc,
-				    struct drm_crtc_state *old_state)
+				    struct drm_atomic_state *state)
 {
 	struct ltdc_device *ldev = crtc_to_ltdc(crtc);
 	struct drm_device *ddev = crtc->dev;
@@ -442,7 +442,7 @@ static void ltdc_crtc_atomic_enable(struct drm_crtc *crtc,
 }
 
 static void ltdc_crtc_atomic_disable(struct drm_crtc *crtc,
-				     struct drm_crtc_state *old_state)
+				     struct drm_atomic_state *state)
 {
 	struct ltdc_device *ldev = crtc_to_ltdc(crtc);
 	struct drm_device *ddev = crtc->dev;
@@ -525,41 +525,12 @@ static void ltdc_crtc_mode_set_nofb(struct drm_crtc *crtc)
 {
 	struct ltdc_device *ldev = crtc_to_ltdc(crtc);
 	struct drm_device *ddev = crtc->dev;
-	struct drm_connector_list_iter iter;
-	struct drm_connector *connector = NULL;
-	struct drm_encoder *encoder = NULL;
-	struct drm_bridge *bridge = NULL;
 	struct drm_display_mode *mode = &crtc->state->adjusted_mode;
 	struct videomode vm;
 	u32 hsync, vsync, accum_hbp, accum_vbp, accum_act_w, accum_act_h;
 	u32 total_width, total_height;
-	u32 bus_flags = 0;
 	u32 val;
 	int ret;
-
-	/* get encoder from crtc */
-	drm_for_each_encoder(encoder, ddev)
-		if (encoder->crtc == crtc)
-			break;
-
-	if (encoder) {
-		/* get bridge from encoder */
-		list_for_each_entry(bridge, &encoder->bridge_chain, chain_node)
-			if (bridge->encoder == encoder)
-				break;
-
-		/* Get the connector from encoder */
-		drm_connector_list_iter_begin(ddev, &iter);
-		drm_for_each_connector_iter(connector, &iter)
-			if (connector->encoder == encoder)
-				break;
-		drm_connector_list_iter_end(&iter);
-	}
-
-	if (bridge && bridge->timings)
-		bus_flags = bridge->timings->input_bus_flags;
-	else if (connector)
-		bus_flags = connector->display_info.bus_flags;
 
 	if (!pm_runtime_active(ddev->dev)) {
 		ret = pm_runtime_get_sync(ddev->dev);
@@ -596,10 +567,10 @@ static void ltdc_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	if (vm.flags & DISPLAY_FLAGS_VSYNC_HIGH)
 		val |= GCR_VSPOL;
 
-	if (bus_flags & DRM_BUS_FLAG_DE_LOW)
+	if (vm.flags & DISPLAY_FLAGS_DE_LOW)
 		val |= GCR_DEPOL;
 
-	if (bus_flags & DRM_BUS_FLAG_PIXDATA_DRIVE_NEGEDGE)
+	if (vm.flags & DISPLAY_FLAGS_PIXDATA_NEGEDGE)
 		val |= GCR_PCPOL;
 
 	reg_update_bits(ldev->regs, LTDC_GCR,
@@ -625,7 +596,7 @@ static void ltdc_crtc_mode_set_nofb(struct drm_crtc *crtc)
 }
 
 static void ltdc_crtc_atomic_flush(struct drm_crtc *crtc,
-				   struct drm_crtc_state *old_crtc_state)
+				   struct drm_atomic_state *state)
 {
 	struct ltdc_device *ldev = crtc_to_ltdc(crtc);
 	struct drm_device *ddev = crtc->dev;
@@ -742,7 +713,6 @@ static const struct drm_crtc_funcs ltdc_crtc_funcs = {
 	.enable_vblank = ltdc_crtc_enable_vblank,
 	.disable_vblank = ltdc_crtc_disable_vblank,
 	.get_vblank_timestamp = drm_crtc_vblank_helper_get_vblank_timestamp,
-	.gamma_set = drm_atomic_helper_legacy_gamma_set,
 };
 
 /*

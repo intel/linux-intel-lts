@@ -90,7 +90,7 @@ static int meson_dumb_create(struct drm_file *file, struct drm_device *dev,
 
 DEFINE_DRM_GEM_CMA_FOPS(fops);
 
-static struct drm_driver meson_driver = {
+static const struct drm_driver meson_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 
 	/* IRQ */
@@ -564,7 +564,6 @@ static const struct dev_pm_ops meson_drv_pm_ops = {
 
 static struct platform_driver meson_drm_platform_driver = {
 	.probe      = meson_drv_probe,
-	.shutdown   = meson_drv_shutdown,
 	.driver     = {
 		.name	= "meson-drm",
 		.of_match_table = dt_match,

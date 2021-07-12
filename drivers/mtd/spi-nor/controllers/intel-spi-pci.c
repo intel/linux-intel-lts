@@ -16,12 +16,43 @@
 #define BCR		0xdc
 #define BCR_WPD		BIT(0)
 
+static int intel_spi_pci_bios_unlock(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	u32 bcr = 0;
+
+	pci_read_config_dword(pdev, BCR, &bcr);
+	if (!(bcr & BCR_WPD)) {
+		bcr |= BCR_WPD;
+		pci_write_config_dword(pdev, BCR, bcr);
+		pci_read_config_dword(pdev, BCR, &bcr);
+	}
+
+	if (!(bcr & BCR_WPD))
+		return -EIO;
+
+	return 0;
+}
+
+static bool intel_spi_pci_is_bios_locked(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	u32 bcr = 0;
+
+	pci_read_config_dword(pdev, BCR, &bcr);
+	return !(bcr & BCR_WPD);
+}
+
 static const struct intel_spi_boardinfo bxt_info = {
 	.type = INTEL_SPI_BXT,
+	.is_bios_locked = intel_spi_pci_is_bios_locked,
+	.bios_unlock = intel_spi_pci_bios_unlock,
 };
 
 static const struct intel_spi_boardinfo cnl_info = {
 	.type = INTEL_SPI_CNL,
+	.is_bios_locked = intel_spi_pci_is_bios_locked,
+	.bios_unlock = intel_spi_pci_bios_unlock,
 };
 
 static int intel_spi_pci_probe(struct pci_dev *pdev,
@@ -29,7 +60,6 @@ static int intel_spi_pci_probe(struct pci_dev *pdev,
 {
 	struct intel_spi_boardinfo *info;
 	struct intel_spi *ispi;
-	u32 bcr;
 	int ret;
 
 	ret = pcim_enable_device(pdev);
@@ -40,15 +70,6 @@ static int intel_spi_pci_probe(struct pci_dev *pdev,
 			    GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
-
-	/* Try to make the chip read/write */
-	pci_read_config_dword(pdev, BCR, &bcr);
-	if (!(bcr & BCR_WPD)) {
-		bcr |= BCR_WPD;
-		pci_write_config_dword(pdev, BCR, bcr);
-		pci_read_config_dword(pdev, BCR, &bcr);
-	}
-	info->writeable = !!(bcr & BCR_WPD);
 
 	ispi = intel_spi_probe(&pdev->dev, &pdev->resource[0], info);
 	if (IS_ERR(ispi))
@@ -73,6 +94,7 @@ static const struct pci_device_id intel_spi_pci_ids[] = {
 	{ PCI_VDEVICE(INTEL, 0x43a4), (unsigned long)&cnl_info },
 	{ PCI_VDEVICE(INTEL, 0x4b24), (unsigned long)&bxt_info },
 	{ PCI_VDEVICE(INTEL, 0x4da4), (unsigned long)&bxt_info },
+	{ PCI_VDEVICE(INTEL, 0x51a4), (unsigned long)&cnl_info },
 	{ PCI_VDEVICE(INTEL, 0x7aa4), (unsigned long)&cnl_info },
 	{ PCI_VDEVICE(INTEL, 0xa0a4), (unsigned long)&bxt_info },
 	{ PCI_VDEVICE(INTEL, 0xa1a4), (unsigned long)&bxt_info },
@@ -83,11 +105,53 @@ static const struct pci_device_id intel_spi_pci_ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, intel_spi_pci_ids);
 
+static ssize_t intel_spi_is_protected_show(struct device *dev,
+					   struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", intel_spi_is_protected(dev));
+}
+static DEVICE_ATTR_ADMIN_RO(intel_spi_is_protected);
+
+static ssize_t intel_spi_bios_lock_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", intel_spi_is_bios_lock(dev));
+}
+
+static ssize_t intel_spi_bios_lock_store(struct device *dev,
+					 struct device_attribute *attr,
+					 const char *buf, size_t len)
+{
+	if (!sysfs_streq(buf, "unlock"))
+		return -EINVAL;
+
+	return intel_spi_bios_unlock(dev, len);
+}
+static DEVICE_ATTR_ADMIN_RW(intel_spi_bios_lock);
+
+static struct attribute *intel_spi_pci_attrs[] = {
+	 &dev_attr_intel_spi_is_protected.attr,
+	 &dev_attr_intel_spi_bios_lock.attr,
+	 NULL
+};
+
+static const struct attribute_group intel_spi_pci_attr_group = {
+	.attrs = intel_spi_pci_attrs,
+};
+
+static const struct attribute_group *intel_spi_pci_dev_groups[] = {
+	&intel_spi_pci_attr_group,
+	NULL
+};
+
 static struct pci_driver intel_spi_pci_driver = {
 	.name = "intel-spi",
 	.id_table = intel_spi_pci_ids,
 	.probe = intel_spi_pci_probe,
 	.remove = intel_spi_pci_remove,
+	.driver = {
+		.dev_groups = intel_spi_pci_dev_groups,
+	},
 };
 
 module_pci_driver(intel_spi_pci_driver);

@@ -1083,12 +1083,39 @@ wdt_done:
 	return ret;
 }
 
+static int lcp_ich_bios_unlock(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	u32 bcr = 0;
+
+	pci_read_config_dword(pdev, BCR, &bcr);
+	if (!(bcr & BCR_WPD)) {
+		bcr |= BCR_WPD;
+		pci_write_config_dword(pdev, BCR, bcr);
+		pci_read_config_dword(pdev, BCR, &bcr);
+	}
+
+	if (!(bcr & BCR_WPD))
+		return -EIO;
+
+	return 0;
+}
+
+static bool lcp_ich_is_bios_locked(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	u32 bcr = 0;
+
+	pci_read_config_dword(pdev, BCR, &bcr);
+	return !(bcr & BCR_WPD);
+}
+
 static int lpc_ich_init_spi(struct pci_dev *dev)
 {
 	struct lpc_ich_priv *priv = pci_get_drvdata(dev);
 	struct resource *res = &intel_spi_res[0];
 	struct intel_spi_boardinfo *info;
-	u32 spi_base, rcba, bcr;
+	u32 spi_base, rcba;
 
 	info = devm_kzalloc(&dev->dev, sizeof(*info), GFP_KERNEL);
 	if (!info)
@@ -1112,8 +1139,8 @@ static int lpc_ich_init_spi(struct pci_dev *dev)
 			res->start = spi_base + SPIBASE_LPT;
 			res->end = res->start + SPIBASE_LPT_SZ - 1;
 
-			pci_read_config_dword(dev, BCR, &bcr);
-			info->writeable = !!(bcr & BCR_WPD);
+			info->is_bios_locked = lcp_ich_is_bios_locked;
+			info->bios_unlock = lcp_ich_bios_unlock;
 		}
 		break;
 
@@ -1134,8 +1161,8 @@ static int lpc_ich_init_spi(struct pci_dev *dev)
 			res->start = spi_base & 0xfffffff0;
 			res->end = res->start + SPIBASE_APL_SZ - 1;
 
-			pci_bus_read_config_dword(bus, spi, BCR, &bcr);
-			info->writeable = !!(bcr & BCR_WPD);
+			info->is_bios_locked = lcp_ich_is_bios_locked;
+			info->bios_unlock = lcp_ich_bios_unlock;
 		}
 
 		pci_bus_write_config_byte(bus, p2sb, 0xe1, 0x1);

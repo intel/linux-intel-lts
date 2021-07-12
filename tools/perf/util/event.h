@@ -135,11 +135,14 @@ struct perf_sample {
 	u32 raw_size;
 	u64 data_src;
 	u64 phys_addr;
+	u64 data_page_size;
+	u64 code_page_size;
 	u64 cgroup;
 	u32 flags;
 	u16 insn_len;
 	u8  cpumode;
 	u16 misc;
+	u16 ins_lat;
 	bool no_hw_idx;		/* No hw_idx collected in branch_stack */
 	char insn[MAX_INSN];
 	void *raw_data;
@@ -407,5 +410,8 @@ bool perf_event_paranoid_check(int max_level);
 extern int sysctl_perf_event_max_stack;
 extern int sysctl_perf_event_max_contexts_per_stack;
 extern unsigned int proc_map_timeout;
+
+#define PAGE_SIZE_NAME_LEN	32
+char *get_page_size_name(u64 size, char *str);
 
 #endif /* __PERF_RECORD_H */

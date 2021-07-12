@@ -449,7 +449,8 @@ static int acx424akp_probe(struct mipi_dsi_device *dsi)
 			MIPI_DSI_MODE_VIDEO_BURST;
 	else
 		dsi->mode_flags =
-			MIPI_DSI_CLOCK_NON_CONTINUOUS;
+			MIPI_DSI_CLOCK_NON_CONTINUOUS |
+			MIPI_DSI_MODE_EOT_PACKET;
 
 	acx->supply = devm_regulator_get(dev, "vddi");
 	if (IS_ERR(acx->supply))

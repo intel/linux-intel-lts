@@ -198,8 +198,11 @@
 #include "gem/i915_gem_context.h"
 #include "gt/intel_engine_pm.h"
 #include "gt/intel_engine_user.h"
+#include "gt/intel_execlists_submission.h"
+#include "gt/intel_gpu_commands.h"
 #include "gt/intel_gt.h"
-#include "gt/intel_lrc_reg.h"
+#include "gt/intel_gt_clock_utils.h"
+#include "gt/intel_lrc.h"
 #include "gt/intel_ring.h"
 
 #include "i915_drv.h"
@@ -600,6 +603,7 @@ static int append_oa_sample(struct i915_perf_stream *stream,
 {
 	int report_size = stream->oa_buffer.format_size;
 	struct drm_i915_perf_record_header header;
+	u32 sample_flags = stream->sample_flags;
 
 	header.type = DRM_I915_PERF_RECORD_SAMPLE;
 	header.pad = 0;
@@ -613,8 +617,10 @@ static int append_oa_sample(struct i915_perf_stream *stream,
 		return -EFAULT;
 	buf += sizeof(header);
 
-	if (copy_to_user(buf, report, report_size))
-		return -EFAULT;
+	if (sample_flags & SAMPLE_OA_REPORT) {
+		if (copy_to_user(buf, report, report_size))
+			return -EFAULT;
+	}
 
 	(*offset) += header.size;
 
@@ -622,7 +628,8 @@ static int append_oa_sample(struct i915_perf_stream *stream,
 }
 
 /**
- * Copies all buffered OA reports into userspace read() buffer.
+ * gen8_append_oa_reports - Copies all buffered OA reports into
+ *			    userspace read() buffer.
  * @stream: An i915-perf stream opened for OA metrics
  * @buf: destination buffer given by userspace
  * @count: the number of bytes userspace wants to read
@@ -910,7 +917,7 @@ static int gen8_oa_read(struct i915_perf_stream *stream,
 		intel_uncore_rmw(uncore, oastatus_reg,
 				 GEN8_OASTATUS_COUNTER_OVERFLOW |
 				 GEN8_OASTATUS_REPORT_LOST,
-				 IS_GEN_RANGE(uncore->i915, 8, 10) ?
+				 IS_GEN_RANGE(uncore->i915, 8, 11) ?
 				 (GEN8_OASTATUS_HEAD_POINTER_WRAP |
 				  GEN8_OASTATUS_TAIL_POINTER_WRAP) : 0);
 	}
@@ -919,7 +926,8 @@ static int gen8_oa_read(struct i915_perf_stream *stream,
 }
 
 /**
- * Copies all buffered OA reports into userspace read() buffer.
+ * gen7_append_oa_reports - Copies all buffered OA reports into
+ *			    userspace read() buffer.
  * @stream: An i915-perf stream opened for OA metrics
  * @buf: destination buffer given by userspace
  * @count: the number of bytes userspace wants to read
@@ -1630,7 +1638,8 @@ static int alloc_noa_wait(struct i915_perf_stream *stream)
 	struct drm_i915_gem_object *bo;
 	struct i915_vma *vma;
 	const u64 delay_ticks = 0xffffffffffffffff -
-		i915_cs_timestamp_ns_to_ticks(i915, atomic64_read(&stream->perf->noa_programming_delay));
+		intel_gt_ns_to_clock_interval(stream->perf->i915->ggtt.vm.gt,
+					      atomic64_read(&stream->perf->noa_programming_delay));
 	const u32 base = stream->engine->mmio_base;
 #define CS_GPR(x) GEN8_RING_CS_GPR(base, x)
 	u32 *batch, *ts0, *cs, *jump;
@@ -2673,7 +2682,7 @@ static void i915_oa_stream_enable(struct i915_perf_stream *stream)
 
 	stream->perf->ops.oa_enable(stream);
 
-	if (stream->sample_flags & SAMPLE_OA_REPORT)
+	if (stream->periodic)
 		hrtimer_start(&stream->poll_check_timer,
 			      ns_to_ktime(stream->poll_oa_period),
 			      HRTIMER_MODE_REL_PINNED);
@@ -2736,7 +2745,7 @@ static void i915_oa_stream_disable(struct i915_perf_stream *stream)
 {
 	stream->perf->ops.oa_disable(stream);
 
-	if (stream->sample_flags & SAMPLE_OA_REPORT)
+	if (stream->periodic)
 		hrtimer_cancel(&stream->poll_check_timer);
 }
 
@@ -3019,7 +3028,7 @@ static ssize_t i915_perf_read(struct file *file,
 	 * disabled stream as an error. In particular it might otherwise lead
 	 * to a deadlock for blocking file descriptors...
 	 */
-	if (!stream->enabled || !(stream->sample_flags & SAMPLE_OA_REPORT))
+	if (!stream->enabled)
 		return -EIO;
 
 	if (!(file->f_flags & O_NONBLOCK)) {
@@ -3229,7 +3238,7 @@ static long i915_perf_config_locked(struct i915_perf_stream *stream,
 }
 
 /**
- * i915_perf_ioctl - support ioctl() usage with i915 perf stream FDs
+ * i915_perf_ioctl_locked - support ioctl() usage with i915 perf stream FDs
  * @stream: An i915 perf stream
  * @cmd: the ioctl request
  * @arg: the ioctl data
@@ -3511,7 +3520,8 @@ err:
 
 static u64 oa_exponent_to_ns(struct i915_perf *perf, int exponent)
 {
-	return i915_cs_timestamp_ticks_to_ns(perf->i915, 2ULL << exponent);
+	return intel_gt_clock_interval_to_ns(perf->i915->ggtt.vm.gt,
+					     2ULL << exponent);
 }
 
 /**
@@ -4365,11 +4375,11 @@ void i915_perf_init(struct drm_i915_private *i915)
 	if (perf->ops.enable_metric_set) {
 		mutex_init(&perf->lock);
 
-		oa_sample_rate_hard_limit =
-			RUNTIME_INFO(i915)->cs_timestamp_frequency_hz / 2;
+		/* Choose a representative limit */
+		oa_sample_rate_hard_limit = i915->gt.clock_frequency / 2;
 
 		mutex_init(&perf->metrics_lock);
-		idr_init(&perf->metrics_idr);
+		idr_init_base(&perf->metrics_idr, 1);
 
 		/* We set up some ratelimit state to potentially throttle any
 		 * _NOTES about spurious, invalid OA reports which we don't

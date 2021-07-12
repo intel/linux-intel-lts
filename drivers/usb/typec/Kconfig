@@ -46,6 +46,8 @@ menuconfig TYPEC
 
 if TYPEC
 
+source "drivers/usb/typec/ccg/Kconfig"
+
 source "drivers/usb/typec/tcpm/Kconfig"
 
 source "drivers/usb/typec/ucsi/Kconfig"

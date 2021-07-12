@@ -189,7 +189,7 @@ compute_partial_view(const struct drm_i915_gem_object *obj,
 	struct i915_ggtt_view view;
 
 	if (i915_gem_object_is_tiled(obj))
-		chunk = roundup(chunk, tile_row_pages(obj) ?: 1);
+		chunk = roundup(chunk, tile_row_pages(obj));
 
 	view.type = I915_GGTT_VIEW_PARTIAL;
 	view.partial.offset = rounddown(page_offset, chunk);
@@ -893,8 +893,9 @@ int i915_gem_mmap(struct file *filp, struct vm_area_struct *vma)
 	 * requires avoiding extraneous references to their filp, hence why
 	 * we prefer to use an anonymous file for their mmaps.
 	 */
-	fput(vma->vm_file);
-	vma->vm_file = anon;
+	vma_set_file(vma, anon);
+	/* Drop the initial creation reference, the vma is now holding one. */
+	fput(anon);
 
 	switch (mmo->mmap_type) {
 	case I915_MMAP_TYPE_WC:

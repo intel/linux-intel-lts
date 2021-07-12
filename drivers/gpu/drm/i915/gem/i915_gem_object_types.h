@@ -67,6 +67,14 @@ struct drm_i915_gem_object_ops {
 	const char *name; /* friendly name for debug, e.g. lockdep classes */
 };
 
+enum i915_map_type {
+	I915_MAP_WB = 0,
+	I915_MAP_WC,
+#define I915_MAP_OVERRIDE BIT(31)
+	I915_MAP_FORCE_WB = I915_MAP_WB | I915_MAP_OVERRIDE,
+	I915_MAP_FORCE_WC = I915_MAP_WC | I915_MAP_OVERRIDE,
+};
+
 enum i915_mmap_type {
 	I915_MMAP_TYPE_GTT = 0,
 	I915_MMAP_TYPE_WC,
@@ -80,6 +88,14 @@ struct i915_mmap_offset {
 	enum i915_mmap_type mmap_type;
 
 	struct rb_node offset;
+};
+
+struct i915_gem_object_page_iter {
+	struct scatterlist *sg_pos;
+	unsigned int sg_idx; /* in pages, but 32bit eek! */
+
+	struct radix_tree_root radix;
+	struct mutex lock; /* protects this cache */
 };
 
 struct drm_i915_gem_object {
@@ -134,8 +150,6 @@ struct drm_i915_gem_object {
 	 */
 	struct list_head obj_link;
 
-	/** Stolen memory for this object, instead of being backed by shmem. */
-	struct drm_mm_node *stolen;
 	union {
 		struct rcu_head rcu;
 		struct llist_node freed;
@@ -159,6 +173,7 @@ struct drm_i915_gem_object {
 #define I915_BO_ALLOC_VOLATILE   BIT(1)
 #define I915_BO_ALLOC_FLAGS (I915_BO_ALLOC_CONTIGUOUS | I915_BO_ALLOC_VOLATILE)
 #define I915_BO_READONLY         BIT(2)
+#define I915_TILING_QUIRK_BIT    3 /* unknown swizzling; do not release! */
 
 	/*
 	 * Is the object to be mapped as read-only to the GPU
@@ -248,13 +263,8 @@ struct drm_i915_gem_object {
 
 		I915_SELFTEST_DECLARE(unsigned int page_mask);
 
-		struct i915_gem_object_page_iter {
-			struct scatterlist *sg_pos;
-			unsigned int sg_idx; /* in pages, but 32bit eek! */
-
-			struct radix_tree_root radix;
-			struct mutex lock; /* protects this cache */
-		} get_page;
+		struct i915_gem_object_page_iter get_page;
+		struct i915_gem_object_page_iter get_dma_page;
 
 		/**
 		 * Element within i915->mm.unbound_list or i915->mm.bound_list,
@@ -272,12 +282,6 @@ struct drm_i915_gem_object {
 		 * pages were last acquired.
 		 */
 		bool dirty:1;
-
-		/**
-		 * This is set if the object has been pinned due to unknown
-		 * swizzling.
-		 */
-		bool quirked:1;
 	} mm;
 
 	/** Record of address bit 17 of each page at last unbind. */
@@ -291,6 +295,8 @@ struct drm_i915_gem_object {
 			struct i915_mmu_object *mmu_object;
 			struct work_struct *work;
 		} userptr;
+
+		struct drm_mm_node *stolen;
 
 		unsigned long scratch;
 		u64 encode;

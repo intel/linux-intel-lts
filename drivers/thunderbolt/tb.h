@@ -361,12 +361,21 @@ struct tb_path {
  * @handle_event: Handle thunderbolt event
  * @get_boot_acl: Get boot ACL list
  * @set_boot_acl: Set boot ACL list
+ * @disapprove_switch: Disapprove switch (disconnect PCIe tunnel)
  * @approve_switch: Approve switch
  * @add_switch_key: Add key to switch
  * @challenge_switch_key: Challenge switch using key
  * @disconnect_pcie_paths: Disconnects PCIe paths before NVM update
  * @approve_xdomain_paths: Approve (establish) XDomain DMA paths
  * @disconnect_xdomain_paths: Disconnect XDomain DMA paths
+ * @usb4_switch_op: Optional proxy for USB4 router operations. If set
+ *		    this will be called whenever USB4 router operation is
+ *		    performed. If this returns %-EOPNOTSUPP then the
+ *		    native USB4 router operation is called.
+ * @usb4_switch_nvm_authenticate_status: Optional callback that the CM
+ *					 implementation can be used to
+ *					 return status of USB4 NVM_AUTH
+ *					 router operation.
  */
 struct tb_cm_ops {
 	int (*driver_ready)(struct tb *tb);
@@ -386,6 +395,7 @@ struct tb_cm_ops {
 			     const void *buf, size_t size);
 	int (*get_boot_acl)(struct tb *tb, uuid_t *uuids, size_t nuuids);
 	int (*set_boot_acl)(struct tb *tb, const uuid_t *uuids, size_t nuuids);
+	int (*disapprove_switch)(struct tb *tb, struct tb_switch *sw);
 	int (*approve_switch)(struct tb *tb, struct tb_switch *sw);
 	int (*add_switch_key)(struct tb *tb, struct tb_switch *sw);
 	int (*challenge_switch_key)(struct tb *tb, struct tb_switch *sw,
@@ -393,6 +403,11 @@ struct tb_cm_ops {
 	int (*disconnect_pcie_paths)(struct tb *tb);
 	int (*approve_xdomain_paths)(struct tb *tb, struct tb_xdomain *xd);
 	int (*disconnect_xdomain_paths)(struct tb *tb, struct tb_xdomain *xd);
+	int (*usb4_switch_op)(struct tb_switch *sw, u16 opcode, u32 *metadata,
+			      u8 *status, const void *tx_data, size_t tx_data_len,
+			      void *rx_data, size_t rx_data_len);
+	int (*usb4_switch_nvm_authenticate_status)(struct tb_switch *sw,
+						   u32 *status);
 };
 
 static inline void *tb_priv(struct tb *tb)
@@ -616,6 +631,7 @@ int tb_domain_thaw_noirq(struct tb *tb);
 void tb_domain_complete(struct tb *tb);
 int tb_domain_runtime_suspend(struct tb *tb);
 int tb_domain_runtime_resume(struct tb *tb);
+int tb_domain_disapprove_switch(struct tb *tb, struct tb_switch *sw);
 int tb_domain_approve_switch(struct tb *tb, struct tb_switch *sw);
 int tb_domain_approve_switch_key(struct tb *tb, struct tb_switch *sw);
 int tb_domain_challenge_switch_key(struct tb *tb, struct tb_switch *sw);
@@ -780,7 +796,8 @@ static inline bool tb_switch_is_ice_lake(const struct tb_switch *sw)
 
 static inline bool tb_switch_is_tiger_lake(const struct tb_switch *sw)
 {
-	if (sw->config.vendor_id == PCI_VENDOR_ID_INTEL) {
+	if (sw->config.vendor_id == PCI_VENDOR_ID_INTEL ||
+	    sw->config.vendor_id == 0x8087) {
 		switch (sw->config.device_id) {
 		case PCI_DEVICE_ID_INTEL_TGL_NHI0:
 		case PCI_DEVICE_ID_INTEL_TGL_NHI1:
@@ -792,6 +809,13 @@ static inline bool tb_switch_is_tiger_lake(const struct tb_switch *sw)
 	return false;
 }
 
+/* This is hack for TGL A step and should be removed */
+static bool tb_switch_is_tiger_lake_astep(const struct tb_switch *sw)
+{
+	return sw->config.thunderbolt_version != USB4_VERSION_1_0 &&
+		tb_switch_is_tiger_lake(sw);
+}
+
 /**
  * tb_switch_is_usb4() - Is the switch USB4 compliant
  * @sw: Switch to check
@@ -800,7 +824,8 @@ static inline bool tb_switch_is_tiger_lake(const struct tb_switch *sw)
  */
 static inline bool tb_switch_is_usb4(const struct tb_switch *sw)
 {
-	return sw->config.thunderbolt_version == USB4_VERSION_1_0;
+	return sw->config.thunderbolt_version == USB4_VERSION_1_0 ||
+	       tb_switch_is_tiger_lake_astep(sw);
 }
 
 /**
@@ -864,6 +889,10 @@ struct tb_port *tb_next_port_on_path(struct tb_port *start, struct tb_port *end,
 	     (p) = tb_next_port_on_path((src), (dst), (p)))
 
 int tb_port_get_link_speed(struct tb_port *port);
+int tb_port_get_link_width(struct tb_port *port);
+int tb_port_state(struct tb_port *port);
+int tb_port_lane_bonding_enable(struct tb_port *port);
+void tb_port_lane_bonding_disable(struct tb_port *port);
 
 int tb_switch_find_vse_cap(struct tb_switch *sw, enum tb_switch_vse_cap vsec);
 int tb_switch_find_cap(struct tb_switch *sw, enum tb_switch_cap cap);
@@ -906,6 +935,7 @@ int tb_lc_configure_port(struct tb_port *port);
 void tb_lc_unconfigure_port(struct tb_port *port);
 int tb_lc_configure_xdomain(struct tb_port *port);
 void tb_lc_unconfigure_xdomain(struct tb_port *port);
+int tb_lc_start_lane_initialization(struct tb_port *port);
 int tb_lc_set_wake(struct tb_switch *sw, unsigned int flags);
 int tb_lc_set_sleep(struct tb_switch *sw);
 bool tb_lc_lane_bonding_possible(struct tb_switch *sw);
@@ -931,6 +961,8 @@ static inline u64 tb_downstream_route(struct tb_port *port)
 	return tb_route(port->sw)
 	       | ((u64) port->port << (port->sw->config.depth * 8));
 }
+
+extern bool tb_xdomain_enabled;
 
 bool tb_xdomain_handle_request(struct tb *tb, enum tb_cfg_pkg_type type,
 			       const void *buf, size_t size);
@@ -970,6 +1002,7 @@ int usb4_switch_nvm_read(struct tb_switch *sw, unsigned int address, void *buf,
 int usb4_switch_nvm_write(struct tb_switch *sw, unsigned int address,
 			  const void *buf, size_t size);
 int usb4_switch_nvm_authenticate(struct tb_switch *sw);
+int usb4_switch_nvm_authenticate_status(struct tb_switch *sw, u32 *status);
 bool usb4_switch_query_dp_resource(struct tb_switch *sw, struct tb_port *in);
 int usb4_switch_alloc_dp_resource(struct tb_switch *sw, struct tb_port *in);
 int usb4_switch_dealloc_dp_resource(struct tb_switch *sw, struct tb_port *in);
@@ -1016,8 +1049,18 @@ void tb_check_quirks(struct tb_switch *sw);
 
 #ifdef CONFIG_ACPI
 void tb_acpi_add_links(struct tb_nhi *nhi);
+
+bool tb_acpi_is_native(void);
+bool tb_acpi_may_tunnel_usb3(void);
+bool tb_acpi_may_tunnel_dp(void);
+bool tb_acpi_may_tunnel_pcie(void);
 #else
 static inline void tb_acpi_add_links(struct tb_nhi *nhi) { }
+
+static inline bool tb_acpi_is_native(void) { return true; }
+static inline bool tb_acpi_may_tunnel_usb3(void) { return true; }
+static inline bool tb_acpi_may_tunnel_dp(void) { return true; }
+static inline bool tb_acpi_may_tunnel_pcie(void) { return true; }
 #endif
 
 #ifdef CONFIG_DEBUG_FS
@@ -1025,11 +1068,15 @@ void tb_debugfs_init(void);
 void tb_debugfs_exit(void);
 void tb_switch_debugfs_init(struct tb_switch *sw);
 void tb_switch_debugfs_remove(struct tb_switch *sw);
+void tb_service_debugfs_init(struct tb_service *svc);
+void tb_service_debugfs_remove(struct tb_service *svc);
 #else
 static inline void tb_debugfs_init(void) { }
 static inline void tb_debugfs_exit(void) { }
 static inline void tb_switch_debugfs_init(struct tb_switch *sw) { }
 static inline void tb_switch_debugfs_remove(struct tb_switch *sw) { }
+static inline void tb_service_debugfs_init(struct tb_service *svc) { }
+static inline void tb_service_debugfs_remove(struct tb_service *svc) { }
 #endif
 
 #ifdef CONFIG_USB4_KUNIT_TEST

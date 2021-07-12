@@ -32,6 +32,7 @@
 #include "ui/progress.h"
 #include "../perf.h"
 #include "arch/common.h"
+#include "units.h"
 #include <internal/lib.h>
 
 #ifdef HAVE_ZSTD_SUPPORT
@@ -125,7 +126,7 @@ static int perf_session__open(struct perf_session *session)
 		return -1;
 	}
 
-	if (!perf_evlist__valid_read_format(session->evlist)) {
+	if (!evlist__valid_read_format(session->evlist)) {
 		pr_err("non matching read_format\n");
 		return -1;
 	}
@@ -135,7 +136,7 @@ static int perf_session__open(struct perf_session *session)
 
 void perf_session__set_id_hdr_size(struct perf_session *session)
 {
-	u16 id_hdr_size = perf_evlist__id_hdr_size(session->evlist);
+	u16 id_hdr_size = evlist__id_hdr_size(session->evlist);
 
 	machines__set_id_hdr_size(&session->machines, id_hdr_size);
 }
@@ -1273,10 +1274,19 @@ static void dump_event(struct evlist *evlist, union perf_event *event,
 	       event->header.size, perf_event__name(event->header.type));
 }
 
+char *get_page_size_name(u64 size, char *str)
+{
+	if (!size || !unit_number__scnprintf(str, PAGE_SIZE_NAME_LEN, size))
+		snprintf(str, PAGE_SIZE_NAME_LEN, "%s", "N/A");
+
+	return str;
+}
+
 static void dump_sample(struct evsel *evsel, union perf_event *event,
 			struct perf_sample *sample)
 {
 	u64 sample_type;
+	char str[PAGE_SIZE_NAME_LEN];
 
 	if (!dump_trace)
 		return;
@@ -1302,14 +1312,24 @@ static void dump_sample(struct evsel *evsel, union perf_event *event,
 	if (sample_type & PERF_SAMPLE_STACK_USER)
 		stack_user__printf(&sample->user_stack);
 
-	if (sample_type & PERF_SAMPLE_WEIGHT)
-		printf("... weight: %" PRIu64 "\n", sample->weight);
+	if (sample_type & PERF_SAMPLE_WEIGHT_TYPE) {
+		printf("... weight: %" PRIu64 "", sample->weight);
+			if (sample_type & PERF_SAMPLE_WEIGHT_STRUCT)
+				printf(",0x%"PRIx16"", sample->ins_lat);
+		printf("\n");
+	}
 
 	if (sample_type & PERF_SAMPLE_DATA_SRC)
 		printf(" . data_src: 0x%"PRIx64"\n", sample->data_src);
 
 	if (sample_type & PERF_SAMPLE_PHYS_ADDR)
 		printf(" .. phys_addr: 0x%"PRIx64"\n", sample->phys_addr);
+
+	if (sample_type & PERF_SAMPLE_DATA_PAGE_SIZE)
+		printf(" .. data page size: %s\n", get_page_size_name(sample->data_page_size, str));
+
+	if (sample_type & PERF_SAMPLE_CODE_PAGE_SIZE)
+		printf(" .. code page size: %s\n", get_page_size_name(sample->code_page_size, str));
 
 	if (sample_type & PERF_SAMPLE_TRANSACTION)
 		printf("... transaction: %" PRIx64 "\n", sample->transaction);
@@ -1377,7 +1397,7 @@ static int deliver_sample_value(struct evlist *evlist,
 				struct sample_read_value *v,
 				struct machine *machine)
 {
-	struct perf_sample_id *sid = perf_evlist__id2sid(evlist, v->id);
+	struct perf_sample_id *sid = evlist__id2sid(evlist, v->id);
 	struct evsel *evsel;
 
 	if (sid) {
@@ -1458,7 +1478,7 @@ static int machines__deliver_event(struct machines *machines,
 
 	dump_event(evlist, event, file_offset, sample);
 
-	evsel = perf_evlist__id2evsel(evlist, sample->id);
+	evsel = evlist__id2evsel(evlist, sample->id);
 
 	machine = machines__find_for_cpumode(machines, event, sample);
 
@@ -1536,9 +1556,8 @@ static int perf_session__deliver_event(struct perf_session *session,
 				       u64 file_offset)
 {
 	struct perf_sample sample;
-	int ret;
+	int ret = evlist__parse_sample(session->evlist, event, &sample);
 
-	ret = perf_evlist__parse_sample(session->evlist, event, &sample);
 	if (ret) {
 		pr_err("Can't parse sample, err = %d\n", ret);
 		return ret;
@@ -1711,7 +1730,7 @@ int perf_session__peek_event(struct perf_session *session, off_t file_offset,
 out_parse_sample:
 
 	if (sample && event->header.type < PERF_RECORD_USER_TYPE_START &&
-	    perf_evlist__parse_sample(session->evlist, event, sample))
+	    evlist__parse_sample(session->evlist, event, sample))
 		return -1;
 
 	*event_ptr = event;
@@ -1768,7 +1787,7 @@ static s64 perf_session__process_event(struct perf_session *session,
 	if (tool->ordered_events) {
 		u64 timestamp = -1ULL;
 
-		ret = perf_evlist__parse_sample_timestamp(evlist, event, &timestamp);
+		ret = evlist__parse_sample_timestamp(evlist, event, &timestamp);
 		if (ret && ret != -1)
 			return ret;
 
@@ -2490,7 +2509,7 @@ int perf_event__process_id_index(struct perf_session *session,
 			fprintf(stdout,	"  tid: %"PRI_ld64"\n", e->tid);
 		}
 
-		sid = perf_evlist__id2sid(evlist, e->id);
+		sid = evlist__id2sid(evlist, e->id);
 		if (!sid)
 			return -ENOENT;
 		sid->idx = e->idx;

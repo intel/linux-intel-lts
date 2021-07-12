@@ -29,6 +29,7 @@
 #include <drm/drm_fourcc.h>
 
 #include "gem/i915_gem_pm.h"
+#include "gt/intel_gpu_commands.h"
 #include "gt/intel_ring.h"
 
 #include "i915_drv.h"
@@ -382,7 +383,7 @@ static void intel_overlay_off_tail(struct intel_overlay *overlay)
 		i830_overlay_clock_gating(dev_priv, true);
 }
 
-__i915_active_call static void
+static void
 intel_overlay_last_flip_retire(struct i915_active *active)
 {
 	struct intel_overlay *overlay =

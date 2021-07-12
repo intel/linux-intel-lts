@@ -71,6 +71,7 @@ int smu_v12_0_check_fw_status(struct smu_context *smu)
 
 int smu_v12_0_check_fw_version(struct smu_context *smu)
 {
+	struct amdgpu_device *adev = smu->adev;
 	uint32_t if_version = 0xff, smu_version = 0xff;
 	uint16_t smu_major;
 	uint8_t smu_minor, smu_debug;
@@ -83,6 +84,8 @@ int smu_v12_0_check_fw_version(struct smu_context *smu)
 	smu_major = (smu_version >> 16) & 0xffff;
 	smu_minor = (smu_version >> 8) & 0xff;
 	smu_debug = (smu_version >> 0) & 0xff;
+	if (smu->is_apu)
+		adev->pm.fw_version = smu_version;
 
 	/*
 	 * 1. if_version mismatch is not critical as our fw is designed
@@ -274,16 +277,4 @@ int smu_v12_0_set_driver_table_location(struct smu_context *smu)
 	}
 
 	return ret;
-}
-
-void smu_v12_0_init_gpu_metrics_v2_0(struct gpu_metrics_v2_0 *gpu_metrics)
-{
-	memset(gpu_metrics, 0xFF, sizeof(struct gpu_metrics_v2_0));
-
-	gpu_metrics->common_header.structure_size =
-				sizeof(struct gpu_metrics_v2_0);
-	gpu_metrics->common_header.format_revision = 2;
-	gpu_metrics->common_header.content_revision = 0;
-
-	gpu_metrics->system_clock_counter = ktime_get_boottime_ns();
 }

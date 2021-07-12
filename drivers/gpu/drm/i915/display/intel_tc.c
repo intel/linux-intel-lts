@@ -198,9 +198,9 @@ static void tc_port_fixup_legacy_flag(struct intel_digital_port *dig_port,
 		return;
 
 	/* If live status mismatches the VBT flag, trust the live status. */
-	drm_err(&i915->drm,
-		"Port %s: live status %08x mismatches the legacy port flag, fix flag\n",
-		dig_port->tc_port_name, live_status_mask);
+	drm_dbg_kms(&i915->drm,
+		    "Port %s: live status %08x mismatches the legacy port flag %08x, fixing flag\n",
+		    dig_port->tc_port_name, live_status_mask, valid_hpd_mask);
 
 	dig_port->tc_legacy_port = !dig_port->tc_legacy_port;
 }
@@ -232,7 +232,7 @@ static u32 tc_port_live_status_mask(struct intel_digital_port *dig_port)
 		mask |= BIT(TC_PORT_LEGACY);
 
 	/* The sink can be connected only in a single mode. */
-	if (!drm_WARN_ON(&i915->drm, hweight32(mask) > 1))
+	if (!drm_WARN_ON_ONCE(&i915->drm, hweight32(mask) > 1))
 		tc_port_fixup_legacy_flag(dig_port, mask);
 
 	return mask;
@@ -659,7 +659,7 @@ void intel_tc_port_init(struct intel_digital_port *dig_port, bool is_legacy)
 	enum port port = dig_port->base.port;
 	enum tc_port tc_port = intel_port_to_tc(i915, port);
 
-	if (drm_WARN_ON(&i915->drm, tc_port == PORT_TC_NONE))
+	if (drm_WARN_ON(&i915->drm, tc_port == TC_PORT_NONE))
 		return;
 
 	snprintf(dig_port->tc_port_name, sizeof(dig_port->tc_port_name),

@@ -1154,7 +1154,6 @@ static void build_clear_payload_id_table(struct drm_dp_sideband_msg_tx *msg)
 
 	req.req_type = DP_CLEAR_PAYLOAD_ID_TABLE;
 	drm_dp_encode_sideband_req(&req, msg);
-	msg->path_msg = true;
 }
 
 static int build_enum_path_resources(struct drm_dp_sideband_msg_tx *msg,
@@ -2753,7 +2752,7 @@ static void drm_dp_mst_link_probe_work(struct work_struct *work)
 	drm_dp_mst_topology_put_mstb(mstb);
 
 	mutex_unlock(&mgr->probe_lock);
-	if (ret)
+	if (ret > 0)
 		drm_kms_helper_hotplug_event(dev);
 }
 
@@ -2825,21 +2824,15 @@ static int set_hdr_from_dst_qlock(struct drm_dp_sideband_msg_hdr *hdr,
 
 	req_type = txmsg->msg[0] & 0x7f;
 	if (req_type == DP_CONNECTION_STATUS_NOTIFY ||
-		req_type == DP_RESOURCE_STATUS_NOTIFY ||
-		req_type == DP_CLEAR_PAYLOAD_ID_TABLE)
+		req_type == DP_RESOURCE_STATUS_NOTIFY)
 		hdr->broadcast = 1;
 	else
 		hdr->broadcast = 0;
 	hdr->path_msg = txmsg->path_msg;
-	if (hdr->broadcast) {
-		hdr->lct = 1;
-		hdr->lcr = 6;
-	} else {
-		hdr->lct = mstb->lct;
-		hdr->lcr = mstb->lct - 1;
-	}
-
-	memcpy(hdr->rad, mstb->rad, hdr->lct / 2);
+	hdr->lct = mstb->lct;
+	hdr->lcr = mstb->lct - 1;
+	if (mstb->lct > 1)
+		memcpy(hdr->rad, mstb->rad, mstb->lct / 2);
 
 	return 0;
 }
@@ -3268,7 +3261,7 @@ int drm_dp_send_query_stream_enc_status(struct drm_dp_mst_topology_mgr *mgr,
 {
 	struct drm_dp_sideband_msg_tx *txmsg;
 	u8 nonce[7];
-	int len, ret;
+	int ret;
 
 	txmsg = kzalloc(sizeof(*txmsg), GFP_KERNEL);
 	if (!txmsg)
@@ -3289,7 +3282,7 @@ int drm_dp_send_query_stream_enc_status(struct drm_dp_mst_topology_mgr *mgr,
 	 */
 	txmsg->dst = mgr->mst_primary;
 
-	len = build_query_stream_enc_status(txmsg, port->vcpi.vcpi, nonce);
+	build_query_stream_enc_status(txmsg, port->vcpi.vcpi, nonce);
 
 	drm_dp_queue_down_tx(mgr, txmsg);
 
@@ -3637,26 +3630,14 @@ static int drm_dp_send_up_ack_reply(struct drm_dp_mst_topology_mgr *mgr,
 	return 0;
 }
 
-/**
- * drm_dp_get_vc_payload_bw - get the VC payload BW for an MST link
- * @link_rate: link rate in 10kbits/s units
- * @link_lane_count: lane count
- *
- * Calculate the total bandwidth of a MultiStream Transport link. The returned
- * value is in units of PBNs/(timeslots/1 MTP). This value can be used to
- * convert the number of PBNs required for a given stream to the number of
- * timeslots this stream requires in each MTP.
- */
-int drm_dp_get_vc_payload_bw(int link_rate, int link_lane_count)
+static int drm_dp_get_vc_payload_bw(u8 dp_link_bw, u8  dp_link_count)
 {
-	if (link_rate == 0 || link_lane_count == 0)
-		DRM_DEBUG_KMS("invalid link rate/lane count: (%d / %d)\n",
-			      link_rate, link_lane_count);
+	if (dp_link_bw == 0 || dp_link_count == 0)
+		DRM_DEBUG_KMS("invalid link bandwidth in DPCD: %x (link count: %d)\n",
+			      dp_link_bw, dp_link_count);
 
-	/* See DP v2.0 2.6.4.2, VCPayload_Bandwidth_for_OneTimeSlotPer_MTP_Allocation */
-	return link_rate * link_lane_count / 54000;
+	return dp_link_bw * dp_link_count / 2;
 }
-EXPORT_SYMBOL(drm_dp_get_vc_payload_bw);
 
 /**
  * drm_dp_read_mst_cap() - check whether or not a sink supports MST
@@ -3712,7 +3693,7 @@ int drm_dp_mst_topology_mgr_set_mst(struct drm_dp_mst_topology_mgr *mgr, bool ms
 			goto out_unlock;
 		}
 
-		mgr->pbn_div = drm_dp_get_vc_payload_bw(drm_dp_bw_code_to_link_rate(mgr->dpcd[1]),
+		mgr->pbn_div = drm_dp_get_vc_payload_bw(mgr->dpcd[1],
 							mgr->dpcd[2] & DP_MAX_LANE_COUNT_MASK);
 		if (mgr->pbn_div == 0) {
 			ret = -EINVAL;
@@ -5845,8 +5826,7 @@ struct drm_dp_aux *drm_dp_mst_dsc_aux_for_port(struct drm_dp_mst_port *port)
 	if (drm_dp_read_desc(port->mgr->aux, &desc, true))
 		return NULL;
 
-	if (drm_dp_has_quirk(&desc, 0,
-			     DP_DPCD_QUIRK_DSC_WITHOUT_VIRTUAL_DPCD) &&
+	if (drm_dp_has_quirk(&desc, DP_DPCD_QUIRK_DSC_WITHOUT_VIRTUAL_DPCD) &&
 	    port->mgr->dpcd[DP_DPCD_REV] >= DP_DPCD_REV_14 &&
 	    port->parent == port->mgr->mst_primary) {
 		u8 downstreamport;

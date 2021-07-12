@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/resource.h>
+#include "cpumap.h"
 #include "rblist.h"
 
 struct perf_cpu_map;
@@ -32,6 +33,10 @@ enum perf_stat_evsel_id {
 	PERF_STAT_EVSEL_ID__TOPDOWN_BAD_SPEC,
 	PERF_STAT_EVSEL_ID__TOPDOWN_FE_BOUND,
 	PERF_STAT_EVSEL_ID__TOPDOWN_BE_BOUND,
+	PERF_STAT_EVSEL_ID__TOPDOWN_HEAVY_OPS,
+	PERF_STAT_EVSEL_ID__TOPDOWN_BR_MISPREDICT,
+	PERF_STAT_EVSEL_ID__TOPDOWN_FETCH_LAT,
+	PERF_STAT_EVSEL_ID__TOPDOWN_MEM_BOUND,
 	PERF_STAT_EVSEL_ID__SMI_NUM,
 	PERF_STAT_EVSEL_ID__APERF,
 	PERF_STAT_EVSEL_ID__MAX,
@@ -90,6 +95,10 @@ enum stat_type {
 	STAT_TOPDOWN_BAD_SPEC,
 	STAT_TOPDOWN_FE_BOUND,
 	STAT_TOPDOWN_BE_BOUND,
+	STAT_TOPDOWN_HEAVY_OPS,
+	STAT_TOPDOWN_BR_MISPREDICT,
+	STAT_TOPDOWN_FETCH_LAT,
+	STAT_TOPDOWN_MEM_BOUND,
 	STAT_SMI_NUM,
 	STAT_APERF,
 	STAT_MAX
@@ -99,7 +108,7 @@ struct runtime_stat {
 	struct rblist value_list;
 };
 
-typedef int (*aggr_get_id_t)(struct perf_stat_config *config,
+typedef struct aggr_cpu_id (*aggr_get_id_t)(struct perf_stat_config *config,
 			     struct perf_cpu_map *m, int cpu);
 
 struct perf_stat_config {
@@ -119,9 +128,11 @@ struct perf_stat_config {
 	bool			 all_user;
 	bool			 percore_show_thread;
 	bool			 summary;
+	bool			 no_csv_summary;
 	bool			 metric_no_group;
 	bool			 metric_no_merge;
 	bool			 stop_read_counter;
+	bool			 quiet;
 	FILE			*output;
 	unsigned int		 interval;
 	unsigned int		 timeout;
@@ -137,18 +148,20 @@ struct perf_stat_config {
 	const char		*csv_sep;
 	struct stats		*walltime_nsecs_stats;
 	struct rusage		 ru_data;
-	struct perf_cpu_map		*aggr_map;
+	struct cpu_aggr_map	*aggr_map;
 	aggr_get_id_t		 aggr_get_id;
-	struct perf_cpu_map		*cpus_aggr_map;
+	struct cpu_aggr_map	*cpus_aggr_map;
 	u64			*walltime_run;
 	struct rblist		 metric_events;
 	int			 ctl_fd;
 	int			 ctl_fd_ack;
 	bool			 ctl_fd_close;
 	const char		*cgroup_list;
+	unsigned int		topdown_level;
 };
 
 void perf_stat__set_big_num(int set);
+void perf_stat__set_no_csv_summary(int set);
 
 void update_stats(struct stats *stats, u64 val);
 double avg_stats(struct stats *stats);
@@ -169,7 +182,7 @@ struct evlist;
 
 struct perf_aggr_thread_value {
 	struct evsel *counter;
-	int id;
+	struct aggr_cpu_id id;
 	double uval;
 	u64 val;
 	u64 run;

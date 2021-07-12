@@ -20,75 +20,8 @@ struct intel_qgv_point {
 struct intel_qgv_info {
 	struct intel_qgv_point points[I915_NUM_QGV_POINTS];
 	u8 num_points;
-	u8 num_channels;
 	u8 t_bl;
-	enum intel_dram_type dram_type;
 };
-
-static int icl_pcode_read_mem_global_info(struct drm_i915_private *dev_priv,
-					  struct intel_qgv_info *qi)
-{
-	u32 val = 0;
-	int ret;
-
-	ret = sandybridge_pcode_read(dev_priv,
-				     ICL_PCODE_MEM_SUBSYSYSTEM_INFO |
-				     ICL_PCODE_MEM_SS_READ_GLOBAL_INFO,
-				     &val, NULL);
-	if (ret)
-		return ret;
-
-	if (IS_GEN(dev_priv, 12)) {
-		switch (val & 0xf) {
-		case 0:
-			qi->dram_type = INTEL_DRAM_DDR4;
-			break;
-		case 3:
-			qi->dram_type = INTEL_DRAM_LPDDR4;
-			break;
-		case 4:
-			qi->dram_type = INTEL_DRAM_DDR3;
-			break;
-		case 5:
-			qi->dram_type = INTEL_DRAM_LPDDR3;
-			break;
-		default:
-			MISSING_CASE(val & 0xf);
-			break;
-		}
-	} else if (IS_GEN(dev_priv, 11)) {
-		switch (val & 0xf) {
-		case 0:
-			qi->dram_type = INTEL_DRAM_DDR4;
-			break;
-		case 1:
-			qi->dram_type = INTEL_DRAM_DDR3;
-			break;
-		case 2:
-			qi->dram_type = INTEL_DRAM_LPDDR3;
-			break;
-		case 3:
-			qi->dram_type = INTEL_DRAM_LPDDR4;
-			break;
-		default:
-			MISSING_CASE(val & 0xf);
-			break;
-		}
-	} else {
-		MISSING_CASE(INTEL_GEN(dev_priv));
-		qi->dram_type = INTEL_DRAM_LPDDR3; /* Conservative default */
-	}
-
-	qi->num_channels = (val & 0xf0) >> 4;
-	qi->num_points = (val & 0xf00) >> 8;
-
-	if (IS_GEN(dev_priv, 12))
-		qi->t_bl = qi->dram_type == INTEL_DRAM_DDR4 ? 4 : 16;
-	else if (IS_GEN(dev_priv, 11))
-		qi->t_bl = qi->dram_type == INTEL_DRAM_DDR4 ? 4 : 8;
-
-	return 0;
-}
 
 static int icl_pcode_read_qgv_point_info(struct drm_i915_private *dev_priv,
 					 struct intel_qgv_point *sp,
@@ -139,11 +72,25 @@ int icl_pcode_restrict_qgv_points(struct drm_i915_private *dev_priv,
 static int icl_get_qgv_points(struct drm_i915_private *dev_priv,
 			      struct intel_qgv_info *qi)
 {
+	const struct dram_info *dram_info = &dev_priv->dram_info;
 	int i, ret;
 
-	ret = icl_pcode_read_mem_global_info(dev_priv, qi);
-	if (ret)
-		return ret;
+	qi->num_points = dram_info->num_qgv_points;
+
+	if (IS_GEN(dev_priv, 12))
+		switch (dram_info->type) {
+		case INTEL_DRAM_DDR4:
+			qi->t_bl = 4;
+			break;
+		case INTEL_DRAM_DDR5:
+			qi->t_bl = 8;
+			break;
+		default:
+			qi->t_bl = 16;
+			break;
+		}
+	else if (IS_GEN(dev_priv, 11))
+		qi->t_bl = dev_priv->dram_info.type == INTEL_DRAM_DDR4 ? 4 : 8;
 
 	if (drm_WARN_ON(&dev_priv->drm,
 			qi->num_points > ARRAY_SIZE(qi->points)))
@@ -205,11 +152,17 @@ static const struct intel_sa_info rkl_sa_info = {
 	.displayrtids = 128,
 };
 
+static const struct intel_sa_info adls_sa_info = {
+	.deburst = 16,
+	.deprogbwlimit = 38, /* GB/s */
+	.displayrtids = 256,
+};
+
 static int icl_get_bw_info(struct drm_i915_private *dev_priv, const struct intel_sa_info *sa)
 {
 	struct intel_qgv_info qi = {};
 	bool is_y_tile = true; /* assume y tile may be used */
-	int num_channels;
+	int num_channels = dev_priv->dram_info.num_channels;
 	int deinterleave;
 	int ipqdepth, ipqdepthpch;
 	int dclk_max;
@@ -222,7 +175,6 @@ static int icl_get_bw_info(struct drm_i915_private *dev_priv, const struct intel
 			    "Failed to get memory subsystem information, ignoring bandwidth limits");
 		return ret;
 	}
-	num_channels = qi.num_channels;
 
 	deinterleave = DIV_ROUND_UP(num_channels, is_y_tile ? 4 : 2);
 	dclk_max = icl_sagv_max_dclk(&qi);
@@ -315,7 +267,9 @@ void intel_bw_init_hw(struct drm_i915_private *dev_priv)
 	if (!HAS_DISPLAY(dev_priv))
 		return;
 
-	if (IS_ROCKETLAKE(dev_priv))
+	if (IS_ALDERLAKE_S(dev_priv))
+		icl_get_bw_info(dev_priv, &adls_sa_info);
+	else if (IS_ROCKETLAKE(dev_priv))
 		icl_get_bw_info(dev_priv, &rkl_sa_info);
 	else if (IS_GEN(dev_priv, 12))
 		icl_get_bw_info(dev_priv, &tgl_sa_info);

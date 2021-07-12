@@ -10,9 +10,13 @@
 #define IGC_EECD		0x00010  /* EEPROM/Flash Control - RW */
 #define IGC_CTRL_EXT		0x00018  /* Extended Device Control - RW */
 #define IGC_MDIC		0x00020  /* MDI Control - RW */
+#define IGC_LEDCTL		0x00E00	 /* LED Control - RW */
+#define IGC_MDICNFG		0x00E04  /* MDC/MDIO Configuration - RW */
 #define IGC_MDICNFG		0x00E04  /* MDC/MDIO Configuration - RW */
 #define IGC_CONNSW		0x00034  /* Copper/Fiber switch control - RW */
+#define IGC_VET			0x00038  /* VLAN Ether Type - RW */
 #define IGC_I225_PHPM		0x00E14  /* I225 PHY Power Management */
+#define IGC_GPHY_VERSION	0x0001E  /* I225 gPHY Firmware Version */
 
 /* Internal Packet Buffer Size Registers */
 #define IGC_RXPBS		0x02404  /* Rx Packet Buffer Size - RW */
@@ -66,6 +70,9 @@
 
 /* Filtering Registers */
 #define IGC_ETQF(_n)		(0x05CB0 + (4 * (_n))) /* EType Queue Fltr */
+#define IGC_FHFT(_n)		(0x09000 + (256 * (_n))) /* Flexible Host Filter */
+#define IGC_FHFT_EXT(_n)	(0x09A00 + (256 * (_n))) /* Flexible Host Filter Extended */
+#define IGC_FHFTSL		0x05804 /* Flex Filter indirect table select */
 
 /* ETQF register bit definitions */
 #define IGC_ETQF_FILTER_ENABLE	BIT(26)
@@ -73,6 +80,19 @@
 #define IGC_ETQF_QUEUE_SHIFT	16
 #define IGC_ETQF_QUEUE_MASK	0x00070000
 #define IGC_ETQF_ETYPE_MASK	0x0000FFFF
+
+/* FHFT register bit definitions */
+#define IGC_FHFT_LENGTH_MASK	GENMASK(7, 0)
+#define IGC_FHFT_QUEUE_SHIFT	8
+#define IGC_FHFT_QUEUE_MASK	GENMASK(10, 8)
+#define IGC_FHFT_PRIO_SHIFT	16
+#define IGC_FHFT_PRIO_MASK	GENMASK(18, 16)
+#define IGC_FHFT_IMM_INT	BIT(24)
+#define IGC_FHFT_DROP		BIT(25)
+
+/* FHFTSL register bit definitions */
+#define IGC_FHFTSL_FTSL_SHIFT	0
+#define IGC_FHFTSL_FTSL_MASK	GENMASK(1, 0)
 
 /* Redirection Table - RW Array */
 #define IGC_RETA(_i)		(0x05C00 + ((_i) * 4))
@@ -191,11 +211,31 @@
 #define IGC_TSYNCTXCTL	0x0B614  /* Tx Time Sync Control register - RW */
 #define IGC_TSYNCRXCFG	0x05F50  /* Time Sync Rx Configuration - RW */
 #define IGC_TSSDP	0x0003C  /* Time Sync SDP Configuration Register - RW */
+#define IGC_TRGTTIML0  0x0B644 /* Target Time Register 0 Low  - RW */
+#define IGC_TRGTTIMH0  0x0B648 /* Target Time Register 0 High - RW */
+#define IGC_TRGTTIML1  0x0B64C /* Target Time Register 1 Low  - RW */
+#define IGC_TRGTTIMH1  0x0B650 /* Target Time Register 1 High - RW */
+#define IGC_FREQOUT0   0x0B654 /* Frequency Out 0 Control Register - RW */
+#define IGC_FREQOUT1   0x0B658 /* Frequency Out 1 Control Register - RW */
+#define IGC_AUXSTMPL0  0x0B65C /* Auxiliary Time Stamp 0 Register Low  - RO */
+#define IGC_AUXSTMPH0  0x0B660 /* Auxiliary Time Stamp 0 Register High - RO */
+#define IGC_AUXSTMPL1  0x0B664 /* Auxiliary Time Stamp 1 Register Low  - RO */
+#define IGC_AUXSTMPH1  0x0B668 /* Auxiliary Time Stamp 1 Register High - RO */
 
 #define IGC_IMIR(_i)	(0x05A80 + ((_i) * 4))  /* Immediate Interrupt */
 #define IGC_IMIREXT(_i)	(0x05AA0 + ((_i) * 4))  /* Immediate INTR Ext*/
 
 #define IGC_FTQF(_n)	(0x059E0 + (4 * (_n)))  /* 5-tuple Queue Fltr */
+
+/* Time sync registers - preemption statistics */
+#define IGC_PRMPTDTCNT	0x04280  /* Good TX Preempted Packets */
+#define IGC_PRMEVNTTCNT	0x04298  /* TX Preemption event counter */
+#define IGC_PRMPTDRCNT	0x04284  /* Good RX Preempted Packets */
+#define IGC_PRMEVNTRCNT	0x0429C  /* RX Preemption event counter */
+#define IGC_PRMPBLTCNT	0x04288  /* Good TX Preemptible Packets */
+#define IGC_PRMPBLRCNT	0x0428C  /* Good RX Preemptible Packets */
+#define IGC_PRMEXPTCNT	0x04290  /* Good TX Express Packets */
+#define IGC_PRMEXPRCNT	0x042A0  /* Preemption Exception Counter */
 
 /* Transmit Scheduling Registers */
 #define IGC_TQAVCTRL		0x3570
@@ -205,9 +245,14 @@
 #define IGC_QBVCYCLET		0x331C
 #define IGC_QBVCYCLET_S		0x3320
 
+#define IGC_GTXOFFSET		0x3310
+
 #define IGC_STQT(_n)		(0x3324 + 0x4 * (_n))
 #define IGC_ENDQT(_n)		(0x3334 + 0x4 * (_n))
 #define IGC_DTXMXPKTSZ		0x355C
+
+#define IGC_TQAVCC(_n)		(0x3004 + ((_n) * 0x40))
+#define IGC_TQAVHC(_n)		(0x300C + ((_n) * 0x40))
 
 /* System Time Registers */
 #define IGC_SYSTIML	0x0B600  /* System time register Low - RO */
@@ -217,6 +262,29 @@
 
 #define IGC_TXSTMPL	0x0B618  /* Tx timestamp value Low - RO */
 #define IGC_TXSTMPH	0x0B61C  /* Tx timestamp value High - RO */
+
+#define IGC_TIMADJ	0x0B60C  /* Time Adjustment Offset Register */
+
+/* PCIe Registers */
+#define IGC_PTM_CTRL		0x12540  /* PTM Control */
+#define IGC_PTM_STAT		0x12544  /* PTM Status */
+#define IGC_PTM_CYCLE_CTRL	0x1254C  /* PTM Cycle Control */
+
+/* PTM Time registers */
+#define IGC_PTM_T1_TIM0_L	0x12558  /* T1 on Timer 0 Low */
+#define IGC_PTM_T1_TIM0_H	0x1255C  /* T1 on Timer 0 High */
+
+#define IGC_PTM_CURR_T2_L	0x1258C  /* Current T2 Low */
+#define IGC_PTM_CURR_T2_H	0x12590  /* Current T2 High */
+#define IGC_PTM_PREV_T2_L	0x12584  /* Previous T2 Low */
+#define IGC_PTM_PREV_T2_H	0x12588  /* Previous T2 High */
+#define IGC_PTM_PREV_T4M1	0x12578  /* T4 Minus T1 on previous PTM Cycle */
+#define IGC_PTM_CURR_T4M1	0x1257C  /* T4 Minus T1 on this PTM Cycle */
+#define IGC_PTM_PREV_T3M2	0x12580  /* T3 Minus T2 on previous PTM Cycle */
+#define IGC_PTM_TDELAY		0x12594  /* PTM PCIe Link Delay */
+
+#define IGC_PCIE_DIG_DELAY	0x12550  /* PCIe Digital Delay */
+#define IGC_PCIE_PHY_DELAY	0x12554  /* PCIe PHY Delay */
 
 /* Management registers */
 #define IGC_MANC	0x05820  /* Management Control - RW */
@@ -229,6 +297,7 @@
 #define IGC_WUFC	0x05808  /* Wakeup Filter Control - RW */
 #define IGC_WUS		0x05810  /* Wakeup Status - R/W1C */
 #define IGC_WUPL	0x05900  /* Wakeup Packet Length - RW */
+#define IGC_WUFC_EXT	0x0580C  /* Wakeup Filter Control Register Extended - RW */
 
 /* Wake Up packet memory */
 #define IGC_WUPM_REG(_i)	(0x05A00 + ((_i) * 4))

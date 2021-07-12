@@ -95,6 +95,7 @@ enum {
  * @DPU_SSPP_SRC             Src and fetch part of the pipes,
  * @DPU_SSPP_SCALER_QSEED2,  QSEED2 algorithm support
  * @DPU_SSPP_SCALER_QSEED3,  QSEED3 alogorithm support
+ * @DPU_SSPP_SCALER_QSEED3LITE,  QSEED3 Lite alogorithm support
  * @DPU_SSPP_SCALER_QSEED4,  QSEED4 algorithm support
  * @DPU_SSPP_SCALER_RGB,     RGB Scaler, supported by RGB pipes
  * @DPU_SSPP_CSC,            Support of Color space converion
@@ -114,6 +115,7 @@ enum {
 	DPU_SSPP_SRC = 0x1,
 	DPU_SSPP_SCALER_QSEED2,
 	DPU_SSPP_SCALER_QSEED3,
+	DPU_SSPP_SCALER_QSEED3LITE,
 	DPU_SSPP_SCALER_QSEED4,
 	DPU_SSPP_SCALER_RGB,
 	DPU_SSPP_CSC,
@@ -524,7 +526,21 @@ struct dpu_dspp_cfg  {
  */
 struct dpu_pingpong_cfg  {
 	DPU_HW_BLK_INFO;
+	u32 merge_3d;
 	const struct dpu_pingpong_sub_blks *sblk;
+};
+
+/**
+ * struct dpu_merge_3d_cfg - information of DSPP blocks
+ * @id                 enum identifying this block
+ * @base               register offset of this block
+ * @features           bit mask identifying sub-blocks/features
+ *                     supported by this block
+ * @sblk               sub-blocks information
+ */
+struct dpu_merge_3d_cfg  {
+	DPU_HW_BLK_INFO;
+	const struct dpu_merge_3d_sub_blks *sblk;
 };
 
 /**
@@ -724,6 +740,9 @@ struct dpu_mdss_cfg {
 	u32 pingpong_count;
 	const struct dpu_pingpong_cfg *pingpong;
 
+	u32 merge_3d_count;
+	const struct dpu_merge_3d_cfg *merge_3d;
+
 	u32 intf_count;
 	const struct dpu_intf_cfg *intf;
 
@@ -767,6 +786,7 @@ struct dpu_mdss_hw_cfg_handler {
 #define BLK_INTF(s) ((s)->intf)
 #define BLK_AD(s) ((s)->ad)
 #define BLK_DSPP(s) ((s)->dspp)
+#define BLK_MERGE3d(s) ((s)->merge_3d)
 
 /**
  * dpu_hw_catalog_init - dpu hardware catalog init API retrieves

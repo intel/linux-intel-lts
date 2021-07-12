@@ -101,7 +101,16 @@ static bool needs_idle_maps(struct drm_i915_private *i915)
 	 * Query intel_iommu to see if we need the workaround. Presumably that
 	 * was loaded first.
 	 */
-	return IS_GEN(i915, 5) && IS_MOBILE(i915) && intel_vtd_active();
+	if (!intel_vtd_active())
+		return false;
+
+	if (IS_GEN(i915, 5) && IS_MOBILE(i915))
+		return true;
+
+	if (IS_GEN(i915, 12))
+		return true; /* XXX DMAR fault reason 7 */
+
+	return false;
 }
 
 void i915_ggtt_suspend(struct i915_ggtt *ggtt)
@@ -858,7 +867,7 @@ static int gen8_gmch_probe(struct i915_ggtt *ggtt)
 	u16 snb_gmch_ctl;
 
 	/* TODO: We're not aware of mappable constraints on gen8 yet */
-	if (!IS_DGFX(i915)) {
+	if (!HAS_LMEM(i915)) {
 		ggtt->gmadr = pci_resource(pdev, 2);
 		ggtt->mappable_end = resource_size(&ggtt->gmadr);
 	}
@@ -1073,7 +1082,12 @@ static int i915_gmch_probe(struct i915_ggtt *ggtt)
 
 	ggtt->vm.alloc_pt_dma = alloc_pt_dma;
 
-	ggtt->do_idle_maps = needs_idle_maps(i915);
+	if (needs_idle_maps(i915)) {
+		drm_notice(&i915->drm,
+			   "Flushing DMA requests before IOMMU unmaps; performance may be degraded\n");
+		ggtt->do_idle_maps = true;
+	}
+
 	ggtt->vm.insert_page = i915_ggtt_insert_page;
 	ggtt->vm.insert_entries = i915_ggtt_insert_entries;
 	ggtt->vm.clear_range = i915_ggtt_clear_range;
@@ -1406,7 +1420,7 @@ intel_partial_pages(const struct i915_ggtt_view *view,
 	if (ret)
 		goto err_sg_alloc;
 
-	iter = i915_gem_object_get_sg(obj, view->partial.offset, &offset);
+	iter = i915_gem_object_get_sg_dma(obj, view->partial.offset, &offset);
 	GEM_BUG_ON(!iter);
 
 	sg = st->sgl;
@@ -1414,7 +1428,7 @@ intel_partial_pages(const struct i915_ggtt_view *view,
 	do {
 		unsigned int len;
 
-		len = min(iter->length - (offset << PAGE_SHIFT),
+		len = min(sg_dma_len(iter) - (offset << PAGE_SHIFT),
 			  count << PAGE_SHIFT);
 		sg_set_page(sg, NULL, len, 0);
 		sg_dma_address(sg) =
