@@ -246,5 +246,5 @@ static int __init trusty_x86_64_irq_init(void)
 core_initcall(trusty_x86_64_irq_init);
 #endif
 
-subsys_initcall(trusty_x86_64_driver_init);
-module_exit(trusty_x86_64_driver_exit);
+//subsys_initcall(trusty_x86_64_driver_init);
+//module_exit(trusty_x86_64_driver_exit);
