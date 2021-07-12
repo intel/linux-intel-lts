@@ -1,11 +1,5 @@
-# CVE-2020-26541
-0001-certs-Add-EFI_CERT_X509_GUID-support-for-dbx-entries.patch
-
 # CVE-2020-16120
 0001-ovl-do-not-fail-because-of-O_NOATIME.patch
 
 # CVE-2020-24504
 0001-ice-create-scheduler-aggregator-node-config-and-move.patch
-
-# CVE-2021-34693
-0001-PATCH-can-bcm-fix-infoleak-in-struct-bcm_msg_head.patch
