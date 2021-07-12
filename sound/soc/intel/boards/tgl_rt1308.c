@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 //
-// Copyright(c) 2019 Intel Corporation. All rights reserved.
+// Copyright(c) 2021 Intel Corporation. All rights reserved.
 
 /*
  * tgl_rt1308.c - ASoc Machine driver for Intel platforms
@@ -21,78 +21,6 @@
 
 #include "../../codecs/rt1308.h"
 #include "../../codecs/hdac_hdmi.h"
-
-struct tgl_card_private {
-	struct list_head hdmi_pcm_list;
-};
-
-#if IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)
-/*static struct snd_soc_jack tgl_hdmi[4];
-
-struct tgl_hdmi_pcm {
-	struct list_head head;
-	struct snd_soc_dai *codec_dai;
-	int device;
-};
-*/
-//static int tgl_hdmi_init(struct snd_soc_pcm_runtime *rtd)
-//{
-//	struct tgl_card_private *ctx = snd_soc_card_get_drvdata(rtd->card);
-//	struct snd_soc_dai *dai = rtd->codec_dai;
-//	struct tgl_hdmi_pcm *pcm;
-//
-//	pcm = devm_kzalloc(rtd->card->dev, sizeof(*pcm), GFP_KERNEL);
-//	if (!pcm)
-//		return -ENOMEM;
-//
-//	/* dai_link id is 1:1 mapped to the PCM device */
-//	pcm->device = rtd->dai_link->id;
-//	pcm->codec_dai = dai;
-//
-//	list_add_tail(&pcm->head, &ctx->hdmi_pcm_list);
-//
-//	return 0;
-//}
-
-//#define NAME_SIZE	32
-//static int tgl_card_late_probe(struct snd_soc_card *card)
-//{
-//	struct tgl_card_private *ctx = snd_soc_card_get_drvdata(card);
-//	struct tgl_hdmi_pcm *pcm;
-//	struct snd_soc_component *component = NULL;
-//	int err, i = 0;
-//	char jack_name[NAME_SIZE];
-//
-//	list_for_each_entry(pcm, &ctx->hdmi_pcm_list, head) {
-//		component = pcm->codec_dai->component;
-//		snprintf(jack_name, sizeof(jack_name),
-//			 "HDMI/DP, pcm=%d Jack", pcm->device);
-//		err = snd_soc_card_jack_new(card, jack_name,
-//					    SND_JACK_AVOUT, &tgl_hdmi[i],
-//					    NULL, 0);
-//
-//		if (err)
-//			return err;
-//
-//		err = hdac_hdmi_jack_init(pcm->codec_dai, pcm->device,
-//					  &tgl_hdmi[i]);
-//		if (err < 0)
-//			return err;
-//
-//		i++;
-//	}
-//
-//	if (!component)
-//		return -EINVAL;
-//
-//	return hdac_hdmi_jack_port_init(component, &card->dapm);
-//}
-//#else
-static int tgl_card_late_probe(struct snd_soc_card *card)
-{
-	return 0;
-}
-#endif
 
 static int tgl_rt1308_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
@@ -148,6 +76,12 @@ static const struct snd_soc_dapm_route tgl_rt1308_dapm_routes[] = {
 	{"DMic", NULL, "SoC DMIC"},
 };
 
+SND_SOC_DAILINK_DEF(ssp1_pin,
+	DAILINK_COMP_ARRAY(COMP_CPU("SSP1 Pin")));
+
+SND_SOC_DAILINK_DEF(ssp1_codec,
+	DAILINK_COMP_ARRAY(COMP_CODEC("snd-soc-dummy", "snd-soc-dummy-dai")));
+
 SND_SOC_DAILINK_DEF(ssp2_pin,
 	DAILINK_COMP_ARRAY(COMP_CPU("SSP2 Pin")));
 
@@ -164,39 +98,26 @@ SND_SOC_DAILINK_DEF(dmic_codec,
 SND_SOC_DAILINK_DEF(dmic16k,
 	DAILINK_COMP_ARRAY(COMP_CPU("DMIC16k Pin")));
 
-/*SND_SOC_DAILINK_DEF(idisp1_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp1 Pin")));
-SND_SOC_DAILINK_DEF(idisp1_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi1")));
-
-SND_SOC_DAILINK_DEF(idisp2_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp2 Pin")));
-SND_SOC_DAILINK_DEF(idisp2_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi2")));
-
-SND_SOC_DAILINK_DEF(idisp3_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp3 Pin")));
-SND_SOC_DAILINK_DEF(idisp3_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi3")));
-
-SND_SOC_DAILINK_DEF(idisp4_pin,
-	DAILINK_COMP_ARRAY(COMP_CPU("iDisp4 Pin")));
-SND_SOC_DAILINK_DEF(idisp4_codec,
-	DAILINK_COMP_ARRAY(COMP_CODEC("ehdaudio0D2", "intel-hdmi-hifi4")));
-*/
 static struct snd_soc_dai_link tgl_rt1308_dailink[] = {
 	{
+		.name = "NoCodec-0",
+		.id = 0,
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		SND_SOC_DAILINK_REG(ssp1_pin, ssp1_codec, platform),
+	},
+	{
 		.name		= "SSP2-Codec",
-		.id		= 0,
+		.id		= 1,
 		.no_pcm		= 1,
 		.ops		= &tgl_rt1308_ops,
 		.dpcm_playback = 1,
-		.nonatomic = true,
 		SND_SOC_DAILINK_REG(ssp2_pin, ssp2_codec, platform),
 	},
 	{
 		.name = "dmic01",
-		.id = 1,
+		.id = 2,
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.no_pcm = 1,
@@ -204,47 +125,12 @@ static struct snd_soc_dai_link tgl_rt1308_dailink[] = {
 	},
 	{
 		.name = "dmic16k",
-		.id = 2,
+		.id = 3,
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.no_pcm = 1,
 		SND_SOC_DAILINK_REG(dmic16k, dmic_codec, platform),
 	},
-#if IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI)
-/*	{
-		.name = "iDisp1",
-		.id = 3,
-		.init = tgl_hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp1_pin, idisp1_codec, platform),
-	},
-	{
-		.name = "iDisp2",
-		.id = 4,
-		.init = tgl_hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp2_pin, idisp2_codec, platform),
-	},
-	{
-		.name = "iDisp3",
-		.id = 5,
-		.init = tgl_hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp3_pin, idisp3_codec, platform),
-	},
-	{
-		.name = "iDisp4",
-		.id = 6,
-		.init = tgl_hdmi_init,
-		.dpcm_playback = 1,
-		.no_pcm = 1,
-		SND_SOC_DAILINK_REG(idisp4_pin, idisp4_codec, platform),
-	},
-*/
-#endif
 };
 
 /* audio machine driver */
@@ -259,24 +145,15 @@ static struct snd_soc_card tgl_rt1308_card = {
 	.num_dapm_widgets = ARRAY_SIZE(tgl_rt1308_dapm_widgets),
 	.dapm_routes = tgl_rt1308_dapm_routes,
 	.num_dapm_routes = ARRAY_SIZE(tgl_rt1308_dapm_routes),
-	.late_probe = tgl_card_late_probe,
 };
 
 static int tgl_rt1308_probe(struct platform_device *pdev)
 {
 	struct snd_soc_acpi_mach *mach;
-	struct tgl_card_private *ctx;
 	struct snd_soc_card *card = &tgl_rt1308_card;
 	int ret;
 
 	card->dev = &pdev->dev;
-
-	ctx = devm_kzalloc(&pdev->dev, sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return -ENOMEM;
-
-	if (IS_ENABLED(CONFIG_SND_SOC_HDAC_HDMI))
-		INIT_LIST_HEAD(&ctx->hdmi_pcm_list);
 
 	mach = (&pdev->dev)->platform_data;
 
@@ -285,7 +162,7 @@ static int tgl_rt1308_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	snd_soc_card_set_drvdata(card, ctx);
+	snd_soc_card_set_drvdata(card, NULL);
 
 	return devm_snd_soc_register_card(&pdev->dev, card);
 }
