@@ -2611,7 +2611,7 @@ static int stmmac_tx_clean(struct stmmac_priv *priv, int budget, u32 queue)
 			} else if (unlikely(priv->hwts_all) &&
 				   tx_q->tx_skbuff_dma[entry].buf_type ==
 				   STMMAC_TXBUF_T_XSK_TX) {
-				ktime_t tx_hwtstamp;
+				ktime_t tx_hwtstamp = { 0 };
 
 				stmmac_get_tx_hwtstamp(priv, p, &tx_hwtstamp);
 				trace_printk("XDP TX HW TS %llu\n",
