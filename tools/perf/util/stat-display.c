@@ -619,9 +619,9 @@ static bool collect_data(struct perf_stat_config *config, struct evsel *counter,
 	if (counter->merged_stat)
 		return false;
 	cb(config, counter, data, true);
-	if (config->no_merge || hybrid_uniquify(counter))
+	if (config->no_merge || (hybrid_uniquify(counter) && !config->hybrid_merge))
 		uniquify_event_name(counter, config);
-	else if (counter->auto_merge_stats)
+	else if (counter->auto_merge_stats || config->hybrid_merge)
 		collect_all_aliases(config, counter, cb, data);
 	return true;
 }
