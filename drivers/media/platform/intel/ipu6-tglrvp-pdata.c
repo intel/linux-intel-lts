@@ -48,12 +48,12 @@ static struct ar0234_platform_data ar0234_pdata_1 = {
 	.port = 1,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 338,
+	.irq_pin = -1,
 	.irq_pin_name = "B23",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'a',
-	.gpios = {258, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_1 = {
@@ -77,12 +77,12 @@ static struct ar0234_platform_data ar0234_pdata_2 = {
 	.port = 2,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 330,
+	.irq_pin = -1,
 	.irq_pin_name = "R6",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
-	.gpios = {501, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_2 = {
@@ -106,12 +106,12 @@ static struct ar0234_platform_data ar0234_pdata_3 = {
 	.port = 4,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 332,
+	.irq_pin = -1,
 	.irq_pin_name = "IMGCLKOUT_3",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'c',
-	.gpios = {253, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_3 = {
@@ -135,12 +135,12 @@ static struct ar0234_platform_data ar0234_pdata_4 = {
 	.port = 5,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS_2,
-	.irq_pin = 331,
+	.irq_pin = -1,
 	.irq_pin_name = "H15",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'd',
-	.gpios = {325, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_4 = {
