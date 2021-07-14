@@ -1542,11 +1542,21 @@ static int ar0234_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 
 	case V4L2_CID_FLASH_STROBE:
+		if (ar0234->platform_data->gpios[0] != -1) {
+			if (ar0234->strobe_source->val ==
+					V4L2_FLASH_STROBE_SOURCE_SOFTWARE)
+				gpio_set_value(ar0234->platform_data->gpios[0], 1);
+		}
 		dev_info(&client->dev, "turn on led %d\n", ctrl->val);
 
 		break;
 
 	case V4L2_CID_FLASH_STROBE_STOP:
+		if (ar0234->platform_data->gpios[0] != -1) {
+			if (ar0234->strobe_source->val ==
+					V4L2_FLASH_STROBE_SOURCE_SOFTWARE)
+				gpio_set_value(ar0234->platform_data->gpios[0], 0);
+		}
 		dev_info(&client->dev, "turn off led %d\n", ctrl->val);
 		break;
 
@@ -1796,6 +1806,11 @@ static void ar0234_stop_streaming(struct ar0234 *ar0234)
 	if (ar0234_write_reg(ar0234, AR0234_REG_MODE_SELECT,
 			     AR0234_REG_VALUE_16BIT, AR0234_MODE_STANDBY))
 		dev_err(&client->dev, "failed to set stream");
+	/*
+	 * turn off flash, clear possible noise.
+	 */
+	if (ar0234->platform_data->gpios[0] != -1)
+		gpio_set_value(ar0234->platform_data->gpios[0], 0);
 }
 
 static int ar0234_set_stream(struct v4l2_subdev *sd, int enable)
@@ -2101,6 +2116,24 @@ static int ar0234_remove(struct i2c_client *client)
 
 irqreturn_t ar0234_threaded_irq_fn(int irq, void *dev_id)
 {
+	struct ar0234 *ar0234 = dev_id;
+
+	if ((ar0234->platform_data->gpios[0] != -1) && (ar0234->platform_data->irq_pin != -1)) {
+		mutex_lock(&ar0234->mutex);
+		if (ar0234->streaming == false) {
+			gpio_set_value(ar0234->platform_data->gpios[0], 0);
+			goto ar0234_irq_handled;
+		}
+
+		if (ar0234->strobe_source->val == V4L2_FLASH_STROBE_SOURCE_EXTERNAL) {
+			gpio_set_value(ar0234->platform_data->gpios[0],
+					gpio_get_value(ar0234->platform_data->irq_pin));
+		}
+
+ar0234_irq_handled:
+		mutex_unlock(&ar0234->mutex);
+	}
+
 	return IRQ_HANDLED;
 }
 
@@ -2147,6 +2180,35 @@ static int ar0234_probe(struct i2c_client *client)
 	if (ret) {
 		dev_err(&client->dev, "failed to init entity pads: %d", ret);
 		goto probe_error_v4l2_ctrl_handler_free;
+	}
+
+	if ((ar0234->platform_data->gpios[0] != -1) && (ar0234->platform_data->irq_pin != -1)) {
+		ret = devm_gpio_request(&client->dev,
+				ar0234->platform_data->irq_pin,
+				ar0234->platform_data->irq_pin_name);
+		if (ret) {
+			dev_err(&client->dev, "IRQ pin request failed!\n");
+			goto probe_error_v4l2_ctrl_handler_free;
+		}
+		gpio_direction_input(ar0234->platform_data->irq_pin);
+		ret = devm_request_threaded_irq(&client->dev,
+				gpio_to_irq(ar0234->platform_data->irq_pin),
+				NULL, ar0234_threaded_irq_fn,
+				ar0234->platform_data->irq_pin_flags,
+				ar0234->platform_data->irq_pin_name,
+				ar0234);
+		if (ret) {
+			dev_err(&client->dev, "IRQ request failed!\n");
+			goto probe_error_v4l2_ctrl_handler_free;
+		}
+
+		ret = devm_gpio_request_one(&client->dev,
+				ar0234->platform_data->gpios[0],
+				GPIOF_OUT_INIT_LOW, "LED");
+		if (ret) {
+			dev_err(&client->dev, "LED GPIO pin request failed!\n");
+			goto probe_error_v4l2_ctrl_handler_free;
+		}
 	}
 
 	ret = v4l2_async_register_subdev_sensor_common(&ar0234->sd);
