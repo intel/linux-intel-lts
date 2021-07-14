@@ -55,9 +55,17 @@
 #define IMX390_GAIN_MIN			0
 #define IMX390_GAIN_DEFAULT		0x80
 
-#define IMX390_REG_LED_FLASH_CONTROL	0x3270
-#define IMX390_LED_FLASH_EN		0x100
-#define IMX390_LED_DELAY		0xff
+#define IMX390_RED_BALANCE_MIN		0
+#define IMX390_RED_BALANCE_MAX		0xfff
+#define IMX390_RED_BALANCE_STEP		1
+#define IMX390_RED_BALANCE_DEF		0x100
+
+#define IMX390_BLUE_BALANCE_MIN		0
+#define IMX390_BLUE_BALANCE_MAX		0xfff
+#define IMX390_BLUE_BALANCE_STEP	1
+#define IMX390_BLUE_BALANCE_DEF		0x100
+
+#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
 
 #define IMX390_CID_CSI_PORT         (V4L2_CID_USER_BASE | 0x1001)
 #define IMX390_CID_I2C_BUS         (V4L2_CID_USER_BASE | 0x1002)
@@ -78,11 +86,19 @@ enum {
 	IMX390_REG_SHS2 = 0x0010,
 	IMX390_REG_AGAIN_SP1H = 0x0018,
 	IMX390_REG_AGAIN_SP1L = 0x001a,
+
+	/* default bayer order RGGB */
+	IMX390_REG_WBGAIN_R = 0x0030,
+	IMX390_REG_WBGAIN_GR = 0x0032,
+	IMX390_REG_WBGAIN_GB = 0x0034,
+	IMX390_REG_WBGAIN_B = 0x0036,
+
 	IMX390_REG_OBB_CLAMP_CTRL_SEL = 0x0083,
+	IMX390_REG_REAR_EMBDATA_LINE = 0x2E18,
 	IMX390_REG_REV1 = 0x3060,
 	IMX390_REG_REV2 = 0x3064,
 	IMX390_REG_REV3 = 0x3067,
-	IMX390_REG_REAR_EMBDATA_LINE = 0x2E18,
+	IMX390_REG_WBGAIN_FORCE_X1 = 0x36A8,
 };
 
 enum {
@@ -168,6 +184,8 @@ struct imx390 {
 	struct v4l2_ctrl *frame_interval;
 	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *red_balance;
+	struct v4l2_ctrl *blue_balance;
 
 	/* Current mode */
 	const struct imx390_mode *cur_mode;
@@ -274,6 +292,7 @@ static int imx390_write_reg(struct imx390 *imx390, u16 reg, u16 len, u32 val)
 	if (len > 4)
 		return -EINVAL;
 
+	dev_dbg(&client->dev, "%s, reg %x len %x, val %x\n", __func__, reg, len, val);
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << 8 * (4 - len), buf + 2);
 	if (i2c_master_send(client, buf, len + 2) != len + 2)
@@ -449,6 +468,46 @@ static int imx390_exposure_set(struct imx390 *self, s64 val)
 	return imx390_exposure_raw_set(self, reg);
 }
 
+static int imx390_white_balance_set(struct imx390 *self)
+{
+	u16 cf00, cf01, cf10, cf11;
+	u16 red, blue;
+	u16 max_chroma, r, g, b;
+	struct i2c_client *client = v4l2_get_subdevdata(&self->sd);
+
+	dev_dbg(&client->dev, "%s\n", __func__);
+	red = *self->red_balance->p_new.p_s32;
+	blue = *self->blue_balance->p_new.p_s32;
+
+	max_chroma = MAX(MAX(red, 0x100), blue);
+	r = (max_chroma * 0x100) / red;
+	g = max_chroma;
+	b = (max_chroma * 0x100) / blue;
+
+	cf00 = IMX390_REG_WBGAIN_R;
+	cf01 = IMX390_REG_WBGAIN_GR;
+	cf10 = IMX390_REG_WBGAIN_GB;
+	cf11 = IMX390_REG_WBGAIN_B;
+
+	imx390_group_hold_enable(self, 1);
+	dev_dbg(&client->dev, "self->cur_mode->code[%x] MEDIA_BUS_FMT_SGRBG12_1X12[%x]\n", self->cur_mode->code, MEDIA_BUS_FMT_SGRBG12_1X12);
+	if (self->cur_mode->code == MEDIA_BUS_FMT_SGRBG12_1X12) {
+		imx390_write_reg(self, IMX390_REG_WBGAIN_FORCE_X1, IMX390_REG_VALUE_08BIT, 0);
+
+		imx390_write_reg(self, cf00, IMX390_REG_VALUE_08BIT, r & 0xff);
+		imx390_write_reg(self, cf00 + 1, IMX390_REG_VALUE_08BIT, (r & 0xff00) >> 8);
+		imx390_write_reg(self, cf01, IMX390_REG_VALUE_08BIT, g & 0xff);
+		imx390_write_reg(self, cf01 + 1, IMX390_REG_VALUE_08BIT, (g & 0xff00) >> 8);
+		imx390_write_reg(self, cf10, IMX390_REG_VALUE_08BIT, g & 0xff);
+		imx390_write_reg(self, cf10 + 1, IMX390_REG_VALUE_08BIT, (g & 0xff00) >> 8);
+		imx390_write_reg(self, cf11, IMX390_REG_VALUE_08BIT, b & 0xff);
+		imx390_write_reg(self, cf11 + 1, IMX390_REG_VALUE_08BIT, (b & 0xff00) >> 8);
+	}
+	imx390_group_hold_enable(self, 0);
+
+	return 0;
+}
+
 static int imx390_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct imx390 *imx390 = container_of(ctrl->handler,
@@ -471,6 +530,10 @@ static int imx390_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = imx390_write_reg(imx390, IMX390_REG_VTS,
 				IMX390_REG_VALUE_16BIT,
 				imx390->cur_mode->height + ctrl->val);
+		break;
+	case V4L2_CID_RED_BALANCE:
+	case V4L2_CID_BLUE_BALANCE:
+		ret = imx390_white_balance_set(imx390);
 		break;
 	default:
 		ret = -EINVAL;
@@ -545,6 +608,20 @@ static int imx390_init_controls(struct imx390 *imx390)
 					hblank, hblank, 1, hblank);
 	if (imx390->hblank)
 		imx390->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	imx390->red_balance = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops,
+					     V4L2_CID_RED_BALANCE,
+					     IMX390_RED_BALANCE_MIN,
+					     IMX390_RED_BALANCE_MAX,
+					     IMX390_RED_BALANCE_STEP,
+					     IMX390_RED_BALANCE_DEF);
+
+	imx390->blue_balance = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops,
+					     V4L2_CID_BLUE_BALANCE,
+					     IMX390_BLUE_BALANCE_MIN,
+					     IMX390_BLUE_BALANCE_MAX,
+					     IMX390_BLUE_BALANCE_STEP,
+					     IMX390_BLUE_BALANCE_DEF);
 
 	if (ctrl_hdlr->error)
 		return ctrl_hdlr->error;
