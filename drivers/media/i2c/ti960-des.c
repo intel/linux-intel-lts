@@ -131,8 +131,10 @@ int bus_switch(struct ti960 *va)
 	int ret;
 	int retry, timeout = 10;
 	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
+	unsigned short addr_backup;
 
 	dev_dbg(&client->dev, "try to set bus switch\n");
+	addr_backup = client->addr;
 	client->addr = 0x70;
 	for (retry = 0; retry < timeout; retry++) {
 		ret = i2c_smbus_write_byte(client, 0x01);
@@ -142,7 +144,7 @@ int bus_switch(struct ti960 *va)
 			break;
 	}
 
-	client->addr = TI960_I2C_ADDRESS;
+	client->addr = addr_backup;
 	if (retry >= timeout) {
 		dev_err(&client->dev, "bus switch failed, maybe no bus switch\n");
 	}
@@ -1378,6 +1380,7 @@ static int ti960_probe(struct i2c_client *client,
 {
 	struct ti960 *va;
 	int i, j, k, l, rval = 0;
+	int gpio_FPD = 0;
 
 	if (client->dev.platform_data == NULL)
 		return -ENODEV;
@@ -1471,13 +1474,15 @@ static int ti960_probe(struct i2c_client *client,
 		}
 
 		/* pull up GPPC_B23 to high for FPD link power */
-		gpio_set_value(va->pdata->FPD_gpio, 1);
+		gpio_FPD = gpio_get_value(va->pdata->FPD_gpio);
+		if (gpio_FPD == 0)
+			gpio_set_value(va->pdata->FPD_gpio, 1);
 	}
 
 	rval = ti960_init(va);
 	if (rval) {
 		dev_err(&client->dev, "Failed to init TI960!\n");
-		return rval;
+		goto free_gpio;
 	}
 
 	/*
@@ -1494,10 +1499,24 @@ static int ti960_probe(struct i2c_client *client,
 	rval = gpiochip_add(&va->gc);
 	if (rval) {
 		dev_err(&client->dev, "Failed to add gpio chip! %d\n", rval);
-		return -EIO;
+		rval = -EIO;
+		goto free_gpio;
 	}
 
 	return 0;
+
+free_gpio:
+	if (va->pdata->FPD_gpio != -1) {
+		dev_err(&client->dev, "restore and free FPD gpio!\n");
+		/* restore GPPC_B23 */
+		if (gpio_FPD == 0)
+			gpio_set_value(va->pdata->FPD_gpio, 0);
+
+		devm_gpio_free(&client->dev,
+			va->pdata->FPD_gpio);
+	}
+
+	return rval;
 }
 
 static int ti960_remove(struct i2c_client *client)
