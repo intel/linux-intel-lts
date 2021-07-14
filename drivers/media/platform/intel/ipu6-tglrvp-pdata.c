@@ -295,11 +295,6 @@ static struct ipu_isys_csi2_config ti960_csi2_cfg = {
 	.port = 1,
 };
 
-static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
-	.nlanes = TI960_LANES,
-	.port = 4,
-};
-
 static struct ti960_subdev_info ti960_subdevs[] = {
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 	/* D3RCM */
@@ -399,6 +394,7 @@ static struct ti960_pdata ti960_pdata = {
 	.subdev_info = ti960_subdevs,
 	.subdev_num = ARRAY_SIZE(ti960_subdevs),
 	.reset_gpio = 0,
+	.FPD_gpio = 175,
 	.suffix = 'a',
 };
 
@@ -411,6 +407,26 @@ static struct ipu_isys_subdev_info ti960_sd = {
 			 .platform_data = &ti960_pdata,
 		},
 		.i2c_adapter_bdf = "0000:00:15.3",
+	}
+};
+
+static struct ti960_pdata ti960_pdata_2 = {
+	.subdev_info = ti960_subdevs,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs),
+	.reset_gpio = 0,
+	.FPD_gpio = -1,
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info ti960_sd_2 = {
+	.csi2 = &ti960_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			 .type = "ti960",
+			 .addr = TI960_I2C_ADDRESS_2,
+			 .platform_data = &ti960_pdata_2,
+		},
+		.i2c_adapter_bdf = "0000:00:15.0",
 	}
 };
 #endif
@@ -490,6 +506,7 @@ static struct ipu_isys_subdev_pdata pdata = {
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 		&ti960_sd,
+		&ti960_sd_2,
 #endif
 		&lt6911uxc_sd_1,
 		&lt6911uxc_sd_2,
