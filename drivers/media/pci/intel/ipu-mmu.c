@@ -390,7 +390,7 @@ static int allocate_trash_buffer(struct ipu_mmu *mmu)
 		goto out_free_iova;
 	}
 
-	mmu->trash_page_dma = dma;
+	mmu->pci_trash_page = dma;
 
 	/*
 	 * Map the 8MB iova address range to the same physical trash page
@@ -399,7 +399,7 @@ static int allocate_trash_buffer(struct ipu_mmu *mmu)
 	iova_addr = iova->pfn_lo;
 	for (i = 0; i < n_pages; i++) {
 		ret = ipu_mmu_map(mmu->dmap->mmu_info, iova_addr << PAGE_SHIFT,
-				  mmu->trash_page_dma, PAGE_SIZE);
+				  mmu->pci_trash_page, PAGE_SIZE);
 		if (ret) {
 			dev_err(mmu->dev,
 				"mapping trash buffer range failed\n");
@@ -417,7 +417,7 @@ static int allocate_trash_buffer(struct ipu_mmu *mmu)
 out_unmap:
 	ipu_mmu_unmap(mmu->dmap->mmu_info, iova->pfn_lo << PAGE_SHIFT,
 		      (iova->pfn_hi - iova->pfn_lo + 1) << PAGE_SHIFT);
-	dma_unmap_page(mmu->dmap->mmu_info->dev, mmu->trash_page_dma,
+	dma_unmap_page(mmu->dmap->mmu_info->dev, mmu->pci_trash_page,
 		       PAGE_SIZE, DMA_BIDIRECTIONAL);
 out_free_iova:
 	__free_iova(&mmu->dmap->iovad, iova);
@@ -762,9 +762,9 @@ static void ipu_mmu_destroy(struct ipu_mmu *mmu)
 		}
 
 		mmu->iova_trash_page = 0;
-		dma_unmap_page(mmu_info->dev, mmu->trash_page_dma,
+		dma_unmap_page(mmu_info->dev, mmu->pci_trash_page,
 			       PAGE_SIZE, DMA_BIDIRECTIONAL);
-		mmu->trash_page_dma = 0;
+		mmu->pci_trash_page = 0;
 		__free_page(mmu->trash_page);
 	}
 

@@ -52,8 +52,8 @@ struct ipu_mmu {
 	struct list_head vma_list;
 
 	struct page *trash_page;
-	dma_addr_t trash_page_dma;
-	dma_addr_t iova_trash_page;
+	dma_addr_t pci_trash_page; /* IOVA from PCI DMA services (parent) */
+	dma_addr_t iova_trash_page; /* IOVA for IPU child nodes to use */
 
 	bool ready;
 	spinlock_t ready_lock;	/* Serialize access to bool ready */
