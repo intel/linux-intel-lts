@@ -132,7 +132,7 @@ int bus_switch(struct ti960 *va)
 	int retry, timeout = 10;
 	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
 
-	dev_dbg(&client->dev, "bus switch");
+	dev_dbg(&client->dev, "try to set bus switch\n");
 	client->addr = 0x70;
 	for (retry = 0; retry < timeout; retry++) {
 		ret = i2c_smbus_write_byte(client, 0x01);
@@ -144,8 +144,7 @@ int bus_switch(struct ti960 *va)
 
 	client->addr = TI960_I2C_ADDRESS;
 	if (retry >= timeout) {
-		dev_err(&client->dev, "bus switch failed");
-		return -EREMOTEIO;
+		dev_err(&client->dev, "bus switch failed, maybe no bus switch\n");
 	}
 
 	return 0;
@@ -175,6 +174,30 @@ static int ti960_reg_read(struct ti960 *va, unsigned char reg, unsigned int *val
 	return 0;
 }
 
+static int ti960_reg_write(struct ti960 *va, unsigned char reg, unsigned int val)
+{
+	int ret, retry, timeout = 10;
+
+	for (retry = 0; retry < timeout; retry++) {
+		ret = regmap_write(va->regmap8, reg, val);
+		if (ret < 0) {
+			dev_err(va->sd.dev, "960 reg write ret=%x", ret);
+			usleep_range(5000, 6000);
+		} else {
+			break;
+		}
+	}
+
+	if (retry >= timeout) {
+		dev_err(va->sd.dev,
+			"%s:devid write failed: reg=%2x, ret=%d\n",
+			__func__, reg, ret);
+		return -EREMOTEIO;
+	}
+
+	return 0;
+}
+
 static int ti960_reg_set_bit(struct ti960 *va, unsigned char reg,
 	unsigned char bit, unsigned char val)
 {
@@ -189,7 +212,7 @@ static int ti960_reg_set_bit(struct ti960 *va, unsigned char reg,
 	else
 		reg_val &= ~(1 << bit);
 
-	return regmap_write(va->regmap8, reg, reg_val);
+	return ti960_reg_write(va, reg, reg_val);
 }
 
 static int ti960_map_phy_i2c_addr(struct ti960 *va, unsigned short rx_port,
@@ -197,12 +220,12 @@ static int ti960_map_phy_i2c_addr(struct ti960 *va, unsigned short rx_port,
 {
 	int rval;
 
-	rval = regmap_write(va->regmap8, TI960_RX_PORT_SEL,
+	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
 		(rx_port << 4) + (1 << rx_port));
 	if (rval)
 		return rval;
 
-	return regmap_write(va->regmap8, TI960_SLAVE_ID0, addr);
+	return ti960_reg_write(va, TI960_SLAVE_ID0, addr);
 }
 
 static int ti960_map_alias_i2c_addr(struct ti960 *va, unsigned short rx_port,
@@ -210,12 +233,12 @@ static int ti960_map_alias_i2c_addr(struct ti960 *va, unsigned short rx_port,
 {
 	int rval;
 
-	rval = regmap_write(va->regmap8, TI960_RX_PORT_SEL,
+	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
 		(rx_port << 4) + (1 << rx_port));
 	if (rval)
 		return rval;
 
-	return regmap_write(va->regmap8, TI960_SLAVE_ALIAS_ID0, addr);
+	return ti960_reg_write(va, TI960_SLAVE_ALIAS_ID0, addr);
 }
 
 static int ti960_map_ser_alias_addr(struct ti960 *va, unsigned short rx_port,
@@ -224,12 +247,12 @@ static int ti960_map_ser_alias_addr(struct ti960 *va, unsigned short rx_port,
 	int rval;
 
 	dev_dbg(va->sd.dev, "%s port %d, ser_alias %x\n", __func__, rx_port, ser_alias);
-	rval = regmap_write(va->regmap8, TI960_RX_PORT_SEL,
+	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
 		(rx_port << 4) + (1 << rx_port));
 	if (rval)
 		return rval;
 
-	return regmap_write(va->regmap8, TI960_SER_ALIAS_ID, ser_alias);
+	return ti960_reg_write(va, TI960_SER_ALIAS_ID, ser_alias);
 }
 
 static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
@@ -251,7 +274,7 @@ static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
 		return 0;
 	}
 
-	rval = regmap_write(va->regmap8, TI960_RX_PORT_SEL,
+	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
 		(rx_port << 4) + (1 << rx_port));
 	if (rval)
 		return rval;
@@ -273,7 +296,7 @@ static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
 			reg_val |= TI960_GPIO1_FSIN;
 		}
 
-		rval = regmap_write(va->regmap8, TI960_BC_GPIO_CTL0, reg_val);
+		rval = ti960_reg_write(va, TI960_BC_GPIO_CTL0, reg_val);
 		if (rval)
 			dev_dbg(va->sd.dev, "Failed to set gpio.\n");
 		break;
@@ -293,7 +316,7 @@ static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
 			reg_val |= TI960_GPIO3_FSIN;
 		}
 
-		rval = regmap_write(va->regmap8, TI960_BC_GPIO_CTL1, reg_val);
+		rval = ti960_reg_write(va, TI960_BC_GPIO_CTL1, reg_val);
 		if (rval)
 			dev_dbg(va->sd.dev, "Failed to set gpio.\n");
 		break;
@@ -791,13 +814,13 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 	int ret;
 	u8 val;
 
-	ret = regmap_write(va->regmap8, TI960_RESET,
+	ret = ti960_reg_write(va, TI960_RESET,
 			   (on) ? TI960_POWER_ON : TI960_POWER_OFF);
 	if (ret || !on)
 		return ret;
 
 	/* Configure MIPI clock bsaed on control value. */
-	ret = regmap_write(va->regmap8, TI960_CSI_PLL_CTL,
+	ret = ti960_reg_write(va, TI960_CSI_PLL_CTL,
 			    ti960_op_sys_clock_reg_val[
 			    v4l2_ctrl_g_ctrl(va->link_freq)]);
 	if (ret)
@@ -807,7 +830,7 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 	/* Enable skew calculation when 1.6Gbps output is enabled. */
 	if (v4l2_ctrl_g_ctrl(va->link_freq))
 		val |= TI960_CSI_SKEWCAL;
-	return regmap_write(va->regmap8, TI960_CSI_CTL, val);
+	return ti960_reg_write(va, TI960_CSI_CTL, val);
 }
 
 static bool ti960_broadcast_mode(struct v4l2_subdev *subdev)
@@ -868,14 +891,14 @@ static int ti960_rx_port_config(struct ti960 *va, int sink, int rx_port)
 	unsigned int csi_vc_map;
 
 	/* Select RX port. */
-	rval = regmap_write(va->regmap8, TI960_RX_PORT_SEL,
+	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
 			(rx_port << 4) + (1 << rx_port));
 	if (rval) {
 		dev_err(va->sd.dev, "Failed to select RX port.\n");
 		return rval;
 	}
 
-	rval = regmap_write(va->regmap8, TI960_PORT_CONFIG,
+	rval = ti960_reg_write(va, TI960_PORT_CONFIG,
 		TI960_FPD3_CSI);
 	if (rval) {
 		dev_err(va->sd.dev, "Failed to set port config.\n");
@@ -901,7 +924,7 @@ static int ti960_rx_port_config(struct ti960 *va, int sink, int rx_port)
 	}
 	dev_dbg(va->sd.dev, "%s port %d, csi_vc_map %x",
 		__func__, rx_port, csi_vc_map);
-	rval = regmap_write(va->regmap8, TI960_CSI_VC_MAP,
+	rval = ti960_reg_write(va, TI960_CSI_VC_MAP,
 		csi_vc_map);
 	if (rval) {
 		dev_err(va->sd.dev, "Failed to set port config.\n");
@@ -930,7 +953,7 @@ static int ti960_set_frame_sync(struct ti960 *va, int enable)
 	int index = !!enable;
 
 	for (i = 0; i < ARRAY_SIZE(ti960_frame_sync_settings[index]); i++) {
-		rval = regmap_write(va->regmap8,
+		rval = ti960_reg_write(va,
 				ti960_frame_sync_settings[index][i].reg,
 				ti960_frame_sync_settings[index][i].val);
 		if (rval) {
@@ -1266,9 +1289,8 @@ static int ti960_init(struct ti960 *va)
 		return rval;
 	}
 	dev_info(va->sd.dev, "TI960 device ID: 0x%X\n", val);
-
 	for (i = 0; i < ARRAY_SIZE(ti960_gpio_settings); i++) {
-		rval = regmap_write(va->regmap8,
+		rval = ti960_reg_write(va,
 			ti960_gpio_settings[i].reg,
 			ti960_gpio_settings[i].val);
 		if (rval) {
@@ -1285,7 +1307,7 @@ static int ti960_init(struct ti960 *va)
 			usleep_range(ti960_init_settings[i].val * 1000, ti960_init_settings[i].val * 1000);
 			continue;
 		}
-		rval = regmap_write(va->regmap8,
+		rval = ti960_reg_write(va,
 			ti960_init_settings[i].reg,
 			ti960_init_settings[i].val);
 		if (rval) {
@@ -1295,7 +1317,6 @@ static int ti960_init(struct ti960 *va)
 			return rval;
 		}
 	}
-
 	/* wait for ti953 ready */
 	msleep(200);
 
@@ -1321,7 +1342,7 @@ static void ti960_gpio_set(struct gpio_chip *chip, unsigned int gpio, int value)
 	rx_port = gpio / NR_OF_GPIOS_PER_PORT;
 	gpio_port = gpio % NR_OF_GPIOS_PER_PORT;
 
-	ret = regmap_write(va->regmap8, TI960_RX_PORT_SEL,
+	ret = ti960_reg_write(va, TI960_RX_PORT_SEL,
 			  (rx_port << 4) + (1 << rx_port));
 	if (ret) {
 		dev_dbg(&client->dev, "Failed to select RX port.\n");
@@ -1341,7 +1362,7 @@ static void ti960_gpio_set(struct gpio_chip *chip, unsigned int gpio, int value)
 		reg_val |= value ? TI960_GPIO1_HIGH : TI960_GPIO1_LOW;
 	}
 
-	ret = regmap_write(va->regmap8, TI960_BC_GPIO_CTL0, reg_val);
+	ret = ti960_reg_write(va, TI960_BC_GPIO_CTL0, reg_val);
 	if (ret)
 		dev_dbg(&client->dev, "Failed to set gpio.\n");
 }
@@ -1439,16 +1460,19 @@ static int ti960_probe(struct i2c_client *client,
 	}
 #endif
 
-	rval = devm_gpio_request_one(&client->dev,
-			175,
+	if (va->pdata->FPD_gpio != -1) {
+		rval = devm_gpio_request_one(&client->dev,
+			va->pdata->FPD_gpio,
 			GPIOF_OUT_INIT_LOW, "Cam");
-	if (rval) {
-		dev_err(&client->dev, "camera power GPIO pin request failed!\n");
-		return rval;
-	}
+		if (rval) {
+			dev_err(&client->dev,
+				"camera power GPIO pin request failed!\n");
+			return rval;
+		}
 
-	/* pull up GPPC_B23 to high for FPD link power */
-	gpio_set_value(175, 1);
+		/* pull up GPPC_B23 to high for FPD link power */
+		gpio_set_value(va->pdata->FPD_gpio, 1);
+	}
 
 	rval = ti960_init(va);
 	if (rval) {
