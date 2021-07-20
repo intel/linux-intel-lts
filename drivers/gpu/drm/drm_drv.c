@@ -35,6 +35,7 @@
 #include <linux/slab.h>
 #include <linux/srcu.h>
 
+#include <drm/drm_cache.h>
 #include <drm/drm_client.h>
 #include <drm/drm_color_mgmt.h>
 #include <drm/drm_drv.h>
@@ -61,7 +62,7 @@ static struct idr drm_minors_idr;
  * prefer to embed struct drm_device into their own device
  * structure and call drm_dev_init() themselves.
  */
-static bool drm_core_init_complete = false;
+static bool drm_core_init_complete;
 
 static struct dentry *drm_debugfs_root;
 
@@ -941,9 +942,7 @@ void drm_dev_unregister(struct drm_device *dev)
 	if (dev->driver->unload)
 		dev->driver->unload(dev);
 
-	if (dev->agp)
-		drm_pci_agp_destroy(dev);
-
+	drm_legacy_pci_agp_destroy(dev);
 	drm_legacy_rmmaps(dev);
 
 	remove_compat_control_link(dev);
@@ -1043,6 +1042,7 @@ static int __init drm_core_init(void)
 
 	drm_connector_ida_init();
 	idr_init(&drm_minors_idr);
+	drm_memcpy_init_early();
 
 	ret = drm_sysfs_init();
 	if (ret < 0) {

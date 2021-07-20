@@ -760,7 +760,7 @@ static void mcde_dsi_start(struct mcde_dsi *d)
 		DSI_MCTL_MAIN_DATA_CTL_BTA_EN |
 		DSI_MCTL_MAIN_DATA_CTL_READ_EN |
 		DSI_MCTL_MAIN_DATA_CTL_REG_TE_EN;
-	if (d->mdsi->mode_flags & MIPI_DSI_MODE_EOT_PACKET)
+	if (!(d->mdsi->mode_flags & MIPI_DSI_MODE_EOT_PACKET))
 		val |= DSI_MCTL_MAIN_DATA_CTL_HOST_EOT_GEN;
 	writel(val, d->regs + DSI_MCTL_MAIN_DATA_CTL);
 
@@ -1196,10 +1196,8 @@ static int mcde_dsi_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	d->regs = devm_ioremap_resource(dev, res);
-	if (IS_ERR(d->regs)) {
-		dev_err(dev, "no DSI regs\n");
+	if (IS_ERR(d->regs))
 		return PTR_ERR(d->regs);
-	}
 
 	dsi_id = readl(d->regs + DSI_ID_REG);
 	dev_info(dev, "HW revision 0x%08x\n", dsi_id);

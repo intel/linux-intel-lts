@@ -465,6 +465,22 @@ fpga_check_for_unclaimed_mmio(struct intel_uncore *uncore)
 	if (likely(!(dbg & FPGA_DBG_RM_NOCLAIM)))
 		return false;
 
+	/*
+	 * Bugs in PCI programming (or failing hardware) can occasionally cause
+	 * us to lose access to the MMIO BAR.  When this happens, register
+	 * reads will come back with 0xFFFFFFFF for every register and things
+	 * go bad very quickly.  Let's try to detect that special case and at
+	 * least try to print a more informative message about what has
+	 * happened.
+	 *
+	 * During normal operation the FPGA_DBG register has several unused
+	 * bits that will always read back as 0's so we can use them as canaries
+	 * to recognize when MMIO accesses are just busted.
+	 */
+	if (unlikely(dbg == ~0))
+		drm_err(&uncore->i915->drm,
+			"Lost access to MMIO BAR; all registers now read back as 0xFFFFFFFF!\n");
+
 	__raw_uncore_write32(uncore, FPGA_DBG, FPGA_DBG_RM_NOCLAIM);
 
 	return true;
@@ -1619,7 +1635,7 @@ static int intel_uncore_fw_domains_init(struct intel_uncore *uncore)
 #define fw_domain_init(uncore__, id__, set__, ack__) \
 	(ret ?: (ret = __fw_domain_init((uncore__), (id__), (set__), (ack__))))
 
-	if (INTEL_GEN(i915) >= 11) {
+	if (GRAPHICS_VER(i915) >= 11) {
 		/* we'll prune the domains of missing engines later */
 		intel_engine_mask_t emask = INTEL_INFO(i915)->platform_engine_mask;
 		int i;
@@ -1649,7 +1665,7 @@ static int intel_uncore_fw_domains_init(struct intel_uncore *uncore)
 				       FORCEWAKE_MEDIA_VEBOX_GEN11(i),
 				       FORCEWAKE_ACK_MEDIA_VEBOX_GEN11(i));
 		}
-	} else if (IS_GEN_RANGE(i915, 9, 10)) {
+	} else if (IS_GRAPHICS_VER(i915, 9, 10)) {
 		uncore->funcs.force_wake_get = fw_domains_get_with_fallback;
 		uncore->funcs.force_wake_put = fw_domains_put;
 		fw_domain_init(uncore, FW_DOMAIN_ID_RENDER,
@@ -1717,7 +1733,7 @@ static int intel_uncore_fw_domains_init(struct intel_uncore *uncore)
 			fw_domain_init(uncore, FW_DOMAIN_ID_RENDER,
 				       FORCEWAKE, FORCEWAKE_ACK);
 		}
-	} else if (IS_GEN(i915, 6)) {
+	} else if (GRAPHICS_VER(i915) == 6) {
 		uncore->funcs.force_wake_get =
 			fw_domains_get_with_thread_status;
 		uncore->funcs.force_wake_put = fw_domains_put;
@@ -1780,11 +1796,11 @@ static int i915_pmic_bus_access_notifier(struct notifier_block *nb,
 static int uncore_mmio_setup(struct intel_uncore *uncore)
 {
 	struct drm_i915_private *i915 = uncore->i915;
-	struct pci_dev *pdev = i915->drm.pdev;
+	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
 	int mmio_bar;
 	int mmio_size;
 
-	mmio_bar = IS_GEN(i915, 2) ? 1 : 0;
+	mmio_bar = GRAPHICS_VER(i915) == 2 ? 1 : 0;
 	/*
 	 * Before gen4, the registers and the GTT are behind different BARs.
 	 * However, from gen4 onwards, the registers and the GTT are shared
@@ -1794,7 +1810,7 @@ static int uncore_mmio_setup(struct intel_uncore *uncore)
 	 * generations up to Ironlake.
 	 * For dgfx chips register range is expanded to 4MB.
 	 */
-	if (INTEL_GEN(i915) < 5)
+	if (GRAPHICS_VER(i915) < 5)
 		mmio_size = 512 * 1024;
 	else if (IS_DGFX(i915))
 		mmio_size = 4 * 1024 * 1024;
@@ -1812,7 +1828,7 @@ static int uncore_mmio_setup(struct intel_uncore *uncore)
 
 static void uncore_mmio_cleanup(struct intel_uncore *uncore)
 {
-	struct pci_dev *pdev = uncore->i915->drm.pdev;
+	struct pci_dev *pdev = to_pci_dev(uncore->i915->drm.dev);
 
 	pci_iounmap(pdev, uncore->regs);
 }
@@ -1833,7 +1849,7 @@ static void uncore_raw_init(struct intel_uncore *uncore)
 	if (intel_vgpu_active(uncore->i915)) {
 		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, vgpu);
 		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, vgpu);
-	} else if (IS_GEN(uncore->i915, 5)) {
+	} else if (GRAPHICS_VER(uncore->i915) == 5) {
 		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen5);
 		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, gen5);
 	} else {
@@ -1854,7 +1870,7 @@ static int uncore_forcewake_init(struct intel_uncore *uncore)
 		return ret;
 	forcewake_early_sanitize(uncore, 0);
 
-	if (IS_GEN_RANGE(i915, 6, 7)) {
+	if (IS_GRAPHICS_VER(i915, 6, 7)) {
 		ASSIGN_WRITE_MMIO_VFUNCS(uncore, gen6);
 
 		if (IS_VALLEYVIEW(i915)) {
@@ -1863,7 +1879,7 @@ static int uncore_forcewake_init(struct intel_uncore *uncore)
 		} else {
 			ASSIGN_READ_MMIO_VFUNCS(uncore, gen6);
 		}
-	} else if (IS_GEN(i915, 8)) {
+	} else if (GRAPHICS_VER(i915) == 8) {
 		if (IS_CHERRYVIEW(i915)) {
 			ASSIGN_FW_DOMAINS_TABLE(uncore, __chv_fw_ranges);
 			ASSIGN_WRITE_MMIO_VFUNCS(uncore, fwtable);
@@ -1872,11 +1888,11 @@ static int uncore_forcewake_init(struct intel_uncore *uncore)
 			ASSIGN_WRITE_MMIO_VFUNCS(uncore, gen8);
 			ASSIGN_READ_MMIO_VFUNCS(uncore, gen6);
 		}
-	} else if (IS_GEN_RANGE(i915, 9, 10)) {
+	} else if (IS_GRAPHICS_VER(i915, 9, 10)) {
 		ASSIGN_FW_DOMAINS_TABLE(uncore, __gen9_fw_ranges);
 		ASSIGN_WRITE_MMIO_VFUNCS(uncore, fwtable);
 		ASSIGN_READ_MMIO_VFUNCS(uncore, fwtable);
-	} else if (IS_GEN(i915, 11)) {
+	} else if (GRAPHICS_VER(i915) == 11) {
 		ASSIGN_FW_DOMAINS_TABLE(uncore, __gen11_fw_ranges);
 		ASSIGN_WRITE_MMIO_VFUNCS(uncore, gen11_fwtable);
 		ASSIGN_READ_MMIO_VFUNCS(uncore, gen11_fwtable);
@@ -1901,6 +1917,18 @@ int intel_uncore_init_mmio(struct intel_uncore *uncore)
 	if (ret)
 		return ret;
 
+	/*
+	 * The boot firmware initializes local memory and assesses its health.
+	 * If memory training fails, the punit will have been instructed to
+	 * keep the GT powered down; we won't be able to communicate with it
+	 * and we should not continue with driver initialization.
+	 */
+	if (IS_DGFX(i915) &&
+	    !(__raw_uncore_read32(uncore, GU_CNTL) & LMEM_INIT)) {
+		drm_err(&i915->drm, "LMEM not initialized by firmware\n");
+		return -ENODEV;
+	}
+
 	if (INTEL_GEN(i915) > 5 && !intel_vgpu_active(i915))
 		uncore->flags |= UNCORE_HAS_FORCEWAKE;
 
@@ -1924,7 +1952,7 @@ int intel_uncore_init_mmio(struct intel_uncore *uncore)
 	if (IS_VALLEYVIEW(i915) || IS_CHERRYVIEW(i915))
 		uncore->flags |= UNCORE_HAS_DBG_UNCLAIMED;
 
-	if (IS_GEN_RANGE(i915, 6, 7))
+	if (IS_GRAPHICS_VER(i915, 6, 7))
 		uncore->flags |= UNCORE_HAS_FIFO;
 
 	/* clear out unclaimed reg detection bit */
@@ -1951,7 +1979,7 @@ void intel_uncore_prune_engine_fw_domains(struct intel_uncore *uncore,
 	enum forcewake_domain_id domain_id;
 	int i;
 
-	if (!intel_uncore_has_forcewake(uncore) || INTEL_GEN(uncore->i915) < 11)
+	if (!intel_uncore_has_forcewake(uncore) || GRAPHICS_VER(uncore->i915) < 11)
 		return;
 
 	for (i = 0; i < I915_MAX_VCS; i++) {
@@ -1992,12 +2020,14 @@ void intel_uncore_fini_mmio(struct intel_uncore *uncore)
 static const struct reg_whitelist {
 	i915_reg_t offset_ldw;
 	i915_reg_t offset_udw;
-	u16 gen_mask;
+	u8 min_graphics_ver;
+	u8 max_graphics_ver;
 	u8 size;
 } reg_read_whitelist[] = { {
 	.offset_ldw = RING_TIMESTAMP(RENDER_RING_BASE),
 	.offset_udw = RING_TIMESTAMP_UDW(RENDER_RING_BASE),
-	.gen_mask = INTEL_GEN_MASK(4, 12),
+	.min_graphics_ver = 4,
+	.max_graphics_ver = 12,
 	.size = 8
 } };
 
@@ -2022,7 +2052,7 @@ int i915_reg_read_ioctl(struct drm_device *dev,
 		GEM_BUG_ON(entry->size > 8);
 		GEM_BUG_ON(entry_offset & (entry->size - 1));
 
-		if (INTEL_INFO(i915)->gen_mask & entry->gen_mask &&
+		if (IS_GRAPHICS_VER(i915, entry->min_graphics_ver, entry->max_graphics_ver) &&
 		    entry_offset == (reg->offset & -entry->size))
 			break;
 		entry++;

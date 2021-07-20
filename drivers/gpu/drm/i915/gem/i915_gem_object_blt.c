@@ -55,6 +55,9 @@ struct i915_vma *intel_emit_vma_fill_blt(struct intel_context *ce,
 	if (unlikely(err))
 		goto out_put;
 
+	/* we pinned the pool, mark it as such */
+	intel_gt_buffer_pool_mark_used(pool);
+
 	cmd = i915_gem_object_pin_map(pool->obj, pool->type);
 	if (IS_ERR(cmd)) {
 		err = PTR_ERR(cmd);
@@ -69,7 +72,7 @@ struct i915_vma *intel_emit_vma_fill_blt(struct intel_context *ce,
 
 		GEM_BUG_ON(size >> PAGE_SHIFT > S16_MAX);
 
-		if (INTEL_GEN(i915) >= 8) {
+		if (GRAPHICS_VER(i915) >= 8) {
 			*cmd++ = XY_COLOR_BLT_CMD | BLT_WRITE_RGBA | (7 - 2);
 			*cmd++ = BLT_DEPTH_32 | BLT_ROP_COLOR_COPY | PAGE_SIZE;
 			*cmd++ = 0;
@@ -229,7 +232,7 @@ static bool wa_1209644611_applies(struct drm_i915_private *i915, u32 size)
 {
 	u32 height = size >> PAGE_SHIFT;
 
-	if (!IS_GEN(i915, 11))
+	if (GRAPHICS_VER(i915) != 11)
 		return false;
 
 	return height % 4 == 3 && height <= 8;
@@ -277,6 +280,9 @@ struct i915_vma *intel_emit_vma_copy_blt(struct intel_context *ce,
 	if (unlikely(err))
 		goto out_put;
 
+	/* we pinned the pool, mark it as such */
+	intel_gt_buffer_pool_mark_used(pool);
+
 	cmd = i915_gem_object_pin_map(pool->obj, pool->type);
 	if (IS_ERR(cmd)) {
 		err = PTR_ERR(cmd);
@@ -291,7 +297,7 @@ struct i915_vma *intel_emit_vma_copy_blt(struct intel_context *ce,
 		size = min_t(u64, rem, block_size);
 		GEM_BUG_ON(size >> PAGE_SHIFT > S16_MAX);
 
-		if (INTEL_GEN(i915) >= 9 &&
+		if (GRAPHICS_VER(i915) >= 9 &&
 		    !wa_1209644611_applies(i915, size)) {
 			*cmd++ = GEN9_XY_FAST_COPY_BLT_CMD | (10 - 2);
 			*cmd++ = BLT_DEPTH_32 | PAGE_SIZE;
@@ -303,7 +309,7 @@ struct i915_vma *intel_emit_vma_copy_blt(struct intel_context *ce,
 			*cmd++ = PAGE_SIZE;
 			*cmd++ = lower_32_bits(src_offset);
 			*cmd++ = upper_32_bits(src_offset);
-		} else if (INTEL_GEN(i915) >= 8) {
+		} else if (GRAPHICS_VER(i915) >= 8) {
 			*cmd++ = XY_SRC_COPY_BLT_CMD | BLT_WRITE_RGBA | (10 - 2);
 			*cmd++ = BLT_DEPTH_32 | BLT_ROP_SRC_COPY | PAGE_SIZE;
 			*cmd++ = 0;

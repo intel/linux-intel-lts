@@ -49,6 +49,7 @@
 #include <drm/drm_irq.h>
 #include <drm/drm_vblank.h>
 #include <drm/amdgpu_drm.h>
+#include <drm/drm_drv.h>
 #include "amdgpu.h"
 #include "amdgpu_ih.h"
 #include "atom.h"
@@ -64,6 +65,41 @@
 #endif
 
 #define AMDGPU_WAIT_IDLE_TIMEOUT 200
+
+const char *soc15_ih_clientid_name[] = {
+	"IH",
+	"SDMA2 or ACP",
+	"ATHUB",
+	"BIF",
+	"SDMA3 or DCE",
+	"SDMA4 or ISP",
+	"VMC1 or PCIE0",
+	"RLC",
+	"SDMA0",
+	"SDMA1",
+	"SE0SH",
+	"SE1SH",
+	"SE2SH",
+	"SE3SH",
+	"VCN1 or UVD1",
+	"THM",
+	"VCN or UVD",
+	"SDMA5 or VCE0",
+	"VMC",
+	"SDMA6 or XDMA",
+	"GRBM_CP",
+	"ATS",
+	"ROM_SMUIO",
+	"DF",
+	"SDMA7 or VCE1",
+	"PWR",
+	"reserved",
+	"UTCL2",
+	"EA",
+	"UTCL2LOG",
+	"MP0",
+	"MP1"
+};
 
 /**
  * amdgpu_hotplug_work_func - work handler for display hotplug event
@@ -164,13 +200,13 @@ irqreturn_t amdgpu_irq_handler(int irq, void *arg)
 	 * ack the interrupt if it is there
 	 */
 	if (amdgpu_ras_is_supported(adev, AMDGPU_RAS_BLOCK__PCIE_BIF)) {
-		if (adev->nbio.funcs &&
-		    adev->nbio.funcs->handle_ras_controller_intr_no_bifring)
-			adev->nbio.funcs->handle_ras_controller_intr_no_bifring(adev);
+		if (adev->nbio.ras_funcs &&
+		    adev->nbio.ras_funcs->handle_ras_controller_intr_no_bifring)
+			adev->nbio.ras_funcs->handle_ras_controller_intr_no_bifring(adev);
 
-		if (adev->nbio.funcs &&
-		    adev->nbio.funcs->handle_ras_err_event_athub_intr_no_bifring)
-			adev->nbio.funcs->handle_ras_err_event_athub_intr_no_bifring(adev);
+		if (adev->nbio.ras_funcs &&
+		    adev->nbio.ras_funcs->handle_ras_err_event_athub_intr_no_bifring)
+			adev->nbio.ras_funcs->handle_ras_err_event_athub_intr_no_bifring(adev);
 	}
 
 	return ret;
@@ -313,6 +349,25 @@ int amdgpu_irq_init(struct amdgpu_device *adev)
 	return 0;
 }
 
+
+void amdgpu_irq_fini_hw(struct amdgpu_device *adev)
+{
+	if (adev->irq.installed) {
+		drm_irq_uninstall(&adev->ddev);
+		adev->irq.installed = false;
+		if (adev->irq.msi_enabled)
+			pci_free_irq_vectors(adev->pdev);
+
+		if (!amdgpu_device_has_dc_support(adev))
+			flush_work(&adev->hotplug_work);
+	}
+
+	amdgpu_ih_ring_fini(adev, &adev->irq.ih_soft);
+	amdgpu_ih_ring_fini(adev, &adev->irq.ih);
+	amdgpu_ih_ring_fini(adev, &adev->irq.ih1);
+	amdgpu_ih_ring_fini(adev, &adev->irq.ih2);
+}
+
 /**
  * amdgpu_irq_fini - shut down interrupt handling
  *
@@ -322,18 +377,9 @@ int amdgpu_irq_init(struct amdgpu_device *adev)
  * functionality, shuts down vblank, hotplug and reset interrupt handling,
  * turns off interrupts from all sources (all ASICs).
  */
-void amdgpu_irq_fini(struct amdgpu_device *adev)
+void amdgpu_irq_fini_sw(struct amdgpu_device *adev)
 {
 	unsigned i, j;
-
-	if (adev->irq.installed) {
-		drm_irq_uninstall(adev_to_drm(adev));
-		adev->irq.installed = false;
-		if (adev->irq.msi_enabled)
-			pci_free_irq_vectors(adev->pdev);
-		if (!amdgpu_device_has_dc_support(adev))
-			flush_work(&adev->hotplug_work);
-	}
 
 	for (i = 0; i < AMDGPU_IRQ_CLIENTID_MAX; ++i) {
 		if (!adev->irq.client[i].sources)
@@ -347,11 +393,6 @@ void amdgpu_irq_fini(struct amdgpu_device *adev)
 
 			kfree(src->enabled_types);
 			src->enabled_types = NULL;
-			if (src->data) {
-				kfree(src->data);
-				kfree(src);
-				adev->irq.client[i].sources[j] = NULL;
-			}
 		}
 		kfree(adev->irq.client[i].sources);
 		adev->irq.client[i].sources = NULL;
@@ -535,7 +576,7 @@ void amdgpu_irq_gpu_reset_resume_helper(struct amdgpu_device *adev)
 		for (j = 0; j < AMDGPU_MAX_IRQ_SRC_ID; ++j) {
 			struct amdgpu_irq_src *src = adev->irq.client[i].sources[j];
 
-			if (!src)
+			if (!src || !src->funcs || !src->funcs->set)
 				continue;
 			for (k = 0; k < src->num_types; k++)
 				amdgpu_irq_update(adev, src, k);

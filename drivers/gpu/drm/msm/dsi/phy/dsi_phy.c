@@ -3,6 +3,7 @@
  * Copyright (c) 2015, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/clk-provider.h>
 #include <linux/platform_device.h>
 
 #include "dsi_phy.h"
@@ -637,24 +638,6 @@ static int dsi_phy_get_id(struct msm_dsi_phy *phy)
 	return -EINVAL;
 }
 
-int msm_dsi_phy_init_common(struct msm_dsi_phy *phy)
-{
-	struct platform_device *pdev = phy->pdev;
-	int ret = 0;
-
-	phy->reg_base = msm_ioremap(pdev, "dsi_phy_regulator",
-				"DSI_PHY_REG");
-	if (IS_ERR(phy->reg_base)) {
-		DRM_DEV_ERROR(&pdev->dev, "%s: failed to map phy regulator base\n",
-			__func__);
-		ret = -ENOMEM;
-		goto fail;
-	}
-
-fail:
-	return ret;
-}
-
 static int dsi_phy_driver_probe(struct platform_device *pdev)
 {
 	struct msm_dsi_phy *phy;
@@ -669,6 +652,14 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 	match = of_match_node(dsi_phy_dt_match, dev->of_node);
 	if (!match)
 		return -ENODEV;
+
+	phy->provided_clocks = devm_kzalloc(dev,
+			struct_size(phy->provided_clocks, hws, NUM_PROVIDED_CLKS),
+			GFP_KERNEL);
+	if (!phy->provided_clocks)
+		return -ENOMEM;
+
+	phy->provided_clocks->num = NUM_PROVIDED_CLKS;
 
 	phy->cfg = match->data;
 	phy->pdev = pdev;
@@ -691,6 +682,24 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
+	if (phy->cfg->has_phy_lane) {
+		phy->lane_base = msm_ioremap(pdev, "dsi_phy_lane", "DSI_PHY_LANE");
+		if (IS_ERR(phy->lane_base)) {
+			DRM_DEV_ERROR(&pdev->dev, "%s: failed to map phy lane base\n", __func__);
+			ret = -ENOMEM;
+			goto fail;
+		}
+	}
+
+	if (phy->cfg->has_phy_regulator) {
+		phy->reg_base = msm_ioremap(pdev, "dsi_phy_regulator", "DSI_PHY_REG");
+		if (IS_ERR(phy->reg_base)) {
+			DRM_DEV_ERROR(&pdev->dev, "%s: failed to map phy regulator base\n", __func__);
+			ret = -ENOMEM;
+			goto fail;
+		}
+	}
+
 	ret = dsi_phy_regulator_init(phy);
 	if (ret)
 		goto fail;
@@ -702,12 +711,6 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
-	if (phy->cfg->ops.init) {
-		ret = phy->cfg->ops.init(phy);
-		if (ret)
-			goto fail;
-	}
-
 	/* PLL init will call into clk_register which requires
 	 * register access, so we need to enable power and ahb clock.
 	 */
@@ -715,12 +718,21 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 	if (ret)
 		goto fail;
 
-	phy->pll = msm_dsi_pll_init(pdev, phy->cfg->type, phy->id);
-	if (IS_ERR_OR_NULL(phy->pll)) {
-		DRM_DEV_INFO(dev,
-			"%s: pll init failed: %ld, need separate pll clk driver\n",
-			__func__, PTR_ERR(phy->pll));
-		phy->pll = NULL;
+	if (phy->cfg->ops.pll_init) {
+		ret = phy->cfg->ops.pll_init(phy);
+		if (ret) {
+			DRM_DEV_INFO(dev,
+				"%s: pll init failed: %d, need separate pll clk driver\n",
+				__func__, ret);
+			goto fail;
+		}
+	}
+
+	ret = of_clk_add_hw_provider(dev->of_node, of_clk_hw_onecell_get,
+				     phy->provided_clocks);
+	if (ret) {
+		DRM_DEV_ERROR(dev, "%s: failed to register clk provider: %d\n", __func__, ret);
+		goto fail;
 	}
 
 	dsi_phy_disable_resource(phy);
@@ -730,6 +742,12 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 	return 0;
 
 fail:
+	if (phy->pll) {
+		of_clk_del_provider(dev->of_node);
+		msm_dsi_pll_destroy(phy->pll);
+		phy->pll = NULL;
+	}
+
 	return ret;
 }
 
@@ -738,6 +756,7 @@ static int dsi_phy_driver_remove(struct platform_device *pdev)
 	struct msm_dsi_phy *phy = platform_get_drvdata(pdev);
 
 	if (phy && phy->pll) {
+		of_clk_del_provider(pdev->dev.of_node);
 		msm_dsi_pll_destroy(phy->pll);
 		phy->pll = NULL;
 	}
@@ -854,4 +873,15 @@ void msm_dsi_phy_set_usecase(struct msm_dsi_phy *phy,
 {
 	if (phy)
 		phy->usecase = uc;
+}
+
+int msm_dsi_phy_get_clk_provider(struct msm_dsi_phy *phy,
+	struct clk **byte_clk_provider, struct clk **pixel_clk_provider)
+{
+	if (byte_clk_provider)
+		*byte_clk_provider = phy->provided_clocks->hws[DSI_BYTE_PLL_CLK]->clk;
+	if (pixel_clk_provider)
+		*pixel_clk_provider = phy->provided_clocks->hws[DSI_PIXEL_PLL_CLK]->clk;
+
+	return -EINVAL;
 }
