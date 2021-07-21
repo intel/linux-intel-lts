@@ -48,12 +48,12 @@ static struct ar0234_platform_data ar0234_pdata_1 = {
 	.port = 1,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 338,
+	.irq_pin = -1,
 	.irq_pin_name = "B23",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'a',
-	.gpios = {258, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_1 = {
@@ -77,12 +77,12 @@ static struct ar0234_platform_data ar0234_pdata_2 = {
 	.port = 2,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 330,
+	.irq_pin = -1,
 	.irq_pin_name = "R6",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
-	.gpios = {501, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_2 = {
@@ -106,12 +106,12 @@ static struct ar0234_platform_data ar0234_pdata_3 = {
 	.port = 4,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 332,
+	.irq_pin = -1,
 	.irq_pin_name = "IMGCLKOUT_3",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'c',
-	.gpios = {253, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_3 = {
@@ -135,12 +135,12 @@ static struct ar0234_platform_data ar0234_pdata_4 = {
 	.port = 5,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS_2,
-	.irq_pin = 331,
+	.irq_pin = -1,
 	.irq_pin_name = "H15",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'd',
-	.gpios = {325, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_4 = {
@@ -295,11 +295,6 @@ static struct ipu_isys_csi2_config ti960_csi2_cfg = {
 	.port = 1,
 };
 
-static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
-	.nlanes = TI960_LANES,
-	.port = 4,
-};
-
 static struct ti960_subdev_info ti960_subdevs[] = {
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 	/* D3RCM */
@@ -399,6 +394,7 @@ static struct ti960_pdata ti960_pdata = {
 	.subdev_info = ti960_subdevs,
 	.subdev_num = ARRAY_SIZE(ti960_subdevs),
 	.reset_gpio = 0,
+	.FPD_gpio = 175,
 	.suffix = 'a',
 };
 
@@ -411,6 +407,26 @@ static struct ipu_isys_subdev_info ti960_sd = {
 			 .platform_data = &ti960_pdata,
 		},
 		.i2c_adapter_bdf = "0000:00:15.3",
+	}
+};
+
+static struct ti960_pdata ti960_pdata_2 = {
+	.subdev_info = ti960_subdevs,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs),
+	.reset_gpio = 0,
+	.FPD_gpio = -1,
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info ti960_sd_2 = {
+	.csi2 = &ti960_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			 .type = "ti960",
+			 .addr = TI960_I2C_ADDRESS_2,
+			 .platform_data = &ti960_pdata_2,
+		},
+		.i2c_adapter_bdf = "0000:00:15.0",
 	}
 };
 #endif
@@ -427,7 +443,7 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_1 = {
 	.port = 1,
 	.lanes = LT6911UXC_LANES,
 	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
-	.irq_pin = 258,
+	.irq_pin = 410,
 	.irq_pin_name = "C2",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
@@ -454,7 +470,7 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_2 = {
 	.port = 2,
 	.lanes = LT6911UXC_LANES,
 	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
-	.irq_pin = 258,
+	.irq_pin = 410,
 	.irq_pin_name = "C2",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
@@ -490,6 +506,7 @@ static struct ipu_isys_subdev_pdata pdata = {
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
 		&ti960_sd,
+		&ti960_sd_2,
 #endif
 		&lt6911uxc_sd_1,
 		&lt6911uxc_sd_2,
