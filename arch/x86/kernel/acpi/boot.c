@@ -1225,6 +1225,10 @@ static inline int acpi_parse_madt_ioapic_entries(void)
 static struct ptct_psram_region ptct_psram_regions[MAX_PSRAM_REGIONS];
 static u32 total_psram_region;
 
+#define ACPI_PTCT_FORMAT_V1      1
+#define ACPI_PTCT_FORMAT_V2      2
+static u32 acpi_ptct_format = ACPI_PTCT_FORMAT_V1;
+
 static inline bool is_TCC_range(u64 start, u64 end)
 {
 	int i;
@@ -1251,13 +1255,32 @@ static int __init acpi_parse_ptct(struct acpi_table_header *table)
 
 	struct acpi_ptct_entry_header *entry;
 	struct acpi_ptct_psram  *psram;
+	struct acpi_ptct_psram_v2  *psram_v2;
+	struct acpi_ptct_compatibility  *compatibility;
 
 	if (!table)
 		return -EINVAL;
 
 	total_length = table->length;
 
-	/* Parse PTCT table for the first round to get number of regions*/
+	/* Parse PTCT table for the first round to determine PTCT version */
+	ptr = (u8 *)table;
+	ptr += PTCT_ACPI_HEADER_SIZE;
+
+	for (offset = PTCT_ACPI_HEADER_SIZE; offset < total_length;) {
+		entry = (struct acpi_ptct_entry_header *)(ptr);
+		offset += entry->size;
+
+		if (entry->type == ACPI_PTCT_V2_ENTRY_COMPATIBILITY) {
+			compatibility = (struct acpi_ptct_compatibility *)(ptr + PTCT_ENTRY_HEADER_SIZE);
+			acpi_ptct_format = compatibility->rtct_version;
+			if ((acpi_ptct_format != ACPI_PTCT_FORMAT_V1) && (acpi_ptct_format != ACPI_PTCT_FORMAT_V2))
+				return -EINVAL;
+		}
+		ptr += entry->size;
+	}
+
+	/* Parse PTCT table for the second round to get number of regions*/
 
 	ptr = (u8 *)table;
 	ptr += PTCT_ACPI_HEADER_SIZE;
@@ -1266,15 +1289,18 @@ static int __init acpi_parse_ptct(struct acpi_table_header *table)
 		entry = (struct acpi_ptct_entry_header *)(ptr);
 		offset += entry->size;
 
-		if (entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM)
+		if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V1) &&
+		    (entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM))
 			total_psram_region++;
-
+		else if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V2) &&
+		    (entry->type == ACPI_PTCT_V2_ENTRY_SSRAM))
+			total_psram_region++;
 		ptr += entry->size;
 	}
 	if (total_psram_region > MAX_PSRAM_REGIONS)
 		return -EINVAL;
 
-	/* Parse for the second round to record address for each regions */
+	/* Parse for the third round to record address for each regions */
 
 	ptr = (u8 *)table;
 	ptr += PTCT_ACPI_HEADER_SIZE;
@@ -1283,10 +1309,19 @@ static int __init acpi_parse_ptct(struct acpi_table_header *table)
 		entry = (struct acpi_ptct_entry_header *)(ptr);
 		offset += entry->size;
 
-		if ((entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM) && (id < total_psram_region)) {
-			psram = (struct acpi_ptct_psram *)(ptr+PTCT_ENTRY_HEADER_SIZE);
-			ptct_psram_regions[id].phyaddr_start = ((u64)(psram->phyaddr_lo))|((u64)(psram->phyaddr_hi)<<32);
+		if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V1) &&
+		    (entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM) &&
+		    (id < total_psram_region)) {
+			psram = (struct acpi_ptct_psram *)(ptr + PTCT_ENTRY_HEADER_SIZE);
+			ptct_psram_regions[id].phyaddr_start = ((u64)(psram->phyaddr_lo)) | ((u64)(psram->phyaddr_hi) << 32);
 			ptct_psram_regions[id].phyaddr_end  = ptct_psram_regions[id].phyaddr_start + psram->size;
+			id++;
+		} else if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V2) &&
+		    (entry->type == ACPI_PTCT_V2_ENTRY_SSRAM) &&
+		    (id < total_psram_region)) {
+			psram_v2 = (struct acpi_ptct_psram_v2 *)(ptr + PTCT_ENTRY_HEADER_SIZE);
+			ptct_psram_regions[id].phyaddr_start = ((u64)(psram_v2->phyaddr_lo)) | ((u64)(psram_v2->phyaddr_hi) << 32);
+			ptct_psram_regions[id].phyaddr_end  = ptct_psram_regions[id].phyaddr_start + psram_v2->size;
 			id++;
 		}
 		ptr += entry->size;
@@ -1297,7 +1332,7 @@ static int __init acpi_parse_ptct(struct acpi_table_header *table)
 
 static void __init acpi_process_ptct(void)
 {
-	if (!acpi_table_parse(ACPI_SIG_PTCT, acpi_parse_ptct))
+	if ((!acpi_table_parse(ACPI_SIG_PTCT, acpi_parse_ptct)) || (!acpi_table_parse(ACPI_SIG_RTCT, acpi_parse_ptct)))
 		x86_platform.is_untracked_pat_range = tcc_is_untracked_pat_range;
 }
 
