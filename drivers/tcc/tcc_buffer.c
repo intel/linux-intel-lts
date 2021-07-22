@@ -61,11 +61,22 @@
 #include <linux/list.h>
 #include <linux/mm.h>
 #include <linux/module.h>
-#include <linux/types.h>
 #include <linux/version.h>
-
 #include <linux/init.h>
+#include <asm/intel-family.h>
 #include "tcc_buffer.h"
+
+/*
+ * This driver supports two versions of configuration tables.
+ *
+ * Some terminologies between these two versions are different.
+ * a) In first version, the sram with cache locking is named as pseodu sram (PSRAM);
+ *    In second version, the sram with cache locking is named as software sram (SSRAM);
+ * b) In first version, configuration table is named as PTCT;
+ *    In second version, configuration table is named as RTCT;
+ *
+ * This driver continues using the terminologies defined in first version.
+ */
 
 static int tccdbg;
 module_param(tccdbg, int, 0644);
@@ -875,12 +886,58 @@ static int tcc_buffer_mmap(struct file *f, struct vm_area_struct *vma)
 		return 0;
 }
 
+static int register_address_is_allowed(u64 base, u64 offset)
+{
+	/* check if phyaddr is within the whitelist range */
+	u32 len = 0;
+
+	if (offset >= TCC_REG_MAX_OFFSET)
+		return 0;
+
+	switch (boot_cpu_data.x86_model) {
+	case INTEL_FAM6_TIGERLAKE:
+		/* TGL-H */
+		for (len = 0; len < ARRAY_SIZE(tcc_registers_wl_tglh); len++) {
+			if ((tcc_registers_wl_tglh[len].base == base) && (tcc_registers_wl_tglh[len].offset == offset)) {
+				dprintk("{base %016llx, offset %016llx} is in the tglh whitelist.\n", base, offset);
+				return 1;
+			}
+		}
+	break;
+	case INTEL_FAM6_TIGERLAKE_L:
+		/* TGL-U */
+		for (len = 0; len < ARRAY_SIZE(tcc_registers_wl_tglu); len++) {
+			if ((tcc_registers_wl_tglu[len].base == base) && (tcc_registers_wl_tglu[len].offset == offset)) {
+				dprintk("{base %016llx, offset %016llx} is in the tglu whitelist.\n", base, offset);
+				return 1;
+			}
+		}
+	break;
+	case INTEL_FAM6_ATOM_TREMONT:
+		/* EHL */
+		for (len = 0; len < ARRAY_SIZE(tcc_registers_wl_ehl); len++) {
+			if ((tcc_registers_wl_ehl[len].base == base) && (tcc_registers_wl_ehl[len].offset == offset)) {
+				dprintk("{base %016llx, offset %016llx} is in the ehl whitelist.\n", base, offset);
+				return 1;
+			}
+		}
+	break;
+	default:
+		pr_err("No whitelisted register.");
+	break;
+	}
+	return 0;
+}
+
 static long tcc_buffer_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
 	struct psram *p_psram;
 	struct tcc_buf_mem_config_s memconfig;
 	struct tcc_buf_mem_req_s req_mem;
+	struct tcc_register_s tcc_register;
+	u64 register_phyaddr;
+	void *register_data = NULL;
 
 	int cpu, testmask = 0;
 
@@ -993,6 +1050,67 @@ static long tcc_buffer_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 			return -ENOMEM;
 
 		ret = copy_to_user((struct tcc_buf_mem_req_s *)arg, &req_mem, sizeof(req_mem));
+		if (ret != 0)
+			return -EFAULT;
+
+		break;
+	case TCC_GET_REGISTER:
+		if (NULL == (struct tcc_register_s *)arg) {
+			pr_err("arg from user is nullptr!");
+			return -EINVAL;
+		}
+
+		ret = copy_from_user(&tcc_register, (struct tcc_register_s *)arg,
+							sizeof(struct tcc_register_s));
+		if (ret != 0)
+			return -EFAULT;
+
+		if (tcc_register.e_format == TCC_MMIO32) {
+			if ((tcc_register.info.mmio32.base <= (UINT_MAX - TCC_REG_MAX_OFFSET)) && (tcc_register.info.mmio32.addr <= TCC_REG_MAX_OFFSET)) {
+				if (register_address_is_allowed((u64)(tcc_register.info.mmio32.base), (u64)(tcc_register.info.mmio32.addr)) == 0) {
+					pr_err("this register is not allowed to read!");
+					return -EINVAL;
+				}
+			} else {
+				pr_err("Invalid mmio32 register base/addr provided.");
+				return -EINVAL;
+			}
+			register_phyaddr = (u64)(tcc_register.info.mmio32.base + tcc_register.info.mmio32.addr);
+			dprintk("register_phyaddr        0x%016llx\n", register_phyaddr);
+			register_data = memremap(register_phyaddr, sizeof(int), MEMREMAP_WB);
+			if (!register_data) {
+				pr_err("cannot map this address");
+				return -ENOMEM;
+			}
+			tcc_register.info.mmio32.data = (*(int *)(register_data)) & tcc_register.info.mmio32.mask;
+			dprintk("mmio32.data   u32 value 0x%08x\n", tcc_register.info.mmio32.data);
+			memunmap(register_data);
+		} else if (tcc_register.e_format == TCC_MMIO64) {
+			if ((tcc_register.info.mmio64.base <= (ULONG_MAX - TCC_REG_MAX_OFFSET)) && (tcc_register.info.mmio64.addr <= TCC_REG_MAX_OFFSET)) {
+				if (register_address_is_allowed(tcc_register.info.mmio64.base, tcc_register.info.mmio64.addr) == 0) {
+					pr_err("this register is not allowed to read!");
+					return -EINVAL;
+				}
+			} else {
+				pr_err("Invalid mmio64 register base/addr provided.");
+				return -EINVAL;
+			}
+			register_phyaddr = (u64)(tcc_register.info.mmio64.base + tcc_register.info.mmio64.addr);
+			dprintk("register_phyaddr        0x%016llx\n", register_phyaddr);
+			register_data = memremap(register_phyaddr, sizeof(long), MEMREMAP_WB);
+			if (!register_data) {
+				pr_err("cannot map this address");
+				return -ENOMEM;
+			}
+			tcc_register.info.mmio64.data = (*(long *)(register_data)) & tcc_register.info.mmio64.mask;
+			dprintk("mmio64.data   u64 value 0x%016llx\n", tcc_register.info.mmio64.data);
+			memunmap(register_data);
+		} else {
+			pr_err("Invalid or unsupported format!");
+			return -EINVAL;
+		}
+
+		ret = copy_to_user((struct tcc_register_s *)arg, &tcc_register, sizeof(struct tcc_register_s));
 		if (ret != 0)
 			return -EFAULT;
 

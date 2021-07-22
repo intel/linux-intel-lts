@@ -53,12 +53,14 @@
  *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
+#include <linux/types.h>
 #include <linux/ioctl.h>
 
 /* TCC Device Interface */
 #define TCC_BUFFER_NAME  "/tcc/tcc_buffer"
 #define UNDEFINED_DEVNODE 256
+
+#define TCC_REG_MAX_OFFSET 0x100000
 
 /* IOCTL MAGIC number */
 #define IOCTL_TCC_MAGIC   'T'
@@ -105,12 +107,101 @@ struct tcc_buf_mem_req_s {
 	unsigned int devnode;
 };
 
+/* This structure defines the whitelisted register for mmio read */
+struct tcc_registers_wl_s {
+	u64 base;
+	u64 offset;
+};
+
+struct tcc_registers_wl_s tcc_registers_wl_ehl[] = {
+	{0xFEDA0000, 0x0A78},
+};
+
+struct tcc_registers_wl_s tcc_registers_wl_tglu[] = {
+	{ 0xFEDA0000, 0x0A78},
+	{ 0xFEDC0000, 0x6F08},
+	{ 0xFEDC0000, 0x6F10},
+	{ 0xFEDC0000, 0x6F00}
+};
+
+struct tcc_registers_wl_s tcc_registers_wl_tglh[] = {
+	{ 0xFEDA0000, 0x0A78}
+};
+
+/* enum type for tcc_register structure */
+enum TCC_REG_PHASE {
+	TCC_PRE_MEM        = 0x00000000,
+	TCC_POST_MEM       = 0x00000001,
+	TCC_LATE_INIT      = 0x00000002,
+	TCC_INVALID_PHASE  = 0xFFFFFFFF
+};
+
+enum TCC_REG_FORMAT {
+	TCC_MMIO32         = 0x00000000,
+	TCC_MMIO64         = 0x00000001,
+	TCC_MSR            = 0x00000002,
+	TCC_IOSFSB         = 0x00000003,
+	TCC_MAILBOX        = 0x00000004,
+	TCC_INVALID_FORMAT = 0xFFFFFFFF
+};
+
+enum TCC_IOSFSB_NETWORK {
+	TCC_IOSFSB_CPU     = 0x00000000,
+	TCC_IOSFSB_PCH     = 0x00000001
+};
+
+enum TCC_MAILBOX_TYPE {
+	TCC_MAILBOX_SA     = 0x00000000,
+	TCC_MAILBOX_MSR    = 0x00000001
+};
+
+/* Support mmio32 and mmio64 formats only. */
+struct tcc_register_s {
+	enum TCC_REG_PHASE e_phase;     /* IN: enum'd above */
+	enum TCC_REG_FORMAT e_format;   /* IN: enum'd above, determines which structure format to use */
+	union {
+		struct {
+			u32 base;               /* IN: ECAM format B:D:F:R of BAR (add this to ECAM_BASE) */
+			u32 addr;               /* IN: offset from BAR */
+			u32 mask;               /* IN: data bit-mask (1's are valid) */
+			u32 data;               /* OUT: data value */
+		} mmio32;
+		struct {
+			u64 base;               /* IN: ECAM format B:D:F:R of BAR (add this to ECAM_BASE) */
+			u64 addr;               /* IN: offset from BAR */
+			u64 mask;               /* IN: data bit-mask (1's are valid) */
+			u64 data;               /* OUT: data value */
+		} mmio64;
+		struct {
+			u32 apic_id;            /* IN: APIC ID of logical CPU corresponding to this MSR value */
+			u32 addr;               /* IN: ECX value */
+			u64 mask;               /* IN: EDX:EAX data bit-mask (1's are valid) */
+			u64 data;               /* OUT: EDX:EAX data value */
+		} msr;
+		struct {
+			enum TCC_IOSFSB_NETWORK e_iosfsb_network; /* IN: which IOSFSB network to use */
+			u8 port;                /* IN: IOSFSB Port ID */
+			u8 type;                /* IN: IOSFSB Register Type (Command) */
+			u32 addr;               /* IN: register address */
+			u32 mask;               /* IN: data bit-mask (1's are valid) */
+			u32 data;               /* IN: data value */
+		} iosfsb;
+		struct {
+			enum TCC_MAILBOX_TYPE e_type;   /* IN: Mailbox type */
+			u32 addr;               /* IN: register address */
+			u32 mask;               /* IN: data bit-mask (1's are valid) */
+			u32 data;               /* OUT: data value */
+		} mailbox;
+	} info;
+};
+
 enum ioctl_index {
 	IOCTL_TCC_GET_REGION_COUNT = 1,
 	IOCTL_TCC_GET_MEMORY_CONFIG,
 	IOCTL_TCC_REQ_BUFFER,
 	IOCTL_TCC_QUERY_PTCT_SIZE,
-	IOCTL_TCC_GET_PTCT
+	IOCTL_TCC_GET_PTCT,
+	IOCTL_TCC_GET_REGISTER
 };
 
 /*
@@ -138,3 +229,7 @@ enum ioctl_index {
  */
 #define TCC_REQ_BUFFER _IOWR(IOCTL_TCC_MAGIC, IOCTL_TCC_REQ_BUFFER, struct tcc_buf_mem_req_s *)
 
+/*
+ * User to get TCC Register
+ */
+#define TCC_GET_REGISTER _IOWR(IOCTL_TCC_MAGIC, IOCTL_TCC_GET_REGISTER, struct tcc_register_s *)
