@@ -255,7 +255,7 @@ int mdp5_mdss_init(struct drm_device *dev)
 	}
 
 	ret = devm_request_irq(dev->dev, platform_get_irq(pdev, 0),
-			       mdss_irq, 0, "mdss_isr", mdp5_mdss);
+			       mdss_irq, IRQF_OOB, "mdss_isr", mdp5_mdss);
 	if (ret) {
 		DRM_DEV_ERROR(dev->dev, "failed to init irq: %d\n", ret);
 		goto fail_irq;
