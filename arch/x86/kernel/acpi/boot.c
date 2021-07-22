@@ -1309,6 +1309,96 @@ static inline int acpi_parse_madt_ioapic_entries(void)
 }
 #endif	/* !CONFIG_X86_IO_APIC */
 
+/*
+ * Parse pSRAM entry in PTCT
+ * Update PAT cache attribute configuration range
+ */
+static struct ptct_psram_region ptct_psram_regions[MAX_PSRAM_REGIONS];
+static u32 total_psram_region;
+
+static inline bool is_TCC_range(u64 start, u64 end)
+{
+	int i;
+
+	if (!ptct_psram_regions)
+		return false;
+
+	for (i = 0; i < total_psram_region; i++) {
+		if ((start >= ptct_psram_regions[i].phyaddr_start) &&
+			(end <= ptct_psram_regions[i].phyaddr_end))
+			return true;
+	}
+	return false;
+}
+
+static bool tcc_is_untracked_pat_range(u64 start, u64 end)
+{
+	return is_ISA_range(start, end) || is_TCC_range(start, end);
+}
+
+static int __init acpi_parse_ptct(struct acpi_table_header *table)
+{
+	u32 total_length = 0;
+	u32 offset = 0;
+	u8  *ptr;
+	u32 id = 0;
+
+	struct acpi_ptct_entry_header *entry;
+	struct acpi_ptct_psram  *psram;
+
+	if (!table)
+		return -EINVAL;
+
+	total_length = table->length;
+
+	/* Parse PTCT table for the first round to get number of regions*/
+
+	ptr = (u8 *)table;
+	ptr += PTCT_ACPI_HEADER_SIZE;
+
+	for (offset = PTCT_ACPI_HEADER_SIZE; offset < total_length;) {
+		entry = (struct acpi_ptct_entry_header *)(ptr);
+		offset += entry->size;
+
+		if (entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM)
+			total_psram_region++;
+
+		ptr += entry->size;
+	}
+	if (total_psram_region > MAX_PSRAM_REGIONS)
+		return -EINVAL;
+
+	/* Parse for the second round to record address for each regions */
+
+	ptr = (u8 *)table;
+	ptr += PTCT_ACPI_HEADER_SIZE;
+
+	for (offset = PTCT_ACPI_HEADER_SIZE; offset < total_length;) {
+		entry = (struct acpi_ptct_entry_header *)(ptr);
+		offset += entry->size;
+
+		if ((entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM) && (id < total_psram_region)) {
+			psram = (struct acpi_ptct_psram *)(ptr+PTCT_ENTRY_HEADER_SIZE);
+			ptct_psram_regions[id].phyaddr_start = ((u64)(psram->phyaddr_lo))|((u64)(psram->phyaddr_hi)<<32);
+			ptct_psram_regions[id].phyaddr_end  = ptct_psram_regions[id].phyaddr_start + psram->size - 1;
+			id++;
+		}
+		ptr += entry->size;
+	}
+
+	return 0;
+}
+
+static void __init acpi_process_ptct(void)
+{
+	if (!acpi_table_parse(ACPI_SIG_PTCT, acpi_parse_ptct))
+		x86_platform.is_untracked_pat_range = tcc_is_untracked_pat_range;
+}
+
+/*
+ *
+ */
+
 static void __init early_acpi_process_madt(void)
 {
 #ifdef CONFIG_X86_LOCAL_APIC
@@ -1722,6 +1812,11 @@ int __init acpi_boot_init(void)
 	acpi_table_parse(ACPI_SIG_HPET, acpi_parse_hpet);
 	if (IS_ENABLED(CONFIG_ACPI_BGRT) && !acpi_nobgrt)
 		acpi_table_parse(ACPI_SIG_BGRT, acpi_parse_bgrt);
+
+	/*
+	 * Process the Platform Tuning Configuration Table (PTCT), if present
+	 */
+	acpi_process_ptct();
 
 	if (!acpi_noirq)
 		x86_init.pci.init = pci_acpi_init;

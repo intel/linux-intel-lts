@@ -44,6 +44,7 @@
 #define ACPI_SIG_PMTT           "PMTT"	/* Platform Memory Topology Table */
 #define ACPI_SIG_PPTT           "PPTT"	/* Processor Properties Topology Table */
 #define ACPI_SIG_PRMT           "PRMT"	/* Platform Runtime Mechanism Table */
+#define ACPI_SIG_PTCT           "PTCT"  /* Platform Tuning Configuration Table */
 #define ACPI_SIG_RASF           "RASF"	/* RAS Feature table */
 #define ACPI_SIG_RGRT           "RGRT"	/* Regulatory Graphics Resource Table */
 #define ACPI_SIG_SBST           "SBST"	/* Smart Battery Specification Table */
@@ -2308,6 +2309,59 @@ struct acpi_prmt_handler_info {
 	u64 static_data_buffer_address;
 	u64 acpi_param_buffer_address;
 };
+
+/*******************************************************************************
+ *
+ * PTCT - Platform Tuning Configuration Table
+ *        Version 1
+ *
+ ******************************************************************************/
+
+struct acpi_table_ptct {
+	struct acpi_table_header header;	/* Common ACPI table header */
+};
+
+/* Values for Type field above */
+
+enum acpi_ptct_entry {
+	ACPI_PTCT_ENTRY_PTCD_LIMITS              = 1,
+	ACPI_PTCT_ENTRY_PTCM_BINARY              = 2,
+	ACPI_PTCT_ENTRY_WRC_L3_WAY_MASKS         = 3,
+	ACPI_PTCT_ENTRY_GT_L3_WAY_MASKS          = 4,
+	ACPI_PTCT_ENTRY_PSEUDO_SRAM              = 5,
+	ACPI_PTCT_ENTRY_STREAM_DATA_PATH         = 6,
+	ACPI_PTCT_ENTRY_TIME_AWARE_SUBSYSTEMS    = 7,
+	ACPI_PTCT_ENTRY_REALTIME_IOMMU           = 8,
+	ACPI_PTCT_ENTRY_MEMORY_HIERARCHY_LATENCY = 9,
+
+	ACPI_PTCT_ENTRY_RESERVED
+};
+
+struct acpi_ptct_entry_header {
+	u16 size;
+	u16 format;
+	u32 type;
+};
+
+struct acpi_ptct_psram {
+	u32 cache_level;
+	u32 phyaddr_lo;
+	u32 phyaddr_hi;
+	u32 cache_ways;
+	u32 size;
+	u32 apic_id;
+};
+
+struct ptct_psram_region {
+	u64 phyaddr_start;
+	u64 phyaddr_end;
+};
+
+#define PTCT_ENTRY_HEADER_SIZE	sizeof(struct acpi_ptct_entry_header)
+#define PTCT_ENTRY_PSRAM_SIZE	sizeof(struct acpi_ptct_psram)
+#define PTCT_ACPI_HEADER_SIZE	sizeof(struct acpi_table_header)
+#define PSRAM_REGION_INFO_SIZE	sizeof(struct ptct_psram_region)
+#define MAX_PSRAM_REGIONS	20
 
 /*******************************************************************************
  *
