@@ -3740,6 +3740,8 @@ static int stmmac_release(struct net_device *dev)
 
 		netif_carrier_off(dev);
 		netif_tx_stop_all_queues(dev);
+
+		stmmac_tsn_hw_unsetup(priv, priv->hw, dev);
 	}
 
 	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
@@ -3757,8 +3759,6 @@ static int stmmac_release(struct net_device *dev)
 	free_dma_desc_resources(priv);
 
 	stmmac_release_ptp(priv);
-
-	stmmac_tsn_hw_unsetup(priv, priv->hw, dev);
 
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
 	if (priv->plat->has_netproxy)
