@@ -188,6 +188,7 @@ static void ici_put_userpages(struct device *dev,
 		}
 	}
 
+	sg_free_table(sgt);
 	kfree(sgt);
 	kframe_plane->sgt = NULL;
 
@@ -223,6 +224,7 @@ static void ici_put_userpages_virt(struct device *dev,
 				DMA_FROM_DEVICE, attrs);
 #endif
 
+	sg_free_table(sgt);
 	kfree(sgt);
 	kframe_plane->sgt = NULL;
 
@@ -415,6 +417,7 @@ error_dma_map:
 	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 			DMA_FROM_DEVICE, attrs);
 #endif
+	sg_free_table(sgt);
 
 error_free_pages:
 	if (pages) {
@@ -491,6 +494,7 @@ error_dma_map:
 	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents,
 			DMA_FROM_DEVICE, attrs);
 #endif
+	sg_free_table(sgt);
 
 error_free_pages:
 	kfree(sgt);
