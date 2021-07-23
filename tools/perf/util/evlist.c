@@ -25,6 +25,7 @@
 #include "util/string2.h"
 #include "util/perf_api_probe.h"
 #include "util/evlist-hybrid.h"
+#include "util/pmu.h"
 #include <signal.h>
 #include <unistd.h>
 #include <sched.h>
