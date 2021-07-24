@@ -2182,7 +2182,7 @@ static inline void __init check_timer(void)
 	if (!global_clock_event)
 		return;
 
-	flags = hard_local_irq_save();
+	local_irq_save_full(flags);
 
 	/*
 	 * get/set the timer IRQ vector:
@@ -2250,7 +2250,7 @@ static inline void __init check_timer(void)
 			goto out;
 		}
 		panic_if_irq_remap("timer doesn't work through Interrupt-remapped IO-APIC");
-		hard_local_irq_disable();
+		local_irq_disable_full();
 		clear_IO_APIC_pin(apic1, pin1);
 		if (!no_pin1)
 			apic_printk(APIC_QUIET, KERN_ERR "..MP-BIOS bug: "
@@ -2274,7 +2274,7 @@ static inline void __init check_timer(void)
 		/*
 		 * Cleanup, just in case ...
 		 */
-		hard_local_irq_disable();
+		local_irq_disable_full();
 		legacy_pic->mask(0);
 		clear_IO_APIC_pin(apic2, pin2);
 		apic_printk(APIC_QUIET, KERN_INFO "....... failed.\n");
@@ -2291,7 +2291,7 @@ static inline void __init check_timer(void)
 		apic_printk(APIC_QUIET, KERN_INFO "..... works.\n");
 		goto out;
 	}
-	hard_local_irq_disable();
+	local_irq_disable_full();
 	legacy_pic->mask(0);
 	apic_write(APIC_LVT0, APIC_LVT_MASKED | APIC_DM_FIXED | cfg->vector);
 	apic_printk(APIC_QUIET, KERN_INFO "..... failed.\n");
@@ -2310,7 +2310,7 @@ static inline void __init check_timer(void)
 		apic_printk(APIC_QUIET, KERN_INFO "..... works.\n");
 		goto out;
 	}
-	hard_local_irq_disable();
+	local_irq_disable_full();
 	apic_printk(APIC_QUIET, KERN_INFO "..... failed :(.\n");
 	if (apic_is_x2apic_enabled())
 		apic_printk(APIC_QUIET, KERN_INFO
@@ -2319,7 +2319,7 @@ static inline void __init check_timer(void)
 	panic("IO-APIC + timer doesn't work!  Boot with apic=debug and send a "
 		"report.  Then try booting with the 'noapic' option.\n");
 out:
-	hard_local_irq_restore(flags);
+	local_irq_restore_full(flags);
 }
 
 /*
@@ -3065,13 +3065,13 @@ int mp_irqdomain_alloc(struct irq_domain *domain, unsigned int virq,
 	cfg = irqd_cfg(irq_data);
 	add_pin_to_irq_node(data, ioapic_alloc_attr_node(info), ioapic, pin);
 
-	flags = hard_local_irq_save();
+	local_irq_save_full(flags);
 	if (info->ioapic.entry)
 		mp_setup_entry(cfg, data, info->ioapic.entry);
 	mp_register_handler(virq, data->trigger);
 	if (virq < nr_legacy_irqs())
 		legacy_pic->mask(virq);
-	hard_local_irq_restore(flags);
+	local_irq_restore_full(flags);
 
 	apic_printk(APIC_VERBOSE, KERN_DEBUG
 		    "IOAPIC[%d]: Set routing entry (%d-%d -> 0x%x -> IRQ %d Mode:%i Active:%i Dest:%d)\n",
