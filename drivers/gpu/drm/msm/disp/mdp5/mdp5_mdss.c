@@ -90,6 +90,7 @@ static struct irq_chip mdss_hw_irq_chip = {
 	.name		= "mdss",
 	.irq_mask	= mdss_hw_mask_irq,
 	.irq_unmask	= mdss_hw_unmask_irq,
+	.flags		= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int mdss_hw_irqdomain_map(struct irq_domain *d, unsigned int irq,
@@ -253,7 +254,7 @@ int mdp5_mdss_init(struct drm_device *dev)
 	}
 
 	ret = devm_request_irq(dev->dev, platform_get_irq(pdev, 0),
-			       mdss_irq, 0, "mdss_isr", mdp5_mdss);
+			       mdss_irq, IRQF_OOB, "mdss_isr", mdp5_mdss);
 	if (ret) {
 		DRM_DEV_ERROR(dev->dev, "failed to init irq: %d\n", ret);
 		goto fail_irq;
