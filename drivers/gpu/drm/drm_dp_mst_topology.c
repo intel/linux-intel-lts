@@ -3385,9 +3385,7 @@ int drm_dp_update_payload_part1(struct drm_dp_mst_topology_mgr *mgr)
 			mutex_unlock(&mgr->lock);
 
 			if (skip) {
-				drm_dbg_kms(mgr->dev,
-					    "Virtual channel %d is not in current topology\n",
-					    i);
+				drm_dbg_kms("Virtual channel %d is not in current topology\n", i);
 				continue;
 			}
 			/* Validated ports don't matter if we're releasing
@@ -3402,8 +3400,7 @@ int drm_dp_update_payload_part1(struct drm_dp_mst_topology_mgr *mgr)
 						payload->start_slot = req_payload.start_slot;
 						continue;
 					} else {
-						drm_dbg_kms(mgr->dev,
-							    "Fail:set payload to invalid sink");
+						drm_dbg_kms("Fail:set payload to invalid sink");
 						mutex_unlock(&mgr->payload_lock);
 						return -EINVAL;
 					}
