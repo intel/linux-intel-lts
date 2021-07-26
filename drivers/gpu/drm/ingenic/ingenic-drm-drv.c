@@ -347,7 +347,7 @@ static void ingenic_drm_plane_enable(struct ingenic_drm *priv,
 	unsigned int en_bit;
 
 	if (priv->soc_info->has_osd) {
-		if (plane != &priv->f0)
+		if (plane->type == DRM_PLANE_TYPE_PRIMARY)
 			en_bit = JZ_LCD_OSDC_F1EN;
 		else
 			en_bit = JZ_LCD_OSDC_F0EN;
@@ -362,7 +362,7 @@ void ingenic_drm_plane_disable(struct device *dev, struct drm_plane *plane)
 	unsigned int en_bit;
 
 	if (priv->soc_info->has_osd) {
-		if (plane != &priv->f0)
+		if (plane->type == DRM_PLANE_TYPE_PRIMARY)
 			en_bit = JZ_LCD_OSDC_F1EN;
 		else
 			en_bit = JZ_LCD_OSDC_F0EN;
@@ -389,7 +389,8 @@ void ingenic_drm_plane_config(struct device *dev,
 
 	ingenic_drm_plane_enable(priv, plane);
 
-	if (priv->soc_info->has_osd && plane != &priv->f0) {
+	if (priv->soc_info->has_osd &&
+	    plane->type == DRM_PLANE_TYPE_PRIMARY) {
 		switch (fourcc) {
 		case DRM_FORMAT_XRGB1555:
 			ctrl |= JZ_LCD_OSDCTRL_RGB555;
@@ -422,7 +423,7 @@ void ingenic_drm_plane_config(struct device *dev,
 	}
 
 	if (priv->soc_info->has_osd) {
-		if (plane != &priv->f0) {
+		if (plane->type == DRM_PLANE_TYPE_PRIMARY) {
 			xy_reg = JZ_REG_LCD_XYP1;
 			size_reg = JZ_REG_LCD_SIZE1;
 		} else {
@@ -454,7 +455,7 @@ static void ingenic_drm_plane_atomic_update(struct drm_plane *plane,
 		height = state->src_h >> 16;
 		cpp = state->fb->format->cpp[0];
 
-		if (!priv->soc_info->has_osd || plane == &priv->f0)
+		if (!priv->soc_info->has_osd || plane->type == DRM_PLANE_TYPE_OVERLAY)
 			hwdesc = priv->dma_hwdesc_f0;
 		else
 			hwdesc = priv->dma_hwdesc_f1;
