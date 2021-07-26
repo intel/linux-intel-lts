@@ -113,8 +113,7 @@ static bool drm_sched_entity_is_idle(struct drm_sched_entity *entity)
 	rmb(); /* for list_empty to work without lock */
 
 	if (list_empty(&entity->list) ||
-	    spsc_queue_count(&entity->job_queue) == 0 ||
-	    entity->stopped)
+	    spsc_queue_count(&entity->job_queue) == 0)
 		return true;
 
 	return false;
