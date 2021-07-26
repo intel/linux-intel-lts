@@ -345,7 +345,7 @@ i2c_dw_xfer_msg(struct dw_i2c_dev *dev)
 				/* Avoid rx buffer overrun */
 				if (dev->rx_outstanding >= dev->rx_fifo_depth)
 					break;
-
+				dev->rx_fifo_interrupt_serviced = FALSE;
 				regmap_write(dev->map, DW_IC_DATA_CMD,
 					     cmd | 0x100);
 				rx_limit--;
@@ -478,6 +478,7 @@ i2c_dw_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	dev->status = STATUS_IDLE;
 	dev->abort_source = 0;
 	dev->rx_outstanding = 0;
+	dev->rx_fifo_interrupt_serviced = TRUE;
 
 	ret = i2c_dw_acquire_lock(dev);
 	if (ret)
@@ -625,11 +626,14 @@ static int i2c_dw_irq_handler_master(struct dw_i2c_dev *dev)
 		 * buffers are flushed. Make sure to skip them.
 		 */
 		regmap_write(dev->map, DW_IC_INTR_MASK, 0);
+		dev->rx_fifo_interrupt_serviced = TRUE;
 		goto tx_aborted;
 	}
 
-	if (stat & DW_IC_INTR_RX_FULL)
+	if (stat & DW_IC_INTR_RX_FULL) {
+		dev->rx_fifo_interrupt_serviced = TRUE;
 		i2c_dw_read(dev);
+	}
 
 	if (stat & DW_IC_INTR_TX_EMPTY)
 		i2c_dw_xfer_msg(dev);
@@ -641,7 +645,7 @@ static int i2c_dw_irq_handler_master(struct dw_i2c_dev *dev)
 	 */
 
 tx_aborted:
-	if ((stat & (DW_IC_INTR_TX_ABRT | DW_IC_INTR_STOP_DET)) || dev->msg_err)
+	if (((stat & (DW_IC_INTR_TX_ABRT | DW_IC_INTR_STOP_DET)) || dev->msg_err) && (dev->rx_fifo_interrupt_serviced))
 		complete(&dev->cmd_complete);
 	else if (unlikely(dev->flags & ACCESS_INTR_MASK)) {
 		/* Workaround to trigger pending interrupt */
