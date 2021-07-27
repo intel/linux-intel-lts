@@ -1076,15 +1076,15 @@ int generic_pipeline_irq(unsigned int irq, struct pt_regs *regs)
 			pr_err("IRQ pipeline: interrupts enabled on entry (IRQ%u)\n",
 			       irq);
 		}
+
 		/*
 		 * Running with the oob stage stalled implies hardirqs
 		 * off.  For this reason, if the oob stage is stalled
-		 * on pipeline entry but we still receive an interrupt
-		 * from the hardware, something is badly broken in our
-		 * interrupt state. Try fixing up, but without great
-		 * hopes.
+		 * when we receive an interrupt from the hardware,
+		 * something is badly broken in our interrupt
+		 * state. Try fixing up, but without great hopes.
 		 */
-		if (on_pipeline_entry() && test_oob_stall()) {
+		if (!on_pipeline_entry() && test_oob_stall()) {
 			pr_err("IRQ pipeline: out-of-band stage stalled on IRQ entry\n");
 			unstall_oob();
 		}
