@@ -791,6 +791,7 @@ static const struct nla_policy taprio_policy[TCA_TAPRIO_ATTR_MAX + 1] = {
 	[TCA_TAPRIO_ATTR_SCHED_CYCLE_TIME_EXTENSION] = { .type = NLA_S64 },
 	[TCA_TAPRIO_ATTR_FLAGS]                      = { .type = NLA_U32 },
 	[TCA_TAPRIO_ATTR_TXTIME_DELAY]		     = { .type = NLA_U32 },
+	[TCA_TAPRIO_ATTR_FPE_QMASK]                  = { .type = NLA_S32 },
 	[TCA_TAPRIO_ATTR_PREEMPT_TCS]                = { .type = NLA_U32 },
 };
 
@@ -1537,6 +1538,12 @@ static int taprio_change(struct Qdisc *sch, struct nlattr *opt,
 		for (i = 0; i <= TC_BITMASK; i++)
 			netdev_set_prio_tc_map(dev, i,
 					       mqprio->prio_tc_map[i]);
+	}
+
+	if (tb[TCA_TAPRIO_ATTR_FPE_QMASK]) {
+		NL_SET_ERR_MSG(extack, "fpe-qmask is only supported in 5.4 Kernel");
+		err = -EOPNOTSUPP;
+		goto free_sched;
 	}
 
 	/* It's valid to enable frame preemption without any kind of
