@@ -4,3 +4,4 @@
 #
 
 source "drivers/platform/x86/intel/pmc/Kconfig"
+source "drivers/platform/x86/intel/pmt/Kconfig"

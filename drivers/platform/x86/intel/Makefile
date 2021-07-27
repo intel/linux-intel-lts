@@ -5,3 +5,4 @@
 #
 
 obj-$(CONFIG_INTEL_PMC_CORE)		+= pmc/
+obj-$(CONFIG_INTEL_PMT_CLASS)		+= pmt/
