@@ -912,7 +912,7 @@ static int pmu_add_sys_aliases_iter_fn(const struct pmu_event *pe, void *data)
 	return 0;
 }
 
-static void pmu_add_sys_aliases(struct list_head *head, struct perf_pmu *pmu)
+void pmu_add_sys_aliases(struct list_head *head, struct perf_pmu *pmu)
 {
 	struct pmu_sys_event_iter_data idata = {
 		.head = head,
