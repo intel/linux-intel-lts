@@ -106,8 +106,9 @@ static enum xlink_error session_res_add(struct session_context *ctx, enum sessio
 	 *It is unexpected behavior and warning log would be printed.
 	 */
 	if (unlikely(is_existing)) {
-		pr_info("Multiple %s  %d\n", type == SC_RES_CHAN ? "open channel":"connect link_id in one process\n", id);
-		return X_LINK_ERROR;
+		pr_info("xlink-core: Info - Multiple %s  %d\n",
+			type == SC_RES_CHAN ? "open channel":"connect link_id in one process\n", id);
+		return X_LINK_SUCCESS;
 	}
 	mutex_lock(&ctx->lock);
 	sess = kzalloc(sizeof(*sess), GFP_KERNEL);
