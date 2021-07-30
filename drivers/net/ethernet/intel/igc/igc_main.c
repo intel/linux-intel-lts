@@ -3022,7 +3022,7 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 
 		switch (tx_buffer->type) {
 		case IGC_TX_BUFFER_TYPE_XSK:
-#if defined(CONFIG_TRACING) && defined(CONFIG_DEBUG_MISC)
+#if defined(CONFIG_TRACING)
 		/* Only use for RTCP KPI Measurement on Q2 */
 		if (tx_ring->queue_index == 2 && adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON)
 			trace_printk("TX HW TS %lld\n", timestamp);
