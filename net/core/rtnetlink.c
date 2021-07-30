@@ -1489,6 +1489,9 @@ static int rtnl_xdp_fill(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	md_btf_id = dev_xdp_query_md_btf(dev, &md_btf_enabled);
+	if (!md_btf_id)
+		goto err_cancel;
+
 	nla_put_u32(skb, IFLA_XDP_MD_BTF_ID, md_btf_id);
 	nla_put_u8(skb, IFLA_XDP_MD_BTF_STATE, md_btf_enabled);
 
