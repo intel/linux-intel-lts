@@ -212,6 +212,7 @@ struct reset_control;
  * @tx_fifo_depth: depth of the hardware tx fifo
  * @rx_fifo_depth: depth of the hardware rx fifo
  * @rx_outstanding: current master-rx elements in tx fifo
+ * @rx_fifo_interrupt_serviced: to service RX_FULL interrupt before STOP_DET
  * @timings: bus clock frequency, SDA hold and other timings
  * @sda_hold_time: SDA hold value
  * @ss_hcnt: standard speed HCNT value
@@ -268,6 +269,7 @@ struct dw_i2c_dev {
 	unsigned int		tx_fifo_depth;
 	unsigned int		rx_fifo_depth;
 	int			rx_outstanding;
+	bool			rx_fifo_interrupt_serviced;
 	struct i2c_timings	timings;
 	u32			sda_hold_time;
 	u16			ss_hcnt;
