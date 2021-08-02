@@ -195,8 +195,7 @@ struct oob_mm_state *dovetail_mm_state(void)
 	return &current->mm->oob_state;
 }
 
-void dovetail_call_mayday(struct thread_info *ti,
-			  struct pt_regs *regs);
+void dovetail_call_mayday(struct pt_regs *regs);
 
 static inline void dovetail_send_mayday(struct task_struct *castaway)
 {
