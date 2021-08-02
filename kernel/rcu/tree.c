@@ -232,6 +232,11 @@ static long rcu_get_n_cbs_cpu(int cpu)
 	return 0;
 }
 
+static inline bool rcu_in_nonmaskable(void)
+{
+	return on_pipeline_entry() || in_nmi();
+}
+
 void rcu_softirq_qs(void)
 {
 	rcu_qs();
@@ -709,9 +714,6 @@ noinstr void rcu_nmi_exit(void)
 {
 	struct rcu_data *rdp = this_cpu_ptr(&rcu_data);
 
-	if (running_oob())
-		return;
-
 	instrumentation_begin();
 
 	/*
@@ -739,7 +741,7 @@ noinstr void rcu_nmi_exit(void)
 	trace_rcu_dyntick(TPS("Startirq"), rdp->dynticks_nmi_nesting, 0, atomic_read(&rdp->dynticks));
 	WRITE_ONCE(rdp->dynticks_nmi_nesting, 0); /* Avoid store tearing. */
 
-	if (!in_nmi())
+	if (!rcu_in_nonmaskable())
 		rcu_prepare_for_idle();
 
 	// instrumentation for the noinstr rcu_dynticks_eqs_enter()
@@ -750,7 +752,7 @@ noinstr void rcu_nmi_exit(void)
 	rcu_dynticks_eqs_enter();
 	// ... but is no longer watching here.
 
-	if (!in_nmi())
+	if (!rcu_in_nonmaskable())
 		rcu_dynticks_task_enter();
 }
 
@@ -939,7 +941,7 @@ void __rcu_irq_enter_check_tick(void)
 	struct rcu_data *rdp = this_cpu_ptr(&rcu_data);
 
 	// If we're here from NMI there's nothing to do.
-	if (in_nmi())
+	if (rcu_in_nonmaskable())
 		return;
 
 	RCU_LOCKDEP_WARN(rcu_dynticks_curr_cpu_in_eqs(),
@@ -987,9 +989,6 @@ noinstr void rcu_nmi_enter(void)
 	long incby = 2;
 	struct rcu_data *rdp = this_cpu_ptr(&rcu_data);
 
-	if (running_oob())
-		return;
-
 	/* Complain about underflow. */
 	WARN_ON_ONCE(rdp->dynticks_nmi_nesting < 0);
 
@@ -1003,14 +1002,14 @@ noinstr void rcu_nmi_enter(void)
 	 */
 	if (rcu_dynticks_curr_cpu_in_eqs()) {
 
-		if (!in_nmi())
+		if (!rcu_in_nonmaskable())
 			rcu_dynticks_task_exit();
 
 		// RCU is not watching here ...
 		rcu_dynticks_eqs_exit();
 		// ... but is watching here.
 
-		if (!in_nmi()) {
+		if (!rcu_in_nonmaskable()) {
 			instrumentation_begin();
 			rcu_cleanup_after_idle();
 			instrumentation_end();
@@ -1023,7 +1022,7 @@ noinstr void rcu_nmi_enter(void)
 		instrument_atomic_write(&rdp->dynticks, sizeof(rdp->dynticks));
 
 		incby = 1;
-	} else if (!in_nmi()) {
+	} else if (!rcu_in_nonmaskable()) {
 		instrumentation_begin();
 		rcu_irq_enter_check_tick();
 	} else  {
@@ -1101,10 +1100,10 @@ static void rcu_disable_urgency_upon_qs(struct rcu_data *rdp)
 /**
  * rcu_is_watching - see if RCU thinks that the current CPU is not idle
  *
- * Return true if RCU is watching the running CPU, which means that this
- * CPU can safely enter RCU read-side critical sections.  In other words,
- * if the current CPU is not in its idle loop or is in an interrupt or
- * NMI handler, return true.
+ * Return true if RCU is watching the running CPU, which means that
+ * this CPU can safely enter RCU read-side critical sections.  In
+ * other words, if the current CPU is not in its idle loop or is in an
+ * interrupt or NMI handler, return true.
  *
  * Make notrace because it can be called by the internal functions of
  * ftrace, and making this notrace removes unnecessary recursion calls.
@@ -1113,8 +1112,11 @@ notrace bool rcu_is_watching(void)
 {
 	bool ret;
 
-	if (running_oob())
+	if (on_pipeline_entry())
 		return true;
+
+	if (WARN_ON_ONCE(irq_pipeline_debug() && running_oob()))
+		return false;
 
 	preempt_disable_notrace();
 	ret = !rcu_dynticks_curr_cpu_in_eqs();
@@ -1162,7 +1164,7 @@ bool rcu_lockdep_current_cpu_online(void)
 	struct rcu_node *rnp;
 	bool ret = false;
 
-	if (in_nmi() || !rcu_scheduler_fully_active)
+	if (rcu_in_nonmaskable() || !rcu_scheduler_fully_active)
 		return true;
 	preempt_disable_notrace();
 	rdp = this_cpu_ptr(&rcu_data);
