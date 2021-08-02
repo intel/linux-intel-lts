@@ -268,6 +268,10 @@ static void scmi_handle_response(struct scmi_chan_info *cinfo,
 		return;
 	}
 
+	/* rx.len could be shrunk in the sync do_xfer, so reset to maxsz */
+	if (msg_type == MSG_TYPE_DELAYED_RESP)
+		xfer->rx.len = info->desc->max_msg_size;
+
 	scmi_dump_header_dbg(dev, &xfer->hdr);
 
 	info->desc->ops->fetch_response(cinfo, xfer);
@@ -918,7 +922,9 @@ ATTRIBUTE_GROUPS(versions);
 
 /* Each compatible listed below must have descriptor associated with it */
 static const struct of_device_id scmi_of_match[] = {
+#ifdef CONFIG_MAILBOX
 	{ .compatible = "arm,scmi", .data = &scmi_mailbox_desc },
+#endif
 #ifdef CONFIG_HAVE_ARM_SMCCC_DISCOVERY
 	{ .compatible = "arm,scmi-smc", .data = &scmi_smc_desc},
 #endif
