@@ -86,8 +86,9 @@ void call_mayday(struct thread_info *ti, struct pt_regs *regs)
 	handle_oob_mayday(regs);
 }
 
-void dovetail_call_mayday(struct thread_info *ti, struct pt_regs *regs)
+void dovetail_call_mayday(struct pt_regs *regs)
 {
+	struct thread_info *ti = current_thread_info();
 	unsigned long flags;
 
 	flags = hard_local_irq_save();
@@ -207,7 +208,7 @@ int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 		local_flags = READ_ONCE(ti_local_flags(ti));
 		if (local_flags & _TLF_OOB) {
 			if (test_ti_thread_flag(ti, TIF_MAYDAY))
-				dovetail_call_mayday(ti, regs);
+				dovetail_call_mayday(regs);
 			return 1; /* don't pass down, no tail work. */
 		} else {
 			WARN_ON_ONCE(dovetail_debug() && irqs_disabled());
