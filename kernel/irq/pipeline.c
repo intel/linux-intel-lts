@@ -1163,7 +1163,7 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	 * then maybe clear over test_and_clear.
 	 */
 	if (user_mode(regs) && test_thread_flag(TIF_MAYDAY))
-		dovetail_call_mayday(current_thread_info(), regs);
+		dovetail_call_mayday(regs);
 #endif
 
 	return running_inband() && !irqs_disabled();
