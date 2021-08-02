@@ -28,6 +28,9 @@ void irq_pipeline_init(void);
 
 void arch_irq_pipeline_init(void);
 
+void generic_pipeline_irq_desc(struct irq_desc *desc,
+			       struct pt_regs *regs);
+
 int irq_inject_pipeline(unsigned int irq);
 
 void synchronize_pipeline(void);
@@ -90,7 +93,7 @@ extern struct irq_domain *synthetic_irq_domain;
 #else /* !CONFIG_IRQ_PIPELINE */
 
 #include <linux/irqstage.h>
-#include <asm/irq_pipeline.h>
+#include <linux/hardirq.h>
 
 static inline
 void irq_pipeline_init_early(void) { }
@@ -100,6 +103,13 @@ void irq_pipeline_init(void) { }
 
 static inline
 void irq_pipeline_oops(void) { }
+
+static inline int
+generic_pipeline_irq_desc(struct irq_desc *desc,
+			struct pt_regs *regs)
+{
+	return 0;
+}
 
 static inline bool handle_oob_irq(struct irq_desc *desc)
 {

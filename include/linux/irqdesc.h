@@ -154,7 +154,7 @@ static inline void generic_handle_irq_desc(struct irq_desc *desc)
 
 int generic_handle_irq(unsigned int irq);
 
-int generic_pipeline_irq(unsigned int irq, struct pt_regs *regs);
+void generic_pipeline_irq(unsigned int irq, struct pt_regs *regs);
 
 #ifdef CONFIG_HANDLE_DOMAIN_IRQ
 /*
@@ -175,7 +175,9 @@ static inline int handle_domain_irq(struct irq_domain *domain,
 {
 	unsigned int irq = irq_find_mapping(domain, hwirq);
 
-	return generic_pipeline_irq(irq, regs);
+	generic_pipeline_irq(irq, regs);
+
+	return 0;
 }
 #else
 static inline int handle_domain_irq(struct irq_domain *domain,

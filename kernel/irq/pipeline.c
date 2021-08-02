@@ -931,7 +931,8 @@ static inline bool is_active_edge_event(struct irq_desc *desc)
 bool handle_oob_irq(struct irq_desc *desc) /* hardirqs off */
 {
 	struct irq_stage_data *oobd = this_oob_staged();
-	unsigned int irq = irq_desc_get_irq(desc), s;
+	unsigned int irq = irq_desc_get_irq(desc);
+	int stalled;
 
 	/*
 	 * Flow handlers of chained interrupts have no business
@@ -960,7 +961,7 @@ bool handle_oob_irq(struct irq_desc *desc) /* hardirqs off */
 	if (WARN_ON_ONCE(irq_pipeline_debug() && running_inband()))
 		return false;
 
-	s = test_and_stall_oob();
+	stalled = test_and_stall_oob();
 
 	if (unlikely(desc->istate & IRQS_EDGE)) {
 		do {
@@ -975,11 +976,11 @@ bool handle_oob_irq(struct irq_desc *desc) /* hardirqs off */
 	}
 
 	/*
-	 * Cascaded interrupts enter handle_oob_irq() with the
-	 * out-of-band stage stalled during the parent
-	 * invocation. Make sure to restore accordingly.
+	 * Cascaded interrupts enter handle_oob_irq() on the stalled
+	 * out-of-band stage during the parent invocation. Make sure
+	 * to restore the stall bit accordingly.
 	 */
-	if (likely(!s))
+	if (likely(!stalled))
 		unstall_oob();
 
 	/*
@@ -1050,90 +1051,94 @@ void restore_stage_on_irq(struct irq_stage_data *prevd)
 }
 
 /**
- *	generic_pipeline_irq - Pass an IRQ to the pipeline
- *	@irq:	IRQ to pass
+ *	generic_pipeline_irq_desc - Pass an IRQ to the pipeline
+ *	@desc:	Descriptor of the IRQ to pass
  *	@regs:	Register file coming from the low-level handling code
  *
  *	Inject an IRQ into the pipeline from a CPU interrupt or trap
  *	context.  A flow handler runs next for this IRQ.
  *
- *      Hard irqs must be off on entry.
+ *      Hard irqs must be off on entry. Caller should have pushed the
+ *      IRQ regs using set_irq_regs().
  */
-int generic_pipeline_irq(unsigned int irq, struct pt_regs *regs)
+void generic_pipeline_irq_desc(struct irq_desc *desc, struct pt_regs *regs)
 {
-	struct pt_regs *old_regs;
-	struct irq_desc *desc;
-	int ret = 0;
+	int irq = irq_desc_get_irq(desc);
+
+	if (irq_pipeline_debug() && !hard_irqs_disabled()) {
+		hard_local_irq_disable();
+		pr_err("IRQ pipeline: interrupts enabled on entry (IRQ%u)\n", irq);
+	}
 
 	trace_irq_pipeline_entry(irq);
+	copy_timer_regs(desc, regs);
+	generic_handle_irq_desc(desc);
+	trace_irq_pipeline_exit(irq);
+}
+
+void generic_pipeline_irq(unsigned int irq, struct pt_regs *regs)
+{
+	struct irq_desc *desc = irq_to_cached_desc(irq);
+	struct pt_regs *old_regs;
 
 	old_regs = set_irq_regs(regs);
-	desc = irq_to_cached_desc(irq);
-
-	if (irq_pipeline_debug()) {
-		if (!hard_irqs_disabled()) {
-			hard_local_irq_disable();
-			pr_err("IRQ pipeline: interrupts enabled on entry (IRQ%u)\n",
-			       irq);
-		}
-
-		/*
-		 * Running with the oob stage stalled implies hardirqs
-		 * off.  For this reason, if the oob stage is stalled
-		 * when we receive an interrupt from the hardware,
-		 * something is badly broken in our interrupt
-		 * state. Try fixing up, but without great hopes.
-		 */
-		if (!on_pipeline_entry() && test_oob_stall()) {
-			pr_err("IRQ pipeline: out-of-band stage stalled on IRQ entry\n");
-			unstall_oob();
-		}
-
-		if (unlikely(desc == NULL)) {
-			pr_err("IRQ pipeline: received unhandled IRQ%u\n",
-			       irq);
-			ret = -EINVAL;
-			goto out;
-		}
-	}
-
-	/*
-	 * We may re-enter this routine either legitimately due to
-	 * stacked IRQ domains, or because some chained IRQ handler is
-	 * abusing the API, and should have called
-	 * generic_handle_irq() instead of us. In any case, deal with
-	 * re-entry gracefully.
-	 */
-	if (unlikely(on_pipeline_entry())) {
-		if (WARN_ON_ONCE(irq_pipeline_debug() &&
-				 irq_settings_is_chained(desc)))
-			generic_handle_irq_desc(desc);
-		goto out;
-	}
-
-	/*
-	 * We switch eagerly to the oob stage if present, so that a
-	 * companion kernel readily runs on the right stage when we
-	 * call its out-of-band IRQ handler from handle_oob_irq(),
-	 * then irq_exit_pipeline() to unwind the interrupt context.
-	 */
-	copy_timer_regs(desc, regs);
-	preempt_count_add(PIPELINE_OFFSET);
-	generic_handle_irq_desc(desc);
-	preempt_count_sub(PIPELINE_OFFSET);
-out:
+	generic_pipeline_irq_desc(desc, regs);
 	set_irq_regs(old_regs);
-	trace_irq_pipeline_exit(irq);
-
-	return ret;
 }
 
 struct irq_stage_data *handle_irq_pipelined_prepare(struct pt_regs *regs)
 {
 	struct irq_stage_data *prevd;
 
+	/*
+	 * Running with the oob stage stalled implies hardirqs off.
+	 * For this reason, if the oob stage is stalled when we
+	 * receive an interrupt from the hardware, something is badly
+	 * broken in our interrupt state. Try fixing up, but without
+	 * great hopes.
+	 */
+	if (irq_pipeline_debug()) {
+		if (test_oob_stall()) {
+			pr_err("IRQ pipeline: out-of-band stage stalled on IRQ entry\n");
+			unstall_oob();
+		}
+		WARN_ON(on_pipeline_entry());
+	}
+
+	/*
+	 * Switch early on to the out-of-band stage if present,
+	 * anticipating a companion kernel is going to handle the
+	 * incoming event. If not, never mind, we will switch back
+	 * in-band before synchronizing interrupts.
+	 */
 	prevd = switch_stage_on_irq();
+
+	/* Tell the companion core about the entry. */
 	irq_enter_pipeline();
+
+	/*
+	 * Invariant: IRQs may not pile up in the section covered by
+	 * the PIPELINE_OFFSET marker, because:
+	 *
+	 * - out-of-band handlers called from handle_oob_irq() may NOT
+	 * re-enable hard interrupts. Ever.
+	 *
+	 * - synchronizing the in-band log with hard interrupts
+	 * enabled is done outside of this section.
+	 */
+	preempt_count_add(PIPELINE_OFFSET);
+
+	/*
+	 * From the standpoint of the in-band context when pipelining
+	 * is in effect, an interrupt entry is unsafe in a similar way
+	 * a NMI is, since it may preempt almost anywhere as IRQs are
+	 * only virtually masked most of the time, including inside
+	 * (virtually) interrupt-free sections. Declare a NMI entry so
+	 * that the low handling code is allowed to enter RCU read
+	 * sides (e.g. handle_domain_irq() needs this to resolve IRQ
+	 * mappings).
+	 */
+	rcu_nmi_enter();
 
 	return prevd;
 }
@@ -1141,19 +1146,37 @@ struct irq_stage_data *handle_irq_pipelined_prepare(struct pt_regs *regs)
 int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 				struct pt_regs *regs)
 {
+	/*
+	 * Leave the (pseudo-)NMI entry for RCU before the out-of-band
+	 * core might reschedule in irq_exit_pipeline(), and
+	 * interrupts are hard enabled again on this CPU as a result
+	 * of switching context.
+	 */
+	rcu_nmi_exit();
+
+	/*
+	 * Make sure to leave the pipeline entry context before
+	 * allowing the companion core to reschedule, and eventually
+	 * synchronizing interrupts.
+	 */
+	preempt_count_sub(PIPELINE_OFFSET);
+
+	/* Allow the companion core to reschedule. */
 	irq_exit_pipeline();
+
+	/* Back to the preempted stage. */
 	restore_stage_on_irq(prevd);
 
 	/*
-	 * We have to synchronize the logs because interrupts might
-	 * have been logged while we were busy handling an OOB event
-	 * coming from the hardware:
+	 * We have to synchronize interrupts because some might have
+	 * been logged while we were busy handling an out-of-band
+	 * event coming from the hardware:
 	 *
-	 * - as a result of calling an OOB handler which in turn
-	 * posted them.
+	 * - as a result of calling an out-of-band handler which in
+	 * turn posted them.
 	 *
 	 * - because we posted them directly for scheduling the
-	 * interrupt to happen from the inband stage.
+	 * interrupt to happen from the in-band stage.
 	 */
 	synchronize_pipeline_on_irq();
 
