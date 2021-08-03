@@ -313,7 +313,7 @@ int skx_get_dimm_info(u32 mtr, u32 mcmtr, u32 amap, struct dimm_info *dimm,
 
 	ranks = numrank(mtr);
 	rows = numrow(mtr);
-	cols = imc->hbm_mc ? 6 : numcol(mtr);
+	cols = numcol(mtr);
 
 	if (cfg->support_ddr5 && (amap & 0x8)) {
 		banks = 32;
@@ -344,10 +344,8 @@ int skx_get_dimm_info(u32 mtr, u32 mcmtr, u32 amap, struct dimm_info *dimm,
 	dimm->dtype = get_width(mtr);
 	dimm->mtype = mtype;
 	dimm->edac_mode = EDAC_SECDED; /* likely better than this */
-	snprintf(dimm->label, sizeof(dimm->label),
-		 "CPU_SrcID#%u_%sMC#%u_Chan#%u_DIMM#%u",
-		 imc->src_id, imc->hbm_mc ? "HBM" : "",
-		 imc->lmc, chan, dimmno);
+	snprintf(dimm->label, sizeof(dimm->label), "CPU_SrcID#%u_MC#%u_Chan#%u_DIMM#%u",
+		 imc->src_id, imc->lmc, chan, dimmno);
 
 	return 1;
 }
@@ -660,8 +658,6 @@ void skx_remove(void)
 		}
 		if (d->util_all)
 			pci_dev_put(d->util_all);
-		if (d->pcu_cr3)
-			pci_dev_put(d->pcu_cr3);
 		if (d->sad_all)
 			pci_dev_put(d->sad_all);
 		if (d->uracu)

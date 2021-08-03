@@ -70,6 +70,7 @@
 #include "util/pfm.h"
 #include "util/bpf_counter.h"
 #include "util/pmu-hybrid.h"
+#include "util/iostat.h"
 #include "asm/bug.h"
 
 #include <linux/time64.h>
@@ -162,6 +163,7 @@ static const char *smi_cost_attrs = {
 };
 
 static struct evlist	*evsel_list;
+static bool all_counters_use_bpf = true;
 
 static struct target target = {
 	.uid	= UINT_MAX,
@@ -214,7 +216,8 @@ static struct perf_stat_config stat_config = {
 	.walltime_nsecs_stats	= &walltime_nsecs_stats,
 	.big_num		= true,
 	.ctl_fd			= -1,
-	.ctl_fd_ack		= -1
+	.ctl_fd_ack		= -1,
+	.iostat_run		= false,
 };
 
 static bool cpus_map_matched(struct evsel *a, struct evsel *b)
@@ -245,7 +248,7 @@ static void evlist__check_cpu_maps(struct evlist *evlist)
 		evlist__warn_hybrid_group(evlist);
 
 	evlist__for_each_entry(evlist, evsel) {
-		leader = evsel->leader;
+		leader = evsel__leader(evsel);
 
 		/* Check that leader matches cpus with each member. */
 		if (leader == evsel)
@@ -266,10 +269,10 @@ static void evlist__check_cpu_maps(struct evlist *evlist)
 		}
 
 		for_each_group_evsel(pos, leader) {
-			pos->leader = pos;
+			evsel__set_leader(pos, pos);
 			pos->core.nr_members = 0;
 		}
-		evsel->leader->core.nr_members = 0;
+		evsel->core.leader->nr_members = 0;
 	}
 }
 
@@ -289,7 +292,7 @@ static void perf_stat__reset_stats(void)
 {
 	int i;
 
-	perf_evlist__reset_stats(evsel_list);
+	evlist__reset_stats(evsel_list);
 	perf_stat__reset_shadow_stats();
 
 	for (i = 0; i < stat_config.stats_num; i++)
@@ -404,6 +407,9 @@ static int read_affinity_counters(struct timespec *rs)
 	struct affinity affinity;
 	int i, ncpus, cpu;
 
+	if (all_counters_use_bpf)
+		return 0;
+
 	if (affinity__setup(&affinity) < 0)
 		return -1;
 
@@ -417,6 +423,8 @@ static int read_affinity_counters(struct timespec *rs)
 
 		evlist__for_each_entry(evsel_list, counter) {
 			if (evsel__cpu_iter_skip(counter, cpu))
+				continue;
+			if (evsel__is_bpf(counter))
 				continue;
 			if (!counter->err) {
 				counter->err = read_counter_cpu(counter, rs,
@@ -434,6 +442,9 @@ static int read_bpf_map_counters(void)
 	int err;
 
 	evlist__for_each_entry(evsel_list, counter) {
+		if (!evsel__is_bpf(counter))
+			continue;
+
 		err = bpf_counter__read(counter);
 		if (err)
 			return err;
@@ -444,14 +455,10 @@ static int read_bpf_map_counters(void)
 static void read_counters(struct timespec *rs)
 {
 	struct evsel *counter;
-	int err;
 
 	if (!stat_config.stop_read_counter) {
-		if (target__has_bpf(&target))
-			err = read_bpf_map_counters();
-		else
-			err = read_affinity_counters(rs);
-		if (err < 0)
+		if (read_bpf_map_counters() ||
+		    read_affinity_counters(rs))
 			return;
 	}
 
@@ -540,12 +547,13 @@ static int enable_counters(void)
 	struct evsel *evsel;
 	int err;
 
-	if (target__has_bpf(&target)) {
-		evlist__for_each_entry(evsel_list, evsel) {
-			err = bpf_counter__enable(evsel);
-			if (err)
-				return err;
-		}
+	evlist__for_each_entry(evsel_list, evsel) {
+		if (!evsel__is_bpf(evsel))
+			continue;
+
+		err = bpf_counter__enable(evsel);
+		if (err)
+			return err;
 	}
 
 	if (stat_config.initial_delay < 0) {
@@ -729,8 +737,8 @@ static enum counter_recovery stat_handle_error(struct evsel *counter)
 		 */
 		counter->errored = true;
 
-		if ((counter->leader != counter) ||
-		    !(counter->leader->core.nr_members > 1))
+		if ((evsel__leader(counter) != counter) ||
+		    !(counter->core.leader->nr_members > 1))
 			return COUNTER_SKIP;
 	} else if (evsel__fallback(counter, errno, msg, sizeof(msg))) {
 		if (verbose > 0)
@@ -788,20 +796,28 @@ static int __run_perf_stat(int argc, const char **argv, int run_idx)
 	if (affinity__setup(&affinity) < 0)
 		return -1;
 
-	if (target__has_bpf(&target)) {
-		evlist__for_each_entry(evsel_list, counter) {
-			if (bpf_counter__load(counter, &target))
-				return -1;
-		}
+	evlist__for_each_entry(evsel_list, counter) {
+		if (bpf_counter__load(counter, &target))
+			return -1;
+		if (!evsel__is_bpf(counter))
+			all_counters_use_bpf = false;
 	}
 
 	evlist__for_each_cpu (evsel_list, i, cpu) {
+		/*
+		 * bperf calls evsel__open_per_cpu() in bperf__load(), so
+		 * no need to call it again here.
+		 */
+		if (target.use_bpf)
+			break;
 		affinity__set(&affinity, cpu);
 
 		evlist__for_each_entry(evsel_list, counter) {
 			if (evsel__cpu_iter_skip(counter, cpu))
 				continue;
 			if (counter->reset_group || counter->errored)
+				continue;
+			if (evsel__is_bpf(counter))
 				continue;
 try_again:
 			if (create_perf_stat_counter(counter, &stat_config, &target,
@@ -815,7 +831,7 @@ try_again:
 				 * Don't close here because we're in the wrong affinity.
 				 */
 				if ((errno == EINVAL || errno == EBADF) &&
-				    counter->leader != counter &&
+				    evsel__leader(counter) != counter &&
 				    counter->weak_group) {
 					evlist__reset_weak_group(evsel_list, counter, false);
 					assert(counter->reset_group);
@@ -975,10 +991,10 @@ try_again_reset:
 		update_stats(&walltime_nsecs_stats, t1 - t0);
 
 		if (stat_config.aggr_mode == AGGR_GLOBAL)
-			perf_evlist__save_aggr_prev_raw_counts(evsel_list);
+			evlist__save_aggr_prev_raw_counts(evsel_list);
 
-		perf_evlist__copy_prev_raw_counts(evsel_list);
-		perf_evlist__reset_prev_raw_counts(evsel_list);
+		evlist__copy_prev_raw_counts(evsel_list);
+		evlist__reset_prev_raw_counts(evsel_list);
 		runtime_stat_reset(&stat_config);
 		perf_stat__reset_shadow_per_stat(&rt_stat);
 	} else
@@ -1156,6 +1172,10 @@ static struct option stat_options[] = {
 #ifdef HAVE_BPF_SKEL
 	OPT_STRING('b', "bpf-prog", &target.bpf_str, "bpf-prog-id",
 		   "stat events on existing bpf program id"),
+	OPT_BOOLEAN(0, "bpf-counters", &target.use_bpf,
+		    "use bpf program to count events"),
+	OPT_STRING(0, "bpf-attr-map", &target.attr_map, "attr-map-path",
+		   "path to perf_event_attr map"),
 #endif
 	OPT_BOOLEAN('a', "all-cpus", &target.system_wide,
 		    "system-wide collection from all CPUs"),
@@ -1259,6 +1279,9 @@ static struct option stat_options[] = {
 		     "\t\t\t  Optionally send control command completion ('ack\\n') to ack-fd descriptor.\n"
 		     "\t\t\t  Alternatively, ctl-fifo / ack-fifo will be opened and used as ctl-fd / ack-fd.",
 		      parse_control_option),
+	OPT_CALLBACK_OPTARG(0, "iostat", &evsel_list, &stat_config, "default",
+			    "measure I/O performance metrics provided by arch/platform",
+			    iostat_parse),
 	OPT_END()
 };
 
@@ -2034,7 +2057,7 @@ static int set_maps(struct perf_stat *st)
 
 	perf_evlist__set_maps(&evsel_list->core, st->cpus, st->threads);
 
-	if (perf_evlist__alloc_stats(evsel_list, true))
+	if (evlist__alloc_stats(evsel_list, true))
 		return -ENOMEM;
 
 	st->maps_allocated = true;
@@ -2360,6 +2383,17 @@ int cmd_stat(int argc, const char **argv)
 		goto out;
 	}
 
+	if (stat_config.iostat_run) {
+		status = iostat_prepare(evsel_list, &stat_config);
+		if (status)
+			goto out;
+		if (iostat_mode == IOSTAT_LIST) {
+			iostat_list(evsel_list, &stat_config);
+			goto out;
+		} else if (verbose)
+			iostat_list(evsel_list, &stat_config);
+	}
+
 	if (add_default_attributes())
 		goto out;
 
@@ -2372,8 +2406,11 @@ int cmd_stat(int argc, const char **argv)
 		}
 
 		if (evlist__expand_cgroup(evsel_list, stat_config.cgroup_list,
-					  &stat_config.metric_events, true) < 0)
+					  &stat_config.metric_events, true) < 0) {
+			parse_options_usage(stat_usage, stat_options,
+					    "for-each-cgroup", 0);
 			goto out;
+		}
 	}
 
 	if ((stat_config.aggr_mode == AGGR_THREAD) && (target.system_wide))
@@ -2441,7 +2478,7 @@ int cmd_stat(int argc, const char **argv)
 		goto out;
 	}
 
-	if (perf_evlist__alloc_stats(evsel_list, interval))
+	if (evlist__alloc_stats(evsel_list, interval))
 		goto out;
 
 	if (perf_stat_init_aggr_mode())
@@ -2481,7 +2518,7 @@ int cmd_stat(int argc, const char **argv)
 				run_idx + 1);
 
 		if (run_idx != 0)
-			perf_evlist__reset_prev_raw_counts(evsel_list);
+			evlist__reset_prev_raw_counts(evsel_list);
 
 		status = run_perf_stat(argc, argv, run_idx);
 		if (forever && status != -1 && !interval) {
@@ -2533,8 +2570,11 @@ int cmd_stat(int argc, const char **argv)
 	}
 
 	perf_stat__exit_aggr_mode();
-	perf_evlist__free_stats(evsel_list);
+	evlist__free_stats(evsel_list);
 out:
+	if (stat_config.iostat_run)
+		iostat_release(evsel_list);
+
 	zfree(&stat_config.walltime_run);
 
 	if (smi_cost && smi_reset)
