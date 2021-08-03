@@ -1492,8 +1492,12 @@ static int rtnl_xdp_fill(struct sk_buff *skb, struct net_device *dev)
 	if (!md_btf_id)
 		goto err_cancel;
 
-	nla_put_u32(skb, IFLA_XDP_MD_BTF_ID, md_btf_id);
-	nla_put_u8(skb, IFLA_XDP_MD_BTF_STATE, md_btf_enabled);
+	err = nla_put_u32(skb, IFLA_XDP_MD_BTF_ID, md_btf_id);
+	if (err)
+		goto err_cancel;
+	err = nla_put_u8(skb, IFLA_XDP_MD_BTF_STATE, md_btf_enabled);
+	if (err)
+		goto err_cancel;
 
 	nla_nest_end(skb, xdp);
 	return 0;
