@@ -446,6 +446,9 @@ static void igc_ptp_dma_time_to_hwtstamp(struct igc_adapter *adapter,
 	nsec = rd32(IGC_SYSTIML);
 	sec = rd32(IGC_SYSTIMH);
 
+	if (unlikely(nsec < (systim & 0xFFFFFFFF)))
+		--sec;
+
 	switch (adapter->hw.mac.type) {
 	case igc_i225:
 		memset(hwtstamps, 0, sizeof(*hwtstamps));
