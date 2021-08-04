@@ -8609,6 +8609,8 @@ bool dovetail_context_switch(struct dovetail_altsched_context *out,
 	struct mm_struct *prev_mm, *next_mm;
 	bool inband_tail = false;
 
+	WARN_ON_ONCE(dovetail_debug() && on_pipeline_entry());
+
 	if (leave_inband) {
 		struct task_struct *tsk = current;
 		/*
