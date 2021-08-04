@@ -162,6 +162,14 @@ static bool contains_event(struct evsel **metric_events, int num_events,
 	return false;
 }
 
+static bool evsel_same_pmu_or_none(struct evsel *ev1, struct evsel *ev2)
+{
+	if (!ev1->pmu_name || !ev2->pmu_name)
+		return true;
+
+	return !strcmp(ev1->pmu_name, ev2->pmu_name);
+}
+
 /**
  * Find a group of events in perf_evlist that correspond to those from a parsed
  * metric expression. Note, as find_evsel_group is called in the same order as
@@ -211,9 +219,9 @@ static struct evsel *find_evsel_group(struct evlist *perf_evlist,
 		if (has_constraint && ev->weak_group)
 			continue;
 		/* Ignore event if already used and merging is disabled. */
-		if (metric_no_merge && test_bit(ev->idx, evlist_used))
+		if (metric_no_merge && test_bit(ev->core.idx, evlist_used))
 			continue;
-		if (!has_constraint && ev->leader != current_leader) {
+		if (!has_constraint && !evsel__has_leader(ev, current_leader)) {
 			/*
 			 * Start of a new group, discard the whole match and
 			 * start again.
@@ -221,7 +229,7 @@ static struct evsel *find_evsel_group(struct evlist *perf_evlist,
 			matched_events = 0;
 			memset(metric_events, 0,
 				sizeof(struct evsel *) * idnum);
-			current_leader = ev->leader;
+			current_leader = evsel__leader(ev);
 		}
 		/*
 		 * Check for duplicate events with the same name. For example,
@@ -261,7 +269,7 @@ static struct evsel *find_evsel_group(struct evlist *perf_evlist,
 	for (i = 0; i < idnum; i++) {
 		ev = metric_events[i];
 		/* Don't free the used events. */
-		set_bit(ev->idx, evlist_used);
+		set_bit(ev->core.idx, evlist_used);
 		/*
 		 * The metric leader points to the identically named event in
 		 * metric_events.
@@ -279,10 +287,11 @@ static struct evsel *find_evsel_group(struct evlist *perf_evlist,
 			 * when then group is left.
 			 */
 			if (!has_constraint &&
-			    ev->leader != metric_events[i]->leader)
+			    ev->core.leader != metric_events[i]->core.leader &&
+			    evsel_same_pmu_or_none(evsel__leader(ev), evsel__leader(metric_events[i])))
 				break;
 			if (!strcmp(metric_events[i]->name, ev->name)) {
-				set_bit(ev->idx, evlist_used);
+				set_bit(ev->core.idx, evlist_used);
 				ev->metric_leader = metric_events[i];
 			}
 		}
@@ -382,7 +391,7 @@ static int metricgroup__setup_events(struct list_head *groups,
 	}
 
 	evlist__for_each_entry_safe(perf_evlist, tmp, evsel) {
-		if (!test_bit(evsel->idx, evlist_used)) {
+		if (!test_bit(evsel->core.idx, evlist_used)) {
 			evlist__remove(perf_evlist, evsel);
 			evsel__delete(evsel);
 		}
@@ -411,6 +420,12 @@ static bool match_metric(const char *n, const char *list)
 	    (m[len] == 0 || m[len] == ';'))
 		return true;
 	return false;
+}
+
+static bool match_pe_metric(struct pmu_event *pe, const char *metric)
+{
+	return match_metric(pe->metric_group, metric) ||
+	       match_metric(pe->metric_name, metric);
 }
 
 struct mep {
@@ -557,18 +572,58 @@ static int metricgroup__print_pmu_event(struct pmu_event *pe,
 	return 0;
 }
 
+struct metricgroup_print_sys_idata {
+	struct strlist *metriclist;
+	char *filter;
+	struct rblist *groups;
+	bool metricgroups;
+	bool raw;
+	bool details;
+};
+
+typedef int (*metricgroup_sys_event_iter_fn)(struct pmu_event *pe, void *);
+
+struct metricgroup_iter_data {
+	metricgroup_sys_event_iter_fn fn;
+	void *data;
+};
+
+static int metricgroup__sys_event_iter(struct pmu_event *pe, void *data)
+{
+	struct metricgroup_iter_data *d = data;
+	struct perf_pmu *pmu = NULL;
+
+	if (!pe->metric_expr || !pe->compat)
+		return 0;
+
+	while ((pmu = perf_pmu__scan(pmu))) {
+
+		if (!pmu->id || strcmp(pmu->id, pe->compat))
+			continue;
+
+		return d->fn(pe, d->data);
+	}
+
+	return 0;
+}
+
+static int metricgroup__print_sys_event_iter(struct pmu_event *pe, void *data)
+{
+	struct metricgroup_print_sys_idata *d = data;
+
+	return metricgroup__print_pmu_event(pe, d->metricgroups, d->filter, d->raw,
+				     d->details, d->groups, d->metriclist);
+}
+
 void metricgroup__print(bool metrics, bool metricgroups, char *filter,
 			bool raw, bool details)
 {
-	struct pmu_events_map *map = perf_pmu__find_map(NULL);
+	struct pmu_events_map *map = pmu_events_map__find();
 	struct pmu_event *pe;
 	int i;
 	struct rblist groups;
 	struct rb_node *node, *next;
 	struct strlist *metriclist = NULL;
-
-	if (!map)
-		return;
 
 	if (!metricgroups) {
 		metriclist = strlist__new(NULL, NULL);
@@ -580,7 +635,7 @@ void metricgroup__print(bool metrics, bool metricgroups, char *filter,
 	groups.node_new = mep_new;
 	groups.node_cmp = mep_cmp;
 	groups.node_delete = mep_delete;
-	for (i = 0; ; i++) {
+	for (i = 0; map; i++) {
 		pe = &map->table[i];
 
 		if (!pe->name && !pe->metric_group && !pe->metric_name)
@@ -591,6 +646,22 @@ void metricgroup__print(bool metrics, bool metricgroups, char *filter,
 						 raw, details, &groups,
 						 metriclist) < 0)
 			return;
+	}
+
+	{
+		struct metricgroup_iter_data data = {
+			.fn = metricgroup__print_sys_event_iter,
+			.data = (void *) &(struct metricgroup_print_sys_idata){
+				.metriclist = metriclist,
+				.metricgroups = metricgroups,
+				.filter = filter,
+				.raw = raw,
+				.details = details,
+				.groups = &groups,
+			},
+		};
+
+		pmu_for_each_sys_event(metricgroup__sys_event_iter, &data);
 	}
 
 	if (!filter || !rblist__empty(&groups)) {
@@ -698,6 +769,16 @@ int __weak arch_get_runtimeparam(struct pmu_event *pe __maybe_unused)
 {
 	return 1;
 }
+
+struct metricgroup_add_iter_data {
+	struct list_head *metric_list;
+	const char *metric;
+	struct metric **m;
+	struct expr_ids *ids;
+	int *ret;
+	bool *has_match;
+	bool metric_no_group;
+};
 
 static int __add_metric(struct list_head *metric_list,
 			struct pmu_event *pe,
@@ -808,10 +889,11 @@ static int __add_metric(struct list_head *metric_list,
 	return 0;
 }
 
-#define map_for_each_event(__pe, __idx, __map)				\
-	for (__idx = 0, __pe = &__map->table[__idx];			\
-	     __pe->name || __pe->metric_group || __pe->metric_name;	\
-	     __pe = &__map->table[++__idx])
+#define map_for_each_event(__pe, __idx, __map)					\
+	if (__map)								\
+		for (__idx = 0, __pe = &__map->table[__idx];			\
+		     __pe->name || __pe->metric_group || __pe->metric_name;	\
+		     __pe = &__map->table[++__idx])
 
 #define map_for_each_metric(__pe, __idx, __map, __metric)		\
 	map_for_each_event(__pe, __idx, __map)				\
@@ -819,7 +901,8 @@ static int __add_metric(struct list_head *metric_list,
 		    (match_metric(__pe->metric_group, __metric) ||	\
 		     match_metric(__pe->metric_name, __metric)))
 
-static struct pmu_event *find_metric(const char *metric, struct pmu_events_map *map)
+struct pmu_event *metricgroup__find_metric(const char *metric,
+					   struct pmu_events_map *map)
 {
 	struct pmu_event *pe;
 	int i;
@@ -904,7 +987,7 @@ static int __resolve_metric(struct metric *m,
 			struct expr_id *parent;
 			struct pmu_event *pe;
 
-			pe = find_metric(cur->key, map);
+			pe = metricgroup__find_metric(cur->key, map);
 			if (!pe)
 				continue;
 
@@ -979,6 +1062,29 @@ static int add_metric(struct list_head *metric_list,
 	return ret;
 }
 
+static int metricgroup__add_metric_sys_event_iter(struct pmu_event *pe,
+						  void *data)
+{
+	struct metricgroup_add_iter_data *d = data;
+	int ret;
+
+	if (!match_pe_metric(pe, d->metric))
+		return 0;
+
+	ret = add_metric(d->metric_list, pe, d->metric_no_group, d->m, NULL, d->ids);
+	if (ret)
+		return ret;
+
+	ret = resolve_metric(d->metric_no_group,
+				     d->metric_list, NULL, d->ids);
+	if (ret)
+		return ret;
+
+	*(d->has_match) = true;
+
+	return *d->ret;
+}
+
 static int metricgroup__add_metric(const char *metric, bool metric_no_group,
 				   struct strbuf *events,
 				   struct list_head *metric_list,
@@ -1009,6 +1115,22 @@ static int metricgroup__add_metric(const char *metric, bool metric_no_group,
 			goto out;
 	}
 
+	{
+		struct metricgroup_iter_data data = {
+			.fn = metricgroup__add_metric_sys_event_iter,
+			.data = (void *) &(struct metricgroup_add_iter_data) {
+				.metric_list = &list,
+				.metric = metric,
+				.metric_no_group = metric_no_group,
+				.m = &m,
+				.ids = &ids,
+				.has_match = &has_match,
+				.ret = &ret,
+			},
+		};
+
+		pmu_for_each_sys_event(metricgroup__sys_event_iter, &data);
+	}
 	/* End of pmu events. */
 	if (!has_match) {
 		ret = -EINVAL;
@@ -1133,10 +1255,7 @@ int metricgroup__parse_groups(const struct option *opt,
 			      struct rblist *metric_events)
 {
 	struct evlist *perf_evlist = *(struct evlist **)opt->value;
-	struct pmu_events_map *map = perf_pmu__find_map(NULL);
-
-	if (!map)
-		return 0;
+	struct pmu_events_map *map = pmu_events_map__find();
 
 	return parse_groups(perf_evlist, str, metric_no_group,
 			    metric_no_merge, NULL, metric_events, map);
@@ -1155,7 +1274,7 @@ int metricgroup__parse_groups_test(struct evlist *evlist,
 
 bool metricgroup__has_metric(const char *metric)
 {
-	struct pmu_events_map *map = perf_pmu__find_map(NULL);
+	struct pmu_events_map *map = pmu_events_map__find();
 	struct pmu_event *pe;
 	int i;
 
@@ -1192,7 +1311,7 @@ int metricgroup__copy_metric_events(struct evlist *evlist, struct cgroup *cgrp,
 		nd = rblist__entry(old_metric_events, i);
 		old_me = container_of(nd, struct metric_event, nd);
 
-		evsel = evlist__find_evsel(evlist, old_me->evsel->idx);
+		evsel = evlist__find_evsel(evlist, old_me->evsel->core.idx);
 		if (!evsel)
 			return -EINVAL;
 		new_me = metricgroup__lookup(new_metric_events, evsel, true);
@@ -1200,7 +1319,7 @@ int metricgroup__copy_metric_events(struct evlist *evlist, struct cgroup *cgrp,
 			return -ENOMEM;
 
 		pr_debug("copying metric event for cgroup '%s': %s (idx=%d)\n",
-			 cgrp ? cgrp->name : "root", evsel->name, evsel->idx);
+			 cgrp ? cgrp->name : "root", evsel->name, evsel->core.idx);
 
 		list_for_each_entry(old_expr, &old_me->head, nd) {
 			new_expr = malloc(sizeof(*new_expr));
@@ -1243,7 +1362,7 @@ int metricgroup__copy_metric_events(struct evlist *evlist, struct cgroup *cgrp,
 			/* copy evsel in the same position */
 			for (idx = 0; idx < nr; idx++) {
 				evsel = old_expr->metric_events[idx];
-				evsel = evlist__find_evsel(evlist, evsel->idx);
+				evsel = evlist__find_evsel(evlist, evsel->core.idx);
 				if (evsel == NULL) {
 					free(new_expr->metric_events);
 					free(new_expr->metric_refs);

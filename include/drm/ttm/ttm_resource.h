@@ -33,7 +33,7 @@
 
 #define TTM_MAX_BO_PRIORITY	4U
 
-struct ttm_bo_device;
+struct ttm_device;
 struct ttm_resource_manager;
 struct ttm_resource;
 struct ttm_place;
@@ -161,7 +161,6 @@ struct ttm_bus_placement {
  * @mm_node: Memory manager node.
  * @size: Requested size of memory region.
  * @num_pages: Actual size of memory region in pages.
- * @page_alignment: Page alignment.
  * @placement: Placement flags.
  * @bus: Placement on io bus accessible to the CPU
  *
@@ -172,7 +171,6 @@ struct ttm_resource {
 	void *mm_node;
 	unsigned long start;
 	unsigned long num_pages;
-	uint32_t page_alignment;
 	uint32_t mem_type;
 	uint32_t placement;
 	struct ttm_bus_placement bus;
@@ -227,13 +225,13 @@ ttm_resource_manager_cleanup(struct ttm_resource_manager *man)
 
 int ttm_resource_alloc(struct ttm_buffer_object *bo,
 		       const struct ttm_place *place,
-		       struct ttm_resource *res);
-void ttm_resource_free(struct ttm_buffer_object *bo, struct ttm_resource *res);
+		       struct ttm_resource **res);
+void ttm_resource_free(struct ttm_buffer_object *bo, struct ttm_resource **res);
 
 void ttm_resource_manager_init(struct ttm_resource_manager *man,
 			       unsigned long p_size);
 
-int ttm_resource_manager_evict_all(struct ttm_bo_device *bdev,
+int ttm_resource_manager_evict_all(struct ttm_device *bdev,
 				   struct ttm_resource_manager *man);
 
 void ttm_resource_manager_debug(struct ttm_resource_manager *man,

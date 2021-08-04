@@ -40,12 +40,12 @@ static struct ar0234_platform_data ar0234_pdata_1 = {
 	.port = 1,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 316,
-	.irq_pin_name = "B23",
+	.irq_pin = -1,
+	.irq_pin_name = "",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'a',
-	.gpios = {175, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_1 = {
@@ -69,12 +69,12 @@ static struct ar0234_platform_data ar0234_pdata_2 = {
 	.port = 2,
 	.lanes = 2,
 	.i2c_slave_address = AR0234_I2C_ADDRESS,
-	.irq_pin = 300,
-	.irq_pin_name = "R6",
+	.irq_pin = -1,
+	.irq_pin_name = "",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
-	.gpios = {510, 0, 0, 0},
+	.gpios = {-1, 0, 0, 0},
 };
 
 static struct ipu_isys_subdev_info ar0234_sd_2 = {

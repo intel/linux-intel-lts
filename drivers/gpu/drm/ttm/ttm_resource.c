@@ -27,28 +27,47 @@
 
 int ttm_resource_alloc(struct ttm_buffer_object *bo,
 		       const struct ttm_place *place,
-		       struct ttm_resource *res)
+		       struct ttm_resource **res_ptr)
 {
 	struct ttm_resource_manager *man =
-		ttm_manager_type(bo->bdev, res->mem_type);
+		ttm_manager_type(bo->bdev, place->mem_type);
+	struct ttm_resource *res;
+	int r;
+
+	res = kmalloc(sizeof(*res), GFP_KERNEL);
+	if (!res)
+		return -ENOMEM;
 
 	res->mm_node = NULL;
-	if (!man->func || !man->func->alloc)
-		return 0;
+	res->start = 0;
+	res->num_pages = PFN_UP(bo->base.size);
+	res->mem_type = place->mem_type;
+	res->placement = place->flags;
+	res->bus.addr = NULL;
+	res->bus.offset = 0;
+	res->bus.is_iomem = false;
+	res->bus.caching = ttm_cached;
+	r = man->func->alloc(man, bo, place, res);
+	if (r) {
+		kfree(res);
+		return r;
+	}
 
-	return man->func->alloc(man, bo, place, res);
+	*res_ptr = res;
+	return 0;
 }
 
-void ttm_resource_free(struct ttm_buffer_object *bo, struct ttm_resource *res)
+void ttm_resource_free(struct ttm_buffer_object *bo, struct ttm_resource **res)
 {
-	struct ttm_resource_manager *man =
-		ttm_manager_type(bo->bdev, res->mem_type);
+	struct ttm_resource_manager *man;
 
-	if (man->func && man->func->free)
-		man->func->free(man, res);
+	if (!*res)
+		return;
 
-	res->mm_node = NULL;
-	res->mem_type = TTM_PL_SYSTEM;
+	man = ttm_manager_type(bo->bdev, (*res)->mem_type);
+	man->func->free(man, *res);
+	kfree(*res);
+	*res = NULL;
 }
 EXPORT_SYMBOL(ttm_resource_free);
 
@@ -83,7 +102,7 @@ EXPORT_SYMBOL(ttm_resource_manager_init);
  * Evict all the objects out of a memory manager until it is empty.
  * Part of memory manager cleanup sequence.
  */
-int ttm_resource_manager_evict_all(struct ttm_bo_device *bdev,
+int ttm_resource_manager_evict_all(struct ttm_device *bdev,
 				   struct ttm_resource_manager *man)
 {
 	struct ttm_operation_ctx ctx = {
@@ -91,7 +110,6 @@ int ttm_resource_manager_evict_all(struct ttm_bo_device *bdev,
 		.no_wait_gpu = false,
 		.force_alloc = true
 	};
-	struct ttm_bo_global *glob = &ttm_bo_glob;
 	struct dma_fence *fence;
 	int ret;
 	unsigned i;
@@ -100,18 +118,18 @@ int ttm_resource_manager_evict_all(struct ttm_bo_device *bdev,
 	 * Can't use standard list traversal since we're unlocking.
 	 */
 
-	spin_lock(&glob->lru_lock);
+	spin_lock(&bdev->lru_lock);
 	for (i = 0; i < TTM_MAX_BO_PRIORITY; ++i) {
 		while (!list_empty(&man->lru[i])) {
-			spin_unlock(&glob->lru_lock);
+			spin_unlock(&bdev->lru_lock);
 			ret = ttm_mem_evict_first(bdev, man, NULL, &ctx,
 						  NULL);
 			if (ret)
 				return ret;
-			spin_lock(&glob->lru_lock);
+			spin_lock(&bdev->lru_lock);
 		}
 	}
-	spin_unlock(&glob->lru_lock);
+	spin_unlock(&bdev->lru_lock);
 
 	spin_lock(&man->move_lock);
 	fence = dma_fence_get(man->move);
@@ -140,7 +158,7 @@ void ttm_resource_manager_debug(struct ttm_resource_manager *man,
 	drm_printf(p, "  use_type: %d\n", man->use_type);
 	drm_printf(p, "  use_tt: %d\n", man->use_tt);
 	drm_printf(p, "  size: %llu\n", man->size);
-	if (man->func && man->func->debug)
-		(*man->func->debug)(man, p);
+	if (man->func->debug)
+		man->func->debug(man, p);
 }
 EXPORT_SYMBOL(ttm_resource_manager_debug);

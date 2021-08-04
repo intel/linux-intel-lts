@@ -41,32 +41,31 @@
 #define	IMX390_EXPOSURE_STEP		(1 * FIXED_POINT_SCALING_FACTOR / 1000000)
 
 /* Analog gain controls from sensor */
-#define IMX390_REG_ANALOG_GAIN		0x3060
 #define	IMX390_ANAL_GAIN_MIN		0
-#define	IMX390_ANAL_GAIN_MAX		0x7f
+#define	IMX390_ANAL_GAIN_MAX		0x64
 #define	IMX390_ANAL_GAIN_STEP		1
-#define	IMX390_ANAL_GAIN_DEFAULT	0xe
-
-/* Analog gain controls from sensor */
-#define IMX390_REG_DIGITAL_GAIN		0x3060
-#define	IMX390_ANAL_GAIN_MIN		0
-#define	IMX390_ANAL_GAIN_MAX		0x7f
-#define	IMX390_ANAL_GAIN_STEP		1
-#define	IMX390_ANAL_GAIN_DEFAULT	0xe
+#define	IMX390_ANAL_GAIN_DEFAULT	0x1c
 
 /* Digital gain controls from sensor */
-#define IMX390_REG_GLOBAL_GAIN		0x305E
 #define IMX390_DGTL_GAIN_MIN		0
 #define IMX390_DGTL_GAIN_MAX		0x7ff
 #define IMX390_DGTL_GAIN_STEP		1
 #define IMX390_DGTL_GAIN_DEFAULT	0x80
 
-#define IMX390_GAIN_MIN	0
-#define IMX390_GAIN_DEFAULT	0x80
+#define IMX390_GAIN_MIN			0
+#define IMX390_GAIN_DEFAULT		0x80
 
-#define IMX390_REG_LED_FLASH_CONTROL	0x3270
-#define IMX390_LED_FLASH_EN		0x100
-#define IMX390_LED_DELAY		0xff
+#define IMX390_RED_BALANCE_MIN		0
+#define IMX390_RED_BALANCE_MAX		0xfff
+#define IMX390_RED_BALANCE_STEP		1
+#define IMX390_RED_BALANCE_DEF		0x100
+
+#define IMX390_BLUE_BALANCE_MIN		0
+#define IMX390_BLUE_BALANCE_MAX		0xfff
+#define IMX390_BLUE_BALANCE_STEP	1
+#define IMX390_BLUE_BALANCE_DEF		0x100
+
+#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
 
 #define IMX390_CID_CSI_PORT         (V4L2_CID_USER_BASE | 0x1001)
 #define IMX390_CID_I2C_BUS         (V4L2_CID_USER_BASE | 0x1002)
@@ -74,6 +73,73 @@
 #define IMX390_CID_I2C_SLAVE_ADDRESS         (V4L2_CID_USER_BASE | 0x1004)
 #define IMX390_CID_FPS         (V4L2_CID_USER_BASE | 0x1005)
 #define IMX390_CID_FRAME_INTERVAL	(V4L2_CID_USER_BASE | 0x1006)
+
+/*
+ * dummy CID
+ */
+#define V4L2_CID_IMX390_BASE		(V4L2_CID_USER_BASE + 0x2050)
+
+#define V4L2_CID_FRAME_LENGTH_LINES (V4L2_CID_IMX390_BASE + 1)
+#define V4L2_CID_LINE_LENGTH_PIXELS (V4L2_CID_IMX390_BASE + 2)
+#define IMX390_CID_SENSOR_THERMAL_DATA (V4L2_CID_IMX390_BASE + 3)
+
+/*
+ * Select sensor mode directly, driver programs media pad
+ * formats as in configuration file
+ */
+#define IMX390_CID_SENSOR_MODE (V4L2_CID_IMX390_BASE + 4)
+
+/* IMX230 HDR specific controls */
+#define IMX390_CID_IMX230_HDR_MODE		(V4L2_CID_IMX390_BASE + 5)
+#define IMX390_CID_IMX230_HDR_ET_RATIO	(V4L2_CID_IMX390_BASE + 6)
+
+/* Set multi-exposure frame in HDR with different exposure value */
+#define IMX390_CID_EXPOSURE_SHS1		(V4L2_CID_IMX390_BASE + 8)
+#define IMX390_CID_EXPOSURE_SHS2		(V4L2_CID_IMX390_BASE + 9)
+#define IMX390_CID_EXPOSURE_SHS3		(V4L2_CID_IMX390_BASE + 10)
+#define IMX390_CID_EXPOSURE_RHS1		(V4L2_CID_IMX390_BASE + 11)
+#define IMX390_CID_EXPOSURE_RHS2		(V4L2_CID_IMX390_BASE + 12)
+
+/* Switch to enable/disable PDAF settings */
+#define IMX390_CID_SENSOR_PDAF		(V4L2_CID_IMX390_BASE + 13)
+
+/* Set multi-digital gain */
+#define IMX390_CID_DIGITAL_GAIN_L		(V4L2_CID_IMX390_BASE + 14)
+#define IMX390_CID_DIGITAL_GAIN_S		(V4L2_CID_IMX390_BASE + 15)
+#define IMX390_CID_DIGITAL_GAIN_VS		(V4L2_CID_IMX390_BASE + 16)
+
+/* Get sensor bit linear */
+#define IMX390_CID_SENSOR_BIT_LINEAR	(V4L2_CID_IMX390_BASE + 17)
+
+/* set sensor msb align*/
+#define IMX390_CID_MSB_ALIGN		(V4L2_CID_IMX390_BASE + 18)
+
+/* enable/disable auto exposure */
+#define IMX390_CID_AUTO_EXPOSURE_DEBUG	(V4L2_CID_IMX390_BASE + 19)
+
+/* set analog gain for HDR frames */
+#define IMX390_CID_ANALOG_GAIN_L		(V4L2_CID_IMX390_BASE + 20)
+#define IMX390_CID_ANALOG_GAIN_S		(V4L2_CID_IMX390_BASE + 21)
+#define IMX390_CID_ANALOG_GAIN_VS		(V4L2_CID_IMX390_BASE + 22)
+
+/* Set exposure mode: Linear mode or 2-/3-/4-HDR mode */
+#define IMX390_CID_EXPOSURE_MODE		(V4L2_CID_IMX390_BASE + 23)
+
+/* Set HDR mode exposure ratio */
+#define IMX390_CID_EXPOSURE_HDR_RATIO	(V4L2_CID_IMX390_BASE + 24)
+
+/* choose hcg/lcg for linear analog */
+#define IMX390_CID_ANALOG_LINEAR_CG	(V4L2_CID_IMX390_BASE + 25)
+
+/* Digital gain controls from sensor */
+#define IMX390_DUMMY_MIN		0
+#define IMX390_DUMMY_MAX		0x7ff
+#define IMX390_DUMMY_STEP		1
+#define IMX390_DUMMY_DEF		0x1
+
+/*
+ * end of dummy CID
+ */
 
 #define to_imx390(_sd)			container_of(_sd, struct imx390, sd)
 
@@ -87,11 +153,19 @@ enum {
 	IMX390_REG_SHS2 = 0x0010,
 	IMX390_REG_AGAIN_SP1H = 0x0018,
 	IMX390_REG_AGAIN_SP1L = 0x001a,
+
+	/* default bayer order RGGB */
+	IMX390_REG_WBGAIN_R = 0x0030,
+	IMX390_REG_WBGAIN_GR = 0x0032,
+	IMX390_REG_WBGAIN_GB = 0x0034,
+	IMX390_REG_WBGAIN_B = 0x0036,
+
 	IMX390_REG_OBB_CLAMP_CTRL_SEL = 0x0083,
+	IMX390_REG_REAR_EMBDATA_LINE = 0x2E18,
 	IMX390_REG_REV1 = 0x3060,
 	IMX390_REG_REV2 = 0x3064,
 	IMX390_REG_REV3 = 0x3067,
-	IMX390_REG_REAR_EMBDATA_LINE = 0x2E18,
+	IMX390_REG_WBGAIN_FORCE_X1 = 0x36A8,
 };
 
 enum {
@@ -177,6 +251,19 @@ struct imx390 {
 	struct v4l2_ctrl *frame_interval;
 	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *red_balance;
+	struct v4l2_ctrl *blue_balance;
+	struct v4l2_ctrl *dummy_exp_shs1;
+	struct v4l2_ctrl *dummy_exp_shs2;
+	struct v4l2_ctrl *dummy_exp_shs3;
+	struct v4l2_ctrl *dummy_exp_rhs1;
+	struct v4l2_ctrl *dummy_exp_rhs2;
+	struct v4l2_ctrl *dummy_dg_l;
+	struct v4l2_ctrl *dummy_dg_s;
+	struct v4l2_ctrl *dummy_dg_vs;
+	struct v4l2_ctrl *dummy_ag_l;
+	struct v4l2_ctrl *dummy_ag_s;
+	struct v4l2_ctrl *dummy_ag_vs;
 
 	/* Current mode */
 	const struct imx390_mode *cur_mode;
@@ -283,6 +370,7 @@ static int imx390_write_reg(struct imx390 *imx390, u16 reg, u16 len, u32 val)
 	if (len > 4)
 		return -EINVAL;
 
+	dev_dbg(&client->dev, "%s, reg %x len %x, val %x\n", __func__, reg, len, val);
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << 8 * (4 - len), buf + 2);
 	if (i2c_master_send(client, buf, len + 2) != len + 2)
@@ -340,47 +428,15 @@ static int imx390_group_hold_enable(struct imx390 *imx390, s32 val)
 }
 
 /**
- * Sets the gain using a raw register value to both SPI1H and SPI1L
+ * imx390 gain is 0 to 30 in .3db steps.
  *
  * @param self driver instance
- * @param gain raw register value written to SP1H and SP1L
- *
- * @return 0 on success
- */
-static int imx390_gain_raw_set(struct imx390 *self, u16 gain)
-{
-	/* This register holds an 11 bit value */
-	u16 masked = gain & 0x7ff;
-
-	imx390_group_hold_enable(self, 1);
-
-	/* Set the analog gain registers. These are in .3 db steps. */
-	imx390_write_reg(self, IMX390_REG_AGAIN_SP1H, IMX390_REG_VALUE_08BIT,  masked & 0xff);
-	imx390_write_reg(self, IMX390_REG_AGAIN_SP1H + 1, IMX390_REG_VALUE_08BIT,
-			      (masked >> 8) & 0xff);
-
-	imx390_write_reg(self, IMX390_REG_AGAIN_SP1L, IMX390_REG_VALUE_08BIT,  masked & 0xff);
-	imx390_write_reg(self, IMX390_REG_AGAIN_SP1L + 1, IMX390_REG_VALUE_08BIT, (masked >> 8) & 0xff);
-	imx390_group_hold_enable(self, 0);
-	return 0;
-}
-
-/**
- * Takes fixed point (Q42.22) gain value in decibels and programs the
- * image sensor.
- *
- * @param self driver instance
- * @param val gain, in decibels, in Q42.22 fixed point format
+ * @param val gain
  *
  * @return 0 on success
  */
 static int imx390_gain_set(struct imx390 *imx390, s64 val)
 {
-	/* Specifies the gain values from the user mode library. */
-	/* It uses Q42.22 format (42 Bit integer, 22 Bit fraction). * */
-	/* See imx185_set_gain function in imx185.c file. */
-
-	/* imx390 gain is 0 to 30 in .3db steps. */
 	u16 gain = 0;
 	u32 prevgain = 0;
 
@@ -394,25 +450,16 @@ static int imx390_gain_set(struct imx390 *imx390, s64 val)
 
 	imx390_read_reg(imx390, IMX390_REG_AGAIN_SP1H, IMX390_REG_VALUE_08BIT, &prevgain);
 
-	imx390_write_reg(imx390, 0x0008, IMX390_REG_VALUE_08BIT,  0x01);
+	imx390_group_hold_enable(imx390, 1);
 
 	imx390_write_reg(imx390, IMX390_REG_AGAIN_SP1H, IMX390_REG_VALUE_08BIT,  gain & 0xff);
 	imx390_write_reg(imx390, IMX390_REG_AGAIN_SP1H + 1, IMX390_REG_VALUE_08BIT, (gain >> 8) & 0xff);
 
-	imx390_write_reg(imx390, IMX390_REG_AGAIN_SP1L, IMX390_REG_VALUE_08BIT,  gain & 0xff);
-	imx390_write_reg(imx390, IMX390_REG_AGAIN_SP1L + 1, IMX390_REG_VALUE_08BIT, (gain >> 8) & 0xff);
-
-	imx390_write_reg(imx390, 0x0008, IMX390_REG_VALUE_08BIT,  0x00);
+	imx390_group_hold_enable(imx390, 0);
 
 	imx390_read_reg(imx390, IMX390_REG_AGAIN_SP1H, IMX390_REG_VALUE_08BIT, &prevgain);
 
 	return 0;
-}
-
-static int imx390_update_digital_gain(struct imx390 *imx390, u32 d_gain)
-{
-	return imx390_write_reg(imx390, IMX390_REG_GLOBAL_GAIN,
-				IMX390_REG_VALUE_08BIT, d_gain);
 }
 
 static u64 get_pixel_rate(struct imx390 *imx390)
@@ -435,8 +482,6 @@ static u64 get_hblank(struct imx390 *imx390)
 
 static int imx390_exposure_raw_set(struct imx390 *self, u32 exp)
 {
-	int err = 0;
-
 	/* This should never be called in HDR mode but we'll put check
 	 * in to be safe.
 	 */
@@ -501,23 +546,70 @@ static int imx390_exposure_set(struct imx390 *self, s64 val)
 	return imx390_exposure_raw_set(self, reg);
 }
 
+static int imx390_white_balance_set(struct imx390 *self)
+{
+	u16 cf00, cf01, cf10, cf11;
+	u16 red, blue;
+	u16 max_chroma, r, g, b;
+	struct i2c_client *client = v4l2_get_subdevdata(&self->sd);
+
+	dev_dbg(&client->dev, "%s\n", __func__);
+	red = *self->red_balance->p_new.p_s32;
+	blue = *self->blue_balance->p_new.p_s32;
+
+	max_chroma = MAX(MAX(red, 0x100), blue);
+	r = (max_chroma * 0x100) / red;
+	g = max_chroma;
+	b = (max_chroma * 0x100) / blue;
+
+	cf00 = IMX390_REG_WBGAIN_R;
+	cf01 = IMX390_REG_WBGAIN_GR;
+	cf10 = IMX390_REG_WBGAIN_GB;
+	cf11 = IMX390_REG_WBGAIN_B;
+
+	imx390_group_hold_enable(self, 1);
+	dev_dbg(&client->dev, "self->cur_mode->code[%x] MEDIA_BUS_FMT_SGRBG12_1X12[%x]\n", self->cur_mode->code, MEDIA_BUS_FMT_SGRBG12_1X12);
+	if (self->cur_mode->code == MEDIA_BUS_FMT_SGRBG12_1X12) {
+		imx390_write_reg(self, IMX390_REG_WBGAIN_FORCE_X1, IMX390_REG_VALUE_08BIT, 0);
+
+		imx390_write_reg(self, cf00, IMX390_REG_VALUE_08BIT, r & 0xff);
+		imx390_write_reg(self, cf00 + 1, IMX390_REG_VALUE_08BIT, (r & 0xff00) >> 8);
+		imx390_write_reg(self, cf01, IMX390_REG_VALUE_08BIT, g & 0xff);
+		imx390_write_reg(self, cf01 + 1, IMX390_REG_VALUE_08BIT, (g & 0xff00) >> 8);
+		imx390_write_reg(self, cf10, IMX390_REG_VALUE_08BIT, g & 0xff);
+		imx390_write_reg(self, cf10 + 1, IMX390_REG_VALUE_08BIT, (g & 0xff00) >> 8);
+		imx390_write_reg(self, cf11, IMX390_REG_VALUE_08BIT, b & 0xff);
+		imx390_write_reg(self, cf11 + 1, IMX390_REG_VALUE_08BIT, (b & 0xff00) >> 8);
+	}
+	imx390_group_hold_enable(self, 0);
+
+	return 0;
+}
+
 static int imx390_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct imx390 *imx390 = container_of(ctrl->handler,
 					     struct imx390, ctrl_handler);
 	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
-	s64 exposure_max;
 	int ret = 0;
-	u32 val;
 
 	switch (ctrl->id) {
-	case V4L2_CID_ANALOGUE_GAIN:
-		ret = imx390_gain_set(imx390, *ctrl->p_new.p_s64);
-		break;
+	case IMX390_CID_EXPOSURE_SHS1:
+	case IMX390_CID_EXPOSURE_SHS2:
+	case IMX390_CID_EXPOSURE_SHS3:
+	case IMX390_CID_EXPOSURE_RHS1:
+	case IMX390_CID_EXPOSURE_RHS2:
+	case IMX390_CID_DIGITAL_GAIN_L:
+	case IMX390_CID_DIGITAL_GAIN_S:
+	case IMX390_CID_DIGITAL_GAIN_VS:
+	case IMX390_CID_ANALOG_GAIN_L:
+	case IMX390_CID_ANALOG_GAIN_S:
+	case IMX390_CID_ANALOG_GAIN_VS:
 	case V4L2_CID_DIGITAL_GAIN:
+	case V4L2_CID_GAIN:
 		ret = 0;
 		break;
-	case V4L2_CID_GAIN:
+	case V4L2_CID_ANALOGUE_GAIN:
 		ret = imx390_gain_set(imx390, *ctrl->p_new.p_s64);
 		break;
 	case V4L2_CID_EXPOSURE:
@@ -527,6 +619,10 @@ static int imx390_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = imx390_write_reg(imx390, IMX390_REG_VTS,
 				IMX390_REG_VALUE_16BIT,
 				imx390->cur_mode->height + ctrl->val);
+		break;
+	case V4L2_CID_RED_BALANCE:
+	case V4L2_CID_BLUE_BALANCE:
+		ret = imx390_white_balance_set(imx390);
 		break;
 	default:
 		ret = -EINVAL;
@@ -544,12 +640,10 @@ static const struct v4l2_ctrl_ops imx390_ctrl_ops = {
 
 static int imx390_init_controls(struct imx390 *imx390)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
 	struct v4l2_ctrl_handler *ctrl_hdlr;
-	s64 exposure_max;
 	s64 hblank;
-	struct v4l2_ctrl_config cfg = { 0 };
 	int ret;
+	struct v4l2_ctrl_config cfg = { 0 };
 
 	ctrl_hdlr = &imx390->ctrl_handler;
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
@@ -571,19 +665,19 @@ static int imx390_init_controls(struct imx390 *imx390)
 			  imx390->cur_mode->vts_def - imx390->cur_mode->height);
 
 	imx390->gain = v4l2_ctrl_new_std(
-		ctrl_hdlr,
-		&imx390_ctrl_ops,
-		V4L2_CID_GAIN, IMX390_GAIN_MIN,
-		IMX390_DGTL_GAIN_MAX * IMX390_ANAL_GAIN_MAX, 1,
-		IMX390_GAIN_DEFAULT);
+			ctrl_hdlr,
+			&imx390_ctrl_ops,
+			V4L2_CID_GAIN, IMX390_GAIN_MIN,
+			IMX390_DGTL_GAIN_MAX * IMX390_ANAL_GAIN_MAX, 1,
+			IMX390_GAIN_DEFAULT);
 
 	imx390->analogue_gain = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
 			  IMX390_ANAL_GAIN_MIN, IMX390_ANAL_GAIN_MAX,
 			  IMX390_ANAL_GAIN_STEP, IMX390_ANAL_GAIN_DEFAULT);
 
 	imx390->digital_gain = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops, V4L2_CID_DIGITAL_GAIN,
-			  IMX390_DGTL_GAIN_MIN, IMX390_DGTL_GAIN_MAX,
-			  IMX390_DGTL_GAIN_STEP, IMX390_DGTL_GAIN_DEFAULT);
+			IMX390_DGTL_GAIN_MIN, IMX390_DGTL_GAIN_MAX,
+			IMX390_DGTL_GAIN_STEP, IMX390_DGTL_GAIN_DEFAULT);
 
 	imx390->exposure = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops,
 					     V4L2_CID_EXPOSURE,
@@ -604,6 +698,71 @@ static int imx390_init_controls(struct imx390 *imx390)
 					hblank, hblank, 1, hblank);
 	if (imx390->hblank)
 		imx390->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	imx390->red_balance = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops,
+					     V4L2_CID_RED_BALANCE,
+					     IMX390_RED_BALANCE_MIN,
+					     IMX390_RED_BALANCE_MAX,
+					     IMX390_RED_BALANCE_STEP,
+					     IMX390_RED_BALANCE_DEF);
+
+	imx390->blue_balance = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops,
+					     V4L2_CID_BLUE_BALANCE,
+					     IMX390_BLUE_BALANCE_MIN,
+					     IMX390_BLUE_BALANCE_MAX,
+					     IMX390_BLUE_BALANCE_STEP,
+					     IMX390_BLUE_BALANCE_DEF);
+
+	cfg.ops = &imx390_ctrl_ops;
+	cfg.id = IMX390_CID_EXPOSURE_SHS1;
+	cfg.name = "IMX390_CID_EXPOSURE_SHS1";
+	cfg.type = V4L2_CTRL_TYPE_INTEGER;
+	cfg.max = IMX390_DUMMY_MAX;
+	cfg.min = IMX390_DUMMY_MIN;
+	cfg.step = IMX390_DUMMY_STEP;
+	cfg.def = IMX390_DUMMY_DEF;
+	cfg.qmenu = 0; cfg.elem_size = 0;
+	imx390->dummy_exp_shs1 = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_EXPOSURE_SHS2;
+	cfg.name = "IMX390_CID_EXPOSURE_SHS2";
+	imx390->dummy_exp_shs2 = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_EXPOSURE_SHS3;
+	cfg.name = "IMX390_CID_EXPOSURE_SHS3";
+	imx390->dummy_exp_shs3 = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_EXPOSURE_RHS1;
+	cfg.name = "IMX390_CID_EXPOSURE_RHS1";
+	imx390->dummy_exp_rhs1 = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_EXPOSURE_RHS2;
+	cfg.name = "IMX390_CID_EXPOSURE_RHS2";
+	imx390->dummy_exp_rhs2 = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_DIGITAL_GAIN_L;
+	cfg.name = "IMX390_CID_DIGITAL_GAIN_L";
+	imx390->dummy_dg_l = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_DIGITAL_GAIN_S;
+	cfg.name = "IMX390_CID_DIGITAL_GAIN_S";
+	imx390->dummy_dg_s = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_DIGITAL_GAIN_VS;
+	cfg.name = "IMX390_CID_DIGITAL_GAIN_VS";
+	imx390->dummy_dg_vs = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_ANALOG_GAIN_L;
+	cfg.name = "IMX390_CID_ANALOG_GAIN_L";
+	imx390->dummy_ag_l = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_ANALOG_GAIN_S;
+	cfg.name = "IMX390_CID_ANALOG_GAIN_S";
+	imx390->dummy_ag_s = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+
+	cfg.id = IMX390_CID_ANALOG_GAIN_VS;
+	cfg.name = "IMX390_CID_ANALOG_GAIN_VS";
+	imx390->dummy_ag_vs = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
 
 	if (ctrl_hdlr->error)
 		return ctrl_hdlr->error;

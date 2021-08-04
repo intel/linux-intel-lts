@@ -323,7 +323,7 @@ static int process_read_event(struct perf_tool *tool,
 		const char *name = evsel__name(evsel);
 		int err = perf_read_values_add_value(&rep->show_threads_values,
 					   event->read.pid, event->read.tid,
-					   evsel->idx,
+					   evsel->core.idx,
 					   name,
 					   event->read.value);
 
@@ -665,7 +665,7 @@ static int report__collapse_hists(struct report *rep)
 	evlist__for_each_entry(rep->session->evlist, pos) {
 		struct hists *hists = evsel__hists(pos);
 
-		if (pos->idx == 0)
+		if (pos->core.idx == 0)
 			hists->symbol_filter_str = rep->symbol_filter_str;
 
 		hists->socket_filter = rep->socket_filter;
@@ -676,7 +676,7 @@ static int report__collapse_hists(struct report *rep)
 
 		/* Non-group events are considered as leader */
 		if (symbol_conf.event_group && !evsel__is_group_leader(pos)) {
-			struct hists *leader_hists = evsel__hists(pos->leader);
+			struct hists *leader_hists = evsel__hists(evsel__leader(pos));
 
 			hists__match(leader_hists, hists);
 			hists__link(leader_hists, hists);
@@ -918,6 +918,8 @@ static int __cmd_report(struct report *rep)
 		ui__error("failed to process sample\n");
 		return ret;
 	}
+
+	evlist__check_mem_load_aux(session->evlist);
 
 	if (rep->stats_mode)
 		return stats_print(rep);

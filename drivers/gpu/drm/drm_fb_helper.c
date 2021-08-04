@@ -1737,7 +1737,7 @@ void drm_fb_helper_fill_info(struct fb_info *info,
 			       sizes->fb_width, sizes->fb_height);
 
 	info->par = fb_helper;
-	snprintf(info->fix.id, sizeof(info->fix.id), "%sdrmfb",
+	snprintf(info->fix.id, sizeof(info->fix.id), "%s",
 		 fb_helper->dev->driver->name);
 
 }
@@ -2048,7 +2048,7 @@ static void drm_fbdev_cleanup(struct drm_fb_helper *fb_helper)
 
 	if (shadow)
 		vfree(shadow);
-	else
+	else if (fb_helper->buffer)
 		drm_client_buffer_vunmap(fb_helper->buffer);
 
 	drm_client_framebuffer_delete(fb_helper->buffer);

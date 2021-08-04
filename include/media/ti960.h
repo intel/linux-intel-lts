@@ -13,6 +13,7 @@
 #define TI960_NAME "ti960"
 
 #define TI960_I2C_ADDRESS	0x32
+#define TI960_I2C_ADDRESS_2	0x3d
 
 #define PIXEL_ORDER_GRBG	0
 #define PIXEL_ORDER_RGGB	1
@@ -61,6 +62,7 @@ struct ti960_pdata {
 	unsigned int subdev_num;
 	struct ti960_subdev_info *subdev_info;
 	unsigned int reset_gpio;
+	int FPD_gpio;
 	const char suffix;
 };
 

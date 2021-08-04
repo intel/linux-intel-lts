@@ -27,7 +27,7 @@ static int s6e63m0_dsi_dcs_read(struct device *dev, const u8 cmd, u8 *data)
 		return ret;
 	}
 
-	dev_info(dev, "DSI read CMD %02x = %02x\n", cmd, *data);
+	dev_dbg(dev, "DSI read CMD %02x = %02x\n", cmd, *data);
 
 	return 0;
 }
@@ -42,7 +42,7 @@ static int s6e63m0_dsi_dcs_write(struct device *dev, const u8 *data, size_t len)
 	int chunk;
 	int ret;
 
-	dev_info(dev, "DSI writing dcs seq: %*ph\n", (int)len, data);
+	dev_dbg(dev, "DSI writing dcs seq: %*ph\n", (int)len, data);
 
 	/* Pick out and skip past the DCS command */
 	cmd = *seqp;
@@ -80,7 +80,7 @@ static int s6e63m0_dsi_dcs_write(struct device *dev, const u8 *data, size_t len)
 		cmdwritten += chunk;
 		seqp += chunk;
 	}
-	dev_info(dev, "sent command %02x %02x bytes\n", cmd, cmdwritten);
+	dev_dbg(dev, "sent command %02x %02x bytes\n", cmd, cmdwritten);
 
 	usleep_range(8000, 9000);
 
@@ -97,7 +97,6 @@ static int s6e63m0_dsi_probe(struct mipi_dsi_device *dsi)
 	dsi->hs_rate = 349440000;
 	dsi->lp_rate = 9600000;
 	dsi->mode_flags = MIPI_DSI_MODE_VIDEO |
-		MIPI_DSI_MODE_EOT_PACKET |
 		MIPI_DSI_MODE_VIDEO_BURST;
 
 	ret = s6e63m0_probe(dev, s6e63m0_dsi_dcs_read, s6e63m0_dsi_dcs_write,

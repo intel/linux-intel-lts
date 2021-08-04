@@ -1,6 +1,5 @@
+// SPDX-License-Identifier: MIT
 /*
- * SPDX-License-Identifier: MIT
- *
  * Copyright © 2019 Intel Corporation
  */
 
@@ -24,8 +23,11 @@ static void dbg_poison_ce(struct intel_context *ce)
 
 	if (ce->state) {
 		struct drm_i915_gem_object *obj = ce->state->obj;
-		int type = i915_coherent_map_type(ce->engine->i915);
+		int type = i915_coherent_map_type(ce->engine->i915, obj, true);
 		void *map;
+
+		if (!i915_gem_object_trylock(obj))
+			return;
 
 		map = i915_gem_object_pin_map(obj, type);
 		if (!IS_ERR(map)) {
@@ -33,6 +35,7 @@ static void dbg_poison_ce(struct intel_context *ce)
 			i915_gem_object_flush_map(obj);
 			i915_gem_object_unpin_map(obj);
 		}
+		i915_gem_object_unlock(obj);
 	}
 }
 

@@ -1346,16 +1346,15 @@ static void  lt6911uxc_check_status(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc_ext_control(lt6911uxc, false);
 }
 
-//#define LT69111UXC_IRQ_MODE
+#define LT69111UXC_IRQ_MODE
 
-#ifdef LT69111UXC_IRQ_MODE
 static irqreturn_t lt6911uxc_threaded_irq_fn(int irq, void *dev_id)
 {
 	struct v4l2_subdev *sd = dev_id;
 	struct lt6911uxc_state *lt6911uxc;
 
 	if (!sd) {
-		dev_err(sd->dev, "Invalid dev_id argument!\n");
+		dev_err(NULL, "Invalid dev_id argument!\n");
 		return IRQ_NONE;
 	}
 
@@ -1365,30 +1364,10 @@ static irqreturn_t lt6911uxc_threaded_irq_fn(int irq, void *dev_id)
 		return IRQ_NONE;
 	}
 
-	mutex_lock(&lt6911uxc->mutex);
 	dev_info(sd->dev, "%s in kthread %d\n", __func__, current->pid);
 	lt6911uxc_check_status(lt6911uxc);
-	mutex_unlock(&lt6911uxc->mutex);
 	return IRQ_HANDLED;
 }
-#else
-static int lt6911uxc_detect_thread(void *data)
-{
-	struct lt6911uxc_state *lt6911uxc = (struct lt6911uxc_state *)data;
-	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
-
-	if (!lt6911uxc) {
-		dev_err(&client->dev,  "Invalid argument\n");
-		return -EINVAL;
-	}
-
-	while (lt6911uxc->thread_run) {
-		lt6911uxc_check_status(lt6911uxc);
-		usleep_range(2000000, 2050000);
-	}
-	return 0;
-}
-#endif
 
 static int lt6911uxc_probe(struct i2c_client *client)
 {
@@ -1446,11 +1425,10 @@ static int lt6911uxc_probe(struct i2c_client *client)
 		dev_err(&client->dev, "Init entity pads failed:%d\n", ret);
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
-#ifdef LT69111UXC_IRQ_MODE
 	/* Setting irq */
 	ret = devm_gpio_request_one(&client->dev,
 			lt6911uxc->platform_data->irq_pin,
-			GPIOF_OUT_INIT_HIGH, "Interrupt signal");
+			GPIOF_IN, "Interrupt signal");
 	if (ret) {
 		dev_err(&client->dev, "IRQ pin %d (name: %s) request failed! ret: %d\n",
 			lt6911uxc->platform_data->irq_pin,
@@ -1465,6 +1443,8 @@ static int lt6911uxc_probe(struct i2c_client *client)
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
+	lt6911uxc_check_status(lt6911uxc);
+
 	ret = devm_request_threaded_irq(&client->dev,
 			gpio_to_irq(lt6911uxc->platform_data->irq_pin),
 			NULL, lt6911uxc_threaded_irq_fn,
@@ -1474,24 +1454,6 @@ static int lt6911uxc_probe(struct i2c_client *client)
 		dev_err(&client->dev, "IRQ request failed! ret: %d\n", ret);
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
-
-	/* Check the current status */
-	usleep_range(2000000, 2050000);
-	mutex_lock(&lt6911uxc->mutex);
-	lt6911uxc_check_status(lt6911uxc);
-	mutex_unlock(&lt6911uxc->mutex);
-#else
-	lt6911uxc->poll_task = kthread_create(lt6911uxc_detect_thread,
-		lt6911uxc, "lt6911uxc polling thread");
-	if (lt6911uxc->poll_task == NULL) {
-		dev_err(&client->dev, "create lt6911uxc polling thread failed.\n");
-		goto probe_error_media_entity_cleanup;
-	} else {
-		lt6911uxc->thread_run = true;
-		wake_up_process(lt6911uxc->poll_task);
-		dev_info(&client->dev, "Started lt6911uxc polling thread.\n");
-	}
-#endif
 	ret = v4l2_async_register_subdev_sensor_common(&lt6911uxc->sd);
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",

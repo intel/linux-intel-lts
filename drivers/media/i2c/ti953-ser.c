@@ -25,9 +25,11 @@ int ti953_reg_write(struct v4l2_subdev *sd, unsigned short rx_port,
 	int ret;
 	int retry, timeout = 10;
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	unsigned short addr_backup;
 
 	dev_dbg(sd->dev, "%s port %d, ser_alias %x, reg %x, val %x",
 		__func__, rx_port, ser_alias, reg, val);
+	addr_backup = client->addr;
 	client->addr = ser_alias;
 	for (retry = 0; retry < timeout; retry++) {
 		ret = i2c_smbus_write_byte_data(client, reg, val);
@@ -37,7 +39,7 @@ int ti953_reg_write(struct v4l2_subdev *sd, unsigned short rx_port,
 			break;
 	}
 
-	client->addr = TI960_I2C_ADDRESS;
+	client->addr = addr_backup;
 	if (retry >= timeout) {
 		dev_err(sd->dev,
 			"%s:write reg failed: port=%2x, addr=%2x, reg=%2x\n",
@@ -53,7 +55,9 @@ int ti953_reg_read(struct v4l2_subdev *sd, unsigned short rx_port,
 {
 	int retry, timeout = 10;
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	unsigned short addr_backup;
 
+	addr_backup = client->addr;
 	client->addr = ser_alias;
 	for (retry = 0; retry < timeout; retry++) {
 		*val = i2c_smbus_read_byte_data(client, reg);
@@ -63,7 +67,7 @@ int ti953_reg_read(struct v4l2_subdev *sd, unsigned short rx_port,
 			break;
 	}
 
-	client->addr = TI960_I2C_ADDRESS;
+	client->addr = addr_backup;
 	if (retry >= timeout) {
 		dev_err(sd->dev,
 			"%s:read reg failed: port=%2x, addr=%2x, reg=%2x\n",

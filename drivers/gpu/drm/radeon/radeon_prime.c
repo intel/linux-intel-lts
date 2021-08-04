@@ -56,6 +56,8 @@ struct drm_gem_object *radeon_gem_prime_import_sg_table(struct drm_device *dev,
 	if (ret)
 		return ERR_PTR(ret);
 
+	bo->tbo.base.funcs = &radeon_gem_object_funcs;
+
 	mutex_lock(&rdev->gem.mutex);
 	list_add_tail(&bo->list, &rdev->gem.objects);
 	mutex_unlock(&rdev->gem.mutex);
@@ -75,19 +77,9 @@ int radeon_gem_prime_pin(struct drm_gem_object *obj)
 
 	/* pin buffer into GTT */
 	ret = radeon_bo_pin(bo, RADEON_GEM_DOMAIN_GTT, NULL);
-	if (unlikely(ret))
-		goto error;
+	if (likely(ret == 0))
+		bo->prime_shared_count++;
 
-	if (bo->tbo.moving) {
-		ret = dma_fence_wait(bo->tbo.moving, false);
-		if (unlikely(ret)) {
-			radeon_bo_unpin(bo);
-			goto error;
-		}
-	}
-
-	bo->prime_shared_count++;
-error:
 	radeon_bo_unreserve(bo);
 	return ret;
 }

@@ -21,7 +21,7 @@ TRACE_EVENT(ipu_sof_seqid,
 	    TP_fast_assign(__entry->seqid = seqid;
 			   __entry->csiport = csiport;
 			   __entry->csivc = csivc;),
-	    TP_printk("seqid<%u>,csiport<%u>,csivc<%u>", __entry->seqid,
+	    TP_printk("seqid=%u,csiport=%u,csivc=%u", __entry->seqid,
 		      __entry->csiport, __entry->csivc)
 	);
 #endif
@@ -38,7 +38,7 @@ TRACE_EVENT(ipu_eof_seqid,
 	    TP_fast_assign(__entry->seqid = seqid;
 			   __entry->csiport = csiport;
 			   __entry->csivc = csivc;),
-	    TP_printk("seqid<%u>,csiport<%u>,csivc<%u>", __entry->seqid,
+	    TP_printk("seqid=%u,csiport=%u,csivc=%u", __entry->seqid,
 		      __entry->csiport, __entry->csivc)
 	);
 #endif

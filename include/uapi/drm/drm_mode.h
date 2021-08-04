@@ -388,6 +388,7 @@ enum drm_mode_subconnector {
 #define DRM_MODE_CONNECTOR_DPI		17
 #define DRM_MODE_CONNECTOR_WRITEBACK	18
 #define DRM_MODE_CONNECTOR_SPI		19
+#define DRM_MODE_CONNECTOR_USB		20
 
 /**
  * struct drm_mode_get_connector - Get connector metadata.
@@ -412,9 +413,10 @@ enum drm_mode_subconnector {
  *
  * **Force-probing a connector**
  *
- * If the @count_modes field is set to zero, the kernel will perform a forced
- * probe on the connector to refresh the connector status, modes and EDID.
- * A forced-probe can be slow, might cause flickering and the ioctl will block.
+ * If the @count_modes field is set to zero and the DRM client is the current
+ * DRM master, the kernel will perform a forced probe on the connector to
+ * refresh the connector status, modes and EDID. A forced-probe can be slow,
+ * might cause flickering and the ioctl will block.
  *
  * User-space needs to force-probe connectors to ensure their metadata is
  * up-to-date at startup and after receiving a hot-plug event. User-space
@@ -990,7 +992,7 @@ struct drm_format_modifier {
 };
 
 /**
- * struct drm_mode_create_blob - Create New block property
+ * struct drm_mode_create_blob - Create New blob property
  *
  * Create a new 'blob' data property, copying length bytes from data pointer,
  * and returning new blob ID.

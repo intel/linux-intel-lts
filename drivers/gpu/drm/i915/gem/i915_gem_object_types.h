@@ -7,7 +7,10 @@
 #ifndef __I915_GEM_OBJECT_TYPES_H__
 #define __I915_GEM_OBJECT_TYPES_H__
 
+#include <linux/mmu_notifier.h>
+
 #include <drm/drm_gem.h>
+#include <drm/ttm/ttm_bo_api.h>
 #include <uapi/drm/i915_drm.h>
 
 #include "i915_active.h"
@@ -30,12 +33,10 @@ struct i915_lut_handle {
 
 struct drm_i915_gem_object_ops {
 	unsigned int flags;
-#define I915_GEM_OBJECT_HAS_STRUCT_PAGE	BIT(0)
 #define I915_GEM_OBJECT_HAS_IOMEM	BIT(1)
 #define I915_GEM_OBJECT_IS_SHRINKABLE	BIT(2)
 #define I915_GEM_OBJECT_IS_PROXY	BIT(3)
 #define I915_GEM_OBJECT_NO_MMAP		BIT(4)
-#define I915_GEM_OBJECT_ASYNC_CANCEL	BIT(5)
 
 	/* Interface between the GEM object and its backing storage.
 	 * get_pages() is called once prior to the use of the associated set
@@ -99,7 +100,16 @@ struct i915_gem_object_page_iter {
 };
 
 struct drm_i915_gem_object {
-	struct drm_gem_object base;
+	/*
+	 * We might have reason to revisit the below since it wastes
+	 * a lot of space for non-ttm gem objects.
+	 * In any case, always use the accessors for the ttm_buffer_object
+	 * when accessing it.
+	 */
+	union {
+		struct drm_gem_object base;
+		struct ttm_buffer_object __do_not_access;
+	};
 
 	const struct drm_i915_gem_object_ops *ops;
 
@@ -149,6 +159,10 @@ struct drm_i915_gem_object {
 	 * when i915_gem_ww_ctx_backoff() or i915_gem_ww_ctx_fini() are called.
 	 */
 	struct list_head obj_link;
+	/**
+	 * @shared_resv_from: The object shares the resv from this vm.
+	 */
+	struct i915_address_space *shares_resv_from;
 
 	union {
 		struct rcu_head rcu;
@@ -171,9 +185,14 @@ struct drm_i915_gem_object {
 	unsigned long flags;
 #define I915_BO_ALLOC_CONTIGUOUS BIT(0)
 #define I915_BO_ALLOC_VOLATILE   BIT(1)
-#define I915_BO_ALLOC_FLAGS (I915_BO_ALLOC_CONTIGUOUS | I915_BO_ALLOC_VOLATILE)
-#define I915_BO_READONLY         BIT(2)
-#define I915_TILING_QUIRK_BIT    3 /* unknown swizzling; do not release! */
+#define I915_BO_ALLOC_STRUCT_PAGE BIT(2)
+#define I915_BO_ALLOC_CPU_CLEAR  BIT(3)
+#define I915_BO_ALLOC_FLAGS (I915_BO_ALLOC_CONTIGUOUS | \
+			     I915_BO_ALLOC_VOLATILE | \
+			     I915_BO_ALLOC_STRUCT_PAGE | \
+			     I915_BO_ALLOC_CPU_CLEAR)
+#define I915_BO_READONLY         BIT(4)
+#define I915_TILING_QUIRK_BIT    5 /* unknown swizzling; do not release! */
 
 	/*
 	 * Is the object to be mapped as read-only to the GPU
@@ -213,18 +232,25 @@ struct drm_i915_gem_object {
 		 * Protects the pages and their use. Do not use directly, but
 		 * instead go through the pin/unpin interfaces.
 		 */
-		struct mutex lock;
 		atomic_t pages_pin_count;
 		atomic_t shrink_pin;
+
+		/**
+		 * Priority list of potential placements for this object.
+		 */
+		struct intel_memory_region **placements;
+		int n_placements;
 
 		/**
 		 * Memory region for this object.
 		 */
 		struct intel_memory_region *region;
+
 		/**
-		 * List of memory region blocks allocated for this object.
+		 * Memory manager node allocated for this object.
 		 */
-		struct list_head blocks;
+		void *st_mm_node;
+
 		/**
 		 * Element within memory_region->objects or region->purgeable
 		 * if the object is marked as DONTNEED. Access is protected by
@@ -288,13 +314,16 @@ struct drm_i915_gem_object {
 	unsigned long *bit_17;
 
 	union {
+#ifdef CONFIG_MMU_NOTIFIER
 		struct i915_gem_userptr {
 			uintptr_t ptr;
+			unsigned long notifier_seq;
 
-			struct i915_mm_struct *mm;
-			struct i915_mmu_object *mmu_object;
-			struct work_struct *work;
+			struct mmu_interval_notifier notifier;
+			struct page **pvec;
+			int page_ref;
 		} userptr;
+#endif
 
 		struct drm_mm_node *stolen;
 

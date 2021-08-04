@@ -11,6 +11,7 @@
 #include "gt/intel_context.h"
 #include "gt/intel_engine_pm.h"
 #include "gt/intel_gt.h"
+#include "gt/intel_gt_irq.h"
 #include "gt/intel_gt_pm.h"
 #include "gt/intel_lrc.h"
 #include "gt/intel_mocs.h"
@@ -206,9 +207,8 @@ static void __guc_dequeue(struct intel_engine_cs *engine)
 	while ((rb = rb_first_cached(&execlists->queue))) {
 		struct i915_priolist *p = to_priolist(rb);
 		struct i915_request *rq, *rn;
-		int i;
 
-		priolist_for_each_request_consume(rq, rn, p, i) {
+		priolist_for_each_request_consume(rq, rn, p) {
 			if (last && rq->context != last->context) {
 				if (port == last_port)
 					goto done;
@@ -238,9 +238,10 @@ done:
 	execlists->active = execlists->inflight;
 }
 
-static void guc_submission_tasklet(unsigned long data)
+static void guc_submission_tasklet(struct tasklet_struct *t)
 {
-	struct intel_engine_cs * const engine = (struct intel_engine_cs *)data;
+	struct intel_engine_cs * const engine =
+		from_tasklet(engine, t, execlists.tasklet);
 	struct intel_engine_execlists * const execlists = &engine->execlists;
 	struct i915_request **port, *rq;
 	unsigned long flags;
@@ -262,6 +263,14 @@ static void guc_submission_tasklet(unsigned long data)
 	__guc_dequeue(engine);
 
 	spin_unlock_irqrestore(&engine->active.lock, flags);
+}
+
+static void cs_irq_handler(struct intel_engine_cs *engine, u16 iir)
+{
+	if (iir & GT_RENDER_USER_INTERRUPT) {
+		intel_engine_signal_breadcrumbs(engine);
+		tasklet_hi_schedule(&engine->execlists.tasklet);
+	}
 }
 
 static void guc_reset_prepare(struct intel_engine_cs *engine)
@@ -361,9 +370,8 @@ static void guc_reset_cancel(struct intel_engine_cs *engine)
 	/* Flush the queued requests to the timeline list (for retiring). */
 	while ((rb = rb_first_cached(&execlists->queue))) {
 		struct i915_priolist *p = to_priolist(rb);
-		int i;
 
-		priolist_for_each_request_consume(rq, rn, p, i) {
+		priolist_for_each_request_consume(rq, rn, p) {
 			list_del_init(&rq->sched.link);
 			__i915_request_submit(rq);
 			dma_fence_set_error(&rq->fence, -EIO);
@@ -422,32 +430,6 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	if (guc->stage_desc_pool) {
 		guc_stage_desc_pool_destroy(guc);
 	}
-}
-
-static void guc_interrupts_capture(struct intel_gt *gt)
-{
-	struct intel_uncore *uncore = gt->uncore;
-	u32 irqs = GT_CONTEXT_SWITCH_INTERRUPT;
-	u32 dmask = irqs << 16 | irqs;
-
-	GEM_BUG_ON(INTEL_GEN(gt->i915) < 11);
-
-	/* Don't handle the ctx switch interrupt in GuC submission mode */
-	intel_uncore_rmw(uncore, GEN11_RENDER_COPY_INTR_ENABLE, dmask, 0);
-	intel_uncore_rmw(uncore, GEN11_VCS_VECS_INTR_ENABLE, dmask, 0);
-}
-
-static void guc_interrupts_release(struct intel_gt *gt)
-{
-	struct intel_uncore *uncore = gt->uncore;
-	u32 irqs = GT_CONTEXT_SWITCH_INTERRUPT;
-	u32 dmask = irqs << 16 | irqs;
-
-	GEM_BUG_ON(INTEL_GEN(gt->i915) < 11);
-
-	/* Handle ctx switch interrupts again */
-	intel_uncore_rmw(uncore, GEN11_RENDER_COPY_INTR_ENABLE, 0, dmask);
-	intel_uncore_rmw(uncore, GEN11_VCS_VECS_INTR_ENABLE, 0, dmask);
 }
 
 static int guc_context_alloc(struct intel_context *ce)
@@ -609,35 +591,6 @@ static int guc_resume(struct intel_engine_cs *engine)
 static void guc_set_default_submission(struct intel_engine_cs *engine)
 {
 	engine->submit_request = guc_submit_request;
-	engine->schedule = i915_schedule;
-	engine->execlists.tasklet.func = guc_submission_tasklet;
-
-	engine->reset.prepare = guc_reset_prepare;
-	engine->reset.rewind = guc_reset_rewind;
-	engine->reset.cancel = guc_reset_cancel;
-	engine->reset.finish = guc_reset_finish;
-
-	engine->flags |= I915_ENGINE_NEEDS_BREADCRUMB_TASKLET;
-	engine->flags |= I915_ENGINE_HAS_PREEMPTION;
-
-	/*
-	 * TODO: GuC supports timeslicing and semaphores as well, but they're
-	 * handled by the firmware so some minor tweaks are required before
-	 * enabling.
-	 *
-	 * engine->flags |= I915_ENGINE_HAS_TIMESLICES;
-	 * engine->flags |= I915_ENGINE_HAS_SEMAPHORES;
-	 */
-
-	engine->emit_bb_start = gen8_emit_bb_start;
-
-	/*
-	 * For the breadcrumb irq to work we need the interrupts to stay
-	 * enabled. However, on all platforms on which we'll have support for
-	 * GuC submission we don't allow disabling the interrupts at runtime, so
-	 * we're always safe with the current flow.
-	 */
-	GEM_BUG_ON(engine->irq_enable || engine->irq_disable);
 }
 
 static void guc_release(struct intel_engine_cs *engine)
@@ -659,19 +612,39 @@ static void guc_default_vfuncs(struct intel_engine_cs *engine)
 	engine->cops = &guc_context_ops;
 	engine->request_alloc = guc_request_alloc;
 
+	engine->schedule = i915_schedule;
+
+	engine->reset.prepare = guc_reset_prepare;
+	engine->reset.rewind = guc_reset_rewind;
+	engine->reset.cancel = guc_reset_cancel;
+	engine->reset.finish = guc_reset_finish;
+
 	engine->emit_flush = gen8_emit_flush_xcs;
 	engine->emit_init_breadcrumb = gen8_emit_init_breadcrumb;
 	engine->emit_fini_breadcrumb = gen8_emit_fini_breadcrumb_xcs;
-	if (INTEL_GEN(engine->i915) >= 12) {
+	if (GRAPHICS_VER(engine->i915) >= 12) {
 		engine->emit_fini_breadcrumb = gen12_emit_fini_breadcrumb_xcs;
 		engine->emit_flush = gen12_emit_flush_xcs;
 	}
 	engine->set_default_submission = guc_set_default_submission;
+
+	engine->flags |= I915_ENGINE_HAS_PREEMPTION;
+
+	/*
+	 * TODO: GuC supports timeslicing and semaphores as well, but they're
+	 * handled by the firmware so some minor tweaks are required before
+	 * enabling.
+	 *
+	 * engine->flags |= I915_ENGINE_HAS_TIMESLICES;
+	 * engine->flags |= I915_ENGINE_HAS_SEMAPHORES;
+	 */
+
+	engine->emit_bb_start = gen8_emit_bb_start;
 }
 
 static void rcs_submission_override(struct intel_engine_cs *engine)
 {
-	switch (INTEL_GEN(engine->i915)) {
+	switch (GRAPHICS_VER(engine->i915)) {
 	case 12:
 		engine->emit_flush = gen12_emit_flush_rcs;
 		engine->emit_fini_breadcrumb = gen12_emit_fini_breadcrumb_rcs;
@@ -690,6 +663,7 @@ static void rcs_submission_override(struct intel_engine_cs *engine)
 static inline void guc_default_irqs(struct intel_engine_cs *engine)
 {
 	engine->irq_keep_mask = GT_RENDER_USER_INTERRUPT;
+	intel_engine_set_irq_handler(engine, cs_irq_handler);
 }
 
 int intel_guc_submission_setup(struct intel_engine_cs *engine)
@@ -700,10 +674,9 @@ int intel_guc_submission_setup(struct intel_engine_cs *engine)
 	 * The setup relies on several assumptions (e.g. irqs always enabled)
 	 * that are only valid on gen11+
 	 */
-	GEM_BUG_ON(INTEL_GEN(i915) < 11);
+	GEM_BUG_ON(GRAPHICS_VER(i915) < 11);
 
-	tasklet_init(&engine->execlists.tasklet,
-		     guc_submission_tasklet, (unsigned long)engine);
+	tasklet_setup(&engine->execlists.tasklet, guc_submission_tasklet);
 
 	guc_default_vfuncs(engine);
 	guc_default_irqs(engine);
@@ -723,9 +696,6 @@ int intel_guc_submission_setup(struct intel_engine_cs *engine)
 void intel_guc_submission_enable(struct intel_guc *guc)
 {
 	guc_stage_desc_init(guc);
-
-	/* Take over from manual control of ELSP (execlists) */
-	guc_interrupts_capture(guc_to_gt(guc));
 }
 
 void intel_guc_submission_disable(struct intel_guc *guc)
@@ -735,8 +705,6 @@ void intel_guc_submission_disable(struct intel_guc *guc)
 	GEM_BUG_ON(gt->awake); /* GT should be parked first */
 
 	/* Note: By the time we're here, GuC may have already been reset */
-
-	guc_interrupts_release(gt);
 
 	guc_stage_desc_fini(guc);
 }
@@ -754,9 +722,4 @@ static bool __guc_submission_selected(struct intel_guc *guc)
 void intel_guc_submission_init_early(struct intel_guc *guc)
 {
 	guc->submission_selected = __guc_submission_selected(guc);
-}
-
-bool intel_engine_in_guc_submission_mode(const struct intel_engine_cs *engine)
-{
-	return engine->set_default_submission == guc_set_default_submission;
 }
