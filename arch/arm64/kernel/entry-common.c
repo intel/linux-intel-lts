@@ -43,9 +43,17 @@ static void noinstr __enter_from_kernel_mode(struct pt_regs *regs)
 static void noinstr enter_from_kernel_mode(struct pt_regs *regs)
 {
 #ifdef CONFIG_IRQ_PIPELINE
+	/*
+	 * CAUTION: we may switch in-band as a result of handling a
+	 * trap, so if we are running out-of-band, we must make sure
+	 * not to perform the RCU exit since we did not enter it in
+	 * the first place.
+	 */
 	regs->oob_on_entry = running_oob();
-	if (regs->oob_on_entry)
+	if (regs->oob_on_entry) {
+		regs->exit_rcu = false;
 		return;
+	}
 
 	/*
 	 * We trapped from kernel space running in-band, we need to
