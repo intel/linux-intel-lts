@@ -49,6 +49,8 @@
  * write operations) or N shared fences (read operations).  The RCU
  * mechanism is used to protect read access to fences from locked
  * write-side updates.
+ *
+ * See struct dma_resv for more details.
  */
 
 DEFINE_WD_CLASS(reservation_ww_class);
@@ -149,7 +151,11 @@ static inline struct dma_resv_list *dma_resv_shared_list(struct dma_resv *obj)
  * @num_fences: number of fences we want to add
  *
  * Should be called before dma_resv_add_shared_fence().  Must
- * be called with obj->lock held.
+ * be called with @obj locked through dma_resv_lock().
+ *
+ * Note that the preallocated slots need to be re-reserved if @obj is unlocked
+ * at any time before calling dma_resv_add_shared_fence(). This is validated
+ * when CONFIG_DEBUG_MUTEXES is enabled.
  *
  * RETURNS
  * Zero for success, or -errno
@@ -246,8 +252,10 @@ EXPORT_SYMBOL(dma_resv_reset_shared_max);
  * @obj: the reservation object
  * @fence: the shared fence to add
  *
- * Add a fence to a shared slot, obj->lock must be held, and
+ * Add a fence to a shared slot, @obj must be locked with dma_resv_lock(), and
  * dma_resv_reserve_shared() has been called.
+ *
+ * See also &dma_resv.fence for a discussion of the semantics.
  */
 void dma_resv_add_shared_fence(struct dma_resv *obj, struct dma_fence *fence)
 {
@@ -335,9 +343,11 @@ EXPORT_SYMBOL(dma_resv_replace_fences);
 /**
  * dma_resv_add_excl_fence - Add an exclusive fence.
  * @obj: the reservation object
- * @fence: the shared fence to add
+ * @fence: the exclusive fence to add
  *
- * Add a fence to the exclusive slot.  The obj->lock must be held.
+ * Add a fence to the exclusive slot. @obj must be locked with dma_resv_lock().
+ * Note that this function replaces all fences attached to @obj, see also
+ * &dma_resv.fence_excl for a discussion of the semantics.
  */
 void dma_resv_add_excl_fence(struct dma_resv *obj, struct dma_fence *fence)
 {
@@ -689,9 +699,11 @@ EXPORT_SYMBOL_GPL(dma_resv_wait_timeout);
  * fence
  *
  * Callers are not required to hold specific locks, but maybe hold
- * dma_resv_lock() already
+ * dma_resv_lock() already.
+ *
  * RETURNS
- * true if all fences signaled, else false
+ *
+ * True if all fences signaled, else false.
  */
 bool dma_resv_test_signaled(struct dma_resv *obj, bool test_all)
 {
