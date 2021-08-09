@@ -43,7 +43,7 @@
 
 # CVE-2020-12364
 # CVE-2020-12363
-0001-drm-i915-disable-guc.patch
+0001-drm-i915-disable-guc-submission.patch
 
 # CVE-2020-36322
 0001-fuse-fix-bad-inode.patch
