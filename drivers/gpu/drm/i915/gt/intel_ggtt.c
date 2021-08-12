@@ -1902,3 +1902,105 @@ void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
 invalidate:
 	ggtt->invalidate(ggtt);
 }
+
+unsigned int ggtt_size_to_ptes_size(u64 ggtt_size)
+{
+	GEM_BUG_ON(!IS_ALIGNED(ggtt_size, I915_GTT_MIN_ALIGNMENT));
+
+	return (ggtt_size >> PAGE_SHIFT) * sizeof(gen8_pte_t);
+}
+
+void ggtt_pte_clear_vfid(void *buf, u64 size)
+{
+	while (size) {
+		*(gen8_pte_t *)buf &= ~TGL_GGTT_PTE_VFID_MASK;
+
+		buf += sizeof(gen8_pte_t);
+		size -= sizeof(gen8_pte_t);
+	}
+}
+
+/**
+ * i915_ggtt_save_ptes - copy GGTT PTEs to preallocated buffer
+ * @ggtt: the &struct i915_ggtt
+ * @node: the &struct drm_mm_node - the @node->start is used as the start offset for save
+ * @buf: preallocated buffer in which PTEs will be saved
+ * @size: size of preallocated buffer (in bytes)
+ *        - must be sizeof(gen8_pte_t) aligned
+ * @flags: function flags:
+ *         - #I915_GGTT_SAVE_PTES_NO_VFID BIT - save PTEs without VFID
+ *
+ * Returns: size of the buffer used (or needed if both @buf and @size are (0)) to store all PTEs
+ *          for a given node, -EINVAL if one of @buf or @size is 0.
+ */
+int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, void *buf,
+			unsigned int size, unsigned int flags)
+{
+	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
+
+	if (!buf && !size)
+		return ggtt_size_to_ptes_size(node->size);
+
+	if (!buf || !size)
+		return -EINVAL;
+
+	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
+	GEM_WARN_ON(size > ggtt_size_to_ptes_size(SZ_4G));
+
+	if (size < ggtt_size_to_ptes_size(node->size))
+		return -ENOSPC;
+	size = ggtt_size_to_ptes_size(node->size);
+
+	gtt_entries += node->start >> PAGE_SHIFT;
+
+	memcpy_fromio(buf, gtt_entries, size);
+
+	if (flags & I915_GGTT_SAVE_PTES_NO_VFID)
+		ggtt_pte_clear_vfid(buf, size);
+
+	return size;
+}
+
+/**
+ * i915_ggtt_restore_ptes() -  restore GGTT PTEs from buffer
+ * @ggtt: the &struct i915_ggtt
+ * @node: the &struct drm_mm_node - the @node->start is used as the start offset for restore
+ * @buf: buffer from which PTEs will be restored
+ * @size: size of preallocated buffer (in bytes)
+ *        - must be sizeof(gen8_pte_t) aligned
+ * @flags: function flags:
+ *         - #I915_GGTT_RESTORE_PTES_VFID_MASK - VFID for restored PTEs
+ *         - #I915_GGTT_RESTORE_PTES_NEW_VFID - restore PTEs with new VFID
+ *           (from #I915_GGTT_RESTORE_PTES_VFID_MASK)
+ *
+ * Returns: 0 on success, -ENOSPC if @node->size is less than size.
+ */
+int i915_ggtt_restore_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, const void *buf,
+			   unsigned int size, unsigned int flags)
+{
+	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
+	u32 vfid = FIELD_GET(I915_GGTT_RESTORE_PTES_VFID_MASK, flags);
+	gen8_pte_t pte;
+
+	GEM_BUG_ON(!size);
+	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
+
+	if (size > ggtt_size_to_ptes_size(node->size))
+		return -ENOSPC;
+
+	gtt_entries += node->start >> PAGE_SHIFT;
+
+	while (size) {
+		pte = *(gen8_pte_t *)buf;
+		if (flags & I915_GGTT_RESTORE_PTES_NEW_VFID)
+			pte |= tgl_prepare_vf_pte_vfid(vfid);
+		gen8_set_pte(gtt_entries++, pte);
+
+		buf += sizeof(gen8_pte_t);
+		size -= sizeof(gen8_pte_t);
+	}
+
+	ggtt->invalidate(ggtt);
+
+	return 0;
+}
