@@ -628,6 +628,17 @@ gen8_pte_t i915_ggtt_prepare_vf_pte(u16 vfid);
 void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
 			       const struct drm_mm_node *node);
 
+#define I915_GGTT_SAVE_PTES_NO_VFID BIT(31)
+
+int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, void *buf,
+			unsigned int size, unsigned int flags);
+
+#define I915_GGTT_RESTORE_PTES_NEW_VFID  BIT(31)
+#define I915_GGTT_RESTORE_PTES_VFID_MASK GENMASK(19, 0)
+
+int i915_ggtt_restore_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, const void *buf,
+			   unsigned int size, unsigned int flags);
+
 int i915_ppgtt_init_hw(struct intel_gt *gt);
 
 struct i915_ppgtt *i915_ppgtt_create(struct intel_gt *gt,
