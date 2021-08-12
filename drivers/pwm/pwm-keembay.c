@@ -49,7 +49,11 @@ static inline struct keembay_pwm *to_keembay_pwm_dev(struct pwm_chip *chip)
 
 static void keembay_clk_unprepare(void *data)
 {
-	clk_disable_unprepare(data);
+	/* The API is updated from clk_disable_unprepare() to clk_disable() as a fix for pwm
+	 * module rmmod going to sleep.
+	 */
+
+	clk_disable(data);
 }
 
 static int keembay_clk_enable(struct device *dev, struct clk *clk)
