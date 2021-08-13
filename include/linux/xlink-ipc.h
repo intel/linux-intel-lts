@@ -49,4 +49,9 @@ int xlink_ipc_get_device_mode(u32 sw_device_id, u32 *power_mode);
 
 int xlink_ipc_set_device_mode(u32 sw_device_id, u32 power_mode);
 
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+void *xlink_alloc_cma(u32 slice, u32 size, dma_addr_t *dma_handle);
+void xlink_free_cma(u32 slice, u32 size, void *buf, dma_addr_t handle);
+#endif
+
 #endif /* _XLINK_IPC_H_ */

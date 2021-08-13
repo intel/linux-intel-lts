@@ -6,6 +6,7 @@
  *
  */
 #include <linux/device.h>
+#include <linux/dma-direct.h>
 #include <linux/dma-mapping.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -20,6 +21,12 @@
 #include <linux/keembay-vpu-ipc.h>
 
 #include <linux/xlink-ipc.h>
+
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+#define XLINK_IPC_MAX_NUM_DEVICES 4
+#else
+#define XLINK_IPC_MAX_NUM_DEVICES 1
+#endif
 
 #define XLINK_IPC_MAX_DEVICE_NAME_SIZE	12
 
@@ -79,11 +86,13 @@ struct xlink_ipc_dev {
 	struct platform_device *pdev;		/* pointer to platform device */
 	u32 vpu_id;				/* The VPU ID defined in the device tree */
 	u32 sw_device_id;			/* the sw device id */
+	u32 phy_vpu_id;				/* physical vpu slice id */
 	const char *device_name;		/* the vpu device name */
 	struct xlink_buf_mem local_xlink_mem;	/* tx buffer memory region */
 	struct xlink_buf_mem remote_xlink_mem;	/* rx buffer memory region */
 	struct xlink_buf_pool xlink_buf_pool;	/* tx buffer pool */
 	struct device *vpu_dev;			/* pointer to vpu ipc device */
+	struct device *cma_dev;			/* child device managing the memory region */
 	int (*callback)(u32 sw_device_id, u32 event);
 };
 
@@ -99,7 +108,16 @@ enum xlink_vpu_event {
 #define VPU_ID 0
 #define VPU_DEVICE_NAME "vpu-0"
 #define VPU_SW_DEVICE_ID 0
-static struct xlink_ipc_dev *xlink_dev;
+static u32 num_of_vpu_devices;
+
+/* helper function to get the xlink_ipc_dev data structure */
+enum xlinkdev_by_idx {
+	slice_idx = 0,
+	sw_device_idx,
+	vpu_dev_idx
+};
+
+static struct xlink_ipc_dev *get_xlink_dev(enum xlinkdev_by_idx idx, void *data);
 
 /*
  * Functions related to reserved-memory sub-devices.
@@ -201,6 +219,33 @@ err:
 	put_device(child);
 	return NULL;
 }
+
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+static struct device *cma_init_xlink_reserved_mem_dev(struct device *dev,
+						      const char *name, int idx)
+{
+	struct device *child;
+	int rc;
+
+	child = devm_kzalloc(dev, sizeof(*child), GFP_KERNEL);
+	if (!child)
+		return NULL;
+
+	device_initialize(child);
+	dev_set_name(child, "%s:%s", dev_name(dev), name);
+	child->parent = dev;
+	child->dma_mask = dev->dma_mask;
+	child->coherent_dma_mask = dev->coherent_dma_mask;
+	rc = device_add(child);
+	if (rc)
+		goto err;
+	return child;
+
+err:
+	put_device(child);
+	return NULL;
+}
+#endif
 
 /*
  * xlink_reserved_memory_init() - Initialize reserved memory for the device.
@@ -425,6 +470,8 @@ static int vpu_ipc_device_get(struct xlink_ipc_dev *xlink_dev)
  */
 int xlink_ipc_connect(u32 sw_device_id)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
+
 	if (!xlink_dev)
 		return -ENODEV;
 
@@ -446,6 +493,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_connect);
 int xlink_ipc_write(u32 sw_device_id, void *data, size_t * const size,
 		    u32 timeout, void *context)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	struct xlink_ipc_context *ctx = context;
 	void *vaddr = NULL;
 	u32 paddr;
@@ -491,6 +539,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_write);
 int xlink_ipc_read(u32 sw_device_id, void *data, size_t * const size,
 		   u32 timeout, void *context)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	struct xlink_ipc_context *ctx = context;
 	u32 addr = 0;
 	void *vaddr;
@@ -529,17 +578,24 @@ EXPORT_SYMBOL_GPL(xlink_ipc_read);
  */
 int xlink_ipc_get_device_list(u32 *sw_device_id_list, u32 *num_devices)
 {
-	int i = 0;
+	struct xlink_ipc_dev *xlink_dev;
+	int dev_found = 0;
+	u32 sw_device_id;
+	int i;
 
 	if (!sw_device_id_list || !num_devices)
 		return -EINVAL;
 
-	if (xlink_dev) {
-		*sw_device_id_list = xlink_dev->sw_device_id;
-		i++;
-	}
+	for (i = 0; i < XLINK_IPC_MAX_NUM_DEVICES; i++) {
+		sw_device_id = GET_SW_DEVICE_ID_FROM_VPU_ID(i);
+		xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
+		if (!xlink_dev)
+			continue;
 
-	*num_devices = i;
+		*sw_device_id_list++ = xlink_dev->sw_device_id;
+		dev_found++;
+	}
+	*num_devices = dev_found;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(xlink_ipc_get_device_list);
@@ -556,6 +612,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_get_device_list);
 int xlink_ipc_get_device_name(u32 sw_device_id, char *device_name,
 			      size_t name_size)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	size_t size;
 
 	if (!device_name)
@@ -582,6 +639,8 @@ EXPORT_SYMBOL_GPL(xlink_ipc_get_device_name);
  */
 int xlink_ipc_get_device_status(u32 sw_device_id, u32 *device_status)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
+
 	if (!device_status)
 		return -EINVAL;
 
@@ -595,6 +654,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_get_device_status);
 
 static void kernel_callback(struct device *dev, enum intel_keembay_vpu_event event)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(vpu_dev_idx, dev);
 	if ((enum xlink_vpu_event)event >= NUM_EVENT_TYPE)
 		return;
 
@@ -615,6 +675,8 @@ static void kernel_callback(struct device *dev, enum intel_keembay_vpu_event eve
 int xlink_ipc_register_for_events(u32 sw_device_id,
 				  int (*callback)(u32 sw_device_id, enum xlink_vpu_event event))
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
+
 	int rc;
 
 	if (!xlink_dev)
@@ -633,6 +695,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_register_for_events);
  */
 int xlink_ipc_unregister_for_events(u32 sw_device_id)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	int rc;
 
 	if (!xlink_dev)
@@ -652,6 +715,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_unregister_for_events);
  */
 int xlink_ipc_boot_device(u32 sw_device_id, const char *binary_name)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	enum intel_keembay_vpu_state state;
 	int rc;
 
@@ -698,6 +762,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_boot_device);
  */
 int xlink_ipc_reset_device(u32 sw_device_id)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	enum intel_keembay_vpu_state state;
 	int rc;
 
@@ -733,6 +798,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_reset_device);
  */
 int xlink_ipc_open_channel(u32 sw_device_id, u32 channel)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	int rc;
 
 	if (!xlink_dev)
@@ -754,6 +820,7 @@ EXPORT_SYMBOL_GPL(xlink_ipc_open_channel);
  */
 int xlink_ipc_close_channel(u32 sw_device_id, u32 channel)
 {
+	struct xlink_ipc_dev *xlink_dev = get_xlink_dev(sw_device_idx, &sw_device_id);
 	int rc;
 
 	if (!xlink_dev)
@@ -895,13 +962,35 @@ setdev_error:
 }
 EXPORT_SYMBOL(xlink_ipc_set_device_mode);
 
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+void *xlink_alloc_cma(u32 slice, u32 size, dma_addr_t *dma_handle)
+{
+	struct xlink_ipc_dev *ipc_dev = get_xlink_dev(slice_idx, &slice);
+
+	return dma_alloc_coherent(ipc_dev->cma_dev, size, dma_handle, GFP_KERNEL);
+}
+EXPORT_SYMBOL_GPL(xlink_alloc_cma);
+
+void xlink_free_cma(u32 slice, u32 size, void *buf, dma_addr_t handle)
+{
+	struct xlink_ipc_dev *ipc_dev = get_xlink_dev(slice_idx, &slice);
+
+	dma_free_coherent(ipc_dev->cma_dev, size, buf, handle);
+}
+EXPORT_SYMBOL_GPL(xlink_free_cma);
+#endif
+
 /*
  * xlink ipc driver functions
  */
 
 static int keembay_xlink_ipc_probe(struct platform_device *pdev)
 {
+	struct xlink_ipc_dev *xlink_dev;
 	struct device *dev = &pdev->dev;
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+	char cma_name[48];
+#endif
 	int rc;
 
 	/* allocate device data structure */
@@ -938,7 +1027,9 @@ static int keembay_xlink_ipc_probe(struct platform_device *pdev)
 
 	/* get device id */
 	rc = of_property_read_u32(dev->of_node, "intel,keembay-vpu-ipc-id",
-				  &xlink_dev->vpu_id);
+				  &xlink_dev->phy_vpu_id);
+	xlink_dev->vpu_id = num_of_vpu_devices++;
+
 	if (rc) {
 		dev_err(dev, "Cannot get VPU ID from DT.\n");
 		goto r_cleanup;
@@ -961,6 +1052,18 @@ static int keembay_xlink_ipc_probe(struct platform_device *pdev)
 
 	/* get platform data reference */
 	platform_set_drvdata(pdev, xlink_dev);
+
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+	sprintf(cma_name, "xlink_cma_reserved%d", xlink_dev->vpu_id);
+	xlink_dev->cma_dev = cma_init_xlink_reserved_mem_dev(dev, cma_name, 2);
+	if (!xlink_dev->cma_dev) {
+		dev_err(dev, "ERROR reserve mem\n");
+		return -ENOMEM;
+	}
+
+	of_dma_configure(xlink_dev->cma_dev, dev->of_node, true);
+	rc = of_reserved_mem_device_init_by_idx(xlink_dev->cma_dev, dev->of_node, 2);
+#endif
 
 	dev_info(dev, "Device id=%u sw_device_id=0x%x name=%s probe complete.\n",
 		 xlink_dev->vpu_id, xlink_dev->sw_device_id,
@@ -1010,6 +1113,42 @@ static struct platform_driver keembay_xlink_ipc_driver = {
 };
 module_platform_driver(keembay_xlink_ipc_driver);
 
-MODULE_DESCRIPTION("Keem Bay xlink IPC Driver");
+static struct xlink_ipc_dev *get_xlink_dev(enum xlinkdev_by_idx idx, void *data)
+{
+	struct xlink_ipc_dev *xlink_dev;
+	struct platform_device *pdev;
+	struct device *dev = NULL;
+	u32 dev_found = 0;
+
+	while ((dev = driver_find_next_device(&keembay_xlink_ipc_driver.driver,
+					      dev))) {
+		pdev = to_platform_device(dev);
+		xlink_dev = platform_get_drvdata(pdev);
+
+		switch (idx) {
+		case (slice_idx):
+			if (xlink_dev->vpu_id == *(u32 *)data)
+				dev_found = 1;
+			break;
+		case (sw_device_idx):
+			if (xlink_dev->sw_device_id == *(u32 *)data)
+				dev_found = 1;
+			break;
+		case (vpu_dev_idx):
+			if (xlink_dev->vpu_dev == (struct device *)data)
+				dev_found = 1;
+			break;
+		default:
+			break;
+		}
+		if (dev_found == 1)
+			break;
+		xlink_dev = NULL;
+	}
+	return xlink_dev;
+}
+
+MODULE_DESCRIPTION("XBay XLink IPC Driver");
 MODULE_AUTHOR("Ryan Carnaghi <ryan.r.carnaghi@intel.com>");
+MODULE_AUTHOR("Kiran Kumar S <Kiran.Kumar1.S@intel.com>");
 MODULE_LICENSE("GPL v2");
