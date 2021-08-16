@@ -18,6 +18,7 @@
 #include <sound/sof/pm.h>
 #include <sound/sof/trace.h>
 #include <uapi/sound/sof/fw.h>
+#include <sound/sof/ext_manifest.h>
 
 /* debug flags */
 #define SOF_DBG_ENABLE_TRACE	BIT(0)
@@ -94,13 +95,14 @@ struct snd_sof_pdata;
  */
 struct snd_sof_dsp_ops {
 
-	/* probe and remove */
+	/* probe/remove/shutdown */
 	int (*probe)(struct snd_sof_dev *sof_dev); /* mandatory */
 	int (*remove)(struct snd_sof_dev *sof_dev); /* optional */
+	int (*shutdown)(struct snd_sof_dev *sof_dev); /* optional */
 
 	/* DSP core boot / reset */
 	int (*run)(struct snd_sof_dev *sof_dev); /* mandatory */
-	int (*stall)(struct snd_sof_dev *sof_dev); /* optional */
+	int (*stall)(struct snd_sof_dev *sof_dev, unsigned int core_mask); /* optional */
 	int (*reset)(struct snd_sof_dev *sof_dev); /* optional */
 	int (*core_power_up)(struct snd_sof_dev *sof_dev,
 			     unsigned int core_mask); /* optional */
@@ -207,6 +209,10 @@ struct snd_sof_dsp_ops {
 	/* pre/post firmware run */
 	int (*pre_fw_run)(struct snd_sof_dev *sof_dev); /* optional */
 	int (*post_fw_run)(struct snd_sof_dev *sof_dev); /* optional */
+
+	/* parse platform specific extended manifest, optional */
+	int (*parse_platform_ext_manifest)(struct snd_sof_dev *sof_dev,
+					   const struct sof_ext_man_elem_header *hdr);
 
 	/* DSP PM */
 	int (*suspend)(struct snd_sof_dev *sof_dev,
@@ -377,6 +383,7 @@ struct snd_sof_dev {
 
 	/* work queue in case the probe is implemented in two steps */
 	struct work_struct probe_work;
+	bool probe_completed;
 
 	/* DSP HW differentiation */
 	struct snd_sof_pdata *pdata;
@@ -451,6 +458,8 @@ struct snd_sof_dev {
 
 int snd_sof_device_probe(struct device *dev, struct snd_sof_pdata *plat_data);
 int snd_sof_device_remove(struct device *dev);
+int snd_sof_device_shutdown(struct device *dev);
+bool snd_sof_device_probe_completed(struct device *dev);
 
 int snd_sof_runtime_suspend(struct device *dev);
 int snd_sof_runtime_resume(struct device *dev);
