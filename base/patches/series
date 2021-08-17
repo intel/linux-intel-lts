@@ -87,3 +87,16 @@
 # CVE-2021-29264
 0001-gianfar-simplify-FCS-handling-and-fix-memory-leak.patch
 0002-gianfar-fix-jumbo-packets-napi-rx-overrun-crash.patch
+
+# CVE-2021-3506
+0001-f2fs-fix-to-avoid-out-of-bounds-memory-access.patch
+
+# CVE-2021-20292
+0001-drm-ttm-nouveau-don-t-call-tt-destroy-callback-on-al.patch
+
+# CVE-2021-34693
+0001-can-bcm-fix-infoleak-in-struct-bcm_msg_head.patch
+
+# CVE-2020-36322
+0001-fuse-fix-bad-inode.patch
+

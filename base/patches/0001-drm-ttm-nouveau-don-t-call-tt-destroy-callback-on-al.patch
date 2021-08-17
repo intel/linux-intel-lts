@@ -1,0 +1,68 @@
+From 675b47ff539acdb0d027b5b77d1716b83a80d5cc Mon Sep 17 00:00:00 2001
+From: nanli2x <nanli2x@intel.com>
+Date: Tue, 22 Jun 2021 18:13:23 -0400
+Subject: [PATCH] drm/ttm/nouveau: don't call tt destroy callback on alloc
+ failure. This is confusing, and from my reading of all the drivers only
+ nouveau got this right.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Just make the API act under driver control of it's own allocation
+failing, and don't call destroy, if the page table fails to
+create there is nothing to cleanup here.
+
+(I'm willing to believe I've missed something here, so please
+review deeply).
+
+Reviewed-by: Christian König <christian.koenig@amd.com>
+Signed-off-by: Dave Airlie <airlied@redhat.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20200728041736.20689-1-airlied@gmail.com
+---
+ drivers/gpu/drm/nouveau/nouveau_sgdma.c | 9 +++------
+ drivers/gpu/drm/ttm/ttm_tt.c            | 2 --
+ 2 files changed, 3 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_sgdma.c b/drivers/gpu/drm/nouveau/nouveau_sgdma.c
+index fde11ce466e4..495c4043467e 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_sgdma.c
++++ b/drivers/gpu/drm/nouveau/nouveau_sgdma.c
+@@ -106,12 +106,9 @@ nouveau_sgdma_create_ttm(struct ttm_bo_device *bdev,
+ 	else
+ 		nvbe->ttm.ttm.func = &nv50_sgdma_backend;
+ 
+-	if (ttm_dma_tt_init(&nvbe->ttm, bdev, size, page_flags, dummy_read_page))
+-		/*
+-		 * A failing ttm_dma_tt_init() will call ttm_tt_destroy()
+-		 * and thus our nouveau_sgdma_destroy() hook, so we don't need
+-		 * to free nvbe here.
+-		 */
++	if (ttm_dma_tt_init(&nvbe->ttm, bdev, size, page_flags, dummy_read_page)) {
++		kfree(nvbe);
+ 		return NULL;
++	}
+ 	return &nvbe->ttm.ttm;
+ }
+diff --git a/drivers/gpu/drm/ttm/ttm_tt.c b/drivers/gpu/drm/ttm/ttm_tt.c
+index 8ebc8d3560c3..fc8bdcc1541b 100644
+--- a/drivers/gpu/drm/ttm/ttm_tt.c
++++ b/drivers/gpu/drm/ttm/ttm_tt.c
+@@ -199,7 +199,6 @@ int ttm_tt_init(struct ttm_tt *ttm, struct ttm_bo_device *bdev,
+ 
+ 	ttm_tt_alloc_page_directory(ttm);
+ 	if (!ttm->pages) {
+-		ttm_tt_destroy(ttm);
+ 		pr_err("Failed allocating page table\n");
+ 		return -ENOMEM;
+ 	}
+@@ -232,7 +231,6 @@ int ttm_dma_tt_init(struct ttm_dma_tt *ttm_dma, struct ttm_bo_device *bdev,
+ 	INIT_LIST_HEAD(&ttm_dma->pages_list);
+ 	ttm_dma_tt_alloc_page_directory(ttm_dma);
+ 	if (!ttm->pages) {
+-		ttm_tt_destroy(ttm);
+ 		pr_err("Failed allocating page table\n");
+ 		return -ENOMEM;
+ 	}
+-- 
+2.17.1
+
