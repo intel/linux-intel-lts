@@ -41,6 +41,10 @@ struct intel_guc {
 	spinlock_t irq_lock;
 	unsigned int msg_enabled_mask;
 
+	/**
+	 * @outstanding_submission_g2h: number of outstanding G2H related to GuC
+	 * submission, used to determine if the GT is idle
+	 */
 	atomic_t outstanding_submission_g2h;
 
 	struct {
@@ -49,12 +53,16 @@ struct intel_guc {
 		void (*disable)(struct intel_guc *guc);
 	} interrupts;
 
-	/*
-	 * contexts_lock protects the pool of free guc ids and a linked list of
-	 * guc ids available to be stolen
+	/**
+	 * @contexts_lock: protects guc_ids, guc_id_list, ce->guc_id.id, and
+	 * ce->guc_id.ref when transitioning in and out of zero
 	 */
 	spinlock_t contexts_lock;
+	/** @guc_ids: used to allocate new guc_ids */
 	struct ida guc_ids;
+	/**
+	 * @guc_id_list: list of intel_context with valid guc_ids but no refs
+	 */
 	struct list_head guc_id_list;
 
 	bool submission_supported;
@@ -70,7 +78,10 @@ struct intel_guc {
 	struct i915_vma *lrc_desc_pool;
 	void *lrc_desc_pool_vaddr;
 
-	/* guc_id to intel_context lookup */
+	/**
+	 * @context_lookup: used to resolve intel_context from guc_id, if a
+	 * context is present in this structure it is registered with the GuC
+	 */
 	struct xarray context_lookup;
 
 	/* Control params for fw initialization */
