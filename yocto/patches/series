@@ -3,3 +3,6 @@
 
 # CVE-2020-24504
 0001-ice-create-scheduler-aggregator-node-config-and-move.patch
+
+# CVE-2021-32078
+0001-ARM-footbridge-remove-personal-server-platform.patch
