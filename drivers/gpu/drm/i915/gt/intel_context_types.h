@@ -190,21 +190,28 @@ struct intel_context {
 		/**
 		 * @id: unique handle which is used to communicate information
 		 * with the GuC about this context, protected by
-		 * guc->contexts_lock
+		 * guc->submission_state.lock
 		 */
 		u16 id;
 		/**
 		 * @ref: the number of references to the guc_id, when
 		 * transitioning in and out of zero protected by
-		 * guc->contexts_lock
+		 * guc->submission_state.lock
 		 */
 		atomic_t ref;
 		/**
 		 * @link: in guc->guc_id_list when the guc_id has no refs but is
-		 * still valid, protected by guc->contexts_lock
+		 * still valid, protected by guc->submission_state.lock
 		 */
 		struct list_head link;
 	} guc_id;
+
+	/**
+	 * @destroyed_link: link in guc->submission_state.destroyed_contexts, in
+	 * list when context is pending to be destroyed (deregistered with the
+	 * GuC), protected by guc->submission_state.lock
+	 */
+	struct list_head destroyed_link;
 
 #ifdef CONFIG_DRM_I915_SELFTEST
 	/**

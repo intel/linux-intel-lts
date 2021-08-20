@@ -53,21 +53,37 @@ struct intel_guc {
 		void (*disable)(struct intel_guc *guc);
 	} interrupts;
 
-	/**
-	 * @contexts_lock: protects guc_ids, guc_id_list, ce->guc_id.id, and
-	 * ce->guc_id.ref when transitioning in and out of zero
-	 */
-	spinlock_t contexts_lock;
-	/** @guc_ids: used to allocate new guc_ids */
-	struct ida guc_ids;
-	/** @num_guc_ids: number of guc_ids that can be used */
-	u32 num_guc_ids;
-	/** @max_guc_ids: max number of guc_ids that can be used */
-	u32 max_guc_ids;
-	/**
-	 * @guc_id_list: list of intel_context with valid guc_ids but no refs
-	 */
-	struct list_head guc_id_list;
+	struct {
+		/**
+		 * @lock: protects everything in submission_state, ce->guc_id,
+		 * and ce->destroyed_link
+		 */
+		spinlock_t lock;
+		/**
+		 * @guc_ids: used to allocate new guc_ids
+		 */
+		struct ida guc_ids;
+		/** @num_guc_ids: number of guc_ids that can be used */
+		u32 num_guc_ids;
+		/** @max_guc_ids: max number of guc_ids that can be used */
+		u32 max_guc_ids;
+		/**
+		 * @guc_id_list: list of intel_context with valid guc_ids but no
+		 * refs
+		 */
+		struct list_head guc_id_list;
+		/**
+		 * @destroyed_contexts: list of contexts waiting to be destroyed
+		 * (deregistered with the GuC)
+		 */
+		struct list_head destroyed_contexts;
+		/**
+		 * @destroyed_worker: worker to deregister contexts, need as we
+		 * need to take a GT PM reference and can't from destroy
+		 * function as it might be in an atomic context (no sleeping)
+		 */
+		struct work_struct destroyed_worker;
+	} submission_state;
 
 	bool submission_supported;
 	bool submission_selected;
