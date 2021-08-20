@@ -26,3 +26,14 @@
 
 # CVE-2020-24504
 0001-ice-create-scheduler-aggregator-node-config-and-move.patch
+
+# CVE-2020-36385
+0001-RDMA-ucma-Rework-ucma_migrate_id-to-avoid-races-with.patch
+
+# CVE-2021-32078
+0001-ARM-footbridge-remove-personal-server-platform.patch
+
+# CVE-2021-34556
+# CVE-2021-35477
+0001-bpf-Introduce-BPF-nospec-instruction-for-mitigating-.patch
+0001-bpf-Fix-leakage-due-to-insufficient-speculative-stor.patch
