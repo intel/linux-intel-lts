@@ -3482,6 +3482,3 @@ end:;
 	return err;
 }
 
-#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
-#include "selftests/i915_gem_execbuffer.c"
-#endif
