@@ -1138,7 +1138,8 @@ int intel_guc_submission_init(struct intel_guc *guc)
 	INIT_LIST_HEAD(&guc->submission_state.guc_id_list);
 	ida_init(&guc->submission_state.guc_ids);
 	INIT_LIST_HEAD(&guc->submission_state.destroyed_contexts);
-	INIT_WORK(&guc->submission_state.destroyed_worker, destroyed_worker_func);
+	intel_gt_pm_unpark_work_init(&guc->submission_state.destroyed_worker,
+				     destroyed_worker_func);
 
 	return 0;
 }
@@ -1945,13 +1946,18 @@ static void deregister_destroyed_contexts(struct intel_guc *guc)
 
 static void destroyed_worker_func(struct work_struct *w)
 {
-	struct intel_guc *guc = container_of(w, struct intel_guc,
+	struct intel_gt_pm_unpark_work *destroyed_worker =
+		container_of(w, struct intel_gt_pm_unpark_work, worker);
+	struct intel_guc *guc = container_of(destroyed_worker, struct intel_guc,
 					     submission_state.destroyed_worker);
 	struct intel_gt *gt = guc_to_gt(guc);
 	int tmp;
 
-	with_intel_gt_pm(gt, tmp)
+	with_intel_gt_pm_if_awake(gt, tmp)
 		deregister_destroyed_contexts(guc);
+
+	if (!list_empty(&guc->submission_state.destroyed_contexts))
+		intel_gt_pm_unpark_work_add(gt, destroyed_worker);
 }
 
 static void guc_context_destroy(struct kref *kref)
@@ -1988,7 +1994,8 @@ static void guc_context_destroy(struct kref *kref)
 	 * take the GT PM for the first time which isn't allowed from an atomic
 	 * context.
 	 */
-	queue_work(system_unbound_wq, &guc->submission_state.destroyed_worker);
+	intel_gt_pm_unpark_work_add(guc_to_gt(guc),
+				    &guc->submission_state.destroyed_worker);
 }
 
 static int guc_context_alloc(struct intel_context *ce)

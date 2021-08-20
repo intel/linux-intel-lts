@@ -30,6 +30,7 @@ typedef depot_stack_handle_t intel_wakeref_t;
 
 struct intel_wakeref_ops {
 	int (*get)(struct intel_wakeref *wf);
+	void (*post_get)(struct intel_wakeref *wf);
 	int (*put)(struct intel_wakeref *wf);
 };
 
