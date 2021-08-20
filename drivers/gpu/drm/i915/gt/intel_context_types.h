@@ -246,6 +246,13 @@ struct intel_context {
 		 * work queue descriptor
 		 */
 		u8 parent_page;
+
+		/**
+		 * @last_rq: last request submitted on a parallel context, used
+		 * to insert submit fences between request in the parallel
+		 * context.
+		 */
+		struct i915_request *last_rq;
 	};
 
 #ifdef CONFIG_DRM_I915_SELFTEST
