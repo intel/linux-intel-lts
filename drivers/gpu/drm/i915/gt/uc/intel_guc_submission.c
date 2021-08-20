@@ -340,6 +340,39 @@ static struct i915_priolist *to_priolist(struct rb_node *rb)
 	return rb_entry(rb, struct i915_priolist, node);
 }
 
+/*
+ * When using multi-lrc submission an extra page in the context state is
+ * reserved for the process descriptor and work queue.
+ *
+ * The layout of this page is below:
+ * 0						guc_process_desc
+ * ...						unused
+ * PAGE_SIZE / 2				work queue start
+ * ...						work queue
+ * PAGE_SIZE - 1				work queue end
+ */
+#define WQ_OFFSET	(PAGE_SIZE / 2)
+static u32 __get_process_desc_offset(struct intel_context *ce)
+{
+	GEM_BUG_ON(!ce->parent_page);
+
+	return ce->parent_page * PAGE_SIZE;
+}
+
+static u32 __get_wq_offset(struct intel_context *ce)
+{
+	return __get_process_desc_offset(ce) + WQ_OFFSET;
+}
+
+static struct guc_process_desc *
+__get_process_desc(struct intel_context *ce)
+{
+	return (struct guc_process_desc *)
+		(ce->lrc_reg_state +
+		 ((__get_process_desc_offset(ce) -
+		   LRC_STATE_OFFSET) / sizeof(u32)));
+}
+
 static struct guc_lrc_desc *__get_lrc_desc(struct intel_guc *guc, u32 index)
 {
 	struct guc_lrc_desc *base = guc->lrc_desc_pool_vaddr;
@@ -1345,6 +1378,30 @@ static void unpin_guc_id(struct intel_guc *guc, struct intel_context *ce)
 	spin_unlock_irqrestore(&guc->submission_state.lock, flags);
 }
 
+static int __guc_action_register_multi_lrc(struct intel_guc *guc,
+					   struct intel_context *ce,
+					   u32 guc_id,
+					   u32 offset,
+					   bool loop)
+{
+	struct intel_context *child;
+	u32 action[4 + MAX_ENGINE_INSTANCE];
+	int len = 0;
+
+	GEM_BUG_ON(ce->guc_number_children > MAX_ENGINE_INSTANCE);
+
+	action[len++] = INTEL_GUC_ACTION_REGISTER_CONTEXT_MULTI_LRC;
+	action[len++] = guc_id;
+	action[len++] = ce->guc_number_children + 1;
+	action[len++] = offset;
+	for_each_child(ce, child) {
+		offset += sizeof(struct guc_lrc_desc);
+		action[len++] = offset;
+	}
+
+	return guc_submission_send_busy_loop(guc, action, len, 0, loop);
+}
+
 static int __guc_action_register_context(struct intel_guc *guc,
 					 u32 guc_id,
 					 u32 offset,
@@ -1367,9 +1424,15 @@ static int register_context(struct intel_context *ce, bool loop)
 		ce->guc_id.id * sizeof(struct guc_lrc_desc);
 	int ret;
 
+	GEM_BUG_ON(intel_context_is_child(ce));
 	trace_intel_context_register(ce);
 
-	ret = __guc_action_register_context(guc, ce->guc_id.id, offset, loop);
+	if (intel_context_is_parent(ce))
+		ret = __guc_action_register_multi_lrc(guc, ce, ce->guc_id.id,
+						      offset, loop);
+	else
+		ret = __guc_action_register_context(guc, ce->guc_id.id, offset,
+						    loop);
 	if (likely(!ret)) {
 		unsigned long flags;
 
@@ -1399,6 +1462,7 @@ static int deregister_context(struct intel_context *ce, u32 guc_id, bool loop)
 {
 	struct intel_guc *guc = ce_to_guc(ce);
 
+	GEM_BUG_ON(intel_context_is_child(ce));
 	trace_intel_context_deregister(ce);
 
 	return __guc_action_deregister_context(guc, guc_id, loop);
@@ -1426,6 +1490,7 @@ static int guc_lrc_desc_pin(struct intel_context *ce, bool loop)
 	struct guc_lrc_desc *desc;
 	bool context_registered;
 	intel_wakeref_t wakeref;
+	struct intel_context *child;
 	int ret = 0;
 
 	GEM_BUG_ON(!engine->mask);
@@ -1450,6 +1515,42 @@ static int guc_lrc_desc_pin(struct intel_context *ce, bool loop)
 	desc->priority = ce->guc_state.prio;
 	desc->context_flags = CONTEXT_REGISTRATION_FLAG_KMD;
 	guc_context_policy_init(engine, desc);
+
+	/*
+	 * Context is a parent, we need to register a process descriptor
+	 * describing a work queue and register all child contexts.
+	 */
+	if (intel_context_is_parent(ce)) {
+		struct guc_process_desc *pdesc;
+
+		ce->guc_wqi_tail = 0;
+		ce->guc_wqi_head = 0;
+
+		desc->process_desc = i915_ggtt_offset(ce->state) +
+			__get_process_desc_offset(ce);
+		desc->wq_addr = i915_ggtt_offset(ce->state) +
+			__get_wq_offset(ce);
+		desc->wq_size = GUC_WQ_SIZE;
+
+		pdesc = __get_process_desc(ce);
+		memset(pdesc, 0, sizeof(*(pdesc)));
+		pdesc->stage_id = ce->guc_id.id;
+		pdesc->wq_base_addr = desc->wq_addr;
+		pdesc->wq_size_bytes = desc->wq_size;
+		pdesc->priority = GUC_CLIENT_PRIORITY_KMD_NORMAL;
+		pdesc->wq_status = WQ_STATUS_ACTIVE;
+
+		for_each_child(ce, child) {
+			desc = __get_lrc_desc(guc, child->guc_id.id);
+
+			desc->engine_class =
+				engine_class_to_guc_class(engine->class);
+			desc->hw_context_desc = child->lrc.lrca;
+			desc->priority = GUC_CLIENT_PRIORITY_KMD_NORMAL;
+			desc->context_flags = CONTEXT_REGISTRATION_FLAG_KMD;
+			guc_context_policy_init(engine, desc);
+		}
+	}
 
 	/*
 	 * The context_lookup xarray is used to determine if the hardware
@@ -2858,6 +2959,12 @@ g2h_context_lookup(struct intel_guc *guc, u32 desc_idx)
 	if (unlikely(!ce)) {
 		drm_err(&guc_to_gt(guc)->i915->drm,
 			"Context is NULL, desc_idx %u", desc_idx);
+		return NULL;
+	}
+
+	if (unlikely(intel_context_is_child(ce))) {
+		drm_err(&guc_to_gt(guc)->i915->drm,
+			"Context is child, desc_idx %u", desc_idx);
 		return NULL;
 	}
 

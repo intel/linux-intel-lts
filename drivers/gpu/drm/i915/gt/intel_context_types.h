@@ -232,8 +232,20 @@ struct intel_context {
 		/** @parent: pointer to parent if child */
 		struct intel_context *parent;
 
+
+		/** @guc_wqi_head: head pointer in work queue */
+		u16 guc_wqi_head;
+		/** @guc_wqi_tail: tail pointer in work queue */
+		u16 guc_wqi_tail;
+
 		/** @guc_number_children: number of children if parent */
 		u8 guc_number_children;
+
+		/**
+		 * @parent_page: page in context used by parent for work queue,
+		 * work queue descriptor
+		 */
+		u8 parent_page;
 	};
 
 #ifdef CONFIG_DRM_I915_SELFTEST

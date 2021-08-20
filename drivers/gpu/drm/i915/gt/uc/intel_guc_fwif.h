@@ -52,7 +52,7 @@
 
 #define GUC_DOORBELL_INVALID		256
 
-#define GUC_WQ_SIZE			(PAGE_SIZE * 2)
+#define GUC_WQ_SIZE			(PAGE_SIZE / 2)
 
 /* Work queue item header definitions */
 #define WQ_STATUS_ACTIVE		1
