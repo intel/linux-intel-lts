@@ -3037,6 +3037,8 @@ guc_create_parallel(struct intel_engine_cs **engines,
 		}
 	}
 
+	parent->fence_context = dma_fence_context_alloc(1);
+
 	parent->engine->emit_bb_start =
 		emit_bb_start_parent_no_preempt_mid_batch;
 	parent->engine->emit_fini_breadcrumb =

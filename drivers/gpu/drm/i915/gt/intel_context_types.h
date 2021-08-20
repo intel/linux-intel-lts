@@ -261,6 +261,18 @@ struct intel_context {
 		 * context.
 		 */
 		struct i915_request *last_rq;
+
+		/**
+		 * @fence_context: fence context composite fence when doing
+		 * parallel submission
+		 */
+		u64 fence_context;
+
+		/**
+		 * @seqno: seqno for composite fence when doing parallel
+		 * submission
+		 */
+		u32 seqno;
 	};
 
 #ifdef CONFIG_DRM_I915_SELFTEST
