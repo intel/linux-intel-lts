@@ -126,6 +126,18 @@ guc_create_virtual(struct intel_engine_cs **siblings, unsigned int count);
 #define GUC_REQUEST_SIZE 64 /* bytes */
 
 /*
+ * We reserve 1/16 of the guc_ids for multi-lrc as these need to be contiguous
+ * per the GuC submission interface. A different allocation algorithm is used
+ * (bitmap vs. ida) between multi-lrc and single-lrc hence the reason to
+ * partition the guc_id space. We believe the number of multi-lrc contexts in
+ * use should be low and 1/16 should be sufficient. Minimum of 32 guc_ids for
+ * multi-lrc.
+ */
+#define NUMBER_MULTI_LRC_GUC_ID(guc) \
+	((guc)->submission_state.num_guc_ids / 16 > 32 ? \
+	 (guc)->submission_state.num_guc_ids / 16 : 32)
+
+/*
  * Below is a set of functions which control the GuC scheduling state which
  * require a lock.
  */
@@ -1179,6 +1191,10 @@ int intel_guc_submission_init(struct intel_guc *guc)
 	INIT_LIST_HEAD(&guc->submission_state.destroyed_contexts);
 	intel_gt_pm_unpark_work_init(&guc->submission_state.destroyed_worker,
 				     destroyed_worker_func);
+	guc->submission_state.guc_ids_bitmap =
+		bitmap_zalloc(NUMBER_MULTI_LRC_GUC_ID(guc), GFP_KERNEL);
+	if (!guc->submission_state.guc_ids_bitmap)
+		return -ENOMEM;
 
 	return 0;
 }
@@ -1191,6 +1207,7 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	guc_lrc_desc_pool_destroy(guc);
 	guc_flush_destroyed_contexts(guc);
 	i915_sched_engine_put(guc->sched_engine);
+	bitmap_free(guc->submission_state.guc_ids_bitmap);
 }
 
 static void queue_request(struct i915_sched_engine *sched_engine,
@@ -1242,18 +1259,43 @@ static void guc_submit_request(struct i915_request *rq)
 	spin_unlock_irqrestore(&sched_engine->lock, flags);
 }
 
-static int new_guc_id(struct intel_guc *guc)
+static int new_guc_id(struct intel_guc *guc, struct intel_context *ce)
 {
-	return ida_simple_get(&guc->submission_state.guc_ids, 0,
-			      guc->submission_state.num_guc_ids, GFP_KERNEL |
-			      __GFP_RETRY_MAYFAIL | __GFP_NOWARN);
+	int ret;
+
+	GEM_BUG_ON(intel_context_is_child(ce));
+
+	if (intel_context_is_parent(ce))
+		ret = bitmap_find_free_region(guc->submission_state.guc_ids_bitmap,
+					      NUMBER_MULTI_LRC_GUC_ID(guc),
+					      order_base_2(ce->guc_number_children
+							   + 1));
+	else
+		ret = ida_simple_get(&guc->submission_state.guc_ids,
+				     NUMBER_MULTI_LRC_GUC_ID(guc),
+				     guc->submission_state.num_guc_ids,
+				     GFP_KERNEL | __GFP_RETRY_MAYFAIL |
+				     __GFP_NOWARN);
+	if (unlikely(ret < 0))
+		return ret;
+
+	ce->guc_id.id = ret;
+	return 0;
 }
 
 static void __release_guc_id(struct intel_guc *guc, struct intel_context *ce)
 {
+	GEM_BUG_ON(intel_context_is_child(ce));
+
 	if (!context_guc_id_invalid(ce)) {
-		ida_simple_remove(&guc->submission_state.guc_ids,
-				  ce->guc_id.id);
+		if (intel_context_is_parent(ce))
+			bitmap_release_region(guc->submission_state.guc_ids_bitmap,
+					      ce->guc_id.id,
+					      order_base_2(ce->guc_number_children
+							   + 1));
+		else
+			ida_simple_remove(&guc->submission_state.guc_ids,
+					  ce->guc_id.id);
 		reset_lrc_desc(guc, ce->guc_id.id);
 		set_context_guc_id_invalid(ce);
 	}
@@ -1270,49 +1312,60 @@ static void release_guc_id(struct intel_guc *guc, struct intel_context *ce)
 	spin_unlock_irqrestore(&guc->submission_state.lock, flags);
 }
 
-static int steal_guc_id(struct intel_guc *guc)
+static int steal_guc_id(struct intel_guc *guc, struct intel_context *ce)
 {
-	struct intel_context *ce;
-	int guc_id;
+	struct intel_context *cn;
 
 	lockdep_assert_held(&guc->submission_state.lock);
+	GEM_BUG_ON(intel_context_is_child(ce));
+	GEM_BUG_ON(intel_context_is_parent(ce));
 
 	if (!list_empty(&guc->submission_state.guc_id_list)) {
-		ce = list_first_entry(&guc->submission_state.guc_id_list,
+		cn = list_first_entry(&guc->submission_state.guc_id_list,
 				      struct intel_context,
 				      guc_id.link);
 
-		GEM_BUG_ON(atomic_read(&ce->guc_id.ref));
-		GEM_BUG_ON(context_guc_id_invalid(ce));
+		GEM_BUG_ON(atomic_read(&cn->guc_id.ref));
+		GEM_BUG_ON(context_guc_id_invalid(cn));
+		GEM_BUG_ON(intel_context_is_child(cn));
+		GEM_BUG_ON(intel_context_is_parent(cn));
 
-		list_del_init(&ce->guc_id.link);
-		guc_id = ce->guc_id.id;
+		list_del_init(&cn->guc_id.link);
+		ce->guc_id = cn->guc_id;
+		clr_context_registered(cn);
+		set_context_guc_id_invalid(cn);
 
-		spin_lock(&ce->guc_state.lock);
-		clr_context_registered(ce);
-		spin_unlock(&ce->guc_state.lock);
-
-		set_context_guc_id_invalid(ce);
-		return guc_id;
+		return 0;
 	} else {
 		return -EAGAIN;
 	}
 }
 
-static int assign_guc_id(struct intel_guc *guc, u16 *out)
+static int assign_guc_id(struct intel_guc *guc, struct intel_context *ce)
 {
 	int ret;
 
 	lockdep_assert_held(&guc->submission_state.lock);
+	GEM_BUG_ON(intel_context_is_child(ce));
 
-	ret = new_guc_id(guc);
+	ret = new_guc_id(guc, ce);
 	if (unlikely(ret < 0)) {
-		ret = steal_guc_id(guc);
+		if (intel_context_is_parent(ce))
+			return -ENOSPC;
+
+		ret = steal_guc_id(guc, ce);
 		if (ret < 0)
 			return ret;
 	}
 
-	*out = ret;
+	if (intel_context_is_parent(ce)) {
+		struct intel_context *child;
+		int i = 1;
+
+		for_each_child(ce, child)
+			child->guc_id.id = ce->guc_id.id + i++;
+	}
+
 	return 0;
 }
 
@@ -1330,7 +1383,7 @@ try_again:
 	might_lock(&ce->guc_state.lock);
 
 	if (context_guc_id_invalid(ce)) {
-		ret = assign_guc_id(guc, &ce->guc_id.id);
+		ret = assign_guc_id(guc, ce);
 		if (ret)
 			goto out_unlock;
 		ret = 1;	/* Indidcates newly assigned guc_id */
@@ -1372,8 +1425,10 @@ static void unpin_guc_id(struct intel_guc *guc, struct intel_context *ce)
 	unsigned long flags;
 
 	GEM_BUG_ON(atomic_read(&ce->guc_id.ref) < 0);
+	GEM_BUG_ON(intel_context_is_child(ce));
 
-	if (unlikely(context_guc_id_invalid(ce)))
+	if (unlikely(context_guc_id_invalid(ce) ||
+		     intel_context_is_parent(ce)))
 		return;
 
 	spin_lock_irqsave(&guc->submission_state.lock, flags);
