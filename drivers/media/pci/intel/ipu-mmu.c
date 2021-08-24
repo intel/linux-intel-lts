@@ -67,6 +67,13 @@ static void tlb_invalidate(struct ipu_mmu *mmu)
 
 		writel(0xffffffff, mmu->mmu_hw[i].base +
 		       REG_TLB_INVALIDATE);
+		/*
+		 * The TLB invalidation is a "single cycle" (IOMMU clock cycles)
+		 * When the actual MMIO write reaches the IPU TLB Invalidate
+		 * register, wmb() will force the TLB invalidate out if the CPU
+		 * attempts to update the IOMMU page table (or sooner).
+		 */
+		wmb();
 	}
 	spin_unlock_irqrestore(&mmu->ready_lock, flags);
 }
