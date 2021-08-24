@@ -785,7 +785,7 @@ static void ipu_mmu_destroy(struct ipu_mmu *mmu)
 	}
 
 	free_dummy_page(mmu_info);
-	dma_unmap_single(mmu_info->dev, mmu_info->l1_pt_dma,
+	dma_unmap_single(mmu_info->dev, mmu_info->l1_pt_dma << ISP_PADDR_SHIFT,
 			 PAGE_SIZE, DMA_BIDIRECTIONAL);
 	free_page((unsigned long)mmu_info->dummy_l2_pt);
 	free_page((unsigned long)mmu_info->l1_pt);
