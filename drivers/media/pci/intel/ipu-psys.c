@@ -355,11 +355,6 @@ static int ipu_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
 	return -ENOTTY;
 }
 
-/*
- * TODO: wrap vmap/vunmap with KERNEL_VERSION(5, 11, 0).
- * vmap/vunmap in struct dma_buf_ops are changed from kernel 5.11,
- * But it's back ported to kernel 5.10 in IOTG yocto lts project.
- */
 static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
 	struct dma_buf_attachment *attach;
@@ -383,11 +378,6 @@ static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 	return 0;
 }
 
-/*
- * TODO: wrap vmap/vunmap with KERNEL_VERSION(5, 11, 0).
- * vmap/vunmap in struct dma_buf_ops are changed from kernel 5.11,
- * But it's back ported to kernel 5.10 in IOTG yocto lts project.
- */
 static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
 	struct dma_buf_attachment *attach;
