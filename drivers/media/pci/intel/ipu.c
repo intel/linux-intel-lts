@@ -32,7 +32,7 @@ enum ipu_version ipu_ver;
 EXPORT_SYMBOL(ipu_ver);
 
 static int isys_freq_overwrite = -1;
-module_param(isys_freq_overwrite, int, 0444);
+module_param(isys_freq_overwrite, int, 0660);
 MODULE_PARM_DESC(isys_freq_overwrite, "overwrite isys freq default value");
 
 static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
