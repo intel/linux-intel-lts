@@ -217,7 +217,24 @@ static int dw_spi_dwc_ssi_init(struct platform_device *pdev,
 static int dw_spi_keembay_init(struct platform_device *pdev,
 			       struct dw_spi_mmio *dwsmmio)
 {
-	dwsmmio->dws.caps = DW_SPI_CAP_KEEMBAY_MST | DW_SPI_CAP_DWC_SSI;
+	/*
+	 * Set MST to make keem bay SPI as master.
+	 */
+	dwsmmio->dws.caps = DW_SPI_CAP_DWC_MST | DW_SPI_CAP_DWC_SSI;
+
+	return 0;
+}
+
+static int dw_spi_thunderbay_init(struct platform_device *pdev,
+				  struct dw_spi_mmio *dwsmmio)
+{
+	/*
+	 * Set MST to make thunder bay SPI as master.
+	 * Set SSTE to enable slave select toggle bit which is required
+	 * for the slave devices connected to the thunder bay SPI controller.
+	 */
+	dwsmmio->dws.caps = DW_SPI_CAP_DWC_MST | DW_SPI_CAP_DWC_SSTE |
+			    DW_SPI_CAP_DWC_SSI;
 
 	return 0;
 }
@@ -349,6 +366,7 @@ static const struct of_device_id dw_spi_mmio_of_match[] = {
 	{ .compatible = "renesas,rzn1-spi", .data = dw_spi_dw_apb_init},
 	{ .compatible = "snps,dwc-ssi-1.01a", .data = dw_spi_dwc_ssi_init},
 	{ .compatible = "intel,keembay-ssi", .data = dw_spi_keembay_init},
+	{ .compatible = "intel,thunderbay-ssi", .data = dw_spi_thunderbay_init},
 	{ .compatible = "microchip,sparx5-spi", dw_spi_mscc_sparx5_init},
 	{ .compatible = "canaan,k210-spi", dw_spi_canaan_k210_init},
 	{ /* end of table */}

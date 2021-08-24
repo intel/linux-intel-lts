@@ -300,8 +300,11 @@ static u32 dw_spi_prepare_cr0(struct dw_spi *dws, struct spi_device *spi)
 		/* CTRLR0[13] Shift Register Loop */
 		cr0 |= ((spi->mode & SPI_LOOP) ? 1 : 0) << DWC_SSI_CTRLR0_SRL_OFFSET;
 
-		if (dws->caps & DW_SPI_CAP_KEEMBAY_MST)
-			cr0 |= DWC_SSI_CTRLR0_KEEMBAY_MST;
+		if (dws->caps & DW_SPI_CAP_DWC_MST)
+			cr0 |= DWC_SSI_CTRLR0_MST;
+
+		if (dws->caps & DW_SPI_CAP_DWC_SSTE)
+			cr0 |= DWC_SSI_CTRLR0_SSTE;
 	}
 
 	return cr0;
