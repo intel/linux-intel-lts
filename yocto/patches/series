@@ -6,3 +6,10 @@
 
 # CVE-2021-32078
 0001-ARM-footbridge-remove-personal-server-platform.patch
+
+# CVE-2021-38166
+0001-bpf-Fix-integer-overflow-involving-bucket_size.patch
+
+# CVE-2021-38205
+0001-net-xilinx_emaclite-Do-not-print-real-IOMEM-pointer.patch
+
