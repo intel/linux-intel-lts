@@ -394,7 +394,7 @@ int intel_hddl_register_xlink_i2c_adap(struct device *dev,
 		xlink_i2c_info.id = c->board_info.board_id << 5 |
 					soc_id << 2 | i;
 		c->xlink_i2c_ch[i] =
-			c->i2c_chan_num + (soc_id * 2) + i;
+			c->i2c_chan_num + i;
 		xlink_i2c_info.data = c;
 		xlink_i2c_info.size_data =
 			sizeof(struct intel_hddl_clients);
