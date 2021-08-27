@@ -25,7 +25,6 @@ struct keembay_thermal_priv {
 	const char *name;
 	void __iomem *base_addr;
 	/* sensor lock*/
-	spinlock_t lock;
 	int current_temp[KEEMBAY_SENSOR_MAX];
 	struct intel_tsens_plat_data *plat_data;
 };
@@ -60,7 +59,6 @@ static int keembay_get_temp(struct platform_device *pdev, int type, int *temp)
 {
 	struct keembay_thermal_priv *priv = platform_get_drvdata(pdev);
 
-	spin_lock(&priv->lock);
 	switch (type) {
 	case KEEMBAY_SENSOR_MSS:
 		kmb_sensor_read_temp(priv->base_addr,
@@ -116,7 +114,6 @@ static int keembay_get_temp(struct platform_device *pdev, int type, int *temp)
 	default:
 		break;
 	}
-	spin_unlock(&priv->lock);
 
 	return 0;
 }
@@ -143,7 +140,6 @@ static int keembay_thermal_probe(struct platform_device *pdev)
 	priv->base_addr = plat_data->base_addr;
 	priv->plat_data = plat_data;
 	plat_data->get_temp = keembay_get_temp;
-	spin_lock_init(&priv->lock);
 	platform_set_drvdata(pdev, priv);
 	dev_info(&pdev->dev, "Thermal driver loaded for %s\n",
 		 plat_data->name);
