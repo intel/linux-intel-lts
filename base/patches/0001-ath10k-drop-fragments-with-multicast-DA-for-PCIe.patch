@@ -1,0 +1,102 @@
+From 9b00855b0fbd75ebe655040f329e0050f2442189 Mon Sep 17 00:00:00 2001
+From: Wen Gong <wgong@codeaurora.org>
+Date: Tue, 11 May 2021 20:02:53 +0200
+Subject: [PATCH] ath10k: drop fragments with multicast DA for PCIe
+
+Fragmentation is not used with multicast frames. Discard unexpected
+fragments with multicast DA. This fixes CVE-2020-26145.
+
+Tested-on: QCA6174 hw3.2 PCI WLAN.RM.4.4.1-00110-QCARMSWP-1
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Wen Gong <wgong@codeaurora.org>
+Signed-off-by: Jouni Malinen <jouni@codeaurora.org>
+Link: https://lore.kernel.org/r/20210511200110.5a0bd289bda8.Idd6ebea20038fb1cfee6de924aa595e5647c9eae@changeid
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+---
+ drivers/net/wireless/ath/ath10k/htt_rx.c | 35 +++++++++++++++++++++---
+ 1 file changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath10k/htt_rx.c b/drivers/net/wireless/ath/ath10k/htt_rx.c
+index ad64ec2e04b5..860067c4fa3c 100644
+--- a/drivers/net/wireless/ath/ath10k/htt_rx.c
++++ b/drivers/net/wireless/ath/ath10k/htt_rx.c
+@@ -1384,14 +1384,24 @@ static void ath10k_htt_rx_h_csum_offload(struct sk_buff *msdu)
+ 	msdu->ip_summed = ath10k_htt_rx_get_csum_state(msdu);
+ }
+ 
++static bool ath10k_htt_rx_h_frag_multicast_check(struct ath10k *ar,
++						 struct sk_buff *skb,
++						 u16 offset)
++{
++	struct ieee80211_hdr *hdr;
++
++	hdr = (struct ieee80211_hdr *)(skb->data + offset);
++	return !is_multicast_ether_addr(hdr->addr1);
++}
+ static void ath10k_htt_rx_h_mpdu(struct ath10k *ar,
+ 				 struct sk_buff_head *amsdu,
+ 				 struct ieee80211_rx_status *status,
+-				 bool fill_crypt_header)
++				 bool fill_crypt_header,
++				 bool frag)
+ {
+ 	struct sk_buff *first;
+ 	struct sk_buff *last;
+-	struct sk_buff *msdu;
++	struct sk_buff *msdu, *temp;
+ 	struct htt_rx_desc *rxd;
+ 	struct ieee80211_hdr *hdr;
+ 	enum htt_rx_mpdu_encrypt_type enctype;
+@@ -1404,6 +1414,7 @@ static void ath10k_htt_rx_h_mpdu(struct ath10k *ar,
+ 	bool is_decrypted;
+ 	bool is_mgmt;
+ 	u32 attention;
++	bool multicast_check = true;
+ 
+ 	if (skb_queue_empty(amsdu))
+ 		return;
+@@ -1488,6 +1499,22 @@ static void ath10k_htt_rx_h_mpdu(struct ath10k *ar,
+ 	}
+ 
+ 	skb_queue_walk(amsdu, msdu) {
++		if (frag)
++			multicast_check = ath10k_htt_rx_h_frag_multicast_check(ar,
++									       msdu,
++									       0);
++
++		if (!multicast_check) {
++			/* Discard the fragment with invalid PN or multicast DA
++			 */
++			temp = msdu->prev;
++			__skb_unlink(msdu, amsdu);
++			dev_kfree_skb_any(msdu);
++			msdu = temp;
++			multicast_check = true;
++			continue;
++		}
++
+ 		ath10k_htt_rx_h_csum_offload(msdu);
+ 		ath10k_htt_rx_h_undecap(ar, msdu, status, first_hdr, enctype,
+ 					is_decrypted);
+@@ -1727,7 +1754,7 @@ static int ath10k_htt_rx_handle_amsdu(struct ath10k_htt *htt)
+ 		ath10k_htt_rx_h_unchain(ar, &amsdu);
+ 
+ 	ath10k_htt_rx_h_filter(ar, &amsdu, rx_status);
+-	ath10k_htt_rx_h_mpdu(ar, &amsdu, rx_status, true);
++	ath10k_htt_rx_h_mpdu(ar, &amsdu, rx_status, true, false);
+ 	ath10k_htt_rx_h_deliver(ar, &amsdu, rx_status);
+ 
+ 	return num_msdus;
+@@ -2062,7 +2089,7 @@ static int ath10k_htt_rx_in_ord_ind(struct ath10k *ar, struct sk_buff *skb)
+ 			num_msdus += skb_queue_len(&amsdu);
+ 			ath10k_htt_rx_h_ppdu(ar, &amsdu, status, vdev_id);
+ 			ath10k_htt_rx_h_filter(ar, &amsdu, status);
+-			ath10k_htt_rx_h_mpdu(ar, &amsdu, status, false);
++			ath10k_htt_rx_h_mpdu(ar, &amsdu, status, false, frag);
+ 			ath10k_htt_rx_h_deliver(ar, &amsdu, status);
+ 			break;
+ 		case -EAGAIN:
+-- 
+2.17.1
+

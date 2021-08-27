@@ -1,0 +1,31 @@
+From c57678d40359a34cc0f6fed792fdb756dd55553d Mon Sep 17 00:00:00 2001
+From: Junxiao Chang <junxiao.chang@intel.com>
+Date: Mon, 9 Aug 2021 15:56:37 +0800
+Subject: [PATCH] drm/i915: disable guc submission
+
+This is to fix CVE-2020-12364 issue. Only solution is to disable
+guc submission.
+
+Signed-off-by: Junxiao Chang <junxiao.chang@intel.com>
+---
+ drivers/gpu/drm/i915/intel_uc.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/gpu/drm/i915/intel_uc.c b/drivers/gpu/drm/i915/intel_uc.c
+index 901854007664..4f38f4c00128 100644
+--- a/drivers/gpu/drm/i915/intel_uc.c
++++ b/drivers/gpu/drm/i915/intel_uc.c
+@@ -342,6 +342,10 @@ int intel_uc_init_hw(struct drm_i915_private *dev_priv)
+ 	/* We need to notify the guc whenever we change the GGTT */
+ 	i915_ggtt_enable_guc(dev_priv);
+ 
++	/* CVE-2020-12364 fix */
++	if (i915_modparams.enable_guc_submission)
++		i915_modparams.enable_guc_submission = 0;
++
+ 	if (i915_modparams.enable_guc_submission) {
+ 		/*
+ 		 * This is stuff we need to have available at fw load time
+-- 
+2.17.1
+

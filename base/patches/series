@@ -81,8 +81,9 @@
 0007-drm-i915-Mark-the-context-state-as-dirty-written.patch
 0008-drm-i915-Record-the-default-hw-state-after-reset-upo.patch
 
+# CVE-2020-12363
 # CVE-2020-12364
-0001-drm-i915-disable-guc.patch
+0001-drm-i915-disable-guc-submission.patch
 
 # CVE-2021-29264
 0001-gianfar-simplify-FCS-handling-and-fix-memory-leak.patch
@@ -94,9 +95,30 @@
 # CVE-2021-20292
 0001-drm-ttm-nouveau-don-t-call-tt-destroy-callback-on-al.patch
 
-# CVE-2021-34693
-0001-can-bcm-fix-infoleak-in-struct-bcm_msg_head.patch
-
 # CVE-2020-36322
 0001-fuse-fix-bad-inode.patch
 
+# CVE-2020-36385
+0001-RDMA-ucma-Rework-ucma_migrate_id-to-avoid-races-with.patch
+
+# CVE-2021-32078
+0001-ARM-footbridge-remove-personal-server-platform.patch
+
+# CVE-2021-34556
+# CVE-2021-35477
+0001-bpf-Introduce-BPF-nospec-instruction-for-mitigating-.patch
+
+# CVE-2020-26141
+0001-ath10k-Fix-TKIP-Michael-MIC-verification-for-PCIe.patch
+
+# CVE-2020-26145
+0001-ath10k-drop-fragments-with-multicast-DA-for-PCIe.patch
+
+# CVE-2021-37159
+0001-usb-hso-fix-error-handling-code-of-hso_create_net_de.patch
+
+# CVE-2021-38199
+0001-NFSv4-Initialise-connection-to-the-server-in-nfs4_al.patch
+
+# CVE-2021-38198
+0001-KVM-X86-MMU-Use-the-correct-inherited-permissions-to.patch
