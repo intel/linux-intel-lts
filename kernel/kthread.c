@@ -1030,9 +1030,9 @@ static void kthread_cancel_delayed_work_timer(struct kthread_work *work,
 	 * any queuing is blocked by setting the canceling counter.
 	 */
 	work->canceling++;
-	spin_unlock_irqrestore(&worker->lock, *flags);
+	raw_spin_unlock_irqrestore(&worker->lock, *flags);
 	del_timer_sync(&dwork->timer);
-	spin_lock_irqsave(&worker->lock, *flags);
+	raw_spin_lock_irqsave(&worker->lock, *flags);
 	work->canceling--;
 }
 
