@@ -431,6 +431,7 @@ int register_virtio_device(struct virtio_device *dev)
 	virtio_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
 
 	INIT_LIST_HEAD(&dev->vqs);
+	spin_lock_init(&dev->vqs_list_lock);
 
 #ifdef CONFIG_VIRTIO_PMD
 	spin_lock_init(&dev->vq_lock);
