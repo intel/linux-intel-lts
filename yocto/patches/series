@@ -37,3 +37,6 @@
 # CVE-2021-35477
 0001-bpf-Introduce-BPF-nospec-instruction-for-mitigating-.patch
 0001-bpf-Fix-leakage-due-to-insufficient-speculative-stor.patch
+
+# CVE-2021-37159
+0001-usb-hso-fix-error-handling-code-of-hso_create_net_de.patch
