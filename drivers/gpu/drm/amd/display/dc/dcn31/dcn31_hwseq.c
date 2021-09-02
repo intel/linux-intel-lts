@@ -33,7 +33,6 @@
 #include "clk_mgr.h"
 #include "reg_helper.h"
 #include "abm.h"
-#include "clk_mgr.h"
 #include "hubp.h"
 #include "dchubbub.h"
 #include "timing_generator.h"
@@ -47,6 +46,8 @@
 #include "dpcd_defs.h"
 #include "dce/dmub_outbox.h"
 #include "dc_link_dp.h"
+#include "inc/link_dpcd.h"
+#include "dcn10/dcn10_hw_sequencer.h"
 
 #define DC_LOGGER_INIT(logger)
 
@@ -225,6 +226,7 @@ void dcn31_init_hw(struct dc *dc)
 	if (dc->config.power_down_display_on_boot) {
 		struct dc_link *edp_links[MAX_NUM_EDP];
 		struct dc_link *edp_link;
+		bool power_down = false;
 
 		get_edp_links(dc, edp_links, &edp_num);
 		if (edp_num) {
@@ -238,9 +240,11 @@ void dcn31_init_hw(struct dc *dc)
 					dc->hwss.edp_backlight_control(edp_link, false);
 					dc->hwss.power_down(dc);
 					dc->hwss.edp_power_control(edp_link, false);
+					power_down = true;
 				}
 			}
-		} else {
+		}
+		if (!power_down) {
 			for (i = 0; i < dc->link_count; i++) {
 				struct dc_link *link = dc->links[i];
 
@@ -299,10 +303,8 @@ void dcn31_init_hw(struct dc *dc)
 	if (dc->res_pool->hubbub->funcs->force_pstate_change_control)
 		dc->res_pool->hubbub->funcs->force_pstate_change_control(
 				dc->res_pool->hubbub, false, false);
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
 	if (dc->res_pool->hubbub->funcs->init_crb)
 		dc->res_pool->hubbub->funcs->init_crb(dc->res_pool->hubbub);
-#endif
 }
 
 void dcn31_dsc_pg_control(
@@ -392,7 +394,7 @@ void dcn31_update_info_frame(struct pipe_ctx *pipe_ctx)
 	is_hdmi_tmds = dc_is_hdmi_tmds_signal(pipe_ctx->stream->signal);
 	is_dp = dc_is_dp_signal(pipe_ctx->stream->signal);
 
-	if (!is_hdmi_tmds)
+	if (!is_hdmi_tmds && !is_dp)
 		return;
 
 	if (is_hdmi_tmds)

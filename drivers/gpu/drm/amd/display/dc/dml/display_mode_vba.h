@@ -39,12 +39,10 @@ dml_get_attr_decl(wm_memory_trip);
 dml_get_attr_decl(wm_writeback_urgent);
 dml_get_attr_decl(wm_stutter_exit);
 dml_get_attr_decl(wm_stutter_enter_exit);
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
 dml_get_attr_decl(wm_z8_stutter_exit);
 dml_get_attr_decl(wm_z8_stutter_enter_exit);
 dml_get_attr_decl(stutter_efficiency_z8);
 dml_get_attr_decl(stutter_num_bursts_z8);
-#endif
 dml_get_attr_decl(wm_dram_clock_change);
 dml_get_attr_decl(wm_writeback_dram_clock_change);
 dml_get_attr_decl(stutter_efficiency_no_vblank);
@@ -108,10 +106,8 @@ dml_get_pipe_attr_decl(vstartup);
 dml_get_pipe_attr_decl(vupdate_offset);
 dml_get_pipe_attr_decl(vupdate_width);
 dml_get_pipe_attr_decl(vready_offset);
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
 dml_get_pipe_attr_decl(vready_at_or_after_vsync);
 dml_get_pipe_attr_decl(min_dst_y_next_start);
-#endif
 
 double get_total_immediate_flip_bytes(
 		struct display_mode_lib *mode_lib,
@@ -680,7 +676,7 @@ struct vba_vars_st {
 	double         AlignedDCCMetaPitchY[DC__NUM_DPP__MAX];
 	double         AlignedDCCMetaPitchC[DC__NUM_DPP__MAX];
 
-	unsigned int NotEnoughUrgentLatencyHiding;
+	unsigned int NotEnoughUrgentLatencyHiding[DC__VOLTAGE_STATES][2];
 	unsigned int NotEnoughUrgentLatencyHidingPre;
 	int PTEBufferSizeInRequestsForLuma;
 	int PTEBufferSizeInRequestsForChroma;
@@ -881,7 +877,7 @@ struct vba_vars_st {
 
 	int PercentMarginOverMinimumRequiredDCFCLK;
 	bool DynamicMetadataSupported[DC__VOLTAGE_STATES][2];
-	enum immediate_flip_requirement ImmediateFlipRequirement;
+	enum immediate_flip_requirement ImmediateFlipRequirement[DC__NUM_DPP__MAX];
 	unsigned int DETBufferSizeYThisState[DC__NUM_DPP__MAX];
 	unsigned int DETBufferSizeCThisState[DC__NUM_DPP__MAX];
 	bool NoUrgentLatencyHiding[DC__NUM_DPP__MAX];
@@ -933,7 +929,6 @@ struct vba_vars_st {
 	bool ClampMinDCFCLK;
 	bool AllowDramClockChangeOneDisplayVactive;
 
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
 	double MaxAveragePercentOfIdealFabricAndSDPPortBWDisplayCanUseInNormalSystemOperation;
 	double PercentOfIdealFabricAndSDPPortBWReceivedAfterUrgLatency;
 	double PercentOfIdealDRAMBWReceivedAfterUrgLatencyPixelMixedWithVMData;
@@ -974,7 +969,6 @@ struct vba_vars_st {
 	int Z8NumberOfStutterBurstsPerFrame;
 	unsigned int MaximumDSCBitsPerComponent;
 	unsigned int NotEnoughUrgentLatencyHidingA[DC__VOLTAGE_STATES][2];
-#endif
 };
 
 bool CalculateMinAndMaxPrefetchMode(

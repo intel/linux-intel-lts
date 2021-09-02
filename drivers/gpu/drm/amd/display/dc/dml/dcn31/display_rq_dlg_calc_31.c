@@ -23,8 +23,6 @@
  *
  */
 
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
-
 #include "../display_mode_lib.h"
 #include "../display_mode_vba.h"
 #include "../dml_inline_defs.h"
@@ -52,7 +50,7 @@ static bool CalculateBytePerPixelAnd256BBlockSizes(
 		*BytePerPixelDETC = 0;
 		*BytePerPixelY = 4;
 		*BytePerPixelC = 0;
-	} else if (SourcePixelFormat == dm_444_16 || SourcePixelFormat == dm_444_16) {
+	} else if (SourcePixelFormat == dm_444_16) {
 		*BytePerPixelDETY = 2;
 		*BytePerPixelDETC = 0;
 		*BytePerPixelY = 2;
@@ -565,7 +563,7 @@ static void get_meta_and_pte_attr(
 	log2_meta_req_bytes = 6;	// meta request is 64b and is 8x8byte meta element
 
 	// each 64b meta request for dcn is 8x8 meta elements and
-	// a meta element covers one 256b block of the the data surface.
+	// a meta element covers one 256b block of the data surface.
 	log2_meta_req_height = log2_blk256_height + 3;	// meta req is 8x8 byte, each byte represent 1 blk256
 	log2_meta_req_width = log2_meta_req_bytes + 8 - log2_bytes_per_element - log2_meta_req_height;
 	meta_req_width = 1 << log2_meta_req_width;
@@ -1724,4 +1722,3 @@ void dml31_rq_dlg_get_dlg_reg(
 	dml_print("DML_DLG: Calculation for pipe[%d] end\n", pipe_idx);
 }
 
-#endif
