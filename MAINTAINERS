@@ -2071,6 +2071,8 @@ ARM/INTEL THUNDERBAY ARCHITECTURE
 M:	Kenchappa, Demakkanavar <kenchappa.demakkanavar@intel.com>
 S:	Maintained
 F:	Documentation/devicetree/bindings/arm/intel,thunderbay.yaml
+F:	arch/arm64/boot/dts/intel/hddl*
+F:	arch/arm64/boot/dts/intel/thunderbay-soc.dtsi
 
 ARM/INTEL XSC3 (MANZANO) ARM CORE
 M:	Lennert Buytenhek <kernel@wantstofly.org>
