@@ -511,6 +511,7 @@
 		*(.text..refcount)					\
 		*(TEXT_CFI_MAIN) 					\
 		*(.ref.text)						\
+		*(.text.asan.* .text.tsan.*)				\
 	MEM_KEEP(init.text*)						\
 	MEM_KEEP(exit.text*)						\
 
