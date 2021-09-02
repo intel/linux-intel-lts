@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/arm/intel,thunderbay.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Thunder Bay platform device tree bindings
+
+maintainers:
+  - Kenchappa, Demakkanavar <kenchappa.demakkanavar@intel.com>
+
+properties:
+  $nodename:
+    const: '/'
+  compatible:
+    items:
+      - enum:
+          - intel,thunderbay-s02
+          - intel,thunderbay-s03
+          - intel,thunderbay-s12
+          - intel,thunderbay-s13
+          - intel,thunderbay-full
+      - const: intel,thunderbay-hddl
+
+additionalProperties: true
+
+...

@@ -2067,6 +2067,11 @@ S:	Maintained
 F:	arch/arm/mach-pxa/stargate2.c
 F:	drivers/pcmcia/pxa2xx_stargate2.c
 
+ARM/INTEL THUNDERBAY ARCHITECTURE
+M:	Kenchappa, Demakkanavar <kenchappa.demakkanavar@intel.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/arm/intel,thunderbay.yaml
+
 ARM/INTEL XSC3 (MANZANO) ARM CORE
 M:	Lennert Buytenhek <kernel@wantstofly.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
