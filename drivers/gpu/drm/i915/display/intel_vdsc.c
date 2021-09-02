@@ -348,7 +348,10 @@ bool intel_dsc_source_support(const struct intel_crtc_state *crtc_state)
 	if (DISPLAY_VER(i915) >= 12)
 		return true;
 
-	if ((DISPLAY_VER(i915) >= 11 || IS_CANNONLAKE(i915)) && (pipe != PIPE_A || (cpu_transcoder == TRANSCODER_EDP || cpu_transcoder == TRANSCODER_DSI_0 || cpu_transcoder == TRANSCODER_DSI_1)))
+	if (DISPLAY_VER(i915) >= 11 &&
+	    (pipe != PIPE_A || cpu_transcoder == TRANSCODER_EDP ||
+	     cpu_transcoder == TRANSCODER_DSI_0 ||
+	     cpu_transcoder == TRANSCODER_DSI_1))
 		return true;
 
 	return false;
@@ -1106,6 +1109,27 @@ static i915_reg_t dss_ctl2_reg(const struct intel_crtc_state *crtc_state)
 	return is_pipe_dsc(crtc_state) ? ICL_PIPE_DSS_CTL2(pipe) : DSS_CTL2;
 }
 
+static struct intel_crtc *
+_get_crtc_for_pipe(struct drm_i915_private *i915, enum pipe pipe)
+{
+	if (!intel_pipe_valid(i915, pipe))
+		return NULL;
+
+	return intel_get_crtc_for_pipe(i915, pipe);
+}
+
+struct intel_crtc *
+intel_dsc_get_bigjoiner_secondary(const struct intel_crtc *primary_crtc)
+{
+	return _get_crtc_for_pipe(to_i915(primary_crtc->base.dev), primary_crtc->pipe + 1);
+}
+
+static struct intel_crtc *
+intel_dsc_get_bigjoiner_primary(const struct intel_crtc *secondary_crtc)
+{
+	return _get_crtc_for_pipe(to_i915(secondary_crtc->base.dev), secondary_crtc->pipe - 1);
+}
+
 void intel_uncompressed_joiner_enable(const struct intel_crtc_state *crtc_state)
 {
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
@@ -1178,15 +1202,13 @@ void intel_uncompressed_joiner_get_config(struct intel_crtc_state *crtc_state)
 	dss_ctl1 = intel_de_read(dev_priv, dss_ctl1_reg(crtc_state));
 	if (dss_ctl1 & UNCOMPRESSED_JOINER_MASTER) {
 		crtc_state->bigjoiner = true;
-		if (!WARN_ON(INTEL_NUM_PIPES(dev_priv) == crtc->pipe + 1))
-			crtc_state->bigjoiner_linked_crtc =
-				intel_get_crtc_for_pipe(dev_priv, crtc->pipe + 1);
+		crtc_state->bigjoiner_linked_crtc = intel_dsc_get_bigjoiner_secondary(crtc);
+		drm_WARN_ON(&dev_priv->drm, !crtc_state->bigjoiner_linked_crtc);
 	} else if (dss_ctl1 & UNCOMPRESSED_JOINER_SLAVE) {
 		crtc_state->bigjoiner = true;
 		crtc_state->bigjoiner_slave = true;
-		if (!WARN_ON(crtc->pipe == PIPE_A))
-			crtc_state->bigjoiner_linked_crtc =
-				intel_get_crtc_for_pipe(dev_priv, crtc->pipe - 1);
+		crtc_state->bigjoiner_linked_crtc = intel_dsc_get_bigjoiner_primary(crtc);
+		drm_WARN_ON(&dev_priv->drm, !crtc_state->bigjoiner_linked_crtc);
 	}
 }
 
@@ -1224,14 +1246,11 @@ void intel_dsc_get_config(struct intel_crtc_state *crtc_state)
 
 		if (!(dss_ctl1 & MASTER_BIG_JOINER_ENABLE)) {
 			crtc_state->bigjoiner_slave = true;
-			if (!WARN_ON(crtc->pipe == PIPE_A))
-				crtc_state->bigjoiner_linked_crtc =
-					intel_get_crtc_for_pipe(dev_priv, crtc->pipe - 1);
+			crtc_state->bigjoiner_linked_crtc = intel_dsc_get_bigjoiner_primary(crtc);
 		} else {
-			if (!WARN_ON(INTEL_NUM_PIPES(dev_priv) == crtc->pipe + 1))
-				crtc_state->bigjoiner_linked_crtc =
-					intel_get_crtc_for_pipe(dev_priv, crtc->pipe + 1);
+			crtc_state->bigjoiner_linked_crtc = intel_dsc_get_bigjoiner_secondary(crtc);
 		}
+		drm_WARN_ON(&dev_priv->drm, !crtc_state->bigjoiner_linked_crtc);
 	}
 
 	/* FIXME: add more state readout as needed */

@@ -9,7 +9,13 @@
 
 #include <linux/kref.h>
 #include <linux/dma-resv.h>
+#include "drm/gpu_scheduler.h"
 #include "msm_drv.h"
+
+/* Make all GEM related WARN_ON()s ratelimited.. when things go wrong they
+ * tend to go wrong 1000s of times in a short timespan.
+ */
+#define GEM_WARN_ON(x)  WARN_RATELIMIT(x, "%s", __stringify(x))
 
 /* Additional internal-use only BO flags: */
 #define MSM_BO_STOLEN        0x10000000    /* try to use stolen/splash memory */
@@ -56,6 +62,11 @@ struct msm_gem_object {
 	bool dontneed : 1;
 
 	/**
+	 * Is object evictable (ie. counted in priv->evictable_count)?
+	 */
+	bool evictable : 1;
+
+	/**
 	 * count of active vmap'ing
 	 */
 	uint8_t vmap_count;
@@ -69,20 +80,13 @@ struct msm_gem_object {
 	/**
 	 * An object is either:
 	 *  inactive - on priv->inactive_dontneed or priv->inactive_willneed
-	 *     (depending on purgability status)
+	 *     (depending on purgeability status)
 	 *  active   - on one one of the gpu's active_list..  well, at
 	 *     least for now we don't have (I don't think) hw sync between
 	 *     2d and 3d one devices which have both, meaning we need to
 	 *     block on submit if a bo is already on other ring
 	 */
 	struct list_head mm_list;
-
-	/* Transiently in the process of submit ioctl, objects associated
-	 * with the submit are on submit->bo_list.. this only lasts for
-	 * the duration of the ioctl, so one bo can never be on multiple
-	 * submit lists.
-	 */
-	struct list_head submit_entry;
 
 	struct page **pages;
 	struct sg_table *sgt;
@@ -98,6 +102,7 @@ struct msm_gem_object {
 	char name[32]; /* Identifier to print for the debugfs files */
 
 	int active_count;
+	int pin_count;
 };
 #define to_msm_bo(x) container_of(x, struct msm_gem_object, base)
 
@@ -132,8 +137,6 @@ void *msm_gem_get_vaddr_active(struct drm_gem_object *obj);
 void msm_gem_put_vaddr_locked(struct drm_gem_object *obj);
 void msm_gem_put_vaddr(struct drm_gem_object *obj);
 int msm_gem_madvise(struct drm_gem_object *obj, unsigned madv);
-int msm_gem_sync_object(struct drm_gem_object *obj,
-		struct msm_fence_context *fctx, bool exclusive);
 void msm_gem_active_get(struct drm_gem_object *obj, struct msm_gpu *gpu);
 void msm_gem_active_put(struct drm_gem_object *obj);
 int msm_gem_cpu_prep(struct drm_gem_object *obj, uint32_t op, ktime_t *timeout);
@@ -143,27 +146,22 @@ int msm_gem_new_handle(struct drm_device *dev, struct drm_file *file,
 		uint32_t size, uint32_t flags, uint32_t *handle, char *name);
 struct drm_gem_object *msm_gem_new(struct drm_device *dev,
 		uint32_t size, uint32_t flags);
-struct drm_gem_object *msm_gem_new_locked(struct drm_device *dev,
-		uint32_t size, uint32_t flags);
 void *msm_gem_kernel_new(struct drm_device *dev, uint32_t size,
 		uint32_t flags, struct msm_gem_address_space *aspace,
 		struct drm_gem_object **bo, uint64_t *iova);
-void *msm_gem_kernel_new_locked(struct drm_device *dev, uint32_t size,
-		uint32_t flags, struct msm_gem_address_space *aspace,
-		struct drm_gem_object **bo, uint64_t *iova);
 void msm_gem_kernel_put(struct drm_gem_object *bo,
-		struct msm_gem_address_space *aspace, bool locked);
+		struct msm_gem_address_space *aspace);
 struct drm_gem_object *msm_gem_import(struct drm_device *dev,
 		struct dma_buf *dmabuf, struct sg_table *sgt);
 __printf(2, 3)
 void msm_gem_object_set_name(struct drm_gem_object *bo, const char *fmt, ...);
-#ifdef CONFIG_DEBUG_FS
 
+#ifdef CONFIG_DEBUG_FS
 struct msm_gem_stats {
 	struct {
 		unsigned count;
 		size_t size;
-	} all, active, purgeable, purged;
+	} all, active, resident, purgeable, purged;
 };
 
 void msm_gem_describe(struct drm_gem_object *obj, struct seq_file *m,
@@ -203,14 +201,14 @@ msm_gem_is_locked(struct drm_gem_object *obj)
 
 static inline bool is_active(struct msm_gem_object *msm_obj)
 {
-	WARN_ON(!msm_gem_is_locked(&msm_obj->base));
+	GEM_WARN_ON(!msm_gem_is_locked(&msm_obj->base));
 	return msm_obj->active_count;
 }
 
 /* imported/exported objects are not purgeable: */
 static inline bool is_unpurgeable(struct msm_gem_object *msm_obj)
 {
-	return msm_obj->base.dma_buf && msm_obj->base.import_attach;
+	return msm_obj->base.import_attach || msm_obj->pin_count;
 }
 
 static inline bool is_purgeable(struct msm_gem_object *msm_obj)
@@ -221,7 +219,7 @@ static inline bool is_purgeable(struct msm_gem_object *msm_obj)
 
 static inline bool is_vunmapable(struct msm_gem_object *msm_obj)
 {
-	WARN_ON(!msm_gem_is_locked(&msm_obj->base));
+	GEM_WARN_ON(!msm_gem_is_locked(&msm_obj->base));
 	return (msm_obj->vmap_count == 0) && msm_obj->vaddr;
 }
 
@@ -229,12 +227,12 @@ static inline void mark_purgeable(struct msm_gem_object *msm_obj)
 {
 	struct msm_drm_private *priv = msm_obj->base.dev->dev_private;
 
-	WARN_ON(!mutex_is_locked(&priv->mm_lock));
+	GEM_WARN_ON(!mutex_is_locked(&priv->mm_lock));
 
 	if (is_unpurgeable(msm_obj))
 		return;
 
-	if (WARN_ON(msm_obj->dontneed))
+	if (GEM_WARN_ON(msm_obj->dontneed))
 		return;
 
 	priv->shrinkable_count += msm_obj->base.size >> PAGE_SHIFT;
@@ -245,39 +243,94 @@ static inline void mark_unpurgeable(struct msm_gem_object *msm_obj)
 {
 	struct msm_drm_private *priv = msm_obj->base.dev->dev_private;
 
-	WARN_ON(!mutex_is_locked(&priv->mm_lock));
+	GEM_WARN_ON(!mutex_is_locked(&priv->mm_lock));
 
 	if (is_unpurgeable(msm_obj))
 		return;
 
-	if (WARN_ON(!msm_obj->dontneed))
+	if (GEM_WARN_ON(!msm_obj->dontneed))
 		return;
 
 	priv->shrinkable_count -= msm_obj->base.size >> PAGE_SHIFT;
-	WARN_ON(priv->shrinkable_count < 0);
+	GEM_WARN_ON(priv->shrinkable_count < 0);
 	msm_obj->dontneed = false;
 }
 
+static inline bool is_unevictable(struct msm_gem_object *msm_obj)
+{
+	return is_unpurgeable(msm_obj) || msm_obj->vaddr;
+}
+
+static inline void mark_evictable(struct msm_gem_object *msm_obj)
+{
+	struct msm_drm_private *priv = msm_obj->base.dev->dev_private;
+
+	WARN_ON(!mutex_is_locked(&priv->mm_lock));
+
+	if (is_unevictable(msm_obj))
+		return;
+
+	if (WARN_ON(msm_obj->evictable))
+		return;
+
+	priv->evictable_count += msm_obj->base.size >> PAGE_SHIFT;
+	msm_obj->evictable = true;
+}
+
+static inline void mark_unevictable(struct msm_gem_object *msm_obj)
+{
+	struct msm_drm_private *priv = msm_obj->base.dev->dev_private;
+
+	WARN_ON(!mutex_is_locked(&priv->mm_lock));
+
+	if (is_unevictable(msm_obj))
+		return;
+
+	if (WARN_ON(!msm_obj->evictable))
+		return;
+
+	priv->evictable_count -= msm_obj->base.size >> PAGE_SHIFT;
+	WARN_ON(priv->evictable_count < 0);
+	msm_obj->evictable = false;
+}
+
 void msm_gem_purge(struct drm_gem_object *obj);
+void msm_gem_evict(struct drm_gem_object *obj);
 void msm_gem_vunmap(struct drm_gem_object *obj);
 
 /* Created per submit-ioctl, to track bo's and cmdstream bufs, etc,
  * associated with the cmdstream submission for synchronization (and
- * make it easier to unwind when things go wrong, etc).  This only
- * lasts for the duration of the submit-ioctl.
+ * make it easier to unwind when things go wrong, etc).
  */
 struct msm_gem_submit {
+	struct drm_sched_job base;
 	struct kref ref;
 	struct drm_device *dev;
 	struct msm_gpu *gpu;
 	struct msm_gem_address_space *aspace;
 	struct list_head node;   /* node in ring submit list */
-	struct list_head bo_list;
 	struct ww_acquire_ctx ticket;
 	uint32_t seqno;		/* Sequence number of the submit on the ring */
-	struct dma_fence *fence;
+
+	/* Array of struct dma_fence * to block on before submitting this job.
+	 */
+	struct xarray deps;
+	unsigned long last_dep;
+
+	/* Hw fence, which is created when the scheduler executes the job, and
+	 * is signaled when the hw finishes (via seqno write from cmdstream)
+	 */
+	struct dma_fence *hw_fence;
+
+	/* Userspace visible fence, which is signaled by the scheduler after
+	 * the hw_fence is signaled.
+	 */
+	struct dma_fence *user_fence;
+
+	int fence_id;       /* key into queue->fence_idr */
 	struct msm_gpu_submitqueue *queue;
 	struct pid *pid;    /* submitting process */
+	bool fault_dumped;  /* Limit devcoredump dumping to one per submit */
 	bool valid;         /* true if no cmdstream patching needed */
 	bool in_rb;         /* "sudo" mode, copy cmds into RB */
 	struct msm_ringbuffer *ring;
@@ -304,6 +357,11 @@ struct msm_gem_submit {
 	} bos[];
 };
 
+static inline struct msm_gem_submit *to_msm_submit(struct drm_sched_job *job)
+{
+	return container_of(job, struct msm_gem_submit, base);
+}
+
 void __msm_gem_submit_destroy(struct kref *kref);
 
 static inline void msm_gem_submit_get(struct msm_gem_submit *submit)
@@ -315,6 +373,8 @@ static inline void msm_gem_submit_put(struct msm_gem_submit *submit)
 {
 	kref_put(&submit->ref, __msm_gem_submit_destroy);
 }
+
+void msm_submit_retire(struct msm_gem_submit *submit);
 
 /* helper to determine of a buffer in submit should be dumped, used for both
  * devcoredump and debugfs cmdstream dumping:

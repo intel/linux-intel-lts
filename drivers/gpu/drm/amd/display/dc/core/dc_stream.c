@@ -221,6 +221,9 @@ struct dc_stream_status *dc_stream_get_status_from_state(
 {
 	uint8_t i;
 
+	if (state == NULL)
+		return NULL;
+
 	for (i = 0; i < state->stream_count; i++) {
 		if (stream == state->streams[i])
 			return &state->stream_status[i];
@@ -294,9 +297,7 @@ bool dc_stream_set_cursor_attributes(
 	stream->cursor_attributes = *attributes;
 
 #if defined(CONFIG_DRM_AMD_DC_DCN)
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
 	dc_z10_restore(dc);
-#endif
 	/* disable idle optimizations while updating cursor */
 	if (dc->idle_optimizations_allowed) {
 		dc_allow_idle_optimizations(dc, false);
@@ -358,9 +359,7 @@ bool dc_stream_set_cursor_position(
 	dc = stream->ctx->dc;
 	res_ctx = &dc->current_state->res_ctx;
 #if defined(CONFIG_DRM_AMD_DC_DCN)
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
 	dc_z10_restore(dc);
-#endif
 
 	/* disable idle optimizations if enabling cursor */
 	if (dc->idle_optimizations_allowed && !stream->cursor_position.enable && position->enable) {

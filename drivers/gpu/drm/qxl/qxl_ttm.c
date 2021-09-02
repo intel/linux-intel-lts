@@ -32,6 +32,7 @@
 #include <drm/ttm/ttm_bo_api.h>
 #include <drm/ttm/ttm_bo_driver.h>
 #include <drm/ttm/ttm_placement.h>
+#include <drm/ttm/ttm_range_manager.h>
 
 #include "qxl_drv.h"
 #include "qxl_object.h"
@@ -126,7 +127,7 @@ static void qxl_bo_move_notify(struct ttm_buffer_object *bo,
 	struct qxl_bo *qbo;
 	struct qxl_device *qdev;
 
-	if (!qxl_ttm_bo_is_qxl_bo(bo))
+	if (!qxl_ttm_bo_is_qxl_bo(bo) || !bo->resource)
 		return;
 	qbo = to_qxl_bo(bo);
 	qdev = to_qxl(qbo->tbo.base.dev);

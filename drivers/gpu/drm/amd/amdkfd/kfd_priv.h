@@ -196,6 +196,7 @@ struct kfd_event_interrupt_class {
 struct kfd_device_info {
 	enum amd_asic_type asic_family;
 	const char *asic_name;
+	uint32_t gfx_target_version;
 	const struct kfd_event_interrupt_class *event_interrupt_class;
 	unsigned int max_pasid_bits;
 	unsigned int max_no_of_hqd;
@@ -730,6 +731,15 @@ struct kfd_process_device {
 	 *  number of CU's a device has along with number of other competing processes
 	 */
 	struct attribute attr_cu_occupancy;
+
+	/* sysfs counters for GPU retry fault and page migration tracking */
+	struct kobject *kobj_counters;
+	struct attribute attr_faults;
+	struct attribute attr_page_in;
+	struct attribute attr_page_out;
+	uint64_t faults;
+	uint64_t page_in;
+	uint64_t page_out;
 };
 
 #define qpd_to_pdd(x) container_of(x, struct kfd_process_device, qpd)
@@ -743,6 +753,7 @@ struct svm_range_list {
 	spinlock_t			deferred_list_lock;
 	atomic_t			evicted_ranges;
 	struct delayed_work		restore_work;
+	DECLARE_BITMAP(bitmap_supported, MAX_GPU_INSTANCE);
 };
 
 /* Process data */
@@ -826,7 +837,6 @@ struct kfd_process {
 
 	/* shared virtual memory registered by this process */
 	struct svm_range_list svms;
-	bool svm_disabled;
 
 	bool xnack_enabled;
 };
@@ -1185,7 +1195,7 @@ int pm_debugfs_runlist(struct seq_file *m, void *data);
 
 int kfd_debugfs_hang_hws(struct kfd_dev *dev);
 int pm_debugfs_hang_hws(struct packet_manager *pm);
-int dqm_debugfs_execute_queues(struct device_queue_manager *dqm);
+int dqm_debugfs_hang_hws(struct device_queue_manager *dqm);
 
 #else
 

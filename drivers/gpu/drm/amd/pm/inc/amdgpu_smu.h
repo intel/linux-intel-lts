@@ -35,6 +35,48 @@
 
 #define SMU_DPM_USER_PROFILE_RESTORE (1 << 0)
 
+// Power Throttlers
+#define SMU_THROTTLER_PPT0_BIT			0
+#define SMU_THROTTLER_PPT1_BIT			1
+#define SMU_THROTTLER_PPT2_BIT			2
+#define SMU_THROTTLER_PPT3_BIT			3
+#define SMU_THROTTLER_SPL_BIT			4
+#define SMU_THROTTLER_FPPT_BIT			5
+#define SMU_THROTTLER_SPPT_BIT			6
+#define SMU_THROTTLER_SPPT_APU_BIT		7
+
+// Current Throttlers
+#define SMU_THROTTLER_TDC_GFX_BIT		16
+#define SMU_THROTTLER_TDC_SOC_BIT		17
+#define SMU_THROTTLER_TDC_MEM_BIT		18
+#define SMU_THROTTLER_TDC_VDD_BIT		19
+#define SMU_THROTTLER_TDC_CVIP_BIT		20
+#define SMU_THROTTLER_EDC_CPU_BIT		21
+#define SMU_THROTTLER_EDC_GFX_BIT		22
+#define SMU_THROTTLER_APCC_BIT			23
+
+// Temperature
+#define SMU_THROTTLER_TEMP_GPU_BIT		32
+#define SMU_THROTTLER_TEMP_CORE_BIT		33
+#define SMU_THROTTLER_TEMP_MEM_BIT		34
+#define SMU_THROTTLER_TEMP_EDGE_BIT		35
+#define SMU_THROTTLER_TEMP_HOTSPOT_BIT		36
+#define SMU_THROTTLER_TEMP_SOC_BIT		37
+#define SMU_THROTTLER_TEMP_VR_GFX_BIT		38
+#define SMU_THROTTLER_TEMP_VR_SOC_BIT		39
+#define SMU_THROTTLER_TEMP_VR_MEM0_BIT		40
+#define SMU_THROTTLER_TEMP_VR_MEM1_BIT		41
+#define SMU_THROTTLER_TEMP_LIQUID0_BIT		42
+#define SMU_THROTTLER_TEMP_LIQUID1_BIT		43
+#define SMU_THROTTLER_VRHOT0_BIT		44
+#define SMU_THROTTLER_VRHOT1_BIT		45
+#define SMU_THROTTLER_PROCHOT_CPU_BIT		46
+#define SMU_THROTTLER_PROCHOT_GFX_BIT		47
+
+// Other
+#define SMU_THROTTLER_PPM_BIT			56
+#define SMU_THROTTLER_FIT_BIT			57
+
 struct smu_hw_power_state {
 	unsigned int magic;
 };
@@ -189,6 +231,7 @@ struct smu_user_dpm_profile {
 	uint32_t power_limit;
 	uint32_t fan_speed_percent;
 	uint32_t flags;
+	uint32_t user_od;
 
 	/* user clock state information */
 	uint32_t clk_mask[SMU_CLK_COUNT];
@@ -310,6 +353,7 @@ struct smu_table_context
 
 	void				*overdrive_table;
 	void                            *boot_overdrive_table;
+	void				*user_overdrive_table;
 
 	uint32_t			gpu_metrics_table_size;
 	void				*gpu_metrics_table;
@@ -582,6 +626,12 @@ struct pptable_funcs {
 				 long *input, uint32_t size);
 
 	/**
+	 * @restore_user_od_settings: Restore the user customized
+	 *                            OD settings on S3/S4/Runpm resume.
+	 */
+	int (*restore_user_od_settings)(struct smu_context *smu);
+
+	/**
 	 * @get_clock_by_type_with_latency: Get the speed and latency of a clock
 	 *                                  domain.
 	 */
@@ -723,7 +773,10 @@ struct pptable_funcs {
 	/**
 	 * @get_power_limit: Get the device's power limits.
 	 */
-	int (*get_power_limit)(struct smu_context *smu);
+	int (*get_power_limit)(struct smu_context *smu,
+			       uint32_t *current_power_limit,
+			       uint32_t *default_power_limit,
+			       uint32_t *max_power_limit);
 
 	/**
 	 * @get_ppt_limit: Get the device's ppt limits.
@@ -932,7 +985,9 @@ struct pptable_funcs {
 	 * @disable_all_features_with_exception: Disable all features with
 	 *                                       exception to those in &mask.
 	 */
-	int (*disable_all_features_with_exception)(struct smu_context *smu, enum smu_feature_mask mask);
+	int (*disable_all_features_with_exception)(struct smu_context *smu,
+						   bool no_hw_disablement,
+						   enum smu_feature_mask mask);
 
 	/**
 	 * @notify_display_change: Enable fast memory clock switching.
@@ -1185,6 +1240,12 @@ struct pptable_funcs {
 	 */
 	int (*wait_for_event)(struct smu_context *smu,
 			      enum smu_event_type event, uint64_t event_arg);
+
+	/**
+	 * @sned_hbm_bad_pages_num:  message SMU to update bad page number
+	 *										of SMUBUS table.
+	 */
+	int (*send_hbm_bad_pages_num)(struct smu_context *smu, uint32_t size);
 };
 
 typedef enum {

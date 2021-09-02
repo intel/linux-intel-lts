@@ -45,7 +45,7 @@
 /* forward declaration */
 struct aux_payload;
 
-#define DC_VER "3.2.139"
+#define DC_VER "3.2.147"
 
 #define MAX_SURFACES 3
 #define MAX_PLANES 6
@@ -183,6 +183,8 @@ struct dc_caps {
 	unsigned int cursor_cache_size;
 	struct dc_plane_cap planes[MAX_PLANES];
 	struct dc_color_caps color;
+	bool vbios_lttpr_aware;
+	bool vbios_lttpr_enable;
 };
 
 struct dc_bug_wa {
@@ -297,12 +299,14 @@ struct dc_config {
 	bool allow_seamless_boot_optimization;
 	bool power_down_display_on_boot;
 	bool edp_not_connected;
+	bool edp_no_power_sequencing;
 	bool force_enum_edp;
 	bool forced_clocks;
 	bool allow_lttpr_non_transparent_mode;
 	bool multi_mon_pp_mclk_switch;
 	bool disable_dmcu;
 	bool enable_4to1MPC;
+	bool allow_edp_hotplug_detection;
 #if defined(CONFIG_DRM_AMD_DC_DCN)
 	bool clamp_min_dcfclk;
 #endif
@@ -351,11 +355,11 @@ enum dcn_pwr_state {
 	DCN_PWR_STATE_LOW_POWER = 3,
 };
 
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
-enum dcn_z9_support_state {
-	DCN_Z9_SUPPORT_UNKNOWN,
-	DCN_Z9_SUPPORT_ALLOW,
-	DCN_Z9_SUPPORT_DISALLOW,
+#if defined(CONFIG_DRM_AMD_DC_DCN)
+enum dcn_zstate_support_state {
+	DCN_ZSTATE_SUPPORT_UNKNOWN,
+	DCN_ZSTATE_SUPPORT_ALLOW,
+	DCN_ZSTATE_SUPPORT_DISALLOW,
 };
 #endif
 /*
@@ -375,8 +379,8 @@ struct dc_clocks {
 	int phyclk_khz;
 	int dramclk_khz;
 	bool p_state_change_support;
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
-	enum dcn_z9_support_state z9_support;
+#if defined(CONFIG_DRM_AMD_DC_DCN)
+	enum dcn_zstate_support_state zstate_support;
 	bool dtbclk_en;
 #endif
 	enum dcn_pwr_state pwr_state;
@@ -456,7 +460,65 @@ union mem_low_power_enable_options {
 	uint32_t u32All;
 };
 
+struct dc_debug_data {
+	uint32_t ltFailCount;
+	uint32_t i2cErrorCount;
+	uint32_t auxErrorCount;
+};
+
+struct dc_phy_addr_space_config {
+	struct {
+		uint64_t start_addr;
+		uint64_t end_addr;
+		uint64_t fb_top;
+		uint64_t fb_offset;
+		uint64_t fb_base;
+		uint64_t agp_top;
+		uint64_t agp_bot;
+		uint64_t agp_base;
+	} system_aperture;
+
+	struct {
+		uint64_t page_table_start_addr;
+		uint64_t page_table_end_addr;
+		uint64_t page_table_base_addr;
+		bool base_addr_is_mc_addr;
+	} gart_config;
+
+	bool valid;
+	bool is_hvm_enabled;
+	uint64_t page_table_default_page_addr;
+};
+
+struct dc_virtual_addr_space_config {
+	uint64_t	page_table_base_addr;
+	uint64_t	page_table_start_addr;
+	uint64_t	page_table_end_addr;
+	uint32_t	page_table_block_size_in_bytes;
+	uint8_t		page_table_depth; // 1 = 1 level, 2 = 2 level, etc.  0 = invalid
+};
+
+struct dc_bounding_box_overrides {
+	int sr_exit_time_ns;
+	int sr_enter_plus_exit_time_ns;
+	int urgent_latency_ns;
+	int percent_of_ideal_drambw;
+	int dram_clock_change_latency_ns;
+	int dummy_clock_change_latency_ns;
+	/* This forces a hard min on the DCFCLK we use
+	 * for DML.  Unlike the debug option for forcing
+	 * DCFCLK, this override affects watermark calculations
+	 */
+	int min_dcfclk_mhz;
+};
+
+struct dc_state;
+struct resource_pool;
+struct dce_hwseq;
+
 struct dc_debug_options {
+	bool native422_support;
+	bool disable_dsc;
 	enum visual_confirm visual_confirm;
 	bool sanity_checks;
 	bool max_disp_clk;
@@ -482,7 +544,6 @@ struct dc_debug_options {
 	bool disable_dsc_power_gate;
 	int dsc_min_slice_height_override;
 	int dsc_bpp_increment_div;
-	bool native422_support;
 	bool disable_pplib_wm_range;
 	enum wm_report_mode pplib_wm_report_mode;
 	unsigned int min_disp_clk_khz;
@@ -500,7 +561,7 @@ struct dc_debug_options {
 	bool disable_pplib_clock_request;
 	bool disable_clock_gate;
 	bool disable_mem_low_power;
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
+#if defined(CONFIG_DRM_AMD_DC_DCN)
 	bool pstate_enabled;
 #endif
 	bool disable_dmcu;
@@ -521,8 +582,6 @@ struct dc_debug_options {
 	unsigned int force_odm_combine; //bit vector based on otg inst
 #if defined(CONFIG_DRM_AMD_DC_DCN)
 	unsigned int force_odm_combine_4to1; //bit vector based on otg inst
-#endif
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
 	bool disable_z9_mpc;
 #endif
 	unsigned int force_fclk_khz;
@@ -554,7 +613,6 @@ struct dc_debug_options {
 	bool validate_dml_output;
 	bool enable_dmcub_surface_flip;
 	bool usbc_combo_phy_reset_wa;
-	bool disable_dsc;
 	bool enable_dram_clock_change_one_display_vactive;
 	union mem_low_power_enable_options enable_mem_low_power;
 	bool force_vblank_alignment;
@@ -566,75 +624,19 @@ struct dc_debug_options {
 	bool force_enable_edp_fec;
 	/* FEC/PSR1 sequence enable delay in 100us */
 	uint8_t fec_enable_delay_in100us;
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
+#if defined(CONFIG_DRM_AMD_DC_DCN)
 	bool disable_z10;
 	bool enable_sw_cntl_psr;
 #endif
 };
 
-struct dc_debug_data {
-	uint32_t ltFailCount;
-	uint32_t i2cErrorCount;
-	uint32_t auxErrorCount;
-};
-
-struct dc_phy_addr_space_config {
-	struct {
-		uint64_t start_addr;
-		uint64_t end_addr;
-		uint64_t fb_top;
-		uint64_t fb_offset;
-		uint64_t fb_base;
-		uint64_t agp_top;
-		uint64_t agp_bot;
-		uint64_t agp_base;
-	} system_aperture;
-
-	struct {
-		uint64_t page_table_start_addr;
-		uint64_t page_table_end_addr;
-		uint64_t page_table_base_addr;
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
-		bool base_addr_is_mc_addr;
-#endif
-	} gart_config;
-
-	bool valid;
-	bool is_hvm_enabled;
-	uint64_t page_table_default_page_addr;
-};
-
-struct dc_virtual_addr_space_config {
-	uint64_t	page_table_base_addr;
-	uint64_t	page_table_start_addr;
-	uint64_t	page_table_end_addr;
-	uint32_t	page_table_block_size_in_bytes;
-	uint8_t		page_table_depth; // 1 = 1 level, 2 = 2 level, etc.  0 = invalid
-};
-
-struct dc_bounding_box_overrides {
-	int sr_exit_time_ns;
-	int sr_enter_plus_exit_time_ns;
-	int urgent_latency_ns;
-	int percent_of_ideal_drambw;
-	int dram_clock_change_latency_ns;
-	int dummy_clock_change_latency_ns;
-	/* This forces a hard min on the DCFCLK we use
-	 * for DML.  Unlike the debug option for forcing
-	 * DCFCLK, this override affects watermark calculations
-	 */
-	int min_dcfclk_mhz;
-};
-
-struct resource_pool;
-struct dce_hwseq;
 struct gpu_info_soc_bounding_box_v1_0;
 struct dc {
+	struct dc_debug_options debug;
 	struct dc_versions versions;
 	struct dc_caps caps;
 	struct dc_cap_funcs cap_funcs;
 	struct dc_config config;
-	struct dc_debug_options debug;
 	struct dc_bounding_box_overrides bb_overrides;
 	struct dc_bug_wa work_arounds;
 	struct dc_context *ctx;
@@ -1334,7 +1336,7 @@ void dc_hardware_release(struct dc *dc);
 #endif
 
 bool dc_set_psr_allow_active(struct dc *dc, bool enable);
-#if defined(CONFIG_DRM_AMD_DC_DCN3_1)
+#if defined(CONFIG_DRM_AMD_DC_DCN)
 void dc_z10_restore(struct dc *dc);
 #endif
 

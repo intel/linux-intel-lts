@@ -23,8 +23,8 @@
  *
  */
 
-#ifndef _DMUB_CMD_H_
-#define _DMUB_CMD_H_
+#ifndef DMUB_CMD_H
+#define DMUB_CMD_H
 
 #if defined(_TEST_HARNESS) || defined(FPGA_USB4)
 #include "dmub_fw_types.h"
@@ -47,10 +47,10 @@
 
 /* Firmware versioning. */
 #ifdef DMUB_EXPOSE_VERSION
-#define DMUB_FW_VERSION_GIT_HASH 0xefd666c1
+#define DMUB_FW_VERSION_GIT_HASH 0x6d13d5e2c
 #define DMUB_FW_VERSION_MAJOR 0
 #define DMUB_FW_VERSION_MINOR 0
-#define DMUB_FW_VERSION_REVISION 69
+#define DMUB_FW_VERSION_REVISION 77
 #define DMUB_FW_VERSION_TEST 0
 #define DMUB_FW_VERSION_VBIOS 0
 #define DMUB_FW_VERSION_HOTFIX 0
@@ -309,6 +309,7 @@ struct dmcub_trace_buf_entry {
  * Current scratch register usage is as follows:
  *
  * SCRATCH0: FW Boot Status register
+ * SCRATCH5: LVTMA Status Register
  * SCRATCH15: FW Boot Options register
  */
 
@@ -333,10 +334,26 @@ enum dmub_fw_boot_status_bit {
 	DMUB_FW_BOOT_STATUS_BIT_MAILBOX_READY = (1 << 1), /**< 1 if mailbox ready */
 	DMUB_FW_BOOT_STATUS_BIT_OPTIMIZED_INIT_DONE = (1 << 2), /**< 1 if init done */
 	DMUB_FW_BOOT_STATUS_BIT_RESTORE_REQUIRED = (1 << 3), /**< 1 if driver should call restore */
+	DMUB_FW_BOOT_STATUS_BIT_DEFERRED_LOADED = (1 << 4), /**< 1 if VBIOS data is deferred programmed */
+};
+
+/* Register bit definition for SCRATCH5 */
+union dmub_lvtma_status {
+	struct {
+		uint32_t psp_ok : 1;
+		uint32_t edp_on : 1;
+		uint32_t reserved : 30;
+	} bits;
+	uint32_t all;
+};
+
+enum dmub_lvtma_status_bit {
+	DMUB_LVTMA_STATUS_BIT_PSP_OK = (1 << 0),
+	DMUB_LVTMA_STATUS_BIT_EDP_ON = (1 << 1),
 };
 
 /**
- * union dmub_fw_boot_options - Boot option definitions for SCRATCH15
+ * union dmub_fw_boot_options - Boot option definitions for SCRATCH14
  */
 union dmub_fw_boot_options {
 	struct {
@@ -346,12 +363,11 @@ union dmub_fw_boot_options {
 		uint32_t skip_phy_access : 1; /**< 1 if PHY access should be skipped */
 		uint32_t disable_clk_gate: 1; /**< 1 if clock gating should be disabled */
 		uint32_t skip_phy_init_panel_sequence: 1; /**< 1 to skip panel init seq */
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
 		uint32_t z10_disable: 1; /**< 1 to disable z10 */
-#else
-		uint32_t reserved_unreleased: 1; /**< reserved for an unreleased feature */
-#endif
-		uint32_t reserved : 25; /**< reserved */
+		uint32_t reserved2: 1; /**< reserved for an unreleased feature */
+		uint32_t reserved_unreleased1: 1; /**< reserved for an unreleased feature */
+		uint32_t invalid_vbios_data: 1; /**< 1 if VBIOS data table is invalid */
+		uint32_t reserved : 23; /**< reserved */
 	} bits; /**< boot bits */
 	uint32_t all; /**< 32-bit access to bits */
 };
@@ -615,7 +631,6 @@ enum dmub_cmd_type {
 	 * Command type used for OUTBOX1 notification enable
 	 */
 	DMUB_CMD__OUTBOX1_ENABLE = 71,
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
 	/**
 	 * Command type used for all idle optimization commands.
 	 */
@@ -628,7 +643,10 @@ enum dmub_cmd_type {
 	 * Command type used for all panel control commands.
 	 */
 	DMUB_CMD__PANEL_CNTL = 74,
-#endif
+	/**
+	 * Command type used for EDID CEA parsing
+	 */
+	DMUB_CMD__EDID_CEA = 79,
 	/**
 	 * Command type used for all VBIOS interface commands.
 	 */
@@ -834,8 +852,6 @@ struct dmub_rb_cmd_mall {
 	uint8_t reserved2; /**< Reserved bits */
 };
 
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
-
 /**
  * enum dmub_cmd_idle_opt_type - Idle optimization command type.
  */
@@ -880,7 +896,7 @@ struct dmub_rb_cmd_clk_mgr_notify_clocks {
 	struct dmub_cmd_header header; /**< header */
 	struct dmub_clocks clocks; /**< clock data */
 };
-#endif
+
 /**
  * struct dmub_cmd_digx_encoder_control_data - Encoder control data.
  */
@@ -1394,6 +1410,10 @@ struct dmub_cmd_psr_copy_settings_data {
 	 * Currently the support is only for 0 or 1
 	 */
 	uint8_t panel_inst;
+	/**
+	 * Explicit padding to 4 byte boundary.
+	 */
+	uint8_t pad3[4];
 };
 
 /**
@@ -2091,7 +2111,6 @@ struct dmub_rb_cmd_drr_update {
 		struct dmub_optc_state dmub_optc_state_req;
 };
 
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
 /**
  * enum dmub_cmd_panel_cntl_type - Panel control command.
  */
@@ -2126,7 +2145,6 @@ struct dmub_rb_cmd_panel_cntl {
 	struct dmub_cmd_header header; /**< header */
 	struct dmub_cmd_panel_cntl_data data; /**< payload */
 };
-#endif
 
 /**
  * Data passed from driver to FW in a DMUB_CMD__VBIOS_LVTMA_CONTROL command.
@@ -2150,6 +2168,68 @@ struct dmub_rb_cmd_lvtma_control {
 	 * Data passed from driver to FW in a DMUB_CMD__VBIOS_LVTMA_CONTROL command.
 	 */
 	struct dmub_cmd_lvtma_control_data data;
+};
+
+/**
+ * Maximum number of bytes a chunk sent to DMUB for parsing
+ */
+#define DMUB_EDID_CEA_DATA_CHUNK_BYTES 8
+
+/**
+ *  Represent a chunk of CEA blocks sent to DMUB for parsing
+ */
+struct dmub_cmd_send_edid_cea {
+	uint16_t offset;	/**< offset into the CEA block */
+	uint8_t length;	/**< number of bytes in payload to copy as part of CEA block */
+	uint16_t total_length;  /**< total length of the CEA block */
+	uint8_t payload[DMUB_EDID_CEA_DATA_CHUNK_BYTES]; /**< data chunk of the CEA block */
+	uint8_t pad[3]; /**< padding and for future expansion */
+};
+
+/**
+ * Result of VSDB parsing from CEA block
+ */
+struct dmub_cmd_edid_cea_amd_vsdb {
+	uint8_t vsdb_found;		/**< 1 if parsing has found valid AMD VSDB */
+	uint8_t freesync_supported;	/**< 1 if Freesync is supported */
+	uint16_t amd_vsdb_version;	/**< AMD VSDB version */
+	uint16_t min_frame_rate;	/**< Maximum frame rate */
+	uint16_t max_frame_rate;	/**< Minimum frame rate */
+};
+
+/**
+ * Result of sending a CEA chunk
+ */
+struct dmub_cmd_edid_cea_ack {
+	uint16_t offset;	/**< offset of the chunk into the CEA block */
+	uint8_t success;	/**< 1 if this sending of chunk succeeded */
+	uint8_t pad;		/**< padding and for future expansion */
+};
+
+/**
+ * Specify whether the result is an ACK/NACK or the parsing has finished
+ */
+enum dmub_cmd_edid_cea_reply_type {
+	DMUB_CMD__EDID_CEA_AMD_VSDB	= 1, /**< VSDB parsing has finished */
+	DMUB_CMD__EDID_CEA_ACK		= 2, /**< acknowledges the CEA sending is OK or failing */
+};
+
+/**
+ * Definition of a DMUB_CMD__EDID_CEA command.
+ */
+struct dmub_rb_cmd_edid_cea {
+	struct dmub_cmd_header header;	/**< Command header */
+	union dmub_cmd_edid_cea_data {
+		struct dmub_cmd_send_edid_cea input; /**< input to send CEA chunks */
+		struct dmub_cmd_edid_cea_output { /**< output with results */
+			uint8_t type;	/**< dmub_cmd_edid_cea_reply_type */
+			union {
+				struct dmub_cmd_edid_cea_amd_vsdb amd_vsdb;
+				struct dmub_cmd_edid_cea_ack ack;
+			};
+		} output;	/**< output to retrieve ACK/NACK or VSDB parsing results */
+	} data;	/**< Command data */
+
 };
 
 /**
@@ -2225,7 +2305,6 @@ union dmub_rb_cmd {
 	 * Definition of a DMUB_CMD__MALL command.
 	 */
 	struct dmub_rb_cmd_mall mall;
-#ifdef CONFIG_DRM_AMD_DC_DCN3_1
 	/**
 	 * Definition of a DMUB_CMD__IDLE_OPT_DCN_RESTORE command.
 	 */
@@ -2240,7 +2319,6 @@ union dmub_rb_cmd {
 	 * Definition of DMUB_CMD__PANEL_CNTL commands.
 	 */
 	struct dmub_rb_cmd_panel_cntl panel_cntl;
-#endif
 	/**
 	 * Definition of a DMUB_CMD__ABM_SET_PIPE command.
 	 */
@@ -2290,6 +2368,10 @@ union dmub_rb_cmd {
 	 * Definition of a DMUB_CMD__VBIOS_LVTMA_CONTROL command.
 	 */
 	struct dmub_rb_cmd_lvtma_control lvtma_control;
+	/**
+	 * Definition of a DMUB_CMD__EDID_CEA command.
+	 */
+	struct dmub_rb_cmd_edid_cea edid_cea;
 };
 
 /**
@@ -2388,16 +2470,14 @@ static inline bool dmub_rb_full(struct dmub_rb *rb)
 static inline bool dmub_rb_push_front(struct dmub_rb *rb,
 				      const union dmub_rb_cmd *cmd)
 {
-	uint64_t volatile *dst = (uint64_t volatile *)(rb->base_address) + rb->wrpt / sizeof(uint64_t);
-	const uint64_t *src = (const uint64_t *)cmd;
-	uint8_t i;
+	uint8_t *dst = (uint8_t *)(rb->base_address) + rb->wrpt;
+	const uint8_t *src = (const uint8_t *)cmd;
 
 	if (dmub_rb_full(rb))
 		return false;
 
 	// copying data
-	for (i = 0; i < DMUB_RB_CMD_SIZE / sizeof(uint64_t); i++)
-		*dst++ = *src++;
+	dmub_memcpy(dst, src, DMUB_RB_CMD_SIZE);
 
 	rb->wrpt += DMUB_RB_CMD_SIZE;
 
@@ -2419,7 +2499,7 @@ static inline bool dmub_rb_out_push_front(struct dmub_rb *rb,
 				      const union dmub_rb_out_cmd *cmd)
 {
 	uint8_t *dst = (uint8_t *)(rb->base_address) + rb->wrpt;
-	const uint8_t *src = (uint8_t *)cmd;
+	const uint8_t *src = (const uint8_t *)cmd;
 
 	if (dmub_rb_full(rb))
 		return false;
@@ -2504,18 +2584,16 @@ static inline bool dmub_rb_peek_offset(struct dmub_rb *rb,
  * @return false otherwise
  */
 static inline bool dmub_rb_out_front(struct dmub_rb *rb,
-				 union dmub_rb_out_cmd  *cmd)
+				 union dmub_rb_out_cmd *cmd)
 {
-	const uint64_t volatile *src = (const uint64_t volatile *)(rb->base_address) + rb->rptr / sizeof(uint64_t);
-	uint64_t *dst = (uint64_t *)cmd;
-	uint8_t i;
+	const uint8_t *src = (const uint8_t *)(rb->base_address) + rb->rptr;
+	uint8_t *dst = (uint8_t *)cmd;
 
 	if (dmub_rb_empty(rb))
 		return false;
 
 	// copying data
-	for (i = 0; i < DMUB_RB_CMD_SIZE / sizeof(uint64_t); i++)
-		*dst++ = *src++;
+	dmub_memcpy(dst, src, DMUB_RB_CMD_SIZE);
 
 	return true;
 }
@@ -2550,15 +2628,14 @@ static inline bool dmub_rb_pop_front(struct dmub_rb *rb)
  */
 static inline void dmub_rb_flush_pending(const struct dmub_rb *rb)
 {
+	uint8_t buf[DMUB_RB_CMD_SIZE];
 	uint32_t rptr = rb->rptr;
 	uint32_t wptr = rb->wrpt;
 
 	while (rptr != wptr) {
-		uint64_t volatile *data = (uint64_t volatile *)rb->base_address + rptr / sizeof(uint64_t);
-		uint8_t i;
+		const uint8_t *data = (const uint8_t *)rb->base_address + rptr;
 
-		for (i = 0; i < DMUB_RB_CMD_SIZE / sizeof(uint64_t); i++)
-			*data++;
+		dmub_memcpy(buf, data, DMUB_RB_CMD_SIZE);
 
 		rptr += DMUB_RB_CMD_SIZE;
 		if (rptr >= rb->capacity)

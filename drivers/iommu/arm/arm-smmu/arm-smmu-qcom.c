@@ -14,6 +14,7 @@ struct qcom_smmu {
 	struct arm_smmu_device smmu;
 	bool bypass_quirk;
 	u8 bypass_cbndx;
+	u32 stall_enabled;
 };
 
 static int qcom_sdm845_smmu500_cfg_probe(struct arm_smmu_device *smmu)

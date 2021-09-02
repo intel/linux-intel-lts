@@ -84,6 +84,9 @@ const struct snd_sof_dsp_ops sof_tgl_ops = {
 	.pre_fw_run = hda_dsp_pre_fw_run,
 	.post_fw_run = hda_dsp_post_fw_run,
 
+	/* parse platform specific extended manifest */
+	.parse_platform_ext_manifest = hda_dsp_ext_man_get_cavs_config_data,
+
 	/* dsp core power up/down */
 	.core_power_up = hda_dsp_enable_core,
 	.core_power_down = hda_dsp_core_reset_power_down,
@@ -121,7 +124,7 @@ const struct snd_sof_dsp_ops sof_tgl_ops = {
 EXPORT_SYMBOL_NS(sof_tgl_ops, SND_SOC_SOF_INTEL_HDA_COMMON);
 
 const struct sof_intel_dsp_desc tgl_chip_info = {
-	/* Tigerlake */
+	/* Tigerlake , Alderlake */
 	.cores_num = 4,
 	.init_core_mask = 1,
 	.host_managed_cores_mask = BIT(0),
