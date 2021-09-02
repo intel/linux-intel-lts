@@ -43,7 +43,7 @@
 
 # CVE-2020-12364
 # CVE-2020-12363
-0001-drm-i915-disable-guc.patch
+0001-drm-i915-disable-guc-submission.patch
 
 # CVE-2020-36322
 0001-fuse-fix-bad-inode.patch
@@ -54,3 +54,21 @@
 # CVE-2019-0149
 0001-i40e-Add-bounds-check-for-ch-array.patch
 
+# CVE-2020-26141
+0001-ath10k-Fix-TKIP-Michael-MIC-verification-for-PCIe.patch
+
+# CVE-2020-26145
+0001-ath10k-drop-fragments-with-multicast-DA-for-PCIe.patch
+
+# CVE-2020-36385
+0001-RDMA-ucma-Rework-ucma_migrate_id-to-avoid-races-with.patch
+
+# CVE-2021-32078
+0001-ARM-footbridge-remove-personal-server-platform.patch
+
+# CVE-2021-37159
+0001-usb-hso-fix-error-handling-code-of-hso_create_net_de.patch
+
+# CVE-2021-34556
+# CVE-2021-35477
+0001-bpf-Introduce-BPF-nospec-instruction-for-mitigating-.patch
