@@ -11,6 +11,7 @@
 #include "evsel.h"
 #include "strbuf.h"
 #include "pmu.h"
+#include "pmu-hybrid.h"
 #include "expr.h"
 #include "rblist.h"
 #include <string.h>
@@ -616,7 +617,7 @@ static int metricgroup__print_sys_event_iter(struct pmu_event *pe, void *data)
 }
 
 void metricgroup__print(bool metrics, bool metricgroups, char *filter,
-			bool raw, bool details)
+			bool raw, bool details, const char *pmu_name)
 {
 	struct pmu_events_map *map = pmu_events_map__find();
 	struct pmu_event *pe;
@@ -642,6 +643,10 @@ void metricgroup__print(bool metrics, bool metricgroups, char *filter,
 			break;
 		if (!pe->metric_expr)
 			continue;
+		if (pmu_name && perf_pmu__is_hybrid(pe->pmu) &&
+		    strcmp(pmu_name, pe->pmu)) {
+			continue;
+		}
 		if (metricgroup__print_pmu_event(pe, metricgroups, filter,
 						 raw, details, &groups,
 						 metriclist) < 0)
