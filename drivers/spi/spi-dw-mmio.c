@@ -33,6 +33,8 @@ struct dw_spi_mmio {
 	struct reset_control *rstc;
 };
 
+#define SPI_DW_DEFAULT_AUTOSUSP_VAL		1000
+
 #define MSCC_CPU_SYSTEM_CTRL_GENERAL_CTRL	0x24
 #define OCELOT_IF_SI_OWNER_OFFSET		4
 #define JAGUAR2_IF_SI_OWNER_OFFSET		6
@@ -326,6 +328,10 @@ static int dw_spi_mmio_probe(struct platform_device *pdev)
 			goto out;
 	}
 
+	/* Set initial autosuspend default delay value and enable */
+	pm_runtime_set_autosuspend_delay(&pdev->dev, SPI_DW_DEFAULT_AUTOSUSP_VAL);
+	pm_runtime_use_autosuspend(&pdev->dev);
+	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 
 	ret = dw_spi_add_host(&pdev->dev, dws);
@@ -336,6 +342,7 @@ static int dw_spi_mmio_probe(struct platform_device *pdev)
 	return 0;
 
 out:
+	pm_runtime_put_noidle(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 	clk_disable_unprepare(dwsmmio->pclk);
 out_clk:
