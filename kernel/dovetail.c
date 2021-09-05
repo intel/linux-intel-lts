@@ -72,7 +72,7 @@ void __weak handle_oob_syscall(struct pt_regs *regs)
 int __weak handle_pipelined_syscall(struct irq_stage *stage,
 				    struct pt_regs *regs)
 {
-	return 0;
+	return 0;	/* i.e. propagate to in-band handler. */
 }
 
 void __weak handle_oob_mayday(struct pt_regs *regs)
@@ -166,6 +166,19 @@ next:
 	return ret;
 }
 
+static inline bool maybe_oob_syscall(unsigned int nr, struct pt_regs *regs)
+{
+	/*
+	 * Check whether the companion core might be interested in
+	 * @nr. Hand the request to the core if __OOB_SYSCALL_BIT is
+	 * set in @nr, or this is a prctl() request into which an oob
+	 * syscall might be folded. If the prctl() call ends up being
+	 * a regular in-band request, the core should tell us to
+	 * propagate it to the in-band handler eventually.
+	 */
+	return (nr & __OOB_SYSCALL_BIT) || nr == __NR_prctl;
+}
+
 int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 {
 	struct thread_info *ti = current_thread_info();
@@ -175,11 +188,12 @@ int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 	WARN_ON_ONCE(dovetail_debug() && hard_irqs_disabled());
 
 	/*
-	 * If __OOB_SYSCALL_BIT is set into the syscall number and we
-	 * are running out-of-band, pass the request directly to the
-	 * companion core by calling the oob syscall handler.
+	 * If the syscall signature belongs to the out-of-band syscall
+	 * set and we are running out-of-band, pass the request
+	 * directly to the companion core by calling the oob syscall
+	 * handler.
 	 *
-	 * Otherwise, if __OOB_SYSCALL_BIT is set or alternate
+	 * Otherwise, if this is an out-of-band syscall or alternate
 	 * scheduling is enabled for the caller, propagate the syscall
 	 * through the pipeline stages, so that:
 	 *
@@ -203,7 +217,7 @@ int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 	 * after exiting to user.
 	 */
 
-	if ((nr & __OOB_SYSCALL_BIT) && (local_flags & _TLF_OOB)) {
+	if ((local_flags & _TLF_OOB) && maybe_oob_syscall(nr, regs)) {
 		handle_oob_syscall(regs);
 		local_flags = READ_ONCE(ti_local_flags(ti));
 		if (local_flags & _TLF_OOB) {
@@ -216,7 +230,7 @@ int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 		}
 	}
 
-	if ((local_flags & _TLF_DOVETAIL) || (nr & __OOB_SYSCALL_BIT)) {
+	if ((local_flags & _TLF_DOVETAIL) || maybe_oob_syscall(nr, regs)) {
 		ret = __pipeline_syscall(regs);
 		local_flags = READ_ONCE(ti_local_flags(ti));
 		if (local_flags & _TLF_OOB)
