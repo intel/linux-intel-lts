@@ -148,8 +148,8 @@ enum xpcie_ep_engine_type {
 };
 
 static u32 dma_chan_offset[2][DMA_CHAN_NUM] = {
-	{ 0x200, 0x400, 0x600, 0x800 },
-	{ 0x300, 0x500, 0x700, 0x900 }
+	{ 0x200, 0x400, 0x600, 0x800, 0xA00, 0xC00, 0xE00, 0x1000 },
+	{ 0x300, 0x500, 0x700, 0x900, 0xB00, 0xD00, 0xF00, 0x1100 }
 };
 
 static int intel_xpcie_ep_dma_disable(void __iomem *dma_base,
@@ -339,13 +339,15 @@ int intel_xpcie_ep_dma_write_ll(struct pci_epf *epf, int chan, int descs_num)
 	if (descs_num <= 0 || descs_num > XPCIE_NUM_TX_DESCS)
 		return -EINVAL;
 
+	chan = xpcie_epf->epf->func_no;
+
 	if (chan < 0 || chan >= DMA_CHAN_NUM)
 		return -EINVAL;
 
 	dma_chan = (struct __iomem pcie_dma_chan *)
 		(dma_base + dma_chan_offset[WRITE_ENGINE][chan]);
 
-	desc_buf = &xpcie_epf->tx_desc_buf[chan];
+	desc_buf = &xpcie_epf->tx_desc_buf;
 
 	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num);
 
@@ -356,18 +358,26 @@ int intel_xpcie_ep_dma_write_ll(struct pci_epf *epf, int chan, int descs_num)
 	if (rc)
 		return rc;
 
-	/* Wait for DMA transfer to complete. */
-	for (i = 0; i < DMA_POLLING_TIMEOUT; i++) {
-		usleep_range(5, 10);
-		if (ioread32((void __iomem *)&dma_reg->dma_write_int_status) &
-		    (DMA_DONE_INTERRUPT_CH_MASK(chan) |
-		     DMA_ABORT_INTERRUPT_CH_MASK(chan)))
-			break;
-	}
-	if (i == DMA_POLLING_TIMEOUT) {
-		dev_err(&xpcie_epf->epf->dev, "DMA Wr timeout\n");
-		rc = -ETIME;
-		goto cleanup;
+	if (xpcie_epf->irq_wdma > 0) {
+		/* Wait for DMA transfer to complete. */
+		xpcie_epf->dma_wr_done = false;
+		rc = wait_event_interruptible(xpcie_epf->dma_wr_wq,
+					      xpcie_epf->dma_wr_done);
+	} else {
+		/* Wait for DMA transfer to complete. */
+		for (i = 0; i < DMA_POLLING_TIMEOUT; i++) {
+			usleep_range(5, 10);
+			if (ioread32((void __iomem *)
+				     &dma_reg->dma_write_int_status) &
+				     (DMA_DONE_INTERRUPT_CH_MASK(chan) |
+				     DMA_ABORT_INTERRUPT_CH_MASK(chan)))
+				break;
+		}
+		if (i == DMA_POLLING_TIMEOUT) {
+			dev_err(&xpcie_epf->epf->dev, "DMA Wr timeout\n");
+			rc = -ETIME;
+			goto cleanup;
+		}
 	}
 
 	rc = intel_xpcie_ep_dma_err_status((void __iomem *)
@@ -405,13 +415,15 @@ int intel_xpcie_ep_dma_read_ll(struct pci_epf *epf, int chan, int descs_num)
 	if (descs_num <= 0 || descs_num > XPCIE_NUM_RX_DESCS)
 		return -EINVAL;
 
+	chan = xpcie_epf->epf->func_no;
+
 	if (chan < 0 || chan >= DMA_CHAN_NUM)
 		return -EINVAL;
 
 	dma_chan = (struct __iomem pcie_dma_chan *)
 		(dma_base + dma_chan_offset[READ_ENGINE][chan]);
 
-	desc_buf = &xpcie_epf->rx_desc_buf[chan];
+	desc_buf = &xpcie_epf->rx_desc_buf;
 
 	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num);
 
@@ -422,18 +434,26 @@ int intel_xpcie_ep_dma_read_ll(struct pci_epf *epf, int chan, int descs_num)
 	if (rc)
 		return rc;
 
-	/* Wait for DMA transfer to complete. */
-	for (i = 0; i < DMA_POLLING_TIMEOUT; i++) {
-		usleep_range(5, 10);
-		if (ioread32((void __iomem *)&dma_reg->dma_read_int_status) &
-		    (DMA_DONE_INTERRUPT_CH_MASK(chan) |
-		     DMA_ABORT_INTERRUPT_CH_MASK(chan)))
-			break;
-	}
-	if (i == DMA_POLLING_TIMEOUT) {
-		dev_err(&xpcie_epf->epf->dev, "DMA Rd timeout\n");
-		rc = -ETIME;
-		goto cleanup;
+	if (xpcie_epf->irq_rdma > 0) {
+		/* Wait for DMA transfer to complete. */
+		xpcie_epf->dma_rd_done = false;
+		rc = wait_event_interruptible(xpcie_epf->dma_rd_wq,
+					      xpcie_epf->dma_rd_done);
+	} else {
+		/* Wait for DMA transfer to complete. */
+		for (i = 0; i < DMA_POLLING_TIMEOUT; i++) {
+			usleep_range(5, 10);
+			if (ioread32((void __iomem *)
+				     &dma_reg->dma_read_int_status) &
+				     (DMA_DONE_INTERRUPT_CH_MASK(chan) |
+				     DMA_ABORT_INTERRUPT_CH_MASK(chan)))
+				break;
+		}
+		if (i == DMA_POLLING_TIMEOUT) {
+			dev_err(&xpcie_epf->epf->dev, "DMA Rd timeout\n");
+			rc = -ETIME;
+			goto cleanup;
+		}
 	}
 
 	rc = intel_xpcie_ep_dma_err_status((void __iomem *)
@@ -469,22 +489,22 @@ static void intel_xpcie_ep_dma_free_ll_descs_mem(struct xpcie_epf *xpcie_epf)
 	int i;
 
 	for (i = 0; i < DMA_CHAN_NUM; i++) {
-		if (xpcie_epf->tx_desc_buf[i].virt) {
+		if (xpcie_epf->tx_desc_buf.virt) {
 			dma_free_coherent(dma_dev,
-					  xpcie_epf->tx_desc_buf[i].size,
-					  xpcie_epf->tx_desc_buf[i].virt,
-					  xpcie_epf->tx_desc_buf[i].phys);
+					  xpcie_epf->tx_desc_buf.size,
+					  xpcie_epf->tx_desc_buf.virt,
+					  xpcie_epf->tx_desc_buf.phys);
 		}
-		if (xpcie_epf->rx_desc_buf[i].virt) {
+		if (xpcie_epf->rx_desc_buf.virt) {
 			dma_free_coherent(dma_dev,
-					  xpcie_epf->rx_desc_buf[i].size,
-					  xpcie_epf->rx_desc_buf[i].virt,
-					  xpcie_epf->rx_desc_buf[i].phys);
+					  xpcie_epf->rx_desc_buf.size,
+					  xpcie_epf->rx_desc_buf.virt,
+					  xpcie_epf->rx_desc_buf.phys);
 		}
 
-		memset(&xpcie_epf->tx_desc_buf[i], 0,
+		memset(&xpcie_epf->tx_desc_buf, 0,
 		       sizeof(struct xpcie_dma_ll_desc_buf));
-		memset(&xpcie_epf->rx_desc_buf[i], 0,
+		memset(&xpcie_epf->rx_desc_buf, 0,
 		       sizeof(struct xpcie_dma_ll_desc_buf));
 	}
 }
@@ -495,30 +515,27 @@ static int intel_xpcie_ep_dma_alloc_ll_descs_mem(struct xpcie_epf *xpcie_epf)
 	int tx_num = XPCIE_NUM_TX_DESCS + 1;
 	int rx_num = XPCIE_NUM_RX_DESCS + 1;
 	size_t tx_size, rx_size;
-	int i;
 
 	tx_size = tx_num * sizeof(struct xpcie_dma_ll_desc);
 	rx_size = rx_num * sizeof(struct xpcie_dma_ll_desc);
 
-	for (i = 0; i < DMA_CHAN_NUM; i++) {
-		xpcie_epf->tx_desc_buf[i].virt =
+	xpcie_epf->tx_desc_buf.virt =
 			dma_alloc_coherent(dma_dev, tx_size,
-					   &xpcie_epf->tx_desc_buf[i].phys,
+					   &xpcie_epf->tx_desc_buf.phys,
 					   GFP_KERNEL);
-		xpcie_epf->rx_desc_buf[i].virt =
+	xpcie_epf->rx_desc_buf.virt =
 			dma_alloc_coherent(dma_dev, rx_size,
-					   &xpcie_epf->rx_desc_buf[i].phys,
+					   &xpcie_epf->rx_desc_buf.phys,
 					   GFP_KERNEL);
-
-		if (!xpcie_epf->tx_desc_buf[i].virt ||
-		    !xpcie_epf->rx_desc_buf[i].virt) {
-			intel_xpcie_ep_dma_free_ll_descs_mem(xpcie_epf);
-			return -ENOMEM;
-		}
-
-		xpcie_epf->tx_desc_buf[i].size = tx_size;
-		xpcie_epf->rx_desc_buf[i].size = rx_size;
+	if (!xpcie_epf->tx_desc_buf.virt ||
+	    !xpcie_epf->rx_desc_buf.virt) {
+		intel_xpcie_ep_dma_free_ll_descs_mem(xpcie_epf);
+		return -ENOMEM;
 	}
+
+	xpcie_epf->tx_desc_buf.size = tx_size;
+	xpcie_epf->rx_desc_buf.size = rx_size;
+
 	return 0;
 }
 
@@ -535,6 +552,48 @@ int intel_xpcie_ep_dma_reset(struct pci_epf *epf)
 	intel_xpcie_ep_dma_enable(xpcie_epf->dma_base, READ_ENGINE);
 
 	return 0;
+}
+
+static irqreturn_t intel_xpcie_ep_dma_wr_interrupt(int irq, void *args)
+{
+	struct __iomem pcie_dma_reg * dma_reg;
+	struct xpcie_epf *xpcie_epf = args;
+	int chan = xpcie_epf->epf->func_no;
+
+	dma_reg = (struct __iomem pcie_dma_reg *)xpcie_epf->dma_base;
+
+	if (ioread32(&dma_reg->dma_write_int_status) &
+		(DMA_ABORT_INTERRUPT_CH_MASK(chan) |
+		 DMA_DONE_INTERRUPT_CH_MASK(chan))) {
+		iowrite32(DMA_DONE_INTERRUPT_CH_MASK(chan),
+			  &dma_reg->dma_write_int_clear);
+
+		xpcie_epf->dma_wr_done = true;
+		wake_up_interruptible(&xpcie_epf->dma_wr_wq);
+	}
+
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t intel_xpcie_ep_dma_rd_interrupt(int irq, void *args)
+{
+	struct __iomem pcie_dma_reg * dma_reg;
+	struct xpcie_epf *xpcie_epf = args;
+	int chan = xpcie_epf->epf->func_no;
+
+	dma_reg = (struct __iomem pcie_dma_reg *)xpcie_epf->dma_base;
+
+	if (ioread32(&dma_reg->dma_read_int_status) &
+		(DMA_ABORT_INTERRUPT_CH_MASK(chan) |
+		 DMA_DONE_INTERRUPT_CH_MASK(chan))) {
+		iowrite32(DMA_DONE_INTERRUPT_CH_MASK(chan),
+			  &dma_reg->dma_read_int_clear);
+
+		xpcie_epf->dma_rd_done = true;
+		wake_up_interruptible(&xpcie_epf->dma_rd_wq);
+	}
+
+	return IRQ_HANDLED;
 }
 
 int intel_xpcie_ep_dma_uninit(struct pci_epf *epf)
@@ -557,6 +616,27 @@ int intel_xpcie_ep_dma_init(struct pci_epf *epf)
 
 	if (!xpcie_epf->dma_base)
 		return -EINVAL;
+
+	if (xpcie_epf->irq_rdma > 0 && xpcie_epf->irq_wdma > 0) {
+		init_waitqueue_head(&xpcie_epf->dma_rd_wq);
+		init_waitqueue_head(&xpcie_epf->dma_wr_wq);
+
+		rc = devm_request_irq(&epf->dev, xpcie_epf->irq_rdma,
+				      &intel_xpcie_ep_dma_rd_interrupt,
+				      0, "xpcie_epf_rd_dma", xpcie_epf);
+		if (rc) {
+			dev_err(&epf->dev, "Failed to get irq_rdma\n");
+			return rc;
+		}
+
+		rc = devm_request_irq(&epf->dev, xpcie_epf->irq_wdma,
+				      &intel_xpcie_ep_dma_wr_interrupt,
+				      0, "xpcie_epf_wr_dma", xpcie_epf);
+		if (rc) {
+			dev_err(&epf->dev, "Failed to get irq_wdma\n");
+			return rc;
+		}
+	}
 
 	rc = intel_xpcie_ep_dma_alloc_ll_descs_mem(xpcie_epf);
 	if (rc)
