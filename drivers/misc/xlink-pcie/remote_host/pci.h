@@ -37,6 +37,7 @@ struct xpcie_dev {
 
 	struct xpcie xpcie;
 	xlink_device_event event_fn;
+	u8 max_functions;
 };
 
 static inline struct device *xpcie_to_dev(struct xpcie *xpcie)

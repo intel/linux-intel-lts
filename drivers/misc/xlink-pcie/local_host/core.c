@@ -23,8 +23,7 @@ static int intel_xpcie_map_dma(struct xpcie *xpcie, struct xpcie_buf_desc *bd,
 {
 	struct xpcie_epf *xpcie_epf = container_of(xpcie,
 						   struct xpcie_epf, xpcie);
-	struct pci_epf *epf = xpcie_epf->epf;
-	struct device *dma_dev = epf->epc->dev.parent;
+	struct device *dma_dev = xpcie_epf->dma_dev;
 
 	bd->phys = dma_map_single(dma_dev, bd->data, bd->length, direction);
 
@@ -36,8 +35,7 @@ static void intel_xpcie_unmap_dma(struct xpcie *xpcie,
 {
 	struct xpcie_epf *xpcie_epf = container_of(xpcie,
 						   struct xpcie_epf, xpcie);
-	struct pci_epf *epf = xpcie_epf->epf;
-	struct device *dma_dev = epf->epc->dev.parent;
+	struct device *dma_dev = xpcie_epf->dma_dev;
 
 	dma_unmap_single(dma_dev, bd->phys, bd->length, direction);
 }
@@ -74,8 +72,8 @@ static void intel_xpcie_txrx_cleanup(struct xpcie *xpcie)
 {
 	struct xpcie_epf *xpcie_epf = container_of(xpcie,
 						   struct xpcie_epf, xpcie);
-	struct device *dma_dev = xpcie_epf->epf->epc->dev.parent;
 	struct xpcie_interface *inf = &xpcie->interfaces[0];
+	struct device *dma_dev = xpcie_epf->dma_dev;
 	struct xpcie_stream *tx = &xpcie->tx;
 	struct xpcie_stream *rx = &xpcie->rx;
 	struct xpcie_transfer_desc *td;
@@ -121,12 +119,12 @@ static int intel_xpcie_txrx_init(struct xpcie *xpcie,
 {
 	struct xpcie_epf *xpcie_epf = container_of(xpcie,
 						   struct xpcie_epf, xpcie);
-	struct device *dma_dev = xpcie_epf->epf->epc->dev.parent;
+	struct device *dma_dev = xpcie_epf->dma_dev;
 	struct xpcie_stream *tx = &xpcie->tx;
 	struct xpcie_stream *rx = &xpcie->rx;
 	int tx_pool_size, rx_pool_size;
 	struct xpcie_buf_desc *bd;
-	int index, ndesc, rc;
+	int index, ndesc;
 
 	xpcie->txrx = cap;
 	xpcie->fragment_size = cap->fragment_size;
@@ -145,13 +143,6 @@ static int intel_xpcie_txrx_init(struct xpcie *xpcie,
 	intel_xpcie_list_init(&xpcie->rx_pool);
 	rx_pool_size = roundup(SZ_32M, xpcie->fragment_size);
 	ndesc = rx_pool_size / xpcie->fragment_size;
-
-	/* Initialize reserved memory resources */
-	rc = of_reserved_mem_device_init(dma_dev);
-	if (rc) {
-		dev_err(dma_dev, "Could not get reserved memory\n");
-		goto error;
-	}
 
 	for (index = 0; index < ndesc; index++) {
 		bd = intel_xpcie_alloc_bd(xpcie->fragment_size);

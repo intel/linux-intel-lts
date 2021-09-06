@@ -362,6 +362,10 @@ int intel_xpcie_pci_raise_irq(struct xpcie_dev *xdev,
 	intel_xpcie_set_doorbell(&xdev->xpcie, TO_DEVICE, type, value);
 	pci_read_config_word(xdev->pci, PCI_STATUS, &pci_status);
 
+	/* Ring Doorbell */
+	if (xdev->pci->device != PCI_DEVICE_ID_INTEL_KEEMBAY)
+		iowrite32(1, (void __force __iomem *)xdev->xpcie.bar0);
+
 	return 0;
 }
 

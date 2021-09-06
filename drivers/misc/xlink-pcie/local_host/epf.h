@@ -55,16 +55,27 @@ struct xpcie_dma_ll_desc_buf {
 struct xpcie_epf {
 	struct pci_epf *epf;
 	void *vaddr[BAR_5 + 1];
+	bool vaddr_resv[BAR_5 + 1];
 	enum pci_barno comm_bar;
 	enum pci_barno bar4;
+	size_t bar0_sz;
+	size_t bar2_sz;
+	size_t bar4_sz;
 	const struct pci_epc_features *epc_features;
 	struct xpcie xpcie;
 	int irq;
-	int irq_dma;
+	int irq_rdma;
+	int irq_wdma;
 	int irq_err;
+	int irq_doorbell;
 	void __iomem *apb_base;
 	void __iomem *dma_base;
 	void __iomem *dbi_base;
+	void __iomem *doorbell_clear;
+	struct resource mmr2;
+	struct resource mmr4;
+	resource_size_t doorbell_start;
+	struct device *dma_dev;
 	char stepping[KEEMBAY_XPCIE_STEPPING_MAXLEN];
 
 	irq_handler_t			core_irq_callback;
