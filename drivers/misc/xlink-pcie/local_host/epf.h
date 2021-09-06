@@ -19,7 +19,7 @@
 
 #define KEEMBAY_XPCIE_STEPPING_MAXLEN 8
 
-#define DMA_CHAN_NUM		(4)
+#define DMA_CHAN_NUM		(8)
 
 #define XPCIE_NUM_TX_DESCS	(64)
 #define XPCIE_NUM_RX_DESCS	(64)
@@ -83,8 +83,13 @@ struct xpcie_epf {
 	void				*tx_virt;
 	size_t				tx_size;
 
-	struct xpcie_dma_ll_desc_buf	tx_desc_buf[DMA_CHAN_NUM];
-	struct xpcie_dma_ll_desc_buf	rx_desc_buf[DMA_CHAN_NUM];
+	struct xpcie_dma_ll_desc_buf	tx_desc_buf;
+	struct xpcie_dma_ll_desc_buf	rx_desc_buf;
+
+	wait_queue_head_t		dma_rd_wq;
+	bool				dma_rd_done;
+	wait_queue_head_t		dma_wr_wq;
+	bool				dma_wr_done;
 };
 
 static inline struct device *xpcie_to_dev(struct xpcie *xpcie)
