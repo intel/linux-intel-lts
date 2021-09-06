@@ -31,6 +31,9 @@ enum xpcie_event_type {
 	SWID_UPDATE_EVENT
 };
 
+static LIST_HEAD(dev_list);
+static DEFINE_MUTEX(dev_list_mutex);
+
 void intel_xpcie_set_doorbell(struct xpcie *xpcie,
 			      enum xpcie_doorbell_direction dirt,
 			      enum xpcie_doorbell_type type, u8 value);
@@ -85,7 +88,6 @@ void intel_xpcie_list_add_device(struct xpcie *xpcie);
 void intel_xpcie_list_del_device(struct xpcie *xpcie);
 u32 intel_xpcie_get_device_num(u32 *id_list);
 struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid);
-struct xpcie *intel_xpcie_get_device_by_name(const char *name);
 int intel_xpcie_get_device_status_by_id(u32 sw_devid, u32 *status);
 int intel_xpcie_get_device_name_by_id(u32 sw_devid, char *device_name,
 				      size_t name_size);

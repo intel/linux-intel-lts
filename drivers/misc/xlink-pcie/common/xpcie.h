@@ -63,7 +63,6 @@ struct xpcie_mmio {
 	u32 htod_rx_bd_list_count;
 	u32 sw_devid;
 	u32 reserved;
-	u8 magic[XPCIE_MAGIC_STRLEN];
 } __packed;
 
 #define XPCIE_MMIO_DEV_STATUS	(offsetof(struct xpcie_mmio, device_status))
@@ -95,6 +94,7 @@ struct xpcie {
 	void *bar0;
 	void *mmio;
 	void *bar4;
+	void *io_comm;
 
 	struct workqueue_struct *rx_wq;
 	struct workqueue_struct *tx_wq;
