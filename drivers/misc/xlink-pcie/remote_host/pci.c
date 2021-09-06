@@ -73,10 +73,13 @@ static void intel_xpcie_pci_unmap_bar(struct xpcie_dev *xdev)
 		xdev->xpcie.bar0 = NULL;
 	}
 
-	if (xdev->xpcie.mmio) {
-		iounmap((void __iomem *)(xdev->xpcie.mmio - XPCIE_MMIO_OFFSET));
-		xdev->xpcie.mmio = NULL;
+	if (xdev->xpcie.io_comm) {
+		iounmap(xdev->xpcie.io_comm);
+		xdev->xpcie.io_comm = NULL;
 	}
+
+	if (xdev->xpcie.mmio)
+		xdev->xpcie.mmio = NULL;
 
 	if (xdev->xpcie.bar4) {
 		iounmap((void __iomem *)xdev->xpcie.bar4);
@@ -91,6 +94,12 @@ static int intel_xpcie_pci_map_bar(struct xpcie_dev *xdev)
 		return -EIO;
 	}
 
+	xdev->xpcie.io_comm = (void __force *)pci_ioremap_bar(xdev->pci, 2);
+	if (!xdev->xpcie.io_comm) {
+		dev_err(&xdev->pci->dev, "failed to ioremap BAR2\n");
+		goto bar_error;
+	}
+
 	xdev->xpcie.bar0 = (void __force *)pci_ioremap_bar(xdev->pci, 0);
 	if (!xdev->xpcie.bar0) {
 		dev_err(&xdev->pci->dev, "failed to ioremap BAR0\n");
@@ -98,7 +107,7 @@ static int intel_xpcie_pci_map_bar(struct xpcie_dev *xdev)
 	}
 
 	xdev->xpcie.mmio = (void __force *)
-			   (pci_ioremap_bar(xdev->pci, 2) + XPCIE_MMIO_OFFSET);
+			   (xdev->xpcie.io_comm + XPCIE_MMIO_OFFSET);
 	if (!xdev->xpcie.mmio) {
 		dev_err(&xdev->pci->dev, "failed to ioremap BAR2\n");
 		goto bar_error;
@@ -117,6 +126,44 @@ bar_error:
 	return -EIO;
 }
 
+static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
+{
+	struct xpcie_dev *xdev = args;
+	enum xpcie_stage stage;
+	struct pci_dev *pdev;
+	u8 event;
+
+	pdev = xdev->pci;
+	if (pdev->device == PCI_DEVICE_ID_INTEL_THB_FULL ||
+	    pdev->device == PCI_DEVICE_ID_INTEL_THB_PRIME) {
+		stage = intel_xpcie_check_magic(xdev);
+		if (stage == STAGE_ROM || stage == STAGE_UBOOT || stage == STAGE_RECOV)
+			schedule_work(&xdev->irq_event);
+	}
+
+	event = intel_xpcie_get_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT);
+	if (event == DEV_SHUTDOWN || event == 0xFF) {
+		pr_info("%s: shutdown_event (event=0x%x)\n", __func__, event);
+		schedule_delayed_work(&xdev->shutdown_event, 0);
+		return IRQ_HANDLED;
+	}
+
+	if (likely(xdev->core_irq_callback))
+		return xdev->core_irq_callback(irq, args);
+
+	return IRQ_HANDLED;
+}
+
+int intel_xpcie_pci_register_irq(struct xpcie_dev *xdev, irq_handler_t irq_handler)
+{
+	if (xdev->xpcie.status != XPCIE_STATUS_READY)
+		return -EINVAL;
+
+	xdev->core_irq_callback = irq_handler;
+
+	return 0;
+}
+
 static void intel_xpcie_pci_irq_cleanup(struct xpcie_dev *xdev)
 {
 	int irq = pci_irq_vector(xdev->pci, 0);
@@ -129,8 +176,7 @@ static void intel_xpcie_pci_irq_cleanup(struct xpcie_dev *xdev)
 	pci_free_irq_vectors(xdev->pci);
 }
 
-static int intel_xpcie_pci_irq_init(struct xpcie_dev *xdev,
-				    irq_handler_t irq_handler)
+static int intel_xpcie_pci_irq_init(struct xpcie_dev *xdev)
 {
 	int rc, irq;
 
@@ -147,7 +193,7 @@ static int intel_xpcie_pci_irq_init(struct xpcie_dev *xdev,
 		rc = irq;
 		goto error_irq;
 	}
-	rc = request_irq(irq, irq_handler, 0,
+	rc = request_irq(irq, &intel_xpcie_core_interrupt, 0,
 			 XPCIE_DRIVER_NAME, xdev);
 	if (rc) {
 		dev_err(&xdev->pci->dev, "failed to request irq\n");
@@ -205,8 +251,19 @@ static void xpcie_device_shutdown(struct work_struct *work)
 
 static int xpcie_device_init(struct xpcie_dev *xdev)
 {
+	struct pci_dev *pdev = xdev->pci;
+	int rc;
+
 	INIT_DELAYED_WORK(&xdev->wait_event, xpcie_device_poll);
 	INIT_DELAYED_WORK(&xdev->shutdown_event, xpcie_device_shutdown);
+
+	if (pdev->device == PCI_DEVICE_ID_INTEL_THB_FULL ||
+	    pdev->device == PCI_DEVICE_ID_INTEL_THB_PRIME)
+		INIT_WORK(&xdev->irq_event, xpcie_device_irq);
+
+	rc = intel_xpcie_pci_irq_init(xdev);
+	if (rc)
+		return rc;
 
 	pci_set_master(xdev->pci);
 
@@ -277,11 +334,18 @@ init_exit:
 
 int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 {
+	struct pci_dev *pdev = xdev->pci;
+
 	if (mutex_lock_interruptible(&xdev->lock))
 		return -EINTR;
 
 	cancel_delayed_work(&xdev->wait_event);
 	cancel_delayed_work(&xdev->shutdown_event);
+
+	if (pdev->device == PCI_DEVICE_ID_INTEL_THB_FULL ||
+	    pdev->device == PCI_DEVICE_ID_INTEL_THB_PRIME)
+		cancel_work_sync(&xdev->irq_event);
+
 	xdev->core_irq_callback = NULL;
 	intel_xpcie_pci_irq_cleanup(xdev);
 
@@ -297,21 +361,6 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 	mutex_unlock(&xdev->lock);
 
 	return 0;
-}
-
-int intel_xpcie_pci_register_irq(struct xpcie_dev *xdev,
-				 irq_handler_t irq_handler)
-{
-	int rc;
-
-	if (xdev->xpcie.status != XPCIE_STATUS_READY)
-		return -EINVAL;
-
-	rc = intel_xpcie_pci_irq_init(xdev, irq_handler);
-	if (rc)
-		dev_warn(&xdev->pci->dev, "failed to initialize pci irq\n");
-
-	return rc;
 }
 
 int intel_xpcie_pci_raise_irq(struct xpcie_dev *xdev,
@@ -434,4 +483,38 @@ void intel_xpcie_pci_notify_event(struct xpcie_dev *xdev,
 
 	if (xdev->event_fn)
 		xdev->event_fn(xdev->xpcie.sw_devid, event_type);
+}
+
+struct xpcie_dev *intel_xpcie_get_device_by_name(const char *name)
+{
+	struct xpcie_dev *p;
+	bool found = false;
+
+	mutex_lock(&dev_list_mutex);
+	list_for_each_entry(p, &dev_list, list) {
+		if (!strncmp(p->name, name, XPCIE_MAX_NAME_LEN)) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&dev_list_mutex);
+
+	if (!found)
+		p = NULL;
+
+	return p;
+}
+
+struct xpcie_dev *intel_xpcie_get_device_by_phys_id(u32 phys_id)
+{
+	struct xpcie_dev *xdev;
+
+	mutex_lock(&dev_list_mutex);
+	list_for_each_entry(xdev, &dev_list, list) {
+		if (xdev->xpcie.sw_devid == phys_id)
+			break;
+	}
+	mutex_unlock(&dev_list_mutex);
+
+	return xdev;
 }
