@@ -7,6 +7,32 @@
 
 #include "util.h"
 
+u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id)
+{
+	u8 slice_id, dev_type = XLINK_DEV_TYPE_KMB;
+	u32 xlink_swid;
+
+	if (max_pcie_fns == THB_FULL_MAX_PCIE_FNS)
+		dev_type = XLINK_DEV_TYPE_THB_STANDARD;
+	else if (max_pcie_fns == THB_PRIME_MAX_PCIE_FNS)
+		dev_type = XLINK_DEV_TYPE_THB_PRIME;
+
+	slice_id = func_no >> 1;
+
+	xlink_swid = FIELD_PREP(XLINK_DEV_INF_TYPE_MASK,
+				XLINK_DEV_INF_PCIE) |
+		     FIELD_PREP(XLINK_DEV_PHYS_ID_MASK,
+				pcie_phys_id) |
+		     FIELD_PREP(XLINK_DEV_TYPE_MASK,
+				dev_type) |
+		     FIELD_PREP(XLINK_DEV_PCIE_SLICE_ID_MASK,
+				slice_id) |
+		     FIELD_PREP(XLINK_DEV_FUNC_MASK,
+				XLINK_DEV_FUNC_VPU);
+
+	return xlink_swid;
+}
+
 void intel_xpcie_set_device_status(struct xpcie *xpcie, u32 status)
 {
 	xpcie->status = status;
@@ -93,6 +119,17 @@ void intel_xpcie_set_host_status(struct xpcie *xpcie, u32 status)
 {
 	xpcie->status = status;
 	intel_xpcie_iowrite32(status, xpcie->mmio + XPCIE_MMIO_HOST_STATUS);
+}
+
+u32 intel_xpcie_get_sw_devid(struct xpcie *xpcie)
+{
+	return intel_xpcie_ioread32(xpcie->mmio + XPCIE_MMIO_SW_DEVID_OFF);
+}
+
+void intel_xpcie_set_sw_devid(struct xpcie *xpcie)
+{
+	intel_xpcie_iowrite32(xpcie->sw_devid,
+			      xpcie->mmio + XPCIE_MMIO_SW_DEVID_OFF);
 }
 
 struct xpcie_buf_desc *intel_xpcie_alloc_bd(size_t length)

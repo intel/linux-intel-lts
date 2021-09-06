@@ -39,12 +39,8 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 	hw_id = FIELD_PREP(HW_ID_HI_MASK, pdev->bus->number) |
 		FIELD_PREP(HW_ID_LO_MASK, PCI_SLOT(pdev->devfn));
 
-	sw_devid = FIELD_PREP(XLINK_DEV_INF_TYPE_MASK,
-			      XLINK_DEV_INF_PCIE) |
-		   FIELD_PREP(XLINK_DEV_PHYS_ID_MASK, hw_id) |
-		   FIELD_PREP(XLINK_DEV_TYPE_MASK, XLINK_DEV_TYPE_KMB) |
-		   FIELD_PREP(XLINK_DEV_PCIE_ID_MASK, XLINK_DEV_PCIE_0) |
-		   FIELD_PREP(XLINK_DEV_FUNC_MASK, XLINK_DEV_FUNC_VPU);
+	sw_devid = intel_xpcie_create_sw_id(PCI_FUNC(pdev->devfn),
+					    max_functions, hw_id);
 
 	xdev = intel_xpcie_get_device_by_id(sw_devid);
 	if (!xdev) {

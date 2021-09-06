@@ -27,7 +27,8 @@ enum xpcie_doorbell_type {
 enum xpcie_event_type {
 	NO_OP,
 	REQUEST_RESET,
-	DEV_SHUTDOWN
+	DEV_SHUTDOWN,
+	SWID_UPDATE_EVENT
 };
 
 void intel_xpcie_set_doorbell(struct xpcie *xpcie,
@@ -49,6 +50,8 @@ void intel_xpcie_set_device_status(struct xpcie *xpcie, u32 status);
 u32 intel_xpcie_get_device_status(struct xpcie *xpcie);
 u32 intel_xpcie_get_host_status(struct xpcie *xpcie);
 void intel_xpcie_set_host_status(struct xpcie *xpcie, u32 status);
+u32 intel_xpcie_get_sw_devid(struct xpcie *xpcie);
+void intel_xpcie_set_sw_devid(struct xpcie *xpcie);
 
 struct xpcie_buf_desc *intel_xpcie_alloc_bd(size_t length);
 struct xpcie_buf_desc *intel_xpcie_alloc_bd_reuse(size_t length, void *virt,
@@ -77,4 +80,5 @@ int intel_xpcie_interfaces_init(struct xpcie *xpcie);
 void intel_xpcie_add_bd_to_interface(struct xpcie *xpcie,
 				     struct xpcie_buf_desc *bd);
 void *intel_xpcie_cap_find(struct xpcie *xpcie, u32 start, u16 id);
+u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id);
 #endif /* XPCIE_UTIL_HEADER_ */

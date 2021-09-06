@@ -20,6 +20,8 @@ static int aspm_enable;
 module_param(aspm_enable, int, 0664);
 MODULE_PARM_DESC(aspm_enable, "enable ASPM");
 
+#define DEV_POLL_PERIOD	2000
+
 static LIST_HEAD(dev_list);
 static DEFINE_MUTEX(dev_list_mutex);
 
@@ -54,7 +56,7 @@ struct xpcie_dev *intel_xpcie_create_device(u32 sw_device_id,
 	if (!xdev)
 		return NULL;
 
-	xdev->devid = sw_device_id;
+	xdev->xpcie.sw_devid = sw_device_id;
 	snprintf(xdev->name, XPCIE_MAX_NAME_LEN, "%02x:%02x.%x",
 		 pdev->bus->number,
 		 PCI_SLOT(pdev->devfn),
@@ -208,11 +210,14 @@ static void xpcie_device_poll(struct work_struct *work)
 	struct xpcie_dev *xdev = container_of(work, struct xpcie_dev,
 					      wait_event.work);
 
-	if (intel_xpcie_get_device_status(&xdev->xpcie) < XPCIE_STATUS_RUN)
+	if (intel_xpcie_get_device_status(&xdev->xpcie) < XPCIE_STATUS_RUN) {
 		schedule_delayed_work(&xdev->wait_event,
-				      msecs_to_jiffies(100));
-	else
+				      msecs_to_jiffies(DEV_POLL_PERIOD));
+	} else {
 		xdev->xpcie.status = XPCIE_STATUS_READY;
+		intel_xpcie_set_sw_devid(&xdev->xpcie);
+		intel_xpcie_pci_raise_irq(xdev, DEV_EVENT, SWID_UPDATE_EVENT);
+	}
 }
 
 static int intel_xpcie_pci_prepare_dev_reset(struct xpcie_dev *xdev,
@@ -523,5 +528,5 @@ void intel_xpcie_pci_notify_event(struct xpcie_dev *xdev,
 		return;
 
 	if (xdev->event_fn)
-		xdev->event_fn(xdev->devid, event_type);
+		xdev->event_fn(xdev->xpcie.sw_devid, event_type);
 }

@@ -61,6 +61,8 @@ struct xpcie_mmio {
 	u8 dtoh_event_doorbell;
 	u32 cap_offset;
 	u32 htod_rx_bd_list_count;
+	u32 sw_devid;
+	u32 reserved;
 	u8 magic[XPCIE_MAGIC_STRLEN];
 } __packed;
 
@@ -85,6 +87,7 @@ struct xpcie_mmio {
 	(offsetof(struct xpcie_mmio, htod_rx_bd_list_count))
 #define XPCIE_MMIO_CAP_OFF	(offsetof(struct xpcie_mmio, cap_offset))
 #define XPCIE_MMIO_MAGIC_OFF	(offsetof(struct xpcie_mmio, magic))
+#define XPCIE_MMIO_SW_DEVID_OFF	(offsetof(struct xpcie_mmio, sw_devid))
 
 struct xpcie {
 	u32 status;
