@@ -22,32 +22,6 @@ MODULE_PARM_DESC(aspm_enable, "enable ASPM");
 
 #define DEV_POLL_PERIOD	2000
 
-static LIST_HEAD(dev_list);
-static DEFINE_MUTEX(dev_list_mutex);
-
-struct xpcie_dev *intel_xpcie_get_device_by_id(u32 id)
-{
-	struct xpcie_dev *xdev;
-
-	mutex_lock(&dev_list_mutex);
-
-	if (list_empty(&dev_list)) {
-		mutex_unlock(&dev_list_mutex);
-		return NULL;
-	}
-
-	list_for_each_entry(xdev, &dev_list, list) {
-		if (xdev->devid == id) {
-			mutex_unlock(&dev_list_mutex);
-			return xdev;
-		}
-	}
-
-	mutex_unlock(&dev_list_mutex);
-
-	return NULL;
-}
-
 struct xpcie_dev *intel_xpcie_create_device(u32 sw_device_id,
 					    struct pci_dev *pdev)
 {
@@ -71,24 +45,6 @@ void intel_xpcie_remove_device(struct xpcie_dev *xdev)
 {
 	mutex_destroy(&xdev->lock);
 	kfree(xdev);
-}
-
-void intel_xpcie_list_add_device(struct xpcie_dev *xdev)
-{
-	mutex_lock(&dev_list_mutex);
-
-	list_add_tail(&xdev->list, &dev_list);
-
-	mutex_unlock(&dev_list_mutex);
-}
-
-void intel_xpcie_list_del_device(struct xpcie_dev *xdev)
-{
-	mutex_lock(&dev_list_mutex);
-
-	list_del(&xdev->list);
-
-	mutex_unlock(&dev_list_mutex);
 }
 
 static void intel_xpcie_pci_set_aspm(struct xpcie_dev *xdev, int aspm)
@@ -374,68 +330,12 @@ int intel_xpcie_pci_raise_irq(struct xpcie_dev *xdev,
 	return 0;
 }
 
-u32 intel_xpcie_get_device_num(u32 *id_list)
-{
-	struct xpcie_dev *p;
-	u32 num = 0;
-
-	mutex_lock(&dev_list_mutex);
-
-	if (list_empty(&dev_list)) {
-		mutex_unlock(&dev_list_mutex);
-		return 0;
-	}
-
-	list_for_each_entry(p, &dev_list, list) {
-		*id_list++ = p->devid;
-		num++;
-	}
-	mutex_unlock(&dev_list_mutex);
-
-	return num;
-}
-
-int intel_xpcie_get_device_name_by_id(u32 id,
-				      char *device_name, size_t name_size)
-{
-	struct xpcie_dev *xdev;
-	size_t size;
-
-	xdev = intel_xpcie_get_device_by_id(id);
-	if (!xdev)
-		return -ENODEV;
-
-	mutex_lock(&xdev->lock);
-
-	size = (name_size > XPCIE_MAX_NAME_LEN) ?
-		XPCIE_MAX_NAME_LEN : name_size;
-	memcpy(device_name, xdev->name, size);
-
-	mutex_unlock(&xdev->lock);
-
-	return 0;
-}
-
-int intel_xpcie_get_device_status_by_id(u32 id, u32 *status)
-{
-	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(id);
-
-	if (!xdev)
-		return -ENODEV;
-
-	mutex_lock(&xdev->lock);
-	*status = xdev->xpcie.status;
-	mutex_unlock(&xdev->lock);
-
-	return 0;
-}
-
 int intel_xpcie_pci_connect_device(u32 id)
 {
-	struct xpcie_dev *xdev;
+	struct xpcie *xpcie = intel_xpcie_get_device_by_id(id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 	int rc = 0;
 
-	xdev = intel_xpcie_get_device_by_id(id);
 	if (!xdev)
 		return -ENODEV;
 
@@ -468,7 +368,8 @@ connect_cleanup:
 
 int intel_xpcie_pci_read(u32 id, void *data, size_t *size, u32 timeout)
 {
-	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_id(id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev)
 		return -ENODEV;
@@ -478,7 +379,8 @@ int intel_xpcie_pci_read(u32 id, void *data, size_t *size, u32 timeout)
 
 int intel_xpcie_pci_write(u32 id, void *data, size_t *size, u32 timeout)
 {
-	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_id(id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev)
 		return -ENODEV;
@@ -488,7 +390,8 @@ int intel_xpcie_pci_write(u32 id, void *data, size_t *size, u32 timeout)
 
 int intel_xpcie_pci_reset_device(u32 id)
 {
-	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_id(id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev)
 		return -ENOMEM;
@@ -499,7 +402,8 @@ int intel_xpcie_pci_reset_device(u32 id)
 int intel_xpcie_pci_register_device_event(u32 sw_device_id,
 					  xlink_device_event event_notif_fn)
 {
-	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(sw_device_id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_id(sw_device_id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev)
 		return -ENOMEM;
@@ -511,7 +415,8 @@ int intel_xpcie_pci_register_device_event(u32 sw_device_id,
 
 int intel_xpcie_pci_unregister_device_event(u32 sw_device_id)
 {
-	struct xpcie_dev *xdev = intel_xpcie_get_device_by_id(sw_device_id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_id(sw_device_id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev)
 		return -ENOMEM;
