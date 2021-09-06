@@ -465,7 +465,7 @@ cleanup:
 
 static void intel_xpcie_ep_dma_free_ll_descs_mem(struct xpcie_epf *xpcie_epf)
 {
-	struct device *dma_dev = xpcie_epf->epf->epc->dev.parent;
+	struct device *dma_dev = xpcie_epf->dma_dev;
 	int i;
 
 	for (i = 0; i < DMA_CHAN_NUM; i++) {
@@ -491,7 +491,7 @@ static void intel_xpcie_ep_dma_free_ll_descs_mem(struct xpcie_epf *xpcie_epf)
 
 static int intel_xpcie_ep_dma_alloc_ll_descs_mem(struct xpcie_epf *xpcie_epf)
 {
-	struct device *dma_dev = xpcie_epf->epf->epc->dev.parent;
+	struct device *dma_dev = xpcie_epf->dma_dev;
 	int tx_num = XPCIE_NUM_TX_DESCS + 1;
 	int rx_num = XPCIE_NUM_RX_DESCS + 1;
 	size_t tx_size, rx_size;

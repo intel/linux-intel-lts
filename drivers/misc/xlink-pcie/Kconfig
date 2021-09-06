@@ -11,7 +11,7 @@ config XLINK_PCIE_RH_DRIVER
 
 config XLINK_PCIE_LH_DRIVER
 	tristate "XLink PCIe Local Host driver"
-	depends on PCI_ENDPOINT && ARCH_KEEMBAY
+	depends on PCI_ENDPOINT && (ARCH_KEEMBAY || ARCH_THUNDERBAY)
 	help
 	  This option enables XLink PCIe Local Host driver.
 
