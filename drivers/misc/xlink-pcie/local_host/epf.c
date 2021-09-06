@@ -53,8 +53,6 @@ static const struct pci_epf_device_id xpcie_epf_ids[] = {
 	{},
 };
 
-u32 xlink_sw_id;
-
 int intel_xpcie_copy_from_host_ll(struct xpcie *xpcie, int chan, int descs_num)
 {
 	struct xpcie_epf *xpcie_epf = container_of(xpcie,
@@ -484,9 +482,9 @@ static int intel_xpcie_epf_get_platform_data(struct device *dev,
 	ret = of_property_read_u8(pdev->dev.of_node,
 				  "max-functions",
 				  &epc->max_functions);
-	if (epc->max_functions == THB_FULL_MAX_PCIE_FNS)
+	if (epc->max_functions == 8)
 		epf->header->deviceid = PCI_DEVICE_ID_INTEL_THB_FULL;
-	else if (epc->max_functions == THB_PRIME_MAX_PCIE_FNS)
+	else if (epc->max_functions == 4)
 		epf->header->deviceid = PCI_DEVICE_ID_INTEL_THB_PRIME;
 
 	if (epf->header->deviceid == PCI_DEVICE_ID_INTEL_KEEMBAY) {
@@ -562,7 +560,6 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 							 epc->max_functions,
 							 bus_num << 8 |
 							 dev_num);
-		xlink_sw_id = xpcie_epf->xpcie.sw_devid;
 	}
 
 	ret = intel_xpcie_core_init(&xpcie_epf->xpcie);
@@ -571,6 +568,9 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 		goto err_uninit_dma;
 	}
 
+	intel_xpcie_list_add_device(&xpcie_epf->xpcie);
+	snprintf(xpcie_epf->xpcie.name, XPCIE_MAX_NAME_LEN,
+		 "%s_func%x", epf->name, epf->func_no);
 	intel_xpcie_iowrite32(XPCIE_STATUS_UNINIT,
 			      xpcie_epf->xpcie.mmio + XPCIE_MMIO_HOST_STATUS);
 	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_RUN);

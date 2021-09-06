@@ -81,4 +81,13 @@ void intel_xpcie_add_bd_to_interface(struct xpcie *xpcie,
 				     struct xpcie_buf_desc *bd);
 void *intel_xpcie_cap_find(struct xpcie *xpcie, u32 start, u16 id);
 u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id);
+void intel_xpcie_list_add_device(struct xpcie *xpcie);
+void intel_xpcie_list_del_device(struct xpcie *xpcie);
+u32 intel_xpcie_get_device_num(u32 *id_list);
+struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid);
+struct xpcie *intel_xpcie_get_device_by_name(const char *name);
+int intel_xpcie_get_device_status_by_id(u32 sw_devid, u32 *status);
+int intel_xpcie_get_device_name_by_id(u32 sw_devid, char *device_name,
+				      size_t name_size);
+
 #endif /* XPCIE_UTIL_HEADER_ */

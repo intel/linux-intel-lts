@@ -6,6 +6,10 @@
  */
 
 #include "util.h"
+#include "xpcie.h"
+
+static LIST_HEAD(dev_list);
+static DEFINE_MUTEX(dev_list_mutex);
 
 u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id)
 {
@@ -31,6 +35,113 @@ u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id)
 				XLINK_DEV_FUNC_VPU);
 
 	return xlink_swid;
+}
+
+void intel_xpcie_list_add_device(struct xpcie *xpcie)
+{
+	mutex_lock(&dev_list_mutex);
+	list_add_tail(&xpcie->list, &dev_list);
+	mutex_unlock(&dev_list_mutex);
+}
+
+void intel_xpcie_list_del_device(struct xpcie *xpcie)
+{
+	mutex_lock(&dev_list_mutex);
+	list_del(&xpcie->list);
+	mutex_unlock(&dev_list_mutex);
+}
+
+u32 intel_xpcie_get_device_num(u32 *id_list)
+{
+	struct xpcie *xpcie = NULL;
+	u32 num = 0;
+
+	mutex_lock(&dev_list_mutex);
+	list_for_each_entry(xpcie, &dev_list, list) {
+		if (xpcie && xpcie->sw_devid) {
+			*id_list++ = xpcie->sw_devid;
+			num++;
+		}
+	}
+	mutex_unlock(&dev_list_mutex);
+
+	return num;
+}
+
+struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid)
+{
+	struct xpcie *xpcie = NULL;
+	bool found = false;
+
+	if (list_empty(&dev_list))
+		return xpcie;
+
+	mutex_lock(&dev_list_mutex);
+	list_for_each_entry(xpcie, &dev_list, list) {
+		if (xpcie->sw_devid == sw_devid) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&dev_list_mutex);
+
+	if (!found)
+		return NULL;
+
+	return xpcie;
+}
+
+int intel_xpcie_get_device_status_by_id(u32 sw_devid, u32 *status)
+{
+	struct xpcie *xpcie;
+
+	xpcie = intel_xpcie_get_device_by_id(sw_devid);
+	if (!xpcie)
+		return -ENODEV;
+
+	*status = xpcie->status;
+
+	return 0;
+}
+
+int intel_xpcie_get_device_name_by_id(u32 sw_devid, char *device_name,
+				      size_t name_size)
+{
+	struct xpcie *xpcie;
+	size_t size;
+
+	xpcie = intel_xpcie_get_device_by_id(sw_devid);
+	if (!xpcie)
+		return -ENODEV;
+
+	if (!device_name || !name_size)
+		return -EINVAL;
+
+	memset(device_name, 0, name_size);
+	size = name_size > XPCIE_MAX_NAME_LEN ? XPCIE_MAX_NAME_LEN : name_size;
+	memcpy(device_name, xpcie->name, size);
+
+	return 0;
+}
+
+struct xpcie *intel_xpcie_get_device_by_name(const char *name)
+{
+	struct xpcie *xpcie = NULL;
+	bool found = false;
+
+	mutex_lock(&dev_list_mutex);
+	list_for_each_entry(xpcie, &dev_list, list) {
+		if (!strncmp(xpcie->name, name, XPCIE_MAX_NAME_LEN)) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&dev_list_mutex);
+
+	if (!found)
+		return NULL;
+
+	return xpcie;
 }
 
 void intel_xpcie_set_device_status(struct xpcie *xpcie, u32 status)

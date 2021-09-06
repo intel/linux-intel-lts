@@ -11,13 +11,6 @@
 #include "../common/core.h"
 #include "../common/util.h"
 
-static struct xpcie *global_xpcie;
-
-static struct xpcie *intel_xpcie_core_get_by_id(u32 sw_device_id)
-{
-	return (sw_device_id == xlink_sw_id) ? global_xpcie : NULL;
-}
-
 static int intel_xpcie_map_dma(struct xpcie *xpcie, struct xpcie_buf_desc *bd,
 			       int direction)
 {
@@ -520,8 +513,6 @@ int intel_xpcie_core_init(struct xpcie *xpcie)
 {
 	int error;
 
-	global_xpcie = xpcie;
-
 	intel_xpcie_set_cap_txrx(xpcie);
 
 	error = intel_xpcie_events_init(xpcie);
@@ -734,52 +725,11 @@ int intel_xpcie_core_write(struct xpcie *xpcie, void *buffer,
 	return 0;
 }
 
-int intel_xpcie_get_device_status_by_id(u32 id, u32 *status)
-{
-	struct xpcie *xpcie = intel_xpcie_core_get_by_id(id);
-
-	if (!xpcie)
-		return -ENODEV;
-
-	*status = xpcie->status;
-
-	return 0;
-}
-
-u32 intel_xpcie_get_device_num(u32 *id_list)
-{
-	u32 num_devices = 0;
-
-	if (xlink_sw_id) {
-		num_devices = 1;
-		*id_list = xlink_sw_id;
-	}
-
-	return num_devices;
-}
-
-int intel_xpcie_get_device_name_by_id(u32 id,
-				      char *device_name, size_t name_size)
-{
-	struct xpcie *xpcie;
-
-	xpcie = intel_xpcie_core_get_by_id(id);
-	if (!xpcie)
-		return -ENODEV;
-
-	memset(device_name, 0, name_size);
-	if (name_size > strlen(XPCIE_DRIVER_NAME))
-		name_size = strlen(XPCIE_DRIVER_NAME);
-	memcpy(device_name, XPCIE_DRIVER_NAME, name_size);
-
-	return 0;
-}
-
 int intel_xpcie_pci_connect_device(u32 id)
 {
 	struct xpcie *xpcie;
 
-	xpcie = intel_xpcie_core_get_by_id(id);
+	xpcie = intel_xpcie_get_device_by_id(id);
 	if (!xpcie)
 		return -ENODEV;
 
@@ -793,7 +743,7 @@ int intel_xpcie_pci_read(u32 id, void *data, size_t *size, u32 timeout)
 {
 	struct xpcie *xpcie;
 
-	xpcie = intel_xpcie_core_get_by_id(id);
+	xpcie = intel_xpcie_get_device_by_id(id);
 	if (!xpcie)
 		return -ENODEV;
 
@@ -804,7 +754,7 @@ int intel_xpcie_pci_write(u32 id, void *data, size_t *size, u32 timeout)
 {
 	struct xpcie *xpcie;
 
-	xpcie = intel_xpcie_core_get_by_id(id);
+	xpcie = intel_xpcie_get_device_by_id(id);
 	if (!xpcie)
 		return -ENODEV;
 
