@@ -44,6 +44,11 @@ struct xpcie_dev {
 	struct work_struct irq_event;
 	bool boot_dev_link;
 	mxlk_pcie_boot_event boot_notif_fn;
+
+	/* FlashLogic DMA allocation */
+	dma_addr_t fl_phys_addr;
+	void *fl_vbuf;
+	size_t fl_buf_size;
 };
 
 static inline struct device *xpcie_to_dev(struct xpcie *xpcie)
