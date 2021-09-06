@@ -12,8 +12,11 @@
 #include <linux/list.h>
 #include <linux/pci.h>
 #include <linux/xlink_drv_inf.h>
-#include "../common/xpcie.h"
+#include <linux/mxlk_boot_inf.h>
+
+#include "../common/boot.h"
 #include "../common/util.h"
+#include "../common/xpcie.h"
 
 #define XPCIE_DRIVER_NAME "mxlk"
 #define XPCIE_DRIVER_DESC "Intel(R) Keem Bay XLink PCIe driver"
@@ -37,6 +40,10 @@ struct xpcie_dev {
 	struct xpcie xpcie;
 	xlink_device_event event_fn;
 	u8 max_functions;
+	/* boot notification support*/
+	struct work_struct irq_event;
+	bool boot_dev_link;
+	mxlk_pcie_boot_event boot_notif_fn;
 };
 
 static inline struct device *xpcie_to_dev(struct xpcie *xpcie)
@@ -65,4 +72,7 @@ void intel_xpcie_remove_device(struct xpcie_dev *xdev);
 void intel_xpcie_pci_notify_event(struct xpcie_dev *xdev,
 				  enum xlink_device_event_type event_type);
 
+struct xpcie_dev *intel_xpcie_get_device_by_name(const char *name);
+enum xpcie_stage intel_xpcie_check_magic(struct xpcie_dev *xdev);
+struct xpcie_dev *intel_xpcie_get_device_by_phys_id(u32 phys_id);
 #endif /* XPCIE_PCI_HEADER_ */

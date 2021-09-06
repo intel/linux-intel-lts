@@ -8,9 +8,6 @@
 #include "util.h"
 #include "xpcie.h"
 
-static LIST_HEAD(dev_list);
-static DEFINE_MUTEX(dev_list_mutex);
-
 u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id)
 {
 	u8 slice_id, dev_type = XLINK_DEV_TYPE_KMB;
@@ -122,26 +119,6 @@ int intel_xpcie_get_device_name_by_id(u32 sw_devid, char *device_name,
 	memcpy(device_name, xpcie->name, size);
 
 	return 0;
-}
-
-struct xpcie *intel_xpcie_get_device_by_name(const char *name)
-{
-	struct xpcie *xpcie = NULL;
-	bool found = false;
-
-	mutex_lock(&dev_list_mutex);
-	list_for_each_entry(xpcie, &dev_list, list) {
-		if (!strncmp(xpcie->name, name, XPCIE_MAX_NAME_LEN)) {
-			found = true;
-			break;
-		}
-	}
-	mutex_unlock(&dev_list_mutex);
-
-	if (!found)
-		return NULL;
-
-	return xpcie;
 }
 
 void intel_xpcie_set_device_status(struct xpcie *xpcie, u32 status)
@@ -333,7 +310,7 @@ bool intel_xpcie_list_empty(struct xpcie_list *list)
 int intel_xpcie_list_put(struct xpcie_list *list, struct xpcie_buf_desc *bd)
 {
 #ifdef XLINK_PCIE_REMOTE
-	unsigned long flags = 0;
+	unsigned long flags;
 #endif
 
 	if (!bd)
@@ -392,7 +369,7 @@ struct xpcie_buf_desc *intel_xpcie_list_get(struct xpcie_list *list)
 {
 	struct xpcie_buf_desc *bd;
 #ifdef XLINK_PCIE_REMOTE
-	unsigned long flags = 0;
+	unsigned long flags;
 
 	spin_lock_irqsave(&list->lock, flags);
 #else
@@ -548,8 +525,8 @@ void intel_xpcie_add_bd_to_interface(struct xpcie *xpcie,
 void *intel_xpcie_cap_find(struct xpcie *xpcie, u32 start, u16 id)
 {
 	int ttl = XPCIE_CAP_TTL;
-	void *hdr;
 	u16 id_out, next;
+	void *hdr;
 
 	/* If user didn't specify start, assume start of mmio */
 	if (!start)
