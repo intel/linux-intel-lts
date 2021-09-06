@@ -280,7 +280,7 @@ static void intel_xpcie_rx_event_handler(struct work_struct *work)
 			break;
 		}
 
-		desc = &xpcie_epf->rx_desc_buf[chan].virt[descs_num++];
+		desc = &xpcie_epf->rx_desc_buf.virt[descs_num++];
 		desc->dma_transfer_size = length;
 		desc->dst_addr = bd->phys;
 		desc->src_addr = address;
@@ -391,7 +391,7 @@ static void intel_xpcie_tx_event_handler(struct work_struct *work)
 		td = tx->pipe.tdr + tail;
 		address = intel_xpcie_get_td_address(td);
 
-		desc = &xpcie_epf->tx_desc_buf[chan].virt[descs_num++];
+		desc = &xpcie_epf->tx_desc_buf.virt[descs_num++];
 		desc->dma_transfer_size = bd->length;
 		desc->src_addr = bd->phys;
 		desc->dst_addr = address;
