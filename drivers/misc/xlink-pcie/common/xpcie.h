@@ -19,6 +19,18 @@
 #define PCI_DEVICE_ID_INTEL_KEEMBAY 0x6240
 #endif
 
+#ifndef PCI_DEVICE_ID_INTEL_THB_FULL
+#define PCI_DEVICE_ID_INTEL_THB_FULL 0x4FC0
+#endif
+
+#ifndef PCI_DEVICE_ID_INTEL_THB_PRIME
+#define PCI_DEVICE_ID_INTEL_THB_PRIME 0x4FC1
+#endif
+
+#define KMB_MAX_PCIE_FNS	1
+#define THB_FULL_MAX_PCIE_FNS	8
+#define THB_PRIME_MAX_PCIE_FNS	4
+
 #define XPCIE_IO_COMM_SIZE SZ_16K
 #define XPCIE_MMIO_OFFSET SZ_4K
 
@@ -32,6 +44,8 @@
 
 #define XPCIE_MAGIC_STRLEN	(16)
 #define XPCIE_MAGIC_YOCTO	"VPUYOCTO"
+
+#define XPCIE_MAX_NAME_LEN	(32)
 
 /* MMIO layout and offsets shared between device and host */
 struct xpcie_mmio {
@@ -106,6 +120,10 @@ struct xpcie {
 	struct tasklet_struct rx_tasklet;
 	struct hrtimer free_rx_bd_timer;
 #endif
+
+	u32 sw_devid;
+	struct list_head list;
+	char name[XPCIE_MAX_NAME_LEN];
 };
 
 #endif /* XPCIE_HEADER_ */

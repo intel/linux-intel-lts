@@ -13,17 +13,28 @@
 
 static const struct pci_device_id xpcie_pci_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_KEEMBAY), 0 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_THB_FULL), 0 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_THB_PRIME), 0 },
 	{ 0 }
 };
 
 static int intel_xpcie_probe(struct pci_dev *pdev,
 			     const struct pci_device_id *ent)
 {
+	u8 max_functions = KMB_MAX_PCIE_FNS;
+	struct xpcie_dev *xdev = NULL;
 	bool new_device = false;
-	struct xpcie_dev *xdev;
 	u32 sw_devid;
 	u16 hw_id;
 	int ret;
+
+	if (PCI_FUNC(pdev->devfn) & 0x1)
+		return 0;
+
+	if (pdev->device == PCI_DEVICE_ID_INTEL_THB_FULL)
+		max_functions = THB_FULL_MAX_PCIE_FNS;
+	else if (pdev->device == PCI_DEVICE_ID_INTEL_THB_PRIME)
+		max_functions = THB_PRIME_MAX_PCIE_FNS;
 
 	hw_id = FIELD_PREP(HW_ID_HI_MASK, pdev->bus->number) |
 		FIELD_PREP(HW_ID_LO_MASK, PCI_SLOT(pdev->devfn));
@@ -43,6 +54,7 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 
 		new_device = true;
 	}
+	xdev->max_functions = max_functions;
 
 	ret = intel_xpcie_pci_init(xdev, pdev);
 	if (ret) {
