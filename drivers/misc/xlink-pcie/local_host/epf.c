@@ -137,6 +137,11 @@ static irqreturn_t intel_xpcie_host_interrupt(int irq, void *args)
 					 DEV_EVENT, NO_OP);
 		if (event == REQUEST_RESET)
 			orderly_reboot();
+
+		if (event == SWID_UPDATE_EVENT && !xpcie_epf->xpcie.sw_devid)
+			xpcie_epf->xpcie.sw_devid =
+						intel_xpcie_get_sw_devid(xpcie);
+
 		return IRQ_HANDLED;
 	}
 
@@ -552,16 +557,12 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 		dev_num = (ret >> PCIE_CFG_PBUS_DEV_NUM_OFFSET) &
 			  PCIE_CFG_PBUS_DEV_NUM_MASK;
 
-		xlink_sw_id = FIELD_PREP(XLINK_DEV_INF_TYPE_MASK,
-					 XLINK_DEV_INF_PCIE) |
-			      FIELD_PREP(XLINK_DEV_PHYS_ID_MASK,
-					 bus_num << 8 | dev_num) |
-			      FIELD_PREP(XLINK_DEV_TYPE_MASK,
-					 XLINK_DEV_TYPE_KMB) |
-			      FIELD_PREP(XLINK_DEV_PCIE_ID_MASK,
-					 XLINK_DEV_PCIE_0) |
-			      FIELD_PREP(XLINK_DEV_FUNC_MASK,
-					 XLINK_DEV_FUNC_VPU);
+		xpcie_epf->xpcie.sw_devid =
+				intel_xpcie_create_sw_id(epf->func_no,
+							 epc->max_functions,
+							 bus_num << 8 |
+							 dev_num);
+		xlink_sw_id = xpcie_epf->xpcie.sw_devid;
 	}
 
 	ret = intel_xpcie_core_init(&xpcie_epf->xpcie);
