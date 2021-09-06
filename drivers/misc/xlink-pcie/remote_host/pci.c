@@ -313,6 +313,11 @@ int intel_xpcie_pci_init(struct xpcie_dev *xdev, struct pci_dev *pdev)
 	if (!rc)
 		goto init_exit;
 
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+	xdev->fl_vbuf = NULL;
+	xdev->fl_buf_size = 0;
+#endif
+
 error_dma_mask:
 	intel_xpcie_pci_unmap_bar(xdev);
 
@@ -349,6 +354,14 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 	xdev->core_irq_callback = NULL;
 	intel_xpcie_pci_irq_cleanup(xdev);
 
+#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
+	if (xdev->fl_vbuf) {
+		dma_free_coherent(&xdev->pci->dev, xdev->fl_buf_size,
+				  xdev->fl_vbuf, xdev->fl_phys_addr);
+		xdev->fl_vbuf = NULL;
+		xdev->fl_buf_size = 0;
+	}
+#endif
 	intel_xpcie_core_cleanup(&xdev->xpcie);
 
 	intel_xpcie_pci_unmap_bar(xdev);
