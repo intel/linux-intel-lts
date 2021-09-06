@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/*
+/********************************************************
  * Intel Keem Bay XLink PCIe Driver
  *
  * Copyright (C) 2021 Intel Corporation
- */
+ ********************************************************/
 
 #include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+#ifdef XLINK_PCIE_RH_DRV_AER
+#include <linux/aer.h>
+#endif
 
 #include "pci.h"
 
@@ -313,6 +316,13 @@ int intel_xpcie_pci_init(struct xpcie_dev *xdev, struct pci_dev *pdev)
 	if (!rc)
 		goto init_exit;
 
+#ifdef XLINK_PCIE_RH_DRV_AER
+	rc = pci_enable_pcie_error_reporting(xdev->pci);
+	if (rc)
+		dev_warn(&pdev->dev,
+			 "failed to configure AER with rc %d\n", rc);
+#endif
+
 #if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
 	xdev->fl_vbuf = NULL;
 	xdev->fl_buf_size = 0;
@@ -364,6 +374,9 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 #endif
 	intel_xpcie_core_cleanup(&xdev->xpcie);
 
+#ifdef XLINK_PCIE_RH_DRV_AER
+	pci_disable_pcie_error_reporting(xdev->pci);
+#endif
 	intel_xpcie_pci_unmap_bar(xdev);
 	pci_release_regions(xdev->pci);
 	pci_disable_device(xdev->pci);
