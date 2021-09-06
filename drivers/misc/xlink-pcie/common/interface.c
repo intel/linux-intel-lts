@@ -8,6 +8,7 @@
 #include <linux/xlink_drv_inf.h>
 
 #include "core.h"
+#include "util.h"
 #include "xpcie.h"
 
 /* Define xpcie driver interface API */

@@ -24,6 +24,7 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 	u8 max_functions = KMB_MAX_PCIE_FNS;
 	struct xpcie_dev *xdev = NULL;
 	bool new_device = false;
+	struct xpcie *xpcie;
 	u32 sw_devid;
 	u16 hw_id;
 	int ret;
@@ -42,13 +43,15 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 	sw_devid = intel_xpcie_create_sw_id(PCI_FUNC(pdev->devfn),
 					    max_functions, hw_id);
 
-	xdev = intel_xpcie_get_device_by_id(sw_devid);
-	if (!xdev) {
+	xpcie = intel_xpcie_get_device_by_id(sw_devid);
+	if (!xpcie) {
 		xdev = intel_xpcie_create_device(sw_devid, pdev);
 		if (!xdev)
 			return -ENOMEM;
 
 		new_device = true;
+	} else {
+		xdev = xpcie_to_xdev(xpcie);
 	}
 	xdev->max_functions = max_functions;
 
@@ -59,7 +62,7 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 	}
 
 	if (new_device)
-		intel_xpcie_list_add_device(xdev);
+		intel_xpcie_list_add_device(&xdev->xpcie);
 
 	intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_CONNECTED);
 
@@ -73,6 +76,7 @@ static void intel_xpcie_remove(struct pci_dev *pdev)
 	if (xdev) {
 		intel_xpcie_pci_cleanup(xdev);
 		intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_DISCONNECTED);
+		intel_xpcie_list_del_device(&xdev->xpcie);
 		intel_xpcie_remove_device(xdev);
 	}
 }
