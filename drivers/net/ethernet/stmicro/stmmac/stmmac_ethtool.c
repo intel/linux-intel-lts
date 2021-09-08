@@ -14,6 +14,7 @@
 #include <linux/mii.h>
 #include <linux/phylink.h>
 #include <linux/net_tstamp.h>
+#include <linux/pm_runtime.h>
 #include <asm/io.h>
 
 #include "stmmac.h"
@@ -431,9 +432,27 @@ static void stmmac_ethtool_setmsglevel(struct net_device *dev, u32 level)
 
 static int stmmac_check_if_running(struct net_device *dev)
 {
+	struct stmmac_priv *priv __maybe_unused;
+
 	if (!netif_running(dev))
 		return -EBUSY;
+
+	priv = netdev_priv(dev);
+	/* Increase the device's usage_count and cancel any scheduled runtime
+	 * suspend, so that race condition between runtime suspend and ethtool
+	 * operation can be avoided.
+	 */
+	pm_runtime_get_sync(priv->device);
+
 	return 0;
+}
+
+static void stmmac_ethtool_complete(struct net_device *dev)
+{
+	struct stmmac_priv *priv = netdev_priv(dev);
+
+	/* Decrease the device's usage_count after ethtool operation. */
+	pm_runtime_put(priv->device);
 }
 
 static int stmmac_ethtool_get_regs_len(struct net_device *dev)
@@ -1153,6 +1172,7 @@ static const struct ethtool_ops stmmac_ethtool_ops = {
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
 				     ETHTOOL_COALESCE_MAX_FRAMES,
 	.begin = stmmac_check_if_running,
+	.complete = stmmac_ethtool_complete,
 	.get_drvinfo = stmmac_ethtool_getdrvinfo,
 	.get_msglevel = stmmac_ethtool_getmsglevel,
 	.set_msglevel = stmmac_ethtool_setmsglevel,
