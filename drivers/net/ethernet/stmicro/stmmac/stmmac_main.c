@@ -1061,6 +1061,10 @@ static void stmmac_mac_link_down(struct phylink_config *config,
 {
 	struct stmmac_priv *priv = netdev_priv(to_net_dev(config->dev));
 
+#ifdef CONFIG_PM
+	priv->phylink_up = false;
+#endif
+
 	stmmac_mac_set(priv, priv->ioaddr, false);
 	priv->eee_active = false;
 	priv->tx_lpi_enabled = false;
@@ -1069,6 +1073,11 @@ static void stmmac_mac_link_down(struct phylink_config *config,
 
 	if (priv->dma_cap.fpesel)
 		stmmac_fpe_link_state_handle(priv, false);
+
+	/* Schedule runtime suspend if the device's runtime PM status allows it
+	 * to be suspended.
+	 */
+	pm_runtime_idle(priv->device);
 }
 
 static void stmmac_mac_link_up(struct phylink_config *config,
@@ -1079,6 +1088,13 @@ static void stmmac_mac_link_up(struct phylink_config *config,
 {
 	struct stmmac_priv *priv = netdev_priv(to_net_dev(config->dev));
 	u32 old_ctrl, ctrl;
+
+#ifdef CONFIG_PM
+	priv->phylink_up = true;
+#endif
+
+	/* Cancel any scheduled runtime suspend request */
+	pm_runtime_resume(priv->device);
 
 	old_ctrl = readl(priv->ioaddr + MAC_CTRL_REG);
 	ctrl = old_ctrl & ~priv->hw->link.speed_mask;
@@ -3803,6 +3819,7 @@ static int stmmac_open(struct net_device *dev)
 	netif_tx_start_all_queues(priv->dev);
 	stmmac_enable_all_dma_irq(priv);
 
+	pm_runtime_put(priv->device);
 	return 0;
 
 irq_error:
@@ -3843,6 +3860,11 @@ static int stmmac_release(struct net_device *dev)
 	u32 chan;
 
 	netif_tx_disable(dev);
+	/* Use pm_runtime_get_sync() call paired with pm_runtime_put() call to
+	 * ensure that the device is not put into runtime suspend during the
+	 * operation.
+	 */
+	pm_runtime_get_sync(priv->device);
 
 	if (device_may_wakeup(priv->device))
 		phylink_speed_down(priv->phylink, false);
@@ -7271,6 +7293,16 @@ int stmmac_dvr_probe(struct device *device,
 	 */
 	pm_runtime_put(device);
 
+#ifdef CONFIG_PM
+	/* To support runtime PM, we need to make sure usage_count is equal to 0
+	 * when runtime_auto flag is set. Otherwise, it should be equal to 1.
+	 */
+	if (priv->device->power.runtime_auto)
+		atomic_set(&priv->device->power.usage_count, 0);
+	else
+		atomic_set(&priv->device->power.usage_count, 1);
+#endif
+
 	return ret;
 
 error_netdev_register:
@@ -7301,6 +7333,9 @@ int stmmac_dvr_remove(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+
+	/* Increase device’s usage_count so that runtime PM is disabled */
+	pm_runtime_get_noresume(dev);
 
 	netdev_info(priv->dev, "%s: removing driver", __func__);
 

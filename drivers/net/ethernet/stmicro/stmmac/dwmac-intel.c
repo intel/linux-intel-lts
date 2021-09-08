@@ -5,6 +5,7 @@
 #include <linux/clk-provider.h>
 #include <linux/pci.h>
 #include <linux/dmi.h>
+#include <linux/pm_runtime.h>
 #include "dwmac-intel.h"
 #include "dwmac4.h"
 #include "stmmac.h"
@@ -1152,8 +1153,98 @@ static int __maybe_unused intel_eth_pci_resume(struct device *dev)
 	return stmmac_resume(dev);
 }
 
-static SIMPLE_DEV_PM_OPS(intel_eth_pm_ops, intel_eth_pci_suspend,
-			 intel_eth_pci_resume);
+static int __maybe_unused intel_eth_runtime_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct net_device *ndev = dev_get_drvdata(&pdev->dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	struct ethtool_wolinfo wol;
+	int ret;
+
+	rtnl_lock();
+	/* Save current WoL operation */
+	phylink_ethtool_get_wol(priv->phylink, &wol);
+#ifdef CONFIG_PM
+	priv->saved_wolopts = wol.wolopts;
+#endif
+	/* Enable WoL to wake on PHY activity */
+	wol.wolopts = WAKE_PHY;
+	phylink_ethtool_set_wol(priv->phylink, &wol);
+	rtnl_unlock();
+
+	device_set_wakeup_enable(priv->device, 1);
+
+	ret = intel_eth_pci_suspend(dev);
+	if (!ret)
+		dev_info(dev, "%s: Device is runtime suspended.\n", __func__);
+
+	return ret;
+}
+
+static int __maybe_unused intel_eth_runtime_resume(struct device *dev)
+{
+	struct ethtool_wolinfo wol;
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct net_device *ndev = dev_get_drvdata(&pdev->dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	int ret;
+
+	ret = intel_eth_pci_resume(dev);
+	if (!ret)
+		dev_info(dev, "%s: Device is runtime resumed.\n", __func__);
+
+	rtnl_lock();
+	/* Restore saved WoL operation */
+#ifdef CONFIG_PM
+	wol.wolopts = priv->saved_wolopts;
+#endif
+	phylink_ethtool_set_wol(priv->phylink, &wol);
+#ifdef CONFIG_PM
+	priv->saved_wolopts = 0;
+#endif
+	rtnl_unlock();
+
+	if (!wol.wolopts)
+		device_set_wakeup_enable(priv->device, 0);
+
+	return ret;
+}
+
+/* Runtime suspend delay set to 10000 millisecond */
+#define INTEL_RUNTIME_SUSPEND_DELAY	10000
+
+static int __maybe_unused intel_eth_runtime_idle(struct device *dev)
+{
+	struct ethtool_wolinfo wol;
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct net_device *ndev = dev_get_drvdata(&pdev->dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
+
+#ifdef CONFIG_PM
+	/* Allow runtime suspend only if link is down */
+	if (priv->phylink_up)
+		return -EBUSY;
+#endif
+
+	/* Allow runtime suspend only if PHY support wake on PHY activity */
+	rtnl_lock();
+	phylink_ethtool_get_wol(priv->phylink, &wol);
+	rtnl_unlock();
+	if (!(wol.supported & WAKE_PHY))
+		return -EBUSY;
+
+	/* Schedule the execution of delayed runtime suspend */
+	pm_schedule_suspend(dev, INTEL_RUNTIME_SUSPEND_DELAY);
+
+	/* Return non-zero value to prevent PM core from calling autosuspend */
+	return -EBUSY;
+}
+
+static const struct dev_pm_ops intel_eth_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(intel_eth_pci_suspend, intel_eth_pci_resume)
+	SET_RUNTIME_PM_OPS(intel_eth_runtime_suspend, intel_eth_runtime_resume,
+			   intel_eth_runtime_idle)
+};
 
 #define PCI_DEVICE_ID_INTEL_QUARK		0x0937
 #define PCI_DEVICE_ID_INTEL_EHL_RGMII1G		0x4b30
