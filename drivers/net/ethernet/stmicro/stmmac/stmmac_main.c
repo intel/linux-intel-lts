@@ -3856,52 +3856,59 @@ static void stmmac_fpe_stop_wq(struct stmmac_priv *priv)
  */
 static int stmmac_release(struct net_device *dev)
 {
-	struct stmmac_priv *priv = netdev_priv(dev);
 	u32 chan;
+	struct stmmac_priv *priv = netdev_priv(dev);
+	bool suspended = pm_runtime_suspended(priv->device);
 
 	netif_tx_disable(dev);
-	/* Use pm_runtime_get_sync() call paired with pm_runtime_put() call to
-	 * ensure that the device is not put into runtime suspend during the
-	 * operation.
+	/* For suspended device/port, skip the release operation that already
+	 * done in stmmac_suspend().
 	 */
-	pm_runtime_get_sync(priv->device);
+	if (!suspended) {
+		/* Use pm_runtime_get_sync() call paired with pm_runtime_put()
+		 * call to ensure that the device is not put into runtime
+		 * suspend during the operation.
+		 */
+		pm_runtime_get_sync(priv->device);
 
-	if (device_may_wakeup(priv->device))
-		phylink_speed_down(priv->phylink, false);
-	/* Stop and disconnect the PHY */
-	phylink_stop(priv->phylink);
-	phylink_disconnect_phy(priv->phylink);
+		if (device_may_wakeup(priv->device))
+			phylink_speed_down(priv->phylink, false);
+		/* Stop and disconnect the PHY */
+		phylink_stop(priv->phylink);
+		phylink_disconnect_phy(priv->phylink);
 
-	stmmac_disable_all_queues(priv);
+		stmmac_disable_all_queues(priv);
 
-	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
-		hrtimer_cancel(&priv->tx_queue[chan].txtimer);
+		for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
+			hrtimer_cancel(&priv->tx_queue[chan].txtimer);
 
-	/* Free the IRQ lines */
-	stmmac_free_irq(dev, REQ_IRQ_ERR_ALL, 0);
+		/* Free the IRQ lines */
+		stmmac_free_irq(dev, REQ_IRQ_ERR_ALL, 0);
 
-	if (priv->eee_enabled) {
-		priv->tx_path_in_lpi_mode = false;
-		del_timer_sync(&priv->eee_ctrl_timer);
+		if (priv->eee_enabled) {
+			priv->tx_path_in_lpi_mode = false;
+			del_timer_sync(&priv->eee_ctrl_timer);
+		}
+
+		/* Stop TX/RX DMA and clear the descriptors */
+		stmmac_stop_all_dma(priv);
+
+		/* Disable the MAC Rx/Tx */
+		stmmac_mac_set(priv, priv->ioaddr, false);
+
+		netif_carrier_off(dev);
+
+		if (priv->dma_cap.fpesel)
+			stmmac_fpe_stop_wq(priv);
 	}
-
-	/* Stop TX/RX DMA and clear the descriptors */
-	stmmac_stop_all_dma(priv);
 
 	/* Release and free the Rx/Tx resources */
 	free_dma_desc_resources(priv);
 
-	/* Disable the MAC Rx/Tx */
-	stmmac_mac_set(priv, priv->ioaddr, false);
-
-	netif_carrier_off(dev);
-
 	stmmac_release_ptp(priv);
 
-	pm_runtime_put(priv->device);
-
-	if (priv->dma_cap.fpesel)
-		stmmac_fpe_stop_wq(priv);
+	if (!suspended)
+		pm_runtime_put(priv->device);
 
 	return 0;
 }
