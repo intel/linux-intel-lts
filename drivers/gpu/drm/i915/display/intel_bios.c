@@ -2005,6 +2005,11 @@ static void parse_ddi_port(struct drm_i915_private *i915,
 		else
 			info->dp_max_link_rate = parse_bdb_216_dp_max_link_rate(child->dp_max_link_rate);
 
+
+		// TODO: Need to remove hardcoding of link_rate once VBT parsing is fixed
+		if (IS_ALDERLAKE_S(i915) || IS_ALDERLAKE_P(i915))
+				info->dp_max_link_rate = 810000;
+
 		drm_dbg_kms(&i915->drm,
 			    "Port %c VBT DP max link rate: %d\n",
 			    port_name(port), info->dp_max_link_rate);
