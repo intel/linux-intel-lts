@@ -411,11 +411,13 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 		else
 			ctrl |= TGPIOCTL_PM;
 
-		intel_tgpio_writel(tgpio->base, TGPIOCOMPV31_0(index),
-				start->nsec);
-		intel_tgpio_writel(tgpio->base, TGPIOCOMPV63_32(index),
-				start->sec);
-
+		if (!(perout->flags & PTP_PEROUT_FREQ_ADJ)) {
+			start->nsec = ((start->nsec) / 10) * 10;
+			intel_tgpio_writel(tgpio->base, TGPIOCOMPV31_0(index),
+					   start->nsec);
+			intel_tgpio_writel(tgpio->base, TGPIOCOMPV63_32(index),
+					   start->sec);
+		}
 		intel_tgpio_writeq(tgpio->base, TGPIOPIV31_0(index),
 				to_intel_tgpio_time(period));
 
