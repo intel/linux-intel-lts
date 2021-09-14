@@ -69,8 +69,8 @@ static inline const char *hxg_type_to_string(u32 type)
 #define GUC_VIDEO_CLASS			1
 #define GUC_VIDEOENHANCE_CLASS		2
 #define GUC_BLITTER_CLASS		3
-#define GUC_RESERVED_CLASS		4
-#define GUC_LAST_ENGINE_CLASS		GUC_RESERVED_CLASS
+#define GUC_COMPUTE_CLASS		4
+#define GUC_LAST_ENGINE_CLASS		GUC_COMPUTE_CLASS
 #define GUC_MAX_ENGINE_CLASSES		16
 #define GUC_MAX_INSTANCES_PER_CLASS	32
 
@@ -187,17 +187,20 @@ static inline u8 engine_class_to_guc_class(u8 class)
 	BUILD_BUG_ON(GUC_BLITTER_CLASS != COPY_ENGINE_CLASS);
 	BUILD_BUG_ON(GUC_VIDEO_CLASS != VIDEO_DECODE_CLASS);
 	BUILD_BUG_ON(GUC_VIDEOENHANCE_CLASS != VIDEO_ENHANCEMENT_CLASS);
+	BUILD_BUG_ON(GUC_COMPUTE_CLASS != (COMPUTE_CLASS - 1));
 	GEM_BUG_ON(class > MAX_ENGINE_CLASS || class == OTHER_CLASS);
 
-	return class;
+	/* the GuC arrays don't include OTHER_CLASS */
+	return class < OTHER_CLASS ? class : class - 1;
 }
 
 static inline u8 guc_class_to_engine_class(u8 guc_class)
 {
+	BUILD_BUG_ON(GUC_COMPUTE_CLASS != OTHER_CLASS);
+	BUILD_BUG_ON(GUC_LAST_ENGINE_CLASS != (MAX_ENGINE_CLASS - 1));
 	GEM_BUG_ON(guc_class > GUC_LAST_ENGINE_CLASS);
-	GEM_BUG_ON(guc_class == GUC_RESERVED_CLASS);
 
-	return guc_class;
+	return guc_class < GUC_COMPUTE_CLASS ? guc_class : guc_class + 1;
 }
 
 /* Work item for submitting workloads into work queue of GuC. */
