@@ -136,4 +136,14 @@ config SND_SOC_INTEL_AVS_MACH_SSM4567
 	   Say Y or m if you have such a device. This is a recommended option.
 	   If unsure select "N".
 
+config SND_SOC_INTEL_AVS_MACH_TDF8532
+	tristate "tdf8532 I2S board"
+	depends on I2C
+	depends on MFD_INTEL_LPSS || COMPILE_TEST
+	select SND_SOC_TDF8532
+	help
+	   This adds support for ASoC machine driver with TDF8532 I2S audio codec.
+	   Say Y or m if you have such a device. This is a recommended option.
+	   If unsure select "N".
+
 endmenu
