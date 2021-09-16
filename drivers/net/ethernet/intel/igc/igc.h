@@ -252,6 +252,8 @@ struct igc_adapter {
 	ktime_t ptm_device_time;
 	struct system_counterval_t ptm_host_time;
 	struct bpf_prog *xdp_prog;
+	struct btf *btf;
+	u8 btf_enabled;
 
 	bool pps_sys_wrap_on;
 
@@ -664,6 +666,7 @@ int igc_ptp_set_ts_config(struct net_device *netdev, struct ifreq *ifr);
 int igc_ptp_get_ts_config(struct net_device *netdev, struct ifreq *ifr);
 void igc_ptp_tx_hang(struct igc_adapter *adapter);
 void igc_ptp_read(struct igc_adapter *adapter, struct timespec64 *ts);
+ktime_t igc_tx_dma_hw_tstamp(struct igc_adapter *adapter, u64 tstamp);
 
 #define igc_rx_pg_size(_ring) (PAGE_SIZE << igc_rx_pg_order(_ring))
 

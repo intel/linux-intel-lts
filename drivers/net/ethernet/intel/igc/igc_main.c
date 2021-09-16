@@ -13,6 +13,7 @@
 #include <linux/pci.h>
 #include <linux/bpf_trace.h>
 #include <net/xdp_sock_drv.h>
+#include <linux/btf.h>
 #include <net/ipv6.h>
 
 #include "igc.h"
@@ -2390,6 +2391,7 @@ static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
 			xdp.data_end = xdp.data + size;
 			xdp.data_hard_start = pktbuf - igc_rx_offset(rx_ring);
 			xdp_set_data_meta_invalid(&xdp);
+
 			xdp.frame_sz = truesize;
 			xdp.rxq = &rx_ring->xdp_rxq;
 
@@ -2521,6 +2523,7 @@ static int igc_clean_rx_irq_zc(struct igc_q_vector *q_vector, const int budget)
 	u16 cleaned_count = igc_desc_unused(ring);
 	int total_bytes = 0, total_packets = 0;
 	u16 ntc = ring->next_to_clean;
+	struct igc_md_desc *md;
 	struct bpf_prog *prog;
 	bool failure = false;
 	int xdp_status = 0;
@@ -2558,6 +2561,14 @@ static int igc_clean_rx_irq_zc(struct igc_q_vector *q_vector, const int budget)
 		}
 
 		bi->xdp->data_end = bi->xdp->data + size;
+		if (adapter->btf_enabled) {
+			md = bi->xdp->data - sizeof(*md);
+			md->timestamp = timestamp;
+			bi->xdp->data_meta = md;
+		} else {
+			xdp_set_data_meta_invalid(bi->xdp);
+		}
+
 		xsk_buff_dma_sync_for_cpu(bi->xdp, ring->xsk_pool);
 
 		res = __igc_xdp_run_prog(adapter, prog, bi->xdp);
@@ -2656,6 +2667,7 @@ static void igc_xdp_xmit_zc(struct igc_ring *ring)
 
 		bi = &ring->tx_buffer_info[ntu];
 		bi->type = IGC_TX_BUFFER_TYPE_XSK;
+		bi->tx_flags |= IGC_TX_FLAGS_DMA_TSTAMP;
 		bi->protocol = 0;
 		bi->bytecount = xdp_desc.len;
 		bi->gso_segs = 1;
@@ -2694,6 +2706,7 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 	unsigned int i = tx_ring->next_to_clean;
 	struct igc_tx_buffer *tx_buffer;
 	union igc_adv_tx_desc *tx_desc;
+	ktime_t timestamp = 0;
 	u32 xsk_frames = 0;
 
 	if (test_bit(__IGC_DOWN, &adapter->state))
@@ -2721,7 +2734,10 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 		    tx_buffer->tx_flags & IGC_TX_FLAGS_DMA_TSTAMP) {
 			u64 tstamp = le64_to_cpu(eop_desc->wb.dma_tstamp);
 
-			igc_ptp_tx_dma_tstamp(adapter, tx_buffer->skb, tstamp);
+			if (tx_ring->xsk_pool && adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON)
+				timestamp = igc_tx_dma_hw_tstamp(adapter, tstamp);
+			else
+				igc_ptp_tx_dma_tstamp(adapter, tx_buffer->skb, tstamp);
 		}
 
 		/* clear next_to_watch to prevent false hangs */
@@ -2733,6 +2749,11 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 
 		switch (tx_buffer->type) {
 		case IGC_TX_BUFFER_TYPE_XSK:
+#if defined(CONFIG_TRACING)
+		/* Only use for RTCP KPI Measurement on Q2 */
+		if (tx_ring->queue_index == 2 && adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON)
+			trace_printk("TX HW TS %lld\n", timestamp);
+#endif
 			xsk_frames++;
 			break;
 		case IGC_TX_BUFFER_TYPE_XDP:
@@ -6068,6 +6089,12 @@ static int igc_bpf(struct net_device *dev, struct netdev_bpf *bpf)
 	case XDP_SETUP_XSK_POOL:
 		return igc_xdp_setup_pool(adapter, bpf->xsk.pool,
 					  bpf->xsk.queue_id);
+	case XDP_SETUP_MD_BTF:
+		return igc_xdp_set_btf_md(dev, bpf->btf_enable);
+	case XDP_QUERY_MD_BTF:
+		bpf->btf_id = igc_xdp_query_btf(dev, &bpf->btf_enable);
+		return 0;
+
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -6693,6 +6720,11 @@ static void igc_remove(struct pci_dev *pdev)
 
 	cancel_work_sync(&adapter->reset_task);
 	cancel_work_sync(&adapter->watchdog_task);
+
+	if (adapter->btf) {
+		adapter->btf_enabled = 0;
+		btf_unregister(adapter->btf);
+	}
 
 	/* Release control of h/w to f/w.  If f/w is AMT enabled, this
 	 * would have already happened in close and is redundant.
