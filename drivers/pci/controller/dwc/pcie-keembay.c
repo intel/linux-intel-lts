@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * PCIe controller driver for Intel Keem Bay
- * Copyright (C) 2020 Intel Corporation
+ * PCIe controller driver for Intel Keem Bay and Thunder Bay platforms
+ * Copyright (C) 2021 Intel Corporation
  */
 
 #include <linux/bitfield.h>
@@ -55,10 +55,24 @@
 #define PERST_DELAY_US		1000
 #define AUX_CLK_RATE_HZ		24000000
 
+#define THB_PCIE_CTRL0_CNF0		0x0
+#define THB_PCIE_CTRL0_CNF0_LTSSM_EN	BIT(4)
+
+#define THB_PCIE_CTRL0_STS		0x1000
+#define THB_PCIE_CTRL_STS_LINK_UP	(BIT(10) | BIT(0))
+
+#define THB_PCIE_FN_OFFSET		BIT(16)
+
+enum hw_plt_type {
+	PLF_HW_KEEMBAY,
+	PLF_HW_THUNDERBAY,
+};
+
 struct keembay_pcie {
 	struct dw_pcie		pci;
 	void __iomem		*apb_base;
 	enum dw_pcie_device_mode mode;
+	enum hw_plt_type	plt_type;
 
 	struct clk		*clk_master;
 	struct clk		*clk_aux;
@@ -67,6 +81,130 @@ struct keembay_pcie {
 
 struct keembay_pcie_of_data {
 	enum dw_pcie_device_mode mode;
+	enum hw_plt_type	plt_type;
+};
+
+static int thunderbay_pcie_link_up(struct dw_pcie *pci)
+{
+	struct keembay_pcie *pcie = dev_get_drvdata(pci->dev);
+	u32 mask = THB_PCIE_CTRL_STS_LINK_UP;
+	u32 val = 0;
+
+	if (pcie->mode == DW_PCIE_EP_TYPE)
+		val = readl(pcie->apb_base + THB_PCIE_CTRL0_STS);
+
+	if ((val & mask) == mask)
+		return 1;
+
+	return 0;
+}
+
+static void thunderbay_pcie_ltssm_enable(struct keembay_pcie *pcie, bool enable)
+{
+	u32 val;
+
+	val = readl(pcie->apb_base + THB_PCIE_CTRL0_CNF0);
+	if (enable)
+		val |= THB_PCIE_CTRL0_CNF0_LTSSM_EN;
+	else
+		val &= ~THB_PCIE_CTRL0_CNF0_LTSSM_EN;
+	writel(val, pcie->apb_base + THB_PCIE_CTRL0_CNF0);
+}
+
+static void thunderbay_pcie_stop_link(struct dw_pcie *pci)
+{
+	struct keembay_pcie *pcie = dev_get_drvdata(pci->dev);
+
+	thunderbay_pcie_ltssm_enable(pcie, false);
+}
+
+static void thunderbay_pcie_write_dbi(struct dw_pcie *pci, void __iomem *base,
+				      u32 reg, size_t size, u32 val)
+{
+	struct keembay_pcie *pcie = dev_get_drvdata(pci->dev);
+	int ret;
+
+	if (pcie->mode == DW_PCIE_EP_TYPE &&
+	    (reg == PCI_BASE_ADDRESS_0 ||
+	     reg == PCI_BASE_ADDRESS_2 ||
+	     reg == PCI_BASE_ADDRESS_4))
+		return;
+
+	ret = dw_pcie_write(base + reg, size, val);
+	if (ret)
+		dev_err(pci->dev, "write DBI address failed\n");
+}
+
+static void thunderbay_pcie_write_dbi2(struct dw_pcie *pci, void __iomem *base,
+				       u32 reg, size_t size, u32 val)
+{
+	struct keembay_pcie *pcie = dev_get_drvdata(pci->dev);
+	int ret;
+
+	if (pcie->mode == DW_PCIE_EP_TYPE)
+		return;
+
+	ret = dw_pcie_write(base + reg, size, val);
+	if (ret)
+		dev_err(pci->dev, "write DBI address failed\n");
+}
+
+static const struct dw_pcie_ops thunderbay_pcie_ops = {
+	.link_up	= thunderbay_pcie_link_up,
+	.stop_link	= thunderbay_pcie_stop_link,
+	.write_dbi	= thunderbay_pcie_write_dbi,
+	.write_dbi2	= thunderbay_pcie_write_dbi2,
+};
+
+static const struct pci_epc_features thunderbay_pcie_epc_features = {
+	.linkup_notifier	= false,
+	.msi_capable		= true,
+	.msix_capable		= false,
+	.reserved_bar		= BIT(BAR_1) | BIT(BAR_3) | BIT(BAR_5),
+	.bar_fixed_64bit	= BIT(BAR_0) | BIT(BAR_2) | BIT(BAR_4),
+	.bar_fixed_size[0]	= SZ_4K,
+	.bar_fixed_size[2]	= SZ_16M,
+	.bar_fixed_size[4]	= SZ_8M,
+	.align			= SZ_1M,
+};
+
+static int keembay_pcie_ep_raise_irq(struct dw_pcie_ep *ep, u8 func_no,
+				     enum pci_epc_irq_type type,
+				     u16 interrupt_num)
+{
+	struct dw_pcie *pci = to_dw_pcie_from_ep(ep);
+
+	switch (type) {
+	case PCI_EPC_IRQ_LEGACY:
+		/* Legacy interrupts are not supported in Keem Bay */
+		dev_err(pci->dev, "Legacy IRQ is not supported\n");
+		return -EINVAL;
+	case PCI_EPC_IRQ_MSI:
+		return dw_pcie_ep_raise_msi_irq(ep, func_no, interrupt_num);
+	case PCI_EPC_IRQ_MSIX:
+		return dw_pcie_ep_raise_msix_irq(ep, func_no, interrupt_num);
+	default:
+		dev_err(pci->dev, "Unknown IRQ type %d\n", type);
+		return -EINVAL;
+	}
+}
+
+static const struct pci_epc_features *
+thunderbay_pcie_get_features(struct dw_pcie_ep *ep)
+{
+	return &thunderbay_pcie_epc_features;
+}
+
+static unsigned int thunderbay_pcie_func_conf_select(struct dw_pcie_ep *ep,
+						     u8 func_no)
+{
+	return func_no * THB_PCIE_FN_OFFSET;
+}
+
+static const struct dw_pcie_ep_ops thunderbay_pcie_ep_ops = {
+	.raise_irq	= keembay_pcie_ep_raise_irq,
+	.get_features	= thunderbay_pcie_get_features,
+	.func_conf_select = thunderbay_pcie_func_conf_select,
 };
 
 static void keembay_ep_reset_assert(struct keembay_pcie *pcie)
@@ -283,27 +421,6 @@ static void keembay_pcie_ep_init(struct dw_pcie_ep *ep)
 	writel(EDMA_INT_EN, pcie->apb_base + PCIE_REGS_INTERRUPT_ENABLE);
 }
 
-static int keembay_pcie_ep_raise_irq(struct dw_pcie_ep *ep, u8 func_no,
-				     enum pci_epc_irq_type type,
-				     u16 interrupt_num)
-{
-	struct dw_pcie *pci = to_dw_pcie_from_ep(ep);
-
-	switch (type) {
-	case PCI_EPC_IRQ_LEGACY:
-		/* Legacy interrupts are not supported in Keem Bay */
-		dev_err(pci->dev, "Legacy IRQ is not supported\n");
-		return -EINVAL;
-	case PCI_EPC_IRQ_MSI:
-		return dw_pcie_ep_raise_msi_irq(ep, func_no, interrupt_num);
-	case PCI_EPC_IRQ_MSIX:
-		return dw_pcie_ep_raise_msix_irq(ep, func_no, interrupt_num);
-	default:
-		dev_err(pci->dev, "Unknown IRQ type %d\n", type);
-		return -EINVAL;
-	}
-}
-
 static const struct pci_epc_features keembay_pcie_epc_features = {
 	.linkup_notifier	= false,
 	.msi_capable		= true,
@@ -385,9 +502,9 @@ static int keembay_pcie_probe(struct platform_device *pdev)
 {
 	const struct keembay_pcie_of_data *data;
 	struct device *dev = &pdev->dev;
+	enum dw_pcie_device_mode mode;
 	struct keembay_pcie *pcie;
 	struct dw_pcie *pci;
-	enum dw_pcie_device_mode mode;
 
 	data = device_get_match_data(dev);
 	if (!data)
@@ -401,9 +518,18 @@ static int keembay_pcie_probe(struct platform_device *pdev)
 
 	pci = &pcie->pci;
 	pci->dev = dev;
-	pci->ops = &keembay_pcie_ops;
 
 	pcie->mode = mode;
+	pcie->plt_type = (enum hw_plt_type)data->plt_type;
+
+	if (pcie->plt_type == PLF_HW_KEEMBAY) {
+		pci->ops = &keembay_pcie_ops;
+	} else {
+		pci->ops = &thunderbay_pcie_ops;
+
+		/* Create 32 inbound and 64 outbound windows */
+		pci->atu_size = SZ_32K;
+	}
 
 	pcie->apb_base = devm_platform_ioremap_resource_byname(pdev, "apb");
 	if (IS_ERR(pcie->apb_base))
@@ -421,7 +547,11 @@ static int keembay_pcie_probe(struct platform_device *pdev)
 		if (!IS_ENABLED(CONFIG_PCIE_KEEMBAY_EP))
 			return -ENODEV;
 
-		pci->ep.ops = &keembay_pcie_ep_ops;
+		if (pcie->plt_type == PLF_HW_KEEMBAY)
+			pci->ep.ops = &keembay_pcie_ep_ops;
+		else
+			pci->ep.ops = &thunderbay_pcie_ep_ops;
+
 		return dw_pcie_ep_init(&pci->ep);
 	default:
 		dev_err(dev, "Invalid device type %d\n", pcie->mode);
@@ -431,10 +561,17 @@ static int keembay_pcie_probe(struct platform_device *pdev)
 
 static const struct keembay_pcie_of_data keembay_pcie_rc_of_data = {
 	.mode = DW_PCIE_RC_TYPE,
+	.plt_type = PLF_HW_KEEMBAY,
 };
 
 static const struct keembay_pcie_of_data keembay_pcie_ep_of_data = {
 	.mode = DW_PCIE_EP_TYPE,
+	.plt_type = PLF_HW_KEEMBAY,
+};
+
+static const struct keembay_pcie_of_data thunderbay_pcie_ep_of_data = {
+	.mode = DW_PCIE_EP_TYPE,
+	.plt_type = PLF_HW_THUNDERBAY,
 };
 
 static const struct of_device_id keembay_pcie_of_match[] = {
@@ -445,6 +582,10 @@ static const struct of_device_id keembay_pcie_of_match[] = {
 	{
 		.compatible = "intel,keembay-pcie-ep",
 		.data = &keembay_pcie_ep_of_data,
+	},
+	{
+		.compatible = "intel,thunderbay-pcie-ep",
+		.data = &thunderbay_pcie_ep_of_data,
 	},
 	{}
 };
