@@ -22,6 +22,10 @@ i915_gem_object_lmem_io_map(struct drm_i915_gem_object *obj,
 bool i915_gem_object_is_lmem(struct drm_i915_gem_object *obj);
 
 struct drm_i915_gem_object *
+i915_gem_object_create_lmem_from_data(struct drm_i915_private *i915,
+				      const void *data, size_t size);
+
+struct drm_i915_gem_object *
 i915_gem_object_create_lmem(struct drm_i915_private *i915,
 			    resource_size_t size,
 			    unsigned int flags);
