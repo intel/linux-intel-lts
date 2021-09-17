@@ -591,8 +591,6 @@ static int i915_driver_hw_probe(struct drm_i915_private *dev_priv)
 
 	pci_set_master(pdev);
 
-	intel_gt_init_workarounds(dev_priv);
-
 	/* Assume that VF is up, otherwise we may end with unknown state */
 	if (IS_SRIOV_VF(dev_priv))
 		ret = pci_set_power_state(pdev, PCI_D0);
