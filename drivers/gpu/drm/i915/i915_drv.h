@@ -936,8 +936,6 @@ struct drm_i915_private {
 
 	struct list_head global_obj_list;
 
-	struct i915_wa_list gt_wa_list;
-
 	struct i915_frontbuffer_tracking fb_tracking;
 
 	struct intel_atomic_helper {
