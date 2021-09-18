@@ -49,7 +49,7 @@ static int guc_registered_contexts_show(struct seq_file *m, void *data)
 
 	return 0;
 }
-DEFINE_GT_DEBUGFS_ATTRIBUTE(guc_registered_contexts);
+DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(guc_registered_contexts);
 
 static int guc_slpc_info_show(struct seq_file *m, void *unused)
 {
@@ -62,7 +62,7 @@ static int guc_slpc_info_show(struct seq_file *m, void *unused)
 
 	return intel_guc_slpc_print_info(slpc, &p);
 }
-DEFINE_GT_DEBUGFS_ATTRIBUTE(guc_slpc_info);
+DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(guc_slpc_info);
 
 static bool intel_eval_slpc_support(void *data)
 {
