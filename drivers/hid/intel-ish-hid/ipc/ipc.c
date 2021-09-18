@@ -430,11 +430,16 @@ static int write_ipc_to_queue(struct ishtp_device *dev,
 {
 	int ret;
 
-	pm_runtime_get_sync(dev->devc);
+	/* if in interrupt context, it's safe to write ipc message directly */
+	if (!in_interrupt())
+		pm_runtime_get_sync(dev->devc);
+
 	pm_runtime_mark_last_busy(dev->devc);
 	ret = _write_ipc_to_queue(dev, ipc_send_compl, ipc_send_compl_prm,
 				msg, length);
-	pm_runtime_put_autosuspend(dev->devc);
+
+	if (!in_interrupt())
+		pm_runtime_put_autosuspend(dev->devc);
 
 	return ret;
 }
@@ -722,8 +727,8 @@ irqreturn_t ish_irq_handler(int irq, void *dev_id)
 		recv_ipc(dev, doorbell_val);
 		break;
 	case IPC_PROTOCOL_ISHTP:
-		ishtp_recv(dev);
 		pm_runtime_mark_last_busy(dev->devc);
+		ishtp_recv(dev);
 		break;
 	}
 
@@ -752,6 +757,7 @@ int ish_disable_dma(struct ishtp_device *dev)
 	unsigned int	dma_delay;
 
 	pm_runtime_get_sync(dev->devc);
+	pm_runtime_mark_last_busy(dev->devc);
 
 	/* Clear the dma enable bit */
 	ish_reg_write(dev, IPC_REG_ISH_RMP2, 0);
@@ -863,6 +869,7 @@ static int _ish_ipc_reset(struct ishtp_device *dev)
 	ipc_mng_msg.reserved = 0;
 
 	pm_runtime_get_sync(dev->devc);
+	pm_runtime_mark_last_busy(dev->devc);
 
 	set_host_ready(dev);
 
