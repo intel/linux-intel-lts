@@ -229,12 +229,6 @@ static int stmmac_mdio_read(struct mii_bus *bus, int phyaddr, int phyreg)
 	int data = 0;
 	u32 v;
 
-	data = pm_runtime_get_sync(priv->device);
-	if (data < 0) {
-		pm_runtime_put_noidle(priv->device);
-		return data;
-	}
-
 	value |= (phyaddr << priv->hw->mii.addr_shift)
 		& priv->hw->mii.addr_mask;
 	value |= (phyreg << priv->hw->mii.reg_shift) & priv->hw->mii.reg_mask;
@@ -273,8 +267,6 @@ static int stmmac_mdio_read(struct mii_bus *bus, int phyaddr, int phyreg)
 	data = (int)readl(priv->ioaddr + mii_data) & MII_DATA_MASK;
 
 err_disable_clks:
-	pm_runtime_put(priv->device);
-
 	return data;
 }
 
@@ -296,12 +288,6 @@ static int stmmac_mdio_write(struct mii_bus *bus, int phyaddr, int phyreg,
 	int ret, data = phydata;
 	u32 value = MII_BUSY;
 	u32 v;
-
-	ret = pm_runtime_get_sync(priv->device);
-	if (ret < 0) {
-		pm_runtime_put_noidle(priv->device);
-		return ret;
-	}
 
 	value |= (phyaddr << priv->hw->mii.addr_shift)
 		& priv->hw->mii.addr_mask;
@@ -341,8 +327,6 @@ static int stmmac_mdio_write(struct mii_bus *bus, int phyaddr, int phyreg,
 				 100, 10000);
 
 err_disable_clks:
-	pm_runtime_put(priv->device);
-
 	return ret;
 }
 
