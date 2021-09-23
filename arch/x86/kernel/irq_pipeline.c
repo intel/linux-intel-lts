@@ -60,8 +60,6 @@ void irq_send_oob_ipi(unsigned int ipi,
 }
 EXPORT_SYMBOL_GPL(irq_send_oob_ipi);
 
-void uv_bau_message_interrupt(struct pt_regs *regs);
-
 static void do_sysvec_inband(struct irq_desc *desc)
 {
 	unsigned int irq = irq_desc_get_irq(desc);
@@ -112,11 +110,6 @@ static void do_sysvec_inband(struct irq_desc *desc)
 	case IRQ_WORK_VECTOR:
 		__sysvec_irq_work(regs);
 		break;
-#ifdef CONFIG_X86_UV
-	case UV_BAU_MESSAGE:
-		__sysvec_uv_bau_message(regs);
-		break;
-#endif
 #ifdef CONFIG_HAVE_KVM
 	case POSTED_INTR_VECTOR:
 		__sysvec_kvm_posted_intr_ipi(regs);
