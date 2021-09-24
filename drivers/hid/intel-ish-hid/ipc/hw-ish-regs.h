@@ -215,6 +215,10 @@
 #define MNG_RESET_NOTIFY		3
 #define MNG_RESET_NOTIFY_ACK		4
 #define MNG_SYNC_FW_CLOCK		5
+#define MNG_RTD3_NOTIFY			7
+#define MNG_RTD3_NOTIFY_ACK		8
+#define MNG_D0_NOTIFY			9
+#define MNG_D0_NOTIFY_ACK		10
 #define MNG_ILLEGAL_CMD			0xFF
 
 #endif /* _ISHTP_ISH_REGS_H_ */
