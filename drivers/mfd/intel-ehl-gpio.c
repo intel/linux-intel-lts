@@ -225,8 +225,8 @@ static const struct dev_pm_ops intel_ehl_pse_gpio_mfd_pm_ops = {
 };
 
 static const struct pci_device_id intel_ehl_pse_gpio_mfd_ids[] = {
-	{ PCI_VDEVICE(INTEL, 0x4b88), NULL},
-	{ PCI_VDEVICE(INTEL, 0x4b89), NULL},
+	{ PCI_VDEVICE(INTEL, 0x4b88), },
+	{ PCI_VDEVICE(INTEL, 0x4b89), },
 	{ },
 };
 MODULE_DEVICE_TABLE(pci, intel_ehl_pse_gpio_mfd_ids);
