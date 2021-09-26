@@ -169,10 +169,11 @@ static int ehl_pse_gpio_get_direction(struct gpio_chip *chip,
 {
 	struct ehl_pse_gpio *priv = gpiochip_get_data(chip);
 	int direction = 0;
+	u32 reg_gpdr;
 
 	pm_runtime_get_sync(priv->dev->parent);
 
-	u32 reg_gpdr = intel_gpio_readl(priv->reg_base, GPDR);
+	reg_gpdr = intel_gpio_readl(priv->reg_base, GPDR);
 
 	direction = !(reg_gpdr & BIT(offset));
 
@@ -360,7 +361,6 @@ static int ehl_pse_gpio_probe(struct platform_device *pdev)
 	struct gpio_irq_chip *girq;
 	struct ehl_pse_gpio *priv;
 	struct resource *res;
-	void __iomem *base;
 	u32 irq;
 	int ret;
 
@@ -374,11 +374,11 @@ static int ehl_pse_gpio_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
-		return NULL;
+		return -EINVAL;
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
-		return NULL;
+		return irq ? irq : -EINVAL;
 
 	priv->dev = &pdev->dev;
 	priv->reg_base = devm_ioremap_resource(&pdev->dev, res);
