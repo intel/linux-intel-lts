@@ -132,7 +132,6 @@ static int intel_ehl_pse_gpio_mfd_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
 	struct intel_ehl_pse_gpio_data	*pdata = pci_get_drvdata(pdev);
-	int i = 0;
 	u32 d0i3c_reg, cgsr_reg = 0;
 
 	d0i3c_reg = readl(pdata->priv + PSE_GPIO_D0I3C);
@@ -181,7 +180,6 @@ static int intel_ehl_pse_gpio_mfd_runtime_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
 	struct intel_ehl_pse_gpio_data	*pdata = pci_get_drvdata(pdev);
-	int i = 0;
 	u32 d0i3c_reg, cgsr_reg = 0;
 
 	d0i3c_reg = readl(pdata->priv + PSE_GPIO_D0I3C);
@@ -233,8 +231,8 @@ static const struct dev_pm_ops intel_ehl_pse_gpio_mfd_pm_ops = {
 };
 
 static const struct pci_device_id intel_ehl_pse_gpio_mfd_ids[] = {
-	{ PCI_VDEVICE(INTEL, 0x4b88), NULL},
-	{ PCI_VDEVICE(INTEL, 0x4b89), NULL},
+	{ PCI_VDEVICE(INTEL, 0x4b88), },
+	{ PCI_VDEVICE(INTEL, 0x4b89), },
 	{ },
 };
 MODULE_DEVICE_TABLE(pci, intel_ehl_pse_gpio_mfd_ids);
