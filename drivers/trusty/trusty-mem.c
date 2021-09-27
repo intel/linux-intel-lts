@@ -3,6 +3,8 @@
  * Copyright (C) 2015 Google, Inc.
  */
 
+#include <asm/page.h>
+#include <asm/io.h>
 #include <linux/types.h>
 #include <linux/printk.h>
 #include <linux/trusty/arm_ffa.h>
