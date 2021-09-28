@@ -322,6 +322,10 @@ struct intel_cdclk_funcs {
 	u8 (*calc_voltage_level)(int cdclk);
 };
 
+struct intel_hotplug_funcs {
+	void (*hpd_irq_setup)(struct drm_i915_private *dev_priv);
+};
+
 struct drm_i915_display_funcs {
 	/* Returns the active state of the crtc, and if the crtc is active,
 	 * fills out the pipe-config with the hw state. */
@@ -339,7 +343,7 @@ struct drm_i915_display_funcs {
 
 	void (*fdi_link_train)(struct intel_crtc *crtc,
 			       const struct intel_crtc_state *crtc_state);
-	void (*hpd_irq_setup)(struct drm_i915_private *dev_priv);
+
 	/* clock updates for mode set */
 	/* cursor updates */
 	/* render clock increase/decrease */
@@ -915,6 +919,9 @@ struct drm_i915_private {
 
 	/* pm display functions */
 	struct drm_i915_wm_disp_funcs wm_disp;
+
+	/* irq display functions */
+	struct intel_hotplug_funcs hotplug_funcs;
 
 	/* Display functions */
 	struct drm_i915_display_funcs display;
