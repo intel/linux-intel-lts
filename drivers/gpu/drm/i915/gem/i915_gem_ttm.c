@@ -367,8 +367,10 @@ static void i915_ttm_delete_mem_notify(struct ttm_buffer_object *bo)
 {
 	struct drm_i915_gem_object *obj = i915_ttm_to_gem(bo);
 
-	if (likely(obj))
+	if (likely(obj)) {
+		__i915_gem_object_pages_fini(obj);
 		i915_ttm_free_cached_io_st(obj);
+	}
 }
 
 static struct intel_memory_region *
@@ -562,7 +564,7 @@ static int i915_ttm_move(struct ttm_buffer_object *bo, bool evict,
 	}
 
 	/* Populate ttm with pages if needed. Typically system memory. */
-	if (ttm && (dst_man->use_tt || (ttm->page_flags & TTM_PAGE_FLAG_SWAPPED))) {
+	if (ttm && (dst_man->use_tt || (ttm->page_flags & TTM_TT_FLAG_SWAPPED))) {
 		ret = ttm_tt_populate(bo->bdev, ttm, ctx);
 		if (ret)
 			return ret;
@@ -573,7 +575,7 @@ static int i915_ttm_move(struct ttm_buffer_object *bo, bool evict,
 		return PTR_ERR(dst_st);
 
 	clear = !cpu_maps_iomem(bo->resource) && (!ttm || !ttm_tt_is_populated(ttm));
-	if (!(clear && ttm && !(ttm->page_flags & TTM_PAGE_FLAG_ZERO_ALLOC)))
+	if (!(clear && ttm && !(ttm->page_flags & TTM_TT_FLAG_ZERO_ALLOC)))
 		__i915_ttm_move(bo, clear, dst_mem, bo->ttm, dst_st, true);
 
 	ttm_bo_move_sync_cleanup(bo, dst_mem);
@@ -813,12 +815,9 @@ static void i915_ttm_adjust_lru(struct drm_i915_gem_object *obj)
  */
 static void i915_ttm_delayed_free(struct drm_i915_gem_object *obj)
 {
-	if (obj->ttm.created) {
-		ttm_bo_put(i915_gem_to_ttm(obj));
-	} else {
-		__i915_gem_free_object(obj);
-		call_rcu(&obj->rcu, __i915_gem_free_object_rcu);
-	}
+	GEM_BUG_ON(!obj->ttm.created);
+
+	ttm_bo_put(i915_gem_to_ttm(obj));
 }
 
 static vm_fault_t vm_fault_ttm(struct vm_fault *vmf)
@@ -898,16 +897,19 @@ void i915_ttm_bo_destroy(struct ttm_buffer_object *bo)
 {
 	struct drm_i915_gem_object *obj = i915_ttm_to_gem(bo);
 
-	i915_ttm_backup_free(obj);
-
-	/* This releases all gem object bindings to the backend. */
-	__i915_gem_free_object(obj);
-
 	i915_gem_object_release_memory_region(obj);
 	mutex_destroy(&obj->ttm.get_io_page.lock);
 
-	if (obj->ttm.created)
+	if (obj->ttm.created) {
+		i915_ttm_backup_free(obj);
+
+		/* This releases all gem object bindings to the backend. */
+		__i915_gem_free_object(obj);
+
 		call_rcu(&obj->rcu, __i915_gem_free_object_rcu);
+	} else {
+		__i915_gem_object_fini(obj);
+	}
 }
 
 /**
@@ -936,7 +938,11 @@ int __i915_gem_ttm_object_init(struct intel_memory_region *mem,
 
 	drm_gem_private_object_init(&i915->drm, &obj->base, size);
 	i915_gem_object_init(obj, &i915_gem_ttm_obj_ops, &lock_class, flags);
-	i915_gem_object_init_memory_region(obj, mem);
+
+	/* Don't put on a region list until we're either locked or fully initialized. */
+	obj->mm.region = intel_memory_region_get(mem);
+	INIT_LIST_HEAD(&obj->mm.region_link);
+
 	i915_gem_object_make_unshrinkable(obj);
 	INIT_RADIX_TREE(&obj->ttm.get_io_page.radix, GFP_KERNEL | __GFP_NOWARN);
 	mutex_init(&obj->ttm.get_io_page.lock);
@@ -963,6 +969,8 @@ int __i915_gem_ttm_object_init(struct intel_memory_region *mem,
 		return i915_ttm_err_to_gem(ret);
 
 	obj->ttm.created = true;
+	i915_gem_object_release_memory_region(obj);
+	i915_gem_object_init_memory_region(obj, mem);
 	i915_ttm_adjust_domains_after_move(obj);
 	i915_ttm_adjust_gem_after_move(obj);
 	i915_gem_object_unlock(obj);

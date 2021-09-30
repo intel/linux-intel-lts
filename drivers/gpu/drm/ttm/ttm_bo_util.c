@@ -169,11 +169,8 @@ int ttm_bo_move_memcpy(struct ttm_buffer_object *bo,
 	}
 
 	clear = src_iter->ops->maps_tt && (!ttm || !ttm_tt_is_populated(ttm));
-	if (!(clear && ttm && !(ttm->page_flags & TTM_PAGE_FLAG_ZERO_ALLOC)))
+	if (!(clear && ttm && !(ttm->page_flags & TTM_TT_FLAG_ZERO_ALLOC)))
 		ttm_move_memcpy(clear, dst_mem->num_pages, dst_iter, src_iter);
-
-	src_copy = *src_mem;
-	ttm_bo_move_sync_cleanup(bo, dst_mem);
 
 	if (!src_iter->ops->maps_tt)
 		ttm_kmap_iter_linear_io_fini(&_src_iter.io, bdev, src_mem);
