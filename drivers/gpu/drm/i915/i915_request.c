@@ -608,7 +608,9 @@ bool __i915_request_submit(struct i915_request *request)
 
 	RQ_TRACE(request, "\n");
 
+#ifndef CONFIG_PREEMPT_RT
 	GEM_BUG_ON(!irqs_disabled());
+#endif
 	lockdep_assert_held(&engine->sched_engine->lock);
 
 	/*
@@ -717,7 +719,9 @@ void __i915_request_unsubmit(struct i915_request *request)
 	 */
 	RQ_TRACE(request, "\n");
 
+#ifndef CONFIG_PREEMPT_RT
 	GEM_BUG_ON(!irqs_disabled());
+#endif
 	lockdep_assert_held(&engine->sched_engine->lock);
 
 	/*
