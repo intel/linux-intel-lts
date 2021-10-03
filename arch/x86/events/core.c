@@ -41,6 +41,7 @@
 #include <asm/desc.h>
 #include <asm/ldt.h>
 #include <asm/unwind.h>
+#include <asm/intel-family.h>
 
 #include "perf_event.h"
 
@@ -247,6 +248,13 @@ bool check_hw_exists(struct pmu *pmu, int num_counters, int num_counters_fixed)
 	int i, reg, reg_fail = -1, ret = 0;
 	int bios_fail = 0;
 	int reg_safe = -1;
+
+	if(boot_cpu_has(X86_FEATURE_HYPERVISOR) &&
+			(boot_cpu_data.x86_model == INTEL_FAM6_ALDERLAKE ||
+			boot_cpu_data.x86_model == INTEL_FAM6_ALDERLAKE_L)) {
+		pr_cont("Disabling PMU for VM on ADL.\n");
+		goto msr_fail;
+	}
 
 	/*
 	 * Check to see if the BIOS enabled any of the counters, if so
