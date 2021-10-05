@@ -453,6 +453,9 @@ static int kmb_isp_populate_pad_formats(struct kmb_isp *kmb_isp)
 				mbus.index;
 	}
 
+	if (WARN_ON(in_fmt_cnt > KMB_ISP_MAX_SUPPORTED_FMTS))
+		return -ERANGE;
+
 	for (isp_pad_idx = KMB_ISP_SRC_PAD_VID_BASE;
 		isp_pad_idx < KMB_ISP_PADS_NUM; isp_pad_idx++) {
 		for (out_fmt_cnt = 0; out_fmt_cnt < in_fmt_cnt;) {
