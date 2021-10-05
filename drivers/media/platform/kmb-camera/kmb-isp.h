@@ -35,7 +35,7 @@
 /* Predefined event queue length */
 #define KMB_ISP_EVT_Q_LEN	8
 
-#define KMB_ISP_MAX_SUPPORTED_FMTS	10
+#define KMB_ISP_MAX_SUPPORTED_FMTS	20
 
 /**
  * struct kmb_isp_channel_ops - xLink channel ID operations
