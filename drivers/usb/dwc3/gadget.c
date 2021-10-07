@@ -2648,7 +2648,7 @@ static void dwc3_gadget_enable_irq(struct dwc3 *dwc)
 			DWC3_DEVTEN_USBRSTEN |
 			DWC3_DEVTEN_DISCONNEVTEN);
 
-	if (DWC3_VER_IS_PRIOR(DWC3, 250A))
+	if (DWC3_VER_IS_WITHIN(DWC3, ANY, 260A))
 		reg |= DWC3_DEVTEN_ULSTCNGEN;
 
 	/* On 2.30a and above this bit enables U3/L2-L1 Suspend Events */
