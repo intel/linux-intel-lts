@@ -1039,6 +1039,7 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->pmd_huge_pte = NULL;
 #endif
 	mm_init_uprobes_state(mm);
+	hugetlb_count_init(mm);
 #ifdef CONFIG_DOVETAIL
 	memset(&mm->oob_state, 0, sizeof(mm->oob_state));
 #endif
@@ -2965,12 +2966,6 @@ int ksys_unshare(unsigned long unshare_flags)
 					 new_cred, new_fs);
 	if (err)
 		goto bad_unshare_cleanup_cred;
-
-	if (new_cred) {
-		err = set_cred_ucounts(new_cred);
-		if (err)
-			goto bad_unshare_cleanup_cred;
-	}
 
 	if (new_fs || new_fd || do_sysvsem || new_cred || new_nsproxy) {
 		if (do_sysvsem) {
