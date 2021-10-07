@@ -1389,6 +1389,12 @@ static struct stream_encoder *dcn31_stream_encoder_create(
 		return NULL;
 	}
 
+	if (ctx->asic_id.chip_family == FAMILY_YELLOW_CARP &&
+			ctx->asic_id.hw_internal_rev == YELLOW_CARP_B0) {
+		if ((eng_id == ENGINE_ID_DIGC) || (eng_id == ENGINE_ID_DIGD))
+			eng_id = eng_id + 3; // For B0 only. C->F, D->G.
+	}
+
 	dcn30_dio_stream_encoder_construct(enc1, ctx, ctx->dc_bios,
 					eng_id, vpg, afmt,
 					&stream_enc_regs[eng_id],
@@ -1837,7 +1843,7 @@ static int dcn31_populate_dml_pipes_from_context(
 	return pipe_cnt;
 }
 
-static void dcn31_update_soc_for_wm_a(struct dc *dc, struct dc_state *context)
+void dcn31_update_soc_for_wm_a(struct dc *dc, struct dc_state *context)
 {
 	if (dc->clk_mgr->bw_params->wm_table.entries[WM_A].valid) {
 		context->bw_ctx.dml.soc.dram_clock_change_latency_us = dc->clk_mgr->bw_params->wm_table.entries[WM_A].pstate_latency_us;
@@ -1981,7 +1987,7 @@ static void dcn31_calculate_wm_and_dlg_fp(
 	dcn20_calculate_dlg_params(dc, context, pipes, pipe_cnt, vlevel);
 }
 
-static void dcn31_calculate_wm_and_dlg(
+void dcn31_calculate_wm_and_dlg(
 		struct dc *dc, struct dc_state *context,
 		display_e2e_pipe_params_st *pipes,
 		int pipe_cnt,
