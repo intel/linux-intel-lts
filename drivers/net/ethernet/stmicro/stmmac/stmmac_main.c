@@ -5748,11 +5748,8 @@ static netdev_features_t stmmac_fix_features(struct net_device *dev,
 
 	/* Disable tso if asked by ethtool */
 	if ((priv->plat->tso_en) && (priv->dma_cap.tsoen)) {
-		if (features & NETIF_F_TSO) {
-			struct stmmac_tx_queue *tx_q = &priv->tx_queue[0];
+		if (features & NETIF_F_TSO)
 			priv->tso = true;
-			tx_q->mss = 0;
-		}
 		else
 			priv->tso = false;
 	}
@@ -5767,6 +5764,7 @@ static netdev_features_t stmmac_fix_features(struct net_device *dev,
 		tx_q->mss = 0;
 		stmmac_enable_tso(priv, priv->ioaddr, priv->tso, chan);
 	}
+
 	return features;
 }
 
