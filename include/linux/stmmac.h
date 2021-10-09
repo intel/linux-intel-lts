@@ -275,5 +275,6 @@ struct plat_stmmacenet_data {
 	int msi_tx_base_vec;
 	bool use_phy_wol;
 	bool skip_xpcs_reset;
+	bool use_hw_vlan;
 };
 #endif
