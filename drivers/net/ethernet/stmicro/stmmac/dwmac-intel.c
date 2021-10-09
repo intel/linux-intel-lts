@@ -593,6 +593,8 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->msi_rx_base_vec = 0;
 	plat->msi_tx_base_vec = 1;
 
+	plat->use_hw_vlan = true;
+
 	return 0;
 }
 
