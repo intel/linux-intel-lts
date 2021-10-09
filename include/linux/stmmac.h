@@ -278,5 +278,6 @@ struct plat_stmmacenet_data {
 	bool use_phy_wol;
 	bool sph_disable;
 	bool skip_xpcs_reset;
+	bool use_hw_vlan;
 };
 #endif
