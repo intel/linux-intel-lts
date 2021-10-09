@@ -3433,6 +3433,10 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 	/* Start the ball rolling... */
 	stmmac_start_all_dma(priv);
 
+	/* Set HW VLAN stripping mode */
+	if (priv->plat->use_hw_vlan)
+		stmmac_set_hw_vlan_mode(priv, priv->ioaddr, dev->features);
+
 	if (priv->dma_cap.fpesel) {
 		stmmac_fpe_start_wq(priv);
 
@@ -5384,7 +5388,12 @@ drain_data:
 		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
 		stmmac_get_rx_hwtstamp(priv, p, np, &shhwtstamp->hwtstamp);
 
-		stmmac_rx_vlan(priv->dev, skb);
+		if (priv->plat->use_hw_vlan)
+			stmmac_rx_hw_vlan(priv, priv->dev,
+					  priv->hw, p, skb);
+		else
+			stmmac_rx_vlan(priv->dev, skb);
+
 		skb->protocol = eth_type_trans(skb, priv->dev);
 
 		if (unlikely(!coe))
