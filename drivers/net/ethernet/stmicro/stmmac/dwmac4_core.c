@@ -13,6 +13,7 @@
 #include <linux/crc32.h>
 #include <linux/slab.h>
 #include <linux/ethtool.h>
+#include <linux/if_vlan.h>
 #include <linux/io.h>
 #include <net/dsa.h>
 #include <linux/if_vlan.h>
