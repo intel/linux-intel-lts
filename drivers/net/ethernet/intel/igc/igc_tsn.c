@@ -126,7 +126,7 @@ static int igc_tsn_enable_offload(struct igc_adapter *adapter)
 		s64 n;
 
 		n = div64_s64(ktime_sub_ns(systim, base_time), cycle);
-		base_time = ktime_add_ns(base_time, n * cycle);
+		base_time = ktime_add_ns(base_time, (n + 1) * cycle);
 	}
 
 	baset_h = div_s64_rem(base_time, NSEC_PER_SEC, &baset_l);

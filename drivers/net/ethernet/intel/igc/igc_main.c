@@ -997,22 +997,19 @@ static int igc_write_mc_addr_list(struct net_device *netdev)
 
 static __le32 igc_tx_launchtime(struct igc_adapter *adapter, ktime_t txtime)
 {
-	ktime_t now = ktime_get_clocktai();
-	struct timespec64 launchtime;
-	ktime_t baset_est;
-	s64 n;
+	ktime_t cycle_time = adapter->cycle_time;
+	ktime_t base_time = adapter->base_time;
+	u32 launchtime;
 
-	n = div64_s64(ktime_sub_ns(now, adapter->base_time), adapter->cycle_time);
-
-	/* The BASET registers are increased by cycle-time everytime
-	 * value of systim registers(SYSTIM) cross the current system time,
-	 * so they point to a time one cycle in the future
+	/* FIXME: when using ETF together with taprio, we may have a
+	 * case where 'delta' is larger than the cycle_time, this may
+	 * cause problems if we don't read the current value of
+	 * IGC_BASET, as the value writen into the launchtime
+	 * descriptor field may be misinterpreted.
 	 */
-	baset_est = ktime_add_ns(adapter->base_time, adapter->cycle_time * (n + 1));
-	baset_est = ktime_sub_ns(txtime, baset_est);
-	launchtime = ktime_to_timespec64(baset_est);
+	div_s64_rem(ktime_sub_ns(txtime, base_time), cycle_time, &launchtime);
 
-	return cpu_to_le32(launchtime.tv_nsec);
+	return cpu_to_le32(launchtime);
 }
 
 static void igc_tx_ctxtdesc(struct igc_ring *tx_ring,
