@@ -1009,12 +1009,6 @@ static __le32 igc_tx_launchtime(struct igc_adapter *adapter, ktime_t txtime)
 	 * so they point to a time one cycle in the future
 	 */
 	baset_est = ktime_add_ns(adapter->base_time, adapter->cycle_time * (n + 1));
-
-	if (baset_est == txtime) {
-		txtime -= 1000;
-		baset_est -= adapter->cycle_time;
-	}
-
 	baset_est = ktime_sub_ns(txtime, baset_est);
 	launchtime = ktime_to_timespec64(baset_est);
 
