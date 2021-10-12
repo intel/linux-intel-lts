@@ -1156,7 +1156,8 @@ void igc_ptp_suspend(struct igc_adapter *adapter)
 
 	spin_unlock(&adapter->ptp_tx_lock);
 
-	igc_ptp_time_save(adapter);
+	if (pci_device_is_present(adapter->pdev))
+		igc_ptp_time_save(adapter);
 }
 
 /**
