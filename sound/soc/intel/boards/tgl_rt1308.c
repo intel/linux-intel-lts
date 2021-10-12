@@ -82,6 +82,13 @@ SND_SOC_DAILINK_DEF(ssp1_pin,
 SND_SOC_DAILINK_DEF(ssp1_codec,
 	DAILINK_COMP_ARRAY(COMP_CODEC("snd-soc-dummy", "snd-soc-dummy-dai")));
 
+SND_SOC_DAILINK_DEF(ssp5_pin,
+	DAILINK_COMP_ARRAY(COMP_CPU("SSP5 Pin")));
+
+SND_SOC_DAILINK_DEF(ssp5_codec,
+	DAILINK_COMP_ARRAY(COMP_CODEC("snd-soc-dummy", "snd-soc-dummy-dai")));
+
+
 SND_SOC_DAILINK_DEF(ssp2_pin,
 	DAILINK_COMP_ARRAY(COMP_CPU("SSP2 Pin")));
 
@@ -108,8 +115,16 @@ static struct snd_soc_dai_link tgl_rt1308_dailink[] = {
 		SND_SOC_DAILINK_REG(ssp1_pin, ssp1_codec, platform),
 	},
 	{
+		.name = "NoCodec-1",
+		.id = 1,
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		SND_SOC_DAILINK_REG(ssp5_pin, ssp5_codec, platform),
+	},
+	{
 		.name		= "SSP2-Codec",
-		.id		= 1,
+		.id		= 2,
 		.no_pcm		= 1,
 		.ops		= &tgl_rt1308_ops,
 		.dpcm_playback = 1,
@@ -117,7 +132,7 @@ static struct snd_soc_dai_link tgl_rt1308_dailink[] = {
 	},
 	{
 		.name = "dmic01",
-		.id = 2,
+		.id = 3,
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.no_pcm = 1,
@@ -125,7 +140,7 @@ static struct snd_soc_dai_link tgl_rt1308_dailink[] = {
 	},
 	{
 		.name = "dmic16k",
-		.id = 3,
+		.id = 4,
 		.ignore_suspend = 1,
 		.dpcm_capture = 1,
 		.no_pcm = 1,
