@@ -40,13 +40,13 @@ do {								\
 
 #elif defined(CONFIG_DEBUG_LOCK_ALLOC)
 
-# define LOCAL_LOCK_DEBUG_INIT(lockname)               \
-       .dep_map = {                                    \
-               .name = #lockname,                      \
-               .wait_type_inner = LD_WAIT_CONFIG,      \
-               .lock_type = LD_LOCK_PERCPU,            \
-       },                                              \
-       .owner = NULL,
+# define LOCAL_LOCK_DEBUG_INIT(lockname)		\
+	.dep_map = {					\
+		.name = #lockname,			\
+		.wait_type_inner = LD_WAIT_CONFIG,	\
+		.lock_type = LD_LOCK_PERCPU,		\
+	},						\
+	.owner = NULL,
 #endif
 
 #ifdef CONFIG_PREEMPT_RT
@@ -100,18 +100,6 @@ static inline void local_lock_debug_init(local_lock_t *l) { }
 #endif /* !CONFIG_DEBUG_LOCK_ALLOC */
 
 #ifdef CONFIG_PREEMPT_RT
-#define INIT_LOCAL_LOCK(lockname)	{ LOCAL_LOCK_DEBUG_INIT(lockname) }
-
-#define __local_lock_init(lock)					\
-do {								\
-	static struct lock_class_key __key;			\
-								\
-	debug_check_no_locks_freed((void *)lock, sizeof(*lock));\
-	lockdep_init_map_type(&(lock)->dep_map, #lock, &__key,  \
-			      0, LD_WAIT_CONFIG, LD_WAIT_INV,	\
-			      LD_LOCK_PERCPU);			\
-	local_lock_debug_init(lock);				\
-} while (0)
 
 #define __local_lock(lock)					\
 	do {							\
@@ -151,6 +139,19 @@ do {								\
 	} while (0)
 
 #else
+
+#define INIT_LOCAL_LOCK(lockname)	{ LOCAL_LOCK_DEBUG_INIT(lockname) }
+
+#define __local_lock_init(lock)					\
+do {								\
+	static struct lock_class_key __key;			\
+								\
+	debug_check_no_locks_freed((void *)lock, sizeof(*lock));\
+	lockdep_init_map_type(&(lock)->dep_map, #lock, &__key,  \
+			      0, LD_WAIT_CONFIG, LD_WAIT_INV,	\
+			      LD_LOCK_PERCPU);			\
+	local_lock_debug_init(lock);				\
+} while (0)
 
 #define __local_lock(lock)					\
 	do {							\

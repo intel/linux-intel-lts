@@ -2020,9 +2020,9 @@ static int update_prstate(struct cpuset *cs, int new_prs)
 	rebuild_sched_domains_locked();
 out:
 	if (!err) {
-		spin_lock_irq(&callback_lock);
+		raw_spin_lock_irq(&callback_lock);
 		cs->partition_root_state = new_prs;
-		spin_unlock_irq(&callback_lock);
+		raw_spin_unlock_irq(&callback_lock);
 	}
 
 	free_cpumasks(NULL, &tmpmask);
@@ -3088,10 +3088,10 @@ retry:
 	if (is_partition_root(cs) && (cpumask_empty(&new_cpus) ||
 	   (parent->partition_root_state == PRS_ERROR))) {
 		if (cs->nr_subparts_cpus) {
-			spin_lock_irq(&callback_lock);
+			raw_spin_lock_irq(&callback_lock);
 			cs->nr_subparts_cpus = 0;
 			cpumask_clear(cs->subparts_cpus);
-			spin_unlock_irq(&callback_lock);
+			raw_spin_unlock_irq(&callback_lock);
 			compute_effective_cpumask(&new_cpus, cs, parent);
 		}
 
@@ -3105,9 +3105,9 @@ retry:
 		     cpumask_empty(&new_cpus)) {
 			update_parent_subparts_cpumask(cs, partcmd_disable,
 						       NULL, tmp);
-			spin_lock_irq(&callback_lock);
+			raw_spin_lock_irq(&callback_lock);
 			cs->partition_root_state = PRS_ERROR;
-			spin_unlock_irq(&callback_lock);
+			raw_spin_unlock_irq(&callback_lock);
 		}
 		cpuset_force_rebuild();
 	}
