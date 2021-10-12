@@ -8,7 +8,6 @@
  ****************************************************************************/
 #include <linux/firmware.h>
 #include <linux/delay.h>
-#include <linux/mxlk_boot_inf.h>
 
 #include "pci.h"
 #include "../common/boot.h"
