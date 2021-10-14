@@ -3925,6 +3925,7 @@ intel_execlists_create_virtual(struct intel_engine_cs **siblings,
 
 		ve->siblings[ve->num_siblings++] = sibling;
 		ve->base.mask |= sibling->mask;
+		ve->base.logical_mask |= sibling->logical_mask;
 
 		/*
 		 * All physical engines must be compatible for their emission
