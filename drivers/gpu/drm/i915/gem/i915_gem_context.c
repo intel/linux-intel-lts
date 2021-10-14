@@ -235,6 +235,25 @@ static void intel_context_set_gem(struct intel_context *ce,
 	}
 }
 
+static void __unpin_engines(struct i915_gem_engines *e, unsigned int count)
+{
+	while (count--) {
+		struct intel_context *ce = e->engines[count], *child;
+
+		if (!ce || !test_bit(CONTEXT_PERMA_PIN, &ce->flags))
+			continue;
+
+		for_each_child(ce, child)
+			intel_context_unpin(child);
+		intel_context_unpin(ce);
+	}
+}
+
+static void unpin_engines(struct i915_gem_engines *e)
+{
+	__unpin_engines(e, e->num_engines);
+}
+
 static void __free_engines(struct i915_gem_engines *e, unsigned int count)
 {
 	while (count--) {
@@ -550,6 +569,7 @@ static void context_close(struct i915_gem_context *ctx)
 
 	/* Flush any concurrent set_engines() */
 	mutex_lock(&ctx->engines_mutex);
+	unpin_engines(__context_engines_static(ctx));
 	engines_idle_release(ctx, rcu_replace_pointer(ctx->engines, NULL, 1));
 	i915_gem_context_set_closed(ctx);
 	mutex_unlock(&ctx->engines_mutex);
@@ -1498,7 +1518,7 @@ set_engines__load_balance(struct i915_user_extension __user *base, void *data)
 		}
 	}
 
-	ce = intel_engine_create_virtual(siblings, n);
+	ce = intel_engine_create_virtual(siblings, n, 0);
 	if (IS_ERR(ce)) {
 		err = PTR_ERR(ce);
 		goto out_siblings;
@@ -1606,9 +1626,195 @@ set_engines__bond(struct i915_user_extension __user *base, void *data)
 	return 0;
 }
 
+static int perma_pin_contexts(struct intel_context *ce)
+{
+	struct intel_context *child;
+	int i = 0, j = 0, ret;
+
+	GEM_BUG_ON(!intel_context_is_parent(ce));
+
+	ret = intel_context_pin(ce);
+	if (unlikely(ret))
+		return ret;
+
+	for_each_child(ce, child) {
+		ret = intel_context_pin(child);
+		if (unlikely(ret))
+			goto unwind;
+		++i;
+	}
+
+	set_bit(CONTEXT_PERMA_PIN, &ce->flags);
+
+	return 0;
+
+unwind:
+	intel_context_unpin(ce);
+	for_each_child(ce, child) {
+		if (j++ < i)
+			intel_context_unpin(child);
+		else
+			break;
+	}
+
+	return ret;
+}
+
+static int
+set_engines__parallel_submit(struct i915_user_extension __user *base, void *data)
+{
+	struct i915_context_engines_parallel_submit __user *ext =
+		container_of_user(base, typeof(*ext), base);
+	const struct set_engines *set = data;
+	struct drm_i915_private *i915 = set->ctx->i915;
+	struct intel_context *ce, *child;
+	struct i915_engine_class_instance prev_engine;
+	u64 flags;
+	int err = 0, n, i, j;
+	u16 slot, width, num_siblings;
+	struct intel_engine_cs **siblings = NULL;
+	intel_engine_mask_t prev_mask;
+
+	/* Disabling for now */
+	return -ENODEV;
+
+	/* FIXME: This is NIY for execlists */
+	if (!(intel_uc_uses_guc_submission(&i915->gt.uc)))
+		return -ENODEV;
+
+	if (get_user(slot, &ext->engine_index))
+		return -EFAULT;
+
+	if (get_user(width, &ext->width))
+		return -EFAULT;
+
+	if (get_user(num_siblings, &ext->num_siblings))
+		return -EFAULT;
+
+	if (slot >= set->engines->num_engines) {
+		drm_dbg(&i915->drm, "Invalid placement value, %d >= %d\n",
+			slot, set->engines->num_engines);
+		return -EINVAL;
+	}
+
+	if (get_user(flags, &ext->flags))
+		return -EFAULT;
+
+	if (flags) {
+		drm_dbg(&i915->drm, "Unknown flags 0x%02llx", flags);
+		return -EINVAL;
+	}
+
+	for (n = 0; n < ARRAY_SIZE(ext->mbz64); n++) {
+		err = check_user_mbz(&ext->mbz64[n]);
+		if (err)
+			return err;
+	}
+
+	if (width < 2) {
+		drm_dbg(&i915->drm, "Width (%d) < 2\n", width);
+		return -EINVAL;
+	}
+
+	if (num_siblings < 1) {
+		drm_dbg(&i915->drm, "Number siblings (%d) < 1\n",
+			num_siblings);
+		return -EINVAL;
+	}
+
+	siblings = kmalloc_array(num_siblings * width,
+				 sizeof(*siblings),
+				 GFP_KERNEL);
+	if (!siblings)
+		return -ENOMEM;
+
+	/* Create contexts / engines */
+	for (i = 0; i < width; ++i) {
+		intel_engine_mask_t current_mask = 0;
+
+		for (j = 0; j < num_siblings; ++j) {
+			struct i915_engine_class_instance ci;
+
+			n = i * num_siblings + j;
+			if (copy_from_user(&ci, &ext->engines[n], sizeof(ci))) {
+				err = -EFAULT;
+				goto out_err;
+			}
+
+			siblings[n] =
+				intel_engine_lookup_user(i915, ci.engine_class,
+							 ci.engine_instance);
+			if (!siblings[n]) {
+				drm_dbg(&i915->drm,
+					"Invalid sibling[%d]: { class:%d, inst:%d }\n",
+					n, ci.engine_class, ci.engine_instance);
+				err = -EINVAL;
+				goto out_err;
+			}
+
+			if (n) {
+				if (prev_engine.engine_class !=
+				    ci.engine_class) {
+					drm_dbg(&i915->drm,
+						"Mismatched class %d, %d\n",
+						prev_engine.engine_class,
+						ci.engine_class);
+					err = -EINVAL;
+					goto out_err;
+				}
+			}
+
+			prev_engine = ci;
+			current_mask |= siblings[n]->logical_mask;
+		}
+
+		if (i > 0) {
+			if (current_mask != prev_mask << 1) {
+				drm_dbg(&i915->drm,
+					"Non contiguous logical mask 0x%x, 0x%x\n",
+					prev_mask, current_mask);
+				err = -EINVAL;
+				goto out_err;
+			}
+		}
+		prev_mask = current_mask;
+	}
+
+	ce = intel_engine_create_parallel(siblings, num_siblings, width);
+	if (IS_ERR(ce)) {
+		err = PTR_ERR(ce);
+		goto out_err;
+	}
+
+	intel_context_set_gem(ce, set->ctx);
+	for_each_child(ce, child)
+		intel_context_set_gem(child, set->ctx);
+
+	err = perma_pin_contexts(ce);
+	if (err) {
+		intel_context_put(ce);
+		goto out_err;
+	}
+
+	if (cmpxchg(&set->engines->engines[slot], NULL, ce)) {
+		intel_context_put(ce);
+		err = -EEXIST;
+		goto out_err;
+	}
+
+	return 0;
+
+out_err:
+	kfree(siblings);
+
+	return err;
+}
+
 static const i915_user_extension_fn set_engines__extensions[] = {
 	[I915_CONTEXT_ENGINES_EXT_LOAD_BALANCE] = set_engines__load_balance,
 	[I915_CONTEXT_ENGINES_EXT_BOND] = set_engines__bond,
+	[I915_CONTEXT_ENGINES_EXT_PARALLEL_SUBMIT] =
+		set_engines__parallel_submit,
 };
 
 static int
