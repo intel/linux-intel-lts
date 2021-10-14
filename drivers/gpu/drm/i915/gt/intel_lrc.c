@@ -942,6 +942,11 @@ __lrc_alloc_state(struct intel_context *ce, struct intel_engine_cs *engine)
 		context_size += PAGE_SIZE;
 	}
 
+	if (intel_context_is_parent(ce) && intel_engine_uses_guc(engine)) {
+		ce->parallel.guc.parent_page = context_size / PAGE_SIZE;
+		context_size += PARENT_SCRATCH_SIZE;
+	}
+
 	obj = i915_gem_object_create_lmem(engine->i915, context_size, 0);
 	if (IS_ERR(obj))
 		obj = i915_gem_object_create_shmem(engine->i915, context_size);
