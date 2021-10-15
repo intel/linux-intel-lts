@@ -811,7 +811,7 @@ static int resolve_metric_simple(struct expr_parse_ctx *pctx,
 			ref->metric_expr = pe->metric_expr;
 			list_add_tail(&metric->list, compound_list);
 
-			rc = expr__find_ids(pe->metric_expr, NULL, pctx, 0);
+			rc = expr__find_ids(pe->metric_expr, NULL, pctx);
 			if (rc)
 				goto out_err;
 			break; /* The hashmap has been modified, so restart */
@@ -861,7 +861,7 @@ static int test_parsing(void)
 			if (!pe->metric_expr)
 				continue;
 			expr__ctx_clear(ctx);
-			if (expr__find_ids(pe->metric_expr, NULL, ctx, 0) < 0) {
+			if (expr__find_ids(pe->metric_expr, NULL, ctx) < 0) {
 				expr_failure("Parse find ids failed", map, pe);
 				ret++;
 				continue;
@@ -894,7 +894,7 @@ static int test_parsing(void)
 				free(metric);
 			}
 
-			if (expr__parse(&result, ctx, pe->metric_expr, 0)) {
+			if (expr__parse(&result, ctx, pe->metric_expr)) {
 				expr_failure("Parse failed", map, pe);
 				ret++;
 			}
@@ -934,7 +934,7 @@ static int metric_parse_fake(const char *str)
 		pr_debug("expr__ctx_new failed");
 		return TEST_FAIL;
 	}
-	if (expr__find_ids(str, NULL, ctx, 0) < 0) {
+	if (expr__find_ids(str, NULL, ctx) < 0) {
 		pr_err("expr__find_ids failed\n");
 		return -1;
 	}
@@ -955,7 +955,7 @@ static int metric_parse_fake(const char *str)
 		}
 	}
 
-	if (expr__parse(&result, ctx, str, 0))
+	if (expr__parse(&result, ctx, str))
 		pr_err("expr__parse failed\n");
 	else
 		ret = 0;
