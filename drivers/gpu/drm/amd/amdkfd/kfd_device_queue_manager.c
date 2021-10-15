@@ -2070,7 +2070,7 @@ int dqm_debugfs_hqds(struct seq_file *m, void *data)
 		return 0;
 	}
 
-	r = dqm->dev->kfd2kgd->hqd_dump(dqm->dev->kgd,
+	r = dqm->dev->kfd2kgd->hqd_dump(dqm->dev->adev,
 					KFD_CIK_HIQ_PIPE, KFD_CIK_HIQ_QUEUE,
 					&dump, &n_regs);
 	if (!r) {
@@ -2092,7 +2092,7 @@ int dqm_debugfs_hqds(struct seq_file *m, void *data)
 				continue;
 
 			r = dqm->dev->kfd2kgd->hqd_dump(
-				dqm->dev->kgd, pipe, queue, &dump, &n_regs);
+				dqm->dev->adev, pipe, queue, &dump, &n_regs);
 			if (r)
 				break;
 
@@ -2109,7 +2109,7 @@ int dqm_debugfs_hqds(struct seq_file *m, void *data)
 		     queue < dqm->dev->device_info->num_sdma_queues_per_engine;
 		     queue++) {
 			r = dqm->dev->kfd2kgd->hqd_sdma_dump(
-				dqm->dev->kgd, pipe, queue, &dump, &n_regs);
+				dqm->dev->adev, pipe, queue, &dump, &n_regs);
 			if (r)
 				break;
 
