@@ -384,6 +384,7 @@ CVEs fixed in 4.19.97:
 
 CVEs fixed in 4.19.98:
   CVE-2020-12652: 3dae5041c65545ac65d610375b4ac30b00f174a3 scsi: mptfusion: Fix double fetch bug in ioctl
+  CVE-2021-3635: 8260ce5aeee4d7c4a6305e469edeae1066de2800 netfilter: nf_tables: fix flowtable list del corruption
 
 CVEs fixed in 4.19.99:
   CVE-2019-19046: 211eabc55d07fc3709e967b08b6f5bb77198dbd0 ipmi: Fix memory leak in __ipmi_bmc_register
@@ -437,6 +438,7 @@ CVEs fixed in 4.19.114:
   CVE-2020-11609: 70764334b2bcb15c67dfbd912d9a9f7076f6d0df media: stv06xx: add missing descriptor sanity checks
   CVE-2020-11668: 5d064d7f0327d9425c5f63fa96efc70a74032d8b media: xirlink_cit: add missing descriptor sanity checks
   CVE-2020-27066: 7ad217a824f7fab1e8534a6dfa82899ae1900bcb xfrm: policy: Fix doulbe free in xfrm_policy_timer
+  CVE-2021-3715: ea3d6652c240978736a91b9e85fde9fee9359be4 net_sched: cls_route: remove the right filter from hashtable
 
 CVEs fixed in 4.19.115:
   CVE-2020-11494: b774578329afb238ccd504477731129aa15e9ec2 slcan: Don't transmit uninitialized stack data in padding
@@ -624,6 +626,7 @@ CVEs fixed in 4.19.164:
   CVE-2020-27815: c7e31b2fecfe0ebd5bd6a8274b2fbfb9c9401738 jfs: Fix array index bounds check in dbAdjTree
   CVE-2020-29568: 9039eb22f99545fa80a5897496452cf9962e3289 xen/xenbus: Allow watches discard events before queueing
   CVE-2020-29569: 014ee1c7d184acb8986152014a570ba7c69d3616 xen-blkback: set ring->xenblkd to NULL after kthread_stop()
+  CVE-2021-0938: b207caff4176e3a6ba273243da2db2e595e4aad2 compiler.h: fix barrier_data() on clang
 
 CVEs fixed in 4.19.166:
   CVE-2020-36158: b35029a1f24fe511af750537e6565dcf68e5c862 mwifiex: Fix possible buffer overflows in mwifiex_cmd_802_11_ad_hoc_start
@@ -676,6 +679,7 @@ CVEs fixed in 4.19.184:
   CVE-2021-31916: 76aa61c55279fdaa8d428236ba8834edf313b372 dm ioctl: fix out of bounds array access when no devices
 
 CVEs fixed in 4.19.185:
+  CVE-2021-0941: 8c1a77ae15ce70a72f26f4bb83c50f769011220c bpf: Remove MTU check in __bpf_skb_max_len
   CVE-2021-3483: 89a2c28a3b67c7d918218f57e4bb7b591f7e5d0f firewire: nosy: Fix a use-after-free bug in nosy_ioctl()
 
 CVEs fixed in 4.19.186:
@@ -689,6 +693,7 @@ CVEs fixed in 4.19.187:
   CVE-2021-3659: c166c0f5311dc9de687b8985574a5ee5166d367e net: mac802154: Fix general protection fault
 
 CVEs fixed in 4.19.188:
+  CVE-2021-0937: 12ec80252edefff00809d473a47e5f89c7485499 netfilter: x_tables: fix compat match/target pad out-of-bound write
   CVE-2021-22555: 12ec80252edefff00809d473a47e5f89c7485499 netfilter: x_tables: fix compat match/target pad out-of-bound write
 
 CVEs fixed in 4.19.189:
@@ -748,9 +753,30 @@ CVEs fixed in 4.19.205:
   CVE-2020-3702: dd5815f023b89c9a28325d8a2a5f0779b57b7190 ath: Use safer key clearing with key cache entries
   CVE-2021-3653: 42f4312c0e8a225b5f1e3ed029509ef514f2157a KVM: nSVM: avoid picking up unsupported bits from L2 in int_ctl (CVE-2021-3653)
   CVE-2021-3656: 119d547cbf7c055ba8100309ad71910478092f24 KVM: nSVM: always intercept VMLOAD/VMSAVE when nested (CVE-2021-3656)
+  CVE-2021-42008: 4e370cc081a78ee23528311ca58fd98a06768ec7 net: 6pack: fix slab-out-of-bounds in decode_data
+
+CVEs fixed in 4.19.206:
+  CVE-2021-3444: 39f74b7c81cca139c05757d9c8f9d1e35fbbf56b bpf: Fix truncation handling for mod32 dst reg wrt zero
+  CVE-2021-3600: 8313432df224d926590731ec3ace3e1bd7bc4a1a bpf: Fix 32 bit src register truncation on div/mod
+  CVE-2021-3753: 0776c1a20babb4ad0b7ce7f2f4e0806a97663187 vt_kdsetmode: extend console locking
+
+CVEs fixed in 4.19.207:
+  CVE-2020-16119: dfec82f3e5b8bd93ab65b7417a64886ec8c42f14 dccp: don't duplicate ccid when cloning dccp sock
+  CVE-2021-34556: 91cdb5b36234e6af69d6280f1510e4453707a2b8 bpf: Introduce BPF nospec instruction for mitigating Spectre v4
+  CVE-2021-35477: 91cdb5b36234e6af69d6280f1510e4453707a2b8 bpf: Introduce BPF nospec instruction for mitigating Spectre v4
+  CVE-2021-40490: c481607ba522e31e6ed01efefc19cc1d0e0a46fa ext4: fix race writing to an inline_data file while its xattrs are changing
+  CVE-2021-42252: 9c8891b638319ddba9cfa330247922cd960c95b0 soc: aspeed: lpc-ctrl: Fix boundary check for mmap
+
+CVEs fixed in 4.19.209:
+  CVE-2021-37159: f6cf22a1ef49f8e131f99c3f5fd80ab6b23a2d21 usb: hso: fix error handling code of hso_create_net_device
+  CVE-2021-3744: 710be7c42d2f724869e5b18b21998ceddaffc4a9 crypto: ccp - fix resource leaks in ccp_run_aes_gcm_cmd()
+  CVE-2021-3764: 710be7c42d2f724869e5b18b21998ceddaffc4a9 crypto: ccp - fix resource leaks in ccp_run_aes_gcm_cmd()
+
+CVEs fixed in 4.19.210:
+  CVE-2021-20317: b9a1ac8e7c03fd09992352c7fb1a61cbbb9ad52b lib/timerqueue: Rely on rbtree semantics for next timer
 
  
-CVEs Fixed in this 4.19.205 LTS 4.19 release 
+CVEs Fixed in this 4.19.207 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -823,8 +849,5 @@ CVEs Fixed in this 4.19.205 LTS 4.19 release
 # CVE-2021-37159
 0001-usb-hso-fix-error-handling-code-of-hso_create_net_de.patch
 
-# CVE-2021-34556
-# CVE-2021-35477
-0001-bpf-Introduce-BPF-nospec-instruction-for-mitigating-.patch
  
 ================
