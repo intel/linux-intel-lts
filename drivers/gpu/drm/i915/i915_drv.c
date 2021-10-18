@@ -82,9 +82,9 @@
 #include "intel_dram.h"
 #include "intel_gvt.h"
 #include "intel_memory_region.h"
+#include "intel_pcode.h"
 #include "intel_pm.h"
 #include "intel_region_ttm.h"
-#include "intel_sideband.h"
 #include "intel_vsec.h"
 #include "vlv_suspend.h"
 
