@@ -291,6 +291,7 @@ struct drm_i915_gem_object {
 			     I915_BO_ALLOC_USER)
 #define I915_BO_READONLY         BIT(5)
 #define I915_TILING_QUIRK_BIT    6 /* unknown swizzling; do not release! */
+#define I915_BO_WAS_BOUND_BIT     9
 
 	/**
 	 * @cache_level: The desired GTT caching level.
