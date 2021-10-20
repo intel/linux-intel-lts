@@ -1182,7 +1182,7 @@ static int skl_plane_check_fb(const struct intel_crtc_state *crtc_state,
 		return 0;
 
 	if (rotation & ~(DRM_MODE_ROTATE_0 | DRM_MODE_ROTATE_180) &&
-	    is_ccs_modifier(fb->modifier)) {
+	    intel_fb_is_ccs_modifier(fb->modifier)) {
 		drm_dbg_kms(&dev_priv->drm,
 			    "RC support only with 0/180 degree rotation (%x)\n",
 			    rotation);
@@ -1481,7 +1481,7 @@ static int skl_check_main_surface(struct intel_plane_state *plane_state)
 	 * CCS AUX surface doesn't have its own x/y offsets, we must make sure
 	 * they match with the main surface x/y offsets.
 	 */
-	if (is_ccs_modifier(fb->modifier)) {
+	if (intel_fb_is_ccs_modifier(fb->modifier)) {
 		while (!skl_check_main_ccs_coordinates(plane_state, x, y,
 						       offset, aux_plane)) {
 			if (offset == 0)
@@ -1545,7 +1545,7 @@ static int skl_check_nv12_aux_surface(struct intel_plane_state *plane_state)
 	offset = intel_plane_compute_aligned_offset(&x, &y,
 						    plane_state, uv_plane);
 
-	if (is_ccs_modifier(fb->modifier)) {
+	if (intel_fb_is_ccs_modifier(fb->modifier)) {
 		int ccs_plane = main_to_ccs_plane(fb, uv_plane);
 		u32 aux_offset = plane_state->view.color_plane[ccs_plane].offset;
 		u32 alignment = intel_surf_alignment(fb, uv_plane);
@@ -1643,7 +1643,7 @@ static int skl_check_plane_surface(struct intel_plane_state *plane_state)
 	 * Handle the AUX surface first since the main surface setup depends on
 	 * it.
 	 */
-	if (is_ccs_modifier(fb->modifier)) {
+	if (intel_fb_is_ccs_modifier(fb->modifier)) {
 		ret = skl_check_ccs_aux_surface(plane_state);
 		if (ret)
 			return ret;
@@ -1842,7 +1842,7 @@ static bool skl_plane_format_mod_supported(struct drm_plane *_plane,
 	case DRM_FORMAT_XBGR8888:
 	case DRM_FORMAT_ARGB8888:
 	case DRM_FORMAT_ABGR8888:
-		if (is_ccs_modifier(modifier))
+		if (intel_fb_is_ccs_modifier(modifier))
 			return true;
 		fallthrough;
 	case DRM_FORMAT_RGB565:
@@ -1896,7 +1896,7 @@ static bool gen12_plane_format_mod_supported(struct drm_plane *_plane,
 	case DRM_FORMAT_XBGR8888:
 	case DRM_FORMAT_ARGB8888:
 	case DRM_FORMAT_ABGR8888:
-		if (is_ccs_modifier(modifier))
+		if (intel_fb_is_ccs_modifier(modifier))
 			return true;
 		fallthrough;
 	case DRM_FORMAT_YUYV:
