@@ -419,9 +419,9 @@ static const struct intel_padgroup ehl_community5_gpps[] = {
 static const struct intel_community ehl_communities[] = {
 	EHL_COMMUNITY(0, 0, 66, ehl_community0_gpps),
 	EHL_COMMUNITY(1, 67, 179, ehl_community1_gpps),
-	EHL_COMMUNITY(3, 180, 226, ehl_community3_gpps),
-	EHL_COMMUNITY(4, 227, 306, ehl_community4_gpps),
-	EHL_COMMUNITY(5, 307, 314, ehl_community5_gpps),
+	EHL_COMMUNITY(2, 180, 226, ehl_community3_gpps),
+	EHL_COMMUNITY(3, 227, 306, ehl_community4_gpps),
+	EHL_COMMUNITY(4, 307, 314, ehl_community5_gpps),
 };
 
 static const struct intel_pingroup ehl_groups[] = {
