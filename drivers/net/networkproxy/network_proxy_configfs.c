@@ -20,29 +20,29 @@ struct np_cfs {
 static inline struct np_cfs *to_np_cfs(struct config_item *item)
 {
 	return item ? container_of(to_configfs_subsystem(to_config_group(item)),
-			struct np_cfs, subsys) : NULL;
+				   struct np_cfs, subsys) : NULL;
 }
 
 static ssize_t np_cfs_agent_version_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d.%d.%d\n", cfs_agent(item).major,
-		       cfs_agent(item).minor,
-		       cfs_agent(item).revision);
+	return sysfs_emit(page, "%d.%d.%d\n", cfs_agent(item).major,
+			  cfs_agent(item).minor,
+			  cfs_agent(item).revision);
 }
 
 static ssize_t np_cfs_max_cls_rules_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d\n", cfs_agent(item).max_cls_rules);
+	return sysfs_emit(page, "%d\n", cfs_agent(item).max_cls_rules);
 }
 
 static ssize_t np_cfs_max_resp_rules_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d\n", cfs_agent(item).max_resp_rules);
+	return sysfs_emit(page, "%d\n", cfs_agent(item).max_resp_rules);
 }
 
 static ssize_t np_cfs_rules_group_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d\n", cfs_rules(item).group);
+	return sysfs_emit(page, "%d\n", cfs_rules(item).group);
 }
 
 static ssize_t np_cfs_rules_group_store(struct config_item *item,
@@ -62,7 +62,7 @@ static ssize_t np_cfs_rules_group_store(struct config_item *item,
 
 static ssize_t np_cfs_rules_type_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d\n", cfs_rules(item).type);
+	return sysfs_emit(page, "%d\n", cfs_rules(item).type);
 }
 
 static ssize_t np_cfs_rules_type_store(struct config_item *item,
@@ -82,7 +82,7 @@ static ssize_t np_cfs_rules_type_store(struct config_item *item,
 
 static ssize_t np_cfs_rules_offset_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d\n", cfs_rules(item).offset);
+	return sysfs_emit(page, "%d\n", cfs_rules(item).offset);
 }
 
 static ssize_t np_cfs_rules_offset_store(struct config_item *item,
@@ -107,7 +107,7 @@ static ssize_t np_cfs_rules_offset_store(struct config_item *item,
 
 static ssize_t np_cfs_rules_size_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d\n", cfs_rules(item).size);
+	return sysfs_emit(page, "%d\n", cfs_rules(item).size);
 }
 
 static ssize_t np_cfs_rules_size_store(struct config_item *item,
@@ -164,7 +164,7 @@ static ssize_t np_cfs_rules_value_store(struct config_item *item,
 	int ret;
 
 	/* allocate rule, value is dynamic size according to count */
-	size = (sizeof(struct np_rules) + count);
+	size = sizeof(struct np_rules) + count;
 	rule = kzalloc(size, GFP_KERNEL);
 	if (!rule)
 		return -ENOMEM;
