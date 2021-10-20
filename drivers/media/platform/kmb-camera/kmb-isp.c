@@ -1303,7 +1303,7 @@ static void kmb_isp_align_fmt(struct kmb_isp *kmb_isp, u32 pad,
  * Return: 0 if successful
  */
 static int kmb_isp_subdev_get_fmt(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *cfg,
 				  struct v4l2_subdev_format *format)
 {
 	struct kmb_isp *kmb_isp = v4l2_get_subdevdata(sd);
@@ -1340,7 +1340,7 @@ static int kmb_isp_subdev_get_fmt(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_isp_subdev_set_fmt(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *cfg,
 				  struct v4l2_subdev_format *format)
 {
 	struct kmb_isp *kmb_isp = v4l2_get_subdevdata(sd);
@@ -1378,7 +1378,7 @@ static int kmb_isp_subdev_set_fmt(struct v4l2_subdev *sd,
  */
 static int
 kmb_isp_subdev_enum_frame_interval(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *cfg,
 				   struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct kmb_isp *kmb_isp = v4l2_get_subdevdata(sd);
@@ -1428,7 +1428,7 @@ kmb_isp_subdev_enum_frame_interval(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_isp_subdev_enum_mbus_code(struct v4l2_subdev *sd,
-					struct v4l2_subdev_pad_config *cfg,
+					struct v4l2_subdev_state *cfg,
 					struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct kmb_isp *kmb_isp = v4l2_get_subdevdata(sd);

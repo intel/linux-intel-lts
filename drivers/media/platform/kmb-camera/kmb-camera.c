@@ -1411,7 +1411,7 @@ static int kmb_cam_parse_nodes(struct kmb_camera *kmb_cam)
 		remote = fwnode_graph_get_remote_port_parent(fwnode);
 		a_subdev = v4l2_async_notifier_add_fwnode_subdev(
 				n, remote,
-				sizeof(struct v4l2_async_subdev));
+				struct v4l2_async_subdev);
 		if (IS_ERR(a_subdev))
 			return PTR_ERR(a_subdev);
 

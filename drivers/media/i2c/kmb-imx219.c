@@ -545,7 +545,7 @@ static int kmb_imx219_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct kmb_imx219 *kmb_imx219 = to_kmb_imx219(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(sd, fh->pad, 0);
+		v4l2_subdev_get_try_format(sd, fh->state, 0);
 
 	mutex_lock(&kmb_imx219->mutex);
 
@@ -787,7 +787,7 @@ static const struct kmb_imx219_mode *kmb_imx219_filter_supported_modes(struct km
  * Return: 0 if successful
  */
 static int kmb_imx219_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *cfg,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct kmb_imx219 *kmb_imx219 = to_kmb_imx219(sd);
@@ -811,7 +811,7 @@ static int kmb_imx219_enum_mbus_code(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_imx219_enum_frame_size(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
+				      struct v4l2_subdev_state *cfg,
 				      struct v4l2_subdev_frame_size_enum *fsize)
 {
 	struct kmb_imx219 *kmb_imx219 = to_kmb_imx219(sd);
@@ -846,7 +846,7 @@ static int kmb_imx219_enum_frame_size(struct v4l2_subdev *sd,
  */
 static int
 kmb_imx219_enum_frame_interval(struct v4l2_subdev *sd,
-			       struct v4l2_subdev_pad_config *cfg,
+			       struct v4l2_subdev_state *cfg,
 			       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct kmb_imx219 *kmb_imx219 = to_kmb_imx219(sd);
@@ -963,7 +963,7 @@ static void kmb_imx219_update_controls(struct kmb_imx219 *kmb_imx219,
  * Return: 0 if successful
  */
 static int kmb_imx219_get_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *cfg,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct kmb_imx219 *kmb_imx219 = to_kmb_imx219(sd);
@@ -996,7 +996,7 @@ static int kmb_imx219_get_pad_format(struct v4l2_subdev *sd,
  */
 static int
 kmb_imx219_set_pad_format(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *cfg,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct kmb_imx219 *kmb_imx219 = to_kmb_imx219(sd);
@@ -1549,7 +1549,7 @@ static int kmb_imx219_i2c_probe(struct i2c_client *client,
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&kmb_imx219->sd);
+	ret = v4l2_async_register_subdev_sensor(&kmb_imx219->sd);
 	if (ret < 0) {
 		dev_err(&client->dev,
 				"failed to register async subdev: %d", ret);
@@ -1799,7 +1799,7 @@ static int kmb_imx219_pdev_probe(struct platform_device *pdev)
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&kmb_imx219->sd);
+	ret = v4l2_async_register_subdev_sensor(&kmb_imx219->sd);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
 				"failed to register async subdev: %d", ret);

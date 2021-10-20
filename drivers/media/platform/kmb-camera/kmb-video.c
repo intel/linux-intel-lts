@@ -1540,7 +1540,7 @@ static int kmb_video_enum_frameintervals(struct file *file, void *fh,
 	struct kmb_video_fh *vid_fh = kmb_video_from_v4l2(fh);
 	struct kmb_video *kmb_vid = vid_fh->kmb_vid;
 	struct v4l2_subdev_frame_interval_enum interval;
-	struct v4l2_subdev_pad_config cfg;
+	struct v4l2_subdev_state cfg;
 	struct v4l2_subdev *subdev;
 	u32 pad;
 	int ret;

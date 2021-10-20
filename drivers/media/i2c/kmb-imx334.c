@@ -763,7 +763,7 @@ static int kmb_imx334_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct kmb_imx334 *kmb_imx334 = to_kmb_imx334(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(sd, fh->pad, 0);
+		v4l2_subdev_get_try_format(sd, fh->state, 0);
 
 	mutex_lock(&kmb_imx334->mutex);
 
@@ -1142,7 +1142,7 @@ kmb_imx334_select_camera_mode(struct kmb_imx334 *kmb_imx334,
  * Return: 0 if successful
  */
 static int kmb_imx334_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *cfg,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct kmb_imx334 *kmb_imx334 = to_kmb_imx334(sd);
@@ -1166,7 +1166,7 @@ static int kmb_imx334_enum_mbus_code(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_imx334_enum_frame_size(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
+				      struct v4l2_subdev_state *cfg,
 				      struct v4l2_subdev_frame_size_enum *fsize)
 {
 	struct kmb_imx334 *kmb_imx334 = to_kmb_imx334(sd);
@@ -1201,7 +1201,7 @@ static int kmb_imx334_enum_frame_size(struct v4l2_subdev *sd,
  */
 static int
 kmb_imx334_enum_frame_interval(struct v4l2_subdev *sd,
-			       struct v4l2_subdev_pad_config *cfg,
+			       struct v4l2_subdev_state *cfg,
 			       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct kmb_imx334 *kmb_imx334 = to_kmb_imx334(sd);
@@ -1367,7 +1367,7 @@ static void kmb_imx334_update_controls(struct kmb_imx334 *kmb_imx334,
  * Return: 0 if successful
  */
 static int kmb_imx334_get_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *cfg,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct kmb_imx334 *kmb_imx334 = to_kmb_imx334(sd);
@@ -1400,7 +1400,7 @@ static int kmb_imx334_get_pad_format(struct v4l2_subdev *sd,
  */
 static int
 kmb_imx334_set_pad_format(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *cfg,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct kmb_imx334 *kmb_imx334 = to_kmb_imx334(sd);
@@ -2001,7 +2001,7 @@ static int kmb_imx334_i2c_probe(struct i2c_client *client,
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&kmb_imx334->sd);
+	ret = v4l2_async_register_subdev_sensor(&kmb_imx334->sd);
 	if (ret < 0) {
 		dev_err(&client->dev,
 				"failed to register async subdev: %d", ret);
@@ -2246,7 +2246,7 @@ static int kmb_imx334_pdev_probe(struct platform_device *pdev)
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&kmb_imx334->sd);
+	ret = v4l2_async_register_subdev_sensor(&kmb_imx334->sd);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
 				"failed to register async subdev: %d", ret);

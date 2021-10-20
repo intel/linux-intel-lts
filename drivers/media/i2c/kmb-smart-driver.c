@@ -488,7 +488,7 @@ static int kmb_smart_drv_open(struct v4l2_subdev *sd,
 {
 	struct kmb_smart_drv *smart_drv = to_kmb_smart_drv(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(sd, fh->pad, 0);
+		v4l2_subdev_get_try_format(sd, fh->state, 0);
 
 	mutex_lock(&smart_drv->mutex);
 
@@ -699,7 +699,7 @@ static const struct v4l2_ctrl_ops kmb_smart_drv_ctrl_ops = {
  * Return: 0 if successful
  */
 static int kmb_smart_drv_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *cfg,
 		struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct kmb_smart_drv *smart_drv = to_kmb_smart_drv(sd);
@@ -723,7 +723,7 @@ static int kmb_smart_drv_enum_mbus_code(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_smart_drv_enum_frame_size(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
+				      struct v4l2_subdev_state *cfg,
 				      struct v4l2_subdev_frame_size_enum *fsize)
 {
 	struct kmb_smart_drv *smart_drv = to_kmb_smart_drv(sd);
@@ -758,7 +758,7 @@ static int kmb_smart_drv_enum_frame_size(struct v4l2_subdev *sd,
  */
 static int
 kmb_smart_drv_enum_frame_interval(struct v4l2_subdev *sd,
-			       struct v4l2_subdev_pad_config *cfg,
+			       struct v4l2_subdev_state *cfg,
 			       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct kmb_smart_drv *smart_drv = to_kmb_smart_drv(sd);
@@ -878,7 +878,7 @@ static void kmb_smart_drv_update_controls(struct kmb_smart_drv *smart_drv,
  * Return: 0 if successful
  */
 static int kmb_smart_drv_get_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *cfg,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct kmb_smart_drv *smart_drv = to_kmb_smart_drv(sd);
@@ -910,7 +910,7 @@ static int kmb_smart_drv_get_pad_format(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_smart_drv_set_pad_format(struct v4l2_subdev *sd,
-				     struct v4l2_subdev_pad_config *cfg,
+				     struct v4l2_subdev_state *cfg,
 				     struct v4l2_subdev_format *fmt)
 {
 	struct kmb_smart_drv *smart_drv = to_kmb_smart_drv(sd);
@@ -1519,7 +1519,7 @@ static int kmb_smart_drv_i2c_probe(struct i2c_client *client,
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&smart_drv->sd);
+	ret = v4l2_async_register_subdev_sensor(&smart_drv->sd);
 	if (ret < 0) {
 		dev_err(&client->dev,
 				"failed to register async subdev: %d", ret);
@@ -1755,7 +1755,7 @@ static int kmb_smart_drv_pdev_probe(struct platform_device *pdev)
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&smart_drv->sd);
+	ret = v4l2_async_register_subdev_sensor(&smart_drv->sd);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
 				"failed to register async subdev: %d", ret);

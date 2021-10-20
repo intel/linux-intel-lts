@@ -396,7 +396,7 @@ kmb_mvmx_write_reg(struct kmb_mvmx *kmb_mvmx, u16 reg, u32 len, u32 val)
  * Return: 0 if successful
  */
 static int kmb_mvmx_enum_mbus_code(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *cfg,
 				   struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct kmb_mvmx *kmb_mvmx = container_of(sd, struct kmb_mvmx, subdev);
@@ -424,7 +424,7 @@ static int kmb_mvmx_enum_mbus_code(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_mvmx_enum_frame_sizes(struct v4l2_subdev *sd,
-				     struct v4l2_subdev_pad_config *cfg,
+				     struct v4l2_subdev_state *cfg,
 				     struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct kmb_mvmx *kmb_mvmx = container_of(sd, struct kmb_mvmx, subdev);
@@ -457,7 +457,7 @@ static int kmb_mvmx_enum_frame_sizes(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_mvmx_get_fmt(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_pad_config *cfg,
+			    struct v4l2_subdev_state *cfg,
 			    struct v4l2_subdev_format *fmt)
 {
 	struct kmb_mvmx *kmb_mvmx = container_of(sd, struct kmb_mvmx, subdev);
@@ -587,7 +587,7 @@ static u64 kmb_mvmx_get_lane_rate_mbps(const u32 pix_rate, const u32 bpp,
  * Return: 0 if successful
  */
 static int kmb_mvmx_set_fmt(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_pad_config *cfg,
+			    struct v4l2_subdev_state *cfg,
 			    struct v4l2_subdev_format *fmt)
 {
 	struct kmb_mvmx *kmb_mvmx = container_of(sd, struct kmb_mvmx, subdev);
@@ -599,7 +599,7 @@ static int kmb_mvmx_set_fmt(struct v4l2_subdev *sd,
 
 	mutex_lock(&kmb_mvmx->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		cfg->try_fmt = fmt->format;
+		cfg->pads->try_fmt = fmt->format;
 	} else {
 		kmb_mvmx->curr_fmt = *fmt;
 		w = fmt->format.width;
@@ -1222,7 +1222,7 @@ static int kmb_mvmx_pdev_probe(struct platform_device *pdev)
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&kmb_mvmx->subdev);
+	ret = v4l2_async_register_subdev_sensor(&kmb_mvmx->subdev);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
 			"failed to register async subdev: %d", ret);

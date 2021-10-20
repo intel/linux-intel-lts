@@ -41,7 +41,7 @@ static int kmb_sensor_set_params(struct kmb_sensor *kmb_sensor)
  * Return: 0 if successful
  */
 static int kmb_sensor_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *cfg,
 		struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct kmb_sensor *kmb_sensor =
@@ -70,7 +70,7 @@ static int kmb_sensor_enum_mbus_code(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_sensor_enum_frame_sizes(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *cfg,
 		struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct kmb_sensor *kmb_sensor =
@@ -104,7 +104,7 @@ static int kmb_sensor_enum_frame_sizes(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_sensor_get_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *cfg,
 		struct v4l2_subdev_format *fmt)
 {
 	struct kmb_sensor *kmb_sensor =
@@ -130,7 +130,7 @@ static int kmb_sensor_get_fmt(struct v4l2_subdev *sd,
  * Return: 0 if successful
  */
 static int kmb_sensor_set_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *cfg,
 		struct v4l2_subdev_format *fmt)
 {
 	struct kmb_sensor *kmb_sensor =
@@ -140,7 +140,7 @@ static int kmb_sensor_set_fmt(struct v4l2_subdev *sd,
 
 	mutex_lock(&kmb_sensor->lock);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
-		cfg->try_fmt = fmt->format;
+		cfg->pads->try_fmt = fmt->format;
 	else
 		kmb_sensor->curr_fmt = fmt->format;
 	mutex_unlock(&kmb_sensor->lock);
@@ -474,7 +474,7 @@ static int kmb_sensor_probe(struct i2c_client *client,
 
 	v4l2_set_subdev_hostdata(sd, &kmb_sensor->subdev);
 
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret < 0)
 		goto error_free_ctrl_handler;
 
