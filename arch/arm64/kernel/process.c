@@ -45,7 +45,6 @@
 #include <linux/thread_info.h>
 #include <linux/prctl.h>
 #include <trace/hooks/fpsimd.h>
-#include <trace/hooks/mpam.h>
 
 #include <asm/alternative.h>
 #include <asm/arch_gicv3.h>
