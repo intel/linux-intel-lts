@@ -1101,7 +1101,6 @@ static int igc_init_tx_empty_descriptor(struct igc_ring *ring,
 #define IGC_EMPTY_FRAME_SIZE 60
 
 static void igc_tx_ctxtdesc(struct igc_ring *tx_ring,
-			    struct igc_tx_buffer *first,
 			    __le32 launch_time, bool first_flag,
 			    u32 vlan_macip_lens, u32 type_tucmd,
 			    u32 mss_l4len_idx)
@@ -1181,7 +1180,7 @@ no_csum:
 	vlan_macip_lens |= skb_network_offset(skb) << IGC_ADVTXD_MACLEN_SHIFT;
 	vlan_macip_lens |= first->tx_flags & IGC_TX_FLAGS_VLAN_MASK;
 
-	igc_tx_ctxtdesc(tx_ring, first, launch_time, first_flag,
+	igc_tx_ctxtdesc(tx_ring, launch_time, first_flag,
 			vlan_macip_lens, type_tucmd, 0);
 }
 
@@ -1493,7 +1492,7 @@ static int igc_tso(struct igc_ring *tx_ring,
 	vlan_macip_lens |= (ip.hdr - skb->data) << IGC_ADVTXD_MACLEN_SHIFT;
 	vlan_macip_lens |= first->tx_flags & IGC_TX_FLAGS_VLAN_MASK;
 
-	igc_tx_ctxtdesc(tx_ring, first, launch_time, first_flag,
+	igc_tx_ctxtdesc(tx_ring, launch_time, first_flag,
 			vlan_macip_lens, type_tucmd, mss_l4len_idx);
 
 	return 1;
@@ -1531,7 +1530,7 @@ static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 		count += TXD_USE_COUNT(skb_frag_size(
 						&skb_shinfo(skb)->frags[f]));
 
-	if (igc_maybe_stop_tx(tx_ring, count + 4)) {
+	if (igc_maybe_stop_tx(tx_ring, count + 5)) {
 		/* this is a hard error */
 		return NETDEV_TX_BUSY;
 	}
@@ -1553,6 +1552,8 @@ static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 
 		data = skb_put(empty, IGC_EMPTY_FRAME_SIZE);
 		memset(data, 0, IGC_EMPTY_FRAME_SIZE);
+
+		igc_tx_ctxtdesc(tx_ring, 0, false, 0, 0, 0);
 
 		if (igc_init_tx_empty_descriptor(tx_ring, empty) < 0)
 			dev_kfree_skb_any(empty);
@@ -2832,8 +2833,8 @@ static void igc_update_tx_stats(struct igc_q_vector *q_vector,
 	q_vector->tx.total_packets += packets;
 }
 
-static void igc_launchtm_ctxtdesc(struct igc_ring *tx_ring,
-				  ktime_t txtime)
+static int igc_launchtm_ctxtdesc(struct igc_ring *tx_ring,
+				 ktime_t txtime)
 {
 	bool first_flag = false, insert_empty = false;
 	struct igc_adv_tx_context_desc *context_desc;
@@ -2841,6 +2842,7 @@ static void igc_launchtm_ctxtdesc(struct igc_ring *tx_ring,
 	u32 mss_l4len_idx = 0;
 	u32 type_tucmd = 0;
 	__le32 launch_time;
+	int desc_used = 0;
 
 	launch_time = igc_tx_launchtime(tx_ring, txtime, &first_flag, &insert_empty);
 
@@ -2855,8 +2857,15 @@ static void igc_launchtm_ctxtdesc(struct igc_ring *tx_ring,
 		data = skb_put(empty, IGC_EMPTY_FRAME_SIZE);
 		memset(data, 0, IGC_EMPTY_FRAME_SIZE);
 
+		igc_tx_ctxtdesc(tx_ring, 0, false, 0, 0, 0);
+
 		if (igc_init_tx_empty_descriptor(tx_ring, empty) < 0)
 			dev_kfree_skb_any(empty);
+
+		/* 1 desc. for Empty packet data
+		 * 1 desc. for Empty packet context
+		 */
+		desc_used += 2;
 	}
 
 done:
@@ -2864,6 +2873,7 @@ done:
 	context_desc = IGC_TX_CTXTDESC(tx_ring, i);
 
 	i++;
+	desc_used++;
 	tx_ring->next_to_use = (i < tx_ring->count) ? i : 0;
 
 	/* set bits to identify this as an advanced context descriptor */
@@ -2880,6 +2890,8 @@ done:
 	context_desc->type_tucmd_mlhl	= cpu_to_le32(type_tucmd);
 	context_desc->mss_l4len_idx	= cpu_to_le32(mss_l4len_idx);
 	context_desc->launch_time = launch_time;
+
+	return desc_used;
 }
 
 static void igc_xdp_xmit_zc(struct igc_ring *ring)
@@ -2899,7 +2911,7 @@ static void igc_xdp_xmit_zc(struct igc_ring *ring)
 
 	budget = igc_desc_unused(ring);
 
-	while (xsk_tx_peek_desc(pool, &xdp_desc) && budget > 2) {
+	while (xsk_tx_peek_desc(pool, &xdp_desc) && budget > 3) {
 		u32 cmd_type, olinfo_status;
 		struct igc_tx_buffer *bi;
 		ktime_t launch_tm = 0;
@@ -2909,8 +2921,7 @@ static void igc_xdp_xmit_zc(struct igc_ring *ring)
 
 		if (ring->launchtime_enable && xdp_desc.txtime > 0) {
 			launch_tm = ns_to_ktime(xdp_desc.txtime);
-			budget--;
-			igc_launchtm_ctxtdesc(ring, launch_tm);
+			budget -= igc_launchtm_ctxtdesc(ring, launch_tm);
 		}
 
 		/* re-read ntu as igc_launchtm_ctxtdesc() updates it */
