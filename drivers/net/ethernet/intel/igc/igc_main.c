@@ -1018,10 +1018,13 @@ static __le32 igc_tx_launchtime(struct igc_ring *ring, ktime_t txtime,
 	end_of_cycle = ktime_add_ns(baset_est, cycle_time);
 
 	if (ktime_compare(txtime, end_of_cycle) >= 0) {
-		*first_flag = true;
+		if (baset_est != ring->last_ff_cycle) {
+			*first_flag = true;
+			ring->last_ff_cycle = baset_est;
 
-		if (ktime_compare(txtime, ring->last_tx_cycle) > 0)
-			*insert_empty = true;
+			if (ktime_compare(txtime, ring->last_tx_cycle) > 0)
+				*insert_empty = true;
+		}
 	}
 
 	ring->last_tx_cycle = end_of_cycle;
