@@ -474,9 +474,6 @@ static void guc_init_golden_context(struct intel_guc *guc)
 	u8 engine_class, guc_class;
 	u8 *ptr;
 
-	/* Skip execlist and PPGTT registers + HWSP */
-	const u32 lr_hw_context_size = 80 * sizeof(u32);
-
 	if (!intel_uc_uses_guc_submission(&gt->uc))
 		return;
 

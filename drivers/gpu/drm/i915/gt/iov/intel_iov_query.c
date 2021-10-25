@@ -394,7 +394,7 @@ static const i915_reg_t tgl_early_regs[] = {
 	RPM_CONFIG0,			/* _MMIO(0x0D00) */
 	GEN11_EU_DISABLE,		/* _MMIO(0x9134) */
 	GEN11_GT_SLICE_ENABLE,		/* _MMIO(0x9138) */
-	GEN12_GT_GEOMETRY_DSS_ENABLE,	/* _MMIO(0x913C) */
+	GEN12_GT_DSS_ENABLE,	/* _MMIO(0x913C) */
 	GEN11_GT_VEBOX_VDBOX_DISABLE,	/* _MMIO(0x9140) */
 	CTC_MODE,			/* _MMIO(0xA26C) */
 };

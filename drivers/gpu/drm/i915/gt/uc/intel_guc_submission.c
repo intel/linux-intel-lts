@@ -1415,11 +1415,11 @@ int intel_guc_submission_limit_ids(struct intel_guc *guc, u32 limit)
 	if (limit > GUC_MAX_LRC_DESCRIPTORS)
 		return -E2BIG;
 
-	if (!ida_is_empty(&guc->guc_ids))
+	if (!ida_is_empty(&guc->submission_state.guc_ids))
 		return -ETXTBSY;
 
-	guc->max_guc_ids = limit;
-	guc->num_guc_ids = min(limit, guc->num_guc_ids);
+	guc->submission_state.max_guc_ids = limit;
+	guc->submission_state.num_guc_ids = min(limit, guc->submission_state.num_guc_ids);
 	return 0;
 }
 

@@ -7990,7 +7990,7 @@ void intel_init_pm(struct drm_i915_private *dev_priv)
 {
 	if (IS_SRIOV_VF(dev_priv)) {
 		/* XXX */
-		dev_priv->wm_disp = &skl_wm_funcs;
+		dev_priv->display.compute_global_watermarks = skl_compute_wm;
 		return;
 	}
 
