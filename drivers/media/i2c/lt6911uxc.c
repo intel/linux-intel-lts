@@ -1072,7 +1072,7 @@ static int lt6911uxc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	lt6911uxc_set_stream(sd, true);
 	lt6911uxc_update_pad_format(lt6911uxc->cur_mode,
-								v4l2_subdev_get_try_format(sd, fh->pad, 0));
+			v4l2_subdev_get_try_format(sd, fh->pad, 0));
 	dev_info(sd->dev, "[%s()]width:%u, height:%u, fps:%u.\n",
 			__func__,
 			lt6911uxc->cur_mode->width,
