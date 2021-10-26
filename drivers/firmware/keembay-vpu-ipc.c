@@ -243,6 +243,7 @@ struct vpu_ipc_dev {
 	uint64_t boot_vec_paddr;
 	struct boot_parameters *boot_params;
 	struct resource fw_res;
+	struct resource fw_ver_res;
 	struct task_struct *ready_message_task;
 	spinlock_t lock;
 	struct clk *cpu_clock;
@@ -972,9 +973,8 @@ static int request_vpu_boot(struct vpu_ipc_dev *vpu_dev)
 	vpu_boot_ta_args->fw_header_size = MAX_HEADER_SIZE;
 	vpu_boot_ta_args->fw_load_addr = vpu_dev->fw_res.start;
 	vpu_boot_ta_args->fw_load_size = resource_size(&vpu_dev->fw_res);
-	vpu_boot_ta_args->fw_version_addr = vpu_boot_ta_args->fw_load_addr -
-					    MAX_FIRMWARE_VERSION_SIZE;
-	vpu_boot_ta_args->fw_version_size = MAX_FIRMWARE_VERSION_SIZE;
+	vpu_boot_ta_args->fw_version_addr = vpu_dev->fw_ver_res.start;
+	vpu_boot_ta_args->fw_version_size = resource_size(&vpu_dev->fw_ver_res);
 	vpu_boot_ta_args->x509_addr = vpu_dev->x509_mem.paddr;
 	vpu_boot_ta_args->x509_size = vpu_dev->x509_size;
 	vpu_boot_ta_args->fw_entry_addr = vpu_dev->boot_vec_paddr;
@@ -1046,7 +1046,7 @@ static void *get_vpu_dev_vaddr(struct vpu_ipc_dev *vpu_dev,
 static int parse_fw_header(struct vpu_ipc_dev *vpu_dev,
 			   const struct firmware *fw)
 {
-	struct resource config_res, version_res, total_reserved_res;
+	struct resource config_res, total_reserved_res;
 	struct device *dev = &vpu_dev->pdev->dev;
 	struct firmware_header *fw_header = NULL;
 	void *version_region = NULL;
@@ -1119,10 +1119,10 @@ static int parse_fw_header(struct vpu_ipc_dev *vpu_dev,
 	 * Generate the resource describing the region containing the
 	 * version information for the VPU.
 	 */
-	version_res.start = fw_header->firmware_version_load_address;
-	version_res.end = fw_header->firmware_version_size +
+	vpu_dev->fw_ver_res.start = fw_header->firmware_version_load_address;
+	vpu_dev->fw_ver_res.end = fw_header->firmware_version_size +
 			  fw_header->firmware_version_load_address - 1;
-	version_res.flags = IORESOURCE_MEM;
+	vpu_dev->fw_ver_res.flags = IORESOURCE_MEM;
 
 	/*
 	 * Generate the resource describing the region of memory
@@ -1141,7 +1141,7 @@ static int parse_fw_header(struct vpu_ipc_dev *vpu_dev,
 		dev_err(dev, "Can't fit firmware in reserved region.\n");
 		return -EINVAL;
 	}
-	if (!resource_contains(&total_reserved_res, &version_res)) {
+	if (!resource_contains(&total_reserved_res, &vpu_dev->fw_ver_res)) {
 		dev_err(dev,
 			"Can't fit firmware version data in reserved region.\n");
 		return -EINVAL;
@@ -1153,7 +1153,7 @@ static int parse_fw_header(struct vpu_ipc_dev *vpu_dev,
 	}
 
 	/* Check for overlapping regions */
-	if (resource_overlaps(&vpu_dev->fw_res, &version_res)) {
+	if (resource_overlaps(&vpu_dev->fw_res, &vpu_dev->fw_ver_res)) {
 		dev_err(dev, "FW and version regions overlap.\n");
 		return -EINVAL;
 	}
@@ -1161,7 +1161,7 @@ static int parse_fw_header(struct vpu_ipc_dev *vpu_dev,
 		dev_err(dev, "FW and config regions overlap.\n");
 		return -EINVAL;
 	}
-	if (resource_overlaps(&config_res, &version_res)) {
+	if (resource_overlaps(&config_res, &vpu_dev->fw_ver_res)) {
 		dev_err(dev, "Version and config regions overlap.\n");
 		return -EINVAL;
 	}
@@ -1173,7 +1173,7 @@ static int parse_fw_header(struct vpu_ipc_dev *vpu_dev,
 			"Couldn't map boot configuration area to CPU virtual address.\n");
 		return -EINVAL;
 	}
-	version_region = get_vpu_dev_vaddr(vpu_dev, &version_res);
+	version_region = get_vpu_dev_vaddr(vpu_dev, &vpu_dev->fw_ver_res);
 	if (!version_region) {
 		dev_err(dev,
 			"Couldn't map version area to CPU virtual address.\n");
