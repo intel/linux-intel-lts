@@ -522,222 +522,497 @@ static const struct imx390_reg_list lsc_unity_list = {
 };
 
 static const struct imx390_reg imx390_lsc_pattern_vendor_def[] = {
-	{0x4000, 0xD0},
-	{0x4001, 0xC8},
-	{0x4002, 0xC8},
-	{0x4003, 0xC6},
-	{0x4004, 0xBA},
-	{0x4005, 0xB5},
-	{0x4006, 0xB5},
-	{0x4007, 0xB4},
-	{0x4008, 0xAA},
-	{0x4009, 0xA7},
-	{0x400A, 0xA7},
-	{0x400B, 0xA7},
-	{0x400C, 0xA1},
-	{0x400D, 0x9F},
-	{0x400E, 0x9F},
-	{0x400F, 0x9F},
-	{0x4010, 0x9C},
-	{0x4011, 0x9B},
-	{0x4012, 0x9B},
-	{0x4013, 0x9B},
-	{0x4014, 0x9F},
-	{0x4015, 0x9E},
-	{0x4016, 0x9D},
-	{0x4017, 0x9E},
-	{0x4018, 0xA7},
-	{0x4019, 0xA4},
-	{0x401A, 0xA4},
-	{0x401B, 0xA4},
-	{0x401C, 0xB5},
-	{0x401D, 0xB0},
-	{0x401E, 0xB0},
-	{0x401F, 0xB0},
-	{0x4020, 0xC9},
-	{0x4021, 0xC1},
-	{0x4022, 0xC1},
-	{0x4023, 0xC0},
-	{0x4024, 0xC3},
-	{0x4025, 0xBB},
-	{0x4026, 0xBC},
-	{0x4027, 0xBA},
-	{0x4028, 0xA5},
-	{0x4029, 0xA1},
-	{0x402A, 0xA1},
-	{0x402B, 0xA0},
-	{0x402C, 0x99},
-	{0x402D, 0x97},
-	{0x402E, 0x97},
-	{0x402F, 0x96},
-	{0x4030, 0x8F},
-	{0x4031, 0x8E},
-	{0x4032, 0x8E},
-	{0x4033, 0x8E},
-	{0x4034, 0x8A},
-	{0x4035, 0x8A},
-	{0x4036, 0x8A},
-	{0x4037, 0x8A},
-	{0x4038, 0x8D},
-	{0x4039, 0x8D},
-	{0x403A, 0x8D},
-	{0x403B, 0x8D},
-	{0x403C, 0x96},
-	{0x403D, 0x94},
-	{0x403E, 0x94},
-	{0x403F, 0x94},
-	{0x4040, 0xA2},
-	{0x4041, 0x9E},
-	{0x4042, 0x9E},
-	{0x4043, 0x9D},
-	{0x4044, 0xBC},
-	{0x4045, 0xB5},
-	{0x4046, 0xB5},
-	{0x4047, 0xB4},
-	{0x4048, 0xBC},
-	{0x4049, 0xB5},
-	{0x404A, 0xB5},
-	{0x404B, 0xB3},
-	{0x404C, 0xA3},
-	{0x404D, 0x9F},
-	{0x404E, 0x9F},
-	{0x404F, 0x9E},
-	{0x4050, 0x95},
-	{0x4051, 0x93},
-	{0x4052, 0x93},
-	{0x4053, 0x93},
-	{0x4054, 0x89},
-	{0x4055, 0x88},
-	{0x4056, 0x88},
-	{0x4057, 0x88},
-	{0x4058, 0x81},
-	{0x4059, 0x81},
-	{0x405A, 0x81},
-	{0x405B, 0x81},
-	{0x405C, 0x86},
-	{0x405D, 0x86},
-	{0x405E, 0x86},
-	{0x405F, 0x86},
-	{0x4060, 0x92},
-	{0x4061, 0x90},
-	{0x4062, 0x90},
-	{0x4063, 0x90},
-	{0x4064, 0x9E},
-	{0x4065, 0x9B},
-	{0x4066, 0x9B},
-	{0x4067, 0x9A},
-	{0x4068, 0xB5},
-	{0x4069, 0xAE},
-	{0x406A, 0xAE},
-	{0x406B, 0xAE},
-	{0x406C, 0xBE},
-	{0x406D, 0xB6},
-	{0x406E, 0xB7},
-	{0x406F, 0xB5},
-	{0x4070, 0xA4},
-	{0x4071, 0xA0},
-	{0x4072, 0xA0},
-	{0x4073, 0x9F},
-	{0x4074, 0x96},
-	{0x4075, 0x94},
-	{0x4076, 0x94},
-	{0x4077, 0x94},
-	{0x4078, 0x8A},
-	{0x4079, 0x8A},
-	{0x407A, 0x8A},
-	{0x407B, 0x8A},
-	{0x407C, 0x83},
-	{0x407D, 0x83},
-	{0x407E, 0x83},
-	{0x407F, 0x83},
-	{0x4080, 0x88},
-	{0x4081, 0x87},
-	{0x4082, 0x87},
-	{0x4083, 0x88},
-	{0x4084, 0x93},
-	{0x4085, 0x91},
-	{0x4086, 0x91},
-	{0x4087, 0x91},
-	{0x4088, 0xA0},
-	{0x4089, 0x9C},
-	{0x408A, 0x9C},
-	{0x408B, 0x9C},
-	{0x408C, 0xB6},
-	{0x408D, 0xAF},
-	{0x408E, 0xAF},
-	{0x408F, 0xAF},
-	{0x4090, 0xCA},
-	{0x4091, 0xC1},
-	{0x4092, 0xC1},
-	{0x4093, 0xBF},
-	{0x4094, 0xAB},
-	{0x4095, 0xA5},
-	{0x4096, 0xA5},
-	{0x4097, 0xA4},
-	{0x4098, 0x9E},
-	{0x4099, 0x9A},
-	{0x409A, 0x9A},
-	{0x409B, 0x9A},
-	{0x409C, 0x94},
-	{0x409D, 0x92},
-	{0x409E, 0x92},
-	{0x409F, 0x92},
-	{0x40A0, 0x8F},
-	{0x40A1, 0x8E},
-	{0x40A2, 0x8E},
-	{0x40A3, 0x8E},
-	{0x40A4, 0x92},
-	{0x40A5, 0x90},
-	{0x40A6, 0x90},
-	{0x40A7, 0x90},
-	{0x40A8, 0x9A},
-	{0x40A9, 0x97},
-	{0x40AA, 0x97},
-	{0x40AB, 0x97},
-	{0x40AC, 0xA6},
-	{0x40AD, 0xA0},
-	{0x40AE, 0xA0},
-	{0x40AF, 0xA0},
-	{0x40B0, 0xC1},
-	{0x40B1, 0xB9},
-	{0x40B2, 0xB9},
-	{0x40B3, 0xB8},
-	{0x40B4, 0xDD},
-	{0x40B5, 0xD2},
-	{0x40B6, 0xD2},
-	{0x40B7, 0xCF},
-	{0x40B8, 0xC6},
-	{0x40B9, 0xBF},
-	{0x40BA, 0xBF},
-	{0x40BB, 0xBD},
-	{0x40BC, 0xB5},
-	{0x40BD, 0xB0},
-	{0x40BE, 0xB0},
-	{0x40BF, 0xAF},
-	{0x40C0, 0xAB},
-	{0x40C1, 0xA8},
-	{0x40C2, 0xA8},
-	{0x40C3, 0xA7},
-	{0x40C4, 0xA7},
-	{0x40C5, 0xA3},
-	{0x40C6, 0xA3},
-	{0x40C7, 0xA3},
-	{0x40C8, 0xA9},
-	{0x40C9, 0xA6},
-	{0x40CA, 0xA6},
-	{0x40CB, 0xA6},
-	{0x40CC, 0xB0},
-	{0x40CD, 0xAB},
-	{0x40CE, 0xAB},
-	{0x40CF, 0xAB},
-	{0x40D0, 0xBF},
-	{0x40D1, 0xB7},
-	{0x40D2, 0xB7},
-	{0x40D3, 0xB7},
-	{0x40D4, 0xD2},
-	{0x40D5, 0xC8},
-	{0x40D6, 0xC7},
-	{0x40D7, 0xC7},
+	{0x01D0, 0x01}, /* SHD_ON                    */
+	{0x3AF6, 0x00}, /* SHD_DIFF_ACCURACY         */
+	{0x4000, 0x64}, /* SHD_KNOT_1_R0             */
+	{0x4001, 0x5D}, /* SHD_KNOT_1_GR0            */
+	{0x4002, 0x5D}, /* SHD_KNOT_1_GB0            */
+	{0x4003, 0x5B}, /* SHD_KNOT_1_B0             */
+	{0x4004, 0x6D}, /* SHD_KNOT_1_R1             */
+	{0x4005, 0x69}, /* SHD_KNOT_1_GR1            */
+	{0x4006, 0x69}, /* SHD_KNOT_1_GB1            */
+	{0x4007, 0x67}, /* SHD_KNOT_1_B1             */
+	{0x4008, 0x74}, /* SHD_KNOT_1_R2             */
+	{0x4009, 0x71}, /* SHD_KNOT_1_GR2            */
+	{0x400A, 0x71}, /* SHD_KNOT_1_GB2            */
+	{0x400B, 0x70}, /* SHD_KNOT_1_B2             */
+	{0x400C, 0x77}, /* SHD_KNOT_1_R3             */
+	{0x400D, 0x76}, /* SHD_KNOT_1_GR3            */
+	{0x400E, 0x76}, /* SHD_KNOT_1_GB3            */
+	{0x400F, 0x75}, /* SHD_KNOT_1_B3             */
+	{0x4010, 0x78}, /* SHD_KNOT_1_R4             */
+	{0x4011, 0x77}, /* SHD_KNOT_1_GR4            */
+	{0x4012, 0x77}, /* SHD_KNOT_1_GB4            */
+	{0x4013, 0x76}, /* SHD_KNOT_1_B4             */
+	{0x4014, 0x77}, /* SHD_KNOT_1_R5             */
+	{0x4015, 0x75}, /* SHD_KNOT_1_GR5            */
+	{0x4016, 0x75}, /* SHD_KNOT_1_GB5            */
+	{0x4017, 0x74}, /* SHD_KNOT_1_B5             */
+	{0x4018, 0x72}, /* SHD_KNOT_1_R6             */
+	{0x4019, 0x70}, /* SHD_KNOT_1_GR6            */
+	{0x401A, 0x70}, /* SHD_KNOT_1_GB6            */
+	{0x401B, 0x6F}, /* SHD_KNOT_1_B6             */
+	{0x401C, 0x6B}, /* SHD_KNOT_1_R7             */
+	{0x401D, 0x67}, /* SHD_KNOT_1_GR7            */
+	{0x401E, 0x67}, /* SHD_KNOT_1_GB7            */
+	{0x401F, 0x66}, /* SHD_KNOT_1_B7             */
+	{0x4020, 0x61}, /* SHD_KNOT_1_R8             */
+	{0x4021, 0x5B}, /* SHD_KNOT_1_GR8            */
+	{0x4022, 0x5B}, /* SHD_KNOT_1_GB8            */
+	{0x4023, 0x59}, /* SHD_KNOT_1_B8             */
+	{0x4024, 0x69}, /* SHD_KNOT_1_R9             */
+	{0x4025, 0x63}, /* SHD_KNOT_1_GR9            */
+	{0x4026, 0x63}, /* SHD_KNOT_1_GB9            */
+	{0x4027, 0x62}, /* SHD_KNOT_1_B9             */
+	{0x4028, 0x71}, /* SHD_KNOT_1_R10            */
+	{0x4029, 0x6E}, /* SHD_KNOT_1_GR10           */
+	{0x402A, 0x6E}, /* SHD_KNOT_1_GB10           */
+	{0x402B, 0x6D}, /* SHD_KNOT_1_B10            */
+	{0x402C, 0x78}, /* SHD_KNOT_1_R11            */
+	{0x402D, 0x76}, /* SHD_KNOT_1_GR11           */
+	{0x402E, 0x76}, /* SHD_KNOT_1_GB11           */
+	{0x402F, 0x76}, /* SHD_KNOT_1_B11            */
+	{0x4030, 0x7C}, /* SHD_KNOT_1_R12            */
+	{0x4031, 0x7B}, /* SHD_KNOT_1_GR12           */
+	{0x4032, 0x7B}, /* SHD_KNOT_1_GB12           */
+	{0x4033, 0x7B}, /* SHD_KNOT_1_B12            */
+	{0x4034, 0x7D}, /* SHD_KNOT_1_R13            */
+	{0x4035, 0x7D}, /* SHD_KNOT_1_GR13           */
+	{0x4036, 0x7D}, /* SHD_KNOT_1_GB13           */
+	{0x4037, 0x7C}, /* SHD_KNOT_1_B13            */
+	{0x4038, 0x7B}, /* SHD_KNOT_1_R14            */
+	{0x4039, 0x7B}, /* SHD_KNOT_1_GR14           */
+	{0x403A, 0x7B}, /* SHD_KNOT_1_GB14           */
+	{0x403B, 0x7A}, /* SHD_KNOT_1_B14            */
+	{0x403C, 0x77}, /* SHD_KNOT_1_R15            */
+	{0x403D, 0x75}, /* SHD_KNOT_1_GR15           */
+	{0x403E, 0x76}, /* SHD_KNOT_1_GB15           */
+	{0x403F, 0x75}, /* SHD_KNOT_1_B15            */
+	{0x4040, 0x70}, /* SHD_KNOT_1_R16            */
+	{0x4041, 0x6D}, /* SHD_KNOT_1_GR16           */
+	{0x4042, 0x6D}, /* SHD_KNOT_1_GB16           */
+	{0x4043, 0x6C}, /* SHD_KNOT_1_B16            */
+	{0x4044, 0x67}, /* SHD_KNOT_1_R17            */
+	{0x4045, 0x61}, /* SHD_KNOT_1_GR17           */
+	{0x4046, 0x61}, /* SHD_KNOT_1_GB17           */
+	{0x4047, 0x60}, /* SHD_KNOT_1_B17            */
+	{0x4048, 0x6B}, /* SHD_KNOT_1_R18            */
+	{0x4049, 0x66}, /* SHD_KNOT_1_GR18           */
+	{0x404A, 0x66}, /* SHD_KNOT_1_GB18           */
+	{0x404B, 0x65}, /* SHD_KNOT_1_B18            */
+	{0x404C, 0x74}, /* SHD_KNOT_1_R19            */
+	{0x404D, 0x71}, /* SHD_KNOT_1_GR19           */
+	{0x404E, 0x71}, /* SHD_KNOT_1_GB19           */
+	{0x404F, 0x70}, /* SHD_KNOT_1_B19            */
+	{0x4050, 0x7B}, /* SHD_KNOT_1_R20            */
+	{0x4051, 0x7A}, /* SHD_KNOT_1_GR20           */
+	{0x4052, 0x7A}, /* SHD_KNOT_1_GB20           */
+	{0x4053, 0x79}, /* SHD_KNOT_1_B20            */
+	{0x4054, 0x7F}, /* SHD_KNOT_1_R21            */
+	{0x4055, 0x7E}, /* SHD_KNOT_1_GR21           */
+	{0x4056, 0x7E}, /* SHD_KNOT_1_GB21           */
+	{0x4057, 0x7E}, /* SHD_KNOT_1_B21            */
+	{0x4058, 0x80}, /* SHD_KNOT_1_R22            */
+	{0x4059, 0x80}, /* SHD_KNOT_1_GR22           */
+	{0x405A, 0x80}, /* SHD_KNOT_1_GB22           */
+	{0x405B, 0x80}, /* SHD_KNOT_1_B22            */
+	{0x405C, 0x7E}, /* SHD_KNOT_1_R23            */
+	{0x405D, 0x7E}, /* SHD_KNOT_1_GR23           */
+	{0x405E, 0x7E}, /* SHD_KNOT_1_GB23           */
+	{0x405F, 0x7D}, /* SHD_KNOT_1_B23            */
+	{0x4060, 0x7A}, /* SHD_KNOT_1_R24            */
+	{0x4061, 0x79}, /* SHD_KNOT_1_GR24           */
+	{0x4062, 0x79}, /* SHD_KNOT_1_GB24           */
+	{0x4063, 0x78}, /* SHD_KNOT_1_B24            */
+	{0x4064, 0x73}, /* SHD_KNOT_1_R25            */
+	{0x4065, 0x70}, /* SHD_KNOT_1_GR25           */
+	{0x4066, 0x70}, /* SHD_KNOT_1_GB25           */
+	{0x4067, 0x6F}, /* SHD_KNOT_1_B25            */
+	{0x4068, 0x69}, /* SHD_KNOT_1_R26            */
+	{0x4069, 0x64}, /* SHD_KNOT_1_GR26           */
+	{0x406A, 0x64}, /* SHD_KNOT_1_GB26           */
+	{0x406B, 0x63}, /* SHD_KNOT_1_B26            */
+	{0x406C, 0x6B}, /* SHD_KNOT_1_R27            */
+	{0x406D, 0x66}, /* SHD_KNOT_1_GR27           */
+	{0x406E, 0x66}, /* SHD_KNOT_1_GB27           */
+	{0x406F, 0x65}, /* SHD_KNOT_1_B27            */
+	{0x4070, 0x74}, /* SHD_KNOT_1_R28            */
+	{0x4071, 0x71}, /* SHD_KNOT_1_GR28           */
+	{0x4072, 0x71}, /* SHD_KNOT_1_GB28           */
+	{0x4073, 0x70}, /* SHD_KNOT_1_B28            */
+	{0x4074, 0x7B}, /* SHD_KNOT_1_R29            */
+	{0x4075, 0x79}, /* SHD_KNOT_1_GR29           */
+	{0x4076, 0x79}, /* SHD_KNOT_1_GB29           */
+	{0x4077, 0x79}, /* SHD_KNOT_1_B29            */
+	{0x4078, 0x7E}, /* SHD_KNOT_1_R30            */
+	{0x4079, 0x7D}, /* SHD_KNOT_1_GR30           */
+	{0x407A, 0x7D}, /* SHD_KNOT_1_GB30           */
+	{0x407B, 0x7D}, /* SHD_KNOT_1_B30            */
+	{0x407C, 0x7F}, /* SHD_KNOT_1_R31            */
+	{0x407D, 0x7F}, /* SHD_KNOT_1_GR31           */
+	{0x407E, 0x7F}, /* SHD_KNOT_1_GB31           */
+	{0x407F, 0x7F}, /* SHD_KNOT_1_B31            */
+	{0x4080, 0x7E}, /* SHD_KNOT_1_R32            */
+	{0x4081, 0x7D}, /* SHD_KNOT_1_GR32           */
+	{0x4082, 0x7D}, /* SHD_KNOT_1_GB32           */
+	{0x4083, 0x7D}, /* SHD_KNOT_1_B32            */
+	{0x4084, 0x7A}, /* SHD_KNOT_1_R33            */
+	{0x4085, 0x78}, /* SHD_KNOT_1_GR33           */
+	{0x4086, 0x78}, /* SHD_KNOT_1_GB33           */
+	{0x4087, 0x78}, /* SHD_KNOT_1_B33            */
+	{0x4088, 0x73}, /* SHD_KNOT_1_R34            */
+	{0x4089, 0x70}, /* SHD_KNOT_1_GR34           */
+	{0x408A, 0x70}, /* SHD_KNOT_1_GB34           */
+	{0x408B, 0x6F}, /* SHD_KNOT_1_B34            */
+	{0x408C, 0x69}, /* SHD_KNOT_1_R35            */
+	{0x408D, 0x64}, /* SHD_KNOT_1_GR35           */
+	{0x408E, 0x64}, /* SHD_KNOT_1_GB35           */
+	{0x408F, 0x63}, /* SHD_KNOT_1_B35            */
+	{0x4090, 0x68}, /* SHD_KNOT_1_R36            */
+	{0x4091, 0x62}, /* SHD_KNOT_1_GR36           */
+	{0x4092, 0x62}, /* SHD_KNOT_1_GB36           */
+	{0x4093, 0x61}, /* SHD_KNOT_1_B36            */
+	{0x4094, 0x71}, /* SHD_KNOT_1_R37            */
+	{0x4095, 0x6D}, /* SHD_KNOT_1_GR37           */
+	{0x4096, 0x6D}, /* SHD_KNOT_1_GB37           */
+	{0x4097, 0x6D}, /* SHD_KNOT_1_B37            */
+	{0x4098, 0x77}, /* SHD_KNOT_1_R38            */
+	{0x4099, 0x75}, /* SHD_KNOT_1_GR38           */
+	{0x409A, 0x75}, /* SHD_KNOT_1_GB38           */
+	{0x409B, 0x75}, /* SHD_KNOT_1_B38            */
+	{0x409C, 0x7B}, /* SHD_KNOT_1_R39            */
+	{0x409D, 0x7A}, /* SHD_KNOT_1_GR39           */
+	{0x409E, 0x7A}, /* SHD_KNOT_1_GB39           */
+	{0x409F, 0x7A}, /* SHD_KNOT_1_B39            */
+	{0x40A0, 0x7C}, /* SHD_KNOT_1_R40            */
+	{0x40A1, 0x7B}, /* SHD_KNOT_1_GR40           */
+	{0x40A2, 0x7B}, /* SHD_KNOT_1_GB40           */
+	{0x40A3, 0x7B}, /* SHD_KNOT_1_B40            */
+	{0x40A4, 0x7B}, /* SHD_KNOT_1_R41            */
+	{0x40A5, 0x79}, /* SHD_KNOT_1_GR41           */
+	{0x40A6, 0x79}, /* SHD_KNOT_1_GB41           */
+	{0x40A7, 0x79}, /* SHD_KNOT_1_B41            */
+	{0x40A8, 0x77}, /* SHD_KNOT_1_R42            */
+	{0x40A9, 0x74}, /* SHD_KNOT_1_GR42           */
+	{0x40AA, 0x74}, /* SHD_KNOT_1_GB42           */
+	{0x40AB, 0x74}, /* SHD_KNOT_1_B42            */
+	{0x40AC, 0x70}, /* SHD_KNOT_1_R43            */
+	{0x40AD, 0x6C}, /* SHD_KNOT_1_GR43           */
+	{0x40AE, 0x6C}, /* SHD_KNOT_1_GB43           */
+	{0x40AF, 0x6C}, /* SHD_KNOT_1_B43            */
+	{0x40B0, 0x66}, /* SHD_KNOT_1_R44            */
+	{0x40B1, 0x60}, /* SHD_KNOT_1_GR44           */
+	{0x40B2, 0x60}, /* SHD_KNOT_1_GB44           */
+	{0x40B3, 0x5F}, /* SHD_KNOT_1_B44            */
+	{0x40B4, 0x62}, /* SHD_KNOT_1_R45            */
+	{0x40B5, 0x5B}, /* SHD_KNOT_1_GR45           */
+	{0x40B6, 0x5B}, /* SHD_KNOT_1_GB45           */
+	{0x40B7, 0x5A}, /* SHD_KNOT_1_B45            */
+	{0x40B8, 0x6B}, /* SHD_KNOT_1_R46            */
+	{0x40B9, 0x66}, /* SHD_KNOT_1_GR46           */
+	{0x40BA, 0x66}, /* SHD_KNOT_1_GB46           */
+	{0x40BB, 0x65}, /* SHD_KNOT_1_B46            */
+	{0x40BC, 0x71}, /* SHD_KNOT_1_R47            */
+	{0x40BD, 0x6E}, /* SHD_KNOT_1_GR47           */
+	{0x40BE, 0x6E}, /* SHD_KNOT_1_GB47           */
+	{0x40BF, 0x6D}, /* SHD_KNOT_1_B47            */
+	{0x40C0, 0x75}, /* SHD_KNOT_1_R48            */
+	{0x40C1, 0x72}, /* SHD_KNOT_1_GR48           */
+	{0x40C2, 0x72}, /* SHD_KNOT_1_GB48           */
+	{0x40C3, 0x72}, /* SHD_KNOT_1_B48            */
+	{0x40C4, 0x76}, /* SHD_KNOT_1_R49            */
+	{0x40C5, 0x74}, /* SHD_KNOT_1_GR49           */
+	{0x40C6, 0x74}, /* SHD_KNOT_1_GB49           */
+	{0x40C7, 0x74}, /* SHD_KNOT_1_B49            */
+	{0x40C8, 0x75}, /* SHD_KNOT_1_R50            */
+	{0x40C9, 0x72}, /* SHD_KNOT_1_GR50           */
+	{0x40CA, 0x72}, /* SHD_KNOT_1_GB50           */
+	{0x40CB, 0x72}, /* SHD_KNOT_1_B50            */
+	{0x40CC, 0x71}, /* SHD_KNOT_1_R51            */
+	{0x40CD, 0x6D}, /* SHD_KNOT_1_GR51           */
+	{0x40CE, 0x6D}, /* SHD_KNOT_1_GB51           */
+	{0x40CF, 0x6D}, /* SHD_KNOT_1_B51            */
+	{0x40D0, 0x6A}, /* SHD_KNOT_1_R52            */
+	{0x40D1, 0x64}, /* SHD_KNOT_1_GR52           */
+	{0x40D2, 0x64}, /* SHD_KNOT_1_GB52           */
+	{0x40D3, 0x64}, /* SHD_KNOT_1_B52            */
+	{0x40D4, 0x61}, /* SHD_KNOT_1_R53            */
+	{0x40D5, 0x59}, /* SHD_KNOT_1_GR53           */
+	{0x40D6, 0x59}, /* SHD_KNOT_1_GB53           */
+	{0x40D7, 0x58}, /* SHD_KNOT_1_B53            */
+	{0x4300, 0x8E}, /* SHD_KNOT_DIFF_1_R0        */
+	{0x4301, 0x8B}, /* SHD_KNOT_DIFF_1_GR0       */
+	{0x4302, 0x8B}, /* SHD_KNOT_DIFF_1_GB0       */
+	{0x4303, 0x8C}, /* SHD_KNOT_DIFF_1_B0        */
+	{0x4304, 0x88}, /* SHD_KNOT_DIFF_1_R1        */
+	{0x4305, 0x88}, /* SHD_KNOT_DIFF_1_GR1       */
+	{0x4306, 0x88}, /* SHD_KNOT_DIFF_1_GB1       */
+	{0x4307, 0x88}, /* SHD_KNOT_DIFF_1_B1        */
+	{0x4308, 0x88}, /* SHD_KNOT_DIFF_1_R2        */
+	{0x4309, 0x84}, /* SHD_KNOT_DIFF_1_GR2       */
+	{0x430A, 0x84}, /* SHD_KNOT_DIFF_1_GB2       */
+	{0x430B, 0x85}, /* SHD_KNOT_DIFF_1_B2        */
+	{0x430C, 0x83}, /* SHD_KNOT_DIFF_1_R3        */
+	{0x430D, 0x82}, /* SHD_KNOT_DIFF_1_GR3       */
+	{0x430E, 0x82}, /* SHD_KNOT_DIFF_1_GB3       */
+	{0x430F, 0x82}, /* SHD_KNOT_DIFF_1_B3        */
+	{0x4310, 0x84}, /* SHD_KNOT_DIFF_1_R4        */
+	{0x4311, 0x83}, /* SHD_KNOT_DIFF_1_GR4       */
+	{0x4312, 0x83}, /* SHD_KNOT_DIFF_1_GB4       */
+	{0x4313, 0x83}, /* SHD_KNOT_DIFF_1_B4        */
+	{0x4314, 0x84}, /* SHD_KNOT_DIFF_1_R5        */
+	{0x4315, 0x85}, /* SHD_KNOT_DIFF_1_GR5       */
+	{0x4316, 0x85}, /* SHD_KNOT_DIFF_1_GB5       */
+	{0x4317, 0x84}, /* SHD_KNOT_DIFF_1_B5        */
+	{0x4318, 0x86}, /* SHD_KNOT_DIFF_1_R6        */
+	{0x4319, 0x87}, /* SHD_KNOT_DIFF_1_GR6       */
+	{0x431A, 0x87}, /* SHD_KNOT_DIFF_1_GB6       */
+	{0x431B, 0x87}, /* SHD_KNOT_DIFF_1_B6        */
+	{0x431C, 0x8D}, /* SHD_KNOT_DIFF_1_R7        */
+	{0x431D, 0x8B}, /* SHD_KNOT_DIFF_1_GR7       */
+	{0x431E, 0x8B}, /* SHD_KNOT_DIFF_1_GB7       */
+	{0x431F, 0x8C}, /* SHD_KNOT_DIFF_1_B7        */
+	{0x4320, 0x93}, /* SHD_KNOT_DIFF_1_R8        */
+	{0x4321, 0x91}, /* SHD_KNOT_DIFF_1_GR8       */
+	{0x4322, 0x90}, /* SHD_KNOT_DIFF_1_GB8       */
+	{0x4323, 0x91}, /* SHD_KNOT_DIFF_1_B8        */
+	{0x4324, 0x8A}, /* SHD_KNOT_DIFF_1_R9        */
+	{0x4325, 0x89}, /* SHD_KNOT_DIFF_1_GR9       */
+	{0x4326, 0x89}, /* SHD_KNOT_DIFF_1_GB9       */
+	{0x4327, 0x8A}, /* SHD_KNOT_DIFF_1_B9        */
+	{0x4328, 0x87}, /* SHD_KNOT_DIFF_1_R10       */
+	{0x4329, 0x85}, /* SHD_KNOT_DIFF_1_GR10      */
+	{0x432A, 0x85}, /* SHD_KNOT_DIFF_1_GB10      */
+	{0x432B, 0x86}, /* SHD_KNOT_DIFF_1_B10       */
+	{0x432C, 0x84}, /* SHD_KNOT_DIFF_1_R11       */
+	{0x432D, 0x82}, /* SHD_KNOT_DIFF_1_GR11      */
+	{0x432E, 0x82}, /* SHD_KNOT_DIFF_1_GB11      */
+	{0x432F, 0x83}, /* SHD_KNOT_DIFF_1_B11       */
+	{0x4330, 0x82}, /* SHD_KNOT_DIFF_1_R12       */
+	{0x4331, 0x81}, /* SHD_KNOT_DIFF_1_GR12      */
+	{0x4332, 0x81}, /* SHD_KNOT_DIFF_1_GB12      */
+	{0x4333, 0x81}, /* SHD_KNOT_DIFF_1_B12       */
+	{0x4334, 0x81}, /* SHD_KNOT_DIFF_1_R13       */
+	{0x4335, 0x81}, /* SHD_KNOT_DIFF_1_GR13      */
+	{0x4336, 0x81}, /* SHD_KNOT_DIFF_1_GB13      */
+	{0x4337, 0x81}, /* SHD_KNOT_DIFF_1_B13       */
+	{0x4338, 0x82}, /* SHD_KNOT_DIFF_1_R14       */
+	{0x4339, 0x82}, /* SHD_KNOT_DIFF_1_GR14      */
+	{0x433A, 0x82}, /* SHD_KNOT_DIFF_1_GB14      */
+	{0x433B, 0x82}, /* SHD_KNOT_DIFF_1_B14       */
+	{0x433C, 0x85}, /* SHD_KNOT_DIFF_1_R15       */
+	{0x433D, 0x85}, /* SHD_KNOT_DIFF_1_GR15      */
+	{0x433E, 0x85}, /* SHD_KNOT_DIFF_1_GB15      */
+	{0x433F, 0x85}, /* SHD_KNOT_DIFF_1_B15       */
+	{0x4340, 0x8A}, /* SHD_KNOT_DIFF_1_R16       */
+	{0x4341, 0x89}, /* SHD_KNOT_DIFF_1_GR16      */
+	{0x4342, 0x89}, /* SHD_KNOT_DIFF_1_GB16      */
+	{0x4343, 0x89}, /* SHD_KNOT_DIFF_1_B16       */
+	{0x4344, 0x91}, /* SHD_KNOT_DIFF_1_R17       */
+	{0x4345, 0x8E}, /* SHD_KNOT_DIFF_1_GR17      */
+	{0x4346, 0x8E}, /* SHD_KNOT_DIFF_1_GB17      */
+	{0x4347, 0x8F}, /* SHD_KNOT_DIFF_1_B17       */
+	{0x4348, 0x8A}, /* SHD_KNOT_DIFF_1_R18       */
+	{0x4349, 0x87}, /* SHD_KNOT_DIFF_1_GR18      */
+	{0x434A, 0x87}, /* SHD_KNOT_DIFF_1_GB18      */
+	{0x434B, 0x89}, /* SHD_KNOT_DIFF_1_B18       */
+	{0x434C, 0x85}, /* SHD_KNOT_DIFF_1_R19       */
+	{0x434D, 0x84}, /* SHD_KNOT_DIFF_1_GR19      */
+	{0x434E, 0x84}, /* SHD_KNOT_DIFF_1_GB19      */
+	{0x434F, 0x85}, /* SHD_KNOT_DIFF_1_B19       */
+	{0x4350, 0x82}, /* SHD_KNOT_DIFF_1_R20       */
+	{0x4351, 0x82}, /* SHD_KNOT_DIFF_1_GR20      */
+	{0x4352, 0x82}, /* SHD_KNOT_DIFF_1_GB20      */
+	{0x4353, 0x82}, /* SHD_KNOT_DIFF_1_B20       */
+	{0x4354, 0x81}, /* SHD_KNOT_DIFF_1_R21       */
+	{0x4355, 0x81}, /* SHD_KNOT_DIFF_1_GR21      */
+	{0x4356, 0x81}, /* SHD_KNOT_DIFF_1_GB21      */
+	{0x4357, 0x81}, /* SHD_KNOT_DIFF_1_B21       */
+	{0x4358, 0x80}, /* SHD_KNOT_DIFF_1_R22       */
+	{0x4359, 0x80}, /* SHD_KNOT_DIFF_1_GR22      */
+	{0x435A, 0x80}, /* SHD_KNOT_DIFF_1_GB22      */
+	{0x435B, 0x80}, /* SHD_KNOT_DIFF_1_B22       */
+	{0x435C, 0x81}, /* SHD_KNOT_DIFF_1_R23       */
+	{0x435D, 0x81}, /* SHD_KNOT_DIFF_1_GR23      */
+	{0x435E, 0x81}, /* SHD_KNOT_DIFF_1_GB23      */
+	{0x435F, 0x81}, /* SHD_KNOT_DIFF_1_B23       */
+	{0x4360, 0x84}, /* SHD_KNOT_DIFF_1_R24       */
+	{0x4361, 0x84}, /* SHD_KNOT_DIFF_1_GR24      */
+	{0x4362, 0x84}, /* SHD_KNOT_DIFF_1_GB24      */
+	{0x4363, 0x83}, /* SHD_KNOT_DIFF_1_B24       */
+	{0x4364, 0x88}, /* SHD_KNOT_DIFF_1_R25       */
+	{0x4365, 0x88}, /* SHD_KNOT_DIFF_1_GR25      */
+	{0x4366, 0x88}, /* SHD_KNOT_DIFF_1_GB25      */
+	{0x4367, 0x87}, /* SHD_KNOT_DIFF_1_B25       */
+	{0x4368, 0x8E}, /* SHD_KNOT_DIFF_1_R26       */
+	{0x4369, 0x8D}, /* SHD_KNOT_DIFF_1_GR26      */
+	{0x436A, 0x8D}, /* SHD_KNOT_DIFF_1_GB26      */
+	{0x436B, 0x8C}, /* SHD_KNOT_DIFF_1_B26       */
+	{0x436C, 0x87}, /* SHD_KNOT_DIFF_1_R27       */
+	{0x436D, 0x86}, /* SHD_KNOT_DIFF_1_GR27      */
+	{0x436E, 0x86}, /* SHD_KNOT_DIFF_1_GB27      */
+	{0x436F, 0x88}, /* SHD_KNOT_DIFF_1_B27       */
+	{0x4370, 0x85}, /* SHD_KNOT_DIFF_1_R28       */
+	{0x4371, 0x84}, /* SHD_KNOT_DIFF_1_GR28      */
+	{0x4372, 0x84}, /* SHD_KNOT_DIFF_1_GB28      */
+	{0x4373, 0x85}, /* SHD_KNOT_DIFF_1_B28       */
+	{0x4374, 0x83}, /* SHD_KNOT_DIFF_1_R29       */
+	{0x4375, 0x82}, /* SHD_KNOT_DIFF_1_GR29      */
+	{0x4376, 0x82}, /* SHD_KNOT_DIFF_1_GB29      */
+	{0x4377, 0x82}, /* SHD_KNOT_DIFF_1_B29       */
+	{0x4378, 0x81}, /* SHD_KNOT_DIFF_1_R30       */
+	{0x4379, 0x80}, /* SHD_KNOT_DIFF_1_GR30      */
+	{0x437A, 0x80}, /* SHD_KNOT_DIFF_1_GB30      */
+	{0x437B, 0x80}, /* SHD_KNOT_DIFF_1_B30       */
+	{0x437C, 0x80}, /* SHD_KNOT_DIFF_1_R31       */
+	{0x437D, 0x80}, /* SHD_KNOT_DIFF_1_GR31      */
+	{0x437E, 0x80}, /* SHD_KNOT_DIFF_1_GB31      */
+	{0x437F, 0x80}, /* SHD_KNOT_DIFF_1_B31       */
+	{0x4380, 0x81}, /* SHD_KNOT_DIFF_1_R32       */
+	{0x4381, 0x81}, /* SHD_KNOT_DIFF_1_GR32      */
+	{0x4382, 0x81}, /* SHD_KNOT_DIFF_1_GB32      */
+	{0x4383, 0x80}, /* SHD_KNOT_DIFF_1_B32       */
+	{0x4384, 0x84}, /* SHD_KNOT_DIFF_1_R33       */
+	{0x4385, 0x84}, /* SHD_KNOT_DIFF_1_GR33      */
+	{0x4386, 0x84}, /* SHD_KNOT_DIFF_1_GB33      */
+	{0x4387, 0x83}, /* SHD_KNOT_DIFF_1_B33       */
+	{0x4388, 0x88}, /* SHD_KNOT_DIFF_1_R34       */
+	{0x4389, 0x88}, /* SHD_KNOT_DIFF_1_GR34      */
+	{0x438A, 0x88}, /* SHD_KNOT_DIFF_1_GB34      */
+	{0x438B, 0x87}, /* SHD_KNOT_DIFF_1_B34       */
+	{0x438C, 0x8E}, /* SHD_KNOT_DIFF_1_R35       */
+	{0x438D, 0x8E}, /* SHD_KNOT_DIFF_1_GR35      */
+	{0x438E, 0x8E}, /* SHD_KNOT_DIFF_1_GB35      */
+	{0x438F, 0x8C}, /* SHD_KNOT_DIFF_1_B35       */
+	{0x4390, 0x89}, /* SHD_KNOT_DIFF_1_R36       */
+	{0x4391, 0x88}, /* SHD_KNOT_DIFF_1_GR36      */
+	{0x4392, 0x88}, /* SHD_KNOT_DIFF_1_GB36      */
+	{0x4393, 0x8A}, /* SHD_KNOT_DIFF_1_B36       */
+	{0x4394, 0x86}, /* SHD_KNOT_DIFF_1_R37       */
+	{0x4395, 0x85}, /* SHD_KNOT_DIFF_1_GR37      */
+	{0x4396, 0x85}, /* SHD_KNOT_DIFF_1_GB37      */
+	{0x4397, 0x86}, /* SHD_KNOT_DIFF_1_B37       */
+	{0x4398, 0x83}, /* SHD_KNOT_DIFF_1_R38       */
+	{0x4399, 0x83}, /* SHD_KNOT_DIFF_1_GR38      */
+	{0x439A, 0x83}, /* SHD_KNOT_DIFF_1_GB38      */
+	{0x439B, 0x83}, /* SHD_KNOT_DIFF_1_B38       */
+	{0x439C, 0x81}, /* SHD_KNOT_DIFF_1_R39       */
+	{0x439D, 0x81}, /* SHD_KNOT_DIFF_1_GR39      */
+	{0x439E, 0x81}, /* SHD_KNOT_DIFF_1_GB39      */
+	{0x439F, 0x81}, /* SHD_KNOT_DIFF_1_B39       */
+	{0x43A0, 0x81}, /* SHD_KNOT_DIFF_1_R40       */
+	{0x43A1, 0x81}, /* SHD_KNOT_DIFF_1_GR40      */
+	{0x43A2, 0x81}, /* SHD_KNOT_DIFF_1_GB40      */
+	{0x43A3, 0x81}, /* SHD_KNOT_DIFF_1_B40       */
+	{0x43A4, 0x82}, /* SHD_KNOT_DIFF_1_R41       */
+	{0x43A5, 0x82}, /* SHD_KNOT_DIFF_1_GR41      */
+	{0x43A6, 0x82}, /* SHD_KNOT_DIFF_1_GB41      */
+	{0x43A7, 0x81}, /* SHD_KNOT_DIFF_1_B41       */
+	{0x43A8, 0x84}, /* SHD_KNOT_DIFF_1_R42       */
+	{0x43A9, 0x85}, /* SHD_KNOT_DIFF_1_GR42      */
+	{0x43AA, 0x85}, /* SHD_KNOT_DIFF_1_GB42      */
+	{0x43AB, 0x83}, /* SHD_KNOT_DIFF_1_B42       */
+	{0x43AC, 0x8A}, /* SHD_KNOT_DIFF_1_R43       */
+	{0x43AD, 0x8A}, /* SHD_KNOT_DIFF_1_GR43      */
+	{0x43AE, 0x8A}, /* SHD_KNOT_DIFF_1_GB43      */
+	{0x43AF, 0x88}, /* SHD_KNOT_DIFF_1_B43       */
+	{0x43B0, 0x93}, /* SHD_KNOT_DIFF_1_R44       */
+	{0x43B1, 0x91}, /* SHD_KNOT_DIFF_1_GR44      */
+	{0x43B2, 0x91}, /* SHD_KNOT_DIFF_1_GB44      */
+	{0x43B3, 0x8F}, /* SHD_KNOT_DIFF_1_B44       */
+	{0x43B4, 0x8B}, /* SHD_KNOT_DIFF_1_R45       */
+	{0x43B5, 0x8A}, /* SHD_KNOT_DIFF_1_GR45      */
+	{0x43B6, 0x8A}, /* SHD_KNOT_DIFF_1_GB45      */
+	{0x43B7, 0x8C}, /* SHD_KNOT_DIFF_1_B45       */
+	{0x43B8, 0x89}, /* SHD_KNOT_DIFF_1_R46       */
+	{0x43B9, 0x87}, /* SHD_KNOT_DIFF_1_GR46      */
+	{0x43BA, 0x87}, /* SHD_KNOT_DIFF_1_GB46      */
+	{0x43BB, 0x89}, /* SHD_KNOT_DIFF_1_B46       */
+	{0x43BC, 0x84}, /* SHD_KNOT_DIFF_1_R47       */
+	{0x43BD, 0x84}, /* SHD_KNOT_DIFF_1_GR47      */
+	{0x43BE, 0x84}, /* SHD_KNOT_DIFF_1_GB47      */
+	{0x43BF, 0x84}, /* SHD_KNOT_DIFF_1_B47       */
+	{0x43C0, 0x83}, /* SHD_KNOT_DIFF_1_R48       */
+	{0x43C1, 0x83}, /* SHD_KNOT_DIFF_1_GR48      */
+	{0x43C2, 0x83}, /* SHD_KNOT_DIFF_1_GB48      */
+	{0x43C3, 0x83}, /* SHD_KNOT_DIFF_1_B48       */
+	{0x43C4, 0x82}, /* SHD_KNOT_DIFF_1_R49       */
+	{0x43C5, 0x83}, /* SHD_KNOT_DIFF_1_GR49      */
+	{0x43C6, 0x83}, /* SHD_KNOT_DIFF_1_GB49      */
+	{0x43C7, 0x82}, /* SHD_KNOT_DIFF_1_B49       */
+	{0x43C8, 0x83}, /* SHD_KNOT_DIFF_1_R50       */
+	{0x43C9, 0x84}, /* SHD_KNOT_DIFF_1_GR50      */
+	{0x43CA, 0x84}, /* SHD_KNOT_DIFF_1_GB50      */
+	{0x43CB, 0x83}, /* SHD_KNOT_DIFF_1_B50       */
+	{0x43CC, 0x86}, /* SHD_KNOT_DIFF_1_R51       */
+	{0x43CD, 0x86}, /* SHD_KNOT_DIFF_1_GR51      */
+	{0x43CE, 0x86}, /* SHD_KNOT_DIFF_1_GB51      */
+	{0x43CF, 0x85}, /* SHD_KNOT_DIFF_1_B51       */
+	{0x43D0, 0x8E}, /* SHD_KNOT_DIFF_1_R52       */
+	{0x43D1, 0x8D}, /* SHD_KNOT_DIFF_1_GR52      */
+	{0x43D2, 0x8D}, /* SHD_KNOT_DIFF_1_GB52      */
+	{0x43D3, 0x8B}, /* SHD_KNOT_DIFF_1_B52       */
+	{0x43D4, 0x94}, /* SHD_KNOT_DIFF_1_R53       */
+	{0x43D5, 0x93}, /* SHD_KNOT_DIFF_1_GR53      */
+	{0x43D6, 0x93}, /* SHD_KNOT_DIFF_1_GB53      */
+	{0x43D7, 0x91}, /* SHD_KNOT_DIFF_1_B53       */
+	{0x34C0, 0xDD}, /* AE_SENSRATIO_SP1H_SP1L_R  */
+	{0x34C1, 0x00}, /* AE_SENSRATIO_SP1H_SP1L_R  */
+	{0x34C2, 0xF1}, /* AE_SENSRATIO_SP1H_SP1L_GR */
+	{0x34C3, 0x00}, /* AE_SENSRATIO_SP1H_SP1L_GR */
+	{0x34C4, 0xEC}, /* AE_SENSRATIO_SP1H_SP1L_GB */
+	{0x34C5, 0x00}, /* AE_SENSRATIO_SP1H_SP1L_GB */
+	{0x34C6, 0xE5}, /* AE_SENSRATIO_SP1H_SP1L_B  */
+	{0x34C7, 0x00}, /* AE_SENSRATIO_SP1H_SP1L_B  */
+	{0x34C8, 0xE7}, /* AE_SENSRATIO_SP1H_SP2_R   */
+	{0x34C9, 0x1B}, /* AE_SENSRATIO_SP1H_SP2_R   */
+	{0x34CA, 0x02}, /* AE_SENSRATIO_SP1H_SP2_GR  */
+	{0x34CB, 0x1D}, /* AE_SENSRATIO_SP1H_SP2_GR  */
+	{0x34CC, 0x5E}, /* AE_SENSRATIO_SP1H_SP2_GB  */
+	{0x34CD, 0x1C}, /* AE_SENSRATIO_SP1H_SP2_GB  */
+	{0x34CE, 0x4B}, /* AE_SENSRATIO_SP1H_SP2_B   */
+	{0x34CF, 0x1B}, /* AE_SENSRATIO_SP1H_SP2_B   */
+	{0x3053, 0x00}, /* "OTP_SENSRATIOEN		"    */
+	{0x3630, 0x40}, /* WDC_SGAIN_ADJ_SP1_R       */
+	{0x3631, 0x00}, /* WDC_SGAIN_ADJ_SP1_R       */
+	{0x3632, 0x40}, /* WDC_SGAIN_ADJ_SP1_GR      */
+	{0x3633, 0x00}, /* WDC_SGAIN_ADJ_SP1_GR      */
+	{0x3634, 0x40}, /* WDC_SGAIN_ADJ_SP1_GB      */
+	{0x3635, 0x00}, /* WDC_SGAIN_ADJ_SP1_GB      */
+	{0x3636, 0x40}, /* WDC_SGAIN_ADJ_SP1_B       */
+	{0x3637, 0x00}, /* WDC_SGAIN_ADJ_SP1_B       */
+	{0x3638, 0x40}, /* WDC_SGAIN_ADJ_SP2_R       */
+	{0x3639, 0x00}, /* WDC_SGAIN_ADJ_SP2_R       */
+	{0x363A, 0x40}, /* WDC_SGAIN_ADJ_SP2_GR      */
+	{0x363B, 0x00}, /* WDC_SGAIN_ADJ_SP2_GR      */
+	{0x363C, 0x40}, /* WDC_SGAIN_ADJ_SP2_GB      */
+	{0x363D, 0x00}, /* WDC_SGAIN_ADJ_SP2_GB      */
+	{0x363E, 0x40}, /* WDC_SGAIN_ADJ_SP2_B       */
+	{0x363F, 0x00}, /* WDC_SGAIN_ADJ_SP2_B       */
+	{0x3838, 0xB3}, /* OBB_CLAMP_OFFSET_R_SP1H   */
+	{0x3839, 0xFF}, /* OBB_CLAMP_OFFSET_R_SP1H   */
+	{0x383A, 0xB5}, /* OBB_CLAMP_OFFSET_GR_SP1H  */
+	{0x383B, 0xFF}, /* OBB_CLAMP_OFFSET_GR_SP1H  */
+	{0x383C, 0xB4}, /* OBB_CLAMP_OFFSET_GB_SP1H  */
+	{0x383D, 0xFF}, /* OBB_CLAMP_OFFSET_GB_SP1H  */
+	{0x383E, 0xB7}, /* OBB_CLAMP_OFFSET_B_SP1H   */
+	{0x383F, 0xFF}, /* OBB_CLAMP_OFFSET_B_SP1H   */
+	{0x3840, 0xE3}, /* OBB_CLAMP_OFFSET_R_SP1L   */
+	{0x3841, 0xFF}, /* OBB_CLAMP_OFFSET_R_SP1L   */
+	{0x3842, 0xE6}, /* OBB_CLAMP_OFFSET_GR_SP1L  */
+	{0x3843, 0xFF}, /* OBB_CLAMP_OFFSET_GR_SP1L  */
+	{0x3844, 0xF9}, /* OBB_CLAMP_OFFSET_GB_SP1L  */
+	{0x3845, 0xFF}, /* OBB_CLAMP_OFFSET_GB_SP1L  */
+	{0x3846, 0xFE}, /* OBB_CLAMP_OFFSET_B_SP1L   */
+	{0x3847, 0xFF}, /* OBB_CLAMP_OFFSET_B_SP1L   */
+	{0x3848, 0xC9}, /* OBB_CLAMP_OFFSET_R_SP2    */
+	{0x3849, 0xFF}, /* OBB_CLAMP_OFFSET_R_SP2    */
+	{0x384A, 0xCA}, /* OBB_CLAMP_OFFSET_GR_SP2   */
+	{0x384B, 0xFF}, /* OBB_CLAMP_OFFSET_GR_SP2   */
+	{0x384C, 0xE5}, /* OBB_CLAMP_OFFSET_GB_SP2   */
+	{0x384D, 0xFF}, /* OBB_CLAMP_OFFSET_GB_SP2   */
+	{0x384E, 0xF0}, /* OBB_CLAMP_OFFSET_B_SP2    */
+	{0x384F, 0xFF}, /* OBB_CLAMP_OFFSET_B_SP2    */
 };
 
 static const struct imx390_reg_list lsc_vendor_def_list = {
