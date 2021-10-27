@@ -1,0 +1,61 @@
+From 4f1e46ac192e503e3919eea2876f3567c627de29 Mon Sep 17 00:00:00 2001
+From: nanli2x <nanx.li@intel.com>
+Date: Mon, 25 Oct 2021 01:29:22 -0400
+Subject: [PATCH] netfilter: nf_tables: fix flowtable list del corruption
+
+syzbot reported following crash:
+
+  list_del corruption, ffff88808c9bb000->prev is LIST_POISON2 (dead000000000122)
+  [..]
+  Call Trace:
+   __list_del_entry include/linux/list.h:131 [inline]
+   list_del_rcu include/linux/rculist.h:148 [inline]
+   nf_tables_commit+0x1068/0x3b30 net/netfilter/nf_tables_api.c:7183
+   [..]
+
+The commit transaction list has:
+
+NFT_MSG_NEWTABLE
+NFT_MSG_NEWFLOWTABLE
+NFT_MSG_DELFLOWTABLE
+NFT_MSG_DELTABLE
+
+A missing generation check during DELTABLE processing causes it to queue
+the DELFLOWTABLE operation a second time, so we corrupt the list here:
+
+  case NFT_MSG_DELFLOWTABLE:
+     list_del_rcu(&nft_trans_flowtable(trans)->list);
+     nf_tables_flowtable_notify(&trans->ctx,
+
+because we have two different DELFLOWTABLE transactions for the same
+flowtable.  We then call list_del_rcu() twice for the same flowtable->list.
+
+The object handling seems to suffer from the same bug so add a generation
+check too and only queue delete transactions for flowtables/objects that
+are still active in the next generation.
+
+Reported-by: syzbot+37a6804945a3a13b1572@syzkaller.appspotmail.com
+Fixes: 3b49e2e94e6eb ("netfilter: nf_tables: add flow table netlink frontend")
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ net/netfilter/nf_tables_api.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index 7c95314f0b7d..f1485114efad 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -828,6 +828,9 @@ static int nft_flush_table(struct nft_ctx *ctx)
+ 	}
+ 
+ 	list_for_each_entry_safe(obj, ne, &ctx->table->objects, list) {
++		if (!nft_is_active_next(ctx->net, obj))
++			continue;
++
+ 		err = nft_delobj(ctx, obj);
+ 		if (err < 0)
+ 			goto out;
+-- 
+2.17.1
+
