@@ -7988,6 +7988,12 @@ void intel_init_clock_gating_hooks(struct drm_i915_private *dev_priv)
 /* Set up chip specific power management-related functions */
 void intel_init_pm(struct drm_i915_private *dev_priv)
 {
+	if (IS_SRIOV_VF(dev_priv)) {
+		/* XXX */
+		dev_priv->wm_disp = &skl_wm_funcs;
+		return;
+	}
+
 	/* For cxsr */
 	if (IS_PINEVIEW(dev_priv))
 		pnv_get_mem_freq(dev_priv);
