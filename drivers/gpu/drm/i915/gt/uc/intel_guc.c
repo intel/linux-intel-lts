@@ -12,6 +12,13 @@
 #include "intel_guc_submission.h"
 #include "i915_drv.h"
 
+#ifdef CONFIG_DRM_I915_DEBUG_GUC
+#define GUC_DEBUG(_guc, _fmt, ...) \
+	drm_dbg(&guc_to_gt(_guc)->i915->drm, "GUC: " _fmt, ##__VA_ARGS__)
+#else
+#define GUC_DEBUG(_guc, _fmt, ...) typecheck(struct intel_guc *, _guc)
+#endif
+
 /**
  * DOC: GuC
  *
@@ -221,32 +228,48 @@ static u32 guc_ctl_log_params_flags(struct intel_guc *guc)
 	u32 flags;
 
 	#if (((CRASH_BUFFER_SIZE) % SZ_1M) == 0)
-	#define UNIT SZ_1M
-	#define FLAG GUC_LOG_ALLOC_IN_MEGABYTE
+	#define LOG_UNIT SZ_1M
+	#define LOG_FLAG GUC_LOG_LOG_ALLOC_UNITS
 	#else
-	#define UNIT SZ_4K
-	#define FLAG 0
+	#define LOG_UNIT SZ_4K
+	#define LOG_FLAG 0
+	#endif
+
+	#if (((CAPTURE_BUFFER_SIZE) % SZ_1M) == 0)
+	#define CAPTURE_UNIT SZ_1M
+	#define CAPTURE_FLAG GUC_LOG_CAPTURE_ALLOC_UNITS
+	#else
+	#define CAPTURE_UNIT SZ_4K
+	#define CAPTURE_FLAG 0
 	#endif
 
 	BUILD_BUG_ON(!CRASH_BUFFER_SIZE);
-	BUILD_BUG_ON(!IS_ALIGNED(CRASH_BUFFER_SIZE, UNIT));
+	BUILD_BUG_ON(!IS_ALIGNED(CRASH_BUFFER_SIZE, LOG_UNIT));
 	BUILD_BUG_ON(!DEBUG_BUFFER_SIZE);
-	BUILD_BUG_ON(!IS_ALIGNED(DEBUG_BUFFER_SIZE, UNIT));
+	BUILD_BUG_ON(!IS_ALIGNED(DEBUG_BUFFER_SIZE, LOG_UNIT));
+	BUILD_BUG_ON(!CAPTURE_BUFFER_SIZE);
+	BUILD_BUG_ON(!IS_ALIGNED(CAPTURE_BUFFER_SIZE, CAPTURE_UNIT));
 
-	BUILD_BUG_ON((CRASH_BUFFER_SIZE / UNIT - 1) >
+	BUILD_BUG_ON((CRASH_BUFFER_SIZE / LOG_UNIT - 1) >
 			(GUC_LOG_CRASH_MASK >> GUC_LOG_CRASH_SHIFT));
-	BUILD_BUG_ON((DEBUG_BUFFER_SIZE / UNIT - 1) >
+	BUILD_BUG_ON((DEBUG_BUFFER_SIZE / LOG_UNIT - 1) >
 			(GUC_LOG_DEBUG_MASK >> GUC_LOG_DEBUG_SHIFT));
+	BUILD_BUG_ON((CAPTURE_BUFFER_SIZE / CAPTURE_UNIT - 1) >
+			(GUC_LOG_CAPTURE_MASK >> GUC_LOG_CAPTURE_SHIFT));
 
 	flags = GUC_LOG_VALID |
 		GUC_LOG_NOTIFY_ON_HALF_FULL |
-		FLAG |
-		((CRASH_BUFFER_SIZE / UNIT - 1) << GUC_LOG_CRASH_SHIFT) |
-		((DEBUG_BUFFER_SIZE / UNIT - 1) << GUC_LOG_DEBUG_SHIFT) |
+		CAPTURE_FLAG |
+		LOG_FLAG |
+		((CRASH_BUFFER_SIZE / LOG_UNIT - 1) << GUC_LOG_CRASH_SHIFT) |
+		((DEBUG_BUFFER_SIZE / LOG_UNIT - 1) << GUC_LOG_DEBUG_SHIFT) |
+		((CAPTURE_BUFFER_SIZE / CAPTURE_UNIT - 1) << GUC_LOG_CAPTURE_SHIFT) |
 		(offset << GUC_LOG_BUF_ADDR_SHIFT);
 
-	#undef UNIT
-	#undef FLAG
+	#undef LOG_UNIT
+	#undef LOG_FLAG
+	#undef CAPTURE_UNIT
+	#undef CAPTURE_FLAG
 
 	return flags;
 }
@@ -257,6 +280,26 @@ static u32 guc_ctl_ads_flags(struct intel_guc *guc)
 	u32 flags = ads << GUC_ADS_ADDR_SHIFT;
 
 	return flags;
+}
+
+static u32 guc_ctl_wa_flags(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+	u32 flags = 0;
+
+	/* Wa_22012773006:gen11,gen12 < XeHP */
+	if (GRAPHICS_VER(gt->i915) >= 11 &&
+	    GRAPHICS_VER_FULL(gt->i915) < IP_VER(12, 50))
+		flags |= GUC_WA_POLLCS;
+
+	return flags;
+}
+
+static u32 guc_ctl_devid(struct intel_guc *guc)
+{
+	struct drm_i915_private *i915 = guc_to_gt(guc)->i915;
+
+	return (INTEL_DEVID(i915) << 16) | INTEL_REVID(i915);
 }
 
 /*
@@ -275,6 +318,8 @@ static void guc_init_params(struct intel_guc *guc)
 	params[GUC_CTL_FEATURE] = guc_ctl_feature_flags(guc);
 	params[GUC_CTL_DEBUG] = guc_ctl_debug_flags(guc);
 	params[GUC_CTL_ADS] = guc_ctl_ads_flags(guc);
+	params[GUC_CTL_WA] = guc_ctl_wa_flags(guc);
+	params[GUC_CTL_DEVID] = guc_ctl_devid(guc);
 
 	for (i = 0; i < GUC_CTL_MAX_DWORDS; i++)
 		DRM_DEBUG_DRIVER("param[%2d] = %#x\n", i, params[i]);
@@ -411,6 +456,8 @@ int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
 	mutex_lock(&guc->send_mutex);
 	intel_uncore_forcewake_get(uncore, guc->send_regs.fw_domains);
 
+	GUC_DEBUG(guc, "mmio sending %*ph\n", len * 4, request);
+
 retry:
 	for (i = 0; i < len; i++)
 		intel_uncore_write(uncore, guc_send_reg(guc, i), request[i]);
@@ -486,10 +533,13 @@ proto:
 		for (i = 1; i < count; i++)
 			response_buf[i] = intel_uncore_read(uncore,
 							    guc_send_reg(guc, i));
+		GUC_DEBUG(guc, "mmio received %*ph\n", count * 4, response_buf);
 
 		/* Use number of copied dwords as our return value */
 		ret = count;
 	} else {
+		GUC_DEBUG(guc, "mmio received %*ph\n", 4, &header);
+
 		/* Use data from the GuC response as our return value */
 		ret = FIELD_GET(GUC_HXG_RESPONSE_MSG_0_DATA0, header);
 	}
@@ -703,6 +753,127 @@ int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 	*out_vaddr = vaddr;
 
 	return 0;
+}
+
+static int __guc_action_self_cfg(struct intel_guc *guc, u16 key, u16 len, u64 value)
+{
+	u32 request[HOST2GUC_SELF_CFG_REQUEST_MSG_LEN] = {
+		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_HOST2GUC_SELF_CFG),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_KEY, key) |
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_LEN, len),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_2_VALUE32, lower_32_bits(value)),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_3_VALUE64, upper_32_bits(value)),
+	};
+	int ret;
+
+	GEM_BUG_ON(len > 2);
+	GEM_BUG_ON(len == 1 && upper_32_bits(value));
+
+	/* Self config must go over MMIO */
+	ret = intel_guc_send_mmio(guc, request, ARRAY_SIZE(request), NULL, 0);
+
+	if (unlikely(ret < 0))
+		return ret;
+	if (unlikely(ret > 1))
+		return -EPROTO;
+	if (unlikely(!ret))
+		return -ENOKEY;
+
+	return 0;
+}
+
+static int __guc_self_cfg(struct intel_guc *guc, u16 key, u16 len, u64 value)
+{
+	struct drm_i915_private *i915 = guc_to_gt(guc)->i915;
+	int err = __guc_action_self_cfg(guc, key, len, value);
+
+	if (unlikely(err))
+		i915_probe_error(i915, "Unsuccessful self-config (%pe) key %#hx value %#llx\n",
+				 ERR_PTR(err), key, value);
+	return err;
+}
+
+int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value)
+{
+	return __guc_self_cfg(guc, key, 1, value);
+}
+
+int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value)
+{
+	return __guc_self_cfg(guc, key, 2, value);
+}
+
+static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 *action, u32 size)
+{
+	struct intel_guc_tlb_wait wait;
+	long timeout = 0;
+	u32 seqno;
+	int err;
+
+	wait.status = 1;
+	wait.tsk = current;
+	err = xa_alloc_cyclic_irq(&guc->tlb_lookup, &seqno, &wait,
+				  xa_limit_32b, &guc->next_seqno,
+				  GFP_KERNEL);
+	if (GEM_WARN_ON(err))
+		return err;
+
+	action[2] = seqno;
+
+	err = intel_guc_send_busy_loop(guc, action, size, G2H_LEN_DW_INVALIDATE_TLB, true);
+	if (err) {
+		xa_erase_irq(&guc->tlb_lookup, seqno);
+		return err;
+	}
+
+#define OUTSTANDING_GUC_TIMEOUT_PERIOD  (HZ / 10)
+	timeout = OUTSTANDING_GUC_TIMEOUT_PERIOD;
+	for (;;) {
+		set_current_state(TASK_UNINTERRUPTIBLE);
+
+		if (!READ_ONCE(wait.status))
+		    break;
+
+		if (!timeout) {
+			timeout = -ETIME;
+			break;
+		}
+		timeout = io_schedule_timeout(timeout);
+	}
+	__set_current_state(TASK_RUNNING);
+
+	xa_erase_irq(&guc->tlb_lookup, seqno);
+
+	/*XXX: Failure of tlb invalidation is critical and would warrant a gt
+	 * reset.
+	 */
+	if (timeout == -ETIME)
+		drm_err(&guc_to_gt(guc)->i915->drm, "tlb invalidation response timed out for seqno %u\n", seqno);
+
+	return (timeout < 0) ? timeout : 0;
+}
+
+/*
+ * Guc TLB Invalidation: Invalidate the TLB's of GuC itself.
+ */
+int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
+				 enum intel_guc_tlb_inval_mode mode)
+{
+	u32 action[] = {
+		INTEL_GUC_ACTION_TLB_INVALIDATION,
+		INTEL_GUC_TLB_INVAL_GUC,
+		0,
+		mode,
+	};
+
+	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)) {
+		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
+		return 0;
+	}
+
+	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
 }
 
 /**

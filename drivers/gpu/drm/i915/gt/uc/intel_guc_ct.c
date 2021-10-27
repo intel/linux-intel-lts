@@ -112,18 +112,6 @@ void intel_guc_ct_init_early(struct intel_guc_ct *ct)
 	init_waitqueue_head(&ct->wq);
 }
 
-static inline const char *guc_ct_buffer_type_to_str(u32 type)
-{
-	switch (type) {
-	case GUC_CTB_TYPE_HOST2GUC:
-		return "SEND";
-	case GUC_CTB_TYPE_GUC2HOST:
-		return "RECV";
-	default:
-		return "<invalid>";
-	}
-}
-
 static void guc_ct_buffer_desc_init(struct guc_ct_buffer_desc *desc)
 {
 	memset(desc, 0, sizeof(*desc));
@@ -156,65 +144,65 @@ static void guc_ct_buffer_init(struct intel_guc_ct_buffer *ctb,
 	guc_ct_buffer_reset(ctb);
 }
 
-static int guc_action_register_ct_buffer(struct intel_guc *guc, u32 type,
-					 u32 desc_addr, u32 buff_addr, u32 size)
+static int guc_action_control_ctb(struct intel_guc *guc, u32 control)
 {
-	u32 request[HOST2GUC_REGISTER_CTB_REQUEST_MSG_LEN] = {
+	u32 request[HOST2GUC_CONTROL_CTB_REQUEST_MSG_LEN] = {
 		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
 		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
-		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_HOST2GUC_REGISTER_CTB),
-		FIELD_PREP(HOST2GUC_REGISTER_CTB_REQUEST_MSG_1_SIZE, size / SZ_4K - 1) |
-		FIELD_PREP(HOST2GUC_REGISTER_CTB_REQUEST_MSG_1_TYPE, type),
-		FIELD_PREP(HOST2GUC_REGISTER_CTB_REQUEST_MSG_2_DESC_ADDR, desc_addr),
-		FIELD_PREP(HOST2GUC_REGISTER_CTB_REQUEST_MSG_3_BUFF_ADDR, buff_addr),
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_HOST2GUC_CONTROL_CTB),
+		FIELD_PREP(HOST2GUC_CONTROL_CTB_REQUEST_MSG_1_CONTROL, control),
 	};
+	int ret;
 
-	GEM_BUG_ON(type != GUC_CTB_TYPE_HOST2GUC && type != GUC_CTB_TYPE_GUC2HOST);
-	GEM_BUG_ON(size % SZ_4K);
+	GEM_BUG_ON(control != GUC_CTB_CONTROL_DISABLE && control != GUC_CTB_CONTROL_ENABLE);
 
-	/* CT registration must go over MMIO */
-	return intel_guc_send_mmio(guc, request, ARRAY_SIZE(request), NULL, 0);
+	/* CT control must go over MMIO */
+	ret = intel_guc_send_mmio(guc, request, ARRAY_SIZE(request), NULL, 0);
+
+	return ret > 0 ? -EPROTO : ret;
 }
 
-static int ct_register_buffer(struct intel_guc_ct *ct, u32 type,
+static int ct_control_enable(struct intel_guc_ct *ct, bool enable)
+{
+	int err;
+
+	err = guc_action_control_ctb(ct_to_guc(ct), enable ?
+				     GUC_CTB_CONTROL_ENABLE : GUC_CTB_CONTROL_DISABLE);
+	if (unlikely(err))
+		CT_PROBE_ERROR(ct, "Failed to control/%s CTB (%pe)\n",
+			       enabledisable(enable), ERR_PTR(err));
+
+	return err;
+}
+
+static int ct_register_buffer(struct intel_guc_ct *ct, bool send,
 			      u32 desc_addr, u32 buff_addr, u32 size)
 {
 	int err;
 
-	err = i915_inject_probe_error(guc_to_gt(ct_to_guc(ct))->i915, -ENXIO);
+	err = intel_guc_self_cfg64(ct_to_guc(ct), send ?
+				   GUC_KLV_SELF_CFG_H2G_CTB_DESCRIPTOR_ADDR_KEY :
+				   GUC_KLV_SELF_CFG_G2H_CTB_DESCRIPTOR_ADDR_KEY,
+				   desc_addr);
 	if (unlikely(err))
-		return err;
+		goto failed;
 
-	err = guc_action_register_ct_buffer(ct_to_guc(ct), type,
-					    desc_addr, buff_addr, size);
+	err = intel_guc_self_cfg64(ct_to_guc(ct), send ?
+				   GUC_KLV_SELF_CFG_H2G_CTB_ADDR_KEY :
+				   GUC_KLV_SELF_CFG_G2H_CTB_ADDR_KEY,
+				   buff_addr);
 	if (unlikely(err))
-		CT_ERROR(ct, "Failed to register %s buffer (err=%d)\n",
-			 guc_ct_buffer_type_to_str(type), err);
-	return err;
-}
+		goto failed;
 
-static int guc_action_deregister_ct_buffer(struct intel_guc *guc, u32 type)
-{
-	u32 request[HOST2GUC_DEREGISTER_CTB_REQUEST_MSG_LEN] = {
-		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
-		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
-		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_HOST2GUC_DEREGISTER_CTB),
-		FIELD_PREP(HOST2GUC_DEREGISTER_CTB_REQUEST_MSG_1_TYPE, type),
-	};
-
-	GEM_BUG_ON(type != GUC_CTB_TYPE_HOST2GUC && type != GUC_CTB_TYPE_GUC2HOST);
-
-	/* CT deregistration must go over MMIO */
-	return intel_guc_send_mmio(guc, request, ARRAY_SIZE(request), NULL, 0);
-}
-
-static int ct_deregister_buffer(struct intel_guc_ct *ct, u32 type)
-{
-	int err = guc_action_deregister_ct_buffer(ct_to_guc(ct), type);
-
+	err = intel_guc_self_cfg32(ct_to_guc(ct), send ?
+				   GUC_KLV_SELF_CFG_H2G_CTB_SIZE_KEY :
+				   GUC_KLV_SELF_CFG_G2H_CTB_SIZE_KEY,
+				   size);
 	if (unlikely(err))
-		CT_ERROR(ct, "Failed to deregister %s buffer (err=%d)\n",
-			 guc_ct_buffer_type_to_str(type), err);
+failed:
+		CT_PROBE_ERROR(ct, "Failed to register %s buffer (%pe)\n",
+			       send ? "SEND" : "RECV", ERR_PTR(err));
+
 	return err;
 }
 
@@ -302,7 +290,7 @@ void intel_guc_ct_fini(struct intel_guc_ct *ct)
 int intel_guc_ct_enable(struct intel_guc_ct *ct)
 {
 	struct intel_guc *guc = ct_to_guc(ct);
-	u32 base, desc, cmds;
+	u32 base, desc, cmds, size;
 	void *blob;
 	int err;
 
@@ -327,27 +315,27 @@ int intel_guc_ct_enable(struct intel_guc_ct *ct)
 	 */
 	desc = base + ptrdiff(ct->ctbs.recv.desc, blob);
 	cmds = base + ptrdiff(ct->ctbs.recv.cmds, blob);
-	err = ct_register_buffer(ct, GUC_CTB_TYPE_GUC2HOST,
-				 desc, cmds, ct->ctbs.recv.size * 4);
-
+	size = ct->ctbs.recv.size * 4;
+	err = ct_register_buffer(ct, false, desc, cmds, size);
 	if (unlikely(err))
 		goto err_out;
 
 	desc = base + ptrdiff(ct->ctbs.send.desc, blob);
 	cmds = base + ptrdiff(ct->ctbs.send.cmds, blob);
-	err = ct_register_buffer(ct, GUC_CTB_TYPE_HOST2GUC,
-				 desc, cmds, ct->ctbs.send.size * 4);
-
+	size = ct->ctbs.send.size * 4;
+	err = ct_register_buffer(ct, true, desc, cmds, size);
 	if (unlikely(err))
-		goto err_deregister;
+		goto err_out;
+
+	err = ct_control_enable(ct, true);
+	if (unlikely(err))
+		goto err_out;
 
 	ct->enabled = true;
 	ct->stall_time = KTIME_MAX;
 
 	return 0;
 
-err_deregister:
-	ct_deregister_buffer(ct, GUC_CTB_TYPE_GUC2HOST);
 err_out:
 	CT_PROBE_ERROR(ct, "Failed to enable CTB (%pe)\n", ERR_PTR(err));
 	return err;
@@ -366,8 +354,7 @@ void intel_guc_ct_disable(struct intel_guc_ct *ct)
 	ct->enabled = false;
 
 	if (intel_guc_is_fw_running(guc)) {
-		ct_deregister_buffer(ct, GUC_CTB_TYPE_HOST2GUC);
-		ct_deregister_buffer(ct, GUC_CTB_TYPE_GUC2HOST);
+		ct_control_enable(ct, false);
 	}
 }
 
@@ -642,6 +629,7 @@ static int ct_send(struct intel_guc_ct *ct,
 	struct intel_guc_ct_buffer *ctb = &ct->ctbs.send;
 	struct ct_request request;
 	unsigned long flags;
+	bool send_again;
 	unsigned int sleep_period_ms = 1;
 	u32 fence;
 	int err;
@@ -651,6 +639,9 @@ static int ct_send(struct intel_guc_ct *ct,
 	GEM_BUG_ON(len & ~GUC_CT_MSG_LEN_MASK);
 	GEM_BUG_ON(!response_buf && response_buf_size);
 	might_sleep();
+
+resend:
+	send_again = false;
 
 	/*
 	 * We use a lazy spin wait loop here as we believe that if the CT
@@ -703,6 +694,13 @@ retry:
 	if (unlikely(err))
 		goto unlink;
 
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, *status) == GUC_HXG_TYPE_NO_RESPONSE_RETRY) {
+		CT_DEBUG(ct, "retrying request %#x (%u)\n", *action,
+			 FIELD_GET(GUC_HXG_RETRY_MSG_0_REASON, *status));
+		send_again = true;
+		goto unlink;
+	}
+
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, *status) != GUC_HXG_TYPE_RESPONSE_SUCCESS) {
 		err = -EIO;
 		goto unlink;
@@ -724,6 +722,9 @@ unlink:
 	spin_lock_irqsave(&ct->requests.lock, flags);
 	list_del(&request.link);
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
+
+	if (unlikely(send_again))
+		goto resend;
 
 	return err;
 }
@@ -896,6 +897,7 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	GEM_BUG_ON(len < GUC_HXG_MSG_MIN_LEN);
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, hxg[0]) != GUC_HXG_ORIGIN_GUC);
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, hxg[0]) != GUC_HXG_TYPE_RESPONSE_SUCCESS &&
+		   FIELD_GET(GUC_HXG_MSG_0_TYPE, hxg[0]) != GUC_HXG_TYPE_NO_RESPONSE_RETRY &&
 		   FIELD_GET(GUC_HXG_MSG_0_TYPE, hxg[0]) != GUC_HXG_TYPE_RESPONSE_FAILURE);
 
 	CT_DEBUG(ct, "response fence %u status %#x\n", fence, hxg[0]);
@@ -968,6 +970,12 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_CONTEXT_RESET_NOTIFICATION:
 		ret = intel_guc_context_reset_process_msg(guc, payload, len);
 		break;
+	case INTEL_GUC_ACTION_STATE_CAPTURE_NOTIFICATION:
+		ret = intel_guc_error_capture_process_msg(guc, payload, len);
+		if (unlikely(ret))
+			CT_ERROR(ct, "error capture notification failed %x %*ph\n",
+				  action, 4 * len, payload);
+		break;
 	case INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
 		ret = intel_guc_engine_failure_process_msg(guc, payload, len);
 		break;
@@ -986,7 +994,7 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	return 0;
 }
 
-static bool ct_process_incoming_requests(struct intel_guc_ct *ct)
+static bool ct_process_incoming_requests(struct intel_guc_ct *ct, struct list_head *incoming)
 {
 	unsigned long flags;
 	struct ct_incoming_msg *request;
@@ -994,11 +1002,11 @@ static bool ct_process_incoming_requests(struct intel_guc_ct *ct)
 	int err;
 
 	spin_lock_irqsave(&ct->requests.lock, flags);
-	request = list_first_entry_or_null(&ct->requests.incoming,
+	request = list_first_entry_or_null(incoming,
 					   struct ct_incoming_msg, link);
 	if (request)
 		list_del(&request->link);
-	done = !!list_empty(&ct->requests.incoming);
+	done = !!list_empty(incoming);
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
 
 	if (!request)
@@ -1021,7 +1029,7 @@ static void ct_incoming_request_worker_func(struct work_struct *w)
 	bool done;
 
 	do {
-		done = ct_process_incoming_requests(ct);
+		done = ct_process_incoming_requests(ct, &ct->requests.incoming);
 	} while (!done);
 }
 
@@ -1042,6 +1050,22 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 	case INTEL_GUC_ACTION_SCHED_CONTEXT_MODE_DONE:
 	case INTEL_GUC_ACTION_DEREGISTER_CONTEXT_DONE:
 		g2h_release_space(ct, request->size);
+	case INTEL_GUC_ACTION_TLB_INVALIDATION_DONE:
+		atomic_add(request->size, &ct->ctbs.recv.space);
+	}
+	/* Handle tlb invalidation response in interrupt context */
+	if (action == INTEL_GUC_ACTION_TLB_INVALIDATION_DONE) {
+		const u32 *hxg, *payload;
+		u32 hxg_len, len;
+
+		hxg = &request->msg[GUC_CTB_MSG_MIN_LEN];
+		hxg_len = request->size - GUC_CTB_MSG_MIN_LEN;
+		payload = &hxg[GUC_HXG_MSG_MIN_LEN];
+		len = hxg_len - GUC_HXG_MSG_MIN_LEN;
+		intel_guc_tlb_invalidation_done_process_msg(ct_to_guc(ct),  payload[0]);
+		if (unlikely(len < 1))
+			return -EPROTO;
+		return 0;
 	}
 
 	spin_lock_irqsave(&ct->requests.lock, flags);
@@ -1049,6 +1073,7 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
 
 	queue_work(system_unbound_wq, &ct->requests.worker);
+
 	return 0;
 }
 
@@ -1076,6 +1101,7 @@ static int ct_handle_hxg(struct intel_guc_ct *ct, struct ct_incoming_msg *msg)
 		break;
 	case GUC_HXG_TYPE_RESPONSE_SUCCESS:
 	case GUC_HXG_TYPE_RESPONSE_FAILURE:
+	case GUC_HXG_TYPE_NO_RESPONSE_RETRY:
 		err = ct_handle_response(ct, msg);
 		break;
 	default:

@@ -16,6 +16,7 @@
 #include "intel_guc_log.h"
 #include "intel_guc_reg.h"
 #include "intel_guc_slpc_types.h"
+#include "intel_guc_hwconfig.h"
 #include "intel_uc_fw.h"
 #include "i915_utils.h"
 #include "i915_vma.h"
@@ -33,6 +34,7 @@ struct intel_guc {
 	struct intel_guc_log log;
 	struct intel_guc_ct ct;
 	struct intel_guc_slpc slpc;
+	struct intel_guc_hwconfig hwconfig;
 
 	/* Global engine used to submit requests to GuC */
 	struct i915_sched_engine *sched_engine;
@@ -53,6 +55,9 @@ struct intel_guc {
 	 * submission, used to determine if the GT is idle
 	 */
 	atomic_t outstanding_submission_g2h;
+
+	struct xarray tlb_lookup;
+	u32 next_seqno;
 
 	struct {
 		void (*reset)(struct intel_guc *guc);
@@ -135,6 +140,11 @@ struct intel_guc {
 	/* To serialize the intel_guc_send actions */
 	struct mutex send_mutex;
 };
+
+struct intel_guc_tlb_wait {
+	u8 status;
+	struct task_struct *tsk;
+} __aligned(4);
 
 static inline struct intel_guc *log_to_guc(struct intel_guc_log *log)
 {
@@ -248,6 +258,11 @@ int intel_guc_resume(struct intel_guc *guc);
 struct i915_vma *intel_guc_allocate_vma(struct intel_guc *guc, u32 size);
 int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 				   struct i915_vma **out_vma, void **out_vaddr);
+int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
+int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
+
+int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
+				 enum intel_guc_tlb_inval_mode mode);
 
 static inline bool intel_guc_is_supported(struct intel_guc *guc)
 {
@@ -324,6 +339,9 @@ int intel_guc_context_reset_process_msg(struct intel_guc *guc,
 					const u32 *msg, u32 len);
 int intel_guc_engine_failure_process_msg(struct intel_guc *guc,
 					 const u32 *msg, u32 len);
+int intel_guc_error_capture_process_msg(struct intel_guc *guc,
+					 const u32 *msg, u32 len);
+void intel_guc_tlb_invalidation_done_process_msg(struct intel_guc *guc, u32 seqno);
 
 void intel_guc_find_hung_context(struct intel_engine_cs *engine);
 

@@ -436,6 +436,15 @@ static int __uc_check_hw(struct intel_uc *uc)
 	return 0;
 }
 
+static void print_fw_ver(struct intel_uc *uc, struct intel_uc_fw *fw)
+{
+	struct drm_i915_private *i915 = uc_to_gt(uc)->i915;
+
+	drm_info(&i915->drm, "%s firmware %s version %u.%u\n",
+		 intel_uc_fw_type_repr(fw->type), fw->path,
+		 fw->major_ver_found, fw->minor_ver_found);
+}
+
 static int __uc_init_hw(struct intel_uc *uc)
 {
 	struct drm_i915_private *i915 = uc_to_gt(uc)->i915;
@@ -445,6 +454,11 @@ static int __uc_init_hw(struct intel_uc *uc)
 
 	GEM_BUG_ON(!intel_uc_supports_guc(uc));
 	GEM_BUG_ON(!intel_uc_wants_guc(uc));
+
+	print_fw_ver(uc, &guc->fw);
+
+	if (intel_uc_uses_huc(uc))
+		print_fw_ver(uc, &huc->fw);
 
 	if (!intel_uc_fw_is_loadable(&guc->fw)) {
 		ret = __uc_check_hw(uc) ||
@@ -497,6 +511,15 @@ static int __uc_init_hw(struct intel_uc *uc)
 
 	intel_huc_auth(huc);
 
+	/*
+	 * Ignore table load failures for now. Missing tables will cause issues
+	 * for UMDs but won't prevent the i915 driver from working. So just
+	 * report the error and keep going.
+	 */
+	ret = intel_guc_hwconfig_init(&guc->hwconfig);
+	if (ret)
+		drm_err(&i915->drm, "Failed to retrieve hwconfig table: %d\n", ret);
+
 	if (intel_uc_uses_guc_submission(uc))
 		intel_guc_submission_enable(guc);
 
@@ -506,23 +529,11 @@ static int __uc_init_hw(struct intel_uc *uc)
 			goto err_submission;
 	}
 
-	drm_info(&i915->drm, "%s firmware %s version %u.%u %s:%s\n",
-		 intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_GUC), guc->fw.path,
-		 guc->fw.major_ver_found, guc->fw.minor_ver_found,
-		 "submission",
+	drm_info(&i915->drm, "GuC submission %s\n",
 		 enableddisabled(intel_uc_uses_guc_submission(uc)));
 
 	drm_info(&i915->drm, "GuC SLPC: %s\n",
 		 enableddisabled(intel_uc_uses_guc_slpc(uc)));
-
-	if (intel_uc_uses_huc(uc)) {
-		drm_info(&i915->drm, "%s firmware %s version %u.%u %s:%s\n",
-			 intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_HUC),
-			 huc->fw.path,
-			 huc->fw.major_ver_found, huc->fw.minor_ver_found,
-			 "authenticated",
-			 yesno(intel_huc_is_authenticated(huc)));
-	}
 
 	return 0;
 
@@ -557,6 +568,8 @@ static void __uc_fini_hw(struct intel_uc *uc)
 
 	if (intel_uc_uses_guc_submission(uc))
 		intel_guc_submission_disable(guc);
+
+	intel_guc_hwconfig_fini(&guc->hwconfig);
 
 	__uc_sanitize(uc);
 }

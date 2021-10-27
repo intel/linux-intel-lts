@@ -2627,6 +2627,13 @@ struct drm_i915_query_item {
 #define DRM_I915_QUERY_ENGINE_INFO	2
 #define DRM_I915_QUERY_PERF_CONFIG      3
 #define DRM_I915_QUERY_MEMORY_REGIONS   4
+	/**
+	 * Query HWConfig Table: Copies a device information table to the
+	 * query's item.data_ptr directly if the allocated length is big enough
+	 * For details about table format and content see intel_hwconfig_types.h
+	 */
+#define PRELIM_DRM_I915_QUERY_HWCONFIG_TABLE	(PRELIM_DRM_I915_QUERY | 6)
+
 /* Must be kept compact -- no holes and well documented */
 
 	/**
