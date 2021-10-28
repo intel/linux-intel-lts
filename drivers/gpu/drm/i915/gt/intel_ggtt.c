@@ -21,6 +21,10 @@
 #include "intel_gtt.h"
 #include "gen8_ppgtt.h"
 
+#include "iov/abi/iov_actions_abi.h"
+#include "iov/intel_iov_relay.h"
+#include "display/intel_display_types.h"
+
 static int
 i915_get_ggtt_vma_pages(struct i915_vma *vma);
 
@@ -117,17 +121,11 @@ static bool needs_idle_maps(struct drm_i915_private *i915)
 	return false;
 }
 
-void i915_ggtt_suspend(struct i915_ggtt *ggtt)
+static void unbind_vm(struct i915_address_space *vm)
 {
 	struct i915_vma *vma, *vn;
-	int open;
 
-	mutex_lock(&ggtt->vm.mutex);
-
-	/* Skip rewriting PTE on VMA unbind. */
-	open = atomic_xchg(&ggtt->vm.open, 0);
-
-	list_for_each_entry_safe(vma, vn, &ggtt->vm.bound_list, vm_link) {
+	list_for_each_entry_safe(vma, vn, &vm->bound_list, vm_link) {
 		GEM_BUG_ON(!drm_mm_node_allocated(&vma->node));
 		i915_vma_wait_for_bind(vma);
 
@@ -140,11 +138,39 @@ void i915_ggtt_suspend(struct i915_ggtt *ggtt)
 		}
 	}
 
-	ggtt->vm.clear_range(&ggtt->vm, 0, ggtt->vm.total);
+	vm->clear_range(vm, 0, vm->total);
+}
+
+void i915_ggtt_suspend(struct i915_ggtt *ggtt)
+{
+	struct drm_i915_private *i915 = ggtt->vm.i915;
+	struct drm_framebuffer *drm_fb;
+	int open;
+
+	mutex_lock(&i915->drm.mode_config.fb_lock);
+	mutex_lock(&ggtt->vm.mutex);
+
+	drm_for_each_fb(drm_fb, &i915->drm) {
+		struct intel_framebuffer *fb = to_intel_framebuffer(drm_fb);
+
+		if (fb->dpt_vm) {
+			/* Skip rewriting PTE on VMA unbind. */
+			int open_dpt = atomic_xchg(&fb->dpt_vm->open, 0);
+
+			unbind_vm(fb->dpt_vm);
+
+			atomic_set(&fb->dpt_vm->open, open_dpt);
+		}
+	}
+
+	open = atomic_xchg(&ggtt->vm.open, 0);
+
+	unbind_vm(&ggtt->vm);
 	ggtt->invalidate(ggtt);
 	atomic_set(&ggtt->vm.open, open);
 
 	mutex_unlock(&ggtt->vm.mutex);
+	mutex_unlock(&i915->drm.mode_config.fb_lock);
 
 	intel_gt_check_and_clear_faults(ggtt->vm.gt);
 }
@@ -1282,9 +1308,35 @@ void i915_ggtt_disable_guc(struct i915_ggtt *ggtt)
 	ggtt->invalidate(ggtt);
 }
 
-void i915_ggtt_resume(struct i915_ggtt *ggtt)
+static bool bind_vm(struct i915_address_space *vm)
 {
 	struct i915_vma *vma;
+	bool flush = false;
+
+	/* clflush objects bound into the GGTT and rebind them. */
+	list_for_each_entry(vma, &vm->bound_list, vm_link) {
+		struct drm_i915_gem_object *obj = vma->obj;
+		unsigned int was_bound =
+			atomic_read(&vma->flags) & I915_VMA_BIND_MASK;
+
+		GEM_BUG_ON(!was_bound);
+		vma->ops->bind_vma(vm, NULL, vma,
+				   obj ? obj->cache_level : 0,
+				   was_bound);
+		if (obj) { /* only used during resume => exclusive access */
+			flush |= fetch_and_zero(&obj->write_domain);
+			obj->read_domains |= I915_GEM_DOMAIN_GTT;
+		}
+	}
+
+	return flush;
+}
+
+
+void i915_ggtt_resume(struct i915_ggtt *ggtt)
+{
+	struct drm_framebuffer *drm_fb;
+	struct drm_i915_private *i915 = ggtt->vm.i915;
 	bool flush = false;
 	int open;
 
@@ -1296,32 +1348,32 @@ void i915_ggtt_resume(struct i915_ggtt *ggtt)
 	/* Skip rewriting PTE on VMA unbind. */
 	open = atomic_xchg(&ggtt->vm.open, 0);
 
-	/* clflush objects bound into the GGTT and rebind them. */
-	list_for_each_entry(vma, &ggtt->vm.bound_list, vm_link) {
-		struct drm_i915_gem_object *obj = vma->obj;
-		unsigned int was_bound =
-			atomic_read(&vma->flags) & I915_VMA_BIND_MASK;
-
-		GEM_BUG_ON(!was_bound);
-		vma->ops->bind_vma(&ggtt->vm, NULL, vma,
-				   obj ? obj->cache_level : 0,
-				   was_bound);
-		if (obj) { /* only used during resume => exclusive access */
-			flush |= fetch_and_zero(&obj->write_domain);
-			obj->read_domains |= I915_GEM_DOMAIN_GTT;
-		}
-	}
+	flush |= bind_vm(&ggtt->vm);
 
 	atomic_set(&ggtt->vm.open, open);
 	ggtt->invalidate(ggtt);
-
-	if (flush)
-		wbinvd_on_all_cpus();
 
 	if (GRAPHICS_VER(ggtt->vm.i915) >= 8)
 		setup_private_pat(ggtt->vm.gt->uncore);
 
 	intel_ggtt_restore_fences(ggtt);
+
+	mutex_lock(&i915->drm.mode_config.fb_lock);
+	drm_for_each_fb(drm_fb, &i915->drm) {
+		struct intel_framebuffer *fb = to_intel_framebuffer(drm_fb);
+
+		if (fb->dpt_vm) {
+			int open_dpt = atomic_xchg(&fb->dpt_vm->open, 0);
+
+			flush |= bind_vm(fb->dpt_vm);
+
+			atomic_set(&fb->dpt_vm->open, open_dpt);
+		}
+	}
+	mutex_unlock(&i915->drm.mode_config.fb_lock);
+
+	if (flush)
+		wbinvd_on_all_cpus();
 }
 
 static struct scatterlist *
