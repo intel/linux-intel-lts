@@ -1062,9 +1062,9 @@ static int igc_init_empty_frame(struct igc_ring *ring,
 }
 
 static int igc_init_tx_empty_descriptor(struct igc_ring *ring,
-					struct sk_buff *skb)
+					struct sk_buff *skb,
+					struct igc_tx_buffer *first)
 {
-	struct igc_tx_buffer *buffer;
 	union igc_adv_tx_desc *desc;
 	u32 cmd_type, olinfo_status;
 	int err;
@@ -1072,24 +1072,23 @@ static int igc_init_tx_empty_descriptor(struct igc_ring *ring,
 	if (!igc_desc_unused(ring))
 		return -EBUSY;
 
-	buffer = &ring->tx_buffer_info[ring->next_to_use];
-	err = igc_init_empty_frame(ring, buffer, skb);
+	err = igc_init_empty_frame(ring, first, skb);
 	if (err)
 		return err;
 
 	cmd_type = IGC_ADVTXD_DTYP_DATA | IGC_ADVTXD_DCMD_DEXT |
 		   IGC_ADVTXD_DCMD_IFCS | IGC_TXD_DCMD |
-		   buffer->bytecount;
-	olinfo_status = buffer->bytecount << IGC_ADVTXD_PAYLEN_SHIFT;
+		   first->bytecount;
+	olinfo_status = first->bytecount << IGC_ADVTXD_PAYLEN_SHIFT;
 
 	desc = IGC_TX_DESC(ring, ring->next_to_use);
 	desc->read.cmd_type_len = cpu_to_le32(cmd_type);
 	desc->read.olinfo_status = cpu_to_le32(olinfo_status);
-	desc->read.buffer_addr = cpu_to_le64(dma_unmap_addr(buffer, dma));
+	desc->read.buffer_addr = cpu_to_le64(dma_unmap_addr(first, dma));
 
 	netdev_tx_sent_queue(txring_txq(ring), skb->len);
 
-	buffer->next_to_watch = desc;
+	first->next_to_watch = desc;
 
 	ring->next_to_use++;
 	if (ring->next_to_use == ring->count)
@@ -1543,9 +1542,11 @@ static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 	launch_time = igc_tx_launchtime(tx_ring, txtime, &first_flag, &insert_empty);
 
 	if (insert_empty) {
+		struct igc_tx_buffer *empty_info;
 		struct sk_buff *empty;
 		void *data;
 
+		empty_info = &tx_ring->tx_buffer_info[tx_ring->next_to_use];
 		empty = alloc_skb(IGC_EMPTY_FRAME_SIZE, GFP_ATOMIC);
 		if (!empty)
 			goto done;
@@ -1555,7 +1556,9 @@ static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 
 		igc_tx_ctxtdesc(tx_ring, 0, false, 0, 0, 0);
 
-		if (igc_init_tx_empty_descriptor(tx_ring, empty) < 0)
+		if (igc_init_tx_empty_descriptor(tx_ring,
+						 empty,
+						 empty_info) < 0)
 			dev_kfree_skb_any(empty);
 	}
 
@@ -2833,67 +2836,6 @@ static void igc_update_tx_stats(struct igc_q_vector *q_vector,
 	q_vector->tx.total_packets += packets;
 }
 
-static int igc_launchtm_ctxtdesc(struct igc_ring *tx_ring,
-				 ktime_t txtime)
-{
-	bool first_flag = false, insert_empty = false;
-	struct igc_adv_tx_context_desc *context_desc;
-	u16 i = tx_ring->next_to_use;
-	u32 mss_l4len_idx = 0;
-	u32 type_tucmd = 0;
-	__le32 launch_time;
-	int desc_used = 0;
-
-	launch_time = igc_tx_launchtime(tx_ring, txtime, &first_flag, &insert_empty);
-
-	if (insert_empty) {
-		struct sk_buff *empty;
-		void *data;
-
-		empty = alloc_skb(IGC_EMPTY_FRAME_SIZE, GFP_ATOMIC);
-		if (!empty)
-			goto done;
-
-		data = skb_put(empty, IGC_EMPTY_FRAME_SIZE);
-		memset(data, 0, IGC_EMPTY_FRAME_SIZE);
-
-		igc_tx_ctxtdesc(tx_ring, 0, false, 0, 0, 0);
-
-		if (igc_init_tx_empty_descriptor(tx_ring, empty) < 0)
-			dev_kfree_skb_any(empty);
-
-		/* 1 desc. for Empty packet data
-		 * 1 desc. for Empty packet context
-		 */
-		desc_used += 2;
-	}
-
-done:
-	i = tx_ring->next_to_use;
-	context_desc = IGC_TX_CTXTDESC(tx_ring, i);
-
-	i++;
-	desc_used++;
-	tx_ring->next_to_use = (i < tx_ring->count) ? i : 0;
-
-	/* set bits to identify this as an advanced context descriptor */
-	type_tucmd |= IGC_TXD_CMD_DEXT | IGC_ADVTXD_DTYP_CTXT;
-
-	/* For i225, context index must be unique per ring. */
-	if (test_bit(IGC_RING_FLAG_TX_CTX_IDX, &tx_ring->flags))
-		mss_l4len_idx |= tx_ring->reg_idx << 4;
-
-	if (first_flag)
-		mss_l4len_idx |= IGC_ADVTXD_TSN_CNTX_FIRST;
-
-	context_desc->vlan_macip_lens	= 0;
-	context_desc->type_tucmd_mlhl	= cpu_to_le32(type_tucmd);
-	context_desc->mss_l4len_idx	= cpu_to_le32(mss_l4len_idx);
-	context_desc->launch_time = launch_time;
-
-	return desc_used;
-}
-
 static void igc_xdp_xmit_zc(struct igc_ring *ring)
 {
 	struct xsk_buff_pool *pool = ring->xsk_pool;
@@ -2914,18 +2856,49 @@ static void igc_xdp_xmit_zc(struct igc_ring *ring)
 	while (xsk_tx_peek_desc(pool, &xdp_desc) && budget > 3) {
 		u32 cmd_type, olinfo_status;
 		struct igc_tx_buffer *bi;
-		ktime_t launch_tm = 0;
+		__le32 launch_time = 0;
 		dma_addr_t dma;
-
-		bi = &ring->tx_buffer_info[ntu];
+		bool first_flag = false, insert_empty = false;
 
 		if (ring->launchtime_enable && xdp_desc.txtime > 0) {
-			launch_tm = ns_to_ktime(xdp_desc.txtime);
-			budget -= igc_launchtm_ctxtdesc(ring, launch_tm);
+			launch_time = igc_tx_launchtime
+						(ring,
+						 ns_to_ktime(xdp_desc.txtime),
+						 &first_flag,
+						 &insert_empty);
+			if (insert_empty) {
+				struct igc_tx_buffer *empty_info;
+				struct sk_buff *empty;
+				void *data;
+
+				empty_info = &ring->tx_buffer_info
+							[ring->next_to_use];
+				empty = alloc_skb(IGC_EMPTY_FRAME_SIZE,
+						  GFP_ATOMIC);
+				if (!empty)
+					goto done;
+
+				data = skb_put(empty, IGC_EMPTY_FRAME_SIZE);
+				memset(data, 0, IGC_EMPTY_FRAME_SIZE);
+				budget--;
+				igc_tx_ctxtdesc(ring, 0, false, 0, 0, 0);
+
+				budget--;
+				if (igc_init_tx_empty_descriptor
+							(ring,
+							 empty,
+							 empty_info) < 0)
+					dev_kfree_skb_any(empty);
+			}
 		}
 
+done:
 		/* re-read ntu as igc_launchtm_ctxtdesc() updates it */
 		ntu = ring->next_to_use;
+		bi = &ring->tx_buffer_info[ntu];
+
+		budget--;
+		igc_tx_ctxtdesc(ring, launch_time, first_flag, 0, 0, 0);
 
 		cmd_type = IGC_ADVTXD_DTYP_DATA | IGC_ADVTXD_DCMD_DEXT |
 			   IGC_ADVTXD_DCMD_IFCS | IGC_TXD_DCMD |
@@ -2938,6 +2911,7 @@ static void igc_xdp_xmit_zc(struct igc_ring *ring)
 
 		budget--;
 
+		ntu = ring->next_to_use;
 		tx_desc = IGC_TX_DESC(ring, ntu);
 		tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
 		tx_desc->read.olinfo_status = cpu_to_le32(olinfo_status);
