@@ -617,6 +617,11 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
 
+	if (pdev->revision == PCI_PCH_A0 ||
+	    pdev->revision == PCI_PCH_A1 ||
+	    pdev->revision == PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
+
 	return ehl_common_data(pdev, plat);
 }
 
@@ -629,6 +634,11 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 {
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII;
+
+	if (pdev->revision == PCI_PCH_A0 ||
+	    pdev->revision == PCI_PCH_A1 ||
+	    pdev->revision == PCI_PCH_B0)
+		plat->dma_cfg->pch_intr_wa = 1;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -739,6 +749,7 @@ static int tgl_sgmii_phy0_data(struct pci_dev *pdev,
 			       struct plat_stmmacenet_data *plat)
 {
 	plat->bus_id = 1;
+	plat->dma_cfg->pch_intr_wa = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	plat->speed_mode_2500 = intel_speed_mode_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
@@ -754,6 +765,7 @@ static int tgl_sgmii_phy1_data(struct pci_dev *pdev,
 			       struct plat_stmmacenet_data *plat)
 {
 	plat->bus_id = 2;
+	plat->dma_cfg->pch_intr_wa = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	plat->speed_mode_2500 = intel_speed_mode_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
@@ -768,30 +780,57 @@ static struct stmmac_pci_info tgl_sgmii1g_phy1_info = {
 static int adls_sgmii_phy0_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
+	int ret;
+
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	plat->speed_mode_2500 = intel_speed_mode_2500;
 
 	/* SerDes power up and power down are done in BIOS for ADL */
 
-	return tgl_common_data(pdev, plat);
+	ret = tgl_common_data(pdev, plat);
+	if (ret)
+		return ret;
+
+	/* Override: Only perform workaround on A0 & A1 stepping for ADL */
+	if (pdev->revision == PCI_PCH_A0 || pdev->revision == PCI_PCH_A1)
+		plat->dma_cfg->pch_intr_wa = 1;
+
+	plat->skip_reset = 1;
+
+	return 0;
+
 }
 
-static struct stmmac_pci_info adls_sgmii1g_phy0_info = {
+static struct stmmac_pci_info adls_sgmii_phy0_info = {
 	.setup = adls_sgmii_phy0_data,
 };
 
 static int adls_sgmii_phy1_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
+	int ret;
+
 	plat->bus_id = 2;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	plat->speed_mode_2500 = intel_speed_mode_2500;
 
 	/* SerDes power up and power down are done in BIOS for ADL */
 
-	return tgl_common_data(pdev, plat);
+	ret = tgl_common_data(pdev, plat);
+	if (ret)
+		return ret;
+
+	/* Override: Only perform workaround on A0 & A1 stepping for ADL */
+	if (pdev->revision == PCI_PCH_A0 || pdev->revision == PCI_PCH_A1)
+		plat->dma_cfg->pch_intr_wa = 1;
+
+	plat->skip_reset = 1;
+
+	return 0;
 }
 
-static struct stmmac_pci_info adls_sgmii1g_phy1_info = {
+static struct stmmac_pci_info adls_sgmii_phy1_info = {
 	.setup = adls_sgmii_phy1_data,
 };
 static const struct stmmac_pci_func_data galileo_stmmac_func_data[] = {
@@ -1158,8 +1197,8 @@ static SIMPLE_DEV_PM_OPS(intel_eth_pm_ops, intel_eth_pci_suspend,
 #define PCI_DEVICE_ID_INTEL_TGLH_SGMII1G_0	0x43ac
 #define PCI_DEVICE_ID_INTEL_TGLH_SGMII1G_1	0x43a2
 #define PCI_DEVICE_ID_INTEL_TGL_SGMII1G		0xa0ac
-#define PCI_DEVICE_ID_INTEL_ADLS_SGMII1G_0	0x7aac
-#define PCI_DEVICE_ID_INTEL_ADLS_SGMII1G_1	0x7aad
+#define PCI_DEVICE_ID_INTEL_ADLS_SGMII_0	0x7aac
+#define PCI_DEVICE_ID_INTEL_ADLS_SGMII_1	0x7aad
 
 static const struct pci_device_id intel_eth_pci_id_table[] = {
 	{ PCI_DEVICE_DATA(INTEL, QUARK, &quark_info) },
@@ -1175,8 +1214,8 @@ static const struct pci_device_id intel_eth_pci_id_table[] = {
 	{ PCI_DEVICE_DATA(INTEL, TGL_SGMII1G, &tgl_sgmii1g_phy0_info) },
 	{ PCI_DEVICE_DATA(INTEL, TGLH_SGMII1G_0, &tgl_sgmii1g_phy0_info) },
 	{ PCI_DEVICE_DATA(INTEL, TGLH_SGMII1G_1, &tgl_sgmii1g_phy1_info) },
-	{ PCI_DEVICE_DATA(INTEL, ADLS_SGMII1G_0, &adls_sgmii1g_phy0_info) },
-	{ PCI_DEVICE_DATA(INTEL, ADLS_SGMII1G_1, &adls_sgmii1g_phy1_info) },
+	{ PCI_DEVICE_DATA(INTEL, ADLS_SGMII_0, &adls_sgmii_phy0_info) },
+	{ PCI_DEVICE_DATA(INTEL, ADLS_SGMII_1, &adls_sgmii_phy1_info) },
 	{}
 };
 MODULE_DEVICE_TABLE(pci, intel_eth_pci_id_table);

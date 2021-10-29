@@ -1140,7 +1140,6 @@ void ipu_put_fw_mgs_buf(struct ipu_isys *isys, u64 data)
 	list_move(&msg->head, &isys->framebuflist);
 	spin_unlock_irqrestore(&isys->listlock, flags);
 }
-EXPORT_SYMBOL_GPL(ipu_put_fw_mgs_buf);
 
 static int isys_probe(struct ipu_bus_device *adev)
 {
@@ -1536,6 +1535,7 @@ leave:
 	return 0;
 }
 
+#ifdef IPU_IRQ_POLL
 static void isys_isr_poll(struct ipu_bus_device *adev)
 {
 	struct ipu_isys *isys = ipu_bus_get_drvdata(adev);
@@ -1563,7 +1563,7 @@ int ipu_isys_isr_run(void *ptr)
 
 	return 0;
 }
-
+#endif
 static struct ipu_bus_driver isys_driver = {
 	.probe = isys_probe,
 	.remove = isys_remove,

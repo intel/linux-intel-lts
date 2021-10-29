@@ -769,6 +769,41 @@ static void ucsi_handle_connector_change(struct work_struct *work)
 	con->status.change = con->unprocessed_changes;
 	con->unprocessed_changes = 0;
 
+	/* 5. Inferre any missing changes */
+	changed_flags = pre_ack_status.flags ^ post_ack_status.flags;
+	inferred_changes = 0;
+	if (UCSI_CONSTAT_PWR_OPMODE(changed_flags) != 0)
+		inferred_changes |= UCSI_CONSTAT_POWER_OPMODE_CHANGE;
+
+	if (changed_flags & UCSI_CONSTAT_CONNECTED)
+		inferred_changes |= UCSI_CONSTAT_CONNECT_CHANGE;
+
+	if (changed_flags & UCSI_CONSTAT_PWR_DIR)
+		inferred_changes |= UCSI_CONSTAT_POWER_DIR_CHANGE;
+
+	if (UCSI_CONSTAT_PARTNER_FLAGS(changed_flags) != 0)
+		inferred_changes |= UCSI_CONSTAT_PARTNER_CHANGE;
+
+	if (UCSI_CONSTAT_PARTNER_TYPE(changed_flags) != 0)
+		inferred_changes |= UCSI_CONSTAT_PARTNER_CHANGE;
+
+	/* Mask out anything that was correctly notified in the later call. */
+	inferred_changes &= ~post_ack_status.change;
+	if (inferred_changes)
+		dev_dbg(ucsi->dev, "%s: Inferred changes that would have been lost: 0x%04x\n",
+			__func__, inferred_changes);
+
+	con->unprocessed_changes |= inferred_changes;
+
+	/* 6. If PPM reported a new change, then restart in order to ACK */
+	if (post_ack_status.change)
+		goto out_unlock;
+
+	/* 7. Continue as if nothing happened */
+	con->status = post_ack_status;
+	con->status.change = con->unprocessed_changes;
+	con->unprocessed_changes = 0;
+
 	role = !!(con->status.flags & UCSI_CONSTAT_PWR_DIR);
 
 	if (con->status.change & UCSI_CONSTAT_POWER_OPMODE_CHANGE ||

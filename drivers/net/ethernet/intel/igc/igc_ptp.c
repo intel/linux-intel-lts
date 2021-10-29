@@ -443,6 +443,9 @@ static void igc_ptp_dma_time_to_hwtstamp(struct igc_adapter *adapter,
 	nsec = rd32(IGC_SYSTIML);
 	sec = rd32(IGC_SYSTIMH);
 
+	if (unlikely(nsec < (systim & 0xFFFFFFFF)))
+		--sec;
+
 	switch (adapter->hw.mac.type) {
 	case igc_i225:
 		memset(hwtstamps, 0, sizeof(*hwtstamps));
@@ -757,6 +760,30 @@ void igc_ptp_tx_dma_tstamp(struct igc_adapter *adapter,
 
 	/* Notify the stack and free the skb after we've unlocked */
 	skb_tstamp_tx(skb, &shhwtstamps);
+}
+
+ktime_t igc_tx_dma_hw_tstamp(struct igc_adapter *adapter, u64 tstamp)
+{
+	struct skb_shared_hwtstamps shhwtstamps;
+	int adjust = 0;
+
+	igc_ptp_dma_time_to_hwtstamp(adapter, &shhwtstamps, tstamp);
+
+	switch (adapter->link_speed) {
+	case SPEED_10:
+		adjust = IGC_I225_TX_LATENCY_10;
+		break;
+	case SPEED_100:
+		adjust = IGC_I225_TX_LATENCY_100;
+		break;
+	case SPEED_1000:
+		adjust = IGC_I225_TX_LATENCY_1000;
+		break;
+	case SPEED_2500:
+		adjust = IGC_I225_TX_LATENCY_2500;
+		break;
+	}
+	return ktime_add_ns(shhwtstamps.hwtstamp, adjust);
 }
 
 /**
@@ -1132,7 +1159,8 @@ void igc_ptp_suspend(struct igc_adapter *adapter)
 
 	spin_unlock(&adapter->ptp_tx_lock);
 
-	igc_ptp_time_save(adapter);
+	if (pci_device_is_present(adapter->pdev))
+		igc_ptp_time_save(adapter);
 }
 
 /**

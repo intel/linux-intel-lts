@@ -166,7 +166,12 @@ static void dwmac4_dma_init(void __iomem *ioaddr,
 
 	if (dma_cfg->multi_msi_en) {
 		value &= ~DMA_BUS_MODE_INTM_MASK;
-		value |= (DMA_BUS_MODE_INTM_MODE1 << DMA_BUS_MODE_INTM_SHIFT);
+		if (dma_cfg->pch_intr_wa)
+			value |= (DMA_BUS_MODE_INTM_MODE0 <<
+				  DMA_BUS_MODE_INTM_SHIFT);
+		else
+			value |= (DMA_BUS_MODE_INTM_MODE1 <<
+				  DMA_BUS_MODE_INTM_SHIFT);
 	}
 
 	if (dma_cfg->dche)
@@ -347,8 +352,8 @@ static void dwmac4_dma_tx_chan_op_mode(void __iomem *ioaddr, int mode,
 	writel(mtl_tx_op, ioaddr +  MTL_CHAN_TX_OP_MODE(channel));
 }
 
-static void dwmac4_get_hw_feature(void __iomem *ioaddr,
-				  struct dma_features *dma_cap)
+static int dwmac4_get_hw_feature(void __iomem *ioaddr,
+				 struct dma_features *dma_cap)
 {
 	u32 hw_cap = readl(ioaddr + GMAC_HW_FEATURE0);
 
@@ -437,6 +442,8 @@ static void dwmac4_get_hw_feature(void __iomem *ioaddr,
 	dma_cap->frpbs = (hw_cap & GMAC_HW_FEAT_FRPBS) >> 11;
 	dma_cap->frpsel = (hw_cap & GMAC_HW_FEAT_FRPSEL) >> 10;
 	dma_cap->dvlan = (hw_cap & GMAC_HW_FEAT_DVLAN) >> 5;
+
+	return 0;
 }
 
 /* Enable/disable TSO feature and set MSS */

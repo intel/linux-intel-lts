@@ -67,6 +67,13 @@ static void tlb_invalidate(struct ipu_mmu *mmu)
 
 		writel(0xffffffff, mmu->mmu_hw[i].base +
 		       REG_TLB_INVALIDATE);
+		/*
+		 * The TLB invalidation is a "single cycle" (IOMMU clock cycles)
+		 * When the actual MMIO write reaches the IPU TLB Invalidate
+		 * register, wmb() will force the TLB invalidate out if the CPU
+		 * attempts to update the IOMMU page table (or sooner).
+		 */
+		wmb();
 	}
 	spin_unlock_irqrestore(&mmu->ready_lock, flags);
 }
@@ -778,7 +785,7 @@ static void ipu_mmu_destroy(struct ipu_mmu *mmu)
 	}
 
 	free_dummy_page(mmu_info);
-	dma_unmap_single(mmu_info->dev, mmu_info->l1_pt_dma,
+	dma_unmap_single(mmu_info->dev, mmu_info->l1_pt_dma << ISP_PADDR_SHIFT,
 			 PAGE_SIZE, DMA_BIDIRECTIONAL);
 	free_page((unsigned long)mmu_info->dummy_l2_pt);
 	free_page((unsigned long)mmu_info->l1_pt);
@@ -833,7 +840,6 @@ struct ipu_mmu *ipu_mmu_init(struct device *dev,
 
 	return mmu;
 }
-EXPORT_SYMBOL(ipu_mmu_init);
 
 void ipu_mmu_cleanup(struct ipu_mmu *mmu)
 {
@@ -845,7 +851,6 @@ void ipu_mmu_cleanup(struct ipu_mmu *mmu)
 	put_iova_domain(&dmap->iovad);
 	kfree(dmap);
 }
-EXPORT_SYMBOL(ipu_mmu_cleanup);
 
 MODULE_AUTHOR("Sakari Ailus <sakari.ailus@linux.intel.com>");
 MODULE_AUTHOR("Samu Onkalo <samu.onkalo@intel.com>");

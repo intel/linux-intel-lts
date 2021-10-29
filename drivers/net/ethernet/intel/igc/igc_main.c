@@ -13,6 +13,7 @@
 #include <linux/pci.h>
 #include <linux/bpf_trace.h>
 #include <net/xdp_sock_drv.h>
+#include <linux/btf.h>
 #include <net/ipv6.h>
 
 #include "igc.h"
@@ -148,6 +149,9 @@ static void igc_release_hw_control(struct igc_adapter *adapter)
 {
 	struct igc_hw *hw = &adapter->hw;
 	u32 ctrl_ext;
+
+	if (!pci_device_is_present(adapter->pdev))
+		return;
 
 	/* Let firmware take over control of h/w */
 	ctrl_ext = rd32(IGC_CTRL_EXT);
@@ -991,40 +995,111 @@ static int igc_write_mc_addr_list(struct net_device *netdev)
 	return netdev_mc_count(netdev);
 }
 
-static __le32 igc_tx_launchtime(struct igc_adapter *adapter, ktime_t txtime)
+static __le32 igc_tx_launchtime(struct igc_ring *ring, ktime_t txtime,
+				bool *first_flag, bool *insert_empty)
 {
+	struct igc_adapter *adapter = netdev_priv(ring->netdev);
+	ktime_t cycle_time = adapter->cycle_time;
+	ktime_t base_time = adapter->base_time;
 	ktime_t now = ktime_get_clocktai();
-	struct timespec64 launchtime;
-	ktime_t baset_est;
+	ktime_t baset_est, end_of_cycle;
 	s64 n;
 
-	n = div64_s64(ktime_sub_ns(now, adapter->base_time), adapter->cycle_time);
+	n = div64_s64(ktime_sub_ns(now, base_time), cycle_time);
 
-	/* The BASET registers are increased by cycle-time everytime
-	 * value of systim registers(SYSTIM) cross the current system time,
-	 * so they point to a time one cycle in the future
-	 */
-	baset_est = ktime_add_ns(adapter->base_time, adapter->cycle_time * (n + 1));
+	baset_est = ktime_add_ns(base_time, cycle_time * (n));
+	end_of_cycle = ktime_add_ns(baset_est, cycle_time);
 
-	if (baset_est == txtime) {
-		txtime -= 1000;
-		baset_est -= adapter->cycle_time;
+	if (ktime_compare(txtime, end_of_cycle) >= 0) {
+		*first_flag = true;
+
+		if (ktime_compare(txtime, ring->last_tx_cycle) > 0)
+			*insert_empty = true;
 	}
 
-	baset_est = ktime_sub_ns(txtime, baset_est);
-	launchtime = ktime_to_timespec64(baset_est);
+	ring->last_tx_cycle = end_of_cycle;
 
-	return cpu_to_le32(launchtime.tv_nsec);
+	txtime = ktime_sub_ns(txtime, baset_est);
+	txtime = (txtime > 0 ? txtime % cycle_time : 0);
+
+	return cpu_to_le32(txtime);
 }
+
+static int igc_init_empty_frame(struct igc_ring *ring,
+				struct igc_tx_buffer *buffer,
+				struct sk_buff *skb)
+{
+	dma_addr_t dma;
+	unsigned int size;
+
+	size = skb_headlen(skb);
+
+	dma = dma_map_single(ring->dev, skb->data, size, DMA_TO_DEVICE);
+	if (dma_mapping_error(ring->dev, dma)) {
+		netdev_err_once(ring->netdev, "Failed to map DMA for TX\n");
+		return -ENOMEM;
+	}
+
+	buffer->skb = skb;
+	buffer->protocol = 0;
+	buffer->bytecount = skb->len;
+	buffer->gso_segs = 1;
+	buffer->time_stamp = jiffies;
+	dma_unmap_len_set(buffer, len, skb->len);
+	dma_unmap_addr_set(buffer, dma, dma);
+
+	return 0;
+}
+
+static int igc_init_tx_empty_descriptor(struct igc_ring *ring,
+					struct sk_buff *skb)
+{
+	struct igc_tx_buffer *buffer;
+	union igc_adv_tx_desc *desc;
+	u32 cmd_type, olinfo_status;
+	int err;
+
+	if (!igc_desc_unused(ring))
+		return -EBUSY;
+
+	buffer = &ring->tx_buffer_info[ring->next_to_use];
+	err = igc_init_empty_frame(ring, buffer, skb);
+	if (err)
+		return err;
+
+	cmd_type = IGC_ADVTXD_DTYP_DATA | IGC_ADVTXD_DCMD_DEXT |
+		   IGC_ADVTXD_DCMD_IFCS | IGC_TXD_DCMD |
+		   buffer->bytecount;
+	olinfo_status = buffer->bytecount << IGC_ADVTXD_PAYLEN_SHIFT;
+
+	desc = IGC_TX_DESC(ring, ring->next_to_use);
+	desc->read.cmd_type_len = cpu_to_le32(cmd_type);
+	desc->read.olinfo_status = cpu_to_le32(olinfo_status);
+	desc->read.buffer_addr = cpu_to_le64(dma_unmap_addr(buffer, dma));
+
+	netdev_tx_sent_queue(txring_txq(ring), skb->len);
+
+	buffer->next_to_watch = desc;
+
+	ring->next_to_use++;
+	if (ring->next_to_use == ring->count)
+		ring->next_to_use = 0;
+
+	return 0;
+}
+
+#define IGC_EMPTY_FRAME_SIZE 60
 
 static void igc_tx_ctxtdesc(struct igc_ring *tx_ring,
 			    struct igc_tx_buffer *first,
+			    __le32 launch_time, bool first_flag,
 			    u32 vlan_macip_lens, u32 type_tucmd,
 			    u32 mss_l4len_idx)
 {
 	struct igc_adv_tx_context_desc *context_desc;
-	u16 i = tx_ring->next_to_use;
+	u16 i;
 
+	i = tx_ring->next_to_use;
 	context_desc = IGC_TX_CTXTDESC(tx_ring, i);
 
 	i++;
@@ -1037,23 +1112,13 @@ static void igc_tx_ctxtdesc(struct igc_ring *tx_ring,
 	if (test_bit(IGC_RING_FLAG_TX_CTX_IDX, &tx_ring->flags))
 		mss_l4len_idx |= tx_ring->reg_idx << 4;
 
+	if (first_flag)
+		mss_l4len_idx |= IGC_ADVTXD_TSN_CNTX_FIRST;
+
 	context_desc->vlan_macip_lens	= cpu_to_le32(vlan_macip_lens);
 	context_desc->type_tucmd_mlhl	= cpu_to_le32(type_tucmd);
 	context_desc->mss_l4len_idx	= cpu_to_le32(mss_l4len_idx);
-
-	/* We assume there is always a valid Tx time available. Invalid times
-	 * should have been handled by the upper layers.
-	 */
-	if (tx_ring->launchtime_enable) {
-		struct igc_adapter *adapter = netdev_priv(tx_ring->netdev);
-		ktime_t txtime = first->skb->tstamp;
-
-		first->skb->tstamp = ktime_set(0, 0);
-		context_desc->launch_time = igc_tx_launchtime(adapter,
-							      txtime);
-	} else {
-		context_desc->launch_time = 0;
-	}
+	context_desc->launch_time	= launch_time;
 }
 
 static inline bool igc_ipv6_csum_is_sctp(struct sk_buff *skb)
@@ -1065,7 +1130,8 @@ static inline bool igc_ipv6_csum_is_sctp(struct sk_buff *skb)
 	return offset == skb_checksum_start_offset(skb);
 }
 
-static void igc_tx_csum(struct igc_ring *tx_ring, struct igc_tx_buffer *first)
+static void igc_tx_csum(struct igc_ring *tx_ring, struct igc_tx_buffer *first,
+			__le32 launch_time, bool first_flag)
 {
 	struct sk_buff *skb = first->skb;
 	u32 vlan_macip_lens = 0;
@@ -1108,7 +1174,8 @@ no_csum:
 	vlan_macip_lens |= skb_network_offset(skb) << IGC_ADVTXD_MACLEN_SHIFT;
 	vlan_macip_lens |= first->tx_flags & IGC_TX_FLAGS_VLAN_MASK;
 
-	igc_tx_ctxtdesc(tx_ring, first, vlan_macip_lens, type_tucmd, 0);
+	igc_tx_ctxtdesc(tx_ring, first, launch_time, first_flag,
+			vlan_macip_lens, type_tucmd, 0);
 }
 
 static int __igc_maybe_stop_tx(struct igc_ring *tx_ring, const u16 size)
@@ -1331,6 +1398,7 @@ dma_error:
 
 static int igc_tso(struct igc_ring *tx_ring,
 		   struct igc_tx_buffer *first,
+		   __le32 launch_time, bool first_flag,
 		   u8 *hdr_len)
 {
 	u32 vlan_macip_lens, type_tucmd, mss_l4len_idx;
@@ -1417,8 +1485,8 @@ static int igc_tso(struct igc_ring *tx_ring,
 	vlan_macip_lens |= (ip.hdr - skb->data) << IGC_ADVTXD_MACLEN_SHIFT;
 	vlan_macip_lens |= first->tx_flags & IGC_TX_FLAGS_VLAN_MASK;
 
-	igc_tx_ctxtdesc(tx_ring, first, vlan_macip_lens,
-			type_tucmd, mss_l4len_idx);
+	igc_tx_ctxtdesc(tx_ring, first, launch_time, first_flag,
+			vlan_macip_lens, type_tucmd, mss_l4len_idx);
 
 	return 1;
 }
@@ -1434,11 +1502,14 @@ static bool igc_is_ptp_packet(struct sk_buff *skb)
 static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 				       struct igc_ring *tx_ring)
 {
+	bool first_flag = false, insert_empty = false;
 	u16 count = TXD_USE_COUNT(skb_headlen(skb));
 	__be16 protocol = vlan_get_protocol(skb);
 	struct igc_tx_buffer *first;
+	__le32 launch_time = 0;
 	u32 tx_flags = 0;
 	unsigned short f;
+	ktime_t txtime;
 	u8 hdr_len = 0;
 	int tso = 0;
 
@@ -1452,11 +1523,34 @@ static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 		count += TXD_USE_COUNT(skb_frag_size(
 						&skb_shinfo(skb)->frags[f]));
 
-	if (igc_maybe_stop_tx(tx_ring, count + 3)) {
+	if (igc_maybe_stop_tx(tx_ring, count + 4)) {
 		/* this is a hard error */
 		return NETDEV_TX_BUSY;
 	}
 
+	if (!tx_ring->launchtime_enable)
+		goto done;
+
+	txtime = skb->tstamp;
+	skb->tstamp = ktime_set(0, 0);
+	launch_time = igc_tx_launchtime(tx_ring, txtime, &first_flag, &insert_empty);
+
+	if (insert_empty) {
+		struct sk_buff *empty;
+		void *data;
+
+		empty = alloc_skb(IGC_EMPTY_FRAME_SIZE, GFP_ATOMIC);
+		if (!empty)
+			goto done;
+
+		data = skb_put(empty, IGC_EMPTY_FRAME_SIZE);
+		memset(data, 0, IGC_EMPTY_FRAME_SIZE);
+
+		if (igc_init_tx_empty_descriptor(tx_ring, empty) < 0)
+			dev_kfree_skb_any(empty);
+	}
+
+done:
 	/* record the location of the first descriptor for this packet */
 	first = &tx_ring->tx_buffer_info[tx_ring->next_to_use];
 	first->type = IGC_TX_BUFFER_TYPE_SKB;
@@ -1501,11 +1595,11 @@ static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 	first->tx_flags = tx_flags;
 	first->protocol = protocol;
 
-	tso = igc_tso(tx_ring, first, &hdr_len);
+	tso = igc_tso(tx_ring, first, launch_time, first_flag, &hdr_len);
 	if (tso < 0)
 		goto out_drop;
 	else if (!tso)
-		igc_tx_csum(tx_ring, first);
+		igc_tx_csum(tx_ring, first, launch_time, first_flag);
 
 	igc_tx_map(tx_ring, first, hdr_len);
 
@@ -2390,6 +2484,7 @@ static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
 			xdp.data_end = xdp.data + size;
 			xdp.data_hard_start = pktbuf - igc_rx_offset(rx_ring);
 			xdp_set_data_meta_invalid(&xdp);
+
 			xdp.frame_sz = truesize;
 			xdp.rxq = &rx_ring->xdp_rxq;
 
@@ -2521,6 +2616,7 @@ static int igc_clean_rx_irq_zc(struct igc_q_vector *q_vector, const int budget)
 	u16 cleaned_count = igc_desc_unused(ring);
 	int total_bytes = 0, total_packets = 0;
 	u16 ntc = ring->next_to_clean;
+	struct igc_md_desc *md;
 	struct bpf_prog *prog;
 	bool failure = false;
 	int xdp_status = 0;
@@ -2558,6 +2654,14 @@ static int igc_clean_rx_irq_zc(struct igc_q_vector *q_vector, const int budget)
 		}
 
 		bi->xdp->data_end = bi->xdp->data + size;
+		if (adapter->btf_enabled) {
+			md = bi->xdp->data - sizeof(*md);
+			md->timestamp = timestamp;
+			bi->xdp->data_meta = md;
+		} else {
+			xdp_set_data_meta_invalid(bi->xdp);
+		}
+
 		xsk_buff_dma_sync_for_cpu(bi->xdp, ring->xsk_pool);
 
 		res = __igc_xdp_run_prog(adapter, prog, bi->xdp);
@@ -2619,6 +2723,56 @@ static void igc_update_tx_stats(struct igc_q_vector *q_vector,
 	q_vector->tx.total_packets += packets;
 }
 
+static void igc_launchtm_ctxtdesc(struct igc_ring *tx_ring,
+				  ktime_t txtime)
+{
+	bool first_flag = false, insert_empty = false;
+	struct igc_adv_tx_context_desc *context_desc;
+	u16 i = tx_ring->next_to_use;
+	u32 mss_l4len_idx = 0;
+	u32 type_tucmd = 0;
+	__le32 launch_time;
+
+	launch_time = igc_tx_launchtime(tx_ring, txtime, &first_flag, &insert_empty);
+
+	if (insert_empty) {
+		struct sk_buff *empty;
+		void *data;
+
+		empty = alloc_skb(IGC_EMPTY_FRAME_SIZE, GFP_ATOMIC);
+		if (!empty)
+			goto done;
+
+		data = skb_put(empty, IGC_EMPTY_FRAME_SIZE);
+		memset(data, 0, IGC_EMPTY_FRAME_SIZE);
+
+		if (igc_init_tx_empty_descriptor(tx_ring, empty) < 0)
+			dev_kfree_skb_any(empty);
+	}
+
+done:
+	i = tx_ring->next_to_use;
+	context_desc = IGC_TX_CTXTDESC(tx_ring, i);
+
+	i++;
+	tx_ring->next_to_use = (i < tx_ring->count) ? i : 0;
+
+	/* set bits to identify this as an advanced context descriptor */
+	type_tucmd |= IGC_TXD_CMD_DEXT | IGC_ADVTXD_DTYP_CTXT;
+
+	/* For i225, context index must be unique per ring. */
+	if (test_bit(IGC_RING_FLAG_TX_CTX_IDX, &tx_ring->flags))
+		mss_l4len_idx |= tx_ring->reg_idx << 4;
+
+	if (first_flag)
+		mss_l4len_idx |= IGC_ADVTXD_TSN_CNTX_FIRST;
+
+	context_desc->vlan_macip_lens	= 0;
+	context_desc->type_tucmd_mlhl	= cpu_to_le32(type_tucmd);
+	context_desc->mss_l4len_idx	= cpu_to_le32(mss_l4len_idx);
+	context_desc->launch_time = launch_time;
+}
+
 static void igc_xdp_xmit_zc(struct igc_ring *ring)
 {
 	struct xsk_buff_pool *pool = ring->xsk_pool;
@@ -2636,26 +2790,41 @@ static void igc_xdp_xmit_zc(struct igc_ring *ring)
 
 	budget = igc_desc_unused(ring);
 
-	while (xsk_tx_peek_desc(pool, &xdp_desc) && budget--) {
+	while (xsk_tx_peek_desc(pool, &xdp_desc) && budget > 2) {
 		u32 cmd_type, olinfo_status;
 		struct igc_tx_buffer *bi;
+		ktime_t launch_tm = 0;
 		dma_addr_t dma;
+
+		bi = &ring->tx_buffer_info[ntu];
+
+		if (ring->launchtime_enable && xdp_desc.txtime > 0) {
+			launch_tm = ns_to_ktime(xdp_desc.txtime);
+			budget--;
+			igc_launchtm_ctxtdesc(ring, launch_tm);
+		}
+
+		/* re-read ntu as igc_launchtm_ctxtdesc() updates it */
+		ntu = ring->next_to_use;
 
 		cmd_type = IGC_ADVTXD_DTYP_DATA | IGC_ADVTXD_DCMD_DEXT |
 			   IGC_ADVTXD_DCMD_IFCS | IGC_TXD_DCMD |
 			   xdp_desc.len;
+
 		olinfo_status = xdp_desc.len << IGC_ADVTXD_PAYLEN_SHIFT;
 
 		dma = xsk_buff_raw_get_dma(pool, xdp_desc.addr);
 		xsk_buff_raw_dma_sync_for_device(pool, dma, xdp_desc.len);
+
+		budget--;
 
 		tx_desc = IGC_TX_DESC(ring, ntu);
 		tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
 		tx_desc->read.olinfo_status = cpu_to_le32(olinfo_status);
 		tx_desc->read.buffer_addr = cpu_to_le64(dma);
 
-		bi = &ring->tx_buffer_info[ntu];
 		bi->type = IGC_TX_BUFFER_TYPE_XSK;
+		bi->tx_flags |= IGC_TX_FLAGS_DMA_TSTAMP;
 		bi->protocol = 0;
 		bi->bytecount = xdp_desc.len;
 		bi->gso_segs = 1;
@@ -2667,9 +2836,10 @@ static void igc_xdp_xmit_zc(struct igc_ring *ring)
 		ntu++;
 		if (ntu == ring->count)
 			ntu = 0;
+
+		ring->next_to_use = ntu;
 	}
 
-	ring->next_to_use = ntu;
 	if (tx_desc) {
 		igc_flush_tx_descriptors(ring);
 		xsk_tx_release(pool);
@@ -2694,6 +2864,7 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 	unsigned int i = tx_ring->next_to_clean;
 	struct igc_tx_buffer *tx_buffer;
 	union igc_adv_tx_desc *tx_desc;
+	ktime_t timestamp = 0;
 	u32 xsk_frames = 0;
 
 	if (test_bit(__IGC_DOWN, &adapter->state))
@@ -2721,7 +2892,10 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 		    tx_buffer->tx_flags & IGC_TX_FLAGS_DMA_TSTAMP) {
 			u64 tstamp = le64_to_cpu(eop_desc->wb.dma_tstamp);
 
-			igc_ptp_tx_dma_tstamp(adapter, tx_buffer->skb, tstamp);
+			if (tx_ring->xsk_pool && adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON)
+				timestamp = igc_tx_dma_hw_tstamp(adapter, tstamp);
+			else
+				igc_ptp_tx_dma_tstamp(adapter, tx_buffer->skb, tstamp);
 		}
 
 		/* clear next_to_watch to prevent false hangs */
@@ -2733,6 +2907,11 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
 
 		switch (tx_buffer->type) {
 		case IGC_TX_BUFFER_TYPE_XSK:
+#if defined(CONFIG_TRACING)
+		/* Only use for RTCP KPI Measurement on Q2 */
+		if (tx_ring->queue_index == 2 && adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON)
+			trace_printk("TX HW TS %lld\n", timestamp);
+#endif
 			xsk_frames++;
 			break;
 		case IGC_TX_BUFFER_TYPE_XDP:
@@ -4810,23 +4989,29 @@ void igc_down(struct igc_adapter *adapter)
 
 	igc_ptp_suspend(adapter);
 
-	/* disable receives in the hardware */
-	rctl = rd32(IGC_RCTL);
-	wr32(IGC_RCTL, rctl & ~IGC_RCTL_EN);
-	/* flush and sleep below */
+	if (pci_device_is_present(adapter->pdev)) {
+		/* disable receives in the hardware */
+		rctl = rd32(IGC_RCTL);
+		wr32(IGC_RCTL, rctl & ~IGC_RCTL_EN);
+		/* flush and sleep below */
+	}
+	/* set trans_start so we don't get spurious watchdogs during reset */
+	netif_trans_update(netdev);
 
 	netif_carrier_off(netdev);
 	netif_tx_stop_all_queues(netdev);
 
-	/* disable transmits in the hardware */
-	tctl = rd32(IGC_TCTL);
-	tctl &= ~IGC_TCTL_EN;
-	wr32(IGC_TCTL, tctl);
-	/* flush both disables and wait for them to finish */
-	wrfl();
-	usleep_range(10000, 20000);
+	if (pci_device_is_present(adapter->pdev)) {
+		/* disable transmits in the hardware */
+		tctl = rd32(IGC_TCTL);
+		tctl &= ~IGC_TCTL_EN;
+		wr32(IGC_TCTL, tctl);
+		/* flush both disables and wait for them to finish */
+		wrfl();
+		usleep_range(10000, 20000);
 
-	igc_irq_disable(adapter);
+		igc_irq_disable(adapter);
+	}
 
 	adapter->flags &= ~IGC_FLAG_NEED_LINK_UPDATE;
 
@@ -6068,6 +6253,12 @@ static int igc_bpf(struct net_device *dev, struct netdev_bpf *bpf)
 	case XDP_SETUP_XSK_POOL:
 		return igc_xdp_setup_pool(adapter, bpf->xsk.pool,
 					  bpf->xsk.queue_id);
+	case XDP_SETUP_MD_BTF:
+		return igc_xdp_set_btf_md(dev, bpf->btf_enable);
+	case XDP_QUERY_MD_BTF:
+		bpf->btf_id = igc_xdp_query_btf(dev, &bpf->btf_enable);
+		return 0;
+
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -6693,6 +6884,11 @@ static void igc_remove(struct pci_dev *pdev)
 
 	cancel_work_sync(&adapter->reset_task);
 	cancel_work_sync(&adapter->watchdog_task);
+
+	if (adapter->btf) {
+		adapter->btf_enabled = 0;
+		btf_unregister(adapter->btf);
+	}
 
 	/* Release control of h/w to f/w.  If f/w is AMT enabled, this
 	 * would have already happened in close and is redundant.

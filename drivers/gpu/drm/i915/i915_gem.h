@@ -89,7 +89,11 @@ struct drm_i915_private;
 #define GEM_TRACE_DUMP_ON(expr) BUILD_BUG_ON_INVALID(expr)
 #endif
 
+#ifdef CONFIG_PREEMPT_RT
+#define I915_GEM_IDLE_TIMEOUT HZ
+#else
 #define I915_GEM_IDLE_TIMEOUT (HZ / 5)
+#endif
 
 static inline void tasklet_lock(struct tasklet_struct *t)
 {
