@@ -767,6 +767,9 @@ CVEs fixed in 4.19.207:
   CVE-2021-40490: c481607ba522e31e6ed01efefc19cc1d0e0a46fa ext4: fix race writing to an inline_data file while its xattrs are changing
   CVE-2021-42252: 9c8891b638319ddba9cfa330247922cd960c95b0 soc: aspeed: lpc-ctrl: Fix boundary check for mmap
 
+CVEs fixed in 4.19.208:
+  CVE-2021-20320: ddf58efd05b5d16d86ea4638675e8bd397320930 s390/bpf: Fix optimizing out zero-extensions
+
 CVEs fixed in 4.19.209:
   CVE-2021-37159: f6cf22a1ef49f8e131f99c3f5fd80ab6b23a2d21 usb: hso: fix error handling code of hso_create_net_device
   CVE-2021-3744: 710be7c42d2f724869e5b18b21998ceddaffc4a9 crypto: ccp - fix resource leaks in ccp_run_aes_gcm_cmd()
@@ -775,8 +778,13 @@ CVEs fixed in 4.19.209:
 CVEs fixed in 4.19.210:
   CVE-2021-20317: b9a1ac8e7c03fd09992352c7fb1a61cbbb9ad52b lib/timerqueue: Rely on rbtree semantics for next timer
 
+CVEs fixed in 4.19.211:
+  CVE-2021-20321: 9d4969d8b5073d02059bae3f1b8d9a20cf023c55 ovl: fix missing negative dentry check in ovl_rename()
+  CVE-2021-38300: 79f3a086dfc34887f9bbb0801768608b9470e942 bpf, mips: Validate conditional branch offsets
+  CVE-2021-41864: 078cdd572408176a3900a6eb5a403db0da22f8e0 bpf: Fix integer overflow in prealloc_elems_and_freelist()
+
  
-CVEs Fixed in this 4.19.207 LTS 4.19 release 
+CVEs Fixed in this 4.19.213 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -846,8 +854,7 @@ CVEs Fixed in this 4.19.207 LTS 4.19 release
 # CVE-2021-32078
 0001-ARM-footbridge-remove-personal-server-platform.patch
 
-# CVE-2021-37159
-0001-usb-hso-fix-error-handling-code-of-hso_create_net_de.patch
-
+# CVE-2019-19449
+0001-f2fs-fix-to-do-sanity-check-on-segment-section-count.patch
  
 ================
