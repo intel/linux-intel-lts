@@ -332,31 +332,28 @@ static const struct snd_soc_acpi_codecs tgl_lt6911_hdmi = {
 
 struct snd_soc_acpi_mach snd_soc_acpi_intel_tgl_machines[] = {
 	{
-		.id = "10EC1308",
-		.drv_name = "tgl_rt1308",
-		.sof_fw_filename = "sof-tgl.ri",
-		.sof_tplg_filename = "sof-tgl-rt1308.tplg",
-	},
-	{
-		.id = "10EC5682",
-		.drv_name = "tgl_max98357a_rt5682",
+		.comp_ids = &tgl_rt5682_rt5682s_hp,
+		.drv_name = "tgl_mx98357_rt5682",
 		.machine_quirk = snd_soc_acpi_codec_list,
 		.quirk_data = &tgl_codecs,
 		.sof_fw_filename = "sof-tgl.ri",
 		.sof_tplg_filename = "sof-tgl-max98357a-rt5682.tplg",
 	},
 	{
-		.id = "10EC5682",
-		.drv_name = "tgl_max98373_rt5682",
+		.comp_ids = &tgl_rt5682_rt5682s_hp,
+		.drv_name = "tgl_mx98373_rt5682",
 		.machine_quirk = snd_soc_acpi_codec_list,
 		.quirk_data = &tgl_max98373_amp,
 		.sof_fw_filename = "sof-tgl.ri",
 		.sof_tplg_filename = "sof-tgl-max98373-rt5682.tplg",
 	},
 	{
-		.comp_ids = &essx_83x6,
-		.drv_name = "sof-essx8336",
-		.sof_tplg_filename = "sof-tgl-es8336-ssp2.tplg",
+		.comp_ids = &tgl_rt5682_rt5682s_hp,
+		.drv_name = "tgl_rt1011_rt5682",
+		.machine_quirk = snd_soc_acpi_codec_list,
+		.quirk_data = &tgl_rt1011_amp,
+		.sof_fw_filename = "sof-tgl.ri",
+		.sof_tplg_filename = "sof-tgl-rt1011-rt5682.tplg",
 	},
 	{
 		.id = "10EC1308",
