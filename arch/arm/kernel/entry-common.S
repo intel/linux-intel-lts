@@ -274,6 +274,9 @@ ENTRY(vector_swi)
 	eor	scno, scno, #__NR_SYSCALL_BASE	@ check OS number
 #endif
 	get_thread_info tsk
+#ifdef CONFIG_DOVETAIL
+	str	scno, [tsk, #TI_SYSCALL]
+#endif
 	/*
 	 * Reload the registers that may have been corrupted on entry to
 	 * the syscall assembly (by tracing or context tracking.)
