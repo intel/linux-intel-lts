@@ -1027,6 +1027,16 @@ static __le32 igc_tx_launchtime(struct igc_ring *ring, ktime_t txtime,
 		}
 	}
 
+	/* Introducing a window at end of cycle on which packets
+	 * potentially not honor launchtime. Window of 5us chosen
+	 * considering software update the tail pointer and packets
+	 * are dma'ed to packet buffer.
+	 */
+	if ((ktime_sub_ns(end_of_cycle, now) < 5 * NSEC_PER_USEC)) {
+		trace_printk("Packet with txtime=%llu may not be honoured\n",
+			     txtime);
+	}
+
 	ring->last_tx_cycle = end_of_cycle;
 
 	txtime = ktime_sub_ns(txtime, baset_est);
