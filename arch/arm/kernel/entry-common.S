@@ -291,6 +291,8 @@ local_restart:
 	b	fastcall_try
 1:
 #endif	
+	cmp	scno, #__NR_prctl
+	beq	fastcall_try
 	ldr	r0, =#__OOB_SYSCALL_BIT
 	ands	r0, scno, r0
 	beq	slow_path
@@ -314,6 +316,8 @@ fastcall_exit_check:
 slow_path:
 	tst	r10, #_TLF_DOVETAIL
 	bne	pipeline_syscall
+	cmp	scno, #__NR_prctl
+	beq	pipeline_syscall
 	ands	r0, scno, r0
 	beq	root_syscall
 pipeline_syscall:
