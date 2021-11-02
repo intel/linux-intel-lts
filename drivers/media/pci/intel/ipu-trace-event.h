@@ -21,7 +21,7 @@ TRACE_EVENT(ipu_sof_seqid,
 	    TP_fast_assign(__entry->seqid = seqid;
 			   __entry->csiport = csiport;
 			   __entry->csivc = csivc;),
-	    TP_printk("seqid=%u,csiport=%u,csivc=%u", __entry->seqid,
+	    TP_printk("seqid=%u csiport=%u csivc=%u", __entry->seqid,
 		      __entry->csiport, __entry->csivc)
 	);
 #endif
@@ -38,8 +38,27 @@ TRACE_EVENT(ipu_eof_seqid,
 	    TP_fast_assign(__entry->seqid = seqid;
 			   __entry->csiport = csiport;
 			   __entry->csivc = csivc;),
-	    TP_printk("seqid=%u,csiport=%u,csivc=%u", __entry->seqid,
+	    TP_printk("seqid=%u csiport=%u csivc=%u", __entry->seqid,
 		      __entry->csiport, __entry->csivc)
+	);
+#endif
+
+#ifdef IPU_ISYSBUF_READY_TRACE
+TRACE_EVENT(ipu_isysbuf_ready,
+	    TP_PROTO(unsigned int seqid, unsigned int width,
+		     unsigned int height, unsigned int bpp),
+	    TP_ARGS(seqid, width, height, bpp),
+	    TP_STRUCT__entry(__field(unsigned int, seqid)
+			     __field(unsigned int, width)
+			     __field(unsigned int, height)
+			     __field(unsigned int, bpp)
+	    ),
+	    TP_fast_assign(__entry->seqid = seqid;
+			   __entry->width = width;
+			   __entry->height = height;
+			   __entry->bpp = bpp;),
+	    TP_printk("seqid=%u width=%u height=%u bpp=%u", __entry->seqid,
+		      __entry->width, __entry->height, __entry->bpp)
 	);
 #endif
 
@@ -51,7 +70,7 @@ TRACE_EVENT(ipu_perf_reg,
 	    ),
 	    TP_fast_assign(__entry->addr = addr;
 			   __entry->val = val;),
-	    TP_printk("addr=%u,val=%u", __entry->addr, __entry->val)
+	    TP_printk("addr=%u val=%u", __entry->addr, __entry->val)
 	);
 #endif
 
@@ -94,10 +113,10 @@ TRACE_EVENT(ipu_pg_kcmd,
 			   __entry->complete_cycles = complete_cycles;
 			   __entry->processing_cycles = processing_cycles;),
 	    TP_printk
-	    ("pg-kcmd: func=%s,id=%u,issue_id=0x%llx,pri=%u,pg_id=%d,"
-	     "load_cycles=%u,init_cycles=%u,"
-	     "server_init_cycles=%u,next_frame_init_cycles=%u,"
-	     "complete_cycles=%u,"
+	    ("func=%s id=%u issue_id=0x%llx pri=%u pg_id=%d "
+	     "load_cycles=%u init_cycles=%u "
+	     "server_init_cycles=%u next_frame_init_cycles=%u "
+	     "complete_cycles=%u "
 	     "processing_cycles=%u",
 	     __entry->func, __entry->id, __entry->issue_id, __entry->pri,
 	     __entry->pg_id, __entry->load_cycles, __entry->init_cycles,
