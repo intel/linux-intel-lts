@@ -16,6 +16,11 @@
 #include "ipu-isys.h"
 #include "ipu-isys-csi2.h"
 #include "ipu-isys-video.h"
+#ifdef IPU_TRACE_EVENT
+#define CREATE_TRACE_POINTS
+#define IPU_ISYSBUF_READY_TRACE
+#include "ipu-trace-event.h"
+#endif
 
 static bool wall_clock_ts_on;
 module_param(wall_clock_ts_on, bool, 0660);
@@ -1003,6 +1008,13 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 			spin_unlock_irqrestore(&ip->short_packet_queue_lock,
 					       flags);
 		} else {
+#ifdef IPU_TRACE_EVENT
+			struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
+
+			trace_ipu_isysbuf_ready(buf->sequence, av->mpix.width,
+						av->mpix.height,
+						av->pfmt->bpp_packed);
+#endif
 			ipu_isys_queue_buf_done(ib);
 		}
 

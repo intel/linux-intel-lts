@@ -434,6 +434,34 @@ static struct ipu_isys_subdev_info ti960_sd_2 = {
 #define LT6911UXC_LANES       4
 #define LT6911UXC_I2C_ADDRESS 0x2B
 
+static struct ipu_isys_csi2_config lt6911uxc_csi2_cfg_0 = {
+	.nlanes = LT6911UXC_LANES,
+	.port = 5,
+};
+
+static struct lt6911uxc_platform_data lt6911uxc_pdata_0 = {
+	.port = 5,
+	.lanes = LT6911UXC_LANES,
+	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
+	.irq_pin = -1,		// -1 means it is an auxiliary port which has no
+	.irq_pin_name = "B23",
+	.irq_pin_flags = IRQF_TRIGGER_RISING
+		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+	.suffix = 'c',
+	.gpios = {-1, 0, 0, 0},
+};
+
+static struct ipu_isys_subdev_info lt6911uxc_sd_0 = {
+	.csi2 = &lt6911uxc_csi2_cfg_0,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("lt6911uxc", LT6911UXC_I2C_ADDRESS),
+		.platform_data = &lt6911uxc_pdata_0,
+	},
+	.i2c_adapter_bdf = "0000:00:15.2",
+	},
+};
+
 static struct ipu_isys_csi2_config lt6911uxc_csi2_cfg_1 = {
 	.nlanes = LT6911UXC_LANES,
 	.port = 1,
@@ -470,8 +498,8 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_2 = {
 	.port = 2,
 	.lanes = LT6911UXC_LANES,
 	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
-	.irq_pin = 410,
-	.irq_pin_name = "C2",
+	.irq_pin = 170,
+	.irq_pin_name = "B18",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
@@ -496,7 +524,7 @@ static struct ipu_isys_subdev_pdata pdata = {
 	.subdevs = (struct ipu_isys_subdev_info *[]) {
 		&ar0234_sd_1,
 		&ar0234_sd_2,
-		&ar0234_sd_3,
+	//	&ar0234_sd_3,
 		&ar0234_sd_4,
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 		&imx390_sd_1,
@@ -508,6 +536,7 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&ti960_sd,
 		&ti960_sd_2,
 #endif
+		&lt6911uxc_sd_0,	//Auxiliary port for 4k60fps
 		&lt6911uxc_sd_1,
 		&lt6911uxc_sd_2,
 		NULL,
