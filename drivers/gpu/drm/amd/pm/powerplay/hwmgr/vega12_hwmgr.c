@@ -2246,6 +2246,8 @@ static int vega12_print_clock_levels(struct pp_hwmgr *hwmgr,
 	int i, now, size = 0;
 	struct pp_clock_levels_with_latency clocks;
 
+	phm_get_sysfs_buf(&buf, &size);
+
 	switch (type) {
 	case PP_SCLK:
 		PP_ASSERT_WITH_CODE(

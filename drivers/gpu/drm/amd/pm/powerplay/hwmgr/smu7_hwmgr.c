@@ -4914,6 +4914,8 @@ static int smu7_print_clock_levels(struct pp_hwmgr *hwmgr,
 	int size = 0;
 	uint32_t i, now, clock, pcie_speed;
 
+	phm_get_sysfs_buf(&buf, &size);
+
 	switch (type) {
 	case PP_SCLK:
 		smum_send_msg_to_smc(hwmgr, PPSMC_MSG_API_GetSclkFrequency, &clock);
