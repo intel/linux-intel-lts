@@ -542,43 +542,44 @@ static resource_size_t get_reserved_mem_size(struct device *dev,
 
 static int setup_vpu_fw_region(struct vpu_ipc_dev *vpu_dev)
 {
-	struct device *dev = &vpu_dev->pdev->dev;
 	struct vpu_mem *rsvd_mem = &vpu_dev->reserved_mem;
+	struct device *dev = &vpu_dev->pdev->dev;
 	int rc;
 
-	rc = of_reserved_mem_device_init(dev);
+	rsvd_mem->size = get_reserved_mem_size(dev, VPU_IPC_FW_AREA_IDX);
+	if (rsvd_mem->size == 0) {
+		dev_err(dev, "Couldn't get size of reserved memory region.\n");
+		return -ENODEV;
+	}
+
+	/* Make dma_alloc_coherent use VPU firmware reserved memory. */
+	rc = of_reserved_mem_device_init_by_idx(dev, dev->of_node,
+						VPU_IPC_FW_AREA_IDX);
 	if (rc) {
 		dev_err(dev, "Failed to initialise device reserved memory.\n");
 		return rc;
 	}
 
-	rsvd_mem->size = get_reserved_mem_size(dev, VPU_IPC_FW_AREA_IDX);
-	if (rsvd_mem->size == 0) {
-		dev_err(dev, "Couldn't get size of reserved memory region.\n");
-		rc = -ENODEV;
-		goto setup_vpu_fw_fail;
-	}
-
-	rsvd_mem->vaddr = dmam_alloc_coherent(dev, rsvd_mem->size,
-					      &rsvd_mem->vpu_addr, GFP_KERNEL);
-	/* Get the physical address of the reserved memory region. */
-	rsvd_mem->paddr = dma_to_phys(dev, vpu_dev->reserved_mem.vpu_addr);
-
+	/*
+	 * NOTE: we cannot use 'dmam_alloc_coherent()' here, because in case of
+	 * failure, 'of_reserved_mem_device_release()' will be called before
+	 * the allocated memory is freed, causing a kernel oops.
+	 */
+	rsvd_mem->vaddr = dma_alloc_coherent(dev, rsvd_mem->size,
+					     &rsvd_mem->vpu_addr, GFP_KERNEL);
 	if (!rsvd_mem->vaddr) {
 		dev_err(dev, "Failed to allocate memory for firmware.\n");
-		rc = -ENOMEM;
-		goto setup_vpu_fw_fail;
+		/* Release reserved memory. */
+		of_reserved_mem_device_release(dev);
+		return -ENOMEM;
 	}
+	/* Get the physical address of the reserved memory region. */
+	rsvd_mem->paddr = dma_to_phys(dev, rsvd_mem->vpu_addr);
 
 	dev_info(dev, "Memory region (firmware): vpu_addr 0x%pad size 0x%zX\n",
 		 &rsvd_mem->vpu_addr, rsvd_mem->size);
 
 	return 0;
-
-setup_vpu_fw_fail:
-	of_reserved_mem_device_release(dev);
-
-	return rc;
 }
 
 static int setup_x509_region(struct vpu_ipc_dev *vpu_dev)
@@ -660,23 +661,13 @@ static int setup_reserved_memory(struct vpu_ipc_dev *vpu_dev)
 	int rc;
 
 	/*
-	 * Find the VPU firmware area described in the device tree,
-	 * and allocate it for our usage.
-	 */
-	rc = setup_vpu_fw_region(vpu_dev);
-	if (rc) {
-		dev_err(dev, "Failed to init FW memory.\n");
-		return rc;
-	}
-
-	/*
 	 * Find the X509 area described in the device tree,
 	 * and allocate it for our usage.
 	 */
 	rc = setup_x509_region(vpu_dev);
 	if (rc) {
 		dev_err(dev, "Failed to setup X509 region.\n");
-		goto res_mem_setup_fail;
+		return rc;
 	}
 
 	/*
@@ -686,15 +677,33 @@ static int setup_reserved_memory(struct vpu_ipc_dev *vpu_dev)
 	rc = setup_mss_ipc_region(vpu_dev);
 	if (rc) {
 		dev_err(dev, "Couldn't setup MSS IPC region.\n");
-		goto res_mem_setup_fail;
+		return rc;
+	}
+
+	/*
+	 * Find the VPU firmware area described in the device tree,
+	 * and allocate it for our usage.
+	 */
+	rc = setup_vpu_fw_region(vpu_dev);
+	if (rc) {
+		dev_err(dev, "Failed to init FW memory.\n");
+		return rc;
 	}
 
 	return 0;
+}
 
-res_mem_setup_fail:
+static void release_reserved_memory(struct vpu_ipc_dev *vpu_dev)
+{
+	struct vpu_mem *rsvd_mem = &vpu_dev->reserved_mem;
+	struct device *dev = &vpu_dev->pdev->dev;
+
+	/* Release VPU FW region. */
+	dma_free_coherent(dev, rsvd_mem->size, rsvd_mem->vaddr,
+			  rsvd_mem->vpu_addr);
 	of_reserved_mem_device_release(dev);
 
-	return rc;
+	/* Noting to be done for x509_region and ipc_region. */
 }
 
 static void ipc_device_put(struct vpu_ipc_dev *vpu_dev)
@@ -2008,7 +2017,7 @@ probe_fail_post_tee_ctx_setup:
 	tee_client_close_context(vpu_dev->tee_ctx);
 
 probe_fail_post_resmem_setup:
-	of_reserved_mem_device_release(dev);
+	release_reserved_memory(vpu_dev);
 
 	return rc;
 }
@@ -2023,7 +2032,7 @@ static int keembay_vpu_ipc_remove(struct platform_device *pdev)
 		vpu_dev->ready_message_task = NULL;
 	}
 
-	of_reserved_mem_device_release(dev);
+	release_reserved_memory(vpu_dev);
 
 	tee_shm_free(vpu_dev->shm);
 
