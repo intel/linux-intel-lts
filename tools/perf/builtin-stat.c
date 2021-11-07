@@ -1769,7 +1769,7 @@ static int add_default_attributes(void)
 					   &errinfo);
 		if (err) {
 			fprintf(stderr, "Cannot set up transaction events\n");
-			parse_events_print_error(&errinfo, transaction_attrs);
+			parse_events_error__print(&errinfo, transaction_attrs);
 			return -1;
 		}
 		return 0;
@@ -1799,11 +1799,11 @@ static int add_default_attributes(void)
 		} else {
 			fprintf(stderr, "To measure SMI cost, it needs "
 				"msr/aperf/, msr/smi/ and cpu/cycles/ support\n");
-			parse_events_print_error(&errinfo, smi_cost_attrs);
+			parse_events_error__print(&errinfo, smi_cost_attrs);
 			return -1;
 		}
 		if (err) {
-			parse_events_print_error(&errinfo, smi_cost_attrs);
+			parse_events_error__print(&errinfo, smi_cost_attrs);
 			fprintf(stderr, "Cannot set up SMI cost events\n");
 			return -1;
 		}
@@ -1870,7 +1870,7 @@ setup_metrics:
 				fprintf(stderr,
 					"Cannot set up top down events %s: %d\n",
 					str, err);
-				parse_events_print_error(&errinfo, str);
+				parse_events_error__print(&errinfo, str);
 				free(str);
 				return -1;
 			}
@@ -1898,7 +1898,7 @@ setup_metrics:
 				fprintf(stderr,
 					"Cannot set up hybrid events %s: %d\n",
 					hybrid_str, err);
-				parse_events_print_error(&errinfo, hybrid_str);
+				parse_events_error__print(&errinfo, hybrid_str);
 				return -1;
 			}
 			return err;

@@ -185,7 +185,7 @@ group_def ':' PE_MODIFIER_EVENT
 		struct parse_events_state *parse_state = _parse_state;
 		struct parse_events_error *error = parse_state->error;
 
-		parse_events__handle_error(error, @3.first_column,
+		parse_events_error__handle(error, @3.first_column,
 					   strdup("Bad modifier"), NULL);
 		free_list_evsel(list);
 		YYABORT;
@@ -247,7 +247,7 @@ event_name PE_MODIFIER_EVENT
 		struct parse_events_state *parse_state = _parse_state;
 		struct parse_events_error *error = parse_state->error;
 
-		parse_events__handle_error(error, @2.first_column,
+		parse_events_error__handle(error, @2.first_column,
 					   strdup("Bad modifier"), NULL);
 		free_list_evsel(list);
 		YYABORT;
