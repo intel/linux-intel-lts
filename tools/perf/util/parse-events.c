@@ -193,47 +193,6 @@ static int tp_event_has_id(const char *dir_path, struct dirent *evt_dir)
 
 #define MAX_EVENT_LENGTH 512
 
-void parse_events__handle_error(struct parse_events_error *err, int idx,
-				char *str, char *help)
-{
-	if (WARN(!str, "WARNING: failed to provide error string\n"))
-		goto out_free;
-	if (!err) {
-		/* Assume caller does not want message printed */
-		pr_debug("event syntax error: %s\n", str);
-		goto out_free;
-	}
-	switch (err->num_errors) {
-	case 0:
-		err->idx = idx;
-		err->str = str;
-		err->help = help;
-		break;
-	case 1:
-		err->first_idx = err->idx;
-		err->idx = idx;
-		err->first_str = err->str;
-		err->str = str;
-		err->first_help = err->help;
-		err->help = help;
-		break;
-	default:
-		pr_debug("Multiple errors dropping message: %s (%s)\n",
-			err->str, err->help);
-		free(err->str);
-		err->str = str;
-		free(err->help);
-		err->help = help;
-		break;
-	}
-	err->num_errors++;
-	return;
-
-out_free:
-	free(str);
-	free(help);
-}
-
 struct tracepoint_path *tracepoint_id_to_path(u64 config)
 {
 	struct tracepoint_path *path = NULL;
@@ -582,7 +541,7 @@ static void tracepoint_error(struct parse_events_error *e, int err,
 	}
 
 	tracing_path__strerror_open_tp(err, help, sizeof(help), sys, name);
-	parse_events__handle_error(e, 0, strdup(str), strdup(help));
+	parse_events_error__handle(e, 0, strdup(str), strdup(help));
 }
 
 static int add_tracepoint(struct list_head *list, int *idx,
@@ -806,7 +765,7 @@ int parse_events_load_bpf_obj(struct parse_events_state *parse_state,
 
 	return 0;
 errout:
-	parse_events__handle_error(parse_state->error, 0,
+	parse_events_error__handle(parse_state->error, 0,
 				strdup(errbuf), strdup("(add -v to see detail)"));
 	return err;
 }
@@ -826,7 +785,7 @@ parse_events_config_bpf(struct parse_events_state *parse_state,
 		int err;
 
 		if (term->type_term != PARSE_EVENTS__TERM_TYPE_USER) {
-			parse_events__handle_error(parse_state->error, term->err_term,
+			parse_events_error__handle(parse_state->error, term->err_term,
 						strdup("Invalid config term for BPF object"),
 						NULL);
 			return -EINVAL;
@@ -846,7 +805,7 @@ parse_events_config_bpf(struct parse_events_state *parse_state,
 			else
 				idx = term->err_term + error_pos;
 
-			parse_events__handle_error(parse_state->error, idx,
+			parse_events_error__handle(parse_state->error, idx,
 						strdup(errbuf),
 						strdup(
 "Hint:\tValid config terms:\n"
@@ -918,7 +877,7 @@ int parse_events_load_bpf(struct parse_events_state *parse_state,
 						   -err, errbuf,
 						   sizeof(errbuf));
 
-		parse_events__handle_error(parse_state->error, 0,
+		parse_events_error__handle(parse_state->error, 0,
 					strdup(errbuf), strdup("(add -v to see detail)"));
 		return err;
 	}
@@ -942,7 +901,7 @@ int parse_events_load_bpf_obj(struct parse_events_state *parse_state,
 			      struct bpf_object *obj __maybe_unused,
 			      struct list_head *head_config __maybe_unused)
 {
-	parse_events__handle_error(parse_state->error, 0,
+	parse_events_error__handle(parse_state->error, 0,
 				   strdup("BPF support is not compiled"),
 				   strdup("Make sure libbpf-devel is available at build time."));
 	return -ENOTSUP;
@@ -954,7 +913,7 @@ int parse_events_load_bpf(struct parse_events_state *parse_state,
 			  bool source __maybe_unused,
 			  struct list_head *head_config __maybe_unused)
 {
-	parse_events__handle_error(parse_state->error, 0,
+	parse_events_error__handle(parse_state->error, 0,
 				   strdup("BPF support is not compiled"),
 				   strdup("Make sure libbpf-devel is available at build time."));
 	return -ENOTSUP;
@@ -1036,7 +995,7 @@ static int check_type_val(struct parse_events_term *term,
 		return 0;
 
 	if (err) {
-		parse_events__handle_error(err, term->err_val,
+		parse_events_error__handle(err, term->err_val,
 					type == PARSE_EVENTS__TERM_TYPE_NUM
 					? strdup("expected numeric value")
 					: strdup("expected string value"),
@@ -1080,7 +1039,7 @@ config_term_avail(int term_type, struct parse_events_error *err)
 	char *err_str;
 
 	if (term_type < 0 || term_type >= __PARSE_EVENTS__TERM_TYPE_NR) {
-		parse_events__handle_error(err, -1,
+		parse_events_error__handle(err, -1,
 					strdup("Invalid term_type"), NULL);
 		return false;
 	}
@@ -1102,7 +1061,7 @@ config_term_avail(int term_type, struct parse_events_error *err)
 		/* term_type is validated so indexing is safe */
 		if (asprintf(&err_str, "'%s' is not usable in 'perf stat'",
 				config_term_names[term_type]) >= 0)
-			parse_events__handle_error(err, -1, err_str, NULL);
+			parse_events_error__handle(err, -1, err_str, NULL);
 		return false;
 	}
 }
@@ -1146,7 +1105,7 @@ do {									   \
 		if (strcmp(term->val.str, "no") &&
 		    parse_branch_str(term->val.str,
 				    &attr->branch_sample_type)) {
-			parse_events__handle_error(err, term->err_val,
+			parse_events_error__handle(err, term->err_val,
 					strdup("invalid branch sample type"),
 					NULL);
 			return -EINVAL;
@@ -1155,7 +1114,7 @@ do {									   \
 	case PARSE_EVENTS__TERM_TYPE_TIME:
 		CHECK_TYPE_VAL(NUM);
 		if (term->val.num > 1) {
-			parse_events__handle_error(err, term->err_val,
+			parse_events_error__handle(err, term->err_val,
 						strdup("expected 0 or 1"),
 						NULL);
 			return -EINVAL;
@@ -1191,7 +1150,7 @@ do {									   \
 	case PARSE_EVENTS__TERM_TYPE_PERCORE:
 		CHECK_TYPE_VAL(NUM);
 		if ((unsigned int)term->val.num > 1) {
-			parse_events__handle_error(err, term->err_val,
+			parse_events_error__handle(err, term->err_val,
 						strdup("expected 0 or 1"),
 						NULL);
 			return -EINVAL;
@@ -1203,14 +1162,14 @@ do {									   \
 	case PARSE_EVENTS__TERM_TYPE_AUX_SAMPLE_SIZE:
 		CHECK_TYPE_VAL(NUM);
 		if (term->val.num > UINT_MAX) {
-			parse_events__handle_error(err, term->err_val,
+			parse_events_error__handle(err, term->err_val,
 						strdup("too big"),
 						NULL);
 			return -EINVAL;
 		}
 		break;
 	default:
-		parse_events__handle_error(err, term->err_term,
+		parse_events_error__handle(err, term->err_term,
 				strdup("unknown term"),
 				parse_events_formats_error_string(NULL));
 		return -EINVAL;
@@ -1264,7 +1223,7 @@ static int config_term_tracepoint(struct perf_event_attr *attr,
 		return config_term_common(attr, term, err);
 	default:
 		if (err) {
-			parse_events__handle_error(err, term->err_term,
+			parse_events_error__handle(err, term->err_term,
 				strdup("unknown term"),
 				strdup("valid terms: call-graph,stack-size\n"));
 		}
@@ -1561,7 +1520,7 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 		if (asprintf(&err_str,
 				"Cannot find PMU `%s'. Missing kernel support?",
 				name) >= 0)
-			parse_events__handle_error(err, 0, err_str, NULL);
+			parse_events_error__handle(err, 0, err_str, NULL);
 		return -EINVAL;
 	}
 
@@ -2311,6 +2270,39 @@ int __parse_events(struct evlist *evlist, const char *str,
 	return ret;
 }
 
+void parse_events_error__handle(struct parse_events_error *err, int idx,
+				char *str, char *help)
+{
+	if (WARN(!str, "WARNING: failed to provide error string\n")) {
+		free(help);
+		return;
+	}
+	switch (err->num_errors) {
+	case 0:
+		err->idx = idx;
+		err->str = str;
+		err->help = help;
+		break;
+	case 1:
+		err->first_idx = err->idx;
+		err->idx = idx;
+		err->first_str = err->str;
+		err->str = str;
+		err->first_help = err->help;
+		err->help = help;
+		break;
+	default:
+		pr_debug("Multiple errors dropping message: %s (%s)\n",
+			err->str, err->help);
+		free(err->str);
+		err->str = str;
+		free(err->help);
+		err->help = help;
+		break;
+	}
+	err->num_errors++;
+}
+
 #define MAX_WIDTH 1000
 static int get_term_width(void)
 {
@@ -2320,8 +2312,8 @@ static int get_term_width(void)
 	return ws.ws_col > MAX_WIDTH ? MAX_WIDTH : ws.ws_col;
 }
 
-static void __parse_events_print_error(int err_idx, const char *err_str,
-				const char *err_help, const char *event)
+static void __parse_events_error__print(int err_idx, const char *err_str,
+					const char *err_help, const char *event)
 {
 	const char *str = "invalid or unsupported event: ";
 	char _buf[MAX_WIDTH];
@@ -2375,19 +2367,19 @@ static void __parse_events_print_error(int err_idx, const char *err_str,
 	}
 }
 
-void parse_events_print_error(struct parse_events_error *err,
-			      const char *event)
+void parse_events_error__print(struct parse_events_error *err,
+			       const char *event)
 {
 	if (!err->num_errors)
 		return;
 
-	__parse_events_print_error(err->idx, err->str, err->help, event);
+	__parse_events_error__print(err->idx, err->str, err->help, event);
 	zfree(&err->str);
 	zfree(&err->help);
 
 	if (err->num_errors > 1) {
 		fputs("\nInitial error:\n", stderr);
-		__parse_events_print_error(err->first_idx, err->first_str,
+		__parse_events_error__print(err->first_idx, err->first_str,
 					err->first_help, event);
 		zfree(&err->first_str);
 		zfree(&err->first_help);
@@ -2407,7 +2399,7 @@ int parse_events_option(const struct option *opt, const char *str,
 	ret = parse_events(evlist, str, &err);
 
 	if (ret) {
-		parse_events_print_error(&err, str);
+		parse_events_error__print(&err, str);
 		fprintf(stderr, "Run 'perf list' for a list of valid events\n");
 	}
 
@@ -3301,7 +3293,7 @@ void parse_events_evlist_error(struct parse_events_state *parse_state,
 	if (!parse_state->error)
 		return;
 
-	parse_events__handle_error(parse_state->error, idx, strdup(str), NULL);
+	parse_events_error__handle(parse_state->error, idx, strdup(str), NULL);
 }
 
 static void config_terms_list(char *buf, size_t buf_sz)
