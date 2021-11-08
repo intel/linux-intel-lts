@@ -318,6 +318,18 @@ static int acpi_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_SERIAL_NUMBER:
 		val->strval = battery->serial_number;
 		break;
+	case POWER_SUPPLY_PROP_HEALTH:
+		val->intval = POWER_SUPPLY_HEALTH_GOOD;
+		if (battery->state & ACPI_BATTERY_STATE_CRITICAL)
+                        val->intval = POWER_SUPPLY_HEALTH_GOOD;
+                else if (test_bit(ACPI_BATTERY_ALARM_PRESENT, &battery->flags) &&
+                        (battery->capacity_now <= battery->alarm))
+                        val->intval = POWER_SUPPLY_HEALTH_DEAD;
+                else if (acpi_battery_is_charged(battery))
+                        val->intval = POWER_SUPPLY_HEALTH_GOOD;
+                else
+                        val->intval = POWER_SUPPLY_HEALTH_GOOD;
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -340,6 +352,7 @@ static enum power_supply_property charge_battery_props[] = {
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
+	POWER_SUPPLY_PROP_HEALTH,
 };
 
 static enum power_supply_property charge_battery_full_cap_broken_props[] = {
@@ -354,6 +367,7 @@ static enum power_supply_property charge_battery_full_cap_broken_props[] = {
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
+	POWER_SUPPLY_PROP_HEALTH,
 };
 
 static enum power_supply_property energy_battery_props[] = {
