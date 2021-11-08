@@ -239,6 +239,8 @@ void arch_handle_irq(struct pt_regs *regs, u8 vector, bool irq_movable)
 	} else {
 		desc = __this_cpu_read(vector_irq[vector]);
 		if (unlikely(IS_ERR_OR_NULL(desc))) {
+			__ack_APIC_irq();
+
 			if (desc == VECTOR_UNUSED) {
 				pr_emerg_ratelimited("%s: %d.%u No irq handler for vector\n",
 						__func__, smp_processor_id(),
