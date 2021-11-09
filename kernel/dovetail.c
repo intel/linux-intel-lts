@@ -172,11 +172,10 @@ static inline bool maybe_oob_syscall(unsigned int nr, struct pt_regs *regs)
 	 * Check whether the companion core might be interested in
 	 * @nr. Hand the request to the core if __OOB_SYSCALL_BIT is
 	 * set in @nr, or this is a prctl() request into which an oob
-	 * syscall might be folded. If the prctl() call ends up being
-	 * a regular in-band request, the core should tell us to
-	 * propagate it to the in-band handler eventually.
+	 * syscall might be folded.
 	 */
-	return nr == __NR_prctl || (nr & __OOB_SYSCALL_BIT);
+	return (nr & __OOB_SYSCALL_BIT) ||
+		(nr == __NR_prctl && syscall_get_arg0(regs) & __OOB_SYSCALL_BIT);
 }
 
 int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
