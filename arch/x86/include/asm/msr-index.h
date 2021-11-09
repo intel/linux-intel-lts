@@ -925,4 +925,23 @@
 #define MSR_VM_IGNNE                    0xc0010115
 #define MSR_VM_HSAVE_PA                 0xc0010117
 
+/* Control-flow Enforcement Technology MSRs */
+#define MSR_IA32_U_CET		0x000006a0 /* user mode cet setting */
+#define MSR_IA32_S_CET		0x000006a2 /* kernel mode cet setting */
+#define CET_SHSTK_EN		BIT_ULL(0)
+#define CET_WRSS_EN		BIT_ULL(1)
+#define CET_ENDBR_EN		BIT_ULL(2)
+#define CET_LEG_IW_EN		BIT_ULL(3)
+#define CET_NO_TRACK_EN		BIT_ULL(4)
+#define CET_SUPPRESS_DISABLE	BIT_ULL(5)
+#define CET_RESERVED		(BIT_ULL(6) | BIT_ULL(7) | BIT_ULL(8) | BIT_ULL(9))
+#define CET_SUPPRESS		BIT_ULL(10)
+#define CET_WAIT_ENDBR		BIT_ULL(11)
+
+#define MSR_IA32_PL0_SSP	0x000006a4 /* kernel shadow stack pointer */
+#define MSR_IA32_PL1_SSP	0x000006a5 /* ring-1 shadow stack pointer */
+#define MSR_IA32_PL2_SSP	0x000006a6 /* ring-2 shadow stack pointer */
+#define MSR_IA32_PL3_SSP	0x000006a7 /* user shadow stack pointer */
+#define MSR_IA32_INT_SSP_TAB	0x000006a8 /* exception shadow stack table */
+
 #endif /* _ASM_X86_MSR_INDEX_H */
