@@ -275,7 +275,7 @@ ENTRY(vector_swi)
 
 local_restart:
 #ifdef CONFIG_DOVETAIL
-	ldr	r10, [tsk, #TI_LOCAL_FLAGS]	@ tsk(r9) is callee-saved
+	ldr	r10, [tsk, #TI_LOCAL_FLAGS]	@ tsk(r10) is callee-saved
 #ifdef CONFIG_IPIPE_COMPAT
 	ldr	r0, =#0xf0042			@ old syscall signature
 	cmp	scno, r0
@@ -285,7 +285,11 @@ local_restart:
 1:
 #endif	
 	cmp	scno, #__NR_prctl
-	beq	fastcall_try
+	bne	fastcall_not_prctl
+	ldr	r0, [sp, #S_OLD_R0]
+	tst	r10, #__OOB_SYSCALL_BIT
+	bne	fastcall_try
+fastcall_not_prctl:
 	ldr	r0, =#__OOB_SYSCALL_BIT
 	ands	r0, scno, r0
 	beq	slow_path
