@@ -127,6 +127,11 @@ static inline void syscall_get_arguments(struct task_struct *task,
 	}
 }
 
+static inline unsigned long syscall_get_arg0(struct pt_regs *regs)
+{
+	return regs->di;
+}
+
 static inline void syscall_set_arguments(struct task_struct *task,
 					 struct pt_regs *regs,
 					 const unsigned long *args)
