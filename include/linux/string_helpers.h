@@ -3,6 +3,7 @@
 #define _LINUX_STRING_HELPERS_H_
 
 #include <linux/ctype.h>
+#include <linux/string.h>
 #include <linux/types.h>
 
 struct file;
