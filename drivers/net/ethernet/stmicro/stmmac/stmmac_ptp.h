@@ -65,7 +65,9 @@
 
 /* SSIR defines */
 #define	PTP_SSIR_SSINC_MASK		0xff
+#define	PTP_SSIR_SNSINC_MASK		0xff
 #define	GMAC4_PTP_SSIR_SSINC_SHIFT	16
+#define	GMAC4_PTP_SSIR_SNSINC_SHIFT	8
 
 /* Auxiliary Control defines */
 #define	PTP_ACR_ATSFC		BIT(0)	/* Auxiliary Snapshot FIFO Clear */
