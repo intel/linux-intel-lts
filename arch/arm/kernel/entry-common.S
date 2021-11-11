@@ -284,14 +284,15 @@ local_restart:
 	b	fastcall_try
 1:
 #endif	
-	cmp	scno, #__NR_prctl
-	bne	fastcall_not_prctl
-	ldr	r0, [sp, #S_OLD_R0]
-	tst	r10, #__OOB_SYSCALL_BIT
-	bne	fastcall_try
-fastcall_not_prctl:
+#ifdef CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE
 	ldr	r0, =#__OOB_SYSCALL_BIT
 	ands	r0, scno, r0
+	bne	fastcall_try
+#endif
+	cmp	scno, #__NR_prctl
+	bne	slow_path
+	ldr	r0, [sp, #S_OLD_R0]
+	tst	r0, #__OOB_SYSCALL_BIT
 	beq	slow_path
 fastcall_try:
 	tst	r10, #_TLF_OOB
@@ -299,6 +300,8 @@ fastcall_try:
 	mov	r0, sp				@ regs
 	bl	handle_oob_syscall
 	ldr	r10, [tsk, #TI_LOCAL_FLAGS]
+	tst	r0, r0
+	beq	slow_path
 	tst	r10, #_TLF_OOB
 	bne	fastcall_exit_check		@ check for MAYDAY
 	bl	sync_inband_irqs
@@ -313,9 +316,15 @@ fastcall_exit_check:
 slow_path:
 	tst	r10, #_TLF_DOVETAIL
 	bne	pipeline_syscall
-	cmp	scno, #__NR_prctl
-	beq	pipeline_syscall
+#ifdef CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE
+	ldr	r0, =#__OOB_SYSCALL_BIT
 	ands	r0, scno, r0
+	bne	pipeline_syscall
+#endif	
+	cmp	scno, #__NR_prctl
+	bne	root_syscall
+	ldr	r0, [sp, #S_OLD_R0]
+	tst	r0, #__OOB_SYSCALL_BIT
 	beq	root_syscall
 pipeline_syscall:
 	mov	r0, sp				@ regs
