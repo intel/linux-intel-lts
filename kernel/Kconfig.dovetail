@@ -17,3 +17,7 @@ config DOVETAIL
 	  Activate this option if you want to enable the interface for
 	  running a secondary kernel side-by-side with Linux (aka
 	  "dual kernel" configuration).
+
+config DOVETAIL_LEGACY_SYSCALL_RANGE
+       depends on DOVETAIL
+       def_bool y
