@@ -36,6 +36,7 @@
 
 #include "gca/gfx_7_2_d.h"
 #include "gca/gfx_7_2_sh_mask.h"
+#include "legacy_dpm.h"
 
 #define KV_MAX_DEEPSLEEP_DIVIDER_ID     5
 #define KV_MINIMUM_ENGINE_CLOCK         800
@@ -3075,7 +3076,7 @@ static int kv_dpm_hw_init(void *handle)
 	else
 		adev->pm.dpm_enabled = true;
 	mutex_unlock(&adev->pm.mutex);
-	amdgpu_pm_compute_clocks(adev);
+	amdgpu_dpm_compute_clocks(adev);
 	return ret;
 }
 
@@ -3123,7 +3124,7 @@ static int kv_dpm_resume(void *handle)
 			adev->pm.dpm_enabled = true;
 		mutex_unlock(&adev->pm.mutex);
 		if (adev->pm.dpm_enabled)
-			amdgpu_pm_compute_clocks(adev);
+			amdgpu_dpm_compute_clocks(adev);
 	}
 	return 0;
 }
@@ -3377,6 +3378,7 @@ static const struct amd_pm_funcs kv_dpm_funcs = {
 	.get_vce_clock_state = amdgpu_get_vce_clock_state,
 	.check_state_equal = kv_check_state_equal,
 	.read_sensor = &kv_dpm_read_sensor,
+	.change_power_state = amdgpu_dpm_change_power_state_locked,
 };
 
 static const struct amdgpu_irq_src_funcs kv_dpm_irq_funcs = {
