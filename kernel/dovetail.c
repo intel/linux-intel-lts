@@ -65,8 +65,9 @@ void dovetail_stop_altsched(void)
 }
 EXPORT_SYMBOL_GPL(dovetail_stop_altsched);
 
-void __weak handle_oob_syscall(struct pt_regs *regs)
+int __weak handle_oob_syscall(struct pt_regs *regs)
 {
+	return 0;
 }
 
 int __weak handle_pipelined_syscall(struct irq_stage *stage,
@@ -169,13 +170,18 @@ next:
 static inline bool maybe_oob_syscall(unsigned int nr, struct pt_regs *regs)
 {
 	/*
-	 * Check whether the companion core might be interested in
-	 * @nr. Hand the request to the core if __OOB_SYSCALL_BIT is
-	 * set in @nr, or this is a prctl() request into which an oob
-	 * syscall might be folded.
+	 * Check whether the companion core might be interested in the
+	 * syscall call. If the old syscall form is handled, pass the
+	 * request to the core if __OOB_SYSCALL_BIT is set in
+	 * @nr. Otherwise, only check whether an oob syscall is folded
+	 * into a prctl() request.
 	 */
-	return (nr & __OOB_SYSCALL_BIT) ||
-		(nr == __NR_prctl && syscall_get_arg0(regs) & __OOB_SYSCALL_BIT);
+	if (IS_ENABLED(CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE)) {
+		if (nr & __OOB_SYSCALL_BIT)
+			return true;
+	}
+
+	return nr == __NR_prctl && syscall_get_arg0(regs) & __OOB_SYSCALL_BIT;
 }
 
 int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
@@ -217,15 +223,19 @@ int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 	 */
 
 	if ((local_flags & _TLF_OOB) && maybe_oob_syscall(nr, regs)) {
-		handle_oob_syscall(regs);
+		ret = handle_oob_syscall(regs);
+		if (!IS_ENABLED(CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE))
+			WARN_ON_ONCE(dovetail_debug() && !ret);
 		local_flags = READ_ONCE(ti_local_flags(ti));
-		if (local_flags & _TLF_OOB) {
-			if (test_ti_thread_flag(ti, TIF_MAYDAY))
-				dovetail_call_mayday(regs);
-			return 1; /* don't pass down, no tail work. */
-		} else {
-			WARN_ON_ONCE(dovetail_debug() && irqs_disabled());
-			return -1; /* don't pass down, do tail work. */
+		if (likely(ret)) {
+			if (local_flags & _TLF_OOB) {
+				if (test_ti_thread_flag(ti, TIF_MAYDAY))
+					dovetail_call_mayday(regs);
+				return 1; /* don't pass down, no tail work. */
+			} else {
+				WARN_ON_ONCE(dovetail_debug() && irqs_disabled());
+				return -1; /* don't pass down, do tail work. */
+			}
 		}
 	}
 
