@@ -83,7 +83,7 @@ int intel_xpcie_raise_irq(struct xpcie *xpcie, enum xpcie_doorbell_type type)
 
 	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, type, 1);
 
-	return pci_epc_raise_irq(epf->epc, epf->func_no, PCI_EPC_IRQ_MSI, 1);
+	return pci_epc_raise_irq(epf->epc, epf->func_no, epf->vfunc_no, PCI_EPC_IRQ_MSI, 1);
 }
 
 static irqreturn_t intel_xpcie_err_interrupt(int irq, void *args)
@@ -191,7 +191,7 @@ static void intel_xpcie_cleanup_bar(struct pci_epf *epf, enum pci_barno barno)
 	struct pci_epc *epc = epf->epc;
 
 	if (xpcie_epf->vaddr[barno]) {
-		pci_epc_clear_bar(epc, epf->func_no, &epf->bar[barno]);
+		pci_epc_clear_bar(epc, epf->func_no, epf->vfunc_no, &epf->bar[barno]);
 		pci_epf_free_space(epf, xpcie_epf->vaddr[barno], barno, PRIMARY_INTERFACE);
 		xpcie_epf->vaddr[barno] = NULL;
 	}
@@ -230,7 +230,7 @@ static int intel_xpcie_setup_bar(struct pci_epf *epf, enum pci_barno barno,
 		return -ENOMEM;
 	}
 
-	ret = pci_epc_set_bar(epc, epf->func_no, bar);
+	ret = pci_epc_set_bar(epc, epf->func_no, epf->vfunc_no, bar);
 	if (ret) {
 		pci_epf_free_space(epf, vaddr, barno, PRIMARY_INTERFACE);
 		dev_err(&epf->dev, "Failed to set BAR%d\n", barno);
@@ -370,7 +370,7 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 		return -EINVAL;
 
 	dev = epc->dev.parent;
-	features = pci_epc_get_features(epc, epf->func_no);
+	features = pci_epc_get_features(epc, epf->func_no, epf->vfunc_no);
 	xpcie_epf->epc_features = features;
 	if (features) {
 		align = features->align;
@@ -524,7 +524,7 @@ static void intel_xpcie_epf_shutdown(struct device *dev)
 	if (xpcie_epf && xpcie_epf->xpcie.status == XPCIE_STATUS_RUN) {
 		intel_xpcie_set_doorbell(&xpcie_epf->xpcie, FROM_DEVICE,
 					 DEV_EVENT, DEV_SHUTDOWN);
-		pci_epc_raise_irq(epf->epc, epf->func_no, PCI_EPC_IRQ_MSI, 1);
+		pci_epc_raise_irq(epf->epc, epf->func_no, epf->vfunc_no, PCI_EPC_IRQ_MSI, 1);
 	}
 }
 
