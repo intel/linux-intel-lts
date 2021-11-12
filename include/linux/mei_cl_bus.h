@@ -123,4 +123,7 @@ ssize_t mei_cldev_send_gsc_command(struct mei_cl_device *cldev,
 				   size_t total_in_len,
 				   struct scatterlist *sg_out);
 
+void *mei_cldev_dma_map(struct mei_cl_device *cldev, u8 buffer_id, size_t size);
+int mei_cldev_dma_unmap(struct mei_cl_device *cldev);
+
 #endif /* _LINUX_MEI_CL_BUS_H */
