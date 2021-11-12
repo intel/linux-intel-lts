@@ -64,10 +64,11 @@
 
 /*
  * Status codes of syscall entry when Dovetail is enabled. Must not
- * conflict with valid syscall numbers.
+ * conflict with valid syscall numbers. And with -1 which seccomp uses
+ * to skip an syscall.
  */
-#define EXIT_SYSCALL_OOB	(-1)
-#define EXIT_SYSCALL_TAIL	(-2)
+#define EXIT_SYSCALL_OOB	(-2)
+#define EXIT_SYSCALL_TAIL	(-3)
 
 /**
  * arch_check_user_regs - Architecture specific sanity check for user mode regs
