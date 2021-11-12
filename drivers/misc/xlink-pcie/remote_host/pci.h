@@ -30,6 +30,7 @@ struct xpcie_dev {
 	struct pci_dev *pci;
 	char name[XPCIE_MAX_NAME_LEN];
 	u32 devid;
+	u32 sw_devid_retry_cnt;
 	char fw_name[XPCIE_MAX_NAME_LEN];
 
 	struct delayed_work wait_event;

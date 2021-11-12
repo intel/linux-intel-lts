@@ -68,6 +68,8 @@ struct xpcie_epf {
 	void __iomem *dma_base;
 	void __iomem *dbi_base;
 	char stepping[KEEMBAY_XPCIE_STEPPING_MAXLEN];
+	u32				sw_devid;
+	bool				sw_dev_id_updated;
 
 	irq_handler_t			core_irq_callback;
 	dma_addr_t			tx_phys;

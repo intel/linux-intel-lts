@@ -593,6 +593,7 @@ int intel_xpcie_core_init(struct xpcie *xpcie)
 	intel_xpcie_set_doorbell(xpcie, TO_DEVICE, DATA_SENT, 0);
 	intel_xpcie_set_doorbell(xpcie, TO_DEVICE, DATA_RECEIVED, 0);
 	intel_xpcie_set_doorbell(xpcie, TO_DEVICE, DEV_EVENT, NO_OP);
+	intel_xpcie_set_doorbell(xpcie, TO_DEVICE, PHY_ID_UPDATED, 0);
 	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_SENT, 0);
 	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_RECEIVED, 0);
 	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DEV_EVENT, NO_OP);

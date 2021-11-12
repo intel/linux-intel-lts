@@ -22,6 +22,7 @@ enum xpcie_doorbell_type {
 	DATA_SENT,
 	DATA_RECEIVED,
 	DEV_EVENT,
+	PHY_ID_UPDATED,
 	PARTIAL_DATA_RECEIVED,
 	RX_BD_COUNT,
 	HOST_STATUS,
@@ -30,7 +31,8 @@ enum xpcie_doorbell_type {
 enum xpcie_event_type {
 	NO_OP,
 	REQUEST_RESET,
-	DEV_SHUTDOWN
+	DEV_SHUTDOWN,
+	PHY_ID_RECEIVED_ACK
 };
 
 void intel_xpcie_set_doorbell(struct xpcie *xpcie,
@@ -52,6 +54,8 @@ void intel_xpcie_set_device_status(struct xpcie *xpcie, u32 status);
 u32 intel_xpcie_get_device_status(struct xpcie *xpcie);
 u32 intel_xpcie_get_host_status(struct xpcie *xpcie);
 void intel_xpcie_set_host_status(struct xpcie *xpcie, u32 status);
+u32 intel_xpcie_get_physical_device_id(struct xpcie *xpcie);
+void intel_xpcie_set_physical_device_id(struct xpcie *xpcie, u32 h_sw_devid);
 
 struct xpcie_buf_desc *intel_xpcie_alloc_bd(size_t length);
 struct xpcie_buf_desc *intel_xpcie_alloc_bd_reuse(size_t length, void *virt,

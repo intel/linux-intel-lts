@@ -23,6 +23,16 @@ u32 intel_xpcie_get_device_status(struct xpcie *xpcie)
 	return intel_xpcie_ioread32(xpcie->mmio + XPCIE_MMIO_DEV_STATUS);
 }
 
+void intel_xpcie_set_physical_device_id(struct xpcie *xpcie, u32 h_sw_devid)
+{
+	intel_xpcie_iowrite32(h_sw_devid, xpcie->mmio + XPCIE_MMIO_H_SW_DEVID);
+}
+
+u32 intel_xpcie_get_physical_device_id(struct xpcie *xpcie)
+{
+	return intel_xpcie_ioread32(xpcie->mmio + XPCIE_MMIO_H_SW_DEVID);
+}
+
 static size_t intel_xpcie_doorbell_offset(struct xpcie *xpcie,
 					  enum xpcie_doorbell_direction dirt,
 					  enum xpcie_doorbell_type type)
@@ -45,6 +55,8 @@ static size_t intel_xpcie_doorbell_offset(struct xpcie *xpcie,
 		return XPCIE_MMIO_HTOD_PARTIAL_RX_DOORBELL;
 	if (dirt == TO_DEVICE && type == RX_BD_COUNT)
 		return XPCIE_MMIO_HTOD_RX_BD_LIST_COUNT;
+	if (dirt == TO_DEVICE && type == PHY_ID_UPDATED)
+		return XPCIE_MMIO_HTOD_PHY_ID_DOORBELL_STATUS;
 
 	return 0;
 }

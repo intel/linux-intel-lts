@@ -46,6 +46,7 @@
 struct xpcie_mmio {
 	u32 device_status;
 	u32 host_status;
+	u32 h_sw_devid;
 	u8 legacy_a0;
 	u8 htod_tx_doorbell;
 	u8 htod_rx_doorbell;
@@ -55,14 +56,15 @@ struct xpcie_mmio {
 	u8 dtoh_rx_doorbell;
 	u8 dtoh_event_doorbell;
 	u8 htod_host_status;
-	u8 reserved1;
-	u16 reserved2;
+	u8 htod_phy_id_doorbell_status;
+	u16 reserved1;
 	u32 cap_offset;
 	u32 htod_rx_bd_list_count;
 } __packed;
 
 #define XPCIE_MMIO_DEV_STATUS	(offsetof(struct xpcie_mmio, device_status))
 #define XPCIE_MMIO_HOST_STATUS	(offsetof(struct xpcie_mmio, host_status))
+#define XPCIE_MMIO_H_SW_DEVID	(offsetof(struct xpcie_mmio, h_sw_devid))
 #define XPCIE_MMIO_LEGACY_A0	(offsetof(struct xpcie_mmio, legacy_a0))
 #define XPCIE_MMIO_HTOD_TX_DOORBELL \
 	(offsetof(struct xpcie_mmio, htod_tx_doorbell))
@@ -82,6 +84,8 @@ struct xpcie_mmio {
 	(offsetof(struct xpcie_mmio, dtoh_event_doorbell))
 #define XPCIE_MMIO_HTOD_RX_BD_LIST_COUNT \
 	(offsetof(struct xpcie_mmio, htod_rx_bd_list_count))
+#define XPCIE_MMIO_HTOD_PHY_ID_DOORBELL_STATUS \
+	(offsetof(struct xpcie_mmio, htod_phy_id_doorbell_status))
 #define XPCIE_MMIO_CAP_OFF	(offsetof(struct xpcie_mmio, cap_offset))
 
 struct xpcie {

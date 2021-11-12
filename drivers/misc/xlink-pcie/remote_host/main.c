@@ -33,7 +33,7 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 		FIELD_PREP(HW_ID_LO_MASK, PCI_SLOT(pdev->devfn));
 
 	sw_devid = FIELD_PREP(XLINK_DEV_INF_TYPE_MASK,
-			      XLINK_DEV_INF_PCIE) |
+				XLINK_DEV_INF_PCIE) |
 		   FIELD_PREP(XLINK_DEV_PHYS_ID_MASK, hw_id) |
 		   FIELD_PREP(XLINK_DEV_TYPE_MASK, XLINK_DEV_TYPE_KMB) |
 		   FIELD_PREP(XLINK_DEV_PCIE_ID_MASK, XLINK_DEV_PCIE_0) |
@@ -57,7 +57,6 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 	if (new_device)
 		intel_xpcie_list_add_device(xdev);
 
-	intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_CONNECTED);
 	intel_xpcie_set_doorbell(&xdev->xpcie, TO_DEVICE, HOST_STATUS,
 				 XPCIE_HOST_DRV_LOAD);
 

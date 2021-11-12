@@ -124,6 +124,22 @@ static irqreturn_t intel_xpcie_host_interrupt(int irq, void *args)
 			return IRQ_HANDLED;
 		}
 
+		if (intel_xpcie_get_doorbell(xpcie, TO_DEVICE, PHY_ID_UPDATED)) {
+			intel_xpcie_set_doorbell(xpcie, TO_DEVICE, PHY_ID_UPDATED, 0);
+			if (!xpcie_epf->sw_dev_id_updated) {
+				xpcie_epf->sw_devid = intel_xpcie_get_physical_device_id(xpcie);
+				xlink_sw_id = xpcie_epf->sw_devid;
+				xpcie_epf->sw_dev_id_updated = true;
+				dev_info(&xpcie_epf->epf->dev,
+					 "pcie: func_no=%d swid updated=%x\n",
+					 xpcie_epf->epf->func_no, xpcie_epf->sw_devid);
+			}
+			intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DEV_EVENT,
+						 PHY_ID_RECEIVED_ACK);
+			/* ensure the doorbell is set */
+			smp_wmb();
+		}
+
 		if (likely(xpcie_epf->core_irq_callback))
 			xpcie_epf->core_irq_callback(irq, xpcie);
 	}
@@ -357,6 +373,30 @@ static int intel_xpcie_epf_get_platform_data(struct device *dev,
 	return 0;
 }
 
+static ssize_t swdev_id_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct pci_epf *epf = container_of(dev, struct pci_epf, dev);
+	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+
+	if (xpcie_epf->sw_dev_id_updated)
+		snprintf(buf, 4096, "%s\n", "okay");
+	else
+		snprintf(buf, 4096, "%s\n", "disabled");
+
+	return strlen(buf);
+}
+static DEVICE_ATTR_RO(swdev_id);
+
+static const struct attribute *xpcie_sysfs_attrs[] = {
+	&dev_attr_swdev_id.attr,
+	NULL,
+};
+
+static const struct attribute_group intel_xpcie_epf_sysfs_attrs = {
+	.attrs = (struct attribute **)xpcie_sysfs_attrs,
+};
+
 static int intel_xpcie_epf_bind(struct pci_epf *epf)
 {
 	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
@@ -434,14 +474,6 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	dev_num = (ret >> PCIE_CFG_PBUS_DEV_NUM_OFFSET) &
 			PCIE_CFG_PBUS_DEV_NUM_MASK;
 
-	xlink_sw_id = FIELD_PREP(XLINK_DEV_INF_TYPE_MASK,
-				 XLINK_DEV_INF_PCIE) |
-		      FIELD_PREP(XLINK_DEV_PHYS_ID_MASK,
-				 bus_num << 8 | dev_num) |
-		      FIELD_PREP(XLINK_DEV_TYPE_MASK, XLINK_DEV_TYPE_KMB) |
-		      FIELD_PREP(XLINK_DEV_PCIE_ID_MASK, XLINK_DEV_PCIE_0) |
-		      FIELD_PREP(XLINK_DEV_FUNC_MASK, XLINK_DEV_FUNC_VPU);
-
 	ret = intel_xpcie_core_init(&xpcie_epf->xpcie);
 	if (ret) {
 		dev_err(&epf->dev, "Core component configuration failed\n");
@@ -464,6 +496,12 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	}
 
 	intel_xpcie_raise_irq(&xpcie_epf->xpcie, NO_OP);
+
+	ret = sysfs_create_group(&epf->dev.kobj, &intel_xpcie_epf_sysfs_attrs);
+	if (ret) {
+		dev_err(&epf->dev, "Failed to create sysfs entries\n");
+		goto err_uninit_dma;
+	}
 
 	return 0;
 
@@ -489,6 +527,7 @@ static void intel_xpcie_epf_unbind(struct pci_epf *epf)
 	intel_xpcie_core_cleanup(&xpcie_epf->xpcie);
 	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_READY);
 
+	sysfs_remove_group(&epf->dev.kobj, &intel_xpcie_epf_sysfs_attrs);
 	intel_xpcie_ep_dma_uninit(epf);
 
 	pci_epc_stop(epc);

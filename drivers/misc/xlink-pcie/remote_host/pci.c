@@ -18,6 +18,8 @@
 #include "../common/core.h"
 #include "../common/util.h"
 
+#define MAX_SW_DEVID_RETRY_COUNT 10
+
 extern int intel_xpcie_pci_setup_recovery_sysfs(struct xpcie_dev *xdev);
 extern void intel_xpcie_pci_cleanup_recovery_sysfs(struct xpcie_dev *xdev);
 enum xpcie_stage intel_xpcie_check_magic(struct xpcie_dev *xdev);
@@ -194,15 +196,6 @@ static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
 		xdev->xpcie.status = XPCIE_STATUS_RECOVERY;
 		wake_up_interruptible(&xdev->waitqueue);
 		return IRQ_HANDLED;
-	} else if (stage == STAGE_OS) {
-		if ((xdev->xpcie.status != XPCIE_STATUS_READY)
-		     && (xdev->xpcie.status != XPCIE_STATUS_RUN)) {
-			xdev->xpcie.status = XPCIE_STATUS_READY;
-			intel_xpcie_set_host_status(&xdev->xpcie,
-						    XPCIE_STATUS_READY);
-			wake_up_interruptible(&xdev->waitqueue);
-			return IRQ_HANDLED;
-		}
 	}
 
 	event = intel_xpcie_get_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT);
@@ -266,17 +259,59 @@ static void xpcie_device_poll(struct work_struct *work)
 {
 	struct xpcie_dev *xdev = container_of(work, struct xpcie_dev,
 					      wait_event.work);
+	enum xpcie_stage stage;
+	bool poll_phyid_status;
+	u8 event;
 
 	if (!xdev->delay_wa_bar2_init) {
-	    xdev->delay_wa_bar2_init = true;
-	    schedule_delayed_work(&xdev->wait_event, msecs_to_jiffies(110));
+		xdev->delay_wa_bar2_init = true;
+		schedule_delayed_work(&xdev->wait_event, msecs_to_jiffies(110));
 
-	    return;
+		return;
+	}
+	if (!xdev->delay_wa_xlink_connect)
+		xdev->delay_wa_xlink_connect = true;
+
+	poll_phyid_status = true;
+	stage = intel_xpcie_check_magic(xdev);
+	if (stage == STAGE_OS) {
+		if (xdev->xpcie.status != XPCIE_STATUS_READY &&
+		    xdev->xpcie.status != XPCIE_STATUS_RUN) {
+			event = intel_xpcie_get_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT);
+			if (event == PHY_ID_RECEIVED_ACK) {
+				intel_xpcie_set_doorbell(&xdev->xpcie,
+							 FROM_DEVICE, DEV_EVENT, NO_OP);
+				xdev->sw_devid_retry_cnt = 0;
+				xdev->xpcie.status = XPCIE_STATUS_READY;
+				intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_CONNECTED);
+				intel_xpcie_set_host_status(&xdev->xpcie, XPCIE_STATUS_READY);
+				wake_up_interruptible(&xdev->waitqueue);
+				poll_phyid_status = false;
+			} else {
+				if (xdev->sw_devid_retry_cnt != MAX_SW_DEVID_RETRY_COUNT) {
+					xdev->sw_devid_retry_cnt++;
+					intel_xpcie_set_physical_device_id(&xdev->xpcie,
+									   xdev->devid);
+					dev_info(&xdev->pci->dev,
+						 "sw_devid=%x, function idx=%d, retry_iterations=%d\n",
+						  xdev->devid,
+						  PCI_FUNC(xdev->pci->devfn),
+						  xdev->sw_devid_retry_cnt);
+					intel_xpcie_pci_raise_irq(xdev, PHY_ID_UPDATED, 1);
+				} else {
+					xdev->xpcie.status = XPCIE_STATUS_ERROR;
+					dev_err(&xdev->pci->dev,
+						"Ack for sw_devid=%x, function idx=%d not received!\n",
+						xdev->devid, PCI_FUNC(xdev->pci->devfn));
+					xdev->sw_devid_retry_cnt = 0;
+					poll_phyid_status = false;
+				}
+			}
+		}
 	}
 
-	xdev->delay_wa_xlink_connect = true;
-
-	return;
+	if (poll_phyid_status)
+		schedule_delayed_work(&xdev->wait_event, msecs_to_jiffies(2000));
 }
 
 static int intel_xpcie_pci_prepare_dev_reset(struct xpcie_dev *xdev,
@@ -405,6 +440,7 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 	xdev->delay_wa_xlink_connect = false;
 
 	intel_xpcie_pci_cleanup_recovery_sysfs(xdev);
+	intel_xpcie_uninit_debug(&xdev->xpcie, &xdev->pci->dev);
 	cancel_delayed_work(&xdev->wait_event);
 	cancel_delayed_work(&xdev->shutdown_event);
 	xdev->core_irq_callback = NULL;
