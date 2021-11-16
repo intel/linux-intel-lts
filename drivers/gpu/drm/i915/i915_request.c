@@ -720,7 +720,7 @@ void i915_request_cancel(struct i915_request *rq, int error)
 	intel_context_cancel_request(rq->context, rq);
 }
 
-static int __i915_sw_fence_call
+static int
 submit_notify(struct i915_sw_fence *fence, enum i915_sw_fence_notify state)
 {
 	struct i915_request *request =
@@ -756,7 +756,7 @@ submit_notify(struct i915_sw_fence *fence, enum i915_sw_fence_notify state)
 	return NOTIFY_DONE;
 }
 
-static int __i915_sw_fence_call
+static int
 semaphore_notify(struct i915_sw_fence *fence, enum i915_sw_fence_notify state)
 {
 	struct i915_request *rq = container_of(fence, typeof(*rq), semaphore);
