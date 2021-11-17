@@ -5366,7 +5366,7 @@ int __lock_is_held(const struct lockdep_map *lock, int read)
 		struct held_lock *hlock = curr->held_locks + i;
 
 		if (match_held_lock(hlock, lock)) {
-			if (read == -1 || hlock->read == read)
+			if (read == -1 || !!hlock->read == read)
 				return LOCK_STATE_HELD;
 
 			return LOCK_STATE_NOT_HELD;
@@ -5473,6 +5473,7 @@ static noinstr void check_flags(unsigned long flags)
 		}
 	}
 
+#ifndef CONFIG_PREEMPT_RT
 	/*
 	 * We dont accurately track softirq state in e.g.
 	 * hardirq contexts (such as on 4KSTACKS), so only
@@ -5487,6 +5488,7 @@ static noinstr void check_flags(unsigned long flags)
 			DEBUG_LOCKS_WARN_ON(!current->softirqs_enabled);
 		}
 	}
+#endif
 
 	if (!debug_locks)
 		print_irqtrace_events(current);
