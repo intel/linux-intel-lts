@@ -7,13 +7,16 @@
 #include <linux/list_sort.h>
 #include <linux/list.h>
 
+typedef int __attribute__((nonnull(2,3))) (*cmp_func)(void *,
+		struct list_head const *, struct list_head const *);
+
 /*
  * Returns a list organized in an intermediate format suited
  * to chaining of merge() calls: null-terminated, no reserved or
  * sentinel head node, "prev" links not maintained.
  */
 __attribute__((nonnull(2,3,4)))
-static struct list_head *merge(void *priv, list_cmp_func_t cmp,
+static struct list_head *merge(void *priv, cmp_func cmp,
 				struct list_head *a, struct list_head *b)
 {
 	struct list_head *head, **tail = &head;
@@ -49,7 +52,7 @@ static struct list_head *merge(void *priv, list_cmp_func_t cmp,
  * throughout.
  */
 __attribute__((nonnull(2,3,4,5)))
-static void merge_final(void *priv, list_cmp_func_t cmp, struct list_head *head,
+static void merge_final(void *priv, cmp_func cmp, struct list_head *head,
 			struct list_head *a, struct list_head *b)
 {
 	struct list_head *tail = head;
@@ -182,7 +185,9 @@ static void merge_final(void *priv, list_cmp_func_t cmp, struct list_head *head,
  * 2^(k+1) - 1 (second merge of case 5 when x == 2^(k-1) - 1).
  */
 __attribute__((nonnull(2,3)))
-void list_sort(void *priv, struct list_head *head, list_cmp_func_t cmp)
+void list_sort(void *priv, struct list_head *head,
+		int (*cmp)(void *priv, struct list_head *a,
+			struct list_head *b))
 {
 	struct list_head *list = head->next, *pending = NULL;
 	size_t count = 0;	/* Count of pending */
@@ -222,7 +227,7 @@ void list_sort(void *priv, struct list_head *head, list_cmp_func_t cmp)
 		if (likely(bits)) {
 			struct list_head *a = *tail, *b = a->prev;
 
-			a = merge(priv, cmp, b, a);
+			a = merge(priv, (cmp_func)cmp, b, a);
 			/* Install the merged result in place of the inputs */
 			a->prev = b->prev;
 			*tail = a;
@@ -244,10 +249,10 @@ void list_sort(void *priv, struct list_head *head, list_cmp_func_t cmp)
 
 		if (!next)
 			break;
-		list = merge(priv, cmp, pending, list);
+		list = merge(priv, (cmp_func)cmp, pending, list);
 		pending = next;
 	}
 	/* The final merge, rebuilding prev links */
-	merge_final(priv, cmp, head, pending, list);
+	merge_final(priv, (cmp_func)cmp, head, pending, list);
 }
 EXPORT_SYMBOL(list_sort);

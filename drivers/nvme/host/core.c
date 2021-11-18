@@ -3802,6 +3802,14 @@ out_unlock:
 	return ret;
 }
 
+static int ns_cmp(void *priv, struct list_head *a, struct list_head *b)
+{
+	struct nvme_ns *nsa = container_of(a, struct nvme_ns, list);
+	struct nvme_ns *nsb = container_of(b, struct nvme_ns, list);
+
+	return nsa->head->ns_id - nsb->head->ns_id;
+}
+
 struct nvme_ns *nvme_find_get_ns(struct nvme_ctrl *ctrl, unsigned nsid)
 {
 	struct nvme_ns *ns, *ret = NULL;
