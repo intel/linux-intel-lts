@@ -788,6 +788,77 @@ static int retrieve_clocks(struct vpu_ipc_dev *vpu_dev)
 	return 0;
 }
 
+/*
+ * Set up TEE communication (initialize TEE context, TEE session, and TEE
+ * shared mem).
+ */
+static int setup_tee_com(struct vpu_ipc_dev *vpu_dev)
+{
+	struct tee_ioctl_open_session_arg sess_arg;
+	struct device *dev = &vpu_dev->pdev->dev;
+	int rc;
+
+	/* Open context with TEE driver */
+	vpu_dev->tee_ctx = tee_client_open_context(NULL, vpu_auth_ta_match,
+						   NULL, NULL);
+	if (IS_ERR(vpu_dev->tee_ctx)) {
+		if (PTR_ERR(vpu_dev->tee_ctx) == -ENOENT)
+			return -EPROBE_DEFER;
+		dev_err(dev, "%s: tee_client_open_context failed\n", __func__);
+		return PTR_ERR(vpu_dev->tee_ctx);
+	}
+
+	/* Open a session with VPU auth TA */
+	memset(&sess_arg, 0, sizeof(sess_arg));
+	memcpy(sess_arg.uuid, vpu_auth_ta_uuid.b, TEE_IOCTL_UUID_LEN);
+	sess_arg.clnt_login = TEE_IOCTL_LOGIN_PUBLIC;
+	sess_arg.num_params = 0;
+
+	rc = tee_client_open_session(vpu_dev->tee_ctx, &sess_arg, NULL);
+	if (rc < 0 || sess_arg.ret != 0) {
+		dev_err(dev, "%s: tee_client_open_session failed, err=%x\n",
+			__func__, sess_arg.ret);
+		if (!rc)
+			rc = -EINVAL;
+		goto fail_post_tee_ctx_setup;
+	}
+	vpu_dev->tee_session = sess_arg.session;
+
+	/* Allocate dynamic shared memory for VPU boot params */
+	vpu_dev->shm = tee_shm_alloc(vpu_dev->tee_ctx,
+				     sizeof(struct vpu_boot_ta_shmem),
+				     (TEE_SHM_MAPPED | TEE_SHM_DMA_BUF));
+
+	if (IS_ERR(vpu_dev->shm)) {
+		dev_err(dev, "%s: tee_shm_alloc failed\n", __func__);
+		rc = -ENOMEM;
+		goto fail_post_tee_session_setup;
+	}
+
+	return 0;
+
+fail_post_tee_session_setup:
+	tee_client_close_session(vpu_dev->tee_ctx, vpu_dev->tee_session);
+
+fail_post_tee_ctx_setup:
+	tee_client_close_context(vpu_dev->tee_ctx);
+
+	return rc;
+}
+
+/*
+ * Tear down TEE communication (free TEE shared mem and close TEE session and
+ * TEE context).
+ */
+static void tear_down_tee_com(struct vpu_ipc_dev *vpu_dev)
+{
+	tee_shm_free(vpu_dev->shm);
+
+	tee_client_close_session(vpu_dev->tee_ctx, vpu_dev->tee_session);
+
+	tee_client_close_context(vpu_dev->tee_ctx);
+}
+
 static int get_pdev_res_and_ioremap(struct platform_device *pdev,
 				    const char *reg_name,
 				    void __iomem **target_reg)
@@ -1908,7 +1979,6 @@ static const struct attribute *vpu_ipc_attrs[] = {
 
 static int keembay_vpu_ipc_probe(struct platform_device *pdev)
 {
-	struct tee_ioctl_open_session_arg sess_arg;
 	struct device *dev = &pdev->dev;
 	struct vpu_ipc_dev *vpu_dev;
 	int rc;
@@ -1935,16 +2005,21 @@ static int keembay_vpu_ipc_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	rc = ipc_device_get(vpu_dev);
+	/* Set-up communication with TEE. */
+	rc = setup_tee_com(vpu_dev);
 	if (rc)
 		return rc;
+
+	rc = ipc_device_get(vpu_dev);
+	if (rc)
+		goto probe_fail_post_tee_com_setup;
 
 	/* Retrieve memory regions, allocate memory */
 	rc = setup_reserved_memory(vpu_dev);
 	if (rc) {
 		dev_err(dev, "Failed to set up reserved memory regions: %d\n",
 			rc);
-		return rc;
+		goto probe_fail_post_tee_com_setup;
 	}
 
 	/* Request watchdog timer resources */
@@ -1971,47 +2046,6 @@ static int keembay_vpu_ipc_probe(struct platform_device *pdev)
 		goto probe_fail_post_resmem_setup;
 	}
 
-	/* Open context with TEE driver */
-	vpu_dev->tee_ctx = tee_client_open_context(NULL, vpu_auth_ta_match,
-						   NULL, NULL);
-
-	if (IS_ERR(vpu_dev->tee_ctx)) {
-		if (PTR_ERR(vpu_dev->tee_ctx) == -ENOENT) {
-			rc = -EPROBE_DEFER;
-			goto probe_fail_post_resmem_setup;
-		}
-		dev_err(dev, "%s: tee_client_open_context failed\n", __func__);
-		rc = PTR_ERR(vpu_dev->tee_ctx);
-		goto probe_fail_post_resmem_setup;
-	}
-
-	/* Open a session with VPU auth TA */
-	memset(&sess_arg, 0, sizeof(sess_arg));
-	memcpy(sess_arg.uuid, vpu_auth_ta_uuid.b, TEE_IOCTL_UUID_LEN);
-	sess_arg.clnt_login = TEE_IOCTL_LOGIN_PUBLIC;
-	sess_arg.num_params = 0;
-
-	rc = tee_client_open_session(vpu_dev->tee_ctx, &sess_arg, NULL);
-	if ((rc < 0) || (sess_arg.ret != 0)) {
-		dev_err(dev, "%s: tee_client_open_session failed, err=%x\n",
-			__func__, sess_arg.ret);
-		if (!rc)
-			rc = -EINVAL;
-		goto probe_fail_post_tee_ctx_setup;
-	}
-	vpu_dev->tee_session = sess_arg.session;
-
-	/* Allocate dynamic shared memory for VPU boot params */
-	vpu_dev->shm = tee_shm_alloc(vpu_dev->tee_ctx,
-				     sizeof(struct vpu_boot_ta_shmem),
-				     (TEE_SHM_MAPPED | TEE_SHM_DMA_BUF));
-
-	if (IS_ERR(vpu_dev->shm)) {
-		dev_err(dev, "%s: tee_shm_alloc failed\n", __func__);
-		rc = -ENOMEM;
-		goto probe_fail_post_tee_session_setup;
-	}
-
 	/* Set platform data reference. */
 	platform_set_drvdata(pdev, vpu_dev);
 
@@ -2019,14 +2053,11 @@ static int keembay_vpu_ipc_probe(struct platform_device *pdev)
 
 	return 0;
 
-probe_fail_post_tee_session_setup:
-	tee_client_close_session(vpu_dev->tee_ctx, vpu_dev->tee_session);
-
-probe_fail_post_tee_ctx_setup:
-	tee_client_close_context(vpu_dev->tee_ctx);
-
 probe_fail_post_resmem_setup:
 	release_reserved_memory(vpu_dev);
+
+probe_fail_post_tee_com_setup:
+	tear_down_tee_com(vpu_dev);
 
 	return rc;
 }
@@ -2043,11 +2074,7 @@ static int keembay_vpu_ipc_remove(struct platform_device *pdev)
 
 	release_reserved_memory(vpu_dev);
 
-	tee_shm_free(vpu_dev->shm);
-
-	tee_client_close_session(vpu_dev->tee_ctx, vpu_dev->tee_session);
-
-	tee_client_close_context(vpu_dev->tee_ctx);
+	tear_down_tee_com(vpu_dev);
 
 	ipc_device_put(vpu_dev);
 
