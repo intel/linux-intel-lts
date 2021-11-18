@@ -108,6 +108,10 @@ void __intel_wakeref_init(struct intel_wakeref *wf,
 	INIT_DELAYED_WORK(&wf->work, __intel_wakeref_put_work);
 	lockdep_init_map(&wf->work.work.lockdep_map,
 			 "wakeref.work", &key->work, 0);
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_WAKEREF)
+	intel_wakeref_tracker_init(&wf->debug);
+#endif
 }
 
 int intel_wakeref_wait_for_idle(struct intel_wakeref *wf)
