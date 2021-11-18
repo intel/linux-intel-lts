@@ -43,6 +43,10 @@ struct intel_wakeref {
 	const struct intel_wakeref_ops *ops;
 
 	struct delayed_work work;
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_WAKEREF)
+	struct intel_wakeref_tracker debug;
+#endif
 };
 
 struct intel_wakeref_lockclass {
@@ -261,6 +265,44 @@ __intel_wakeref_defer_park(struct intel_wakeref *wf)
  * Return: 0 on success, error code if killed.
  */
 int intel_wakeref_wait_for_idle(struct intel_wakeref *wf);
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_WAKEREF)
+
+static inline intel_wakeref_t intel_wakeref_track(struct intel_wakeref *wf)
+{
+	return intel_wakeref_tracker_add(&wf->debug);
+}
+
+static inline void intel_wakeref_untrack(struct intel_wakeref *wf,
+					 intel_wakeref_t handle)
+{
+	intel_wakeref_tracker_remove(&wf->debug, handle);
+}
+
+static inline void intel_wakeref_show(struct intel_wakeref *wf,
+				      struct drm_printer *p)
+{
+	intel_wakeref_tracker_show(&wf->debug, p);
+}
+
+#else
+
+static inline intel_wakeref_t intel_wakeref_track(struct intel_wakeref *wf)
+{
+	return -1;
+}
+
+static inline void intel_wakeref_untrack(struct intel_wakeref *wf,
+					 intel_wakeref_t handle)
+{
+}
+
+static inline void intel_wakeref_show(struct intel_wakeref *wf,
+				      struct drm_printer *p)
+{
+}
+
+#endif
 
 struct intel_wakeref_auto {
 	struct intel_runtime_pm *rpm;

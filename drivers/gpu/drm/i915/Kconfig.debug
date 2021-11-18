@@ -40,6 +40,7 @@ config DRM_I915_DEBUG
 	select DRM_I915_DEBUG_MMIO
 	select DRM_I915_TRACK_WAKEREF
 	select DRM_I915_DEBUG_RUNTIME_PM
+	select DRM_I915_DEBUG_WAKEREF
 	select DRM_I915_SW_FENCE_DEBUG_OBJECTS
 	select DRM_I915_SELFTEST
 	default n
@@ -246,5 +247,19 @@ config DRM_I915_DEBUG_RUNTIME_PM
 	  driver loading, suspend and resume operations.
 
 	  Recommended for driver developers only.
+
+	  If in doubt, say "N"
+
+config DRM_I915_DEBUG_WAKEREF
+	bool "Enable extra tracking for wakerefs"
+	depends on DRM_I915
+	default n
+	select STACKDEPOT
+	select STACKTRACE
+	select DRM_I915_TRACK_WAKEREF
+	help
+	  Choose this option to turn on extra state checking and usage
+	  tracking for the wakerefPM functionality. This may introduce
+	  overhead during driver runtime.
 
 	  If in doubt, say "N"
