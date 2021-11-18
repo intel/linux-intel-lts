@@ -19,6 +19,7 @@
 #include "i915_request.h"
 #include "i915_sysrq.h"
 #include "i915_irq.h"
+#include "intel_wakeref.h"
 
 static DEFINE_MUTEX(sysrq_mutex);
 static LIST_HEAD(sysrq_list);
@@ -111,6 +112,8 @@ static void show_gt(struct intel_gt *gt, struct drm_printer *p)
 		   str_yes_no(gt->awake),
 		   atomic_read(&gt->wakeref.count),
 		   ktime_to_ms(intel_gt_get_awake_time(gt)));
+	if (gt->awake)
+		intel_wakeref_show(&gt->wakeref, p);
 
 	for_each_engine(engine, gt, id) {
 		if (intel_engine_is_idle(engine))
