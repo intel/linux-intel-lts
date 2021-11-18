@@ -45,6 +45,7 @@ static int live_slpc_clamp_min(void *arg)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 	struct igt_spinner spin;
+	intel_wakeref_t wakeref;
 	u32 slpc_min_freq, slpc_max_freq;
 	int err = 0;
 
@@ -70,7 +71,7 @@ static int live_slpc_clamp_min(void *arg)
 	}
 
 	intel_gt_pm_wait_for_idle(gt);
-	intel_gt_pm_get(gt);
+	wakeref = intel_gt_pm_get(gt);
 	for_each_engine(engine, gt, id) {
 		struct i915_request *rq;
 		u32 step, min_freq, req_freq;
@@ -156,7 +157,7 @@ static int live_slpc_clamp_min(void *arg)
 	if (igt_flush_test(gt->i915))
 		err = -EIO;
 
-	intel_gt_pm_put(gt);
+	intel_gt_pm_put(gt, wakeref);
 	igt_spinner_fini(&spin);
 	intel_gt_pm_wait_for_idle(gt);
 
@@ -172,6 +173,7 @@ static int live_slpc_clamp_max(void *arg)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 	struct igt_spinner spin;
+	intel_wakeref_t wakeref;
 	int err = 0;
 	u32 slpc_min_freq, slpc_max_freq;
 
@@ -200,7 +202,7 @@ static int live_slpc_clamp_max(void *arg)
 	}
 
 	intel_gt_pm_wait_for_idle(gt);
-	intel_gt_pm_get(gt);
+	wakeref = intel_gt_pm_get(gt);
 	for_each_engine(engine, gt, id) {
 		struct i915_request *rq;
 		u32 max_freq, req_freq;
@@ -290,7 +292,7 @@ static int live_slpc_clamp_max(void *arg)
 	slpc_set_max_freq(slpc, slpc_max_freq);
 	slpc_set_min_freq(slpc, slpc_min_freq);
 
-	intel_gt_pm_put(gt);
+	intel_gt_pm_put(gt, wakeref);
 	igt_spinner_fini(&spin);
 	intel_gt_pm_wait_for_idle(gt);
 

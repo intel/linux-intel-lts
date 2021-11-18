@@ -17,7 +17,9 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 
-#if IS_ENABLED(CONFIG_DRM_I915_DEBUG)
+#include "intel_wakeref_tracker.h"
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_WAKEREF)
 #define INTEL_WAKEREF_BUG_ON(expr) BUG_ON(expr)
 #else
 #define INTEL_WAKEREF_BUG_ON(expr) BUILD_BUG_ON_INVALID(expr)
@@ -25,8 +27,6 @@
 
 struct intel_runtime_pm;
 struct intel_wakeref;
-
-typedef depot_stack_handle_t intel_wakeref_t;
 
 struct intel_wakeref_ops {
 	int (*get)(struct intel_wakeref *wf);
