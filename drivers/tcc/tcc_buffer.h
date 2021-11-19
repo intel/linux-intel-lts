@@ -113,21 +113,6 @@ struct tcc_registers_wl_s {
 	u64 offset;
 };
 
-struct tcc_registers_wl_s tcc_registers_wl_ehl[] = {
-	{0xFEDA0000, 0x0A78},
-};
-
-struct tcc_registers_wl_s tcc_registers_wl_tglu[] = {
-	{ 0xFEDA0000, 0x0A78},
-	{ 0xFEDC0000, 0x6F08},
-	{ 0xFEDC0000, 0x6F10},
-	{ 0xFEDC0000, 0x6F00}
-};
-
-struct tcc_registers_wl_s tcc_registers_wl_tglh[] = {
-	{ 0xFEDA0000, 0x0A78}
-};
-
 /* enum type for tcc_register structure */
 enum TCC_REG_PHASE {
 	TCC_PRE_MEM        = 0x00000000,

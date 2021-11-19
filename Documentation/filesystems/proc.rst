@@ -550,6 +550,7 @@ encoded manner. The codes are the following:
     mg    mergable advise flag
     bt    arm64 BTI guarded page
     mt    arm64 MTE allocation tags are enabled
+    ss    shadow stack page
     ==    =======================================
 
 Note that there is no guarantee that every flag and associated mnemonic will

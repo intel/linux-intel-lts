@@ -3911,8 +3911,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 
 	entry = mk_pte(page, vmf->vma_page_prot);
 	entry = pte_sw_mkyoung(entry);
-	if (vmf->vma_flags & VM_WRITE)
-		entry = pte_mkwrite(pte_mkdirty(entry));
+	entry = maybe_mkwrite(pte_mkdirty(entry), vma->vm_flags);
 
 	if (!pte_map_lock(vmf)) {
 		ret = VM_FAULT_RETRY;

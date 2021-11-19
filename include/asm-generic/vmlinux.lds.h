@@ -946,7 +946,14 @@
 #define TRACEDATA
 #endif
 
+/*
+ * Discard .note.gnu.property sections which are unused and have
+ * different alignment requirement from kernel note sections.
+ */
 #define NOTES								\
+	/DISCARD/ : {							\
+		*(.note.gnu.property)					\
+	}								\
 	.notes : AT(ADDR(.notes) - LOAD_OFFSET) {			\
 		__start_notes = .;					\
 		KEEP(*(.note.*))					\

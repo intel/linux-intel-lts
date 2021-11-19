@@ -35,6 +35,7 @@
 #include <asm/sigframe.h>
 #include <asm/sighandling.h>
 #include <asm/smap.h>
+#include <asm/cet.h>
 
 static inline void reload_segments(struct sigcontext_32 *sc)
 {
@@ -103,6 +104,13 @@ COMPAT_SYSCALL_DEFINE0(sigreturn)
 	struct sigframe_ia32 __user *frame = (struct sigframe_ia32 __user *)(regs->sp-8);
 	sigset_t set;
 
+	/*
+	 * Verify legacy sigreturn does not have IBT enabled.
+	 */
+#ifdef CONFIG_X86_IBT
+	if (current->thread.shstk.ibt)
+		goto badframe;
+#endif
 	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__get_user(set.sig[0], &frame->sc.oldmask)
@@ -113,6 +121,10 @@ COMPAT_SYSCALL_DEFINE0(sigreturn)
 
 	if (ia32_restore_sigcontext(regs, &frame->sc))
 		goto badframe;
+
+	if (restore_signal_shadow_stack())
+		goto badframe;
+
 	return regs->ax;
 
 badframe:
@@ -124,6 +136,7 @@ COMPAT_SYSCALL_DEFINE0(rt_sigreturn)
 {
 	struct pt_regs *regs = current_pt_regs();
 	struct rt_sigframe_ia32 __user *frame;
+	unsigned int uc_flags;
 	sigset_t set;
 
 	frame = (struct rt_sigframe_ia32 __user *)(regs->sp - 4);
@@ -132,10 +145,18 @@ COMPAT_SYSCALL_DEFINE0(rt_sigreturn)
 		goto badframe;
 	if (__get_user(set.sig[0], (__u64 __user *)&frame->uc.uc_sigmask))
 		goto badframe;
+	if (__get_user(uc_flags, &frame->uc.uc_flags))
+		goto badframe;
+
+	if (uc_flags & UC_WAIT_ENDBR)
+		ibt_set_wait_endbr();
 
 	set_current_blocked(&set);
 
 	if (ia32_restore_sigcontext(regs, &frame->uc.uc_mcontext))
+		goto badframe;
+
+	if (restore_signal_shadow_stack())
 		goto badframe;
 
 	if (compat_restore_altstack(&frame->uc.uc_stack))
@@ -262,6 +283,9 @@ int ia32_setup_frame(int sig, struct ksignal *ksig,
 			restorer = &frame->retcode;
 	}
 
+	if (setup_signal_shadow_stack(1, restorer))
+		return -EFAULT;
+
 	if (!user_access_begin(frame, sizeof(*frame)))
 		return -EFAULT;
 
@@ -301,6 +325,7 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 			compat_sigset_t *set, struct pt_regs *regs)
 {
 	struct rt_sigframe_ia32 __user *frame;
+	unsigned int uc_flags = 0;
 	void __user *restorer;
 	void __user *fp = NULL;
 
@@ -319,6 +344,18 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 
 	frame = get_sigframe(ksig, regs, sizeof(*frame), &fp);
 
+	if (ksig->ka.sa.sa_flags & SA_RESTORER)
+		restorer = ksig->ka.sa.sa_restorer;
+	else
+		restorer = current->mm->context.vdso +
+			vdso_image_32.sym___kernel_rt_sigreturn;
+
+	if (setup_signal_shadow_stack(1, restorer))
+		return -EFAULT;
+
+	if (ibt_get_clear_wait_endbr())
+		uc_flags |= UC_WAIT_ENDBR;
+
 	if (!user_access_begin(frame, sizeof(*frame)))
 		return -EFAULT;
 
@@ -328,17 +365,11 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 
 	/* Create the ucontext.  */
 	if (static_cpu_has(X86_FEATURE_XSAVE))
-		unsafe_put_user(UC_FP_XSTATE, &frame->uc.uc_flags, Efault);
-	else
-		unsafe_put_user(0, &frame->uc.uc_flags, Efault);
+		uc_flags |= UC_FP_XSTATE;
+	unsafe_put_user(uc_flags, &frame->uc.uc_flags, Efault);
 	unsafe_put_user(0, &frame->uc.uc_link, Efault);
 	unsafe_compat_save_altstack(&frame->uc.uc_stack, regs->sp, Efault);
 
-	if (ksig->ka.sa.sa_flags & SA_RESTORER)
-		restorer = ksig->ka.sa.sa_restorer;
-	else
-		restorer = current->mm->context.vdso +
-			vdso_image_32.sym___kernel_rt_sigreturn;
 	unsafe_put_user(ptr_to_compat(restorer), &frame->pretcode, Efault);
 
 	/*

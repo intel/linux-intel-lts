@@ -74,7 +74,7 @@ static inline bool arch_validate_prot(unsigned long prot,
 }
 #define arch_validate_prot(prot, addr) arch_validate_prot(prot, addr)
 
-static inline bool arch_validate_flags(unsigned long vm_flags)
+static inline bool arch_validate_flags(struct vm_area_struct *vma, unsigned long vm_flags)
 {
 	if (!system_supports_mte())
 		return true;
@@ -82,6 +82,6 @@ static inline bool arch_validate_flags(unsigned long vm_flags)
 	/* only allow VM_MTE if VM_MTE_ALLOWED has been set previously */
 	return !(vm_flags & VM_MTE) || (vm_flags & VM_MTE_ALLOWED);
 }
-#define arch_validate_flags(vm_flags) arch_validate_flags(vm_flags)
+#define arch_validate_flags(vma, vm_flags) arch_validate_flags(vma, vm_flags)
 
 #endif /* ! __ASM_MMAN_H__ */

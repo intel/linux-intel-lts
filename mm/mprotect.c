@@ -122,6 +122,13 @@ static unsigned long change_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			bool preserve_write = prot_numa && pte_write(oldpte);
 
 			/*
+			 * Preserve only normal writable PTE, but not shadow
+			 * stack (RW=0, Dirty=1).
+			 */
+			if (is_shadow_stack_mapping(vma->vm_flags))
+				preserve_write = false;
+
+			/*
 			 * Avoid trapping faults against the zero or KSM
 			 * pages. See similar comment in change_huge_pmd.
 			 */
@@ -176,7 +183,8 @@ static unsigned long change_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			}
 
 			if (may_avoid_write_fault(ptent, vma, cp_flags))
-				ptent = pte_mkwrite(ptent);
+				ptent = maybe_mkwrite(ptent, vma->vm_flags);
+
 			ptep_modify_prot_commit(vma, addr, pte, oldpte, ptent);
 			pages++;
 		} else if (is_swap_pte(oldpte)) {
@@ -646,7 +654,7 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 		}
 
 		/* Allow architectures to sanity-check the new flags */
-		if (!arch_validate_flags(newflags)) {
+		if (!arch_validate_flags(vma, newflags)) {
 			error = -EINVAL;
 			goto out;
 		}
