@@ -21,6 +21,8 @@
 #include <asm/device.h>
 #include <asm/msi.h>
 
+#include "../pci.h"
+
 #define VMD_CFGBAR	0
 #define VMD_MEMBAR1	2
 #define VMD_MEMBAR2	4
@@ -68,6 +70,12 @@ enum vmd_features {
 	 * interrupt handling.
 	 */
 	VMD_FEAT_CAN_BYPASS_MSI_REMAP		= (1 << 4),
+
+       /*
+	* Device must have ASPM policy overridden, as its default policy is
+	* incorrect.
+	*/
+	VMD_FEAT_QUIRK_OVERRIDE_ASPM            = (1 << 5),
 };
 
 /*
@@ -659,6 +667,30 @@ static int vmd_alloc_irqs(struct vmd_dev *vmd)
 }
 
 /*
+ * Override the BIOS ASPM policy and set the LTR value for PCI storage
+ * devices on the VMD bride.
+ */
+static int vmd_enable_aspm(struct pci_dev *pdev, void *userdata)
+{
+	int features = *(int *)userdata, pos;
+
+	if (!(features & VMD_FEAT_QUIRK_OVERRIDE_ASPM) ||
+		pdev->class != PCI_CLASS_STORAGE_EXPRESS)
+		return 0;
+
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_LTR);
+	if (!pos)
+		return 0;
+
+	pci_write_config_word(pdev, pos + PCI_LTR_MAX_SNOOP_LAT, 0x1003);
+	pci_write_config_word(pdev, pos + PCI_LTR_MAX_NOSNOOP_LAT, 0x1003);
+	if (pcie_aspm_policy_override(pdev))
+		pci_info(pdev, "Unable of override ASPM policy\n");
+
+	return 0;
+}
+
+/*
  * Since VMD is an aperture to regular PCIe root ports, only allow it to
  * control features that the OS is allowed to control on the physical PCI bus.
  */
@@ -821,6 +853,8 @@ static int vmd_enable_domain(struct vmd_dev *vmd, unsigned long features)
 	pci_scan_child_bus(vmd->bus);
 	pci_assign_unassigned_bus_resources(vmd->bus);
 
+	pci_walk_bus(vmd->bus, vmd_enable_aspm, &features);
+
 	/*
 	 * VMD root buses are virtual and don't return true on pci_is_pcie()
 	 * and will fail pcie_bus_configure_settings() early. It can instead be
@@ -941,11 +975,13 @@ static const struct pci_device_id vmd_ids[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x467f),
 		.driver_data = VMD_FEAT_HAS_MEMBAR_SHADOW_VSCAP |
 				VMD_FEAT_HAS_BUS_RESTRICTIONS |
-				VMD_FEAT_OFFSET_FIRST_VECTOR,},
+				VMD_FEAT_OFFSET_FIRST_VECTOR |
+				VMD_FEAT_QUIRK_OVERRIDE_ASPM,},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x4c3d),
 		.driver_data = VMD_FEAT_HAS_MEMBAR_SHADOW_VSCAP |
 				VMD_FEAT_HAS_BUS_RESTRICTIONS |
-				VMD_FEAT_OFFSET_FIRST_VECTOR,},
+				VMD_FEAT_OFFSET_FIRST_VECTOR |
+				VMD_FEAT_QUIRK_OVERRIDE_ASPM,},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_VMD_9A0B),
 		.driver_data = VMD_FEAT_HAS_MEMBAR_SHADOW_VSCAP |
 				VMD_FEAT_HAS_BUS_RESTRICTIONS |
