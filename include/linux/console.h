@@ -156,6 +156,8 @@ struct console {
 	int	cflag;
 	unsigned long printk_seq;
 	int	wrote_history;
+	uint	ispeed;
+	uint	ospeed;
 	void	*data;
 	struct	 console *next;
 };
