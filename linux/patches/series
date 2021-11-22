@@ -1,1 +1,5 @@
-# CVE Patches
+# CVE-2021-43975
+0001-atlantic-Fix-OOB-read-and-write-in-hw_atl_utils_fw_r.patch
+
+# CVE-2021-43976
+0001-mwifiex_usb-Fix-skb_over_panic-in-mwifiex_usb_recv.patch
