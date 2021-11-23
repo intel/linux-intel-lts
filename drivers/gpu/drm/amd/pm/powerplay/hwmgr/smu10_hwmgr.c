@@ -1024,8 +1024,6 @@ static int smu10_print_clock_levels(struct pp_hwmgr *hwmgr,
 	uint32_t min_freq, max_freq = 0;
 	uint32_t ret = 0;
 
-	phm_get_sysfs_buf(&buf, &size);
-
 	switch (type) {
 	case PP_SCLK:
 		smum_send_msg_to_smc(hwmgr, PPSMC_MSG_GetGfxclkFrequency, &now);

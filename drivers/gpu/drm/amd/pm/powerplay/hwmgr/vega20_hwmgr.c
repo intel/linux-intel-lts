@@ -3366,8 +3366,6 @@ static int vega20_print_clock_levels(struct pp_hwmgr *hwmgr,
 	int ret = 0;
 	uint32_t gen_speed, lane_width, current_gen_speed, current_lane_width;
 
-	phm_get_sysfs_buf(&buf, &size);
-
 	switch (type) {
 	case PP_SCLK:
 		ret = vega20_get_current_clk_freq(hwmgr, PPCLK_GFXCLK, &now);
