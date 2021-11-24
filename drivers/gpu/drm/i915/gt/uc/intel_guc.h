@@ -60,10 +60,6 @@ struct intel_guc {
 	spinlock_t contexts_lock;
 	/** @guc_ids: used to allocate new guc_ids */
 	struct ida guc_ids;
-	/** @num_guc_ids: number of guc_ids that can be used */
-	u32 num_guc_ids;
-	/** @max_guc_ids: max number of guc_ids that can be used */
-	u32 max_guc_ids;
 	/**
 	 * @guc_id_list: list of intel_context with valid guc_ids but no refs
 	 */

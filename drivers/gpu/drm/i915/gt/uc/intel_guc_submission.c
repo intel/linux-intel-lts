@@ -344,7 +344,7 @@ static struct guc_lrc_desc *__get_lrc_desc(struct intel_guc *guc, u32 index)
 {
 	struct guc_lrc_desc *base = guc->lrc_desc_pool_vaddr;
 
-	GEM_BUG_ON(index >= guc->max_guc_ids);
+	GEM_BUG_ON(index >= GUC_MAX_LRC_DESCRIPTORS);
 
 	return &base[index];
 }
@@ -353,7 +353,7 @@ static struct intel_context *__get_context(struct intel_guc *guc, u32 id)
 {
 	struct intel_context *ce = xa_load(&guc->context_lookup, id);
 
-	GEM_BUG_ON(id >= guc->max_guc_ids);
+	GEM_BUG_ON(id >= GUC_MAX_LRC_DESCRIPTORS);
 
 	return ce;
 }
@@ -363,7 +363,8 @@ static int guc_lrc_desc_pool_create(struct intel_guc *guc)
 	u32 size;
 	int ret;
 
-	size = PAGE_ALIGN(sizeof(struct guc_lrc_desc) * guc->max_guc_ids);
+	size = PAGE_ALIGN(sizeof(struct guc_lrc_desc) *
+			  GUC_MAX_LRC_DESCRIPTORS);
 	ret = intel_guc_allocate_and_map_vma(guc, size, &guc->lrc_desc_pool,
 					     (void **)&guc->lrc_desc_pool_vaddr);
 	if (ret)
@@ -1195,7 +1196,7 @@ static void guc_submit_request(struct i915_request *rq)
 static int new_guc_id(struct intel_guc *guc)
 {
 	return ida_simple_get(&guc->guc_ids, 0,
-			      guc->num_guc_ids, GFP_KERNEL |
+			      GUC_MAX_LRC_DESCRIPTORS, GFP_KERNEL |
 			      __GFP_RETRY_MAYFAIL | __GFP_NOWARN);
 }
 
@@ -2706,8 +2707,6 @@ static bool __guc_submission_selected(struct intel_guc *guc)
 
 void intel_guc_submission_init_early(struct intel_guc *guc)
 {
-	guc->max_guc_ids = GUC_MAX_LRC_DESCRIPTORS;
-	guc->num_guc_ids = GUC_MAX_LRC_DESCRIPTORS;
 	guc->submission_supported = __guc_submission_supported(guc);
 	guc->submission_selected = __guc_submission_selected(guc);
 }
@@ -2717,7 +2716,7 @@ g2h_context_lookup(struct intel_guc *guc, u32 desc_idx)
 {
 	struct intel_context *ce;
 
-	if (unlikely(desc_idx >= guc->max_guc_ids)) {
+	if (unlikely(desc_idx >= GUC_MAX_LRC_DESCRIPTORS)) {
 		drm_err(&guc_to_gt(guc)->i915->drm,
 			"Invalid desc_idx %u", desc_idx);
 		return NULL;
@@ -3067,8 +3066,6 @@ void intel_guc_submission_print_info(struct intel_guc *guc,
 
 	drm_printf(p, "GuC Number Outstanding Submission G2H: %u\n",
 		   atomic_read(&guc->outstanding_submission_g2h));
-	drm_printf(p, "GuC Number GuC IDs: %u\n", guc->num_guc_ids);
-	drm_printf(p, "GuC Max GuC IDs: %u\n", guc->max_guc_ids);
 	drm_printf(p, "GuC tasklet count: %u\n\n",
 		   atomic_read(&sched_engine->tasklet.count));
 
