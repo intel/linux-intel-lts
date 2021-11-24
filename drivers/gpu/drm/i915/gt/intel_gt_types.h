@@ -74,8 +74,6 @@ struct intel_gt {
 	struct intel_uc uc;
 	struct intel_iov iov;
 
-	struct i915_wa_list wa_list;
-
 	struct intel_gt_timelines {
 		spinlock_t lock; /* protects active_list */
 		struct list_head active_list;
