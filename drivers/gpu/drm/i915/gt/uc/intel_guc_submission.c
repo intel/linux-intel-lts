@@ -606,18 +606,8 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 	unsigned long index, flags;
 	bool pending_disable, pending_enable, deregister, destroyed, banned;
 
-	xa_lock_irqsave(&guc->context_lookup, flags);
 	xa_for_each(&guc->context_lookup, index, ce) {
-		/*
-		 * Corner case where the ref count on the object is zero but and
-		 * deregister G2H was lost. In this case we don't touch the ref
-		 * count and finish the destroy of the context.
-		 */
-		bool do_put = kref_get_unless_zero(&ce->ref);
-
-		xa_unlock(&guc->context_lookup);
-
-		spin_lock(&ce->guc_state.lock);
+		spin_lock_irqsave(&ce->guc_state.lock, flags);
 
 		/*
 		 * Once we are at this point submission_disabled() is guaranteed
@@ -633,9 +623,7 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 		banned = context_banned(ce);
 		init_sched_state(ce);
 
-		spin_unlock(&ce->guc_state.lock);
-
-		GEM_BUG_ON(!do_put && !destroyed);
+		spin_unlock_irqrestore(&ce->guc_state.lock, flags);
 
 		if (pending_enable || destroyed || deregister) {
 			decr_outstanding_submission_g2h(guc);
@@ -658,19 +646,13 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 			}
 			intel_context_sched_disable_unpin(ce);
 			decr_outstanding_submission_g2h(guc);
-
-			spin_lock(&ce->guc_state.lock);
+			spin_lock_irqsave(&ce->guc_state.lock, flags);
 			guc_blocked_fence_complete(ce);
-			spin_unlock(&ce->guc_state.lock);
+			spin_unlock_irqrestore(&ce->guc_state.lock, flags);
 
 			intel_context_put(ce);
 		}
-
-		if (do_put)
-			intel_context_put(ce);
-		xa_lock(&guc->context_lookup);
 	}
-	xa_unlock_irqrestore(&guc->context_lookup, flags);
 }
 
 static inline bool
@@ -891,28 +873,15 @@ void intel_guc_submission_reset(struct intel_guc *guc, bool stalled)
 {
 	struct intel_context *ce;
 	unsigned long index;
-	unsigned long flags;
 
 	if (unlikely(!guc_submission_initialized(guc))) {
 		/* Reset called during driver load? GuC not yet initialised! */
 		return;
 	}
 
-	xa_lock_irqsave(&guc->context_lookup, flags);
-	xa_for_each(&guc->context_lookup, index, ce) {
-		if (!kref_get_unless_zero(&ce->ref))
-			continue;
-
-		xa_unlock(&guc->context_lookup);
-
+	xa_for_each(&guc->context_lookup, index, ce)
 		if (intel_context_is_pinned(ce))
 			__guc_reset_context(ce, stalled);
-
-		intel_context_put(ce);
-
-		xa_lock(&guc->context_lookup);
-	}
-	xa_unlock_irqrestore(&guc->context_lookup, flags);
 
 	/* GuC is blown away, drop all references to contexts */
 	xa_destroy(&guc->context_lookup);
@@ -988,23 +957,10 @@ void intel_guc_submission_cancel_requests(struct intel_guc *guc)
 {
 	struct intel_context *ce;
 	unsigned long index;
-	unsigned long flags;
 
-	xa_lock_irqsave(&guc->context_lookup, flags);
-	xa_for_each(&guc->context_lookup, index, ce) {
-		if (!kref_get_unless_zero(&ce->ref))
-			continue;
-
-		xa_unlock(&guc->context_lookup);
-
+	xa_for_each(&guc->context_lookup, index, ce)
 		if (intel_context_is_pinned(ce))
 			guc_cancel_context_requests(ce);
-
-		intel_context_put(ce);
-
-		xa_lock(&guc->context_lookup);
-	}
-	xa_unlock_irqrestore(&guc->context_lookup, flags);
 
 	guc_cancel_sched_engine_requests(guc->sched_engine);
 
@@ -2894,28 +2850,21 @@ void intel_guc_find_hung_context(struct intel_engine_cs *engine)
 	struct intel_context *ce;
 	struct i915_request *rq;
 	unsigned long index;
-	unsigned long flags;
 
 	/* Reset called during driver load? GuC not yet initialised! */
 	if (unlikely(!guc_submission_initialized(guc)))
 		return;
 
-	xa_lock_irqsave(&guc->context_lookup, flags);
 	xa_for_each(&guc->context_lookup, index, ce) {
-		if (!kref_get_unless_zero(&ce->ref))
-			continue;
-
-		xa_unlock(&guc->context_lookup);
-
 		if (!intel_context_is_pinned(ce))
-			goto next;
+			continue;
 
 		if (intel_engine_is_virtual(ce->engine)) {
 			if (!(ce->engine->mask & engine->mask))
-				goto next;
+				continue;
 		} else {
 			if (ce->engine != engine)
-				goto next;
+				continue;
 		}
 
 		list_for_each_entry(rq, &ce->guc_active.requests, sched.link) {
@@ -2925,17 +2874,9 @@ void intel_guc_find_hung_context(struct intel_engine_cs *engine)
 			intel_engine_set_hung_context(engine, ce);
 
 			/* Can only cope with one hang at a time... */
-			intel_context_put(ce);
-			xa_lock(&guc->context_lookup);
-			goto done;
+			return;
 		}
-next:
-		intel_context_put(ce);
-		xa_lock(&guc->context_lookup);
-
 	}
-done:
-	xa_unlock_irqrestore(&guc->context_lookup, flags);
 }
 
 void intel_guc_dump_active_requests(struct intel_engine_cs *engine,
@@ -2951,34 +2892,23 @@ void intel_guc_dump_active_requests(struct intel_engine_cs *engine,
 	if (unlikely(!guc_submission_initialized(guc)))
 		return;
 
-	xa_lock_irqsave(&guc->context_lookup, flags);
 	xa_for_each(&guc->context_lookup, index, ce) {
-		if (!kref_get_unless_zero(&ce->ref))
-			continue;
-
-		xa_unlock(&guc->context_lookup);
-
 		if (!intel_context_is_pinned(ce))
-			goto next;
+			continue;
 
 		if (intel_engine_is_virtual(ce->engine)) {
 			if (!(ce->engine->mask & engine->mask))
-				goto next;
+				continue;
 		} else {
 			if (ce->engine != engine)
-				goto next;
+				continue;
 		}
 
-		spin_lock(&ce->guc_active.lock);
+		spin_lock_irqsave(&ce->guc_active.lock, flags);
 		intel_engine_dump_active_requests(&ce->guc_active.requests,
 						  hung_rq, m);
-		spin_unlock(&ce->guc_active.lock);
-
-next:
-		intel_context_put(ce);
-		xa_lock(&guc->context_lookup);
+		spin_unlock_irqrestore(&ce->guc_active.lock, flags);
 	}
-	xa_unlock_irqrestore(&guc->context_lookup, flags);
 }
 
 void intel_guc_submission_print_info(struct intel_guc *guc,
@@ -3032,9 +2962,7 @@ void intel_guc_submission_print_context_info(struct intel_guc *guc,
 {
 	struct intel_context *ce;
 	unsigned long index;
-	unsigned long flags;
 
-	xa_lock_irqsave(&guc->context_lookup, flags);
 	xa_for_each(&guc->context_lookup, index, ce) {
 		drm_printf(p, "GuC lrc descriptor %u:\n", ce->guc_id);
 		drm_printf(p, "\tHW Context Desc: 0x%08x\n", ce->lrc.lrca);
@@ -3053,7 +2981,6 @@ void intel_guc_submission_print_context_info(struct intel_guc *guc,
 
 		guc_log_context_priority(p, ce);
 	}
-	xa_unlock_irqrestore(&guc->context_lookup, flags);
 }
 
 static struct intel_context *
