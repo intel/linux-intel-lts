@@ -240,8 +240,6 @@ int __intel_context_do_pin_ww(struct intel_context *ce,
 	if (err)
 		goto err_post_unpin;
 
-	intel_engine_pm_might_get(ce->engine);
-
 	if (unlikely(intel_context_is_closed(ce))) {
 		err = -ENOENT;
 		goto err_unlock;
@@ -315,7 +313,6 @@ void __intel_context_do_unpin(struct intel_context *ce, int sub)
 		return;
 
 	CE_TRACE(ce, "unpin\n");
-	intel_engine_pm_might_put(ce->engine);
 	ce->ops->unpin(ce);
 	ce->ops->post_unpin(ce);
 
