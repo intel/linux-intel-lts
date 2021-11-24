@@ -320,12 +320,6 @@ static void decr_context_committed_requests(struct intel_context *ce)
 	GEM_BUG_ON(ce->guc_state.number_committed_requests < 0);
 }
 
-static struct intel_context *
-request_to_scheduling_context(struct i915_request *rq)
-{
-	return intel_context_to_parent(rq->context);
-}
-
 static bool context_guc_id_invalid(struct intel_context *ce)
 {
 	return ce->guc_id.id == GUC_INVALID_LRC_ID;
@@ -1693,7 +1687,6 @@ static void __guc_context_sched_disable(struct intel_guc *guc,
 
 	GEM_BUG_ON(guc_id == GUC_INVALID_LRC_ID);
 
-	GEM_BUG_ON(intel_context_is_child(ce));
 	trace_intel_context_sched_disable(ce);
 
 	guc_submission_send_busy_loop(guc, action, ARRAY_SIZE(action),
@@ -1907,8 +1900,6 @@ static void guc_context_sched_disable(struct intel_context *ce)
 	intel_wakeref_t wakeref;
 	u16 guc_id;
 	bool enabled;
-
-	GEM_BUG_ON(intel_context_is_child(ce));
 
 	if (submission_disabled(guc) || context_guc_id_invalid(ce) ||
 	    !lrc_desc_registered(guc, ce->guc_id.id)) {
@@ -2298,8 +2289,6 @@ static void guc_signal_context_fence(struct intel_context *ce)
 {
 	unsigned long flags;
 
-	GEM_BUG_ON(intel_context_is_child(ce));
-
 	spin_lock_irqsave(&ce->guc_state.lock, flags);
 	clr_context_wait_for_deregister_to_register(ce);
 	__guc_signal_context_fence(ce);
@@ -2329,7 +2318,7 @@ static void guc_context_init(struct intel_context *ce)
 
 static int guc_request_alloc(struct i915_request *rq)
 {
-	struct intel_context *ce = request_to_scheduling_context(rq);
+	struct intel_context *ce = rq->context;
 	struct intel_guc *guc = ce_to_guc(ce);
 	unsigned long flags;
 	int ret;
@@ -2372,12 +2361,11 @@ static int guc_request_alloc(struct i915_request *rq)
 	 * exhausted and return -EAGAIN to the user indicating that they can try
 	 * again in the future.
 	 *
-	 * There is no need for a lock here as the timeline mutex (or
-	 * parallel_submit mutex in the case of multi-lrc) ensures at most one
-	 * context can be executing this code path at once. The guc_id_ref is
-	 * incremented once for every request in flight and decremented on each
-	 * retire. When it is zero, a lock around the increment (in pin_guc_id)
-	 * is needed to seal a race with unpin_guc_id.
+	 * There is no need for a lock here as the timeline mutex ensures at
+	 * most one context can be executing this code path at once. The
+	 * guc_id_ref is incremented once for every request in flight and
+	 * decremented on each retire. When it is zero, a lock around the
+	 * increment (in pin_guc_id) is needed to seal a race with unpin_guc_id.
 	 */
 	if (atomic_add_unless(&ce->guc_id.ref, 1, 0))
 		goto out;
