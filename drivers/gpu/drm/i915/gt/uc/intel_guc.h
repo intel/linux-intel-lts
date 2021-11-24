@@ -19,7 +19,6 @@
 #include "intel_uc_fw.h"
 #include "i915_utils.h"
 #include "i915_vma.h"
-#include "gt/intel_gt_pm_unpark_work.h"
 
 struct __guc_ads_blob;
 
@@ -79,12 +78,11 @@ struct intel_guc {
 		 */
 		struct list_head destroyed_contexts;
 		/**
-		 * @destroyed_worker: Worker to deregister contexts, need as we
+		 * @destroyed_worker: worker to deregister contexts, need as we
 		 * need to take a GT PM reference and can't from destroy
-		 * function as it might be in an atomic context (no sleeping).
-		 * Worker only issues deregister when GT is unparked.
+		 * function as it might be in an atomic context (no sleeping)
 		 */
-		struct intel_gt_pm_unpark_work destroyed_worker;
+		struct work_struct destroyed_worker;
 	} submission_state;
 
 	bool submission_supported;

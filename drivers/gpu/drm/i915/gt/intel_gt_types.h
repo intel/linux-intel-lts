@@ -96,16 +96,6 @@ struct intel_gt {
 	struct intel_wakeref wakeref;
 	atomic_t user_wakeref;
 
-	/**
-	 * @pm_unpark_work_list: list of delayed work to scheduled which GT is
-	 * unparked, protected by pm_unpark_work_lock
-	 */
-	struct list_head pm_unpark_work_list;
-	/**
-	 * @pm_unpark_work_lock: protects pm_unpark_work_list
-	 */
-	spinlock_t pm_unpark_work_lock;
-
 	struct list_head closed_vma;
 	spinlock_t closed_lock; /* guards the list of closed_vma */
 
