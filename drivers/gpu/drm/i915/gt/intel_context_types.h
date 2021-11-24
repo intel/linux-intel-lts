@@ -156,52 +156,40 @@ struct intel_context {
 	u8 wa_bb_page; /* if set, page num reserved for context workarounds */
 
 	struct {
-		/** @lock: protects everything in guc_state */
+		/** lock: protects everything in guc_state */
 		spinlock_t lock;
 		/**
-		 * @sched_state: scheduling state of this context using GuC
+		 * sched_state: scheduling state of this context using GuC
 		 * submission
 		 */
 		u32 sched_state;
 		/*
-		 * @fences: maintains a list of requests are currently being
-		 * fenced until a GuC operation completes
+		 * fences: maintains of list of requests that have a submit
+		 * fence related to GuC submission
 		 */
 		struct list_head fences;
-		/**
-		 * @blocked_fence: fence used to signal when the blocking of a
-		 * contexts submissions is complete.
-		 */
+		/* GuC context blocked fence */
 		struct i915_sw_fence blocked_fence;
-		/** @number_committed_requests: number of committed requests */
+		/* GuC committed requests */
 		int number_committed_requests;
-		/** @requests: list of active requests on this context */
+		/** requests: active requests on this context */
 		struct list_head requests;
-		/** @prio: the contexts current guc priority */
-		u8 prio;
-		/**
-		 * @prio_count: a counter of the number requests inflight in
-		 * each priority bucket
+		/*
+		 * GuC priority management
 		 */
+		u8 prio;
 		u32 prio_count[GUC_CLIENT_PRIORITY_NUM];
 	} guc_state;
 
 	struct {
-		/**
-		 * @id: unique handle which is used to communicate information
-		 * with the GuC about this context, protected by
-		 * guc->contexts_lock
-		 */
+		/* GuC LRC descriptor ID */
 		u16 id;
-		/**
-		 * @ref: the number of references to the guc_id, when
-		 * transitioning in and out of zero protected by
-		 * guc->contexts_lock
-		 */
+
+		/* GuC LRC descriptor reference count */
 		atomic_t ref;
-		/**
-		 * @link: in guc->guc_id_list when the guc_id has no refs but is
-		 * still valid, protected by guc->contexts_lock
+
+		/*
+		 * GuC ID link - in list when unpinned but guc_id still valid in GuC
 		 */
 		struct list_head link;
 	} guc_id;
