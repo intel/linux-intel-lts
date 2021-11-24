@@ -7,9 +7,9 @@
 #define _ABI_GUC_ACTIONS_ABI_H
 
 /**
- * DOC: HOST2GUC_REGISTER_CTB
+ * DOC: HOST2GUC_SELF_CFG
  *
- * This message is used as part of the `CTB based communication`_ setup.
+ * This message is used by Host KMD to setup of the `GuC Self Config KLVs`_.
  *
  * This message must be sent as `MMIO HXG Message`_.
  *
@@ -22,20 +22,18 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 27:16 | DATA0 = MBZ                                                  |
  *  |   +-------+--------------------------------------------------------------+
- *  |   |  15:0 | ACTION = _`GUC_ACTION_HOST2GUC_REGISTER_CTB` = 0x4505        |
+ *  |   |  15:0 | ACTION = _`GUC_ACTION_HOST2GUC_SELF_CFG` = 0x0508            |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 | 31:12 | RESERVED = MBZ                                               |
+ *  | 1 | 31:16 | **KLV_KEY** - KLV key, see `GuC Self Config KLVs`_           |
  *  |   +-------+--------------------------------------------------------------+
- *  |   |  11:8 | **TYPE** - type for the `CT Buffer`_                         |
+ *  |   |  15:0 | **KLV_LEN** - KLV length                                     |
  *  |   |       |                                                              |
- *  |   |       |   - _`GUC_CTB_TYPE_HOST2GUC` = 0                             |
- *  |   |       |   - _`GUC_CTB_TYPE_GUC2HOST` = 1                             |
- *  |   +-------+--------------------------------------------------------------+
- *  |   |   7:0 | **SIZE** - size of the `CT Buffer`_ in 4K units minus 1      |
+ *  |   |       |   - 32 bit KLV = 1                                           |
+ *  |   |       |   - 64 bit KLV = 2                                           |
  *  +---+-------+--------------------------------------------------------------+
- *  | 2 |  31:0 | **DESC_ADDR** - GGTT address of the `CTB Descriptor`_        |
+ *  | 2 |  31:0 | **VALUE32** - Bits 31-0 of the KLV value                     |
  *  +---+-------+--------------------------------------------------------------+
- *  | 3 |  31:0 | **BUFF_ADDF** - GGTT address of the `CT Buffer`_             |
+ *  | 3 |  31:0 | **VALUE64** - Bits 63-32 of the KLV value (**KLV_LEN** = 2)  |
  *  +---+-------+--------------------------------------------------------------+
  *
  *  +---+-------+--------------------------------------------------------------+
@@ -45,28 +43,25 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_RESPONSE_SUCCESS_                        |
  *  |   +-------+--------------------------------------------------------------+
- *  |   |  27:0 | DATA0 = MBZ                                                  |
+ *  |   |  27:0 | DATA0 = **NUM** - 1 if KLV was parsed, 0 if not recognized   |
  *  +---+-------+--------------------------------------------------------------+
  */
-#define GUC_ACTION_HOST2GUC_REGISTER_CTB		0x4505
+#define GUC_ACTION_HOST2GUC_SELF_CFG			0x0508
 
-#define HOST2GUC_REGISTER_CTB_REQUEST_MSG_LEN		(GUC_HXG_REQUEST_MSG_MIN_LEN + 3u)
-#define HOST2GUC_REGISTER_CTB_REQUEST_MSG_0_MBZ		GUC_HXG_REQUEST_MSG_0_DATA0
-#define HOST2GUC_REGISTER_CTB_REQUEST_MSG_1_MBZ		(0xfffff << 12)
-#define HOST2GUC_REGISTER_CTB_REQUEST_MSG_1_TYPE	(0xf << 8)
-#define   GUC_CTB_TYPE_HOST2GUC				0u
-#define   GUC_CTB_TYPE_GUC2HOST				1u
-#define HOST2GUC_REGISTER_CTB_REQUEST_MSG_1_SIZE	(0xff << 0)
-#define HOST2GUC_REGISTER_CTB_REQUEST_MSG_2_DESC_ADDR	GUC_HXG_REQUEST_MSG_n_DATAn
-#define HOST2GUC_REGISTER_CTB_REQUEST_MSG_3_BUFF_ADDR	GUC_HXG_REQUEST_MSG_n_DATAn
+#define HOST2GUC_SELF_CFG_REQUEST_MSG_LEN		(GUC_HXG_REQUEST_MSG_MIN_LEN + 3u)
+#define HOST2GUC_SELF_CFG_REQUEST_MSG_0_MBZ		GUC_HXG_REQUEST_MSG_0_DATA0
+#define HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_KEY		(0xffff << 16)
+#define HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_LEN		(0xffff << 0)
+#define HOST2GUC_SELF_CFG_REQUEST_MSG_2_VALUE32		GUC_HXG_REQUEST_MSG_n_DATAn
+#define HOST2GUC_SELF_CFG_REQUEST_MSG_3_VALUE64		GUC_HXG_REQUEST_MSG_n_DATAn
 
-#define HOST2GUC_REGISTER_CTB_RESPONSE_MSG_LEN		GUC_HXG_RESPONSE_MSG_MIN_LEN
-#define HOST2GUC_REGISTER_CTB_RESPONSE_MSG_0_MBZ	GUC_HXG_RESPONSE_MSG_0_DATA0
+#define HOST2GUC_SELF_CFG_RESPONSE_MSG_LEN		GUC_HXG_RESPONSE_MSG_MIN_LEN
+#define HOST2GUC_SELF_CFG_RESPONSE_MSG_0_NUM		GUC_HXG_RESPONSE_MSG_0_DATA0
 
 /**
- * DOC: HOST2GUC_DEREGISTER_CTB
+ * DOC: HOST2GUC_CONTROL_CTB
  *
- * This message is used as part of the `CTB based communication`_ teardown.
+ * This H2G action allows Vf Host to enable or disable H2G and G2H `CT Buffer`_.
  *
  * This message must be sent as `MMIO HXG Message`_.
  *
@@ -79,15 +74,12 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 27:16 | DATA0 = MBZ                                                  |
  *  |   +-------+--------------------------------------------------------------+
- *  |   |  15:0 | ACTION = _`GUC_ACTION_HOST2GUC_DEREGISTER_CTB` = 0x4506      |
+ *  |   |  15:0 | ACTION = _`GUC_ACTION_HOST2GUC_CONTROL_CTB` = 0x4509         |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 | 31:12 | RESERVED = MBZ                                               |
- *  |   +-------+--------------------------------------------------------------+
- *  |   |  11:8 | **TYPE** - type of the `CT Buffer`_                          |
+ *  | 1 |  31:0 | **CONTROL** - control `CTB based communication`_             |
  *  |   |       |                                                              |
- *  |   |       | see `GUC_ACTION_HOST2GUC_REGISTER_CTB`_                      |
- *  |   +-------+--------------------------------------------------------------+
- *  |   |   7:0 | RESERVED = MBZ                                               |
+ *  |   |       |   - _`GUC_CTB_CONTROL_DISABLE` = 0                           |
+ *  |   |       |   - _`GUC_CTB_CONTROL_ENABLE` = 1                            |
  *  +---+-------+--------------------------------------------------------------+
  *
  *  +---+-------+--------------------------------------------------------------+
@@ -100,16 +92,16 @@
  *  |   |  27:0 | DATA0 = MBZ                                                  |
  *  +---+-------+--------------------------------------------------------------+
  */
-#define GUC_ACTION_HOST2GUC_DEREGISTER_CTB		0x4506
+#define GUC_ACTION_HOST2GUC_CONTROL_CTB			0x4509
 
-#define HOST2GUC_DEREGISTER_CTB_REQUEST_MSG_LEN		(GUC_HXG_REQUEST_MSG_MIN_LEN + 1u)
-#define HOST2GUC_DEREGISTER_CTB_REQUEST_MSG_0_MBZ	GUC_HXG_REQUEST_MSG_0_DATA0
-#define HOST2GUC_DEREGISTER_CTB_REQUEST_MSG_1_MBZ	(0xfffff << 12)
-#define HOST2GUC_DEREGISTER_CTB_REQUEST_MSG_1_TYPE	(0xf << 8)
-#define HOST2GUC_DEREGISTER_CTB_REQUEST_MSG_1_MBZ2	(0xff << 0)
+#define HOST2GUC_CONTROL_CTB_REQUEST_MSG_LEN		(GUC_HXG_REQUEST_MSG_MIN_LEN + 1u)
+#define HOST2GUC_CONTROL_CTB_REQUEST_MSG_0_MBZ		GUC_HXG_REQUEST_MSG_0_DATA0
+#define HOST2GUC_CONTROL_CTB_REQUEST_MSG_1_CONTROL	GUC_HXG_REQUEST_MSG_n_DATAn
+#define   GUC_CTB_CONTROL_DISABLE			0u
+#define   GUC_CTB_CONTROL_ENABLE			1u
 
-#define HOST2GUC_DEREGISTER_CTB_RESPONSE_MSG_LEN	GUC_HXG_RESPONSE_MSG_MIN_LEN
-#define HOST2GUC_DEREGISTER_CTB_RESPONSE_MSG_0_MBZ	GUC_HXG_RESPONSE_MSG_0_DATA0
+#define HOST2GUC_CONTROL_CTB_RESPONSE_MSG_LEN		GUC_HXG_RESPONSE_MSG_MIN_LEN
+#define HOST2GUC_CONTROL_CTB_RESPONSE_MSG_0_MBZ		GUC_HXG_RESPONSE_MSG_0_DATA0
 
 /* legacy definitions */
 
@@ -137,12 +129,24 @@ enum intel_guc_action {
 	INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION = 0x1009,
 	INTEL_GUC_ACTION_SETUP_PC_GUCRC = 0x3004,
 	INTEL_GUC_ACTION_AUTHENTICATE_HUC = 0x4000,
+	INTEL_GUC_ACTION_GET_HWCONFIG = 0x4100,
 	INTEL_GUC_ACTION_REGISTER_CONTEXT = 0x4502,
 	INTEL_GUC_ACTION_DEREGISTER_CONTEXT = 0x4503,
 	INTEL_GUC_ACTION_REGISTER_COMMAND_TRANSPORT_BUFFER = 0x4505,
 	INTEL_GUC_ACTION_DEREGISTER_COMMAND_TRANSPORT_BUFFER = 0x4506,
 	INTEL_GUC_ACTION_DEREGISTER_CONTEXT_DONE = 0x4600,
+	INTEL_GUC_ACTION_REGISTER_CONTEXT_MULTI_LRC = 0x4601,
+	INTEL_GUC_ACTION_UPDATE_VGT_INFO = 0x5004,
+	INTEL_GUC_ACTION_MMIO_RELAY_SERVICE = 0x5005,
+	INTEL_GUC_ACTION_MMIO_RELAY_NOTIFICATION = 0x5006,
+	INTEL_GUC_ACTION_MMIO_RELAY_SUCCESS = 0x5007,
+	INTEL_GUC_ACTION_MMIO_RELAY_FAILURE = 0x5008,
 	INTEL_GUC_ACTION_RESET_CLIENT = 0x5507,
+	INTEL_GUC_ACTION_IOMMU_CAT_ERROR_NOTIFICATION = 0x6000,
+	INTEL_GUC_ACTION_PAGE_FAULT_NOTIFICATION = 0x6001,
+	INTEL_GUC_ACTION_TLB_INVALIDATION = 0x7000,
+	INTEL_GUC_ACTION_TLB_INVALIDATION_DONE = 0x7001,
+	INTEL_GUC_ACTION_STATE_CAPTURE_NOTIFICATION = 0x8002,
 	INTEL_GUC_ACTION_LIMIT
 };
 
@@ -174,5 +178,31 @@ enum intel_guc_sleep_state_status {
 #define GUC_LOG_CONTROL_VERBOSITY_SHIFT	4
 #define GUC_LOG_CONTROL_VERBOSITY_MASK	(0xF << GUC_LOG_CONTROL_VERBOSITY_SHIFT)
 #define GUC_LOG_CONTROL_DEFAULT_LOGGING	(1 << 8)
+
+enum intel_guc_tlb_invalidation_type {
+	INTEL_GUC_TLB_INVAL_GUC = 0x6,
+};
+
+/*
+ * 0: Heavy mode of Invalidation:
+ * The pipeline of the engine(s) for which the invalidation is targeted to is
+ * blocked, and all the in-flight transactions are guaranteed to be Globally
+ * Observed before completing the TLB invalidation
+ * 1: Lite mode of Invalidation:
+ * TLBs of the targeted engine(s) are immediately invalidated.
+ * In-flight transactions are NOT guaranteed to be Globally Observed before
+ * completing TLB invalidation.
+ * Light Invalidation Mode is to be used only when
+ * it can be guaranteed (by SW) that the address translations remain invariant
+ * for the in-flight transactions across the TLB invalidation. In other words,
+ * this mode can be used when the TLB invalidation is intended to clear out the
+ * stale cached translations that are no longer in use. Light Invalidation Mode
+ * is much faster than the Heavy Invalidation Mode, as it does not wait for the
+ * in-flight transactions to be GOd.
+ */
+enum intel_guc_tlb_inval_mode {
+	INTEL_GUC_TLB_INVAL_MODE_HEAVY = 0x0,
+	INTEL_GUC_TLB_INVAL_MODE_LITE = 0x1,
+};
 
 #endif /* _ABI_GUC_ACTIONS_ABI_H */

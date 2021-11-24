@@ -16,9 +16,14 @@
 #include "i915_drv.h"
 #include "i915_scatterlist.h"
 #include "i915_vgpu.h"
+#include "iov/intel_iov.h"
 
 #include "intel_gtt.h"
 #include "gen8_ppgtt.h"
+
+#include "iov/abi/iov_actions_abi.h"
+#include "iov/intel_iov_relay.h"
+#include "display/intel_display_types.h"
 
 static int
 i915_get_ggtt_vma_pages(struct i915_vma *vma);
@@ -116,17 +121,11 @@ static bool needs_idle_maps(struct drm_i915_private *i915)
 	return false;
 }
 
-void i915_ggtt_suspend(struct i915_ggtt *ggtt)
+static void unbind_vm(struct i915_address_space *vm)
 {
 	struct i915_vma *vma, *vn;
-	int open;
 
-	mutex_lock(&ggtt->vm.mutex);
-
-	/* Skip rewriting PTE on VMA unbind. */
-	open = atomic_xchg(&ggtt->vm.open, 0);
-
-	list_for_each_entry_safe(vma, vn, &ggtt->vm.bound_list, vm_link) {
+	list_for_each_entry_safe(vma, vn, &vm->bound_list, vm_link) {
 		GEM_BUG_ON(!drm_mm_node_allocated(&vma->node));
 		i915_vma_wait_for_bind(vma);
 
@@ -139,11 +138,39 @@ void i915_ggtt_suspend(struct i915_ggtt *ggtt)
 		}
 	}
 
-	ggtt->vm.clear_range(&ggtt->vm, 0, ggtt->vm.total);
+	vm->clear_range(vm, 0, vm->total);
+}
+
+void i915_ggtt_suspend(struct i915_ggtt *ggtt)
+{
+	struct drm_i915_private *i915 = ggtt->vm.i915;
+	struct drm_framebuffer *drm_fb;
+	int open;
+
+	mutex_lock(&i915->drm.mode_config.fb_lock);
+	mutex_lock(&ggtt->vm.mutex);
+
+	drm_for_each_fb(drm_fb, &i915->drm) {
+		struct intel_framebuffer *fb = to_intel_framebuffer(drm_fb);
+
+		if (fb->dpt_vm) {
+			/* Skip rewriting PTE on VMA unbind. */
+			int open_dpt = atomic_xchg(&fb->dpt_vm->open, 0);
+
+			unbind_vm(fb->dpt_vm);
+
+			atomic_set(&fb->dpt_vm->open, open_dpt);
+		}
+	}
+
+	open = atomic_xchg(&ggtt->vm.open, 0);
+
+	unbind_vm(&ggtt->vm);
 	ggtt->invalidate(ggtt);
 	atomic_set(&ggtt->vm.open, open);
 
 	mutex_unlock(&ggtt->vm.mutex);
+	mutex_unlock(&i915->drm.mode_config.fb_lock);
 
 	intel_gt_check_and_clear_faults(ggtt->vm.gt);
 }
@@ -188,11 +215,26 @@ static void gmch_ggtt_invalidate(struct i915_ggtt *ggtt)
 	intel_gtt_chipset_flush();
 }
 
+static void gen12vf_ggtt_invalidate(struct i915_ggtt *ggtt)
+{
+	struct intel_gt *gt = ggtt->vm.gt;
+	struct intel_guc *guc = &gt->uc.guc;
+	intel_wakeref_t wakeref;
+
+	if (!guc->ct.enabled)
+		return;
+
+	with_intel_runtime_pm(gt->uncore->rpm, wakeref)
+		intel_guc_invalidate_tlb_guc(guc, INTEL_GUC_TLB_INVAL_MODE_HEAVY);
+}
+
 u64 gen8_ggtt_pte_encode(dma_addr_t addr,
 			 enum i915_cache_level level,
 			 u32 flags)
 {
 	gen8_pte_t pte = addr | _PAGE_PRESENT;
+
+	GEM_BUG_ON(addr & ~GEN12_GGTT_PTE_ADDR_MASK);
 
 	if (flags & PTE_LM)
 		pte |= GEN12_GGTT_PTE_LM;
@@ -481,29 +523,17 @@ static void ggtt_unbind_vma(struct i915_address_space *vm, struct i915_vma *vma)
 
 static int ggtt_reserve_guc_top(struct i915_ggtt *ggtt)
 {
-	u64 size;
-	int ret;
-
 	if (!intel_uc_uses_guc(&ggtt->vm.gt->uc))
 		return 0;
 
 	GEM_BUG_ON(ggtt->vm.total <= GUC_GGTT_TOP);
-	size = ggtt->vm.total - GUC_GGTT_TOP;
-
-	ret = i915_gem_gtt_reserve(&ggtt->vm, &ggtt->uc_fw, size,
-				   GUC_GGTT_TOP, I915_COLOR_UNEVICTABLE,
-				   PIN_NOEVICT);
-	if (ret)
-		drm_dbg(&ggtt->vm.i915->drm,
-			"Failed to reserve top of GGTT for GuC\n");
-
-	return ret;
+	return i915_ggtt_balloon(ggtt, GUC_GGTT_TOP, ggtt->vm.total,
+				 &ggtt->uc_fw);
 }
 
 static void ggtt_release_guc_top(struct i915_ggtt *ggtt)
 {
-	if (drm_mm_node_allocated(&ggtt->uc_fw))
-		drm_mm_remove_node(&ggtt->uc_fw);
+	i915_ggtt_deballoon(ggtt, &ggtt->uc_fw);
 }
 
 static void cleanup_init_ggtt(struct i915_ggtt *ggtt)
@@ -540,6 +570,10 @@ static int init_ggtt(struct i915_ggtt *ggtt)
 			       intel_wopcm_guc_size(&ggtt->vm.i915->wopcm));
 
 	ret = intel_vgt_balloon(ggtt);
+	if (ret)
+		return ret;
+
+	ret = intel_iov_init_ggtt(&ggtt->vm.gt->iov);
 	if (ret)
 		return ret;
 
@@ -740,6 +774,7 @@ static void ggtt_cleanup_hw(struct i915_ggtt *ggtt)
 	mutex_destroy(&ggtt->error_mutex);
 
 	ggtt_release_guc_top(ggtt);
+	intel_iov_fini_ggtt(&ggtt->vm.gt->iov);
 	intel_vgt_deballoon(ggtt);
 
 	ggtt->vm.cleanup(&ggtt->vm);
@@ -1140,6 +1175,39 @@ static int i915_gmch_probe(struct i915_ggtt *ggtt)
 	return 0;
 }
 
+static int gen12vf_ggtt_probe(struct i915_ggtt *ggtt)
+{
+	struct drm_i915_private *i915 = ggtt->vm.i915;
+
+	GEM_BUG_ON(!IS_SRIOV_VF(i915));
+	GEM_BUG_ON(GRAPHICS_VER(i915) < 12);
+
+	/* there is no apperture on VFs */
+	ggtt->gmadr = (struct resource) DEFINE_RES_MEM(0, 0);
+	ggtt->mappable_end = 0;
+
+	ggtt->vm.alloc_pt_dma = alloc_pt_dma;
+
+	/* safe guess as native expects the same minimum */
+	ggtt->vm.total = 1ULL << (ilog2(GUC_GGTT_TOP - 1) + 1); /* roundup_pow_of_two(GUC_GGTT_TOP); */
+
+	ggtt->vm.pte_encode = gen8_ggtt_pte_encode;
+	ggtt->vm.clear_range = nop_clear_range;
+	ggtt->vm.insert_page = gen8_ggtt_insert_page;
+	ggtt->vm.insert_entries = gen8_ggtt_insert_entries;
+	ggtt->vm.cleanup = gen6_gmch_remove;
+
+	ggtt->vm.vma_ops.bind_vma    = ggtt_bind_vma;
+	ggtt->vm.vma_ops.unbind_vma  = ggtt_unbind_vma;
+	ggtt->vm.vma_ops.set_pages   = ggtt_set_pages;
+	ggtt->vm.vma_ops.clear_pages = clear_pages;
+
+	ggtt->invalidate = gen12vf_ggtt_invalidate;
+
+	return ggtt_probe_common(ggtt, sizeof(gen8_pte_t) *
+				 (ggtt->vm.total >> PAGE_SHIFT));
+}
+
 static int ggtt_probe_hw(struct i915_ggtt *ggtt, struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
@@ -1154,6 +1222,8 @@ static int ggtt_probe_hw(struct i915_ggtt *ggtt, struct intel_gt *gt)
 		ret = i915_gmch_probe(ggtt);
 	else if (GRAPHICS_VER(i915) < 8)
 		ret = gen6_gmch_probe(ggtt);
+	else if (IS_SRIOV_VF(i915))
+		ret = gen12vf_ggtt_probe(ggtt);
 	else
 		ret = gen8_gmch_probe(ggtt);
 	if (ret) {
@@ -1238,9 +1308,35 @@ void i915_ggtt_disable_guc(struct i915_ggtt *ggtt)
 	ggtt->invalidate(ggtt);
 }
 
-void i915_ggtt_resume(struct i915_ggtt *ggtt)
+static bool bind_vm(struct i915_address_space *vm)
 {
 	struct i915_vma *vma;
+	bool flush = false;
+
+	/* clflush objects bound into the GGTT and rebind them. */
+	list_for_each_entry(vma, &vm->bound_list, vm_link) {
+		struct drm_i915_gem_object *obj = vma->obj;
+		unsigned int was_bound =
+			atomic_read(&vma->flags) & I915_VMA_BIND_MASK;
+
+		GEM_BUG_ON(!was_bound);
+		vma->ops->bind_vma(vm, NULL, vma,
+				   obj ? obj->cache_level : 0,
+				   was_bound);
+		if (obj) { /* only used during resume => exclusive access */
+			flush |= fetch_and_zero(&obj->write_domain);
+			obj->read_domains |= I915_GEM_DOMAIN_GTT;
+		}
+	}
+
+	return flush;
+}
+
+
+void i915_ggtt_resume(struct i915_ggtt *ggtt)
+{
+	struct drm_framebuffer *drm_fb;
+	struct drm_i915_private *i915 = ggtt->vm.i915;
 	bool flush = false;
 	int open;
 
@@ -1252,32 +1348,32 @@ void i915_ggtt_resume(struct i915_ggtt *ggtt)
 	/* Skip rewriting PTE on VMA unbind. */
 	open = atomic_xchg(&ggtt->vm.open, 0);
 
-	/* clflush objects bound into the GGTT and rebind them. */
-	list_for_each_entry(vma, &ggtt->vm.bound_list, vm_link) {
-		struct drm_i915_gem_object *obj = vma->obj;
-		unsigned int was_bound =
-			atomic_read(&vma->flags) & I915_VMA_BIND_MASK;
-
-		GEM_BUG_ON(!was_bound);
-		vma->ops->bind_vma(&ggtt->vm, NULL, vma,
-				   obj ? obj->cache_level : 0,
-				   was_bound);
-		if (obj) { /* only used during resume => exclusive access */
-			flush |= fetch_and_zero(&obj->write_domain);
-			obj->read_domains |= I915_GEM_DOMAIN_GTT;
-		}
-	}
+	flush |= bind_vm(&ggtt->vm);
 
 	atomic_set(&ggtt->vm.open, open);
 	ggtt->invalidate(ggtt);
-
-	if (flush)
-		wbinvd_on_all_cpus();
 
 	if (GRAPHICS_VER(ggtt->vm.i915) >= 8)
 		setup_private_pat(ggtt->vm.gt->uncore);
 
 	intel_ggtt_restore_fences(ggtt);
+
+	mutex_lock(&i915->drm.mode_config.fb_lock);
+	drm_for_each_fb(drm_fb, &i915->drm) {
+		struct intel_framebuffer *fb = to_intel_framebuffer(drm_fb);
+
+		if (fb->dpt_vm) {
+			int open_dpt = atomic_xchg(&fb->dpt_vm->open, 0);
+
+			flush |= bind_vm(fb->dpt_vm);
+
+			atomic_set(&fb->dpt_vm->open, open_dpt);
+		}
+	}
+	mutex_unlock(&i915->drm.mode_config.fb_lock);
+
+	if (flush)
+		wbinvd_on_all_cpus();
 }
 
 static struct scatterlist *
@@ -1574,4 +1670,191 @@ i915_get_ggtt_vma_pages(struct i915_vma *vma)
 			vma->ggtt_view.type, ret);
 	}
 	return ret;
+}
+
+/**
+ * i915_ggtt_balloon - reserve fixed space in an GGTT
+ * @ggtt: the &struct i915_ggtt
+ * @start: start offset inside the GGTT,
+ *          must be #I915_GTT_MIN_ALIGNMENT aligned
+ * @end: end offset inside the GGTT,
+ *        must be #I915_GTT_PAGE_SIZE aligned
+ * @node: the &struct drm_mm_node
+ *
+ * i915_ggtt_balloon() tries to reserve the @node from @start to @end inside
+ * GGTT the address space.
+ *
+ * Returns: 0 on success, -ENOSPC if no suitable hole is found.
+ */
+int i915_ggtt_balloon(struct i915_ggtt *ggtt, u64 start, u64 end,
+		      struct drm_mm_node *node)
+{
+	u64 size = end - start;
+	int err;
+
+	GEM_BUG_ON(start >= end);
+	drm_dbg(&ggtt->vm.i915->drm, "%sGGTT [%#llx-%#llx] %lluK\n",
+		"ballooning ", start, end, size / SZ_1K);
+
+	err = i915_gem_gtt_reserve(&ggtt->vm, node, size, start,
+				   I915_COLOR_UNEVICTABLE, PIN_NOEVICT);
+	if (unlikely(err)) {
+		drm_err(&ggtt->vm.i915->drm, "%sGGTT [%#llx-%#llx] %lluK\n",
+			"Failed to balloon ", node->start,
+			node->start + node->size, node->size / SZ_1K);
+		return err;
+	}
+
+	ggtt->vm.reserved += node->size;
+	return 0;
+}
+
+void i915_ggtt_deballoon(struct i915_ggtt *ggtt, struct drm_mm_node *node)
+{
+	if (!drm_mm_node_allocated(node))
+		return;
+
+	drm_dbg(&ggtt->vm.i915->drm, "%sGGTT [%#llx-%#llx] %lluK\n",
+		"deballooning ", node->start, node->start + node->size,
+		node->size / SZ_1K);
+
+	GEM_BUG_ON(ggtt->vm.reserved < node->size);
+	ggtt->vm.reserved -= node->size;
+	drm_mm_remove_node(node);
+}
+
+static gen8_pte_t tgl_prepare_vf_pte_vfid(u16 vfid)
+{
+	GEM_BUG_ON(!FIELD_FIT(TGL_GGTT_PTE_VFID_MASK, vfid));
+
+	return FIELD_PREP(TGL_GGTT_PTE_VFID_MASK, vfid);
+}
+
+static gen8_pte_t prepare_vf_pte(u16 vfid)
+{
+	return tgl_prepare_vf_pte_vfid(vfid) | _PAGE_PRESENT;
+}
+
+void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
+			       const struct drm_mm_node *node)
+{
+	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
+	const gen8_pte_t pte = prepare_vf_pte(vfid);
+	u64 base = node->start;
+	u64 size = node->size;
+
+	GEM_BUG_ON(!IS_SRIOV_PF(ggtt->vm.i915));
+	GEM_BUG_ON(base % PAGE_SIZE);
+	GEM_BUG_ON(size % PAGE_SIZE);
+
+	drm_dbg(&ggtt->vm.i915->drm, "GGTT VF%u [%#llx-%#llx] %lluK\n",
+		vfid, base, base + size, size / SZ_1K);
+
+	gtt_entries += base >> PAGE_SHIFT;
+	while (size) {
+		gen8_set_pte(gtt_entries++, pte);
+		size -= PAGE_SIZE;
+	}
+
+	ggtt->invalidate(ggtt);
+}
+
+static inline unsigned int __ggtt_size_to_ptes_size(u64 ggtt_size)
+{
+	GEM_BUG_ON(!IS_ALIGNED(ggtt_size, I915_GTT_MIN_ALIGNMENT));
+
+	return (ggtt_size >> PAGE_SHIFT) * sizeof(gen8_pte_t);
+}
+
+static void ggtt_pte_clear_vfid(void *buf, u64 size)
+{
+	while (size) {
+		*(gen8_pte_t *)buf &= ~TGL_GGTT_PTE_VFID_MASK;
+
+		buf += sizeof(gen8_pte_t);
+		size -= sizeof(gen8_pte_t);
+	}
+}
+
+/**
+ * i915_ggtt_save_ptes - copy GGTT PTEs to preallocated buffer
+ * @ggtt: the &struct i915_ggtt
+ * @node: the &struct drm_mm_node - the @node->start is used as the start offset for save
+ * @buf: preallocated buffer in which PTEs will be saved
+ * @size: size of prealocated buffer (in bytes)
+ *        - must be sizeof(gen8_pte_t) aligned
+ * @flags: function flags:
+ *         - #I915_GGTT_SAVE_PTES_NO_VFID BIT - save PTEs without VFID
+ *
+ * Returns: size of the buffer used (or needed if both @buf and @size are (0)) to store all PTEs
+ *          for a given node, -EINVAL if one of @buf or @size is 0.
+
+ *
+ */
+int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, void *buf,
+			unsigned int size, unsigned int flags)
+{
+	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
+
+	if (!buf && !size)
+		return __ggtt_size_to_ptes_size(node->size);
+
+	if (!buf || !size)
+		return -EINVAL;
+
+	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
+	GEM_BUG_ON(size > __ggtt_size_to_ptes_size(SZ_4G));
+
+	gtt_entries += node->start >> PAGE_SHIFT;
+
+	memcpy_fromio(buf, gtt_entries, size);
+
+	if (flags & I915_GGTT_SAVE_PTES_NO_VFID)
+		ggtt_pte_clear_vfid(buf, size);
+
+	return size;
+}
+
+/**
+ * i915_ggtt_restore_ptes() -  restore GGTT PTEs from buffer
+ * @ggtt: the &struct i915_ggtt
+ * @node: the &struct drm_mm_node - the @node->start is used as the start offset for restore
+ * @buf: buffer from which PTEs will be restored
+ * @size: size of prealocated buffer (in bytes)
+ *        - must be sizeof(gen8_pte_t) aligned
+ * @flags: function flags:
+ *         - #I915_GGTT_RESTORE_PTES_VFID_MASK - VFID for restored PTEs
+ *         - #I915_GGTT_RESTORE_PTES_NEW_VFID - restore PTEs with new VFID
+ *           (from #I915_GGTT_RESTORE_PTES_VFID_MASK)
+ *
+ * Returns: 0 on success, -ENOSPC if @node->size is less than size.
+ */
+int i915_ggtt_restore_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, const void *buf,
+			   unsigned int size, unsigned int flags)
+{
+	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
+	u32 vfid = FIELD_GET(I915_GGTT_RESTORE_PTES_VFID_MASK, flags);
+	gen8_pte_t pte;
+
+	GEM_BUG_ON(!size);
+	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
+
+	if (node->size < size)
+		return -ENOSPC;
+
+	gtt_entries += node->start >> PAGE_SHIFT;
+
+	while (size) {
+		pte = *(gen8_pte_t *)buf;
+		if (flags & I915_GGTT_RESTORE_PTES_NEW_VFID)
+			pte |= tgl_prepare_vf_pte_vfid(vfid);
+		gen8_set_pte(gtt_entries++, pte);
+
+		buf += sizeof(gen8_pte_t);
+		size -= sizeof(gen8_pte_t);
+	}
+
+	ggtt->invalidate(ggtt);
+
+	return 0;
 }

@@ -162,6 +162,15 @@ static bool switch_to_kernel_context(struct intel_engine_cs *engine)
 	unsigned long flags;
 	bool result = true;
 
+	/*
+	 * No need to switch_to_kernel_context if GuC submission
+	 *
+	 * FIXME: This execlists specific backend behavior in generic code, this
+	 * should be pushed to the backend.
+	 */
+	if (intel_engine_uses_guc(engine))
+		return true;
+
 	/* GPU is pointing to the void, as good as in the kernel context. */
 	if (intel_gt_is_wedged(engine->gt))
 		return true;

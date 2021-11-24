@@ -632,7 +632,8 @@ static int lrc_ring_cmd_buf_cctl(const struct intel_engine_cs *engine)
 		 * simply to match the RCS context image layout.
 		 */
 		return 0xc6;
-	else if (engine->class != RENDER_CLASS)
+	else if (engine->class != RENDER_CLASS &&
+		 engine->class != COMPUTE_CLASS)
 		return -1;
 	else if (GRAPHICS_VER(engine->i915) >= 12)
 		return 0xb6;
@@ -861,6 +862,11 @@ __lrc_alloc_state(struct intel_context *ce, struct intel_engine_cs *engine)
 		context_size += PAGE_SIZE;
 	}
 
+	if (intel_context_is_parent(ce)) {
+		ce->parent_page = context_size / PAGE_SIZE;
+		context_size += PAGE_SIZE;
+	}
+
 	obj = i915_gem_object_create_lmem(engine->i915, context_size, 0);
 	if (IS_ERR(obj))
 		obj = i915_gem_object_create_shmem(engine->i915, context_size);
@@ -978,6 +984,8 @@ lrc_pin(struct intel_context *ce,
 
 void lrc_unpin(struct intel_context *ce)
 {
+	if (unlikely(ce->last_rq))
+		i915_request_put(ce->last_rq);
 	check_redzone((void *)ce->lrc_reg_state - LRC_STATE_OFFSET,
 		      ce->engine);
 }
@@ -1491,7 +1499,7 @@ void lrc_init_wa_ctx(struct intel_engine_cs *engine)
 	unsigned int i;
 	int err;
 
-	if (engine->class != RENDER_CLASS)
+	if (engine->class != RENDER_CLASS && engine->class != COMPUTE_CLASS)
 		return;
 
 	switch (GRAPHICS_VER(engine->i915)) {

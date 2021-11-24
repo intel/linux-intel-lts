@@ -441,7 +441,7 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN8_RING_PDP_UDW(base, n)	_MMIO((base) + 0x270 + (n) * 8 + 4)
 #define GEN8_RING_PDP_LDW(base, n)	_MMIO((base) + 0x270 + (n) * 8)
 
-#define GEN8_R_PWR_CLK_STATE		_MMIO(0x20C8)
+#define GEN8_R_PWR_CLK_STATE(base)	_MMIO((base)+0xc8)
 #define   GEN8_RPCS_ENABLE		(1 << 31)
 #define   GEN8_RPCS_S_CNT_ENABLE	(1 << 18)
 #define   GEN8_RPCS_S_CNT_SHIFT		15
@@ -497,6 +497,12 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define   ECOBITS_SNB_BIT		(1 << 13)
 #define   ECOBITS_PPGTT_CACHE64B	(3 << 8)
 #define   ECOBITS_PPGTT_CACHE4B		(0 << 8)
+
+#define GEN12_RCU_MODE			_MMIO(0x14800)
+#define   GEN12_RCU_MODE_CCS_ENABLE	(1<<0)
+
+#define GEN12_GAM_MULT_CTXT_CTL		_MMIO(0xce90)
+#define   GEN12_GAM_MULT_CTXT_ENABLE	(1<<0)
 
 #define GAB_CTL				_MMIO(0x24000)
 #define   GAB_CTL_CONT_AFTER_PAGEFAULT	(1 << 8)
@@ -2524,6 +2530,10 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN11_VEBOX2_RING_BASE		0x1d8000
 #define XEHP_VEBOX3_RING_BASE		0x1e8000
 #define XEHP_VEBOX4_RING_BASE		0x1f8000
+#define GEN12_COMPUTE0_RING_BASE       0x1a000
+#define GEN12_COMPUTE1_RING_BASE       0x1c000
+#define GEN12_COMPUTE2_RING_BASE       0x1e000
+#define GEN12_COMPUTE3_RING_BASE       0x26000
 #define BLT_RING_BASE		0x22000
 #define RING_TAIL(base)		_MMIO((base) + 0x30)
 #define RING_HEAD(base)		_MMIO((base) + 0x34)
@@ -4174,6 +4184,11 @@ enum {
 #define GEN8_CTX_L3LLC_COHERENT (1 << 5)
 #define GEN8_CTX_PRIVILEGE (1 << 8)
 #define GEN8_CTX_ADDRESSING_MODE_SHIFT 3
+#define GEN12_CTX_PRIORITY_SHIFT 9
+#define GEN12_CTX_PRIORITY_MASK (3<<GEN12_CTX_PRIORITY_SHIFT)
+#define GEN12_CTX_PRIORITY_HIGH (2<<GEN12_CTX_PRIORITY_SHIFT)
+#define GEN12_CTX_PRIORITY_NORMAL (1<<GEN12_CTX_PRIORITY_SHIFT)
+#define GEN12_CTX_PRIORITY_LOW (0<<GEN12_CTX_PRIORITY_SHIFT)
 
 #define GEN8_CTX_ID_SHIFT 32
 #define GEN8_CTX_ID_WIDTH 21
@@ -6203,11 +6218,17 @@ enum {
 #define   PIPEMISC_HDR_MODE_PRECISION	(1 << 23) /* icl+ */
 #define   PIPEMISC_OUTPUT_COLORSPACE_YUV  (1 << 11)
 #define   PIPEMISC_PIXEL_ROUNDING_TRUNC	REG_BIT(8) /* tgl+ */
-#define   PIPEMISC_DITHER_BPC_MASK	(7 << 5)
-#define   PIPEMISC_DITHER_8_BPC		(0 << 5)
-#define   PIPEMISC_DITHER_10_BPC	(1 << 5)
-#define   PIPEMISC_DITHER_6_BPC		(2 << 5)
-#define   PIPEMISC_DITHER_12_BPC	(3 << 5)
+/*
+ * For Display < 13, Bits 5-7 of PIPE MISC represent DITHER BPC with
+ * valid values of: 6, 8, 10 BPC.
+ * ADLP+, the bits 5-7 represent PORT OUTPUT BPC with valid values of:
+ * 6, 8, 10, 12 BPC.
+ */
+#define   PIPEMISC_BPC_MASK		(7 << 5)
+#define   PIPEMISC_8_BPC		(0 << 5)
+#define   PIPEMISC_10_BPC		(1 << 5)
+#define   PIPEMISC_6_BPC		(2 << 5)
+#define   PIPEMISC_12_BPC_ADLP		(4 << 5) /* adlp+ */
 #define   PIPEMISC_DITHER_ENABLE	(1 << 4)
 #define   PIPEMISC_DITHER_TYPE_MASK	(3 << 2)
 #define   PIPEMISC_DITHER_TYPE_SP	(0 << 2)
@@ -8071,6 +8092,10 @@ enum {
 #define  GEN11_KCR			(19)
 #define  GEN11_GTPM			(16)
 #define  GEN11_BCS			(15)
+#define  GEN12_CCS3			(7)
+#define  GEN12_CCS2			(6)
+#define  GEN12_CCS1			(5)
+#define  GEN12_CCS0			(4)
 #define  GEN11_RCS0			(0)
 
 #define GEN11_GT_INTR_DW1		_MMIO(0x19001c)
@@ -8102,6 +8127,7 @@ enum {
 #define GEN11_GPM_WGBOXPERF_INTR_ENABLE	_MMIO(0x19003c)
 #define GEN11_CRYPTO_RSVD_INTR_ENABLE	_MMIO(0x190040)
 #define GEN11_GUNIT_CSME_INTR_ENABLE	_MMIO(0x190044)
+#define GEN12_CCS_RSVD_INTR_ENABLE	_MMIO(0x190048)
 
 #define GEN11_RCS0_RSVD_INTR_MASK	_MMIO(0x190090)
 #define GEN11_BCS_RSVD_INTR_MASK	_MMIO(0x1900a0)
@@ -8115,9 +8141,19 @@ enum {
 #define GEN11_GPM_WGBOXPERF_INTR_MASK	_MMIO(0x1900ec)
 #define GEN11_CRYPTO_RSVD_INTR_MASK	_MMIO(0x1900f0)
 #define GEN11_GUNIT_CSME_INTR_MASK	_MMIO(0x1900f4)
+#define GEN12_CCS0_CCS1_INTR_MASK	_MMIO(0x190100)
+#define GEN12_CCS2_CCS3_INTR_MASK	_MMIO(0x190104)
 
 #define   ENGINE1_MASK			REG_GENMASK(31, 16)
 #define   ENGINE0_MASK			REG_GENMASK(15, 0)
+
+/* VF_CAPABILITY_REGISTER */
+#define GEN12_VF_CAP_REG		_MMIO(0x1901f8)
+#define   GEN12_VF			REG_BIT(0)
+
+/* VIRTUALIZATION CONTROL REGISTER */
+#define GEN12_VIRTUAL_CTRL_REG		_MMIO(0x10108C)
+#define   GEN12_GUEST_GTT_UPDATE_EN	REG_BIT(8)
 
 #define ILK_DISPLAY_CHICKEN2	_MMIO(0x42004)
 /* Required on all Ironlake and Sandybridge according to the B-Spec. */

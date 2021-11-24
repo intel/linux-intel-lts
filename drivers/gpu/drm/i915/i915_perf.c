@@ -2418,7 +2418,7 @@ gen12_configure_all_contexts(struct i915_perf_stream *stream,
 {
 	struct flex regs[] = {
 		{
-			GEN8_R_PWR_CLK_STATE,
+			GEN8_R_PWR_CLK_STATE(RENDER_RING_BASE),
 			CTX_R_PWR_CLK_STATE,
 		},
 	};
@@ -2438,7 +2438,7 @@ lrc_configure_all_contexts(struct i915_perf_stream *stream,
 #define ctx_flexeuN(N) (ctx_flexeu0 + 2 * (N) + 1)
 	struct flex regs[] = {
 		{
-			GEN8_R_PWR_CLK_STATE,
+			GEN8_R_PWR_CLK_STATE(RENDER_RING_BASE),
 			CTX_R_PWR_CLK_STATE,
 		},
 		{
@@ -4351,6 +4351,9 @@ void i915_perf_init(struct drm_i915_private *i915)
 	struct i915_perf *perf = &i915->perf;
 
 	/* XXX const struct i915_perf_ops! */
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	perf->oa_formats = oa_formats;
 	if (IS_HASWELL(i915)) {
