@@ -352,12 +352,6 @@ static inline void set_lrc_desc_registered(struct intel_guc *guc, u32 id,
 	xa_unlock_irqrestore(&guc->context_lookup, flags);
 }
 
-static void decr_outstanding_submission_g2h(struct intel_guc *guc)
-{
-	if (atomic_dec_and_test(&guc->outstanding_submission_g2h))
-		wake_up_all(&guc->ct.wq);
-}
-
 static int guc_submission_send_busy_loop(struct intel_guc *guc,
 					 const u32 *action,
 					 u32 len,
@@ -366,12 +360,10 @@ static int guc_submission_send_busy_loop(struct intel_guc *guc,
 {
 	int err;
 
-	if (g2h_len_dw)
-		atomic_inc(&guc->outstanding_submission_g2h);
-
 	err = intel_guc_send_busy_loop(guc, action, len, g2h_len_dw, loop);
-	if (err == -EBUSY && g2h_len_dw)
-		decr_outstanding_submission_g2h(guc);
+
+	if (!err && g2h_len_dw)
+		atomic_inc(&guc->outstanding_submission_g2h);
 
 	return err;
 }
@@ -624,7 +616,7 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 		init_sched_state(ce);
 
 		if (pending_enable || destroyed || deregister) {
-			decr_outstanding_submission_g2h(guc);
+			atomic_dec(&guc->outstanding_submission_g2h);
 			if (deregister)
 				guc_signal_context_fence(ce);
 			if (destroyed) {
@@ -643,7 +635,7 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 				intel_engine_signal_breadcrumbs(ce->engine);
 			}
 			intel_context_sched_disable_unpin(ce);
-			decr_outstanding_submission_g2h(guc);
+			atomic_dec(&guc->outstanding_submission_g2h);
 			spin_lock_irqsave(&ce->guc_state.lock, flags);
 			guc_blocked_fence_complete(ce);
 			spin_unlock_irqrestore(&ce->guc_state.lock, flags);
@@ -2589,6 +2581,12 @@ g2h_context_lookup(struct intel_guc *guc, u32 desc_idx)
 	}
 
 	return ce;
+}
+
+static void decr_outstanding_submission_g2h(struct intel_guc *guc)
+{
+	if (atomic_dec_and_test(&guc->outstanding_submission_g2h))
+		wake_up_all(&guc->ct.wq);
 }
 
 int intel_guc_deregister_done_process_msg(struct intel_guc *guc,
