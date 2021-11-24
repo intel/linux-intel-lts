@@ -1433,7 +1433,6 @@ int intel_guc_submission_init(struct intel_guc *guc)
 	GEM_BUG_ON(!guc->lrc_desc_pool);
 
 	xa_init_flags(&guc->context_lookup, XA_FLAGS_LOCK_IRQ);
-	xa_init_flags(&guc->tlb_lookup, XA_FLAGS_ALLOC);
 
 	spin_lock_init(&guc->submission_state.lock);
 	INIT_LIST_HEAD(&guc->submission_state.guc_id_list);
@@ -1458,7 +1457,6 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	guc_flush_destroyed_contexts(guc);
 	i915_sched_engine_put(guc->sched_engine);
 	bitmap_free(guc->submission_state.guc_ids_bitmap);
-	xa_destroy(&guc->tlb_lookup);
 }
 
 static void queue_request(struct i915_sched_engine *sched_engine,
@@ -3718,31 +3716,6 @@ g2h_context_lookup(struct intel_guc *guc, u32 desc_idx)
 	return ce;
 }
 
-static void wait_wake_outstanding_tlb_g2h(struct intel_guc *guc, u32 seqno)
-{
-	struct intel_guc_tlb_wait *wait;
-	unsigned long flags;
-
-	xa_lock_irqsave(&guc->tlb_lookup, flags);
-	wait = xa_load(&guc->tlb_lookup, seqno);
-
-	/* We received a response after the waiting task did exit with a timeout */
-	if (unlikely(!wait))
-		drm_dbg(&guc_to_gt(guc)->i915->drm, "Stale tlb invalidation response with seqno %d\n", seqno);
-
-	if (wait) {
-		WRITE_ONCE(wait->status, 0);
-		smp_mb();
-		wake_up_process(wait->tsk);
-	}
-	xa_unlock_irqrestore(&guc->tlb_lookup, flags);
-}
-
-void  intel_guc_tlb_invalidation_done_process_msg(struct intel_guc *guc, u32 seqno)
-{
-	wait_wake_outstanding_tlb_g2h(guc, seqno);
-}
-
 int intel_guc_deregister_done_process_msg(struct intel_guc *guc,
 					  const u32 *msg,
 					  u32 len)
@@ -3914,7 +3887,6 @@ int intel_guc_context_reset_process_msg(struct intel_guc *guc,
 {
 	struct intel_context *ce;
 	int desc_idx;
-	unsigned long flags;
 
 	if (unlikely(len != 1)) {
 		drm_err(&guc_to_gt(guc)->i915->drm, "Invalid length %u", len);
@@ -3922,41 +3894,11 @@ int intel_guc_context_reset_process_msg(struct intel_guc *guc,
 	}
 
 	desc_idx = msg[0];
-	/*
-	 * The context lookup uses the xarray but lookups only require an RCU lock
-	 * not the full spinlock. So take the lock explicitly and keep it until the
-	 * context has been reference count locked to ensure it can't be destroyed
-	 * asynchronously until the reset is done.
-	 */
-	xa_lock_irqsave(&guc->context_lookup, flags);
 	ce = g2h_context_lookup(guc, desc_idx);
-	if (ce)
-		intel_context_get(ce);
-	xa_unlock_irqrestore(&guc->context_lookup, flags);
-
 	if (unlikely(!ce))
 		return -EPROTO;
 
 	guc_handle_context_reset(guc, ce);
-	intel_context_put(ce);
-
-	return 0;
-}
-
-int intel_guc_error_capture_process_msg(struct intel_guc *guc,
-					 const u32 *msg, u32 len)
-{
-	int status;
-
-	if (unlikely(len != 1)) {
-		drm_dbg(&guc_to_gt(guc)->i915->drm, "Invalid length %u", len);
-		return -EPROTO;
-	}
-
-	status = msg[0];
-	drm_info(&guc_to_gt(guc)->i915->drm, "Got error capture: status = %d", status);
-
-	/* FIXME: Do something with the capture */
 
 	return 0;
 }

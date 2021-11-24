@@ -38,10 +38,6 @@
  *      +---------------------------------------+
  *      | padding                               |
  *      +---------------------------------------+ <== 4K aligned
- *      | capture lists                         |
- *      +---------------------------------------+
- *      | padding                               |
- *      +---------------------------------------+ <== 4K aligned
  *      | private data                          |
  *      +---------------------------------------+
  *      | padding                               |
@@ -66,12 +62,6 @@ static u32 guc_ads_golden_ctxt_size(struct intel_guc *guc)
 	return PAGE_ALIGN(guc->ads_golden_ctxt_size);
 }
 
-static u32 guc_ads_capture_size(struct intel_guc *guc)
-{
-	/* FIXME: Allocate a proper capture list */
-	return PAGE_ALIGN(PAGE_SIZE);
-}
-
 static u32 guc_ads_private_data_size(struct intel_guc *guc)
 {
 	return PAGE_ALIGN(guc->fw.private_data_size);
@@ -92,22 +82,12 @@ static u32 guc_ads_golden_ctxt_offset(struct intel_guc *guc)
 	return PAGE_ALIGN(offset);
 }
 
-static u32 guc_ads_capture_offset(struct intel_guc *guc)
+static u32 guc_ads_private_data_offset(struct intel_guc *guc)
 {
 	u32 offset;
 
 	offset = guc_ads_golden_ctxt_offset(guc) +
 		 guc_ads_golden_ctxt_size(guc);
-
-	return PAGE_ALIGN(offset);
-}
-
-static u32 guc_ads_private_data_offset(struct intel_guc *guc)
-{
-	u32 offset;
-
-	offset = guc_ads_capture_offset(guc) +
-		 guc_ads_capture_size(guc);
 
 	return PAGE_ALIGN(offset);
 }
@@ -369,13 +349,6 @@ static void fill_engine_enable_masks(struct intel_gt *gt,
 	info->engine_enabled_masks[GUC_VIDEOENHANCE_CLASS] = VEBOX_MASK(gt);
 }
 
-#define LR_HW_CONTEXT_SIZE (80 * sizeof(u32))
-#define XEHP_LR_HW_CONTEXT_SIZE (96 * sizeof(u32))
-#define LR_HW_CONTEXT_SZ(i915) (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 50) ? \
-					XEHP_LR_HW_CONTEXT_SIZE : \
-					LR_HW_CONTEXT_SIZE)
-#define LRC_SKIP_SIZE(i915) (LRC_PPHWSP_SZ * PAGE_SIZE + LR_HW_CONTEXT_SZ(i915))
-
 static int guc_prep_golden_context(struct intel_guc *guc,
 				   struct __guc_ads_blob *blob)
 {
@@ -423,18 +396,7 @@ static int guc_prep_golden_context(struct intel_guc *guc,
 		if (!blob)
 			continue;
 
-		/*
-		 * This interface is slightly confusing. We need to pass the
-		 * base address of the full golden context and the size of just
-		 * the engine state, which is the section of the context image
-		 * that starts after the execlists context. This is required to
-		 * allow the GuC to restore just the engine state when a
-		 * watchdog reset occurs.
-		 * We calculate the engine state size by removing the size of
-		 * what comes before it in the context image (which is identical
-		 * on all engines).
-		 */
-		blob->ads.eng_state_size[guc_class] = real_size - LRC_SKIP_SIZE(gt->i915);
+		blob->ads.eng_state_size[guc_class] = real_size;
 		blob->ads.golden_context_lrca[guc_class] = addr_ggtt;
 		addr_ggtt += alloc_size;
 	}
@@ -476,6 +438,8 @@ static void guc_init_golden_context(struct intel_guc *guc)
 
 	/* Skip execlist and PPGTT registers + HWSP */
 	const u32 lr_hw_context_size = 80 * sizeof(u32);
+	const u32 skip_size = LRC_PPHWSP_SZ * PAGE_SIZE +
+		lr_hw_context_size;
 
 	if (!intel_uc_uses_guc_submission(&gt->uc))
 		return;
@@ -512,36 +476,16 @@ static void guc_init_golden_context(struct intel_guc *guc)
 			continue;
 		}
 
-		GEM_BUG_ON(blob->ads.eng_state_size[guc_class] !=
-			   real_size - LRC_SKIP_SIZE(gt->i915));
+		GEM_BUG_ON(blob->ads.eng_state_size[guc_class] != real_size);
 		GEM_BUG_ON(blob->ads.golden_context_lrca[guc_class] != addr_ggtt);
 		addr_ggtt += alloc_size;
 
-		shmem_read(engine->default_state, 0, ptr, real_size);
+		shmem_read(engine->default_state, skip_size, ptr + skip_size,
+			   real_size - skip_size);
 		ptr += alloc_size;
 	}
 
 	GEM_BUG_ON(guc->ads_golden_ctxt_size != total_size);
-}
-
-static void guc_capture_list_init(struct intel_guc *guc, struct __guc_ads_blob *blob)
-{
-	int i, j;
-	u32 addr_ggtt, offset;
-
-	offset = guc_ads_capture_offset(guc);
-	addr_ggtt = intel_guc_ggtt_offset(guc, guc->ads_vma) + offset;
-
-	/* FIXME: Populate a proper capture list */
-
-	for (i = 0; i < GUC_CAPTURE_LIST_INDEX_MAX; i++) {
-		for (j = 0; j < GUC_MAX_ENGINE_CLASSES; j++) {
-			blob->ads.capture_instance[i][j] = addr_ggtt;
-			blob->ads.capture_class[i][j] = addr_ggtt;
-		}
-
-		blob->ads.capture_global[i] = addr_ggtt;
-	}
 }
 
 static void __guc_ads_init(struct intel_guc *guc)
@@ -576,9 +520,6 @@ static void __guc_ads_init(struct intel_guc *guc)
 	guc_mapping_table_init(guc_to_gt(guc), &blob->system_info);
 
 	base = intel_guc_ggtt_offset(guc, guc->ads_vma);
-
-	/* Capture list for hang debug */
-	guc_capture_list_init(guc, blob);
 
 	/* ADS */
 	blob->ads.scheduler_policies = base + ptr_offset(blob, policies);
