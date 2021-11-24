@@ -391,29 +391,6 @@ __get_process_desc(struct intel_context *ce)
 		   LRC_STATE_OFFSET) / sizeof(u32)));
 }
 
-static u32 *get_wq_pointer(struct guc_process_desc *desc,
-			   struct intel_context *ce,
-			   u32 wqi_size)
-{
-	/*
-	 * Check for space in work queue. Caching a value of head pointer in
-	 * intel_context structure in order reduce the number accesses to shared
-	 * GPU memory which may be across a PCIe bus.
-	 */
-#define AVAILABLE_SPACE	\
-	CIRC_SPACE(ce->guc_wqi_tail, ce->guc_wqi_head, GUC_WQ_SIZE)
-	if (wqi_size > AVAILABLE_SPACE) {
-		ce->guc_wqi_head = READ_ONCE(desc->head);
-
-		if (wqi_size > AVAILABLE_SPACE)
-			return NULL;
-	}
-#undef AVAILABLE_SPACE
-
-	return ((u32 *)__get_process_desc(ce)) +
-		((WQ_OFFSET + ce->guc_wqi_tail) / sizeof(u32));
-}
-
 static struct guc_lrc_desc *__get_lrc_desc(struct intel_guc *guc, u32 index)
 {
 	struct guc_lrc_desc *base = guc->lrc_desc_pool_vaddr;
@@ -572,10 +549,10 @@ int intel_guc_wait_for_idle(struct intel_guc *guc, long timeout)
 
 static int guc_lrc_desc_pin(struct intel_context *ce, bool loop);
 
-static int __guc_add_request(struct intel_guc *guc, struct i915_request *rq)
+static int guc_add_request(struct intel_guc *guc, struct i915_request *rq)
 {
 	int err = 0;
-	struct intel_context *ce = request_to_scheduling_context(rq);
+	struct intel_context *ce = rq->context;
 	u32 action[3];
 	int len = 0;
 	u32 g2h_len_dw = 0;
@@ -596,17 +573,26 @@ static int __guc_add_request(struct intel_guc *guc, struct i915_request *rq)
 	GEM_BUG_ON(!atomic_read(&ce->guc_id.ref));
 	GEM_BUG_ON(context_guc_id_invalid(ce));
 
+	/*
+	 * Corner case where the GuC firmware was blown away and reloaded while
+	 * this context was pinned.
+	 */
+	if (unlikely(!lrc_desc_registered(guc, ce->guc_id.id))) {
+		err = guc_lrc_desc_pin(ce, false);
+		if (unlikely(err))
+			return err;
+	}
+
 	spin_lock(&ce->guc_state.lock);
 
 	/*
 	 * The request / context will be run on the hardware when scheduling
-	 * gets enabled in the unblock. For multi-lrc we still submit the
-	 * context to move the LRC tails.
+	 * gets enabled in the unblock.
 	 */
-	if (unlikely(context_blocked(ce) && !intel_context_is_parent(ce)))
+	if (unlikely(context_blocked(ce)))
 		goto out;
 
-	enabled = context_enabled(ce) || context_blocked(ce);
+	enabled = context_enabled(ce);
 
 	if (!enabled) {
 		action[len++] = INTEL_GUC_ACTION_SCHED_CONTEXT_MODE_SET;
@@ -625,18 +611,6 @@ static int __guc_add_request(struct intel_guc *guc, struct i915_request *rq)
 		trace_intel_context_sched_enable(ce);
 		atomic_inc(&guc->outstanding_submission_g2h);
 		set_context_enabled(ce);
-
-		/*
-		 * Without multi-lrc KMD does the submission step (moving the
-		 * lrc tail) so enabling scheduling is sufficient to submit the
-		 * context. This isn't the case in multi-lrc submission as the
-		 * GuC needs to move the tails, hence the need for another H2G
-		 * to submit a multi-lrc context after enabling scheduling.
-		 */
-		if (intel_context_is_parent(ce)) {
-			action[0] = INTEL_GUC_ACTION_SCHED_CONTEXT;
-			err = intel_guc_send_nb(guc, action, len - 1, 0);
-		}
 	} else if (!enabled) {
 		clr_context_pending_enable(ce);
 		intel_context_put(ce);
@@ -649,18 +623,6 @@ out:
 	return err;
 }
 
-static int guc_add_request(struct intel_guc *guc, struct i915_request *rq)
-{
-	int ret = __guc_add_request(guc, rq);
-
-	if (unlikely(ret == -EBUSY)) {
-		guc->stalled_request = rq;
-		guc->submission_stall_reason = STALL_ADD_REQUEST;
-	}
-
-	return ret;
-}
-
 static void guc_set_lrc_tail(struct i915_request *rq)
 {
 	rq->context->lrc_reg_state[CTX_RING_TAIL] =
@@ -670,127 +632,6 @@ static void guc_set_lrc_tail(struct i915_request *rq)
 static int rq_prio(const struct i915_request *rq)
 {
 	return rq->sched.attr.priority;
-}
-
-static bool is_multi_lrc_rq(struct i915_request *rq)
-{
-	return intel_context_is_child(rq->context) ||
-		intel_context_is_parent(rq->context);
-}
-
-static bool can_merge_rq(struct i915_request *rq,
-			 struct i915_request *last)
-{
-	return request_to_scheduling_context(rq) ==
-		request_to_scheduling_context(last);
-}
-
-static u32 wq_space_until_wrap(struct intel_context *ce)
-{
-	return (GUC_WQ_SIZE - ce->guc_wqi_tail);
-}
-
-static void write_wqi(struct guc_process_desc *desc,
-		      struct intel_context *ce,
-		      u32 wqi_size)
-{
-	/*
-	 * Ensure WQE are visible before updating tail
-	 */
-	intel_guc_write_barrier(ce_to_guc(ce));
-
-	ce->guc_wqi_tail = (ce->guc_wqi_tail + wqi_size) & (GUC_WQ_SIZE - 1);
-	WRITE_ONCE(desc->tail, ce->guc_wqi_tail);
-}
-
-static int guc_wq_noop_append(struct intel_context *ce)
-{
-	struct guc_process_desc *desc = __get_process_desc(ce);
-	u32 *wqi = get_wq_pointer(desc, ce, wq_space_until_wrap(ce));
-
-	if (!wqi)
-		return -EBUSY;
-
-	*wqi = WQ_TYPE_NOOP |
-		((wq_space_until_wrap(ce) / sizeof(u32) - 1) << WQ_LEN_SHIFT);
-	ce->guc_wqi_tail = 0;
-
-	return 0;
-}
-
-static int __guc_wq_item_append(struct i915_request *rq)
-{
-	struct intel_context *ce = request_to_scheduling_context(rq);
-	struct intel_context *child;
-	struct guc_process_desc *desc = __get_process_desc(ce);
-	unsigned int wqi_size = (ce->guc_number_children + 4) *
-		sizeof(u32);
-	u32 *wqi;
-	int ret;
-
-	/* Ensure context is in correct state updating work queue */
-	GEM_BUG_ON(!atomic_read(&ce->guc_id.ref));
-	GEM_BUG_ON(context_guc_id_invalid(ce));
-	GEM_BUG_ON(context_wait_for_deregister_to_register(ce));
-	GEM_BUG_ON(!lrc_desc_registered(ce_to_guc(ce), ce->guc_id.id));
-
-	/* Insert NOOP if this work queue item will wrap the tail pointer. */
-	if (wqi_size > wq_space_until_wrap(ce)) {
-		ret = guc_wq_noop_append(ce);
-		if (ret)
-			return ret;
-	}
-
-	wqi = get_wq_pointer(desc, ce, wqi_size);
-	if (!wqi)
-		return -EBUSY;
-
-	*wqi++ = WQ_TYPE_MULTI_LRC |
-		((wqi_size / sizeof(u32) - 1) << WQ_LEN_SHIFT);
-	*wqi++ = ce->lrc.lrca;
-	*wqi++ = (ce->guc_id.id << WQ_GUC_ID_SHIFT) |
-		 ((ce->ring->tail / sizeof(u64)) << WQ_RING_TAIL_SHIFT);
-	*wqi++ = 0;	/* fence_id */
-	for_each_child(ce, child)
-		*wqi++ = child->ring->tail / sizeof(u64);
-
-	write_wqi(desc, ce, wqi_size);
-
-	return 0;
-}
-
-static int guc_wq_item_append(struct intel_guc *guc,
-			      struct i915_request *rq)
-{
-	struct intel_context *ce = request_to_scheduling_context(rq);
-	int ret = 0;
-
-	if (likely(!intel_context_is_banned(ce))) {
-		ret = __guc_wq_item_append(rq);
-
-		if (unlikely(ret == -EBUSY)) {
-			guc->stalled_request = rq;
-			guc->submission_stall_reason = STALL_MOVE_LRC_TAIL;
-		}
-	}
-
-	return ret;
-}
-
-static bool multi_lrc_submit(struct i915_request *rq)
-{
-	struct intel_context *ce = request_to_scheduling_context(rq);
-
-	intel_ring_set_tail(rq->ring, rq->tail);
-
-	/*
-	 * We expect the front end (execbuf IOCTL) to set this flag on the last
-	 * request generated from a multi-BB submission. This indicates to the
-	 * backend (GuC interface) that we should submit this context thus
-	 * submitting all the requests generated in parallel.
-	 */
-	return test_bit(I915_FENCE_FLAG_SUBMIT_PARALLEL, &rq->fence.flags) ||
-		intel_context_is_banned(ce);
 }
 
 static int guc_dequeue_one_context(struct intel_guc *guc)
@@ -806,17 +647,7 @@ static int guc_dequeue_one_context(struct intel_guc *guc)
 	if (guc->stalled_request) {
 		submit = true;
 		last = guc->stalled_request;
-
-		switch (guc->submission_stall_reason) {
-		case STALL_REGISTER_CONTEXT:
-			goto register_context;
-		case STALL_MOVE_LRC_TAIL:
-			goto move_lrc_tail;
-		case STALL_ADD_REQUEST:
-			goto add_request;
-		default:
-			MISSING_CASE(guc->submission_stall_reason);
-		}
+		goto resubmit;
 	}
 
 	while ((rb = rb_first_cached(&sched_engine->queue))) {
@@ -824,8 +655,8 @@ static int guc_dequeue_one_context(struct intel_guc *guc)
 		struct i915_request *rq, *rn;
 
 		priolist_for_each_request_consume(rq, rn, p) {
-			if (last && !can_merge_rq(rq, last))
-				goto register_context;
+			if (last && rq->context != last->context)
+				goto done;
 
 			list_del_init(&rq->sched.link);
 
@@ -833,83 +664,32 @@ static int guc_dequeue_one_context(struct intel_guc *guc)
 
 			trace_i915_request_in(rq, 0);
 			last = rq;
-
-			if (is_multi_lrc_rq(rq)) {
-				/*
-				 * We need to coalesce all multi-lrc requests in
-				 * a relationship into a single H2G. We are
-				 * guaranteed that all of these requests will be
-				 * submitted sequentially.
-				 */
-				if (multi_lrc_submit(rq)) {
-					submit = true;
-					goto register_context;
-				}
-			} else {
-				submit = true;
-			}
+			submit = true;
 		}
 
 		rb_erase_cached(&p->node, &sched_engine->queue);
 		i915_priolist_free(p);
 	}
-
-register_context:
+done:
 	if (submit) {
-		struct intel_context *ce = request_to_scheduling_context(last);
-
-		if (unlikely(!lrc_desc_registered(guc, ce->guc_id.id) &&
-			     !intel_context_is_banned(ce))) {
-			ret = guc_lrc_desc_pin(ce, false);
-			if (unlikely(ret == -EPIPE)) {
-				goto deadlk;
-			} else if (ret == -EBUSY) {
-				guc->stalled_request = last;
-				guc->submission_stall_reason =
-					STALL_REGISTER_CONTEXT;
-				goto schedule_tasklet;
-			} else if (ret != 0) {
-				GEM_WARN_ON(ret);	/* Unexpected */
-				goto deadlk;
-			}
-		}
-
-move_lrc_tail:
-		if (is_multi_lrc_rq(last)) {
-			ret = guc_wq_item_append(guc, last);
-			if (ret == -EBUSY) {
-				goto schedule_tasklet;
-			} else if (ret != 0) {
-				GEM_WARN_ON(ret);	/* Unexpected */
-				goto deadlk;
-			}
-		} else {
-			guc_set_lrc_tail(last);
-		}
-
-add_request:
+		guc_set_lrc_tail(last);
+resubmit:
 		ret = guc_add_request(guc, last);
-		if (unlikely(ret == -EPIPE)) {
+		if (unlikely(ret == -EPIPE))
 			goto deadlk;
-		} else if (ret == -EBUSY) {
-			goto schedule_tasklet;
-		} else if (ret != 0) {
-			GEM_WARN_ON(ret);	/* Unexpected */
-			goto deadlk;
+		else if (ret == -EBUSY) {
+			tasklet_schedule(&sched_engine->tasklet);
+			guc->stalled_request = last;
+			return false;
 		}
 	}
 
 	guc->stalled_request = NULL;
-	guc->submission_stall_reason = STALL_NONE;
 	return submit;
 
 deadlk:
 	sched_engine->tasklet.callback = NULL;
 	tasklet_disable_nosync(&sched_engine->tasklet);
-	return false;
-
-schedule_tasklet:
-	tasklet_schedule(&sched_engine->tasklet);
 	return false;
 }
 
@@ -1450,31 +1230,15 @@ static int guc_bypass_tasklet_submit(struct intel_guc *guc,
 
 	trace_i915_request_in(rq, 0);
 
-	if (is_multi_lrc_rq(rq)) {
-		if (multi_lrc_submit(rq)) {
-			ret = guc_wq_item_append(guc, rq);
-			if (!ret)
-				ret = guc_add_request(guc, rq);
-		}
-	} else {
-		guc_set_lrc_tail(rq);
-		ret = guc_add_request(guc, rq);
-	}
+	guc_set_lrc_tail(rq);
+	ret = guc_add_request(guc, rq);
+	if (ret == -EBUSY)
+		guc->stalled_request = rq;
 
 	if (unlikely(ret == -EPIPE))
 		disable_submission(guc);
 
 	return ret;
-}
-
-bool need_tasklet(struct intel_guc *guc, struct i915_request *rq)
-{
-	struct i915_sched_engine *sched_engine = rq->engine->sched_engine;
-	struct intel_context *ce = request_to_scheduling_context(rq);
-
-	return submission_disabled(guc) || guc->stalled_request ||
-		!i915_sched_engine_is_empty(sched_engine) ||
-		!lrc_desc_registered(guc, ce->guc_id.id);
 }
 
 static void guc_submit_request(struct i915_request *rq)
@@ -1486,7 +1250,8 @@ static void guc_submit_request(struct i915_request *rq)
 	/* Will be called from irq-context when using foreign fences. */
 	spin_lock_irqsave(&sched_engine->lock, flags);
 
-	if (need_tasklet(guc, rq))
+	if (submission_disabled(guc) || guc->stalled_request ||
+	    !i915_sched_engine_is_empty(sched_engine))
 		queue_request(sched_engine, rq, rq_prio(rq));
 	else if (guc_bypass_tasklet_submit(guc, rq) == -EBUSY)
 		tasklet_hi_schedule(&sched_engine->tasklet);
@@ -2479,10 +2244,9 @@ static bool new_guc_prio_higher(u8 old_guc_prio, u8 new_guc_prio)
 
 static void add_to_context(struct i915_request *rq)
 {
-	struct intel_context *ce = request_to_scheduling_context(rq);
+	struct intel_context *ce = rq->context;
 	u8 new_guc_prio = map_i915_prio_to_guc_prio(rq_prio(rq));
 
-	GEM_BUG_ON(intel_context_is_child(ce));
 	GEM_BUG_ON(rq->guc_prio == GUC_PRIO_FINI);
 
 	spin_lock(&ce->guc_state.lock);
@@ -2515,9 +2279,7 @@ static void guc_prio_fini(struct i915_request *rq, struct intel_context *ce)
 
 static void remove_from_context(struct i915_request *rq)
 {
-	struct intel_context *ce = request_to_scheduling_context(rq);
-
-	GEM_BUG_ON(intel_context_is_child(ce));
+	struct intel_context *ce = rq->context;
 
 	spin_lock_irq(&ce->guc_state.lock);
 
@@ -2933,7 +2695,7 @@ static void guc_init_breadcrumbs(struct intel_engine_cs *engine)
 static void guc_bump_inflight_request_prio(struct i915_request *rq,
 					   int prio)
 {
-	struct intel_context *ce = request_to_scheduling_context(rq);
+	struct intel_context *ce = rq->context;
 	u8 new_guc_prio = map_i915_prio_to_guc_prio(prio);
 
 	/* Short circuit function */
@@ -2956,7 +2718,7 @@ static void guc_bump_inflight_request_prio(struct i915_request *rq,
 
 static void guc_retire_inflight_request_prio(struct i915_request *rq)
 {
-	struct intel_context *ce = request_to_scheduling_context(rq);
+	struct intel_context *ce = rq->context;
 
 	spin_lock(&ce->guc_state.lock);
 	guc_prio_fini(rq, ce);

@@ -65,14 +65,12 @@
 #define   WQ_TYPE_PSEUDO		(0x2 << WQ_TYPE_SHIFT)
 #define   WQ_TYPE_INORDER		(0x3 << WQ_TYPE_SHIFT)
 #define   WQ_TYPE_NOOP			(0x4 << WQ_TYPE_SHIFT)
-#define   WQ_TYPE_MULTI_LRC		(0x5 << WQ_TYPE_SHIFT)
-#define WQ_TARGET_SHIFT			8
+#define WQ_TARGET_SHIFT			10
 #define WQ_LEN_SHIFT			16
 #define WQ_NO_WCFLUSH_WAIT		(1 << 27)
 #define WQ_PRESENT_WORKLOAD		(1 << 28)
 
-#define WQ_GUC_ID_SHIFT			0
-#define WQ_RING_TAIL_SHIFT		18
+#define WQ_RING_TAIL_SHIFT		20
 #define WQ_RING_TAIL_MAX		0x7FF	/* 2^11 QWords */
 #define WQ_RING_TAIL_MASK		(WQ_RING_TAIL_MAX << WQ_RING_TAIL_SHIFT)
 
