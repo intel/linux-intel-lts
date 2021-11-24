@@ -246,9 +246,6 @@ struct intel_context {
 		/** @guc_number_children: number of children if parent */
 		u8 guc_number_children;
 
-		/** @guc_child_index: index into guc_child_list if child */
-		u8 guc_child_index;
-
 		/**
 		 * @parent_page: page in context used by parent for work queue,
 		 * work queue descriptor

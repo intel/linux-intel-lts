@@ -561,7 +561,7 @@ void intel_context_bind_parent_child(struct intel_context *parent,
 	GEM_BUG_ON(intel_context_is_child(child));
 	GEM_BUG_ON(intel_context_is_parent(child));
 
-	child->guc_child_index = parent->guc_number_children++;
+	parent->guc_number_children++;
 	list_add_tail(&child->guc_child_link,
 		      &parent->guc_child_list);
 	child->parent = parent;
