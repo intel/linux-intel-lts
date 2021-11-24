@@ -169,8 +169,6 @@ struct intel_context {
 		struct list_head fences;
 		/* GuC context blocked fence */
 		struct i915_sw_fence blocked_fence;
-		/* GuC committed requests */
-		int number_committed_requests;
 	} guc_state;
 
 	struct {
