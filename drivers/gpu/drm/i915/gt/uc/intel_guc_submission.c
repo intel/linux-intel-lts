@@ -139,7 +139,7 @@ guc_create_virtual(struct intel_engine_cs **siblings, unsigned int count);
 #define SCHED_STATE_BLOCKED_SHIFT			7
 #define SCHED_STATE_BLOCKED		BIT(SCHED_STATE_BLOCKED_SHIFT)
 #define SCHED_STATE_BLOCKED_MASK	(0xfff << SCHED_STATE_BLOCKED_SHIFT)
-static void init_sched_state(struct intel_context *ce)
+static inline void init_sched_state(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state &= SCHED_STATE_BLOCKED_MASK;
@@ -156,14 +156,14 @@ static bool sched_state_is_init(struct intel_context *ce)
 		 ~(SCHED_STATE_BLOCKED_MASK | SCHED_STATE_REGISTERED));
 }
 
-static bool
+static inline bool
 context_wait_for_deregister_to_register(struct intel_context *ce)
 {
 	return ce->guc_state.sched_state &
 		SCHED_STATE_WAIT_FOR_DEREGISTER_TO_REGISTER;
 }
 
-static void
+static inline void
 set_context_wait_for_deregister_to_register(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
@@ -171,7 +171,7 @@ set_context_wait_for_deregister_to_register(struct intel_context *ce)
 		SCHED_STATE_WAIT_FOR_DEREGISTER_TO_REGISTER;
 }
 
-static void
+static inline void
 clr_context_wait_for_deregister_to_register(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
@@ -179,111 +179,111 @@ clr_context_wait_for_deregister_to_register(struct intel_context *ce)
 		~SCHED_STATE_WAIT_FOR_DEREGISTER_TO_REGISTER;
 }
 
-static bool
+static inline bool
 context_destroyed(struct intel_context *ce)
 {
 	return ce->guc_state.sched_state & SCHED_STATE_DESTROYED;
 }
 
-static void
+static inline void
 set_context_destroyed(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state |= SCHED_STATE_DESTROYED;
 }
 
-static bool context_pending_disable(struct intel_context *ce)
+static inline bool context_pending_disable(struct intel_context *ce)
 {
 	return ce->guc_state.sched_state & SCHED_STATE_PENDING_DISABLE;
 }
 
-static void set_context_pending_disable(struct intel_context *ce)
+static inline void set_context_pending_disable(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state |= SCHED_STATE_PENDING_DISABLE;
 }
 
-static void clr_context_pending_disable(struct intel_context *ce)
+static inline void clr_context_pending_disable(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state &= ~SCHED_STATE_PENDING_DISABLE;
 }
 
-static bool context_banned(struct intel_context *ce)
+static inline bool context_banned(struct intel_context *ce)
 {
 	return ce->guc_state.sched_state & SCHED_STATE_BANNED;
 }
 
-static void set_context_banned(struct intel_context *ce)
+static inline void set_context_banned(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state |= SCHED_STATE_BANNED;
 }
 
-static void clr_context_banned(struct intel_context *ce)
+static inline void clr_context_banned(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state &= ~SCHED_STATE_BANNED;
 }
 
-static bool context_enabled(struct intel_context *ce)
+static inline bool context_enabled(struct intel_context *ce)
 {
 	return ce->guc_state.sched_state & SCHED_STATE_ENABLED;
 }
 
-static void set_context_enabled(struct intel_context *ce)
+static inline void set_context_enabled(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state |= SCHED_STATE_ENABLED;
 }
 
-static void clr_context_enabled(struct intel_context *ce)
+static inline void clr_context_enabled(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state &= ~SCHED_STATE_ENABLED;
 }
 
-static bool context_pending_enable(struct intel_context *ce)
+static inline bool context_pending_enable(struct intel_context *ce)
 {
 	return ce->guc_state.sched_state & SCHED_STATE_PENDING_ENABLE;
 }
 
-static void set_context_pending_enable(struct intel_context *ce)
+static inline void set_context_pending_enable(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state |= SCHED_STATE_PENDING_ENABLE;
 }
 
-static void clr_context_pending_enable(struct intel_context *ce)
+static inline void clr_context_pending_enable(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state &= ~SCHED_STATE_PENDING_ENABLE;
 }
 
-static bool context_registered(struct intel_context *ce)
+static inline bool context_registered(struct intel_context *ce)
 {
 	return ce->guc_state.sched_state & SCHED_STATE_REGISTERED;
 }
 
-static void set_context_registered(struct intel_context *ce)
+static inline void set_context_registered(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state |= SCHED_STATE_REGISTERED;
 }
 
-static void clr_context_registered(struct intel_context *ce)
+static inline void clr_context_registered(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state &= ~SCHED_STATE_REGISTERED;
 }
 
-static u32 context_blocked(struct intel_context *ce)
+static inline u32 context_blocked(struct intel_context *ce)
 {
 	return (ce->guc_state.sched_state & SCHED_STATE_BLOCKED_MASK) >>
 		SCHED_STATE_BLOCKED_SHIFT;
 }
 
-static void incr_context_blocked(struct intel_context *ce)
+static inline void incr_context_blocked(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 
@@ -292,7 +292,7 @@ static void incr_context_blocked(struct intel_context *ce)
 	GEM_BUG_ON(!context_blocked(ce));	/* Overflow check */
 }
 
-static void decr_context_blocked(struct intel_context *ce)
+static inline void decr_context_blocked(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 
@@ -301,41 +301,41 @@ static void decr_context_blocked(struct intel_context *ce)
 	ce->guc_state.sched_state -= SCHED_STATE_BLOCKED;
 }
 
-static bool context_has_committed_requests(struct intel_context *ce)
+static inline bool context_has_committed_requests(struct intel_context *ce)
 {
 	return !!ce->guc_state.number_committed_requests;
 }
 
-static void incr_context_committed_requests(struct intel_context *ce)
+static inline void incr_context_committed_requests(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	++ce->guc_state.number_committed_requests;
 	GEM_BUG_ON(ce->guc_state.number_committed_requests < 0);
 }
 
-static void decr_context_committed_requests(struct intel_context *ce)
+static inline void decr_context_committed_requests(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	--ce->guc_state.number_committed_requests;
 	GEM_BUG_ON(ce->guc_state.number_committed_requests < 0);
 }
 
-static bool context_guc_id_invalid(struct intel_context *ce)
+static inline bool context_guc_id_invalid(struct intel_context *ce)
 {
 	return ce->guc_id.id == GUC_INVALID_LRC_ID;
 }
 
-static void set_context_guc_id_invalid(struct intel_context *ce)
+static inline void set_context_guc_id_invalid(struct intel_context *ce)
 {
 	ce->guc_id.id = GUC_INVALID_LRC_ID;
 }
 
-static struct intel_guc *ce_to_guc(struct intel_context *ce)
+static inline struct intel_guc *ce_to_guc(struct intel_context *ce)
 {
 	return &ce->engine->gt->uc.guc;
 }
 
-static struct i915_priolist *to_priolist(struct rb_node *rb)
+static inline struct i915_priolist *to_priolist(struct rb_node *rb)
 {
 	return rb_entry(rb, struct i915_priolist, node);
 }
@@ -349,7 +349,7 @@ static struct guc_lrc_desc *__get_lrc_desc(struct intel_guc *guc, u32 index)
 	return &base[index];
 }
 
-static struct intel_context *__get_context(struct intel_guc *guc, u32 id)
+static inline struct intel_context *__get_context(struct intel_guc *guc, u32 id)
 {
 	struct intel_context *ce = xa_load(&guc->context_lookup, id);
 
@@ -379,12 +379,12 @@ static void guc_lrc_desc_pool_destroy(struct intel_guc *guc)
 	i915_vma_unpin_and_release(&guc->lrc_desc_pool, I915_VMA_RELEASE_MAP);
 }
 
-static bool guc_submission_initialized(struct intel_guc *guc)
+static inline bool guc_submission_initialized(struct intel_guc *guc)
 {
 	return !!guc->lrc_desc_pool_vaddr;
 }
 
-static void reset_lrc_desc(struct intel_guc *guc, u32 id)
+static inline void reset_lrc_desc(struct intel_guc *guc, u32 id)
 {
 	if (likely(guc_submission_initialized(guc))) {
 		struct guc_lrc_desc *desc = __get_lrc_desc(guc, id);
@@ -402,13 +402,13 @@ static void reset_lrc_desc(struct intel_guc *guc, u32 id)
 	}
 }
 
-static bool lrc_desc_registered(struct intel_guc *guc, u32 id)
+static inline bool lrc_desc_registered(struct intel_guc *guc, u32 id)
 {
 	return __get_context(guc, id);
 }
 
-static void set_lrc_desc_registered(struct intel_guc *guc, u32 id,
-				    struct intel_context *ce)
+static inline void set_lrc_desc_registered(struct intel_guc *guc, u32 id,
+					   struct intel_context *ce)
 {
 	unsigned long flags;
 
@@ -572,13 +572,13 @@ out:
 	return err;
 }
 
-static void guc_set_lrc_tail(struct i915_request *rq)
+static inline void guc_set_lrc_tail(struct i915_request *rq)
 {
 	rq->context->lrc_reg_state[CTX_RING_TAIL] =
 		intel_ring_set_tail(rq->ring, rq->tail);
 }
 
-static int rq_prio(const struct i915_request *rq)
+static inline int rq_prio(const struct i915_request *rq)
 {
 	return rq->sched.attr.priority;
 }
@@ -745,7 +745,7 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 	xa_unlock_irqrestore(&guc->context_lookup, flags);
 }
 
-static bool
+static inline bool
 submission_disabled(struct intel_guc *guc)
 {
 	struct i915_sched_engine * const sched_engine = guc->sched_engine;
@@ -826,7 +826,7 @@ guc_virtual_get_sibling(struct intel_engine_cs *ve, unsigned int sibling)
 	return NULL;
 }
 
-static struct intel_engine_cs *
+static inline struct intel_engine_cs *
 __context_to_physical_engine(struct intel_context *ce)
 {
 	struct intel_engine_cs *engine = ce->engine;
@@ -1144,9 +1144,9 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	i915_sched_engine_put(guc->sched_engine);
 }
 
-static void queue_request(struct i915_sched_engine *sched_engine,
-			  struct i915_request *rq,
-			  int prio)
+static inline void queue_request(struct i915_sched_engine *sched_engine,
+				 struct i915_request *rq,
+				 int prio)
 {
 	GEM_BUG_ON(!list_empty(&rq->sched.link));
 	list_add_tail(&rq->sched.link,
@@ -1842,7 +1842,7 @@ unpin:
 	intel_context_sched_disable_unpin(ce);
 }
 
-static void guc_lrc_desc_unpin(struct intel_context *ce)
+static inline void guc_lrc_desc_unpin(struct intel_context *ce)
 {
 	struct intel_guc *guc = ce_to_guc(ce);
 
@@ -1982,7 +1982,7 @@ static void guc_context_set_prio(struct intel_guc *guc,
 	trace_intel_context_set_prio(ce);
 }
 
-static u8 map_i915_prio_to_guc_prio(int prio)
+static inline u8 map_i915_prio_to_guc_prio(int prio)
 {
 	if (prio == I915_PRIORITY_NORMAL)
 		return GUC_CLIENT_PRIORITY_KMD_NORMAL;
@@ -1994,7 +1994,8 @@ static u8 map_i915_prio_to_guc_prio(int prio)
 		return GUC_CLIENT_PRIORITY_KMD_HIGH;
 }
 
-static void add_context_inflight_prio(struct intel_context *ce, u8 guc_prio)
+static inline void add_context_inflight_prio(struct intel_context *ce,
+					     u8 guc_prio)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	GEM_BUG_ON(guc_prio >= ARRAY_SIZE(ce->guc_state.prio_count));
@@ -2005,7 +2006,8 @@ static void add_context_inflight_prio(struct intel_context *ce, u8 guc_prio)
 	GEM_WARN_ON(!ce->guc_state.prio_count[guc_prio]);
 }
 
-static void sub_context_inflight_prio(struct intel_context *ce, u8 guc_prio)
+static inline void sub_context_inflight_prio(struct intel_context *ce,
+					     u8 guc_prio)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	GEM_BUG_ON(guc_prio >= ARRAY_SIZE(ce->guc_state.prio_count));
@@ -2016,7 +2018,7 @@ static void sub_context_inflight_prio(struct intel_context *ce, u8 guc_prio)
 	--ce->guc_state.prio_count[guc_prio];
 }
 
-static void update_context_prio(struct intel_context *ce)
+static inline void update_context_prio(struct intel_context *ce)
 {
 	struct intel_guc *guc = &ce->engine->gt->uc.guc;
 	int i;
@@ -2034,7 +2036,7 @@ static void update_context_prio(struct intel_context *ce)
 	}
 }
 
-static bool new_guc_prio_higher(u8 old_guc_prio, u8 new_guc_prio)
+static inline bool new_guc_prio_higher(u8 old_guc_prio, u8 new_guc_prio)
 {
 	/* Lower value is higher priority */
 	return new_guc_prio < old_guc_prio;
@@ -2504,15 +2506,15 @@ static void guc_set_default_submission(struct intel_engine_cs *engine)
 	engine->submit_request = guc_submit_request;
 }
 
-static void guc_kernel_context_pin(struct intel_guc *guc,
-				   struct intel_context *ce)
+static inline void guc_kernel_context_pin(struct intel_guc *guc,
+					  struct intel_context *ce)
 {
 	if (context_guc_id_invalid(ce))
 		pin_guc_id(guc, ce);
 	guc_lrc_desc_pin(ce, true);
 }
 
-static void guc_init_lrc_mapping(struct intel_guc *guc)
+static inline void guc_init_lrc_mapping(struct intel_guc *guc)
 {
 	struct intel_gt *gt = guc_to_gt(guc);
 	struct intel_engine_cs *engine;
@@ -2615,7 +2617,7 @@ static void rcs_submission_override(struct intel_engine_cs *engine)
 	}
 }
 
-static void guc_default_irqs(struct intel_engine_cs *engine)
+static inline void guc_default_irqs(struct intel_engine_cs *engine)
 {
 	engine->irq_keep_mask = GT_RENDER_USER_INTERRUPT;
 	intel_engine_set_irq_handler(engine, cs_irq_handler);
@@ -2711,7 +2713,7 @@ void intel_guc_submission_init_early(struct intel_guc *guc)
 	guc->submission_selected = __guc_submission_selected(guc);
 }
 
-static struct intel_context *
+static inline struct intel_context *
 g2h_context_lookup(struct intel_guc *guc, u32 desc_idx)
 {
 	struct intel_context *ce;
@@ -3084,8 +3086,8 @@ void intel_guc_submission_print_info(struct intel_guc *guc,
 	drm_printf(p, "\n");
 }
 
-static void guc_log_context_priority(struct drm_printer *p,
-				     struct intel_context *ce)
+static inline void guc_log_context_priority(struct drm_printer *p,
+					    struct intel_context *ce)
 {
 	int i;
 
