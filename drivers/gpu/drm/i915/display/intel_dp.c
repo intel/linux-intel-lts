@@ -228,10 +228,6 @@ static int icl_max_source_rate(struct intel_dp *intel_dp)
 	struct drm_i915_private *dev_priv = to_i915(dig_port->base.base.dev);
 	enum phy phy = intel_port_to_phy(dev_priv, dig_port->base.port);
 
-	//To support 8K@60 using DP port max rate need to be set as 810000
-	if (IS_ALDERLAKE_S(dev_priv) || IS_ALDERLAKE_P(dev_priv))
-		return 810000;
-
 	if (intel_phy_is_combo(dev_priv, phy) &&
 	    !intel_dp_is_edp(intel_dp))
 		return 540000;
