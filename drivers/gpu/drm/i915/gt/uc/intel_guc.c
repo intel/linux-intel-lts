@@ -467,8 +467,8 @@ static int __vf_guc_init(struct intel_guc *guc)
 	 * __guc_slpc_selected since the VF probe is not complete
 	 * at that point.
 	 */
-	guc->slpc.supported = false;
-	guc->slpc.selected = false;
+	guc->slpc_supported = false;
+	guc->slpc_selected = false;
 
 	/* Disable GUCRC for VF */
 	guc->rc_supported = false;

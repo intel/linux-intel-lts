@@ -177,7 +177,7 @@ static inline const char *intel_uc_fw_type_repr(enum intel_uc_fw_type type)
 }
 
 static inline enum intel_uc_fw_status
-__intel_uc_fw_status(const struct intel_uc_fw *uc_fw)
+__intel_uc_fw_status(struct intel_uc_fw *uc_fw)
 {
 	/* shouldn't call this before checking hw/blob availability */
 	GEM_BUG_ON(uc_fw->status == INTEL_UC_FIRMWARE_UNINITIALIZED);
