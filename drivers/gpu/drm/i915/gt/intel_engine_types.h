@@ -266,11 +266,6 @@ struct intel_engine_cs {
 	unsigned int guc_id;
 
 	intel_engine_mask_t mask;
-	/**
-	 * @logical_mask: logical mask of engine, reported to user space via
-	 * query IOCTL and used to communicate with the GuC in logical space
-	 */
-	intel_engine_mask_t logical_mask;
 
 	u8 class;
 	u8 instance;
