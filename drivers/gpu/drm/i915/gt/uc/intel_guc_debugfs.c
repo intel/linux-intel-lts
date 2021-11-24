@@ -78,7 +78,7 @@ static int guc_num_id_get(void *data, u64 *val)
 	if (!intel_guc_submission_is_used(guc))
 		return -ENODEV;
 
-	*val = guc->submission_state.num_guc_ids;
+	*val = guc->num_guc_ids;
 
 	return 0;
 }
@@ -86,21 +86,16 @@ static int guc_num_id_get(void *data, u64 *val)
 static int guc_num_id_set(void *data, u64 val)
 {
 	struct intel_guc *guc = data;
-	unsigned long flags;
 
 	if (!intel_guc_submission_is_used(guc))
 		return -ENODEV;
 
-	spin_lock_irqsave(&guc->submission_state.lock, flags);
-
-	if (val > guc->submission_state.max_guc_ids)
-		val = guc->submission_state.max_guc_ids;
+	if (val > guc->max_guc_ids)
+		val = guc->max_guc_ids;
 	else if (val < 256)
 		val = 256;
 
-	guc->submission_state.num_guc_ids = val;
-
-	spin_unlock_irqrestore(&guc->submission_state.lock, flags);
+	guc->num_guc_ids = val;
 
 	return 0;
 }
