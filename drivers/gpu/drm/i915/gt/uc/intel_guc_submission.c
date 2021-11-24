@@ -121,13 +121,7 @@ struct guc_virtual_engine {
 };
 
 static struct intel_context *
-guc_create_virtual(struct intel_engine_cs **siblings, unsigned int count,
-		   unsigned long flags);
-
-static struct intel_context *
-guc_create_parallel(struct intel_engine_cs **engines,
-		    unsigned int num_siblings,
-		    unsigned int width);
+guc_create_virtual(struct intel_engine_cs **siblings, unsigned int count);
 
 #define GUC_REQUEST_SIZE 64 /* bytes */
 
@@ -2590,7 +2584,6 @@ static const struct intel_context_ops guc_context_ops = {
 	.destroy = guc_context_destroy,
 
 	.create_virtual = guc_create_virtual,
-	.create_parallel = guc_create_parallel,
 };
 
 static void submit_work_cb(struct irq_work *wrk)
@@ -2837,6 +2830,8 @@ static const struct intel_context_ops virtual_guc_context_ops = {
 	.get_sibling = guc_virtual_get_sibling,
 };
 
+/* Future patches will use this function */
+__maybe_unused
 static int guc_parent_context_pin(struct intel_context *ce, void *vaddr)
 {
 	struct intel_engine_cs *engine = guc_virtual_get_sibling(ce->engine, 0);
@@ -2853,6 +2848,8 @@ static int guc_parent_context_pin(struct intel_context *ce, void *vaddr)
 	return __guc_context_pin(ce, engine, vaddr);
 }
 
+/* Future patches will use this function */
+__maybe_unused
 static int guc_child_context_pin(struct intel_context *ce, void *vaddr)
 {
 	struct intel_engine_cs *engine = guc_virtual_get_sibling(ce->engine, 0);
@@ -2864,6 +2861,8 @@ static int guc_child_context_pin(struct intel_context *ce, void *vaddr)
 	return __guc_context_pin(ce, engine, vaddr);
 }
 
+/* Future patches will use this function */
+__maybe_unused
 static void guc_parent_context_unpin(struct intel_context *ce)
 {
 	struct intel_guc *guc = ce_to_guc(ce);
@@ -2879,6 +2878,8 @@ static void guc_parent_context_unpin(struct intel_context *ce)
 	lrc_unpin(ce);
 }
 
+/* Future patches will use this function */
+__maybe_unused
 static void guc_child_context_unpin(struct intel_context *ce)
 {
 	GEM_BUG_ON(context_enabled(ce));
@@ -2889,6 +2890,8 @@ static void guc_child_context_unpin(struct intel_context *ce)
 	lrc_unpin(ce);
 }
 
+/* Future patches will use this function */
+__maybe_unused
 static void guc_child_context_post_unpin(struct intel_context *ce)
 {
 	GEM_BUG_ON(!intel_context_is_child(ce));
@@ -2897,98 +2900,6 @@ static void guc_child_context_post_unpin(struct intel_context *ce)
 
 	lrc_post_unpin(ce);
 	intel_context_unpin(ce->parent);
-}
-
-static void guc_child_context_destroy(struct kref *kref)
-{
-	struct intel_context *ce = container_of(kref, typeof(*ce), ref);
-
-	__guc_context_destroy(ce);
-}
-
-static const struct intel_context_ops virtual_parent_context_ops = {
-	.alloc = guc_virtual_context_alloc,
-
-	.pre_pin = guc_context_pre_pin,
-	.pin = guc_parent_context_pin,
-	.unpin = guc_parent_context_unpin,
-	.post_unpin = guc_context_post_unpin,
-
-	.ban = guc_context_ban,
-
-	.cancel_request = guc_context_cancel_request,
-
-	.enter = guc_virtual_context_enter,
-	.exit = guc_virtual_context_exit,
-
-	.sched_disable = guc_context_sched_disable,
-
-	.destroy = guc_context_destroy,
-
-	.get_sibling = guc_virtual_get_sibling,
-};
-
-static const struct intel_context_ops virtual_child_context_ops = {
-	.alloc = guc_virtual_context_alloc,
-
-	.pre_pin = guc_context_pre_pin,
-	.pin = guc_child_context_pin,
-	.unpin = guc_child_context_unpin,
-	.post_unpin = guc_child_context_post_unpin,
-
-	.cancel_request = guc_context_cancel_request,
-
-	.enter = guc_virtual_context_enter,
-	.exit = guc_virtual_context_exit,
-
-	.destroy = guc_child_context_destroy,
-
-	.get_sibling = guc_virtual_get_sibling,
-};
-
-static struct intel_context *
-guc_create_parallel(struct intel_engine_cs **engines,
-		    unsigned int num_siblings,
-		    unsigned int width)
-{
-	struct intel_engine_cs **siblings = NULL;
-	struct intel_context *parent = NULL, *ce, *err;
-	int i, j;
-
-	siblings = kmalloc_array(num_siblings,
-				 sizeof(*siblings),
-				 GFP_KERNEL);
-	if (!siblings)
-		return ERR_PTR(-ENOMEM);
-
-	for (i = 0; i < width; ++i) {
-		for (j = 0; j < num_siblings; ++j)
-			siblings[j] = engines[i * num_siblings + j];
-
-		ce = intel_engine_create_virtual(siblings, num_siblings,
-						 FORCE_VIRTUAL);
-		if (!ce) {
-			err = ERR_PTR(-ENOMEM);
-			goto unwind;
-		}
-
-		if (i == 0) {
-			parent = ce;
-			parent->ops = &virtual_parent_context_ops;
-		} else {
-			ce->ops = &virtual_child_context_ops;
-			intel_context_bind_parent_child(parent, ce);
-		}
-	}
-
-	kfree(siblings);
-	return parent;
-
-unwind:
-	if (parent)
-		intel_context_put(parent);
-	kfree(siblings);
-	return err;
 }
 
 static bool
@@ -3818,8 +3729,7 @@ void intel_guc_submission_print_context_info(struct intel_guc *guc,
 }
 
 static struct intel_context *
-guc_create_virtual(struct intel_engine_cs **siblings, unsigned int count,
-		   unsigned long flags)
+guc_create_virtual(struct intel_engine_cs **siblings, unsigned int count)
 {
 	struct guc_virtual_engine *ve;
 	struct intel_guc *guc;

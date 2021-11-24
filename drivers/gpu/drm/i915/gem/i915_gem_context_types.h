@@ -78,9 +78,6 @@ enum i915_gem_engine_type {
 
 	/** @I915_GEM_ENGINE_TYPE_BALANCED: A load-balanced engine set */
 	I915_GEM_ENGINE_TYPE_BALANCED,
-
-	/** @I915_GEM_ENGINE_TYPE_PARALLEL: A parallel engine set */
-	I915_GEM_ENGINE_TYPE_PARALLEL,
 };
 
 /**
@@ -110,9 +107,6 @@ struct i915_gem_proto_engine {
 
 	/** @num_siblings: Number of balanced siblings */
 	unsigned int num_siblings;
-
-	/** @width: Width of each sibling */
-	unsigned int width;
 
 	/** @siblings: Balanced siblings */
 	struct intel_engine_cs **siblings;

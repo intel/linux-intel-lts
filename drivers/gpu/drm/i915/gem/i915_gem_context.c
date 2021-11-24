@@ -515,149 +515,9 @@ set_proto_ctx_engines_bond(struct i915_user_extension __user *base, void *data)
 	return 0;
 }
 
-static int
-set_proto_ctx_engines_parallel_submit(struct i915_user_extension __user *base,
-				      void *data)
-{
-	struct i915_context_engines_parallel_submit __user *ext =
-		container_of_user(base, typeof(*ext), base);
-	const struct set_proto_ctx_engines *set = data;
-	struct drm_i915_private *i915 = set->i915;
-	u64 flags;
-	int err = 0, n, i, j;
-	u16 slot, width, num_siblings;
-	struct intel_engine_cs **siblings = NULL;
-	intel_engine_mask_t prev_mask;
-
-	/* Disabling for now */
-	return -ENODEV;
-
-	if (!(intel_uc_uses_guc_submission(&i915->gt.uc)))
-		return -ENODEV;
-
-	if (get_user(slot, &ext->engine_index))
-		return -EFAULT;
-
-	if (get_user(width, &ext->width))
-		return -EFAULT;
-
-	if (get_user(num_siblings, &ext->num_siblings))
-		return -EFAULT;
-
-	if (slot >= set->num_engines) {
-		drm_dbg(&i915->drm, "Invalid placement value, %d >= %d\n",
-			slot, set->num_engines);
-		return -EINVAL;
-	}
-
-	if (set->engines[slot].type != I915_GEM_ENGINE_TYPE_INVALID) {
-		drm_dbg(&i915->drm,
-			"Invalid placement[%d], already occupied\n", slot);
-		return -EINVAL;
-	}
-
-	if (get_user(flags, &ext->flags))
-		return -EFAULT;
-
-	if (flags) {
-		drm_dbg(&i915->drm, "Unknown flags 0x%02llx", flags);
-		return -EINVAL;
-	}
-
-	for (n = 0; n < ARRAY_SIZE(ext->mbz64); n++) {
-		err = check_user_mbz(&ext->mbz64[n]);
-		if (err)
-			return err;
-	}
-
-	if (width < 2) {
-		drm_dbg(&i915->drm, "Width (%d) < 2\n", width);
-		return -EINVAL;
-	}
-
-	if (num_siblings < 1) {
-		drm_dbg(&i915->drm, "Number siblings (%d) < 1\n",
-			num_siblings);
-		return -EINVAL;
-	}
-
-	siblings = kmalloc_array(num_siblings * width,
-				 sizeof(*siblings),
-				 GFP_KERNEL);
-	if (!siblings)
-		return -ENOMEM;
-
-	/* Create contexts / engines */
-	for (i = 0; i < width; ++i) {
-		intel_engine_mask_t current_mask = 0;
-		struct i915_engine_class_instance prev_engine;
-
-		for (j = 0; j < num_siblings; ++j) {
-			struct i915_engine_class_instance ci;
-
-			n = i * num_siblings + j;
-			if (copy_from_user(&ci, &ext->engines[n], sizeof(ci))) {
-				err = -EFAULT;
-				goto out_err;
-			}
-
-			siblings[n] =
-				intel_engine_lookup_user(i915, ci.engine_class,
-							 ci.engine_instance);
-			if (!siblings[n]) {
-				drm_dbg(&i915->drm,
-					"Invalid sibling[%d]: { class:%d, inst:%d }\n",
-					n, ci.engine_class, ci.engine_instance);
-				err = -EINVAL;
-				goto out_err;
-			}
-
-			if (n) {
-				if (prev_engine.engine_class !=
-				    ci.engine_class) {
-					drm_dbg(&i915->drm,
-						"Mismatched class %d, %d\n",
-						prev_engine.engine_class,
-						ci.engine_class);
-					err = -EINVAL;
-					goto out_err;
-				}
-			}
-
-			prev_engine = ci;
-			current_mask |= siblings[n]->logical_mask;
-		}
-
-		if (i > 0) {
-			if (current_mask != prev_mask << 1) {
-				drm_dbg(&i915->drm,
-					"Non contiguous logical mask 0x%x, 0x%x\n",
-					prev_mask, current_mask);
-				err = -EINVAL;
-				goto out_err;
-			}
-		}
-		prev_mask = current_mask;
-	}
-
-	set->engines[slot].type = I915_GEM_ENGINE_TYPE_PARALLEL;
-	set->engines[slot].num_siblings = num_siblings;
-	set->engines[slot].width = width;
-	set->engines[slot].siblings = siblings;
-
-	return 0;
-
-out_err:
-	kfree(siblings);
-
-	return err;
-}
-
 static const i915_user_extension_fn set_proto_ctx_engines_extensions[] = {
 	[I915_CONTEXT_ENGINES_EXT_LOAD_BALANCE] = set_proto_ctx_engines_balance,
 	[I915_CONTEXT_ENGINES_EXT_BOND] = set_proto_ctx_engines_bond,
-	[I915_CONTEXT_ENGINES_EXT_PARALLEL_SUBMIT] =
-		set_proto_ctx_engines_parallel_submit,
 };
 
 static int set_proto_ctx_engines(struct drm_i915_file_private *fpriv,
@@ -954,25 +814,6 @@ static int intel_context_set_gem(struct intel_context *ce,
 	return ret;
 }
 
-static void __unpin_engines(struct i915_gem_engines *e, unsigned int count)
-{
-	while (count--) {
-		struct intel_context *ce = e->engines[count], *child;
-
-		if (!ce || !test_bit(CONTEXT_PERMA_PIN, &ce->flags))
-			continue;
-
-		for_each_child(ce, child)
-			intel_context_unpin(child);
-		intel_context_unpin(ce);
-	}
-}
-
-static void unpin_engines(struct i915_gem_engines *e)
-{
-	__unpin_engines(e, e->num_engines);
-}
-
 static void __free_engines(struct i915_gem_engines *e, unsigned int count)
 {
 	while (count--) {
@@ -1088,40 +929,6 @@ free_engines:
 	return err;
 }
 
-static int perma_pin_contexts(struct intel_context *ce)
-{
-	struct intel_context *child;
-	int i = 0, j = 0, ret;
-
-	GEM_BUG_ON(!intel_context_is_parent(ce));
-
-	ret = intel_context_pin(ce);
-	if (unlikely(ret))
-		return ret;
-
-	for_each_child(ce, child) {
-		ret = intel_context_pin(child);
-		if (unlikely(ret))
-			goto unwind;
-		++i;
-	}
-
-	set_bit(CONTEXT_PERMA_PIN, &ce->flags);
-
-	return 0;
-
-unwind:
-	intel_context_unpin(ce);
-	for_each_child(ce, child) {
-		if (j++ < i)
-			intel_context_unpin(child);
-		else
-			break;
-	}
-
-	return ret;
-}
-
 static struct i915_gem_engines *user_engines(struct i915_gem_context *ctx,
 					     unsigned int num_engines,
 					     struct i915_gem_proto_engine *pe)
@@ -1132,7 +939,7 @@ static struct i915_gem_engines *user_engines(struct i915_gem_context *ctx,
 	e = alloc_engines(num_engines);
 	e->num_engines = num_engines;
 	for (n = 0; n < num_engines; n++) {
-		struct intel_context *ce, *child;
+		struct intel_context *ce;
 		int ret;
 
 		switch (pe[n].type) {
@@ -1142,13 +949,7 @@ static struct i915_gem_engines *user_engines(struct i915_gem_context *ctx,
 
 		case I915_GEM_ENGINE_TYPE_BALANCED:
 			ce = intel_engine_create_virtual(pe[n].siblings,
-							 pe[n].num_siblings, 0);
-			break;
-
-		case I915_GEM_ENGINE_TYPE_PARALLEL:
-			ce = intel_engine_create_parallel(pe[n].siblings,
-							  pe[n].num_siblings,
-							  pe[n].width);
+							 pe[n].num_siblings);
 			break;
 
 		case I915_GEM_ENGINE_TYPE_INVALID:
@@ -1168,22 +969,6 @@ static struct i915_gem_engines *user_engines(struct i915_gem_context *ctx,
 		if (ret) {
 			err = ERR_PTR(ret);
 			goto free_engines;
-		}
-		for_each_child(ce, child) {
-			ret = intel_context_set_gem(child, ctx, pe->sseu);
-			if (ret) {
-				err = ERR_PTR(ret);
-				goto free_engines;
-			}
-		}
-
-		/* XXX: Must be done after setting gem context */
-		if (pe[n].type == I915_GEM_ENGINE_TYPE_PARALLEL) {
-			ret = perma_pin_contexts(ce);
-			if (ret) {
-				err = ERR_PTR(ret);
-				goto free_engines;
-			}
 		}
 	}
 
@@ -1408,7 +1193,6 @@ static void context_close(struct i915_gem_context *ctx)
 
 	/* Flush any concurrent set_engines() */
 	mutex_lock(&ctx->engines_mutex);
-	unpin_engines(ctx->engines);
 	engines_idle_release(ctx, rcu_replace_pointer(ctx->engines, NULL, 1));
 	i915_gem_context_set_closed(ctx);
 	mutex_unlock(&ctx->engines_mutex);
