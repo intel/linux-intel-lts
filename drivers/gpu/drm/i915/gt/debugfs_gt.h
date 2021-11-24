@@ -3,14 +3,14 @@
  * Copyright © 2019 Intel Corporation
  */
 
-#ifndef INTEL_GT_DEBUGFS_H
-#define INTEL_GT_DEBUGFS_H
+#ifndef DEBUGFS_GT_H
+#define DEBUGFS_GT_H
 
 #include <linux/file.h>
 
 struct intel_gt;
 
-#define DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(__name)				\
+#define DEFINE_GT_DEBUGFS_ATTRIBUTE(__name)				\
 	static int __name ## _open(struct inode *inode, struct file *file) \
 {									\
 	return single_open(file, __name ## _show, inode->i_private);	\
@@ -23,16 +23,16 @@ static const struct file_operations __name ## _fops = {			\
 	.release = single_release,					\
 }
 
-void intel_gt_debugfs_register(struct intel_gt *gt);
+void debugfs_gt_register(struct intel_gt *gt);
 
-struct intel_gt_debugfs_file {
+struct debugfs_gt_file {
 	const char *name;
 	const struct file_operations *fops;
 	bool (*eval)(void *data);
 };
 
 void intel_gt_debugfs_register_files(struct dentry *root,
-				     const struct intel_gt_debugfs_file *files,
+				     const struct debugfs_gt_file *files,
 				     unsigned long count, void *data);
 
-#endif /* INTEL_GT_DEBUGFS_H */
+#endif /* DEBUGFS_GT_H */

@@ -5,7 +5,7 @@
 
 #include <drm/drm_print.h>
 
-#include "gt/intel_gt_debugfs.h"
+#include "gt/debugfs_gt.h"
 #include "intel_guc.h"
 #include "intel_guc_debugfs.h"
 #include "intel_guc_log_debugfs.h"
@@ -35,7 +35,7 @@ static int guc_info_show(struct seq_file *m, void *data)
 
 	return 0;
 }
-DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(guc_info);
+DEFINE_GT_DEBUGFS_ATTRIBUTE(guc_info);
 
 static int guc_registered_contexts_show(struct seq_file *m, void *data)
 {
@@ -108,7 +108,7 @@ DEFINE_SIMPLE_ATTRIBUTE(guc_num_id_fops, guc_num_id_get, guc_num_id_set, "%lld\n
 
 void intel_guc_debugfs_register(struct intel_guc *guc, struct dentry *root)
 {
-	static const struct intel_gt_debugfs_file files[] = {
+	static const struct debugfs_gt_file files[] = {
 		{ "guc_info", &guc_info_fops, NULL },
 		{ "guc_registered_contexts", &guc_registered_contexts_fops, NULL },
 		{ "guc_slpc_info", &guc_slpc_info_fops, &intel_eval_slpc_support},
