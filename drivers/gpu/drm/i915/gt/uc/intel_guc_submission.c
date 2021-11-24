@@ -1586,9 +1586,6 @@ static void guc_context_unblock(struct intel_context *ce)
 	spin_lock_irqsave(&ce->guc_state.lock, flags);
 
 	if (unlikely(submission_disabled(guc) ||
-		     intel_context_is_banned(ce) ||
-		     context_guc_id_invalid(ce) ||
-		     !lrc_desc_registered(guc, ce->guc_id) ||
 		     !intel_context_is_pinned(ce) ||
 		     context_pending_disable(ce) ||
 		     context_blocked(ce) > 1)) {
