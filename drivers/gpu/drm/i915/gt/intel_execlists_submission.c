@@ -927,7 +927,8 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 
 static bool ctx_single_port_submission(const struct intel_context *ce)
 {
-	return intel_context_force_single_submission(ce);
+	return (IS_ENABLED(CONFIG_DRM_I915_GVT) &&
+		intel_context_force_single_submission(ce));
 }
 
 static bool can_merge_ctx(const struct intel_context *prev,
@@ -2597,59 +2598,6 @@ static void execlists_context_cancel_request(struct intel_context *ce,
 				      current->comm);
 }
 
-static struct intel_context *
-execlists_create_parallel(struct intel_engine_cs **engines,
-			  unsigned int num_siblings,
-			  unsigned int width)
-{
-	struct intel_engine_cs **siblings = NULL;
-	struct intel_context *parent = NULL, *ce, *err;
-	int i, j;
-
-	GEM_BUG_ON(num_siblings != 1);
-
-	siblings = kmalloc_array(num_siblings,
-				 sizeof(*siblings),
-				 GFP_KERNEL);
-	if (!siblings)
-		return ERR_PTR(-ENOMEM);
-
-	for (i = 0; i < width; ++i) {
-		for (j = 0; j < num_siblings; ++j)
-			siblings[j] = engines[i * num_siblings + j];
-
-		ce = intel_context_create(siblings[0]);
-		if (!ce) {
-			err = ERR_PTR(-ENOMEM);
-			goto unwind;
-		}
-
-		if (i == 0) {
-			parent = ce;
-		} else {
-			intel_context_bind_parent_child(parent, ce);
-		}
-	}
-
-	parent->fence_context = dma_fence_context_alloc(1);
-
-	intel_context_set_nopreempt(parent);
-	intel_context_set_single_submission(parent);
-	for_each_child(parent, ce) {
-		intel_context_set_nopreempt(ce);
-		intel_context_set_single_submission(ce);
-	}
-
-	kfree(siblings);
-	return parent;
-
-unwind:
-	if (parent)
-		intel_context_put(parent);
-	kfree(siblings);
-	return err;
-}
-
 static const struct intel_context_ops execlists_context_ops = {
 	.flags = COPS_HAS_INFLIGHT,
 
@@ -2668,7 +2616,6 @@ static const struct intel_context_ops execlists_context_ops = {
 	.reset = lrc_reset,
 	.destroy = lrc_destroy,
 
-	.create_parallel = execlists_create_parallel,
 	.create_virtual = execlists_create_virtual,
 };
 
