@@ -651,9 +651,6 @@ __intel_engine_init_ctx_wa(struct intel_engine_cs *engine,
 {
 	struct drm_i915_private *i915 = engine->i915;
 
-	if (IS_SRIOV_VF(i915))
-		return;
-
 	if (engine->class != RENDER_CLASS)
 		return;
 
@@ -1209,9 +1206,6 @@ void intel_gt_init_workarounds(struct drm_i915_private *i915)
 {
 	struct i915_wa_list *wal = &i915->gt_wa_list;
 
-	if (IS_SRIOV_VF(gt->i915))
-		return;
-
 	wa_init_start(wal, "GT", "global");
 	gt_init_workarounds(i915, wal);
 	wa_init_finish(wal);
@@ -1558,9 +1552,6 @@ void intel_engine_init_whitelist(struct intel_engine_cs *engine)
 {
 	struct drm_i915_private *i915 = engine->i915;
 	struct i915_wa_list *w = &engine->whitelist;
-
-	if (IS_SRIOV_VF(engine->i915))
-		return;
 
 	wa_init_start(w, "whitelist", engine->name);
 
@@ -2062,9 +2053,6 @@ engine_init_workarounds(struct intel_engine_cs *engine, struct i915_wa_list *wal
 void intel_engine_init_workarounds(struct intel_engine_cs *engine)
 {
 	struct i915_wa_list *wal = &engine->wa_list;
-
-	if (IS_SRIOV_VF(engine->i915))
-		return;
 
 	if (GRAPHICS_VER(engine->i915) < 4)
 		return;

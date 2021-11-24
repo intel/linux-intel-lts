@@ -11,10 +11,6 @@
 #include "i915_drv.h"
 #include "intel_guc_ct.h"
 #include "gt/intel_gt.h"
-#include "gt/iov/intel_iov_event.h"
-#include "gt/iov/intel_iov_relay.h"
-#include "gt/iov/intel_iov_service.h"
-#include "gt/iov/intel_iov_state.h"
 
 static inline struct intel_guc *ct_to_guc(struct intel_guc_ct *ct)
 {
@@ -767,7 +763,6 @@ int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 
 	return ret;
 }
-ALLOW_ERROR_INJECTION(intel_guc_ct_send, ERRNO);
 
 static struct ct_incoming_msg *ct_alloc_msg(u32 num_dwords)
 {
@@ -948,8 +943,6 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *request)
 {
 	struct intel_guc *guc = ct_to_guc(ct);
-	struct intel_gt *gt = guc_to_gt(guc);
-	struct intel_iov *iov = &gt->iov;
 	const u32 *hxg;
 	const u32 *payload;
 	u32 hxg_len, action, len;
@@ -985,21 +978,6 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 		break;
 	case INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
 		ret = intel_guc_engine_failure_process_msg(guc, payload, len);
-		break;
-	case GUC_ACTION_GUC2PF_VF_STATE_NOTIFY:
-		ret = intel_iov_state_process_guc2pf(iov, hxg, hxg_len);
-		break;
-	case GUC_ACTION_GUC2PF_ADVERSE_EVENT:
-		ret = intel_iov_event_process_guc2pf(iov, hxg, hxg_len);
-		break;
-	case GUC_ACTION_GUC2PF_RELAY_FROM_VF:
-		ret = intel_iov_relay_process_guc2pf(&iov->relay, hxg, hxg_len);
-		break;
-	case GUC_ACTION_GUC2VF_RELAY_FROM_PF:
-		ret = intel_iov_relay_process_guc2vf(&iov->relay, hxg, hxg_len);
-		break;
-	case INTEL_GUC_ACTION_MMIO_RELAY_NOTIFICATION:
-		ret = intel_iov_service_process_mmio_relay(iov, payload, len);
 		break;
 	default:
 		ret = -EOPNOTSUPP;

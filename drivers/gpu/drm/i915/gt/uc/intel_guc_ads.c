@@ -480,9 +480,6 @@ static void guc_init_golden_context(struct intel_guc *guc)
 	if (!intel_uc_uses_guc_submission(&gt->uc))
 		return;
 
-	if (IS_SRIOV_VF(gt->i915))
-		return;
-
 	GEM_BUG_ON(!blob);
 
 	/*

@@ -23,12 +23,6 @@
 #include "gt/intel_gt_pm_unpark_work.h"
 
 struct __guc_ads_blob;
-struct intel_guc;
-
-struct intel_guc_ops {
-	int (*init)(struct intel_guc *guc);
-	void (*fini)(struct intel_guc *guc);
-};
 
 /*
  * Top level structure of GuC. It handles firmware loading and manages client
@@ -36,7 +30,6 @@ struct intel_guc_ops {
  * submission.
  */
 struct intel_guc {
-	struct intel_guc_ops const *ops;
 	struct intel_uc_fw fw;
 	struct intel_guc_log log;
 	struct intel_guc_ct ct;
@@ -248,19 +241,6 @@ static inline u32 intel_guc_ggtt_offset(struct intel_guc *guc,
 	return offset;
 }
 
-static inline int intel_guc_init(struct intel_guc *guc)
-{
-	if (guc->ops->init)
-		return guc->ops->init(guc);
-	return 0;
-}
-
-static inline void intel_guc_fini(struct intel_guc *guc)
-{
-	if (guc->ops->fini)
-		guc->ops->fini(guc);
-}
-
 void intel_guc_init_early(struct intel_guc *guc);
 void intel_guc_init_late(struct intel_guc *guc);
 void intel_guc_init_send_regs(struct intel_guc *guc);
@@ -297,8 +277,7 @@ static inline bool intel_guc_is_wanted(struct intel_guc *guc)
 static inline bool intel_guc_is_used(struct intel_guc *guc)
 {
 	GEM_BUG_ON(__intel_uc_fw_status(&guc->fw) == INTEL_UC_FIRMWARE_SELECTED);
-	return intel_uc_fw_is_available(&guc->fw) ||
-	       intel_uc_fw_is_preloaded(&guc->fw);
+	return intel_uc_fw_is_available(&guc->fw);
 }
 
 static inline bool intel_guc_is_fw_running(struct intel_guc *guc)

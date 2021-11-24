@@ -1410,19 +1410,6 @@ void intel_guc_submission_reset_finish(struct intel_guc *guc)
 	intel_gt_unpark_heartbeats(guc_to_gt(guc));
 }
 
-int intel_guc_submission_limit_ids(struct intel_guc *guc, u32 limit)
-{
-	if (limit > GUC_MAX_LRC_DESCRIPTORS)
-		return -E2BIG;
-
-	if (!ida_is_empty(&guc->guc_ids))
-		return -ETXTBSY;
-
-	guc->max_guc_ids = limit;
-	guc->num_guc_ids = min(limit, guc->num_guc_ids);
-	return 0;
-}
-
 static void destroyed_worker_func(struct work_struct *w);
 
 /*
@@ -3231,12 +3218,6 @@ static int guc_resume(struct intel_engine_cs *engine)
 	return 0;
 }
 
-static int vf_guc_resume(struct intel_engine_cs *engine)
-{
-	intel_breadcrumbs_reset(engine->breadcrumbs);
-	return 0;
-}
-
 static bool guc_sched_engine_disabled(struct i915_sched_engine *sched_engine)
 {
 	return !sched_engine->tasklet.callback;
@@ -3411,9 +3392,6 @@ int intel_guc_submission_setup(struct intel_engine_cs *engine)
 
 	if (engine->class == RENDER_CLASS)
 		rcs_submission_override(engine);
-
-	if (IS_SRIOV_VF(engine->i915))
-		engine->resume = vf_guc_resume;
 
 	lrc_init_wa_ctx(engine);
 

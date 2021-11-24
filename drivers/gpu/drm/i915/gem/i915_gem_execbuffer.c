@@ -1835,8 +1835,10 @@ slow:
 #define for_each_batch_create_order(_eb, _i) \
 	for (_i = 0; _i < _eb->num_batches; ++_i)
 #define for_each_batch_add_order(_eb, _i) \
+do { \
 	BUILD_BUG_ON(!typecheck(int, _i)); \
-	for (_i = _eb->num_batches - 1; _i >= 0; --_i)
+	for (_i = _eb->num_batches - 1; _i >= 0; --_i) \
+} while (0)
 
 static struct i915_request *
 eb_find_first_request(struct i915_execbuffer *eb)
@@ -3315,23 +3317,6 @@ i915_gem_execbuffer2_ioctl(struct drm_device *dev, void *data,
 	if (!check_buffer_count(count)) {
 		drm_dbg(&i915->drm, "execbuf2 with %zd buffers\n", count);
 		return -EINVAL;
-	}
-
-	if (args->flags & I915_EXEC_SECURE) {
-		if (!i915->params.enable_secure_batch) {
-			if (GRAPHICS_VER(i915) >= 11)
-				return -ENODEV;
-
-			/*
-			 * Return -EPERM to trigger fallback code on old
-			 * binaries.
-			 */
-			if (!HAS_SECURE_BATCHES(i915))
-				return -EPERM;
-		}
-
-		if (!drm_is_current_master(file) || !capable(CAP_SYS_ADMIN))
-			return -EPERM;
 	}
 
 	err = i915_gem_check_execbuffer(args);
