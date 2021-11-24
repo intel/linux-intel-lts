@@ -61,13 +61,9 @@ struct intel_guc {
 		 */
 		spinlock_t lock;
 		/**
-		 * @guc_ids: used to allocate new guc_ids, single-lrc
+		 * @guc_ids: used to allocate new guc_ids
 		 */
 		struct ida guc_ids;
-		/**
-		 * @guc_ids_bitmap: used to allocate new guc_ids, multi-lrc
-		 */
-		unsigned long *guc_ids_bitmap;
 		/** @num_guc_ids: number of guc_ids that can be used */
 		u32 num_guc_ids;
 		/** @max_guc_ids: max number of guc_ids that can be used */
