@@ -237,13 +237,7 @@ intel_context_timeline_lock(struct intel_context *ce)
 	struct intel_timeline *tl = ce->timeline;
 	int err;
 
-	if (intel_context_is_parent(ce))
-		err = mutex_lock_interruptible_nested(&tl->mutex, 0);
-	else if (intel_context_is_child(ce))
-		err = mutex_lock_interruptible_nested(&tl->mutex,
-						      ce->guc_child_index + 1);
-	else
-		err = mutex_lock_interruptible(&tl->mutex);
+	err = mutex_lock_interruptible(&tl->mutex);
 	if (err)
 		return ERR_PTR(err);
 
