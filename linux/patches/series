@@ -3,3 +3,8 @@
 
 # CVE-2021-43976
 0001-mwifiex_usb-Fix-skb_over_panic-in-mwifiex_usb_recv.patch
+
+# CVE-2020-27820
+0001-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
+0002-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
+0003-drm-nouveau-clean-up-all-clients-on-device-removal.patch
