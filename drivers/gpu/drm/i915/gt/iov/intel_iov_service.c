@@ -28,12 +28,10 @@ static void __uncore_read_many(struct intel_uncore *uncore, unsigned int count,
 
 static const i915_reg_t tgl_runtime_regs[] = {
 	RPM_CONFIG0,			/* _MMIO(0x0D00) */
-	GEN10_MIRROR_FUSE3,             /* _MMIO(0x9118) */
 	GEN11_EU_DISABLE,		/* _MMIO(0x9134) */
 	GEN11_GT_SLICE_ENABLE,		/* _MMIO(0x9138) */
 	GEN12_GT_DSS_ENABLE,	/* _MMIO(0x913C) */
 	GEN11_GT_VEBOX_VDBOX_DISABLE,	/* _MMIO(0x9140) */
-	GEN12_GT_COMPUTE_DSS_ENABLE,    /* _MMIO(0x9144) */
 	CTC_MODE,			/* _MMIO(0xA26C) */
 	GEN9_TIMESTAMP_OVERRIDE,	/* _MMIO(0x44074) */
 };
