@@ -49,7 +49,8 @@
 #include "i915_memcpy.h"
 #include "i915_scatterlist.h"
 
-#define ATOMIC_MAYFAIL (GFP_NOWAIT | __GFP_NOWARN)
+#define ALLOW_FAIL (GFP_KERNEL | __GFP_RETRY_MAYFAIL | __GFP_NOWARN)
+#define ATOMIC_MAYFAIL (GFP_ATOMIC | __GFP_NOWARN)
 
 static void __sg_set_buf(struct scatterlist *sg,
 			 void *addr, unsigned int len, loff_t it)
@@ -78,7 +79,7 @@ static bool __i915_error_grow(struct drm_i915_error_state_buf *e, size_t len)
 	if (e->cur == e->end) {
 		struct scatterlist *sgl;
 
-		sgl = (typeof(sgl))__get_free_page(ATOMIC_MAYFAIL);
+		sgl = (typeof(sgl))__get_free_page(ALLOW_FAIL);
 		if (!sgl) {
 			e->err = -ENOMEM;
 			return false;
@@ -98,10 +99,10 @@ static bool __i915_error_grow(struct drm_i915_error_state_buf *e, size_t len)
 	}
 
 	e->size = ALIGN(len + 1, SZ_64K);
-	e->buf = kmalloc(e->size, ATOMIC_MAYFAIL);
+	e->buf = kmalloc(e->size, ALLOW_FAIL);
 	if (!e->buf) {
 		e->size = PAGE_ALIGN(len + 1);
-		e->buf = kmalloc(e->size, ATOMIC_MAYFAIL);
+		e->buf = kmalloc(e->size, GFP_KERNEL);
 	}
 	if (!e->buf) {
 		e->err = -ENOMEM;
@@ -242,12 +243,12 @@ static bool compress_init(struct i915_vma_compress *c)
 {
 	struct z_stream_s *zstream = &c->zstream;
 
-	if (pool_init(&c->pool, ATOMIC_MAYFAIL))
+	if (pool_init(&c->pool, ALLOW_FAIL))
 		return false;
 
 	zstream->workspace =
 		kmalloc(zlib_deflate_workspacesize(MAX_WBITS, MAX_MEM_LEVEL),
-			ATOMIC_MAYFAIL);
+			ALLOW_FAIL);
 	if (!zstream->workspace) {
 		pool_fini(&c->pool);
 		return false;
@@ -255,7 +256,7 @@ static bool compress_init(struct i915_vma_compress *c)
 
 	c->tmp = NULL;
 	if (i915_has_memcpy_from_wc())
-		c->tmp = pool_alloc(&c->pool, ATOMIC_MAYFAIL);
+		c->tmp = pool_alloc(&c->pool, ALLOW_FAIL);
 
 	return true;
 }
@@ -279,7 +280,7 @@ static void *compress_next_page(struct i915_vma_compress *c,
 	if (dst->page_count >= dst->num_pages)
 		return ERR_PTR(-ENOSPC);
 
-	page = pool_alloc(&c->pool, ATOMIC_MAYFAIL);
+	page = pool_alloc(&c->pool, ALLOW_FAIL);
 	if (!page)
 		return ERR_PTR(-ENOMEM);
 
@@ -375,7 +376,7 @@ struct i915_vma_compress {
 
 static bool compress_init(struct i915_vma_compress *c)
 {
-	return pool_init(&c->pool, ATOMIC_MAYFAIL) == 0;
+	return pool_init(&c->pool, ALLOW_FAIL) == 0;
 }
 
 static bool compress_start(struct i915_vma_compress *c)
@@ -390,7 +391,7 @@ static int compress_page(struct i915_vma_compress *c,
 {
 	void *ptr;
 
-	ptr = pool_alloc(&c->pool, ATOMIC_MAYFAIL);
+	ptr = pool_alloc(&c->pool, ALLOW_FAIL);
 	if (!ptr)
 		return -ENOMEM;
 
@@ -996,7 +997,7 @@ i915_vma_coredump_create(const struct intel_gt *gt,
 
 	num_pages = min_t(u64, vma->size, vma->obj->base.size) >> PAGE_SHIFT;
 	num_pages = DIV_ROUND_UP(10 * num_pages, 8); /* worstcase zlib growth */
-	dst = kmalloc(sizeof(*dst) + num_pages * sizeof(u32 *), ATOMIC_MAYFAIL);
+	dst = kmalloc(sizeof(*dst) + num_pages * sizeof(u32 *), ALLOW_FAIL);
 	if (!dst)
 		return NULL;
 
@@ -1432,7 +1433,7 @@ capture_engine(struct intel_engine_cs *engine,
 	struct i915_request *rq = NULL;
 	unsigned long flags;
 
-	ee = intel_engine_coredump_alloc(engine, ATOMIC_MAYFAIL);
+	ee = intel_engine_coredump_alloc(engine, GFP_KERNEL);
 	if (!ee)
 		return NULL;
 
@@ -1480,7 +1481,7 @@ gt_record_engines(struct intel_gt_coredump *gt,
 		struct intel_engine_coredump *ee;
 
 		/* Refill our page pool before entering atomic section */
-		pool_refill(&compress->pool, ATOMIC_MAYFAIL);
+		pool_refill(&compress->pool, ALLOW_FAIL);
 
 		ee = capture_engine(engine, compress);
 		if (!ee)
@@ -1506,7 +1507,7 @@ gt_record_uc(struct intel_gt_coredump *gt,
 	const struct intel_uc *uc = &gt->_gt->uc;
 	struct intel_uc_coredump *error_uc;
 
-	error_uc = kzalloc(sizeof(*error_uc), ATOMIC_MAYFAIL);
+	error_uc = kzalloc(sizeof(*error_uc), ALLOW_FAIL);
 	if (!error_uc)
 		return NULL;
 
@@ -1517,8 +1518,8 @@ gt_record_uc(struct intel_gt_coredump *gt,
 	 * As modparams are generally accesible from the userspace make
 	 * explicit copies of the firmware paths.
 	 */
-	error_uc->guc_fw.path = kstrdup(uc->guc.fw.path, ATOMIC_MAYFAIL);
-	error_uc->huc_fw.path = kstrdup(uc->huc.fw.path, ATOMIC_MAYFAIL);
+	error_uc->guc_fw.path = kstrdup(uc->guc.fw.path, ALLOW_FAIL);
+	error_uc->huc_fw.path = kstrdup(uc->huc.fw.path, ALLOW_FAIL);
 	error_uc->guc_log =
 		i915_vma_coredump_create(gt->_gt,
 					 uc->guc.log.vma, "GuC log buffer",
@@ -1777,7 +1778,7 @@ i915_vma_capture_prepare(struct intel_gt_coredump *gt)
 {
 	struct i915_vma_compress *compress;
 
-	compress = kmalloc(sizeof(*compress), ATOMIC_MAYFAIL);
+	compress = kmalloc(sizeof(*compress), ALLOW_FAIL);
 	if (!compress)
 		return NULL;
 
@@ -1810,11 +1811,11 @@ i915_gpu_coredump(struct intel_gt *gt, intel_engine_mask_t engine_mask)
 	if (IS_ERR(error))
 		return error;
 
-	error = i915_gpu_coredump_alloc(i915, ATOMIC_MAYFAIL);
+	error = i915_gpu_coredump_alloc(i915, ALLOW_FAIL);
 	if (!error)
 		return ERR_PTR(-ENOMEM);
 
-	error->gt = intel_gt_coredump_alloc(gt, ATOMIC_MAYFAIL);
+	error->gt = intel_gt_coredump_alloc(gt, ALLOW_FAIL);
 	if (error->gt) {
 		struct i915_vma_compress *compress;
 
