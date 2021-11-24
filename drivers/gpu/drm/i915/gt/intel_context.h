@@ -44,45 +44,6 @@ void intel_context_free(struct intel_context *ce);
 int intel_context_reconfigure_sseu(struct intel_context *ce,
 				   const struct intel_sseu sseu);
 
-static inline bool intel_context_is_child(struct intel_context *ce)
-{
-	return !!ce->parent;
-}
-
-static inline bool intel_context_is_parent(struct intel_context *ce)
-{
-	return !!ce->guc_number_children;
-}
-
-static inline bool intel_context_is_pinned(struct intel_context *ce);
-
-static inline struct intel_context *
-intel_context_to_parent(struct intel_context *ce)
-{
-		if (intel_context_is_child(ce)) {
-		/*
-		 * The parent holds ref count to the child so it is always safe
-		 * for the parent to access the child, but the child has pointer
-		 * to the parent without a ref. To ensure this is safe the child
-		 * should only access the parent pointer while the parent is
-		 * pinned.
-		 */
-				GEM_BUG_ON(!intel_context_is_pinned(ce->parent));
-
-				return ce->parent;
-		} else {
-				return ce;
-		}
-}
-
-void intel_context_bind_parent_child(struct intel_context *parent,
-				     struct intel_context *child);
-
-#define for_each_child(parent, ce)\
-	list_for_each_entry(ce, &(parent)->guc_child_list, guc_child_link)
-#define for_each_child_safe(parent, ce, cn)\
-	list_for_each_entry_safe(ce, cn, &(parent)->guc_child_list, guc_child_link)
-
 /**
  * intel_context_lock_pinned - Stablises the 'pinned' status of the HW context
  * @ce - the context
