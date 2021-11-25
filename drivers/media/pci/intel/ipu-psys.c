@@ -1682,7 +1682,8 @@ static void __exit ipu_psys_exit(void)
 static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6SE_PCI_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID)},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);

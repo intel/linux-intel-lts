@@ -108,4 +108,5 @@ static void ipu6_quirk(struct pci_dev *pci_dev)
 	pci_dev->dev.platform_data = &pdata;
 }
 
-DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_PCI_ID, ipu6_quirk);
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID, ipu6_quirk);
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID, ipu6_quirk);
