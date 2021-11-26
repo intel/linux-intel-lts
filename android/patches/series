@@ -68,3 +68,6 @@
 
 # CVE-2019-19449
 0001-f2fs-fix-to-do-sanity-check-on-segment-section-count.patch
+
+# CVE-2020-27820
+0001-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
