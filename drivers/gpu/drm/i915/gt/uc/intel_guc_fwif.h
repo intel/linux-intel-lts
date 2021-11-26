@@ -12,15 +12,39 @@
 #include "gt/intel_engine_types.h"
 
 #include "abi/guc_actions_abi.h"
+#include "abi/guc_actions_pf_abi.h"
+#include "abi/guc_actions_vf_abi.h"
 #include "abi/guc_actions_slpc_abi.h"
 #include "abi/guc_errors_abi.h"
 #include "abi/guc_communication_mmio_abi.h"
 #include "abi/guc_communication_ctb_abi.h"
+#include "abi/guc_klvs_abi.h"
 #include "abi/guc_messages_abi.h"
+
+static inline const char *hxg_type_to_string(u32 type)
+{
+	switch (type) {
+	case GUC_HXG_TYPE_REQUEST:
+	return "request";
+	case GUC_HXG_TYPE_EVENT:
+		return "event";
+	case GUC_HXG_TYPE_NO_RESPONSE_BUSY:
+		return "busy";
+	case GUC_HXG_TYPE_NO_RESPONSE_RETRY:
+		return "retry";
+	case GUC_HXG_TYPE_RESPONSE_FAILURE:
+		return "failure";
+	case GUC_HXG_TYPE_RESPONSE_SUCCESS:
+		return "response";
+	default:
+		return "<invalid>";
+	}
+}
 
 /* Payload length only i.e. don't include G2H header length */
 #define G2H_LEN_DW_SCHED_CONTEXT_MODE_SET	2
 #define G2H_LEN_DW_DEREGISTER_CONTEXT		1
+#define G2H_LEN_DW_INVALIDATE_TLB		3
 
 #define GUC_CONTEXT_DISABLE		0
 #define GUC_CONTEXT_ENABLE		1
@@ -45,14 +69,14 @@
 #define GUC_VIDEO_CLASS			1
 #define GUC_VIDEOENHANCE_CLASS		2
 #define GUC_BLITTER_CLASS		3
-#define GUC_RESERVED_CLASS		4
-#define GUC_LAST_ENGINE_CLASS		GUC_RESERVED_CLASS
+#define GUC_COMPUTE_CLASS		4
+#define GUC_LAST_ENGINE_CLASS		GUC_COMPUTE_CLASS
 #define GUC_MAX_ENGINE_CLASSES		16
 #define GUC_MAX_INSTANCES_PER_CLASS	32
 
 #define GUC_DOORBELL_INVALID		256
 
-#define GUC_WQ_SIZE			(PAGE_SIZE * 2)
+#define GUC_WQ_SIZE			(PAGE_SIZE / 2)
 
 /* Work queue item header definitions */
 #define WQ_STATUS_ACTIVE		1
@@ -65,12 +89,14 @@
 #define   WQ_TYPE_PSEUDO		(0x2 << WQ_TYPE_SHIFT)
 #define   WQ_TYPE_INORDER		(0x3 << WQ_TYPE_SHIFT)
 #define   WQ_TYPE_NOOP			(0x4 << WQ_TYPE_SHIFT)
-#define WQ_TARGET_SHIFT			10
+#define   WQ_TYPE_MULTI_LRC		(0x5 << WQ_TYPE_SHIFT)
+#define WQ_TARGET_SHIFT			8
 #define WQ_LEN_SHIFT			16
 #define WQ_NO_WCFLUSH_WAIT		(1 << 27)
 #define WQ_PRESENT_WORKLOAD		(1 << 28)
 
-#define WQ_RING_TAIL_SHIFT		20
+#define WQ_GUC_ID_SHIFT			0
+#define WQ_RING_TAIL_SHIFT		18
 #define WQ_RING_TAIL_MAX		0x7FF	/* 2^11 QWords */
 #define WQ_RING_TAIL_MASK		(WQ_RING_TAIL_MAX << WQ_RING_TAIL_SHIFT)
 
@@ -86,14 +112,19 @@
 #define GUC_CTL_LOG_PARAMS		0
 #define   GUC_LOG_VALID			(1 << 0)
 #define   GUC_LOG_NOTIFY_ON_HALF_FULL	(1 << 1)
-#define   GUC_LOG_ALLOC_IN_MEGABYTE	(1 << 3)
+#define   GUC_LOG_CAPTURE_ALLOC_UNITS	(1 << 2)
+#define   GUC_LOG_LOG_ALLOC_UNITS	(1 << 3)
 #define   GUC_LOG_CRASH_SHIFT		4
 #define   GUC_LOG_CRASH_MASK		(0x3 << GUC_LOG_CRASH_SHIFT)
 #define   GUC_LOG_DEBUG_SHIFT		6
 #define   GUC_LOG_DEBUG_MASK	        (0xF << GUC_LOG_DEBUG_SHIFT)
+#define   GUC_LOG_CAPTURE_SHIFT		10
+#define   GUC_LOG_CAPTURE_MASK	        (0x3 << GUC_LOG_CAPTURE_SHIFT)
 #define   GUC_LOG_BUF_ADDR_SHIFT	12
 
 #define GUC_CTL_WA			1
+#define   GUC_WA_POLLCS                 (1 << 18)
+
 #define GUC_CTL_FEATURE			2
 #define   GUC_CTL_DISABLE_SCHEDULER	(1 << 14)
 #define   GUC_CTL_ENABLE_SLPC		BIT(2)
@@ -115,6 +146,8 @@
 #define GUC_CTL_ADS			4
 #define   GUC_ADS_ADDR_SHIFT		1
 #define   GUC_ADS_ADDR_MASK		(0xFFFFF << GUC_ADS_ADDR_SHIFT)
+
+#define GUC_CTL_DEVID			5
 
 #define GUC_CTL_MAX_DWORDS		(SOFT_SCRATCH_COUNT - 2) /* [1..14] */
 
@@ -154,17 +187,20 @@ static inline u8 engine_class_to_guc_class(u8 class)
 	BUILD_BUG_ON(GUC_BLITTER_CLASS != COPY_ENGINE_CLASS);
 	BUILD_BUG_ON(GUC_VIDEO_CLASS != VIDEO_DECODE_CLASS);
 	BUILD_BUG_ON(GUC_VIDEOENHANCE_CLASS != VIDEO_ENHANCEMENT_CLASS);
+	BUILD_BUG_ON(GUC_COMPUTE_CLASS != (COMPUTE_CLASS - 1));
 	GEM_BUG_ON(class > MAX_ENGINE_CLASS || class == OTHER_CLASS);
 
-	return class;
+	/* the GuC arrays don't include OTHER_CLASS */
+	return class < OTHER_CLASS ? class : class - 1;
 }
 
 static inline u8 guc_class_to_engine_class(u8 guc_class)
 {
+	BUILD_BUG_ON(GUC_COMPUTE_CLASS != OTHER_CLASS);
+	BUILD_BUG_ON(GUC_LAST_ENGINE_CLASS != (MAX_ENGINE_CLASS - 1));
 	GEM_BUG_ON(guc_class > GUC_LAST_ENGINE_CLASS);
-	GEM_BUG_ON(guc_class == GUC_RESERVED_CLASS);
 
-	return guc_class;
+	return guc_class < GUC_COMPUTE_CLASS ? guc_class : guc_class + 1;
 }
 
 /* Work item for submitting workloads into work queue of GuC. */
@@ -186,7 +222,7 @@ struct guc_process_desc {
 	u32 wq_status;
 	u32 engine_presence;
 	u32 priority;
-	u32 reserved[30];
+	u32 reserved[36];
 } __packed;
 
 #define CONTEXT_REGISTRATION_FLAG_KMD	BIT(0)
@@ -263,7 +299,10 @@ struct guc_mmio_reg {
 	u32 offset;
 	u32 value;
 	u32 flags;
+	u32 mask;
 #define GUC_REGSET_MASKED		(1 << 0)
+#define GUC_REGSET_MASKED_WITH_VALUE	(1 << 2)
+#define GUC_REGSET_RESTORE_ONLY		(1 << 3)
 } __packed;
 
 /* GuC register sets */
@@ -280,6 +319,12 @@ struct guc_gt_system_info {
 	u32 generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_MAX];
 } __packed;
 
+enum {
+	GUC_CAPTURE_LIST_INDEX_PF = 0,
+	GUC_CAPTURE_LIST_INDEX_VF = 1,
+	GUC_CAPTURE_LIST_INDEX_MAX = 2,
+};
+
 /* GuC Additional Data Struct */
 struct guc_ads {
 	struct guc_mmio_reg_set reg_state_list[GUC_MAX_ENGINE_CLASSES][GUC_MAX_INSTANCES_PER_CLASS];
@@ -291,7 +336,11 @@ struct guc_ads {
 	u32 golden_context_lrca[GUC_MAX_ENGINE_CLASSES];
 	u32 eng_state_size[GUC_MAX_ENGINE_CLASSES];
 	u32 private_data;
-	u32 reserved[15];
+	u32 reserved2;
+	u32 capture_instance[GUC_CAPTURE_LIST_INDEX_MAX][GUC_MAX_ENGINE_CLASSES];
+	u32 capture_class[GUC_CAPTURE_LIST_INDEX_MAX][GUC_MAX_ENGINE_CLASSES];
+	u32 capture_global[GUC_CAPTURE_LIST_INDEX_MAX];
+	u32 reserved[14];
 } __packed;
 
 /* GuC logging structures */
@@ -299,6 +348,7 @@ struct guc_ads {
 enum guc_log_buffer_type {
 	GUC_DEBUG_LOG_BUFFER,
 	GUC_CRASH_DUMP_LOG_BUFFER,
+	GUC_CAPTURE_LOG_BUFFER,
 	GUC_MAX_LOG_BUFFER
 };
 
@@ -371,5 +421,10 @@ enum intel_guc_recv_message {
 	INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED = BIT(1),
 	INTEL_GUC_RECV_MSG_FLUSH_LOG_BUFFER = BIT(3)
 };
+
+#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) \
+	((intel_guc_ct_enabled(&(guc)->ct)) && \
+	 (intel_guc_submission_is_used(guc)) && \
+	 (GRAPHICS_VER(guc_to_gt((guc))->i915) >= 12))
 
 #endif

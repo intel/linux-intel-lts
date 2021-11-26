@@ -30,6 +30,7 @@ typedef depot_stack_handle_t intel_wakeref_t;
 
 struct intel_wakeref_ops {
 	int (*get)(struct intel_wakeref *wf);
+	void (*post_get)(struct intel_wakeref *wf);
 	int (*put)(struct intel_wakeref *wf);
 };
 
@@ -123,6 +124,12 @@ enum {
 	__INTEL_WAKEREF_PUT_LAST_BIT__
 };
 
+static inline void
+intel_wakeref_might_get(struct intel_wakeref *wf)
+{
+	might_lock(&wf->mutex);
+}
+
 /**
  * intel_wakeref_put_flags: Release the wakeref
  * @wf: the wakeref
@@ -168,6 +175,12 @@ intel_wakeref_put_delay(struct intel_wakeref *wf, unsigned long delay)
 	__intel_wakeref_put(wf,
 			    INTEL_WAKEREF_PUT_ASYNC |
 			    FIELD_PREP(INTEL_WAKEREF_PUT_DELAY, delay));
+}
+
+static inline void
+intel_wakeref_might_put(struct intel_wakeref *wf)
+{
+	might_lock(&wf->mutex);
 }
 
 /**

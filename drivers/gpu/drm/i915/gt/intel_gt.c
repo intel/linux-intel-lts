@@ -3,7 +3,7 @@
  * Copyright © 2019 Intel Corporation
  */
 
-#include "debugfs_gt.h"
+#include "intel_gt_debugfs.h"
 
 #include "gem/i915_gem_lmem.h"
 #include "i915_drv.h"
@@ -15,11 +15,12 @@
 #include "intel_gt_requests.h"
 #include "intel_migrate.h"
 #include "intel_mocs.h"
+#include "intel_pm.h"
 #include "intel_rc6.h"
 #include "intel_renderstate.h"
 #include "intel_rps.h"
 #include "intel_uncore.h"
-#include "intel_pm.h"
+#include "iov/intel_iov.h"
 #include "shmem_utils.h"
 
 void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
@@ -28,6 +29,9 @@ void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
 	gt->uncore = &i915->uncore;
 
 	spin_lock_init(&gt->irq_lock);
+
+	spin_lock_init(&gt->pm_unpark_work_lock);
+	INIT_LIST_HEAD(&gt->pm_unpark_work_list);
 
 	INIT_LIST_HEAD(&gt->closed_vma);
 	spin_lock_init(&gt->closed_lock);
@@ -119,10 +123,15 @@ static u16 slicemask(struct intel_gt *gt, int count)
 int intel_gt_init_mmio(struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
+	int ret;
+
+	ret = intel_iov_init_mmio(&gt->iov);
+	if (ret)
+		return ret;
 
 	intel_gt_init_clock_frequency(gt);
-
 	intel_uc_init_mmio(&gt->uc);
+
 	intel_sseu_info_init(gt);
 
 	/*
@@ -228,6 +237,13 @@ int intel_gt_init_hw(struct intel_gt *gt)
 	ret = intel_uc_init_hw(&gt->uc);
 	if (ret) {
 		i915_probe_error(i915, "Enabling uc failed (%d)\n", ret);
+		goto out;
+	}
+
+	ret = intel_iov_init_hw(&gt->iov);
+	if (unlikely(ret)) {
+		i915_probe_error(i915, "Enabling IOV failed (%pe)\n",
+				 ERR_PTR(ret));
 		goto out;
 	}
 
@@ -371,6 +387,9 @@ void intel_gt_check_and_clear_faults(struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
 
+	if (IS_SRIOV_VF(i915))
+		return;
+
 	/* From GEN8 onwards we only have one 'All Engine Fault Register' */
 	if (GRAPHICS_VER(i915) >= 8)
 		gen8_check_faults(gt);
@@ -434,7 +453,7 @@ void intel_gt_driver_register(struct intel_gt *gt)
 {
 	intel_rps_driver_register(&gt->rps);
 
-	debugfs_gt_register(gt);
+	intel_gt_debugfs_register(gt);
 }
 
 static int intel_gt_init_scratch(struct intel_gt *gt, unsigned int size)
@@ -660,6 +679,8 @@ int intel_gt_init(struct intel_gt *gt)
 	if (err)
 		return err;
 
+	intel_gt_init_workarounds(gt);
+
 	/*
 	 * This is just a security blanket to placate dragons.
 	 * On some systems, we very sporadically observe that the first TLBs
@@ -669,10 +690,14 @@ int intel_gt_init(struct intel_gt *gt)
 	 */
 	intel_uncore_forcewake_get(gt->uncore, FORCEWAKE_ALL);
 
+	err = intel_iov_init(&gt->iov);
+	if (unlikely(err))
+		goto out_fw;
+
 	err = intel_gt_init_scratch(gt,
 				    GRAPHICS_VER(gt->i915) == 2 ? SZ_256K : SZ_4K);
 	if (err)
-		goto out_fw;
+		goto err_iov;
 
 	intel_gt_pm_init(gt);
 
@@ -693,6 +718,10 @@ int intel_gt_init(struct intel_gt *gt)
 	err = intel_gt_resume(gt);
 	if (err)
 		goto err_uc_init;
+
+	err = intel_iov_init_late(&gt->iov);
+	if (err)
+		goto err_gt;
 
 	err = __engines_record_defaults(gt);
 	if (err)
@@ -722,6 +751,8 @@ err_engines:
 err_pm:
 	intel_gt_pm_fini(gt);
 	intel_gt_fini_scratch(gt);
+err_iov:
+	intel_iov_fini(&gt->iov);
 out_fw:
 	if (err)
 		intel_gt_set_wedged_on_init(gt);
@@ -731,6 +762,10 @@ out_fw:
 
 void intel_gt_driver_remove(struct intel_gt *gt)
 {
+	intel_gt_fini_clock_frequency(gt);
+
+	intel_iov_fini_hw(&gt->iov);
+
 	__intel_gt_disable(gt);
 
 	intel_migrate_fini(&gt->migrate);
@@ -765,9 +800,11 @@ void intel_gt_driver_release(struct intel_gt *gt)
 	if (vm) /* FIXME being called twice on error paths :( */
 		i915_vm_put(vm);
 
+	intel_wa_list_free(&gt->wa_list);
 	intel_gt_pm_fini(gt);
 	intel_gt_fini_scratch(gt);
 	intel_gt_fini_buffer_pool(gt);
+	intel_iov_fini(&gt->iov);
 }
 
 void intel_gt_driver_late_release(struct intel_gt *gt)
@@ -775,6 +812,7 @@ void intel_gt_driver_late_release(struct intel_gt *gt)
 	/* We need to wait for inflight RCU frees to release their grip */
 	rcu_barrier();
 
+	intel_iov_release(&gt->iov);
 	intel_uc_driver_late_release(&gt->uc);
 	intel_gt_fini_requests(gt);
 	intel_gt_fini_reset(gt);

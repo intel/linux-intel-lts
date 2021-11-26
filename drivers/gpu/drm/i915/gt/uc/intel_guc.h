@@ -16,11 +16,19 @@
 #include "intel_guc_log.h"
 #include "intel_guc_reg.h"
 #include "intel_guc_slpc_types.h"
+#include "intel_guc_hwconfig.h"
 #include "intel_uc_fw.h"
 #include "i915_utils.h"
 #include "i915_vma.h"
+#include "gt/intel_gt_pm_unpark_work.h"
 
 struct __guc_ads_blob;
+struct intel_guc;
+
+struct intel_guc_ops {
+	int (*init)(struct intel_guc *guc);
+	void (*fini)(struct intel_guc *guc);
+};
 
 /*
  * Top level structure of GuC. It handles firmware loading and manages client
@@ -28,20 +36,35 @@ struct __guc_ads_blob;
  * submission.
  */
 struct intel_guc {
+	struct intel_guc_ops const *ops;
 	struct intel_uc_fw fw;
 	struct intel_guc_log log;
 	struct intel_guc_ct ct;
 	struct intel_guc_slpc slpc;
+	struct intel_guc_hwconfig hwconfig;
 
 	/* Global engine used to submit requests to GuC */
 	struct i915_sched_engine *sched_engine;
 	struct i915_request *stalled_request;
+	enum {
+		STALL_NONE,
+		STALL_REGISTER_CONTEXT,
+		STALL_MOVE_LRC_TAIL,
+		STALL_ADD_REQUEST,
+	} submission_stall_reason;
 
 	/* intel_guc_recv interrupt related state */
 	spinlock_t irq_lock;
 	unsigned int msg_enabled_mask;
 
+	/**
+	 * @outstanding_submission_g2h: number of outstanding G2H related to GuC
+	 * submission, used to determine if the GT is idle
+	 */
 	atomic_t outstanding_submission_g2h;
+
+	struct xarray tlb_lookup;
+	u32 next_seqno;
 
 	struct {
 		void (*reset)(struct intel_guc *guc);
@@ -49,13 +72,42 @@ struct intel_guc {
 		void (*disable)(struct intel_guc *guc);
 	} interrupts;
 
-	/*
-	 * contexts_lock protects the pool of free guc ids and a linked list of
-	 * guc ids available to be stolen
-	 */
-	spinlock_t contexts_lock;
-	struct ida guc_ids;
-	struct list_head guc_id_list;
+	struct {
+		/**
+		 * @lock: protects everything in submission_state, ce->guc_id,
+		 * and ce->destroyed_link
+		 */
+		spinlock_t lock;
+		/**
+		 * @guc_ids: used to allocate new guc_ids, single-lrc
+		 */
+		struct ida guc_ids;
+		/**
+		 * @guc_ids_bitmap: used to allocate new guc_ids, multi-lrc
+		 */
+		unsigned long *guc_ids_bitmap;
+		/** @num_guc_ids: number of guc_ids that can be used */
+		u32 num_guc_ids;
+		/** @max_guc_ids: max number of guc_ids that can be used */
+		u32 max_guc_ids;
+		/**
+		 * @guc_id_list: list of intel_context with valid guc_ids but no
+		 * refs
+		 */
+		struct list_head guc_id_list;
+		/**
+		 * @destroyed_contexts: list of contexts waiting to be destroyed
+		 * (deregistered with the GuC)
+		 */
+		struct list_head destroyed_contexts;
+		/**
+		 * @destroyed_worker: Worker to deregister contexts, need as we
+		 * need to take a GT PM reference and can't from destroy
+		 * function as it might be in an atomic context (no sleeping).
+		 * Worker only issues deregister when GT is unparked.
+		 */
+		struct intel_gt_pm_unpark_work destroyed_worker;
+	} submission_state;
 
 	bool submission_supported;
 	bool submission_selected;
@@ -70,7 +122,10 @@ struct intel_guc {
 	struct i915_vma *lrc_desc_pool;
 	void *lrc_desc_pool_vaddr;
 
-	/* guc_id to intel_context lookup */
+	/**
+	 * @context_lookup: used to resolve intel_context from guc_id, if a
+	 * context is present in this structure it is registered with the GuC
+	 */
 	struct xarray context_lookup;
 
 	/* Control params for fw initialization */
@@ -92,6 +147,11 @@ struct intel_guc {
 	/* To serialize the intel_guc_send actions */
 	struct mutex send_mutex;
 };
+
+struct intel_guc_tlb_wait {
+	u8 status;
+	struct task_struct *tsk;
+} __aligned(4);
 
 static inline struct intel_guc *log_to_guc(struct intel_guc_log *log)
 {
@@ -188,6 +248,19 @@ static inline u32 intel_guc_ggtt_offset(struct intel_guc *guc,
 	return offset;
 }
 
+static inline int intel_guc_init(struct intel_guc *guc)
+{
+	if (guc->ops->init)
+		return guc->ops->init(guc);
+	return 0;
+}
+
+static inline void intel_guc_fini(struct intel_guc *guc)
+{
+	if (guc->ops->fini)
+		guc->ops->fini(guc);
+}
+
 void intel_guc_init_early(struct intel_guc *guc);
 void intel_guc_init_late(struct intel_guc *guc);
 void intel_guc_init_send_regs(struct intel_guc *guc);
@@ -205,6 +278,11 @@ int intel_guc_resume(struct intel_guc *guc);
 struct i915_vma *intel_guc_allocate_vma(struct intel_guc *guc, u32 size);
 int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 				   struct i915_vma **out_vma, void **out_vaddr);
+int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
+int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
+
+int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
+				 enum intel_guc_tlb_inval_mode mode);
 
 static inline bool intel_guc_is_supported(struct intel_guc *guc)
 {
@@ -219,7 +297,8 @@ static inline bool intel_guc_is_wanted(struct intel_guc *guc)
 static inline bool intel_guc_is_used(struct intel_guc *guc)
 {
 	GEM_BUG_ON(__intel_uc_fw_status(&guc->fw) == INTEL_UC_FIRMWARE_SELECTED);
-	return intel_uc_fw_is_available(&guc->fw);
+	return intel_uc_fw_is_available(&guc->fw) ||
+	       intel_uc_fw_is_preloaded(&guc->fw);
 }
 
 static inline bool intel_guc_is_fw_running(struct intel_guc *guc)
@@ -281,6 +360,9 @@ int intel_guc_context_reset_process_msg(struct intel_guc *guc,
 					const u32 *msg, u32 len);
 int intel_guc_engine_failure_process_msg(struct intel_guc *guc,
 					 const u32 *msg, u32 len);
+int intel_guc_error_capture_process_msg(struct intel_guc *guc,
+					 const u32 *msg, u32 len);
+void intel_guc_tlb_invalidation_done_process_msg(struct intel_guc *guc, u32 seqno);
 
 void intel_guc_find_hung_context(struct intel_engine_cs *engine);
 
@@ -294,5 +376,7 @@ void intel_guc_submission_reset_finish(struct intel_guc *guc);
 void intel_guc_submission_cancel_requests(struct intel_guc *guc);
 
 void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p);
+
+void intel_guc_write_barrier(struct intel_guc *guc);
 
 #endif

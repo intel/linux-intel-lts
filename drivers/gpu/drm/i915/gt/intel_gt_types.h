@@ -15,6 +15,7 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
+#include "iov/intel_iov_types.h"
 #include "uc/intel_uc.h"
 
 #include "i915_vma.h"
@@ -71,6 +72,9 @@ struct intel_gt {
 	struct i915_ggtt *ggtt;
 
 	struct intel_uc uc;
+	struct intel_iov iov;
+
+	struct i915_wa_list wa_list;
 
 	struct intel_gt_timelines {
 		spinlock_t lock; /* protects active_list */
@@ -95,6 +99,16 @@ struct intel_gt {
 
 	struct intel_wakeref wakeref;
 	atomic_t user_wakeref;
+
+	/**
+	 * @pm_unpark_work_list: list of delayed work to scheduled which GT is
+	 * unparked, protected by pm_unpark_work_lock
+	 */
+	struct list_head pm_unpark_work_list;
+	/**
+	 * @pm_unpark_work_lock: protects pm_unpark_work_list
+	 */
+	spinlock_t pm_unpark_work_lock;
 
 	struct list_head closed_vma;
 	spinlock_t closed_lock; /* guards the list of closed_vma */
