@@ -9519,6 +9519,12 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/display/intel,ixp46x-rng.yaml
 F:	drivers/char/hw_random/ixp4xx-rng.c
 
+INTEL KEEM BAY DDR SUBSYSTEM, NETWORK ON CHIP INTERCONNECT DRIVER
+M:	Pandith N <pandith.n@intel.com>
+S:	Supported
+F:	drivers/interconnect/intel/
+F:	include/uapi/linux/noc_uapi.h
+
 INTEL KEEM BAY DRM DRIVER
 M:	Anitha Chrisanthus <anitha.chrisanthus@intel.com>
 M:	Edmund Dea <edmund.j.dea@intel.com>
