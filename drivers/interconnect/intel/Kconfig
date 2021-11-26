@@ -1,0 +1,19 @@
+# Copyright (C) 2019 Intel Corporation
+# SPDX-License-Identifier: GPL-2.0-only
+config INTERCONNECT_INTEL
+	bool "Intel Network-on-chip interconnect drivers"
+	help
+	  Support for Intel's Network on chip interconnect hardware.
+
+config INTERCONNECT_INTEL_KEEMBAY
+	tristate "Intel Keem Bay Enable DDR profiling using NOC"
+	depends on INTERCONNECT_INTEL || ARCH_KEEMBAY || COMPILE_TEST
+	help
+	  Enable this option for DDR bandwidth measurements using NOC.
+
+	  Add support for Network-on-chip (NOC) in DDR Subsystem(DSS).
+	  DSS NOC has capabilities to enable and get statistics profiling.
+	  NOC driver enables features to configure and capture NOC probe
+	  counters, needed for DSS bandwidth measurement.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
