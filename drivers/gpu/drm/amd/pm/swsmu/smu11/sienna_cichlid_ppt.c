@@ -1665,7 +1665,6 @@ static int sienna_cichlid_read_sensor(struct smu_context *smu,
 	if(!data || !size)
 		return -EINVAL;
 
-	mutex_lock(&smu->sensor_lock);
 	switch (sensor) {
 	case AMDGPU_PP_SENSOR_MAX_FAN_RPM:
 		GET_PPTABLE_MEMBER(FanMaximumRpm, &temp);
@@ -1726,7 +1725,6 @@ static int sienna_cichlid_read_sensor(struct smu_context *smu,
 		ret = -EOPNOTSUPP;
 		break;
 	}
-	mutex_unlock(&smu->sensor_lock);
 
 	return ret;
 }
