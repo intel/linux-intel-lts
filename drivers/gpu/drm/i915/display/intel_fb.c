@@ -7,6 +7,7 @@
 #include <drm/drm_modeset_helper.h>
 
 #include "gem/i915_gem_lmem.h"
+#include "i915_drv.h"
 #include "intel_display.h"
 #include "intel_display_types.h"
 #include "intel_dpt.h"
