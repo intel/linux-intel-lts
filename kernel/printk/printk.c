@@ -3151,7 +3151,7 @@ void wake_up_klogd(void)
 
 void printk_trigger_flush(void)
 {
-	defer_console_output();
+	wake_up_klogd();
 }
 
 /*
