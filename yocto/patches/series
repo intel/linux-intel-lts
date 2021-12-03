@@ -43,3 +43,17 @@
 
 # CVE-2019-19449
 0001-f2fs-fix-to-do-sanity-check-on-segment-section-count.patch
+
+# CVE-2021-43056
+0001-KVM-PPC-Book3S-HV-Make-idle_kvm_start_guest-return-0.patch
+
+# CVE-2021-42739
+0001-media-firewire-firedtv-avc-fix-a-buffer-overflow-in-.patch
+
+# CVE-2021-40490
+0001-ext4-fix-race-writing-to-an-inline_data-file-while-i.patch
+
+# CVE-2020-27820
+0001-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
+0002-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
+0003-drm-nouveau-clean-up-all-clients-on-device-removal.patch

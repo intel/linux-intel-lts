@@ -1,0 +1,46 @@
+From b359e0e184f18cfda7c9be9697b2e564bf08699d Mon Sep 17 00:00:00 2001
+From: Theodore Ts'o <tytso@mit.edu>
+Date: Fri, 20 Aug 2021 23:44:17 -0400
+Subject: [PATCH] ext4: fix race writing to an inline_data file while its
+ xattrs are changing
+
+commit a54c4613dac1500b40e4ab55199f7c51f028e848 upstream.
+
+The location of the system.data extended attribute can change whenever
+xattr_sem is not taken.  So we need to recalculate the i_inline_off
+field since it mgiht have changed between ext4_write_begin() and
+ext4_write_end().
+
+This means that caching i_inline_off is probably not helpful, so in
+the long run we should probably get rid of it and shrink the in-memory
+ext4 inode slightly, but let's fix the race the simple way for now.
+
+Cc: stable@kernel.org
+Fixes: f19d5870cbf72 ("ext4: add normal write support for inline data")
+Reported-by: syzbot+13146364637c7363a7de@syzkaller.appspotmail.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/ext4/inline.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index 519378a15bc6..46151bda6236 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -750,6 +750,12 @@ int ext4_write_inline_data_end(struct inode *inode, loff_t pos, unsigned len,
+ 	ext4_write_lock_xattr(inode, &no_expand);
+ 	BUG_ON(!ext4_has_inline_data(inode));
+ 
++	/*
++	 * ei->i_inline_off may have changed since ext4_write_begin()
++	 * called ext4_try_to_write_inline_data()
++	 */
++	(void) ext4_find_inline_data_nolock(inode);
++
+ 	kaddr = kmap_atomic(page);
+ 	ext4_write_inline_data(inode, &iloc, kaddr, pos, len);
+ 	kunmap_atomic(kaddr);
+-- 
+2.17.1
+

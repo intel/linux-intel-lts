@@ -1,0 +1,88 @@
+From 35d8dc697c1e59874ee21453008d66e92db0f4fd Mon Sep 17 00:00:00 2001
+From: Jeremy Cline <jcline@redhat.com>
+Date: Tue, 30 Nov 2021 21:15:46 -0500
+Subject: [PATCH 2/3] drm/nouveau: Add a dedicated mutex for the clients list
+
+    Rather than protecting the nouveau_drm clients list with the lock within
+    the "client" nouveau_cli, add a dedicated lock to serialize access to
+    the list. This is both clearer and necessary to avoid lockdep being
+    upset with us when we need to iterate through all the clients in the
+    list and potentially lock their mutex, which is the same class as the
+    lock protecting the entire list.
+
+    Cc: stable@vger.kernel.org # 5.4+
+    Signed-off-by: Jeremy Cline <jcline@redhat.com>
+    Reviewed-by: Lyude Paul <lyude@redhat.com>
+    Reviewed-by: Ben Skeggs <bskeggs@redhat.com>
+    Tested-by: Karol Herbst <kherbst@redhat.com>
+    Signed-off-by: Karol Herbst <kherbst@redhat.com>
+    Link: https://patchwork.freedesktop.org/patch/msgid/20201125202648.5220-3-jcline@redhat.com
+    Link: https://gitlab.freedesktop.org/drm/nouveau/-/merge_requests/14
+---
+ drivers/gpu/drm/nouveau/nouveau_drm.c | 10 ++++++----
+ drivers/gpu/drm/nouveau/nouveau_drv.h |  5 +++++
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drm.c b/drivers/gpu/drm/nouveau/nouveau_drm.c
+index e18938972a89..c9d2be16ee6f 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drm.c
++++ b/drivers/gpu/drm/nouveau/nouveau_drm.c
+@@ -520,6 +520,7 @@ nouveau_drm_device_init(struct drm_device *dev)
+ 		nvkm_dbgopt(nouveau_debug, "DRM");
+ 
+ 	INIT_LIST_HEAD(&drm->clients);
++	mutex_init(&drm->clients_lock);
+ 	spin_lock_init(&drm->tile.lock);
+ 
+ 	/* workaround an odd issue on nvc1 by disabling the device's
+@@ -615,6 +616,7 @@ nouveau_drm_device_fini(struct drm_device *dev)
+ 
+ 	nouveau_cli_fini(&drm->client);
+ 	nouveau_cli_fini(&drm->master);
++	mutex_destroy(&drm->clients_lock);
+ 	kfree(drm);
+ }
+ 
+@@ -1073,9 +1075,9 @@ nouveau_drm_open(struct drm_device *dev, struct drm_file *fpriv)
+ 
+ 	fpriv->driver_priv = cli;
+ 
+-	mutex_lock(&drm->client.mutex);
++	mutex_lock(&drm->clients_lock);
+ 	list_add(&cli->head, &drm->clients);
+-	mutex_unlock(&drm->client.mutex);
++	mutex_unlock(&drm->clients_lock);
+ 
+ done:
+ 	if (ret && cli) {
+@@ -1101,9 +1103,9 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
+ 		nouveau_abi16_fini(cli->abi16);
+ 	mutex_unlock(&cli->mutex);
+ 
+-	mutex_lock(&drm->client.mutex);
++	mutex_lock(&drm->clients_lock);
+ 	list_del(&cli->head);
+-	mutex_unlock(&drm->client.mutex);
++	mutex_unlock(&drm->clients_lock);
+ 
+ 	nouveau_cli_fini(cli);
+ 	kfree(cli);
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
+index 8104e3806499..8138ac851d94 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.h
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
+@@ -138,6 +138,11 @@ struct nouveau_drm {
+ 
+ 	struct list_head clients;
+ 
++	/**
++	 * @clients_lock: Protects access to the @clients list of &struct nouveau_cli.
++	 */
++	struct mutex clients_lock;
++
+ 	u8 old_pm_cap;
+ 
+ 	struct {
+-- 
+2.17.1
+

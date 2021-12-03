@@ -1,0 +1,49 @@
+From 25adc4105b5fccc9e4f083868446347cb9e6292f Mon Sep 17 00:00:00 2001
+From: Jeremy Cline <jcline@redhat.com>
+Date: Wed, 25 Nov 2020 15:26:46 -0500
+Subject: [PATCH 1/3] drm/nouveau: use drm_dev_unplug() during device removal
+
+commit aff2299e0d81b26304ccc6a1ec0170e437f38efc upstream.
+
+Nouveau does not currently support hot-unplugging, but it still makes
+sense to switch from drm_dev_unregister() to drm_dev_unplug().
+drm_dev_unplug() calls drm_dev_unregister() after marking the device as
+unplugged, but only after any device critical sections are finished.
+
+Since nouveau isn't using drm_dev_enter() and drm_dev_exit(), there are
+no critical sections so this is nearly functionally equivalent. However,
+the DRM layer does check to see if the device is unplugged, and if it is
+returns appropriate error codes.
+
+In the future nouveau can add critical sections in order to truly
+support hot-unplugging.
+
+Cc: stable@vger.kernel.org # 5.4+
+Signed-off-by: Jeremy Cline <jcline@redhat.com>
+Reviewed-by: Lyude Paul <lyude@redhat.com>
+Reviewed-by: Ben Skeggs <bskeggs@redhat.com>
+Tested-by: Karol Herbst <kherbst@redhat.com>
+Signed-off-by: Karol Herbst <kherbst@redhat.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20201125202648.5220-2-jcline@redhat.com
+Link: https://gitlab.freedesktop.org/drm/nouveau/-/merge_requests/14
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/gpu/drm/nouveau/nouveau_drm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drm.c b/drivers/gpu/drm/nouveau/nouveau_drm.c
+index 5347e5bdee8c..e18938972a89 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drm.c
++++ b/drivers/gpu/drm/nouveau/nouveau_drm.c
+@@ -779,7 +779,7 @@ nouveau_drm_device_remove(struct drm_device *dev)
+ 	struct nvkm_client *client;
+ 	struct nvkm_device *device;
+ 
+-	drm_dev_unregister(dev);
++	drm_dev_unplug(dev);
+ 
+ 	dev->irq_enabled = false;
+ 	client = nvxx_client(&drm->client.base);
+-- 
+2.17.1
+
