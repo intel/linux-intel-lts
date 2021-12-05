@@ -6,3 +6,28 @@ Description:
 		with.
 
 		Format: %d.%d.%d.%d, type:major:minor:build.
+
+What:		/sys/devices/pci0000:00/<dev>/<tplg_name>/<path_template>:<path>/<pipeline>/state
+Date:		December 2021
+Contact:	Cezary Rojewski <cezary.rojewski@intel.com>
+Description:
+		File is only present when specific pipeline is instantiated in
+		driver. It is used to check or change pipeline state. Possible
+		read values: invalid, uninitialized, reset, paused, running,
+		eos, error_stop, saved, restored.
+		Allows only to set state to: reset, paused, running.
+
+What:		/sys/devices/pci0000:00/<dev>/<tplg_name>/<path_template>:<path>/<pipeline>/<module>/fw_id
+Date:		December 2021
+Contact:	Cezary Rojewski <cezary.rojewski@intel.com>
+Description:
+		File is only present when specific module is instantiated in
+		driver. Used to get module id used by FW for module in question.
+
+What:		/sys/devices/pci0000:00/<dev>/<tplg_name>/<path_template>:<path>/<pipeline>/<module>/fw_instance
+Date:		December 2021
+Contact:	Cezary Rojewski <cezary.rojewski@intel.com>
+Description:
+		File is only present when specific module is instantiated in
+		driver. Used to get instance id assigned from pool of ids
+		for module in question.

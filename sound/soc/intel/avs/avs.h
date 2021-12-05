@@ -317,6 +317,7 @@ int avs_hda_transfer_modules(struct avs_dev *adev, bool load,
 struct avs_soc_component {
 	struct snd_soc_component base;
 	struct avs_tplg *tplg;
+	struct kobject *kobj;
 
 	struct list_head node;
 };
