@@ -549,9 +549,51 @@ static int avs_path_module_type_create(struct avs_dev *adev, struct avs_path_mod
 	return avs_modext_create(adev, mod);
 }
 
+static void avs_path_module_release(struct kobject *kobj)
+{
+	struct avs_path_module *mod = container_of(kobj, struct avs_path_module, kobj);
+
+	kfree(mod);
+}
+
+static ssize_t avs_path_module_fw_id_show(struct kobject *kobj,
+					  struct kobj_attribute *attr, char *buf)
+{
+	struct avs_path_module *mod = container_of(kobj, struct avs_path_module, kobj);
+
+	return sprintf(buf, "%d\n", mod->module_id);
+}
+
+static struct kobj_attribute avs_path_module_fw_id =
+		__ATTR(fw_id, 0444, avs_path_module_fw_id_show, NULL);
+
+static ssize_t avs_path_module_fw_instance_show(struct kobject *kobj,
+						struct kobj_attribute *attr, char *buf)
+{
+	struct avs_path_module *mod = container_of(kobj, struct avs_path_module, kobj);
+
+	return sprintf(buf, "%d\n", mod->instance_id);
+}
+
+static struct kobj_attribute avs_path_module_fw_instance =
+		__ATTR(fw_instance, 0444, avs_path_module_fw_instance_show, NULL);
+
+static struct attribute *avs_path_module_attrs[] = {
+	&avs_path_module_fw_id.attr,
+	&avs_path_module_fw_instance.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(avs_path_module);
+
+static struct kobj_type avs_path_module_ktype = {
+	.release = avs_path_module_release,
+	.default_groups = avs_path_module_groups,
+	.sysfs_ops = &kobj_sysfs_ops,
+};
+
 static void avs_path_module_free(struct avs_dev *adev, struct avs_path_module *mod)
 {
-	kfree(mod);
+	kobject_put(&mod->kobj);
 }
 
 static struct avs_path_module *
@@ -579,6 +621,13 @@ avs_path_module_create(struct avs_dev *adev,
 	if (ret) {
 		dev_err(adev->dev, "module-type create failed: %d\n", ret);
 		kfree(mod);
+		return ERR_PTR(ret);
+	}
+
+	ret = kobject_init_and_add(&mod->kobj, &avs_path_module_ktype,
+				   &owner->kobj, "%d", template->id);
+	if (ret) {
+		kobject_put(&mod->kobj);
 		return ERR_PTR(ret);
 	}
 
@@ -659,6 +708,86 @@ static struct avs_path_binding *avs_path_binding_create(struct avs_dev *adev,
 	return binding;
 }
 
+static void avs_path_pipeline_release(struct kobject *kobj)
+{
+	struct avs_path_pipeline *ppl = container_of(kobj, struct avs_path_pipeline, kobj);
+
+	kfree(ppl);
+}
+
+static const char *pipeline_state_str[] = {
+	[AVS_PPL_STATE_INVALID] = "invalid",
+	[AVS_PPL_STATE_UNINITIALIZED] = "uninitialized",
+	[AVS_PPL_STATE_RESET] = "reset",
+	[AVS_PPL_STATE_PAUSED] = "paused",
+	[AVS_PPL_STATE_RUNNING] = "running",
+	[AVS_PPL_STATE_EOS] = "eos",
+	[AVS_PPL_STATE_ERROR_STOP] = "error_stop",
+	[AVS_PPL_STATE_SAVED] = "saved",
+	[AVS_PPL_STATE_RESTORED] = "restored",
+};
+
+static ssize_t avs_path_pipeline_state_show(struct kobject *kobj,
+					    struct kobj_attribute *attr, char *buf)
+{
+	struct avs_path_pipeline *ppl = container_of(kobj, struct avs_path_pipeline, kobj);
+	struct avs_dev *adev = ppl->owner->owner;
+	enum avs_pipeline_state state;
+	int ret;
+
+	ret = avs_ipc_get_pipeline_state(adev, ppl->instance_id, &state);
+	if (ret) {
+		dev_err(adev->dev, "read pipeline state failed: %d\n", ret);
+		return AVS_IPC_RET(ret);
+	}
+
+	if (state >= ARRAY_SIZE(pipeline_state_str))
+		return -EIO;
+	return sprintf(buf, pipeline_state_str[state]);
+}
+
+static ssize_t avs_path_pipeline_state_store(struct kobject *kobj,
+					     struct kobj_attribute *attr,
+					     const char *buf, size_t len)
+{
+	struct avs_path_pipeline *ppl = container_of(kobj, struct avs_path_pipeline, kobj);
+	struct avs_dev *adev = ppl->owner->owner;
+	enum avs_pipeline_state state;
+	int ret;
+
+	if (sysfs_streq(buf, "reset"))
+		state = AVS_PPL_STATE_RESET;
+	else if (sysfs_streq(buf, "paused"))
+		state = AVS_PPL_STATE_PAUSED;
+	else if (sysfs_streq(buf, "running"))
+		state = AVS_PPL_STATE_RUNNING;
+	else
+		return -EINVAL;
+
+	ret = avs_ipc_set_pipeline_state(adev, ppl->instance_id, state);
+	if (ret) {
+		dev_err(adev->dev, "write pipeline state failed: %d\n", ret);
+		return AVS_IPC_RET(ret);
+	}
+
+	return len;
+}
+
+static struct kobj_attribute avs_path_pipeline_state =
+	__ATTR(state, 0664, avs_path_pipeline_state_show, avs_path_pipeline_state_store);
+
+static struct attribute *avs_path_pipeline_attrs[] = {
+	&avs_path_pipeline_state.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(avs_path_pipeline);
+
+static struct kobj_type avs_path_pipeline_ktype = {
+	.release = avs_path_pipeline_release,
+	.default_groups = avs_path_pipeline_groups,
+	.sysfs_ops = &kobj_sysfs_ops,
+};
+
 static int avs_path_pipeline_arm(struct avs_dev *adev,
 				 struct avs_path_pipeline *ppl)
 {
@@ -713,7 +842,7 @@ static void avs_path_pipeline_free(struct avs_dev *adev,
 	}
 
 	list_del(&ppl->node);
-	kfree(ppl);
+	kobject_put(&ppl->kobj);
 }
 
 static struct avs_path_pipeline *
@@ -744,6 +873,11 @@ avs_path_pipeline_create(struct avs_dev *adev, struct avs_path *owner,
 		return ERR_PTR(ret);
 	}
 
+	ret = kobject_init_and_add(&ppl->kobj, &avs_path_pipeline_ktype,
+				   &owner->kobj, "%d", ppl->template->id);
+	if (ret)
+		goto err;
+
 	list_for_each_entry(tmod, &template->mod_list, node) {
 		struct avs_path_module *mod;
 
@@ -751,7 +885,7 @@ avs_path_pipeline_create(struct avs_dev *adev, struct avs_path *owner,
 		if (IS_ERR(mod)) {
 			ret = PTR_ERR(mod);
 			dev_err(adev->dev, "error creating module %d\n", ret);
-			goto init_err;
+			goto err;
 		}
 
 		list_add_tail(&mod->node, &ppl->mod_list);
@@ -764,7 +898,7 @@ avs_path_pipeline_create(struct avs_dev *adev, struct avs_path *owner,
 		if (IS_ERR(binding)) {
 			ret = PTR_ERR(binding);
 			dev_err(adev->dev, "error creating binding %d\n", ret);
-			goto init_err;
+			goto err;
 		}
 
 		list_add_tail(&binding->node, &ppl->binding_list);
@@ -772,10 +906,21 @@ avs_path_pipeline_create(struct avs_dev *adev, struct avs_path *owner,
 
 	return ppl;
 
-init_err:
+err:
 	avs_path_pipeline_free(adev, ppl);
 	return ERR_PTR(ret);
 }
+
+static void avs_path_release(struct kobject *kobj)
+{
+	struct avs_path *path = container_of(kobj, struct avs_path, kobj);
+
+	kfree(path);
+}
+
+static struct kobj_type avs_path_ktype = {
+	.release = avs_path_release,
+};
 
 static int avs_path_init(struct avs_dev *adev, struct avs_path *path,
 			 struct avs_tplg_path *template, u32 dma_id)
@@ -842,18 +987,29 @@ static void avs_path_free_unlocked(struct avs_path *path)
 	list_for_each_entry_safe(ppl, save, &path->ppl_list, node)
 		avs_path_pipeline_free(path->owner, ppl);
 
-	kfree(path);
+	kobject_put(&path->kobj);
 }
 
 static struct avs_path *avs_path_create_unlocked(struct avs_dev *adev, u32 dma_id,
-						 struct avs_tplg_path *template)
+						 struct avs_tplg_path *template,
+						 const char *prefix)
 {
+	struct avs_soc_component *acomp;
 	struct avs_path *path;
 	int ret;
+
+	acomp = to_avs_soc_component(template->owner->owner->comp);
 
 	path = kzalloc(sizeof(*path), GFP_KERNEL);
 	if (!path)
 		return ERR_PTR(-ENOMEM);
+
+	ret = kobject_init_and_add(&path->kobj, &avs_path_ktype, acomp->kobj, "%s%d:%d",
+				   prefix, template->owner->id, template->id);
+	if (ret) {
+		kobject_put(&path->kobj);
+		return ERR_PTR(ret);
+	}
 
 	ret = avs_path_init(adev, path, template, dma_id);
 	if (ret < 0)
@@ -898,7 +1054,7 @@ struct avs_path *avs_path_create(struct avs_dev *adev, u32 dma_id,
 	/* Satisfy needs of avs_path_find_tplg(). */
 	mutex_lock(&adev->comp_list_mutex);
 
-	path = avs_path_create_unlocked(adev, dma_id, variant);
+	path = avs_path_create_unlocked(adev, dma_id, variant, "");
 
 	mutex_unlock(&adev->comp_list_mutex);
 	mutex_unlock(&adev->path_mutex);

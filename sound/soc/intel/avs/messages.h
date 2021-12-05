@@ -293,6 +293,10 @@ enum avs_pipeline_state {
 	AVS_PPL_STATE_RESET,
 	AVS_PPL_STATE_PAUSED,
 	AVS_PPL_STATE_RUNNING,
+	AVS_PPL_STATE_EOS,
+	AVS_PPL_STATE_ERROR_STOP,
+	AVS_PPL_STATE_SAVED,
+	AVS_PPL_STATE_RESTORED,
 };
 
 int avs_ipc_create_pipeline(struct avs_dev *adev, u16 req_size, u8 priority,

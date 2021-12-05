@@ -788,6 +788,12 @@ static int avs_component_probe(struct snd_soc_component *component)
 	if (ret < 0)
 		return ret;
 
+	acomp->kobj = kobject_create_and_add(acomp->tplg->name, &component->dev->kobj);
+	if (!acomp->kobj) {
+		ret = -ENOMEM;
+		goto err_kobj_create;
+	}
+
 	ret = avs_component_load_libraries(acomp);
 	if (ret < 0) {
 		dev_err(card->dev, "libraries loading failed: %d\n", ret);
@@ -805,6 +811,8 @@ finalize:
 	return 0;
 
 err_load_libs:
+	kobject_put(acomp->kobj);
+err_kobj_create:
 	avs_remove_topology(component);
 	return ret;
 }
@@ -817,6 +825,8 @@ static void avs_component_remove(struct snd_soc_component *component)
 	int ret;
 
 	mach = dev_get_platdata(component->card->dev);
+
+	kobject_put(acomp->kobj);
 
 	mutex_lock(&adev->comp_list_mutex);
 	list_del(&acomp->node);
