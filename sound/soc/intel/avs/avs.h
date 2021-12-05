@@ -332,6 +332,7 @@ int avs_icl_load_basefw(struct avs_dev *adev, struct firmware *fw);
 struct avs_soc_component {
 	struct snd_soc_component base;
 	struct avs_tplg *tplg;
+	struct kobject *kobj;
 
 	struct list_head node;
 };
