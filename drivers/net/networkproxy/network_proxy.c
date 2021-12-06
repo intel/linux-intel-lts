@@ -52,6 +52,105 @@ int netprox_send_ipc_msg(int cmd, const char *msg, int size)
 }
 EXPORT_SYMBOL(netprox_send_ipc_msg);
 
+static int netprox_rd_mib_shm(struct np_rules *rule)
+{
+	struct np_shm_info *shm_info_send;
+	struct np_shm_info *shm_info_resp;
+	struct np_rules *rule_send;
+	struct np_rules *rule_resp;
+	int shm_data_remain_size;
+	u64 shm_data_addr_user;
+	int shm_data_cpy_size;
+	int msg_payload_size;
+	long respond_timer;
+	char *shm_data;
+	int ret = 0;
+
+	if (rule->size > NP_RULE_ACCESS_MAX_BYTE) {
+		pr_err("Rule size exceeded limit.\n");
+		return -EPERM;
+	}
+
+	/* Allocate memory to temporary store the received shared memory data */
+	shm_data = kzalloc(rule->size, GFP_KERNEL);
+	if (!shm_data)
+		return -ENOMEM;
+
+	/* Allocate memory for IPC message payload */
+	msg_payload_size = sizeof(struct np_rules) + sizeof(struct np_shm_info);
+	rule_send = kzalloc(msg_payload_size, GFP_KERNEL);
+	if (!rule_send) {
+		kfree(shm_data);
+		return -ENOMEM;
+	}
+
+	memcpy(rule_send, rule, sizeof(struct np_rules));
+	shm_info_send = (struct np_shm_info *)(rule_send + 1);
+
+	shm_info_send->offset = 0;
+	do {
+		netprox_send_ipc_msg(NP_H2A_CMD_READ_SHM_DATA,
+				     (const char *)rule_send,
+				     msg_payload_size);
+
+		agent_access_task = current;
+		set_current_state(TASK_INTERRUPTIBLE);
+		respond_timer =
+			schedule_timeout(msecs_to_jiffies(NP_TIMEOUT_MS));
+		/* If respond_timer = 0, no response is received from Agent */
+		if (respond_timer == 0) {
+			pr_err("Netprox MIB passing timeout.\n");
+			break;
+		}
+		rule_resp = (struct np_rules *)ipc_ptr;
+		shm_info_resp = (struct np_shm_info *)(rule_resp + 1);
+
+		/* Check the response is same as query */
+		if (rule->group != rule_resp->group ||
+		    rule->type != rule_resp->type ||
+		    rule->offset != rule_resp->offset ||
+		    rule->size != rule_resp->size) {
+			pr_err("Response is not same as query.\n");
+			break;
+		}
+
+		/* Check the received OID tree is within requested range */
+		shm_data_remain_size = rule->size - shm_info_send->offset;
+		shm_data_cpy_size = min_t(int, shm_data_remain_size, (int)shm_info_resp->size);
+
+		memcpy_fromio(shm_data + shm_info_send->offset,
+			      np_ctx->np_shm->shm_ptr,
+			      shm_data_cpy_size);
+
+		shm_info_send->offset += shm_info_resp->size;
+	} while (shm_info_send->offset < rule->size &&
+		 shm_info_send->offset < shm_info_resp->total_size);
+
+	if (shm_info_send->offset) {
+		shm_data_addr_user = *(u64 *)rule->value;
+		if (copy_to_user(u64_to_user_ptr(shm_data_addr_user),
+				 shm_data, shm_info_send->offset)) {
+			pr_err("error in copying data from kernel to userspace.\n");
+			ret = -ENOMEM;
+		}
+	}
+
+	kfree(rule_send);
+	kfree(shm_data);
+
+	return ret;
+}
+
+static int netprox_rd_mib(struct np_rules *rule)
+{
+	if (!np_ctx->np_shm) {
+		pr_err("Netprox requires shared memory support for MIB passing.\n");
+		return -EPERM;
+	} else {
+		return netprox_rd_mib_shm(rule);
+	}
+}
+
 static int netprox_read_from_agent(struct np_rules *rule, void *content,
 				   int *size)
 {
@@ -149,6 +248,95 @@ int netprox_read_rule(struct np_rules *rule, void *content, int *size)
 	return ret;
 }
 EXPORT_SYMBOL(netprox_read_rule);
+
+static int netprox_wr_mib_shm(struct np_rules *rule)
+{
+	struct np_shm_info *shm_info;
+	struct np_rules *rule_send;
+	u64 shm_data_addr_user;
+	int msg_payload_size;
+	long respond_timer;
+	char *shm_data;
+	int remain_sz;
+	int ret = 0;
+	int pos;
+
+	if (rule->size > NP_RULE_ACCESS_MAX_BYTE) {
+		pr_err("Rule size exceeded limit.\n");
+		return -EPERM;
+	}
+
+	/* Allocate memory for IPC message payload */
+	msg_payload_size = sizeof(struct np_rules) + sizeof(struct np_shm_info);
+	rule_send = kzalloc(msg_payload_size, GFP_KERNEL);
+	if (!rule_send)
+		return -ENOMEM;
+
+	/* Allocate memory to temporary store the received shared memory data */
+	shm_data = kzalloc(rule->size, GFP_KERNEL);
+	if (!shm_data) {
+		kfree(rule_send);
+		return -ENOMEM;
+	}
+
+	shm_data_addr_user = *(u64 *)rule->value;
+
+	if (copy_from_user(shm_data, (const void __user *)shm_data_addr_user,
+			   rule->size)) {
+		pr_err("error in copying data from userspace to kernel.\n");
+		kfree(shm_data);
+		kfree(rule_send);
+		return -ENOMEM;
+	}
+
+	memcpy(rule_send, rule, sizeof(struct np_rules));
+	shm_info = (struct np_shm_info *)(rule_send + 1);
+	shm_info->total_size = rule->size;
+
+	for (remain_sz = rule->size, pos = 0;
+	     remain_sz > 0;
+	     pos += shm_info->size) {
+		shm_info->offset = pos;
+
+		shm_info->size = min(np_ctx->np_shm->shm_max_len, remain_sz);
+		remain_sz -= shm_info->size;
+
+		memcpy_toio(np_ctx->np_shm->shm_ptr,
+			    shm_data + pos,
+			    shm_info->size);
+
+		netprox_send_ipc_msg(NP_H2A_CMD_WRITE_SHM_DATA,
+				     (const char *)rule_send,
+				     msg_payload_size);
+
+		agent_access_task = current;
+		set_current_state(TASK_INTERRUPTIBLE);
+		respond_timer =
+			schedule_timeout(msecs_to_jiffies(NP_TIMEOUT_MS));
+
+		/* If respond_timer = 0, no response is received from Agent */
+		if (respond_timer == 0) {
+			pr_err("Netprox MIB passing timeout.\n");
+			ret = -ETIME;
+			break;
+		}
+	}
+
+	kfree(rule_send);
+	kfree(shm_data);
+
+	return ret;
+}
+
+static int netprox_wr_mib(struct np_rules *rule)
+{
+	if (!np_ctx->np_shm) {
+		pr_err("Netprox requires shared memory support for MIB passing.\n");
+		return -EPERM;
+	} else {
+		return netprox_wr_mib_shm(rule);
+	}
+}
 
 static int netprox_send_netdev_mib(int rule_type)
 {
@@ -299,6 +487,32 @@ static int netprox_process_classifier_rule_write(struct np_rules *rule,
 	return ret;
 }
 
+static int netprox_process_mib_rule_write(struct np_rules *rule, int size)
+{
+	int ret = 0;
+
+	switch (rule->type) {
+	case NP_RL_T_SNMP_WRITE_OID_TREE:
+	case NP_RL_T_MDNS_WRITE_RR:
+		ret = netprox_wr_mib(rule);
+		break;
+	case NP_RL_T_SNMP_READ_OID_TREE:
+	case NP_RL_T_MDNS_READ_RR:
+		ret = netprox_rd_mib(rule);
+		break;
+	case NP_RL_T_SNMP_COMMUNITY_STR:
+	case NP_RL_T_TCP_WAKE_PORT:
+		ret = netprox_send_ipc_msg(NP_H2A_CMD_WRITE_CLS_RULE,
+					   (const char *)rule,
+					   size);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
 int netprox_write_rule(struct np_rules *rule, int size)
 {
 	int ret;
@@ -306,6 +520,9 @@ int netprox_write_rule(struct np_rules *rule, int size)
 	switch (rule->group) {
 	case NP_RL_G_CLS:
 		ret = netprox_process_classifier_rule_write(rule, size);
+		break;
+	case NP_RL_G_MIB:
+		ret = netprox_process_mib_rule_write(rule, size);
 		break;
 	default:
 		ret = -EINVAL;
@@ -382,6 +599,13 @@ int netprox_ipc_recv(int cmd, unsigned char *payload, int size)
 		else
 			pr_err("Received cls_rule_result after timeout.\n");
 		break;
+	case NP_A2H_CMD_SHM_DATA_COMPLETE:
+		ipc_ptr = payload;
+		if (agent_access_task)
+			wake_up_process(agent_access_task);
+		else
+			pr_err("Received shm_data_complete after timeout.\n");
+		break;
 	default:
 		pr_err("%s unknown command %d\n", __func__, cmd);
 		break;
@@ -389,6 +613,22 @@ int netprox_ipc_recv(int cmd, unsigned char *payload, int size)
 	return 0;
 }
 EXPORT_SYMBOL(netprox_ipc_recv);
+
+int netprox_register_shm(struct np_shm *np_shm)
+{
+	np_ctx->np_shm = np_shm;
+
+	return 0;
+}
+EXPORT_SYMBOL(netprox_register_shm);
+
+int netprox_deregister_shm(struct np_shm *np_shm)
+{
+	np_ctx->np_shm = NULL;
+
+	return 0;
+}
+EXPORT_SYMBOL(netprox_deregister_shm);
 
 int netprox_register_ipcdev(struct np_ipcdev *np_ipcdev)
 {
