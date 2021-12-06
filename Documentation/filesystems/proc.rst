@@ -546,7 +546,6 @@ encoded manner. The codes are the following:
     nh    no huge page advise flag
     mg    mergable advise flag
     bt    arm64 BTI guarded page
-    ss    shadow stack page
     ==    =======================================
 
 Note that there is no guarantee that every flag and associated mnemonic will

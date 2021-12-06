@@ -231,8 +231,7 @@ typedef struct siginfo {
 #define SEGV_ADIPERR	7	/* Precise MCD exception */
 #define SEGV_MTEAERR	8	/* Asynchronous ARM MTE error */
 #define SEGV_MTESERR	9	/* Synchronous ARM MTE exception */
-#define SEGV_CPERR	10	/* Control protection fault */
-#define NSIGSEGV	10
+#define NSIGSEGV	9
 
 /*
  * SIGBUS si_codes
