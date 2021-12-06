@@ -557,7 +557,6 @@ nouveau_drm_device_init(struct drm_device *dev)
 		nvkm_dbgopt(nouveau_debug, "DRM");
 
 	INIT_LIST_HEAD(&drm->clients);
-	mutex_init(&drm->clients_lock);
 	spin_lock_init(&drm->tile.lock);
 
 	/* workaround an odd issue on nvc1 by disabling the device's
@@ -655,7 +654,6 @@ nouveau_drm_device_fini(struct drm_device *dev)
 	nouveau_cli_fini(&drm->client);
 	nouveau_cli_fini(&drm->master);
 	nvif_parent_dtor(&drm->parent);
-	mutex_destroy(&drm->clients_lock);
 	kfree(drm);
 }
 
@@ -1088,9 +1086,9 @@ nouveau_drm_open(struct drm_device *dev, struct drm_file *fpriv)
 
 	fpriv->driver_priv = cli;
 
-	mutex_lock(&drm->clients_lock);
+	mutex_lock(&drm->client.mutex);
 	list_add(&cli->head, &drm->clients);
-	mutex_unlock(&drm->clients_lock);
+	mutex_unlock(&drm->client.mutex);
 
 done:
 	if (ret && cli) {
@@ -1116,9 +1114,9 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
 		nouveau_abi16_fini(cli->abi16);
 	mutex_unlock(&cli->mutex);
 
-	mutex_lock(&drm->clients_lock);
+	mutex_lock(&drm->client.mutex);
 	list_del(&cli->head);
-	mutex_unlock(&drm->clients_lock);
+	mutex_unlock(&drm->client.mutex);
 
 	nouveau_cli_fini(cli);
 	kfree(cli);
