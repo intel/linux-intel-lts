@@ -103,6 +103,16 @@ struct np_rules {
 	unsigned int value[0];
 };
 
+/* Shared Memory Passing Info */
+struct np_shm_info {
+	/* Offset in byte */
+	unsigned int offset;
+	/* Currently passed data size in byte */
+	unsigned int size;
+	/* Total shared memory size in byte */
+	unsigned int total_size;
+};
+
 /* Commands from Network Proxy Host to Agent */
 enum np_h2a_cmd {
 	/* Network Device for Network Proxy is ready */
@@ -117,6 +127,9 @@ enum np_h2a_cmd {
 	/* Read/Write Responder rule */
 	NP_H2A_CMD_READ_RESP_RULE,
 	NP_H2A_CMD_WRITE_RESP_RULE,
+	/* Read/Write Shared Memory Data */
+	NP_H2A_CMD_READ_SHM_DATA,
+	NP_H2A_CMD_WRITE_SHM_DATA,
 	NP_H2A_CMD_MAX,
 };
 
@@ -132,6 +145,8 @@ enum np_a2h_cmd {
 	NP_A2H_CMD_HOST_IS_AWAKE,
 	/* Network Proxy Mode Exited */
 	NP_A2H_CMD_HOST_IS_EXITED,
+	/* Processing of Shared Memory Data is complete */
+	NP_A2H_CMD_SHM_DATA_COMPLETE,
 	NP_A2H_CMD_MAX,
 };
 
