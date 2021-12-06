@@ -9,6 +9,8 @@
 #include <linux/printk.h>
 #include <linux/types.h>
 
+#define NP_RULE_ACCESS_MAX_BYTE			(500 * 1024)
+
 /* Network Proxy Host States */
 enum np_host_state {
 	NP_HOST_PROXY_EXIT = 0,
@@ -39,6 +41,12 @@ struct np_configfs {
 	void (*agent_info)(struct np_agent_info *info);
 };
 
+/* Shared Memory for Network Proxy Agent */
+struct np_shm {
+	char *shm_ptr;
+	int shm_max_len;
+};
+
 /* Network Proxy Context */
 struct np_context {
 	enum np_host_state host_state;
@@ -47,6 +55,7 @@ struct np_context {
 	struct np_netdev *np_netdev;
 	struct np_configfs *np_configfs;
 	struct np_agent_info np_agent_info;
+	struct np_shm *np_shm;
 };
 
 int netprox_agent_is_ready(void);
@@ -56,6 +65,8 @@ int netprox_send_ipc_msg(int cmd, const char *msg, int size);
 int netprox_read_rule(struct np_rules *rule, void *ptr, int *size);
 int netprox_write_rule(struct np_rules *rule, int size);
 int netprox_ipc_recv(int cmd, unsigned char *payload, int size);
+int netprox_register_shm(struct np_shm *np_shm);
+int netprox_deregister_shm(struct np_shm *np_shm);
 int netprox_register_ipcdev(struct np_ipcdev *np_ipcdev);
 int netprox_deregister_ipcdev(struct np_ipcdev *np_ipcdev);
 int netprox_register_netdev(struct np_netdev *np_netdev, void *config,
