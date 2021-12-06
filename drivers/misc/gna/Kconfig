@@ -1,0 +1,10 @@
+#
+# Intel GNA device
+#
+
+config INTEL_GNA
+        tristate "Intel GMM & Neural Networks Accelerator"
+	depends on X86_64 && PCI
+        help
+	  This adds an option to enable the Intel GMM & Neural Networks Accelerator (Intel GNA) driver.
+	  See Documentation/misc-devices/gna.rst for more information on the functionality.
