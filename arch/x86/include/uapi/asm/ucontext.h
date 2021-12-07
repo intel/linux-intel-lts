@@ -51,11 +51,6 @@
 #define UC_STRICT_RESTORE_SS	0x4
 #endif
 
-/*
- * Indicates IBT WAIT-ENDBR status.
- */
-#define UC_WAIT_ENDBR		0x08
-
 #include <asm-generic/ucontext.h>
 
 #endif /* _ASM_X86_UCONTEXT_H */

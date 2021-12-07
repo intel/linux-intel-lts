@@ -57,6 +57,8 @@
 #include <asm/microcode_intel.h>
 #include <asm/intel-family.h>
 #include <asm/cpu_device_id.h>
+#include <asm/keylocker.h>
+
 #include <asm/uv/uv.h>
 
 #include "cpu.h"
@@ -353,6 +355,23 @@ out:
 /* These bits should not change their value after CPU init is finished. */
 static const unsigned long cr4_pinned_mask =
 	X86_CR4_SMEP | X86_CR4_SMAP | X86_CR4_UMIP | X86_CR4_FSGSBASE;
+
+static __init int x86_nokeylocker_setup(char *arg)
+{
+	/* Expect an exact match without trailing characters */
+	if (strlen(arg))
+		return 0;
+
+	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
+	    !boot_cpu_has(X86_FEATURE_KL))
+		return 1;
+
+	setup_clear_cpu_cap(X86_FEATURE_KL);
+	pr_info("x86/keylocker: Disabled by kernel command line\n");
+	return 1;
+}
+__setup("nokeylocker", x86_nokeylocker_setup);
+
 static DEFINE_STATIC_KEY_FALSE_RO(cr_pinning);
 static unsigned long cr4_pinned_bits __ro_after_init;
 
@@ -460,6 +479,67 @@ static __init int x86_nofsgsbase_setup(char *arg)
 }
 __setup("nofsgsbase", x86_nofsgsbase_setup);
 
+static bool use_hwrand_iwkey;
+
+static __init int setup_hwrand_iwkey(char *arg)
+{
+	/* Require an exact match without trailing characters. */
+	if (strlen(arg))
+		return 0;
+
+	use_hwrand_iwkey = true;
+	return 1;
+}
+__setup("keylocker.use_hwrand", setup_hwrand_iwkey);
+
+static __always_inline void setup_keylocker(struct cpuinfo_x86 *c)
+{
+	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
+	    !cpu_has(c, X86_FEATURE_KL))
+		goto out;
+
+	if (c == &boot_cpu_data) {
+		bool iwkeyloaded;
+
+		cr4_set_bits(X86_CR4_KL);
+
+		if (!check_keylocker_readiness())
+			goto disable_keylocker;
+
+		make_iwkeydata(use_hwrand_iwkey);
+		iwkeyloaded = load_iwkey();
+		if (!iwkeyloaded) {
+			pr_err("x86/keylocker: Fail to load internal key\n");
+			goto disable_keylocker;
+		}
+		backup_iwkey();
+	} else {
+		bool iwkeycopied;
+
+		if (!boot_cpu_has(X86_FEATURE_KL))
+			goto disable_keylocker;
+
+		cr4_set_bits(X86_CR4_KL);
+
+		/* NB: When system wakes up, this path recovers the internal key. */
+		iwkeycopied = copy_iwkey();
+		if (!iwkeycopied) {
+			pr_err_once("x86/keylocker: Fail to copy internal key\n");
+			goto disable_keylocker;
+		}
+	}
+
+	pr_info_once("x86/keylocker: Activated\n");
+	return;
+
+disable_keylocker:
+	clear_cpu_cap(c, X86_FEATURE_KL);
+	pr_info_once("x86/keylocker: Disabled\n");
+out:
+	/* Make sure the feature disabled for kexec-reboot. */
+	cr4_clear_bits(X86_CR4_KL);
+}
+
 /*
  * Protection Keys are not available in 32-bit mode.
  */
@@ -510,14 +590,6 @@ static __init int setup_disable_pku(char *arg)
 }
 __setup("nopku", setup_disable_pku);
 #endif /* CONFIG_X86_64 */
-
-static __always_inline void setup_cet(struct cpuinfo_x86 *c)
-{
-	if (!cpu_feature_enabled(X86_FEATURE_SHSTK))
-		return;
-
-	cr4_set_bits(X86_CR4_CET);
-}
 
 /*
  * Some CPU features depend on higher CPUID levels, which may not always
@@ -1261,11 +1333,6 @@ static void __init cpu_parse_early_param(void)
 	if (cmdline_find_option_bool(boot_command_line, "noxsaves"))
 		setup_clear_cpu_cap(X86_FEATURE_XSAVES);
 
-	if (cmdline_find_option_bool(boot_command_line, "no_user_shstk"))
-		setup_clear_cpu_cap(X86_FEATURE_SHSTK);
-	if (cmdline_find_option_bool(boot_command_line, "no_user_ibt"))
-		setup_clear_cpu_cap(X86_FEATURE_IBT);
-
 	arglen = cmdline_find_option(boot_command_line, "clearcpuid", arg, sizeof(arg));
 	if (arglen <= 0)
 		return;
@@ -1572,6 +1639,8 @@ static void identify_cpu(struct cpuinfo_x86 *c)
 	setup_smep(c);
 	setup_smap(c);
 	setup_umip(c);
+	/* Setup various Intel-specific CPU security features */
+	setup_keylocker(c);
 
 	/* Enable FSGSBASE instructions if available. */
 	if (cpu_has(c, X86_FEATURE_FSGSBASE)) {
@@ -1605,7 +1674,6 @@ static void identify_cpu(struct cpuinfo_x86 *c)
 
 	x86_init_rdrand(c);
 	setup_pku(c);
-	setup_cet(c);
 
 	/*
 	 * Clear/Set all flags overridden by options, need do it

@@ -1210,7 +1210,7 @@ static int split_2MB_gtt_entry(struct intel_vgpu *vgpu,
 	}
 
 	/* Clear dirty field. */
-	se->val64 &= ~_PAGE_DIRTY_BITS;
+	se->val64 &= ~_PAGE_DIRTY;
 
 	ops->clear_pse(se);
 	ops->clear_ips(se);

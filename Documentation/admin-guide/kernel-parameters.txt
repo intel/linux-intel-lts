@@ -2128,6 +2128,10 @@
 			parameter KASAN will print report only for the first
 			invalid access.
 
+	keylocker.use_hwrand
+			[x86] Use on-chip hardware random number generator for
+			the CPU internal key.
+
 	keepinitrd	[HW,ARM]
 
 	kernelcore=	[KNL,X86,IA-64,PPC]
@@ -3197,12 +3201,6 @@
 			noexec=on: enable non-executable mappings (default)
 			noexec=off: disable non-executable mappings
 
-	no_user_shstk	[X86-64] Disable Shadow Stack for user-mode
-			applications
-
-	no_user_ibt	[X86-64] Disable Indirect Branch Tracking for user-mode
-			applications
-
 	nosmap		[X86,PPC]
 			Disable SMAP (Supervisor Mode Access Prevention)
 			even if it is supported by processor.
@@ -3225,6 +3223,8 @@
 			legacy floating-point registers on task switch.
 
 	nohugeiomap	[KNL,X86,PPC,ARM64] Disable kernel huge I/O mappings.
+
+	nokeylocker	[X86] Disables Key Locker hardware feature.
 
 	nosmt		[KNL,S390] Disable symmetric multithreading (SMT).
 			Equivalent to smt=1.

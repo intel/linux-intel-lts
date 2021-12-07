@@ -378,12 +378,9 @@ SECTIONS
 	DISCARDS
 	/DISCARD/ : {
 		*(*.EMB.apuinfo)
-		*(.glink .iplt .plt .comment)
+		*(.glink .iplt .plt .rela* .comment)
 		*(.gnu.version*)
 		*(.gnu.attributes)
 		*(.eh_frame)
-#ifndef CONFIG_RELOCATABLE
-		*(.rela*)
-#endif
 	}
 }

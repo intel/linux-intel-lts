@@ -25,6 +25,7 @@
 #include <asm/cpu.h>
 #include <asm/mmu_context.h>
 #include <asm/cpu_device_id.h>
+#include <asm/keylocker.h>
 
 #ifdef CONFIG_X86_32
 __visible unsigned long saved_context_ebx;
@@ -55,6 +56,39 @@ static void msr_restore_context(struct saved_context *ctxt)
 			wrmsrl(msr->info.msr_no, msr->info.reg.q);
 		msr++;
 	}
+}
+
+/*
+ * The boot CPU executes this function, while other CPUs restore the key
+ * through the setup path in setup_keylocker().
+ */
+static void restore_keylocker(void)
+{
+	u64 iwkeybackup_status;
+	bool iwkeycopied;
+
+	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
+	    !boot_cpu_has(X86_FEATURE_KL))
+		return;
+
+	iwkeybackup_status = read_iwkeybackup_status();
+	if (!(iwkeybackup_status & BIT(0))) {
+		pr_err("x86/keylocker: internal key restoration failed with %s\n",
+		       (iwkeybackup_status & BIT(2)) ? "read error" : "invalid status");
+		WARN_ON(1);
+		goto disable_keylocker;
+	}
+
+	iwkeycopied = copy_iwkey();
+	if (iwkeycopied)
+		return;
+
+	pr_err("x86/keylocker: internal key copy failure\n");
+
+disable_keylocker:
+	pr_info_once("x86/keylocker: Disabled with internal key restoration failure\n");
+	setup_clear_cpu_cap(X86_FEATURE_KL);
+	cr4_clear_bits(X86_CR4_KL);
 }
 
 /**
@@ -265,6 +299,7 @@ static void notrace __restore_processor_state(struct saved_context *ctxt)
 	mtrr_bp_restore();
 	perf_restore_debug_store();
 	msr_restore_context(ctxt);
+	restore_keylocker();
 
 	c = &cpu_data(smp_processor_id());
 	if (cpu_has(c, X86_FEATURE_MSR_IA32_FEAT_CTL))
