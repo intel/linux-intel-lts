@@ -6,3 +6,6 @@
 
 obj-$(CONFIG_INTEL_PMC_CORE)		+= pmc/
 obj-$(CONFIG_INTEL_PMT_CLASS)		+= pmt/
+
+intel_vsec-y				:= vsec.o
+obj-$(CONFIG_INTEL_VSEC)		+= intel_vsec.o
