@@ -206,6 +206,7 @@
 #include "gt/intel_ring.h"
 
 #include "i915_drv.h"
+#include "i915_mm.h"
 #include "i915_perf.h"
 
 /* HW requires this to be a power of two, between 128k and 16M, though driver
