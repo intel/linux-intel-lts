@@ -157,6 +157,8 @@ struct console {
 #endif
 	atomic64_t printk_seq;
 	struct task_struct *thread;
+	uint	ispeed;
+	uint	ospeed;
 	void	*data;
 	struct	 console *next;
 };
