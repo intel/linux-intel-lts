@@ -61,13 +61,10 @@ MODULE_AUTHOR("Paul E. McKenney <paulmck@linux.ibm.com> and Josh Triplett <josh@
 #define RCUTORTURE_RDR_RBH	 0x08	/*  ... rcu_read_lock_bh(). */
 #define RCUTORTURE_RDR_SCHED	 0x10	/*  ... rcu_read_lock_sched(). */
 #define RCUTORTURE_RDR_RCU	 0x20	/*  ... entering another RCU reader. */
-#define RCUTORTURE_RDR_ATOM_BH	 0x40	/*  ... disabling bh while atomic */
-#define RCUTORTURE_RDR_ATOM_RBH	 0x80	/*  ... RBH while atomic */
-#define RCUTORTURE_RDR_NBITS	 8	/* Number of bits defined above. */
+#define RCUTORTURE_RDR_NBITS	 6	/* Number of bits defined above. */
 #define RCUTORTURE_MAX_EXTEND	 \
 	(RCUTORTURE_RDR_BH | RCUTORTURE_RDR_IRQ | RCUTORTURE_RDR_PREEMPT | \
-	 RCUTORTURE_RDR_RBH | RCUTORTURE_RDR_SCHED | \
-	 RCUTORTURE_RDR_ATOM_BH | RCUTORTURE_RDR_ATOM_RBH)
+	 RCUTORTURE_RDR_RBH | RCUTORTURE_RDR_SCHED)
 #define RCUTORTURE_RDR_MAX_LOOPS 0x7	/* Maximum reader extensions. */
 					/* Must be power of two minus one. */
 #define RCUTORTURE_RDR_MAX_SEGS (RCUTORTURE_RDR_MAX_LOOPS + 3)
@@ -1238,11 +1235,7 @@ static void rcutorture_one_extend(int *readstate, int newstate,
 	WARN_ON_ONCE((idxold >> RCUTORTURE_RDR_SHIFT) > 1);
 	rtrsp->rt_readstate = newstate;
 
-	/*
-	 * First, put new protection in place to avoid critical-section gap.
-	 * Disable preemption around the ATOM disables to ensure that
-	 * in_atomic() is true.
-	 */
+	/* First, put new protection in place to avoid critical-section gap. */
 	if (statesnew & RCUTORTURE_RDR_BH)
 		local_bh_disable();
 	if (statesnew & RCUTORTURE_RDR_RBH)
@@ -1253,12 +1246,6 @@ static void rcutorture_one_extend(int *readstate, int newstate,
 		preempt_disable();
 	if (statesnew & RCUTORTURE_RDR_SCHED)
 		rcu_read_lock_sched();
-	preempt_disable();
-	if (statesnew & RCUTORTURE_RDR_ATOM_BH)
-		local_bh_disable();
-	if (statesnew & RCUTORTURE_RDR_ATOM_RBH)
-		rcu_read_lock_bh();
-	preempt_enable();
 	if (statesnew & RCUTORTURE_RDR_RCU)
 		idxnew = cur_ops->readlock() << RCUTORTURE_RDR_SHIFT;
 
