@@ -17,7 +17,7 @@
 #include <linux/trusty/sm_err.h>
 #include <linux/trusty/trusty.h>
 
-#ifdef CONFIG_X86_64
+#ifdef TRUSTY_X86_OWNS_INTR
 extern int trusty_x86_64_release_reserved_vector(unsigned int vector);
 extern void trusty_x86_64_retrigger_irq(unsigned int irq);
 #endif
@@ -159,7 +159,7 @@ static irqreturn_t trusty_irq_handler(int irq, void *data)
 		__func__, irq, trusty_irq->irq, smp_processor_id(),
 		trusty_irq->enable);
 
-#ifdef CONFIG_X86_64
+#ifdef TRUSTY_X86_OWNS_INTR
 	trusty_x86_64_retrigger_irq(irq);
 #endif
 
@@ -266,7 +266,7 @@ static int trusty_irq_create_irq_mapping(struct trusty_irq_state *is, int irq)
 
 	/* check if "interrupt-ranges" property is present */
 	if (!of_find_property(is->dev->of_node, "interrupt-ranges", NULL)) {
-#ifdef CONFIG_X86_64
+#ifdef TRUSTY_X86_OWNS_INTR
 		/* IRQ number which retrieved from Trusty side is vector number */
 		return trusty_x86_64_release_reserved_vector(irq);
 #else

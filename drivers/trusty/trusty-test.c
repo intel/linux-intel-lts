@@ -430,7 +430,6 @@ static struct platform_driver trusty_test_driver = {
 	.driver = {
 		.name = "trusty-test",
 		.of_match_table = trusty_test_of_match,
-		.dev_groups = trusty_test_groups,
 	},
 };
 
