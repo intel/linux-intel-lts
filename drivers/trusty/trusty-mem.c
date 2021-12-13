@@ -147,3 +147,5 @@ int trusty_encode_page_info(struct ns_mem_page_info *inf,
 			   ((u64)mem_attr << 48);
 	return 0;
 }
+
+EXPORT_SYMBOL(trusty_encode_page_info);
