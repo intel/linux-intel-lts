@@ -108,15 +108,17 @@ enum {
 	VMM_SUPPORTED_NUM
 };
 
+#if IS_ENABLED(CONFIG_TRUSTY_X86_64)
 static const char *vmm_signature[] = {
 	[VMM_ID_EVMM] = "EVMMEVMMEVMM",
 	[VMM_ID_ACRN] = "ACRNACRNACRN"
 };
+#endif
 
 /* Detect VMM and return vmm_id */
 static inline int trusty_detect_vmm(void)
 {
-#if IS_ENABLED(CONFIG_TRUSTY)
+#if IS_ENABLED(CONFIG_TRUSTY_X86_64)
 	int i;
 	for (i = 0; i < VMM_SUPPORTED_NUM; i++) {
 		if (hypervisor_cpuid_base(vmm_signature[i], 0))

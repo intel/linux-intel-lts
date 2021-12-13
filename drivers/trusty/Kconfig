@@ -100,6 +100,7 @@ config TRUSTY_CRASH_IS_PANIC
 
 config TRUSTY_X86_64
 	tristate "Trusty x86_64 driver"
+	depends on X86_64
 	default y
 	help
 	  Enable Trusty Intel architecture implementation.
