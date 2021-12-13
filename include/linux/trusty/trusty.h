@@ -76,14 +76,10 @@ int trusty_reclaim_memory(struct device *dev, trusty_shared_mem_id_t id,
 			  struct scatterlist *sglist, unsigned int nents);
 
 struct dma_buf;
-#ifdef CONFIG_TRUSTY_DMA_BUF_FFA_TAG
-u64 trusty_dma_buf_get_ffa_tag(struct dma_buf *dma_buf);
-#else
 static inline u64 trusty_dma_buf_get_ffa_tag(struct dma_buf *dma_buf)
 {
 	return 0;
 }
-#endif
 
 struct trusty_nop {
 	struct list_head node;
