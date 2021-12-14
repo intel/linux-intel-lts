@@ -321,7 +321,7 @@ static struct i915_gem_engines *alloc_engines(unsigned int count)
 
 static struct i915_gem_engines *default_engines(struct i915_gem_context *ctx)
 {
-	const struct intel_gt *gt = &ctx->i915->gt;
+	const struct intel_gt *gt = to_gt(ctx->i915);
 	struct intel_engine_cs *engine;
 	struct i915_gem_engines *e;
 	enum intel_engine_id id;
@@ -645,7 +645,7 @@ static int __context_set_persistence(struct i915_gem_context *ctx, bool state)
 		 * colateral damage, and we should not pretend we can by
 		 * exposing the interface.
 		 */
-		if (!intel_has_reset_engine(&ctx->i915->gt))
+		if (!intel_has_reset_engine(to_gt(ctx->i915)))
 			return -ENODEV;
 
 		i915_gem_context_clear_persistence(ctx);
@@ -940,7 +940,7 @@ int i915_gem_vm_create_ioctl(struct drm_device *dev, void *data,
 	if (args->flags)
 		return -EINVAL;
 
-	ppgtt = i915_ppgtt_create(&i915->gt);
+	ppgtt = i915_ppgtt_create(to_gt(i915));
 	if (IS_ERR(ppgtt))
 		return PTR_ERR(ppgtt);
 
@@ -1459,7 +1459,7 @@ set_engines__load_balance(struct i915_user_extension __user *base, void *data)
 	if (!HAS_EXECLISTS(i915))
 		return -ENODEV;
 
-	if (intel_uc_uses_guc_submission(&i915->gt.uc))
+	if (intel_uc_uses_guc_submission(&to_gt(i915)->uc))
 		return -ENODEV; /* not implement yet */
 
 	if (get_user(idx, &ext->engine_index))
@@ -2161,7 +2161,7 @@ int i915_gem_context_create_ioctl(struct drm_device *dev, void *data,
 	if (args->flags & I915_CONTEXT_CREATE_FLAGS_UNKNOWN)
 		return -EINVAL;
 
-	ret = intel_gt_terminally_wedged(&i915->gt);
+	ret = intel_gt_terminally_wedged(to_gt(i915));
 	if (ret)
 		return ret;
 

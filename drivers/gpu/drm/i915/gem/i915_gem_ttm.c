@@ -368,7 +368,7 @@ static int i915_ttm_accel_move(struct ttm_buffer_object *bo,
 	struct i915_request *rq;
 	int ret;
 
-	if (!i915->gt.migrate.context)
+	if (!to_gt(i915)->migrate.context)
 		return -EINVAL;
 
 	if (!bo->ttm || !ttm_tt_is_populated(bo->ttm)) {
@@ -379,8 +379,8 @@ static int i915_ttm_accel_move(struct ttm_buffer_object *bo,
 		    !(bo->ttm->page_flags & TTM_PAGE_FLAG_ZERO_ALLOC))
 			return 0;
 
-		intel_engine_pm_get(i915->gt.migrate.context->engine);
-		ret = intel_context_migrate_clear(i915->gt.migrate.context, NULL,
+		intel_engine_pm_get(to_gt(i915)->migrate.context->engine);
+		ret = intel_context_migrate_clear(to_gt(i915)->migrate.context, NULL,
 						  dst_st->sgl, I915_CACHE_NONE,
 						  dst_mem->mem_type >= I915_PL_LMEM0,
 						  0, &rq);
@@ -389,13 +389,13 @@ static int i915_ttm_accel_move(struct ttm_buffer_object *bo,
 			i915_request_wait(rq, 0, MAX_SCHEDULE_TIMEOUT);
 			i915_request_put(rq);
 		}
-		intel_engine_pm_put(i915->gt.migrate.context->engine);
+		intel_engine_pm_put(to_gt(i915)->migrate.context->engine);
 	} else {
 		src_st = src_man->use_tt ? i915_ttm_tt_get_st(bo->ttm) :
 						obj->ttm.cached_io_st;
 
-		intel_engine_pm_get(i915->gt.migrate.context->engine);
-		ret = intel_context_migrate_copy(i915->gt.migrate.context,
+		intel_engine_pm_get(to_gt(i915)->migrate.context->engine);
+		ret = intel_context_migrate_copy(to_gt(i915)->migrate.context,
 						 NULL, src_st->sgl, I915_CACHE_NONE,
 						 bo->resource->mem_type >= I915_PL_LMEM0,
 						 dst_st->sgl, I915_CACHE_NONE,
@@ -405,7 +405,7 @@ static int i915_ttm_accel_move(struct ttm_buffer_object *bo,
 			i915_request_wait(rq, 0, MAX_SCHEDULE_TIMEOUT);
 			i915_request_put(rq);
 		}
-		intel_engine_pm_put(i915->gt.migrate.context->engine);
+		intel_engine_pm_put(to_gt(i915)->migrate.context->engine);
 	}
 
 	return ret;
