@@ -62,6 +62,9 @@
 /* maximum number of reset retries before giving up */
 #define MAX_HOST_RESET_RETRIES 5
 
+/* Maximum number of error handler retries before giving up */
+#define MAX_ERR_HANDLER_RETRIES 5
+
 /* Expose the flag value from utp_upiu_query.value */
 #define MASK_QUERY_UPIU_FLAG_LOC 0xFF
 
@@ -2684,7 +2687,19 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 
 	switch (hba->ufshcd_state) {
 	case UFSHCD_STATE_OPERATIONAL:
+		break;
 	case UFSHCD_STATE_EH_SCHEDULED_NON_FATAL:
+		/*
+		 * SCSI error handler can call ->queuecommand() while UFS error
+		 * handler is in progress. Error interrupts could change the
+		 * state from UFSHCD_STATE_RESET to
+		 * UFSHCD_STATE_EH_SCHEDULED_NON_FATAL. Prevent requests
+		 * being issued in that case.
+		 */
+		if (ufshcd_eh_in_progress(hba)) {
+			err = SCSI_MLQUEUE_HOST_BUSY;
+			goto out;
+		}
 		break;
 	case UFSHCD_STATE_EH_SCHEDULED_FATAL:
 		/*
@@ -6030,12 +6045,14 @@ static bool ufshcd_is_pwr_mode_restore_needed(struct ufs_hba *hba)
 static void ufshcd_err_handler(struct work_struct *work)
 {
 	struct ufs_hba *hba;
+	int retries = MAX_ERR_HANDLER_RETRIES;
 	unsigned long flags;
-	bool err_xfer = false;
-	bool err_tm = false;
-	int err = 0, pmc_err;
+	bool needs_restore;
+	bool needs_reset;
+	bool err_xfer;
+	bool err_tm;
+	int pmc_err;
 	int tag;
-	bool needs_reset = false, needs_restore = false;
 
 	hba = container_of(work, struct ufs_hba, eh_work);
 
@@ -6054,6 +6071,12 @@ static void ufshcd_err_handler(struct work_struct *work)
 	/* Complete requests that have door-bell cleared by h/w */
 	ufshcd_complete_requests(hba);
 	spin_lock_irqsave(hba->host->host_lock, flags);
+again:
+	needs_restore = false;
+	needs_reset = false;
+	err_xfer = false;
+	err_tm = false;
+
 	if (hba->ufshcd_state != UFSHCD_STATE_ERROR)
 		hba->ufshcd_state = UFSHCD_STATE_RESET;
 	/*
@@ -6174,6 +6197,8 @@ lock_skip_pending_xfer_clear:
 do_reset:
 	/* Fatal errors need reset */
 	if (needs_reset) {
+		int err;
+
 		hba->force_reset = false;
 		spin_unlock_irqrestore(hba->host->host_lock, flags);
 		err = ufshcd_reset_and_restore(hba);
@@ -6192,6 +6217,13 @@ skip_err_handling:
 		if (hba->saved_err || hba->saved_uic_err)
 			dev_err_ratelimited(hba->dev, "%s: exit: saved_err 0x%x saved_uic_err 0x%x",
 			    __func__, hba->saved_err, hba->saved_uic_err);
+	}
+	/* Exit in an operational state or dead */
+	if (hba->ufshcd_state != UFSHCD_STATE_OPERATIONAL &&
+	    hba->ufshcd_state != UFSHCD_STATE_ERROR) {
+		if (--retries)
+			goto again;
+		hba->ufshcd_state = UFSHCD_STATE_ERROR;
 	}
 	ufshcd_clear_eh_in_progress(hba);
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
@@ -7093,31 +7125,41 @@ static int ufshcd_host_reset_and_restore(struct ufs_hba *hba)
  */
 static int ufshcd_reset_and_restore(struct ufs_hba *hba)
 {
-	u32 saved_err;
-	u32 saved_uic_err;
+	u32 saved_err = 0;
+	u32 saved_uic_err = 0;
 	int err = 0;
 	unsigned long flags;
 	int retries = MAX_HOST_RESET_RETRIES;
 
-	/*
-	 * This is a fresh start, cache and clear saved error first,
-	 * in case new error generated during reset and restore.
-	 */
 	spin_lock_irqsave(hba->host->host_lock, flags);
-	saved_err = hba->saved_err;
-	saved_uic_err = hba->saved_uic_err;
-	hba->saved_err = 0;
-	hba->saved_uic_err = 0;
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-
 	do {
+		/*
+		 * This is a fresh start, cache and clear saved error first,
+		 * in case new error generated during reset and restore.
+		 */
+		saved_err |= hba->saved_err;
+		saved_uic_err |= hba->saved_uic_err;
+		hba->saved_err = 0;
+		hba->saved_uic_err = 0;
+		hba->force_reset = false;
+		hba->ufshcd_state = UFSHCD_STATE_RESET;
+		spin_unlock_irqrestore(hba->host->host_lock, flags);
+
 		/* Reset the attached device */
 		ufshcd_device_reset(hba);
 
 		err = ufshcd_host_reset_and_restore(hba);
+
+		spin_lock_irqsave(hba->host->host_lock, flags);
+		if (err)
+			continue;
+		/* Do not exit unless operational or dead */
+		if (hba->ufshcd_state != UFSHCD_STATE_OPERATIONAL &&
+		    hba->ufshcd_state != UFSHCD_STATE_ERROR &&
+		    hba->ufshcd_state != UFSHCD_STATE_EH_SCHEDULED_NON_FATAL)
+			err = -EAGAIN;
 	} while (err && --retries);
 
-	spin_lock_irqsave(hba->host->host_lock, flags);
 	/*
 	 * Inform scsi mid-layer that we did reset and allow to handle
 	 * Unit Attention properly.

@@ -26,6 +26,7 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
+#include <sound/jack.h>
 
 #include "rl6231.h"
 #include "rt5660.h"
@@ -1119,6 +1120,134 @@ static int rt5660_set_bias_level(struct snd_soc_component *component,
 	return 0;
 }
 
+#define JACK_SETTLE_TIME 100
+#define JACK_DETECT_MAXCOUNT 4
+
+static bool rt5660_jack_inserted(struct snd_soc_component *component)
+{
+	unsigned int val;
+	int i;
+
+	for (i = 0; i < JACK_DETECT_MAXCOUNT; i++) {
+		msleep(JACK_SETTLE_TIME);
+		val = snd_soc_component_read(component, RT5660_INT_IRQ_ST);
+		dev_dbg(component->dev, "Mx-BF=%#04x\n", val);
+	}
+	val &= 0x0010;
+
+	return (val == 0x0010);
+}
+
+static void rt5660_jack_detect_work(struct work_struct *work)
+{
+	struct rt5660_priv *rt5660 =
+		container_of(work, struct rt5660_priv, jack_detect_work.work);
+	struct snd_soc_component *component = rt5660->component;
+	bool inserted;
+
+	while (!rt5660->component)
+		usleep_range(10000, 15000);
+
+	while (!rt5660->component->card->instantiated)
+		usleep_range(10000, 15000);
+
+	inserted = rt5660_jack_inserted(component);
+	if (!inserted) {
+		if (rt5660->lo_jack->status & SND_JACK_LINEOUT) {
+			/* Jack removed */
+			dev_dbg(component->dev, "Jack unplugged\n");
+			snd_soc_jack_report(rt5660->lo_jack, 0,
+					SND_JACK_LINEOUT);
+		} else {
+			dev_dbg(component->dev, "No jack plugged in\n");
+		}
+	} else {
+		if (!(rt5660->lo_jack->status & SND_JACK_LINEOUT)) {
+			dev_dbg(component->dev, "Jack plugged in\n");
+			snd_soc_jack_report(rt5660->lo_jack,
+				SND_JACK_LINEOUT, SND_JACK_LINEOUT);
+		} else {
+			dev_warn(component->dev, "Spurious IRQ\n");
+		}
+	}
+}
+
+static irqreturn_t rt5660_irq(int irq, void *data)
+{
+	struct rt5660_priv *rt5660 = data;
+
+	queue_delayed_work(system_power_efficient_wq,
+			&rt5660->jack_detect_work, msecs_to_jiffies(100));
+
+	return IRQ_HANDLED;
+}
+
+static void rt5660_cancel_work(void *data)
+{
+	struct rt5660_priv *rt5660 = data;
+
+	cancel_delayed_work_sync(&rt5660->jack_detect_work);
+}
+
+static void rt5660_enable_jack_detect(struct snd_soc_component *component,
+				      struct snd_soc_jack *lo_jack)
+{
+	struct rt5660_priv *rt5660 = snd_soc_component_get_drvdata(component);
+
+	/* IRQ output on GPIO1 */
+	snd_soc_component_update_bits(component, RT5660_GPIO_CTRL2,
+		RT5660_GP1_PF_MASK, RT5660_GP1_PF_OUT);
+	snd_soc_component_update_bits(component, RT5660_GPIO_CTRL1,
+		RT5660_GP1_PIN_MASK, RT5660_GP1_PIN_IRQ);
+
+	/* Set GPIO2 as GPIO JD source */
+	snd_soc_component_update_bits(component, RT5660_JD_CTRL,
+		RT5660_JD_MASK, RT5660_JD_GPIO2);
+
+	/* Enable IRQ output source configure of jd status
+	 * and invert output JD signal
+	 */
+	snd_soc_component_update_bits(component, RT5660_IRQ_CTRL1,
+		RT5660_IRQ_JD_MASK | RT5660_JD_P_MASK,
+		RT5660_IRQ_JD_NOR | RT5660_JD_P_INV);
+
+	rt5660->lo_jack = lo_jack;
+
+	enable_irq(rt5660->irq);
+	/* sync initial jack state */
+	queue_delayed_work(system_power_efficient_wq,
+			&rt5660->jack_detect_work, msecs_to_jiffies(100));
+}
+
+static void rt5660_disable_jack_detect(struct snd_soc_component *component)
+{
+	struct rt5660_priv *rt5660 = snd_soc_component_get_drvdata(component);
+
+	snd_soc_component_update_bits(component, RT5660_GPIO_CTRL2,
+		RT5660_GP1_PF_MASK, 0);
+	snd_soc_component_update_bits(component, RT5660_GPIO_CTRL1,
+		RT5660_GP1_PIN_MASK, 0);
+	snd_soc_component_update_bits(component, RT5660_JD_CTRL,
+		RT5660_JD_MASK, 0);
+	snd_soc_component_update_bits(component, RT5660_IRQ_CTRL1,
+		RT5660_IRQ_JD_MASK | RT5660_JD_P_MASK, 0);
+
+	disable_irq(rt5660->irq);
+	rt5660_cancel_work(rt5660);
+	rt5660->lo_jack = NULL;
+}
+
+static int rt5660_set_jack(struct snd_soc_component *component,
+			   struct snd_soc_jack *jack, void *data)
+{
+	if (jack)
+		rt5660_enable_jack_detect(component, jack);
+	else
+		rt5660_disable_jack_detect(component);
+
+	return 0;
+}
+
 static int rt5660_probe(struct snd_soc_component *component)
 {
 	struct rt5660_priv *rt5660 = snd_soc_component_get_drvdata(component);
@@ -1200,6 +1329,7 @@ static const struct snd_soc_component_driver soc_component_dev_rt5660 = {
 	.suspend		= rt5660_suspend,
 	.resume			= rt5660_resume,
 	.set_bias_level		= rt5660_set_bias_level,
+	.set_jack		= rt5660_set_jack,
 	.controls		= rt5660_snd_controls,
 	.num_controls		= ARRAY_SIZE(rt5660_snd_controls),
 	.dapm_widgets		= rt5660_dapm_widgets,
@@ -1247,6 +1377,8 @@ MODULE_DEVICE_TABLE(of, rt5660_of_match);
 static const struct acpi_device_id rt5660_acpi_match[] = {
 	{ "10EC5660", 0 },
 	{ "10EC3277", 0 },
+	{ "INTC1027", 0 },
+	{ "INT34C2", 0 },
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, rt5660_acpi_match);
@@ -1332,9 +1464,42 @@ static int rt5660_i2c_probe(struct i2c_client *i2c,
 				RT5660_SEL_DMIC_DATA_IN1P);
 	}
 
+	rt5660->irq = i2c->irq;
+
+	INIT_DELAYED_WORK(&rt5660->jack_detect_work, rt5660_jack_detect_work);
+
+	/* Make sure work is stopped on probe-error / remove */
+	ret = devm_add_action_or_reset(&i2c->dev, rt5660_cancel_work, rt5660);
+	if (ret)
+		return ret;
+
+	ret = devm_request_irq(&i2c->dev, rt5660->irq, rt5660_irq,
+			       IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
+			       | IRQF_ONESHOT, "rt5660", rt5660);
+	if (ret == 0) {
+		/* Gets re-enabled by rt5660_set_jack() */
+		disable_irq(rt5660->irq);
+	} else {
+		dev_err(&i2c->dev, "Failed to reguest IRQ %d: %d\n",
+			 rt5660->irq, ret);
+		rt5660->irq = -ENXIO;
+	}
+
 	return devm_snd_soc_register_component(&i2c->dev,
 				      &soc_component_dev_rt5660,
 				      rt5660_dai, ARRAY_SIZE(rt5660_dai));
+}
+
+static int rt5660_i2c_remove(struct i2c_client *i2c)
+{
+	struct rt5660_priv *rt5660 = i2c_get_clientdata(i2c);
+
+	if (i2c->irq)
+		free_irq(i2c->irq, rt5660);
+
+	cancel_delayed_work_sync(&rt5660->jack_detect_work);
+
+	return 0;
 }
 
 static struct i2c_driver rt5660_i2c_driver = {
@@ -1344,6 +1509,7 @@ static struct i2c_driver rt5660_i2c_driver = {
 		.of_match_table = of_match_ptr(rt5660_of_match),
 	},
 	.probe = rt5660_i2c_probe,
+	.remove = rt5660_i2c_remove,
 	.id_table = rt5660_i2c_id,
 };
 module_i2c_driver(rt5660_i2c_driver);
