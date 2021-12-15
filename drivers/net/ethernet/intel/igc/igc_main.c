@@ -3781,6 +3781,7 @@ static int igc_alloc_q_vector(struct igc_adapter *adapter,
  */
 static int igc_alloc_q_vectors(struct igc_adapter *adapter)
 {
+	unsigned int num_q_vectors = adapter->num_q_vectors;
 	int rxr_remaining = adapter->num_rx_queues;
 	int txr_remaining = adapter->num_tx_queues;
 	int rxr_idx = 0, txr_idx = 0, v_idx = 0;
@@ -3799,6 +3800,13 @@ static int igc_alloc_q_vectors(struct igc_adapter *adapter)
 			rxr_remaining--;
 			rxr_idx++;
 		}
+	}
+
+	if (num_q_vectors > MAX_Q_VECTORS) {
+		num_q_vectors = MAX_Q_VECTORS;
+		dev_warn(&adapter->pdev->dev,
+			 "The number of queue vectors (%d) is higher than max allowed (%d)\n",
+			 adapter->num_q_vectors, MAX_Q_VECTORS);
 	}
 
 	for (; v_idx < q_vectors; v_idx++) {
