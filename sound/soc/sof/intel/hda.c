@@ -1033,7 +1033,8 @@ int hda_dsp_remove(struct snd_sof_dev *sdev)
 }
 
 #if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA)
-static int hda_generic_machine_select(struct snd_sof_dev *sdev)
+static void hda_generic_machine_select(struct snd_sof_dev *sdev,
+				       struct snd_soc_acpi_mach **mach)
 {
 	struct hdac_bus *bus = sof_to_bus(sdev);
 	struct snd_soc_acpi_mach_params *mach_params;
@@ -1065,7 +1066,7 @@ static int hda_generic_machine_select(struct snd_sof_dev *sdev)
 		 *  - one HDMI codec, and/or
 		 *  - one external HDAudio codec
 		 */
-		if (!pdata->machine && codec_num <= 2) {
+		if (!*mach && codec_num <= 2) {
 			hda_mach = snd_soc_acpi_intel_hda_machines;
 
 			/* topology: use the info from hda_machines */
@@ -1080,56 +1081,39 @@ static int hda_generic_machine_select(struct snd_sof_dev *sdev)
 			else
 				idisp_str = "";
 
+			/* topology: use the info from hda_machines */
+			tplg_filename = hda_mach->sof_tplg_filename;
+			ret = dmic_topology_fixup(sdev, &tplg_filename, idisp_str, &dmic_num);
+			if (ret < 0)
+				return;
 
-			switch (dmic_num) {
-			case 1:
-				dmic_str = "-1ch";
-				break;
-			case 2:
-				dmic_str = "-2ch";
-				break;
-			case 3:
-				dmic_str = "-3ch";
-				break;
-			case 4:
-				dmic_str = "-4ch";
-				break;
-			default:
-				dmic_num = 0;
-				dmic_str = "";
-				break;
+			hda_mach->mach_params.dmic_num = dmic_num;
+			pdata->tplg_filename = tplg_filename;
+
+			if (codec_num == 2) {
+				/*
+				 * Prevent SoundWire links from starting when an external
+				 * HDaudio codec is used
+				 */
+				hda_mach->mach_params.link_mask = 0;
 			}
 
-			tplg_filename = pdata->tplg_filename;
-			tplg_filename = fixup_tplg_name(sdev, tplg_filename,
-							idisp_str, dmic_str);
-			if (!tplg_filename)
-				return -EINVAL;
-
-			dev_info(bus->dev,
-				 "DMICs detected in NHLT tables: %d\n",
-				 dmic_num);
-
-			pdata->machine = hda_mach;
-			pdata->tplg_filename = tplg_filename;
+			*mach = hda_mach;
 		}
 	}
 
 	/* used by hda machine driver to create dai links */
-	if (pdata->machine) {
-		mach_params = (struct snd_soc_acpi_mach_params *)
-			&pdata->machine->mach_params;
+	if (*mach) {
+		mach_params = &(*mach)->mach_params;
 		mach_params->codec_mask = bus->codec_mask;
 		mach_params->common_hdmi_codec_drv = hda_codec_use_common_hdmi;
 		mach_params->dmic_num = dmic_num;
 	}
-
-	return 0;
 }
 #else
-static int hda_generic_machine_select(struct snd_sof_dev *sdev)
+static void hda_generic_machine_select(struct snd_sof_dev *sdev,
+				       struct snd_soc_acpi_mach **mach)
 {
-	return 0;
 }
 #endif
 
@@ -1217,7 +1201,7 @@ static bool link_slaves_found(struct snd_sof_dev *sdev,
 	return true;
 }
 
-static int hda_sdw_machine_select(struct snd_sof_dev *sdev)
+static struct snd_soc_acpi_mach *hda_sdw_machine_select(struct snd_sof_dev *sdev)
 {
 	struct snd_sof_pdata *pdata = sdev->pdata;
 	const struct snd_soc_acpi_link_adr *link;
@@ -1236,7 +1220,7 @@ static int hda_sdw_machine_select(struct snd_sof_dev *sdev)
 	 * machines, for mixed cases with I2C/I2S the detection relies
 	 * on the HID list.
 	 */
-	if (link_mask && !pdata->machine) {
+	if (link_mask) {
 		for (mach = pdata->desc->alt_machines;
 		     mach && mach->link_mask; mach++) {
 			/*
@@ -1269,41 +1253,63 @@ static int hda_sdw_machine_select(struct snd_sof_dev *sdev)
 				break;
 		}
 		if (mach && mach->link_mask) {
-			dev_dbg(bus->dev,
-				"SoundWire machine driver %s topology %s\n",
-				mach->drv_name,
-				mach->sof_tplg_filename);
-			pdata->machine = mach;
+			int dmic_num = 0;
+
 			mach->mach_params.links = mach->links;
 			mach->mach_params.link_mask = mach->link_mask;
 			mach->mach_params.platform = dev_name(sdev->dev);
 			pdata->fw_filename = mach->sof_fw_filename;
 			pdata->tplg_filename = mach->sof_tplg_filename;
-		} else {
-			dev_info(sdev->dev,
-				 "No SoundWire machine driver found\n");
+
+			/*
+			 * DMICs use up to 4 pins and are typically pin-muxed with SoundWire
+			 * link 2 and 3, thus we only try to enable dmics if all conditions
+			 * are true:
+			 * a) link 2 and 3 are not used by SoundWire
+			 * b) the NHLT table reports the presence of microphones
+			 */
+			if (!(mach->link_mask & GENMASK(3, 2))) {
+				const char *tplg_filename = mach->sof_tplg_filename;
+				int ret;
+
+				ret = dmic_topology_fixup(sdev, &tplg_filename, "", &dmic_num);
+				if (ret < 0)
+					return NULL;
+
+				pdata->tplg_filename = tplg_filename;
+			}
+			mach->mach_params.dmic_num = dmic_num;
+
+			dev_dbg(sdev->dev,
+				"SoundWire machine driver %s topology %s\n",
+				mach->drv_name,
+				pdata->tplg_filename);
+
+			return mach;
 		}
+
+		dev_info(sdev->dev, "No SoundWire machine driver found\n");
 	}
 
-	return 0;
+	return NULL;
 }
 #else
-static int hda_sdw_machine_select(struct snd_sof_dev *sdev)
+static struct snd_soc_acpi_mach *hda_sdw_machine_select(struct snd_sof_dev *sdev)
 {
-	return 0;
+	return NULL;
 }
 #endif
 
-void hda_set_mach_params(const struct snd_soc_acpi_mach *mach,
+void hda_set_mach_params(struct snd_soc_acpi_mach *mach,
 			 struct snd_sof_dev *sdev)
 {
 	struct snd_soc_acpi_mach_params *mach_params;
 
-	mach_params = (struct snd_soc_acpi_mach_params *)&mach->mach_params;
+	mach_params = &mach->mach_params;
 	mach_params->platform = dev_name(sdev->dev);
 }
 
-void hda_machine_select(struct snd_sof_dev *sdev)
+struct snd_soc_acpi_mach *hda_machine_select(struct snd_sof_dev *sdev)
 {
 	struct snd_sof_pdata *sof_pdata = sdev->pdata;
 	const struct sof_dev_desc *desc = sof_pdata->desc;
@@ -1320,25 +1326,6 @@ void hda_machine_select(struct snd_sof_dev *sdev)
 		 */
 		if (!sof_pdata->tplg_filename)
 			sof_pdata->tplg_filename = mach->sof_tplg_filename;
-
-		sof_pdata->machine = mach;
-		/* report to machine driver if any DMICs are found */
-		mach->mach_params.dmic_num = check_dmic_num(sdev);
-
-		if (mach->tplg_quirk_mask & SND_SOC_ACPI_TPLG_INTEL_DMIC_NUMBER &&
-		    mach->mach_params.dmic_num) {
-			tplg_filename = devm_kasprintf(sdev->dev, GFP_KERNEL,
-						       "%s%s%d%s",
-						       sof_pdata->tplg_filename,
-						       "-dmic",
-						       mach->mach_params.dmic_num,
-						       "ch");
-			if (!tplg_filename)
-				return;
-
-			sof_pdata->tplg_filename = tplg_filename;
-			add_extension = true;
-		}
 
 		if (mach->link_mask) {
 			mach->mach_params.links = mach->links;
@@ -1386,16 +1373,18 @@ void hda_machine_select(struct snd_sof_dev *sdev)
 	/*
 	 * If I2S fails, try SoundWire
 	 */
-	hda_sdw_machine_select(sdev);
+	if (!mach)
+		mach = hda_sdw_machine_select(sdev);
 
 	/*
 	 * Choose HDA generic machine driver if mach is NULL.
 	 * Otherwise, set certain mach params.
 	 */
-	hda_generic_machine_select(sdev);
-
-	if (!sof_pdata->machine)
+	hda_generic_machine_select(sdev, &mach);
+	if (!mach)
 		dev_warn(sdev->dev, "warning: No matching ASoC machine driver found\n");
+
+	return mach;
 }
 
 MODULE_LICENSE("Dual BSD/GPL");
