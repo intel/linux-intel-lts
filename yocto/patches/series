@@ -11,3 +11,6 @@
 0001-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
 0002-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
 0003-drm-nouveau-clean-up-all-clients-on-device-removal.patch
+
+# CVE-2021-43975
+0001-atlantic-Fix-OOB-read-and-write-in-hw_atl_utils_fw_r.patch
