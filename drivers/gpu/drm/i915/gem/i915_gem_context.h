@@ -159,7 +159,7 @@ i915_gem_context_get_eb_vm(struct i915_gem_context *ctx)
 	rcu_read_lock();
 	vm = rcu_dereference(ctx->vm);
 	if (!vm)
-		vm = &ctx->i915->ggtt.vm;
+		vm = &to_gt(ctx->i915)->ggtt->vm;
 	vm = i915_vm_get(vm);
 	rcu_read_unlock();
 

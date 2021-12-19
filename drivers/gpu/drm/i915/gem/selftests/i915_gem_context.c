@@ -1384,7 +1384,7 @@ static int igt_ctx_readonly(void *arg)
 		goto out_file;
 	}
 
-	vm = ctx_vm(ctx) ?: &i915->ggtt.alias->vm;
+	vm = ctx_vm(ctx) ?: &to_gt(i915)->ggtt->alias->vm;
 	if (!vm || !vm->has_read_only) {
 		err = 0;
 		goto out_file;

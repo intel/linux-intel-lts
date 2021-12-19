@@ -1105,7 +1105,7 @@ static inline struct i915_ggtt *cache_to_ggtt(struct reloc_cache *cache)
 {
 	struct drm_i915_private *i915 =
 		container_of(cache, struct i915_execbuffer, reloc_cache)->i915;
-	return &i915->ggtt;
+	return to_gt(i915)->ggtt;
 }
 
 static void reloc_cache_put_pool(struct i915_execbuffer *eb, struct reloc_cache *cache)
