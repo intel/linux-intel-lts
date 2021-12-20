@@ -257,7 +257,7 @@ static int stmmac_test_loopback_validate(struct sk_buff *skb,
 	struct tcphdr *thdr;
 	struct iphdr *ihdr;
 
-	skb = skb_unshare(skb, GFP_ATOMIC);
+	skb = skb_share_check(skb, GFP_ATOMIC);
 	if (!skb)
 		goto out;
 
@@ -846,7 +846,7 @@ static int stmmac_test_vlan_validate(struct sk_buff *skb,
 
 	proto = tpriv->double_vlan ? ETH_P_8021AD : ETH_P_8021Q;
 
-	skb = skb_unshare(skb, GFP_ATOMIC);
+	skb = skb_share_check(skb, GFP_ATOMIC);
 	if (!skb)
 		goto out;
 
