@@ -71,3 +71,6 @@
 
 # CVE-2020-27820
 0001-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
+
+# CVE-2021-0929
+0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
