@@ -65,6 +65,51 @@ u32 intel_xpcie_get_device_num(u32 *id_list)
 	return num;
 }
 
+struct xpcie *intel_xpcie_get_device_by_name(const char *name)
+{
+	struct xpcie *xpcie = NULL;
+	bool found = false;
+
+	if (list_empty(&dev_list))
+		return xpcie;
+
+	mutex_lock(&dev_list_mutex);
+	list_for_each_entry(xpcie, &dev_list, list) {
+		if (!strncmp(xpcie->name, name, XPCIE_MAX_NAME_LEN)) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&dev_list_mutex);
+
+	if (!found)
+		xpcie = NULL;
+
+	return xpcie;
+}
+
+struct xpcie *intel_xpcie_get_device_by_phys_id(u32 phys_id)
+{
+	struct xpcie *xpcie = NULL;
+	bool found = false;
+
+	if (list_empty(&dev_list))
+		return xpcie;
+
+	mutex_lock(&dev_list_mutex);
+	list_for_each_entry(xpcie, &dev_list, list) {
+		if (xpcie->sw_devid == phys_id) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&dev_list_mutex);
+	if (!found)
+		return NULL;
+
+	return xpcie;
+}
+
 struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid)
 {
 	struct xpcie *xpcie = NULL;

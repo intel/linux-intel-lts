@@ -324,10 +324,8 @@ int intel_xpcie_pci_init(struct xpcie_dev *xdev, struct pci_dev *pdev)
 			 "failed to configure AER with rc %d\n", rc);
 #endif
 
-#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
 	xdev->fl_vbuf = NULL;
 	xdev->fl_buf_size = 0;
-#endif
 
 error_dma_mask:
 	intel_xpcie_pci_unmap_bar(xdev);
@@ -365,14 +363,13 @@ int intel_xpcie_pci_cleanup(struct xpcie_dev *xdev)
 	xdev->core_irq_callback = NULL;
 	intel_xpcie_pci_irq_cleanup(xdev);
 
-#if (IS_ENABLED(CONFIG_ARCH_THUNDERBAY))
 	if (xdev->fl_vbuf) {
 		dma_free_coherent(&xdev->pci->dev, xdev->fl_buf_size,
 				  xdev->fl_vbuf, xdev->fl_phys_addr);
 		xdev->fl_vbuf = NULL;
 		xdev->fl_buf_size = 0;
 	}
-#endif
+
 	intel_xpcie_core_cleanup(&xdev->xpcie);
 
 #ifdef XLINK_PCIE_RH_DRV_AER
@@ -510,38 +507,4 @@ void intel_xpcie_pci_notify_event(struct xpcie_dev *xdev,
 
 	if (xdev->event_fn)
 		xdev->event_fn(xdev->xpcie.sw_devid, event_type);
-}
-
-struct xpcie_dev *intel_xpcie_get_device_by_name(const char *name)
-{
-	struct xpcie_dev *p;
-	bool found = false;
-
-	mutex_lock(&dev_list_mutex);
-	list_for_each_entry(p, &dev_list, list) {
-		if (!strncmp(p->name, name, XPCIE_MAX_NAME_LEN)) {
-			found = true;
-			break;
-		}
-	}
-	mutex_unlock(&dev_list_mutex);
-
-	if (!found)
-		p = NULL;
-
-	return p;
-}
-
-struct xpcie_dev *intel_xpcie_get_device_by_phys_id(u32 phys_id)
-{
-	struct xpcie_dev *xdev;
-
-	mutex_lock(&dev_list_mutex);
-	list_for_each_entry(xdev, &dev_list, list) {
-		if (xdev->xpcie.sw_devid == phys_id)
-			break;
-	}
-	mutex_unlock(&dev_list_mutex);
-
-	return xdev;
 }

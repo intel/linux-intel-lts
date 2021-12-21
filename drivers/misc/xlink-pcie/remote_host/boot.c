@@ -10,6 +10,7 @@
 #include <linux/delay.h>
 
 #include "pci.h"
+#include "../common/util.h"
 #include "../common/boot.h"
 
 #define STR_EQUAL(a, b) !strncmp(a, b, strlen(b))
@@ -18,9 +19,8 @@ enum xpcie_stage intel_xpcie_check_magic(struct xpcie_dev *xdev)
 {
 	char magic[XPCIE_BOOT_MAGIC_STRLEN];
 
-	memcpy_fromio(magic, xdev->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
+	memcpy_fromio(magic, (void *)xdev->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
 		      XPCIE_BOOT_MAGIC_STRLEN);
-
 	if (strlen(magic) == 0)
 		return STAGE_UNINIT;
 
@@ -54,10 +54,11 @@ void xpcie_device_irq(struct work_struct *work)
 		xdev->boot_notif_fn(xdev->xpcie.sw_devid);
 };
 
-int intel_xpcie_connect_boot_device(const char *dev_name, u32 *phys_dev_id,
-				    mxlk_pcie_boot_event notif_fn)
+int mxlk_pcie_connect_boot_device(const char *dev_name, u32 *phys_dev_id,
+				  mxlk_pcie_boot_event notif_fn)
 {
-	struct xpcie_dev *xdev = intel_xpcie_get_device_by_name(dev_name);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_name(dev_name);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev) {
 		pr_err("Invalid dev_name %s\n", dev_name);
@@ -86,13 +87,13 @@ int intel_xpcie_connect_boot_device(const char *dev_name, u32 *phys_dev_id,
 		 *phys_dev_id, xdev->boot_dev_link);
 	return 0;
 }
-EXPORT_SYMBOL(intel_xpcie_connect_boot_device);
+EXPORT_SYMBOL(mxlk_pcie_connect_boot_device);
 
-int intel_xpcie_boot_mmio_write(u32 phys_dev_id, u32 offset, void *data,
-				size_t size)
+int mxlk_pcie_boot_mmio_write(u32 phys_dev_id, u32 offset, void *data,
+			      size_t size)
 {
-	struct xpcie_dev *xdev =
-			intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev) {
 		pr_err("Invalid phys_dev_id %d\n", phys_dev_id);
@@ -112,13 +113,13 @@ int intel_xpcie_boot_mmio_write(u32 phys_dev_id, u32 offset, void *data,
 
 	return size;
 }
-EXPORT_SYMBOL(intel_xpcie_boot_mmio_write);
+EXPORT_SYMBOL(mxlk_pcie_boot_mmio_write);
 
-int intel_xpcie_boot_mmio_read(u32 phys_dev_id, u32 offset, void *status,
-			       size_t size)
+int mxlk_pcie_boot_mmio_read(u32 phys_dev_id, u32 offset, void *status,
+			     size_t size)
 {
-	struct xpcie_dev *xdev =
-			intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev) {
 		pr_err("Invalid phys_dev_id %d\n", phys_dev_id);
@@ -137,12 +138,12 @@ int intel_xpcie_boot_mmio_read(u32 phys_dev_id, u32 offset, void *status,
 
 	return size;
 }
-EXPORT_SYMBOL(intel_xpcie_boot_mmio_read);
+EXPORT_SYMBOL(mxlk_pcie_boot_mmio_read);
 
-int intel_xpcie_disconnect_boot_device(u32 phys_dev_id)
+int mxlk_pcie_disconnect_boot_device(u32 phys_dev_id)
 {
-	struct xpcie_dev *xdev =
-			intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie *xpcie = intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
 
 	if (!xdev) {
 		dev_err(&xdev->pci->dev, "Invalid phys_dev_id %d\n",
@@ -168,4 +169,54 @@ int intel_xpcie_disconnect_boot_device(u32 phys_dev_id)
 		 xdev->boot_dev_link);
 	return 0;
 }
-EXPORT_SYMBOL(intel_xpcie_disconnect_boot_device);
+EXPORT_SYMBOL(mxlk_pcie_disconnect_boot_device);
+
+void *xlink_pcie_alloc_dma_memory(u32 phys_dev_id, size_t size,
+				  dma_addr_t *phys_addr)
+{
+	struct xpcie *xpcie = intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
+	struct device *dev = NULL;
+	void *dma_buf = NULL;
+
+	if (!xdev || !phys_addr) {
+		dev_err(&xdev->pci->dev, "Invalid input parameters\n");
+		return dma_buf;
+	}
+	dev = &xdev->pci->dev;
+
+	if (!xdev->fl_vbuf) {
+		dma_buf = dma_alloc_coherent(dev, size, phys_addr, GFP_KERNEL);
+		if (!dma_buf)
+			return dma_buf;
+
+		xdev->fl_vbuf = dma_buf;
+		xdev->fl_buf_size = size;
+		xdev->fl_phys_addr = *phys_addr;
+	}
+
+	return dma_buf;
+}
+EXPORT_SYMBOL(xlink_pcie_alloc_dma_memory);
+
+int xlink_pcie_free_dma_memory(u32 phys_dev_id, size_t size,
+			       void *dma_buf, dma_addr_t phys_addr)
+{
+	struct xpcie *xpcie = intel_xpcie_get_device_by_phys_id(phys_dev_id);
+	struct xpcie_dev *xdev = xpcie_to_xdev(xpcie);
+	struct device *dev = &xdev->pci->dev;
+
+	if (!xdev || !phys_addr) {
+		dev_err(&xdev->pci->dev, "Invalid input parameters\n");
+		return -EINVAL;
+	}
+
+	if (xdev->fl_vbuf && xdev->fl_vbuf == dma_buf) {
+		dma_free_coherent(dev, size, dma_buf, phys_addr);
+		xdev->fl_vbuf = NULL;
+		xdev->fl_buf_size = 0;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(xlink_pcie_free_dma_memory);

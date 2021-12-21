@@ -77,7 +77,5 @@ void intel_xpcie_remove_device(struct xpcie_dev *xdev);
 void intel_xpcie_pci_notify_event(struct xpcie_dev *xdev,
 				  enum xlink_device_event_type event_type);
 
-struct xpcie_dev *intel_xpcie_get_device_by_name(const char *name);
 enum xpcie_stage intel_xpcie_check_magic(struct xpcie_dev *xdev);
-struct xpcie_dev *intel_xpcie_get_device_by_phys_id(u32 phys_id);
 #endif /* XPCIE_PCI_HEADER_ */
