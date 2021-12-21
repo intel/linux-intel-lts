@@ -55,6 +55,7 @@ u32 intel_xpcie_get_host_status(struct xpcie *xpcie);
 void intel_xpcie_set_host_status(struct xpcie *xpcie, u32 status);
 u32 intel_xpcie_get_sw_devid(struct xpcie *xpcie);
 void intel_xpcie_set_sw_devid(struct xpcie *xpcie);
+struct xpcie *intel_xpcie_get_device_by_name(const char *name);
 
 struct xpcie_buf_desc *intel_xpcie_alloc_bd(size_t length);
 struct xpcie_buf_desc *intel_xpcie_alloc_bd_reuse(size_t length, void *virt,
@@ -91,5 +92,6 @@ struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid);
 int intel_xpcie_get_device_status_by_id(u32 sw_devid, u32 *status);
 int intel_xpcie_get_device_name_by_id(u32 sw_devid, char *device_name,
 				      size_t name_size);
+struct xpcie *intel_xpcie_get_device_by_phys_id(u32 phys_id);
 
 #endif /* XPCIE_UTIL_HEADER_ */
