@@ -28,8 +28,7 @@ static void config_sub_second_increment(void __iomem *ioaddr,
 {
 	u32 value = readl(ioaddr + PTP_TCR);
 	unsigned long data;
-	u32 reg_value, rem;
-	u64 snsinc;
+	u32 reg_value;
 
 	/* For GMAC3.x, 4.x versions, in "fine adjustement mode" set sub-second
 	 * increment to twice the number of nanoseconds of a clock cycle.
@@ -40,19 +39,9 @@ static void config_sub_second_increment(void __iomem *ioaddr,
 	 * 2000000000ULL / ptp_clock.
 	 */
 	if (value & PTP_TCR_TSCFUPDT)
-		data = div_u64_rem(2000000000ULL, ptp_clock, &rem);
+		data = (2000000000ULL / ptp_clock);
 	else
-		data = div_u64_rem(1000000000ULL, ptp_clock, &rem);
-
-	if (rem) {
-		snsinc = rem;
-		/* This field contains the sub-nanosecond increment value,
-		 * represented in nanoseconds multiplied by 2^8.
-		 */
-		snsinc <<= 8;
-		snsinc /= ptp_clock;
-		snsinc &= PTP_SSIR_SNSINC_MASK;
-	}
+		data = (1000000000ULL / ptp_clock);
 
 	/* 0.465ns accuracy */
 	if (!(value & PTP_TCR_TSCTRLSSR))
@@ -61,13 +50,8 @@ static void config_sub_second_increment(void __iomem *ioaddr,
 	data &= PTP_SSIR_SSINC_MASK;
 
 	reg_value = data;
-
-	if (gmac4) {
+	if (gmac4)
 		reg_value <<= GMAC4_PTP_SSIR_SSINC_SHIFT;
-
-		if (rem)
-			reg_value |= (snsinc << GMAC4_PTP_SSIR_SNSINC_SHIFT);
-	}
 
 	writel(reg_value, ioaddr + PTP_SSIR);
 
