@@ -230,7 +230,7 @@ static int dw_pcie_ep_set_bar(struct pci_epc *epc, u8 func_no, u8 vfunc_no,
 	u32 reg;
 	unsigned int func_offset = 0;
 
-	func_offset = dw_pcie_ep_func_select(ep, func_no);
+	//func_offset = dw_pcie_ep_func_select(ep, func_no);
 
 	reg = PCI_BASE_ADDRESS_0 + (4 * bar) + func_offset;
 
