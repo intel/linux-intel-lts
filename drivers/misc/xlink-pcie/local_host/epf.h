@@ -56,6 +56,7 @@ struct xpcie_epf {
 	struct pci_epf *epf;
 	void *vaddr[BAR_5 + 1];
 	bool vaddr_resv[BAR_5 + 1];
+	enum pci_barno doorbell_bar;
 	enum pci_barno comm_bar;
 	enum pci_barno bar4;
 	size_t bar0_sz;

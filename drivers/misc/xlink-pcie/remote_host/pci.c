@@ -24,8 +24,9 @@ module_param(aspm_enable, int, 0664);
 MODULE_PARM_DESC(aspm_enable, "enable ASPM");
 
 #define DEV_POLL_PERIOD	2000
+#define MAX_SW_DEVID_RETRY_COUNT 10
 
-struct xpcie_dev *intel_xpcie_create_device(u32 sw_device_id,
+struct xpcie_dev *intel_xpcie_create_device(u32 device_id,
 					    struct pci_dev *pdev)
 {
 	struct xpcie_dev *xdev = kzalloc(sizeof(*xdev), GFP_KERNEL);
@@ -33,7 +34,7 @@ struct xpcie_dev *intel_xpcie_create_device(u32 sw_device_id,
 	if (!xdev)
 		return NULL;
 
-	xdev->xpcie.sw_devid = sw_device_id;
+	xdev->xpcie.devid = device_id;
 	snprintf(xdev->name, XPCIE_MAX_NAME_LEN, "%02x:%02x.%x",
 		 pdev->bus->number,
 		 PCI_SLOT(pdev->devfn),
@@ -74,6 +75,7 @@ static void intel_xpcie_pci_unmap_bar(struct xpcie_dev *xdev)
 	if (xdev->xpcie.bar0) {
 		iounmap((void __iomem *)xdev->xpcie.bar0);
 		xdev->xpcie.bar0 = NULL;
+		xdev->xpcie.doorbell_base = xdev->xpcie.bar0;
 	}
 
 	if (xdev->xpcie.io_comm) {
@@ -108,6 +110,7 @@ static int intel_xpcie_pci_map_bar(struct xpcie_dev *xdev)
 		dev_err(&xdev->pci->dev, "failed to ioremap BAR0\n");
 		goto bar_error;
 	}
+	xdev->xpcie.doorbell_base = xdev->xpcie.bar0;
 
 	xdev->xpcie.mmio = (void __force *)
 			   (xdev->xpcie.io_comm + XPCIE_MMIO_OFFSET);
@@ -215,15 +218,52 @@ static void xpcie_device_poll(struct work_struct *work)
 {
 	struct xpcie_dev *xdev = container_of(work, struct xpcie_dev,
 					      wait_event.work);
+	enum xpcie_stage stage;
+	bool sched_poll = true;
+	u8 max_functions;
+	u32 devid;
+	u8 event;
 
-	if (intel_xpcie_get_device_status(&xdev->xpcie) < XPCIE_STATUS_RUN) {
-		schedule_delayed_work(&xdev->wait_event,
-				      msecs_to_jiffies(DEV_POLL_PERIOD));
-	} else {
-		xdev->xpcie.status = XPCIE_STATUS_READY;
-		intel_xpcie_set_sw_devid(&xdev->xpcie);
-		intel_xpcie_pci_raise_irq(xdev, DEV_EVENT, SWID_UPDATE_EVENT);
+	stage = intel_xpcie_check_magic(xdev);
+	if (stage == STAGE_OS) {
+		event = intel_xpcie_get_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT);
+		if (event == PHY_ID_RECIEVED_ACK) {
+			intel_xpcie_set_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT, NO_OP);
+			xdev->sw_devid_retry_cnt = 0;
+			xdev->xpcie.status = XPCIE_STATUS_READY;
+			xdev->xpcie.sw_dev_id_updated = true;
+			intel_xpcie_pci_notify_event(xdev, NOTIFY_DEVICE_CONNECTED);
+			wake_up_interruptible(&xdev->waitqueue);
+
+			sched_poll = false;
+		} else {
+			if (xdev->sw_devid_retry_cnt != MAX_SW_DEVID_RETRY_COUNT) {
+				xdev->sw_devid_retry_cnt++;
+				max_functions = intel_xpcie_get_max_functions(&xdev->xpcie);
+				devid = (PCI_BUS_NUM(xdev->xpcie.devid) << 8) |
+					PCI_SLOT(xdev->pci->devfn);
+				xdev->xpcie.sw_devid =
+					intel_xpcie_create_sw_device_id
+					(PCI_FUNC(xdev->pci->devfn), devid, max_functions);
+				intel_xpcie_set_host_swdev_id(&xdev->xpcie, xdev->xpcie.sw_devid);
+				dev_info(&xdev->pci->dev,
+					 "sw_devid=%x, function idx=%d, max_functions=%d, retry_iterations=%d\n",
+					 xdev->xpcie.sw_devid, PCI_FUNC(xdev->pci->devfn),
+					 max_functions, xdev->sw_devid_retry_cnt);
+				intel_xpcie_pci_raise_irq(xdev, PHY_ID_UPDATED, 1);
+				sched_poll = true;
+			} else {
+				xdev->xpcie.status = XPCIE_STATUS_ERROR;
+				dev_err(&xdev->pci->dev,
+					"Ack for sw_devid=%x, function idx=%d not received!\n",
+					xdev->xpcie.sw_devid, PCI_FUNC(xdev->pci->devfn));
+				sched_poll = false;
+			}
+		}
 	}
+
+	if (sched_poll)
+		schedule_delayed_work(&xdev->wait_event, msecs_to_jiffies(DEV_POLL_PERIOD));
 }
 
 static int intel_xpcie_pci_prepare_dev_reset(struct xpcie_dev *xdev,
@@ -505,6 +545,11 @@ void intel_xpcie_pci_notify_event(struct xpcie_dev *xdev,
 	if (event_type >= NUM_EVENT_TYPE)
 		return;
 
-	if (xdev->event_fn)
-		xdev->event_fn(xdev->xpcie.sw_devid, event_type);
+	if (xdev->event_fn) {
+		dev_info(&xdev->pci->dev,
+			 "sw_devid=0x%x, event_type=%d\n",
+			 xdev->xpcie.sw_devid, event_type);
+
+		xdev->event_fn(xdev->xpcie.devid, event_type);
+	}
 }
