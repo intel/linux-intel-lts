@@ -449,6 +449,11 @@ task_exit:
 static irqreturn_t intel_xpcie_core_irq_cb(int irq, void *args)
 {
 	struct xpcie *xpcie = args;
+	struct xpcie_epf *xpcie_epf =
+				container_of(xpcie, struct xpcie_epf, xpcie);
+
+	/*clear the interrupt*/
+	writel(0x1, xpcie_epf->doorbell_clear);
 
 	if (intel_xpcie_get_doorbell(xpcie, TO_DEVICE, DATA_SENT)) {
 		intel_xpcie_set_doorbell(xpcie, TO_DEVICE, DATA_SENT, 0);
@@ -531,6 +536,7 @@ int intel_xpcie_core_init(struct xpcie *xpcie)
 	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_SENT, 0);
 	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DATA_RECEIVED, 0);
 	intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DEV_EVENT, NO_OP);
+	intel_xpcie_set_doorbell(xpcie, TO_DEVICE, PHY_ID_UPDATED, 0);
 
 	intel_xpcie_register_host_irq(xpcie, intel_xpcie_core_irq_cb);
 

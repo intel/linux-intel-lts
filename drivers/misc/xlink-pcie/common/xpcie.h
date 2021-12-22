@@ -12,6 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pci_ids.h>
+#include <linux/xlink_drv_inf.h>
 
 #include "core.h"
 
@@ -51,6 +52,7 @@
 struct xpcie_mmio {
 	u32 device_status;
 	u32 host_status;
+	u8 max_functions;
 	u8 legacy_a0;
 	u8 htod_tx_doorbell;
 	u8 htod_rx_doorbell;
@@ -59,10 +61,11 @@ struct xpcie_mmio {
 	u8 dtoh_tx_doorbell;
 	u8 dtoh_rx_doorbell;
 	u8 dtoh_event_doorbell;
+	u8 htod_phy_id_doorbell_status;
+	u16 reserved;
 	u32 cap_offset;
 	u32 htod_rx_bd_list_count;
-	u32 sw_devid;
-	u32 reserved;
+	u32 h_swdev_id;
 } __packed;
 
 #define XPCIE_MMIO_DEV_STATUS	(offsetof(struct xpcie_mmio, device_status))
@@ -86,7 +89,11 @@ struct xpcie_mmio {
 	(offsetof(struct xpcie_mmio, htod_rx_bd_list_count))
 #define XPCIE_MMIO_CAP_OFF	(offsetof(struct xpcie_mmio, cap_offset))
 #define XPCIE_MMIO_MAGIC_OFF	(offsetof(struct xpcie_mmio, magic))
-#define XPCIE_MMIO_SW_DEVID_OFF	(offsetof(struct xpcie_mmio, sw_devid))
+#define XPCIE_MMIO_HOST_SWDEV_ID	(offsetof(struct xpcie_mmio, h_swdev_id))
+#define XPCIE_MMIO_MAX_FUNCTIONS \
+	(offsetof(struct xpcie_mmio, max_functions))
+#define XPCIE_MMIO_HTOD_PHY_ID_DOORBELL_STATUS \
+	(offsetof(struct xpcie_mmio, htod_phy_id_doorbell_status))
 
 struct xpcie {
 	u32 status;
@@ -95,6 +102,8 @@ struct xpcie {
 	void *mmio;
 	void *bar4;
 	void *io_comm;
+
+	void __iomem *doorbell_base; /*IPC DoorBell address space*/
 
 	struct workqueue_struct *rx_wq;
 	struct workqueue_struct *tx_wq;
@@ -124,7 +133,9 @@ struct xpcie {
 	struct hrtimer free_rx_bd_timer;
 #endif
 
+	u32 devid;
 	u32 sw_devid;
+	u32 sw_dev_id_updated;
 	struct list_head list;
 	char name[XPCIE_MAX_NAME_LEN];
 };
