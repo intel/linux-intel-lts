@@ -21,6 +21,7 @@ enum xpcie_doorbell_type {
 	DATA_RECEIVED,
 	DEV_EVENT,
 	PARTIAL_DATA_RECEIVED,
+	PHY_ID_UPDATED,
 	RX_BD_COUNT
 };
 
@@ -28,7 +29,7 @@ enum xpcie_event_type {
 	NO_OP,
 	REQUEST_RESET,
 	DEV_SHUTDOWN,
-	SWID_UPDATE_EVENT
+	PHY_ID_RECIEVED_ACK
 };
 
 static LIST_HEAD(dev_list);
@@ -49,12 +50,16 @@ u32 intel_xpcie_get_device_flwctl(struct xpcie *xpcie,
 				  enum xpcie_doorbell_direction dirt,
 				  enum xpcie_doorbell_type type);
 
+void intel_xpcie_set_max_functions(struct xpcie *xpcie, u8 max_functions);
+u8 intel_xpcie_get_max_functions(struct xpcie *xpcie);
+u32 intel_xpcie_create_sw_device_id(u8 func_no, u16 phy_id, u8 max_functions);
+void intel_xpcie_set_host_swdev_id(struct xpcie *xpcie, u32 h_sw_devid);
+u32 intel_xpcie_get_host_swdev_id(struct xpcie *xpcie);
+
 void intel_xpcie_set_device_status(struct xpcie *xpcie, u32 status);
 u32 intel_xpcie_get_device_status(struct xpcie *xpcie);
 u32 intel_xpcie_get_host_status(struct xpcie *xpcie);
 void intel_xpcie_set_host_status(struct xpcie *xpcie, u32 status);
-u32 intel_xpcie_get_sw_devid(struct xpcie *xpcie);
-void intel_xpcie_set_sw_devid(struct xpcie *xpcie);
 struct xpcie *intel_xpcie_get_device_by_name(const char *name);
 
 struct xpcie_buf_desc *intel_xpcie_alloc_bd(size_t length);
@@ -84,11 +89,10 @@ int intel_xpcie_interfaces_init(struct xpcie *xpcie);
 void intel_xpcie_add_bd_to_interface(struct xpcie *xpcie,
 				     struct xpcie_buf_desc *bd);
 void *intel_xpcie_cap_find(struct xpcie *xpcie, u32 start, u16 id);
-u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id);
 void intel_xpcie_list_add_device(struct xpcie *xpcie);
 void intel_xpcie_list_del_device(struct xpcie *xpcie);
 u32 intel_xpcie_get_device_num(u32 *id_list);
-struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid);
+struct xpcie *intel_xpcie_get_device_by_id(u32 id);
 int intel_xpcie_get_device_status_by_id(u32 sw_devid, u32 *status);
 int intel_xpcie_get_device_name_by_id(u32 sw_devid, char *device_name,
 				      size_t name_size);

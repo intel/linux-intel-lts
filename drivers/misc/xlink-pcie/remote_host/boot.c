@@ -51,7 +51,7 @@ void xpcie_device_irq(struct work_struct *work)
 			irq_event);
 
 	if (xdev->boot_notif_fn)
-		xdev->boot_notif_fn(xdev->xpcie.sw_devid);
+		xdev->boot_notif_fn(xdev->xpcie.devid);
 };
 
 int mxlk_pcie_connect_boot_device(const char *dev_name, u32 *phys_dev_id,
@@ -78,7 +78,7 @@ int mxlk_pcie_connect_boot_device(const char *dev_name, u32 *phys_dev_id,
 	}
 
 	mutex_lock(&xdev->lock);
-	*phys_dev_id = xdev->xpcie.sw_devid;
+	*phys_dev_id = xdev->xpcie.devid;
 	xdev->boot_notif_fn = notif_fn;
 	xdev->boot_dev_link = true;
 	mutex_unlock(&xdev->lock);

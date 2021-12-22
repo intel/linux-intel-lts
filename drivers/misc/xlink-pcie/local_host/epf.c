@@ -126,9 +126,6 @@ static irqreturn_t intel_xpcie_host_interrupt(int irq, void *args)
 			  xpcie_epf->apb_base + PCIE_REGS_PCIE_INTR_FLAGS);
 	}
 
-	if (xpcie_epf->doorbell_clear)
-		writel(0x1, xpcie_epf->doorbell_clear);
-
 	event = intel_xpcie_get_doorbell(xpcie, TO_DEVICE, DEV_EVENT);
 	if (unlikely(event != NO_OP)) {
 		intel_xpcie_set_doorbell(xpcie, TO_DEVICE,
@@ -136,15 +133,27 @@ static irqreturn_t intel_xpcie_host_interrupt(int irq, void *args)
 		if (event == REQUEST_RESET)
 			orderly_reboot();
 
-		if (event == SWID_UPDATE_EVENT && !xpcie_epf->xpcie.sw_devid)
-			xpcie_epf->xpcie.sw_devid =
-						intel_xpcie_get_sw_devid(xpcie);
-
 		return IRQ_HANDLED;
+	}
+
+	if (intel_xpcie_get_doorbell(xpcie, TO_DEVICE, PHY_ID_UPDATED)) {
+		intel_xpcie_set_doorbell(xpcie, TO_DEVICE, PHY_ID_UPDATED, 0);
+		if (!xpcie->sw_dev_id_updated) {
+			xpcie->sw_devid = intel_xpcie_get_host_swdev_id(xpcie);
+			xpcie->sw_dev_id_updated = true;
+			dev_info(&xpcie_epf->epf->dev,
+				 "pcie: func_no=%d swid updated=%x\n",
+				 xpcie_epf->epf->func_no, xpcie->sw_devid);
+		}
+		intel_xpcie_set_doorbell(xpcie, FROM_DEVICE, DEV_EVENT, PHY_ID_RECIEVED_ACK);
+		/* Ensure ACK is sent before remote host checks for the status */
+		smp_wmb();
 	}
 
 	if (likely(xpcie_epf->core_irq_callback))
 		xpcie_epf->core_irq_callback(irq, xpcie);
+	else
+		writel(0x1, xpcie_epf->doorbell_clear); /* clearing the interrupt */
 
 	return IRQ_HANDLED;
 }
@@ -256,6 +265,9 @@ static int intel_xpcie_setup_bars(struct pci_epf *epf, size_t align)
 	ret = intel_xpcie_setup_bar(epf, BAR_0, xpcie_epf->bar0_sz, align);
 	if (ret)
 		return ret;
+
+	xpcie_epf->doorbell_bar = BAR_0;
+	xpcie_epf->xpcie.doorbell_base = xpcie_epf->vaddr[BAR_0];
 
 	ret = intel_xpcie_setup_bar(epf, BAR_2, xpcie_epf->bar2_sz, align);
 	if (ret) {
@@ -548,6 +560,8 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 		return ret;
 	}
 
+	intel_xpcie_set_max_functions(&xpcie_epf->xpcie, epc->max_functions);
+
 	ret = intel_xpcie_ep_dma_init(epf);
 	if (ret) {
 		dev_err(&epf->dev, "DMA initialization failed\n");
@@ -565,10 +579,8 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 			  PCIE_CFG_PBUS_DEV_NUM_MASK;
 
 		xpcie_epf->xpcie.sw_devid =
-				intel_xpcie_create_sw_id(epf->func_no,
-							 epc->max_functions,
-							 bus_num << 8 |
-							 dev_num);
+				intel_xpcie_create_sw_device_id(epf->func_no, 0,
+								epc->max_functions);
 	}
 
 	ret = intel_xpcie_core_init(&xpcie_epf->xpcie);

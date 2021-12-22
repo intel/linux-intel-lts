@@ -8,32 +8,6 @@
 #include "util.h"
 #include "xpcie.h"
 
-u32 intel_xpcie_create_sw_id(u8 func_no, u8 max_pcie_fns, u16 pcie_phys_id)
-{
-	u8 slice_id, dev_type = XLINK_DEV_TYPE_KMB;
-	u32 xlink_swid;
-
-	if (max_pcie_fns == THB_FULL_MAX_PCIE_FNS)
-		dev_type = XLINK_DEV_TYPE_THB_STANDARD;
-	else if (max_pcie_fns == THB_PRIME_MAX_PCIE_FNS)
-		dev_type = XLINK_DEV_TYPE_THB_PRIME;
-
-	slice_id = func_no >> 1;
-
-	xlink_swid = FIELD_PREP(XLINK_DEV_INF_TYPE_MASK,
-				XLINK_DEV_INF_PCIE) |
-		     FIELD_PREP(XLINK_DEV_PHYS_ID_MASK,
-				pcie_phys_id) |
-		     FIELD_PREP(XLINK_DEV_TYPE_MASK,
-				dev_type) |
-		     FIELD_PREP(XLINK_DEV_PCIE_SLICE_ID_MASK,
-				slice_id) |
-		     FIELD_PREP(XLINK_DEV_FUNC_MASK,
-				XLINK_DEV_FUNC_VPU);
-
-	return xlink_swid;
-}
-
 void intel_xpcie_list_add_device(struct xpcie *xpcie)
 {
 	mutex_lock(&dev_list_mutex);
@@ -55,7 +29,7 @@ u32 intel_xpcie_get_device_num(u32 *id_list)
 
 	mutex_lock(&dev_list_mutex);
 	list_for_each_entry(xpcie, &dev_list, list) {
-		if (xpcie && xpcie->sw_devid) {
+		if (xpcie && xpcie->sw_dev_id_updated) {
 			*id_list++ = xpcie->sw_devid;
 			num++;
 		}
@@ -93,12 +67,14 @@ struct xpcie *intel_xpcie_get_device_by_phys_id(u32 phys_id)
 	struct xpcie *xpcie = NULL;
 	bool found = false;
 
-	if (list_empty(&dev_list))
-		return xpcie;
-
 	mutex_lock(&dev_list_mutex);
+	if (list_empty(&dev_list)) {
+		mutex_unlock(&dev_list_mutex);
+		return xpcie;
+	}
+
 	list_for_each_entry(xpcie, &dev_list, list) {
-		if (xpcie->sw_devid == phys_id) {
+		if (xpcie->devid == phys_id) {
 			found = true;
 			break;
 		}
@@ -110,7 +86,7 @@ struct xpcie *intel_xpcie_get_device_by_phys_id(u32 phys_id)
 	return xpcie;
 }
 
-struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid)
+struct xpcie *intel_xpcie_get_device_by_id(u32 id)
 {
 	struct xpcie *xpcie = NULL;
 	bool found = false;
@@ -120,7 +96,7 @@ struct xpcie *intel_xpcie_get_device_by_id(u32 sw_devid)
 
 	mutex_lock(&dev_list_mutex);
 	list_for_each_entry(xpcie, &dev_list, list) {
-		if (xpcie->sw_devid == sw_devid) {
+		if (xpcie->sw_devid == id  || xpcie->devid == id) {
 			found = true;
 			break;
 		}
@@ -197,6 +173,8 @@ static size_t intel_xpcie_doorbell_offset(struct xpcie *xpcie,
 		return XPCIE_MMIO_HTOD_PARTIAL_RX_DOORBELL;
 	if (dirt == TO_DEVICE && type == RX_BD_COUNT)
 		return XPCIE_MMIO_HTOD_RX_BD_LIST_COUNT;
+	if (dirt == TO_DEVICE && type == PHY_ID_UPDATED)
+		return XPCIE_MMIO_HTOD_PHY_ID_DOORBELL_STATUS;
 
 	return 0;
 }
@@ -254,17 +232,6 @@ void intel_xpcie_set_host_status(struct xpcie *xpcie, u32 status)
 	intel_xpcie_iowrite32(status, xpcie->mmio + XPCIE_MMIO_HOST_STATUS);
 }
 
-u32 intel_xpcie_get_sw_devid(struct xpcie *xpcie)
-{
-	return intel_xpcie_ioread32(xpcie->mmio + XPCIE_MMIO_SW_DEVID_OFF);
-}
-
-void intel_xpcie_set_sw_devid(struct xpcie *xpcie)
-{
-	intel_xpcie_iowrite32(xpcie->sw_devid,
-			      xpcie->mmio + XPCIE_MMIO_SW_DEVID_OFF);
-}
-
 struct xpcie_buf_desc *intel_xpcie_alloc_bd(size_t length)
 {
 	struct xpcie_buf_desc *bd;
@@ -286,6 +253,75 @@ struct xpcie_buf_desc *intel_xpcie_alloc_bd(size_t length)
 	bd->own_mem = true;
 
 	return bd;
+}
+
+u32 intel_xpcie_create_sw_device_id(u8 func_no, u16 phy_id,
+				    u8 max_functions)
+{
+	int sw_id = 0;
+
+	switch (func_no) {
+	case 0:
+	case 1:
+		sw_id = sw_id |
+			(XLINK_DEV_SLICE_0 << XLINK_DEV_SLICE_ID_SHIFT);
+		break;
+	case 2:
+	case 3:
+		sw_id = sw_id |
+			(XLINK_DEV_SLICE_1 << XLINK_DEV_SLICE_ID_SHIFT);
+		break;
+	case 4:
+	case 5:
+		sw_id = sw_id |
+			(XLINK_DEV_SLICE_2 << XLINK_DEV_SLICE_ID_SHIFT);
+		break;
+	case 6:
+	case 7:
+		sw_id = sw_id |
+			(XLINK_DEV_SLICE_3 << XLINK_DEV_SLICE_ID_SHIFT);
+		break;
+	default:
+		break;
+	}
+	/* all odd functions are media function */
+	if (func_no & 1)
+		sw_id = sw_id | (XLINK_DEV_FUNC_MEDIA << XLINK_DEV_FUNC_SHIFT);
+
+	/* physical id */
+	sw_id |= (phy_id << XLINK_DEV_PHYS_ID_SHIFT);
+
+	if (max_functions == 8)
+		sw_id = sw_id |
+			(XLINK_DEV_TYPE_THB_STANDARD << XLINK_DEV_TYPE_SHIFT);
+	else if (max_functions == 4)
+		sw_id = sw_id |
+			(XLINK_DEV_TYPE_THB_PRIME << XLINK_DEV_TYPE_SHIFT);
+
+	sw_id = sw_id | (XLINK_DEV_INF_PCIE << XLINK_DEV_INF_TYPE_SHIFT);
+
+	return sw_id;
+}
+
+void intel_xpcie_set_max_functions(struct xpcie *xpcie, u8 max_functions)
+{
+	intel_xpcie_iowrite8(max_functions,
+			     xpcie->mmio + XPCIE_MMIO_MAX_FUNCTIONS);
+}
+
+u8 intel_xpcie_get_max_functions(struct xpcie *xpcie)
+{
+	return intel_xpcie_ioread8(xpcie->mmio + XPCIE_MMIO_MAX_FUNCTIONS);
+}
+
+void intel_xpcie_set_host_swdev_id(struct xpcie *xpcie, u32 h_sw_devid)
+{
+	intel_xpcie_iowrite32(h_sw_devid, xpcie->mmio + XPCIE_MMIO_HOST_SWDEV_ID);
+}
+
+u32 intel_xpcie_get_host_swdev_id(struct xpcie *xpcie)
+{
+	return intel_xpcie_ioread32(xpcie->mmio + XPCIE_MMIO_HOST_SWDEV_ID);
 }
 
 struct xpcie_buf_desc *intel_xpcie_alloc_bd_reuse(size_t length, void *virt,

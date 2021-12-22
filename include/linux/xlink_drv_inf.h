@@ -32,6 +32,12 @@
 #define XLINK_DEV_PHYS_ID_SHIFT		(8)
 #define XLINK_DEV_INF_TYPE_SHIFT	(24)
 
+#define XLINK_DEV_FUNC_SHIFT		(0)
+#define XLINK_DEV_SLICE_ID_SHIFT	(1)
+#define XLINK_DEV_TYPE_SHIFT		(4)
+#define XLINK_DEV_PHYS_ID_SHIFT		(8)
+#define XLINK_DEV_INF_TYPE_SHIFT	(24)
+
 enum xlink_device_inf_type {
 	XLINK_DEV_INF_PCIE = 1,
 	XLINK_DEV_INF_USB = 2,

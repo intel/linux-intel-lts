@@ -111,7 +111,6 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 	struct xpcie_dev *xdev = NULL;
 	bool new_device = false;
 	struct xpcie *xpcie;
-	u32 sw_devid;
 	u16 hw_id;
 	int ret;
 
@@ -123,15 +122,12 @@ static int intel_xpcie_probe(struct pci_dev *pdev,
 	else if (pdev->device == PCI_DEVICE_ID_INTEL_THB_PRIME)
 		max_functions = THB_PRIME_MAX_PCIE_FNS;
 
-	hw_id = FIELD_PREP(HW_ID_HI_MASK, pdev->bus->number) |
-		FIELD_PREP(HW_ID_LO_MASK, PCI_SLOT(pdev->devfn));
+	hw_id = ((u16)pdev->bus->number << 8) |
+		 (PCI_DEVFN(PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn)));
 
-	sw_devid = intel_xpcie_create_sw_id(PCI_FUNC(pdev->devfn),
-					    max_functions, hw_id);
-
-	xpcie = intel_xpcie_get_device_by_id(sw_devid);
+	xpcie = intel_xpcie_get_device_by_phys_id(hw_id);
 	if (!xpcie) {
-		xdev = intel_xpcie_create_device(sw_devid, pdev);
+		xdev = intel_xpcie_create_device(hw_id, pdev);
 		if (!xdev)
 			return -ENOMEM;
 
