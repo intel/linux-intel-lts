@@ -136,6 +136,7 @@ struct xpcie {
 	u32 devid;
 	u32 sw_devid;
 	u32 sw_dev_id_updated;
+	struct device_attribute swdev_id;
 	struct list_head list;
 	char name[XPCIE_MAX_NAME_LEN];
 };
