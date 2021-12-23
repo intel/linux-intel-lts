@@ -523,6 +523,32 @@ static int intel_xpcie_epf_get_platform_data(struct device *dev,
 	return ret;
 }
 
+static ssize_t swdev_id_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	struct pci_epf *epf = container_of(dev, struct pci_epf, dev);
+	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
+	struct xpcie *xpcie = &xpcie_epf->xpcie;
+
+	if (xpcie->sw_dev_id_updated)
+		snprintf(buf, 4096, "%s\n", "okay");
+	else
+		snprintf(buf, 4096, "%s\n", "disabled");
+
+	return strlen(buf);
+}
+static DEVICE_ATTR_RO(swdev_id);
+
+static const struct attribute *xpcie_sysfs_attrs[] = {
+	&dev_attr_swdev_id.attr,
+	NULL,
+};
+
+static const struct attribute_group xpcie_epf_sysfs_attrs = {
+	.attrs = (struct attribute **)xpcie_sysfs_attrs,
+};
+
 static int intel_xpcie_epf_bind(struct pci_epf *epf)
 {
 	struct xpcie_epf *xpcie_epf = epf_get_drvdata(epf);
@@ -600,6 +626,12 @@ static int intel_xpcie_epf_bind(struct pci_epf *epf)
 	memcpy(xpcie_epf->xpcie.io_comm + XPCIE_IO_COMM_MAGIC_OFF,
 	       XPCIE_BOOT_MAGIC_YOCTO, strlen(XPCIE_BOOT_MAGIC_YOCTO));
 
+	ret = sysfs_create_group(&epf->dev.kobj, &xpcie_epf_sysfs_attrs);
+	if (ret) {
+		dev_err(&epf->dev, "Failed to create sysfs entries\n");
+		goto err_uninit_dma;
+	}
+
 	return 0;
 
 err_uninit_dma:
@@ -623,6 +655,7 @@ static void intel_xpcie_epf_unbind(struct pci_epf *epf)
 	intel_xpcie_core_cleanup(&xpcie_epf->xpcie);
 	intel_xpcie_set_device_status(&xpcie_epf->xpcie, XPCIE_STATUS_READY);
 
+	sysfs_remove_group(&epf->dev.kobj, &xpcie_epf_sysfs_attrs);
 	intel_xpcie_ep_dma_uninit(epf);
 
 	pci_epc_stop(epc);
