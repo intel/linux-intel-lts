@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config DRM_HANTRO_UNIFY
+	tristate "Hantro DRM"
+	depends on DRM
+	depends on ARM64
+	select DRM_PANEL
+	select DRM_KMS_HELPER
+	help
+	  Choose this option if you have a system that has "Keem
+	  Bay VPU" hardware which supports Verisilicon's Hantro
+	  Video Processor Unit (VPU) IP, a series of video decoder
+	  and encoder semiconductor IP cores which can be flexibly
+	  configured for video surveillance, multimedia consumer
+	  products, Internet of Things, cloud service products, data
+	  centers, aerial photography and recorders, thereby providing
+	  video transcoding and multi-channel HD video encoding and
+	  decoding.
+
+	  Hantro VC8000D allows 4K decoding that supports H264 and HEVC
+	  video formats. Hantro VC8000E allows 4K encoding that supports
+	  H264 and HEVC video formats.
+
+config DRM_HANTRO_TRACEPOINTS
+	bool "Hantro tracing"
+	help
+	  This option enables tracepoints for Keem Bay VPU DRM driver
