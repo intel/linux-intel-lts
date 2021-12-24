@@ -195,6 +195,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			/* TOFIX: Temporarily uses RESERVED field to */
 			/* pass event count value */
 			req.extts.rsv[1] = 0;
+
 		}
 		if (req.extts.index >= ops->n_ext_ts) {
 			err = -EINVAL;
