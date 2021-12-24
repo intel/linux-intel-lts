@@ -341,7 +341,7 @@ int drm_gem_dumb_destroy(struct drm_file *file,
 {
 	return drm_gem_handle_delete(file, handle);
 }
-
+EXPORT_SYMBOL_GPL(drm_gem_dumb_destroy);
 /**
  * drm_gem_handle_create_tail - internal functions to create a handle
  * @file_priv: drm file-private structure to register the handle for
