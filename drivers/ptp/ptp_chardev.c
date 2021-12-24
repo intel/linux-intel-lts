@@ -191,7 +191,11 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			}
 		} else if (cmd == PTP_EXTTS_REQUEST) {
 			req.extts.flags &= PTP_EXTTS_V1_VALID_FLAGS;
-			zero_rsv_field(req.extts.rsv);
+			/* zero_rsv_field(req.extts.rsv); */
+			/* TOFIX: Temporarily uses RESERVED field to */
+			/* pass event count value */
+			req.extts.rsv[1] = 0;
+
 		}
 		if (req.extts.index >= ops->n_ext_ts) {
 			err = -EINVAL;
