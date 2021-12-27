@@ -1,3 +1,5 @@
 # CVE-2021-43976
 0001-mwifiex_usb-Fix-skb_over_panic-in-mwifiex_usb_recv.patch
 
+# CVE-2021-45095
+0001-phonet-refcount-leak-in-pep_sock_accep.patch
