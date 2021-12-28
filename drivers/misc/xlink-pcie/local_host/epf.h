@@ -87,6 +87,27 @@ struct xpcie_epf {
 	struct xpcie_dma_ll_desc_buf	tx_desc_buf;
 	struct xpcie_dma_ll_desc_buf	rx_desc_buf;
 
+	struct hrtimer			tx_dma_bug_detect;
+	struct hrtimer			rx_dma_bug_detect;
+	struct hrtimer			tx_dma_bug_reset;
+	struct hrtimer			rx_dma_bug_reset;
+	/* Tx DMA Spinlock*/
+	spinlock_t			dma_tx_lock;
+	/* Rx DMA Spinlock*/
+	spinlock_t			dma_rx_lock;
+
+	atomic_t			dma_wr_eng_reset_cnt;
+	u32				dma_wr_int_status;
+	u32				dma_wr_err_status;
+	int				dma_wr_rc;
+	atomic_t			dma_rd_eng_reset_cnt;
+	u32				dma_rd_int_status;
+	u32				dma_rd_err_status_low;
+	u32				dma_rd_err_status_high;
+	int				dma_rd_rc;
+	atomic_t			dma_wr_reset_retry;
+	atomic_t			dma_rd_reset_retry;
+
 	wait_queue_head_t		dma_rd_wq;
 	bool				dma_rd_done;
 	wait_queue_head_t		dma_wr_wq;
@@ -115,4 +136,10 @@ int intel_xpcie_copy_from_host_ll(struct xpcie *xpcie,
 				  int chan, int descs_num);
 int intel_xpcie_copy_to_host_ll(struct xpcie *xpcie,
 				int chan, int descs_num);
+
+enum hrtimer_restart tx_dma_bug_detect_cb(struct hrtimer *tx_dma_bug_detect);
+enum hrtimer_restart rx_dma_bug_detect_cb(struct hrtimer *rx_dma_bug_detect);
+enum hrtimer_restart tx_dma_bug_reset_cb(struct hrtimer *tx_dma_bug_reset);
+enum hrtimer_restart rx_dma_bug_reset_cb(struct hrtimer *rx_dma_bug_reset);
+
 #endif /* XPCIE_EPF_HEADER_ */
