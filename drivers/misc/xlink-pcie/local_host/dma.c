@@ -20,6 +20,7 @@
 #define DMA_CH_CONTROL1_CS_SHIFT	(5)
 #define DMA_CH_CONTROL1_CCS_SHIFT	(8)
 #define DMA_CH_CONTROL1_LLE_SHIFT	(9)
+#define DMA_CH_CONTROL1_FUNC_NUM_SHIFT	(12)
 #define DMA_CH_CONTROL1_CB_MASK		(BIT(DMA_CH_CONTROL1_CB_SHIFT))
 #define DMA_CH_CONTROL1_TCB_MASK	(BIT(DMA_CH_CONTROL1_TCB_SHIFT))
 #define DMA_CH_CONTROL1_LLP_MASK	(BIT(DMA_CH_CONTROL1_LLP_SHIFT))
@@ -297,7 +298,8 @@ static int intel_xpcie_ep_dma_rd_err_sts_h(void __iomem *err_status,
 static void
 intel_xpcie_ep_dma_setup_ll_descs(struct __iomem pcie_dma_chan * dma_chan,
 				  struct xpcie_dma_ll_desc_buf *desc_buf,
-				  int descs_num)
+				  int descs_num,
+				  int func_no)
 {
 	struct xpcie_dma_ll_desc *descs = desc_buf->virt;
 	int i;
@@ -312,7 +314,8 @@ intel_xpcie_ep_dma_setup_ll_descs(struct __iomem pcie_dma_chan * dma_chan,
 	descs[descs_num].src_addr = (phys_addr_t)desc_buf->phys;
 
 	/* Setup linked list settings */
-	iowrite32(DMA_CH_CONTROL1_LLE_MASK | DMA_CH_CONTROL1_CCS_MASK,
+	iowrite32(DMA_CH_CONTROL1_LLE_MASK | DMA_CH_CONTROL1_CCS_MASK |
+		  (func_no << DMA_CH_CONTROL1_FUNC_NUM_SHIFT),
 		  (void __iomem *)&dma_chan->dma_ch_control1);
 	iowrite32((u32)desc_buf->phys, (void __iomem *)&dma_chan->dma_llp_low);
 	iowrite32((u64)desc_buf->phys >> 32,
@@ -598,7 +601,7 @@ int intel_xpcie_ep_dma_write_ll(struct pci_epf *epf, int chan, int descs_num)
 					      atomic_read(&dma_wr_reset_all_done) == true);
 	}
 
-	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num);
+	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num, chan);
 
 	spin_lock_irqsave(&xpcie_epf->dma_tx_lock, flags);
 	if (!hrtimer_active(&xpcie_epf->tx_dma_bug_detect)) {
@@ -708,7 +711,7 @@ int intel_xpcie_ep_dma_read_ll(struct pci_epf *epf, int chan, int descs_num)
 					      atomic_read(&dma_rd_reset_all_done) == true);
 	}
 
-	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num);
+	intel_xpcie_ep_dma_setup_ll_descs(dma_chan, desc_buf, descs_num, chan);
 
 	spin_lock_irqsave(&xpcie_epf->dma_rx_lock, flags);
 	if (!hrtimer_active(&xpcie_epf->rx_dma_bug_detect)) {
