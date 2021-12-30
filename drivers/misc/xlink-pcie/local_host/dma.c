@@ -61,8 +61,8 @@
 #define DMA_LLLAIE_SHIFT		(16)
 #define DMA_LLLAIE_MASK			(0xF << DMA_LLLAIE_SHIFT)
 
-#define DMA_CHAN_WRITE_MAX_WEIGHT	(0x7)
-#define DMA_CHAN_READ_MAX_WEIGHT	(0x3)
+#define DMA_CHAN_WRITE_MAX_WEIGHT	(0x1)
+#define DMA_CHAN_READ_MAX_WEIGHT	(0x1)
 #define DMA_CHAN0_WEIGHT_OFFSET		(0)
 #define DMA_CHAN1_WEIGHT_OFFSET		(5)
 #define DMA_CHAN2_WEIGHT_OFFSET		(10)
@@ -214,7 +214,7 @@ static void intel_xpcie_ep_dma_enable(void __iomem *dma_base,
 {
 	struct __iomem pcie_dma_reg * dma_reg =
 				(struct __iomem pcie_dma_reg *)(dma_base);
-	void __iomem *engine_en, *ll_err, *arb_weight;
+	void __iomem *engine_en, *ll_err, *arb_weight, *arb_weight_hi;
 	struct __iomem pcie_dma_chan * dma_chan;
 	void __iomem *int_mask, *int_clear;
 	u32 offset, weight;
@@ -227,6 +227,7 @@ static void intel_xpcie_ep_dma_enable(void __iomem *dma_base,
 		ll_err = (void __iomem *)&dma_reg->dma_write_linked_list_err_en;
 		arb_weight = (void __iomem *)
 			     &dma_reg->dma_write_channel_arb_weight_low;
+		arb_weight_hi = &dma_reg->dma_write_channel_arb_weight_high;
 		weight = DMA_CHAN_WRITE_ALL_MAX_WEIGHT;
 	} else {
 		engine_en = (void __iomem *)&dma_reg->dma_read_engine_en;
@@ -235,6 +236,7 @@ static void intel_xpcie_ep_dma_enable(void __iomem *dma_base,
 		ll_err = (void __iomem *)&dma_reg->dma_read_linked_list_err_en;
 		arb_weight = (void __iomem *)
 			     &dma_reg->dma_read_channel_arb_weight_low;
+		arb_weight_hi = &dma_reg->dma_read_channel_arb_weight_high;
 		weight = DMA_CHAN_READ_ALL_MAX_WEIGHT;
 	}
 
@@ -248,6 +250,7 @@ static void intel_xpcie_ep_dma_enable(void __iomem *dma_base,
 
 	/* Set channel round robin weight. */
 	iowrite32(weight, arb_weight);
+	iowrite32(weight, arb_weight_hi);
 
 	/* Enable LL abort interrupt (LLLAIE). */
 	iowrite32(DMA_LLLAIE_MASK, ll_err);
