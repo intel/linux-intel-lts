@@ -1109,6 +1109,7 @@ again:
 					     parent_objectid, victim_name,
 					     victim_name_len);
 			if (ret < 0) {
+				kfree(victim_name);
 				return ret;
 			} else if (!ret) {
 				ret = -ENOENT;
@@ -2466,7 +2467,9 @@ again:
 		else {
 			ret = find_dir_range(log, path, dirid, key_type,
 					     &range_start, &range_end);
-			if (ret != 0)
+			if (ret < 0)
+				goto out;
+			else if (ret > 0)
 				break;
 		}
 
