@@ -98,4 +98,5 @@ int intel_xpcie_get_device_name_by_id(u32 sw_devid, char *device_name,
 				      size_t name_size);
 struct xpcie *intel_xpcie_get_device_by_phys_id(u32 phys_id);
 
+bool intel_xpcie_list_try_packing(struct xpcie_list *list, void *data, size_t size);
 #endif /* XPCIE_UTIL_HEADER_ */
