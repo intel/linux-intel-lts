@@ -8,6 +8,9 @@
 #include "util.h"
 #include "xpcie.h"
 
+/*Set the PCIE TX queue threashold when try packing*/
+#define PACKING_QUEUE_DEPTH  (1)
+
 void intel_xpcie_list_add_device(struct xpcie *xpcie)
 {
 	mutex_lock(&dev_list_mutex);
@@ -322,6 +325,26 @@ void intel_xpcie_set_host_swdev_id(struct xpcie *xpcie, u32 h_sw_devid)
 u32 intel_xpcie_get_host_swdev_id(struct xpcie *xpcie)
 {
 	return intel_xpcie_ioread32(xpcie->mmio + XPCIE_MMIO_HOST_SWDEV_ID);
+}
+
+bool intel_xpcie_list_try_packing(struct xpcie_list *list, void *data, size_t size)
+{
+	struct xpcie_buf_desc *bd_tail;
+	bool is_packed = false;
+
+	spin_lock(&list->lock);
+	if (list->tail && list->buffers >= PACKING_QUEUE_DEPTH) {
+		bd_tail = list->tail;
+		if ((bd_tail->length + size) <= bd_tail->true_len) {
+			memcpy((bd_tail->data + bd_tail->length), data, size);
+			bd_tail->length += size;
+			list->bytes += size;
+			is_packed = true;
+		}
+	}
+	spin_unlock(&list->lock);
+
+	return is_packed;
 }
 
 struct xpcie_buf_desc *intel_xpcie_alloc_bd_reuse(size_t length, void *virt,
