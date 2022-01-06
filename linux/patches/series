@@ -3,3 +3,9 @@
 
 # CVE-2021-45095
 0001-phonet-refcount-leak-in-pep_sock_accep.patch
+
+# CVE-2021-45469
+0001-f2fs-fix-to-do-sanity-check-on-last-xattr-entry-in-_.patch
+
+# CVE-2021-44733
+0001-tee-handle-lookup-of-shm-with-reference-count-0.patch
