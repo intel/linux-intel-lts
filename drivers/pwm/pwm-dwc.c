@@ -44,6 +44,14 @@
 #define DWC_TIM_CTRL_INT_MASK	BIT(2)
 #define DWC_TIM_CTRL_PWM	BIT(3)
 
+#define DWC_TIM_D0I3C	0x2000
+#define DWC_TIM_CGSR	0x2004
+
+#define DWC_TIM_D0I3_CIP	BIT(0)
+#define DWC_TIM_D0I3_EN		BIT(2)
+#define DWC_TIM_D0I3_RR		BIT(3)
+#define DWC_TIM_CGSR_CG		BIT(16)
+
 struct dwc_pwm_ctx {
 	u32 cnt;
 	u32 cnt2;
@@ -291,7 +299,82 @@ static int dwc_pwm_resume(struct device *dev)
 }
 #endif
 
-static SIMPLE_DEV_PM_OPS(dwc_pwm_pm_ops, dwc_pwm_suspend, dwc_pwm_resume);
+#ifdef CONFIG_PM
+static int dwc_pwm_runtime_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct dwc_pwm *dwc = pci_get_drvdata(pdev);
+	unsigned long j0, j1, delay;
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	delay = msecs_to_jiffies(100);
+	j0 = jiffies;
+	j1 = j0 + delay;
+
+	cgsr_reg = dwc_pwm_readl(dwc->base, DWC_TIM_CGSR);
+	dwc_pwm_writel(dwc->base, DWC_TIM_CGSR, DWC_TIM_CGSR_CG);
+
+	d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+
+	if (d0i3c_reg & DWC_TIM_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		dwc_pwm_writel(dwc->base, DWC_TIM_D0I3C, DWC_TIM_D0I3_EN);
+		d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+	}
+
+	while (time_before(jiffies, j1)) {
+		d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+		if (!(d0i3c_reg & DWC_TIM_D0I3_CIP))
+			break;
+	}
+
+	if (d0i3c_reg & DWC_TIM_D0I3_CIP)
+		dev_info(dev, "%s: timeout waiting CIP to be cleared", __func__);
+	/*
+	 * The PCI core will handle transition to D3 automatically. We only
+	 * need to provide runtime PM hooks for that to happen.
+	 */
+
+	return 0;
+}
+
+static int dwc_pwm_runtime_resume(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct dwc_pwm *dwc = pci_get_drvdata(pdev);
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	cgsr_reg = dwc_pwm_readl(dwc->base, DWC_TIM_CGSR);
+
+	if (cgsr_reg & DWC_TIM_CGSR_CG)
+		dwc_pwm_writel(dwc->base, DWC_TIM_CGSR, (cgsr_reg & ~DWC_TIM_CGSR_CG));
+
+	d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+
+	if (d0i3c_reg & DWC_TIM_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		if (d0i3c_reg & DWC_TIM_D0I3_EN)
+			d0i3c_reg &= ~DWC_TIM_D0I3_EN;
+
+		if (d0i3c_reg & DWC_TIM_D0I3_RR)
+			d0i3c_reg |= DWC_TIM_D0I3_RR;
+
+		dwc_pwm_writel(dwc->base, DWC_TIM_D0I3C, d0i3c_reg);
+	}
+
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops dwc_pwm_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(dwc_pwm_suspend, dwc_pwm_resume)
+	SET_RUNTIME_PM_OPS(dwc_pwm_runtime_suspend, dwc_pwm_runtime_resume,
+			   NULL)
+};
 
 static const struct pci_device_id dwc_pwm_id_table[] = {
 	{ PCI_VDEVICE(INTEL, 0x4bb7) }, /* Elkhart Lake */
