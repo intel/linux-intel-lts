@@ -1340,11 +1340,20 @@ static inline bool is_cow_mapping(vm_flags_t flags)
  * This should most likely only be called during fork() to see whether we
  * should break the cow immediately for a page on the src mm.
  */
-static inline bool page_needs_cow_for_dma(struct vm_area_struct *vma,
-					  struct page *page)
+static inline bool page_needs_cow(struct vm_area_struct *vma,
+				struct page *page)
 {
 	if (!is_cow_mapping(vma->vm_flags))
 		return false;
+
+	/*
+	 * Dovetail: If the source mm belongs to a dovetailed process,
+	 * we don't want to impose the COW-induced latency on it: make
+	 * sure the child gets its own copy of the page.
+	 */
+	if (IS_ENABLED(CONFIG_DOVETAIL) &&
+	    test_bit(MMF_DOVETAILED, &vma->vm_mm->flags))
+		return true;
 
 	if (!test_bit(MMF_HAS_PINNED, &vma->vm_mm->flags))
 		return false;
