@@ -4383,7 +4383,7 @@ again:
 			 * need to be without the pgtable locks since we could
 			 * sleep during the process.
 			 */
-			if (unlikely(page_needs_cow_for_dma(vma, ptepage))) {
+			if (unlikely(page_needs_cow(vma, ptepage))) {
 				pte_t src_pte_old = entry;
 				struct page *new;
 
