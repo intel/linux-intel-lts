@@ -899,14 +899,8 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 	 * seen pinning", along with the (inexact) check of
 	 * the page count. That might give false positives for
 	 * for pinning, but it will work correctly.
-	 *
-	 * Dovetail: if the source mm belongs to a Dovetail-enabled
-	 * process, we don't want to impose the COW-induced latency on
-	 * it: make sure the child gets its own copy of the page.
 	 */
-	if (likely(!page_needs_cow_for_dma(src_vma, page) &&
-			(!dovetailing() || !test_bit(MMF_DOVETAILED,
-						&src_vma->vm_mm->flags))))
+	if (likely(!page_needs_cow(src_vma, page)))
 		return 1;
 
 	new_page = *prealloc;
