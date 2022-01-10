@@ -38,7 +38,7 @@ struct xpcie_dev *intel_xpcie_create_device(u32 sw_device_id,
 		 pdev->bus->number,
 		 PCI_SLOT(pdev->devfn),
 		 PCI_FUNC(pdev->devfn));
-
+	memcpy(xdev->xpcie.name, xdev->name, XPCIE_MAX_NAME_LEN);
 	mutex_init(&xdev->lock);
 
 	return xdev;
@@ -146,7 +146,8 @@ static irqreturn_t intel_xpcie_core_interrupt(int irq, void *args)
 
 	event = intel_xpcie_get_doorbell(&xdev->xpcie, FROM_DEVICE, DEV_EVENT);
 	if (event == DEV_SHUTDOWN || event == 0xFF) {
-		pr_info("%s: shutdown_event (event=0x%x)\n", __func__, event);
+		dev_err(&xdev->pci->dev,
+			"%s: shutdown_event (event=0x%x)\n", __func__, event);
 		schedule_delayed_work(&xdev->shutdown_event, 0);
 		return IRQ_HANDLED;
 	}
