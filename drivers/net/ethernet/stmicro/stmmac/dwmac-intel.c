@@ -667,6 +667,14 @@ static int ehl_pse0_common_data(struct pci_dev *pdev,
 
 	intel_mgbe_pse_crossts_adj(intel_priv, EHL_PSE_ART_MHZ);
 
+	/* store A2H packets in L2 SRAM, access through BAR0 + 128KB */
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+#if (CONFIG_STMMAC_NETWORK_PROXY_PORT == 0)
+	plat->has_netproxy = 1;
+	plat->msi_network_proxy_vec = 24;
+#endif /* CONFIG_STMMAC_NETWORK_PROXY_PORT */
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
+
 	return ehl_common_data(pdev, plat);
 }
 
@@ -707,6 +715,14 @@ static int ehl_pse1_common_data(struct pci_dev *pdev,
 	plat->clk_ptp_rate = 200000000;
 
 	intel_mgbe_pse_crossts_adj(intel_priv, EHL_PSE_ART_MHZ);
+
+	/* store A2H packets in L2 SRAM, access through BAR0 + 128KB */
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+#if (CONFIG_STMMAC_NETWORK_PROXY_PORT == 1)
+	plat->has_netproxy = 1;
+	plat->msi_network_proxy_vec = 24;
+#endif /* CONFIG_STMMAC_NETWORK_PROXY_PORT */
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
 
 	return ehl_common_data(pdev, plat);
 }
