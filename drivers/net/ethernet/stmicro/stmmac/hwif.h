@@ -408,6 +408,8 @@ struct stmmac_ops {
 				bool en, bool udp, bool sa, bool inv,
 				u32 match);
 	void (*set_arp_offload)(struct mac_device_info *hw, bool en, u32 addr);
+	/* Check frame transmission is completed */
+	int (*mtl_tx_completed)(void __iomem *ioaddr, u32 tx_queues);
 	int (*est_configure)(void __iomem *ioaddr, struct stmmac_est *cfg,
 			     unsigned int ptp_rate);
 	void (*est_irq_status)(void __iomem *ioaddr, struct net_device *dev,
@@ -523,6 +525,8 @@ struct stmmac_ops {
 	stmmac_do_callback(__priv, mac, config_l4_filter, __args)
 #define stmmac_set_arp_offload(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, set_arp_offload, __args)
+#define stmmac_mtl_tx_completed(__priv, __args...) \
+	stmmac_do_callback(__priv, mac, mtl_tx_completed, __args)
 #define stmmac_est_configure(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, est_configure, __args)
 #define stmmac_est_irq_status(__priv, __args...) \
@@ -652,6 +656,18 @@ struct stmmac_regs_off {
 	u32 mmc_off;
 };
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+struct stmmac_pm_ops {
+	int (*suspend)(struct stmmac_priv *priv, struct net_device *ndev);
+	int (*resume)(struct stmmac_priv *priv, struct net_device *ndev);
+};
+
+#define stmmac_pm_suspend(__priv, __args...) \
+	stmmac_do_callback(__priv, pm, suspend, __args)
+#define stmmac_pm_resume(__priv, __args...) \
+	stmmac_do_callback(__priv, pm, resume, __args)
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
+
 extern const struct stmmac_ops dwmac100_ops;
 extern const struct stmmac_dma_ops dwmac100_dma_ops;
 extern const struct stmmac_ops dwmac1000_ops;
@@ -668,6 +684,10 @@ extern const struct stmmac_dma_ops dwxgmac210_dma_ops;
 extern const struct stmmac_desc_ops dwxgmac210_desc_ops;
 extern const struct stmmac_mmc_ops dwmac_mmc_ops;
 extern const struct stmmac_mmc_ops dwxgmac_mmc_ops;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+extern const struct stmmac_pm_ops dwmac_pm_ops;
+extern const struct stmmac_pm_ops dwmac_netprox_pm_ops;
+#endif
 
 #define GMAC_VERSION		0x00000020	/* GMAC CORE Version */
 #define GMAC4_VERSION		0x00000110	/* GMAC4+ CORE Version */
