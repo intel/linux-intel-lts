@@ -64,6 +64,42 @@ static void dwxgmac2_set_mac(void __iomem *ioaddr, bool enable)
 	writel(rx, ioaddr + XGMAC_RX_CONFIG);
 }
 
+static void dwxgmac2_mac_start_tx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_TX_CONFIG);
+	value |= XGMAC_CONFIG_TE;
+	writel(value, ioaddr + XGMAC_TX_CONFIG);
+}
+
+static void dwxgmac2_mac_stop_tx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_TX_CONFIG);
+	value &= ~XGMAC_CONFIG_TE;
+	writel(value, ioaddr + XGMAC_TX_CONFIG);
+}
+
+static void dwxgmac2_mac_start_rx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_RX_CONFIG);
+	value |= XGMAC_CONFIG_RE;
+	writel(value, ioaddr + XGMAC_RX_CONFIG);
+}
+
+static void dwxgmac2_mac_stop_rx(void __iomem *ioaddr)
+{
+	u32 value;
+
+	value = readl(ioaddr + XGMAC_RX_CONFIG);
+	value &= ~XGMAC_CONFIG_RE;
+	writel(value, ioaddr + XGMAC_RX_CONFIG);
+}
+
 static int dwxgmac2_rx_ipc(struct mac_device_info *hw)
 {
 	void __iomem *ioaddr = hw->pcsr;
@@ -1455,6 +1491,10 @@ static void dwxgmac3_fpe_configure(void __iomem *ioaddr, u32 num_txq,
 const struct stmmac_ops dwxgmac210_ops = {
 	.core_init = dwxgmac2_core_init,
 	.set_mac = dwxgmac2_set_mac,
+	.start_tx = dwxgmac2_mac_start_tx,
+	.stop_tx = dwxgmac2_mac_stop_tx,
+	.start_rx = dwxgmac2_mac_start_rx,
+	.stop_rx = dwxgmac2_mac_stop_rx,
 	.rx_ipc = dwxgmac2_rx_ipc,
 	.rx_queue_enable = dwxgmac2_rx_queue_enable,
 	.rx_queue_prio = dwxgmac2_rx_queue_prio,
