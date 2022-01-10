@@ -271,4 +271,23 @@ config STMMAC_PCI
 	  If you have a controller with this interface, say Y or M here.
 
 	  If unsure, say N.
+
+config STMMAC_NETWORK_PROXY
+	bool "STMMAC Network Proxy support"
+	depends on STMMAC_ETH && DWMAC_INTEL && NETWORK_PROXY
+	help
+	  This selects the Network Proxy support for the stmmac driver.
+
+	  This enables stmmac driver to has the capable of supporting
+	  network proxy mode entry and exit for the ECMA-393 proxZzy
+	  technology.
+
+config STMMAC_NETWORK_PROXY_PORT
+	int "STMMAC Network Proxy support in Port"
+	depends on STMMAC_NETWORK_PROXY
+	range 0 1
+	default 0
+	help
+	  Default enable port 0 for Network Proxy.
+
 endif
