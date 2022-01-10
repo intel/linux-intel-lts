@@ -13298,6 +13298,7 @@ M:	Ong Boon Leong <boon.leong.ong@intel.com>
 M:	Song Yoong Siang <yoong.siang.song@intel.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
+F:	drivers/net/ethernet/stmicro/stmmac/stmmac_netproxy.*
 F:	drivers/net/networkproxy/*
 F:	include/linux/network_proxy*
 
