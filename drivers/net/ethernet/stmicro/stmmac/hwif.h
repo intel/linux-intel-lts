@@ -299,6 +299,11 @@ struct stmmac_ops {
 	void (*core_init)(struct mac_device_info *hw, struct net_device *dev);
 	/* Enable the MAC RX/TX */
 	void (*set_mac)(void __iomem *ioaddr, bool enable);
+	/* Start/Stop TX/RX state machine of MAC */
+	void (*start_tx)(void __iomem *ioaddr);
+	void (*stop_tx)(void __iomem *ioaddr);
+	void (*start_rx)(void __iomem *ioaddr);
+	void (*stop_rx)(void __iomem *ioaddr);
 	/* Enable and verify that the IPC module is supported */
 	int (*rx_ipc)(struct mac_device_info *hw);
 	/* Enable RX Queues */
@@ -418,6 +423,14 @@ struct stmmac_ops {
 	stmmac_do_void_callback(__priv, mac, core_init, __args)
 #define stmmac_mac_set(__priv, __args...) \
 	stmmac_do_void_callback(__priv, mac, set_mac, __args)
+#define stmmac_start_mac_tx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, start_tx, __args)
+#define stmmac_stop_mac_tx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, stop_tx, __args)
+#define stmmac_start_mac_rx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, start_rx, __args)
+#define stmmac_stop_mac_rx(__priv, __args...) \
+	stmmac_do_void_callback(__priv, mac, stop_rx, __args)
 #define stmmac_rx_ipc(__priv, __args...) \
 	stmmac_do_callback(__priv, mac, rx_ipc, __args)
 #define stmmac_rx_queue_enable(__priv, __args...) \
