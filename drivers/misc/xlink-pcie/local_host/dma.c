@@ -254,29 +254,8 @@ static void intel_xpcie_ep_dma_enable(void __iomem *dma_base,
 static int intel_xpcie_ep_dma_doorbell(struct xpcie_epf *xpcie_epf, int chan,
 				       void __iomem *doorbell)
 {
-	int i = DMA_PCIE_PM_L1_TIMEOUT, rc = 0;
-	u32 val, pm_val;
-
-	val = ioread32(xpcie_epf->apb_base + PCIE_REGS_PCIE_APP_CNTRL);
-	iowrite32(val | APP_XFER_PENDING,
-		  xpcie_epf->apb_base + PCIE_REGS_PCIE_APP_CNTRL);
-	pm_val = ioread32(xpcie_epf->apb_base + PCIE_REGS_PCIE_SII_PM_STATE_1);
-	while (pm_val & PM_LINKST_IN_L1) {
-		if (i-- < 0) {
-			rc = -ETIME;
-			break;
-		}
-		udelay(5);
-		pm_val = ioread32(xpcie_epf->apb_base +
-				  PCIE_REGS_PCIE_SII_PM_STATE_1);
-	}
-
 	iowrite32((u32)chan, doorbell);
-
-	iowrite32(val & ~APP_XFER_PENDING,
-		  xpcie_epf->apb_base + PCIE_REGS_PCIE_APP_CNTRL);
-
-	return rc;
+	return 0;
 }
 
 static int intel_xpcie_ep_dma_err_status(void __iomem *err_status, int chan)

@@ -117,7 +117,6 @@ static irqreturn_t intel_xpcie_host_interrupt(int irq, void *args)
 
 	xpcie_epf = container_of(xpcie, struct xpcie_epf, xpcie);
 	epf = xpcie_epf->epf;
-
 	if (epf->header->deviceid == PCI_DEVICE_ID_INTEL_KEEMBAY) {
 		val = ioread32(xpcie_epf->apb_base + PCIE_REGS_PCIE_INTR_FLAGS);
 		if (!(val & LBC_CII_EVENT_FLAG))
@@ -205,6 +204,7 @@ static int intel_xpcie_setup_bar(struct pci_epf *epf, enum pci_barno barno,
 	if (!min_size)
 		return 0;
 
+	bar->barno = barno;
 	bar->flags |= PCI_BASE_ADDRESS_MEM_TYPE_64;
 	if (!bar->size)
 		bar->size = min_size;
@@ -293,6 +293,12 @@ static int intel_xpcie_epf_get_thb_pf_data(struct platform_device *pdev,
 	struct resource *res;
 
 	dma_dev = epc->dev.parent;
+
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dma");
+	xpcie_epf->dma_base =
+		devm_ioremap(dma_dev, res->start, resource_size(res));
+	if (IS_ERR(xpcie_epf->dma_base))
+		return PTR_ERR(xpcie_epf->dma_base);
 
 	res = platform_get_resource_byname(pdev,
 					   IORESOURCE_MEM,
