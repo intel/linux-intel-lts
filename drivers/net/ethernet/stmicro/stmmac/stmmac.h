@@ -310,7 +310,11 @@ struct stmmac_priv {
 	struct workqueue_struct *fpe_wq;
 	struct work_struct fpe_task;
 	char wq_name[IFNAMSIZ + 4];
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	/* Network Proxy A2H Worker */
+	struct workqueue_struct *netprox_wq;
+	bool networkproxy_exit;
+#endif
 	/* TC Handling */
 	unsigned int tc_entries_max;
 	unsigned int tc_off_max;
@@ -369,6 +373,13 @@ int stmmac_reinit_queues(struct net_device *dev, u32 rx_cnt, u32 tx_cnt);
 int stmmac_reinit_ringparam(struct net_device *dev, u32 rx_size, u32 tx_size);
 int stmmac_bus_clks_config(struct stmmac_priv *priv, bool enabled);
 void stmmac_fpe_handshake(struct stmmac_priv *priv, bool enable);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+int stmmac_config_dma_channel(struct stmmac_priv *priv);
+int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
+#endif
 
 static inline bool stmmac_xdp_is_enabled(struct stmmac_priv *priv)
 {
