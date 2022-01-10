@@ -25,18 +25,23 @@ static void dwmac100_core_init(struct mac_device_info *hw,
 {
 	void __iomem *ioaddr = hw->pcsr;
 	u32 value = readl(ioaddr + MAC_CONTROL);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	struct stmmac_priv *priv = netdev_priv(dev);
+	if (!priv->networkproxy_exit) {
+#endif
+		value |= MAC_CORE_INIT;
 
-	value |= MAC_CORE_INIT;
+		/* Clear ASTP bit because Ethernet switch tagging formats such
+		 * as Broadcom tags can look like invalid LLC/SNAP packets and
+		 * cause the hardware to truncate packets on reception.
+		 */
+		if (netdev_uses_dsa(dev))
+			value &= ~MAC_CONTROL_ASTP;
 
-	/* Clear ASTP bit because Ethernet switch tagging formats such as
-	 * Broadcom tags can look like invalid LLC/SNAP packets and cause the
-	 * hardware to truncate packets on reception.
-	 */
-	if (netdev_uses_dsa(dev))
-		value &= ~MAC_CONTROL_ASTP;
-
-	writel(value, ioaddr + MAC_CONTROL);
-
+		writel(value, ioaddr + MAC_CONTROL);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	}
+#endif
 #ifdef STMMAC_VLAN_TAG_USED
 	writel(ETH_P_8021Q, ioaddr + MAC_VLAN1);
 #endif
