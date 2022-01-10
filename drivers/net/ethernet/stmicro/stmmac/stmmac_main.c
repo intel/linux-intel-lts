@@ -2729,6 +2729,7 @@ static void stmmac_tx_err(struct stmmac_priv *priv, u32 chan)
 	netif_tx_stop_queue(netdev_get_tx_queue(priv->dev, chan));
 
 	stmmac_stop_tx_dma(priv, chan);
+	stmmac_stop_mac_tx(priv, priv->ioaddr);
 	dma_free_tx_skbufs(priv, chan);
 	stmmac_clear_tx_descriptors(priv, chan);
 	tx_q->dirty_tx = 0;
@@ -2738,6 +2739,7 @@ static void stmmac_tx_err(struct stmmac_priv *priv, u32 chan)
 	stmmac_init_tx_chan(priv, priv->ioaddr, priv->plat->dma_cfg,
 			    tx_q->dma_tx_phy, chan);
 	stmmac_start_tx_dma(priv, chan);
+	stmmac_start_mac_tx(priv, priv->ioaddr);
 
 	priv->dev->stats.tx_errors++;
 	netif_tx_wake_queue(netdev_get_tx_queue(priv->dev, chan));
@@ -6467,6 +6469,7 @@ void stmmac_disable_rx_queue(struct stmmac_priv *priv, u32 queue)
 	stmmac_disable_dma_irq(priv, priv->ioaddr, queue, 1, 0);
 	spin_unlock_irqrestore(&ch->lock, flags);
 
+	stmmac_stop_mac_rx(priv, priv->ioaddr);
 	stmmac_stop_rx_dma(priv, queue);
 	__free_dma_rx_desc_resources(priv, queue);
 }
@@ -6514,6 +6517,7 @@ void stmmac_enable_rx_queue(struct stmmac_priv *priv, u32 queue)
 	}
 
 	stmmac_start_rx_dma(priv, queue);
+	stmmac_start_mac_rx(priv, priv->ioaddr);
 
 	spin_lock_irqsave(&ch->lock, flags);
 	stmmac_enable_dma_irq(priv, priv->ioaddr, queue, 1, 0);
@@ -6530,6 +6534,7 @@ void stmmac_disable_tx_queue(struct stmmac_priv *priv, u32 queue)
 	spin_unlock_irqrestore(&ch->lock, flags);
 
 	stmmac_stop_tx_dma(priv, queue);
+	stmmac_stop_mac_tx(priv, priv->ioaddr);
 	__free_dma_tx_desc_resources(priv, queue);
 }
 
@@ -6565,6 +6570,7 @@ void stmmac_enable_tx_queue(struct stmmac_priv *priv, u32 queue)
 	stmmac_set_tx_tail_ptr(priv, priv->ioaddr,
 			       tx_q->tx_tail_addr, tx_q->queue_index);
 
+	stmmac_start_mac_tx(priv, priv->ioaddr);
 	stmmac_start_tx_dma(priv, queue);
 
 	spin_lock_irqsave(&ch->lock, flags);
@@ -7456,6 +7462,8 @@ int stmmac_suspend(struct device *dev)
 
 	/* Stop TX/RX DMA */
 	stmmac_stop_all_dma(priv);
+	stmmac_stop_mac_tx(priv, priv->ioaddr);
+	stmmac_stop_mac_rx(priv, priv->ioaddr);
 
 	if (priv->plat->serdes_powerdown)
 		priv->plat->serdes_powerdown(ndev, priv->plat->bsp_priv);
