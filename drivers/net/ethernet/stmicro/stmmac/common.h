@@ -519,6 +519,9 @@ struct mac_device_info {
 	const struct stmmac_mode_ops *mode;
 	const struct stmmac_hwtimestamp *ptp;
 	const struct stmmac_tc_ops *tc;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	const struct stmmac_pm_ops *pm;
+#endif
 	const struct stmmac_mmc_ops *mmc;
 	struct dw_xpcs *xpcs;
 	struct mii_regs mii;	/* MII register Addresses */
