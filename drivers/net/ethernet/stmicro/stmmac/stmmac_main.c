@@ -49,6 +49,9 @@
 #include "dwmac1000.h"
 #include "dwxgmac2.h"
 #include "hwif.h"
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+#include "stmmac_netproxy.h"
+#endif
 
 /* As long as the interface is active, we keep the timestamping counter enabled
  * with fine resolution and binary rollover. This avoid non-monotonic behavior
@@ -2925,8 +2928,10 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 	u32 rx_channels_count = priv->plat->rx_queues_to_use;
 	u32 tx_channels_count = priv->plat->tx_queues_to_use;
 	u32 dma_csr_ch = max(rx_channels_count, tx_channels_count);
+#ifndef CONFIG_STMMAC_NETWORK_PROXY
 	struct stmmac_rx_queue *rx_q;
 	struct stmmac_tx_queue *tx_q;
+#endif
 	u32 chan = 0;
 	int atds = 0;
 	int ret = 0;
@@ -2939,12 +2944,17 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 	if (priv->extend_desc && (priv->mode == STMMAC_RING_MODE))
 		atds = 1;
 
-	ret = stmmac_reset(priv, priv->ioaddr);
-	if (ret) {
-		dev_err(priv->device, "Failed to reset the dma\n");
-		return ret;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (!priv->networkproxy_exit) {
+#endif
+		ret = stmmac_reset(priv, priv->ioaddr);
+		if (ret) {
+			dev_err(priv->device, "Failed to reset the dma\n");
+			return ret;
+		}
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
 	}
-
+#endif
 	/* DMA Configuration */
 	stmmac_dma_init(priv, priv->ioaddr, priv->plat->dma_cfg, atds);
 
@@ -2956,7 +2966,9 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 		stmmac_init_chan(priv, priv->ioaddr, priv->plat->dma_cfg, chan);
 		stmmac_disable_dma_irq(priv, priv->ioaddr, chan, 1, 1);
 	}
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	stmmac_config_dma_channel(priv);
+#else
 	/* DMA RX Channel Configuration */
 	for (chan = 0; chan < rx_channels_count; chan++) {
 		rx_q = &priv->rx_queue[chan];
@@ -2982,7 +2994,7 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 		stmmac_set_tx_tail_ptr(priv, priv->ioaddr,
 				       tx_q->tx_tail_addr, chan);
 	}
-
+#endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 	return ret;
 }
 
@@ -3844,7 +3856,10 @@ static int stmmac_open(struct net_device *dev)
 	stmmac_enable_all_queues(priv);
 	netif_tx_start_all_queues(priv->dev);
 	stmmac_enable_all_dma_irq(priv);
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy)
+		stmmac_netproxy_register(dev);
+#endif
 	pm_runtime_put(priv->device);
 	return 0;
 
@@ -3930,6 +3945,11 @@ static int stmmac_release(struct net_device *dev)
 
 	/* Release and free the Rx/Tx resources */
 	free_dma_desc_resources(priv);
+
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy)
+		stmmac_netproxy_deregister(dev);
+#endif
 
 	stmmac_release_ptp(priv);
 
@@ -7186,6 +7206,13 @@ int stmmac_dvr_probe(struct device *device,
 	if (ret)
 		goto error_hw_init;
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy) {
+		dev_info(priv->device, "Network Proxy supported\n");
+		device_set_wakeup_capable(priv->device, 1);
+	}
+#endif
+
 	/* Only DWMAC core version 5.20 onwards supports HW descriptor prefetch.
 	 */
 	if (priv->synopsys_id < DWMAC_CORE_5_20)
@@ -7371,6 +7398,12 @@ int stmmac_dvr_probe(struct device *device,
 	if (priv->plat->dump_debug_regs)
 		priv->plat->dump_debug_regs(priv->plat->bsp_priv);
 
+	/* Runtime PM is mutually exclusive with network proxy service */
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (priv->plat->has_netproxy)
+		return ret;
+#endif
+
 	/* Let pm_runtime_put() disable the clocks.
 	 * If CONFIG_PM is not enabled, the clocks will stay powered.
 	 */
@@ -7457,6 +7490,104 @@ int stmmac_dvr_remove(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(stmmac_dvr_remove);
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+/**
+ * stmmac_suspend_common - suspend common callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: this is the function to suspend the device and it is called
+ * by the platform driver to stop the network queue, release the resources,
+ * clean and release driver resources.
+ */
+int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	u32 chan;
+
+	mutex_lock(&priv->lock);
+
+	netif_device_detach(ndev);
+
+	netif_carrier_off(priv->dev);
+
+	stmmac_disable_all_queues(priv);
+
+	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
+		hrtimer_cancel(&priv->tx_queue[chan].txtimer);
+
+	if (priv->eee_enabled) {
+		priv->tx_path_in_lpi_mode = false;
+		del_timer_sync(&priv->eee_ctrl_timer);
+	}
+
+	/* Stop TX/RX DMA */
+	stmmac_stop_all_dma(priv);
+	stmmac_stop_mac_tx(priv, priv->ioaddr);
+
+	stmmac_free_tx_skbufs(priv);
+
+	mutex_unlock(&priv->lock);
+
+	priv->speed = SPEED_UNKNOWN;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_suspend_common);
+
+/**
+ * stmmac_suspend_main - suspend main callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: suspend and program the PMT register (for WoL).
+ */
+int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	if (!ndev || !netif_running(ndev))
+		return 0;
+
+	stmmac_suspend_common(priv, ndev);
+
+	mutex_lock(&priv->lock);
+
+	stmmac_stop_mac_rx(priv, priv->ioaddr);
+
+	if (priv->plat->serdes_powerdown)
+		priv->plat->serdes_powerdown(ndev, priv->plat->bsp_priv);
+
+	/* Enable Power down mode by programming the PMT regs */
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
+		stmmac_pmt(priv, priv->hw, priv->wolopts);
+		priv->irq_wake = 1;
+	} else {
+		stmmac_mac_set(priv, priv->ioaddr, false);
+		pinctrl_pm_select_sleep_state(priv->device);
+	}
+
+	mutex_unlock(&priv->lock);
+
+	rtnl_lock();
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
+		phylink_suspend(priv->phylink, true);
+	} else {
+		if (device_may_wakeup(priv->device))
+			phylink_speed_down(priv->phylink, false);
+		phylink_suspend(priv->phylink, false);
+	}
+	rtnl_unlock();
+
+	if (priv->dma_cap.fpesel) {
+		/* Disable FPE */
+		stmmac_fpe_configure(priv, priv->ioaddr,
+				     priv->plat->tx_queues_to_use,
+				     priv->plat->rx_queues_to_use, 0, false);
+
+		stmmac_fpe_handshake(priv, false);
+		stmmac_fpe_stop_wq(priv);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_suspend_main);
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
+
 /**
  * stmmac_suspend - suspend callback
  * @dev: device pointer
@@ -7468,6 +7599,9 @@ int stmmac_suspend(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	stmmac_pm_suspend(priv, priv, ndev);
+#else
 	u32 chan;
 
 	if (!ndev || !netif_running(ndev))
@@ -7527,6 +7661,7 @@ int stmmac_suspend(struct device *dev)
 	}
 
 	priv->speed = SPEED_UNKNOWN;
+#endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 	return 0;
 }
 EXPORT_SYMBOL_GPL(stmmac_suspend);
@@ -7559,6 +7694,138 @@ static void stmmac_reset_queues_param(struct stmmac_priv *priv)
 	}
 }
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+/**
+ * stmmac_resume_common - common resume callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: when resume this function is invoked to setup the DMA and CORE
+ * in a usable state.
+ */
+int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	rtnl_lock();
+		mutex_lock(&priv->lock);
+
+	stmmac_reset_queues_param(priv);
+
+	stmmac_clear_descriptors(priv);
+
+	stmmac_hw_setup(ndev, false);
+	stmmac_init_coalesce(priv);
+	stmmac_set_rx_mode(ndev);
+
+	stmmac_restore_hw_vlan_rx_fltr(priv, ndev, priv->hw);
+
+	stmmac_enable_all_queues(priv);
+	stmmac_enable_all_dma_irq(priv);
+
+	mutex_unlock(&priv->lock);
+	rtnl_unlock();
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_resume_common);
+
+/**
+ * stmmac_resume_main - main resume callback
+ * @priv: driver private structure
+ * @ndev: net device structure
+ * Description: program the PMT register (for WoL) and resume
+ */
+int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
+{
+	int ret;
+
+	if (!netif_running(ndev))
+		return 0;
+
+	/* Power Down bit, into the PM register, is cleared
+	 * automatically as soon as a magic packet or a Wake-up frame
+	 * is received. Anyway, it's better to manually clear
+	 * this bit because it can generate problems while resuming
+	 * from another devices (e.g. serial console).
+	 */
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
+		mutex_lock(&priv->lock);
+		stmmac_pmt(priv, priv->hw, 0);
+		mutex_unlock(&priv->lock);
+		priv->irq_wake = 0;
+	} else {
+		pinctrl_pm_select_default_state(priv->device);
+		/* reset the phy so that it's ready */
+		if (priv->mii)
+			stmmac_mdio_reset(priv->mii);
+	}
+
+	if (priv->plat->serdes_powerup) {
+		ret = priv->plat->serdes_powerup(ndev, priv->plat->bsp_priv);
+		if (ret < 0)
+			return ret;
+	}
+
+	rtnl_lock();
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
+		phylink_resume(priv->phylink);
+	} else {
+		phylink_resume(priv->phylink);
+		if (device_may_wakeup(priv->device))
+			phylink_speed_up(priv->phylink);
+	}
+	rtnl_unlock();
+
+	stmmac_resume_common(priv, ndev);
+
+	netif_device_attach(ndev);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_resume_main);
+
+int stmmac_config_dma_channel(struct stmmac_priv *priv)
+{
+	u32 rx_channels_count = priv->plat->rx_queues_to_use;
+	u32 tx_channels_count = priv->plat->tx_queues_to_use;
+	struct stmmac_rx_queue *rx_q;
+	struct stmmac_tx_queue *tx_q;
+	u32 chan = 0;
+	int ret = 0;
+
+	if (!priv->plat->dma_cfg || !priv->plat->dma_cfg->pbl) {
+		dev_err(priv->device, "Invalid DMA configuration\n");
+		return -EINVAL;
+	}
+
+	/* DMA RX Channel Configuration */
+	for (chan = 0; chan < rx_channels_count; chan++) {
+		rx_q = &priv->rx_queue[chan];
+
+		stmmac_init_rx_chan(priv, priv->ioaddr, priv->plat->dma_cfg,
+				    rx_q->dma_rx_phy, chan);
+
+		rx_q->rx_tail_addr = rx_q->dma_rx_phy +
+				     (priv->dma_rx_size *
+				      sizeof(struct dma_desc));
+		stmmac_set_rx_tail_ptr(priv, priv->ioaddr,
+				       rx_q->rx_tail_addr, chan);
+	}
+
+	/* DMA TX Channel Configuration */
+	for (chan = 0; chan < tx_channels_count; chan++) {
+		tx_q = &priv->tx_queue[chan];
+
+		stmmac_init_tx_chan(priv, priv->ioaddr, priv->plat->dma_cfg,
+				    tx_q->dma_tx_phy, chan);
+
+		tx_q->tx_tail_addr = tx_q->dma_tx_phy;
+		stmmac_set_tx_tail_ptr(priv, priv->ioaddr,
+				       tx_q->tx_tail_addr, chan);
+	}
+
+	return ret;
+}
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
+
 /**
  * stmmac_resume - resume callback
  * @dev: device pointer
@@ -7569,6 +7836,10 @@ int stmmac_resume(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	stmmac_pm_resume(priv, priv, ndev);
+#else
+
 	int ret;
 
 	if (!netif_running(ndev))
@@ -7631,7 +7902,7 @@ int stmmac_resume(struct device *dev)
 	rtnl_unlock();
 
 	netif_device_attach(ndev);
-
+#endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 	return 0;
 }
 EXPORT_SYMBOL_GPL(stmmac_resume);
@@ -7702,6 +7973,13 @@ static void __exit stmmac_exit(void)
 	debugfs_remove_recursive(stmmac_fs_dir);
 #endif
 }
+
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+const struct stmmac_pm_ops dwmac_pm_ops = {
+	.suspend = stmmac_suspend_main,
+	.resume = stmmac_resume_main,
+};
+#endif
 
 module_init(stmmac_init)
 module_exit(stmmac_exit)

@@ -257,6 +257,9 @@ struct plat_stmmacenet_data {
 	int mac_port_sel_speed;
 	bool en_tx_lpi_clockgating;
 	int has_xgmac;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int has_netproxy;
+#endif
 	bool vlan_fail_q_en;
 	u8 vlan_fail_q;
 	unsigned int eee_usecs_rate;
