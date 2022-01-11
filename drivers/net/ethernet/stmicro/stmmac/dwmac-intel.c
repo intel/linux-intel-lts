@@ -1008,6 +1008,12 @@ static int stmmac_config_multi_msi(struct pci_dev *pdev,
 		res->sfty_ce_irq = pci_irq_vector(pdev, plat->msi_sfty_ce_vec);
 	if (plat->msi_sfty_ue_vec < STMMAC_MSI_VEC_MAX)
 		res->sfty_ue_irq = pci_irq_vector(pdev, plat->msi_sfty_ue_vec);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (plat->msi_network_proxy_vec < STMMAC_MSI_VEC_MAX &&
+	    plat->has_netproxy)
+		res->netprox_irq =
+			pci_irq_vector(pdev, plat->msi_network_proxy_vec);
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
 
 	plat->multi_msi_en = 1;
 	dev_info(&pdev->dev, "%s: multi MSI enablement successful\n", __func__);
@@ -1090,6 +1096,9 @@ static int intel_eth_pci_probe(struct pci_dev *pdev,
 	plat->msi_sfty_ue_vec = STMMAC_MSI_VEC_MAX;
 	plat->msi_rx_base_vec = STMMAC_MSI_VEC_MAX;
 	plat->msi_tx_base_vec = STMMAC_MSI_VEC_MAX;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	plat->msi_network_proxy_vec = STMMAC_MSI_VEC_MAX;
+#endif /* CONFIG_STMMAC_NETWORK_PROXY */
 
 	ret = info->setup(pdev, plat);
 	if (ret)
