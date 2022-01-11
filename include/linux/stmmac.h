@@ -276,6 +276,9 @@ struct plat_stmmacenet_data {
 	int msi_sfty_ue_vec;
 	int msi_rx_base_vec;
 	int msi_tx_base_vec;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int msi_network_proxy_vec;
+#endif
 	bool use_phy_wol;
 	bool skip_xpcs_reset;
 	bool use_hw_vlan;
