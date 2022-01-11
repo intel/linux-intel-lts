@@ -335,6 +335,9 @@ enum dma_irq_dir {
 
 enum request_irq_err {
 	REQ_IRQ_ERR_ALL,
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	REQ_IRQ_ERR_NETWORK_PROXY,
+#endif
 	REQ_IRQ_ERR_TX,
 	REQ_IRQ_ERR_RX,
 	REQ_IRQ_ERR_SFTY_UE,
