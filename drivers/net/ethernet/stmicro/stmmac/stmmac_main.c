@@ -3464,6 +3464,12 @@ static void stmmac_free_irq(struct net_device *dev,
 
 	switch (irq_err) {
 	case REQ_IRQ_ERR_ALL:
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+		if (priv->netprox_irq > 0 && priv->netprox_irq != dev->irq)
+			free_irq(priv->netprox_irq, dev);
+		fallthrough;
+	case REQ_IRQ_ERR_NETWORK_PROXY:
+#endif
 		irq_idx = priv->plat->tx_queues_to_use;
 		fallthrough;
 	case REQ_IRQ_ERR_TX:
@@ -3649,6 +3655,24 @@ static int stmmac_request_irq_multi_msi(struct net_device *dev)
 		irq_set_affinity_hint(priv->tx_irq[i], &cpu_mask);
 	}
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+		/* Network Proxy IRQ line */
+		if (priv->netprox_irq > 0 && priv->netprox_irq != dev->irq) {
+			int_name = priv->int_name_netprox_irq;
+			sprintf(int_name, "%s:%s", dev->name, "netprox");
+			ret = request_threaded_irq(priv->netprox_irq,
+						   netproxy_isr,
+						   netproxy_isr_thread, 0,
+						   int_name, dev);
+			if (unlikely(ret < 0)) {
+				netdev_err(priv->dev,
+					   "%s: alloc netprox MSI %d (error: %d)\n",
+					   __func__, priv->netprox_irq, ret);
+				irq_err = REQ_IRQ_ERR_NETWORK_PROXY;
+				goto irq_error;
+			}
+		}
+#endif
 	return 0;
 
 irq_error:
@@ -7108,6 +7132,9 @@ int stmmac_dvr_probe(struct device *device,
 		priv->rx_irq[i] = res->rx_irq[i];
 	for (i = 0; i < MTL_MAX_TX_QUEUES; i++)
 		priv->tx_irq[i] = res->tx_irq[i];
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	priv->netprox_irq = res->netprox_irq;
+#endif
 
 	if (!is_zero_ether_addr(res->mac))
 		memcpy(priv->dev->dev_addr, res->mac, ETH_ALEN);
