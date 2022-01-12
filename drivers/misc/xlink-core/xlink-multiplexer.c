@@ -31,14 +31,11 @@
 #include "xlink-multiplexer.h"
 #include "xlink-platform.h"
 
-#undef pr_fmt
-#define pr_fmt(fmt) "%s:%s():%d: " fmt, KBUILD_MODNAME, __func__, __LINE__
-
 #define THR_UPR 85
 #define THR_LWR 80
 
 // timeout used for open channel
-#define OPEN_CHANNEL_TIMEOUT_MSEC 5000
+#define OPEN_CHANNEL_TIMEOUT_MSEC 50000
 
 /* Channel mapping table. */
 struct xlink_channel_type {
@@ -65,7 +62,7 @@ static const struct xlink_channel_table_entry default_channel_table[] = {
 struct channel {
 	struct open_channel *opchan;
 	struct open_channel *opchan_waiting_closure;
-	struct mutex lock;  /* protect channel structure */
+	struct mutex lock;		/* lock to protect channel */
 	enum xlink_opmode mode;
 	enum xlink_channel_status status;
 	enum xlink_channel_status ipc_status;
@@ -239,9 +236,9 @@ static struct open_channel *get_channel(u32 link_id, u16 chan)
 
 	mutex_lock(&xmux->channels[link_id][chan].lock);
 	opchan = xmux->channels[link_id][chan].opchan;
-
 	if (!opchan)
 		mutex_unlock(&xmux->channels[link_id][chan].lock);
+
 	return opchan;
 }
 
@@ -288,7 +285,7 @@ static struct packet *get_packet_from_channel(struct packet_queue *queue)
 
 static int release_packet_from_channel(struct open_channel *opchan,
 				       struct packet_queue *queue,
-				       u8 * const addr, u32 *size)
+				       u8 * const addr,	u32 *size)
 {
 	u8 packet_found = 0;
 	struct packet *pkt = NULL;
@@ -340,6 +337,7 @@ static int multiplexer_open_channel(u32 link_id, u16 chan)
 	// initialize open channel
 	opchan->id = chan;
 	opchan->chan = &xmux->channels[link_id][chan];
+	// TODO: remove circular dependency
 	xmux->channels[link_id][chan].opchan = opchan;
 	INIT_LIST_HEAD(&opchan->rx_queue.head);
 	opchan->rx_queue.count = 0;
@@ -486,7 +484,7 @@ enum xlink_error xlink_multiplexer_destroy(void)
 	for (i = 0; i < XLINK_MAX_CONNECTIONS; i++) {
 		if (xmux->channels[i])
 			xlink_multiplexer_disconnect(i);
-	}
+		}
 
 	for (conni = 0; conni < XLINK_MAX_CONNECTIONS; conni++) {
 		if (xmux->channels[conni]) {
@@ -524,6 +522,73 @@ static int compl_wait(struct completion *compl, struct open_channel *opchan)
 	return rc;
 }
 
+static int open_closed_channel(struct xlink_event *event, u32 link_id,
+			       u16 chan, int *event_queued)
+{
+	struct open_channel *opchan = NULL;
+	int rc = X_LINK_SUCCESS;
+	u32 save_timeout;
+
+	if (xmux->channels[link_id][chan].opchan) {
+		/* we need to wait for notification
+		 * from peer of previous closure.
+		 */
+		opchan = xmux->channels[link_id][chan].opchan;
+		xmux->channels[link_id][chan].opchan_waiting_closure = opchan;
+		xmux->channels[link_id][chan].opchan = NULL;
+
+		mutex_unlock(&xmux->channels[link_id][chan].lock);
+		rc = wait_for_completion_interruptible_timeout(&opchan->closed,
+							       msecs_to_jiffies
+					(OPEN_CHANNEL_TIMEOUT_MSEC / 5000));
+		if (rc <= 0)
+			pr_err("wait for prev close failed chan%u.rc=%d\n",
+			       chan, rc);
+		mutex_lock(&xmux->channels[link_id][chan].lock);
+		/* whether our wait completed okay or not
+		 * destroy the waiting for closure version.
+		 */
+		multiplexer_close_channel(opchan);
+		xmux->channels[link_id][chan].opchan_waiting_closure = NULL;
+		opchan = NULL;
+	}
+	xmux->channels[link_id][chan].size = event->header.size;
+	xmux->channels[link_id][chan].timeout = event->header.timeout;
+	xmux->channels[link_id][chan].mode = (uintptr_t)event->data;
+	rc = multiplexer_open_channel(link_id, chan);
+	if (rc) {
+		rc = X_LINK_ERROR;
+	} else {
+		opchan = xmux->channels[link_id][chan].opchan;
+
+		if (!opchan) {
+			rc = X_LINK_COMMUNICATION_FAIL;
+		} else {
+			xlink_dispatcher_event_add(EVENT_TX, event);
+			*event_queued = 1;
+			mutex_unlock(&xmux->channels[link_id][chan].lock);
+			save_timeout = opchan->chan->timeout;
+			opchan->chan->timeout = OPEN_CHANNEL_TIMEOUT_MSEC;
+			rc = compl_wait(&opchan->opened, opchan);
+			if (opchan) {
+				opchan->chan->timeout = save_timeout;
+				if (rc == 0) {
+					xmux->channels[link_id][chan].status =
+								CHAN_OPEN;
+				} else {
+					multiplexer_close_channel(opchan);
+					xmux->channels[link_id][chan].opchan = NULL;
+				}
+			} else {
+				pr_err("link %u, chan %u invalid state\n",
+				       link_id, chan);
+				rc = X_LINK_COMMUNICATION_FAIL;
+			}
+		}
+	}
+	return rc;
+}
+
 enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 				      int *event_queued)
 {
@@ -533,7 +598,6 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 	u32 link_id = 0;
 	u32 size = 0;
 	u16 chan = 0;
-	u32 save_timeout = 0;
 
 	if (!xmux || !event)
 		return X_LINK_ERROR;
@@ -565,9 +629,9 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 	case XLINK_WRITE_VOLATILE_REQ:
 	case XLINK_WRITE_CONTROL_REQ:
 		opchan = get_channel(link_id, chan);
-			if (!opchan || opchan->chan->status != CHAN_OPEN) {
-				pr_err("channel %u in invalid state: opchan=%p, status=%d\n",
-				       chan, opchan, opchan ? opchan->chan->status : -1);
+		if (!opchan || opchan->chan->status != CHAN_OPEN) {
+			pr_err("channel %u in invalid state: opchan=%p, status=%d\n",
+			       chan, opchan, opchan ? opchan->chan->status : -1);
 			rc = X_LINK_COMMUNICATION_FAIL;
 		} else {
 			event->header.timeout = opchan->chan->timeout;
@@ -577,12 +641,11 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 				    opchan->chan->mode == RXB_TXB) {
 					// channel is blocking,
 					// wait for packet to be released
-					mutex_unlock(&xmux->channels[link_id][chan].lock);
+					release_channel(opchan);
 					rc = compl_wait(&opchan->pkt_released, opchan);
-					mutex_lock(&xmux->channels[link_id][chan].lock);
 					opchan = get_channel(link_id, chan);
 					if (!opchan) {
-						pr_err("link %u, channel %u in invalid state\n",
+						pr_err("link %u,chan %u invalid\n",
 						       link_id, chan);
 						rc = X_LINK_COMMUNICATION_FAIL;
 					}
@@ -600,20 +663,16 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 					       chan, rc);
 				else
 					*event_queued = 1;
-				if (!rc) {
-					if (opchan->chan->mode == RXN_TXB ||
-					    opchan->chan->mode == RXB_TXB) {
-						// channel is blocking,
-						// wait for packet to be consumed
-						mutex_unlock(&xmux->channels[link_id][chan].lock);
-						rc = compl_wait(&opchan->pkt_consumed, opchan);
-						mutex_lock(&xmux->channels[link_id][chan].lock);
-						opchan = get_channel(link_id, chan);
-						if (!opchan) {
-							pr_err("link %u, channel %u in invalid state\n",
-							       link_id, chan);
-							rc = X_LINK_COMMUNICATION_FAIL;
-						}
+				if (opchan->chan->mode == RXN_TXB ||
+				    opchan->chan->mode == RXB_TXB) {
+					// channel is blocking,
+					// wait for packet to be consumed
+					release_channel(opchan);
+					rc = compl_wait(&opchan->pkt_consumed, opchan);
+					opchan = get_channel(link_id, chan);
+					if (!opchan) {
+						pr_err("link %u,chan %u invalid\n", link_id, chan);
+						return X_LINK_COMMUNICATION_FAIL;
 					}
 				}
 			}
@@ -631,15 +690,13 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 			if (opchan->chan->mode == RXB_TXN ||
 			    opchan->chan->mode == RXB_TXB) {
 				// channel is blocking, wait for packet to become available
-				mutex_unlock(&xmux->channels[link_id][chan].lock);
+				release_channel(opchan);
 				rc = compl_wait(&opchan->pkt_available, opchan);
-				mutex_lock(&xmux->channels[link_id][chan].lock);
 				opchan = get_channel(link_id, chan);
-				if (!opchan) {
-					pr_err("link %u, channel %u in invalid state\n",
-					       link_id, chan);
-					rc = X_LINK_COMMUNICATION_FAIL;
-				}
+					if (!opchan) {
+						pr_err("link %u,chan %u invalid\n", link_id, chan);
+						return X_LINK_COMMUNICATION_FAIL;
+					}
 			}
 			if (rc == X_LINK_SUCCESS) {
 				pkt = get_packet_from_channel(&opchan->rx_queue);
@@ -664,15 +721,15 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 		if (!opchan || opchan->chan->status != CHAN_OPEN) {
 			pr_err("channel %u in invalid state: opchan=%p, status=%d\n",
 			       chan, opchan, opchan ? opchan->chan->status : -1);
+
 			rc = X_LINK_COMMUNICATION_FAIL;
 		} else {
 			event->header.timeout = opchan->chan->timeout;
 			if (opchan->chan->mode == RXB_TXN ||
 			    opchan->chan->mode == RXB_TXB) {
 				// channel is blocking, wait for packet to become available
-				mutex_unlock(&xmux->channels[link_id][chan].lock);
+				release_channel(opchan);
 				rc = compl_wait(&opchan->pkt_available, opchan);
-				mutex_lock(&xmux->channels[link_id][chan].lock);
 				opchan = get_channel(link_id, chan);
 				if (!opchan) {
 					pr_err("link %u, channel %u in invalid state\n",
@@ -724,66 +781,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 	case XLINK_OPEN_CHANNEL_REQ:
 		mutex_lock(&xmux->channels[link_id][chan].lock);
 		if (xmux->channels[link_id][chan].status == CHAN_CLOSED) {
-			//if there was a previous close for which we never received
-			// notification from.
-			if (xmux->channels[link_id][chan].opchan) {
-				//we need to wait for notification from peer of previous closure.
-				opchan = xmux->channels[link_id][chan].opchan;
-				xmux->channels[link_id][chan].opchan_waiting_closure = opchan;
-				xmux->channels[link_id][chan].opchan = NULL;
-
-				mutex_unlock(&xmux->channels[link_id][chan].lock);
-				rc = wait_for_completion_interruptible_timeout
-						(&opchan->closed,
-						 msecs_to_jiffies
-						 (OPEN_CHANNEL_TIMEOUT_MSEC));
-				if (rc <= 0)
-					pr_err("wait for previous closure failed for chan %u. rc = %d\n",
-					       chan, rc);
-				mutex_lock(&xmux->channels[link_id][chan].lock);
-				//whether our wait completed okay or not,
-				// destroy the waiting for closure version.
-				multiplexer_close_channel(opchan);
-				xmux->channels[link_id][chan].opchan_waiting_closure = NULL;
-				opchan = NULL;
-			}
-			xmux->channels[link_id][chan].size = event->header.size;
-			xmux->channels[link_id][chan].timeout = event->header.timeout;
-			xmux->channels[link_id][chan].mode = (uintptr_t)event->data;
-			rc = multiplexer_open_channel(link_id, chan);
-			if (rc) {
-				rc = X_LINK_ERROR;
-			} else {
-				opchan = xmux->channels[link_id][chan].opchan;
-				if (!opchan)
-					return X_LINK_COMMUNICATION_FAIL;
-				rc = xlink_dispatcher_event_add(EVENT_TX, event);
-				if (rc) {
-					pr_err("xlink_dispatcher_event_add on chan %d failed. rc=%d\n",
-					       chan, rc);
-				} else {
-					*event_queued = 1;
-					mutex_unlock(&xmux->channels[link_id][chan].lock);
-					save_timeout = opchan->chan->timeout;
-					opchan->chan->timeout = OPEN_CHANNEL_TIMEOUT_MSEC;
-					rc = compl_wait(&opchan->opened, opchan);
-					opchan->chan->timeout = save_timeout;
-					mutex_lock(&xmux->channels[link_id][chan].lock);
-					opchan = xmux->channels[link_id][chan].opchan;
-					if (!opchan) {
-						pr_err("link %u, channel %u in invalid state\n",
-						       link_id, chan);
-						mutex_unlock(&xmux->channels[link_id][chan].lock);
-						return X_LINK_COMMUNICATION_FAIL;
-						}
-					if (rc == 0) {
-						xmux->channels[link_id][chan].status = CHAN_OPEN;
-					} else {
-						multiplexer_close_channel(opchan);
-						xmux->channels[link_id][chan].opchan = NULL;
-					}
-				}
-			}
+			rc = open_closed_channel(event, link_id, chan, event_queued);
 		} else if (xmux->channels[link_id][chan].status == CHAN_OPEN_PEER) {
 			/* channel already open */
 			xmux->channels[link_id][chan].status = CHAN_OPEN; // opened locally
@@ -791,7 +789,6 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 			xmux->channels[link_id][chan].timeout = event->header.timeout;
 			xmux->channels[link_id][chan].mode = (uintptr_t)event->data;
 			rc = multiplexer_open_channel(link_id, chan);
-			rc = X_LINK_SUCCESS;
 		} else {
 			/* channel already open */
 			rc = X_LINK_ALREADY_OPEN;
@@ -829,7 +826,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 		if (xmux->channels[link_id][chan].status == CHAN_OPEN) {
 			opchan = xmux->channels[link_id][chan].opchan;
 			if (opchan) {
-				//if we've already received peer closure notification
+				/* if we've already received peer closure notification */
 				if (try_wait_for_completion(&opchan->closed)) {
 					//we can go ahead and destroy it.
 					multiplexer_close_channel(opchan);
@@ -837,6 +834,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 				}
 				xmux->channels[link_id][chan].status = CHAN_CLOSED;
 			} else {
+				/* can't close channel not open */
 				rc = X_LINK_ERROR;
 			}
 		} else {
@@ -844,7 +842,7 @@ enum xlink_error xlink_multiplexer_tx(struct xlink_event *event,
 			rc = X_LINK_COMMUNICATION_NOT_OPEN;
 		}
 		if (!rc) {
-			//send an event that notifies of closure
+			/* send an event that notifies of closure */
 			rc = xlink_dispatcher_event_add(EVENT_TX, event);
 			if (!rc)
 				*event_queued = 1;
@@ -963,6 +961,8 @@ enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
 					break;
 				}
 			} else {
+				pr_err("xlink_platform_allocate failed for size=%zu, on chan %u\n",
+				       event->header.size, chan);
 				// failed to allocate buffer
 				rc = X_LINK_ERROR;
 			}
@@ -1030,9 +1030,9 @@ enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
 		if (xmux->channels[link_id][chan].status == CHAN_OPEN) {
 			opchan = xmux->channels[link_id][chan].opchan;
 			if (opchan) {
-				//complete regardless of mode/timeout
+				/* complete regardless of mode/timeout */
 				complete(&opchan->pkt_consumed);
-				// run callback
+				/* run callback */
 				if (chan_is_non_blocking_write(opchan) &&
 				    opchan->consumed_callback) {
 					rc = run_callback(opchan, opchan->consumed_callback,
@@ -1055,7 +1055,7 @@ enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
 				event->header.timeout = opchan->chan->timeout;
 				opchan->tx_fill_level -= event->header.size;
 				opchan->tx_packet_level--;
-				//complete regardless of mode/timeout
+				/* complete regardless of mode/timeout */
 				complete(&opchan->pkt_released);
 			} else {
 				pr_err("channel %u in invalid state\n", chan);
@@ -1119,25 +1119,30 @@ enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
 	case XLINK_CLOSE_CHANNEL_REQ:
 		mutex_lock(&xmux->channels[link_id][chan].lock);
 		if (xmux->channels[link_id][chan].status == CHAN_CLOSED) {
-			//Locally, the channel was closed, but hasn't received
-			// notification from the peer yet (this notification).
+			/* Locally, the channel was closed, but hasn't received
+			 * notification from the peer yet (this notification).
+			 */
 			if (xmux->channels[link_id][chan].opchan_waiting_closure) {
-				//in this case, we have a local thread that is in the open
-				// routine, but waiting on the closure completion. In this
-				// case, we signal completion, and just get outta here. The
-				// waiting thread will take care of destruction of opchan.
-				complete(&xmux->channels[link_id][chan].opchan_waiting_closure->closed);
+				/* in this case, we have a local thread that is in the open
+				 * routine, but waiting on the closure completion. In this
+				 * case, we signal completion, and just get outta here. The
+				 * waiting thread will take care of destruction of opchan.
+				 */
+				complete
+				(&xmux->channels[link_id][chan].opchan_waiting_closure->closed);
 			} else if (xmux->channels[link_id][chan].opchan) {
-				//in this case, locally the channel was closed, and they
-				// have yet to call xlink_open_channel for this channel again.
-				// So, we can directly destroy it.
+				/* in this case, locally the channel was closed, and they
+				 * have yet to call xlink_open_channel for this channel again.
+				 * So, we can directly destroy it.
+				 */
 				multiplexer_close_channel(xmux->channels[link_id][chan].opchan);
 				xmux->channels[link_id][chan].opchan = NULL;
 			}
 		} else if (xmux->channels[link_id][chan].status == CHAN_OPEN &&
-				   xmux->channels[link_id][chan].opchan) {
-			//locally the channel hasn't been closed, so just
-			// set completion flag to indicate peer completion
+			   xmux->channels[link_id][chan].opchan) {
+			/* locally the channel hasn't been closed, so just
+			 * set completion flag to indicate peer completion
+			 */
 			complete(&xmux->channels[link_id][chan].opchan->closed);
 		} else {
 			pr_err("channel %u in invalid state: %d\n", chan,
@@ -1168,13 +1173,6 @@ enum xlink_error xlink_multiplexer_rx(struct xlink_event *event)
 	case XLINK_OPEN_CHANNEL_RESP:
 		opchan = get_channel(link_id, chan);
 		if (!opchan) {
-			//This could happen in a couple of circumstances.
-			// 1. Locally, the wait for this completion timed out, so the
-			//   opchan was destroyed
-			// 2. Locally, the completion was triggered by peer, and the channel
-			//   went on to do a short amount of work, and closed the channel,
-			//   and opchan was destroyed (or moved to opchan_waiting_closure)
-			//   before this resp actually got back.
 			rc = X_LINK_COMMUNICATION_FAIL;
 		} else {
 			xlink_destroy_event(event); // event is handled and can now be freed
