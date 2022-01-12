@@ -63,49 +63,6 @@ static int event_x_idx_serviced[MAX_EVENTS_SUPPORTED];
 static dev_t xdev;
 static struct class *dev_class;
 
-static int xlink_open(struct inode *inode, struct file *filp)
-{
-	// create context data for recording & leakage handling
-	struct session_context *ctx;
-
-	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(ctx))
-		return PTR_ERR(ctx);
-	INIT_LIST_HEAD(&ctx->list);
-	mutex_init(&ctx->lock);
-	filp->private_data = ctx;
-	return 0;
-}
-
-static int xlink_release_chans(int id, void *ptr)
-{
-	int rc = 0;
-	struct xlink_handle *pdevH = (struct xlink_handle *)ptr;
-
-	if (pdevH) {
-		rc = xlink_close_channel(pdevH, id);
-		pr_info("[xlink-core]: xlink_close_channel(%d) rc=%d\n", id, rc);
-	}
-	return 0;
-}
-
-static int xlink_release(struct inode *inode, struct file *filp)
-{
-	struct session_context *ctx = (struct session_context *)filp->private_data;
-	struct session_context *sess = NULL, *tmp = NULL;
-
-	mutex_lock(&ctx->lock);
-	list_for_each_entry_safe(sess, tmp, &ctx->list, list) {
-		xlink_release_chans(sess->chan, sess->ptr);
-		list_del(&sess->list);
-		kfree(sess);
-	}
-	mutex_unlock(&ctx->lock);
-	mutex_destroy(&ctx->lock);
-	kfree(ctx);
-	return 0;
-}
-
 static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 static struct mutex dev_event_lock;
@@ -113,15 +70,13 @@ static struct mutex dev_event_lock;
 static const struct file_operations fops = {
 		.owner		= THIS_MODULE,
 		.unlocked_ioctl = xlink_ioctl,
-		.open		= xlink_open,
-		.release	= xlink_release,
 };
 
-//struct xlink_link {
-//	u32 id;
-//	struct xlink_handle handle;
-//	struct kref refcount;
-//};
+struct xlink_link {
+	u32 id;
+	struct xlink_handle handle;
+	struct kref refcount;
+};
 
 struct keembay_xlink_dev {
 	struct device *dev;
@@ -416,7 +371,7 @@ static int kmb_xlink_init(void)
 	int rc, i, j;
 
 	pr_info("Keem Bay xlink v%d.%d.%d:%s\n", XLINK_VERSION_MAJOR,
-		XLINK_VERSION_MINOR, XLINK_VERSION_REVISION, XLINK_VERSION_SUB_REV);
+		 XLINK_VERSION_MINOR, XLINK_VERSION_REVISION, XLINK_VERSION_SUB_REV);
 
 	/*Allocating Major number*/
 	if ((alloc_chrdev_region(&xdev, 0, 1, "xlinkdev")) < 0) {
@@ -424,13 +379,13 @@ static int kmb_xlink_init(void)
 		return -1;
 	}
 	pr_info("Major = %d Minor = %d\n", MAJOR(xdev),
-		MINOR(xdev));
+		 MINOR(xdev));
 
 	/*Creating struct class*/
 	dev_class = class_create(THIS_MODULE, CLASS_NAME);
 	if (IS_ERR(dev_class)) {
 		pr_info("Cannot create the struct class - Err %ld\n",
-			PTR_ERR(dev_class));
+			 PTR_ERR(dev_class));
 		goto r_class;
 	}
 
@@ -471,6 +426,7 @@ static int kmb_xlink_init(void)
 				XLINK_INVALID_SW_DEVICE_ID;
 	}
 
+
 	/*Creating cdev structure*/
 	cdev_init(&xlink->cdev, &fops);
 
@@ -480,7 +436,7 @@ static int kmb_xlink_init(void)
 		goto r_char;
 	}
 	INIT_LIST_HEAD(&ev_info.list);
-	/* Create sysfs fds for event notification */
+	/* create sysfs fds for event notification */
 	ev_kobj = kzalloc(sizeof(*ev_kobj), GFP_KERNEL);
 	if (ev_kobj) {
 		kobject_init(ev_kobj, &ev_type);
@@ -552,14 +508,13 @@ static int kmb_xlink_remove(void)
 static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int rc;
-	struct session_context *sess_ctx = (struct session_context *)file->private_data;
 
 	switch (cmd) {
 	case XL_CONNECT:
 		rc = ioctl_connect(arg);
 		break;
 	case XL_OPEN_CHANNEL:
-		rc = ioctl_open_channel(arg, sess_ctx);
+		rc = ioctl_open_channel(arg);
 		break;
 	case XL_DATA_READY_CALLBACK:
 		rc = ioctl_data_ready_callback(arg);
@@ -586,7 +541,7 @@ static long xlink_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		rc = ioctl_release_data(arg);
 		break;
 	case XL_CLOSE_CHANNEL:
-		rc = ioctl_close_channel(arg, sess_ctx);
+		rc = ioctl_close_channel(arg);
 		break;
 	case XL_START_VPU:
 		rc = ioctl_start_vpu(arg);
@@ -971,7 +926,6 @@ enum xlink_error xlink_write_control_data(struct xlink_handle *handle,
 
 	if (!xlink || !handle)
 		return X_LINK_ERROR;
-
 	if (chan < XLINK_IPC_MAX_CHANNELS) {
 		if (size > XLINK_MAX_CONTROL_DATA_SIZE)
 			return X_LINK_ERROR;
@@ -980,7 +934,6 @@ enum xlink_error xlink_write_control_data(struct xlink_handle *handle,
 		if (size > XLINK_MAX_CONTROL_DATA_PCIE_SIZE)
 			return X_LINK_ERROR;
 	}
-
 	link = get_link_by_sw_device_id(handle->sw_device_id);
 	if (!link)
 		return X_LINK_ERROR;
@@ -997,8 +950,8 @@ enum xlink_error xlink_write_control_data(struct xlink_handle *handle,
 EXPORT_SYMBOL_GPL(xlink_write_control_data);
 
 static enum xlink_error do_xlink_write_volatile(struct xlink_handle *handle,
-						u16 chan, u8 const *message,
-						u32 size, u32 user_flag)
+					 u16 chan, u8 const *message,
+					 u32 size, u32 user_flag)
 {
 	enum xlink_error rc = 0;
 	struct xlink_link *link = NULL;
@@ -1011,7 +964,7 @@ static enum xlink_error do_xlink_write_volatile(struct xlink_handle *handle,
 		return X_LINK_ERROR;
 
 	if (size > XLINK_MAX_BUF_SIZE)
-		return X_LINK_ERROR;
+		return X_LINK_ERROR; // TODO: XLink Parameter Error
 
 	link = get_link_by_sw_device_id(handle->sw_device_id);
 	if (!link)
@@ -1180,6 +1133,7 @@ enum xlink_error xlink_disconnect(struct xlink_handle *handle)
 			mutex_unlock(&xlink->lock);
 			return X_LINK_ERROR;
 		}
+		// TODO: reset device?
 		// invalidate link handle reference
 		link->handle.sw_device_id = XLINK_INVALID_SW_DEVICE_ID;
 		xlink->nmb_connected_links--;
@@ -1355,7 +1309,7 @@ static void xlink_device_cleanup(uint32_t sw_device_id)
 		if (xlink->links[i].handle.sw_device_id == sw_device_id) {
 			interface = get_interface_from_sw_device_id(sw_device_id);
 			if (interface != IPC_INTERFACE) {
-				/* Stop dispatcher */
+				// stop dispatcher
 				rc = xlink_dispatcher_stop(xlink->links[i].id);
 				if (rc != X_LINK_SUCCESS) {
 					pr_err("%s:xlink_disconnect - dispatcher stop failed\n",
@@ -1363,7 +1317,7 @@ static void xlink_device_cleanup(uint32_t sw_device_id)
 					return;
 				}
 			}
-			/* Deinitialize multiplexer connection */
+			// deinitialize multiplexer connection
 			rc = xlink_multiplexer_disconnect(xlink->links[i].id);
 			if (rc) {
 				pr_err("%s:xlink_disconnect - multiplexer disconnect failed\n",
@@ -1524,9 +1478,8 @@ enum xlink_error do_xlink_register_device_event(struct xlink_handle *handle,
 		events->user_flag = user_flag;
 		events->ref_count = 1;
 		if (user_flag) {
-			/* Only add to list once if userspace
-			 * xlink userspace handles multi process callbacks
-			 */
+			/* only add to list once if userspace */
+			/* xlink userspace handles multi process callbacks */
 			if (event_registered(handle->sw_device_id, event, user_flag)) {
 				increment_refcount(handle->sw_device_id, events->event_type);
 				kfree(events);
@@ -1671,9 +1624,8 @@ enum xlink_error do_xlink_unregister_device_event(struct xlink_handle *handle,
 			}
 		}
 	}
-	/* Check if any events left for this sw_device_id
-	 * are still registered ( in list )
-	 */
+	// check if any events left for this sw_device_id
+	// are still registered ( in list )
 	list_for_each_entry(events, &ev_info.list, list) {
 		if (events->sw_device_id == handle->sw_device_id) {
 			count++;
@@ -1686,7 +1638,6 @@ enum xlink_error do_xlink_unregister_device_event(struct xlink_handle *handle,
 			return X_LINK_ERROR;
 		xlink_platform_unregister_for_events(interface, handle->sw_device_id);
 	}
-
 	return X_LINK_SUCCESS;
 }
 

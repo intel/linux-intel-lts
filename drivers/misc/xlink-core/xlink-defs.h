@@ -14,8 +14,7 @@
 #define XLINK_MAX_BUF_SIZE		128U
 #define XLINK_MAX_DATA_SIZE		(1024U * 1024U * 1024U)
 #define XLINK_MAX_CONTROL_DATA_SIZE	100U
-#define XLINK_MAX_CONTROL_DATA_PCIE_SIZE 484U
-#define XLINK_MAX_CONNECTIONS		24
+#define XLINK_MAX_CONNECTIONS		16
 #define XLINK_PACKET_ALIGNMENT		64
 #define XLINK_INVALID_EVENT_ID		0xDEADBEEF
 #define XLINK_INVALID_CHANNEL_ID	0xDEAD
@@ -24,9 +23,12 @@
 #define XLINK_EVENT_HEADER_MAGIC	0x786C6E6B
 #define XLINK_PING_TIMEOUT_MS		5000U
 #define XLINK_MAX_DEVICE_NAME_SIZE	128
-#define XLINK_MAX_DEVICE_LIST_SIZE	24
+#define XLINK_MAX_DEVICE_LIST_SIZE	8
 #define XLINK_INVALID_LINK_ID		0xDEADBEEF
 #define XLINK_INVALID_SW_DEVICE_ID	0xDEADBEEF
+#define XLINK_MAX_EVENTS		1024
+
+#define XLINK_MAX_CONTROL_DATA_PCIE_SIZE	484U
 
 #define NMB_CHANNELS			4096
 #define IP_CONTROL_CHANNEL		0x0A
@@ -105,6 +107,8 @@ enum xlink_event_type {
 	XLINK_WRITE_CONTROL_REQ,
 	XLINK_DATA_READY_CALLBACK_REQ,
 	XLINK_DATA_CONSUMED_CALLBACK_REQ,
+	XLINK_PASSTHRU_WRITE_REQ,
+	XLINK_PASSTHRU_VOLATILE_WRITE_REQ,
 	XLINK_REQ_LAST,
 	// response events
 	XLINK_WRITE_RESP = 0x10,
@@ -121,18 +125,18 @@ enum xlink_event_type {
 	XLINK_RESP_LAST,
 };
 
-struct xlink_event_header {
+struct xlink_event_header_data {
 	u32 magic;
 	u32 id;
-	enum xlink_event_type type;
 	u32 chan;
-	size_t size;
 	u32 timeout;
+	size_t size;
+	enum xlink_event_type type;
 	u8  control_data[XLINK_MAX_CONTROL_DATA_PCIE_SIZE];
 };
 
 struct xlink_event {
-	struct xlink_event_header header;
+	struct xlink_event_header_data header;
 	enum xlink_event_origin origin;
 	u32 link_id;
 	struct xlink_handle *handle;
@@ -147,7 +151,6 @@ struct xlink_event {
 	struct list_head list;
 };
 
-struct xlink_event *alloc_event(u32 link_id);
+struct xlink_event *alloc_event(uint32_t link_id);
 void free_event(struct xlink_event *event);
-
 #endif /* __XLINK_DEFS_H */
