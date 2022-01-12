@@ -9,3 +9,12 @@
 
 # CVE-2021-44733
 0001-tee-handle-lookup-of-shm-with-reference-count-0.patch
+
+# CVE-2021-45480
+0001-rds-memory-leak-in-__rds_conn_create.patch
+
+# CVE-2021-28714
+0001-xen-netback-fix-rx-queue-stall-detection.patch
+
+# CVE-2021-28715
+0001-xen-netback-don-t-queue-unlimited-number-of-packages.patch
