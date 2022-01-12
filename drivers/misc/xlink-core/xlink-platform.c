@@ -18,7 +18,7 @@
 
 #include "xlink-platform.h"
 
-#if IS_ENABLED(CONFIG_XLINK_LOCAL_HOST)
+#ifdef CONFIG_XLINK_LOCAL_HOST
 #include <linux/xlink-ipc.h>
 #else /* !CONFIG_XLINK_LOCAL_HOST */
 
