@@ -7210,6 +7210,8 @@ int stmmac_dvr_probe(struct device *device,
 	if (priv->plat->has_netproxy) {
 		dev_info(priv->device, "Network Proxy supported\n");
 		device_set_wakeup_capable(priv->device, 1);
+		/* Network Proxy does not support MAC EEE */
+		priv->dma_cap.eee = 0;
 	}
 #endif
 
