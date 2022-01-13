@@ -7473,6 +7473,9 @@ int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 {
 	u32 chan;
 
+	if (ndev->phydev && device_may_wakeup(priv->device))
+		phy_stop_machine(ndev->phydev);
+
 	mutex_lock(&priv->lock);
 
 	netif_device_detach(ndev);
@@ -7687,6 +7690,9 @@ int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev)
 
 	mutex_unlock(&priv->lock);
 	rtnl_unlock();
+
+	if (ndev->phydev && device_may_wakeup(priv->device))
+		phy_start_machine(ndev->phydev);
 
 	return 0;
 }
