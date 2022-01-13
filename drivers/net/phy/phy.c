@@ -928,6 +928,7 @@ void phy_stop_machine(struct phy_device *phydev)
 		phydev->state = PHY_UP;
 	mutex_unlock(&phydev->lock);
 }
+EXPORT_SYMBOL_GPL(phy_stop_machine);
 
 /**
  * phy_error - enter HALTED state for this PHY device
