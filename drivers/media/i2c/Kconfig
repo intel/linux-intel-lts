@@ -896,6 +896,104 @@ config VIDEO_OV02A10
 	  To compile this driver as a module, choose M here: the
 	  module will be called ov02a10.
 
+config VIDEO_INTEL_KMB_SENSOR
+	tristate "Keem Bay Camera V4L2 sensor device"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a V4L2 sensor-level driver for Keem Bay camera
+	  sensor.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-sensor.
+
+config VIDEO_INTEL_KMB_MVMX
+	tristate "INTEL KeemBay Camera V4L2 smart sensor device"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a V4L2 sensor-level driver for KeemBay smart camera sensor.
+
+config VIDEO_INTEL_KMB_IMX334
+	tristate "Keem Bay Camera V4L2 IMX334 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX33 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-imx334.
+
+config VIDEO_INTEL_KMB_IMX335
+	tristate "Keem Bay Camera V4L2 IMX335 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX335 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-imx335.
+
+config VIDEO_INTEL_KMB_IMX327
+	tristate "INTEL Keem Bay Camera V4L2 IMX327 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX327 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-imx327.
+
+config VIDEO_INTEL_KMB_IMX412
+	tristate "Keem Bay Camera V4L2 IMX412 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX412 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-imx412.
+
+config VIDEO_INTEL_KMB_IMX219
+	tristate "INTEL KeemBay Camera V4L2 IMX219 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX219 camera.
+
+config VIDEO_INTEL_KMB_SMART_DRV
+	tristate "INTEL KeemBay Camera V4L2 smart sensor device"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a V4L2 sensor-level driver for simulating KeemBay smart
+	  camera sensor.
+
+config VIDEO_INTEL_KMB_OV9282
+	tristate "Keem Bay Camera V4L2 OV9282 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the OmniVision
+	  OV9282 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-ov9282.
+
 config VIDEO_OV2640
 	tristate "OmniVision OV2640 sensor support"
 	depends on VIDEO_V4L2 && I2C
@@ -1452,6 +1550,16 @@ config VIDEO_DW9807_VCM
 	  capability. This is designed for linear control of
 	  voice coil motors, controlled via I2C serial interface.
 
+config VIDEO_INTEL_KMB_LENS
+	tristate "Keem Bay Camera lens voice coil support"
+	depends on I2C && VIDEO_V4L2 && MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  Support for the Keem Bay camera lens voice coil.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-lens.
+
 endmenu
 
 menu "Flash devices"
@@ -1485,6 +1593,17 @@ config VIDEO_LM3646
 	help
 	  This is a driver for the lm3646 dual flash controllers. It controls
 	  flash, torch LEDs.
+
+config VIDEO_INTEL_KMB_FLASH
+	tristate "Keem Bay Camera flash driver support"
+	depends on I2C && VIDEO_V4L2 && MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+	  This is a driver for the Keem Bay camera flash led.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kmb-flash.
+
 endmenu
 
 endif # VIDEO_V4L2
