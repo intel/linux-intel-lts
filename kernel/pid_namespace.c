@@ -108,6 +108,7 @@ static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns
 	refcount_set(&ns->ns.count, 1);
 	ns->level = level;
 	ns->parent = get_pid_ns(parent_pid_ns);
+	ns->pid_max = parent_pid_ns->pid_max;
 	ns->user_ns = get_user_ns(user_ns);
 	ns->ucounts = ucounts;
 	ns->pid_allocated = PIDNS_ADDING;

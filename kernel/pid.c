@@ -193,12 +193,13 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,
 
 	for (i = ns->level; i >= 0; i--) {
 		int tid = 0;
+		int ns_pid_max = min(pid_max, tmp->pid_max);
 
 		if (set_tid_size) {
 			tid = set_tid[ns->level - i];
 
 			retval = -EINVAL;
-			if (tid < 1 || tid >= pid_max)
+			if (tid < 1 || tid >= ns_pid_max)
 				goto out_free;
 			/*
 			 * Also fail if a PID != 1 is requested and
@@ -238,7 +239,7 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,
 			 * a partially initialized PID (see below).
 			 */
 			nr = idr_alloc_cyclic(&tmp->idr, NULL, pid_min,
-					      pid_max, GFP_ATOMIC);
+					      ns_pid_max, GFP_ATOMIC);
 		}
 		spin_unlock_irq(&pidmap_lock);
 		idr_preload_end();
@@ -647,6 +648,30 @@ SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
 	return fd;
 }
 
+static int proc_dointvec_pidmax(const struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+       struct ctl_table tmp;
+
+       tmp = *table;
+       tmp.data = &(task_active_pid_ns(current)->pid_max);
+
+       return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
+}
+
+static struct ctl_table pid_ctl_table[] = {
+       {
+		.procname       = "ns_pid_max",
+		.data           = &init_pid_ns.pid_max,
+		.maxlen         = sizeof (int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_pidmax,
+		.extra1         = &pid_max_min,
+		.extra2         = &pid_max_max,
+       },
+       { }
+};
+
 void __init pid_idr_init(void)
 {
 	/* Verify no one has done anything silly: */
@@ -655,9 +680,10 @@ void __init pid_idr_init(void)
 	/* bump default and minimum pid_max based on number of cpus */
 	pid_max = min(pid_max_max, max_t(int, pid_max,
 				PIDS_PER_CPU_DEFAULT * num_possible_cpus()));
+	init_pid_ns.pid_max = pid_max_max;
 	pid_max_min = max_t(int, pid_max_min,
 				PIDS_PER_CPU_MIN * num_possible_cpus());
-	pr_info("pid_max: default: %u minimum: %u\n", pid_max, pid_max_min);
+	pr_info("pid_max: default: %u, ns_pid_max: %d, minimum: %u\n", pid_max, init_pid_ns.pid_max, pid_max_min);
 
 	idr_init(&init_pid_ns.idr);
 
@@ -666,6 +692,7 @@ void __init pid_idr_init(void)
 			__alignof__(struct pid),
 			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT,
 			NULL);
+	register_sysctl("kernel", pid_ctl_table);
 }
 
 static struct file *__pidfd_fget(struct task_struct *task, int fd)

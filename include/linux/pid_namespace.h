@@ -26,6 +26,7 @@ struct fs_pin;
 struct pid_namespace {
 	struct idr idr;
 	struct rcu_head rcu;
+	int pid_max;
 	unsigned int pid_allocated;
 	struct task_struct *child_reaper;
 	struct kmem_cache *pid_cachep;
