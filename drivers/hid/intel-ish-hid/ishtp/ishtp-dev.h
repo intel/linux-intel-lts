@@ -135,7 +135,15 @@ struct ishtp_device {
 
 	/* waitq for waiting for resume response */
 	wait_queue_head_t resume_wait;
-	bool resume_flag;	/*Resume is active */
+	bool resume_flag;	/* Resume is active */
+
+	/* waitq for waiting for D0_notify response */
+	wait_queue_head_t d0_wait;
+	uint32_t d0_flag;		/* D0 notify result */
+
+	/* waitq for waiting for RTD3 response */
+	wait_queue_head_t rtd3_wait;
+	uint32_t rtd3_flag;		/* RTD3 notify result */
 
 	/*
 	 * lock for the device, for everything that doesn't have
