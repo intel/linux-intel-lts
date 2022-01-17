@@ -221,6 +221,7 @@ static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	init_waitqueue_head(&ishtp->resume_wait);
 	init_waitqueue_head(&ishtp->d0_wait);
 	init_waitqueue_head(&ishtp->rtd3_wait);
+	ishtp->suspend_to_d0i3 = false;
 
 	/* Enable PME for EHL */
 	if (pdev->device == EHL_Ax_DEVICE_ID) {
@@ -281,7 +282,7 @@ static void __maybe_unused ish_resume_handler(struct work_struct *work)
 	struct ishtp_device *dev = pci_get_drvdata(pdev);
 	uint32_t fwsts = dev->ops->get_fw_status(dev);
 
-	if (ish_should_leave_d0i3(pdev) && !dev->suspend_flag) {
+	if (dev->suspend_to_d0i3) {
 		if (device_may_wakeup(&pdev->dev))
 			disable_irq_wake(pdev->irq);
 
@@ -329,7 +330,7 @@ static int __maybe_unused ish_suspend(struct device *device)
 	struct pci_dev *pdev = to_pci_dev(device);
 	struct ishtp_device *dev = pci_get_drvdata(pdev);
 
-	if (ish_should_enter_d0i3(pdev)) {
+	if (dev->suspend_to_d0i3) {
 		/*
 		 * If previous suspend hasn't been asnwered then ISH is likely
 		 * dead, don't attempt nested notification
@@ -414,6 +415,54 @@ static int __maybe_unused ish_resume(struct device *device)
 }
 
 
+static int __maybe_unused ish_pm_suspend(struct device *device)
+{
+	struct pci_dev *pdev = to_pci_dev(device);
+	struct ishtp_device *dev = pci_get_drvdata(pdev);
+
+	if (ish_should_enter_d0i3(pdev))
+		dev->suspend_to_d0i3 = true;
+	else
+		dev->suspend_to_d0i3 = false;
+
+	return ish_suspend(device);
+}
+
+static int __maybe_unused ish_pm_resume(struct device *device)
+{
+	return ish_resume(device);
+}
+
+static int __maybe_unused ish_pm_freeze(struct device *device)
+{
+	struct pci_dev *pdev = to_pci_dev(device);
+	struct ishtp_device *dev = pci_get_drvdata(pdev);
+
+	dev->suspend_to_d0i3 = false;
+
+	return ish_suspend(device);
+}
+
+static int __maybe_unused ish_pm_thaw(struct device *device)
+{
+	return ish_resume(device);
+}
+
+static int __maybe_unused ish_pm_poweroff(struct device *device)
+{
+	struct pci_dev *pdev = to_pci_dev(device);
+	struct ishtp_device *dev = pci_get_drvdata(pdev);
+
+	dev->suspend_to_d0i3 = false;
+
+	return ish_suspend(device);
+}
+
+static int __maybe_unused ish_pm_restore(struct device *device)
+{
+	return ish_resume(device);
+}
+
 static int __maybe_unused ish_runtime_suspend(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
@@ -447,8 +496,14 @@ static int __maybe_unused ish_runtime_resume(struct device *device)
 }
 
 static const struct dev_pm_ops __maybe_unused ish_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(ish_suspend, ish_resume)
-	SET_RUNTIME_PM_OPS(ish_runtime_suspend, ish_runtime_resume, NULL)
+	.suspend = ish_pm_suspend,
+	.resume = ish_pm_resume,
+	.freeze = ish_pm_freeze,
+	.thaw = ish_pm_thaw,
+	.poweroff = ish_pm_poweroff,
+	.restore = ish_pm_restore,
+	.runtime_suspend = ish_runtime_suspend,
+	.runtime_resume = ish_runtime_resume,
 };
 
 static struct pci_driver ish_driver = {
