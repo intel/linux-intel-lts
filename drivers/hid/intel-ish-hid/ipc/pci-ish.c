@@ -18,6 +18,7 @@
 #include <linux/suspend.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
+#include <linux/pm_runtime.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/intel_ish.h>
 #include "ishtp-dev.h"
@@ -83,10 +84,14 @@ static int ish_init(struct ishtp_device *dev)
 {
 	int ret;
 
+	/* during initializaion, runtime suspend is forbidden */
+	pm_runtime_forbid(dev->devc);
+
 	/* Set the state of ISH HW to start */
 	ret = ish_hw_start(dev);
 	if (ret) {
 		dev_err(dev->devc, "ISH: hw start failed.\n");
+		pm_runtime_allow(dev->devc);
 		return ret;
 	}
 
@@ -94,8 +99,11 @@ static int ish_init(struct ishtp_device *dev)
 	ret = ishtp_start(dev);
 	if (ret) {
 		dev_err(dev->devc, "ISHTP: Protocol init failed.\n");
+		pm_runtime_allow(dev->devc);
 		return ret;
 	}
+
+	pm_runtime_allow(dev->devc);
 
 	return 0;
 }
@@ -220,6 +228,8 @@ static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	init_waitqueue_head(&ishtp->suspend_wait);
 	init_waitqueue_head(&ishtp->resume_wait);
+	init_waitqueue_head(&ishtp->d0_wait);
+	init_waitqueue_head(&ishtp->rtd3_wait);
 
 	/* Enable PME for EHL */
 	if (pdev->device == EHL_Ax_DEVICE_ID)
@@ -228,6 +238,15 @@ static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	ret = ish_init(ishtp);
 	if (ret)
 		return ret;
+
+	/* enable runtime pm for EHL */
+	if (pdev->device == EHL_Ax_DEVICE_ID) {
+		pm_runtime_use_autosuspend(dev);
+		pm_runtime_set_autosuspend_delay(dev, 5000);
+		pm_runtime_allow(dev);
+		pm_runtime_mark_last_busy(dev);
+		pm_runtime_put_autosuspend(dev);
+	}
 
 	return 0;
 }
@@ -244,6 +263,8 @@ static void ish_remove(struct pci_dev *pdev)
 
 	ishtp_bus_remove_all_clients(ishtp_dev, false);
 	ish_device_disable(ishtp_dev);
+
+	pm_runtime_forbid(&pdev->dev);
 }
 
 static struct device __maybe_unused *ish_resume_device;
@@ -338,7 +359,8 @@ static int __maybe_unused ish_suspend(struct device *device)
 			 * Save state so PCI core will keep the device at D0,
 			 * the ISH would enter D0i3
 			 */
-			pci_save_state(pdev);
+			if (dev->pdev->device != EHL_Ax_DEVICE_ID)
+				pci_save_state(pdev);
 
 			if (device_may_wakeup(&pdev->dev))
 				enable_irq_wake(pdev->irq);
@@ -383,7 +405,43 @@ static int __maybe_unused ish_resume(struct device *device)
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(ish_pm_ops, ish_suspend, ish_resume);
+
+static int __maybe_unused ish_runtime_suspend(struct device *device)
+{
+	struct pci_dev *pdev = to_pci_dev(device);
+	struct ishtp_device *dev = pci_get_drvdata(pdev);
+	int ret = 0;
+
+	if (dev->pdev->device == EHL_Ax_DEVICE_ID)
+		ret = ish_notify_rtd3(dev);
+
+	return ret;
+}
+
+static int __maybe_unused ish_runtime_resume(struct device *device)
+{
+	struct pci_dev *pdev = to_pci_dev(device);
+	struct ishtp_device *dev = pci_get_drvdata(pdev);
+	int ret = 0;
+
+	if (dev->pdev->device == EHL_Ax_DEVICE_ID) {
+		pci_set_power_state(pdev, PCI_D0);
+		enable_pme_wake(pdev);
+
+		ret = ish_notify_d0(dev);
+	}
+
+	if (!ret)
+		pm_runtime_mark_last_busy(device);
+
+	return ret;
+
+}
+
+static const struct dev_pm_ops __maybe_unused ish_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(ish_suspend, ish_resume)
+	SET_RUNTIME_PM_OPS(ish_runtime_suspend, ish_runtime_resume, NULL)
+};
 
 static struct pci_driver ish_driver = {
 	.name = KBUILD_MODNAME,
