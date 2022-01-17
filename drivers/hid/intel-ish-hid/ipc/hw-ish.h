@@ -85,5 +85,7 @@ int ish_hw_start(struct ishtp_device *dev);
 void ish_device_disable(struct ishtp_device *dev);
 int ish_disable_dma(struct ishtp_device *dev);
 void ish_set_host_ready(struct ishtp_device *dev);
+int ish_notify_d0(struct ishtp_device *dev);
+int ish_notify_rtd3(struct ishtp_device *dev);
 
 #endif /* _ISHTP_HW_ISH_H_ */
