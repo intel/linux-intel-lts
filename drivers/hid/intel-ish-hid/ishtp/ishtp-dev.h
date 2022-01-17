@@ -132,6 +132,7 @@ struct ishtp_device {
 	/* waitq for waiting for suspend response */
 	wait_queue_head_t suspend_wait;
 	bool suspend_flag;	/* Suspend is active */
+	bool suspend_to_d0i3;	/* Suspend to D0i3 state */
 
 	/* waitq for waiting for resume response */
 	wait_queue_head_t resume_wait;
