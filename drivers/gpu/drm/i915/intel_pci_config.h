@@ -6,6 +6,11 @@
 #ifndef __INTEL_PCI_CONFIG_H__
 #define __INTEL_PCI_CONFIG_H__
 
+/* PCI BARs */
+#define GTTMMADR_BAR				0
+#define GEN2_GTTMMADR_BAR			1
+#define GFXMEM_BAR				2
+
 /* BSM in include/drm/i915_drm.h */
 
 #define MCHBAR_I915				0x44
