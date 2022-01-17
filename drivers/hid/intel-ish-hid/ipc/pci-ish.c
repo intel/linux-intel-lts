@@ -84,14 +84,10 @@ static int ish_init(struct ishtp_device *dev)
 {
 	int ret;
 
-	/* during initializaion, runtime suspend is forbidden */
-	pm_runtime_forbid(dev->devc);
-
 	/* Set the state of ISH HW to start */
 	ret = ish_hw_start(dev);
 	if (ret) {
 		dev_err(dev->devc, "ISH: hw start failed.\n");
-		pm_runtime_allow(dev->devc);
 		return ret;
 	}
 
@@ -99,11 +95,8 @@ static int ish_init(struct ishtp_device *dev)
 	ret = ishtp_start(dev);
 	if (ret) {
 		dev_err(dev->devc, "ISHTP: Protocol init failed.\n");
-		pm_runtime_allow(dev->devc);
 		return ret;
 	}
-
-	pm_runtime_allow(dev->devc);
 
 	return 0;
 }
@@ -232,8 +225,11 @@ static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	init_waitqueue_head(&ishtp->rtd3_wait);
 
 	/* Enable PME for EHL */
-	if (pdev->device == EHL_Ax_DEVICE_ID)
+	if (pdev->device == EHL_Ax_DEVICE_ID) {
+		pci_d3cold_disable(pdev);
+		device_init_wakeup(dev, true);
 		enable_pme_wake(pdev);
+	}
 
 	ret = ish_init(ishtp);
 	if (ret)
@@ -287,20 +283,25 @@ static void __maybe_unused ish_resume_handler(struct work_struct *work)
 	struct ishtp_device *dev = pci_get_drvdata(pdev);
 	uint32_t fwsts = dev->ops->get_fw_status(dev);
 
-	if (ish_should_leave_d0i3(pdev) && !dev->suspend_flag
-			&& IPC_IS_ISH_ILUP(fwsts)) {
+	if (ish_should_leave_d0i3(pdev) && !dev->suspend_flag) {
 		if (device_may_wakeup(&pdev->dev))
 			disable_irq_wake(pdev->irq);
 
 		ish_set_host_ready(dev);
 
-		ishtp_send_resume(dev);
+		/* Send D0 notify to call fw back */
+		if (dev->pdev->device == EHL_Ax_DEVICE_ID)
+			ish_notify_d0(dev);
 
-		/* Waiting to get resume response */
-		if (dev->resume_flag)
-			wait_event_interruptible_timeout(dev->resume_wait,
-				!dev->resume_flag,
-				msecs_to_jiffies(WAIT_FOR_RESUME_ACK_MS));
+		if (IPC_IS_ISH_ILUP(fwsts)) {
+			ishtp_send_resume(dev);
+
+			/* Waiting to get resume response */
+			if (dev->resume_flag)
+				wait_event_interruptible_timeout(dev->resume_wait,
+					!dev->resume_flag,
+					msecs_to_jiffies(WAIT_FOR_RESUME_ACK_MS));
+		}
 
 		/*
 		 * If the flag is not cleared, something is wrong with ISH FW.
@@ -361,6 +362,15 @@ static int __maybe_unused ish_suspend(struct device *device)
 			 */
 			if (dev->pdev->device != EHL_Ax_DEVICE_ID)
 				pci_save_state(pdev);
+			else {
+				/* For no Sx suspend case, need send RTD3 notify to keep
+				 * wake capability */
+				int ret = ish_notify_rtd3(dev);
+				if (ret)
+					return ret;
+
+				pci_wake_from_d3(pdev, true);
+			}
 
 			if (device_may_wakeup(&pdev->dev))
 				enable_irq_wake(pdev->irq);
