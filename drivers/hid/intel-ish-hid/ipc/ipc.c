@@ -1081,11 +1081,14 @@ int ish_notify_d0(struct ishtp_device *dev)
 
 	dev->d0_flag = POWER_NOTIFY_WAIT;
 
+wait:
 	ret = wait_event_interruptible_timeout(dev->d0_wait,
 			(dev->d0_flag != POWER_NOTIFY_WAIT),
 			msecs_to_jiffies(WAIT_FOR_D0_RTD3_ACK_MS));
+	if (ret < 0)
+		goto wait;
 
-	if (!ret || dev->d0_flag == POWER_NOTIFY_WAIT) {
+	if (dev->d0_flag == POWER_NOTIFY_WAIT) {
 		dev_err(dev->devc, "wait fw back to d0 timeout\n");
 		return -EBUSY;
 	} else if (dev->d0_flag == POWER_NOTIFY_NOT_READY) {
@@ -1106,11 +1109,14 @@ int ish_notify_rtd3(struct ishtp_device *dev)
 
 	dev->rtd3_flag = POWER_NOTIFY_WAIT;
 
+wait:
 	ret = wait_event_interruptible_timeout(dev->rtd3_wait,
 			(dev->rtd3_flag != POWER_NOTIFY_WAIT),
 			msecs_to_jiffies(WAIT_FOR_D0_RTD3_ACK_MS));
+	if (ret < 0)
+		goto wait;
 
-	if (!ret || dev->rtd3_flag == POWER_NOTIFY_WAIT) {
+	if (dev->rtd3_flag == POWER_NOTIFY_WAIT) {
 		dev_err(dev->devc, "wait fw enter RTD3 timeout\n");
 		return -EBUSY;
 	} else if (dev->rtd3_flag == POWER_NOTIFY_NOT_READY) {
