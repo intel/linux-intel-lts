@@ -284,6 +284,11 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define DEVEN 0x54
 #define   DEVEN_MCHBAR_EN (1 << 28)
 
+/* PCI BARs */
+#define GTTMMADR_BAR               0
+#define GEN2_GTTMMADR_BAR          1
+#define GFXMEM_BAR             2
+
 /* BSM in include/drm/i915_drm.h */
 
 #define HPLLCC	0xc0 /* 85x only */
