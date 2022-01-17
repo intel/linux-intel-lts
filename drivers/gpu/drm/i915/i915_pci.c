@@ -30,6 +30,7 @@
 #include "i915_drv.h"
 #include "i915_pci.h"
 #include "i915_reg.h"
+#include "intel_pci_config.h"
 
 #define PLATFORM(x) .platform = (x)
 #define GEN(x) \
@@ -1200,6 +1201,34 @@ static bool force_probe(u16 device_id, const char *devices)
 	return ret;
 }
 
+static bool __pci_resource_valid(struct pci_dev *pdev, int bar)
+{
+	if (!pci_resource_flags(pdev, bar))
+		return false;
+
+	if (pci_resource_flags(pdev, bar) & IORESOURCE_UNSET)
+		return false;
+
+	if (!pci_resource_len(pdev, bar))
+		return false;
+
+	return true;
+}
+
+static bool intel_bars_valid(struct pci_dev *pdev, struct intel_device_info *intel_info)
+{
+	const int gttmmaddr_bar = intel_info->graphics.ver == 2 ? GEN2_GTTMMADR_BAR : GTTMMADR_BAR;
+	const int gfxmem_bar = GFXMEM_BAR;
+
+	if (!__pci_resource_valid(pdev, gttmmaddr_bar))
+		return false;
+
+	if (!__pci_resource_valid(pdev, gfxmem_bar))
+		return false;
+
+	return true;
+}
+
 static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct intel_device_info *intel_info =
@@ -1223,6 +1252,9 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * functions have the same PCI-ID!
 	 */
 	if (PCI_FUNC(pdev->devfn))
+		return -ENODEV;
+
+	if (!intel_bars_valid(pdev, intel_info))
 		return -ENODEV;
 
 	/* Detect if we need to wait for other drivers early on */
