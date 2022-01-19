@@ -3146,12 +3146,16 @@ static int phy_remove(struct device *dev)
 
 static void phy_shutdown(struct device *dev)
 {
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
 	struct phy_device *phydev = to_phy_device(dev);
 
 	if (phydev->state == PHY_READY || !phydev->attached_dev)
 		return;
 
-	phy_disable_interrupts(phydev);
+	phy_ethtool_get_wol(phydev, &wol);
+	/* If the device has WOL enabled, don't disable interrupts. */
+	if (!wol.wolopts)
+		phy_disable_interrupts(phydev);
 }
 
 /**
