@@ -58,6 +58,9 @@ static inline void mei_me_reg_write(const struct mei_me_hw *hw,
  */
 static inline u32 mei_me_mecbrw_read(const struct mei_device *dev)
 {
+	if (dev->dev->offline)
+		return 0;
+
 	return mei_me_reg_read(to_me_hw(dev), ME_CB_RW);
 }
 
@@ -69,6 +72,9 @@ static inline u32 mei_me_mecbrw_read(const struct mei_device *dev)
  */
 static inline void mei_me_hcbww_write(struct mei_device *dev, u32 data)
 {
+	if (dev->dev->offline)
+		return;
+
 	mei_me_reg_write(to_me_hw(dev), H_CB_WW, data);
 }
 
@@ -82,6 +88,9 @@ static inline void mei_me_hcbww_write(struct mei_device *dev, u32 data)
 static inline u32 mei_me_mecsr_read(const struct mei_device *dev)
 {
 	u32 reg;
+
+	if (dev->dev->offline)
+		return 0;
 
 	reg = mei_me_reg_read(to_me_hw(dev), ME_CSR_HA);
 	trace_mei_reg_read(dev->dev, "ME_CSR_HA", ME_CSR_HA, reg);
@@ -100,6 +109,9 @@ static inline u32 mei_hcsr_read(const struct mei_device *dev)
 {
 	u32 reg;
 
+	if (dev->dev->offline)
+		return 0;
+
 	reg = mei_me_reg_read(to_me_hw(dev), H_CSR);
 	trace_mei_reg_read(dev->dev, "H_CSR", H_CSR, reg);
 
@@ -114,6 +126,9 @@ static inline u32 mei_hcsr_read(const struct mei_device *dev)
  */
 static inline void mei_hcsr_write(struct mei_device *dev, u32 reg)
 {
+	if (dev->dev->offline)
+		return;
+
 	trace_mei_reg_write(dev->dev, "H_CSR", H_CSR, reg);
 	mei_me_reg_write(to_me_hw(dev), H_CSR, reg);
 }
@@ -127,6 +142,9 @@ static inline void mei_hcsr_write(struct mei_device *dev, u32 reg)
  */
 static inline void mei_hcsr_set(struct mei_device *dev, u32 reg)
 {
+	if (dev->dev->offline)
+		return;
+
 	reg &= ~H_CSR_IS_MASK;
 	mei_hcsr_write(dev, reg);
 }
@@ -139,6 +157,9 @@ static inline void mei_hcsr_set(struct mei_device *dev, u32 reg)
 static inline void mei_hcsr_set_hig(struct mei_device *dev)
 {
 	u32 hcsr;
+
+	if (dev->dev->offline)
+		return;
 
 	hcsr = mei_hcsr_read(dev) | H_IG;
 	mei_hcsr_set(dev, hcsr);
@@ -155,6 +176,9 @@ static inline u32 mei_me_d0i3c_read(const struct mei_device *dev)
 {
 	u32 reg;
 
+	if (dev->dev->offline)
+		return 0;
+
 	reg = mei_me_reg_read(to_me_hw(dev), H_D0I3C);
 	trace_mei_reg_read(dev->dev, "H_D0I3C", H_D0I3C, reg);
 
@@ -169,6 +193,9 @@ static inline u32 mei_me_d0i3c_read(const struct mei_device *dev)
  */
 static inline void mei_me_d0i3c_write(struct mei_device *dev, u32 reg)
 {
+	if (dev->dev->offline)
+		return;
+
 	trace_mei_reg_write(dev->dev, "H_D0I3C", H_D0I3C, reg);
 	mei_me_reg_write(to_me_hw(dev), H_D0I3C, reg);
 }
@@ -184,6 +211,9 @@ static inline void mei_me_d0i3c_write(struct mei_device *dev, u32 reg)
 static int mei_me_trc_status(struct mei_device *dev, u32 *trc)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
+
+	if (dev->dev->offline)
+		return -EOPNOTSUPP;
 
 	if (!hw->cfg->hw_trc_supported)
 		return -EOPNOTSUPP;
@@ -209,6 +239,9 @@ static int mei_me_fw_status(struct mei_device *dev,
 	const struct mei_fw_status *fw_src = &hw->cfg->fw_status;
 	int ret;
 	int i;
+
+	if (dev->dev->offline)
+		return -EINVAL;
 
 	if (!fw_status || !hw->read_fws)
 		return -EINVAL;
@@ -241,6 +274,9 @@ static int mei_me_hw_config(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 	u32 hcsr, reg;
+
+	if (dev->dev->offline)
+		return -EINVAL;
 
 	if (WARN_ON(!hw->read_fws))
 		return -EINVAL;
@@ -294,6 +330,9 @@ static inline u32 me_intr_src(u32 hcsr)
  */
 static inline void me_intr_disable(struct mei_device *dev, u32 hcsr)
 {
+	if (dev->dev->offline)
+		return;
+
 	hcsr &= ~H_CSR_IE_MASK;
 	mei_hcsr_set(dev, hcsr);
 }
@@ -306,6 +345,9 @@ static inline void me_intr_disable(struct mei_device *dev, u32 hcsr)
  */
 static inline void me_intr_clear(struct mei_device *dev, u32 hcsr)
 {
+	if (dev->dev->offline)
+		return;
+
 	if (me_intr_src(hcsr))
 		mei_hcsr_write(dev, hcsr);
 }
@@ -317,7 +359,12 @@ static inline void me_intr_clear(struct mei_device *dev, u32 hcsr)
  */
 static void mei_me_intr_clear(struct mei_device *dev)
 {
-	u32 hcsr = mei_hcsr_read(dev);
+	u32 hcsr;
+
+	if (dev->dev->offline)
+		return;
+
+	hcsr = mei_hcsr_read(dev);
 
 	me_intr_clear(dev, hcsr);
 }
@@ -329,6 +376,9 @@ static void mei_me_intr_clear(struct mei_device *dev)
 static void mei_me_intr_enable(struct mei_device *dev)
 {
 	u32 hcsr;
+
+	if (dev->dev->offline)
+		return;
 
 	if (mei_me_hw_use_polling(to_me_hw(dev)))
 		return;
@@ -344,8 +394,12 @@ static void mei_me_intr_enable(struct mei_device *dev)
  */
 static void mei_me_intr_disable(struct mei_device *dev)
 {
-	u32 hcsr = mei_hcsr_read(dev);
+	u32 hcsr;
 
+	if (dev->dev->offline)
+		return;
+
+	hcsr = mei_hcsr_read(dev);
 	me_intr_disable(dev, hcsr);
 }
 
@@ -357,6 +411,9 @@ static void mei_me_intr_disable(struct mei_device *dev)
 static void mei_me_synchronize_irq(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
+
+	if (dev->dev->offline)
+		return;
 
 	if (mei_me_hw_use_polling(hw))
 		return;
@@ -371,7 +428,12 @@ static void mei_me_synchronize_irq(struct mei_device *dev)
  */
 static void mei_me_hw_reset_release(struct mei_device *dev)
 {
-	u32 hcsr = mei_hcsr_read(dev);
+	u32 hcsr;
+
+	if (dev->dev->offline)
+		return;
+
+	hcsr = mei_hcsr_read(dev);
 
 	hcsr |= H_IG;
 	hcsr &= ~H_RST;
@@ -385,7 +447,12 @@ static void mei_me_hw_reset_release(struct mei_device *dev)
  */
 static void mei_me_host_set_ready(struct mei_device *dev)
 {
-	u32 hcsr = mei_hcsr_read(dev);
+	u32 hcsr;
+
+	if (dev->dev->offline)
+		return;
+
+	hcsr = mei_hcsr_read(dev);
 
 	if (!mei_me_hw_use_polling(to_me_hw(dev)))
 		hcsr |= H_CSR_IE_MASK;
@@ -402,7 +469,12 @@ static void mei_me_host_set_ready(struct mei_device *dev)
  */
 static bool mei_me_host_is_ready(struct mei_device *dev)
 {
-	u32 hcsr = mei_hcsr_read(dev);
+	u32 hcsr;
+
+	if (dev->dev->offline)
+		return true;
+
+	hcsr = mei_hcsr_read(dev);
 
 	return (hcsr & H_RDY) == H_RDY;
 }
@@ -415,7 +487,12 @@ static bool mei_me_host_is_ready(struct mei_device *dev)
  */
 static bool mei_me_hw_is_ready(struct mei_device *dev)
 {
-	u32 mecsr = mei_me_mecsr_read(dev);
+	u32 mecsr;
+
+	if (dev->dev->offline)
+		return true;
+
+	mecsr = mei_me_mecsr_read(dev);
 
 	return (mecsr & ME_RDY_HRA) == ME_RDY_HRA;
 }
@@ -428,7 +505,12 @@ static bool mei_me_hw_is_ready(struct mei_device *dev)
  */
 static bool mei_me_hw_is_resetting(struct mei_device *dev)
 {
-	u32 mecsr = mei_me_mecsr_read(dev);
+	u32 mecsr;
+
+	if (dev->dev->offline)
+		return false;
+
+	mecsr = mei_me_mecsr_read(dev);
 
 	return (mecsr & ME_RST_HRA) == ME_RST_HRA;
 }
@@ -442,6 +524,9 @@ static void mei_gsc_pxp_check(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 	u32 fwsts5 = 0;
+
+	if (dev->dev->offline)
+		return;
 
 	if (!kind_is_gsc(dev) && !kind_is_gscfi(dev))
 		return;
@@ -538,8 +623,12 @@ end:
  */
 static int mei_me_hw_start(struct mei_device *dev)
 {
-	int ret = mei_me_hw_ready_wait(dev);
+	int ret;
 
+	if (dev->dev->offline)
+		return 0;
+
+	ret = mei_me_hw_ready_wait(dev);
 	if (kind_is_gsc(dev) || kind_is_gscfi(dev))
 		mei_me_check_fw_reset(dev);
 	if (ret)
@@ -640,6 +729,9 @@ static int mei_me_hbuf_write(struct mei_device *dev,
 	u32 dw_cnt;
 	int empty_slots;
 
+	if (dev->dev->offline)
+		return -EINVAL;
+
 	if (WARN_ON(!hdr || hdr_len & 0x3))
 		return -EINVAL;
 
@@ -724,6 +816,9 @@ static int mei_me_read_slots(struct mei_device *dev, unsigned char *buffer,
 {
 	u32 *reg_buf = (u32 *)buffer;
 
+	if (dev->dev->offline)
+		return 0;
+
 	for (; buffer_length >= MEI_SLOT_SIZE; buffer_length -= MEI_SLOT_SIZE)
 		*reg_buf++ = mei_me_mecbrw_read(dev);
 
@@ -747,6 +842,9 @@ static void mei_me_pg_set(struct mei_device *dev)
 	struct mei_me_hw *hw = to_me_hw(dev);
 	u32 reg;
 
+	if (dev->dev->offline)
+		return;
+
 	reg = mei_me_reg_read(hw, H_HPG_CSR);
 	trace_mei_reg_read(dev->dev, "H_HPG_CSR", H_HPG_CSR, reg);
 
@@ -765,6 +863,9 @@ static void mei_me_pg_unset(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 	u32 reg;
+
+	if (dev->dev->offline)
+		return;
 
 	reg = mei_me_reg_read(hw, H_HPG_CSR);
 	trace_mei_reg_read(dev->dev, "H_HPG_CSR", H_HPG_CSR, reg);
@@ -788,6 +889,9 @@ static int mei_me_pg_legacy_enter_sync(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 	int ret;
+
+	if (dev->dev->offline)
+		return 0;
 
 	dev->pg_event = MEI_PG_EVENT_WAIT;
 
@@ -825,6 +929,9 @@ static int mei_me_pg_legacy_exit_sync(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 	int ret;
+
+	if (dev->dev->offline)
+		return 0;
 
 	if (dev->pg_event == MEI_PG_EVENT_RECEIVED)
 		goto reply;
@@ -971,6 +1078,9 @@ static int mei_me_d0i3_enter_sync(struct mei_device *dev)
 	int ret;
 	u32 reg;
 
+	if (dev->dev->offline)
+		return 0;
+
 	reg = mei_me_d0i3c_read(dev);
 	if (reg & H_D0I3C_I3) {
 		/* we are in d0i3, nothing to do */
@@ -1046,6 +1156,9 @@ static int mei_me_d0i3_enter(struct mei_device *dev)
 	struct mei_me_hw *hw = to_me_hw(dev);
 	u32 reg;
 
+	if (dev->dev->offline)
+		return 0;
+
 	reg = mei_me_d0i3c_read(dev);
 	if (reg & H_D0I3C_I3) {
 		/* we are in d0i3, nothing to do */
@@ -1073,6 +1186,9 @@ static int mei_me_d0i3_exit_sync(struct mei_device *dev)
 	struct mei_me_hw *hw = to_me_hw(dev);
 	int ret;
 	u32 reg;
+
+	if (dev->dev->offline)
+		return 0;
 
 	dev->pg_event = MEI_PG_EVENT_INTR_WAIT;
 
@@ -1125,6 +1241,9 @@ static void mei_me_pg_legacy_intr(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 
+	if (dev->dev->offline)
+		return;
+
 	if (dev->pg_event != MEI_PG_EVENT_INTR_WAIT)
 		return;
 
@@ -1143,6 +1262,9 @@ static void mei_me_pg_legacy_intr(struct mei_device *dev)
 static void mei_me_d0i3_intr(struct mei_device *dev, u32 intr_source)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
+
+	if (dev->dev->offline)
+		return;
 
 	if (dev->pg_event == MEI_PG_EVENT_INTR_WAIT &&
 	    (intr_source & H_D0I3C_IS)) {
@@ -1185,6 +1307,9 @@ static void mei_me_pg_intr(struct mei_device *dev, u32 intr_source)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 
+	if (dev->dev->offline)
+		return;
+
 	if (hw->d0i3_supported)
 		mei_me_d0i3_intr(dev, intr_source);
 	else
@@ -1202,6 +1327,9 @@ int mei_me_pg_enter_sync(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
 
+	if (dev->dev->offline)
+		return 0;
+
 	if (hw->d0i3_supported)
 		return mei_me_d0i3_enter_sync(dev);
 	else
@@ -1218,6 +1346,9 @@ int mei_me_pg_enter_sync(struct mei_device *dev)
 int mei_me_pg_exit_sync(struct mei_device *dev)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
+
+	if (dev->dev->offline)
+		return 0;
 
 	if (hw->d0i3_supported)
 		return mei_me_d0i3_exit_sync(dev);
@@ -1309,6 +1440,9 @@ irqreturn_t mei_me_irq_quick_handler(int irq, void *dev_id)
 	struct mei_device *dev = (struct mei_device *)dev_id;
 	u32 hcsr;
 
+	if (dev->dev->offline)
+		return IRQ_HANDLED;
+
 	hcsr = mei_hcsr_read(dev);
 	if (!me_intr_src(hcsr))
 		return IRQ_NONE;
@@ -1341,6 +1475,10 @@ irqreturn_t mei_me_irq_thread_handler(int irq, void *dev_id)
 	int rets = 0;
 
 	dev_dbg(dev->dev, "function called after ISR to handle the interrupt processing.\n");
+
+	if (dev->dev->offline)
+		return IRQ_HANDLED;
+
 	/* initialize our complete list */
 	mutex_lock(&dev->device_lock);
 
