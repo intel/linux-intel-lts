@@ -23,6 +23,11 @@
 
 #define MEI_GSC_RPM_TIMEOUT 2000
 
+static inline bool mei_gsc_hw_is_unavailable(const struct device *dev)
+{
+	return dev->offline;
+}
+
 static int mei_gsc_read_hfs(const struct mei_device *dev, int where, u32 *val)
 {
 	struct mei_me_hw *hw = to_me_hw(dev);
@@ -42,6 +47,291 @@ static void mei_gsc_set_ext_op_mem(const struct mei_me_hw *hw, struct resource *
 	iowrite32(hi, hw->mem_addr + H_GSC_EXT_OP_MEM_BASE_ADDR_HI_REG);
 	iowrite32(limit, hw->mem_addr + H_GSC_EXT_OP_MEM_LIMIT_REG);
 }
+
+/**
+ * mei_gsc_mecbrw_read_null - read 32bit data from ME circular buffer (empty implementation)
+ *  read window register
+ *
+ * @dev: the device structure
+ *
+ * Return: always 0
+ */
+static inline u32 mei_gsc_mecbrw_read_null(const struct mei_device *dev)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_trc_status_null - read trc status register (empty implementation)
+ *
+ * @dev: mei device
+ * @trc: trc status register value
+ *
+ * Return: always 0
+ */
+static int mei_gsc_trc_status_null(struct mei_device *dev, u32 *trc)
+{
+	*trc = 0;
+	return 0;
+}
+
+/**
+ * mei_gsc_fw_status_null - read fw status register from pci config space (empty implementation)
+ *
+ * @dev: mei device
+ * @fw_status: fw status register values
+ *
+ * Return: always 0
+ */
+static int mei_gsc_fw_status_null(struct mei_device *dev,
+				  struct mei_fw_status *fw_status)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_hw_config_null - configure hw dependent settings (empty implementation)
+ *
+ * @dev: mei device
+ *
+ * Return: always 0
+ *
+ */
+static int mei_gsc_hw_config_null(struct mei_device *dev)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_pg_state_null  - translate internal pg state (empty implementation)
+ *   to the mei power gating state
+ *
+ * @dev:  mei device
+ *
+ * Return: always MEI_PG_OFF
+ */
+static inline enum mei_pg_state mei_gsc_pg_state_null(struct mei_device *dev)
+{
+	return MEI_PG_OFF;
+}
+
+/**
+ * mei_gsc_intr_clear_null - clear and stop interrupts (empty implementation)
+ *
+ * @dev: the device structure
+ */
+static void mei_gsc_intr_clear_null(struct mei_device *dev)
+{
+}
+
+/**
+ * mei_gsc_intr_enable_null - enables mei device interrupts (empty implementation)
+ *
+ * @dev: the device structure
+ */
+static void mei_gsc_intr_enable_null(struct mei_device *dev)
+{
+}
+
+/**
+ * mei_gsc_intr_disable_null - disables mei device interrupts (empty implementation)
+ *
+ * @dev: the device structure
+ */
+static void mei_gsc_intr_disable_null(struct mei_device *dev)
+{
+}
+
+/**
+ * mei_gsc_synchronize_irq_null - wait for pending IRQ handlers (empty implementation)
+ *
+ * @dev: the device structure
+ */
+static void mei_gsc_synchronize_irq_null(struct mei_device *dev)
+{
+}
+
+/**
+ * mei_gsc_host_is_ready_null - check whether the host has turned ready (empty implementation)
+ *
+ * @dev: mei device
+ * Return: always true
+ */
+static bool mei_gsc_host_is_ready_null(struct mei_device *dev)
+{
+	return true;
+}
+
+/**
+ * mei_gsc_hw_start_null - hw start routine (empty implementation)
+ *
+ * @dev: mei device
+ * Return: always 0
+ */
+static int mei_gsc_hw_start_null(struct mei_device *dev)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_hbuf_is_empty_null - checks if host buffer is empty (empty implementation)
+ *
+ * @dev: the device structure
+ *
+ * Return: always true
+ */
+static bool mei_gsc_hbuf_is_empty_null(struct mei_device *dev)
+{
+	return true;
+}
+
+/**
+ * mei_gsc_hbuf_empty_slots_null - counts write empty slots (empty implementation)
+ *
+ * @dev: the device structure
+ *
+ * Return: always -EOVERFLOW
+ */
+static int mei_gsc_hbuf_empty_slots_null(struct mei_device *dev)
+{
+	return -EOVERFLOW;
+}
+
+/**
+ * mei_gsc_hbuf_depth_null - returns depth of the hw buffer (empty implementation)
+ *
+ * @dev: the device structure
+ *
+ * Return: always 1
+ */
+static u32 mei_gsc_hbuf_depth_null(const struct mei_device *dev)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_hbuf_write_null - writes a message to host hw buffer (empty implementation)
+ *
+ * @dev: the device structure
+ * @hdr: header of message
+ * @hdr_len: header length in bytes: must be multiplication of a slot (4bytes)
+ * @data: payload
+ * @data_len: payload length in bytes
+ *
+ * Return: always 0
+ */
+static int mei_gsc_hbuf_write_null(struct mei_device *dev,
+				   const void *hdr, size_t hdr_len,
+				   const void *data, size_t data_len)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_count_full_read_slots_null - counts read full slots (empty implementation)
+ *
+ * @dev: the device structure
+ *
+ * Return: always -EOVERFLOW
+ */
+static int mei_gsc_count_full_read_slots_null(struct mei_device *dev)
+{
+	return -EOVERFLOW;
+}
+
+/**
+ * mei_gsc_read_slots_null - reads a message from mei device (empty implementation)
+ *
+ * @dev: the device structure
+ * @buffer: message buffer will be written
+ * @buffer_length: message size will be read
+ *
+ * Return: always 0
+ */
+static int mei_gsc_read_slots_null(struct mei_device *dev, unsigned char *buffer,
+				   unsigned long buffer_length)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_pg_in_transition_null - is device now in pg transition (empty implementation)
+ *
+ * @dev: the device structure
+ *
+ * Return: always false
+ */
+static bool mei_gsc_pg_in_transition_null(struct mei_device *dev)
+{
+	return false;
+}
+
+/**
+ * mei_gsc_pg_is_enabled_null - detect if PG is supported by HW (empty implementation)
+ *
+ * @dev: the device structure
+ *
+ * Return: always false
+ */
+static bool mei_gsc_pg_is_enabled_null(struct mei_device *dev)
+{
+	return false;
+}
+
+/**
+ * mei_gsc_hw_is_ready_null - check whether the me(hw) has turned ready (empty implementation)
+ *
+ * @dev: mei device
+ * Return: always true
+ */
+static bool mei_gsc_hw_is_ready_null(struct mei_device *dev)
+{
+	return true;
+}
+
+/**
+ * mei_gsc_hw_reset_null - resets fw via mei csr register (empty implementation)
+ *
+ * @dev: the device structure
+ * @intr_enable: if interrupt should be enabled after reset.
+ *
+ * Return: always 0
+ */
+static int mei_gsc_hw_reset_null(struct mei_device *dev, bool intr_enable)
+{
+	return 0;
+}
+
+static const struct mei_hw_ops mei_gsc_hw_ops_null = {
+	.trc_status = mei_gsc_trc_status_null,
+	.fw_status = mei_gsc_fw_status_null,
+	.pg_state  = mei_gsc_pg_state_null,
+
+	.host_is_ready = mei_gsc_host_is_ready_null,
+
+	.hw_is_ready = mei_gsc_hw_is_ready_null,
+	.hw_reset = mei_gsc_hw_reset_null,
+	.hw_config = mei_gsc_hw_config_null,
+	.hw_start = mei_gsc_hw_start_null,
+
+	.pg_in_transition = mei_gsc_pg_in_transition_null,
+	.pg_is_enabled = mei_gsc_pg_is_enabled_null,
+
+	.intr_clear = mei_gsc_intr_clear_null,
+	.intr_enable = mei_gsc_intr_enable_null,
+	.intr_disable = mei_gsc_intr_disable_null,
+	.synchronize_irq = mei_gsc_synchronize_irq_null,
+
+	.hbuf_free_slots = mei_gsc_hbuf_empty_slots_null,
+	.hbuf_is_ready = mei_gsc_hbuf_is_empty_null,
+	.hbuf_depth = mei_gsc_hbuf_depth_null,
+
+	.write = mei_gsc_hbuf_write_null,
+
+	.rdbuf_full_slots = mei_gsc_count_full_read_slots_null,
+	.read_hdr = mei_gsc_mecbrw_read_null,
+	.read = mei_gsc_read_slots_null
+};
 
 static int mei_gsc_probe(struct auxiliary_device *aux_dev,
 			 const struct auxiliary_device_id *aux_dev_id)
@@ -145,6 +435,8 @@ static void mei_gsc_remove(struct auxiliary_device *aux_dev)
 
 	dev = dev_get_drvdata(&aux_dev->dev);
 	hw = to_me_hw(dev);
+	if (mei_gsc_hw_is_unavailable(&aux_dev->dev))
+		dev->ops = &mei_gsc_hw_ops_null;
 
 	mei_stop(dev);
 
