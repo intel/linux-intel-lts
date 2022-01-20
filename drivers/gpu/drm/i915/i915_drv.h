@@ -1799,6 +1799,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 
 #define HAS_D12_PLANE_MINIMIZATION(dev_priv) (IS_ROCKETLAKE(dev_priv) || \
 					      IS_ALDERLAKE_S(dev_priv))
+#define HAS_GUC_DEPRIVILEGE(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_guc_deprivilege)
 
 static inline bool run_as_guest(void)
 {
