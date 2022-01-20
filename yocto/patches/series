@@ -36,13 +36,9 @@
 # CVE-2019-19449
 0001-f2fs-fix-to-do-sanity-check-on-segment-section-count.patch
 
-# CVE-2020-27820
-0001-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
-0002-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
-0003-drm-nouveau-clean-up-all-clients-on-device-removal.patch
-
-# CVE-2021-43975
-0001-atlantic-Fix-OOB-read-and-write-in-hw_atl_utils_fw_r.patch
 
 # CVE-2021-0929
 0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
+
+# CVE-2021-45095
+0001-phonet-refcount-leak-in-pep_sock_accep.patch
