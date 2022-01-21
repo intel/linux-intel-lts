@@ -25,6 +25,8 @@
 #define INTEL_QEPCAPBUF			0x1c
 #define INTEL_QEPINT_STAT		0x20
 #define INTEL_QEPINT_MASK		0x24
+#define INTEL_QEP_D0I3C			0x1000
+#define INTEL_QEP_CGSR			0x1004
 
 /* QEPCON */
 #define INTEL_QEPCON_EN			BIT(0)
@@ -59,6 +61,12 @@
 #define INTEL_QEPINT_WDT		BIT(0)
 
 #define INTEL_QEPINT_MASK_ALL		GENMASK(5, 0)
+
+/* QEP D0I3 and CGSR */
+#define INTEL_QEP_D0I3_CIP		BIT(0)
+#define INTEL_QEP_D0I3_EN		BIT(2)
+#define INTEL_QEP_D0I3_RR		BIT(3)
+#define INTEL_QEP_CGSR_CG		BIT(16)
 
 #define INTEL_QEP_CLK_PERIOD_NS		10
 
@@ -511,8 +519,80 @@ static int __maybe_unused intel_qep_resume(struct device *dev)
 	return 0;
 }
 
-static UNIVERSAL_DEV_PM_OPS(intel_qep_pm_ops,
-			    intel_qep_suspend, intel_qep_resume, NULL);
+#ifdef CONFIG_PM
+static int intel_qep_runtime_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct intel_qep *qep = pci_get_drvdata(pdev);
+	unsigned long j0, j1, delay;
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	delay = msecs_to_jiffies(100);
+	j0 = jiffies;
+	j1 = j0 + delay;
+
+	cgsr_reg = intel_qep_readl(qep, INTEL_QEP_CGSR);
+	intel_qep_writel(qep, INTEL_QEP_CGSR, INTEL_QEP_CGSR_CG);
+
+	d0i3c_reg = intel_qep_readl(qep, INTEL_QEP_D0I3C);
+
+	if (d0i3c_reg & INTEL_QEP_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		intel_qep_writel(qep, INTEL_QEP_D0I3C, INTEL_QEP_D0I3_EN);
+		d0i3c_reg = intel_qep_readl(qep, INTEL_QEP_D0I3C);
+	}
+
+	while (time_before(jiffies, j1)) {
+		d0i3c_reg = intel_qep_readl(qep, INTEL_QEP_D0I3C);
+		if (!(d0i3c_reg & INTEL_QEP_D0I3_CIP))
+			break;
+	}
+
+	if (d0i3c_reg & INTEL_QEP_D0I3_CIP)
+		dev_info(dev, "%s: timeout waiting CIP to be cleared", __func__);
+
+	return 0;
+}
+
+static int intel_qep_runtime_resume(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct intel_qep *qep = pci_get_drvdata(pdev);
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	cgsr_reg = intel_qep_readl(qep, INTEL_QEP_CGSR);
+
+	if (cgsr_reg & INTEL_QEP_CGSR_CG)
+		intel_qep_writel(qep, INTEL_QEP_CGSR, (cgsr_reg & ~INTEL_QEP_CGSR_CG));
+
+	d0i3c_reg = intel_qep_readl(qep, INTEL_QEP_D0I3C);
+
+	if (d0i3c_reg & INTEL_QEP_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+
+		if (d0i3c_reg & INTEL_QEP_D0I3_EN)
+			d0i3c_reg &= ~INTEL_QEP_D0I3_EN;
+
+		if (d0i3c_reg & INTEL_QEP_D0I3_RR)
+			d0i3c_reg |= INTEL_QEP_D0I3_RR;
+
+		writel(d0i3c_reg, dev + INTEL_QEP_D0I3C);
+	}
+	intel_qep_init(qep);
+
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops intel_qep_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(intel_qep_suspend, intel_qep_resume)
+	SET_RUNTIME_PM_OPS(intel_qep_runtime_suspend, intel_qep_runtime_resume,
+			   NULL)
+};
 
 static const struct pci_device_id intel_qep_id_table[] = {
 	/* EHL */
