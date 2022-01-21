@@ -28,6 +28,14 @@
 #define DRIVER_NAME "i2c-designware-pci"
 #define AMD_CLK_RATE_HZ	100000
 
+#define PSE_I2C_D0I3C		0x1000
+#define PSE_I2C_CGSR		0x1004
+
+#define PSE_I2C_D0I3_CIP	BIT(0)
+#define PSE_I2C_D0I3_EN		BIT(2)
+#define PSE_I2C_D0I3_RR		BIT(3)
+#define PSE_I2C_CGSR_CG		BIT(16)
+
 enum dw_pci_ctl_id_t {
 	medfield,
 	merrifield,
@@ -224,7 +232,7 @@ static struct dw_pci_controller dw_pci_controllers[] = {
 	},
 };
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int i2c_dw_pci_suspend(struct device *dev)
 {
 	struct dw_i2c_dev *i_dev = dev_get_drvdata(dev);
@@ -247,8 +255,99 @@ static int i2c_dw_pci_resume(struct device *dev)
 }
 #endif
 
-static UNIVERSAL_DEV_PM_OPS(i2c_dw_pm_ops, i2c_dw_pci_suspend,
-			    i2c_dw_pci_resume, NULL);
+#ifdef CONFIG_PM
+static int i2c_dw_pci_runtime_suspend(struct device *dev)
+{
+	struct dw_i2c_dev *i_dev = dev_get_drvdata(dev);
+	unsigned long j0, j1, delay;
+	u32 d0i3c_reg = 0;
+	u32 cgsr_reg = 0;
+	int ret;
+
+	i_dev->suspended = true;
+	i_dev->disable(i_dev);
+
+	delay = msecs_to_jiffies(100);
+	j0 = jiffies;
+	j1 = j0 + delay;
+
+	ret = regmap_read(i_dev->map, PSE_I2C_CGSR, &cgsr_reg);
+	if (ret)
+		return ret;
+	regmap_write(i_dev->map, PSE_I2C_CGSR, PSE_I2C_CGSR_CG);
+
+	ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+	if (ret)
+		return ret;
+
+	if (d0i3c_reg & PSE_I2C_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		regmap_write(i_dev->map, PSE_I2C_D0I3C, PSE_I2C_D0I3_EN);
+		ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+		if (ret)
+			return ret;
+	}
+
+	while (time_before(jiffies, j1)) {
+		ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+		if (ret)
+			return ret;
+		if (!(d0i3c_reg & PSE_I2C_D0I3_CIP))
+			break;
+	}
+
+	if (d0i3c_reg & PSE_I2C_D0I3_CIP)
+		dev_info(dev, "%s: timeout waiting CIP to be cleared",  __func__);
+
+	return 0;
+}
+
+static int i2c_dw_pci_runtime_resume(struct device *dev)
+{
+	struct dw_i2c_dev *i_dev = dev_get_drvdata(dev);
+	u32 d0i3c_reg = 0;
+	u32 cgsr_reg = 0;
+	int ret;
+
+	ret = regmap_read(i_dev->map, PSE_I2C_CGSR, &cgsr_reg);
+	if (ret)
+		return ret;
+
+	if (cgsr_reg & PSE_I2C_CGSR_CG)
+		regmap_write(i_dev->map, PSE_I2C_CGSR, (cgsr_reg & ~PSE_I2C_CGSR_CG));
+
+	ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+	if (ret)
+		return ret;
+
+	if (d0i3c_reg & PSE_I2C_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		if (d0i3c_reg & PSE_I2C_D0I3_EN)
+			d0i3c_reg &= ~PSE_I2C_D0I3_EN;
+
+		if (d0i3c_reg & PSE_I2C_D0I3_RR)
+			d0i3c_reg |= PSE_I2C_D0I3_RR;
+
+		regmap_write(i_dev->map, PSE_I2C_D0I3C, d0i3c_reg);
+		ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+		if (ret)
+			return ret;
+	}
+
+	ret = i_dev->init(i_dev);
+	i_dev->suspended = false;
+
+	return ret;
+}
+#endif
+
+static const struct dev_pm_ops i2c_dw_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(i2c_dw_pci_suspend, i2c_dw_pci_resume)
+	SET_RUNTIME_PM_OPS(i2c_dw_pci_runtime_suspend,
+			   i2c_dw_pci_runtime_resume, NULL)
+};
 
 static int i2c_dw_pci_probe(struct pci_dev *pdev,
 			    const struct pci_device_id *id)
