@@ -26,6 +26,13 @@ struct m_can_pci_priv {
 
 	void __iomem *base;
 };
+#define M_CAN_D0I3C	0x8000
+#define M_CAN_CGSR	0x8004
+
+#define M_CAN_D0I3_CIP BIT(0)
+#define M_CAN_D0I3_EN BIT(2)
+#define M_CAN_D0I3_RR BIT(3)
+#define M_CAN_CGSR_CG BIT(16)
 
 static inline struct m_can_pci_priv *cdev_to_priv(struct m_can_classdev *cdev)
 {
@@ -174,8 +181,79 @@ static __maybe_unused int m_can_pci_resume(struct device *dev)
 	return m_can_class_resume(dev);
 }
 
-static SIMPLE_DEV_PM_OPS(m_can_pci_pm_ops,
-			 m_can_pci_suspend, m_can_pci_resume);
+static int __maybe_unused m_can_pci_runtime_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct net_device *ndev = pci_get_drvdata(pdev);
+	struct m_can_classdev *mcan_class = netdev_priv(ndev);
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+	unsigned long j0, j1, delay;
+
+	delay = msecs_to_jiffies(100);
+	j0 = jiffies;
+	j1 = j0 + delay;
+
+	cgsr_reg = iomap_read_reg(mcan_class, M_CAN_CGSR);
+	iomap_write_reg(mcan_class, M_CAN_CGSR, M_CAN_CGSR_CG);
+
+	d0i3c_reg = iomap_read_reg(mcan_class, M_CAN_D0I3C);
+
+	if (d0i3c_reg & M_CAN_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		iomap_write_reg(mcan_class, M_CAN_D0I3C, M_CAN_D0I3_EN);
+		d0i3c_reg = iomap_read_reg(mcan_class, M_CAN_D0I3C);
+	}
+
+	while (time_before(jiffies, j1)) {
+		d0i3c_reg = iomap_read_reg(mcan_class, M_CAN_D0I3C);
+		if (!(d0i3c_reg & M_CAN_D0I3_CIP))
+			break;
+	}
+
+	if (d0i3c_reg & M_CAN_D0I3_CIP)
+		dev_info(dev, "%s d0i3c timeout waiting CIP to be cleared", __func__);
+
+	return 0;
+}
+
+static int __maybe_unused m_can_pci_runtime_resume(struct device *dev)
+{
+	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
+	struct net_device *ndev = pci_get_drvdata(pdev);
+	struct m_can_classdev *mcan_class = netdev_priv(ndev);
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	cgsr_reg = iomap_read_reg(mcan_class, M_CAN_CGSR);
+
+	if (cgsr_reg & M_CAN_CGSR_CG)
+		iomap_write_reg(mcan_class, M_CAN_CGSR, (cgsr_reg & ~M_CAN_CGSR_CG));
+
+	d0i3c_reg = iomap_read_reg(mcan_class, M_CAN_D0I3C);
+
+	if (d0i3c_reg & M_CAN_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		if (d0i3c_reg & M_CAN_D0I3_EN)
+			d0i3c_reg &= ~M_CAN_D0I3_EN;
+
+		if (d0i3c_reg & M_CAN_D0I3_RR)
+			d0i3c_reg |= M_CAN_D0I3_RR;
+
+		iomap_write_reg(mcan_class, M_CAN_D0I3C, d0i3c_reg);
+		d0i3c_reg = iomap_read_reg(mcan_class, M_CAN_D0I3C);
+	}
+
+	return 0;
+}
+
+static const struct dev_pm_ops m_can_pci_pm_ops = {
+	SET_RUNTIME_PM_OPS(m_can_pci_runtime_suspend,
+			   m_can_pci_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(m_can_pci_suspend, m_can_pci_resume)
+};
 
 static const struct pci_device_id m_can_pci_id_table[] = {
 	{ PCI_VDEVICE(INTEL, 0x4bc1), M_CAN_CLOCK_FREQ_EHL, },
