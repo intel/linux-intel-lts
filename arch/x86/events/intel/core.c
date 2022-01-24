@@ -6331,6 +6331,10 @@ __init int intel_pmu_init(void)
 	if (is_hybrid())
 		intel_pmu_check_hybrid_pmus((u64)fixed_mask);
 
+	if (x86_pmu.intel_cap.pebs_timing_info)
+		x86_pmu.flags |= PMU_FL_RETIRE_LATENCY;
+
+
 	return 0;
 }
 
