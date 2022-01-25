@@ -10,6 +10,8 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/rational.h>
+#include <linux/pm_runtime.h>
+
 
 #include <linux/dmaengine.h>
 #include <linux/dma/dw.h>
@@ -45,6 +47,25 @@
 #define BYT_TX_OVF_INT			0x820
 #define BYT_TX_OVF_INT_MASK		BIT(1)
 
+#define LPSS8250_D0I3C 0x1000
+#define LPSS8250_CGSR 0x1004
+
+#define LPSS8250_D0I3_CIP BIT(0)
+#define LPSS8250_D0I3_EN BIT(2)
+#define LPSS8250_D0I3_RR BIT(3)
+#define LPSS8250_CGSR_CG BIT(16)
+
+
+static inline void lpss8250_writel(void __iomem *base, u32 offset, u32 value)
+{
+	writel(value, base + offset);
+}
+
+static inline u32 lpss8250_readl(void __iomem *base, u32 offset)
+{
+	return readl(base + offset);
+}
+
 struct lpss8250;
 
 struct lpss8250_board {
@@ -62,6 +83,7 @@ struct lpss8250 {
 	struct dw_dma_chip dma_chip;
 	struct dw_dma_slave dma_param;
 	u8 dma_maxburst;
+	unsigned char __iomem *base;
 };
 
 static inline struct lpss8250 *to_lpss8250(struct dw8250_port_data *data)
@@ -307,6 +329,7 @@ static int lpss8250_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	struct uart_8250_port uart;
 	struct lpss8250 *lpss;
 	int ret;
+	struct device *dev = &pdev->dev;
 
 	ret = pcim_enable_device(pdev);
 	if (ret)
@@ -340,6 +363,8 @@ static int lpss8250_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!uart.port.membase)
 		return -ENOMEM;
 
+  lpss->base = uart.port.membase;
+
 	if (lpss->board->setup) {
 		ret = lpss->board->setup(lpss, &uart.port);
 		if (ret)
@@ -359,6 +384,13 @@ static int lpss8250_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	lpss->data.line = ret;
 
 	pci_set_drvdata(pdev, lpss);
+
+	pm_runtime_set_autosuspend_delay(dev, -1);
+	pm_runtime_use_autosuspend(dev);
+	pm_runtime_put_noidle(dev);
+	pm_runtime_allow(dev);
+
+
 	return 0;
 
 err_exit:
@@ -370,11 +402,17 @@ err_exit:
 static void lpss8250_remove(struct pci_dev *pdev)
 {
 	struct lpss8250 *lpss = pci_get_drvdata(pdev);
+	struct device *dev = &pdev->dev;
+
+	pm_runtime_get_sync(dev);
 
 	serial8250_unregister_port(lpss->data.line);
 
 	lpss->board->exit(lpss);
 	pci_free_irq_vectors(pdev);
+
+	pm_runtime_disable(dev);
+	pm_runtime_put_noidle(dev);
 }
 
 static const struct lpss8250_board byt_board = {
@@ -398,6 +436,97 @@ static const struct lpss8250_board qrk_board = {
 	.exit = qrk_serial_exit,
 };
 
+#ifdef CONFIG_PM_SLEEP
+static int lpss8250_suspend(struct device *dev)
+{
+	struct lpss8250 *lpss = dev_get_drvdata(dev);
+
+	serial8250_suspend_port(lpss->data.line);
+
+	return 0;
+}
+
+static int lpss8250_resume(struct device *dev)
+{
+	struct lpss8250 *lpss = dev_get_drvdata(dev);
+
+	serial8250_resume_port(lpss->data.line);
+
+	return 0;
+}
+#endif /* CONFIG_PM_SLEEP */
+
+#ifdef CONFIG_PM
+static int lpss8250_runtime_suspend(struct device *dev)
+{
+	struct lpss8250 *lpss = dev_get_drvdata(dev);
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+	unsigned long j0, j1, delay;
+
+	delay = msecs_to_jiffies(100);
+	j0 = jiffies;
+	j1 = j0 + delay;
+
+	cgsr_reg = lpss8250_readl(lpss->base, LPSS8250_CGSR);
+	lpss8250_writel(lpss->base, LPSS8250_CGSR, LPSS8250_CGSR_CG);
+
+	d0i3c_reg = lpss8250_readl(lpss->base, LPSS8250_D0I3C);
+
+	if (d0i3c_reg & LPSS8250_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		lpss8250_writel(lpss->base, LPSS8250_D0I3C, LPSS8250_D0I3_EN);
+		d0i3c_reg = lpss8250_readl(lpss->base, LPSS8250_D0I3C);
+	}
+
+	while (time_before(jiffies, j1)) {
+		d0i3c_reg = lpss8250_readl(lpss->base, LPSS8250_D0I3C);
+		if (!(d0i3c_reg & LPSS8250_D0I3_CIP)) {
+			break;
+		}
+	}
+
+	if (d0i3c_reg & LPSS8250_D0I3_CIP) {
+		dev_info(dev, "%s: timeout waiting CIP to be cleared", __func__);
+	}
+
+	return 0;
+}
+
+static int lpss8250_runtime_resume(struct device *dev)
+{
+	struct lpss8250 *lpss = dev_get_drvdata(dev);
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	cgsr_reg = lpss8250_readl(lpss->base, LPSS8250_CGSR);
+
+	if (cgsr_reg & LPSS8250_CGSR_CG) {
+		dev_info(dev, "%s Clock Gated, release now...", __func__);
+		lpss8250_writel(lpss->base, LPSS8250_CGSR, (cgsr_reg & ~LPSS8250_CGSR_CG));
+	}
+
+	d0i3c_reg = lpss8250_readl(lpss->base, LPSS8250_D0I3C);
+
+	if (d0i3c_reg & LPSS8250_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+
+		if (d0i3c_reg & LPSS8250_D0I3_EN)
+			d0i3c_reg &= ~LPSS8250_D0I3_EN;
+
+		if (d0i3c_reg & LPSS8250_D0I3_RR)
+			d0i3c_reg |= LPSS8250_D0I3_RR;
+
+		lpss8250_writel(lpss->base, LPSS8250_D0I3C, d0i3c_reg);
+		d0i3c_reg = lpss8250_readl(lpss->base, LPSS8250_D0I3C);
+	}
+
+	return 0;
+}
+#endif /* CONFIG_PM */
+
 static const struct pci_device_id pci_ids[] = {
 	{ PCI_DEVICE_DATA(INTEL, QRK_UARTx, &qrk_board) },
 	{ PCI_DEVICE_DATA(INTEL, EHL_UART0, &ehl_board) },
@@ -416,11 +545,19 @@ static const struct pci_device_id pci_ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, pci_ids);
 
+static const struct dev_pm_ops lpss8250_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(lpss8250_suspend, lpss8250_resume)
+	SET_RUNTIME_PM_OPS(lpss8250_runtime_suspend, lpss8250_runtime_resume, NULL)
+};
+
 static struct pci_driver lpss8250_pci_driver = {
 	.name           = "8250_lpss",
 	.id_table       = pci_ids,
 	.probe          = lpss8250_probe,
 	.remove         = lpss8250_remove,
+	.driver					= {
+		.pm		= &lpss8250_pm_ops,
+	}
 };
 
 module_pci_driver(lpss8250_pci_driver);
