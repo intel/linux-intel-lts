@@ -566,10 +566,12 @@ static int open_closed_channel(struct xlink_event *event, u32 link_id,
 		} else {
 			xlink_dispatcher_event_add(EVENT_TX, event);
 			*event_queued = 1;
-			mutex_unlock(&xmux->channels[link_id][chan].lock);
 			save_timeout = opchan->chan->timeout;
 			opchan->chan->timeout = OPEN_CHANNEL_TIMEOUT_MSEC;
+			mutex_unlock(&xmux->channels[link_id][chan].lock);
 			rc = compl_wait(&opchan->opened, opchan);
+			mutex_lock(&xmux->channels[link_id][chan].lock);
+			opchan = xmux->channels[link_id][chan].opchan;
 			if (opchan) {
 				opchan->chan->timeout = save_timeout;
 				if (rc == 0) {
