@@ -319,6 +319,12 @@ struct stmmac_priv {
 	/* XDP BPF Program */
 	unsigned long *af_xdp_zc_qps;
 	struct bpf_prog *xdp_prog;
+
+#ifdef CONFIG_PM
+	/* Runtime PM */
+	int saved_wolopts;
+	bool phylink_up;
+#endif
 };
 
 enum stmmac_state {
