@@ -1223,20 +1223,6 @@
 #define   ERR_INT_FIFO_UNDERRUN_A	(1 << 0)
 #define   ERR_INT_FIFO_UNDERRUN(pipe)	(1 << ((pipe) * 3))
 
-#define GEN8_FAULT_TLB_DATA0		_MMIO(0x4b10)
-#define GEN8_FAULT_TLB_DATA1		_MMIO(0x4b14)
-#define GEN12_FAULT_TLB_DATA0		_MMIO(0xceb8)
-#define GEN12_FAULT_TLB_DATA1		_MMIO(0xcebc)
-#define   FAULT_VA_HIGH_BITS		(0xf << 0)
-#define   FAULT_GTT_SEL			(1 << 4)
-
-#define GEN12_GFX_TLB_INV_CR	_MMIO(0xced8)
-#define GEN12_VD_TLB_INV_CR	_MMIO(0xcedc)
-#define GEN12_VE_TLB_INV_CR	_MMIO(0xcee0)
-#define GEN12_BLT_TLB_INV_CR	_MMIO(0xcee4)
-
-#define GEN12_AUX_ERR_DBG		_MMIO(0x43f4)
-
 #define FPGA_DBG		_MMIO(0x42300)
 #define   FPGA_DBG_RM_NOCLAIM	REG_BIT(31)
 
