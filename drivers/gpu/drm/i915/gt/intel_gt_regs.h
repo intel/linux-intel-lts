@@ -430,6 +430,8 @@
 #define   GEN9_IZ_HASHING_MASK(slice)			(0x3 << ((slice) * 2))
 #define   GEN9_IZ_HASHING(slice, val)			((val) << ((slice) * 2))
 
+#define GEN12_STATE_ACK_DEBUG			_MMIO(0x20bc)
+
 /* chicken reg for WaConextSwitchWithConcurrentTLBInvalidate */
 #define GEN9_CSFE_CHICKEN1_RCS _MMIO(0x20D4)
 #define   GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE (1 << 2)
@@ -1022,6 +1024,7 @@ enum {
 # define CHV_HZ_8X8_MODE_IN_1X				REG_BIT(15)
 # define DG1_HZ_READ_SUPPRESSION_OPTIMIZATION_DISABLE   REG_BIT(14)
 # define BDW_HIZ_POWER_COMPILER_CLOCK_GATING_DISABLE	REG_BIT(3)
+#define GEN12_CULLBIT1				_MMIO(0x6100)
 
 #define GEN9_SLICE_COMMON_ECO_CHICKEN0		_MMIO(0x7308)
 #define  DISABLE_PIXEL_MASK_CAMMING		(1 << 14)
@@ -1060,6 +1063,7 @@ enum {
 
 #define GEN7_L3SQCREG4				_MMIO(0xb034)
 #define  L3SQ_URB_READ_CAM_MATCH_DISABLE	(1 << 27)
+#define GEN12_CULLBIT2				_MMIO(0x7030)
 
 #define GEN11_SCRATCH2					_MMIO(0xb140)
 #define  GEN11_COHERENT_PARTIAL_WRITE_MERGE_ENABLE	(1 << 19)
