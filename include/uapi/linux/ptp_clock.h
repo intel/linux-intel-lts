@@ -49,8 +49,7 @@
 				 PTP_RISING_EDGE |	\
 				 PTP_FALLING_EDGE |	\
 				 PTP_STRICT_FLAGS |	\
-				 PTP_EXT_OFFSET |	\
-				 PTP_EVENT_COUNTER_MODE)
+				 PTP_EXT_OFFSET)
 
 /*
  * flag fields valid for the original PTP_EXTTS_REQUEST ioctl.
@@ -58,6 +57,7 @@
  */
 #define PTP_EXTTS_V1_VALID_FLAGS	(PTP_ENABLE_FEATURE |	\
 					 PTP_RISING_EDGE |	\
+					 PTP_EVENT_COUNTER_MODE |	\
 					 PTP_FALLING_EDGE)
 
 /*
