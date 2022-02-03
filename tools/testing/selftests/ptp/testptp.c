@@ -605,6 +605,7 @@ int main(int argc, char *argv[])
 			else
 				puts("single shot output request okay");
 		} else {
+			perout_request.period.nsec = perout;
 			if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request))
 				perror("PTP_PEROUT_REQUEST2");
 			else
