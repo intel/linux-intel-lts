@@ -360,7 +360,7 @@ static struct drm_gem_object *vgem_prime_import_sg_table(struct drm_device *dev,
 	return &obj->base;
 }
 
-static int vgem_prime_vmap(struct drm_gem_object *obj, struct dma_buf_map *map)
+static int vgem_prime_vmap(struct drm_gem_object *obj, struct iosys_map *map)
 {
 	struct drm_vgem_gem_object *bo = to_vgem_bo(obj);
 	long n_pages = obj->size >> PAGE_SHIFT;
@@ -374,12 +374,13 @@ static int vgem_prime_vmap(struct drm_gem_object *obj, struct dma_buf_map *map)
 	vaddr = vmap(pages, n_pages, 0, pgprot_writecombine(PAGE_KERNEL));
 	if (!vaddr)
 		return -ENOMEM;
-	dma_buf_map_set_vaddr(map, vaddr);
+	iosys_map_set_vaddr(map, vaddr);
 
 	return 0;
 }
 
-static void vgem_prime_vunmap(struct drm_gem_object *obj, struct dma_buf_map *map)
+static void vgem_prime_vunmap(struct drm_gem_object *obj,
+			      struct iosys_map *map)
 {
 	struct drm_vgem_gem_object *bo = to_vgem_bo(obj);
 

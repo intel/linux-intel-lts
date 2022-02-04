@@ -290,7 +290,8 @@ int xen_drm_front_gem_mmap(struct file *filp, struct vm_area_struct *vma)
 	return gem_mmap_obj(xen_obj, vma);
 }
 
-int xen_drm_front_gem_prime_vmap(struct drm_gem_object *gem_obj, struct dma_buf_map *map)
+int xen_drm_front_gem_prime_vmap(struct drm_gem_object *gem_obj,
+				 struct iosys_map *map)
 {
 	struct xen_gem_object *xen_obj = to_xen_gem_obj(gem_obj);
 	void *vaddr;
@@ -303,13 +304,13 @@ int xen_drm_front_gem_prime_vmap(struct drm_gem_object *gem_obj, struct dma_buf_
 		     VM_MAP, PAGE_KERNEL);
 	if (!vaddr)
 		return -ENOMEM;
-	dma_buf_map_set_vaddr(map, vaddr);
+	iosys_map_set_vaddr(map, vaddr);
 
 	return 0;
 }
 
 void xen_drm_front_gem_prime_vunmap(struct drm_gem_object *gem_obj,
-				    struct dma_buf_map *map)
+				    struct iosys_map *map)
 {
 	vunmap(map->vaddr);
 }
