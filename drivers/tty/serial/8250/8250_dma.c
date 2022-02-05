@@ -8,8 +8,22 @@
 #include <linux/tty_flip.h>
 #include <linux/serial_reg.h>
 #include <linux/dma-mapping.h>
+#include <linux/pci.h>
 
 #include "8250.h"
+
+static int ehl_pse_dma_dev(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+
+	if ((pdev->vendor == PCI_VENDOR_ID_INTEL) &&
+		(pdev->device == 0x4b96 || pdev->device == 0x4b97 ||
+		 pdev->device == 0x4b98 || pdev->device == 0x4b99 ||
+		 pdev->device == 0x4b9a || pdev->device == 0x4b9b))
+		return 1;
+
+	return 0;
+}
 
 static void __dma_tx_complete(void *param)
 {
@@ -19,9 +33,13 @@ static void __dma_tx_complete(void *param)
 	unsigned long	flags;
 	int		ret;
 
-	dma_sync_single_for_cpu(dma->txchan->device->dev, dma->tx_addr,
+	if (ehl_pse_dma_dev(p->port.dev)) {
+		dma_sync_single_for_cpu(p->port.dev, dma->tx_addr,
+					UART_XMIT_SIZE, DMA_TO_DEVICE);
+	} else {
+		dma_sync_single_for_cpu(dma->txchan->device->dev, dma->tx_addr,
 				UART_XMIT_SIZE, DMA_TO_DEVICE);
-
+	}
 	spin_lock_irqsave(&p->port.lock, flags);
 
 	dma->tx_running = 0;
@@ -101,8 +119,13 @@ int serial8250_tx_dma(struct uart_8250_port *p)
 
 	dma->tx_cookie = dmaengine_submit(desc);
 
-	dma_sync_single_for_device(dma->txchan->device->dev, dma->tx_addr,
+	if (ehl_pse_dma_dev(p->port.dev)) {
+		dma_sync_single_for_device(p->port.dev, dma->tx_addr,
 				   UART_XMIT_SIZE, DMA_TO_DEVICE);
+	} else {
+		dma_sync_single_for_device(dma->txchan->device->dev,
+				dma->tx_addr, UART_XMIT_SIZE, DMA_TO_DEVICE);
+	}
 
 	dma_async_issue_pending(dma->txchan);
 	if (dma->tx_err) {
@@ -218,23 +241,42 @@ int serial8250_request_dma(struct uart_8250_port *p)
 	if (!dma->rx_size)
 		dma->rx_size = PAGE_SIZE;
 
-	dma->rx_buf = dma_alloc_coherent(dma->rxchan->device->dev, dma->rx_size,
-					&dma->rx_addr, GFP_KERNEL);
+	if (ehl_pse_dma_dev(p->port.dev)) {
+		dma->rx_buf = dma_alloc_coherent(p->port.dev, dma->rx_size,
+						&dma->rx_addr, GFP_KERNEL);
+	} else {
+		dma->rx_buf = dma_alloc_coherent(dma->rxchan->device->dev,
+				dma->rx_size, &dma->rx_addr, GFP_KERNEL);
+	}
+
 	if (!dma->rx_buf) {
 		ret = -ENOMEM;
 		goto err;
 	}
 
 	/* TX buffer */
-	dma->tx_addr = dma_map_single(dma->txchan->device->dev,
+	if (ehl_pse_dma_dev(p->port.dev)) {
+		dma->tx_addr = dma_map_single(p->port.dev,
+						p->port.state->xmit.buf,
+						UART_XMIT_SIZE,
+						DMA_TO_DEVICE);
+		if (dma_mapping_error(p->port.dev, dma->tx_addr)) {
+			dma_free_coherent(p->port.dev, dma->rx_size,
+					dma->rx_buf, dma->rx_addr);
+		ret = -ENOMEM;
+		goto err;
+		}
+	} else {
+		dma->tx_addr = dma_map_single(dma->txchan->device->dev,
 					p->port.state->xmit.buf,
 					UART_XMIT_SIZE,
 					DMA_TO_DEVICE);
-	if (dma_mapping_error(dma->txchan->device->dev, dma->tx_addr)) {
-		dma_free_coherent(dma->rxchan->device->dev, dma->rx_size,
-				  dma->rx_buf, dma->rx_addr);
-		ret = -ENOMEM;
-		goto err;
+		if (dma_mapping_error(dma->txchan->device->dev, dma->tx_addr)) {
+			dma_free_coherent(dma->rxchan->device->dev, dma->rx_size,
+							 dma->rx_buf, dma->rx_addr);
+			ret = -ENOMEM;
+			goto err;
+		}
 	}
 
 	dev_dbg_ratelimited(p->port.dev, "got both dma channels\n");
@@ -257,15 +299,27 @@ void serial8250_release_dma(struct uart_8250_port *p)
 
 	/* Release RX resources */
 	dmaengine_terminate_sync(dma->rxchan);
-	dma_free_coherent(dma->rxchan->device->dev, dma->rx_size, dma->rx_buf,
-			  dma->rx_addr);
+
+	if (ehl_pse_dma_dev(p->port.dev)) {
+		dma_free_coherent(p->port.dev, dma->rx_size,
+				dma->rx_buf, dma->rx_addr);
+	} else {
+		dma_free_coherent(dma->rxchan->device->dev, dma->rx_size,
+				dma->rx_buf, dma->rx_addr);
+	}
+
 	dma_release_channel(dma->rxchan);
 	dma->rxchan = NULL;
 
 	/* Release TX resources */
 	dmaengine_terminate_sync(dma->txchan);
-	dma_unmap_single(dma->txchan->device->dev, dma->tx_addr,
+	if (ehl_pse_dma_dev(p->port.dev)) {
+		dma_unmap_single(p->port.dev, dma->tx_addr,
+				UART_XMIT_SIZE, DMA_TO_DEVICE);
+	} else {
+		dma_unmap_single(dma->txchan->device->dev, dma->tx_addr,
 			 UART_XMIT_SIZE, DMA_TO_DEVICE);
+	}
 	dma_release_channel(dma->txchan);
 	dma->txchan = NULL;
 	dma->tx_running = 0;
