@@ -1321,28 +1321,6 @@ stm32_usart_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return -EINVAL;
 }
 
-static void stm32_usart_pm(struct uart_port *port, unsigned int state,
-			   unsigned int oldstate)
-{
-	struct stm32_port *stm32port = container_of(port,
-			struct stm32_port, port);
-	const struct stm32_usart_offsets *ofs = &stm32port->info->ofs;
-	const struct stm32_usart_config *cfg = &stm32port->info->cfg;
-	unsigned long flags;
-
-	switch (state) {
-	case UART_PM_STATE_ON:
-		pm_runtime_get_sync(port->dev);
-		break;
-	case UART_PM_STATE_OFF:
-		spin_lock_irqsave(&port->lock, flags);
-		stm32_usart_clr_bits(port, ofs->cr1, BIT(cfg->uart_enable_bit));
-		spin_unlock_irqrestore(&port->lock, flags);
-		pm_runtime_put_sync(port->dev);
-		break;
-	}
-}
-
 #if defined(CONFIG_CONSOLE_POLL)
 
  /* Callbacks for characters polling in debug context (i.e. KGDB). */
@@ -1385,7 +1363,6 @@ static const struct uart_ops stm32_uart_ops = {
 	.shutdown	= stm32_usart_shutdown,
 	.flush_buffer	= stm32_usart_flush_buffer,
 	.set_termios	= stm32_usart_set_termios,
-	.pm		= stm32_usart_pm,
 	.type		= stm32_usart_type,
 	.release_port	= stm32_usart_release_port,
 	.request_port	= stm32_usart_request_port,
