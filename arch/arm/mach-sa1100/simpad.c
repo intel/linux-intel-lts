@@ -134,27 +134,6 @@ static struct map_desc simpad_io_desc[] __initdata = {
 	},
 };
 
-
-static void simpad_uart_pm(struct uart_port *port, u_int state, u_int oldstate)
-{
-	if (port->mapbase == (u_int)&Ser1UTCR0) {
-		if (state)
-		{
-			simpad_clear_cs3_bit(RS232_ON);
-			simpad_clear_cs3_bit(DECT_POWER_ON);
-		}else
-		{
-			simpad_set_cs3_bit(RS232_ON);
-			simpad_set_cs3_bit(DECT_POWER_ON);
-		}
-	}
-}
-
-static struct sa1100_port_fns simpad_port_fns __initdata = {
-	.pm	   = simpad_uart_pm,
-};
-
-
 static struct mtd_partition simpad_partitions[] = {
 	{
 		.name       = "SIMpad boot firmware",
@@ -207,7 +186,6 @@ static void __init simpad_map_io(void)
 		RS232_ON | ENABLE_5V | RESET_SIMCARD | DECT_POWER_ON);
 	__simpad_write_cs3(); /* Spinlocks not yet initialized */
 
-        sa1100_register_uart_fns(&simpad_port_fns);
 	sa1100_register_uart(0, 3);  /* serial interface */
 	sa1100_register_uart(1, 1);  /* DECT             */
 
