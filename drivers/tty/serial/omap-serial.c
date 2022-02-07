@@ -1058,26 +1058,6 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	dev_dbg(up->port.dev, "serial_omap_set_termios+%d\n", up->port.line);
 }
 
-static void
-serial_omap_pm(struct uart_port *port, unsigned int state,
-	       unsigned int oldstate)
-{
-	struct uart_omap_port *up = to_uart_omap_port(port);
-	unsigned char efr;
-
-	dev_dbg(up->port.dev, "serial_omap_pm+%d\n", up->port.line);
-
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
-	efr = serial_in(up, UART_EFR);
-	serial_out(up, UART_EFR, efr | UART_EFR_ECB);
-	serial_out(up, UART_LCR, 0);
-
-	serial_out(up, UART_IER, (state != 0) ? UART_IERX_SLEEP : 0);
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
-	serial_out(up, UART_EFR, efr);
-	serial_out(up, UART_LCR, 0);
-}
-
 static void serial_omap_release_port(struct uart_port *port)
 {
 	dev_dbg(port->dev, "serial_omap_release_port+\n");
@@ -1395,7 +1375,6 @@ static const struct uart_ops serial_omap_pops = {
 	.startup	= serial_omap_startup,
 	.shutdown	= serial_omap_shutdown,
 	.set_termios	= serial_omap_set_termios,
-	.pm		= serial_omap_pm,
 	.type		= serial_omap_type,
 	.release_port	= serial_omap_release_port,
 	.request_port	= serial_omap_request_port,
