@@ -315,21 +315,6 @@ hardware.
 
 	Locking: caller holds tty_port->mutex
 
-  pm(port,state,oldstate)
-	Perform any power management related activities on the specified
-	port.  State indicates the new state (defined by
-	enum uart_pm_state), oldstate indicates the previous state.
-
-	This function should not be used to grab any resources.
-
-	This will be called when the port is initially opened and finally
-	closed, except when the port is also the system console.  This
-	will occur even if CONFIG_PM is not set.
-
-	Locking: none.
-
-	Interrupts: caller dependent.
-
   type(port)
 	Return a pointer to a string constant describing the specified
 	port, or return NULL, in which case the string 'unknown' is
