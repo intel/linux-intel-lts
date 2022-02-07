@@ -902,30 +902,9 @@ static int sprd_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return 0;
 }
 
-static void sprd_pm(struct uart_port *port, unsigned int state,
-		unsigned int oldstate)
-{
-	struct sprd_uart_port *sup =
-		container_of(port, struct sprd_uart_port, port);
-
-	switch (state) {
-	case UART_PM_STATE_ON:
-		clk_prepare_enable(sup->clk);
-		break;
-	case UART_PM_STATE_OFF:
-		clk_disable_unprepare(sup->clk);
-		break;
-	}
-}
-
 #ifdef CONFIG_CONSOLE_POLL
 static int sprd_poll_init(struct uart_port *port)
 {
-	if (port->state->pm_state != UART_PM_STATE_ON) {
-		sprd_pm(port, UART_PM_STATE_ON, 0);
-		port->state->pm_state = UART_PM_STATE_ON;
-	}
-
 	return 0;
 }
 
@@ -962,7 +941,6 @@ static const struct uart_ops serial_sprd_ops = {
 	.request_port = sprd_request_port,
 	.config_port = sprd_config_port,
 	.verify_port = sprd_verify_port,
-	.pm = sprd_pm,
 #ifdef CONFIG_CONSOLE_POLL
 	.poll_init	= sprd_poll_init,
 	.poll_get_char	= sprd_poll_get_char,
