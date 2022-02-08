@@ -17,6 +17,8 @@
 #include "topdown.h"
 #include "map_symbol.h"
 #include "mem-events.h"
+#include "util/pmu.h"
+#include "util/pmu-hybrid.h"
 
 /*
  * evsel__config_leader_sampling() uses special rules for leader sampling.
@@ -26,8 +28,17 @@
 static struct evsel *evsel__read_sampler(struct evsel *evsel, struct evlist *evlist)
 {
 	struct evsel *leader = evsel__leader(evsel);
+	const char *pmu_name = "cpu";
 
-	if (evsel__is_aux_event(leader) || arch_topdown_sample_read(leader) ||
+	if (perf_pmu__has_hybrid()) {
+		if (!evlist->hybrid_pmu_name) {
+			pr_warning("WARNING: default to read cpu_core events\n");
+			evlist->hybrid_pmu_name = perf_pmu__hybrid_type_to_pmu("core");
+		}
+		pmu_name = evlist->hybrid_pmu_name;
+	}
+
+	if (evsel__is_aux_event(leader) || arch_topdown_sample_read(leader, pmu_name) ||
 	    is_mem_loads_aux_event(leader)) {
 		evlist__for_each_entry(evlist, evsel) {
 			if (evsel__leader(evsel) == leader && evsel != evsel__leader(evsel))

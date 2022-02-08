@@ -61,7 +61,8 @@ __weak void arch_topdown_group_warn(void)
 {
 }
 
-__weak bool arch_topdown_sample_read(struct evsel *leader __maybe_unused)
+__weak bool arch_topdown_sample_read(struct evsel *leader __maybe_unused,
+				     const char *pmu_name __maybe_unused)
 {
 	return false;
 }

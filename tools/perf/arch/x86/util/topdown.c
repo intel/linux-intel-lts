@@ -30,12 +30,12 @@ void arch_topdown_group_warn(void)
 
 #define TOPDOWN_SLOTS		0x0400
 
-static bool is_topdown_slots_event(struct evsel *counter)
+static bool is_topdown_slots_event(struct evsel *counter, const char *pmu_name)
 {
 	if (!counter->pmu_name)
 		return false;
 
-	if (strcmp(counter->pmu_name, "cpu"))
+	if (strcmp(counter->pmu_name, pmu_name))
 		return false;
 
 	if (counter->core.attr.config == TOPDOWN_SLOTS)
@@ -51,12 +51,12 @@ static bool is_topdown_slots_event(struct evsel *counter)
  * event must be the leader of the topdown group.
  */
 
-bool arch_topdown_sample_read(struct evsel *leader)
+bool arch_topdown_sample_read(struct evsel *leader, const char *pmu_name)
 {
-	if (!pmu_have_event("cpu", "slots"))
+	if (!pmu_have_event(pmu_name, "slots"))
 		return false;
 
-	if (is_topdown_slots_event(leader))
+	if (is_topdown_slots_event(leader, pmu_name))
 		return true;
 
 	return false;
