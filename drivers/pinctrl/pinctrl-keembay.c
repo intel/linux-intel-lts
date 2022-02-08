@@ -1545,8 +1545,11 @@ static int keembay_pinctrl_reg(struct keembay_pinctrl *kpc,  struct device *dev)
 
 	keembay_pinctrl_desc.pins = keembay_pins;
 	ret = of_property_read_u32(dev->of_node, "ngpios", &kpc->npins);
-	if (ret < 0)
-		return ret;
+	if (ret < 0) {
+		ret = of_property_read_u32(dev->of_node, "num-gpios", &kpc->npins);
+		if (ret < 0)
+			return ret;
+	}
 	keembay_pinctrl_desc.npins = kpc->npins;
 
 	kpc->pctrl = devm_pinctrl_register(kpc->dev, &keembay_pinctrl_desc, kpc);
