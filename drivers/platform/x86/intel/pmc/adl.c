@@ -8,7 +8,7 @@
  *
  */
 
-#include "core.h"
+#include <linux/intel_pmc_core.h>
 
 /* Alder Lake: PGD PFET Enable Ack Status Register(s) bitmap */
 const struct pmc_bit_map adl_pfear_map[] = {

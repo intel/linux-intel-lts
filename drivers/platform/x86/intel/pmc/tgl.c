@@ -8,7 +8,7 @@
  *
  */
 
-#include "core.h"
+#include <linux/intel_pmc_core.h>
 
 #define ACPI_S0IX_DSM_UUID		"57a6512e-3979-4e9d-9708-ff13b2508972"
 #define ACPI_GET_LOW_MODE_REGISTERS	1

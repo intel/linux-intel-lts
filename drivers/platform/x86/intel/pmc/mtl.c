@@ -9,7 +9,7 @@
  */
 
 #include <linux/pci.h>
-#include "core.h"
+#include <linux/intel_pmc_core.h>
 
 /*
  * Die Mapping to Product.

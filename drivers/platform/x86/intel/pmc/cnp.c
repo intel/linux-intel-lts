@@ -8,7 +8,7 @@
  *
  */
 
-#include "core.h"
+#include <linux/intel_pmc_core.h>
 
 /* Cannon Lake: PGD PFET Enable Ack Status Register(s) bitmap */
 const struct pmc_bit_map cnp_pfear_map[] = {
