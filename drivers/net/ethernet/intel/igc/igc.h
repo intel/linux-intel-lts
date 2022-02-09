@@ -13,6 +13,8 @@
 #include <linux/ptp_clock_kernel.h>
 #include <linux/timecounter.h>
 #include <linux/net_tstamp.h>
+#include <linux/leds.h>
+#include <linux/timekeeping.h>
 
 #include "igc_hw.h"
 
@@ -94,6 +96,9 @@ struct igc_ring {
 	u8 queue_index;                 /* logical index of the ring*/
 	u8 reg_idx;                     /* physical index of the ring */
 	bool launchtime_enable;         /* true if LaunchTime is enabled */
+	bool preemptible;               /* true if not express */
+	ktime_t last_tx_cycle;          /* end of the cycle with a launchtime transmission */
+	ktime_t last_ff_cycle;          /* Last cycle with an active first flag */
 
 	u32 start_time;
 	u32 end_time;
@@ -129,6 +134,13 @@ struct igc_ring {
 	struct xdp_rxq_info xdp_rxq;
 	struct xsk_buff_pool *xsk_pool;
 } ____cacheline_internodealigned_in_smp;
+
+enum frame_preemption_state {
+	FRAME_PREEMPTION_STATE_FAILED,
+	FRAME_PREEMPTION_STATE_DONE,
+	FRAME_PREEMPTION_STATE_START,
+	FRAME_PREEMPTION_STATE_SENT,
+};
 
 /* Board specific private data structure */
 struct igc_adapter {
@@ -182,6 +194,8 @@ struct igc_adapter {
 
 	ktime_t base_time;
 	ktime_t cycle_time;
+	bool frame_preemption_active;
+	u32 add_frag_size;
 
 	/* OS defined structs */
 	struct pci_dev *pdev;
@@ -224,6 +238,10 @@ struct igc_adapter {
 	struct ptp_clock *ptp_clock;
 	struct ptp_clock_info ptp_caps;
 	struct work_struct ptp_tx_work;
+	/* Access to ptp_tx_skb and ptp_tx_start is protected by the
+	 * ptp_tx_lock.
+	 */
+	spinlock_t ptp_tx_lock;
 	struct sk_buff *ptp_tx_skb;
 	struct hwtstamp_config tstamp_config;
 	unsigned long ptp_tx_start;
@@ -239,6 +257,8 @@ struct igc_adapter {
 	char fw_version[32];
 
 	struct bpf_prog *xdp_prog;
+	struct btf *btf;
+	u8 btf_enabled;
 
 	bool pps_sys_wrap_on;
 
@@ -247,7 +267,24 @@ struct igc_adapter {
 		struct timespec64 start;
 		struct timespec64 period;
 	} perout[IGC_N_PEROUT];
+
+	struct delayed_work fp_verification_work;
+	unsigned long fp_start;
+	bool fp_received_smd_v;
+	bool fp_received_smd_r;
+	unsigned int fp_verify_cnt;
+	enum frame_preemption_state fp_tx_state;
+	bool fp_disable_verify;
+
+	/* LEDs */
+	struct mutex led_mutex;
+	struct led_classdev led0;
+	struct led_classdev led1;
+	struct led_classdev led2;
 };
+
+#define led_to_igc(ldev, led)	\
+	container_of(ldev, struct igc_adapter, led)
 
 void igc_up(struct igc_adapter *adapter);
 void igc_down(struct igc_adapter *adapter);
@@ -297,10 +334,12 @@ extern char igc_driver_name[];
 #define IGC_FLAG_VLAN_PROMISC		BIT(15)
 #define IGC_FLAG_RX_LEGACY		BIT(16)
 #define IGC_FLAG_TSN_QBV_ENABLED	BIT(17)
-#define IGC_FLAG_TSN_QAV_ENABLED	BIT(18)
+#define IGC_FLAG_TSN_PREEMPT_ENABLED	BIT(18)
+#define IGC_FLAG_TSN_QAV_ENABLED	BIT(19)
 
 #define IGC_FLAG_TSN_ANY_ENABLED \
-	(IGC_FLAG_TSN_QBV_ENABLED | IGC_FLAG_TSN_QAV_ENABLED)
+	(IGC_FLAG_TSN_QBV_ENABLED | IGC_FLAG_TSN_PREEMPT_ENABLED | \
+	 IGC_FLAG_TSN_QAV_ENABLED)
 
 #define IGC_FLAG_RSS_FIELD_IPV4_UDP	BIT(6)
 #define IGC_FLAG_RSS_FIELD_IPV6_UDP	BIT(7)
@@ -348,6 +387,11 @@ extern char igc_driver_name[];
 #define IGC_I225_RX_LATENCY_100		185
 #define IGC_I225_RX_LATENCY_1000	300
 #define IGC_I225_RX_LATENCY_2500	1485
+
+/* From the datasheet section 8.12.4 Tx Qav Control TQAVCTRL,
+ * MIN_FRAG initial value.
+ */
+#define IGC_I225_MIN_FRAG_SIZE_DEFAULT	68
 
 /* RX and TX descriptor control thresholds.
  * PTHRESH - MAC will consider prefetch if it has fewer than this number of
@@ -399,7 +443,6 @@ enum igc_state_t {
 	__IGC_TESTING,
 	__IGC_RESETTING,
 	__IGC_DOWN,
-	__IGC_PTP_TX_IN_PROGRESS,
 };
 
 enum igc_tx_flags {
@@ -411,6 +454,8 @@ enum igc_tx_flags {
 	/* olinfo flags */
 	IGC_TX_FLAGS_IPV4	= 0x10,
 	IGC_TX_FLAGS_CSUM	= 0x20,
+
+	IGC_TX_FLAGS_DMA_TSTAMP	= 0x200,
 };
 
 enum igc_boards {
@@ -628,10 +673,13 @@ void igc_ptp_reset(struct igc_adapter *adapter);
 void igc_ptp_suspend(struct igc_adapter *adapter);
 void igc_ptp_stop(struct igc_adapter *adapter);
 ktime_t igc_ptp_rx_pktstamp(struct igc_adapter *adapter, __le32 *buf);
+void igc_ptp_tx_dma_tstamp(struct igc_adapter *adapter,
+			   struct sk_buff *skb, u64 tstamp);
 int igc_ptp_set_ts_config(struct net_device *netdev, struct ifreq *ifr);
 int igc_ptp_get_ts_config(struct net_device *netdev, struct ifreq *ifr);
 void igc_ptp_tx_hang(struct igc_adapter *adapter);
 void igc_ptp_read(struct igc_adapter *adapter, struct timespec64 *ts);
+ktime_t igc_tx_dma_hw_tstamp(struct igc_adapter *adapter, u64 tstamp);
 
 #define igc_rx_pg_size(_ring) (PAGE_SIZE << igc_rx_pg_order(_ring))
 

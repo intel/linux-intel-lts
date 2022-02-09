@@ -2831,6 +2831,26 @@ int netdev_set_num_tc(struct net_device *dev, u8 num_tc)
 }
 EXPORT_SYMBOL(netdev_set_num_tc);
 
+u32 netdev_tc_map_to_queue_mask(struct net_device *dev, u32 tc_mask)
+{
+	u32 i, queue_mask = 0;
+
+	for (i = 0; i < dev->num_tc; i++) {
+		u32 offset, count;
+
+		if (!(tc_mask & BIT(i)))
+			continue;
+
+		offset = dev->tc_to_txq[i].offset;
+		count = dev->tc_to_txq[i].count;
+
+		queue_mask |= GENMASK(offset + count - 1, offset);
+	}
+
+	return queue_mask;
+}
+EXPORT_SYMBOL(netdev_tc_map_to_queue_mask);
+
 void netdev_unbind_sb_channel(struct net_device *dev,
 			      struct net_device *sb_dev)
 {
@@ -9771,6 +9791,59 @@ err_out:
 	if (old_prog)
 		bpf_prog_put(old_prog);
 	return err;
+}
+
+/**
+ *	dev_xdp_query_md_btf - Query meta data btf of a device
+ *	@dev: device
+ *	@enabled: 1 if enabled, 0 otherwise
+ *
+ *	Returns btf id > 0 if valid
+ */
+u32 dev_xdp_query_md_btf(struct net_device *dev, u8 *enabled)
+{
+	struct netdev_bpf xdp;
+	bpf_op_t ndo_bpf;
+
+	ndo_bpf = dev->netdev_ops->ndo_bpf;
+	if (!ndo_bpf)
+		return 0;
+
+	memset(&xdp, 0, sizeof(xdp));
+	xdp.command = XDP_QUERY_MD_BTF;
+
+	if (ndo_bpf(dev, &xdp))
+		return 0; /* 0 is an invalid btf id */
+
+	*enabled = xdp.btf_enable;
+	return xdp.btf_id;
+}
+
+/**
+ *	dev_xdp_setup_md_btf - enable or disable meta data btf for a device
+ *	@dev: device
+ *	@extack: netlink extended ack
+ *	@enable: 1 to enable, 0 to disable
+ *
+ *	Returns 0 on success
+ */
+int dev_xdp_setup_md_btf(struct net_device *dev, struct netlink_ext_ack *extack,
+			 u8 enable)
+{
+	struct netdev_bpf xdp;
+	bpf_op_t ndo_bpf;
+
+	ndo_bpf = dev->netdev_ops->ndo_bpf;
+	if (!ndo_bpf)
+		return -EOPNOTSUPP;
+
+	memset(&xdp, 0, sizeof(xdp));
+
+	xdp.command = XDP_SETUP_MD_BTF;
+	xdp.btf_enable = enable;
+	xdp.extack = extack;
+
+	return ndo_bpf(dev, &xdp);
 }
 
 /**

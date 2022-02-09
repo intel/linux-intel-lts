@@ -173,6 +173,7 @@ int do_btf(int argc, char **argv);
 
 /* non-bootstrap only commands */
 int do_prog(int argc, char **arg) __weak;
+int do_xdp(int argc, char **argv) __weak;
 int do_map(int argc, char **arg) __weak;
 int do_link(int argc, char **arg) __weak;
 int do_event_pipe(int argc, char **argv) __weak;
@@ -256,6 +257,7 @@ struct tcmsg;
 int do_xdp_dump(struct ifinfomsg *ifinfo, struct nlattr **tb);
 int do_filter_dump(struct tcmsg *ifinfo, struct nlattr **tb, const char *kind,
 		   const char *devname, int ifindex);
+int xdp_dump_link_nlmsg(void *cookie, void *msg, struct nlattr **tb);
 
 int print_all_levels(__maybe_unused enum libbpf_print_level level,
 		     const char *format, va_list args);
