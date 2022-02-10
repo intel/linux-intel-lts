@@ -11,6 +11,7 @@
 #include "i915_selftest.h"
 
 #include "gem/i915_gem_context.h"
+#include "gem/i915_gem_internal.h"
 #include "selftests/igt_flush_test.h"
 #include "selftests/i915_random.h"
 #include "selftests/mock_drm.h"
