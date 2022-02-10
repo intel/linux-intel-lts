@@ -55,26 +55,26 @@
 
 #define pr_fmt(fmt) "TCC Buffer: " fmt
 
-#include <linux/module.h>
-#include <linux/moduleparam.h>
-#include <linux/version.h>
-#include <linux/init.h>
-#include <linux/kernel.h>
-#include <linux/proc_fs.h>
-#include <linux/uaccess.h>
-#include <linux/slab.h>
-#include <linux/io.h>
-#include <linux/sched.h>
-#include <linux/kthread.h>
 #include <asm/cacheflush.h>
 #include <asm/intel-family.h>
-#include <asm/perf_event.h>
 #include <asm/nops.h>
+#include <asm/perf_event.h>
 #include <linux/acpi.h>
-#include <linux/smp.h>
+#include <linux/init.h>
+#include <linux/io.h>
+#include <linux/kernel.h>
+#include <linux/kthread.h>
 #include <linux/list.h>
 #include <linux/mm.h>
+#include <linux/module.h>
+#include <linux/moduleparam.h>
+#include <linux/proc_fs.h>
+#include <linux/sched.h>
 #include <linux/seq_file.h>
+#include <linux/slab.h>
+#include <linux/smp.h>
+#include <linux/uaccess.h>
+#include <linux/version.h>
 #include "tcc_buffer.h"
 
 /*
@@ -117,30 +117,29 @@ MODULE_PARM_DESC(strict_affinity_check, "Check affinity of buffer request");
 #define FORMAT_V2                 2
 
 enum PTCT_ENTRY_TYPE {
-	PTCT_PTCD_LIMITS             = 0x00000001,
-	PTCT_PTCM_BINARY             = 0x00000002,
-	PTCT_WRC_L3_WAYMASK          = 0x00000003,
-	PTCT_GT_L3_WAYMASK           = 0x00000004,
-	PTCT_PESUDO_SRAM             = 0x00000005,
-	PTCT_STREAM_DATAPATH         = 0x00000006,
-	PTCT_TIMEAWARE_SUBSYSTEMS    = 0x00000007,
-	PTCT_REALTIME_IOMMU          = 0x00000008,
-	PTCT_MEMORY_HIERARCHY_LATENCY = 0x00000009,
+	PTCT_PTCD_LIMITS = 1,
+	PTCT_PTCM_BINARY,
+	PTCT_WRC_L3_WAYMASK,
+	PTCT_GT_L3_WAYMASK,
+	PTCT_PESUDO_SRAM,
+	PTCT_STREAM_DATAPATH,
+	PTCT_TIMEAWARE_SUBSYSTEMS,
+	PTCT_REALTIME_IOMMU,
+	PTCT_MEMORY_HIERARCHY_LATENCY,
 	PTCT_ENTRY_TYPE_NUMS
 };
 
 enum PTCT_V2_ENTRY_TYPE {
-	PTCT_V2_COMPATIBILITY        = 0x00000000,
-	PTCT_V2_RTCD_LIMIT           = 0x00000001,
-	PTCT_V2_CRL_BINARY           = 0x00000002,
-	PTCT_V2_IA_WAYMASK           = 0x00000003,
-	PTCT_V2_WRC_WAYMASK          = 0x00000004,
-	PTCT_V2_GT_WAYMASK           = 0x00000005,
-	PTCT_V2_SSRAM_WAYMASK        = 0x00000006,
-	PTCT_V2_SSRAM                = 0x00000007,
-	PTCT_V2_MEMORY_HIERARCHY_LATENCY = 0x00000008,
-	PTCT_V2_ERROR_LOG_ADDRESS    = 0x00000009,
-
+	PTCT_V2_COMPATIBILITY = 0,
+	PTCT_V2_RTCD_LIMIT,
+	PTCT_V2_CRL_BINARY,
+	PTCT_V2_IA_WAYMASK,
+	PTCT_V2_WRC_WAYMASK,
+	PTCT_V2_GT_WAYMASK,
+	PTCT_V2_SSRAM_WAYMASK,
+	PTCT_V2_SSRAM,
+	PTCT_V2_MEMORY_HIERARCHY_LATENCY,
+	PTCT_V2_ERROR_LOG_ADDRESS,
 	PTCT_V2_ENTRY_TYPE_NUMS
 };
 
@@ -248,11 +247,11 @@ static const struct tcc_registers_wl_s tcc_registers_wl_tglu[] = {
 	{ 0xFEDA0000, 0x0A78},
 	{ 0xFEDC0000, 0x6F08},
 	{ 0xFEDC0000, 0x6F10},
-	{ 0xFEDC0000, 0x6F00}
+	{ 0xFEDC0000, 0x6F00},
 };
 
 static const struct tcc_registers_wl_s tcc_registers_wl_tglh[] = {
-	{ 0xFEDA0000, 0x0A78}
+	{ 0xFEDA0000, 0x0A78},
 };
 
 #define MAXDEVICENODE 250
@@ -267,39 +266,24 @@ static u32 tcc_init;
 static u32 ptct_format = FORMAT_V1;
 DEFINE_MUTEX(tccbuffer_mutex);
 static int tcc_errlog_show(struct seq_file *m, void *v);
-/****************************************************************************/
-/*These MACROs may not yet defined in previous kernel version*/
-#ifndef INTEL_FAM6_ALDERLAKE
-#define INTEL_FAM6_ALDERLAKE   0x97
-#endif
-#ifndef INTEL_FAM6_ALDERLAKE_L
-#define INTEL_FAM6_ALDERLAKE_L 0x9A
-#endif
-#ifndef INTEL_FAM6_RAPTOR_LAKE
-#define INTEL_FAM6_RAPTOR_LAKE 0xB7
-#endif
-
 static void *cache_info_k_virt_addr;
-
 struct cache_info_s {
-	u64 phy_addr;           // in: psram physical address
-	u32 cache_level;        // in: cache level, used to determing return l2 hit/miss or l3 hit/miss
-	u32 cache_size;         // in: cache size to test
-	u32 cacheline_size;     // in: cache_line size
-	u32 testcase;           // in: which test case to conduct (sequential or random)
-	u64 l1_hits;            // out:
-	u64 l1_miss;            // out:
-	u64 l2_hits;            // out:
-	u64 l2_miss;            // out:
-	u64 l3_hits;            // out:
-	u64 l3_miss;            // out:
+	u64 phy_addr;
+	u32 cache_level;
+	u32 cache_size;
+	u32 cacheline_size;
+	u32 testcase;
+	u64 l1_hits;
+	u64 l1_miss;
+	u64 l2_hits;
+	u64 l2_miss;
+	u64 l3_hits;
+	u64 l3_miss;
 };
-
 static struct cache_info_s cache_info_k = {0,};
 #define BUFSIZE  sizeof(struct cache_info_s)
 static struct proc_dir_entry *ent;
 static u64 hardware_prefetcher_disable_bits;
-
 static u64 get_hardware_prefetcher_disable_bits(void);
 static inline void tcc_perf_wrmsrl(u32 msr, u64 val);
 static int start_measure(void);
@@ -318,25 +302,14 @@ static u64 get_hardware_prefetcher_disable_bits(void)
 
 	dprintk("x86_model 0x%02X\n", (u32)(boot_cpu_data.x86_model));
 	switch (boot_cpu_data.x86_model) {
-	case INTEL_FAM6_TIGERLAKE:
-	case INTEL_FAM6_TIGERLAKE_L:
-	case INTEL_FAM6_ALDERLAKE:
-	case INTEL_FAM6_ALDERLAKE_L:
-	case INTEL_FAM6_ICELAKE:
-	case INTEL_FAM6_ICELAKE_L:
-	case INTEL_FAM6_ICELAKE_X:
-	case INTEL_FAM6_ICELAKE_D:
-	case INTEL_FAM6_RAPTOR_LAKE:
-	return 0xF;
 	case INTEL_FAM6_ATOM_GOLDMONT:
 	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
 	return 0x5;
 	case INTEL_FAM6_ATOM_TREMONT:
 	return 0x1F;
 	default:
-		pr_err("Didn't catch CPU model in setting prefetcher disable bits.\n");
+	return 0xF;
 	}
-	return 0;
 }
 
 static inline void tcc_perf_wrmsrl(u32 reg, u64 data)
@@ -346,53 +319,26 @@ static inline void tcc_perf_wrmsrl(u32 reg, u64 data)
 
 static int tcc_perf_fn(void)
 {
+	u32 cacheline_len = 0, cacheread_size = 0;
 	u64 perf_l1h = 0, perf_l1m = 0, msr_bits_l1h = 0, msr_bits_l1m = 0;
 	u64 perf_l2h = 0, perf_l2m = 0, msr_bits_l2h = 0, msr_bits_l2m = 0;
 	u64 perf_l3h = 0, perf_l3m = 0, msr_bits_l3h = 0, msr_bits_l3m = 0;
-	u64 i;
-
-	u32 cacheline_len;
-	u32 cacheread_size;
+	u64 i = 0, start = 0, end = 0;
 	void *cachemem_k;
 
-	u64 start, end;
-
 	pr_err("In %s\n", __func__);
-
-	switch (boot_cpu_data.x86_model) {
-	case INTEL_FAM6_ATOM_GOLDMONT:
-	case INTEL_FAM6_ATOM_GOLDMONT_PLUS:
-	case INTEL_FAM6_ATOM_TREMONT:
-	case INTEL_FAM6_TIGERLAKE:
-	case INTEL_FAM6_TIGERLAKE_L:
-	case INTEL_FAM6_ALDERLAKE:
-	case INTEL_FAM6_ALDERLAKE_L:
-	case INTEL_FAM6_ICELAKE:
-	case INTEL_FAM6_ICELAKE_L:
-	case INTEL_FAM6_ICELAKE_X:
-	case INTEL_FAM6_ICELAKE_D:
-	case INTEL_FAM6_RAPTOR_LAKE:
-	{
-		if (cache_info_k.cache_level == RGN_L2) {
-			msr_bits_l2h = (MISC_MSR_BITS_COMMON) | (0x2  << 8);
-			msr_bits_l2m = (MISC_MSR_BITS_COMMON) | (0x10 << 8);
-			msr_bits_l1h = (MISC_MSR_BITS_COMMON) | (0x1  << 8);
-			msr_bits_l1m = (MISC_MSR_BITS_COMMON) | (0x08 << 8);
-		} else if (cache_info_k.cache_level == RGN_L3) {
-			msr_bits_l2h = (MISC_MSR_BITS_COMMON) | (0x2  << 8);
-			msr_bits_l2m = (MISC_MSR_BITS_COMMON) | (0x10 << 8);
-			msr_bits_l3h = (MISC_MSR_BITS_COMMON) | (0x4  << 8);
-			msr_bits_l3m = (MISC_MSR_BITS_COMMON) | (0x20 << 8);
-		}
+	if (cache_info_k.cache_level == RGN_L2) {
+		msr_bits_l2h = (MISC_MSR_BITS_COMMON) | (0x2  << 8);
+		msr_bits_l2m = (MISC_MSR_BITS_COMMON) | (0x10 << 8);
+		msr_bits_l1h = (MISC_MSR_BITS_COMMON) | (0x1  << 8);
+		msr_bits_l1m = (MISC_MSR_BITS_COMMON) | (0x08 << 8);
+	} else if (cache_info_k.cache_level == RGN_L3) {
+		msr_bits_l2h = (MISC_MSR_BITS_COMMON) | (0x2  << 8);
+		msr_bits_l2m = (MISC_MSR_BITS_COMMON) | (0x10 << 8);
+		msr_bits_l3h = (MISC_MSR_BITS_COMMON) | (0x4  << 8);
+		msr_bits_l3m = (MISC_MSR_BITS_COMMON) | (0x20 << 8);
 	}
-	break;
-	default:
-		pr_err("Didn't catch this CPU Model in perf_fn()!\n");
-		return -1;
-	}
-
 	asm volatile (" cli ");
-
 	__wrmsr(MSR_MISC_FEATURE_CONTROL, hardware_prefetcher_disable_bits, 0x0);
 
 	cachemem_k     = cache_info_k_virt_addr;
