@@ -1339,21 +1339,19 @@ static bool tcc_is_untracked_pat_range(u64 start, u64 end)
 
 static int __init acpi_parse_ptct(struct acpi_table_header *table)
 {
-	u32 total_length = 0;
-	u32 offset = 0;
-	u8  *ptr;
-	u32 id = 0;
-
-	struct acpi_ptct_entry_header *entry;
-	struct acpi_ptct_psram  *psram;
-	struct acpi_ptct_psram_v2  *psram_v2;
 	struct acpi_ptct_compatibility  *compatibility;
+	struct acpi_ptct_entry_header *entry;
+	struct acpi_ptct_psram_v2  *psram_v2;
+	struct acpi_ptct_psram  *psram;
+	u32 total_length;
+	u32 offset;
+	u32 id = 0;
+	u8  *ptr;
 
 	if (!table)
 		return -EINVAL;
 
 	total_length = table->length;
-
 	/* Parse PTCT table for the first round to determine PTCT version */
 	ptr = (u8 *)table;
 	ptr += PTCT_ACPI_HEADER_SIZE;
@@ -1372,7 +1370,6 @@ static int __init acpi_parse_ptct(struct acpi_table_header *table)
 	}
 
 	/* Parse PTCT table for the second round to get number of regions*/
-
 	ptr = (u8 *)table;
 	ptr += PTCT_ACPI_HEADER_SIZE;
 
@@ -1392,7 +1389,6 @@ static int __init acpi_parse_ptct(struct acpi_table_header *table)
 		return -EINVAL;
 
 	/* Parse for the third round to record address for each regions */
-
 	ptr = (u8 *)table;
 	ptr += PTCT_ACPI_HEADER_SIZE;
 
@@ -1434,10 +1430,6 @@ static void __init acpi_process_ptct(void)
 	if ((!acpi_table_parse(ACPI_SIG_PTCT, acpi_parse_ptct)) || (!acpi_table_parse(ACPI_SIG_RTCT, acpi_parse_ptct)))
 		x86_platform.is_untracked_pat_range = tcc_is_untracked_pat_range;
 }
-
-/*
- *
- */
 
 static void __init early_acpi_process_madt(void)
 {
