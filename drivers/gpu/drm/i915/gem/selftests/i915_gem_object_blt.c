@@ -4,6 +4,7 @@
  */
 
 #include <linux/sort.h>
+#include <drm/drm_cache.h>
 
 #include "gt/intel_gt.h"
 #include "gt/intel_engine_user.h"

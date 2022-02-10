@@ -68,6 +68,7 @@
 #include <linux/nospec.h>
 
 #include <drm/drm_syncobj.h>
+#include <drm/drm_cache.h>
 
 #include "gt/gen6_ppgtt.h"
 #include "gt/intel_context.h"
