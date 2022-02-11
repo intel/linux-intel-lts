@@ -451,7 +451,7 @@
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "All L2 requests. Alias Alias",
+        "BriefDescription": "All L2 requests.[This event is alias to L2_RQSTS.REFERENCES]",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "EventCode": "0x24",
@@ -462,7 +462,7 @@
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "All requests that miss L2 cache. Alias Alias",
+        "BriefDescription": "Read requests with true-miss in L2 cache.[This event is alias to L2_RQSTS.MISS]",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "EventCode": "0x24",
@@ -558,6 +558,28 @@
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "200003",
         "UMask": "0x21",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Read requests with true-miss in L2 cache.[This event is alias to L2_REQUEST.MISS]",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3",
+        "EventCode": "0x24",
+        "EventName": "L2_RQSTS.MISS",
+        "PEBScounters": "0,1,2,3",
+        "SampleAfterValue": "200003",
+        "UMask": "0x3f",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "All L2 requests.[This event is alias to L2_REQUEST.ALL]",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3",
+        "EventCode": "0x24",
+        "EventName": "L2_RQSTS.REFERENCES",
+        "PEBScounters": "0,1,2,3",
+        "SampleAfterValue": "200003",
+        "UMask": "0xff",
         "Unit": "cpu_core"
     },
     {
@@ -957,6 +979,28 @@
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "100003",
         "UMask": "0x80",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Demand and prefetch data reads",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3",
+        "EventCode": "0x21",
+        "EventName": "OFFCORE_REQUESTS.DATA_RD",
+        "PEBScounters": "0,1,2,3",
+        "SampleAfterValue": "100003",
+        "UMask": "0x8",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Demand Data Read requests sent to uncore",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3",
+        "EventCode": "0x21",
+        "EventName": "OFFCORE_REQUESTS.DEMAND_DATA_RD",
+        "PEBScounters": "0,1,2,3",
+        "SampleAfterValue": "100003",
+        "UMask": "0x1",
         "Unit": "cpu_core"
     },
     {
