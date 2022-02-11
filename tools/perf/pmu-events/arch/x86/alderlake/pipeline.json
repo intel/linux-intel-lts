@@ -700,7 +700,7 @@
         "BriefDescription": "Execution stalls while memory subsystem has an outstanding load.",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5,6,7",
-        "CounterMask": "33",
+        "CounterMask": "5",
         "EventCode": "0xa6",
         "EventName": "EXE_ACTIVITY.BOUND_ON_LOADS",
         "PEBScounters": "0,1,2,3,4,5,6,7",

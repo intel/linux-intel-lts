@@ -422,7 +422,19 @@
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "Cycles while L1 cache miss demand load is outstanding.",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3",
+        "CounterMask": "2",
+        "EventCode": "0x47",
+        "EventName": "MEMORY_ACTIVITY.CYCLES_L1D_MISS",
+        "PEBScounters": "0,1,2,3",
+        "SampleAfterValue": "1000003",
+        "UMask": "0x2",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Execution stalls while L1 cache miss demand load is outstanding.",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "CounterMask": "3",

@@ -3,7 +3,7 @@
         "BriefDescription": "This 48-bit fixed counter counts the UCLK cycles",
         "Counter": "Fixed",
         "CounterType": "PGMABLE",
-        "EventCode": "0xff",
+	"EventCode": "0xff",
         "EventName": "UNC_CLOCK.SOCKET",
         "PerPkg": "1",
         "Unit": "CLOCK"
@@ -29,7 +29,7 @@
         "Unit": "ARB"
     },
     {
-        "BriefDescription": "Each cycle count number of all outgoing valid entries in ReqTrk. Such entry is defined as valid from its allocation in ReqTrk till deallocation. Accounts for Coherent and non-coherent traffic",
+        "BriefDescription": "Each cycle counts number of all outgoing valid entries in ReqTrk. Such entry is defined as valid from its allocation in ReqTrk till deallocation. Accounts for Coherent and non-coherent traffic",
         "CounterType": "PGMABLE",
         "EventCode": "0x80",
         "EventName": "UNC_ARB_TRK_OCCUPANCY.ALL",
