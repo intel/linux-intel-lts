@@ -799,8 +799,11 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 		  pte_t *dst_pte, pte_t *src_pte, unsigned long addr, int *rss,
 		  struct page **prealloc, pte_t pte, struct page *page)
 {
+	struct mm_struct *src_mm = src_vma->vm_mm;
 	struct page *new_page;
 
+	if (!is_cow_mapping(src_vma->vm_flags))
+		return 1;
 	/*
 	 * If the source mm belongs to a Dovetail-enabled process, we
 	 * don't want to impose the COW-induced latency on it: make
