@@ -1,5 +1,1 @@
-# CVE-2021-43976
-0001-mwifiex_usb-Fix-skb_over_panic-in-mwifiex_usb_recv.patch
-
-# CVE-2022-24122
-0001-ucount-Make-get_ucount-a-safe-get_user-replacement.patch
+# CVE Patches to apply
