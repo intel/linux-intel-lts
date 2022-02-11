@@ -32,11 +32,6 @@ int vmw_mmap(struct file *filp, struct vm_area_struct *vma)
 	struct drm_file *file_priv = filp->private_data;
 	struct vmw_private *dev_priv = vmw_priv(file_priv->minor->dev);
 
-	if (ret)
-		return ret;
-
-	vma->vm_ops = &vmw_vm_ops;
-
 	/* Use VM_PFNMAP rather than VM_MIXEDMAP if not a COW mapping */
 	if ((vma->vm_flags & (VM_SHARED | VM_MAYWRITE)) != VM_MAYWRITE)
 		vma->vm_flags = (vma->vm_flags & ~VM_MIXEDMAP) | VM_PFNMAP;

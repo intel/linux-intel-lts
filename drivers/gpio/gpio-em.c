@@ -295,12 +295,12 @@ static int em_gio_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	p->base0 = devm_ioremap_nocache(dev, io[0]->start,
+	p->base0 = ioremap_nocache(io[0]->start,
 					resource_size(io[0]));
 	if (!p->base0)
 		return -ENOMEM;
 
-	p->base1 = devm_ioremap_nocache(dev, io[1]->start,
+	p->base1 = ioremap_nocache(io[1]->start,
 				   resource_size(io[1]));
 	if (!p->base1)
 		return -ENOMEM;
