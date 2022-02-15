@@ -7,6 +7,7 @@
 
 #include "i915_drv.h"
 #include "intel_guc_slpc.h"
+#include "intel_mchbar_regs.h"
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_regs.h"
 
