@@ -45,6 +45,7 @@
 #include <linux/slab.h>
 #include <linux/maple_tree.h>
 #include <linux/rw_hint.h>
+#include <linux/major.h>
 
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
@@ -2809,6 +2810,15 @@ extern const struct file_operations def_chr_fops;
 #define CHRDEV_MAJOR_DYN_EXT_START 511
 #define CHRDEV_MAJOR_DYN_EXT_END 384
 
+/* Need to create 512 binder devices */
+/* Increase misc devices number from 256 to 1024 */
+#define MAJOR_FILTER(x, y, base) ({ \
+  typeof(x) _x = (x); \
+  typeof(y) _y = (y); \
+ (void) (&_x == &_y); \
+  _x == _y ? base * 4 : base; \
+})
+
 extern int alloc_chrdev_region(dev_t *, unsigned, unsigned, const char *);
 extern int register_chrdev_region(dev_t, unsigned, const char *);
 extern int __register_chrdev(unsigned int major, unsigned int baseminor,
@@ -2822,12 +2832,13 @@ extern void chrdev_show(struct seq_file *,off_t);
 static inline int register_chrdev(unsigned int major, const char *name,
 				  const struct file_operations *fops)
 {
-	return __register_chrdev(major, 0, 256, name, fops);
+	return __register_chrdev(major, 0, MAJOR_FILTER(major, (unsigned int)MISC_MAJOR, 256),
+				 name, fops);
 }
 
 static inline void unregister_chrdev(unsigned int major, const char *name)
 {
-	__unregister_chrdev(major, 0, 256, name);
+	__unregister_chrdev(major, 0, MAJOR_FILTER(major, (unsigned int)MISC_MAJOR, 256), name);
 }
 
 extern void init_special_inode(struct inode *, umode_t, dev_t);
