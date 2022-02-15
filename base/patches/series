@@ -45,9 +45,6 @@
 # CVE-2020-12363
 0001-drm-i915-disable-guc-submission.patch
 
-# CVE-2020-36322
-0001-fuse-fix-bad-inode.patch
-
 # CVE-2021-20177
 0001-netfilter-add-and-use-nf_hook_slow_list.patch
 
