@@ -39,7 +39,7 @@ static void dw_spi_dma_maxburst_init(struct dw_spi *dws)
 	u32 max_burst, def_burst;
 	int ret;
 
-	def_burst = dws->fifo_len / 2;
+	def_burst = dws->fifo_len / 4;
 
 	ret = dma_get_slave_caps(dws->rxchan, &caps);
 	if (!ret && caps.max_burst)
