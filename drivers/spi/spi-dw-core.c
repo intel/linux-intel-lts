@@ -331,9 +331,10 @@ static irqreturn_t dw_spi_transfer_handler(struct dw_spi *dws)
 	 * have the TXE IRQ flood at the final stage of the transfer.
 	 */
 	if (irq_status & SPI_INT_TXEI) {
+		spi_mask_intr(dws, SPI_INT_TXEI);
 		dw_writer(dws);
-		if (!dws->tx_len)
-			spi_mask_intr(dws, SPI_INT_TXEI);
+		if (dws->tx_len)
+			spi_umask_intr(dws, SPI_INT_TXEI);
 	}
 
 	return IRQ_HANDLED;
