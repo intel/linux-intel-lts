@@ -40,6 +40,17 @@ static int notify_guc(struct drm_i915_private *i915)
 {
 	int ret = 0;
 
+	/*
+	 * FIXME: This needs to return -EPERM to userland to indicate
+	 * that a VF is not allowed to change the scheduling policies.
+	 * However, doing so will currently 'break' a whole bunch of IGT
+	 * tests that rely on disabling engine reset. Although, they are
+	 * already broken as they will not correctly detect hang failures
+	 * and are potentially returning false successes.
+	 */
+	if (IS_SRIOV_VF(i915))
+		return 0;
+
 	if (intel_uc_uses_guc_submission(&to_gt(i915)->uc))
 		ret = intel_guc_global_policies_update(&to_gt(i915)->uc.guc);
 
