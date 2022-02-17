@@ -67,9 +67,6 @@ struct intel_memory_region {
 	struct io_mapping iomap;
 	struct resource region;
 
-	/* For fake LMEM */
-	struct drm_mm_node fake_mappable;
-
 	struct kref kref;
 
 	resource_size_t io_start;
@@ -82,8 +79,6 @@ struct intel_memory_region {
 	enum intel_region_id id;
 	char name[16];
 	bool private; /* not for userspace */
-
-	dma_addr_t remap_addr;
 
 	struct {
 		struct mutex lock; /* Protects access to objects */
