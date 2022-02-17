@@ -506,6 +506,15 @@ static int __uc_init_hw(struct intel_uc *uc)
 
 	intel_huc_auth(huc);
 
+	/*
+	 * Ignore table load failures for now. Missing tables will cause issues
+	 * for UMDs but won't prevent the i915 driver from working. So just
+	 * report the error and keep going.
+	 */
+	ret = intel_guc_hwconfig_init(&guc->hwconfig);
+	if (ret)
+		i915_probe_error(i915, "Failed to retrieve hwconfig table: %d\n", ret);
+
 	if (intel_uc_uses_guc_submission(uc))
 		intel_guc_submission_enable(guc);
 
@@ -554,6 +563,8 @@ static void __uc_fini_hw(struct intel_uc *uc)
 
 	if (intel_uc_uses_guc_submission(uc))
 		intel_guc_submission_disable(guc);
+
+	intel_guc_hwconfig_fini(&guc->hwconfig);
 
 	__uc_sanitize(uc);
 }
