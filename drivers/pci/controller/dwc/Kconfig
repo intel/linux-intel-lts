@@ -240,27 +240,27 @@ config PCIE_KEEMBAY
 	bool
 
 config PCIE_KEEMBAY_HOST
-	bool "Intel Keem Bay PCIe controller - Host mode"
-	depends on ARCH_KEEMBAY || COMPILE_TEST
+	bool "Intel Keem Bay or Thunder Bay PCIe controller - Host mode"
+	depends on ARCH_KEEMBAY || ARCH_THUNDERBAY || COMPILE_TEST
 	depends on PCI && PCI_MSI_IRQ_DOMAIN
 	select PCIE_DW_HOST
 	select PCIE_KEEMBAY
 	help
 	  Say 'Y' here to enable support for the PCIe controller in Keem Bay
-	  to work in host mode.
+	  or Thunder Bay to work in host mode.
 	  The PCIe controller is based on DesignWare Hardware and uses
 	  DesignWare core functions.
 
 config PCIE_KEEMBAY_EP
-	bool "Intel Keem Bay PCIe controller - Endpoint mode"
-	depends on ARCH_KEEMBAY || COMPILE_TEST
+	bool "Intel Keem Bay or Thunder Bay PCIe controller - Endpoint mode"
+	depends on ARCH_KEEMBAY || ARCH_THUNDERBAY || COMPILE_TEST
 	depends on PCI && PCI_MSI_IRQ_DOMAIN
 	depends on PCI_ENDPOINT
 	select PCIE_DW_EP
 	select PCIE_KEEMBAY
 	help
 	  Say 'Y' here to enable support for the PCIe controller in Keem Bay
-	  to work in endpoint mode.
+	  or Thunder Bay to work in endpoint mode.
 	  The PCIe controller is based on DesignWare Hardware and uses
 	  DesignWare core functions.
 

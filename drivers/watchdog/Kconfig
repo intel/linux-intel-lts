@@ -2119,7 +2119,7 @@ config USBPCWATCHDOG
 
 config KEEMBAY_WATCHDOG
 	tristate "Intel Keem Bay SoC non-secure watchdog"
-	depends on ARCH_KEEMBAY || (ARM64 && COMPILE_TEST)
+	depends on ARCH_KEEMBAY || ARCH_THUNDERBAY || (ARM64 && COMPILE_TEST)
 	select WATCHDOG_CORE
 	help
 	 This option enable support for an In-secure watchdog timer driver for

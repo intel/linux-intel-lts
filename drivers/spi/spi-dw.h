@@ -76,11 +76,16 @@
 #define DWC_SSI_CTRLR0_DFS_OFFSET	0
 
 /*
- * For Keem Bay, CTRLR0[31] is used to select controller mode.
+ * CTRLR0[31] is used to select controller mode.
  * 0: SSI is slave
  * 1: SSI is master
  */
-#define DWC_SSI_CTRLR0_KEEMBAY_MST	BIT(31)
+#define DWC_SSI_CTRLR0_MST		BIT(31)
+
+/*
+ * CTRLR0[14] is used to enable/disable Slave Select Toggle bit
+ */
+#define DWC_SSI_CTRLR0_SSTE		BIT(14)
 
 /* Bit fields in CTRLR1 */
 #define SPI_NDF_MASK			GENMASK(15, 0)
@@ -122,9 +127,10 @@ enum dw_ssi_type {
 
 /* DW SPI capabilities */
 #define DW_SPI_CAP_CS_OVERRIDE		BIT(0)
-#define DW_SPI_CAP_KEEMBAY_MST		BIT(1)
+#define DW_SPI_CAP_DWC_MST		BIT(1)
 #define DW_SPI_CAP_DWC_SSI		BIT(2)
 #define DW_SPI_CAP_DFS32		BIT(3)
+#define DW_SPI_CAP_DWC_SSTE		BIT(4)
 
 /* Slave spi_transfer/spi_mem_op related */
 struct dw_spi_cfg {

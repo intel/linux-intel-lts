@@ -445,6 +445,16 @@ config REGULATOR_ISL6271A
 	help
 	  This driver supports ISL6271A voltage regulator chip.
 
+config REGULATOR_KEEMBAY_SD
+	tristate "Intel Keem Bay SD Regulator"
+	depends on HAVE_ARM_SMCCC && (OF || COMPILE_TEST)
+	help
+	  This driver provides support for the voltage regulators of the
+	  Keem Bay SOC to encapsulate ARM Secure Monitor Call Calling Convention
+	  to change the voltage rail output.
+	  This is specific for Keem Bay hardware design only.
+	  The module name will be called keembay-sd-regulator.
+
 config REGULATOR_LM363X
 	tristate "TI LM363X voltage regulators"
 	depends on MFD_TI_LMU

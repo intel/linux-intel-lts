@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-3-Clause)
+/*
+ * Copyright (c) 2021 Intel Corporation.
+ *
+ * Device tree describing Intel Thunder Bay Hybrid HDDL Prime configuration
+ * board
+ *
+ * DDR 8GB + 4GB with vpu slice 1 and vpu slice 2
+ */
+
+/dts-v1/;
+
+#include "thunderbay-soc.dtsi"
+
+/ {
+	model = "Intel Thunder Bay Hybrid HDDL Prime Board";
+	compatible = "intel,thunderbay-s12", "intel,thunderbay-hddl";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@100a000000 {
+		device_type = "memory";
+		/* 8GB of DDR memory */
+		reg = <0x10 0x0a000000 0x2 0x0>;
+	};
+
+	memory@1200000000 {
+		device_type = "memory";
+		/* 4GB of DDR memory */
+		reg = <0x12 0x0 0x1 0x0>;
+	};
+
+};

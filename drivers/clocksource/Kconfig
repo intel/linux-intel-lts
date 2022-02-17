@@ -709,4 +709,15 @@ config MICROCHIP_PIT64B
 	  modes and high resolution. It is used as a clocksource
 	  and a clockevent.
 
+config KEEMBAY_TIMER
+	bool "Intel Keem Bay timer"
+	depends on ARCH_KEEMBAY || ARCH_THUNDERBAY
+	select TIMER_OF
+	help
+	  This option enables the support for the Intel Keem Bay
+	  general purpose timer and free running counter driver.
+	  Each timer can generate an individual interrupt and
+	  supports oneshot and periodic modes.
+	  The 64-bit counter can be used as a clock source.
+
 endmenu
