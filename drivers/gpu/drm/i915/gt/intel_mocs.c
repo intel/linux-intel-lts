@@ -480,6 +480,9 @@ static unsigned int get_mocs_settings(const struct drm_i915_private *i915,
 	if (GEM_DEBUG_WARN_ON(table->size > table->n_entries))
 		return 0;
 
+	if (IS_SRIOV_VF(i915))
+		return 0;
+
 	/* WaDisableSkipCaching:skl,bxt,kbl,glk */
 	if (GRAPHICS_VER(i915) == 9) {
 		int i;
