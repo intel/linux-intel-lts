@@ -410,6 +410,7 @@ static int ecl_ish_cl_enable_events(struct ishtp_opregion_dev *opr_dev,
 	message.header.request_type = ECL_ISH_WRITE;
 	message.header.offset = ECL_EVENTS_NOTIFY;
 	message.header.data_len = 1;
+	message.header.event = 0;
 	message.payload[0] = config_enable;
 
 	len = sizeof(struct ecl_message_header) + message.header.data_len;
