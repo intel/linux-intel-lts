@@ -278,6 +278,10 @@ static void guc_mmio_regset_init(struct temp_regset *regset,
 	GUC_MMIO_REG_ADD(regset, RING_HWS_PGA(base), false);
 	GUC_MMIO_REG_ADD(regset, RING_IMR(base), false);
 
+	if ((engine->class == RENDER_CLASS) &&
+	    CCS_MASK(engine->gt))
+		GUC_MMIO_REG_ADD(regset, GEN12_RCU_MODE, true);
+
 	for (i = 0, wa = wal->list; i < wal->count; i++, wa++)
 		GUC_MMIO_REG_ADD(regset, wa->reg, wa->masked_reg);
 
@@ -367,6 +371,7 @@ static void fill_engine_enable_masks(struct intel_gt *gt,
 				     struct guc_gt_system_info *info)
 {
 	info->engine_enabled_masks[GUC_RENDER_CLASS] = 1;
+	info->engine_enabled_masks[GUC_COMPUTE_CLASS] = CCS_MASK(gt);
 	info->engine_enabled_masks[GUC_BLITTER_CLASS] = 1;
 	info->engine_enabled_masks[GUC_VIDEO_CLASS] = VDBOX_MASK(gt);
 	info->engine_enabled_masks[GUC_VIDEOENHANCE_CLASS] = VEBOX_MASK(gt);

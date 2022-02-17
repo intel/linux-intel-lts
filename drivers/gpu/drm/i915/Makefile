@@ -42,6 +42,7 @@ i915-y += i915_driver.o \
 	  i915_suspend.o \
 	  i915_switcheroo.o \
 	  i915_sysfs.o \
+	  i915_sysrq.o \
 	  i915_utils.o \
 	  intel_device_info.o \
 	  intel_dram.o \
@@ -175,6 +176,7 @@ i915-y += \
 	  i915_ttm_buddy_manager.o \
 	  i915_vma.o \
 	  i915_vma_snapshot.o \
+	  intel_pagefault.o \
 	  intel_wopcm.o
 
 # general-purpose microcontroller (GuC) support
@@ -191,6 +193,7 @@ i915-y += gt/uc/intel_uc.o \
 	  gt/uc/intel_guc_rc.o \
 	  gt/uc/intel_guc_slpc.o \
 	  gt/uc/intel_guc_submission.o \
+	  gt/uc/intel_guc_hwconfig.o \
 	  gt/uc/intel_huc.o \
 	  gt/uc/intel_huc_debugfs.o \
 	  gt/uc/intel_huc_fw.o
