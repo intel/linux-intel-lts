@@ -170,6 +170,10 @@ int intel_huc_check_status(struct intel_huc *huc)
 	with_intel_runtime_pm(gt->uncore->rpm, wakeref)
 		status = intel_uncore_read(gt->uncore, huc->status.reg);
 
+	/* if status is suspicious, VFs must trust PF that HuC was loaded */
+	if ((!status || !~status) && IS_SRIOV_VF(gt->i915))
+		return 1;
+
 	return (status & huc->status.mask) == huc->status.value;
 }
 
