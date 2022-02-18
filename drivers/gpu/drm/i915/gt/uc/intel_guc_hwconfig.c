@@ -134,7 +134,7 @@ u32 intel_guc_hwconfig_get_value(struct intel_guc_hwconfig *hwconfig, u32 key)
 
 static bool has_table(struct drm_i915_private *i915)
 {
-	if (IS_ADLP_GT_STEP(i915, STEP_B0, STEP_FOREVER))
+	if (IS_ADLP_GRAPHICS_STEP(i915, STEP_B0, STEP_FOREVER))
 		return 1;
 
 	return 0;
