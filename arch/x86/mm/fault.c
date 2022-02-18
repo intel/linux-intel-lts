@@ -740,7 +740,6 @@ kernelmode_fixup_or_oops(struct pt_regs *regs, unsigned long error_code,
 		if (current->thread.sig_on_uaccess_err && signal) {
 			sanitize_error_code(address, &error_code);
 
-			oob_trap_notify(X86_TRAP_PF, regs);
 			set_signal_archinfo(address, error_code);
 
 			if (si_code == SEGV_PKUERR) {
@@ -749,7 +748,6 @@ kernelmode_fixup_or_oops(struct pt_regs *regs, unsigned long error_code,
 				/* XXX: hwpoison faults will set the wrong code. */
 				force_sig_fault(signal, si_code, (void __user *)address);
 			}
-			oob_trap_unwind(X86_TRAP_PF, regs);
 		}
 
 		/*
