@@ -1202,7 +1202,7 @@ bool __pci_resource_valid(struct pci_dev *pdev, int bar)
 
 static bool intel_bars_valid(struct pci_dev *pdev, struct intel_device_info *intel_info)
 {
-	const int gttmmaddr_bar = intel_info->graphics_ver == 2 ? GEN2_GTTMMADR_BAR : GTTMMADR_BAR;
+	const int gttmmaddr_bar = intel_info->graphics.ver == 2 ? GEN2_GTTMMADR_BAR : GTTMMADR_BAR;
 	const int gfxmem_bar = GFXMEM_BAR;
 
 	if (!__pci_resource_valid(pdev, gttmmaddr_bar))
