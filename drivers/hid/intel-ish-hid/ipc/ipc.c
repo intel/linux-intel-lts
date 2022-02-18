@@ -930,6 +930,9 @@ int ish_hw_start(struct ishtp_device *dev)
 		return	-ENODEV;
 	}
 
+	/* clear the status for next waiting */
+	dev->recvd_hw_ready = 0;
+
 	return 0;
 }
 
