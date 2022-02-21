@@ -67,6 +67,7 @@ enum intel_vsec_quirks {
 struct intel_vsec_platform_info {
 	struct intel_vsec_header **capabilities;
 	unsigned long quirks;
+	s32 base_adjust;
 };
 
 struct intel_vsec_device {

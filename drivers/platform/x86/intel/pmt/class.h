@@ -45,6 +45,7 @@ struct intel_pmt_entry {
 	void __iomem		*disc_table;
 	void __iomem		*base;
 	unsigned long		base_addr;
+	s32			base_adjust;
 	size_t			size;
 	u32			guid;
 	int			devid;

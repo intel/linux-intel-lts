@@ -77,6 +77,12 @@ static int pmt_telem_header_decode(struct intel_pmt_entry *entry,
 	header->access_type = TELEM_ACCESS(readl(disc_table));
 	header->guid = readl(disc_table + TELEM_GUID_OFFSET);
 	header->base_offset = readl(disc_table + TELEM_BASE_OFFSET);
+	if (entry->base_adjust) {
+		u32 new_base = header->base_offset + entry->base_adjust;
+		dev_dbg(dev, "Adjusting baseoffset from 0x%x to 0x%x\n",
+			header->base_offset, new_base);
+		header->base_offset = new_base;
+	}
 
 	/* Size is measured in DWORDS, but accessor returns bytes */
 	header->size = TELEM_SIZE(readl(disc_table));
@@ -320,6 +326,8 @@ static int pmt_telem_probe(struct auxiliary_device *auxdev, const struct auxilia
 	     i < intel_vsec_dev->num_resources;
 	     i++, entry++) {
 		dev_dbg(&auxdev->dev, "Getting resource %d\n", i);
+		entry->base_adjust = intel_vsec_dev->info->base_adjust;
+
 		ret = intel_pmt_dev_create(entry, &pmt_telem_ns, intel_vsec_dev, i);
 		if (ret < 0)
 			goto abort_probe;
