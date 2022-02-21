@@ -183,9 +183,7 @@ static __maybe_unused int m_can_pci_resume(struct device *dev)
 
 static int __maybe_unused m_can_pci_runtime_suspend(struct device *dev)
 {
-	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
-	struct net_device *ndev = pci_get_drvdata(pdev);
-	struct m_can_classdev *mcan_class = netdev_priv(ndev);
+	struct m_can_classdev *mcan_class = dev_get_drvdata(dev);
 	u32 d0i3c_reg;
 	u32 cgsr_reg;
 	unsigned long j0, j1, delay;
@@ -220,9 +218,7 @@ static int __maybe_unused m_can_pci_runtime_suspend(struct device *dev)
 
 static int __maybe_unused m_can_pci_runtime_resume(struct device *dev)
 {
-	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
-	struct net_device *ndev = pci_get_drvdata(pdev);
-	struct m_can_classdev *mcan_class = netdev_priv(ndev);
+	struct m_can_classdev *mcan_class = dev_get_drvdata(dev);
 	u32 d0i3c_reg;
 	u32 cgsr_reg;
 
