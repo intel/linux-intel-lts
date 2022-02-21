@@ -12,5 +12,3 @@
 0002-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
 0003-drm-nouveau-clean-up-all-clients-on-device-removal.patch
 
-# CVE-2021-45095
-0001-phonet-refcount-leak-in-pep_sock_accep.patch
