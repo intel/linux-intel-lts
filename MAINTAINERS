@@ -958,6 +958,7 @@ F:	drivers/gpu/drm/amd/include/kgd_kfd_interface.h
 F:	drivers/gpu/drm/amd/include/v9_structs.h
 F:	drivers/gpu/drm/amd/include/vi_structs.h
 F:	include/uapi/linux/kfd_ioctl.h
+F:	include/uapi/linux/kfd_sysfs.h
 
 AMD SPI DRIVER
 M:	Sanjay R Mehta <sanju.mehta@amd.com>
@@ -5962,6 +5963,7 @@ F:	drivers/gpu/drm/tiny/mi0283qt.c
 DRM DRIVER FOR MSM ADRENO GPU
 M:	Rob Clark <robdclark@gmail.com>
 M:	Sean Paul <sean@poorly.run>
+R:	Abhinav Kumar <quic_abhinavk@quicinc.com>
 L:	linux-arm-msm@vger.kernel.org
 L:	dri-devel@lists.freedesktop.org
 L:	freedreno@lists.freedesktop.org
@@ -5987,10 +5989,17 @@ F:	drivers/gpu/drm/panel/panel-novatek-nt36672a.c
 
 DRM DRIVER FOR NVIDIA GEFORCE/QUADRO GPUS
 M:	Ben Skeggs <bskeggs@redhat.com>
+M:	Karol Herbst <kherbst@redhat.com>
+M:	Lyude Paul <lyude@redhat.com>
 L:	dri-devel@lists.freedesktop.org
 L:	nouveau@lists.freedesktop.org
 S:	Supported
-T:	git git://github.com/skeggsb/linux
+W:	https://nouveau.freedesktop.org/
+Q:	https://patchwork.freedesktop.org/project/nouveau/
+Q:	https://gitlab.freedesktop.org/drm/nouveau/-/merge_requests
+B:	https://gitlab.freedesktop.org/drm/nouveau/-/issues
+C:	irc://irc.oftc.net/nouveau
+T:	git https://gitlab.freedesktop.org/drm/nouveau.git
 F:	drivers/gpu/drm/nouveau/
 F:	include/uapi/drm/nouveau_drm.h
 
@@ -6043,6 +6052,12 @@ S:	Maintained
 T:	git git://anongit.freedesktop.org/drm/drm-misc
 F:	Documentation/devicetree/bindings/display/panel/samsung,lms397kf04.yaml
 F:	drivers/gpu/drm/panel/panel-samsung-db7430.c
+
+DRM DRIVER FOR SAMSUNG S6D27A1 PANELS
+M:	Markuss Broks <markuss.broks@gmail.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/samsung,s6d27a1.yaml
+F:	driver/gpu/drm/panel/panel-samsung-s6d27a1.c
 
 DRM DRIVER FOR SITRONIX ST7703 PANELS
 M:	Guido Günther <agx@sigxcpu.org>
@@ -6323,6 +6338,7 @@ L:	dri-devel@lists.freedesktop.org
 L:	linux-renesas-soc@vger.kernel.org
 S:	Supported
 T:	git git://linuxtv.org/pinchartl/media drm/du/next
+F:	Documentation/devicetree/bindings/display/bridge/renesas,dsi-csi2-tx.yaml
 F:	Documentation/devicetree/bindings/display/bridge/renesas,dw-hdmi.yaml
 F:	Documentation/devicetree/bindings/display/bridge/renesas,lvds.yaml
 F:	Documentation/devicetree/bindings/display/renesas,du.yaml
@@ -6440,6 +6456,14 @@ F:	Documentation/devicetree/bindings/display/panel/
 F:	drivers/gpu/drm/drm_panel.c
 F:	drivers/gpu/drm/panel/
 F:	include/drm/drm_panel.h
+
+DRM PRIVACY-SCREEN CLASS
+M:	Hans de Goede <hdegoede@redhat.com>
+L:	dri-devel@lists.freedesktop.org
+S:	Maintained
+T:	git git://anongit.freedesktop.org/drm/drm-misc
+F:	drivers/gpu/drm/drm_privacy_screen*
+F:	include/drm/drm_privacy_screen*
 
 DRM TTM SUBSYSTEM
 M:	Christian Koenig <christian.koenig@amd.com>
@@ -9358,6 +9382,7 @@ INTEL DRM DRIVERS (excluding Poulsbo, Moorestown and derivative chipsets)
 M:	Jani Nikula <jani.nikula@linux.intel.com>
 M:	Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
 M:	Rodrigo Vivi <rodrigo.vivi@intel.com>
+M:	Tvrtko Ursulin <tvrtko.ursulin@linux.intel.com>
 L:	intel-gfx@lists.freedesktop.org
 S:	Supported
 W:	https://01.org/linuxgraphics/
@@ -19948,6 +19973,8 @@ F:	include/uapi/linux/virtio_gpio.h
 VIRTIO GPU DRIVER
 M:	David Airlie <airlied@linux.ie>
 M:	Gerd Hoffmann <kraxel@redhat.com>
+R:	Gurchetan Singh <gurchetansingh@chromium.org>
+R:	Chia-I Wu <olvaffe@gmail.com>
 L:	dri-devel@lists.freedesktop.org
 L:	virtualization@lists.linux-foundation.org
 S:	Maintained

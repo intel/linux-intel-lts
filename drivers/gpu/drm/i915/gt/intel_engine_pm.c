@@ -26,7 +26,7 @@ static void dbg_poison_ce(struct intel_context *ce)
 		int type = i915_coherent_map_type(ce->engine->i915, obj, true);
 		void *map;
 
-		if (!i915_gem_object_trylock(obj))
+		if (!i915_gem_object_trylock(obj, NULL))
 			return;
 
 		map = i915_gem_object_pin_map(obj, type);
@@ -128,6 +128,19 @@ static bool switch_to_kernel_context(struct intel_engine_cs *engine)
 	struct i915_request *rq;
 	bool result = true;
 
+	/*
+	 * This is execlist specific behaviour intended to ensure the GPU is
+	 * idle by switching to a known 'safe' context. With GuC submission, the
+	 * same idle guarantee is achieved by other means (disabling
+	 * scheduling). Further, switching to a 'safe' context has no effect
+	 * with GuC submission as the scheduler can just switch back again.
+	 *
+	 * FIXME: Move this backend scheduler specific behaviour into the
+	 * scheduler backend.
+	 */
+	if (intel_engine_uses_guc(engine))
+		return true;
+
 	/* GPU is pointing to the void, as good as in the kernel context. */
 	if (intel_gt_is_wedged(engine->gt))
 		return true;
@@ -167,7 +180,7 @@ static bool switch_to_kernel_context(struct intel_engine_cs *engine)
 	 * engine->wakeref.count, we may see the request completion and retire
 	 * it causing an underflow of the engine->wakeref.
 	 */
-	set_bit(CONTEXT_IS_PARKED, &ce->flags);
+	set_bit(CONTEXT_IS_PARKING, &ce->flags);
 	GEM_BUG_ON(atomic_read(&ce->timeline->active_count) < 0);
 
 	rq = __i915_request_create(ce, GFP_NOWAIT);
@@ -199,7 +212,7 @@ static bool switch_to_kernel_context(struct intel_engine_cs *engine)
 
 	result = false;
 out_unlock:
-	clear_bit(CONTEXT_IS_PARKED, &ce->flags);
+	clear_bit(CONTEXT_IS_PARKING, &ce->flags);
 	return result;
 }
 
@@ -262,6 +275,29 @@ void intel_engine_init__pm(struct intel_engine_cs *engine)
 
 	intel_wakeref_init(&engine->wakeref, rpm, &wf_ops);
 	intel_engine_init_heartbeat(engine);
+}
+
+/**
+ * intel_engine_reset_pinned_contexts - Reset the pinned contexts of
+ * an engine.
+ * @engine: The engine whose pinned contexts we want to reset.
+ *
+ * Typically the pinned context LMEM images lose or get their content
+ * corrupted on suspend. This function resets their images.
+ */
+void intel_engine_reset_pinned_contexts(struct intel_engine_cs *engine)
+{
+	struct intel_context *ce;
+
+	list_for_each_entry(ce, &engine->pinned_contexts_list,
+			    pinned_contexts_link) {
+		/* kernel context gets reset at __engine_unpark() */
+		if (ce == engine->kernel_context)
+			continue;
+
+		dbg_poison_ce(ce);
+		ce->ops->reset(ce);
+	}
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

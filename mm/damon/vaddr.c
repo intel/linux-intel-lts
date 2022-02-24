@@ -17,6 +17,7 @@
 #include <linux/random.h>
 #include <linux/sched/mm.h>
 #include <linux/slab.h>
+#include <linux/sched/mm.h>
 
 #ifdef CONFIG_DAMON_VADDR_KUNIT_TEST
 #undef DAMON_MIN_REGION

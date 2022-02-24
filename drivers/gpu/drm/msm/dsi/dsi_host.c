@@ -106,7 +106,8 @@ struct msm_dsi_host {
 	phys_addr_t ctrl_size;
 	struct regulator_bulk_data supplies[DSI_DEV_REGULATOR_MAX];
 
-	struct clk *bus_clks[DSI_BUS_CLK_MAX];
+	int num_bus_clks;
+	struct clk_bulk_data bus_clks[DSI_BUS_CLK_MAX];
 
 	struct clk *byte_clk;
 	struct clk *esc_clk;
@@ -374,15 +375,14 @@ static int dsi_clk_init(struct msm_dsi_host *msm_host)
 	int i, ret = 0;
 
 	/* get bus clocks */
-	for (i = 0; i < cfg->num_bus_clks; i++) {
-		msm_host->bus_clks[i] = msm_clk_get(pdev,
-						cfg->bus_clk_names[i]);
-		if (IS_ERR(msm_host->bus_clks[i])) {
-			ret = PTR_ERR(msm_host->bus_clks[i]);
-			pr_err("%s: Unable to get %s clock, ret = %d\n",
-				__func__, cfg->bus_clk_names[i], ret);
-			goto exit;
-		}
+	for (i = 0; i < cfg->num_bus_clks; i++)
+		msm_host->bus_clks[i].id = cfg->bus_clk_names[i];
+	msm_host->num_bus_clks = cfg->num_bus_clks;
+
+	ret = devm_clk_bulk_get(&pdev->dev, msm_host->num_bus_clks, msm_host->bus_clks);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Unable to get clocks, ret = %d\n", ret);
+		goto exit;
 	}
 
 	/* get link and source clocks */
@@ -433,41 +433,6 @@ exit:
 	return ret;
 }
 
-static int dsi_bus_clk_enable(struct msm_dsi_host *msm_host)
-{
-	const struct msm_dsi_config *cfg = msm_host->cfg_hnd->cfg;
-	int i, ret;
-
-	DBG("id=%d", msm_host->id);
-
-	for (i = 0; i < cfg->num_bus_clks; i++) {
-		ret = clk_prepare_enable(msm_host->bus_clks[i]);
-		if (ret) {
-			pr_err("%s: failed to enable bus clock %d ret %d\n",
-				__func__, i, ret);
-			goto err;
-		}
-	}
-
-	return 0;
-err:
-	while (--i >= 0)
-		clk_disable_unprepare(msm_host->bus_clks[i]);
-
-	return ret;
-}
-
-static void dsi_bus_clk_disable(struct msm_dsi_host *msm_host)
-{
-	const struct msm_dsi_config *cfg = msm_host->cfg_hnd->cfg;
-	int i;
-
-	DBG("");
-
-	for (i = cfg->num_bus_clks - 1; i >= 0; i--)
-		clk_disable_unprepare(msm_host->bus_clks[i]);
-}
-
 int msm_dsi_runtime_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -478,7 +443,7 @@ int msm_dsi_runtime_suspend(struct device *dev)
 	if (!msm_host->cfg_hnd)
 		return 0;
 
-	dsi_bus_clk_disable(msm_host);
+	clk_bulk_disable_unprepare(msm_host->num_bus_clks, msm_host->bus_clks);
 
 	return 0;
 }
@@ -493,7 +458,7 @@ int msm_dsi_runtime_resume(struct device *dev)
 	if (!msm_host->cfg_hnd)
 		return 0;
 
-	return dsi_bus_clk_enable(msm_host);
+	return clk_bulk_prepare_enable(msm_host->num_bus_clks, msm_host->bus_clks);
 }
 
 int dsi_link_clk_set_rate_6g(struct msm_dsi_host *msm_host)
@@ -558,13 +523,11 @@ int dsi_link_clk_enable_6g(struct msm_dsi_host *msm_host)
 		goto pixel_clk_err;
 	}
 
-	if (msm_host->byte_intf_clk) {
-		ret = clk_prepare_enable(msm_host->byte_intf_clk);
-		if (ret) {
-			pr_err("%s: Failed to enable byte intf clk\n",
-			       __func__);
-			goto byte_intf_clk_err;
-		}
+	ret = clk_prepare_enable(msm_host->byte_intf_clk);
+	if (ret) {
+		pr_err("%s: Failed to enable byte intf clk\n",
+			   __func__);
+		goto byte_intf_clk_err;
 	}
 
 	return 0;
@@ -660,8 +623,7 @@ void dsi_link_clk_disable_6g(struct msm_dsi_host *msm_host)
 	dev_pm_opp_set_rate(&msm_host->pdev->dev, 0);
 	clk_disable_unprepare(msm_host->esc_clk);
 	clk_disable_unprepare(msm_host->pixel_clk);
-	if (msm_host->byte_intf_clk)
-		clk_disable_unprepare(msm_host->byte_intf_clk);
+	clk_disable_unprepare(msm_host->byte_intf_clk);
 	clk_disable_unprepare(msm_host->byte_clk);
 }
 
@@ -1624,6 +1586,10 @@ static int dsi_host_attach(struct mipi_dsi_host *host,
 	if (ret)
 		return ret;
 
+	ret = dsi_dev_attach(msm_host->pdev);
+	if (ret)
+		return ret;
+
 	DBG("id=%d", msm_host->id);
 	if (msm_host->dev)
 		queue_work(msm_host->workqueue, &msm_host->hpd_work);
@@ -1635,6 +1601,8 @@ static int dsi_host_detach(struct mipi_dsi_host *host,
 					struct mipi_dsi_device *dsi)
 {
 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+
+	dsi_dev_detach(msm_host->pdev);
 
 	msm_host->device_node = NULL;
 
@@ -1944,7 +1912,6 @@ void msm_dsi_host_destroy(struct mipi_dsi_host *host)
 	DBG("");
 	dsi_tx_buf_free(msm_host);
 	if (msm_host->workqueue) {
-		flush_workqueue(msm_host->workqueue);
 		destroy_workqueue(msm_host->workqueue);
 		msm_host->workqueue = NULL;
 	}
@@ -1972,7 +1939,7 @@ int msm_dsi_host_modeset_init(struct mipi_dsi_host *host,
 	return 0;
 }
 
-int msm_dsi_host_register(struct mipi_dsi_host *host, bool check_defer)
+int msm_dsi_host_register(struct mipi_dsi_host *host)
 {
 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
 	int ret;
@@ -1986,20 +1953,6 @@ int msm_dsi_host_register(struct mipi_dsi_host *host, bool check_defer)
 			return ret;
 
 		msm_host->registered = true;
-
-		/* If the panel driver has not been probed after host register,
-		 * we should defer the host's probe.
-		 * It makes sure panel is connected when fbcon detects
-		 * connector status and gets the proper display mode to
-		 * create framebuffer.
-		 * Don't try to defer if there is nothing connected to the dsi
-		 * output
-		 */
-		if (check_defer && msm_host->device_node) {
-			if (IS_ERR(of_drm_find_panel(msm_host->device_node)))
-				if (!of_drm_find_bridge(msm_host->device_node))
-					return -EPROBE_DEFER;
-		}
 	}
 
 	return 0;
@@ -2067,7 +2020,7 @@ void msm_dsi_host_xfer_restore(struct mipi_dsi_host *host,
 	/* TODO: unvote for bus bandwidth */
 
 	cfg_hnd->ops->link_clk_disable(msm_host);
-	pm_runtime_put_autosuspend(&msm_host->pdev->dev);
+	pm_runtime_put(&msm_host->pdev->dev);
 }
 
 int msm_dsi_host_cmd_tx(struct mipi_dsi_host *host,
@@ -2226,57 +2179,12 @@ void msm_dsi_host_cmd_xfer_commit(struct mipi_dsi_host *host, u32 dma_base,
 	wmb();
 }
 
-int msm_dsi_host_set_src_pll(struct mipi_dsi_host *host,
+void msm_dsi_host_set_phy_mode(struct mipi_dsi_host *host,
 	struct msm_dsi_phy *src_phy)
 {
 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
-	struct clk *byte_clk_provider, *pixel_clk_provider;
-	int ret;
 
 	msm_host->cphy_mode = src_phy->cphy_mode;
-
-	ret = msm_dsi_phy_get_clk_provider(src_phy,
-				&byte_clk_provider, &pixel_clk_provider);
-	if (ret) {
-		pr_info("%s: can't get provider from pll, don't set parent\n",
-			__func__);
-		return 0;
-	}
-
-	ret = clk_set_parent(msm_host->byte_clk_src, byte_clk_provider);
-	if (ret) {
-		pr_err("%s: can't set parent to byte_clk_src. ret=%d\n",
-			__func__, ret);
-		goto exit;
-	}
-
-	ret = clk_set_parent(msm_host->pixel_clk_src, pixel_clk_provider);
-	if (ret) {
-		pr_err("%s: can't set parent to pixel_clk_src. ret=%d\n",
-			__func__, ret);
-		goto exit;
-	}
-
-	if (msm_host->dsi_clk_src) {
-		ret = clk_set_parent(msm_host->dsi_clk_src, pixel_clk_provider);
-		if (ret) {
-			pr_err("%s: can't set parent to dsi_clk_src. ret=%d\n",
-				__func__, ret);
-			goto exit;
-		}
-	}
-
-	if (msm_host->esc_clk_src) {
-		ret = clk_set_parent(msm_host->esc_clk_src, byte_clk_provider);
-		if (ret) {
-			pr_err("%s: can't set parent to esc_clk_src. ret=%d\n",
-				__func__, ret);
-			goto exit;
-		}
-	}
-
-exit:
-	return ret;
 }
 
 void msm_dsi_host_reset_phy(struct mipi_dsi_host *host)
@@ -2344,7 +2252,7 @@ int msm_dsi_host_enable(struct mipi_dsi_host *host)
 	 */
 	/* if (msm_panel->mode == MSM_DSI_CMD_MODE) {
 	 *	dsi_link_clk_disable(msm_host);
-	 *	pm_runtime_put_autosuspend(&msm_host->pdev->dev);
+	 *	pm_runtime_put(&msm_host->pdev->dev);
 	 * }
 	 */
 	msm_host->enabled = true;
@@ -2436,7 +2344,7 @@ int msm_dsi_host_power_on(struct mipi_dsi_host *host,
 
 fail_disable_clk:
 	cfg_hnd->ops->link_clk_disable(msm_host);
-	pm_runtime_put_autosuspend(&msm_host->pdev->dev);
+	pm_runtime_put(&msm_host->pdev->dev);
 fail_disable_reg:
 	dsi_host_regulator_disable(msm_host);
 unlock_ret:
@@ -2463,7 +2371,7 @@ int msm_dsi_host_power_off(struct mipi_dsi_host *host)
 	pinctrl_pm_select_sleep_state(&msm_host->pdev->dev);
 
 	cfg_hnd->ops->link_clk_disable(msm_host);
-	pm_runtime_put_autosuspend(&msm_host->pdev->dev);
+	pm_runtime_put(&msm_host->pdev->dev);
 
 	dsi_host_regulator_disable(msm_host);
 

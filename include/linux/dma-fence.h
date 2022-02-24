@@ -268,6 +268,7 @@ void dma_fence_init(struct dma_fence *fence, const struct dma_fence_ops *ops,
 
 void dma_fence_release(struct kref *kref);
 void dma_fence_free(struct dma_fence *fence);
+void dma_fence_describe(struct dma_fence *fence, struct seq_file *seq);
 
 /**
  * dma_fence_put - decreases refcount of the fence
@@ -589,27 +590,5 @@ static inline signed long dma_fence_wait(struct dma_fence *fence, bool intr)
 struct dma_fence *dma_fence_get_stub(void);
 struct dma_fence *dma_fence_allocate_private_stub(void);
 u64 dma_fence_context_alloc(unsigned num);
-
-#define DMA_FENCE_TRACE(f, fmt, args...) \
-	do {								\
-		struct dma_fence *__ff = (f);				\
-		if (IS_ENABLED(CONFIG_DMA_FENCE_TRACE))			\
-			pr_info("f %llu#%llu: " fmt,			\
-				__ff->context, __ff->seqno, ##args);	\
-	} while (0)
-
-#define DMA_FENCE_WARN(f, fmt, args...) \
-	do {								\
-		struct dma_fence *__ff = (f);				\
-		pr_warn("f %llu#%llu: " fmt, __ff->context, __ff->seqno,\
-			 ##args);					\
-	} while (0)
-
-#define DMA_FENCE_ERR(f, fmt, args...) \
-	do {								\
-		struct dma_fence *__ff = (f);				\
-		pr_err("f %llu#%llu: " fmt, __ff->context, __ff->seqno,	\
-			##args);					\
-	} while (0)
 
 #endif /* __LINUX_DMA_FENCE_H */

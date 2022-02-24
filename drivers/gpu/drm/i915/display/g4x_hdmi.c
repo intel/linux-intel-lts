@@ -8,14 +8,15 @@
 #include "g4x_hdmi.h"
 #include "intel_audio.h"
 #include "intel_connector.h"
+#include "intel_crtc.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
 #include "intel_dpio_phy.h"
 #include "intel_fifo_underrun.h"
 #include "intel_hdmi.h"
 #include "intel_hotplug.h"
-#include "intel_sideband.h"
 #include "intel_sdvo.h"
+#include "vlv_sideband.h"
 
 static void intel_hdmi_prepare(struct intel_encoder *encoder,
 			       const struct intel_crtc_state *crtc_state)

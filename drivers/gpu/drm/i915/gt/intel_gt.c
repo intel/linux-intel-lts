@@ -3,7 +3,9 @@
  * Copyright © 2019 Intel Corporation
  */
 
-#include "debugfs_gt.h"
+#include <drm/intel-gtt.h>
+
+#include "intel_gt_debugfs.h"
 
 #include "gem/i915_gem_lmem.h"
 #include "i915_drv.h"
@@ -15,18 +17,16 @@
 #include "intel_gt_requests.h"
 #include "intel_migrate.h"
 #include "intel_mocs.h"
+#include "intel_pm.h"
 #include "intel_rc6.h"
 #include "intel_renderstate.h"
 #include "intel_rps.h"
 #include "intel_uncore.h"
-#include "intel_pm.h"
 #include "shmem_utils.h"
+#include "pxp/intel_pxp.h"
 
-void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
+void __intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
 {
-	gt->i915 = i915;
-	gt->uncore = &i915->uncore;
-
 	spin_lock_init(&gt->irq_lock);
 
 	mutex_init(&gt->tlb_invalidate_lock);
@@ -45,6 +45,12 @@ void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
 
 	intel_uc_init_early(&gt->uc);
 	intel_rps_init_early(&gt->rps);
+}
+
+void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
+{
+	gt->i915 = i915;
+	gt->uncore = &i915->uncore;
 }
 
 int intel_gt_probe_lmem(struct intel_gt *gt)
@@ -436,7 +442,7 @@ void intel_gt_driver_register(struct intel_gt *gt)
 {
 	intel_rps_driver_register(&gt->rps);
 
-	debugfs_gt_register(gt);
+	intel_gt_debugfs_register(gt);
 }
 
 static int intel_gt_init_scratch(struct intel_gt *gt, unsigned int size)
@@ -483,7 +489,7 @@ static void intel_gt_fini_scratch(struct intel_gt *gt)
 static struct i915_address_space *kernel_vm(struct intel_gt *gt)
 {
 	if (INTEL_PPGTT(gt->i915) > INTEL_PPGTT_ALIASING)
-		return &i915_ppgtt_create(gt)->vm;
+		return &i915_ppgtt_create(gt, I915_BO_ALLOC_PM_EARLY)->vm;
 	else
 		return i915_vm_get(&gt->ggtt->vm);
 }
@@ -662,6 +668,8 @@ int intel_gt_init(struct intel_gt *gt)
 	if (err)
 		return err;
 
+	intel_gt_init_workarounds(gt);
+
 	/*
 	 * This is just a security blanket to placate dragons.
 	 * On some systems, we very sporadically observe that the first TLBs
@@ -683,6 +691,8 @@ int intel_gt_init(struct intel_gt *gt)
 		err = -ENOMEM;
 		goto err_pm;
 	}
+
+	intel_set_mocs_index(gt);
 
 	err = intel_engines_init(gt);
 	if (err)
@@ -712,6 +722,8 @@ int intel_gt_init(struct intel_gt *gt)
 
 	intel_migrate_init(&gt->migrate, gt);
 
+	intel_pxp_init(&gt->pxp);
+
 	goto out_fw;
 err_gt:
 	__intel_gt_disable(gt);
@@ -739,6 +751,8 @@ void intel_gt_driver_remove(struct intel_gt *gt)
 	intel_uc_driver_remove(&gt->uc);
 
 	intel_engines_release(gt);
+
+	intel_gt_flush_buffer_pool(gt);
 }
 
 void intel_gt_driver_unregister(struct intel_gt *gt)
@@ -747,12 +761,14 @@ void intel_gt_driver_unregister(struct intel_gt *gt)
 
 	intel_rps_driver_unregister(&gt->rps);
 
+	intel_pxp_fini(&gt->pxp);
+
 	/*
 	 * Upon unregistering the device to prevent any new users, cancel
 	 * all in-flight requests so that we can quickly unbind the active
 	 * resources.
 	 */
-	intel_gt_set_wedged(gt);
+	intel_gt_set_wedged_on_fini(gt);
 
 	/* Scrub all HW state upon release */
 	with_intel_runtime_pm(gt->uncore->rpm, wakeref)
@@ -767,6 +783,7 @@ void intel_gt_driver_release(struct intel_gt *gt)
 	if (vm) /* FIXME being called twice on error paths :( */
 		i915_vm_put(vm);
 
+	intel_wa_list_free(&gt->wa_list);
 	intel_gt_pm_fini(gt);
 	intel_gt_fini_scratch(gt);
 	intel_gt_fini_buffer_pool(gt);
