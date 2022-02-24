@@ -7485,6 +7485,11 @@ int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev)
 	for (chan = 0; chan < priv->plat->tx_queues_to_use; chan++)
 		hrtimer_cancel(&priv->tx_queue[chan].txtimer);
 
+	if (priv->eee_enabled) {
+		priv->tx_path_in_lpi_mode = false;
+		del_timer_sync(&priv->eee_ctrl_timer);
+	}
+
 	/* Stop TX/RX DMA */
 	stmmac_stop_all_dma(priv);
 	stmmac_stop_mac_tx(priv, priv->ioaddr);
@@ -7509,33 +7514,35 @@ int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
 	if (!ndev || !netif_running(ndev))
 		return 0;
 
-	phylink_mac_change(priv->phylink, false);
-
 	stmmac_suspend_common(priv, ndev);
 
 	mutex_lock(&priv->lock);
 
 	stmmac_stop_mac_rx(priv, priv->ioaddr);
 
+	if (priv->plat->serdes_powerdown)
+		priv->plat->serdes_powerdown(ndev, priv->plat->bsp_priv);
+
 	/* Enable Power down mode by programming the PMT regs */
-	if (device_may_wakeup(priv->device)) {
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
 		stmmac_pmt(priv, priv->hw, priv->wolopts);
 		priv->irq_wake = 1;
 	} else {
-		mutex_unlock(&priv->lock);
-		rtnl_lock();
-		phylink_stop(priv->phylink);
-		rtnl_unlock();
-		mutex_lock(&priv->lock);
-
 		stmmac_mac_set(priv, priv->ioaddr, false);
 		pinctrl_pm_select_sleep_state(priv->device);
-		/* Disable clock in case of PWM is off */
-		if (priv->plat->clk_ptp_ref)
-			clk_disable_unprepare(priv->plat->clk_ptp_ref);
-		clk_disable_unprepare(priv->plat->pclk);
-		clk_disable_unprepare(priv->plat->stmmac_clk);
 	}
+
+	mutex_unlock(&priv->lock);
+
+	rtnl_lock();
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
+		phylink_suspend(priv->phylink, true);
+	} else {
+		if (device_may_wakeup(priv->device))
+			phylink_speed_down(priv->phylink, false);
+		phylink_suspend(priv->phylink, false);
+	}
+	rtnl_unlock();
 
 	if (priv->dma_cap.fpesel) {
 		/* Disable FPE */
@@ -7546,8 +7553,6 @@ int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev)
 		stmmac_fpe_handshake(priv, false);
 		stmmac_fpe_stop_wq(priv);
 	}
-
-	mutex_unlock(&priv->lock);
 
 	return 0;
 }
@@ -7704,6 +7709,8 @@ EXPORT_SYMBOL_GPL(stmmac_resume_common);
  */
 int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 {
+	int ret;
+
 	if (!netif_running(ndev))
 		return 0;
 
@@ -7713,35 +7720,36 @@ int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev)
 	 * this bit because it can generate problems while resuming
 	 * from another devices (e.g. serial console).
 	 */
-	if (device_may_wakeup(priv->device)) {
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
 		mutex_lock(&priv->lock);
 		stmmac_pmt(priv, priv->hw, 0);
 		mutex_unlock(&priv->lock);
 		priv->irq_wake = 0;
 	} else {
 		pinctrl_pm_select_default_state(priv->device);
-		/* enable the clk previously disabled */
-		clk_prepare_enable(priv->plat->stmmac_clk);
-		clk_prepare_enable(priv->plat->pclk);
-		if (priv->plat->clk_ptp_ref)
-			clk_prepare_enable(priv->plat->clk_ptp_ref);
 		/* reset the phy so that it's ready */
 		if (priv->mii)
 			stmmac_mdio_reset(priv->mii);
 	}
 
-	stmmac_resume_common(priv, ndev);
-
-	if (!device_may_wakeup(priv->device)) {
-		rtnl_lock();
-		phylink_start(priv->phylink);
-		rtnl_unlock();
-	} else {
-		if (ndev->phydev)
-			phy_restart_aneg(ndev->phydev);
+	if (priv->plat->serdes_powerup) {
+		ret = priv->plat->serdes_powerup(ndev, priv->plat->bsp_priv);
+		if (ret < 0)
+			return ret;
 	}
 
-	phylink_mac_change(priv->phylink, true);
+	rtnl_lock();
+	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
+		phylink_resume(priv->phylink);
+	} else {
+		phylink_resume(priv->phylink);
+		if (device_may_wakeup(priv->device))
+			phylink_speed_up(priv->phylink);
+	}
+	rtnl_unlock();
+
+	stmmac_resume_common(priv, ndev);
+
 	netif_device_attach(ndev);
 
 	return 0;
