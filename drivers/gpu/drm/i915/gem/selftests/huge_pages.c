@@ -5,6 +5,7 @@
  */
 
 #include <linux/prime_numbers.h>
+#include <linux/string_helpers.h>
 
 #include "i915_selftest.h"
 
@@ -809,7 +810,7 @@ static int igt_mock_ppgtt_huge_fill(void *arg)
 		if (vma->page_sizes.gtt != expected_gtt) {
 			pr_err("gtt=%u, expected=%u, size=%zd, single=%s\n",
 			       vma->page_sizes.gtt, expected_gtt,
-			       obj->base.size, yesno(!!single));
+			       obj->base.size, str_yes_no(!!single));
 			err = -EINVAL;
 			break;
 		}
@@ -965,7 +966,7 @@ static int igt_mock_ppgtt_64K(void *arg)
 			if (vma->page_sizes.gtt != expected_gtt) {
 				pr_err("gtt=%u, expected=%u, i=%d, single=%s\n",
 				       vma->page_sizes.gtt, expected_gtt, i,
-				       yesno(!!single));
+				       str_yes_no(!!single));
 				err = -EINVAL;
 				goto out_vma_unpin;
 			}
@@ -1711,14 +1712,14 @@ static int igt_shrink_thp(void *arg)
 			I915_SHRINK_WRITEBACK);
 	if (should_swap == i915_gem_object_has_pages(obj)) {
 		pr_err("unexpected pages mismatch, should_swap=%s\n",
-		       yesno(should_swap));
+		       str_yes_no(should_swap));
 		err = -EINVAL;
 		goto out_put;
 	}
 
 	if (should_swap == (obj->mm.page_sizes.sg || obj->mm.page_sizes.phys)) {
 		pr_err("unexpected residual page-size bits, should_swap=%s\n",
-		       yesno(should_swap));
+		       str_yes_no(should_swap));
 		err = -EINVAL;
 		goto out_put;
 	}

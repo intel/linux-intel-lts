@@ -7,6 +7,7 @@
 #define _I915_TRACE_H_
 
 #include <linux/stringify.h>
+#include <linux/string_helpers.h>
 #include <linux/types.h>
 #include <linux/tracepoint.h>
 
