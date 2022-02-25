@@ -79,8 +79,7 @@ static int intel_context_active_acquire(struct intel_context *ce)
 
 	__i915_active_acquire(&ce->active);
 
-	if (intel_context_is_barrier(ce) || intel_engine_uses_guc(ce->engine) ||
-	    intel_context_is_parallel(ce))
+	if (intel_context_is_barrier(ce) || intel_engine_uses_guc(ce->engine))
 		return 0;
 
 	/* Preallocate tracking nodes */
@@ -316,7 +315,6 @@ void __intel_context_do_unpin(struct intel_context *ce, int sub)
 		return;
 
 	CE_TRACE(ce, "unpin\n");
-	intel_engine_pm_might_put(ce->engine);
 	ce->ops->unpin(ce);
 	ce->ops->post_unpin(ce);
 
@@ -366,8 +364,9 @@ static int __intel_context_active(struct i915_active *active)
 	return 0;
 }
 
-static int sw_fence_dummy_notify(struct i915_sw_fence *sf,
-				 enum i915_sw_fence_notify state)
+static int __i915_sw_fence_call
+sw_fence_dummy_notify(struct i915_sw_fence *sf,
+		      enum i915_sw_fence_notify state)
 {
 	return NOTIFY_DONE;
 }
@@ -400,20 +399,20 @@ intel_context_init(struct intel_context *ce, struct intel_engine_cs *engine)
 	INIT_LIST_HEAD(&ce->guc_state.fences);
 	INIT_LIST_HEAD(&ce->guc_state.requests);
 
-	ce->guc_id.id = GUC_INVALID_LRC_ID;
+	ce->guc_id.id = GUC_INVALID_CONTEXT_ID;
 	INIT_LIST_HEAD(&ce->guc_id.link);
 
 	INIT_LIST_HEAD(&ce->destroyed_link);
 
-	INIT_LIST_HEAD(&ce->guc_child_list);
+	INIT_LIST_HEAD(&ce->parallel.child_list);
 
 	/*
 	 * Initialize fence to be complete as this is expected to be complete
 	 * unless there is a pending schedule disable outstanding.
 	 */
-	i915_sw_fence_init(&ce->guc_state.blocked_fence,
+	i915_sw_fence_init(&ce->guc_state.blocked,
 			   sw_fence_dummy_notify);
-	i915_sw_fence_commit(&ce->guc_state.blocked_fence);
+	i915_sw_fence_commit(&ce->guc_state.blocked);
 
 	i915_active_init(&ce->active,
 			 __intel_context_active, __intel_context_retire, 0);
@@ -434,6 +433,7 @@ void intel_context_fini(struct intel_context *ce)
 
 	mutex_destroy(&ce->pin_mutex);
 	i915_active_fini(&ce->active);
+	i915_sw_fence_fini(&ce->guc_state.blocked);
 }
 
 void i915_context_module_exit(void)
@@ -535,13 +535,21 @@ struct i915_request *intel_context_find_active_request(struct intel_context *ce)
 
 	GEM_BUG_ON(!intel_engine_uses_guc(ce->engine));
 
+	/*
+	 * We search the parent list to find an active request on the submitted
+	 * context. The parent list contains the requests for all the contexts
+	 * in the relationship so we have to do a compare of each request's
+	 * context.
+	 */
 	spin_lock_irqsave(&parent->guc_state.lock, flags);
 	list_for_each_entry_reverse(rq, &parent->guc_state.requests,
 				    sched.link) {
-		if (i915_request_completed(rq) && rq->context == ce)
+		if (rq->context != ce)
+			continue;
+		if (i915_request_completed(rq))
 			break;
 
-		active = (rq->context == ce) ? rq : active;
+		active = rq;
 	}
 	spin_unlock_irqrestore(&parent->guc_state.lock, flags);
 
@@ -555,16 +563,17 @@ void intel_context_bind_parent_child(struct intel_context *parent,
 	 * Callers responsibility to validate that this function is used
 	 * correctly but we use GEM_BUG_ON here ensure that they do.
 	 */
+	GEM_BUG_ON(!intel_engine_uses_guc(parent->engine));
 	GEM_BUG_ON(intel_context_is_pinned(parent));
 	GEM_BUG_ON(intel_context_is_child(parent));
 	GEM_BUG_ON(intel_context_is_pinned(child));
 	GEM_BUG_ON(intel_context_is_child(child));
 	GEM_BUG_ON(intel_context_is_parent(child));
 
-	child->guc_child_index = parent->guc_number_children++;
-	list_add_tail(&child->guc_child_link,
-		      &parent->guc_child_list);
-	child->parent = parent;
+	parent->parallel.child_index = parent->parallel.number_children++;
+	list_add_tail(&child->parallel.child_link,
+		      &parent->parallel.child_list);
+	child->parallel.parent = parent;
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

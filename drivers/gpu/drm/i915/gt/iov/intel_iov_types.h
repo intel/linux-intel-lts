@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #ifndef __INTEL_IOV_TYPES_H__
@@ -80,7 +80,6 @@ struct intel_iov_policies {
  */
 struct intel_iov_provisioning {
 	bool auto_mode;
-	bool self_done;
 	unsigned int num_pushed;
 	struct work_struct worker;
 	struct intel_iov_policies policies;

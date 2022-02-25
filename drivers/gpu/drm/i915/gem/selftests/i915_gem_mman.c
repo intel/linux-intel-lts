@@ -581,6 +581,20 @@ static enum i915_mmap_type default_mapping(struct drm_i915_private *i915)
 	return I915_MMAP_TYPE_GTT;
 }
 
+static struct drm_i915_gem_object *
+create_sys_or_internal(struct drm_i915_private *i915,
+		       unsigned long size)
+{
+	if (HAS_LMEM(i915)) {
+		struct intel_memory_region *sys_region =
+			i915->mm.regions[INTEL_REGION_SMEM];
+
+		return __i915_gem_object_create_user(i915, size, &sys_region, 1);
+	}
+
+	return i915_gem_object_create_internal(i915, size);
+}
+
 static bool assert_mmap_offset(struct drm_i915_private *i915,
 			       unsigned long size,
 			       int expected)
@@ -589,7 +603,7 @@ static bool assert_mmap_offset(struct drm_i915_private *i915,
 	u64 offset;
 	int ret;
 
-	obj = i915_gem_object_create_internal(i915, size);
+	obj = create_sys_or_internal(i915, size);
 	if (IS_ERR(obj))
 		return expected && expected == PTR_ERR(obj);
 
@@ -602,14 +616,14 @@ static bool assert_mmap_offset(struct drm_i915_private *i915,
 static void disable_retire_worker(struct drm_i915_private *i915)
 {
 	i915_gem_driver_unregister__shrinker(i915);
-	intel_gt_pm_get(&i915->gt);
+	intel_gt_pm_get_untracked(to_gt(i915));
 	cancel_delayed_work_sync(&i915->gt.requests.retire_work);
 }
 
 static void restore_retire_worker(struct drm_i915_private *i915)
 {
 	igt_flush_test(i915);
-	intel_gt_pm_put(&i915->gt);
+	intel_gt_pm_put_untracked(to_gt(i915));
 	i915_gem_driver_register__shrinker(i915);
 }
 
@@ -633,6 +647,7 @@ static int igt_mmap_offset_exhaustion(void *arg)
 	struct drm_mm_node *hole, *next;
 	int loop, err = 0;
 	u64 offset;
+	int enospc = HAS_LMEM(i915) ? -ENXIO : -ENOSPC;
 
 	/* Disable background reaper */
 	disable_retire_worker(i915);
@@ -683,14 +698,14 @@ static int igt_mmap_offset_exhaustion(void *arg)
 	}
 
 	/* Too large */
-	if (!assert_mmap_offset(i915, 2 * PAGE_SIZE, -ENOSPC)) {
+	if (!assert_mmap_offset(i915, 2 * PAGE_SIZE, enospc)) {
 		pr_err("Unexpectedly succeeded in inserting too large object into single page hole\n");
 		err = -EINVAL;
 		goto out;
 	}
 
 	/* Fill the hole, further allocation attempts should then fail */
-	obj = i915_gem_object_create_internal(i915, PAGE_SIZE);
+	obj = create_sys_or_internal(i915, PAGE_SIZE);
 	if (IS_ERR(obj)) {
 		err = PTR_ERR(obj);
 		pr_err("Unable to create object for reclaimed hole\n");
@@ -703,7 +718,7 @@ static int igt_mmap_offset_exhaustion(void *arg)
 		goto err_obj;
 	}
 
-	if (!assert_mmap_offset(i915, PAGE_SIZE, -ENOSPC)) {
+	if (!assert_mmap_offset(i915, PAGE_SIZE, enospc)) {
 		pr_err("Unexpectedly succeeded in inserting object into no holes!\n");
 		err = -EINVAL;
 		goto err_obj;
@@ -749,6 +764,7 @@ err_obj:
 
 static int gtt_set(struct drm_i915_gem_object *obj)
 {
+	intel_wakeref_t wakeref;
 	struct i915_vma *vma;
 	void __iomem *map;
 	int err = 0;
@@ -757,7 +773,7 @@ static int gtt_set(struct drm_i915_gem_object *obj)
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
-	intel_gt_pm_get(vma->vm->gt);
+	wakeref = intel_gt_pm_get(vma->vm->gt);
 	map = i915_vma_pin_iomap(vma);
 	i915_vma_unpin(vma);
 	if (IS_ERR(map)) {
@@ -769,12 +785,13 @@ static int gtt_set(struct drm_i915_gem_object *obj)
 	i915_vma_unpin_iomap(vma);
 
 out:
-	intel_gt_pm_put(vma->vm->gt);
+	intel_gt_pm_put(vma->vm->gt, wakeref);
 	return err;
 }
 
 static int gtt_check(struct drm_i915_gem_object *obj)
 {
+	intel_wakeref_t wakeref;
 	struct i915_vma *vma;
 	void __iomem *map;
 	int err = 0;
@@ -783,7 +800,7 @@ static int gtt_check(struct drm_i915_gem_object *obj)
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
-	intel_gt_pm_get(vma->vm->gt);
+	wakeref = intel_gt_pm_get(vma->vm->gt);
 	map = i915_vma_pin_iomap(vma);
 	i915_vma_unpin(vma);
 	if (IS_ERR(map)) {
@@ -799,7 +816,7 @@ static int gtt_check(struct drm_i915_gem_object *obj)
 	i915_vma_unpin_iomap(vma);
 
 out:
-	intel_gt_pm_put(vma->vm->gt);
+	intel_gt_pm_put(vma->vm->gt, wakeref);
 	return err;
 }
 
@@ -839,10 +856,9 @@ static int wc_check(struct drm_i915_gem_object *obj)
 
 static bool can_mmap(struct drm_i915_gem_object *obj, enum i915_mmap_type type)
 {
-	struct drm_i915_private *i915 = to_i915(obj->base.dev);
 	bool no_map;
 
-	if (HAS_LMEM(i915))
+	if (obj->ops->mmap_offset)
 		return type == I915_MMAP_TYPE_FIXED;
 	else if (type == I915_MMAP_TYPE_FIXED)
 		return false;
@@ -889,7 +905,9 @@ static int __igt_mmap(struct drm_i915_private *i915,
 
 	pr_debug("igt_mmap(%s, %d) @ %lx\n", obj->mm.region->name, type, addr);
 
+	mmap_read_lock(current->mm);
 	area = vma_lookup(current->mm, addr);
+	mmap_read_unlock(current->mm);
 	if (!area) {
 		pr_err("%s: Did not create a vm_area_struct for the mmap\n",
 		       obj->mm.region->name);

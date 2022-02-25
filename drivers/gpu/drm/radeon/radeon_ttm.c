@@ -488,9 +488,6 @@ static void radeon_ttm_backend_destroy(struct ttm_device *bdev, struct ttm_tt *t
 {
 	struct radeon_ttm_tt *gtt = (void *)ttm;
 
-	radeon_ttm_backend_unbind(bdev, ttm);
-	ttm_tt_destroy_common(bdev, ttm);
-
 	ttm_tt_fini(&gtt->ttm);
 	kfree(gtt);
 }
@@ -651,8 +648,6 @@ static void radeon_ttm_tt_destroy(struct ttm_device *bdev,
 	struct radeon_device *rdev = radeon_get_rdev(bdev);
 
 	if (rdev->flags & RADEON_IS_AGP) {
-		ttm_agp_unbind(ttm);
-		ttm_tt_destroy_common(bdev, ttm);
 		ttm_agp_destroy(ttm);
 		return;
 	}

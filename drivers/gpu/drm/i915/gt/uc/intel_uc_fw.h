@@ -10,6 +10,7 @@
 #include "intel_uc_fw_abi.h"
 #include "intel_device_info.h"
 #include "i915_gem.h"
+#include "i915_vma.h"
 
 struct drm_printer;
 struct drm_i915_private;
@@ -76,6 +77,14 @@ struct intel_uc_fw {
 	bool user_overridden;
 	size_t size;
 	struct drm_i915_gem_object *obj;
+	/**
+	 * @dummy: A vma used in binding the uc fw to ggtt. We can't define this
+	 * vma on the stack as it can lead to a stack overflow, so we define it
+	 * here. Safe to have 1 copy per uc fw because the binding is single
+	 * threaded as it done during driver load (inherently single threaded)
+	 * or during a GT reset (mutex guarantees single threaded).
+	 */
+	struct i915_vma dummy;
 
 	/*
 	 * The firmware build process will generate a version header file with major and
@@ -177,7 +186,7 @@ static inline const char *intel_uc_fw_type_repr(enum intel_uc_fw_type type)
 }
 
 static inline enum intel_uc_fw_status
-__intel_uc_fw_status(const struct intel_uc_fw *uc_fw)
+__intel_uc_fw_status(struct intel_uc_fw *uc_fw)
 {
 	/* shouldn't call this before checking hw/blob availability */
 	GEM_BUG_ON(uc_fw->status == INTEL_UC_FIRMWARE_UNINITIALIZED);
@@ -216,7 +225,7 @@ static inline bool intel_uc_fw_is_running(struct intel_uc_fw *uc_fw)
 	return __intel_uc_fw_status(uc_fw) >= INTEL_UC_FIRMWARE_RUNNING;
 }
 
-static inline bool intel_uc_fw_is_preloaded(const struct intel_uc_fw *uc_fw)
+static inline bool intel_uc_fw_is_preloaded(struct intel_uc_fw *uc_fw)
 {
 	return __intel_uc_fw_status(uc_fw) == INTEL_UC_FIRMWARE_PRELOADED;
 }

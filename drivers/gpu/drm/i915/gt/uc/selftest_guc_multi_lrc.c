@@ -93,7 +93,7 @@ multi_lrc_nop_request(struct intel_context *ce)
 		if (IS_ERR(child_rq))
 			goto child_error;
 
-		if (++i == ce->guc_number_children)
+		if (++i == ce->parallel.number_children)
 			set_bit(I915_FENCE_FLAG_SUBMIT_PARALLEL,
 				&child_rq->fence.flags);
 		i915_request_add(child_rq);
@@ -118,8 +118,7 @@ static int __intel_guc_multi_lrc_basic(struct intel_gt *gt, unsigned int class)
 		pr_err("Failed creating contexts: %ld", PTR_ERR(parent));
 		return PTR_ERR(parent);
 	} else if (!parent) {
-		pr_debug("Not enough engines in class: %d",
-			 VIDEO_DECODE_CLASS);
+		pr_debug("Not enough engines in class: %d", class);
 		return 0;
 	}
 

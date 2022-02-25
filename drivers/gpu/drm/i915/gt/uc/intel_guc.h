@@ -20,7 +20,6 @@
 #include "intel_uc_fw.h"
 #include "i915_utils.h"
 #include "i915_vma.h"
-#include "gt/intel_gt_pm_unpark_work.h"
 
 struct __guc_ads_blob;
 struct intel_guc;
@@ -30,22 +29,36 @@ struct intel_guc_ops {
 	void (*fini)(struct intel_guc *guc);
 };
 
-/*
- * Top level structure of GuC. It handles firmware loading and manages client
- * pool. intel_guc owns a intel_guc_client to replace the legacy ExecList
- * submission.
+/**
+ * struct intel_guc - Top level structure of GuC.
+ *
+ * It handles firmware loading and manages client pool. intel_guc owns an
+ * i915_sched_engine for submission.
  */
 struct intel_guc {
+	/** @ops: Operations to init / fini the GuC */
 	struct intel_guc_ops const *ops;
+	/** @fw: the GuC firmware */
 	struct intel_uc_fw fw;
+	/** @log: sub-structure containing GuC log related data and objects */
 	struct intel_guc_log log;
+	/** @ct: the command transport communication channel */
 	struct intel_guc_ct ct;
+	/** @slpc: sub-structure containing SLPC related data and objects */
 	struct intel_guc_slpc slpc;
 	struct intel_guc_hwconfig hwconfig;
 
-	/* Global engine used to submit requests to GuC */
+	/** @sched_engine: Global engine used to submit requests to GuC */
 	struct i915_sched_engine *sched_engine;
+	/**
+	 * @stalled_request: if GuC can't process a request for any reason, we
+	 * save it until GuC restarts processing. No other request can be
+	 * submitted until the stalled request is processed.
+	 */
 	struct i915_request *stalled_request;
+	/**
+	 * @submission_stall_reason: reason why submission is stalled
+	 */
 	enum {
 		STALL_NONE,
 		STALL_REGISTER_CONTEXT,
@@ -54,15 +67,22 @@ struct intel_guc {
 	} submission_stall_reason;
 
 	/* intel_guc_recv interrupt related state */
+	/** @irq_lock: protects GuC irq state */
 	spinlock_t irq_lock;
+	/**
+	 * @msg_enabled_mask: mask of events that are processed when receiving
+	 * an INTEL_GUC_ACTION_DEFAULT G2H message.
+	 */
 	unsigned int msg_enabled_mask;
 
 	/**
-	 * @outstanding_submission_g2h: number of outstanding G2H related to GuC
-	 * submission, used to determine if the GT is idle
+	 * @outstanding_submission_g2h: number of outstanding GuC to Host
+	 * responses related to GuC submission, used to determine if the GT is
+	 * idle
 	 */
 	atomic_t outstanding_submission_g2h;
 
+	/** @interrupts: pointers to GuC interrupt-managing functions. */
 	struct xarray tlb_lookup;
 	u32 next_seqno;
 
@@ -72,10 +92,15 @@ struct intel_guc {
 		void (*disable)(struct intel_guc *guc);
 	} interrupts;
 
+	/**
+	 * @submission_state: sub-structure for submission state protected by
+	 * single lock
+	 */
 	struct {
 		/**
-		 * @lock: protects everything in submission_state, ce->guc_id,
-		 * and ce->destroyed_link
+		 * @lock: protects everything in submission_state,
+		 * ce->guc_id.id, and ce->guc_id.ref when transitioning in and
+		 * out of zero
 		 */
 		spinlock_t lock;
 		/**
@@ -83,13 +108,15 @@ struct intel_guc {
 		 */
 		struct ida guc_ids;
 		/**
+		 * @num_guc_ids: Number of guc_ids, selftest feature to be able
+		 * to reduce this number while testing. Also used on VFs to
+		 * reduce the pool of guc_ids.
+		 */
+		int num_guc_ids;
+		/**
 		 * @guc_ids_bitmap: used to allocate new guc_ids, multi-lrc
 		 */
 		unsigned long *guc_ids_bitmap;
-		/** @num_guc_ids: number of guc_ids that can be used */
-		u32 num_guc_ids;
-		/** @max_guc_ids: max number of guc_ids that can be used */
-		u32 max_guc_ids;
 		/**
 		 * @guc_id_list: list of intel_context with valid guc_ids but no
 		 * refs
@@ -101,26 +128,39 @@ struct intel_guc {
 		 */
 		struct list_head destroyed_contexts;
 		/**
-		 * @destroyed_worker: Worker to deregister contexts, need as we
+		 * @destroyed_worker: worker to deregister contexts, need as we
 		 * need to take a GT PM reference and can't from destroy
-		 * function as it might be in an atomic context (no sleeping).
-		 * Worker only issues deregister when GT is unparked.
+		 * function as it might be in an atomic context (no sleeping)
 		 */
-		struct intel_gt_pm_unpark_work destroyed_worker;
+		struct work_struct destroyed_worker;
 	} submission_state;
 
+	/**
+	 * @submission_supported: tracks whether we support GuC submission on
+	 * the current platform
+	 */
 	bool submission_supported;
+	/** @submission_selected: tracks whether the user enabled GuC submission */
 	bool submission_selected;
+	/** @submission_initialized: tracks whether GuC submission has been initialised */
+	bool submission_initialized;
+	/**
+	 * @rc_supported: tracks whether we support GuC rc on the current platform
+	 */
 	bool rc_supported;
+	/** @rc_selected: tracks whether the user enabled GuC rc */
 	bool rc_selected;
 
+	/** @ads_vma: object allocated to hold the GuC ADS */
 	struct i915_vma *ads_vma;
+	/** @ads_blob: contents of the GuC ADS */
 	struct __guc_ads_blob *ads_blob;
+	/** @ads_regset_size: size of the save/restore regsets in the ADS */
 	u32 ads_regset_size;
+	/** @ads_golden_ctxt_size: size of the golden contexts in the ADS */
 	u32 ads_golden_ctxt_size;
-
-	struct i915_vma *lrc_desc_pool;
-	void *lrc_desc_pool_vaddr;
+	/** @ads_engine_usage_size: size of engine usage in the ADS */
+	u32 ads_engine_usage_size;
 
 	/**
 	 * @context_lookup: used to resolve intel_context from guc_id, if a
@@ -128,24 +168,63 @@ struct intel_guc {
 	 */
 	struct xarray context_lookup;
 
-	/* Control params for fw initialization */
+	/** @params: Control params for fw initialization */
 	u32 params[GUC_CTL_MAX_DWORDS];
 
-	/* GuC's FW specific registers used in MMIO send */
+	/** @send_regs: GuC's FW specific registers used for sending MMIO H2G */
 	struct {
 		u32 base;
 		unsigned int count;
 		enum forcewake_domains fw_domains;
 	} send_regs;
 
-	/* register used to send interrupts to the GuC FW */
+	/** @notify_reg: register used to send interrupts to the GuC FW */
 	i915_reg_t notify_reg;
 
-	/* Store msg (e.g. log flush) that we see while CTBs are disabled */
+	/**
+	 * @mmio_msg: notification bitmask that the GuC writes in one of its
+	 * registers when the CT channel is disabled, to be processed when the
+	 * channel is back up.
+	 */
 	u32 mmio_msg;
 
-	/* To serialize the intel_guc_send actions */
+	/** @send_mutex: used to serialize the intel_guc_send actions */
 	struct mutex send_mutex;
+
+	/**
+	 * @timestamp: GT timestamp object that stores a copy of the timestamp
+	 * and adjusts it for overflow using a worker.
+	 */
+	struct {
+		/**
+		 * @lock: Lock protecting the below fields and the engine stats.
+		 */
+		spinlock_t lock;
+
+		/**
+		 * @gt_stamp: 64 bit extended value of the GT timestamp.
+		 */
+		u64 gt_stamp;
+
+		/**
+		 * @ping_delay: Period for polling the GT timestamp for
+		 * overflow.
+		 */
+		unsigned long ping_delay;
+
+		/**
+		 * @work: Periodic work to adjust GT timestamp, engine and
+		 * context usage for overflows.
+		 */
+		struct delayed_work work;
+	} timestamp;
+
+#ifdef CONFIG_DRM_I915_SELFTEST
+	/**
+	 * @number_guc_id_stolen: The number of guc_ids that have been stolen
+	 */
+	int number_guc_id_stolen;
+#endif
 };
 
 struct intel_guc_tlb_wait {
@@ -281,6 +360,16 @@ int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
 int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
 
+int intel_guc_invalidate_tlb_full(struct intel_guc *guc,
+				  enum intel_guc_tlb_inval_mode mode);
+int intel_guc_invalidate_tlb_full_engine(struct intel_guc *guc,
+					    u32 engine_class);
+int intel_guc_invalidate_tlb_page_selective(struct intel_guc *guc,
+					    enum intel_guc_tlb_inval_mode mode,
+					    u64 start, u64 length, u32 asid);
+int intel_guc_invalidate_tlb_page_selective_ctxid(struct intel_guc *guc,
+						  enum intel_guc_tlb_inval_mode mode,
+						  u64 start, u64 length, u32 ctxid);
 int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
 				 enum intel_guc_tlb_inval_mode mode);
 
@@ -361,8 +450,8 @@ int intel_guc_context_reset_process_msg(struct intel_guc *guc,
 int intel_guc_engine_failure_process_msg(struct intel_guc *guc,
 					 const u32 *msg, u32 len);
 int intel_guc_error_capture_process_msg(struct intel_guc *guc,
-					 const u32 *msg, u32 len);
-void intel_guc_tlb_invalidation_done_process_msg(struct intel_guc *guc, u32 seqno);
+					const u32 *msg, u32 len);
+void intel_guc_tlb_invalidation_done(struct intel_guc *guc, u32 seqno);
 
 void intel_guc_find_hung_context(struct intel_engine_cs *engine);
 

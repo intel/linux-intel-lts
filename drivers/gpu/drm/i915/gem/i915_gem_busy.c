@@ -74,11 +74,8 @@ __busy_set_if_active(struct dma_fence *fence, u32 (*flag)(u16 id))
 			}
 
 			rq = to_request(current_fence);
-			if (!i915_request_completed(rq)) {
-				BUILD_BUG_ON(!typecheck(u16,
-							rq->engine->uabi_class));
+			if (!i915_request_completed(rq))
 				return flag(rq->engine->uabi_class);
-			}
 		} while (--nchild);
 
 		/* All requests in array complete, not busy */

@@ -328,7 +328,6 @@ static int vmw_ttm_map_dma(struct vmw_ttm_tt *vmw_tt)
 	int ret = 0;
 	static size_t sgl_size;
 	static size_t sgt_size;
-	struct scatterlist *sg;
 
 	if (vmw_tt->mapped)
 		return 0;
@@ -351,15 +350,12 @@ static int vmw_ttm_map_dma(struct vmw_ttm_tt *vmw_tt)
 		if (unlikely(ret != 0))
 			return ret;
 
-		sg = __sg_alloc_table_from_pages(&vmw_tt->sgt, vsgt->pages,
-				vsgt->num_pages, 0,
-				(unsigned long) vsgt->num_pages << PAGE_SHIFT,
-				dma_get_max_seg_size(dev_priv->drm.dev),
-				NULL, 0, GFP_KERNEL);
-		if (IS_ERR(sg)) {
-			ret = PTR_ERR(sg);
+		ret = sg_alloc_table_from_pages_segment(
+			&vmw_tt->sgt, vsgt->pages, vsgt->num_pages, 0,
+			(unsigned long)vsgt->num_pages << PAGE_SHIFT,
+			dma_get_max_seg_size(dev_priv->drm.dev), GFP_KERNEL);
+		if (ret)
 			goto out_sg_alloc_fail;
-		}
 
 		if (vsgt->num_pages > vmw_tt->sgt.orig_nents) {
 			uint64_t over_alloc =
@@ -526,8 +522,6 @@ static void vmw_ttm_destroy(struct ttm_device *bdev, struct ttm_tt *ttm)
 	struct vmw_ttm_tt *vmw_be =
 		container_of(ttm, struct vmw_ttm_tt, dma_ttm);
 
-	vmw_ttm_unbind(bdev, ttm);
-	ttm_tt_destroy_common(bdev, ttm);
 	vmw_ttm_unmap_dma(vmw_be);
 	if (vmw_be->dev_priv->map_mode == vmw_dma_alloc_coherent)
 		ttm_tt_fini(&vmw_be->dma_ttm);

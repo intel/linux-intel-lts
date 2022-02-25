@@ -41,18 +41,21 @@ static void guc_prepare_xfer(struct intel_uncore *uncore)
 }
 
 /* Copy RSA signature from the fw image to HW for verification */
-static void guc_xfer_rsa(struct intel_uc_fw *guc_fw,
-			 struct intel_uncore *uncore)
+static int guc_xfer_rsa(struct intel_uc_fw *guc_fw,
+			struct intel_uncore *uncore)
 {
 	u32 rsa[UOS_RSA_SCRATCH_COUNT];
 	size_t copied;
 	int i;
 
 	copied = intel_uc_fw_copy_rsa(guc_fw, rsa, sizeof(rsa));
-	GEM_BUG_ON(copied < sizeof(rsa));
+	if (copied < sizeof(rsa))
+		return -ENOMEM;
 
 	for (i = 0; i < UOS_RSA_SCRATCH_COUNT; i++)
 		intel_uncore_write(uncore, UOS_RSA_SCRATCH(i), rsa[i]);
+
+	return 0;
 }
 
 /*
@@ -81,12 +84,21 @@ static int guc_wait_ucode(struct intel_uncore *uncore)
 	/*
 	 * Wait for the GuC to start up.
 	 * NB: Docs recommend not using the interrupt for completion.
-	 * Measurements indicate this should take no more than 20ms, so a
+	 * Measurements indicate this should take no more than 20ms
+	 * (assuming the GT clock is at maximum frequency). So, a
 	 * timeout here indicates that the GuC has failed and is unusable.
 	 * (Higher levels of the driver may decide to reset the GuC and
 	 * attempt the ucode load again if this happens.)
+	 *
+	 * FIXME: There is a known (but exceedingly unlikely) race condition
+	 * where the asynchronous frequency management code could reduce
+	 * the GT clock while a GuC reload is in progress (during a full
+	 * GT reset). A fix is in progress but there are complex locking
+	 * issues to be resolved. In the meantime bump the timeout to
+	 * 200ms. Even at slowest clock, this should be sufficient. And
+	 * in the working case, a larger timeout makes no difference.
 	 */
-	ret = wait_for(guc_ready(uncore, &status), 100);
+	ret = wait_for(guc_ready(uncore, &status), 200);
 	if (ret) {
 		struct drm_device *drm = &uncore->i915->drm;
 
@@ -107,7 +119,7 @@ static int guc_wait_ucode(struct intel_uncore *uncore)
 
 		if (REG_FIELD_GET(GS_UKERNEL_MASK, status) == INTEL_GUC_LOAD_STATUS_EXCEPTION) {
 			drm_info(drm, "GuC firmware exception. EIP: %#x\n",
-				intel_uncore_read(uncore, SOFT_SCRATCH(13)));
+				 intel_uncore_read(uncore, SOFT_SCRATCH(13)));
 			ret = -ENXIO;
 		}
 	}
@@ -140,7 +152,9 @@ int intel_guc_fw_upload(struct intel_guc *guc)
 	 * by the DMA engine in one operation, whereas the RSA signature is
 	 * loaded via MMIO.
 	 */
-	guc_xfer_rsa(&guc->fw, uncore);
+	ret = guc_xfer_rsa(&guc->fw, uncore);
+	if (ret)
+		goto out;
 
 	/*
 	 * Current uCode expects the code to be loaded at 8k; locations below

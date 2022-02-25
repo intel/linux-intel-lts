@@ -76,10 +76,6 @@ void dcn31_init_hw(struct dc *dc)
 	if (dc->clk_mgr && dc->clk_mgr->funcs->init_clocks)
 		dc->clk_mgr->funcs->init_clocks(dc->clk_mgr);
 
-	// Initialize the dccg
-	if (res_pool->dccg->funcs->dccg_init)
-		res_pool->dccg->funcs->dccg_init(res_pool->dccg);
-
 	if (IS_FPGA_MAXIMUS_DC(dc->ctx->dce_environment)) {
 
 		REG_WRITE(REFCLK_CNTL, 0);
@@ -106,6 +102,9 @@ void dcn31_init_hw(struct dc *dc)
 		hws->funcs.bios_golden_init(dc);
 		hws->funcs.disable_vga(dc->hwseq);
 	}
+	// Initialize the dccg
+	if (res_pool->dccg->funcs->dccg_init)
+		res_pool->dccg->funcs->dccg_init(res_pool->dccg);
 
 	if (dc->debug.enable_mem_low_power.bits.dmcu) {
 		// Force ERAM to shutdown if DMCU is not enabled
@@ -406,6 +405,18 @@ void dcn31_update_info_frame(struct pipe_ctx *pipe_ctx)
 			pipe_ctx->stream_res.stream_enc,
 			&pipe_ctx->stream_res.encoder_info_frame);
 	}
+}
+void dcn31_z10_save_init(struct dc *dc)
+{
+	union dmub_rb_cmd cmd;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.dcn_restore.header.type = DMUB_CMD__IDLE_OPT;
+	cmd.dcn_restore.header.sub_type = DMUB_CMD__IDLE_OPT_DCN_SAVE_INIT;
+
+	dc_dmub_srv_cmd_queue(dc->ctx->dmub_srv, &cmd);
+	dc_dmub_srv_cmd_execute(dc->ctx->dmub_srv);
+	dc_dmub_srv_wait_idle(dc->ctx->dmub_srv);
 }
 
 void dcn31_z10_restore(struct dc *dc)

@@ -37,7 +37,7 @@ static void uc_expand_default_options(struct intel_uc *uc)
 	}
 
 	/* Intermediate platforms are HuC authentication only */
-	if (IS_DG1(i915) || IS_ALDERLAKE_S(i915)) {
+	if (IS_ALDERLAKE_S(i915)) {
 		i915->params.enable_guc = ENABLE_GUC_LOAD_HUC;
 		return;
 	}
@@ -150,6 +150,7 @@ void intel_uc_init_mmio(struct intel_uc *uc)
 {
 	intel_guc_init_send_regs(&uc->guc);
 
+	/* XXX can't do it in intel_uc_init_early, it's too early */
 	if (IS_SRIOV_VF(uc_to_gt(uc)->i915))
 		uc->ops = &uc_ops_vf;
 }
@@ -177,11 +178,6 @@ void intel_uc_driver_remove(struct intel_uc *uc)
 	__uc_free_load_err_log(uc);
 }
 
-static inline bool guc_communication_enabled(struct intel_guc *guc)
-{
-	return intel_guc_ct_enabled(&guc->ct);
-}
-
 /*
  * Events triggered while CT buffers are disabled are logged in the SCRATCH_15
  * register using the same bits used in the CT message payload. Since our
@@ -190,12 +186,18 @@ static inline bool guc_communication_enabled(struct intel_guc *guc)
  */
 static void guc_clear_mmio_msg(struct intel_guc *guc)
 {
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		return;
+
 	intel_uncore_write(guc_to_gt(guc)->uncore, SOFT_SCRATCH(15), 0);
 }
 
 static void guc_get_mmio_msg(struct intel_guc *guc)
 {
 	u32 val;
+
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		return;
 
 	spin_lock_irq(&guc->irq_lock);
 
@@ -215,7 +217,7 @@ static void guc_get_mmio_msg(struct intel_guc *guc)
 static void guc_handle_mmio_msg(struct intel_guc *guc)
 {
 	/* we need communication to be enabled to reply to GuC */
-	GEM_BUG_ON(!guc_communication_enabled(guc));
+	GEM_BUG_ON(!intel_guc_ct_enabled(&guc->ct));
 
 	spin_lock_irq(&guc->irq_lock);
 	if (guc->mmio_msg) {
@@ -231,7 +233,7 @@ static int guc_enable_communication(struct intel_guc *guc)
 	struct drm_i915_private *i915 = gt->i915;
 	int ret;
 
-	GEM_BUG_ON(guc_communication_enabled(guc));
+	GEM_BUG_ON(intel_guc_ct_enabled(&guc->ct));
 
 	ret = i915_inject_probe_error(i915, -ENXIO);
 	if (ret)
@@ -523,7 +525,7 @@ static int __uc_init_hw(struct intel_uc *uc)
 	 */
 	ret = intel_guc_hwconfig_init(&guc->hwconfig);
 	if (ret)
-		drm_err(&i915->drm, "Failed to retrieve hwconfig table: %d\n", ret);
+		i915_probe_error(i915, "Failed to retrieve hwconfig table: %d\n", ret);
 
 	if (intel_uc_uses_guc_submission(uc))
 		intel_guc_submission_enable(guc);
@@ -537,7 +539,7 @@ static int __uc_init_hw(struct intel_uc *uc)
 	drm_info(&i915->drm, "GuC submission %s\n",
 		 enableddisabled(intel_uc_uses_guc_submission(uc)));
 
-	drm_info(&i915->drm, "GuC SLPC: %s\n",
+	drm_info(&i915->drm, "GuC SLPC %s\n",
 		 enableddisabled(intel_uc_uses_guc_slpc(uc)));
 
 	return 0;
@@ -621,12 +623,21 @@ static int __vf_uc_init_hw(struct intel_uc *uc)
 	intel_guc_reset_interrupts(guc);
 
 	err = guc_enable_communication(guc);
-	if (err)
+	if (unlikely(err))
 		goto err_out;
 
 	err = intel_iov_query_version(&gt->iov);
 	if (unlikely(err))
 		goto err_out;
+
+	/*
+	 * pretend that HuC is running if it is supported
+	 * for status rely on runtime reg shared by PF
+	 */
+	if (intel_uc_fw_is_supported(&huc->fw)) {
+		/* XXX: We don't know how to get the HuC version yet */
+		intel_uc_fw_set_preloaded(&huc->fw, 0, 0);
+	}
 
 	intel_guc_submission_enable(guc);
 
@@ -635,11 +646,10 @@ static int __vf_uc_init_hw(struct intel_uc *uc)
 		 guc->fw.major_ver_found, guc->fw.minor_ver_found,
 		 "submission", i915_iov_mode_to_string(IOV_MODE(i915)));
 
-	/* XXX VFs don't know anything about HuC ;( */
-	dev_info(i915->drm.dev, "%s firmware %s version %u.%u %s:%s\n",
-		 intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_HUC), huc->fw.path,
-		 huc->fw.major_ver_found, huc->fw.minor_ver_found,
-		 enableddisabled(true), yesno(true));
+	dev_info(i915->drm.dev, "%s firmware %s\n",
+		 intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_HUC),
+		 intel_uc_fw_status_repr(__intel_uc_fw_status(&huc->fw)));
+
 	return 0;
 
 err_out:
@@ -654,7 +664,7 @@ static void __vf_uc_fini_hw(struct intel_uc *uc)
 
 	intel_guc_submission_disable(guc);
 
-	if (guc_communication_enabled(guc))
+	if (intel_guc_ct_enabled(&guc->ct))
 		guc_disable_communication(guc);
 
 	__vf_uc_sanitize(uc);
@@ -761,7 +771,7 @@ static int __uc_resume(struct intel_uc *uc, bool enable_communication)
 		return 0;
 
 	/* Make sure we enable communication if and only if it's disabled */
-	GEM_BUG_ON(enable_communication == guc_communication_enabled(guc));
+	GEM_BUG_ON(enable_communication == intel_guc_ct_enabled(&guc->ct));
 
 	if (enable_communication)
 		guc_enable_communication(guc);

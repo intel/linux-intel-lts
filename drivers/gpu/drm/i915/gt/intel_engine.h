@@ -2,6 +2,7 @@
 #ifndef _INTEL_RINGBUFFER_H_
 #define _INTEL_RINGBUFFER_H_
 
+#include <asm/cacheflush.h>
 #include <drm/drm_util.h>
 
 #include <linux/hashtable.h>
@@ -175,6 +176,8 @@ intel_write_status_page(struct intel_engine_cs *engine, int reg, u32 value)
 #define I915_GEM_HWS_SEQNO		0x40
 #define I915_GEM_HWS_SEQNO_ADDR		(I915_GEM_HWS_SEQNO * sizeof(u32))
 #define I915_GEM_HWS_MIGRATE		(0x42 * sizeof(u32))
+#define I915_GEM_HWS_PXP		0x60
+#define I915_GEM_HWS_PXP_ADDR		(I915_GEM_HWS_PXP * sizeof(u32))
 #define I915_GEM_HWS_SCRATCH		0x80
 
 #define I915_HWS_CSB_BUF0_INDEX		0x10
@@ -261,6 +264,8 @@ intel_engine_create_pinned_context(struct intel_engine_cs *engine,
 
 void intel_engine_destroy_pinned_context(struct intel_context *ce);
 
+void xehp_enable_ccs_engines(struct intel_engine_cs *engine);
+
 #define ENGINE_PHYSICAL	0
 #define ENGINE_MOCK	1
 #define ENGINE_VIRTUAL	2
@@ -273,7 +278,7 @@ static inline bool intel_engine_uses_guc(const struct intel_engine_cs *engine)
 static inline bool
 intel_engine_has_preempt_reset(const struct intel_engine_cs *engine)
 {
-	if (!IS_ACTIVE(CONFIG_DRM_I915_PREEMPT_TIMEOUT))
+	if (!CONFIG_DRM_I915_PREEMPT_TIMEOUT)
 		return false;
 
 	return intel_engine_has_preemption(engine);
@@ -310,7 +315,7 @@ intel_virtual_engine_has_heartbeat(const struct intel_engine_cs *engine)
 static inline bool
 intel_engine_has_heartbeat(const struct intel_engine_cs *engine)
 {
-	if (!IS_ACTIVE(CONFIG_DRM_I915_HEARTBEAT_INTERVAL))
+	if (!CONFIG_DRM_I915_HEARTBEAT_INTERVAL)
 		return false;
 
 	if (intel_engine_is_virtual(engine))

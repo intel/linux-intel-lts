@@ -1738,7 +1738,6 @@ static const struct component_ops exynos_dsi_component_ops = {
 static int exynos_dsi_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct resource *res;
 	struct exynos_dsi *dsi;
 	int ret, i;
 
@@ -1789,12 +1788,9 @@ static int exynos_dsi_probe(struct platform_device *pdev)
 		}
 	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	dsi->reg_base = devm_ioremap_resource(dev, res);
-	if (IS_ERR(dsi->reg_base)) {
-		dev_err(dev, "failed to remap io region\n");
+	dsi->reg_base = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(dsi->reg_base))
 		return PTR_ERR(dsi->reg_base);
-	}
 
 	dsi->phy = devm_phy_get(dev, "dsim");
 	if (IS_ERR(dsi->phy)) {

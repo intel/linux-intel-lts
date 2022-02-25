@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #ifndef __I915_SRIOV_SYSFS_H__

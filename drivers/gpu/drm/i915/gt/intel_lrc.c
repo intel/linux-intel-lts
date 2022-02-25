@@ -226,6 +226,40 @@ static const u8 gen12_xcs_offsets[] = {
 	END
 };
 
+static const u8 dg2_xcs_offsets[] = {
+	NOP(1),
+	LRI(15, POSTED),
+	REG16(0x244),
+	REG(0x034),
+	REG(0x030),
+	REG(0x038),
+	REG(0x03c),
+	REG(0x168),
+	REG(0x140),
+	REG(0x110),
+	REG(0x1c0),
+	REG(0x1c4),
+	REG(0x1c8),
+	REG(0x180),
+	REG16(0x2b4),
+	REG(0x120),
+	REG(0x124),
+
+	NOP(1),
+	LRI(9, POSTED),
+	REG16(0x3a8),
+	REG16(0x28c),
+	REG16(0x288),
+	REG16(0x284),
+	REG16(0x280),
+	REG16(0x27c),
+	REG16(0x278),
+	REG16(0x274),
+	REG16(0x270),
+
+	END
+};
+
 static const u8 gen8_rcs_offsets[] = {
 	NOP(1),
 	LRI(14, POSTED),
@@ -525,6 +559,49 @@ static const u8 xehp_rcs_offsets[] = {
 	END
 };
 
+static const u8 dg2_rcs_offsets[] = {
+	NOP(1),
+	LRI(15, POSTED),
+	REG16(0x244),
+	REG(0x034),
+	REG(0x030),
+	REG(0x038),
+	REG(0x03c),
+	REG(0x168),
+	REG(0x140),
+	REG(0x110),
+	REG(0x1c0),
+	REG(0x1c4),
+	REG(0x1c8),
+	REG(0x180),
+	REG16(0x2b4),
+	REG(0x120),
+	REG(0x124),
+
+	NOP(1),
+	LRI(9, POSTED),
+	REG16(0x3a8),
+	REG16(0x28c),
+	REG16(0x288),
+	REG16(0x284),
+	REG16(0x280),
+	REG16(0x27c),
+	REG16(0x278),
+	REG16(0x274),
+	REG16(0x270),
+
+	LRI(3, POSTED),
+	REG(0x1b0),
+	REG16(0x5a8),
+	REG16(0x5ac),
+
+	NOP(6),
+	LRI(1, 0),
+	REG(0x0c8),
+
+	END
+};
+
 #undef END
 #undef REG16
 #undef REG
@@ -542,8 +619,10 @@ static const u8 *reg_offsets(const struct intel_engine_cs *engine)
 	GEM_BUG_ON(GRAPHICS_VER(engine->i915) >= 12 &&
 		   !intel_engine_has_relative_mmio(engine));
 
-	if (engine->class == RENDER_CLASS) {
-		if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 50))
+	if (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE) {
+		if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 55))
+			return dg2_rcs_offsets;
+		else if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 50))
 			return xehp_rcs_offsets;
 		else if (GRAPHICS_VER(engine->i915) >= 12)
 			return gen12_rcs_offsets;
@@ -554,7 +633,9 @@ static const u8 *reg_offsets(const struct intel_engine_cs *engine)
 		else
 			return gen8_rcs_offsets;
 	} else {
-		if (GRAPHICS_VER(engine->i915) >= 12)
+		if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 55))
+			return dg2_xcs_offsets;
+		else if (GRAPHICS_VER(engine->i915) >= 12)
 			return gen12_xcs_offsets;
 		else if (GRAPHICS_VER(engine->i915) >= 9)
 			return gen9_xcs_offsets;
@@ -862,9 +943,9 @@ __lrc_alloc_state(struct intel_context *ce, struct intel_engine_cs *engine)
 		context_size += PAGE_SIZE;
 	}
 
-	if (intel_context_is_parent(ce)) {
-		ce->parent_page = context_size / PAGE_SIZE;
-		context_size += PAGE_SIZE;
+	if (intel_context_is_parent(ce) && intel_engine_uses_guc(engine)) {
+		ce->parallel.guc.parent_page = context_size / PAGE_SIZE;
+		context_size += PARENT_SCRATCH_SIZE;
 	}
 
 	obj = i915_gem_object_create_lmem(engine->i915, context_size, 0);
@@ -984,8 +1065,6 @@ lrc_pin(struct intel_context *ce,
 
 void lrc_unpin(struct intel_context *ce)
 {
-	if (unlikely(ce->last_rq))
-		i915_request_put(ce->last_rq);
 	check_redzone((void *)ce->lrc_reg_state - LRC_STATE_OFFSET,
 		      ce->engine);
 }
@@ -1499,7 +1578,7 @@ void lrc_init_wa_ctx(struct intel_engine_cs *engine)
 	unsigned int i;
 	int err;
 
-	if (engine->class != RENDER_CLASS && engine->class != COMPUTE_CLASS)
+	if (!(engine->flags & I915_ENGINE_HAS_RCS_REG_STATE))
 		return;
 
 	switch (GRAPHICS_VER(engine->i915)) {

@@ -844,6 +844,7 @@ nouveau_bo_move_init(struct nouveau_drm *drm)
 			    struct ttm_resource *, struct ttm_resource *);
 		int (*init)(struct nouveau_channel *, u32 handle);
 	} _methods[] = {
+		{  "COPY", 4, 0xc7b5, nve0_bo_move_copy, nve0_bo_move_init },
 		{  "COPY", 4, 0xc5b5, nve0_bo_move_copy, nve0_bo_move_init },
 		{  "GRCE", 0, 0xc5b5, nve0_bo_move_copy, nvc0_bo_move_init },
 		{  "COPY", 4, 0xc3b5, nve0_bo_move_copy, nve0_bo_move_init },
@@ -1290,8 +1291,6 @@ nouveau_ttm_tt_destroy(struct ttm_device *bdev,
 #if IS_ENABLED(CONFIG_AGP)
 	struct nouveau_drm *drm = nouveau_bdev(bdev);
 	if (drm->agp.bridge) {
-		ttm_agp_unbind(ttm);
-		ttm_tt_destroy_common(bdev, ttm);
 		ttm_agp_destroy(ttm);
 		return;
 	}

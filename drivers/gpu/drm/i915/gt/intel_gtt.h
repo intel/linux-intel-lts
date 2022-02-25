@@ -97,9 +97,9 @@ typedef u64 gen8_pte_t;
  * +----------+---------+---------+-----------------+--------------+---------+
  */
 
-#define GEN12_GGTT_PTE_LM	BIT_ULL(1)
-#define TGL_GGTT_PTE_VFID_MASK		GENMASK_ULL(4, 2)
+#define GEN12_GGTT_PTE_LM		BIT_ULL(1)
 #define GEN12_GGTT_PTE_ADDR_MASK	GENMASK_ULL(45, 12)
+#define TGL_GGTT_PTE_VFID_MASK		GENMASK_ULL(4, 2)
 
 /*
  * Cacheability Control is a 4-bit value. The low three bits are stored in bits
@@ -147,8 +147,12 @@ typedef u64 gen8_pte_t;
 #define GEN8_PPAT_ELLC_OVERRIDE		(0<<2)
 #define GEN8_PPAT(i, x)			((u64)(x) << ((i) * 8))
 
+#define GEN8_PAGE_PRESENT		BIT_ULL(0)
+#define GEN8_PAGE_RW			BIT_ULL(1)
+
 #define GEN8_PDE_IPS_64K BIT(11)
 #define GEN8_PDE_PS_2M   BIT(7)
+#define GEN8_PDPE_PS_1G  BIT_ULL(7)
 
 enum i915_cache_level;
 
@@ -225,7 +229,7 @@ struct i915_vma_ops {
 
 struct i915_address_space {
 	struct kref ref;
-	struct rcu_work rcu;
+	struct work_struct release_work;
 
 	struct drm_mm mm;
 	struct intel_gt *gt;
@@ -619,6 +623,11 @@ release_pd_entry(struct i915_page_directory * const pd,
 		 struct i915_page_table * const pt,
 		 const struct drm_i915_gem_object * const scratch);
 void gen6_ggtt_invalidate(struct i915_ggtt *ggtt);
+
+void gen8_set_pte(void __iomem *addr, gen8_pte_t pte);
+gen8_pte_t gen8_get_pte(void __iomem *addr);
+
+u64 ggtt_addr_to_pte_offset(u64 ggtt_addr);
 
 int ggtt_set_pages(struct i915_vma *vma);
 int ppgtt_set_pages(struct i915_vma *vma);

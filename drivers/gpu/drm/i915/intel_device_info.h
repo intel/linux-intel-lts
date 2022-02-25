@@ -133,10 +133,12 @@ enum intel_ppgtt_type {
 	func(has_logical_ring_elsq); \
 	func(has_mslices); \
 	func(has_pooled_eu); \
+	func(has_pxp); \
 	func(has_rc6); \
 	func(has_rc6p); \
 	func(has_rps); \
 	func(has_runtime_pm); \
+	func(has_selective_tlb_invalidation); \
 	func(has_snoop); \
 	func(has_sriov); \
 	func(has_coherent_ggtt); \

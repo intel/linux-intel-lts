@@ -628,7 +628,7 @@ static void __execlists_schedule_out(struct i915_request * const rq,
 	execlists_context_status_change(rq, INTEL_CONTEXT_SCHEDULE_OUT);
 	if (engine->fw_domain && !--engine->fw_active)
 		intel_uncore_forcewake_put(engine->uncore, engine->fw_domain);
-	intel_gt_pm_put_async(engine->gt);
+	intel_gt_pm_put_async_untracked(engine->gt);
 
 	/*
 	 * If this is part of a virtual engine, its next request may
@@ -931,7 +931,8 @@ static void execlists_submit_ports(struct intel_engine_cs *engine)
 
 static bool ctx_single_port_submission(const struct intel_context *ce)
 {
-	return intel_context_force_single_submission(ce);
+	return (IS_ENABLED(CONFIG_DRM_I915_GVT) &&
+		intel_context_force_single_submission(ce));
 }
 
 static bool can_merge_ctx(const struct intel_context *prev,
@@ -2565,7 +2566,7 @@ __execlists_context_pre_pin(struct intel_context *ce,
 	if (!__test_and_set_bit(CONTEXT_INIT_BIT, &ce->flags)) {
 		lrc_init_state(ce, engine, *vaddr);
 
-		 __i915_gem_object_flush_map(ce->state->obj, 0, engine->context_size);
+		__i915_gem_object_flush_map(ce->state->obj, 0, engine->context_size);
 	}
 
 	return 0;
@@ -2601,59 +2602,6 @@ static void execlists_context_cancel_request(struct intel_context *ce,
 				      current->comm);
 }
 
-static struct intel_context *
-execlists_create_parallel(struct intel_engine_cs **engines,
-			  unsigned int num_siblings,
-			  unsigned int width)
-{
-	struct intel_engine_cs **siblings = NULL;
-	struct intel_context *parent = NULL, *ce, *err;
-	int i, j;
-
-	GEM_BUG_ON(num_siblings != 1);
-
-	siblings = kmalloc_array(num_siblings,
-				 sizeof(*siblings),
-				 GFP_KERNEL);
-	if (!siblings)
-		return ERR_PTR(-ENOMEM);
-
-	for (i = 0; i < width; ++i) {
-		for (j = 0; j < num_siblings; ++j)
-			siblings[j] = engines[i * num_siblings + j];
-
-		ce = intel_context_create(siblings[0]);
-		if (!ce) {
-			err = ERR_PTR(-ENOMEM);
-			goto unwind;
-		}
-
-		if (i == 0) {
-			parent = ce;
-		} else {
-			intel_context_bind_parent_child(parent, ce);
-		}
-	}
-
-	parent->fence_context = dma_fence_context_alloc(1);
-
-	intel_context_set_nopreempt(parent);
-	intel_context_set_single_submission(parent);
-	for_each_child(parent, ce) {
-		intel_context_set_nopreempt(ce);
-		intel_context_set_single_submission(ce);
-	}
-
-	kfree(siblings);
-	return parent;
-
-unwind:
-	if (parent)
-		intel_context_put(parent);
-	kfree(siblings);
-	return err;
-}
-
 static const struct intel_context_ops execlists_context_ops = {
 	.flags = COPS_HAS_INFLIGHT,
 
@@ -2672,7 +2620,6 @@ static const struct intel_context_ops execlists_context_ops = {
 	.reset = lrc_reset,
 	.destroy = lrc_destroy,
 
-	.create_parallel = execlists_create_parallel,
 	.create_virtual = execlists_create_virtual,
 };
 
@@ -2845,6 +2792,8 @@ static void execlists_sanitize(struct intel_engine_cs *engine)
 
 	/* And scrub the dirty cachelines for the HWSP */
 	clflush_cache_range(engine->status_page.addr, PAGE_SIZE);
+
+	intel_engine_reset_pinned_contexts(engine);
 }
 
 static void enable_error_interrupt(struct intel_engine_cs *engine)
@@ -2932,17 +2881,7 @@ static int gen12_rcs_resume(struct intel_engine_cs *engine)
 	if (ret)
 		return ret;
 
-	/*
-	 * Multi Context programming.
-	 * just need to program this register once no matter how many CCS
-	 * engines there are. Since some of the CCS engines might be fused off,
-	 * we can't do this as part of the init of a specific CCS and we do
-	 * it during RCS init instead. RCS and all CCS engines are reset
-	 * together, so post-reset re-init is covered as well.
-	 */
-	if (CCS_MASK(engine->gt))
-		intel_uncore_write(engine->uncore, GEN12_RCU_MODE,
-			   _MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
+	xehp_enable_ccs_engines(engine);
 
 	return 0;
 }
@@ -3371,6 +3310,38 @@ static void execlists_release(struct intel_engine_cs *engine)
 	lrc_fini_wa_ctx(engine);
 }
 
+static ktime_t __execlists_engine_busyness(struct intel_engine_cs *engine,
+					   ktime_t *now)
+{
+	struct intel_engine_execlists_stats *stats = &engine->stats.execlists;
+	ktime_t total = stats->total;
+
+	/*
+	 * If the engine is executing something at the moment
+	 * add it to the total.
+	 */
+	*now = ktime_get();
+	if (READ_ONCE(stats->active))
+		total = ktime_add(total, ktime_sub(*now, stats->start));
+
+	return total;
+}
+
+static ktime_t execlists_engine_busyness(struct intel_engine_cs *engine,
+					 ktime_t *now)
+{
+	struct intel_engine_execlists_stats *stats = &engine->stats.execlists;
+	unsigned int seq;
+	ktime_t total;
+
+	do {
+		seq = read_seqcount_begin(&stats->lock);
+		total = __execlists_engine_busyness(engine, now);
+	} while (read_seqcount_retry(&stats->lock, seq));
+
+	return total;
+}
+
 static void
 logical_ring_default_vfuncs(struct intel_engine_cs *engine)
 {
@@ -3418,7 +3389,7 @@ logical_ring_default_vfuncs(struct intel_engine_cs *engine)
 		engine->flags |= I915_ENGINE_HAS_SEMAPHORES;
 		if (can_preempt(engine)) {
 			engine->flags |= I915_ENGINE_HAS_PREEMPTION;
-			if (IS_ACTIVE(CONFIG_DRM_I915_TIMESLICE_DURATION))
+			if (CONFIG_DRM_I915_TIMESLICE_DURATION)
 				engine->flags |= I915_ENGINE_HAS_TIMESLICES;
 		}
 	}
@@ -3427,6 +3398,8 @@ logical_ring_default_vfuncs(struct intel_engine_cs *engine)
 		engine->emit_bb_start = gen8_emit_bb_start;
 	else
 		engine->emit_bb_start = gen8_emit_bb_start_noarb;
+
+	engine->busyness = execlists_engine_busyness;
 }
 
 static void logical_ring_default_irqs(struct intel_engine_cs *engine)
@@ -3486,8 +3459,7 @@ int intel_execlists_submission_setup(struct intel_engine_cs *engine)
 	logical_ring_default_vfuncs(engine);
 	logical_ring_default_irqs(engine);
 
-	if (engine->class == RENDER_CLASS ||
-	    engine->class == COMPUTE_CLASS)
+	if (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE)
 		rcs_submission_override(engine);
 
 	lrc_init_wa_ctx(engine);

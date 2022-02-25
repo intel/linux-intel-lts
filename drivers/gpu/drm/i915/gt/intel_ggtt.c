@@ -232,7 +232,7 @@ u64 gen8_ggtt_pte_encode(dma_addr_t addr,
 			 enum i915_cache_level level,
 			 u32 flags)
 {
-	gen8_pte_t pte = addr | _PAGE_PRESENT;
+	gen8_pte_t pte = addr | GEN8_PAGE_PRESENT;
 
 	GEM_BUG_ON(addr & ~GEN12_GGTT_PTE_ADDR_MASK);
 
@@ -242,9 +242,21 @@ u64 gen8_ggtt_pte_encode(dma_addr_t addr,
 	return pte;
 }
 
-static void gen8_set_pte(void __iomem *addr, gen8_pte_t pte)
+void gen8_set_pte(void __iomem *addr, gen8_pte_t pte)
 {
 	writeq(pte, addr);
+}
+
+gen8_pte_t gen8_get_pte(void __iomem *addr)
+{
+	return readq(addr);
+}
+
+u64 ggtt_addr_to_pte_offset(u64 ggtt_addr)
+{
+	GEM_BUG_ON(!IS_ALIGNED(ggtt_addr, I915_GTT_PAGE_SIZE_4K));
+
+	return (ggtt_addr / I915_GTT_PAGE_SIZE_4K) * sizeof(gen8_pte_t);
 }
 
 static void gen8_ggtt_insert_page(struct i915_address_space *vm,
@@ -761,7 +773,6 @@ static void ggtt_cleanup_hw(struct i915_ggtt *ggtt)
 
 	atomic_set(&ggtt->vm.open, 0);
 
-	rcu_barrier(); /* flush the RCU'ed__i915_vm_release */
 	flush_workqueue(ggtt->vm.i915->wq);
 
 	mutex_lock(&ggtt->vm.mutex);
@@ -849,6 +860,21 @@ static unsigned int chv_get_total_gtt_size(u16 gmch_ctrl)
 	return 0;
 }
 
+static unsigned int gen6_gttmmadr_size(struct drm_i915_private *i915)
+{
+	/*
+	 * GEN6: GTTMMADR size is 4MB and GTTADR starts at 2MB offset
+	 * GEN8: GTTMMADR size is 16MB and GTTADR starts at 8MB offset
+	 */
+	GEM_BUG_ON(GRAPHICS_VER(i915) < 6);
+	return (GRAPHICS_VER(i915) < 8) ? SZ_4M : SZ_16M;
+}
+
+static unsigned int gen6_gttadr_offset(struct drm_i915_private *i915)
+{
+	return gen6_gttmmadr_size(i915) / 2;
+}
+
 static int ggtt_probe_common(struct i915_ggtt *ggtt, u64 size)
 {
 	struct drm_i915_private *i915 = ggtt->vm.i915;
@@ -857,8 +883,8 @@ static int ggtt_probe_common(struct i915_ggtt *ggtt, u64 size)
 	u32 pte_flags;
 	int ret;
 
-	/* For Modern GENs the PTEs and register space are split in the BAR */
-	phys_addr = pci_resource_start(pdev, 0) + pci_resource_len(pdev, 0) / 2;
+	GEM_WARN_ON(pci_resource_len(pdev, 0) != gen6_gttmmadr_size(i915));
+	phys_addr = pci_resource_start(pdev, 0) + gen6_gttadr_offset(i915);
 
 	/*
 	 * On BXT+/ICL+ writes larger than 64 bit to the GTT pagetable range
@@ -1469,12 +1495,30 @@ err_st_alloc:
 }
 
 static struct scatterlist *
-remap_pages(struct drm_i915_gem_object *obj, unsigned int offset,
+remap_pages(struct drm_i915_gem_object *obj,
+	    unsigned int offset, unsigned int alignment_pad,
 	    unsigned int width, unsigned int height,
 	    unsigned int src_stride, unsigned int dst_stride,
 	    struct sg_table *st, struct scatterlist *sg)
 {
 	unsigned int row;
+
+	if (!width || !height)
+		return sg;
+
+	if (alignment_pad) {
+		st->nents++;
+
+		/*
+		 * The DE ignores the PTEs for the padding tiles, the sg entry
+		 * here is just a convenience to indicate how many padding PTEs
+		 * to insert at this spot.
+		 */
+		sg_set_page(sg, NULL, alignment_pad * 4096, 0);
+		sg_dma_address(sg) = 0;
+		sg_dma_len(sg) = alignment_pad * 4096;
+		sg = sg_next(sg);
+	}
 
 	for (row = 0; row < height; row++) {
 		unsigned int left = width * I915_GTT_PAGE_SIZE;
@@ -1535,6 +1579,7 @@ intel_remap_pages(struct intel_remapped_info *rem_info,
 	struct drm_i915_private *i915 = to_i915(obj->base.dev);
 	struct sg_table *st;
 	struct scatterlist *sg;
+	unsigned int gtt_offset = 0;
 	int ret = -ENOMEM;
 	int i;
 
@@ -1551,10 +1596,19 @@ intel_remap_pages(struct intel_remapped_info *rem_info,
 	sg = st->sgl;
 
 	for (i = 0 ; i < ARRAY_SIZE(rem_info->plane); i++) {
-		sg = remap_pages(obj, rem_info->plane[i].offset,
+		unsigned int alignment_pad = 0;
+
+		if (rem_info->plane_alignment)
+			alignment_pad = ALIGN(gtt_offset, rem_info->plane_alignment) - gtt_offset;
+
+		sg = remap_pages(obj,
+				 rem_info->plane[i].offset, alignment_pad,
 				 rem_info->plane[i].width, rem_info->plane[i].height,
 				 rem_info->plane[i].src_stride, rem_info->plane[i].dst_stride,
 				 st, sg);
+
+		gtt_offset += alignment_pad +
+			      rem_info->plane[i].dst_stride * rem_info->plane[i].height;
 	}
 
 	i915_sg_trim(st);
@@ -1732,7 +1786,7 @@ static gen8_pte_t tgl_prepare_vf_pte_vfid(u16 vfid)
 
 static gen8_pte_t prepare_vf_pte(u16 vfid)
 {
-	return tgl_prepare_vf_pte_vfid(vfid) | _PAGE_PRESENT;
+	return tgl_prepare_vf_pte_vfid(vfid) | GEN8_PAGE_PRESENT;
 }
 
 void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
@@ -1788,8 +1842,6 @@ static void ggtt_pte_clear_vfid(void *buf, u64 size)
  *
  * Returns: size of the buffer used (or needed if both @buf and @size are (0)) to store all PTEs
  *          for a given node, -EINVAL if one of @buf or @size is 0.
-
- *
  */
 int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, void *buf,
 			unsigned int size, unsigned int flags)
@@ -1803,7 +1855,11 @@ int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, 
 		return -EINVAL;
 
 	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
-	GEM_BUG_ON(size > __ggtt_size_to_ptes_size(SZ_4G));
+	GEM_WARN_ON(size > __ggtt_size_to_ptes_size(SZ_4G));
+
+	if (size < __ggtt_size_to_ptes_size(node->size))
+		return -ENOSPC;
+	size = __ggtt_size_to_ptes_size(node->size);
 
 	gtt_entries += node->start >> PAGE_SHIFT;
 
@@ -1839,7 +1895,7 @@ int i915_ggtt_restore_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *nod
 	GEM_BUG_ON(!size);
 	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
 
-	if (node->size < size)
+	if (size > __ggtt_size_to_ptes_size(node->size))
 		return -ENOSPC;
 
 	gtt_entries += node->start >> PAGE_SHIFT;

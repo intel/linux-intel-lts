@@ -24,8 +24,6 @@ static void rpm_put(struct intel_wakeref *wf)
 
 int __intel_wakeref_get_first(struct intel_wakeref *wf)
 {
-	bool do_post = false;
-
 	/*
 	 * Treat get/put as different subclasses, as we may need to run
 	 * the put callback from under the shrinker and do not want to
@@ -46,11 +44,8 @@ int __intel_wakeref_get_first(struct intel_wakeref *wf)
 		}
 
 		smp_mb__before_atomic(); /* release wf->count */
-		do_post = true;
 	}
 	atomic_inc(&wf->count);
-	if (do_post && wf->ops->post_get)
-		wf->ops->post_get(wf);
 	mutex_unlock(&wf->mutex);
 
 	INTEL_WAKEREF_BUG_ON(atomic_read(&wf->count) <= 0);
@@ -113,6 +108,10 @@ void __intel_wakeref_init(struct intel_wakeref *wf,
 	INIT_DELAYED_WORK(&wf->work, __intel_wakeref_put_work);
 	lockdep_init_map(&wf->work.work.lockdep_map,
 			 "wakeref.work", &key->work, 0);
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_WAKEREF)
+	intel_wakeref_tracker_init(&wf->debug);
+#endif
 }
 
 int intel_wakeref_wait_for_idle(struct intel_wakeref *wf)

@@ -15,7 +15,7 @@
 
 struct intel_guc;
 
-#if defined(CONFIG_DRM_I915_DEBUG_GUC) || defined(CONFIG_DRM_I915_DEBUG_GEM)
+#ifdef CONFIG_DRM_I915_DEBUG_GUC
 #define CRASH_BUFFER_SIZE	SZ_2M
 #define DEBUG_BUFFER_SIZE	SZ_16M
 #define CAPTURE_BUFFER_SIZE	SZ_4M
@@ -64,6 +64,8 @@ struct intel_guc_log {
 void intel_guc_log_init_early(struct intel_guc_log *log);
 int intel_guc_log_create(struct intel_guc_log *log);
 void intel_guc_log_destroy(struct intel_guc_log *log);
+u32 intel_guc_log_size(struct intel_guc_log *log);
+u32 intel_guc_log_relay_subbuf_count(struct intel_guc_log *log);
 
 int intel_guc_log_set_level(struct intel_guc_log *log, u32 level);
 bool intel_guc_log_relay_created(const struct intel_guc_log *log);

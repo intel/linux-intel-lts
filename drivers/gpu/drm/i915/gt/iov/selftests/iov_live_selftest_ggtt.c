@@ -5,29 +5,13 @@
 
 #include "i915_utils.h"
 #include "gt/intel_gt.h"
+#include "iov_selftest_actions.h"
 #include "../abi/iov_actions_selftest_abi.h"
 #include "../intel_iov_relay.h"
 
 struct pte_testcase {
 	bool (*test)(struct intel_iov *iov, void __iomem *pte_addr, u64 ggtt_addr, gen8_pte_t *out);
 };
-
-static gen8_pte_t gen8_get_pte(void __iomem *pte_addr)
-{
-	return readq(pte_addr);
-}
-
-static void gen8_set_pte(void __iomem *pte_addr, gen8_pte_t pte)
-{
-	writeq(pte, pte_addr);
-}
-
-static inline void __iomem *ggtt_addr_to_pte_addr(void __iomem *gsm, u64 ggtt_addr)
-{
-	GEM_BUG_ON(!IS_ALIGNED(ggtt_addr, I915_GTT_PAGE_SIZE_4K));
-
-	return gsm + (ggtt_addr / I915_GTT_PAGE_SIZE_4K) * sizeof(gen8_pte_t);
-}
 
 static void gen8_set_masked_pte_val(void __iomem *pte_addr, const u64 mask_size,
 				    const u8 mask_shift, u64 val)
@@ -36,42 +20,6 @@ static void gen8_set_masked_pte_val(void __iomem *pte_addr, const u64 mask_size,
 	gen8_pte_t pte = old_pte | (val << mask_shift);
 
 	gen8_set_pte(pte_addr, pte);
-}
-
-static int vf_pte_get_value(struct intel_iov *iov, u64 ggtt_addr, u64 *pte)
-{
-	u32 request[VF2PF_ST_GET_GGTT_PTE_REQUEST_MSG_LEN];
-	u32 response[VF2PF_ST_GET_GGTT_PTE_RESPONSE_MSG_LEN];
-	u32 pte_lo, pte_hi;
-	int err;
-
-	GEM_BUG_ON(!intel_iov_is_vf(iov));
-
-	request[0] = FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
-		     FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
-		     FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, IOV_ACTION_VF2PF_PF_ST_ACTION) |
-		     FIELD_PREP(VF2PF_PF_ST_ACTION_REQUEST_MSG_0_OPCODE,
-				IOV_OPCODE_ST_GET_GGTT_PTE);
-	request[1] = FIELD_PREP(VF2PF_ST_GET_GGTT_PTE_REQUEST_MSG_1_ADDRESS_LO,
-				lower_32_bits(ggtt_addr));
-	request[2] = FIELD_PREP(VF2PF_ST_GET_GGTT_PTE_REQUEST_MSG_2_ADDRESS_HI,
-				upper_32_bits(ggtt_addr));
-
-	err = intel_iov_relay_send_to_pf(&iov->relay,
-					 request, ARRAY_SIZE(request),
-					 response, ARRAY_SIZE(response));
-
-	if (err < 0) {
-		IOV_ERROR(iov, "ST: failed to get PTE value for %#llx, %d\n", ggtt_addr, err);
-		return err;
-	}
-
-	pte_lo = FIELD_GET(VF2PF_ST_GET_GGTT_PTE_RESPONSE_MSG_1_PTE_LO, response[1]);
-	pte_hi = FIELD_GET(VF2PF_ST_GET_GGTT_PTE_RESPONSE_MSG_2_PTE_HI, response[2]);
-
-	*pte = make_u64(pte_hi, pte_lo);
-
-	return err;
 }
 
 static bool
@@ -83,7 +31,7 @@ vf_pte_is_value_not_modifiable(struct intel_iov *iov, void __iomem *pte_addr, u6
 	u64 new_val;
 	u64 val;
 
-	err = vf_pte_get_value(iov, ggtt_addr, &val);
+	err = intel_iov_selftest_send_vfpf_get_ggtt_pte(iov, ggtt_addr, &val);
 	if (err < 0)
 		return false;
 
@@ -95,7 +43,7 @@ vf_pte_is_value_not_modifiable(struct intel_iov *iov, void __iomem *pte_addr, u6
 
 	gen8_set_masked_pte_val(pte_addr, mask_size, mask_shift, new_val);
 
-	err = vf_pte_get_value(iov, ggtt_addr, &val);
+	err = intel_iov_selftest_send_vfpf_get_ggtt_pte(iov, ggtt_addr, &val);
 	if (err < 0)
 		return false;
 
@@ -251,10 +199,10 @@ static bool run_test_on_pte(struct intel_iov *iov, void __iomem *pte_addr, u64 g
 
 #define for_each_pte(pte_addr__, ggtt_addr__, gsm__, ggtt_block__, step__) \
 	for ((ggtt_addr__) = ((ggtt_block__)->start), \
-	     (pte_addr__) = (ggtt_addr_to_pte_addr((gsm__), (ggtt_addr__))); \
+	     (pte_addr__) = (gsm__) + (ggtt_addr_to_pte_offset((ggtt_addr__))); \
 	     (ggtt_addr__) < ((ggtt_block__)->start + (ggtt_block__)->size); \
 	     (ggtt_addr__) += (step__), \
-	     (pte_addr__) = (ggtt_addr_to_pte_addr((gsm__), (ggtt_addr__))))
+	     (pte_addr__) = (gsm__) + (ggtt_addr_to_pte_offset((ggtt_addr__))))
 
 static bool
 run_test_on_ggtt_block(struct intel_iov *iov, void __iomem *gsm, struct drm_mm_node *ggtt_block,
@@ -285,7 +233,7 @@ run_test_on_ggtt_block(struct intel_iov *iov, void __iomem *gsm, struct drm_mm_n
 	 */
 	if (sanitycheck) {
 		ggtt_addr = ggtt_block->start + ggtt_block->size - I915_GTT_PAGE_SIZE_4K;
-		pte_addr = ggtt_addr_to_pte_addr(gsm, ggtt_addr);
+		pte_addr = gsm + ggtt_addr_to_pte_offset(ggtt_addr);
 		if (!run_test_on_pte(iov, pte_addr, ggtt_addr, tc, vfid))
 			return false;
 	}
@@ -328,10 +276,9 @@ static int igt_pf_iov_ggtt(struct intel_iov *iov)
 	if (err < 0)
 		goto out;
 
-	IOV_DEBUG(iov, "Checking VF%u range [%#llx-%#llx]", vfid, ggtt_block.start,
-		  ggtt_block.start + ggtt_block.size);
-
 	for (vfid = 1; vfid <= pf_get_totalvfs(iov); vfid++) {
+		IOV_DEBUG(iov, "Checking VF%u range [%#llx-%#llx]", vfid, ggtt_block.start,
+			  ggtt_block.start + ggtt_block.size);
 		i915_ggtt_set_space_owner(ggtt, vfid, &ggtt_block);
 		for_each_pte_test(tc, pte_testcases) {
 			IOV_DEBUG(iov, "Run '%ps' check\n", tc->test);
@@ -436,7 +383,7 @@ static int igt_vf_iov_own_ggtt_via_pf(struct intel_iov *iov)
 		  __func__, ptr_to_u64(gsm), ggtt_block.start, ggtt_block.size);
 
 	for_each_pte_test(tc, pte_testcases) {
-		IOV_DEBUG(iov, "Run '%ps' check\n", tc->test);
+		IOV_DEBUG(iov, "Run '%ps' check \n", tc->test);
 		if (!run_test_on_ggtt_block(iov, gsm, &ggtt_block, tc, 0, false))
 			failed++;
 	}
@@ -625,68 +572,6 @@ static int igt_vf_other_ggtt_via_pf(void *arg)
 	GEM_BUG_ON(!IS_SRIOV_VF(i915));
 
 	return igt_vf_iov_other_ggtt(&to_gt(i915)->iov, true);
-}
-
-static int
-pf_handle_action_get_ggtt_pte(struct intel_iov *iov,
-			      u32 origin, u32 relay_id,
-			      const u32 *msg, u32 len)
-{
-	u32 response[VF2PF_ST_GET_GGTT_PTE_RESPONSE_MSG_LEN];
-	u32 addr_lo, addr_hi;
-	u64 ggtt_addr;
-	void __iomem *pte_addr;
-	gen8_pte_t pte;
-
-	GEM_BUG_ON(!intel_iov_is_pf(iov));
-
-	if (unlikely(len != VF2PF_ST_GET_GGTT_PTE_REQUEST_MSG_LEN))
-		return -EPROTO;
-
-	addr_lo = FIELD_GET(VF2PF_ST_GET_GGTT_PTE_REQUEST_MSG_1_ADDRESS_LO, msg[1]);
-	addr_hi = FIELD_GET(VF2PF_ST_GET_GGTT_PTE_REQUEST_MSG_2_ADDRESS_HI, msg[2]);
-
-	ggtt_addr = make_u64(addr_hi, addr_lo);
-
-	if (!IS_ALIGNED(ggtt_addr, I915_GTT_PAGE_SIZE_4K))
-		return -EINVAL;
-
-	pte_addr = ggtt_addr_to_pte_addr(iov_to_gt(iov)->ggtt->gsm, ggtt_addr);
-
-	pte = gen8_get_pte(pte_addr);
-
-	response[0] = FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
-		      FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_RESPONSE_SUCCESS) |
-		      FIELD_PREP(VF2PF_PF_ST_ACTION_RESPONSE_MSG_0_MBZ, 0);
-	response[1] = FIELD_PREP(VF2PF_ST_GET_GGTT_PTE_RESPONSE_MSG_1_PTE_LO, lower_32_bits(pte));
-	response[2] = FIELD_PREP(VF2PF_ST_GET_GGTT_PTE_RESPONSE_MSG_2_PTE_HI, upper_32_bits(pte));
-
-	return intel_iov_relay_reply_to_vf(&iov->relay, origin, relay_id, response,
-					   ARRAY_SIZE(response));
-}
-
-int intel_iov_service_perform_selftest_action(struct intel_iov *iov, u32 origin, u32 relay_id,
-					      const u32 *msg, u32 len)
-{
-	u32 opcode;
-
-	GEM_BUG_ON(!intel_iov_is_pf(iov));
-
-	if (unlikely(len < VF2PF_PF_ST_ACTION_REQUEST_MSG_MIN_LEN ||
-		     len > VF2PF_PF_ST_ACTION_REQUEST_MSG_MAX_LEN))
-		return -EPROTO;
-
-	opcode = FIELD_GET(VF2PF_PF_ST_ACTION_REQUEST_MSG_0_OPCODE, msg[0]);
-
-	switch (opcode) {
-	case IOV_OPCODE_ST_GET_GGTT_PTE:
-		return pf_handle_action_get_ggtt_pte(iov, origin, relay_id, msg, len);
-	default:
-		IOV_ERROR(iov, "Unsupported selftest opcode %#x from VF%u\n", opcode, origin);
-		return -EBADRQC;
-	}
-
-	return intel_iov_relay_reply_ack_to_vf(&iov->relay, origin, relay_id, 0);
 }
 
 int intel_iov_ggtt_live_selftests(struct drm_i915_private *i915)

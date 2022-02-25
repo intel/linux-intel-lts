@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #ifndef __INTEL_IOV_SERVICE_H__
@@ -18,17 +18,6 @@ void intel_iov_service_release(struct intel_iov *iov);
 
 int intel_iov_service_process_msg(struct intel_iov *iov, u32 origin,
 				  u32 relay_id, const u32 *msg, u32 len);
-
-#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
-int intel_iov_service_perform_selftest_action(struct intel_iov *iov, u32 origin, u32 relay_id,
-					      const u32 *msg, u32 len);
-#else
-static inline int intel_iov_service_perform_selftest_action(struct intel_iov *iov, u32 origin,
-							    u32 relay_id, const u32 *msg, u32 len)
-{
-	return -EOPNOTSUPP;
-}
-#endif /* IS_ENABLED(CONFIG_DRM_I915_SELFTEST) */
 
 int intel_iov_service_process_mmio_relay(struct intel_iov *iov, const u32 *msg,
 					 u32 len);

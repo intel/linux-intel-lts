@@ -22,16 +22,16 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_REQUEST_                                 |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 27:16 | DATA0 = MBZ                                                  |
+ *  |   | 27:16 | MBZ                                                          |
  *  |   +-------+--------------------------------------------------------------+
  *  |   |  15:0 | ACTION = _`GUC_ACTION_PF2GUC_UPDATE_VGT_POLICY` = 0x5502     |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 |  31:0 | DATA1 = **CFG_ADDR_LO** - dword aligned GGTT offset that     |
+ *  | 1 |  31:0 | **CFG_ADDR_LO** - dword aligned GGTT offset that             |
  *  |   |       | represents the start of `GuC VGT Policy KLVs`_ list.         |
  *  +---+-------+--------------------------------------------------------------+
- *  | 2 |  31:0 | DATA2 = **CFG_ADDR_HI** - upper 32 bits of above offset.     |
+ *  | 2 |  31:0 | **CFG_ADDR_HI** - upper 32 bits of above offset.             |
  *  +---+-------+--------------------------------------------------------------+
- *  | 3 |  31:0 | DATA3 = **CFG_SIZE** - size (in dwords) of the config buffer |
+ *  | 3 |  31:0 | **CFG_SIZE** - size (in dwords) of the config buffer         |
  *  +---+-------+--------------------------------------------------------------+
  *
  *  +---+-------+--------------------------------------------------------------+
@@ -41,7 +41,7 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_RESPONSE_SUCCESS_                        |
  *  |   +-------+--------------------------------------------------------------+
- *  |   |  27:0 | DATA0 = **COUNT** - number of KLVs successfully applied      |
+ *  |   |  27:0 | **COUNT** - number of KLVs successfully applied              |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_PF2GUC_UPDATE_VGT_POLICY			0x5502
@@ -58,7 +58,7 @@
 /**
  * DOC: PF2GUC_UPDATE_VF_CFG
  *
- * The PF2GUC_UPDATE_VF_CFG message is used by PF to provision single VF in GuC.
+ * The `PF2GUC_UPDATE_VF_CFG`_ message is used by PF to provision single VF in GuC.
  *
  * This message must be sent as `CTB HXG Message`_.
  *
@@ -69,23 +69,23 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_REQUEST_                                 |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 27:16 | DATA0 = MBZ                                                  |
+ *  |   | 27:16 | MBZ                                                          |
  *  |   +-------+--------------------------------------------------------------+
  *  |   |  15:0 | ACTION = _`GUC_ACTION_PF2GUC_UPDATE_VF_CFG` = 0x5503         |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 |  31:0 | DATA1 = **VFID** - identifier of the VF that the KLV         |
+ *  | 1 |  31:0 | **VFID** - identifier of the VF that the KLV                 |
  *  |   |       | configurations are being applied to                          |
  *  +---+-------+--------------------------------------------------------------+
- *  | 2 |  31:0 | DATA2 = **CFG_ADDR_LO** - dword aligned GGTT offset that     |
- *  |   |       | represents the start of a list of virtualization related KLV |
- *  |   |       | configs that are to be applied to the VF.                    |
+ *  | 2 |  31:0 | **CFG_ADDR_LO** - dword aligned GGTT offset that represents  |
+ *  |   |       | the start of a list of virtualization related KLV configs    |
+ *  |   |       | that are to be applied to the VF.                            |
  *  |   |       | If this parameter is zero, the list is not parsed.           |
  *  |   |       | If full configs address parameter is zero and configs_size is|
  *  |   |       | zero associated VF config shall be reset to its default state|
  *  +---+-------+--------------------------------------------------------------+
- *  | 3 |  31:0 | DATA3 = **CFG_ADDR_HI** - upper 32 bits of configs address.  |
+ *  | 3 |  31:0 | **CFG_ADDR_HI** - upper 32 bits of configs address.          |
  *  +---+-------+--------------------------------------------------------------+
- *  | 4 |  31:0 | DATA4 = **CFG_SIZE** - size (in dwords) of the config buffer |
+ *  | 4 |  31:0 | **CFG_SIZE** - size (in dwords) of the config buffer         |
  *  +---+-------+--------------------------------------------------------------+
  *
  *  +---+-------+--------------------------------------------------------------+
@@ -95,7 +95,7 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_RESPONSE_SUCCESS_                        |
  *  |   +-------+--------------------------------------------------------------+
- *  |   |  27:0 | DATA0 = **COUNT** - number of KLVs successfully applied      |
+ *  |   |  27:0 | **COUNT** - number of KLVs successfully applied              |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_PF2GUC_UPDATE_VF_CFG			0x5503
@@ -113,8 +113,8 @@
 /**
  * DOC: GUC2PF_RELAY_FROM_VF
  *
- * The GUC2PF_RELAY_FROM_VF message is used by the GuC to forward VF/PF messages
- * received from the VF.
+ * The `GUC2PF_RELAY_FROM_VF`_ message is used by the GuC to forward VF/PF IOV
+ * messages received from the VF to the PF.
  *
  * This H2G message must be sent as `CTB HXG Message`_.
  *
@@ -125,19 +125,19 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_EVENT_                                   |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 27:16 | DATA0 = MBZ                                                  |
+ *  |   | 27:16 | MBZ                                                          |
  *  |   +-------+--------------------------------------------------------------+
  *  |   |  15:0 | ACTION = _`GUC_ACTION_GUC2PF_RELAY_FROM_VF` = 0x5100         |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 |  31:0 | DATA1 = **VFID** - source VF identifier                      |
+ *  | 1 |  31:0 | **VFID** - source VF identifier                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | 2 |  31:0 | DATA2 = **RELAY_ID** - VF/PF message ID                      |
+ *  | 2 |  31:0 | **RELAY_ID** - VF/PF message ID                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | 3 |  31:0 | DATA3 = **RELAY_DATA1** - VF/PF message payload data         |
+ *  | 3 |  31:0 | **RELAY_DATA1** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  *  |...|       |                                                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | n |  31:0 | DATAn = **RELAY_DATAx** - VF/PF message payload data         |
+ *  | n |  31:0 | **RELAY_DATAx** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_GUC2PF_RELAY_FROM_VF			0x5100
@@ -153,7 +153,8 @@
 /**
  * DOC: PF2GUC_RELAY_TO_VF
  *
- * The PF2GUC_RELAY_TO_VF message is used by PF to send VF/PF messages to the VF.
+ * The `PF2GUC_RELAY_TO_VF`_ message is used by the PF to send VF/PF IOV messages
+ * to the VF.
  *
  * This action message must be sent over CTB as `CTB HXG Message`_.
  *
@@ -162,31 +163,21 @@
  *  +===+=======+==============================================================+
  *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_HOST_                                |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 30:28 | TYPE = GUC_HXG_TYPE_REQUEST_ or GUC_HXG_TYPE_EVENT_          |
+ *  |   | 30:28 | TYPE = `GUC_HXG_TYPE_FAST_REQUEST`_                          |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 27:16 | DATA0 = MBZ                                                  |
+ *  |   | 27:16 | MBZ                                                          |
  *  |   +-------+--------------------------------------------------------------+
  *  |   |  15:0 | ACTION = _`GUC_ACTION_PF2GUC_RELAY_TO_VF` = 0x5101           |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 |  31:0 | DATA1 = **VFID** - target VF identifier                      |
+ *  | 1 |  31:0 | **VFID** - target VF identifier                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | 2 |  31:0 | DATA2 = **RELAY_ID** - VF/PF message ID                      |
+ *  | 2 |  31:0 | **RELAY_ID** - VF/PF message ID                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | 3 |  31:0 | DATA3 = **RELAY_DATA1** - VF/PF message payload data         |
+ *  | 3 |  31:0 | **RELAY_DATA1** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  *  |...|       |                                                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | n |  31:0 | DATAn = **RELAY_DATAx** - VF/PF message payload data         |
- *  +---+-------+--------------------------------------------------------------+
- *
- *  +---+-------+--------------------------------------------------------------+
- *  |   | Bits  | Description                                                  |
- *  +===+=======+==============================================================+
- *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_GUC_                                 |
- *  |   +-------+--------------------------------------------------------------+
- *  |   | 30:28 | TYPE = GUC_HXG_TYPE_RESPONSE_SUCCESS_                        |
- *  |   +-------+--------------------------------------------------------------+
- *  |   |  27:0 | DATA0 = MBZ                                                  |
+ *  | n |  31:0 | **RELAY_DATAx** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_PF2GUC_RELAY_TO_VF			0x5101
@@ -199,8 +190,135 @@
 #define PF2GUC_RELAY_TO_VF_REQUEST_MSG_3_RELAY_DATA1	GUC_HXG_REQUEST_MSG_n_DATAn
 #define PF2GUC_RELAY_TO_VF_REQUEST_MSG_n_RELAY_DATAx	GUC_HXG_REQUEST_MSG_n_DATAn
 
-#define PF2GUC_RELAY_TO_VF_RESPONSE_MSG_LEN		GUC_HXG_RESPONSE_MSG_MIN_LEN
-#define PF2GUC_RELAY_TO_VF_RESPONSE_DATA0_MBZ		GUC_HXG_RESPONSE_MSG_0_DATA0
+/**
+ * DOC: GUC2PF_MMIO_RELAY_SERVICE
+ *
+ * The `GUC2PF_MMIO_RELAY_SERVICE`_ message is used by the GuC to forward data
+ * from `VF2GUC_MMIO_RELAY_SERVICE`_ request message that was sent by the VF.
+ *
+ * To reply to `VF2GUC_MMIO_RELAY_SERVICE`_ request message PF must be either
+ * `PF2GUC_MMIO_RELAY_SUCCESS`_ or `PF2GUC_MMIO_RELAY_FAILURE`_.
+ *
+ * This G2H message must be sent as `CTB HXG Message`_.
+ *
+ *  +---+-------+--------------------------------------------------------------+
+ *  |   | Bits  | Description                                                  |
+ *  +===+=======+==============================================================+
+ *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_GUC_                                 |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 30:28 | TYPE = GUC_HXG_TYPE_EVENT_                                   |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:16 | MBZ                                                          |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  15:0 | ACTION = _`GUC_ACTION_GUC2PF_MMIO_RELAY_SERVICE` = 0x5006    |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 1 |  31:0 | **VFID** - identifier of the VF which sent this message      |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 2 | 31:28 | MBZ                                                          |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:24 | **MAGIC** - see `VF2GUC_MMIO_RELAY_SERVICE`_ request         |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 23:16 | **OPCODE** - see `VF2GUC_MMIO_RELAY_SERVICE`_ request        |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  15:0 | MBZ                                                          |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 3 |  31:0 | **DATA1** - see `VF2GUC_MMIO_RELAY_SERVICE`_ request         |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 4 |  31:0 | **DATA2** - see `VF2GUC_MMIO_RELAY_SERVICE`_ request         |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 5 |  31:0 | **DATA3** - see `VF2GUC_MMIO_RELAY_SERVICE`_ request         |
+ *  +---+-------+--------------------------------------------------------------+
+ */
+#define GUC_ACTION_GUC2PF_MMIO_RELAY_SERVICE		0x5006
+
+#define GUC2PF_MMIO_RELAY_SERVICE_EVENT_MSG_LEN		(GUC_HXG_EVENT_MSG_MIN_LEN + 5u)
+#define GUC2PF_MMIO_RELAY_SERVICE_EVENT_MSG_1_VFID	GUC_HXG_EVENT_MSG_n_DATAn
+#define GUC2PF_MMIO_RELAY_SERVICE_EVENT_MSG_2_MAGIC	(0xf << 24)
+#define GUC2PF_MMIO_RELAY_SERVICE_EVENT_MSG_2_OPCODE	(0xff << 16)
+#define GUC2PF_MMIO_RELAY_SERVICE_EVENT_MSG_n_DATAx	GUC_HXG_EVENT_MSG_n_DATAn
+#define GUC2PF_MMIO_RELAY_SERVICE_EVENT_MSG_NUM_DATA	3u
+
+/**
+ * DOC: PF2GUC_MMIO_RELAY_SUCCESS
+ *
+ * The `PF2GUC_MMIO_RELAY_SUCCESS`_ message is used by the PF to send success
+ * response data related to `VF2GUC_MMIO_RELAY_SERVICE`_ request message that
+ * was received in `GUC2PF_MMIO_RELAY_SERVICE`_.
+ *
+ * This message must be sent as `CTB HXG Message`_.
+ *
+ *  +---+-------+--------------------------------------------------------------+
+ *  |   | Bits  | Description                                                  |
+ *  +===+=======+==============================================================+
+ *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_HOST_                                |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 30:28 | TYPE = GUC_HXG_TYPE_FAST_REQUEST_                            |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:16 | MBZ                                                          |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  15:0 | ACTION = _`GUC_ACTION_PF2GUC_MMIO_RELAY_SUCCESS` = 0x5007    |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 1 |  31:0 | **VFID** - identifier of the VF where to send this reply     |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 2 | 31:28 | MBZ                                                          |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:24 | **MAGIC** - see `VF2GUC_MMIO_RELAY_SERVICE`_ response        |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  23:0 | **DATA0** - see `VF2GUC_MMIO_RELAY_SERVICE`_ response        |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 3 |  31:0 | **DATA1** - see `VF2GUC_MMIO_RELAY_SERVICE`_ response        |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 4 |  31:0 | **DATA2** - see `VF2GUC_MMIO_RELAY_SERVICE`_ response        |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 5 |  31:0 | **DATA3** - see `VF2GUC_MMIO_RELAY_SERVICE`_ response        |
+ *  +---+-------+--------------------------------------------------------------+
+ */
+#define GUC_ACTION_PF2GUC_MMIO_RELAY_SUCCESS		0x5007
+
+#define PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_LEN	(GUC_HXG_REQUEST_MSG_MIN_LEN + 5u)
+#define PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_1_VFID	GUC_HXG_REQUEST_MSG_n_DATAn
+#define PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_2_MAGIC	(0xf << 24)
+#define PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_2_DATA0	(0xffffff << 0)
+#define PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_n_DATAx	GUC_HXG_REQUEST_MSG_n_DATAn
+#define PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_NUM_DATA	3u
+
+/**
+ * DOC: PF2GUC_MMIO_RELAY_FAILURE
+ *
+ * The `PF2GUC_MMIO_RELAY_FAILURE`_ message is used by PF to send error response
+ * data related to `VF2GUC_MMIO_RELAY_SERVICE`_ request message that
+ * was received in `GUC2PF_MMIO_RELAY_SERVICE`_.
+ *
+ * This message must be sent as `CTB HXG Message`_.
+ *
+ *  +---+-------+--------------------------------------------------------------+
+ *  |   | Bits  | Description                                                  |
+ *  +===+=======+==============================================================+
+ *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_HOST_                                |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 30:28 | TYPE = GUC_HXG_TYPE_FAST_REQUEST_                            |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:16 | MBZ                                                          |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  15:0 | ACTION = _`GUC_ACTION_PF2GUC_MMIO_RELAY_FAILURE` = 0x5008    |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 1 |  31:0 | **VFID** - identifier of the VF where to send reply          |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 2 | 31:28 | MBZ                                                          |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:24 | **MAGIC** - see `VF2GUC_MMIO_RELAY_SERVICE`_ request         |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  23:8 | MBZ                                                          |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |   7:0 | **FAULT** - see `IOV Error Codes`_                           |
+ *  +---+-------+--------------------------------------------------------------+
+ */
+#define GUC_ACTION_PF2GUC_MMIO_RELAY_FAILURE		0x5008
+
+#define PF2GUC_MMIO_RELAY_FAILURE_REQUEST_MSG_LEN	(GUC_HXG_REQUEST_MSG_MIN_LEN + 2u)
+#define PF2GUC_MMIO_RELAY_FAILURE_REQUEST_MSG_1_VFID	GUC_HXG_REQUEST_MSG_n_DATAn
+#define PF2GUC_MMIO_RELAY_FAILURE_REQUEST_MSG_2_MAGIC	(0xf << 24)
+#define PF2GUC_MMIO_RELAY_FAILURE_REQUEST_MSG_2_FAULT	(0xff << 0)
 
 /**
  * DOC: GUC2PF_ADVERSE_EVENT
@@ -255,9 +373,11 @@
  *  +---+-------+--------------------------------------------------------------+
  *  | 2 |  31:0 | DATA2 = **EVENT** - notification event:                      |
  *  |   |       |                                                              |
- *  |   |       |   - _`GUC_PF_NOTIFY_VF_FLR_START` = 1                        |
- *  |   |       |   - _`GUC_PF_NOTIFY_VF_PAUSE_COMPLETE` = 2                   |
- *  |   |       |   - _`GUC_PF_NOTIFY_VF_FIXUP_DONE` = 3                       |
+ *  |   |       |   - _`GUC_PF_NOTIFY_VF_ENABLE` = 1 (only if VFID = 0)        |
+ *  |   |       |   - _`GUC_PF_NOTIFY_VF_FLR` = 1                              |
+ *  |   |       |   - _`GUC_PF_NOTIFY_VF_FLR_DONE` = 2                         |
+ *  |   |       |   - _`GUC_PF_NOTIFY_VF_PAUSE_DONE` = 3                       |
+ *  |   |       |   - _`GUC_PF_NOTIFY_VF_FIXUP_DONE` = 4                       |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_GUC2PF_VF_STATE_NOTIFY		0x5106
@@ -266,9 +386,11 @@
 #define GUC2PF_VF_STATE_NOTIFY_EVENT_MSG_0_MBZ		GUC_HXG_EVENT_MSG_0_DATA0
 #define GUC2PF_VF_STATE_NOTIFY_EVENT_MSG_1_VFID		GUC_HXG_EVENT_MSG_n_DATAn
 #define GUC2PF_VF_STATE_NOTIFY_EVENT_MSG_2_EVENT	GUC_HXG_EVENT_MSG_n_DATAn
-#define   GUC_PF_NOTIFY_VF_FLR_START			1
-#define   GUC_PF_NOTIFY_VF_PAUSE_COMPLETE		2
-#define   GUC_PF_NOTIFY_VF_FIXUP_DONE			3
+#define   GUC_PF_NOTIFY_VF_ENABLE			1
+#define   GUC_PF_NOTIFY_VF_FLR				1
+#define   GUC_PF_NOTIFY_VF_FLR_DONE			2
+#define   GUC_PF_NOTIFY_VF_PAUSE_DONE			3
+#define   GUC_PF_NOTIFY_VF_FIXUP_DONE			4
 
 /**
  * DOC: PF2GUC_VF_CONTROL
@@ -296,8 +418,8 @@
  *  |   |       |   - _`GUC_PF_TRIGGER_VF_PAUSE` = 1                           |
  *  |   |       |   - _`GUC_PF_TRIGGER_VF_RESUME` = 2                          |
  *  |   |       |   - _`GUC_PF_TRIGGER_VF_STOP` = 3                            |
- *  |   |       |   - _`GUC_PF_TRIGGER_VF_FLR_DONE` = 4                        |
- *  |   |       |   - _`GUC_PF_TRIGGER_VF_RESOURCE_FIX` = 5                    |
+ *  |   |       |   - _`GUC_PF_TRIGGER_VF_FLR_START` = 4                       |
+ *  |   |       |   - _`GUC_PF_TRIGGER_VF_FLR_FINISH` = 5                      |
  *  +---+-------+--------------------------------------------------------------+
  *
  *  +---+-------+--------------------------------------------------------------+
@@ -319,8 +441,8 @@
 #define   GUC_PF_TRIGGER_VF_PAUSE			1
 #define   GUC_PF_TRIGGER_VF_RESUME			2
 #define   GUC_PF_TRIGGER_VF_STOP			3
-#define   GUC_PF_TRIGGER_VF_FLR_DONE			4
-#define   GUC_PF_TRIGGER_VF_RESOURCE_FIX		5
+#define   GUC_PF_TRIGGER_VF_FLR_START			4
+#define   GUC_PF_TRIGGER_VF_FLR_FINISH			5
 
 /**
  * DOC: PF2GUC_SAVE_RESTORE_VF

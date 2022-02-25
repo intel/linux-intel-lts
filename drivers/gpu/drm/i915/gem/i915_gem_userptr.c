@@ -131,7 +131,6 @@ static int i915_gem_userptr_get_pages(struct drm_i915_gem_object *obj)
 	unsigned int max_segment = i915_sg_segment_size();
 	struct sg_table *st;
 	unsigned int sg_page_sizes;
-	struct scatterlist *sg;
 	struct page **pvec;
 	int ret;
 
@@ -148,13 +147,11 @@ static int i915_gem_userptr_get_pages(struct drm_i915_gem_object *obj)
 	pvec = obj->userptr.pvec;
 
 alloc_table:
-	sg = __sg_alloc_table_from_pages(st, pvec, num_pages, 0,
-					 num_pages << PAGE_SHIFT, max_segment,
-					 NULL, 0, GFP_KERNEL);
-	if (IS_ERR(sg)) {
-		ret = PTR_ERR(sg);
+	ret = sg_alloc_table_from_pages_segment(st, pvec, num_pages, 0,
+						num_pages << PAGE_SHIFT,
+						max_segment, GFP_KERNEL);
+	if (ret)
 		goto err;
-	}
 
 	ret = i915_gem_gtt_prepare_pages(obj, st);
 	if (ret) {
@@ -168,8 +165,11 @@ alloc_table:
 		goto err;
 	}
 
-	sg_page_sizes = i915_sg_dma_sizes(st->sgl);
+	WARN_ON_ONCE(!(obj->cache_coherent & I915_BO_CACHE_COHERENT_FOR_WRITE));
+	if (i915_gem_object_can_bypass_llc(obj))
+		obj->cache_dirty = true;
 
+	sg_page_sizes = i915_sg_dma_sizes(st->sgl);
 	__i915_gem_object_set_pages(obj, st, sg_page_sizes);
 
 	return 0;
@@ -549,7 +549,8 @@ i915_gem_userptr_ioctl(struct drm_device *dev,
 		return -ENOMEM;
 
 	drm_gem_private_object_init(dev, &obj->base, args->user_size);
-	i915_gem_object_init(obj, &i915_gem_userptr_ops, &lock_class, 0);
+	i915_gem_object_init(obj, &i915_gem_userptr_ops, &lock_class,
+			     I915_BO_ALLOC_USER);
 	obj->mem_flags = I915_BO_FLAG_STRUCT_PAGE;
 	obj->read_domains = I915_GEM_DOMAIN_CPU;
 	obj->write_domain = I915_GEM_DOMAIN_CPU;

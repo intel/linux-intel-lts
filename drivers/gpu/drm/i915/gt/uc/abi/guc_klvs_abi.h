@@ -6,6 +6,8 @@
 #ifndef _ABI_GUC_KLVS_ABI_H
 #define _ABI_GUC_KLVS_ABI_H
 
+#include <linux/types.h>
+
 /**
  * DOC: GuC KLV
  *
@@ -42,23 +44,23 @@
  *      Refers to 64 bit Global Gfx address of H2G `CT Buffer`_.
  *      Should be above WOPCM address but below APIC base address for native mode.
  *
- * _`GUC_KLV_SELF_CFG_H2G_CTB_DESCRIPTOR_ADDR : 0x0903
+ * _`GUC_KLV_SELF_CFG_H2G_CTB_DESCRIPTOR_ADDR` : 0x0903
  *      Refers to 64 bit Global Gfx address of H2G `CTB Descriptor`_.
  *      Should be above WOPCM address but below APIC base address for native mode.
  *
- * _`GUC_KLV_SELF_CFG_H2G_CTB_SIZE : 0x0904
+ * _`GUC_KLV_SELF_CFG_H2G_CTB_SIZE` : 0x0904
  *      Refers to size of H2G `CT Buffer`_ in bytes.
  *      Should be a multiple of 4K.
  *
- * _`GUC_KLV_SELF_CFG_G2H_CTB_ADDR : 0x0905
+ * _`GUC_KLV_SELF_CFG_G2H_CTB_ADDR` : 0x0905
  *      Refers to 64 bit Global Gfx address of G2H `CT Buffer`_.
  *      Should be above WOPCM address but below APIC base address for native mode.
  *
- * _GUC_KLV_SELF_CFG_G2H_CTB_DESCRIPTOR_ADDR : 0x0906
+ * _`GUC_KLV_SELF_CFG_G2H_CTB_DESCRIPTOR_ADDR` : 0x0906
  *      Refers to 64 bit Global Gfx address of G2H `CTB Descriptor`_.
  *      Should be above WOPCM address but below APIC base address for native mode.
  *
- * _GUC_KLV_SELF_CFG_G2H_CTB_SIZE : 0x0907
+ * _`GUC_KLV_SELF_CFG_G2H_CTB_SIZE` : 0x0907
  *      Refers to size of G2H `CT Buffer`_ in bytes.
  *      Should be a multiple of 4K.
  */
@@ -80,6 +82,19 @@
 
 #define GUC_KLV_SELF_CFG_G2H_CTB_SIZE_KEY		0x0907
 #define GUC_KLV_SELF_CFG_G2H_CTB_SIZE_LEN		1u
+
+/*
+ * Per context scheduling policy update keys.
+ */
+enum  {
+	GUC_CONTEXT_POLICIES_KLV_ID_EXECUTION_QUANTUM			= 0x2001,
+	GUC_CONTEXT_POLICIES_KLV_ID_PREEMPTION_TIMEOUT			= 0x2002,
+	GUC_CONTEXT_POLICIES_KLV_ID_SCHEDULING_PRIORITY			= 0x2003,
+	GUC_CONTEXT_POLICIES_KLV_ID_PREEMPT_TO_IDLE_ON_QUANTUM_EXPIRY	= 0x2004,
+	GUC_CONTEXT_POLICIES_KLV_ID_SLPM_GT_FREQUENCY			= 0x2005,
+
+	GUC_CONTEXT_POLICIES_KLV_NUM_IDS = 5,
+};
 
 /**
  * DOC: GuC VGT Policy KLVs
@@ -180,32 +195,39 @@
  *
  *      :0: no preemption timeout (default)
  *
- * _`GUC_KLV_VF_CFG_THRESHOLD_CAT_ERR`: 0x8A03
+ * _`GUC_KLV_VF_CFG_THRESHOLD_CAT_ERR` : 0x8A03
+ *      This config sets threshold for CAT errors caused by the VF.
  *
  *      :0: adverse events or error will not be reported (default)
  *      :n: event occurrence count per sampling interval
  *
  * _`GUC_KLV_VF_CFG_THRESHOLD_ENGINE_RESET` : 0x8A04
+ *      This config sets threshold for engine reset caused by the VF.
  *
  *      :0: adverse events or error will not be reported (default)
  *      :n: event occurrence count per sampling interval
  *
  * _`GUC_KLV_VF_CFG_THRESHOLD_PAGE_FAULT` : 0x8A05
+ *      This config sets threshold for page fault errors caused by the VF.
  *
  *      :0: adverse events or error will not be reported (default)
  *      :n: event occurrence count per sampling interval
  *
  * _`GUC_KLV_VF_CFG_THRESHOLD_H2G_STORM` : 0x8A06
+ *      This config sets threshold for H2G interrupts triggered by the VF.
  *
  *      :0: adverse events or error will not be reported (default)
  *      :n: time (us) per sampling interval
  *
  * _`GUC_KLV_VF_CFG_THRESHOLD_IRQ_STORM` : 0x8A07
+ *      This config sets threshold for GT interrupts triggered by the VF's
+ *      workloads.
  *
  *      :0: adverse events or error will not be reported (default)
  *      :n: time (us) per sampling interval
  *
  * _`GUC_KLV_VF_CFG_THRESHOLD_DOORBELL_STORM` : 0x8A08
+ *      This config sets threshold for doorbell's ring triggered by the VF.
  *
  *      :0: adverse events or error will not be reported (default)
  *      :n: time (us) per sampling interval

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #include "intel_iov.h"
@@ -332,7 +332,7 @@ static bool pf_is_config_pushed(struct intel_iov *iov, unsigned int id)
 
 static bool pf_needs_push_config(struct intel_iov *iov, unsigned int id)
 {
-	return pf_is_vf_enabled(iov, id) && pf_is_config_pushed(iov, id);
+	return id != PFID && pf_is_vf_enabled(iov, id) && pf_is_config_pushed(iov, id);
 }
 
 /*
@@ -427,17 +427,26 @@ static u64 pf_get_free_ggtt(struct intel_iov *iov)
 	struct i915_ggtt *ggtt = iov_to_gt(iov)->ggtt;
 	const struct drm_mm *mm = &ggtt->vm.mm;
 	const struct drm_mm_node *entry;
-	u64 free_ggtt;
+	u64 alignment = pf_get_ggtt_alignment(iov);
+	u64 hole_min_start = ggtt->pin_bias;
+	u64 hole_start, hole_end;
+	u64 spare = alignment;
+	u64 free_ggtt = 0;
 
 	mutex_lock(&ggtt->vm.mutex);
 
-	free_ggtt = mm->head_node.hole_size;
-	drm_mm_for_each_node(entry, mm)
-		free_ggtt += entry->hole_size;
+	drm_mm_for_each_hole(entry, mm, hole_start, hole_end) {
+		hole_start = max(hole_start, hole_min_start);
+		hole_start = ALIGN(hole_start, alignment);
+		hole_end = ALIGN_DOWN(hole_end, alignment);
+		if (hole_start >= hole_end)
+			continue;
+		free_ggtt += hole_end - hole_start;
+	}
 
 	mutex_unlock(&ggtt->vm.mutex);
 
-	return free_ggtt;
+	return free_ggtt > spare ? free_ggtt - spare : 0;
 }
 
 static u64 pf_get_max_ggtt(struct intel_iov *iov)
@@ -566,11 +575,14 @@ int intel_iov_provisioning_set_ggtt(struct intel_iov *iov, unsigned int id, u64 
 {
 	struct intel_runtime_pm *rpm = iov_to_gt(iov)->uncore->rpm;
 	intel_wakeref_t wakeref;
+	bool reprovisioning;
 	int err = -ENONET;
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 	GEM_BUG_ON(id == PFID);
+
+	reprovisioning = pf_is_valid_config_ggtt(iov, id) || size;
 
 	with_intel_runtime_pm(rpm, wakeref)
 		err = pf_provision_ggtt(iov, id, size);
@@ -578,6 +590,8 @@ int intel_iov_provisioning_set_ggtt(struct intel_iov *iov, unsigned int id, u64 
 	if (unlikely(err))
 		IOV_ERROR(iov, "Failed to provision VF%u with %llu of GGTT (%pe)\n",
 			  id, size, ERR_PTR(err));
+	else if (reprovisioning)
+		pf_mark_manual_provisioning(iov);
 
 	return err;
 }
@@ -657,15 +671,15 @@ static int pf_push_config_ctxs(struct intel_iov *iov, unsigned int id, u16 begin
  * To facilitate the implementation of dynamic context provisioning, we introduced
  * the concept of granularity of contexts. For this purpose, we divided all contexts
  * into packages with size CTXS_GRANULARITY. The exception is the first package, whose
- * size is CTXS_MODULO, because GUC_MAX_LRC_DESCRIPTORS is an odd number.
+ * size is CTXS_MODULO, because GUC_MAX_CONTEXT_ID is an odd number.
  */
 #define CTXS_GRANULARITY 128
-#define CTXS_MODULO (GUC_MAX_LRC_DESCRIPTORS % CTXS_GRANULARITY)
+#define CTXS_MODULO (GUC_MAX_CONTEXT_ID % CTXS_GRANULARITY)
 #define CTXS_DELTA (CTXS_GRANULARITY - CTXS_MODULO)
 
 static u16 ctxs_bitmap_total_bits(void)
 {
-	return ALIGN(GUC_MAX_LRC_DESCRIPTORS, CTXS_GRANULARITY) / CTXS_GRANULARITY;
+	return ALIGN(GUC_MAX_CONTEXT_ID, CTXS_GRANULARITY) / CTXS_GRANULARITY;
 }
 
 static u16 __encode_ctxs_count(u16 num_ctxs, bool first)
@@ -882,10 +896,13 @@ int intel_iov_provisioning_set_ctxs(struct intel_iov *iov, unsigned int id, u16 
 {
 	struct intel_runtime_pm *rpm = iov_to_gt(iov)->uncore->rpm;
 	intel_wakeref_t wakeref;
+	bool reprovisioning;
 	int err = -ENONET;
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
+
+	reprovisioning = pf_is_valid_config_ctxs(iov, id) || num_ctxs;
 
 	with_intel_runtime_pm(rpm, wakeref)
 		err = pf_provision_ctxs(iov, id, num_ctxs);
@@ -893,6 +910,8 @@ int intel_iov_provisioning_set_ctxs(struct intel_iov *iov, unsigned int id, u16 
 	if (unlikely(err))
 		IOV_ERROR(iov, "Failed to provision VF%u with %hu contexts (%pe)\n",
 			  id, num_ctxs, ERR_PTR(err));
+	else if (reprovisioning && id != PFID)
+		pf_mark_manual_provisioning(iov);
 
 	return err;
 }
@@ -1093,10 +1112,13 @@ int intel_iov_provisioning_set_dbs(struct intel_iov *iov, unsigned int id, u16 n
 {
 	struct intel_runtime_pm *rpm = iov_to_gt(iov)->uncore->rpm;
 	intel_wakeref_t wakeref;
+	bool reprovisioning;
 	int err = -ENONET;
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
+
+	reprovisioning = pf_is_valid_config_dbs(iov, id) || num_dbs;
 
 	with_intel_runtime_pm(rpm, wakeref)
 		err = pf_provision_dbs(iov, id, num_dbs);
@@ -1104,6 +1126,8 @@ int intel_iov_provisioning_set_dbs(struct intel_iov *iov, unsigned int id, u16 n
 	if (unlikely(err))
 		IOV_ERROR(iov, "Failed to provision VF%u with %hu doorbells (%pe)\n",
 			  id, num_dbs, ERR_PTR(err));
+	else if (reprovisioning && id != PFID)
+		pf_mark_manual_provisioning(iov);
 
 	return err;
 }
@@ -1230,6 +1254,8 @@ int intel_iov_provisioning_set_exec_quantum(struct intel_iov *iov, unsigned int 
 	if (unlikely(err))
 		IOV_ERROR(iov, "Failed to provision VF%u with %u%s execution quantum (%pe)\n",
 			  id, exec_quantum, exec_quantum_unit(exec_quantum), ERR_PTR(err));
+	else if (exec_quantum && id != PFID)
+		pf_mark_manual_provisioning(iov);
 
 	return err;
 }
@@ -1298,6 +1324,8 @@ int intel_iov_provisioning_set_preempt_timeout(struct intel_iov *iov, unsigned i
 	if (unlikely(err))
 		IOV_ERROR(iov, "Failed to provision VF%u with %u%s preemption timeout (%pe)\n",
 			  id, preempt_timeout, preempt_timeout_unit(preempt_timeout), ERR_PTR(err));
+	else if (preempt_timeout && id != PFID)
+		pf_mark_manual_provisioning(iov);
 
 	return err;
 }
@@ -1389,6 +1417,8 @@ int intel_iov_provisioning_set_threshold(struct intel_iov *iov, unsigned int id,
 	if (unlikely(err))
 		IOV_ERROR(iov, "Failed to set threshold %s=%u for VF%u (%pe)\n",
 			  intel_iov_threshold_to_string(threshold), value, id, ERR_PTR(err));
+	else if (value)
+		pf_mark_manual_provisioning(iov);
 
 	return err;
 }
@@ -1435,7 +1465,7 @@ static void pf_assign_ctxs_for_pf(struct intel_iov *iov)
 	pf_ctxs = decode_pf_ctxs_count(pf_ctxs_bits);
 
 	IOV_DEBUG(iov, "config: %s %u = %u pf + %u available\n",
-		  "contexts", GUC_MAX_LRC_DESCRIPTORS, pf_ctxs, GUC_MAX_LRC_DESCRIPTORS - pf_ctxs);
+		  "contexts", GUC_MAX_CONTEXT_ID, pf_ctxs, GUC_MAX_CONTEXT_ID - pf_ctxs);
 
 	provisioning->configs[0].begin_ctx = 0;
 	provisioning->configs[0].num_ctxs = pf_ctxs;
@@ -1482,6 +1512,8 @@ static void pf_unprovision_config(struct intel_iov *iov, unsigned int id)
 	pf_provision_ggtt(iov, id, 0);
 	pf_provision_ctxs(iov, id, 0);
 	pf_provision_dbs(iov, id, 0);
+	pf_provision_exec_quantum(iov, id, 0);
+	pf_provision_preempt_timeout(iov, id, 0);
 
 	pf_unprovision_thresholds(iov, id);
 }
@@ -1634,11 +1666,12 @@ fail:
 }
 
 /**
- * intel_iov_provisioning_auto() - TBD
+ * intel_iov_provisioning_auto() - Perform auto provisioning of VFs
  * @iov: the IOV struct
  * @num_vfs: number of VFs to auto configure or 0 to unprovision
  *
- * TBD
+ * Perform auto provisioning by allocating fair amount of available
+ * resources for each VF that are to be enabled.
  *
  * This function shall be called only on PF.
  *
@@ -1748,36 +1781,6 @@ static u32 encode_config(u32 *cfg, const struct intel_iov_config *config)
 	return n;
 }
 
-static int pf_push_self_config(struct intel_iov *iov)
-{
-	struct intel_guc *guc = iov_to_guc(iov);
-	u64 ggtt_start = intel_wopcm_guc_size(&iov_to_i915(iov)->wopcm);
-	u64 ggtt_size = GUC_GGTT_TOP - ggtt_start;
-	int err;
-
-	GEM_BUG_ON(!intel_iov_is_pf(iov));
-
-	if (iov->pf.provisioning.self_done)
-		return 0;
-
-	GEM_BUG_ON(intel_wopcm_guc_size(&iov_to_i915(iov)->wopcm) > GUC_GGTT_TOP);
-
-	err = guc_update_vf_klv64(guc, PFID, GUC_KLV_VF_CFG_GGTT_START_KEY, ggtt_start);
-	err = guc_update_vf_klv64(guc, PFID, GUC_KLV_VF_CFG_GGTT_SIZE_KEY, ggtt_size);
-
-	err = guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_BEGIN_CONTEXT_ID_KEY, 0);
-	err = guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_NUM_CONTEXTS_KEY,
-				  iov->pf.provisioning.configs[PFID].num_ctxs);
-
-	err = guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_BEGIN_DOORBELL_ID_KEY, 0);
-	err = guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_NUM_DOORBELLS_KEY,
-				  iov->pf.provisioning.configs[PFID].num_dbs);
-
-	iov->pf.provisioning.self_done = true;
-
-	return err;
-}
-
 static int pf_push_configs(struct intel_iov *iov, unsigned int num)
 {
 	struct intel_iov_provisioning *provisioning = &iov->pf.provisioning;
@@ -1861,10 +1864,6 @@ int intel_iov_provisioning_push(struct intel_iov *iov, unsigned int num)
 	if (unlikely(err < 0))
 		goto fail;
 
-	err = pf_push_self_config(iov);
-	if (unlikely(err))
-		goto fail;
-
 	if (num)
 		err = pf_push_configs(iov, num);
 	else
@@ -1904,7 +1903,6 @@ void intel_iov_provisioning_restart(struct intel_iov *iov)
 {
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
-	iov->pf.provisioning.self_done = false;
 	iov->pf.provisioning.num_pushed = 0;
 
 	if (pf_get_status(iov) > 0)
@@ -2093,3 +2091,92 @@ int intel_iov_provisioning_print_dbs(struct intel_iov *iov, struct drm_printer *
 
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV)
+
+static int pf_reprovision_ggtt(struct intel_iov *iov, unsigned int id)
+{
+	struct i915_ggtt *ggtt = iov_to_gt(iov)->ggtt;
+	struct intel_iov_provisioning *provisioning = &iov->pf.provisioning;
+	struct intel_iov_config *config = &provisioning->configs[id];
+	struct drm_mm_node *node = &config->ggtt_region;
+	struct drm_mm_node new_node = {};
+	u64 alignment = pf_get_ggtt_alignment(iov);
+	u64 node_size = node->size;
+	unsigned int ptes_size;
+	void *ptes;
+	int err;
+
+	if (!drm_mm_node_allocated(node))
+		return -ENODATA;
+
+	/* save PTEs */
+	ptes_size = i915_ggtt_save_ptes(ggtt, node, NULL, 0, 0);
+	ptes = kmalloc(ptes_size, GFP_KERNEL);
+	if (!ptes)
+		return -ENOMEM;
+	err = i915_ggtt_save_ptes(ggtt, node, ptes, ptes_size, 0);
+	if (err < 0)
+		goto out;
+
+	/* allocate new block */
+	mutex_lock(&ggtt->vm.mutex);
+	err = i915_gem_gtt_insert(&ggtt->vm, &new_node, node_size, alignment,
+		I915_COLOR_UNEVICTABLE,
+		0, ggtt->vm.total,
+		PIN_HIGH);
+	mutex_unlock(&ggtt->vm.mutex);
+	if (err)
+		goto out;
+	GEM_WARN_ON(node_size != new_node.size);
+
+	/* reprovision */
+	err = pf_push_config_ggtt(iov, id, new_node.start, new_node.size);
+	if (err) {
+		mutex_lock(&ggtt->vm.mutex);
+		drm_mm_remove_node(&new_node);
+		mutex_unlock(&ggtt->vm.mutex);
+		goto out;
+	}
+
+	/* replace node */
+	mutex_lock(&ggtt->vm.mutex);
+	drm_mm_remove_node(node);
+	drm_mm_replace_node(&new_node, node);
+	mutex_unlock(&ggtt->vm.mutex);
+
+	/* restore PTEs */
+	err = i915_ggtt_restore_ptes(ggtt, node, ptes, ptes_size, 0);
+	if (err)
+		i915_ggtt_set_space_owner(ggtt, id, node);
+
+out:
+	kfree(ptes);
+	return err;
+}
+
+/**
+ * intel_iov_provisioning_move_ggtt - Move existing GGTT allocation to other location.
+ * @iov: the IOV struct
+ * @id: VF identifier
+ *
+ * This function is for internal testing of VF migration scenarios.
+ * This function can only be called on PF.
+ */
+int intel_iov_provisioning_move_ggtt(struct intel_iov *iov, unsigned int id)
+{
+	struct intel_runtime_pm *rpm = iov_to_gt(iov)->uncore->rpm;
+	intel_wakeref_t wakeref;
+	int err = -ENONET;
+
+	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	GEM_BUG_ON(id > pf_get_totalvfs(iov));
+	GEM_BUG_ON(id == PFID);
+
+	with_intel_runtime_pm(rpm, wakeref)
+		err = pf_reprovision_ggtt(iov, id);
+
+	return err;
+}
+
+#endif /* CONFIG_DRM_I915_DEBUG_IOV */

@@ -244,6 +244,7 @@ nouveau_cli_init(struct nouveau_drm *drm, const char *sname,
 	ret = nvif_device_ctor(&cli->base.object, "drmDevice", 0, NV_DEVICE,
 			       &(struct nv_device_v0) {
 					.device = ~0,
+					.priv = true,
 			       }, sizeof(struct nv_device_v0),
 			       &cli->device);
 	if (ret) {
@@ -343,6 +344,9 @@ nouveau_accel_gr_init(struct nouveau_drm *drm)
 	struct nvif_device *device = &drm->client.device;
 	u32 arg0, arg1;
 	int ret;
+
+	if (device->info.family >= NV_DEVICE_INFO_V0_AMPERE)
+		return;
 
 	/* Allocate channel that has access to the graphics engine. */
 	if (device->info.family >= NV_DEVICE_INFO_V0_KEPLER) {
@@ -468,6 +472,7 @@ nouveau_accel_init(struct nouveau_drm *drm)
 		case PASCAL_CHANNEL_GPFIFO_A:
 		case VOLTA_CHANNEL_GPFIFO_A:
 		case TURING_CHANNEL_GPFIFO_A:
+		case AMPERE_CHANNEL_GPFIFO_B:
 			ret = nvc0_fence_create(drm);
 			break;
 		default:

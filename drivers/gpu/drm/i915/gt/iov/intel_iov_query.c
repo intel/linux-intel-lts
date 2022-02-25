@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #include <drm/drm_print.h>
 #include <linux/bitfield.h>
+#include <linux/crc32.h>
 
 #include "abi/iov_actions_abi.h"
+#include "abi/iov_actions_mmio_abi.h"
 #include "abi/iov_version_abi.h"
 #include "gt/uc/abi/guc_actions_vf_abi.h"
 #include "gt/uc/abi/guc_klvs_abi.h"
 #include "i915_drv.h"
-#include "intel_iov_abi.h"
 #include "intel_iov_relay.h"
 #include "intel_iov_utils.h"
 #include "intel_iov_types.h"
@@ -40,8 +41,8 @@ static int vf_reset_guc_state(struct intel_iov *iov)
 
 	err = guc_action_vf_reset(guc);
 	if (unlikely(err))
-		IOV_ERROR(iov, "Failed to reset GuC state (%pe)\n",
-			  ERR_PTR(err));
+		IOV_PROBE_ERROR(iov, "Failed to reset GuC state (%pe)\n",
+				ERR_PTR(err));
 
 	return err;
 }
@@ -221,7 +222,6 @@ static int vf_get_ggtt_info(struct intel_iov *iov)
 	int err;
 
 	GEM_BUG_ON(!intel_iov_is_vf(iov));
-	GEM_BUG_ON(iov->vf.config.ggtt_size);
 
 	err = guc_action_query_single_klv64(guc, GUC_KLV_VF_CFG_GGTT_START_KEY, &start);
 	if (unlikely(err))
@@ -231,13 +231,17 @@ static int vf_get_ggtt_info(struct intel_iov *iov)
 	if (unlikely(err))
 		return err;
 
+	IOV_DEBUG(iov, "GGTT %#llx-%#llx = %lluK\n",
+		  start, start + size - 1, size / SZ_1K);
+
+	if (iov->vf.config.ggtt_size && iov->vf.config.ggtt_size != size) {
+		IOV_ERROR(iov, "Unexpected GGTT reassignment: %lluK != %lluK\n",
+			  size / SZ_1K, iov->vf.config.ggtt_size / SZ_1K);
+		return -EREMCHG;
+	}
+
 	iov->vf.config.ggtt_base = start;
 	iov->vf.config.ggtt_size = size;
-
-	IOV_DEBUG(iov, "GGTT %#llx-%#llx = %lluM\n",
-		  iov->vf.config.ggtt_base,
-		  iov->vf.config.ggtt_base + iov->vf.config.ggtt_size - 1,
-		  iov->vf.config.ggtt_size / SZ_1M);
 
 	return iov->vf.config.ggtt_size ? 0 : -ENODATA;
 }
@@ -249,7 +253,6 @@ static int vf_get_submission_cfg(struct intel_iov *iov)
 	int err;
 
 	GEM_BUG_ON(!intel_iov_is_vf(iov));
-	GEM_BUG_ON(iov->vf.config.num_ctxs);
 
 	err = guc_action_query_single_klv32(guc, GUC_KLV_VF_CFG_NUM_CONTEXTS_KEY, &num_ctxs);
 	if (unlikely(err))
@@ -259,29 +262,23 @@ static int vf_get_submission_cfg(struct intel_iov *iov)
 	if (unlikely(err))
 		return err;
 
+	IOV_DEBUG(iov, "CTXs %u DBs %u\n", num_ctxs, num_dbs);
+
+	if (iov->vf.config.num_ctxs && iov->vf.config.num_ctxs != num_ctxs) {
+		IOV_ERROR(iov, "Unexpected CTXs reassignment: %u != %u\n",
+			  num_ctxs, iov->vf.config.num_ctxs);
+		return -EREMCHG;
+	}
+	if (iov->vf.config.num_dbs && iov->vf.config.num_dbs != num_dbs) {
+		IOV_ERROR(iov, "Unexpected DBs reassignment: %u != %u\n",
+			  num_dbs, iov->vf.config.num_dbs);
+		return -EREMCHG;
+	}
+
 	iov->vf.config.num_ctxs = num_ctxs;
 	iov->vf.config.num_dbs = num_dbs;
 
-	IOV_DEBUG(iov, "CTXS %u DBS %u\n",
-		  iov->vf.config.num_ctxs, iov->vf.config.num_dbs);
-
 	return iov->vf.config.num_ctxs ? 0 : -ENODATA;
-}
-
-static void vf_get_huc_info(struct intel_iov *iov)
-{
-	struct intel_huc *huc = &iov_to_gt(iov)->uc.huc;
-
-	GEM_BUG_ON(!intel_iov_is_vf(iov));
-
-	/* Set HuC status as loaded only if HuC supported */
-	if (!intel_uc_fw_is_supported(&huc->fw))
-		return;
-
-	/* XXX: We don't know how to get the HuC version yet */
-	huc->fw.user_overridden = true;
-
-	intel_uc_fw_set_preloaded(&huc->fw, 0, 0);
 }
 
 /**
@@ -305,8 +302,6 @@ int intel_iov_query_config(struct intel_iov *iov)
 	err = vf_get_submission_cfg(iov);
 	if (unlikely(err))
 		return err;
-
-	vf_get_huc_info(iov);
 
 	return 0;
 }
@@ -392,9 +387,10 @@ failed:
 
 static const i915_reg_t tgl_early_regs[] = {
 	RPM_CONFIG0,			/* _MMIO(0x0D00) */
+	GEN10_MIRROR_FUSE3,		/* _MMIO(0x9118) */
 	GEN11_EU_DISABLE,		/* _MMIO(0x9134) */
 	GEN11_GT_SLICE_ENABLE,		/* _MMIO(0x9138) */
-	GEN12_GT_DSS_ENABLE,	/* _MMIO(0x913C) */
+	GEN12_GT_GEOMETRY_DSS_ENABLE,	/* _MMIO(0x913C) */
 	GEN11_GT_VEBOX_VDBOX_DISABLE,	/* _MMIO(0x9140) */
 	CTC_MODE,			/* _MMIO(0xA26C) */
 };
@@ -425,75 +421,176 @@ static void vf_cleanup_runtime_info(struct intel_iov *iov)
 	iov->vf.runtime.regs_size = 0;
 }
 
-static int vf_get_runtime_info_mmio(struct intel_iov *iov)
+static int vf_prepare_runtime_info(struct intel_iov *iov, unsigned int regs_size,
+				   unsigned int alignment)
 {
-	struct intel_guc *guc = iov_to_guc(iov);
-	u32 action[GUC_MMIO_RELAY_REQ_MSG_LEN] = {
-		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION,
-			   INTEL_GUC_ACTION_MMIO_RELAY_SERVICE) |
-		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_DATA0,
-			   MMIO_RELAY_SUBCODE_VFPF_GET_REG),
-	};
-	u32 response[GUC_MMIO_RELAY_RESP_MSG_LEN];
-	struct vf_runtime_reg *vf_regs;
-	const i915_reg_t *regs;
-	unsigned int size, size_up, i;
-	int err;
+	unsigned int regs_size_up = roundup(regs_size, alignment);
 
 	GEM_BUG_ON(!intel_iov_is_vf(iov));
-	GEM_BUG_ON(iov->vf.runtime.regs);
+	GEM_BUG_ON(iov->vf.runtime.regs_size && !iov->vf.runtime.regs);
+
+	iov->vf.runtime.regs = krealloc(iov->vf.runtime.regs,
+					regs_size_up * sizeof(struct vf_runtime_reg),
+					__GFP_ZERO | GFP_NOWAIT | __GFP_NOWARN);
+	if (unlikely(!iov->vf.runtime.regs))
+		return -ENOMEM;
+
+	iov->vf.runtime.regs_size = regs_size;
+
+	return regs_size_up;
+}
+
+static void vf_show_runtime_info(struct intel_iov *iov)
+{
+	struct vf_runtime_reg *vf_regs = iov->vf.runtime.regs;
+	unsigned int size = iov->vf.runtime.regs_size;
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+
+	for ( ; size--; vf_regs++) {
+		IOV_DEBUG(iov, "RUNTIME reg[%#x] = %#x\n",
+			  vf_regs->offset, vf_regs->value);
+	}
+}
+
+static int guc_send_mmio_relay(struct intel_guc *guc, const u32 *request, u32 len,
+			       u32 *response, u32 response_size)
+{
+	u32 magic1, magic2;
+	int ret;
+
+	GEM_BUG_ON(len < VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_MIN_LEN);
+	GEM_BUG_ON(response_size < VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_MIN_LEN);
+
+	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, request[0]) != GUC_HXG_ORIGIN_HOST);
+	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, request[0]) != GUC_HXG_TYPE_REQUEST);
+	GEM_BUG_ON(FIELD_GET(GUC_HXG_REQUEST_MSG_0_ACTION, request[0]) !=
+			     GUC_ACTION_VF2GUC_MMIO_RELAY_SERVICE);
+
+	magic1 = FIELD_GET(VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_0_MAGIC, request[0]);
+
+	ret = intel_guc_send_mmio(guc, request, len, response, response_size);
+	if (unlikely(ret < 0))
+		return ret;
+
+	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, response[0]) != GUC_HXG_ORIGIN_GUC);
+	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, response[0]) != GUC_HXG_TYPE_RESPONSE_SUCCESS);
+
+	magic2 = FIELD_GET(VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_0_MAGIC, response[0]);
+
+	if (unlikely(magic1 != magic2))
+		return -EPROTO;
+
+	return ret;
+}
+
+static u32 mmio_relay_header(u32 opcode, u32 magic)
+{
+	return FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+	       FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+	       FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_VF2GUC_MMIO_RELAY_SERVICE) |
+	       FIELD_PREP(VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_0_MAGIC, magic) |
+	       FIELD_PREP(VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_0_OPCODE, opcode);
+}
+
+static int vf_handshake_with_pf_mmio(struct intel_iov *iov)
+{
+	u32 major_wanted = IOV_VERSION_LATEST_MAJOR;
+	u32 minor_wanted = IOV_VERSION_LATEST_MINOR;
+	u32 request[VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_MAX_LEN] = {
+		mmio_relay_header(IOV_OPCODE_VF2PF_MMIO_HANDSHAKE, 0xF),
+		FIELD_PREP(VF2PF_MMIO_HANDSHAKE_REQUEST_MSG_1_MAJOR, major_wanted) |
+		FIELD_PREP(VF2PF_MMIO_HANDSHAKE_REQUEST_MSG_1_MINOR, minor_wanted),
+	};
+	u32 response[VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_MAX_LEN];
+	u32 major, minor;
+	int ret;
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+
+	ret = guc_send_mmio_relay(iov_to_guc(iov), request, ARRAY_SIZE(request),
+				  response, ARRAY_SIZE(response));
+	if (unlikely(ret < 0))
+		goto failed;
+
+	major = FIELD_GET(VF2PF_MMIO_HANDSHAKE_RESPONSE_MSG_1_MAJOR, response[1]);
+	minor = FIELD_GET(VF2PF_MMIO_HANDSHAKE_RESPONSE_MSG_1_MINOR, response[1]);
+	if (unlikely(major != major_wanted || minor != minor_wanted)) {
+		ret = -ENOPKG;
+		goto failed;
+	}
+
+	IOV_DEBUG(iov, "Using ABI %u.%02u\n", major, minor);
+	return 0;
+
+failed:
+	IOV_PROBE_ERROR(iov, "Unable to confirm ABI version %u.%02u (%pe)\n",
+			major_wanted, minor_wanted, ERR_PTR(ret));
+	return -ECONNREFUSED;
+}
+
+static int vf_get_runtime_info_mmio(struct intel_iov *iov)
+{
+	u32 request[VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_MAX_LEN];
+	u32 response[VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_MAX_LEN];
+	u32 chunk = VF2PF_MMIO_GET_RUNTIME_REQUEST_MSG_NUM_OFFSET;
+	unsigned int size, size_up, i, n;
+	struct vf_runtime_reg *vf_regs;
+	const i915_reg_t *regs;
+	int ret;
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+	BUILD_BUG_ON(VF2PF_MMIO_GET_RUNTIME_REQUEST_MSG_NUM_OFFSET >
+		     VF2PF_MMIO_GET_RUNTIME_RESPONSE_MSG_NUM_VALUE);
 
 	regs = get_early_regs(iov_to_i915(iov), &size);
 	if (IS_ERR(regs)) {
-		err = PTR_ERR(regs);
+		ret = PTR_ERR(regs);
 		goto failed;
 	}
 	if (!size)
 		return 0;
 
-	size_up = roundup(size, VFPF_GET_REG_DATA_MAX);
-	vf_regs = kcalloc(size_up, sizeof(struct vf_runtime_reg), GFP_KERNEL);
-	if (unlikely(!vf_regs)) {
-		err = -ENOMEM;
+	/*
+	 * We want to allocate slightly larger buffer in order to align
+	 * ourselves with GuC interface and avoid out-of-bounds write.
+	 */
+	ret = vf_prepare_runtime_info(iov, size, chunk);
+	if (unlikely(ret < 0))
 		goto failed;
-	}
+	vf_regs = iov->vf.runtime.regs;
+	size_up = ret;
+	GEM_BUG_ON(!size_up);
 
 	for (i = 0; i < size; i++)
 		vf_regs[i].offset = i915_mmio_reg_offset(regs[i]);
 
-	for (i = 0; i < size_up; i += VFPF_GET_REG_DATA_MAX) {
-		action[1] = FIELD_PREP(GUC_MMIO_RELAY_REQ_DATA1,
-				       vf_regs[i].offset);
-		action[2] = FIELD_PREP(GUC_MMIO_RELAY_REQ_DATA2,
-				       vf_regs[i + 1].offset);
-		action[3] = FIELD_PREP(GUC_MMIO_RELAY_REQ_DATA3,
-				       vf_regs[i + 2].offset);
-		err = intel_guc_send_mmio(guc, action, ARRAY_SIZE(action),
+	for (i = 0; i < size_up; i += chunk) {
+
+		request[0] = mmio_relay_header(IOV_OPCODE_VF2PF_MMIO_GET_RUNTIME, 0);
+
+		for (n = 0; n < chunk; n++)
+			request[1 + n] = vf_regs[i + n].offset;
+
+		/* we will use few bits from crc32 as magic */
+		u32p_replace_bits(request, crc32_le(0, (void *)request, sizeof(request)),
+				  VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_0_MAGIC);
+
+		ret = guc_send_mmio_relay(iov_to_guc(iov), request, ARRAY_SIZE(request),
 					  response, ARRAY_SIZE(response));
-		if (unlikely(err < 0))
+		if (unlikely(ret < 0))
 			goto failed;
+		GEM_BUG_ON(ret != ARRAY_SIZE(response));
 
-		vf_regs[i + 0].value = FIELD_GET(GUC_MMIO_RELAY_RESP_DATA1,
-						 response[1]);
-		vf_regs[i + 1].value = FIELD_GET(GUC_MMIO_RELAY_RESP_DATA2,
-						 response[2]);
-		vf_regs[i + 2].value = FIELD_GET(GUC_MMIO_RELAY_RESP_DATA3,
-						 response[3]);
-	}
-
-	iov->vf.runtime.regs_size = size;
-	iov->vf.runtime.regs = vf_regs;
-
-	for (; size--; vf_regs++) {
-		IOV_DEBUG(iov, "early reg[%#x] = %#x\n",
-			  vf_regs->offset, vf_regs->value);
+		for (n = 0; n < chunk; n++)
+			vf_regs[i + n].value = response[1 + n];
 	}
 
 	return 0;
 
 failed:
 	vf_cleanup_runtime_info(iov);
-	return err;
+	return ret;
 }
 
 static int vf_get_runtime_info_relay(struct intel_iov *iov)
@@ -501,17 +598,19 @@ static int vf_get_runtime_info_relay(struct intel_iov *iov)
 	struct drm_i915_private *i915 = iov_to_i915(iov);
 	u32 request[VF2PF_QUERY_RUNTIME_REQUEST_MSG_LEN];
 	u32 response[VF2PF_QUERY_RUNTIME_RESPONSE_MSG_MAX_LEN];
+	u32 limit = (ARRAY_SIZE(response) - VF2PF_QUERY_RUNTIME_RESPONSE_MSG_MIN_LEN) / 2;
 	u32 start = 0;
 	u32 count, remaining, num, i;
 	int ret;
 
 	GEM_BUG_ON(!intel_iov_is_vf(iov));
+	GEM_BUG_ON(!limit);
 	assert_rpm_wakelock_held(&i915->runtime_pm);
 
 	request[0] = FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
 		     FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
 		     FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, IOV_ACTION_VF2PF_QUERY_RUNTIME) |
-		     FIELD_PREP(VF2PF_QUERY_RUNTIME_REQUEST_MSG_0_LIMIT, 0);
+		     FIELD_PREP(VF2PF_QUERY_RUNTIME_REQUEST_MSG_0_LIMIT, limit);
 
 repeat:
 	request[1] = FIELD_PREP(VF2PF_QUERY_RUNTIME_REQUEST_MSG_1_START, start);
@@ -543,15 +642,9 @@ repeat:
 	}
 
 	if (start == 0) {
-		GEM_BUG_ON(iov->vf.runtime.regs);
-		iov->vf.runtime.regs_size = num + remaining;
-		iov->vf.runtime.regs = kcalloc(num + remaining,
-						 sizeof(struct vf_runtime_reg),
-						 GFP_KERNEL);
-		if (!iov->vf.runtime.regs) {
-			ret = -ENOMEM;
+		ret = vf_prepare_runtime_info(iov, num + remaining, 1);
+		if (unlikely(ret < 0))
 			goto failed;
-		}
 	} else if (unlikely(start + num > iov->vf.runtime.regs_size)) {
 		ret = -EPROTO;
 		goto failed;
@@ -562,8 +655,6 @@ repeat:
 
 		reg->offset = response[VF2PF_QUERY_RUNTIME_RESPONSE_MSG_MIN_LEN + 2 * i];
 		reg->value = response[VF2PF_QUERY_RUNTIME_RESPONSE_MSG_MIN_LEN + 2 * i + 1];
-		IOV_DEBUG(iov, "RUNTIME %u: %#x = %#x\n",
-			  start + i, reg->offset, reg->value);
 	}
 
 	if (remaining) {
@@ -593,7 +684,12 @@ int intel_iov_query_runtime(struct intel_iov *iov, bool early)
 
 	GEM_BUG_ON(!intel_iov_is_vf(iov));
 
-	vf_cleanup_runtime_info(iov);
+	if (early) {
+		err = vf_handshake_with_pf_mmio(iov);
+		if (unlikely(err))
+			goto failed;
+	}
+
 	if (early)
 		err = vf_get_runtime_info_mmio(iov);
 	else
@@ -601,10 +697,12 @@ int intel_iov_query_runtime(struct intel_iov *iov, bool early)
 	if (unlikely(err))
 		goto failed;
 
+	vf_show_runtime_info(iov);
 	return 0;
 
 failed:
-	IOV_PROBE_ERROR(iov, "Failed to get runtime info, %d\n", err);
+	IOV_PROBE_ERROR(iov, "Failed to get runtime info (%pe)\n",
+			ERR_PTR(err));
 	return err;
 }
 

@@ -169,7 +169,7 @@
 /**
  * DOC: VF2GUC_RELAY_TO_PF
  *
- * The VF2GUC_RELAY_TO_PF message is used to send VF/PF messages to the PF.
+ * The `VF2GUC_RELAY_TO_PF`_ message is used to send VF/PF messages to the PF.
  *
  * This message must be sent over CTB.
  *
@@ -178,19 +178,19 @@
  *  +===+=======+==============================================================+
  *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_HOST_                                |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 30:28 | TYPE = GUC_HXG_TYPE_REQUEST_ or GUC_HXG_TYPE_EVENT_          |
+ *  |   | 30:28 | TYPE = GUC_HXG_TYPE_REQUEST_ or GUC_HXG_TYPE_FAST_REQUEST_   |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 27:16 | DATA0 = MBZ                                                  |
+ *  |   | 27:16 | MBZ                                                          |
  *  |   +-------+--------------------------------------------------------------+
  *  |   |  15:0 | ACTION = _`GUC_ACTION_VF2GUC_RELAY_TO_PF` = 0x5103           |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 |  31:0 | DATA1 = **RELAY_ID** - VF/PF message ID                      |
+ *  | 1 |  31:0 | **RELAY_ID** - VF/PF message ID                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | 2 |  31:0 | DATA2 = **RELAY_DATA1** - VF/PF message payload data         |
+ *  | 2 |  31:0 | **RELAY_DATA1** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  *  |...|       |                                                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | n |  31:0 | DATAn = **RELAY_DATAx** - VF/PF message payload data         |
+ *  | n |  31:0 | **RELAY_DATAx** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_VF2GUC_RELAY_TO_PF			0x5103
@@ -201,13 +201,10 @@
 #define VF2GUC_RELAY_TO_PF_REQUEST_MSG_1_RELAY_ID	GUC_HXG_REQUEST_MSG_n_DATAn
 #define VF2GUC_RELAY_TO_PF_REQUEST_MSG_n_RELAY_DATAx	GUC_HXG_REQUEST_MSG_n_DATAn
 
-#define VF2GUC_RELAY_TO_PF_RESPONSE_MSG_LEN		GUC_HXG_RESPONSE_MSG_MIN_LEN
-#define VF2GUC_RELAY_TO_PF_RESPONSE_MSG_0_MBZ		GUC_HXG_RESPONSE_MSG_0_DATA0
-
 /**
  * DOC: GUC2VF_RELAY_FROM_PF
  *
- * The GUC2VF_RELAY_FROM_PF message is used by GuC to forward VF/PF messages
+ * The `GUC2VF_RELAY_FROM_PF`_ message is used by GuC to forward VF/PF messages
  * received from the PF.
  *
  * This message must be sent over CTB.
@@ -219,17 +216,17 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_EVENT_                                   |
  *  |   +-------+--------------------------------------------------------------+
- *  |   | 27:16 | DATA0 = MBZ                                                  |
+ *  |   | 27:16 | MBZ                                                          |
  *  |   +-------+--------------------------------------------------------------+
  *  |   |  15:0 | ACTION = _`GUC_ACTION_GUC2VF_RELAY_FROM_PF` = 0x5102         |
  *  +---+-------+--------------------------------------------------------------+
- *  | 1 |  31:0 | DATA1 = **RELAY_ID** - VF/PF message ID                      |
+ *  | 1 |  31:0 | **RELAY_ID** - VF/PF message ID                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | 2 |  31:0 | DATA2 = **RELAY_DATA1** - VF/PF message payload data         |
+ *  | 2 |  31:0 | **RELAY_DATA1** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  *  |...|       |                                                              |
  *  +---+-------+--------------------------------------------------------------+
- *  | n |  31:0 | DATAn = **RELAY_DATAx** - VF/PF message payload data         |
+ *  | n |  31:0 | **RELAY_DATAx** - VF/PF message payload data                 |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_GUC2VF_RELAY_FROM_PF			0x5102
@@ -239,5 +236,78 @@
 #define GUC2VF_RELAY_FROM_PF_EVENT_MSG_0_MBZ		GUC_HXG_EVENT_MSG_0_DATA0
 #define GUC2VF_RELAY_FROM_PF_EVENT_MSG_1_RELAY_ID	GUC_HXG_EVENT_MSG_n_DATAn
 #define GUC2VF_RELAY_FROM_PF_EVENT_MSG_n_RELAY_DATAx	GUC_HXG_EVENT_MSG_n_DATAn
+
+/**
+ * DOC: VF2GUC_MMIO_RELAY_SERVICE
+ *
+ * The VF2GUC_MMIO_RELAY_SERVICE action allows to send early MMIO VF/PF messages
+ * from the VF to the PF.
+ *
+ * Note that support for the sending such messages to the PF is not guaranteed
+ * and might be disabled or blocked in the future releases.
+ *
+ * The value of **MAGIC** used in the GUC_HXG_TYPE_REQUEST_ shall be generated
+ * by the VF and value of **MAGIC** included in GUC_HXG_TYPE_RESPONSE_SUCCESS_
+ * shall be the same.
+ *
+ * In case of GUC_HXG_TYPE_RESPONSE_FAILURE_, **MAGIC** shall be encoded in upper
+ * bits of **HINT** field.
+ *
+ * This action may take longer time to completion and VFs should expect intermediate
+ * `HXG Busy`_ response message.
+ *
+ * This action is only available over MMIO.
+ *
+ *  +---+-------+--------------------------------------------------------------+
+ *  |   | Bits  | Description                                                  |
+ *  +===+=======+==============================================================+
+ *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_HOST_                                |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 30:28 | TYPE = GUC_HXG_TYPE_REQUEST_                                 |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:24 | **MAGIC** - MMIO VF/PF message magic number (like CRC)       |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 23:16 | **OPCODE** - MMIO VF/PF message opcode                       |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  15:0 | ACTION = _`GUC_ACTION_VF2GUC_MMIO_RELAY_SERVICE` = 0x5005    |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 1 |  31:0 | **DATA1** - optional MMIO VF/PF payload data (or zero)       |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 2 |  31:0 | **DATA2** - optional MMIO VF/PF payload data (or zero)       |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 3 |  31:0 | **DATA3** - optional MMIO VF/PF payload data (or zero)       |
+ *  +---+-------+--------------------------------------------------------------+
+ *
+ *  +---+-------+--------------------------------------------------------------+
+ *  |   | Bits  | Description                                                  |
+ *  +===+=======+==============================================================+
+ *  | 0 |    31 | ORIGIN = GUC_HXG_ORIGIN_GUC_                                 |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 30:28 | TYPE = GUC_HXG_TYPE_RESPONSE_SUCCESS_                        |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 27:24 | **MAGIC** - must match value from the REQUEST                |
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   |  23:0 | **DATA0** - MMIO VF/PF response data                         |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 1 |  31:0 | **DATA1** - MMIO VF/PF response data (or zero)               |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 2 |  31:0 | **DATA2** - MMIO VF/PF response data (or zero)               |
+ *  +---+-------+--------------------------------------------------------------+
+ *  | 3 |  31:0 | **DATA3** - MMIO VF/PF response data (or zero)               |
+ *  +---+-------+--------------------------------------------------------------+
+ */
+#define GUC_ACTION_VF2GUC_MMIO_RELAY_SERVICE		0x5005
+
+#define VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_MIN_LEN	(GUC_HXG_REQUEST_MSG_MIN_LEN)
+#define VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_MAX_LEN	(GUC_HXG_REQUEST_MSG_MIN_LEN + 3u)
+#define VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_0_MAGIC	(0xf << 24)
+#define VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_0_OPCODE	(0xff << 16)
+#define VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_n_DATAn	GUC_HXG_REQUEST_MSG_n_DATAn
+
+#define VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_MIN_LEN	(GUC_HXG_RESPONSE_MSG_MIN_LEN)
+#define VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_MAX_LEN	(GUC_HXG_RESPONSE_MSG_MIN_LEN + 3u)
+#define VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_0_MAGIC	(0xf << 24)
+#define VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_0_DATA0	(0xffffff << 0)
+#define VF2GUC_MMIO_RELAY_SERVICE_RESPONSE_MSG_n_DATAn	GUC_HXG_RESPONSE_MSG_n_DATAn
 
 #endif /* _ABI_GUC_ACTIONS_VF_ABI_H */

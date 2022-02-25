@@ -44,14 +44,16 @@ void intel_context_free(struct intel_context *ce);
 int intel_context_reconfigure_sseu(struct intel_context *ce,
 				   const struct intel_sseu sseu);
 
+#define PARENT_SCRATCH_SIZE	PAGE_SIZE
+
 static inline bool intel_context_is_child(struct intel_context *ce)
 {
-	return !!ce->parent;
+	return !!ce->parallel.parent;
 }
 
 static inline bool intel_context_is_parent(struct intel_context *ce)
 {
-	return !!ce->guc_number_children;
+	return !!ce->parallel.number_children;
 }
 
 static inline bool intel_context_is_pinned(struct intel_context *ce);
@@ -59,20 +61,20 @@ static inline bool intel_context_is_pinned(struct intel_context *ce);
 static inline struct intel_context *
 intel_context_to_parent(struct intel_context *ce)
 {
-		if (intel_context_is_child(ce)) {
+	if (intel_context_is_child(ce)) {
 		/*
 		 * The parent holds ref count to the child so it is always safe
-		 * for the parent to access the child, but the child has pointer
-		 * to the parent without a ref. To ensure this is safe the child
-		 * should only access the parent pointer while the parent is
-		 * pinned.
+		 * for the parent to access the child, but the child has a
+		 * pointer to the parent without a ref. To ensure this is safe
+		 * the child should only access the parent pointer while the
+		 * parent is pinned.
 		 */
-				GEM_BUG_ON(!intel_context_is_pinned(ce->parent));
+		GEM_BUG_ON(!intel_context_is_pinned(ce->parallel.parent));
 
-				return ce->parent;
-		} else {
-				return ce;
-		}
+		return ce->parallel.parent;
+	} else {
+		return ce;
+	}
 }
 
 static inline bool intel_context_is_parallel(struct intel_context *ce)
@@ -84,9 +86,11 @@ void intel_context_bind_parent_child(struct intel_context *parent,
 				     struct intel_context *child);
 
 #define for_each_child(parent, ce)\
-	list_for_each_entry(ce, &(parent)->guc_child_list, guc_child_link)
+	list_for_each_entry(ce, &(parent)->parallel.child_list,\
+			    parallel.child_link)
 #define for_each_child_safe(parent, ce, cn)\
-	list_for_each_entry_safe(ce, cn, &(parent)->guc_child_list, guc_child_link)
+	list_for_each_entry_safe(ce, cn, &(parent)->parallel.child_list,\
+				 parallel.child_link)
 
 /**
  * intel_context_lock_pinned - Stablises the 'pinned' status of the HW context
@@ -241,7 +245,7 @@ intel_context_timeline_lock(struct intel_context *ce)
 		err = mutex_lock_interruptible_nested(&tl->mutex, 0);
 	else if (intel_context_is_child(ce))
 		err = mutex_lock_interruptible_nested(&tl->mutex,
-						      ce->guc_child_index + 1);
+						      ce->parallel.child_index + 1);
 	else
 		err = mutex_lock_interruptible(&tl->mutex);
 	if (err)
