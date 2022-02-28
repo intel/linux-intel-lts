@@ -689,9 +689,9 @@ static int convert_tiling_flags_to_modifier(struct amdgpu_framebuffer *afb)
 			return -EINVAL;
 		}
 
-		if (adev->asic_type >= CHIP_SIENNA_CICHLID)
+		if (adev->ip_versions[GC_HWIP][0] >= IP_VERSION(10, 3, 0))
 			version = AMD_FMT_MOD_TILE_VER_GFX10_RBPLUS;
-		else if (adev->family == AMDGPU_FAMILY_NV)
+		else if (adev->ip_versions[GC_HWIP][0] >= IP_VERSION(10, 0, 0))
 			version = AMD_FMT_MOD_TILE_VER_GFX10;
 		else
 			version = AMD_FMT_MOD_TILE_VER_GFX9;
@@ -785,7 +785,7 @@ static int convert_tiling_flags_to_modifier(struct amdgpu_framebuffer *afb)
 				if (adev->family >= AMDGPU_FAMILY_NV) {
 					int extra_pipe = 0;
 
-					if (adev->asic_type >= CHIP_SIENNA_CICHLID &&
+					if ((adev->ip_versions[GC_HWIP][0] >= IP_VERSION(10, 3, 0)) &&
 					    pipes == packers && pipes > 1)
 						extra_pipe = 1;
 
@@ -1122,7 +1122,7 @@ int amdgpu_display_framebuffer_init(struct drm_device *dev,
 	if (ret)
 		return ret;
 
-	if (!dev->mode_config.allow_fb_modifiers && !adev->enable_virtual_display) {
+	if (!dev->mode_config.fb_modifiers_not_supported && !adev->enable_virtual_display) {
 		drm_WARN_ONCE(dev, adev->family >= AMDGPU_FAMILY_AI,
 			      "GFX9+ requires FB check based on format modifier\n");
 		ret = check_tiling_flags_gfx6(rfb);
