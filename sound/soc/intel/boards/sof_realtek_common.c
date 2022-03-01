@@ -131,12 +131,14 @@ void sof_rt1011_dai_link(struct snd_soc_dai_link *link)
 	link->init = rt1011_init;
 	link->ops = &rt1011_ops;
 }
+EXPORT_SYMBOL_NS(sof_rt1011_dai_link, SND_SOC_INTEL_SOF_REALTEK_COMMON);
 
 void sof_rt1011_codec_conf(struct snd_soc_card *card)
 {
 	card->codec_conf = rt1011_codec_confs;
 	card->num_configs = ARRAY_SIZE(rt1011_codec_confs);
 }
+EXPORT_SYMBOL_NS(sof_rt1011_codec_conf, SND_SOC_INTEL_SOF_REALTEK_COMMON);
 
 /*
  * rt1015:  i2c mode driver for ALC1015 and ALC1015Q
@@ -232,6 +234,7 @@ void sof_rt1015p_dai_link(struct snd_soc_dai_link *link)
 	link->init = rt1015p_init;
 	link->ops = &rt1015p_ops;
 }
+EXPORT_SYMBOL_NS(sof_rt1015p_dai_link, SND_SOC_INTEL_SOF_REALTEK_COMMON);
 
 void sof_rt1015p_codec_conf(struct snd_soc_card *card)
 {
@@ -241,3 +244,7 @@ void sof_rt1015p_codec_conf(struct snd_soc_card *card)
 	card->codec_conf = rt1015p_codec_confs;
 	card->num_configs = ARRAY_SIZE(rt1015p_codec_confs);
 }
+EXPORT_SYMBOL_NS(sof_rt1015p_codec_conf, SND_SOC_INTEL_SOF_REALTEK_COMMON);
+
+MODULE_DESCRIPTION("ASoC Intel SOF Realtek helpers");
+MODULE_LICENSE("GPL");
