@@ -1217,6 +1217,14 @@ config VIDEO_OV8856
 	  To compile this driver as a module, choose M here: the
 	  module will be called ov8856.
 
+config VIDEO_AR0234
+	tristate "OnSemi AR0234 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	  This is a Video4Linux2 sensor-level driver for the OnSemi
+	  ar0234 camera.
+
 config VIDEO_OV8865
 	tristate "OmniVision OV8865 sensor support"
 	depends on I2C && PM && VIDEO_V4L2
