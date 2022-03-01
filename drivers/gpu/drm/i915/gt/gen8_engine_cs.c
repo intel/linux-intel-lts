@@ -212,7 +212,7 @@ int gen12_emit_flush_rcs(struct i915_request *rq, u32 mode)
 
 	if (mode & EMIT_INVALIDATE) {
 		u32 flags = 0;
-		u32 *cs;
+		u32 *cs, count;
 
 		flags |= PIPE_CONTROL_COMMAND_CACHE_INVALIDATE;
 		flags |= PIPE_CONTROL_TLB_INVALIDATE;
@@ -230,7 +230,12 @@ int gen12_emit_flush_rcs(struct i915_request *rq, u32 mode)
 		if (engine->class == COMPUTE_CLASS)
 			flags &= ~PIPE_CONTROL_3D_FLAGS;
 
-		cs = intel_ring_begin(rq, 8 + 4);
+		if (!HAS_FLAT_CCS(rq->engine->i915))
+			count = 8 + 4;
+		else
+			count = 8;
+
+		cs = intel_ring_begin(rq, count);
 		if (IS_ERR(cs))
 			return PTR_ERR(cs);
 
