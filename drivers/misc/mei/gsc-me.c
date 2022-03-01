@@ -21,7 +21,7 @@
 
 #include "mei-trace.h"
 
-#define MEI_GSC_RPM_TIMEOUT 500
+#define MEI_GSC_RPM_TIMEOUT 2000
 
 static int mei_gsc_read_hfs(const struct mei_device *dev, int where, u32 *val)
 {

@@ -1334,6 +1334,7 @@ EXPORT_SYMBOL_GPL(mei_me_irq_quick_handler);
 irqreturn_t mei_me_irq_thread_handler(int irq, void *dev_id)
 {
 	struct mei_device *dev = (struct mei_device *) dev_id;
+	struct mei_me_hw *hw = to_me_hw(dev);
 	struct list_head cmpl_list;
 	s32 slots;
 	u32 hcsr;
@@ -1347,6 +1348,16 @@ irqreturn_t mei_me_irq_thread_handler(int irq, void *dev_id)
 	me_intr_clear(dev, hcsr);
 
 	INIT_LIST_HEAD(&cmpl_list);
+
+	/* HW not ready without reset - HW is powering down */
+	if (hw->cfg->hw_down_supported && !mei_hw_is_ready(dev)  && !mei_me_hw_is_resetting(dev)) {
+		dev_notice(dev->dev, "FW not ready and not resetting\n");
+		mei_cl_all_disconnect(dev);
+		/* move device to fw down state to allow reset flow on next interrupt */
+		mei_set_devstate(dev, MEI_DEV_FW_DOWN);
+		pm_runtime_mark_last_busy(dev->dev);
+		goto end;
+	}
 
 	/* check if ME wants a reset */
 	if (!mei_hw_is_ready(dev) && dev->dev_state != MEI_DEV_RESETTING) {
@@ -1642,6 +1653,9 @@ static bool mei_me_fw_type_sps_ign(const struct pci_dev *pdev)
 #define MEI_CFG_TRC \
 	.hw_trc_supported = 1
 
+#define MEI_CFG_DOWN \
+	.hw_down_supported = 1
+
 /* ICH Legacy devices */
 static const struct mei_cfg mei_me_ich_cfg = {
 	MEI_CFG_ICH_HFS,
@@ -1744,6 +1758,7 @@ static const struct mei_cfg mei_me_gsc_cfg = {
 	MEI_CFG_TYPE_GSC,
 	MEI_CFG_PCH8_HFS,
 	MEI_CFG_FW_VER_SUPP,
+	MEI_CFG_DOWN,
 };
 
 /* Graphics System Controller Firmware Interface */
@@ -1751,6 +1766,7 @@ static const struct mei_cfg mei_me_gscfi_cfg = {
 	MEI_CFG_TYPE_GSCFI,
 	MEI_CFG_PCH8_HFS,
 	MEI_CFG_FW_VER_SUPP,
+	MEI_CFG_DOWN,
 };
 
 /*

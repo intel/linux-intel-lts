@@ -27,6 +27,7 @@ const char *mei_dev_state_str(int state)
 	MEI_DEV_STATE(POWERING_DOWN);
 	MEI_DEV_STATE(POWER_DOWN);
 	MEI_DEV_STATE(POWER_UP);
+	MEI_DEV_STATE(FW_DOWN);
 	default:
 		return "unknown";
 	}
@@ -121,7 +122,8 @@ int mei_reset(struct mei_device *dev)
 	if (state != MEI_DEV_INITIALIZING &&
 	    state != MEI_DEV_DISABLED &&
 	    state != MEI_DEV_POWER_DOWN &&
-	    state != MEI_DEV_POWER_UP) {
+	    state != MEI_DEV_POWER_UP &&
+	    state != MEI_DEV_FW_DOWN) {
 		char fw_sts_str[MEI_FW_STATUS_STR_SZ];
 
 		mei_fw_status_str(dev, fw_sts_str, MEI_FW_STATUS_STR_SZ);
@@ -360,7 +362,8 @@ EXPORT_SYMBOL_GPL(mei_stop);
  */
 bool mei_write_is_idle(struct mei_device *dev)
 {
-	bool idle = (dev->dev_state == MEI_DEV_ENABLED &&
+	bool idle = ((dev->dev_state == MEI_DEV_ENABLED ||
+		      dev->dev_state == MEI_DEV_FW_DOWN) &&
 		list_empty(&dev->ctrl_wr_list) &&
 		list_empty(&dev->write_list)   &&
 		list_empty(&dev->write_waiting_list));
