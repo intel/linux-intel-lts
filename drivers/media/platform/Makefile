@@ -87,3 +87,5 @@ obj-y					+= sunxi/
 
 obj-$(CONFIG_VIDEO_MESON_GE2D)		+= meson/ge2d/
 obj-$(CONFIG_VIDEO_INTEL_KEEMBAY_CAMERA)	+= kmb-camera/
+
+obj-y  += intel/
