@@ -2922,6 +2922,9 @@ static int execlists_resume(struct intel_engine_cs *engine)
 
 	enable_execlists(engine);
 
+	if (engine->class == RENDER_CLASS)
+		xehp_enable_ccs_engines(engine);
+
 	return 0;
 }
 
