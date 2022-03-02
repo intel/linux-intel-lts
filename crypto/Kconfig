@@ -246,12 +246,12 @@ config CRYPTO_DH
 
 config CRYPTO_ECC
 	tristate
+	select CRYPTO_RNG_DEFAULT
 
 config CRYPTO_ECDH
 	tristate "ECDH algorithm"
 	select CRYPTO_ECC
 	select CRYPTO_KPP
-	select CRYPTO_RNG_DEFAULT
 	help
 	  Generic implementation of the ECDH algorithm
 
@@ -1166,6 +1166,29 @@ config CRYPTO_AES_NI_INTEL
 	  for some popular block cipher mode is supported too, including
 	  ECB, CBC, LRW, XTS. The 64 bit version has additional
 	  acceleration for CTR.
+
+config CRYPTO_AES_KL
+	tristate "AES cipher algorithms (AES-KL)"
+	depends on X86_KEYLOCKER
+	depends on LD_VERSION >= 23600
+	select CRYPTO_AES_NI_INTEL
+	help
+	  Key Locker provides AES SIMD instructions (AES-KL) to protect AES
+	  keys. They are analogous to AES-NI. AES-KL supports to encode an
+	  AES key and use the encoded form to transform data instead of
+	  referencing the key all the way.
+
+	  The key loaded in each CPU is used to wrap an AES key. So,
+	  AES-KL relies on the x86 core code that manages the wrapping key.
+
+	  AES-KL supports 128-/256-bit keys. This module uses the AES-NI
+	  methods for 192-bit keys. It includes such block cipher mode
+	  support as ECB, CBC, CTR (64-bit only), and XTS.
+
+	  binutils version 2.36 or later is needed to assemble AES-KL.
+
+	  See the CRYPTO_AES_NI_INTEL description for more about the AES
+	  algorithm.
 
 config CRYPTO_AES_SPARC64
 	tristate "AES cipher algorithms (SPARC64)"

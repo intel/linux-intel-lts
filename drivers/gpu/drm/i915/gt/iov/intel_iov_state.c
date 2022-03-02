@@ -1,25 +1,12 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #include "intel_iov.h"
 #include "intel_iov_state.h"
 #include "intel_iov_utils.h"
 #include "gt/uc/abi/guc_actions_pf_abi.h"
-
-static void pf_clear_vf_ggtt_entries(struct intel_iov *iov, u32 vfid)
-{
-	struct intel_iov_config *config = &iov->pf.provisioning.configs[vfid];
-	struct intel_gt *gt = iov_to_gt(iov);
-
-	GEM_BUG_ON(vfid > pf_get_totalvfs(iov));
-
-	if (!drm_mm_node_allocated(&config->ggtt_region))
-		return;
-
-	i915_ggtt_set_space_owner(gt->ggtt, vfid, &config->ggtt_region);
-}
 
 static int guc_action_vf_control_cmd(struct intel_guc *guc, u32 vfid, u32 cmd)
 {
@@ -50,11 +37,21 @@ static int pf_control_vf(struct intel_iov *iov, u32 vfid, u32 cmd)
 	return err;
 }
 
+static void pf_trigger_vf_flr_start(struct intel_iov *iov, u32 vfid)
+{
+	int ret;
+
+	ret = pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_FLR_START);
+	if (unlikely(ret < 0))
+		IOV_ERROR(iov, "Failed to start FLR for VF%u (%pe)\n",
+			  vfid, ERR_PTR(ret));
+}
+
 static void pf_confirm_vf_flr_done(struct intel_iov *iov, u32 vfid)
 {
 	int ret;
 
-	ret = pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_FLR_DONE);
+	ret = pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_FLR_FINISH);
 	if (unlikely(ret < 0))
 		IOV_ERROR(iov, "Failed to confirm FLR for VF%u (%pe)\n",
 			  vfid, ERR_PTR(ret));
@@ -65,23 +62,43 @@ static bool pf_vfs_flr_enabled(struct intel_iov *iov, u32 vfid)
 	return iov_to_i915(iov)->params.vfs_flr_mask & BIT(vfid);
 }
 
-static void pf_handle_vf_flr_start(struct intel_iov *iov, u32 vfid)
+static void pf_handle_vf_flr(struct intel_iov *iov, u32 vfid)
 {
 	struct device *dev = iov_to_dev(iov);
 
+	dev_info(dev, "VF%u FLR\n", vfid);
+	pf_trigger_vf_flr_start(iov, vfid);
+}
+
+static void pf_clear_vf_ggtt_entries(struct intel_iov *iov, u32 vfid)
+{
+	struct intel_iov_config *config = &iov->pf.provisioning.configs[vfid];
+	struct intel_gt *gt = iov_to_gt(iov);
+
+	GEM_BUG_ON(vfid > pf_get_totalvfs(iov));
+
+	if (!drm_mm_node_allocated(&config->ggtt_region))
+		return;
+
+	i915_ggtt_set_space_owner(gt->ggtt, vfid, &config->ggtt_region);
+}
+
+static void pf_handle_vf_flr_done(struct intel_iov *iov, u32 vfid)
+{
 	if (!pf_vfs_flr_enabled(iov, vfid)) {
-		dev_info(dev, "VF%u %s\n", vfid, "fake FLR");
-		goto done;
+		IOV_DEBUG(iov, "VF%u FLR processing skipped\n", vfid);
+		goto confirm;
 	}
 
-	dev_info(dev, "VF%u FLR\n", vfid);
+	IOV_DEBUG(iov, "processing VF%u FLR\n", vfid);
+
 	pf_clear_vf_ggtt_entries(iov, vfid);
 
-done:
+confirm:
 	pf_confirm_vf_flr_done(iov, vfid);
 }
 
-static void pf_handle_vf_pause_complete(struct intel_iov *iov, u32 vfid)
+static void pf_handle_vf_pause_done(struct intel_iov *iov, u32 vfid)
 {
 	struct device *dev = iov_to_dev(iov);
 
@@ -95,24 +112,35 @@ static void pf_handle_vf_fixup_done(struct intel_iov *iov, u32 vfid)
 	dev_info(dev, "VF%u %s\n", vfid, "has completed migration");
 }
 
-static int pf_handle_vf_state_event(struct intel_iov *iov, u32 vfid, u32 eventid)
+static int pf_handle_vf_event(struct intel_iov *iov, u32 vfid, u32 eventid)
 {
-	if (unlikely(!vfid || vfid > pf_get_totalvfs(iov)))
-		return -EINVAL;
-
 	switch (eventid) {
-	case GUC_PF_NOTIFY_VF_FLR_START:
-		pf_handle_vf_flr_start(iov, vfid);
+	case GUC_PF_NOTIFY_VF_FLR:
+		pf_handle_vf_flr(iov, vfid);
 		break;
-	case GUC_PF_NOTIFY_VF_PAUSE_COMPLETE:
-		pf_handle_vf_pause_complete(iov, vfid);
+	case GUC_PF_NOTIFY_VF_FLR_DONE:
+		pf_handle_vf_flr_done(iov, vfid);
+		break;
+	case GUC_PF_NOTIFY_VF_PAUSE_DONE:
+		pf_handle_vf_pause_done(iov, vfid);
 		break;
 	case GUC_PF_NOTIFY_VF_FIXUP_DONE:
 		pf_handle_vf_fixup_done(iov, vfid);
 		break;
 	default:
-		IOV_ERROR(iov, "VF%u: Unrecognized state notification (event=%u)\n",
-			  vfid, eventid);
+		return -ENOPKG;
+	}
+
+	return 0;
+}
+
+static int pf_handle_pf_event(struct intel_iov *iov, u32 eventid)
+{
+	switch (eventid) {
+	case GUC_PF_NOTIFY_VF_ENABLE:
+		IOV_DEBUG(iov, "VFs %s/%s\n", enableddisabled(true), enableddisabled(false));
+		break;
+	default:
 		return -ENOPKG;
 	}
 
@@ -152,7 +180,10 @@ int intel_iov_state_process_guc2pf(struct intel_iov *iov,
 	vfid = FIELD_GET(GUC2PF_VF_STATE_NOTIFY_EVENT_MSG_1_VFID, msg[1]);
 	eventid = FIELD_GET(GUC2PF_VF_STATE_NOTIFY_EVENT_MSG_2_EVENT, msg[2]);
 
-	return pf_handle_vf_state_event(iov, vfid, eventid);
+	if (unlikely(vfid > pf_get_totalvfs(iov)))
+		return -EINVAL;
+
+	return vfid ? pf_handle_vf_event(iov, vfid, eventid) : pf_handle_pf_event(iov, eventid);
 }
 
 /**

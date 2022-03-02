@@ -3,6 +3,7 @@
  * Copyright © 2014-2019 Intel Corporation
  */
 
+#include "gem/i915_gem_lmem.h"
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_irq.h"
 #include "gt/intel_gt_pm_irq.h"
@@ -195,6 +196,9 @@ void intel_guc_init_early(struct intel_guc *guc)
 		guc->send_regs.count = GUC_MAX_MMIO_MSG_LEN;
 		BUILD_BUG_ON(GUC_MAX_MMIO_MSG_LEN > SOFT_SCRATCH_COUNT);
 	}
+
+	intel_guc_enable_msg(guc, INTEL_GUC_RECV_MSG_EXCEPTION |
+				  INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED);
 
 	guc->ops = &guc_ops_default;
 }
@@ -502,6 +506,10 @@ int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
 	int i;
 	int ret;
 
+	ret = i915_inject_probe_error(i915, -ENXIO);
+	if (ret)
+		return ret;
+
 	GEM_BUG_ON(!len);
 	GEM_BUG_ON(len > guc->send_regs.count);
 
@@ -572,6 +580,13 @@ busy_loop:
 		u32 hint = FIELD_GET(GUC_HXG_FAILURE_MSG_0_HINT, header);
 		u32 error = FIELD_GET(GUC_HXG_FAILURE_MSG_0_ERROR, header);
 
+		if (error == INTEL_GUC_RESPONSE_VF_MIGRATED) {
+			drm_dbg(&i915->drm, "mmio request %#x: migrated!\n", request[0]);
+			i915_sriov_vf_start_migration_recovery(i915);
+			ret = -EREMOTEIO;
+			goto out;
+		}
+
 		drm_err(&i915->drm, "mmio request %#x: failure %x/%u\n",
 			request[0], error, hint);
 		ret = -ENXIO;
@@ -626,9 +641,10 @@ int intel_guc_to_host_process_recv_msg(struct intel_guc *guc,
 	/* Make sure to handle only enabled messages */
 	msg = payload[0] & guc->msg_enabled_mask;
 
-	if (msg & (INTEL_GUC_RECV_MSG_FLUSH_LOG_BUFFER |
-		   INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED))
-		intel_guc_log_handle_flush_event(&guc->log);
+	if (msg & INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED)
+		drm_err(&guc_to_gt(guc)->i915->drm, "Received early GuC crash dump notification!\n");
+	if (msg & INTEL_GUC_RECV_MSG_EXCEPTION)
+		drm_err(&guc_to_gt(guc)->i915->drm, "Received early GuC exception notification!\n");
 
 	return 0;
 }
@@ -662,7 +678,7 @@ int intel_guc_suspend(struct intel_guc *guc)
 {
 	int ret;
 	u32 action[] = {
-		INTEL_GUC_ACTION_RESET_CLIENT,
+		INTEL_GUC_ACTION_CLIENT_SOFT_RESET,
 	};
 
 	if (!intel_guc_is_ready(guc))
@@ -761,7 +777,13 @@ struct i915_vma *intel_guc_allocate_vma(struct intel_guc *guc, u32 size)
 	u64 flags;
 	int ret;
 
-	obj = i915_gem_object_create_shmem(gt->i915, size);
+	if (HAS_LMEM(gt->i915))
+		obj = i915_gem_object_create_lmem(gt->i915, size,
+						  I915_BO_ALLOC_CPU_CLEAR |
+						  I915_BO_ALLOC_CONTIGUOUS);
+	else
+		obj = i915_gem_object_create_shmem(gt->i915, size);
+
 	if (IS_ERR(obj))
 		return ERR_CAST(obj);
 
@@ -884,7 +906,7 @@ static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 *action, u32 size)
 	if (GEM_WARN_ON(err))
 		return err;
 
-	action[2] = seqno;
+	action[1] = seqno;
 
 	err = intel_guc_send_busy_loop(guc, action, size, G2H_LEN_DW_INVALIDATE_TLB, true);
 	if (err) {
@@ -920,6 +942,103 @@ static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 *action, u32 size)
 }
 
 /*
+ * Full TLB invalidation:
+ * If invoked by PF, will invalidate the TLB's across all VFs and all engines.
+ * If invoked by VF, will invalidate the TLB's across all engines, given the
+ * VF is active.
+ */
+int intel_guc_invalidate_tlb_full(struct intel_guc *guc,
+				  enum intel_guc_tlb_inval_mode mode)
+{
+	u32 action[] = {
+		IS_SRIOV_PF(guc_to_gt(guc)->i915) ?
+			INTEL_GUC_ACTION_TLB_INVALIDATION_ALL :
+			INTEL_GUC_ACTION_TLB_INVALIDATION,
+		0,
+		INTEL_GUC_TLB_INVAL_FULL << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
+			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
+			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
+	};
+
+	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_FULL(guc)) {
+		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
+		return 0;
+	}
+
+	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
+}
+
+/*
+ * Selective TLB Invalidation for Address Range:
+ * TLB's in the Address Range is Invalidated across all engines.
+ */
+int intel_guc_invalidate_tlb_page_selective(struct intel_guc *guc,
+					    enum intel_guc_tlb_inval_mode mode,
+					    u64 start, u64 length, u32 asid)
+{
+	u64 vm_total = BIT_ULL(INTEL_INFO(guc_to_gt(guc)->i915)->ppgtt_size);
+	u32 address_mask = (ilog2(length) - ilog2(I915_GTT_PAGE_SIZE_4K));
+	u32 full_range = vm_total == length;
+	u32 action[] = {
+		INTEL_GUC_ACTION_TLB_INVALIDATION,
+		0,
+		INTEL_GUC_TLB_INVAL_PAGE_SELECTIVE << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
+			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
+			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
+		asid,
+		full_range ? full_range : lower_32_bits(start),
+		full_range ? 0 : upper_32_bits(start),
+		full_range ? 0 : address_mask,
+	};
+
+	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc)) {
+		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
+		return 0;
+	}
+
+	GEM_BUG_ON(!IS_ALIGNED(start, I915_GTT_PAGE_SIZE_4K));
+	GEM_BUG_ON(!IS_ALIGNED(length, I915_GTT_PAGE_SIZE_4K));
+	GEM_BUG_ON(range_overflows(start, length, vm_total));
+
+	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
+}
+
+/*
+ * Selective TLB Invalidation for Context:
+ * Invalidates all TLB's for a specific context across all engines.
+ */
+int intel_guc_invalidate_tlb_page_selective_ctx(struct intel_guc *guc,
+						enum intel_guc_tlb_inval_mode mode,
+						u64 start, u64 length, u32 ctxid)
+{
+	u64 vm_total = BIT_ULL(INTEL_INFO(guc_to_gt(guc)->i915)->ppgtt_size);
+	u32 address_mask = (ilog2(length) - ilog2(I915_GTT_PAGE_SIZE_4K));
+	u32 full_range = vm_total == length;
+	u32 action[] = {
+		INTEL_GUC_ACTION_TLB_INVALIDATION,
+		0,
+		INTEL_GUC_TLB_INVAL_PAGE_SELECTIVE_CTX << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
+			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
+			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
+		ctxid,
+		full_range ? full_range : lower_32_bits(start),
+		full_range ? 0 : upper_32_bits(start),
+		full_range ? 0 : address_mask,
+	};
+
+	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc)) {
+		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
+		return 0;
+	}
+
+	GEM_BUG_ON(!IS_ALIGNED(start, I915_GTT_PAGE_SIZE_4K));
+	GEM_BUG_ON(!IS_ALIGNED(length, I915_GTT_PAGE_SIZE_4K));
+	GEM_BUG_ON(range_overflows(start, length, vm_total));
+
+	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
+}
+
+/*
  * Guc TLB Invalidation: Invalidate the TLB's of GuC itself.
  */
 int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
@@ -927,9 +1046,10 @@ int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
 {
 	u32 action[] = {
 		INTEL_GUC_ACTION_TLB_INVALIDATION,
-		INTEL_GUC_TLB_INVAL_GUC,
 		0,
-		mode,
+		INTEL_GUC_TLB_INVAL_GUC << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
+			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
+			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
 	};
 
 	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)) {
@@ -965,6 +1085,9 @@ void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p)
 
 	intel_uc_fw_dump(&guc->fw, p);
 
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		return;
+
 	with_intel_runtime_pm(uncore->rpm, wakeref) {
 		u32 status = intel_uncore_read(uncore, GUC_STATUS);
 		u32 i;
@@ -984,6 +1107,35 @@ void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p)
 	}
 }
 
+void intel_guc_write_barrier(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+
+	if (i915_gem_object_is_lmem(guc->ct.vma->obj)) {
+		/*
+		 * Ensure intel_uncore_write_fw can be used rather than
+		 * intel_uncore_write.
+		 */
+		GEM_BUG_ON(guc->send_regs.fw_domains);
+
+		/*
+		 * This register is used by the i915 and GuC for MMIO based
+		 * communication. Once we are in this code CTBs are the only
+		 * method the i915 uses to communicate with the GuC so it is
+		 * safe to write to this register (a value of 0 is NOP for MMIO
+		 * communication). If we ever start mixing CTBs and MMIOs a new
+		 * register will have to be chosen. This function is also used
+		 * to enforce ordering of a work queue item write and an update
+		 * to the process descriptor. When a work queue is being used,
+		 * CTBs are also the only mechanism of communication.
+		 */
+		intel_uncore_write_fw(gt->uncore, GEN11_SOFT_SCRATCH(0), 0);
+	} else {
+		/* wmb() sufficient for a barrier if in smem */
+		wmb();
+	}
+}
+
 static const struct intel_guc_ops guc_ops_default = {
 	.init = __guc_init,
 	.fini = __guc_fini,
@@ -993,24 +1145,3 @@ static const struct intel_guc_ops guc_ops_vf = {
 	.init = __vf_guc_init,
 	.fini = __vf_guc_fini,
 };
-
-void intel_guc_write_barrier(struct intel_guc *guc)
-{
-	struct intel_gt *gt = guc_to_gt(guc);
-
-	if (i915_gem_object_is_lmem(guc->ct.vma->obj)) {
-		GEM_BUG_ON(guc->send_regs.fw_domains);
-		/*
-		 * This register is used by the i915 and GuC for MMIO based
-		 * communication. Once we are in this code CTBs are the only
-		 * method the i915 uses to communicate with the GuC so it is
-		 * safe to write to this register (a value of 0 is NOP for MMIO
-		 * communication). If we ever start mixing CTBs and MMIOs a new
-		 * register will have to be chosen.
-		 */
-		intel_uncore_write_fw(gt->uncore, GEN11_SOFT_SCRATCH(0), 0);
-	} else {
-		/* wmb() sufficient for a barrier if in smem */
-		wmb();
-	}
-}

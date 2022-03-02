@@ -21,6 +21,8 @@
 #include "gt/intel_gt_pm.h"
 #include "gt/intel_ring.h"
 
+#include "pxp/intel_pxp.h"
+
 #include "i915_drv.h"
 #include "i915_gem_clflush.h"
 #include "i915_gem_context.h"
@@ -247,9 +249,12 @@ struct i915_execbuffer {
 	struct intel_gt *gt; /* gt for the execbuf */
 	struct intel_context *context; /* logical state for the request */
 	struct i915_gem_context *gem_context; /** caller's context */
+	intel_wakeref_t wakeref;
 
-	struct i915_request *requests[MAX_ENGINE_INSTANCE + 1]; /** our requests to build */
-	struct eb_vma *batches[MAX_ENGINE_INSTANCE + 1]; /** identity of the batch obj/vma */
+	/** our requests to build */
+	struct i915_request *requests[MAX_ENGINE_INSTANCE + 1];
+	/** identity of the batch obj/vma */
+	struct eb_vma *batches[MAX_ENGINE_INSTANCE + 1];
 	struct i915_vma *trampoline; /** trampoline used for chaining */
 
 	/** used for excl fence in dma_resv objects when > 1 BB submitted */
@@ -287,7 +292,8 @@ struct i915_execbuffer {
 
 	u64 invalid_flags; /** Set of execobj.flags that are invalid */
 
-	u64 batch_len[MAX_ENGINE_INSTANCE + 1]; /** Length of batch within object */
+	/** Length of batch within object */
+	u64 batch_len[MAX_ENGINE_INSTANCE + 1];
 	u32 batch_start_offset; /** Location within object of batch */
 	u32 batch_flags; /** Flags composed for emit_bb_start() */
 	struct intel_gt_buffer_pool_node *batch_pool; /** pool node for batch buffer */
@@ -605,7 +611,9 @@ eb_add_vma(struct i915_execbuffer *eb,
 		if (eb->args->batch_len == 0)
 			eb->batch_len[*current_batch] = ev->vma->size -
 				eb->batch_start_offset;
-		if (unlikely(eb->batch_len == 0)) { /* impossible! */
+		else
+			eb->batch_len[*current_batch] = eb->args->batch_len;
+		if (unlikely(eb->batch_len[*current_batch] == 0)) { /* impossible! */
 			drm_dbg(&i915->drm, "Invalid batch length\n");
 			return -EINVAL;
 		}
@@ -766,7 +774,7 @@ static int eb_select_context(struct i915_execbuffer *eb)
 		return PTR_ERR(ctx);
 
 	eb->gem_context = ctx;
-	if (rcu_access_pointer(ctx->vm))
+	if (i915_gem_context_has_full_ppgtt(ctx))
 		eb->invalid_flags |= EXEC_OBJECT_NEEDS_GTT;
 
 	return 0;
@@ -792,11 +800,7 @@ static int __eb_add_lut(struct i915_execbuffer *eb,
 	/* Check that the context hasn't been closed in the meantime */
 	err = -EINTR;
 	if (!mutex_lock_interruptible(&ctx->lut_mutex)) {
-		struct i915_address_space *vm = rcu_access_pointer(ctx->vm);
-
-		if (unlikely(vm && vma->vm != vm))
-			err = -EAGAIN; /* user racing with ctx set-vm */
-		else if (likely(!i915_gem_context_is_closed(ctx)))
+		if (likely(!i915_gem_context_is_closed(ctx)))
 			err = radix_tree_insert(&ctx->handles_vma, handle, vma);
 		else
 			err = -ENOENT;
@@ -846,6 +850,22 @@ static struct i915_vma *eb_lookup_vma(struct i915_execbuffer *eb, u32 handle)
 		obj = i915_gem_object_lookup(eb->file, handle);
 		if (unlikely(!obj))
 			return ERR_PTR(-ENOENT);
+
+		/*
+		 * If the user has opted-in for protected-object tracking, make
+		 * sure the object encryption can be used.
+		 * We only need to do this when the object is first used with
+		 * this context, because the context itself will be banned when
+		 * the protected objects become invalid.
+		 */
+		if (i915_gem_context_uses_protected_content(eb->gem_context) &&
+		    i915_gem_object_is_protected(obj)) {
+			err = intel_pxp_key_check(&vm->gt->pxp, obj, true);
+			if (err) {
+				i915_gem_object_put(obj);
+				return ERR_PTR(err);
+			}
+		}
 
 		vma = i915_vma_instance(obj, vm, NULL);
 		if (IS_ERR(vma)) {
@@ -1832,14 +1852,23 @@ slow:
 	return err;
 }
 
+/*
+ * Using two helper loops for the order of which requests / batches are created
+ * and added the to backend. Requests are created in order from the parent to
+ * the last child. Requests are added in the reverse order, from the last child
+ * to parent. This is done for locking reasons as the timeline lock is acquired
+ * during request creation and released when the request is added to the
+ * backend. To make lockdep happy (see intel_context_timeline_lock) this must be
+ * the ordering.
+ */
 #define for_each_batch_create_order(_eb, _i) \
-	for (_i = 0; _i < _eb->num_batches; ++_i)
+	for ((_i) = 0; (_i) < (_eb)->num_batches; ++(_i))
 #define for_each_batch_add_order(_eb, _i) \
 	BUILD_BUG_ON(!typecheck(int, _i)); \
-	for (_i = _eb->num_batches - 1; _i >= 0; --_i)
+	for ((_i) = (_eb)->num_batches - 1; (_i) >= 0; --(_i))
 
 static struct i915_request *
-eb_find_first_request(struct i915_execbuffer *eb)
+eb_find_first_request_added(struct i915_execbuffer *eb)
 {
 	int i;
 
@@ -1894,6 +1923,17 @@ static int eb_move_to_gpu(struct i915_execbuffer *eb)
 		 *   !(obj->cache_coherent & I915_BO_CACHE_COHERENT_FOR_READ)
 		 * but gcc's optimiser doesn't handle that as well and emits
 		 * two jumps instead of one. Maybe one day...
+		 *
+		 * FIXME: There is also sync flushing in set_pages(), which
+		 * serves a different purpose(some of the time at least).
+		 *
+		 * We should consider:
+		 *
+		 *   1. Rip out the async flush code.
+		 *
+		 *   2. Or make the sync flushing use the async clflush path
+		 *   using mandatory fences underneath. Currently the below
+		 *   async flush happens after we bind the object.
 		 */
 		if (unlikely(obj->cache_dirty & ~obj->cache_coherent)) {
 			if (i915_gem_clflush_object(obj, 0))
@@ -1903,7 +1943,7 @@ static int eb_move_to_gpu(struct i915_execbuffer *eb)
 		/* We only need to await on the first request */
 		if (err == 0 && !(flags & EXEC_OBJECT_ASYNC)) {
 			err = i915_request_await_object
-				(eb_find_first_request(eb), obj,
+				(eb_find_first_request_added(eb), obj,
 				 flags & EXEC_OBJECT_WRITE);
 		}
 
@@ -2061,7 +2101,8 @@ static int eb_parse(struct i915_execbuffer *eb)
 		goto secure_batch;
 	}
 
-	GEM_BUG_ON(intel_context_is_parallel(eb->context));
+	if (intel_context_is_parallel(eb->context))
+		return -EINVAL;
 
 	len = eb->batch_len[0];
 	if (!CMDPARSER_USES_GGTT(eb->i915)) {
@@ -2145,7 +2186,9 @@ static int eb_parse(struct i915_execbuffer *eb)
 
 secure_batch:
 	if (batch) {
-		GEM_BUG_ON(intel_context_is_parallel(eb->context));
+		if (intel_context_is_parallel(eb->context))
+			return -EINVAL;
+
 		eb->batches[0] = &eb->vma[eb->buffer_count++];
 		eb->batches[0]->flags = __EXEC_OBJECT_HAS_PIN;
 		eb->batches[0]->vma = i915_vma_get(batch);
@@ -2303,7 +2346,7 @@ static int eb_pin_timeline(struct i915_execbuffer *eb, struct intel_context *ce,
 			   bool throttle)
 {
 	struct intel_timeline *tl;
-	struct i915_request *rq;
+	struct i915_request *rq = NULL;
 
 	/*
 	 * Take a local wakeref for preparing to dispatch the execbuf as
@@ -2480,7 +2523,7 @@ eb_select_engine(struct i915_execbuffer *eb)
 		return PTR_ERR(ce);
 
 	if (intel_context_is_parallel(ce)) {
-		if (eb->buffer_count < ce->guc_number_children + 1) {
+		if (eb->buffer_count < ce->parallel.number_children + 1) {
 			intel_context_put(ce);
 			return -EINVAL;
 		}
@@ -2489,11 +2532,11 @@ eb_select_engine(struct i915_execbuffer *eb)
 			return -EINVAL;
 		}
 	}
-	eb->num_batches = ce->guc_number_children + 1;
+	eb->num_batches = ce->parallel.number_children + 1;
 
 	for_each_child(ce, child)
 		intel_context_get(child);
-	intel_gt_pm_get(ce->engine->gt);
+	eb->wakeref = intel_gt_pm_get(ce->engine->gt);
 
 	if (!test_bit(CONTEXT_ALLOC_BIT, &ce->flags)) {
 		err = intel_context_alloc_state(ce);
@@ -2527,7 +2570,7 @@ eb_select_engine(struct i915_execbuffer *eb)
 	return err;
 
 err:
-	intel_gt_pm_put(ce->engine->gt);
+	intel_gt_pm_put(ce->engine->gt, eb->wakeref);
 	for_each_child(ce, child)
 		intel_context_put(child);
 	intel_context_put(ce);
@@ -2539,7 +2582,7 @@ eb_put_engine(struct i915_execbuffer *eb)
 {
 	struct intel_context *child;
 
-	intel_gt_pm_put(eb->gt);
+	intel_gt_pm_put(eb->context->engine->gt, eb->wakeref);
 	for_each_child(eb->context, child)
 		intel_context_put(child);
 	intel_context_put(eb->context);
@@ -2837,12 +2880,12 @@ static void retire_requests(struct intel_timeline *tl, struct i915_request *end)
 			break;
 }
 
-static int eb_request_add(struct i915_execbuffer *eb, struct i915_request *rq)
+static int eb_request_add(struct i915_execbuffer *eb, struct i915_request *rq,
+			  int err, bool last_parallel)
 {
 	struct intel_timeline * const tl = i915_request_timeline(rq);
 	struct i915_sched_attr attr = {};
 	struct i915_request *prev;
-	int err = 0;
 
 	lockdep_assert_held(&tl->mutex);
 	lockdep_unpin_lock(&tl->mutex, rq->cookie);
@@ -2854,6 +2897,22 @@ static int eb_request_add(struct i915_execbuffer *eb, struct i915_request *rq)
 	/* Check that the context wasn't destroyed before submission */
 	if (likely(!intel_context_is_closed(eb->context))) {
 		attr = eb->gem_context->sched;
+	} else {
+		/* Serialise with context_close via the add_to_timeline */
+		i915_request_set_error_once(rq, -ENOENT);
+		__i915_request_skip(rq);
+		err = -ENOENT; /* override any transient errors */
+	}
+
+	if (intel_context_is_parallel(eb->context)) {
+		if (err) {
+			__i915_request_skip(rq);
+			set_bit(I915_FENCE_FLAG_SKIP_PARALLEL,
+				&rq->fence.flags);
+		}
+		if (last_parallel)
+			set_bit(I915_FENCE_FLAG_SUBMIT_PARALLEL,
+				&rq->fence.flags);
 	}
 
 	__i915_request_queue(rq, &attr);
@@ -2872,34 +2931,15 @@ static int eb_requests_add(struct i915_execbuffer *eb, int err)
 	int i;
 
 	/*
-	* We iterate in reverse order of creation to release timeline mutexes in
-	* same order.
-	*/
+	 * We iterate in reverse order of creation to release timeline mutexes in
+	 * same order.
+	 */
 	for_each_batch_add_order(eb, i) {
 		struct i915_request *rq = eb->requests[i];
 
 		if (!rq)
 			continue;
-
-		if (unlikely(intel_context_is_closed(eb->context))) {
-			/* Serialise with context_close via the add_to_timeline */
-			i915_request_set_error_once(rq, -ENOENT);
-			__i915_request_skip(rq);
-			err = -ENOENT; /* override any transient errors */
-		}
-
-		if (intel_context_is_parallel(eb->context)) {
-			if (err) {
-				__i915_request_skip(rq);
-				set_bit(I915_FENCE_FLAG_SKIP_PARALLEL,
-					&rq->fence.flags);
-			}
-			if (i == 0)
-				set_bit(I915_FENCE_FLAG_SUBMIT_PARALLEL,
-					&rq->fence.flags);
-		}
-
-		err |= eb_request_add(eb, rq);
+		err |= eb_request_add(eb, rq, err, i == 0);
 	}
 
 	return err;
@@ -2954,6 +2994,7 @@ static void eb_requests_put(struct i915_execbuffer *eb)
 		i915_request_put(eb->requests[i]);
 	}
 }
+
 static struct sync_file *
 eb_composite_fence_create(struct i915_execbuffer *eb, int out_fence_fd)
 {
@@ -2964,17 +3005,20 @@ eb_composite_fence_create(struct i915_execbuffer *eb, int out_fence_fd)
 
 	GEM_BUG_ON(!intel_context_is_parent(eb->context));
 
-	fences = kmalloc(eb->num_batches * sizeof(*fences), GFP_KERNEL);
+	fences = kmalloc_array(eb->num_batches, sizeof(*fences), GFP_KERNEL);
 	if (!fences)
 		return ERR_PTR(-ENOMEM);
 
-	for_each_batch_create_order(eb, i)
+	for_each_batch_create_order(eb, i) {
 		fences[i] = &eb->requests[i]->fence;
+		__set_bit(I915_FENCE_FLAG_COMPOSITE,
+			  &eb->requests[i]->fence.flags);
+	}
 
 	fence_array = dma_fence_array_create(eb->num_batches,
 					     fences,
-					     eb->context->fence_context,
-					     eb->context->seqno,
+					     eb->context->parallel.fence_context,
+					     eb->context->parallel.seqno,
 					     false);
 	if (!fence_array) {
 		kfree(fences);
@@ -2994,6 +3038,51 @@ eb_composite_fence_create(struct i915_execbuffer *eb, int out_fence_fd)
 	}
 
 	eb->composite_fence = &fence_array->base;
+
+	return out_fence;
+}
+
+static struct sync_file *
+eb_fences_add(struct i915_execbuffer *eb, struct i915_request *rq,
+	      struct dma_fence *in_fence, int out_fence_fd)
+{
+	struct sync_file *out_fence = NULL;
+	int err;
+
+	if (unlikely(eb->gem_context->syncobj)) {
+		struct dma_fence *fence;
+
+		fence = drm_syncobj_fence_get(eb->gem_context->syncobj);
+		err = i915_request_await_dma_fence(rq, fence);
+		dma_fence_put(fence);
+		if (err)
+			return ERR_PTR(err);
+	}
+
+	if (in_fence) {
+		if (eb->args->flags & I915_EXEC_FENCE_SUBMIT)
+			err = i915_request_await_execution(rq, in_fence);
+		else
+			err = i915_request_await_dma_fence(rq, in_fence);
+		if (err < 0)
+			return ERR_PTR(err);
+	}
+
+	if (eb->fences) {
+		err = await_fence_array(eb, rq);
+		if (err)
+			return ERR_PTR(err);
+	}
+
+	if (intel_context_is_parallel(eb->context)) {
+		out_fence = eb_composite_fence_create(eb, out_fence_fd);
+		if (IS_ERR(out_fence))
+			return ERR_PTR(-ENOMEM);
+	} else if (out_fence_fd != -1) {
+		out_fence = sync_file_create(&rq->fence);
+		if (!out_fence)
+			return ERR_PTR(-ENOMEM);
+	}
 
 	return out_fence;
 }
@@ -3021,62 +3110,32 @@ eb_requests_create(struct i915_execbuffer *eb, struct dma_fence *in_fence,
 {
 	struct sync_file *out_fence = NULL;
 	unsigned int i;
-	int err;
 
 	for_each_batch_create_order(eb, i) {
-		bool first_request_to_add = i + 1 == eb->num_batches;
-
 		/* Allocate a request for this batch buffer nice and early. */
 		eb->requests[i] = i915_request_create(eb_find_context(eb, i));
 		if (IS_ERR(eb->requests[i])) {
+			out_fence = ERR_PTR(PTR_ERR(eb->requests[i]));
 			eb->requests[i] = NULL;
-			return ERR_PTR(PTR_ERR(eb->requests[i]));
+			return out_fence;
 		}
 
-		if (unlikely(eb->gem_context->syncobj &&
-			     first_request_to_add)) {
-			struct dma_fence *fence;
-
-			fence = drm_syncobj_fence_get(eb->gem_context->syncobj);
-			err = i915_request_await_dma_fence(eb->requests[i], fence);
-			dma_fence_put(fence);
-			if (err)
-				return ERR_PTR(err);
-		}
-
-		if (in_fence && first_request_to_add) {
-			if (eb->args->flags & I915_EXEC_FENCE_SUBMIT)
-				err = i915_request_await_execution(eb->requests[i],
-								   in_fence);
-			else
-				err = i915_request_await_dma_fence(eb->requests[i],
-								   in_fence);
-			if (err < 0)
-				return ERR_PTR(err);
-		}
-
-		if (eb->fences && first_request_to_add) {
-			err = await_fence_array(eb, eb->requests[i]);
-			if (err)
-				return ERR_PTR(err);
-		}
-
-		if (first_request_to_add) {
-			if (intel_context_is_parallel(eb->context)) {
-				out_fence = eb_composite_fence_create(eb, out_fence_fd);
-				if (IS_ERR(out_fence))
-					return ERR_PTR(-ENOMEM);
-			} else if (out_fence_fd != -1) {
-				out_fence = sync_file_create(&eb->requests[i]->fence);
-				if (!out_fence)
-					return ERR_PTR(-ENOMEM);
-			}
+		/*
+		 * Only the first request added (committed to backend) has to
+		 * take the in fences into account as all subsequent requests
+		 * will have fences inserted inbetween them.
+		 */
+		if (i + 1 == eb->num_batches) {
+			out_fence = eb_fences_add(eb, eb->requests[i],
+						  in_fence, out_fence_fd);
+			if (IS_ERR(out_fence))
+				return out_fence;
 		}
 
 		/*
 		 * Whilst this request exists, batch_obj will be on the
 		 * active_list, and so will hold the active reference. Only when
-		 * this request is retired will the the batch_obj be moved onto
+		 * this request is retired will the batch_obj be moved onto
 		 * the inactive_list and lose its active reference. Hence we do
 		 * not need to explicitly hold another reference here.
 		 */
@@ -3135,12 +3194,17 @@ i915_gem_do_execbuffer(struct drm_device *dev,
 
 	eb.batch_flags = 0;
 	if (args->flags & I915_EXEC_SECURE) {
-		if (GRAPHICS_VER(i915) >= 11)
-			return -ENODEV;
+		if (!i915->params.enable_secure_batch) {
+			if (GRAPHICS_VER(i915) >= 11)
+				return -ENODEV;
 
-		/* Return -EPERM to trigger fallback code on old binaries. */
-		if (!HAS_SECURE_BATCHES(i915))
-			return -EPERM;
+			/*
+			 * Return -EPERM to trigger fallback code on old
+			 * binaries.
+			 */
+			if (!HAS_SECURE_BATCHES(i915))
+				return -EPERM;
+		}
 
 		if (!drm_is_current_master(file) || !capable(CAP_SYS_ADMIN))
 			return -EPERM;
@@ -3315,23 +3379,6 @@ i915_gem_execbuffer2_ioctl(struct drm_device *dev, void *data,
 	if (!check_buffer_count(count)) {
 		drm_dbg(&i915->drm, "execbuf2 with %zd buffers\n", count);
 		return -EINVAL;
-	}
-
-	if (args->flags & I915_EXEC_SECURE) {
-		if (!i915->params.enable_secure_batch) {
-			if (GRAPHICS_VER(i915) >= 11)
-				return -ENODEV;
-
-			/*
-			 * Return -EPERM to trigger fallback code on old
-			 * binaries.
-			 */
-			if (!HAS_SECURE_BATCHES(i915))
-				return -EPERM;
-		}
-
-		if (!drm_is_current_master(file) || !capable(CAP_SYS_ADMIN))
-			return -EPERM;
 	}
 
 	err = i915_gem_check_execbuffer(args);

@@ -434,9 +434,6 @@ static int query_memregion_info(struct drm_i915_private *i915,
 	u32 total_length;
 	int ret, id, i;
 
-	if (!IS_ENABLED(CONFIG_DRM_I915_UNSTABLE_FAKE_LMEM))
-		return -ENODEV;
-
 	if (query_item->flags != 0)
 		return -EINVAL;
 
@@ -485,7 +482,7 @@ static int query_memregion_info(struct drm_i915_private *i915,
 static int query_hwconfig_table(struct drm_i915_private *i915,
 				struct drm_i915_query_item *query_item)
 {
-	struct intel_gt *gt = &i915->gt;
+	struct intel_gt *gt = to_gt(i915);
 	struct intel_guc_hwconfig *hwconfig = &gt->uc.guc.hwconfig;
 
 	if (!hwconfig->size || !hwconfig->ptr)
@@ -513,7 +510,6 @@ static int (* const i915_query_funcs[])(struct drm_i915_private *dev_priv,
 	query_engine_info,
 	query_perf_config,
 	query_memregion_info,
-	NULL, /* 5 is reserved */
 	query_hwconfig_table,
 };
 

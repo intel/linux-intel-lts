@@ -18,7 +18,7 @@
 static u64 gen8_pde_encode(const dma_addr_t addr,
 			   const enum i915_cache_level level)
 {
-	u64 pde = addr | _PAGE_PRESENT | _PAGE_RW;
+	u64 pde = addr | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 
 	if (level != I915_CACHE_NONE)
 		pde |= PPAT_CACHED_PDE;
@@ -32,10 +32,10 @@ static u64 gen8_pte_encode(dma_addr_t addr,
 			   enum i915_cache_level level,
 			   u32 flags)
 {
-	gen8_pte_t pte = addr | _PAGE_PRESENT | _PAGE_RW;
+	gen8_pte_t pte = addr | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 
 	if (unlikely(flags & PTE_READ_ONLY))
-		pte &= ~_PAGE_RW;
+		pte &= ~GEN8_PAGE_RW;
 
 	if (flags & PTE_LM)
 		pte |= GEN12_PPGTT_PTE_LM;
@@ -548,6 +548,7 @@ static void gen8_ppgtt_insert_huge(struct i915_vma *vma,
 					      I915_GTT_PAGE_SIZE_2M)))) {
 			vaddr = px_vaddr(pd);
 			vaddr[maybe_64K] |= GEN8_PDE_IPS_64K;
+			clflush_cache_range(vaddr, PAGE_SIZE);
 			page_size = I915_GTT_PAGE_SIZE_64K;
 
 			/*
@@ -568,6 +569,7 @@ static void gen8_ppgtt_insert_huge(struct i915_vma *vma,
 				for (i = 1; i < index; i += 16)
 					memset64(vaddr + i, encode, 15);
 
+				clflush_cache_range(vaddr, PAGE_SIZE);
 			}
 		}
 

@@ -12,6 +12,13 @@
 #include "i915_gem_object.h"
 #include "i915_scatterlist.h"
 
+#if defined(CONFIG_X86)
+#include <asm/smp.h>
+#else
+#define wbinvd_on_all_cpus() \
+	pr_warn(DRIVER_NAME ": Missing cache flush in %s\n", __func__)
+#endif
+
 I915_SELFTEST_DECLARE(static bool force_different_devices;)
 
 static struct drm_i915_gem_object *dma_buf_to_obj(struct dma_buf *buf)
@@ -232,6 +239,7 @@ struct dma_buf *i915_gem_prime_export(struct drm_gem_object *gem_obj, int flags)
 
 static int i915_gem_object_get_pages_dmabuf(struct drm_i915_gem_object *obj)
 {
+	struct drm_i915_private *i915 = to_i915(obj->base.dev);
 	struct sg_table *pages;
 	unsigned int sg_page_sizes;
 
@@ -242,8 +250,11 @@ static int i915_gem_object_get_pages_dmabuf(struct drm_i915_gem_object *obj)
 	if (IS_ERR(pages))
 		return PTR_ERR(pages);
 
-	sg_page_sizes = i915_sg_dma_sizes(pages->sgl);
+	/* XXX: consider doing a vmap flush or something */
+	if (!HAS_LLC(i915) || i915_gem_object_can_bypass_llc(obj))
+		wbinvd_on_all_cpus();
 
+	sg_page_sizes = i915_sg_dma_sizes(pages->sgl);
 	__i915_gem_object_set_pages(obj, pages, sg_page_sizes);
 
 	return 0;
@@ -301,7 +312,8 @@ struct drm_gem_object *i915_gem_prime_import(struct drm_device *dev,
 	}
 
 	drm_gem_private_object_init(dev, &obj->base, dma_buf->size);
-	i915_gem_object_init(obj, &i915_gem_object_dmabuf_ops, &lock_class, 0);
+	i915_gem_object_init(obj, &i915_gem_object_dmabuf_ops, &lock_class,
+			     I915_BO_ALLOC_USER);
 	obj->base.import_attach = attach;
 	obj->base.resv = dma_buf->resv;
 

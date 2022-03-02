@@ -20,8 +20,10 @@
 #include "intel_renderstate.h"
 #include "intel_rps.h"
 #include "intel_uncore.h"
+#include "intel_pm.h"
 #include "iov/intel_iov.h"
 #include "shmem_utils.h"
+#include "pxp/intel_pxp.h"
 
 void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
 {
@@ -29,9 +31,6 @@ void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
 	gt->uncore = &i915->uncore;
 
 	spin_lock_init(&gt->irq_lock);
-
-	spin_lock_init(&gt->pm_unpark_work_lock);
-	INIT_LIST_HEAD(&gt->pm_unpark_work_list);
 
 	INIT_LIST_HEAD(&gt->closed_vma);
 	spin_lock_init(&gt->closed_lock);
@@ -332,12 +331,12 @@ static void gen6_check_faults(struct intel_gt *gt)
 				"\tAddr: 0x%08lx\n"
 				"\tAddress space: %s\n"
 				"\tSource ID: %d\n"
-				"\tType: %d\n",
+				"\tLevel: %d\n",
 				fault & PAGE_MASK,
 				fault & RING_FAULT_GTTSEL_MASK ?
 				"GGTT" : "PPGTT",
 				RING_FAULT_SRCID(fault),
-				RING_FAULT_FAULT_TYPE(fault));
+				RING_FAULT_LEVEL(fault));
 		}
 	}
 }
@@ -374,12 +373,13 @@ static void gen8_check_faults(struct intel_gt *gt)
 			"\tAddress space: %s\n"
 			"\tEngine ID: %d\n"
 			"\tSource ID: %d\n"
-			"\tType: %d\n",
-			upper_32_bits(fault_addr), lower_32_bits(fault_addr),
+			"\tLevel: %d\n",
+			upper_32_bits(fault_addr),
+			lower_32_bits(fault_addr),
 			fault_data1 & FAULT_GTT_SEL ? "GGTT" : "PPGTT",
 			GEN8_RING_FAULT_ENGINE_ID(fault),
 			RING_FAULT_SRCID(fault),
-			RING_FAULT_FAULT_TYPE(fault));
+			RING_FAULT_LEVEL(fault));
 	}
 }
 
@@ -707,6 +707,8 @@ int intel_gt_init(struct intel_gt *gt)
 		goto err_pm;
 	}
 
+	intel_set_mocs_index(gt);
+
 	err = intel_engines_init(gt);
 	if (err)
 		goto err_engines;
@@ -738,6 +740,8 @@ int intel_gt_init(struct intel_gt *gt)
 		goto err_gt;
 
 	intel_migrate_init(&gt->migrate, gt);
+
+	intel_pxp_init(&gt->pxp);
 
 	goto out_fw;
 err_gt:
@@ -772,6 +776,8 @@ void intel_gt_driver_remove(struct intel_gt *gt)
 	intel_uc_driver_remove(&gt->uc);
 
 	intel_engines_release(gt);
+
+	intel_gt_flush_buffer_pool(gt);
 }
 
 void intel_gt_driver_unregister(struct intel_gt *gt)
@@ -780,12 +786,14 @@ void intel_gt_driver_unregister(struct intel_gt *gt)
 
 	intel_rps_driver_unregister(&gt->rps);
 
+	intel_pxp_fini(&gt->pxp);
+
 	/*
 	 * Upon unregistering the device to prevent any new users, cancel
 	 * all in-flight requests so that we can quickly unbind the active
 	 * resources.
 	 */
-	intel_gt_set_wedged(gt);
+	intel_gt_set_wedged_on_fini(gt);
 
 	/* Scrub all HW state upon release */
 	with_intel_runtime_pm(gt->uncore->rpm, wakeref)

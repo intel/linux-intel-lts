@@ -174,6 +174,8 @@ ALL_F:      .octa 0xffffffffffffffffffffffffffffffff
 #define TKEYP	T1
 #endif
 
+#define GF128MUL_MASK	%xmm7
+
 .macro FUNC_SAVE
 	push	%r12
 	push	%r13

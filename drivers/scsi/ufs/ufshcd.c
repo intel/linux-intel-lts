@@ -172,6 +172,11 @@ struct ufs_pm_lvl_states ufs_pm_lvl_states[] = {
 	{UFS_SLEEP_PWR_MODE, UIC_LINK_HIBERN8_STATE},
 	{UFS_POWERDOWN_PWR_MODE, UIC_LINK_HIBERN8_STATE},
 	{UFS_POWERDOWN_PWR_MODE, UIC_LINK_OFF_STATE},
+	/*
+	 * For DeepSleep, the link is first put in hibern8 and then off.
+	 * Leaving the link in hibern8 is not supported.
+	 */
+	{UFS_DEEPSLEEP_PWR_MODE, UIC_LINK_OFF_STATE},
 };
 
 static inline enum ufs_dev_pwr_mode
@@ -6365,27 +6370,6 @@ static irqreturn_t ufshcd_check_errors(struct ufs_hba *hba, u32 intr_status)
 	return retval;
 }
 
-struct ctm_info {
-	struct ufs_hba	*hba;
-	unsigned long	pending;
-	unsigned int	ncpl;
-};
-
-static bool ufshcd_compl_tm(struct request *req, void *priv, bool reserved)
-{
-	struct ctm_info *const ci = priv;
-	struct completion *c;
-
-	WARN_ON_ONCE(reserved);
-	if (test_bit(req->tag, &ci->pending))
-		return true;
-	ci->ncpl++;
-	c = req->end_io_data;
-	if (c)
-		complete(c);
-	return true;
-}
-
 /**
  * ufshcd_tmc_handler - handle task management function completion
  * @hba: per adapter instance
@@ -6396,18 +6380,22 @@ static bool ufshcd_compl_tm(struct request *req, void *priv, bool reserved)
  */
 static irqreturn_t ufshcd_tmc_handler(struct ufs_hba *hba)
 {
-	unsigned long flags;
-	struct request_queue *q = hba->tmf_queue;
-	struct ctm_info ci = {
-		.hba	 = hba,
-	};
+	unsigned long pending, issued;
+	irqreturn_t ret = IRQ_NONE;
+	int tag;
 
-	spin_lock_irqsave(hba->host->host_lock, flags);
-	ci.pending = ufshcd_readl(hba, REG_UTP_TASK_REQ_DOOR_BELL);
-	blk_mq_tagset_busy_iter(q->tag_set, ufshcd_compl_tm, &ci);
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
+	pending = ufshcd_readl(hba, REG_UTP_TASK_REQ_DOOR_BELL);
 
-	return ci.ncpl ? IRQ_HANDLED : IRQ_NONE;
+	issued = hba->outstanding_tasks & ~pending;
+	for_each_set_bit(tag, &issued, hba->nutmrs) {
+		struct request *req = hba->tmf_rqs[tag];
+		struct completion *c = req->end_io_data;
+
+		complete(c);
+		ret = IRQ_HANDLED;
+	}
+
+	return ret;
 }
 
 /**
@@ -6530,9 +6518,9 @@ static int __ufshcd_issue_tm_cmd(struct ufs_hba *hba,
 	ufshcd_hold(hba, false);
 
 	spin_lock_irqsave(host->host_lock, flags);
-	blk_mq_start_request(req);
 
 	task_tag = req->tag;
+	hba->tmf_rqs[req->tag] = req;
 	treq->req_header.dword_0 |= cpu_to_be32(task_tag);
 
 	memcpy(hba->utmrdl_base_addr + task_tag, treq, sizeof(*treq));
@@ -6556,11 +6544,6 @@ static int __ufshcd_issue_tm_cmd(struct ufs_hba *hba,
 	err = wait_for_completion_io_timeout(&wait,
 			msecs_to_jiffies(TM_CMD_TIMEOUT));
 	if (!err) {
-		/*
-		 * Make sure that ufshcd_compl_tm() does not trigger a
-		 * use-after-free.
-		 */
-		req->end_io_data = NULL;
 		ufshcd_add_tm_upiu_trace(hba, task_tag, "tm_complete_err");
 		dev_err(hba->dev, "%s: task management cmd 0x%.2x timed-out\n",
 				__func__, tm_function);
@@ -6576,6 +6559,7 @@ static int __ufshcd_issue_tm_cmd(struct ufs_hba *hba,
 	}
 
 	spin_lock_irqsave(hba->host->host_lock, flags);
+	hba->tmf_rqs[req->tag] = NULL;
 	__clear_bit(task_tag, &hba->outstanding_tasks);
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 
@@ -8894,7 +8878,8 @@ static int ufshcd_link_state_transition(struct ufs_hba *hba,
 	}
 	/*
 	 * If autobkops is enabled, link can't be turned off because
-	 * turning off the link would also turn off the device.
+	 * turning off the link would also turn off the device, except in the
+	 * case of DeepSleep where the device is expected to remain powered.
 	 */
 	else if ((req_link_state == UIC_LINK_OFF_STATE) &&
 		 (!check_for_bkops || !hba->auto_bkops_enabled)) {
@@ -8904,6 +8889,9 @@ static int ufshcd_link_state_transition(struct ufs_hba *hba,
 		 * put the link in low power mode is to send the DME end point
 		 * to device and then send the DME reset command to local
 		 * unipro. But putting the link in hibern8 is much faster.
+		 *
+		 * Note also that putting the link in Hibern8 is a requirement
+		 * for entering DeepSleep.
 		 */
 		ret = ufshcd_uic_hibern8_enter(hba);
 		if (ret) {
@@ -9036,6 +9024,7 @@ static void ufshcd_hba_vreg_set_hpm(struct ufs_hba *hba)
 static int ufshcd_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 {
 	int ret = 0;
+	int check_for_bkops;
 	enum ufs_pm_level pm_lvl;
 	enum ufs_dev_pwr_mode req_dev_pwr_mode;
 	enum uic_link_state req_link_state;
@@ -9156,11 +9145,25 @@ disable_clks:
 
 set_link_active:
 	ufshcd_vreg_set_hpm(hba);
+	/*
+	 * Device hardware reset is required to exit DeepSleep. Also, for
+	 * DeepSleep, the link is off so host reset and restore will be done
+	 * further below.
+	 */
+	if (ufshcd_is_ufs_dev_deepsleep(hba)) {
+		ufshcd_vops_device_reset(hba);
+		WARN_ON(!ufshcd_is_link_off(hba));
+	}
 	if (ufshcd_is_link_hibern8(hba) && !ufshcd_uic_hibern8_exit(hba))
 		ufshcd_set_link_active(hba);
 	else if (ufshcd_is_link_off(hba))
 		ufshcd_host_reset_and_restore(hba);
 set_dev_active:
+	/* Can also get here needing to exit DeepSleep */
+	if (ufshcd_is_ufs_dev_deepsleep(hba)) {
+		ufshcd_vops_device_reset(hba);
+		ufshcd_host_reset_and_restore(hba);
+	}
 	if (!ufshcd_set_dev_pwr_mode(hba, UFS_ACTIVE_PWR_MODE))
 		ufshcd_disable_auto_bkops(hba);
 enable_gating:
@@ -9225,6 +9228,9 @@ static int ufshcd_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	if (ret)
 		goto disable_irq_and_vops_clks;
 
+	/* For DeepSleep, the only supported option is to have the link off */
+	WARN_ON(ufshcd_is_ufs_dev_deepsleep(hba) && !ufshcd_is_link_off(hba));
+
 	if (ufshcd_is_link_hibern8(hba)) {
 		ret = ufshcd_uic_hibern8_exit(hba);
 		if (!ret) {
@@ -9238,6 +9244,8 @@ static int ufshcd_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 		/*
 		 * A full initialization of the host and the device is
 		 * required since the link was put to off during suspend.
+		 * Note, in the case of DeepSleep, the device will exit
+		 * DeepSleep due to device reset.
 		 */
 		ret = ufshcd_reset_and_restore(hba);
 		/*
@@ -9615,6 +9623,13 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 	struct device *dev = hba->dev;
 	char eh_wq_name[sizeof("ufs_eh_wq_00")];
 
+	/*
+	 * dev_set_drvdata() must be called before any callbacks are registered
+	 * that use dev_get_drvdata() (frequency scaling, clock scaling, hwmon,
+	 * sysfs).
+	 */
+	dev_set_drvdata(dev, hba);
+
 	if (!mmio_base) {
 		dev_err(hba->dev,
 		"Invalid memory reference for mmio_base is NULL\n");
@@ -9746,6 +9761,12 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 	if (IS_ERR(hba->tmf_queue)) {
 		err = PTR_ERR(hba->tmf_queue);
 		goto free_tmf_tag_set;
+	}
+	hba->tmf_rqs = devm_kcalloc(hba->dev, hba->nutmrs,
+				    sizeof(*hba->tmf_rqs), GFP_KERNEL);
+	if (!hba->tmf_rqs) {
+		err = -ENOMEM;
+		goto free_tmf_queue;
 	}
 
 	/* Reset the attached device */

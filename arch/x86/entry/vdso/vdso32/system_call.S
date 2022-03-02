@@ -7,7 +7,6 @@
 #include <asm/dwarf2.h>
 #include <asm/cpufeatures.h>
 #include <asm/alternative-asm.h>
-#include <asm/vdso.h>
 
 	.text
 	.globl __kernel_vsyscall
@@ -15,7 +14,6 @@
 	ALIGN
 __kernel_vsyscall:
 	CFI_STARTPROC
-	ENDBR32
 	/*
 	 * Reshuffle regs so that all of any of the entry instructions
 	 * will preserve enough state.

@@ -7,6 +7,8 @@
 
 #include <linux/tracepoint.h>
 
+#include <linux/sched/clock.h>
+
 TRACE_EVENT(cpuhp_enter,
 
 	TP_PROTO(unsigned int cpu,

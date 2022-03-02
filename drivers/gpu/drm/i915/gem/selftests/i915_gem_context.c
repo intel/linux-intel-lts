@@ -27,12 +27,6 @@
 
 #define DW_PER_PAGE (PAGE_SIZE / sizeof(u32))
 
-static inline struct i915_address_space *ctx_vm(struct i915_gem_context *ctx)
-{
-	/* single threaded, private ctx */
-	return rcu_dereference_protected(ctx->vm, true);
-}
-
 static int live_nop_switch(void *arg)
 {
 	const unsigned int nctx = 1024;
@@ -94,7 +88,7 @@ static int live_nop_switch(void *arg)
 			rq = i915_request_get(this);
 			i915_request_add(this);
 		}
-		if (i915_request_wait(rq, 0, HZ / 5) < 0) {
+		if (i915_request_wait(rq, 0, HZ) < 0) {
 			pr_err("Failed to populated %d contexts\n", nctx);
 			intel_gt_set_wedged(&i915->gt);
 			i915_request_put(rq);
@@ -704,7 +698,7 @@ static int igt_ctx_exec(void *arg)
 				pr_err("Failed to fill dword %lu [%lu/%lu] with gpu (%s) [full-ppgtt? %s], err=%d\n",
 				       ndwords, dw, max_dwords(obj),
 				       engine->name,
-				       yesno(!!rcu_access_pointer(ctx->vm)),
+				       yesno(i915_gem_context_has_full_ppgtt(ctx)),
 				       err);
 				intel_context_put(ce);
 				kernel_context_close(ctx);
@@ -813,7 +807,7 @@ static int igt_shared_ctx_exec(void *arg)
 			struct i915_gem_context *ctx;
 			struct intel_context *ce;
 
-			ctx = kernel_context(i915, ctx_vm(parent));
+			ctx = kernel_context(i915, parent->vm);
 			if (IS_ERR(ctx)) {
 				err = PTR_ERR(ctx);
 				goto out_test;
@@ -823,7 +817,7 @@ static int igt_shared_ctx_exec(void *arg)
 			GEM_BUG_ON(IS_ERR(ce));
 
 			if (!obj) {
-				obj = create_test_object(ctx_vm(parent),
+				obj = create_test_object(parent->vm,
 							 file, &objects);
 				if (IS_ERR(obj)) {
 					err = PTR_ERR(obj);
@@ -838,7 +832,7 @@ static int igt_shared_ctx_exec(void *arg)
 				pr_err("Failed to fill dword %lu [%lu/%lu] with gpu (%s) [full-ppgtt? %s], err=%d\n",
 				       ndwords, dw, max_dwords(obj),
 				       engine->name,
-				       yesno(!!rcu_access_pointer(ctx->vm)),
+				       yesno(i915_gem_context_has_full_ppgtt(ctx)),
 				       err);
 				intel_context_put(ce);
 				kernel_context_close(ctx);
@@ -890,7 +884,8 @@ out_file:
 }
 
 static int rpcs_query_batch(struct drm_i915_gem_object *rpcs,
-			    struct i915_vma *vma, struct intel_engine_cs *engine)
+			    struct i915_vma *vma,
+			    struct intel_engine_cs *engine)
 {
 	u32 *cmd;
 
@@ -901,7 +896,7 @@ static int rpcs_query_batch(struct drm_i915_gem_object *rpcs,
 		return PTR_ERR(cmd);
 
 	*cmd++ = MI_STORE_REGISTER_MEM_GEN8;
-	*cmd++ = i915_mmio_reg_offset(GEN8_R_PWR_CLK_STATE(RENDER_RING_BASE));
+	*cmd++ = i915_mmio_reg_offset(GEN8_R_PWR_CLK_STATE);
 	*cmd++ = lower_32_bits(vma->node.start);
 	*cmd++ = upper_32_bits(vma->node.start);
 	*cmd = MI_BATCH_BUFFER_END;
@@ -1381,7 +1376,7 @@ static int igt_ctx_readonly(void *arg)
 		goto out_file;
 	}
 
-	vm = ctx_vm(ctx) ?: &i915->ggtt.alias->vm;
+	vm = ctx->vm ?: &i915->ggtt.alias->vm;
 	if (!vm || !vm->has_read_only) {
 		err = 0;
 		goto out_file;
@@ -1418,7 +1413,7 @@ static int igt_ctx_readonly(void *arg)
 				pr_err("Failed to fill dword %lu [%lu/%lu] with gpu (%s) [full-ppgtt? %s], err=%d\n",
 				       ndwords, dw, max_dwords(obj),
 				       ce->engine->name,
-				       yesno(!!ctx_vm(ctx)),
+				       yesno(i915_gem_context_has_full_ppgtt(ctx)),
 				       err);
 				i915_gem_context_unlock_engines(ctx);
 				goto out_file;
@@ -1500,7 +1495,7 @@ static int write_to_scratch(struct i915_gem_context *ctx,
 
 	GEM_BUG_ON(offset < I915_GTT_PAGE_SIZE);
 
-	err = check_scratch(ctx_vm(ctx), offset);
+	err = check_scratch(ctx->vm, offset);
 	if (err)
 		return err;
 
@@ -1529,7 +1524,7 @@ static int write_to_scratch(struct i915_gem_context *ctx,
 
 	intel_gt_chipset_flush(engine->gt);
 
-	vm = i915_gem_context_get_vm_rcu(ctx);
+	vm = i915_gem_context_get_eb_vm(ctx);
 	vma = i915_vma_instance(obj, vm, NULL);
 	if (IS_ERR(vma)) {
 		err = PTR_ERR(vma);
@@ -1597,7 +1592,7 @@ static int read_from_scratch(struct i915_gem_context *ctx,
 
 	GEM_BUG_ON(offset < I915_GTT_PAGE_SIZE);
 
-	err = check_scratch(ctx_vm(ctx), offset);
+	err = check_scratch(ctx->vm, offset);
 	if (err)
 		return err;
 
@@ -1608,7 +1603,7 @@ static int read_from_scratch(struct i915_gem_context *ctx,
 	if (GRAPHICS_VER(i915) >= 8) {
 		const u32 GPR0 = engine->mmio_base + 0x600;
 
-		vm = i915_gem_context_get_vm_rcu(ctx);
+		vm = i915_gem_context_get_eb_vm(ctx);
 		vma = i915_vma_instance(obj, vm, NULL);
 		if (IS_ERR(vma)) {
 			err = PTR_ERR(vma);
@@ -1740,7 +1735,7 @@ static int check_scratch_page(struct i915_gem_context *ctx, u32 *out)
 	u32 *vaddr;
 	int err = 0;
 
-	vm = ctx_vm(ctx);
+	vm = ctx->vm;
 	if (!vm)
 		return -ENODEV;
 
@@ -1802,7 +1797,7 @@ static int igt_vm_isolation(void *arg)
 	}
 
 	/* We can only test vm isolation, if the vm are distinct */
-	if (ctx_vm(ctx_a) == ctx_vm(ctx_b))
+	if (ctx_a->vm == ctx_b->vm)
 		goto out_file;
 
 	/* Read the initial state of the scratch page */
@@ -1814,8 +1809,8 @@ static int igt_vm_isolation(void *arg)
 	if (err)
 		goto out_file;
 
-	vm_total = ctx_vm(ctx_a)->total;
-	GEM_BUG_ON(ctx_vm(ctx_b)->total != vm_total);
+	vm_total = ctx_a->vm->total;
+	GEM_BUG_ON(ctx_b->vm->total != vm_total);
 
 	count = 0;
 	num_engines = 0;

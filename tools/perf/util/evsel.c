@@ -333,11 +333,11 @@ error_free:
 	goto out;
 }
 
-static int evsel__copy_config_terms(struct evsel *dst, struct evsel *src)
+int copy_config_terms(struct list_head *dst, struct list_head *src)
 {
 	struct evsel_config_term *pos, *tmp;
 
-	list_for_each_entry(pos, &src->config_terms, list) {
+	list_for_each_entry(pos, src, list) {
 		tmp = malloc(sizeof(*tmp));
 		if (tmp == NULL)
 			return -ENOMEM;
@@ -350,9 +350,14 @@ static int evsel__copy_config_terms(struct evsel *dst, struct evsel *src)
 				return -ENOMEM;
 			}
 		}
-		list_add_tail(&tmp->list, &dst->config_terms);
+		list_add_tail(&tmp->list, dst);
 	}
 	return 0;
+}
+
+static int evsel__copy_config_terms(struct evsel *dst, struct evsel *src)
+{
+	return copy_config_terms(&dst->config_terms, &src->config_terms);
 }
 
 /**
@@ -1037,6 +1042,17 @@ struct evsel_config_term *__evsel__get_config_term(struct evsel *evsel, enum evs
 	return found_term;
 }
 
+static void evsel__set_default_freq_period(struct record_opts *opts,
+					   struct perf_event_attr *attr)
+{
+	if (opts->freq) {
+		attr->freq = 1;
+		attr->sample_freq = opts->freq;
+	} else {
+		attr->sample_period = opts->default_interval;
+	}
+}
+
 void __weak arch_evsel__set_sample_weight(struct evsel *evsel)
 {
 	evsel__set_sample_bit(evsel, WEIGHT);
@@ -1108,14 +1124,12 @@ void evsel__config(struct evsel *evsel, struct record_opts *opts,
 	 * We default some events to have a default interval. But keep
 	 * it a weak assumption overridable by the user.
 	 */
-	if (!attr->sample_period) {
-		if (opts->freq) {
-			attr->freq		= 1;
-			attr->sample_freq	= opts->freq;
-		} else {
-			attr->sample_period = opts->default_interval;
-		}
-	}
+	if ((evsel->is_libpfm_event && !attr->sample_period) ||
+	    (!evsel->is_libpfm_event && (!attr->sample_period ||
+					 opts->user_freq != UINT_MAX ||
+					 opts->user_interval != ULLONG_MAX)))
+		evsel__set_default_freq_period(opts, attr);
+
 	/*
 	 * If attr->freq was set (here or earlier), ask for period
 	 * to be sampled.
@@ -1383,16 +1397,21 @@ int evsel__disable(struct evsel *evsel)
 	return err;
 }
 
-static void evsel__free_config_terms(struct evsel *evsel)
+void free_config_terms(struct list_head *config_terms)
 {
 	struct evsel_config_term *term, *h;
 
-	list_for_each_entry_safe(term, h, &evsel->config_terms, list) {
+	list_for_each_entry_safe(term, h, config_terms, list) {
 		list_del_init(&term->list);
 		if (term->free_str)
 			zfree(&term->val.str);
 		free(term);
 	}
+}
+
+static void evsel__free_config_terms(struct evsel *evsel)
+{
+	free_config_terms(&evsel->config_terms);
 }
 
 void evsel__exit(struct evsel *evsel)

@@ -13,14 +13,11 @@
 # will most likely get a sudden build breakage... Hopefully we will fix
 # new warnings before CI updates!
 subdir-ccflags-y := -Wall -Wextra
-subdir-ccflags-y += $(call cc-disable-warning, unused-parameter)
-subdir-ccflags-y += $(call cc-disable-warning, type-limits)
-subdir-ccflags-y += $(call cc-disable-warning, missing-field-initializers)
+subdir-ccflags-y += -Wno-unused-parameter
+subdir-ccflags-y += -Wno-type-limits
+subdir-ccflags-y += -Wno-missing-field-initializers
+subdir-ccflags-y += -Wno-sign-compare
 subdir-ccflags-y += $(call cc-disable-warning, unused-but-set-variable)
-# clang warnings
-subdir-ccflags-y += $(call cc-disable-warning, sign-compare)
-subdir-ccflags-y += $(call cc-disable-warning, sometimes-uninitialized)
-subdir-ccflags-y += $(call cc-disable-warning, initializer-overrides)
 subdir-ccflags-y += $(call cc-disable-warning, frame-address)
 subdir-ccflags-$(CONFIG_DRM_I915_WERROR) += -Werror
 
@@ -45,18 +42,21 @@ i915-y += i915_drv.o \
 	  i915_suspend.o \
 	  i915_switcheroo.o \
 	  i915_sysfs.o \
+	  i915_sysrq.o \
 	  i915_utils.o \
 	  intel_device_info.o \
 	  intel_dram.o \
 	  intel_memory_region.o \
 	  intel_pch.o \
+	  intel_pcode.o \
 	  intel_pm.o \
 	  intel_region_ttm.o \
 	  intel_runtime_pm.o \
-	  intel_sideband.o \
+	  intel_sbi.o \
 	  intel_step.o \
 	  intel_uncore.o \
 	  intel_wakeref.o \
+	  vlv_sideband.o \
 	  vlv_suspend.o
 
 # core library code
@@ -75,6 +75,10 @@ i915-$(CONFIG_DEBUG_FS) += \
 	i915_debugfs_params.o \
 	display/intel_display_debugfs.o \
 	display/intel_pipe_crc.o
+
+i915-$(CONFIG_DRM_I915_TRACK_WAKEREF) += \
+	intel_wakeref_tracker.o
+
 i915-$(CONFIG_PERF_EVENTS) += i915_pmu.o
 
 # "Graphics Technology" (aka we talk to the gpu)
@@ -102,7 +106,6 @@ gt-y += \
 	gt/intel_gt_engines_debugfs.o \
 	gt/intel_gt_irq.o \
 	gt/intel_gt_pm.o \
-	gt/intel_gt_pm_unpark_work.o \
 	gt/intel_gt_pm_debugfs.o \
 	gt/intel_gt_pm_irq.o \
 	gt/intel_gt_requests.o \
@@ -174,6 +177,7 @@ i915-y += \
 	  i915_trace_points.o \
 	  i915_ttm_buddy_manager.o \
 	  i915_vma.o \
+	  intel_pagefault.o \
 	  intel_wopcm.o
 
 # general-purpose microcontroller (GuC) support
@@ -210,6 +214,10 @@ iov-y += \
 	gt/iov/intel_iov_sysfs.o
 i915-y += $(iov-y)
 
+iov-$(CONFIG_DRM_I915_SELFTEST) += \
+	gt/iov/selftests/iov_selftest_actions.o
+i915-y += $(iov-$(CONFIG_DRM_I915_SELFTEST))
+
 # modesetting core code
 i915-y += \
 	display/intel_atomic.o \
@@ -229,8 +237,11 @@ i915-y += \
 	display/intel_dpio_phy.o \
 	display/intel_dpll.o \
 	display/intel_dpll_mgr.o \
+	display/intel_dpt.o \
+	display/intel_drrs.o \
 	display/intel_dsb.o \
 	display/intel_fb.o \
+	display/intel_fb_pin.o \
 	display/intel_fbc.o \
 	display/intel_fdi.o \
 	display/intel_fifo_underrun.o \
@@ -240,6 +251,7 @@ i915-y += \
 	display/intel_hotplug.o \
 	display/intel_lpe_audio.o \
 	display/intel_overlay.o \
+	display/intel_plane_initial.o \
 	display/intel_psr.o \
 	display/intel_quirks.o \
 	display/intel_sprite.o \
@@ -265,6 +277,7 @@ i915-y += \
 	display/g4x_dp.o \
 	display/g4x_hdmi.o \
 	display/icl_dsi.o \
+	display/intel_backlight.o \
 	display/intel_crt.o \
 	display/intel_ddi.o \
 	display/intel_ddi_buf_trans.o \
@@ -294,6 +307,16 @@ i915-y += \
 	display/vlv_dsi_pll.o
 
 i915-y += i915_perf.o
+
+# Protected execution platform (PXP) support
+i915-$(CONFIG_DRM_I915_PXP) += \
+	pxp/intel_pxp.o \
+	pxp/intel_pxp_cmd.o \
+	pxp/intel_pxp_debugfs.o \
+	pxp/intel_pxp_irq.o \
+	pxp/intel_pxp_pm.o \
+	pxp/intel_pxp_session.o \
+	pxp/intel_pxp_tee.o
 
 # Post-mortem debug and GPU hang state capture
 i915-$(CONFIG_DRM_I915_CAPTURE_ERROR) += i915_gpu_error.o

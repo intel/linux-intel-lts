@@ -57,6 +57,8 @@
 #include <asm/microcode_intel.h>
 #include <asm/intel-family.h>
 #include <asm/cpu_device_id.h>
+#include <asm/keylocker.h>
+
 #include <asm/uv/uv.h>
 
 #include "cpu.h"
@@ -353,6 +355,23 @@ out:
 /* These bits should not change their value after CPU init is finished. */
 static const unsigned long cr4_pinned_mask =
 	X86_CR4_SMEP | X86_CR4_SMAP | X86_CR4_UMIP | X86_CR4_FSGSBASE;
+
+static __init int x86_nokeylocker_setup(char *arg)
+{
+	/* Expect an exact match without trailing characters */
+	if (strlen(arg))
+		return 0;
+
+	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
+	    !boot_cpu_has(X86_FEATURE_KL))
+		return 1;
+
+	setup_clear_cpu_cap(X86_FEATURE_KL);
+	pr_info("x86/keylocker: Disabled by kernel command line\n");
+	return 1;
+}
+__setup("nokeylocker", x86_nokeylocker_setup);
+
 static DEFINE_STATIC_KEY_FALSE_RO(cr_pinning);
 static unsigned long cr4_pinned_bits __ro_after_init;
 
@@ -460,6 +479,67 @@ static __init int x86_nofsgsbase_setup(char *arg)
 }
 __setup("nofsgsbase", x86_nofsgsbase_setup);
 
+static bool use_hwrand_iwkey;
+
+static __init int setup_hwrand_iwkey(char *arg)
+{
+	/* Require an exact match without trailing characters. */
+	if (strlen(arg))
+		return 0;
+
+	use_hwrand_iwkey = true;
+	return 1;
+}
+__setup("keylocker.use_hwrand", setup_hwrand_iwkey);
+
+static __always_inline void setup_keylocker(struct cpuinfo_x86 *c)
+{
+	if (!cpu_feature_enabled(X86_FEATURE_KL) ||
+	    !cpu_has(c, X86_FEATURE_KL))
+		goto out;
+
+	if (c == &boot_cpu_data) {
+		bool iwkeyloaded;
+
+		cr4_set_bits(X86_CR4_KL);
+
+		if (!check_keylocker_readiness())
+			goto disable_keylocker;
+
+		make_iwkeydata(use_hwrand_iwkey);
+		iwkeyloaded = load_iwkey();
+		if (!iwkeyloaded) {
+			pr_err("x86/keylocker: Fail to load internal key\n");
+			goto disable_keylocker;
+		}
+		backup_iwkey();
+	} else {
+		bool iwkeycopied;
+
+		if (!boot_cpu_has(X86_FEATURE_KL))
+			goto disable_keylocker;
+
+		cr4_set_bits(X86_CR4_KL);
+
+		/* NB: When system wakes up, this path recovers the internal key. */
+		iwkeycopied = copy_iwkey();
+		if (!iwkeycopied) {
+			pr_err_once("x86/keylocker: Fail to copy internal key\n");
+			goto disable_keylocker;
+		}
+	}
+
+	pr_info_once("x86/keylocker: Activated\n");
+	return;
+
+disable_keylocker:
+	clear_cpu_cap(c, X86_FEATURE_KL);
+	pr_info_once("x86/keylocker: Disabled\n");
+out:
+	/* Make sure the feature disabled for kexec-reboot. */
+	cr4_clear_bits(X86_CR4_KL);
+}
+
 /*
  * Protection Keys are not available in 32-bit mode.
  */
@@ -510,14 +590,6 @@ static __init int setup_disable_pku(char *arg)
 }
 __setup("nopku", setup_disable_pku);
 #endif /* CONFIG_X86_64 */
-
-static __always_inline void setup_cet(struct cpuinfo_x86 *c)
-{
-	if (!cpu_feature_enabled(X86_FEATURE_SHSTK))
-		return;
-
-	cr4_set_bits(X86_CR4_CET);
-}
 
 /*
  * Some CPU features depend on higher CPUID levels, which may not always
@@ -1261,11 +1333,6 @@ static void __init cpu_parse_early_param(void)
 	if (cmdline_find_option_bool(boot_command_line, "noxsaves"))
 		setup_clear_cpu_cap(X86_FEATURE_XSAVES);
 
-	if (cmdline_find_option_bool(boot_command_line, "no_user_shstk"))
-		setup_clear_cpu_cap(X86_FEATURE_SHSTK);
-	if (cmdline_find_option_bool(boot_command_line, "no_user_ibt"))
-		setup_clear_cpu_cap(X86_FEATURE_IBT);
-
 	arglen = cmdline_find_option(boot_command_line, "clearcpuid", arg, sizeof(arg));
 	if (arglen <= 0)
 		return;
@@ -1404,9 +1471,8 @@ void __init early_cpu_init(void)
 	early_identify_cpu(&boot_cpu_data);
 }
 
-static void detect_null_seg_behavior(struct cpuinfo_x86 *c)
+static bool detect_null_seg_behavior(void)
 {
-#ifdef CONFIG_X86_64
 	/*
 	 * Empirically, writing zero to a segment selector on AMD does
 	 * not clear the base, whereas writing zero to a segment
@@ -1427,10 +1493,43 @@ static void detect_null_seg_behavior(struct cpuinfo_x86 *c)
 	wrmsrl(MSR_FS_BASE, 1);
 	loadsegment(fs, 0);
 	rdmsrl(MSR_FS_BASE, tmp);
-	if (tmp != 0)
-		set_cpu_bug(c, X86_BUG_NULL_SEG);
 	wrmsrl(MSR_FS_BASE, old_base);
-#endif
+	return tmp == 0;
+}
+
+void check_null_seg_clears_base(struct cpuinfo_x86 *c)
+{
+	/* BUG_NULL_SEG is only relevant with 64bit userspace */
+	if (!IS_ENABLED(CONFIG_X86_64))
+		return;
+
+	/* Zen3 CPUs advertise Null Selector Clears Base in CPUID. */
+	if (c->extended_cpuid_level >= 0x80000021 &&
+	    cpuid_eax(0x80000021) & BIT(6))
+		return;
+
+	/*
+	 * CPUID bit above wasn't set. If this kernel is still running
+	 * as a HV guest, then the HV has decided not to advertize
+	 * that CPUID bit for whatever reason.	For example, one
+	 * member of the migration pool might be vulnerable.  Which
+	 * means, the bug is present: set the BUG flag and return.
+	 */
+	if (cpu_has(c, X86_FEATURE_HYPERVISOR)) {
+		set_cpu_bug(c, X86_BUG_NULL_SEG);
+		return;
+	}
+
+	/*
+	 * Zen2 CPUs also have this behaviour, but no CPUID bit.
+	 * 0x18 is the respective family for Hygon.
+	 */
+	if ((c->x86 == 0x17 || c->x86 == 0x18) &&
+	    detect_null_seg_behavior())
+		return;
+
+	/* All the remaining ones are affected */
+	set_cpu_bug(c, X86_BUG_NULL_SEG);
 }
 
 static void generic_identify(struct cpuinfo_x86 *c)
@@ -1465,8 +1564,6 @@ static void generic_identify(struct cpuinfo_x86 *c)
 	}
 
 	get_model_name(c); /* Default name */
-
-	detect_null_seg_behavior(c);
 
 	/*
 	 * ESPFIX is a strange bug.  All real CPUs have it.  Paravirt
@@ -1572,6 +1669,8 @@ static void identify_cpu(struct cpuinfo_x86 *c)
 	setup_smep(c);
 	setup_smap(c);
 	setup_umip(c);
+	/* Setup various Intel-specific CPU security features */
+	setup_keylocker(c);
 
 	/* Enable FSGSBASE instructions if available. */
 	if (cpu_has(c, X86_FEATURE_FSGSBASE)) {
@@ -1605,7 +1704,6 @@ static void identify_cpu(struct cpuinfo_x86 *c)
 
 	x86_init_rdrand(c);
 	setup_pku(c);
-	setup_cet(c);
 
 	/*
 	 * Clear/Set all flags overridden by options, need do it

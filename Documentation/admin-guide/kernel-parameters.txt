@@ -1645,6 +1645,8 @@
 			architectures force reset to be always executed
 	i8042.unlock	[HW] Unlock (ignore) the keylock
 	i8042.kbdreset	[HW] Reset device connected to KBD port
+	i8042.probe_defer
+			[HW] Allow deferred probing upon i8042 probe errors
 
 	i810=		[HW,DRM]
 
@@ -2162,6 +2164,10 @@
 			parameter KASAN will print report only for the first
 			invalid access.
 
+	keylocker.use_hwrand
+			[x86] Use on-chip hardware random number generator for
+			the CPU internal key.
+
 	keepinitrd	[HW,ARM]
 
 	kernelcore=	[KNL,X86,IA-64,PPC]
@@ -2335,8 +2341,12 @@
 			Default is 1 (enabled)
 
 	kvm-intel.emulate_invalid_guest_state=
-			[KVM,Intel] Enable emulation of invalid guest states
-			Default is 0 (disabled)
+			[KVM,Intel] Disable emulation of invalid guest state.
+			Ignored if kvm-intel.enable_unrestricted_guest=1, as
+			guest state is never invalid for unrestricted guests.
+			This param doesn't apply to nested guests (L2), as KVM
+			never emulates invalid L2 guest state.
+			Default is 1 (enabled)
 
 	kvm-intel.flexpriority=
 			[KVM,Intel] Disable FlexPriority feature (TPR shadow).
@@ -3264,12 +3274,6 @@
 			noexec=on: enable non-executable mappings (default)
 			noexec=off: disable non-executable mappings
 
-	no_user_shstk	[X86-64] Disable Shadow Stack for user-mode
-			applications
-
-	no_user_ibt	[X86-64] Disable Indirect Branch Tracking for user-mode
-			applications
-
 	nosmap		[X86,PPC]
 			Disable SMAP (Supervisor Mode Access Prevention)
 			even if it is supported by processor.
@@ -3292,6 +3296,8 @@
 			legacy floating-point registers on task switch.
 
 	nohugeiomap	[KNL,X86,PPC,ARM64] Disable kernel huge I/O mappings.
+
+	nokeylocker	[X86] Disables Key Locker hardware feature.
 
 	nosmt		[KNL,S390] Disable symmetric multithreading (SMT).
 			Equivalent to smt=1.
@@ -6081,6 +6087,13 @@
 			delta of virtualized Xen timers, where lower values
 			improve timer resolution at the expense of processing
 			more timer interrupts.
+
+	xen.balloon_boot_timeout= [XEN]
+			The time (in seconds) to wait before giving up to boot
+			in case initial ballooning fails to free enough memory.
+			Applies only when running as HVM or PVH guest and
+			started with less memory configured than allowed at
+			max. Default is 180.
 
 	xen.event_eoi_delay=	[XEN]
 			How long to delay EOI handling in case of event

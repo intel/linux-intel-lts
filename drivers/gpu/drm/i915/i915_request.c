@@ -829,8 +829,6 @@ static void __i915_request_ctor(void *arg)
 	i915_sw_fence_init(&rq->submit, submit_notify);
 	i915_sw_fence_init(&rq->semaphore, semaphore_notify);
 
-	dma_fence_init(&rq->fence, &i915_fence_ops, &rq->lock, 0, 0);
-
 	rq->capture_list = NULL;
 
 	init_llist_head(&rq->execute_cb);
@@ -905,17 +903,12 @@ __i915_request_create(struct intel_context *ce, gfp_t gfp)
 	rq->ring = ce->ring;
 	rq->execution_mask = ce->engine->mask;
 
-	kref_init(&rq->fence.refcount);
-	rq->fence.flags = 0;
-	rq->fence.error = 0;
-	INIT_LIST_HEAD(&rq->fence.cb_list);
-
 	ret = intel_timeline_get_seqno(tl, rq, &seqno);
 	if (ret)
 		goto err_free;
 
-	rq->fence.context = tl->fence_context;
-	rq->fence.seqno = seqno;
+	dma_fence_init(&rq->fence, &i915_fence_ops, &rq->lock,
+		       tl->fence_context, seqno);
 
 	RCU_INIT_POINTER(rq->timeline, tl);
 	rq->hwsp_seqno = tl->hwsp_seqno;
@@ -1152,6 +1145,12 @@ __emit_semaphore_wait(struct i915_request *to,
 	return 0;
 }
 
+static bool
+can_use_semaphore_wait(struct i915_request *to, struct i915_request *from)
+{
+	return to->engine->gt->ggtt == from->engine->gt->ggtt;
+}
+
 static int
 emit_semaphore_wait(struct i915_request *to,
 		    struct i915_request *from,
@@ -1159,6 +1158,9 @@ emit_semaphore_wait(struct i915_request *to,
 {
 	const intel_engine_mask_t mask = READ_ONCE(from->engine)->mask;
 	struct i915_sw_fence *wait = &to->submit;
+
+	if (!can_use_semaphore_wait(to, from))
+		goto await_fence;
 
 	if (!intel_context_use_semaphores(to->context))
 		goto await_fence;
@@ -1263,7 +1265,8 @@ __i915_request_await_execution(struct i915_request *to,
 	 * immediate execution, and so we must wait until it reaches the
 	 * active slot.
 	 */
-	if (intel_engine_has_semaphores(to->engine) &&
+	if (can_use_semaphore_wait(to, from) &&
+	    intel_engine_has_semaphores(to->engine) &&
 	    !i915_request_has_initial_breadcrumb(to)) {
 		err = __emit_semaphore_wait(to, from, from->fence.seqno - 1);
 		if (err < 0)
@@ -1332,6 +1335,25 @@ i915_request_await_external(struct i915_request *rq, struct dma_fence *fence)
 	return err;
 }
 
+static inline bool is_parallel_rq(struct i915_request *rq)
+{
+	return intel_context_is_parallel(rq->context);
+}
+
+static inline struct intel_context *request_to_parent(struct i915_request *rq)
+{
+	return intel_context_to_parent(rq->context);
+}
+
+static bool is_same_parallel_context(struct i915_request *to,
+				     struct i915_request *from)
+{
+	if (is_parallel_rq(to))
+		return request_to_parent(to) == request_to_parent(from);
+
+	return false;
+}
+
 int
 i915_request_await_execution(struct i915_request *rq,
 			     struct dma_fence *fence)
@@ -1365,11 +1387,14 @@ i915_request_await_execution(struct i915_request *rq,
 		 * want to run our callback in all cases.
 		 */
 
-		if (dma_fence_is_i915(fence))
+		if (dma_fence_is_i915(fence)) {
+			if (is_same_parallel_context(rq, to_request(fence)))
+				continue;
 			ret = __i915_request_await_execution(rq,
 							     to_request(fence));
-		else
+		} else {
 			ret = i915_request_await_external(rq, fence);
+		}
 		if (ret < 0)
 			return ret;
 	} while (--nchild);
@@ -1472,10 +1497,13 @@ i915_request_await_dma_fence(struct i915_request *rq, struct dma_fence *fence)
 						 fence))
 			continue;
 
-		if (dma_fence_is_i915(fence))
+		if (dma_fence_is_i915(fence)) {
+			if (is_same_parallel_context(rq, to_request(fence)))
+				continue;
 			ret = i915_request_await_request(rq, to_request(fence));
-		else
+		} else {
 			ret = i915_request_await_external(rq, fence);
+		}
 		if (ret < 0)
 			return ret;
 
@@ -1513,51 +1541,17 @@ i915_request_await_object(struct i915_request *to,
 			  struct drm_i915_gem_object *obj,
 			  bool write)
 {
-	struct dma_fence *excl;
+	struct dma_resv_iter cursor;
+	struct dma_fence *fence;
 	int ret = 0;
 
-	if (write) {
-		struct dma_fence **shared;
-		unsigned int count, i;
-
-		ret = dma_resv_get_fences(obj->base.resv, &excl, &count,
-					  &shared);
+	dma_resv_for_each_fence(&cursor, obj->base.resv, write, fence) {
+		ret = i915_request_await_dma_fence(to, fence);
 		if (ret)
-			return ret;
-
-		for (i = 0; i < count; i++) {
-			ret = i915_request_await_dma_fence(to, shared[i]);
-			if (ret)
-				break;
-
-			dma_fence_put(shared[i]);
-		}
-
-		for (; i < count; i++)
-			dma_fence_put(shared[i]);
-		kfree(shared);
-	} else {
-		excl = dma_resv_get_excl_unlocked(obj->base.resv);
-	}
-
-	if (excl) {
-		if (ret == 0)
-			ret = i915_request_await_dma_fence(to, excl);
-
-		dma_fence_put(excl);
+			break;
 	}
 
 	return ret;
-}
-
-static inline bool is_parallel_rq(struct i915_request *rq)
-{
-	return intel_context_is_parallel(rq->context);
-}
-
-static inline struct intel_context *request_to_parent(struct i915_request *rq)
-{
-	return intel_context_to_parent(rq->context);
 }
 
 static struct i915_request *
@@ -1568,7 +1562,7 @@ __i915_request_ensure_parallel_ordering(struct i915_request *rq,
 
 	GEM_BUG_ON(!is_parallel_rq(rq));
 
-	prev = request_to_parent(rq)->last_rq;
+	prev = request_to_parent(rq)->parallel.last_rq;
 	if (prev) {
 		if (!__i915_request_is_complete(prev)) {
 			i915_sw_fence_await_sw_fence(&rq->submit,
@@ -1584,7 +1578,7 @@ __i915_request_ensure_parallel_ordering(struct i915_request *rq,
 		i915_request_put(prev);
 	}
 
-	request_to_parent(rq)->last_rq = i915_request_get(rq);
+	request_to_parent(rq)->parallel.last_rq = i915_request_get(rq);
 
 	return to_request(__i915_active_fence_set(&timeline->last_request,
 						  &rq->fence));
@@ -1931,7 +1925,7 @@ long i915_request_wait(struct i915_request *rq,
 	 * completion. That requires having a good predictor for the request
 	 * duration, which we currently lack.
 	 */
-	if (IS_ACTIVE(CONFIG_DRM_I915_MAX_REQUEST_BUSYWAIT) &&
+	if (CONFIG_DRM_I915_MAX_REQUEST_BUSYWAIT &&
 	    __i915_spin_request(rq, state))
 		goto out;
 

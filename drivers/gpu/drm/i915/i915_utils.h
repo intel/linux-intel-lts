@@ -30,6 +30,7 @@
 #include <linux/sched.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
+#include <linux/sched/clock.h>
 
 struct drm_i915_private;
 struct timer_list;
@@ -458,22 +459,9 @@ static inline bool timer_expired(const struct timer_list *t)
 	return timer_active(t) && !timer_pending(t);
 }
 
-/*
- * This is a lookalike for IS_ENABLED() that takes a kconfig value,
- * e.g. CONFIG_DRM_I915_SPIN_REQUEST, and evaluates whether it is non-zero
- * i.e. whether the configuration is active. Wrapping up the config inside
- * a boolean context prevents clang and smatch from complaining about potential
- * issues in confusing logical-&& with bitwise-& for constants.
- *
- * Sadly IS_ENABLED() itself does not work with kconfig values.
- *
- * Returns 0 if @config is 0, 1 if set to any value.
- */
-#define IS_ACTIVE(config) ((config) != 0)
-
 #define make_u64(hi__, low__)  ((u64)(hi__) << 32 | (u64)(low__))
 
 int from_user_to_u32array(const char __user *from, size_t count,
-			  u32 *array, unsigned int size);
+			 u32 *array, unsigned int size);
 
 #endif /* !__I915_UTILS_H */

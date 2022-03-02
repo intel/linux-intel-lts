@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #ifndef __I915_SRIOV_H__
@@ -37,5 +37,8 @@ int i915_sriov_pf_disable_vfs(struct drm_i915_private *i915);
 
 bool i915_sriov_pf_is_auto_provisioning_enabled(struct drm_i915_private *i915);
 int i915_sriov_pf_set_auto_provisioning(struct drm_i915_private *i915, bool enable);
+
+/* VF only */
+void i915_sriov_vf_start_migration_recovery(struct drm_i915_private *i915);
 
 #endif /* __I915_SRIOV_H__ */

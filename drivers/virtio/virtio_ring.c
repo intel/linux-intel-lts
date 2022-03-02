@@ -263,7 +263,7 @@ size_t virtio_max_dma_size(struct virtio_device *vdev)
 	size_t max_segment_size = SIZE_MAX;
 
 	if (vring_use_dma_api(vdev))
-		max_segment_size = dma_max_mapping_size(&vdev->dev);
+		max_segment_size = dma_max_mapping_size(vdev->dev.parent);
 
 	return max_segment_size;
 }
@@ -758,13 +758,20 @@ static unsigned virtqueue_enable_cb_prepare_split(struct virtqueue *_vq)
 	/* Depending on the VIRTIO_RING_F_EVENT_IDX feature, we need to
 	 * either clear the flags bit or point the event index at the next
 	 * entry. Always do both to keep code simple. */
-	if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
-		vq->split.avail_flags_shadow &= ~VRING_AVAIL_F_NO_INTERRUPT;
-		if (!vq->event)
-			vq->split.vring.avail->flags =
-				cpu_to_virtio16(_vq->vdev,
+#ifdef CONFIG_VIRTIO_PMD
+	if (!virtio_polling_mode_enabled(_vq->vdev)) {
+#endif
+		if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
+			vq->split.avail_flags_shadow &=
+				~VRING_AVAIL_F_NO_INTERRUPT;
+			if (!vq->event)
+				vq->split.vring.avail->flags =
+					cpu_to_virtio16(_vq->vdev,
 						vq->split.avail_flags_shadow);
+		}
+#ifdef CONFIG_VIRTIO_PMD
 	}
+#endif
 	vring_used_event(&vq->split.vring) = cpu_to_virtio16(_vq->vdev,
 			last_used_idx = vq->last_used_idx);
 	END_USE(vq);
@@ -791,13 +798,20 @@ static bool virtqueue_enable_cb_delayed_split(struct virtqueue *_vq)
 	/* Depending on the VIRTIO_RING_F_USED_EVENT_IDX feature, we need to
 	 * either clear the flags bit or point the event index at the next
 	 * entry. Always update the event index to keep code simple. */
-	if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
-		vq->split.avail_flags_shadow &= ~VRING_AVAIL_F_NO_INTERRUPT;
-		if (!vq->event)
-			vq->split.vring.avail->flags =
-				cpu_to_virtio16(_vq->vdev,
+#ifdef CONFIG_VIRTIO_PMD
+	if (!virtio_polling_mode_enabled(_vq->vdev)) {
+#endif
+		if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
+			vq->split.avail_flags_shadow &=
+				~VRING_AVAIL_F_NO_INTERRUPT;
+			if (!vq->event)
+				vq->split.vring.avail->flags =
+					cpu_to_virtio16(_vq->vdev,
 						vq->split.avail_flags_shadow);
+		}
+#ifdef CONFIG_VIRTIO_PMD
 	}
+#endif
 	/* TODO: tune this threshold */
 	bufs = (u16)(vq->split.avail_idx_shadow - vq->last_used_idx) * 3 / 4;
 
@@ -992,6 +1006,8 @@ static int virtqueue_add_indirect_packed(struct vring_virtqueue *vq,
 
 	head = vq->packed.next_avail_idx;
 	desc = alloc_indirect_packed(total_sg, gfp);
+	if (!desc)
+		return -ENOMEM;
 
 	if (unlikely(vq->vq.num_free < 1)) {
 		pr_debug("Can't add buf len 1 - avail = 0\n");
@@ -1103,6 +1119,7 @@ static inline int virtqueue_add_packed(struct virtqueue *_vq,
 	unsigned int i, n, c, descs_used, err_idx;
 	__le16 head_flags, flags;
 	u16 head, id, prev, curr, avail_used_flags;
+	int err;
 
 	START_USE(vq);
 
@@ -1118,9 +1135,16 @@ static inline int virtqueue_add_packed(struct virtqueue *_vq,
 
 	BUG_ON(total_sg == 0);
 
-	if (virtqueue_use_indirect(_vq, total_sg))
-		return virtqueue_add_indirect_packed(vq, sgs, total_sg,
-				out_sgs, in_sgs, data, gfp);
+	if (virtqueue_use_indirect(_vq, total_sg)) {
+		err = virtqueue_add_indirect_packed(vq, sgs, total_sg, out_sgs,
+						    in_sgs, data, gfp);
+		if (err != -ENOMEM) {
+			END_USE(vq);
+			return err;
+		}
+
+		/* fall back on direct */
+	}
 
 	head = vq->packed.next_avail_idx;
 	avail_used_flags = vq->packed.avail_used_flags;
@@ -2066,6 +2090,7 @@ struct virtqueue *__vring_new_virtqueue(unsigned int index,
 {
 	unsigned int i;
 	struct vring_virtqueue *vq;
+	bool disable_cb = (callback == NULL);
 
 	if (virtio_has_feature(vdev, VIRTIO_F_RING_PACKED))
 		return NULL;
@@ -2096,6 +2121,11 @@ struct virtqueue *__vring_new_virtqueue(unsigned int index,
 		!context;
 	vq->event = virtio_has_feature(vdev, VIRTIO_RING_F_EVENT_IDX);
 
+#ifdef CONFIG_VIRTIO_PMD
+	if (!disable_cb && virtio_polling_mode_enabled(vdev))
+		disable_cb = true;
+#endif
+
 	if (virtio_has_feature(vdev, VIRTIO_F_ORDER_PLATFORM))
 		vq->weak_barriers = false;
 
@@ -2107,7 +2137,7 @@ struct virtqueue *__vring_new_virtqueue(unsigned int index,
 	vq->split.avail_idx_shadow = 0;
 
 	/* No callback?  Tell other side not to bother us. */
-	if (!callback) {
+	if (disable_cb) {
 		vq->split.avail_flags_shadow |= VRING_AVAIL_F_NO_INTERRUPT;
 		if (!vq->event)
 			vq->split.vring.avail->flags = cpu_to_virtio16(vdev,
@@ -2338,5 +2368,19 @@ const struct vring *virtqueue_get_vring(struct virtqueue *vq)
 	return &to_vvq(vq)->split.vring;
 }
 EXPORT_SYMBOL_GPL(virtqueue_get_vring);
+
+#ifdef CONFIG_VIRTIO_PMD
+void virtio_poll_virtqueues(struct virtio_device *dev)
+{
+	struct virtqueue *_vq;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev->vq_lock, flags);
+	list_for_each_entry(_vq, &dev->vqs, list)
+		vring_interrupt(0, _vq);  /* parameter irq is not used */
+	spin_unlock_irqrestore(&dev->vq_lock, flags);
+}
+EXPORT_SYMBOL_GPL(virtio_poll_virtqueues);
+#endif
 
 MODULE_LICENSE("GPL");

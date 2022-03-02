@@ -7,14 +7,14 @@
 
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_debugfs.h"
+#include "gt/uc/intel_guc_ads.h"
+#include "gt/uc/intel_guc_ct.h"
+#include "gt/uc/intel_guc_slpc.h"
+#include "gt/uc/intel_guc_submission.h"
 #include "intel_guc.h"
 #include "intel_guc_debugfs.h"
 #include "intel_guc_log_debugfs.h"
 #include "intel_runtime_pm.h"
-#include "gt/uc/intel_guc_ct.h"
-#include "gt/uc/intel_guc_ads.h"
-#include "gt/uc/intel_guc_submission.h"
-#include "gt/uc/intel_guc_slpc.h"
 
 static int guc_info_show(struct seq_file *m, void *data)
 {
@@ -65,48 +65,6 @@ static int guc_slpc_info_show(struct seq_file *m, void *unused)
 	return intel_guc_slpc_print_info(slpc, &p);
 }
 DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(guc_slpc_info);
-
-static bool intel_eval_slpc_support(void *data)
-{
-	struct intel_guc *guc = (struct intel_guc *)data;
-
-	return intel_guc_slpc_is_used(guc);
-}
-
-static int guc_num_id_get(void *data, u64 *val)
-{
-	struct intel_guc *guc = data;
-
-	if (!intel_guc_submission_is_used(guc))
-		return -ENODEV;
-
-	*val = guc->submission_state.num_guc_ids;
-
-	return 0;
-}
-
-static int guc_num_id_set(void *data, u64 val)
-{
-	struct intel_guc *guc = data;
-	unsigned long flags;
-
-	if (!intel_guc_submission_is_used(guc))
-		return -ENODEV;
-
-	spin_lock_irqsave(&guc->submission_state.lock, flags);
-
-	if (val > guc->submission_state.max_guc_ids)
-		val = guc->submission_state.max_guc_ids;
-	else if (val < 256)
-		val = 256;
-
-	guc->submission_state.num_guc_ids = val;
-
-	spin_unlock_irqrestore(&guc->submission_state.lock, flags);
-
-	return 0;
-}
-DEFINE_SIMPLE_ATTRIBUTE(guc_num_id_fops, guc_num_id_get, guc_num_id_set, "%lld\n");
 
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
 static ssize_t guc_send_mmio_write(struct file *file, const char __user *user,
@@ -171,13 +129,19 @@ static const struct file_operations guc_send_ctb_fops = {
 };
 #endif
 
+static bool intel_eval_slpc_support(void *data)
+{
+	struct intel_guc *guc = (struct intel_guc *)data;
+
+	return intel_guc_slpc_is_used(guc);
+}
+
 void intel_guc_debugfs_register(struct intel_guc *guc, struct dentry *root)
 {
 	static const struct intel_gt_debugfs_file files[] = {
 		{ "guc_info", &guc_info_fops, NULL },
 		{ "guc_registered_contexts", &guc_registered_contexts_fops, NULL },
 		{ "guc_slpc_info", &guc_slpc_info_fops, &intel_eval_slpc_support},
-		{ "guc_num_id", &guc_num_id_fops, NULL },
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
 		{ "guc_send_mmio", &guc_send_mmio_fops, NULL },
 		{ "guc_send_ctb", &guc_send_ctb_fops, NULL },

@@ -25,11 +25,9 @@ config X86_64
 	depends on 64BIT
 	# Options that are inherently 64-bit kernel only:
 	select ARCH_HAS_GIGANTIC_PAGE
-	select ARCH_HAS_SHADOW_STACK
 	select ARCH_SUPPORTS_INT128 if CC_HAS_INT128
 	select ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
 	select ARCH_USE_CMPXCHG_LOCKREF
-	select ARCH_USE_GNU_PROPERTY
 	select HAVE_ARCH_SOFT_DIRTY
 	select MODULES_USE_ELF_RELA
 	select NEED_DMA_MAP_STATE
@@ -60,7 +58,6 @@ config X86
 	select ACPI_LEGACY_TABLES_LOOKUP	if ACPI
 	select ACPI_SYSTEM_POWER_STATES_SUPPORT	if ACPI
 	select ARCH_32BIT_OFF_T			if X86_32
-	select ARCH_BINFMT_ELF_STATE
 	select ARCH_CLOCKSOURCE_INIT
 	select ARCH_HAS_ACPI_TABLE_UPGRADE	if ACPI
 	select ARCH_HAS_DEBUG_VIRTUAL
@@ -1272,7 +1269,8 @@ config TOSHIBA
 
 config I8K
 	tristate "Dell i8k legacy laptop support"
-	select HWMON
+	depends on HWMON
+	depends on PROC_FS
 	select SENSORS_DELL_SMM
 	help
 	  This option enables legacy /proc/i8k userspace interface in hwmon
@@ -1533,6 +1531,7 @@ config AMD_MEM_ENCRYPT
 	select ARCH_USE_MEMREMAP_PROT
 	select ARCH_HAS_FORCE_DMA_UNENCRYPTED
 	select INSTRUCTION_DECODER
+	select ARCH_HAS_CC_PLATFORM
 	help
 	  Say yes to enable support for the encryption of system memory.
 	  This requires an AMD processor that supports Secure Memory
@@ -1893,6 +1892,20 @@ config X86_INTEL_MEMORY_PROTECTION_KEYS
 
 	  If unsure, say y.
 
+config X86_KL
+	prompt "Key Locker" if EXPERT
+	def_bool y
+	depends on CPU_SUP_INTEL
+	help
+	  Key Locker is a new security feature to protect a data-encryption
+	  key for the Advanced Encryption Standard (AES) algorithm.
+
+	  When enabled, every CPU has a unique internal key to wrap the AES
+	  key into an encoded format.  The internal key is not accessible
+	  to software once loaded.
+
+	  If unsure, say y.
+
 choice
 	prompt "TSX enable mode"
 	depends on CPU_SUP_INTEL
@@ -1938,51 +1951,12 @@ config X86_INTEL_TSX_MODE_AUTO
 	  side channel attacks- equals the tsx=auto command line parameter.
 endchoice
 
-config ARCH_HAS_SHADOW_STACK
-	def_bool n
-
-config X86_SHADOW_STACK
-	prompt "Intel Shadow Stack"
-	def_bool n
-	depends on AS_WRUSS
-	depends on ARCH_HAS_SHADOW_STACK
-	select ARCH_USES_HIGH_VMA_FLAGS
-	help
-	  Shadow Stack protection is a hardware feature that detects function
-	  return address corruption.  This helps mitigate ROP attacks.
-	  Applications must be enabled to use it, and old userspace does not
-	  get protection "for free".
-	  Support for this feature is present on Tiger Lake family of
-	  processors released in 2020 or later.  Enabling this feature
-	  increases kernel text size by 3.7 KB.
-	  See Documentation/x86/intel_cet.rst for more information.
-
-	  If unsure, say N.
-
-config X86_IBT
-	prompt "Intel Indirect Branch Tracking"
-	def_bool n
-	depends on X86_SHADOW_STACK
-	depends on $(cc-option,-fcf-protection)
-	help
-	  Indirect Branch Tracking (IBT) provides protection against
-	  CALL-/JMP-oriented programming attacks.  It is active when
-	  the kernel has this feature enabled, and the processor and
-	  the application support it.  When this feature is enabled,
-	  legacy non-IBT applications continue to work, but without
-	  IBT protection.
-	  Support for this feature is present on Tiger Lake family of
-	  processors released in 2020 or later.  Enabling this feature
-	  increases kernel text size by 3.7 KB.
-	  See Documentation/x86/intel_cet.rst for more information.
-
-	  If unsure, say N.
-
 config EFI
 	bool "EFI runtime service support"
 	depends on ACPI
 	select UCS2_STRING
 	select EFI_RUNTIME_WRAPPERS
+	select ARCH_USE_MEMREMAP_PROT
 	help
 	  This enables the kernel to use EFI runtime services that are
 	  available (such as the EFI variable services).

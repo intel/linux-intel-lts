@@ -27,6 +27,7 @@
 #ifndef _TTM_TT_H_
 #define _TTM_TT_H_
 
+#include <linux/pagemap.h>
 #include <linux/types.h>
 #include <drm/ttm/ttm_caching.h>
 #include <drm/ttm/ttm_kmap_iter.h>
@@ -133,13 +134,6 @@ void ttm_tt_fini(struct ttm_tt *ttm);
  * Unbind, unpopulate and destroy common struct ttm_tt.
  */
 void ttm_tt_destroy(struct ttm_device *bdev, struct ttm_tt *ttm);
-
-/**
- * ttm_tt_destroy_common:
- *
- * Called from driver to destroy common path.
- */
-void ttm_tt_destroy_common(struct ttm_device *bdev, struct ttm_tt *ttm);
 
 /**
  * ttm_tt_swapin:

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #include <drm/drm_print.h>
@@ -142,6 +142,36 @@ static const struct file_operations relay_to_pf_fops = {
 	.llseek =	default_llseek,
 };
 
+static ssize_t relocate_ggtt_write(struct file *file, const char __user *user,
+				   size_t count, loff_t *ppos)
+{
+	struct intel_iov *iov = file->private_data;
+	u32 vfid;
+	int ret;
+
+	if (*ppos)
+		return 0;
+
+	ret = kstrtou32_from_user(user, count, 0, &vfid);
+	if (ret < 0)
+		return ret;
+
+	if (!vfid || vfid > pf_get_totalvfs(iov))
+		return -EINVAL;
+
+	ret = intel_iov_provisioning_move_ggtt(iov, vfid);
+	if (ret < 0)
+		return ret;
+
+	return count;
+}
+
+static const struct file_operations relocate_ggtt_fops = {
+	.write =	relocate_ggtt_write,
+	.open =		simple_open,
+	.llseek =	default_llseek,
+};
+
 #endif /* CONFIG_DRM_I915_DEBUG_IOV */
 
 /**
@@ -161,6 +191,7 @@ void intel_iov_debugfs_register(struct intel_iov *iov, struct dentry *root)
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV)
 		{ "relay_to_vf", &relay_to_vf_fops, eval_is_pf },
 		{ "relay_to_pf", &relay_to_pf_fops, eval_is_vf },
+		{ "relocate_ggtt", &relocate_ggtt_fops, eval_is_pf },
 #endif
 	};
 	struct dentry *dir;

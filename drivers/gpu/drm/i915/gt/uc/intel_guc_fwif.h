@@ -25,7 +25,7 @@ static inline const char *hxg_type_to_string(u32 type)
 {
 	switch (type) {
 	case GUC_HXG_TYPE_REQUEST:
-	return "request";
+		return "request";
 	case GUC_HXG_TYPE_EVENT:
 		return "event";
 	case GUC_HXG_TYPE_NO_RESPONSE_BUSY:
@@ -44,7 +44,7 @@ static inline const char *hxg_type_to_string(u32 type)
 /* Payload length only i.e. don't include G2H header length */
 #define G2H_LEN_DW_SCHED_CONTEXT_MODE_SET	2
 #define G2H_LEN_DW_DEREGISTER_CONTEXT		1
-#define G2H_LEN_DW_INVALIDATE_TLB		3
+#define G2H_LEN_DW_INVALIDATE_TLB		1
 
 #define GUC_CONTEXT_DISABLE		0
 #define GUC_CONTEXT_ENABLE		1
@@ -55,8 +55,8 @@ static inline const char *hxg_type_to_string(u32 type)
 #define GUC_CLIENT_PRIORITY_NORMAL	3
 #define GUC_CLIENT_PRIORITY_NUM		4
 
-#define GUC_MAX_LRC_DESCRIPTORS		65535
-#define	GUC_INVALID_LRC_ID		GUC_MAX_LRC_DESCRIPTORS
+#define GUC_MAX_CONTEXT_ID		65535
+#define	GUC_INVALID_CONTEXT_ID		GUC_MAX_CONTEXT_ID
 
 #define GUC_RENDER_ENGINE		0
 #define GUC_VIDEO_ENGINE		1
@@ -76,29 +76,27 @@ static inline const char *hxg_type_to_string(u32 type)
 
 #define GUC_DOORBELL_INVALID		256
 
-#define GUC_WQ_SIZE			(PAGE_SIZE / 2)
-
-/* Work queue item header definitions */
+/*
+ * Work queue item header definitions
+ *
+ * Work queue is circular buffer used to submit complex (multi-lrc) submissions
+ * to the GuC. A work queue item is an entry in the circular buffer.
+ */
 #define WQ_STATUS_ACTIVE		1
 #define WQ_STATUS_SUSPENDED		2
 #define WQ_STATUS_CMD_ERROR		3
 #define WQ_STATUS_ENGINE_ID_NOT_USED	4
 #define WQ_STATUS_SUSPENDED_FROM_RESET	5
-#define WQ_TYPE_SHIFT			0
-#define   WQ_TYPE_BATCH_BUF		(0x1 << WQ_TYPE_SHIFT)
-#define   WQ_TYPE_PSEUDO		(0x2 << WQ_TYPE_SHIFT)
-#define   WQ_TYPE_INORDER		(0x3 << WQ_TYPE_SHIFT)
-#define   WQ_TYPE_NOOP			(0x4 << WQ_TYPE_SHIFT)
-#define   WQ_TYPE_MULTI_LRC		(0x5 << WQ_TYPE_SHIFT)
-#define WQ_TARGET_SHIFT			8
-#define WQ_LEN_SHIFT			16
-#define WQ_NO_WCFLUSH_WAIT		(1 << 27)
-#define WQ_PRESENT_WORKLOAD		(1 << 28)
+#define WQ_TYPE_BATCH_BUF		0x1
+#define WQ_TYPE_PSEUDO			0x2
+#define WQ_TYPE_INORDER			0x3
+#define WQ_TYPE_NOOP			0x4
+#define WQ_TYPE_MULTI_LRC		0x5
+#define WQ_TYPE_MASK			GENMASK(7, 0)
+#define WQ_LEN_MASK			GENMASK(26, 16)
 
-#define WQ_GUC_ID_SHIFT			0
-#define WQ_RING_TAIL_SHIFT		18
-#define WQ_RING_TAIL_MAX		0x7FF	/* 2^11 QWords */
-#define WQ_RING_TAIL_MASK		(WQ_RING_TAIL_MAX << WQ_RING_TAIL_SHIFT)
+#define WQ_GUC_ID_MASK			GENMASK(15, 0)
+#define WQ_RING_TAIL_MASK		GENMASK(28, 18)
 
 #define GUC_STAGE_DESC_ATTR_ACTIVE	BIT(0)
 #define GUC_STAGE_DESC_ATTR_PENDING_DB	BIT(1)
@@ -110,10 +108,10 @@ static inline const char *hxg_type_to_string(u32 type)
 #define GUC_STAGE_DESC_ATTR_TERMINATED	BIT(7)
 
 #define GUC_CTL_LOG_PARAMS		0
-#define   GUC_LOG_VALID			(1 << 0)
-#define   GUC_LOG_NOTIFY_ON_HALF_FULL	(1 << 1)
-#define   GUC_LOG_CAPTURE_ALLOC_UNITS	(1 << 2)
-#define   GUC_LOG_LOG_ALLOC_UNITS	(1 << 3)
+#define   GUC_LOG_VALID			BIT(0)
+#define   GUC_LOG_NOTIFY_ON_HALF_FULL	BIT(1)
+#define   GUC_LOG_CAPTURE_ALLOC_UNITS	BIT(2)
+#define   GUC_LOG_LOG_ALLOC_UNITS	BIT(3)
 #define   GUC_LOG_CRASH_SHIFT		4
 #define   GUC_LOG_CRASH_MASK		(0x3 << GUC_LOG_CRASH_SHIFT)
 #define   GUC_LOG_DEBUG_SHIFT		6
@@ -123,11 +121,11 @@ static inline const char *hxg_type_to_string(u32 type)
 #define   GUC_LOG_BUF_ADDR_SHIFT	12
 
 #define GUC_CTL_WA			1
-#define   GUC_WA_POLLCS                 (1 << 18)
+#define   GUC_WA_POLLCS                 BIT(18)
 
 #define GUC_CTL_FEATURE			2
-#define   GUC_CTL_DISABLE_SCHEDULER	(1 << 14)
 #define   GUC_CTL_ENABLE_SLPC		BIT(2)
+#define   GUC_CTL_DISABLE_SCHEDULER	BIT(14)
 
 #define GUC_CTL_DEBUG			3
 #define   GUC_LOG_VERBOSITY_SHIFT	0
@@ -176,6 +174,22 @@ static inline const char *hxg_type_to_string(u32 type)
 #define GUC_ID_TO_ENGINE_INSTANCE(guc_id) \
 	(((guc_id) & GUC_ENGINE_INSTANCE_MASK) >> GUC_ENGINE_INSTANCE_SHIFT)
 
+/* the GuC arrays don't include OTHER_CLASS */
+static u8 engine_class_guc_class_map[] = {
+	[RENDER_CLASS]            = GUC_RENDER_CLASS,
+	[COPY_ENGINE_CLASS]       = GUC_BLITTER_CLASS,
+	[VIDEO_DECODE_CLASS]      = GUC_VIDEO_CLASS,
+	[VIDEO_ENHANCEMENT_CLASS] = GUC_VIDEOENHANCE_CLASS,
+	[COMPUTE_CLASS]           = GUC_COMPUTE_CLASS,
+};
+
+static u8 guc_class_engine_class_map[] = {
+	[GUC_RENDER_CLASS]       = RENDER_CLASS,
+	[GUC_BLITTER_CLASS]      = COPY_ENGINE_CLASS,
+	[GUC_VIDEO_CLASS]        = VIDEO_DECODE_CLASS,
+	[GUC_VIDEOENHANCE_CLASS] = VIDEO_ENHANCEMENT_CLASS,
+	[GUC_COMPUTE_CLASS]      = COMPUTE_CLASS,
+};
 #define SLPC_EVENT(id, c) (\
 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ID, id) | \
 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, c) \
@@ -183,24 +197,18 @@ FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, c) \
 
 static inline u8 engine_class_to_guc_class(u8 class)
 {
-	BUILD_BUG_ON(GUC_RENDER_CLASS != RENDER_CLASS);
-	BUILD_BUG_ON(GUC_BLITTER_CLASS != COPY_ENGINE_CLASS);
-	BUILD_BUG_ON(GUC_VIDEO_CLASS != VIDEO_DECODE_CLASS);
-	BUILD_BUG_ON(GUC_VIDEOENHANCE_CLASS != VIDEO_ENHANCEMENT_CLASS);
-	BUILD_BUG_ON(GUC_COMPUTE_CLASS != (COMPUTE_CLASS - 1));
+	BUILD_BUG_ON(ARRAY_SIZE(engine_class_guc_class_map) != MAX_ENGINE_CLASS + 1);
 	GEM_BUG_ON(class > MAX_ENGINE_CLASS || class == OTHER_CLASS);
 
-	/* the GuC arrays don't include OTHER_CLASS */
-	return class < OTHER_CLASS ? class : class - 1;
+	return engine_class_guc_class_map[class];
 }
 
 static inline u8 guc_class_to_engine_class(u8 guc_class)
 {
-	BUILD_BUG_ON(GUC_COMPUTE_CLASS != OTHER_CLASS);
-	BUILD_BUG_ON(GUC_LAST_ENGINE_CLASS != (MAX_ENGINE_CLASS - 1));
+	BUILD_BUG_ON(ARRAY_SIZE(guc_class_engine_class_map) != GUC_LAST_ENGINE_CLASS + 1);
 	GEM_BUG_ON(guc_class > GUC_LAST_ENGINE_CLASS);
 
-	return guc_class < GUC_COMPUTE_CLASS ? guc_class : guc_class + 1;
+	return guc_class_engine_class_map[guc_class];
 }
 
 /* Work item for submitting workloads into work queue of GuC. */
@@ -211,54 +219,45 @@ struct guc_wq_item {
 	u32 fence_id;
 } __packed;
 
-struct guc_process_desc {
-	u32 stage_id;
-	u64 db_base_addr;
+struct guc_sched_wq_desc {
 	u32 head;
 	u32 tail;
 	u32 error_offset;
-	u64 wq_base_addr;
-	u32 wq_size_bytes;
 	u32 wq_status;
-	u32 engine_presence;
-	u32 priority;
-	u32 reserved[36];
+	u32 reserved[28];
 } __packed;
 
+/* Helper for context registration H2G */
+struct guc_ctxt_registration_info {
+	u32 flags;
+	u32 context_idx;
+	u32 engine_class;
+	u32 engine_submit_mask;
+	u32 wq_desc_lo;
+	u32 wq_desc_hi;
+	u32 wq_base_lo;
+	u32 wq_base_hi;
+	u32 wq_size;
+	u32 hwlrca_lo;
+	u32 hwlrca_hi;
+};
 #define CONTEXT_REGISTRATION_FLAG_KMD	BIT(0)
 
-#define CONTEXT_POLICY_DEFAULT_EXECUTION_QUANTUM_US 1000000
-#define CONTEXT_POLICY_DEFAULT_PREEMPTION_TIME_US 500000
+/* 32-bit KLV structure as used by policy updates and others */
+struct guc_klv_generic_dw_t {
+	u32 kl;
+	u32 value;
+} __packed;
 
-/* Preempt to idle on quantum expiry */
-#define CONTEXT_POLICY_FLAG_PREEMPT_TO_IDLE	BIT(0)
+/* Format of the UPDATE_CONTEXT_POLICIES H2G data packet */
+struct guc_update_context_policy_header {
+	u32 action;
+	u32 ctx_id;
+} __packed;
 
-/*
- * GuC Context registration descriptor.
- * FIXME: This is only required to exist during context registration.
- * The current 1:1 between guc_lrc_desc and LRCs for the lifetime of the LRC
- * is not required.
- */
-struct guc_lrc_desc {
-	u32 hw_context_desc;
-	u32 slpm_perf_mode_hint;	/* SPLC v1 only */
-	u32 slpm_freq_hint;
-	u32 engine_submit_mask;		/* In logical space */
-	u8 engine_class;
-	u8 reserved0[3];
-	u32 priority;
-	u32 process_desc;
-	u32 wq_addr;
-	u32 wq_size;
-	u32 context_flags;		/* CONTEXT_REGISTRATION_* */
-	/* Time for one workload to execute. (in micro seconds) */
-	u32 execution_quantum;
-	/* Time to wait for a preemption request to complete before issuing a
-	 * reset. (in micro seconds).
-	 */
-	u32 preemption_timeout;
-	u32 policy_flags;		/* CONTEXT_POLICY_* */
-	u32 reserved1[19];
+struct guc_update_context_policy {
+	struct guc_update_context_policy_header header;
+	struct guc_klv_generic_dw_t klv[GUC_CONTEXT_POLICIES_KLV_NUM_IDS];
 } __packed;
 
 #define GUC_POWER_UNSPECIFIED	0
@@ -300,9 +299,9 @@ struct guc_mmio_reg {
 	u32 value;
 	u32 flags;
 	u32 mask;
-#define GUC_REGSET_MASKED		(1 << 0)
-#define GUC_REGSET_MASKED_WITH_VALUE	(1 << 2)
-#define GUC_REGSET_RESTORE_ONLY		(1 << 3)
+#define GUC_REGSET_MASKED		BIT(0)
+#define GUC_REGSET_MASKED_WITH_VALUE	BIT(2)
+#define GUC_REGSET_RESTORE_ONLY		BIT(3)
 } __packed;
 
 /* GuC register sets */
@@ -343,6 +342,19 @@ struct guc_ads {
 	u32 reserved[14];
 } __packed;
 
+/* Engine usage stats */
+struct guc_engine_usage_record {
+	u32 current_context_index;
+	u32 last_switch_in_stamp;
+	u32 reserved0;
+	u32 total_runtime;
+	u32 reserved1[4];
+} __packed;
+
+struct guc_engine_usage {
+	struct guc_engine_usage_record engines[GUC_MAX_ENGINE_CLASSES][GUC_MAX_INSTANCES_PER_CLASS];
+} __packed;
+
 /* GuC logging structures */
 
 enum guc_log_buffer_type {
@@ -379,6 +391,7 @@ struct guc_log_buffer_state {
 	u32 write_ptr;
 	u32 size;
 	u32 sampled_write_ptr;
+	u32 wrap_offset;
 	union {
 		struct {
 			u32 flush_to_file:1;
@@ -419,12 +432,20 @@ struct guc_shared_ctx_data {
 /* This action will be programmed in C1BC - SOFT_SCRATCH_15_REG */
 enum intel_guc_recv_message {
 	INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED = BIT(1),
-	INTEL_GUC_RECV_MSG_FLUSH_LOG_BUFFER = BIT(3)
+	INTEL_GUC_RECV_MSG_EXCEPTION = BIT(30),
 };
 
 #define INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) \
 	((intel_guc_ct_enabled(&(guc)->ct)) && \
 	 (intel_guc_submission_is_used(guc)) && \
 	 (GRAPHICS_VER(guc_to_gt((guc))->i915) >= 12))
+#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_ENGINE(guc) \
+	INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)
+#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_FULL(guc) \
+	(INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) && \
+	HAS_SELECTIVE_TLB_INVALIDATION(guc_to_gt(guc)->i915))
+#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc) \
+	(INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) && \
+	HAS_SELECTIVE_TLB_INVALIDATION(guc_to_gt(guc)->i915))
 
 #endif

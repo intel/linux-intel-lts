@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #include "intel_iov_provisioning.h"
@@ -75,7 +75,6 @@ static ssize_t contexts_quota_iov_attr_store(struct intel_iov *iov,
 	if (err)
 		return err;
 
-	pf_mark_manual_provisioning(iov);
 	err = intel_iov_provisioning_set_ctxs(iov, id, num_ctxs);
 	return err ?: count;
 }
@@ -99,7 +98,6 @@ static ssize_t doorbells_quota_iov_attr_store(struct intel_iov *iov,
 	if (err)
 		return err;
 
-	pf_mark_manual_provisioning(iov);
 	err = intel_iov_provisioning_set_dbs(iov, id, num_dbs);
 	return err ?: count;
 }
@@ -123,7 +121,6 @@ static ssize_t exec_quantum_ms_iov_attr_store(struct intel_iov *iov,
 	if (err)
 		return err;
 
-	pf_mark_manual_provisioning(iov);
 	err = intel_iov_provisioning_set_exec_quantum(iov, id, exec_quantum);
 	return err ?: count;
 }
@@ -147,7 +144,6 @@ static ssize_t preempt_timeout_us_iov_attr_store(struct intel_iov *iov,
 	if (err)
 		return err;
 
-	pf_mark_manual_provisioning(iov);
 	err = intel_iov_provisioning_set_preempt_timeout(iov, id, preempt_timeout);
 	return err ?: count;
 }
@@ -359,7 +355,6 @@ static ssize_t ggtt_quota_iov_attr_store(struct intel_iov *iov,
 	if (err)
 		return err;
 
-	pf_mark_manual_provisioning(iov);
 	err = intel_iov_provisioning_set_ggtt(iov, id, size);
 	return err ?: count;
 }
@@ -389,7 +384,6 @@ static ssize_t N##_iov_attr_store(struct intel_iov *iov, unsigned int id,		\
 	if (err)									\
 		return err;								\
 											\
-	pf_mark_manual_provisioning(iov);						\
 	err = intel_iov_provisioning_set_threshold(iov, id, IOV_THRESHOLD_##K, value);	\
 	return err ?: count;								\
 }											\

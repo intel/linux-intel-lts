@@ -205,9 +205,8 @@ u32 intel_engine_context_size(struct intel_gt *gt, u8 class)
 	BUILD_BUG_ON(I915_GTT_PAGE_SIZE != PAGE_SIZE);
 
 	switch (class) {
-	case COMPUTE_CLASS: /* TODO: same as render, for now... */
-		GEM_BUG_ON(!CCS_MASK(gt));
-		/* fall through */
+	case COMPUTE_CLASS:
+		fallthrough;
 	case RENDER_CLASS:
 		switch (GRAPHICS_VER(gt->i915)) {
 		default:
@@ -355,6 +354,7 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id,
 
 	BUILD_BUG_ON(BITS_PER_TYPE(engine->mask) < I915_NUM_ENGINES);
 
+	INIT_LIST_HEAD(&engine->pinned_contexts_list);
 	engine->id = id;
 	engine->legacy_idx = INVALID_ENGINE;
 	engine->mask = BIT(id);
@@ -383,15 +383,16 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id,
 	engine->props.timeslice_duration_ms =
 		CONFIG_DRM_I915_TIMESLICE_DURATION;
 
-	/* Override to uninterruptible for OpenCL workloads. */
-	if (GRAPHICS_VER(i915) == 12 && engine->class == RENDER_CLASS)
-		engine->props.preempt_timeout_ms = 0;
-
 	/* features common between engines sharing EUs */
 	if (engine->class == RENDER_CLASS || engine->class == COMPUTE_CLASS) {
 		engine->flags |= I915_ENGINE_HAS_RCS_REG_STATE;
 		engine->flags |= I915_ENGINE_HAS_EU_PRIORITY;
 	}
+
+	/* Override to uninterruptible for OpenCL workloads. */
+	if (GRAPHICS_VER(i915) == 12 &&
+	    engine->flags & I915_ENGINE_HAS_RCS_REG_STATE)
+		engine->props.preempt_timeout_ms = 0;
 
 	engine->defaults = engine->props; /* never to change again */
 
@@ -402,7 +403,7 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id,
 		DRIVER_CAPS(i915)->has_logical_contexts = true;
 
 	ewma__engine_latency_init(&engine->latency);
-	seqcount_init(&engine->stats.lock);
+	seqcount_init(&engine->stats.execlists.lock);
 
 	ATOMIC_INIT_NOTIFIER_HEAD(&engine->context_status_notifier);
 
@@ -440,7 +441,8 @@ static void __setup_engine_capabilities(struct intel_engine_cs *engine)
 			engine->uabi_capabilities |=
 				I915_VIDEO_AND_ENHANCE_CLASS_CAPABILITY_SFC;
 	} else if (engine->class == VIDEO_ENHANCEMENT_CLASS) {
-		if (GRAPHICS_VER(i915) >= 9)
+		if (GRAPHICS_VER(i915) >= 9 &&
+		    engine->gt->info.sfc_mask & BIT(engine->instance))
 			engine->uabi_capabilities |=
 				I915_VIDEO_AND_ENHANCE_CLASS_CAPABILITY_SFC;
 	}
@@ -516,18 +518,25 @@ void intel_engines_free(struct intel_gt *gt)
 }
 
 static
-bool gen11_vdbox_has_sfc(struct drm_i915_private *i915,
+bool gen11_vdbox_has_sfc(struct intel_gt *gt,
 			 unsigned int physical_vdbox,
 			 unsigned int logical_vdbox, u16 vdbox_mask)
 {
+	struct drm_i915_private *i915 = gt->i915;
+
 	/*
 	 * In Gen11, only even numbered logical VDBOXes are hooked
 	 * up to an SFC (Scaler & Format Converter) unit.
 	 * In Gen12, Even numbered physical instance always are connected
 	 * to an SFC. Odd numbered physical instances have SFC only if
 	 * previous even instance is fused off.
+	 *
+	 * Starting with Xe_HP, there's also a dedicated SFC_ENABLE field
+	 * in the fuse register that tells us whether a specific SFC is present.
 	 */
-	if (GRAPHICS_VER(i915) == 12)
+	if ((gt->info.sfc_mask & BIT(physical_vdbox / 2)) == 0)
+		return false;
+	else if (GRAPHICS_VER(i915) == 12)
 		return (physical_vdbox % 2 == 0) ||
 			!(BIT(physical_vdbox - 1) & vdbox_mask);
 	else if (GRAPHICS_VER(i915) == 11)
@@ -535,6 +544,29 @@ bool gen11_vdbox_has_sfc(struct drm_i915_private *i915,
 
 	MISSING_CASE(GRAPHICS_VER(i915));
 	return false;
+}
+
+static void engine_mask_apply_compute_fuses(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_gt_info *info = &gt->info;
+	unsigned int i;
+
+	/*
+	 * If all DSS in a quadrant are fused off, the corresponding CCS
+	 * engine is not available for use.
+	 */
+	if (fls(CCS_MASK(gt)) > 1) {
+		int ss_per_ccs = info->sseu.max_subslices / I915_MAX_CCS;
+		const unsigned long ccs_mask = intel_slicemask_from_dssmask(
+			intel_sseu_get_compute_subslices(&info->sseu),
+			ss_per_ccs);
+
+		for_each_clear_bit(i, &ccs_mask, I915_MAX_CCS) {
+			info->engine_mask &= ~BIT(_CCS(i));
+			drm_dbg(&i915->drm, "ccs%u fused off\n", i);
+		}
+	}
 }
 
 /*
@@ -554,7 +586,7 @@ static intel_engine_mask_t init_engine_mask(struct intel_gt *gt)
 	struct intel_uncore *uncore = gt->uncore;
 	unsigned int logical_vdbox = 0;
 	unsigned int i;
-	u32 media_fuse;
+	u32 media_fuse, fuse1;
 	u16 vdbox_mask;
 	u16 vebox_mask;
 
@@ -576,6 +608,13 @@ static intel_engine_mask_t init_engine_mask(struct intel_gt *gt)
 	vebox_mask = (media_fuse & GEN11_GT_VEBOX_DISABLE_MASK) >>
 		      GEN11_GT_VEBOX_DISABLE_SHIFT;
 
+	if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 50)) {
+		fuse1 = intel_uncore_read(uncore, HSW_PAVP_FUSE1);
+		gt->info.sfc_mask = REG_FIELD_GET(XEHP_SFC_ENABLE_MASK, fuse1);
+	} else {
+		gt->info.sfc_mask = ~0;
+	}
+
 	for (i = 0; i < I915_MAX_VCS; i++) {
 		if (!HAS_ENGINE(gt, _VCS(i))) {
 			vdbox_mask &= ~BIT(i);
@@ -588,7 +627,7 @@ static intel_engine_mask_t init_engine_mask(struct intel_gt *gt)
 			continue;
 		}
 
-		if (gen11_vdbox_has_sfc(i915, i, logical_vdbox, vdbox_mask))
+		if (gen11_vdbox_has_sfc(gt, i, logical_vdbox, vdbox_mask))
 			gt->info.vdbox_sfc_access |= BIT(i);
 		logical_vdbox++;
 	}
@@ -610,6 +649,8 @@ static intel_engine_mask_t init_engine_mask(struct intel_gt *gt)
 	drm_dbg(&i915->drm, "vebox enable: %04x, instances: %04lx\n",
 		vebox_mask, VEBOX_MASK(gt));
 	GEM_BUG_ON(vebox_mask != VEBOX_MASK(gt));
+
+	engine_mask_apply_compute_fuses(gt);
 
 	return info->engine_mask;
 }
@@ -957,6 +998,8 @@ intel_engine_create_pinned_context(struct intel_engine_cs *engine,
 		return ERR_PTR(err);
 	}
 
+	list_add_tail(&ce->pinned_contexts_link, &engine->pinned_contexts_list);
+
 	/*
 	 * Give our perma-pinned kernel timelines a separate lockdep class,
 	 * so that we can use them from within the normal user timelines
@@ -979,6 +1022,7 @@ void intel_engine_destroy_pinned_context(struct intel_context *ce)
 	list_del(&ce->timeline->engine_link);
 	mutex_unlock(&hwsp->vm->mutex);
 
+	list_del(&ce->pinned_contexts_link);
 	intel_context_unpin(ce);
 	intel_context_put(ce);
 }
@@ -1245,16 +1289,16 @@ void intel_engine_get_instdone(const struct intel_engine_cs *engine,
 	u32 mmio_base = engine->mmio_base;
 	int slice;
 	int subslice;
+	int iter;
 
 	memset(instdone, 0, sizeof(*instdone));
 
-	switch (GRAPHICS_VER(i915)) {
-	default:
+	if (GRAPHICS_VER(i915) >= 8) {
 		instdone->instdone =
 			intel_uncore_read(uncore, RING_INSTDONE(mmio_base));
 
 		if (engine->id != RCS0)
-			break;
+			return;
 
 		instdone->slice_common =
 			intel_uncore_read(uncore, GEN7_SC_INSTDONE);
@@ -1264,21 +1308,39 @@ void intel_engine_get_instdone(const struct intel_engine_cs *engine,
 			instdone->slice_common_extra[1] =
 				intel_uncore_read(uncore, GEN12_SC_INSTDONE_EXTRA2);
 		}
-		for_each_instdone_slice_subslice(i915, sseu, slice, subslice) {
-			instdone->sampler[slice][subslice] =
-				read_subslice_reg(engine, slice, subslice,
-						  GEN7_SAMPLER_INSTDONE);
-			instdone->row[slice][subslice] =
-				read_subslice_reg(engine, slice, subslice,
-						  GEN7_ROW_INSTDONE);
+
+		if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 50)) {
+			for_each_instdone_gslice_dss_xehp(i915, sseu, iter, slice, subslice) {
+				instdone->sampler[slice][subslice] =
+					read_subslice_reg(engine, slice, subslice,
+							  GEN7_SAMPLER_INSTDONE);
+				instdone->row[slice][subslice] =
+					read_subslice_reg(engine, slice, subslice,
+							  GEN7_ROW_INSTDONE);
+			}
+		} else {
+			for_each_instdone_slice_subslice(i915, sseu, slice, subslice) {
+				instdone->sampler[slice][subslice] =
+					read_subslice_reg(engine, slice, subslice,
+							  GEN7_SAMPLER_INSTDONE);
+				instdone->row[slice][subslice] =
+					read_subslice_reg(engine, slice, subslice,
+							  GEN7_ROW_INSTDONE);
+			}
 		}
-		break;
-	case 7:
+
+		if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 55)) {
+			for_each_instdone_gslice_dss_xehp(i915, sseu, iter, slice, subslice)
+				instdone->geom_svg[slice][subslice] =
+					read_subslice_reg(engine, slice, subslice,
+							  XEHPG_INSTDONE_GEOM_SVG);
+		}
+	} else if (GRAPHICS_VER(i915) >= 7) {
 		instdone->instdone =
 			intel_uncore_read(uncore, RING_INSTDONE(mmio_base));
 
 		if (engine->id != RCS0)
-			break;
+			return;
 
 		instdone->slice_common =
 			intel_uncore_read(uncore, GEN7_SC_INSTDONE);
@@ -1286,22 +1348,15 @@ void intel_engine_get_instdone(const struct intel_engine_cs *engine,
 			intel_uncore_read(uncore, GEN7_SAMPLER_INSTDONE);
 		instdone->row[0][0] =
 			intel_uncore_read(uncore, GEN7_ROW_INSTDONE);
-
-		break;
-	case 6:
-	case 5:
-	case 4:
+	} else if (GRAPHICS_VER(i915) >= 4) {
 		instdone->instdone =
 			intel_uncore_read(uncore, RING_INSTDONE(mmio_base));
 		if (engine->id == RCS0)
 			/* HACK: Using the wrong struct member */
 			instdone->slice_common =
 				intel_uncore_read(uncore, GEN4_INSTDONE1);
-		break;
-	case 3:
-	case 2:
+	} else {
 		instdone->instdone = intel_uncore_read(uncore, GEN2_INSTDONE);
-		break;
 	}
 }
 
@@ -1929,22 +1984,6 @@ void intel_engine_dump(struct intel_engine_cs *engine,
 	intel_engine_print_breadcrumbs(engine, m);
 }
 
-static ktime_t __intel_engine_get_busy_time(struct intel_engine_cs *engine,
-					    ktime_t *now)
-{
-	ktime_t total = engine->stats.total;
-
-	/*
-	 * If the engine is executing something at the moment
-	 * add it to the total.
-	 */
-	*now = ktime_get();
-	if (READ_ONCE(engine->stats.active))
-		total = ktime_add(total, ktime_sub(*now, engine->stats.start));
-
-	return total;
-}
-
 /**
  * intel_engine_get_busy_time() - Return current accumulated engine busyness
  * @engine: engine to report on
@@ -1954,15 +1993,7 @@ static ktime_t __intel_engine_get_busy_time(struct intel_engine_cs *engine,
  */
 ktime_t intel_engine_get_busy_time(struct intel_engine_cs *engine, ktime_t *now)
 {
-	unsigned int seq;
-	ktime_t total;
-
-	do {
-		seq = read_seqcount_begin(&engine->stats.lock);
-		total = __intel_engine_get_busy_time(engine, now);
-	} while (read_seqcount_retry(&engine->stats.lock, seq));
-
-	return total;
+	return engine->busyness(engine, now);
 }
 
 struct intel_context *
@@ -2030,6 +2061,23 @@ intel_engine_execlist_find_hung_request(struct intel_engine_cs *engine)
 	}
 
 	return active;
+}
+
+void xehp_enable_ccs_engines(struct intel_engine_cs *engine)
+{
+	/*
+	 * If there are any non-fused-off CCS engines, we need to enable CCS
+	 * support in the RCU_MODE register.  This only needs to be done once,
+	 * so for simplicity we'll take care of this in the RCS engine's
+	 * resume handler; since the RCS and all CCS engines belong to the
+	 * same reset domain and are reset together, this will also take care
+	 * of re-applying the setting after i915-triggered resets.
+	 */
+	if (!CCS_MASK(engine->gt))
+		return;
+
+	intel_uncore_write(engine->uncore, GEN12_RCU_MODE,
+			   _MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

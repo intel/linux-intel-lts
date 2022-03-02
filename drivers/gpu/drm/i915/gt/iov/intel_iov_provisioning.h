@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  */
 
 #ifndef __INTEL_IOV_PROVISIONING_H__
@@ -60,5 +60,9 @@ int intel_iov_provisioning_clear(struct intel_iov *iov, unsigned int id);
 int intel_iov_provisioning_print_ggtt(struct intel_iov *iov, struct drm_printer *p);
 int intel_iov_provisioning_print_ctxs(struct intel_iov *iov, struct drm_printer *p);
 int intel_iov_provisioning_print_dbs(struct intel_iov *iov, struct drm_printer *p);
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV)
+int intel_iov_provisioning_move_ggtt(struct intel_iov *iov, unsigned int id);
+#endif /* CONFIG_DRM_I915_DEBUG_IOV */
 
 #endif /* __INTEL_IOV_PROVISIONING_H__ */

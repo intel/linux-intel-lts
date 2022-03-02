@@ -402,7 +402,6 @@ typedef struct elf64_shdr {
 #define NT_386_TLS	0x200		/* i386 TLS slots (struct user_desc) */
 #define NT_386_IOPERM	0x201		/* x86 io permission bitmap (1=deny) */
 #define NT_X86_XSTATE	0x202		/* x86 extended state using xsave */
-#define NT_X86_CET	0x203		/* x86 cet state */
 #define NT_S390_HIGH_GPRS	0x300	/* s390 upper register halves */
 #define NT_S390_TIMER	0x301		/* s390 timer register */
 #define NT_S390_TODCMP	0x302		/* s390 TOD clock comparator register */
@@ -455,19 +454,5 @@ typedef struct elf64_note {
 
 /* Bits for GNU_PROPERTY_AARCH64_FEATURE_1_BTI */
 #define GNU_PROPERTY_AARCH64_FEATURE_1_BTI	(1U << 0)
-
-/*
- * See the x86 64 psABI at:
- * https://gitlab.com/x86-psABIs/x86-64-ABI/-/wikis/x86-64-psABI
- * .note.gnu.property types for x86:
- */
-/* 0xc0000000 and 0xc0000001 are reserved */
-#define GNU_PROPERTY_X86_FEATURE_1_AND		0xc0000002
-
-/* Bits for GNU_PROPERTY_X86_FEATURE_1_AND */
-#define GNU_PROPERTY_X86_FEATURE_1_IBT		0x00000001
-#define GNU_PROPERTY_X86_FEATURE_1_SHSTK	0x00000002
-#define GNU_PROPERTY_X86_FEATURE_1_VALID (GNU_PROPERTY_X86_FEATURE_1_IBT | \
-					   GNU_PROPERTY_X86_FEATURE_1_SHSTK)
 
 #endif /* _UAPI_LINUX_ELF_H */

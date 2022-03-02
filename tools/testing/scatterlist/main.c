@@ -79,19 +79,39 @@ int main(void)
 	for (i = 0, test = tests; test->expected_segments; test++, i++) {
 		struct page *pages[MAX_PAGES];
 		struct sg_table st;
-		struct scatterlist *sg;
+		struct scatterlist *sg = NULL;
+		int ret;
 
 		set_pages(pages, test->pfn, test->num_pages);
 
-		sg = __sg_alloc_table_from_pages(&st, pages, test->num_pages, 0,
-				test->size, test->max_seg, NULL, 0, GFP_KERNEL);
-		assert(PTR_ERR_OR_ZERO(sg) == test->alloc_ret);
+		if (test->pfn_app) {
+			sg = sg_alloc_append_table_from_pages(
+				&st, pages, test->num_pages, 0, test->size,
+				test->max_seg, NULL, left_pages, GFP_KERNEL);
+			assert(PTR_ERR_OR_ZERO(sg) == test->alloc_ret);
+		} else {
+			ret = sg_alloc_table_from_pages_segment(
+				&st, pages, test->num_pages, 0, test->size,
+				test->max_seg, GFP_KERNEL);
+			assert(ret == test->alloc_ret);
+		}
 
 		if (test->alloc_ret)
 			continue;
 
+		if (test->pfn_app) {
+			set_pages(pages, test->pfn_app, test->num_pages);
+			sg = sg_alloc_append_table_from_pages(
+				&st, pages, test->num_pages, 0, test->size,
+				test->max_seg, sg, 0, GFP_KERNEL);
+
+			assert(PTR_ERR_OR_ZERO(sg) == test->alloc_ret);
+		}
+
 		VALIDATE(st.nents == test->expected_segments, &st, test);
-		VALIDATE(st.orig_nents == test->expected_segments, &st, test);
+		if (!test->pfn_app)
+			VALIDATE(st.orig_nents == test->expected_segments, &st,
+				 test);
 
 		sg_free_table(&st);
 	}

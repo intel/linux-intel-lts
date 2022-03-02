@@ -39,7 +39,6 @@
 #include <linux/io.h>
 #include <linux/hardirq.h>
 #include <linux/atomic.h>
-#include <linux/nospec.h>
 
 #include <asm/stacktrace.h>
 #include <asm/processor.h>
@@ -524,6 +523,37 @@ static enum kernel_gp_hint get_kernel_gp_address(struct pt_regs *regs,
 
 #define GPFSTR "general protection fault"
 
+static bool fixup_iopl_exception(struct pt_regs *regs)
+{
+	struct thread_struct *t = &current->thread;
+	unsigned char byte;
+	unsigned long ip;
+
+	if (!IS_ENABLED(CONFIG_X86_IOPL_IOPERM) || t->iopl_emul != 3)
+		return false;
+
+	ip = insn_get_effective_ip(regs);
+	if (!ip)
+		return false;
+
+	if (get_user(byte, (const char __user *)ip))
+		return false;
+
+	if (byte != 0xfa && byte != 0xfb)
+		return false;
+
+	if (!t->iopl_warn && printk_ratelimit()) {
+		pr_err("%s[%d] attempts to use CLI/STI, pretending it's a NOP, ip:%lx",
+		       current->comm, task_pid_nr(current), ip);
+		print_vma_addr(KERN_CONT " in ", ip);
+		pr_cont("\n");
+		t->iopl_warn = 1;
+	}
+
+	regs->ip += 1;
+	return true;
+}
+
 DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 {
 	char desc[sizeof(GPFSTR) + 50 + 2*sizeof(unsigned long) + 1] = GPFSTR;
@@ -549,6 +579,9 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 	tsk = current;
 
 	if (user_mode(regs)) {
+		if (fixup_iopl_exception(regs))
+			goto exit;
+
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_nr = X86_TRAP_GP;
 
@@ -599,68 +632,6 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 exit:
 	cond_local_irq_disable(regs);
 }
-
-#ifdef CONFIG_X86_SHADOW_STACK
-static const char * const control_protection_err[] = {
-	"unknown",
-	"near-ret",
-	"far-ret/iret",
-	"endbranch",
-	"rstorssp",
-	"setssbsy",
-	"unknown",
-};
-
-static DEFINE_RATELIMIT_STATE(cpf_rate, DEFAULT_RATELIMIT_INTERVAL,
-			      DEFAULT_RATELIMIT_BURST);
-
-/*
- * When a control protection exception occurs, send a signal to the responsible
- * application.  Currently, control protection is only enabled for user mode.
- * This exception should not come from kernel mode.
- */
-DEFINE_IDTENTRY_ERRORCODE(exc_control_protection)
-{
-	struct task_struct *tsk;
-
-	if (!user_mode(regs)) {
-		pr_emerg("PANIC: unexpected kernel control protection fault\n");
-		die("kernel control protection fault", regs, error_code);
-		panic("Machine halted.");
-	}
-
-	cond_local_irq_enable(regs);
-
-	if (!boot_cpu_has(X86_FEATURE_SHSTK))
-		WARN_ONCE(1, "Control protection fault with CET support disabled\n");
-
-	tsk = current;
-	tsk->thread.error_code = error_code;
-	tsk->thread.trap_nr = X86_TRAP_CP;
-
-	/*
-	 * Ratelimit to prevent log spamming.
-	 */
-	if (show_unhandled_signals && unhandled_signal(tsk, SIGSEGV) &&
-	    __ratelimit(&cpf_rate)) {
-		unsigned long ssp;
-		int cpf_type;
-
-		cpf_type = array_index_nospec(error_code, ARRAY_SIZE(control_protection_err));
-
-		rdmsrl(MSR_IA32_PL3_SSP, ssp);
-		pr_emerg("%s[%d] control protection ip:%lx sp:%lx ssp:%lx error:%lx(%s)",
-			 tsk->comm, task_pid_nr(tsk),
-			 regs->ip, regs->sp, ssp, error_code,
-			 control_protection_err[cpf_type]);
-		print_vma_addr(KERN_CONT " in ", regs->ip);
-		pr_cont("\n");
-	}
-
-	force_sig_fault(SIGSEGV, SEGV_CPERR, (void __user *)0);
-	cond_local_irq_disable(regs);
-}
-#endif
 
 static bool do_int3(struct pt_regs *regs)
 {
@@ -764,7 +735,7 @@ asmlinkage __visible noinstr struct pt_regs *vc_switch_off_ist(struct pt_regs *r
 	stack = (unsigned long *)sp;
 
 	if (!get_stack_info_noinstr(stack, current, &info) || info.type == STACK_TYPE_ENTRY ||
-	    info.type >= STACK_TYPE_EXCEPTION_LAST)
+	    info.type > STACK_TYPE_EXCEPTION_LAST)
 		sp = __this_cpu_ist_top_va(VC2);
 
 sync:

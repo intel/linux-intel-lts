@@ -44,6 +44,7 @@ static inline unsigned long pte_index(unsigned long address)
 {
 	return (address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1);
 }
+#define pte_index pte_index
 
 #ifndef pmd_index
 static inline unsigned long pmd_index(unsigned long address)
@@ -1453,13 +1454,6 @@ static inline bool arch_has_pfn_modify_check(void)
 	return false;
 }
 #endif /* !_HAVE_ARCH_PFN_MODIFY_ALLOWED */
-
-#ifndef is_shadow_stack_mapping
-static inline bool is_shadow_stack_mapping(vm_flags_t vm_flags)
-{
-	return false;
-}
-#endif
 
 /*
  * Architecture PAGE_KERNEL_* fallbacks

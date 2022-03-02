@@ -108,6 +108,7 @@
 #include "amdgpu_df.h"
 #include "amdgpu_smuio.h"
 #include "amdgpu_fdinfo.h"
+#include "amdgpu_mca.h"
 
 #define MAX_GPU_INSTANCE		16
 
@@ -757,7 +758,7 @@ enum amd_hw_ip_block_type {
 	MAX_HWIP
 };
 
-#define HWIP_MAX_INSTANCE	8
+#define HWIP_MAX_INSTANCE	10
 
 struct amd_powerplay {
 	void *pp_handle;
@@ -1009,6 +1010,9 @@ struct amdgpu_device {
 	/* df */
 	struct amdgpu_df                df;
 
+	/* MCA */
+	struct amdgpu_mca               mca;
+
 	struct amdgpu_ip_block          ip_blocks[AMDGPU_MAX_IP_NUM];
 	uint32_t		        harvest_ip_mask;
 	int				num_ip_blocks;
@@ -1083,6 +1087,7 @@ struct amdgpu_device {
 
 	bool                            no_hw_access;
 	struct pci_saved_state          *pci_state;
+	pci_channel_state_t		pci_channel_state;
 
 	struct amdgpu_reset_control     *reset_cntl;
 };
@@ -1270,6 +1275,8 @@ int emu_soc_asic_init(struct amdgpu_device *adev);
 #define amdgpu_asic_query_video_codecs(adev, e, c) (adev)->asic_funcs->query_video_codecs((adev), (e), (c))
 
 #define amdgpu_inc_vram_lost(adev) atomic_inc(&((adev)->vram_lost_counter));
+
+#define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 
 /* Common functions */
 bool amdgpu_device_has_job_running(struct amdgpu_device *adev);

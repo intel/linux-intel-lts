@@ -1123,17 +1123,6 @@ access_error(unsigned long error_code, struct vm_area_struct *vma)
 				       (error_code & X86_PF_INSTR), foreign))
 		return 1;
 
-	/*
-	 * Verify a shadow stack access is within a shadow stack VMA.
-	 * It is always an error otherwise.  Normal data access to a
-	 * shadow stack area is checked in the case followed.
-	 */
-	if (error_code & X86_PF_SHSTK) {
-		if (!(vma->vm_flags & VM_SHADOW_STACK))
-			return 1;
-		return 0;
-	}
-
 	if (error_code & X86_PF_WRITE) {
 		/* write, present and write, not present: */
 		if (unlikely(!(vma->vm_flags & VM_WRITE)))
@@ -1299,14 +1288,6 @@ void do_user_addr_fault(struct pt_regs *regs,
 
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);
 
-	/*
-	 * Clearing _PAGE_DIRTY is used to detect shadow stack access.
-	 * This method cannot distinguish shadow stack read vs. write.
-	 * For valid shadow stack accesses, set FAULT_FLAG_WRITE to effect
-	 * copy-on-write.
-	 */
-	if (hw_error_code & X86_PF_SHSTK)
-		flags |= FAULT_FLAG_WRITE;
 	if (hw_error_code & X86_PF_WRITE)
 		flags |= FAULT_FLAG_WRITE;
 	if (hw_error_code & X86_PF_INSTR)

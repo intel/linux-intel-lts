@@ -158,6 +158,14 @@ struct intel_context {
 	/** sseu: Control eu/slice partitioning */
 	struct intel_sseu sseu;
 
+	/**
+	 * pinned_contexts_link: List link for the engine's pinned contexts.
+	 * This is only used if this is a perma-pinned kernel context and
+	 * the list is assumed to only be manipulated during driver load
+	 * or unload time so no mutex protection currently.
+	 */
+	struct list_head pinned_contexts_link;
+
 	u8 wa_bb_page; /* if set, page num reserved for context workarounds */
 
 	struct {
@@ -169,23 +177,23 @@ struct intel_context {
 		 */
 		u32 sched_state;
 		/*
-		 * @fences: maintains a list of requests are currently being
-		 * fenced until a GuC operation completes
+		 * @fences: maintains a list of requests that are currently
+		 * being fenced until a GuC operation completes
 		 */
 		struct list_head fences;
 		/**
-		 * @blocked_fence: fence used to signal when the blocking of a
-		 * contexts submissions is complete.
+		 * @blocked: fence used to signal when the blocking of a
+		 * context's submissions is complete.
 		 */
-		struct i915_sw_fence blocked_fence;
+		struct i915_sw_fence blocked;
 		/** @number_committed_requests: number of committed requests */
 		int number_committed_requests;
 		/** @requests: list of active requests on this context */
 		struct list_head requests;
-		/** @prio: the contexts current guc priority */
+		/** @prio: the context's current guc priority */
 		u8 prio;
 		/**
-		 * @prio_count: a counter of the number requests inflight in
+		 * @prio_count: a counter of the number requests in flight in
 		 * each priority bucket
 		 */
 		u32 prio_count[GUC_CLIENT_PRIORITY_NUM];
@@ -193,9 +201,8 @@ struct intel_context {
 
 	struct {
 		/**
-		 * @id: unique handle which is used to communicate information
-		 * with the GuC about this context, protected by
-		 * guc->submission_state.lock
+		 * @id: handle which is used to uniquely identify this context
+		 * with the GuC, protected by guc->submission_state.lock
 		 */
 		u16 id;
 		/**
@@ -218,62 +225,56 @@ struct intel_context {
 	 */
 	struct list_head destroyed_link;
 
-	/** anonymous struct for parent / children only members */
+	/** @parallel: sub-structure for parallel submission members */
 	struct {
 		union {
 			/**
-			 * @guc_child_list: parent's list of of children
+			 * @child_list: parent's list of children
 			 * contexts, no protection as immutable after context
 			 * creation
 			 */
-			struct list_head guc_child_list;
+			struct list_head child_list;
 			/**
-			 * @guc_child_link: child's link into parent's list of
+			 * @child_link: child's link into parent's list of
 			 * children
 			 */
-			struct list_head guc_child_link;
+			struct list_head child_link;
 		};
-
 		/** @parent: pointer to parent if child */
 		struct intel_context *parent;
-
-
-		/** @guc_wqi_head: head pointer in work queue */
-		u16 guc_wqi_head;
-		/** @guc_wqi_tail: tail pointer in work queue */
-		u16 guc_wqi_tail;
-
-		/** @guc_number_children: number of children if parent */
-		u8 guc_number_children;
-
-		/** @guc_child_index: index into guc_child_list if child */
-		u8 guc_child_index;
-
-		/**
-		 * @parent_page: page in context used by parent for work queue,
-		 * work queue descriptor
-		 */
-		u8 parent_page;
-
 		/**
 		 * @last_rq: last request submitted on a parallel context, used
-		 * to insert submit fences between request in the parallel
-		 * context.
+		 * to insert submit fences between requests in the parallel
+		 * context
 		 */
 		struct i915_request *last_rq;
-
 		/**
 		 * @fence_context: fence context composite fence when doing
 		 * parallel submission
 		 */
 		u64 fence_context;
-
 		/**
 		 * @seqno: seqno for composite fence when doing parallel
 		 * submission
 		 */
 		u32 seqno;
-	};
+		/** @number_children: number of children if parent */
+		u8 number_children;
+		/** @child_index: index into child_list if child */
+		u8 child_index;
+		/** @guc: GuC specific members for parallel submission */
+		struct {
+			/** @wqi_head: head pointer in work queue */
+			u16 wqi_head;
+			/** @wqi_tail: tail pointer in work queue */
+			u16 wqi_tail;
+			/**
+			 * @parent_page: page in context state (ce->state) used
+			 * by parent for work queue, process descriptor
+			 */
+			u8 parent_page;
+		} guc;
+	} parallel;
 
 #ifdef CONFIG_DRM_I915_SELFTEST
 	/**

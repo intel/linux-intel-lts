@@ -44,6 +44,12 @@
 # define DISABLE_OSPKE		(1<<(X86_FEATURE_OSPKE & 31))
 #endif /* CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS */
 
+#ifdef CONFIG_X86_KL
+# define DISABLE_KL		0
+#else
+# define DISABLE_KL		(1<<(X86_FEATURE_KL & 31))
+#endif
+
 #ifdef CONFIG_X86_5LEVEL
 # define DISABLE_LA57	0
 #else
@@ -58,18 +64,6 @@
 
 /* Force disable because it's broken beyond repair */
 #define DISABLE_ENQCMD		(1 << (X86_FEATURE_ENQCMD & 31))
-
-#ifdef CONFIG_X86_SHADOW_STACK
-#define DISABLE_SHSTK	0
-#else
-#define DISABLE_SHSTK	(1 << (X86_FEATURE_SHSTK & 31))
-#endif
-
-#ifdef CONFIG_X86_IBT
-#define DISABLE_IBT	0
-#else
-#define DISABLE_IBT	(1 << (X86_FEATURE_IBT & 31))
-#endif
 
 /*
  * Make sure to add features to the correct mask
@@ -91,9 +85,9 @@
 #define DISABLED_MASK14	0
 #define DISABLED_MASK15	0
 #define DISABLED_MASK16	(DISABLE_PKU|DISABLE_OSPKE|DISABLE_LA57|DISABLE_UMIP| \
-			 DISABLE_ENQCMD|DISABLE_SHSTK)
+			 DISABLE_ENQCMD|DISABLE_KL)
 #define DISABLED_MASK17	0
-#define DISABLED_MASK18	(DISABLE_IBT)
+#define DISABLED_MASK18	0
 #define DISABLED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 19)
 
 #endif /* _ASM_X86_DISABLED_FEATURES_H */

@@ -154,22 +154,71 @@ enum i915_mocs_table_index {
 	I915_MOCS_CACHED,
 };
 
-/*
+/**
+ * enum drm_i915_gem_engine_class - uapi engine type enumeration
+ *
  * Different engines serve different roles, and there may be more than one
- * engine serving each role. enum drm_i915_gem_engine_class provides a
- * classification of the role of the engine, which may be used when requesting
- * operations to be performed on a certain subset of engines, or for providing
- * information about that group.
+ * engine serving each role.  This enum provides a classification of the role
+ * of the engine, which may be used when requesting operations to be performed
+ * on a certain subset of engines, or for providing information about that
+ * group.
  */
 enum drm_i915_gem_engine_class {
+	/**
+	 * @I915_ENGINE_CLASS_RENDER:
+	 *
+	 * Render engines support instructions used for 3D, Compute (GPGPU),
+	 * and programmable media workloads.  These instructions fetch data and
+	 * dispatch individual work items to threads that operate in parallel.
+	 * The threads run small programs (called "kernels" or "shaders") on
+	 * the GPU's execution units (EUs).
+	 */
 	I915_ENGINE_CLASS_RENDER	= 0,
+
+	/**
+	 * @I915_ENGINE_CLASS_COPY:
+	 *
+	 * Copy engines (also referred to as "blitters") support instructions
+	 * that move blocks of data from one location in memory to another,
+	 * or that fill a specified location of memory with fixed data.
+	 * Copy engines can perform pre-defined logical or bitwise operations
+	 * on the source, destination, or pattern data.
+	 */
 	I915_ENGINE_CLASS_COPY		= 1,
+
+	/**
+	 * @I915_ENGINE_CLASS_VIDEO:
+	 *
+	 * Video engines (also referred to as "bit stream decode" (BSD) or
+	 * "vdbox") support instructions that perform fixed-function media
+	 * decode and encode.
+	 */
 	I915_ENGINE_CLASS_VIDEO		= 2,
+
+	/**
+	 * @I915_ENGINE_CLASS_VIDEO_ENHANCE:
+	 *
+	 * Video enhancement engines (also referred to as "vebox") support
+	 * instructions related to image enhancement.
+	 */
 	I915_ENGINE_CLASS_VIDEO_ENHANCE	= 3,
-	I915_ENGINE_CLASS_COMPUTE       = 4,
 
-	/* should be kept compact */
+	/**
+	 * @I915_ENGINE_CLASS_COMPUTE:
+	 *
+	 * Compute engines support a subset of the instructions available
+	 * on render engines:  compute engines support Compute (GPGPU) and
+	 * programmable media workloads, but do not support the 3D pipeline.
+	 */
+	I915_ENGINE_CLASS_COMPUTE	= 4,
 
+	/* Values in this enum should be kept compact. */
+
+	/**
+	 * @I915_ENGINE_CLASS_INVALID:
+	 *
+	 * Placeholder value to represent an invalid engine class assignment.
+	 */
 	I915_ENGINE_CLASS_INVALID	= -1
 };
 
@@ -1848,6 +1897,55 @@ struct drm_i915_gem_context_param {
  * attempted to use it, never re-use this context param number.
  */
 #define I915_CONTEXT_PARAM_RINGSIZE	0xc
+
+/*
+ * I915_CONTEXT_PARAM_PROTECTED_CONTENT:
+ *
+ * Mark that the context makes use of protected content, which will result
+ * in the context being invalidated when the protected content session is.
+ * Given that the protected content session is killed on suspend, the device
+ * is kept awake for the lifetime of a protected context, so the user should
+ * make sure to dispose of them once done.
+ * This flag can only be set at context creation time and, when set to true,
+ * must be preceded by an explicit setting of I915_CONTEXT_PARAM_RECOVERABLE
+ * to false. This flag can't be set to true in conjunction with setting the
+ * I915_CONTEXT_PARAM_BANNABLE flag to false. Creation example:
+ *
+ * .. code-block:: C
+ *
+ *	struct drm_i915_gem_context_create_ext_setparam p_protected = {
+ *		.base = {
+ *			.name = I915_CONTEXT_CREATE_EXT_SETPARAM,
+ *		},
+ *		.param = {
+ *			.param = I915_CONTEXT_PARAM_PROTECTED_CONTENT,
+ *			.value = 1,
+ *		}
+ *	};
+ *	struct drm_i915_gem_context_create_ext_setparam p_norecover = {
+ *		.base = {
+ *			.name = I915_CONTEXT_CREATE_EXT_SETPARAM,
+ *			.next_extension = to_user_pointer(&p_protected),
+ *		},
+ *		.param = {
+ *			.param = I915_CONTEXT_PARAM_RECOVERABLE,
+ *			.value = 0,
+ *		}
+ *	};
+ *	struct drm_i915_gem_context_create_ext create = {
+ *		.flags = I915_CONTEXT_CREATE_FLAGS_USE_EXTENSIONS,
+ *		.extensions = to_user_pointer(&p_norecover);
+ *	};
+ *
+ *	ctx_id = gem_context_create_ext(drm_fd, &create);
+ *
+ * In addition to the normal failure cases, setting this flag during context
+ * creation can result in the following errors:
+ *
+ * -ENODEV: feature not available
+ * -EPERM: trying to mark a recoverable or not bannable context as protected
+ */
+#define I915_CONTEXT_PARAM_PROTECTED_CONTENT    0xd
 /* Must be kept compact -- no holes and well documented */
 
 	__u64 value;
@@ -2057,7 +2155,7 @@ struct i915_context_engines_bond {
  *
  * Setup a slot in the context engine map to allow multiple BBs to be submitted
  * in a single execbuf IOCTL. Those BBs will then be scheduled to run on the GPU
- * in parallel. Multiple hardware contexts are created internally in the i915
+ * in parallel. Multiple hardware contexts are created internally in the i915 to
  * run these BBs. Once a slot is configured for N BBs only N BBs can be
  * submitted in each execbuf IOCTL and this is implicit behavior e.g. The user
  * doesn't tell the execbuf IOCTL there are N BBs, the execbuf IOCTL knows how
@@ -2068,10 +2166,10 @@ struct i915_context_engines_bond {
  * context if each context maps to more than 1 physical engine (e.g. context is
  * a virtual engine). Also we only allow contexts of same engine class and these
  * contexts must be in logically contiguous order. Examples of the placement
- * behavior described below. Lastly, the default is to not allow BBs to
- * preempted mid BB rather insert coordinated preemption on all hardware
- * contexts between each set of BBs. Flags may be added in the future to change
- * both of these default behaviors.
+ * behavior are described below. Lastly, the default is to not allow BBs to be
+ * preempted mid-batch. Rather insert coordinated preemption points on all
+ * hardware contexts between each set of BBs. Flags could be added in the future
+ * to change both of these default behaviors.
  *
  * Returns -EINVAL if hardware context placement configuration is invalid or if
  * the placement configuration isn't supported on the platform / submission
@@ -2081,9 +2179,11 @@ struct i915_context_engines_bond {
  *
  * .. code-block:: none
  *
- *	Example 1 pseudo code:
+ *	Examples syntax:
  *	CS[X] = generic engine of same class, logical instance X
  *	INVALID = I915_ENGINE_CLASS_INVALID, I915_ENGINE_CLASS_INVALID_NONE
+ *
+ *	Example 1 pseudo code:
  *	set_engines(INVALID)
  *	set_parallel(engine_index=0, width=2, num_siblings=1,
  *		     engines=CS[0],CS[1])
@@ -2092,8 +2192,6 @@ struct i915_context_engines_bond {
  *	CS[0], CS[1]
  *
  *	Example 2 pseudo code:
- *	CS[X] = generic engine of same class, logical instance X
- *	INVALID = I915_ENGINE_CLASS_INVALID, I915_ENGINE_CLASS_INVALID_NONE
  *	set_engines(INVALID)
  *	set_parallel(engine_index=0, width=2, num_siblings=2,
  *		     engines=CS[0],CS[2],CS[1],CS[3])
@@ -2102,23 +2200,24 @@ struct i915_context_engines_bond {
  *	CS[0], CS[1]
  *	CS[2], CS[3]
  *
- *	This can also be thought of as 2 virtual engines described by 2-D array
- *	in the engines the field with bonds placed between each index of the
- *	virtual engines. e.g. CS[0] is bonded to CS[1], CS[2] is bonded to
- *	CS[3].
+ *	This can be thought of as two virtual engines, each containing two
+ *	engines thereby making a 2D array. However, there are bonds tying the
+ *	entries together and placing restrictions on how they can be scheduled.
+ *	Specifically, the scheduler can choose only vertical columns from the 2D
+ *	array. That is, CS[0] is bonded to CS[1] and CS[2] to CS[3]. So if the
+ *	scheduler wants to submit to CS[0], it must also choose CS[1] and vice
+ *	versa. Same for CS[2] requires also using CS[3].
  *	VE[0] = CS[0], CS[2]
  *	VE[1] = CS[1], CS[3]
  *
  *	Example 3 pseudo code:
- *	CS[X] = generic engine of same class, logical instance X
- *	INVALID = I915_ENGINE_CLASS_INVALID, I915_ENGINE_CLASS_INVALID_NONE
  *	set_engines(INVALID)
  *	set_parallel(engine_index=0, width=2, num_siblings=2,
  *		     engines=CS[0],CS[1],CS[1],CS[3])
  *
  *	Results in the following valid and invalid placements:
  *	CS[0], CS[1]
- *	CS[1], CS[3] - Not logical contiguous, return -EINVAL
+ *	CS[1], CS[3] - Not logically contiguous, return -EINVAL
  */
 struct i915_context_engines_parallel_submit {
 	/**
@@ -2132,12 +2231,14 @@ struct i915_context_engines_parallel_submit {
 	__u16 engine_index;
 
 	/**
-	 * @width: number of contexts per parallel engine
+	 * @width: number of contexts per parallel engine or in other words the
+	 * number of batches in each submission
 	 */
 	__u16 width;
 
 	/**
-	 * @num_siblings: number of siblings per context
+	 * @num_siblings: number of siblings per context or in other words the
+	 * number of possible placements for each submission
 	 */
 	__u16 num_siblings;
 
@@ -2628,13 +2729,6 @@ struct drm_i915_query_item {
 #define DRM_I915_QUERY_ENGINE_INFO	2
 #define DRM_I915_QUERY_PERF_CONFIG      3
 #define DRM_I915_QUERY_MEMORY_REGIONS   4
-	/**
-	 * Query HWConfig Table: Copies a device information table to the
-	 * query's item.data_ptr directly if the allocated length is big enough
-	 * For details about table format and content see intel_hwconfig_types.h
-	 */
-#define PRELIM_DRM_I915_QUERY_HWCONFIG_TABLE	(PRELIM_DRM_I915_QUERY | 6)
-
 /* Must be kept compact -- no holes and well documented */
 
 	/**
@@ -3121,8 +3215,12 @@ struct drm_i915_gem_create_ext {
 	 *
 	 * For I915_GEM_CREATE_EXT_MEMORY_REGIONS usage see
 	 * struct drm_i915_gem_create_ext_memory_regions.
+	 *
+	 * For I915_GEM_CREATE_EXT_PROTECTED_CONTENT usage see
+	 * struct drm_i915_gem_create_ext_protected_content.
 	 */
 #define I915_GEM_CREATE_EXT_MEMORY_REGIONS 0
+#define I915_GEM_CREATE_EXT_PROTECTED_CONTENT 1
 	__u64 extensions;
 };
 
@@ -3179,6 +3277,50 @@ struct drm_i915_gem_create_ext_memory_regions {
 	 */
 	__u64 regions;
 };
+
+/**
+ * struct drm_i915_gem_create_ext_protected_content - The
+ * I915_OBJECT_PARAM_PROTECTED_CONTENT extension.
+ *
+ * If this extension is provided, buffer contents are expected to be protected
+ * by PXP encryption and require decryption for scan out and processing. This
+ * is only possible on platforms that have PXP enabled, on all other scenarios
+ * using this extension will cause the ioctl to fail and return -ENODEV. The
+ * flags parameter is reserved for future expansion and must currently be set
+ * to zero.
+ *
+ * The buffer contents are considered invalid after a PXP session teardown.
+ *
+ * The encryption is guaranteed to be processed correctly only if the object
+ * is submitted with a context created using the
+ * I915_CONTEXT_PARAM_PROTECTED_CONTENT flag. This will also enable extra checks
+ * at submission time on the validity of the objects involved.
+ *
+ * Below is an example on how to create a protected object:
+ *
+ * .. code-block:: C
+ *
+ *      struct drm_i915_gem_create_ext_protected_content protected_ext = {
+ *              .base = { .name = I915_GEM_CREATE_EXT_PROTECTED_CONTENT },
+ *              .flags = 0,
+ *      };
+ *      struct drm_i915_gem_create_ext create_ext = {
+ *              .size = PAGE_SIZE,
+ *              .extensions = (uintptr_t)&protected_ext,
+ *      };
+ *
+ *      int err = ioctl(fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &create_ext);
+ *      if (err) ...
+ */
+struct drm_i915_gem_create_ext_protected_content {
+	/** @base: Extension link. See struct i915_user_extension. */
+	struct i915_user_extension base;
+	/** @flags: reserved for future usage, currently MBZ */
+	__u32 flags;
+};
+
+/* ID of the protected content session managed by i915 when PXP is active */
+#define I915_PROTECTED_CONTENT_DEFAULT_SESSION 0xf
 
 #if defined(__cplusplus)
 }

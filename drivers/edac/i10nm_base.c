@@ -32,6 +32,8 @@
 	readl((m)->mbase + 0x20ef8 + (i) * (m)->chan_mmio_sz)
 #define I10NM_GET_AMAP(m, i)		\
 	readl((m)->mbase + 0x20814 + (i) * (m)->chan_mmio_sz)
+#define I10NM_GET_REG(m, i, offset)	\
+	readl((m)->mbase + (i) * (m)->chan_mmio_sz + (offset))
 
 #define I10NM_GET_SCK_MMIO_BASE(reg)	(GET_BITFIELD(reg, 0, 28) << 23)
 #define I10NM_GET_IMC_MMIO_OFFSET(reg)	(GET_BITFIELD(reg, 0, 10) << 12)
@@ -39,6 +41,46 @@
 					 GET_BITFIELD(reg, 0, 10) + 1) << 12)
 
 static struct list_head *i10nm_edac_list;
+
+static void i10nm_show_retry_rd_err_log(struct decoded_addr *res,
+					char *msg, int len,
+					bool scrub_err)
+{
+	u32 offsets1[] = {0x22c60, 0x22c54, 0x22c5c, 0x22c58, 0x22c28, 0x20ed8, 0x20edc};
+	u32 offsets2[] = {0x22e54, 0x22e60, 0x22e64, 0x22e58, 0x22e5c, 0x20ee0, 0x20ee4};
+	struct skx_imc *imc = &res->dev->imc[res->imc];
+	u32 log0, log1, log2, log3, log4;
+	u32 corr0, corr1, corr2, corr3;
+	u32 *offsets;
+	u64 log5;
+	int n;
+
+	offsets = scrub_err ? offsets1 : offsets2;
+
+	log0 = I10NM_GET_REG(imc, res->channel, offsets[0]);
+	log1 = I10NM_GET_REG(imc, res->channel, offsets[1]);
+	log2 = I10NM_GET_REG(imc, res->channel, offsets[2]);
+	log3 = I10NM_GET_REG(imc, res->channel, offsets[3]);
+	log4 = I10NM_GET_REG(imc, res->channel, offsets[4]);
+	log5 = I10NM_GET_REG(imc, res->channel, offsets[5]);
+	log5 |= (u64)I10NM_GET_REG(imc, res->channel, offsets[6]) << 32;
+
+	n = snprintf(msg, len, " retry_rd_err_log[%.8x %.8x %.8x %.8x %.8x %.16llx]",
+		     log0, log1, log2, log3, log4, log5);
+
+	corr0 = I10NM_GET_REG(imc, res->channel, 0x22c18);
+	corr1 = I10NM_GET_REG(imc, res->channel, 0x22c1c);
+	corr2 = I10NM_GET_REG(imc, res->channel, 0x22c20);
+	corr3 = I10NM_GET_REG(imc, res->channel, 0x22c24);
+
+	if (len - n > 0)
+		snprintf(msg + n, len - n,
+			 " correrrcnt[%.4x %.4x %.4x %.4x %.4x %.4x %.4x %.4x]",
+			 corr0 & 0xffff, corr0 >> 16,
+			 corr1 & 0xffff, corr1 >> 16,
+			 corr2 & 0xffff, corr2 >> 16,
+			 corr3 & 0xffff, corr3 >> 16);
+}
 
 static struct pci_dev *pci_get_dev_wrapper(int dom, unsigned int bus,
 					   unsigned int dev, unsigned int fun)
@@ -330,6 +372,8 @@ static int __init i10nm_init(void)
 				goto fail;
 		}
 	}
+
+	skx_set_decode(NULL, i10nm_show_retry_rd_err_log);
 
 	rc = skx_adxl_get();
 	if (rc)
