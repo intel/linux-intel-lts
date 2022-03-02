@@ -724,8 +724,7 @@ void intel_uncore_forcewake_get__locked(struct intel_uncore *uncore,
 }
 
 static void __intel_uncore_forcewake_put(struct intel_uncore *uncore,
-					 enum forcewake_domains fw_domains,
-					 bool delayed)
+					 enum forcewake_domains fw_domains)
 {
 	struct intel_uncore_forcewake_domain *domain;
 	unsigned int tmp;
@@ -740,11 +739,7 @@ static void __intel_uncore_forcewake_put(struct intel_uncore *uncore,
 			continue;
 		}
 
-		if (delayed &&
-		    !(domain->uncore->fw_domains_timer & domain->mask))
-			fw_domain_arm_timer(domain);
-		else
-			fw_domains_put(uncore, domain->mask);
+		fw_domains_put(uncore, domain->mask);
 	}
 }
 
@@ -765,20 +760,7 @@ void intel_uncore_forcewake_put(struct intel_uncore *uncore,
 		return;
 
 	spin_lock_irqsave(&uncore->lock, irqflags);
-	__intel_uncore_forcewake_put(uncore, fw_domains, false);
-	spin_unlock_irqrestore(&uncore->lock, irqflags);
-}
-
-void intel_uncore_forcewake_put_delayed(struct intel_uncore *uncore,
-					enum forcewake_domains fw_domains)
-{
-	unsigned long irqflags;
-
-	if (!uncore->fw_get_funcs)
-		return;
-
-	spin_lock_irqsave(&uncore->lock, irqflags);
-	__intel_uncore_forcewake_put(uncore, fw_domains, true);
+	__intel_uncore_forcewake_put(uncore, fw_domains);
 	spin_unlock_irqrestore(&uncore->lock, irqflags);
 }
 
@@ -820,7 +802,7 @@ void intel_uncore_forcewake_put__locked(struct intel_uncore *uncore,
 	if (!uncore->fw_get_funcs)
 		return;
 
-	__intel_uncore_forcewake_put(uncore, fw_domains, false);
+	__intel_uncore_forcewake_put(uncore, fw_domains);
 }
 
 void assert_forcewakes_inactive(struct intel_uncore *uncore)
