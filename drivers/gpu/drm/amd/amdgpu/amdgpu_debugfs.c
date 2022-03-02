@@ -1651,23 +1651,23 @@ static ssize_t amdgpu_reset_dump_register_list_read(struct file *f,
 		return 0;
 
 	memset(reg_offset, 0, 12);
-	ret = down_read_killable(&adev->reset_sem);
+	ret = down_read_killable(&adev->reset_domain->sem);
 	if (ret)
 		return ret;
 
 	for (i = 0; i < adev->num_regs; i++) {
 		sprintf(reg_offset, "0x%x\n", adev->reset_dump_reg_list[i]);
-		up_read(&adev->reset_sem);
+		up_read(&adev->reset_domain->sem);
 		if (copy_to_user(buf + len, reg_offset, strlen(reg_offset)))
 			return -EFAULT;
 
 		len += strlen(reg_offset);
-		ret = down_read_killable(&adev->reset_sem);
+		ret = down_read_killable(&adev->reset_domain->sem);
 		if (ret)
 			return ret;
 	}
 
-	up_read(&adev->reset_sem);
+	up_read(&adev->reset_domain->sem);
 	*pos += len;
 
 	return len;
@@ -1704,13 +1704,13 @@ static ssize_t amdgpu_reset_dump_register_list_write(struct file *f,
 		i++;
 	} while (len < size);
 
-	ret = down_write_killable(&adev->reset_sem);
+	ret = down_write_killable(&adev->reset_domain->sem);
 	if (ret)
 		goto error_free;
 
 	swap(adev->reset_dump_reg_list, tmp);
 	adev->num_regs = i;
-	up_write(&adev->reset_sem);
+	up_write(&adev->reset_domain->sem);
 	ret = size;
 
 error_free:
@@ -1776,6 +1776,16 @@ int amdgpu_debugfs_init(struct amdgpu_device *adev)
 			continue;
 
 		amdgpu_debugfs_ring_init(adev, ring);
+	}
+
+	for ( i = 0; i < adev->vcn.num_vcn_inst; i++) {
+		if (!amdgpu_vcnfw_log)
+			break;
+
+		if (adev->vcn.harvest_config & (1 << i))
+			continue;
+
+		amdgpu_debugfs_vcn_fwlog_init(adev, i, &adev->vcn.inst[i]);
 	}
 
 	amdgpu_ras_debugfs_create_all(adev);
