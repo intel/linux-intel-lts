@@ -75,8 +75,6 @@ struct intel_gt {
 	struct intel_uc uc;
 	struct intel_iov iov;
 
-	struct mutex tlb_invalidate_lock;
-
 	struct i915_wa_list wa_list;
 
 	struct intel_gt_timelines {
