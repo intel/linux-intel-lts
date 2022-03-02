@@ -312,20 +312,20 @@ static int dwc_pwm_runtime_suspend(struct device *dev)
 	j0 = jiffies;
 	j1 = j0 + delay;
 
-	cgsr_reg = dwc_pwm_readl(dwc->base, DWC_TIM_CGSR);
-	dwc_pwm_writel(dwc->base, DWC_TIM_CGSR, DWC_TIM_CGSR_CG);
+	cgsr_reg = dwc_pwm_readl(dwc, DWC_TIM_CGSR);
+	dwc_pwm_writel(dwc, DWC_TIM_CGSR, DWC_TIM_CGSR_CG);
 
-	d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+	d0i3c_reg = dwc_pwm_readl(dwc, DWC_TIM_D0I3C);
 
 	if (d0i3c_reg & DWC_TIM_D0I3_CIP) {
 		dev_info(dev, "%s d0i3c CIP detected", __func__);
 	} else {
-		dwc_pwm_writel(dwc->base, DWC_TIM_D0I3C, DWC_TIM_D0I3_EN);
-		d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+		dwc_pwm_writel(dwc, DWC_TIM_D0I3C, DWC_TIM_D0I3_EN);
+		d0i3c_reg = dwc_pwm_readl(dwc, DWC_TIM_D0I3C);
 	}
 
 	while (time_before(jiffies, j1)) {
-		d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+		d0i3c_reg = dwc_pwm_readl(dwc, DWC_TIM_D0I3C);
 		if (!(d0i3c_reg & DWC_TIM_D0I3_CIP))
 			break;
 	}
@@ -347,12 +347,12 @@ static int dwc_pwm_runtime_resume(struct device *dev)
 	u32 d0i3c_reg;
 	u32 cgsr_reg;
 
-	cgsr_reg = dwc_pwm_readl(dwc->base, DWC_TIM_CGSR);
+	cgsr_reg = dwc_pwm_readl(dwc, DWC_TIM_CGSR);
 
 	if (cgsr_reg & DWC_TIM_CGSR_CG)
-		dwc_pwm_writel(dwc->base, DWC_TIM_CGSR, (cgsr_reg & ~DWC_TIM_CGSR_CG));
+		dwc_pwm_writel(dwc, DWC_TIM_CGSR, (cgsr_reg & ~DWC_TIM_CGSR_CG));
 
-	d0i3c_reg = dwc_pwm_readl(dwc->base, DWC_TIM_D0I3C);
+	d0i3c_reg = dwc_pwm_readl(dwc, DWC_TIM_D0I3C);
 
 	if (d0i3c_reg & DWC_TIM_D0I3_CIP) {
 		dev_info(dev, "%s d0i3c CIP detected", __func__);
@@ -363,7 +363,7 @@ static int dwc_pwm_runtime_resume(struct device *dev)
 		if (d0i3c_reg & DWC_TIM_D0I3_RR)
 			d0i3c_reg |= DWC_TIM_D0I3_RR;
 
-		dwc_pwm_writel(dwc->base, DWC_TIM_D0I3C, d0i3c_reg);
+		dwc_pwm_writel(dwc, DWC_TIM_D0I3C, d0i3c_reg);
 	}
 
 	return 0;
