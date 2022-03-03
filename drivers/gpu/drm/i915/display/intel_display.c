@@ -778,6 +778,7 @@ void intel_plane_disable_noatomic(struct intel_crtc *crtc,
 	intel_set_plane_visible(crtc_state, plane_state, false);
 	fixup_plane_bitmasks(crtc_state);
 	crtc_state->data_rate[plane->id] = 0;
+	crtc_state->data_rate_y[plane->id] = 0;
 	crtc_state->min_cdclk[plane->id] = 0;
 
 	if ((crtc_state->active_planes & ~BIT(PLANE_CURSOR)) == 0 &&
@@ -4811,6 +4812,7 @@ static int icl_check_nv12_planes(struct intel_crtc_state *crtc_state)
 			crtc_state->enabled_planes &= ~BIT(plane->id);
 			crtc_state->active_planes &= ~BIT(plane->id);
 			crtc_state->update_planes |= BIT(plane->id);
+			crtc_state->data_rate[plane->id] = 0;
 		}
 
 		plane_state->planar_slave = false;
@@ -4855,6 +4857,8 @@ static int icl_check_nv12_planes(struct intel_crtc_state *crtc_state)
 		crtc_state->enabled_planes |= BIT(linked->id);
 		crtc_state->active_planes |= BIT(linked->id);
 		crtc_state->update_planes |= BIT(linked->id);
+		crtc_state->data_rate[linked->id] =
+			crtc_state->data_rate_y[plane->id];
 		drm_dbg_kms(&dev_priv->drm, "Using %s as Y plane for %s\n",
 			    linked->base.name, plane->base.name);
 
