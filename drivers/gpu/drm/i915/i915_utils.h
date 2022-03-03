@@ -28,6 +28,7 @@
 #include <linux/list.h>
 #include <linux/overflow.h>
 #include <linux/sched.h>
+#include <linux/sched/clock.h>
 #include <linux/string_helpers.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
