@@ -39,6 +39,3 @@
 
 # CVE-2021-0929
 0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
-
-# CVE-2021-45095
-0001-phonet-refcount-leak-in-pep_sock_accep.patch
