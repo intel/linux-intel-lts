@@ -66,6 +66,18 @@ struct dw_pci_controller {
 	u32 (*get_clk_rate_khz)(struct dw_i2c_dev *dev);
 };
 
+static int dw_reg_read(struct dw_i2c_dev *dev, unsigned int reg, unsigned int *val)
+{
+	*val = readl_relaxed(dev->base + reg);
+	return 0;
+}
+
+static int dw_reg_write(struct dw_i2c_dev *dev, unsigned int reg, unsigned int val)
+{
+	writel_relaxed(val, dev->base + reg);
+	return 0;
+}
+
 /* Merrifield HCNT/LCNT/SDA hold time */
 static struct dw_scl_sda_cfg mrfld_config = {
 	.ss_hcnt = 0x2f8,
@@ -271,26 +283,26 @@ static int i2c_dw_pci_runtime_suspend(struct device *dev)
 	j0 = jiffies;
 	j1 = j0 + delay;
 
-	ret = regmap_read(i_dev->map, PSE_I2C_CGSR, &cgsr_reg);
+	ret = dw_reg_read(i_dev, PSE_I2C_CGSR, &cgsr_reg);
 	if (ret)
 		return ret;
-	regmap_write(i_dev->map, PSE_I2C_CGSR, PSE_I2C_CGSR_CG);
+	dw_reg_write(i_dev, PSE_I2C_CGSR, PSE_I2C_CGSR_CG);
 
-	ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+	ret = dw_reg_read(i_dev, PSE_I2C_D0I3C, &d0i3c_reg);
 	if (ret)
 		return ret;
 
 	if (d0i3c_reg & PSE_I2C_D0I3_CIP) {
 		dev_info(dev, "%s d0i3c CIP detected", __func__);
 	} else {
-		regmap_write(i_dev->map, PSE_I2C_D0I3C, PSE_I2C_D0I3_EN);
-		ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+		dw_reg_write(i_dev, PSE_I2C_D0I3C, PSE_I2C_D0I3_EN);
+		ret = dw_reg_read(i_dev, PSE_I2C_D0I3C, &d0i3c_reg);
 		if (ret)
 			return ret;
 	}
 
 	while (time_before(jiffies, j1)) {
-		ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+		ret = dw_reg_read(i_dev, PSE_I2C_D0I3C, &d0i3c_reg);
 		if (ret)
 			return ret;
 		if (!(d0i3c_reg & PSE_I2C_D0I3_CIP))
@@ -310,14 +322,14 @@ static int i2c_dw_pci_runtime_resume(struct device *dev)
 	u32 cgsr_reg = 0;
 	int ret;
 
-	ret = regmap_read(i_dev->map, PSE_I2C_CGSR, &cgsr_reg);
+	ret = dw_reg_read(i_dev, PSE_I2C_CGSR, &cgsr_reg);
 	if (ret)
 		return ret;
 
 	if (cgsr_reg & PSE_I2C_CGSR_CG)
-		regmap_write(i_dev->map, PSE_I2C_CGSR, (cgsr_reg & ~PSE_I2C_CGSR_CG));
+		dw_reg_write(i_dev, PSE_I2C_CGSR, (cgsr_reg & ~PSE_I2C_CGSR_CG));
 
-	ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+	ret = dw_reg_read(i_dev, PSE_I2C_D0I3C, &d0i3c_reg);
 	if (ret)
 		return ret;
 
@@ -330,8 +342,8 @@ static int i2c_dw_pci_runtime_resume(struct device *dev)
 		if (d0i3c_reg & PSE_I2C_D0I3_RR)
 			d0i3c_reg |= PSE_I2C_D0I3_RR;
 
-		regmap_write(i_dev->map, PSE_I2C_D0I3C, d0i3c_reg);
-		ret = regmap_read(i_dev->map, PSE_I2C_D0I3C, &d0i3c_reg);
+		dw_reg_write(i_dev, PSE_I2C_D0I3C, d0i3c_reg);
+		ret = dw_reg_read(i_dev, PSE_I2C_D0I3C, &d0i3c_reg);
 		if (ret)
 			return ret;
 	}
