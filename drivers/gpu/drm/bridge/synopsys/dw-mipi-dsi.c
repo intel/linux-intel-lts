@@ -316,8 +316,7 @@ static int dw_mipi_dsi_host_attach(struct mipi_dsi_host *host,
 		return ret;
 
 	if (panel) {
-		bridge = drm_panel_bridge_add_typed(panel,
-						    DRM_MODE_CONNECTOR_DSI);
+		bridge = drm_panel_bridge_add(panel, DRM_MODE_CONNECTOR_DSI);
 		if (IS_ERR(bridge))
 			return PTR_ERR(bridge);
 	}
@@ -366,6 +365,7 @@ static void dw_mipi_message_config(struct dw_mipi_dsi *dsi,
 	if (lpm)
 		val |= CMD_MODE_ALL_LP;
 
+	dsi_write(dsi, DSI_LPCLK_CTRL, lpm ? 0 : PHY_TXREQUESTCLKHS);
 	dsi_write(dsi, DSI_CMD_MODE_CFG, val);
 }
 
@@ -541,21 +541,15 @@ static void dw_mipi_dsi_video_mode_config(struct dw_mipi_dsi *dsi)
 static void dw_mipi_dsi_set_mode(struct dw_mipi_dsi *dsi,
 				 unsigned long mode_flags)
 {
-	u32 val;
-
 	dsi_write(dsi, DSI_PWR_UP, RESET);
 
 	if (mode_flags & MIPI_DSI_MODE_VIDEO) {
 		dsi_write(dsi, DSI_MODE_CFG, ENABLE_VIDEO_MODE);
 		dw_mipi_dsi_video_mode_config(dsi);
+		dsi_write(dsi, DSI_LPCLK_CTRL, PHY_TXREQUESTCLKHS);
 	} else {
 		dsi_write(dsi, DSI_MODE_CFG, ENABLE_CMD_MODE);
 	}
-
-	val = PHY_TXREQUESTCLKHS;
-	if (dsi->mode_flags & MIPI_DSI_CLOCK_NON_CONTINUOUS)
-		val |= AUTO_CLKLANE_CTRL;
-	dsi_write(dsi, DSI_LPCLK_CTRL, val);
 
 	dsi_write(dsi, DSI_PWR_UP, POWERUP);
 }
@@ -987,6 +981,7 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 	struct device *dev = &pdev->dev;
 	struct reset_control *apb_rst;
 	struct dw_mipi_dsi *dsi;
+	struct resource *res;
 	int ret;
 
 	dsi = devm_kzalloc(dev, sizeof(*dsi), GFP_KERNEL);
@@ -1002,7 +997,11 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 	}
 
 	if (!plat_data->base) {
-		dsi->base = devm_platform_ioremap_resource(pdev, 0);
+		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+		if (!res)
+			return ERR_PTR(-ENODEV);
+
+		dsi->base = devm_ioremap_resource(dev, res);
 		if (IS_ERR(dsi->base))
 			return ERR_PTR(-ENODEV);
 

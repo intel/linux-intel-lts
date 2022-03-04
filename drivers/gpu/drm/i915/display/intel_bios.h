@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2019 Intel Corporation
+ * Copyright © 2016 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -35,7 +35,6 @@
 #include <drm/i915_drm.h>
 
 struct drm_i915_private;
-enum port;
 
 enum intel_backlight_type {
 	INTEL_BACKLIGHT_PMIC,

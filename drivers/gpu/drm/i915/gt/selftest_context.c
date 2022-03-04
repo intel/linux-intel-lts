@@ -14,28 +14,22 @@
 
 static int request_sync(struct i915_request *rq)
 {
-	struct intel_timeline *tl = i915_request_timeline(rq);
 	long timeout;
 	int err = 0;
 
-	intel_timeline_get(tl);
 	i915_request_get(rq);
 
-	/* Opencode i915_request_add() so we can keep the timeline locked. */
-	__i915_request_commit(rq);
-	__i915_request_queue(rq, NULL);
-
+	i915_request_add(rq);
 	timeout = i915_request_wait(rq, 0, HZ / 10);
-	if (timeout < 0)
+	if (timeout < 0) {
 		err = timeout;
-	else
+	} else {
+		mutex_lock(&rq->timeline->mutex);
 		i915_request_retire_upto(rq);
-
-	lockdep_unpin_lock(&tl->mutex, rq->cookie);
-	mutex_unlock(&tl->mutex);
+		mutex_unlock(&rq->timeline->mutex);
+	}
 
 	i915_request_put(rq);
-	intel_timeline_put(tl);
 
 	return err;
 }
@@ -47,20 +41,24 @@ static int context_sync(struct intel_context *ce)
 
 	mutex_lock(&tl->mutex);
 	do {
-		struct dma_fence *fence;
+		struct i915_request *rq;
 		long timeout;
 
-		fence = i915_active_fence_get(&tl->last_request);
-		if (!fence)
+		rcu_read_lock();
+		rq = rcu_dereference(tl->last_request.request);
+		if (rq)
+			rq = i915_request_get_rcu(rq);
+		rcu_read_unlock();
+		if (!rq)
 			break;
 
-		timeout = dma_fence_wait_timeout(fence, false, HZ / 10);
+		timeout = i915_request_wait(rq, 0, HZ / 10);
 		if (timeout < 0)
 			err = timeout;
 		else
-			i915_request_retire_upto(to_request(fence));
+			i915_request_retire_upto(rq);
 
-		dma_fence_put(fence);
+		i915_request_put(rq);
 	} while (!err);
 	mutex_unlock(&tl->mutex);
 
@@ -103,6 +101,9 @@ static int __live_context_size(struct intel_engine_cs *engine,
 	 *
 	 * TLDR; this overlaps with the execlists redzone.
 	 */
+	if (HAS_EXECLISTS(engine->i915))
+		vaddr += LRC_HEADER_PAGES * PAGE_SIZE;
+
 	vaddr += engine->context_size - I915_GTT_PAGE_SIZE;
 	memset(vaddr, POISON_INUSE, I915_GTT_PAGE_SIZE);
 
@@ -152,11 +153,15 @@ static int live_context_size(void *arg)
 	 * HW tries to write past the end of one.
 	 */
 
-	fixme = kernel_context(gt->i915);
-	if (IS_ERR(fixme))
-		return PTR_ERR(fixme);
+	mutex_lock(&gt->i915->drm.struct_mutex);
 
-	for_each_engine(engine, gt, id) {
+	fixme = kernel_context(gt->i915);
+	if (IS_ERR(fixme)) {
+		err = PTR_ERR(fixme);
+		goto unlock;
+	}
+
+	for_each_engine(engine, gt->i915, id) {
 		struct {
 			struct drm_i915_gem_object *state;
 			void *pinned;
@@ -194,6 +199,8 @@ static int live_context_size(void *arg)
 	}
 
 	kernel_context_close(fixme);
+unlock:
+	mutex_unlock(&gt->i915->drm.struct_mutex);
 	return err;
 }
 
@@ -296,23 +303,26 @@ static int live_active_context(void *arg)
 	if (IS_ERR(file))
 		return PTR_ERR(file);
 
+	mutex_lock(&gt->i915->drm.struct_mutex);
+
 	fixme = live_context(gt->i915, file);
 	if (IS_ERR(fixme)) {
 		err = PTR_ERR(fixme);
-		goto out_file;
+		goto unlock;
 	}
 
-	for_each_engine(engine, gt, id) {
+	for_each_engine(engine, gt->i915, id) {
 		err = __live_active_context(engine, fixme);
 		if (err)
 			break;
 
-		err = igt_flush_test(gt->i915);
+		err = igt_flush_test(gt->i915, I915_WAIT_LOCKED);
 		if (err)
 			break;
 	}
 
-out_file:
+unlock:
+	mutex_unlock(&gt->i915->drm.struct_mutex);
 	mock_file_free(gt->i915, file);
 	return err;
 }
@@ -406,23 +416,26 @@ static int live_remote_context(void *arg)
 	if (IS_ERR(file))
 		return PTR_ERR(file);
 
+	mutex_lock(&gt->i915->drm.struct_mutex);
+
 	fixme = live_context(gt->i915, file);
 	if (IS_ERR(fixme)) {
 		err = PTR_ERR(fixme);
-		goto out_file;
+		goto unlock;
 	}
 
-	for_each_engine(engine, gt, id) {
+	for_each_engine(engine, gt->i915, id) {
 		err = __live_remote_context(engine, fixme);
 		if (err)
 			break;
 
-		err = igt_flush_test(gt->i915);
+		err = igt_flush_test(gt->i915, I915_WAIT_LOCKED);
 		if (err)
 			break;
 	}
 
-out_file:
+unlock:
+	mutex_unlock(&gt->i915->drm.struct_mutex);
 	mock_file_free(gt->i915, file);
 	return err;
 }

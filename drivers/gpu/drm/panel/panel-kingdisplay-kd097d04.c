@@ -391,8 +391,9 @@ static int kingdisplay_panel_add(struct kingdisplay_panel *kingdisplay)
 	if (IS_ERR(kingdisplay->backlight))
 		return PTR_ERR(kingdisplay->backlight);
 
-	drm_panel_init(&kingdisplay->base, &kingdisplay->link->dev,
-		       &kingdisplay_panel_funcs, DRM_MODE_CONNECTOR_DSI);
+	drm_panel_init(&kingdisplay->base);
+	kingdisplay->base.funcs = &kingdisplay_panel_funcs;
+	kingdisplay->base.dev = &kingdisplay->link->dev;
 
 	return drm_panel_add(&kingdisplay->base);
 }
@@ -423,13 +424,7 @@ static int kingdisplay_panel_probe(struct mipi_dsi_device *dsi)
 	if (err < 0)
 		return err;
 
-	err = mipi_dsi_attach(dsi);
-	if (err < 0) {
-		kingdisplay_panel_del(kingdisplay);
-		return err;
-	}
-
-	return 0;
+	return mipi_dsi_attach(dsi);
 }
 
 static int kingdisplay_panel_remove(struct mipi_dsi_device *dsi)

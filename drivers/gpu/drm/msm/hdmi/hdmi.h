@@ -14,8 +14,6 @@
 #include <linux/gpio/consumer.h>
 #include <linux/hdmi.h>
 
-#include <drm/drm_bridge.h>
-
 #include "msm_drv.h"
 #include "hdmi.xml.h"
 

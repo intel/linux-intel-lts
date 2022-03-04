@@ -106,7 +106,7 @@ static void store_vblank(struct drm_device *dev, unsigned int pipe,
 
 	write_seqlock(&vblank->seqlock);
 	vblank->time = t_vblank;
-	atomic64_add(vblank_count_inc, &vblank->count);
+	vblank->count += vblank_count_inc;
 	write_sequnlock(&vblank->seqlock);
 }
 
@@ -272,8 +272,7 @@ static void drm_update_vblank_count(struct drm_device *dev, unsigned int pipe,
 
 	DRM_DEBUG_VBL("updating vblank count on crtc %u:"
 		      " current=%llu, diff=%u, hw=%u hw_last=%u\n",
-		      pipe, atomic64_read(&vblank->count), diff,
-		      cur_vblank, vblank->last);
+		      pipe, vblank->count, diff, cur_vblank, vblank->last);
 
 	if (diff == 0) {
 		WARN_ON_ONCE(cur_vblank != vblank->last);
@@ -295,23 +294,11 @@ static void drm_update_vblank_count(struct drm_device *dev, unsigned int pipe,
 static u64 drm_vblank_count(struct drm_device *dev, unsigned int pipe)
 {
 	struct drm_vblank_crtc *vblank = &dev->vblank[pipe];
-	u64 count;
 
 	if (WARN_ON(pipe >= dev->num_crtcs))
 		return 0;
 
-	count = atomic64_read(&vblank->count);
-
-	/*
-	 * This read barrier corresponds to the implicit write barrier of the
-	 * write seqlock in store_vblank(). Note that this is the only place
-	 * where we need an explicit barrier, since all other access goes
-	 * through drm_vblank_count_and_time(), which already has the required
-	 * read barrier curtesy of the read seqlock.
-	 */
-	smp_rmb();
-
-	return count;
+	return vblank->count;
 }
 
 /**
@@ -332,7 +319,7 @@ u64 drm_crtc_accurate_vblank_count(struct drm_crtc *crtc)
 	u64 vblank;
 	unsigned long flags;
 
-	WARN_ONCE(drm_debug_enabled(DRM_UT_VBL) && !dev->driver->get_vblank_timestamp,
+	WARN_ONCE(drm_debug & DRM_UT_VBL && !dev->driver->get_vblank_timestamp,
 		  "This function requires support for accurate vblank timestamps.");
 
 	spin_lock_irqsave(&dev->vblank_time_lock, flags);
@@ -706,7 +693,7 @@ bool drm_calc_vbltimestamp_from_scanoutpos(struct drm_device *dev,
 	 */
 	*vblank_time = ktime_sub_ns(etime, delta_ns);
 
-	if (!drm_debug_enabled(DRM_UT_VBL))
+	if ((drm_debug & DRM_UT_VBL) == 0)
 		return true;
 
 	ts_etime = ktime_to_timespec64(etime);
@@ -776,14 +763,6 @@ drm_get_last_vbltimestamp(struct drm_device *dev, unsigned int pipe,
  * vblank interrupt (since it only reports the software vblank counter), see
  * drm_crtc_accurate_vblank_count() for such use-cases.
  *
- * Note that for a given vblank counter value drm_crtc_handle_vblank()
- * and drm_crtc_vblank_count() or drm_crtc_vblank_count_and_time()
- * provide a barrier: Any writes done before calling
- * drm_crtc_handle_vblank() will be visible to callers of the later
- * functions, iff the vblank count is the same or a later one.
- *
- * See also &drm_vblank_crtc.count.
- *
  * Returns:
  * The software vblank counter.
  */
@@ -821,7 +800,7 @@ static u64 drm_vblank_count_and_time(struct drm_device *dev, unsigned int pipe,
 
 	do {
 		seq = read_seqbegin(&vblank->seqlock);
-		vblank_count = atomic64_read(&vblank->count);
+		vblank_count = vblank->count;
 		*vblanktime = vblank->time;
 	} while (read_seqretry(&vblank->seqlock, seq));
 
@@ -838,14 +817,6 @@ static u64 drm_vblank_count_and_time(struct drm_device *dev, unsigned int pipe,
  * vblank events since the system was booted, including lost events due to
  * modesetting activity. Returns corresponding system timestamp of the time
  * of the vblank interval that corresponds to the current vblank counter value.
- *
- * Note that for a given vblank counter value drm_crtc_handle_vblank()
- * and drm_crtc_vblank_count() or drm_crtc_vblank_count_and_time()
- * provide a barrier: Any writes done before calling
- * drm_crtc_handle_vblank() will be visible to callers of the later
- * functions, iff the vblank count is the same or a later one.
- *
- * See also &drm_vblank_crtc.count.
  */
 u64 drm_crtc_vblank_count_and_time(struct drm_crtc *crtc,
 				   ktime_t *vblanktime)
@@ -1352,7 +1323,7 @@ void drm_vblank_restore(struct drm_device *dev, unsigned int pipe)
 	assert_spin_locked(&dev->vblank_time_lock);
 
 	vblank = &dev->vblank[pipe];
-	WARN_ONCE(drm_debug_enabled(DRM_UT_VBL) && !vblank->framedur_ns,
+	WARN_ONCE((drm_debug & DRM_UT_VBL) && !vblank->framedur_ns,
 		  "Cannot compute missed vblanks without frame duration\n");
 	framedur_ns = vblank->framedur_ns;
 
@@ -1610,7 +1581,7 @@ int drm_wait_vblank_ioctl(struct drm_device *dev, void *data,
 	unsigned int flags, pipe, high_pipe;
 
 	if (!dev->irq_enabled)
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	if (vblwait->request.type & _DRM_VBLANK_SIGNAL)
 		return -EINVAL;
@@ -1760,8 +1731,7 @@ static void drm_handle_vblank_events(struct drm_device *dev, unsigned int pipe)
 		send_vblank_event(dev, e, seq, now);
 	}
 
-	trace_drm_vblank_event(pipe, seq, now,
-			dev->driver->get_vblank_timestamp != NULL);
+	trace_drm_vblank_event(pipe, seq);
 }
 
 /**
@@ -1836,14 +1806,6 @@ EXPORT_SYMBOL(drm_handle_vblank);
  *
  * This is the native KMS version of drm_handle_vblank().
  *
- * Note that for a given vblank counter value drm_crtc_handle_vblank()
- * and drm_crtc_vblank_count() or drm_crtc_vblank_count_and_time()
- * provide a barrier: Any writes done before calling
- * drm_crtc_handle_vblank() will be visible to callers of the later
- * functions, iff the vblank count is the same or a later one.
- *
- * See also &drm_vblank_crtc.count.
- *
  * Returns:
  * True if the event was successfully handled, false on failure.
  */
@@ -1876,7 +1838,7 @@ int drm_crtc_get_sequence_ioctl(struct drm_device *dev, void *data,
 		return -EOPNOTSUPP;
 
 	if (!dev->irq_enabled)
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	crtc = drm_crtc_find(dev, file_priv, get_seq->crtc_id);
 	if (!crtc)
@@ -1934,7 +1896,7 @@ int drm_crtc_queue_sequence_ioctl(struct drm_device *dev, void *data,
 		return -EOPNOTSUPP;
 
 	if (!dev->irq_enabled)
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	crtc = drm_crtc_find(dev, file_priv, queue_seq->crtc_id);
 	if (!crtc)

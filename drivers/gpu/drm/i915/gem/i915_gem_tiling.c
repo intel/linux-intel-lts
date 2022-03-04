@@ -181,25 +181,22 @@ static int
 i915_gem_object_fence_prepare(struct drm_i915_gem_object *obj,
 			      int tiling_mode, unsigned int stride)
 {
-	struct i915_ggtt *ggtt = &to_i915(obj->base.dev)->ggtt;
 	struct i915_vma *vma;
-	int ret = 0;
+	int ret;
 
 	if (tiling_mode == I915_TILING_NONE)
 		return 0;
 
-	mutex_lock(&ggtt->vm.mutex);
 	for_each_ggtt_vma(vma, obj) {
 		if (i915_vma_fence_prepare(vma, tiling_mode, stride))
 			continue;
 
-		ret = __i915_vma_unbind(vma);
+		ret = i915_vma_unbind(vma);
 		if (ret)
-			break;
+			return ret;
 	}
-	mutex_unlock(&ggtt->vm.mutex);
 
-	return ret;
+	return 0;
 }
 
 int
@@ -215,6 +212,7 @@ i915_gem_object_set_tiling(struct drm_i915_gem_object *obj,
 
 	GEM_BUG_ON(!i915_tiling_ok(obj, tiling, stride));
 	GEM_BUG_ON(!stride ^ (tiling == I915_TILING_NONE));
+	lockdep_assert_held(&i915->drm.struct_mutex);
 
 	if ((tiling | stride) == obj->tiling_and_stride)
 		return 0;
@@ -235,16 +233,14 @@ i915_gem_object_set_tiling(struct drm_i915_gem_object *obj,
 	 * whilst executing a fenced command for an untiled object.
 	 */
 
+	err = i915_gem_object_fence_prepare(obj, tiling, stride);
+	if (err)
+		return err;
+
 	i915_gem_object_lock(obj);
 	if (i915_gem_object_is_framebuffer(obj)) {
 		i915_gem_object_unlock(obj);
 		return -EBUSY;
-	}
-
-	err = i915_gem_object_fence_prepare(obj, tiling, stride);
-	if (err) {
-		i915_gem_object_unlock(obj);
-		return err;
 	}
 
 	/* If the memory has unknown (i.e. varying) swizzling, we pin the
@@ -317,13 +313,9 @@ int
 i915_gem_set_tiling_ioctl(struct drm_device *dev, void *data,
 			  struct drm_file *file)
 {
-	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_i915_gem_set_tiling *args = data;
 	struct drm_i915_gem_object *obj;
 	int err;
-
-	if (!dev_priv->ggtt.num_fences)
-		return -EOPNOTSUPP;
 
 	obj = i915_gem_object_lookup(file, args->handle);
 	if (!obj)
@@ -348,9 +340,9 @@ i915_gem_set_tiling_ioctl(struct drm_device *dev, void *data,
 		args->stride = 0;
 	} else {
 		if (args->tiling_mode == I915_TILING_X)
-			args->swizzle_mode = to_i915(dev)->ggtt.bit_6_swizzle_x;
+			args->swizzle_mode = to_i915(dev)->mm.bit_6_swizzle_x;
 		else
-			args->swizzle_mode = to_i915(dev)->ggtt.bit_6_swizzle_y;
+			args->swizzle_mode = to_i915(dev)->mm.bit_6_swizzle_y;
 
 		/* Hide bit 17 swizzling from the user.  This prevents old Mesa
 		 * from aborting the application on sw fallbacks to bit 17,
@@ -372,7 +364,12 @@ i915_gem_set_tiling_ioctl(struct drm_device *dev, void *data,
 		}
 	}
 
+	err = mutex_lock_interruptible(&dev->struct_mutex);
+	if (err)
+		goto err;
+
 	err = i915_gem_object_set_tiling(obj, args->tiling_mode, args->stride);
+	mutex_unlock(&dev->struct_mutex);
 
 	/* We have to maintain this existing ABI... */
 	args->stride = i915_gem_object_get_stride(obj);
@@ -405,9 +402,6 @@ i915_gem_get_tiling_ioctl(struct drm_device *dev, void *data,
 	struct drm_i915_gem_object *obj;
 	int err = -ENOENT;
 
-	if (!dev_priv->ggtt.num_fences)
-		return -EOPNOTSUPP;
-
 	rcu_read_lock();
 	obj = i915_gem_object_lookup_rcu(file, args->handle);
 	if (obj) {
@@ -421,10 +415,10 @@ i915_gem_get_tiling_ioctl(struct drm_device *dev, void *data,
 
 	switch (args->tiling_mode) {
 	case I915_TILING_X:
-		args->swizzle_mode = dev_priv->ggtt.bit_6_swizzle_x;
+		args->swizzle_mode = dev_priv->mm.bit_6_swizzle_x;
 		break;
 	case I915_TILING_Y:
-		args->swizzle_mode = dev_priv->ggtt.bit_6_swizzle_y;
+		args->swizzle_mode = dev_priv->mm.bit_6_swizzle_y;
 		break;
 	default:
 	case I915_TILING_NONE:

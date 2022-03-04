@@ -438,7 +438,6 @@ struct vmw_private {
 	struct vmw_fifo_state fifo;
 
 	struct drm_device *dev;
-	struct drm_vma_offset_manager vma_manager;
 	unsigned long vmw_chipset;
 	unsigned int io_start;
 	uint32_t vram_start;
@@ -1003,14 +1002,15 @@ extern int vmw_execbuf_fence_commands(struct drm_file *file_priv,
 				      struct vmw_private *dev_priv,
 				      struct vmw_fence_obj **p_fence,
 				      uint32_t *p_handle);
-extern int vmw_execbuf_copy_fence_user(struct vmw_private *dev_priv,
+extern void vmw_execbuf_copy_fence_user(struct vmw_private *dev_priv,
 					struct vmw_fpriv *vmw_fp,
 					int ret,
 					struct drm_vmw_fence_rep __user
 					*user_fence_rep,
 					struct vmw_fence_obj *fence,
 					uint32_t fence_handle,
-					int32_t out_fence_fd);
+					int32_t out_fence_fd,
+					struct sync_file *sync_file);
 bool vmw_cmd_describe(const void *buf, u32 *size, char const **cmd);
 
 /**

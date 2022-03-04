@@ -168,15 +168,9 @@ config DRM_TTM
 config DRM_VRAM_HELPER
 	tristate
 	depends on DRM
-	help
-	  Helpers for VRAM memory management
-
-config DRM_TTM_HELPER
-	tristate
-	depends on DRM
 	select DRM_TTM
 	help
-	  Helpers for ttm-based gem objects
+	  Helpers for VRAM memory management
 
 config DRM_GEM_CMA_HELPER
 	bool
@@ -212,7 +206,6 @@ source "drivers/gpu/drm/arm/Kconfig"
 config DRM_RADEON
 	tristate "ATI Radeon"
 	depends on DRM && PCI && MMU
-	depends on AGP || !AGP
 	select FW_LOADER
         select DRM_KMS_HELPER
         select DRM_TTM
@@ -251,8 +244,6 @@ source "drivers/gpu/drm/amd/amdgpu/Kconfig"
 source "drivers/gpu/drm/nouveau/Kconfig"
 
 source "drivers/gpu/drm/i915/Kconfig"
-
-source "drivers/gpu/drm/kmb/Kconfig"
 
 config DRM_VGEM
 	tristate "Virtual GEM provider"

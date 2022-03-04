@@ -92,6 +92,7 @@ userptr_mn_invalidate_range_start(struct mmu_notifier *_mn,
 	struct i915_mmu_notifier *mn =
 		container_of(_mn, struct i915_mmu_notifier, mn);
 	struct interval_tree_node *it;
+	struct mutex *unlock = NULL;
 	unsigned long end;
 	int ret = 0;
 
@@ -128,13 +129,33 @@ userptr_mn_invalidate_range_start(struct mmu_notifier *_mn,
 		}
 		spin_unlock(&mn->lock);
 
+		if (!unlock) {
+			unlock = &mn->mm->i915->drm.struct_mutex;
+
+			switch (mutex_trylock_recursive(unlock)) {
+			default:
+			case MUTEX_TRYLOCK_FAILED:
+				if (mutex_lock_killable_nested(unlock, I915_MM_SHRINKER)) {
+					i915_gem_object_put(obj);
+					return -EINTR;
+				}
+				/* fall through */
+			case MUTEX_TRYLOCK_SUCCESS:
+				break;
+
+			case MUTEX_TRYLOCK_RECURSIVE:
+				unlock = ERR_PTR(-EEXIST);
+				break;
+			}
+		}
+
 		ret = i915_gem_object_unbind(obj,
 					     I915_GEM_OBJECT_UNBIND_ACTIVE);
 		if (ret == 0)
 			ret = __i915_gem_object_put_pages(obj, I915_MM_SHRINKER);
 		i915_gem_object_put(obj);
 		if (ret)
-			return ret;
+			goto unlock;
 
 		spin_lock(&mn->lock);
 
@@ -146,6 +167,10 @@ userptr_mn_invalidate_range_start(struct mmu_notifier *_mn,
 		it = interval_tree_iter_first(&mn->objects, range->start, end);
 	}
 	spin_unlock(&mn->lock);
+
+unlock:
+	if (!IS_ERR_OR_NULL(unlock))
+		mutex_unlock(unlock);
 
 	return ret;
 
@@ -402,7 +427,7 @@ struct get_pages_work {
 
 static struct sg_table *
 __i915_gem_userptr_alloc_pages(struct drm_i915_gem_object *obj,
-			       struct page **pvec, unsigned long num_pages)
+			       struct page **pvec, int num_pages)
 {
 	unsigned int max_segment = i915_sg_segment_size();
 	struct sg_table *st;
@@ -448,10 +473,9 @@ __i915_gem_userptr_get_pages_worker(struct work_struct *_work)
 {
 	struct get_pages_work *work = container_of(_work, typeof(*work), work);
 	struct drm_i915_gem_object *obj = work->obj;
-	const unsigned long npages = obj->base.size >> PAGE_SHIFT;
-	unsigned long pinned;
+	const int npages = obj->base.size >> PAGE_SHIFT;
 	struct page **pvec;
-	int ret;
+	int pinned, ret;
 
 	ret = -ENOMEM;
 	pinned = 0;
@@ -554,7 +578,7 @@ __i915_gem_userptr_get_pages_schedule(struct drm_i915_gem_object *obj)
 
 static int i915_gem_userptr_get_pages(struct drm_i915_gem_object *obj)
 {
-	const unsigned long num_pages = obj->base.size >> PAGE_SHIFT;
+	const int num_pages = obj->base.size >> PAGE_SHIFT;
 	struct mm_struct *mm = obj->userptr.mm->mm;
 	struct page **pvec;
 	struct sg_table *pages;
@@ -594,14 +618,6 @@ static int i915_gem_userptr_get_pages(struct drm_i915_gem_object *obj)
 				      GFP_KERNEL |
 				      __GFP_NORETRY |
 				      __GFP_NOWARN);
-		/*
-		 * Using __get_user_pages_fast() with a read-only
-		 * access is questionable. A read-only page may be
-		 * COW-broken, and then this might end up giving
-		 * the wrong side of the COW..
-		 *
-		 * We may or may not care.
-		 */
 		if (pvec) /* defer to worker if malloc fails */
 			pinned = __get_user_pages_fast(obj->userptr.ptr,
 						       num_pages,
@@ -754,7 +770,6 @@ i915_gem_userptr_ioctl(struct drm_device *dev,
 		       void *data,
 		       struct drm_file *file)
 {
-	static struct lock_class_key lock_class;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_i915_gem_userptr *args = data;
 	struct drm_i915_gem_object *obj;
@@ -788,8 +803,7 @@ i915_gem_userptr_ioctl(struct drm_device *dev,
 		 * On almost all of the older hw, we cannot tell the GPU that
 		 * a page is readonly.
 		 */
-		vm = rcu_dereference_protected(dev_priv->kernel_context->vm,
-					       true); /* static vm */
+		vm = dev_priv->kernel_context->vm;
 		if (!vm || !vm->has_read_only)
 			return -ENODEV;
 	}
@@ -799,7 +813,7 @@ i915_gem_userptr_ioctl(struct drm_device *dev,
 		return -ENOMEM;
 
 	drm_gem_private_object_init(dev, &obj->base, args->user_size);
-	i915_gem_object_init(obj, &i915_gem_userptr_ops, &lock_class);
+	i915_gem_object_init(obj, &i915_gem_userptr_ops);
 	obj->read_domains = I915_GEM_DOMAIN_CPU;
 	obj->write_domain = I915_GEM_DOMAIN_CPU;
 	i915_gem_object_set_cache_coherency(obj, I915_CACHE_LLC);

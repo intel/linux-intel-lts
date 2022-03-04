@@ -343,8 +343,8 @@ static void gen7_fbc_activate(struct drm_i915_private *dev_priv)
 			   HSW_FBCQ_DIS);
 	}
 
-	if (INTEL_GEN(dev_priv) >= 11)
-		/* Wa_1409120013:icl,ehl,tgl */
+	if (IS_GEN(dev_priv, 11))
+		/* Wa_1409120013:icl,ehl */
 		I915_WRITE(ILK_DPFC_CHICKEN, ILK_DPFC_CHICKEN_COMP_DUMMY_PIXEL);
 
 	I915_WRITE(ILK_DPFC_CONTROL, dpfc_ctl | DPFC_CTL_EN);
@@ -430,7 +430,7 @@ static bool multiple_pipes_ok(struct intel_crtc *crtc,
 	if (!no_fbc_on_multiple_pipes(dev_priv))
 		return true;
 
-	if (plane_state->uapi.visible)
+	if (plane_state->base.visible)
 		fbc->visible_pipes_mask |= (1 << pipe);
 	else
 		fbc->visible_pipes_mask &= ~(1 << pipe);
@@ -504,7 +504,8 @@ static int intel_fbc_alloc_cfb(struct intel_crtc *crtc)
 	if (!ret)
 		goto err_llb;
 	else if (ret > 1) {
-		DRM_INFO_ONCE("Reducing the compressed framebuffer size. This may lead to less power savings than a non-reduced-size. Try to increase stolen memory size if available in BIOS.\n");
+		DRM_INFO("Reducing the compressed framebuffer size. This may lead to less power savings than a non-reduced-size. Try to increase stolen memory size if available in BIOS.\n");
+
 	}
 
 	fbc->threshold = ret;
@@ -661,29 +662,29 @@ static void intel_fbc_update_state_cache(struct intel_crtc *crtc,
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	struct intel_fbc *fbc = &dev_priv->fbc;
 	struct intel_fbc_state_cache *cache = &fbc->state_cache;
-	struct drm_framebuffer *fb = plane_state->hw.fb;
+	struct drm_framebuffer *fb = plane_state->base.fb;
 
 	cache->vma = NULL;
 	cache->flags = 0;
 
-	cache->crtc.mode_flags = crtc_state->hw.adjusted_mode.flags;
+	cache->crtc.mode_flags = crtc_state->base.adjusted_mode.flags;
 	if (IS_HASWELL(dev_priv) || IS_BROADWELL(dev_priv))
 		cache->crtc.hsw_bdw_pixel_rate = crtc_state->pixel_rate;
 
-	cache->plane.rotation = plane_state->hw.rotation;
+	cache->plane.rotation = plane_state->base.rotation;
 	/*
 	 * Src coordinates are already rotated by 270 degrees for
 	 * the 90/270 degree plane rotation cases (to match the
 	 * GTT mapping), hence no need to account for rotation here.
 	 */
-	cache->plane.src_w = drm_rect_width(&plane_state->uapi.src) >> 16;
-	cache->plane.src_h = drm_rect_height(&plane_state->uapi.src) >> 16;
-	cache->plane.visible = plane_state->uapi.visible;
+	cache->plane.src_w = drm_rect_width(&plane_state->base.src) >> 16;
+	cache->plane.src_h = drm_rect_height(&plane_state->base.src) >> 16;
+	cache->plane.visible = plane_state->base.visible;
 	cache->plane.adjusted_x = plane_state->color_plane[0].x;
 	cache->plane.adjusted_y = plane_state->color_plane[0].y;
-	cache->plane.y = plane_state->uapi.src.y1 >> 16;
+	cache->plane.y = plane_state->base.src.y1 >> 16;
 
-	cache->plane.pixel_blend_mode = plane_state->hw.pixel_blend_mode;
+	cache->plane.pixel_blend_mode = plane_state->base.pixel_blend_mode;
 
 	if (!cache->plane.visible)
 		return;
@@ -810,14 +811,6 @@ static bool intel_fbc_can_enable(struct drm_i915_private *dev_priv)
 		fbc->no_fbc_reason = "VGPU is active";
 		return false;
 	}
-
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt) {
-		i915_modparams.enable_fbc = 0;
-		fbc->no_fbc_reason = "Disable FBC for direct display in IDV";
-		return false;
-	}
-#endif
 
 	if (!i915_modparams.enable_fbc) {
 		fbc->no_fbc_reason = "disabled per module param or by default";
@@ -1054,12 +1047,12 @@ void intel_fbc_choose_crtc(struct drm_i915_private *dev_priv,
 	 * to pipe or plane A. */
 	for_each_new_intel_plane_in_state(state, plane, plane_state, i) {
 		struct intel_crtc_state *crtc_state;
-		struct intel_crtc *crtc = to_intel_crtc(plane_state->hw.crtc);
+		struct intel_crtc *crtc = to_intel_crtc(plane_state->base.crtc);
 
 		if (!plane->has_fbc)
 			continue;
 
-		if (!plane_state->uapi.visible)
+		if (!plane_state->base.visible)
 			continue;
 
 		crtc_state = intel_atomic_get_new_crtc_state(state, crtc);
@@ -1284,14 +1277,6 @@ void intel_fbc_init_pipe_state(struct drm_i915_private *dev_priv)
  */
 static int intel_sanitize_fbc_option(struct drm_i915_private *dev_priv)
 {
-#if IS_ENABLED(CONFIG_DRM_I915_GVT)
-	if (dev_priv->gvt) {
-		i915_modparams.enable_fbc = 0;
-		DRM_WARN("Disable FBC for direct display in IDV\n");
-		return 0;
-	}
-#endif
-
 	if (i915_modparams.enable_fbc >= 0)
 		return !!i915_modparams.enable_fbc;
 
@@ -1299,7 +1284,7 @@ static int intel_sanitize_fbc_option(struct drm_i915_private *dev_priv)
 		return 0;
 
 	/* https://bugs.freedesktop.org/show_bug.cgi?id=108085 */
-	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv))
+	if (IS_GEMINILAKE(dev_priv))
 		return 0;
 
 	if (IS_BROADWELL(dev_priv) || INTEL_GEN(dev_priv) >= 9)
@@ -1334,9 +1319,6 @@ void intel_fbc_init(struct drm_i915_private *dev_priv)
 	mutex_init(&fbc->lock);
 	fbc->enabled = false;
 	fbc->active = false;
-
-	if (!drm_mm_initialized(&dev_priv->mm.stolen))
-		mkwrite_device_info(dev_priv)->display.has_fbc = false;
 
 	if (need_fbc_vtd_wa(dev_priv))
 		mkwrite_device_info(dev_priv)->display.has_fbc = false;

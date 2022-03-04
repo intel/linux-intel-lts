@@ -47,10 +47,6 @@ struct i915_pmu {
 	 */
 	struct pmu base;
 	/**
-	 * @name: Name as registered with perf core.
-	 */
-	const char *name;
-	/**
 	 * @lock: Lock protecting enable mask and ref count handling.
 	 */
 	spinlock_t lock;
@@ -101,9 +97,9 @@ struct i915_pmu {
 	 */
 	struct i915_pmu_sample sample[__I915_NUM_PMU_SAMPLERS];
 	/**
-	 * @sleep_last: Last time GT parked for RC6 estimation.
+	 * @suspended_time_last: Cached suspend time from PM core.
 	 */
-	ktime_t sleep_last;
+	u64 suspended_time_last;
 	/**
 	 * @i915_attr: Memory block holding device attributes.
 	 */

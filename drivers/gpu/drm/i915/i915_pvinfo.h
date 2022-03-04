@@ -48,9 +48,6 @@ enum vgt_g2v_type {
 	VGT_G2V_PPGTT_L4_PAGE_TABLE_DESTROY,
 	VGT_G2V_EXECLIST_CONTEXT_CREATE,
 	VGT_G2V_EXECLIST_CONTEXT_DESTROY,
-#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
-	VGT_G2V_GOP_SETUP,
-#endif
 	VGT_G2V_MAX,
 };
 
@@ -60,9 +57,6 @@ enum vgt_g2v_type {
 #define VGT_CAPS_FULL_PPGTT		BIT(2)
 #define VGT_CAPS_HWSP_EMULATION		BIT(3)
 #define VGT_CAPS_HUGE_GTT		BIT(4)
-#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
-#define VGT_CAPS_GOP_SUPPORT		BIT(5)
-#endif
 
 struct vgt_if {
 	u64 magic;		/* VGT_MAGIC */
@@ -115,23 +109,8 @@ struct vgt_if {
 	u32 execlist_context_descriptor_lo;
 	u32 execlist_context_descriptor_hi;
 
-#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
-	struct {
-		u32 fb_base;
-		u32 width;
-		u32 height;
-		u32 pitch;
-		u32 Bpp;
-		u32 size;
-	} gop;
-	u32  rsv8[0x200 - 30];    /* pad to one page */
-#else
 	u32  rsv7[0x200 - 24];    /* pad to one page */
-#endif
 } __packed;
-
-#define _vgtif_reg(x) \
-       (VGT_PVINFO_PAGE + offsetof(struct vgt_if, x))
 
 #define vgtif_offset(x) (offsetof(struct vgt_if, x))
 

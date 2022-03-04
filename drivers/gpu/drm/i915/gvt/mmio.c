@@ -234,15 +234,10 @@ out:
 void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 {
 	struct intel_gvt *gvt = vgpu->gvt;
-	struct drm_i915_private *dev_priv = gvt->dev_priv;
-	struct intel_runtime_info *runtime = RUNTIME_INFO(dev_priv);
 	const struct intel_gvt_device_info *info = &gvt->device_info;
 	void  *mmio = gvt->firmware.mmio;
 
 	if (dmlr) {
-		enum pipe pipe = INVALID_PIPE;
-		int scaler;
-
 		memcpy(vgpu->mmio.vreg, mmio, info->mmio_size);
 
 		vgpu_vreg_t(vgpu, GEN6_GT_THREAD_STATUS_REG) = 0;
@@ -250,20 +245,7 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 		/* set the bit 0:2(Core C-State ) to C0 */
 		vgpu_vreg_t(vgpu, GEN6_GT_CORE_STATUS) = 0;
 
-		vgpu_vreg_t(vgpu, GUC_STATUS) |= GS_MIA_IN_RESET;
-
-		if (IS_BROADWELL(dev_priv)) {
-			vgpu_vreg_t(vgpu, PCH_ADPA) &= ~ADPA_CRT_HOTPLUG_MONITOR_MASK;
-			for (pipe = PIPE_A; pipe <= PIPE_C; pipe++) {
-				vgpu_vreg_t(vgpu, PF_CTL(pipe)) = 0;
-				vgpu_vreg_t(vgpu, PF_WIN_SZ(pipe)) = 0;
-				vgpu_vreg_t(vgpu, PF_WIN_POS(pipe)) = 0;
-				vgpu_vreg_t(vgpu, PF_VSCALE(pipe)) = 0;
-				vgpu_vreg_t(vgpu, PF_HSCALE(pipe)) = 0;
-			}
-		}
-
-		if (IS_BROXTON(dev_priv)) {
+		if (IS_BROXTON(vgpu->gvt->dev_priv)) {
 			vgpu_vreg_t(vgpu, BXT_P_CR_GT_DISP_PWRON) &=
 				    ~(BIT(0) | BIT(1));
 			vgpu_vreg_t(vgpu, BXT_PORT_CL1CM_DW0(DPIO_PHY0)) &=
@@ -289,33 +271,6 @@ void intel_vgpu_reset_mmio(struct intel_vgpu *vgpu, bool dmlr)
 			vgpu_vreg_t(vgpu, BXT_PHY_CTL(PORT_C)) |=
 				    BXT_PHY_CMNLANE_POWERDOWN_ACK |
 				    BXT_PHY_LANE_POWERDOWN_ACK;
-			vgpu_vreg_t(vgpu, SKL_FUSE_STATUS) |=
-				SKL_FUSE_DOWNLOAD_STATUS |
-				SKL_FUSE_PG_DIST_STATUS(SKL_PG0) |
-				SKL_FUSE_PG_DIST_STATUS(SKL_PG1) |
-				SKL_FUSE_PG_DIST_STATUS(SKL_PG2);
-		}
-		if (IS_SKYLAKE(dev_priv) || IS_KABYLAKE(dev_priv) ||
-		    IS_COFFEELAKE(dev_priv)) {
-			vgpu_vreg_t(vgpu, SKL_FUSE_STATUS) |=
-				SKL_FUSE_DOWNLOAD_STATUS |
-				SKL_FUSE_PG_DIST_STATUS(SKL_PG0) |
-				SKL_FUSE_PG_DIST_STATUS(SKL_PG1) |
-				SKL_FUSE_PG_DIST_STATUS(SKL_PG2);
-			vgpu_vreg_t(vgpu, LCPLL1_CTL) |=
-				LCPLL_PLL_ENABLE |
-				LCPLL_PLL_LOCK;
-			vgpu_vreg_t(vgpu, LCPLL2_CTL) |= LCPLL_PLL_ENABLE;
-		}
-
-		if (INTEL_GEN(dev_priv) >= 9) {
-			for_each_pipe(dev_priv, pipe) {
-				for (scaler = 0; scaler < runtime->num_scalers[pipe]; scaler++) {
-					vgpu_vreg_t(vgpu, SKL_PS_WIN_POS(pipe, scaler)) = 0;
-					vgpu_vreg_t(vgpu, SKL_PS_WIN_SZ(pipe, scaler)) = 0;
-					vgpu_vreg_t(vgpu, SKL_PS_CTRL(pipe, scaler)) = 0;
-				}
-			}
 		}
 	} else {
 #define GVT_GEN8_MMIO_RESET_OFFSET		(0x44200)

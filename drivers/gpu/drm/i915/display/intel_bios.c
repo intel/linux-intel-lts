@@ -202,12 +202,17 @@ get_lvds_fp_timing(const struct bdb_header *bdb,
 	return (const struct lvds_fp_timing *)((const u8 *)bdb + ofs);
 }
 
-/* Parse general panel options */
+/* Try to find integrated panel data */
 static void
-parse_panel_options(struct drm_i915_private *dev_priv,
-		    const struct bdb_header *bdb)
+parse_lfp_panel_data(struct drm_i915_private *dev_priv,
+		     const struct bdb_header *bdb)
 {
 	const struct bdb_lvds_options *lvds_options;
+	const struct bdb_lvds_lfp_data *lvds_lfp_data;
+	const struct bdb_lvds_lfp_data_ptrs *lvds_lfp_data_ptrs;
+	const struct lvds_dvo_timing *panel_dvo_timing;
+	const struct lvds_fp_timing *fp_timing;
+	struct drm_display_mode *panel_fixed_mode;
 	int panel_type;
 	int drrs_mode;
 	int ret;
@@ -256,19 +261,6 @@ parse_panel_options(struct drm_i915_private *dev_priv,
 		DRM_DEBUG_KMS("DRRS not supported (VBT input)\n");
 		break;
 	}
-}
-
-/* Try to find integrated panel timing data */
-static void
-parse_lfp_panel_dtd(struct drm_i915_private *dev_priv,
-		    const struct bdb_header *bdb)
-{
-	const struct bdb_lvds_lfp_data *lvds_lfp_data;
-	const struct bdb_lvds_lfp_data_ptrs *lvds_lfp_data_ptrs;
-	const struct lvds_dvo_timing *panel_dvo_timing;
-	const struct lvds_fp_timing *fp_timing;
-	struct drm_display_mode *panel_fixed_mode;
-	int panel_type = dev_priv->vbt.panel_type;
 
 	lvds_lfp_data = find_section(bdb, BDB_LVDS_LFP_DATA);
 	if (!lvds_lfp_data)
@@ -290,7 +282,7 @@ parse_lfp_panel_dtd(struct drm_i915_private *dev_priv,
 
 	dev_priv->vbt.lfp_lvds_vbt_mode = panel_fixed_mode;
 
-	DRM_DEBUG_KMS("Found panel mode in BIOS VBT legacy lfp table:\n");
+	DRM_DEBUG_KMS("Found panel mode in BIOS VBT tables:\n");
 	drm_mode_debug_printmodeline(panel_fixed_mode);
 
 	fp_timing = get_lvds_fp_timing(bdb, lvds_lfp_data,
@@ -305,100 +297,6 @@ parse_lfp_panel_dtd(struct drm_i915_private *dev_priv,
 				      dev_priv->vbt.bios_lvds_val);
 		}
 	}
-}
-
-static void
-parse_generic_dtd(struct drm_i915_private *dev_priv,
-		  const struct bdb_header *bdb)
-{
-	const struct bdb_generic_dtd *generic_dtd;
-	const struct generic_dtd_entry *dtd;
-	struct drm_display_mode *panel_fixed_mode;
-	int num_dtd;
-
-	generic_dtd = find_section(bdb, BDB_GENERIC_DTD);
-	if (!generic_dtd)
-		return;
-
-	if (generic_dtd->gdtd_size < sizeof(struct generic_dtd_entry)) {
-		DRM_ERROR("GDTD size %u is too small.\n",
-			  generic_dtd->gdtd_size);
-		return;
-	} else if (generic_dtd->gdtd_size !=
-		   sizeof(struct generic_dtd_entry)) {
-		DRM_ERROR("Unexpected GDTD size %u\n", generic_dtd->gdtd_size);
-		/* DTD has unknown fields, but keep going */
-	}
-
-	num_dtd = (get_blocksize(generic_dtd) -
-		   sizeof(struct bdb_generic_dtd)) / generic_dtd->gdtd_size;
-	if (dev_priv->vbt.panel_type > num_dtd) {
-		DRM_ERROR("Panel type %d not found in table of %d DTD's\n",
-			  dev_priv->vbt.panel_type, num_dtd);
-		return;
-	}
-
-	dtd = &generic_dtd->dtd[dev_priv->vbt.panel_type];
-
-	panel_fixed_mode = kzalloc(sizeof(*panel_fixed_mode), GFP_KERNEL);
-	if (!panel_fixed_mode)
-		return;
-
-	panel_fixed_mode->hdisplay = dtd->hactive;
-	panel_fixed_mode->hsync_start =
-		panel_fixed_mode->hdisplay + dtd->hfront_porch;
-	panel_fixed_mode->hsync_end =
-		panel_fixed_mode->hsync_start + dtd->hsync;
-	panel_fixed_mode->htotal =
-		panel_fixed_mode->hdisplay + dtd->hblank;
-
-	panel_fixed_mode->vdisplay = dtd->vactive;
-	panel_fixed_mode->vsync_start =
-		panel_fixed_mode->vdisplay + dtd->vfront_porch;
-	panel_fixed_mode->vsync_end =
-		panel_fixed_mode->vsync_start + dtd->vsync;
-	panel_fixed_mode->vtotal =
-		panel_fixed_mode->vdisplay + dtd->vblank;
-
-	panel_fixed_mode->clock = dtd->pixel_clock;
-	panel_fixed_mode->width_mm = dtd->width_mm;
-	panel_fixed_mode->height_mm = dtd->height_mm;
-
-	panel_fixed_mode->type = DRM_MODE_TYPE_PREFERRED;
-	drm_mode_set_name(panel_fixed_mode);
-
-	if (dtd->hsync_positive_polarity)
-		panel_fixed_mode->flags |= DRM_MODE_FLAG_PHSYNC;
-	else
-		panel_fixed_mode->flags |= DRM_MODE_FLAG_NHSYNC;
-
-	if (dtd->vsync_positive_polarity)
-		panel_fixed_mode->flags |= DRM_MODE_FLAG_PVSYNC;
-	else
-		panel_fixed_mode->flags |= DRM_MODE_FLAG_NVSYNC;
-
-	DRM_DEBUG_KMS("Found panel mode in BIOS VBT generic dtd table:\n");
-	drm_mode_debug_printmodeline(panel_fixed_mode);
-
-	dev_priv->vbt.lfp_lvds_vbt_mode = panel_fixed_mode;
-}
-
-static void
-parse_panel_dtd(struct drm_i915_private *dev_priv,
-		const struct bdb_header *bdb)
-{
-	/*
-	 * Older VBTs provided provided DTD information for internal displays
-	 * through the "LFP panel DTD" block (42).  As of VBT revision 229,
-	 * that block is now deprecated and DTD information should be provided
-	 * via a newer "generic DTD" block (58).  Just to be safe, we'll
-	 * try the new generic DTD block first on VBT >= 229, but still fall
-	 * back to trying the old LFP block if that fails.
-	 */
-	if (bdb->version >= 229)
-		parse_generic_dtd(dev_priv, bdb);
-	if (!dev_priv->vbt.lfp_lvds_vbt_mode)
-		parse_lfp_panel_dtd(dev_priv, bdb);
 }
 
 static void
@@ -1348,7 +1246,7 @@ static enum port get_port_by_ddc_pin(struct drm_i915_private *i915, u8 ddc_pin)
 	const struct ddi_vbt_port_info *info;
 	enum port port;
 
-	for_each_port(port) {
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
 		info = &i915->vbt.ddi_port_info[port];
 
 		if (info->child && ddc_pin == info->alternate_ddc_pin)
@@ -1399,7 +1297,7 @@ static enum port get_port_by_aux_ch(struct drm_i915_private *i915, u8 aux_ch)
 	const struct ddi_vbt_port_info *info;
 	enum port port;
 
-	for_each_port(port) {
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
 		info = &i915->vbt.ddi_port_info[port];
 
 		if (info->child && aux_ch == info->alternate_aux_channel)
@@ -1501,7 +1399,6 @@ static enum port dvo_port_to_port(u8 dvo_port)
 		[PORT_D] = { DVO_PORT_HDMID, DVO_PORT_DPD, -1},
 		[PORT_E] = { DVO_PORT_CRT, DVO_PORT_HDMIE, DVO_PORT_DPE},
 		[PORT_F] = { DVO_PORT_HDMIF, DVO_PORT_DPF, -1},
-		[PORT_G] = { DVO_PORT_HDMIG, DVO_PORT_DPG, -1},
 	};
 	enum port port;
 	int i;
@@ -1545,7 +1442,7 @@ static void parse_ddi_port(struct drm_i915_private *dev_priv,
 	is_hdmi = is_dvi && (child->device_type & DEVICE_TYPE_NOT_HDMI_OUTPUT) == 0;
 	is_edp = is_dp && (child->device_type & DEVICE_TYPE_INTERNAL_CONNECTOR);
 
-	if (port == PORT_A && is_dvi && INTEL_GEN(dev_priv) < 12) {
+	if (port == PORT_A && is_dvi) {
 		DRM_DEBUG_KMS("VBT claims port A supports DVI%s, ignoring\n",
 			      is_hdmi ? "/HDMI" : "");
 		is_dvi = false;
@@ -1728,7 +1625,7 @@ parse_general_definitions(struct drm_i915_private *dev_priv,
 		expected_size = 37;
 	} else if (bdb->version <= 215) {
 		expected_size = 38;
-	} else if (bdb->version <= 229) {
+	} else if (bdb->version <= 216) {
 		expected_size = 39;
 	} else {
 		expected_size = sizeof(*child);
@@ -1824,7 +1721,7 @@ init_vbt_defaults(struct drm_i915_private *dev_priv)
 			!HAS_PCH_SPLIT(dev_priv));
 	DRM_DEBUG_KMS("Set default to SSC at %d kHz\n", dev_priv->vbt.lvds_ssc_freq);
 
-	for_each_port(port) {
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
 		struct ddi_vbt_port_info *info =
 			&dev_priv->vbt.ddi_port_info[port];
 
@@ -1838,7 +1735,7 @@ init_vbt_missing_defaults(struct drm_i915_private *dev_priv)
 {
 	enum port port;
 
-	for_each_port(port) {
+	for (port = PORT_A; port < I915_MAX_PORTS; port++) {
 		struct ddi_vbt_port_info *info =
 			&dev_priv->vbt.ddi_port_info[port];
 		enum phy phy = intel_port_to_phy(dev_priv, port);
@@ -1946,7 +1843,7 @@ void intel_bios_init(struct drm_i915_private *dev_priv)
 	const struct bdb_header *bdb;
 	u8 __iomem *bios = NULL;
 
-	if (!HAS_DISPLAY(dev_priv) || !INTEL_DISPLAY_ENABLED(dev_priv)) {
+	if (!HAS_DISPLAY(dev_priv)) {
 		DRM_DEBUG_KMS("Skipping VBT init due to disabled display.\n");
 		return;
 	}
@@ -1976,8 +1873,7 @@ void intel_bios_init(struct drm_i915_private *dev_priv)
 	/* Grab useful general definitions */
 	parse_general_features(dev_priv, bdb);
 	parse_general_definitions(dev_priv, bdb);
-	parse_panel_options(dev_priv, bdb);
-	parse_panel_dtd(dev_priv, bdb);
+	parse_lfp_panel_data(dev_priv, bdb);
 	parse_lfp_backlight(dev_priv, bdb);
 	parse_sdvo_panel_data(dev_priv, bdb);
 	parse_driver_features(dev_priv, bdb);
@@ -2361,15 +2257,6 @@ enum aux_ch intel_bios_port_aux_ch(struct drm_i915_private *dev_priv,
 		break;
 	case DP_AUX_F:
 		aux_ch = AUX_CH_F;
-		break;
-	case DP_AUX_G:
-		aux_ch = AUX_CH_G;
-		break;
-	case DP_AUX_H:
-		aux_ch = AUX_CH_H;
-		break;
-	case DP_AUX_I:
-		aux_ch = AUX_CH_I;
 		break;
 	default:
 		MISSING_CASE(info->alternate_aux_channel);

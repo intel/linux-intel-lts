@@ -15,7 +15,6 @@
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_graph.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
@@ -425,11 +424,8 @@ static void ltdc_crtc_atomic_enable(struct drm_crtc *crtc,
 				    struct drm_crtc_state *old_state)
 {
 	struct ltdc_device *ldev = crtc_to_ltdc(crtc);
-	struct drm_device *ddev = crtc->dev;
 
 	DRM_DEBUG_DRIVER("\n");
-
-	pm_runtime_get_sync(ddev->dev);
 
 	/* Sets the background color value */
 	reg_write(ldev->regs, LTDC_BCCR, BCCR_BCBLACK);
@@ -1044,36 +1040,6 @@ static const struct drm_encoder_funcs ltdc_encoder_funcs = {
 	.destroy = drm_encoder_cleanup,
 };
 
-static void ltdc_encoder_disable(struct drm_encoder *encoder)
-{
-	struct drm_device *ddev = encoder->dev;
-
-	DRM_DEBUG_DRIVER("\n");
-
-	/* Set to sleep state the pinctrl whatever type of encoder */
-	pinctrl_pm_select_sleep_state(ddev->dev);
-}
-
-static void ltdc_encoder_enable(struct drm_encoder *encoder)
-{
-	struct drm_device *ddev = encoder->dev;
-
-	DRM_DEBUG_DRIVER("\n");
-
-	/*
-	 * Set to default state the pinctrl only with DPI type.
-	 * Others types like DSI, don't need pinctrl due to
-	 * internal bridge (the signals do not come out of the chipset).
-	 */
-	if (encoder->encoder_type == DRM_MODE_ENCODER_DPI)
-		pinctrl_pm_select_default_state(ddev->dev);
-}
-
-static const struct drm_encoder_helper_funcs ltdc_encoder_helper_funcs = {
-	.disable = ltdc_encoder_disable,
-	.enable = ltdc_encoder_enable,
-};
-
 static int ltdc_encoder_init(struct drm_device *ddev, struct drm_bridge *bridge)
 {
 	struct drm_encoder *encoder;
@@ -1088,8 +1054,6 @@ static int ltdc_encoder_init(struct drm_device *ddev, struct drm_bridge *bridge)
 
 	drm_encoder_init(ddev, encoder, &ltdc_encoder_funcs,
 			 DRM_MODE_ENCODER_DPI, NULL);
-
-	drm_encoder_helper_add(encoder, &ltdc_encoder_helper_funcs);
 
 	ret = drm_bridge_attach(encoder, bridge, NULL);
 	if (ret) {
@@ -1272,8 +1236,8 @@ int ltdc_load(struct drm_device *ddev)
 	/* Add endpoints panels or bridges if any */
 	for (i = 0; i < MAX_ENDPOINTS; i++) {
 		if (panel[i]) {
-			bridge[i] = drm_panel_bridge_add_typed(panel[i],
-							       DRM_MODE_CONNECTOR_DPI);
+			bridge[i] = drm_panel_bridge_add(panel[i],
+							DRM_MODE_CONNECTOR_DPI);
 			if (IS_ERR(bridge[i])) {
 				DRM_ERROR("panel-bridge endpoint %d\n", i);
 				ret = PTR_ERR(bridge[i]);
@@ -1315,8 +1279,6 @@ int ltdc_load(struct drm_device *ddev)
 	ddev->irq_enabled = 1;
 
 	clk_disable_unprepare(ldev->pixel_clk);
-
-	pinctrl_pm_select_sleep_state(ddev->dev);
 
 	pm_runtime_enable(ddev->dev);
 

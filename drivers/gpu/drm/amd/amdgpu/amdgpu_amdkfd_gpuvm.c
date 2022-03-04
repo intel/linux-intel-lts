@@ -55,6 +55,12 @@ static struct {
 	spinlock_t mem_limit_lock;
 } kfd_mem_limit;
 
+/* Struct used for amdgpu_amdkfd_bo_validate */
+struct amdgpu_vm_parser {
+	uint32_t        domain;
+	bool            wait;
+};
+
 static const char * const domain_bit_to_string[] = {
 		"CPU",
 		"GTT",
@@ -287,9 +293,11 @@ validate_fail:
 	return ret;
 }
 
-static int amdgpu_amdkfd_validate_vm_bo(void *_unused, struct amdgpu_bo *bo)
+static int amdgpu_amdkfd_validate(void *param, struct amdgpu_bo *bo)
 {
-	return amdgpu_amdkfd_bo_validate(bo, bo->allowed_domains, false);
+	struct amdgpu_vm_parser *p = param;
+
+	return amdgpu_amdkfd_bo_validate(bo, p->domain, p->wait);
 }
 
 /* vm_validate_pt_pd_bos - Validate page table and directory BOs
@@ -303,15 +311,20 @@ static int vm_validate_pt_pd_bos(struct amdgpu_vm *vm)
 {
 	struct amdgpu_bo *pd = vm->root.base.bo;
 	struct amdgpu_device *adev = amdgpu_ttm_adev(pd->tbo.bdev);
+	struct amdgpu_vm_parser param;
 	int ret;
 
-	ret = amdgpu_vm_validate_pt_bos(adev, vm, amdgpu_amdkfd_validate_vm_bo, NULL);
+	param.domain = AMDGPU_GEM_DOMAIN_VRAM;
+	param.wait = false;
+
+	ret = amdgpu_vm_validate_pt_bos(adev, vm, amdgpu_amdkfd_validate,
+					&param);
 	if (ret) {
 		pr_err("amdgpu: failed to validate PT BOs\n");
 		return ret;
 	}
 
-	ret = amdgpu_amdkfd_validate_vm_bo(NULL, pd);
+	ret = amdgpu_amdkfd_validate(&param, pd);
 	if (ret) {
 		pr_err("amdgpu: failed to validate PD\n");
 		return ret;
@@ -1234,14 +1247,14 @@ int amdgpu_amdkfd_gpuvm_free_memory_of_gpu(
 	 * be freed anyway
 	 */
 
+	/* No more MMU notifiers */
+	amdgpu_mn_unregister(mem->bo);
+
 	/* Make sure restore workers don't access the BO any more */
 	bo_list_entry = &mem->validate_list;
 	mutex_lock(&process_info->lock);
 	list_del(&bo_list_entry->head);
 	mutex_unlock(&process_info->lock);
-
-	/* No more MMU notifiers */
-	amdgpu_mn_unregister(mem->bo);
 
 	ret = reserve_bo_and_cond_vms(mem, NULL, BO_VM_ALL, &ctx);
 	if (unlikely(ret))
@@ -1275,7 +1288,7 @@ int amdgpu_amdkfd_gpuvm_free_memory_of_gpu(
 	}
 
 	/* Free the BO*/
-	drm_gem_object_put_unlocked(&mem->bo->tbo.base);
+	amdgpu_bo_unref(&mem->bo);
 	mutex_destroy(&mem->lock);
 	kfree(mem);
 
@@ -1617,8 +1630,7 @@ int amdgpu_amdkfd_gpuvm_import_dmabuf(struct kgd_dev *kgd,
 		AMDGPU_VM_PAGE_READABLE | AMDGPU_VM_PAGE_WRITEABLE |
 		AMDGPU_VM_PAGE_EXECUTABLE | AMDGPU_VM_MTYPE_NC;
 
-	drm_gem_object_get(&bo->tbo.base);
-	(*mem)->bo = bo;
+	(*mem)->bo = amdgpu_bo_ref(bo);
 	(*mem)->va = va;
 	(*mem)->domain = (bo->preferred_domains & AMDGPU_GEM_DOMAIN_VRAM) ?
 		AMDGPU_GEM_DOMAIN_VRAM : AMDGPU_GEM_DOMAIN_GTT;

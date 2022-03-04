@@ -35,7 +35,6 @@
 
 #include "i915_drv.h"
 #include "gt/intel_context.h"
-#include "gt/intel_ring.h"
 #include "gvt.h"
 #include "trace.h"
 

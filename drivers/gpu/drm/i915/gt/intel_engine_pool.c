@@ -61,7 +61,6 @@ static int pool_active(struct i915_active *ref)
 	return 0;
 }
 
-__i915_active_call
 static void pool_retire(struct i915_active *ref)
 {
 	struct intel_engine_pool_node *node =
@@ -95,7 +94,7 @@ node_create(struct intel_engine_pool *pool, size_t sz)
 		return ERR_PTR(-ENOMEM);
 
 	node->pool = pool;
-	i915_active_init(&node->active, pool_active, pool_retire);
+	i915_active_init(engine->i915, &node->active, pool_active, pool_retire);
 
 	obj = i915_gem_object_create_internal(engine->i915, sz);
 	if (IS_ERR(obj)) {
@@ -110,19 +109,9 @@ node_create(struct intel_engine_pool *pool, size_t sz)
 	return node;
 }
 
-static struct intel_engine_pool *lookup_pool(struct intel_engine_cs *engine)
-{
-	if (intel_engine_is_virtual(engine))
-		engine = intel_virtual_engine_get_sibling(engine, 0);
-
-	GEM_BUG_ON(!engine);
-	return &engine->pool;
-}
-
 struct intel_engine_pool_node *
-intel_engine_get_pool(struct intel_engine_cs *engine, size_t size)
+intel_engine_pool_get(struct intel_engine_pool *pool, size_t size)
 {
-	struct intel_engine_pool *pool = lookup_pool(engine);
 	struct intel_engine_pool_node *node;
 	struct list_head *list;
 	unsigned long flags;

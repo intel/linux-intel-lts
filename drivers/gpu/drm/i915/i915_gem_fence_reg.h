@@ -29,6 +29,7 @@
 #include <linux/types.h>
 
 struct drm_i915_gem_object;
+struct drm_i915_private;
 struct i915_ggtt;
 struct i915_vma;
 struct intel_gt;
@@ -38,7 +39,7 @@ struct sg_table;
 
 struct i915_fence_reg {
 	struct list_head link;
-	struct i915_ggtt *ggtt;
+	struct drm_i915_private *i915;
 	struct i915_vma *vma;
 	atomic_t pin_count;
 	int id;
@@ -54,10 +55,10 @@ struct i915_fence_reg {
 };
 
 /* i915_gem_fence_reg.c */
-struct i915_fence_reg *i915_reserve_fence(struct i915_ggtt *ggtt);
+struct i915_fence_reg *i915_reserve_fence(struct drm_i915_private *i915);
 void i915_unreserve_fence(struct i915_fence_reg *fence);
 
-void i915_gem_restore_fences(struct i915_ggtt *ggtt);
+void i915_gem_restore_fences(struct drm_i915_private *i915);
 
 void i915_gem_object_do_bit_17_swizzle(struct drm_i915_gem_object *obj,
 				       struct sg_table *pages);

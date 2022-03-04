@@ -12,15 +12,7 @@
 #include "i915_active.h"
 #include "intel_context_types.h"
 #include "intel_engine_types.h"
-#include "intel_ring_types.h"
 #include "intel_timeline_types.h"
-
-#define CE_TRACE(ce, fmt, ...) do {					\
-	const struct intel_context *ce__ = (ce);			\
-	ENGINE_TRACE(ce__->engine, "context:%llx" fmt,			\
-		     ce__->timeline->fence_context,			\
-		     ##__VA_ARGS__);					\
-} while (0)
 
 void intel_context_init(struct intel_context *ce,
 			struct i915_gem_context *ctx,

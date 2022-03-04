@@ -44,7 +44,7 @@
 #define gvt_vdbg_mm(fmt, args...)
 #endif
 
-static bool enable_out_of_sync;
+static bool enable_out_of_sync = false;
 static int preallocated_oos_pages = 8192;
 
 /*
@@ -1719,13 +1719,6 @@ static int ppgtt_handle_guest_write_page_table_bytes(
 
 	index = (pa & (PAGE_SIZE - 1)) >> info->gtt_entry_size_shift;
 
-#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
-	/*
-	 * Set guest ppgtt entry. Optional for KVMGT, but MUST for
-	 * XENGT and ACRNGT.
-	 */
-	intel_gvt_hypervisor_write_gpa(vgpu, pa, p_data, bytes);
-#endif
 	ppgtt_get_guest_entry(spt, &we, index);
 
 	/*
@@ -1963,11 +1956,7 @@ void _intel_vgpu_mm_release(struct kref *mm_ref)
 
 	if (mm->type == INTEL_GVT_MM_PPGTT) {
 		list_del(&mm->ppgtt_mm.list);
-
-		mutex_lock(&mm->vgpu->gvt->gtt.ppgtt_mm_lock);
 		list_del(&mm->ppgtt_mm.lru_list);
-		mutex_unlock(&mm->vgpu->gvt->gtt.ppgtt_mm_lock);
-
 		invalidate_ppgtt_mm(mm);
 	} else {
 		vfree(mm->ggtt_mm.virtual_ggtt);
@@ -2484,7 +2473,7 @@ int intel_vgpu_init_gtt(struct intel_vgpu *vgpu)
 	return create_scratch_page_tree(vgpu);
 }
 
-void intel_vgpu_destroy_all_ppgtt_mm(struct intel_vgpu *vgpu)
+static void intel_vgpu_destroy_all_ppgtt_mm(struct intel_vgpu *vgpu)
 {
 	struct list_head *pos, *n;
 	struct intel_vgpu_mm *mm;
@@ -2516,26 +2505,8 @@ static void intel_vgpu_destroy_ggtt_mm(struct intel_vgpu *vgpu)
 	}
 	intel_vgpu_destroy_mm(vgpu->gtt.ggtt_mm);
 	vgpu->gtt.ggtt_mm = NULL;
-
-	if (vgpu->ggtt_entries) {
-		vfree(vgpu->ggtt_entries);
-		vgpu->ggtt_entries = NULL;
-	}
 }
 
-#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
-static void clean_gvt_gop(struct intel_vgpu *vgpu)
-{
-	int i;
-	for (i = 0; i < vgpu->gm.gop_fb_size; i++)
-		intel_gvt_hypervisor_map_gfn_to_mfn(vgpu,
-			(GOP_FB_BASE >> PAGE_SHIFT) + i,
-			page_to_pfn(vgpu->gm.gop_fb_pages[i]), 1, false);
-
-	release_pages(vgpu->gm.gop_fb_pages, vgpu->gm.gop_fb_size);
-	kfree(vgpu->gm.gop_fb_pages);
-}
-#endif
 /**
  * intel_vgpu_clean_gtt - clean up per-vGPU graphics memory virulization
  * @vgpu: a vGPU
@@ -2550,10 +2521,6 @@ void intel_vgpu_clean_gtt(struct intel_vgpu *vgpu)
 {
 	intel_vgpu_destroy_all_ppgtt_mm(vgpu);
 	intel_vgpu_destroy_ggtt_mm(vgpu);
-#if IS_ENABLED(CONFIG_DRM_I915_GVT_ACRN_GVT)
-	if (vgpu->gm.gop_fb_pages)
-		clean_gvt_gop(vgpu);
-#endif
 	release_scratch_page_tree(vgpu);
 }
 
@@ -2857,74 +2824,4 @@ void intel_vgpu_reset_gtt(struct intel_vgpu *vgpu)
 	 */
 	intel_vgpu_destroy_all_ppgtt_mm(vgpu);
 	intel_vgpu_reset_ggtt(vgpu, true);
-}
-
-/**
- * intel_gvt_save_ggtt - save all vGPU's ggtt entries
- * @gvt: intel gvt device
- *
- * This function is called at driver suspend stage to save
- * GGTT entries of every active vGPU.
- *
- */
-void intel_gvt_save_ggtt(struct intel_gvt *gvt)
-{
-	struct intel_vgpu *vgpu;
-	int id;
-	u32 index, num_low, num_hi;
-	void __iomem *addr;
-
-	for_each_active_vgpu(gvt, vgpu, id) {
-		num_low = vgpu_aperture_sz(vgpu) >> PAGE_SHIFT;
-		num_hi = vgpu_hidden_sz(vgpu) >> PAGE_SHIFT;
-		vgpu->ggtt_entries = vzalloc((num_low + num_hi) * sizeof(u64));
-		if (!vgpu->ggtt_entries)
-			continue;
-
-		index = vgpu_aperture_gmadr_base(vgpu) >> PAGE_SHIFT;
-		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy_fromio(vgpu->ggtt_entries, addr, num_low * sizeof(u64));
-
-		index = vgpu_hidden_gmadr_base(vgpu) >> PAGE_SHIFT;
-		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy_fromio(vgpu->ggtt_entries + num_low, addr,
-			      num_hi * sizeof(u64));
-	}
-}
-
-/**
- * intel_gvt_restore_ggtt - restore all vGPU's ggtt entries
- * @gvt: intel gvt device
- *
- * This function is called at driver resume stage to restore
- * GGTT entries of every active vGPU.
- *
- */
-void intel_gvt_restore_ggtt(struct intel_gvt *gvt)
-{
-	struct intel_vgpu *vgpu;
-	int id;
-	u32 index, num_low, num_hi;
-	void __iomem *addr;
-
-	for_each_active_vgpu(gvt, vgpu, id) {
-		if (!vgpu->ggtt_entries) {
-			gvt_vgpu_err("fail to get saved ggtt\n");
-			continue;
-		}
-
-		num_low = vgpu_aperture_sz(vgpu) >> PAGE_SHIFT;
-		num_hi = vgpu_hidden_sz(vgpu) >> PAGE_SHIFT;
-
-		index = vgpu_aperture_gmadr_base(vgpu) >> PAGE_SHIFT;
-		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy_toio(addr, vgpu->ggtt_entries, num_low * sizeof(u64));
-		index = vgpu_hidden_gmadr_base(vgpu) >> PAGE_SHIFT;
-		addr = (gen8_pte_t __iomem *)gvt->dev_priv->ggtt.gsm + index;
-		memcpy_toio(addr, vgpu->ggtt_entries + num_low,
-			    num_hi * sizeof(u64));
-
-		vfree(vgpu->ggtt_entries);
-		vgpu->ggtt_entries = NULL;
-	}
 }

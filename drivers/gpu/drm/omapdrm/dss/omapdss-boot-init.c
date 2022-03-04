@@ -192,7 +192,7 @@ static int __init omapdss_boot_init(void)
 	dss = of_find_matching_node(NULL, omapdss_of_match);
 
 	if (dss == NULL || !of_device_is_available(dss))
-		goto put_node;
+		return 0;
 
 	omapdss_walk_device(dss, true);
 
@@ -217,8 +217,6 @@ static int __init omapdss_boot_init(void)
 		kfree(n);
 	}
 
-put_node:
-	of_node_put(dss);
 	return 0;
 }
 

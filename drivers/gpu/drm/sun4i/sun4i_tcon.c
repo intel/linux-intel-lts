@@ -16,7 +16,6 @@
 #include <linux/reset.h>
 
 #include <drm/drm_atomic_helper.h>
-#include <drm/drm_bridge.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_encoder.h>
@@ -489,7 +488,7 @@ static void sun4i_tcon0_mode_set_rgb(struct sun4i_tcon *tcon,
 
 	WARN_ON(!tcon->quirks->has_channel_0);
 
-	tcon->dclk_min_div = tcon->quirks->dclk_min_div;
+	tcon->dclk_min_div = 1;
 	tcon->dclk_max_div = 127;
 	sun4i_tcon0_mode_set_common(tcon, mode);
 
@@ -546,13 +545,30 @@ static void sun4i_tcon0_mode_set_rgb(struct sun4i_tcon *tcon,
 	if (info->bus_flags & DRM_BUS_FLAG_DE_LOW)
 		val |= SUN4I_TCON0_IO_POL_DE_NEGATIVE;
 
+	/*
+	 * On A20 and similar SoCs, the only way to achieve Positive Edge
+	 * (Rising Edge), is setting dclk clock phase to 2/3(240°).
+	 * By default TCON works in Negative Edge(Falling Edge),
+	 * this is why phase is set to 0 in that case.
+	 * Unfortunately there's no way to logically invert dclk through
+	 * IO_POL register.
+	 * The only acceptable way to work, triple checked with scope,
+	 * is using clock phase set to 0° for Negative Edge and set to 240°
+	 * for Positive Edge.
+	 * On A33 and similar SoCs there would be a 90° phase option,
+	 * but it divides also dclk by 2.
+	 * Following code is a way to avoid quirks all around TCON
+	 * and DOTCLOCK drivers.
+	 */
+	if (info->bus_flags & DRM_BUS_FLAG_PIXDATA_DRIVE_POSEDGE)
+		clk_set_phase(tcon->dclk, 240);
+
 	if (info->bus_flags & DRM_BUS_FLAG_PIXDATA_DRIVE_NEGEDGE)
-		val |= SUN4I_TCON0_IO_POL_DCLK_DRIVE_NEGEDGE;
+		clk_set_phase(tcon->dclk, 0);
 
 	regmap_update_bits(tcon->regs, SUN4I_TCON0_IO_POL_REG,
 			   SUN4I_TCON0_IO_POL_HSYNC_POSITIVE |
 			   SUN4I_TCON0_IO_POL_VSYNC_POSITIVE |
-			   SUN4I_TCON0_IO_POL_DCLK_DRIVE_NEGEDGE |
 			   SUN4I_TCON0_IO_POL_DE_NEGATIVE,
 			   val);
 
@@ -648,30 +664,6 @@ static void sun4i_tcon1_mode_set(struct sun4i_tcon *tcon,
 	regmap_write(tcon->regs, SUN4I_TCON1_BASIC5_REG,
 		     SUN4I_TCON1_BASIC5_V_SYNC(vsync) |
 		     SUN4I_TCON1_BASIC5_H_SYNC(hsync));
-
-	/* Setup the polarity of multiple signals */
-	if (tcon->quirks->polarity_in_ch0) {
-		val = 0;
-
-		if (mode->flags & DRM_MODE_FLAG_PHSYNC)
-			val |= SUN4I_TCON0_IO_POL_HSYNC_POSITIVE;
-
-		if (mode->flags & DRM_MODE_FLAG_PVSYNC)
-			val |= SUN4I_TCON0_IO_POL_VSYNC_POSITIVE;
-
-		regmap_write(tcon->regs, SUN4I_TCON0_IO_POL_REG, val);
-	} else {
-		/* according to vendor driver, this bit must be always set */
-		val = SUN4I_TCON1_IO_POL_UNKNOWN;
-
-		if (mode->flags & DRM_MODE_FLAG_PHSYNC)
-			val |= SUN4I_TCON1_IO_POL_HSYNC_POSITIVE;
-
-		if (mode->flags & DRM_MODE_FLAG_PVSYNC)
-			val |= SUN4I_TCON1_IO_POL_VSYNC_POSITIVE;
-
-		regmap_write(tcon->regs, SUN4I_TCON1_IO_POL_REG, val);
-	}
 
 	/* Map output pins to channel 1 */
 	regmap_update_bits(tcon->regs, SUN4I_TCON_GCTL_REG,
@@ -1417,18 +1409,14 @@ static int sun8i_r40_tcon_tv_set_mux(struct sun4i_tcon *tcon,
 	if (IS_ENABLED(CONFIG_DRM_SUN8I_TCON_TOP) &&
 	    encoder->encoder_type == DRM_MODE_ENCODER_TMDS) {
 		ret = sun8i_tcon_top_set_hdmi_src(&pdev->dev, id);
-		if (ret) {
-			put_device(&pdev->dev);
+		if (ret)
 			return ret;
-		}
 	}
 
 	if (IS_ENABLED(CONFIG_DRM_SUN8I_TCON_TOP)) {
 		ret = sun8i_tcon_top_de_config(&pdev->dev, tcon->id, id);
-		if (ret) {
-			put_device(&pdev->dev);
+		if (ret)
 			return ret;
-		}
 	}
 
 	return 0;
@@ -1437,14 +1425,12 @@ static int sun8i_r40_tcon_tv_set_mux(struct sun4i_tcon *tcon,
 static const struct sun4i_tcon_quirks sun4i_a10_quirks = {
 	.has_channel_0		= true,
 	.has_channel_1		= true,
-	.dclk_min_div		= 4,
 	.set_mux		= sun4i_a10_tcon_set_mux,
 };
 
 static const struct sun4i_tcon_quirks sun5i_a13_quirks = {
 	.has_channel_0		= true,
 	.has_channel_1		= true,
-	.dclk_min_div		= 4,
 	.set_mux		= sun5i_a13_tcon_set_mux,
 };
 
@@ -1453,7 +1439,6 @@ static const struct sun4i_tcon_quirks sun6i_a31_quirks = {
 	.has_channel_1		= true,
 	.has_lvds_alt		= true,
 	.needs_de_be_mux	= true,
-	.dclk_min_div		= 1,
 	.set_mux		= sun6i_tcon_set_mux,
 };
 
@@ -1461,13 +1446,11 @@ static const struct sun4i_tcon_quirks sun6i_a31s_quirks = {
 	.has_channel_0		= true,
 	.has_channel_1		= true,
 	.needs_de_be_mux	= true,
-	.dclk_min_div		= 1,
 };
 
 static const struct sun4i_tcon_quirks sun7i_a20_quirks = {
 	.has_channel_0		= true,
 	.has_channel_1		= true,
-	.dclk_min_div		= 4,
 	/* Same display pipeline structure as A10 */
 	.set_mux		= sun4i_a10_tcon_set_mux,
 };
@@ -1475,13 +1458,11 @@ static const struct sun4i_tcon_quirks sun7i_a20_quirks = {
 static const struct sun4i_tcon_quirks sun8i_a33_quirks = {
 	.has_channel_0		= true,
 	.has_lvds_alt		= true,
-	.dclk_min_div		= 1,
 };
 
 static const struct sun4i_tcon_quirks sun8i_a83t_lcd_quirks = {
 	.supports_lvds		= true,
 	.has_channel_0		= true,
-	.dclk_min_div		= 1,
 };
 
 static const struct sun4i_tcon_quirks sun8i_a83t_tv_quirks = {
@@ -1490,19 +1471,16 @@ static const struct sun4i_tcon_quirks sun8i_a83t_tv_quirks = {
 
 static const struct sun4i_tcon_quirks sun8i_r40_tv_quirks = {
 	.has_channel_1		= true,
-	.polarity_in_ch0	= true,
 	.set_mux		= sun8i_r40_tcon_tv_set_mux,
 };
 
 static const struct sun4i_tcon_quirks sun8i_v3s_quirks = {
 	.has_channel_0		= true,
-	.dclk_min_div		= 1,
 };
 
 static const struct sun4i_tcon_quirks sun9i_a80_tcon_lcd_quirks = {
-	.has_channel_0		= true,
-	.needs_edp_reset	= true,
-	.dclk_min_div		= 1,
+	.has_channel_0	= true,
+	.needs_edp_reset = true,
 };
 
 static const struct sun4i_tcon_quirks sun9i_a80_tcon_tv_quirks = {
@@ -1517,8 +1495,6 @@ const struct of_device_id sun4i_tcon_of_table[] = {
 	{ .compatible = "allwinner,sun6i-a31-tcon", .data = &sun6i_a31_quirks },
 	{ .compatible = "allwinner,sun6i-a31s-tcon", .data = &sun6i_a31s_quirks },
 	{ .compatible = "allwinner,sun7i-a20-tcon", .data = &sun7i_a20_quirks },
-	{ .compatible = "allwinner,sun7i-a20-tcon0", .data = &sun7i_a20_quirks },
-	{ .compatible = "allwinner,sun7i-a20-tcon1", .data = &sun7i_a20_quirks },
 	{ .compatible = "allwinner,sun8i-a23-tcon", .data = &sun8i_a33_quirks },
 	{ .compatible = "allwinner,sun8i-a33-tcon", .data = &sun8i_a33_quirks },
 	{ .compatible = "allwinner,sun8i-a83t-tcon-lcd", .data = &sun8i_a83t_lcd_quirks },

@@ -47,7 +47,6 @@ struct intel_guc_log {
 	struct i915_vma *vma;
 	struct {
 		void *buf_addr;
-		bool started;
 		struct work_struct flush_work;
 		struct rchan *channel;
 		struct mutex lock;
@@ -66,9 +65,8 @@ int intel_guc_log_create(struct intel_guc_log *log);
 void intel_guc_log_destroy(struct intel_guc_log *log);
 
 int intel_guc_log_set_level(struct intel_guc_log *log, u32 level);
-bool intel_guc_log_relay_created(const struct intel_guc_log *log);
+bool intel_guc_log_relay_enabled(const struct intel_guc_log *log);
 int intel_guc_log_relay_open(struct intel_guc_log *log);
-int intel_guc_log_relay_start(struct intel_guc_log *log);
 void intel_guc_log_relay_flush(struct intel_guc_log *log);
 void intel_guc_log_relay_close(struct intel_guc_log *log);
 

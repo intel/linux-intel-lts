@@ -7,8 +7,9 @@
  *
  * This library provides &struct drm_gem_vram_object (GEM VRAM), a GEM
  * buffer object that is backed by video RAM. It can be used for
- * framebuffer devices with dedicated memory. The video RAM is managed
- * by &struct drm_vram_mm (VRAM MM).
+ * framebuffer devices with dedicated memory. The video RAM can be
+ * managed with &struct drm_vram_mm (VRAM MM). Both data structures are
+ * supposed to be used together, but can also be used individually.
  *
  * With the GEM interface userspace applications create, manage and destroy
  * graphics buffers, such as an on-screen framebuffer. GEM does not provide
@@ -49,7 +50,8 @@
  *		// setup device, vram base and size
  *		// ...
  *
- *		ret = drm_vram_helper_alloc_mm(dev, vram_base, vram_size);
+ *		ret = drm_vram_helper_alloc_mm(dev, vram_base, vram_size,
+ *					       &drm_gem_vram_mm_funcs);
  *		if (ret)
  *			return ret;
  *		return 0;

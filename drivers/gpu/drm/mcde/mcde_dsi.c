@@ -935,20 +935,19 @@ static int mcde_dsi_bind(struct device *dev, struct device *master,
 	for_each_available_child_of_node(dev->of_node, child) {
 		panel = of_drm_find_panel(child);
 		if (IS_ERR(panel)) {
-			dev_err(dev, "failed to find panel try bridge (%ld)\n",
+			dev_err(dev, "failed to find panel try bridge (%lu)\n",
 				PTR_ERR(panel));
-			panel = NULL;
-
 			bridge = of_drm_find_bridge(child);
-			if (!bridge) {
-				dev_err(dev, "failed to find bridge\n");
-				return -EINVAL;
+			if (IS_ERR(bridge)) {
+				dev_err(dev, "failed to find bridge (%lu)\n",
+					PTR_ERR(bridge));
+				return PTR_ERR(bridge);
 			}
 		}
 	}
 	if (panel) {
-		bridge = drm_panel_bridge_add_typed(panel,
-						    DRM_MODE_CONNECTOR_DSI);
+		bridge = drm_panel_bridge_add(panel,
+					      DRM_MODE_CONNECTOR_DSI);
 		if (IS_ERR(bridge)) {
 			dev_err(dev, "error adding panel bridge\n");
 			return PTR_ERR(bridge);

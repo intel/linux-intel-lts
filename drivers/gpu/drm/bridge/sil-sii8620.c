@@ -9,7 +9,6 @@
 #include <asm/unaligned.h>
 
 #include <drm/bridge/mhl.h>
-#include <drm/drm_bridge.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_encoder.h>
@@ -178,7 +177,7 @@ static void sii8620_read_buf(struct sii8620 *ctx, u16 addr, u8 *buf, int len)
 
 static u8 sii8620_readb(struct sii8620 *ctx, u16 addr)
 {
-	u8 ret = 0;
+	u8 ret;
 
 	sii8620_read_buf(ctx, addr, &ret, 1);
 	return ret;

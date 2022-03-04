@@ -256,7 +256,7 @@ int intel_vgpu_init_opregion(struct intel_vgpu *vgpu)
 	return 0;
 }
 
-int map_vgpu_opregion(struct intel_vgpu *vgpu, bool map)
+static int map_vgpu_opregion(struct intel_vgpu *vgpu, bool map)
 {
 	u64 mfn;
 	int i, ret;
@@ -268,10 +268,6 @@ int map_vgpu_opregion(struct intel_vgpu *vgpu, bool map)
 			gvt_vgpu_err("fail to get MFN from VA\n");
 			return -EINVAL;
 		}
-
-		gvt_dbg_dpy("Round[%d] gfn: %x ==> mfn: %llx \n", i,
-				vgpu_opregion(vgpu)->gfn[i], mfn);
-
 		ret = intel_gvt_hypervisor_map_gfn_to_mfn(vgpu,
 				vgpu_opregion(vgpu)->gfn[i],
 				mfn, 1, map);
@@ -321,19 +317,6 @@ int intel_vgpu_opregion_base_write_handler(struct intel_vgpu *vgpu, u32 gpa)
 
 		ret = map_vgpu_opregion(vgpu, true);
 		break;
-	case INTEL_GVT_HYPERVISOR_ACRN:
-		if (gpa == 0) {
-			return 0;
-		}
-
-		if (vgpu_opregion(vgpu)->mapped)
-			map_vgpu_opregion(vgpu, false);
-
-		for (i = 0; i < INTEL_GVT_OPREGION_PAGES; i++)
-			vgpu_opregion(vgpu)->gfn[i] = (gpa >> PAGE_SHIFT) + i;
-
-		ret = map_vgpu_opregion(vgpu, true);
-		break;
 	default:
 		ret = -EINVAL;
 		gvt_vgpu_err("not supported hypervisor\n");
@@ -354,8 +337,7 @@ void intel_vgpu_clean_opregion(struct intel_vgpu *vgpu)
 	if (!vgpu_opregion(vgpu)->va)
 		return;
 
-	if (intel_gvt_host.hypervisor_type == INTEL_GVT_HYPERVISOR_XEN ||
-		intel_gvt_host.hypervisor_type == INTEL_GVT_HYPERVISOR_ACRN) {
+	if (intel_gvt_host.hypervisor_type == INTEL_GVT_HYPERVISOR_XEN) {
 		if (vgpu_opregion(vgpu)->mapped)
 			map_vgpu_opregion(vgpu, false);
 	} else if (intel_gvt_host.hypervisor_type == INTEL_GVT_HYPERVISOR_KVM) {
@@ -491,7 +473,6 @@ int intel_vgpu_emulate_opregion_request(struct intel_vgpu *vgpu, u32 swsci)
 
 	switch (intel_gvt_host.hypervisor_type) {
 	case INTEL_GVT_HYPERVISOR_XEN:
-	case INTEL_GVT_HYPERVISOR_ACRN:
 		scic = *((u32 *)vgpu_opregion(vgpu)->va +
 					INTEL_GVT_OPREGION_SCIC);
 		parm = *((u32 *)vgpu_opregion(vgpu)->va +
@@ -557,7 +538,6 @@ int intel_vgpu_emulate_opregion_request(struct intel_vgpu *vgpu, u32 swsci)
 out:
 	switch (intel_gvt_host.hypervisor_type) {
 	case INTEL_GVT_HYPERVISOR_XEN:
-	case INTEL_GVT_HYPERVISOR_ACRN:
 		*((u32 *)vgpu_opregion(vgpu)->va +
 					INTEL_GVT_OPREGION_SCIC) = scic;
 		*((u32 *)vgpu_opregion(vgpu)->va +

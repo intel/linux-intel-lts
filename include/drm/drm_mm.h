@@ -168,9 +168,8 @@ struct drm_mm_node {
 	struct rb_node rb_hole_addr;
 	u64 __subtree_last;
 	u64 hole_size;
-	unsigned long flags;
-#define DRM_MM_NODE_ALLOCATED_BIT	0
-#define DRM_MM_NODE_SCANNED_BIT		1
+	bool allocated : 1;
+	bool scanned_block : 1;
 #ifdef CONFIG_DRM_DEBUG_MM
 	depot_stack_handle_t stack;
 #endif
@@ -254,7 +253,7 @@ struct drm_mm_scan {
  */
 static inline bool drm_mm_node_allocated(const struct drm_mm_node *node)
 {
-	return test_bit(DRM_MM_NODE_ALLOCATED_BIT, &node->flags);
+	return node->allocated;
 }
 
 /**

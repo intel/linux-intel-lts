@@ -39,11 +39,8 @@ __nop_read(16)
 __nop_read(32)
 __nop_read(64)
 
-void mock_uncore_init(struct intel_uncore *uncore,
-		      struct drm_i915_private *i915)
+void mock_uncore_init(struct intel_uncore *uncore)
 {
-	intel_uncore_init_early(uncore, i915);
-
 	ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, nop);
 	ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, nop);
 }

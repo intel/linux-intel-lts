@@ -226,7 +226,7 @@ static void guc_read_update_log_buffer(struct intel_guc_log *log)
 
 	mutex_lock(&log->relay.lock);
 
-	if (WARN_ON(!intel_guc_log_relay_created(log)))
+	if (WARN_ON(!intel_guc_log_relay_enabled(log)))
 		goto out_unlock;
 
 	/* Get the pointer to shared GuC log buffer */
@@ -361,7 +361,6 @@ void intel_guc_log_init_early(struct intel_guc_log *log)
 {
 	mutex_init(&log->relay.lock);
 	INIT_WORK(&log->relay.flush_work, capture_logs_work);
-	log->relay.started = false;
 }
 
 static int guc_log_relay_create(struct intel_guc_log *log)
@@ -547,7 +546,7 @@ out_unlock:
 	return ret;
 }
 
-bool intel_guc_log_relay_created(const struct intel_guc_log *log)
+bool intel_guc_log_relay_enabled(const struct intel_guc_log *log)
 {
 	return log->relay.buf_addr;
 }
@@ -561,7 +560,7 @@ int intel_guc_log_relay_open(struct intel_guc_log *log)
 
 	mutex_lock(&log->relay.lock);
 
-	if (intel_guc_log_relay_created(log)) {
+	if (intel_guc_log_relay_enabled(log)) {
 		ret = -EEXIST;
 		goto out_unlock;
 	}
@@ -586,6 +585,15 @@ int intel_guc_log_relay_open(struct intel_guc_log *log)
 
 	mutex_unlock(&log->relay.lock);
 
+	guc_log_enable_flush_events(log);
+
+	/*
+	 * When GuC is logging without us relaying to userspace, we're ignoring
+	 * the flush notification. This means that we need to unconditionally
+	 * flush on relay enabling, since GuC only notifies us once.
+	 */
+	queue_work(system_highpri_wq, &log->relay.flush_work);
+
 	return 0;
 
 out_relay:
@@ -596,32 +604,11 @@ out_unlock:
 	return ret;
 }
 
-int intel_guc_log_relay_start(struct intel_guc_log *log)
-{
-	if (log->relay.started)
-		return -EEXIST;
-
-	guc_log_enable_flush_events(log);
-
-	/*
-	 * When GuC is logging without us relaying to userspace, we're ignoring
-	 * the flush notification. This means that we need to unconditionally
-	 * flush on relay enabling, since GuC only notifies us once.
-	 */
-	queue_work(system_highpri_wq, &log->relay.flush_work);
-
-	log->relay.started = true;
-
-	return 0;
-}
-
 void intel_guc_log_relay_flush(struct intel_guc_log *log)
 {
 	struct intel_guc *guc = log_to_guc(log);
+	struct drm_i915_private *i915 = guc_to_gt(guc)->i915;
 	intel_wakeref_t wakeref;
-
-	if (!log->relay.started)
-		return;
 
 	/*
 	 * Before initiating the forceful flush, wait for any pending/ongoing
@@ -629,40 +616,25 @@ void intel_guc_log_relay_flush(struct intel_guc_log *log)
 	 */
 	flush_work(&log->relay.flush_work);
 
-	with_intel_runtime_pm(guc_to_gt(guc)->uncore->rpm, wakeref)
+	with_intel_runtime_pm(&i915->runtime_pm, wakeref)
 		guc_action_flush_log(guc);
 
 	/* GuC would have updated log buffer by now, so capture it */
 	guc_log_capture_logs(log);
 }
 
-/*
- * Stops the relay log. Called from intel_guc_log_relay_close(), so no
- * possibility of race with start/flush since relay_write cannot race
- * relay_close.
- */
-static void guc_log_relay_stop(struct intel_guc_log *log)
+void intel_guc_log_relay_close(struct intel_guc_log *log)
 {
 	struct intel_guc *guc = log_to_guc(log);
 	struct drm_i915_private *i915 = guc_to_gt(guc)->i915;
-
-	if (!log->relay.started)
-		return;
 
 	guc_log_disable_flush_events(log);
 	intel_synchronize_irq(i915);
 
 	flush_work(&log->relay.flush_work);
 
-	log->relay.started = false;
-}
-
-void intel_guc_log_relay_close(struct intel_guc_log *log)
-{
-	guc_log_relay_stop(log);
-
 	mutex_lock(&log->relay.lock);
-	GEM_BUG_ON(!intel_guc_log_relay_created(log));
+	GEM_BUG_ON(!intel_guc_log_relay_enabled(log));
 	guc_log_unmap(log);
 	guc_log_relay_destroy(log);
 	mutex_unlock(&log->relay.lock);

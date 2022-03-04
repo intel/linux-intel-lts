@@ -283,8 +283,6 @@ bool dc_stream_adjust_vmin_vmax(struct dc *dc,
 	int i = 0;
 	bool ret = false;
 
-	stream->adjust = *adjust;
-
 	for (i = 0; i < MAX_PIPES; i++) {
 		struct pipe_ctx *pipe = &dc->current_state->res_ctx.pipe_ctx[i];
 
@@ -907,11 +905,15 @@ static void program_timing_sync(
 
 		/* set first pipe with plane as master */
 		for (j = 0; j < group_size; j++) {
+			struct pipe_ctx *temp;
+
 			if (pipe_set[j]->plane_state) {
 				if (j == 0)
 					break;
 
-				swap(pipe_set[0], pipe_set[j]);
+				temp = pipe_set[0];
+				pipe_set[0] = pipe_set[j];
+				pipe_set[j] = temp;
 				break;
 			}
 		}
@@ -1178,26 +1180,6 @@ bool dc_commit_state(struct dc *dc, struct dc_state *context)
 	return (result == DC_OK);
 }
 
-static bool is_flip_pending_in_pipes(struct dc *dc, struct dc_state *context)
-{
-	int i;
-	struct pipe_ctx *pipe;
-
-	for (i = 0; i < MAX_PIPES; i++) {
-		pipe = &context->res_ctx.pipe_ctx[i];
-
-		if (!pipe->plane_state)
-			continue;
-
-		/* Must set to false to start with, due to OR in update function */
-		pipe->plane_state->status.is_flip_pending = false;
-		dc->hwss.update_pending_status(pipe);
-		if (pipe->plane_state->status.is_flip_pending)
-			return true;
-	}
-	return false;
-}
-
 bool dc_post_update_surfaces_to_stream(struct dc *dc)
 {
 	int i;
@@ -1207,9 +1189,6 @@ bool dc_post_update_surfaces_to_stream(struct dc *dc)
 		return true;
 
 	post_surface_trace(dc);
-
-	if (is_flip_pending_in_pipes(dc, context))
-		return true;
 
 	for (i = 0; i < dc->res_pool->pipe_count; i++)
 		if (context->res_ctx.pipe_ctx[i].stream == NULL ||
@@ -1961,8 +1940,7 @@ static void commit_planes_do_stream_update(struct dc *dc,
 					if (pipe_ctx->stream_res.audio && !dc->debug.az_endpoint_mute_only)
 						pipe_ctx->stream_res.audio->funcs->az_disable(pipe_ctx->stream_res.audio);
 
-					dc->optimized_required = true;
-
+					dc->hwss.optimize_bandwidth(dc, dc->current_state);
 				} else {
 					if (!dc->optimize_seamless_boot)
 						dc->hwss.prepare_bandwidth(dc, dc->current_state);
@@ -2049,10 +2027,6 @@ static void commit_planes_for_stream(struct dc *dc,
 						/*triple buffer for VUpdate  only*/
 						plane_state->triplebuffer_flips = true;
 				}
-			}
-			if (update_type == UPDATE_TYPE_FULL) {
-				/* force vsync flip when reconfiguring pipes to prevent underflow */
-				plane_state->flip_immediate = false;
 			}
 		}
 	}
@@ -2178,7 +2152,7 @@ void dc_commit_updates_for_stream(struct dc *dc,
 	enum surface_update_type update_type;
 	struct dc_state *context;
 	struct dc_context *dc_ctx = dc->ctx;
-	int i, j;
+	int i;
 
 	stream_status = dc_stream_get_status(stream);
 	context = dc->current_state;
@@ -2216,28 +2190,9 @@ void dc_commit_updates_for_stream(struct dc *dc,
 
 		copy_surface_update_to_plane(surface, &srf_updates[i]);
 
-		if (update_type >= UPDATE_TYPE_MED) {
-			for (j = 0; j < dc->res_pool->pipe_count; j++) {
-				struct pipe_ctx *pipe_ctx =
-					&context->res_ctx.pipe_ctx[j];
-
-				if (pipe_ctx->plane_state != surface)
-					continue;
-
-				resource_build_scaling_params(pipe_ctx);
-			}
-		}
 	}
 
 	copy_stream_update_to_stream(dc, context, stream, stream_update);
-
-	if (update_type > UPDATE_TYPE_FAST) {
-		if (!dc->res_pool->funcs->validate_bandwidth(dc, context, false)) {
-			DC_ERROR("Mode validation failed for stream update!\n");
-			dc_release_state(context);
-			return;
-		}
-	}
 
 	commit_planes_for_stream(
 				dc,
@@ -2312,7 +2267,12 @@ void dc_set_power_state(
 	enum dc_acpi_cm_power_state power_state)
 {
 	struct kref refcount;
-	struct display_mode_lib *dml;
+	struct display_mode_lib *dml = kzalloc(sizeof(struct display_mode_lib),
+						GFP_KERNEL);
+
+	ASSERT(dml);
+	if (!dml)
+		return;
 
 	switch (power_state) {
 	case DC_ACPI_CM_POWER_STATE_D0:
@@ -2334,12 +2294,6 @@ void dc_set_power_state(
 		 * clean state, and dc hw programming optimizations will not
 		 * cause any trouble.
 		 */
-		dml = kzalloc(sizeof(struct display_mode_lib),
-				GFP_KERNEL);
-
-		ASSERT(dml);
-		if (!dml)
-			return;
 
 		/* Preserve refcount */
 		refcount = dc->current_state->refcount;
@@ -2353,10 +2307,10 @@ void dc_set_power_state(
 		dc->current_state->refcount = refcount;
 		dc->current_state->bw_ctx.dml = *dml;
 
-		kfree(dml);
-
 		break;
 	}
+
+	kfree(dml);
 }
 
 void dc_resume(struct dc *dc)

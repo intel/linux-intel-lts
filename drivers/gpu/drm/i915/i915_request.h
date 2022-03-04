@@ -26,7 +26,6 @@
 #define I915_REQUEST_H
 
 #include <linux/dma-fence.h>
-#include <linux/irq_work.h>
 #include <linux/lockdep.h>
 
 #include "gt/intel_context_types.h"
@@ -49,13 +48,6 @@ struct i915_capture_list {
 	struct i915_capture_list *next;
 	struct i915_vma *vma;
 };
-
-#define RQ_TRACE(rq, fmt, ...) do {					\
-	const struct i915_request *rq__ = (rq);				\
-	ENGINE_TRACE(rq__->engine, "fence %llx:%lld, current %d" fmt,	\
-		     rq__->fence.context, rq__->fence.seqno,		\
-		     hwsp_seqno(rq__), ##__VA_ARGS__);			\
-} while (0)
 
 enum {
 	/*
@@ -121,7 +113,7 @@ struct i915_request {
 	struct intel_engine_cs *engine;
 	struct intel_context *hw_context;
 	struct intel_ring *ring;
-	struct intel_timeline __rcu *timeline;
+	struct intel_timeline *timeline;
 	struct list_head signal_link;
 
 	/*
@@ -155,7 +147,6 @@ struct i915_request {
 	};
 	struct list_head execute_cb;
 	struct i915_sw_fence semaphore;
-	struct irq_work semaphore_work;
 
 	/*
 	 * A list of everyone we wait upon, and everyone who waits upon us.
@@ -220,14 +211,14 @@ struct i915_request {
 	 * on the active_list (of their final request).
 	 */
 	struct i915_capture_list *capture_list;
+	struct list_head active_list;
 
 	/** Time at which this request was emitted, in jiffies. */
 	unsigned long emitted_jiffies;
 
 	unsigned long flags;
-#define I915_REQUEST_WAITBOOST	BIT(0)
-#define I915_REQUEST_NOPREEMPT	BIT(1)
-#define I915_REQUEST_SENTINEL	BIT(2)
+#define I915_REQUEST_WAITBOOST BIT(0)
+#define I915_REQUEST_NOPREEMPT BIT(1)
 
 	/** timeline->request entry for this request */
 	struct list_head link;
@@ -260,7 +251,6 @@ struct i915_request *__i915_request_commit(struct i915_request *request);
 void __i915_request_queue(struct i915_request *rq,
 			  const struct i915_sched_attr *attr);
 
-bool i915_request_retire(struct i915_request *rq);
 void i915_request_retire_upto(struct i915_request *rq);
 
 static inline struct i915_request *
@@ -319,8 +309,10 @@ long i915_request_wait(struct i915_request *rq,
 		       long timeout)
 	__attribute__((nonnull(1)));
 #define I915_WAIT_INTERRUPTIBLE	BIT(0)
-#define I915_WAIT_PRIORITY	BIT(1) /* small priority bump for the request */
-#define I915_WAIT_ALL		BIT(2) /* used by i915_gem_object_wait() */
+#define I915_WAIT_LOCKED	BIT(1) /* struct_mutex held, handle GPU reset */
+#define I915_WAIT_PRIORITY	BIT(2) /* small priority bump for the request */
+#define I915_WAIT_ALL		BIT(3) /* used by i915_gem_object_wait() */
+#define I915_WAIT_FOR_IDLE_BOOST BIT(4)
 
 static inline bool i915_request_signaled(const struct i915_request *rq)
 {
@@ -450,29 +442,6 @@ static inline bool i915_request_has_nopreempt(const struct i915_request *rq)
 	return unlikely(rq->flags & I915_REQUEST_NOPREEMPT);
 }
 
-static inline bool i915_request_has_sentinel(const struct i915_request *rq)
-{
-	return unlikely(rq->flags & I915_REQUEST_SENTINEL);
-}
-
-static inline struct intel_timeline *
-i915_request_timeline(struct i915_request *rq)
-{
-	/* Valid only while the request is being constructed (or retired). */
-	return rcu_dereference_protected(rq->timeline,
-					 lockdep_is_held(&rcu_access_pointer(rq->timeline)->mutex));
-}
-
-static inline struct intel_timeline *
-i915_request_active_timeline(struct i915_request *rq)
-{
-	/*
-	 * When in use during submission, we are protected by a guarantee that
-	 * the context/timeline is pinned and must remain pinned until after
-	 * this submission.
-	 */
-	return rcu_dereference_protected(rq->timeline,
-					 lockdep_is_held(&rq->engine->active.lock));
-}
+bool i915_retire_requests(struct drm_i915_private *i915);
 
 #endif /* I915_REQUEST_H */

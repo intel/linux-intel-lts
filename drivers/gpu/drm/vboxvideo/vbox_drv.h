@@ -20,6 +20,8 @@
 #include <drm/drm_gem.h>
 #include <drm/drm_gem_vram_helper.h>
 
+#include <drm/drm_vram_mm_helper.h>
+
 #include "vboxvideo_guest.h"
 #include "vboxvideo_vbe.h"
 #include "hgsmi_ch_setup.h"

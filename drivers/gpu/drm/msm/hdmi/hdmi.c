@@ -97,13 +97,8 @@ static int msm_hdmi_get_phy(struct hdmi *hdmi)
 
 	of_node_put(phy_node);
 
-	if (!phy_pdev) {
+	if (!phy_pdev || !hdmi->phy) {
 		DRM_DEV_ERROR(&pdev->dev, "phy driver is not ready\n");
-		return -EPROBE_DEFER;
-	}
-	if (!hdmi->phy) {
-		DRM_DEV_ERROR(&pdev->dev, "phy driver is not ready\n");
-		put_device(&phy_pdev->dev);
 		return -EPROBE_DEFER;
 	}
 
@@ -332,9 +327,7 @@ int msm_hdmi_modeset_init(struct hdmi *hdmi,
 		goto fail;
 	}
 
-	ret = drm_bridge_attach(encoder, hdmi->bridge, NULL);
-	if (ret)
-		goto fail;
+	encoder->bridge = hdmi->bridge;
 
 	priv->bridges[priv->num_bridges++]       = hdmi->bridge;
 	priv->connectors[priv->num_connectors++] = hdmi->connector;

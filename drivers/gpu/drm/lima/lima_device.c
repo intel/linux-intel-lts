@@ -105,8 +105,7 @@ static int lima_clk_init(struct lima_device *dev)
 	if (err)
 		goto error_out0;
 
-	dev->reset = devm_reset_control_array_get_optional_shared(dev->dev);
-
+	dev->reset = devm_reset_control_get_optional(dev->dev, NULL);
 	if (IS_ERR(dev->reset)) {
 		err = PTR_ERR(dev->reset);
 		if (err != -EPROBE_DEFER)
@@ -294,7 +293,6 @@ int lima_device_init(struct lima_device *ldev)
 	struct resource *res;
 
 	dma_set_coherent_mask(ldev->dev, DMA_BIT_MASK(32));
-	dma_set_max_seg_size(ldev->dev, UINT_MAX);
 
 	err = lima_clk_init(ldev);
 	if (err)

@@ -84,13 +84,6 @@
 #define HDP_MEM_POWER_CTRL__RC_MEM_POWER_CTRL_EN_MASK	0x00010000L
 #define HDP_MEM_POWER_CTRL__RC_MEM_POWER_LS_EN_MASK		0x00020000L
 #define mmHDP_MEM_POWER_CTRL_BASE_IDX	0
-
-/* for Vega20/arcturus regiter offset change */
-#define	mmROM_INDEX_VG20				0x00e4
-#define	mmROM_INDEX_VG20_BASE_IDX			0
-#define	mmROM_DATA_VG20					0x00e5
-#define	mmROM_DATA_VG20_BASE_IDX			0
-
 /*
  * Indirect registers accessor
  */
@@ -274,14 +267,7 @@ static u32 soc15_get_config_memsize(struct amdgpu_device *adev)
 
 static u32 soc15_get_xclk(struct amdgpu_device *adev)
 {
-	u32 reference_clock = adev->clock.spll.reference_freq;
-
-	if (adev->asic_type == CHIP_RENOIR)
-		return 10000;
-	if (adev->asic_type == CHIP_RAVEN)
-		return reference_clock / 4;
-
-	return reference_clock;
+	return adev->clock.spll.reference_freq;
 }
 
 
@@ -313,8 +299,6 @@ static bool soc15_read_bios_from_rom(struct amdgpu_device *adev,
 {
 	u32 *dw_ptr;
 	u32 i, length_dw;
-	uint32_t rom_index_offset;
-	uint32_t rom_data_offset;
 
 	if (bios == NULL)
 		return false;
@@ -327,23 +311,11 @@ static bool soc15_read_bios_from_rom(struct amdgpu_device *adev,
 	dw_ptr = (u32 *)bios;
 	length_dw = ALIGN(length_bytes, 4) / 4;
 
-	switch (adev->asic_type) {
-	case CHIP_VEGA20:
-	case CHIP_ARCTURUS:
-		rom_index_offset = SOC15_REG_OFFSET(SMUIO, 0, mmROM_INDEX_VG20);
-		rom_data_offset = SOC15_REG_OFFSET(SMUIO, 0, mmROM_DATA_VG20);
-		break;
-	default:
-		rom_index_offset = SOC15_REG_OFFSET(SMUIO, 0, mmROM_INDEX);
-		rom_data_offset = SOC15_REG_OFFSET(SMUIO, 0, mmROM_DATA);
-		break;
-	}
-
 	/* set rom index to 0 */
-	WREG32(rom_index_offset, 0);
+	WREG32(SOC15_REG_OFFSET(SMUIO, 0, mmROM_INDEX), 0);
 	/* read out the rom data */
 	for (i = 0; i < length_dw; i++)
-		dw_ptr[i] = RREG32(rom_data_offset);
+		dw_ptr[i] = RREG32(SOC15_REG_OFFSET(SMUIO, 0, mmROM_DATA));
 
 	return true;
 }
@@ -1132,6 +1104,7 @@ static int soc15_common_early_init(void *handle)
 			adev->cg_flags = AMD_CG_SUPPORT_GFX_MGCG |
 				AMD_CG_SUPPORT_GFX_MGLS |
 				AMD_CG_SUPPORT_GFX_CP_LS |
+				AMD_CG_SUPPORT_GFX_3D_CGCG |
 				AMD_CG_SUPPORT_GFX_3D_CGLS |
 				AMD_CG_SUPPORT_GFX_CGCG |
 				AMD_CG_SUPPORT_GFX_CGLS |
@@ -1145,12 +1118,14 @@ static int soc15_common_early_init(void *handle)
 
 			adev->pg_flags = AMD_PG_SUPPORT_SDMA |
 				AMD_PG_SUPPORT_MMHUB |
-				AMD_PG_SUPPORT_VCN;
+				AMD_PG_SUPPORT_VCN |
+				AMD_PG_SUPPORT_VCN_DPG;
 		} else {
 			adev->cg_flags = AMD_CG_SUPPORT_GFX_MGCG |
 				AMD_CG_SUPPORT_GFX_MGLS |
 				AMD_CG_SUPPORT_GFX_RLC_LS |
 				AMD_CG_SUPPORT_GFX_CP_LS |
+				AMD_CG_SUPPORT_GFX_3D_CGCG |
 				AMD_CG_SUPPORT_GFX_3D_CGLS |
 				AMD_CG_SUPPORT_GFX_CGCG |
 				AMD_CG_SUPPORT_GFX_CGLS |

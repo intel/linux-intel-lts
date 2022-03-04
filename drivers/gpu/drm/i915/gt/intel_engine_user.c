@@ -160,10 +160,10 @@ static int legacy_ring_idx(const struct legacy_ring *ring)
 	};
 
 	if (GEM_DEBUG_WARN_ON(ring->class >= ARRAY_SIZE(map)))
-		return INVALID_ENGINE;
+		return -1;
 
 	if (GEM_DEBUG_WARN_ON(ring->instance >= map[ring->class].max))
-		return INVALID_ENGINE;
+		return -1;
 
 	return map[ring->class].base + ring->instance;
 }
@@ -171,15 +171,23 @@ static int legacy_ring_idx(const struct legacy_ring *ring)
 static void add_legacy_ring(struct legacy_ring *ring,
 			    struct intel_engine_cs *engine)
 {
+	int idx;
+
 	if (engine->gt != ring->gt || engine->class != ring->class) {
 		ring->gt = engine->gt;
 		ring->class = engine->class;
 		ring->instance = 0;
 	}
 
-	engine->legacy_idx = legacy_ring_idx(ring);
-	if (engine->legacy_idx != INVALID_ENGINE)
-		ring->instance++;
+	idx = legacy_ring_idx(ring);
+	if (unlikely(idx == -1))
+		return;
+
+	GEM_BUG_ON(idx >= ARRAY_SIZE(ring->gt->engine));
+	ring->gt->engine[idx] = engine;
+	ring->instance++;
+
+	engine->legacy_idx = idx;
 }
 
 void intel_engines_driver_register(struct drm_i915_private *i915)

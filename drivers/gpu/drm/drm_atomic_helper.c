@@ -31,7 +31,6 @@
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_atomic_uapi.h>
-#include <drm/drm_bridge.h>
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_device.h>
 #include <drm/drm_plane_helper.h>
@@ -98,6 +97,17 @@ drm_atomic_helper_plane_changed(struct drm_atomic_state *state,
 	}
 }
 
+/*
+ * For connectors that support multiple encoders, either the
+ * .atomic_best_encoder() or .best_encoder() operation must be implemented.
+ */
+static struct drm_encoder *
+pick_single_encoder_for_connector(struct drm_connector *connector)
+{
+	WARN_ON(connector->encoder_ids[1]);
+	return drm_encoder_find(connector->dev, NULL, connector->encoder_ids[0]);
+}
+
 static int handle_conflicting_encoders(struct drm_atomic_state *state,
 				       bool disable_conflicting_encoders)
 {
@@ -125,7 +135,7 @@ static int handle_conflicting_encoders(struct drm_atomic_state *state,
 		else if (funcs->best_encoder)
 			new_encoder = funcs->best_encoder(connector);
 		else
-			new_encoder = drm_connector_get_single_encoder(connector);
+			new_encoder = pick_single_encoder_for_connector(connector);
 
 		if (new_encoder) {
 			if (encoder_mask & drm_encoder_mask(new_encoder)) {
@@ -349,7 +359,7 @@ update_connector_routing(struct drm_atomic_state *state,
 	else if (funcs->best_encoder)
 		new_encoder = funcs->best_encoder(connector);
 	else
-		new_encoder = drm_connector_get_single_encoder(connector);
+		new_encoder = pick_single_encoder_for_connector(connector);
 
 	if (!new_encoder) {
 		DRM_DEBUG_ATOMIC("No suitable encoder found for [CONNECTOR:%d:%s]\n",
@@ -472,7 +482,7 @@ mode_fixup(struct drm_atomic_state *state)
 			continue;
 
 		funcs = crtc->helper_private;
-		if (!funcs || !funcs->mode_fixup)
+		if (!funcs->mode_fixup)
 			continue;
 
 		ret = funcs->mode_fixup(crtc, &new_crtc_state->mode,
@@ -2938,7 +2948,7 @@ int drm_atomic_helper_set_config(struct drm_mode_set *set,
 
 	ret = handle_conflicting_encoders(state, true);
 	if (ret)
-		goto fail;
+		return ret;
 
 	ret = drm_atomic_commit(state);
 

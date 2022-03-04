@@ -10,6 +10,7 @@
 #include <drm/drm_gem.h>
 #include <drm/drm_gem_vram_helper.h>
 #include <drm/drm_simple_kms_helper.h>
+#include <drm/drm_vram_mm_helper.h>
 
 /* ---------------------------------------------------------------------- */
 

@@ -13,7 +13,6 @@
 #include "i915_reg.h"
 
 enum pipe;
-enum port;
 struct drm_connector_state;
 struct drm_encoder;
 struct drm_i915_private;
@@ -77,7 +76,6 @@ int intel_dp_max_lane_count(struct intel_dp *intel_dp);
 int intel_dp_rate_select(struct intel_dp *intel_dp, int rate);
 void intel_power_sequencer_reset(struct drm_i915_private *dev_priv);
 u32 intel_dp_pack_aux(const u8 *src, int src_bytes);
-void intel_dp_unpack_aux(u32 src, u8 *dst, int dst_bytes);
 
 void intel_edp_drrs_enable(struct intel_dp *intel_dp,
 			   const struct intel_crtc_state *crtc_state);
@@ -109,14 +107,6 @@ bool intel_dp_read_dpcd(struct intel_dp *intel_dp);
 bool intel_dp_get_colorimetry_status(struct intel_dp *intel_dp);
 int intel_dp_link_required(int pixel_clock, int bpp);
 int intel_dp_max_data_rate(int max_link_clock, int max_lanes);
-bool intel_dp_needs_vsc_sdp(const struct intel_crtc_state *crtc_state,
-			    const struct drm_connector_state *conn_state);
-void intel_dp_vsc_enable(struct intel_dp *intel_dp,
-			 const struct intel_crtc_state *crtc_state,
-			 const struct drm_connector_state *conn_state);
-void intel_dp_hdr_metadata_enable(struct intel_dp *intel_dp,
-				  const struct intel_crtc_state *crtc_state,
-				  const struct drm_connector_state *conn_state);
 bool intel_digital_port_connected(struct intel_encoder *encoder);
 
 static inline unsigned int intel_dp_unused_lane_mask(int lane_count)

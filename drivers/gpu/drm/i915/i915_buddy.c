@@ -38,7 +38,6 @@ int __init i915_global_buddy_init(void)
 	if (!global.slab_blocks)
 		return -ENOMEM;
 
-	i915_global_register(&global.base);
 	return 0;
 }
 

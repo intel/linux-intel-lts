@@ -179,7 +179,7 @@ nv04_display_destroy(struct drm_device *dev)
 	nvif_notify_fini(&disp->flip);
 
 	nouveau_display(dev)->priv = NULL;
-	vfree(disp);
+	kfree(disp);
 
 	nvif_object_unmap(&drm->client.device.object);
 }
@@ -197,7 +197,7 @@ nv04_display_create(struct drm_device *dev)
 	struct nv04_display *disp;
 	int i, ret;
 
-	disp = vzalloc(sizeof(*disp));
+	disp = kzalloc(sizeof(*disp), GFP_KERNEL);
 	if (!disp)
 		return -ENOMEM;
 
@@ -256,7 +256,7 @@ nv04_display_create(struct drm_device *dev)
 
 	list_for_each_entry_safe(connector, ct,
 				 &dev->mode_config.connector_list, head) {
-		if (!connector->possible_encoders) {
+		if (!connector->encoder_ids[0]) {
 			NV_WARN(drm, "%s has no encoders, removing\n",
 				connector->name);
 			connector->funcs->destroy(connector);

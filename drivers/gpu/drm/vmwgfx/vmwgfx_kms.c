@@ -2570,7 +2570,7 @@ void vmw_kms_helper_validation_finish(struct vmw_private *dev_priv,
 	if (file_priv)
 		vmw_execbuf_copy_fence_user(dev_priv, vmw_fpriv(file_priv),
 					    ret, user_fence_rep, fence,
-					    handle, -1);
+					    handle, -1, NULL);
 	if (out_fence)
 		*out_fence = fence;
 	else
@@ -2666,7 +2666,7 @@ int vmw_kms_fbdev_init_data(struct vmw_private *dev_priv,
 		++i;
 	}
 
-	if (&con->head == &dev_priv->dev->mode_config.connector_list) {
+	if (i != unit) {
 		DRM_ERROR("Could not find initial display unit.\n");
 		ret = -EINVAL;
 		goto out_unlock;
@@ -2690,13 +2690,13 @@ int vmw_kms_fbdev_init_data(struct vmw_private *dev_priv,
 			break;
 	}
 
-	if (&mode->head == &con->modes) {
+	if (mode->type & DRM_MODE_TYPE_PREFERRED)
+		*p_mode = mode;
+	else {
 		WARN_ONCE(true, "Could not find initial preferred mode.\n");
 		*p_mode = list_first_entry(&con->modes,
 					   struct drm_display_mode,
 					   head);
-	} else {
-		*p_mode = mode;
 	}
 
  out_unlock:

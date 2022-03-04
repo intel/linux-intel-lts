@@ -426,8 +426,8 @@ static int rpi_touchscreen_probe(struct i2c_client *i2c,
 		return PTR_ERR(ts->dsi);
 	}
 
-	drm_panel_init(&ts->base, dev, &rpi_touchscreen_funcs,
-		       DRM_MODE_CONNECTOR_DSI);
+	ts->base.dev = dev;
+	ts->base.funcs = &rpi_touchscreen_funcs;
 
 	/* This appears last, as it's what will unblock the DSI host
 	 * driver's component bind function.
@@ -452,6 +452,7 @@ static int rpi_touchscreen_remove(struct i2c_client *i2c)
 	drm_panel_remove(&ts->base);
 
 	mipi_dsi_device_unregister(ts->dsi);
+	kfree(ts->dsi);
 
 	return 0;
 }

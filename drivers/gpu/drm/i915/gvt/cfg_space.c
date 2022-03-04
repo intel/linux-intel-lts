@@ -70,7 +70,6 @@ static void vgpu_pci_cfg_mem_write(struct intel_vgpu *vgpu, unsigned int off,
 {
 	u8 *cfg_base = vgpu_cfg_space(vgpu);
 	u8 mask, new, old;
-	pci_power_t pwr;
 	int i = 0;
 
 	for (; i < bytes && (off + i < sizeof(pci_cfg_space_rw_bmp)); i++) {
@@ -92,15 +91,6 @@ static void vgpu_pci_cfg_mem_write(struct intel_vgpu *vgpu, unsigned int off,
 	/* For other configuration space directly copy as it is. */
 	if (i < bytes)
 		memcpy(cfg_base + off + i, src + i, bytes - i);
-
-	if (off == vgpu->cfg_space.pmcsr_off && vgpu->cfg_space.pmcsr_off) {
-		pwr = (pci_power_t __force)(*(u16 *)(&vgpu_cfg_space(vgpu)[off])
-			& PCI_PM_CTRL_STATE_MASK);
-		if (pwr == PCI_D3hot)
-			vgpu->d3_entered = true;
-		gvt_dbg_core("vgpu-%d power status changed to %d\n",
-			     vgpu->id, pwr);
-	}
 }
 
 /**
@@ -121,13 +111,6 @@ int intel_vgpu_emulate_cfg_read(struct intel_vgpu *vgpu, unsigned int offset,
 
 	if (WARN_ON(offset + bytes > vgpu->gvt->device_info.cfg_space_size))
 		return -EINVAL;
-
-	if (rounddown(offset, 4) == INTEL_GVT_PCI_OPREGION) {
-		if (!vgpu_opregion(vgpu)->mapped) {
-			gvt_dbg_dpy("set up virtual opregion mapping\n");
-			map_vgpu_opregion(vgpu, true);
-		}
-	}
 
 	memcpy(p_data, vgpu_cfg_space(vgpu) + offset, bytes);
 	return 0;
@@ -378,7 +361,6 @@ void intel_vgpu_init_cfg_space(struct intel_vgpu *vgpu,
 	struct intel_gvt *gvt = vgpu->gvt;
 	const struct intel_gvt_device_info *info = &gvt->device_info;
 	u16 *gmch_ctl;
-	u8 next;
 
 	memcpy(vgpu_cfg_space(vgpu), gvt->firmware.cfg_space,
 	       info->cfg_space_size);
@@ -414,19 +396,6 @@ void intel_vgpu_init_cfg_space(struct intel_vgpu *vgpu,
 				pci_resource_len(gvt->dev_priv->drm.pdev, 2);
 
 	memset(vgpu_cfg_space(vgpu) + PCI_ROM_ADDRESS, 0, 4);
-
-	/* PM Support */
-	vgpu->cfg_space.pmcsr_off = 0;
-	if (vgpu_cfg_space(vgpu)[PCI_STATUS] & PCI_STATUS_CAP_LIST) {
-		next = vgpu_cfg_space(vgpu)[PCI_CAPABILITY_LIST];
-		do {
-			if (vgpu_cfg_space(vgpu)[next + PCI_CAP_LIST_ID] == PCI_CAP_ID_PM) {
-				vgpu->cfg_space.pmcsr_off = next + PCI_PM_CTRL;
-				break;
-			}
-			next = vgpu_cfg_space(vgpu)[next + PCI_CAP_LIST_NEXT];
-		} while (next);
-	}
 }
 
 /**

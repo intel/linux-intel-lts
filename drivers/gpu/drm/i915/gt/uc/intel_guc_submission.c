@@ -6,13 +6,12 @@
 #include <linux/circ_buf.h>
 
 #include "gem/i915_gem_context.h"
+
 #include "gt/intel_context.h"
 #include "gt/intel_engine_pm.h"
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_pm.h"
 #include "gt/intel_lrc_reg.h"
-#include "gt/intel_ring.h"
-
 #include "intel_guc_submission.h"
 
 #include "i915_drv.h"
@@ -29,12 +28,6 @@ enum {
 
 /**
  * DOC: GuC-based command submission
- *
- * IMPORTANT NOTE: GuC submission is currently not supported in i915. The GuC
- * firmware is moving to an updated submission interface and we plan to
- * turn submission back on when that lands. The below documentation (and related
- * code) matches the old submission model and will be updated as part of the
- * upgrade to the new flow.
  *
  * GuC client:
  * A intel_guc_client refers to a submission path through GuC. Currently, there
@@ -631,7 +624,7 @@ static void guc_reset_prepare(struct intel_engine_cs *engine)
 {
 	struct intel_engine_execlists * const execlists = &engine->execlists;
 
-	ENGINE_TRACE(engine, "\n");
+	GEM_TRACE("%s\n", engine->name);
 
 	/*
 	 * Prevent request submission to the hardware until we have
@@ -690,7 +683,7 @@ static void guc_cancel_requests(struct intel_engine_cs *engine)
 	struct rb_node *rb;
 	unsigned long flags;
 
-	ENGINE_TRACE(engine, "\n");
+	GEM_TRACE("%s\n", engine->name);
 
 	/*
 	 * Before we call engine->cancel_requests(), we should have exclusive
@@ -751,8 +744,8 @@ static void guc_reset_finish(struct intel_engine_cs *engine)
 		/* And kick in case we missed a new request submission. */
 		tasklet_hi_schedule(&execlists->tasklet);
 
-	ENGINE_TRACE(engine, "depth->%d\n",
-		     atomic_read(&execlists->tasklet.count));
+	GEM_TRACE("%s: depth->%d\n", engine->name,
+		  atomic_read(&execlists->tasklet.count));
 }
 
 /*
@@ -1011,7 +1004,7 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 
 static void guc_interrupts_capture(struct intel_gt *gt)
 {
-	struct intel_rps *rps = &gt->rps;
+	struct intel_rps *rps = &gt->i915->gt_pm.rps;
 	struct intel_uncore *uncore = gt->uncore;
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
@@ -1021,7 +1014,7 @@ static void guc_interrupts_capture(struct intel_gt *gt)
 	 * to GuC
 	 */
 	irqs = _MASKED_BIT_ENABLE(GFX_INTERRUPT_STEERING);
-	for_each_engine(engine, gt, id)
+	for_each_engine(engine, gt->i915, id)
 		ENGINE_WRITE(engine, RING_MODE_GEN7, irqs);
 
 	/* route USER_INTERRUPT to Host, all others are sent to GuC. */
@@ -1057,7 +1050,7 @@ static void guc_interrupts_capture(struct intel_gt *gt)
 
 static void guc_interrupts_release(struct intel_gt *gt)
 {
-	struct intel_rps *rps = &gt->rps;
+	struct intel_rps *rps = &gt->i915->gt_pm.rps;
 	struct intel_uncore *uncore = gt->uncore;
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
@@ -1069,7 +1062,7 @@ static void guc_interrupts_release(struct intel_gt *gt)
 	 */
 	irqs = _MASKED_FIELD(GFX_FORWARD_VBLANK_MASK, GFX_FORWARD_VBLANK_NEVER);
 	irqs |= _MASKED_BIT_DISABLE(GFX_INTERRUPT_STEERING);
-	for_each_engine(engine, gt, id)
+	for_each_engine(engine, gt->i915, id)
 		ENGINE_WRITE(engine, RING_MODE_GEN7, irqs);
 
 	/* route all GT interrupts to the host */
@@ -1126,7 +1119,7 @@ int intel_guc_submission_enable(struct intel_guc *guc)
 	enum intel_engine_id id;
 	int err;
 
-	err = i915_inject_probe_error(gt->i915, -ENXIO);
+	err = i915_inject_load_error(gt->i915, -ENXIO);
 	if (err)
 		return err;
 
@@ -1152,7 +1145,7 @@ int intel_guc_submission_enable(struct intel_guc *guc)
 	/* Take over from manual control of ELSP (execlists) */
 	guc_interrupts_capture(gt);
 
-	for_each_engine(engine, gt, id) {
+	for_each_engine(engine, gt->i915, id) {
 		engine->set_default_submission = guc_set_default_submission;
 		engine->set_default_submission(engine);
 	}

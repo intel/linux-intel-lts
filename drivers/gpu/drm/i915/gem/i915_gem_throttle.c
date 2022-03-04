@@ -50,8 +50,10 @@ i915_gem_throttle_ioctl(struct drm_device *dev, void *data,
 		if (time_after_eq(request->emitted_jiffies, recent_enough))
 			break;
 
-		if (target && xchg(&target->file_priv, NULL))
+		if (target) {
 			list_del(&target->client_link);
+			target->file_priv = NULL;
+		}
 
 		target = request;
 	}

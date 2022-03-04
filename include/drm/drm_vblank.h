@@ -109,20 +109,9 @@ struct drm_vblank_crtc {
 	seqlock_t seqlock;
 
 	/**
-	 * @count:
-	 *
-	 * Current software vblank counter.
-	 *
-	 * Note that for a given vblank counter value drm_crtc_handle_vblank()
-	 * and drm_crtc_vblank_count() or drm_crtc_vblank_count_and_time()
-	 * provide a barrier: Any writes done before calling
-	 * drm_crtc_handle_vblank() will be visible to callers of the later
-	 * functions, iff the vblank count is the same or a later one.
-	 *
-	 * IMPORTANT: This guarantee requires barriers, therefor never access
-	 * this field directly. Use drm_crtc_vblank_count() instead.
+	 * @count: Current software vblank counter.
 	 */
-	atomic64_t count;
+	u64 count;
 	/**
 	 * @time: Vblank timestamp corresponding to @count.
 	 */

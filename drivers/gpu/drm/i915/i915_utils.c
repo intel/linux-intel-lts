@@ -8,8 +8,9 @@
 #include "i915_drv.h"
 #include "i915_utils.h"
 
-#define FDO_BUG_URL "https://gitlab.freedesktop.org/drm/intel/-/wikis/How-to-file-i915-bugs"
-#define FDO_BUG_MSG "Please file a bug on drm/i915; see " FDO_BUG_URL " for details."
+#define FDO_BUG_URL "https://bugs.freedesktop.org/enter_bug.cgi?product=DRI"
+#define FDO_BUG_MSG "Please file a bug at " FDO_BUG_URL " against DRM/Intel " \
+		    "providing the dmesg log by booting with drm.debug=0xf"
 
 void
 __i915_printk(struct drm_i915_private *dev_priv, const char *level,
@@ -53,54 +54,25 @@ __i915_printk(struct drm_i915_private *dev_priv, const char *level,
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG)
 static unsigned int i915_probe_fail_count;
 
-int __i915_inject_probe_error(struct drm_i915_private *i915, int err,
-			      const char *func, int line)
+int __i915_inject_load_error(struct drm_i915_private *i915, int err,
+			     const char *func, int line)
 {
-	if (i915_probe_fail_count >= i915_modparams.inject_probe_failure)
+	if (i915_probe_fail_count >= i915_modparams.inject_load_failure)
 		return 0;
 
-	if (++i915_probe_fail_count < i915_modparams.inject_probe_failure)
+	if (++i915_probe_fail_count < i915_modparams.inject_load_failure)
 		return 0;
 
 	__i915_printk(i915, KERN_INFO,
 		      "Injecting failure %d at checkpoint %u [%s:%d]\n",
-		      err, i915_modparams.inject_probe_failure, func, line);
-	i915_modparams.inject_probe_failure = 0;
+		      err, i915_modparams.inject_load_failure, func, line);
+	i915_modparams.inject_load_failure = 0;
 	return err;
 }
 
 bool i915_error_injected(void)
 {
-	return i915_probe_fail_count && !i915_modparams.inject_probe_failure;
+	return i915_probe_fail_count && !i915_modparams.inject_load_failure;
 }
 
 #endif
-
-void cancel_timer(struct timer_list *t)
-{
-	if (!READ_ONCE(t->expires))
-		return;
-
-	del_timer(t);
-	WRITE_ONCE(t->expires, 0);
-}
-
-void set_timer_ms(struct timer_list *t, unsigned long timeout)
-{
-	if (!timeout) {
-		cancel_timer(t);
-		return;
-	}
-
-	timeout = msecs_to_jiffies_timeout(timeout);
-
-	/*
-	 * Paranoia to make sure the compiler computes the timeout before
-	 * loading 'jiffies' as jiffies is volatile and may be updated in
-	 * the background by a timer tick. All to reduce the complexity
-	 * of the addition and reduce the risk of losing a jiffie.
-	 */
-	barrier();
-
-	mod_timer(t, jiffies + timeout);
-}

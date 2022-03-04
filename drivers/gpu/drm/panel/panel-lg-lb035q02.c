@@ -196,8 +196,9 @@ static int lb035q02_probe(struct spi_device *spi)
 	if (ret < 0)
 		return ret;
 
-	drm_panel_init(&lcd->panel, &lcd->spi->dev, &lb035q02_funcs,
-		       DRM_MODE_CONNECTOR_DPI);
+	drm_panel_init(&lcd->panel);
+	lcd->panel.dev = &lcd->spi->dev;
+	lcd->panel.funcs = &lb035q02_funcs;
 
 	return drm_panel_add(&lcd->panel);
 }

@@ -27,6 +27,7 @@
  */
 
 #include <linux/pm_runtime.h>
+#include <linux/vgaarb.h>
 
 #include <drm/drm_print.h>
 

@@ -32,7 +32,6 @@ struct panfrost_job {
 
 	/* Exclusive fences we have taken from the BOs to wait for */
 	struct dma_fence **implicit_fences;
-	struct panfrost_gem_mapping **mappings;
 	struct drm_gem_object **bos;
 	u32 bo_count;
 

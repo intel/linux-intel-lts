@@ -240,10 +240,8 @@ static int submit_pin_objects(struct etnaviv_gem_submit *submit)
 		}
 
 		if ((submit->flags & ETNA_SUBMIT_SOFTPIN) &&
-		     submit->bos[i].va != mapping->iova) {
-			etnaviv_gem_mapping_unreference(mapping);
+		     submit->bos[i].va != mapping->iova)
 			return -EINVAL;
-		}
 
 		atomic_inc(&etnaviv_obj->gpu_active);
 
@@ -471,12 +469,6 @@ int etnaviv_ioctl_gem_submit(struct drm_device *dev, void *data,
 		return -EINVAL;
 	}
 
-	if (args->stream_size > SZ_128K || args->nr_relocs > SZ_128K ||
-	    args->nr_bos > SZ_128K || args->nr_pmrs > 128) {
-		DRM_ERROR("submit arguments out of size limits\n");
-		return -EINVAL;
-	}
-
 	/*
 	 * Copy the command submission and bo array to kernel space in
 	 * one go, and do this outside of any locks.
@@ -540,7 +532,8 @@ int etnaviv_ioctl_gem_submit(struct drm_device *dev, void *data,
 		goto err_submit_objects;
 
 	submit->ctx = file->driver_priv;
-	submit->mmu_context = etnaviv_iommu_context_get(submit->ctx->mmu);
+	etnaviv_iommu_context_get(submit->ctx->mmu);
+	submit->mmu_context = submit->ctx->mmu;
 	submit->exec_state = args->exec_state;
 	submit->flags = args->flags;
 

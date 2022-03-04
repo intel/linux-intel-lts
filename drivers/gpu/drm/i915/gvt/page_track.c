@@ -176,7 +176,7 @@ int intel_vgpu_page_track_handler(struct intel_vgpu *vgpu, u64 gpa,
 	} else {
 		ret = page_track->handler(page_track, gpa, data, bytes);
 		if (ret)
-			gvt_dbg_mm("guest page write error, gpa %llx\n", gpa);
+			gvt_err("guest page write error, gpa %llx\n", gpa);
 	}
 
 out:

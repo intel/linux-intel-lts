@@ -1272,19 +1272,20 @@ struct drm_dp_aux_msg {
 
 struct cec_adapter;
 struct edid;
-struct drm_connector;
 
 /**
  * struct drm_dp_aux_cec - DisplayPort CEC-Tunneling-over-AUX
  * @lock: mutex protecting this struct
  * @adap: the CEC adapter for CEC-Tunneling-over-AUX support.
- * @connector: the connector this CEC adapter is associated with
+ * @name: name of the CEC adapter
+ * @parent: parent device of the CEC adapter
  * @unregister_work: unregister the CEC adapter
  */
 struct drm_dp_aux_cec {
 	struct mutex lock;
 	struct cec_adapter *adap;
-	struct drm_connector *connector;
+	const char *name;
+	struct device *parent;
 	struct delayed_work unregister_work;
 };
 
@@ -1475,13 +1476,6 @@ enum drm_dp_quirk {
 	 * The driver should ignore SINK_COUNT during detection.
 	 */
 	DP_DPCD_QUIRK_NO_SINK_COUNT,
-	/**
-	 * @DP_DPCD_QUIRK_DSC_WITHOUT_VIRTUAL_DPCD:
-	 *
-	 * The device supports MST DSC despite not supporting Virtual DPCD.
-	 * The DSC caps can be read from the physical aux instead.
-	 */
-	DP_DPCD_QUIRK_DSC_WITHOUT_VIRTUAL_DPCD,
 };
 
 /**
@@ -1499,8 +1493,8 @@ drm_dp_has_quirk(const struct drm_dp_desc *desc, enum drm_dp_quirk quirk)
 
 #ifdef CONFIG_DRM_DP_CEC
 void drm_dp_cec_irq(struct drm_dp_aux *aux);
-void drm_dp_cec_register_connector(struct drm_dp_aux *aux,
-				   struct drm_connector *connector);
+void drm_dp_cec_register_connector(struct drm_dp_aux *aux, const char *name,
+				   struct device *parent);
 void drm_dp_cec_unregister_connector(struct drm_dp_aux *aux);
 void drm_dp_cec_set_edid(struct drm_dp_aux *aux, const struct edid *edid);
 void drm_dp_cec_unset_edid(struct drm_dp_aux *aux);
@@ -1509,9 +1503,9 @@ static inline void drm_dp_cec_irq(struct drm_dp_aux *aux)
 {
 }
 
-static inline void
-drm_dp_cec_register_connector(struct drm_dp_aux *aux,
-			      struct drm_connector *connector)
+static inline void drm_dp_cec_register_connector(struct drm_dp_aux *aux,
+						 const char *name,
+						 struct device *parent)
 {
 }
 

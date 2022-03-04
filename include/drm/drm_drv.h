@@ -778,6 +778,8 @@ struct drm_driver {
 	int dev_priv_size;
 };
 
+extern unsigned int drm_debug;
+
 int drm_dev_init(struct drm_device *dev,
 		 struct drm_driver *driver,
 		 struct device *parent);

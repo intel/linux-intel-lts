@@ -35,6 +35,7 @@
 #include <drm/drm_gem_vram_helper.h>
 #include <drm/drm_pci.h>
 #include <drm/drm_probe_helper.h>
+#include <drm/drm_vram_mm_helper.h>
 
 #include "ast_drv.h"
 

@@ -63,13 +63,13 @@ enum gpio_result dal_gpio_open_ex(
 	enum gpio_mode mode)
 {
 	if (gpio->pin) {
-		BREAK_TO_DEBUGGER();
+		ASSERT_CRITICAL(false);
 		return GPIO_RESULT_ALREADY_OPENED;
 	}
 
 	// No action if allocation failed during gpio construct
 	if (!gpio->hw_container.ddc) {
-		BREAK_TO_DEBUGGER();
+		ASSERT_CRITICAL(false);
 		return GPIO_RESULT_NON_SPECIFIC_ERROR;
 	}
 	gpio->mode = mode;

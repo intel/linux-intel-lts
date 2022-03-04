@@ -6,12 +6,7 @@
 #include "i915_drv.h"
 #include "intel_gt.h"
 #include "intel_gt_pm.h"
-#include "intel_gt_requests.h"
-#include "intel_mocs.h"
-#include "intel_rc6.h"
-#include "intel_rps.h"
 #include "intel_uncore.h"
-#include "intel_pm.h"
 
 void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
 {
@@ -20,114 +15,18 @@ void intel_gt_init_early(struct intel_gt *gt, struct drm_i915_private *i915)
 
 	spin_lock_init(&gt->irq_lock);
 
-	mutex_init(&gt->tlb_invalidate_lock);
-
 	INIT_LIST_HEAD(&gt->closed_vma);
 	spin_lock_init(&gt->closed_lock);
 
+	intel_gt_init_hangcheck(gt);
 	intel_gt_init_reset(gt);
-	intel_gt_init_requests(gt);
-	intel_gt_init_timelines(gt);
 	intel_gt_pm_init_early(gt);
-
-	intel_rps_init_early(&gt->rps);
 	intel_uc_init_early(&gt->uc);
 }
 
-void intel_gt_init_hw_early(struct intel_gt *gt, struct i915_ggtt *ggtt)
+void intel_gt_init_hw(struct drm_i915_private *i915)
 {
-	gt->ggtt = ggtt;
-
-	intel_gt_sanitize(gt, false);
-}
-
-static void init_unused_ring(struct intel_gt *gt, u32 base)
-{
-	struct intel_uncore *uncore = gt->uncore;
-
-	intel_uncore_write(uncore, RING_CTL(base), 0);
-	intel_uncore_write(uncore, RING_HEAD(base), 0);
-	intel_uncore_write(uncore, RING_TAIL(base), 0);
-	intel_uncore_write(uncore, RING_START(base), 0);
-}
-
-static void init_unused_rings(struct intel_gt *gt)
-{
-	struct drm_i915_private *i915 = gt->i915;
-
-	if (IS_I830(i915)) {
-		init_unused_ring(gt, PRB1_BASE);
-		init_unused_ring(gt, SRB0_BASE);
-		init_unused_ring(gt, SRB1_BASE);
-		init_unused_ring(gt, SRB2_BASE);
-		init_unused_ring(gt, SRB3_BASE);
-	} else if (IS_GEN(i915, 2)) {
-		init_unused_ring(gt, SRB0_BASE);
-		init_unused_ring(gt, SRB1_BASE);
-	} else if (IS_GEN(i915, 3)) {
-		init_unused_ring(gt, PRB1_BASE);
-		init_unused_ring(gt, PRB2_BASE);
-	}
-}
-
-int intel_gt_init_hw(struct intel_gt *gt)
-{
-	struct drm_i915_private *i915 = gt->i915;
-	struct intel_uncore *uncore = gt->uncore;
-	int ret;
-
-	BUG_ON(!i915->kernel_context);
-	ret = intel_gt_terminally_wedged(gt);
-	if (ret)
-		return ret;
-
-	gt->last_init_time = ktime_get();
-
-	/* Double layer security blanket, see i915_gem_init() */
-	intel_uncore_forcewake_get(uncore, FORCEWAKE_ALL);
-
-	if (HAS_EDRAM(i915) && INTEL_GEN(i915) < 9)
-		intel_uncore_rmw(uncore, HSW_IDICR, 0, IDIHASHMSK(0xf));
-
-	if (IS_HASWELL(i915))
-		intel_uncore_write(uncore,
-				   MI_PREDICATE_RESULT_2,
-				   IS_HSW_GT3(i915) ?
-				   LOWER_SLICE_ENABLED : LOWER_SLICE_DISABLED);
-
-	/* Apply the GT workarounds... */
-	intel_gt_apply_workarounds(gt);
-	/* ...and determine whether they are sticking. */
-	intel_gt_verify_workarounds(gt, "init");
-
-	intel_gt_init_swizzling(gt);
-
-	/*
-	 * At least 830 can leave some of the unused rings
-	 * "active" (ie. head != tail) after resume which
-	 * will prevent c3 entry. Makes sure all unused rings
-	 * are totally idle.
-	 */
-	init_unused_rings(gt);
-
-	ret = i915_ppgtt_init_hw(gt);
-	if (ret) {
-		DRM_ERROR("Enabling PPGTT failed (%d)\n", ret);
-		goto out;
-	}
-
-	/* We can't enable contexts until all firmware is loaded */
-	ret = intel_uc_init_hw(&gt->uc);
-	if (ret) {
-		i915_probe_error(i915, "Enabling uc failed (%d)\n", ret);
-		goto out;
-	}
-
-	intel_mocs_init(gt);
-
-out:
-	intel_uncore_forcewake_put(uncore, FORCEWAKE_ALL);
-	return ret;
+	i915->gt.ggtt = &i915->ggtt;
 }
 
 static void rmw_set(struct intel_uncore *uncore, i915_reg_t reg, u32 set)
@@ -190,7 +89,7 @@ intel_gt_clear_error_registers(struct intel_gt *gt,
 		struct intel_engine_cs *engine;
 		enum intel_engine_id id;
 
-		for_each_engine_masked(engine, gt, engine_mask, id)
+		for_each_engine_masked(engine, i915, engine_mask, id)
 			gen8_clear_engine_error_register(engine);
 	}
 }
@@ -201,7 +100,7 @@ static void gen6_check_faults(struct intel_gt *gt)
 	enum intel_engine_id id;
 	u32 fault;
 
-	for_each_engine(engine, gt, id) {
+	for_each_engine(engine, gt->i915, id) {
 		fault = GEN6_RING_FAULT_REG_READ(engine);
 		if (fault & RING_FAULT_VALID) {
 			DRM_DEBUG_DRIVER("Unexpected fault\n"
@@ -277,7 +176,7 @@ void intel_gt_check_and_clear_faults(struct intel_gt *gt)
 
 void intel_gt_flush_ggtt_writes(struct intel_gt *gt)
 {
-	struct intel_uncore *uncore = gt->uncore;
+	struct drm_i915_private *i915 = gt->i915;
 	intel_wakeref_t wakeref;
 
 	/*
@@ -301,18 +200,18 @@ void intel_gt_flush_ggtt_writes(struct intel_gt *gt)
 
 	wmb();
 
-	if (INTEL_INFO(gt->i915)->has_coherent_ggtt)
+	if (INTEL_INFO(i915)->has_coherent_ggtt)
 		return;
 
 	intel_gt_chipset_flush(gt);
 
-	with_intel_runtime_pm(uncore->rpm, wakeref) {
-		unsigned long flags;
+	with_intel_runtime_pm(&i915->runtime_pm, wakeref) {
+		struct intel_uncore *uncore = gt->uncore;
 
-		spin_lock_irqsave(&uncore->lock, flags);
+		spin_lock_irq(&uncore->lock);
 		intel_uncore_posting_read_fw(uncore,
 					     RING_HEAD(RENDER_RING_BASE));
-		spin_unlock_irqrestore(&uncore->lock, flags);
+		spin_unlock_irq(&uncore->lock);
 	}
 }
 
@@ -323,12 +222,7 @@ void intel_gt_chipset_flush(struct intel_gt *gt)
 		intel_gtt_chipset_flush();
 }
 
-void intel_gt_driver_register(struct intel_gt *gt)
-{
-	intel_rps_driver_register(&gt->rps);
-}
-
-static int intel_gt_init_scratch(struct intel_gt *gt, unsigned int size)
+int intel_gt_init_scratch(struct intel_gt *gt, unsigned int size)
 {
 	struct drm_i915_private *i915 = gt->i915;
 	struct drm_i915_gem_object *obj;
@@ -336,7 +230,7 @@ static int intel_gt_init_scratch(struct intel_gt *gt, unsigned int size)
 	int ret;
 
 	obj = i915_gem_object_create_stolen(i915, size);
-	if (IS_ERR(obj))
+	if (!obj)
 		obj = i915_gem_object_create_internal(i915, size);
 	if (IS_ERR(obj)) {
 		DRM_ERROR("Failed to allocate scratch page\n");
@@ -362,140 +256,13 @@ err_unref:
 	return ret;
 }
 
-static void intel_gt_fini_scratch(struct intel_gt *gt)
+void intel_gt_fini_scratch(struct intel_gt *gt)
 {
 	i915_vma_unpin_and_release(&gt->scratch, 0);
-}
-
-int intel_gt_init(struct intel_gt *gt)
-{
-	int err;
-
-	err = intel_gt_init_scratch(gt, IS_GEN(gt->i915, 2) ? SZ_256K : SZ_4K);
-	if (err)
-		return err;
-
-	intel_gt_pm_init(gt);
-
-	return 0;
-}
-
-void intel_gt_driver_remove(struct intel_gt *gt)
-{
-	GEM_BUG_ON(gt->awake);
-}
-
-void intel_gt_driver_unregister(struct intel_gt *gt)
-{
-	intel_rps_driver_unregister(&gt->rps);
-}
-
-void intel_gt_driver_release(struct intel_gt *gt)
-{
-	intel_gt_pm_fini(gt);
-	intel_gt_fini_scratch(gt);
 }
 
 void intel_gt_driver_late_release(struct intel_gt *gt)
 {
 	intel_uc_driver_late_release(&gt->uc);
 	intel_gt_fini_reset(gt);
-	intel_gt_fini_timelines(gt);
-}
-
-struct reg_and_bit {
-	i915_reg_t reg;
-	u32 bit;
-};
-
-static struct reg_and_bit
-get_reg_and_bit(const struct intel_engine_cs *engine, const bool gen8,
-		const i915_reg_t *regs, const unsigned int num)
-{
-	const unsigned int class = engine->class;
-	struct reg_and_bit rb = { };
-
-	if (WARN_ON_ONCE(class >= num || !regs[class].reg))
-		return rb;
-
-	rb.reg = regs[class];
-	if (gen8 && class == VIDEO_DECODE_CLASS)
-		rb.reg.reg += 4 * engine->instance; /* GEN8_M2TCR */
-	else
-		rb.bit = engine->instance;
-
-	rb.bit = BIT(rb.bit);
-
-	return rb;
-}
-
-void intel_gt_invalidate_tlbs(struct intel_gt *gt)
-{
-	static const i915_reg_t gen8_regs[] = {
-		[RENDER_CLASS]			= GEN8_RTCR,
-		[VIDEO_DECODE_CLASS]		= GEN8_M1TCR, /* , GEN8_M2TCR */
-		[VIDEO_ENHANCEMENT_CLASS]	= GEN8_VTCR,
-		[COPY_ENGINE_CLASS]		= GEN8_BTCR,
-	};
-	static const i915_reg_t gen12_regs[] = {
-		[RENDER_CLASS]			= GEN12_GFX_TLB_INV_CR,
-		[VIDEO_DECODE_CLASS]		= GEN12_VD_TLB_INV_CR,
-		[VIDEO_ENHANCEMENT_CLASS]	= GEN12_VE_TLB_INV_CR,
-		[COPY_ENGINE_CLASS]		= GEN12_BLT_TLB_INV_CR,
-	};
-	struct drm_i915_private *i915 = gt->i915;
-	struct intel_uncore *uncore = gt->uncore;
-	struct intel_engine_cs *engine;
-	enum intel_engine_id id;
-	const i915_reg_t *regs;
-	unsigned int num = 0;
-
-	if (I915_SELFTEST_ONLY(gt->awake == -ENODEV))
-		return;
-
-	if (INTEL_GEN(i915) == 12) {
-		regs = gen12_regs;
-		num = ARRAY_SIZE(gen12_regs);
-	} else if (INTEL_GEN(i915) >= 8 && INTEL_GEN(i915) <= 11) {
-		regs = gen8_regs;
-		num = ARRAY_SIZE(gen8_regs);
-	} else if (INTEL_GEN(i915) < 8) {
-		return;
-	}
-
-	if (WARN_ONCE(!num, "Platform does not implement TLB invalidation!"))
-		return;
-
-	GEM_TRACE("\n");
-
-	assert_rpm_wakelock_held(&i915->runtime_pm);
-
-	mutex_lock(&gt->tlb_invalidate_lock);
-	intel_uncore_forcewake_get(uncore, FORCEWAKE_ALL);
-
-	for_each_engine(engine, gt, id) {
-		/*
-		 * HW architecture suggest typical invalidation time at 40us,
-		 * with pessimistic cases up to 100us and a recommendation to
-		 * cap at 1ms. We go a bit higher just in case.
-		 */
-		const unsigned int timeout_us = 100;
-		const unsigned int timeout_ms = 4;
-		struct reg_and_bit rb;
-
-		rb = get_reg_and_bit(engine, regs == gen8_regs, regs, num);
-		if (!i915_mmio_reg_offset(rb.reg))
-			continue;
-
-		intel_uncore_write_fw(uncore, rb.reg, rb.bit);
-		if (__intel_wait_for_register_fw(uncore,
-						 rb.reg, rb.bit, 0,
-						 timeout_us, timeout_ms,
-						 NULL))
-			DRM_ERROR_RATELIMITED("%s TLB invalidation did not complete in %ums!\n",
-					      engine->name, timeout_ms);
-	}
-
-	intel_uncore_forcewake_put(uncore, FORCEWAKE_ALL);
-	mutex_unlock(&gt->tlb_invalidate_lock);
 }

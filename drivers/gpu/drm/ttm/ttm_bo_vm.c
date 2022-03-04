@@ -358,10 +358,8 @@ static int ttm_bo_vm_access_kmap(struct ttm_buffer_object *bo,
 static int ttm_bo_vm_access(struct vm_area_struct *vma, unsigned long addr,
 			    void *buf, int len, int write)
 {
+	unsigned long offset = (addr) - vma->vm_start;
 	struct ttm_buffer_object *bo = vma->vm_private_data;
-	unsigned long offset = (addr) - vma->vm_start +
-		((vma->vm_pgoff - drm_vma_node_start(&bo->base.vma_node))
-		 << PAGE_SHIFT);
 	int ret;
 
 	if (len < 1 || (offset + len) >> PAGE_SHIFT > bo->num_pages)
@@ -409,16 +407,16 @@ static struct ttm_buffer_object *ttm_bo_vm_lookup(struct ttm_bo_device *bdev,
 	struct drm_vma_offset_node *node;
 	struct ttm_buffer_object *bo = NULL;
 
-	drm_vma_offset_lock_lookup(bdev->vma_manager);
+	drm_vma_offset_lock_lookup(&bdev->vma_manager);
 
-	node = drm_vma_offset_lookup_locked(bdev->vma_manager, offset, pages);
+	node = drm_vma_offset_lookup_locked(&bdev->vma_manager, offset, pages);
 	if (likely(node)) {
 		bo = container_of(node, struct ttm_buffer_object,
 				  base.vma_node);
 		bo = ttm_bo_get_unless_zero(bo);
 	}
 
-	drm_vma_offset_unlock_lookup(bdev->vma_manager);
+	drm_vma_offset_unlock_lookup(&bdev->vma_manager);
 
 	if (!bo)
 		pr_err("Could not find buffer object to map\n");

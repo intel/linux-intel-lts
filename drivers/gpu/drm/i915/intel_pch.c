@@ -52,8 +52,7 @@ intel_pch_type(const struct drm_i915_private *dev_priv, unsigned short id)
 		return PCH_SPT;
 	case INTEL_PCH_SPT_LP_DEVICE_ID_TYPE:
 		DRM_DEBUG_KMS("Found SunrisePoint LP PCH\n");
-		WARN_ON(!IS_SKYLAKE(dev_priv) && !IS_KABYLAKE(dev_priv) &&
-			!IS_COFFEELAKE(dev_priv));
+		WARN_ON(!IS_SKYLAKE(dev_priv) && !IS_KABYLAKE(dev_priv));
 		return PCH_SPT;
 	case INTEL_PCH_KBP_DEVICE_ID_TYPE:
 		DRM_DEBUG_KMS("Found Kaby Lake PCH (KBP)\n");
@@ -75,29 +74,19 @@ intel_pch_type(const struct drm_i915_private *dev_priv, unsigned short id)
 		WARN_ON(!IS_COFFEELAKE(dev_priv));
 		/* CometPoint is CNP Compatible */
 		return PCH_CNP;
-	case INTEL_PCH_CMP_V_DEVICE_ID_TYPE:
-		DRM_DEBUG_KMS("Found Comet Lake V PCH (CMP-V)\n");
-		WARN_ON(!IS_COFFEELAKE(dev_priv));
-		/* Comet Lake V PCH is based on KBP, which is SPT compatible */
-		return PCH_SPT;
 	case INTEL_PCH_ICP_DEVICE_ID_TYPE:
 		DRM_DEBUG_KMS("Found Ice Lake PCH\n");
 		WARN_ON(!IS_ICELAKE(dev_priv));
 		return PCH_ICP;
 	case INTEL_PCH_MCC_DEVICE_ID_TYPE:
+	case INTEL_PCH_MCC2_DEVICE_ID_TYPE:
 		DRM_DEBUG_KMS("Found Mule Creek Canyon PCH\n");
 		WARN_ON(!IS_ELKHARTLAKE(dev_priv));
 		return PCH_MCC;
 	case INTEL_PCH_TGP_DEVICE_ID_TYPE:
-	case INTEL_PCH_TGP2_DEVICE_ID_TYPE:
 		DRM_DEBUG_KMS("Found Tiger Lake LP PCH\n");
 		WARN_ON(!IS_TIGERLAKE(dev_priv));
 		return PCH_TGP;
-	case INTEL_PCH_JSP_DEVICE_ID_TYPE:
-	case INTEL_PCH_JSP2_DEVICE_ID_TYPE:
-		DRM_DEBUG_KMS("Found Jasper Lake PCH\n");
-		WARN_ON(!IS_ELKHARTLAKE(dev_priv));
-		return PCH_JSP;
 	default:
 		return PCH_NONE;
 	}
@@ -113,9 +102,8 @@ static bool intel_is_virt_pch(unsigned short id,
 		 sdevice == PCI_SUBDEVICE_ID_QEMU));
 }
 
-static void
-intel_virt_detect_pch(const struct drm_i915_private *dev_priv,
-		      unsigned short *pch_id, enum intel_pch *pch_type)
+static unsigned short
+intel_virt_detect_pch(const struct drm_i915_private *dev_priv)
 {
 	unsigned short id = 0;
 
@@ -150,20 +138,12 @@ intel_virt_detect_pch(const struct drm_i915_private *dev_priv,
 	else
 		DRM_DEBUG_KMS("Assuming no PCH\n");
 
-	*pch_type = intel_pch_type(dev_priv, id);
-
-	/* Sanity check virtual PCH id */
-	if (WARN_ON(id && *pch_type == PCH_NONE))
-		id = 0;
-
-	*pch_id = id;
+	return id;
 }
 
 void intel_detect_pch(struct drm_i915_private *dev_priv)
 {
 	struct pci_dev *pch = NULL;
-	unsigned short id;
-	enum intel_pch pch_type;
 
 	/*
 	 * The reason to probe ISA bridge instead of Dev31:Fun0 is to
@@ -177,6 +157,9 @@ void intel_detect_pch(struct drm_i915_private *dev_priv)
 	 * of only checking the first one.
 	 */
 	while ((pch = pci_get_class(PCI_CLASS_BRIDGE_ISA << 8, pch))) {
+		unsigned short id;
+		enum intel_pch pch_type;
+
 		if (pch->vendor != PCI_VENDOR_ID_INTEL)
 			continue;
 
@@ -189,7 +172,13 @@ void intel_detect_pch(struct drm_i915_private *dev_priv)
 			break;
 		} else if (intel_is_virt_pch(id, pch->subsystem_vendor,
 					     pch->subsystem_device)) {
-			intel_virt_detect_pch(dev_priv, &id, &pch_type);
+			id = intel_virt_detect_pch(dev_priv);
+			pch_type = intel_pch_type(dev_priv, id);
+
+			/* Sanity check virtual PCH id */
+			if (WARN_ON(id && pch_type == PCH_NONE))
+				id = 0;
+
 			dev_priv->pch_type = pch_type;
 			dev_priv->pch_id = id;
 			break;
@@ -204,15 +193,6 @@ void intel_detect_pch(struct drm_i915_private *dev_priv)
 		DRM_DEBUG_KMS("Display disabled, reverting to NOP PCH\n");
 		dev_priv->pch_type = PCH_NOP;
 		dev_priv->pch_id = 0;
-	} else if (!pch) {
-		if (run_as_guest() && HAS_DISPLAY(dev_priv)) {
-			intel_virt_detect_pch(dev_priv, &id, &pch_type);
-			dev_priv->pch_type = pch_type;
-			dev_priv->pch_id = id;
-			DRM_DEBUG_KMS("PCH is found.\n");
-		} else {
-			DRM_DEBUG_KMS("No PCH found.\n");
-		}
 	}
 
 	if (!pch)

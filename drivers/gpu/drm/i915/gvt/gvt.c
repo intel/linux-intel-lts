@@ -44,7 +44,6 @@ struct intel_gvt_host intel_gvt_host;
 static const char * const supported_hypervisors[] = {
 	[INTEL_GVT_HYPERVISOR_XEN] = "XEN",
 	[INTEL_GVT_HYPERVISOR_KVM] = "KVM",
-	[INTEL_GVT_HYPERVISOR_ACRN] = "ACRN",
 };
 
 static struct intel_vgpu_type *intel_gvt_find_vgpu_type(struct intel_gvt *gvt,
@@ -129,7 +128,7 @@ static bool intel_get_gvt_attrs(struct attribute ***type_attrs,
 	return true;
 }
 
-static int intel_gvt_init_vgpu_type_groups(struct intel_gvt *gvt)
+static bool intel_gvt_init_vgpu_type_groups(struct intel_gvt *gvt)
 {
 	int i, j;
 	struct intel_vgpu_type *type;
@@ -147,7 +146,7 @@ static int intel_gvt_init_vgpu_type_groups(struct intel_gvt *gvt)
 		gvt_vgpu_type_groups[i] = group;
 	}
 
-	return 0;
+	return true;
 
 unwind:
 	for (j = 0; j < i; j++) {
@@ -155,7 +154,7 @@ unwind:
 		kfree(group);
 	}
 
-	return -ENOMEM;
+	return false;
 }
 
 static void intel_gvt_cleanup_vgpu_type_groups(struct intel_gvt *gvt)
@@ -363,12 +362,10 @@ int intel_gvt_init_device(struct drm_i915_private *dev_priv)
 		goto out_clean_thread;
 
 	ret = intel_gvt_init_vgpu_type_groups(gvt);
-	if (ret) {
+	if (ret == false) {
 		gvt_err("failed to init vgpu type groups: %d\n", ret);
 		goto out_clean_types;
 	}
-
-	intel_gvt_init_display(gvt);
 
 	vgpu = intel_gvt_create_idle_vgpu(gvt);
 	if (IS_ERR(vgpu)) {
@@ -410,45 +407,6 @@ out_clean_idr:
 	return ret;
 }
 
-int intel_gvt_pm_suspend(struct intel_gvt *gvt)
-{
-	intel_gvt_save_ggtt(gvt);
-	return 0;
-}
-
-int intel_gvt_pm_early_resume(struct intel_gvt *gvt)
-{
-	intel_gvt_init_ddb(gvt);
-	return 0;
-}
-
-int intel_gvt_pm_resume(struct intel_gvt *gvt)
-{
-	struct intel_vgpu *vgpu = NULL;
-	struct intel_vgpu_display *disp_cfg = NULL;
-	struct intel_vgpu_display_path *disp_path = NULL, *n;
-	int id;
-
-	intel_gvt_restore_regs(gvt);
-	intel_gvt_restore_ggtt(gvt);
-
-	mutex_lock(&gvt->lock);
-	for_each_active_vgpu(gvt, vgpu, id) {
-		mutex_lock(&vgpu->vgpu_lock);
-		mutex_lock(&gvt->sw_in_progress);
-		disp_cfg = &vgpu->disp_cfg;
-		list_for_each_entry_safe(disp_path, n, &disp_cfg->path_list, list) {
-			if (disp_path->p_pipe != INVALID_PIPE && disp_path->foreground_state)
-				intel_gvt_switch_display_pipe(vgpu->gvt, disp_path->p_pipe, NULL, vgpu);
-		}
-		mutex_unlock(&gvt->sw_in_progress);
-		mutex_unlock(&vgpu->vgpu_lock);
-	}
-	mutex_unlock(&gvt->lock);
-
-	return 0;
-}
-
 int
 intel_gvt_register_hypervisor(struct intel_gvt_mpt *m)
 {
@@ -459,8 +417,7 @@ intel_gvt_register_hypervisor(struct intel_gvt_mpt *m)
 		return -ENODEV;
 
 	if (m->type != INTEL_GVT_HYPERVISOR_KVM &&
-	    m->type != INTEL_GVT_HYPERVISOR_XEN &&
-	    m->type != INTEL_GVT_HYPERVISOR_ACRN)
+	    m->type != INTEL_GVT_HYPERVISOR_XEN)
 		return -EINVAL;
 
 	/* Get a reference for device model module */

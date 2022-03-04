@@ -15,7 +15,6 @@
 #include <linux/rbtree.h>
 #include <linux/timer.h>
 #include <linux/types.h>
-#include <linux/workqueue.h>
 
 #include "i915_gem.h"
 #include "i915_pmu.h"
@@ -59,7 +58,6 @@ struct i915_gem_context;
 struct i915_request;
 struct i915_sched_attr;
 struct intel_gt;
-struct intel_ring;
 struct intel_uncore;
 
 typedef u8 intel_engine_mask_t;
@@ -76,6 +74,40 @@ struct intel_instdone {
 	u32 slice_common;
 	u32 sampler[I915_MAX_SLICES][I915_MAX_SUBSLICES];
 	u32 row[I915_MAX_SLICES][I915_MAX_SUBSLICES];
+};
+
+struct intel_engine_hangcheck {
+	u64 acthd;
+	u32 last_ring;
+	u32 last_head;
+	unsigned long action_timestamp;
+	struct intel_instdone instdone;
+};
+
+struct intel_ring {
+	struct kref ref;
+	struct i915_vma *vma;
+	void *vaddr;
+
+	/*
+	 * As we have two types of rings, one global to the engine used
+	 * by ringbuffer submission and those that are exclusive to a
+	 * context used by execlists, we have to play safe and allow
+	 * atomic updates to the pin_count. However, the actual pinning
+	 * of the context is either done during initialisation for
+	 * ringbuffer submission or serialised as part of the context
+	 * pinning for execlists, and so we do not need a mutex ourselves
+	 * to serialise intel_ring_pin/intel_ring_unpin.
+	 */
+	atomic_t pin_count;
+
+	u32 head;
+	u32 tail;
+	u32 emit;
+
+	u32 space;
+	u32 size;
+	u32 effective_size;
 };
 
 /*
@@ -116,7 +148,6 @@ enum intel_engine_id {
 	VECS1,
 #define _VECS(n) (VECS0 + (n))
 	I915_NUM_ENGINES
-#define INVALID_ENGINE ((enum intel_engine_id)-1)
 };
 
 struct st_preempt_hang {
@@ -141,11 +172,6 @@ struct intel_engine_execlists {
 	 * @timer: kick the current context if its timeslice expires
 	 */
 	struct timer_list timer;
-
-	/**
-	 * @preempt: reset the current context if it fails to give way
-	 */
-	struct timer_list preempt;
 
 	/**
 	 * @default_priolist: priority list for I915_PRIORITY_NORMAL
@@ -274,15 +300,13 @@ struct intel_engine_cs {
 	u8 class;
 	u8 instance;
 
-	u16 uabi_class;
-	u16 uabi_instance;
+	u8 uabi_class;
+	u8 uabi_instance;
 
-	u32 uabi_capabilities;
 	u32 context_size;
 	u32 mmio_base;
 
-	unsigned int context_tag;
-#define NUM_CONTEXT_TAG roundup_pow_of_two(2 * EXECLIST_MAX_PORTS)
+	u32 uabi_capabilities;
 
 	struct rb_node uabi_node;
 
@@ -298,11 +322,6 @@ struct intel_engine_cs {
 	struct intel_context *kernel_context; /* pinned */
 
 	intel_engine_mask_t saturated; /* submitting semaphores too late? */
-
-	struct {
-		struct delayed_work work;
-		struct i915_request *systole;
-	} heartbeat;
 
 	unsigned long serial;
 
@@ -451,17 +470,10 @@ struct intel_engine_cs {
 
 	struct intel_engine_execlists execlists;
 
-	/*
-	 * Keep track of completed timelines on this engine for early
-	 * retirement with the goal of quickly enabling powersaving as
-	 * soon as the engine is idle.
-	 */
-	struct intel_timeline *retire;
-	struct work_struct retire_work;
-
 	/* status_notifier: list of callbacks for context-switch changes */
 	struct atomic_notifier_head context_status_notifier;
 
+	struct intel_engine_hangcheck hangcheck;
 
 #define I915_ENGINE_USING_CMD_PARSER BIT(0)
 #define I915_ENGINE_SUPPORTS_STATS   BIT(1)
@@ -469,7 +481,6 @@ struct intel_engine_cs {
 #define I915_ENGINE_HAS_SEMAPHORES   BIT(3)
 #define I915_ENGINE_NEEDS_BREADCRUMB_TASKLET BIT(4)
 #define I915_ENGINE_IS_VIRTUAL       BIT(5)
-#define I915_ENGINE_HAS_RELATIVE_MMIO BIT(6)
 #define I915_ENGINE_REQUIRES_CMD_PARSER BIT(7)
 	unsigned int flags;
 
@@ -498,17 +509,28 @@ struct intel_engine_cs {
 	u32 (*get_cmd_length_mask)(u32 cmd_header);
 
 	struct {
+		/**
+		 * @lock: Lock protecting the below fields.
+		 */
+		seqlock_t lock;
+		/**
+		 * @enabled: Reference count indicating number of listeners.
+		 */
 		unsigned int enabled;
 		/**
 		 * @active: Number of contexts currently scheduled in.
 		 */
-		atomic_t active;
-
+		unsigned int active;
 		/**
-		 * @lock: Lock protecting the below fields.
-		*/
-		seqlock_t lock;
-
+		 * @enabled_at: Timestamp when busy stats were enabled.
+		 */
+		ktime_t enabled_at;
+		/**
+		 * @start: Timestamp of the last idle to active transition.
+		 *
+		 * Idle is defined as active == 0, active is active > 0.
+		 */
+		ktime_t start;
 		/**
 		 * @total: Total time this engine was busy.
 		 *
@@ -516,28 +538,7 @@ struct intel_engine_cs {
 		 * where engine is currently busy (active > 0).
 		 */
 		ktime_t total;
-
-		/**
-		 * @start: Timestamp of the last idle to active transition.
-		 *
-		 * Idle is defined as active == 0, active is active > 0.
-		*/
-		ktime_t start;
-
-		/**
-		 * @rps: Utilisation at last RPS sampling.
-		 */
-		ktime_t rps;
-
 	} stats;
-
-	struct {
-		unsigned long heartbeat_interval_ms;
-		unsigned long max_busywait_duration_ns;
-		unsigned long preempt_timeout_ms;
-		unsigned long stop_timeout_ms;
-		unsigned long timeslice_duration_ms;
-	} props;
 };
 
 static inline bool
@@ -582,24 +583,20 @@ intel_engine_is_virtual(const struct intel_engine_cs *engine)
 	return engine->flags & I915_ENGINE_IS_VIRTUAL;
 }
 
-static inline bool
-intel_engine_has_relative_mmio(const struct intel_engine_cs * const engine)
-{
-	return engine->flags & I915_ENGINE_HAS_RELATIVE_MMIO;
-}
+#define instdone_slice_mask(dev_priv__) \
+	(IS_GEN(dev_priv__, 7) ? \
+	 1 : RUNTIME_INFO(dev_priv__)->sseu.slice_mask)
 
-#define instdone_has_slice(dev_priv___, sseu___, slice___) \
-	((IS_GEN(dev_priv___, 7) ? 1 : ((sseu___)->slice_mask)) & BIT(slice___))
+#define instdone_subslice_mask(dev_priv__) \
+	(IS_GEN(dev_priv__, 7) ? \
+	 1 : RUNTIME_INFO(dev_priv__)->sseu.subslice_mask[0])
 
-#define instdone_has_subslice(dev_priv__, sseu__, slice__, subslice__) \
-	(IS_GEN(dev_priv__, 7) ? (1 & BIT(subslice__)) : \
-	 intel_sseu_has_subslice(sseu__, 0, subslice__))
+#define for_each_instdone_slice_subslice(dev_priv__, slice__, subslice__) \
+	for ((slice__) = 0, (subslice__) = 0; \
+	     (slice__) < I915_MAX_SLICES; \
+	     (subslice__) = ((subslice__) + 1) < I915_MAX_SUBSLICES ? (subslice__) + 1 : 0, \
+	       (slice__) += ((subslice__) == 0)) \
+		for_each_if((BIT(slice__) & instdone_slice_mask(dev_priv__)) && \
+			    (BIT(subslice__) & instdone_subslice_mask(dev_priv__)))
 
-#define for_each_instdone_slice_subslice(dev_priv_, sseu_, slice_, subslice_) \
-	for ((slice_) = 0, (subslice_) = 0; (slice_) < I915_MAX_SLICES; \
-	     (subslice_) = ((subslice_) + 1) % I915_MAX_SUBSLICES, \
-	     (slice_) += ((subslice_) == 0)) \
-		for_each_if((instdone_has_slice(dev_priv_, sseu_, slice_)) && \
-			    (instdone_has_subslice(dev_priv_, sseu_, slice_, \
-						    subslice_)))
 #endif /* __INTEL_ENGINE_TYPES_H__ */

@@ -178,7 +178,7 @@ static void vc4_plane_destroy_state(struct drm_plane *plane,
 	struct vc4_dev *vc4 = to_vc4_dev(plane->dev);
 	struct vc4_plane_state *vc4_state = to_vc4_plane_state(state);
 
-	if (drm_mm_node_allocated(&vc4_state->lbm)) {
+	if (vc4_state->lbm.allocated) {
 		unsigned long irqflags;
 
 		spin_lock_irqsave(&vc4->hvs->mm_lock, irqflags);
@@ -205,7 +205,7 @@ static void vc4_plane_reset(struct drm_plane *plane)
 	__drm_atomic_helper_plane_reset(plane, &vc4_state->base);
 }
 
-static void vc4_dlist_counter_increment(struct vc4_plane_state *vc4_state)
+static void vc4_dlist_write(struct vc4_plane_state *vc4_state, u32 val)
 {
 	if (vc4_state->dlist_count == vc4_state->dlist_size) {
 		u32 new_size = max(4u, vc4_state->dlist_count * 2);
@@ -220,15 +220,7 @@ static void vc4_dlist_counter_increment(struct vc4_plane_state *vc4_state)
 		vc4_state->dlist_size = new_size;
 	}
 
-	vc4_state->dlist_count++;
-}
-
-static void vc4_dlist_write(struct vc4_plane_state *vc4_state, u32 val)
-{
-	unsigned int idx = vc4_state->dlist_count;
-
-	vc4_dlist_counter_increment(vc4_state);
-	vc4_state->dlist[idx] = val;
+	vc4_state->dlist[vc4_state->dlist_count++] = val;
 }
 
 /* Returns the scl0/scl1 field based on whether the dimensions need to
@@ -565,7 +557,7 @@ static int vc4_plane_allocate_lbm(struct drm_plane_state *state)
 	/* Allocate the LBM memory that the HVS will use for temporary
 	 * storage due to our scaling/format conversion.
 	 */
-	if (!drm_mm_node_allocated(&vc4_state->lbm)) {
+	if (!vc4_state->lbm.allocated) {
 		int ret;
 
 		spin_lock_irqsave(&vc4->hvs->mm_lock, irqflags);
@@ -879,10 +871,8 @@ static int vc4_plane_mode_set(struct drm_plane *plane,
 		 * be set when calling vc4_plane_allocate_lbm().
 		 */
 		if (vc4_state->y_scaling[0] != VC4_SCALING_NONE ||
-		    vc4_state->y_scaling[1] != VC4_SCALING_NONE) {
-			vc4_state->lbm_offset = vc4_state->dlist_count;
-			vc4_dlist_counter_increment(vc4_state);
-		}
+		    vc4_state->y_scaling[1] != VC4_SCALING_NONE)
+			vc4_state->lbm_offset = vc4_state->dlist_count++;
 
 		if (num_planes > 1) {
 			/* Emit Cb/Cr as channel 0 and Y as channel

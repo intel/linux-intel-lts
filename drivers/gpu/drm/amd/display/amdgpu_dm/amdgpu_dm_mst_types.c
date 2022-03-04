@@ -101,7 +101,7 @@ static ssize_t dm_dp_aux_transfer(struct drm_dp_aux *aux,
 	result = dc_link_aux_transfer_raw(TO_DM_AUX(aux)->ddc_service, &payload,
 				      &operation_result);
 
-	if (payload.write && result >= 0)
+	if (payload.write)
 		result = msg->size;
 
 	if (result < 0)
@@ -121,6 +121,21 @@ static ssize_t dm_dp_aux_transfer(struct drm_dp_aux *aux,
 		}
 
 	return result;
+}
+
+static enum drm_connector_status
+dm_dp_mst_detect(struct drm_connector *connector, bool force)
+{
+	struct amdgpu_dm_connector *aconnector = to_amdgpu_dm_connector(connector);
+	struct amdgpu_dm_connector *master = aconnector->mst_port;
+
+	enum drm_connector_status status =
+		drm_dp_mst_detect_port(
+			connector,
+			&master->mst_mgr,
+			aconnector->port);
+
+	return status;
 }
 
 static void
@@ -162,6 +177,7 @@ amdgpu_dm_mst_connector_early_unregister(struct drm_connector *connector)
 }
 
 static const struct drm_connector_funcs dm_dp_mst_connector_funcs = {
+	.detect = dm_dp_mst_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = dm_dp_mst_connector_destroy,
 	.reset = amdgpu_dm_connector_funcs_reset,
@@ -236,22 +252,10 @@ static struct drm_encoder *dm_mst_best_encoder(struct drm_connector *connector)
 	return &amdgpu_dm_connector->mst_encoder->base;
 }
 
-static int
-dm_dp_mst_detect(struct drm_connector *connector,
-		 struct drm_modeset_acquire_ctx *ctx, bool force)
-{
-	struct amdgpu_dm_connector *aconnector = to_amdgpu_dm_connector(connector);
-	struct amdgpu_dm_connector *master = aconnector->mst_port;
-
-	return drm_dp_mst_detect_port(connector, ctx, &master->mst_mgr,
-				      aconnector->port);
-}
-
 static const struct drm_connector_helper_funcs dm_dp_mst_connector_helper_funcs = {
 	.get_modes = dm_dp_mst_get_modes,
 	.mode_valid = amdgpu_dm_connector_mode_valid,
 	.best_encoder = dm_mst_best_encoder,
-	.detect_ctx = dm_dp_mst_detect,
 };
 
 static void amdgpu_dm_encoder_destroy(struct drm_encoder *encoder)
@@ -375,7 +379,6 @@ static void dm_dp_destroy_mst_connector(struct drm_dp_mst_topology_mgr *mgr,
 					   aconnector->dc_sink);
 		dc_sink_release(aconnector->dc_sink);
 		aconnector->dc_sink = NULL;
-		aconnector->dc_link->cur_link_settings.lane_count = 0;
 	}
 
 	drm_connector_unregister(connector);
@@ -413,7 +416,7 @@ void amdgpu_dm_initialize_dp_connector(struct amdgpu_display_manager *dm,
 
 	drm_dp_aux_register(&aconnector->dm_dp_aux.aux);
 	drm_dp_cec_register_connector(&aconnector->dm_dp_aux.aux,
-				      &aconnector->base);
+				      aconnector->base.name, dm->adev->dev);
 	aconnector->mst_mgr.cbs = &dm_mst_cbs;
 	drm_dp_mst_topology_mgr_init(
 		&aconnector->mst_mgr,

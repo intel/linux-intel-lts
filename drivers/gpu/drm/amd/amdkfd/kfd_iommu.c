@@ -20,10 +20,6 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <linux/kconfig.h>
-
-#if IS_REACHABLE(CONFIG_AMD_IOMMU_V2)
-
 #include <linux/printk.h>
 #include <linux/device.h>
 #include <linux/slab.h>
@@ -362,5 +358,3 @@ int kfd_iommu_add_perf_counters(struct kfd_topology_device *kdev)
 
 	return 0;
 }
-
-#endif

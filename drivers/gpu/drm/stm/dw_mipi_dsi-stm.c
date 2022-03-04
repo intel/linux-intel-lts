@@ -260,11 +260,8 @@ dw_mipi_dsi_get_lane_mbps(void *priv_data, const struct drm_display_mode *mode,
 	/* Compute requested pll out */
 	bpp = mipi_dsi_pixel_format_to_bpp(format);
 	pll_out_khz = mode->clock * bpp / lanes;
-
 	/* Add 20% to pll out to be higher than pixel bw (burst mode only) */
-	if (mode_flags & MIPI_DSI_MODE_VIDEO_BURST)
-		pll_out_khz = (pll_out_khz * 12) / 10;
-
+	pll_out_khz = (pll_out_khz * 12) / 10;
 	if (pll_out_khz > dsi->lane_max_kbps) {
 		pll_out_khz = dsi->lane_max_kbps;
 		DRM_WARN("Warning max phy mbps is used\n");
