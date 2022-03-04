@@ -562,6 +562,8 @@ static int intel_qep_runtime_resume(struct device *dev)
 	struct intel_qep *qep = pci_get_drvdata(pdev);
 	u32 d0i3c_reg;
 	u32 cgsr_reg;
+	u32 ret = 0;
+	u32 reg;
 
 	cgsr_reg = intel_qep_readl(qep, INTEL_QEP_CGSR);
 
@@ -582,9 +584,25 @@ static int intel_qep_runtime_resume(struct device *dev)
 
 		writel(d0i3c_reg, dev + INTEL_QEP_D0I3C);
 	}
-	intel_qep_init(qep);
 
-	return 0;
+	mutex_lock(&qep->lock);
+	if (qep->enabled) {
+		ret = -EBUSY;
+		goto out;
+	}
+	reg = intel_qep_readl(qep, INTEL_QEPCON);
+	reg &= ~INTEL_QEPCON_EN;
+	intel_qep_writel(qep, INTEL_QEPCON, reg);
+	qep->enabled = false;
+	/*
+	 * Make sure peripheral is disabled by flushing the write with
+	 * a dummy read
+	 */
+	reg = intel_qep_readl(qep, INTEL_QEPCON);
+
+out:
+	mutex_unlock(&qep->lock);
+	return ret;
 }
 #endif
 
