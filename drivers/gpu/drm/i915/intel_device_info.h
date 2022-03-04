@@ -114,7 +114,7 @@ enum intel_platform {
 #define INTEL_SUBPLATFORM_N    0
 
 /* ADL-S */
-#define INTEL_SUBPLATFORM_RPL_S	0
+#define INTEL_SUBPLATFORM_RPL	0
 
 /* ADL-P */
 #define INTEL_SUBPLATFORM_N    0
