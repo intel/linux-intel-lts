@@ -965,6 +965,18 @@ static const struct pmc_bit_map adl_vnn_misc_status_map[] = {
 	{}
 };
 
+const char *pmc_lpm_modes[] = {
+	"S0i2.0",
+	"S0i2.1",
+	"S0i2.2",
+	"S0i3.0",
+	"S0i3.1",
+	"S0i3.2",
+	"S0i3.3",
+	"S0i3.4",
+	NULL
+};
+
 static const struct pmc_bit_map *adl_lpm_maps[] = {
 	adl_clocksource_status_map,
 	adl_power_gating_status_0_map,
