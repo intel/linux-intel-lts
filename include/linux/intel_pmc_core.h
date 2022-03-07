@@ -236,21 +236,12 @@ enum ppfear_regs {
 #define ADL_LPM_STATUS_LATCH_EN_OFFSET		0x1704
 #define ADL_LPM_LIVE_STATUS_OFFSET		0x1764
 
-const char *pmc_lpm_modes[] = {
-	"S0i2.0",
-	"S0i2.1",
-	"S0i2.2",
-	"S0i3.0",
-	"S0i3.1",
-	"S0i3.2",
-	"S0i3.3",
-	"S0i3.4",
-	NULL
-};
-
 #define IPC_PMC_REGISTER_ACCESS			0xAB
 #define IPC_PMC_SUB_CMD_READ			0x00
 #define IPC_PMC_SUB_CMD_WRITE			0x01
+#define IPC_SOC_REGISTER_ACCESS			0xAA
+#define IPC_SOC_SUB_CMD_READ			0x00
+#define IPC_SOC_SUB_CMD_WRITE			0x01
 
 struct pmc_ipc_cmd {
 	u32 cmd;
