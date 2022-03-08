@@ -676,6 +676,10 @@ struct phy_device {
 	/* MACsec management functions */
 	const struct macsec_ops *macsec_ops;
 #endif
+	/* Use phydev->cur_link_an_mode to communicate the in-band
+	 * AN mode setting with phylink framework.
+	 */
+	u8 cur_link_an_mode;
 };
 
 static inline struct phy_device *to_phy_device(const struct device *dev)
