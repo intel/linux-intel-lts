@@ -45,9 +45,6 @@
 # CVE-2020-12363
 0001-drm-i915-disable-guc-submission.patch
 
-# CVE-2020-36322
-0001-fuse-fix-bad-inode.patch
-
 # CVE-2021-20177
 0001-netfilter-add-and-use-nf_hook_slow_list.patch
 
@@ -68,3 +65,9 @@
 
 # CVE-2019-19449
 0001-f2fs-fix-to-do-sanity-check-on-segment-section-count.patch
+
+# CVE-2020-27820
+0001-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
+
+# CVE-2021-0929
+0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
