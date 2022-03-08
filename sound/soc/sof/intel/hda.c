@@ -296,15 +296,13 @@ static char *hda_model;
 module_param(hda_model, charp, 0444);
 MODULE_PARM_DESC(hda_model, "Use the given HDA board model.");
 
-#if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA)
-static int hda_dmic_num = -1;
-module_param_named(dmic_num, hda_dmic_num, int, 0444);
+static int dmic_num_override = -1;
+module_param_named(dmic_num, dmic_num_override, int, 0444);
 MODULE_PARM_DESC(dmic_num, "SOF HDA DMIC number");
 
 static bool hda_codec_use_common_hdmi = IS_ENABLED(CONFIG_SND_HDA_CODEC_HDMI);
 module_param_named(use_common_hdmi, hda_codec_use_common_hdmi, bool, 0444);
 MODULE_PARM_DESC(use_common_hdmi, "SOF HDA use common HDMI codec driver");
-#endif
 
 static const struct hda_dsp_msg_code hda_dsp_rom_msg[] = {
 	{HDA_DSP_ROM_FW_MANIFEST_LOADED, "status: manifest loaded"},
@@ -568,23 +566,34 @@ static int hda_init(struct snd_sof_dev *sdev)
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA)
-
-static int check_nhlt_dmic(struct snd_sof_dev *sdev)
+static int check_dmic_num(struct snd_sof_dev *sdev)
 {
 	struct nhlt_acpi_table *nhlt;
-	int dmic_num;
+	int dmic_num = 0;
 
 	nhlt = intel_nhlt_init(sdev->dev);
 	if (nhlt) {
 		dmic_num = intel_nhlt_get_dmic_geo(sdev->dev, nhlt);
 		intel_nhlt_free(nhlt);
-		if (dmic_num >= 1 && dmic_num <= 4)
-			return dmic_num;
 	}
 
-	return 0;
+	/* allow for module parameter override */
+	if (dmic_num_override != -1) {
+		dev_dbg(sdev->dev,
+			"overriding DMICs detected in NHLT tables %d by kernel param %d\n",
+			dmic_num, dmic_num_override);
+		dmic_num = dmic_num_override;
+	}
+
+	if (dmic_num < 0 || dmic_num > 4) {
+		dev_dbg(sdev->dev, "invalid dmic_number %d\n", dmic_num);
+		dmic_num = 0;
+	}
+
+	return dmic_num;
 }
+
+#if IS_ENABLED(CONFIG_SND_SOC_SOF_HDA) || IS_ENABLED(CONFIG_SND_SOC_SOF_INTEL_SOUNDWIRE)
 
 static const char *fixup_tplg_name(struct snd_sof_dev *sdev,
 				   const char *sof_tplg_filename,
@@ -611,6 +620,49 @@ static const char *fixup_tplg_name(struct snd_sof_dev *sdev,
 	return tplg_filename;
 }
 
+static int dmic_topology_fixup(struct snd_sof_dev *sdev,
+			       const char **tplg_filename,
+			       const char *idisp_str,
+			       int *dmic_found)
+{
+	const char *default_tplg_filename = *tplg_filename;
+	const char *fixed_tplg_filename;
+	const char *dmic_str;
+	int dmic_num;
+
+	/* first check for DMICs (using NHLT or module parameter) */
+	dmic_num = check_dmic_num(sdev);
+
+	switch (dmic_num) {
+	case 1:
+		dmic_str = "-1ch";
+		break;
+	case 2:
+		dmic_str = "-2ch";
+		break;
+	case 3:
+		dmic_str = "-3ch";
+		break;
+	case 4:
+		dmic_str = "-4ch";
+		break;
+	default:
+		dmic_num = 0;
+		dmic_str = "";
+		break;
+	}
+
+	fixed_tplg_filename = fixup_tplg_name(sdev, default_tplg_filename,
+					      idisp_str, dmic_str);
+	if (!fixed_tplg_filename)
+		return -ENOMEM;
+
+	dev_info(sdev->dev, "DMICs detected in NHLT tables: %d\n", dmic_num);
+	*dmic_found = dmic_num;
+	*tplg_filename = fixed_tplg_filename;
+
+	return 0;
+}
 #endif
 
 static int hda_init_caps(struct snd_sof_dev *sdev)
@@ -1009,12 +1061,6 @@ static int hda_generic_machine_select(struct snd_sof_dev *sdev)
 			else
 				idisp_str = "";
 
-			/* first check NHLT for DMICs */
-			dmic_num = check_nhlt_dmic(sdev);
-
-			/* allow for module parameter override */
-			if (hda_dmic_num != -1)
-				dmic_num = hda_dmic_num;
 
 			switch (dmic_num) {
 			case 1:
@@ -1254,6 +1300,8 @@ void hda_machine_select(struct snd_sof_dev *sdev)
 			sof_pdata->tplg_filename = mach->sof_tplg_filename;
 
 		sof_pdata->machine = mach;
+		/* report to machine driver if any DMICs are found */
+		mach->mach_params.dmic_num = check_dmic_num(sdev);
 
 		if (mach->link_mask) {
 			mach->mach_params.links = mach->links;
