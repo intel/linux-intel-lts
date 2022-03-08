@@ -5109,9 +5109,8 @@ bool dp_retrieve_lttpr_cap(struct dc_link *link)
 				lttpr_dpcd_data,
 				sizeof(lttpr_dpcd_data));
 		if (status != DC_OK) {
-#if defined(CONFIG_DRM_AMD_DC_DCN)
 			DC_LOG_DP2("%s: Read LTTPR caps data failed.\n", __func__);
-#endif
+			link->lttpr_mode = LTTPR_MODE_NON_LTTPR;
 			return false;
 		}
 
