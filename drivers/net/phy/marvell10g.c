@@ -29,6 +29,7 @@
 #include <linux/phy.h>
 #include <linux/sfp.h>
 #include <linux/netdevice.h>
+#include <linux/phylink.h>
 
 #define MV_PHY_ALASKA_NBT_QUIRK_MASK	0xfffffffe
 #define MV_PHY_ALASKA_NBT_QUIRK_REV	(MARVELL_PHY_ID_88X3310 | 0xa)
@@ -748,6 +749,9 @@ static void mv3310_update_interface(struct phy_device *phydev)
 	 * xaui / rxaui modes according to the speed.
 	 * Florian suggests setting phydev->interface to communicate this to the
 	 * MAC. Only do this if we are already in one of the above modes.
+	 * In-band Auto-negotiation is not supported in 2500BASE-X.
+	 * Setting phydev->cur_link_an_mode to communicate this to the
+	 * phylink framework.
 	 */
 	switch (phydev->speed) {
 	case SPEED_10000:
@@ -758,11 +762,13 @@ static void mv3310_update_interface(struct phy_device *phydev)
 		break;
 	case SPEED_2500:
 		phydev->interface = PHY_INTERFACE_MODE_2500BASEX;
+		phydev->cur_link_an_mode = MLO_AN_PHY;
 		break;
 	case SPEED_1000:
 	case SPEED_100:
 	case SPEED_10:
 		phydev->interface = PHY_INTERFACE_MODE_SGMII;
+		phydev->cur_link_an_mode = MLO_AN_INBAND;
 		break;
 	default:
 		break;
