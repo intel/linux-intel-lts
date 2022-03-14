@@ -1,7 +1,7 @@
-From 1e5112ed3dfc493870feb95d1fe30dea7dc94599 Mon Sep 17 00:00:00 2001
+From f1fdfc8c6fc426250b6963b4e5320f6e34ce2f51 Mon Sep 17 00:00:00 2001
 From: John Harrison <John.C.Harrison@Intel.com>
 Date: Wed, 28 Oct 2020 07:58:24 -0700
-Subject: [PATCH 6/6] drm/i915/guc: Update to use firmware v49.0.1
+Subject: [PATCH 4/4] drm/i915/guc: Update to use firmware v49.0.1
 
 The latest GuC firmware includes a number of interface changes that
 require driver updates to match.
@@ -61,10 +61,10 @@ Link: https://patchwork.freedesktop.org/patch/msgid/20201028145826.2949180-2-Joh
  8 files changed, 181 insertions(+), 90 deletions(-)
 
 diff --git a/drivers/gpu/drm/i915/gt/intel_engine_cs.c b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
-index 2ec6f24b9470..7800306604ea 100644
+index 883a9b7fe88d5..ca9680e410855 100644
 --- a/drivers/gpu/drm/i915/gt/intel_engine_cs.c
 +++ b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
-@@ -304,8 +304,9 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id)
+@@ -305,8 +305,9 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id)
  	engine->i915 = i915;
  	engine->gt = gt;
  	engine->uncore = gt->uncore;
@@ -76,10 +76,10 @@ index 2ec6f24b9470..7800306604ea 100644
  	engine->class = info->class;
  	engine->instance = info->instance;
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc.c b/drivers/gpu/drm/i915/gt/uc/intel_guc.c
-index 922a19635d20..ea32ab55735b 100644
+index 819f09ef51fc2..f846eb163302c 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_guc.c
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_guc.c
-@@ -216,23 +216,6 @@ static u32 guc_ctl_feature_flags(struct intel_guc *guc)
+@@ -213,23 +213,6 @@ static u32 guc_ctl_feature_flags(struct intel_guc *guc)
  	return flags;
  }
  
@@ -87,7 +87,7 @@ index 922a19635d20..ea32ab55735b 100644
 -{
 -	u32 flags = 0;
 -
--	if (intel_guc_is_submission_supported(guc)) {
+-	if (intel_guc_submission_is_used(guc)) {
 -		u32 ctxnum, base;
 -
 -		base = intel_guc_ggtt_offset(guc, guc->stage_desc_pool);
@@ -103,7 +103,7 @@ index 922a19635d20..ea32ab55735b 100644
  static u32 guc_ctl_log_params_flags(struct intel_guc *guc)
  {
  	u32 offset = intel_guc_ggtt_offset(guc, guc->log.vma) >> PAGE_SHIFT;
-@@ -294,7 +277,6 @@ static void guc_init_params(struct intel_guc *guc)
+@@ -291,7 +274,6 @@ static void guc_init_params(struct intel_guc *guc)
  
  	BUILD_BUG_ON(sizeof(guc->params) != GUC_CTL_MAX_DWORDS * sizeof(u32));
  
@@ -112,7 +112,7 @@ index 922a19635d20..ea32ab55735b 100644
  	params[GUC_CTL_FEATURE] = guc_ctl_feature_flags(guc);
  	params[GUC_CTL_DEBUG] = guc_ctl_debug_flags(guc);
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c b/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c
-index 101728006ae9..f5910277884e 100644
+index 101728006ae9d..f5910277884eb 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_guc_ads.c
 @@ -10,11 +10,52 @@
@@ -320,7 +320,7 @@ index 101728006ae9..f5910277884e 100644
 +	guc_ads_private_data_reset(guc);
  }
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc_fwif.h b/drivers/gpu/drm/i915/gt/uc/intel_guc_fwif.h
-index a26a85d50209..2b5fc86bdd31 100644
+index a6b733c146c99..79c560d9c0b63 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_guc_fwif.h
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_guc_fwif.h
 @@ -26,8 +26,8 @@
@@ -334,7 +334,7 @@ index a26a85d50209..2b5fc86bdd31 100644
  
  #define GUC_DOORBELL_INVALID		256
  
-@@ -63,12 +63,7 @@
+@@ -62,12 +62,7 @@
  #define GUC_STAGE_DESC_ATTR_PCH		BIT(6)
  #define GUC_STAGE_DESC_ATTR_TERMINATED	BIT(7)
  
@@ -348,7 +348,7 @@ index a26a85d50209..2b5fc86bdd31 100644
  #define   GUC_LOG_VALID			(1 << 0)
  #define   GUC_LOG_NOTIFY_ON_HALF_FULL	(1 << 1)
  #define   GUC_LOG_ALLOC_IN_MEGABYTE	(1 << 3)
-@@ -80,11 +75,11 @@
+@@ -79,11 +74,11 @@
  #define   GUC_LOG_ISR_MASK	        (0x7 << GUC_LOG_ISR_SHIFT)
  #define   GUC_LOG_BUF_ADDR_SHIFT	12
  
@@ -363,7 +363,7 @@ index a26a85d50209..2b5fc86bdd31 100644
  #define   GUC_LOG_VERBOSITY_SHIFT	0
  #define   GUC_LOG_VERBOSITY_LOW		(0 << GUC_LOG_VERBOSITY_SHIFT)
  #define   GUC_LOG_VERBOSITY_MED		(1 << GUC_LOG_VERBOSITY_SHIFT)
-@@ -98,12 +93,37 @@
+@@ -97,12 +92,37 @@
  #define   GUC_LOG_DISABLED		(1 << 6)
  #define   GUC_PROFILE_ENABLED		(1 << 7)
  
@@ -402,7 +402,7 @@ index a26a85d50209..2b5fc86bdd31 100644
  /* Work item for submitting workloads into work queue of GuC. */
  struct guc_wq_item {
  	u32 header;
-@@ -337,11 +357,6 @@ struct guc_policies {
+@@ -336,11 +356,6 @@ struct guc_policies {
  } __packed;
  
  /* GuC MMIO reg state struct */
@@ -414,7 +414,7 @@ index a26a85d50209..2b5fc86bdd31 100644
  struct guc_mmio_reg {
  	u32 offset;
  	u32 value;
-@@ -349,28 +364,18 @@ struct guc_mmio_reg {
+@@ -348,28 +363,18 @@ struct guc_mmio_reg {
  #define GUC_REGSET_MASKED		(1 << 0)
  } __packed;
  
@@ -450,7 +450,7 @@ index a26a85d50209..2b5fc86bdd31 100644
  } __packed;
  
  /* Clients info */
-@@ -391,15 +396,16 @@ struct guc_clients_info {
+@@ -390,15 +395,16 @@ struct guc_clients_info {
  
  /* GuC Additional Data Struct */
  struct guc_ads {
@@ -471,7 +471,7 @@ index a26a85d50209..2b5fc86bdd31 100644
  
  /* GuC logging structures */
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc_reg.h b/drivers/gpu/drm/i915/gt/uc/intel_guc_reg.h
-index 1949346e714e..b37fc2ffaef2 100644
+index 1949346e714ee..b37fc2ffaef25 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_guc_reg.h
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_guc_reg.h
 @@ -118,6 +118,11 @@ struct guc_doorbell_info {
@@ -487,7 +487,7 @@ index 1949346e714e..b37fc2ffaef2 100644
  
  #define GUC_BCS_RCS_IER			_MMIO(0xC550)
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
-index 5327a46c82b3..9138436384c9 100644
+index ed88ddd67284d..782f33a1b2a9f 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.c
 @@ -38,23 +38,19 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
@@ -524,7 +524,7 @@ index 5327a46c82b3..9138436384c9 100644
  
  #define __MAKE_UC_FW_PATH(prefix_, name_, major_, minor_, patch_) \
  	"i915/" \
-@@ -366,6 +362,9 @@ int intel_uc_fw_fetch(struct intel_uc_fw *uc_fw, struct drm_i915_private *i915)
+@@ -365,6 +361,9 @@ int intel_uc_fw_fetch(struct intel_uc_fw *uc_fw)
  		}
  	}
  
@@ -535,10 +535,10 @@ index 5327a46c82b3..9138436384c9 100644
  	if (IS_ERR(obj)) {
  		err = PTR_ERR(obj);
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.h b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.h
-index 7a0a5989afc9..acda2af76b8c 100644
+index 888ff0de0244b..cb47b828a63f9 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.h
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw.h
-@@ -84,6 +84,8 @@ struct intel_uc_fw {
+@@ -88,6 +88,8 @@ struct intel_uc_fw {
  
  	u32 rsa_size;
  	u32 ucode_size;
@@ -548,7 +548,7 @@ index 7a0a5989afc9..acda2af76b8c 100644
  
  #ifdef CONFIG_DRM_I915_DEBUG_GUC
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw_abi.h b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw_abi.h
-index 029214cdedd5..e41ffc7a7fbc 100644
+index 029214cdedd57..e41ffc7a7fbcb 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_uc_fw_abi.h
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_uc_fw_abi.h
 @@ -69,7 +69,11 @@ struct uc_css_header {
@@ -565,5 +565,5 @@ index 029214cdedd5..e41ffc7a7fbc 100644
  } __packed;
  static_assert(sizeof(struct uc_css_header) == 128);
 -- 
-2.17.1
+2.25.1
 

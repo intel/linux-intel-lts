@@ -11,12 +11,10 @@
 
 # CVE-2020-12364
 # CVE-2020-12363
-0001-drm-i915-huc-update-TGL-HuC-to-v7.0.12.patch
-0002-drm-i915-rkl-Add-RKL-platform-info-and-PCI-ids.patch
-0003-drm-i915-rkl-Re-use-TGL-GuC-HuC-firmware.patch
-0004-drm-i915-Update-TGL-and-RKL-HuC-firmware-versions.patch
-0005-drm-i915-guc-add-a-helper-to-allocate-and-map-guc-vm.patch
-0006-drm-i915-guc-Update-to-use-firmware-v49.0.1.patch
+0001-drm-i915-rkl-Add-RKL-platform-info-and-PCI-ids.patch
+0002-drm-i915-rkl-Re-use-TGL-GuC-HuC-firmware.patch
+0003-drm-i915-Update-TGL-and-RKL-HuC-firmware-versions.patch
+0004-drm-i915-guc-Update-to-use-firmware-v49.0.1.patch
 
 # CVE-2020-36310
 0001-KVM-SVM-avoid-infinite-loop-on-NPF-from-bad-address.patch
@@ -39,3 +37,6 @@
 
 # CVE-2021-0929
 0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
+
+# CVE-2022-25636
+0001-netfilter-nf_tables_offload-incorrect-flow-offload-a.patch
