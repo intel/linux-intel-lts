@@ -15,6 +15,14 @@
 
 #define DRIVER_NAME "dw_spi_pci"
 
+#define PSE_SPI_D0I3C 0x1000
+#define PSE_SPI_CGSR 0x1004
+
+#define PSE_SPI_D0I3_CIP BIT(0)
+#define PSE_SPI_D0I3_EN BIT(2)
+#define PSE_SPI_D0I3_RR BIT(3)
+#define PSE_SPI_CGSR_CG BIT(16)
+
 /* HW info for MRST Clk Control Unit, 32b reg per controller */
 #define MRST_SPI_CLK_BASE	100000000	/* 100m */
 #define MRST_CLK_SPI_REG	0xff11d86c
@@ -85,6 +93,7 @@ static int spi_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct spi_pci_desc *desc = (struct spi_pci_desc *)ent->driver_data;
 	int pci_bar = 0;
 	int ret;
+	u32 d0i3c_reg;
 
 	ret = pcim_enable_device(pdev);
 	if (ret)
@@ -132,6 +141,11 @@ static int spi_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (ret)
 		goto err_free_irq_vectors;
 
+	/* Clear those RR bit if set */
+	d0i3c_reg = dw_readl(dws, PSE_SPI_D0I3C);
+	if (d0i3c_reg & PSE_SPI_D0I3_RR)
+		dw_writel(dws, PSE_SPI_D0I3_RR, PSE_SPI_D0I3C);
+
 	/* PCI hook and SPI hook use the same drv data */
 	pci_set_drvdata(pdev, dws);
 
@@ -162,14 +176,14 @@ static void spi_pci_remove(struct pci_dev *pdev)
 }
 
 #ifdef CONFIG_PM_SLEEP
-static int spi_suspend(struct device *dev)
+static int dw_spi_pci_suspend(struct device *dev)
 {
 	struct dw_spi *dws = dev_get_drvdata(dev);
 
 	return dw_spi_suspend_host(dws);
 }
 
-static int spi_resume(struct device *dev)
+static int dw_spi_pci_resume(struct device *dev)
 {
 	struct dw_spi *dws = dev_get_drvdata(dev);
 
@@ -177,7 +191,73 @@ static int spi_resume(struct device *dev)
 }
 #endif
 
-static SIMPLE_DEV_PM_OPS(dw_spi_pm_ops, spi_suspend, spi_resume);
+#if CONFIG_PM
+static int dw_spi_runtime_suspend(struct device *dev)
+{
+	struct dw_spi *dws = dev_get_drvdata(dev);
+	unsigned long j0, j1, delay;
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	delay = msecs_to_jiffies(100);
+	j0 = jiffies;
+	j1 = j0 + delay;
+
+	cgsr_reg = dw_readl(dws, PSE_SPI_CGSR);
+	dw_writel(dws, PSE_SPI_CGSR, PSE_SPI_D0I3_RR);
+
+	d0i3c_reg = dw_readl(dws, PSE_SPI_D0I3C);
+	if (d0i3c_reg & PSE_SPI_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		dw_writel(dws, PSE_SPI_D0I3C, PSE_SPI_D0I3_EN);
+		d0i3c_reg = dw_readl(dws, PSE_SPI_D0I3C);
+	}
+
+	while (time_before(jiffies, j1)) {
+		d0i3c_reg = dw_readl(dws, PSE_SPI_D0I3C);
+		if (!(d0i3c_reg & PSE_SPI_D0I3_CIP))
+			break;
+	}
+
+	if (d0i3c_reg & PSE_SPI_D0I3_CIP)
+		dev_info(dev, "%s: timeout waiting CIP to be cleared", __func__);
+
+	return 0;
+}
+
+static int dw_spi_runtime_resume(struct device *dev)
+{
+	struct dw_spi *dws = dev_get_drvdata(dev);
+	u32 d0i3c_reg;
+	u32 cgsr_reg;
+
+	cgsr_reg = dw_readl(dws, PSE_SPI_CGSR);
+	if (cgsr_reg & PSE_SPI_CGSR_CG)
+		dw_writel(dws, (cgsr_reg & ~PSE_SPI_CGSR_CG), PSE_SPI_CGSR);
+
+	d0i3c_reg = dw_readl(dws, PSE_SPI_D0I3C);
+	if (d0i3c_reg & PSE_SPI_D0I3_CIP) {
+		dev_info(dev, "%s d0i3c CIP detected", __func__);
+	} else {
+		if (d0i3c_reg & PSE_SPI_D0I3_EN)
+			d0i3c_reg &= ~PSE_SPI_D0I3_EN;
+
+		if (d0i3c_reg & PSE_SPI_D0I3_RR)
+			d0i3c_reg |= PSE_SPI_D0I3_RR;
+
+		dw_writel(dws, d0i3c_reg, PSE_SPI_D0I3C);
+		d0i3c_reg = dw_readl(dws, PSE_SPI_D0I3C);
+	}
+
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops dw_spi_pm_ops = {
+	SET_RUNTIME_PM_OPS(dw_spi_runtime_suspend, dw_spi_runtime_resume, NULL)
+		SET_SYSTEM_SLEEP_PM_OPS(dw_spi_pci_suspend, dw_spi_pci_resume)
+};
 
 static const struct pci_device_id pci_ids[] = {
 	/* Intel MID platform SPI controller 0 */
