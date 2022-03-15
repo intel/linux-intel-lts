@@ -868,8 +868,12 @@ CVEs fixed in 4.19.229:
   CVE-2022-0487: 9c25d5ff1856b91bd4365e813f566cb59aaa9552 moxart: fix potential use-after-free on remove path
   CVE-2022-0492: 939f8b491887c27585933ea7dc5ad4123de58ff3 cgroup-v1: Require capabilities to set release_agent
 
+CVEs fixed in 4.19.230:
+  CVE-2022-25258: e5eb8d19aee115d8fb354d1eff1b8df700467164 USB: gadget: validate interface OS descriptor requests
+  CVE-2022-25375: db9aaa3026298d652e98f777bc0f5756e2455dda usb: gadget: rndis: check size of RNDIS_MSG_SET command
+
  
-CVEs Fixed in this 4.19.229 LTS 4.19 release 
+CVEs Fixed in this 4.19.232 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
