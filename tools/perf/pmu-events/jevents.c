@@ -361,7 +361,7 @@ static int close_table;
 
 static void print_events_table_prefix(FILE *fp, const char *tblname)
 {
-	fprintf(fp, "struct pmu_event %s[] = {\n", tblname);
+	fprintf(fp, "static const struct pmu_event %s[] = {\n", tblname);
 	close_table = 1;
 }
 
@@ -786,7 +786,7 @@ static bool is_sys_dir(char *fname)
 
 static void print_mapping_table_prefix(FILE *outfp)
 {
-	fprintf(outfp, "struct pmu_events_map pmu_events_map[] = {\n");
+	fprintf(outfp, "const struct pmu_events_map pmu_events_map[] = {\n");
 }
 
 static void print_mapping_table_suffix(FILE *outfp)

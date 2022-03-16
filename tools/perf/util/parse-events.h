@@ -87,6 +87,7 @@ enum {
 	PARSE_EVENTS__TERM_TYPE_PERCORE,
 	PARSE_EVENTS__TERM_TYPE_AUX_OUTPUT,
 	PARSE_EVENTS__TERM_TYPE_AUX_SAMPLE_SIZE,
+	PARSE_EVENTS__TERM_TYPE_METRIC_ID,
 	__PARSE_EVENTS__TERM_TYPE_NR,
 };
 
@@ -141,8 +142,6 @@ struct parse_events_state {
 	char			  *hybrid_pmu_name;
 };
 
-void parse_events__handle_error(struct parse_events_error *err, int idx,
-				char *str, char *help);
 void parse_events__shrink_config_terms(void);
 int parse_events__is_hardcoded_term(struct parse_events_term *term);
 int parse_events_term__num(struct parse_events_term **term,
@@ -162,7 +161,7 @@ void parse_events_terms__purge(struct list_head *terms);
 void parse_events__clear_array(struct parse_events_array *a);
 int parse_events__modifier_event(struct list_head *list, char *str, bool add);
 int parse_events__modifier_group(struct list_head *list, char *event_mod);
-int parse_events_name(struct list_head *list, char *name);
+int parse_events_name(struct list_head *list, const char *name);
 int parse_events_add_tracepoint(struct list_head *list, int *idx,
 				const char *sys, const char *event,
 				struct parse_events_error *error,
@@ -200,10 +199,12 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 			 bool use_alias);
 
 struct evsel *parse_events__add_event(int idx, struct perf_event_attr *attr,
-					char *name, struct perf_pmu *pmu);
+				      const char *name, const char *metric_id,
+				      struct perf_pmu *pmu);
 
 int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
 			       char *str,
+			       struct list_head *head_config,
 			       struct list_head **listp);
 
 int parse_events_copy_term_list(struct list_head *old,
@@ -242,8 +243,12 @@ int is_valid_tracepoint(const char *event_string);
 int valid_event_mount(const char *eventfs);
 char *parse_events_formats_error_string(char *additional_terms);
 
-void parse_events_print_error(struct parse_events_error *err,
-			      const char *event);
+void parse_events_error__init(struct parse_events_error *err);
+void parse_events_error__exit(struct parse_events_error *err);
+void parse_events_error__handle(struct parse_events_error *err, int idx,
+				char *str, char *help);
+void parse_events_error__print(struct parse_events_error *err,
+			       const char *event);
 
 #ifdef HAVE_LIBELF_SUPPORT
 /*
@@ -268,7 +273,9 @@ int perf_pmu__test_parse_init(void);
 
 struct evsel *parse_events__add_event_hybrid(struct list_head *list, int *idx,
 					     struct perf_event_attr *attr,
-					     char *name, struct perf_pmu *pmu,
+					     const char *name,
+					     const char *metric_id,
+					     struct perf_pmu *pmu,
 					     struct list_head *config_terms);
 
 #endif /* __PERF_PARSE_EVENTS_H */
