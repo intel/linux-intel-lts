@@ -25,7 +25,6 @@ static int lpit_read_residency_counter_us(u64 *counter, bool io_mem)
 {
 	int err;
 
-	printk("@@@@ %s:%d\n", __func__, io_mem);
 	if (io_mem) {
 		u64 count = 0;
 		int error;
@@ -103,7 +102,6 @@ static void lpit_update_residency(struct lpit_residency_info *info,
 	if (!info->frequency)
 		info->frequency = 1;
 
-	printk("@@@@ %s\n", __func__);
 	info->gaddr = lpit_native->residency_counter;
 	if (info->gaddr.space_id == ACPI_ADR_SPACE_SYSTEM_MEMORY) {
 		info->iomem_addr = ioremap(info->gaddr.address,
@@ -137,11 +135,9 @@ static void lpit_process(u64 begin, u64 end)
 		if (!lpit_native->header.type && !lpit_native->header.flags) {
 			if (lpit_native->residency_counter.space_id == ACPI_ADR_SPACE_SYSTEM_MEMORY &&
 			    !residency_info_mem.gaddr.address) {
-				printk("@@@@ %s:%lx:%lx, memory:%lx\n", __func__, begin, end, residency_info_mem.gaddr.address);
 				lpit_update_residency(&residency_info_mem, lpit_native);
 			} else if (lpit_native->residency_counter.space_id == ACPI_ADR_SPACE_FIXED_HARDWARE &&
 				   !residency_info_ffh.gaddr.address) {
-				printk("@@@@ %s:%lx:%lx, ffh:%lx\n", __func__, begin, end, residency_info_ffh.gaddr.address);
 				lpit_update_residency(&residency_info_ffh, lpit_native);
 			}
 		}
