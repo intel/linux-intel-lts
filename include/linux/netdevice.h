@@ -2362,6 +2362,7 @@ struct packet_type {
 					      struct net_device *);
 	bool			(*id_match)(struct packet_type *ptype,
 					    struct sock *sk);
+	struct net		*af_packet_net;
 	void			*af_packet_priv;
 	struct list_head	list;
 };
@@ -3943,8 +3944,9 @@ static inline void __netif_tx_lock_bh(struct netdev_queue *txq)
 static inline bool __netif_tx_trylock(struct netdev_queue *txq)
 {
 	bool ok = spin_trylock(&txq->_xmit_lock);
-	if (likely(ok))
+	if (likely(ok)) {
 		netdev_queue_set_owner(txq, smp_processor_id());
+	}
 	return ok;
 }
 
