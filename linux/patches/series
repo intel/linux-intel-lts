@@ -1,1 +1,3 @@
 # CVE Patches to apply
+# CVE-2022-0847
+0001-lib-iov_iter-initialize-flags-in-new-pipe_buffer.patch
