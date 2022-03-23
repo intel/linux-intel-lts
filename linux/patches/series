@@ -12,3 +12,6 @@
 # CVE-2021-4095
 0001-KVM-x86-xen-Maintain-valid-mapping-of-Xen-shared_inf.patch
 0001-KVM-x86-Fix-wall-clock-writes-in-Xen-shared_info-not.patch
+
+# CVE-2022-25636
+0001-netfilter-nf_tables_offload-incorrect-flow-offload-a.patch
