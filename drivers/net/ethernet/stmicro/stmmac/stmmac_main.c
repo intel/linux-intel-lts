@@ -1187,11 +1187,31 @@ static void stmmac_mac_link_up(struct phylink_config *config,
 		stmmac_fpe_link_state_handle(priv, true);
 }
 
+#if IS_ENABLED(CONFIG_INTEL_PMC_CORE)
+static int stmmac_mac_prepare(struct phylink_config *config, unsigned int mode,
+			      phy_interface_t interface)
+{
+	struct net_device *ndev = to_net_dev(config->dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	int ret = 0;
+
+	priv->plat->phy_interface = interface;
+
+	if (priv->plat->config_serdes)
+		ret = priv->plat->config_serdes(ndev, priv->plat->bsp_priv);
+
+	return ret;
+}
+#endif
+
 static const struct phylink_mac_ops stmmac_phylink_mac_ops = {
 	.validate = stmmac_validate,
 	.mac_config = stmmac_mac_config,
 	.mac_link_down = stmmac_mac_link_down,
 	.mac_link_up = stmmac_mac_link_up,
+#if IS_ENABLED(CONFIG_INTEL_PMC_CORE)
+	.mac_prepare = stmmac_mac_prepare,
+#endif
 };
 
 /**
