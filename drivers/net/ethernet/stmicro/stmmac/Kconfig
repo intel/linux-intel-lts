@@ -225,6 +225,7 @@ config DWMAC_INTEL_PLAT
 	tristate "Intel dwmac support"
 	depends on OF && COMMON_CLK
 	depends on STMMAC_ETH
+	select INTEL_PMC_CORE
 	help
 	  Support for ethernet controllers on Intel SoCs
 
@@ -246,6 +247,7 @@ config DWMAC_INTEL
 	default X86
 	depends on X86 && STMMAC_ETH && PCI
 	depends on COMMON_CLK
+	select INTEL_PMC_CORE
 	help
 	  This selects the Intel platform specific bus support for the
 	  stmmac driver. This driver is used for Intel Quark/EHL/TGL.
