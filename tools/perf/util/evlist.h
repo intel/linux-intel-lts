@@ -110,7 +110,7 @@ int __evlist__add_default_attrs(struct evlist *evlist,
 #define evlist__add_default_attrs(evlist, array) \
 	__evlist__add_default_attrs(evlist, array, ARRAY_SIZE(array))
 
-int arch_evlist__add_default_attrs(struct evlist *evlist);
+int arch_evlist__add_default_attrs(struct evlist *evlist, const char *pmu_name);
 
 int evlist__add_dummy(struct evlist *evlist);
 
