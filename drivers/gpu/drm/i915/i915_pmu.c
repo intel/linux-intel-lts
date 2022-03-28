@@ -1148,7 +1148,7 @@ void i915_pmu_register(struct drm_i915_private *i915)
 
 	int ret = -ENOMEM;
 
-	if (GRAPHICS_VER(i915) <= 2 || IS_SRIOV_VF(i915)) {
+	if (GRAPHICS_VER(i915) <= 2) {
 		drm_info(&i915->drm, "PMU not supported for this GPU.");
 		return;
 	}
@@ -1157,7 +1157,8 @@ void i915_pmu_register(struct drm_i915_private *i915)
 	hrtimer_init(&pmu->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	pmu->timer.function = i915_sample;
 	pmu->cpuhp.cpu = -1;
-	init_rc6(pmu);
+	if (!IS_SRIOV_VF(i915))
+		init_rc6(pmu);
 
 	if (!is_igp(i915)) {
 		pmu->name = kasprintf(GFP_KERNEL,

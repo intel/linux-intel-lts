@@ -1148,6 +1148,21 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 #define WRAP_TIME_CLKS U32_MAX
 #define POLL_TIME_CLKS (WRAP_TIME_CLKS >> 3)
 
+static u32 intel_guc_engine_usage_offset(struct intel_guc *guc)
+{
+	return intel_guc_ggtt_offset(guc, guc->engine_util_vma);
+}
+
+struct iosys_map intel_guc_engine_usage_record_map(struct intel_engine_cs *engine)
+{
+	struct intel_guc *guc = &engine->gt->uc.guc;
+	u8 guc_class = engine_class_to_guc_class(engine->class);
+	size_t offset = offsetof(struct guc_engine_usage,
+				 engines[guc_class][ilog2(engine->logical_mask)]);
+
+	return IOSYS_MAP_INIT_OFFSET(&guc->engine_util_map, offset);
+}
+
 static void
 __extend_last_switch(struct intel_guc *guc, u64 *prev_start, u32 new_start)
 {
@@ -1257,6 +1272,9 @@ static void guc_update_pm_timestamp(struct intel_guc *guc, ktime_t *now)
 	u32 gt_stamp_lo, gt_stamp_hi;
 	u64 gpm_ts;
 
+	if (IS_SRIOV_VF(gt->i915))
+		return;
+
 	lockdep_assert_held(&guc->timestamp.lock);
 
 	gt_stamp_hi = upper_32_bits(guc->timestamp.gt_stamp);
@@ -1309,8 +1327,7 @@ static ktime_t guc_engine_busyness(struct intel_engine_cs *engine, ktime_t *now)
 	 * start_gt_clk is derived from GuC state. To get a consistent
 	 * view of activity, we query the GuC state only if gt is awake.
 	 */
-	if (!in_reset && !IS_SRIOV_VF(gt->i915) &&
-	    (wakeref = intel_gt_pm_get_if_awake(gt))) {
+	if (!in_reset && (wakeref = intel_gt_pm_get_if_awake(gt))) {
 		stats_saved = *stats;
 		gt_stamp_saved = guc->timestamp.gt_stamp;
 		/*
@@ -1327,7 +1344,7 @@ static ktime_t guc_engine_busyness(struct intel_engine_cs *engine, ktime_t *now)
 	}
 
 	total = intel_gt_clock_interval_to_ns(gt, stats->total_gt_clks);
-	if (stats->running) {
+	if (stats->running && !IS_SRIOV_VF(gt->i915)) {
 		u64 clk = guc->timestamp.gt_stamp - stats->start_gt_clk;
 
 		total += intel_gt_clock_interval_to_ns(gt, clk);
@@ -1437,9 +1454,6 @@ void intel_guc_busyness_park(struct intel_gt *gt)
 {
 	struct intel_guc *guc = &gt->uc.guc;
 
-	if (IS_SRIOV_VF(gt->i915))
-		return;
-
 	if (!guc_submission_initialized(guc))
 		return;
 
@@ -1468,9 +1482,6 @@ void intel_guc_busyness_unpark(struct intel_gt *gt)
 	struct intel_guc *guc = &gt->uc.guc;
 	unsigned long flags;
 	ktime_t unused;
-
-	if (IS_SRIOV_VF(gt->i915))
-		return;
 
 	if (!guc_submission_initialized(guc))
 		return;
@@ -1543,8 +1554,7 @@ void intel_guc_submission_reset_prepare(struct intel_guc *guc)
 	disable_submission(guc);
 	guc->interrupts.disable(guc);
 
-	if (!IS_SRIOV_VF(guc_to_gt(guc)->i915))
-		__reset_guc_busyness_stats(guc);
+	__reset_guc_busyness_stats(guc);
 
 	/* Flush IRQ handler */
 	spin_lock_irq(guc_to_gt(guc)->irq_lock);
@@ -1952,6 +1962,16 @@ int intel_guc_submission_init(struct intel_guc *guc)
 		goto err;
 	}
 
+	ret = intel_guc_allocate_and_map_vma(guc,
+					     PAGE_ALIGN(sizeof(struct guc_engine_usage)),
+					     &guc->engine_util_vma,
+					     (void **)&guc->engine_util_map);
+	if (ret) {
+		drm_err(&guc_to_gt(guc)->i915->drm,
+			"Failed to init engine util buf %d\n", ret);
+		return ret;
+	}
+
 	guc->timestamp.ping_delay = (POLL_TIME_CLKS / gt->clock_frequency + 1) * HZ;
 	guc->timestamp.shift = gpm_timestamp_shift(gt);
 	guc->submission_initialized = true;
@@ -1971,6 +1991,8 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	guc_lrc_desc_pool_destroy_v69(guc);
 	i915_sched_engine_put(guc->sched_engine);
 	bitmap_free(guc->submission_state.guc_ids_bitmap);
+	i915_vma_unpin_and_release(&guc->engine_util_vma, I915_VMA_RELEASE_MAP);
+	iosys_map_clear(&guc->engine_util_map);
 	guc->submission_initialized = false;
 	fini_tlb_lookup(guc);
 }
@@ -4274,9 +4296,7 @@ void intel_guc_submission_enable(struct intel_guc *guc)
 				   GUC_SEM_INTR_ENABLE_ALL);
 
 	guc_init_lrc_mapping(guc);
-
-	if (!IS_SRIOV_VF(gt->i915))
-		guc_init_engine_stats(guc);
+	guc_init_engine_stats(guc);
 }
 
 void intel_guc_submission_disable(struct intel_guc *guc)
