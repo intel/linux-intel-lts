@@ -10,7 +10,7 @@
 #include <linux/types.h>
 
 #include "i915_gem.h" /* GEM_BUG_ON */
-#include "i915_reg.h"
+#include "intel_gt_regs.h"
 #include "intel_gpu_commands.h"
 
 struct i915_request;

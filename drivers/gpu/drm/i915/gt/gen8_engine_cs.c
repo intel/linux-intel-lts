@@ -6,7 +6,6 @@
 #include "gen8_engine_cs.h"
 #include "i915_drv.h"
 #include "intel_gpu_commands.h"
-#include "intel_gt_regs.h"
 #include "intel_lrc.h"
 #include "intel_ring.h"
 
