@@ -30,8 +30,6 @@
  *      | guc_policies                          |
  *      +---------------------------------------+
  *      | guc_gt_system_info                    |
- *      +---------------------------------------+
- *      | guc_engine_usage                      |
  *      +---------------------------------------+ <== static
  *      | guc_mmio_reg[countA] (engine 0.0)     |
  *      | guc_mmio_reg[countB] (engine 0.1)     |
@@ -57,7 +55,6 @@ struct __guc_ads_blob {
 	struct guc_ads ads;
 	struct guc_policies policies;
 	struct guc_gt_system_info system_info;
-	struct guc_engine_usage engine_usage;
 	/* From here on, location is dynamic! Refer to above diagram. */
 	struct guc_mmio_reg regset[0];
 } __packed;
@@ -889,20 +886,4 @@ void intel_guc_ads_reset(struct intel_guc *guc)
 	__guc_ads_init(guc);
 
 	guc_ads_private_data_reset(guc);
-}
-
-u32 intel_guc_engine_usage_offset(struct intel_guc *guc)
-{
-	return intel_guc_ggtt_offset(guc, guc->ads_vma) +
-		offsetof(struct __guc_ads_blob, engine_usage);
-}
-
-struct iosys_map intel_guc_engine_usage_record_map(struct intel_engine_cs *engine)
-{
-	struct intel_guc *guc = &engine->gt->uc.guc;
-	u8 guc_class = engine_class_to_guc_class(engine->class);
-	size_t offset = offsetof(struct __guc_ads_blob,
-				 engine_usage.engines[guc_class][ilog2(engine->logical_mask)]);
-
-	return IOSYS_MAP_INIT_OFFSET(&guc->ads_map, offset);
 }

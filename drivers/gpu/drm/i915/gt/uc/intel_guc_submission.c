@@ -1148,6 +1148,21 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 #define WRAP_TIME_CLKS U32_MAX
 #define POLL_TIME_CLKS (WRAP_TIME_CLKS >> 3)
 
+static u32 intel_guc_engine_usage_offset(struct intel_guc *guc)
+{
+	return intel_guc_ggtt_offset(guc, guc->engine_util_vma);
+}
+
+struct iosys_map intel_guc_engine_usage_record_map(struct intel_engine_cs *engine)
+{
+	struct intel_guc *guc = &engine->gt->uc.guc;
+	u8 guc_class = engine_class_to_guc_class(engine->class);
+	size_t offset = offsetof(struct guc_engine_usage,
+				 engines[guc_class][ilog2(engine->logical_mask)]);
+
+	return IOSYS_MAP_INIT_OFFSET(&guc->engine_util_map, offset);
+}
+
 static void
 __extend_last_switch(struct intel_guc *guc, u64 *prev_start, u32 new_start)
 {
@@ -1952,6 +1967,16 @@ int intel_guc_submission_init(struct intel_guc *guc)
 		goto err;
 	}
 
+	ret = intel_guc_allocate_and_map_vma(guc,
+					     PAGE_ALIGN(sizeof(struct guc_engine_usage)),
+					     &guc->engine_util_vma,
+					     (void **)&guc->engine_util_map);
+	if (ret) {
+		drm_err(&guc_to_gt(guc)->i915->drm,
+			"Failed to init engine util buf %d\n", ret);
+		return ret;
+	}
+
 	guc->timestamp.ping_delay = (POLL_TIME_CLKS / gt->clock_frequency + 1) * HZ;
 	guc->timestamp.shift = gpm_timestamp_shift(gt);
 	guc->submission_initialized = true;
@@ -1971,6 +1996,8 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	guc_lrc_desc_pool_destroy_v69(guc);
 	i915_sched_engine_put(guc->sched_engine);
 	bitmap_free(guc->submission_state.guc_ids_bitmap);
+	i915_vma_unpin_and_release(&guc->engine_util_vma, I915_VMA_RELEASE_MAP);
+	iosys_map_clear(&guc->engine_util_map);
 	guc->submission_initialized = false;
 	fini_tlb_lookup(guc);
 }
