@@ -167,6 +167,12 @@ struct intel_guc {
 	struct i915_vma *ads_vma;
 	/** @ads_map: contents of the GuC ADS */
 	struct iosys_map ads_map;
+
+	/** @engine_util_vma: object allocated to hold the engine utilization */
+	struct i915_vma *engine_util_vma;
+	/** @engine_util_map: contents of the engine utilization */
+	struct iosys_map engine_util_map;
+
 	/** @ads_regset_size: size of the save/restore regsets in the ADS */
 	u32 ads_regset_size;
 	/**
@@ -180,8 +186,6 @@ struct intel_guc {
 	u32 ads_golden_ctxt_size;
 	/** @ads_capture_size: size of register lists in the ADS used for error capture */
 	u32 ads_capture_size;
-	/** @ads_engine_usage_size: size of engine usage in the ADS */
-	u32 ads_engine_usage_size;
 
 	/** @lrc_desc_pool_v69: object allocated to hold the GuC LRC descriptor pool */
 	struct i915_vma *lrc_desc_pool_v69;
