@@ -98,6 +98,7 @@
 #define FREEZE_ON_SMI_PATH	"devices/cpu/freeze_on_smi"
 
 static void print_counters(struct timespec *ts, int argc, const char **argv);
+const char *get_topdown_pmu_name(bool pr_warn);
 
 /* Default events used for perf stat -T */
 static const char *transaction_attrs = {
@@ -1650,6 +1651,20 @@ static int perf_stat_init_aggr_mode_file(struct perf_stat *st)
 	return 0;
 }
 
+const char *get_topdown_pmu_name(bool pr_warn)
+{
+	const char *pmu_name = "cpu";
+	if (perf_pmu__has_hybrid()) {
+		if (!evsel_list->hybrid_pmu_name) {
+			if (pr_warn)
+				pr_warning("WARNING: default to use cpu_core topdown events\n");
+			evsel_list->hybrid_pmu_name = perf_pmu__hybrid_type_to_pmu("core");
+		}
+		pmu_name = evsel_list->hybrid_pmu_name;
+	}
+	return pmu_name;
+}
+
 /*
  * Add default attributes, if there were no attributes specified or
  * if -d/--detailed, -d -d or -d -d -d is used:
@@ -1853,21 +1868,10 @@ static int add_default_attributes(void)
 		unsigned int max_level = 1;
 		char *str = NULL;
 		bool warn = false;
-		const char *pmu_name = "cpu";
+		const char *pmu_name = get_topdown_pmu_name(true);
 
 		if (!force_metric_only)
 			stat_config.metric_only = true;
-
-		if (perf_pmu__has_hybrid()) {
-			if (!evsel_list->hybrid_pmu_name) {
-				pr_warning("WARNING: default to use cpu_core topdown events\n");
-				evsel_list->hybrid_pmu_name = perf_pmu__hybrid_type_to_pmu("core");
-			}
-
-			pmu_name = evsel_list->hybrid_pmu_name;
-			if (!pmu_name)
-				return -1;
-		}
 
 		if (pmu_have_event(pmu_name, topdown_metric_L2_attrs[5])) {
 			metric_attrs = topdown_metric_L2_attrs;
@@ -1942,7 +1946,7 @@ setup_metrics:
 		if (perf_pmu__has_hybrid()) {
 			struct parse_events_error errinfo;
 			const char *hybrid_str = "cycles,instructions,branches,branch-misses";
-
+			target.system_wide = true;
 			if (target__has_cpu(&target))
 				default_sw_attrs[0].config = PERF_COUNT_SW_CPU_CLOCK;
 
@@ -1960,7 +1964,10 @@ setup_metrics:
 				parse_events_error__print(&errinfo, hybrid_str);
 			}
 			parse_events_error__exit(&errinfo);
-			return err ? -1 : 0;
+			if (err)
+				return -1;
+			else
+				goto default_topdown;
 		}
 
 		if (target__has_cpu(&target))
@@ -1978,9 +1985,9 @@ setup_metrics:
 		}
 		if (evlist__add_default_attrs(evsel_list, default_attrs1) < 0)
 			return -1;
-
+default_topdown:
 		stat_config.topdown_level = TOPDOWN_MAX_LEVEL;
-		if (arch_evlist__add_default_attrs(evsel_list) < 0)
+		if (arch_evlist__add_default_attrs(evsel_list, get_topdown_pmu_name(false)) < 0)
 			return -1;
 	}
 
