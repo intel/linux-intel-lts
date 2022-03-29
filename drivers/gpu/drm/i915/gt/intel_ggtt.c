@@ -18,6 +18,7 @@
 #include "intel_gt_regs.h"
 #include "i915_drv.h"
 #include "i915_scatterlist.h"
+#include "i915_utils.h"
 #include "i915_vgpu.h"
 
 #include "intel_gtt.h"
@@ -107,7 +108,7 @@ static bool needs_idle_maps(struct drm_i915_private *i915)
 	 * Query intel_iommu to see if we need the workaround. Presumably that
 	 * was loaded first.
 	 */
-	if (!intel_vtd_active(i915))
+	if (!i915_vtd_active(i915))
 		return false;
 
 	if (GRAPHICS_VER(i915) == 5 && IS_MOBILE(i915))
@@ -1237,7 +1238,7 @@ int i915_ggtt_probe_hw(struct drm_i915_private *i915)
 	if (ret)
 		return ret;
 
-	if (intel_vtd_active(i915))
+	if (i915_vtd_active(i915))
 		drm_info(&i915->drm, "VT-d active for gfx access\n");
 
 	return 0;
