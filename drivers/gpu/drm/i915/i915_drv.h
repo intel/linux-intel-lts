@@ -683,6 +683,9 @@ struct intel_vbt_data {
 	unsigned int bios_lvds_val; /* initial [PCH_]LVDS reg val in VBIOS */
 	enum drm_panel_orientation orientation;
 
+	bool override_afc_startup;
+	u8 override_afc_startup_val;
+
 	enum drrs_support_type drrs_type;
 
 	struct {
@@ -1489,6 +1492,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 	IS_SUBPLATFORM(dev_priv, INTEL_DG2, INTEL_SUBPLATFORM_G10)
 #define IS_DG2_G11(dev_priv) \
 	IS_SUBPLATFORM(dev_priv, INTEL_DG2, INTEL_SUBPLATFORM_G11)
+#define IS_ADLP_N(dev_priv) \
+	IS_SUBPLATFORM(dev_priv, INTEL_ALDERLAKE_P, INTEL_SUBPLATFORM_N)
 #define IS_HSW_EARLY_SDV(dev_priv) (IS_HASWELL(dev_priv) && \
 				    (INTEL_DEVID(dev_priv) & 0xFF00) == 0x0C00)
 #define IS_BDW_ULT(dev_priv) \

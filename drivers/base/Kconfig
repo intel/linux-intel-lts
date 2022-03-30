@@ -2,7 +2,13 @@
 menu "Generic Driver Options"
 
 config AUXILIARY_BUS
-	bool
+	bool "Support auxiliary bus"
+	help
+	  This enables driver to create auxiliary_device and bind an
+	  auxiliary_driver to it. The bus supports probe/remove shutdown
+	  and suspend/resume callbacks. Each auxiliary device has a
+	  unique string based id. Driver binds to an auxiliary device
+	  based on this id through the bus.
 
 config UEVENT_HELPER
 	bool "Support for uevent helper"
