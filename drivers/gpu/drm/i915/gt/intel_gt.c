@@ -3,6 +3,7 @@
  * Copyright © 2019 Intel Corporation
  */
 
+#include <drm/drm_managed.h>
 #include <drm/intel-gtt.h>
 #include <drm/drm_managed.h>
 
@@ -16,6 +17,7 @@
 #include "intel_gt_buffer_pool.h"
 #include "intel_gt_clock_utils.h"
 #include "intel_gt_debugfs.h"
+#include "intel_gt_gmch.h"
 #include "intel_gt_pm.h"
 #include "intel_gt_regs.h"
 #include "intel_gt_requests.h"
@@ -450,7 +452,7 @@ void intel_gt_chipset_flush(struct intel_gt *gt)
 {
 	wmb();
 	if (GRAPHICS_VER(gt->i915) < 6)
-		intel_gtt_chipset_flush();
+		intel_gt_gmch_gen5_chipset_flush(gt);
 }
 
 void intel_gt_driver_register(struct intel_gt *gt)
