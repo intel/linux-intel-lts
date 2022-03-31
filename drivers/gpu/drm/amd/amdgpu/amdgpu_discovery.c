@@ -1033,6 +1033,9 @@ int amdgpu_discovery_reg_base_init(struct amdgpu_device *adev)
 			    le16_to_cpu(ip->hw_id) == SDMA3_HWID)
 				adev->sdma.num_instances++;
 
+			if (le16_to_cpu(ip->hw_id) == UMC_HWID)
+				adev->gmc.num_umc++;
+
 			for (k = 0; k < num_base_address; k++) {
 				/*
 				 * convert the endianness of base addresses in place,
@@ -1666,6 +1669,7 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 	case CHIP_VEGA10:
 		vega10_reg_base_init(adev);
 		adev->sdma.num_instances = 2;
+		adev->gmc.num_umc = 4;
 		adev->ip_versions[MMHUB_HWIP][0] = IP_VERSION(9, 0, 0);
 		adev->ip_versions[ATHUB_HWIP][0] = IP_VERSION(9, 0, 0);
 		adev->ip_versions[OSSSYS_HWIP][0] = IP_VERSION(4, 0, 0);
@@ -1687,6 +1691,7 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 	case CHIP_VEGA12:
 		vega10_reg_base_init(adev);
 		adev->sdma.num_instances = 2;
+		adev->gmc.num_umc = 4;
 		adev->ip_versions[MMHUB_HWIP][0] = IP_VERSION(9, 3, 0);
 		adev->ip_versions[ATHUB_HWIP][0] = IP_VERSION(9, 3, 0);
 		adev->ip_versions[OSSSYS_HWIP][0] = IP_VERSION(4, 0, 1);
@@ -1709,6 +1714,7 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 		vega10_reg_base_init(adev);
 		adev->sdma.num_instances = 1;
 		adev->vcn.num_vcn_inst = 1;
+		adev->gmc.num_umc = 2;
 		if (adev->apu_flags & AMD_APU_IS_RAVEN2) {
 			adev->ip_versions[MMHUB_HWIP][0] = IP_VERSION(9, 2, 0);
 			adev->ip_versions[ATHUB_HWIP][0] = IP_VERSION(9, 2, 0);
@@ -1746,6 +1752,7 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 	case CHIP_VEGA20:
 		vega20_reg_base_init(adev);
 		adev->sdma.num_instances = 2;
+		adev->gmc.num_umc = 8;
 		adev->ip_versions[MMHUB_HWIP][0] = IP_VERSION(9, 4, 0);
 		adev->ip_versions[ATHUB_HWIP][0] = IP_VERSION(9, 4, 0);
 		adev->ip_versions[OSSSYS_HWIP][0] = IP_VERSION(4, 2, 0);
@@ -1769,6 +1776,7 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 		arct_reg_base_init(adev);
 		adev->sdma.num_instances = 8;
 		adev->vcn.num_vcn_inst = 2;
+		adev->gmc.num_umc = 8;
 		adev->ip_versions[MMHUB_HWIP][0] = IP_VERSION(9, 4, 1);
 		adev->ip_versions[ATHUB_HWIP][0] = IP_VERSION(9, 4, 1);
 		adev->ip_versions[OSSSYS_HWIP][0] = IP_VERSION(4, 2, 1);
@@ -1796,6 +1804,7 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 		aldebaran_reg_base_init(adev);
 		adev->sdma.num_instances = 5;
 		adev->vcn.num_vcn_inst = 2;
+		adev->gmc.num_umc = 4;
 		adev->ip_versions[MMHUB_HWIP][0] = IP_VERSION(9, 4, 2);
 		adev->ip_versions[ATHUB_HWIP][0] = IP_VERSION(9, 4, 2);
 		adev->ip_versions[OSSSYS_HWIP][0] = IP_VERSION(4, 4, 0);
