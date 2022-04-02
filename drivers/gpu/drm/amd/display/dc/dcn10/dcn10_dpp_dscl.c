@@ -218,14 +218,12 @@ static void dpp1_dscl_set_lb(
 			INTERLEAVE_EN, lb_params->interleave_en, /* Interleave source enable */
 			LB_DATA_FORMAT__ALPHA_EN, lb_params->alpha_en); /* Alpha enable */
 	}
-#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
 	else {
 		/* DSCL caps: pixel data processed in float format */
 		REG_SET_2(LB_DATA_FORMAT, 0,
 			INTERLEAVE_EN, lb_params->interleave_en, /* Interleave source enable */
 			LB_DATA_FORMAT__ALPHA_EN, lb_params->alpha_en); /* Alpha enable */
 	}
-#endif
 
 	REG_SET_2(LB_MEMORY_CTRL, 0,
 		MEMORY_CONFIG, mem_size_config,
@@ -484,13 +482,10 @@ static enum lb_memory_config dpp1_dscl_find_lb_memory_config(struct dcn10_dpp *d
 	int vtaps_c = scl_data->taps.v_taps_c;
 	int ceil_vratio = dc_fixpt_ceil(scl_data->ratios.vert);
 	int ceil_vratio_c = dc_fixpt_ceil(scl_data->ratios.vert_c);
+	enum lb_memory_config mem_cfg = LB_MEMORY_CONFIG_0;
 
-	if (dpp->base.ctx->dc->debug.use_max_lb) {
-		if (scl_data->format == PIXEL_FORMAT_420BPP8
-				|| scl_data->format == PIXEL_FORMAT_420BPP10)
-			return LB_MEMORY_CONFIG_3;
-		return LB_MEMORY_CONFIG_0;
-	}
+	if (dpp->base.ctx->dc->debug.use_max_lb)
+		return mem_cfg;
 
 	dpp->base.caps->dscl_calc_lb_num_partitions(
 			scl_data, LB_MEMORY_CONFIG_1, &num_part_y, &num_part_c);

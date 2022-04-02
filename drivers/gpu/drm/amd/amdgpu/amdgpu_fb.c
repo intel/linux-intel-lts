@@ -69,7 +69,7 @@ amdgpufb_release(struct fb_info *info, int user)
 	return 0;
 }
 
-static struct fb_ops amdgpufb_ops = {
+static const struct fb_ops amdgpufb_ops = {
 	.owner = THIS_MODULE,
 	DRM_FB_HELPER_DEFAULT_OPS,
 	.fb_open = amdgpufb_open,
@@ -133,7 +133,8 @@ static int amdgpufb_create_pinned_object(struct amdgpu_fbdev *rfbdev,
 	u32 cpp;
 	u64 flags = AMDGPU_GEM_CREATE_CPU_ACCESS_REQUIRED |
 			       AMDGPU_GEM_CREATE_VRAM_CONTIGUOUS     |
-			       AMDGPU_GEM_CREATE_VRAM_CLEARED;
+			       AMDGPU_GEM_CREATE_VRAM_CLEARED 	     |
+			       AMDGPU_GEM_CREATE_CPU_GTT_USWC;
 
 	info = drm_get_format_info(adev->ddev, mode_cmd);
 	cpp = info->cpp[0];
@@ -146,7 +147,7 @@ static int amdgpufb_create_pinned_object(struct amdgpu_fbdev *rfbdev,
 	size = mode_cmd->pitches[0] * height;
 	aligned_size = ALIGN(size, PAGE_SIZE);
 	ret = amdgpu_gem_object_create(adev, aligned_size, 0, domain, flags,
-				       ttm_bo_type_device, NULL, &gobj);
+				       ttm_bo_type_kernel, NULL, &gobj);
 	if (ret) {
 		pr_err("failed to allocate framebuffer (%d)\n", aligned_size);
 		return -ENOMEM;
@@ -289,13 +290,10 @@ out:
 static int amdgpu_fbdev_destroy(struct drm_device *dev, struct amdgpu_fbdev *rfbdev)
 {
 	struct amdgpu_framebuffer *rfb = &rfbdev->rfb;
-	int i;
 
 	drm_fb_helper_unregister_fbi(&rfbdev->helper);
 
 	if (rfb->base.obj[0]) {
-		for (i = 0; i < rfb->base.format->num_planes; i++)
-			drm_gem_object_put(rfb->base.obj[0]);
 		amdgpufb_destroy_pinned_object(rfb->base.obj[0]);
 		rfb->base.obj[0] = NULL;
 		drm_framebuffer_unregister_private(&rfb->base);
@@ -338,14 +336,11 @@ int amdgpu_fbdev_init(struct amdgpu_device *adev)
 	drm_fb_helper_prepare(adev->ddev, &rfbdev->helper,
 			&amdgpu_fb_helper_funcs);
 
-	ret = drm_fb_helper_init(adev->ddev, &rfbdev->helper,
-				 AMDGPUFB_CONN_LIMIT);
+	ret = drm_fb_helper_init(adev->ddev, &rfbdev->helper);
 	if (ret) {
 		kfree(rfbdev);
 		return ret;
 	}
-
-	drm_fb_helper_single_add_all_connectors(&rfbdev->helper);
 
 	/* disable all the possible outputs/crtcs before entering KMS mode */
 	if (!amdgpu_device_has_dc_support(adev))

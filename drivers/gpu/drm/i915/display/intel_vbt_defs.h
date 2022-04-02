@@ -111,7 +111,7 @@ enum bdb_block_id {
 	BDB_LVDS_LFP_DATA_PTRS		= 41,
 	BDB_LVDS_LFP_DATA		= 42,
 	BDB_LVDS_BACKLIGHT		= 43,
-	BDB_LVDS_POWER			= 44,
+	BDB_LFP_POWER			= 44,
 	BDB_MIPI_CONFIG			= 52,
 	BDB_MIPI_SEQUENCE		= 53,
 	BDB_COMPRESSION_PARAMETERS	= 56,
@@ -330,8 +330,6 @@ enum vbt_gmbus_ddi {
 #define DP_AUX_E 0x50
 #define DP_AUX_F 0x60
 #define DP_AUX_G 0x70
-#define DP_AUX_H 0x80
-#define DP_AUX_I 0x90
 
 #define VBT_DP_MAX_LINK_RATE_HBR3	0
 #define VBT_DP_MAX_LINK_RATE_HBR2	1
@@ -371,7 +369,7 @@ struct child_device_config {
 			u16 dtd_buf_ptr;			/* 161 */
 			u8 edidless_efp:1;			/* 161 */
 			u8 compression_enable:1;		/* 198 */
-			u8 compression_method:1;		/* 198 */
+			u8 compression_method_cps:1;		/* 198 */
 			u8 ganged_edp:1;			/* 202 */
 			u8 reserved0:4;
 			u8 compression_structure_index:4;	/* 198 */
@@ -793,6 +791,35 @@ struct bdb_lfp_backlight_data {
 	struct lfp_backlight_data_entry data[16];
 	u8 level[16];
 	struct lfp_backlight_control_method backlight_control[16];
+} __packed;
+
+/*
+ * Block 44 - LFP Power Conservation Features Block
+ */
+
+struct als_data_entry {
+	u16 backlight_adjust;
+	u16 lux;
+} __packed;
+
+struct agressiveness_profile_entry {
+	u8 dpst_agressiveness : 4;
+	u8 lace_agressiveness : 4;
+} __packed;
+
+struct bdb_lfp_power {
+	u8 lfp_feature_bits;
+	struct als_data_entry als[5];
+	u8 lace_aggressiveness_profile;
+	u16 dpst;
+	u16 psr;
+	u16 drrs;
+	u16 lace_support;
+	u16 adt;
+	u16 dmrrs;
+	u16 adb;
+	u16 lace_enabled_status;
+	struct agressiveness_profile_entry aggressivenes[16];
 } __packed;
 
 /*

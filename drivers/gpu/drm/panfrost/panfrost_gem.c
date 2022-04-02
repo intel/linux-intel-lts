@@ -46,7 +46,7 @@ static void panfrost_gem_free_object(struct drm_gem_object *obj)
 				sg_free_table(&bo->sgts[i]);
 			}
 		}
-		kvfree(bo->sgts);
+		kfree(bo->sgts);
 	}
 
 	drm_gem_shmem_free_object(obj);
@@ -105,12 +105,14 @@ void panfrost_gem_mapping_put(struct panfrost_gem_mapping *mapping)
 	kref_put(&mapping->refcount, panfrost_gem_mapping_release);
 }
 
-void panfrost_gem_teardown_mappings_locked(struct panfrost_gem_object *bo)
+void panfrost_gem_teardown_mappings(struct panfrost_gem_object *bo)
 {
 	struct panfrost_gem_mapping *mapping;
 
+	mutex_lock(&bo->mappings.lock);
 	list_for_each_entry(mapping, &bo->mappings.list, node)
 		panfrost_gem_teardown_mapping(mapping);
+	mutex_unlock(&bo->mappings.lock);
 }
 
 int panfrost_gem_open(struct drm_gem_object *obj, struct drm_file *file_priv)
@@ -205,7 +207,7 @@ static const struct drm_gem_object_funcs panfrost_gem_funcs = {
 	.get_sg_table = drm_gem_shmem_get_sg_table,
 	.vmap = drm_gem_shmem_vmap,
 	.vunmap = drm_gem_shmem_vunmap,
-	.vm_ops = &drm_gem_shmem_vm_ops,
+	.mmap = drm_gem_shmem_mmap,
 };
 
 /**

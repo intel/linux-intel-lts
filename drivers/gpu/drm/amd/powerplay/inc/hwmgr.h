@@ -229,7 +229,6 @@ struct pp_smumgr_func {
 	bool (*is_hw_avfs_present)(struct pp_hwmgr  *hwmgr);
 	int (*update_dpm_settings)(struct pp_hwmgr *hwmgr, void *profile_setting);
 	int (*smc_table_manager)(struct pp_hwmgr *hwmgr, uint8_t *table, uint16_t table_id, bool rw); /*rw: true for read, false for write */
-	int (*stop_smc)(struct pp_hwmgr *hwmgr);
 };
 
 struct pp_hwmgr_func {
@@ -356,6 +355,10 @@ struct pp_hwmgr_func {
 	int (*set_mp1_state)(struct pp_hwmgr *hwmgr, enum pp_mp1_state mp1_state);
 	int (*asic_reset)(struct pp_hwmgr *hwmgr, enum SMU_ASIC_RESET_MODE mode);
 	int (*smu_i2c_bus_access)(struct pp_hwmgr *hwmgr, bool aquire);
+	int (*set_df_cstate)(struct pp_hwmgr *hwmgr, enum pp_df_cstate state);
+	int (*set_xgmi_pstate)(struct pp_hwmgr *hwmgr, uint32_t pstate);
+	int (*disable_power_features_for_compute_performance)(struct pp_hwmgr *hwmgr,
+					bool disable);
 };
 
 struct pp_table_func {
@@ -738,6 +741,7 @@ struct pp_hwmgr {
 	uint32_t smu_version;
 	bool not_vf;
 	bool pm_en;
+	bool pp_one_vf;
 	struct mutex smu_lock;
 
 	uint32_t pp_table_version;

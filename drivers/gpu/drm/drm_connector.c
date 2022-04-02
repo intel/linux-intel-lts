@@ -27,7 +27,6 @@
 #include <drm/drm_print.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_file.h>
-#include <drm/drm_sysfs.h>
 
 #include <linux/uaccess.h>
 
@@ -247,7 +246,6 @@ int drm_connector_init(struct drm_device *dev,
 	INIT_LIST_HEAD(&connector->modes);
 	mutex_init(&connector->mutex);
 	connector->edid_blob_ptr = NULL;
-	connector->epoch_counter = 0;
 	connector->tile_blob_ptr = NULL;
 	connector->status = connector_status_unknown;
 	connector->display_info.panel_orientation =
@@ -503,10 +501,6 @@ int drm_connector_register(struct drm_connector *connector)
 	drm_mode_object_register(connector->dev, &connector->base);
 
 	connector->registration_state = DRM_CONNECTOR_REGISTERED;
-
-	/* Let userspace know we have a new connector */
-	drm_sysfs_hotplug_event(connector->dev);
-
 	goto unlock;
 
 err_debugfs:
@@ -718,7 +712,7 @@ void drm_connector_list_iter_end(struct drm_connector_list_iter *iter)
 		__drm_connector_put_safe(iter->conn);
 		spin_unlock_irqrestore(&config->connector_list_lock, flags);
 	}
-	lock_release(&connector_list_iter_dep_map, 0, _RET_IP_);
+	lock_release(&connector_list_iter_dep_map, _RET_IP_);
 }
 EXPORT_SYMBOL(drm_connector_list_iter_end);
 
@@ -1145,7 +1139,8 @@ static const struct drm_prop_enum_list dp_colorspaces[] = {
  *	coordinates, so if userspace rotates the picture to adjust for
  *	the orientation it must also apply the same transformation to the
  *	touchscreen input coordinates. This property is initialized by calling
- *	drm_connector_init_panel_orientation_property().
+ *	drm_connector_set_panel_orientation() or
+ *	drm_connector_set_panel_orientation_with_quirk()
  *
  * scaling mode:
  *	This property defines how a non-native mode is upscaled to the native
@@ -1932,7 +1927,6 @@ int drm_connector_update_edid_property(struct drm_connector *connector,
 	struct drm_device *dev = connector->dev;
 	size_t size = 0;
 	int ret;
-	const struct edid *old_edid;
 
 	/* ignore requests to set edid when overridden */
 	if (connector->override_edid)
@@ -1953,22 +1947,6 @@ int drm_connector_update_edid_property(struct drm_connector *connector,
 		drm_add_display_info(connector, edid);
 	else
 		drm_reset_display_info(connector);
-
-	drm_update_tile_info(connector, edid);
-
-	if (connector->edid_blob_ptr) {
-		old_edid = (const struct edid *)connector->edid_blob_ptr->data;
-		if (old_edid) {
-			if (!drm_edid_are_equal(edid, old_edid)) {
-				DRM_DEBUG_KMS("[CONNECTOR:%d:%s] Edid was changed.\n",
-					      connector->base.id, connector->name);
-
-				connector->epoch_counter += 1;
-				DRM_DEBUG_KMS("Updating change counter to %llu\n",
-					      connector->epoch_counter);
-			}
-		}
-	}
 
 	drm_object_property_set_value(&connector->base,
 				      dev->mode_config.non_desktop_property,
@@ -2069,37 +2047,40 @@ void drm_connector_set_vrr_capable_property(
 EXPORT_SYMBOL(drm_connector_set_vrr_capable_property);
 
 /**
- * drm_connector_init_panel_orientation_property -
- *	initialize the connecters panel_orientation property
- * @connector: connector for which to init the panel-orientation property.
- * @width: width in pixels of the panel, used for panel quirk detection
- * @height: height in pixels of the panel, used for panel quirk detection
+ * drm_connector_set_panel_orientation - sets the connecter's panel_orientation
+ * @connector: connector for which to set the panel-orientation property.
+ * @panel_orientation: drm_panel_orientation value to set
  *
- * This function should only be called for built-in panels, after setting
- * connector->display_info.panel_orientation first (if known).
+ * This function sets the connector's panel_orientation and attaches
+ * a "panel orientation" property to the connector.
  *
- * This function will check for platform specific (e.g. DMI based) quirks
- * overriding display_info.panel_orientation first, then if panel_orientation
- * is not DRM_MODE_PANEL_ORIENTATION_UNKNOWN it will attach the
- * "panel orientation" property to the connector.
+ * Calling this function on a connector where the panel_orientation has
+ * already been set is a no-op (e.g. the orientation has been overridden with
+ * a kernel commandline option).
+ *
+ * It is allowed to call this function with a panel_orientation of
+ * DRM_MODE_PANEL_ORIENTATION_UNKNOWN, in which case it is a no-op.
  *
  * Returns:
  * Zero on success, negative errno on failure.
  */
-int drm_connector_init_panel_orientation_property(
-	struct drm_connector *connector, int width, int height)
+int drm_connector_set_panel_orientation(
+	struct drm_connector *connector,
+	enum drm_panel_orientation panel_orientation)
 {
 	struct drm_device *dev = connector->dev;
 	struct drm_display_info *info = &connector->display_info;
 	struct drm_property *prop;
-	int orientation_quirk;
 
-	orientation_quirk = drm_get_panel_orientation_quirk(width, height);
-	if (orientation_quirk != DRM_MODE_PANEL_ORIENTATION_UNKNOWN)
-		info->panel_orientation = orientation_quirk;
-
-	if (info->panel_orientation == DRM_MODE_PANEL_ORIENTATION_UNKNOWN)
+	/* Already set? */
+	if (info->panel_orientation != DRM_MODE_PANEL_ORIENTATION_UNKNOWN)
 		return 0;
+
+	/* Don't attach the property if the orientation is unknown */
+	if (panel_orientation == DRM_MODE_PANEL_ORIENTATION_UNKNOWN)
+		return 0;
+
+	info->panel_orientation = panel_orientation;
 
 	prop = dev->mode_config.panel_orientation_property;
 	if (!prop) {
@@ -2117,7 +2098,37 @@ int drm_connector_init_panel_orientation_property(
 				   info->panel_orientation);
 	return 0;
 }
-EXPORT_SYMBOL(drm_connector_init_panel_orientation_property);
+EXPORT_SYMBOL(drm_connector_set_panel_orientation);
+
+/**
+ * drm_connector_set_panel_orientation_with_quirk -
+ *	set the connecter's panel_orientation after checking for quirks
+ * @connector: connector for which to init the panel-orientation property.
+ * @panel_orientation: drm_panel_orientation value to set
+ * @width: width in pixels of the panel, used for panel quirk detection
+ * @height: height in pixels of the panel, used for panel quirk detection
+ *
+ * Like drm_connector_set_panel_orientation(), but with a check for platform
+ * specific (e.g. DMI based) quirks overriding the passed in panel_orientation.
+ *
+ * Returns:
+ * Zero on success, negative errno on failure.
+ */
+int drm_connector_set_panel_orientation_with_quirk(
+	struct drm_connector *connector,
+	enum drm_panel_orientation panel_orientation,
+	int width, int height)
+{
+	int orientation_quirk;
+
+	orientation_quirk = drm_get_panel_orientation_quirk(width, height);
+	if (orientation_quirk != DRM_MODE_PANEL_ORIENTATION_UNKNOWN)
+		panel_orientation = orientation_quirk;
+
+	return drm_connector_set_panel_orientation(connector,
+						   panel_orientation);
+}
+EXPORT_SYMBOL(drm_connector_set_panel_orientation_with_quirk);
 
 int drm_connector_set_obj_prop(struct drm_mode_object *obj,
 				    struct drm_property *property,

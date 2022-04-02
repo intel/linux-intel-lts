@@ -126,16 +126,22 @@ struct aux_payloads {
 	struct vector payloads;
 };
 
-static bool dal_ddc_i2c_payloads_create(
-		struct dc_context *ctx,
-		struct i2c_payloads *payloads,
-		uint32_t count)
+static struct i2c_payloads *dal_ddc_i2c_payloads_create(struct dc_context *ctx, uint32_t count)
 {
+	struct i2c_payloads *payloads;
+
+	payloads = kzalloc(sizeof(struct i2c_payloads), GFP_KERNEL);
+
+	if (!payloads)
+		return NULL;
+
 	if (dal_vector_construct(
 		&payloads->payloads, ctx, count, sizeof(struct i2c_payload)))
-		return true;
+		return payloads;
 
-	return false;
+	kfree(payloads);
+	return NULL;
+
 }
 
 static struct i2c_payload *dal_ddc_i2c_payloads_get(struct i2c_payloads *p)
@@ -148,12 +154,14 @@ static uint32_t dal_ddc_i2c_payloads_get_count(struct i2c_payloads *p)
 	return p->payloads.count;
 }
 
-static void dal_ddc_i2c_payloads_destroy(struct i2c_payloads *p)
+static void dal_ddc_i2c_payloads_destroy(struct i2c_payloads **p)
 {
-	if (!p)
+	if (!p || !*p)
 		return;
+	dal_vector_destruct(&(*p)->payloads);
+	kfree(*p);
+	*p = NULL;
 
-	dal_vector_destruct(&p->payloads);
 }
 
 #define DDC_MIN(a, b) (((a) < (b)) ? (a) : (b))
@@ -179,7 +187,7 @@ void dal_ddc_i2c_payloads_add(
 
 }
 
-static void construct(
+static void ddc_service_construct(
 	struct ddc_service *ddc_service,
 	struct ddc_service_init_data *init_data)
 {
@@ -198,7 +206,10 @@ static void construct(
 		ddc_service->ddc_pin = NULL;
 	} else {
 		hw_info.ddc_channel = i2c_info.i2c_line;
-		hw_info.hw_supported = i2c_info.i2c_hw_assist;
+		if (ddc_service->link != NULL)
+			hw_info.hw_supported = i2c_info.i2c_hw_assist;
+		else
+			hw_info.hw_supported = false;
 
 		ddc_service->ddc_pin = dal_gpio_create_ddc(
 			gpio_service,
@@ -228,11 +239,11 @@ struct ddc_service *dal_ddc_service_create(
 	if (!ddc_service)
 		return NULL;
 
-	construct(ddc_service, init_data);
+	ddc_service_construct(ddc_service, init_data);
 	return ddc_service;
 }
 
-static void destruct(struct ddc_service *ddc)
+static void ddc_service_destruct(struct ddc_service *ddc)
 {
 	if (ddc->ddc_pin)
 		dal_gpio_destroy_ddc(&ddc->ddc_pin);
@@ -244,7 +255,7 @@ void dal_ddc_service_destroy(struct ddc_service **ddc)
 		BREAK_TO_DEBUGGER();
 		return;
 	}
-	destruct(*ddc);
+	ddc_service_destruct(*ddc);
 	kfree(*ddc);
 	*ddc = NULL;
 }
@@ -500,7 +511,7 @@ bool dal_ddc_service_query_ddc_data(
 	uint8_t *read_buf,
 	uint32_t read_size)
 {
-	bool ret;
+	bool ret = false;
 	uint32_t payload_size =
 		dal_ddc_service_is_in_aux_transaction_mode(ddc) ?
 			DEFAULT_AUX_MAX_DATA_SIZE : EDID_SEGMENT_SIZE;
@@ -513,64 +524,56 @@ bool dal_ddc_service_query_ddc_data(
 
 	uint32_t payloads_num = write_payloads + read_payloads;
 
-
 	if (write_size > EDID_SEGMENT_SIZE || read_size > EDID_SEGMENT_SIZE)
-		return false;
-
-	if (!payloads_num)
 		return false;
 
 	/*TODO: len of payload data for i2c and aux is uint8!!!!,
 	 *  but we want to read 256 over i2c!!!!*/
 	if (dal_ddc_service_is_in_aux_transaction_mode(ddc)) {
-		struct aux_payload write_payload = {
-			.i2c_over_aux = true,
-			.write = true,
-			.mot = true,
-			.address = address,
-			.length = write_size,
-			.data = write_buf,
-			.reply = NULL,
-			.defer_delay = get_defer_delay(ddc),
-		};
+		struct aux_payload payload;
+		bool read_available = true;
 
-		struct aux_payload read_payload = {
-			.i2c_over_aux = true,
-			.write = false,
-			.mot = false,
-			.address = address,
-			.length = read_size,
-			.data = read_buf,
-			.reply = NULL,
-			.defer_delay = get_defer_delay(ddc),
-		};
+		payload.i2c_over_aux = true;
+		payload.address = address;
+		payload.reply = NULL;
+		payload.defer_delay = get_defer_delay(ddc);
 
-		ret = dc_link_aux_transfer_with_retries(ddc, &write_payload);
+		if (write_size != 0) {
+			payload.write = true;
+			payload.mot = false;
+			payload.length = write_size;
+			payload.data = write_buf;
 
-		if (!ret)
-			return false;
+			ret = dal_ddc_submit_aux_command(ddc, &payload);
+			read_available = ret;
+		}
 
-		ret = dc_link_aux_transfer_with_retries(ddc, &read_payload);
+		if (read_size != 0 && read_available) {
+			payload.write = false;
+			payload.mot = false;
+			payload.length = read_size;
+			payload.data = read_buf;
+
+			ret = dal_ddc_submit_aux_command(ddc, &payload);
+		}
 	} else {
-		struct i2c_command command = {0};
-		struct i2c_payloads payloads;
+		struct i2c_payloads *payloads =
+			dal_ddc_i2c_payloads_create(ddc->ctx, payloads_num);
 
-		if (!dal_ddc_i2c_payloads_create(ddc->ctx, &payloads, payloads_num))
-			return false;
-
-		command.payloads = dal_ddc_i2c_payloads_get(&payloads);
-		command.number_of_payloads = 0;
-		command.engine = DDC_I2C_COMMAND_ENGINE;
-		command.speed = ddc->ctx->dc->caps.i2c_speed_in_khz;
+		struct i2c_command command = {
+			.payloads = dal_ddc_i2c_payloads_get(payloads),
+			.number_of_payloads = 0,
+			.engine = DDC_I2C_COMMAND_ENGINE,
+			.speed = ddc->ctx->dc->caps.i2c_speed_in_khz };
 
 		dal_ddc_i2c_payloads_add(
-			&payloads, address, write_size, write_buf, true);
+			payloads, address, write_size, write_buf, true);
 
 		dal_ddc_i2c_payloads_add(
-			&payloads, address, read_size, read_buf, false);
+			payloads, address, read_size, read_buf, false);
 
 		command.number_of_payloads =
-			dal_ddc_i2c_payloads_get_count(&payloads);
+			dal_ddc_i2c_payloads_get_count(payloads);
 
 		ret = dm_helpers_submit_i2c(
 				ddc->ctx,
@@ -579,6 +582,41 @@ bool dal_ddc_service_query_ddc_data(
 
 		dal_ddc_i2c_payloads_destroy(&payloads);
 	}
+
+	return ret;
+}
+
+bool dal_ddc_submit_aux_command(struct ddc_service *ddc,
+		struct aux_payload *payload)
+{
+	uint32_t retrieved = 0;
+	bool ret = false;
+
+	if (!ddc)
+		return false;
+
+	if (!payload)
+		return false;
+
+	do {
+		struct aux_payload current_payload;
+		bool is_end_of_payload = (retrieved + DEFAULT_AUX_MAX_DATA_SIZE) >
+			payload->length ? true : false;
+
+		current_payload.address = payload->address;
+		current_payload.data = &payload->data[retrieved];
+		current_payload.defer_delay = payload->defer_delay;
+		current_payload.i2c_over_aux = payload->i2c_over_aux;
+		current_payload.length = is_end_of_payload ?
+			payload->length - retrieved : DEFAULT_AUX_MAX_DATA_SIZE;
+		current_payload.mot = !is_end_of_payload;
+		current_payload.reply = payload->reply;
+		current_payload.write = payload->write;
+
+		ret = dc_link_aux_transfer_with_retries(ddc, &current_payload);
+
+		retrieved += current_payload.length;
+	} while (retrieved < payload->length && ret == true);
 
 	return ret;
 }
@@ -609,6 +647,19 @@ bool dc_link_aux_transfer_with_retries(struct ddc_service *ddc,
 		struct aux_payload *payload)
 {
 	return dce_aux_transfer_with_retries(ddc, payload);
+}
+
+
+uint32_t dc_link_aux_configure_timeout(struct ddc_service *ddc,
+		uint32_t timeout)
+{
+	uint32_t prev_timeout = 0;
+	struct ddc *ddc_pin = ddc->ddc_pin;
+
+	if (ddc->ctx->dc->res_pool->engines[ddc_pin->pin_data->en]->funcs->configure_timeout)
+		prev_timeout =
+				ddc->ctx->dc->res_pool->engines[ddc_pin->pin_data->en]->funcs->configure_timeout(ddc, timeout);
+	return prev_timeout;
 }
 
 /*test only function*/

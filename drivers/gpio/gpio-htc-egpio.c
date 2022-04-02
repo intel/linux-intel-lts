@@ -287,7 +287,7 @@ static int __init egpio_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		goto fail;
-	ei->base_addr = devm_ioremap_nocache(&pdev->dev, res->start,
+	ei->base_addr = devm_ioremap(&pdev->dev, res->start,
 					     resource_size(res));
 	if (!ei->base_addr)
 		goto fail;

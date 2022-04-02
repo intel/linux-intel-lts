@@ -183,6 +183,9 @@ static int vega20_set_features_platform_caps(struct pp_hwmgr *hwmgr)
 			PHM_PlatformCaps_TablelessHardwareInterface);
 
 	phm_cap_set(hwmgr->platform_descriptor.platformCaps,
+			PHM_PlatformCaps_BACO);
+
+	phm_cap_set(hwmgr->platform_descriptor.platformCaps,
 			PHM_PlatformCaps_EnableSMU7ThermalManagement);
 
 	if (adev->pg_flags & AMD_PG_SUPPORT_UVD)
@@ -490,8 +493,8 @@ static int vega20_setup_asic_task(struct pp_hwmgr *hwmgr)
 			"Failed to init sclk threshold!",
 			return ret);
 
-	if (adev->in_baco_reset) {
-		adev->in_baco_reset = 0;
+	if (adev->in_gpu_reset &&
+	    (amdgpu_asic_reset_method(adev) == AMD_RESET_METHOD_BACO)) {
 
 		ret = vega20_baco_apply_vdci_flush_workaround(hwmgr);
 		if (ret)
@@ -869,7 +872,7 @@ static int vega20_override_pcie_parameters(struct pp_hwmgr *hwmgr)
 		"[OverridePcieParameters] Attempt to override pcie params failed!",
 		return ret);
 
-	data->pcie_parameters_override = 1;
+	data->pcie_parameters_override = true;
 	data->pcie_gen_level1 = pcie_gen;
 	data->pcie_width_level1 = pcie_width;
 
@@ -981,15 +984,27 @@ static int vega20_disable_all_smu_features(struct pp_hwmgr *hwmgr)
 {
 	struct vega20_hwmgr *data =
 			(struct vega20_hwmgr *)(hwmgr->backend);
-	int i, ret = 0;
+	uint64_t features_enabled;
+	int i;
+	bool enabled;
+	int ret = 0;
 
 	PP_ASSERT_WITH_CODE((ret = smum_send_msg_to_smc(hwmgr,
 			PPSMC_MSG_DisableAllSmuFeatures)) == 0,
 			"[DisableAllSMUFeatures] Failed to disable all smu features!",
 			return ret);
 
-	for (i = 0; i < GNLD_FEATURES_MAX; i++)
-		data->smu_features[i].enabled = 0;
+	ret = vega20_get_enabled_smc_features(hwmgr, &features_enabled);
+	PP_ASSERT_WITH_CODE(!ret,
+			"[DisableAllSMUFeatures] Failed to get enabled smc features!",
+			return ret);
+
+	for (i = 0; i < GNLD_FEATURES_MAX; i++) {
+		enabled = (features_enabled & data->smu_features[i].smu_feature_bitmap) ?
+			true : false;
+		data->smu_features[i].enabled = enabled;
+		data->smu_features[i].supported = enabled;
+	}
 
 	return 0;
 }
@@ -1640,6 +1655,12 @@ static void vega20_init_powergate_state(struct pp_hwmgr *hwmgr)
 
 	data->uvd_power_gated = true;
 	data->vce_power_gated = true;
+
+	if (data->smu_features[GNLD_DPM_UVD].enabled)
+		data->uvd_power_gated = false;
+
+	if (data->smu_features[GNLD_DPM_VCE].enabled)
+		data->vce_power_gated = false;
 }
 
 static int vega20_enable_dpm_tasks(struct pp_hwmgr *hwmgr)
@@ -3193,11 +3214,10 @@ static int vega20_get_ppfeature_status(struct pp_hwmgr *hwmgr, char *buf)
 
 static int vega20_set_ppfeature_status(struct pp_hwmgr *hwmgr, uint64_t new_ppfeature_masks)
 {
-	struct vega20_hwmgr *data =
-			(struct vega20_hwmgr *)(hwmgr->backend);
-	uint64_t features_enabled, features_to_enable, features_to_disable;
-	int i, ret = 0;
-	bool enabled;
+	uint64_t features_enabled;
+	uint64_t features_to_enable;
+	uint64_t features_to_disable;
+	int ret = 0;
 
 	if (new_ppfeature_masks >= (1ULL << GNLD_FEATURES_MAX))
 		return -EINVAL;
@@ -3224,17 +3244,6 @@ static int vega20_set_ppfeature_status(struct pp_hwmgr *hwmgr, uint64_t new_ppfe
 		ret = vega20_enable_smc_features(hwmgr, true, features_to_enable);
 		if (ret)
 			return ret;
-	}
-
-	/* Update the cached feature enablement state */
-	ret = vega20_get_enabled_smc_features(hwmgr, &features_enabled);
-	if (ret)
-		return ret;
-
-	for (i = 0; i < GNLD_FEATURES_MAX; i++) {
-		enabled = (features_enabled & data->smu_features[i].smu_feature_bitmap) ?
-			true : false;
-		data->smu_features[i].enabled = enabled;
 	}
 
 	return 0;
@@ -4149,6 +4158,38 @@ static int vega20_smu_i2c_bus_access(struct pp_hwmgr *hwmgr, bool acquire)
 	return res;
 }
 
+static int vega20_set_df_cstate(struct pp_hwmgr *hwmgr,
+				enum pp_df_cstate state)
+{
+	int ret;
+
+	/* PPSMC_MSG_DFCstateControl is supported with 40.50 and later fws */
+	if (hwmgr->smu_version < 0x283200) {
+		pr_err("Df cstate control is supported with 40.50 and later SMC fw!\n");
+		return -EINVAL;
+	}
+
+	ret = smum_send_msg_to_smc_with_parameter(hwmgr, PPSMC_MSG_DFCstateControl, state);
+	if (ret)
+		pr_err("SetDfCstate failed!\n");
+
+	return ret;
+}
+
+static int vega20_set_xgmi_pstate(struct pp_hwmgr *hwmgr,
+				  uint32_t pstate)
+{
+	int ret;
+
+	ret = smum_send_msg_to_smc_with_parameter(hwmgr,
+						  PPSMC_MSG_SetXgmiMode,
+						  pstate ? XGMI_MODE_PSTATE_D0 : XGMI_MODE_PSTATE_D3);
+	if (ret)
+		pr_err("SetXgmiPstate failed!\n");
+
+	return ret;
+}
+
 static const struct pp_hwmgr_func vega20_hwmgr_funcs = {
 	/* init/fini related */
 	.backend_init = vega20_hwmgr_backend_init,
@@ -4217,6 +4258,8 @@ static const struct pp_hwmgr_func vega20_hwmgr_funcs = {
 	.set_asic_baco_state = vega20_baco_set_state,
 	.set_mp1_state = vega20_set_mp1_state,
 	.smu_i2c_bus_access = vega20_smu_i2c_bus_access,
+	.set_df_cstate = vega20_set_df_cstate,
+	.set_xgmi_pstate = vega20_set_xgmi_pstate,
 };
 
 int vega20_hwmgr_init(struct pp_hwmgr *hwmgr)

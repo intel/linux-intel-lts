@@ -174,7 +174,7 @@ static int xgene_gpio_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	gpio->base = devm_ioremap_nocache(&pdev->dev, res->start,
+	gpio->base = devm_ioremap(&pdev->dev, res->start,
 							resource_size(res));
 	if (!gpio->base) {
 		err = -ENOMEM;

@@ -113,7 +113,7 @@ static void submit_unlock_object(struct etnaviv_gem_submit *submit, int i)
 	if (submit->bos[i].flags & BO_LOCKED) {
 		struct drm_gem_object *obj = &submit->bos[i].obj->base;
 
-		ww_mutex_unlock(&obj->resv->lock);
+		dma_resv_unlock(obj->resv);
 		submit->bos[i].flags &= ~BO_LOCKED;
 	}
 }
@@ -133,8 +133,7 @@ retry:
 		contended = i;
 
 		if (!(submit->bos[i].flags & BO_LOCKED)) {
-			ret = ww_mutex_lock_interruptible(&obj->resv->lock,
-							  ticket);
+			ret = dma_resv_lock_interruptible(obj->resv, ticket);
 			if (ret == -EALREADY)
 				DRM_ERROR("BO at index %u already on submit list\n",
 					  i);
@@ -161,8 +160,7 @@ fail:
 		obj = &submit->bos[contended].obj->base;
 
 		/* we lost out in a seqno race, lock and retry.. */
-		ret = ww_mutex_lock_slow_interruptible(&obj->resv->lock,
-						       ticket);
+		ret = dma_resv_lock_slow_interruptible(obj->resv, ticket);
 		if (!ret) {
 			submit->bos[contended].flags |= BO_LOCKED;
 			slow_locked = contended;
@@ -240,10 +238,8 @@ static int submit_pin_objects(struct etnaviv_gem_submit *submit)
 		}
 
 		if ((submit->flags & ETNA_SUBMIT_SOFTPIN) &&
-		     submit->bos[i].va != mapping->iova) {
-			etnaviv_gem_mapping_unreference(mapping);
+		     submit->bos[i].va != mapping->iova)
 			return -EINVAL;
-		}
 
 		atomic_inc(&etnaviv_obj->gpu_active);
 
@@ -471,12 +467,6 @@ int etnaviv_ioctl_gem_submit(struct drm_device *dev, void *data,
 		return -EINVAL;
 	}
 
-	if (args->stream_size > SZ_128K || args->nr_relocs > SZ_128K ||
-	    args->nr_bos > SZ_128K || args->nr_pmrs > 128) {
-		DRM_ERROR("submit arguments out of size limits\n");
-		return -EINVAL;
-	}
-
 	/*
 	 * Copy the command submission and bo array to kernel space in
 	 * one go, and do this outside of any locks.
@@ -540,7 +530,8 @@ int etnaviv_ioctl_gem_submit(struct drm_device *dev, void *data,
 		goto err_submit_objects;
 
 	submit->ctx = file->driver_priv;
-	submit->mmu_context = etnaviv_iommu_context_get(submit->ctx->mmu);
+	etnaviv_iommu_context_get(submit->ctx->mmu);
+	submit->mmu_context = submit->ctx->mmu;
 	submit->exec_state = args->exec_state;
 	submit->flags = args->flags;
 

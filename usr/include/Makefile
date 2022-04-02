@@ -99,14 +99,11 @@ endif
 # asm-generic/*.h is used by asm/*.h, and should not be included directly
 header-test- += asm-generic/%
 
-extra-y := $(patsubst $(obj)/%.h,%.hdrtest, $(shell find $(obj) -name '*.h' 2>/dev/null))
+extra-y := $(patsubst %.h,%.hdrtest, $(filter-out $(header-test-), \
+		$(patsubst $(obj)/%,%, $(shell find $(obj) -name '*.h'))))
 
 quiet_cmd_hdrtest = HDRTEST $<
-      cmd_hdrtest = \
-		$(CC) $(c_flags) -S -o /dev/null -x c /dev/null \
-			$(if $(filter-out $(header-test-), $*.h), -include $<); \
-		$(PERL) $(srctree)/scripts/headers_check.pl $(obj) $(SRCARCH) $<; \
-		touch $@
+      cmd_hdrtest = $(CC) $(c_flags) -S -o /dev/null -x c /dev/null -include $<; touch $@
 
 $(obj)/%.hdrtest: $(obj)/%.h FORCE
 	$(call if_changed_dep,hdrtest)

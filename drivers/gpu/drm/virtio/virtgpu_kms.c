@@ -96,10 +96,8 @@ static void virtio_gpu_get_capsets(struct virtio_gpu_device *vgdev,
 					 vgdev->capsets[i].id > 0, 5 * HZ);
 		if (ret == 0) {
 			DRM_ERROR("timed out waiting for cap set %d\n", i);
-			spin_lock(&vgdev->display_info_lock);
 			kfree(vgdev->capsets);
 			vgdev->capsets = NULL;
-			spin_unlock(&vgdev->display_info_lock);
 			return;
 		}
 		DRM_INFO("cap set %d: id %d, max-version %d, max-size %d\n",
@@ -157,15 +155,14 @@ int virtio_gpu_init(struct drm_device *dev)
 #ifdef __LITTLE_ENDIAN
 	if (virtio_has_feature(vgdev->vdev, VIRTIO_GPU_F_VIRGL))
 		vgdev->has_virgl_3d = true;
-	DRM_INFO("virgl 3d acceleration %s\n",
-		 vgdev->has_virgl_3d ? "enabled" : "not supported by host");
-#else
-	DRM_INFO("virgl 3d acceleration not supported by guest\n");
 #endif
 	if (virtio_has_feature(vgdev->vdev, VIRTIO_GPU_F_EDID)) {
 		vgdev->has_edid = true;
-		DRM_INFO("EDID support available.\n");
 	}
+
+	DRM_INFO("features: %cvirgl %cedid\n",
+		 vgdev->has_virgl_3d ? '+' : '-',
+		 vgdev->has_edid     ? '+' : '-');
 
 	ret = virtio_find_vqs(vgdev->vdev, 2, vqs, callbacks, names, NULL);
 	if (ret) {
@@ -215,7 +212,6 @@ err_scanouts:
 err_vbufs:
 	vgdev->vdev->config->del_vqs(vgdev->vdev);
 err_vqs:
-	dev->dev_private = NULL;
 	kfree(vgdev);
 	return ret;
 }

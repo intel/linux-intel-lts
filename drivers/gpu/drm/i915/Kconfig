@@ -42,16 +42,9 @@ config DRM_I915
 
 	  If "M" is selected, the module will be called i915.
 
-config DRM_I915_ALPHA_SUPPORT
-	bool "Enable alpha quality support for new Intel hardware by default"
-	depends on DRM_I915
-	help
-	  This option is deprecated. Use DRM_I915_FORCE_PROBE option instead.
-
 config DRM_I915_FORCE_PROBE
 	string "Force probe driver for selected new Intel hardware"
 	depends on DRM_I915
-	default "*" if DRM_I915_ALPHA_SUPPORT
 	help
 	  This is the default value for the i915.force_probe module
 	  parameter. Using the module parameter overrides this option.
@@ -135,16 +128,6 @@ config DRM_I915_GVT_KVMGT
 	help
 	  Choose this option if you want to enable KVMGT support for
 	  Intel GVT-g.
-
-config DRM_I915_GVT_ACRN_GVT
-	tristate "Enable ACRN support for Intel GVT-g"
-	depends on DRM_I915_GVT
-	depends on ACRN_GUEST
-	depends on ACRN_VHM
-	default n
-	help
-          Choose this option if you want to enable ACRN_GVT support for
-          Intel GVT-g under ACRN hypervisor environment.
 
 menu "drm/i915 Debugging"
 depends on DRM_I915

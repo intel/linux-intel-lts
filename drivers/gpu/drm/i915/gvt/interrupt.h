@@ -32,6 +32,8 @@
 #ifndef _GVT_INTERRUPT_H_
 #define _GVT_INTERRUPT_H_
 
+#include <linux/types.h>
+
 enum intel_gvt_event_type {
 	RCS_MI_USER_INTERRUPT = 0,
 	RCS_DEBUG,
@@ -92,9 +94,6 @@ enum intel_gvt_event_type {
 	SPRITE_A_FLIP_DONE,
 	SPRITE_B_FLIP_DONE,
 	SPRITE_C_FLIP_DONE,
-	PLANE_3_A_FLIP_DONE,
-	PLANE_3_B_FLIP_DONE,
-	PLANE_3_C_FLIP_DONE,
 
 	PCU_THERMAL,
 	PCU_PCODE2DRIVER_MAILBOX,
@@ -138,6 +137,7 @@ enum intel_gvt_event_type {
 
 struct intel_gvt_irq;
 struct intel_gvt;
+struct intel_vgpu;
 
 typedef void (*gvt_event_virt_handler_t)(struct intel_gvt_irq *irq,
 	enum intel_gvt_event_type event, struct intel_vgpu *vgpu);

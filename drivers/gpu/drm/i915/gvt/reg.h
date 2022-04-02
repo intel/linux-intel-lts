@@ -57,16 +57,14 @@
 
 #define VGT_SPRSTRIDE(pipe)	_PIPE(pipe, _SPRA_STRIDE, _PLANE_STRIDE_2_B)
 
-#define PLANE_WM_BASE(pipe, plane) _MMIO(_PLANE_WM_BASE(pipe, plane))
-#define SKL_PLANE_SURFLIVE(pipe, plane) (_MMIO(_DSPASURFLIVE + (pipe) * 0x1000 + (plane) * 0x100))
-#define SKL_CURSOR_SURFLIVE(pipe) (_MMIO(_CURASURFLIVE + (pipe) * 0x1000))
-#define SKL_PLANE_REG_TO_PIPE(reg) (((reg) >> 12) & 0x3)
-#define SKL_PLANE_REG_TO_PLANE(reg) ((((reg) & 0xFFF) - 0x180) >> 8)
+#define _REG_701C0(pipe, plane) (0x701c0 + pipe * 0x1000 + (plane - 1) * 0x100)
+#define _REG_701C4(pipe, plane) (0x701c4 + pipe * 0x1000 + (plane - 1) * 0x100)
+
 #define SKL_FLIP_EVENT(pipe, plane) (PRIMARY_A_FLIP_DONE + (plane) * 3 + (pipe))
+
 #define PLANE_CTL_ASYNC_FLIP		(1 << 9)
 #define REG50080_FLIP_TYPE_MASK	0x3
 #define REG50080_FLIP_TYPE_ASYNC	0x1
-#define SKL_CURSOR_MODE_MASK 0x3F
 
 #define REG_50080(_pipe, _plane) ({ \
 	typeof(_pipe) (p) = (_pipe); \

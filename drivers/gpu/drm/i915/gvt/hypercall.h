@@ -33,10 +33,13 @@
 #ifndef _GVT_HYPERCALL_H_
 #define _GVT_HYPERCALL_H_
 
+#include <linux/types.h>
+
+struct device;
+
 enum hypervisor_type {
 	INTEL_GVT_HYPERVISOR_XEN = 0,
 	INTEL_GVT_HYPERVISOR_KVM,
-	INTEL_GVT_HYPERVISOR_ACRN,
 };
 
 /*
@@ -63,6 +66,8 @@ struct intel_gvt_mpt {
 				  unsigned long size, dma_addr_t *dma_addr);
 	void (*dma_unmap_guest_page)(unsigned long handle, dma_addr_t dma_addr);
 
+	int (*dma_pin_guest_page)(unsigned long handle, dma_addr_t dma_addr);
+
 	int (*map_gfn_to_mfn)(unsigned long handle, unsigned long gfn,
 			      unsigned long mfn, unsigned int nr, bool map);
 	int (*set_trap_area)(unsigned long handle, u64 start, u64 end,
@@ -75,6 +80,5 @@ struct intel_gvt_mpt {
 };
 
 extern struct intel_gvt_mpt xengt_mpt;
-extern struct intel_gvt_mpt acrn_gvt_mpt;
 
 #endif /* _GVT_HYPERCALL_H_ */

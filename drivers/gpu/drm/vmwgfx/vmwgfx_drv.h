@@ -56,9 +56,9 @@
 
 
 #define VMWGFX_DRIVER_NAME "vmwgfx"
-#define VMWGFX_DRIVER_DATE "20180704"
+#define VMWGFX_DRIVER_DATE "20200114"
 #define VMWGFX_DRIVER_MAJOR 2
-#define VMWGFX_DRIVER_MINOR 15
+#define VMWGFX_DRIVER_MINOR 17
 #define VMWGFX_DRIVER_PATCHLEVEL 0
 #define VMWGFX_FIFO_STATIC_SIZE (1024*1024)
 #define VMWGFX_MAX_RELOCATIONS 2048
@@ -102,6 +102,8 @@ struct vmw_fpriv {
  * @base: The TTM buffer object
  * @res_list: List of resources using this buffer object as a backing MOB
  * @pin_count: pin depth
+ * @cpu_writers: Number of synccpu write grabs. Protected by reservation when
+ * increased. May be decreased without reservation.
  * @dx_query_ctx: DX context if this buffer object is used as a DX query MOB
  * @map: Kmap object for semi-persistent mappings
  * @res_prios: Eviction priority counts for attached resources
@@ -110,6 +112,7 @@ struct vmw_buffer_object {
 	struct ttm_buffer_object base;
 	struct list_head res_list;
 	s32 pin_count;
+	atomic_t cpu_writers;
 	/* Not ref-counted.  Protected by binding_mutex */
 	struct vmw_resource *dx_query_ctx;
 	/* Protected by reservation */
@@ -1003,14 +1006,15 @@ extern int vmw_execbuf_fence_commands(struct drm_file *file_priv,
 				      struct vmw_private *dev_priv,
 				      struct vmw_fence_obj **p_fence,
 				      uint32_t *p_handle);
-extern int vmw_execbuf_copy_fence_user(struct vmw_private *dev_priv,
+extern void vmw_execbuf_copy_fence_user(struct vmw_private *dev_priv,
 					struct vmw_fpriv *vmw_fp,
 					int ret,
 					struct drm_vmw_fence_rep __user
 					*user_fence_rep,
 					struct vmw_fence_obj *fence,
 					uint32_t fence_handle,
-					int32_t out_fence_fd);
+					int32_t out_fence_fd,
+					struct sync_file *sync_file);
 bool vmw_cmd_describe(const void *buf, u32 *size, char const **cmd);
 
 /**
@@ -1388,6 +1392,8 @@ int vmw_bo_cpu_blit(struct ttm_buffer_object *dst,
 int vmw_host_get_guestinfo(const char *guest_info_param,
 			   char *buffer, size_t *length);
 int vmw_host_log(const char *log);
+int vmw_msg_ioctl(struct drm_device *dev, void *data,
+		  struct drm_file *file_priv);
 
 /* VMW logging */
 

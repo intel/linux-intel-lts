@@ -26,6 +26,7 @@
  *          Jerome Glisse
  */
 
+#include <linux/pci.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
@@ -35,7 +36,6 @@
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_file.h>
 #include <drm/drm_ioctl.h>
-#include <drm/drm_pci.h>
 #include <drm/radeon_drm.h>
 
 #include "radeon.h"
@@ -512,7 +512,6 @@ static int radeon_info_ioctl(struct drm_device *dev, void *data, struct drm_file
 			*value = rdev->config.si.backend_enable_mask;
 		} else {
 			DRM_DEBUG_KMS("BACKEND_ENABLED_MASK is si+ only!\n");
-			return -EINVAL;
 		}
 		break;
 	case RADEON_INFO_MAX_SCLK:
@@ -634,66 +633,58 @@ void radeon_driver_lastclose_kms(struct drm_device *dev)
 int radeon_driver_open_kms(struct drm_device *dev, struct drm_file *file_priv)
 {
 	struct radeon_device *rdev = dev->dev_private;
-	struct radeon_fpriv *fpriv;
-	struct radeon_vm *vm;
 	int r;
 
 	file_priv->driver_priv = NULL;
 
 	r = pm_runtime_get_sync(dev->dev);
-	if (r < 0) {
-		pm_runtime_put_autosuspend(dev->dev);
+	if (r < 0)
 		return r;
-	}
 
 	/* new gpu have virtual address space support */
 	if (rdev->family >= CHIP_CAYMAN) {
+		struct radeon_fpriv *fpriv;
+		struct radeon_vm *vm;
 
 		fpriv = kzalloc(sizeof(*fpriv), GFP_KERNEL);
 		if (unlikely(!fpriv)) {
 			r = -ENOMEM;
-			goto err_suspend;
+			goto out_suspend;
 		}
 
 		if (rdev->accel_working) {
 			vm = &fpriv->vm;
 			r = radeon_vm_init(rdev, vm);
-			if (r)
-				goto err_fpriv;
+			if (r) {
+				kfree(fpriv);
+				goto out_suspend;
+			}
 
 			r = radeon_bo_reserve(rdev->ring_tmp_bo.bo, false);
-			if (r)
-				goto err_vm_fini;
+			if (r) {
+				radeon_vm_fini(rdev, vm);
+				kfree(fpriv);
+				goto out_suspend;
+			}
 
 			/* map the ib pool buffer read only into
 			 * virtual address space */
 			vm->ib_bo_va = radeon_vm_bo_add(rdev, vm,
 							rdev->ring_tmp_bo.bo);
-			if (!vm->ib_bo_va) {
-				r = -ENOMEM;
-				goto err_vm_fini;
-			}
-
 			r = radeon_vm_bo_set_addr(rdev, vm->ib_bo_va,
 						  RADEON_VA_IB_OFFSET,
 						  RADEON_VM_PAGE_READABLE |
 						  RADEON_VM_PAGE_SNOOPED);
-			if (r)
-				goto err_vm_fini;
+			if (r) {
+				radeon_vm_fini(rdev, vm);
+				kfree(fpriv);
+				goto out_suspend;
+			}
 		}
 		file_priv->driver_priv = fpriv;
 	}
 
-	pm_runtime_mark_last_busy(dev->dev);
-	pm_runtime_put_autosuspend(dev->dev);
-	return 0;
-
-err_vm_fini:
-	radeon_vm_fini(rdev, vm);
-err_fpriv:
-	kfree(fpriv);
-
-err_suspend:
+out_suspend:
 	pm_runtime_mark_last_busy(dev->dev);
 	pm_runtime_put_autosuspend(dev->dev);
 	return r;

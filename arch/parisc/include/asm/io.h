@@ -137,9 +137,8 @@ static inline void __iomem * ioremap(unsigned long offset, unsigned long size)
 {
 	return __ioremap(offset, size, _PAGE_NO_CACHE);
 }
-#define ioremap_nocache(off, sz)	ioremap((off), (sz))
-#define ioremap_wc			ioremap_nocache
-#define ioremap_uc			ioremap_nocache
+#define ioremap_wc			ioremap
+#define ioremap_uc			ioremap
 
 extern void iounmap(const volatile void __iomem *addr);
 

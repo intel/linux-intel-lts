@@ -354,15 +354,6 @@ drm_load_edid_firmware(struct drm_connector *connector)
 }
 #endif
 
-/**
- * drm_edid_are_equal - compare two edid blobs.
- * @edid1: pointer to first blob
- * @edid2: pointer to second blob
- * This helper can be used during probing to determine if
- * edid had changed.
- */
-bool drm_edid_are_equal(const struct edid *edid1, const struct edid *edid2);
-
 int
 drm_hdmi_avi_infoframe_from_display_mode(struct hdmi_avi_infoframe *frame,
 					 struct drm_connector *connector,
@@ -375,6 +366,10 @@ drm_hdmi_vendor_infoframe_from_display_mode(struct hdmi_vendor_infoframe *frame,
 void
 drm_hdmi_avi_infoframe_colorspace(struct hdmi_avi_infoframe *frame,
 				  const struct drm_connector_state *conn_state);
+
+void
+drm_hdmi_avi_infoframe_bars(struct hdmi_avi_infoframe *frame,
+			    const struct drm_connector_state *conn_state);
 
 void
 drm_hdmi_avi_infoframe_quant_range(struct hdmi_avi_infoframe *frame,
@@ -490,7 +485,6 @@ int drm_add_edid_modes(struct drm_connector *connector, struct edid *edid);
 int drm_add_override_edid_modes(struct drm_connector *connector);
 
 u8 drm_match_cea_mode(const struct drm_display_mode *to_match);
-enum hdmi_picture_aspect drm_get_cea_aspect_ratio(const u8 video_code);
 bool drm_detect_hdmi_monitor(struct edid *edid);
 bool drm_detect_monitor_audio(struct edid *edid);
 enum hdmi_quantization_range

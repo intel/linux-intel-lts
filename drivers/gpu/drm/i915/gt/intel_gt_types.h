@@ -35,8 +35,6 @@ struct intel_gt {
 
 	struct intel_uc uc;
 
-	struct mutex tlb_invalidate_lock;
-
 	struct intel_gt_timelines {
 		spinlock_t lock; /* protects active_list */
 		struct list_head active_list;
@@ -92,6 +90,13 @@ struct intel_gt {
 	struct intel_engine_cs *engine[I915_NUM_ENGINES];
 	struct intel_engine_cs *engine_class[MAX_ENGINE_CLASS + 1]
 					    [MAX_ENGINE_INSTANCE + 1];
+
+	/*
+	 * Default address space (either GGTT or ppGTT depending on arch).
+	 *
+	 * Reserved for exclusive use by the kernel.
+	 */
+	struct i915_address_space *vm;
 };
 
 enum intel_gt_scratch_field {

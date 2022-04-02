@@ -2666,7 +2666,7 @@ static void tegra186_pmc_setup_irq_polarity(struct tegra_pmc *pmc,
 
 	of_address_to_resource(np, index, &regs);
 
-	wake = ioremap_nocache(regs.start, resource_size(&regs));
+	wake = ioremap(regs.start, resource_size(&regs));
 	if (!wake) {
 		dev_err(pmc->dev, "failed to map PMC wake registers\n");
 		return;
@@ -2892,7 +2892,7 @@ static int __init tegra_pmc_early_init(void)
 		}
 	}
 
-	pmc->base = ioremap_nocache(regs.start, resource_size(&regs));
+	pmc->base = ioremap(regs.start, resource_size(&regs));
 	if (!pmc->base) {
 		pr_err("failed to map PMC registers\n");
 		of_node_put(np);

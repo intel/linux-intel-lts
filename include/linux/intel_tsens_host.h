@@ -8,6 +8,8 @@
 #ifndef _LINUX_INTEL_TSENS_HOST_DEVICE_H
 #define _LINUX_INTEL_TSENS_HOST_DEVICE_H
 
+#include <linux/thermal.h>
+
 __packed __aligned(4) struct intel_tsens_host_trip_info {
 	enum thermal_trip_type trip_type;
 	int temp;

@@ -179,18 +179,10 @@ static int mcde_modeset_init(struct drm_device *drm)
 	mode_config->min_height = 1;
 	mode_config->max_height = 1080;
 
-	/*
-	 * Currently we only support vblank handling on the DSI bridge, using
-	 * TE synchronization. If TE sync is not set up, it is still possible
-	 * to push out a single update on demand, but this is hard for DRM to
-	 * exploit.
-	 */
-	if (mcde->te_sync) {
-		ret = drm_vblank_init(drm, 1);
-		if (ret) {
-			dev_err(drm->dev, "failed to init vblank\n");
-			goto out_config;
-		}
+	ret = drm_vblank_init(drm, 1);
+	if (ret) {
+		dev_err(drm->dev, "failed to init vblank\n");
+		goto out_config;
 	}
 
 	ret = mcde_display_init(drm);
@@ -215,6 +207,7 @@ static int mcde_modeset_init(struct drm_device *drm)
 
 	drm_mode_config_reset(drm);
 	drm_kms_helper_poll_init(drm);
+	drm_fbdev_generic_setup(drm, 32);
 
 	return 0;
 
@@ -281,8 +274,6 @@ static int mcde_drm_bind(struct device *dev)
 	if (ret < 0)
 		goto unbind;
 
-	drm_fbdev_generic_setup(drm, 32);
-
 	return 0;
 
 unbind:
@@ -340,8 +331,6 @@ static int mcde_probe(struct platform_device *pdev)
 	drm->dev_private = mcde;
 	platform_set_drvdata(pdev, drm);
 
-	/* Enable use of the TE signal and interrupt */
-	mcde->te_sync = true;
 	/* Enable continuous updates: this is what Linux' framebuffer expects */
 	mcde->oneshot_mode = false;
 	drm->dev_private = mcde;
@@ -410,8 +399,8 @@ static int mcde_probe(struct platform_device *pdev)
 	}
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		ret = irq;
+	if (!irq) {
+		ret = -EINVAL;
 		goto clk_disable;
 	}
 

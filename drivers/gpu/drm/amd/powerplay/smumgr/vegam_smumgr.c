@@ -642,6 +642,9 @@ static int vegam_get_dependency_volt_by_clk(struct pp_hwmgr *hwmgr,
 
 	/* sclk is bigger than max sclk in the dependence table */
 	*voltage |= (dep_table->entries[i - 1].vddc * VOLTAGE_SCALE) << VDDC_SHIFT;
+	vddci = phm_find_closest_vddci(&(data->vddci_voltage_table),
+			(dep_table->entries[i - 1].vddc -
+					(uint16_t)VDDC_VDDCI_DELTA));
 
 	if (SMU7_VOLTAGE_CONTROL_NONE == data->vddci_control)
 		*voltage |= (data->vbios_boot_state.vddci_bootup_value *
@@ -649,13 +652,8 @@ static int vegam_get_dependency_volt_by_clk(struct pp_hwmgr *hwmgr,
 	else if (dep_table->entries[i - 1].vddci)
 		*voltage |= (dep_table->entries[i - 1].vddci *
 				VOLTAGE_SCALE) << VDDC_SHIFT;
-	else {
-		vddci = phm_find_closest_vddci(&(data->vddci_voltage_table),
-				(dep_table->entries[i - 1].vddc -
-						(uint16_t)VDDC_VDDCI_DELTA));
-
+	else
 		*voltage |= (vddci * VOLTAGE_SCALE) << VDDCI_SHIFT;
-	}
 
 	if (SMU7_VOLTAGE_CONTROL_NONE == data->mvdd_control)
 		*mvdd = data->vbios_boot_state.mvdd_bootup_value * VOLTAGE_SCALE;
@@ -1116,7 +1114,6 @@ static int vegam_populate_smc_acpi_level(struct pp_hwmgr *hwmgr,
 			(struct phm_ppt_v1_information *)(hwmgr->pptable);
 	SMIO_Pattern vol_level;
 	uint32_t mvdd;
-	uint16_t us_mvdd;
 
 	table->ACPILevel.Flags &= ~PPSMC_SWSTATE_FLAG_DC;
 
@@ -1169,17 +1166,6 @@ static int vegam_populate_smc_acpi_level(struct pp_hwmgr *hwmgr,
 			"Cannot find ACPI VDDCI voltage value "
 			"in Clock Dependency Table",
 			);
-
-	us_mvdd = 0;
-	if ((SMU7_VOLTAGE_CONTROL_NONE == data->mvdd_control) ||
-			(data->mclk_dpm_key_disabled))
-		us_mvdd = data->vbios_boot_state.mvdd_bootup_value;
-	else {
-		if (!vegam_populate_mvdd_value(hwmgr,
-				data->dpm_table.mclk_table.dpm_levels[0].value,
-				&vol_level))
-			us_mvdd = vol_level.Voltage;
-	}
 
 	if (!vegam_populate_mvdd_value(hwmgr, 0, &vol_level))
 		table->MemoryACPILevel.MinMvdd = PP_HOST_TO_SMC_UL(vol_level.Voltage);
@@ -1385,10 +1371,15 @@ static int vegam_populate_smc_boot_level(struct pp_hwmgr *hwmgr,
 	result = phm_find_boot_level(&(data->dpm_table.sclk_table),
 			data->vbios_boot_state.sclk_bootup_value,
 			(uint32_t *)&(table->GraphicsBootLevel));
+	if (result)
+		return result;
 
 	result = phm_find_boot_level(&(data->dpm_table.mclk_table),
 			data->vbios_boot_state.mclk_bootup_value,
 			(uint32_t *)&(table->MemoryBootLevel));
+
+	if (result)
+		return result;
 
 	table->BootVddc  = data->vbios_boot_state.vddc_bootup_value *
 			VOLTAGE_SCALE;
@@ -1495,7 +1486,7 @@ static int vegam_populate_clock_stretcher_data_table(struct pp_hwmgr *hwmgr)
 	struct vegam_smumgr *smu_data =
 			(struct vegam_smumgr *)(hwmgr->smu_backend);
 
-	uint8_t i, stretch_amount, stretch_amount2, volt_offset = 0;
+	uint8_t i, stretch_amount, volt_offset = 0;
 	struct phm_ppt_v1_information *table_info =
 			(struct phm_ppt_v1_information *)(hwmgr->pptable);
 	struct phm_ppt_v1_clock_voltage_dependency_table *sclk_table =
@@ -1534,11 +1525,9 @@ static int vegam_populate_clock_stretcher_data_table(struct pp_hwmgr *hwmgr)
 			(table_info->cac_dtp_table->ucCKS_LDO_REFSEL != 0) ?
 			table_info->cac_dtp_table->ucCKS_LDO_REFSEL : 5;
 	/* Populate CKS Lookup Table */
-	if (stretch_amount == 1 || stretch_amount == 2 || stretch_amount == 5)
-		stretch_amount2 = 0;
-	else if (stretch_amount == 3 || stretch_amount == 4)
-		stretch_amount2 = 1;
-	else {
+	if (!(stretch_amount == 1 || stretch_amount == 2 ||
+	      stretch_amount == 5 || stretch_amount == 3 ||
+	      stretch_amount == 4)) {
 		phm_cap_unset(hwmgr->platform_descriptor.platformCaps,
 				PHM_PlatformCaps_ClockStretcher);
 		PP_ASSERT_WITH_CODE(false,

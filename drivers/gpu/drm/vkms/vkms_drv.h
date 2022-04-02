@@ -121,6 +121,11 @@ struct drm_plane *vkms_plane_init(struct vkms_device *vkmsdev,
 				  enum drm_plane_type type, int index);
 
 /* Gem stuff */
+struct drm_gem_object *vkms_gem_create(struct drm_device *dev,
+				       struct drm_file *file,
+				       u32 *handle,
+				       u64 size);
+
 vm_fault_t vkms_gem_fault(struct vm_fault *vmf);
 
 int vkms_dumb_create(struct drm_file *file, struct drm_device *dev,
@@ -131,6 +136,12 @@ void vkms_gem_free_object(struct drm_gem_object *obj);
 int vkms_gem_vmap(struct drm_gem_object *obj);
 
 void vkms_gem_vunmap(struct drm_gem_object *obj);
+
+/* Prime */
+struct drm_gem_object *
+vkms_prime_import_sg_table(struct drm_device *dev,
+			   struct dma_buf_attachment *attach,
+			   struct sg_table *sg);
 
 /* CRC Support */
 const char *const *vkms_get_crc_sources(struct drm_crtc *crtc,

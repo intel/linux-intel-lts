@@ -95,29 +95,29 @@ static ssize_t dp_link_settings_read(struct file *f, char __user *buf,
 
 	rd_buf_ptr = rd_buf;
 
-	str_len = strlen("Current:  %d  0x%x  %d  ");
-	snprintf(rd_buf_ptr, str_len, "Current:  %d  0x%x  %d  ",
+	str_len = strlen("Current:  %d  %d  %d  ");
+	snprintf(rd_buf_ptr, str_len, "Current:  %d  %d  %d  ",
 			link->cur_link_settings.lane_count,
 			link->cur_link_settings.link_rate,
 			link->cur_link_settings.link_spread);
 	rd_buf_ptr += str_len;
 
-	str_len = strlen("Verified:  %d  0x%x  %d  ");
-	snprintf(rd_buf_ptr, str_len, "Verified:  %d  0x%x  %d  ",
+	str_len = strlen("Verified:  %d  %d  %d  ");
+	snprintf(rd_buf_ptr, str_len, "Verified:  %d  %d  %d  ",
 			link->verified_link_cap.lane_count,
 			link->verified_link_cap.link_rate,
 			link->verified_link_cap.link_spread);
 	rd_buf_ptr += str_len;
 
-	str_len = strlen("Reported:  %d  0x%x  %d  ");
-	snprintf(rd_buf_ptr, str_len, "Reported:  %d  0x%x  %d  ",
+	str_len = strlen("Reported:  %d  %d  %d  ");
+	snprintf(rd_buf_ptr, str_len, "Reported:  %d  %d  %d  ",
 			link->reported_link_cap.lane_count,
 			link->reported_link_cap.link_rate,
 			link->reported_link_cap.link_spread);
 	rd_buf_ptr += str_len;
 
-	str_len = strlen("Preferred:  %d  0x%x  %d  ");
-	snprintf(rd_buf_ptr, str_len, "Preferred:  %d  0x%x  %d\n",
+	str_len = strlen("Preferred:  %d  %d  %d  ");
+	snprintf(rd_buf_ptr, str_len, "Preferred:  %d  %d  %d\n",
 			link->preferred_link_setting.lane_count,
 			link->preferred_link_setting.link_rate,
 			link->preferred_link_setting.link_spread);
@@ -657,6 +657,7 @@ static ssize_t dp_phy_test_pattern_debugfs_write(struct file *f, const char __us
 	dc_link_set_test_pattern(
 		link,
 		test_pattern,
+		DP_TEST_PATTERN_COLOR_SPACE_RGB,
 		&link_training_settings,
 		custom_pattern,
 		10);
@@ -942,6 +943,52 @@ static const struct {
 		{"aux_dpcd_data", &dp_dpcd_data_debugfs_fops}
 };
 
+/*
+ * Force YUV420 output if available from the given mode
+ */
+static int force_yuv420_output_set(void *data, u64 val)
+{
+	struct amdgpu_dm_connector *connector = data;
+
+	connector->force_yuv420_output = (bool)val;
+
+	return 0;
+}
+
+/*
+ * Check if YUV420 is forced when available from the given mode
+ */
+static int force_yuv420_output_get(void *data, u64 *val)
+{
+	struct amdgpu_dm_connector *connector = data;
+
+	*val = connector->force_yuv420_output;
+
+	return 0;
+}
+
+DEFINE_DEBUGFS_ATTRIBUTE(force_yuv420_output_fops, force_yuv420_output_get,
+			 force_yuv420_output_set, "%llu\n");
+
+/*
+ *  Read PSR state
+ */
+static int psr_get(void *data, u64 *val)
+{
+	struct amdgpu_dm_connector *connector = data;
+	struct dc_link *link = connector->dc_link;
+	uint32_t psr_state = 0;
+
+	dc_link_get_psr_state(link, &psr_state);
+
+	*val = psr_state;
+
+	return 0;
+}
+
+
+DEFINE_DEBUGFS_ATTRIBUTE(psr_fops, psr_get, NULL, "%llu\n");
+
 void connector_debugfs_init(struct amdgpu_dm_connector *connector)
 {
 	int i;
@@ -955,6 +1002,12 @@ void connector_debugfs_init(struct amdgpu_dm_connector *connector)
 					    dp_debugfs_entries[i].fops);
 		}
 	}
+	if (connector->base.connector_type == DRM_MODE_CONNECTOR_eDP)
+		debugfs_create_file_unsafe("psr_state", 0444, dir, connector, &psr_fops);
+
+	debugfs_create_file_unsafe("force_yuv420_output", 0644, dir, connector,
+				   &force_yuv420_output_fops);
+
 }
 
 /*

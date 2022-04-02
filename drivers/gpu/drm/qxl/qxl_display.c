@@ -325,7 +325,6 @@ static void qxl_crtc_update_monitors_config(struct drm_crtc *crtc,
 
 	head.id = i;
 	head.flags = 0;
-	head.surface_id = 0;
 	oldcount = qdev->monitors_config->count;
 	if (crtc->state->active) {
 		struct drm_display_mode *mode = &crtc->mode;
@@ -524,8 +523,8 @@ static int qxl_primary_apply_cursor(struct drm_plane *plane)
 	cmd->u.set.visible = 1;
 	qxl_release_unmap(qdev, release, &cmd->release_info);
 
-	qxl_release_fence_buffer_objects(release);
 	qxl_push_cursor_ring_release(qdev, release, QXL_CMD_CURSOR, false);
+	qxl_release_fence_buffer_objects(release);
 
 	return ret;
 
@@ -666,8 +665,8 @@ static void qxl_cursor_atomic_update(struct drm_plane *plane,
 	cmd->u.position.y = plane->state->crtc_y + fb->hot_y;
 
 	qxl_release_unmap(qdev, release, &cmd->release_info);
-	qxl_release_fence_buffer_objects(release);
 	qxl_push_cursor_ring_release(qdev, release, QXL_CMD_CURSOR, false);
+	qxl_release_fence_buffer_objects(release);
 
 	if (old_cursor_bo != NULL)
 		qxl_bo_unpin(old_cursor_bo);
@@ -714,8 +713,8 @@ static void qxl_cursor_atomic_disable(struct drm_plane *plane,
 	cmd->type = QXL_CURSOR_HIDE;
 	qxl_release_unmap(qdev, release, &cmd->release_info);
 
-	qxl_release_fence_buffer_objects(release);
 	qxl_push_cursor_ring_release(qdev, release, QXL_CMD_CURSOR, false);
+	qxl_release_fence_buffer_objects(release);
 }
 
 static void qxl_update_dumb_head(struct qxl_device *qdev,
@@ -1237,10 +1236,6 @@ int qxl_modeset_init(struct qxl_device *qdev)
 
 void qxl_modeset_fini(struct qxl_device *qdev)
 {
-	if (qdev->dumb_shadow_bo) {
-		drm_gem_object_put(&qdev->dumb_shadow_bo->tbo.base);
-		qdev->dumb_shadow_bo = NULL;
-	}
 	qxl_destroy_monitors_object(qdev);
 	drm_mode_config_cleanup(&qdev->ddev);
 }

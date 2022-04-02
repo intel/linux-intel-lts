@@ -1071,19 +1071,22 @@ static int cik_sdma_soft_reset(void *handle)
 {
 	u32 srbm_soft_reset = 0;
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-	u32 tmp;
+	u32 tmp = RREG32(mmSRBM_STATUS2);
 
-	/* sdma0 */
-	tmp = RREG32(mmSDMA0_F32_CNTL + SDMA0_REGISTER_OFFSET);
-	tmp |= SDMA0_F32_CNTL__HALT_MASK;
-	WREG32(mmSDMA0_F32_CNTL + SDMA0_REGISTER_OFFSET, tmp);
-	srbm_soft_reset |= SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK;
-
-	/* sdma1 */
-	tmp = RREG32(mmSDMA0_F32_CNTL + SDMA1_REGISTER_OFFSET);
-	tmp |= SDMA0_F32_CNTL__HALT_MASK;
-	WREG32(mmSDMA0_F32_CNTL + SDMA1_REGISTER_OFFSET, tmp);
-	srbm_soft_reset |= SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK;
+	if (tmp & SRBM_STATUS2__SDMA_BUSY_MASK) {
+		/* sdma0 */
+		tmp = RREG32(mmSDMA0_F32_CNTL + SDMA0_REGISTER_OFFSET);
+		tmp |= SDMA0_F32_CNTL__HALT_MASK;
+		WREG32(mmSDMA0_F32_CNTL + SDMA0_REGISTER_OFFSET, tmp);
+		srbm_soft_reset |= SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK;
+	}
+	if (tmp & SRBM_STATUS2__SDMA1_BUSY_MASK) {
+		/* sdma1 */
+		tmp = RREG32(mmSDMA0_F32_CNTL + SDMA1_REGISTER_OFFSET);
+		tmp |= SDMA0_F32_CNTL__HALT_MASK;
+		WREG32(mmSDMA0_F32_CNTL + SDMA1_REGISTER_OFFSET, tmp);
+		srbm_soft_reset |= SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK;
+	}
 
 	if (srbm_soft_reset) {
 		tmp = RREG32(mmSRBM_SOFT_RESET);
@@ -1369,16 +1372,14 @@ static const struct amdgpu_vm_pte_funcs cik_sdma_vm_pte_funcs = {
 
 static void cik_sdma_set_vm_pte_funcs(struct amdgpu_device *adev)
 {
-	struct drm_gpu_scheduler *sched;
 	unsigned i;
 
 	adev->vm_manager.vm_pte_funcs = &cik_sdma_vm_pte_funcs;
 	for (i = 0; i < adev->sdma.num_instances; i++) {
-		sched = &adev->sdma.instance[i].ring.sched;
-		adev->vm_manager.vm_pte_rqs[i] =
-			&sched->sched_rq[DRM_SCHED_PRIORITY_KERNEL];
+		adev->vm_manager.vm_pte_scheds[i] =
+			&adev->sdma.instance[i].ring.sched;
 	}
-	adev->vm_manager.vm_pte_num_rqs = adev->sdma.num_instances;
+	adev->vm_manager.vm_pte_num_scheds = adev->sdma.num_instances;
 }
 
 const struct amdgpu_ip_block_version cik_sdma_ip_block =

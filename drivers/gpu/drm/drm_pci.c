@@ -51,6 +51,8 @@
 drm_dma_handle_t *drm_pci_alloc(struct drm_device * dev, size_t size, size_t align)
 {
 	drm_dma_handle_t *dmah;
+	unsigned long addr;
+	size_t sz;
 
 	/* pci_alloc_consistent only guarantees alignment to the smallest
 	 * PAGE_SIZE order which is greater than or equal to the requested size.
@@ -66,11 +68,18 @@ drm_dma_handle_t *drm_pci_alloc(struct drm_device * dev, size_t size, size_t ali
 	dmah->size = size;
 	dmah->vaddr = dma_alloc_coherent(&dev->pdev->dev, size,
 					 &dmah->busaddr,
-					 GFP_KERNEL);
+					 GFP_KERNEL | __GFP_COMP);
 
 	if (dmah->vaddr == NULL) {
 		kfree(dmah);
 		return NULL;
+	}
+
+	/* XXX - Is virt_to_page() legal for consistent mem? */
+	/* Reserve */
+	for (addr = (unsigned long)dmah->vaddr, sz = size;
+	     sz > 0; addr += PAGE_SIZE, sz -= PAGE_SIZE) {
+		SetPageReserved(virt_to_page((void *)addr));
 	}
 
 	return dmah;
@@ -85,9 +94,19 @@ EXPORT_SYMBOL(drm_pci_alloc);
  */
 void __drm_legacy_pci_free(struct drm_device * dev, drm_dma_handle_t * dmah)
 {
-	if (dmah->vaddr)
+	unsigned long addr;
+	size_t sz;
+
+	if (dmah->vaddr) {
+		/* XXX - Is virt_to_page() legal for consistent mem? */
+		/* Unreserve */
+		for (addr = (unsigned long)dmah->vaddr, sz = dmah->size;
+		     sz > 0; addr += PAGE_SIZE, sz -= PAGE_SIZE) {
+			ClearPageReserved(virt_to_page((void *)addr));
+		}
 		dma_free_coherent(&dev->pdev->dev, dmah->size, dmah->vaddr,
 				  dmah->busaddr);
+	}
 }
 
 /**
@@ -105,8 +124,6 @@ void drm_pci_free(struct drm_device * dev, drm_dma_handle_t * dmah)
 }
 
 EXPORT_SYMBOL(drm_pci_free);
-
-#ifdef CONFIG_PCI
 
 static int drm_get_pci_domain(struct drm_device *dev)
 {
@@ -265,6 +282,8 @@ err_free:
 }
 EXPORT_SYMBOL(drm_get_pci_dev);
 
+#ifdef CONFIG_DRM_LEGACY
+
 /**
  * drm_legacy_pci_init - shadow-attach a legacy DRM PCI driver
  * @driver: DRM device driver
@@ -312,17 +331,6 @@ int drm_legacy_pci_init(struct drm_driver *driver, struct pci_driver *pdriver)
 }
 EXPORT_SYMBOL(drm_legacy_pci_init);
 
-#else
-
-void drm_pci_agp_destroy(struct drm_device *dev) {}
-
-int drm_irq_by_busid(struct drm_device *dev, void *data,
-		     struct drm_file *file_priv)
-{
-	return -EINVAL;
-}
-#endif
-
 /**
  * drm_legacy_pci_exit - unregister shadow-attach legacy DRM driver
  * @driver: DRM device driver
@@ -348,3 +356,5 @@ void drm_legacy_pci_exit(struct drm_driver *driver, struct pci_driver *pdriver)
 	DRM_INFO("Module unloaded\n");
 }
 EXPORT_SYMBOL(drm_legacy_pci_exit);
+
+#endif

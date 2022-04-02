@@ -57,7 +57,7 @@ static inline u32 intel_ring_wrap(const struct intel_ring *ring, u32 pos)
 }
 
 static inline int intel_ring_direction(const struct intel_ring *ring,
-				u32 next, u32 prev)
+				       u32 next, u32 prev)
 {
 	typecheck(typeof(ring->size), next);
 	typecheck(typeof(ring->size), prev);

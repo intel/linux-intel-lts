@@ -197,10 +197,6 @@ static void _dpu_crtc_blend_setup(struct drm_crtc *crtc)
 	DPU_DEBUG("%s\n", dpu_crtc->name);
 
 	for (i = 0; i < cstate->num_mixers; i++) {
-		if (!mixer[i].hw_lm || !mixer[i].lm_ctl) {
-			DPU_ERROR("invalid lm or ctl assigned to mixer\n");
-			return;
-		}
 		mixer[i].mixer_op_mode = 0;
 		mixer[i].flush_mask = 0;
 		if (mixer[i].lm_ctl->ops.clear_all_blendstages)
@@ -266,11 +262,20 @@ enum dpu_intf_mode dpu_crtc_get_intf_mode(struct drm_crtc *crtc)
 {
 	struct drm_encoder *encoder;
 
-	if (!crtc || !crtc->dev) {
+	if (!crtc) {
 		DPU_ERROR("invalid crtc\n");
 		return INTF_MODE_NONE;
 	}
 
+	/*
+	 * TODO: This function is called from dpu debugfs and as part of atomic
+	 * check. When called from debugfs, the crtc->mutex must be held to
+	 * read crtc->state. However reading crtc->state from atomic check isn't
+	 * allowed (unless you have a good reason, a big comment, and a deep
+	 * understanding of how the atomic/modeset locks work (<- and this is
+	 * probably not possible)). So we'll keep the WARN_ON here for now, but
+	 * really we need to figure out a better way to track our operating mode
+	 */
 	WARN_ON(!drm_modeset_is_locked(&crtc->mutex));
 
 	/* TODO: Returns the first INTF_MODE, could there be multiple values? */
@@ -381,7 +386,7 @@ static void dpu_crtc_frame_event_cb(void *data, u32 event)
 	spin_unlock_irqrestore(&dpu_crtc->spin_lock, flags);
 
 	if (!fevent) {
-		DRM_ERROR_RATELIMITED("crtc%d event %d overflow\n", crtc->base.id, event);
+		DRM_ERROR("crtc%d event %d overflow\n", crtc->base.id, event);
 		return;
 	}
 
@@ -694,7 +699,7 @@ static void dpu_crtc_disable(struct drm_crtc *crtc,
 	unsigned long flags;
 	bool release_bandwidth = false;
 
-	if (!crtc || !crtc->dev || !crtc->dev->dev_private || !crtc->state) {
+	if (!crtc || !crtc->state) {
 		DPU_ERROR("invalid crtc\n");
 		return;
 	}
@@ -766,7 +771,7 @@ static void dpu_crtc_enable(struct drm_crtc *crtc,
 	struct msm_drm_private *priv;
 	bool request_bandwidth;
 
-	if (!crtc || !crtc->dev || !crtc->dev->dev_private) {
+	if (!crtc) {
 		DPU_ERROR("invalid crtc\n");
 		return;
 	}
@@ -819,7 +824,7 @@ static int dpu_crtc_atomic_check(struct drm_crtc *crtc,
 	struct drm_plane *plane;
 	struct drm_display_mode *mode;
 
-	int cnt = 0, rc = 0, mixer_width = 0, i, z_pos;
+	int cnt = 0, rc = 0, mixer_width, i, z_pos;
 
 	struct dpu_multirect_plane_states multirect_plane[DPU_STAGE_MAX * 2];
 	int multirect_count = 0;
@@ -852,11 +857,9 @@ static int dpu_crtc_atomic_check(struct drm_crtc *crtc,
 
 	memset(pipe_staged, 0, sizeof(pipe_staged));
 
-	if (cstate->num_mixers) {
-		mixer_width = mode->hdisplay / cstate->num_mixers;
+	mixer_width = mode->hdisplay / cstate->num_mixers;
 
-		_dpu_crtc_setup_lm_bounds(crtc, state);
-	}
+	_dpu_crtc_setup_lm_bounds(crtc, state);
 
 	crtc_rect.x2 = mode->hdisplay;
 	crtc_rect.y2 = mode->vdisplay;
@@ -1106,14 +1109,9 @@ static int _dpu_debugfs_status_show(struct seq_file *s, void *data)
 
 	for (i = 0; i < cstate->num_mixers; ++i) {
 		m = &cstate->mixers[i];
-		if (!m->hw_lm)
-			seq_printf(s, "\tmixer[%d] has no lm\n", i);
-		else if (!m->lm_ctl)
-			seq_printf(s, "\tmixer[%d] has no ctl\n", i);
-		else
-			seq_printf(s, "\tmixer:%d ctl:%d width:%d height:%d\n",
-				m->hw_lm->idx - LM_0, m->lm_ctl->idx - CTL_0,
-				out_width, mode->vdisplay);
+		seq_printf(s, "\tmixer:%d ctl:%d width:%d height:%d\n",
+			m->hw_lm->idx - LM_0, m->lm_ctl->idx - CTL_0,
+			out_width, mode->vdisplay);
 	}
 
 	seq_puts(s, "\n");
@@ -1290,12 +1288,7 @@ struct drm_crtc *dpu_crtc_init(struct drm_device *dev, struct drm_plane *plane,
 {
 	struct drm_crtc *crtc = NULL;
 	struct dpu_crtc *dpu_crtc = NULL;
-	struct msm_drm_private *priv = NULL;
-	struct dpu_kms *kms = NULL;
 	int i;
-
-	priv = dev->dev_private;
-	kms = to_dpu_kms(priv->kms);
 
 	dpu_crtc = kzalloc(sizeof(*dpu_crtc), GFP_KERNEL);
 	if (!dpu_crtc)

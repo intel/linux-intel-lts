@@ -132,17 +132,16 @@
 /* traffic shaper clock in Hz */
 #define TS_CLK			19200000
 
+
 static int _sspp_subblk_offset(struct dpu_hw_pipe *ctx,
 		int s_id,
 		u32 *idx)
 {
 	int rc = 0;
-	const struct dpu_sspp_sub_blks *sblk;
+	const struct dpu_sspp_sub_blks *sblk = ctx->cap->sblk;
 
-	if (!ctx || !ctx->cap || !ctx->cap->sblk)
+	if (!ctx)
 		return -EINVAL;
-
-	sblk = ctx->cap->sblk;
 
 	switch (s_id) {
 	case DPU_SSPP_SRC:
@@ -406,7 +405,7 @@ static void _dpu_hw_sspp_setup_scaler3(struct dpu_hw_pipe *ctx,
 
 	(void)pe;
 	if (_sspp_subblk_offset(ctx, DPU_SSPP_SCALER_QSEED3, &idx) || !sspp
-		|| !scaler3_cfg)
+		|| !scaler3_cfg || !ctx || !ctx->cap || !ctx->cap->sblk)
 		return;
 
 	dpu_hw_setup_scaler3(&ctx->hw, scaler3_cfg, idx,
@@ -659,7 +658,8 @@ static void _setup_layer_ops(struct dpu_hw_pipe *c,
 		test_bit(DPU_SSPP_SMART_DMA_V2, &c->cap->features))
 		c->ops.setup_multirect = dpu_hw_sspp_setup_multirect;
 
-	if (test_bit(DPU_SSPP_SCALER_QSEED3, &features)) {
+	if (test_bit(DPU_SSPP_SCALER_QSEED3, &features) ||
+			test_bit(DPU_SSPP_SCALER_QSEED4, &features)) {
 		c->ops.setup_scaler = _dpu_hw_sspp_setup_scaler3;
 		c->ops.get_scaler_ver = _dpu_hw_sspp_get_scaler3_ver;
 	}
@@ -668,7 +668,7 @@ static void _setup_layer_ops(struct dpu_hw_pipe *c,
 		c->ops.setup_cdp = dpu_hw_sspp_setup_cdp;
 }
 
-static struct dpu_sspp_cfg *_sspp_offset(enum dpu_sspp sspp,
+static const struct dpu_sspp_cfg *_sspp_offset(enum dpu_sspp sspp,
 		void __iomem *addr,
 		struct dpu_mdss_cfg *catalog,
 		struct dpu_hw_blk_reg_map *b)
@@ -698,7 +698,7 @@ struct dpu_hw_pipe *dpu_hw_sspp_init(enum dpu_sspp idx,
 		bool is_virtual_pipe)
 {
 	struct dpu_hw_pipe *hw_pipe;
-	struct dpu_sspp_cfg *cfg;
+	const struct dpu_sspp_cfg *cfg;
 
 	if (!addr || !catalog)
 		return ERR_PTR(-EINVAL);

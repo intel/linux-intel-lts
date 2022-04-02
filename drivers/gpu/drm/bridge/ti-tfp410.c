@@ -140,7 +140,8 @@ static int tfp410_attach(struct drm_bridge *bridge)
 					  dvi->connector_type,
 					  dvi->ddc);
 	if (ret) {
-		dev_err(dvi->dev, "drm_connector_init() failed: %d\n", ret);
+		dev_err(dvi->dev, "drm_connector_init_with_ddc() failed: %d\n",
+			ret);
 		return ret;
 	}
 
@@ -286,7 +287,8 @@ static int tfp410_get_connector_properties(struct tfp410 *dvi)
 		dvi->connector_type = DRM_MODE_CONNECTOR_DVID;
 
 	dvi->hpd = fwnode_get_named_gpiod(&connector_node->fwnode,
-					"hpd-gpios", 0, GPIOD_IN, "hpd");
+			"hpd-gpios", 0, GPIOD_IN, "hpd");
+
 	if (IS_ERR(dvi->hpd)) {
 		ret = PTR_ERR(dvi->hpd);
 		dvi->hpd = NULL;

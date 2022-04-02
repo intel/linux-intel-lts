@@ -24,8 +24,9 @@
  *          Alex Deucher
  */
 
+#include <linux/pci.h>
+
 #include <drm/drm_device.h>
-#include <drm/drm_pci.h>
 #include <drm/radeon_drm.h>
 
 #include "radeon.h"
@@ -569,7 +570,7 @@ bool radeon_get_atom_connector_info_from_object_table(struct drm_device *dev)
 		path_size += le16_to_cpu(path->usSize);
 
 		if (device_support & le16_to_cpu(path->usDeviceTag)) {
-			uint8_t con_obj_id, con_obj_num, con_obj_type;
+			uint8_t con_obj_id, con_obj_num;
 
 			con_obj_id =
 			    (le16_to_cpu(path->usConnObjectId) & OBJECT_ID_MASK)
@@ -577,9 +578,6 @@ bool radeon_get_atom_connector_info_from_object_table(struct drm_device *dev)
 			con_obj_num =
 			    (le16_to_cpu(path->usConnObjectId) & ENUM_ID_MASK)
 			    >> ENUM_ID_SHIFT;
-			con_obj_type =
-			    (le16_to_cpu(path->usConnObjectId) &
-			     OBJECT_TYPE_MASK) >> OBJECT_TYPE_SHIFT;
 
 			/* TODO CV support */
 			if (le16_to_cpu(path->usDeviceTag) ==
@@ -647,15 +645,7 @@ bool radeon_get_atom_connector_info_from_object_table(struct drm_device *dev)
 			router.ddc_valid = false;
 			router.cd_valid = false;
 			for (j = 0; j < ((le16_to_cpu(path->usSize) - 8) / 2); j++) {
-				uint8_t grph_obj_id, grph_obj_num, grph_obj_type;
-
-				grph_obj_id =
-				    (le16_to_cpu(path->usGraphicObjIds[j]) &
-				     OBJECT_ID_MASK) >> OBJECT_ID_SHIFT;
-				grph_obj_num =
-				    (le16_to_cpu(path->usGraphicObjIds[j]) &
-				     ENUM_ID_MASK) >> ENUM_ID_SHIFT;
-				grph_obj_type =
+				uint8_t grph_obj_type =
 				    (le16_to_cpu(path->usGraphicObjIds[j]) &
 				     OBJECT_TYPE_MASK) >> OBJECT_TYPE_SHIFT;
 
@@ -2136,14 +2126,11 @@ static int radeon_atombios_parse_power_table_1_3(struct radeon_device *rdev)
 		return state_index;
 	/* last mode is usually default, array is low to high */
 	for (i = 0; i < num_modes; i++) {
-		/* avoid memory leaks from invalid modes or unknown frev. */
-		if (!rdev->pm.power_state[state_index].clock_info) {
-			rdev->pm.power_state[state_index].clock_info =
-				kzalloc(sizeof(struct radeon_pm_clock_info),
-					GFP_KERNEL);
-		}
+		rdev->pm.power_state[state_index].clock_info =
+			kcalloc(1, sizeof(struct radeon_pm_clock_info),
+				GFP_KERNEL);
 		if (!rdev->pm.power_state[state_index].clock_info)
-			goto out;
+			return state_index;
 		rdev->pm.power_state[state_index].num_clock_modes = 1;
 		rdev->pm.power_state[state_index].clock_info[0].voltage.type = VOLTAGE_NONE;
 		switch (frev) {
@@ -2262,24 +2249,17 @@ static int radeon_atombios_parse_power_table_1_3(struct radeon_device *rdev)
 			break;
 		}
 	}
-out:
-	/* free any unused clock_info allocation. */
-	if (state_index && state_index < num_modes) {
-		kfree(rdev->pm.power_state[state_index].clock_info);
-		rdev->pm.power_state[state_index].clock_info = NULL;
-	}
-
 	/* last mode is usually default */
-	if (state_index && rdev->pm.default_power_state_index == -1) {
+	if (rdev->pm.default_power_state_index == -1) {
 		rdev->pm.power_state[state_index - 1].type =
 			POWER_STATE_TYPE_DEFAULT;
 		rdev->pm.default_power_state_index = state_index - 1;
 		rdev->pm.power_state[state_index - 1].default_clock_mode =
 			&rdev->pm.power_state[state_index - 1].clock_info[0];
-		rdev->pm.power_state[state_index - 1].flags &=
+		rdev->pm.power_state[state_index].flags &=
 			~RADEON_PM_STATE_SINGLE_DISPLAY_ONLY;
-		rdev->pm.power_state[state_index - 1].misc = 0;
-		rdev->pm.power_state[state_index - 1].misc2 = 0;
+		rdev->pm.power_state[state_index].misc = 0;
+		rdev->pm.power_state[state_index].misc2 = 0;
 	}
 	return state_index;
 }

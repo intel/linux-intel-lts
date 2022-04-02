@@ -4,6 +4,8 @@
 
 #include "nouveau_display.h"
 
+struct nv50_msto;
+
 struct nv50_disp {
 	struct nvif_disp *disp;
 	struct nv50_core *core;
@@ -70,7 +72,7 @@ struct nv50_dmac {
 
 int nv50_dmac_create(struct nvif_device *device, struct nvif_object *disp,
 		     const s32 *oclass, u8 head, void *data, u32 size,
-		     s64 syncbuf, struct nv50_dmac *dmac);
+		     u64 syncbuf, struct nv50_dmac *dmac);
 void nv50_dmac_destroy(struct nv50_dmac *);
 
 u32 *evo_wait(struct nv50_dmac *, int nr);
@@ -78,14 +80,14 @@ void evo_kick(u32 *, struct nv50_dmac *);
 
 #define evo_mthd(p, m, s) do {						\
 	const u32 _m = (m), _s = (s);					\
-	if (drm_debug & DRM_UT_KMS)					\
+	if (drm_debug_enabled(DRM_UT_KMS))				\
 		pr_err("%04x %d %s\n", _m, _s, __func__);		\
 	*((p)++) = ((_s << 18) | _m);					\
 } while(0)
 
 #define evo_data(p, d) do {						\
 	const u32 _d = (d);						\
-	if (drm_debug & DRM_UT_KMS)					\
+	if (drm_debug_enabled(DRM_UT_KMS))				\
 		pr_err("\t%08x\n", _d);					\
 	*((p)++) = _d;							\
 } while(0)

@@ -14,7 +14,7 @@ struct drm_i915_private;
 
 #define GT_TRACE(gt, fmt, ...) do {					\
 	const struct intel_gt *gt__ __maybe_unused = (gt);		\
-	GEM_TRACE("%s  " fmt, dev_name(gt__->i915->drm.dev),		\
+	GEM_TRACE("%s " fmt, dev_name(gt__->i915->drm.dev),		\
 		  ##__VA_ARGS__);					\
 } while (0)
 
@@ -58,11 +58,14 @@ static inline u32 intel_gt_scratch_offset(const struct intel_gt *gt,
 	return i915_ggtt_offset(gt->scratch) + field;
 }
 
-static inline bool intel_gt_is_wedged(struct intel_gt *gt)
+static inline bool intel_gt_is_wedged(const struct intel_gt *gt)
 {
 	return __intel_reset_failed(&gt->reset);
 }
 
-void intel_gt_invalidate_tlbs(struct intel_gt *gt);
+static inline bool intel_gt_has_init_error(const struct intel_gt *gt)
+{
+	return test_bit(I915_WEDGED_ON_INIT, &gt->reset.flags);
+}
 
 #endif /* __INTEL_GT_H__ */

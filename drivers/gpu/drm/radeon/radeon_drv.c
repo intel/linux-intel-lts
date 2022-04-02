@@ -174,7 +174,12 @@ int radeon_no_wb;
 int radeon_modeset = -1;
 int radeon_dynclks = -1;
 int radeon_r4xx_atom = 0;
+#ifdef __powerpc__
+/* Default to PCI on PowerPC (fdo #95017) */
 int radeon_agpmode = -1;
+#else
+int radeon_agpmode = 0;
+#endif
 int radeon_vram_limit = 0;
 int radeon_gart_size = -1; /* auto */
 int radeon_benchmarking = 0;
@@ -413,10 +418,6 @@ radeon_pci_remove(struct pci_dev *pdev)
 static void
 radeon_pci_shutdown(struct pci_dev *pdev)
 {
-#ifdef CONFIG_PPC64
-	struct drm_device *ddev = pci_get_drvdata(pdev);
-#endif
-
 	/* if we are running in a VM, make sure the device
 	 * torn down properly on reboot/shutdown
 	 */
@@ -424,13 +425,14 @@ radeon_pci_shutdown(struct pci_dev *pdev)
 		radeon_pci_remove(pdev);
 
 #ifdef CONFIG_PPC64
-	/* Some adapters need to be suspended before a
+	/*
+	 * Some adapters need to be suspended before a
 	 * shutdown occurs in order to prevent an error
 	 * during kexec.
 	 * Make this power specific becauase it breaks
 	 * some non-power boards.
 	 */
-	radeon_suspend_kms(ddev, true, true, false);
+	radeon_suspend_kms(pci_get_drvdata(pdev), true, true, false);
 #endif
 }
 
@@ -550,10 +552,8 @@ long radeon_drm_ioctl(struct file *filp,
 	long ret;
 	dev = file_priv->minor->dev;
 	ret = pm_runtime_get_sync(dev->dev);
-	if (ret < 0) {
-		pm_runtime_put_autosuspend(dev->dev);
+	if (ret < 0)
 		return ret;
-	}
 
 	ret = drm_ioctl(filp, cmd, arg);
 	

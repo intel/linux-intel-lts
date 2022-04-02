@@ -327,27 +327,19 @@ int drm_syncobj_find_fence(struct drm_file *file_private,
 		return -ENOENT;
 
 	*fence = drm_syncobj_fence_get(syncobj);
+	drm_syncobj_put(syncobj);
 
 	if (*fence) {
 		ret = dma_fence_chain_find_seqno(fence, point);
-		if (!ret) {
-			/* If the requested seqno is already signaled
-			 * drm_syncobj_find_fence may return a NULL
-			 * fence. To make sure the recipient gets
-			 * signalled, use a new fence instead.
-			 */
-			if (!*fence)
-				*fence = dma_fence_get_stub();
-
-			goto out;
-		}
+		if (!ret)
+			return 0;
 		dma_fence_put(*fence);
 	} else {
 		ret = -EINVAL;
 	}
 
 	if (!(flags & DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT))
-		goto out;
+		return ret;
 
 	memset(&wait, 0, sizeof(wait));
 	wait.task = current;
@@ -378,9 +370,6 @@ int drm_syncobj_find_fence(struct drm_file *file_private,
 
 	if (wait.node.next)
 		drm_syncobj_remove_wait(syncobj, &wait);
-
-out:
-	drm_syncobj_put(syncobj);
 
 	return ret;
 }
@@ -1291,7 +1280,7 @@ drm_syncobj_timeline_signal_ioctl(struct drm_device *dev, void *data,
 	if (!drm_core_check_feature(dev, DRIVER_SYNCOBJ_TIMELINE))
 		return -EOPNOTSUPP;
 
-	if (args->pad != 0)
+	if (args->flags != 0)
 		return -EINVAL;
 
 	if (args->count_handles == 0)
@@ -1362,7 +1351,7 @@ int drm_syncobj_query_ioctl(struct drm_device *dev, void *data,
 	if (!drm_core_check_feature(dev, DRIVER_SYNCOBJ_TIMELINE))
 		return -EOPNOTSUPP;
 
-	if (args->pad != 0)
+	if (args->flags & ~DRM_SYNCOBJ_QUERY_FLAGS_LAST_SUBMITTED)
 		return -EINVAL;
 
 	if (args->count_handles == 0)
@@ -1383,25 +1372,32 @@ int drm_syncobj_query_ioctl(struct drm_device *dev, void *data,
 		fence = drm_syncobj_fence_get(syncobjs[i]);
 		chain = to_dma_fence_chain(fence);
 		if (chain) {
-			struct dma_fence *iter, *last_signaled = NULL;
+			struct dma_fence *iter, *last_signaled =
+				dma_fence_get(fence);
 
-			dma_fence_chain_for_each(iter, fence) {
-				if (iter->context != fence->context) {
-					dma_fence_put(iter);
-					/* It is most likely that timeline has
-					 * unorder points. */
-					break;
+			if (args->flags &
+			    DRM_SYNCOBJ_QUERY_FLAGS_LAST_SUBMITTED) {
+				point = fence->seqno;
+			} else {
+				dma_fence_chain_for_each(iter, fence) {
+					if (iter->context != fence->context) {
+						dma_fence_put(iter);
+						/* It is most likely that timeline has
+						* unorder points. */
+						break;
+					}
+					dma_fence_put(last_signaled);
+					last_signaled = dma_fence_get(iter);
 				}
-				dma_fence_put(last_signaled);
-				last_signaled = dma_fence_get(iter);
+				point = dma_fence_is_signaled(last_signaled) ?
+					last_signaled->seqno :
+					to_dma_fence_chain(last_signaled)->prev_seqno;
 			}
-			point = dma_fence_is_signaled(last_signaled) ?
-				last_signaled->seqno :
-				to_dma_fence_chain(last_signaled)->prev_seqno;
 			dma_fence_put(last_signaled);
 		} else {
 			point = 0;
 		}
+		dma_fence_put(fence);
 		ret = copy_to_user(&points[i], &point, sizeof(uint64_t));
 		ret = ret ? -EFAULT : 0;
 		if (ret)

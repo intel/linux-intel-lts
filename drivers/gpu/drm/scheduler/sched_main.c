@@ -47,6 +47,7 @@
 #include <linux/kthread.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
+#include <linux/completion.h>
 #include <uapi/linux/sched/types.h>
 
 #include <drm/drm_print.h>
@@ -91,6 +92,7 @@ void drm_sched_rq_add_entity(struct drm_sched_rq *rq,
 	if (!list_empty(&entity->list))
 		return;
 	spin_lock(&rq->lock);
+	atomic_inc(&rq->sched->score);
 	list_add_tail(&entity->list, &rq->entities);
 	spin_unlock(&rq->lock);
 }
@@ -109,6 +111,7 @@ void drm_sched_rq_remove_entity(struct drm_sched_rq *rq,
 	if (list_empty(&entity->list))
 		return;
 	spin_lock(&rq->lock);
+	atomic_dec(&rq->sched->score);
 	list_del_init(&entity->list);
 	if (rq->current_entity == entity)
 		rq->current_entity = NULL;
@@ -134,6 +137,7 @@ drm_sched_rq_select_entity(struct drm_sched_rq *rq)
 		list_for_each_entry_continue(entity, &rq->entities, list) {
 			if (drm_sched_entity_is_ready(entity)) {
 				rq->current_entity = entity;
+				reinit_completion(&entity->entity_idle);
 				spin_unlock(&rq->lock);
 				return entity;
 			}
@@ -144,6 +148,7 @@ drm_sched_rq_select_entity(struct drm_sched_rq *rq)
 
 		if (drm_sched_entity_is_ready(entity)) {
 			rq->current_entity = entity;
+			reinit_completion(&entity->entity_idle);
 			spin_unlock(&rq->lock);
 			return entity;
 		}
@@ -652,7 +657,7 @@ static void drm_sched_process_job(struct dma_fence *f, struct dma_fence_cb *cb)
 	struct drm_gpu_scheduler *sched = s_fence->sched;
 
 	atomic_dec(&sched->hw_rq_count);
-	atomic_dec(&sched->num_jobs);
+	atomic_dec(&sched->score);
 
 	trace_drm_sched_process_job(s_fence);
 
@@ -676,9 +681,13 @@ drm_sched_get_cleanup_job(struct drm_gpu_scheduler *sched)
 	struct drm_sched_job *job;
 	unsigned long flags;
 
-	/* Don't destroy jobs while the timeout worker is running */
-	if (sched->timeout != MAX_SCHEDULE_TIMEOUT &&
-	    !cancel_delayed_work(&sched->work_tdr))
+	/*
+	 * Don't destroy jobs while the timeout worker is running  OR thread
+	 * is being parked and hence assumed to not touch ring_mirror_list
+	 */
+	if ((sched->timeout != MAX_SCHEDULE_TIMEOUT &&
+	    !cancel_delayed_work(&sched->work_tdr)) ||
+	    __kthread_should_park(sched->thread))
 		return NULL;
 
 	spin_lock_irqsave(&sched->job_list_lock, flags);
@@ -755,6 +764,9 @@ static int drm_sched_main(void *param)
 			continue;
 
 		sched_job = drm_sched_entity_pop_job(entity);
+
+		complete(&entity->entity_idle);
+
 		if (!sched_job)
 			continue;
 
@@ -822,7 +834,7 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 	spin_lock_init(&sched->job_list_lock);
 	atomic_set(&sched->hw_rq_count, 0);
 	INIT_DELAYED_WORK(&sched->work_tdr, drm_sched_job_timedout);
-	atomic_set(&sched->num_jobs, 0);
+	atomic_set(&sched->score, 0);
 	atomic64_set(&sched->job_id_count, 0);
 
 	/* Each scheduler will run on a seperate kernel thread */
@@ -850,9 +862,6 @@ void drm_sched_fini(struct drm_gpu_scheduler *sched)
 {
 	if (sched->thread)
 		kthread_stop(sched->thread);
-
-	/* Confirm no work left behind accessing device structures */
-	cancel_delayed_work_sync(&sched->work_tdr);
 
 	sched->ready = false;
 }

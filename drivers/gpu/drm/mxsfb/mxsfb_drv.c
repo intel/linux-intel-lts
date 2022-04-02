@@ -26,7 +26,6 @@
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_fb_helper.h>
-#include <drm/drm_fourcc.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_irq.h>
@@ -88,26 +87,8 @@ void mxsfb_disable_axi_clk(struct mxsfb_drm_private *mxsfb)
 		clk_disable_unprepare(mxsfb->clk_axi);
 }
 
-static struct drm_framebuffer *
-mxsfb_fb_create(struct drm_device *dev, struct drm_file *file_priv,
-		const struct drm_mode_fb_cmd2 *mode_cmd)
-{
-	const struct drm_format_info *info;
-
-	info = drm_get_format_info(dev, mode_cmd);
-	if (!info)
-		return ERR_PTR(-EINVAL);
-
-	if (mode_cmd->width * info->cpp[0] != mode_cmd->pitches[0]) {
-		dev_dbg(dev->dev, "Invalid pitch: fb width must match pitch\n");
-		return ERR_PTR(-EINVAL);
-	}
-
-	return drm_gem_fb_create(dev, file_priv, mode_cmd);
-}
-
 static const struct drm_mode_config_funcs mxsfb_mode_config_funcs = {
-	.fb_create		= mxsfb_fb_create,
+	.fb_create		= drm_gem_fb_create,
 	.atomic_check		= drm_atomic_helper_check,
 	.atomic_commit		= drm_atomic_helper_commit,
 };
@@ -120,8 +101,24 @@ static void mxsfb_pipe_enable(struct drm_simple_display_pipe *pipe,
 			      struct drm_crtc_state *crtc_state,
 			      struct drm_plane_state *plane_state)
 {
+	struct drm_connector *connector;
 	struct mxsfb_drm_private *mxsfb = drm_pipe_to_mxsfb_drm_private(pipe);
 	struct drm_device *drm = pipe->plane.dev;
+
+	if (!mxsfb->connector) {
+		list_for_each_entry(connector,
+				    &drm->mode_config.connector_list,
+				    head)
+			if (connector->encoder == &mxsfb->pipe.encoder) {
+				mxsfb->connector = connector;
+				break;
+			}
+	}
+
+	if (!mxsfb->connector) {
+		dev_warn(drm->dev, "No connector attached, using default\n");
+		mxsfb->connector = &mxsfb->panel_connector;
+	}
 
 	pm_runtime_get_sync(drm->dev);
 	drm_panel_prepare(mxsfb->panel);
@@ -148,6 +145,9 @@ static void mxsfb_pipe_disable(struct drm_simple_display_pipe *pipe)
 		drm_crtc_send_vblank_event(crtc, event);
 	}
 	spin_unlock_irq(&drm->event_lock);
+
+	if (mxsfb->connector != &mxsfb->panel_connector)
+		mxsfb->connector = NULL;
 }
 
 static void mxsfb_pipe_update(struct drm_simple_display_pipe *pipe,
@@ -245,16 +245,33 @@ static int mxsfb_load(struct drm_device *drm, unsigned long flags)
 
 	ret = drm_simple_display_pipe_init(drm, &mxsfb->pipe, &mxsfb_funcs,
 			mxsfb_formats, ARRAY_SIZE(mxsfb_formats), NULL,
-			&mxsfb->connector);
+			mxsfb->connector);
 	if (ret < 0) {
 		dev_err(drm->dev, "Cannot setup simple display pipe\n");
 		goto err_vblank;
 	}
 
-	ret = drm_panel_attach(mxsfb->panel, &mxsfb->connector);
-	if (ret) {
-		dev_err(drm->dev, "Cannot connect panel\n");
-		goto err_vblank;
+	/*
+	 * Attach panel only if there is one.
+	 * If there is no panel attach, it must be a bridge. In this case, we
+	 * need a reference to its connector for a proper initialization.
+	 * We will do this check in pipe->enable(), since the connector won't
+	 * be attached to an encoder until then.
+	 */
+
+	if (mxsfb->panel) {
+		ret = drm_panel_attach(mxsfb->panel, mxsfb->connector);
+		if (ret) {
+			dev_err(drm->dev, "Cannot connect panel: %d\n", ret);
+			goto err_vblank;
+		}
+	} else if (mxsfb->bridge) {
+		ret = drm_simple_display_pipe_attach_bridge(&mxsfb->pipe,
+							    mxsfb->bridge);
+		if (ret) {
+			dev_err(drm->dev, "Cannot connect bridge: %d\n", ret);
+			goto err_vblank;
+		}
 	}
 
 	drm->mode_config.min_width	= MXSFB_MIN_XRES;

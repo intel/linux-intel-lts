@@ -138,7 +138,7 @@ void __iomem *msm_ioremap(struct platform_device *pdev, const char *name,
 
 	size = resource_size(res);
 
-	ptr = devm_ioremap_nocache(&pdev->dev, res->start, size);
+	ptr = devm_ioremap(&pdev->dev, res->start, size);
 	if (!ptr) {
 		DRM_DEV_ERROR(&pdev->dev, "failed to ioremap: %s\n", name);
 		return ERR_PTR(-ENOMEM);
@@ -337,7 +337,7 @@ static int msm_init_vram(struct drm_device *dev)
 		of_node_put(node);
 		if (ret)
 			return ret;
-		size = r.end - r.start + 1;
+		size = r.end - r.start;
 		DRM_INFO("using VRAM carveout: %lx@%pa\n", size, &r.start);
 
 		/* if we have no IOMMU, then we need to use carveout allocator.
@@ -432,22 +432,20 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 
 	drm_mode_config_init(ddev);
 
-	ret = msm_init_vram(ddev);
-	if (ret)
-		goto err_destroy_mdss;
-
 	/* Bind all our sub-components: */
 	ret = component_bind_all(dev, ddev);
 	if (ret)
 		goto err_destroy_mdss;
 
+	ret = msm_init_vram(ddev);
+	if (ret)
+		goto err_msm_uninit;
+
 	if (!dev->dma_parms) {
 		dev->dma_parms = devm_kzalloc(dev, sizeof(*dev->dma_parms),
 					      GFP_KERNEL);
-		if (!dev->dma_parms) {
-			ret = -ENOMEM;
-			goto err_msm_uninit;
-		}
+		if (!dev->dma_parms)
+			return -ENOMEM;
 	}
 	dma_set_max_seg_size(dev, DMA_BIT_MASK(32));
 
@@ -567,7 +565,6 @@ err_free_priv:
 	kfree(priv);
 err_put_drm_dev:
 	drm_dev_put(ddev);
-	platform_set_drvdata(pdev, NULL);
 	return ret;
 }
 
@@ -1203,7 +1200,8 @@ static int add_display_components(struct device *dev,
 	 * the interfaces to our components list.
 	 */
 	if (of_device_is_compatible(dev->of_node, "qcom,mdss") ||
-	    of_device_is_compatible(dev->of_node, "qcom,sdm845-mdss")) {
+	    of_device_is_compatible(dev->of_node, "qcom,sdm845-mdss") ||
+	    of_device_is_compatible(dev->of_node, "qcom,sc7180-mdss")) {
 		ret = of_platform_populate(dev->of_node, NULL, NULL, dev);
 		if (ret) {
 			DRM_DEV_ERROR(dev, "failed to populate children devices\n");
@@ -1324,21 +1322,11 @@ static int msm_pdev_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static void msm_pdev_shutdown(struct platform_device *pdev)
-{
-	struct drm_device *drm = platform_get_drvdata(pdev);
-	struct msm_drm_private *priv = drm ? drm->dev_private : NULL;
-
-	if (!priv || !priv->kms)
-		return;
-
-	drm_atomic_helper_shutdown(drm);
-}
-
 static const struct of_device_id dt_match[] = {
 	{ .compatible = "qcom,mdp4", .data = (void *)KMS_MDP4 },
 	{ .compatible = "qcom,mdss", .data = (void *)KMS_MDP5 },
 	{ .compatible = "qcom,sdm845-mdss", .data = (void *)KMS_DPU },
+	{ .compatible = "qcom,sc7180-mdss", .data = (void *)KMS_DPU },
 	{}
 };
 MODULE_DEVICE_TABLE(of, dt_match);
@@ -1346,7 +1334,6 @@ MODULE_DEVICE_TABLE(of, dt_match);
 static struct platform_driver msm_platform_driver = {
 	.probe      = msm_pdev_probe,
 	.remove     = msm_pdev_remove,
-	.shutdown   = msm_pdev_shutdown,
 	.driver     = {
 		.name   = "msm",
 		.of_match_table = dt_match,

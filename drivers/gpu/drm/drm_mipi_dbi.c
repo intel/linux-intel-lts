@@ -937,7 +937,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi *dbi, int dc,
 			}
 		}
 
-		tr.len = chunk * 2;
+		tr.len = chunk;
 		len -= chunk;
 
 		ret = spi_sync(spi, &m);
@@ -1021,7 +1021,7 @@ static int mipi_dbi_typec3_command_read(struct mipi_dbi *dbi, u8 *cmd,
 		unsigned int i;
 
 		for (i = 0; i < len; i++)
-			data[i] = (buf[i] << 1) | !!(buf[i + 1] & BIT(7));
+			data[i] = (buf[i] << 1) | (buf[i + 1] >> 7);
 	}
 
 	MIPI_DBI_DEBUG_COMMAND(*cmd, data, len);

@@ -294,7 +294,6 @@ int lima_device_init(struct lima_device *ldev)
 	struct resource *res;
 
 	dma_set_coherent_mask(ldev->dev, DMA_BIT_MASK(32));
-	dma_set_max_seg_size(ldev->dev, UINT_MAX);
 
 	err = lima_clk_init(ldev);
 	if (err)
@@ -315,7 +314,7 @@ int lima_device_init(struct lima_device *ldev)
 		ldev->va_end = LIMA_VA_RESERVE_START;
 		ldev->dlbu_cpu = dma_alloc_wc(
 			ldev->dev, LIMA_PAGE_SIZE,
-			&ldev->dlbu_dma, GFP_KERNEL);
+			&ldev->dlbu_dma, GFP_KERNEL | __GFP_NOWARN);
 		if (!ldev->dlbu_cpu) {
 			err = -ENOMEM;
 			goto err_out2;

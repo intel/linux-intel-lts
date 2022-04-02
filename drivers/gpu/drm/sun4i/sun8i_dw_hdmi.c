@@ -49,9 +49,11 @@ sun8i_dw_hdmi_mode_valid_h6(struct drm_connector *connector,
 {
 	/*
 	 * Controller support maximum of 594 MHz, which correlates to
-	 * 4K@60Hz 4:4:4 or RGB.
+	 * 4K@60Hz 4:4:4 or RGB. However, for frequencies greater than
+	 * 340 MHz scrambling has to be enabled. Because scrambling is
+	 * not yet implemented, just limit to 340 MHz for now.
 	 */
-	if (mode->clock > 594000)
+	if (mode->clock > 340000)
 		return MODE_CLOCK_HIGH;
 
 	return MODE_OK;
@@ -207,7 +209,6 @@ static int sun8i_dw_hdmi_bind(struct device *dev, struct device *master,
 	phy_node = of_parse_phandle(dev->of_node, "phys", 0);
 	if (!phy_node) {
 		dev_err(dev, "Can't found PHY phandle\n");
-		ret = -EINVAL;
 		goto err_disable_clk_tmds;
 	}
 
@@ -225,6 +226,7 @@ static int sun8i_dw_hdmi_bind(struct device *dev, struct device *master,
 	sun8i_hdmi_phy_init(hdmi->phy);
 
 	plat_data->mode_valid = hdmi->quirks->mode_valid;
+	plat_data->use_drm_infoframe = hdmi->quirks->use_drm_infoframe;
 	sun8i_hdmi_phy_set_ops(hdmi->phy, plat_data);
 
 	platform_set_drvdata(pdev, hdmi);
@@ -299,6 +301,7 @@ static const struct sun8i_dw_hdmi_quirks sun8i_a83t_quirks = {
 
 static const struct sun8i_dw_hdmi_quirks sun50i_h6_quirks = {
 	.mode_valid = sun8i_dw_hdmi_mode_valid_h6,
+	.use_drm_infoframe = true,
 };
 
 static const struct of_device_id sun8i_dw_hdmi_dt_ids[] = {

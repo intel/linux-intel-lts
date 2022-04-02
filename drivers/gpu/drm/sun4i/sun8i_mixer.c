@@ -366,10 +366,10 @@ static struct drm_plane **sun8i_layers_init(struct drm_device *drm,
 			dev_err(drm->dev,
 				"Couldn't initialize overlay plane\n");
 			return ERR_CAST(layer);
-		};
+		}
 
 		planes[i] = &layer->plane;
-	};
+	}
 
 	for (i = 0; i < mixer->cfg->ui_num; i++) {
 		struct sun8i_ui_layer *layer;
@@ -379,10 +379,10 @@ static struct drm_plane **sun8i_layers_init(struct drm_device *drm,
 			dev_err(drm->dev, "Couldn't initialize %s plane\n",
 				i ? "overlay" : "primary");
 			return ERR_CAST(layer);
-		};
+		}
 
 		planes[mixer->cfg->vi_num + i] = &layer->plane;
-	};
+	}
 
 	return planes;
 }
@@ -396,7 +396,7 @@ static struct regmap_config sun8i_mixer_regmap_config = {
 	.reg_bits	= 32,
 	.val_bits	= 32,
 	.reg_stride	= 4,
-	.max_register	= 0xffffc, /* guessed */
+	.max_register	= 0xbfffc, /* guessed */
 };
 
 static int sun8i_mixer_of_get_id(struct device_node *node)

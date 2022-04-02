@@ -55,6 +55,8 @@ nouveau_channel_killed(struct nvif_notify *ntfy)
 	struct nouveau_cli *cli = (void *)chan->user.client;
 	NV_PRINTK(warn, cli, "channel %d killed!\n", chan->chid);
 	atomic_set(&chan->killed, 1);
+	if (chan->fence)
+		nouveau_fence_context_kill(chan->fence, -ENODEV);
 	return NVIF_NOTIFY_DROP;
 }
 
@@ -497,7 +499,6 @@ nouveau_channel_new(struct nouveau_drm *drm, struct nvif_device *device,
 	if (ret) {
 		NV_PRINTK(err, cli, "channel failed to initialise, %d\n", ret);
 		nouveau_channel_del(pchan);
-		goto done;
 	}
 
 	ret = nouveau_svmm_join((*pchan)->vmm->svmm, (*pchan)->inst);

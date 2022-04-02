@@ -240,7 +240,7 @@ EXPORT_SYMBOL_GPL(percpu_down_write);
 
 void percpu_up_write(struct percpu_rw_semaphore *sem)
 {
-	rwsem_release(&sem->dep_map, 1, _RET_IP_);
+	rwsem_release(&sem->dep_map, _RET_IP_);
 
 	/*
 	 * Signal the writer is done, no fast path yet.
