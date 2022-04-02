@@ -9,6 +9,7 @@
 #if !defined(__ASSEMBLY__) && defined(CONFIG_DOVETAIL)
 
 #include <asm/fpu/api.h>
+#include <asm/io_bitmap.h>
 
 static inline void arch_dovetail_exec_prepare(void)
 {
@@ -25,11 +26,18 @@ void arch_dovetail_switch_prepare(bool leave_inband)
 static inline
 void arch_dovetail_switch_finish(bool enter_inband)
 {
-	if (enter_inband)
+	unsigned int ti_work = READ_ONCE(current_thread_info()->flags);
+
+	if (unlikely(ti_work & _TIF_IO_BITMAP))
+		tss_update_io_bitmap();
+
+	if (enter_inband) {
 		fpu__resume_inband();
-	else if (!(current->flags & PF_KTHREAD) &&
-		test_thread_flag(TIF_NEED_FPU_LOAD))
-		switch_fpu_return();
+	} else {
+		  if (unlikely(ti_work & _TIF_NEED_FPU_LOAD &&
+				  !(current->flags & PF_KTHREAD)))
+			  switch_fpu_return();
+	}
 }
 
 #endif
