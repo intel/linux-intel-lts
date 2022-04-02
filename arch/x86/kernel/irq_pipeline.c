@@ -155,29 +155,9 @@ static void do_sysvec_inband(struct irq_desc *desc, struct pt_regs *regs)
 					regs);
 		break;
 #endif
-#ifdef CONFIG_HYPERV
-	case HYPERVISOR_CALLBACK_VECTOR:
-		run_sysvec_on_irqstack_cond(__sysvec_hyperv_callback,
-					regs);
-		break;
-	case HYPERV_REENLIGHTENMENT_VECTOR:
-		run_sysvec_on_irqstack_cond(__sysvec_hyperv_reenlightenment,
-					regs);
-		break;
-	case HYPERV_STIMER0_VECTOR:
-		run_sysvec_on_irqstack_cond(__sysvec_hyperv_stimer0,
-					regs);
-		break;
-#endif
 #ifdef CONFIG_ACRN_GUEST
 	case HYPERVISOR_CALLBACK_VECTOR:
 		run_sysvec_on_irqstack_cond(__sysvec_acrn_hv_callback,
-					regs);
-		break;
-#endif
-#ifdef CONFIG_XEN_PVHVM
-	case HYPERVISOR_CALLBACK_VECTOR:
-		run_sysvec_on_irqstack_cond(__sysvec_xen_hvm_callback,
 					regs);
 		break;
 #endif
