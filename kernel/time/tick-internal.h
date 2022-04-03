@@ -47,6 +47,14 @@ static inline void clockevent_set_state(struct clock_event_device *dev,
 	dev->state_use_accessors = state;
 }
 
+static inline bool tick_check_is_proxy(struct clock_event_device *dev)
+{
+	if (!irqs_pipelined())
+		return false;
+
+	return dev && dev->features & CLOCK_EVT_FEAT_PROXY;
+}
+
 extern void clockevents_shutdown(struct clock_event_device *dev);
 extern void clockevents_exchange_device(struct clock_event_device *old,
 					struct clock_event_device *new);

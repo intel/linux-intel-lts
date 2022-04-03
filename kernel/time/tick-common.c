@@ -332,17 +332,6 @@ static bool tick_check_preferred(struct clock_event_device *curdev,
 	       !cpumask_equal(curdev->cpumask, newdev->cpumask);
 }
 
-static bool tick_check_is_proxy(struct clock_event_device *curdev)
-{
-	if (!irqs_pipelined())
-		return false;
-
-	/*
-	 * Never replace an active proxy except when unregistering it.
-	 */
-	return curdev && curdev->features & CLOCK_EVT_FEAT_PROXY;
-}
-
 /*
  * Check whether the new device is a better fit than curdev. curdev
  * can be NULL !
@@ -350,6 +339,9 @@ static bool tick_check_is_proxy(struct clock_event_device *curdev)
 bool tick_check_replacement(struct clock_event_device *curdev,
 			    struct clock_event_device *newdev)
 {
+	/*
+	 * Never replace an active proxy except when unregistering it.
+	 */
 	if (tick_check_is_proxy(curdev))
 		return false;
 
@@ -388,7 +380,12 @@ void tick_check_new_device(struct clock_event_device *newdev)
 	 * not give it back to the clockevents layer !
 	 */
 	if (tick_is_broadcast_device(curdev)) {
-		clockevents_shutdown(curdev);
+		if (tick_check_is_proxy(newdev)) {
+			list_del(&curdev->list);
+			clockevents_switch_state(curdev, CLOCK_EVT_STATE_RESERVED);
+		} else {
+			clockevents_shutdown(curdev);
+		}
 		curdev = NULL;
 	}
 	clockevents_exchange_device(curdev, newdev);

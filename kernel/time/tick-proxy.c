@@ -285,7 +285,7 @@ static int enable_oob_timer(void *arg) /* hard_irqs_disabled() */
 
 	/*
 	 * irq_switch_oob() grabs the IRQ descriptor lock which is
-	 * mutable, so that is fine to invoke this routine with hard
+	 * hybrid, so that is fine to invoke this routine with hard
 	 * IRQs off.
 	 */
 	irq_switch_oob(real_dev->irq, true);
