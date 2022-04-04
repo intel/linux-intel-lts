@@ -246,7 +246,6 @@ static int _intel_pmc_tgpio_config_output(struct intel_pmc_tgpio_t *tgpio,
 	u32 ctrl, ctrl_new;
 	u64 new_period;
 	int enable_toggle;
-	bool enable_preempt = false;
 
 	/*
 	 * enable_toggle meaning:
@@ -306,7 +305,6 @@ static int _intel_pmc_tgpio_config_output(struct intel_pmc_tgpio_t *tgpio,
 		ktime_t delta;
 
 		preempt_disable();
-		enable_preempt = true;
 
 		/* Calculate time delta until next edge */
 		tsc_tmp = get_tsc_ns_now(NULL);
@@ -327,6 +325,8 @@ static int _intel_pmc_tgpio_config_output(struct intel_pmc_tgpio_t *tgpio,
 		next_edge_tsc = convert_art_to_tsc_ns(next_edge);
 		delta = timespec64_to_ktime
 			(timespec64_sub(next_edge_tsc, tsc_now));
+
+		preempt_enable();
 
 		/* If there's a chance our write will get stepped on, wait */
 		if (delta < FREQ_CHANGE_BLACKOUT_THRESH) {
@@ -374,8 +374,6 @@ static int _intel_pmc_tgpio_config_output(struct intel_pmc_tgpio_t *tgpio,
 			(TGPIOPIV31_0, index, new_period & 0xFFFFFFFF);
 		INTEL_PMC_TGPIO_WR_REG
 			(TGPIOPIV63_32, index, new_period >> 32);
-		if (enable_preempt)
-			preempt_enable();
 		tgpio->pin[index].curr_ns = timespec64_to_ktime(new_period_ns);
 		tgpio->pin[index].curr_art = new_period;
 	}
