@@ -1153,6 +1153,8 @@ void igc_ptp_suspend(struct igc_adapter *adapter)
 	dev_kfree_skb_any(adapter->ptp_tx_skb);
 	adapter->ptp_tx_skb = NULL;
 
+	spin_unlock(&adapter->ptp_tx_lock);
+
 	if (pci_device_is_present(adapter->pdev)) {
 		igc_ptp_time_save(adapter);
 		igc_ptm_stop(adapter);
