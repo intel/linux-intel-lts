@@ -295,6 +295,21 @@
         "Unit": "cpu_core"
     },
     {
+        "BriefDescription": "TBD",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3,4,5,6,7",
+        "EventCode": "0xc6",
+        "EventName": "FRONTEND_RETIRED.MS_FLOWS",
+        "MSRIndex": "0x3F7",
+        "MSRValue": "0x8",
+        "PEBS": "1",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
+        "SampleAfterValue": "100007",
+        "TakenAlone": "1",
+        "UMask": "0x1",
+        "Unit": "cpu_core"
+    },
+    {
         "BriefDescription": "Retired Instructions who experienced STLB (2nd level TLB) true miss.",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5,6,7",
