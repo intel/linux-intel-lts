@@ -121,25 +121,9 @@ static void do_sysvec_inband(struct irq_desc *desc)
 		__sysvec_kvm_posted_intr_nested_ipi(regs);
 		break;
 #endif
-#ifdef CONFIG_HYPERV
-	case HYPERVISOR_CALLBACK_VECTOR:
-		__sysvec_hyperv_callback(regs);
-		break;
-	case HYPERV_REENLIGHTENMENT_VECTOR:
-		__sysvec_hyperv_reenlightenment(regs);
-		break;
-	case HYPERV_STIMER0_VECTOR:
-		__sysvec_hyperv_stimer0(regs);
-		break;
-#endif
 #ifdef CONFIG_ACRN_GUEST
 	case HYPERVISOR_CALLBACK_VECTOR:
 		__sysvec_acrn_hv_callback(regs);
-		break;
-#endif
-#ifdef CONFIG_XEN_PVHVM
-	case HYPERVISOR_CALLBACK_VECTOR:
-		__sysvec_xen_hvm_callback(regs);
 		break;
 #endif
 	case LOCAL_TIMER_VECTOR:
