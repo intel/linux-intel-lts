@@ -23,7 +23,7 @@
         "Unit": "cpu_atom"
     },
     {
-        "BriefDescription": "Counts the number of far branch instructions retired, includes far jump, far call and return, and Interrupt call and return.",
+        "BriefDescription": "Counts the number of far branch instructions retired, includes far jump, far call and return, and interrupt call and return.",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5",
         "EventCode": "0xc4",
@@ -182,7 +182,6 @@
         "Counter": "0,1,2,3,4,5",
         "EventCode": "0xc3",
         "EventName": "MACHINE_CLEARS.PAGE_FAULT",
-        "PEBS": "1",
         "PEBScounters": "0,1,2,3,4,5",
         "SampleAfterValue": "20003",
         "UMask": "0x20",
@@ -211,7 +210,7 @@
         "Unit": "cpu_atom"
     },
     {
-        "BriefDescription": "Counts the number of issue slots not consumed due to a micro-sequencer (MS) scoreboard, which stalls the front-end from issuing uops from the UROM until a specified older uop retires.",
+        "BriefDescription": "Counts the number of issue slots not consumed by the backend due to a micro-sequencer (MS) scoreboard, which stalls the front-end from issuing from the UROM until a specified older uop retires.",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5",
         "EventCode": "0x75",
@@ -555,7 +554,18 @@
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "This event counts the cycles the integer divider is busy.",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3,4,5,6,7",
+        "EventCode": "0xb0",
+        "EventName": "ARITH.IDIV_ACTIVE",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
+        "SampleAfterValue": "1000003",
+        "UMask": "0x8",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "This event is deprecated. Refer to new event ARITH.IDIV_ACTIVE",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5,6,7",
         "CounterMask": "1",
@@ -1244,7 +1254,7 @@
         "CounterMask": "1",
         "EventCode": "0xa8",
         "EventName": "LSD.CYCLES_ACTIVE",
-        "PEBScounters": "0,1,2,3",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
         "SampleAfterValue": "2000003",
         "UMask": "0x1",
         "Unit": "cpu_core"
@@ -1256,7 +1266,7 @@
         "CounterMask": "6",
         "EventCode": "0xa8",
         "EventName": "LSD.CYCLES_OK",
-        "PEBScounters": "0,1,2,3",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
         "SampleAfterValue": "2000003",
         "UMask": "0x1",
         "Unit": "cpu_core"
