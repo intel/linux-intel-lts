@@ -2112,6 +2112,9 @@ static int sdma_init(struct sdma_engine *sdma)
 	clk_disable(sdma->clk_ipg);
 	clk_disable(sdma->clk_ahb);
 
+#ifdef CONFIG_IMX_SDMA_OOB
+	raw_spin_lock_init(&sdma->oob_lock);
+#endif
 	return 0;
 
 err_dma_alloc:
