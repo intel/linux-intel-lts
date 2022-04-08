@@ -644,8 +644,8 @@ void clockevents_exchange_device(struct clock_event_device *old,
 		 * to the release list, keep it around but mark it as
 		 * reserved.
 		 */
+		list_del(&old->list);
 		if (tick_check_is_proxy(new)) {
-			list_del(&old->list);
 			clockevents_switch_state(old, CLOCK_EVT_STATE_RESERVED);
 		} else {
 			clockevents_switch_state(old, CLOCK_EVT_STATE_DETACHED);
