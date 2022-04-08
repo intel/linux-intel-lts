@@ -1,0 +1,121 @@
+From 5ba75b1fd719a2ea880bf77823e93b41217db7fb Mon Sep 17 00:00:00 2001
+From: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+Date: Fri, 11 Mar 2022 15:58:13 +0100
+Subject: [PATCH 3/5] net: sched: extend Qdisc with rcu.
+
+suse-commit: 6b54018d29946eceaf26f98351def972012fcf6f
+---
+ include/linux/rtnetlink.h |  5 +++++
+ include/net/pkt_sched.h   |  1 +
+ include/net/sch_generic.h |  2 ++
+ net/sched/sch_api.c       | 18 ++++++++++++++++++
+ net/sched/sch_generic.c   | 16 ++++++++++++++++
+ 5 files changed, 42 insertions(+)
+
+diff --git a/include/linux/rtnetlink.h b/include/linux/rtnetlink.h
+index 6ddeec98bddb..0f5bd747837a 100644
+--- a/include/linux/rtnetlink.h
++++ b/include/linux/rtnetlink.h
+@@ -81,6 +81,11 @@ static inline struct netdev_queue *dev_ingress_queue(struct net_device *dev)
+ 	return rtnl_dereference(dev->ingress_queue);
+ }
+ 
++static inline struct netdev_queue *dev_ingress_queue_rcu(struct net_device *dev)
++{
++	return rcu_dereference(dev->ingress_queue);
++}
++
+ struct netdev_queue *dev_ingress_queue_create(struct net_device *dev);
+ 
+ #ifdef CONFIG_NET_INGRESS
+diff --git a/include/net/pkt_sched.h b/include/net/pkt_sched.h
+index 466a7059462f..7d4fea763d1c 100644
+--- a/include/net/pkt_sched.h
++++ b/include/net/pkt_sched.h
+@@ -100,6 +100,7 @@ void qdisc_hash_add(struct Qdisc *q, bool invisible);
+ void qdisc_hash_del(struct Qdisc *q);
+ struct Qdisc *qdisc_lookup(struct net_device *dev, u32 handle);
+ struct Qdisc *qdisc_lookup_class(struct net_device *dev, u32 handle);
++struct Qdisc *qdisc_lookup_rcu(struct net_device *dev, u32 handle);
+ struct qdisc_rate_table *qdisc_get_rtab(struct tc_ratespec *r,
+ 					struct nlattr *tab);
+ void qdisc_put_rtab(struct qdisc_rate_table *tab);
+diff --git a/include/net/sch_generic.h b/include/net/sch_generic.h
+index 2deb7548ebe5..5ddd4ad16df6 100644
+--- a/include/net/sch_generic.h
++++ b/include/net/sch_generic.h
+@@ -100,6 +100,7 @@ struct Qdisc {
+ 	refcount_t		refcnt;
+ 
+ 	spinlock_t		busylock ____cacheline_aligned_in_smp;
++	struct rcu_head		rcu;
+ };
+ 
+ static inline void qdisc_refcount_inc(struct Qdisc *qdisc)
+@@ -434,6 +435,7 @@ struct Qdisc *dev_graft_qdisc(struct netdev_queue *dev_queue,
+ 			      struct Qdisc *qdisc);
+ void qdisc_reset(struct Qdisc *qdisc);
+ void qdisc_put(struct Qdisc *qdisc);
++void qdisc_put_unlocked(struct Qdisc *qdisc);
+ void qdisc_tree_reduce_backlog(struct Qdisc *qdisc, unsigned int n,
+ 			       unsigned int len);
+ struct Qdisc *qdisc_alloc(struct netdev_queue *dev_queue,
+diff --git a/net/sched/sch_api.c b/net/sched/sch_api.c
+index ab7470746ad6..d0b9d49d41ad 100644
+--- a/net/sched/sch_api.c
++++ b/net/sched/sch_api.c
+@@ -315,6 +315,24 @@ struct Qdisc *qdisc_lookup(struct net_device *dev, u32 handle)
+ 	return q;
+ }
+ 
++struct Qdisc *qdisc_lookup_rcu(struct net_device *dev, u32 handle)
++{
++	struct netdev_queue *nq;
++	struct Qdisc *q;
++
++	if (!handle)
++		return NULL;
++	q = qdisc_match_from_root(dev->qdisc, handle);
++	if (q)
++		goto out;
++
++	nq = dev_ingress_queue_rcu(dev);
++	if (nq)
++		q = qdisc_match_from_root(nq->qdisc_sleeping, handle);
++out:
++	return q;
++}
++
+ static struct Qdisc *qdisc_leaf(struct Qdisc *p, u32 classid)
+ {
+ 	unsigned long cl;
+diff --git a/net/sched/sch_generic.c b/net/sched/sch_generic.c
+index f8aa86d1c854..ae7c08513c4f 100644
+--- a/net/sched/sch_generic.c
++++ b/net/sched/sch_generic.c
+@@ -749,6 +749,22 @@ void qdisc_put(struct Qdisc *qdisc)
+ }
+ EXPORT_SYMBOL(qdisc_put);
+ 
++/* Version of qdisc_put() that is called with rtnl mutex unlocked.
++ * Intended to be used as optimization, this function only takes rtnl lock if
++ * qdisc reference counter reached zero.
++ */
++
++void qdisc_put_unlocked(struct Qdisc *qdisc)
++{
++	if (qdisc->flags & TCQ_F_BUILTIN ||
++			!refcount_dec_and_rtnl_lock(&qdisc->refcnt))
++		return;
++
++	qdisc_destroy(qdisc);
++	rtnl_unlock();
++}
++EXPORT_SYMBOL(qdisc_put_unlocked);
++
+ /* Attach toplevel qdisc to device queue. */
+ struct Qdisc *dev_graft_qdisc(struct netdev_queue *dev_queue,
+ 			      struct Qdisc *qdisc)
+-- 
+2.25.1
+

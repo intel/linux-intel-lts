@@ -1,0 +1,52 @@
+From 054b0f3a26b0e15514ce02d82d829347a6b8c4e7 Mon Sep 17 00:00:00 2001
+From: Thomas Bogendoerfer <tbogendoerfer@suse.de>
+Date: Fri, 11 Mar 2022 15:58:13 +0100
+Subject: [PATCH 1/5] net: core: netlink: add helper refcount dec and lock
+ function (bsc#1196973 CVE-2021-39713).
+
+suse-commit: 3537686b788ac2c916bcc3f49f3fb4d0b589716b
+---
+ include/linux/rtnetlink.h | 2 ++
+ net/core/rtnetlink.c      | 6 ++++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/include/linux/rtnetlink.h b/include/linux/rtnetlink.h
+index ff3dd2ec44b4..6ddeec98bddb 100644
+--- a/include/linux/rtnetlink.h
++++ b/include/linux/rtnetlink.h
+@@ -6,6 +6,7 @@
+ #include <linux/mutex.h>
+ #include <linux/netdevice.h>
+ #include <linux/wait.h>
++#include <linux/refcount.h>
+ #include <uapi/linux/rtnetlink.h>
+ 
+ extern int rtnetlink_send(struct sk_buff *skb, struct net *net, u32 pid, u32 group, int echo);
+@@ -30,6 +31,7 @@ extern void rtnl_lock(void);
+ extern void rtnl_unlock(void);
+ extern int rtnl_trylock(void);
+ extern int rtnl_is_locked(void);
++extern bool refcount_dec_and_rtnl_lock(refcount_t *r);
+ 
+ extern wait_queue_head_t netdev_unregistering_wq;
+ extern struct mutex net_mutex;
+diff --git a/net/core/rtnetlink.c b/net/core/rtnetlink.c
+index d7e2cb7ae1fa..3c915c10a894 100644
+--- a/net/core/rtnetlink.c
++++ b/net/core/rtnetlink.c
+@@ -119,6 +119,12 @@ int rtnl_is_locked(void)
+ }
+ EXPORT_SYMBOL(rtnl_is_locked);
+ 
++bool refcount_dec_and_rtnl_lock(refcount_t *r)
++{
++	return refcount_dec_and_mutex_lock(r, &rtnl_mutex);
++}
++EXPORT_SYMBOL(refcount_dec_and_rtnl_lock);
++
+ #ifdef CONFIG_PROVE_LOCKING
+ bool lockdep_rtnl_is_held(void)
+ {
+-- 
+2.25.1
+

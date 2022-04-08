@@ -65,9 +65,6 @@
 0014-f2fs-support-F2FS_IOC_PRECACHE_EXTENTS.patch
 0015-f2fs-support-swap-file-w-DIO.patch
 
-# CVE-2018-7754
-0019-printk-hash-addresses-printed-with-p.patch
-
 # CVE-2020-29372
 0001-mm-check-that-mm-is-still-valid-in-madvise.patch
 
@@ -85,18 +82,8 @@
 # CVE-2020-12364
 0001-drm-i915-disable-guc-submission.patch
 
-# CVE-2021-29264
-0001-gianfar-simplify-FCS-handling-and-fix-memory-leak.patch
-0002-gianfar-fix-jumbo-packets-napi-rx-overrun-crash.patch
-
 # CVE-2021-3506
 0001-f2fs-fix-to-avoid-out-of-bounds-memory-access.patch
-
-# CVE-2021-20292
-0001-drm-ttm-nouveau-don-t-call-tt-destroy-callback-on-al.patch
-
-# CVE-2020-36322
-0001-fuse-fix-bad-inode.patch
 
 # CVE-2020-36385
 0001-RDMA-ucma-Rework-ucma_migrate_id-to-avoid-races-with.patch
@@ -114,9 +101,6 @@
 # CVE-2020-26145
 0001-ath10k-drop-fragments-with-multicast-DA-for-PCIe.patch
 
-# CVE-2021-38199
-0001-NFSv4-Initialise-connection-to-the-server-in-nfs4_al.patch
-
 # CVE-2021-3635
 0001-netfilter-nf_tables-fix-flowtable-list-del-corruptio.patch
 
@@ -129,5 +113,31 @@
 # CVE-2020-27820
 0001-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
 
-# CVE-2018-25020
-0001-bpf-fix-truncated-jump-targets-on-heavy-expansions.patch
+#CVE-2022-1011
+0001-fuse-fix-pipe-buffer-lifetime-for-direct_io.patch
+
+#CVE-2021-4197
+0001-cgroup-Use-open-time-credentials-for-process-migrato.patch
+0002-cgroup-Allocate-cgroup_file_ctx-for-kernfs_open_file.patch
+0003-cgroup-Use-open-time-cgroup-namespace-for-process-mi.patch
+
+#CVE-2021-4148
+0001-mm-khugepaged-skip-huge-page-collapse-for-special-fi.patch
+
+#CVE 2021 44879
+0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
+
+#CVE-2018-7754
+0001-docs-correct-documentation-for-pK.patch
+0002-vsprintf-refactor-pK-code-out-of-pointer.patch
+0003-printk-hash-addresses-printed-with-p.patch
+0004-vsprintf-add-printk-specifier-px.patch
+0005-kasan-use-px-to-print-addresses-instead-of-p.patch
+
+#CVE-2021-39713
+0001-net-core-netlink-add-helper-refcount-dec-and-lock-fu.patch
+0002-net-sched-rename-qdisc_destroy-to-qdisc_put.patch
+0003-net-sched-extend-Qdisc-with-rcu.patch
+0004-net-sched-add-helper-function-to-take-reference-to-Q.patch
+0005-net-sched-use-Qdisc-rcu-API-instead-of-relying-on-rt.patch
+
