@@ -613,8 +613,15 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	struct thread_struct *next = &next_p->thread;
 	int cpu = smp_processor_id();
 
+	/*
+	 * Dovetail: Switching context on the out-of-band stage is
+	 * legit, and we may have preempted an in-band (soft)irq
+	 * handler earlier. Since oob handlers never switch stack,
+	 * make sure to restrict the following test to in-band
+	 * callers.
+	 */
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_DEBUG_ENTRY) &&
-		     this_cpu_read(pcpu_hot.hardirq_stack_inuse));
+		     running_inband() && this_cpu_read(pcpu_hot.hardirq_stack_inuse));
 
 	WARN_ON_ONCE(dovetail_debug() && !hard_irqs_disabled());
 
