@@ -1166,10 +1166,9 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 				       to_dma_addr(msg),
 				       sizeof(*stream_cfg),
 				       IPU_FW_ISYS_SEND_TYPE_STREAM_OPEN);
-	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
-
 	if (rval < 0) {
 		dev_err(dev, "can't open stream (%d)\n", rval);
+		ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
 		goto out_put_stream_handle;
 	}
 
@@ -1177,6 +1176,9 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	tout = wait_for_completion_timeout(&ip->stream_open_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+
+	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
+
 	if (!tout) {
 		dev_err(dev, "stream open time out\n");
 		rval = -ETIMEDOUT;
@@ -1215,7 +1217,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 					       buf, to_dma_addr(msg),
 					       sizeof(*buf),
 					       send_type);
-		ipu_put_fw_mgs_buf(av->isys, (uintptr_t)buf);
 	} else {
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
 		rval = ipu_fw_isys_simple_cmd(av->isys,

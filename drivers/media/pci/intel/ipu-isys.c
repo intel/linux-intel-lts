@@ -1418,7 +1418,6 @@ int isys_isr_one(struct ipu_bus_device *adev)
 
 	switch (resp->type) {
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_OPEN_DONE:
-		ipu_put_fw_mgs_buf(ipu_bus_get_drvdata(adev), resp->buf_id);
 		complete(&pipe->stream_open_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_CLOSE_ACK:
@@ -1428,7 +1427,6 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		complete(&pipe->stream_start_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_START_AND_CAPTURE_ACK:
-		ipu_put_fw_mgs_buf(ipu_bus_get_drvdata(adev), resp->buf_id);
 		complete(&pipe->stream_start_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_STOP_ACK:
@@ -1438,6 +1436,11 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		complete(&pipe->stream_stop_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_PIN_DATA_READY:
+		/*
+		 * firmware only release the capture msg until software
+		 * get pin_data_ready event
+		 */
+		ipu_put_fw_mgs_buf(ipu_bus_get_drvdata(adev), resp->buf_id);
 		if (resp->pin_id < IPU_ISYS_OUTPUT_PINS &&
 		    pipe->output_pins[resp->pin_id].pin_ready)
 			pipe->output_pins[resp->pin_id].pin_ready(pipe, resp);

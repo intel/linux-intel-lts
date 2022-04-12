@@ -466,7 +466,6 @@ static int ipu_isys_stream_start(struct ipu_isys_pipeline *ip,
 					       buf, to_dma_addr(msg),
 					       sizeof(*buf),
 					       send_type);
-		ipu_put_fw_mgs_buf(pipe_av->isys, (uintptr_t)buf);
 	} while (!WARN_ON(rval));
 
 	return 0;
@@ -603,7 +602,6 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 				       buf, to_dma_addr(msg),
 				       sizeof(*buf),
 				       IPU_FW_ISYS_SEND_TYPE_STREAM_CAPTURE);
-	ipu_put_fw_mgs_buf(pipe_av->isys, (uintptr_t)buf);
 	if (!WARN_ON(rval < 0))
 		dev_dbg(&av->isys->adev->dev, "queued buffer\n");
 
