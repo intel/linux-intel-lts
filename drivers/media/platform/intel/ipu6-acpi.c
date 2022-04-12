@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016--2017 Intel Corporation.
+ * Copyright (c) 2016--2022 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -635,8 +635,10 @@ int ar0234_populate(struct device dev,
 		return -ENOMEM;
 
 	csi2_config = kzalloc(sizeof(*csi2_config), GFP_KERNEL);
-	if (!csi2_config)
+	if (!csi2_config) {
+		kfree(pdata);
 		return -ENOMEM;
+	}
 
 	/* csi2 */
 	csi2_config->nlanes = cam_data.lanes;
@@ -701,8 +703,10 @@ int lt6911uxc_populate(struct device dev,
 		return -ENOMEM;
 
 	csi2_config = kzalloc(sizeof(*csi2_config), GFP_KERNEL);
-	if (!csi2_config)
+	if (!csi2_config) {
+		kfree(pdata);
 		return -ENOMEM;
+	}
 
 	/* csi2 */
 	csi2_config->nlanes = cam_data.lanes;
@@ -762,16 +766,28 @@ int lt6911uxc_populate(struct device dev,
 		unsigned short addr_dummy = 0x11;
 
 		lt6911uxc_sd_dummy = kzalloc(sizeof(*lt6911uxc_sd_dummy), GFP_KERNEL);
-		if (!lt6911uxc_sd_dummy)
+		if (!lt6911uxc_sd_dummy) {
+			kfree(pdata);
+			kfree(csi2_config);
 			return -ENOMEM;
+		}
 
 		pdata_dummy = kzalloc(sizeof(*pdata_dummy), GFP_KERNEL);
-		if (!pdata_dummy)
+		if (!pdata_dummy) {
+			kfree(pdata);
+			kfree(csi2_config);
+			kfree(lt6911uxc_sd_dummy);
 			return -ENOMEM;
+		}
 
 		csi2_config_dummy = kzalloc(sizeof(*csi2_config_dummy), GFP_KERNEL);
-		if (!csi2_config_dummy)
+		if (!csi2_config_dummy) {
+			kfree(pdata);
+			kfree(csi2_config);
+			kfree(lt6911uxc_sd_dummy);
+			kfree(pdata_dummy);
 			return -ENOMEM;
+		}
 
 		pdata_dummy->port = cam_data.pprval;
 		pdata_dummy->lanes = cam_data.lanes;
@@ -816,17 +832,23 @@ static int get_lt6911uxc_pdata(struct i2c_client *client,
 
 	/* get sensor info from ssdb table generated from BIOS, save in sensor */
 	rval = ipu_acpi_get_cam_data(&client->dev, &cam_data);
-	if (rval)
+	if (rval) {
+		kfree(lt6911uxc_sd);
 		return rval;
+	}
 
 	rval = ipu_acpi_get_dep_data(&client->dev, &ctl_data);
-	if (rval)
+	if (rval) {
+		kfree(lt6911uxc_sd);
 		return rval;
+	}
 
 	rval = lt6911uxc_populate(client->dev, &lt6911uxc_sd, cam_data.i2c[0],
 				client->name, cam_data, ctl_data);
-	if (rval)
+	if (rval) {
+		kfree(lt6911uxc_sd);
 		return rval;
+	}
 
 	client->dev.platform_data = lt6911uxc_sd;
 
@@ -852,17 +874,23 @@ static int get_ar0234_pdata(struct i2c_client *client,
 
 	/* get sensor info from ssdb table generated from BIOS, save in sensor */
 	rval = ipu_acpi_get_cam_data(&client->dev, &cam_data);
-	if (rval)
+	if (rval) {
+		kfree(ar0234_sd);
 		return rval;
+	}
 
 	rval = ipu_acpi_get_dep_data(&client->dev, &ctl_data);
-	if (rval)
+	if (rval) {
+		kfree(ar0234_sd);
 		return rval;
+	}
 
 	rval = ar0234_populate(client->dev, &ar0234_sd, cam_data.i2c[0],
 				client->name, cam_data, ctl_data);
-	if (rval)
+	if (rval) {
+		kfree(ar0234_sd);
 		return rval;
+	}
 
 	client->dev.platform_data = ar0234_sd;
 
