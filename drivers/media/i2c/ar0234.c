@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2020 Intel Corporation.
+// Copyright (c) 2022 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -13,6 +13,7 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
 #include <media/ar0234.h>
+#include <linux/version.h>
 
 #define AR0234_REG_VALUE_08BIT		1
 #define AR0234_REG_VALUE_16BIT		2

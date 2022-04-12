@@ -21,6 +21,7 @@
 #include <media/v4l2-fwnode.h>
 #include <linux/types.h>
 
+#include <linux/version.h>
 #include <media/lt6911uxc.h>
 
 /* v4l2 debug level */
@@ -1070,7 +1071,6 @@ static int lt6911uxc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	if (!lt6911uxc->auxiliary_port)
 		lt6911uxc_set_stream(sd, true);
-
 	lt6911uxc_update_pad_format(lt6911uxc->cur_mode,
 			v4l2_subdev_get_try_format(sd, fh->pad, 0));
 
@@ -1467,7 +1467,6 @@ static int lt6911uxc_probe(struct i2c_client *client)
 	lt6911uxc->sd.internal_ops = &lt6911uxc_subdev_internal_ops;
 	lt6911uxc->sd.flags |=
 			V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
-
 	ret = v4l2_async_register_subdev_sensor_common(&lt6911uxc->sd);
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",

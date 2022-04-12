@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2020 Intel Corporation.
+// Copyright (c) 2022 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -12,6 +12,7 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
+#include <linux/version.h>
 #include <media/imx390.h>
 
 #define IMX390_LINK_FREQ_360MHZ		360000000ULL
