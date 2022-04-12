@@ -212,6 +212,8 @@ struct ipu_isys {
 	struct isys_iwake_watermark *iwake_watermark;
 #endif
 
+	struct mutex reset_mutex;
+	bool in_reset;
 };
 
 #if defined(IPU_IWAKE_ENABLE)

@@ -895,6 +895,7 @@ static void isys_remove(struct ipu_bus_device *adev)
 	mutex_destroy(&isys->stream_mutex);
 	mutex_destroy(&isys->mutex);
 
+	mutex_destroy(&isys->reset_mutex);
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT) {
 		u32 trace_size = IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE;
 
@@ -1222,6 +1223,9 @@ static int isys_probe(struct ipu_bus_device *adev)
 	mutex_init(&isys->stream_mutex);
 	mutex_init(&isys->lib_mutex);
 
+	mutex_init(&isys->reset_mutex);
+	isys->in_reset = false;
+
 	spin_lock_init(&isys->listlock);
 	INIT_LIST_HEAD(&isys->framebuflist);
 	INIT_LIST_HEAD(&isys->framebuflist_fw);
@@ -1304,6 +1308,8 @@ release_firmware:
 
 	mutex_destroy(&isys->mutex);
 	mutex_destroy(&isys->stream_mutex);
+
+	mutex_destroy(&isys->reset_mutex);
 
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT)
 		mutex_destroy(&isys->short_packet_tracing_mutex);

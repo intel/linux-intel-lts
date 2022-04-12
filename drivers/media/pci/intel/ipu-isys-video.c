@@ -243,7 +243,20 @@ static int video_release(struct file *file)
 	struct ipu_isys_video *av = video_drvdata(file);
 	int ret = 0;
 
+	dev_info(&av->isys->adev->dev, "release: %s: enter\n",
+		av->vdev.name);
 	vb2_fop_release(file);
+
+	mutex_lock(&av->isys->reset_mutex);
+	while (av->isys->in_reset) {
+		mutex_unlock(&av->isys->reset_mutex);
+		dev_dbg(&av->isys->adev->dev, "release: %s: wait for reset\n",
+			av->vdev.name
+		);
+		usleep_range(10000, 11000);
+		mutex_lock(&av->isys->reset_mutex);
+	}
+	mutex_unlock(&av->isys->reset_mutex);
 
 	mutex_lock(&av->isys->mutex);
 
@@ -251,6 +264,8 @@ static int video_release(struct file *file)
 #ifdef IPU_IRQ_POLL
 		kthread_stop(av->isys->isr_thread);
 #endif
+	dev_info(&av->isys->adev->dev, "release: %s: close fw\n",
+		av->vdev.name);
 		ipu_fw_isys_close(av->isys);
 		if (av->isys->fwcom) {
 			av->isys->reset_needed = true;
@@ -267,6 +282,8 @@ static int video_release(struct file *file)
 	else
 		pm_runtime_put(&av->isys->adev->dev);
 
+	dev_info(&av->isys->adev->dev, "release: %s: exit\n",
+		av->vdev.name);
 	return ret;
 }
 
@@ -1263,6 +1280,7 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	int rval, tout;
 	enum ipu_fw_isys_send_type send_type =
 		IPU_FW_ISYS_SEND_TYPE_STREAM_FLUSH;
+	unsigned long timeout = IPU_LIB_CALL_TIMEOUT_JIFFIES;
 
 	reinit_completion(&ip->stream_stop_completion);
 
@@ -1274,8 +1292,13 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 		return;
 	}
 
+	mutex_lock(&av->isys->reset_mutex);
+	if (av->isys->in_reset)
+		timeout = msecs_to_jiffies(30);
+	mutex_unlock(&av->isys->reset_mutex);
+
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
-					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   timeout);
 	if (!tout)
 		dev_err(dev, "stream stop time out\n");
 	else if (ip->error)
@@ -1290,6 +1313,7 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	struct device *dev = &av->isys->adev->dev;
 	int rval, tout;
+	unsigned long timeout = IPU_LIB_CALL_TIMEOUT_JIFFIES;
 
 	reinit_completion(&ip->stream_close_completion);
 
@@ -1300,8 +1324,13 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 		return;
 	}
 
+	mutex_lock(&av->isys->reset_mutex);
+	if (av->isys->in_reset)
+		timeout = msecs_to_jiffies(30);
+	mutex_unlock(&av->isys->reset_mutex);
+
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
-					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   timeout);
 	if (!tout)
 		dev_err(dev, "stream close time out\n");
 	else if (ip->error)
@@ -1776,6 +1805,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	av->ip.isys = av->isys;
 	av->ip.stream_id = 0;
 	av->ip.vc = 0;
+	av->reset = false;
 
 #if defined(IPU_IWAKE_ENABLE)
 	if (!av->watermark) {
