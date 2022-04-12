@@ -596,8 +596,9 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 
 	kbuf->fd = ret;
 	buf->base.fd = ret;
-	kbuf->flags = buf->flags &= ~IPU_BUFFER_FLAG_USERPTR;
-	kbuf->flags = buf->flags |= IPU_BUFFER_FLAG_DMA_HANDLE;
+	buf->flags &= ~IPU_BUFFER_FLAG_USERPTR;
+	buf->flags |= IPU_BUFFER_FLAG_DMA_HANDLE;
+	kbuf->flags = buf->flags;
 
 	mutex_lock(&fh->mutex);
 	list_add(&kbuf->list, &fh->bufmap);
