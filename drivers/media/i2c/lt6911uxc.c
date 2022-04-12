@@ -916,6 +916,11 @@ static void lt6911uxc_stop_streaming(struct lt6911uxc_state *lt6911uxc)
 	if (lt6911uxc->auxiliary_port == true)
 		return;
 
+	/*The fps of 1080p60fps will be dropped to half when the CSI disabled. */
+	lt6911uxc_ext_control(lt6911uxc, true);
+	lt6911uxc_csi_enable(&lt6911uxc->sd, false);
+	lt6911uxc_ext_control(lt6911uxc, false);
+
 	lt6911uxc->streaming = false;
 }
 
