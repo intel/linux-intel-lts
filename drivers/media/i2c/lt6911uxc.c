@@ -1322,7 +1322,7 @@ static irqreturn_t lt6911uxc_threaded_irq_fn(int irq, void *dev_id)
 	struct lt6911uxc_state *lt6911uxc;
 
 	if (!sd) {
-		dev_err(sd->dev, "Invalid dev_id argument!\n");
+		dev_err(NULL, "Invalid dev_id argument!\n");
 		return IRQ_NONE;
 	}
 
