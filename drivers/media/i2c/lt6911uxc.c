@@ -702,6 +702,12 @@ static struct v4l2_ctrl_config lt6911uxc_frame_interval = {
 
 static u64 get_pixel_rate(struct lt6911uxc_state *lt6911uxc)
 {
+	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
+
+	if (lt6911uxc->cur_mode->lanes == 0) {
+		dev_err(&client->dev, "cur_mode lanes should not be 0\n");
+		lt6911uxc->cur_mode->lanes = 4;
+	}
 	return lt6911uxc->cur_mode->width * lt6911uxc->cur_mode->height *
 		lt6911uxc->cur_mode->fps * 16 / lt6911uxc->cur_mode->lanes;
 }
@@ -977,6 +983,7 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
 	s32 vblank_def;
 	s64 hblank;
+	u32 fps;
 
 	mutex_lock(&lt6911uxc->mutex);
 	lt6911uxc_update_pad_format(lt6911uxc->cur_mode, &fmt->format);
@@ -1004,10 +1011,12 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 					 vblank_def);
 		__v4l2_ctrl_s_ctrl(lt6911uxc->vblank, vblank_def);
 
-		__v4l2_ctrl_s_ctrl(lt6911uxc->fps, lt6911uxc->cur_mode->fps);
+		/* store fps localy, in case lt6911uxc->cur_mode->fps may be set 0 in irq */
+		fps = lt6911uxc->cur_mode->fps;
+		__v4l2_ctrl_s_ctrl(lt6911uxc->fps, fps);
 
-		if (lt6911uxc->cur_mode->fps)
-			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 1000 / lt6911uxc->cur_mode->fps);
+		if (fps)
+			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 1000 / fps);
 		else
 			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 33);
 	}
@@ -1234,7 +1243,14 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 			lt6911uxc->cur_mode->lanes = lanes/2;
 			lt6911uxc->cur_mode->pixel_clk = pixel_clk/2;
 			lt6911uxc->cur_mode->byte_clk = byte_clock/2;
+		} else if (lanes == 4) {
+			lt6911uxc->cur_mode->width = width;
+			lt6911uxc->cur_mode->lanes = lanes;
+			lt6911uxc->cur_mode->pixel_clk = pixel_clk;
+			lt6911uxc->cur_mode->byte_clk = byte_clock;
 		} else {
+			dev_err(&client->dev, "read invalid lanes %d\n", lanes);
+			lanes = 4;
 			lt6911uxc->cur_mode->width = width;
 			lt6911uxc->cur_mode->lanes = lanes;
 			lt6911uxc->cur_mode->pixel_clk = pixel_clk;
