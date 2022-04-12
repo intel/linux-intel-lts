@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2022 Intel Corporation
 
 #include <linux/uaccess.h>
 #include <linux/device.h>
@@ -1072,3 +1072,4 @@ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
 
 	return 0;
 }
+
