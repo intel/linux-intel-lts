@@ -26,7 +26,9 @@
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 #include <media/ipu-isys.h>
+#endif
 
 #include <media/ipu-acpi.h>
 
@@ -386,6 +388,7 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 }
 EXPORT_SYMBOL(request_cpd_fw);
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 static inline int match_spdata(struct ipu_isys_subdev_info *sd,
 			const struct ipu_spdata_rep *rep)
 {
@@ -434,6 +437,7 @@ void fixup_spdata(const void *spdata_rep,
 		}
 	}
 }
+#endif
 
 static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
@@ -598,12 +602,13 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	rval = request_firmware(&isp->spdata_fw, IPU_SPDATA_NAME, &pdev->dev);
 	if (rval)
 		dev_warn(&isp->pdev->dev, "no spdata replace, using default\n");
 	else
 		fixup_spdata(isp->spdata_fw->data, pdev->dev.platform_data);
-
+#endif
 	rval = ipu_trace_add(isp);
 	if (rval)
 		dev_err(&pdev->dev, "Trace support not available\n");
@@ -739,7 +744,9 @@ out_ipu_bus_del_devices:
 	ipu_bus_del_devices(pdev);
 	ipu_buttress_exit(isp);
 	release_firmware(isp->cpd_fw);
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	release_firmware(isp->spdata_fw);
+#endif
 
 #ifdef IPU_TRACE_EVENT
 	trace_printk("E|%d|TMWK\n", rval);
