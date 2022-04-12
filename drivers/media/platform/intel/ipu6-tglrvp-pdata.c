@@ -447,7 +447,7 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_0 = {
 	.irq_pin_name = "B23",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-	.suffix = 'c',
+	.suffix = 'e',
 	.reset_pin = -1,
 	.detect_pin = -1,
 	.gpios = {-1, 0, 0, 0},

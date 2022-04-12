@@ -46,6 +46,7 @@
 #define VCM_BUFFER_SIZE 32
 
 #define LOOP_SIZE 10
+#define SUFFIX_BASE 96
 static LIST_HEAD(devices);
 static LIST_HEAD(new_devs);
 
@@ -719,17 +720,11 @@ int lt6911uxc_populate(struct device dev,
 	pdata->lanes = cam_data.lanes;
 	pdata->i2c_slave_address = cam_data.i2c[0].addr;
 
-	switch (cam_data.link) {
-	case 1:
-		pdata->suffix = 'a';
-		break;
-	case 2:
-		pdata->suffix = 'b';
-		break;
-	default:
+	/* use ascii */
+	if (cam_data.link > 0)
+		pdata->suffix = cam_data.link + SUFFIX_BASE;
+	else
 		dev_err(&dev, "INVALID MIPI PORT");
-		break;
-	}
 
 	/* gpio */
 	if (ctl_data.completed && ctl_data.gpio_num > 0) {
@@ -781,7 +776,7 @@ int lt6911uxc_populate(struct device dev,
 		pdata_dummy->port = cam_data.pprval;
 		pdata_dummy->lanes = cam_data.lanes;
 		pdata_dummy->i2c_slave_address = addr_dummy;
-		pdata_dummy->suffix = 'c';
+		pdata_dummy->suffix = cam_data.pprval + SUFFIX_BASE;
 		pdata_dummy->irq_pin = -1;
 
 		csi2_config_dummy->nlanes = cam_data.lanes;
