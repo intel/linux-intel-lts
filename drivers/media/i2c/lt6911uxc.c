@@ -1382,6 +1382,10 @@ static int lt6911uxc_probe(struct i2c_client *client)
 
 	mutex_init(&lt6911uxc->mutex);
 
+	if (-1 != lt6911uxc->platform_data->reset_pin)
+		if (!gpio_get_value(lt6911uxc->platform_data->reset_pin))
+			gpio_set_value(lt6911uxc->platform_data->reset_pin, 1);
+
 	if (-1 != lt6911uxc->platform_data->irq_pin) {
 		lt6911uxc->auxiliary_port = false;
 		dev_info(&client->dev, "Probing lt6911uxc chip...\n");

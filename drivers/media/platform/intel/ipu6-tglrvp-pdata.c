@@ -448,6 +448,8 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_0 = {
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'c',
+	.reset_pin = -1,
+	.detect_pin = -1,
 	.gpios = {-1, 0, 0, 0},
 };
 
@@ -476,6 +478,8 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_1 = {
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'a',
+	.reset_pin = 423,
+	.detect_pin = 175,
 };
 
 static struct ipu_isys_subdev_info  lt6911uxc_sd_1 = {
@@ -503,6 +507,8 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_2 = {
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
+	.reset_pin = 292,
+	.detect_pin = 510,
 };
 
 static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {

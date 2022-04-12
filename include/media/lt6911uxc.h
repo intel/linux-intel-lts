@@ -15,6 +15,8 @@ struct lt6911uxc_platform_data {
 	int irq_pin;
 	unsigned int irq_pin_flags;
 	char irq_pin_name[16];
+	int reset_pin;
+	int detect_pin;
 	char suffix;
 	int gpios[4];
 };
