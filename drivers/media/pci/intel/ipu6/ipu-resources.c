@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2015 - 2020 Intel Corporation
+// Copyright (C) 2015 - 2022 Intel Corporation
 
 #include <linux/bitmap.h>
 #include <linux/errno.h>
@@ -33,7 +33,6 @@ void ipu6_psys_hw_res_variant_init(void)
 	hw_var.set_proc_ext_mem = ipu6_fw_psys_set_process_ext_mem;
 	hw_var.get_pgm_by_proc =
 		ipu6_fw_psys_get_program_manifest_by_process;
-	return;
 }
 
 static const struct ipu_fw_resource_definitions *get_res(void)

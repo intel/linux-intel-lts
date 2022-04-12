@@ -19,17 +19,16 @@ static void ar0234_fixup_spdata(const void *spdata_rep, void *spdata)
 	const struct ipu_spdata_rep *rep = spdata_rep;
 	struct ar0234_platform_data *platform = spdata;
 
-	if (NULL == spdata_rep || NULL == spdata)
-		return;
-
-	platform->port = rep->port_n;
-	platform->lanes = rep->lanes;
-	platform->i2c_slave_address = rep->slave_addr_n;
-	platform->gpios[0] = rep->gpios[0];
-	platform->irq_pin = rep->irq_pin;
-	platform->irq_pin_flags = rep->irq_pin_flags;
-	strcpy(platform->irq_pin_name, rep->irq_pin_name);
-	platform->suffix = rep->suffix;
+	if (spdata_rep && spdata) {
+		platform->port = rep->port_n;
+		platform->lanes = rep->lanes;
+		platform->i2c_slave_address = rep->slave_addr_n;
+		platform->gpios[0] = rep->gpios[0];
+		platform->irq_pin = rep->irq_pin;
+		platform->irq_pin_flags = rep->irq_pin_flags;
+		strcpy(platform->irq_pin_name, rep->irq_pin_name);
+		platform->suffix = rep->suffix;
+	}
 }
 
 static void lt6911uxc_fixup_spdata(const void *spdata_rep, void *spdata)
@@ -37,17 +36,16 @@ static void lt6911uxc_fixup_spdata(const void *spdata_rep, void *spdata)
 	const struct ipu_spdata_rep *rep = spdata_rep;
 	struct lt6911uxc_platform_data *platform = spdata;
 
-	if (NULL == spdata_rep || NULL == spdata)
-		return;
-
-	platform->port = rep->port_n;
-	platform->lanes = rep->lanes;
-	platform->i2c_slave_address = rep->slave_addr_n;
-	platform->gpios[0] = rep->gpios[0];
-	platform->irq_pin = rep->irq_pin;
-	platform->irq_pin_flags = rep->irq_pin_flags;
-	strcpy(platform->irq_pin_name, rep->irq_pin_name);
-	platform->suffix = rep->suffix;
+	if (spdata_rep && spdata) {
+		platform->port = rep->port_n;
+		platform->lanes = rep->lanes;
+		platform->i2c_slave_address = rep->slave_addr_n;
+		platform->gpios[0] = rep->gpios[0];
+		platform->irq_pin = rep->irq_pin;
+		platform->irq_pin_flags = rep->irq_pin_flags;
+		strcpy(platform->irq_pin_name, rep->irq_pin_name);
+		platform->suffix = rep->suffix;
+	}
 }
 
 #define AR0234_LANES       2
