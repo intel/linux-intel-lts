@@ -548,7 +548,10 @@ static u64 __maybe_unused get_hblank(struct lt6911uxc_state *lt6911uxc)
 		pixel_clk = PIX_CLK_4_LANE;
 	}
 
-	hblank = 0x128 * (pixel_rate / pixel_clk);
+	if (pixel_clk)
+		hblank = 0x128 * (pixel_rate / pixel_clk);
+	else
+		hblank = 1184;
 
 	return hblank;
 }
@@ -702,14 +705,11 @@ static struct v4l2_ctrl_config lt6911uxc_frame_interval = {
 
 static u64 get_pixel_rate(struct lt6911uxc_state *lt6911uxc)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
-
-	if (lt6911uxc->cur_mode->lanes == 0) {
-		dev_err(&client->dev, "cur_mode lanes should not be 0\n");
-		lt6911uxc->cur_mode->lanes = 4;
-	}
-	return lt6911uxc->cur_mode->width * lt6911uxc->cur_mode->height *
-		lt6911uxc->cur_mode->fps * 16 / lt6911uxc->cur_mode->lanes;
+	if (lt6911uxc->cur_mode->lanes)
+		return lt6911uxc->cur_mode->width * lt6911uxc->cur_mode->height *
+			lt6911uxc->cur_mode->fps * 16 / lt6911uxc->cur_mode->lanes;
+	else
+		return 995328000; /* default value: 4K@30 */
 }
 
 static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
@@ -834,7 +834,11 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 		return ctrl_hdlr->error;
 	}
 
-	lt6911uxc_frame_interval.def = 1000 / lt6911uxc->cur_mode->fps;
+	if (lt6911uxc->cur_mode->fps)
+		lt6911uxc_frame_interval.def = 1000 / lt6911uxc->cur_mode->fps;
+	else
+		lt6911uxc_frame_interval.def = 33;
+
 	lt6911uxc->frame_interval = v4l2_ctrl_new_custom(ctrl_hdlr,
 					&lt6911uxc_frame_interval, NULL);
 	if (ctrl_hdlr->error) {
@@ -983,7 +987,6 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
 	s32 vblank_def;
 	s64 hblank;
-	u32 fps;
 
 	mutex_lock(&lt6911uxc->mutex);
 	lt6911uxc_update_pad_format(lt6911uxc->cur_mode, &fmt->format);
@@ -1011,12 +1014,10 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 					 vblank_def);
 		__v4l2_ctrl_s_ctrl(lt6911uxc->vblank, vblank_def);
 
-		/* store fps localy, in case lt6911uxc->cur_mode->fps may be set 0 in irq */
-		fps = lt6911uxc->cur_mode->fps;
-		__v4l2_ctrl_s_ctrl(lt6911uxc->fps, fps);
+		__v4l2_ctrl_s_ctrl(lt6911uxc->fps, lt6911uxc->cur_mode->fps);
 
-		if (fps)
-			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 1000 / fps);
+		if (lt6911uxc->cur_mode->fps)
+			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 1000 / lt6911uxc->cur_mode->fps);
 		else
 			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 33);
 	}
@@ -1243,14 +1244,7 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 			lt6911uxc->cur_mode->lanes = lanes/2;
 			lt6911uxc->cur_mode->pixel_clk = pixel_clk/2;
 			lt6911uxc->cur_mode->byte_clk = byte_clock/2;
-		} else if (lanes == 4) {
-			lt6911uxc->cur_mode->width = width;
-			lt6911uxc->cur_mode->lanes = lanes;
-			lt6911uxc->cur_mode->pixel_clk = pixel_clk;
-			lt6911uxc->cur_mode->byte_clk = byte_clock;
 		} else {
-			dev_err(&client->dev, "read invalid lanes %d\n", lanes);
-			lanes = 4;
 			lt6911uxc->cur_mode->width = width;
 			lt6911uxc->cur_mode->lanes = lanes;
 			lt6911uxc->cur_mode->pixel_clk = pixel_clk;
@@ -1269,7 +1263,7 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 	case INT_HDMI_DISCONNECT:
 		lt6911uxc->cur_mode->width = 0;
 		lt6911uxc->cur_mode->height = 0;
-		lt6911uxc->cur_mode->fps = 0;
+		lt6911uxc->cur_mode->fps = 30;
 		lt6911uxc->cur_mode->pixel_clk = 0;
 		lt6911uxc->cur_mode->code = MEDIA_BUS_FMT_UYVY8_1X16;
 		lt6911uxc->cur_mode->byte_clk = 0;
@@ -1311,15 +1305,18 @@ static void lt6911uxc_audio_status_update(struct lt6911uxc_state *lt6911uxc)
 				"Sampling rate changed: %d\n", audio_fs);
 		break;
 	default:
-		dev_err(&client->dev, "Unhandled audio= 0x%02X\n", int_event);
+		dev_dbg(&client->dev, "Unhandled audio= 0x%02X\n", int_event);
+		// use the default value for avoiding problem
 		lt6911uxc->cur_mode->audio_sample_rate = 0;
 		break;
 	}
 
 	__v4l2_ctrl_s_ctrl(lt6911uxc->audio_present_ctrl,
 		(lt6911uxc->cur_mode->audio_sample_rate != 0));
-	__v4l2_ctrl_s_ctrl(lt6911uxc->audio_sampling_rate_ctrl,
-		lt6911uxc->cur_mode->audio_sample_rate);
+
+	if (lt6911uxc->cur_mode->audio_sample_rate)
+		__v4l2_ctrl_s_ctrl(lt6911uxc->audio_sampling_rate_ctrl,
+			lt6911uxc->cur_mode->audio_sample_rate);
 }
 
 static void  lt6911uxc_check_status(struct lt6911uxc_state *lt6911uxc)
