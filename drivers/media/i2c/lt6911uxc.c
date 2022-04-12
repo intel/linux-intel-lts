@@ -895,58 +895,50 @@ static int lt6911uxc_start_streaming(struct lt6911uxc_state *lt6911uxc)
 {
 	int ret = 0;
 
-	if (!lt6911uxc->auxiliary_port) {
-		lt6911uxc_ext_control(lt6911uxc, true);
-		lt6911uxc_csi_enable(&lt6911uxc->sd, true);
-		lt6911uxc_ext_control(lt6911uxc, false);
-	}
+	if (lt6911uxc->auxiliary_port == true)
+		return 0;
+
+	lt6911uxc_ext_control(lt6911uxc, true);
+	lt6911uxc_csi_enable(&lt6911uxc->sd, true);
+	lt6911uxc_ext_control(lt6911uxc, false);
+	lt6911uxc->streaming = true;
 
 	ret = __v4l2_ctrl_handler_setup(lt6911uxc->sd.ctrl_handler);
 	if (ret)
 		return ret;
 
-	lt6911uxc->streaming = true;
 	return 0;
 }
 
 static void lt6911uxc_stop_streaming(struct lt6911uxc_state *lt6911uxc)
 {
-	if (!lt6911uxc->auxiliary_port) {
-		lt6911uxc_ext_control(lt6911uxc, true);
-		lt6911uxc_csi_enable(&lt6911uxc->sd, false);
-		lt6911uxc_ext_control(lt6911uxc, false);
-	}
+	if (lt6911uxc->auxiliary_port == true)
+		return;
+
 	lt6911uxc->streaming = false;
 }
 
 static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int ret = 0;
 
-	mutex_lock(&lt6911uxc->mutex);
+	if (lt6911uxc->streaming == enable)
+		return 0;
+
+	if (lt6911uxc->auxiliary_port == true)
+		return 0;
+
 	if (enable) {
-		ret = pm_runtime_get_sync(&client->dev);
-		if (ret < 0) {
-			pm_runtime_put_noidle(&client->dev);
-			mutex_unlock(&lt6911uxc->mutex);
-			dev_info(&client->dev, "pm runtime get sync error.\n");
-			return ret;
-		}
-		ret = lt6911uxc_start_streaming(lt6911uxc);
 		dev_dbg(sd->dev, "[%s()], start streaming.\n", __func__);
-		if (ret) {
+		ret = lt6911uxc_start_streaming(lt6911uxc);
+		if (ret)
 			lt6911uxc_stop_streaming(lt6911uxc);
-			pm_runtime_put(&client->dev);
-		}
 	} else {
-		lt6911uxc_stop_streaming(lt6911uxc);
 		dev_dbg(sd->dev, "[%s()], stop streaming.\n", __func__);
-		pm_runtime_put(&client->dev);
+		lt6911uxc_stop_streaming(lt6911uxc);
 	}
 
-	mutex_unlock(&lt6911uxc->mutex);
 	return ret;
 }
 
@@ -1008,7 +1000,10 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 
 		__v4l2_ctrl_s_ctrl(lt6911uxc->fps, lt6911uxc->cur_mode->fps);
 
-		__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 1000 / lt6911uxc->cur_mode->fps);
+		if (lt6911uxc->cur_mode->fps)
+			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 1000 / lt6911uxc->cur_mode->fps);
+		else
+			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 33);
 	}
 	mutex_unlock(&lt6911uxc->mutex);
 
@@ -1089,6 +1084,7 @@ static int lt6911uxc_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	if (!lt6911uxc->auxiliary_port)
 		lt6911uxc_set_stream(sd, false);
+
 	return 0;
 }
 
@@ -1176,7 +1172,6 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 	switch (int_event) {
 	case INT_HDMI_STABLE:
 		dev_dbg(&client->dev, "Video signal stable\n");
-		lt6911uxc->streaming = true;
 
 		/* byte clock / MIPI clock */
 		lt6911uxc_i2c_wr8(&lt6911uxc->sd,
@@ -1227,7 +1222,10 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 
 		if (lanes == 8) {
 			/* 4K60fps with 2 MIPI ports*/
-			lt6911uxc->cur_mode->width = width/2;
+			if (width >= 3840)
+				lt6911uxc->cur_mode->width = width/2; /* YUV422 */
+			else
+				lt6911uxc->cur_mode->width = width; /* YUV420 */
 			lt6911uxc->cur_mode->lanes = lanes/2;
 			lt6911uxc->cur_mode->pixel_clk = pixel_clk/2;
 			lt6911uxc->cur_mode->byte_clk = byte_clock/2;
@@ -1248,7 +1246,6 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 			lt6911uxc->cur_mode->lanes);
 	break;
 	case INT_HDMI_DISCONNECT:
-		lt6911uxc_stop_streaming(lt6911uxc);
 		lt6911uxc->cur_mode->width = 0;
 		lt6911uxc->cur_mode->height = 0;
 		lt6911uxc->cur_mode->fps = 0;
@@ -1262,7 +1259,6 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 		dev_dbg(&client->dev, "Video signal disconnected\n");
 	break;
 	default:
-		lt6911uxc_stop_streaming(lt6911uxc);
 		dev_dbg(&client->dev, "Unhandled video= 0x%02X\n", int_event);
 	return  -ENOLINK;
 	}
@@ -1438,7 +1434,7 @@ static int lt6911uxc_probe(struct i2c_client *client)
 			goto probe_error_v4l2_ctrl_handler_free;
 		}
 		/* Check the current status */
-		usleep_range(2000000, 2050000);
+		usleep_range(200000, 205000);
 		lt6911uxc_check_status(lt6911uxc);
 		/* Stop to transmit MIPI data firstly waiting for IPU ready */
 		lt6911uxc_stop_streaming(lt6911uxc);
