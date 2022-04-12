@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2016--2022 Intel Corporation.
  *
@@ -1059,7 +1060,6 @@ static int __init ipu_acpi_init(void)
 
 static void __exit ipu_acpi_exit(void)
 {
-	return;
 }
 
 module_init(ipu_acpi_init);
