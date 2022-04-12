@@ -887,6 +887,7 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 	}
 	spin_unlock_irqrestore(&aq->lock, flags);
 
+	av->skipframe = 1;
 	rval = __start_streaming(&aq->vbq, 0);
 
 	return rval;
@@ -1195,6 +1196,9 @@ void ipu_isys_queue_buf_done(struct ipu_isys_buffer *ib)
 		 * to the userspace when it is de-queued
 		 */
 		atomic_set(&ib->str2mmio_flag, 0);
+	} else if (atomic_read(&ib->skipframe_flag)) {
+		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+		atomic_set(&ib->skipframe_flag, 0);
 	} else {
 		vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
 	}

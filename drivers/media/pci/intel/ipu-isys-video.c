@@ -1795,6 +1795,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	av->ip.stream_id = 0;
 	av->ip.vc = 0;
 	av->reset = false;
+	av->skipframe = 0;
 
 #if defined(IPU_IWAKE_ENABLE)
 	if (!av->watermark) {
