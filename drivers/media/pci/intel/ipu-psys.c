@@ -1613,15 +1613,17 @@ static int ipu_psys_isr_run(void *data)
 
 	while (!kthread_should_stop()) {
 		usleep_range(100, 500);
-#ifdef CONFIG_PM
-		r = pm_runtime_get_if_in_use(&psys->adev->dev);
-		if (!r || WARN_ON_ONCE(r < 0))
-			continue;
-#endif
 
 		r = mutex_trylock(&psys->mutex);
 		if (!r)
 			continue;
+#ifdef CONFIG_PM
+		r = pm_runtime_get_if_in_use(&psys->adev->dev);
+		if (!r || WARN_ON_ONCE(r < 0)) {
+			mutex_unlock(&psys->mutex);
+			continue;
+		}
+#endif
 
 		ipu_psys_handle_events(psys);
 
