@@ -214,6 +214,7 @@ struct ipu_isys {
 
 	struct mutex reset_mutex;
 	bool in_reset;
+	bool in_stop_streaming;
 };
 
 #if defined(IPU_IWAKE_ENABLE)

@@ -729,7 +729,7 @@ static void return_buffers(struct ipu_isys_queue *aq,
 	}
 }
 
-static int start_streaming(struct vb2_queue *q, unsigned int count)
+static int __start_streaming(struct vb2_queue *q, unsigned int count)
 {
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(q);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
@@ -770,6 +770,7 @@ static int start_streaming(struct vb2_queue *q, unsigned int count)
 		mutex_unlock(&av->mutex);
 		mutex_lock(&pipe_av->mutex);
 	}
+
 	ip->nr_streaming++;
 	dev_dbg(&av->isys->adev->dev, "queue %u of %u\n", ip->nr_streaming,
 		ip->nr_queues);
@@ -821,6 +822,30 @@ out_return_buffers:
 	return rval;
 }
 
+static int start_streaming(struct vb2_queue *q, unsigned int count)
+{
+	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(q);
+	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
+	int rval;
+
+	mutex_unlock(&av->mutex);
+	mutex_lock(&av->isys->reset_mutex);
+	while (av->isys->in_stop_streaming) {
+		mutex_unlock(&av->isys->reset_mutex);
+		dev_dbg(&av->isys->adev->dev, "buffer: %s: wait for stop streaming\n",
+			av->vdev.name
+		);
+		usleep_range(10000, 11000);
+		mutex_lock(&av->isys->reset_mutex);
+	}
+	mutex_unlock(&av->isys->reset_mutex);
+	mutex_lock(&av->mutex);
+
+	rval = __start_streaming(q, count);
+
+	return rval;
+}
+
 static void reset_stop_streaming(struct ipu_isys_video *av)
 {
 	struct ipu_isys_pipeline *ip = &av->ip;
@@ -862,7 +887,7 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 	}
 	spin_unlock_irqrestore(&aq->lock, flags);
 
-	rval = start_streaming(&aq->vbq, 0);
+	rval = __start_streaming(&aq->vbq, 0);
 
 	return rval;
 }
@@ -1034,6 +1059,13 @@ static void stop_streaming(struct vb2_queue *q)
 	dev_info(&av->isys->adev->dev, "stop: %s: enter\n",
 		av->vdev.name);
 
+	if (!ip)
+		return;
+
+	mutex_lock(&av->isys->reset_mutex);
+	av->isys->in_stop_streaming = true;
+	mutex_unlock(&av->isys->reset_mutex);
+
 	if (pipe_av != av) {
 		mutex_unlock(&av->mutex);
 		mutex_lock(&pipe_av->mutex);
@@ -1061,6 +1093,11 @@ static void stop_streaming(struct vb2_queue *q)
 
 	dev_info(&av->isys->adev->dev, "stop: %s: exit\n",
 		av->vdev.name);
+
+	mutex_lock(&av->isys->reset_mutex);
+	av->isys->in_stop_streaming = false;
+	mutex_unlock(&av->isys->reset_mutex);
+
 }
 
 static unsigned int
