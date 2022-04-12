@@ -456,7 +456,7 @@ static int ipu_acpi_get_dep_data(struct device *dev,
 	return 0;
 }
 
-static int ipu_acpi_get_cam_data(struct device *dev,
+int ipu_acpi_get_cam_data(struct device *dev,
 			     struct sensor_bios_data *sensor)
 {
 	/* SSDB */
