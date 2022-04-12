@@ -243,7 +243,7 @@ static int video_release(struct file *file)
 	struct ipu_isys_video *av = video_drvdata(file);
 	int ret = 0;
 
-	dev_info(&av->isys->adev->dev, "release: %s: enter\n",
+	dev_dbg(&av->isys->adev->dev, "release: %s: enter\n",
 		av->vdev.name);
 	vb2_fop_release(file);
 
@@ -264,7 +264,7 @@ static int video_release(struct file *file)
 #ifdef IPU_IRQ_POLL
 		kthread_stop(av->isys->isr_thread);
 #endif
-	dev_info(&av->isys->adev->dev, "release: %s: close fw\n",
+	dev_dbg(&av->isys->adev->dev, "release: %s: close fw\n",
 		av->vdev.name);
 		ipu_fw_isys_close(av->isys);
 		if (av->isys->fwcom) {
@@ -282,7 +282,7 @@ static int video_release(struct file *file)
 	else
 		pm_runtime_put(&av->isys->adev->dev);
 
-	dev_info(&av->isys->adev->dev, "release: %s: exit\n",
+	dev_dbg(&av->isys->adev->dev, "release: %s: exit\n",
 		av->vdev.name);
 	return ret;
 }

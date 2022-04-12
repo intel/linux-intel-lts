@@ -851,7 +851,7 @@ static void reset_stop_streaming(struct ipu_isys_video *av)
 	struct ipu_isys_pipeline *ip = &av->ip;
 	struct ipu_isys_queue *aq = &av->aq;
 
-	dev_info(&av->isys->adev->dev, "%s: stop streaming\n", av->vdev.name);
+	dev_dbg(&av->isys->adev->dev, "%s: stop streaming\n", av->vdev.name);
 
 	mutex_lock(&av->isys->stream_mutex);
 	if (ip->nr_streaming == ip->nr_queues && ip->streaming)
@@ -872,7 +872,7 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 	unsigned long flags;
 	int rval;
 
-	dev_info(&av->isys->adev->dev, "%s: start streaming\n", av->vdev.name);
+	dev_dbg(&av->isys->adev->dev, "%s: start streaming\n", av->vdev.name);
 
 	spin_lock_irqsave(&aq->lock, flags);
 	while (!list_empty(&aq->active)) {
@@ -905,7 +905,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 	int rval, i, j;
 	int has_streaming = 0;
 
-	dev_info(&isys->adev->dev, "%s\n", __func__);
+	dev_dbg(&isys->adev->dev, "%s\n", __func__);
 
 	mutex_lock(&isys->reset_mutex);
 	if (isys->in_reset) {
@@ -968,7 +968,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 	if (!has_streaming)
 		goto end_of_reset;
 
-	dev_info(&isys->adev->dev, "ipu reset, close fw\n");
+	dev_dbg(&isys->adev->dev, "ipu reset, close fw\n");
 	ipu_fw_isys_close(isys);
 
 	dev_dbg(&isys->adev->dev, "ipu reset, power cycle\n");
@@ -1042,7 +1042,7 @@ end_of_reset:
 	mutex_lock(&isys->reset_mutex);
 	isys->in_reset = false;
 	mutex_unlock(&isys->reset_mutex);
-	dev_info(&isys->adev->dev, "reset done\n");
+	dev_dbg(&isys->adev->dev, "reset done\n");
 
 	return 0;
 }
@@ -1056,7 +1056,7 @@ static void stop_streaming(struct vb2_queue *q)
 	struct ipu_isys_video *pipe_av =
 	    container_of(ip, struct ipu_isys_video, ip);
 
-	dev_info(&av->isys->adev->dev, "stop: %s: enter\n",
+	dev_dbg(&av->isys->adev->dev, "stop: %s: enter\n",
 		av->vdev.name);
 
 	if (!ip)
@@ -1091,7 +1091,7 @@ static void stop_streaming(struct vb2_queue *q)
 	if (av->isys->reset_needed)
 		ipu_isys_reset(av);
 
-	dev_info(&av->isys->adev->dev, "stop: %s: exit\n",
+	dev_dbg(&av->isys->adev->dev, "stop: %s: exit\n",
 		av->vdev.name);
 
 	mutex_lock(&av->isys->reset_mutex);
