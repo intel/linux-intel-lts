@@ -12,12 +12,6 @@
 0002-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
 0003-drm-nouveau-clean-up-all-clients-on-device-removal.patch
 
-# CVE-2022-0847
-0001-lib-iov_iter-initialize-flags-in-new-pipe_buffer.patch
-
-# CVE-2022-24958
-0001-usb-gadget-don-t-release-an-existing-dev-buf.patch
-0002-usb-gadget-clear-related-members-when-goto-fail.patch
 
 # CVE-2022-26490
 0001-nfc-st21nfca-Fix-potential-buffer-overflows-in-EVT_T.patch
@@ -25,12 +19,6 @@
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
 0002-f2fs-fix-to-avoid-panic-in-is_alive-if-metadata-is-i.patch
-
-# CVE-2022-25258
-0001-USB-gadget-validate-interface-OS-descriptor-requests.patch
-
-# CVE-2022-25375
-0001-usb-gadget-rndis-check-size-of-RNDIS_MSG_SET-command.patch
 
 # CVE-2021-4197
 0001-cgroup-Use-open-time-credentials-for-process-migrato.patch
@@ -40,3 +28,5 @@
 0005-selftests-cgroup-Test-open-time-credential-usage-for.patch
 0006-selftests-cgroup-Test-open-time-cgroup-namespace-usa.patch
 
+#CVE-2022-27666
+0001-esp-Fix-possible-buffer-overflow-in-ESP-transformati.patch
