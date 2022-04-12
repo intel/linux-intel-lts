@@ -284,10 +284,11 @@ static int dwmac4_wrback_get_rx_timestamp_status(void *desc, void *next_desc,
 			/* Check if timestamp is OK from context descriptor */
 			do {
 				ret = dwmac4_rx_check_timestamp(next_desc);
-				if (ret < 0)
+				if (ret <= 0)
 					goto exit;
 				i++;
 
+				fsleep(1);
 			} while ((ret == 1) && (i < 10));
 
 			if (i == 10)
