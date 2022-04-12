@@ -548,6 +548,18 @@ static bool update_subdev(struct device dev,
 		dev_info(&dev, "Pdata irq_pin %d -> %d",
 			ori_pdata->irq_pin, new_pdata->irq_pin);
 
+	if (strcmp(ori_pdata->irq_pin_name, new_pdata->irq_pin_name) != 0)
+		dev_info(&dev, "Pdata irq_pin_name %s -> %s",
+			ori_pdata->irq_pin_name, new_pdata->irq_pin_name);
+
+	if (ori_pdata->reset_pin != new_pdata->reset_pin)
+		dev_info(&dev, "Pdata reset_pin %d -> %d",
+			ori_pdata->reset_pin, new_pdata->reset_pin);
+
+	if (ori_pdata->detect_pin != new_pdata->detect_pin)
+		dev_info(&dev, "Pdata detect_pin %d -> %d",
+			ori_pdata->detect_pin, new_pdata->detect_pin);
+
 	(*sd_info)->csi2->port = new_subdev_info->csi2->port;
 	(*sd_info)->csi2->nlanes = new_subdev_info->csi2->nlanes;
 	(*sd_info)->i2c.board_info.addr = new_subdev_info->i2c.board_info.addr;
@@ -560,6 +572,10 @@ static bool update_subdev(struct device dev,
 	ori_pdata->i2c_slave_address = new_pdata->i2c_slave_address;
 
 	ori_pdata->irq_pin = new_pdata->irq_pin;
+
+	strlcpy(ori_pdata->irq_pin_name, new_pdata->irq_pin_name, sizeof(new_pdata->irq_pin_name));
+	ori_pdata->reset_pin = new_pdata->reset_pin;
+	ori_pdata->detect_pin = new_pdata->detect_pin;
 
 	return true;
 }
@@ -734,15 +750,20 @@ int lt6911uxc_populate(struct device dev,
 	/* gpio */
 	if (ctl_data.completed && ctl_data.gpio_num > 0) {
 		for (i = 0; i < ctl_data.gpio_num; i++) {
-		/* check for GPIO_READY_STAT selection in BIOS */
+			/* check for RESET selection in BIOS */
+			if (ctl_data.gpio[i].valid && ctl_data.gpio[i].func == GPIO_RESET)
+				pdata->reset_pin = ctl_data.gpio[i].pin;
+			/* check for READY_STAT selection in BIOS */
 			if (ctl_data.gpio[i].valid && ctl_data.gpio[i].func == GPIO_READY_STAT) {
 				pdata->irq_pin = ctl_data.gpio[i].pin;
 				pdata->irq_pin_flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
 							IRQF_ONESHOT;
-				strlcpy(pdata->irq_pin_name, "GPIO_READY_STAT",
-					sizeof("GPIO_READY_STAT"));
+				strlcpy(pdata->irq_pin_name, "READY_STAT", sizeof("READY_STAT"));
 				irq_set = true;
 			}
+			/* check for HDMI_DETECT selection in BIOS */
+			if (ctl_data.gpio[i].valid && ctl_data.gpio[i].func == GPIO_HDMI_DETECT)
+				pdata->detect_pin = ctl_data.gpio[i].pin;
 		}
 	}
 

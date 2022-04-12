@@ -141,6 +141,8 @@ struct intel_ipu6_regulator {
 	char *dest_rail;
 };
 
-#define GPIO_READY_STAT		0x13
+#define GPIO_RESET             0x0
+#define GPIO_READY_STAT        0x13
+#define GPIO_HDMI_DETECT       0x14
 
 #endif
