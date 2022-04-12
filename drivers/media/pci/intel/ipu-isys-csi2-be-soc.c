@@ -199,9 +199,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd,
-					cfg,
-					fmt->pad,
+		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
 				    fmt->stream,
 				    fmt->which);
 
@@ -214,16 +212,13 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 			fmt->format.field = V4L2_FIELD_NONE;
 		*ffmt = fmt->format;
 
-		ipu_isys_subdev_fmt_propagate(sd,
-						  cfg,
-						  &fmt->format,
+		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format,
 					      NULL,
 					      IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
 					      fmt->pad, fmt->which);
 	} else if (sd->entity.pads[fmt->pad].flags & MEDIA_PAD_FL_SOURCE) {
 		struct v4l2_mbus_framefmt *sink_ffmt;
-		struct v4l2_rect *r = __ipu_isys_get_selection(sd,
-			cfg,
+		struct v4l2_rect *r = __ipu_isys_get_selection(sd, cfg,
 			V4L2_SEL_TGT_CROP, fmt->pad, fmt->which);
 		struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 		unsigned int sink_pad = 0;
