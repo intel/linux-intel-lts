@@ -1258,17 +1258,33 @@ err:
 
 #endif /* CONFIG_DEBUG_FS */
 
-u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks)
+u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu_device *isp)
 {
+	u32 ref_clk, val;
 	u64 ns = ticks * 10000;
-	/*
-	 * TSC clock frequency is 19.2MHz,
-	 * converting TSC tick count to ns is calculated by:
-	 * ns = ticks * 1000 000 000 / 19.2Mhz
-	 *    = ticks * 1000 000 000 / 19200000Hz
-	 *    = ticks * 10000 / 192 ns
-	 */
-	do_div(ns, 192);
+
+	val = readl(isp->base + BUTTRESS_REG_BTRS_CTRL);
+	val &= BUTTRESS_REG_BTRS_CTRL_REF_CLK_IND;
+	val >>= 8;
+
+	switch (val) {
+	case 0x0:
+		ref_clk = 240;
+		break;
+	case 0x1:
+		ref_clk = 192;
+		break;
+	case 0x2:
+		ref_clk = 384;
+		break;
+	default:
+		dev_warn(&isp->pdev->dev,
+			 "Unsupported ref clock, use 19.2Mhz by default.\n");
+		ref_clk = 192;
+		break;
+	}
+
+	do_div(ns, ref_clk);
 
 	return ns;
 }
