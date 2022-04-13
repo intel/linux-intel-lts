@@ -85,3 +85,6 @@
 
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
+
+# CVE-2022-1011
+0001-fuse-fix-pipe-buffer-lifetime-for-direct_io.patch
