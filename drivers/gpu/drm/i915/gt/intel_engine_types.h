@@ -536,6 +536,7 @@ struct intel_engine_cs {
 #define I915_ENGINE_HAS_RCS_REG_STATE  BIT(9)
 #define I915_ENGINE_HAS_EU_PRIORITY    BIT(10)
 #define I915_ENGINE_FIRST_RENDER_COMPUTE BIT(11)
+#define I915_ENGINE_USES_WA_HOLD_CCS_SWITCHOUT BIT(12)
 	unsigned int flags;
 
 	/*
@@ -657,5 +658,12 @@ intel_engine_has_relative_mmio(const struct intel_engine_cs * const engine)
 	     (iter_)++, (gslice_) = (iter_) / GEN_DSS_PER_GSLICE, \
 	     (dss_) = (iter_) % GEN_DSS_PER_GSLICE) \
 		for_each_if(intel_sseu_has_subslice((sseu_), 0, (iter_)))
+
+/* Wa_14014475959:dg2 */
+static inline bool
+intel_engine_uses_wa_hold_ccs_switchout(struct intel_engine_cs *engine)
+{
+	return engine->flags & I915_ENGINE_USES_WA_HOLD_CCS_SWITCHOUT;
+}
 
 #endif /* __INTEL_ENGINE_TYPES_H__ */
