@@ -1049,6 +1049,7 @@ static const struct intel_device_info xehpsdv_info = {
 	.has_4tile = 1, \
 	.has_64k_pages = 1, \
 	.has_guc_deprivilege = 1, \
+	.has_heci_pxp = 1, \
 	.platform_engine_mask = \
 		BIT(RCS0) | BIT(BCS0) | \
 		BIT(VECS0) | BIT(VECS1) | \
