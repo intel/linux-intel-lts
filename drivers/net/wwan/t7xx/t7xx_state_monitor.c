@@ -7,7 +7,7 @@
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Eliot Lee <eliot.lee@intel.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
@@ -445,7 +445,7 @@ int t7xx_fsm_append_event(struct t7xx_fsm_ctl *ctl, enum t7xx_fsm_event_state ev
 	event->length = length;
 
 	if (data && length)
-		memcpy((void *)event + sizeof(*event), data, length);
+		memcpy(event->data, data, length);
 
 	spin_lock_irqsave(&ctl->event_lock, flags);
 	list_add_tail(&event->entry, &ctl->event_queue);

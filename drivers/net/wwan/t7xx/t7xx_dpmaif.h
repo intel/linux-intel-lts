@@ -7,7 +7,7 @@
  *  Amir Hanania <amir.hanania@intel.com>
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Chiranjeevi Rapolu <chiranjeevi.rapolu@intel.com>
@@ -154,25 +154,25 @@ void t7xx_dpmaif_start_hw(struct dpmaif_hw_info *hw_info);
 int t7xx_dpmaif_hw_get_intr_cnt(struct dpmaif_hw_info *hw_info,
 				struct dpmaif_hw_intr_st_para *para, int qno);
 void t7xx_dpmaif_unmask_ulq_intr(struct dpmaif_hw_info *hw_info, unsigned int q_num);
-int t7xx_dpmaif_ul_update_hw_drb_cnt(struct dpmaif_hw_info *hw_info, unsigned char q_num,
-				     unsigned int drb_entry_cnt);
+void t7xx_dpmaif_ul_update_hw_drb_cnt(struct dpmaif_hw_info *hw_info, unsigned int q_num,
+				      unsigned int drb_entry_cnt);
 int t7xx_dpmaif_dl_snd_hw_bat_cnt(struct dpmaif_hw_info *hw_info, unsigned int bat_entry_cnt);
 int t7xx_dpmaif_dl_snd_hw_frg_cnt(struct dpmaif_hw_info *hw_info, unsigned int frg_entry_cnt);
 int t7xx_dpmaif_dlq_add_pit_remain_cnt(struct dpmaif_hw_info *hw_info, unsigned int dlq_pit_idx,
 				       unsigned int pit_remain_cnt);
 void t7xx_dpmaif_dlq_unmask_pitcnt_len_err_intr(struct dpmaif_hw_info *hw_info,
-						unsigned char qno);
-void t7xx_dpmaif_dlq_unmask_rx_done(struct dpmaif_hw_info *hw_info, unsigned char qno);
-bool t7xx_dpmaif_ul_clr_done(struct dpmaif_hw_info *hw_info, unsigned char qno);
+						unsigned int qno);
+void t7xx_dpmaif_dlq_unmask_rx_done(struct dpmaif_hw_info *hw_info, unsigned int qno);
+bool t7xx_dpmaif_ul_clr_done(struct dpmaif_hw_info *hw_info, unsigned int qno);
 void t7xx_dpmaif_ul_clr_all_intr(struct dpmaif_hw_info *hw_info);
 void t7xx_dpmaif_dl_clr_all_intr(struct dpmaif_hw_info *hw_info);
 void t7xx_dpmaif_clr_ip_busy_sts(struct dpmaif_hw_info *hw_info);
 void t7xx_dpmaif_dl_unmask_batcnt_len_err_intr(struct dpmaif_hw_info *hw_info);
 void t7xx_dpmaif_dl_unmask_pitcnt_len_err_intr(struct dpmaif_hw_info *hw_info);
-unsigned int t7xx_dpmaif_ul_get_rd_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num);
-unsigned int t7xx_dpmaif_dl_get_bat_rd_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num);
-unsigned int t7xx_dpmaif_dl_get_bat_wr_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num);
-unsigned int t7xx_dpmaif_dl_get_frg_rd_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num);
+unsigned int t7xx_dpmaif_ul_get_rd_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num);
+unsigned int t7xx_dpmaif_dl_get_bat_rd_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num);
+unsigned int t7xx_dpmaif_dl_get_bat_wr_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num);
+unsigned int t7xx_dpmaif_dl_get_frg_rd_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num);
 unsigned int t7xx_dpmaif_dl_dlq_pit_get_wr_idx(struct dpmaif_hw_info *hw_info,
 					       unsigned int dlq_pit_idx);
 

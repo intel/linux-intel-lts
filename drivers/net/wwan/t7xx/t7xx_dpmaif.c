@@ -7,7 +7,7 @@
  *  Amir Hanania <amir.hanania@intel.com>
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Andy Shevchenko <andriy.shevchenko@linux.intel.com>
@@ -140,7 +140,7 @@ static u32 t7xx_update_dlq_intr(struct dpmaif_hw_info *hw_info, u32 q_done)
 	return value;
 }
 
-static int t7xx_mask_dlq_intr(struct dpmaif_hw_info *hw_info, unsigned char qno)
+static int t7xx_mask_dlq_intr(struct dpmaif_hw_info *hw_info, unsigned int qno)
 {
 	u32 value, q_done;
 	int ret;
@@ -161,7 +161,7 @@ static int t7xx_mask_dlq_intr(struct dpmaif_hw_info *hw_info, unsigned char qno)
 	return 0;
 }
 
-void t7xx_dpmaif_dlq_unmask_rx_done(struct dpmaif_hw_info *hw_info, unsigned char qno)
+void t7xx_dpmaif_dlq_unmask_rx_done(struct dpmaif_hw_info *hw_info, unsigned int qno)
 {
 	u32 mask;
 
@@ -179,7 +179,7 @@ void t7xx_dpmaif_clr_ip_busy_sts(struct dpmaif_hw_info *hw_info)
 }
 
 static void t7xx_dpmaif_dlq_mask_rx_pitcnt_len_err_intr(struct dpmaif_hw_info *hw_info,
-							unsigned char qno)
+							unsigned int qno)
 {
 	if (qno == DPF_RX_QNO0)
 		iowrite32(DPMAIF_DL_INT_DLQ0_PITCNT_LEN,
@@ -190,7 +190,7 @@ static void t7xx_dpmaif_dlq_mask_rx_pitcnt_len_err_intr(struct dpmaif_hw_info *h
 }
 
 void t7xx_dpmaif_dlq_unmask_pitcnt_len_err_intr(struct dpmaif_hw_info *hw_info,
-						unsigned char qno)
+						unsigned int qno)
 {
 	if (qno == DPF_RX_QNO0)
 		iowrite32(DPMAIF_DL_INT_DLQ0_PITCNT_LEN,
@@ -512,8 +512,7 @@ static void t7xx_dpmaif_dl_dlq_hpc_hw_init(struct dpmaif_hw_info *hw_info)
 	t7xx_dpmaif_hw_dlq_start_prs_thres_set(hw_info);
 }
 
-static int t7xx_dpmaif_dl_bat_init_done(struct dpmaif_hw_info *hw_info,
-					unsigned char q_num, bool frg_en)
+static int t7xx_dpmaif_dl_bat_init_done(struct dpmaif_hw_info *hw_info, bool frg_en)
 {
 	u32 value, dl_bat_init = 0;
 	int ret;
@@ -544,14 +543,13 @@ static int t7xx_dpmaif_dl_bat_init_done(struct dpmaif_hw_info *hw_info,
 }
 
 static void t7xx_dpmaif_dl_set_bat_base_addr(struct dpmaif_hw_info *hw_info,
-					     unsigned char q_num, dma_addr_t addr)
+					     dma_addr_t addr)
 {
 	iowrite32(lower_32_bits(addr), hw_info->pcie_base + DPMAIF_DL_BAT_INIT_CON0);
 	iowrite32(upper_32_bits(addr), hw_info->pcie_base + DPMAIF_DL_BAT_INIT_CON3);
 }
 
-static void t7xx_dpmaif_dl_set_bat_size(struct dpmaif_hw_info *hw_info,
-					unsigned char q_num, unsigned int size)
+static void t7xx_dpmaif_dl_set_bat_size(struct dpmaif_hw_info *hw_info, unsigned int size)
 {
 	unsigned int value;
 
@@ -561,7 +559,7 @@ static void t7xx_dpmaif_dl_set_bat_size(struct dpmaif_hw_info *hw_info,
 	iowrite32(value, hw_info->pcie_base + DPMAIF_DL_BAT_INIT_CON1);
 }
 
-static void t7xx_dpmaif_dl_bat_en(struct dpmaif_hw_info *hw_info, unsigned char q_num, bool enable)
+static void t7xx_dpmaif_dl_bat_en(struct dpmaif_hw_info *hw_info, bool enable)
 {
 	unsigned int value;
 
@@ -628,7 +626,7 @@ static void t7xx_dpmaif_dl_set_ao_bat_rsv_length(struct dpmaif_hw_info *hw_info)
 
 	value = ioread32(hw_info->pcie_base + DPMAIF_AO_DL_PKTINFO_CON2);
 	value &= ~DPMAIF_BAT_RSV_LEN_MSK;
-	value |= DPMAIF_HW_BAT_RSVLEN & DPMAIF_BAT_RSV_LEN_MSK;
+	value |= DPMAIF_HW_BAT_RSVLEN;
 	iowrite32(value, hw_info->pcie_base + DPMAIF_AO_DL_PKTINFO_CON2);
 }
 
@@ -657,7 +655,7 @@ static void t7xx_dpmaif_dl_set_ao_frg_check_thres(struct dpmaif_hw_info *hw_info
 
 	value = ioread32(hw_info->pcie_base + DPMAIF_AO_DL_RDY_CHK_FRG_THRES);
 	value &= ~DPMAIF_FRG_CHECK_THRES_MSK;
-	value |= (DPMAIF_HW_CHK_FRG_NUM & DPMAIF_FRG_CHECK_THRES_MSK);
+	value |= DPMAIF_HW_CHK_FRG_NUM;
 	iowrite32(value, hw_info->pcie_base + DPMAIF_AO_DL_RDY_CHK_FRG_THRES);
 }
 
@@ -672,8 +670,7 @@ static void t7xx_dpmaif_dl_set_ao_frg_bufsz(struct dpmaif_hw_info *hw_info)
 	iowrite32(value, hw_info->pcie_base + DPMAIF_AO_DL_RDY_CHK_FRG_THRES);
 }
 
-static void t7xx_dpmaif_dl_frg_ao_en(struct dpmaif_hw_info *hw_info, unsigned char q_num,
-				     bool enable)
+static void t7xx_dpmaif_dl_frg_ao_en(struct dpmaif_hw_info *hw_info, bool enable)
 {
 	unsigned int value;
 
@@ -703,19 +700,18 @@ static void t7xx_dpmaif_dl_set_pit_seqnum(struct dpmaif_hw_info *hw_info)
 
 	value = ioread32(hw_info->pcie_base + DPMAIF_AO_DL_PIT_SEQ_END);
 	value &= ~DPMAIF_DL_PIT_SEQ_MSK;
-	value |= DPMAIF_DL_PIT_SEQ_VALUE & DPMAIF_DL_PIT_SEQ_MSK;
+	value |= DPMAIF_DL_PIT_SEQ_VALUE;
 	iowrite32(value, hw_info->pcie_base + DPMAIF_AO_DL_PIT_SEQ_END);
 }
 
 static void t7xx_dpmaif_dl_set_dlq_pit_base_addr(struct dpmaif_hw_info *hw_info,
-						 unsigned char q_num, dma_addr_t addr)
+						 dma_addr_t addr)
 {
 	iowrite32(lower_32_bits(addr), hw_info->pcie_base + DPMAIF_DL_DLQPIT_INIT_CON0);
 	iowrite32(upper_32_bits(addr), hw_info->pcie_base + DPMAIF_DL_DLQPIT_INIT_CON4);
 }
 
-static void t7xx_dpmaif_dl_set_dlq_pit_size(struct dpmaif_hw_info *hw_info,
-					    unsigned char q_num, unsigned int size)
+static void t7xx_dpmaif_dl_set_dlq_pit_size(struct dpmaif_hw_info *hw_info, unsigned int size)
 {
 	unsigned int value;
 
@@ -729,7 +725,7 @@ static void t7xx_dpmaif_dl_set_dlq_pit_size(struct dpmaif_hw_info *hw_info,
 	iowrite32(0, hw_info->pcie_base + DPMAIF_DL_DLQPIT_INIT_CON6);
 }
 
-static void t7xx_dpmaif_dl_dlq_pit_en(struct dpmaif_hw_info *hw_info, unsigned char q_num)
+static void t7xx_dpmaif_dl_dlq_pit_en(struct dpmaif_hw_info *hw_info)
 {
 	unsigned int value;
 
@@ -739,7 +735,7 @@ static void t7xx_dpmaif_dl_dlq_pit_en(struct dpmaif_hw_info *hw_info, unsigned c
 }
 
 static void t7xx_dpmaif_dl_dlq_pit_init_done(struct dpmaif_hw_info *hw_info,
-					     unsigned char q_num, unsigned int pit_idx)
+					     unsigned int pit_idx)
 {
 	unsigned int dl_pit_init;
 	int timeout;
@@ -767,15 +763,13 @@ static void t7xx_dpmaif_dl_dlq_pit_init_done(struct dpmaif_hw_info *hw_info,
 		dev_err(hw_info->dev, "Data plane modem DL PIT initialization failed\n");
 }
 
-static void t7xx_dpmaif_config_dlq_pit_hw(struct dpmaif_hw_info *hw_info, unsigned char q_num,
+static void t7xx_dpmaif_config_dlq_pit_hw(struct dpmaif_hw_info *hw_info, unsigned int q_num,
 					  struct dpmaif_dl *dl_que)
 {
-	unsigned int pit_idx = q_num;
-
-	t7xx_dpmaif_dl_set_dlq_pit_base_addr(hw_info, q_num, dl_que->pit_base);
-	t7xx_dpmaif_dl_set_dlq_pit_size(hw_info, q_num, dl_que->pit_size_cnt);
-	t7xx_dpmaif_dl_dlq_pit_en(hw_info, q_num);
-	t7xx_dpmaif_dl_dlq_pit_init_done(hw_info, q_num, pit_idx);
+	t7xx_dpmaif_dl_set_dlq_pit_base_addr(hw_info, dl_que->pit_base);
+	t7xx_dpmaif_dl_set_dlq_pit_size(hw_info, dl_que->pit_size_cnt);
+	t7xx_dpmaif_dl_dlq_pit_en(hw_info);
+	t7xx_dpmaif_dl_dlq_pit_init_done(hw_info, q_num);
 }
 
 static void t7xx_dpmaif_config_all_dlq_hw(struct dpmaif_hw_info *hw_info)
@@ -819,12 +813,11 @@ static void t7xx_dpmaif_dl_all_q_en(struct dpmaif_hw_info *hw_info, bool enable)
 static int t7xx_dpmaif_config_dlq_hw(struct dpmaif_hw_info *hw_info)
 {
 	struct dpmaif_dl *dl_que;
-	unsigned int queue = 0; /* All queues share one BAT/frag BAT table */
 	int ret;
 
 	t7xx_dpmaif_dl_dlq_hpc_hw_init(hw_info);
 
-	dl_que = &hw_info->dl_que[queue];
+	dl_que = &hw_info->dl_que[0]; /* All queues share one BAT/frag BAT table */
 	if (!dl_que->que_started)
 		return -EBUSY;
 
@@ -839,21 +832,21 @@ static int t7xx_dpmaif_config_dlq_hw(struct dpmaif_hw_info *hw_info)
 	t7xx_dpmaif_dl_set_ao_pit_chknum(hw_info);
 	t7xx_dpmaif_dl_set_ao_bat_check_thres(hw_info);
 	t7xx_dpmaif_dl_set_ao_frg_check_thres(hw_info);
-	t7xx_dpmaif_dl_frg_ao_en(hw_info, queue, true);
+	t7xx_dpmaif_dl_frg_ao_en(hw_info, true);
 
-	t7xx_dpmaif_dl_set_bat_base_addr(hw_info, queue, dl_que->frg_base);
-	t7xx_dpmaif_dl_set_bat_size(hw_info, queue, dl_que->frg_size_cnt);
-	t7xx_dpmaif_dl_bat_en(hw_info, queue, true);
+	t7xx_dpmaif_dl_set_bat_base_addr(hw_info, dl_que->frg_base);
+	t7xx_dpmaif_dl_set_bat_size(hw_info, dl_que->frg_size_cnt);
+	t7xx_dpmaif_dl_bat_en(hw_info, true);
 
-	ret = t7xx_dpmaif_dl_bat_init_done(hw_info, queue, true);
+	ret = t7xx_dpmaif_dl_bat_init_done(hw_info, true);
 	if (ret)
 		return ret;
 
-	t7xx_dpmaif_dl_set_bat_base_addr(hw_info, queue, dl_que->bat_base);
-	t7xx_dpmaif_dl_set_bat_size(hw_info, queue, dl_que->bat_size_cnt);
-	t7xx_dpmaif_dl_bat_en(hw_info, queue, false);
+	t7xx_dpmaif_dl_set_bat_base_addr(hw_info, dl_que->bat_base);
+	t7xx_dpmaif_dl_set_bat_size(hw_info, dl_que->bat_size_cnt);
+	t7xx_dpmaif_dl_bat_en(hw_info, false);
 
-	ret = t7xx_dpmaif_dl_bat_init_done(hw_info, queue, false);
+	ret = t7xx_dpmaif_dl_bat_init_done(hw_info, false);
 	if (ret)
 		return ret;
 
@@ -865,7 +858,7 @@ static int t7xx_dpmaif_config_dlq_hw(struct dpmaif_hw_info *hw_info)
 }
 
 static void t7xx_dpmaif_ul_update_drb_size(struct dpmaif_hw_info *hw_info,
-					   unsigned char q_num, unsigned int size)
+					   unsigned int q_num, unsigned int size)
 {
 	unsigned int value;
 
@@ -876,14 +869,14 @@ static void t7xx_dpmaif_ul_update_drb_size(struct dpmaif_hw_info *hw_info,
 }
 
 static void t7xx_dpmaif_ul_update_drb_base_addr(struct dpmaif_hw_info *hw_info,
-						unsigned char q_num, dma_addr_t addr)
+						unsigned int q_num, dma_addr_t addr)
 {
 	iowrite32(lower_32_bits(addr), hw_info->pcie_base + DPMAIF_ULQSAR_n(q_num));
 	iowrite32(upper_32_bits(addr), hw_info->pcie_base + DPMAIF_UL_DRB_ADDRH_n(q_num));
 }
 
 static void t7xx_dpmaif_ul_rdy_en(struct dpmaif_hw_info *hw_info,
-				  unsigned char q_num, bool ready)
+				  unsigned int q_num, bool ready)
 {
 	u32 value;
 
@@ -898,7 +891,7 @@ static void t7xx_dpmaif_ul_rdy_en(struct dpmaif_hw_info *hw_info,
 }
 
 static void t7xx_dpmaif_ul_arb_en(struct dpmaif_hw_info *hw_info,
-				  unsigned char q_num, bool enable)
+				  unsigned int q_num, bool enable)
 {
 	u32 value;
 
@@ -977,37 +970,33 @@ static bool t7xx_dpmaif_ul_idle_check(struct dpmaif_hw_info *hw_info)
 	return !(dpmaif_ul_is_busy & DPMAIF_UL_IDLE_STS);
 }
 
-int t7xx_dpmaif_ul_update_hw_drb_cnt(struct dpmaif_hw_info *hw_info, unsigned char q_num,
-				     unsigned int drb_entry_cnt)
+void t7xx_dpmaif_ul_update_hw_drb_cnt(struct dpmaif_hw_info *hw_info, unsigned int q_num,
+				      unsigned int drb_entry_cnt)
 {
 	u32 ul_update, value;
-	int ret;
+	int err;
 
 	ul_update = drb_entry_cnt & DPMAIF_UL_ADD_COUNT_MASK;
 	ul_update |= DPMAIF_UL_ADD_UPDATE;
 
-	ret = ioread32_poll_timeout_atomic(hw_info->pcie_base + DPMAIF_ULQ_ADD_DESC_CH_n(q_num),
+	err = ioread32_poll_timeout_atomic(hw_info->pcie_base + DPMAIF_ULQ_ADD_DESC_CH_n(q_num),
 					   value, !(value & DPMAIF_UL_ADD_NOT_READY), 0,
 					   DPMAIF_CHECK_TIMEOUT_US);
-	if (ret) {
+	if (err) {
 		dev_err(hw_info->dev, "UL add is not ready\n");
-		return ret;
+		return;
 	}
 
 	iowrite32(ul_update, hw_info->pcie_base + DPMAIF_ULQ_ADD_DESC_CH_n(q_num));
 
-	ret = ioread32_poll_timeout_atomic(hw_info->pcie_base + DPMAIF_ULQ_ADD_DESC_CH_n(q_num),
+	err = ioread32_poll_timeout_atomic(hw_info->pcie_base + DPMAIF_ULQ_ADD_DESC_CH_n(q_num),
 					   value, !(value & DPMAIF_UL_ADD_NOT_READY), 0,
 					   DPMAIF_CHECK_TIMEOUT_US);
-	if (ret) {
+	if (err)
 		dev_err(hw_info->dev, "Timeout updating UL add\n");
-		return ret;
-	}
-
-	return 0;
 }
 
-unsigned int t7xx_dpmaif_ul_get_rd_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num)
+unsigned int t7xx_dpmaif_ul_get_rd_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num)
 {
 	unsigned int value = ioread32(hw_info->pcie_base + DPMAIF_ULQ_STA0_n(q_num));
 
@@ -1086,7 +1075,7 @@ int t7xx_dpmaif_dl_snd_hw_bat_cnt(struct dpmaif_hw_info *hw_info, unsigned int b
 	return 0;
 }
 
-unsigned int t7xx_dpmaif_dl_get_bat_rd_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num)
+unsigned int t7xx_dpmaif_dl_get_bat_rd_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num)
 {
 	u32 value;
 
@@ -1094,7 +1083,7 @@ unsigned int t7xx_dpmaif_dl_get_bat_rd_idx(struct dpmaif_hw_info *hw_info, unsig
 	return value & DPMAIF_DL_RD_WR_IDX_MSK;
 }
 
-unsigned int t7xx_dpmaif_dl_get_bat_wr_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num)
+unsigned int t7xx_dpmaif_dl_get_bat_wr_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num)
 {
 	u32 value;
 
@@ -1123,7 +1112,7 @@ int t7xx_dpmaif_dl_snd_hw_frg_cnt(struct dpmaif_hw_info *hw_info, unsigned int f
 	return 0;
 }
 
-unsigned int t7xx_dpmaif_dl_get_frg_rd_idx(struct dpmaif_hw_info *hw_info, unsigned char q_num)
+unsigned int t7xx_dpmaif_dl_get_frg_rd_idx(struct dpmaif_hw_info *hw_info, unsigned int q_num)
 {
 	u32 value;
 
@@ -1279,7 +1268,7 @@ int t7xx_dpmaif_hw_init(struct dpmaif_hw_info *hw_info, struct dpmaif_hw_params 
 	return ret;
 }
 
-bool t7xx_dpmaif_ul_clr_done(struct dpmaif_hw_info *hw_info, unsigned char qno)
+bool t7xx_dpmaif_ul_clr_done(struct dpmaif_hw_info *hw_info, unsigned int qno)
 {
 	u32 intr_status;
 

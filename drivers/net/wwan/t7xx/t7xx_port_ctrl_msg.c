@@ -5,7 +5,7 @@
  *
  * Authors:
  *  Haijun Liu <haijun.liu@mediatek.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *  Moises Veleta <moises.veleta@intel.com>
  *
  * Contributors:
@@ -15,6 +15,7 @@
  *  Sreehari Kancharla <sreehari.kancharla@intel.com>
  */
 
+#include <linux/bitfield.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/kthread.h>
@@ -22,16 +23,41 @@
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
 
-#include "t7xx_common.h"
 #include "t7xx_port.h"
 #include "t7xx_port_proxy.h"
 #include "t7xx_state_monitor.h"
 
-static int fsm_ee_message_handler(struct t7xx_fsm_ctl *ctl, struct sk_buff *skb)
+#define PORT_MSG_VERSION	GENMASK(31, 16)
+#define PORT_MSG_PRT_CNT	GENMASK(15, 0)
+
+struct port_msg {
+	__le32	head_pattern;
+	__le32	info;
+	__le32	tail_pattern;
+	__le32	data[];
+};
+
+static int port_ctl_send_msg_to_md(struct t7xx_port *port, unsigned int msg, unsigned int ex_msg)
+{
+	struct sk_buff *skb;
+	int ret;
+
+	skb = t7xx_ctrl_alloc_skb(0);
+	if (!skb)
+		return -ENOMEM;
+
+	ret = t7xx_port_send_ctl_skb(port, skb, msg, ex_msg);
+	if (ret)
+		dev_kfree_skb_any(skb);
+
+	return ret;
+}
+
+static int fsm_ee_message_handler(struct t7xx_port *port, struct t7xx_fsm_ctl *ctl,
+				  struct sk_buff *skb)
 {
 	struct ctrl_msg_header *ctrl_msg_h = (struct ctrl_msg_header *)skb->data;
 	struct device *dev = &ctl->md->t7xx_dev->pdev->dev;
-	struct port_proxy *port_prox = ctl->md->port_prox;
 	enum md_state md_state;
 	int ret = -EINVAL;
 
@@ -46,24 +72,30 @@ static int fsm_ee_message_handler(struct t7xx_fsm_ctl *ctl, struct sk_buff *skb)
 	case CTL_ID_MD_EX:
 		if (le32_to_cpu(ctrl_msg_h->ex_msg) != MD_EX_CHK_ID) {
 			dev_err(dev, "Receive invalid MD_EX %x\n", ctrl_msg_h->ex_msg);
-		} else {
-			t7xx_port_proxy_send_msg_to_md(port_prox, PORT_CH_CONTROL_TX, CTL_ID_MD_EX,
-						       MD_EX_CHK_ID);
-			ret = t7xx_fsm_append_event(ctl, FSM_EVENT_MD_EX, NULL, 0);
-			if (ret)
-				dev_err(dev, "Failed to append Modem Exception event");
+			break;
 		}
+
+		ret = port_ctl_send_msg_to_md(port, CTL_ID_MD_EX, MD_EX_CHK_ID);
+		if (ret) {
+			dev_err(dev, "Failed to send exception message to modem\n");
+			break;
+		}
+
+		ret = t7xx_fsm_append_event(ctl, FSM_EVENT_MD_EX, NULL, 0);
+		if (ret)
+			dev_err(dev, "Failed to append Modem Exception event");
 
 		break;
 
 	case CTL_ID_MD_EX_ACK:
 		if (le32_to_cpu(ctrl_msg_h->ex_msg) != MD_EX_CHK_ACK_ID) {
 			dev_err(dev, "Receive invalid MD_EX_ACK %x\n", ctrl_msg_h->ex_msg);
-		} else {
-			ret = t7xx_fsm_append_event(ctl, FSM_EVENT_MD_EX_REC_OK, NULL, 0);
-			if (ret)
-				dev_err(dev, "Failed to append Modem Exception Received event");
+			break;
 		}
+
+		ret = t7xx_fsm_append_event(ctl, FSM_EVENT_MD_EX_REC_OK, NULL, 0);
+		if (ret)
+			dev_err(dev, "Failed to append Modem Exception Received event");
 
 		break;
 
@@ -81,22 +113,61 @@ static int fsm_ee_message_handler(struct t7xx_fsm_ctl *ctl, struct sk_buff *skb)
 	return ret;
 }
 
+/**
+ * t7xx_port_enum_msg_handler() - Parse the port enumeration message to create/remove nodes.
+ * @md: Modem context.
+ * @msg: Message.
+ *
+ * Used to control create/remove device node.
+ *
+ * Return:
+ * * 0		- Success.
+ * * -EFAULT	- Message check failure.
+ */
+int t7xx_port_enum_msg_handler(struct t7xx_modem *md, void *msg)
+{
+	struct device *dev = &md->t7xx_dev->pdev->dev;
+	unsigned int version, port_count, i;
+	struct port_msg *port_msg = msg;
+
+	version = FIELD_GET(PORT_MSG_VERSION, le32_to_cpu(port_msg->info));
+	if (version != PORT_ENUM_VER ||
+	    le32_to_cpu(port_msg->head_pattern) != PORT_ENUM_HEAD_PATTERN ||
+	    le32_to_cpu(port_msg->tail_pattern) != PORT_ENUM_TAIL_PATTERN) {
+		dev_err(dev, "Invalid port control message %x:%x:%x\n",
+			version, le32_to_cpu(port_msg->head_pattern),
+			le32_to_cpu(port_msg->tail_pattern));
+		return -EFAULT;
+	}
+
+	port_count = FIELD_GET(PORT_MSG_PRT_CNT, le32_to_cpu(port_msg->info));
+	for (i = 0; i < port_count; i++) {
+		u32 port_info = le32_to_cpu(port_msg->data[i]);
+		unsigned int ch_id;
+		bool en_flag;
+
+		ch_id = FIELD_GET(PORT_INFO_CH_ID, port_info);
+		en_flag = !!(port_info & PORT_INFO_ENFLG);
+		if (t7xx_port_proxy_chl_enable_disable(md->port_prox, ch_id, en_flag))
+			dev_dbg(dev, "Port:%x not found\n", ch_id);
+	}
+
+	return 0;
+}
+
 static int control_msg_handler(struct t7xx_port *port, struct sk_buff *skb)
 {
-	struct t7xx_port_static *port_static = port->port_static;
 	struct t7xx_fsm_ctl *ctl = port->t7xx_dev->md->fsm_ctl;
-	struct port_proxy *port_prox = ctl->md->port_prox;
+	struct t7xx_port_conf *port_conf = port->port_conf;
 	struct ctrl_msg_header *ctrl_msg_h;
 	int ret = 0;
-
-	skb_pull(skb, sizeof(struct ccci_header));
 
 	ctrl_msg_h = (struct ctrl_msg_header *)skb->data;
 	switch (le32_to_cpu(ctrl_msg_h->ctrl_msg_id)) {
 	case CTL_ID_HS2_MSG:
 		skb_pull(skb, sizeof(*ctrl_msg_h));
 
-		if (port_static->rx_ch == PORT_CH_CONTROL_RX) {
+		if (port_conf->rx_ch == PORT_CH_CONTROL_RX) {
 			ret = t7xx_fsm_append_event(ctl, FSM_EVENT_MD_HS2, skb->data,
 						    le32_to_cpu(ctrl_msg_h->data_length));
 			if (ret)
@@ -110,19 +181,18 @@ static int control_msg_handler(struct t7xx_port *port, struct sk_buff *skb)
 	case CTL_ID_MD_EX_ACK:
 	case CTL_ID_MD_EX_PASS:
 	case CTL_ID_DRV_VER_ERROR:
-		ret = fsm_ee_message_handler(ctl, skb);
+		ret = fsm_ee_message_handler(port, ctl, skb);
 		dev_kfree_skb_any(skb);
 		break;
 
 	case CTL_ID_PORT_ENUM:
 		skb_pull(skb, sizeof(*ctrl_msg_h));
-		ret = t7xx_port_proxy_node_control(ctl->md, (struct port_msg *)skb->data);
+		ret = t7xx_port_enum_msg_handler(ctl->md, (struct port_msg *)skb->data);
 		if (!ret)
-			t7xx_port_proxy_send_msg_to_md(port_prox, PORT_CH_CONTROL_TX,
-						       CTL_ID_PORT_ENUM, 0);
+			ret = port_ctl_send_msg_to_md(port, CTL_ID_PORT_ENUM, 0);
 		else
-			t7xx_port_proxy_send_msg_to_md(port_prox, PORT_CH_CONTROL_TX,
-						       CTL_ID_PORT_ENUM, PORT_ENUM_VER_MISMATCH);
+			ret = port_ctl_send_msg_to_md(port, CTL_ID_PORT_ENUM,
+						      PORT_ENUM_VER_MISMATCH);
 
 		break;
 
@@ -134,8 +204,7 @@ static int control_msg_handler(struct t7xx_port *port, struct sk_buff *skb)
 	}
 
 	if (ret)
-		dev_err(port->dev, "%s control message handle error: %d\n", port_static->name,
-			ret);
+		dev_err(port->dev, "%s control message handle error: %d\n", port_conf->name, ret);
 
 	return ret;
 }
@@ -162,7 +231,7 @@ static int port_ctl_rx_thread(void *arg)
 		skb = __skb_dequeue(&port->rx_skb_list);
 		spin_unlock_irqrestore(&port->rx_wq.lock, flags);
 
-		port->skb_handler(port, skb);
+		control_msg_handler(port, skb);
 	}
 
 	return 0;
@@ -170,10 +239,9 @@ static int port_ctl_rx_thread(void *arg)
 
 static int port_ctl_init(struct t7xx_port *port)
 {
-	struct t7xx_port_static *port_static = port->port_static;
+	struct t7xx_port_conf *port_conf = port->port_conf;
 
-	port->skb_handler = &control_msg_handler;
-	port->thread = kthread_run(port_ctl_rx_thread, port, "%s", port_static->name);
+	port->thread = kthread_run(port_ctl_rx_thread, port, "%s", port_conf->name);
 	if (IS_ERR(port->thread)) {
 		dev_err(port->dev, "Failed to start port control thread\n");
 		return PTR_ERR(port->thread);
@@ -200,6 +268,6 @@ static void port_ctl_uninit(struct t7xx_port *port)
 
 struct port_ops ctl_port_ops = {
 	.init = port_ctl_init,
-	.recv_skb = t7xx_port_recv_skb,
+	.recv_skb = t7xx_port_enqueue_skb,
 	.uninit = port_ctl_uninit,
 };

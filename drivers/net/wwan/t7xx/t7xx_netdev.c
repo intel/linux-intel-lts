@@ -6,7 +6,7 @@
  * Authors:
  *  Chandrashekar Devegowda <chandrashekar.devegowda@intel.com>
  *  Haijun Liu <haijun.liu@mediatek.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
@@ -31,20 +31,14 @@
 #include <linux/wwan.h>
 #include <net/pkt_sched.h>
 
-#include "t7xx_common.h"
 #include "t7xx_hif_dpmaif_rx.h"
 #include "t7xx_hif_dpmaif_tx.h"
 #include "t7xx_netdev.h"
 #include "t7xx_pci.h"
+#include "t7xx_port_proxy.h"
 #include "t7xx_state_monitor.h"
 
 #define IP_MUX_SESSION_DEFAULT	0
-
-static u16 t7xx_ccmni_select_queue(struct net_device *dev, struct sk_buff *skb,
-				   struct net_device *sb_dev)
-{
-	return DPMAIF_TX_DEFAULT_QUEUE;
-}
 
 static int t7xx_ccmni_open(struct net_device *dev)
 {
@@ -116,7 +110,6 @@ static const struct net_device_ops ccmni_netdev_ops = {
 	.ndo_stop	  = t7xx_ccmni_close,
 	.ndo_start_xmit   = t7xx_ccmni_start_xmit,
 	.ndo_tx_timeout   = t7xx_ccmni_tx_timeout,
-	.ndo_select_queue = t7xx_ccmni_select_queue,
 };
 
 static void t7xx_ccmni_start(struct t7xx_ccmni_ctrl *ctlb)
@@ -344,7 +337,7 @@ static void t7xx_ccmni_recv_skb(struct t7xx_pci_dev *t7xx_dev, struct sk_buff *s
 		skb->protocol = htons(ETH_P_IP);
 
 	skb_len = skb->len;
-	netif_rx_any_context(skb);
+	netif_rx(skb);
 	net_dev->stats.rx_packets++;
 	net_dev->stats.rx_bytes += skb_len;
 }

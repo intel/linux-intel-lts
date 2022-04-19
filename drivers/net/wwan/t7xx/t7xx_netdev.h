@@ -10,7 +10,7 @@
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
  *  Chiranjeevi Rapolu <chiranjeevi.rapolu@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  */
 
 #ifndef __T7XX_NETDEV_H__
@@ -20,7 +20,6 @@
 #include <linux/netdevice.h>
 #include <linux/types.h>
 
-#include "t7xx_common.h"
 #include "t7xx_hif_dpmaif.h"
 #include "t7xx_pci.h"
 #include "t7xx_state_monitor.h"

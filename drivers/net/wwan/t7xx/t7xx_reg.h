@@ -12,7 +12,7 @@
  *  Andy Shevchenko <andriy.shevchenko@linux.intel.com>
  *  Eliot Lee <eliot.lee@intel.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *  Sreehari Kancharla <sreehari.kancharla@intel.com>
  */
 
@@ -110,13 +110,11 @@ enum t7xx_pm_resume_state {
 #define T7XX_PCIE_RESOURCE_STATUS		0x0d28
 #define T7XX_PCIE_RESOURCE_STS_MSK		GENMASK(4, 0)
 
-#define DIS_ASPM_LOWPWR_SET_0			0x0e50
-#define DIS_ASPM_LOWPWR_CLR_0			0x0e54
-#define DIS_ASPM_LOWPWR_SET_1			0x0e58
-#define DIS_ASPM_LOWPWR_CLR_1			0x0e5c
-#define L1_DISABLE_BIT(i)			BIT((i) * 4 + 1)
-#define L1_1_DISABLE_BIT(i)			BIT((i) * 4 + 2)
-#define L1_2_DISABLE_BIT(i)			BIT((i) * 4 + 3)
+#define DISABLE_ASPM_LOWPWR			0x0e50
+#define ENABLE_ASPM_LOWPWR			0x0e54
+#define T7XX_L1_BIT(i)				BIT((i) * 4 + 1)
+#define T7XX_L1_1_BIT(i)			BIT((i) * 4 + 2)
+#define T7XX_L1_2_BIT(i)			BIT((i) * 4 + 3)
 
 #define MSIX_ISTAT_HST_GRP0_0			0x0f00
 #define IMASK_HOST_MSIX_SET_GRP0_0		0x3000
