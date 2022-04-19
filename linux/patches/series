@@ -1,8 +1,5 @@
 # CVE Patches to apply
 
-# CVE-2022-26490
-0001-nfc-st21nfca-Fix-potential-buffer-overflows-in-EVT_T.patch
-
 # CVE-2021-4095
 0001-KVM-x86-xen-Maintain-valid-mapping-of-Xen-shared_inf.patch
 0001-KVM-x86-Fix-wall-clock-writes-in-Xen-shared_info-not.patch
