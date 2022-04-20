@@ -1,24 +1,27 @@
-From 598ff2f3a9893bf09cc4c11a489b84105bab71a4 Mon Sep 17 00:00:00 2001
+From d166c328dd24a6eab3b598b453d995fedd0abf19 Mon Sep 17 00:00:00 2001
 From: Tejun Heo <tj@kernel.org>
-Date: Tue, 14 Dec 2021 09:42:04 -1000
-Subject: [PATCH 6/6] selftests: cgroup: Test open-time cgroup namespace usage
+Date: Thu, 6 Jan 2022 11:02:29 -1000
+Subject: [PATCH 4/4] selftests: cgroup: Test open-time cgroup namespace usage
  for migration checks
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
+
+commit bf35a7879f1dfb0d050fe779168bcf25c7de66f5 upstream.
 
 When a task is writing to an fd opened by a different task, the perm check
 should use the cgroup namespace of the latter task. Add a test for it.
 
 Tested-by: Michal Koutný <mkoutny@suse.com>
 Signed-off-by: Tejun Heo <tj@kernel.org>
-Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+Signed-off-by: Ovidiu Panait <ovidiu.panait@windriver.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
 ---
  tools/testing/selftests/cgroup/test_core.c | 97 ++++++++++++++++++++++
  1 file changed, 97 insertions(+)
 
 diff --git a/tools/testing/selftests/cgroup/test_core.c b/tools/testing/selftests/cgroup/test_core.c
-index 5095145914dd..a41965d1669f 100644
+index 01b766506973..600123503063 100644
 --- a/tools/testing/selftests/cgroup/test_core.c
 +++ b/tools/testing/selftests/cgroup/test_core.c
 @@ -1,11 +1,14 @@
@@ -36,7 +39,7 @@ index 5095145914dd..a41965d1669f 100644
  #include <stdio.h>
  #include <errno.h>
  #include <signal.h>
-@@ -600,6 +603,99 @@ static int test_cgcore_lesser_euid_open(const char *root)
+@@ -741,6 +744,99 @@ static int test_cgcore_lesser_euid_open(const char *root)
  	return ret;
  }
  
@@ -133,9 +136,9 @@ index 5095145914dd..a41965d1669f 100644
 +	return ret;
 +}
 +
- static void *dummy_thread_fn(void *arg)
- {
- 	return (void *)(size_t)pause();
+ #define T(x) { x, #x }
+ struct corecg_test {
+ 	int (*fn)(const char *root);
 @@ -757,6 +853,7 @@ struct corecg_test {
  	T(test_cgcore_thread_migration),
  	T(test_cgcore_destroy),

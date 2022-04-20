@@ -1,17 +1,21 @@
-From b2cee3a25c36dde494ceb3f842fa56d321cc730e Mon Sep 17 00:00:00 2001
+From c6a72117d8f9b6173dc990fd861bc27179fd6ebe Mon Sep 17 00:00:00 2001
 From: Tejun Heo <tj@kernel.org>
-Date: Tue, 14 Dec 2021 09:42:04 -1000
-Subject: [PATCH 4/6] selftests: cgroup: Make cg_create() use 0755 for
+Date: Thu, 6 Jan 2022 11:02:29 -1000
+Subject: [PATCH 2/4] selftests: cgroup: Make cg_create() use 0755 for
  permission instead of 0644
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
+
+commit b09c2baa56347ae65795350dfcc633dedb1c2970 upstream.
 
 0644 is an odd perm to create a cgroup which is a directory. Use the regular
 0755 instead. This is necessary for euid switching test case.
 
 Reviewed-by: Michal Koutný <mkoutny@suse.com>
 Signed-off-by: Tejun Heo <tj@kernel.org>
+Signed-off-by: Ovidiu Panait <ovidiu.panait@windriver.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
 ---
  tools/testing/selftests/cgroup/cgroup_util.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
