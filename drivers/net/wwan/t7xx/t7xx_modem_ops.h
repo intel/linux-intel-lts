@@ -7,7 +7,7 @@
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Eliot Lee <eliot.lee@intel.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
@@ -46,6 +46,7 @@ struct mtk_runtime_feature {
 	u8				support_info;
 	u8				reserved[2];
 	__le32				data_len;
+	__le32				data[];
 };
 
 enum md_event_id {

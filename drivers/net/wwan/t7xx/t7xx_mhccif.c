@@ -9,7 +9,7 @@
  *
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  */
 
 #include <linux/bits.h>
@@ -46,8 +46,8 @@ static irqreturn_t t7xx_mhccif_isr_thread(int irq, void *data)
 	struct t7xx_pci_dev *t7xx_dev = data;
 	u32 int_status, val;
 
-	val = L1_1_DISABLE_BIT(1) | L1_2_DISABLE_BIT(1);
-	iowrite32(val, IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_SET_0);
+	val = T7XX_L1_1_BIT(1) | T7XX_L1_2_BIT(1);
+	iowrite32(val, IREG_BASE(t7xx_dev) + DISABLE_ASPM_LOWPWR);
 
 	int_status = t7xx_mhccif_read_sw_int_sts(t7xx_dev);
 	if (int_status & D2H_SW_INT_MASK) {
@@ -65,12 +65,12 @@ static irqreturn_t t7xx_mhccif_isr_thread(int irq, void *data)
 	if (int_status & D2H_INT_SR_ACK)
 		complete(&t7xx_dev->pm_sr_ack);
 
-	iowrite32(L1_DISABLE_BIT(1), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
+	iowrite32(T7XX_L1_BIT(1), IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
 
 	int_status = t7xx_mhccif_read_sw_int_sts(t7xx_dev);
 	if (!int_status) {
-		val = L1_1_DISABLE_BIT(1) | L1_2_DISABLE_BIT(1);
-		iowrite32(val, IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
+		val = T7XX_L1_1_BIT(1) | T7XX_L1_2_BIT(1);
+		iowrite32(val, IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
 	}
 
 	t7xx_pcie_mac_set_int(t7xx_dev, MHCCIF_INT);

@@ -9,7 +9,7 @@
  *
  * Contributors:
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  */
 
 #ifndef __T7XX_PCIE_MAC_H__

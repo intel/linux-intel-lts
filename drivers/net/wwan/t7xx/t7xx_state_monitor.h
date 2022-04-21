@@ -10,7 +10,7 @@
  *
  * Contributors:
  *  Eliot Lee <eliot.lee@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *  Sreehari Kancharla <sreehari.kancharla@intel.com>
  */
 
@@ -23,7 +23,6 @@
 #include <linux/types.h>
 #include <linux/wait.h>
 
-#include "t7xx_common.h"
 #include "t7xx_modem_ops.h"
 
 enum t7xx_fsm_state {
@@ -65,6 +64,16 @@ enum t7xx_md_irq_type {
 	MD_IRQ_PORT_ENUM,
 };
 
+enum md_state {
+	MD_STATE_INVALID,
+	MD_STATE_WAITING_FOR_HS1,
+	MD_STATE_WAITING_FOR_HS2,
+	MD_STATE_READY,
+	MD_STATE_EXCEPTION,
+	MD_STATE_WAITING_TO_STOP,
+	MD_STATE_STOPPED,
+};
+
 #define FSM_CMD_FLAG_WAIT_FOR_COMPLETION	BIT(0)
 #define FSM_CMD_FLAG_FLIGHT_MODE		BIT(1)
 #define FSM_CMD_FLAG_IN_INTERRUPT		BIT(2)
@@ -91,6 +100,7 @@ struct t7xx_fsm_event {
 	struct list_head	entry;
 	enum t7xx_fsm_event_state event_id;
 	unsigned int		length;
+	unsigned char		data[];
 };
 
 struct t7xx_fsm_command {

@@ -8,7 +8,7 @@
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Eliot Lee <eliot.lee@intel.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Andy Shevchenko <andriy.shevchenko@linux.intel.com>
@@ -66,13 +66,13 @@
 /* Buffer type */
 #define PKT_BUF_FRAG			1
 
-static unsigned int t7xx_normal_pit_bid(const struct dpmaif_normal_pit *pit_info)
+static unsigned int t7xx_normal_pit_bid(const struct dpmaif_pit *pit_info)
 {
 	u32 value;
 
-	value = FIELD_GET(NORMAL_PIT_H_BID, le32_to_cpu(pit_info->pit_footer));
+	value = FIELD_GET(PD_PIT_H_BID, le32_to_cpu(pit_info->pd.footer));
 	value <<= 13;
-	value += FIELD_GET(NORMAL_PIT_BUFFER_ID, le32_to_cpu(pit_info->pit_header));
+	value += FIELD_GET(PD_PIT_BUFFER_ID, le32_to_cpu(pit_info->header));
 	return value;
 }
 
@@ -114,11 +114,11 @@ static int t7xx_dpmaif_net_rx_push_thread(void *arg)
 }
 
 static int t7xx_dpmaif_update_bat_wr_idx(struct dpmaif_ctrl *dpmaif_ctrl,
-					 const unsigned char q_num, const unsigned int bat_cnt)
+					 const unsigned int q_num, const unsigned int bat_cnt)
 {
 	struct dpmaif_rx_queue *rxq = &dpmaif_ctrl->rxq[q_num];
-	unsigned short old_rl_idx, new_wr_idx, old_wr_idx;
 	struct dpmaif_bat_request *bat_req = rxq->bat_req;
+	unsigned int old_rl_idx, new_wr_idx, old_wr_idx;
 
 	if (!rxq->que_started) {
 		dev_err(dpmaif_ctrl->dev, "RX queue %d has not been started\n", rxq->index);
@@ -157,7 +157,7 @@ static bool t7xx_alloc_and_map_skb_info(const struct dpmaif_ctrl *dpmaif_ctrl,
 	if (!skb)
 		return false;
 
-	data_len = t7xx_skb_data_area_size(skb);
+	data_len = skb_end_pointer(skb) - skb->data;
 
 	data_bus_addr = dma_map_single(dpmaif_ctrl->dev, skb->data, data_len, DMA_FROM_DEVICE);
 	if (dma_mapping_error(dpmaif_ctrl->dev, data_bus_addr)) {
@@ -202,7 +202,7 @@ static void t7xx_unmap_bat_skb(struct device *dev, struct dpmaif_bat_skb *bat_sk
  */
 int t7xx_dpmaif_rx_buf_alloc(struct dpmaif_ctrl *dpmaif_ctrl,
 			     const struct dpmaif_bat_request *bat_req,
-			     const unsigned char q_num, const unsigned int buf_cnt,
+			     const unsigned int q_num, const unsigned int buf_cnt,
 			     const bool initial)
 {
 	unsigned int i, bat_cnt, bat_max_cnt, bat_start_idx;
@@ -275,7 +275,7 @@ static int t7xx_dpmaifq_release_pit_entry(struct dpmaif_rx_queue *rxq,
 					  const unsigned int rel_entry_num)
 {
 	struct dpmaif_hw_info *hw_info = &rxq->dpmaif_ctrl->hw_info;
-	unsigned short old_rel_idx, new_rel_idx, hw_wr_idx;
+	unsigned int old_rel_idx, new_rel_idx, hw_wr_idx;
 	int ret;
 
 	if (!rxq->que_started)
@@ -358,9 +358,8 @@ static void t7xx_unmap_bat_page(struct device *dev, struct dpmaif_bat_page *bat_
 int t7xx_dpmaif_rx_frag_alloc(struct dpmaif_ctrl *dpmaif_ctrl, struct dpmaif_bat_request *bat_req,
 			      const unsigned int buf_cnt, const bool initial)
 {
+	unsigned int buf_space, cur_bat_idx = bat_req->bat_wr_idx;
 	struct dpmaif_bat_page *bat_skb = bat_req->bat_skb;
-	unsigned short cur_bat_idx = bat_req->bat_wr_idx;
-	unsigned int buf_space;
 	int ret = 0, i;
 
 	if (!buf_cnt || buf_cnt > bat_req->bat_size_cnt)
@@ -430,7 +429,7 @@ int t7xx_dpmaif_rx_frag_alloc(struct dpmaif_ctrl *dpmaif_ctrl, struct dpmaif_bat
 }
 
 static int t7xx_dpmaif_set_frag_to_skb(const struct dpmaif_rx_queue *rxq,
-				       const struct dpmaif_normal_pit *pkt_info,
+				       const struct dpmaif_pit *pkt_info,
 				       struct sk_buff *skb)
 {
 	unsigned long long data_bus_addr, data_base_addr;
@@ -446,12 +445,12 @@ static int t7xx_dpmaif_set_frag_to_skb(const struct dpmaif_rx_queue *rxq,
 	if (!page_info->page)
 		return -EINVAL;
 
-	data_bus_addr = le32_to_cpu(pkt_info->data_addr_ext);
-	data_bus_addr = (data_bus_addr << 32) + le32_to_cpu(pkt_info->p_data_addr);
+	data_bus_addr = le32_to_cpu(pkt_info->pd.data_addr_h);
+	data_bus_addr = (data_bus_addr << 32) + le32_to_cpu(pkt_info->pd.data_addr_l);
 	data_base_addr = page_info->data_bus_addr;
 	data_offset = data_bus_addr - data_base_addr;
 	data_offset += page_info->offset;
-	data_len = FIELD_GET(NORMAL_PIT_DATA_LEN, le32_to_cpu(pkt_info->pit_header));
+	data_len = FIELD_GET(PD_PIT_DATA_LEN, le32_to_cpu(pkt_info->header));
 	skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page_info->page,
 			data_offset, data_len, page_info->data_len);
 
@@ -462,7 +461,7 @@ static int t7xx_dpmaif_set_frag_to_skb(const struct dpmaif_rx_queue *rxq,
 }
 
 static int t7xx_dpmaif_get_frag(struct dpmaif_rx_queue *rxq,
-				const struct dpmaif_normal_pit *pkt_info,
+				const struct dpmaif_pit *pkt_info,
 				const struct dpmaif_cur_rx_skb_info *skb_info)
 {
 	unsigned int cur_bid = t7xx_normal_pit_bid(pkt_info);
@@ -493,13 +492,13 @@ static int t7xx_bat_cur_bid_check(struct dpmaif_rx_queue *rxq, const unsigned in
 	return 0;
 }
 
-static int t7xx_dpmaif_read_pit_seq(const struct dpmaif_normal_pit *pit)
+static int t7xx_dpmaif_read_pit_seq(const struct dpmaif_pit *pit)
 {
-	return FIELD_GET(NORMAL_PIT_PIT_SEQ, le32_to_cpu(pit->pit_footer));
+	return FIELD_GET(PD_PIT_PIT_SEQ, le32_to_cpu(pit->pd.footer));
 }
 
 static int t7xx_dpmaif_check_pit_seq(struct dpmaif_rx_queue *rxq,
-				     const struct dpmaif_normal_pit *pit)
+				     const struct dpmaif_pit *pit)
 {
 	unsigned int cur_pit_seq, expect_pit_seq = rxq->expect_pit_seq;
 
@@ -541,10 +540,9 @@ static int t7xx_dpmaif_release_bat_entry(const struct dpmaif_rx_queue *rxq,
 					 const enum bat_type buf_type)
 {
 	struct dpmaif_hw_info *hw_info = &rxq->dpmaif_ctrl->hw_info;
-	unsigned short old_rel_idx, new_rel_idx, hw_rd_idx;
+	unsigned int old_rel_idx, new_rel_idx, hw_rd_idx, i;
 	struct dpmaif_bat_request *bat;
 	unsigned long flags;
-	unsigned int i;
 
 	if (!rxq->que_started || !rel_entry_num)
 		return -EINVAL;
@@ -649,17 +647,19 @@ static int t7xx_dpmaif_frag_bat_release_and_add(const struct dpmaif_rx_queue *rx
 }
 
 static void t7xx_dpmaif_parse_msg_pit(const struct dpmaif_rx_queue *rxq,
-				      const struct dpmaif_msg_pit *msg_pit,
+				      const struct dpmaif_pit *msg_pit,
 				      struct dpmaif_cur_rx_skb_info *skb_info)
 {
-	skb_info->cur_chn_idx = FIELD_GET(MSG_PIT_CHANNEL_ID, le32_to_cpu(msg_pit->dword1));
-	skb_info->check_sum = FIELD_GET(MSG_PIT_CHECKSUM, le32_to_cpu(msg_pit->dword1));
-	skb_info->pit_dp = FIELD_GET(MSG_PIT_DP, le32_to_cpu(msg_pit->dword1));
-	skb_info->pkt_type = FIELD_GET(MSG_PIT_IP, le32_to_cpu(msg_pit->dword4));
+	int header = le32_to_cpu(msg_pit->header);
+
+	skb_info->cur_chn_idx = FIELD_GET(MSG_PIT_CHANNEL_ID, header);
+	skb_info->check_sum = FIELD_GET(MSG_PIT_CHECKSUM, header);
+	skb_info->pit_dp = FIELD_GET(MSG_PIT_DP, header);
+	skb_info->pkt_type = FIELD_GET(MSG_PIT_IP, le32_to_cpu(msg_pit->msg.params_3));
 }
 
 static int t7xx_dpmaif_set_data_to_skb(const struct dpmaif_rx_queue *rxq,
-				       const struct dpmaif_normal_pit *pkt_info,
+				       const struct dpmaif_pit *pkt_info,
 				       struct dpmaif_cur_rx_skb_info *skb_info)
 {
 	unsigned long long data_bus_addr, data_base_addr;
@@ -673,11 +673,11 @@ static int t7xx_dpmaif_set_data_to_skb(const struct dpmaif_rx_queue *rxq,
 	bat_skb += t7xx_normal_pit_bid(pkt_info);
 	dma_unmap_single(dev, bat_skb->data_bus_addr, bat_skb->data_len, DMA_FROM_DEVICE);
 
-	data_bus_addr = le32_to_cpu(pkt_info->data_addr_ext);
-	data_bus_addr = (data_bus_addr << 32) + le32_to_cpu(pkt_info->p_data_addr);
+	data_bus_addr = le32_to_cpu(pkt_info->pd.data_addr_h);
+	data_bus_addr = (data_bus_addr << 32) + le32_to_cpu(pkt_info->pd.data_addr_l);
 	data_base_addr = bat_skb->data_bus_addr;
 	data_offset = data_bus_addr - data_base_addr;
-	data_len = FIELD_GET(NORMAL_PIT_DATA_LEN, le32_to_cpu(pkt_info->pit_header));
+	data_len = FIELD_GET(PD_PIT_DATA_LEN, le32_to_cpu(pkt_info->header));
 	skb = bat_skb->skb;
 	skb->len = 0;
 	skb_reset_tail_pointer(skb);
@@ -695,7 +695,7 @@ static int t7xx_dpmaif_set_data_to_skb(const struct dpmaif_rx_queue *rxq,
 }
 
 static int t7xx_dpmaif_get_rx_pkt(struct dpmaif_rx_queue *rxq,
-				  const struct dpmaif_normal_pit *pkt_info,
+				  const struct dpmaif_pit *pkt_info,
 				  struct dpmaif_cur_rx_skb_info *skb_info)
 {
 	unsigned int cur_bid = t7xx_normal_pit_bid(pkt_info);
@@ -777,28 +777,27 @@ static int t7xx_dpmaif_rx_start(struct dpmaif_rx_queue *rxq, const unsigned int 
 	cur_pit = rxq->pit_rd_idx;
 
 	for (rx_cnt = 0; rx_cnt < pit_cnt; rx_cnt++) {
-		struct dpmaif_normal_pit *pkt_info;
+		struct dpmaif_pit *pkt_info;
 		u32 val;
 
 		if (!skb_info->msg_pit_received && time_after_eq(jiffies, timeout))
 			break;
 
-		pkt_info = (struct dpmaif_normal_pit *)rxq->pit_base + cur_pit;
+		pkt_info = (struct dpmaif_pit *)rxq->pit_base + cur_pit;
 		if (t7xx_dpmaif_check_pit_seq(rxq, pkt_info)) {
 			dev_err_ratelimited(dev, "RXQ%u checks PIT SEQ fail\n", rxq->index);
 			return -EAGAIN;
 		}
 
-		val = FIELD_GET(NORMAL_PIT_PACKET_TYPE, le32_to_cpu(pkt_info->pit_header));
+		val = FIELD_GET(PD_PIT_PACKET_TYPE, le32_to_cpu(pkt_info->header));
 		if (val == DES_PT_MSG) {
 			if (skb_info->msg_pit_received)
 				dev_err(dev, "RXQ%u received repeated PIT\n", rxq->index);
 
 			skb_info->msg_pit_received = true;
-			t7xx_dpmaif_parse_msg_pit(rxq, (struct dpmaif_msg_pit *)pkt_info,
-						  skb_info);
+			t7xx_dpmaif_parse_msg_pit(rxq, pkt_info, skb_info);
 		} else { /* DES_PT_PD */
-			val = FIELD_GET(NORMAL_PIT_BUFFER_TYPE, le32_to_cpu(pkt_info->pit_header));
+			val = FIELD_GET(PD_PIT_BUFFER_TYPE, le32_to_cpu(pkt_info->header));
 			if (val != PKT_BUF_FRAG)
 				ret = t7xx_dpmaif_get_rx_pkt(rxq, pkt_info, skb_info);
 			else if (!skb_info->cur_skb)
@@ -811,7 +810,7 @@ static int t7xx_dpmaif_rx_start(struct dpmaif_rx_queue *rxq, const unsigned int 
 				dev_err_ratelimited(dev, "RXQ%u error payload\n", rxq->index);
 			}
 
-			val = FIELD_GET(NORMAL_PIT_CONT, le32_to_cpu(pkt_info->pit_header));
+			val = FIELD_GET(PD_PIT_CONT, le32_to_cpu(pkt_info->header));
 			if (!val) {
 				if (!skb_info->err_payload) {
 					t7xx_dpmaif_rx_skb(rxq, skb_info);
@@ -868,7 +867,7 @@ static unsigned int t7xx_dpmaifq_poll_pit(struct dpmaif_rx_queue *rxq)
 }
 
 static int t7xx_dpmaif_rx_data_collect(struct dpmaif_ctrl *dpmaif_ctrl,
-				       const unsigned char q_num, const unsigned int budget)
+				       const unsigned int q_num, const unsigned int budget)
 {
 	struct dpmaif_rx_queue *rxq = &dpmaif_ctrl->rxq[q_num];
 	unsigned long time_limit;
@@ -880,7 +879,7 @@ static int t7xx_dpmaif_rx_data_collect(struct dpmaif_ctrl *dpmaif_ctrl,
 		unsigned int rd_cnt;
 		int real_cnt;
 
-		rd_cnt = min_t(unsigned int, cnt, budget);
+		rd_cnt = min(cnt, budget);
 
 		real_cnt = t7xx_dpmaif_rx_start(rxq, rd_cnt, time_limit);
 		if (real_cnt < 0)
@@ -991,7 +990,6 @@ int t7xx_dpmaif_bat_alloc(const struct dpmaif_ctrl *dpmaif_ctrl, struct dpmaif_b
 		bat_req->pkt_buf_sz = DPMAIF_HW_BAT_PKTBUF;
 	}
 
-	bat_req->skb_pkt_cnt = bat_req->bat_size_cnt;
 	bat_req->type = buf_type;
 	bat_req->bat_wr_idx = 0;
 	bat_req->bat_release_rd_idx = 0;
@@ -1003,7 +1001,7 @@ int t7xx_dpmaif_bat_alloc(const struct dpmaif_ctrl *dpmaif_ctrl, struct dpmaif_b
 		return -ENOMEM;
 
 	/* For AP SW to record skb information */
-	bat_req->bat_skb = devm_kzalloc(dpmaif_ctrl->dev, bat_req->skb_pkt_cnt * sw_buf_size,
+	bat_req->bat_skb = devm_kzalloc(dpmaif_ctrl->dev, bat_req->bat_size_cnt * sw_buf_size,
 					GFP_KERNEL);
 	if (!bat_req->bat_skb)
 		goto err_free_dma_mem;
@@ -1055,7 +1053,7 @@ static int t7xx_dpmaif_rx_alloc(struct dpmaif_rx_queue *rxq)
 	memset(&rxq->rx_data_info, 0, sizeof(rxq->rx_data_info));
 
 	rxq->pit_base = dma_alloc_coherent(rxq->dpmaif_ctrl->dev,
-					   rxq->pit_size_cnt * sizeof(struct dpmaif_normal_pit),
+					   rxq->pit_size_cnt * sizeof(struct dpmaif_pit),
 					   &rxq->pit_bus_addr, GFP_KERNEL | __GFP_ZERO);
 	if (!rxq->pit_base)
 		return -ENOMEM;
@@ -1078,7 +1076,7 @@ static void t7xx_dpmaif_rx_buf_free(const struct dpmaif_rx_queue *rxq)
 
 	if (rxq->pit_base)
 		dma_free_coherent(rxq->dpmaif_ctrl->dev,
-				  rxq->pit_size_cnt * sizeof(struct dpmaif_normal_pit),
+				  rxq->pit_size_cnt * sizeof(struct dpmaif_pit),
 				  rxq->pit_base, rxq->pit_bus_addr);
 }
 
@@ -1223,7 +1221,7 @@ static void t7xx_dpmaif_stop_rxq(struct dpmaif_rx_queue *rxq)
 		}
 	} while (cnt);
 
-	memset(rxq->pit_base, 0, rxq->pit_size_cnt * sizeof(struct dpmaif_normal_pit));
+	memset(rxq->pit_base, 0, rxq->pit_size_cnt * sizeof(struct dpmaif_pit));
 	memset(rxq->bat_req->bat_base, 0, rxq->bat_req->bat_size_cnt * sizeof(struct dpmaif_bat));
 	bitmap_zero(rxq->bat_req->bat_bitmap, rxq->bat_req->bat_size_cnt);
 	memset(&rxq->rx_data_info, 0, sizeof(rxq->rx_data_info));

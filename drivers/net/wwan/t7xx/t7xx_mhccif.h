@@ -9,7 +9,7 @@
  *
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  */
 
 #ifndef __T7XX_MHCCIF_H__

@@ -11,7 +11,7 @@
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
  *  Chiranjeevi Rapolu <chiranjeevi.rapolu@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  */
 
 #include <linux/bits.h>
@@ -256,8 +256,7 @@ void t7xx_pcie_mac_clear_int_status(struct t7xx_pci_dev *t7xx_dev, enum t7xx_int
  */
 void t7xx_pcie_set_mac_msix_cfg(struct t7xx_pci_dev *t7xx_dev, unsigned int irq_count)
 {
-	u32 val;
+	u32 val = ffs(irq_count) * 2 - 1;
 
-	val = ffs(irq_count) * 2 - 1;
 	iowrite32(val, IREG_BASE(t7xx_dev) + T7XX_PCIE_CFG_MSIX);
 }

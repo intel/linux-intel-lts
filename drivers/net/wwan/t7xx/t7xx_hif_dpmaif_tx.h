@@ -6,7 +6,7 @@
  * Authors:
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Eliot Lee <eliot.lee@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
@@ -22,41 +22,36 @@
 #include <linux/skbuff.h>
 #include <linux/types.h>
 
-#include "t7xx_common.h"
 #include "t7xx_hif_dpmaif.h"
 
 #define DPMAIF_TX_DEFAULT_QUEUE	0
 
-/* UL DRB */
-struct dpmaif_drb_pd {
-	__le32	header;
-	__le32	p_data_addr;
-	__le32	data_addr_ext;
-	__le32	reserved2;
+struct dpmaif_drb {
+	__le32 header;
+	union {
+		struct {
+			__le32 data_addr_l;
+			__le32 data_addr_h;
+			__le32 reserved;
+		} pd;
+		struct {
+			__le32 msg_hdr;
+			__le32 reserved1;
+			__le32 reserved2;
+		} msg;
+	};
 };
 
 /* Header fields */
-#define DRB_PD_DATA_LEN		GENMASK(31, 16)
-#define DRB_PD_RES		GENMASK(15, 3)
-#define DRB_PD_CONT		BIT(2)
-#define DRB_PD_DTYP		GENMASK(1, 0)
-
-struct dpmaif_drb_msg {
-	__le32	header_dw1;
-	__le32	header_dw2;
-	__le32	reserved4;
-	__le32	reserved5;
-};
-
-#define DRB_MSG_PACKET_LEN	GENMASK(31, 16)
-#define DRB_MSG_DW1_RES		GENMASK(15, 3)
-#define DRB_MSG_CONT		BIT(2)
-#define DRB_MSG_DTYP		GENMASK(1, 0)
+#define DRB_HDR_DATA_LEN	GENMASK(31, 16)
+#define DRB_HDR_RESERVED	GENMASK(15, 3)
+#define DRB_HDR_CONT		BIT(2)
+#define DRB_HDR_DTYP		GENMASK(1, 0)
 
 #define DRB_MSG_DW2_RES		GENMASK(31, 30)
 #define DRB_MSG_L4_CHK		BIT(29)
 #define DRB_MSG_IP_CHK		BIT(28)
-#define DRB_MSG_RES2		BIT(27)
+#define DRB_MSG_RESERVED	BIT(27)
 #define DRB_MSG_NETWORK_TYPE	GENMASK(26, 24)
 #define DRB_MSG_CHANNEL_ID	GENMASK(23, 16)
 #define DRB_MSG_COUNT_L		GENMASK(15, 0)

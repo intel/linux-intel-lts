@@ -6,7 +6,7 @@
  * Authors:
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Eliot Lee <eliot.lee@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Amir Hanania <amir.hanania@intel.com>
@@ -28,35 +28,37 @@
 #define PKT_TYPE_IP6		1
 
 /* Structure of DL PIT */
-struct dpmaif_normal_pit {
-	__le32			pit_header;
-	__le32			p_data_addr;
-	__le32			data_addr_ext;
-	__le32			pit_footer;
+struct dpmaif_pit {
+	__le32 header;
+	union {
+		struct {
+			__le32 data_addr_l;
+			__le32 data_addr_h;
+			__le32 footer;
+		} pd;
+		struct {
+			__le32 params_1;
+			__le32 params_2;
+			__le32 params_3;
+		} msg;
+	};
 };
 
 /* PIT header fields */
-#define NORMAL_PIT_DATA_LEN	GENMASK(31, 16)
-#define NORMAL_PIT_BUFFER_ID	GENMASK(15, 3)
-#define NORMAL_PIT_BUFFER_TYPE	BIT(2)
-#define NORMAL_PIT_CONT		BIT(1)
-#define NORMAL_PIT_PACKET_TYPE	BIT(0)
+#define PD_PIT_DATA_LEN		GENMASK(31, 16)
+#define PD_PIT_BUFFER_ID	GENMASK(15, 3)
+#define PD_PIT_BUFFER_TYPE	BIT(2)
+#define PD_PIT_CONT		BIT(1)
+#define PD_PIT_PACKET_TYPE	BIT(0)
 /* PIT footer fields */
-#define NORMAL_PIT_DLQ_DONE	GENMASK(31, 30)
-#define NORMAL_PIT_ULQ_DONE	GENMASK(29, 24)
-#define NORMAL_PIT_HEADER_OFFSET GENMASK(23, 19)
-#define NORMAL_PIT_BI_F		GENMASK(18, 17)
-#define NORMAL_PIT_IG		BIT(16)
-#define NORMAL_PIT_RES		GENMASK(15, 11)
-#define NORMAL_PIT_H_BID	GENMASK(10, 8)
-#define NORMAL_PIT_PIT_SEQ	GENMASK(7, 0)
-
-struct dpmaif_msg_pit {
-	__le32			dword1;
-	__le32			dword2;
-	__le32			dword3;
-	__le32			dword4;
-};
+#define PD_PIT_DLQ_DONE		GENMASK(31, 30)
+#define PD_PIT_ULQ_DONE		GENMASK(29, 24)
+#define PD_PIT_HEADER_OFFSET	GENMASK(23, 19)
+#define PD_PIT_BI_F		GENMASK(18, 17)
+#define PD_PIT_IG		BIT(16)
+#define PD_PIT_RES		GENMASK(15, 11)
+#define PD_PIT_H_BID		GENMASK(10, 8)
+#define PD_PIT_PIT_SEQ		GENMASK(7, 0)
 
 #define MSG_PIT_DP		BIT(31)
 #define MSG_PIT_RES		GENMASK(30, 27)
@@ -98,7 +100,7 @@ void t7xx_dpmaif_rx_clear(struct dpmaif_ctrl *dpmaif_ctrl);
 int t7xx_dpmaif_bat_rel_wq_alloc(struct dpmaif_ctrl *dpmaif_ctrl);
 int t7xx_dpmaif_rx_buf_alloc(struct dpmaif_ctrl *dpmaif_ctrl,
 			     const struct dpmaif_bat_request *bat_req,
-			     const unsigned char q_num, const unsigned int buf_cnt,
+			     const unsigned int q_num, const unsigned int buf_cnt,
 			     const bool initial);
 int t7xx_dpmaif_rx_frag_alloc(struct dpmaif_ctrl *dpmaif_ctrl, struct dpmaif_bat_request *bat_req,
 			      const unsigned int buf_cnt, const bool first_time);

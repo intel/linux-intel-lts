@@ -8,7 +8,7 @@
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Eliot Lee <eliot.lee@intel.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
  *
  * Contributors:
  *  Chiranjeevi Rapolu <chiranjeevi.rapolu@intel.com>
@@ -36,7 +36,6 @@
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 
-#include "t7xx_common.h"
 #include "t7xx_dpmaif.h"
 #include "t7xx_hif_dpmaif.h"
 #include "t7xx_hif_dpmaif_tx.h"
@@ -50,11 +49,10 @@
 #define DES_DTYP_MSG		1
 
 static unsigned int t7xx_dpmaif_update_drb_rd_idx(struct dpmaif_ctrl *dpmaif_ctrl,
-						  unsigned char q_num)
+						  unsigned int q_num)
 {
 	struct dpmaif_tx_queue *txq = &dpmaif_ctrl->txq[q_num];
-	unsigned short old_sw_rd_idx, new_hw_rd_idx;
-	unsigned int drb_cnt;
+	unsigned int old_sw_rd_idx, new_hw_rd_idx, drb_cnt;
 	unsigned long flags;
 
 	if (!txq->que_started)
@@ -79,15 +77,14 @@ static unsigned int t7xx_dpmaif_update_drb_rd_idx(struct dpmaif_ctrl *dpmaif_ctr
 	return drb_cnt;
 }
 
-static unsigned short t7xx_dpmaif_release_tx_buffer(struct dpmaif_ctrl *dpmaif_ctrl,
-						    unsigned char q_num, unsigned int release_cnt)
+static unsigned int t7xx_dpmaif_release_tx_buffer(struct dpmaif_ctrl *dpmaif_ctrl,
+						  unsigned int q_num, unsigned int release_cnt)
 {
 	struct dpmaif_tx_queue *txq = &dpmaif_ctrl->txq[q_num];
 	struct dpmaif_callbacks *cb = dpmaif_ctrl->callbacks;
 	struct dpmaif_drb_skb *cur_drb_skb, *drb_skb_base;
-	struct dpmaif_drb_pd *cur_drb, *drb_base;
-	unsigned int drb_cnt, i;
-	unsigned short cur_idx;
+	struct dpmaif_drb *cur_drb, *drb_base;
+	unsigned int drb_cnt, i, cur_idx;
 	unsigned long flags;
 
 	drb_skb_base = txq->drb_skb_base;
@@ -100,13 +97,13 @@ static unsigned short t7xx_dpmaif_release_tx_buffer(struct dpmaif_ctrl *dpmaif_c
 
 	for (i = 0; i < release_cnt; i++) {
 		cur_drb = drb_base + cur_idx;
-		if (FIELD_GET(DRB_PD_DTYP, le32_to_cpu(cur_drb->header)) == DES_DTYP_PD) {
+		if (FIELD_GET(DRB_HDR_DTYP, le32_to_cpu(cur_drb->header)) == DES_DTYP_PD) {
 			cur_drb_skb = drb_skb_base + cur_idx;
 			if (!cur_drb_skb->is_msg)
 				dma_unmap_single(dpmaif_ctrl->dev, cur_drb_skb->bus_addr,
 						 cur_drb_skb->data_len, DMA_TO_DEVICE);
 
-			if (!FIELD_GET(DRB_PD_CONT, le32_to_cpu(cur_drb->header))) {
+			if (!FIELD_GET(DRB_HDR_CONT, le32_to_cpu(cur_drb->header))) {
 				if (!cur_drb_skb->skb) {
 					dev_err(dpmaif_ctrl->dev,
 						"txq%u: DRB check fail, invalid skb\n", q_num);
@@ -128,14 +125,14 @@ static unsigned short t7xx_dpmaif_release_tx_buffer(struct dpmaif_ctrl *dpmaif_c
 			cb->state_notify(dpmaif_ctrl->t7xx_dev, DMPAIF_TXQ_STATE_IRQ, txq->index);
 	}
 
-	if (FIELD_GET(DRB_PD_CONT, le32_to_cpu(cur_drb->header)))
+	if (FIELD_GET(DRB_HDR_CONT, le32_to_cpu(cur_drb->header)))
 		dev_err(dpmaif_ctrl->dev, "txq%u: DRB not marked as the last one\n", q_num);
 
 	return i;
 }
 
 static int t7xx_dpmaif_tx_release(struct dpmaif_ctrl *dpmaif_ctrl,
-				  unsigned char q_num, unsigned int budget)
+				  unsigned int q_num, unsigned int budget)
 {
 	struct dpmaif_tx_queue *txq = &dpmaif_ctrl->txq[q_num];
 	unsigned int rel_cnt, real_rel_cnt;
@@ -192,44 +189,41 @@ static void t7xx_dpmaif_tx_done(struct work_struct *work)
 	pm_runtime_put_autosuspend(dpmaif_ctrl->dev);
 }
 
-static void t7xx_setup_msg_drb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned char q_num,
-			       unsigned short cur_idx, unsigned int pkt_len, unsigned short count_l,
-			       unsigned char channel_id)
+static void t7xx_setup_msg_drb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int q_num,
+			       unsigned int cur_idx, unsigned int pkt_len, unsigned int count_l,
+			       unsigned int channel_id)
 {
-	struct dpmaif_drb_msg *drb_base = dpmaif_ctrl->txq[q_num].drb_base;
-	struct dpmaif_drb_msg *drb = drb_base + cur_idx;
+	struct dpmaif_drb *drb_base = dpmaif_ctrl->txq[q_num].drb_base;
+	struct dpmaif_drb *drb = drb_base + cur_idx;
 
-	drb->header_dw1 = cpu_to_le32(FIELD_PREP(DRB_MSG_DTYP, DES_DTYP_MSG) |
-				      FIELD_PREP(DRB_MSG_CONT, 1) |
-				      FIELD_PREP(DRB_MSG_PACKET_LEN, pkt_len));
+	drb->header = cpu_to_le32(FIELD_PREP(DRB_HDR_DTYP, DES_DTYP_MSG) |
+				  FIELD_PREP(DRB_HDR_CONT, 1) |
+				  FIELD_PREP(DRB_HDR_DATA_LEN, pkt_len));
 
-	drb->header_dw2 = cpu_to_le32(FIELD_PREP(DRB_MSG_COUNT_L, count_l) |
-				      FIELD_PREP(DRB_MSG_CHANNEL_ID, channel_id) |
-				      FIELD_PREP(DRB_MSG_L4_CHK, 1));
+	drb->msg.msg_hdr = cpu_to_le32(FIELD_PREP(DRB_MSG_COUNT_L, count_l) |
+				       FIELD_PREP(DRB_MSG_CHANNEL_ID, channel_id) |
+				       FIELD_PREP(DRB_MSG_L4_CHK, 1));
 }
 
-static void t7xx_setup_payload_drb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned char q_num,
-				   unsigned short cur_idx, dma_addr_t data_addr,
+static void t7xx_setup_payload_drb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int q_num,
+				   unsigned int cur_idx, dma_addr_t data_addr,
 				   unsigned int pkt_size, bool last_one)
 {
-	struct dpmaif_drb_pd *drb_base = dpmaif_ctrl->txq[q_num].drb_base;
-	struct dpmaif_drb_pd *drb = drb_base + cur_idx;
+	struct dpmaif_drb *drb_base = dpmaif_ctrl->txq[q_num].drb_base;
+	struct dpmaif_drb *drb = drb_base + cur_idx;
+	u32 header;
 
-	drb->header &= cpu_to_le32(~DRB_PD_DTYP);
-	drb->header |= cpu_to_le32(FIELD_PREP(DRB_PD_DTYP, DES_DTYP_PD));
-	drb->header &= cpu_to_le32(~DRB_PD_CONT);
-
+	header = FIELD_PREP(DRB_HDR_DTYP, DES_DTYP_PD) | FIELD_PREP(DRB_HDR_DATA_LEN, pkt_size);
 	if (!last_one)
-		drb->header |= cpu_to_le32(FIELD_PREP(DRB_PD_CONT, 1));
+		header |= FIELD_PREP(DRB_HDR_CONT, 1);
 
-	drb->header &= cpu_to_le32(~(u32)DRB_PD_DATA_LEN);
-	drb->header |= cpu_to_le32(FIELD_PREP(DRB_PD_DATA_LEN, pkt_size));
-	drb->p_data_addr = cpu_to_le32(lower_32_bits(data_addr));
-	drb->data_addr_ext = cpu_to_le32(upper_32_bits(data_addr));
+	drb->header = cpu_to_le32(header);
+	drb->pd.data_addr_l = cpu_to_le32(lower_32_bits(data_addr));
+	drb->pd.data_addr_h = cpu_to_le32(upper_32_bits(data_addr));
 }
 
-static void t7xx_record_drb_skb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned char q_num,
-				unsigned short cur_idx, struct sk_buff *skb, unsigned short is_msg,
+static void t7xx_record_drb_skb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int q_num,
+				unsigned int cur_idx, struct sk_buff *skb, bool is_msg,
 				bool is_frag, bool is_last_one, dma_addr_t bus_addr,
 				unsigned int data_len)
 {
@@ -248,15 +242,11 @@ static void t7xx_record_drb_skb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned char q
 static int t7xx_dpmaif_add_skb_to_ring(struct dpmaif_ctrl *dpmaif_ctrl, struct sk_buff *skb)
 {
 	unsigned int wr_cnt, send_cnt, payload_cnt;
-	unsigned short cur_idx, drb_wr_idx_backup;
-	bool is_frag, is_last_one = false;
+	unsigned int cur_idx, drb_wr_idx_backup;
 	struct skb_shared_info *shinfo;
 	struct dpmaif_tx_queue *txq;
 	struct t7xx_skb_cb *skb_cb;
-	unsigned int data_len;
-	dma_addr_t bus_addr;
 	unsigned long flags;
-	void *data_addr;
 
 	skb_cb = T7XX_SKB_CB(skb);
 	txq = &dpmaif_ctrl->txq[skb_cb->txq_number];
@@ -282,12 +272,15 @@ static int t7xx_dpmaif_add_skb_to_ring(struct dpmaif_ctrl *dpmaif_ctrl, struct s
 	if (txq->drb_wr_idx >= txq->drb_size_cnt)
 		txq->drb_wr_idx -= txq->drb_size_cnt;
 	t7xx_setup_msg_drb(dpmaif_ctrl, txq->index, cur_idx, skb->len, 0, skb_cb->netif_idx);
-	t7xx_record_drb_skb(dpmaif_ctrl, txq->index, cur_idx, skb, 1, 0, 0, 0, 0);
+	t7xx_record_drb_skb(dpmaif_ctrl, txq->index, cur_idx, skb, true, 0, 0, 0, 0);
 	spin_unlock_irqrestore(&txq->tx_lock, flags);
 
-	cur_idx = t7xx_ring_buf_get_next_wr_idx(txq->drb_size_cnt, cur_idx);
-
 	for (wr_cnt = 0; wr_cnt < payload_cnt; wr_cnt++) {
+		bool is_frag, is_last_one = wr_cnt == payload_cnt - 1;
+		unsigned int data_len;
+		dma_addr_t bus_addr;
+		void *data_addr;
+
 		if (!wr_cnt) {
 			data_len = skb_headlen(skb);
 			data_addr = skb->data;
@@ -300,35 +293,39 @@ static int t7xx_dpmaif_add_skb_to_ring(struct dpmaif_ctrl *dpmaif_ctrl, struct s
 			is_frag = true;
 		}
 
-		if (wr_cnt == payload_cnt - 1)
-			is_last_one = true;
-
 		bus_addr = dma_map_single(dpmaif_ctrl->dev, data_addr, data_len, DMA_TO_DEVICE);
-		if (dma_mapping_error(dpmaif_ctrl->dev, bus_addr)) {
-			dev_err(dpmaif_ctrl->dev, "DMA mapping fail\n");
-			atomic_set(&txq->tx_processing, 0);
+		if (dma_mapping_error(dpmaif_ctrl->dev, bus_addr))
+			goto unmap_buffers;
 
-			spin_lock_irqsave(&txq->tx_lock, flags);
-			txq->drb_wr_idx = drb_wr_idx_backup;
-			spin_unlock_irqrestore(&txq->tx_lock, flags);
-
-			return -ENOMEM;
-		}
+		cur_idx = t7xx_ring_buf_get_next_wr_idx(txq->drb_size_cnt, cur_idx);
 
 		spin_lock_irqsave(&txq->tx_lock, flags);
 		t7xx_setup_payload_drb(dpmaif_ctrl, txq->index, cur_idx, bus_addr, data_len,
 				       is_last_one);
-		t7xx_record_drb_skb(dpmaif_ctrl, txq->index, cur_idx, skb, 0, is_frag,
+		t7xx_record_drb_skb(dpmaif_ctrl, txq->index, cur_idx, skb, false, is_frag,
 				    is_last_one, bus_addr, data_len);
 		spin_unlock_irqrestore(&txq->tx_lock, flags);
-
-		cur_idx = t7xx_ring_buf_get_next_wr_idx(txq->drb_size_cnt, cur_idx);
 	}
 
 	atomic_sub(send_cnt, &txq->tx_budget);
 	atomic_set(&txq->tx_processing, 0);
 
 	return 0;
+
+unmap_buffers:
+	while (wr_cnt--) {
+		struct dpmaif_drb_skb *drb_skb = txq->drb_skb_base;
+
+		cur_idx = cur_idx ? cur_idx - 1 : txq->drb_size_cnt - 1;
+		drb_skb += cur_idx;
+		dma_unmap_single(dpmaif_ctrl->dev, drb_skb->bus_addr,
+				 drb_skb->data_len, DMA_TO_DEVICE);
+	}
+
+	txq->drb_wr_idx = drb_wr_idx_backup;
+	atomic_set(&txq->tx_processing, 0);
+
+	return -ENOMEM;
 }
 
 static bool t7xx_tx_lists_are_all_empty(const struct dpmaif_ctrl *dpmaif_ctrl)
@@ -336,7 +333,7 @@ static bool t7xx_tx_lists_are_all_empty(const struct dpmaif_ctrl *dpmaif_ctrl)
 	int i;
 
 	for (i = 0; i < DPMAIF_TXQ_NUM; i++) {
-		if (!list_empty(&dpmaif_ctrl->txq[i].tx_skb_queue))
+		if (!skb_queue_empty(&dpmaif_ctrl->txq[i].tx_skb_head))
 			return false;
 	}
 
@@ -357,18 +354,11 @@ static struct dpmaif_tx_queue *t7xx_select_tx_queue(struct dpmaif_ctrl *dpmaif_c
 
 static unsigned int t7xx_txq_drb_wr_available(struct dpmaif_tx_queue *txq)
 {
-	unsigned int drb_remain_cnt;
-	unsigned long flags;
-
-	spin_lock_irqsave(&txq->tx_lock, flags);
-	drb_remain_cnt = t7xx_ring_buf_rd_wr_count(txq->drb_size_cnt, txq->drb_release_rd_idx,
-						   txq->drb_wr_idx, DPMAIF_WRITE);
-	spin_unlock_irqrestore(&txq->tx_lock, flags);
-
-	return drb_remain_cnt;
+	return t7xx_ring_buf_rd_wr_count(txq->drb_size_cnt, txq->drb_release_rd_idx,
+					 txq->drb_wr_idx, DPMAIF_WRITE);
 }
 
-static unsigned char t7xx_skb_drb_cnt(struct sk_buff *skb)
+static unsigned int t7xx_skb_drb_cnt(struct sk_buff *skb)
 {
 	/* Normal DRB (frags data + skb linear data) + msg DRB */
 	return skb_shinfo(skb)->nr_frags + 2;
@@ -378,7 +368,6 @@ static int t7xx_txq_burst_send_skb(struct dpmaif_tx_queue *txq)
 {
 	unsigned int drb_remain_cnt, i;
 	unsigned int send_drb_cnt;
-	unsigned long flags;
 	int drb_cnt = 0;
 	int ret = 0;
 
@@ -387,10 +376,7 @@ static int t7xx_txq_burst_send_skb(struct dpmaif_tx_queue *txq)
 	for (i = 0; i < DPMAIF_SKB_TX_BURST_CNT; i++) {
 		struct sk_buff *skb;
 
-		spin_lock_irqsave(&txq->tx_skb_lock, flags);
-		skb = list_first_entry_or_null(&txq->tx_skb_queue, struct sk_buff, list);
-		spin_unlock_irqrestore(&txq->tx_skb_lock, flags);
-
+		skb = skb_peek(&txq->tx_skb_head);
 		if (!skb)
 			break;
 
@@ -410,11 +396,7 @@ static int t7xx_txq_burst_send_skb(struct dpmaif_tx_queue *txq)
 		}
 
 		drb_cnt += send_drb_cnt;
-
-		spin_lock_irqsave(&txq->tx_skb_lock, flags);
-		list_del(&skb->list);
-		txq->tx_submit_skb_cnt--;
-		spin_unlock_irqrestore(&txq->tx_skb_lock, flags);
+		skb_unlink(skb, &txq->tx_skb_head);
 	}
 
 	if (drb_cnt > 0)
@@ -523,7 +505,6 @@ int t7xx_dpmaif_tx_send_skb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int txq_nu
 	struct dpmaif_tx_queue *txq = &dpmaif_ctrl->txq[txq_number];
 	struct dpmaif_callbacks *callbacks;
 	struct t7xx_skb_cb *skb_cb;
-	unsigned long flags;
 
 	if (!(txq->tx_skb_stat++ % DPMAIF_SKB_TX_BURST_CNT)) {
 		unsigned int send_drb_cnt, drb_available_cnt;
@@ -534,19 +515,12 @@ int t7xx_dpmaif_tx_send_skb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int txq_nu
 			goto report_full_state;
 	}
 
-	spin_lock_irqsave(&txq->tx_skb_lock, flags);
-	if (txq->tx_submit_skb_cnt >= txq->tx_list_max_len) {
-		spin_unlock_irqrestore(&txq->tx_skb_lock, flags);
+	if (txq->tx_skb_head.qlen >= txq->tx_list_max_len)
 		goto report_full_state;
-	}
 
 	skb_cb = T7XX_SKB_CB(skb);
 	skb_cb->txq_number = txq_number;
-
-	list_add_tail(&skb->list, &txq->tx_skb_queue);
-	txq->tx_submit_skb_cnt++;
-	spin_unlock_irqrestore(&txq->tx_skb_lock, flags);
-
+	skb_queue_tail(&txq->tx_skb_head, skb);
 	wake_up(&dpmaif_ctrl->tx_wq);
 	return 0;
 
@@ -570,7 +544,7 @@ static int t7xx_dpmaif_tx_drb_buf_init(struct dpmaif_tx_queue *txq)
 {
 	size_t brb_skb_size, brb_pd_size;
 
-	brb_pd_size = DPMAIF_DRB_LIST_LEN * sizeof(struct dpmaif_drb_pd);
+	brb_pd_size = DPMAIF_DRB_LIST_LEN * sizeof(struct dpmaif_drb);
 	brb_skb_size = DPMAIF_DRB_LIST_LEN * sizeof(struct dpmaif_drb_skb);
 
 	txq->drb_size_cnt = DPMAIF_DRB_LIST_LEN;
@@ -594,10 +568,9 @@ static int t7xx_dpmaif_tx_drb_buf_init(struct dpmaif_tx_queue *txq)
 
 static void t7xx_dpmaif_tx_free_drb_skb(struct dpmaif_tx_queue *txq)
 {
-	struct dpmaif_drb_skb *drb_skb, *drb_skb_base;
+	struct dpmaif_drb_skb *drb_skb, *drb_skb_base = txq->drb_skb_base;
 	unsigned int i;
 
-	drb_skb_base = txq->drb_skb_base;
 	if (!drb_skb_base)
 		return;
 
@@ -621,7 +594,7 @@ static void t7xx_dpmaif_tx_drb_buf_rel(struct dpmaif_tx_queue *txq)
 {
 	if (txq->drb_base)
 		dma_free_coherent(txq->dpmaif_ctrl->dev,
-				  txq->drb_size_cnt * sizeof(struct dpmaif_drb_pd),
+				  txq->drb_size_cnt * sizeof(struct dpmaif_drb),
 				  txq->drb_base, txq->drb_bus_addr);
 
 	t7xx_dpmaif_tx_free_drb_skb(txq);
@@ -641,9 +614,7 @@ int t7xx_dpmaif_txq_init(struct dpmaif_tx_queue *txq)
 {
 	int ret;
 
-	spin_lock_init(&txq->tx_skb_lock);
-	INIT_LIST_HEAD(&txq->tx_skb_queue);
-	txq->tx_submit_skb_cnt = 0;
+	skb_queue_head_init(&txq->tx_skb_head);
 	txq->tx_skb_stat = 0;
 	txq->tx_list_max_len = DPMAIF_DRB_LIST_LEN / 2;
 	init_waitqueue_head(&txq->req_wq);
@@ -668,19 +639,10 @@ int t7xx_dpmaif_txq_init(struct dpmaif_tx_queue *txq)
 
 void t7xx_dpmaif_txq_free(struct dpmaif_tx_queue *txq)
 {
-	struct sk_buff *skb, *skb_next;
-	unsigned long flags;
-
 	if (txq->worker)
 		destroy_workqueue(txq->worker);
 
-	spin_lock_irqsave(&txq->tx_skb_lock, flags);
-	list_for_each_entry_safe(skb, skb_next, &txq->tx_skb_queue, list) {
-		list_del(&skb->list);
-		dev_kfree_skb_any(skb);
-	}
-	spin_unlock_irqrestore(&txq->tx_skb_lock, flags);
-
+	skb_queue_purge(&txq->tx_skb_head);
 	t7xx_dpmaif_tx_drb_buf_rel(txq);
 }
 
