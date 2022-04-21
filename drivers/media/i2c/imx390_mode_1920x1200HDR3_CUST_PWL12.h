@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /**
  * @author George Vigelette <gvigelette@d3engineering.com>
  *

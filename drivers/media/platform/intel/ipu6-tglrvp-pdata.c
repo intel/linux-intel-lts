@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2022 Intel Corporation
 #include <linux/clk.h>
 #include <linux/clkdev.h>
 #include <linux/gpio.h>
@@ -20,19 +20,16 @@ static void ar0234_fixup_spdata(const void *spdata_rep, void *spdata)
 	const struct ipu_spdata_rep *rep = spdata_rep;
 	struct ar0234_platform_data *platform = spdata;
 
-	if (NULL == spdata_rep || NULL == spdata)
-		return;
-
-	platform->port = rep->port_n;
-	platform->lanes = rep->lanes;
-	platform->i2c_slave_address = rep->slave_addr_n;
-	platform->gpios[0] = rep->gpios[0];
-	platform->irq_pin = rep->irq_pin;
-	platform->irq_pin_flags = rep->irq_pin_flags;
-	strcpy(platform->irq_pin_name, rep->irq_pin_name);
-	platform->suffix = rep->suffix;
-
-	return;
+	if (spdata_rep && spdata) {
+		platform->port = rep->port_n;
+		platform->lanes = rep->lanes;
+		platform->i2c_slave_address = rep->slave_addr_n;
+		platform->gpios[0] = rep->gpios[0];
+		platform->irq_pin = rep->irq_pin;
+		platform->irq_pin_flags = rep->irq_pin_flags;
+		strcpy(platform->irq_pin_name, rep->irq_pin_name);
+		platform->suffix = rep->suffix;
+	}
 }
 
 #define AR0234_LANES       2
@@ -447,7 +444,9 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_0 = {
 	.irq_pin_name = "B23",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-	.suffix = 'c',
+	.suffix = 'e',
+	.reset_pin = -1,
+	.detect_pin = -1,
 	.gpios = {-1, 0, 0, 0},
 };
 
@@ -476,6 +475,8 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_1 = {
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'a',
+	.reset_pin = 423,
+	.detect_pin = 175,
 };
 
 static struct ipu_isys_subdev_info  lt6911uxc_sd_1 = {
@@ -503,6 +504,8 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_2 = {
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
+	.reset_pin = 292,
+	.detect_pin = 510,
 };
 
 static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {

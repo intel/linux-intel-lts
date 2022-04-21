@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2020 Intel Corporation.
+// Copyright (c) 2022 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -8,11 +8,13 @@
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
 #include <linux/gpio.h>
+#include <linux/version.h>
 #include <linux/interrupt.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
 #include <media/ar0234.h>
+#include <linux/version.h>
 
 #define AR0234_REG_VALUE_08BIT		1
 #define AR0234_REG_VALUE_16BIT		2
@@ -63,6 +65,10 @@
 #define AR0234_REG_LED_FLASH_CONTROL	0x3270
 #define AR0234_LED_FLASH_EN		0x100
 #define AR0234_LED_DELAY		0xff
+
+#define AR0234_REG_IMAGE_ORIENTATION	0x301D
+#define AR0234_HFLIP_BIT		0x0
+#define AR0234_VFLIP_BIT		0x1
 
 #define WIN_WIDTH	1280
 #define WIN_HEIGHT	960
@@ -1349,6 +1355,8 @@ struct ar0234 {
 	struct v4l2_ctrl *frame_interval;
 	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *vflip;
+	struct v4l2_ctrl *hflip;
 
 	/* Current mode */
 	const struct ar0234_mode *cur_mode;
@@ -1570,7 +1578,28 @@ static int ar0234_set_ctrl(struct v4l2_ctrl *ctrl)
 		dev_info(&client->dev, "set led delay %d\n",
 				AR0234_LED_DELAY & ctrl->val);
 		break;
+	case V4L2_CID_VFLIP:
+		ret = ar0234_read_reg(ar0234, AR0234_REG_IMAGE_ORIENTATION,
+				AR0234_REG_VALUE_08BIT, &val);
 
+		val &= ~(0x1 << AR0234_VFLIP_BIT);
+		val |= ctrl->val << AR0234_VFLIP_BIT;
+		ret = ar0234_write_reg(ar0234, AR0234_REG_IMAGE_ORIENTATION,
+				AR0234_REG_VALUE_08BIT,
+				val);
+		dev_info(&client->dev, "set vflip %d\n", ctrl->val);
+		break;
+	case V4L2_CID_HFLIP:
+		ret = ar0234_read_reg(ar0234, AR0234_REG_IMAGE_ORIENTATION,
+				AR0234_REG_VALUE_08BIT, &val);
+
+		val &= ~(0x1 << AR0234_HFLIP_BIT);
+		val |= ctrl->val << AR0234_HFLIP_BIT;
+		ret = ar0234_write_reg(ar0234, AR0234_REG_IMAGE_ORIENTATION,
+				AR0234_REG_VALUE_08BIT,
+				val);
+		dev_info(&client->dev, "set hflip %d\n", ctrl->val);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -1742,6 +1771,11 @@ static int ar0234_init_controls(struct ar0234 *ar0234)
 	if (ar0234->hblank)
 		ar0234->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
+	ar0234->vflip = v4l2_ctrl_new_std(ctrl_hdlr, &ar0234_ctrl_ops,
+					  V4L2_CID_VFLIP, 0, 1, 1, 1);
+	ar0234->hflip = v4l2_ctrl_new_std(ctrl_hdlr, &ar0234_ctrl_ops,
+					  V4L2_CID_HFLIP, 0, 1, 1, 0);
+
 	if (ctrl_hdlr->error)
 		return ctrl_hdlr->error;
 
@@ -1793,8 +1827,6 @@ static int ar0234_start_streaming(struct ar0234 *ar0234)
 		dev_err(&client->dev, "failed to set stream");
 		return ret;
 	}
-
-	ar0234_write_reg(ar0234, 0x301D, AR0234_REG_VALUE_08BIT, 0x2);
 
 	return 0;
 }

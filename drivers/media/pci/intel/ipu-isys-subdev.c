@@ -134,7 +134,8 @@ u32 ipu_isys_subdev_code_to_uncompressed(u32 sink_code)
 }
 
 struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
-					       struct v4l2_subdev_pad_config *cfg,
+					       struct v4l2_subdev_pad_config
+					       *cfg,
 					       unsigned int pad,
 					       unsigned int stream,
 					       unsigned int which)
@@ -166,7 +167,7 @@ struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
 		case V4L2_SEL_TGT_CROP:
 			return v4l2_subdev_get_try_crop(sd, cfg, pad);
 		case V4L2_SEL_TGT_COMPOSE:
-			return v4l2_subdev_get_try_crop(sd, cfg, pad);
+			return v4l2_subdev_get_try_compose(sd, cfg, pad);
 		}
 	}
 	WARN_ON(1);
@@ -346,6 +347,7 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 							ffmts[pad]->field,
 				},
 			};
+
 			asd->set_ffmt(sd, cfg, &fmt);
 			goto out_subdev_fmt_propagate;
 		}
@@ -363,20 +365,14 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 				     struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd,
-							cfg,
-							fmt->pad,
-							fmt->stream,
-							fmt->which);
+		__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->stream,
+					   fmt->which);
 
 	/* No propagation for non-zero pads. */
 	if (fmt->pad) {
 		struct v4l2_mbus_framefmt *sink_ffmt =
-			__ipu_isys_get_ffmt(sd,
-								cfg,
-								0,
-								fmt->stream,
-								fmt->which);
+			__ipu_isys_get_ffmt(sd, cfg, 0, fmt->stream,
+						   fmt->which);
 
 		ffmt->width = sink_ffmt->width;
 		ffmt->height = sink_ffmt->height;
@@ -402,11 +398,8 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd,
-							cfg,
-							fmt->pad,
-							fmt->stream,
-							fmt->which);
+		__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->stream,
+					   fmt->which);
 	u32 code = asd->supported_codes[fmt->pad][0];
 	unsigned int i;
 
@@ -460,9 +453,7 @@ int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	mutex_lock(&asd->mutex);
-	fmt->format = *__ipu_isys_get_ffmt(sd,
-					   cfg,
-					   fmt->pad,
+	fmt->format = *__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
 					   fmt->stream,
 					   fmt->which);
 	mutex_unlock(&asd->mutex);
@@ -648,11 +639,8 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 	case V4L2_SEL_TGT_CROP:
 		if (pad->flags & MEDIA_PAD_FL_SINK) {
 			struct v4l2_mbus_framefmt *ffmt =
-				__ipu_isys_get_ffmt(sd,
-									cfg,
-									sel->pad,
-									0,
-									sel->which);
+				__ipu_isys_get_ffmt(sd, cfg, sel->pad, 0,
+							   sel->which);
 
 			__r.width = ffmt->width;
 			__r.height = ffmt->height;

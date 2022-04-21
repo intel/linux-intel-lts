@@ -561,9 +561,7 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 {
 	enum isys_subdev_prop_tgt tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT;
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd,
-					cfg,
-					fmt->pad,
+		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
 				    fmt->stream,
 				    fmt->which);
 
@@ -574,18 +572,14 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 		*ffmt = fmt->format;
 		if (fmt->stream)
 			return;
-		ipu_isys_subdev_fmt_propagate(sd,
-						cfg,
-						&fmt->format, NULL,
-					    tgt, fmt->pad, fmt->which);
+		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format, NULL,
+					      tgt, fmt->pad, fmt->which);
 		return;
 	}
 
 	if (fmt->pad == CSI2_PAD_META) {
 		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd,
-						cfg,
-						fmt->pad,
+			__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
 					    fmt->stream,
 					    fmt->which);
 		struct media_pad *pad = media_entity_remote_pad(

@@ -124,6 +124,8 @@ struct ipu_isys_video {
 	struct ipu_isys *isys;
 	struct ipu_isys_pipeline ip;
 	unsigned int streaming;
+	unsigned int reset;
+	unsigned int skipframe;
 	bool packed;
 #if defined(IPU_ISYS_COMPRESSION)
 	bool compression;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
+#include <linux/acpi.h>
 #include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/interrupt.h>
@@ -25,7 +26,11 @@
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 #include <media/ipu-isys.h>
+#endif
+
+#include <media/ipu-acpi.h>
 
 #define IPU_PCI_BAR		0
 enum ipu_version ipu_ver;
@@ -34,6 +39,13 @@ EXPORT_SYMBOL(ipu_ver);
 static int isys_freq_overwrite = -1;
 module_param(isys_freq_overwrite, int, 0660);
 MODULE_PARM_DESC(isys_freq_overwrite, "overwrite isys freq default value");
+
+static int isys_init_acpi_add_device(struct device *dev, void *priv,
+				struct ipu_isys_csi2_config *csi2,
+				bool reprobe)
+{
+	return 0;
+}
 
 static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    struct device *parent,
@@ -47,7 +59,9 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 {
 	struct ipu_bus_device *isys;
 	struct ipu_isys_pdata *pdata;
-
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+	struct ipu_isys_subdev_pdata *acpi_pdata;
+#endif
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return ERR_PTR(-ENOMEM);
@@ -62,6 +76,18 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 
 	isys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
 				  IPU_ISYS_NAME, nr);
+
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+	if (!spdata) {
+		dev_err(&pdev->dev, "No subdevice info provided");
+		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, NULL, isys_init_acpi_add_device);
+		pdata->spdata = acpi_pdata;
+	} else {
+		dev_info(&pdev->dev, "Subdevice info found");
+		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, &spdata, isys_init_acpi_add_device);
+	}
+#endif
+
 	if (IS_ERR(isys))
 		return ERR_PTR(-ENOMEM);
 
@@ -362,6 +388,7 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 }
 EXPORT_SYMBOL(request_cpd_fw);
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 static inline int match_spdata(struct ipu_isys_subdev_info *sd,
 			const struct ipu_spdata_rep *rep)
 {
@@ -410,6 +437,7 @@ void fixup_spdata(const void *spdata_rep,
 		}
 	}
 }
+#endif
 
 static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
@@ -420,11 +448,15 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	void __iomem *psys_base = NULL;
 	struct ipu_buttress_ctrl *isys_ctrl = NULL, *psys_ctrl = NULL;
 	unsigned int dma_mask = IPU_DMA_MASK;
+	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+	u32 is_es;
 	int rval;
 
 #ifdef IPU_TRACE_EVENT
 	trace_printk("B|%d|TMWK\n", current->pid);
 #endif
+	if (!fwnode || fwnode_property_read_u32(fwnode, "is_es", &is_es))
+		is_es = 0;
 
 	isp = devm_kzalloc(&pdev->dev, sizeof(*isp), GFP_KERNEL);
 	if (!isp)
@@ -489,7 +521,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	case IPU6EP_ADL_P_PCI_ID:
 	case IPU6EP_ADL_N_PCI_ID:
 		ipu_ver = IPU_VER_6EP;
-		isp->cpd_fw_name = IPU6EP_FIRMWARE_NAME;
+		isp->cpd_fw_name = is_es ? IPU6EPES_FIRMWARE_NAME : IPU6EP_FIRMWARE_NAME;
 		break;
 	default:
 		WARN(1, "Unsupported IPU device");
@@ -570,12 +602,13 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	rval = request_firmware(&isp->spdata_fw, IPU_SPDATA_NAME, &pdev->dev);
 	if (rval)
 		dev_warn(&isp->pdev->dev, "no spdata replace, using default\n");
 	else
 		fixup_spdata(isp->spdata_fw->data, pdev->dev.platform_data);
-
+#endif
 	rval = ipu_trace_add(isp);
 	if (rval)
 		dev_err(&pdev->dev, "Trace support not available\n");
@@ -711,7 +744,9 @@ out_ipu_bus_del_devices:
 	ipu_bus_del_devices(pdev);
 	ipu_buttress_exit(isp);
 	release_firmware(isp->cpd_fw);
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	release_firmware(isp->spdata_fw);
+#endif
 
 #ifdef IPU_TRACE_EVENT
 	trace_printk("E|%d|TMWK\n", rval);

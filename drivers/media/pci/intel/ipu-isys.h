@@ -50,6 +50,8 @@
 #define IPU_ISYS_TURNOFF_TIMEOUT		1000
 #define IPU_LIB_CALL_TIMEOUT_JIFFIES \
 	msecs_to_jiffies(IPU_LIB_CALL_TIMEOUT_MS)
+#define IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET \
+	msecs_to_jiffies(200)
 
 #define IPU_ISYS_CSI2_LONG_PACKET_HEADER_SIZE	32
 #define IPU_ISYS_CSI2_LONG_PACKET_FOOTER_SIZE	32
@@ -212,6 +214,9 @@ struct ipu_isys {
 	struct isys_iwake_watermark *iwake_watermark;
 #endif
 
+	struct mutex reset_mutex;
+	bool in_reset;
+	bool in_stop_streaming;
 };
 
 #if defined(IPU_IWAKE_ENABLE)
