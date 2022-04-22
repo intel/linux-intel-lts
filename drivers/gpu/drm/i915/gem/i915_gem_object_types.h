@@ -10,7 +10,6 @@
 #include <linux/mmu_notifier.h>
 
 #include <drm/drm_gem.h>
-#include <drm/ttm/ttm_bo_api.h>
 #include <uapi/drm/i915_drm.h>
 
 #include "i915_active.h"
@@ -180,16 +179,7 @@ struct i915_gem_object_page_iter {
 };
 
 struct drm_i915_gem_object {
-	/*
-	 * We might have reason to revisit the below since it wastes
-	 * a lot of space for non-ttm gem objects.
-	 * In any case, always use the accessors for the ttm_buffer_object
-	 * when accessing it.
-	 */
-	union {
-		struct drm_gem_object base;
-		struct ttm_buffer_object __do_not_access;
-	};
+	struct drm_gem_object base;
 
 	const struct drm_i915_gem_object_ops *ops;
 
