@@ -88,3 +88,6 @@
 
 # CVE-2022-1011
 0001-fuse-fix-pipe-buffer-lifetime-for-direct_io.patch
+
+# CVE-2022-28388
+0001-can-usb_8dev-usb_8dev_start_xmit-fix-double-dev_kfre.patch
