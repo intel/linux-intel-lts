@@ -33,7 +33,7 @@
         "Unit": "cpu_atom"
     },
     {
-        "BriefDescription": "Counts the number of cycles the core is stalled due to an instruction cache or TLB miss which hit in the last level cache or other core with HITE/F/M.",
+        "BriefDescription": "Counts the number of cycles the core is stalled due to an instruction cache or TLB miss which hit in the LLC or other core with HITE/F/M.",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5",
         "EventCode": "0x34",
