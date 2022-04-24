@@ -108,7 +108,7 @@
         "Unit": "cpu_atom"
     },
     {
-        "BriefDescription": "Counts the number of instructions retired. (Fixed event)",
+        "BriefDescription": "Counts the total number of instructions retired. (Fixed event)",
         "CollectPEBSRecord": "2",
         "Counter": "32",
         "EventName": "INST_RETIRED.ANY",
@@ -577,6 +577,17 @@
         "Unit": "cpu_core"
     },
     {
+        "BriefDescription": "Number of occurrences where a microcode assist is invoked by hardware.",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3,4,5,6,7",
+        "EventCode": "0xc1",
+        "EventName": "ASSISTS.ANY",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
+        "SampleAfterValue": "100003",
+        "UMask": "0x1f",
+        "Unit": "cpu_core"
+    },
+    {
         "BriefDescription": "All branch instructions retired.",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5,6,7",
@@ -764,6 +775,39 @@
         "PEBScounters": "0,1,2,3,4,5,6,7",
         "SampleAfterValue": "100007",
         "UMask": "0x8",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Core clocks when the thread is in the C0.1 light-weight slower wakeup time but more power saving optimized state.",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3,4,5,6,7",
+        "EventCode": "0xec",
+        "EventName": "CPU_CLK_UNHALTED.C01",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
+        "SampleAfterValue": "2000003",
+        "UMask": "0x10",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Core clocks when the thread is in the C0.2 light-weight faster wakeup time but less power saving optimized state.",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3,4,5,6,7",
+        "EventCode": "0xec",
+        "EventName": "CPU_CLK_UNHALTED.C02",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
+        "SampleAfterValue": "2000003",
+        "UMask": "0x20",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Core clocks when the thread is in the C0.1 or C0.2 or running a PAUSE in C0 ACPI state.",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3,4,5,6,7",
+        "EventCode": "0xec",
+        "EventName": "CPU_CLK_UNHALTED.C0_WAIT",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
+        "SampleAfterValue": "2000003",
+        "UMask": "0x70",
         "Unit": "cpu_core"
     },
     {
@@ -989,6 +1033,17 @@
         "PEBScounters": "0,1,2,3,4,5,6,7",
         "SampleAfterValue": "1000003",
         "UMask": "0x40",
+        "Unit": "cpu_core"
+    },
+    {
+        "BriefDescription": "Cycles no uop executed while RS was not empty, the SB was not full and there was no outstanding load.",
+        "CollectPEBSRecord": "2",
+        "Counter": "0,1,2,3,4,5,6,7",
+        "EventCode": "0xa6",
+        "EventName": "EXE_ACTIVITY.EXE_BOUND_0_PORTS",
+        "PEBScounters": "0,1,2,3,4,5,6,7",
+        "SampleAfterValue": "1000003",
+        "UMask": "0x80",
         "Unit": "cpu_core"
     },
     {
