@@ -120,4 +120,9 @@ static inline u32 lrc_desc_priority(int prio)
 		return GEN12_CTX_PRIORITY_NORMAL;
 }
 
+#define DG2_PREDICATE_RESULT_WA (PAGE_SIZE - sizeof(u64))
+#define DG2_PREDICATE_RESULT_BB (2048)
+
+u32 lrc_indirect_bb(const struct intel_context *ce);
+
 #endif /* __INTEL_LRC_H__ */
