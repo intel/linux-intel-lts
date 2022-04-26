@@ -366,7 +366,7 @@ static struct i915_gem_engines *default_engines(struct i915_gem_context *ctx)
 {
 	const struct intel_gt *gt = &ctx->i915->gt;
 	struct intel_engine_cs *engine;
-	struct i915_gem_engines *e, *err;
+	struct i915_gem_engines *e;
 	enum intel_engine_id id;
 
 	e = alloc_engines(I915_NUM_ENGINES);
@@ -384,21 +384,18 @@ static struct i915_gem_engines *default_engines(struct i915_gem_context *ctx)
 
 		ce = intel_context_create(engine);
 		if (IS_ERR(ce)) {
-			err = ERR_CAST(ce);
-			goto free_engines;
+			__free_engines(e, e->num_engines + 1);
+			return ERR_CAST(ce);
 		}
 
 		intel_context_set_gem(ce, ctx);
 
 		e->engines[engine->legacy_idx] = ce;
-		e->num_engines = max(e->num_engines, engine->legacy_idx + 1);
+		e->num_engines = max(e->num_engines, engine->legacy_idx);
 	}
+	e->num_engines++;
 
 	return e;
-
-free_engines:
-	free_engines(e);
-	return err;
 }
 
 void i915_gem_context_release(struct kref *ref)
