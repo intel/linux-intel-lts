@@ -38,6 +38,7 @@
 #include <drm/drm_device.h>
 #include <drm/drm_file.h>
 #include <drm/drm_ioctl.h>
+#include <drm/drm_irq.h>
 #include <drm/drm_legacy.h>
 #include <drm/drm_print.h>
 #include <drm/drm_sarea.h>
