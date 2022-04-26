@@ -490,7 +490,6 @@ static int __create_shmem(struct drm_i915_private *i915,
 static int shmem_object_init(struct intel_memory_region *mem,
 			     struct drm_i915_gem_object *obj,
 			     resource_size_t size,
-			     resource_size_t page_size,
 			     unsigned int flags)
 {
 	static struct lock_class_key lock_class;
@@ -549,7 +548,7 @@ i915_gem_object_create_shmem(struct drm_i915_private *i915,
 			     resource_size_t size)
 {
 	return i915_gem_object_create_region(i915->mm.regions[INTEL_REGION_SMEM],
-					     size, 0, 0);
+					     size, 0);
 }
 
 /* Allocate a new GEM object and fill it with the supplied data */
