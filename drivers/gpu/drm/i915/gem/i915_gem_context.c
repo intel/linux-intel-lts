@@ -1311,7 +1311,11 @@ static int set_ppgtt(struct drm_i915_file_private *file_priv,
 	if (upper_32_bits(args->value))
 		return -ENOENT;
 
-	vm = i915_gem_vm_lookup(file_priv, args->value);
+	rcu_read_lock();
+	vm = xa_load(&file_priv->vm_xa, args->value);
+	if (vm && !kref_get_unless_zero(&vm->ref))
+		vm = NULL;
+	rcu_read_unlock();
 	if (!vm)
 		return -ENOENT;
 
