@@ -1931,10 +1931,6 @@ struct drm_dp_aux {
 
 	/**
 	 * @hw_mutex: internal mutex used for locking transfers.
-	 *
-	 * Note that if the underlying hardware is shared among multiple
-	 * channels, the driver needs to do additional locking to
-	 * prevent concurrent access.
 	 */
 	struct mutex hw_mutex;
 
