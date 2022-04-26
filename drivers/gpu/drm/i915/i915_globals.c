@@ -59,7 +59,7 @@ int __init i915_globals_init(void)
 	return 0;
 }
 
-void i915_globals_exit(void)
+void __exit i915_globals_exit(void)
 {
 	__i915_globals_cleanup();
 }
