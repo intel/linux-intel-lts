@@ -183,12 +183,7 @@ int mipi_dbi_buf_copy(void *dst, struct drm_framebuffer *fb,
 #define mipi_dbi_command(dbi, cmd, seq...) \
 ({ \
 	const u8 d[] = { seq }; \
-	struct device *dev = &(dbi)->spi->dev;	\
-	int ret; \
-	ret = mipi_dbi_command_stackbuf(dbi, cmd, d, ARRAY_SIZE(d)); \
-	if (ret) \
-		dev_err_ratelimited(dev, "error %d when sending command %#02x\n", ret, cmd); \
-	ret; \
+	mipi_dbi_command_stackbuf(dbi, cmd, d, ARRAY_SIZE(d)); \
 })
 
 #ifdef CONFIG_DEBUG_FS
