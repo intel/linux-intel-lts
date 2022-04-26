@@ -23,6 +23,7 @@ int i915_globals_init(void);
 void i915_globals_exit(void);
 
 /* constructors */
+int i915_global_objects_init(void);
 int i915_global_request_init(void);
 int i915_global_scheduler_init(void);
 int i915_global_vma_init(void);
