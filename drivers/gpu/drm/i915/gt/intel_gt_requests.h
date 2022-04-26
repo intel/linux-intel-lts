@@ -6,7 +6,7 @@
 #ifndef INTEL_GT_REQUESTS_H
 #define INTEL_GT_REQUESTS_H
 
-#include <linux/stddef.h>
+#include <stddef.h>
 
 struct intel_engine_cs;
 struct intel_gt;
