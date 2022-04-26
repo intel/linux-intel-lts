@@ -680,15 +680,9 @@ __assign_mmap_offset(struct drm_i915_gem_object *obj,
 		return -ENODEV;
 
 	if (obj->ops->mmap_offset)  {
-		if (mmap_type != I915_MMAP_TYPE_FIXED)
-			return -ENODEV;
-
 		*offset = obj->ops->mmap_offset(obj);
 		return 0;
 	}
-
-	if (mmap_type == I915_MMAP_TYPE_FIXED)
-		return -ENODEV;
 
 	if (mmap_type != I915_MMAP_TYPE_GTT &&
 	    !i915_gem_object_has_struct_page(obj) &&
@@ -734,9 +728,7 @@ i915_gem_dumb_mmap_offset(struct drm_file *file,
 {
 	enum i915_mmap_type mmap_type;
 
-	if (HAS_LMEM(to_i915(dev)))
-		mmap_type = I915_MMAP_TYPE_FIXED;
-	else if (boot_cpu_has(X86_FEATURE_PAT))
+	if (boot_cpu_has(X86_FEATURE_PAT))
 		mmap_type = I915_MMAP_TYPE_WC;
 	else if (!i915_ggtt_has_aperture(&to_i915(dev)->ggtt))
 		return -ENODEV;
@@ -805,10 +797,6 @@ i915_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 		if (!boot_cpu_has(X86_FEATURE_PAT))
 			return -ENODEV;
 		type = I915_MMAP_TYPE_UC;
-		break;
-
-	case I915_MMAP_OFFSET_FIXED:
-		type = I915_MMAP_TYPE_FIXED;
 		break;
 
 	default:
@@ -981,9 +969,6 @@ int i915_gem_mmap(struct file *filp, struct vm_area_struct *vma)
 		vma->vm_ops = &vm_ops_cpu;
 		break;
 
-	case I915_MMAP_TYPE_FIXED:
-		GEM_WARN_ON(1);
-		fallthrough;
 	case I915_MMAP_TYPE_WB:
 		vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 		vma->vm_ops = &vm_ops_cpu;
