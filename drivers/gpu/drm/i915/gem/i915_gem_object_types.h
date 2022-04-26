@@ -444,10 +444,9 @@ struct drm_i915_gem_object {
 		struct intel_memory_region *region;
 
 		/**
-		 * Memory manager resource allocated for this object. Only
-		 * needed for the mock region.
+		 * Memory manager node allocated for this object.
 		 */
-		struct ttm_resource *res;
+		void *st_mm_node;
 
 		/**
 		 * Element within memory_region->objects or region->purgeable
