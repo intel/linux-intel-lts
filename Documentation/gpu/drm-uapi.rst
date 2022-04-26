@@ -37,15 +37,6 @@ Primary Nodes, DRM Master and Authentication
 .. kernel-doc:: include/drm/drm_auth.h
    :internal:
 
-
-.. _drm_leasing:
-
-DRM Display Resource Leasing
-============================
-
-.. kernel-doc:: drivers/gpu/drm/drm_lease.c
-   :doc: drm leasing
-
 Open-Source Userspace Requirements
 ==================================
 
