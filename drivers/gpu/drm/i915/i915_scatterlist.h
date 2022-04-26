@@ -13,8 +13,6 @@
 
 #include "i915_gem.h"
 
-struct drm_mm_node;
-
 /*
  * Optimised SGL iterator for GEM objects
  */
@@ -143,6 +141,4 @@ static inline unsigned int i915_sg_segment_size(void)
 
 bool i915_sg_trim(struct sg_table *orig_st);
 
-struct sg_table *i915_sg_from_mm_node(const struct drm_mm_node *node,
-				      u64 region_start);
 #endif
