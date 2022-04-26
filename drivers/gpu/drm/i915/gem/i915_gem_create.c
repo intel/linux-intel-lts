@@ -11,14 +11,13 @@
 #include "i915_trace.h"
 #include "i915_user_extensions.h"
 
-static u32 object_max_page_size(struct intel_memory_region **placements,
-				unsigned int n_placements)
+static u32 object_max_page_size(struct drm_i915_gem_object *obj)
 {
 	u32 max_page_size = 0;
 	int i;
 
-	for (i = 0; i < n_placements; i++) {
-		struct intel_memory_region *mr = placements[i];
+	for (i = 0; i < obj->mm.n_placements; i++) {
+		struct intel_memory_region *mr = obj->mm.placements[i];
 
 		GEM_BUG_ON(!is_power_of_2(mr->min_page_size));
 		max_page_size = max_t(u32, max_page_size, mr->min_page_size);
@@ -82,46 +81,22 @@ static int i915_gem_publish(struct drm_i915_gem_object *obj,
 	return 0;
 }
 
-/**
- * Creates a new object using the same path as DRM_I915_GEM_CREATE_EXT
- * @i915: i915 private
- * @size: size of the buffer, in bytes
- * @placements: possible placement regions, in priority order
- * @n_placements: number of possible placement regions
- *
- * This function is exposed primarily for selftests and does very little
- * error checking.  It is assumed that the set of placement regions has
- * already been verified to be valid.
- */
-struct drm_i915_gem_object *
-__i915_gem_object_create_user(struct drm_i915_private *i915, u64 size,
-			      struct intel_memory_region **placements,
-			      unsigned int n_placements)
+static int
+i915_gem_setup(struct drm_i915_gem_object *obj, u64 size)
 {
-	struct intel_memory_region *mr = placements[0];
-	struct drm_i915_gem_object *obj;
+	struct intel_memory_region *mr = obj->mm.placements[0];
 	unsigned int flags;
 	int ret;
 
-	i915_gem_flush_free_objects(i915);
-
-	size = round_up(size, object_max_page_size(placements, n_placements));
+	size = round_up(size, object_max_page_size(obj));
 	if (size == 0)
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 
 	/* For most of the ABI (e.g. mmap) we think in system pages */
 	GEM_BUG_ON(!IS_ALIGNED(size, PAGE_SIZE));
 
 	if (i915_gem_object_size_2big(size))
-		return ERR_PTR(-E2BIG);
-
-	obj = i915_gem_object_alloc();
-	if (!obj)
-		return ERR_PTR(-ENOMEM);
-
-	ret = object_set_placements(obj, placements, n_placements);
-	if (ret)
-		goto object_free;
+		return -E2BIG;
 
 	/*
 	 * I915_BO_ALLOC_USER will make sure the object is cleared before
@@ -131,18 +106,12 @@ __i915_gem_object_create_user(struct drm_i915_private *i915, u64 size,
 
 	ret = mr->ops->init_object(mr, obj, size, 0, flags);
 	if (ret)
-		goto object_free;
+		return ret;
 
 	GEM_BUG_ON(size != obj->base.size);
 
 	trace_i915_gem_object_create(obj);
-	return obj;
-
-object_free:
-	if (obj->mm.n_placements > 1)
-		kfree(obj->mm.placements);
-	i915_gem_object_free(obj);
-	return ERR_PTR(ret);
+	return 0;
 }
 
 int
@@ -155,6 +124,7 @@ i915_gem_dumb_create(struct drm_file *file,
 	enum intel_memory_type mem_type;
 	int cpp = DIV_ROUND_UP(args->bpp, 8);
 	u32 format;
+	int ret;
 
 	switch (cpp) {
 	case 1:
@@ -181,19 +151,32 @@ i915_gem_dumb_create(struct drm_file *file,
 	if (args->pitch < args->width)
 		return -EINVAL;
 
+	i915_gem_flush_free_objects(i915);
+
 	args->size = mul_u32_u32(args->pitch, args->height);
 
 	mem_type = INTEL_MEMORY_SYSTEM;
 	if (HAS_LMEM(to_i915(dev)))
 		mem_type = INTEL_MEMORY_LOCAL;
 
-	mr = intel_memory_region_by_type(to_i915(dev), mem_type);
+	obj = i915_gem_object_alloc();
+	if (!obj)
+		return -ENOMEM;
 
-	obj = __i915_gem_object_create_user(to_i915(dev), args->size, &mr, 1);
-	if (IS_ERR(obj))
-		return PTR_ERR(obj);
+	mr = intel_memory_region_by_type(to_i915(dev), mem_type);
+	ret = object_set_placements(obj, &mr, 1);
+	if (ret)
+		goto object_free;
+
+	ret = i915_gem_setup(obj, args->size);
+	if (ret)
+		goto object_free;
 
 	return i915_gem_publish(obj, file, &args->size, &args->handle);
+
+object_free:
+	i915_gem_object_free(obj);
+	return ret;
 }
 
 /**
@@ -210,14 +193,28 @@ i915_gem_create_ioctl(struct drm_device *dev, void *data,
 	struct drm_i915_gem_create *args = data;
 	struct drm_i915_gem_object *obj;
 	struct intel_memory_region *mr;
+	int ret;
+
+	i915_gem_flush_free_objects(i915);
+
+	obj = i915_gem_object_alloc();
+	if (!obj)
+		return -ENOMEM;
 
 	mr = intel_memory_region_by_type(i915, INTEL_MEMORY_SYSTEM);
+	ret = object_set_placements(obj, &mr, 1);
+	if (ret)
+		goto object_free;
 
-	obj = __i915_gem_object_create_user(i915, args->size, &mr, 1);
-	if (IS_ERR(obj))
-		return PTR_ERR(obj);
+	ret = i915_gem_setup(obj, args->size);
+	if (ret)
+		goto object_free;
 
 	return i915_gem_publish(obj, file, &args->size, &args->handle);
+
+object_free:
+	i915_gem_object_free(obj);
+	return ret;
 }
 
 struct create_ext {
@@ -379,24 +376,38 @@ i915_gem_create_ext_ioctl(struct drm_device *dev, void *data,
 	if (args->flags)
 		return -EINVAL;
 
+	i915_gem_flush_free_objects(i915);
+
+	obj = i915_gem_object_alloc();
+	if (!obj)
+		return -ENOMEM;
+
 	ret = i915_user_extensions(u64_to_user_ptr(args->extensions),
 				   create_extensions,
 				   ARRAY_SIZE(create_extensions),
 				   &ext_data);
 	if (ret)
-		return ret;
+		goto object_free;
 
 	if (!ext_data.n_placements) {
 		ext_data.placements[0] =
 			intel_memory_region_by_type(i915, INTEL_MEMORY_SYSTEM);
 		ext_data.n_placements = 1;
 	}
+	ret = object_set_placements(obj, ext_data.placements,
+				    ext_data.n_placements);
+	if (ret)
+		goto object_free;
 
-	obj = __i915_gem_object_create_user(i915, args->size,
-					    ext_data.placements,
-					    ext_data.n_placements);
-	if (IS_ERR(obj))
-		return PTR_ERR(obj);
+	ret = i915_gem_setup(obj, args->size);
+	if (ret)
+		goto object_free;
 
 	return i915_gem_publish(obj, file, &args->size, &args->handle);
+
+object_free:
+	if (obj->mm.n_placements > 1)
+		kfree(obj->mm.placements);
+	i915_gem_object_free(obj);
+	return ret;
 }
