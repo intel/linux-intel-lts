@@ -129,7 +129,6 @@ void i915_buddy_free(struct i915_buddy_mm *mm, struct i915_buddy_block *block);
 
 void i915_buddy_free_list(struct i915_buddy_mm *mm, struct list_head *objects);
 
-void i915_buddy_module_exit(void);
-int i915_buddy_module_init(void);
+int i915_global_buddy_init(void);
 
 #endif

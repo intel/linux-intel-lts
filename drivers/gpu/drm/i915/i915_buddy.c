@@ -8,9 +8,13 @@
 #include "i915_buddy.h"
 
 #include "i915_gem.h"
+#include "i915_globals.h"
 #include "i915_utils.h"
 
-static struct kmem_cache *slab_blocks;
+static struct i915_global_buddy {
+	struct i915_global base;
+	struct kmem_cache *slab_blocks;
+} global;
 
 static struct i915_buddy_block *i915_block_alloc(struct i915_buddy_mm *mm,
 						 struct i915_buddy_block *parent,
@@ -21,7 +25,7 @@ static struct i915_buddy_block *i915_block_alloc(struct i915_buddy_mm *mm,
 
 	GEM_BUG_ON(order > I915_BUDDY_MAX_ORDER);
 
-	block = kmem_cache_zalloc(slab_blocks, GFP_KERNEL);
+	block = kmem_cache_zalloc(global.slab_blocks, GFP_KERNEL);
 	if (!block)
 		return NULL;
 
@@ -36,7 +40,7 @@ static struct i915_buddy_block *i915_block_alloc(struct i915_buddy_mm *mm,
 static void i915_block_free(struct i915_buddy_mm *mm,
 			    struct i915_buddy_block *block)
 {
-	kmem_cache_free(slab_blocks, block);
+	kmem_cache_free(global.slab_blocks, block);
 }
 
 static void mark_allocated(struct i915_buddy_block *block)
@@ -406,16 +410,21 @@ err_free:
 #include "selftests/i915_buddy.c"
 #endif
 
-void i915_buddy_module_exit(void)
+static void i915_global_buddy_exit(void)
 {
-	kmem_cache_destroy(slab_blocks);
+	kmem_cache_destroy(global.slab_blocks);
 }
 
-int __init i915_buddy_module_init(void)
+static struct i915_global_buddy global = { {
+	.exit = i915_global_buddy_exit,
+} };
+
+int __init i915_global_buddy_init(void)
 {
-	slab_blocks = KMEM_CACHE(i915_buddy_block, 0);
-	if (!slab_blocks)
+	global.slab_blocks = KMEM_CACHE(i915_buddy_block, 0);
+	if (!global.slab_blocks)
 		return -ENOMEM;
 
+	i915_global_register(&global.base);
 	return 0;
 }
