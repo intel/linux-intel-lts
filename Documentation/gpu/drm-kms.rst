@@ -537,8 +537,8 @@ Plane Composition Properties
 Damage Tracking Properties
 --------------------------
 
-.. kernel-doc:: drivers/gpu/drm/drm_plane.c
-   :doc: damage tracking
+.. kernel-doc:: drivers/gpu/drm/drm_damage_helper.c
+   :doc: overview
 
 Color Management Properties
 ---------------------------
