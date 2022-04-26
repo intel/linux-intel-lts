@@ -247,7 +247,4 @@ static inline int __i915_request_await_exclusive(struct i915_request *rq,
 	return err;
 }
 
-void i915_active_module_exit(void);
-int i915_active_module_init(void);
-
 #endif /* _I915_ACTIVE_H_ */
