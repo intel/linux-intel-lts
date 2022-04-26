@@ -38,7 +38,6 @@ i915-y += i915_drv.o \
 	  i915_irq.o \
 	  i915_getparam.o \
 	  i915_mitigations.o \
-	  i915_module.o \
 	  i915_params.o \
 	  i915_pci.o \
 	  i915_scatterlist.o \
