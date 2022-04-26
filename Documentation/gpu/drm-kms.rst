@@ -159,8 +159,6 @@ KMS Core Structures and Functions
 .. kernel-doc:: drivers/gpu/drm/drm_mode_config.c
    :export:
 
-.. _kms_base_object_abstraction:
-
 Modeset Base Object Abstraction
 ===============================
 
