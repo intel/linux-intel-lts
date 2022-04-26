@@ -4,7 +4,7 @@
 #ifndef _DPU_HW_DSC_H
 #define _DPU_HW_DSC_H
 
-#include <drm/drm_dsc.h>
+#include <drm/display/drm_dsc.h>
 
 #define DSC_MODE_SPLIT_PANEL            BIT(0)
 #define DSC_MODE_MULTIPLEX              BIT(1)
