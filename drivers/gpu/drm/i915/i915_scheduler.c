@@ -7,11 +7,15 @@
 #include <linux/mutex.h>
 
 #include "i915_drv.h"
+#include "i915_globals.h"
 #include "i915_request.h"
 #include "i915_scheduler.h"
 
-static struct kmem_cache *slab_dependencies;
-static struct kmem_cache *slab_priorities;
+static struct i915_global_scheduler {
+	struct i915_global base;
+	struct kmem_cache *slab_dependencies;
+	struct kmem_cache *slab_priorities;
+} global;
 
 static DEFINE_SPINLOCK(schedule_lock);
 
@@ -89,7 +93,7 @@ find_priolist:
 	if (prio == I915_PRIORITY_NORMAL) {
 		p = &sched_engine->default_priolist;
 	} else {
-		p = kmem_cache_alloc(slab_priorities, GFP_ATOMIC);
+		p = kmem_cache_alloc(global.slab_priorities, GFP_ATOMIC);
 		/* Convert an allocation failure to a priority bump */
 		if (unlikely(!p)) {
 			prio = I915_PRIORITY_NORMAL; /* recurses just once */
@@ -118,7 +122,7 @@ find_priolist:
 
 void __i915_priolist_free(struct i915_priolist *p)
 {
-	kmem_cache_free(slab_priorities, p);
+	kmem_cache_free(global.slab_priorities, p);
 }
 
 struct sched_cache {
@@ -316,13 +320,13 @@ void i915_sched_node_reinit(struct i915_sched_node *node)
 static struct i915_dependency *
 i915_dependency_alloc(void)
 {
-	return kmem_cache_alloc(slab_dependencies, GFP_KERNEL);
+	return kmem_cache_alloc(global.slab_dependencies, GFP_KERNEL);
 }
 
 static void
 i915_dependency_free(struct i915_dependency *dep)
 {
-	kmem_cache_free(slab_dependencies, dep);
+	kmem_cache_free(global.slab_dependencies, dep);
 }
 
 bool __i915_sched_node_add_dependency(struct i915_sched_node *node,
@@ -485,27 +489,32 @@ i915_sched_engine_create(unsigned int subclass)
 	return sched_engine;
 }
 
-void i915_scheduler_module_exit(void)
+static void i915_global_scheduler_exit(void)
 {
-	kmem_cache_destroy(slab_dependencies);
-	kmem_cache_destroy(slab_priorities);
+	kmem_cache_destroy(global.slab_dependencies);
+	kmem_cache_destroy(global.slab_priorities);
 }
 
-int __init i915_scheduler_module_init(void)
+static struct i915_global_scheduler global = { {
+	.exit = i915_global_scheduler_exit,
+} };
+
+int __init i915_global_scheduler_init(void)
 {
-	slab_dependencies = KMEM_CACHE(i915_dependency,
+	global.slab_dependencies = KMEM_CACHE(i915_dependency,
 					      SLAB_HWCACHE_ALIGN |
 					      SLAB_TYPESAFE_BY_RCU);
-	if (!slab_dependencies)
+	if (!global.slab_dependencies)
 		return -ENOMEM;
 
-	slab_priorities = KMEM_CACHE(i915_priolist, 0);
-	if (!slab_priorities)
+	global.slab_priorities = KMEM_CACHE(i915_priolist, 0);
+	if (!global.slab_priorities)
 		goto err_priorities;
 
+	i915_global_register(&global.base);
 	return 0;
 
 err_priorities:
-	kmem_cache_destroy(slab_priorities);
+	kmem_cache_destroy(global.slab_priorities);
 	return -ENOMEM;
 }
