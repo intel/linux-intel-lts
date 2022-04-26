@@ -1723,8 +1723,9 @@ set_engines(struct i915_gem_context *ctx,
 		goto replace;
 	}
 
+	BUILD_BUG_ON(!IS_ALIGNED(sizeof(*user), sizeof(*user->engines)));
 	if (args->size < sizeof(*user) ||
-	    !IS_ALIGNED(args->size -  sizeof(*user), sizeof(*user->engines))) {
+	    !IS_ALIGNED(args->size, sizeof(*user->engines))) {
 		drm_dbg(&i915->drm, "Invalid size for engine array: %d\n",
 			args->size);
 		return -EINVAL;
