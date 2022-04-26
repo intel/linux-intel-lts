@@ -2108,6 +2108,12 @@ enum i915_request_state i915_test_request_state(struct i915_request *rq)
 #include "selftests/i915_request.c"
 #endif
 
+static void i915_global_request_shrink(void)
+{
+	kmem_cache_shrink(global.slab_execute_cbs);
+	kmem_cache_shrink(global.slab_requests);
+}
+
 static void i915_global_request_exit(void)
 {
 	kmem_cache_destroy(global.slab_execute_cbs);
@@ -2115,6 +2121,7 @@ static void i915_global_request_exit(void)
 }
 
 static struct i915_global_request global = { {
+	.shrink = i915_global_request_shrink,
 	.exit = i915_global_request_exit,
 } };
 

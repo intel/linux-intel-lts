@@ -428,12 +428,18 @@ void intel_context_fini(struct intel_context *ce)
 	i915_sw_fence_fini(&ce->guc_blocked);
 }
 
+static void i915_global_context_shrink(void)
+{
+	kmem_cache_shrink(global.slab_ce);
+}
+
 static void i915_global_context_exit(void)
 {
 	kmem_cache_destroy(global.slab_ce);
 }
 
 static struct i915_global_context global = { {
+	.shrink = i915_global_context_shrink,
 	.exit = i915_global_context_exit,
 } };
 
