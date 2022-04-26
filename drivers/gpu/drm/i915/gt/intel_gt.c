@@ -13,7 +13,6 @@
 #include "intel_gt_clock_utils.h"
 #include "intel_gt_pm.h"
 #include "intel_gt_requests.h"
-#include "intel_migrate.h"
 #include "intel_mocs.h"
 #include "intel_rc6.h"
 #include "intel_renderstate.h"
@@ -708,8 +707,6 @@ int intel_gt_init(struct intel_gt *gt)
 	if (err)
 		goto err_gt;
 
-	intel_migrate_init(&gt->migrate, gt);
-
 	goto out_fw;
 err_gt:
 	__intel_gt_disable(gt);
@@ -733,7 +730,6 @@ void intel_gt_driver_remove(struct intel_gt *gt)
 {
 	__intel_gt_disable(gt);
 
-	intel_migrate_fini(&gt->migrate);
 	intel_uc_driver_remove(&gt->uc);
 
 	intel_engines_release(gt);
