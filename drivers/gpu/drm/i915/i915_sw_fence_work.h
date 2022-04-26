@@ -17,7 +17,7 @@ struct dma_fence_work;
 
 struct dma_fence_work_ops {
 	const char *name;
-	void (*work)(struct dma_fence_work *f);
+	int (*work)(struct dma_fence_work *f);
 	void (*release)(struct dma_fence_work *f);
 };
 
