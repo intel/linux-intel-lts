@@ -4,5 +4,8 @@
 0001-KVM-x86-xen-Maintain-valid-mapping-of-Xen-shared_inf.patch
 0001-KVM-x86-Fix-wall-clock-writes-in-Xen-shared_info-not.patch
 
-#CVE-2022-0998
+# CVE-2022-0998
 0001-vdpa-clean-up-get_config_size-ret-value-handling.patch
+
+# CVE-2022-28893
+0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
