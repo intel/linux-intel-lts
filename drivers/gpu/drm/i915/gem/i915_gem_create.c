@@ -151,7 +151,7 @@ i915_gem_dumb_create(struct drm_file *file,
 	if (args->pitch < args->width)
 		return -EINVAL;
 
-	i915_gem_flush_free_objects(i915);
+	i915_gem_flush_free_objects(to_i915(dev));
 
 	args->size = mul_u32_u32(args->pitch, args->height);
 
