@@ -2065,7 +2065,9 @@ repeat_validate:
 
 	list_for_each_entry(ev, &eb->relocs, reloc_link) {
 		if (!have_copy) {
+			pagefault_disable();
 			err = eb_relocate_vma(eb, ev);
+			pagefault_enable();
 			if (err)
 				break;
 		} else {
