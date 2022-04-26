@@ -190,43 +190,6 @@ static int validate_priority(struct drm_i915_private *i915,
 	return 0;
 }
 
-static void proto_context_close(struct i915_gem_proto_context *pc)
-{
-	if (pc->vm)
-		i915_vm_put(pc->vm);
-	kfree(pc);
-}
-
-static struct i915_gem_proto_context *
-proto_context_create(struct drm_i915_private *i915, unsigned int flags)
-{
-	struct i915_gem_proto_context *pc, *err;
-
-	pc = kzalloc(sizeof(*pc), GFP_KERNEL);
-	if (!pc)
-		return ERR_PTR(-ENOMEM);
-
-	pc->user_flags = BIT(UCONTEXT_BANNABLE) |
-			 BIT(UCONTEXT_RECOVERABLE);
-	if (i915->params.enable_hangcheck)
-		pc->user_flags |= BIT(UCONTEXT_PERSISTENCE);
-	pc->sched.priority = I915_PRIORITY_NORMAL;
-
-	if (flags & I915_CONTEXT_CREATE_FLAGS_SINGLE_TIMELINE) {
-		if (!HAS_EXECLISTS(i915)) {
-			err = ERR_PTR(-EINVAL);
-			goto proto_close;
-		}
-		pc->single_timeline = true;
-	}
-
-	return pc;
-
-proto_close:
-	proto_context_close(pc);
-	return err;
-}
-
 static struct i915_address_space *
 context_get_vm_rcu(struct i915_gem_context *ctx)
 {
@@ -697,8 +660,7 @@ static int __context_set_persistence(struct i915_gem_context *ctx, bool state)
 }
 
 static struct i915_gem_context *
-__create_context(struct drm_i915_private *i915,
-		 const struct i915_gem_proto_context *pc)
+__create_context(struct drm_i915_private *i915)
 {
 	struct i915_gem_context *ctx;
 	struct i915_gem_engines *e;
@@ -711,7 +673,7 @@ __create_context(struct drm_i915_private *i915,
 
 	kref_init(&ctx->ref);
 	ctx->i915 = i915;
-	ctx->sched = pc->sched;
+	ctx->sched.priority = I915_PRIORITY_NORMAL;
 	mutex_init(&ctx->mutex);
 	INIT_LIST_HEAD(&ctx->link);
 
@@ -734,7 +696,9 @@ __create_context(struct drm_i915_private *i915,
 	 * is no remap info, it will be a NOP. */
 	ctx->remap_slice = ALL_L3_SLICES(i915);
 
-	ctx->user_flags = pc->user_flags;
+	i915_gem_context_set_bannable(ctx);
+	i915_gem_context_set_recoverable(ctx);
+	__context_set_persistence(ctx, true /* cgroup hook? */);
 
 	for (i = 0; i < ARRAY_SIZE(ctx->hang_timestamp); i++)
 		ctx->hang_timestamp[i] = jiffies - CONTEXT_FAST_HANG_JIFFIES;
@@ -822,22 +786,20 @@ static void __assign_ppgtt(struct i915_gem_context *ctx,
 }
 
 static struct i915_gem_context *
-i915_gem_create_context(struct drm_i915_private *i915,
-			const struct i915_gem_proto_context *pc)
+i915_gem_create_context(struct drm_i915_private *i915, unsigned int flags)
 {
 	struct i915_gem_context *ctx;
 	int ret;
 
-	ctx = __create_context(i915, pc);
+	if (flags & I915_CONTEXT_CREATE_FLAGS_SINGLE_TIMELINE &&
+	    !HAS_EXECLISTS(i915))
+		return ERR_PTR(-EINVAL);
+
+	ctx = __create_context(i915);
 	if (IS_ERR(ctx))
 		return ctx;
 
-	if (pc->vm) {
-		/* __assign_ppgtt() requires this mutex to be held */
-		mutex_lock(&ctx->mutex);
-		__assign_ppgtt(ctx, pc->vm);
-		mutex_unlock(&ctx->mutex);
-	} else if (HAS_FULL_PPGTT(i915)) {
+	if (HAS_FULL_PPGTT(i915)) {
 		struct i915_ppgtt *ppgtt;
 
 		ppgtt = i915_ppgtt_create(&i915->gt);
@@ -848,16 +810,14 @@ i915_gem_create_context(struct drm_i915_private *i915,
 			return ERR_CAST(ppgtt);
 		}
 
-		/* __assign_ppgtt() requires this mutex to be held */
 		mutex_lock(&ctx->mutex);
 		__assign_ppgtt(ctx, &ppgtt->vm);
 		mutex_unlock(&ctx->mutex);
 
-		/* __assign_ppgtt() takes another reference for us */
 		i915_vm_put(&ppgtt->vm);
 	}
 
-	if (pc->single_timeline) {
+	if (flags & I915_CONTEXT_CREATE_FLAGS_SINGLE_TIMELINE) {
 		ret = drm_syncobj_create(&ctx->syncobj,
 					 DRM_SYNCOBJ_CREATE_SIGNALED,
 					 NULL);
@@ -923,7 +883,6 @@ int i915_gem_context_open(struct drm_i915_private *i915,
 			  struct drm_file *file)
 {
 	struct drm_i915_file_private *file_priv = file->driver_priv;
-	struct i915_gem_proto_context *pc;
 	struct i915_gem_context *ctx;
 	int err;
 	u32 id;
@@ -933,14 +892,7 @@ int i915_gem_context_open(struct drm_i915_private *i915,
 	/* 0 reserved for invalid/unassigned ppgtt */
 	xa_init_flags(&file_priv->vm_xa, XA_FLAGS_ALLOC1);
 
-	pc = proto_context_create(i915, 0);
-	if (IS_ERR(pc)) {
-		err = PTR_ERR(pc);
-		goto err;
-	}
-
-	ctx = i915_gem_create_context(i915, pc);
-	proto_context_close(pc);
+	ctx = i915_gem_create_context(i915, 0);
 	if (IS_ERR(ctx)) {
 		err = PTR_ERR(ctx);
 		goto err;
@@ -1933,7 +1885,6 @@ int i915_gem_context_create_ioctl(struct drm_device *dev, void *data,
 {
 	struct drm_i915_private *i915 = to_i915(dev);
 	struct drm_i915_gem_context_create_ext *args = data;
-	struct i915_gem_proto_context *pc;
 	struct create_ext ext_data;
 	int ret;
 	u32 id;
@@ -1956,12 +1907,7 @@ int i915_gem_context_create_ioctl(struct drm_device *dev, void *data,
 		return -EIO;
 	}
 
-	pc = proto_context_create(i915, args->flags);
-	if (IS_ERR(pc))
-		return PTR_ERR(pc);
-
-	ext_data.ctx = i915_gem_create_context(i915, pc);
-	proto_context_close(pc);
+	ext_data.ctx = i915_gem_create_context(i915, args->flags);
 	if (IS_ERR(ext_data.ctx))
 		return PTR_ERR(ext_data.ctx);
 
