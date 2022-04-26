@@ -9,7 +9,6 @@
 #include "intel_region_ttm.h"
 #include "gem/i915_gem_lmem.h"
 #include "gem/i915_gem_region.h"
-#include "gem/i915_gem_ttm.h"
 #include "gt/intel_gt.h"
 
 static int init_fake_lmem_bar(struct intel_memory_region *mem)
@@ -108,7 +107,7 @@ out_no_io:
 static const struct intel_memory_region_ops intel_region_lmem_ops = {
 	.init = region_lmem_init,
 	.release = region_lmem_release,
-	.init_object = __i915_gem_ttm_object_init,
+	.init_object = __i915_gem_lmem_object_init,
 };
 
 struct intel_memory_region *
