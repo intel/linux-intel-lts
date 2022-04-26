@@ -7,6 +7,7 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 
+#include "gem/i915_gem_object.h"
 #include "i915_globals.h"
 #include "i915_request.h"
 #include "i915_scheduler.h"
@@ -30,6 +31,7 @@ static void __i915_globals_cleanup(void)
 }
 
 static __initconst int (* const initfn[])(void) = {
+	i915_global_gem_context_init,
 	i915_global_objects_init,
 	i915_global_request_init,
 	i915_global_scheduler_init,
