@@ -494,7 +494,7 @@ __i915_gem_object_get_sg(struct drm_i915_gem_object *obj,
 			 struct i915_gem_object_page_iter *iter,
 			 unsigned int n,
 			 unsigned int *offset,
-			 bool dma)
+			 bool allow_alloc, bool dma)
 {
 	struct scatterlist *sg;
 	unsigned int idx, count;
@@ -515,6 +515,9 @@ __i915_gem_object_get_sg(struct drm_i915_gem_object *obj,
 	 */
 	if (n < READ_ONCE(iter->sg_idx))
 		goto lookup;
+
+	if (!allow_alloc)
+		goto manual_lookup;
 
 	mutex_lock(&iter->lock);
 
@@ -565,7 +568,16 @@ scan:
 	if (unlikely(n < idx)) /* insertion completed by another thread */
 		goto lookup;
 
-	/* In case we failed to insert the entry into the radixtree, we need
+	goto manual_walk;
+
+manual_lookup:
+	idx = 0;
+	sg = obj->mm.pages->sgl;
+	count = __sg_page_count(sg);
+
+manual_walk:
+	/*
+	 * In case we failed to insert the entry into the radixtree, we need
 	 * to look beyond the current sg.
 	 */
 	while (idx + count <= n) {
@@ -612,7 +624,7 @@ i915_gem_object_get_page(struct drm_i915_gem_object *obj, unsigned int n)
 
 	GEM_BUG_ON(!i915_gem_object_has_struct_page(obj));
 
-	sg = i915_gem_object_get_sg(obj, n, &offset);
+	sg = i915_gem_object_get_sg(obj, n, &offset, true);
 	return nth_page(sg_page(sg), offset);
 }
 
@@ -638,7 +650,7 @@ i915_gem_object_get_dma_address_len(struct drm_i915_gem_object *obj,
 	struct scatterlist *sg;
 	unsigned int offset;
 
-	sg = i915_gem_object_get_sg_dma(obj, n, &offset);
+	sg = i915_gem_object_get_sg_dma(obj, n, &offset, true);
 
 	if (len)
 		*len = sg_dma_len(sg) - (offset << PAGE_SHIFT);
