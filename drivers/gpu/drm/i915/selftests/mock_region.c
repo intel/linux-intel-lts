@@ -3,7 +3,6 @@
  * Copyright © 2019-2021 Intel Corporation
  */
 
-#include <drm/ttm/ttm_placement.h>
 #include <linux/scatterlist.h>
 
 #include <drm/ttm/ttm_placement.h>
@@ -26,11 +25,10 @@ static int mock_region_get_pages(struct drm_i915_gem_object *obj)
 {
 	unsigned int flags;
 	struct sg_table *pages;
-	int err;
 
 	flags = I915_ALLOC_MIN_PAGE_SIZE;
 	if (obj->flags & I915_BO_ALLOC_CONTIGUOUS)
-		flags |= TTM_PL_FLAG_CONTIGUOUS;
+		flags |= I915_ALLOC_CONTIGUOUS;
 
 	obj->mm.res = intel_region_ttm_resource_alloc(obj->mm.region,
 						      obj->base.size,
@@ -40,17 +38,13 @@ static int mock_region_get_pages(struct drm_i915_gem_object *obj)
 
 	pages = intel_region_ttm_resource_to_st(obj->mm.region, obj->mm.res);
 	if (IS_ERR(pages)) {
-		err = PTR_ERR(pages);
-		goto err_free_resource;
+		intel_region_ttm_resource_free(obj->mm.region, obj->mm.res);
+		return PTR_ERR(pages);
 	}
 
 	__i915_gem_object_set_pages(obj, pages, i915_sg_dma_sizes(pages->sgl));
 
 	return 0;
-
-err_free_resource:
-	intel_region_ttm_resource_free(obj->mm.region, obj->mm.res);
-	return err;
 }
 
 static const struct drm_i915_gem_object_ops mock_region_obj_ops = {
