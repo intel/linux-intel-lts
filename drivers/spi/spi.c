@@ -851,7 +851,18 @@ int spi_register_board_info(struct spi_board_info const *info, unsigned n)
 
 /*-------------------------------------------------------------------------*/
 
-static void spi_set_cs(struct spi_device *spi, bool enable, bool force)
+/**
+ * spi_set_cs - assert or deassert the spi chip select.
+ * @spi: The spi device for which we set/unset the chip select
+ * @enable: bool value to assert or deassert the chip select
+ * @force: A true bool value indicates to force the chip select to
+ *	   given value, irrespective of what its current state is
+ *
+ * Called by spi drivers to assert or deassert the chip select
+ * during transactions.
+ */
+
+void spi_set_cs(struct spi_device *spi, bool enable, bool force)
 {
 	bool activate = enable;
 
@@ -918,6 +929,7 @@ static void spi_set_cs(struct spi_device *spi, bool enable, bool force)
 			spi_delay_exec(&spi->cs_inactive, NULL);
 	}
 }
+EXPORT_SYMBOL_GPL(spi_set_cs);
 
 #ifdef CONFIG_HAS_DMA
 int spi_map_buf(struct spi_controller *ctlr, struct device *dev,

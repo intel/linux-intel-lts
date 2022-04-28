@@ -712,6 +712,9 @@ extern struct spi_message *spi_get_next_queued_message(struct spi_controller *ct
 extern void spi_finalize_current_message(struct spi_controller *ctlr);
 extern void spi_finalize_current_transfer(struct spi_controller *ctlr);
 
+/* SPI driver calls this function to assert/deassert the chip select */
+extern void spi_set_cs(struct spi_device *spi, bool enable, bool force);
+
 /* Helper calls for driver to timestamp transfer */
 void spi_take_timestamp_pre(struct spi_controller *ctlr,
 			    struct spi_transfer *xfer,
