@@ -64,17 +64,6 @@ static const u32 csi2_be_soc_supported_raw_bayer_codes_pad[] = {
 	0,
 };
 
-static int get_supported_code_index(u32 code)
-{
-	int i;
-
-	for (i = 0; csi2_be_soc_supported_raw_bayer_codes_pad[i]; i++) {
-		if (csi2_be_soc_supported_raw_bayer_codes_pad[i] == code)
-			return i;
-	}
-	return -EINVAL;
-}
-
 static const u32 *csi2_be_soc_supported_codes[NR_OF_CSI2_BE_SOC_PADS];
 
 static struct v4l2_subdev_internal_ops csi2_be_soc_sd_internal_ops = {

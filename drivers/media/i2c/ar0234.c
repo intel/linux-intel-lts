@@ -1798,7 +1798,6 @@ static int ar0234_start_streaming(struct ar0234 *ar0234)
 	struct i2c_client *client = v4l2_get_subdevdata(&ar0234->sd);
 	const struct ar0234_reg_list *reg_list;
 	int link_freq_index, ret;
-	u32 val;
 
 	reg_list = &ar0234->cur_mode->reg_list;
 	ret = ar0234_write_reg_list(ar0234, reg_list);

@@ -100,56 +100,6 @@ struct ipu_isys_subdev_pdata acpi_subdev_pdata = {
 
 struct ipu_isys_subdev_pdata *ptr_built_in_pdata;
 
-/*
- * Add a request to create new i2c devices later on. i2c_new_device can't be
- * directly called from functions which are called by i2c_for_each_dev
- * function. Both takes a same mutex inside i2c core code.
- */
-static int add_new_i2c(unsigned short addr, unsigned short  bus,
-		       unsigned short flags, char *name, void *pdata)
-{
-	struct ipu_i2c_new_dev *newdev = kzalloc(sizeof(*newdev), GFP_KERNEL);
-
-	if (!newdev)
-		return -ENOMEM;
-
-	newdev->info.flags = flags;
-	newdev->info.addr = addr;
-	newdev->bus = bus;
-	newdev->info.platform_data = pdata;
-	strlcpy(newdev->info.type, name, sizeof(newdev->info.type));
-
-	list_add(&newdev->list, &new_devs);
-	return 0;
-}
-
-static int get_string_dsdt_data(struct device *dev, const u8 *dsdt,
-				int func, char *out, unsigned int size)
-{
-	struct acpi_handle *dev_handle = ACPI_HANDLE(dev);
-	union acpi_object *obj;
-	int ret = -ENODEV;
-
-	obj = acpi_evaluate_dsm(dev_handle, (void *)dsdt, 0, func, NULL);
-	if (!obj) {
-		dev_err(dev, "No dsdt field\n");
-		return -ENODEV;
-	}
-	dev_dbg(dev, "ACPI type %d", obj->type);
-
-	if ((obj->type != ACPI_TYPE_STRING) || !obj->string.pointer)
-		goto exit;
-
-	strlcpy(out, obj->string.pointer,
-		min((unsigned int)(obj->string.length + 1), size));
-	dev_info(dev, "DSDT string id: %s\n", out);
-
-	ret = 0;
-exit:
-	ACPI_FREE(obj);
-	return ret;
-}
-
 static int get_integer_dsdt_data(struct device *dev, const u8 *dsdt,
 				 int func, u64 *out)
 {
@@ -873,48 +823,6 @@ static int get_lt6911uxc_pdata(struct i2c_client *client,
 	}
 
 	client->dev.platform_data = lt6911uxc_sd;
-
-	return rval;
-}
-
-static int get_ar0234_pdata(struct i2c_client *client,
-			       struct ipu_camera_module_data *data,
-			       struct ipu_i2c_helper *helper,
-			       void *priv, size_t size)
-{
-	struct sensor_bios_data cam_data;
-	struct control_logic_data ctl_data;
-	struct ipu_isys_subdev_info *ar0234_sd;
-	int rval;
-
-	cam_data.dev = &client->dev;
-
-	ar0234_sd = kzalloc(sizeof(*ar0234_sd), GFP_KERNEL);
-
-	if (!ar0234_sd)
-		return -ENOMEM;
-
-	/* get sensor info from ssdb table generated from BIOS, save in sensor */
-	rval = ipu_acpi_get_cam_data(&client->dev, &cam_data);
-	if (rval) {
-		kfree(ar0234_sd);
-		return rval;
-	}
-
-	rval = ipu_acpi_get_dep_data(&client->dev, &ctl_data);
-	if (rval) {
-		kfree(ar0234_sd);
-		return rval;
-	}
-
-	rval = ar0234_populate(client->dev, &ar0234_sd, cam_data.i2c[0],
-				client->name, cam_data, ctl_data);
-	if (rval) {
-		kfree(ar0234_sd);
-		return rval;
-	}
-
-	client->dev.platform_data = ar0234_sd;
 
 	return rval;
 }

@@ -867,7 +867,6 @@ static void reset_stop_streaming(struct ipu_isys_video *av)
 
 static int reset_start_streaming(struct ipu_isys_video *av)
 {
-	struct ipu_isys_pipeline *ip = &av->ip;
 	struct ipu_isys_queue *aq = &av->aq;
 	unsigned long flags;
 	int rval;
@@ -880,7 +879,6 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 				struct
 				ipu_isys_buffer,
 				head);
-		struct vb2_buffer *vb = ipu_isys_buffer_to_vb2_buffer(ib);
 
 		list_del(&ib->head);
 		list_add_tail(&ib->head, &aq->incoming);
@@ -896,11 +894,9 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 {
 	struct ipu_isys *isys = self_av->isys;
 	struct ipu_bus_device *adev = isys->adev;
-	struct ipu_bus_driver *adrv = adev->adrv;
 	struct ipu_device *isp = isys->adev->isp;
 	struct ipu_isys_video *av = NULL;
 	struct ipu_isys_pipeline *ip = NULL;
-	struct ipu_isys_queue *aq = NULL;
 	struct ipu_isys_csi2_be_soc *csi2_be_soc = NULL;
 	int rval, i, j;
 	int has_streaming = 0;

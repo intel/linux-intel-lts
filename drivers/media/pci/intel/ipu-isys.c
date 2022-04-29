@@ -283,7 +283,6 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 #endif
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
-	struct ipu_isys_csi2_be_soc *csi2_be_soc;
 	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
 	struct ipu_isys_subdev_info **sd_info;
 	DECLARE_BITMAP(csi2_enable, 32);

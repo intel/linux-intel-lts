@@ -94,6 +94,7 @@ static struct ipu_isys_subdev_info ar0234_sd_2 = {
 	.fixup_spdata = ar0234_fixup_spdata,
 };
 
+#if !IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 static struct ipu_isys_csi2_config ar0234_csi2_cfg_3 = {
 	.nlanes = AR0234_LANES,
 	.port = 4,
@@ -122,6 +123,7 @@ static struct ipu_isys_subdev_info ar0234_sd_3 = {
 	},
 	.fixup_spdata = ar0234_fixup_spdata,
 };
+#endif
 
 static struct ipu_isys_csi2_config ar0234_csi2_cfg_4 = {
 	.nlanes = AR0234_LANES,
@@ -527,7 +529,9 @@ static struct ipu_isys_subdev_pdata pdata = {
 	.subdevs = (struct ipu_isys_subdev_info *[]) {
 		&ar0234_sd_1,
 		&ar0234_sd_2,
-	//	&ar0234_sd_3,
+#if !IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
+		&ar0234_sd_3,
+#endif
 		&ar0234_sd_4,
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 		&imx390_sd_1,
