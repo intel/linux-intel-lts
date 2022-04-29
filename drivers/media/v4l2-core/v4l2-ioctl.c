@@ -473,9 +473,9 @@ static void v4l_print_buffer(const void *arg, bool write_only)
 	const struct v4l2_plane *plane;
 	int i;
 
-	pr_cont("%02ld:%02d:%02d.%08ld index=%d, type=%s, stream=%u, "
+	pr_cont("%02d:%02d:%02d.%08ld index=%d, type=%s, stream=%u, "
 		"flags=0x%08x, field=%s, sequence=%d, memory=%s",
-		p->timestamp.tv_sec / 3600,
+		(int)p->timestamp.tv_sec / 3600,
 		(int)(p->timestamp.tv_sec / 60) % 60,
 		(int)(p->timestamp.tv_sec % 60),
 		(long)p->timestamp.tv_usec,
