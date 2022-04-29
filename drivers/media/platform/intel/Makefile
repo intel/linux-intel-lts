@@ -5,14 +5,6 @@ ifneq ($(EXTERNAL_BUILD), 1)
 srcpath := $(srctree)
 endif
 
-# force check the compile warning to make sure zero warnings
-# note we may have build issue when gcc upgraded.
-ccflags-y := -Wall -Wextra
-ccflags-y += $(call cc-disable-warning, unused-parameter)
-ccflags-y += $(call cc-disable-warning, implicit-fallthrough)
-ccflags-y += $(call cc-disable-warning, missing-field-initializers)
-ccflags-$(CONFIG_VIDEO_INTEL_IPU_WERROR) += -Werror
-
 ccflags-y += -I$(srcpath)/$(src)/../../../../include/
 ccflags-y += -I$(srcpath)/$(src)/../../pci/intel/
 
