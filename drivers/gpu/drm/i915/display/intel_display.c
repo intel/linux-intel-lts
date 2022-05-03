@@ -2809,9 +2809,11 @@ static int intel_crtc_compute_pipe_mode(struct intel_crtc_state *crtc_state)
 	return 0;
 }
 
-static int intel_crtc_compute_config(struct intel_crtc *crtc,
-				     struct intel_crtc_state *crtc_state)
+static int intel_crtc_compute_config(struct intel_atomic_state *state,
+				     struct intel_crtc *crtc)
 {
+	struct intel_crtc_state *crtc_state =
+		intel_atomic_get_new_crtc_state(state, crtc);
 	int ret;
 
 	ret = intel_crtc_compute_pipe_src(crtc_state);
@@ -5054,11 +5056,12 @@ compute_sink_pipe_bpp(const struct drm_connector_state *conn_state,
 }
 
 static int
-compute_baseline_pipe_bpp(struct intel_crtc *crtc,
-			  struct intel_crtc_state *pipe_config)
+compute_baseline_pipe_bpp(struct intel_atomic_state *state,
+			  struct intel_crtc *crtc)
 {
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
-	struct drm_atomic_state *state = pipe_config->uapi.state;
+	struct intel_crtc_state *pipe_config =
+		intel_atomic_get_new_crtc_state(state, crtc);
 	struct drm_connector *connector;
 	struct drm_connector_state *connector_state;
 	int bpp, i;
@@ -5074,7 +5077,7 @@ compute_baseline_pipe_bpp(struct intel_crtc *crtc,
 	pipe_config->pipe_bpp = bpp;
 
 	/* Clamp display bpp to connector max bpp */
-	for_each_new_connector_in_state(state, connector, connector_state, i) {
+	for_each_new_connector_in_state(&state->base, connector, connector_state, i) {
 		int ret;
 
 		if (connector_state->crtc != &crtc->base)
@@ -5634,18 +5637,18 @@ intel_crtc_prepare_cleared_state(struct intel_atomic_state *state,
 
 static int
 intel_modeset_pipe_config(struct intel_atomic_state *state,
-			  struct intel_crtc_state *pipe_config)
+			  struct intel_crtc *crtc)
 {
-	struct drm_crtc *crtc = pipe_config->uapi.crtc;
-	struct drm_i915_private *i915 = to_i915(pipe_config->uapi.crtc->dev);
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+	struct intel_crtc_state *pipe_config =
+		intel_atomic_get_new_crtc_state(state, crtc);
 	struct drm_connector *connector;
 	struct drm_connector_state *connector_state;
 	int pipe_src_w, pipe_src_h;
 	int base_bpp, ret, i;
 	bool retry = true;
 
-	pipe_config->cpu_transcoder =
-		(enum transcoder) to_intel_crtc(crtc)->pipe;
+	pipe_config->cpu_transcoder = (enum transcoder) crtc->pipe;
 
 	pipe_config->framestart_delay = 1;
 
@@ -5662,8 +5665,7 @@ intel_modeset_pipe_config(struct intel_atomic_state *state,
 	      (DRM_MODE_FLAG_PVSYNC | DRM_MODE_FLAG_NVSYNC)))
 		pipe_config->hw.adjusted_mode.flags |= DRM_MODE_FLAG_NVSYNC;
 
-	ret = compute_baseline_pipe_bpp(to_intel_crtc(crtc),
-					pipe_config);
+	ret = compute_baseline_pipe_bpp(state, crtc);
 	if (ret)
 		return ret;
 
@@ -5686,10 +5688,10 @@ intel_modeset_pipe_config(struct intel_atomic_state *state,
 		struct intel_encoder *encoder =
 			to_intel_encoder(connector_state->best_encoder);
 
-		if (connector_state->crtc != crtc)
+		if (connector_state->crtc != &crtc->base)
 			continue;
 
-		if (!check_single_encoder_cloning(state, to_intel_crtc(crtc), encoder)) {
+		if (!check_single_encoder_cloning(state, crtc, encoder)) {
 			drm_dbg_kms(&i915->drm,
 				    "rejecting invalid cloning configuration\n");
 			return -EINVAL;
@@ -5724,7 +5726,7 @@ encoder_retry:
 		struct intel_encoder *encoder =
 			to_intel_encoder(connector_state->best_encoder);
 
-		if (connector_state->crtc != crtc)
+		if (connector_state->crtc != &crtc->base)
 			continue;
 
 		ret = encoder->compute_config(encoder, pipe_config,
@@ -5743,7 +5745,7 @@ encoder_retry:
 		pipe_config->port_clock = pipe_config->hw.adjusted_mode.crtc_clock
 			* pipe_config->pixel_multiplier;
 
-	ret = intel_crtc_compute_config(to_intel_crtc(crtc), pipe_config);
+	ret = intel_crtc_compute_config(state, crtc);
 	if (ret == -EDEADLK)
 		return ret;
 	if (ret == -EAGAIN) {
@@ -5774,11 +5776,11 @@ encoder_retry:
 }
 
 static int
-intel_modeset_pipe_config_late(struct intel_crtc_state *crtc_state)
+intel_modeset_pipe_config_late(struct intel_atomic_state *state,
+			       struct intel_crtc *crtc)
 {
-	struct intel_atomic_state *state =
-		to_intel_atomic_state(crtc_state->uapi.state);
-	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct intel_crtc_state *crtc_state =
+		intel_atomic_get_new_crtc_state(state, crtc);
 	struct drm_connector_state *conn_state;
 	struct drm_connector *connector;
 	int i;
@@ -7721,7 +7723,7 @@ static int intel_atomic_check(struct drm_device *dev,
 		if (!new_crtc_state->hw.enable)
 			continue;
 
-		ret = intel_modeset_pipe_config(state, new_crtc_state);
+		ret = intel_modeset_pipe_config(state, crtc);
 		if (ret)
 			goto fail;
 
@@ -7735,7 +7737,7 @@ static int intel_atomic_check(struct drm_device *dev,
 		if (!intel_crtc_needs_modeset(new_crtc_state))
 			continue;
 
-		ret = intel_modeset_pipe_config_late(new_crtc_state);
+		ret = intel_modeset_pipe_config_late(state, crtc);
 		if (ret)
 			goto fail;
 
