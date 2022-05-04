@@ -578,6 +578,43 @@ int avs_ipc_get_fw_config(struct avs_dev *adev, struct avs_fw_cfg *cfg)
 	return ret;
 }
 
+int avs_ipc_set_fw_config(struct avs_dev *adev, size_t num_tlvs, ...)
+{
+	struct avs_tlv *tlv;
+	void *payload;
+	size_t offset;
+	va_list args;
+	int ret, i;
+
+	offset = ret = 0;
+
+	payload = kzalloc(AVS_MAILBOX_SIZE, GFP_KERNEL);
+	if (!payload)
+		return -ENOMEM;
+
+	va_start(args, num_tlvs);
+	for (i = 0; i < num_tlvs; i++) {
+		tlv = (struct avs_tlv *)(payload + offset);
+		tlv->type = va_arg(args, u32);
+		tlv->length = va_arg(args, u32);
+
+		offset += sizeof(*tlv) + tlv->length;
+		if (offset > AVS_MAILBOX_SIZE) {
+			ret = -ERANGE;
+			goto out;
+		}
+
+		memcpy(tlv->value, va_arg(args, u8*), tlv->length);
+	}
+
+	ret = avs_ipc_set_large_config(adev, AVS_BASEFW_MOD_ID, AVS_BASEFW_INST_ID,
+				       AVS_BASEFW_FIRMWARE_CONFIG, payload, offset);
+out:
+	va_end(args);
+	kfree(payload);
+	return ret;
+}
+
 int avs_ipc_get_hw_config(struct avs_dev *adev, struct avs_hw_cfg *cfg)
 {
 	struct avs_tlv *tlv;
