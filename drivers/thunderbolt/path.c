@@ -99,7 +99,8 @@ static int tb_path_find_src_hopid(struct tb_port *src,
  */
 struct tb_path *tb_path_discover(struct tb_port *src, int src_hopid,
 				 struct tb_port *dst, int dst_hopid,
-				 struct tb_port **last, const char *name)
+				 struct tb_port **last, const char *name,
+				 bool alloc_hopid)
 {
 	struct tb_port *out_port;
 	struct tb_regs_hop hop;
@@ -156,6 +157,7 @@ struct tb_path *tb_path_discover(struct tb_port *src, int src_hopid,
 	path->tb = src->sw->tb;
 	path->path_length = num_hops;
 	path->activated = true;
+	path->alloc_hopid = alloc_hopid;
 
 	path->hops = kcalloc(num_hops, sizeof(*path->hops), GFP_KERNEL);
 	if (!path->hops) {
@@ -177,13 +179,14 @@ struct tb_path *tb_path_discover(struct tb_port *src, int src_hopid,
 			goto err;
 		}
 
-		if (tb_port_alloc_in_hopid(p, h, h) < 0)
+		if (alloc_hopid && tb_port_alloc_in_hopid(p, h, h) < 0)
 			goto err;
 
 		out_port = &sw->ports[hop.out_port];
 		next_hop = hop.next_hop;
 
-		if (tb_port_alloc_out_hopid(out_port, next_hop, next_hop) < 0) {
+		if (alloc_hopid &&
+		    tb_port_alloc_out_hopid(out_port, next_hop, next_hop) < 0) {
 			tb_port_release_in_hopid(p, h);
 			goto err;
 		}
@@ -262,6 +265,8 @@ struct tb_path *tb_path_alloc(struct tb *tb, struct tb_port *src, int src_hopid,
 		kfree(path);
 		return NULL;
 	}
+
+	path->alloc_hopid = true;
 
 	in_hopid = src_hopid;
 	out_port = NULL;
@@ -345,17 +350,19 @@ err:
  */
 void tb_path_free(struct tb_path *path)
 {
-	int i;
+	if (path->alloc_hopid) {
+		int i;
 
-	for (i = 0; i < path->path_length; i++) {
-		const struct tb_path_hop *hop = &path->hops[i];
+		for (i = 0; i < path->path_length; i++) {
+			const struct tb_path_hop *hop = &path->hops[i];
 
-		if (hop->in_port)
-			tb_port_release_in_hopid(hop->in_port,
-						 hop->in_hop_index);
-		if (hop->out_port)
-			tb_port_release_out_hopid(hop->out_port,
-						  hop->next_hop_index);
+			if (hop->in_port)
+				tb_port_release_in_hopid(hop->in_port,
+							 hop->in_hop_index);
+			if (hop->out_port)
+				tb_port_release_out_hopid(hop->out_port,
+							  hop->next_hop_index);
+		}
 	}
 
 	kfree(path->hops);
