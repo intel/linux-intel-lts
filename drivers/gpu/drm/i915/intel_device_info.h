@@ -141,7 +141,6 @@ enum intel_ppgtt_type {
 	func(has_64bit_reloc); \
 	func(has_64k_pages); \
 	func(gpu_reset_clobbers_display); \
-	func(has_reset_engine); \
 	func(has_4tile); \
 	func(has_flat_ccs); \
 	func(has_global_mocs); \
