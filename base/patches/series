@@ -77,3 +77,9 @@
 
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
+
+# CVE-2022-1048
+0001-ALSA-pcm-Fix-races-among-concurrent-hw_params-and-hw.patch
+0002-ALSA-pcm-Fix-races-among-concurrent-read-write-and-b.patch
+0003-ALSA-pcm-Fix-races-among-concurrent-prepare-and-hw_p.patch
+0004-ALSA-pcm-Fix-races-among-concurrent-prealloc-proc-wr.patch
