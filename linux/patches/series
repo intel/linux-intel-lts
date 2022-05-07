@@ -9,3 +9,6 @@
 
 # CVE-2022-28893
 0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
+
+# CVE-2022-1353
+0001-af_key-add-__GFP_ZERO-flag-for-compose_sadb_supporte.patch
