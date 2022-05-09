@@ -38,13 +38,6 @@
 # CVE-2021-0929
 0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
 
-# CVE-2022-26490
-0001-nfc-st21nfca-Fix-potential-buffer-overflows-in-EVT_T.patch
-
-# CVE-2022-24958
-0001-usb-gadget-don-t-release-an-existing-dev-buf.patch
-0002-usb-gadget-clear-related-members-when-goto-fail.patch
-
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
 0002-f2fs-fix-to-avoid-panic-in-is_alive-if-metadata-is-i.patch
@@ -60,69 +53,14 @@
 # CVE-2021-4148
 0001-mm-khugepaged-skip-huge-page-collapse-for-special-fi.patch
 
-# CVE-2022-23037
-0001-xen-xenbus-don-t-let-xenbus_grant_ring-remove-grants.patch
-0002-xen-grant-table-add-gnttab_try_end_foreign_access.patch
-0003-xen-blkfront-don-t-use-gnttab_query_foreign_access-f.patch
-0004-xen-netfront-don-t-use-gnttab_query_foreign_access-f.patch
-0005-xen-scsifront-don-t-use-gnttab_query_foreign_access-.patch
-0006-xen-gntalloc-don-t-use-gnttab_query_foreign_access.patch
-0007-xen-remove-gnttab_query_foreign_access.patch
-0008-xen-9p-use-alloc-free_pages_exact.patch
-0009-xen-pvcalls-use-alloc-free_pages_exact.patch
-0010-xen-gnttab-fix-gnttab_end_foreign_access-without-pag.patch
-0011-xen-netfront-react-properly-to-failing-gnttab_end_fo.patch
+# CVE-2022-28893
+0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
 
-# CVE-2022-1011
-0001-fuse-fix-pipe-buffer-lifetime-for-direct_io.patch
+# CVE-2022-1048
+0001-ALSA-pcm-Fix-races-among-concurrent-hw_params-and-hw.patch
+0002-ALSA-pcm-Fix-races-among-concurrent-read-write-and-b.patch
+0003-ALSA-pcm-Fix-races-among-concurrent-prepare-and-hw_p.patch
+0004-ALSA-pcm-Fix-races-among-concurrent-prealloc-proc-wr.patch
 
-# CVE-2022-27666
-0001-esp-Fix-possible-buffer-overflow-in-ESP-transformati.patch
-
-# CVE-2022-0002
-# CVE-2022-0001
-# CVE-2022-23960
-0001-x86-speculation-Merge-one-test-in-spectre_v2_user_se.patch
-0002-x86-bugs-Unconditionally-allow-spectre_v2-retpoline-.patch
-0003-x86-speculation-Rename-RETPOLINE_AMD-to-RETPOLINE_LF.patch
-0004-x86-speculation-Add-eIBRS-Retpoline-options.patch
-0005-Documentation-hw-vuln-Update-spectre-doc.patch
-0007-x86-speculation-Include-unprivileged-eBPF-status-in-.patch
-0008-x86-speculation-Use-generic-retpoline-by-default-on-.patch
-0009-x86-speculation-Update-link-to-AMD-speculation-white.patch
-0010-x86-speculation-Warn-about-Spectre-v2-LFENCE-mitigat.patch
-0011-x86-speculation-Warn-about-eIBRS-LFENCE-Unprivileged.patch
-0012-arm-arm64-Provide-a-wrapper-for-SMCCC-1.1-calls.patch
-0013-arm-arm64-smccc-psci-add-arm_smccc_1_1_get_conduit.patch
-0014-ARM-report-Spectre-v2-status-through-sysfs.patch
-0015-ARM-early-traps-initialisation.patch
-0016-ARM-use-LOADADDR-to-get-load-address-of-sections.patch
-0017-ARM-Spectre-BHB-workaround.patch
-0018-ARM-include-unprivileged-BPF-status-in-Spectre-V2-re.patch
-0019-ARM-fix-build-error-when-BPF_SYSCALL-is-disabled.patch
-0020-ARM-fix-co-processor-register-typo.patch
-0021-ARM-Do-not-use-NOCROSSREFS-directive-with-ld.lld.patch
-0022-ARM-fix-build-warning-in-proc-v7-bugs.c.patch
-0023-ARM-Spectre-BHB-provide-empty-stub-for-non-config.patch
-0024-ARM-fix-Thumb2-regression-with-Spectre-BHB.patch
-0025-arm64-entry.S-Add-ventry-overflow-sanity-checks.patch
-0026-arm64-entry-Make-the-trampoline-cleanup-optional.patch
-0027-arm64-entry-Free-up-another-register-on-kpti-s-tramp.patch
-0028-arm64-entry-Move-the-trampoline-data-page-before-the.patch
-0029-arm64-entry-Allow-tramp_alias-to-access-symbols-afte.patch
-0030-arm64-entry-Don-t-assume-tramp_vectors-is-the-start-.patch
-0031-arm64-entry-Move-trampoline-macros-out-of-ifdef-d-se.patch
-0032-arm64-entry-Make-the-kpti-trampoline-s-kpti-sequence.patch
-0033-arm64-entry-Allow-the-trampoline-text-to-occupy-mult.patch
-0034-arm64-entry-Add-non-kpti-__bp_harden_el1_vectors-for.patch
-0035-arm64-entry-Add-vectors-that-have-the-bhb-mitigation.patch
-0036-arm64-entry-Add-macro-for-reading-symbol-addresses-f.patch
-0037-arm64-Add-percpu-vectors-for-EL1.patch
-0038-arm64-proton-pack-Report-Spectre-BHB-vulnerabilities.patch
-0039-KVM-arm64-Add-templates-for-BHB-mitigation-sequences.patch
-0040-arm64-Add-part-number-for-Arm-Cortex-A77.patch
-0041-arm64-Add-Neoverse-N2-Cortex-A710-CPU-part-definitio.patch
-0042-arm64-add-ID_AA64ISAR2_EL1-sys-register.patch
-0043-arm64-Add-Cortex-X2-CPU-part-definition.patch
-0044-arm64-Mitigate-spectre-style-branch-history-side-cha.patch
-0045-arm64-Use-the-clearbhb-instruction-in-mitigations.patch
+# CVE-2022-1353
+0001-af_key-add-__GFP_ZERO-flag-for-compose_sadb_supporte.patch
