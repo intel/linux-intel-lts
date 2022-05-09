@@ -73,3 +73,10 @@
 0002-ALSA-pcm-Fix-races-among-concurrent-read-write-and-b.patch
 0003-ALSA-pcm-Fix-races-among-concurrent-prepare-and-hw_p.patch
 0004-ALSA-pcm-Fix-races-among-concurrent-prealloc-proc-wr.patch
+
+# CVE-2022-1280
+0001-drm-add-a-locked-version-of-drm_is_current_master.patch
+0002-drm-protect-drm_master-pointers-in-drm_lease.c.patch
+0003-Subject-PATCH-drm-serialize-drm_file.master-with-a-n.patch
+0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
+0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
