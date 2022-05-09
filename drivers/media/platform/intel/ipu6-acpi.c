@@ -453,7 +453,7 @@ static void add_local_subdevs(struct ipu_isys_subdev_info *new_subdev_info)
 	}
 }
 
-static bool update_subdev(struct device dev,
+static bool update_subdev(struct device *dev,
 			struct ipu_isys_subdev_info *new_subdev_info,
 			struct ipu_isys_subdev_info **sd_info)
 {
@@ -465,49 +465,49 @@ static bool update_subdev(struct device dev,
 
 	/* csi2 */
 	if ((*sd_info)->csi2->port != new_subdev_info->csi2->port)
-		dev_info(&dev, "CSI2 Port %d -> %d",
+		dev_info(dev, "CSI2 Port %d -> %d",
 			(*sd_info)->csi2->port, new_subdev_info->csi2->port);
 
 	if ((*sd_info)->csi2->nlanes != new_subdev_info->csi2->nlanes)
-		dev_info(&dev, "CSI2 nlanes %d -> %d",
+		dev_info(dev, "CSI2 nlanes %d -> %d",
 			(*sd_info)->csi2->nlanes, new_subdev_info->csi2->nlanes);
 
 	/* i2c */
 	if ((*sd_info)->i2c.board_info.addr != new_subdev_info->i2c.board_info.addr)
-		dev_info(&dev, "I2C board_info addr %x -> %x",
+		dev_info(dev, "I2C board_info addr %x -> %x",
 			(*sd_info)->i2c.board_info.addr, new_subdev_info->i2c.board_info.addr);
 
 	if (strcmp((*sd_info)->i2c.i2c_adapter_bdf, new_subdev_info->i2c.i2c_adapter_bdf) != 0)
-		dev_info(&dev, "I2C bdf %s -> %s",
+		dev_info(dev, "I2C bdf %s -> %s",
 			(*sd_info)->i2c.i2c_adapter_bdf, new_subdev_info->i2c.i2c_adapter_bdf);
 
 	/* platform data */
 	if (ori_pdata->port != new_pdata->port)
-		dev_info(&dev, "Pdata port %d -> %d",
+		dev_info(dev, "Pdata port %d -> %d",
 			ori_pdata->port, new_pdata->port);
 
 	if (ori_pdata->lanes != new_pdata->lanes)
-		dev_info(&dev, "Pdata lanes %d -> %d",
+		dev_info(dev, "Pdata lanes %d -> %d",
 			ori_pdata->lanes, new_pdata->lanes);
 
 	if (ori_pdata->i2c_slave_address != new_pdata->i2c_slave_address)
-		dev_info(&dev, "Pdata I2C_slave_addr %x -> %x",
+		dev_info(dev, "Pdata I2C_slave_addr %x -> %x",
 			ori_pdata->i2c_slave_address, new_pdata->i2c_slave_address);
 
 	if (ori_pdata->irq_pin != new_pdata->irq_pin)
-		dev_info(&dev, "Pdata irq_pin %d -> %d",
+		dev_info(dev, "Pdata irq_pin %d -> %d",
 			ori_pdata->irq_pin, new_pdata->irq_pin);
 
 	if (strcmp(ori_pdata->irq_pin_name, new_pdata->irq_pin_name) != 0)
-		dev_info(&dev, "Pdata irq_pin_name %s -> %s",
+		dev_info(dev, "Pdata irq_pin_name %s -> %s",
 			ori_pdata->irq_pin_name, new_pdata->irq_pin_name);
 
 	if (ori_pdata->reset_pin != new_pdata->reset_pin)
-		dev_info(&dev, "Pdata reset_pin %d -> %d",
+		dev_info(dev, "Pdata reset_pin %d -> %d",
 			ori_pdata->reset_pin, new_pdata->reset_pin);
 
 	if (ori_pdata->detect_pin != new_pdata->detect_pin)
-		dev_info(&dev, "Pdata detect_pin %d -> %d",
+		dev_info(dev, "Pdata detect_pin %d -> %d",
 			ori_pdata->detect_pin, new_pdata->detect_pin);
 
 	(*sd_info)->csi2->port = new_subdev_info->csi2->port;
@@ -530,15 +530,15 @@ static bool update_subdev(struct device dev,
 	return true;
 }
 
-int compare_subdev(struct device dev,
+int compare_subdev(struct device *dev,
 			struct ipu_isys_subdev_info *new_subdev,
 			struct ipu_isys_subdev_info *existing_subdev)
 {
 	/* check for ACPI HID in existing pdata */
 	if (existing_subdev->acpi_hid) {
 		/* compare with HID for User Custom */
-		if (!strcmp(existing_subdev->acpi_hid, dev_name(&dev))) {
-			dev_info(&dev, "Found matching sensor : %s", dev_name(&dev));
+		if (!strcmp(existing_subdev->acpi_hid, dev_name(dev))) {
+			dev_info(dev, "Found matching sensor : %s", dev_name(dev));
 			return 0;
 		}
 	}
@@ -555,7 +555,7 @@ int compare_subdev(struct device dev,
 					new_subdev->i2c.board_info.platform_data;
 
 		if (existing_pdata->suffix == new_pdata->suffix) {
-			dev_info(&dev, "Found matching sensor : %s %c",
+			dev_info(dev, "Found matching sensor : %s %c",
 				existing_subdev->i2c.board_info.type,
 				existing_pdata->suffix);
 			return 0;
@@ -564,7 +564,7 @@ int compare_subdev(struct device dev,
 	return -1;
 }
 
-void update_pdata(struct device dev,
+void update_pdata(struct device *dev,
 			struct ipu_isys_subdev_info *new_subdev)
 {
 	struct ipu_isys_subdev_info *acpi_subdev;
@@ -653,12 +653,11 @@ int ar0234_populate(struct device dev,
 	return 0;
 }
 
-int lt6911uxc_populate(struct device dev,
+int lt6911uxc_populate(struct device *dev,
 			struct ipu_isys_subdev_info **lt6911uxc_sd,
-			struct ipu_i2c_info i2c,
 			char sensor_name[I2C_NAME_SIZE],
-			struct sensor_bios_data cam_data,
-			struct control_logic_data ctl_data)
+			struct sensor_bios_data *cam_data,
+			struct control_logic_data *ctl_data)
 {
 	struct lt6911uxc_platform_data *pdata;
 	struct ipu_isys_csi2_config *csi2_config;
@@ -676,44 +675,44 @@ int lt6911uxc_populate(struct device dev,
 	}
 
 	/* csi2 */
-	csi2_config->nlanes = cam_data.lanes;
-	csi2_config->port = cam_data.link;
+	csi2_config->nlanes = cam_data->lanes;
+	csi2_config->port = cam_data->link;
 	(*lt6911uxc_sd)->csi2 = csi2_config;
 
 	/* i2c */
-	(*lt6911uxc_sd)->i2c.board_info.addr = i2c.addr;
+	(*lt6911uxc_sd)->i2c.board_info.addr = cam_data->i2c[0].addr;
 	strlcpy((*lt6911uxc_sd)->i2c.board_info.type, sensor_name, I2C_NAME_SIZE);
-	strlcpy((*lt6911uxc_sd)->i2c.i2c_adapter_bdf, dev_name(dev.parent->parent->parent),
+	strlcpy((*lt6911uxc_sd)->i2c.i2c_adapter_bdf, dev_name(dev->parent->parent->parent),
 		sizeof((*lt6911uxc_sd)->i2c.i2c_adapter_bdf));
 
 	/* platform data */
-	pdata->port = cam_data.link;
-	pdata->lanes = cam_data.lanes;
-	pdata->i2c_slave_address = cam_data.i2c[0].addr;
+	pdata->port = cam_data->link;
+	pdata->lanes = cam_data->lanes;
+	pdata->i2c_slave_address = cam_data->i2c[0].addr;
 
 	/* use ascii */
-	if (cam_data.link > 0)
-		pdata->suffix = cam_data.link + SUFFIX_BASE;
+	if (cam_data->link > 0)
+		pdata->suffix = cam_data->link + SUFFIX_BASE;
 	else
-		dev_err(&dev, "INVALID MIPI PORT");
+		dev_err(dev, "INVALID MIPI PORT");
 
 	/* gpio */
-	if (ctl_data.completed && ctl_data.gpio_num > 0) {
-		for (i = 0; i < ctl_data.gpio_num; i++) {
+	if (ctl_data->completed && ctl_data->gpio_num > 0) {
+		for (i = 0; i < ctl_data->gpio_num; i++) {
 			/* check for RESET selection in BIOS */
-			if (ctl_data.gpio[i].valid && ctl_data.gpio[i].func == GPIO_RESET)
-				pdata->reset_pin = ctl_data.gpio[i].pin;
+			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_RESET)
+				pdata->reset_pin = ctl_data->gpio[i].pin;
 			/* check for READY_STAT selection in BIOS */
-			if (ctl_data.gpio[i].valid && ctl_data.gpio[i].func == GPIO_READY_STAT) {
-				pdata->irq_pin = ctl_data.gpio[i].pin;
+			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_READY_STAT) {
+				pdata->irq_pin = ctl_data->gpio[i].pin;
 				pdata->irq_pin_flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
 							IRQF_ONESHOT;
 				strlcpy(pdata->irq_pin_name, "READY_STAT", sizeof("READY_STAT"));
 				irq_set = true;
 			}
 			/* check for HDMI_DETECT selection in BIOS */
-			if (ctl_data.gpio[i].valid && ctl_data.gpio[i].func == GPIO_HDMI_DETECT)
-				pdata->detect_pin = ctl_data.gpio[i].pin;
+			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_HDMI_DETECT)
+				pdata->detect_pin = ctl_data->gpio[i].pin;
 		}
 	}
 
@@ -731,7 +730,7 @@ int lt6911uxc_populate(struct device dev,
 	update_pdata(dev, *lt6911uxc_sd);
 
 	/* pprval is used as an indicator to enumerate dummy port for HDMI use case */
-	if (cam_data.pprval != cam_data.link) {
+	if (cam_data->pprval != cam_data->link) {
 		struct ipu_isys_subdev_info *lt6911uxc_sd_dummy;
 		struct lt6911uxc_platform_data *pdata_dummy;
 		struct ipu_isys_csi2_config *csi2_config_dummy;
@@ -761,19 +760,19 @@ int lt6911uxc_populate(struct device dev,
 			return -ENOMEM;
 		}
 
-		pdata_dummy->port = cam_data.pprval;
-		pdata_dummy->lanes = cam_data.lanes;
+		pdata_dummy->port = cam_data->pprval;
+		pdata_dummy->lanes = cam_data->lanes;
 		pdata_dummy->i2c_slave_address = addr_dummy;
-		pdata_dummy->suffix = cam_data.pprval + SUFFIX_BASE;
+		pdata_dummy->suffix = cam_data->pprval + SUFFIX_BASE;
 		pdata_dummy->irq_pin = -1;
 
-		csi2_config_dummy->nlanes = cam_data.lanes;
-		csi2_config_dummy->port = cam_data.pprval;
+		csi2_config_dummy->nlanes = cam_data->lanes;
+		csi2_config_dummy->port = cam_data->pprval;
 
 		lt6911uxc_sd_dummy->csi2 = csi2_config_dummy;
 		lt6911uxc_sd_dummy->i2c.board_info.addr = addr_dummy;
 		strlcpy(lt6911uxc_sd_dummy->i2c.board_info.type, sensor_name, I2C_NAME_SIZE);
-		strlcpy(lt6911uxc_sd_dummy->i2c.i2c_adapter_bdf, dev_name(dev.parent->parent->parent),
+		strlcpy(lt6911uxc_sd_dummy->i2c.i2c_adapter_bdf, dev_name(dev->parent->parent->parent),
 			sizeof(lt6911uxc_sd_dummy->i2c.i2c_adapter_bdf));
 
 		lt6911uxc_sd_dummy->i2c.board_info.platform_data = pdata_dummy;
@@ -791,39 +790,60 @@ static int get_lt6911uxc_pdata(struct i2c_client *client,
 			       struct ipu_i2c_helper *helper,
 			       void *priv, size_t size)
 {
-	struct sensor_bios_data cam_data;
-	struct control_logic_data ctl_data;
+	struct sensor_bios_data *cam_data;
+	struct control_logic_data *ctl_data;
 	struct ipu_isys_subdev_info *lt6911uxc_sd;
 	int rval;
 
-	cam_data.dev = &client->dev;
-
-	lt6911uxc_sd = kzalloc(sizeof(*lt6911uxc_sd), GFP_KERNEL);
-	if (!lt6911uxc_sd)
+	cam_data = kzalloc(sizeof(*cam_data), GFP_KERNEL);
+	if (!cam_data)
 		return -ENOMEM;
 
+	cam_data->dev = &client->dev;
+
+	ctl_data = kzalloc(sizeof(*ctl_data), GFP_KERNEL);
+	if (!ctl_data) {
+		kfree(cam_data);
+		return -ENOMEM;
+	}
+
+	lt6911uxc_sd = kzalloc(sizeof(*lt6911uxc_sd), GFP_KERNEL);
+	if (!lt6911uxc_sd) {
+		kfree(cam_data);
+		kfree(ctl_data);
+		return -ENOMEM;
+	}
+
 	/* get sensor info from ssdb table generated from BIOS, save in sensor */
-	rval = ipu_acpi_get_cam_data(&client->dev, &cam_data);
+	rval = ipu_acpi_get_cam_data(&client->dev, cam_data);
 	if (rval) {
 		kfree(lt6911uxc_sd);
+		kfree(cam_data);
+		kfree(ctl_data);
 		return rval;
 	}
 
-	rval = ipu_acpi_get_dep_data(&client->dev, &ctl_data);
+	rval = ipu_acpi_get_dep_data(&client->dev, ctl_data);
 	if (rval) {
 		kfree(lt6911uxc_sd);
+		kfree(cam_data);
+		kfree(ctl_data);
 		return rval;
 	}
 
-	rval = lt6911uxc_populate(client->dev, &lt6911uxc_sd, cam_data.i2c[0],
+	rval = lt6911uxc_populate(&client->dev, &lt6911uxc_sd,
 				client->name, cam_data, ctl_data);
 	if (rval) {
 		kfree(lt6911uxc_sd);
+		kfree(cam_data);
+		kfree(ctl_data);
 		return rval;
 	}
 
 	client->dev.platform_data = lt6911uxc_sd;
 
+	kfree(cam_data);
+	kfree(ctl_data);
 	return rval;
 }
 
