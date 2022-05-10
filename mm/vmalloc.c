@@ -2442,6 +2442,7 @@ struct vm_struct *__get_vm_area_caller(unsigned long size, unsigned long flags,
 	return __get_vm_area_node(size, 1, PAGE_SHIFT, flags, start, end,
 				  NUMA_NO_NODE, GFP_KERNEL, caller);
 }
+EXPORT_SYMBOL_GPL(get_vm_area_caller);
 
 /**
  * get_vm_area - reserve a contiguous kernel virtual area
@@ -2490,6 +2491,7 @@ struct vm_struct *find_vm_area(const void *addr)
 
 	return va->vm;
 }
+EXPORT_SYMBOL_GPL(find_vm_area);
 
 /**
  * remove_vm_area - find and remove a continuous kernel virtual area

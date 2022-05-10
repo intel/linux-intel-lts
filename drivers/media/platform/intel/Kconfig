@@ -1,0 +1,18 @@
+config INTEL_IPU6_TGLRVP_PDATA
+	bool "Enable built in platform data for TGL RVP"
+	depends on VIDEO_INTEL_IPU6
+	help
+	Pre-ACPI system platform data is compiled inside kernel
+
+config INTEL_IPU6_ADLRVP_PDATA
+	bool "Enable built in platform data for ADL RVP"
+	depends on VIDEO_INTEL_IPU6
+	help
+	Pre-ACPI system platform data is compiled inside kernel
+config INTEL_IPU6_ACPI
+	bool "Enable IPU ACPI driver"
+	depends on VIDEO_INTEL_IPU6
+	help
+	Driver to read ACPI data from BIOS
+
+	This driver is used to read ACPI data from BIOS
