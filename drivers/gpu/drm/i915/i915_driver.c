@@ -1455,7 +1455,10 @@ static int i915_drm_resume_early(struct drm_device *dev)
 
 	intel_power_domains_resume(dev_priv);
 
+	intel_iov_resume(&to_gt(dev_priv)->iov);
+
 	enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
+
 
 	return ret;
 }
