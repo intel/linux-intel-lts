@@ -142,12 +142,7 @@ static void virtio_gpu_resource_flush(struct drm_plane *plane,
 
 	vgfb = to_virtio_gpu_framebuffer(plane->state->fb);
 	bo = gem_to_virtio_gpu_obj(vgfb->base.obj[0]);
-
-	if (bo && bo->dumb && (plane->state->fb != new_state->fb) &&
-	    ((plane->type == DRM_PLANE_TYPE_PRIMARY && bo->guest_blob) ||
-	    plane->type != DRM_PLANE_TYPE_PRIMARY))
-		fence = virtio_gpu_fence_alloc(vgdev, vgdev->fence_drv.context,
-					       0);
+	fence = virtio_gpu_fence_alloc(vgdev, vgdev->fence_drv.context, 0);
 
 	if (fence) {
 		objs = virtio_gpu_array_alloc(1);
