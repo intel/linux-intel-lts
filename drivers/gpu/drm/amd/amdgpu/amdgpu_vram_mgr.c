@@ -451,13 +451,35 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
 		pages_left -= pages;
 		++i;
 
-		if (pages > pages_left)
-			pages = pages_left;
-	}
-	spin_unlock(&mgr->lock);
+		mutex_lock(&mgr->lock);
+		drm_buddy_block_trim(mm,
+				     original_size,
+				     trim_list);
+		mutex_unlock(&mgr->lock);
 
-	if (i == 1)
-		node->base.placement |= TTM_PL_FLAG_CONTIGUOUS;
+		if (!list_empty(&temp))
+			list_splice_tail(trim_list, &vres->blocks);
+	}
+
+	vres->base.start = 0;
+	list_for_each_entry(block, &vres->blocks, link) {
+		unsigned long start;
+
+		start = amdgpu_vram_mgr_block_start(block) +
+			amdgpu_vram_mgr_block_size(block);
+		start >>= PAGE_SHIFT;
+
+		if (start > vres->base.num_pages)
+			start -= vres->base.num_pages;
+		else
+			start = 0;
+		vres->base.start = max(vres->base.start, start);
+
+		vis_usage += amdgpu_vram_mgr_vis_size(adev, block);
+	}
+
+	if (amdgpu_is_vram_mgr_blocks_contiguous(&vres->blocks))
+		vres->base.placement |= TTM_PL_FLAG_CONTIGUOUS;
 
 	if (adev->gmc.xgmi.connected_to_cpu)
 		node->base.bus.caching = ttm_cached;
