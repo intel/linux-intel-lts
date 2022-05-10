@@ -10,6 +10,7 @@
 
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_pm.h"
+#include "gt/iov/intel_iov.h"
 #include "gt/iov/intel_iov_provisioning.h"
 #include "gt/iov/intel_iov_state.h"
 #include "gt/iov/intel_iov_utils.h"
@@ -433,7 +434,7 @@ int i915_sriov_pf_enable_vfs(struct drm_i915_private *i915, int num_vfs)
 		goto fail;
 
 	/* hold the reference to runtime pm as long as VFs are enabled */
-	intel_gt_pm_get_untracked(to_gt(i915));
+	intel_iov_pf_get_pm_vfs(&to_gt(i915)->iov);
 
 	err = intel_iov_provisioning_verify(&to_gt(i915)->iov, num_vfs);
 	if (err == -ENODATA) {
@@ -534,7 +535,7 @@ int i915_sriov_pf_disable_vfs(struct drm_i915_private *i915)
 
 	pf_update_guc_clients(&to_gt(i915)->iov, 0);
 	intel_iov_provisioning_auto(&to_gt(i915)->iov, 0);
-	intel_gt_pm_put_untracked(to_gt(i915));
+	intel_iov_pf_put_pm_vfs(&to_gt(i915)->iov);
 
 	dev_info(dev, "Disabled %u VFs\n", num_vfs);
 	return 0;
