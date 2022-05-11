@@ -5513,23 +5513,6 @@
 #define  GAMMA_MODE_MODE_SPLIT	(3 << 0) /* ivb-bdw */
 #define  GAMMA_MODE_MODE_12BIT_MULTI_SEGMENTED	(3 << 0) /* icl + */
 
-#define DMC_V1_MMIO_START_RANGE	0x80000
-#define TGL_MAIN_MMIO_START	0x8F000
-#define TGL_MAIN_MMIO_END	0x8FFFF
-#define _TGL_PIPEA_MMIO_START	0x92000
-#define _TGL_PIPEA_MMIO_END	0x93FFF
-#define _TGL_PIPEB_MMIO_START	0x96000
-#define _TGL_PIPEB_MMIO_END	0x97FFF
-#define ADLP_PIPE_MMIO_START	0x5F000
-#define ADLP_PIPE_MMIO_END	0x5FFFF
-
-#define TGL_PIPE_MMIO_START(dmc_id)	_PICK_EVEN(((dmc_id) - 1), _TGL_PIPEA_MMIO_START,\
-						_TGL_PIPEB_MMIO_START)
-
-#define TGL_PIPE_MMIO_END(dmc_id)	_PICK_EVEN(((dmc_id) - 1), _TGL_PIPEA_MMIO_END,\
-						_TGL_PIPEB_MMIO_END)
-
-
 /* Display Internal Timeout Register */
 #define RM_TIMEOUT		_MMIO(0x42060)
 #define  MMIO_TIMEOUT_US(us)	((us) << 0)
