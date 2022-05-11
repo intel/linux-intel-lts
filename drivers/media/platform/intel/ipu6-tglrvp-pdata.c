@@ -470,13 +470,13 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_1 = {
 	.port = 1,
 	.lanes = LT6911UXC_LANES,
 	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
-	.irq_pin = 410,
+	.irq_pin = -1,
 	.irq_pin_name = "C2",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'a',
-	.reset_pin = 423,
-	.detect_pin = 175,
+	.reset_pin = -1,
+	.detect_pin = -1,
 };
 
 static struct ipu_isys_subdev_info  lt6911uxc_sd_1 = {
@@ -499,13 +499,13 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_2 = {
 	.port = 2,
 	.lanes = LT6911UXC_LANES,
 	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
-	.irq_pin = 170,
+	.irq_pin = -1,
 	.irq_pin_name = "B18",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
-	.reset_pin = 292,
-	.detect_pin = 510,
+	.reset_pin = -1,
+	.detect_pin = -1,
 };
 
 static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {
