@@ -72,19 +72,21 @@
 # CVE-2021-0929
 0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
 
-# CVE-2021-4197
-0001-cgroup-Use-open-time-credentials-for-process-migrato.patch
-0002-cgroup-Allocate-cgroup_file_ctx-for-kernfs_open_file.patch
-0003-cgroup-Use-open-time-cgroup-namespace-for-process-mi.patch
-0004-selftests-cgroup-Make-cg_create-use-0755-for-permiss.patch
-0005-selftests-cgroup-Test-open-time-credential-usage-for.patch
-0006-selftests-cgroup-Test-open-time-cgroup-namespace-usa.patch
-
 # CVE-2021-4148
 0001-mm-khugepaged-skip-huge-page-collapse-for-special-fi.patch
 
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
 
-# CVE-2022-1011
-0001-fuse-fix-pipe-buffer-lifetime-for-direct_io.patch
+# CVE-2022-1048
+0001-ALSA-pcm-Fix-races-among-concurrent-hw_params-and-hw.patch
+0002-ALSA-pcm-Fix-races-among-concurrent-read-write-and-b.patch
+0003-ALSA-pcm-Fix-races-among-concurrent-prepare-and-hw_p.patch
+0004-ALSA-pcm-Fix-races-among-concurrent-prealloc-proc-wr.patch
+
+# CVE-2022-1280
+0001-drm-add-a-locked-version-of-drm_is_current_master.patch
+0002-drm-protect-drm_master-pointers-in-drm_lease.c.patch
+0003-Subject-PATCH-drm-serialize-drm_file.master-with-a-n.patch
+0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
+0005-drm-drm_file-struct-kABI-compatibility-workaround.patch

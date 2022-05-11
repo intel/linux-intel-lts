@@ -877,6 +877,9 @@ CVEs fixed in 4.19.230:
   CVE-2022-25258: e5eb8d19aee115d8fb354d1eff1b8df700467164 USB: gadget: validate interface OS descriptor requests
   CVE-2022-25375: db9aaa3026298d652e98f777bc0f5756e2455dda usb: gadget: rndis: check size of RNDIS_MSG_SET command
 
+CVEs fixed in 4.19.231:
+  CVE-2022-20008: c91b06297563e84ac072464fe6cc141cc15435f0 mmc: block: fix read single on recovery logic
+
 CVEs fixed in 4.19.232:
   CVE-2022-26966: dde5ddf02a47487dd6efcc7077307f1d4e1ba337 sr9700: sanity check for packet length
   CVE-2022-27223: ebc465e894890a534ce05e035eae4829a2a47ba1 USB: gadget: validate endpoint index for xilinx udc
@@ -906,8 +909,22 @@ CVEs fixed in 4.19.237:
   CVE-2022-27666: ce89087966651ad41e103770efc5ce2742046284 esp: Fix possible buffer overflow in ESP transformation
   CVE-2022-28356: d14193111c436fc5de33206c67c7afd45c730099 llc: fix netdevice reference leaks in llc_ui_bind()
 
+CVEs fixed in 4.19.238:
+  CVE-2021-4197: 0bd407959f7d6671ba0617e2dbda3e89d8a0419f cgroup: Use open-time credentials for process migraton perm checks
+  CVE-2022-1011: 99db28212be68030c1db3a525f6bbdce39b039e9 fuse: fix pipe buffer lifetime for direct_io
+  CVE-2022-1198: 79e2f40c210a47f283bca352745068207798fbb9 drivers: hamradio: 6pack: fix UAF bug caused by mod_timer()
+  CVE-2022-1353: 693fe8af9a2625139de07bd1ae212a7d89c37795 af_key: add __GFP_ZERO flag for compose_sadb_supported in function pfkey_register
+  CVE-2022-1516: 4c240c5a105557e4546d0836e694868f22fd09b0 net/x25: Fix null-ptr-deref caused by x25_disconnect
+  CVE-2022-28389: a8bba9fd73775e66b4021b18f2193f769ce48a59 can: mcba_usb: mcba_usb_start_xmit(): fix double dev_kfree_skb in error path
+  CVE-2022-28390: dec3ed0c76483748268bf36ec278af660b0f80ba can: ems_usb: ems_usb_start_xmit(): fix double dev_kfree_skb() in error path
+
+CVEs fixed in 4.19.240:
+  CVE-2022-1204: de55a1338e6a48ff1e41ea8db1432496fbe2a62b ax25: Fix refcount leaks caused by ax25_cb_del()
+  CVE-2022-1205: 512f09df261b51b088f17d86dbdf300a3492523d ax25: Fix NULL pointer dereferences in ax25 timers
+  CVE-2022-28388: 8eb78da898079c0d7250c32ebf0c35fb81737abe can: usb_8dev: usb_8dev_start_xmit(): fix double dev_kfree_skb() in error path
+
  
-CVEs Fixed in this 4.19.237 LTS 4.19 release 
+CVEs Fixed in this 4.19.241 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -983,21 +1000,23 @@ CVEs Fixed in this 4.19.237 LTS 4.19 release
 # CVE-2021-0929
 0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
 
-# CVE-2021-4197
-0001-cgroup-Use-open-time-credentials-for-process-migrato.patch
-0002-cgroup-Allocate-cgroup_file_ctx-for-kernfs_open_file.patch
-0003-cgroup-Use-open-time-cgroup-namespace-for-process-mi.patch
-0004-selftests-cgroup-Make-cg_create-use-0755-for-permiss.patch
-0005-selftests-cgroup-Test-open-time-credential-usage-for.patch
-0006-selftests-cgroup-Test-open-time-cgroup-namespace-usa.patch
-
 # CVE-2021-4148
 0001-mm-khugepaged-skip-huge-page-collapse-for-special-fi.patch
 
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
 
-# CVE-2022-1011
-0001-fuse-fix-pipe-buffer-lifetime-for-direct_io.patch
+# CVE-2022-1048
+0001-ALSA-pcm-Fix-races-among-concurrent-hw_params-and-hw.patch
+0002-ALSA-pcm-Fix-races-among-concurrent-read-write-and-b.patch
+0003-ALSA-pcm-Fix-races-among-concurrent-prepare-and-hw_p.patch
+0004-ALSA-pcm-Fix-races-among-concurrent-prealloc-proc-wr.patch
+
+# CVE-2022-1280
+0001-drm-add-a-locked-version-of-drm_is_current_master.patch
+0002-drm-protect-drm_master-pointers-in-drm_lease.c.patch
+0003-Subject-PATCH-drm-serialize-drm_file.master-with-a-n.patch
+0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
+0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
  
 ================
