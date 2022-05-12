@@ -347,7 +347,7 @@ i915_gem_set_tiling_ioctl(struct drm_device *dev, void *data,
 	struct drm_i915_gem_object *obj;
 	int err;
 
-	if (!to_gt(dev_priv)->ggtt->num_fences)
+	if (!to_gt(dev_priv)->ggtt->num_fences && !IS_SRIOV_VF(dev_priv))
 		return -EOPNOTSUPP;
 
 	obj = i915_gem_object_lookup(file, args->handle);
@@ -430,7 +430,7 @@ i915_gem_get_tiling_ioctl(struct drm_device *dev, void *data,
 	struct drm_i915_gem_object *obj;
 	int err = -ENOENT;
 
-	if (!to_gt(dev_priv)->ggtt->num_fences)
+	if (!to_gt(dev_priv)->ggtt->num_fences && !IS_SRIOV_VF(dev_priv))
 		return -EOPNOTSUPP;
 
 	rcu_read_lock();
