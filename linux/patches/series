@@ -9,12 +9,3 @@
 
 # CVE-2022-28893
 0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
-
-# CVE-2022-1353
-0001-af_key-add-__GFP_ZERO-flag-for-compose_sadb_supporte.patch
-
-# CVE-2022-29582
-0001-io_uring-fix-race-between-timeout-flush-and-removal.patch
-
-# CVE-2022-1516
-0001-net-x25-Fix-null-ptr-deref-caused-by-x25_disconnect.patch
