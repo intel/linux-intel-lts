@@ -18,7 +18,6 @@ depot_stack_handle_t stack_depot_save(unsigned long *entries,
 
 unsigned int stack_depot_fetch(depot_stack_handle_t handle,
 			       unsigned long **entries);
-
 int stack_depot_snprint(depot_stack_handle_t handle, char *buf, size_t size,
 		       int spaces);
 
