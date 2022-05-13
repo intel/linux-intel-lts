@@ -87,19 +87,8 @@ typedef u64 gen8_pte_t;
 
 #define GEN12_PPGTT_PTE_LM	BIT_ULL(11)
 
-/*
- *  DOC: GEN12 GGTT Table Entry format
- *
- * +----------+---------+---------+-----------------+--------------+---------+
- * |    63:46 |   45:12 |    11:5 |             4:2 |            1 |       0 |
- * +==========+=========+=========+=================+==============+=========+
- * |  Ignored | Address | Ignored | Function Number | Local Memory | Present |
- * +----------+---------+---------+-----------------+--------------+---------+
- */
-
-#define GEN12_GGTT_PTE_LM		BIT_ULL(1)
-#define GEN12_GGTT_PTE_ADDR_MASK	GENMASK_ULL(45, 12)
-#define TGL_GGTT_PTE_VFID_MASK		GENMASK_ULL(4, 2)
+#define GEN12_GGTT_PTE_LM	BIT_ULL(1)
+#define TGL_GGTT_PTE_VFID_MASK	GENMASK_ULL(4, 2)
 
 /*
  * Cacheability Control is a 4-bit value. The low three bits are stored in bits
