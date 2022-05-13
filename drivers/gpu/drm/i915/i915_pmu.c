@@ -1151,7 +1151,7 @@ void i915_pmu_register(struct drm_i915_private *i915)
 
 	int ret = -ENOMEM;
 
-	if (GRAPHICS_VER(i915) <= 2 || IS_SRIOV_VF(i915)) {
+	if (GRAPHICS_VER(i915) <= 2) {
 		drm_info(&i915->drm, "PMU not supported for this GPU.");
 		return;
 	}

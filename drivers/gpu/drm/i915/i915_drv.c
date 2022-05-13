@@ -66,7 +66,6 @@
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_pm.h"
 #include "gt/intel_rc6.h"
-#include "gt/iov/intel_iov.h"
 
 #include "pxp/intel_pxp_pm.h"
 
@@ -429,8 +428,6 @@ static int i915_driver_mmio_probe(struct drm_i915_private *dev_priv)
 	if (ret)
 		goto err_uncore;
 
-	intel_power_domains_prune(dev_priv);
-
 	/* As early as possible, scrub existing GPU state before clobbering */
 	sanitize_gpu(dev_priv);
 
@@ -595,10 +592,6 @@ static int i915_driver_hw_probe(struct drm_i915_private *dev_priv)
 
 	pci_set_master(pdev);
 
-	/* Assume that VF is up, otherwise we may end with unknown state */
-	if (IS_SRIOV_VF(dev_priv))
-		ret = pci_set_power_state(pdev, PCI_D0);
-
 	/* On the 945G/GM, the chipset reports the MSI capability on the
 	 * integrated graphics even though the support isn't actually there
 	 * according to the published specs.  It doesn't appear to function
@@ -757,8 +750,6 @@ static void i915_welcome_messages(struct drm_i915_private *dev_priv)
 		intel_device_info_print_static(INTEL_INFO(dev_priv), &p);
 		intel_device_info_print_runtime(RUNTIME_INFO(dev_priv), &p);
 		intel_gt_info_print(&dev_priv->gt.info, &p);
-
-		drm_printf(&p, "mode: %s\n", i915_iov_mode_to_string(IOV_MODE(dev_priv)));
 	}
 
 	if (IS_ENABLED(CONFIG_DRM_I915_DEBUG))
@@ -794,29 +785,6 @@ i915_driver_create(struct pci_dev *pdev, const struct pci_device_id *ent)
 	RUNTIME_INFO(i915)->device_id = pdev->device;
 
 	return i915;
-}
-
-static void i915_virtualization_probe(struct drm_i915_private *i915)
-{
-	GEM_BUG_ON(i915->__mode);
-
-	intel_vgpu_detect(i915);
-	if (intel_vgpu_active(i915))
-		i915->__mode = I915_IOV_MODE_GVT_VGPU;
-	else
-		i915->__mode = i915_sriov_probe(i915);
-
-	GEM_BUG_ON(!i915->__mode);
-
-	if (IS_IOV_ACTIVE(i915))
-		dev_info(i915->drm.dev, "Running in %s mode\n",
-			 i915_iov_mode_to_string(IOV_MODE(i915)));
-}
-
-static void i915_virtualization_commit(struct drm_i915_private *i915)
-{
-	if (IS_SRIOV_PF(i915))
-		i915_sriov_pf_confirm(i915);
 }
 
 /**
@@ -885,15 +853,7 @@ int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	disable_rpm_wakeref_asserts(&i915->runtime_pm);
 
-	/* This must be called before any calls to IS/IOV_MODE() macros */
-	i915_virtualization_probe(i915);
-
-	ret = i915_sriov_early_tweaks(i915);
-	if (ret < 0)
-		goto out_pci_disable;
-
-	/* XXX find better place */
-	intel_iov_init_early(&to_gt(i915)->iov);
+	intel_vgpu_detect(i915);
 
 	ret = i915_driver_mmio_probe(i915);
 	if (ret < 0)
@@ -926,8 +886,6 @@ int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	i915_driver_register(i915);
 
 	enable_rpm_wakeref_asserts(&i915->runtime_pm);
-
-	i915_virtualization_commit(i915);
 
 	i915_welcome_messages(i915);
 

@@ -7,7 +7,6 @@
 #include <linux/firmware.h>
 #include <drm/drm_print.h>
 
-#include "abi/guc_version_abi.h"
 #include "gem/i915_gem_lmem.h"
 #include "intel_uc_fw.h"
 #include "intel_uc_fw_abi.h"
@@ -135,9 +134,6 @@ __uc_fw_auto_select(struct drm_i915_private *i915, struct intel_uc_fw *uc_fw)
 			uc_fw->path = blob->path;
 			uc_fw->major_ver_wanted = blob->major;
 			uc_fw->minor_ver_wanted = blob->minor;
-			/* XXX for now, all platforms use same latest version */
-			uc_fw->major_vf_ver_wanted = GUC_VF_VERSION_LATEST_MAJOR;
-			uc_fw->minor_vf_ver_wanted = GUC_VF_VERSION_LATEST_MINOR;
 			break;
 		}
 	}
@@ -237,46 +233,6 @@ void intel_uc_fw_init_early(struct intel_uc_fw *uc_fw,
 				  INTEL_UC_FIRMWARE_SELECTED :
 				  INTEL_UC_FIRMWARE_DISABLED :
 				  INTEL_UC_FIRMWARE_NOT_SUPPORTED);
-}
-
-/**
- * intel_uc_fw_set_preloaded() - set uC firmware as pre-loaded
- * @uc_fw: uC firmware structure
- * @major: major version of the pre-loaded firmware
- * @minor: minor version of the pre-loaded firmware
- *
- * If the uC firmware was loaded to h/w by other entity, just
- * mark it as loaded.
- *
- * Return: 0 on success or a negative error code on version mismatch.
- */
-int intel_uc_fw_set_preloaded(struct intel_uc_fw *uc_fw, u16 major, u16 minor)
-{
-	struct device *dev = __uc_fw_to_gt(uc_fw)->i915->drm.dev;
-
-	uc_fw->path = "PRELOADED";
-	uc_fw->major_ver_found = major;
-	uc_fw->minor_ver_found = minor;
-
-	if (!major && !minor)
-		goto done;
-
-	if (uc_fw->major_ver_found != uc_fw->major_vf_ver_wanted ||
-	    uc_fw->minor_ver_found < uc_fw->minor_vf_ver_wanted) {
-		dev_notice(dev, "%s firmware %s: unexpected version: %u.%u != %u.%u\n",
-			   intel_uc_fw_type_repr(uc_fw->type), uc_fw->path,
-			   uc_fw->major_ver_found, uc_fw->minor_ver_found,
-			   uc_fw->major_vf_ver_wanted, uc_fw->minor_vf_ver_wanted);
-		goto mismatch;
-	}
-
-done:
-	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_PRELOADED);
-	return 0;
-
-mismatch:
-	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_ERROR);
-	return -ENOEXEC;
 }
 
 static void __force_fw_fetch_failures(struct intel_uc_fw *uc_fw, int e)

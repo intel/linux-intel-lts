@@ -289,13 +289,6 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GTTMMADR_BAR		(0)
 #define GEN2_GTTMMADR_BAR	(1)
 #define GFXMEM_BAR		(2)
-#define GTT_APERTURE_BAR			GFXMEM_BAR
-#define GEN12_LMEM_BAR				GFXMEM_BAR
-
-#ifdef CONFIG_PCI_IOV
-#define GEN12_VF_GTTMMADR_BAR			(PCI_IOV_RESOURCES + GTTMMADR_BAR)
-#define GEN12_VF_LMEM_BAR			(PCI_IOV_RESOURCES + GEN12_LMEM_BAR)
-#endif
 
 /* BSM in include/drm/i915_drm.h */
 
@@ -8198,14 +8191,6 @@ enum {
 
 #define   ENGINE1_MASK			REG_GENMASK(31, 16)
 #define   ENGINE0_MASK			REG_GENMASK(15, 0)
-
-/* VF_CAPABILITY_REGISTER */
-#define GEN12_VF_CAP_REG		_MMIO(0x1901f8)
-#define   GEN12_VF			REG_BIT(0)
-
-/* VIRTUALIZATION CONTROL REGISTER */
-#define GEN12_VIRTUAL_CTRL_REG		_MMIO(0x10108C)
-#define   GEN12_GUEST_GTT_UPDATE_EN	REG_BIT(8)
 
 #define ILK_DISPLAY_CHICKEN2	_MMIO(0x42004)
 /* Required on all Ironlake and Sandybridge according to the B-Spec. */

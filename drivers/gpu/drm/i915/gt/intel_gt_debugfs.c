@@ -10,7 +10,6 @@
 #include "intel_gt_engines_debugfs.h"
 #include "intel_gt_pm_debugfs.h"
 #include "intel_sseu_debugfs.h"
-#include "iov/intel_iov_debugfs.h"
 #include "pxp/intel_pxp_debugfs.h"
 #include "uc/intel_uc_debugfs.h"
 
@@ -85,7 +84,6 @@ void intel_gt_debugfs_register(struct intel_gt *gt)
 	intel_sseu_debugfs_register(gt, root);
 
 	intel_uc_debugfs_register(&gt->uc, root);
-	intel_iov_debugfs_register(&gt->iov, root);
 	intel_pxp_debugfs_register(&gt->pxp, root);
 }
 
