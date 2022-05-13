@@ -3807,8 +3807,6 @@ int intel_guc_submission_setup(struct intel_engine_cs *engine)
 
 void intel_guc_submission_enable(struct intel_guc *guc)
 {
-	struct intel_gt *gt = guc_to_gt(guc);
-
 	guc_init_lrc_mapping(guc);
 
 	if (!IS_SRIOV_VF(gt->i915))
