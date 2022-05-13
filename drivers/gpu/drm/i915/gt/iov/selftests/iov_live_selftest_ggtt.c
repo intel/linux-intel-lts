@@ -471,7 +471,7 @@ test_other_ggtt_region(struct intel_iov *iov, gen8_pte_t __iomem *gsm,
 
 static void *map_gsm(struct intel_gt *gt, u64 ggtt_size)
 {
-	struct pci_dev *pdev = to_pci_dev(gt->i915->drm.dev);
+	struct pci_dev *pdev = gt->i915->drm.pdev;
 	struct device *dev = gt->i915->drm.dev;
 	u64 gsm_ggtt_size = (ggtt_size / I915_GTT_PAGE_SIZE_4K) *
 			    sizeof(gen8_pte_t);
