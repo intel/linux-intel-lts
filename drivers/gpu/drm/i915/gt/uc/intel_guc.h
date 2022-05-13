@@ -142,8 +142,6 @@ struct intel_guc {
 	bool submission_supported;
 	/** @submission_selected: tracks whether the user enabled GuC submission */
 	bool submission_selected;
-	/** @submission_initialized: tracks whether GuC submission has been initialised */
-	bool submission_initialized;
 	/**
 	 * @rc_supported: tracks whether we support GuC rc on the current platform
 	 */
@@ -161,6 +159,11 @@ struct intel_guc {
 	u32 ads_golden_ctxt_size;
 	/** @ads_engine_usage_size: size of engine usage in the ADS */
 	u32 ads_engine_usage_size;
+
+	/** @lrc_desc_pool: object allocated to hold the GuC LRC descriptor pool */
+	struct i915_vma *lrc_desc_pool;
+	/** @lrc_desc_pool_vaddr: contents of the GuC LRC descriptor pool */
+	void *lrc_desc_pool_vaddr;
 
 	/**
 	 * @context_lookup: used to resolve intel_context from guc_id, if a

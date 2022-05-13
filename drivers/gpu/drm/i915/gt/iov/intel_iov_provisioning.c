@@ -671,15 +671,15 @@ static int pf_push_config_ctxs(struct intel_iov *iov, unsigned int id, u16 begin
  * To facilitate the implementation of dynamic context provisioning, we introduced
  * the concept of granularity of contexts. For this purpose, we divided all contexts
  * into packages with size CTXS_GRANULARITY. The exception is the first package, whose
- * size is CTXS_MODULO, because GUC_MAX_CONTEXT_ID is an odd number.
+ * size is CTXS_MODULO, because GUC_MAX_LRC_DESCRIPTORS is an odd number.
  */
 #define CTXS_GRANULARITY 128
-#define CTXS_MODULO (GUC_MAX_CONTEXT_ID % CTXS_GRANULARITY)
+#define CTXS_MODULO (GUC_MAX_LRC_DESCRIPTORS % CTXS_GRANULARITY)
 #define CTXS_DELTA (CTXS_GRANULARITY - CTXS_MODULO)
 
 static u16 ctxs_bitmap_total_bits(void)
 {
-	return ALIGN(GUC_MAX_CONTEXT_ID, CTXS_GRANULARITY) / CTXS_GRANULARITY;
+	return ALIGN(GUC_MAX_LRC_DESCRIPTORS, CTXS_GRANULARITY) / CTXS_GRANULARITY;
 }
 
 static u16 __encode_ctxs_count(u16 num_ctxs, bool first)
@@ -1465,7 +1465,7 @@ static void pf_assign_ctxs_for_pf(struct intel_iov *iov)
 	pf_ctxs = decode_pf_ctxs_count(pf_ctxs_bits);
 
 	IOV_DEBUG(iov, "config: %s %u = %u pf + %u available\n",
-		  "contexts", GUC_MAX_CONTEXT_ID, pf_ctxs, GUC_MAX_CONTEXT_ID - pf_ctxs);
+		  "contexts", GUC_MAX_LRC_DESCRIPTORS, pf_ctxs, GUC_MAX_LRC_DESCRIPTORS - pf_ctxs);
 
 	provisioning->configs[0].begin_ctx = 0;
 	provisioning->configs[0].num_ctxs = pf_ctxs;
