@@ -33,14 +33,12 @@
 #include "gt/intel_rc6.h"
 #include "gt/intel_rps.h"
 #include "gt/sysfs_engines.h"
-#include "gt/iov/intel_iov_sysfs.h"
 
 #include "i915_drv.h"
-#include "i915_sriov_sysfs.h"
 #include "i915_sysfs.h"
 #include "intel_pm.h"
 
-struct drm_i915_private *kdev_minor_to_i915(struct device *kdev)
+static inline struct drm_i915_private *kdev_minor_to_i915(struct device *kdev)
 {
 	struct drm_minor *minor = dev_get_drvdata(kdev);
 	return to_i915(minor->dev);
@@ -569,32 +567,25 @@ void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 	ret = 0;
 	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 		ret = sysfs_create_files(&kdev->kobj, vlv_attrs);
-	else if (GRAPHICS_VER(dev_priv) >= 6 && !IS_SRIOV_VF(dev_priv))
+	else if (GRAPHICS_VER(dev_priv) >= 6)
 		ret = sysfs_create_files(&kdev->kobj, gen6_attrs);
 	if (ret)
 		drm_err(&dev_priv->drm, "RPS sysfs setup failed\n");
 
-	i915_sriov_sysfs_setup(dev_priv);
-
 	i915_setup_error_capture(kdev);
 
 	intel_engines_add_sysfs(dev_priv);
-
-	intel_iov_sysfs_setup(&to_gt(dev_priv)->iov);
 }
 
 void i915_teardown_sysfs(struct drm_i915_private *dev_priv)
 {
 	struct device *kdev = dev_priv->drm.primary->kdev;
 
-	intel_iov_sysfs_teardown(&to_gt(dev_priv)->iov);
 	i915_teardown_error_capture(kdev);
-
-	i915_sriov_sysfs_teardown(dev_priv);
 
 	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 		sysfs_remove_files(&kdev->kobj, vlv_attrs);
-	else if (GRAPHICS_VER(dev_priv) >= 6 && !IS_SRIOV_VF(dev_priv))
+	else
 		sysfs_remove_files(&kdev->kobj, gen6_attrs);
 	device_remove_bin_file(kdev,  &dpf_attrs_1);
 	device_remove_bin_file(kdev,  &dpf_attrs);
