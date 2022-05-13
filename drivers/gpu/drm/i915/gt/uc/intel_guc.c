@@ -906,7 +906,7 @@ static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 *action, u32 size)
 	if (GEM_WARN_ON(err))
 		return err;
 
-	action[1] = seqno;
+	action[2] = seqno;
 
 	err = intel_guc_send_busy_loop(guc, action, size, G2H_LEN_DW_INVALIDATE_TLB, true);
 	if (err) {
@@ -942,103 +942,6 @@ static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 *action, u32 size)
 }
 
 /*
- * Full TLB invalidation:
- * If invoked by PF, will invalidate the TLB's across all VFs and all engines.
- * If invoked by VF, will invalidate the TLB's across all engines, given the
- * VF is active.
- */
-int intel_guc_invalidate_tlb_full(struct intel_guc *guc,
-				  enum intel_guc_tlb_inval_mode mode)
-{
-	u32 action[] = {
-		IS_SRIOV_PF(guc_to_gt(guc)->i915) ?
-			INTEL_GUC_ACTION_TLB_INVALIDATION_ALL :
-			INTEL_GUC_ACTION_TLB_INVALIDATION,
-		0,
-		INTEL_GUC_TLB_INVAL_FULL << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
-			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
-			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
-	};
-
-	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_FULL(guc)) {
-		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
-		return 0;
-	}
-
-	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
-}
-
-/*
- * Selective TLB Invalidation for Address Range:
- * TLB's in the Address Range is Invalidated across all engines.
- */
-int intel_guc_invalidate_tlb_page_selective(struct intel_guc *guc,
-					    enum intel_guc_tlb_inval_mode mode,
-					    u64 start, u64 length, u32 asid)
-{
-	u64 vm_total = BIT_ULL(INTEL_INFO(guc_to_gt(guc)->i915)->ppgtt_size);
-	u32 address_mask = (ilog2(length) - ilog2(I915_GTT_PAGE_SIZE_4K));
-	u32 full_range = vm_total == length;
-	u32 action[] = {
-		INTEL_GUC_ACTION_TLB_INVALIDATION,
-		0,
-		INTEL_GUC_TLB_INVAL_PAGE_SELECTIVE << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
-			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
-			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
-		asid,
-		full_range ? full_range : lower_32_bits(start),
-		full_range ? 0 : upper_32_bits(start),
-		full_range ? 0 : address_mask,
-	};
-
-	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc)) {
-		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
-		return 0;
-	}
-
-	GEM_BUG_ON(!IS_ALIGNED(start, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(!IS_ALIGNED(length, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(range_overflows(start, length, vm_total));
-
-	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
-}
-
-/*
- * Selective TLB Invalidation for Context:
- * Invalidates all TLB's for a specific context across all engines.
- */
-int intel_guc_invalidate_tlb_page_selective_ctx(struct intel_guc *guc,
-						enum intel_guc_tlb_inval_mode mode,
-						u64 start, u64 length, u32 ctxid)
-{
-	u64 vm_total = BIT_ULL(INTEL_INFO(guc_to_gt(guc)->i915)->ppgtt_size);
-	u32 address_mask = (ilog2(length) - ilog2(I915_GTT_PAGE_SIZE_4K));
-	u32 full_range = vm_total == length;
-	u32 action[] = {
-		INTEL_GUC_ACTION_TLB_INVALIDATION,
-		0,
-		INTEL_GUC_TLB_INVAL_PAGE_SELECTIVE_CTX << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
-			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
-			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
-		ctxid,
-		full_range ? full_range : lower_32_bits(start),
-		full_range ? 0 : upper_32_bits(start),
-		full_range ? 0 : address_mask,
-	};
-
-	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc)) {
-		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
-		return 0;
-	}
-
-	GEM_BUG_ON(!IS_ALIGNED(start, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(!IS_ALIGNED(length, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(range_overflows(start, length, vm_total));
-
-	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
-}
-
-/*
  * Guc TLB Invalidation: Invalidate the TLB's of GuC itself.
  */
 int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
@@ -1046,10 +949,9 @@ int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
 {
 	u32 action[] = {
 		INTEL_GUC_ACTION_TLB_INVALIDATION,
+		INTEL_GUC_TLB_INVAL_GUC,
 		0,
-		INTEL_GUC_TLB_INVAL_GUC << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
-			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
-			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
+		mode,
 	};
 
 	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)) {
@@ -1084,9 +986,6 @@ void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p)
 	}
 
 	intel_uc_fw_dump(&guc->fw, p);
-
-	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
-		return;
 
 	with_intel_runtime_pm(uncore->rpm, wakeref) {
 		u32 status = intel_uncore_read(uncore, GUC_STATUS);

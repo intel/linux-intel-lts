@@ -186,18 +186,12 @@ void intel_uc_driver_remove(struct intel_uc *uc)
  */
 static void guc_clear_mmio_msg(struct intel_guc *guc)
 {
-	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
-		return;
-
 	intel_uncore_write(guc_to_gt(guc)->uncore, SOFT_SCRATCH(15), 0);
 }
 
 static void guc_get_mmio_msg(struct intel_guc *guc)
 {
 	u32 val;
-
-	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
-		return;
 
 	spin_lock_irq(&guc->irq_lock);
 
