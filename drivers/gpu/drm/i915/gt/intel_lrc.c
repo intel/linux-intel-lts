@@ -619,7 +619,7 @@ static const u8 *reg_offsets(const struct intel_engine_cs *engine)
 	GEM_BUG_ON(GRAPHICS_VER(engine->i915) >= 12 &&
 		   !intel_engine_has_relative_mmio(engine));
 
-	if (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE) {
+	if (engine->class == RENDER_CLASS) {
 		if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 55))
 			return dg2_rcs_offsets;
 		else if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 50))
@@ -713,8 +713,7 @@ static int lrc_ring_cmd_buf_cctl(const struct intel_engine_cs *engine)
 		 * simply to match the RCS context image layout.
 		 */
 		return 0xc6;
-	else if (engine->class != RENDER_CLASS &&
-		 engine->class != COMPUTE_CLASS)
+	else if (engine->class != RENDER_CLASS)
 		return -1;
 	else if (GRAPHICS_VER(engine->i915) >= 12)
 		return 0xb6;
@@ -1590,7 +1589,7 @@ void lrc_init_wa_ctx(struct intel_engine_cs *engine)
 	unsigned int i;
 	int err;
 
-	if (!(engine->flags & I915_ENGINE_HAS_RCS_REG_STATE))
+	if (engine->class != RENDER_CLASS)
 		return;
 
 	switch (GRAPHICS_VER(engine->i915)) {

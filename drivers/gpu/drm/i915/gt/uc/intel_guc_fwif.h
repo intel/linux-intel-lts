@@ -22,7 +22,6 @@
 /* Payload length only i.e. don't include G2H header length */
 #define G2H_LEN_DW_SCHED_CONTEXT_MODE_SET	2
 #define G2H_LEN_DW_DEREGISTER_CONTEXT		1
-#define G2H_LEN_DW_INVALIDATE_TLB		1
 
 #define GUC_CONTEXT_DISABLE		0
 #define GUC_CONTEXT_ENABLE		1
@@ -47,8 +46,8 @@
 #define GUC_VIDEO_CLASS			1
 #define GUC_VIDEOENHANCE_CLASS		2
 #define GUC_BLITTER_CLASS		3
-#define GUC_COMPUTE_CLASS		4
-#define GUC_LAST_ENGINE_CLASS		GUC_COMPUTE_CLASS
+#define GUC_RESERVED_CLASS		4
+#define GUC_LAST_ENGINE_CLASS		GUC_RESERVED_CLASS
 #define GUC_MAX_ENGINE_CLASSES		16
 #define GUC_MAX_INSTANCES_PER_CLASS	32
 
@@ -152,22 +151,6 @@
 #define GUC_ID_TO_ENGINE_INSTANCE(guc_id) \
 	(((guc_id) & GUC_ENGINE_INSTANCE_MASK) >> GUC_ENGINE_INSTANCE_SHIFT)
 
-/* the GuC arrays don't include OTHER_CLASS */
-static u8 engine_class_guc_class_map[] = {
-	[RENDER_CLASS]            = GUC_RENDER_CLASS,
-	[COPY_ENGINE_CLASS]       = GUC_BLITTER_CLASS,
-	[VIDEO_DECODE_CLASS]      = GUC_VIDEO_CLASS,
-	[VIDEO_ENHANCEMENT_CLASS] = GUC_VIDEOENHANCE_CLASS,
-	[COMPUTE_CLASS]           = GUC_COMPUTE_CLASS,
-};
-
-static u8 guc_class_engine_class_map[] = {
-	[GUC_RENDER_CLASS]       = RENDER_CLASS,
-	[GUC_BLITTER_CLASS]      = COPY_ENGINE_CLASS,
-	[GUC_VIDEO_CLASS]        = VIDEO_DECODE_CLASS,
-	[GUC_VIDEOENHANCE_CLASS] = VIDEO_ENHANCEMENT_CLASS,
-	[GUC_COMPUTE_CLASS]      = COMPUTE_CLASS,
-};
 #define SLPC_EVENT(id, c) (\
 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ID, id) | \
 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, c) \
@@ -175,18 +158,21 @@ FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, c) \
 
 static inline u8 engine_class_to_guc_class(u8 class)
 {
-	BUILD_BUG_ON(ARRAY_SIZE(engine_class_guc_class_map) != MAX_ENGINE_CLASS + 1);
+	BUILD_BUG_ON(GUC_RENDER_CLASS != RENDER_CLASS);
+	BUILD_BUG_ON(GUC_BLITTER_CLASS != COPY_ENGINE_CLASS);
+	BUILD_BUG_ON(GUC_VIDEO_CLASS != VIDEO_DECODE_CLASS);
+	BUILD_BUG_ON(GUC_VIDEOENHANCE_CLASS != VIDEO_ENHANCEMENT_CLASS);
 	GEM_BUG_ON(class > MAX_ENGINE_CLASS || class == OTHER_CLASS);
 
-	return engine_class_guc_class_map[class];
+	return class;
 }
 
 static inline u8 guc_class_to_engine_class(u8 guc_class)
 {
-	BUILD_BUG_ON(ARRAY_SIZE(guc_class_engine_class_map) != GUC_LAST_ENGINE_CLASS + 1);
 	GEM_BUG_ON(guc_class > GUC_LAST_ENGINE_CLASS);
+	GEM_BUG_ON(guc_class == GUC_RESERVED_CLASS);
 
-	return guc_class_engine_class_map[guc_class];
+	return guc_class;
 }
 
 /* Work item for submitting workloads into work queue of GuC. */
@@ -421,10 +407,5 @@ enum intel_guc_recv_message {
 	INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED = BIT(1),
 	INTEL_GUC_RECV_MSG_EXCEPTION = BIT(30),
 };
-
-#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) \
-	((intel_guc_ct_enabled(&(guc)->ct)) && \
-	 (intel_guc_submission_is_used(guc)) && \
-	 (GRAPHICS_VER(guc_to_gt((guc))->i915) >= 12))
 
 #endif

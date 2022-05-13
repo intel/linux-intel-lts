@@ -85,10 +85,6 @@ struct intel_guc_ct {
 
 	/** @stall_time: time of first time a CTB submission is stalled */
 	ktime_t stall_time;
-
-	int dead_ct_reason;
-	bool dead_ct_reported;
-	struct work_struct dead_ct_worker;
 };
 
 void intel_guc_ct_init_early(struct intel_guc_ct *ct);

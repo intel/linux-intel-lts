@@ -169,19 +169,19 @@ static u64 get_rc6(struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
 	struct i915_pmu *pmu = &i915->pmu;
-	intel_wakeref_t wakeref;
 	unsigned long flags;
+	bool awake = false;
 	u64 val;
 
-	wakeref = intel_gt_pm_get_if_awake(gt);
-	if (wakeref) {
+	if (intel_gt_pm_get_if_awake(gt)) {
 		val = __get_rc6(gt);
-		intel_gt_pm_put_async(gt, wakeref);
+		intel_gt_pm_put_async(gt);
+		awake = true;
 	}
 
 	spin_lock_irqsave(&pmu->lock, flags);
 
-	if (wakeref) {
+	if (awake) {
 		pmu->sample[__I915_SAMPLE_RC6].cur = val;
 	} else {
 		/*
@@ -375,14 +375,12 @@ frequency_sample(struct intel_gt *gt, unsigned int period_ns)
 	struct intel_uncore *uncore = gt->uncore;
 	struct i915_pmu *pmu = &i915->pmu;
 	struct intel_rps *rps = &gt->rps;
-	intel_wakeref_t wakeref;
 
 	if (!frequency_sampling_enabled(pmu))
 		return;
 
 	/* Report 0/0 (actual/requested) frequency while parked. */
-	wakeref = intel_gt_pm_get_if_awake(gt);
-	if (!wakeref)
+	if (!intel_gt_pm_get_if_awake(gt))
 		return;
 
 	if (pmu->enable & config_mask(I915_PMU_ACTUAL_FREQUENCY)) {
@@ -413,7 +411,7 @@ frequency_sample(struct intel_gt *gt, unsigned int period_ns)
 				period_ns / 1000);
 	}
 
-	intel_gt_pm_put_async(gt, wakeref);
+	intel_gt_pm_put_async(gt);
 }
 
 static enum hrtimer_restart i915_sample(struct hrtimer *hrtimer)
