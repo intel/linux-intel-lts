@@ -439,13 +439,5 @@ enum intel_guc_recv_message {
 	((intel_guc_ct_enabled(&(guc)->ct)) && \
 	 (intel_guc_submission_is_used(guc)) && \
 	 (GRAPHICS_VER(guc_to_gt((guc))->i915) >= 12))
-#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_ENGINE(guc) \
-	INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)
-#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_FULL(guc) \
-	(INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) && \
-	HAS_SELECTIVE_TLB_INVALIDATION(guc_to_gt(guc)->i915))
-#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc) \
-	(INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) && \
-	HAS_SELECTIVE_TLB_INVALIDATION(guc_to_gt(guc)->i915))
 
 #endif

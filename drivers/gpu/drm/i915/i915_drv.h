@@ -1755,9 +1755,6 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 
 #define HAS_SRIOV(dev_priv)	(INTEL_INFO(dev_priv)->has_sriov)
 
-#define HAS_SELECTIVE_TLB_INVALIDATION(dev_priv) \
-	(INTEL_INFO(dev_priv)->has_selective_tlb_invalidation)
-
 #define HAS_POOLED_EU(dev_priv)	(INTEL_INFO(dev_priv)->has_pooled_eu)
 
 #define HAS_GLOBAL_MOCS_REGISTERS(dev_priv)	(INTEL_INFO(dev_priv)->has_global_mocs)
