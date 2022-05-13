@@ -23,7 +23,7 @@
 int intel_gt_pm_debugfs_forcewake_user_open(struct intel_gt *gt)
 {
 	atomic_inc(&gt->user_wakeref);
-	intel_gt_pm_get_untracked(gt);
+	intel_gt_pm_get(gt);
 	if (GRAPHICS_VER(gt->i915) >= 6)
 		intel_uncore_forcewake_user_get(gt->uncore);
 
@@ -34,7 +34,7 @@ int intel_gt_pm_debugfs_forcewake_user_release(struct intel_gt *gt)
 {
 	if (GRAPHICS_VER(gt->i915) >= 6)
 		intel_uncore_forcewake_user_put(gt->uncore);
-	intel_gt_pm_put_untracked(gt);
+	intel_gt_pm_put(gt);
 	atomic_dec(&gt->user_wakeref);
 
 	return 0;

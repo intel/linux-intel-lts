@@ -1046,7 +1046,7 @@ static void scrub_guc_desc_for_outstanding_g2h(struct intel_guc *guc)
 			if (deregister)
 				guc_signal_context_fence(ce);
 			if (destroyed) {
-				intel_gt_pm_put_async_untracked(guc_to_gt(guc));
+				intel_gt_pm_put_async(guc_to_gt(guc));
 				release_guc_id(guc, ce);
 				__guc_context_destroy(ce);
 			}
@@ -1183,7 +1183,6 @@ static ktime_t guc_engine_busyness(struct intel_engine_cs *engine, ktime_t *now)
 	unsigned long flags;
 	u32 reset_count;
 	bool in_reset;
-	intel_wakeref_t wakeref;
 
 	spin_lock_irqsave(&guc->timestamp.lock, flags);
 
@@ -1206,12 +1205,12 @@ static ktime_t guc_engine_busyness(struct intel_engine_cs *engine, ktime_t *now)
 	 * start_gt_clk is derived from GuC state. To get a consistent
 	 * view of activity, we query the GuC state only if gt is awake.
 	 */
-	if (!in_reset && (wakeref = intel_gt_pm_get_if_awake(gt))) {
+	if (intel_gt_pm_get_if_awake(gt) && !in_reset) {
 		stats_saved = *stats;
 		gt_stamp_saved = guc->timestamp.gt_stamp;
 		guc_update_engine_gt_clks(engine);
 		guc_update_pm_timestamp(guc, engine, now);
-		intel_gt_pm_put_async(gt, wakeref);
+		intel_gt_pm_put_async(gt);
 		if (i915_reset_count(gpu_error) != reset_count) {
 			*stats = stats_saved;
 			guc->timestamp.gt_stamp = gt_stamp_saved;
@@ -1768,7 +1767,6 @@ int intel_guc_submission_init(struct intel_guc *guc)
 	GEM_BUG_ON(!guc->lrc_desc_pool);
 
 	xa_init_flags(&guc->context_lookup, XA_FLAGS_LOCK_IRQ);
-	xa_init_flags(&guc->tlb_lookup, XA_FLAGS_ALLOC);
 
 	spin_lock_init(&guc->submission_state.lock);
 	INIT_LIST_HEAD(&guc->submission_state.guc_id_list);
@@ -1798,7 +1796,6 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	guc_lrc_desc_pool_destroy(guc);
 	i915_sched_engine_put(guc->sched_engine);
 	bitmap_free(guc->submission_state.guc_ids_bitmap);
-	xa_destroy(&guc->tlb_lookup);
 }
 
 static inline void queue_request(struct i915_sched_engine *sched_engine,
@@ -2208,8 +2205,6 @@ static int guc_lrc_desc_pin(struct intel_context *ce, bool loop)
 	desc->engine_submit_mask = engine->logical_mask;
 	desc->hw_context_desc = ce->lrc.lrca;
 	desc->priority = ce->guc_state.prio;
-	if (engine->flags & I915_ENGINE_HAS_EU_PRIORITY)
-		desc->hw_context_desc |= lrc_desc_priority(ce->guc_state.prio);
 	desc->context_flags = CONTEXT_REGISTRATION_FLAG_KMD;
 	guc_context_policy_init(engine, desc);
 
@@ -3574,19 +3569,6 @@ static bool guc_sched_engine_disabled(struct i915_sched_engine *sched_engine)
 	return !sched_engine->tasklet.callback;
 }
 
-static int gen12_rcs_resume(struct intel_engine_cs *engine)
-{
-	int ret;
-
-	ret = guc_resume(engine);
-	if (ret)
-		return ret;
-
-	xehp_enable_ccs_engines(engine);
-
-	return 0;
-}
-
 static void guc_set_default_submission(struct intel_engine_cs *engine)
 {
 	engine->submit_request = guc_submit_request;
@@ -3707,9 +3689,6 @@ static void rcs_submission_override(struct intel_engine_cs *engine)
 		engine->emit_fini_breadcrumb = gen8_emit_fini_breadcrumb_rcs;
 		break;
 	}
-
-	if (engine->class == RENDER_CLASS)
-		engine->resume = gen12_rcs_resume;
 }
 
 static inline void guc_default_irqs(struct intel_engine_cs *engine)
@@ -3763,7 +3742,7 @@ int intel_guc_submission_setup(struct intel_engine_cs *engine)
 	guc_default_irqs(engine);
 	guc_init_breadcrumbs(engine);
 
-	if (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE)
+	if (engine->class == RENDER_CLASS)
 		rcs_submission_override(engine);
 
 	lrc_init_wa_ctx(engine);
@@ -3837,32 +3816,6 @@ g2h_context_lookup(struct intel_guc *guc, u32 desc_idx)
 	return ce;
 }
 
-static void wait_wake_outstanding_tlb_g2h(struct intel_guc *guc, u32 seqno)
-{
-	struct intel_guc_tlb_wait *wait;
-	unsigned long flags;
-
-	xa_lock_irqsave(&guc->tlb_lookup, flags);
-	wait = xa_load(&guc->tlb_lookup, seqno);
-
-	/* We received a response after the waiting task did exit with a timeout */
-	if (unlikely(!wait))
-		drm_dbg(&guc_to_gt(guc)->i915->drm, "Stale tlb invalidation response with seqno %d\n", seqno);
-
-	if (wait) {
-		WRITE_ONCE(wait->status, 0);
-		smp_mb();
-		wake_up_process(wait->tsk);
-	}
-	xa_unlock_irqrestore(&guc->tlb_lookup, flags);
-}
-
-
-void intel_guc_tlb_invalidation_done(struct intel_guc *guc, u32 seqno)
-{
-	wait_wake_outstanding_tlb_g2h(guc, seqno);
-}
-
 int intel_guc_deregister_done_process_msg(struct intel_guc *guc,
 					  const u32 *msg,
 					  u32 len)
@@ -3903,7 +3856,7 @@ int intel_guc_deregister_done_process_msg(struct intel_guc *guc,
 		intel_context_put(ce);
 	} else if (context_destroyed(ce)) {
 		/* Context has been destroyed */
-		intel_gt_pm_put_async_untracked(guc_to_gt(guc));
+		intel_gt_pm_put_async(guc_to_gt(guc));
 		release_guc_id(guc, ce);
 		__guc_context_destroy(ce);
 	}

@@ -214,9 +214,6 @@ struct drm_i915_error_state_buf {
 
 #if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
 
-void intel_klog_error_capture(struct intel_gt *gt,
-			      intel_engine_mask_t engine_mask);
-
 __printf(2, 3)
 void i915_error_printf(struct drm_i915_error_state_buf *e, const char *f, ...);
 

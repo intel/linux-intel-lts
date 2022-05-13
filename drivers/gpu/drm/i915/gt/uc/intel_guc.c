@@ -13,13 +13,6 @@
 #include "intel_guc_submission.h"
 #include "i915_drv.h"
 
-#ifdef CONFIG_DRM_I915_DEBUG_GUC
-#define GUC_DEBUG(_guc, _fmt, ...) \
-	drm_dbg(&guc_to_gt(_guc)->i915->drm, "GUC: " _fmt, ##__VA_ARGS__)
-#else
-#define GUC_DEBUG(_guc, _fmt, ...) typecheck(struct intel_guc *, _guc)
-#endif
-
 /**
  * DOC: GuC
  *
@@ -451,10 +444,6 @@ int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
 	int i;
 	int ret;
 
-	ret = i915_inject_probe_error(i915, -ENXIO);
-	if (ret)
-		return ret;
-
 	GEM_BUG_ON(!len);
 	GEM_BUG_ON(len > guc->send_regs.count);
 
@@ -463,8 +452,6 @@ int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
 
 	mutex_lock(&guc->send_mutex);
 	intel_uncore_forcewake_get(uncore, guc->send_regs.fw_domains);
-
-	GUC_DEBUG(guc, "mmio sending %*ph\n", len * 4, request);
 
 retry:
 	for (i = 0; i < len; i++)
@@ -541,13 +528,10 @@ proto:
 		for (i = 1; i < count; i++)
 			response_buf[i] = intel_uncore_read(uncore,
 							    guc_send_reg(guc, i));
-		GUC_DEBUG(guc, "mmio received %*ph\n", count * 4, response_buf);
 
 		/* Use number of copied dwords as our return value */
 		ret = count;
 	} else {
-		GUC_DEBUG(guc, "mmio received %*ph\n", 4, &header);
-
 		/* Use data from the GuC response as our return value */
 		ret = FIELD_GET(GUC_HXG_RESPONSE_MSG_0_DATA0, header);
 	}
@@ -818,77 +802,6 @@ int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value)
 int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value)
 {
 	return __guc_self_cfg(guc, key, 2, value);
-}
-
-static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 *action, u32 size)
-{
-	struct intel_guc_tlb_wait wait;
-	long timeout = 0;
-	u32 seqno;
-	int err;
-
-	wait.status = 1;
-	wait.tsk = current;
-	err = xa_alloc_cyclic_irq(&guc->tlb_lookup, &seqno, &wait,
-				  xa_limit_32b, &guc->next_seqno,
-				  GFP_KERNEL);
-	if (GEM_WARN_ON(err))
-		return err;
-
-	action[2] = seqno;
-
-	err = intel_guc_send_busy_loop(guc, action, size, G2H_LEN_DW_INVALIDATE_TLB, true);
-	if (err) {
-		xa_erase_irq(&guc->tlb_lookup, seqno);
-		return err;
-	}
-
-#define OUTSTANDING_GUC_TIMEOUT_PERIOD  (HZ / 10)
-	timeout = OUTSTANDING_GUC_TIMEOUT_PERIOD;
-	for (;;) {
-		set_current_state(TASK_UNINTERRUPTIBLE);
-
-		if (!READ_ONCE(wait.status))
-		    break;
-
-		if (!timeout) {
-			timeout = -ETIME;
-			break;
-		}
-		timeout = io_schedule_timeout(timeout);
-	}
-	__set_current_state(TASK_RUNNING);
-
-	xa_erase_irq(&guc->tlb_lookup, seqno);
-
-	/*XXX: Failure of tlb invalidation is critical and would warrant a gt
-	 * reset.
-	 */
-	if (timeout == -ETIME)
-		drm_err(&guc_to_gt(guc)->i915->drm, "tlb invalidation response timed out for seqno %u\n", seqno);
-
-	return (timeout < 0) ? timeout : 0;
-}
-
-/*
- * Guc TLB Invalidation: Invalidate the TLB's of GuC itself.
- */
-int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
-				 enum intel_guc_tlb_inval_mode mode)
-{
-	u32 action[] = {
-		INTEL_GUC_ACTION_TLB_INVALIDATION,
-		INTEL_GUC_TLB_INVAL_GUC,
-		0,
-		mode,
-	};
-
-	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)) {
-		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
-		return 0;
-	}
-
-	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
 }
 
 /**

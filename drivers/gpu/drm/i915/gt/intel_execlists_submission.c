@@ -628,7 +628,7 @@ static void __execlists_schedule_out(struct i915_request * const rq,
 	execlists_context_status_change(rq, INTEL_CONTEXT_SCHEDULE_OUT);
 	if (engine->fw_domain && !--engine->fw_active)
 		intel_uncore_forcewake_put(engine->uncore, engine->fw_domain);
-	intel_gt_pm_put_async_untracked(engine->gt);
+	intel_gt_pm_put_async(engine->gt);
 
 	/*
 	 * If this is part of a virtual engine, its next request may
@@ -663,12 +663,8 @@ static inline void execlists_schedule_out(struct i915_request *rq)
 static u64 execlists_update_context(struct i915_request *rq)
 {
 	struct intel_context *ce = rq->context;
-	u64 desc;
+	u64 desc = ce->lrc.desc;
 	u32 tail, prev;
-
-	desc = ce->lrc.desc;
-	if (rq->engine->flags & I915_ENGINE_HAS_EU_PRIORITY)
-		desc |= lrc_desc_priority(rq_prio(rq));
 
 	/*
 	 * WaIdleLiteRestore:bdw,skl
@@ -2873,19 +2869,6 @@ static int execlists_resume(struct intel_engine_cs *engine)
 	return 0;
 }
 
-static int gen12_rcs_resume(struct intel_engine_cs *engine)
-{
-	int ret;
-
-	ret = execlists_resume(engine);
-	if (ret)
-		return ret;
-
-	xehp_enable_ccs_engines(engine);
-
-	return 0;
-}
-
 static void execlists_reset_prepare(struct intel_engine_cs *engine)
 {
 	ENGINE_TRACE(engine, "depth<-%d\n",
@@ -3440,9 +3423,6 @@ static void rcs_submission_override(struct intel_engine_cs *engine)
 		engine->emit_fini_breadcrumb = gen8_emit_fini_breadcrumb_rcs;
 		break;
 	}
-
-	if (engine->class == RENDER_CLASS)
-		engine->resume = gen12_rcs_resume;
 }
 
 int intel_execlists_submission_setup(struct intel_engine_cs *engine)
@@ -3459,7 +3439,7 @@ int intel_execlists_submission_setup(struct intel_engine_cs *engine)
 	logical_ring_default_vfuncs(engine);
 	logical_ring_default_irqs(engine);
 
-	if (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE)
+	if (engine->class == RENDER_CLASS)
 		rcs_submission_override(engine);
 
 	lrc_init_wa_ctx(engine);

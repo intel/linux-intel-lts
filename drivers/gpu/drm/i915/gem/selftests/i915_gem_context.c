@@ -883,9 +883,7 @@ out_file:
 	return err;
 }
 
-static int rpcs_query_batch(struct drm_i915_gem_object *rpcs,
-			    struct i915_vma *vma,
-			    struct intel_engine_cs *engine)
+static int rpcs_query_batch(struct drm_i915_gem_object *rpcs, struct i915_vma *vma)
 {
 	u32 *cmd;
 
@@ -957,7 +955,7 @@ retry:
 	if (err)
 		goto err_vma;
 
-	err = rpcs_query_batch(rpcs, vma, ce->engine);
+	err = rpcs_query_batch(rpcs, vma);
 	if (err)
 		goto err_batch;
 

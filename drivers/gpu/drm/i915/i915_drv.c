@@ -79,7 +79,6 @@
 #include "i915_suspend.h"
 #include "i915_switcheroo.h"
 #include "i915_sysfs.h"
-#include "i915_sysrq.h"
 #include "i915_trace.h"
 #include "i915_vgpu.h"
 #include "intel_dram.h"
@@ -689,7 +688,6 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 
 	i915_debugfs_register(dev_priv);
 	i915_setup_sysfs(dev_priv);
-	i915_register_sysrq(dev_priv);
 
 	/* Depends on sysfs having been initialized */
 	i915_perf_register(dev_priv);
@@ -727,7 +725,6 @@ static void i915_driver_unregister(struct drm_i915_private *dev_priv)
 	i915_perf_unregister(dev_priv);
 	i915_pmu_unregister(dev_priv);
 
-	i915_unregister_sysrq(dev_priv);
 	i915_teardown_sysfs(dev_priv);
 	drm_dev_unplug(&dev_priv->drm);
 
@@ -808,21 +805,6 @@ int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	i915 = i915_driver_create(pdev, ent);
 	if (IS_ERR(i915))
 		return PTR_ERR(i915);
-
-	/*
-	 * Hack to enable CCS and set ppgtt_size to 47
-	 * on TGL and DG1 for testing purpose
-	 *
-	 */
-	if ((match_info->platform == INTEL_DG1 ||
-	    match_info->platform == INTEL_TIGERLAKE ||
-	    match_info->platform == INTEL_ALDERLAKE_S ||
-	    match_info->platform == INTEL_ALDERLAKE_P) &&
-	    (i915->params.enable_guc & ENABLE_GUC_SUBMISSION)
-	    && i915->params.enable_guc != -1) {
-		mkwrite_device_info(i915)->ppgtt_size = 47;
-		mkwrite_device_info(i915)->platform_engine_mask |= BIT(CCS0);
-	}
 
 	/* Disable nuclear pageflip by default on pre-ILK */
 	if (!i915->params.nuclear_pageflip && match_info->graphics_ver < 5)
