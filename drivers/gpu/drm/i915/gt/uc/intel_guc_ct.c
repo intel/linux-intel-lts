@@ -1074,7 +1074,7 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
 		ret = intel_guc_engine_failure_process_msg(guc, payload, len);
 		break;
-	case INTEL_GUC_ACTION_NOTIFY_MEMORY_CAT_ERROR:
+	case INTEL_GUC_ACTION_REPORT_MEMORY_CAT_ERROR_CONTEXT:
 		ret = intel_pagefault_process_cat_error_msg(guc, payload, len);
 		break;
 	case INTEL_GUC_ACTION_PAGE_FAULT_NOTIFICATION:
