@@ -23,7 +23,7 @@
  */
 #include "priv.h"
 
-void
+static void
 gp102_pmu_reset(struct nvkm_pmu *pmu)
 {
 	struct nvkm_device *device = pmu->subdev.device;
