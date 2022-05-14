@@ -925,7 +925,7 @@ static int clcdfb_probe(struct amba_device *dev, const struct amba_id *id)
 	return ret;
 }
 
-static void clcdfb_remove(struct amba_device *dev)
+static int clcdfb_remove(struct amba_device *dev)
 {
 	struct clcd_fb *fb = amba_get_drvdata(dev);
 
@@ -942,6 +942,8 @@ static void clcdfb_remove(struct amba_device *dev)
 	kfree(fb);
 
 	amba_release_regions(dev);
+
+	return 0;
 }
 
 static const struct amba_id clcdfb_id_table[] = {

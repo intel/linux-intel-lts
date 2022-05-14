@@ -159,7 +159,7 @@ static int amba_kmi_probe(struct amba_device *dev,
 	return ret;
 }
 
-static void amba_kmi_remove(struct amba_device *dev)
+static int amba_kmi_remove(struct amba_device *dev)
 {
 	struct amba_kmi_port *kmi = amba_get_drvdata(dev);
 
@@ -168,6 +168,7 @@ static void amba_kmi_remove(struct amba_device *dev)
 	iounmap(kmi->base);
 	kfree(kmi);
 	amba_release_regions(dev);
+	return 0;
 }
 
 static int __maybe_unused amba_kmi_resume(struct device *dev)

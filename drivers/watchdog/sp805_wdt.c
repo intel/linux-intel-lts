@@ -304,12 +304,14 @@ err:
 	return ret;
 }
 
-static void sp805_wdt_remove(struct amba_device *adev)
+static int sp805_wdt_remove(struct amba_device *adev)
 {
 	struct sp805_wdt *wdt = amba_get_drvdata(adev);
 
 	watchdog_unregister_device(&wdt->wdd);
 	watchdog_set_drvdata(&wdt->wdd, NULL);
+
+	return 0;
 }
 
 static int __maybe_unused sp805_wdt_suspend(struct device *dev)
