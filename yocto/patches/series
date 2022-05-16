@@ -21,3 +21,18 @@
 0002-selftests-cgroup-Make-cg_create-use-0755-for-permiss.patch
 0003-selftests-cgroup-Test-open-time-credential-usage-for.patch
 0004-selftests-cgroup-Test-open-time-cgroup-namespace-usa.patch
+
+# CVE-2022-28893
+0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
+
+# CVE-2022-1516
+0001-net-x25-Fix-null-ptr-deref-caused-by-x25_disconnect.patch
+
+# CVE-2022-29582
+0001-io_uring-fix-race-between-timeout-flush-and-removal.patch
+
+# CVE-2022-1353
+0001-af_key-add-__GFP_ZERO-flag-for-compose_sadb_supporte.patch
+
+# CVE-2022-1280
+0001-drm-drm_file-struct-kABI-compatibility-workaround.patch
