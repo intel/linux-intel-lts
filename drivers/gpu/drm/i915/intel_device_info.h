@@ -145,6 +145,7 @@ enum intel_ppgtt_type {
 	func(has_4tile); \
 	func(has_flat_ccs); \
 	func(has_global_mocs); \
+	func(has_gt_uc); \
 	func(has_guc_deprivilege); \
 	func(has_heci_pxp); \
 	func(has_heci_gscfi); \
