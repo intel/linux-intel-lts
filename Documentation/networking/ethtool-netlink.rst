@@ -1727,6 +1727,8 @@ Sets transceiver module parameters.
   ``ETHTOOL_A_PREEMPT_ENABLED``           bool    frame preemption enabled
   ``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK``  bitset  preemptible queue mask
   ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE``     u32     Min additional frag size
+  ``ETHTOOL_A_PREEMPT_DISABLE_VERIFY``    u32     disable verification
+  ``ETHTOOL_A_PREEMPT_VERIFIED``          u32     verification procedure
   ======================================  ======  ==========================
 
 ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE`` configures the minimum non-final
@@ -1765,6 +1767,8 @@ in revision 5.0 of the specification.
   ``ETHTOOL_A_PREEMPT_ENABLED``           bool    frame preemption enabled
   ``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK``  bitset  preemptible queue mask
   ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE``     u32     Min additional frag size
+  ``ETHTOOL_A_PREEMPT_DISABLE_VERIFY``    bool    disable verification
+  ======================================  ======  ==========================
 
 ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE`` configures the minimum non-final
 fragment size that the receiver device supports.
