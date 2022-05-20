@@ -184,6 +184,15 @@ static void __uc_fw_user_override(struct drm_i915_private *i915, struct intel_uc
 	switch (uc_fw->type) {
 	case INTEL_UC_FW_TYPE_GUC:
 		path = __override_guc_firmware_path(i915);
+
+		if (path == NULL && IS_ADLP_N(i915)) {
+		   static const struct uc_fw_blob adln_blob = GUC_FW_BLOB(tgl, 70, 0, 3);
+		   uc_fw->path = adln_blob.path;
+		   uc_fw->major_ver_wanted = adln_blob.major;
+		   uc_fw->minor_ver_wanted = adln_blob.minor;
+		   uc_fw->user_overridden = true;
+		}
+
 		break;
 	case INTEL_UC_FW_TYPE_HUC:
 		path = __override_huc_firmware_path(i915);
