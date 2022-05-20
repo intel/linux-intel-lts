@@ -214,6 +214,9 @@ Userspace to kernel:
   ``ETHTOOL_MSG_STATS_GET``             get standard statistics
   ``ETHTOOL_MSG_PHC_VCLOCKS_GET``       get PHC virtual clocks info
   ===================================== ================================
+  ``ETHTOOL_MSG_PREEMPT_GET``           get frame preemption parameters
+  ``ETHTOOL_MSG_PREEMPT_SET``           set frame preemption parameters
+  ===================================== =================================
 
 Kernel to userspace:
 
@@ -252,6 +255,7 @@ Kernel to userspace:
   ``ETHTOOL_MSG_MODULE_EEPROM_GET_REPLY``  read SFP module EEPROM
   ``ETHTOOL_MSG_STATS_GET_REPLY``          standard statistics
   ``ETHTOOL_MSG_PHC_VCLOCKS_GET_REPLY``    PHC virtual clocks info
+  ``ETHTOOL_MSG_PREEMPT_GET_REPLY``        frame preemption parameters
   ======================================== =================================
 
 ``GET`` requests are sent by userspace applications to retrieve device
@@ -1521,6 +1525,53 @@ Kernel response contents:
   ``ETHTOOL_A_PHC_VCLOCKS_INDEX``       s32     PHC index array
   ====================================  ======  ==========================
 
+PREEMPT_GET
+===========
+
+Get information about frame preemption state.
+
+Request contents:
+
+  ====================================  ======  ==========================
+  ``ETHTOOL_A_PREEMPT_HEADER``          nested  request header
+  ====================================  ======  ==========================
+
+Kernel response contents:
+
+  ======================================  ======  ==========================
+  ``ETHTOOL_A_PREEMPT_HEADER``            nested  reply header
+  ``ETHTOOL_A_PREEMPT_ENABLED``           bool    frame preemption enabled
+  ``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK``  bitset  preemptible queue mask
+  ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE``     u32     Min additional frag size
+  ======================================  ======  ==========================
+
+``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE`` configures the minimum non-final
+fragment size that the receiver device supports.
+
+``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK`` configures which queues should
+be marked as preemptible. If bit X is '1' then queue X is preemptible,
+the queue is express otherwise.
+
+PREEMPT_SET
+===========
+
+Sets frame preemption parameters.
+
+Request contents:
+
+  ======================================  ======  ==========================
+  ``ETHTOOL_A_PREEMPT_HEADER``            nested  reply header
+  ``ETHTOOL_A_PREEMPT_ENABLED``           bool    frame preemption enabled
+  ``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK``  bitset  preemptible queue mask
+  ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE``     u32     Min additional frag size
+  ======================================  ======  ==========================
+
+``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE`` configures the minimum non-final
+fragment size that the receiver device supports.
+
+``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK`` configures which queues should be marked as
+preemptible.
+
 Request translation
 ===================
 
@@ -1620,4 +1671,6 @@ are netlink only.
   n/a                                 ``ETHTOOL_MSG_CABLE_TEST_TDR_ACT``
   n/a                                 ``ETHTOOL_MSG_TUNNEL_INFO_GET``
   n/a                                 ``ETHTOOL_MSG_PHC_VCLOCKS_GET``
+  n/a                                 ``ETHTOOL_MSG_PREEMPT_GET``
+  n/a                                 ``ETHTOOL_MSG_PREEMPT_SET``
   =================================== =====================================
