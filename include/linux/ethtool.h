@@ -13,6 +13,7 @@
 #ifndef _LINUX_ETHTOOL_H
 #define _LINUX_ETHTOOL_H
 
+#include "asm-generic/int-ll64.h"
 #include <linux/bitmap.h>
 #include <linux/compat.h>
 #include <linux/netlink.h>
@@ -464,6 +465,8 @@ struct ethtool_module_power_mode_params {
 struct ethtool_fp {
 	u32 enabled;
 	u32 preemptible_mask;
+	u32 disable_verify;
+	u32 verified;
 	u32 add_frag_size;
 };
 
