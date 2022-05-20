@@ -795,3 +795,24 @@ void ethtool_rxfh_context_lost(struct net_device *dev, u32 context_id)
 	kfree(ctx);
 }
 EXPORT_SYMBOL(ethtool_rxfh_context_lost);
+/* ethtool_frag_size_to_mult() - Convert from a Frame Preemption
+ * Additional Fragment size in bytes to a multiplier.
+ * @frag_size: minimum non-final fragment size in bytes.
+ *
+ * The multiplier is defined as:
+ *	"A 2-bit integer value used to indicate the minimum size of
+ *	non-final fragments supported by the receiver on the given port
+ *	associated with the local System. This value is expressed in units
+ *	of 64 octets of additional fragment length."
+ *	Equivalent to `30.14.1.7 aMACMergeAddFragSize` from the IEEE 802.3-2018
+ *	standard.
+ *
+ * Return: the multiplier is a number in the [0, 2] interval.
+ */
+u8 ethtool_frag_size_to_mult(u32 frag_size)
+{
+	u8 mult = (frag_size / 64) - 1;
+
+	return clamp_t(u8, mult, 0, 3);
+}
+EXPORT_SYMBOL_GPL(ethtool_frag_size_to_mult);
