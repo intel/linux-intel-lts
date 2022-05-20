@@ -242,6 +242,8 @@ Kernel to userspace:
   ``ETHTOOL_MSG_CABLE_TEST_NTF``        Cable test results
   ``ETHTOOL_MSG_CABLE_TEST_TDR_NTF``    Cable test TDR results
   ``ETHTOOL_MSG_TUNNEL_INFO_GET_REPLY`` tunnel offload info
+  ``ETHTOOL_MSG_PREEMPT_GET``           get frame preemption parameters
+  ``ETHTOOL_MSG_PREEMPT_SET``           set frame preemption parameters
   ===================================== =================================
 
 ``GET`` requests are sent by userspace applications to retrieve device
@@ -1279,6 +1281,53 @@ Kernel response contents:
 For UDP tunnel table empty ``ETHTOOL_A_TUNNEL_UDP_TABLE_TYPES`` indicates that
 the table contains static entries, hard-coded by the NIC.
 
+PREEMPT_GET
+===========
+
+Get information about frame preemption state.
+
+Request contents:
+
+  ====================================  ======  ==========================
+  ``ETHTOOL_A_PREEMPT_HEADER``          nested  request header
+  ====================================  ======  ==========================
+
+Kernel response contents:
+
+  ======================================  ======  ==========================
+  ``ETHTOOL_A_PREEMPT_HEADER``            nested  reply header
+  ``ETHTOOL_A_PREEMPT_ENABLED``           bool    frame preemption enabled
+  ``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK``  bitset  preemptible queue mask
+  ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE``     u32     Min additional frag size
+  ======================================  ======  ==========================
+
+``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE`` configures the minimum non-final
+fragment size that the receiver device supports.
+
+``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK`` configures which queues should
+be marked as preemptible. If bit X is '1' then queue X is preemptible,
+the queue is express otherwise.
+
+PREEMPT_SET
+===========
+
+Sets frame preemption parameters.
+
+Request contents:
+
+  ======================================  ======  ==========================
+  ``ETHTOOL_A_PREEMPT_HEADER``            nested  reply header
+  ``ETHTOOL_A_PREEMPT_ENABLED``           bool    frame preemption enabled
+  ``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK``  bitset  preemptible queue mask
+  ``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE``     u32     Min additional frag size
+  ======================================  ======  ==========================
+
+``ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE`` configures the minimum non-final
+fragment size that the receiver device supports.
+
+``ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK`` configures which queues should be marked as
+preemptible.
+
 Request translation
 ===================
 
@@ -1377,4 +1426,6 @@ are netlink only.
   n/a                                 ''ETHTOOL_MSG_CABLE_TEST_ACT''
   n/a                                 ''ETHTOOL_MSG_CABLE_TEST_TDR_ACT''
   n/a                                 ``ETHTOOL_MSG_TUNNEL_INFO_GET``
+  n/a                                 ``ETHTOOL_MSG_PREEMPT_GET``
+  n/a                                 ``ETHTOOL_MSG_PREEMPT_SET``
   =================================== =====================================
