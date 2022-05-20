@@ -13,6 +13,7 @@
 #ifndef _LINUX_ETHTOOL_H
 #define _LINUX_ETHTOOL_H
 
+#include "asm-generic/int-ll64.h"
 #include <linux/bitmap.h>
 #include <linux/compat.h>
 #include <uapi/linux/ethtool.h>
@@ -77,6 +78,7 @@ enum {
 #define ETH_RSS_HASH_NO_CHANGE	0
 
 struct net_device;
+struct netlink_ext_ack;
 
 /* Some generic methods drivers may use in their ethtool_ops */
 u32 ethtool_op_get_link(struct net_device *dev);
@@ -269,6 +271,8 @@ struct ethtool_pause_stats {
 struct ethtool_fp {
 	u32 enabled;
 	u32 preemptible_mask;
+	u32 disable_verify;
+	u32 verified;
 	u32 add_frag_size;
 };
 
@@ -548,7 +552,6 @@ int ethtool_virtdev_set_link_ksettings(struct net_device *dev,
 				       const struct ethtool_link_ksettings *cmd,
 				       u32 *dev_speed, u8 *dev_duplex);
 
-struct netlink_ext_ack;
 struct phy_device;
 struct phy_tdr_config;
 
