@@ -312,9 +312,15 @@ static int write_ipc_from_queue(struct ishtp_device *dev)
 		struct ipc_time_update_msg time_update;
 		struct time_sync_format ts_format;
 
-		usec_system = ktime_to_us(ktime_get_boottime());
 		usec_utc = ktime_to_us(ktime_get_real());
-		ts_format.ts1_source = HOST_SYSTEM_TIME_USEC;
+		if (dev->pdev->device == EHL_Ax_DEVICE_ID) {
+			usec_system = read_art();
+			ts_format.ts1_source = HOST_ART_TIME_CYCLE;
+		} else {
+			usec_system = ktime_to_us(ktime_get_boottime());
+			ts_format.ts1_source = HOST_SYSTEM_TIME_USEC;
+		}
+
 		ts_format.ts2_source = HOST_UTC_TIME_USEC;
 		ts_format.reserved = 0;
 
@@ -601,6 +607,15 @@ static void fw_reset_work_fn(struct work_struct *unused)
 			rv);
 }
 
+void ish_send_time_sync(struct ishtp_device *dev)
+{
+	uint64_t usec;
+
+	usec = ktime_to_us(ktime_get_boottime());
+	ipc_send_mng_msg(dev, MNG_SYNC_FW_CLOCK, &usec, sizeof(uint64_t));
+
+}
+
 /**
  * _ish_sync_fw_clock() -Sync FW clock with the OS clock
  * @dev: ishtp device pointer
@@ -610,15 +625,13 @@ static void fw_reset_work_fn(struct work_struct *unused)
 static void _ish_sync_fw_clock(struct ishtp_device *dev)
 {
 	static unsigned long	prev_sync;
-	uint64_t	usec;
 
-	if (prev_sync && jiffies - prev_sync < 20 * HZ)
+	if (dev->pdev->device == EHL_Ax_DEVICE_ID || (prev_sync &&
+	    jiffies - prev_sync < 20 * HZ))
 		return;
 
 	prev_sync = jiffies;
-	usec = ktime_to_us(ktime_get_boottime());
-
-	ipc_send_mng_msg(dev, MNG_SYNC_FW_CLOCK, &usec, sizeof(uint64_t));
+	ish_send_time_sync(dev);
 }
 
 #define POWER_NOTIFY_WAIT	0xff
