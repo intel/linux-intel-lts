@@ -183,6 +183,11 @@ struct ishtp_device {
 	spinlock_t rd_msg_spinlock;
 	struct work_struct bh_hbm_work;
 
+	/* time sync work */
+	#define ISHTP_SYNC_PERIOD_MAX 1024
+	unsigned long time_sync_period;
+	struct delayed_work time_sync_work;
+
 	/* IPC write queue */
 	struct list_head wr_processing_list, wr_free_list;
 	/* For both processing list  and free list */
