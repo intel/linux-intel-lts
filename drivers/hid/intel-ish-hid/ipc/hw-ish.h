@@ -58,7 +58,8 @@ struct ipc_time_update_msg {
 
 enum {
 	HOST_UTC_TIME_USEC = 0,
-	HOST_SYSTEM_TIME_USEC = 1
+	HOST_SYSTEM_TIME_USEC = 1,
+	HOST_ART_TIME_CYCLE = 2,
 };
 
 struct ish_hw {
@@ -87,5 +88,6 @@ int ish_disable_dma(struct ishtp_device *dev);
 void ish_set_host_ready(struct ishtp_device *dev);
 int ish_notify_d0(struct ishtp_device *dev);
 int ish_notify_rtd3(struct ishtp_device *dev);
+void ish_send_time_sync(struct ishtp_device *dev);
 
 #endif /* _ISHTP_HW_ISH_H_ */

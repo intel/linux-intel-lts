@@ -152,6 +152,57 @@ static void enable_pme_wake(struct pci_dev *pdev)
 	}
 }
 
+static void time_sync_work_fn(struct work_struct *work)
+{
+	struct ishtp_device *ishtp_dev;
+
+	ishtp_dev = container_of(work, struct ishtp_device, time_sync_work.work);
+
+	pm_runtime_get_sync(ishtp_dev->devc);
+	pm_runtime_mark_last_busy(ishtp_dev->devc);
+	ish_send_time_sync(ishtp_dev);
+
+	pm_runtime_put_autosuspend(ishtp_dev->devc);
+
+	if (ishtp_dev->time_sync_period)
+		schedule_delayed_work(&ishtp_dev->time_sync_work, ishtp_dev->time_sync_period * HZ);
+}
+
+static ssize_t time_sync_period_store(struct device *dev,
+				      struct device_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct ishtp_device *ishtp_dev = pci_get_drvdata(pdev);
+	unsigned long val = 0;
+	int ret;
+	int time_sync_period_pre = ishtp_dev->time_sync_period;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val > ISHTP_SYNC_PERIOD_MAX)
+		return -EINVAL;
+
+	ishtp_dev->time_sync_period = val;
+
+	if (!time_sync_period_pre && ishtp_dev->time_sync_period)
+		schedule_delayed_work(&ishtp_dev->time_sync_work, 0);
+
+	return count;
+}
+
+static ssize_t time_sync_period_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct ishtp_device *ishtp_dev = pci_get_drvdata(pdev);
+
+	return sysfs_emit(buf, "%ld\n", ishtp_dev->time_sync_period);
+}
+static DEVICE_ATTR_RW(time_sync_period);
+
 /**
  * ish_probe() - PCI driver probe callback
  * @pdev:	pci device
@@ -241,6 +292,11 @@ static int ish_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		pm_runtime_allow(dev);
 		pm_runtime_mark_last_busy(dev);
 		pm_runtime_put_autosuspend(dev);
+
+		/* start a timmer to sync time with FW for EHL */
+		ishtp->time_sync_period = 0;
+		device_create_file(dev, &dev_attr_time_sync_period);
+		INIT_DELAYED_WORK(&ishtp->time_sync_work, time_sync_work_fn);
 	}
 
 	return 0;
@@ -256,6 +312,10 @@ static void ish_remove(struct pci_dev *pdev)
 {
 	struct ishtp_device *ishtp_dev = pci_get_drvdata(pdev);
 
+	if (pdev->device == EHL_Ax_DEVICE_ID) {
+		device_remove_file(&pdev->dev, &dev_attr_time_sync_period);
+		cancel_delayed_work_sync(&ishtp_dev->time_sync_work);
+	}
 	ishtp_bus_remove_all_clients(ishtp_dev, false);
 	ish_device_disable(ishtp_dev);
 
@@ -315,6 +375,9 @@ static void __maybe_unused ish_resume_handler(struct work_struct *work)
 		 */
 		ish_init(dev);
 	}
+
+	if (pdev->device == EHL_Ax_DEVICE_ID && dev->time_sync_period)
+		schedule_delayed_work(&dev->time_sync_work, 0);
 }
 
 /**
@@ -329,6 +392,9 @@ static int __maybe_unused ish_suspend(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
 	struct ishtp_device *dev = pci_get_drvdata(pdev);
+
+	if (pdev->device == EHL_Ax_DEVICE_ID)
+		cancel_delayed_work_sync(&dev->time_sync_work);
 
 	if (dev->suspend_to_d0i3) {
 		/*
@@ -492,7 +558,6 @@ static int __maybe_unused ish_runtime_resume(struct device *device)
 		pm_runtime_mark_last_busy(device);
 
 	return ret;
-
 }
 
 static const struct dev_pm_ops __maybe_unused ish_pm_ops = {
