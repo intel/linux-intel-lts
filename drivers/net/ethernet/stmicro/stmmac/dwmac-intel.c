@@ -298,6 +298,11 @@ static void get_arttime(struct mii_bus *mii, int intel_adhoc_addr,
 	*art_time = ns;
 }
 
+static int stmmac_cross_ts_isr(struct stmmac_priv *priv)
+{
+	return (readl(priv->ioaddr + GMAC_INT_STATUS) & GMAC_INT_TSIE);
+}
+
 static int intel_crosststamp(ktime_t *device,
 			     struct system_counterval_t *system,
 			     void *ctx)
@@ -313,14 +318,13 @@ static int intel_crosststamp(ktime_t *device,
 	u32 num_snapshot;
 	u32 gpio_value;
 	u32 acr_value;
-	int ret;
-	u32 v;
 	int i;
 
 	if (!boot_cpu_has(X86_FEATURE_ART))
 		return -EOPNOTSUPP;
 
 	intel_priv = priv->plat->bsp_priv;
+	priv->plat->int_snapshot_en = 1;
 
 	/* Both internal crosstimestamping and external triggered event
 	 * timestamping cannot be run concurrently.
@@ -368,14 +372,10 @@ static int intel_crosststamp(ktime_t *device,
 	gpio_value |= GMAC_GPO1;
 	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
 
-	/* Poll for time sync operation done */
-	ret = readl_poll_timeout(priv->ioaddr + GMAC_INT_STATUS, v,
-				 (v & GMAC_INT_TSIE), 100, 10000);
-
-	if (ret == -ETIMEDOUT) {
-		pr_err("%s: Wait for time sync operation timeout\n", __func__);
-		return ret;
-	}
+	/* Time sync done Indication - Interrupt method */
+	if (!wait_event_timeout(priv->tstamp_busy_wait,
+				stmmac_cross_ts_isr(priv), HZ / 100))
+		return -ETIMEDOUT;
 
 	num_snapshot = (readl(ioaddr + GMAC_TIMESTAMP_STATUS) &
 			GMAC_TIMESTAMP_ATSNS_MASK) >>
@@ -392,7 +392,7 @@ static int intel_crosststamp(ktime_t *device,
 	}
 
 	system->cycles *= intel_priv->crossts_adj;
-
+	priv->plat->int_snapshot_en = 0;
 	return 0;
 }
 
@@ -586,6 +586,7 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->msi_tx_base_vec = 1;
 
 	plat->use_hw_vlan = true;
+	plat->int_snapshot_en = 0;
 
 	return 0;
 }
