@@ -7,5 +7,3 @@
 # CVE-2022-0998
 0001-vdpa-clean-up-get_config_size-ret-value-handling.patch
 
-# CVE-2022-28893
-0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
