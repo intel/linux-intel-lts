@@ -330,6 +330,11 @@ static int write_ipc_from_queue(struct ishtp_device *dev)
 
 		memcpy(r_buf, &time_update,
 		       sizeof(struct ipc_time_update_msg));
+
+		if (dev->pdev->device == EHL_Ax_DEVICE_ID) {
+			length = sizeof(time_update);
+			doorbell_val = IPC_BUILD_MNG_MSG(MNG_SYNC_FW_CLOCK, length);
+		}
 	}
 
 	for (i = 0, reg_addr = IPC_REG_HOST2ISH_MSG; i < length >> 2; i++,
