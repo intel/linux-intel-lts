@@ -1293,6 +1293,8 @@ parse_power_conservation_features(struct drm_i915_private *i915,
 	const struct bdb_lfp_power *power;
 	u8 panel_type = panel->vbt.panel_type;
 
+	panel->vbt.vrr = true; /* matches Windows behaviour */
+
 	if (i915->vbt.version < 228)
 		return;
 
@@ -1313,6 +1315,9 @@ parse_power_conservation_features(struct drm_i915_private *i915,
 
 	if (i915->vbt.version >= 232)
 		panel->vbt.edp.hobl = power->hobl & BIT(panel_type);
+
+	if (i915->vbt.version >= 233)
+		panel->vbt.vrr = power->vrr_feature_enabled & BIT(panel_type);
 }
 
 static void
