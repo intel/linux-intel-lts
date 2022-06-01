@@ -6,7 +6,7 @@
 	};
 
 	testcase: testcase-data {
-		security-password = "password";
+		security-password = "";
 		duplicate-name = "duplicate";
 		duplicate-name { };
 		phandle-tests {
