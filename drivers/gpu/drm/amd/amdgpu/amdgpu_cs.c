@@ -1542,7 +1542,6 @@ int amdgpu_cs_fence_to_handle_ioctl(struct drm_device *dev, void *data,
 		return 0;
 
 	default:
-		dma_fence_put(fence);
 		return -EINVAL;
 	}
 }
