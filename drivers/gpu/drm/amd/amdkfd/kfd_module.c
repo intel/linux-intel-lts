@@ -82,7 +82,7 @@ static void kfd_exit(void)
 	kfd_chardev_exit();
 }
 
-int kgd2kfd_init(void)
+int kgd2kfd_init()
 {
 	return kfd_init();
 }
