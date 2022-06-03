@@ -1352,6 +1352,7 @@ static int drm_i915_load_fn(void *arg)
 	int ret = i915_driver_load(dev, ent);
 	i915_load_finished = 1;
 	wake_up(&i915_load_queue);
+	kfree(para);
 	return ret;
 }
 
