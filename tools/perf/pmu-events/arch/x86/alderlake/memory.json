@@ -7,6 +7,7 @@
         "EventName": "LD_HEAD.ANY_AT_RET",
         "PEBScounters": "0,1,2,3,4,5",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0xff",
         "Unit": "cpu_atom"
     },
@@ -18,6 +19,7 @@
         "EventName": "LD_HEAD.L1_BOUND_AT_RET",
         "PEBScounters": "0,1,2,3,4,5",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0xf4",
         "Unit": "cpu_atom"
     },
@@ -29,6 +31,7 @@
         "EventName": "LD_HEAD.OTHER_AT_RET",
         "PEBScounters": "0,1,2,3,4,5",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0xc0",
         "Unit": "cpu_atom"
     },
@@ -40,6 +43,7 @@
         "EventName": "LD_HEAD.PGWALK_AT_RET",
         "PEBScounters": "0,1,2,3,4,5",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0xa0",
         "Unit": "cpu_atom"
     },
@@ -51,6 +55,7 @@
         "EventName": "LD_HEAD.ST_ADDR_AT_RET",
         "PEBScounters": "0,1,2,3,4,5",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x84",
         "Unit": "cpu_atom"
     },
@@ -62,6 +67,7 @@
         "EventName": "MACHINE_CLEARS.MEMORY_ORDERING",
         "PEBScounters": "0,1,2,3,4,5",
         "SampleAfterValue": "20003",
+        "Speculative": "1",
         "UMask": "0x2",
         "Unit": "cpu_atom"
     },
@@ -96,6 +102,7 @@
         "EventName": "CYCLE_ACTIVITY.STALLS_L3_MISS",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x6",
         "Unit": "cpu_core"
     },
@@ -107,6 +114,7 @@
         "EventName": "MACHINE_CLEARS.MEMORY_ORDERING",
         "PEBScounters": "0,1,2,3,4,5,6,7",
         "SampleAfterValue": "100003",
+        "Speculative": "1",
         "UMask": "0x2",
         "Unit": "cpu_core"
     },
@@ -119,6 +127,7 @@
         "EventName": "MEMORY_ACTIVITY.CYCLES_L1D_MISS",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x2",
         "Unit": "cpu_core"
     },
@@ -131,11 +140,12 @@
         "EventName": "MEMORY_ACTIVITY.STALLS_L1D_MISS",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x3",
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "MEMORY_ACTIVITY.STALLS_L2_MISS",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "CounterMask": "5",
@@ -143,11 +153,12 @@
         "EventName": "MEMORY_ACTIVITY.STALLS_L2_MISS",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x5",
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "MEMORY_ACTIVITY.STALLS_L3_MISS",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "CounterMask": "9",
@@ -155,6 +166,7 @@
         "EventName": "MEMORY_ACTIVITY.STALLS_L3_MISS",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x9",
         "Unit": "cpu_core"
     },
@@ -287,7 +299,7 @@
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "Retired instructions with at least 1 store uop. This PEBS event is the trigger for stores sampled by the PEBS Store Facility.",
+        "BriefDescription": "Retired memory store access operations. A PDist event for PEBS Store Latency Facility.",
         "CollectPEBSRecord": "2",
         "Data_LA": "1",
         "EventCode": "0xcd",
