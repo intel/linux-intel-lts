@@ -33,57 +33,62 @@
         "Unit": "cpu_atom"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "ASSISTS.HARDWARE",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5,6,7",
         "EventCode": "0xc1",
         "EventName": "ASSISTS.HARDWARE",
         "PEBScounters": "0,1,2,3,4,5,6,7",
         "SampleAfterValue": "100003",
+        "Speculative": "1",
         "UMask": "0x4",
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "ASSISTS.PAGE_FAULT",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3,4,5,6,7",
         "EventCode": "0xc1",
         "EventName": "ASSISTS.PAGE_FAULT",
         "PEBScounters": "0,1,2,3,4,5,6,7",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x8",
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "CORE_POWER.LICENSE_1",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "EventCode": "0x28",
         "EventName": "CORE_POWER.LICENSE_1",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "200003",
+        "Speculative": "1",
         "UMask": "0x2",
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "CORE_POWER.LICENSE_2",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "EventCode": "0x28",
         "EventName": "CORE_POWER.LICENSE_2",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "200003",
+        "Speculative": "1",
         "UMask": "0x4",
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "CORE_POWER.LICENSE_3",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "EventCode": "0x28",
         "EventName": "CORE_POWER.LICENSE_3",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "200003",
+        "Speculative": "1",
         "UMask": "0x8",
         "Unit": "cpu_core"
     },
@@ -121,7 +126,7 @@
         "Unit": "cpu_core"
     },
     {
-        "BriefDescription": "TBD",
+        "BriefDescription": "XQ.FULL_CYCLES",
         "CollectPEBSRecord": "2",
         "Counter": "0,1,2,3",
         "CounterMask": "1",
@@ -129,6 +134,7 @@
         "EventName": "XQ.FULL_CYCLES",
         "PEBScounters": "0,1,2,3",
         "SampleAfterValue": "1000003",
+        "Speculative": "1",
         "UMask": "0x1",
         "Unit": "cpu_core"
     }
