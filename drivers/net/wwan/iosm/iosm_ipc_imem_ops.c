@@ -11,7 +11,6 @@
 #include "iosm_ipc_imem_ops.h"
 #include "iosm_ipc_port.h"
 #include "iosm_ipc_task_queue.h"
-#include "iosm_ipc_trace.h"
 
 /* Open a packet data online channel between the network layer and CP. */
 int ipc_imem_sys_wwan_open(struct iosm_imem *ipc_imem, int if_id)
@@ -100,23 +99,6 @@ void ipc_imem_wwan_channel_init(struct iosm_imem *ipc_imem,
 	if (!ipc_imem->wwan)
 		dev_err(ipc_imem->dev,
 			"failed to register the ipc_wwan interfaces");
-}
-
-/**
- * ipc_imem_trace_channel_init - Initializes trace channel.
- * @ipc_imem:          Pointer to iosm_imem struct.
- *
- * Returns: Pointer to trace instance on success else NULL
- */
-struct iosm_trace *ipc_imem_trace_channel_init(struct iosm_imem *ipc_imem)
-{
-	struct ipc_chnl_cfg chnl_cfg = { 0 };
-
-	ipc_chnl_cfg_get(&chnl_cfg, IPC_MEM_CTRL_CHL_ID_3);
-	ipc_imem_channel_init(ipc_imem, IPC_CTYPE_CTRL, chnl_cfg,
-			      IRQ_MOD_OFF);
-
-	return ipc_trace_init(ipc_imem);
 }
 
 /* Map SKB to DMA for transfer */
@@ -409,12 +391,10 @@ void ipc_imem_sys_devlink_close(struct iosm_devlink *ipc_devlink)
 	int boot_check_timeout = BOOT_CHECK_DEFAULT_TIMEOUT;
 	enum ipc_mem_exec_stage exec_stage;
 	struct ipc_mem_channel *channel;
-	enum ipc_phase curr_phase;
 	int status = 0;
 	u32 tail = 0;
 
 	channel = ipc_imem->ipc_devlink->devlink_sio.channel;
-	curr_phase = ipc_imem->phase;
 	/* Increase the total wait time to boot_check_timeout */
 	do {
 		exec_stage = ipc_mmio_get_exec_stage(ipc_imem->mmio);

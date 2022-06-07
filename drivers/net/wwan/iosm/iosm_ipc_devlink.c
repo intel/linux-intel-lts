@@ -80,16 +80,15 @@ static int ipc_devlink_flash_update(struct devlink *devlink,
 	struct iosm_devlink *ipc_devlink = devlink_priv(devlink);
 	enum iosm_flash_comp_type fls_type;
 	struct iosm_devlink_image *header;
-	u32 rc = -EINVAL;
+	int rc = -EINVAL;
 	u8 *mdm_rsp;
 
-	if (!params->component)
-		header = (struct iosm_devlink_image *)params->fw->data;
+	header = (struct iosm_devlink_image *)params->fw->data;
 
 	if (!header || params->fw->size <= IOSM_DEVLINK_HDR_SIZE ||
 		(memcmp(header->magic_header, IOSM_DEVLINK_MAGIC_HEADER,
 			IOSM_DEVLINK_MAGIC_HEADER_LEN) != 0))
-		return rc;
+		return -EINVAL;
 
 	mdm_rsp = kzalloc(IOSM_EBL_DW_PACK_SIZE, GFP_KERNEL);
 	if (!mdm_rsp)
@@ -97,17 +96,19 @@ static int ipc_devlink_flash_update(struct devlink *devlink,
 
 	fls_type = ipc_devlink_get_flash_comp_type(header->image_type,
 							IOSM_DEVLINK_MAX_IMG_LEN);
+
 	switch (fls_type) {
 	case FLASH_COMP_TYPE_PSI:
 		rc = ipc_flash_boot_psi(ipc_devlink, params->fw);
 		break;
 	case FLASH_COMP_TYPE_EBL:
 		rc = ipc_flash_boot_ebl(ipc_devlink, params->fw);
-		if (!rc)
-			rc = ipc_flash_boot_set_capabilities(ipc_devlink,
-								mdm_rsp);
-		if (!rc)
-			rc = ipc_flash_read_swid(ipc_devlink, mdm_rsp);
+		if (rc)
+			break;
+		rc = ipc_flash_boot_set_capabilities(ipc_devlink, mdm_rsp);
+		if (rc)
+			break;
+		rc = ipc_flash_read_swid(ipc_devlink, mdm_rsp);
 		break;
 	case FLASH_COMP_TYPE_FLS:
 		rc = ipc_flash_send_fls(ipc_devlink, params->fw, mdm_rsp);
@@ -134,7 +135,14 @@ static const struct devlink_ops devlink_flash_ops = {
 	.flash_update = ipc_devlink_flash_update,
 };
 
-/* Send command to modem to collect data */
+/**
+ * ipc_devlink_send_cmd - Send command to Modem
+ * @ipc_devlink: Pointer to struct iosm_devlink
+ * @cmd:         Command to be sent to modem
+ * @entry:       Command entry number
+ *
+ * Returns:      0 on success and failure value on error
+ */
 int ipc_devlink_send_cmd(struct iosm_devlink *ipc_devlink, u16 cmd, u32 entry)
 {
 	struct iosm_rpsi_cmd rpsi_cmd;
@@ -148,6 +156,7 @@ int ipc_devlink_send_cmd(struct iosm_devlink *ipc_devlink, u16 cmd, u32 entry)
 					  sizeof(rpsi_cmd));
 }
 
+/* Function to create snapshot */
 static int ipc_devlink_coredump_snapshot(struct devlink *dl,
 					 const struct devlink_region_ops *ops,
 					 struct netlink_ext_ack *extack,
@@ -172,7 +181,8 @@ static int ipc_devlink_coredump_snapshot(struct devlink *dl,
 	if (cd_list->entry == (IOSM_NOF_CD_REGION - 1))
 		ipc_coredump_get_list(ipc_devlink, rpsi_cmd_coredump_end);
 
-	return rc;
+	return 0;
+
 coredump_collect_err:
 	ipc_coredump_get_list(ipc_devlink, rpsi_cmd_coredump_end);
 	return rc;
@@ -219,7 +229,12 @@ static void ipc_devlink_destroy_region(struct iosm_devlink *ipc_devlink)
 		devlink_region_destroy(ipc_devlink->cd_regions[i]);
 }
 
-/* Handle registration to devlink framework */
+/**
+ * ipc_devlink_init - Initialize/register devlink to IOSM driver
+ * @ipc_imem:   Pointer to struct iosm_imem
+ *
+ * Returns:     Pointer to iosm_devlink on success and NULL on failure
+ */
 struct iosm_devlink *ipc_devlink_init(struct iosm_imem *ipc_imem)
 {
 	struct ipc_chnl_cfg chnl_cfg_flash = { 0 };
@@ -239,11 +254,6 @@ struct iosm_devlink *ipc_devlink_init(struct iosm_imem *ipc_imem)
 	ipc_devlink->devlink_ctx = devlink_ctx;
 	ipc_devlink->pcie = ipc_imem->pcie;
 	ipc_devlink->dev = ipc_imem->dev;
-	rc = devlink_register(devlink_ctx);
-	if (rc) {
-		dev_err(ipc_devlink->dev, "devlink_register failed rc %d", rc);
-		goto free_dl;
-	}
 
 	rc = devlink_params_register(devlink_ctx, iosm_devlink_params,
 						ARRAY_SIZE(iosm_devlink_params));
@@ -253,7 +263,6 @@ struct iosm_devlink *ipc_devlink_init(struct iosm_imem *ipc_imem)
 		goto param_reg_fail;
 	}
 
-	devlink_params_publish(devlink_ctx);
 	ipc_devlink->cd_file_info = list;
 
 	rc = ipc_devlink_create_region(ipc_devlink);
@@ -272,6 +281,7 @@ struct iosm_devlink *ipc_devlink_init(struct iosm_imem *ipc_imem)
 	init_completion(&ipc_devlink->devlink_sio.read_sem);
 	skb_queue_head_init(&ipc_devlink->devlink_sio.rx_list);
 
+	devlink_register(devlink_ctx);
 	dev_dbg(ipc_devlink->dev, "iosm devlink register success");
 
 	return ipc_devlink;
@@ -279,24 +289,24 @@ struct iosm_devlink *ipc_devlink_init(struct iosm_imem *ipc_imem)
 chnl_get_fail:
 	ipc_devlink_destroy_region(ipc_devlink);
 region_create_fail:
-	devlink_params_unpublish(devlink_ctx);
 	devlink_params_unregister(devlink_ctx, iosm_devlink_params,
 					ARRAY_SIZE(iosm_devlink_params));
 param_reg_fail:
-	devlink_unregister(devlink_ctx);
-free_dl:
 	devlink_free(devlink_ctx);
 devlink_alloc_fail:
 	return NULL;
 }
 
-/* Handle unregistration of devlink */
+/**
+ * ipc_devlink_deinit - To unintialize the devlink from IOSM driver.
+ * @ipc_devlink:        Devlink instance
+ */
 void ipc_devlink_deinit(struct iosm_devlink *ipc_devlink)
 {
 	struct devlink *devlink_ctx = ipc_devlink->devlink_ctx;
 
+	devlink_unregister(devlink_ctx);
 	ipc_devlink_destroy_region(ipc_devlink);
-	devlink_params_unpublish(devlink_ctx);
 	devlink_params_unregister(devlink_ctx, iosm_devlink_params,
 					ARRAY_SIZE(iosm_devlink_params));
 	if (ipc_devlink->devlink_sio.devlink_read_pend) {
@@ -307,6 +317,5 @@ void ipc_devlink_deinit(struct iosm_devlink *ipc_devlink)
 		skb_queue_purge(&ipc_devlink->devlink_sio.rx_list);
 
 	ipc_imem_sys_devlink_close(ipc_devlink);
-	devlink_unregister(devlink_ctx);
 	devlink_free(devlink_ctx);
 }

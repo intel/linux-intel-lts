@@ -50,7 +50,9 @@ struct wwan_device {
 	atomic_t port_id;
 	const struct wwan_ops *ops;
 	void *ops_ctxt;
+#ifdef CONFIG_WWAN_DEBUGFS
 	struct dentry *debugfs_dir;
+#endif
 };
 
 /**
@@ -146,6 +148,7 @@ static struct wwan_device *wwan_dev_get_by_name(const char *name)
 	return to_wwan_dev(dev);
 }
 
+#ifdef CONFIG_WWAN_DEBUGFS
 struct dentry *wwan_get_debugfs_dir(struct device *parent)
 {
 	struct wwan_device *wwandev;
@@ -158,6 +161,43 @@ struct dentry *wwan_get_debugfs_dir(struct device *parent)
 }
 EXPORT_SYMBOL_GPL(wwan_get_debugfs_dir);
 
+static int wwan_dev_debugfs_match(struct device *dev, const void *dir)
+{
+	struct wwan_device *wwandev;
+
+	if (dev->type != &wwan_dev_type)
+		return 0;
+
+	wwandev = to_wwan_dev(dev);
+
+	return wwandev->debugfs_dir == dir;
+}
+
+static struct wwan_device *wwan_dev_get_by_debugfs(struct dentry *dir)
+{
+	struct device *dev;
+
+	dev = class_find_device(wwan_class, NULL, dir, wwan_dev_debugfs_match);
+	if (!dev)
+		return ERR_PTR(-ENODEV);
+
+	return to_wwan_dev(dev);
+}
+
+void wwan_put_debugfs_dir(struct dentry *dir)
+{
+	struct wwan_device *wwandev = wwan_dev_get_by_debugfs(dir);
+
+	if (WARN_ON(IS_ERR(wwandev)))
+		return;
+
+	/* wwan_dev_get_by_debugfs() also got a reference */
+	put_device(&wwandev->dev);
+	put_device(&wwandev->dev);
+}
+EXPORT_SYMBOL_GPL(wwan_put_debugfs_dir);
+#endif
+
 /* This function allocates and registers a new WWAN device OR if a WWAN device
  * already exist for the given parent, it gets a reference and return it.
  * This function is not exported (for now), it is called indirectly via
@@ -166,7 +206,6 @@ EXPORT_SYMBOL_GPL(wwan_get_debugfs_dir);
 static struct wwan_device *wwan_create_dev(struct device *parent)
 {
 	struct wwan_device *wwandev;
-	const char *wwandev_name;
 	int err, id;
 
 	/* The 'find-alloc-register' operation must be protected against
@@ -206,9 +245,11 @@ static struct wwan_device *wwan_create_dev(struct device *parent)
 		goto done_unlock;
 	}
 
-	wwandev_name = kobject_name(&wwandev->dev.kobj);
-	wwandev->debugfs_dir = debugfs_create_dir(wwandev_name,
-						  wwan_debugfs_dir);
+#ifdef CONFIG_WWAN_DEBUGFS
+	wwandev->debugfs_dir =
+			debugfs_create_dir(kobject_name(&wwandev->dev.kobj),
+					   wwan_debugfs_dir);
+#endif
 
 done_unlock:
 	mutex_unlock(&wwan_register_lock);
@@ -240,7 +281,9 @@ static void wwan_remove_dev(struct wwan_device *wwandev)
 		ret = device_for_each_child(&wwandev->dev, NULL, is_wwan_child);
 
 	if (!ret) {
+#ifdef CONFIG_WWAN_DEBUGFS
 		debugfs_remove_recursive(wwandev->debugfs_dir);
+#endif
 		device_unregister(&wwandev->dev);
 	} else {
 		put_device(&wwandev->dev);
@@ -1140,7 +1183,9 @@ static int __init wwan_init(void)
 		goto destroy;
 	}
 
+#ifdef CONFIG_WWAN_DEBUGFS
 	wwan_debugfs_dir = debugfs_create_dir("wwan", NULL);
+#endif
 
 	return 0;
 
