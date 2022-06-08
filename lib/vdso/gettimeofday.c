@@ -350,7 +350,7 @@ static __always_inline int do_hres(const struct vdso_data *vd, clockid_t clk,
 		while (unlikely((seq = READ_ONCE(vd->seq)) & 1)) {
 			if (IS_ENABLED(CONFIG_TIME_NS) &&
 				vd->clock_mode == VDSO_CLOCKMODE_TIMENS)
-				return !do_hres_timens(vd, clk, ts);
+				return do_hres_timens(vd, clk, ts);
 			cpu_relax();
 		}
 
