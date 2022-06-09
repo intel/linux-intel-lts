@@ -75,7 +75,6 @@ void hv_remove_vmbus_handler(void)
 DEFINE_IDTENTRY_SYSVEC(sysvec_hyperv_stimer0)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
-	u64 ip = regs ? instruction_pointer(regs) : 0;
 
 	inc_irq_stat(hyperv_stimer0_count);
 	if (hv_stimer0_handler)
