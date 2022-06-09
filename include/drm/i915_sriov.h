@@ -8,7 +8,7 @@ int i915_sriov_resume_vf(struct pci_dev *pdev, unsigned int vfid);
 
 int i915_sriov_wait_vf_flr_done(struct pci_dev *pdev, unsigned int vfid);
 
-ssize_t
+size_t
 i915_sriov_ggtt_size(struct pci_dev *pdev, unsigned int vfid, unsigned int tile);
 ssize_t i915_sriov_ggtt_save(struct pci_dev *pdev, unsigned int vfid, unsigned int tile,
 			     void *buf, size_t size);
@@ -16,7 +16,7 @@ int
 i915_sriov_ggtt_load(struct pci_dev *pdev, unsigned int vfid, unsigned int tile,
 		     const void *buf, size_t size);
 
-ssize_t
+size_t
 i915_sriov_fw_state_size(struct pci_dev *pdev, unsigned int vfid,
 			 unsigned int tile);
 ssize_t
