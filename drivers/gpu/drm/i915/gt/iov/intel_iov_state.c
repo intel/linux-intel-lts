@@ -539,3 +539,73 @@ int intel_iov_state_stop_vf(struct intel_iov *iov, u32 vfid)
 {
 	return pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_STOP);
 }
+
+/**
+ * intel_iov_state_save_ggtt - Save VF GGTT.
+ * @iov: the IOV struct
+ * @vfid: VF identifier
+ * @buf: buffer to save VF GGTT
+ * @size: size of buffer to save VF GGTT
+ *
+ * This function is for PF only.
+ *
+ * Return: Size of data written on success or a negative error code on failure.
+ */
+ssize_t intel_iov_state_save_ggtt(struct intel_iov *iov, u32 vfid, void *buf, size_t size)
+{
+	struct drm_mm_node *node = &iov->pf.provisioning.configs[vfid].ggtt_region;
+	struct intel_runtime_pm *rpm = iov_to_gt(iov)->uncore->rpm;
+	struct i915_ggtt *ggtt = iov_to_gt(iov)->ggtt;
+	intel_wakeref_t wakeref;
+	ssize_t ret;
+
+	GEM_BUG_ON(!intel_iov_is_pf(iov));
+
+	mutex_lock(pf_provisioning_mutex(iov));
+
+	if (!drm_mm_node_allocated(node)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	with_intel_runtime_pm(rpm, wakeref)
+		ret = i915_ggtt_save_ptes(ggtt, node, buf, size, I915_GGTT_SAVE_PTES_NO_VFID);
+
+out:
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return ret;
+}
+
+/**
+ * intel_iov_state_restore_ggtt - Restore VF GGTT.
+ * @iov: the IOV struct
+ * @vfid: VF identifier
+ * @buf: buffer with VF GGTT to restore
+ * @size: size of buffer with VF GGTT
+ *
+ * This function is for PF only.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
+int intel_iov_state_restore_ggtt(struct intel_iov *iov, u32 vfid, const void *buf, size_t size)
+{
+	struct drm_mm_node *node = &iov->pf.provisioning.configs[vfid].ggtt_region;
+	struct intel_runtime_pm *rpm = iov_to_gt(iov)->uncore->rpm;
+	struct i915_ggtt *ggtt = iov_to_gt(iov)->ggtt;
+	intel_wakeref_t wakeref;
+	int ret;
+
+	GEM_BUG_ON(!intel_iov_is_pf(iov));
+
+	mutex_lock(pf_provisioning_mutex(iov));
+
+	with_intel_runtime_pm(rpm, wakeref)
+		ret = i915_ggtt_restore_ptes(ggtt, node, buf, size,
+					     FIELD_PREP(I915_GGTT_RESTORE_PTES_VFID_MASK, vfid) |
+					     I915_GGTT_RESTORE_PTES_NEW_VFID);
+
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return ret;
+}
