@@ -1,0 +1,39 @@
+From 246546a2721d1c5b1a47fb62ebfc1dd1c481f28b Mon Sep 17 00:00:00 2001
+From: Jens Axboe <axboe@kernel.dk>
+Date: Mon, 16 May 2022 23:05:51 +0200
+Subject: [PATCH] io_uring: always use original task when preparing req
+ identity
+
+If the ring is setup with IORING_SETUP_IOPOLL and we have more than
+one task doing submissions on a ring, we can up in a situation where
+we assign the context from the current task rather than the request
+originator.
+
+Always use req->task rather than assume it's the same as current.
+
+No upstream patch exists for this issue, as only older kernels with
+the non-native workers have this problem.
+
+Reported-by: Kyle Zeng <zengyhkyle@gmail.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/io_uring.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/io_uring.c b/fs/io_uring.c
+index ab9290ab4cae..4330603eae35 100644
+--- a/fs/io_uring.c
++++ b/fs/io_uring.c
+@@ -1156,7 +1156,7 @@ static inline void __io_req_init_async(struct io_kiocb *req)
+  */
+ static inline void io_req_init_async(struct io_kiocb *req)
+ {
+-	struct io_uring_task *tctx = current->io_uring;
++	struct io_uring_task *tctx = req->task->io_uring;
+ 
+ 	if (req->flags & REQ_F_WORK_INITIALIZED)
+ 		return;
+-- 
+2.25.1
+
