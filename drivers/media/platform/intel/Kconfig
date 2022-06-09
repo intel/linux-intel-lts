@@ -1,6 +1,6 @@
 config INTEL_IPU6_TGLRVP_PDATA
 	bool "Enable built in platform data for TGL RVP"
-	depends on VIDEO_INTEL_IPU6
+	depends on VIDEO_INTEL_IPU6 && !INTEL_IPU6_ADLRVP_PDATA
 	help
 	Pre-ACPI system platform data is compiled inside kernel
 
