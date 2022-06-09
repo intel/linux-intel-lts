@@ -7,3 +7,5 @@
 # CVE-2022-0998
 0001-vdpa-clean-up-get_config_size-ret-value-handling.patch
 
+# CVE-2022-1966
+0001-netfilter-nf_tables-disallow-non-stateful-expression.patch
