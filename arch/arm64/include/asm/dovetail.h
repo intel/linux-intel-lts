@@ -32,6 +32,14 @@ static inline void arch_dovetail_switch_finish(bool enter_inband)
 	fpsimd_restore_current_oob();
 }
 
+/*
+ * 172 is __NR_prctl from unistd32 in ARM32 mode, without #inclusion
+ * hell. At the end of the day, this number is written in stone to
+ * honor the ABI stability promise anyway.
+ */
+#define arch_dovetail_is_syscall(__nr)	\
+	((is_compat_task() && (__nr) == 172) || __nr == __NR_prctl)
+
 #endif
 
 #endif /* _ASM_ARM64_DOVETAIL_H */
