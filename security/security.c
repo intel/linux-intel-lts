@@ -993,7 +993,7 @@ OUT:									\
  *
  * Return: Return 0 if permission is granted.
  */
-int security_binder_set_context_mgr(const struct cred *mgr)
+int security_binder_set_context_mgr(struct task_struct *mgr)
 {
 	return call_int_hook(binder_set_context_mgr, mgr);
 }
@@ -1007,8 +1007,8 @@ int security_binder_set_context_mgr(const struct cred *mgr)
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_binder_transaction(const struct cred *from,
-				const struct cred *to)
+int security_binder_transaction(struct task_struct *from,
+				struct task_struct *to)
 {
 	return call_int_hook(binder_transaction, from, to);
 }
@@ -1022,8 +1022,8 @@ int security_binder_transaction(const struct cred *from,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_binder_transfer_binder(const struct cred *from,
-				    const struct cred *to)
+int security_binder_transfer_binder(struct task_struct *from,
+				    struct task_struct *to)
 {
 	return call_int_hook(binder_transfer_binder, from, to);
 }
@@ -1038,8 +1038,8 @@ int security_binder_transfer_binder(const struct cred *from,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_binder_transfer_file(const struct cred *from,
-				  const struct cred *to, const struct file *file)
+int security_binder_transfer_file(struct task_struct *from,
+				  struct task_struct *to, struct file *file)
 {
 	return call_int_hook(binder_transfer_file, from, to, file);
 }

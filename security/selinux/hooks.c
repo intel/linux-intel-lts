@@ -266,6 +266,29 @@ static inline u32 task_sid_obj(const struct task_struct *task)
 	return sid;
 }
 
+/*
+ * get the security ID of a task for use with binder
+ */
+static inline u32 task_sid_binder(const struct task_struct *task)
+{
+	/*
+	 * In many case where this function is used we should be using the
+	 * task's subjective SID, but we can't reliably access the subjective
+	 * creds of a task other than our own so we must use the objective
+	 * creds/SID, which are safe to access.  The downside is that if a task
+	 * is temporarily overriding it's creds it will not be reflected here;
+	 * however, it isn't clear that binder would handle that case well
+	 * anyway.
+	 *
+	 * If this ever changes and we can safely reference the subjective
+	 * creds/SID of another task, this function will make it easier to
+	 * identify the various places where we make use of the task SIDs in
+	 * the binder code.  It is also likely that we will need to adjust
+	 * the main drivers/android binder code as well.
+	 */
+	return task_sid_obj(task);
+}
+
 static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dentry);
 
 /*
@@ -2022,18 +2045,17 @@ static inline u32 open_file_to_av(struct file *file)
 
 /* Hook functions begin here. */
 
-static int selinux_binder_set_context_mgr(const struct cred *mgr)
+static int selinux_binder_set_context_mgr(struct task_struct *mgr)
 {
-	return avc_has_perm(current_sid(), cred_sid(mgr), SECCLASS_BINDER,
+	return avc_has_perm(current_sid(), task_sid_binder(mgr), SECCLASS_BINDER,
 			    BINDER__SET_CONTEXT_MGR, NULL);
 }
 
-static int selinux_binder_transaction(const struct cred *from,
-				      const struct cred *to)
+static int selinux_binder_transaction(struct task_struct *from,
+				      struct task_struct *to)
 {
 	u32 mysid = current_sid();
-	u32 fromsid = cred_sid(from);
-	u32 tosid = cred_sid(to);
+	u32 fromsid = task_sid_binder(from);
 	int rc;
 
 	if (mysid != fromsid) {
@@ -2043,23 +2065,23 @@ static int selinux_binder_transaction(const struct cred *from,
 			return rc;
 	}
 
-	return avc_has_perm(fromsid, tosid,
+	return avc_has_perm(fromsid, task_sid_binder(to),
 			    SECCLASS_BINDER, BINDER__CALL, NULL);
 }
 
-static int selinux_binder_transfer_binder(const struct cred *from,
-					  const struct cred *to)
+static int selinux_binder_transfer_binder(struct task_struct *from,
+					  struct task_struct *to)
 {
-	return avc_has_perm(cred_sid(from), cred_sid(to),
+	return avc_has_perm(task_sid_binder(from), task_sid_binder(to),
 			    SECCLASS_BINDER, BINDER__TRANSFER,
 			    NULL);
 }
 
-static int selinux_binder_transfer_file(const struct cred *from,
-					const struct cred *to,
-					const struct file *file)
+static int selinux_binder_transfer_file(struct task_struct *from,
+					struct task_struct *to,
+					struct file *file)
 {
-	u32 sid = cred_sid(to);
+	u32 sid = task_sid_binder(to);
 	struct file_security_struct *fsec = selinux_file(file);
 	struct dentry *dentry = file->f_path.dentry;
 	struct inode_security_struct *isec;
