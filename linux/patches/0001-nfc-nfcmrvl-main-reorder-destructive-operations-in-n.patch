@@ -1,0 +1,117 @@
+From 47438ec1596f72d60e5796db04d38c7ee3d7f062 Mon Sep 17 00:00:00 2001
+From: Duoming Zhou <duoming@zju.edu.cn>
+Date: Fri, 29 Apr 2022 20:45:51 +0800
+Subject: [PATCH 1/2] nfc: nfcmrvl: main: reorder destructive operations in
+ nfcmrvl_nci_unregister_dev to avoid bugs
+
+commit d270453a0d9ec10bb8a802a142fb1b3601a83098 upstream.
+
+There are destructive operations such as nfcmrvl_fw_dnld_abort and
+gpio_free in nfcmrvl_nci_unregister_dev. The resources such as firmware,
+gpio and so on could be destructed while the upper layer functions such as
+nfcmrvl_fw_dnld_start and nfcmrvl_nci_recv_frame is executing, which leads
+to double-free, use-after-free and null-ptr-deref bugs.
+
+There are three situations that could lead to double-free bugs.
+
+The first situation is shown below:
+
+   (Thread 1)                 |      (Thread 2)
+nfcmrvl_fw_dnld_start         |
+ ...                          |  nfcmrvl_nci_unregister_dev
+ release_firmware()           |   nfcmrvl_fw_dnld_abort
+  kfree(fw) //(1)             |    fw_dnld_over
+                              |     release_firmware
+  ...                         |      kfree(fw) //(2)
+                              |     ...
+
+The second situation is shown below:
+
+   (Thread 1)                 |      (Thread 2)
+nfcmrvl_fw_dnld_start         |
+ ...                          |
+ mod_timer                    |
+ (wait a time)                |
+ fw_dnld_timeout              |  nfcmrvl_nci_unregister_dev
+   fw_dnld_over               |   nfcmrvl_fw_dnld_abort
+    release_firmware          |    fw_dnld_over
+     kfree(fw) //(1)          |     release_firmware
+     ...                      |      kfree(fw) //(2)
+
+The third situation is shown below:
+
+       (Thread 1)               |       (Thread 2)
+nfcmrvl_nci_recv_frame          |
+ if(..->fw_download_in_progress)|
+  nfcmrvl_fw_dnld_recv_frame    |
+   queue_work                   |
+                                |
+fw_dnld_rx_work                 | nfcmrvl_nci_unregister_dev
+ fw_dnld_over                   |  nfcmrvl_fw_dnld_abort
+  release_firmware              |   fw_dnld_over
+   kfree(fw) //(1)              |    release_firmware
+                                |     kfree(fw) //(2)
+
+The firmware struct is deallocated in position (1) and deallocated
+in position (2) again.
+
+The crash trace triggered by POC is like below:
+
+BUG: KASAN: double-free or invalid-free in fw_dnld_over
+Call Trace:
+  kfree
+  fw_dnld_over
+  nfcmrvl_nci_unregister_dev
+  nci_uart_tty_close
+  tty_ldisc_kill
+  tty_ldisc_hangup
+  __tty_hangup.part.0
+  tty_release
+  ...
+
+What's more, there are also use-after-free and null-ptr-deref bugs
+in nfcmrvl_fw_dnld_start. If we deallocate firmware struct, gpio or
+set null to the members of priv->fw_dnld in nfcmrvl_nci_unregister_dev,
+then, we dereference firmware, gpio or the members of priv->fw_dnld in
+nfcmrvl_fw_dnld_start, the UAF or NPD bugs will happen.
+
+This patch reorders destructive operations after nci_unregister_device
+in order to synchronize between cleanup routine and firmware download
+routine.
+
+The nci_unregister_device is well synchronized. If the device is
+detaching, the firmware download routine will goto error. If firmware
+download routine is executing, nci_unregister_device will wait until
+firmware download routine is finished.
+
+Fixes: 3194c6870158 ("NFC: nfcmrvl: add firmware download support")
+Signed-off-by: Duoming Zhou <duoming@zju.edu.cn>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/nfc/nfcmrvl/main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/nfc/nfcmrvl/main.c b/drivers/nfc/nfcmrvl/main.c
+index 2fcf545012b1..1a5284de4341 100644
+--- a/drivers/nfc/nfcmrvl/main.c
++++ b/drivers/nfc/nfcmrvl/main.c
+@@ -183,6 +183,7 @@ void nfcmrvl_nci_unregister_dev(struct nfcmrvl_private *priv)
+ {
+ 	struct nci_dev *ndev = priv->ndev;
+ 
++	nci_unregister_device(ndev);
+ 	if (priv->ndev->nfc_dev->fw_download_in_progress)
+ 		nfcmrvl_fw_dnld_abort(priv);
+ 
+@@ -191,7 +192,6 @@ void nfcmrvl_nci_unregister_dev(struct nfcmrvl_private *priv)
+ 	if (gpio_is_valid(priv->config.reset_n_io))
+ 		gpio_free(priv->config.reset_n_io);
+ 
+-	nci_unregister_device(ndev);
+ 	nci_free_device(ndev);
+ 	kfree(priv);
+ }
+-- 
+2.27.0
+

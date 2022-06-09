@@ -1,0 +1,60 @@
+From 1b70c8a7bd0e8ea9dd60e26d992f24b7252fd533 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 20 May 2022 13:48:11 -0400
+Subject: [PATCH 2/2] KVM: x86/mmu: fix NULL pointer dereference on guest
+ INVPCID
+
+commit 9f46c187e2e680ecd9de7983e4d081c3391acc76 upstream.
+
+With shadow paging enabled, the INVPCID instruction results in a call
+to kvm_mmu_invpcid_gva.  If INVPCID is executed with CR0.PG=0, the
+invlpg callback is not set and the result is a NULL pointer dereference.
+Fix it trivially by checking for mmu->invlpg before every call.
+
+There are other possibilities:
+
+- check for CR0.PG, because KVM (like all Intel processors after P5)
+  flushes guest TLB on CR0.PG changes so that INVPCID/INVLPG are a
+  nop with paging disabled
+
+- check for EFER.LMA, because KVM syncs and flushes when switching
+  MMU contexts outside of 64-bit mode
+
+All of these are tricky, go for the simple solution.  This is CVE-2022-1789.
+
+Reported-by: Yongkang Jia <kangel@zju.edu.cn>
+Cc: stable@vger.kernel.org
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+[fix conflict due to missing b9e5603c2a3accbadfec570ac501a54431a6bdba]
+Signed-off-by: Vegard Nossum <vegard.nossum@oracle.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/kvm/mmu/mmu.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/mmu/mmu.c b/arch/x86/kvm/mmu/mmu.c
+index 34e828badc51..62addcb98be7 100644
+--- a/arch/x86/kvm/mmu/mmu.c
++++ b/arch/x86/kvm/mmu/mmu.c
+@@ -5394,14 +5394,16 @@ void kvm_mmu_invpcid_gva(struct kvm_vcpu *vcpu, gva_t gva, unsigned long pcid)
+ 	uint i;
+ 
+ 	if (pcid == kvm_get_active_pcid(vcpu)) {
+-		mmu->invlpg(vcpu, gva, mmu->root_hpa);
++		if (mmu->invlpg)
++			mmu->invlpg(vcpu, gva, mmu->root_hpa);
+ 		tlb_flush = true;
+ 	}
+ 
+ 	for (i = 0; i < KVM_MMU_NUM_PREV_ROOTS; i++) {
+ 		if (VALID_PAGE(mmu->prev_roots[i].hpa) &&
+ 		    pcid == kvm_get_pcid(vcpu, mmu->prev_roots[i].pgd)) {
+-			mmu->invlpg(vcpu, gva, mmu->prev_roots[i].hpa);
++			if (mmu->invlpg)
++				mmu->invlpg(vcpu, gva, mmu->prev_roots[i].hpa);
+ 			tlb_flush = true;
+ 		}
+ 	}
+-- 
+2.27.0
+

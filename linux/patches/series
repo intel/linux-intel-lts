@@ -9,3 +9,9 @@
 
 # CVE-2022-28893
 0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
+
+# CVE-2022-1734
+0001-nfc-nfcmrvl-main-reorder-destructive-operations-in-n.patch
+
+# CVE-2022-1789
+0002-KVM-x86-mmu-fix-NULL-pointer-dereference-on-guest-IN.patch
