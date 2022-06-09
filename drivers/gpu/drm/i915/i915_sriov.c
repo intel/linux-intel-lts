@@ -1190,7 +1190,7 @@ sriov_to_gt(struct pci_dev *pdev, unsigned int tile)
  *
  * Return: Size in bytes.
  */
-ssize_t
+size_t
 i915_sriov_ggtt_size(struct pci_dev *pdev, unsigned int vfid, unsigned int tile)
 {
 	struct intel_gt *gt;
@@ -1279,7 +1279,7 @@ EXPORT_SYMBOL_NS_GPL(i915_sriov_ggtt_load, I915_SRIOV_NS);
  *
  * Return: size in bytes on success or a negative error code on failure.
  */
-ssize_t
+size_t
 i915_sriov_fw_state_size(struct pci_dev *pdev, unsigned int vfid, unsigned int tile)
 {
 	struct intel_gt *gt;
