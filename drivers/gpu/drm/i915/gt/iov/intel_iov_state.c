@@ -172,6 +172,16 @@ static void pf_clear_vf_ggtt_entries(struct intel_iov *iov, u32 vfid)
 	i915_ggtt_set_space_owner(gt->ggtt, vfid, &config->ggtt_region);
 }
 
+static void pf_reset_vf_guc_migration_state(struct intel_iov *iov, u32 vfid)
+{
+	struct intel_iov_data *data = &iov->pf.state.data[vfid];
+	void *guc_state = fetch_and_zero(&data->guc_state);
+
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
+	kfree(guc_state);
+}
+
 static int pf_process_vf_flr_finish(struct intel_iov *iov, u32 vfid)
 {
 	/* Wa_14017568299:mtl - Clear Unsupported Request Detected status*/
@@ -180,6 +190,7 @@ static int pf_process_vf_flr_finish(struct intel_iov *iov, u32 vfid)
 	intel_iov_event_reset(iov, vfid);
 
 	mutex_lock(pf_provisioning_mutex(iov));
+	pf_reset_vf_guc_migration_state(iov, vfid);
 	pf_clear_vf_ggtt_entries(iov, vfid);
 	mutex_unlock(pf_provisioning_mutex(iov));
 
@@ -768,4 +779,28 @@ int intel_iov_state_restore_vf(struct intel_iov *iov, u32 vfid, const void *buf,
 		iov->pf.state.data[vfid].paused = false;
 
 	return err;
+}
+
+int intel_iov_state_store_guc_migration_state(struct intel_iov *iov, u32 vfid,
+					      const void *buf, size_t size)
+{
+	struct intel_iov_data *data = &iov->pf.state.data[vfid];
+	void *guc_state;
+
+	if (size != PF2GUC_SAVE_RESTORE_VF_BUFF_SIZE)
+		return -EINVAL;
+
+	mutex_lock(pf_provisioning_mutex(iov));
+	guc_state = kzalloc(size, GFP_KERNEL);
+	if (!guc_state) {
+		mutex_unlock(pf_provisioning_mutex(iov));
+		return -ENOMEM;
+	}
+
+	memcpy(guc_state, buf, size);
+
+	data->guc_state = guc_state;
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return 0;
 }
