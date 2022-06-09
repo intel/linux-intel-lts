@@ -38,7 +38,7 @@ static inline void arch_dovetail_switch_finish(bool enter_inband)
  * honor the ABI stability promise anyway.
  */
 #define arch_dovetail_is_syscall(__nr)	\
-	((is_compat_task() && (__nr) == 172) || __nr == __NR_prctl)
+	(is_compat_task() ? (__nr) == 172 : (__nr) == __NR_prctl)
 
 #endif
 
