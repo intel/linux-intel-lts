@@ -3,6 +3,8 @@
  * Copyright © 2023 Intel Corporation
  */
 
+#include <drm/i915_sriov.h>
+
 #include "i915_sriov.h"
 #include "i915_sriov_sysfs.h"
 #include "i915_drv.h"
@@ -1009,6 +1011,268 @@ int i915_sriov_pf_resume_vf(struct drm_i915_private *i915, unsigned int vfid)
 
 	return result;
 }
+
+/**
+ * i915_sriov_pause_vf - Pause VF.
+ * @pdev: the i915 struct
+ * @vfid: VF identifier
+ *
+ * This function will pause VF on all tiles.
+ * This function shall be called only on PF.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
+int i915_sriov_pause_vf(struct pci_dev *pdev, unsigned int vfid)
+{
+	struct drm_i915_private *i915 = pci_get_drvdata(pdev);
+
+	if (!IS_SRIOV_PF(i915))
+		return -ENODEV;
+
+	return i915_sriov_pf_pause_vf(i915, vfid);
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_pause_vf, I915_SRIOV_NS);
+
+/**
+ * i915_sriov_resume_vf - Resume VF.
+ * @pdev: the i915 struct
+ * @vfid: VF identifier
+ *
+ * This function will resume VF on all tiles.
+ * This function shall be called only on PF.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
+int i915_sriov_resume_vf(struct pci_dev *pdev, unsigned int vfid)
+{
+	struct drm_i915_private *i915 = pci_get_drvdata(pdev);
+
+	if (!IS_SRIOV_PF(i915))
+		return -ENODEV;
+
+	return i915_sriov_pf_resume_vf(i915, vfid);
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_resume_vf, I915_SRIOV_NS);
+
+/**
+ * i915_sriov_wait_vf_flr_done - Wait for VF FLR completion.
+ * @pdev: PF pci device
+ * @vfid: VF identifier
+ *
+ * This function will wait until VF FLR is processed by PF on all tiles (or
+ * until timeout occurs).
+ * This function shall be called only on PF.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
+int i915_sriov_wait_vf_flr_done(struct pci_dev *pdev, unsigned int vfid)
+{
+	struct drm_i915_private *i915 = pci_get_drvdata(pdev);
+	struct intel_gt *gt;
+	unsigned int id;
+	int ret;
+
+	if (!IS_SRIOV_PF(i915))
+		return -ENODEV;
+
+	for_each_gt(gt, i915, id) {
+		ret = wait_for(intel_iov_state_no_flr(&gt->iov, vfid), I915_VF_FLR_TIMEOUT_MS);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_wait_vf_flr_done, I915_SRIOV_NS);
+
+static struct intel_gt *
+sriov_to_gt(struct pci_dev *pdev, unsigned int tile)
+{
+	struct drm_i915_private *i915 = pci_get_drvdata(pdev);
+	struct intel_gt *gt;
+
+	if (!i915 || !IS_SRIOV_PF(i915))
+		return NULL;
+
+	if (!HAS_EXTRA_GT_LIST(i915) && tile > 0)
+		return NULL;
+
+	gt = NULL;
+	if (tile < ARRAY_SIZE(i915->gt))
+		gt = i915->gt[tile];
+
+	return gt;
+}
+
+/**
+ * i915_sriov_ggtt_size - Get size needed to store VF GGTT.
+ * @pdev: PF pci device
+ * @vfid: VF identifier
+ * @tile: tile identifier
+ *
+ * This function shall be called only on PF.
+ *
+ * Return: Size in bytes.
+ */
+ssize_t
+i915_sriov_ggtt_size(struct pci_dev *pdev, unsigned int vfid, unsigned int tile)
+{
+	struct intel_gt *gt;
+	ssize_t size;
+
+	gt = sriov_to_gt(pdev, tile);
+	if (!gt)
+		return 0;
+
+	if (gt->type == GT_MEDIA)
+		return 0;
+
+	size = intel_iov_state_save_ggtt(&gt->iov, vfid, NULL, 0);
+	WARN_ON(size < 0);
+
+	return size;
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_ggtt_size, I915_SRIOV_NS);
+
+/**
+ * i915_sriov_ggtt_save - Save VF GGTT.
+ * @pdev: PF pci device
+ * @vfid: VF identifier
+ * @tile: tile identifier
+ * @buf: buffer to save VF GGTT
+ * @size: size of buffer to save VF GGTT
+ *
+ * This function shall be called only on PF.
+ *
+ * Return: Size of data written on success or a negative error code on failure.
+ */
+ssize_t i915_sriov_ggtt_save(struct pci_dev *pdev, unsigned int vfid, unsigned int tile,
+			     void *buf, size_t size)
+{
+	struct intel_gt *gt;
+
+	gt = sriov_to_gt(pdev, tile);
+	if (!gt)
+		return -ENODEV;
+
+	if (gt->type == GT_MEDIA)
+		return -ENODEV;
+
+	WARN_ON(buf == NULL && size == 0);
+
+	return intel_iov_state_save_ggtt(&gt->iov, vfid, buf, size);
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_ggtt_save, I915_SRIOV_NS);
+
+/**
+ * i915_sriov_ggtt_load - Load VF GGTT.
+ * @pdev: PF pci device
+ * @vfid: VF identifier
+ * @tile: tile identifier
+ * @buf: buffer with VF GGTT
+ * @size: size of buffer with VF GGTT
+ *
+ * This function shall be called only on PF.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
+int
+i915_sriov_ggtt_load(struct pci_dev *pdev, unsigned int vfid, unsigned int tile,
+		     const void *buf, size_t size)
+{
+	struct intel_gt *gt;
+
+	gt = sriov_to_gt(pdev, tile);
+	if (!gt)
+		return -ENODEV;
+
+	if (gt->type == GT_MEDIA)
+		return -ENODEV;
+
+	return intel_iov_state_restore_ggtt(&gt->iov, vfid, buf, size);
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_ggtt_load, I915_SRIOV_NS);
+
+/**
+ * i915_sriov_fw_state_size - Get size needed to store GuC FW state.
+ * @pdev: PF pci device
+ * @vfid: VF identifier
+ * @tile: tile identifier
+ *
+ * This function shall be called only on PF.
+ *
+ * Return: size in bytes on success or a negative error code on failure.
+ */
+ssize_t
+i915_sriov_fw_state_size(struct pci_dev *pdev, unsigned int vfid, unsigned int tile)
+{
+	struct intel_gt *gt;
+	int ret;
+
+	gt = sriov_to_gt(pdev, tile);
+	if (!gt)
+		return -ENODEV;
+
+	ret = intel_iov_state_save_vf_size(&gt->iov, vfid);
+
+	return ret;
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_fw_state_size, I915_SRIOV_NS);
+
+/**
+ * i915_sriov_fw_state_save - Save GuC FW state.
+ * @pdev: PF pci device
+ * @vfid: VF identifier
+ * @tile: tile identifier
+ * @buf: buffer to save GuC FW state
+ * @size: size of buffer to save GuC FW state, in bytes
+ *
+ * This function shall be called only on PF.
+ *
+ * Return: Size of data written (in bytes) on success or a negative error code on failure.
+ */
+ssize_t
+i915_sriov_fw_state_save(struct pci_dev *pdev, unsigned int vfid, unsigned int tile,
+			 void *buf, size_t size)
+{
+	struct intel_gt *gt;
+	int ret;
+
+	gt = sriov_to_gt(pdev, tile);
+	if (!gt)
+		return -ENODEV;
+
+	ret = intel_iov_state_save_vf(&gt->iov, vfid, buf, size);
+
+	return ret;
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_fw_state_save, I915_SRIOV_NS);
+
+/**
+ * i915_sriov_fw_state_load - Load GuC FW state.
+ * @pdev: PF pci device
+ * @vfid: VF identifier
+ * @tile: tile identifier
+ * @buf: buffer with GuC FW state to load
+ * @size: size of buffer with GuC FW state
+ *
+ * This function shall be called only on PF.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
+int
+i915_sriov_fw_state_load(struct pci_dev *pdev, unsigned int vfid, unsigned int tile,
+			 const void *buf, size_t size)
+{
+	struct intel_gt *gt;
+
+	gt = sriov_to_gt(pdev, tile);
+	if (!gt)
+		return -ENODEV;
+
+	return intel_iov_state_store_guc_migration_state(&gt->iov, vfid, buf, size);
+}
+EXPORT_SYMBOL_NS_GPL(i915_sriov_fw_state_load, I915_SRIOV_NS);
 
 /**
  * i915_sriov_pf_clear_vf - Unprovision VF.
