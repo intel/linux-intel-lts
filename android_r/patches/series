@@ -74,3 +74,6 @@
 0003-Subject-PATCH-drm-serialize-drm_file.master-with-a-n.patch
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
+
+# CVE-2022-1966
+0001-netfilter-nf_tables-disallow-non-stateful-expression.patch
