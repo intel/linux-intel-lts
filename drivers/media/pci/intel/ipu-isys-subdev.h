@@ -100,7 +100,8 @@ struct ipu_isys_subdev {
 	container_of(__sd, struct ipu_isys_subdev, sd)
 
 struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
-					       struct v4l2_subdev_pad_config *cfg,
+					       struct v4l2_subdev_pad_config
+					       *cfg,
 					       unsigned int pad,
 					       unsigned int stream,
 					       unsigned int which);

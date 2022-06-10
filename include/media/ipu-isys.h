@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2014 - 2020 Intel Corporation */
+/* Copyright (C) 2014 - 2022 Intel Corporation */
 
 #ifndef MEDIA_IPU_H
 #define MEDIA_IPU_H
@@ -62,6 +62,7 @@ struct ipu_isys_subdev_info {
 	struct ipu_isys_csi2_config *csi2;
 	struct ipu_isys_subdev_i2c_info i2c;
 	void (*fixup_spdata)(const void *spdata_rep, void *spdata);
+	char *acpi_hid;
 };
 
 struct ipu_isys_clk_mapping {

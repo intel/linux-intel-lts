@@ -8,6 +8,7 @@ endif
 ccflags-y += -DIPU_VC_SUPPORT -DIPU_HAS_S2M -DIPU_TPG_FRAME_SYNC -DIPU_PSYS_GPC \
 		-DIPU_ISYS_GPC -DIPU_TRACE_EVENT
 ccflags-y += -DIPU_META_DATA_SUPPORT -DI2C_DYNAMIC
+ccflags-y += -DIPU_ISYS_RESET
 
 intel-ipu6-objs				+= ../ipu.o \
 					   ../ipu-bus.o \

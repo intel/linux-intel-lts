@@ -613,7 +613,6 @@ static inline bool cpu_supports_mixed_endian_el0(void)
 	return id_aa64mmfr0_mixed_endian_el0(read_cpuid(ID_AA64MMFR0_EL1));
 }
 
-
 static inline bool supports_csv2p3(int scope)
 {
 	u64 pfr0;

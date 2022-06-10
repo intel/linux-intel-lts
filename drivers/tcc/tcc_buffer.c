@@ -308,6 +308,7 @@ static int tcc_perf_fn(void);
 #define MSR_MISC_FEATURE_CONTROL    0x000001a4
 #define READ_BYTE_SIZE              64
 #define MISC_MSR_BITS_COMMON        ((0x52ULL << 16) | 0xd1)
+#define MISC_MSR_BITS_GENERIC_L3    ((0x52ULL << 16) | 0x2e)
 #define MISC_MSR_BITS_ALL_CLEAR     0x0
 #define PERFMON_EVENTSEL_BITMASK    (~(0x40ULL << 16))
 
@@ -323,6 +324,10 @@ static u64 get_hardware_prefetcher_disable_bits(void)
 	return 0x5;
 	case INTEL_FAM6_ATOM_TREMONT:
 	return 0x1F;
+	case INTEL_FAM6_ALDERLAKE:
+	case INTEL_FAM6_ALDERLAKE_N:
+	case INTEL_FAM6_RAPTORLAKE:
+	return 0x2F;
 	default:
 	return 0xF;
 	}
@@ -356,7 +361,10 @@ static int tcc_perf_fn(void)
 		msr_bits_l2h = (MISC_MSR_BITS_COMMON) | (0x2  << 8);
 		msr_bits_l2m = (MISC_MSR_BITS_COMMON) | (0x10 << 8);
 		msr_bits_l3h = (MISC_MSR_BITS_COMMON) | (0x4  << 8);
-		msr_bits_l3m = (MISC_MSR_BITS_COMMON) | (0x20 << 8);
+		if (boot_cpu_data.x86_model == INTEL_FAM6_ALDERLAKE_N)
+			msr_bits_l3m = (MISC_MSR_BITS_GENERIC_L3) | (0x41 << 8);
+		else
+			msr_bits_l3m = (MISC_MSR_BITS_COMMON) | (0x20 << 8);
 	}
 	asm volatile (" cli ");
 	__wrmsr(MSR_MISC_FEATURE_CONTROL, hardware_prefetcher_disable_bits, 0x0);
@@ -397,13 +405,14 @@ static int tcc_perf_fn(void)
 	/* capture the timestamp at the meantime while hitting buffer */
 	start = rdtsc_ordered();
 	for (i = 0; i < cacheread_size; i += cacheline_len) {
+		/* Add a barrier to prevent reading beyond the end of the buffer */
+		rmb();
 		asm volatile("mov (%0,%1,1), %%eax\n\t"
 				:
 				: "r" (cachemem_k), "r" (i)
 				: "%eax", "memory");
 	}
 	end = rdtsc_ordered();
-
 	tcc_perf_wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0, msr_bits_l2h & PERFMON_EVENTSEL_BITMASK);
 	tcc_perf_wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + 1, msr_bits_l2m & PERFMON_EVENTSEL_BITMASK);
 
@@ -429,7 +438,8 @@ static int tcc_perf_fn(void)
 		perf_l1h = native_read_pmc(2);
 		perf_l1m = native_read_pmc(3);
 	}
-
+	/* Add a barrier to ensure all previous instructions are retired before proceeding */
+	rmb();
 	wrmsr(MSR_MISC_FEATURE_CONTROL, 0x0, 0x0);
 	asm volatile (" sti ");
 

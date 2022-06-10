@@ -78,7 +78,9 @@ struct ipu_device {
 	unsigned int pkg_dir_size;
 	struct sg_table fw_sgt;
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	const struct firmware *spdata_fw;
+#endif
 	void __iomem *base;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *ipu_dir;
