@@ -508,26 +508,34 @@ static void entry_task_switch(struct task_struct *next)
 
 /*
  * ARM erratum 1418040 handling, affecting the 32bit view of CNTVCT.
- * Ensure access is disabled when switching to a 32bit task, ensure
- * access is enabled when switching to a 64bit task.
+ * Assuming the virtual counter is enabled at the beginning of times:
+ *
+ * - disable access when switching from a 64bit task to a 32bit task
+ * - enable access when switching from a 32bit task to a 64bit task
  */
-static void erratum_1418040_thread_switch(struct task_struct *next)
+static void erratum_1418040_thread_switch(struct task_struct *prev,
+					  struct task_struct *next)
 {
-	if (!IS_ENABLED(CONFIG_ARM64_ERRATUM_1418040) ||
-	    !this_cpu_has_cap(ARM64_WORKAROUND_1418040))
+	bool prev32, next32;
+	u64 val;
+
+	if (!IS_ENABLED(CONFIG_ARM64_ERRATUM_1418040))
 		return;
 
-	if (is_compat_thread(task_thread_info(next)))
-		sysreg_clear_set(cntkctl_el1, ARCH_TIMER_USR_VCT_ACCESS_EN, 0);
-	else
-		sysreg_clear_set(cntkctl_el1, 0, ARCH_TIMER_USR_VCT_ACCESS_EN);
-}
+	prev32 = is_compat_thread(task_thread_info(prev));
+	next32 = is_compat_thread(task_thread_info(next));
 
-static void erratum_1418040_new_exec(void)
-{
-	preempt_disable();
-	erratum_1418040_thread_switch(current);
-	preempt_enable();
+	if (prev32 == next32 || !this_cpu_has_cap(ARM64_WORKAROUND_1418040))
+		return;
+
+	val = read_sysreg(cntkctl_el1);
+
+	if (!next32)
+		val |= ARCH_TIMER_USR_VCT_ACCESS_EN;
+	else
+		val &= ~ARCH_TIMER_USR_VCT_ACCESS_EN;
+
+	write_sysreg(val, cntkctl_el1);
 }
 
 static void update_sctlr_el1(u64 sctlr)
@@ -566,7 +574,7 @@ __notrace_funcgraph struct task_struct *__switch_to(struct task_struct *prev,
 	entry_task_switch(next);
 	uao_thread_switch(next);
 	ssbs_thread_switch(next);
-	erratum_1418040_thread_switch(next);
+	erratum_1418040_thread_switch(prev, next);
 
 	/*
 	 * Complete any pending TLB or cache maintenance on this CPU in case
@@ -654,7 +662,6 @@ void arch_setup_new_exec(void)
 
 	current->mm->context.flags = mmflags;
 	ptrauth_thread_init_user(current);
-	erratum_1418040_new_exec();
 
 	if (task_spec_ssb_noexec(current)) {
 		arch_prctl_spec_ctrl_set(current, PR_SPEC_STORE_BYPASS,
