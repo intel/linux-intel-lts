@@ -72,6 +72,8 @@ int intel_opregion_notify_adapter(struct drm_i915_private *dev_priv,
 				  pci_power_t state);
 int intel_opregion_get_panel_type(struct drm_i915_private *dev_priv);
 
+bool intel_opregion_headless_sku(struct drm_i915_private *i915);
+
 #else /* CONFIG_ACPI*/
 
 static inline int intel_opregion_setup(struct drm_i915_private *dev_priv)
@@ -115,6 +117,11 @@ intel_opregion_notify_adapter(struct drm_i915_private *dev, pci_power_t state)
 static inline int intel_opregion_get_panel_type(struct drm_i915_private *dev)
 {
 	return -ENODEV;
+}
+
+static inline bool intel_opregion_headless_sku(struct drm_i915_private *i915)
+{
+	return false;
 }
 
 #endif /* CONFIG_ACPI */
