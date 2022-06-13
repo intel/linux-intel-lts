@@ -296,12 +296,6 @@ static int vc4_drm_bind(struct device *dev)
 	else
 		driver = &vc4_drm_driver;
 
-	/* If VC4 V3D is missing, don't advertise render nodes. */
-	node = of_find_matching_node_and_match(NULL, vc4_v3d_dt_match, NULL);
-	if (!node || !of_device_is_available(node))
-		vc4_drm_driver.driver_features &= ~DRIVER_RENDER;
-	of_node_put(node);
-
 	node = of_find_matching_node_and_match(NULL, vc4_dma_range_matches,
 					       NULL);
 	if (node) {
