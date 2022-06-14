@@ -78,15 +78,12 @@
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
 
-# CVE-2022-1048
-0001-ALSA-pcm-Fix-races-among-concurrent-hw_params-and-hw.patch
-0002-ALSA-pcm-Fix-races-among-concurrent-read-write-and-b.patch
-0003-ALSA-pcm-Fix-races-among-concurrent-prepare-and-hw_p.patch
-0004-ALSA-pcm-Fix-races-among-concurrent-prealloc-proc-wr.patch
-
 # CVE-2022-1280
 0001-drm-add-a-locked-version-of-drm_is_current_master.patch
 0002-drm-protect-drm_master-pointers-in-drm_lease.c.patch
 0003-Subject-PATCH-drm-serialize-drm_file.master-with-a-n.patch
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
+
+# CVE-2022-1966
+0001-netfilter-nf_tables-disallow-non-stateful-expression.patch
