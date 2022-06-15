@@ -13,6 +13,7 @@
 #include <stdarg.h>
 #include <locale.h>
 #include <api/fs/fs.h>
+#include "util/evlist.h"
 #include "fncache.h"
 #include "pmu-hybrid.h"
 
@@ -86,4 +87,22 @@ char *perf_pmu__hybrid_type_to_pmu(const char *type)
 
 	free(pmu_name);
 	return NULL;
+}
+
+int parse_hybrid_type(const struct option *opt, const char *str, int unset __maybe_unused)
+{
+	struct evlist *evlist = *(struct evlist **)opt->value;
+
+	if (!list_empty(&evlist->core.entries)) {
+		fprintf(stderr, "Must define cputype before events/metrics\n");
+		return -1;
+	}
+
+	evlist->hybrid_pmu_name = perf_pmu__hybrid_type_to_pmu(str);
+	if (!evlist->hybrid_pmu_name) {
+		fprintf(stderr, "--cputype %s is not supported!\n", str);
+		return -1;
+	}
+
+	return 0;
 }
