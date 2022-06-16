@@ -373,8 +373,9 @@ static int intel_crosststamp(ktime_t *device,
 	writel(gpio_value, ioaddr + GMAC_GPIO_STATUS);
 
 	/* Time sync done Indication - Interrupt method */
-	if (!wait_event_timeout(priv->tstamp_busy_wait,
-				stmmac_cross_ts_isr(priv), HZ / 100))
+	if (!wait_event_interruptible_timeout(priv->tstamp_busy_wait,
+					      stmmac_cross_ts_isr(priv),
+					      HZ / 100))
 		return -ETIMEDOUT;
 
 	num_snapshot = (readl(ioaddr + GMAC_TIMESTAMP_STATUS) &
