@@ -2062,6 +2062,16 @@ void x86_pmu_update_cpu_context(struct pmu *pmu, int cpu)
 	cpuctx->ctx.pmu = pmu;
 }
 
+u8 x86_pmu_get_this_hybrid_cpu_type(void)
+{
+	u8 cpu_type = get_this_hybrid_cpu_type();
+
+	if (!cpu_type && x86_pmu.get_hybrid_cpu_type)
+		return x86_pmu.get_hybrid_cpu_type();
+
+	return cpu_type;
+}
+
 static int __init init_hw_perf_events(void)
 {
 	struct x86_pmu_quirk *quirk;
@@ -2161,12 +2171,9 @@ static int __init init_hw_perf_events(void)
 		if (err)
 			goto out2;
 	} else {
-		u8 cpu_type = get_this_hybrid_cpu_type();
+		u8 cpu_type = x86_pmu_get_this_hybrid_cpu_type();
 		struct x86_hybrid_pmu *hybrid_pmu;
 		int i, j;
-
-		if (!cpu_type && x86_pmu.get_hybrid_cpu_type)
-			cpu_type = x86_pmu.get_hybrid_cpu_type();
 
 		for (i = 0; i < x86_pmu.num_hybrid_pmus; i++) {
 			hybrid_pmu = &x86_pmu.hybrid_pmu[i];

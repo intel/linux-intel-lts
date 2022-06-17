@@ -4146,6 +4146,9 @@ static int adl_hw_config(struct perf_event *event)
 
 static u8 adl_get_hybrid_cpu_type(void)
 {
+	if (boot_cpu_data.x86_model == INTEL_FAM6_ALDERLAKE_N)
+		return hybrid_small;
+
 	return hybrid_big;
 }
 
@@ -4309,12 +4312,9 @@ static void flip_smm_bit(void *data)
 static bool init_hybrid_pmu(int cpu)
 {
 	struct cpu_hw_events *cpuc = &per_cpu(cpu_hw_events, cpu);
-	u8 cpu_type = get_this_hybrid_cpu_type();
+	u8 cpu_type = x86_pmu_get_this_hybrid_cpu_type();
 	struct x86_hybrid_pmu *pmu = NULL;
 	int i;
-
-	if (!cpu_type && x86_pmu.get_hybrid_cpu_type)
-		cpu_type = x86_pmu.get_hybrid_cpu_type();
 
 	for (i = 0; i < x86_pmu.num_hybrid_pmus; i++) {
 		if (x86_pmu.hybrid_pmu[i].cpu_type == cpu_type) {
