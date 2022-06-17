@@ -836,7 +836,7 @@ __intel_display_resume(struct drm_i915_private *i915,
 	struct drm_crtc *crtc;
 	int i, ret;
 
-	intel_modeset_setup_hw_state(&i915->drm, ctx);
+	intel_modeset_setup_hw_state(i915, ctx);
 	intel_vga_redisable(i915);
 
 	if (!state)
@@ -8763,7 +8763,7 @@ int intel_modeset_init_nogem(struct drm_i915_private *i915)
 	intel_setup_outputs(i915);
 
 	drm_modeset_lock_all(dev);
-	intel_modeset_setup_hw_state(dev, dev->mode_config.acquire_ctx);
+	intel_modeset_setup_hw_state(i915, dev->mode_config.acquire_ctx);
 	drm_modeset_unlock_all(dev);
 
 	for_each_intel_crtc(dev, crtc) {
