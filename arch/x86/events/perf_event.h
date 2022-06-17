@@ -1158,6 +1158,8 @@ void x86_pmu_show_pmu_cap(int num_counters, int num_counters_fixed,
 
 void x86_pmu_update_cpu_context(struct pmu *pmu, int cpu);
 
+u8 x86_pmu_get_this_hybrid_cpu_type(void);
+
 extern struct event_constraint emptyconstraint;
 
 extern struct event_constraint unconstrained;
