@@ -1354,7 +1354,7 @@ static void vmbus_isr(void)
 			tasklet_schedule(&hv_cpu->msg_dpc);
 	}
 
-	add_interrupt_randomness(hv_get_vector(), 0, ip);
+	add_interrupt_randomness(hv_get_vector());
 }
 
 /*
