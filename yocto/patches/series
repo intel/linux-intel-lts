@@ -24,3 +24,6 @@
 
 # CVE-2022-1786
 0001-io_uring-always-use-original-task-when-preparing-req.patch
+
+# CVE-2022-1966
+0001-netfilter-nf_tables-disallow-non-stateful-expression.patch
