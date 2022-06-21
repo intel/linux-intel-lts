@@ -538,7 +538,8 @@ static void aggr_update_shadow(struct perf_stat_config *config,
 	}
 }
 
-static void uniquify_event_name(struct evsel *counter)
+static void uniquify_event_name(struct evsel *counter,
+				struct perf_stat_config *stat_config)
 {
 	char *new_name;
 	char *config;
@@ -557,7 +558,8 @@ static void uniquify_event_name(struct evsel *counter)
 			counter->name = new_name;
 		}
 	} else {
-		if (perf_pmu__has_hybrid()) {
+		if (perf_pmu__has_hybrid() &&
+		    stat_config->metric_events.nr_entries == 0) {
 			ret = asprintf(&new_name, "%s/%s/",
 				       counter->pmu_name, counter->name);
 		} else {
@@ -609,6 +611,19 @@ static bool hybrid_uniquify(struct evsel *evsel)
 	return perf_pmu__has_hybrid() && !is_uncore(evsel);
 }
 
+static bool hybrid_merge(struct evsel *counter, struct perf_stat_config *config,
+			 bool check)
+{
+	if (hybrid_uniquify(counter)) {
+		if (check)
+			return config && config->hybrid_merge;
+		else
+			return config && !config->hybrid_merge;
+	}
+
+	return false;
+}
+
 static bool collect_data(struct perf_stat_config *config, struct evsel *counter,
 			    void (*cb)(struct perf_stat_config *config, struct evsel *counter, void *data,
 				       bool first),
@@ -617,9 +632,9 @@ static bool collect_data(struct perf_stat_config *config, struct evsel *counter,
 	if (counter->merged_stat)
 		return false;
 	cb(config, counter, data, true);
-	if (config->no_merge || hybrid_uniquify(counter))
-		uniquify_event_name(counter);
-	else if (counter->auto_merge_stats)
+	if (config->no_merge || hybrid_merge(counter, config, false))
+		uniquify_event_name(counter, config);
+	else if (counter->auto_merge_stats || hybrid_merge(counter, config, true))
 		collect_all_aliases(config, counter, cb, data);
 	return true;
 }

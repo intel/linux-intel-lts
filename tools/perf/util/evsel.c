@@ -294,7 +294,7 @@ static bool perf_event_can_profile_kernel(void)
 	return perf_event_paranoid_check(1);
 }
 
-struct evsel *evsel__new_cycles(bool precise, __u32 type, __u64 config)
+struct evsel *evsel__new_cycles(bool precise __maybe_unused, __u32 type, __u64 config)
 {
 	struct perf_event_attr attr = {
 		.type	= type,
@@ -305,17 +305,15 @@ struct evsel *evsel__new_cycles(bool precise, __u32 type, __u64 config)
 
 	event_attr_init(&attr);
 
-	if (!precise)
-		goto new_event;
-
 	/*
 	 * Now let the usual logic to set up the perf_event_attr defaults
 	 * to kick in when we return and before perf_evsel__open() is called.
 	 */
-new_event:
 	evsel = evsel__new(&attr);
 	if (evsel == NULL)
 		goto out;
+
+	arch_evsel__fixup_new_cycles(&evsel->core.attr);
 
 	evsel->precise_max = true;
 
@@ -2953,4 +2951,35 @@ bool evsel__is_leader(struct evsel *evsel)
 void evsel__set_leader(struct evsel *evsel, struct evsel *leader)
 {
 	evsel->core.leader = &leader->core;
+}
+
+int evsel__source_count(const struct evsel *evsel)
+{
+	struct evsel *pos;
+	int count = 0;
+
+	evlist__for_each_entry(evsel->evlist, pos) {
+		if (pos->metric_leader == evsel)
+			count++;
+	}
+	return count;
+}
+
+bool __weak arch_evsel__must_be_in_group(const struct evsel *evsel __maybe_unused)
+{
+	return false;
+}
+
+/*
+ * Remove an event from a given group (leader).
+ * Some events, e.g., perf metrics Topdown events,
+ * must always be grouped. Ignore the events.
+ */
+void evsel__remove_from_group(struct evsel *evsel, struct evsel *leader)
+{
+	if (!arch_evsel__must_be_in_group(evsel) && evsel != leader) {
+		evsel__set_leader(evsel, evsel);
+		evsel->core.nr_members = 0;
+		leader->core.nr_members--;
+	}
 }

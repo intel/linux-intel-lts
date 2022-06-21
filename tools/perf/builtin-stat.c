@@ -270,11 +270,8 @@ static void evlist__check_cpu_maps(struct evlist *evlist)
 			pr_warning("     %s: %s\n", evsel->name, buf);
 		}
 
-		for_each_group_evsel(pos, leader) {
-			evsel__set_leader(pos, pos);
-			pos->core.nr_members = 0;
-		}
-		evsel->core.leader->nr_members = 0;
+		for_each_group_evsel(pos, leader)
+			evsel__remove_from_group(pos, leader);
 	}
 }
 
@@ -1236,6 +1233,8 @@ static struct option stat_options[] = {
 	OPT_SET_UINT('A', "no-aggr", &stat_config.aggr_mode,
 		    "disable CPU count aggregation", AGGR_NONE),
 	OPT_BOOLEAN(0, "no-merge", &stat_config.no_merge, "Do not merge identical named events"),
+	OPT_BOOLEAN(0, "hybrid-merge", &stat_config.hybrid_merge,
+		    "Merge identical named hybrid events"),
 	OPT_STRING('x', "field-separator", &stat_config.csv_sep, "separator",
 		   "print counts with custom separator"),
 	OPT_CALLBACK('G', "cgroup", &evsel_list, "name",
@@ -1852,11 +1851,23 @@ static int add_default_attributes(void)
 		unsigned int max_level = 1;
 		char *str = NULL;
 		bool warn = false;
+		const char *pmu_name = "cpu";
 
 		if (!force_metric_only)
 			stat_config.metric_only = true;
 
-		if (pmu_have_event("cpu", topdown_metric_L2_attrs[5])) {
+		if (perf_pmu__has_hybrid()) {
+			if (!evsel_list->hybrid_pmu_name) {
+				pr_warning("WARNING: default to use cpu_core topdown events\n");
+				evsel_list->hybrid_pmu_name = perf_pmu__hybrid_type_to_pmu("core");
+			}
+
+			pmu_name = evsel_list->hybrid_pmu_name;
+			if (!pmu_name)
+				return -1;
+		}
+
+		if (pmu_have_event(pmu_name, topdown_metric_L2_attrs[5])) {
 			metric_attrs = topdown_metric_L2_attrs;
 			max_level = 2;
 		}
@@ -1867,10 +1878,11 @@ static int add_default_attributes(void)
 		} else if (!stat_config.topdown_level)
 			stat_config.topdown_level = max_level;
 
-		if (topdown_filter_events(metric_attrs, &str, 1) < 0) {
+		if (topdown_filter_events(metric_attrs, &str, 1, pmu_name) < 0) {
 			pr_err("Out of memory\n");
 			return -1;
 		}
+
 		if (metric_attrs[0] && str) {
 			if (!stat_config.interval && !stat_config.metric_only) {
 				fprintf(stat_config.output,
@@ -1894,10 +1906,12 @@ static int add_default_attributes(void)
 		}
 
 		if (topdown_filter_events(topdown_attrs, &str,
-				arch_topdown_check_group(&warn)) < 0) {
+				arch_topdown_check_group(&warn),
+				pmu_name) < 0) {
 			pr_err("Out of memory\n");
 			return -1;
 		}
+
 		if (topdown_attrs[0] && str) {
 			struct parse_events_error errinfo;
 			if (warn)
