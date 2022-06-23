@@ -538,6 +538,13 @@ err_submission:
 err_log_capture:
 	__uc_capture_load_err_log(uc);
 err_out:
+#if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR) && IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
+	if (!i915_error_injected()) {
+		drm_info(&i915->drm, "Dumping on GuC load failure...\n");
+		intel_klog_error_capture(uc_to_gt(uc), (intel_engine_mask_t) ~0U);
+	}
+#endif
+
 	/* Return GT back to RPn */
 	intel_rps_lower_unslice(&uc_to_gt(uc)->rps);
 

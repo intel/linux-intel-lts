@@ -143,6 +143,8 @@ struct intel_gt_coredump {
 	u32 gtt_cache;
 	u32 aux_err; /* gen12 */
 	u32 gam_done; /* gen12 */
+	u32 clock_frequency;
+	u32 clock_period_ns;
 
 	/* Display related */
 	u32 derrmr;
@@ -157,6 +159,7 @@ struct intel_gt_coredump {
 		struct intel_uc_fw guc_fw;
 		struct intel_uc_fw huc_fw;
 		struct i915_vma_coredump *guc_log;
+		u32 timestamp;
 		bool is_guc_capture;
 	} *uc;
 
