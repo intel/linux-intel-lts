@@ -11,6 +11,7 @@
 
 #include "i915_drv.h"
 #include "intel_guc_ct.h"
+#include "intel_pagefault.h"
 #include "gt/intel_gt.h"
 
 static inline struct intel_guc *ct_to_guc(struct intel_guc_ct *ct)
@@ -816,8 +817,22 @@ static int ct_read(struct intel_guc_ct *ct, struct ct_incoming_msg **msg)
 	if (unlikely(ctb->broken))
 		return -EPIPE;
 
-	if (unlikely(desc->status))
-		goto corrupted;
+	if (unlikely(desc->status)) {
+		u32 status = desc->status;
+
+		if (status & GUC_CTB_STATUS_UNUSED) {
+			/*
+			 * Potentially valid if a CLIENT_RESET request resulted in
+			 * contexts/engines being reset. But should never happen as
+			 * no contexts should be active when CLIENT_RESET is sent.
+			 */
+			CT_ERROR(ct, "Unexpected G2H after GuC has stopped!\n");
+			status &= ~GUC_CTB_STATUS_UNUSED;
+		}
+
+		if (status)
+			goto corrupted;
+	}
 
 	GEM_BUG_ON(head > size);
 
@@ -987,6 +1002,9 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_CONTEXT_RESET_NOTIFICATION:
 		ret = intel_guc_context_reset_process_msg(guc, payload, len);
 		break;
+	case INTEL_GUC_ACTION_NOTIFY_MEMORY_CAT_ERROR:
+		ret = intel_pagefault_process_cat_error_msg(guc, payload, len);
+		break;
 	case INTEL_GUC_ACTION_STATE_CAPTURE_NOTIFICATION:
 		ret = intel_guc_error_capture_process_msg(guc, payload, len);
 		if (unlikely(ret))
@@ -1008,6 +1026,9 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 		CT_ERROR(ct, "Received GuC exception notification!\n");
 		ret = 0;
 		break;
+	case INTEL_GUC_ACTION_PAGE_FAULT_NOTIFICATION:
+		ret = intel_pagefault_process_page_fault_msg(guc, payload, len);
+		break;
 	default:
 		ret = -EOPNOTSUPP;
 		break;
@@ -1023,7 +1044,7 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	return 0;
 }
 
-static bool ct_process_incoming_requests(struct intel_guc_ct *ct)
+static bool ct_process_incoming_requests(struct intel_guc_ct *ct, struct list_head *incoming)
 {
 	unsigned long flags;
 	struct ct_incoming_msg *request;
@@ -1031,11 +1052,11 @@ static bool ct_process_incoming_requests(struct intel_guc_ct *ct)
 	int err;
 
 	spin_lock_irqsave(&ct->requests.lock, flags);
-	request = list_first_entry_or_null(&ct->requests.incoming,
+	request = list_first_entry_or_null(incoming,
 					   struct ct_incoming_msg, link);
 	if (request)
 		list_del(&request->link);
-	done = !!list_empty(&ct->requests.incoming);
+	done = !!list_empty(incoming);
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
 
 	if (!request)
@@ -1058,7 +1079,7 @@ static void ct_incoming_request_worker_func(struct work_struct *w)
 	bool done;
 
 	do {
-		done = ct_process_incoming_requests(ct);
+		done = ct_process_incoming_requests(ct, &ct->requests.incoming);
 	} while (!done);
 }
 
@@ -1078,7 +1099,22 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 	switch (action) {
 	case INTEL_GUC_ACTION_SCHED_CONTEXT_MODE_DONE:
 	case INTEL_GUC_ACTION_DEREGISTER_CONTEXT_DONE:
+	case INTEL_GUC_ACTION_TLB_INVALIDATION_DONE:
 		g2h_release_space(ct, request->size);
+	}
+	/* Handle tlb invalidation response in interrupt context */
+	if (action == INTEL_GUC_ACTION_TLB_INVALIDATION_DONE) {
+		const u32 *payload;
+		u32 hxg_len, len;
+
+		hxg_len = request->size - GUC_CTB_MSG_MIN_LEN;
+		len = hxg_len - GUC_HXG_MSG_MIN_LEN;
+		if (unlikely(len < 1))
+			return -EPROTO;
+		payload = &hxg[GUC_HXG_MSG_MIN_LEN];
+		intel_guc_tlb_invalidation_done(ct_to_guc(ct),  payload[0]);
+		ct_free_msg(request);
+		return 0;
 	}
 
 	spin_lock_irqsave(&ct->requests.lock, flags);
@@ -1086,6 +1122,7 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
 
 	queue_work(system_unbound_wq, &ct->requests.worker);
+
 	return 0;
 }
 
