@@ -164,7 +164,7 @@ u32 intel_guc_log_section_size_capture(struct intel_guc_log *log)
 	return log->sizes[GUC_LOG_SECTIONS_CAPTURE].bytes;
 }
 
-static u32 intel_guc_log_size(struct intel_guc_log *log)
+u32 intel_guc_log_size(struct intel_guc_log *log)
 {
 	/*
 	 *  GuC Log buffer Layout:
@@ -191,6 +191,12 @@ static u32 intel_guc_log_size(struct intel_guc_log *log)
 		intel_guc_log_section_size_crash(log) +
 		intel_guc_log_section_size_debug(log) +
 		intel_guc_log_section_size_capture(log);
+}
+
+#define GUC_LOG_RELAY_SUBBUF_COUNT 8
+u32 intel_guc_log_relay_subbuf_count(struct intel_guc_log *log)
+{
+	return GUC_LOG_RELAY_SUBBUF_COUNT;
 }
 
 /**
@@ -482,13 +488,16 @@ static void _guc_log_copy_debuglogs_for_relay(struct intel_guc_log *log)
 
 		/* Just copy the newly written data */
 		if (read_offset > write_offset) {
-			i915_memcpy_from_wc(dst_data, src_data, write_offset);
+			if (!i915_memcpy_from_wc(dst_data, src_data, write_offset))
+				i915_unaligned_memcpy_from_wc(dst_data, src_data, write_offset);
 			bytes_to_copy = buffer_size - read_offset;
 		} else {
 			bytes_to_copy = write_offset - read_offset;
 		}
-		i915_memcpy_from_wc(dst_data + read_offset,
-				    src_data + read_offset, bytes_to_copy);
+		if (!i915_memcpy_from_wc(dst_data + read_offset,
+					 src_data + read_offset, bytes_to_copy))
+			i915_unaligned_memcpy_from_wc(dst_data + read_offset,
+						      src_data + read_offset, bytes_to_copy);
 
 		src_data += buffer_size;
 		dst_data += buffer_size;
@@ -563,9 +572,9 @@ static int guc_log_relay_create(struct intel_guc_log *log)
 	 * latency, for consuming the logs from relay. Also doesn't take
 	 * up too much memory.
 	 */
-	n_subbufs = 8;
+	n_subbufs = intel_guc_log_relay_subbuf_count(log);
 
-	guc_log_relay_chan = relay_open("guc_log",
+	guc_log_relay_chan = relay_open("guc_log_relay_chan",
 					dev_priv->drm.primary->debugfs_root,
 					subbuf_size, n_subbufs,
 					&relay_callbacks, dev_priv);
