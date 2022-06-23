@@ -209,7 +209,7 @@ int xen_be_unshare_pages(void **refs_info, int nents)
 
 	/* End foreign access for data pages, but do not free them */
 	for (i = 0; i < nents; i++) {
-		if (gnttab_try_end_foreign_access(sh_pages_info->lvl2_table[i]))
+		if (!gnttab_try_end_foreign_access(sh_pages_info->lvl2_table[i]))
 			dev_warn(hy_drv_priv->dev, "refid not shared !!\n");
 
 		gnttab_end_foreign_access_ref(sh_pages_info->lvl2_table[i], 0);
@@ -218,7 +218,7 @@ int xen_be_unshare_pages(void **refs_info, int nents)
 
 	/* End foreign access for 2nd level addressing pages */
 	for (i = 0; i < n_lvl2_grefs; i++) {
-		if (gnttab_try_end_foreign_access(sh_pages_info->lvl3_table[i]))
+		if (!gnttab_try_end_foreign_access(sh_pages_info->lvl3_table[i]))
 			dev_warn(hy_drv_priv->dev, "refid not shared !!\n");
 
 		if (!gnttab_end_foreign_access_ref(
@@ -229,7 +229,7 @@ int xen_be_unshare_pages(void **refs_info, int nents)
 	}
 
 	/* End foreign access for top level addressing page */
-	if (gnttab_try_end_foreign_access(sh_pages_info->lvl3_gref))
+	if (!gnttab_try_end_foreign_access(sh_pages_info->lvl3_gref))
 		dev_warn(hy_drv_priv->dev, "gref not shared !!\n");
 
 	gnttab_end_foreign_access_ref(sh_pages_info->lvl3_gref, 1);
