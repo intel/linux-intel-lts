@@ -184,6 +184,7 @@ struct drm_i915_private *mock_gem_device(void)
 
 	spin_lock_init(&i915->gpu_error.lock);
 
+	i915->__mode = I915_IOV_MODE_NONE;
 	i915_gem_init__mm(i915);
 	intel_root_gt_init_early(i915);
 	mock_uncore_init(&i915->uncore, i915);

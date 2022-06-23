@@ -40,7 +40,7 @@ static int intel_hang_guc(void *arg)
 	u32 guc_status;
 	u32 old_beat;
 
-	ctx = kernel_context(gt->i915);
+	ctx = kernel_context(gt->i915, NULL);
 	if (IS_ERR(ctx)) {
 		pr_err("Failed get kernel context: %ld\n", PTR_ERR(ctx));
 		return PTR_ERR(ctx);

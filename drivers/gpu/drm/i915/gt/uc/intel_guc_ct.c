@@ -13,6 +13,10 @@
 #include "intel_guc_ct.h"
 #include "intel_pagefault.h"
 #include "gt/intel_gt.h"
+#include "gt/iov/intel_iov_event.h"
+#include "gt/iov/intel_iov_relay.h"
+#include "gt/iov/intel_iov_service.h"
+#include "gt/iov/intel_iov_state.h"
 
 static inline struct intel_guc *ct_to_guc(struct intel_guc_ct *ct)
 {
@@ -381,8 +385,19 @@ static int ct_write(struct intel_guc_ct *ct,
 	u32 *cmds = ctb->cmds;
 	unsigned int i;
 
-	if (unlikely(desc->status))
-		goto corrupted;
+	if (unlikely(desc->status)) {
+		/*
+		 * after VF migration H2G is not usable any more
+		 * start recovery procedure and let caller retry
+		 * any other non-migration status is still fatal
+		 */
+		if (desc->status & ~GUC_CTB_STATUS_MIGRATED)
+			goto corrupted;
+		if (!IS_SRIOV_VF(ct_to_i915(ct)))
+			goto corrupted;
+		i915_sriov_vf_start_migration_recovery(ct_to_i915(ct));
+		return -EBUSY;
+	}
 
 	GEM_BUG_ON(tail > size);
 
@@ -651,7 +666,7 @@ static int ct_send(struct intel_guc_ct *ct,
 
 	GEM_BUG_ON(!ct->enabled);
 	GEM_BUG_ON(!len);
-	GEM_BUG_ON(len & ~GUC_CT_MSG_LEN_MASK);
+	GEM_BUG_ON(len > GUC_CTB_HXG_MSG_MAX_LEN - GUC_CTB_HDR_LEN);
 	GEM_BUG_ON(!response_buf && response_buf_size);
 	might_sleep();
 
@@ -771,6 +786,9 @@ int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 		return ct_send_nb(ct, action, len, flags);
 
 	ret = ct_send(ct, action, len, response_buf, response_buf_size, &status);
+	if (I915_SELFTEST_ONLY(flags & INTEL_GUC_CT_SEND_SELFTEST))
+		return ret;
+
 	if (unlikely(ret < 0)) {
 		CT_ERROR(ct, "Sending action %#x failed (%pe) status=%#X\n",
 			 action[0], ERR_PTR(ret), status);
@@ -781,6 +799,7 @@ int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(intel_guc_ct_send, ERRNO);
 
 static struct ct_incoming_msg *ct_alloc_msg(u32 num_dwords)
 {
@@ -830,8 +849,18 @@ static int ct_read(struct intel_guc_ct *ct, struct ct_incoming_msg **msg)
 			status &= ~GUC_CTB_STATUS_UNUSED;
 		}
 
-		if (status)
-			goto corrupted;
+		if (status) {
+			/*
+			 * after VF migration G2H shall be still usable
+			 * only any other non-migration status is fatal
+			 */
+			if (status & ~GUC_CTB_STATUS_MIGRATED)
+				goto corrupted;
+			if (!IS_SRIOV_VF(ct_to_i915(ct)))
+				goto corrupted;
+			desc->status &= ~GUC_CTB_STATUS_MIGRATED;
+			i915_sriov_vf_start_migration_recovery(ct_to_i915(ct));
+		}
 	}
 
 	GEM_BUG_ON(head > size);
@@ -955,9 +984,9 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 		break;
 	}
 	if (!found) {
-		CT_ERROR(ct, "Unsolicited response (fence %u)\n", fence);
-		CT_ERROR(ct, "Could not find fence=%u, last_fence=%u\n", fence,
-			 ct->requests.last_fence);
+		CT_ERROR(ct, "Unsolicited response message %#x (fence %u len %u)\n",
+			 hxg[0], fence, len);
+		CT_ERROR(ct, "Last used fence was %u\n", ct->requests.last_fence);
 		list_for_each_entry(req, &ct->requests.pending, link)
 			CT_ERROR(ct, "request %u awaits response\n",
 				 req->fence);
@@ -975,6 +1004,8 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *request)
 {
 	struct intel_guc *guc = ct_to_guc(ct);
+	struct intel_gt *gt = guc_to_gt(guc);
+	struct intel_iov *iov = &gt->iov;
 	const u32 *hxg;
 	const u32 *payload;
 	u32 hxg_len, action, len;
@@ -1013,6 +1044,21 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 		break;
 	case INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
 		ret = intel_guc_engine_failure_process_msg(guc, payload, len);
+		break;
+	case GUC_ACTION_GUC2PF_VF_STATE_NOTIFY:
+		ret = intel_iov_state_process_guc2pf(iov, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_ADVERSE_EVENT:
+		ret = intel_iov_event_process_guc2pf(iov, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_RELAY_FROM_VF:
+		ret = intel_iov_relay_process_guc2pf(&iov->relay, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2VF_RELAY_FROM_PF:
+		ret = intel_iov_relay_process_guc2vf(&iov->relay, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_MMIO_RELAY_SERVICE:
+		ret = intel_iov_service_process_mmio_relay(iov, hxg, hxg_len);
 		break;
 	case INTEL_GUC_ACTION_NOTIFY_FLUSH_LOG_BUFFER_TO_FILE:
 		intel_guc_log_handle_flush_event(&guc->log);

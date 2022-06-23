@@ -113,6 +113,9 @@ i915_param_named_unsafe(force_probe, charp, 0400,
 	"Force probe the driver for specified devices. "
 	"See CONFIG_DRM_I915_FORCE_PROBE for details.");
 
+i915_param_named_unsafe(enable_secure_batch, bool, 0400,
+	"Enable for legacy tests I915_EXEC_SECURE. (default: 0)");
+
 i915_param_named_unsafe(disable_power_well, int, 0400,
 	"Disable display power wells when possible "
 	"(-1=auto [default], 0=power wells always on, 1=power wells disabled when possible)");
@@ -165,7 +168,11 @@ i915_param_named_unsafe(edp_vswing, int, 0400,
 i915_param_named_unsafe(enable_guc, int, 0400,
 	"Enable GuC load for GuC submission and/or HuC load. "
 	"Required functionality can be selected using bitmask values. "
-	"(-1=auto [default], 0=disable, 1=GuC submission, 2=HuC load)");
+	"(-1=auto [default], 0=disable, 1=GuC submission, 2=HuC load, "
+	"4=SR-IOV PF)");
+
+i915_param_named_unsafe(guc_feature_flags, uint, 0400,
+	"GuC feature flags. Requires GuC to be loaded. (0=none [default])");
 
 i915_param_named(guc_log_level, int, 0400,
 	"GuC firmware logging level. Requires GuC to be loaded. "
@@ -204,6 +211,17 @@ i915_param_named_unsafe(request_timeout_ms, uint, 0600,
 
 i915_param_named_unsafe(lmem_size, uint, 0400,
 			"Set the lmem size(in MiB) for each region. (default: 0, all memory)");
+
+i915_param_named(max_vfs, uint, 0400,
+	"Limit number of virtual functions to allocate. "
+	"(default: no limit; N=limit to N, 0=no VFs)");
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV)
+i915_param_named_unsafe(vfs_flr_mask, ulong, 0600,
+	"Bitmask to enable (1) or disable (0) cleaning by PF VF's resources "
+	"(GGTT and LMEM) after FLR (default: ~0 - cleaning enable for all VFs) "
+	"Bit number indicates VF number, e.g. bit 1 indicates VF1");
+#endif
 
 static __always_inline void _print_param(struct drm_printer *p,
 					 const char *name,
