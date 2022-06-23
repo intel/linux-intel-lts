@@ -13,11 +13,33 @@
 
 #include "abi/guc_actions_abi.h"
 #include "abi/guc_actions_slpc_abi.h"
+#include "abi/guc_actions_pf_abi.h"
+#include "abi/guc_actions_vf_abi.h"
 #include "abi/guc_errors_abi.h"
 #include "abi/guc_communication_mmio_abi.h"
 #include "abi/guc_communication_ctb_abi.h"
 #include "abi/guc_klvs_abi.h"
 #include "abi/guc_messages_abi.h"
+
+static inline const char *hxg_type_to_string(u32 type)
+{
+	switch (type) {
+	case GUC_HXG_TYPE_REQUEST:
+		return "request";
+	case GUC_HXG_TYPE_EVENT:
+		return "event";
+	case GUC_HXG_TYPE_NO_RESPONSE_BUSY:
+		return "busy";
+	case GUC_HXG_TYPE_NO_RESPONSE_RETRY:
+		return "retry";
+	case GUC_HXG_TYPE_RESPONSE_FAILURE:
+		return "failure";
+	case GUC_HXG_TYPE_RESPONSE_SUCCESS:
+		return "response";
+	default:
+		return "<invalid>";
+	}
+}
 
 /* Payload length only i.e. don't include G2H header length */
 #define G2H_LEN_DW_SCHED_CONTEXT_MODE_SET	2

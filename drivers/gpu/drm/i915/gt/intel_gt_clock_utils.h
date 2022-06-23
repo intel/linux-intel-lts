@@ -11,6 +11,7 @@
 struct intel_gt;
 
 void intel_gt_init_clock_frequency(struct intel_gt *gt);
+void intel_gt_fini_clock_frequency(struct intel_gt *gt);
 
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 void intel_gt_check_clock_frequency(const struct intel_gt *gt);
