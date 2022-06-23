@@ -996,6 +996,21 @@ int intel_power_domains_init(struct drm_i915_private *dev_priv)
 }
 
 /**
+ * intel_power_domains_prune - prunes the power domain structures
+ * @dev_priv: i915 device instance
+ *
+ * We might have detected that power domain initialization done earlier
+ * requires some additional tweaks.
+ */
+void intel_power_domains_prune(struct drm_i915_private *dev_priv)
+{
+	struct i915_power_domains *power_domains = &dev_priv->power_domains;
+
+	if (IS_SRIOV_VF(dev_priv))
+		intel_display_power_map_prune(power_domains);
+}
+
+/**
  * intel_power_domains_cleanup - clean up power domains resources
  * @dev_priv: i915 device instance
  *
