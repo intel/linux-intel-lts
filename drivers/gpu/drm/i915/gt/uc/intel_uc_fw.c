@@ -263,6 +263,24 @@ void intel_uc_fw_init_early(struct intel_uc_fw *uc_fw,
 				  INTEL_UC_FIRMWARE_NOT_SUPPORTED);
 }
 
+/**
+ * intel_uc_fw_set_preloaded() - set uC firmware as pre-loaded
+ * @uc_fw: uC firmware structure
+ * @major: major version of the pre-loaded firmware
+ * @minor: minor version of the pre-loaded firmware
+ *
+ * If the uC firmware was loaded to h/w by other entity, just
+ * mark it as loaded.
+ */
+void intel_uc_fw_set_preloaded(struct intel_uc_fw *uc_fw, u16 major, u16 minor)
+{
+	uc_fw->path = "PRELOADED";
+	uc_fw->major_ver_found = major;
+	uc_fw->minor_ver_found = minor;
+
+	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_PRELOADED);
+}
+
 static void __force_fw_fetch_failures(struct intel_uc_fw *uc_fw, int e)
 {
 	struct drm_i915_private *i915 = __uc_fw_to_gt(uc_fw)->i915;

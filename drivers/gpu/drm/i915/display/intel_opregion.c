@@ -890,6 +890,9 @@ int intel_opregion_setup(struct drm_i915_private *dev_priv)
 	BUILD_BUG_ON(sizeof(struct opregion_asle) != 0x100);
 	BUILD_BUG_ON(sizeof(struct opregion_asle_ext) != 0x400);
 
+	if (IS_SRIOV_VF(dev_priv))
+		return 0;
+
 	pci_read_config_dword(pdev, ASLS, &asls);
 	drm_dbg(&dev_priv->drm, "graphic opregion physical addr: 0x%x\n",
 		asls);

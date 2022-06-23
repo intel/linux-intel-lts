@@ -1763,6 +1763,43 @@ __vgpu_write(8)
 __vgpu_write(16)
 __vgpu_write(32)
 
+static int __vf_runtime_reg_cmp(u32 key, const struct vf_runtime_reg *reg)
+{
+	u32 offset = reg->offset;
+
+	if (key < offset)
+		return -1;
+	else if (key > offset)
+		return 1;
+	else
+		return 0;
+}
+
+static const struct vf_runtime_reg *
+__vf_runtime_reg_find(struct drm_i915_private *i915, u32 offset)
+{
+	const struct vf_runtime_reg *regs = to_gt(i915)->iov.vf.runtime.regs;
+	u32 regs_num = to_gt(i915)->iov.vf.runtime.regs_size;
+
+	return BSEARCH(offset, regs, regs_num, __vf_runtime_reg_cmp);
+}
+
+#define __vf_read(x) \
+static u##x vf_read##x(struct intel_uncore *uncore, \
+		       i915_reg_t reg, bool trace) \
+{ \
+	u32 offset = i915_mmio_reg_offset(reg); \
+	const struct vf_runtime_reg *vf_reg = __vf_runtime_reg_find(uncore->i915, offset); \
+	if (vf_reg) \
+		return vf_reg->value; \
+	return gen2_read##x(uncore, reg, trace); \
+}
+
+__vf_read(8)
+__vf_read(16)
+__vf_read(32)
+#define vf_read64 gen2_read64 /* no support for 64 */
+
 #define ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, x) \
 do { \
 	(uncore)->funcs.mmio_writeb = x##_write8; \
@@ -2105,6 +2142,9 @@ static void uncore_raw_init(struct intel_uncore *uncore)
 	} else if (GRAPHICS_VER(uncore->i915) == 5) {
 		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen5);
 		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, gen5);
+	} else if (IS_SRIOV_VF(uncore->i915)) {
+		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen2);
+		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, vf);
 	} else {
 		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen2);
 		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, gen2);
@@ -2184,7 +2224,9 @@ int intel_uncore_init_mmio(struct intel_uncore *uncore)
 		return -ENODEV;
 	}
 
-	if (GRAPHICS_VER(i915) > 5 && !intel_vgpu_active(i915))
+	if (GRAPHICS_VER(i915) > 5 &&
+	    !IS_SRIOV_VF(i915) &&
+	    !intel_vgpu_active(i915))
 		uncore->flags |= UNCORE_HAS_FORCEWAKE;
 
 	if (!intel_uncore_has_forcewake(uncore)) {

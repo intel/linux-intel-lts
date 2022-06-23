@@ -3332,12 +3332,17 @@ i915_gem_do_execbuffer(struct drm_device *dev,
 
 	eb.batch_flags = 0;
 	if (args->flags & I915_EXEC_SECURE) {
-		if (GRAPHICS_VER(i915) >= 11)
-			return -ENODEV;
+		if (!i915->params.enable_secure_batch) {
+			if (GRAPHICS_VER(i915) >= 11)
+				return -ENODEV;
 
-		/* Return -EPERM to trigger fallback code on old binaries. */
-		if (!HAS_SECURE_BATCHES(i915))
-			return -EPERM;
+			/*
+			 * Return -EPERM to trigger fallback code on old
+			 * binaries.
+			 */
+			if (!HAS_SECURE_BATCHES(i915))
+				return -EPERM;
+		}
 
 		if (!drm_is_current_master(file) || !capable(CAP_SYS_ADMIN))
 			return -EPERM;

@@ -212,6 +212,25 @@ i915-y += gt/uc/intel_uc.o \
 # graphics system controller (GSC) support
 i915-y += gt/intel_gsc.o
 
+# Virtualization support
+iov-y += \
+	i915_sriov.o \
+	i915_sriov_sysfs.o \
+	gt/iov/intel_iov.o \
+	gt/iov/intel_iov_debugfs.o \
+	gt/iov/intel_iov_event.o \
+	gt/iov/intel_iov_provisioning.o \
+	gt/iov/intel_iov_query.o \
+	gt/iov/intel_iov_relay.o \
+	gt/iov/intel_iov_service.o \
+	gt/iov/intel_iov_state.o \
+	gt/iov/intel_iov_sysfs.o
+i915-y += $(iov-y)
+
+iov-$(CONFIG_DRM_I915_SELFTEST) += \
+	gt/iov/selftests/iov_selftest_actions.o
+i915-y += $(iov-$(CONFIG_DRM_I915_SELFTEST))
+
 # modesetting core code
 i915-y += \
 	display/hsw_ips.o \
