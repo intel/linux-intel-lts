@@ -34,8 +34,10 @@
 #include "gt/intel_rc6.h"
 #include "gt/intel_rps.h"
 #include "gt/sysfs_engines.h"
+#include "gt/iov/intel_iov_sysfs.h"
 
 #include "i915_drv.h"
+#include "i915_sriov_sysfs.h"
 #include "i915_sysfs.h"
 #include "intel_pm.h"
 
@@ -255,16 +257,23 @@ void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 		drm_warn(&dev_priv->drm,
 			 "failed to register GT sysfs directory\n");
 
+	i915_sriov_sysfs_setup(dev_priv);
+
 	i915_setup_error_capture(kdev);
 
 	intel_engines_add_sysfs(dev_priv);
+
+	intel_iov_sysfs_setup(&to_gt(dev_priv)->iov);
 }
 
 void i915_teardown_sysfs(struct drm_i915_private *dev_priv)
 {
 	struct device *kdev = dev_priv->drm.primary->kdev;
 
+	intel_iov_sysfs_teardown(&to_gt(dev_priv)->iov);
 	i915_teardown_error_capture(kdev);
+
+	i915_sriov_sysfs_teardown(dev_priv);
 
 	device_remove_bin_file(kdev,  &dpf_attrs_1);
 	device_remove_bin_file(kdev,  &dpf_attrs);

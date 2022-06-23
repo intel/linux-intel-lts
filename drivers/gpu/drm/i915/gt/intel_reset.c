@@ -645,6 +645,49 @@ skip_reset:
 	return ret;
 }
 
+static int gen12_vf_reset(struct intel_gt *gt,
+			  intel_engine_mask_t mask,
+			  unsigned int retry)
+{
+	struct intel_uncore *uncore = gt->uncore;
+	u32 request[VF2GUC_VF_RESET_REQUEST_MSG_LEN] = {
+		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_VF2GUC_VF_RESET),
+	};
+	const i915_reg_t reg = GEN11_SOFT_SCRATCH(0);
+	u32 response;
+	int err;
+
+	/* No engine reset since VFs always run with GuC submission enabled */
+	if (GEM_WARN_ON(mask != ALL_ENGINES))
+		return -ENODEV;
+
+	/*
+	 * Can't use intel_guc_send_mmio() since it uses mutex,
+	 * but we don't expect any other MMIO action in flight,
+	 * as we use them only during init and teardown.
+	 */
+	GEM_WARN_ON(mutex_is_locked(&gt->uc.guc.send_mutex));
+
+	intel_uncore_write_fw(uncore, reg, request[0]);
+	intel_uncore_write_fw(uncore, GEN11_GUC_HOST_INTERRUPT, 1);
+
+	err = __intel_wait_for_register_fw(uncore, reg,
+					   GUC_HXG_MSG_0_ORIGIN,
+					   FIELD_PREP(GUC_HXG_MSG_0_ORIGIN,
+						      GUC_HXG_ORIGIN_GUC),
+					   1000, 0, &response);
+	if (unlikely(err)) {
+		drm_dbg(&gt->i915->drm, "VF reset not completed (%pe)\n",
+			ERR_PTR(err));
+	} else if (FIELD_GET(GUC_HXG_MSG_0_TYPE, response) != GUC_HXG_TYPE_RESPONSE_SUCCESS) {
+		drm_dbg(&gt->i915->drm, "VF reset not completed (%#x)\n",
+			response);
+	}
+	return 0;
+}
+
 static int mock_reset(struct intel_gt *gt,
 		      intel_engine_mask_t mask,
 		      unsigned int retry)
@@ -662,6 +705,8 @@ static reset_func intel_get_gpu_reset(const struct intel_gt *gt)
 
 	if (is_mock_gt(gt))
 		return mock_reset;
+	else if (IS_SRIOV_VF(i915))
+		return gen12_vf_reset;
 	else if (GRAPHICS_VER(i915) >= 8)
 		return gen8_reset_engines;
 	else if (GRAPHICS_VER(i915) >= 6)
