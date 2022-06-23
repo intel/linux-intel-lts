@@ -529,6 +529,22 @@ GuC ABI
 .. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_actions_abi.h
 .. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_klvs_abi.h
 
+GuC Virtualization ABI
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_actions_pf_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_actions_vf_abi.h
+
+GuC VF/PF Virtualization ABI
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_communication_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_communication_mmio_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_messages_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_actions_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_actions_mmio_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_errors_abi.h
+
 HuC
 ---
 .. kernel-doc:: drivers/gpu/drm/i915/gt/uc/intel_huc.c

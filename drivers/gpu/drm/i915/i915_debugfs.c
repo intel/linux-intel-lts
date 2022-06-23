@@ -79,6 +79,16 @@ static int i915_capabilities(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int sriov_info(struct seq_file *m, void *data)
+{
+	struct drm_i915_private *i915 = node_to_i915(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	i915_sriov_print_info(i915, &p);
+
+	return 0;
+}
+
 static char get_tiling_flag(struct drm_i915_gem_object *obj)
 {
 	switch (i915_gem_object_get_tiling(obj)) {
@@ -762,6 +772,7 @@ static const struct drm_info_list i915_debugfs_list[] = {
 	{"i915_wa_registers", i915_wa_registers, 0},
 	{"i915_sseu_status", i915_sseu_status, 0},
 	{"i915_rps_boost_info", i915_rps_boost_info, 0},
+	{"i915_sriov_info", sriov_info, 0},
 };
 #define I915_DEBUGFS_ENTRIES ARRAY_SIZE(i915_debugfs_list)
 
