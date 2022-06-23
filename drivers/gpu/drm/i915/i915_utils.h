@@ -441,4 +441,9 @@ static inline bool i915_run_as_guest(void)
 
 bool i915_vtd_active(struct drm_i915_private *i915);
 
+#define make_u64(hi__, low__)  ((u64)(hi__) << 32 | (u64)(low__))
+
+int from_user_to_u32array(const char __user *from, size_t count,
+			  u32 *array, unsigned int size);
+
 #endif /* !__I915_UTILS_H */

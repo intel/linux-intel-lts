@@ -193,6 +193,7 @@ struct intel_display_power_domain_set {
 		for_each_if((__power_well)->desc->domains & (__domain_mask))
 
 int intel_power_domains_init(struct drm_i915_private *dev_priv);
+void intel_power_domains_prune(struct drm_i915_private *dev_priv);
 void intel_power_domains_cleanup(struct drm_i915_private *dev_priv);
 void intel_power_domains_init_hw(struct drm_i915_private *dev_priv, bool resume);
 void intel_power_domains_driver_remove(struct drm_i915_private *dev_priv);

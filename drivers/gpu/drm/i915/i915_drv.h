@@ -67,7 +67,11 @@
 #include "i915_params.h"
 #include "i915_perf_types.h"
 #include "i915_scheduler.h"
+#include "i915_sriov.h"
+#include "i915_sriov_types.h"
+#include "i915_virtualization.h"
 #include "i915_utils.h"
+#include "i915_irq.h"
 #include "intel_device_info.h"
 #include "intel_memory_region.h"
 #include "intel_pch.h"
@@ -440,6 +444,14 @@ struct drm_i915_private {
 	/* i915 device parameters */
 	struct i915_params params;
 
+	/* i915 virtualization mode, use IOV_MODE() to access */
+	enum i915_iov_mode __mode;
+#define IOV_MODE(i915) ({				\
+	BUILD_BUG_ON(!I915_IOV_MODE_NONE);		\
+	GEM_BUG_ON(!(i915)->__mode);			\
+	(i915)->__mode;					\
+})
+
 	const struct intel_device_info __info; /* Use INTEL_INFO() to access. */
 	struct intel_runtime_info __runtime; /* Use RUNTIME_INFO() to access. */
 	struct intel_driver_caps caps;
@@ -471,6 +483,7 @@ struct drm_i915_private {
 	struct intel_uncore uncore;
 	struct intel_uncore_mmio_debug mmio_debug;
 
+	struct i915_sriov sriov;
 	struct i915_virtual_gpu vgpu;
 
 	struct intel_gvt *gvt;
@@ -1352,6 +1365,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 
 #define HAS_GT_UC(dev_priv)	(INTEL_INFO(dev_priv)->has_gt_uc)
 
+#define HAS_SRIOV(dev_priv)	(INTEL_INFO(dev_priv)->has_sriov)
+
 #define HAS_POOLED_EU(dev_priv)	(INTEL_INFO(dev_priv)->has_pooled_eu)
 
 #define HAS_GLOBAL_MOCS_REGISTERS(dev_priv)	(INTEL_INFO(dev_priv)->has_global_mocs)
@@ -1394,6 +1409,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 					      IS_ALDERLAKE_S(dev_priv))
 
 #define HAS_MBUS_JOINING(i915) (IS_ALDERLAKE_P(i915))
+
+bool __pci_resource_valid(struct pci_dev *pdev, int bar);
 
 /* i915_gem.c */
 void i915_gem_init_early(struct drm_i915_private *dev_priv);

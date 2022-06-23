@@ -302,6 +302,9 @@ static void __sprint_engine_name(struct intel_engine_cs *engine)
 
 void intel_engine_set_hwsp_writemask(struct intel_engine_cs *engine, u32 mask)
 {
+	if (IS_SRIOV_VF(engine->i915))
+		return;
+
 	/*
 	 * Though they added more rings on g4x/ilk, they did not add
 	 * per-engine HWSTAM until gen6.
@@ -1664,6 +1667,10 @@ static void intel_engine_print_registers(struct intel_engine_cs *engine,
 	struct drm_i915_private *dev_priv = engine->i915;
 	struct intel_engine_execlists * const execlists = &engine->execlists;
 	u64 addr;
+
+	/* VF can't access these registers */
+	if (IS_SRIOV_VF(dev_priv))
+		return;
 
 	if (engine->id == RENDER_CLASS && IS_GRAPHICS_VER(dev_priv, 4, 7))
 		drm_printf(m, "\tCCID: 0x%08x\n", ENGINE_READ(engine, CCID));

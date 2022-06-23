@@ -90,7 +90,19 @@ typedef u64 gen8_pte_t;
 
 #define GEN12_PPGTT_PTE_LM	BIT_ULL(11)
 
-#define GEN12_GGTT_PTE_LM	BIT_ULL(1)
+/*
+ *  DOC: GEN12 GGTT Table Entry format
+ *
+ * +----------+---------+---------+-----------------+--------------+---------+
+ * |    63:46 |   45:12 |    11:5 |             4:2 |            1 |       0 |
+ * +==========+=========+=========+=================+==============+=========+
+ * |  Ignored | Address | Ignored | Function Number | Local Memory | Present |
+ * +----------+---------+---------+-----------------+--------------+---------+
+ */
+
+#define GEN12_GGTT_PTE_LM		BIT_ULL(1)
+#define TGL_GGTT_PTE_VFID_MASK		GENMASK_ULL(4, 2)
+#define GEN12_GGTT_PTE_ADDR_MASK	GENMASK_ULL(45, 12)
 
 #define GEN12_PDE_64K BIT(6)
 
@@ -568,6 +580,20 @@ int i915_ggtt_balloon(struct i915_ggtt *ggtt, u64 start, u64 end,
 		      struct drm_mm_node *node);
 void i915_ggtt_deballoon(struct i915_ggtt *ggtt, struct drm_mm_node *node);
 
+void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
+			       const struct drm_mm_node *node);
+
+#define I915_GGTT_SAVE_PTES_NO_VFID BIT(31)
+
+int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, void *buf,
+			unsigned int size, unsigned int flags);
+
+#define I915_GGTT_RESTORE_PTES_NEW_VFID  BIT(31)
+#define I915_GGTT_RESTORE_PTES_VFID_MASK GENMASK(19, 0)
+
+int i915_ggtt_restore_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, const void *buf,
+			   unsigned int size, unsigned int flags);
+
 int i915_ppgtt_init_hw(struct intel_gt *gt);
 
 struct i915_ppgtt *i915_ppgtt_create(struct intel_gt *gt,
@@ -624,6 +650,11 @@ release_pd_entry(struct i915_page_directory * const pd,
 		 struct i915_page_table * const pt,
 		 const struct drm_i915_gem_object * const scratch);
 void gen6_ggtt_invalidate(struct i915_ggtt *ggtt);
+
+void gen8_set_pte(void __iomem *addr, gen8_pte_t pte);
+gen8_pte_t gen8_get_pte(void __iomem *addr);
+
+u64 ggtt_addr_to_pte_offset(u64 ggtt_addr);
 
 void ppgtt_bind_vma(struct i915_address_space *vm,
 		    struct i915_vm_pt_stash *stash,

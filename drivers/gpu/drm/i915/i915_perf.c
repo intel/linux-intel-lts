@@ -4394,6 +4394,9 @@ void i915_perf_init(struct drm_i915_private *i915)
 
 	/* XXX const struct i915_perf_ops! */
 
+	if (IS_SRIOV_VF(i915))
+		return;
+
 	/* i915_perf is not enabled for DG2 yet */
 	if (IS_DG2(i915))
 		return;
