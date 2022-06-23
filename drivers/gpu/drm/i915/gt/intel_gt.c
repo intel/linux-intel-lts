@@ -340,12 +340,12 @@ static void gen6_check_faults(struct intel_gt *gt)
 				"\tAddr: 0x%08lx\n"
 				"\tAddress space: %s\n"
 				"\tSource ID: %d\n"
-				"\tType: %d\n",
+				"\tLevel: %d\n",
 				fault & PAGE_MASK,
 				fault & RING_FAULT_GTTSEL_MASK ?
 				"GGTT" : "PPGTT",
 				RING_FAULT_SRCID(fault),
-				RING_FAULT_FAULT_TYPE(fault));
+				RING_FAULT_LEVEL(fault));
 		}
 	}
 }
@@ -382,12 +382,13 @@ static void gen8_check_faults(struct intel_gt *gt)
 			"\tAddress space: %s\n"
 			"\tEngine ID: %d\n"
 			"\tSource ID: %d\n"
-			"\tType: %d\n",
-			upper_32_bits(fault_addr), lower_32_bits(fault_addr),
+			"\tLevel: %d\n",
+			upper_32_bits(fault_addr),
+			lower_32_bits(fault_addr),
 			fault_data1 & FAULT_GTT_SEL ? "GGTT" : "PPGTT",
 			GEN8_RING_FAULT_ENGINE_ID(fault),
 			RING_FAULT_SRCID(fault),
-			RING_FAULT_FAULT_TYPE(fault));
+			RING_FAULT_LEVEL(fault));
 	}
 }
 
