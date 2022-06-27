@@ -1,0 +1,110 @@
+From 18028810f9544344f17006bc28a2a4e34d0576f6 Mon Sep 17 00:00:00 2001
+From: Desmond Cheong Zhi Xi <desmondcheongzx@gmail.com>
+Date: Mon, 9 May 2022 09:01:47 +0800
+Subject: [PATCH 3/5] drm: protect drm_master pointers in drm_lease.c
+
+Git-commit: 56f0729a510f92151682ff6c89f69724d5595d6e
+Patch-mainline: v5.15-rc1
+References: CVE-2022-1280 bsc#1197914
+
+drm_file->master pointers should be protected by
+drm_device.master_mutex or drm_file.master_lookup_lock when being
+dereferenced.
+
+However, in drm_lease.c, there are multiple instances where
+drm_file->master is accessed and dereferenced while neither lock is
+held. This makes drm_lease.c vulnerable to use-after-free bugs.
+
+We address this issue in 2 ways:
+
+1. Add a new drm_file_get_master() function that calls drm_master_get
+on drm_file->master while holding on to
+drm_file.master_lookup_lock. Since drm_master_get increments the
+reference count of master, this prevents master from being freed until
+we unreference it with drm_master_put.
+
+2. In each case where drm_file->master is directly accessed and
+eventually dereferenced in drm_lease.c, we wrap the access in a call
+to the new drm_file_get_master function, then unreference the master
+pointer once we are done using it.
+
+Reported-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Signed-off-by: Desmond Cheong Zhi Xi <desmondcheongzx@gmail.com>
+Reviewed-by: Emil Velikov <emil.l.velikov@gmail.com>
+Signed-off-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Link: https://patchwork.freedesktop.org/patch/msgid/20210712043508.11584-6-desmondcheongzx@gmail.com
+Acked-by: Takashi Iwai <tiwai@suse.de>
+---
+ drivers/gpu/drm/drm_auth.c | 25 +++++++++++++++++++++++++
+ include/drm/drm_auth.h     |  1 +
+ include/drm/drm_file.h     |  6 ++++++
+ 3 files changed, 32 insertions(+)
+
+diff --git a/drivers/gpu/drm/drm_auth.c b/drivers/gpu/drm/drm_auth.c
+index 1b675ac62e8f..15fcacec133a 100644
+--- a/drivers/gpu/drm/drm_auth.c
++++ b/drivers/gpu/drm/drm_auth.c
+@@ -326,6 +326,31 @@ struct drm_master *drm_master_get(struct drm_master *master)
+ }
+ EXPORT_SYMBOL(drm_master_get);
+ 
++/**
++ * drm_file_get_master - reference &drm_file.master of @file_priv
++ * @file_priv: DRM file private
++ *
++ * Increments the reference count of @file_priv's &drm_file.master and returns
++ * the &drm_file.master. If @file_priv has no &drm_file.master, returns NULL.
++ *
++ * Master pointers returned from this function should be unreferenced using
++ * drm_master_put().
++ */
++struct drm_master *drm_file_get_master(struct drm_file *file_priv)
++{
++	struct drm_master *master = NULL;
++
++	spin_lock(&file_priv->master_lookup_lock);
++	if (!file_priv->master)
++		goto unlock;
++	master = drm_master_get(file_priv->master);
++
++unlock:
++	spin_unlock(&file_priv->master_lookup_lock);
++	return master;
++}
++EXPORT_SYMBOL(drm_file_get_master);
++
+ static void drm_master_destroy(struct kref *kref)
+ {
+ 	struct drm_master *master = container_of(kref, struct drm_master, refcount);
+diff --git a/include/drm/drm_auth.h b/include/drm/drm_auth.h
+index 81a40c2a9a3e..9f97f9fb882a 100644
+--- a/include/drm/drm_auth.h
++++ b/include/drm/drm_auth.h
+@@ -79,6 +79,7 @@ struct drm_master {
+ };
+ 
+ struct drm_master *drm_master_get(struct drm_master *master);
++struct drm_master *drm_file_get_master(struct drm_file *file_priv);
+ void drm_master_put(struct drm_master **master);
+ bool drm_is_current_master(struct drm_file *fpriv);
+ 
+diff --git a/include/drm/drm_file.h b/include/drm/drm_file.h
+index 1d603cd5bcf0..2f6420a35b5a 100644
+--- a/include/drm/drm_file.h
++++ b/include/drm/drm_file.h
+@@ -202,6 +202,12 @@ struct drm_file {
+ 	 * this only matches &drm_device.master if the master is the currently
+ 	 * active one.
+ 	 *
++	 * When dereferencing this pointer, either hold struct
++	 * &drm_device.master_mutex for the duration of the pointer's use, or
++	 * use drm_file_get_master() if struct &drm_device.master_mutex is not
++	 * currently held and there is no other need to hold it. This prevents
++	 * @master from being freed during use.
++	 *
+ 	 * See also @authentication and @is_master and the :ref:`section on
+ 	 * primary nodes and authentication <drm_primary_node>`.
+ 	 */
+-- 
+2.25.1
+

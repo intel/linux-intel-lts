@@ -113,14 +113,6 @@
 # CVE-2020-27820
 0001-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
 
-#CVE-2022-1011
-0001-fuse-fix-pipe-buffer-lifetime-for-direct_io.patch
-
-#CVE-2021-4197
-0001-cgroup-Use-open-time-credentials-for-process-migrato.patch
-0002-cgroup-Allocate-cgroup_file_ctx-for-kernfs_open_file.patch
-0003-cgroup-Use-open-time-cgroup-namespace-for-process-mi.patch
-
 #CVE-2021-4148
 0001-mm-khugepaged-skip-huge-page-collapse-for-special-fi.patch
 
@@ -141,3 +133,9 @@
 0004-net-sched-add-helper-function-to-take-reference-to-Q.patch
 0005-net-sched-use-Qdisc-rcu-API-instead-of-relying-on-rt.patch
 
+# CVE-2022-1280
+0001-drm-add-a-locked-version-of-drm_is_current_master.patch
+0002-drm-serialize-drm_file.master-with-a-new-spinlock.patch
+0003-drm-protect-drm_master-pointers-in-drm_lease.c.patch
+0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
+0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
