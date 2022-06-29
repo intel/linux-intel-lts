@@ -1030,6 +1030,7 @@ static const struct dc_debug_options debug_defaults_drv = {
 			.afmt = true,
 		}
 	},
+	.disable_z10 = true,
 	.optimize_edp_link_rate = true,
 	.enable_sw_cntl_psr = true,
 	.apply_vendor_specific_lttpr_wa = true,
@@ -1388,12 +1389,6 @@ static struct stream_encoder *dcn31_stream_encoder_create(
 		kfree(vpg);
 		kfree(afmt);
 		return NULL;
-	}
-
-	if (ctx->asic_id.chip_family == FAMILY_YELLOW_CARP &&
-			ctx->asic_id.hw_internal_rev == YELLOW_CARP_B0) {
-		if ((eng_id == ENGINE_ID_DIGC) || (eng_id == ENGINE_ID_DIGD))
-			eng_id = eng_id + 3; // For B0 only. C->F, D->G.
 	}
 
 	dcn30_dio_stream_encoder_construct(enc1, ctx, ctx->dc_bios,
