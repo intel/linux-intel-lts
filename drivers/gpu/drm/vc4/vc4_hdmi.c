@@ -2967,6 +2967,8 @@ static int vc4_hdmi_bind(struct device *dev, struct device *master, void *data)
 			vc4_hdmi->disable_4kp60 = true;
 	}
 
+	pm_runtime_enable(dev);
+
 	/*
 	 *  We need to have the device powered up at this point to call
 	 *  our reset hook and for the CEC init.
