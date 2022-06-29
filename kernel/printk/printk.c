@@ -3146,6 +3146,7 @@ late_initcall(printk_late_init);
  * Delayed printk version, for scheduler-internal messages:
  */
 #define PRINTK_PENDING_WAKEUP	0x01
+#define PRINTK_PENDING_OUTPUT	0x02
 
 static DEFINE_PER_CPU(int, printk_pending);
 
