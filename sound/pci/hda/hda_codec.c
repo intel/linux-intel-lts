@@ -772,11 +772,11 @@ static void codec_release_pcms(struct hda_codec *codec)
  */
 void snd_hda_codec_cleanup_for_unbind(struct hda_codec *codec)
 {
-	if (codec->registered) {
+	if (codec->core.registered) {
 		/* pm_runtime_put() is called in snd_hdac_device_exit() */
 		pm_runtime_get_noresume(hda_codec_dev(codec));
 		pm_runtime_disable(hda_codec_dev(codec));
-		codec->registered = 0;
+		codec->core.registered = 0;
 	}
 
 	snd_hda_codec_disconnect_pcms(codec);
@@ -824,14 +824,14 @@ void snd_hda_codec_display_power(struct hda_codec *codec, bool enable)
  */
 void snd_hda_codec_register(struct hda_codec *codec)
 {
-	if (codec->registered)
+	if (codec->core.registered)
 		return;
 	if (device_is_registered(hda_codec_dev(codec))) {
 		snd_hda_codec_display_power(codec, true);
 		pm_runtime_enable(hda_codec_dev(codec));
 		/* it was powered up in snd_hda_codec_new(), now all done */
 		snd_hda_power_down(codec);
-		codec->registered = 1;
+		codec->core.registered = 1;
 	}
 }
 EXPORT_SYMBOL_GPL(snd_hda_codec_register);
@@ -3032,7 +3032,7 @@ void snd_hda_codec_shutdown(struct hda_codec *codec)
 	struct hda_pcm *cpcm;
 
 	/* Skip the shutdown if codec is not registered */
-	if (!codec->registered)
+	if (!codec->core.registered)
 		return;
 
 	list_for_each_entry(cpcm, &codec->pcm_list_head, list)
