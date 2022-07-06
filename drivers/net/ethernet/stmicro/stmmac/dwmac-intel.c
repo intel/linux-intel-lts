@@ -1372,13 +1372,26 @@ static int __maybe_unused intel_eth_runtime_resume(struct device *dev)
 	struct pci_dev *pdev = to_pci_dev(dev);
 	struct net_device *ndev = dev_get_drvdata(&pdev->dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
+	bool lock;
 	int ret;
 
-	ret = intel_eth_pci_resume(dev);
+	lock = !!rtnl_is_locked();
+
+	pci_restore_state(pdev);
+	pci_set_power_state(pdev, PCI_D0);
+
+	ret = pcim_enable_device(pdev);
+	if (ret)
+		return ret;
+
+	pci_set_master(pdev);
+
+	ret = stmmac_resume_runtime(dev, lock);
 	if (!ret)
 		dev_info(dev, "%s: Device is runtime resumed.\n", __func__);
 
-	rtnl_lock();
+	if (!lock)
+		rtnl_lock();
 	/* Restore saved WoL operation */
 #ifdef CONFIG_PM
 	wol.wolopts = priv->saved_wolopts;
@@ -1387,7 +1400,8 @@ static int __maybe_unused intel_eth_runtime_resume(struct device *dev)
 #ifdef CONFIG_PM
 	priv->saved_wolopts = 0;
 #endif
-	rtnl_unlock();
+	if (!lock)
+		rtnl_unlock();
 
 	if (!wol.wolopts)
 		device_set_wakeup_enable(priv->device, 0);

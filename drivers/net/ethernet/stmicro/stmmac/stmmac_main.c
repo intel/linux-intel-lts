@@ -7851,12 +7851,13 @@ int stmmac_config_dma_channel(struct stmmac_priv *priv)
 #endif /* CONFIG_STMMAC_NETWORK_PROXY */
 
 /**
- * stmmac_resume - resume callback
+ * stmmac_resume_runtime - resume callback
  * @dev: device pointer
+ * @rpm: rtnl_lock check
  * Description: when resume this function is invoked to setup the DMA and CORE
  * in a usable state.
  */
-int stmmac_resume(struct device *dev)
+int stmmac_resume_runtime(struct device *dev, bool rpm)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
@@ -7895,7 +7896,8 @@ int stmmac_resume(struct device *dev)
 			return ret;
 	}
 
-	rtnl_lock();
+	if (!rpm)
+		rtnl_lock();
 	if (device_may_wakeup(priv->device) && priv->plat->pmt) {
 		phylink_resume(priv->phylink);
 	} else {
@@ -7903,9 +7905,7 @@ int stmmac_resume(struct device *dev)
 		if (device_may_wakeup(priv->device))
 			phylink_speed_up(priv->phylink);
 	}
-	rtnl_unlock();
 
-	rtnl_lock();
 	mutex_lock(&priv->lock);
 
 	stmmac_reset_queues_param(priv);
@@ -7923,11 +7923,25 @@ int stmmac_resume(struct device *dev)
 	stmmac_enable_all_dma_irq(priv);
 
 	mutex_unlock(&priv->lock);
-	rtnl_unlock();
+	if (!rpm)
+		rtnl_unlock();
+
 
 	netif_device_attach(ndev);
 #endif /* ndef CONFIG_STMMAC_NETWORK_PROXY */
 	return 0;
+}
+EXPORT_SYMBOL_GPL(stmmac_resume_runtime);
+
+/**
+ * stmmac_resume - resume callback
+ * @dev: device pointer
+ * Description: when resume this function is invoked to setup the DMA and CORE
+ * in a usable state.
+ */
+int stmmac_resume(struct device *dev)
+{
+	return stmmac_resume_runtime(dev, false);
 }
 EXPORT_SYMBOL_GPL(stmmac_resume);
 
