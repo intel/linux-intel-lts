@@ -28,6 +28,7 @@
 #include <linux/list.h>
 #include <linux/overflow.h>
 #include <linux/sched.h>
+#include <linux/string_helpers.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
 #include <linux/sched/clock.h>
@@ -458,5 +459,10 @@ static inline bool timer_expired(const struct timer_list *t)
 {
 	return timer_active(t) && !timer_pending(t);
 }
+
+#define make_u64(hi__, low__)  ((u64)(hi__) << 32 | (u64)(low__))
+
+int from_user_to_u32array(const char __user *from, size_t count,
+			  u32 *array, unsigned int size);
 
 #endif /* !__I915_UTILS_H */
