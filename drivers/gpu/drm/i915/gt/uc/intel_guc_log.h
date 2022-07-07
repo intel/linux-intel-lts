@@ -64,6 +64,8 @@ struct intel_guc_log {
 void intel_guc_log_init_early(struct intel_guc_log *log);
 int intel_guc_log_create(struct intel_guc_log *log);
 void intel_guc_log_destroy(struct intel_guc_log *log);
+u32 intel_guc_log_size(struct intel_guc_log *log);
+u32 intel_guc_log_relay_subbuf_count(struct intel_guc_log *log);
 
 int intel_guc_log_set_level(struct intel_guc_log *log, u32 level);
 bool intel_guc_log_relay_created(const struct intel_guc_log *log);

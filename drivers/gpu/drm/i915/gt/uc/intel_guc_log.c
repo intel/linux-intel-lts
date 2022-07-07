@@ -12,6 +12,38 @@
 
 static void guc_log_capture_logs(struct intel_guc_log *log);
 
+u32 intel_guc_log_size(struct intel_guc_log *log)
+{
+	/*
+	 *  GuC Log buffer Layout:
+	 *
+	 *  NB: Ordering must follow "enum guc_log_buffer_type".
+	 *
+	 *  +===============================+ 00B
+	 *  |      Debug state header       |
+	 *  +-------------------------------+ 32B
+	 *  |    Crash dump state header    |
+	 *  +-------------------------------+ 64B
+	 *  |     Capture state header      |
+	 *  +-------------------------------+ 96B
+	 *  |                               |
+	 *  +===============================+ PAGE_SIZE (4KB)
+	 *  |          Debug logs           |
+	 *  +===============================+ + DEBUG_SIZE
+	 *  |        Crash Dump logs        |
+	 *  +===============================+ + CRASH_SIZE
+	 *  |         Capture logs          |
+	 *  +===============================+ + CAPTURE_SIZE
+	 */
+	return PAGE_SIZE + CRASH_BUFFER_SIZE + DEBUG_BUFFER_SIZE + CAPTURE_BUFFER_SIZE;
+}
+
+#define GUC_LOG_RELAY_SUBBUF_COUNT 8
+u32 intel_guc_log_relay_subbuf_count(struct intel_guc_log *log)
+{
+	return GUC_LOG_RELAY_SUBBUF_COUNT;
+}
+
 /**
  * DOC: GuC firmware log
  *
@@ -281,13 +313,16 @@ static void guc_read_update_log_buffer(struct intel_guc_log *log)
 
 		/* Just copy the newly written data */
 		if (read_offset > write_offset) {
-			i915_memcpy_from_wc(dst_data, src_data, write_offset);
+			if (!i915_memcpy_from_wc(dst_data, src_data, write_offset))
+				i915_unaligned_memcpy_from_wc(dst_data, src_data, write_offset);
 			bytes_to_copy = buffer_size - read_offset;
 		} else {
 			bytes_to_copy = write_offset - read_offset;
 		}
-		i915_memcpy_from_wc(dst_data + read_offset,
-				    src_data + read_offset, bytes_to_copy);
+		if (!i915_memcpy_from_wc(dst_data + read_offset,
+					 src_data + read_offset, bytes_to_copy))
+			i915_unaligned_memcpy_from_wc(dst_data + read_offset,
+						      src_data + read_offset, bytes_to_copy);
 
 		src_data += buffer_size;
 		dst_data += buffer_size;
@@ -365,9 +400,9 @@ static int guc_log_relay_create(struct intel_guc_log *log)
 	 * latency, for consuming the logs from relay. Also doesn't take
 	 * up too much memory.
 	 */
-	n_subbufs = 8;
+	n_subbufs = intel_guc_log_relay_subbuf_count(log);
 
-	guc_log_relay_chan = relay_open("guc_log",
+	guc_log_relay_chan = relay_open("guc_log_relay_chan",
 					dev_priv->drm.primary->debugfs_root,
 					subbuf_size, n_subbufs,
 					&relay_callbacks, dev_priv);
@@ -443,27 +478,7 @@ int intel_guc_log_create(struct intel_guc_log *log)
 
 	GEM_BUG_ON(log->vma);
 
-	/*
-	 *  GuC Log buffer Layout
-	 *
-	 *  +===============================+ 00B
-	 *  |    Crash dump state header    |
-	 *  +-------------------------------+ 32B
-	 *  |      Debug state header       |
-	 *  +-------------------------------+ 64B
-	 *  |     Capture state header      |
-	 *  +-------------------------------+ 96B
-	 *  |                               |
-	 *  +===============================+ PAGE_SIZE (4KB)
-	 *  |        Crash Dump logs        |
-	 *  +===============================+ + CRASH_SIZE
-	 *  |          Debug logs           |
-	 *  +===============================+ + DEBUG_SIZE
-	 *  |         Capture logs          |
-	 *  +===============================+ + CAPTURE_SIZE
-	 */
-	guc_log_size = PAGE_SIZE + CRASH_BUFFER_SIZE + DEBUG_BUFFER_SIZE +
-		       CAPTURE_BUFFER_SIZE;
+	guc_log_size = intel_guc_log_size(log);
 
 	vma = intel_guc_allocate_vma(guc, guc_log_size);
 	if (IS_ERR(vma)) {
@@ -727,6 +742,8 @@ int intel_guc_log_dump(struct intel_guc_log *log, struct drm_printer *p,
 
 	if (!obj)
 		return 0;
+
+	intel_guc_dump_time_info(guc, p);
 
 	map = i915_gem_object_pin_map_unlocked(obj, I915_MAP_WC);
 	if (IS_ERR(map)) {

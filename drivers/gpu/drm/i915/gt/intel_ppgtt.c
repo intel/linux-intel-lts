@@ -151,6 +151,17 @@ int i915_ppgtt_init_hw(struct intel_gt *gt)
 	else if (GRAPHICS_VER(i915) == 7)
 		gen7_ppgtt_enable(gt);
 
+	/*
+	 * Tell GAM that we want to use dual-ctx. The same address space will be
+	 * shared by RCS and CCS and the HW to use bit 47 as an indication of
+	 * the source unit, so the PPGTT size needs to be limited to 47b.
+	 * This restriction does not apply in multi-ctx mode.
+	 */
+	if (IS_TIGERLAKE(i915) || IS_DG1(i915) || IS_ALDERLAKE_S(i915) || IS_ALDERLAKE_P(i915))
+		if (HAS_ENGINE(gt, CCS0) && INTEL_INFO(i915)->ppgtt_size < 48)
+			intel_uncore_write(gt->uncore, GEN12_GAM_MULT_CTXT_CTL,
+					   _MASKED_BIT_ENABLE
+					   (GEN12_GAM_MULT_CTXT_ENABLE));
 	return 0;
 }
 
