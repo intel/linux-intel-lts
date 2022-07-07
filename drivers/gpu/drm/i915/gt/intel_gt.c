@@ -20,6 +20,8 @@
 #include "intel_renderstate.h"
 #include "intel_rps.h"
 #include "intel_uncore.h"
+#include "intel_pm.h"
+#include "iov/intel_iov.h"
 #include "shmem_utils.h"
 #include "pxp/intel_pxp.h"
 
@@ -120,10 +122,15 @@ static u16 slicemask(struct intel_gt *gt, int count)
 int intel_gt_init_mmio(struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
+	int ret;
+
+	ret = intel_iov_init_mmio(&gt->iov);
+	if (ret)
+		return ret;
 
 	intel_gt_init_clock_frequency(gt);
-
 	intel_uc_init_mmio(&gt->uc);
+
 	intel_sseu_info_init(gt);
 
 	/*
@@ -229,6 +236,13 @@ int intel_gt_init_hw(struct intel_gt *gt)
 	ret = intel_uc_init_hw(&gt->uc);
 	if (ret) {
 		i915_probe_error(i915, "Enabling uc failed (%d)\n", ret);
+		goto out;
+	}
+
+	ret = intel_iov_init_hw(&gt->iov);
+	if (unlikely(ret)) {
+		i915_probe_error(i915, "Enabling IOV failed (%pe)\n",
+				 ERR_PTR(ret));
 		goto out;
 	}
 
@@ -372,6 +386,9 @@ static void gen8_check_faults(struct intel_gt *gt)
 void intel_gt_check_and_clear_faults(struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	/* From GEN8 onwards we only have one 'All Engine Fault Register' */
 	if (GRAPHICS_VER(i915) >= 8)
@@ -673,10 +690,14 @@ int intel_gt_init(struct intel_gt *gt)
 	 */
 	intel_uncore_forcewake_get(gt->uncore, FORCEWAKE_ALL);
 
+	err = intel_iov_init(&gt->iov);
+	if (unlikely(err))
+		goto out_fw;
+
 	err = intel_gt_init_scratch(gt,
 				    GRAPHICS_VER(gt->i915) == 2 ? SZ_256K : SZ_4K);
 	if (err)
-		goto out_fw;
+		goto err_iov;
 
 	intel_gt_pm_init(gt);
 
@@ -699,6 +720,10 @@ int intel_gt_init(struct intel_gt *gt)
 	err = intel_gt_resume(gt);
 	if (err)
 		goto err_uc_init;
+
+	err = intel_iov_init_late(&gt->iov);
+	if (err)
+		goto err_gt;
 
 	err = __engines_record_defaults(gt);
 	if (err)
@@ -730,6 +755,8 @@ err_engines:
 err_pm:
 	intel_gt_pm_fini(gt);
 	intel_gt_fini_scratch(gt);
+err_iov:
+	intel_iov_fini(&gt->iov);
 out_fw:
 	if (err)
 		intel_gt_set_wedged_on_init(gt);
@@ -739,6 +766,10 @@ out_fw:
 
 void intel_gt_driver_remove(struct intel_gt *gt)
 {
+	intel_gt_fini_clock_frequency(gt);
+
+	intel_iov_fini_hw(&gt->iov);
+
 	__intel_gt_disable(gt);
 
 	intel_migrate_fini(&gt->migrate);
@@ -781,6 +812,7 @@ void intel_gt_driver_release(struct intel_gt *gt)
 	intel_gt_pm_fini(gt);
 	intel_gt_fini_scratch(gt);
 	intel_gt_fini_buffer_pool(gt);
+	intel_iov_fini(&gt->iov);
 }
 
 void intel_gt_driver_late_release(struct intel_gt *gt)
@@ -788,6 +820,7 @@ void intel_gt_driver_late_release(struct intel_gt *gt)
 	/* We need to wait for inflight RCU frees to release their grip */
 	rcu_barrier();
 
+	intel_iov_release(&gt->iov);
 	intel_uc_driver_late_release(&gt->uc);
 	intel_gt_fini_requests(gt);
 	intel_gt_fini_reset(gt);

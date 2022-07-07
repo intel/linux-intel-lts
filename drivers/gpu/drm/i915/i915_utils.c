@@ -114,3 +114,62 @@ void set_timer_ms(struct timer_list *t, unsigned long timeout)
 	/* Keep t->expires = 0 reserved to indicate a canceled timer. */
 	mod_timer(t, jiffies + timeout ?: 1);
 }
+
+/**
+ * from_user_to_u32array - convert user input into array of u32
+ * @from: user input
+ * @count: number of characters to read
+ * @array: array with results
+ * @size: size of the array
+ *
+ * We expect input formatted as comma-separated list of integer values.
+ *
+ * Returns number of entries parsed or negative errno on failure.
+ */
+int from_user_to_u32array(const char __user *from, size_t count,
+			  u32 *array, unsigned int size)
+{
+	unsigned int num = 0;
+	char *buf, *p, save;
+	int ret;
+
+	/* [(sign + longest representation) + comma] + newline + terminator */
+	if (count > (1 + sizeof(u32) * 8 + 1) * size + 1 + 1)
+		return -EFBIG;
+
+	p = buf = kzalloc(count + 1, GFP_USER);
+	if (!buf)
+		return -ENOMEM;
+
+	if (copy_from_user(buf, from, count)) {
+		ret = -EFAULT;
+		goto out_free;
+	}
+
+	do {
+		int len;
+
+		if (num == size) {
+			ret = -EINVAL;
+			goto out_free;
+		}
+		len = strcspn(p, ",");
+
+		/* nul-terminate and parse */
+		save = p[len];
+		p[len] = '\0';
+
+		ret = kstrtou32(p, 0, &array[num]);
+		if (ret)
+			goto out_free;
+
+		p += len + 1;
+		num++;
+	} while (save == ',');
+
+	ret = num;
+out_free:
+	kfree(buf);
+	return ret;
+}
+

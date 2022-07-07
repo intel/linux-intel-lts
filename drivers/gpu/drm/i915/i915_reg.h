@@ -288,6 +288,13 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GTTMMADR_BAR               0
 #define GEN2_GTTMMADR_BAR          1
 #define GFXMEM_BAR             2
+#define GTT_APERTURE_BAR			GFXMEM_BAR
+#define GEN12_LMEM_BAR				GFXMEM_BAR
+
+#ifdef CONFIG_PCI_IOV
+#define GEN12_VF_GTTMMADR_BAR			(PCI_IOV_RESOURCES + GTTMMADR_BAR)
+#define GEN12_VF_LMEM_BAR			(PCI_IOV_RESOURCES + GEN12_LMEM_BAR)
+#endif
 
 /* BSM in include/drm/i915_drm.h */
 
@@ -4166,10 +4173,23 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN6_GT_PERF_STATUS	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5948)
 #define BXT_GT_PERF_STATUS      _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x7070)
 #define GEN6_RP_STATE_LIMITS	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5994)
+
+#define PCU_PACKAGE_POWER_SKU_UNIT     _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5938)
+#define   PKG_PWR_UNIT             REG_GENMASK(3, 0)
+#define   PKG_ENERGY_UNIT          REG_GENMASK(12, 8)
+#define   PKG_TIME_UNIT                REG_GENMASK(19, 16)
+#define PCU_PACKAGE_ENERGY_STATUS      _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x593c)
+
 #define GEN6_RP_STATE_CAP	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5998)
 #define   RP0_CAP_MASK		REG_GENMASK(7, 0)
 #define   RP1_CAP_MASK		REG_GENMASK(15, 8)
 #define   RPN_CAP_MASK		REG_GENMASK(23, 16)
+
+#define PCU_PACKAGE_RAPL_LIMIT         _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x59a0)
+#define   PKG_PWR_LIM_1                REG_GENMASK(14, 0)
+#define   PKG_PWR_LIM_1_EN         REG_BIT(15)
+#define   PKG_PWR_LIM_1_TIME           REG_GENMASK(23, 17)
+
 #define BXT_RP_STATE_CAP        _MMIO(0x138170)
 #define GEN9_RP_STATE_LIMITS	_MMIO(0x138148)
 #define XEHPSDV_RP_STATE_CAP	_MMIO(0x250014)
@@ -4212,6 +4232,22 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN7_CXT_VFSTATE_SIZE(ctx_reg)	(((ctx_reg) >> 0) & 0x3f)
 #define GEN7_CXT_TOTAL_SIZE(ctx_reg)	(GEN7_CXT_EXTENDED_SIZE(ctx_reg) + \
 					 GEN7_CXT_VFSTATE_SIZE(ctx_reg))
+
+/*
+ * *_PACKAGE_POWER_SKU - SKU power and timing parameters.
+ * Used herein as a 64-bit register.
+ * These masks are defined using GENMASK_ULL as REG_GENMASK is limited to u32
+ * and as GENMASK is "long" and therefore 32-bits on a 32-bit system.
+ * PKG_PKG_TDP, PKG_MIN_PWR, and PKG_MAX_PWR are scaled in the same way as
+ * PKG_PWR_LIM_*, above.
+ * PKG_MAX_WIN has sub-fields for x and y, and has the value: is 1.x * 2^y.
+ */
+#define   PKG_PKG_TDP			GENMASK_ULL(14, 0)
+#define   PKG_MIN_PWR			GENMASK_ULL(30, 16)
+#define   PKG_MAX_PWR			GENMASK_ULL(46, 32)
+#define   PKG_MAX_WIN			GENMASK_ULL(54, 48)
+#define     PKG_MAX_WIN_Y		GENMASK_ULL(54, 53)
+#define     PKG_MAX_WIN_X		GENMASK_ULL(52, 48)
 
 #define CHV_CLK_CTL1			_MMIO(0x101100)
 #define VLV_CLK_CTL2			_MMIO(0x101104)
@@ -8148,6 +8184,14 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 
 #define   ENGINE1_MASK			REG_GENMASK(31, 16)
 #define   ENGINE0_MASK			REG_GENMASK(15, 0)
+
+/* VF_CAPABILITY_REGISTER */
+#define GEN12_VF_CAP_REG		_MMIO(0x1901f8)
+#define   GEN12_VF			REG_BIT(0)
+
+/* VIRTUALIZATION CONTROL REGISTER */
+#define GEN12_VIRTUAL_CTRL_REG		_MMIO(0x10108C)
+#define   GEN12_GUEST_GTT_UPDATE_EN	REG_BIT(8)
 
 #define ILK_DISPLAY_CHICKEN2	_MMIO(0x42004)
 /* Required on all Ironlake and Sandybridge according to the B-Spec. */
