@@ -141,6 +141,8 @@ struct intel_gt_coredump {
 	u32 aux_err; /* gen12 */
 	u32 sfc_done[GEN12_SFC_DONE_MAX]; /* gen12 */
 	u32 gam_done; /* gen12 */
+	u32 clock_frequency;
+	u32 clock_period_ns;
 
 	u32 nfence;
 	u64 fence[I915_MAX_NUM_FENCES];
@@ -151,6 +153,7 @@ struct intel_gt_coredump {
 		struct intel_uc_fw guc_fw;
 		struct intel_uc_fw huc_fw;
 		struct i915_vma_coredump *guc_log;
+		u32 timestamp;
 	} *uc;
 
 	struct intel_gt_coredump *next;

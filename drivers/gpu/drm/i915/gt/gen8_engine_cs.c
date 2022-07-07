@@ -177,6 +177,8 @@ u32 *gen12_emit_aux_table_inv(u32 *cs, const i915_reg_t inv_reg)
 
 int gen12_emit_flush_rcs(struct i915_request *rq, u32 mode)
 {
+	struct intel_engine_cs *engine = rq->engine;
+
 	if (mode & EMIT_FLUSH) {
 		u32 flags = 0;
 		u32 *cs;
@@ -194,6 +196,9 @@ int gen12_emit_flush_rcs(struct i915_request *rq, u32 mode)
 		flags |= PIPE_CONTROL_QW_WRITE;
 
 		flags |= PIPE_CONTROL_CS_STALL;
+
+		if (engine->class == COMPUTE_CLASS)
+			flags &= ~PIPE_CONTROL_RENDER_ONLY_FLAGS;
 
 		cs = intel_ring_begin(rq, 6);
 		if (IS_ERR(cs))
@@ -221,6 +226,9 @@ int gen12_emit_flush_rcs(struct i915_request *rq, u32 mode)
 		flags |= PIPE_CONTROL_QW_WRITE;
 
 		flags |= PIPE_CONTROL_CS_STALL;
+
+		if (engine->class == COMPUTE_CLASS)
+			flags &= ~PIPE_CONTROL_RENDER_ONLY_FLAGS;
 
 		cs = intel_ring_begin(rq, 8 + 4);
 		if (IS_ERR(cs))
@@ -596,19 +604,24 @@ u32 *gen12_emit_fini_breadcrumb_xcs(struct i915_request *rq, u32 *cs)
 
 u32 *gen12_emit_fini_breadcrumb_rcs(struct i915_request *rq, u32 *cs)
 {
+	u32 flags = (PIPE_CONTROL_CS_STALL |
+		     PIPE_CONTROL_TILE_CACHE_FLUSH |
+		     PIPE_CONTROL_FLUSH_L3 |
+		     PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+		     PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+		     /* Wa_1409600907:tgl,adl-p */
+		     PIPE_CONTROL_DEPTH_STALL |
+		     PIPE_CONTROL_DC_FLUSH_ENABLE |
+		     PIPE_CONTROL_FLUSH_ENABLE);
+
+	if (rq->engine->class == COMPUTE_CLASS)
+		flags &= ~PIPE_CONTROL_RENDER_ONLY_FLAGS;
+
 	cs = gen12_emit_ggtt_write_rcs(cs,
 				       rq->fence.seqno,
 				       hwsp_offset(rq),
 				       PIPE_CONTROL0_HDC_PIPELINE_FLUSH,
-				       PIPE_CONTROL_CS_STALL |
-				       PIPE_CONTROL_TILE_CACHE_FLUSH |
-				       PIPE_CONTROL_FLUSH_L3 |
-				       PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-				       PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-				       /* Wa_1409600907:tgl */
-				       PIPE_CONTROL_DEPTH_STALL |
-				       PIPE_CONTROL_DC_FLUSH_ENABLE |
-				       PIPE_CONTROL_FLUSH_ENABLE);
+				       flags);
 
 	return gen12_emit_fini_breadcrumb_tail(rq, cs);
 }

@@ -166,6 +166,7 @@ enum drm_i915_gem_engine_class {
 	I915_ENGINE_CLASS_COPY		= 1,
 	I915_ENGINE_CLASS_VIDEO		= 2,
 	I915_ENGINE_CLASS_VIDEO_ENHANCE	= 3,
+	I915_ENGINE_CLASS_COMPUTE       = 4,
 
 	/* should be kept compact */
 

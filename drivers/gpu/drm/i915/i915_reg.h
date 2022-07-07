@@ -446,7 +446,7 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN8_RING_PDP_UDW(base, n)	_MMIO((base) + 0x270 + (n) * 8 + 4)
 #define GEN8_RING_PDP_LDW(base, n)	_MMIO((base) + 0x270 + (n) * 8)
 
-#define GEN8_R_PWR_CLK_STATE		_MMIO(0x20C8)
+#define GEN8_R_PWR_CLK_STATE(base)	_MMIO((base)+0xc8)
 #define   GEN8_RPCS_ENABLE		(1 << 31)
 #define   GEN8_RPCS_S_CNT_ENABLE	(1 << 18)
 #define   GEN8_RPCS_S_CNT_SHIFT		15
@@ -502,6 +502,12 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define   ECOBITS_SNB_BIT		(1 << 13)
 #define   ECOBITS_PPGTT_CACHE64B	(3 << 8)
 #define   ECOBITS_PPGTT_CACHE4B		(0 << 8)
+
+#define GEN12_RCU_MODE			_MMIO(0x14800)
+#define   GEN12_RCU_MODE_CCS_ENABLE	(1<<0)
+
+#define GEN12_GAM_MULT_CTXT_CTL		_MMIO(0xce90)
+#define   GEN12_GAM_MULT_CTXT_ENABLE	(1<<0)
 
 #define GAB_CTL				_MMIO(0x24000)
 #define   GAB_CTL_CONT_AFTER_PAGEFAULT	(1 << 8)
@@ -2531,6 +2537,10 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN11_VEBOX2_RING_BASE		0x1d8000
 #define XEHP_VEBOX3_RING_BASE		0x1e8000
 #define XEHP_VEBOX4_RING_BASE		0x1f8000
+#define GEN12_COMPUTE0_RING_BASE       0x1a000
+#define GEN12_COMPUTE1_RING_BASE       0x1c000
+#define GEN12_COMPUTE2_RING_BASE       0x1e000
+#define GEN12_COMPUTE3_RING_BASE       0x26000
 #define BLT_RING_BASE		0x22000
 #define RING_TAIL(base)		_MMIO((base) + 0x30)
 #define RING_HEAD(base)		_MMIO((base) + 0x34)
@@ -2622,10 +2632,12 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 					       _RING_FAULT_REG_BCS))
 #define GEN8_RING_FAULT_REG	_MMIO(0x4094)
 #define GEN12_RING_FAULT_REG	_MMIO(0xcec4)
+#define   GEN12_RING_FAULT_FAULT_TYPE(x)   (((x) >> 18) & 0x3)
+#define   GEN12_RING_FAULT_ACCESS_TYPE     (1 << 17)
 #define   GEN8_RING_FAULT_ENGINE_ID(x)	(((x) >> 12) & 0x7)
 #define   RING_FAULT_GTTSEL_MASK (1 << 11)
 #define   RING_FAULT_SRCID(x)	(((x) >> 3) & 0xff)
-#define   RING_FAULT_FAULT_TYPE(x) (((x) >> 1) & 0x3)
+#define   RING_FAULT_LEVEL(x) (((x) >> 1) & 0x3)
 #define   RING_FAULT_VALID	(1 << 0)
 #define DONE_REG		_MMIO(0x40b0)
 #define GEN12_GAM_DONE		_MMIO(0xcf68)
@@ -8081,6 +8093,10 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define  GEN11_KCR			(19)
 #define  GEN11_GTPM			(16)
 #define  GEN11_BCS			(15)
+#define  GEN12_CCS3			(7)
+#define  GEN12_CCS2			(6)
+#define  GEN12_CCS1			(5)
+#define  GEN12_CCS0			(4)
 #define  GEN11_RCS0			(0)
 
 #define GEN11_GT_INTR_DW1		_MMIO(0x19001c)
@@ -8113,6 +8129,7 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN11_GPM_WGBOXPERF_INTR_ENABLE	_MMIO(0x19003c)
 #define GEN11_CRYPTO_RSVD_INTR_ENABLE	_MMIO(0x190040)
 #define GEN11_GUNIT_CSME_INTR_ENABLE	_MMIO(0x190044)
+#define GEN12_CCS_RSVD_INTR_ENABLE	_MMIO(0x190048)
 
 #define GEN11_RCS0_RSVD_INTR_MASK	_MMIO(0x190090)
 #define GEN11_BCS_RSVD_INTR_MASK	_MMIO(0x1900a0)
@@ -8126,6 +8143,8 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN11_GPM_WGBOXPERF_INTR_MASK	_MMIO(0x1900ec)
 #define GEN11_CRYPTO_RSVD_INTR_MASK	_MMIO(0x1900f0)
 #define GEN11_GUNIT_CSME_INTR_MASK	_MMIO(0x1900f4)
+#define GEN12_CCS0_CCS1_INTR_MASK	_MMIO(0x190100)
+#define GEN12_CCS2_CCS3_INTR_MASK	_MMIO(0x190104)
 
 #define   ENGINE1_MASK			REG_GENMASK(31, 16)
 #define   ENGINE0_MASK			REG_GENMASK(15, 0)
