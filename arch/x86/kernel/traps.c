@@ -298,11 +298,9 @@ DEFINE_IDTENTRY_RAW(exc_invalid_op)
 		return;
 
 	state = irqentry_enter(regs);
-	mark_trap_entry(X86_TRAP_UD, regs);
 	instrumentation_begin();
 	handle_invalid_op(regs);
 	instrumentation_end();
-	mark_trap_exit(X86_TRAP_UD, regs);
 	irqentry_exit(regs, state);
 }
 
