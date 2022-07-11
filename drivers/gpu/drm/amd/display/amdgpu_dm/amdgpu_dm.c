@@ -9608,7 +9608,6 @@ static void amdgpu_dm_commit_planes(struct drm_atomic_state *state,
 					&acrtc_state->stream->vrr_infopacket;
 		}
 	} else if (cursor_update && acrtc_state->active_planes > 0 &&
-		   !acrtc_state->force_dpms_off &&
 		   acrtc_attach->base.state->event) {
 		drm_crtc_vblank_get(pcrtc);
 
