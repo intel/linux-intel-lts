@@ -9,6 +9,7 @@
 #include "intel_iov.h"
 #include "intel_iov_utils.h"
 #include "intel_iov_debugfs.h"
+#include "intel_iov_event.h"
 #include "intel_iov_provisioning.h"
 #include "intel_iov_query.h"
 #include "intel_iov_relay.h"
@@ -53,6 +54,15 @@ static int dbs_provisioning_show(struct seq_file *m, void *data)
 	return intel_iov_provisioning_print_dbs(iov, &p);
 }
 DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(dbs_provisioning);
+
+static int adverse_events_show(struct seq_file *m, void *data)
+{
+	struct intel_iov *iov = m->private;
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	return intel_iov_event_print_events(iov, &p);
+}
+DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(adverse_events);
 
 static int vf_self_config_show(struct seq_file *m, void *data)
 {
@@ -187,6 +197,7 @@ void intel_iov_debugfs_register(struct intel_iov *iov, struct dentry *root)
 		{ "ggtt_provisioning", &ggtt_provisioning_fops, eval_is_pf },
 		{ "contexts_provisioning", &ctxs_provisioning_fops, eval_is_pf },
 		{ "doorbells_provisioning", &dbs_provisioning_fops, eval_is_pf },
+		{ "adverse_events", &adverse_events_fops, eval_is_pf },
 		{ "self_config", &vf_self_config_fops, eval_is_vf },
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV)
 		{ "relay_to_vf", &relay_to_vf_fops, eval_is_pf },

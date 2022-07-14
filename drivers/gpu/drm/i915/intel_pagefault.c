@@ -6,13 +6,6 @@
 #include "i915_drv.h"
 #include "intel_pagefault.h"
 
-struct memory_cat_err_info {
-	u8 engine_class;
-	u8 sw_counter;
-	u8 engine_instance;
-	u16 sw_ctx_id;
-};
-
 struct page_fault_info {
 	u8 access_type;
 	u8 fault_type;
@@ -22,95 +15,19 @@ struct page_fault_info {
 	u64 address;
 };
 
-/*
- * Context descriptor masks are prepared for 64 bit structure, but GuC sends
- * only upper half of this structure. So we have to create masks for
- * the 32 bit structure we get from GuC.
- */
-
-#define ENGINE_CLASS_MASK_32 (GENMASK(GEN11_ENGINE_CLASS_SHIFT - 32 + \
-				      GEN11_ENGINE_CLASS_WIDTH - 1, \
-				      GEN11_ENGINE_CLASS_SHIFT - 32))
-#define SW_COUNTER_MASK_32 (GENMASK(GEN11_SW_COUNTER_SHIFT - 32 + \
-				    GEN11_SW_COUNTER_WIDTH - 1, \
-				    GEN11_SW_COUNTER_SHIFT - 32))
-#define SW_CTX_ID_MASK_32 (GENMASK(GEN11_SW_CTX_ID_SHIFT - 32 + \
-				   GEN11_SW_CTX_ID_WIDTH - 1, \
-				   GEN11_SW_CTX_ID_SHIFT - 32))
-#define ENGINE_INSTANCE_MASK_32 (GENMASK(GEN11_ENGINE_INSTANCE_SHIFT - 32 + \
-					 GEN11_ENGINE_INSTANCE_WIDTH - 1, \
-					 GEN11_ENGINE_INSTANCE_SHIFT - 32))
-
-static u8 __gen11_get_engine_class(u32 ctx_desc)
-{
-	return FIELD_GET(ENGINE_CLASS_MASK_32, ctx_desc);
-}
-
-static u8 __gen11_get_sw_counter(u32 ctx_desc)
-{
-	return FIELD_GET(SW_COUNTER_MASK_32, ctx_desc);
-}
-
-static u8 __gen11_get_engine_instance(u32 ctx_desc)
-{
-	return FIELD_GET(ENGINE_INSTANCE_MASK_32, ctx_desc);
-}
-
-static u16 __gen11_get_sw_ctx_id(u32 ctx_desc)
-{
-	return FIELD_GET(SW_CTX_ID_MASK_32, ctx_desc);
-}
-
-static void print_cat_memory_error(struct drm_printer *p,
-				   struct memory_cat_err_info *info)
-{
-	drm_printf(p, "Unexpected catastrophic memory error from GPU\n"
-		      "\tGuC Engine class ID: 0x%x\n"
-		      "\tSW Counter: 0x%x\n"
-		      "\tEngine ID: 0x%x\n"
-		      "\tSW Context ID: 0x%x\n",
-		      info->engine_class,
-		      info->sw_counter,
-		      info->engine_instance,
-		      info->sw_ctx_id);
-}
-
-/*
- * DOC: INTEL_GUC_ACTION_REPORT_MEMORY_CAT_ERROR_CONTEXT
- * Bspec: 18920
- *      +==========================================================+
- *      | G2H REPORT MEMORY CAT ERROR CONTEXT MESSAGE PAYLOAD      |
- *      +==========================================================+
- *      | 0 | 31:29 |GuC engine class id                           |
- *      |   |-------+----------------------------------------------|
- *      |   | 28:23 |SW counter                                    |
- *      |   |-------+----------------------------------------------|
- *      |   |   22  |Reserved                                      |
- *      |   |-------+----------------------------------------------|
- *      |   | 21:16 |Engine instance                               |
- *      |   |-------+----------------------------------------------|
- *      |   |  15:5 |SW context id                                 |
- *      |   |-------+----------------------------------------------|
- *      |   |   4:0 |VF id                                         |
- *      +==========================================================+
- *
- */
 int intel_pagefault_process_cat_error_msg(struct intel_guc *guc,
 					  const u32 *payload, u32 len)
 {
-	struct drm_i915_private *i915 = guc_to_gt(guc)->i915;
-	struct memory_cat_err_info info = {};
-	struct drm_printer p = drm_info_printer(i915->drm.dev);
+	struct intel_gt *gt = guc_to_gt(guc);
+	struct drm_i915_private *i915 = gt->i915;
+	u32 ctx_id;
 
 	if (len < 1)
 		return -EPROTO;
 
-	info.engine_class = __gen11_get_engine_class(payload[0]);
-	info.sw_counter = __gen11_get_sw_counter(payload[0]);
-	info.engine_instance = __gen11_get_engine_instance(payload[0]);
-	info.sw_ctx_id = __gen11_get_sw_ctx_id(payload[0]);
+	ctx_id = payload[0];
 
-	print_cat_memory_error(&p, &info);
+	drm_err(&i915->drm, "GPU catastrophic memory error: GuC context 0x%x\n", ctx_id);
 
 	return 0;
 }

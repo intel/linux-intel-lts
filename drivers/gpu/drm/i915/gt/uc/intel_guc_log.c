@@ -15,21 +15,23 @@ static void guc_log_capture_logs(struct intel_guc_log *log);
 u32 intel_guc_log_size(struct intel_guc_log *log)
 {
 	/*
-	 *  GuC Log buffer Layout
+	 *  GuC Log buffer Layout:
+	 *
+	 *  NB: Ordering must follow "enum guc_log_buffer_type".
 	 *
 	 *  +===============================+ 00B
-	 *  |    Crash dump state header    |
-	 *  +-------------------------------+ 32B
 	 *  |      Debug state header       |
+	 *  +-------------------------------+ 32B
+	 *  |    Crash dump state header    |
 	 *  +-------------------------------+ 64B
 	 *  |     Capture state header      |
 	 *  +-------------------------------+ 96B
 	 *  |                               |
 	 *  +===============================+ PAGE_SIZE (4KB)
-	 *  |        Crash Dump logs        |
-	 *  +===============================+ + CRASH_SIZE
 	 *  |          Debug logs           |
 	 *  +===============================+ + DEBUG_SIZE
+	 *  |        Crash Dump logs        |
+	 *  +===============================+ + CRASH_SIZE
 	 *  |         Capture logs          |
 	 *  +===============================+ + CAPTURE_SIZE
 	 */
@@ -727,9 +729,8 @@ int intel_guc_log_dump(struct intel_guc_log *log, struct drm_printer *p,
 	struct intel_guc *guc = log_to_guc(log);
 	struct intel_uc *uc = container_of(guc, struct intel_uc, guc);
 	struct drm_i915_gem_object *obj = NULL;
-	void *map;
-	u32 *page;
-	int i, j;
+	u32 *map;
+	int i = 0;
 
 	if (!intel_guc_is_supported(guc))
 		return -ENODEV;
@@ -742,32 +743,23 @@ int intel_guc_log_dump(struct intel_guc_log *log, struct drm_printer *p,
 	if (!obj)
 		return 0;
 
-	page = (u32 *)__get_free_page(GFP_KERNEL);
-	if (!page)
-		return -ENOMEM;
+	intel_guc_dump_time_info(guc, p);
 
 	map = i915_gem_object_pin_map_unlocked(obj, I915_MAP_WC);
 	if (IS_ERR(map)) {
 		DRM_DEBUG("Failed to pin object\n");
 		drm_puts(p, "(log data unaccessible)\n");
-		free_page((unsigned long)page);
 		return PTR_ERR(map);
 	}
 
-	for (i = 0; i < obj->base.size; i += PAGE_SIZE) {
-		if (!i915_memcpy_from_wc(page, map + i, PAGE_SIZE))
-			memcpy(page, map + i, PAGE_SIZE);
-
-		for (j = 0; j < PAGE_SIZE / sizeof(u32); j += 4)
-			drm_printf(p, "0x%08x 0x%08x 0x%08x 0x%08x\n",
-				   *(page + j + 0), *(page + j + 1),
-				   *(page + j + 2), *(page + j + 3));
-	}
+	for (i = 0; i < obj->base.size / sizeof(u32); i += 4)
+		drm_printf(p, "0x%08x 0x%08x 0x%08x 0x%08x\n",
+			   *(map + i), *(map + i + 1),
+			   *(map + i + 2), *(map + i + 3));
 
 	drm_puts(p, "\n");
 
 	i915_gem_object_unpin_map(obj);
-	free_page((unsigned long)page);
 
 	return 0;
 }

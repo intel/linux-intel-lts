@@ -18,6 +18,7 @@
 #include "intel_gt.h"
 #include "intel_gt_requests.h"
 #include "intel_gt_pm.h"
+#include "intel_lrc.h"
 #include "intel_lrc_reg.h"
 #include "intel_reset.h"
 #include "intel_ring.h"
@@ -205,8 +206,9 @@ u32 intel_engine_context_size(struct intel_gt *gt, u8 class)
 	BUILD_BUG_ON(I915_GTT_PAGE_SIZE != PAGE_SIZE);
 
 	switch (class) {
-	case COMPUTE_CLASS:
-		fallthrough;
+	case COMPUTE_CLASS: /* TODO: same as render, for now... */
+		GEM_BUG_ON(!CCS_MASK(gt));
+		/* fall through */
 	case RENDER_CLASS:
 		switch (GRAPHICS_VER(gt->i915)) {
 		default:
@@ -383,16 +385,15 @@ static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id,
 	engine->props.timeslice_duration_ms =
 		CONFIG_DRM_I915_TIMESLICE_DURATION;
 
+	/* Override to uninterruptible for OpenCL workloads. */
+	if (GRAPHICS_VER(i915) == 12 && engine->class == RENDER_CLASS)
+		engine->props.preempt_timeout_ms = 0;
+
 	/* features common between engines sharing EUs */
 	if (engine->class == RENDER_CLASS || engine->class == COMPUTE_CLASS) {
 		engine->flags |= I915_ENGINE_HAS_RCS_REG_STATE;
 		engine->flags |= I915_ENGINE_HAS_EU_PRIORITY;
 	}
-
-	/* Override to uninterruptible for OpenCL workloads. */
-	if (GRAPHICS_VER(i915) == 12 &&
-	    engine->flags & I915_ENGINE_HAS_RCS_REG_STATE)
-		engine->props.preempt_timeout_ms = 0;
 
 	engine->defaults = engine->props; /* never to change again */
 
@@ -546,29 +547,6 @@ bool gen11_vdbox_has_sfc(struct intel_gt *gt,
 	return false;
 }
 
-static void engine_mask_apply_compute_fuses(struct intel_gt *gt)
-{
-	struct drm_i915_private *i915 = gt->i915;
-	struct intel_gt_info *info = &gt->info;
-	unsigned int i;
-
-	/*
-	 * If all DSS in a quadrant are fused off, the corresponding CCS
-	 * engine is not available for use.
-	 */
-	if (fls(CCS_MASK(gt)) > 1) {
-		int ss_per_ccs = info->sseu.max_subslices / I915_MAX_CCS;
-		const unsigned long ccs_mask = intel_slicemask_from_dssmask(
-			intel_sseu_get_compute_subslices(&info->sseu),
-			ss_per_ccs);
-
-		for_each_clear_bit(i, &ccs_mask, I915_MAX_CCS) {
-			info->engine_mask &= ~BIT(_CCS(i));
-			drm_dbg(&i915->drm, "ccs%u fused off\n", i);
-		}
-	}
-}
-
 /*
  * Determine which engines are fused off in our particular hardware.
  * Note that we have a catch-22 situation where we need to be able to access
@@ -649,8 +627,6 @@ static intel_engine_mask_t init_engine_mask(struct intel_gt *gt)
 	drm_dbg(&i915->drm, "vebox enable: %04x, instances: %04lx\n",
 		vebox_mask, VEBOX_MASK(gt));
 	GEM_BUG_ON(vebox_mask != VEBOX_MASK(gt));
-
-	engine_mask_apply_compute_fuses(gt);
 
 	return info->engine_mask;
 }
@@ -2061,23 +2037,6 @@ intel_engine_execlist_find_hung_request(struct intel_engine_cs *engine)
 	}
 
 	return active;
-}
-
-void xehp_enable_ccs_engines(struct intel_engine_cs *engine)
-{
-	/*
-	 * If there are any non-fused-off CCS engines, we need to enable CCS
-	 * support in the RCU_MODE register.  This only needs to be done once,
-	 * so for simplicity we'll take care of this in the RCS engine's
-	 * resume handler; since the RCS and all CCS engines belong to the
-	 * same reset domain and are reset together, this will also take care
-	 * of re-applying the setting after i915-triggered resets.
-	 */
-	if (!CCS_MASK(engine->gt))
-		return;
-
-	intel_uncore_write(engine->uncore, GEN12_RCU_MODE,
-			   _MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

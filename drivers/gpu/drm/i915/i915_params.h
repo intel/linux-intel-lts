@@ -77,8 +77,8 @@ struct drm_printer;
 	param(unsigned int, request_timeout_ms, CONFIG_DRM_I915_REQUEST_TIMEOUT, CONFIG_DRM_I915_REQUEST_TIMEOUT ? 0600 : 0) \
 	param(unsigned int, max_vfs, ~0, 0400) \
 	param(unsigned long, vfs_flr_mask, ~0, IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV) ? 0600 : 0) \
-	param(bool, enable_secure_batch, false, 0400) \
 	/* leave bools at the end to not create holes */ \
+	param(bool, enable_secure_batch, false, 0400) \
 	param(bool, enable_hangcheck, true, 0600) \
 	param(bool, load_detect_test, false, 0600) \
 	param(bool, force_reset_modeset_test, false, 0600) \

@@ -504,13 +504,10 @@ static void error_print_context(struct drm_i915_error_state_buf *m,
 				const char *header,
 				const struct i915_gem_context_coredump *ctx)
 {
-	const u32 period = m->i915->gt.clock_period_ns;
-
 	err_printf(m, "%s%s[%d] prio %d, guilty %d active %d, runtime total %lluns, avg %lluns\n",
 		   header, ctx->comm, ctx->pid, ctx->sched_attr.priority,
 		   ctx->guilty, ctx->active,
-		   ctx->total_runtime * period,
-		   mul_u32_u32(ctx->avg_runtime, period));
+		   ctx->total_runtime, ctx->avg_runtime);
 }
 
 static struct i915_vma_coredump *
@@ -679,6 +676,7 @@ static void err_print_uc(struct drm_i915_error_state_buf *m,
 
 	intel_uc_fw_dump(&error_uc->guc_fw, &p);
 	intel_uc_fw_dump(&error_uc->huc_fw, &p);
+	err_printf(m, "GuC timestamp: 0x%08x\n", error_uc->timestamp);
 	print_error_vma(m, NULL, error_uc->guc_log);
 }
 
@@ -715,6 +713,8 @@ static void err_print_gt(struct drm_i915_error_state_buf *m,
 	int i;
 
 	err_printf(m, "GT awake: %s\n", yesno(gt->awake));
+	err_printf(m, "CS timestamp frequency: %u Hz, %d ns\n",
+		   gt->clock_frequency, gt->clock_period_ns);
 	err_printf(m, "EIR: 0x%08x\n", gt->eir);
 	err_printf(m, "IER: 0x%08x\n", gt->ier);
 	for (i = 0; i < gt->ngtier; i++)
@@ -1309,8 +1309,8 @@ static bool record_context(struct i915_gem_context_coredump *e,
 	e->guilty = atomic_read(&ctx->guilty_count);
 	e->active = atomic_read(&ctx->active_count);
 
-	e->total_runtime = rq->context->runtime.total;
-	e->avg_runtime = ewma_runtime_read(&rq->context->runtime.avg);
+	e->total_runtime = intel_context_get_total_runtime_ns(rq->context);
+	e->avg_runtime = intel_context_get_avg_runtime_ns(rq->context);
 
 	simulated = i915_gem_context_no_error_capture(ctx);
 
@@ -1550,10 +1550,17 @@ gt_record_uc(struct intel_gt_coredump *gt,
 	 */
 	error_uc->guc_fw.path = kstrdup(uc->guc.fw.path, ALLOW_FAIL);
 	error_uc->huc_fw.path = kstrdup(uc->huc.fw.path, ALLOW_FAIL);
+
+	/*
+	 * Save the GuC log and include a timestamp reference for
+	 * converting the log times to system times.
+	 */
+	error_uc->timestamp = intel_uncore_read(gt->_gt->uncore, GUCPMTIMESTAMP);
 	error_uc->guc_log =
 		i915_vma_coredump_create(gt->_gt,
 					 uc->guc.log.vma, "GuC log buffer",
 					 compress);
+
 
 	return error_uc;
 }
@@ -1686,6 +1693,8 @@ static void gt_record_regs(struct intel_gt_coredump *gt)
 static void gt_record_info(struct intel_gt_coredump *gt)
 {
 	memcpy(&gt->info, &gt->_gt->info, sizeof(struct intel_gt_info));
+	gt->clock_frequency = gt->_gt->clock_frequency;
+	gt->clock_period_ns = gt->_gt->clock_period_ns;
 }
 
 /*
@@ -1970,112 +1979,4 @@ void i915_disable_error_state(struct drm_i915_private *i915, int err)
 	if (!i915->gpu_error.first_error)
 		i915->gpu_error.first_error = ERR_PTR(err);
 	spin_unlock_irq(&i915->gpu_error.lock);
-}
-
-void intel_klog_error_capture(struct intel_gt *gt,
-			      intel_engine_mask_t engine_mask)
-{
-	struct drm_i915_private *i915 = gt->i915;
-	struct i915_gpu_coredump *error;
-	intel_wakeref_t wakeref;
-	size_t buf_size = PAGE_SIZE * 128;
-	size_t pos_err;
-	char *buf, *ptr, *next;
-
-	error = READ_ONCE(i915->gpu_error.first_error);
-	if (error) {
-		drm_err(&i915->drm, "Clearing existing error capture first...\n");
-		i915_reset_error_state(i915);
-	}
-
-	with_intel_runtime_pm(&i915->runtime_pm, wakeref)
-		error = i915_gpu_coredump(gt, engine_mask);
-
-	if (IS_ERR(error)) {
-		drm_err(&i915->drm, "Failed to capture error capture: %ld!\n", PTR_ERR(error));
-		return;
-	}
-
-	buf = kvmalloc(buf_size, GFP_KERNEL);
-	if (!buf) {
-		drm_err(&i915->drm, "Failed to allocate buffer for error capture!\n");
-		i915_gpu_coredump_put(error);
-		return;
-	}
-
-	drm_info(&i915->drm, "Dumping i915 error capture...\n");
-
-	/* Largest string length safe to print via dmesg */
-#	define MAX_CHUNK	800
-
-	pos_err = 0;
-	while (1) {
-		ssize_t got = i915_gpu_coredump_copy_to_buffer(error, buf, pos_err, buf_size - 1);
-		if (got <= 0)
-			break;
-
-		buf[got] = 0;
-		pos_err += got;
-
-		ptr = buf;
-		while (got > 0) {
-			size_t count;
-			char tag[2];
-
-			next = strnchr(ptr, got, '\n');
-			if (next) {
-				count = next - ptr;
-				*next = 0;
-				tag[0] = '>';
-				tag[1] = '<';
-			} else {
-				count = got;
-				tag[0] = '}';
-				tag[1] = '{';
-			}
-
-			if (count > MAX_CHUNK) {
-				size_t pos;
-				char *ptr2 = ptr;
-
-				for (pos = MAX_CHUNK; pos < count; pos += MAX_CHUNK) {
-					char chr = ptr[pos];
-					ptr[pos] = 0;
-					drm_info(&i915->drm, "Capture }%s{\n", ptr2);
-					ptr[pos] = chr;
-					ptr2 = ptr + pos;
-
-					/*
-					 * If spewing large amounts of data via a serial console,
-					 * this can be a very slow process. So be friendly and try
-					 * not to cause 'softlockup on CPU' problems.
-					 */
-					cond_resched();
-				}
-
-				if (ptr2 < (ptr + count))
-					drm_info(&i915->drm, "Capture %c%s%c\n", tag[0], ptr2, tag[1]);
-				else if (tag[0] == '>')
-					drm_info(&i915->drm, "Capture ><\n");
-			} else
-				drm_info(&i915->drm, "Capture %c%s%c\n", tag[0], ptr, tag[1]);
-
-			ptr = next;
-			got -= count;
-			if (next) {
-				ptr++;
-				got--;
-			}
-
-			/* As above. */
-			cond_resched();
-		}
-
-		if (got)
-			drm_info(&i915->drm, "Got %zd bytes remaining!\n", got);
-	}
-
-	kvfree(buf);
-
-	drm_info(&i915->drm, "Dumped %zd bytes\n", pos_err);
 }

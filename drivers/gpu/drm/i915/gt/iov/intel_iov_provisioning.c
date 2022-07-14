@@ -56,7 +56,7 @@ void intel_iov_provisioning_init_early(struct intel_iov *iov)
 	}
 
 	iov->pf.provisioning.configs = configs;
-
+	mutex_init(&iov->pf.provisioning.lock);
 	pf_init_reprovisioning_worker(iov);
 }
 
@@ -71,6 +71,7 @@ void intel_iov_provisioning_release(struct intel_iov *iov)
 {
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
+	mutex_destroy(&iov->pf.provisioning.lock);
 	kfree(fetch_and_zero(&iov->pf.provisioning.configs));
 }
 
@@ -146,7 +147,7 @@ static int pf_update_bool_policy(struct intel_iov *iov, u16 key, bool *policy, b
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
 	IOV_DEBUG(iov, "updating policy %#04x (%s) %s -> %s\n",
-		  key, name, enabledisable(*policy), enabledisable(value));
+		  key, name, str_enable_disable(*policy), str_enable_disable(value));
 
 	err = guc_update_policy_klv32(guc, key, value);
 	if (unlikely(err))
@@ -157,7 +158,7 @@ static int pf_update_bool_policy(struct intel_iov *iov, u16 key, bool *policy, b
 
 failed:
 	IOV_ERROR(iov, "Failed to %s '%s' policy (%pe)\n",
-		  enabledisable(value), name, ERR_PTR(err));
+		  str_enable_disable(value), name, ERR_PTR(err));
 	return err;
 }
 
@@ -187,8 +188,17 @@ failed:
 
 static int pf_provision_sched_if_idle(struct intel_iov *iov, bool enable)
 {
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
 	return pf_update_bool_policy(iov, GUC_KLV_VGT_POLICY_SCHED_IF_IDLE_KEY,
 				     &iov->pf.provisioning.policies.sched_if_idle, enable);
+}
+
+static int pf_reprovision_sched_if_idle(struct intel_iov *iov)
+{
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
+	return pf_provision_sched_if_idle(iov, iov->pf.provisioning.policies.sched_if_idle);
 }
 
 /**
@@ -206,8 +216,10 @@ int intel_iov_provisioning_set_sched_if_idle(struct intel_iov *iov, bool enable)
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
+	mutex_lock(pf_provisioning_mutex(iov));
 	with_intel_runtime_pm(rpm, wakeref)
 		err = pf_provision_sched_if_idle(iov, enable);
+	mutex_unlock(pf_provisioning_mutex(iov));
 
 	return err;
 }
@@ -220,14 +232,30 @@ int intel_iov_provisioning_set_sched_if_idle(struct intel_iov *iov, bool enable)
  */
 bool intel_iov_provisioning_get_sched_if_idle(struct intel_iov *iov)
 {
+	bool enable;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
-	return iov->pf.provisioning.policies.sched_if_idle;
+
+	mutex_lock(pf_provisioning_mutex(iov));
+	enable = iov->pf.provisioning.policies.sched_if_idle;
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return enable;
 }
 
 static int pf_provision_reset_engine(struct intel_iov *iov, bool enable)
 {
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
 	return pf_update_bool_policy(iov, GUC_KLV_VGT_POLICY_RESET_AFTER_VF_SWITCH_KEY,
 				     &iov->pf.provisioning.policies.reset_engine, enable);
+}
+
+static int pf_reprovision_reset_engine(struct intel_iov *iov)
+{
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
+	return pf_provision_reset_engine(iov, iov->pf.provisioning.policies.reset_engine);
 }
 
 /**
@@ -245,8 +273,10 @@ int intel_iov_provisioning_set_reset_engine(struct intel_iov *iov, bool enable)
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
+	mutex_lock(pf_provisioning_mutex(iov));
 	with_intel_runtime_pm(rpm, wakeref)
 		err = pf_provision_reset_engine(iov, enable);
+	mutex_unlock(pf_provisioning_mutex(iov));
 
 	return err;
 }
@@ -259,14 +289,28 @@ int intel_iov_provisioning_set_reset_engine(struct intel_iov *iov, bool enable)
  */
 bool intel_iov_provisioning_get_reset_engine(struct intel_iov *iov)
 {
+	bool enable;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
-	return iov->pf.provisioning.policies.reset_engine;
+
+	mutex_lock(pf_provisioning_mutex(iov));
+	enable = iov->pf.provisioning.policies.reset_engine;
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return enable;
 }
 
 static int pf_provision_sample_period(struct intel_iov *iov, u32 value)
 {
 	return pf_update_policy_u32(iov, GUC_KLV_VGT_POLICY_ADVERSE_SAMPLE_PERIOD_KEY,
 				    &iov->pf.provisioning.policies.sample_period, value);
+}
+
+static int pf_reprovision_sample_period(struct intel_iov *iov)
+{
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
+	return pf_provision_sample_period(iov, iov->pf.provisioning.policies.sample_period);
 }
 
 /**
@@ -315,7 +359,7 @@ static void pf_set_auto_provisioning(struct intel_iov *iov, bool value)
 		return;
 
 	IOV_DEBUG(iov, "%ps auto provisioning: %s\n",
-		  __builtin_return_address(0), yesno(value));
+		  __builtin_return_address(0), str_yes_no(value));
 	iov->pf.provisioning.auto_mode = value;
 }
 
@@ -483,6 +527,7 @@ static u64 pf_get_max_ggtt(struct intel_iov *iov)
 static bool pf_is_valid_config_ggtt(struct intel_iov *iov, unsigned int id)
 {
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	return drm_mm_node_allocated(&iov->pf.provisioning.configs[id].ggtt_region);
 }
@@ -582,6 +627,8 @@ int intel_iov_provisioning_set_ggtt(struct intel_iov *iov, unsigned int id, u64 
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 	GEM_BUG_ON(id == PFID);
 
+	mutex_lock(pf_provisioning_mutex(iov));
+
 	reprovisioning = pf_is_valid_config_ggtt(iov, id) || size;
 
 	with_intel_runtime_pm(rpm, wakeref)
@@ -593,6 +640,7 @@ int intel_iov_provisioning_set_ggtt(struct intel_iov *iov, unsigned int id, u64 
 	else if (reprovisioning)
 		pf_mark_manual_provisioning(iov);
 
+	mutex_unlock(pf_provisioning_mutex(iov));
 	return err;
 }
 
@@ -607,12 +655,17 @@ u64 intel_iov_provisioning_get_ggtt(struct intel_iov *iov, unsigned int id)
 {
 	struct intel_iov_provisioning *provisioning = &iov->pf.provisioning;
 	struct drm_mm_node *node = &provisioning->configs[id].ggtt_region;
+	u64 size;
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 	GEM_BUG_ON(id == PFID);
 
-	return drm_mm_node_allocated(node) ? node->size : 0;
+	mutex_lock(pf_provisioning_mutex(iov));
+	size = drm_mm_node_allocated(node) ? node->size : 0;
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return size;
 }
 
 /**
@@ -623,9 +676,15 @@ u64 intel_iov_provisioning_get_ggtt(struct intel_iov *iov, unsigned int id)
  */
 u64 intel_iov_provisioning_query_free_ggtt(struct intel_iov *iov)
 {
+	u64 size;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
-	return pf_get_free_ggtt(iov);
+	mutex_lock(pf_provisioning_mutex(iov));
+	size = pf_get_free_ggtt(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return size;
 }
 
 /**
@@ -636,14 +695,21 @@ u64 intel_iov_provisioning_query_free_ggtt(struct intel_iov *iov)
  */
 u64 intel_iov_provisioning_query_max_ggtt(struct intel_iov *iov)
 {
+	u64 size;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
-	return pf_get_max_ggtt(iov);
+	mutex_lock(pf_provisioning_mutex(iov));
+	size = pf_get_max_ggtt(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return size;
 }
 
 static bool pf_is_valid_config_ctxs(struct intel_iov *iov, unsigned int id)
 {
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	return iov->pf.provisioning.configs[id].num_ctxs;
 }
@@ -738,6 +804,7 @@ static u16 decode_vf_ctxs_start(u16 start_bit)
 static u16 pf_get_ctxs_quota(struct intel_iov *iov, unsigned int id)
 {
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	return iov->pf.provisioning.configs[id].num_ctxs;
 }
@@ -836,6 +903,7 @@ static int __pf_provision_vf_ctxs(struct intel_iov *iov, unsigned int id, u16 st
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id == PFID);
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	config->begin_ctx = start_ctx;
 	config->num_ctxs = num_ctxs;
@@ -902,6 +970,8 @@ int intel_iov_provisioning_set_ctxs(struct intel_iov *iov, unsigned int id, u16 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
+	mutex_lock(pf_provisioning_mutex(iov));
+
 	reprovisioning = pf_is_valid_config_ctxs(iov, id) || num_ctxs;
 
 	with_intel_runtime_pm(rpm, wakeref)
@@ -913,6 +983,7 @@ int intel_iov_provisioning_set_ctxs(struct intel_iov *iov, unsigned int id, u16 
 	else if (reprovisioning && id != PFID)
 		pf_mark_manual_provisioning(iov);
 
+	mutex_unlock(pf_provisioning_mutex(iov));
 	return err;
 }
 
@@ -925,10 +996,16 @@ int intel_iov_provisioning_set_ctxs(struct intel_iov *iov, unsigned int id, u16 
  */
 u16 intel_iov_provisioning_get_ctxs(struct intel_iov *iov, unsigned int id)
 {
+	u16 num_ctxs;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
-	return pf_get_ctxs_quota(iov, id);
+	mutex_lock(pf_provisioning_mutex(iov));
+	num_ctxs = pf_get_ctxs_quota(iov, id);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return num_ctxs;
 }
 
 static u16 pf_get_ctxs_free(struct intel_iov *iov)
@@ -958,9 +1035,15 @@ static u16 pf_get_ctxs_free(struct intel_iov *iov)
  */
 u16 intel_iov_provisioning_query_free_ctxs(struct intel_iov *iov)
 {
+	u16 num_ctxs;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
-	return pf_get_ctxs_free(iov);
+	mutex_lock(pf_provisioning_mutex(iov));
+	num_ctxs = pf_get_ctxs_free(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return num_ctxs;
 }
 
 static u16 pf_get_ctxs_max_quota(struct intel_iov *iov)
@@ -990,9 +1073,15 @@ static u16 pf_get_ctxs_max_quota(struct intel_iov *iov)
  */
 u16 intel_iov_provisioning_query_max_ctxs(struct intel_iov *iov)
 {
+	u16 num_ctxs;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
-	return pf_get_ctxs_max_quota(iov);
+	mutex_lock(pf_provisioning_mutex(iov));
+	num_ctxs = pf_get_ctxs_max_quota(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return num_ctxs;
 }
 
 static bool pf_is_valid_config_dbs(struct intel_iov *iov, unsigned int id)
@@ -1000,6 +1089,7 @@ static bool pf_is_valid_config_dbs(struct intel_iov *iov, unsigned int id)
 	struct intel_iov_config *config = &iov->pf.provisioning.configs[id];
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	return config->num_dbs || config->begin_db;
 }
@@ -1010,6 +1100,8 @@ static unsigned long *pf_get_dbs_bitmap(struct intel_iov *iov)
 	struct intel_iov_provisioning *provisioning = &iov->pf.provisioning;
 	unsigned int n, total_vfs = pf_get_totalvfs(iov);
 	struct intel_iov_config *config;
+
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	if (unlikely(!dbs_bitmap))
 		return NULL;
@@ -1069,6 +1161,8 @@ static int pf_provision_dbs(struct intel_iov *iov, unsigned int id, u16 num_dbs)
 	struct intel_iov_config *config = &provisioning->configs[id];
 	int err, ret;
 
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
 	if (num_dbs == config->num_dbs)
 		return 0;
 
@@ -1118,6 +1212,8 @@ int intel_iov_provisioning_set_dbs(struct intel_iov *iov, unsigned int id, u16 n
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
+	mutex_lock(pf_provisioning_mutex(iov));
+
 	reprovisioning = pf_is_valid_config_dbs(iov, id) || num_dbs;
 
 	with_intel_runtime_pm(rpm, wakeref)
@@ -1129,6 +1225,7 @@ int intel_iov_provisioning_set_dbs(struct intel_iov *iov, unsigned int id, u16 n
 	else if (reprovisioning && id != PFID)
 		pf_mark_manual_provisioning(iov);
 
+	mutex_unlock(pf_provisioning_mutex(iov));
 	return err;
 }
 
@@ -1141,10 +1238,16 @@ int intel_iov_provisioning_set_dbs(struct intel_iov *iov, unsigned int id, u16 n
  */
 u16 intel_iov_provisioning_get_dbs(struct intel_iov *iov, unsigned int id)
 {
+	u16 num_dbs;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
-	return iov->pf.provisioning.configs[id].num_dbs;
+	mutex_lock(pf_provisioning_mutex(iov));
+	num_dbs = iov->pf.provisioning.configs[id].num_dbs;
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return num_dbs;
 }
 
 static u16 pf_get_free_dbs(struct intel_iov *iov)
@@ -1171,7 +1274,13 @@ static u16 pf_get_free_dbs(struct intel_iov *iov)
  */
 u16 intel_iov_provisioning_query_free_dbs(struct intel_iov *iov)
 {
-	return pf_get_free_dbs(iov);
+	u16 num_dbs;
+
+	mutex_lock(pf_provisioning_mutex(iov));
+	num_dbs = pf_get_free_dbs(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return num_dbs;
 }
 
 static u16 pf_get_max_dbs(struct intel_iov *iov)
@@ -1200,12 +1309,24 @@ static u16 pf_get_max_dbs(struct intel_iov *iov)
  */
 u16 intel_iov_provisioning_query_max_dbs(struct intel_iov *iov)
 {
-	return pf_get_max_dbs(iov);
+	u16 num_dbs;
+
+	mutex_lock(pf_provisioning_mutex(iov));
+	num_dbs = pf_get_max_dbs(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return num_dbs;
 }
 
 static const char *exec_quantum_unit(u32 exec_quantum)
 {
 	return exec_quantum ? "ms" : "(inifinity)";
+}
+
+static int pf_push_config_exec_quantum(struct intel_iov *iov, unsigned int id, u32 exec_quantum)
+{
+	return guc_update_vf_klv32(iov_to_guc(iov), id,
+				   GUC_KLV_VF_CFG_EXEC_QUANTUM_KEY, exec_quantum);
 }
 
 static int pf_provision_exec_quantum(struct intel_iov *iov, unsigned int id,
@@ -1215,11 +1336,12 @@ static int pf_provision_exec_quantum(struct intel_iov *iov, unsigned int id,
 	struct intel_iov_config *config = &provisioning->configs[id];
 	int err;
 
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
 	if (exec_quantum == config->exec_quantum)
 		return 0;
 
-	err = guc_update_vf_klv32(iov_to_guc(iov), id,
-				  GUC_KLV_VF_CFG_EXEC_QUANTUM_KEY, exec_quantum);
+	err = pf_push_config_exec_quantum(iov, id, exec_quantum);
 	if (unlikely(err))
 		return err;
 
@@ -1228,6 +1350,14 @@ static int pf_provision_exec_quantum(struct intel_iov *iov, unsigned int id,
 	IOV_DEBUG(iov, "VF%u provisioned with %u%s execution quantum\n",
 		  id, exec_quantum, exec_quantum_unit(exec_quantum));
 	return 0;
+}
+
+static int pf_reprovision_exec_quantum(struct intel_iov *iov, unsigned int id)
+{
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
+	return pf_push_config_exec_quantum(iov, id,
+					   iov->pf.provisioning.configs[id].exec_quantum);
 }
 
 /**
@@ -1248,6 +1378,8 @@ int intel_iov_provisioning_set_exec_quantum(struct intel_iov *iov, unsigned int 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
+	mutex_lock(pf_provisioning_mutex(iov));
+
 	with_intel_runtime_pm(rpm, wakeref)
 		err = pf_provision_exec_quantum(iov, id, exec_quantum);
 
@@ -1257,6 +1389,7 @@ int intel_iov_provisioning_set_exec_quantum(struct intel_iov *iov, unsigned int 
 	else if (exec_quantum && id != PFID)
 		pf_mark_manual_provisioning(iov);
 
+	mutex_unlock(pf_provisioning_mutex(iov));
 	return err;
 }
 
@@ -1269,15 +1402,28 @@ int intel_iov_provisioning_set_exec_quantum(struct intel_iov *iov, unsigned int 
  */
 u32 intel_iov_provisioning_get_exec_quantum(struct intel_iov *iov, unsigned int id)
 {
+	u32 exec_quantum;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
-	return iov->pf.provisioning.configs[id].exec_quantum;
+	mutex_lock(pf_provisioning_mutex(iov));
+	exec_quantum = iov->pf.provisioning.configs[id].exec_quantum;
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return exec_quantum;
 }
 
 static const char *preempt_timeout_unit(u32 preempt_timeout)
 {
 	return preempt_timeout ? "us" : "(inifinity)";
+}
+
+static int pf_push_config_preempt_timeout(struct intel_iov *iov, unsigned int id,
+					  u32 preempt_timeout)
+{
+	return guc_update_vf_klv32(iov_to_guc(iov), id,
+				   GUC_KLV_VF_CFG_PREEMPT_TIMEOUT_KEY, preempt_timeout);
 }
 
 static int pf_provision_preempt_timeout(struct intel_iov *iov, unsigned int id,
@@ -1287,12 +1433,12 @@ static int pf_provision_preempt_timeout(struct intel_iov *iov, unsigned int id,
 	struct intel_iov_config *config = &provisioning->configs[id];
 	int err;
 
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
 	if (preempt_timeout == config->preempt_timeout)
 		return 0;
 
-	err = guc_update_vf_klv32(iov_to_guc(iov), id,
-				  GUC_KLV_VF_CFG_PREEMPT_TIMEOUT_KEY,
-				  preempt_timeout);
+	err = pf_push_config_preempt_timeout(iov, id, preempt_timeout);
 	if (unlikely(err))
 		return err;
 
@@ -1301,6 +1447,14 @@ static int pf_provision_preempt_timeout(struct intel_iov *iov, unsigned int id,
 	IOV_DEBUG(iov, "VF%u provisioned with %u%s preemption timeout\n",
 		  id, preempt_timeout, preempt_timeout_unit(preempt_timeout));
 	return 0;
+}
+
+static int pf_reprovision_preempt_timeout(struct intel_iov *iov, unsigned int id)
+{
+	lockdep_assert_held(pf_provisioning_mutex(iov));
+
+	return pf_push_config_preempt_timeout(iov, id,
+					      iov->pf.provisioning.configs[id].preempt_timeout);
 }
 
 /**
@@ -1318,6 +1472,8 @@ int intel_iov_provisioning_set_preempt_timeout(struct intel_iov *iov, unsigned i
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
+	mutex_lock(pf_provisioning_mutex(iov));
+
 	with_intel_runtime_pm(rpm, wakeref)
 		err = pf_provision_preempt_timeout(iov, id, preempt_timeout);
 
@@ -1327,6 +1483,7 @@ int intel_iov_provisioning_set_preempt_timeout(struct intel_iov *iov, unsigned i
 	else if (preempt_timeout && id != PFID)
 		pf_mark_manual_provisioning(iov);
 
+	mutex_unlock(pf_provisioning_mutex(iov));
 	return err;
 }
 
@@ -1339,16 +1496,22 @@ int intel_iov_provisioning_set_preempt_timeout(struct intel_iov *iov, unsigned i
  */
 u32 intel_iov_provisioning_get_preempt_timeout(struct intel_iov *iov, unsigned int id)
 {
+	u32 preempt_timeout;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 
-	return iov->pf.provisioning.configs[id].preempt_timeout;
+	mutex_lock(pf_provisioning_mutex(iov));
+	preempt_timeout = iov->pf.provisioning.configs[id].preempt_timeout;
+	mutex_unlock(pf_provisioning_mutex(iov));
+
+	return preempt_timeout;
 }
 
 static inline const char *intel_iov_threshold_to_string(enum intel_iov_threshold threshold)
 {
 	switch (threshold) {
-#define __iov_threshold_to_string(N, K) \
+#define __iov_threshold_to_string(K, N, ...) \
 	case IOV_THRESHOLD_##K: return #N;
 	IOV_THRESHOLDS(__iov_threshold_to_string)
 	}
@@ -1359,7 +1522,7 @@ static inline const char *intel_iov_threshold_to_string(enum intel_iov_threshold
 static u32 intel_iov_threshold_to_klv_key(enum intel_iov_threshold threshold)
 {
 	switch (threshold) {
-#define __iov_threshold_enum_to_klv(N, K) \
+#define __iov_threshold_enum_to_klv(K, ...) \
 	case IOV_THRESHOLD_##K: return GUC_KLV_VF_CFG_THRESHOLD_##K##_KEY;
 	IOV_THRESHOLDS(__iov_threshold_enum_to_klv)
 #undef __iov_threshold_enum_to_klv
@@ -1443,7 +1606,7 @@ u32 intel_iov_provisioning_get_threshold(struct intel_iov *iov, unsigned int id,
 
 static void pf_unprovision_thresholds(struct intel_iov *iov, unsigned int id)
 {
-#define __iov_threshold_unprovision(N, K) pf_provision_threshold(iov, id, IOV_THRESHOLD_##K, 0);
+#define __iov_threshold_unprovision(K, ...) pf_provision_threshold(iov, id, IOV_THRESHOLD_##K, 0);
 	IOV_THRESHOLDS(__iov_threshold_unprovision)
 #undef __iov_threshold_unprovision
 }
@@ -1460,6 +1623,7 @@ static void pf_assign_ctxs_for_pf(struct intel_iov *iov)
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(!total_vfs);
 	GEM_BUG_ON(provisioning->configs[0].num_ctxs);
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	pf_ctxs_bits = total_ctxs_bits - ((total_ctxs_bits / (1 + total_vfs)) * total_vfs);
 	pf_ctxs = decode_pf_ctxs_count(pf_ctxs_bits);
@@ -1494,7 +1658,9 @@ void intel_iov_provisioning_init(struct intel_iov *iov)
 	if (unlikely(pf_in_error(iov)))
 		return;
 
+	mutex_lock(pf_provisioning_mutex(iov));
 	pf_assign_ctxs_for_pf(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
 }
 
 static bool pf_is_auto_provisioning_enabled(struct intel_iov *iov)
@@ -1679,13 +1845,18 @@ fail:
  */
 int intel_iov_provisioning_auto(struct intel_iov *iov, unsigned int num_vfs)
 {
+	int err;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
+	mutex_lock(pf_provisioning_mutex(iov));
 	if (num_vfs)
-		return pf_auto_provision(iov, num_vfs);
+		err = pf_auto_provision(iov, num_vfs);
+	else
+		err = 0, pf_auto_unprovision(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
 
-	pf_auto_unprovision(iov);
-	return 0;
+	return err;
 }
 
 static int pf_validate_config(struct intel_iov *iov, unsigned int id)
@@ -1731,6 +1902,8 @@ int intel_iov_provisioning_verify(struct intel_iov *iov, unsigned int num_vfs)
 	GEM_BUG_ON(num_vfs > pf_get_totalvfs(iov));
 	GEM_BUG_ON(num_vfs < 1);
 
+	mutex_lock(pf_provisioning_mutex(iov));
+
 	for (n = 1; n <= num_vfs; n++) {
 		err = pf_validate_config(iov, n);
 		if (!err)
@@ -1738,6 +1911,8 @@ int intel_iov_provisioning_verify(struct intel_iov *iov, unsigned int num_vfs)
 		else if (err == -ENODATA)
 			num_empty++;
 	}
+
+	mutex_unlock(pf_provisioning_mutex(iov));
 
 	IOV_DEBUG(iov, "found valid(%u) invalid(%u) empty(%u) configs\n",
 		  num_valid, num_vfs - num_valid, num_empty);
@@ -1778,7 +1953,53 @@ static u32 encode_config(u32 *cfg, const struct intel_iov_config *config)
 	cfg[n++] = MAKE_GUC_KLV(VF_CFG_NUM_DOORBELLS);
 	cfg[n++] = config->num_dbs;
 
+	cfg[n++] = MAKE_GUC_KLV(VF_CFG_EXEC_QUANTUM);
+	cfg[n++] = config->exec_quantum;
+
+	cfg[n++] = MAKE_GUC_KLV(VF_CFG_PREEMPT_TIMEOUT);
+	cfg[n++] = config->preempt_timeout;
+
+#define __encode_threshold(K, ...) \
+	cfg[n++] = MAKE_GUC_KLV(VF_CFG_THRESHOLD_##K); \
+	cfg[n++] = config->thresholds[IOV_THRESHOLD_##K];
+
+	IOV_THRESHOLDS(__encode_threshold)
+#undef __encode_threshold
+
 	return n;
+}
+
+static int pf_verify_config_klvs(struct intel_iov *iov, const u32 *cfg, u32 cfg_size)
+{
+	while (cfg_size) {
+		u32 key __maybe_unused = FIELD_GET(GUC_KLV_0_KEY, *cfg);
+		u32 len = FIELD_GET(GUC_KLV_0_LEN, *cfg);
+
+		GEM_BUG_ON(cfg_size < GUC_KLV_LEN_MIN);
+		cfg += GUC_KLV_LEN_MIN;
+		cfg_size -= GUC_KLV_LEN_MIN;
+		GEM_BUG_ON(cfg_size < len);
+
+		switch (len) {
+		case 1:
+			IOV_DEBUG(iov, "{ key %04x : 32b value %u }\n",
+				  key, cfg[0]);
+			break;
+		case 2:
+			IOV_DEBUG(iov, "{ key %04x : 64b value %#llx }\n",
+				  key, make_u64(cfg[1], cfg[0]));
+			break;
+		default:
+			IOV_DEBUG(iov, "{ key %04x : %u dwords value %*ph }\n",
+				  key, len, (int)(len * sizeof(u32)), cfg);
+			break;
+		}
+
+		cfg += len;
+		cfg_size -= len;
+	}
+
+	return 0;
 }
 
 static int pf_push_configs(struct intel_iov *iov, unsigned int num)
@@ -1793,6 +2014,7 @@ static int pf_push_configs(struct intel_iov *iov, unsigned int num)
 	int err;
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	err = intel_guc_allocate_and_map_vma(guc, SZ_4K, &vma, (void **)&cfg);
 	if (unlikely(err))
@@ -1808,6 +2030,11 @@ static int pf_push_configs(struct intel_iov *iov, unsigned int num)
 			cfg_size = encode_config(cfg, &provisioning->configs[n]);
 
 		GEM_BUG_ON(cfg_size * sizeof(u32) > SZ_4K);
+		if (IS_ENABLED(CONFIG_DRM_I915_SELFTEST)) {
+			err = pf_verify_config_klvs(iov, cfg, cfg_size);
+			if (unlikely(err < 0))
+				goto fail;
+		}
 
 		if (cfg_size) {
 			err = guc_action_update_vf_cfg(guc, n, cfg_addr, cfg_size);
@@ -1830,6 +2057,7 @@ static int pf_push_no_configs(struct intel_iov *iov)
 	int err;
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	lockdep_assert_held(pf_provisioning_mutex(iov));
 
 	for (n = iov->pf.provisioning.num_pushed; n > 0; n--) {
 		err = guc_action_update_vf_cfg(guc, n, 0, 0);
@@ -1864,10 +2092,13 @@ int intel_iov_provisioning_push(struct intel_iov *iov, unsigned int num)
 	if (unlikely(err < 0))
 		goto fail;
 
+	mutex_lock(pf_provisioning_mutex(iov));
 	if (num)
 		err = pf_push_configs(iov, num);
 	else
 		err = pf_push_no_configs(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
+
 	if (unlikely(err))
 		goto fail;
 
@@ -1888,7 +2119,10 @@ void intel_iov_provisioning_fini(struct intel_iov *iov)
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
 	pf_fini_reprovisioning_worker(iov);
+
+	mutex_lock(pf_provisioning_mutex(iov));
 	pf_unprovision_all(iov);
+	mutex_unlock(pf_provisioning_mutex(iov));
 }
 
 /**
@@ -1909,6 +2143,19 @@ void intel_iov_provisioning_restart(struct intel_iov *iov)
 		pf_start_reprovisioning_worker(iov);
 }
 
+static void pf_reprovision_pf(struct intel_iov *iov)
+{
+	IOV_DEBUG(iov, "reprovisioning PF\n");
+
+	mutex_lock(pf_provisioning_mutex(iov));
+	pf_reprovision_sched_if_idle(iov);
+	pf_reprovision_reset_engine(iov);
+	pf_reprovision_sample_period(iov);
+	pf_reprovision_exec_quantum(iov, PFID);
+	pf_reprovision_preempt_timeout(iov, PFID);
+	mutex_unlock(pf_provisioning_mutex(iov));
+}
+
 /*
  * pf_do_reprovisioning - Push again provisioning of the resources.
  * @iov: the IOV struct from within the GT to be affected
@@ -1918,6 +2165,12 @@ static void pf_do_reprovisioning(struct intel_iov *iov)
 	struct intel_runtime_pm *rpm = iov_to_gt(iov)->uncore->rpm;
 	unsigned int numvfs = pf_get_numvfs(iov);
 	intel_wakeref_t wakeref;
+
+	with_intel_runtime_pm(rpm, wakeref)
+		pf_reprovision_pf(iov);
+
+	if (!numvfs)
+		return;
 
 	IOV_DEBUG(iov, "reprovisioning %u VFs\n", numvfs);
 	with_intel_runtime_pm(rpm, wakeref)
@@ -1971,11 +2224,15 @@ int intel_iov_provisioning_clear(struct intel_iov *iov, unsigned int id)
 	GEM_BUG_ON(id > pf_get_totalvfs(iov));
 	GEM_BUG_ON(id == PFID);
 
+	mutex_lock(pf_provisioning_mutex(iov));
+
 	with_intel_runtime_pm(rpm, wakeref) {
 		err = guc_action_update_vf_cfg(guc, id, 0, 0);
 		if (!err)
 			pf_unprovision_config(iov, id);
 	}
+
+	mutex_unlock(pf_provisioning_mutex(iov));
 
 	if (unlikely(err))
 		IOV_ERROR(iov, "Failed to unprovision VF%u (%pe)\n",
@@ -2180,3 +2437,65 @@ int intel_iov_provisioning_move_ggtt(struct intel_iov *iov, unsigned int id)
 }
 
 #endif /* CONFIG_DRM_I915_DEBUG_IOV */
+
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+
+static int pf_push_self_config(struct intel_iov *iov)
+{
+	struct intel_guc *guc = iov_to_guc(iov);
+	u64 ggtt_start = intel_wopcm_guc_size(&iov_to_i915(iov)->wopcm);
+	u64 ggtt_size = GUC_GGTT_TOP - ggtt_start;
+	int err = 0;
+
+	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	GEM_BUG_ON(intel_wopcm_guc_size(&iov_to_i915(iov)->wopcm) > GUC_GGTT_TOP);
+
+	err |= guc_update_vf_klv64(guc, PFID, GUC_KLV_VF_CFG_GGTT_START_KEY, ggtt_start);
+	err |= guc_update_vf_klv64(guc, PFID, GUC_KLV_VF_CFG_GGTT_SIZE_KEY, ggtt_size);
+
+	err |= guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_BEGIN_CONTEXT_ID_KEY, 0);
+	err |= guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_NUM_CONTEXTS_KEY, GUC_MAX_CONTEXT_ID);
+
+	err |= guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_BEGIN_DOORBELL_ID_KEY, 0);
+	err |= guc_update_vf_klv32(guc, PFID, GUC_KLV_VF_CFG_NUM_DOORBELLS_KEY, GUC_NUM_DOORBELLS);
+
+	return err ? -EREMOTEIO : 0;
+}
+
+/**
+ * intel_iov_provisioning_force_vgt_mode - Turn on GuC virtualization mode.
+ * @iov: the IOV struct
+ *
+ * By default GuC starts in 'native' mode and enables 'virtualization' mode
+ * only after it receives from the PF some VF's configuration data. While this
+ * happens naturally while PF begins VFs provisioning, we might need this sooner
+ * during selftests. This function will perform minimal provisioning steps to
+ * let GuC believe it has to switch 'virtualization' mode.
+ *
+ * This function can only be called on PF.
+ */
+int intel_iov_provisioning_force_vgt_mode(struct intel_iov *iov)
+{
+	int err;
+
+	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	assert_rpm_wakelock_held(iov_to_gt(iov)->uncore->rpm);
+
+	if (pf_get_status(iov) < 0)
+		return -EIO;
+
+	if (iov->pf.provisioning.self_done)
+		return 0;
+
+	err = pf_push_self_config(iov);
+	if (err) {
+		IOV_ERROR(iov, "Failed to force VGT mode (%pe)\n", ERR_PTR(err));
+		return err;
+	}
+
+	iov->pf.provisioning.self_done = true;
+	return 0;
+}
+
+#include "selftests/selftest_live_iov_provisioning.c"
+#endif /* CONFIG_DRM_I915_SELFTEST */

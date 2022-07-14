@@ -72,6 +72,7 @@
 
 #include "i915_debugfs.h"
 #include "i915_drv.h"
+#include "i915_hwmon.h"
 #include "i915_ioc32.h"
 #include "i915_irq.h"
 #include "i915_memcpy.h"
@@ -80,8 +81,8 @@
 #include "i915_suspend.h"
 #include "i915_switcheroo.h"
 #include "i915_sysfs.h"
-#include "i915_sysrq.h"
 #include "i915_trace.h"
+#include "i915_sysrq.h"
 #include "i915_vgpu.h"
 #include "intel_dram.h"
 #include "intel_gvt.h"
@@ -703,6 +704,9 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 
 	intel_gt_driver_register(&dev_priv->gt);
 
+	if (!IS_SRIOV_VF(dev_priv))
+		i915_hwmon_register(dev_priv);
+
 	intel_display_driver_register(dev_priv);
 
 	intel_power_domains_enable(dev_priv);
@@ -726,6 +730,8 @@ static void i915_driver_unregister(struct drm_i915_private *dev_priv)
 
 	intel_runtime_pm_disable(&dev_priv->runtime_pm);
 	intel_power_domains_disable(dev_priv);
+
+	i915_hwmon_unregister(dev_priv);
 
 	intel_display_driver_unregister(dev_priv);
 

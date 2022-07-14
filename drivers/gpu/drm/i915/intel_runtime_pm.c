@@ -52,6 +52,16 @@
 
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_RUNTIME_PM)
 
+static void __print_depot_stack(depot_stack_handle_t stack,
+				char *buf, int sz, int indent)
+{
+	unsigned long *entries;
+	unsigned int nr_entries;
+
+	nr_entries = stack_depot_fetch(stack, &entries);
+	stack_trace_snprint(buf, sz, entries, nr_entries, indent);
+}
+
 static void init_intel_runtime_pm_wakeref(struct intel_runtime_pm *rpm)
 {
 	intel_wakeref_tracker_init(&rpm->debug);
@@ -67,7 +77,7 @@ track_intel_runtime_pm_wakeref(struct intel_runtime_pm *rpm)
 }
 
 static void untrack_intel_runtime_pm_wakeref(struct intel_runtime_pm *rpm,
-					intel_wakeref_t wakeref)
+					     intel_wakeref_t wakeref)
 {
 	intel_wakeref_tracker_remove(&rpm->debug, wakeref);
 }

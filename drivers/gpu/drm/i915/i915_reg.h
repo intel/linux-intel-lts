@@ -285,10 +285,9 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define   DEVEN_MCHBAR_EN (1 << 28)
 
 /* PCI BARs */
-
-#define GTTMMADR_BAR		(0)
-#define GEN2_GTTMMADR_BAR	(1)
-#define GFXMEM_BAR		(2)
+#define GTTMMADR_BAR               0
+#define GEN2_GTTMMADR_BAR          1
+#define GFXMEM_BAR             2
 #define GTT_APERTURE_BAR			GFXMEM_BAR
 #define GEN12_LMEM_BAR				GFXMEM_BAR
 
@@ -454,7 +453,7 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN8_RING_PDP_UDW(base, n)	_MMIO((base) + 0x270 + (n) * 8 + 4)
 #define GEN8_RING_PDP_LDW(base, n)	_MMIO((base) + 0x270 + (n) * 8)
 
-#define GEN8_R_PWR_CLK_STATE		_MMIO(0x20C8)
+#define GEN8_R_PWR_CLK_STATE(base)	_MMIO((base)+0xc8)
 #define   GEN8_RPCS_ENABLE		(1 << 31)
 #define   GEN8_RPCS_S_CNT_ENABLE	(1 << 18)
 #define   GEN8_RPCS_S_CNT_SHIFT		15
@@ -512,10 +511,10 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define   ECOBITS_PPGTT_CACHE4B		(0 << 8)
 
 #define GEN12_RCU_MODE			_MMIO(0x14800)
-#define   GEN12_RCU_MODE_CCS_ENABLE	REG_BIT(0)
+#define   GEN12_RCU_MODE_CCS_ENABLE	(1<<0)
 
 #define GEN12_GAM_MULT_CTXT_CTL		_MMIO(0xce90)
-#define   GEN12_GAM_MULT_CTXT_ENABLE	REG_BIT(0)
+#define   GEN12_GAM_MULT_CTXT_ENABLE	(1<<0)
 
 #define GAB_CTL				_MMIO(0x24000)
 #define   GAB_CTL_CONT_AFTER_PAGEFAULT	(1 << 8)
@@ -2545,10 +2544,10 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN11_VEBOX2_RING_BASE		0x1d8000
 #define XEHP_VEBOX3_RING_BASE		0x1e8000
 #define XEHP_VEBOX4_RING_BASE		0x1f8000
-#define GEN12_COMPUTE0_RING_BASE	0x1a000
-#define GEN12_COMPUTE1_RING_BASE	0x1c000
-#define GEN12_COMPUTE2_RING_BASE	0x1e000
-#define GEN12_COMPUTE3_RING_BASE	0x26000
+#define GEN12_COMPUTE0_RING_BASE       0x1a000
+#define GEN12_COMPUTE1_RING_BASE       0x1c000
+#define GEN12_COMPUTE2_RING_BASE       0x1e000
+#define GEN12_COMPUTE3_RING_BASE       0x26000
 #define BLT_RING_BASE		0x22000
 #define RING_TAIL(base)		_MMIO((base) + 0x30)
 #define RING_HEAD(base)		_MMIO((base) + 0x34)
@@ -2640,12 +2639,12 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 					       _RING_FAULT_REG_BCS))
 #define GEN8_RING_FAULT_REG	_MMIO(0x4094)
 #define GEN12_RING_FAULT_REG	_MMIO(0xcec4)
-#define   GEN12_RING_FAULT_FAULT_TYPE(x)	(((x) >> 18) & 0x3)
-#define   GEN12_RING_FAULT_ACCESS_TYPE	(1 << 17)
+#define   GEN12_RING_FAULT_FAULT_TYPE(x)   (((x) >> 18) & 0x3)
+#define   GEN12_RING_FAULT_ACCESS_TYPE     (1 << 17)
 #define   GEN8_RING_FAULT_ENGINE_ID(x)	(((x) >> 12) & 0x7)
 #define   RING_FAULT_GTTSEL_MASK (1 << 11)
 #define   RING_FAULT_SRCID(x)	(((x) >> 3) & 0xff)
-#define   RING_FAULT_LEVEL(x)	(((x) >> 1) & 0x3)
+#define   RING_FAULT_LEVEL(x) (((x) >> 1) & 0x3)
 #define   RING_FAULT_VALID	(1 << 0)
 #define DONE_REG		_MMIO(0x40b0)
 #define GEN12_GAM_DONE		_MMIO(0xcf68)
@@ -4174,10 +4173,23 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN6_GT_PERF_STATUS	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5948)
 #define BXT_GT_PERF_STATUS      _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x7070)
 #define GEN6_RP_STATE_LIMITS	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5994)
+
+#define PCU_PACKAGE_POWER_SKU_UNIT     _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5938)
+#define   PKG_PWR_UNIT             REG_GENMASK(3, 0)
+#define   PKG_ENERGY_UNIT          REG_GENMASK(12, 8)
+#define   PKG_TIME_UNIT                REG_GENMASK(19, 16)
+#define PCU_PACKAGE_ENERGY_STATUS      _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x593c)
+
 #define GEN6_RP_STATE_CAP	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5998)
 #define   RP0_CAP_MASK		REG_GENMASK(7, 0)
 #define   RP1_CAP_MASK		REG_GENMASK(15, 8)
 #define   RPN_CAP_MASK		REG_GENMASK(23, 16)
+
+#define PCU_PACKAGE_RAPL_LIMIT         _MMIO(MCHBAR_MIRROR_BASE_SNB + 0x59a0)
+#define   PKG_PWR_LIM_1                REG_GENMASK(14, 0)
+#define   PKG_PWR_LIM_1_EN         REG_BIT(15)
+#define   PKG_PWR_LIM_1_TIME           REG_GENMASK(23, 17)
+
 #define BXT_RP_STATE_CAP        _MMIO(0x138170)
 #define GEN9_RP_STATE_LIMITS	_MMIO(0x138148)
 #define XEHPSDV_RP_STATE_CAP	_MMIO(0x250014)
@@ -4221,47 +4233,21 @@ static inline bool i915_mmio_reg_valid(i915_reg_t reg)
 #define GEN7_CXT_TOTAL_SIZE(ctx_reg)	(GEN7_CXT_EXTENDED_SIZE(ctx_reg) + \
 					 GEN7_CXT_VFSTATE_SIZE(ctx_reg))
 
-enum {
-	INTEL_ADVANCED_CONTEXT = 0,
-	INTEL_LEGACY_32B_CONTEXT,
-	INTEL_ADVANCED_AD_CONTEXT,
-	INTEL_LEGACY_64B_CONTEXT
-};
-
-enum {
-	FAULT_AND_HANG = 0,
-	FAULT_AND_HALT, /* Debug only */
-	FAULT_AND_STREAM,
-	FAULT_AND_CONTINUE /* Unsupported */
-};
-
-#define CTX_GTT_ADDRESS_MASK GENMASK(31, 12)
-#define GEN8_CTX_VALID (1 << 0)
-#define GEN8_CTX_FORCE_PD_RESTORE (1 << 1)
-#define GEN8_CTX_FORCE_RESTORE (1 << 2)
-#define GEN8_CTX_L3LLC_COHERENT (1 << 5)
-#define GEN8_CTX_PRIVILEGE (1 << 8)
-#define GEN8_CTX_ADDRESSING_MODE_SHIFT 3
-#define GEN12_CTX_PRIORITY_MASK REG_GENMASK(10, 9)
-#define GEN12_CTX_PRIORITY_HIGH REG_FIELD_PREP(GEN12_CTX_PRIORITY_MASK, 2)
-#define GEN12_CTX_PRIORITY_NORMAL REG_FIELD_PREP(GEN12_CTX_PRIORITY_MASK, 1)
-#define GEN12_CTX_PRIORITY_LOW REG_FIELD_PREP(GEN12_CTX_PRIORITY_MASK, 0)
-
-#define GEN8_CTX_ID_SHIFT 32
-#define GEN8_CTX_ID_WIDTH 21
-#define GEN11_SW_CTX_ID_SHIFT 37
-#define GEN11_SW_CTX_ID_WIDTH 11
-#define GEN11_SW_COUNTER_SHIFT 55
-#define GEN11_SW_COUNTER_WIDTH 6
-#define GEN11_ENGINE_CLASS_SHIFT 61
-#define GEN11_ENGINE_CLASS_WIDTH 3
-#define GEN11_ENGINE_INSTANCE_SHIFT 48
-#define GEN11_ENGINE_INSTANCE_WIDTH 6
-
-#define XEHP_SW_CTX_ID_SHIFT 39
-#define XEHP_SW_CTX_ID_WIDTH 16
-#define XEHP_SW_COUNTER_SHIFT 58
-#define XEHP_SW_COUNTER_WIDTH 6
+/*
+ * *_PACKAGE_POWER_SKU - SKU power and timing parameters.
+ * Used herein as a 64-bit register.
+ * These masks are defined using GENMASK_ULL as REG_GENMASK is limited to u32
+ * and as GENMASK is "long" and therefore 32-bits on a 32-bit system.
+ * PKG_PKG_TDP, PKG_MIN_PWR, and PKG_MAX_PWR are scaled in the same way as
+ * PKG_PWR_LIM_*, above.
+ * PKG_MAX_WIN has sub-fields for x and y, and has the value: is 1.x * 2^y.
+ */
+#define   PKG_PKG_TDP			GENMASK_ULL(14, 0)
+#define   PKG_MIN_PWR			GENMASK_ULL(30, 16)
+#define   PKG_MAX_PWR			GENMASK_ULL(46, 32)
+#define   PKG_MAX_WIN			GENMASK_ULL(54, 48)
+#define     PKG_MAX_WIN_Y		GENMASK_ULL(54, 53)
+#define     PKG_MAX_WIN_X		GENMASK_ULL(52, 48)
 
 #define CHV_CLK_CTL1			_MMIO(0x101100)
 #define VLV_CLK_CTL2			_MMIO(0x101104)

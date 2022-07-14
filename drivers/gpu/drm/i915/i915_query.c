@@ -479,38 +479,12 @@ static int query_memregion_info(struct drm_i915_private *i915,
 	return total_length;
 }
 
-static int query_hwconfig_table(struct drm_i915_private *i915,
-				struct drm_i915_query_item *query_item)
-{
-	struct intel_gt *gt = to_gt(i915);
-	struct intel_guc_hwconfig *hwconfig = &gt->uc.guc.hwconfig;
-
-	if (!hwconfig->size || !hwconfig->ptr)
-		return -ENODEV;
-
-	if (query_item->length == 0)
-		return hwconfig->size;
-
-	if (query_item->length < hwconfig->size) {
-		drm_dbg(&i915->drm, "Invalid query hwconfig table size=%u expected=%u\n",
-			query_item->length, hwconfig->size);
-		return -EINVAL;
-	}
-
-	if (copy_to_user(u64_to_user_ptr(query_item->data_ptr),
-			 hwconfig->ptr, hwconfig->size))
-		return -EFAULT;
-
-	return hwconfig->size;
-}
-
 static int (* const i915_query_funcs[])(struct drm_i915_private *dev_priv,
 					struct drm_i915_query_item *query_item) = {
 	query_topology_info,
 	query_engine_info,
 	query_perf_config,
 	query_memregion_info,
-	query_hwconfig_table,
 };
 
 int i915_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
@@ -544,9 +518,6 @@ int i915_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		if (func_idx < ARRAY_SIZE(i915_query_funcs)) {
 			func_idx = array_index_nospec(func_idx,
 						      ARRAY_SIZE(i915_query_funcs));
-			if (!i915_query_funcs[func_idx])
-				return -EINVAL;
-
 			ret = i915_query_funcs[func_idx](dev_priv, &item);
 		}
 

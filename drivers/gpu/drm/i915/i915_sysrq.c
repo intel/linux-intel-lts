@@ -108,7 +108,7 @@ static void show_gt(struct intel_gt *gt, struct drm_printer *p)
 	enum intel_engine_id id;
 
 	drm_printf(p, "GT awake? %s [%d], %llums\n",
-		   yesno(gt->awake),
+		   str_yes_no(gt->awake),
 		   atomic_read(&gt->wakeref.count),
 		   ktime_to_ms(intel_gt_get_awake_time(gt)));
 	if (gt->awake)
@@ -127,9 +127,9 @@ static void show_gt(struct intel_gt *gt, struct drm_printer *p)
 static void show_rpm(struct drm_i915_private *i915, struct drm_printer *p)
 {
 	drm_printf(p, "Runtime power status: %s\n",
-		   enableddisabled(!i915->power_domains.init_wakeref));
+		   str_enabled_disabled(!i915->power_domains.init_wakeref));
 	drm_printf(p, "IRQs disabled: %s\n",
-		   yesno(!intel_irqs_enabled(i915)));
+		   str_yes_no(!intel_irqs_enabled(i915)));
 	print_intel_runtime_pm_wakeref(&i915->runtime_pm, p);
 }
 

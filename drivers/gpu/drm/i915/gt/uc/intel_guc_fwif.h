@@ -12,9 +12,9 @@
 #include "gt/intel_engine_types.h"
 
 #include "abi/guc_actions_abi.h"
+#include "abi/guc_actions_slpc_abi.h"
 #include "abi/guc_actions_pf_abi.h"
 #include "abi/guc_actions_vf_abi.h"
-#include "abi/guc_actions_slpc_abi.h"
 #include "abi/guc_errors_abi.h"
 #include "abi/guc_communication_mmio_abi.h"
 #include "abi/guc_communication_ctb_abi.h"
@@ -174,22 +174,6 @@ static inline const char *hxg_type_to_string(u32 type)
 #define GUC_ID_TO_ENGINE_INSTANCE(guc_id) \
 	(((guc_id) & GUC_ENGINE_INSTANCE_MASK) >> GUC_ENGINE_INSTANCE_SHIFT)
 
-/* the GuC arrays don't include OTHER_CLASS */
-static u8 engine_class_guc_class_map[] = {
-	[RENDER_CLASS]            = GUC_RENDER_CLASS,
-	[COPY_ENGINE_CLASS]       = GUC_BLITTER_CLASS,
-	[VIDEO_DECODE_CLASS]      = GUC_VIDEO_CLASS,
-	[VIDEO_ENHANCEMENT_CLASS] = GUC_VIDEOENHANCE_CLASS,
-	[COMPUTE_CLASS]           = GUC_COMPUTE_CLASS,
-};
-
-static u8 guc_class_engine_class_map[] = {
-	[GUC_RENDER_CLASS]       = RENDER_CLASS,
-	[GUC_BLITTER_CLASS]      = COPY_ENGINE_CLASS,
-	[GUC_VIDEO_CLASS]        = VIDEO_DECODE_CLASS,
-	[GUC_VIDEOENHANCE_CLASS] = VIDEO_ENHANCEMENT_CLASS,
-	[GUC_COMPUTE_CLASS]      = COMPUTE_CLASS,
-};
 #define SLPC_EVENT(id, c) (\
 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ID, id) | \
 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, c) \
@@ -197,18 +181,24 @@ FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, c) \
 
 static inline u8 engine_class_to_guc_class(u8 class)
 {
-	BUILD_BUG_ON(ARRAY_SIZE(engine_class_guc_class_map) != MAX_ENGINE_CLASS + 1);
+	BUILD_BUG_ON(GUC_RENDER_CLASS != RENDER_CLASS);
+	BUILD_BUG_ON(GUC_BLITTER_CLASS != COPY_ENGINE_CLASS);
+	BUILD_BUG_ON(GUC_VIDEO_CLASS != VIDEO_DECODE_CLASS);
+	BUILD_BUG_ON(GUC_VIDEOENHANCE_CLASS != VIDEO_ENHANCEMENT_CLASS);
+	BUILD_BUG_ON(GUC_COMPUTE_CLASS != (COMPUTE_CLASS - 1));
 	GEM_BUG_ON(class > MAX_ENGINE_CLASS || class == OTHER_CLASS);
 
-	return engine_class_guc_class_map[class];
+	/* the GuC arrays don't include OTHER_CLASS */
+	return class < OTHER_CLASS ? class : class - 1;
 }
 
 static inline u8 guc_class_to_engine_class(u8 guc_class)
 {
-	BUILD_BUG_ON(ARRAY_SIZE(guc_class_engine_class_map) != GUC_LAST_ENGINE_CLASS + 1);
+	BUILD_BUG_ON(GUC_COMPUTE_CLASS != OTHER_CLASS);
+	BUILD_BUG_ON(GUC_LAST_ENGINE_CLASS != (MAX_ENGINE_CLASS - 1));
 	GEM_BUG_ON(guc_class > GUC_LAST_ENGINE_CLASS);
 
-	return guc_class_engine_class_map[guc_class];
+	return guc_class < GUC_COMPUTE_CLASS ? guc_class : guc_class + 1;
 }
 
 /* Work item for submitting workloads into work queue of GuC. */
@@ -439,13 +429,5 @@ enum intel_guc_recv_message {
 	((intel_guc_ct_enabled(&(guc)->ct)) && \
 	 (intel_guc_submission_is_used(guc)) && \
 	 (GRAPHICS_VER(guc_to_gt((guc))->i915) >= 12))
-#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_ENGINE(guc) \
-	INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)
-#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_FULL(guc) \
-	(INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) && \
-	HAS_SELECTIVE_TLB_INVALIDATION(guc_to_gt(guc)->i915))
-#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc) \
-	(INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) && \
-	HAS_SELECTIVE_TLB_INVALIDATION(guc_to_gt(guc)->i915))
 
 #endif

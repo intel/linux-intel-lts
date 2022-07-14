@@ -97,7 +97,6 @@ struct i915_ctx_workarounds {
 #define I915_MAX_VCS	8
 #define I915_MAX_VECS	4
 #define I915_MAX_CCS	4
-
 /*
  * Engine IDs definitions.
  * Keep instances of the same type engine together.

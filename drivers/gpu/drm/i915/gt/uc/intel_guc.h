@@ -22,6 +22,7 @@
 #include "i915_vma.h"
 
 struct __guc_ads_blob;
+
 struct intel_guc;
 
 struct intel_guc_ops {
@@ -46,6 +47,7 @@ struct intel_guc {
 	struct intel_guc_ct ct;
 	/** @slpc: sub-structure containing SLPC related data and objects */
 	struct intel_guc_slpc slpc;
+
 	struct intel_guc_hwconfig hwconfig;
 
 	/** @sched_engine: Global engine used to submit requests to GuC */
@@ -84,6 +86,7 @@ struct intel_guc {
 
 	/** @interrupts: pointers to GuC interrupt-managing functions. */
 	struct xarray tlb_lookup;
+	u32 serial_slot;
 	u32 next_seqno;
 
 	struct {
@@ -228,8 +231,8 @@ struct intel_guc {
 };
 
 struct intel_guc_tlb_wait {
+	struct wait_queue_head wq;
 	u8 status;
-	struct task_struct *tsk;
 } __aligned(4);
 
 static inline struct intel_guc *log_to_guc(struct intel_guc_log *log)
@@ -360,16 +363,6 @@ int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
 int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
 
-int intel_guc_invalidate_tlb_full(struct intel_guc *guc,
-				  enum intel_guc_tlb_inval_mode mode);
-int intel_guc_invalidate_tlb_full_engine(struct intel_guc *guc,
-					    u32 engine_class);
-int intel_guc_invalidate_tlb_page_selective(struct intel_guc *guc,
-					    enum intel_guc_tlb_inval_mode mode,
-					    u64 start, u64 length, u32 asid);
-int intel_guc_invalidate_tlb_page_selective_ctxid(struct intel_guc *guc,
-						  enum intel_guc_tlb_inval_mode mode,
-						  u64 start, u64 length, u32 ctxid);
 int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
 				 enum intel_guc_tlb_inval_mode mode);
 
@@ -467,5 +460,7 @@ void intel_guc_submission_cancel_requests(struct intel_guc *guc);
 void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p);
 
 void intel_guc_write_barrier(struct intel_guc *guc);
+
+void intel_guc_dump_time_info(struct intel_guc *guc, struct drm_printer *p);
 
 #endif
