@@ -888,6 +888,17 @@ static int dp83867_loopback(struct phy_device *phydev, bool enable)
 			  enable ? BMCR_LOOPBACK : 0);
 }
 
+static int dp83867_config_aneg(struct phy_device *phydev)
+{
+	int err;
+
+	err = genphy_config_aneg(phydev);
+	if (err < 0)
+		return err;
+
+	return dp83867_phy_reset(phydev);
+}
+
 static struct phy_driver dp83867_driver[] = {
 	{
 		.phy_id		= DP83867_PHY_ID,
@@ -915,6 +926,7 @@ static struct phy_driver dp83867_driver[] = {
 
 		.link_change_notify = dp83867_link_change_notify,
 		.set_loopback	= dp83867_loopback,
+		.config_aneg	= dp83867_config_aneg,
 	},
 };
 module_phy_driver(dp83867_driver);
