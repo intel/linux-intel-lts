@@ -160,14 +160,14 @@ nv50_head_atom_get(struct drm_atomic_state *state, struct drm_crtc *crtc)
 static inline struct drm_encoder *
 nv50_head_atom_get_encoder(struct nv50_head_atom *atom)
 {
-	struct drm_encoder *encoder;
+	struct drm_encoder *encoder = NULL;
 
 	/* We only ever have a single encoder */
 	drm_for_each_encoder_mask(encoder, atom->state.crtc->dev,
 				  atom->state.encoder_mask)
-		return encoder;
+		break;
 
-	return NULL;
+	return encoder;
 }
 
 #define nv50_wndw_atom(p) container_of((p), struct nv50_wndw_atom, state)
