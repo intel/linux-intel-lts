@@ -1147,9 +1147,10 @@ int dp_display_request_irq(struct msm_dp *dp_display)
 	dp = container_of(dp_display, struct dp_display_private, dp_display);
 
 	dp->irq = irq_of_parse_and_map(dp->pdev->dev.of_node, 0);
-	if (!dp->irq) {
-		DRM_ERROR("failed to get irq\n");
-		return -EINVAL;
+	if (dp->irq < 0) {
+		rc = dp->irq;
+		DRM_ERROR("failed to get irq: %d\n", rc);
+		return rc;
 	}
 
 	rc = devm_request_irq(&dp->pdev->dev, dp->irq,
