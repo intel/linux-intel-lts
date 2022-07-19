@@ -608,15 +608,9 @@ int mdp5_crtc_setup_pipeline(struct drm_crtc *crtc,
 		if (ret)
 			return ret;
 
-		ret = mdp5_mixer_release(new_crtc_state->state, old_mixer);
-		if (ret)
-			return ret;
-
+		mdp5_mixer_release(new_crtc_state->state, old_mixer);
 		if (old_r_mixer) {
-			ret = mdp5_mixer_release(new_crtc_state->state, old_r_mixer);
-			if (ret)
-				return ret;
-
+			mdp5_mixer_release(new_crtc_state->state, old_r_mixer);
 			if (!need_right_mixer)
 				pipeline->r_mixer = NULL;
 		}
