@@ -626,23 +626,26 @@ static void ishtp_cl_read_complete(struct ishtp_cl_rb *rb)
 }
 
 /**
- * ipc_tx_callback() - IPC tx callback function
- * @prm: Pointer to client device instance
+ * ishtp_cl_send_msg_ipc() -Send message using IPC
+ * @dev: ISHTP device instance
+ * @cl: Pointer to client device instance
  *
- * Send message over IPC either first time or on callback on previous message
- * completion
+ * Send message over IPC not using DMA
  */
-static void ipc_tx_callback(void *prm)
+static void ishtp_cl_send_msg_ipc(struct ishtp_device *dev,
+				  struct ishtp_cl *cl)
 {
-	struct ishtp_cl	*cl = prm;
 	struct ishtp_cl_tx_ring	*cl_msg;
-	size_t	rem;
-	struct ishtp_device	*dev = (cl ? cl->dev : NULL);
 	struct ishtp_msg_hdr	ishtp_hdr;
 	unsigned long	tx_flags, tx_free_flags;
 	unsigned char	*pmsg;
+	size_t	rem;
 
 	if (!dev)
+		return;
+
+	/* If last DMA message wasn't acked yet, leave this one in Tx queue */
+	if (cl->last_tx_path == CL_TX_PATH_DMA && cl->last_dma_acked == 0)
 		return;
 
 	/*
@@ -673,54 +676,47 @@ static void ipc_tx_callback(void *prm)
 		cl->sending = 1;
 	}
 
+	cl->tx_offs = 0;
+
 	cl_msg = list_entry(cl->tx_list.list.next, struct ishtp_cl_tx_ring,
 			    list);
 	rem = cl_msg->send_buf.size - cl->tx_offs;
 
-	ishtp_hdr.host_addr = cl->host_client_id;
-	ishtp_hdr.fw_addr = cl->fw_client_id;
-	ishtp_hdr.reserved = 0;
-	pmsg = cl_msg->send_buf.data + cl->tx_offs;
+	while (rem > 0) {
+		ishtp_hdr.host_addr = cl->host_client_id;
+		ishtp_hdr.fw_addr = cl->fw_client_id;
+		ishtp_hdr.reserved = 0;
+		pmsg = cl_msg->send_buf.data + cl->tx_offs;
 
-	if (rem <= dev->mtu) {
-		ishtp_hdr.length = rem;
-		ishtp_hdr.msg_complete = 1;
-		cl->sending = 0;
-		list_del_init(&cl_msg->list);	/* Must be before write */
-		spin_unlock_irqrestore(&cl->tx_list_spinlock, tx_flags);
-		/* Submit to IPC queue with no callback */
-		ishtp_write_message(dev, &ishtp_hdr, pmsg);
-		spin_lock_irqsave(&cl->tx_free_list_spinlock, tx_free_flags);
-		list_add_tail(&cl_msg->list, &cl->tx_free_list.list);
-		++cl->tx_ring_free_size;
-		spin_unlock_irqrestore(&cl->tx_free_list_spinlock,
-			tx_free_flags);
-	} else {
-		/* Send IPC fragment */
-		spin_unlock_irqrestore(&cl->tx_list_spinlock, tx_flags);
-		cl->tx_offs += dev->mtu;
-		ishtp_hdr.length = dev->mtu;
-		ishtp_hdr.msg_complete = 0;
-		ishtp_send_msg(dev, &ishtp_hdr, pmsg, ipc_tx_callback, cl);
+		if (rem <= dev->mtu) {
+			/* last fregment or only one packet */
+			ishtp_hdr.length = rem;
+			ishtp_hdr.msg_complete = 1;
+			/* Submit to IPC queue with no callback */
+			ishtp_write_message(dev, &ishtp_hdr, pmsg);
+			cl->tx_offs = 0;
+			cl->sending = 0;
+			rem = 0;
+		} else {
+			/* send ipc fragment */
+			ishtp_hdr.length = dev->mtu;
+			ishtp_hdr.msg_complete = 0;
+			/* All fregments submitted to IPC queue with no callback */
+			ishtp_write_message(dev, &ishtp_hdr, pmsg);
+			cl->tx_offs += dev->mtu;
+			rem = cl_msg->send_buf.size - cl->tx_offs;
+		}
 	}
-}
 
-/**
- * ishtp_cl_send_msg_ipc() -Send message using IPC
- * @dev: ISHTP device instance
- * @cl: Pointer to client device instance
- *
- * Send message over IPC not using DMA
- */
-static void ishtp_cl_send_msg_ipc(struct ishtp_device *dev,
-				  struct ishtp_cl *cl)
-{
-	/* If last DMA message wasn't acked yet, leave this one in Tx queue */
-	if (cl->last_tx_path == CL_TX_PATH_DMA && cl->last_dma_acked == 0)
-		return;
+	list_del_init(&cl_msg->list);
+	spin_unlock_irqrestore(&cl->tx_list_spinlock, tx_flags);
 
-	cl->tx_offs = 0;
-	ipc_tx_callback(cl);
+	spin_lock_irqsave(&cl->tx_free_list_spinlock, tx_free_flags);
+	list_add_tail(&cl_msg->list, &cl->tx_free_list.list);
+	++cl->tx_ring_free_size;
+	spin_unlock_irqrestore(&cl->tx_free_list_spinlock,
+		tx_free_flags);
+
 	++cl->send_msg_cnt_ipc;
 }
 
