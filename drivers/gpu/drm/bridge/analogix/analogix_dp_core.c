@@ -1639,19 +1639,8 @@ static ssize_t analogix_dpaux_transfer(struct drm_dp_aux *aux,
 				       struct drm_dp_aux_msg *msg)
 {
 	struct analogix_dp_device *dp = to_dp(aux);
-	int ret;
 
-	pm_runtime_get_sync(dp->dev);
-
-	ret = analogix_dp_detect_hpd(dp);
-	if (ret)
-		goto out;
-
-	ret = analogix_dp_transfer(dp, msg);
-out:
-	pm_runtime_put(dp->dev);
-
-	return ret;
+	return analogix_dp_transfer(dp, msg);
 }
 
 struct analogix_dp_device *
