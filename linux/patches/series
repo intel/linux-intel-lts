@@ -6,3 +6,9 @@
 
 # CVE-2022-0998
 0001-vdpa-clean-up-get_config_size-ret-value-handling.patch
+
+# CVE-2022-34918
+0001-netfilter-nf_tables-stricter-validation-of-element-d.patch
+
+# CVE-2022-33743
+0001-xen-netfront-restore-__skb_queue_tail-positioning-in.patch
