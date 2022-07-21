@@ -1,0 +1,75 @@
+From cc092cff12d4ead71fe1e95eb8c4d4a1d4fd97d2 Mon Sep 17 00:00:00 2001
+From: Oleksandr Tyshchenko <oleksandr_tyshchenko@epam.com>
+Date: Fri, 1 Jul 2022 09:57:42 +0200
+Subject: [PATCH] xen/arm: Fix race in RB-tree based P2M accounting
+
+commit b75cd218274e01d026dc5240e86fdeb44bbed0c8 upstream.
+
+During the PV driver life cycle the mappings are added to
+the RB-tree by set_foreign_p2m_mapping(), which is called from
+gnttab_map_refs() and are removed by clear_foreign_p2m_mapping()
+which is called from gnttab_unmap_refs(). As both functions end
+up calling __set_phys_to_machine_multi() which updates the RB-tree,
+this function can be called concurrently.
+
+There is already a "p2m_lock" to protect against concurrent accesses,
+but the problem is that the first read of "phys_to_mach.rb_node"
+in __set_phys_to_machine_multi() is not covered by it, so this might
+lead to the incorrect mappings update (removing in our case) in RB-tree.
+
+In my environment the related issue happens rarely and only when
+PV net backend is running, the xen_add_phys_to_mach_entry() claims
+that it cannot add new pfn <-> mfn mapping to the tree since it is
+already exists which results in a failure when mapping foreign pages.
+
+But there might be other bad consequences related to the non-protected
+root reads such use-after-free, etc.
+
+While at it, also fix the similar usage in __pfn_to_mfn(), so
+initialize "struct rb_node *n" with the "p2m_lock" held in both
+functions to avoid possible bad consequences.
+
+This is CVE-2022-33744 / XSA-406.
+
+Signed-off-by: Oleksandr Tyshchenko <oleksandr_tyshchenko@epam.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/arm/xen/p2m.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/xen/p2m.c b/arch/arm/xen/p2m.c
+index 8a8a388549e7..e04b5044f597 100644
+--- a/arch/arm/xen/p2m.c
++++ b/arch/arm/xen/p2m.c
+@@ -61,11 +61,12 @@ static int xen_add_phys_to_mach_entry(struct xen_p2m_entry *new)
+ 
+ unsigned long __pfn_to_mfn(unsigned long pfn)
+ {
+-	struct rb_node *n = phys_to_mach.rb_node;
++	struct rb_node *n;
+ 	struct xen_p2m_entry *entry;
+ 	unsigned long irqflags;
+ 
+ 	read_lock_irqsave(&p2m_lock, irqflags);
++	n = phys_to_mach.rb_node;
+ 	while (n) {
+ 		entry = rb_entry(n, struct xen_p2m_entry, rbnode_phys);
+ 		if (entry->pfn <= pfn &&
+@@ -151,10 +152,11 @@ bool __set_phys_to_machine_multi(unsigned long pfn,
+ 	int rc;
+ 	unsigned long irqflags;
+ 	struct xen_p2m_entry *p2m_entry;
+-	struct rb_node *n = phys_to_mach.rb_node;
++	struct rb_node *n;
+ 
+ 	if (mfn == INVALID_P2M_ENTRY) {
+ 		write_lock_irqsave(&p2m_lock, irqflags);
++		n = phys_to_mach.rb_node;
+ 		while (n) {
+ 			p2m_entry = rb_entry(n, struct xen_p2m_entry, rbnode_phys);
+ 			if (p2m_entry->pfn <= pfn &&
+-- 
+2.25.1
+
