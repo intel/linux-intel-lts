@@ -840,6 +840,11 @@ struct sk_buff {
 #ifdef CONFIG_SKB_EXTENSIONS
 	__u8			active_extensions;
 #endif
+#ifdef CONFIG_NET_OOB
+	__u8			oob:1;
+	__u8			oob_clone:1;
+	__u8			oob_cloned:1;
+#endif
 
 	/* fields enclosed in headers_start/headers_end are copied
 	 * using a single memcpy() in __copy_skb_header()
@@ -913,11 +918,6 @@ struct sk_buff {
 #endif
 	__u8			slow_gro:1;
 	__u8			scm_io_uring:1;
-#ifdef CONFIG_NET_OOB
-	__u8			oob:1;
-	__u8			oob_clone:1;
-	__u8			oob_cloned:1;
-#endif
 
 #ifdef CONFIG_NET_SCHED
 	__u16			tc_index;	/* traffic control index */
