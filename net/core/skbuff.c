@@ -217,11 +217,12 @@ static void __build_skb_around(struct sk_buff *skb, void *data,
 
 #ifdef CONFIG_NET_OOB
 
-struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev, size_t len,
-				       gfp_t gfp_mask)
+struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev, size_t len, gfp_t gfp_mask)
 {
-	struct sk_buff *skb = __alloc_skb(len, gfp_mask, 0, NUMA_NO_NODE);
+	struct sk_buff *skb;
 
+	skb = __alloc_skb(len + NET_SKB_PAD, gfp_mask,
+			SKB_ALLOC_RX, NUMA_NO_NODE);
 	if (!skb)
 		return NULL;
 
@@ -243,30 +244,16 @@ EXPORT_SYMBOL_GPL(__netdev_free_oob_skb);
 
 void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb)
 {
-	struct skb_shared_info *shinfo;
-	bool head_frag = skb->head_frag;
-	bool pfmemalloc = skb->pfmemalloc;
+	unsigned char *data = skb->head; /* Always from kmalloc_reserve(). */
 
 	if (WARN_ON_ONCE(!skb->oob || skb->oob_clone))
 		return;
 
 	memset(skb, 0, offsetof(struct sk_buff, tail));
-	/* Out-of-band skbs are guaranteed to have linear storage. */
-	skb->data = skb->head;
-	skb_reset_tail_pointer(skb);
-	skb->mac_header = (typeof(skb->mac_header))~0U;
-	skb->transport_header = (typeof(skb->transport_header))~0U;
-	skb->head_frag = head_frag;
-	skb->pfmemalloc = pfmemalloc;
-	shinfo = skb_shinfo(skb);
-	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
-	atomic_set(&shinfo->dataref, 1);
+	__build_skb_around(skb, data, 0);
 	skb_reserve(skb, NET_SKB_PAD);
-
-	refcount_set(&skb->users, 1);
-	skb->dev = dev;
 	skb->oob = true;
-	skb_set_kcov_handle(skb, kcov_common_handle());
+	skb->dev = dev;
 }
 EXPORT_SYMBOL_GPL(netdev_reset_oob_skb);
 
