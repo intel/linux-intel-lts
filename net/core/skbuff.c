@@ -217,16 +217,18 @@ static void __build_skb_around(struct sk_buff *skb, void *data,
 
 #ifdef CONFIG_NET_OOB
 
-struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev, size_t len, gfp_t gfp_mask)
+struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev, size_t len,
+				size_t headroom, gfp_t gfp_mask)
 {
 	struct sk_buff *skb;
 
-	skb = __alloc_skb(len + NET_SKB_PAD, gfp_mask,
+	headroom = ALIGN(NET_SKB_PAD + headroom, NET_SKB_PAD);
+	skb = __alloc_skb(len + headroom, gfp_mask,
 			SKB_ALLOC_RX, NUMA_NO_NODE);
 	if (!skb)
 		return NULL;
 
-	skb_reserve(skb, NET_SKB_PAD);
+	skb_reserve(skb, headroom);
 	skb->dev = dev;
 	skb->oob = true;
 
@@ -242,7 +244,8 @@ void __netdev_free_oob_skb(struct net_device *dev, struct sk_buff *skb)
 }
 EXPORT_SYMBOL_GPL(__netdev_free_oob_skb);
 
-void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb)
+void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb,
+			size_t headroom)
 {
 	unsigned char *data = skb->head; /* Always from kmalloc_reserve(). */
 
@@ -251,7 +254,8 @@ void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb)
 
 	memset(skb, 0, offsetof(struct sk_buff, tail));
 	__build_skb_around(skb, data, 0);
-	skb_reserve(skb, NET_SKB_PAD);
+	headroom = ALIGN(NET_SKB_PAD + headroom, NET_SKB_PAD);
+	skb_reserve(skb, headroom);
 	skb->oob = true;
 	skb->dev = dev;
 }
