@@ -1174,9 +1174,11 @@ static inline bool skb_has_oob_clone(const struct sk_buff *skb)
 }
 
 struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev,
-				       size_t len, gfp_t gfp_mask);
+				size_t len, size_t headroom,
+				gfp_t gfp_mask);
 void __netdev_free_oob_skb(struct net_device *dev, struct sk_buff *skb);
-void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb);
+void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb,
+			size_t headroom);
 struct sk_buff *skb_alloc_oob_head(gfp_t gfp_mask);
 void skb_morph_oob_skb(struct sk_buff *n, struct sk_buff *skb);
 bool skb_release_oob_skb(struct sk_buff *skb, int *dref);
