@@ -1158,6 +1158,14 @@ struct sk_buff *build_skb_around(struct sk_buff *skb,
 				 void *data, unsigned int frag_size);
 #ifdef CONFIG_NET_OOB
 
+static inline void __skb_oob_copy(struct sk_buff *new,
+				const struct sk_buff *old)
+{
+	new->oob = old->oob;
+	new->oob_clone = old->oob_clone;
+	new->oob_cloned = old->oob_cloned;
+}
+
 static inline bool skb_is_oob(const struct sk_buff *skb)
 {
 	return skb->oob;
@@ -1193,7 +1201,12 @@ static inline bool recycle_oob_skb(struct sk_buff *skb)
 	return skb_oob_recycle(skb);
 }
 
-#else
+#else  /* !CONFIG_NET_OOB */
+
+static inline void __skb_oob_copy(struct sk_buff *new,
+				const struct sk_buff *old)
+{
+}
 
 static inline bool skb_is_oob(const struct sk_buff *skb)
 {
@@ -1205,7 +1218,7 @@ static inline bool recycle_oob_skb(struct sk_buff *skb)
 	return false;
 }
 
-#endif
+#endif	/* !CONFIG_NET_OOB */
 
 struct sk_buff *napi_build_skb(void *data, unsigned int frag_size);
 
