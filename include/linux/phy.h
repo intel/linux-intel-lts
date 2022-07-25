@@ -242,6 +242,9 @@ static inline const char *phy_modes(phy_interface_t interface)
 #define PHY_INIT_TIMEOUT	100000
 #define PHY_FORCE_TIMEOUT	10
 
+#define PHY_LOOP_BACK_SLEEP	1000000
+#define PHY_LOOP_BACK_TIMEOUT	8000000
+
 #define PHY_MAX_ADDR	32
 
 /* Used when trying to connect to a specific phy (mii bus id:phy device id) */

@@ -1947,6 +1947,7 @@ static int m88e1510_loopback(struct phy_device *phydev, bool enable)
 
 	if (enable) {
 		u16 bmcr_ctl = 0, mscr2_ctl = 0;
+		int val = 0;
 
 		if (phydev->speed == SPEED_1000)
 			bmcr_ctl = BMCR_SPEED1000;
@@ -1976,14 +1977,26 @@ static int m88e1510_loopback(struct phy_device *phydev, bool enable)
 		if (err < 0)
 			return err;
 
-		err = phy_modify(phydev, MII_BMCR, BMCR_LOOPBACK,
-				 BMCR_LOOPBACK);
+		if (phydev->speed == SPEED_1000) {
+			/* Setting up the master/slave training for 1Gbps */
+			err = __genphy_setup_master_slave(phydev);
+			if (err)
+				return err;
 
+			err = phy_read_poll_timeout(phydev, MII_BMSR, val, val & BMSR_LSTATUS,
+						    PHY_LOOP_BACK_SLEEP,
+						    PHY_LOOP_BACK_TIMEOUT, true);
+			if (err)
+				return err;
+		}
+
+		err =  phy_modify(phydev, MII_BMCR, BMCR_LOOPBACK,
+				  BMCR_LOOPBACK);
 		if (!err) {
 			/* It takes some time for PHY device to switch
 			 * into/out-of loopback mode.
 			 */
-			msleep(1000);
+			msleep(100);
 		}
 		return err;
 	} else {
