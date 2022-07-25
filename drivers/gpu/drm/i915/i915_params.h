@@ -48,6 +48,7 @@ struct drm_printer;
 #define I915_PARAMS_FOR_EACH(param) \
 	param(int, modeset, -1, 0400) \
 	param(int, enable_guc, -1, 0400) \
+	param(bool, enable_rc6, true, 0400) \
 	param(int, guc_log_level, -1, 0400) \
 	param(char *, guc_firmware_path, NULL, 0400) \
 	param(char *, huc_firmware_path, NULL, 0400) \
