@@ -564,6 +564,12 @@ void *wwan_port_get_drvdata(struct wwan_port *port)
 }
 EXPORT_SYMBOL_GPL(wwan_port_get_drvdata);
 
+enum wwan_port_type wwan_port_get_type(struct wwan_port *port)
+{
+	return port->type;
+}
+EXPORT_SYMBOL_GPL(wwan_port_get_type);
+
 static int wwan_port_op_start(struct wwan_port *port)
 {
 	int ret = 0;

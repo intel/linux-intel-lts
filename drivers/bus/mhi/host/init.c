@@ -78,6 +78,32 @@ const char *to_mhi_pm_state_str(u32 state)
 	return mhi_pm_state_str[index];
 }
 
+static ssize_t fw_update_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct mhi_device *mhi_dev = to_mhi_device(dev);
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+
+	return sprintf(buf, "%u\n", mhi_cntrl->xfp);
+}
+
+static ssize_t fw_update_store(struct device *dev,  struct device_attribute *attr, const char *buf, size_t len)
+{
+	struct mhi_device *mhi_dev = to_mhi_device(dev);
+	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
+	bool enable;
+
+	if (kstrtobool(buf, &enable))
+		return -EINVAL;
+
+	if (enable)
+		mhi_cntrl->xfp = XFP_STATE_FLASHING;
+	else
+		mhi_cntrl->xfp = XFP_STATE_NEED_RESET;
+
+	return len;
+}
+static DEVICE_ATTR_RW(fw_update);
+
 static ssize_t serial_number_show(struct device *dev,
 				  struct device_attribute *attr,
 				  char *buf)
@@ -155,6 +181,7 @@ static struct attribute *mhi_dev_attrs[] = {
 	&dev_attr_serial_number.attr,
 	&dev_attr_oem_pk_hash.attr,
 	&dev_attr_soc_reset.attr,
+	&dev_attr_fw_update.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mhi_dev);

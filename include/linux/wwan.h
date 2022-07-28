@@ -145,6 +145,12 @@ void wwan_port_txon(struct wwan_port *port);
 void *wwan_port_get_drvdata(struct wwan_port *port);
 
 /**
+ * wwan_port_get_type - Retrieve the WWAN port type
+ * @port: Related WWAN port
+ */
+enum wwan_port_type wwan_port_get_type(struct wwan_port *port);
+
+/**
  * struct wwan_netdev_priv - WWAN core network device private data
  * @link_id: WWAN device data link id
  * @drv_priv: driver private data area, size is determined in &wwan_ops
