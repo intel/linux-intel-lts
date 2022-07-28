@@ -31,6 +31,7 @@ enum wwan_port_type {
 	WWAN_PORT_XMMRPC,
 	WWAN_PORT_FASTBOOT,
 	WWAN_PORT_SAHARA,
+	WWAN_PORT_NMEA,
 
 	/* Add new port types above this line */
 
