@@ -391,6 +391,23 @@ stmmac_ethtool_set_link_ksettings(struct net_device *dev,
 				  const struct ethtool_link_ksettings *cmd)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
+	struct ethtool_link_ksettings link_ks = {};
+
+	/* Get the current link settings */
+	stmmac_ethtool_get_link_ksettings(dev, &link_ks);
+
+	/* Check if the speed and duplex are supported by phy */
+	if (!phy_lookup_setting(cmd->base.speed, cmd->base.duplex,
+				link_ks.link_modes.supported, true)) {
+		return -EINVAL;
+	}
+
+	/* Check if the advertising request is supported */
+	if (!bitmap_subset(cmd->link_modes.advertising,
+			   link_ks.link_modes.supported,
+			   __ETHTOOL_LINK_MODE_MASK_NBITS)) {
+		return -EINVAL;
+	}
 
 	if (priv->hw->pcs & STMMAC_PCS_RGMII ||
 	    priv->hw->pcs & STMMAC_PCS_SGMII) {
