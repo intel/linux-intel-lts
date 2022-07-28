@@ -327,6 +327,10 @@ static const struct {
 		.name = "XMMRPC",
 		.devsuf = "xmmrpc",
 	},
+	[WWAN_PORT_SAHARA] = {
+		.name = "SAHARA",
+		.devsuf = "sahara",
+	},
 };
 
 static ssize_t type_show(struct device *dev, struct device_attribute *attr,

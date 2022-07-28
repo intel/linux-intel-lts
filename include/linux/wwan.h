@@ -28,6 +28,7 @@ enum wwan_port_type {
 	WWAN_PORT_QCDM,
 	WWAN_PORT_FIREHOSE,
 	WWAN_PORT_XMMRPC,
+	WWAN_PORT_SAHARA,
 
 	/* Add new port types above this line */
 
