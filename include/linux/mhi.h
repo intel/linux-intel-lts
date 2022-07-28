@@ -287,6 +287,18 @@ struct mhi_controller_config {
 };
 
 /**
+ * enum xfp_state - xfp flashing state
+ * @XFP_STATE_IDLE: not flashing
+ * @XFP_STATE_FLASHING: flashing
+ * @XFP_STATE_NEED_RESET: mhi stack needs to be resetted
+ */
+enum xfp_state {
+	XFP_STATE_IDLE = 0x0,
+	XFP_STATE_FLASHING = 0x1,
+	XFP_STATE_NEED_RESET = 0x2,
+};
+
+/**
  * struct mhi_controller - Master MHI controller structure
  * @cntrl_dev: Pointer to the struct device of physical bus acting as the MHI
  *            controller (required)
@@ -361,6 +373,7 @@ struct mhi_controller_config {
  * @fbc_download: MHI host needs to do complete image transfer (optional)
  * @wake_set: Device wakeup set flag
  * @irq_flags: irq flags passed to request_irq (optional)
+ * @xfp: xfp state used for flashing
  * @mru: the default MRU for the MHI device
  *
  * Fields marked as (required) need to be populated by the controller driver
@@ -458,6 +471,8 @@ struct mhi_controller {
 	bool wake_set;
 	unsigned long irq_flags;
 	u32 mru;
+	/* Flag to manage flashing status  */
+	enum xfp_state xfp;
 };
 
 /**
