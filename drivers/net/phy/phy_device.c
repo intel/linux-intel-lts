@@ -2092,6 +2092,12 @@ static int genphy_setup_master_slave(struct phy_device *phydev)
 				   CTL1000_PREFER_MASTER), ctl);
 }
 
+int __genphy_setup_master_slave(struct phy_device *phydev)
+{
+	return genphy_setup_master_slave(phydev);
+}
+EXPORT_SYMBOL(__genphy_setup_master_slave);
+
 static int genphy_read_master_slave(struct phy_device *phydev)
 {
 	int cfg, state;
