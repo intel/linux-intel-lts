@@ -90,7 +90,7 @@ struct intel_engine_coredump {
 		char comm[TASK_COMM_LEN];
 
 		u64 total_runtime;
-		u32 avg_runtime;
+		u64 avg_runtime;
 
 		pid_t pid;
 		int active;
@@ -141,6 +141,8 @@ struct intel_gt_coredump {
 	u32 aux_err; /* gen12 */
 	u32 sfc_done[GEN12_SFC_DONE_MAX]; /* gen12 */
 	u32 gam_done; /* gen12 */
+	u32 clock_frequency;
+	u32 clock_period_ns;
 
 	u32 nfence;
 	u64 fence[I915_MAX_NUM_FENCES];
@@ -151,6 +153,7 @@ struct intel_gt_coredump {
 		struct intel_uc_fw guc_fw;
 		struct intel_uc_fw huc_fw;
 		struct i915_vma_coredump *guc_log;
+		u32 timestamp;
 	} *uc;
 
 	struct intel_gt_coredump *next;
@@ -213,9 +216,6 @@ struct drm_i915_error_state_buf {
 };
 
 #if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
-
-void intel_klog_error_capture(struct intel_gt *gt,
-			      intel_engine_mask_t engine_mask);
 
 __printf(2, 3)
 void i915_error_printf(struct drm_i915_error_state_buf *e, const char *f, ...);

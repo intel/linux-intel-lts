@@ -107,17 +107,15 @@
 	.endm
 #endif
 
-	.macro  disable_irq_if_pipelined
-#ifdef CONFIG_IRQ_PIPELINE
-	disable_irq_notrace
-#endif
+#if __LINUX_ARM_ARCH__ < 7
+	.macro	dsb, args
+	mcr	p15, 0, r0, c7, c10, 4
 	.endm
 
-	.macro  enable_irq_if_pipelined
-#ifdef CONFIG_IRQ_PIPELINE
-	enable_irq_notrace
-#endif
+	.macro	isb, args
+	mcr	p15, 0, r0, c7, c5, 4
 	.endm
+#endif
 
 	.macro asm_trace_hardirqs_off, save=1
 #if defined(CONFIG_TRACE_IRQFLAGS)
@@ -146,6 +144,18 @@
 	.endif
 #endif
 	.endm
+
+        .macro  disable_irq_if_pipelined
+#ifdef CONFIG_IRQ_PIPELINE
+        disable_irq_notrace
+#endif
+        .endm
+
+        .macro  enable_irq_if_pipelined
+#ifdef CONFIG_IRQ_PIPELINE
+        enable_irq_notrace
+#endif
+        .endm
 
 	.macro disable_irq, save=1
 	disable_irq_notrace

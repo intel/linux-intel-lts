@@ -366,15 +366,15 @@ static struct attribute *vf_attrs[] = {
 	NULL
 };
 
-#define __iov_threshold_to_attr_impl(N, K) \
-static ssize_t N##_iov_attr_show(struct intel_iov *iov, unsigned int id, char *buf)	\
+#define __iov_threshold_to_attr_impl(K, N, A) \
+static ssize_t A##_iov_attr_show(struct intel_iov *iov, unsigned int id, char *buf)	\
 {											\
 	u32 value = intel_iov_provisioning_get_threshold(iov, id, IOV_THRESHOLD_##K);	\
 											\
 	return sysfs_emit(buf, "%u\n", value);						\
 }											\
 											\
-static ssize_t N##_iov_attr_store(struct intel_iov *iov, unsigned int id,		\
+static ssize_t A##_iov_attr_store(struct intel_iov *iov, unsigned int id,		\
 				  const char *buf, size_t count)			\
 {											\
 	u32 value;									\
@@ -388,14 +388,14 @@ static ssize_t N##_iov_attr_store(struct intel_iov *iov, unsigned int id,		\
 	return err ?: count;								\
 }											\
 											\
-IOV_ATTR(N);
+IOV_ATTR(A);
 
 IOV_THRESHOLDS(__iov_threshold_to_attr_impl)
 #undef __iov_threshold_to_attr_impl
 
 static struct attribute *vf_threshold_attrs[] = {
-#define __iov_threshold_to_attr_list(N, K) \
-	&N##_iov_attr.attr,
+#define __iov_threshold_to_attr_list(K, N, A) \
+	&A##_iov_attr.attr,
 	IOV_THRESHOLDS(__iov_threshold_to_attr_list)
 #undef __iov_threshold_to_attr_list
 	NULL

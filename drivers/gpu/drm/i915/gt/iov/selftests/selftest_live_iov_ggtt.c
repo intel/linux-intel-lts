@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright(c) 2021 Intel Corporation. All rights reserved.
+ * Copyright(c) 2022 Intel Corporation. All rights reserved.
  */
 
 #include "i915_utils.h"

@@ -66,6 +66,13 @@ static int guc_slpc_info_show(struct seq_file *m, void *unused)
 }
 DEFINE_INTEL_GT_DEBUGFS_ATTRIBUTE(guc_slpc_info);
 
+static bool intel_eval_slpc_support(void *data)
+{
+	struct intel_guc *guc = (struct intel_guc *)data;
+
+	return intel_guc_slpc_is_used(guc);
+}
+
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
 static ssize_t guc_send_mmio_write(struct file *file, const char __user *user,
 				   size_t count, loff_t *ppos)
@@ -128,13 +135,6 @@ static const struct file_operations guc_send_ctb_fops = {
 	.llseek =	default_llseek,
 };
 #endif
-
-static bool intel_eval_slpc_support(void *data)
-{
-	struct intel_guc *guc = (struct intel_guc *)data;
-
-	return intel_guc_slpc_is_used(guc);
-}
 
 void intel_guc_debugfs_register(struct intel_guc *guc, struct dentry *root)
 {

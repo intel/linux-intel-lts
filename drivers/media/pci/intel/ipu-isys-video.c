@@ -243,7 +243,20 @@ static int video_release(struct file *file)
 	struct ipu_isys_video *av = video_drvdata(file);
 	int ret = 0;
 
+	dev_dbg(&av->isys->adev->dev, "release: %s: enter\n",
+		av->vdev.name);
 	vb2_fop_release(file);
+
+	mutex_lock(&av->isys->reset_mutex);
+	while (av->isys->in_reset) {
+		mutex_unlock(&av->isys->reset_mutex);
+		dev_dbg(&av->isys->adev->dev, "release: %s: wait for reset\n",
+			av->vdev.name
+		);
+		usleep_range(10000, 11000);
+		mutex_lock(&av->isys->reset_mutex);
+	}
+	mutex_unlock(&av->isys->reset_mutex);
 
 	mutex_lock(&av->isys->mutex);
 
@@ -251,6 +264,8 @@ static int video_release(struct file *file)
 #ifdef IPU_IRQ_POLL
 		kthread_stop(av->isys->isr_thread);
 #endif
+	dev_dbg(&av->isys->adev->dev, "release: %s: close fw\n",
+		av->vdev.name);
 		ipu_fw_isys_close(av->isys);
 		if (av->isys->fwcom) {
 			av->isys->reset_needed = true;
@@ -267,6 +282,8 @@ static int video_release(struct file *file)
 	else
 		pm_runtime_put(&av->isys->adev->dev);
 
+	dev_dbg(&av->isys->adev->dev, "release: %s: exit\n",
+		av->vdev.name);
 	return ret;
 }
 
@@ -1149,10 +1166,9 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 				       to_dma_addr(msg),
 				       sizeof(*stream_cfg),
 				       IPU_FW_ISYS_SEND_TYPE_STREAM_OPEN);
-	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
-
 	if (rval < 0) {
 		dev_err(dev, "can't open stream (%d)\n", rval);
+		ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
 		goto out_put_stream_handle;
 	}
 
@@ -1160,6 +1176,9 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	tout = wait_for_completion_timeout(&ip->stream_open_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+
+	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
+
 	if (!tout) {
 		dev_err(dev, "stream open time out\n");
 		rval = -ETIMEDOUT;
@@ -1198,7 +1217,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 					       buf, to_dma_addr(msg),
 					       sizeof(*buf),
 					       send_type);
-		ipu_put_fw_mgs_buf(av->isys, (uintptr_t)buf);
 	} else {
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
 		rval = ipu_fw_isys_simple_cmd(av->isys,
@@ -1275,7 +1293,7 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
-					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET);
 	if (!tout)
 		dev_err(dev, "stream stop time out\n");
 	else if (ip->error)
@@ -1301,7 +1319,7 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
-					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET);
 	if (!tout)
 		dev_err(dev, "stream close time out\n");
 	else if (ip->error)
@@ -1776,6 +1794,8 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	av->ip.isys = av->isys;
 	av->ip.stream_id = 0;
 	av->ip.vc = 0;
+	av->reset = false;
+	av->skipframe = 0;
 
 #if defined(IPU_IWAKE_ENABLE)
 	if (!av->watermark) {

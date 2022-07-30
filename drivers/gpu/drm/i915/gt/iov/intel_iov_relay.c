@@ -6,6 +6,7 @@
 #include <linux/bitfield.h>
 
 #include "abi/iov_actions_abi.h"
+#include "abi/iov_actions_selftest_abi.h"
 #include "abi/iov_errors_abi.h"
 #include "abi/iov_messages_abi.h"
 #include "gt/intel_gt.h"
@@ -16,6 +17,14 @@
 #include "intel_runtime_pm.h"
 #include "i915_drv.h"
 #include "i915_gem.h"
+
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+static int relay_selftest_process_msg(struct intel_iov_relay *, u32, u32, const u32 *, u32);
+static int relay_selftest_guc_send_nb(struct intel_guc *, const u32 *, u32, u32);
+#define intel_guc_send    relay_selftest_override_not_available
+#define intel_guc_ct_send relay_selftest_override_not_available
+#define intel_guc_send_nb relay_selftest_guc_send_nb
+#endif
 
 static struct intel_iov *relay_to_iov(struct intel_iov_relay *relay)
 {
@@ -91,15 +100,18 @@ static int pf_relay_send(struct intel_iov_relay *relay, u32 target,
 	};
 	int err;
 
-	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)));
-	GEM_BUG_ON(!target);
+	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)) &&
+		   !I915_SELFTEST_ONLY(relay->selftest.disable_strict));
+	GEM_BUG_ON(!target && !I915_SELFTEST_ONLY(relay->selftest.enable_loopback));
 	GEM_BUG_ON(!len);
-	GEM_BUG_ON(len + 4 > PF2GUC_RELAY_TO_VF_REQUEST_MSG_MAX_LEN);
+	GEM_BUG_ON(len + PF2GUC_RELAY_TO_VF_REQUEST_MSG_MIN_LEN >
+		   PF2GUC_RELAY_TO_VF_REQUEST_MSG_MAX_LEN);
 
-	memcpy(&request[3], msg, 4 * len);
+	memcpy(&request[PF2GUC_RELAY_TO_VF_REQUEST_MSG_MIN_LEN], msg, 4 * len);
 
 retry:
-	err = intel_guc_send_nb(relay_to_guc(relay), request, 3 + len, 0);
+	err = intel_guc_send_nb(relay_to_guc(relay), request,
+				PF2GUC_RELAY_TO_VF_REQUEST_MSG_MIN_LEN + len, 0);
 	if (unlikely(err == -EBUSY))
 		goto retry;
 
@@ -117,7 +129,8 @@ static int vf_relay_send(struct intel_iov_relay *relay,
 	};
 	int err;
 
-	GEM_BUG_ON(!IS_SRIOV_VF(relay_to_i915(relay)));
+	GEM_BUG_ON(!IS_SRIOV_VF(relay_to_i915(relay)) &&
+		   !I915_SELFTEST_ONLY(relay->selftest.disable_strict));
 	GEM_BUG_ON(!len);
 	GEM_BUG_ON(len + VF2GUC_RELAY_TO_PF_REQUEST_MSG_MIN_LEN >
 		   VF2GUC_RELAY_TO_PF_REQUEST_MSG_MAX_LEN);
@@ -143,7 +156,7 @@ static int relay_send(struct intel_iov_relay *relay, u32 target,
 		    hxg_type_to_string(FIELD_GET(GUC_HXG_MSG_0_TYPE, msg[0])),
 		    relay_id, target, 4 * len, msg);
 
-	if (target)
+	if (target || I915_SELFTEST_ONLY(relay->selftest.enable_loopback))
 		err = pf_relay_send(relay, target, relay_id, msg, len);
 	else
 		err = vf_relay_send(relay, relay_id, msg, len);
@@ -172,8 +185,9 @@ static int relay_send(struct intel_iov_relay *relay, u32 target,
 int intel_iov_relay_reply_to_vf(struct intel_iov_relay *relay, u32 target,
 				u32 relay_id, const u32 *msg, u32 len)
 {
-	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)));
-	GEM_BUG_ON(!target);
+	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)) &&
+		   !I915_SELFTEST_ONLY(relay->selftest.disable_strict));
+	GEM_BUG_ON(!target && !I915_SELFTEST_ONLY(relay->selftest.enable_loopback));
 	GEM_BUG_ON(len < GUC_HXG_MSG_MIN_LEN);
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, msg[0]) == GUC_HXG_TYPE_REQUEST);
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, msg[0]) == GUC_HXG_TYPE_EVENT);
@@ -212,8 +226,9 @@ static int relay_send_success(struct intel_iov_relay *relay, u32 target,
 int intel_iov_relay_reply_ack_to_vf(struct intel_iov_relay *relay, u32 target,
 				    u32 relay_id, u32 data)
 {
-	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)));
-	GEM_BUG_ON(!target);
+	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)) &&
+		   !I915_SELFTEST_ONLY(relay->selftest.disable_strict));
+	GEM_BUG_ON(!target && !I915_SELFTEST_ONLY(relay->selftest.enable_loopback));
 
 	return relay_send_success(relay, target, relay_id, data);
 }
@@ -275,8 +290,9 @@ int intel_iov_relay_reply_err_to_vf(struct intel_iov_relay *relay, u32 target,
 {
 	u32 error = from_err_to_iov_error(err);
 
-	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)));
-	GEM_BUG_ON(!target);
+	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)) &&
+		   !I915_SELFTEST_ONLY(relay->selftest.disable_strict));
+	GEM_BUG_ON(!target && !I915_SELFTEST_ONLY(relay->selftest.enable_loopback));
 
 	return relay_send_failure(relay, target, relay_id,
 				 sanitize_iov_error(error), 0);
@@ -407,8 +423,9 @@ int intel_iov_relay_send_to_vf(struct intel_iov_relay *relay, u32 target,
 	u32 relay_type;
 	u32 relay_id;
 
-	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)));
-	GEM_BUG_ON(!target);
+	GEM_BUG_ON(!IS_SRIOV_PF(relay_to_i915(relay)) &&
+		   !I915_SELFTEST_ONLY(relay->selftest.disable_strict));
+	GEM_BUG_ON(!target && !I915_SELFTEST_ONLY(relay->selftest.enable_loopback));
 	GEM_BUG_ON(len < GUC_HXG_MSG_MIN_LEN);
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, msg[0]) != GUC_HXG_ORIGIN_HOST);
 
@@ -443,7 +460,8 @@ int intel_iov_relay_send_to_pf(struct intel_iov_relay *relay,
 	u32 relay_type;
 	u32 relay_id;
 
-	GEM_BUG_ON(!IS_SRIOV_VF(relay_to_i915(relay)));
+	GEM_BUG_ON(!IS_SRIOV_VF(relay_to_i915(relay)) &&
+		   !I915_SELFTEST_ONLY(relay->selftest.disable_strict));
 	GEM_BUG_ON(len < GUC_HXG_MSG_MIN_LEN);
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, msg[0]) != GUC_HXG_ORIGIN_HOST);
 
@@ -494,12 +512,12 @@ static int relay_handle_reply(struct intel_iov_relay *relay, u32 origin,
 static int relay_handle_failure(struct intel_iov_relay *relay, u32 origin,
 				u32 relay_id, const u32 *msg, u32 len)
 {
-	u32 error = FIELD_GET(GUC_HXG_FAILURE_MSG_0_ERROR, msg[0]);
+	int error = FIELD_GET(GUC_HXG_FAILURE_MSG_0_ERROR, msg[0]);
 	u32 hint __maybe_unused = FIELD_GET(GUC_HXG_FAILURE_MSG_0_HINT, msg[0]);
 
 	GEM_BUG_ON(!len);
 	RELAY_DEBUG(relay, "%u.%u error %#x (%pe) hint %u debug %*ph\n",
-		    origin, relay_id, error, ERR_PTR(error), hint, 4 * (len - 1), msg + 1);
+		    origin, relay_id, error, ERR_PTR(-error), hint, 4 * (len - 1), msg + 1);
 
 	return relay_handle_reply(relay, origin, relay_id, error ?: -ERFKILL, NULL, 0);
 }
@@ -542,6 +560,10 @@ static int relay_process_msg(struct intel_iov_relay *relay, u32 origin,
 {
 	u32 relay_type;
 	int err;
+
+	if (I915_SELFTEST_ONLY(!relay_selftest_process_msg(relay, origin, relay_id,
+							   relay_msg, relay_len)))
+		return 0;
 
 	if (unlikely(relay_len < GUC_HXG_MSG_MIN_LEN))
 		return -EPROTO;
@@ -601,7 +623,19 @@ int intel_iov_relay_process_guc2pf(struct intel_iov_relay *relay, const u32 *msg
 {
 	u32 origin, relay_id;
 
-	if (unlikely(!IS_SRIOV_PF(relay_to_i915(relay))))
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+	if (unlikely(!IS_ERR_OR_NULL(relay->selftest.guc2pf))) {
+		int ret = relay->selftest.guc2pf(relay, msg, len);
+
+		if (ret != -ENOTTY) {
+			relay->selftest.guc2pf = ERR_PTR(ret < 0 ? ret : 0);
+			return ret;
+		}
+	}
+#endif
+
+	if (unlikely(!IS_SRIOV_PF(relay_to_i915(relay)) &&
+		     !I915_SELFTEST_ONLY(relay->selftest.disable_strict)))
 		return -EPERM;
 
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, msg[0]) != GUC_HXG_ORIGIN_GUC);
@@ -610,6 +644,9 @@ int intel_iov_relay_process_guc2pf(struct intel_iov_relay *relay, const u32 *msg
 
 	if (unlikely(len < GUC2PF_RELAY_FROM_VF_EVENT_MSG_MIN_LEN))
 		return -EPROTO;
+
+	if (unlikely(len > GUC2PF_RELAY_FROM_VF_EVENT_MSG_MAX_LEN))
+		return -EMSGSIZE;
 
 	if (unlikely(FIELD_GET(GUC_HXG_EVENT_MSG_0_DATA0, msg[0])))
 		return -EPFNOSUPPORT;
@@ -642,7 +679,20 @@ int intel_iov_relay_process_guc2vf(struct intel_iov_relay *relay, const u32 *msg
 	struct drm_i915_private *i915 = relay_to_i915(relay);
 	u32 relay_id;
 
-	if (unlikely(!IS_SRIOV_VF(i915)))
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+	if (unlikely(!IS_ERR_OR_NULL(relay->selftest.guc2vf))) {
+		int ret = relay->selftest.guc2vf(relay, msg, len);
+
+		if (ret != -ENOTTY) {
+			relay->selftest.guc2vf = ERR_PTR(ret < 0 ? ret : 0);
+			return ret;
+		}
+	}
+#endif
+
+	if (unlikely(!IS_SRIOV_VF(i915)) &&
+		     !(I915_SELFTEST_ONLY(relay->selftest.disable_strict) ||
+		       I915_SELFTEST_ONLY(relay->selftest.enable_loopback)))
 		return -EPERM;
 
 	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, msg[0]) != GUC_HXG_ORIGIN_GUC);
@@ -651,6 +701,9 @@ int intel_iov_relay_process_guc2vf(struct intel_iov_relay *relay, const u32 *msg
 
 	if (unlikely(len < GUC2VF_RELAY_FROM_PF_EVENT_MSG_MIN_LEN))
 		return -EPROTO;
+
+	if (unlikely(len > GUC2VF_RELAY_FROM_PF_EVENT_MSG_MAX_LEN))
+		return -EMSGSIZE;
 
 	if (unlikely(FIELD_GET(GUC_HXG_EVENT_MSG_0_DATA0, msg[0])))
 		return -EPFNOSUPPORT;
@@ -661,3 +714,13 @@ int intel_iov_relay_process_guc2vf(struct intel_iov_relay *relay, const u32 *msg
 				 msg + GUC2VF_RELAY_FROM_PF_EVENT_MSG_MIN_LEN,
 				 len - GUC2VF_RELAY_FROM_PF_EVENT_MSG_MIN_LEN);
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+#undef intel_guc_send
+#undef intel_guc_send_nb
+#undef intel_guc_ct_send
+#include "selftests/selftest_util_iov_relay.c"
+#include "selftests/selftest_mock_iov_relay.c"
+#include "selftests/selftest_live_iov_relay.c"
+#include "selftests/selftest_perf_iov_relay.c"
+#endif

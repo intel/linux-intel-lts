@@ -7,7 +7,6 @@
 #include <linux/firmware.h>
 #include <drm/drm_print.h>
 
-#include "abi/guc_version_abi.h"
 #include "gem/i915_gem_lmem.h"
 #include "intel_uc_fw.h"
 #include "intel_uc_fw_abi.h"
@@ -50,21 +49,21 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
  * firmware as TGL.
  */
 #define INTEL_UC_FIRMWARE_DEFS(fw_def, guc_def, huc_def) \
-	fw_def(ALDERLAKE_P, 0, guc_def(adlp, 70, 0, 3), huc_def(tgl, 7, 9, 3)) \
-	fw_def(ALDERLAKE_S, 0, guc_def(tgl, 70, 0, 3), huc_def(tgl,  7, 9, 3)) \
-	fw_def(DG1,         0, guc_def(dg1, 70, 0, 3), huc_def(dg1,  7, 9, 3)) \
-	fw_def(ROCKETLAKE,  0, guc_def(tgl, 70, 0, 3), huc_def(tgl,  7, 9, 3)) \
-	fw_def(TIGERLAKE,   0, guc_def(tgl, 70, 0, 3), huc_def(tgl,  7, 9, 3)) \
-	fw_def(JASPERLAKE,  0, guc_def(ehl, 70, 0, 3), huc_def(ehl,  9, 0, 0)) \
-	fw_def(ELKHARTLAKE, 0, guc_def(ehl, 70, 0, 3), huc_def(ehl,  9, 0, 0)) \
-	fw_def(ICELAKE,     0, guc_def(icl, 70, 0, 3), huc_def(icl,  9, 0, 0)) \
-	fw_def(COMETLAKE,   5, guc_def(cml, 70, 0, 3), huc_def(cml,  4, 0, 0)) \
-	fw_def(COMETLAKE,   0, guc_def(kbl, 70, 0, 3), huc_def(kbl,  4, 0, 0)) \
-	fw_def(COFFEELAKE,  0, guc_def(kbl, 70, 0, 3), huc_def(kbl,  4, 0, 0)) \
-	fw_def(GEMINILAKE,  0, guc_def(glk, 70, 0, 3), huc_def(glk,  4, 0, 0)) \
-	fw_def(KABYLAKE,    0, guc_def(kbl, 70, 0, 3), huc_def(kbl,  4, 0, 0)) \
-	fw_def(BROXTON,     0, guc_def(bxt, 70, 0, 3), huc_def(bxt,  2, 0, 0)) \
-	fw_def(SKYLAKE,     0, guc_def(skl, 70, 0, 3), huc_def(skl,  2, 0, 0))
+	fw_def(ALDERLAKE_P, 0, guc_def(adlp, 70, 1, 1), huc_def(tgl, 7, 9, 3)) \
+	fw_def(ALDERLAKE_S, 0, guc_def(tgl, 70, 1, 1), huc_def(tgl,  7, 9, 3)) \
+	fw_def(DG1,         0, guc_def(dg1, 70, 1, 1), huc_def(dg1,  7, 9, 3)) \
+	fw_def(ROCKETLAKE,  0, guc_def(tgl, 70, 1, 1), huc_def(tgl,  7, 9, 3)) \
+	fw_def(TIGERLAKE,   0, guc_def(tgl, 70, 1, 1), huc_def(tgl,  7, 9, 3)) \
+	fw_def(JASPERLAKE,  0, guc_def(ehl, 70, 1, 1), huc_def(ehl,  9, 0, 0)) \
+	fw_def(ELKHARTLAKE, 0, guc_def(ehl, 70, 1, 1), huc_def(ehl,  9, 0, 0)) \
+	fw_def(ICELAKE,     0, guc_def(icl, 70, 1, 1), huc_def(icl,  9, 0, 0)) \
+	fw_def(COMETLAKE,   5, guc_def(cml, 70, 1, 1), huc_def(cml,  4, 0, 0)) \
+	fw_def(COMETLAKE,   0, guc_def(kbl, 70, 1, 1), huc_def(kbl,  4, 0, 0)) \
+	fw_def(COFFEELAKE,  0, guc_def(kbl, 70, 1, 1), huc_def(kbl,  4, 0, 0)) \
+	fw_def(GEMINILAKE,  0, guc_def(glk, 70, 1, 1), huc_def(glk,  4, 0, 0)) \
+	fw_def(KABYLAKE,    0, guc_def(kbl, 70, 1, 1), huc_def(kbl,  4, 0, 0)) \
+	fw_def(BROXTON,     0, guc_def(bxt, 70, 1, 1), huc_def(bxt,  2, 0, 0)) \
+	fw_def(SKYLAKE,     0, guc_def(skl, 70, 1, 1), huc_def(skl,  2, 0, 0))
 
 #define __MAKE_UC_FW_PATH(prefix_, name_, major_, minor_, patch_) \
 	"i915/" \
@@ -135,9 +134,6 @@ __uc_fw_auto_select(struct drm_i915_private *i915, struct intel_uc_fw *uc_fw)
 			uc_fw->path = blob->path;
 			uc_fw->major_ver_wanted = blob->major;
 			uc_fw->minor_ver_wanted = blob->minor;
-			/* XXX for now, all platforms use same latest version */
-			uc_fw->major_vf_ver_wanted = GUC_VF_VERSION_LATEST_MAJOR;
-			uc_fw->minor_vf_ver_wanted = GUC_VF_VERSION_LATEST_MINOR;
 			break;
 		}
 	}
@@ -238,36 +234,14 @@ void intel_uc_fw_init_early(struct intel_uc_fw *uc_fw,
  *
  * If the uC firmware was loaded to h/w by other entity, just
  * mark it as loaded.
- *
- * Return: 0 on success or a negative error code on version mismatch.
  */
-int intel_uc_fw_set_preloaded(struct intel_uc_fw *uc_fw, u16 major, u16 minor)
+void intel_uc_fw_set_preloaded(struct intel_uc_fw *uc_fw, u16 major, u16 minor)
 {
-	struct device *dev = __uc_fw_to_gt(uc_fw)->i915->drm.dev;
-
 	uc_fw->path = "PRELOADED";
 	uc_fw->major_ver_found = major;
 	uc_fw->minor_ver_found = minor;
 
-	if (!major && !minor)
-		goto done;
-
-	if (uc_fw->major_ver_found != uc_fw->major_vf_ver_wanted ||
-	    uc_fw->minor_ver_found < uc_fw->minor_vf_ver_wanted) {
-		dev_notice(dev, "%s firmware %s: unexpected version: %u.%u != %u.%u\n",
-			   intel_uc_fw_type_repr(uc_fw->type), uc_fw->path,
-			   uc_fw->major_ver_found, uc_fw->minor_ver_found,
-			   uc_fw->major_vf_ver_wanted, uc_fw->minor_vf_ver_wanted);
-		goto mismatch;
-	}
-
-done:
 	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_PRELOADED);
-	return 0;
-
-mismatch:
-	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_ERROR);
-	return -ENOEXEC;
 }
 
 static void __force_fw_fetch_failures(struct intel_uc_fw *uc_fw, int e)

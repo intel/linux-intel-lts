@@ -12,6 +12,7 @@
 #include "abi/iov_version_abi.h"
 #include "gt/uc/abi/guc_actions_vf_abi.h"
 #include "gt/uc/abi/guc_klvs_abi.h"
+#include "gt/uc/abi/guc_version_abi.h"
 #include "i915_drv.h"
 #include "intel_iov_relay.h"
 #include "intel_iov_utils.h"
@@ -90,21 +91,24 @@ static int vf_handshake_with_guc(struct intel_iov *iov)
 
 	GEM_BUG_ON(!intel_iov_is_vf(iov));
 
+	/* XXX for now, all platforms use same latest version */
 	branch = GUC_VERSION_BRANCH_ANY;
-	major = guc->fw.major_vf_ver_wanted;
-	minor = guc->fw.minor_vf_ver_wanted;
+	major = GUC_VF_VERSION_LATEST_MAJOR;
+	minor = GUC_VF_VERSION_LATEST_MINOR;
+
 	err = guc_action_match_version(guc, &branch, &major, &minor, &patch);
 	if (unlikely(err))
+		goto fail;
+
+	/* XXX we only support one version, there must be a match */
+	if (major != GUC_VF_VERSION_LATEST_MAJOR || minor != GUC_VF_VERSION_LATEST_MINOR)
 		goto fail;
 
 	dev_info(iov_to_dev(iov), "%s interface version %u.%u.%u.%u\n",
 		 intel_uc_fw_type_repr(guc->fw.type),
 		 branch, major, minor, patch);
 
-	err = intel_uc_fw_set_preloaded(&guc->fw, major, minor);
-	if (unlikely(err))
-		return err;
-
+	intel_uc_fw_set_preloaded(&guc->fw, major, minor);
 	return 0;
 
 fail:

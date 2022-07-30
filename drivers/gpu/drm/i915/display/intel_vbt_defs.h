@@ -162,6 +162,14 @@ struct bdb_general_features {
 	u8 dp_ssc_freq:1;	/* SSC freq for PCH attached eDP */
 	u8 dp_ssc_dongle_supported:1;
 	u8 rsvd11:2; /* finish byte */
+
+	/* bits 6 */
+	u8 tc_hpd_retry_timeout:7; /* 242 */
+	u8 rsvd12:1;
+
+	/* bits 7 */
+	u8 afc_startup_config:2;/* 249 */
+	u8 rsvd13:6;
 } __packed;
 
 /*
@@ -334,7 +342,8 @@ enum vbt_gmbus_ddi {
 	ADLP_DDC_BUS_PORT_TC1 = 0x3,
 	ADLP_DDC_BUS_PORT_TC2,
 	ADLP_DDC_BUS_PORT_TC3,
-	ADLP_DDC_BUS_PORT_TC4,
+	ADLP_DDC_BUS_PORT_TC4
+
 };
 
 #define DP_AUX_A 0x40

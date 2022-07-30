@@ -884,8 +884,7 @@ out_file:
 }
 
 static int rpcs_query_batch(struct drm_i915_gem_object *rpcs,
-			    struct i915_vma *vma,
-			    struct intel_engine_cs *engine)
+			    struct i915_vma *vma, struct intel_engine_cs *engine)
 {
 	u32 *cmd;
 
@@ -896,7 +895,7 @@ static int rpcs_query_batch(struct drm_i915_gem_object *rpcs,
 		return PTR_ERR(cmd);
 
 	*cmd++ = MI_STORE_REGISTER_MEM_GEN8;
-	*cmd++ = i915_mmio_reg_offset(GEN8_R_PWR_CLK_STATE);
+	*cmd++ = i915_mmio_reg_offset(GEN8_R_PWR_CLK_STATE(RENDER_RING_BASE));
 	*cmd++ = lower_32_bits(vma->node.start);
 	*cmd++ = upper_32_bits(vma->node.start);
 	*cmd = MI_BATCH_BUFFER_END;

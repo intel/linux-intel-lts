@@ -596,8 +596,9 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 
 	kbuf->fd = ret;
 	buf->base.fd = ret;
-	kbuf->flags = buf->flags &= ~IPU_BUFFER_FLAG_USERPTR;
-	kbuf->flags = buf->flags |= IPU_BUFFER_FLAG_DMA_HANDLE;
+	buf->flags &= ~IPU_BUFFER_FLAG_USERPTR;
+	buf->flags |= IPU_BUFFER_FLAG_DMA_HANDLE;
+	kbuf->flags = buf->flags;
 
 	mutex_lock(&fh->mutex);
 	list_add(&kbuf->list, &fh->bufmap);
@@ -712,7 +713,6 @@ kbuf_map_fail:
 	list_del(&kbuf->list);
 	if (!kbuf->userptr)
 		kfree(kbuf);
-	return ret;
 
 mapbuf_fail:
 	dma_buf_put(dbuf);
@@ -1613,15 +1613,17 @@ static int ipu_psys_isr_run(void *data)
 
 	while (!kthread_should_stop()) {
 		usleep_range(100, 500);
-#ifdef CONFIG_PM
-		r = pm_runtime_get_if_in_use(&psys->adev->dev);
-		if (!r || WARN_ON_ONCE(r < 0))
-			continue;
-#endif
 
 		r = mutex_trylock(&psys->mutex);
 		if (!r)
 			continue;
+#ifdef CONFIG_PM
+		r = pm_runtime_get_if_in_use(&psys->adev->dev);
+		if (!r || WARN_ON_ONCE(r < 0)) {
+			mutex_unlock(&psys->mutex);
+			continue;
+		}
+#endif
 
 		ipu_psys_handle_events(psys);
 

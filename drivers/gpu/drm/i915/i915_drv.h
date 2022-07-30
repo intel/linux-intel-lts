@@ -683,6 +683,9 @@ struct intel_vbt_data {
 	unsigned int bios_lvds_val; /* initial [PCH_]LVDS reg val in VBIOS */
 	enum drm_panel_orientation orientation;
 
+	bool override_afc_startup;
+	u8 override_afc_startup_val;
+
 	enum drrs_support_type drrs_type;
 
 	struct {
@@ -1202,6 +1205,8 @@ struct drm_i915_private {
 
 	struct i915_perf perf;
 
+	struct i915_hwmon *hwmon;
+
 	/* Abstract the submission mechanism (legacy ringbuffer or execlists) away */
 	struct intel_gt gt;
 
@@ -1489,6 +1494,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 	IS_SUBPLATFORM(dev_priv, INTEL_DG2, INTEL_SUBPLATFORM_G10)
 #define IS_DG2_G11(dev_priv) \
 	IS_SUBPLATFORM(dev_priv, INTEL_DG2, INTEL_SUBPLATFORM_G11)
+#define IS_ADLP_N(dev_priv) \
+	IS_SUBPLATFORM(dev_priv, INTEL_ALDERLAKE_P, INTEL_SUBPLATFORM_N)
 #define IS_HSW_EARLY_SDV(dev_priv) (IS_HASWELL(dev_priv) && \
 				    (INTEL_DEVID(dev_priv) & 0xFF00) == 0x0C00)
 #define IS_BDW_ULT(dev_priv) \
@@ -1735,17 +1742,28 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 #define HAS_MSLICES(dev_priv) \
 	(INTEL_INFO(dev_priv)->has_mslices)
 
+/*
+ * Set this flag, when platform requires 64K GTT page sizes or larger for
+ * device local memory access. Also this flag implies that we require or
+ * at least support the compact PT layout for the ppGTT when using the 64K
+ * GTT pages.
+ */
+#define HAS_64K_PAGES(dev_priv) (INTEL_INFO(dev_priv)->has_64k_pages)
+
 #define HAS_IPC(dev_priv)		 (INTEL_INFO(dev_priv)->display.has_ipc)
 
 #define HAS_REGION(i915, i) (INTEL_INFO(i915)->memory_regions & (i))
 #define HAS_LMEM(i915) HAS_REGION(i915, REGION_LMEM)
 
+/*
+ * Platform has the dedicated compression control state for each lmem surfaces
+ * stored in lmem to support the 3D and media compression formats.
+ */
+#define HAS_FLAT_CCS(dev_priv)   (INTEL_INFO(dev_priv)->has_flat_ccs)
+
 #define HAS_GT_UC(dev_priv)	(INTEL_INFO(dev_priv)->has_gt_uc)
 
 #define HAS_SRIOV(dev_priv)	(INTEL_INFO(dev_priv)->has_sriov)
-
-#define HAS_SELECTIVE_TLB_INVALIDATION(dev_priv) \
-	(INTEL_INFO(dev_priv)->has_selective_tlb_invalidation)
 
 #define HAS_POOLED_EU(dev_priv)	(INTEL_INFO(dev_priv)->has_pooled_eu)
 
@@ -1809,8 +1827,6 @@ intel_ggtt_update_needs_vtd_wa(struct drm_i915_private *i915)
 	return IS_BROXTON(i915) && intel_vtd_active();
 }
 
-bool __pci_resource_valid(struct pci_dev *pdev, int bar);
-
 static inline bool
 intel_vm_no_concurrent_access_wa(struct drm_i915_private *i915)
 {
@@ -1829,6 +1845,8 @@ int i915_suspend_switcheroo(struct drm_i915_private *i915, pm_message_t state);
 
 int i915_getparam_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file_priv);
+
+bool __pci_resource_valid(struct pci_dev *pdev, int bar);
 
 /* i915_gem.c */
 int i915_gem_init_userptr(struct drm_i915_private *dev_priv);

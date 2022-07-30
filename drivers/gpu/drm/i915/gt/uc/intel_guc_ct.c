@@ -17,17 +17,6 @@
 #include "gt/iov/intel_iov_service.h"
 #include "gt/iov/intel_iov_state.h"
 
-enum {
-	CT_DEAD_ALIVE = 0,
-	CT_DEAD_SETUP,
-	CT_DEAD_WRITE,
-	CT_DEAD_DEADLOCK,
-	CT_DEAD_H2G_HAS_ROOM,
-	CT_DEAD_READ,
-	CT_DEAD_PROCESS_FAILED,
-};
-static void ct_dead_ct_worker_func(struct work_struct *w);
-
 static inline struct intel_guc *ct_to_guc(struct intel_guc_ct *ct)
 {
 	return container_of(ct, struct intel_guc, ct);
@@ -123,7 +112,6 @@ void intel_guc_ct_init_early(struct intel_guc_ct *ct)
 	spin_lock_init(&ct->requests.lock);
 	INIT_LIST_HEAD(&ct->requests.pending);
 	INIT_LIST_HEAD(&ct->requests.incoming);
-	INIT_WORK(&ct->dead_ct_worker, ct_dead_ct_worker_func);
 	INIT_WORK(&ct->requests.worker, ct_incoming_request_worker_func);
 	tasklet_setup(&ct->receive_tasklet, ct_receive_tasklet_func);
 	init_waitqueue_head(&ct->wq);
@@ -352,17 +340,11 @@ int intel_guc_ct_enable(struct intel_guc_ct *ct)
 
 	ct->enabled = true;
 	ct->stall_time = KTIME_MAX;
-	ct->dead_ct_reported = false;
-	ct->dead_ct_reason = CT_DEAD_ALIVE;
 
 	return 0;
 
 err_out:
 	CT_PROBE_ERROR(ct, "Failed to enable CTB (%pe)\n", ERR_PTR(err));
-	if (!ct->dead_ct_reported) {
-		ct->dead_ct_reason |= 1 << CT_DEAD_SETUP;
-		queue_work(system_unbound_wq, &ct->dead_ct_worker);
-	}
 	return err;
 }
 
@@ -484,8 +466,6 @@ static int ct_write(struct intel_guc_ct *ct,
 corrupted:
 	CT_ERROR(ct, "Corrupted descriptor head=%u tail=%u status=%#x\n",
 		 desc->head, desc->tail, desc->status);
-	ct->dead_ct_reason |= 1 << CT_DEAD_WRITE;
-	queue_work(system_unbound_wq, &ct->dead_ct_worker);
 	ctb->broken = true;
 	return -EPIPE;
 }
@@ -551,8 +531,6 @@ static inline bool ct_deadlocked(struct intel_guc_ct *ct)
 		CT_ERROR(ct, "Head: %u\n (Dwords)", ct->ctbs.recv.desc->head);
 		CT_ERROR(ct, "Tail: %u\n (Dwords)", ct->ctbs.recv.desc->tail);
 
-		ct->dead_ct_reason |= 1 << CT_DEAD_DEADLOCK;
-		queue_work(system_unbound_wq, &ct->dead_ct_worker);
 		ct->ctbs.send.broken = true;
 	}
 
@@ -601,8 +579,6 @@ static inline bool h2g_has_room(struct intel_guc_ct *ct, u32 len_dw)
 			 head, ctb->size);
 		desc->status |= GUC_CTB_STATUS_OVERFLOW;
 		ctb->broken = true;
-		ct->dead_ct_reason |= 1 << CT_DEAD_H2G_HAS_ROOM;
-		queue_work(system_unbound_wq, &ct->dead_ct_worker);
 		return false;
 	}
 
@@ -691,7 +667,7 @@ static int ct_send(struct intel_guc_ct *ct,
 
 	GEM_BUG_ON(!ct->enabled);
 	GEM_BUG_ON(!len);
-	GEM_BUG_ON(len & ~GUC_CT_MSG_LEN_MASK);
+	GEM_BUG_ON(len > GUC_CTB_HXG_MSG_MAX_LEN - GUC_CTB_HDR_LEN);
 	GEM_BUG_ON(!response_buf && response_buf_size);
 	might_sleep();
 
@@ -796,14 +772,6 @@ int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 	u32 status = ~0; /* undefined */
 	int ret;
 
-	ret = i915_inject_probe_error((ct_to_i915(ct)), -ENXIO);
-	if (ret)
-		return ret;
-
-	ret = i915_inject_probe_error((ct_to_i915(ct)), -EBUSY);
-	if (ret)
-		return ret;
-
 	if (unlikely(!ct->enabled)) {
 		struct intel_guc *guc = ct_to_guc(ct);
 		struct intel_uc *uc = container_of(guc, struct intel_uc, guc);
@@ -819,6 +787,9 @@ int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 		return ct_send_nb(ct, action, len, flags);
 
 	ret = ct_send(ct, action, len, response_buf, response_buf_size, &status);
+	if (I915_SELFTEST_ONLY(flags & INTEL_GUC_CT_SEND_SELFTEST))
+		return ret;
+
 	if (unlikely(ret < 0)) {
 		CT_ERROR(ct, "Sending action %#x failed (%pe) status=%#X\n",
 			 action[0], ERR_PTR(ret), status);
@@ -970,8 +941,6 @@ corrupted:
 	CT_ERROR(ct, "Corrupted descriptor head=%u tail=%u status=%#x\n",
 		 desc->head, desc->tail, desc->status);
 	ctb->broken = true;
-	ct->dead_ct_reason |= 1 << CT_DEAD_READ;
-	queue_work(system_unbound_wq, &ct->dead_ct_worker);
 	return -EPIPE;
 }
 
@@ -1016,9 +985,9 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 		break;
 	}
 	if (!found) {
-		CT_ERROR(ct, "Unsolicited response (fence %u)\n", fence);
-		CT_ERROR(ct, "Could not find fence=%u, last_fence=%u\n", fence,
-			 ct->requests.last_fence);
+		CT_ERROR(ct, "Unsolicited response message %#x (fence %u len %u)\n",
+			 hxg[0], fence, len);
+		CT_ERROR(ct, "Last used fence was %u\n", ct->requests.last_fence);
 		list_for_each_entry(req, &ct->requests.pending, link)
 			CT_ERROR(ct, "request %u awaits response\n",
 				 req->fence);
@@ -1065,20 +1034,17 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_CONTEXT_RESET_NOTIFICATION:
 		ret = intel_guc_context_reset_process_msg(guc, payload, len);
 		break;
+	case INTEL_GUC_ACTION_NOTIFY_MEMORY_CAT_ERROR:
+		ret = intel_pagefault_process_cat_error_msg(guc, payload, len);
+		break;
 	case INTEL_GUC_ACTION_STATE_CAPTURE_NOTIFICATION:
 		ret = intel_guc_error_capture_process_msg(guc, payload, len);
 		if (unlikely(ret))
 			CT_ERROR(ct, "error capture notification failed %x %*ph\n",
-				  action, 4 * len, payload);
+				 action, 4 * len, payload);
 		break;
 	case INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
 		ret = intel_guc_engine_failure_process_msg(guc, payload, len);
-		break;
-	case INTEL_GUC_ACTION_NOTIFY_MEMORY_CAT_ERROR:
-		ret = intel_pagefault_process_cat_error_msg(guc, payload, len);
-		break;
-	case INTEL_GUC_ACTION_PAGE_FAULT_NOTIFICATION:
-		ret = intel_pagefault_process_page_fault_msg(guc, payload, len);
 		break;
 	case GUC_ACTION_GUC2PF_VF_STATE_NOTIFY:
 		ret = intel_iov_state_process_guc2pf(iov, hxg, hxg_len);
@@ -1106,6 +1072,9 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_NOTIFY_EXCEPTION:
 		CT_ERROR(ct, "Received GuC exception notification!\n");
 		ret = 0;
+		break;
+	case INTEL_GUC_ACTION_PAGE_FAULT_NOTIFICATION:
+		ret = intel_pagefault_process_page_fault_msg(guc, payload, len);
 		break;
 	default:
 		ret = -EOPNOTSUPP;
@@ -1144,10 +1113,6 @@ static bool ct_process_incoming_requests(struct intel_guc_ct *ct, struct list_he
 	if (unlikely(err)) {
 		CT_ERROR(ct, "Failed to process CT message (%pe) %*ph\n",
 			 ERR_PTR(err), 4 * request->size, request->msg);
-		if (!ct->dead_ct_reported) {
-			ct->dead_ct_reason |= 1 << CT_DEAD_PROCESS_FAILED;
-			queue_work(system_unbound_wq, &ct->dead_ct_worker);
-		}
 		ct_free_msg(request);
 	}
 
@@ -1339,19 +1304,4 @@ void intel_guc_ct_print_info(struct intel_guc_ct *ct,
 		   ct->ctbs.recv.desc->head);
 	drm_printf(p, "Tail: %u\n",
 		   ct->ctbs.recv.desc->tail);
-}
-
-static void ct_dead_ct_worker_func(struct work_struct *w)
-{
-	struct intel_guc_ct *ct =
-		container_of(w, struct intel_guc_ct, dead_ct_worker);
-
-	if (ct->dead_ct_reported)
-		return;
-
-	ct->dead_ct_reported = true;
-#if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
-	drm_info(&ct_to_i915(ct)->drm, "%s:%d> Dumping on CTB because 0x%X...\n", __func__, __LINE__, ct->dead_ct_reason);
-	intel_klog_error_capture(ct_to_gt(ct), (intel_engine_mask_t) ~0U);
-#endif
 }

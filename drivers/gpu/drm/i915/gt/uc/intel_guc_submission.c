@@ -159,7 +159,8 @@ guc_create_parallel(struct intel_engine_cs **engines,
 #define SCHED_STATE_ENABLED				BIT(4)
 #define SCHED_STATE_PENDING_ENABLE			BIT(5)
 #define SCHED_STATE_REGISTERED				BIT(6)
-#define SCHED_STATE_BLOCKED_SHIFT			7
+#define SCHED_STATE_POLICY_REQUIRED			BIT(7)
+#define SCHED_STATE_BLOCKED_SHIFT			8
 #define SCHED_STATE_BLOCKED		BIT(SCHED_STATE_BLOCKED_SHIFT)
 #define SCHED_STATE_BLOCKED_MASK	(0xfff << SCHED_STATE_BLOCKED_SHIFT)
 
@@ -172,8 +173,11 @@ static inline void init_sched_state(struct intel_context *ce)
 __maybe_unused
 static bool sched_state_is_init(struct intel_context *ce)
 {
-	/* Kernel contexts can have SCHED_STATE_REGISTERED after suspend. */
-	return !(ce->guc_state.sched_state &
+	/*
+	 * XXX: Kernel contexts can have SCHED_STATE_NO_LOCK_REGISTERED after
+	 * suspend.
+	 */
+	return !(ce->guc_state.sched_state &=
 		 ~(SCHED_STATE_BLOCKED_MASK | SCHED_STATE_REGISTERED));
 }
 
@@ -296,6 +300,23 @@ static inline void clr_context_registered(struct intel_context *ce)
 {
 	lockdep_assert_held(&ce->guc_state.lock);
 	ce->guc_state.sched_state &= ~SCHED_STATE_REGISTERED;
+}
+
+static inline bool context_policy_required(struct intel_context *ce)
+{
+	return ce->guc_state.sched_state & SCHED_STATE_POLICY_REQUIRED;
+}
+
+static inline void set_context_policy_required(struct intel_context *ce)
+{
+	lockdep_assert_held(&ce->guc_state.lock);
+	ce->guc_state.sched_state |= SCHED_STATE_POLICY_REQUIRED;
+}
+
+static inline void clr_context_policy_required(struct intel_context *ce)
+{
+	lockdep_assert_held(&ce->guc_state.lock);
+	ce->guc_state.sched_state &= ~SCHED_STATE_POLICY_REQUIRED;
 }
 
 static inline u32 context_blocked(struct intel_context *ce)
@@ -590,6 +611,7 @@ int intel_guc_wait_for_idle(struct intel_guc *guc, long timeout)
 					      true, timeout);
 }
 
+static int guc_context_policy_init(struct intel_context *ce, bool loop);
 static int try_context_registration(struct intel_context *ce, bool loop);
 
 static int __guc_add_request(struct intel_guc *guc, struct i915_request *rq)
@@ -615,6 +637,12 @@ static int __guc_add_request(struct intel_guc *guc, struct i915_request *rq)
 
 	GEM_BUG_ON(!atomic_read(&ce->guc_id.ref));
 	GEM_BUG_ON(context_guc_id_invalid(ce));
+
+	if (context_policy_required(ce)) {
+		err = guc_context_policy_init(ce, false);
+		if (err)
+			return err;
+	}
 
 	spin_lock(&ce->guc_state.lock);
 
@@ -1569,11 +1597,20 @@ out_put:
 	intel_context_put(parent);
 }
 
+static void wake_up_tlb_invalidate(struct intel_guc_tlb_wait *wait)
+{
+	/* Barrier to ensure the store is observed by the woken thread */
+	smp_store_mb(wait->status, 0);
+	wake_up(&wait->wq);
+}
+
 void intel_guc_submission_reset(struct intel_guc *guc, bool stalled)
 {
+	struct intel_guc_tlb_wait *wait;
 	struct intel_context *ce;
 	unsigned long index;
 	unsigned long flags;
+	unsigned long i;
 
 	if (unlikely(!guc_submission_initialized(guc))) {
 		/* Reset called during driver load? GuC not yet initialised! */
@@ -1599,6 +1636,13 @@ void intel_guc_submission_reset(struct intel_guc *guc, bool stalled)
 
 	/* GuC is blown away, drop all references to contexts */
 	xa_destroy(&guc->context_lookup);
+
+	/*
+	 * The full GT reset will have cleared the TLB caches and flushed the
+	 * G2H message queue; we can release all the blocked waiters.
+	 */
+	xa_for_each(&guc->tlb_lookup, i, wait)
+		wake_up_tlb_invalidate(wait);
 }
 
 static void guc_cancel_context_requests(struct intel_context *ce)
@@ -1720,6 +1764,41 @@ void intel_guc_submission_reset_finish(struct intel_guc *guc)
 
 static void destroyed_worker_func(struct work_struct *w);
 
+static int init_tlb_lookup(struct intel_guc *guc)
+{
+	struct intel_guc_tlb_wait *wait;
+	int err;
+
+	xa_init_flags(&guc->tlb_lookup, XA_FLAGS_ALLOC);
+
+	wait = kzalloc(sizeof(*wait), GFP_KERNEL);
+	if (!wait)
+		return -ENOMEM;
+
+	init_waitqueue_head(&wait->wq);
+	err = xa_alloc_cyclic_irq(&guc->tlb_lookup, &guc->serial_slot, wait,
+				  xa_limit_32b, &guc->next_seqno, GFP_KERNEL);
+	if (err == -ENOMEM) {
+		kfree(wait);
+		return err;
+	}
+
+	return 0;
+}
+
+static void fini_tlb_lookup(struct intel_guc *guc)
+{
+	struct intel_guc_tlb_wait *wait;
+
+	wait = xa_load(&guc->tlb_lookup, guc->serial_slot);
+	if (wait) {
+		GEM_BUG_ON(wait->status);
+		kfree(wait);
+	}
+
+	xa_destroy(&guc->tlb_lookup);
+}
+
 /*
  * Set up the memory resources to be shared with the GuC (via the GGTT)
  * at firmware loading time.
@@ -1727,12 +1806,13 @@ static void destroyed_worker_func(struct work_struct *w);
 int intel_guc_submission_init(struct intel_guc *guc)
 {
 	struct intel_gt *gt = guc_to_gt(guc);
+	int ret;
 
 	if (guc->submission_initialized)
 		return 0;
 
+
 	xa_init_flags(&guc->context_lookup, XA_FLAGS_LOCK_IRQ);
-	xa_init_flags(&guc->tlb_lookup, XA_FLAGS_ALLOC);
 
 	spin_lock_init(&guc->submission_state.lock);
 	INIT_LIST_HEAD(&guc->submission_state.guc_id_list);
@@ -1741,10 +1821,16 @@ int intel_guc_submission_init(struct intel_guc *guc)
 	INIT_WORK(&guc->submission_state.destroyed_worker,
 		  destroyed_worker_func);
 
+	ret = init_tlb_lookup(guc);
+	if (ret)
+		return ret;
+
 	guc->submission_state.guc_ids_bitmap =
 		bitmap_zalloc(NUMBER_MULTI_LRC_GUC_ID(guc), GFP_KERNEL);
-	if (!guc->submission_state.guc_ids_bitmap)
-		return -ENOMEM;
+	if (!guc->submission_state.guc_ids_bitmap) {
+		ret = -ENOMEM;
+		goto err;
+	}
 
 	spin_lock_init(&guc->timestamp.lock);
 	INIT_DELAYED_WORK(&guc->timestamp.work, guc_timestamp_ping);
@@ -1752,6 +1838,10 @@ int intel_guc_submission_init(struct intel_guc *guc)
 	guc->submission_initialized = true;
 
 	return 0;
+
+err:
+	fini_tlb_lookup(guc);
+	return ret;
 }
 
 void intel_guc_submission_fini(struct intel_guc *guc)
@@ -1762,7 +1852,7 @@ void intel_guc_submission_fini(struct intel_guc *guc)
 	guc_flush_destroyed_contexts(guc);
 	i915_sched_engine_put(guc->sched_engine);
 	bitmap_free(guc->submission_state.guc_ids_bitmap);
-	xa_destroy(&guc->tlb_lookup);
+	fini_tlb_lookup(guc);
 	guc->submission_initialized = false;
 }
 
@@ -2036,7 +2126,7 @@ static int __guc_action_register_multi_lrc(struct intel_guc *guc,
 					   bool loop)
 {
 	struct intel_context *child;
-	u32 action[11 + (MAX_ENGINE_INSTANCE * 2)];
+	u32 action[13 + (MAX_ENGINE_INSTANCE * 2)];
 	int len = 0;
 	u32 next_id;
 
@@ -2065,7 +2155,7 @@ static int __guc_action_register_multi_lrc(struct intel_guc *guc,
 		action[len++] = upper_32_bits(child->lrc.lrca);
 	}
 
-	GEM_BUG_ON(len >= ARRAY_SIZE(action));
+	GEM_BUG_ON(len > ARRAY_SIZE(action));
 
 	return guc_submission_send_busy_loop(guc, action, len, 0, loop);
 }
@@ -2095,8 +2185,6 @@ static int __guc_action_register_context(struct intel_guc *guc,
 
 static void prepare_context_registration_info(struct intel_context *ce,
 					      struct guc_ctxt_registration_info *info);
-static int guc_context_policy_init(struct intel_context *ce, bool loop);
-
 static int register_context(struct intel_context *ce, bool loop)
 {
 	struct guc_ctxt_registration_info info;
@@ -2223,6 +2311,8 @@ static int guc_context_policy_init(struct intel_context *ce, bool loop)
 	struct context_policy policy;
 	u32 execution_quantum;
 	u32 preemption_timeout;
+	bool missing = false;
+	unsigned long flags;
 	int ret;
 
 	/* NB: For both of these, zero means disabled. */
@@ -2239,18 +2329,9 @@ static int guc_context_policy_init(struct intel_context *ce, bool loop)
 		__guc_context_policy_add_preempt_to_idle(&policy, 1);
 
 	ret = __guc_context_set_context_policies(guc, &policy, loop);
-	if (ret) {
-		/*
-		 * FIXME: Need to unwind and retry later. Unfortunately, the
-		 * rewind almost certainly can't be done because that means
-		 * sending a context deregister H2G and presumably the reason
-		 * the policy update failed is because the H2G CTB is blocked.
-		 * So just flag an error for now!
-		 */
-		drm_err(&engine->i915->drm, "Failed to send policy update for 0x%04X: %d!\n", ce->guc_id.id, ret);
-	}
+	missing = ret != 0;
 
-	if (intel_context_is_parent(ce)) {
+	if (!missing && intel_context_is_parent(ce)) {
 		struct intel_context *child;
 
 		for_each_child(ce, child) {
@@ -2266,12 +2347,18 @@ static int guc_context_policy_init(struct intel_context *ce, bool loop)
 
 			ret = __guc_context_set_context_policies(guc, &policy, loop);
 			if (ret) {
-				/* FIXME: As above. */
-				drm_err(&engine->i915->drm, "Failed to send policy update for 0x%04X of 0x%04X: %d!\n",
-					child->guc_id.id, ce->guc_id.id, ret);
+				missing = true;
+				break;
 			}
 		}
 	}
+
+	spin_lock_irqsave(&ce->guc_state.lock, flags);
+	if (missing)
+		set_context_policy_required(ce);
+	else
+		clr_context_policy_required(ce);
+	spin_unlock_irqrestore(&ce->guc_state.lock, flags);
 
 	return ret;
 }
@@ -2284,7 +2371,6 @@ static void prepare_context_registration_info(struct intel_context *ce,
 	u32 ctx_id = ce->guc_id.id;
 
 	GEM_BUG_ON(!engine->mask);
-	GEM_BUG_ON(!sched_state_is_init(ce));
 
 	/*
 	 * Ensure LRC + CT vmas are is same region as write barrier is done
@@ -2303,8 +2389,6 @@ static void prepare_context_registration_info(struct intel_context *ce,
 	/* Interface support 64 bit LRCA even though i915 only supports 32 bit currently */
 	info->hwlrca_lo = lower_32_bits(ce->lrc.lrca);
 	info->hwlrca_hi = upper_32_bits(ce->lrc.lrca);
-	if (engine->flags & I915_ENGINE_HAS_EU_PRIORITY)
-		info->hwlrca_lo |= lrc_desc_priority(ce->guc_state.prio);
 	info->flags = CONTEXT_REGISTRATION_FLAG_KMD;
 
 	/*
@@ -3675,17 +3759,6 @@ static int guc_resume(struct intel_engine_cs *engine)
 	return 0;
 }
 
-static bool guc_sched_engine_disabled(struct i915_sched_engine *sched_engine)
-{
-	return !sched_engine->tasklet.callback;
-}
-
-static int vf_guc_resume(struct intel_engine_cs *engine)
-{
-	intel_breadcrumbs_reset(engine->breadcrumbs);
-	return 0;
-}
-
 static int gen12_rcs_resume(struct intel_engine_cs *engine)
 {
 	int ret;
@@ -3694,8 +3767,29 @@ static int gen12_rcs_resume(struct intel_engine_cs *engine)
 	if (ret)
 		return ret;
 
-	xehp_enable_ccs_engines(engine);
+	/*
+	 * Multi Context programming.
+	 * just need to program this register once no matter how many CCS
+	 * engines there are. Since some of the CCS engines might be fused off,
+	 * we can't do this as part of the init of a specific CCS and we do
+	 * it during RCS init instead. RCS and all CCS engines are reset
+	 * together, so post-reset re-init is covered as well.
+	 */
+	if (CCS_MASK(engine->gt))
+		intel_uncore_write(engine->uncore, GEN12_RCU_MODE,
+			   _MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
 
+       return 0;
+}
+
+static bool guc_sched_engine_disabled(struct i915_sched_engine *sched_engine)
+{
+	return !sched_engine->tasklet.callback;
+}
+
+static int vf_guc_resume(struct intel_engine_cs *engine)
+{
+	intel_breadcrumbs_reset(engine->breadcrumbs);
 	return 0;
 }
 
@@ -3877,7 +3971,8 @@ int intel_guc_submission_setup(struct intel_engine_cs *engine)
 	guc_default_irqs(engine);
 	guc_init_breadcrumbs(engine);
 
-	if (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE)
+	if (engine->class == RENDER_CLASS ||
+	    engine->class == COMPUTE_CLASS)
 		rcs_submission_override(engine);
 
 	if (IS_SRIOV_VF(engine->i915))
@@ -3926,6 +4021,7 @@ static bool __guc_submission_selected(struct intel_guc *guc)
 
 void intel_guc_submission_init_early(struct intel_guc *guc)
 {
+
 	guc->submission_state.num_guc_ids = GUC_MAX_CONTEXT_ID;
 	guc->submission_supported = __guc_submission_supported(guc);
 	guc->submission_selected = __guc_submission_selected(guc);
@@ -3968,16 +4064,14 @@ static void wait_wake_outstanding_tlb_g2h(struct intel_guc *guc, u32 seqno)
 
 	/* We received a response after the waiting task did exit with a timeout */
 	if (unlikely(!wait))
-		drm_dbg(&guc_to_gt(guc)->i915->drm, "Stale tlb invalidation response with seqno %d\n", seqno);
+		drm_dbg(&guc_to_gt(guc)->i915->drm,
+			"Stale tlb invalidation response with seqno %d\n", seqno);
 
-	if (wait) {
-		WRITE_ONCE(wait->status, 0);
-		smp_mb();
-		wake_up_process(wait->tsk);
-	}
+	if (wait)
+		wake_up_tlb_invalidate(wait);
+
 	xa_unlock_irqrestore(&guc->tlb_lookup, flags);
 }
-
 
 void intel_guc_tlb_invalidation_done(struct intel_guc *guc, u32 seqno)
 {
@@ -4811,4 +4905,5 @@ bool intel_guc_virtual_engine_has_heartbeat(const struct intel_engine_cs *ve)
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
 #include "selftest_guc.c"
 #include "selftest_guc_multi_lrc.c"
+#include "selftest_guc_hangcheck.c"
 #endif

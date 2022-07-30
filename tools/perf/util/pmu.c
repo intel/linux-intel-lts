@@ -315,7 +315,7 @@ static bool perf_pmu_merge_alias(struct perf_pmu_alias *newalias,
 }
 
 static int __perf_pmu__new_alias(struct list_head *list, char *dir, char *name,
-				 char *desc, char *val, struct pmu_event *pe)
+				 char *desc, char *val, const struct pmu_event *pe)
 {
 	struct parse_events_term *term;
 	struct perf_pmu_alias *alias;
@@ -710,9 +710,9 @@ static char *perf_pmu__getcpuid(struct perf_pmu *pmu)
 	return cpuid;
 }
 
-struct pmu_events_map *perf_pmu__find_map(struct perf_pmu *pmu)
+const struct pmu_events_map *perf_pmu__find_map(struct perf_pmu *pmu)
 {
-	struct pmu_events_map *map;
+	const struct pmu_events_map *map;
 	char *cpuid = perf_pmu__getcpuid(pmu);
 	int i;
 
@@ -737,7 +737,7 @@ struct pmu_events_map *perf_pmu__find_map(struct perf_pmu *pmu)
 	return map;
 }
 
-struct pmu_events_map *__weak pmu_events_map__find(void)
+const struct pmu_events_map *__weak pmu_events_map__find(void)
 {
 	return perf_pmu__find_map(NULL);
 }
@@ -809,7 +809,7 @@ out:
  * as aliases.
  */
 void pmu_add_cpu_aliases_map(struct list_head *head, struct perf_pmu *pmu,
-			     struct pmu_events_map *map)
+			     const struct pmu_events_map *map)
 {
 	int i;
 	const char *name = pmu->name;
@@ -819,7 +819,7 @@ void pmu_add_cpu_aliases_map(struct list_head *head, struct perf_pmu *pmu,
 	i = 0;
 	while (1) {
 		const char *cpu_name = is_arm_pmu_core(name) ? name : "cpu";
-		struct pmu_event *pe = &map->table[i++];
+		const struct pmu_event *pe = &map->table[i++];
 		const char *pname = pe->pmu ? pe->pmu : cpu_name;
 
 		if (!pe->name) {
@@ -845,7 +845,7 @@ new_alias:
 
 static void pmu_add_cpu_aliases(struct list_head *head, struct perf_pmu *pmu)
 {
-	struct pmu_events_map *map;
+	const struct pmu_events_map *map;
 
 	map = perf_pmu__find_map(pmu);
 	if (!map)
@@ -859,7 +859,7 @@ void pmu_for_each_sys_event(pmu_sys_event_iter_fn fn, void *data)
 	int i = 0;
 
 	while (1) {
-		struct pmu_sys_events *event_table;
+		const struct pmu_sys_events *event_table;
 		int j = 0;
 
 		event_table = &pmu_sys_event_tables[i++];
@@ -868,7 +868,7 @@ void pmu_for_each_sys_event(pmu_sys_event_iter_fn fn, void *data)
 			break;
 
 		while (1) {
-			struct pmu_event *pe = &event_table->table[j++];
+			const struct pmu_event *pe = &event_table->table[j++];
 			int ret;
 
 			if (!pe->name && !pe->metric_group && !pe->metric_name)
@@ -886,7 +886,7 @@ struct pmu_sys_event_iter_data {
 	struct perf_pmu *pmu;
 };
 
-static int pmu_add_sys_aliases_iter_fn(struct pmu_event *pe, void *data)
+static int pmu_add_sys_aliases_iter_fn(const struct pmu_event *pe, void *data)
 {
 	struct pmu_sys_event_iter_data *idata = data;
 	struct perf_pmu *pmu = idata->pmu;
@@ -912,7 +912,7 @@ static int pmu_add_sys_aliases_iter_fn(struct pmu_event *pe, void *data)
 	return 0;
 }
 
-static void pmu_add_sys_aliases(struct list_head *head, struct perf_pmu *pmu)
+void pmu_add_sys_aliases(struct list_head *head, struct perf_pmu *pmu)
 {
 	struct pmu_sys_event_iter_data idata = {
 		.head = head,
@@ -1238,7 +1238,7 @@ static int pmu_config_term(const char *pmu_name,
 			unknown_term = NULL;
 		help_msg = parse_events_formats_error_string(pmu_term);
 		if (err) {
-			parse_events__handle_error(err, term->err_term,
+			parse_events_error__handle(err, term->err_term,
 						   unknown_term,
 						   help_msg);
 		} else {
@@ -1271,7 +1271,7 @@ static int pmu_config_term(const char *pmu_name,
 		if (term->no_value &&
 		    bitmap_weight(format->bits, PERF_PMU_FORMAT_BITS) > 1) {
 			if (err) {
-				parse_events__handle_error(err, term->err_val,
+				parse_events_error__handle(err, term->err_val,
 					   strdup("no value assigned for term"),
 					   NULL);
 			}
@@ -1286,7 +1286,7 @@ static int pmu_config_term(const char *pmu_name,
 						term->config, term->val.str);
 			}
 			if (err) {
-				parse_events__handle_error(err, term->err_val,
+				parse_events_error__handle(err, term->err_val,
 					strdup("expected numeric value"),
 					NULL);
 			}
@@ -1303,7 +1303,7 @@ static int pmu_config_term(const char *pmu_name,
 		if (err) {
 			char *err_str;
 
-			parse_events__handle_error(err, term->err_val,
+			parse_events_error__handle(err, term->err_val,
 				asprintf(&err_str,
 				    "value too big for format, maximum is %llu",
 				    (unsigned long long)max_val) < 0
@@ -1880,7 +1880,7 @@ int perf_pmu__caps_parse(struct perf_pmu *pmu)
 }
 
 void perf_pmu__warn_invalid_config(struct perf_pmu *pmu, __u64 config,
-				   char *name)
+				   const char *name)
 {
 	struct perf_pmu_format *format;
 	__u64 masks = 0, bits;

@@ -365,6 +365,22 @@ void intel_guc_write_params(struct intel_guc *guc)
 	intel_uncore_forcewake_put(uncore, FORCEWAKE_GT);
 }
 
+void intel_guc_dump_time_info(struct intel_guc *guc, struct drm_printer *p)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+	intel_wakeref_t wakeref;
+	u32 stamp = 0;
+
+	intel_device_info_print_runtime(RUNTIME_INFO(gt->i915), p);
+
+	with_intel_runtime_pm(&gt->i915->runtime_pm, wakeref)
+		stamp = intel_uncore_read(gt->uncore, GUCPMTIMESTAMP);
+
+	drm_printf(p, "GuC timestamp: 0x%08X\n", stamp);
+	drm_printf(p, "CS timestamp frequency: %u Hz, %d ns\n",
+		   gt->clock_frequency, gt->clock_period_ns);
+}
+
 static int __guc_init(struct intel_guc *guc)
 {
 	struct intel_gt *gt = guc_to_gt(guc);
@@ -505,10 +521,6 @@ int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
 	u32 header;
 	int i;
 	int ret;
-
-	ret = i915_inject_probe_error(i915, -ENXIO);
-	if (ret)
-		return ret;
 
 	GEM_BUG_ON(!len);
 	GEM_BUG_ON(len > guc->send_regs.count);
@@ -891,151 +903,101 @@ int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value)
 	return __guc_self_cfg(guc, key, 2, value);
 }
 
+static long must_wait_woken(struct wait_queue_entry *wq_entry, long timeout)
+{
+	/*
+	 * This is equivalent to wait_woken() with the exception that
+	 * we do not wake up early if the kthread task has been completed.
+	 * As we are called from page reclaim in any task context,
+	 * we may be invoked from stopped kthreads, but we *must*
+	 * complete the wait from the HW .
+	 *
+	 * A second problem is that since we are called under reclaim
+	 * and wait_woken() inspected the thread state, it makes an invalid
+	 * assumption that all PF_KTHREAD tasks have set_kthread_struct()
+	 * called upon them, and will trigger a GPF in is_kthread_should_stop().
+	 */
+	do {
+		set_current_state(TASK_INTERRUPTIBLE);
+		if (wq_entry->flags & WQ_FLAG_WOKEN)
+			break;
+
+		timeout = schedule_timeout(timeout);
+	} while (timeout);
+	__set_current_state(TASK_RUNNING);
+
+	/* See wait_woken() and woken_wake_function() */
+	smp_store_mb(wq_entry->flags, wq_entry->flags & ~WQ_FLAG_WOKEN);
+
+	return timeout;
+}
+
 static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 *action, u32 size)
 {
-	struct intel_guc_tlb_wait wait;
-	long timeout = 0;
+	struct intel_guc_tlb_wait _wq, *wq = &_wq;
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+	int err = 0;
 	u32 seqno;
-	int err;
 
-	wait.status = 1;
-	wait.tsk = current;
-	err = xa_alloc_cyclic_irq(&guc->tlb_lookup, &seqno, &wait,
-				  xa_limit_32b, &guc->next_seqno,
-				  GFP_KERNEL);
-	if (GEM_WARN_ON(err))
-		return err;
+	init_waitqueue_head(&_wq.wq);
+
+	if (xa_alloc_cyclic_irq(&guc->tlb_lookup, &seqno, wq,
+				xa_limit_32b, &guc->next_seqno,
+				GFP_ATOMIC | __GFP_NOWARN) < 0) {
+		/* Under severe memory pressure? Serialise TLB allocations */
+		xa_lock_irq(&guc->tlb_lookup);
+		wq = xa_load(&guc->tlb_lookup, guc->serial_slot);
+		wait_event_lock_irq(wq->wq,
+				    !READ_ONCE(wq->status),
+				    guc->tlb_lookup.xa_lock);
+		/*
+		 * Update wq->status under lock to ensure only one waiter can
+		 * issue the tlb invalidation command using the serial slot at a
+		 * time. The condition is set to false before releasing the lock
+		 * so that other caller continue to wait until woken up again.
+		 */
+		wq->status = 1;
+		xa_unlock_irq(&guc->tlb_lookup);
+
+		seqno = guc->serial_slot;
+	}
 
 	action[1] = seqno;
 
+	add_wait_queue(&wq->wq, &wait);
+
 	err = intel_guc_send_busy_loop(guc, action, size, G2H_LEN_DW_INVALIDATE_TLB, true);
 	if (err) {
+		/*
+		 * XXX: Failure of tlb invalidation is critical and would
+		 * warrant a gt reset.
+		 */
+		goto out;
+	}
+/*
+ * GuC has a timeout of 1ms for a tlb invalidation response from GAM. On a
+ * timeout GuC drops the request and has no mechanism to notify the host about
+ * the timeout. So keep a larger timeout that accounts for this individual
+ * timeout and max number of outstanding invalidation requests that can be
+ * queued in CT buffer.
+ */
+#define OUTSTANDING_GUC_TIMEOUT_PERIOD  (HZ)
+	if (!must_wait_woken(&wait,
+			OUTSTANDING_GUC_TIMEOUT_PERIOD)) {
+		/*
+		 * XXX: Failure of tlb invalidation is critical and would
+		 * warrant a gt reset.
+		 */
+		drm_err(&guc_to_gt(guc)->i915->drm,
+			 "tlb invalidation response timed out for seqno %u\n", seqno);
+		err = -ETIME;
+	}
+out:
+	remove_wait_queue(&wq->wq, &wait);
+	if (seqno != guc->serial_slot)
 		xa_erase_irq(&guc->tlb_lookup, seqno);
-		return err;
-	}
 
-#define OUTSTANDING_GUC_TIMEOUT_PERIOD  (HZ / 10)
-	timeout = OUTSTANDING_GUC_TIMEOUT_PERIOD;
-	for (;;) {
-		set_current_state(TASK_UNINTERRUPTIBLE);
-
-		if (!READ_ONCE(wait.status))
-		    break;
-
-		if (!timeout) {
-			timeout = -ETIME;
-			break;
-		}
-		timeout = io_schedule_timeout(timeout);
-	}
-	__set_current_state(TASK_RUNNING);
-
-	xa_erase_irq(&guc->tlb_lookup, seqno);
-
-	/*XXX: Failure of tlb invalidation is critical and would warrant a gt
-	 * reset.
-	 */
-	if (timeout == -ETIME)
-		drm_err(&guc_to_gt(guc)->i915->drm, "tlb invalidation response timed out for seqno %u\n", seqno);
-
-	return (timeout < 0) ? timeout : 0;
-}
-
-/*
- * Full TLB invalidation:
- * If invoked by PF, will invalidate the TLB's across all VFs and all engines.
- * If invoked by VF, will invalidate the TLB's across all engines, given the
- * VF is active.
- */
-int intel_guc_invalidate_tlb_full(struct intel_guc *guc,
-				  enum intel_guc_tlb_inval_mode mode)
-{
-	u32 action[] = {
-		IS_SRIOV_PF(guc_to_gt(guc)->i915) ?
-			INTEL_GUC_ACTION_TLB_INVALIDATION_ALL :
-			INTEL_GUC_ACTION_TLB_INVALIDATION,
-		0,
-		INTEL_GUC_TLB_INVAL_FULL << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
-			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
-			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
-	};
-
-	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_FULL(guc)) {
-		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
-		return 0;
-	}
-
-	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
-}
-
-/*
- * Selective TLB Invalidation for Address Range:
- * TLB's in the Address Range is Invalidated across all engines.
- */
-int intel_guc_invalidate_tlb_page_selective(struct intel_guc *guc,
-					    enum intel_guc_tlb_inval_mode mode,
-					    u64 start, u64 length, u32 asid)
-{
-	u64 vm_total = BIT_ULL(INTEL_INFO(guc_to_gt(guc)->i915)->ppgtt_size);
-	u32 address_mask = (ilog2(length) - ilog2(I915_GTT_PAGE_SIZE_4K));
-	u32 full_range = vm_total == length;
-	u32 action[] = {
-		INTEL_GUC_ACTION_TLB_INVALIDATION,
-		0,
-		INTEL_GUC_TLB_INVAL_PAGE_SELECTIVE << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
-			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
-			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
-		asid,
-		full_range ? full_range : lower_32_bits(start),
-		full_range ? 0 : upper_32_bits(start),
-		full_range ? 0 : address_mask,
-	};
-
-	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc)) {
-		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
-		return 0;
-	}
-
-	GEM_BUG_ON(!IS_ALIGNED(start, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(!IS_ALIGNED(length, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(range_overflows(start, length, vm_total));
-
-	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
-}
-
-/*
- * Selective TLB Invalidation for Context:
- * Invalidates all TLB's for a specific context across all engines.
- */
-int intel_guc_invalidate_tlb_page_selective_ctx(struct intel_guc *guc,
-						enum intel_guc_tlb_inval_mode mode,
-						u64 start, u64 length, u32 ctxid)
-{
-	u64 vm_total = BIT_ULL(INTEL_INFO(guc_to_gt(guc)->i915)->ppgtt_size);
-	u32 address_mask = (ilog2(length) - ilog2(I915_GTT_PAGE_SIZE_4K));
-	u32 full_range = vm_total == length;
-	u32 action[] = {
-		INTEL_GUC_ACTION_TLB_INVALIDATION,
-		0,
-		INTEL_GUC_TLB_INVAL_PAGE_SELECTIVE_CTX << INTEL_GUC_TLB_INVAL_TYPE_SHIFT |
-			mode << INTEL_GUC_TLB_INVAL_MODE_SHIFT |
-			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
-		ctxid,
-		full_range ? full_range : lower_32_bits(start),
-		full_range ? 0 : upper_32_bits(start),
-		full_range ? 0 : address_mask,
-	};
-
-	if (!INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc)) {
-		DRM_ERROR("Tlb invalidation: Operation not supported in this platform!\n");
-		return 0;
-	}
-
-	GEM_BUG_ON(!IS_ALIGNED(start, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(!IS_ALIGNED(length, I915_GTT_PAGE_SIZE_4K));
-	GEM_BUG_ON(range_overflows(start, length, vm_total));
-
-	return guc_send_invalidate_tlb(guc, action, ARRAY_SIZE(action));
+	return err;
 }
 
 /*
@@ -1084,9 +1046,6 @@ void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p)
 	}
 
 	intel_uc_fw_dump(&guc->fw, p);
-
-	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
-		return;
 
 	with_intel_runtime_pm(uncore->rpm, wakeref) {
 		u32 status = intel_uncore_read(uncore, GUC_STATUS);

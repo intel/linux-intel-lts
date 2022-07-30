@@ -93,9 +93,8 @@ static int ipu6_csi2_phy_power_set(struct ipu_isys *isys,
 			return ret;
 
 		ipu6_isys_phy_reset(isys, phy_id, 0);
-		ipu6_isys_phy_common_init(isys);
-
-		ret = ipu6_isys_phy_config(isys);
+		ipu6_isys_phy_common_init(isys, cfg);
+		ret = ipu6_isys_phy_config(isys, cfg);
 		if (ret)
 			return ret;
 

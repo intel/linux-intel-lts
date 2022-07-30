@@ -95,7 +95,7 @@ static int get_supported_code_index(u32 code)
 }
 
 static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
-					struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_pad_config *cfg,
 				    struct v4l2_subdev_selection *sel)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
@@ -105,11 +105,7 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 	    pad->flags & MEDIA_PAD_FL_SOURCE &&
 	    asd->valid_tgts[CSI2_BE_PAD_SOURCE].crop) {
 		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd,
-							cfg,
-							sel->pad,
-							0,
-							sel->which);
+			__ipu_isys_get_ffmt(sd, cfg, sel->pad, 0, sel->which);
 		struct v4l2_rect *r = __ipu_isys_get_selection
 		    (sd, cfg, sel->target, CSI2_BE_PAD_SINK, sel->which);
 
@@ -169,31 +165,25 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd,
-							cfg,
-							fmt->pad,
-							fmt->stream,
-							fmt->which);
+		__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->stream,
+				    fmt->which);
+
 	switch (fmt->pad) {
 	case CSI2_BE_PAD_SINK:
 		if (fmt->format.field != V4L2_FIELD_ALTERNATE)
 			fmt->format.field = V4L2_FIELD_NONE;
 		*ffmt = fmt->format;
+
 		ipu_isys_subdev_fmt_propagate
 		    (sd, cfg, &fmt->format, NULL,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT, fmt->pad, fmt->which);
 		return;
 	case CSI2_BE_PAD_SOURCE: {
 		struct v4l2_mbus_framefmt *sink_ffmt =
-			__ipu_isys_get_ffmt(sd,
-							cfg,
-							CSI2_BE_PAD_SINK,
-							fmt->stream,
-							fmt->which);
+			__ipu_isys_get_ffmt(sd, cfg, CSI2_BE_PAD_SINK,
+					    fmt->stream, fmt->which);
 		struct v4l2_rect *r =
-			__ipu_isys_get_selection(sd,
-						 cfg,
-						 V4L2_SEL_TGT_CROP,
+			__ipu_isys_get_selection(sd, cfg, V4L2_SEL_TGT_CROP,
 						 CSI2_BE_PAD_SOURCE,
 						 fmt->which);
 		struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);

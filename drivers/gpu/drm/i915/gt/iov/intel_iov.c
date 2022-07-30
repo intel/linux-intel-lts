@@ -8,6 +8,7 @@
 #include "intel_iov_query.h"
 #include "intel_iov_relay.h"
 #include "intel_iov_service.h"
+#include "intel_iov_state.h"
 #include "intel_iov_utils.h"
 
 /**
@@ -21,6 +22,7 @@ void intel_iov_init_early(struct intel_iov *iov)
 	if (intel_iov_is_pf(iov)) {
 		intel_iov_provisioning_init_early(iov);
 		intel_iov_service_init_early(iov);
+		intel_iov_state_init_early(iov);
 	}
 
 	intel_iov_relay_init_early(&iov->relay);
@@ -35,6 +37,7 @@ void intel_iov_init_early(struct intel_iov *iov)
 void intel_iov_release(struct intel_iov *iov)
 {
 	if (intel_iov_is_pf(iov)) {
+		intel_iov_state_release(iov);
 		intel_iov_service_release(iov);
 		intel_iov_provisioning_release(iov);
 	}
@@ -225,6 +228,7 @@ int intel_iov_init_hw(struct intel_iov *iov)
 		pf_enable_ggtt_guest_update(iov);
 		intel_iov_service_update(iov);
 		intel_iov_provisioning_restart(iov);
+		intel_iov_state_reset(iov);
 	}
 
 	if (intel_iov_is_vf(iov)) {
@@ -280,7 +284,7 @@ int intel_iov_init_late(struct intel_iov *iov)
 		 */
 		if (!intel_uc_uses_guc_submission(&gt->uc)) {
 			dev_warn(gt->i915->drm.dev, "GuC submission is %s\n",
-				 enableddisabled(false));
+				 str_enabled_disabled(false));
 			return -EIO;
 		}
 	}
@@ -289,5 +293,5 @@ int intel_iov_init_late(struct intel_iov *iov)
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
-#include "./selftests/iov_live_selftest_ggtt.c"
+#include "selftests/selftest_live_iov_ggtt.c"
 #endif
