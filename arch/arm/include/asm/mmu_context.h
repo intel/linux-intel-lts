@@ -106,7 +106,7 @@ init_new_context(struct task_struct *tsk, struct mm_struct *mm)
 #endif	/* CONFIG_CPU_HAS_ASID */
 
 #define destroy_context(mm)		do { } while(0)
-#define activate_mm(prev, next)		__switch_mm(prev, next, NULL)
+#define activate_mm(prev,next)		__switch_mm(prev, next, NULL)
 
 /*
  * This is called when "tsk" is about to enter lazy TLB mode.

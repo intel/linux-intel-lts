@@ -323,7 +323,7 @@ unsigned long test_and_lock_stage(int *irqsoff);
 void unlock_stage(unsigned long irqstate);
 
 #define stage_save_flags(__irqstate)					\
-	do {								\
+  	do {								\
 	  unsigned long __flags = hard_local_save_flags();		\
 	  (__irqstate) = irqs_merge_flags(__flags,			\
 					  irqs_disabled());		\

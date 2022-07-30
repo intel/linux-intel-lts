@@ -23,7 +23,7 @@ SECTIONS
 #endif
 #ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
 	PROVIDE(_vdso_priv = _vdso_data - __VPRIV_PAGES * PAGE_SIZE);
-#endif
+#endif	
 	. = VDSO_LBASE + SIZEOF_HEADERS;
 
 	.hash		: { *(.hash) }			:text

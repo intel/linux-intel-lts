@@ -293,7 +293,7 @@ local_restart:
 	add	scno, scno, #__OOB_SYSCALL_BIT	@ force in oob marker
 	b	fastcall_try
 1:
-#endif
+#endif	
 #ifdef CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE
 	ldr	r0, =#__OOB_SYSCALL_BIT
 	ands	r0, scno, r0
@@ -330,7 +330,7 @@ slow_path:
 	ldr	r0, =#__OOB_SYSCALL_BIT
 	ands	r0, scno, r0
 	bne	pipeline_syscall
-#endif
+#endif	
 	cmp	scno, #__NR_prctl
 	bne	root_syscall
 	ldr	r0, [sp, #S_OLD_R0]

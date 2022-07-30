@@ -110,11 +110,11 @@ struct vdso_data {
 	u32			cs_type_seq;
 	char			cs_mmdev[16];
 #endif
-
+ 
 	struct arch_vdso_data	arch_data;
 };
 
-#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
+#if defined(CONFIG_GENERIC_CLOCKSOURCE_VDSO) && !defined(ENABLE_COMPAT_VDSO)
 
 #include <linux/clocksource.h>
 

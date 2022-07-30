@@ -386,7 +386,7 @@ bool skb_release_oob_skb(struct sk_buff *skb, int *dref)
 
 	/*
 	 * ->nohdr is never set for oob shells, so we always refcount
-	 * the full data (header + payload) when cloned.
+         * the full data (header + payload) when cloned.
 	 */
 	*dref = skb->cloned ? atomic_sub_return(1, &shinfo->dataref) : 0;
 

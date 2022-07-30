@@ -269,7 +269,7 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 }
 
 #define deactivate_mm(tsk,mm)	do { } while (0)
-#define activate_mm(prev, next)	do_switch_mm(prev, next, current)
+#define activate_mm(prev,next)	do_switch_mm(prev, next, current)
 
 static inline void
 switch_oob_mm(struct mm_struct *prev, struct mm_struct *next,

@@ -64,10 +64,10 @@ void irq_pipeline_nmi_exit(void);
 						raw_local_irq_save(__flags); __flags; })
 #define hard_local_irq_restore(__flags)		raw_local_irq_restore(__flags)
 
-#define hard_cond_local_irq_enable()		do { } while (0)
-#define hard_cond_local_irq_disable()		do { } while (0)
+#define hard_cond_local_irq_enable()		do { } while(0)
+#define hard_cond_local_irq_disable()		do { } while(0)
 #define hard_cond_local_irq_save()		0
-#define hard_cond_local_irq_restore(__flags)	do { (void)(__flags); } while (0)
+#define hard_cond_local_irq_restore(__flags)	do { (void)(__flags); } while(0)
 
 #define hard_irqs_disabled()			irqs_disabled()
 #define hard_irqs_disabled_flags(__flags)	raw_irqs_disabled_flags(__flags)

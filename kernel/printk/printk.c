@@ -2185,7 +2185,7 @@ void raw_vprintk(const char *fmt, va_list ap)
 	if (raw_console == NULL || console_suspended)
 		return;
 
-	touch_nmi_watchdog();
+        touch_nmi_watchdog();
 	n = vscnprintf(buf, sizeof(buf), fmt, ap);
 	raw_puts(buf, n);
 }

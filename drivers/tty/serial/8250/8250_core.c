@@ -693,12 +693,12 @@ static void univ8250_console_write_raw(struct console *co, const char *s,
 	struct uart_8250_port *up = &serial8250_ports[co->index];
 	unsigned int ier;
 
-	ier = serial_in(up, UART_IER);
+        ier = serial_in(up, UART_IER);
 
-	if (up->capabilities & UART_CAP_UUE)
-		serial_out(up, UART_IER, UART_IER_UUE);
-	else
-		serial_out(up, UART_IER, 0);
+        if (up->capabilities & UART_CAP_UUE)
+                serial_out(up, UART_IER, UART_IER_UUE);
+        else
+                serial_out(up, UART_IER, 0);
 
 	while (count-- > 0) {
 		if (*s == '\n')
@@ -706,7 +706,7 @@ static void univ8250_console_write_raw(struct console *co, const char *s,
 		raw_write_char(up, *s++);
 	}
 
-	serial_out(up, UART_IER, ier);
+        serial_out(up, UART_IER, ier);
 }
 
 #endif

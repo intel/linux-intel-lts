@@ -639,8 +639,13 @@ void clockevents_exchange_device(struct clock_event_device *old,
 	 */
 	if (old) {
 		module_put(old->owner);
+		/*
+		 * Do not move the device backing a proxy tick device
+		 * to the release list, keep it around but mark it as
+		 * reserved.
+		 */
 		list_del(&old->list);
-		if (new && new->features & CLOCK_EVT_FEAT_PROXY) {
+		if (tick_check_is_proxy(new)) {
 			clockevents_switch_state(old, CLOCK_EVT_STATE_RESERVED);
 		} else {
 			clockevents_switch_state(old, CLOCK_EVT_STATE_DETACHED);

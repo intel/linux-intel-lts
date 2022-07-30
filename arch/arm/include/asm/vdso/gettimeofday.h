@@ -176,13 +176,13 @@ long clock_ioctl_device(int fd, unsigned int cmd, long arg)
 	register long ret asm ("r0");
 	register long nr asm("r7") = __NR_ioctl;
 
-	asm volatile(
+ 	asm volatile(
 		"	swi #0\n"
 		: "=r" (ret)
 		: "r"(r0), "r"(r1), "r"(r2), "r"(nr)
 		: "memory");
 
-	return ret;
+ 	return ret;
 }
 
 static __always_inline long clock_close_device(int fd)

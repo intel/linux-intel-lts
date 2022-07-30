@@ -324,10 +324,10 @@ extern void lock_unpin_lock(struct lockdep_map *lock, struct pin_cookie);
 
 #define lockdep_recursing(tsk)	((tsk)->lockdep_recursion)
 
-#define lockdep_pin_lock(l)	LOCKDEP_HARD_DEBUG_RET(l, ({ struct pin_cookie cookie; cookie; }), \
+#define lockdep_pin_lock(l)	LOCKDEP_HARD_DEBUG_RET(l, ({ struct pin_cookie cookie; cookie;} ), \
 							lock_pin_lock(LOCKDEP_ALT_DEPMAP(l)))
-#define lockdep_repin_lock(l, c)	LOCKDEP_HARD_DEBUG(l,, lock_repin_lock(LOCKDEP_ALT_DEPMAP(l), (c)))
-#define lockdep_unpin_lock(l, c)	LOCKDEP_HARD_DEBUG(l,, lock_unpin_lock(LOCKDEP_ALT_DEPMAP(l), (c)))
+#define lockdep_repin_lock(l,c)	LOCKDEP_HARD_DEBUG(l,, lock_repin_lock(LOCKDEP_ALT_DEPMAP(l), (c)))
+#define lockdep_unpin_lock(l,c)	LOCKDEP_HARD_DEBUG(l,, lock_unpin_lock(LOCKDEP_ALT_DEPMAP(l), (c)))
 
 #else /* !CONFIG_LOCKDEP */
 

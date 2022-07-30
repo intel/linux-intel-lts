@@ -813,7 +813,7 @@ ret_to_user_naked:
 	kernel_exit 0
 
 #ifdef CONFIG_IRQ_PIPELINE
-fast_ret_from_el0_irq:
+fast_ret_from_el0_irq:	
  	disable_daif
  	gic_prio_kentry_setup tmp=x3
 fast_ret_to_user:

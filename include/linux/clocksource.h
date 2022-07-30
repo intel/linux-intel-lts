@@ -114,7 +114,7 @@ struct clocksource {
 	struct list_head	list;
 	int			rating;
 	enum vdso_clock_mode	vdso_clock_mode;
-	enum clocksource_vdso_type vdso_type;
+  	enum clocksource_vdso_type vdso_type;
 	unsigned long		flags;
 
 	int			(*enable)(struct clocksource *cs);

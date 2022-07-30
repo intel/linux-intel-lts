@@ -92,7 +92,7 @@ u64 clocksource_dual_mmio_readw_up(struct clocksource *c)
 	return (((u64)upper) << ucs->bits_lower) | lower;
 }
 
-static void mmio_base_init(const char *name, int rating, unsigned int bits,
+static void mmio_base_init(const char *name,int rating, unsigned int bits,
 			   u64 (*read)(struct clocksource *),
 			   struct clocksource *cs)
 {

@@ -145,17 +145,17 @@
 #endif
 	.endm
 
-        .macro  disable_irq_if_pipelined
+	.macro  disable_irq_if_pipelined
 #ifdef CONFIG_IRQ_PIPELINE
-        disable_irq_notrace
+	disable_irq_notrace
 #endif
-        .endm
+	.endm
 
-        .macro  enable_irq_if_pipelined
+	.macro  enable_irq_if_pipelined
 #ifdef CONFIG_IRQ_PIPELINE
-        enable_irq_notrace
+	enable_irq_notrace
 #endif
-        .endm
+	.endm
 
 	.macro disable_irq, save=1
 	disable_irq_notrace

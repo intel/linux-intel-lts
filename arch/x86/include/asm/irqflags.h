@@ -61,7 +61,7 @@ static __always_inline void native_irq_enable(void)
 
 static __always_inline void native_irq_sync(void)
 {
-	asm volatile("sti ; nop ; cli" : : : "memory");
+	asm volatile("sti ; nop ; cli": : :"memory");
 }
 
 static __always_inline unsigned long native_irq_save(void)

@@ -111,7 +111,7 @@ TRACE_EVENT(irq_pipeline_entry,
 	TP_ARGS(irq),
 
 	TP_STRUCT__entry(
-		__field(int, irq)
+		__field(	int,	irq		)
 	),
 
 	TP_fast_assign(
@@ -132,7 +132,7 @@ TRACE_EVENT(irq_pipeline_exit,
 	TP_ARGS(irq),
 
 	TP_STRUCT__entry(
-		__field(int, irq)
+		__field(	int,	irq		)
 	),
 
 	TP_fast_assign(

@@ -293,21 +293,15 @@ static inline void inband_clock_was_set(void) { }
 
 static inline
 void install_inband_fd(unsigned int fd, struct file *file,
-		       struct files_struct *files)
-{
-}
+		       struct files_struct *files) { }
 
 static inline
 void uninstall_inband_fd(unsigned int fd, struct file *file,
-			 struct files_struct *files)
-{
-}
+			 struct files_struct *files) { }
 
 static inline
 void replace_inband_fd(unsigned int fd, struct file *file,
-		       struct files_struct *files)
-{
-}
+		       struct files_struct *files) { }
 
 #endif	/* !CONFIG_DOVETAIL */
 
@@ -320,5 +314,9 @@ static __always_inline bool dovetail_debug(void)
 {
 	return IS_ENABLED(CONFIG_DEBUG_DOVETAIL);
 }
+
+#ifndef arch_dovetail_is_syscall
+#define arch_dovetail_is_syscall(__nr)	((__nr) == __NR_prctl)
+#endif
 
 #endif /* _LINUX_DOVETAIL_H */

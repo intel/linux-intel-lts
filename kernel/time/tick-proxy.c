@@ -66,7 +66,7 @@ static int proxy_set_state_periodic(struct clock_event_device *dev)
 
 static int proxy_set_state_oneshot_stopped(struct clock_event_device *dev)
 {
-	struct clock_event_device *real_dev = get_real_tick_device(dev);
+        struct clock_event_device *real_dev = get_real_tick_device(dev);
 	unsigned long flags;
 	int ret;
 
@@ -79,7 +79,7 @@ static int proxy_set_state_oneshot_stopped(struct clock_event_device *dev)
 
 static int proxy_set_state_shutdown(struct clock_event_device *dev)
 {
-	struct clock_event_device *real_dev = get_real_tick_device(dev);
+        struct clock_event_device *real_dev = get_real_tick_device(dev);
 	unsigned long flags;
 	int ret;
 
@@ -92,7 +92,7 @@ static int proxy_set_state_shutdown(struct clock_event_device *dev)
 
 static void proxy_suspend(struct clock_event_device *dev)
 {
-	struct clock_event_device *real_dev = get_real_tick_device(dev);
+        struct clock_event_device *real_dev = get_real_tick_device(dev);
 	unsigned long flags;
 
 	flags = hard_local_irq_save();
@@ -102,7 +102,7 @@ static void proxy_suspend(struct clock_event_device *dev)
 
 static void proxy_resume(struct clock_event_device *dev)
 {
-	struct clock_event_device *real_dev = get_real_tick_device(dev);
+        struct clock_event_device *real_dev = get_real_tick_device(dev);
 	unsigned long flags;
 
 	flags = hard_local_irq_save();
@@ -112,7 +112,7 @@ static void proxy_resume(struct clock_event_device *dev)
 
 static int proxy_tick_resume(struct clock_event_device *dev)
 {
-	struct clock_event_device *real_dev = get_real_tick_device(dev);
+        struct clock_event_device *real_dev = get_real_tick_device(dev);
 	unsigned long flags;
 	int ret;
 
@@ -126,7 +126,7 @@ static int proxy_tick_resume(struct clock_event_device *dev)
 static void proxy_broadcast(const struct cpumask *mask)
 {
 	struct clock_proxy_device *dev = raw_cpu_ptr(&proxy_tick_device);
-	struct clock_event_device *real_dev = dev->real_device;
+        struct clock_event_device *real_dev = dev->real_device;
 	unsigned long flags;
 
 	flags = hard_local_irq_save();
@@ -219,11 +219,11 @@ int tick_setup_proxy(struct clock_proxy_device *dev)
 		return -ENODEV;
 	}
 
-	/*
-	 * The assumption is that neither us nor clockevents_register_proxy()
+ 	/*
+ 	 * The assumption is that neither us nor clockevents_register_proxy()
 	 * can fail afterwards, so this is ok to advertise the new proxy as
 	 * built by setting dev->real_device early.
-	 */
+ 	 */
 	dev->real_device = real_dev;
 	dev->__original_handler = real_dev->event_handler;
 
@@ -285,7 +285,7 @@ static int enable_oob_timer(void *arg) /* hard_irqs_disabled() */
 
 	/*
 	 * irq_switch_oob() grabs the IRQ descriptor lock which is
-	 * mutable, so that is fine to invoke this routine with hard
+	 * hybrid, so that is fine to invoke this routine with hard
 	 * IRQs off.
 	 */
 	irq_switch_oob(real_dev->irq, true);

@@ -562,7 +562,7 @@ static inline void switch_fpu_prepare(struct task_struct *prev, int cpu)
 {
 	struct fpu *old_fpu = &prev->thread.fpu;
 
-	if (static_cpu_has(X86_FEATURE_FPU) && 
+	if (static_cpu_has(X86_FEATURE_FPU) &&
 		!(prev->flags & PF_KTHREAD) &&
 		!oob_fpu_preempted(old_fpu)) {
 		if (!copy_fpregs_to_fpstate(old_fpu))
