@@ -355,7 +355,7 @@ static int ipu_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
 	return -ENOTTY;
 }
 
-static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
+static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct iosys_map *map)
 {
 	struct dma_buf_attachment *attach;
 	struct ipu_dma_buf_attach *ipu_attach;
@@ -378,7 +378,7 @@ static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 	return 0;
 }
 
-static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
+static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
 {
 	struct dma_buf_attachment *attach;
 	struct ipu_dma_buf_attach *ipu_attach;
@@ -479,9 +479,9 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 
 	kbuf->valid = false;
 	if (kbuf->kaddr) {
-		struct dma_buf_map dmap;
+		struct iosys_map dmap;
 
-		dma_buf_map_set_vaddr(&dmap, kbuf->kaddr);
+		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
 		dma_buf_vunmap(kbuf->dbuf, &dmap);
 	}
 	if (kbuf->sgt)
@@ -620,7 +620,7 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 {
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
-	struct dma_buf_map dmap;
+	struct iosys_map dmap;
 	int ret;
 
 	dbuf = dma_buf_get(fd);

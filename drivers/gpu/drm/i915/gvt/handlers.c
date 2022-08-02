@@ -37,9 +37,15 @@
  */
 
 #include "i915_drv.h"
+#include "i915_reg.h"
 #include "gvt.h"
 #include "i915_pvinfo.h"
+#include "intel_mchbar_regs.h"
 #include "display/intel_display_types.h"
+#include "display/intel_dmc_regs.h"
+#include "display/intel_fbc.h"
+#include "display/vlv_dsi_pll_regs.h"
+#include "gt/intel_gt_regs.h"
 
 /* XXX FIXME i915 has changed PP_XXX definition */
 #define PCH_PP_STATUS  _MMIO(0xc7200)
@@ -571,14 +577,19 @@ static u32 bxt_vgpu_get_dp_bitrate(struct intel_vgpu *vgpu, enum port port)
 	}
 
 	clock.m1 = 2;
-	clock.m2 = (vgpu_vreg_t(vgpu, BXT_PORT_PLL(phy, ch, 0)) & PORT_PLL_M2_MASK) << 22;
+	clock.m2 = REG_FIELD_GET(PORT_PLL_M2_INT_MASK,
+				 vgpu_vreg_t(vgpu, BXT_PORT_PLL(phy, ch, 0))) << 22;
 	if (vgpu_vreg_t(vgpu, BXT_PORT_PLL(phy, ch, 3)) & PORT_PLL_M2_FRAC_ENABLE)
-		clock.m2 |= vgpu_vreg_t(vgpu, BXT_PORT_PLL(phy, ch, 2)) & PORT_PLL_M2_FRAC_MASK;
-	clock.n = (vgpu_vreg_t(vgpu, BXT_PORT_PLL(phy, ch, 1)) & PORT_PLL_N_MASK) >> PORT_PLL_N_SHIFT;
-	clock.p1 = (vgpu_vreg_t(vgpu, BXT_PORT_PLL_EBB_0(phy, ch)) & PORT_PLL_P1_MASK) >> PORT_PLL_P1_SHIFT;
-	clock.p2 = (vgpu_vreg_t(vgpu, BXT_PORT_PLL_EBB_0(phy, ch)) & PORT_PLL_P2_MASK) >> PORT_PLL_P2_SHIFT;
+		clock.m2 |= REG_FIELD_GET(PORT_PLL_M2_FRAC_MASK,
+					  vgpu_vreg_t(vgpu, BXT_PORT_PLL(phy, ch, 2)));
+	clock.n = REG_FIELD_GET(PORT_PLL_N_MASK,
+				vgpu_vreg_t(vgpu, BXT_PORT_PLL(phy, ch, 1)));
+	clock.p1 = REG_FIELD_GET(PORT_PLL_P1_MASK,
+				 vgpu_vreg_t(vgpu, BXT_PORT_PLL_EBB_0(phy, ch)));
+	clock.p2 = REG_FIELD_GET(PORT_PLL_P2_MASK,
+				 vgpu_vreg_t(vgpu, BXT_PORT_PLL_EBB_0(phy, ch)));
 	clock.m = clock.m1 * clock.m2;
-	clock.p = clock.p1 * clock.p2;
+	clock.p = clock.p1 * clock.p2 * 5;
 
 	if (clock.n == 0 || clock.p == 0) {
 		gvt_dbg_dpy("vgpu-%d PORT_%c PLL has invalid divider\n", vgpu->id, port_name(port));
@@ -588,7 +599,7 @@ static u32 bxt_vgpu_get_dp_bitrate(struct intel_vgpu *vgpu, enum port port)
 	clock.vco = DIV_ROUND_CLOSEST_ULL(mul_u32_u32(refclk, clock.m), clock.n << 22);
 	clock.dot = DIV_ROUND_CLOSEST(clock.vco, clock.p);
 
-	dp_br = clock.dot / 5;
+	dp_br = clock.dot;
 
 out:
 	return dp_br;
@@ -701,11 +712,11 @@ static int pipeconf_mmio_write(struct intel_vgpu *vgpu, unsigned int offset,
 	data = vgpu_vreg(vgpu, offset);
 
 	if (data & PIPECONF_ENABLE) {
-		vgpu_vreg(vgpu, offset) |= I965_PIPECONF_ACTIVE;
+		vgpu_vreg(vgpu, offset) |= PIPECONF_STATE_ENABLE;
 		vgpu_update_refresh_rate(vgpu);
 		vgpu_update_vblank_emulation(vgpu, true);
 	} else {
-		vgpu_vreg(vgpu, offset) &= ~I965_PIPECONF_ACTIVE;
+		vgpu_vreg(vgpu, offset) &= ~PIPECONF_STATE_ENABLE;
 		vgpu_update_vblank_emulation(vgpu, false);
 	}
 	return 0;
@@ -2647,12 +2658,12 @@ static int init_generic_mmio_info(struct intel_gvt *gvt)
 	MMIO_D(_MMIO(_TRANSA_CHICKEN2), D_ALL);
 	MMIO_D(_MMIO(_TRANSB_CHICKEN2), D_ALL);
 
-	MMIO_D(ILK_DPFC_CB_BASE, D_ALL);
-	MMIO_D(ILK_DPFC_CONTROL, D_ALL);
-	MMIO_D(ILK_DPFC_RECOMP_CTL, D_ALL);
-	MMIO_D(ILK_DPFC_STATUS, D_ALL);
-	MMIO_D(ILK_DPFC_FENCE_YOFF, D_ALL);
-	MMIO_D(ILK_DPFC_CHICKEN, D_ALL);
+	MMIO_D(ILK_DPFC_CB_BASE(INTEL_FBC_A), D_ALL);
+	MMIO_D(ILK_DPFC_CONTROL(INTEL_FBC_A), D_ALL);
+	MMIO_D(ILK_DPFC_RECOMP_CTL(INTEL_FBC_A), D_ALL);
+	MMIO_D(ILK_DPFC_STATUS(INTEL_FBC_A), D_ALL);
+	MMIO_D(ILK_DPFC_FENCE_YOFF(INTEL_FBC_A), D_ALL);
+	MMIO_D(ILK_DPFC_CHICKEN(INTEL_FBC_A), D_ALL);
 	MMIO_D(ILK_FBC_RT_BASE, D_ALL);
 
 	MMIO_D(IPS_CTL, D_ALL);
@@ -2876,9 +2887,9 @@ static int init_generic_mmio_info(struct intel_gvt *gvt)
 
 	MMIO_D(_MMIO(0x3c), D_ALL);
 	MMIO_D(_MMIO(0x860), D_ALL);
-	MMIO_D(ECOSKPD, D_ALL);
+	MMIO_D(ECOSKPD(RENDER_RING_BASE), D_ALL);
 	MMIO_D(_MMIO(0x121d0), D_ALL);
-	MMIO_D(GEN6_BLITTER_ECOSKPD, D_ALL);
+	MMIO_D(ECOSKPD(BLT_RING_BASE), D_ALL);
 	MMIO_D(_MMIO(0x41d0), D_ALL);
 	MMIO_D(GAC_ECO_BITS, D_ALL);
 	MMIO_D(_MMIO(0x6200), D_ALL);
@@ -3436,6 +3447,7 @@ static int init_skl_mmio_info(struct intel_gvt *gvt)
 
 	MMIO_DFH(GAMT_CHKN_BIT_REG, D_KBL | D_CFL, F_CMD_ACCESS, NULL, NULL);
 	MMIO_D(GEN9_CTX_PREEMPT_REG, D_SKL_PLUS & ~D_BXT);
+	MMIO_DFH(_MMIO(0xe4cc), D_BDW_PLUS, F_CMD_ACCESS, NULL, NULL);
 
 	return 0;
 }
@@ -3627,11 +3639,11 @@ static int init_bxt_mmio_info(struct intel_gvt *gvt)
 	return 0;
 }
 
-static struct gvt_mmio_block *find_mmio_block(struct intel_gvt *gvt,
-					      unsigned int offset)
+static const struct gvt_mmio_block *find_mmio_block(struct intel_gvt *gvt,
+						    unsigned int offset)
 {
 	unsigned long device = intel_gvt_get_device_type(gvt);
-	struct gvt_mmio_block *block = gvt->mmio.mmio_block;
+	const struct gvt_mmio_block *block = gvt->mmio.mmio_block;
 	int num = gvt->mmio.num_mmio_block;
 	int i;
 
@@ -3670,7 +3682,7 @@ void intel_gvt_clean_mmio_info(struct intel_gvt *gvt)
  * accessible (should have no F_CMD_ACCESS flag).
  * otherwise, need to update cmd_reg_handler in cmd_parser.c
  */
-static struct gvt_mmio_block mmio_blocks[] = {
+static const struct gvt_mmio_block mmio_blocks[] = {
 	{D_SKL_PLUS, _MMIO(DMC_MMIO_START_RANGE), 0x3000, NULL, NULL},
 	{D_ALL, _MMIO(MCHBAR_MIRROR_BASE_SNB), 0x40000, NULL, NULL},
 	{D_ALL, _MMIO(VGT_PVINFO_PAGE), VGT_PVINFO_SIZE,
@@ -3753,7 +3765,7 @@ int intel_gvt_for_each_tracked_mmio(struct intel_gvt *gvt,
 	int (*handler)(struct intel_gvt *gvt, u32 offset, void *data),
 	void *data)
 {
-	struct gvt_mmio_block *block = gvt->mmio.mmio_block;
+	const struct gvt_mmio_block *block = gvt->mmio.mmio_block;
 	struct intel_gvt_mmio_info *e;
 	int i, j, ret;
 
@@ -3871,7 +3883,7 @@ int intel_vgpu_mmio_reg_rw(struct intel_vgpu *vgpu, unsigned int offset,
 	struct drm_i915_private *i915 = vgpu->gvt->gt->i915;
 	struct intel_gvt *gvt = vgpu->gvt;
 	struct intel_gvt_mmio_info *mmio_info;
-	struct gvt_mmio_block *mmio_block;
+	const struct gvt_mmio_block *mmio_block;
 	gvt_mmio_func func;
 	int ret;
 

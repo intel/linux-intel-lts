@@ -47,15 +47,12 @@ struct nbio_hdp_flush_reg {
 	u32 ref_and_mask_sdma7;
 };
 
-struct amdgpu_nbio_ras_funcs {
+struct amdgpu_nbio_ras {
+	struct amdgpu_ras_block_object ras_block;
 	void (*handle_ras_controller_intr_no_bifring)(struct amdgpu_device *adev);
 	void (*handle_ras_err_event_athub_intr_no_bifring)(struct amdgpu_device *adev);
 	int (*init_ras_controller_interrupt)(struct amdgpu_device *adev);
 	int (*init_ras_err_event_athub_interrupt)(struct amdgpu_device *adev);
-	void (*query_ras_error_count)(struct amdgpu_device *adev,
-				      void *ras_error_status);
-	int (*ras_late_init)(struct amdgpu_device *adev);
-	void (*ras_fini)(struct amdgpu_device *adev);
 };
 
 struct amdgpu_nbio_funcs {
@@ -86,7 +83,7 @@ struct amdgpu_nbio_funcs {
 	void (*update_medium_grain_light_sleep)(struct amdgpu_device *adev,
 						bool enable);
 	void (*get_clockgating_state)(struct amdgpu_device *adev,
-				      u32 *flags);
+				      u64 *flags);
 	void (*ih_control)(struct amdgpu_device *adev);
 	void (*init_registers)(struct amdgpu_device *adev);
 	void (*remap_hdp_registers)(struct amdgpu_device *adev);
@@ -104,9 +101,8 @@ struct amdgpu_nbio {
 	struct amdgpu_irq_src ras_err_event_athub_irq;
 	struct ras_common_if *ras_if;
 	const struct amdgpu_nbio_funcs *funcs;
-	const struct amdgpu_nbio_ras_funcs *ras_funcs;
+	struct amdgpu_nbio_ras  *ras;
 };
 
-int amdgpu_nbio_ras_late_init(struct amdgpu_device *adev);
-void amdgpu_nbio_ras_fini(struct amdgpu_device *adev);
+int amdgpu_nbio_ras_late_init(struct amdgpu_device *adev, struct ras_common_if *ras_block);
 #endif
