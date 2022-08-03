@@ -1,0 +1,23 @@
+# CVE Patches to apply
+
+# CVE-2022-34918
+0001-netfilter-nf_tables-stricter-validation-of-element-d.patch
+
+# CVE-2020-27820
+0002-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
+0003-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
+0004-drm-nouveau-clean-up-all-clients-on-device-removal.patch
+
+# CVE-2022-33743
+0001-xen-netfront-restore-__skb_queue_tail-positioning-in.patch
+
+# CVE-2022-32296
+0006-tcp-add-some-entropy-in-__inet_hash_connect.patch
+0007-tcp-use-different-parts-of-the-port_offset-for-index.patch
+0008-tcp-add-small-random-increments-to-the-source-port.patch
+0009-tcp-dynamically-allocate-the-perturb-table-used-by-s.patch
+0010-tcp-increase-source-port-perturb-table-to-2-16.patch
+0011-tcp-drop-the-hash_32-part-from-the-index-calculation.patch
+
+# CVE-2021-33656
+0012-vt-drop-old-FONT-ioctls.patch
