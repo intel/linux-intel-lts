@@ -1016,6 +1016,21 @@ static void stmmac_validate(struct phylink_config *config,
 		phylink_set(mask, 1000baseT_Half);
 	}
 
+	/* In the case where kernel driver has no access to modify the clock
+	 * rate after it is increased by 2.5 times in the BIOS to support 2.5G
+	 * mode, link speeds other than 2.5Gbps are not supported. Thus, remove
+	 * them from mac_capabilities.
+	 */
+	if (priv->plat->fixed_2G5_clock_rate && max_speed == 2500) {
+		phylink_set(mask, 10baseT_Half);
+		phylink_set(mask, 10baseT_Full);
+		phylink_set(mask, 100baseT_Half);
+		phylink_set(mask, 100baseT_Full);
+		phylink_set(mask, 1000baseT_Half);
+		phylink_set(mask, 1000baseT_Full);
+		phylink_set(mask, 1000baseKX_Full);
+	}
+
 	linkmode_and(supported, supported, mac_supported);
 	linkmode_andnot(supported, supported, mask);
 
