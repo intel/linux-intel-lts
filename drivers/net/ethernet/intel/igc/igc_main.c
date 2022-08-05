@@ -9,8 +9,8 @@
 #include <linux/udp.h>
 #include <linux/ip.h>
 #include <linux/pm_runtime.h>
-#include <net/pkt_sched.h>
 #include <linux/pci.h>
+#include <net/pkt_sched.h>
 #include <linux/bpf_trace.h>
 #include <net/xdp_sock_drv.h>
 #include <linux/btf.h>
@@ -6646,7 +6646,7 @@ static int igc_probe(struct pci_dev *pdev,
 
 	err = pci_enable_ptm(pdev, NULL);
 	if (err < 0)
-		dev_err(&pdev->dev, "PTM not supported\n");
+		dev_info(&pdev->dev, "PCIe PTM not supported by PCIe bus/controller\n");
 
 	pci_set_master(pdev);
 

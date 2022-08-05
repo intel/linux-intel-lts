@@ -825,14 +825,14 @@ static int dp83867_phy_reset(struct phy_device *phydev)
 static void dp83867_link_change_notify(struct phy_device *phydev)
 {
 	/* There is a limitation in DP83867 PHY device where SGMII AN is
-	 * only triggered once after the device booted up. Even after the
+	 * only triggered once after the device is booted up. Even after the
 	 * PHY TPI is down and up again, SGMII AN is not triggered and
 	 * hence no new in-band message from PHY to MAC side SGMII.
 	 * This could cause an issue during power up, when PHY is up prior
 	 * to MAC. At this condition, once MAC side SGMII is up, MAC side
 	 * SGMII wouldn`t receive new in-band message from TI PHY with
 	 * correct link status, speed and duplex info.
-	 * Thus, implemented a SW WA here to retrigger SGMII Auto-Neg
+	 * Thus, implemented a SW solution here to retrigger SGMII Auto-Neg
 	 * whenever there is a link change.
 	 */
 	if (phydev->interface == PHY_INTERFACE_MODE_SGMII) {
