@@ -568,7 +568,8 @@ int amdgpu_ucode_create_bo(struct amdgpu_device *adev)
 
 void amdgpu_ucode_free_bo(struct amdgpu_device *adev)
 {
-	amdgpu_bo_free_kernel(&adev->firmware.fw_buf,
+	if (adev->firmware.load_type != AMDGPU_FW_LOAD_DIRECT)
+		amdgpu_bo_free_kernel(&adev->firmware.fw_buf,
 		&adev->firmware.fw_buf_mc,
 		&adev->firmware.fw_buf_ptr);
 }
