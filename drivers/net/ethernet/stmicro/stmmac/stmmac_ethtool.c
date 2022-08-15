@@ -391,6 +391,23 @@ stmmac_ethtool_set_link_ksettings(struct net_device *dev,
 				  const struct ethtool_link_ksettings *cmd)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
+	struct ethtool_link_ksettings link_ks = {};
+
+	/* Get the current link settings */
+	stmmac_ethtool_get_link_ksettings(dev, &link_ks);
+
+	/* Check if the speed and duplex are supported by phy */
+	if (!phy_lookup_setting(cmd->base.speed, cmd->base.duplex,
+				link_ks.link_modes.supported, true)) {
+		return -EINVAL;
+	}
+
+	/* Check if the advertising request is supported */
+	if (!bitmap_subset(cmd->link_modes.advertising,
+			   link_ks.link_modes.supported,
+			   __ETHTOOL_LINK_MODE_MASK_NBITS)) {
+		return -EINVAL;
+	}
 
 	if (priv->hw->pcs & STMMAC_PCS_RGMII ||
 	    priv->hw->pcs & STMMAC_PCS_SGMII) {
@@ -790,11 +807,26 @@ static int stmmac_ethtool_op_get_eee(struct net_device *dev,
 static int stmmac_ethtool_op_set_eee(struct net_device *dev,
 				     struct ethtool_eee *edata)
 {
+	__ETHTOOL_DECLARE_LINK_MODE_MASK(lm_advertising);
 	struct stmmac_priv *priv = netdev_priv(dev);
+	struct ethtool_link_ksettings link_ks = {};
 	int ret;
 
 	if (!priv->dma_cap.eee)
 		return -EOPNOTSUPP;
+
+	ethtool_convert_legacy_u32_to_link_mode(lm_advertising,
+						edata->advertised);
+
+	/* Get the current phy link settings */
+	stmmac_ethtool_get_link_ksettings(dev, &link_ks);
+
+	/* Check if the advertising request is supported */
+	if (!bitmap_subset(lm_advertising,
+			   link_ks.link_modes.supported,
+			   __ETHTOOL_LINK_MODE_MASK_NBITS)) {
+		return -EINVAL;
+	}
 
 	if (priv->tx_lpi_enabled != edata->tx_lpi_enabled)
 		netdev_warn(priv->dev,
