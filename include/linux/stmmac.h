@@ -247,5 +247,6 @@ struct plat_stmmacenet_data {
 	struct mdio_board_info *intel_bi;
 	struct dwxpcs_platform_data *xpcs_pdata;
 	bool phy_wol_thru_pmc;
+	bool sph_disable;
 };
 #endif

@@ -174,6 +174,7 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	plat->legos = 0; /* Launch Expiry GSN Offset */
 	plat->ftos = 0;  /* Fetch Time Offset */
 	plat->fgos = 0;  /* Fetch GSN Offset */
+	plat->sph_disable = 1;
 
 	plat->vlan_fail_q_en = true;
 
@@ -907,7 +908,7 @@ static int stmmac_pci_probe(struct pci_dev *pdev,
 		return -ENOMEM;
 
 	/* Enable pci device */
-	ret = pci_enable_device(pdev);
+	ret = pcim_enable_device(pdev);
 	if (ret) {
 		dev_err(&pdev->dev, "%s: ERROR: failed to enable device\n",
 			__func__);
@@ -994,9 +995,7 @@ static void stmmac_pci_remove(struct pci_dev *pdev)
 		pcim_iounmap_regions(pdev, BIT(i));
 		break;
 	}
-
 	pci_free_irq_vectors(pdev);
-	pci_disable_device(pdev);
 }
 
 static void stmmac_pci_shutdown(struct pci_dev *pdev)
