@@ -2,13 +2,12 @@
 #ifndef _INTEL_PMT_CLASS_H
 #define _INTEL_PMT_CLASS_H
 
-#include <linux/xarray.h>
-#include <linux/types.h>
 #include <linux/bits.h>
 #include <linux/err.h>
+#include <linux/intel_vsec.h>
 #include <linux/io.h>
+#include <linux/types.h>
 
-#include "../vsec.h"
 #include "telemetry.h"
 
 /* PMT access types */
