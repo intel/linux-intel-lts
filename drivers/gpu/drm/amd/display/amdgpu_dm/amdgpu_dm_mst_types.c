@@ -473,7 +473,7 @@ static int dm_dp_mst_atomic_check(struct drm_connector *connector,
 			return 0;
 		}
 
-	return drm_dp_atomic_release_vcpi_slots(state,
+	return drm_dp_atomic_release_time_slots(state,
 						mst_mgr,
 						mst_port);
 }
@@ -786,7 +786,7 @@ static bool increase_dsc_bpp(struct drm_atomic_state *state,
 
 		if (initial_slack[next_index] > fair_pbn_alloc) {
 			vars[next_index].pbn += fair_pbn_alloc;
-			if (drm_dp_atomic_find_vcpi_slots(state,
+			if (drm_dp_atomic_find_time_slots(state,
 							  params[next_index].port->mgr,
 							  params[next_index].port,
 							  vars[next_index].pbn,
@@ -796,7 +796,7 @@ static bool increase_dsc_bpp(struct drm_atomic_state *state,
 				vars[next_index].bpp_x16 = bpp_x16_from_pbn(params[next_index], vars[next_index].pbn);
 			} else {
 				vars[next_index].pbn -= fair_pbn_alloc;
-				if (drm_dp_atomic_find_vcpi_slots(state,
+				if (drm_dp_atomic_find_time_slots(state,
 								  params[next_index].port->mgr,
 								  params[next_index].port,
 								  vars[next_index].pbn,
@@ -805,7 +805,7 @@ static bool increase_dsc_bpp(struct drm_atomic_state *state,
 			}
 		} else {
 			vars[next_index].pbn += initial_slack[next_index];
-			if (drm_dp_atomic_find_vcpi_slots(state,
+			if (drm_dp_atomic_find_time_slots(state,
 							  params[next_index].port->mgr,
 							  params[next_index].port,
 							  vars[next_index].pbn,
@@ -815,7 +815,7 @@ static bool increase_dsc_bpp(struct drm_atomic_state *state,
 				vars[next_index].bpp_x16 = params[next_index].bw_range.max_target_bpp_x16;
 			} else {
 				vars[next_index].pbn -= initial_slack[next_index];
-				if (drm_dp_atomic_find_vcpi_slots(state,
+				if (drm_dp_atomic_find_time_slots(state,
 								  params[next_index].port->mgr,
 								  params[next_index].port,
 								  vars[next_index].pbn,
@@ -873,7 +873,7 @@ static bool try_disable_dsc(struct drm_atomic_state *state,
 			break;
 
 		vars[next_index].pbn = kbps_to_peak_pbn(params[next_index].bw_range.stream_kbps);
-		if (drm_dp_atomic_find_vcpi_slots(state,
+		if (drm_dp_atomic_find_time_slots(state,
 						  params[next_index].port->mgr,
 						  params[next_index].port,
 						  vars[next_index].pbn,
@@ -885,7 +885,7 @@ static bool try_disable_dsc(struct drm_atomic_state *state,
 			vars[next_index].bpp_x16 = 0;
 		} else {
 			vars[next_index].pbn = kbps_to_peak_pbn(params[next_index].bw_range.max_kbps);
-			if (drm_dp_atomic_find_vcpi_slots(state,
+			if (drm_dp_atomic_find_time_slots(state,
 							  params[next_index].port->mgr,
 							  params[next_index].port,
 							  vars[next_index].pbn,
@@ -972,11 +972,11 @@ static bool compute_mst_dsc_configs_for_link(struct drm_atomic_state *state,
 		vars[i + k].pbn = kbps_to_peak_pbn(params[i].bw_range.stream_kbps);
 		vars[i + k].dsc_enabled = false;
 		vars[i + k].bpp_x16 = 0;
-		if (drm_dp_atomic_find_vcpi_slots(state,
-						 params[i].port->mgr,
-						 params[i].port,
-						 vars[i + k].pbn,
-						 dm_mst_get_pbn_divider(dc_link)) < 0)
+		if (drm_dp_atomic_find_time_slots(state,
+						  params[i].port->mgr,
+						  params[i].port,
+						  vars[i + k].pbn,
+						  dm_mst_get_pbn_divider(dc_link)) < 0)
 			return false;
 	}
 	if (!drm_dp_mst_atomic_check(state) && !debugfs_overwrite) {
@@ -990,7 +990,7 @@ static bool compute_mst_dsc_configs_for_link(struct drm_atomic_state *state,
 			vars[i + k].pbn = kbps_to_peak_pbn(params[i].bw_range.min_kbps);
 			vars[i + k].dsc_enabled = true;
 			vars[i + k].bpp_x16 = params[i].bw_range.min_target_bpp_x16;
-			if (drm_dp_atomic_find_vcpi_slots(state,
+			if (drm_dp_atomic_find_time_slots(state,
 							  params[i].port->mgr,
 							  params[i].port,
 							  vars[i + k].pbn,
@@ -1000,7 +1000,7 @@ static bool compute_mst_dsc_configs_for_link(struct drm_atomic_state *state,
 			vars[i + k].pbn = kbps_to_peak_pbn(params[i].bw_range.stream_kbps);
 			vars[i + k].dsc_enabled = false;
 			vars[i + k].bpp_x16 = 0;
-			if (drm_dp_atomic_find_vcpi_slots(state,
+			if (drm_dp_atomic_find_time_slots(state,
 							  params[i].port->mgr,
 							  params[i].port,
 							  vars[i + k].pbn,
