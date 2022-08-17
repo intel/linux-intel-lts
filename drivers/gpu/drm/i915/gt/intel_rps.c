@@ -1986,6 +1986,9 @@ void intel_rps_init(struct intel_rps *rps)
 {
 	struct drm_i915_private *i915 = rps_to_i915(rps);
 
+	if (IS_SRIOV_VF(i915))
+		return;
+
 	if (rps_uses_slpc(rps))
 		return;
 
@@ -2052,6 +2055,9 @@ void intel_rps_init(struct intel_rps *rps)
 
 void intel_rps_sanitize(struct intel_rps *rps)
 {
+	if (IS_SRIOV_VF(rps_to_i915(rps)))
+		return;
+
 	if (rps_uses_slpc(rps))
 		return;
 

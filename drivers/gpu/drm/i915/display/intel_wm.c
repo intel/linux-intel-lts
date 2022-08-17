@@ -173,8 +173,17 @@ void intel_print_wm_latency(struct drm_i915_private *dev_priv,
 	}
 }
 
+static const struct intel_wm_funcs nop_wm_func = {
+};
+
 void intel_wm_init(struct drm_i915_private *i915)
 {
+	if (IS_SRIOV_VF(i915)) {
+		/* XXX */
+		i915->display.funcs.wm = &nop_wm_func;
+		return;
+	}
+
 	if (DISPLAY_VER(i915) >= 9)
 		skl_wm_init(i915);
 	else

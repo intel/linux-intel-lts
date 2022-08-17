@@ -71,20 +71,21 @@ int intel_huc_fw_load_and_auth_via_gsc_cs(struct intel_huc *huc);
 void intel_huc_register_gsc_notifier(struct intel_huc *huc, const struct bus_type *bus);
 void intel_huc_unregister_gsc_notifier(struct intel_huc *huc, const struct bus_type *bus);
 
-static inline bool intel_huc_is_supported(struct intel_huc *huc)
+static inline bool intel_huc_is_supported(const struct intel_huc *huc)
 {
 	return intel_uc_fw_is_supported(&huc->fw);
 }
 
-static inline bool intel_huc_is_wanted(struct intel_huc *huc)
+static inline bool intel_huc_is_wanted(const struct intel_huc *huc)
 {
 	return intel_uc_fw_is_enabled(&huc->fw);
 }
 
-static inline bool intel_huc_is_used(struct intel_huc *huc)
+static inline bool intel_huc_is_used(const struct intel_huc *huc)
 {
 	GEM_BUG_ON(__intel_uc_fw_status(&huc->fw) == INTEL_UC_FIRMWARE_SELECTED);
-	return intel_uc_fw_is_available(&huc->fw);
+	return intel_uc_fw_is_available(&huc->fw) ||
+	       intel_uc_fw_is_preloaded(&huc->fw);
 }
 
 static inline bool intel_huc_is_loaded_by_gsc(const struct intel_huc *huc)

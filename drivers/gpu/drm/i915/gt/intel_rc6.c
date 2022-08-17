@@ -505,6 +505,9 @@ static bool rc6_supported(struct intel_rc6 *rc6)
 	if (!HAS_RC6(i915))
 		return false;
 
+	if (IS_SRIOV_VF(i915))
+		return false;
+
 	if (intel_vgpu_active(i915))
 		return false;
 

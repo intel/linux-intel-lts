@@ -12,16 +12,39 @@
 #include "gt/intel_engine_types.h"
 
 #include "abi/guc_actions_abi.h"
+#include "abi/guc_actions_pf_abi.h"
 #include "abi/guc_actions_slpc_abi.h"
+#include "abi/guc_actions_vf_abi.h"
 #include "abi/guc_errors_abi.h"
 #include "abi/guc_communication_mmio_abi.h"
 #include "abi/guc_communication_ctb_abi.h"
 #include "abi/guc_klvs_abi.h"
 #include "abi/guc_messages_abi.h"
 
+static inline const char *hxg_type_to_string(u32 type)
+{
+	switch (type) {
+	case GUC_HXG_TYPE_REQUEST:
+		return "request";
+	case GUC_HXG_TYPE_EVENT:
+		return "event";
+	case GUC_HXG_TYPE_NO_RESPONSE_BUSY:
+		return "busy";
+	case GUC_HXG_TYPE_NO_RESPONSE_RETRY:
+		return "retry";
+	case GUC_HXG_TYPE_RESPONSE_FAILURE:
+		return "failure";
+	case GUC_HXG_TYPE_RESPONSE_SUCCESS:
+		return "response";
+	default:
+		return "<invalid>";
+	}
+}
+
 /* Payload length only i.e. don't include G2H header length */
 #define G2H_LEN_DW_SCHED_CONTEXT_MODE_SET	2
 #define G2H_LEN_DW_DEREGISTER_CONTEXT		1
+#define G2H_LEN_DW_INVALIDATE_TLB		1
 
 #define GUC_CONTEXT_DISABLE		0
 #define GUC_CONTEXT_ENABLE		1
@@ -100,6 +123,7 @@
 #define   GUC_WA_HOLD_CCS_SWITCHOUT	BIT(17)
 #define   GUC_WA_POLLCS			BIT(18)
 #define   GUC_WA_RCS_REGS_IN_CCS_REGS_LIST	BIT(21)
+#define   GUC_WA_DISABLE_GSC_RESET_IN_VF	BIT(23)
 
 #define GUC_CTL_FEATURE			2
 #define   GUC_CTL_ENABLE_SLPC		BIT(2)

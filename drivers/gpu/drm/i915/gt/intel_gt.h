@@ -10,6 +10,7 @@
 #include "intel_engine_types.h"
 #include "intel_gt_types.h"
 #include "intel_reset.h"
+#include "i915_irq.h"
 
 struct drm_i915_private;
 struct drm_printer;
@@ -159,6 +160,14 @@ static inline bool intel_gt_is_wedged(const struct intel_gt *gt)
 		   !test_bit(I915_WEDGED, &gt->reset.flags));
 
 	return unlikely(test_bit(I915_WEDGED, &gt->reset.flags));
+}
+
+static inline bool intel_gt_is_enabled(const struct intel_gt *gt)
+{
+	/* Check if GT is wedged or suspended */
+	if (intel_gt_is_wedged(gt) || !intel_irqs_enabled(gt->i915))
+		return false;
+	return true;
 }
 
 int intel_gt_probe_all(struct drm_i915_private *i915);
