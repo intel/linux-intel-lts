@@ -8,7 +8,7 @@
 #include <linux/err.h>
 #include <linux/kernel.h>
 
-#include <linux/dma-map-ops.h>
+#include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/notifier.h>
@@ -221,7 +221,7 @@ static u64 trusty_virtio_get_features(struct virtio_device *vdev)
 	struct trusty_vdev *tvdev = vdev_to_tvdev(vdev);
 
 	return tvdev->vdev_descr->dfeatures |
-		(1ULL << VIRTIO_F_ACCESS_PLATFORM);
+		(1ULL << VIRTIO_F_IOMMU_PLATFORM);
 }
 
 static int trusty_virtio_finalize_features(struct virtio_device *vdev)
@@ -233,7 +233,7 @@ static int trusty_virtio_finalize_features(struct virtio_device *vdev)
 	 * We set VIRTIO_F_ACCESS_PLATFORM to enable the dma mapping hooks.
 	 * The other side does not need to know.
 	 */
-	features &= ~(1ULL << VIRTIO_F_ACCESS_PLATFORM);
+	features &= ~(1ULL << VIRTIO_F_IOMMU_PLATFORM);
 
 	/* Make sure we don't have any features > 32 bits! */
 	if (WARN_ON((u32)vdev->features != features))

@@ -425,8 +425,6 @@ int trusty_transfer_memory(struct device *dev, u64 *id,
 		}
 		count -= lcount;
 		if (cons_mrd_offset) {
-			u32 smc = lend ? SMC_FC_FFA_MEM_LEND :
-					 SMC_FC_FFA_MEM_SHARE;
 			/* First fragment */
 			smc_ret = trusty_smc8_wrapper(SMC_FC_FFA_MEM_SHARE, total_len,
 					      fragment_len, 0, 0, 0, 0, 0);
@@ -592,6 +590,7 @@ static int trusty_remove_child(struct device *dev, void *data)
 	return 0;
 }
 
+#if 0
 static ssize_t trusty_version_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
@@ -607,6 +606,7 @@ static struct attribute *trusty_attrs[] = {
 	NULL,
 };
 ATTRIBUTE_GROUPS(trusty);
+#endif
 
 const char *trusty_version_str_get(struct device *dev)
 {
@@ -1052,8 +1052,8 @@ static struct platform_driver trusty_driver = {
 	.remove = trusty_remove,
 	.driver	= {
 		.name = "trusty",
+		.owner = THIS_MODULE,
 		.of_match_table = trusty_of_match,
-		.dev_groups = trusty_groups,
 	},
 };
 
