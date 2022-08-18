@@ -61,6 +61,38 @@ static void virtio_gpu_resource_id_put(struct virtio_gpu_device *vgdev, uint32_t
 	}
 }
 
+static void virtio_gpu_object_save_restore_list(struct virtio_gpu_device *vgdev,
+						struct virtio_gpu_object *bo,
+						struct virtio_gpu_object_params *params)
+{
+	struct virtio_gpu_object_restore *new;
+
+	new = kvmalloc(sizeof(*new), GFP_KERNEL);
+	if (!new) {
+		DRM_ERROR("Fail to allocate virtio_gpu_object_restore");
+		return;
+	}
+
+	new->bo = bo;
+	memcpy(&new->params, params, sizeof(*params));
+
+	list_add_tail(&new->node, &vgdev->obj_rec);
+}
+
+static void virtio_gpu_object_del_restore_list(struct virtio_gpu_device *vgdev,
+					       struct virtio_gpu_object *bo)
+{
+	struct virtio_gpu_object_restore *curr, *tmp;
+
+	list_for_each_entry_safe(curr, tmp, &vgdev->obj_rec, node) {
+		if (bo == curr->bo) {
+			list_del(&curr->node);
+			kvfree(curr);
+			break;
+		}
+	}
+}
+
 void virtio_gpu_cleanup_object(struct virtio_gpu_object *bo)
 {
 	struct virtio_gpu_device *vgdev = bo->base.base.dev->dev_private;
@@ -96,6 +128,7 @@ void virtio_gpu_cleanup_object(struct virtio_gpu_object *bo)
 		drm_gem_object_release(&vram->base.base.base);
 		kfree(vram);
 	}
+	virtio_gpu_object_del_restore_list(vgdev, bo);
 }
 
 static void virtio_gpu_free_object(struct drm_gem_object *obj)
@@ -268,8 +301,11 @@ int virtio_gpu_object_create(struct virtio_gpu_device *vgdev,
 					       objs, fence);
 		virtio_gpu_object_attach(vgdev, bo, ents, nents);
 	}
+	/* add submitted object to restore list */
+	virtio_gpu_object_save_restore_list(vgdev, bo, params);
 
 	*bo_ptr = bo;
+
 	return 0;
 
 err_put_objs:
@@ -278,5 +314,34 @@ err_put_id:
 	virtio_gpu_resource_id_put(vgdev, bo->hw_res_handle);
 err_free_gem:
 	drm_gem_shmem_free(shmem_obj);
+	return ret;
+}
+
+int virtio_gpu_object_restore_all(struct virtio_gpu_device *vgdev)
+{
+	struct virtio_gpu_object_restore *curr, *tmp;
+	struct virtio_gpu_mem_entry *ents;
+	unsigned int nents;
+	int ret;
+
+	list_for_each_entry_safe(curr, tmp, &vgdev->obj_rec, node) {
+		ret = virtio_gpu_object_shmem_init(vgdev, curr->bo, &ents, &nents);
+		if (ret)
+			break;
+
+		if (curr->params.blob) {
+			virtio_gpu_cmd_resource_create_blob(vgdev, curr->bo, &curr->params,
+							    ents, nents);
+		} else if (curr->params.virgl) {
+			virtio_gpu_cmd_resource_create_3d(vgdev, curr->bo, &curr->params,
+							  NULL, NULL);
+			virtio_gpu_object_attach(vgdev, curr->bo, ents, nents);
+		} else {
+			virtio_gpu_cmd_create_resource(vgdev, curr->bo, &curr->params,
+						       NULL, NULL);
+			virtio_gpu_object_attach(vgdev, curr->bo, ents, nents);
+		}
+	}
+
 	return ret;
 }
