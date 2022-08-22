@@ -71,6 +71,11 @@ properties:
   "#sound-dai-cells":
     const: 0
 
+  vdda-0p9-supply:
+    deprecated: true
+  vdda-1p2-supply:
+    deprecated: true
+
   ports:
     $ref: /schemas/graph.yaml#/properties/ports
     properties:
