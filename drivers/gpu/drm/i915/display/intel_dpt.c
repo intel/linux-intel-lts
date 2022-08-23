@@ -79,9 +79,6 @@ static void dpt_bind_vma(struct i915_address_space *vm,
 {
 	u32 pte_flags;
 
-	if (vma_res->bound_flags)
-		return;
-
 	/* Applicable to VLV (gen8+ do not support RO in the GGTT) */
 	pte_flags = 0;
 	if (vm->has_read_only && vma_res->bi.readonly)
