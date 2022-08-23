@@ -365,7 +365,7 @@ static int skl_int3472_discrete_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	if (cldb.control_logic_type != 1) {
+	if (cldb.control_logic_type != 1 && cldb.control_logic_type != 5) {
 		dev_err(&pdev->dev, "Unsupported control logic type %u\n",
 			cldb.control_logic_type);
 		return -EINVAL;
