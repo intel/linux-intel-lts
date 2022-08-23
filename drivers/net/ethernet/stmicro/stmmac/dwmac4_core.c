@@ -67,7 +67,8 @@ static void dwmac4_core_init(struct mac_device_info *hw,
 
 static void dwmac4_update_caps(struct stmmac_priv *priv)
 {
-	if (priv->plat->tx_queues_to_use > 1)
+	if (priv->plat->tx_queues_to_use > 1 &&
+	    !priv->plat->fixed_2G5_clock_rate)
 		priv->hw->link.caps &= ~(MAC_10HD | MAC_100HD | MAC_1000HD);
 	else
 		priv->hw->link.caps |= (MAC_10HD | MAC_100HD | MAC_1000HD);
