@@ -45,9 +45,6 @@
 # CVE-2021-4148
 0001-mm-khugepaged-skip-huge-page-collapse-for-special-fi.patch
 
-# CVE-2022-28893
-0001-SUNRPC-Ensure-we-flush-any-closed-sockets-before-xs_.patch
-
 # CVE-2022-1280
 0001-drm-add-a-locked-version-of-drm_is_current_master.patch
 0002-Subject-PATCH-drm-protect-drm_master-pointers-in-drm.patch
