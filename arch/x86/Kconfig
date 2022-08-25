@@ -1615,8 +1615,8 @@ config X86_64_ACPI_NUMA
 config NODES_SHIFT
 	int "Maximum NUMA Nodes (as a power of 2)" if !MAXSMP
 	range 1 10
-	default "10" if MAXSMP
-	default "6" if X86_64
+	default "4" if MAXSMP
+	default "4" if X86_64
 	default "3"
 	depends on NUMA
 	help
