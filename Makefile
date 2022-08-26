@@ -156,6 +156,16 @@ endif
 
 export KBUILD_EXTRA_WARN
 
+# Disallow use of trace_printk. Can be used by production kernels.
+ifeq ("$(origin DISALLOW_TRACE_PRINTK)", "command line")
+  KBUILD_DISALLOW_TRACE_PRINTK = $(DISALLOW_TRACE_PRINTK)
+endif
+ifndef KBUILD_DISALLOW_TRACE_PRINTK
+  KBUILD_DISALLOW_TRACE_PRINTK = 0
+endif
+
+export KBUILD_DISALLOW_TRACE_PRINTK
+
 # Kbuild will save output files in the current working directory.
 # This does not need to match to the root of the kernel source tree.
 #
@@ -883,6 +893,10 @@ KBUILD_CFLAGS	+= $(call cc-option, -fno-stack-clash-protection)
 # Clear used registers at func exit (to reduce data lifetime and ROP gadgets).
 ifdef CONFIG_ZERO_CALL_USED_REGS
 KBUILD_CFLAGS	+= -fzero-call-used-regs=used-gpr
+endif
+
+ifeq ($(KBUILD_DISALLOW_TRACE_PRINTK),1)
+KBUILD_CFLAGS += -DDISALLOW_TRACE_PRINTK
 endif
 
 ifdef CONFIG_FUNCTION_TRACER
