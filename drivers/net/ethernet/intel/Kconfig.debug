@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config IGC_TSN_TRACE
+	bool "Enable TSN trace printk events"
+	depends on IGC
+	select TRACING
+	default n
+	help
+	  Choose this option to turn on low level request tracing events.
+	  This provides the ability to precisely monitor TSN scheduling
+	  mechanism and also analyze the L2-packet timeline.
+
+	  Recommended for driver developers only.
+
+	  If in doubt, say "N".
+
