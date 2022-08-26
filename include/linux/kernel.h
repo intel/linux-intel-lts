@@ -238,6 +238,12 @@ do {									\
 		____trace_printk_check_format(fmt, ##args);		\
 } while (0)
 
+#ifdef DISALLOW_TRACE_PRINTK
+#define ALLOW_TRACE_PRINTK 0
+#else
+#define ALLOW_TRACE_PRINTK 1
+#endif
+
 /**
  * trace_printk - printf formatting in the ftrace buffer
  * @fmt: the printf format for printing
@@ -271,10 +277,13 @@ do {									\
 #define trace_printk(fmt, ...)				\
 do {							\
 	char _______STR[] = __stringify((__VA_ARGS__));	\
+							\
+	static_assert(ALLOW_TRACE_PRINTK, "trace_printk called.");	\
+							\
 	if (sizeof(_______STR) > 3)			\
 		do_trace_printk(fmt, ##__VA_ARGS__);	\
 	else						\
-		trace_puts(fmt);			\
+		do_trace_puts(fmt);			\
 } while (0)
 
 #define do_trace_printk(fmt, args...)					\
@@ -323,6 +332,11 @@ int __trace_printk(unsigned long ip, const char *fmt, ...);
  */
 
 #define trace_puts(str) ({						\
+	static_assert(ALLOW_TRACE_PRINTK, "trace_puts called.");	\
+	do_trace_puts(str);						\
+})
+
+#define do_trace_puts(str) ({						\
 	static const char *trace_printk_fmt __used			\
 		__section("__trace_printk_fmt") =			\
 		__builtin_constant_p(str) ? str : NULL;			\
@@ -344,6 +358,7 @@ extern void trace_dump_stack(int skip);
  */
 #define ftrace_vprintk(fmt, vargs)					\
 do {									\
+	static_assert(ALLOW_TRACE_PRINTK, "ftrace_vprintk called.");	\
 	if (__builtin_constant_p(fmt)) {				\
 		static const char *trace_printk_fmt __used		\
 		  __section("__trace_printk_fmt") =			\
