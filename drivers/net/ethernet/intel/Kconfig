@@ -386,4 +386,10 @@ config IGC_LEDS
 
 source "drivers/net/ethernet/intel/idpf/Kconfig"
 
+menu "intel/Ethernet Debugging"
+depends on NET_VENDOR_INTEL
+depends on EXPERT
+source "drivers/net/ethernet/intel/Kconfig.debug"
+endmenu
+
 endif # NET_VENDOR_INTEL
