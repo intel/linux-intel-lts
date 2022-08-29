@@ -5176,7 +5176,7 @@ intel_edp_add_properties(struct intel_dp *intel_dp)
 		return;
 
 	drm_connector_set_panel_orientation_with_quirk(&connector->base,
-						       i915->vbt.orientation,
+						       i915->display.vbt.orientation,
 						       fixed_mode->hdisplay,
 						       fixed_mode->vdisplay);
 }
