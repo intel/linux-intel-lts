@@ -1142,6 +1142,8 @@ static int mv3110_set_wol(struct phy_device *phydev,
 
 		/* Clear the interrupt status register */
 		ret = phy_read_mmd(phydev, MDIO_MMD_PCS, MV_PCS_INTR_STS);
+		if (ret < 0)
+			return ret;
 	} else {
 		/* Disable the link status changed interrupt */
 		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_PCS,
