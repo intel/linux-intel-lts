@@ -75,3 +75,9 @@
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
+# CVE-2022-1679
+0001-ath9k-fix-use-after-free-in-ath9k_hif_usb_rx_cb.patch
+
+# CVE-2021-4159
+0001-bpf-Verifer-adjust_scalar_min_max_vals-to-always-cal.patch
+
