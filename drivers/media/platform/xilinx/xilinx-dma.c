@@ -189,7 +189,7 @@ static int xvip_pipeline_validate(struct xvip_pipeline *pipe,
 		return ret;
 	}
 
-	media_graph_walk_start(&graph, &entity->pads[0]);
+	media_graph_walk_start(&graph, entity);
 
 	while ((entity = media_graph_walk_next(&graph))) {
 		struct xvip_dma *dma;

@@ -217,7 +217,7 @@ iss_video_far_end(struct iss_video *video)
 		return NULL;
 	}
 
-	media_graph_walk_start(&graph, &entity->pads[0]);
+	media_graph_walk_start(&graph, entity);
 
 	while ((entity = media_graph_walk_next(&graph))) {
 		if (entity == &video->video.entity)
@@ -892,7 +892,7 @@ iss_video_streamon(struct file *file, void *fh, enum v4l2_buf_type type)
 		goto err_media_pipeline_start;
 
 	mutex_lock(&mdev->graph_mutex);
-	media_graph_walk_start(&graph, &entity->pads[0]);
+	media_graph_walk_start(&graph, entity);
 	while ((entity = media_graph_walk_next(&graph)))
 		media_entity_enum_set(&pipe->ent_enum, entity);
 	mutex_unlock(&mdev->graph_mutex);
