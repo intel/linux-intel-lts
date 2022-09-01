@@ -912,6 +912,10 @@ CVEs fixed in 4.19.235:
   CVE-2021-4149: 73d55fa1b9310573f623195a4f7ab3170bbaf248 btrfs: unlock newly allocated extent buffer after error
   CVE-2022-1199: 5ab8de9377edde3eaf1de9872e2f01d43157cd6c ax25: Fix NULL pointer dereference in ax25_kill_by_device
 
+CVEs fixed in 4.19.236:
+  CVE-2022-20158: a33dd1e6693f80d805155b3f69c18c2f642915da net/packet: fix slab-out-of-bounds access in packet_recvmsg()
+  CVE-2022-20368: a33dd1e6693f80d805155b3f69c18c2f642915da net/packet: fix slab-out-of-bounds access in packet_recvmsg()
+
 CVEs fixed in 4.19.237:
   CVE-2022-1016: 88791b79a1eb2ba94e95d039243e28433583a67b netfilter: nf_tables: initialize registers in nft_do_chain()
   CVE-2022-26490: 0043b74987acb44f1ade537aad901695511cfebe nfc: st21nfca: Fix potential buffer overflows in EVT_TRANSACTION
@@ -930,6 +934,7 @@ CVEs fixed in 4.19.238:
 
 CVEs fixed in 4.19.240:
   CVE-2022-1204: de55a1338e6a48ff1e41ea8db1432496fbe2a62b ax25: Fix refcount leaks caused by ax25_cb_del()
+  CVE-2022-2639: bbbf059337f9a74285c1cf088ff85ee92d149e64 openvswitch: fix OOB access in reserve_sfa_size()
   CVE-2022-28388: 8eb78da898079c0d7250c32ebf0c35fb81737abe can: usb_8dev: usb_8dev_start_xmit(): fix double dev_kfree_skb() in error path
 
 CVEs fixed in 4.19.241:
@@ -953,6 +958,7 @@ CVEs fixed in 4.19.245:
 CVEs fixed in 4.19.246:
   CVE-2022-0494: 18243d8479fd77952bdb6340024169d30b173a40 block-map: add __GFP_ZERO flag for alloc_page in function bio_copy_kern
   CVE-2022-1012: 695309c5c71526d32f5539f008bbf20ed2218528 secure_seq: use the 64 bits of the siphash for port offset calculation
+  CVE-2022-2503: 6bff6107d1364c95109609c3fd680e6c8d7fa503 dm verity: set DM_TARGET_IMMUTABLE feature flag
 
 CVEs fixed in 4.19.247:
   CVE-2022-1184: 78398c2b2cc14f9a9c8592cf6d334c5a479ed611 ext4: verify dir block before splitting it
@@ -983,8 +989,19 @@ CVEs fixed in 4.19.251:
 CVEs fixed in 4.19.252:
   CVE-2021-33655: eae522ed28fe1c00375a8a0081a97dce7996e4d8 fbcon: Disallow setting font bigger than screen size
 
+CVEs fixed in 4.19.253:
+  CVE-2022-36123: 36e2f161fb01795722f2ff1a24d95f08100333dd x86: Clear .brk area at early boot
+
+CVEs fixed in 4.19.254:
+  CVE-2022-1462: eb059bf8c237fe41fbaed4a6cccacce687b83222 tty: use new tty_insert_flip_string_and_push_buffer() in pty_write()
+  CVE-2022-36879: fdb4fba1ba8512fa579a9d091dcb6c410f82f96a xfrm: xfrm_policy: fix a possible double xfrm_pols_put() in xfrm_bundle_lookup()
+
+CVEs fixed in 4.19.255:
+  CVE-2022-26373: b6c5011934a15762cd694e36fe74f2f2f93eac9b x86/speculation: Add RSB VM Exit protections
+  CVE-2022-36946: f295d365b30626f82423a923695274024016380e netfilter: nf_queue: do not allow packet truncation below transport header offset
+
  
-CVEs Fixed in this 4.19.252 LTS 4.19 release 
+CVEs Fixed in this 4.19.255 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -1073,5 +1090,10 @@ CVEs Fixed in this 4.19.252 LTS 4.19 release
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
+# CVE-2022-1679
+0001-ath9k-fix-use-after-free-in-ath9k_hif_usb_rx_cb.patch
+
+# CVE-2021-4159
+0001-bpf-Verifer-adjust_scalar_min_max_vals-to-always-cal.patch
  
 ================
