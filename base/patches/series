@@ -90,3 +90,9 @@
 
 # CVE-2021-4159
 0001-bpf-Verifer-adjust_scalar_min_max_vals-to-always-cal.patch
+
+# CVE-2022-2153
+0001-KVM-x86-Avoid-theoretical-NULL-pointer-dereference-i.patch
+0002-KVM-x86-Check-lapic_in_kernel-before-attempting-to-s.patch
+0003-KVM-Add-infrastructure-and-macro-to-mark-VM-as-bugge.patch
+
