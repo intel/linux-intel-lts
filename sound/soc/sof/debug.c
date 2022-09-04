@@ -14,6 +14,7 @@
 #include <linux/debugfs.h>
 #include <linux/io.h>
 #include <linux/pm_runtime.h>
+#include <linux/string_helpers.h>
 #include <sound/sof/ext_manifest.h>
 #include <sound/sof/debug.h>
 #include "sof-priv.h"
@@ -21,80 +22,6 @@
 
 #if IS_ENABLED(CONFIG_SND_SOC_SOF_DEBUG_PROBES)
 #include "probe.h"
-
-/**
- * strsplit_u32 - Split string into sequence of u32 tokens
- * @buf:	String to split into tokens.
- * @delim:	String containing delimiter characters.
- * @tkns:	Returned u32 sequence pointer.
- * @num_tkns:	Returned number of tokens obtained.
- */
-static int
-strsplit_u32(char **buf, const char *delim, u32 **tkns, size_t *num_tkns)
-{
-	char *s;
-	u32 *data, *tmp;
-	size_t count = 0;
-	size_t cap = 32;
-	int ret = 0;
-
-	*tkns = NULL;
-	*num_tkns = 0;
-	data = kcalloc(cap, sizeof(*data), GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	while ((s = strsep(buf, delim)) != NULL) {
-		ret = kstrtouint(s, 0, data + count);
-		if (ret)
-			goto exit;
-		if (++count >= cap) {
-			cap *= 2;
-			tmp = krealloc(data, cap * sizeof(*data), GFP_KERNEL);
-			if (!tmp) {
-				ret = -ENOMEM;
-				goto exit;
-			}
-			data = tmp;
-		}
-	}
-
-	if (!count)
-		goto exit;
-	*tkns = kmemdup(data, count * sizeof(*data), GFP_KERNEL);
-	if (*tkns == NULL) {
-		ret = -ENOMEM;
-		goto exit;
-	}
-	*num_tkns = count;
-
-exit:
-	kfree(data);
-	return ret;
-}
-
-static int tokenize_input(const char __user *from, size_t count,
-		loff_t *ppos, u32 **tkns, size_t *num_tkns)
-{
-	char *buf;
-	int ret;
-
-	buf = kmalloc(count + 1, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
-	ret = simple_write_to_buffer(buf, count, ppos, from, count);
-	if (ret != count) {
-		ret = ret >= 0 ? -EIO : ret;
-		goto exit;
-	}
-
-	buf[count] = '\0';
-	ret = strsplit_u32((char **)&buf, ",", tkns, num_tkns);
-exit:
-	kfree(buf);
-	return ret;
-}
 
 static ssize_t probe_points_read(struct file *file,
 		char __user *to, size_t count, loff_t *ppos)
@@ -142,8 +69,8 @@ static ssize_t probe_points_write(struct file *file,
 	struct snd_sof_dfsentry *dfse = file->private_data;
 	struct snd_sof_dev *sdev = dfse->sdev;
 	struct sof_probe_point_desc *desc;
-	size_t num_tkns, bytes;
-	u32 *tkns;
+	u32 num_elems, *array;
+	size_t bytes;
 	int ret;
 
 	if (sdev->extractor_stream_tag == SOF_PROBE_INVALID_NODE_ID) {
@@ -151,22 +78,24 @@ static ssize_t probe_points_write(struct file *file,
 		return -ENOENT;
 	}
 
-	ret = tokenize_input(from, count, ppos, &tkns, &num_tkns);
+	ret = parse_int_array_user(from, count, (int **)&array);
 	if (ret < 0)
 		return ret;
-	bytes = sizeof(*tkns) * num_tkns;
-	if (!num_tkns || (bytes % sizeof(*desc))) {
+
+	num_elems = *array;
+	bytes = sizeof(*array) * num_elems;
+	if (bytes % sizeof(*desc)) {
 		ret = -EINVAL;
 		goto exit;
 	}
 
-	desc = (struct sof_probe_point_desc *)tkns;
+	desc = (struct sof_probe_point_desc *)&array[1];
 	ret = sof_ipc_probe_points_add(sdev,
 			desc, bytes / sizeof(*desc));
 	if (!ret)
 		ret = count;
 exit:
-	kfree(tkns);
+	kfree(array);
 	return ret;
 }
 
@@ -182,8 +111,7 @@ static ssize_t probe_points_remove_write(struct file *file,
 {
 	struct snd_sof_dfsentry *dfse = file->private_data;
 	struct snd_sof_dev *sdev = dfse->sdev;
-	size_t num_tkns;
-	u32 *tkns;
+	u32 *array;
 	int ret;
 
 	if (sdev->extractor_stream_tag == SOF_PROBE_INVALID_NODE_ID) {
@@ -191,19 +119,15 @@ static ssize_t probe_points_remove_write(struct file *file,
 		return -ENOENT;
 	}
 
-	ret = tokenize_input(from, count, ppos, &tkns, &num_tkns);
+	ret = parse_int_array_user(from, count, (int **)&array);
 	if (ret < 0)
 		return ret;
-	if (!num_tkns) {
-		ret = -EINVAL;
-		goto exit;
-	}
 
-	ret = sof_ipc_probe_points_remove(sdev, tkns, num_tkns);
+	ret = sof_ipc_probe_points_remove(sdev, &array[1], array[0]);
 	if (!ret)
 		ret = count;
-exit:
-	kfree(tkns);
+
+	kfree(array);
 	return ret;
 }
 
