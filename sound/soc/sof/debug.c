@@ -14,6 +14,7 @@
 #include <linux/debugfs.h>
 #include <linux/io.h>
 #include <linux/pm_runtime.h>
+#include <linux/string_helpers.h>
 #include <sound/sof/ext_manifest.h>
 #include <sound/sof/debug.h>
 #include "sof-priv.h"
