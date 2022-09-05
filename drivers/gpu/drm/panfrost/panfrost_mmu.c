@@ -491,7 +491,7 @@ err_map:
 err_pages:
 	drm_gem_shmem_put_pages(&bo->base);
 err_bo:
-	panfrost_gem_mapping_put(bomapping);
+	drm_gem_object_put(&bo->base.base);
 	return ret;
 }
 
