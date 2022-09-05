@@ -203,7 +203,8 @@ static int clockevents_increase_min_delta(struct clock_event_device *dev)
 {
 	/* Nothing to do if we already reached the limit */
 	if (dev->min_delta_ns >= MIN_DELTA_LIMIT) {
-		pr_warn("CE: Reprogramming failure. Giving up\n");
+		printk_deferred(KERN_WARNING
+				"CE: Reprogramming failure. Giving up\n");
 		dev->next_event = KTIME_MAX;
 		return -ETIME;
 	}
@@ -216,8 +217,10 @@ static int clockevents_increase_min_delta(struct clock_event_device *dev)
 	if (dev->min_delta_ns > MIN_DELTA_LIMIT)
 		dev->min_delta_ns = MIN_DELTA_LIMIT;
 
-	pr_warn("CE: %s increased min_delta_ns to %llu nsec\n",
-		dev->name ? dev->name : "?", (unsigned long long) dev->min_delta_ns);
+	printk_deferred(KERN_WARNING
+			"CE: %s increased min_delta_ns to %llu nsec\n",
+			dev->name ? dev->name : "?",
+			(unsigned long long) dev->min_delta_ns);
 	return 0;
 }
 
