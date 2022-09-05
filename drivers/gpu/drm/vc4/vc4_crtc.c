@@ -346,8 +346,7 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 				 PV_HORZB_HACTIVE));
 
 	CRTC_WRITE(PV_VERTA,
-		   VC4_SET_FIELD(mode->crtc_vtotal - mode->crtc_vsync_end +
-				 interlace,
+		   VC4_SET_FIELD(mode->crtc_vtotal - mode->crtc_vsync_end,
 				 PV_VERTA_VBP) |
 		   VC4_SET_FIELD(mode->crtc_vsync_end - mode->crtc_vsync_start,
 				 PV_VERTA_VSYNC));
@@ -359,7 +358,7 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 	if (interlace) {
 		CRTC_WRITE(PV_VERTA_EVEN,
 			   VC4_SET_FIELD(mode->crtc_vtotal -
-					 mode->crtc_vsync_end,
+					 mode->crtc_vsync_end - 1,
 					 PV_VERTA_VBP) |
 			   VC4_SET_FIELD(mode->crtc_vsync_end -
 					 mode->crtc_vsync_start,
@@ -379,7 +378,7 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 			   PV_VCONTROL_CONTINUOUS |
 			   (is_dsi ? PV_VCONTROL_DSI : 0) |
 			   PV_VCONTROL_INTERLACE |
-			   VC4_SET_FIELD(mode->htotal * pixel_rep / (2 * ppc),
+			   VC4_SET_FIELD(mode->htotal * pixel_rep / 2,
 					 PV_VCONTROL_ODD_DELAY));
 		CRTC_WRITE(PV_VSYNCD_EVEN, 0);
 	} else {
