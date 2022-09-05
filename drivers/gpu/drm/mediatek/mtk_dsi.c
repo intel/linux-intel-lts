@@ -910,33 +910,24 @@ static ssize_t mtk_dsi_host_transfer(struct mipi_dsi_host *host,
 	u8 read_data[16];
 	void *src_addr;
 	u8 irq_flag = CMD_DONE_INT_FLAG;
-	u32 dsi_mode;
-	int ret;
 
-	dsi_mode = readl(dsi->regs + DSI_MODE_CTRL);
-	if (dsi_mode & MODE) {
-		mtk_dsi_stop(dsi);
-		ret = mtk_dsi_switch_to_cmd_mode(dsi, VM_DONE_INT_FLAG, 500);
-		if (ret)
-			goto restore_dsi_mode;
+	if (readl(dsi->regs + DSI_MODE_CTRL) & MODE) {
+		DRM_ERROR("dsi engine is not command mode\n");
+		return -EINVAL;
 	}
 
 	if (MTK_DSI_HOST_IS_READ(msg->type))
 		irq_flag |= LPRX_RD_RDY_INT_FLAG;
 
-	ret = mtk_dsi_host_send_cmd(dsi, msg, irq_flag);
-	if (ret)
-		goto restore_dsi_mode;
+	if (mtk_dsi_host_send_cmd(dsi, msg, irq_flag) < 0)
+		return -ETIME;
 
-	if (!MTK_DSI_HOST_IS_READ(msg->type)) {
-		recv_cnt = 0;
-		goto restore_dsi_mode;
-	}
+	if (!MTK_DSI_HOST_IS_READ(msg->type))
+		return 0;
 
 	if (!msg->rx_buf) {
 		DRM_ERROR("dsi receive buffer size may be NULL\n");
-		ret = -EINVAL;
-		goto restore_dsi_mode;
+		return -EINVAL;
 	}
 
 	for (i = 0; i < 16; i++)
@@ -961,13 +952,7 @@ static ssize_t mtk_dsi_host_transfer(struct mipi_dsi_host *host,
 	DRM_INFO("dsi get %d byte data from the panel address(0x%x)\n",
 		 recv_cnt, *((u8 *)(msg->tx_buf)));
 
-restore_dsi_mode:
-	if (dsi_mode & MODE) {
-		mtk_dsi_set_mode(dsi);
-		mtk_dsi_start(dsi);
-	}
-
-	return ret < 0 ? ret : recv_cnt;
+	return recv_cnt;
 }
 
 static const struct mipi_dsi_host_ops mtk_dsi_ops = {
