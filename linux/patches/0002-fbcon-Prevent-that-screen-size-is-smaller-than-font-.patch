@@ -1,0 +1,106 @@
+From 66048a5ceeae4d88ac3c36914a625092a99997ee Mon Sep 17 00:00:00 2001
+From: Helge Deller <deller@gmx.de>
+Date: Sat, 25 Jun 2022 13:00:34 +0200
+Subject: [PATCH 2/3] fbcon: Prevent that screen size is smaller than font size
+
+commit e64242caef18b4a5840b0e7a9bff37abd4f4f933 upstream.
+
+We need to prevent that users configure a screen size which is smaller than the
+currently selected font size. Otherwise rendering chars on the screen will
+access memory outside the graphics memory region.
+
+This patch adds a new function fbcon_modechange_possible() which
+implements this check and which later may be extended with other checks
+if necessary.  The new function is called from the FBIOPUT_VSCREENINFO
+ioctl handler in fbmem.c, which will return -EINVAL if userspace asked
+for a too small screen size.
+
+Signed-off-by: Helge Deller <deller@gmx.de>
+Reviewed-by: Geert Uytterhoeven <geert@linux-m68k.org>
+Cc: stable@vger.kernel.org # v5.4+
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/video/fbdev/core/fbcon.c | 28 ++++++++++++++++++++++++++++
+ drivers/video/fbdev/core/fbmem.c |  4 +++-
+ include/linux/fbcon.h            |  4 ++++
+ 3 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/video/fbdev/core/fbcon.c b/drivers/video/fbdev/core/fbcon.c
+index 407d14cd01d6..489a417281f2 100644
+--- a/drivers/video/fbdev/core/fbcon.c
++++ b/drivers/video/fbdev/core/fbcon.c
+@@ -2735,6 +2735,34 @@ void fbcon_update_vcs(struct fb_info *info, bool all)
+ }
+ EXPORT_SYMBOL(fbcon_update_vcs);
+ 
++/* let fbcon check if it supports a new screen resolution */
++int fbcon_modechange_possible(struct fb_info *info, struct fb_var_screeninfo *var)
++{
++	struct fbcon_ops *ops = info->fbcon_par;
++	struct vc_data *vc;
++	unsigned int i;
++
++	WARN_CONSOLE_UNLOCKED();
++
++	if (!ops)
++		return 0;
++
++	/* prevent setting a screen size which is smaller than font size */
++	for (i = first_fb_vc; i <= last_fb_vc; i++) {
++		vc = vc_cons[i].d;
++		if (!vc || vc->vc_mode != KD_TEXT ||
++			   registered_fb[con2fb_map[i]] != info)
++			continue;
++
++		if (vc->vc_font.width  > FBCON_SWAP(var->rotate, var->xres, var->yres) ||
++		    vc->vc_font.height > FBCON_SWAP(var->rotate, var->yres, var->xres))
++			return -EINVAL;
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(fbcon_modechange_possible);
++
+ int fbcon_mode_deleted(struct fb_info *info,
+ 		       struct fb_videomode *mode)
+ {
+diff --git a/drivers/video/fbdev/core/fbmem.c b/drivers/video/fbdev/core/fbmem.c
+index 94de5668a415..517ef576cc05 100644
+--- a/drivers/video/fbdev/core/fbmem.c
++++ b/drivers/video/fbdev/core/fbmem.c
+@@ -1110,7 +1110,9 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
+ 			return -EFAULT;
+ 		console_lock();
+ 		lock_fb_info(info);
+-		ret = fb_set_var(info, &var);
++		ret = fbcon_modechange_possible(info, &var);
++		if (!ret)
++			ret = fb_set_var(info, &var);
+ 		if (!ret)
+ 			fbcon_update_vcs(info, var.activate & FB_ACTIVATE_ALL);
+ 		unlock_fb_info(info);
+diff --git a/include/linux/fbcon.h b/include/linux/fbcon.h
+index ff5596dd30f8..2382dec6d6ab 100644
+--- a/include/linux/fbcon.h
++++ b/include/linux/fbcon.h
+@@ -15,6 +15,8 @@ void fbcon_new_modelist(struct fb_info *info);
+ void fbcon_get_requirement(struct fb_info *info,
+ 			   struct fb_blit_caps *caps);
+ void fbcon_fb_blanked(struct fb_info *info, int blank);
++int  fbcon_modechange_possible(struct fb_info *info,
++			       struct fb_var_screeninfo *var);
+ void fbcon_update_vcs(struct fb_info *info, bool all);
+ void fbcon_remap_all(struct fb_info *info);
+ int fbcon_set_con2fb_map_ioctl(void __user *argp);
+@@ -33,6 +35,8 @@ static inline void fbcon_new_modelist(struct fb_info *info) {}
+ static inline void fbcon_get_requirement(struct fb_info *info,
+ 					 struct fb_blit_caps *caps) {}
+ static inline void fbcon_fb_blanked(struct fb_info *info, int blank) {}
++static inline int  fbcon_modechange_possible(struct fb_info *info,
++				struct fb_var_screeninfo *var) { return 0; }
+ static inline void fbcon_update_vcs(struct fb_info *info, bool all) {}
+ static inline void fbcon_remap_all(struct fb_info *info) {}
+ static inline int fbcon_set_con2fb_map_ioctl(void __user *argp) { return 0; }
+-- 
+2.25.1
+

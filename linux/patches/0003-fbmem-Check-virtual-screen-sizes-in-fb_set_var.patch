@@ -1,0 +1,43 @@
+From 47fbccb8d853708a70dacd31284fdb9e546160b2 Mon Sep 17 00:00:00 2001
+From: Helge Deller <deller@gmx.de>
+Date: Wed, 29 Jun 2022 15:53:55 +0200
+Subject: [PATCH 3/3] fbmem: Check virtual screen sizes in fb_set_var()
+
+commit 6c11df58fd1ac0aefcb3b227f72769272b939e56 upstream.
+
+Verify that the fbdev or drm driver correctly adjusted the virtual
+screen sizes. On failure report the failing driver and reject the screen
+size change.
+
+Signed-off-by: Helge Deller <deller@gmx.de>
+Reviewed-by: Geert Uytterhoeven <geert@linux-m68k.org>
+Cc: stable@vger.kernel.org # v5.4+
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/video/fbdev/core/fbmem.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/video/fbdev/core/fbmem.c b/drivers/video/fbdev/core/fbmem.c
+index 517ef576cc05..98ead251a4f5 100644
+--- a/drivers/video/fbdev/core/fbmem.c
++++ b/drivers/video/fbdev/core/fbmem.c
+@@ -1020,6 +1020,16 @@ fb_set_var(struct fb_info *info, struct fb_var_screeninfo *var)
+ 	if (ret)
+ 		return ret;
+ 
++	/* verify that virtual resolution >= physical resolution */
++	if (var->xres_virtual < var->xres ||
++	    var->yres_virtual < var->yres) {
++		pr_warn("WARNING: fbcon: Driver '%s' missed to adjust virtual screen size (%ux%u vs. %ux%u)\n",
++			info->fix.id,
++			var->xres_virtual, var->yres_virtual,
++			var->xres, var->yres);
++		return -EINVAL;
++	}
++
+ 	if ((var->activate & FB_ACTIVATE_MASK) != FB_ACTIVATE_NOW)
+ 		return 0;
+ 
+-- 
+2.25.1
+

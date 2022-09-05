@@ -1,0 +1,41 @@
+From 36ce0fc39ec165f9ef7c83eb1e038555b432c44b Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Thu, 30 Jun 2022 09:14:40 +0200
+Subject: [PATCH] x86: Clear .brk area at early boot
+
+[ Upstream commit 38fa5479b41376dc9d7f57e71c83514285a25ca0 ]
+
+The .brk section has the same properties as .bss: it is an alloc-only
+section and should be cleared before being used.
+
+Not doing so is especially a problem for Xen PV guests, as the
+hypervisor will validate page tables (check for writable page tables
+and hypervisor private bits) before accepting them to be used.
+
+Make sure .brk is initially zero by letting clear_bss() clear the brk
+area, too.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Link: https://lore.kernel.org/r/20220630071441.28576-3-jgross@suse.com
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ arch/x86/kernel/head64.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/x86/kernel/head64.c b/arch/x86/kernel/head64.c
+index fc5371a7e9d1..5fa25dd24e06 100644
+--- a/arch/x86/kernel/head64.c
++++ b/arch/x86/kernel/head64.c
+@@ -423,6 +423,8 @@ static void __init clear_bss(void)
+ {
+ 	memset(__bss_start, 0,
+ 	       (unsigned long) __bss_stop - (unsigned long) __bss_start);
++	memset(__brk_base, 0,
++	       (unsigned long) __brk_limit - (unsigned long) __brk_base);
+ }
+ 
+ static unsigned long get_cmd_line_ptr(void)
+-- 
+2.25.1
+
