@@ -44,14 +44,10 @@
 #include "intel_hotplug.h"
 #include "skl_scaler.h"
 
-static int intel_dp_mst_find_vcpi_slots_for_bpp(struct intel_encoder *encoder,
-						struct intel_crtc_state *crtc_state,
-						int max_bpp,
-						int min_bpp,
-						struct link_config_limits *limits,
-						struct drm_connector_state *conn_state,
-						int step,
-						bool dsc)
+static int intel_dp_mst_compute_link_config(struct intel_encoder *encoder,
+					    struct intel_crtc_state *crtc_state,
+					    struct drm_connector_state *conn_state,
+					    struct link_config_limits *limits)
 {
 	struct drm_atomic_state *state = crtc_state->uapi.state;
 	struct intel_dp_mst_encoder *intel_mst = enc_to_mst(encoder);
@@ -62,9 +58,9 @@ static int intel_dp_mst_find_vcpi_slots_for_bpp(struct intel_encoder *encoder,
 	struct drm_i915_private *i915 = to_i915(connector->base.dev);
 	const struct drm_display_mode *adjusted_mode =
 		&crtc_state->hw.adjusted_mode;
+	bool constant_n = drm_dp_has_quirk(&intel_dp->desc, DP_DPCD_QUIRK_CONSTANT_N);
 	int bpp, slots = -EINVAL;
 	int ret = 0;
-	int pbn_div;
 
 	mst_state = drm_atomic_get_mst_topology_state(state, &intel_dp->mst_mgr);
 	if (IS_ERR(mst_state))
@@ -73,22 +69,23 @@ static int intel_dp_mst_find_vcpi_slots_for_bpp(struct intel_encoder *encoder,
 	crtc_state->lane_count = limits->max_lane_count;
 	crtc_state->port_clock = limits->max_rate;
 
-	pbn_div = drm_dp_get_vc_payload_bw(&intel_dp->mst_mgr,
-					   crtc_state->port_clock,
-					   crtc_state->lane_count);
+	// TODO: Handle pbn_div changes by adding a new MST helper
+	if (!mst_state->pbn_div) {
+		mst_state->pbn_div = drm_dp_get_vc_payload_bw(&intel_dp->mst_mgr,
+							      limits->max_rate,
+							      limits->max_lane_count);
+	}
 
-	for (bpp = max_bpp; bpp >= min_bpp; bpp -= step) {
+	for (bpp = limits->max_bpp; bpp >= limits->min_bpp; bpp -= 2 * 3) {
 		crtc_state->pipe_bpp = bpp;
 
 		crtc_state->pbn = drm_dp_calc_pbn_mode(adjusted_mode->crtc_clock,
-						       dsc ? bpp << 4 : crtc_state->pipe_bpp,
-						       dsc);
-
+						       crtc_state->pipe_bpp,
+						       false);
 		slots = drm_dp_atomic_find_time_slots(state, &intel_dp->mst_mgr,
 						      connector->port, crtc_state->pbn);
 		if (slots == -EDEADLK)
 			return slots;
-
 		if (slots >= 0) {
 			ret = drm_dp_mst_atomic_check(state);
 			/*
@@ -104,32 +101,11 @@ static int intel_dp_mst_find_vcpi_slots_for_bpp(struct intel_encoder *encoder,
 	if (ret && slots >= 0)
 		slots = ret;
 
-	if (slots < 0)
+	if (slots < 0) {
 		drm_dbg_kms(&i915->drm, "failed finding vcpi slots:%d\n",
 			    slots);
-
-	return slots;
-}
-
-
-static int intel_dp_mst_compute_link_config(struct intel_encoder *encoder,
-					    struct intel_crtc_state *crtc_state,
-					    struct drm_connector_state *conn_state,
-					    struct link_config_limits *limits)
-{
-	const struct drm_display_mode *adjusted_mode =
-		&crtc_state->hw.adjusted_mode;
-	struct intel_dp_mst_encoder *intel_mst = enc_to_mst(encoder);
-	struct intel_dp *intel_dp = &intel_mst->primary->dp;
-	bool constant_n = drm_dp_has_quirk(&intel_dp->desc, DP_DPCD_QUIRK_CONSTANT_N);
-	int slots = -EINVAL;
-
-	slots = intel_dp_mst_find_vcpi_slots_for_bpp(encoder, crtc_state, limits->max_bpp,
-						     limits->min_bpp, limits,
-						     conn_state, 2 * 3, false);
-
-	if (slots < 0)
 		return slots;
+	}
 
 	intel_link_compute_m_n(crtc_state->pipe_bpp,
 			       crtc_state->lane_count,
