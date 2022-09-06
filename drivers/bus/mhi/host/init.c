@@ -83,7 +83,7 @@ static ssize_t fw_update_show(struct device *dev, struct device_attribute *attr,
 	struct mhi_device *mhi_dev = to_mhi_device(dev);
 	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
 
-	return sprintf(buf, "%u\n", mhi_cntrl->xfp);
+	return sysfs_emit(buf, "%u\n", mhi_cntrl->xfp);
 }
 
 static ssize_t fw_update_store(struct device *dev,  struct device_attribute *attr, const char *buf, size_t len)
@@ -95,10 +95,7 @@ static ssize_t fw_update_store(struct device *dev,  struct device_attribute *att
 	if (kstrtobool(buf, &enable))
 		return -EINVAL;
 
-	if (enable)
-		mhi_cntrl->xfp = XFP_STATE_FLASHING;
-	else
-		mhi_cntrl->xfp = XFP_STATE_NEED_RESET;
+	mhi_cntrl->xfp = enable ? XFP_STATE_FLASHING : XFP_STATE_NEED_RESET;
 
 	return len;
 }
