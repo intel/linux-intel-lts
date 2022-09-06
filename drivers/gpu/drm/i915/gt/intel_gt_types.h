@@ -78,6 +78,7 @@ enum intel_submission_method {
 enum intel_gt_type {
 	GT_PRIMARY,
 	GT_TILE,
+	GT_MEDIA,
 };
 
 struct intel_gt {

@@ -31,6 +31,7 @@
 #include "intel_rc6.h"
 #include "intel_renderstate.h"
 #include "intel_rps.h"
+#include "intel_sa_media.h"
 #include "intel_uncore.h"
 #include "shmem_utils.h"
 #include "pxp/intel_pxp.h"
@@ -857,6 +858,11 @@ int intel_gt_probe_all(struct drm_i915_private *i915)
 		switch (gtdef->type) {
 		case GT_TILE:
 			ret = intel_gt_tile_setup(gt, phys_addr + gtdef->mapping_base);
+			break;
+
+		case GT_MEDIA:
+			ret = intel_sa_mediagt_setup(gt, phys_addr + gtdef->mapping_base,
+						     gtdef->gsi_offset);
 			break;
 
 		case GT_PRIMARY:
