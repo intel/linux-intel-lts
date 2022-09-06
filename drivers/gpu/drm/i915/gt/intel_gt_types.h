@@ -75,8 +75,16 @@ enum intel_submission_method {
 	INTEL_SUBMISSION_GUC,
 };
 
+enum intel_gt_type {
+	GT_PRIMARY,
+	GT_TILE,
+};
+
 struct intel_gt {
 	struct drm_i915_private *i915;
+	const char *name;
+	enum intel_gt_type type;
+
 	struct intel_uncore *uncore;
 	struct i915_ggtt *ggtt;
 
@@ -231,6 +239,13 @@ struct intel_gt {
 	} mocs;
 
 	struct intel_pxp pxp;
+};
+
+struct intel_gt_definition {
+	enum intel_gt_type type;
+	char *name;
+	u32 mapping_base;
+	intel_engine_mask_t engine_mask;
 };
 
 enum intel_gt_scratch_field {

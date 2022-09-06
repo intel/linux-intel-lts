@@ -37,6 +37,7 @@
 
 struct drm_printer;
 struct drm_i915_private;
+struct intel_gt_definition;
 
 /* Keep in gen based order, and chronological order within a gen */
 enum intel_platform {
@@ -218,6 +219,8 @@ struct intel_device_info {
 	unsigned int page_sizes; /* page sizes supported by the HW */
 
 	u32 memory_regions; /* regions supported by the HW */
+
+	const struct intel_gt_definition *extra_gt_list;
 
 	u8 gt; /* GT number, 0 if undefined */
 
