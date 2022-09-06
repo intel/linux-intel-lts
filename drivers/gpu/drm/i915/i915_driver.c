@@ -365,7 +365,9 @@ static int i915_driver_early_probe(struct drm_i915_private *dev_priv)
 
 	intel_wopcm_init_early(&dev_priv->wopcm);
 
-	intel_root_gt_init_early(dev_priv);
+	ret = intel_root_gt_init_early(dev_priv);
+	if (ret < 0)
+		goto err_rootgt;
 
 	i915_gem_init_early(dev_priv);
 
@@ -387,6 +389,7 @@ static int i915_driver_early_probe(struct drm_i915_private *dev_priv)
 err_gem:
 	i915_gem_cleanup_early(dev_priv);
 	intel_gt_driver_late_release_all(dev_priv);
+err_rootgt:
 	intel_region_ttm_device_fini(dev_priv);
 err_ttm:
 	vlv_suspend_cleanup(dev_priv);
