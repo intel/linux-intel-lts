@@ -7,29 +7,4 @@
 # CVE-2022-0998
 0001-vdpa-clean-up-get_config_size-ret-value-handling.patch
 
-# CVE-2022-34918
-0001-netfilter-nf_tables-stricter-validation-of-element-d.patch
 
-# CVE-2022-33743
-0001-xen-netfront-restore-__skb_queue_tail-positioning-in.patch
-
-# CVE-2022-1679
-0001-ath9k-fix-use-after-free-in-ath9k_hif_usb_rx_cb.patch
-
-# CVE-2021-33655
-0001-fbcon-Disallow-setting-font-bigger-than-screen-size.patch
-0002-fbcon-Prevent-that-screen-size-is-smaller-than-font-.patch
-0003-fbmem-Check-virtual-screen-sizes-in-fb_set_var.patch
-
-# CVE-2022-36946
-0001-netfilter-nf_queue-do-not-allow-packet-truncation-be.patch
-
-# CVE-2022-36123
-0001-x86-Clear-.brk-area-at-early-boot.patch
-
-# CVE-2022-29901
-# CVE-2022-29900
-0001-x86-kvm-vmx-Make-noinstr-clean.patch
-
-# CVE-2022-36879
-0001-xfrm-xfrm_policy-fix-a-possible-double-xfrm_pols_put.patch
