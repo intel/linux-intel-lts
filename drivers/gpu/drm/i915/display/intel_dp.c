@@ -5129,9 +5129,6 @@ intel_edp_add_properties(struct intel_dp *intel_dp)
 
 	intel_attach_scaling_mode_property(&connector->base);
 
-	if (!fixed_mode)
-		return;
-
 	drm_connector_set_panel_orientation_with_quirk(&connector->base,
 						       i915->display.vbt.orientation,
 						       fixed_mode->hdisplay,
@@ -5204,7 +5201,8 @@ static bool intel_edp_init_connector(struct intel_dp *intel_dp,
 	if (!has_dpcd) {
 		/* if this fails, presume the device is a ghost */
 		drm_info(&dev_priv->drm,
-			 "failed to retrieve link info, disabling eDP\n");
+			 "[ENCODER:%d:%s] failed to retrieve link info, disabling eDP\n",
+			 encoder->base.base.id, encoder->base.name);
 		goto out_vdd_off;
 	}
 
@@ -5247,6 +5245,13 @@ static bool intel_edp_init_connector(struct intel_dp *intel_dp,
 		intel_panel_add_vbt_lfp_fixed_mode(intel_connector);
 
 	mutex_unlock(&dev->mode_config.mutex);
+
+	if (!intel_panel_preferred_fixed_mode(intel_connector)) {
+		drm_info(&dev_priv->drm,
+			 "[ENCODER:%d:%s] failed to find fixed mode for the panel, disabling eDP\n",
+			 encoder->base.base.id, encoder->base.name);
+		goto out_vdd_off;
+	}
 
 	intel_panel_init(intel_connector);
 
