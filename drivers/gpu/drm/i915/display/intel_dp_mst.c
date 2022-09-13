@@ -590,7 +590,10 @@ static void intel_mst_enable_dp(struct intel_atomic_state *state,
 
 	drm_dp_update_payload_part2(&intel_dp->mst_mgr);
 
-	if (DISPLAY_VER(dev_priv) >= 12 && pipe_config->fec_enable)
+	if (DISPLAY_VER(dev_priv) >= 14 && pipe_config->fec_enable)
+		intel_de_rmw(dev_priv, MTL_CHICKEN_TRANS(trans), 0,
+			     FECSTALL_DIS_DPTSTREAM_DPTTG);
+	else if (DISPLAY_VER(dev_priv) >= 12 && pipe_config->fec_enable)
 		intel_de_rmw(dev_priv, CHICKEN_TRANS(trans), 0,
 			     FECSTALL_DIS_DPTSTREAM_DPTTG);
 
