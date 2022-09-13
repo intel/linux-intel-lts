@@ -18,6 +18,3 @@
 
 # CVE-2022-1280
 0001-drm-drm_file-struct-kABI-compatibility-workaround.patch
-
-# CVE-2022-29901
-0001-x86-kvm-vmx-Make-noinstr-clean.patch
