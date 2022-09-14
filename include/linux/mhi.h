@@ -385,6 +385,8 @@ struct mhi_controller {
 	struct device *cntrl_dev;
 	struct mhi_device *mhi_dev;
 	struct dentry *debugfs_dentry;
+	/* Reference to ip_ctrl device for managing DUN signals */
+	struct mhi_device *mhi_dev_ip_ctrl;
 	void __iomem *regs;
 	void __iomem *bhi;
 	void __iomem *bhie;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2021, Linaro Ltd <loic.poulain@linaro.org> */
+/* Copyright (c) 2023, Linaro Ltd <loic.poulain@linaro.org> */
 #include <linux/kernel.h>
 #include <linux/mhi.h>
 #include <linux/mod_devicetable.h>
@@ -104,6 +104,44 @@ static void mhi_wwan_ctrl_refill_work(struct work_struct *work)
 	}
 }
 
+static int mhi_wwan_dtr_set(struct wwan_port *port, int dtr, int rts)
+{
+	struct mhi_wwan_dev *mhiwwan = wwan_port_get_drvdata(port);
+	int ret;
+
+	if (mhiwwan->mhi_dev->mhi_cntrl->mhi_dev_ip_ctrl) {
+		struct __packed dtr_ctrl_msg {
+			u32 preamble;
+			u32 msg_id;
+			u32 dest_id;
+			u32 size;
+			u32 msg;
+		};
+
+		struct dtr_ctrl_msg dtr_msg = {0};
+		struct sk_buff *skb;
+
+		dtr_msg.preamble = 0x4C525443;
+		dtr_msg.msg_id = 0x10;
+		dtr_msg.dest_id = mhiwwan->mhi_dev->ul_chan_id;
+		dtr_msg.size = sizeof(u32);
+		if (dtr)
+			dtr_msg.msg |= BIT(0);
+		if (rts)
+			dtr_msg.msg |= BIT(1);
+		skb = alloc_skb(sizeof(dtr_msg), GFP_KERNEL);
+		skb_put_data(skb, &dtr_msg, sizeof(dtr_msg));
+		dev_dbg(&mhiwwan->mhi_dev->mhi_cntrl->mhi_dev_ip_ctrl->dev, "Queuing DTR skb %u...\n", skb->len);
+		ret = mhi_queue_skb(mhiwwan->mhi_dev->mhi_cntrl->mhi_dev_ip_ctrl, DMA_TO_DEVICE, skb, skb->len, MHI_EOT);
+		if (ret) {
+			dev_dbg(&mhiwwan->mhi_dev->mhi_cntrl->mhi_dev_ip_ctrl->dev, "Unable to send UART signals\n");
+				kfree_skb(skb);
+		}
+	}
+
+	return 0;
+}
+
 static int mhi_wwan_ctrl_start(struct wwan_port *port)
 {
 	struct mhi_wwan_dev *mhiwwan = wwan_port_get_drvdata(port);
@@ -123,14 +161,22 @@ static int mhi_wwan_ctrl_start(struct wwan_port *port)
 		mhi_wwan_ctrl_refill_work(&mhiwwan->rx_refill);
 	}
 
+	if (wwan_port_get_type(port) == WWAN_PORT_AT) {
+		dev_dbg(&mhiwwan->mhi_dev->dev, "Setting DTR and RTS for port\n");
+		mhi_wwan_dtr_set(port, 1, 1);
+	}
+
 	return 0;
 }
 
 static void mhi_wwan_ctrl_stop(struct wwan_port *port)
 {
 	struct mhi_wwan_dev *mhiwwan = wwan_port_get_drvdata(port);
-	struct mhi_device *mhi_dev = mhiwwan->mhi_dev;
-	struct mhi_controller *cntrl = mhi_dev->mhi_cntrl;
+
+	if (wwan_port_get_type(port) == WWAN_PORT_AT) {
+		dev_dbg(&mhiwwan->mhi_dev->dev, "Unsetting DTR and RTS for port\n");
+		mhi_wwan_dtr_set(port, 0, 0);
+	}
 
 	spin_lock_bh(&mhiwwan->rx_lock);
 	clear_bit(MHI_WWAN_RX_REFILL, &mhiwwan->flags);
