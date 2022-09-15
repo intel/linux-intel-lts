@@ -21,6 +21,9 @@
 
 void i915_gem_suspend(struct drm_i915_private *i915)
 {
+	struct intel_gt *gt;
+	unsigned int i;
+
 	GEM_TRACE("%s\n", dev_name(i915->drm.dev));
 
 	intel_wakeref_auto(&to_gt(i915)->ggtt->userfault_wakeref, 0);
@@ -35,7 +38,8 @@ void i915_gem_suspend(struct drm_i915_private *i915)
 	 * state. Fortunately, the kernel_context is disposable and we do
 	 * not rely on its state.
 	 */
-	intel_gt_suspend_prepare(to_gt(i915));
+	for_each_gt(gt, i915, i)
+		intel_gt_suspend_prepare(gt);
 
 	i915_gem_drain_freed_objects(i915);
 }
@@ -48,7 +52,9 @@ void i915_gem_suspend_late(struct drm_i915_private *i915)
 		&i915->mm.purge_list,
 		NULL
 	}, **phase;
+	struct intel_gt *gt;
 	unsigned long flags;
+	unsigned int i;
 	bool flush = false;
 
 	/*
@@ -71,7 +77,8 @@ void i915_gem_suspend_late(struct drm_i915_private *i915)
 	 * machine in an unusable condition.
 	 */
 
-	intel_gt_suspend_late(to_gt(i915));
+	for_each_gt(gt, i915, i)
+		intel_gt_suspend_late(gt);
 
 	spin_lock_irqsave(&i915->mm.obj_lock, flags);
 	for (phase = phases; *phase; phase++) {
