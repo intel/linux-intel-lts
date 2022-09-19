@@ -1,0 +1,57 @@
+From 5de7f5e40f2a3ede0dc0378ba19fec530b0690d8 Mon Sep 17 00:00:00 2001
+From: Jann Horn <jannh@google.com>
+Date: Wed, 31 Aug 2022 21:13:48 +0200
+Subject: [PATCH] mm: Force TLB flush for PFNMAP mappings before
+ unlink_file_vma()
+
+commit b67fbebd4cf980aecbcc750e1462128bffe8ae15 upstream.
+
+Some drivers rely on having all VMAs through which a PFN might be
+accessible listed in the rmap for correctness.
+However, on X86, it was possible for a VMA with stale TLB entries
+to not be listed in the rmap.
+
+This was fixed in mainline with
+commit b67fbebd4cf9 ("mmu_gather: Force tlb-flush VM_PFNMAP vmas"),
+but that commit relies on preceding refactoring in
+commit 18ba064e42df3 ("mmu_gather: Let there be one tlb_{start,end}_vma()
+implementation") and commit 1e9fdf21a4339 ("mmu_gather: Remove per arch
+tlb_{start,end}_vma()").
+
+This patch provides equivalent protection without needing that
+refactoring, by forcing a TLB flush between removing PTEs in
+unmap_vmas() and the call to unlink_file_vma() in free_pgtables().
+
+[This is a stable-specific rewrite of the upstream commit!]
+Signed-off-by: Jann Horn <jannh@google.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ mm/mmap.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/mm/mmap.c b/mm/mmap.c
+index 2e317afca67e..9f0dd62e8873 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -2669,6 +2669,18 @@ static void unmap_region(struct mm_struct *mm,
+ 	tlb_gather_mmu(&tlb, mm, start, end);
+ 	update_hiwater_rss(mm);
+ 	unmap_vmas(&tlb, vma, start, end);
++
++	/*
++	 * Ensure we have no stale TLB entries by the time this mapping is
++	 * removed from the rmap.
++	 * Note that we don't have to worry about nested flushes here because
++	 * we're holding the mm semaphore for removing the mapping - so any
++	 * concurrent flush in this region has to be coming through the rmap,
++	 * and we synchronize against that using the rmap lock.
++	 */
++	if ((vma->vm_flags & (VM_PFNMAP|VM_MIXEDMAP)) != 0)
++		tlb_flush_mmu(&tlb);
++
+ 	free_pgtables(&tlb, vma, prev ? prev->vm_end : FIRST_USER_ADDRESS,
+ 				 next ? next->vm_start : USER_PGTABLES_CEILING);
+ 	tlb_finish_mmu(&tlb, start, end);
+-- 
+2.25.1
+

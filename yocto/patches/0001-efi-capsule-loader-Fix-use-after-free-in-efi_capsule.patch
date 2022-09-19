@@ -1,0 +1,82 @@
+From 994e61da9ae68259323e2f01a5e268cec222b111 Mon Sep 17 00:00:00 2001
+From: Hyunwoo Kim <imv4bel@gmail.com>
+Date: Wed, 7 Sep 2022 09:07:14 -0700
+Subject: [PATCH] efi: capsule-loader: Fix use-after-free in efi_capsule_write
+
+A race condition may occur if the user calls close() on another thread
+during a write() operation on the device node of the efi capsule.
+
+This is a race condition that occurs between the efi_capsule_write() and
+efi_capsule_flush() functions of efi_capsule_fops, which ultimately
+results in UAF.
+
+So, the page freeing process is modified to be done in
+efi_capsule_release() instead of efi_capsule_flush().
+
+Cc: <stable@vger.kernel.org> # v4.9+
+Signed-off-by: Hyunwoo Kim <imv4bel@gmail.com>
+Link: https://lore.kernel.org/all/20220907102920.GA88602@ubuntu/
+Signed-off-by: Ard Biesheuvel <ardb@kernel.org>
+---
+ drivers/firmware/efi/capsule-loader.c | 31 ++++++---------------------
+ 1 file changed, 7 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/firmware/efi/capsule-loader.c b/drivers/firmware/efi/capsule-loader.c
+index 4dde8edd53b6..3e8d4b51a814 100644
+--- a/drivers/firmware/efi/capsule-loader.c
++++ b/drivers/firmware/efi/capsule-loader.c
+@@ -242,29 +242,6 @@ static ssize_t efi_capsule_write(struct file *file, const char __user *buff,
+ 	return ret;
+ }
+ 
+-/**
+- * efi_capsule_flush - called by file close or file flush
+- * @file: file pointer
+- * @id: not used
+- *
+- *	If a capsule is being partially uploaded then calling this function
+- *	will be treated as upload termination and will free those completed
+- *	buffer pages and -ECANCELED will be returned.
+- **/
+-static int efi_capsule_flush(struct file *file, fl_owner_t id)
+-{
+-	int ret = 0;
+-	struct capsule_info *cap_info = file->private_data;
+-
+-	if (cap_info->index > 0) {
+-		pr_err("capsule upload not complete\n");
+-		efi_free_all_buff_pages(cap_info);
+-		ret = -ECANCELED;
+-	}
+-
+-	return ret;
+-}
+-
+ /**
+  * efi_capsule_release - called by file close
+  * @inode: not used
+@@ -277,6 +254,13 @@ static int efi_capsule_release(struct inode *inode, struct file *file)
+ {
+ 	struct capsule_info *cap_info = file->private_data;
+ 
++	if (cap_info->index > 0 &&
++	    (cap_info->header.headersize == 0 ||
++	     cap_info->count < cap_info->total_size)) {
++		pr_err("capsule upload not complete\n");
++		efi_free_all_buff_pages(cap_info);
++	}
++
+ 	kfree(cap_info->pages);
+ 	kfree(cap_info->phys);
+ 	kfree(file->private_data);
+@@ -324,7 +308,6 @@ static const struct file_operations efi_capsule_fops = {
+ 	.owner = THIS_MODULE,
+ 	.open = efi_capsule_open,
+ 	.write = efi_capsule_write,
+-	.flush = efi_capsule_flush,
+ 	.release = efi_capsule_release,
+ 	.llseek = no_llseek,
+ };
+-- 
+2.25.1
+

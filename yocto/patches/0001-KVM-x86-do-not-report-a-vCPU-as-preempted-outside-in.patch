@@ -1,0 +1,139 @@
+From 8556f75886b45b4a82282d5fc148d0a5f43f5ab9 Mon Sep 17 00:00:00 2001
+From: Rishabh Bhatnagar <risbhat@xxxxxxxxxx>
+Date: Wed, 14 Sep 2022 18:17:35 +0800
+Subject: [PATCH] KVM: x86: do not report a vCPU as preempted outside
+ instruction boundaries
+
+commit 6cd88243c7e03845a450795e134b488fc2afb736 upstream.
+
+If a vCPU is outside guest mode and is scheduled out, it might be in the
+process of making a memory access.  A problem occurs if another vCPU uses
+the PV TLB flush feature during the period when the vCPU is scheduled
+out, and a virtual address has already been translated but has not yet
+been accessed, because this is equivalent to using a stale TLB entry.
+
+To avoid this, only report a vCPU as preempted if sure that the guest
+is at an instruction boundary.  A rescheduling request will be delivered
+to the host physical CPU as an external interrupt, so for simplicity
+consider any vmexit *not* instruction boundary except for external
+interrupts.
+
+It would in principle be okay to report the vCPU as preempted also
+if it is sleeping in kvm_vcpu_block(): a TLB flush IPI will incur the
+vmentry/vmexit overhead unnecessarily, and optimistic spinning is
+also unlikely to succeed.  However, leave it for later because right
+now kvm_vcpu_check_block() is doing memory accesses.  Even
+though the TLB flush issue only applies to virtual memory address,
+it's very much preferrable to be conservative.
+
+https://www.spinics.net/lists/stable/msg591063.html
+
+Reported-by: Jann Horn <jannh@xxxxxxxxxx>
+Signed-off-by: Paolo Bonzini <pbonzini@xxxxxxxxxx>
+[risbhat@xxxxxxxxxx: Use VCPU_STAT to expose preemption_reported and
+preemption_other debugfs entries.]
+Signed-off-by: Rishabh Bhatnagar <risbhat@xxxxxxxxxx>
+Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+---
+ arch/x86/include/asm/kvm_host.h |  3 +++
+ arch/x86/kvm/svm/svm.c          |  2 ++
+ arch/x86/kvm/vmx/vmx.c          |  1 +
+ arch/x86/kvm/x86.c              | 22 ++++++++++++++++++++++
+ 4 files changed, 28 insertions(+)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 38c63a78aba6..37ba199a9bef 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -553,6 +553,7 @@ struct kvm_vcpu_arch {
+ 	u64 ia32_misc_enable_msr;
+ 	u64 smbase;
+ 	u64 smi_count;
++	bool at_instruction_boundary;
+ 	bool tpr_access_reporting;
+ 	bool xsaves_enabled;
+ 	u64 ia32_xss;
+@@ -1061,6 +1062,8 @@ struct kvm_vcpu_stat {
+ 	u64 req_event;
+ 	u64 halt_poll_success_ns;
+ 	u64 halt_poll_fail_ns;
++	u64 preemption_reported;
++	u64 preemption_other;
+ };
+ 
+ struct x86_instruction_info;
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 442705517caf..f3b7a6a82b07 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3991,6 +3991,8 @@ static int svm_check_intercept(struct kvm_vcpu *vcpu,
+ 
+ static void svm_handle_exit_irqoff(struct kvm_vcpu *vcpu)
+ {
++	if (to_svm(vcpu)->vmcb->control.exit_code == SVM_EXIT_INTR)
++		vcpu->arch.at_instruction_boundary = true;
+ }
+ 
+ static void svm_sched_in(struct kvm_vcpu *vcpu, int cpu)
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index b05e4bcb445e..cab96d620516 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -6496,6 +6496,7 @@ static void handle_external_interrupt_irqoff(struct kvm_vcpu *vcpu)
+ 		return;
+ 
+ 	handle_interrupt_nmi_irqoff(vcpu, gate_offset(desc));
++	vcpu->arch.at_instruction_boundary = true;
+ }
+ 
+ static void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu)
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 5f4f855bb3b1..6eb87faa689a 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -231,6 +231,8 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
+ 	VCPU_STAT("l1d_flush", l1d_flush),
+ 	VCPU_STAT("halt_poll_success_ns", halt_poll_success_ns),
+ 	VCPU_STAT("halt_poll_fail_ns", halt_poll_fail_ns),
++	VCPU_STAT("preemption_reported", preemption_reported),
++	VCPU_STAT("preemption_other", preemption_other),
+ 	VM_STAT("mmu_shadow_zapped", mmu_shadow_zapped),
+ 	VM_STAT("mmu_pte_write", mmu_pte_write),
+ 	VM_STAT("mmu_pde_zapped", mmu_pde_zapped),
+@@ -4028,6 +4030,19 @@ static void kvm_steal_time_set_preempted(struct kvm_vcpu *vcpu)
+ 	struct kvm_host_map map;
+ 	struct kvm_steal_time *st;
+ 
++	/*
++	 * The vCPU can be marked preempted if and only if the VM-Exit was on
++	 * an instruction boundary and will not trigger guest emulation of any
++	 * kind (see vcpu_run).  Vendor specific code controls (conservatively)
++	 * when this is true, for example allowing the vCPU to be marked
++	 * preempted if and only if the VM-Exit was due to a host interrupt.
++	 */
++	if (!vcpu->arch.at_instruction_boundary) {
++		vcpu->stat.preemption_other++;
++		return;
++	}
++
++	vcpu->stat.preemption_reported++;
+ 	if (!(vcpu->arch.st.msr_val & KVM_MSR_ENABLED))
+ 		return;
+ 
+@@ -9241,6 +9256,13 @@ static int vcpu_run(struct kvm_vcpu *vcpu)
+ 	vcpu->arch.l1tf_flush_l1d = true;
+ 
+ 	for (;;) {
++		/*
++		 * If another guest vCPU requests a PV TLB flush in the middle
++		 * of instruction emulation, the rest of the emulation could
++		 * use a stale page translation. Assume that any code after
++		 * this point can start executing an instruction.
++		 */
++		vcpu->arch.at_instruction_boundary = false;
+ 		if (kvm_vcpu_running(vcpu)) {
+ 			r = vcpu_enter_guest(vcpu);
+ 		} else {
+-- 
+2.25.1
+
