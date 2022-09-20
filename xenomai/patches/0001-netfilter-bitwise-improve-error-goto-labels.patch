@@ -1,0 +1,52 @@
+From 4e9426e90aec7e5a7e2aa9064860491162d31d47 Mon Sep 17 00:00:00 2001
+From: Jeremy Sowden <jeremy@azazel.net>
+Date: Mon, 4 Apr 2022 13:04:15 +0100
+Subject: [PATCH 1/9] netfilter: bitwise: improve error goto labels
+
+[ Upstream commit 00bd435208e5201eb935d273052930bd3b272b6f ]
+
+Replace two labels (`err1` and `err2`) with more informative ones.
+
+Signed-off-by: Jeremy Sowden <jeremy@azazel.net>
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nft_bitwise.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/net/netfilter/nft_bitwise.c b/net/netfilter/nft_bitwise.c
+index 47b0dba95054..d0c648b64cd4 100644
+--- a/net/netfilter/nft_bitwise.c
++++ b/net/netfilter/nft_bitwise.c
+@@ -109,22 +109,23 @@ static int nft_bitwise_init_bool(struct nft_bitwise *priv,
+ 		return err;
+ 	if (mask.type != NFT_DATA_VALUE || mask.len != priv->len) {
+ 		err = -EINVAL;
+-		goto err1;
++		goto err_mask_release;
+ 	}
+ 
+ 	err = nft_data_init(NULL, &priv->xor, sizeof(priv->xor), &xor,
+ 			    tb[NFTA_BITWISE_XOR]);
+ 	if (err < 0)
+-		goto err1;
++		goto err_mask_release;
+ 	if (xor.type != NFT_DATA_VALUE || xor.len != priv->len) {
+ 		err = -EINVAL;
+-		goto err2;
++		goto err_xor_release;
+ 	}
+ 
+ 	return 0;
+-err2:
++
++err_xor_release:
+ 	nft_data_release(&priv->xor, xor.type);
+-err1:
++err_mask_release:
+ 	nft_data_release(&priv->mask, mask.type);
+ 	return err;
+ }
+-- 
+2.25.1
+

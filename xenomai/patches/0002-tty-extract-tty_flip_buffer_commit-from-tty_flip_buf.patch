@@ -1,0 +1,59 @@
+From bcaa831d79e6f2c27c356c3a6fdec2ac35ff9077 Mon Sep 17 00:00:00 2001
+From: Jiri Slaby <jslaby@suse.cz>
+Date: Thu, 7 Jul 2022 10:25:57 +0200
+Subject: [PATCH 2/5] tty: extract tty_flip_buffer_commit() from
+ tty_flip_buffer_push()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 716b10580283fda66f2b88140e3964f8a7f9da89 upstream.
+
+We will need this new helper in the next patch.
+
+Cc: Hillf Danton <hdanton@sina.com>
+Cc: 一只狗 <chennbnbnb@gmail.com>
+Cc: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+Link: https://lore.kernel.org/r/20220707082558.9250-1-jslaby@suse.cz
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/tty/tty_buffer.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/tty/tty_buffer.c b/drivers/tty/tty_buffer.c
+index 40ddcaae2194..bf8d4160411c 100644
+--- a/drivers/tty/tty_buffer.c
++++ b/drivers/tty/tty_buffer.c
+@@ -523,6 +523,15 @@ static void flush_to_ldisc(struct work_struct *work)
+ 
+ }
+ 
++static inline void tty_flip_buffer_commit(struct tty_buffer *tail)
++{
++	/*
++	 * Paired w/ acquire in flush_to_ldisc(); ensures flush_to_ldisc() sees
++	 * buffer data.
++	 */
++	smp_store_release(&tail->commit, tail->used);
++}
++
+ /**
+  *	tty_flip_buffer_push	-	terminal
+  *	@port: tty port to push
+@@ -538,11 +547,7 @@ void tty_flip_buffer_push(struct tty_port *port)
+ {
+ 	struct tty_bufhead *buf = &port->buf;
+ 
+-	/*
+-	 * Paired w/ acquire in flush_to_ldisc(); ensures flush_to_ldisc() sees
+-	 * buffer data.
+-	 */
+-	smp_store_release(&buf->tail->commit, buf->tail->used);
++	tty_flip_buffer_commit(buf->tail);
+ 	queue_work(system_unbound_wq, &buf->work);
+ }
+ EXPORT_SYMBOL(tty_flip_buffer_push);
+-- 
+2.25.1
+

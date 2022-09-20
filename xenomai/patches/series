@@ -1,23 +1,64 @@
 # CVE Patches to apply
 
-# CVE-2022-34918
-0001-netfilter-nf_tables-stricter-validation-of-element-d.patch
-
 # CVE-2020-27820
 0002-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
 0003-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
 0004-drm-nouveau-clean-up-all-clients-on-device-removal.patch
 
-# CVE-2022-33743
-0001-xen-netfront-restore-__skb_queue_tail-positioning-in.patch
+# CVE-2021-44879
+0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
+0002-f2fs-fix-to-avoid-panic-in-is_alive-if-metadata-is-i.patch
 
-# CVE-2022-32296
-0006-tcp-add-some-entropy-in-__inet_hash_connect.patch
-0007-tcp-use-different-parts-of-the-port_offset-for-index.patch
-0008-tcp-add-small-random-increments-to-the-source-port.patch
-0009-tcp-dynamically-allocate-the-perturb-table-used-by-s.patch
-0010-tcp-increase-source-port-perturb-table-to-2-16.patch
-0011-tcp-drop-the-hash_32-part-from-the-index-calculation.patch
+# CVE-2022-1280
+0001-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
-# CVE-2021-33656
-0012-vt-drop-old-FONT-ioctls.patch
+# CVE-2021-33061
+0001-ixgbe-add-the-ability-for-the-PF-to-disable-VF-link-.patch
+0002-ixgbe-add-improvement-for-MDD-response-functionality.patch
+0003-ixgbevf-add-disable-link-state.patch
+0004-ixgbevf-Rename-MSGTYPE-to-SUCCESS-and-FAILURE.patch
+
+# CVE-2020-24504
+0001-ice-create-scheduler-aggregator-node-config-and-move.patch
+
+# CVE-2022-39189
+0001-KVM-x86-do-not-report-a-vCPU-as-preempted-outside-in.patch
+
+# CVE-2022-40307
+0001-efi-capsule-loader-Fix-use-after-free-in-efi_capsule.patch
+
+# CVE-2022-39188
+0001-mm-Force-TLB-flush-for-PFNMAP-mappings-before-unlink.patch
+
+# CVE-2022-39842
+0001-video-fbdev-pxa3xx-gcu-Fix-integer-overflow-in-pxa3x.patch
+
+# CVE-2022-3028
+0001-af_key-Do-not-call-xfrm_probe_algs-in-parallel.patch
+
+# CVE-2022-2905
+0001-bpf-Don-t-use-tnum_range-on-array-range-checking-for.patch
+
+# CVE-2022-1462
+0001-tty-drop-tty_schedule_flip.patch
+0002-tty-extract-tty_flip_buffer_commit-from-tty_flip_buf.patch
+0003-tty-use-new-tty_insert_flip_string_and_push_buffer-i.patch
+0004-tty-drivers-tty-stop-using-tty_schedule_flip.patch
+0005-tty-the-rest-stop-using-tty_schedule_flip.patch
+
+# CVE-2022-39190
+0001-netfilter-bitwise-improve-error-goto-labels.patch
+0002-netfilter-nftables-remove-redundant-assignment-of-va.patch
+0003-netfilter-nf_tables-do-not-leave-chain-stats-enabled.patch
+0004-netfilter-nft_tunnel-restrict-it-to-netdev-family.patch
+0005-netfilter-nf_tables-consolidate-rule-verdict-trace-c.patch
+0006-netfilter-nft_cmp-optimize-comparison-for-16-bytes.patch
+0007-netfilter-nf_tables-upfront-validation-of-data-via-n.patch
+0008-netfilter-nf_tables-disallow-jump-to-implicit-chain-.patch
+0009-netfilter-nf_tables-disallow-binding-to-already-boun.patch
+
+# CVE-2021-3759
+0001-memcg-enable-accounting-of-ipc-resources.patch
+
+# CVE-2022-3061
+0001-video-fbdev-i740fb-Error-out-if-pixclock-equals-zero.patch

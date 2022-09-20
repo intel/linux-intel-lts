@@ -1,0 +1,91 @@
+From 3b4206f09179951f10b7691bc221cac0b3158532 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Fri, 10 Dec 2021 00:10:12 +0100
+Subject: [PATCH 5/9] netfilter: nf_tables: consolidate rule verdict trace call
+
+[ Upstream commit 4765473fefd4403b5eeca371637065b561522c50 ]
+
+Add function to consolidate verdict tracing.
+
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nf_tables_core.c | 39 ++++++++++++++++++++++++++++------
+ 1 file changed, 32 insertions(+), 7 deletions(-)
+
+diff --git a/net/netfilter/nf_tables_core.c b/net/netfilter/nf_tables_core.c
+index a61b5bf5aa0f..6dd27c8cd425 100644
+--- a/net/netfilter/nf_tables_core.c
++++ b/net/netfilter/nf_tables_core.c
+@@ -67,6 +67,36 @@ static void nft_cmp_fast_eval(const struct nft_expr *expr,
+ 	regs->verdict.code = NFT_BREAK;
+ }
+ 
++static noinline void __nft_trace_verdict(struct nft_traceinfo *info,
++					 const struct nft_chain *chain,
++					 const struct nft_regs *regs)
++{
++	enum nft_trace_types type;
++
++	switch (regs->verdict.code) {
++	case NFT_CONTINUE:
++	case NFT_RETURN:
++		type = NFT_TRACETYPE_RETURN;
++		break;
++	default:
++		type = NFT_TRACETYPE_RULE;
++		break;
++	}
++
++	__nft_trace_packet(info, chain, type);
++}
++
++static inline void nft_trace_verdict(struct nft_traceinfo *info,
++				     const struct nft_chain *chain,
++				     const struct nft_rule *rule,
++				     const struct nft_regs *regs)
++{
++	if (static_branch_unlikely(&nft_trace_enabled)) {
++		info->rule = rule;
++		__nft_trace_verdict(info, chain, regs);
++	}
++}
++
+ static bool nft_payload_fast_eval(const struct nft_expr *expr,
+ 				  struct nft_regs *regs,
+ 				  const struct nft_pktinfo *pkt)
+@@ -207,13 +237,13 @@ nft_do_chain(struct nft_pktinfo *pkt, void *priv)
+ 		break;
+ 	}
+ 
++	nft_trace_verdict(&info, chain, rule, &regs);
++
+ 	switch (regs.verdict.code & NF_VERDICT_MASK) {
+ 	case NF_ACCEPT:
+ 	case NF_DROP:
+ 	case NF_QUEUE:
+ 	case NF_STOLEN:
+-		nft_trace_packet(&info, chain, rule,
+-				 NFT_TRACETYPE_RULE);
+ 		return regs.verdict.code;
+ 	}
+ 
+@@ -226,15 +256,10 @@ nft_do_chain(struct nft_pktinfo *pkt, void *priv)
+ 		stackptr++;
+ 		fallthrough;
+ 	case NFT_GOTO:
+-		nft_trace_packet(&info, chain, rule,
+-				 NFT_TRACETYPE_RULE);
+-
+ 		chain = regs.verdict.chain;
+ 		goto do_chain;
+ 	case NFT_CONTINUE:
+ 	case NFT_RETURN:
+-		nft_trace_packet(&info, chain, rule,
+-				 NFT_TRACETYPE_RETURN);
+ 		break;
+ 	default:
+ 		WARN_ON(1);
+-- 
+2.25.1
+

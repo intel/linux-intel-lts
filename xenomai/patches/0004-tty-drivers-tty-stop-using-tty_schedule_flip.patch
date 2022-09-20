@@ -1,0 +1,152 @@
+From 4331fb403395513a2a6958e5270cf9895111be9e Mon Sep 17 00:00:00 2001
+From: Jiri Slaby <jslaby@suse.cz>
+Date: Mon, 22 Nov 2021 12:16:46 +0100
+Subject: [PATCH 4/5] tty: drivers/tty/, stop using tty_schedule_flip()
+
+commit 5f6a85158ccacc3f09744b3aafe8b11ab3b6c6f6 upstream.
+
+Since commit a9c3f68f3cd8d (tty: Fix low_latency BUG) in 2014,
+tty_flip_buffer_push() is only a wrapper to tty_schedule_flip(). We are
+going to remove the latter (as it is used less), so call the former in
+drivers/tty/.
+
+Cc: Vladimir Zapolskiy <vz@mleia.com>
+Reviewed-by: Johan Hovold <johan@kernel.org>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+Link: https://lore.kernel.org/r/20211122111648.30379-2-jslaby@suse.cz
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/tty/cyclades.c          | 6 +++---
+ drivers/tty/goldfish.c          | 2 +-
+ drivers/tty/moxa.c              | 4 ++--
+ drivers/tty/serial/lpc32xx_hs.c | 2 +-
+ drivers/tty/vt/keyboard.c       | 6 +++---
+ drivers/tty/vt/vt.c             | 2 +-
+ 6 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/tty/cyclades.c b/drivers/tty/cyclades.c
+index 097266342e5e..4bcaab250676 100644
+--- a/drivers/tty/cyclades.c
++++ b/drivers/tty/cyclades.c
+@@ -556,7 +556,7 @@ static void cyy_chip_rx(struct cyclades_card *cinfo, int chip,
+ 		}
+ 		info->idle_stats.recv_idle = jiffies;
+ 	}
+-	tty_schedule_flip(port);
++	tty_flip_buffer_push(port);
+ 
+ 	/* end of service */
+ 	cyy_writeb(info, CyRIR, save_xir & 0x3f);
+@@ -996,7 +996,7 @@ static void cyz_handle_rx(struct cyclades_port *info)
+ 		mod_timer(&info->rx_full_timer, jiffies + 1);
+ #endif
+ 	info->idle_stats.recv_idle = jiffies;
+-	tty_schedule_flip(&info->port);
++	tty_flip_buffer_push(&info->port);
+ 
+ 	/* Update rx_get */
+ 	cy_writel(&buf_ctrl->rx_get, new_rx_get);
+@@ -1172,7 +1172,7 @@ static void cyz_handle_cmd(struct cyclades_card *cinfo)
+ 		if (delta_count)
+ 			wake_up_interruptible(&info->port.delta_msr_wait);
+ 		if (special_count)
+-			tty_schedule_flip(&info->port);
++			tty_flip_buffer_push(&info->port);
+ 	}
+ }
+ 
+diff --git a/drivers/tty/goldfish.c b/drivers/tty/goldfish.c
+index 9180ca5e4dcd..d6e82eb61fc2 100644
+--- a/drivers/tty/goldfish.c
++++ b/drivers/tty/goldfish.c
+@@ -151,7 +151,7 @@ static irqreturn_t goldfish_tty_interrupt(int irq, void *dev_id)
+ 	address = (unsigned long)(void *)buf;
+ 	goldfish_tty_rw(qtty, address, count, 0);
+ 
+-	tty_schedule_flip(&qtty->port);
++	tty_flip_buffer_push(&qtty->port);
+ 	return IRQ_HANDLED;
+ }
+ 
+diff --git a/drivers/tty/moxa.c b/drivers/tty/moxa.c
+index f9f14104bd2c..d6528f3bb9b9 100644
+--- a/drivers/tty/moxa.c
++++ b/drivers/tty/moxa.c
+@@ -1385,7 +1385,7 @@ static int moxa_poll_port(struct moxa_port *p, unsigned int handle,
+ 		if (inited && !tty_throttled(tty) &&
+ 				MoxaPortRxQueue(p) > 0) { /* RX */
+ 			MoxaPortReadData(p);
+-			tty_schedule_flip(&p->port);
++			tty_flip_buffer_push(&p->port);
+ 		}
+ 	} else {
+ 		clear_bit(EMPTYWAIT, &p->statusflags);
+@@ -1410,7 +1410,7 @@ static int moxa_poll_port(struct moxa_port *p, unsigned int handle,
+ 
+ 	if (tty && (intr & IntrBreak) && !I_IGNBRK(tty)) { /* BREAK */
+ 		tty_insert_flip_char(&p->port, 0, TTY_BREAK);
+-		tty_schedule_flip(&p->port);
++		tty_flip_buffer_push(&p->port);
+ 	}
+ 
+ 	if (intr & IntrLine)
+diff --git a/drivers/tty/serial/lpc32xx_hs.c b/drivers/tty/serial/lpc32xx_hs.c
+index b5898c932036..a9802308ff60 100644
+--- a/drivers/tty/serial/lpc32xx_hs.c
++++ b/drivers/tty/serial/lpc32xx_hs.c
+@@ -344,7 +344,7 @@ static irqreturn_t serial_lpc32xx_interrupt(int irq, void *dev_id)
+ 		       LPC32XX_HSUART_IIR(port->membase));
+ 		port->icount.overrun++;
+ 		tty_insert_flip_char(tport, 0, TTY_OVERRUN);
+-		tty_schedule_flip(tport);
++		tty_flip_buffer_push(tport);
+ 	}
+ 
+ 	/* Data received? */
+diff --git a/drivers/tty/vt/keyboard.c b/drivers/tty/vt/keyboard.c
+index 78acc270e39a..aa0026a9839c 100644
+--- a/drivers/tty/vt/keyboard.c
++++ b/drivers/tty/vt/keyboard.c
+@@ -311,7 +311,7 @@ int kbd_rate(struct kbd_repeat *rpt)
+ static void put_queue(struct vc_data *vc, int ch)
+ {
+ 	tty_insert_flip_char(&vc->port, ch, 0);
+-	tty_schedule_flip(&vc->port);
++	tty_flip_buffer_push(&vc->port);
+ }
+ 
+ static void puts_queue(struct vc_data *vc, char *cp)
+@@ -320,7 +320,7 @@ static void puts_queue(struct vc_data *vc, char *cp)
+ 		tty_insert_flip_char(&vc->port, *cp, 0);
+ 		cp++;
+ 	}
+-	tty_schedule_flip(&vc->port);
++	tty_flip_buffer_push(&vc->port);
+ }
+ 
+ static void applkey(struct vc_data *vc, int key, char mode)
+@@ -565,7 +565,7 @@ static void fn_inc_console(struct vc_data *vc)
+ static void fn_send_intr(struct vc_data *vc)
+ {
+ 	tty_insert_flip_char(&vc->port, 0, TTY_BREAK);
+-	tty_schedule_flip(&vc->port);
++	tty_flip_buffer_push(&vc->port);
+ }
+ 
+ static void fn_scroll_forw(struct vc_data *vc)
+diff --git a/drivers/tty/vt/vt.c b/drivers/tty/vt/vt.c
+index 0a6336d54a65..30fc2a60c352 100644
+--- a/drivers/tty/vt/vt.c
++++ b/drivers/tty/vt/vt.c
+@@ -1834,7 +1834,7 @@ static void csi_m(struct vc_data *vc)
+ static void respond_string(const char *p, size_t len, struct tty_port *port)
+ {
+ 	tty_insert_flip_string(port, p, len);
+-	tty_schedule_flip(port);
++	tty_flip_buffer_push(port);
+ }
+ 
+ static void cursor_report(struct vc_data *vc, struct tty_struct *tty)
+-- 
+2.25.1
+

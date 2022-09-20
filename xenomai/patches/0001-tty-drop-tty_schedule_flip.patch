@@ -1,0 +1,87 @@
+From 96ca6762d37ba1f7b078876234d360f369d337f1 Mon Sep 17 00:00:00 2001
+From: Jiri Slaby <jslaby@suse.cz>
+Date: Mon, 22 Nov 2021 12:16:48 +0100
+Subject: [PATCH 1/5] tty: drop tty_schedule_flip()
+
+commit 5db96ef23bda6c2a61a51693c85b78b52d03f654 upstream.
+
+Since commit a9c3f68f3cd8d (tty: Fix low_latency BUG) in 2014,
+tty_flip_buffer_push() is only a wrapper to tty_schedule_flip(). All
+users were converted in the previous patches, so remove
+tty_schedule_flip() completely while inlining its body into
+tty_flip_buffer_push().
+
+One less exported function.
+
+Reviewed-by: Johan Hovold <johan@kernel.org>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+Link: https://lore.kernel.org/r/20211122111648.30379-4-jslaby@suse.cz
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/tty/tty_buffer.c | 30 ++++++++----------------------
+ include/linux/tty_flip.h |  1 -
+ 2 files changed, 8 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/tty/tty_buffer.c b/drivers/tty/tty_buffer.c
+index 6c4a50addadd..40ddcaae2194 100644
+--- a/drivers/tty/tty_buffer.c
++++ b/drivers/tty/tty_buffer.c
+@@ -394,27 +394,6 @@ int __tty_insert_flip_char(struct tty_port *port, unsigned char ch, char flag)
+ }
+ EXPORT_SYMBOL(__tty_insert_flip_char);
+ 
+-/**
+- *	tty_schedule_flip	-	push characters to ldisc
+- *	@port: tty port to push from
+- *
+- *	Takes any pending buffers and transfers their ownership to the
+- *	ldisc side of the queue. It then schedules those characters for
+- *	processing by the line discipline.
+- */
+-
+-void tty_schedule_flip(struct tty_port *port)
+-{
+-	struct tty_bufhead *buf = &port->buf;
+-
+-	/* paired w/ acquire in flush_to_ldisc(); ensures
+-	 * flush_to_ldisc() sees buffer data.
+-	 */
+-	smp_store_release(&buf->tail->commit, buf->tail->used);
+-	queue_work(system_unbound_wq, &buf->work);
+-}
+-EXPORT_SYMBOL(tty_schedule_flip);
+-
+ /**
+  *	tty_prepare_flip_string		-	make room for characters
+  *	@port: tty port
+@@ -557,7 +536,14 @@ static void flush_to_ldisc(struct work_struct *work)
+ 
+ void tty_flip_buffer_push(struct tty_port *port)
+ {
+-	tty_schedule_flip(port);
++	struct tty_bufhead *buf = &port->buf;
++
++	/*
++	 * Paired w/ acquire in flush_to_ldisc(); ensures flush_to_ldisc() sees
++	 * buffer data.
++	 */
++	smp_store_release(&buf->tail->commit, buf->tail->used);
++	queue_work(system_unbound_wq, &buf->work);
+ }
+ EXPORT_SYMBOL(tty_flip_buffer_push);
+ 
+diff --git a/include/linux/tty_flip.h b/include/linux/tty_flip.h
+index 767f62086bd9..e183f74b19a0 100644
+--- a/include/linux/tty_flip.h
++++ b/include/linux/tty_flip.h
+@@ -12,7 +12,6 @@ extern int tty_insert_flip_string_fixed_flag(struct tty_port *port,
+ extern int tty_prepare_flip_string(struct tty_port *port,
+ 		unsigned char **chars, size_t size);
+ extern void tty_flip_buffer_push(struct tty_port *port);
+-void tty_schedule_flip(struct tty_port *port);
+ int __tty_insert_flip_char(struct tty_port *port, unsigned char ch, char flag);
+ 
+ static inline int tty_insert_flip_char(struct tty_port *port,
+-- 
+2.25.1
+

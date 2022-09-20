@@ -1,0 +1,31 @@
+From 060bc2f6d0b4437c8ea5d2c277aa450dd857fc33 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Sun, 21 Aug 2022 16:32:44 +0200
+Subject: [PATCH 4/9] netfilter: nft_tunnel: restrict it to netdev family
+
+[ Upstream commit 01e4092d53bc4fe122a6e4b6d664adbd57528ca3 ]
+
+Only allow to use this expression from NFPROTO_NETDEV family.
+
+Fixes: af308b94a2a4 ("netfilter: nf_tables: add tunnel support")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nft_tunnel.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/netfilter/nft_tunnel.c b/net/netfilter/nft_tunnel.c
+index 3b27926d5382..2ee50996da8c 100644
+--- a/net/netfilter/nft_tunnel.c
++++ b/net/netfilter/nft_tunnel.c
+@@ -133,6 +133,7 @@ static const struct nft_expr_ops nft_tunnel_get_ops = {
+ 
+ static struct nft_expr_type nft_tunnel_type __read_mostly = {
+ 	.name		= "tunnel",
++	.family		= NFPROTO_NETDEV,
+ 	.ops		= &nft_tunnel_get_ops,
+ 	.policy		= nft_tunnel_policy,
+ 	.maxattr	= NFTA_TUNNEL_MAX,
+-- 
+2.25.1
+

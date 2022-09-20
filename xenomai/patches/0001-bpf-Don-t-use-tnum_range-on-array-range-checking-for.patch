@@ -1,0 +1,111 @@
+From 0792c7fb5783ed5641d4b456feab376ab832eb89 Mon Sep 17 00:00:00 2001
+From: Daniel Borkmann <daniel@iogearbox.net>
+Date: Thu, 25 Aug 2022 23:26:47 +0200
+Subject: [PATCH] bpf: Don't use tnum_range on array range checking for poke
+ descriptors
+
+commit a657182a5c5150cdfacb6640aad1d2712571a409 upstream.
+
+Hsin-Wei reported a KASAN splat triggered by their BPF runtime fuzzer which
+is based on a customized syzkaller:
+
+  BUG: KASAN: slab-out-of-bounds in bpf_int_jit_compile+0x1257/0x13f0
+  Read of size 8 at addr ffff888004e90b58 by task syz-executor.0/1489
+  CPU: 1 PID: 1489 Comm: syz-executor.0 Not tainted 5.19.0 #1
+  Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS
+  1.13.0-1ubuntu1.1 04/01/2014
+  Call Trace:
+   <TASK>
+   dump_stack_lvl+0x9c/0xc9
+   print_address_description.constprop.0+0x1f/0x1f0
+   ? bpf_int_jit_compile+0x1257/0x13f0
+   kasan_report.cold+0xeb/0x197
+   ? kvmalloc_node+0x170/0x200
+   ? bpf_int_jit_compile+0x1257/0x13f0
+   bpf_int_jit_compile+0x1257/0x13f0
+   ? arch_prepare_bpf_dispatcher+0xd0/0xd0
+   ? rcu_read_lock_sched_held+0x43/0x70
+   bpf_prog_select_runtime+0x3e8/0x640
+   ? bpf_obj_name_cpy+0x149/0x1b0
+   bpf_prog_load+0x102f/0x2220
+   ? __bpf_prog_put.constprop.0+0x220/0x220
+   ? find_held_lock+0x2c/0x110
+   ? __might_fault+0xd6/0x180
+   ? lock_downgrade+0x6e0/0x6e0
+   ? lock_is_held_type+0xa6/0x120
+   ? __might_fault+0x147/0x180
+   __sys_bpf+0x137b/0x6070
+   ? bpf_perf_link_attach+0x530/0x530
+   ? new_sync_read+0x600/0x600
+   ? __fget_files+0x255/0x450
+   ? lock_downgrade+0x6e0/0x6e0
+   ? fput+0x30/0x1a0
+   ? ksys_write+0x1a8/0x260
+   __x64_sys_bpf+0x7a/0xc0
+   ? syscall_enter_from_user_mode+0x21/0x70
+   do_syscall_64+0x3b/0x90
+   entry_SYSCALL_64_after_hwframe+0x63/0xcd
+  RIP: 0033:0x7f917c4e2c2d
+
+The problem here is that a range of tnum_range(0, map->max_entries - 1) has
+limited ability to represent the concrete tight range with the tnum as the
+set of resulting states from value + mask can result in a superset of the
+actual intended range, and as such a tnum_in(range, reg->var_off) check may
+yield true when it shouldn't, for example tnum_range(0, 2) would result in
+00XX -> v = 0000, m = 0011 such that the intended set of {0, 1, 2} is here
+represented by a less precise superset of {0, 1, 2, 3}. As the register is
+known const scalar, really just use the concrete reg->var_off.value for the
+upper index check.
+
+Fixes: d2e4c1e6c294 ("bpf: Constant map key tracking for prog array pokes")
+Reported-by: Hsin-Wei Hung <hsinweih@uci.edu>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Cc: Shung-Hsi Yu <shung-hsi.yu@suse.com>
+Acked-by: John Fastabend <john.fastabend@gmail.com>
+Link: https://lore.kernel.org/r/984b37f9fdf7ac36831d2137415a4a915744c1b6.1661462653.git.daniel@iogearbox.net
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ kernel/bpf/verifier.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 15ddc4292bc0..9a0fceb1fc97 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -5282,8 +5282,7 @@ record_func_key(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,
+ 	struct bpf_insn_aux_data *aux = &env->insn_aux_data[insn_idx];
+ 	struct bpf_reg_state *regs = cur_regs(env), *reg;
+ 	struct bpf_map *map = meta->map_ptr;
+-	struct tnum range;
+-	u64 val;
++	u64 val, max;
+ 	int err;
+ 
+ 	if (func_id != BPF_FUNC_tail_call)
+@@ -5293,10 +5292,11 @@ record_func_key(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,
+ 		return -EINVAL;
+ 	}
+ 
+-	range = tnum_range(0, map->max_entries - 1);
+ 	reg = &regs[BPF_REG_3];
++	val = reg->var_off.value;
++	max = map->max_entries;
+ 
+-	if (!register_is_const(reg) || !tnum_in(range, reg->var_off)) {
++	if (!(register_is_const(reg) && val < max)) {
+ 		bpf_map_key_store(aux, BPF_MAP_KEY_POISON);
+ 		return 0;
+ 	}
+@@ -5304,8 +5304,6 @@ record_func_key(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,
+ 	err = mark_chain_precision(env, BPF_REG_3);
+ 	if (err)
+ 		return err;
+-
+-	val = reg->var_off.value;
+ 	if (bpf_map_key_unseen(aux))
+ 		bpf_map_key_store(aux, val);
+ 	else if (!bpf_map_key_poisoned(aux) &&
+-- 
+2.25.1
+

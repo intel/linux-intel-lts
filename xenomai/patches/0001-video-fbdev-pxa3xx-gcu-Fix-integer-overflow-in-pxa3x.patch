@@ -1,0 +1,32 @@
+From 3a4e8ebe4ef5f435111b70ce24634d3f1c8fac6d Mon Sep 17 00:00:00 2001
+From: Hyunwoo Kim <imv4bel@gmail.com>
+Date: Mon, 20 Jun 2022 07:17:46 -0700
+Subject: [PATCH] video: fbdev: pxa3xx-gcu: Fix integer overflow in
+ pxa3xx_gcu_write
+
+In pxa3xx_gcu_write, a count parameter of type size_t is passed to words of
+type int.  Then, copy_from_user() may cause a heap overflow because it is used
+as the third argument of copy_from_user().
+
+Signed-off-by: Hyunwoo Kim <imv4bel@gmail.com>
+Signed-off-by: Helge Deller <deller@gmx.de>
+---
+ drivers/video/fbdev/pxa3xx-gcu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/video/fbdev/pxa3xx-gcu.c b/drivers/video/fbdev/pxa3xx-gcu.c
+index 9421d14d0eb0..9e9888e40c57 100644
+--- a/drivers/video/fbdev/pxa3xx-gcu.c
++++ b/drivers/video/fbdev/pxa3xx-gcu.c
+@@ -381,7 +381,7 @@ pxa3xx_gcu_write(struct file *file, const char *buff,
+ 	struct pxa3xx_gcu_batch	*buffer;
+ 	struct pxa3xx_gcu_priv *priv = to_pxa3xx_gcu_priv(file);
+ 
+-	int words = count / 4;
++	size_t words = count / 4;
+ 
+ 	/* Does not need to be atomic. There's a lock in user space,
+ 	 * but anyhow, this is just for statistics. */
+-- 
+2.25.1
+

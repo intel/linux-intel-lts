@@ -1,0 +1,54 @@
+From e5ca0f401abf8d4319a697aa7933a7ad7e677e9a Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Sun, 21 Aug 2022 12:41:33 +0200
+Subject: [PATCH 3/9] netfilter: nf_tables: do not leave chain stats enabled on
+ error
+
+[ Upstream commit 43eb8949cfdffa764b92bc6c54b87cbe5b0003fe ]
+
+Error might occur later in the nf_tables_addchain() codepath, enable
+static key only after transaction has been created.
+
+Fixes: 9f08ea848117 ("netfilter: nf_tables: keep chain counters away from hot path")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nf_tables_api.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index e5622e925ea9..de5b34c79dbe 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -1991,9 +1991,9 @@ static int nf_tables_addchain(struct nft_ctx *ctx, u8 family, u8 genmask,
+ 			      u8 policy, u32 flags)
+ {
+ 	const struct nlattr * const *nla = ctx->nla;
++	struct nft_stats __percpu *stats = NULL;
+ 	struct nft_table *table = ctx->table;
+ 	struct nft_base_chain *basechain;
+-	struct nft_stats __percpu *stats;
+ 	struct net *net = ctx->net;
+ 	char name[NFT_NAME_MAXLEN];
+ 	struct nft_trans *trans;
+@@ -2029,7 +2029,6 @@ static int nf_tables_addchain(struct nft_ctx *ctx, u8 family, u8 genmask,
+ 				return PTR_ERR(stats);
+ 			}
+ 			rcu_assign_pointer(basechain->stats, stats);
+-			static_branch_inc(&nft_counters_enabled);
+ 		}
+ 
+ 		err = nft_basechain_init(basechain, family, &hook, flags);
+@@ -2112,6 +2111,9 @@ static int nf_tables_addchain(struct nft_ctx *ctx, u8 family, u8 genmask,
+ 		goto err_unregister_hook;
+ 	}
+ 
++	if (stats)
++		static_branch_inc(&nft_counters_enabled);
++
+ 	table->use++;
+ 
+ 	return 0;
+-- 
+2.25.1
+
