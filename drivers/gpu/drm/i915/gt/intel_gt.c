@@ -35,6 +35,7 @@
 #include "intel_pm.h"
 #include "iov/intel_iov.h"
 #include "shmem_utils.h"
+#include "uc/intel_guc.h"
 
 static void __intel_gt_init_early(struct intel_gt *gt)
 {
@@ -1059,11 +1060,15 @@ void intel_gt_invalidate_tlb(struct intel_gt *gt, u32 seqno)
 		return;
 
 	with_intel_gt_pm_if_awake(gt, wakeref) {
+		struct intel_guc *guc = &gt->uc.guc;
 		mutex_lock(&gt->tlb.invalidate_lock);
 		if (tlb_seqno_passed(gt, seqno))
 			goto unlock;
 
-		mmio_invalidate_full(gt);
+		if (INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)) {
+			intel_guc_invalidate_tlb_guc(guc, INTEL_GUC_TLB_INVAL_MODE_HEAVY);
+		} else
+			mmio_invalidate_full(gt);
 
 		write_seqcount_invalidate(&gt->tlb.seqno);
 unlock:
