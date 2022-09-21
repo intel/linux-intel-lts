@@ -367,9 +367,9 @@ static __always_inline int optimize_nops_range(u8 *instr, u8 instrlen, int off)
 	if (nnops <= 1)
 		return nnops;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	add_nops(instr + off, nnops);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 	DUMP_BYTES(instr, instrlen, "%px: [%d:%d) optimized NOPs: ", instr, off, i);
 

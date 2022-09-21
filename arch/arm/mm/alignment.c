@@ -941,7 +941,7 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	if (thumb_mode(regs))
 		regs->ARM_cpsr = it_advance(regs->ARM_cpsr);
 
-	return 0;
+	goto out;
 
  bad_or_fault:
 	if (type == TYPE_ERROR)

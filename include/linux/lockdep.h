@@ -215,25 +215,25 @@ static inline void lockdep_init_map(struct lockdep_map *lock, const char *name,
  * or they are too narrow (they suffer from a false class-split):
  */
 #define lockdep_set_class(lock, key)				\
-	lockdep_init_map_type(&(lock)->dep_map, #key, key, 0,	\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #key, key, 0,	\
 			      (lock)->dep_map.wait_type_inner,	\
 			      (lock)->dep_map.wait_type_outer,	\
 			      (lock)->dep_map.lock_type)
 
 #define lockdep_set_class_and_name(lock, key, name)		\
-	lockdep_init_map_type(&(lock)->dep_map, name, key, 0,	\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), name, key, 0,	\
 			      (lock)->dep_map.wait_type_inner,	\
 			      (lock)->dep_map.wait_type_outer,	\
 			      (lock)->dep_map.lock_type)
 
 #define lockdep_set_class_and_subclass(lock, key, sub)		\
-	lockdep_init_map_type(&(lock)->dep_map, #key, key, sub,	\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #key, key, sub,	\
 			      (lock)->dep_map.wait_type_inner,	\
 			      (lock)->dep_map.wait_type_outer,	\
 			      (lock)->dep_map.lock_type)
 
 #define lockdep_set_subclass(lock, sub)					\
-	lockdep_init_map_type(&(lock)->dep_map, #lock, (lock)->dep_map.key, sub,\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #lock, (lock)->dep_map.key, sub,\
 			      (lock)->dep_map.wait_type_inner,		\
 			      (lock)->dep_map.wait_type_outer,		\
 			      (lock)->dep_map.lock_type)
