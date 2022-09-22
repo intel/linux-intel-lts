@@ -2189,8 +2189,9 @@ static int tb_switch_uevent(struct device *dev, struct kobj_uevent_env *env)
 	struct tb_switch *sw = tb_to_switch(dev);
 	const char *type;
 
-	if (sw->config.thunderbolt_version == USB4_VERSION_1_0) {
-		if (add_uevent_var(env, "USB4_VERSION=1.0"))
+	if (tb_switch_is_usb4(sw)) {
+		if (add_uevent_var(env, "USB4_VERSION=%u.0",
+				   usb4_switch_version(sw)))
 			return -ENOMEM;
 	}
 
