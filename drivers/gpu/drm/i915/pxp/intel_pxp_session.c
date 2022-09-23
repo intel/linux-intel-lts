@@ -70,6 +70,7 @@ static int pxp_create_arb_session(struct intel_pxp *pxp)
 		drm_err(&gt->i915->drm, "arb session failed to go in play\n");
 		return ret;
 	}
+	drm_dbg(&gt->i915->drm, "PXP ARB session is alive\n");
 
 	pxp->arb_is_valid = true;
 
