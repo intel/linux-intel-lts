@@ -804,6 +804,7 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 
 	if (!is_cow_mapping(src_vma->vm_flags))
 		return 1;
+
 	/*
 	 * If the source mm belongs to a Dovetail-enabled process, we
 	 * don't want to impose the COW-induced latency on it: make
