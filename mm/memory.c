@@ -814,30 +814,6 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 		goto do_copy;
 
 	/*
-	 * If the source mm belongs to a Dovetail-enabled process, we
-	 * don't want to impose the COW-induced latency on it: make
-	 * sure the child gets its own copy of the page.
-	 */
-	if (dovetailing() && test_bit(MMF_DOVETAILED, &src_mm->flags))
-		goto do_copy;
-
-	/*
-	 * If the source mm belongs to a Dovetail-enabled process, we
-	 * don't want to impose the COW-induced latency on it: make
-	 * sure the child gets its own copy of the page.
-	 */
-	if (dovetailing() && test_bit(MMF_DOVETAILED, &src_mm->flags))
-		goto do_copy;
-
-	/*
-	 * If the source mm belongs to a Dovetail-enabled process, we
-	 * don't want to impose the COW-induced latency on it: make
-	 * sure the child gets its own copy of the page.
-	 */
-	if (dovetailing() && test_bit(MMF_DOVETAILED, &src_mm->flags))
-		goto do_copy;
-
-	/*
 	 * What we want to do is to check whether this page may
 	 * have been pinned by the parent process.  If so,
 	 * instead of wrprotect the pte on both sides, we copy
