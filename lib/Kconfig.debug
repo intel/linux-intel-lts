@@ -1424,7 +1424,7 @@ config DEBUG_LOCK_ALLOC
 
 config DEBUG_HARD_LOCKS
 	bool "Debug hard spinlocks"
-	depends on DEBUG_IRQ_PIPELINE && LOCKDEP && EXPERIMENTAL
+	depends on DEBUG_IRQ_PIPELINE && LOCKDEP && EXPERT
 	help
 	  Turn on this option for enabling LOCKDEP for hard spinlock
 	  types used in interrupt pipelining.
