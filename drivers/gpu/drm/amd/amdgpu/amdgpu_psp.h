@@ -69,8 +69,8 @@ enum psp_bootloader_cmd {
 	PSP_BL__LOAD_SOSDRV		= 0x20000,
 	PSP_BL__LOAD_KEY_DATABASE	= 0x80000,
 	PSP_BL__LOAD_SOCDRV             = 0xB0000,
-	PSP_BL__LOAD_INTFDRV            = 0xC0000,
-	PSP_BL__LOAD_DBGDRV             = 0xD0000,
+	PSP_BL__LOAD_DBGDRV             = 0xC0000,
+	PSP_BL__LOAD_INTFDRV		= 0xD0000,
 	PSP_BL__DRAM_LONG_TRAIN		= 0x100000,
 	PSP_BL__DRAM_SHORT_TRAIN	= 0x200000,
 	PSP_BL__LOAD_TOS_SPL_TABLE	= 0x10000000,
@@ -129,6 +129,8 @@ struct psp_funcs
 	void (*ring_set_wptr)(struct psp_context *psp, uint32_t value);
 	int (*load_usbc_pd_fw)(struct psp_context *psp, uint64_t fw_pri_mc_addr);
 	int (*read_usbc_pd_fw)(struct psp_context *psp, uint32_t *fw_ver);
+	int (*update_spirom)(struct psp_context *psp, uint64_t fw_pri_mc_addr);
+	int (*vbflash_stat)(struct psp_context *psp);
 };
 
 #define AMDGPU_XGMI_MAX_CONNECTED_NODES		64
@@ -244,6 +246,7 @@ enum psp_runtime_entry_type {
 	PSP_RUNTIME_ENTRY_TYPE_MGPU_WAFL	= 0x3,  /* WAFL runtime data */
 	PSP_RUNTIME_ENTRY_TYPE_MGPU_XGMI	= 0x4,  /* XGMI runtime data */
 	PSP_RUNTIME_ENTRY_TYPE_BOOT_CONFIG	= 0x5,  /* Boot Config runtime data */
+	PSP_RUNTIME_ENTRY_TYPE_PPTABLE_ERR_STATUS = 0x6, /* SCPM validation data */
 };
 
 /* PSP runtime DB header */
@@ -278,10 +281,22 @@ enum psp_runtime_boot_cfg_feature {
 	BOOT_CFG_FEATURE_TWO_STAGE_DRAM_TRAINING    = 0x2,
 };
 
+/* PSP run time DB SCPM authentication defines */
+enum psp_runtime_scpm_authentication {
+	SCPM_DISABLE                     = 0x0,
+	SCPM_ENABLE                      = 0x1,
+	SCPM_ENABLE_WITH_SCPM_ERR        = 0x2,
+};
+
 /* PSP runtime DB boot config entry */
 struct psp_runtime_boot_cfg_entry {
 	uint32_t boot_cfg_bitmask;
 	uint32_t reserved;
+};
+
+/* PSP runtime DB SCPM entry */
+struct psp_runtime_scpm_entry {
+	enum psp_runtime_scpm_authentication scpm_status;
 };
 
 struct psp_context
@@ -358,6 +373,10 @@ struct psp_context
 	struct psp_memory_training_context mem_train_ctx;
 
 	uint32_t			boot_cfg_bitmask;
+
+	char *vbflash_tmp_buf;
+	size_t vbflash_image_size;
+	bool vbflash_done;
 };
 
 struct amdgpu_psp_funcs {
@@ -404,6 +423,14 @@ struct amdgpu_psp_funcs {
 	((psp)->funcs->read_usbc_pd_fw ? \
 	(psp)->funcs->read_usbc_pd_fw((psp), fw_ver) : -EINVAL)
 
+#define psp_update_spirom(psp, fw_pri_mc_addr) \
+	((psp)->funcs->update_spirom ? \
+	(psp)->funcs->update_spirom((psp), fw_pri_mc_addr) : -EINVAL)
+
+#define psp_vbflash_status(psp) \
+	((psp)->funcs->vbflash_stat ? \
+	(psp)->funcs->vbflash_stat((psp)) : -EINVAL)
+
 extern const struct amd_ip_funcs psp_ip_funcs;
 
 extern const struct amdgpu_ip_block_version psp_v3_1_ip_block;
@@ -412,6 +439,7 @@ extern const struct amdgpu_ip_block_version psp_v11_0_ip_block;
 extern const struct amdgpu_ip_block_version psp_v11_0_8_ip_block;
 extern const struct amdgpu_ip_block_version psp_v12_0_ip_block;
 extern const struct amdgpu_ip_block_version psp_v13_0_ip_block;
+extern const struct amdgpu_ip_block_version psp_v13_0_4_ip_block;
 
 extern int psp_wait_for(struct psp_context *psp, uint32_t reg_index,
 			uint32_t field_val, uint32_t mask, bool check_changed);
@@ -483,4 +511,7 @@ int psp_load_fw_list(struct psp_context *psp,
 void psp_copy_fw(struct psp_context *psp, uint8_t *start_addr, uint32_t bin_size);
 
 int is_psp_fw_valid(struct psp_bin_desc bin);
+
+int amdgpu_psp_sysfs_init(struct amdgpu_device *adev);
+void amdgpu_psp_sysfs_fini(struct amdgpu_device *adev);
 #endif

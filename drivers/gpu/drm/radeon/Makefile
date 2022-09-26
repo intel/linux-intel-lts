@@ -44,12 +44,12 @@ radeon-y += radeon_device.o radeon_asic.o radeon_kms.o \
 	evergreen.o evergreen_cs.o \
 	evergreen_hdmi.o radeon_trace_points.o ni.o \
 	atombios_encoders.o radeon_semaphore.o radeon_sa.o atombios_i2c.o si.o \
-	radeon_prime.o cik.o cik_blit_shaders.o \
+	radeon_prime.o cik.o \
 	r600_dpm.o rs780_dpm.o rv6xx_dpm.o rv770_dpm.o rv730_dpm.o rv740_dpm.o \
 	rv770_smc.o cypress_dpm.o btc_dpm.o sumo_dpm.o sumo_smc.o trinity_dpm.o \
 	trinity_smc.o ni_dpm.o si_smc.o si_dpm.o kv_smc.o kv_dpm.o ci_smc.o \
 	ci_dpm.o dce6_afmt.o radeon_vm.o radeon_ucode.o radeon_ib.o \
-	radeon_sync.o radeon_audio.o radeon_dp_auxch.o radeon_dp_mst.o
+	radeon_sync.o radeon_audio.o radeon_dp_auxch.o
 
 radeon-$(CONFIG_MMU_NOTIFIER) += radeon_mn.o
 

@@ -23,9 +23,6 @@
  *
  */
 
-#include <linux/delay.h>
-#include <linux/slab.h>
-
 #include "dm_services.h"
 #include "core_types.h"
 #include "dce_aux.h"
@@ -87,7 +84,8 @@ static void release_engine(
 
 	engine->ddc = NULL;
 
-	REG_UPDATE(AUX_ARB_CONTROL, AUX_SW_DONE_USING_AUX_REG, 1);
+	REG_UPDATE_2(AUX_ARB_CONTROL, AUX_SW_DONE_USING_AUX_REG, 1,
+		AUX_SW_USE_AUX_REG_REQ, 0);
 }
 
 #define SW_CAN_ACCESS_AUX 1
@@ -571,6 +569,11 @@ int dce_aux_transfer_raw(struct ddc_service *ddc,
 
 	memset(&aux_req, 0, sizeof(aux_req));
 
+	if (ddc_pin == NULL) {
+		*operation_result = AUX_RET_ERROR_ENGINE_ACQUIRE;
+		return -1;
+	}
+
 	aux_engine = ddc->ctx->dc->res_pool->engines[ddc_pin->pin_data->en];
 	if (!acquire(aux_engine, ddc_pin)) {
 		*operation_result = AUX_RET_ERROR_ENGINE_ACQUIRE;
@@ -811,12 +814,6 @@ bool dce_aux_transfer_with_retries(struct ddc_service *ddc,
 								"dce_aux_transfer_with_retries: AUX_RET_SUCCESS: AUX_TRANSACTION_REPLY_I2C_OVER_AUX_DEFER");
 
 				retry_on_defer = true;
-				fallthrough;
-			case AUX_TRANSACTION_REPLY_I2C_OVER_AUX_NACK:
-				if (*payload->reply == AUX_TRANSACTION_REPLY_I2C_OVER_AUX_NACK)
-					DC_TRACE_LEVEL_MESSAGE(DAL_TRACE_LEVEL_INFORMATION,
-								LOG_FLAG_I2cAux_DceAux,
-								"dce_aux_transfer_with_retries: AUX_RET_SUCCESS: AUX_TRANSACTION_REPLY_I2C_OVER_AUX_NACK");
 
 				if (aux_defer_retries >= AUX_MIN_DEFER_RETRIES
 						&& defer_time_in_ms >= AUX_MAX_DEFER_TIMEOUT_MS) {
@@ -845,7 +842,11 @@ bool dce_aux_transfer_with_retries(struct ddc_service *ddc,
 					}
 				}
 				break;
-
+			case AUX_TRANSACTION_REPLY_I2C_OVER_AUX_NACK:
+				DC_TRACE_LEVEL_MESSAGE(DAL_TRACE_LEVEL_INFORMATION,
+							LOG_FLAG_I2cAux_DceAux,
+							"dce_aux_transfer_with_retries: FAILURE: AUX_TRANSACTION_REPLY_I2C_OVER_AUX_NACK");
+				goto fail;
 			case AUX_TRANSACTION_REPLY_I2C_DEFER:
 				DC_TRACE_LEVEL_MESSAGE(DAL_TRACE_LEVEL_INFORMATION,
 							LOG_FLAG_I2cAux_DceAux,

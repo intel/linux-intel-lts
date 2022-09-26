@@ -61,3 +61,5 @@ config INTEL_MEI_GSC
 	  tasks.
 
 source "drivers/misc/mei/hdcp/Kconfig"
+source "drivers/misc/mei/pxp/Kconfig"
+

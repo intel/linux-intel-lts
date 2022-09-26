@@ -238,12 +238,24 @@ static int create_other_event(struct kfd_process *p, struct kfd_event *ev, const
 	return 0;
 }
 
-void kfd_event_init_process(struct kfd_process *p)
+int kfd_event_init_process(struct kfd_process *p)
 {
+	int id;
+
 	mutex_init(&p->event_mutex);
 	idr_init(&p->event_idr);
 	p->signal_page = NULL;
-	p->signal_event_count = 0;
+	p->signal_event_count = 1;
+	/* Allocate event ID 0. It is used for a fast path to ignore bogus events
+	 * that are sent by the CP without a context ID
+	 */
+	id = idr_alloc(&p->event_idr, NULL, 0, 1, GFP_KERNEL);
+	if (id < 0) {
+		idr_destroy(&p->event_idr);
+		mutex_destroy(&p->event_mutex);
+		return id;
+	}
+	return 0;
 }
 
 static void destroy_event(struct kfd_process *p, struct kfd_event *ev)
@@ -271,8 +283,10 @@ static void destroy_events(struct kfd_process *p)
 	uint32_t id;
 
 	idr_for_each_entry(&p->event_idr, ev, id)
-		destroy_event(p, ev);
+		if (ev)
+			destroy_event(p, ev);
 	idr_destroy(&p->event_idr);
+	mutex_destroy(&p->event_mutex);
 }
 
 /*
@@ -363,8 +377,7 @@ int kfd_kmap_event_page(struct kfd_process *p, uint64_t event_page_offset)
 		return -EINVAL;
 	}
 
-	err = amdgpu_amdkfd_gpuvm_map_gtt_bo_to_kernel(kfd->adev,
-					mem, &kern_addr, &size);
+	err = amdgpu_amdkfd_gpuvm_map_gtt_bo_to_kernel(mem, &kern_addr, &size);
 	if (err) {
 		pr_err("Failed to map event page to kernel\n");
 		return err;
@@ -373,7 +386,7 @@ int kfd_kmap_event_page(struct kfd_process *p, uint64_t event_page_offset)
 	err = kfd_event_page_set(p, kern_addr, size, event_page_offset);
 	if (err) {
 		pr_err("Failed to set event page\n");
-		amdgpu_amdkfd_gpuvm_unmap_gtt_bo_from_kernel(kfd->adev, mem);
+		amdgpu_amdkfd_gpuvm_unmap_gtt_bo_from_kernel(mem);
 		return err;
 	}
 	return err;
@@ -749,7 +762,7 @@ void kfd_signal_event_interrupt(u32 pasid, uint32_t partial_id,
 			 * iterate over the signal slots and lookup
 			 * only signaled events from the IDR.
 			 */
-			for (id = 0; id < KFD_SIGNAL_EVENT_LIMIT; id++)
+			for (id = 1; id < KFD_SIGNAL_EVENT_LIMIT; id++)
 				if (READ_ONCE(slots[id]) != UNSIGNALED_EVENT_SLOT) {
 					ev = lookup_event_by_id(p, id);
 					set_event_from_interrupt(p, ev);
@@ -881,7 +894,8 @@ static long user_timeout_to_jiffies(uint32_t user_timeout_ms)
 	return msecs_to_jiffies(user_timeout_ms) + 1;
 }
 
-static void free_waiters(uint32_t num_events, struct kfd_event_waiter *waiters)
+static void free_waiters(uint32_t num_events, struct kfd_event_waiter *waiters,
+			 bool undo_auto_reset)
 {
 	uint32_t i;
 
@@ -890,6 +904,9 @@ static void free_waiters(uint32_t num_events, struct kfd_event_waiter *waiters)
 			spin_lock(&waiters[i].event->lock);
 			remove_wait_queue(&waiters[i].event->wq,
 					  &waiters[i].wait);
+			if (undo_auto_reset && waiters[i].activated &&
+			    waiters[i].event && waiters[i].event->auto_reset)
+				set_event(waiters[i].event);
 			spin_unlock(&waiters[i].event->lock);
 		}
 
@@ -898,7 +915,7 @@ static void free_waiters(uint32_t num_events, struct kfd_event_waiter *waiters)
 
 int kfd_wait_on_events(struct kfd_process *p,
 		       uint32_t num_events, void __user *data,
-		       bool all, uint32_t user_timeout_ms,
+		       bool all, uint32_t *user_timeout_ms,
 		       uint32_t *wait_result)
 {
 	struct kfd_event_data __user *events =
@@ -907,7 +924,7 @@ int kfd_wait_on_events(struct kfd_process *p,
 	int ret = 0;
 
 	struct kfd_event_waiter *event_waiters = NULL;
-	long timeout = user_timeout_to_jiffies(user_timeout_ms);
+	long timeout = user_timeout_to_jiffies(*user_timeout_ms);
 
 	event_waiters = alloc_event_waiters(num_events);
 	if (!event_waiters) {
@@ -957,15 +974,11 @@ int kfd_wait_on_events(struct kfd_process *p,
 		}
 
 		if (signal_pending(current)) {
-			/*
-			 * This is wrong when a nonzero, non-infinite timeout
-			 * is specified. We need to use
-			 * ERESTARTSYS_RESTARTBLOCK, but struct restart_block
-			 * contains a union with data for each user and it's
-			 * in generic kernel code that I don't want to
-			 * touch yet.
-			 */
 			ret = -ERESTARTSYS;
+			if (*user_timeout_ms != KFD_EVENT_TIMEOUT_IMMEDIATE &&
+			    *user_timeout_ms != KFD_EVENT_TIMEOUT_INFINITE)
+				*user_timeout_ms = jiffies_to_msecs(
+					max(0l, timeout-1));
 			break;
 		}
 
@@ -1006,7 +1019,7 @@ int kfd_wait_on_events(struct kfd_process *p,
 					       event_waiters, events);
 
 out_unlock:
-	free_waiters(num_events, event_waiters);
+	free_waiters(num_events, event_waiters, ret == -ERESTARTSYS);
 	mutex_unlock(&p->event_mutex);
 out:
 	if (ret)
