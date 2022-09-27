@@ -6093,7 +6093,10 @@ static void drm_get_monitor_range(struct drm_connector *connector,
 		.drm_edid = drm_edid,
 	};
 
-	if (!version_greater(drm_edid, 1, 1))
+	if (!version_greater(drm_edid, 1, 3))
+		return;
+
+	if (!(drm_edid->edid->features & DRM_EDID_FEATURE_CONTINUOUS_FREQ))
 		return;
 
 	drm_for_each_detailed_block(drm_edid, get_monitor_range, &closure);
