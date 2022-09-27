@@ -113,6 +113,7 @@ CVEs fixed in 4.19.35:
 CVEs fixed in 4.19.36:
   CVE-2019-15292: 6c42507f426b40c63e8eb98ce6dd4afbc7efcdb5 appletalk: Fix use-after-free in atalk_proc_exit
   CVE-2019-9857: ca306c17d2edcc8aa3bf1724a5cb1ecefc31ef3b inotify: Fix fsnotify_mark refcount leak in inotify_update_existing_watch()
+  CVE-2022-21385: 5be4bb315de29ad3ae558a8f6b92f13a1b4bfb84 net/rds: fix warn in rds_message_alloc_sgs
 
 CVEs fixed in 4.19.37:
   CVE-2019-11599: 6ff17bc5936e5fab33de8064dc0690f6c8c789ca coredump: fix race condition between mmget_not_zero()/get_task_mm() and core dumping
@@ -591,6 +592,9 @@ CVEs fixed in 4.19.153:
   CVE-2020-0423: 35cc2facc2a5ff52b9aa03f2dc81dcb000d97da3 binder: fix UAF when releasing todo list
   CVE-2020-25705: d6c552505c0d1719dda42b4af2def0618bd7bf54 icmp: randomize the global rate limiter
 
+CVEs fixed in 4.19.154:
+  CVE-2020-27784: cedb0187b8ba929c3f76f28e6bc25804d65f8a54 usb: gadget: function: printer: fix use-after-free in __lock_acquire
+
 CVEs fixed in 4.19.155:
   CVE-2020-25656: 7e3ba72e5b9376e12839ea347c49fc4108244b0c vt: keyboard, extend func_buf_lock to readers
   CVE-2020-25668: 619e366268e0430687d07b24b48f7382fc088c9f tty: make FONTX ioctl use the tty pointer they were actually passed
@@ -887,6 +891,7 @@ CVEs fixed in 4.19.230:
 
 CVEs fixed in 4.19.231:
   CVE-2022-20008: c91b06297563e84ac072464fe6cc141cc15435f0 mmc: block: fix read single on recovery logic
+  CVE-2022-2964: 1668781ed24da43498799aa4f65714a7de201930 net: usb: ax88179_178a: Fix out-of-bounds accesses in RX fixup
 
 CVEs fixed in 4.19.232:
   CVE-2022-26966: dde5ddf02a47487dd6efcc7077307f1d4e1ba337 sr9700: sanity check for packet length
@@ -930,11 +935,13 @@ CVEs fixed in 4.19.238:
   CVE-2022-2380: 1caa40af491dcfe17b3ae870a854388d8ea01984 video: fbdev: sm712fb: Fix crash in smtcfb_read()
   CVE-2022-28389: a8bba9fd73775e66b4021b18f2193f769ce48a59 can: mcba_usb: mcba_usb_start_xmit(): fix double dev_kfree_skb in error path
   CVE-2022-28390: dec3ed0c76483748268bf36ec278af660b0f80ba can: ems_usb: ems_usb_start_xmit(): fix double dev_kfree_skb() in error path
+  CVE-2022-2977: cb64bd038beacb4331fe464a36c8b5481e8f51e2 tpm: fix reference counting for struct tpm_chip
   CVE-2022-30594: b1f438f872dcda10a79e6aeaf06fd52dfb15a6ab ptrace: Check PTRACE_O_SUSPEND_SECCOMP permission on PTRACE_SEIZE
+  CVE-2022-3202: 2ef74e3e0089b6615ee124e1183746974c6bb561 jfs: prevent NULL deref in diFree
+  CVE-2022-3239: 0113fa98a49a8e46a19b0ad80f29c904c6feec23 media: em28xx: initialize refcount before kref_get
 
 CVEs fixed in 4.19.240:
   CVE-2022-1204: de55a1338e6a48ff1e41ea8db1432496fbe2a62b ax25: Fix refcount leaks caused by ax25_cb_del()
-  CVE-2022-2639: bbbf059337f9a74285c1cf088ff85ee92d149e64 openvswitch: fix OOB access in reserve_sfa_size()
   CVE-2022-28388: 8eb78da898079c0d7250c32ebf0c35fb81737abe can: usb_8dev: usb_8dev_start_xmit(): fix double dev_kfree_skb() in error path
 
 CVEs fixed in 4.19.241:
@@ -1000,8 +1007,22 @@ CVEs fixed in 4.19.255:
   CVE-2022-26373: b6c5011934a15762cd694e36fe74f2f2f93eac9b x86/speculation: Add RSB VM Exit protections
   CVE-2022-36946: f295d365b30626f82423a923695274024016380e netfilter: nf_queue: do not allow packet truncation below transport header offset
 
+CVEs fixed in 4.19.256:
+  CVE-2021-4159: 6c6b84ef5ea8dc0ca3559ccf69810960e348c555 bpf: Verifer, adjust_scalar_min_max_vals to always call update_reg_bounds()
+  CVE-2022-1679: ab7a0ddf5f1cdec63cb21840369873806fc36d80 ath9k: fix use-after-free in ath9k_hif_usb_rx_cb
+  CVE-2022-2153: b8127a0fd21d70ab42d8177f8bb97df74f503cc1 KVM: x86: Avoid theoretical NULL pointer dereference in kvm_irq_delivery_to_apic_fast()
+  CVE-2022-2586: 77d3b5038b7462318f5183e2ad704b01d57215a2 netfilter: nf_tables: do not allow SET_ID to refer to another table
+  CVE-2022-2588: 73584dab72d0a826f286a45544305819b58f7b92 net_sched: cls_route: remove from list when handle is 0
+
+CVEs fixed in 4.19.257:
+  CVE-2022-3028: 7dbfc8f25f22fe2a64dd808266e00c8d2661ebdd af_key: Do not call xfrm_probe_algs in parallel
+
+CVEs fixed in 4.19.258:
+  CVE-2022-2663: 3275f7804f40de3c578d2253232349b07c25f146 netfilter: nf_conntrack_irc: Fix forged IP logic
+  CVE-2022-40307: 021805af5bedeafc76c117fc771c100b358ab419 efi: capsule-loader: Fix use-after-free in efi_capsule_write
+
  
-CVEs Fixed in this 4.19.255 LTS 4.19 release 
+CVEs Fixed in this 4.19.259 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -1090,10 +1111,7 @@ CVEs Fixed in this 4.19.255 LTS 4.19 release
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
-# CVE-2022-1679
-0001-ath9k-fix-use-after-free-in-ath9k_hif_usb_rx_cb.patch
-
-# CVE-2021-4159
-0001-bpf-Verifer-adjust_scalar_min_max_vals-to-always-cal.patch
+# CVE-2022-39842
+0001-video-fbdev-pxa3xx-gcu-Fix-integer-overflow-in-pxa3x.patch
  
 ================
