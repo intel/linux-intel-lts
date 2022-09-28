@@ -1692,12 +1692,15 @@ static int igc_ethtool_get_preempt(struct net_device *netdev,
 }
 
 static int igc_ethtool_set_preempt(struct net_device *netdev,
-				   struct ethtool_fp *fpcmd)
+				   struct ethtool_fp *fpcmd,
+				   struct netlink_ext_ack *extack)
 {
 	struct igc_adapter *adapter = netdev_priv(netdev);
 
-	if (fpcmd->add_frag_size < 68 || fpcmd->add_frag_size > 260)
+	if (fpcmd->add_frag_size < 68 || fpcmd->add_frag_size > 260) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid value for add-frag-size");
 		return -EINVAL;
+	}
 
 	adapter->frame_preemption_active = fpcmd->enabled;
 	adapter->add_frag_size = fpcmd->add_frag_size;
