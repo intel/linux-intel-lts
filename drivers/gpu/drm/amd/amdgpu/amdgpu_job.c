@@ -248,12 +248,12 @@ int amdgpu_job_submit_direct(struct amdgpu_job *job, struct amdgpu_ring *ring,
 	return 0;
 }
 
-static struct dma_fence *amdgpu_job_dependency(struct drm_sched_job *sched_job,
-					       struct drm_sched_entity *s_entity)
+static struct dma_fence *
+amdgpu_job_dependency(struct drm_sched_job *sched_job,
+		      struct drm_sched_entity *s_entity)
 {
 	struct amdgpu_ring *ring = to_amdgpu_ring(s_entity->rq->sched);
 	struct amdgpu_job *job = to_amdgpu_job(sched_job);
-	struct amdgpu_vm *vm = job->vm;
 	struct dma_fence *fence;
 	int r;
 
@@ -267,12 +267,10 @@ static struct dma_fence *amdgpu_job_dependency(struct drm_sched_job *sched_job,
 	if (!fence && job->gang_submit)
 		fence = amdgpu_device_switch_gang(ring->adev, job->gang_submit);
 
-	while (fence == NULL && vm && !job->vmid) {
-		r = amdgpu_vmid_grab(vm, ring, &job->sync, job);
+	while (!fence && job->vm && !job->vmid) {
+		r = amdgpu_vmid_grab(job->vm, ring, job, &fence);
 		if (r)
 			DRM_ERROR("Error getting VM ID (%d)\n", r);
-
-		fence = amdgpu_sync_get_fence(&job->sync);
 	}
 
 	return fence;
