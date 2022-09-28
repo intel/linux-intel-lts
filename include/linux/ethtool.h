@@ -416,6 +416,21 @@ struct ethtool_module_eeprom {
 };
 
 /**
+ * struct ethtool_fp - Frame Preemption information
+ *
+ * @enabled: Enable frame preemption.
+ * @add_frag_size: Minimum size for additional (non-final) fragments
+ * in bytes, for the value defined in the IEEE 802.3-2018 standard see
+ * ethtool_frag_size_to_mult().
+ */
+struct ethtool_fp {
+	u8 enabled;
+	u32 add_frag_size;
+	u8 disable_verify;
+	u8 verified;
+};
+
+/**
  * struct ethtool_ops - optional netdev operations
  * @cap_link_lanes_supported: indicates if the driver supports lanes
  *	parameter.
