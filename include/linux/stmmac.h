@@ -277,5 +277,6 @@ struct plat_stmmacenet_data {
 	bool use_phy_wol;
 	bool use_hw_vlan;
 	bool sph_disable;
+	bool fixed_2G5_clock_rate;
 };
 #endif

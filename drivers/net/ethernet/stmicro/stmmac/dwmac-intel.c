@@ -249,10 +249,12 @@ static void intel_speed_mode_2500(struct net_device *ndev, void *intel_data)
 		priv->plat->max_speed = 2500;
 		priv->plat->phy_interface = PHY_INTERFACE_MODE_2500BASEX;
 		priv->plat->mdio_bus_data->xpcs_an_inband = false;
+		priv->plat->fixed_2G5_clock_rate = true;
 	} else {
 		priv->plat->max_speed = 1000;
 		priv->plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 		priv->plat->mdio_bus_data->xpcs_an_inband = true;
+		priv->plat->fixed_2G5_clock_rate = false;
 	}
 }
 
@@ -1143,6 +1145,7 @@ static void intel_eth_pci_remove(struct pci_dev *pdev)
 
 	stmmac_dvr_remove(&pdev->dev);
 
+	clk_disable_unprepare(priv->plat->stmmac_clk);
 	clk_unregister_fixed_rate(priv->plat->stmmac_clk);
 
 	pcim_iounmap_regions(pdev, BIT(0));

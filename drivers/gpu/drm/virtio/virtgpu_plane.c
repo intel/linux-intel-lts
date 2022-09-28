@@ -288,7 +288,6 @@ static void virtio_gpu_cursor_plane_update(struct drm_plane *plane,
 		/* new cursor -- update & wait */
 		struct virtio_gpu_object_array *objs = NULL;
 		struct virtio_gpu_fence *fence = NULL;
-
 		fence = virtio_gpu_fence_alloc(vgdev, vgdev->fence_drv.context,
 						0);
 		objs = virtio_gpu_array_alloc(1);

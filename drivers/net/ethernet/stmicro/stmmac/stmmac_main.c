@@ -827,18 +827,9 @@ int stmmac_init_tstamp_counter(struct stmmac_priv *priv, u32 systime_flags)
 	struct timespec64 now;
 	u32 sec_inc = 0;
 	u64 temp = 0;
-	int ret;
 
 	if (!(priv->dma_cap.time_stamp || priv->dma_cap.atime_stamp))
 		return -EOPNOTSUPP;
-
-	ret = clk_prepare_enable(priv->plat->clk_ptp_ref);
-	if (ret < 0) {
-		netdev_warn(priv->dev,
-			    "failed to enable PTP reference clock: %pe\n",
-			    ERR_PTR(ret));
-		return ret;
-	}
 
 	stmmac_config_hw_tstamping(priv, priv->ptpaddr, systime_flags);
 	priv->systime_flags = systime_flags;
@@ -1016,6 +1007,21 @@ static void stmmac_validate(struct phylink_config *config,
 		phylink_set(mask, 10baseT_Half);
 		phylink_set(mask, 100baseT_Half);
 		phylink_set(mask, 1000baseT_Half);
+	}
+
+	/* In the case where kernel driver has no access to modify the clock
+	 * rate after it is increased by 2.5 times in the BIOS to support 2.5G
+	 * mode, link speeds other than 2.5Gbps are not supported. Thus, remove
+	 * them from mac_capabilities.
+	 */
+	if (priv->plat->fixed_2G5_clock_rate && max_speed == 2500) {
+		phylink_set(mask, 10baseT_Half);
+		phylink_set(mask, 10baseT_Full);
+		phylink_set(mask, 100baseT_Half);
+		phylink_set(mask, 100baseT_Full);
+		phylink_set(mask, 1000baseT_Half);
+		phylink_set(mask, 1000baseT_Full);
+		phylink_set(mask, 1000baseKX_Full);
 	}
 
 	linkmode_and(supported, supported, mac_supported);
@@ -3387,6 +3393,14 @@ static int stmmac_hw_setup(struct net_device *dev, bool ptp_register)
 	stmmac_dma_operation_mode(priv);
 
 	stmmac_mmc_setup(priv);
+
+	if (ptp_register) {
+		ret = clk_prepare_enable(priv->plat->clk_ptp_ref);
+		if (ret < 0)
+			netdev_warn(priv->dev,
+				    "failed to enable PTP reference clock: %pe\n",
+				    ERR_PTR(ret));
+	}
 
 	ret = stmmac_init_ptp(priv);
 	if (ret == -EOPNOTSUPP)
