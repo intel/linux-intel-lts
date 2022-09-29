@@ -2739,3 +2739,37 @@ int usb4_dp_port_requested_bw(struct tb_port *port)
 
 	return (val & ADP_DP_CS_8_REQUESTED_BW_MASK) * granularity;
 }
+
+/**
+ * usb4_pci_port_set_ext_encapsulation() - Enable/disable extended encapsulation
+ * @port: PCIe adapter
+ * @enable: Enable/disable extended encapsulation
+ *
+ * Can be called to any adapter. Enables or disables extended
+ * encapsulation used in PCIe tunneling. Returns %0 on success and
+ * negative errno otherwise.
+ */
+int usb4_pci_port_set_ext_encapsulation(struct tb_port *port, bool enable)
+{
+	u32 val;
+	int ret;
+
+	if (!tb_port_is_pcie_up(port) || !tb_port_is_pcie_down(port))
+		return 0;
+
+	if (usb4_switch_version(port->sw) < 2)
+		return 0;
+
+	ret = tb_port_read(port, &val, TB_CFG_PORT,
+			   port->cap_adap + ADP_PCIE_CS_1, 1);
+	if (ret)
+		return ret;
+
+	if (enable)
+		val |= ADP_PCIE_CS_1_EE;
+	else
+		val &= ~ADP_PCIE_CS_1_EE;
+
+	return tb_port_write(port, &val, TB_CFG_PORT,
+			     port->cap_adap + ADP_PCIE_CS_1, 1);
+}
