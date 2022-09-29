@@ -2563,9 +2563,11 @@ int tb_switch_configure(struct tb_switch *sw)
 		/*
 		 * For USB4 devices, we need to program the CM version
 		 * accordingly so that it knows to expose all the
-		 * additional capabilities.
+		 * additional capabilities. If this is programmed higher
+		 * than the router USB4 version it uses its USB4 version
+		 * then.
 		 */
-		sw->config.cmuv = USB4_VERSION_1_0;
+		sw->config.cmuv = ROUTER_CS_4_CMUV_V2;
 		sw->config.plug_events_delay = 0xa;
 
 		/* Enumerate the switch */
