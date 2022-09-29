@@ -1117,6 +1117,7 @@ void mei_set_devstate(struct mei_device *dev, enum mei_dev_state state)
 		return;
 
 	dev->dev_state = state;
+	wake_up(&dev->wait_dev_state);
 
 	clsdev = class_find_device_by_devt(&mei_class, dev->cdev.dev);
 	if (clsdev) {

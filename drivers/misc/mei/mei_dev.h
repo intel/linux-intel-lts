@@ -495,6 +495,7 @@ struct mei_dev_timeouts {
  *
  * @reset_count : number of consecutive resets
  * @dev_state   : device state
+ * @wait_dev_state : wait queue for receive dev state changes
  * @hbm_state   : state of host bus message protocol
  * @pxp_mode    : PXP device mode
  * @init_clients_timer : HBM init handshake timeout
@@ -586,6 +587,7 @@ struct mei_device {
 	 */
 	unsigned long reset_count;
 	enum mei_dev_state dev_state;
+	wait_queue_head_t wait_dev_state;
 	enum mei_hbm_state hbm_state;
 	enum mei_dev_pxp_mode pxp_mode;
 	u16 init_clients_timer;
