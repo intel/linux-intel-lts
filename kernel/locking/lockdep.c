@@ -164,7 +164,7 @@ static inline void lockdep_lock(void)
 
 static inline void lockdep_unlock(void)
 {
-	DEBUG_LOCKS_WARN_ON(!irqs_disabled());
+	DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled());
 
 	if (debug_locks && DEBUG_LOCKS_WARN_ON(__owner != current))
 		return;
