@@ -429,7 +429,7 @@ static int amdgpu_cs_p2_dependencies(struct amdgpu_cs_parser *p,
 			dma_fence_put(old);
 		}
 
-		r = amdgpu_sync_fence(&p->gang_leader->sync, fence);
+		r = amdgpu_sync_fence(&p->sync, fence);
 		dma_fence_put(fence);
 		if (r)
 			return r;
@@ -451,7 +451,7 @@ static int amdgpu_syncobj_lookup_and_add(struct amdgpu_cs_parser *p,
 		return r;
 	}
 
-	r = amdgpu_sync_fence(&p->gang_leader->sync, fence);
+	r = amdgpu_sync_fence(&p->sync, fence);
 	if (r)
 		goto error;
 
@@ -1113,7 +1113,7 @@ static int amdgpu_cs_vm_handling(struct amdgpu_cs_parser *p)
 	if (r)
 		return r;
 
-	r = amdgpu_sync_fence(&job->sync, fpriv->prt_va->last_pt_update);
+	r = amdgpu_sync_fence(&p->sync, fpriv->prt_va->last_pt_update);
 	if (r)
 		return r;
 
@@ -1124,7 +1124,7 @@ static int amdgpu_cs_vm_handling(struct amdgpu_cs_parser *p)
 		if (r)
 			return r;
 
-		r = amdgpu_sync_fence(&job->sync, bo_va->last_pt_update);
+		r = amdgpu_sync_fence(&p->sync, bo_va->last_pt_update);
 		if (r)
 			return r;
 	}
@@ -1143,7 +1143,7 @@ static int amdgpu_cs_vm_handling(struct amdgpu_cs_parser *p)
 		if (r)
 			return r;
 
-		r = amdgpu_sync_fence(&job->sync, bo_va->last_pt_update);
+		r = amdgpu_sync_fence(&p->sync, bo_va->last_pt_update);
 		if (r)
 			return r;
 	}
@@ -1156,7 +1156,7 @@ static int amdgpu_cs_vm_handling(struct amdgpu_cs_parser *p)
 	if (r)
 		return r;
 
-	r = amdgpu_sync_fence(&job->sync, vm->last_update);
+	r = amdgpu_sync_fence(&p->sync, vm->last_update);
 	if (r)
 		return r;
 
@@ -1188,7 +1188,6 @@ static int amdgpu_cs_vm_handling(struct amdgpu_cs_parser *p)
 static int amdgpu_cs_sync_rings(struct amdgpu_cs_parser *p)
 {
 	struct amdgpu_fpriv *fpriv = p->filp->driver_priv;
-	struct amdgpu_job *leader = p->gang_leader;
 	struct amdgpu_bo_list_entry *e;
 	unsigned int i;
 	int r;
@@ -1200,17 +1199,14 @@ static int amdgpu_cs_sync_rings(struct amdgpu_cs_parser *p)
 
 		sync_mode = amdgpu_bo_explicit_sync(bo) ?
 			AMDGPU_SYNC_EXPLICIT : AMDGPU_SYNC_NE_OWNER;
-		r = amdgpu_sync_resv(p->adev, &leader->sync, resv, sync_mode,
+		r = amdgpu_sync_resv(p->adev, &p->sync, resv, sync_mode,
 				     &fpriv->vm);
 		if (r)
 			return r;
 	}
 
 	for (i = 0; i < p->gang_size; ++i) {
-		if (p->jobs[i] == leader)
-			continue;
-
-		r = amdgpu_sync_clone(&leader->sync, &p->jobs[i]->sync);
+		r = amdgpu_sync_push_to_job(&p->sync, p->jobs[i]);
 		if (r)
 			return r;
 	}
@@ -1258,7 +1254,7 @@ static int amdgpu_cs_submit(struct amdgpu_cs_parser *p,
 			continue;
 
 		fence = &p->jobs[i]->base.s_fence->scheduled;
-		r = amdgpu_sync_fence(&leader->sync, fence);
+		r = drm_sched_job_add_dependency(&leader->base, fence);
 		if (r)
 			goto error_cleanup;
 	}
