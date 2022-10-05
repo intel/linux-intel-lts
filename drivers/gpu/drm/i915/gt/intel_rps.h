@@ -9,6 +9,7 @@
 #include "intel_rps_types.h"
 
 struct i915_request;
+struct drm_printer;
 
 void intel_rps_init_early(struct intel_rps *rps);
 void intel_rps_init(struct intel_rps *rps);
@@ -49,7 +50,7 @@ u32 intel_rps_read_punit_req_frequency(struct intel_rps *rps);
 void gen6_rps_get_freq_caps(struct intel_rps *rps, struct intel_rps_freq_caps *caps);
 void intel_rps_raise_unslice(struct intel_rps *rps);
 void intel_rps_lower_unslice(struct intel_rps *rps);
-
+void gen6_rps_frequency_dump(struct intel_rps *rps, struct drm_printer *p);
 void gen5_rps_irq_handler(struct intel_rps *rps);
 void gen6_rps_irq_handler(struct intel_rps *rps, u32 pm_iir);
 void gen11_rps_irq_handler(struct intel_rps *rps, u32 pm_iir);
