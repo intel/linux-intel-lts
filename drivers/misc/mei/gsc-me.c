@@ -333,6 +333,62 @@ static const struct mei_hw_ops mei_gsc_hw_ops_null = {
 	.read = mei_gsc_read_slots_null
 };
 
+#define MEI_GSC_RESET_BEGIN_TIMEOUT 300
+#define MEI_GSC_RESET_END_TIMEOUT 700
+#define MEI_GSC_RESET_STEP 20
+
+static int mei_gsc_forcewake_get_and_wait(struct mei_device *dev)
+{
+	struct mei_fw_status fw_status;
+	int timeout;
+	int ret;
+
+	if (!dev->forcewake_needed || dev->gt_forcewake_init_on)
+		return 0;
+
+	/* grab the GT forcewake bit to prevent RC6-exit which would cause fw reset */
+	dev->ops->forcewake_get(dev);
+	dev->gt_forcewake_init_on = true;
+	/* wait for FW going to reset */
+	for (timeout = MEI_GSC_RESET_BEGIN_TIMEOUT; timeout >= 0; timeout -= MEI_GSC_RESET_STEP) {
+		ret = mei_fw_status(dev, &fw_status);
+		if (ret) {
+			dev_err(dev->dev, "failed to read fw sts: %d\n", ret);
+			dev->gt_forcewake_init_on = false;
+			dev->ops->forcewake_put(dev);
+			return ret;
+		}
+		dev_dbg(dev->dev, "forcewake: fw sts: %d\n", fw_status.status[0]);
+		if (!(fw_status.status[0] & PCI_CFG_HFS_1_INITSTATE))
+			break;
+		msleep(20);
+	}
+	dev_dbg(dev->dev, "forcewake: after wake fw sts: %d\n", fw_status.status[0]);
+
+	/* wait to FW going out of reset */
+	if (fw_status.status[0] & PCI_CFG_HFS_1_INITSTATE)
+		return 0;
+	for (timeout = MEI_GSC_RESET_END_TIMEOUT; timeout >= 0; timeout -= MEI_GSC_RESET_STEP) {
+		ret = mei_fw_status(dev, &fw_status);
+		if (ret) {
+			dev_err(dev->dev, "failed to read fw sts: %d\n", ret);
+			dev->gt_forcewake_init_on = false;
+			dev->ops->forcewake_put(dev);
+			return ret;
+		}
+		dev_dbg(dev->dev, "forcewake: fw sts: %d\n", fw_status.status[0]);
+		if (fw_status.status[0] & PCI_CFG_HFS_1_INITSTATE)
+			break;
+		msleep(20);
+	}
+
+	if (!(fw_status.status[0] & PCI_CFG_HFS_1_INITSTATE)) {
+		dev_err(dev->dev, "forcewake: FW not back from reset: %d\n", fw_status.status[0]);
+		return -ENODEV;
+	}
+	return 0;
+}
+
 static int mei_gsc_probe(struct auxiliary_device *aux_dev,
 			 const struct auxiliary_device_id *aux_dev_id)
 {
@@ -377,6 +433,10 @@ static int mei_gsc_probe(struct auxiliary_device *aux_dev,
 		mei_gsc_set_ext_op_mem(hw, &adev->ext_op_mem);
 		dev->pxp_mode = MEI_DEV_PXP_INIT;
 	}
+
+	ret = mei_gsc_forcewake_get_and_wait(dev);
+	if (ret)
+		goto err;
 
 	/* use polling */
 	if (mei_me_hw_use_polling(hw)) {
@@ -445,6 +505,11 @@ static void mei_gsc_remove(struct auxiliary_device *aux_dev)
 		dev->ops = &mei_gsc_hw_ops_null;
 
 	mei_stop(dev);
+
+	if (dev->forcewake_needed && dev->gt_forcewake_init_on) {
+		dev->ops->forcewake_put(dev);
+		dev->gt_forcewake_init_on = false;
+	}
 
 	hw = to_me_hw(dev);
 	if (mei_me_hw_use_polling(hw))

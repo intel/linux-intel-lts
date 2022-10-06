@@ -731,6 +731,12 @@ void mei_host_client_init(struct mei_device *dev)
 
 	schedule_work(&dev->bus_rescan_work);
 
+	if (dev->forcewake_needed && dev->gt_forcewake_init_on) {
+		dev->ops->forcewake_put(dev);
+		dev->gt_forcewake_init_on = false;
+		pm_runtime_put_noidle(dev->dev);
+	}
+
 	pm_runtime_mark_last_busy(dev->dev);
 	dev_dbg(dev->dev, "rpm: autosuspend\n");
 	pm_request_autosuspend(dev->dev);
