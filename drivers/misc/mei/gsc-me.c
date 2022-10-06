@@ -337,7 +337,7 @@ static const struct mei_hw_ops mei_gsc_hw_ops_null = {
 #define MEI_GSC_RESET_END_TIMEOUT 700
 #define MEI_GSC_RESET_STEP 20
 
-static int mei_gsc_forcewake_get_and_wait(struct mei_device *dev)
+static int mei_gsc_forcewake_get_and_wait(struct mei_device *dev, bool need_runtime_pm)
 {
 	struct mei_fw_status fw_status;
 	int timeout;
@@ -367,7 +367,7 @@ static int mei_gsc_forcewake_get_and_wait(struct mei_device *dev)
 
 	/* wait to FW going out of reset */
 	if (fw_status.status[0] & PCI_CFG_HFS_1_INITSTATE)
-		return 0;
+		goto runtime_pm;
 	for (timeout = MEI_GSC_RESET_END_TIMEOUT; timeout >= 0; timeout -= MEI_GSC_RESET_STEP) {
 		ret = mei_fw_status(dev, &fw_status);
 		if (ret) {
@@ -385,6 +385,16 @@ static int mei_gsc_forcewake_get_and_wait(struct mei_device *dev)
 	if (!(fw_status.status[0] & PCI_CFG_HFS_1_INITSTATE)) {
 		dev_err(dev->dev, "forcewake: FW not back from reset: %d\n", fw_status.status[0]);
 		return -ENODEV;
+	}
+
+runtime_pm:
+	if (need_runtime_pm) {
+		/*
+		 * Our runtime_pm configured to start as resumed.
+		 * Take additional forcewake and runtime pm to avoid RC6 while initializing
+		 */
+		dev->ops->forcewake_get(dev);
+		pm_runtime_get_noresume(dev->dev);
 	}
 	return 0;
 }
@@ -434,7 +444,7 @@ static int mei_gsc_probe(struct auxiliary_device *aux_dev,
 		dev->pxp_mode = MEI_DEV_PXP_INIT;
 	}
 
-	ret = mei_gsc_forcewake_get_and_wait(dev);
+	ret = mei_gsc_forcewake_get_and_wait(dev, true);
 	if (ret)
 		goto err;
 
@@ -585,6 +595,8 @@ static int  __maybe_unused mei_gsc_pm_runtime_suspend(struct device *device)
 
 		if (mei_me_hw_use_polling(hw))
 			hw->is_active = false;
+
+		mei_forcewake_put(dev);
 		ret = 0;
 	} else {
 		ret = -EAGAIN;
@@ -610,6 +622,8 @@ static int __maybe_unused mei_gsc_pm_runtime_resume(struct device *device)
 		hw->is_active = true;
 		wake_up(&hw->wait_active);
 	}
+
+	mei_forcewake_get(dev);
 
 	mutex_unlock(&dev->device_lock);
 
