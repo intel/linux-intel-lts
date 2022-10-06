@@ -1428,6 +1428,44 @@ static int mei_me_hw_reset(struct mei_device *dev, bool intr_enable)
 }
 
 /**
+ * mei_gt_forcewake_get - grab gt forcewake for the client
+ *
+ * @dev: the device structure
+ *
+ * Return: forcewake_count before increase
+ */
+static int mei_gt_forcewake_get(struct mei_device *dev)
+{
+	struct mei_me_hw *hw = to_me_hw(dev);
+
+	if (!hw->forcewake_get)
+		return 0;
+	dev_dbg(dev->dev, "Forcewake get %d\n", dev->forcewake_count);
+	hw->forcewake_get(hw->gsc);
+	return dev->forcewake_count++;
+}
+
+/**
+ * mei_gt_forcewake_put - release gt forcewake for the client
+ *
+ * @dev: the device structure
+ *
+ * Return: forcewake_count before decrease
+ */
+static int mei_gt_forcewake_put(struct mei_device *dev)
+{
+	struct mei_me_hw *hw = to_me_hw(dev);
+
+	if (!hw->forcewake_put)
+		return 0;
+	dev_dbg(dev->dev, "Forcewake put %d\n", dev->forcewake_count);
+	if (dev->forcewake_count <= 0)
+		return 0;
+	hw->forcewake_put(hw->gsc);
+	return dev->forcewake_count--;
+}
+
+/**
  * mei_me_irq_quick_handler - The ISR of the MEI device
  *
  * @irq: The irq number
@@ -1666,7 +1704,10 @@ static const struct mei_hw_ops mei_me_hw_ops = {
 
 	.rdbuf_full_slots = mei_me_count_full_read_slots,
 	.read_hdr = mei_me_mecbrw_read,
-	.read = mei_me_read_slots
+	.read = mei_me_read_slots,
+
+	.forcewake_get = mei_gt_forcewake_get,
+	.forcewake_put = mei_gt_forcewake_put,
 };
 
 /**

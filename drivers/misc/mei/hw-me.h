@@ -69,6 +69,11 @@ struct mei_me_hw {
 	struct task_struct *polling_thread;
 	wait_queue_head_t wait_active;
 	bool is_active;
+	/* forcewake wa */
+	void *gsc;
+	void (*forcewake_get)(void *gsc);
+	void (*forcewake_put)(void *gsc);
+
 };
 
 #define to_me_hw(dev) (struct mei_me_hw *)((dev)->hw)

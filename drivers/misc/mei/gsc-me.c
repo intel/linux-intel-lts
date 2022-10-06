@@ -365,6 +365,12 @@ static int mei_gsc_probe(struct auxiliary_device *aux_dev,
 	hw->irq = adev->irq;
 	hw->read_fws = mei_gsc_read_hfs;
 
+	/* forcewake */
+	dev->forcewake_needed = adev->forcewake_needed;
+	hw->gsc = adev->gsc;
+	hw->forcewake_get = adev->forcewake_get;
+	hw->forcewake_put = adev->forcewake_put;
+
 	dev_set_drvdata(device, dev);
 
 	if (adev->ext_op_mem.start) {
