@@ -437,6 +437,8 @@ void mei_device_init(struct mei_device *dev,
 	dev->timeouts.client_init = MEI_CLIENTS_INIT_TIMEOUT;
 	dev->timeouts.pgi = mei_secs_to_jiffies(MEI_PGI_TIMEOUT);
 	dev->timeouts.d0i3 = mei_secs_to_jiffies(MEI_D0I3_TIMEOUT);
+	dev->timeouts.gt_forcewake = mei_secs_to_jiffies(MEI_GT_FORCEWAKE_TIMEOUT);
+	dev->timeouts.gt_forcewake_link = mei_secs_to_jiffies(MEI_GT_FORCEWAKE_LINK_TIMEOUT);
 	if (slow_fw) {
 		dev->timeouts.cl_connect = mei_secs_to_jiffies(MEI_CL_CONNECT_TIMEOUT_SLOW);
 		dev->timeouts.hbm = mei_secs_to_jiffies(MEI_HBM_TIMEOUT_SLOW);

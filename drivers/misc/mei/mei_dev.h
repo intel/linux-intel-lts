@@ -469,6 +469,8 @@ struct mei_dev_timeouts {
 	unsigned int d0i3; /* D0i3 set/unset max response time, in jiffies */
 	unsigned long hbm; /* HBM operation timeout, in jiffies */
 	unsigned long mkhi_recv; /* receive timeout, in jiffies */
+	unsigned long gt_forcewake; /* GT forcewake timeout, in jiffies */
+	unsigned long gt_forcewake_link; /* GT forcewake link timeout, in jiffies */
 };
 
 /**
