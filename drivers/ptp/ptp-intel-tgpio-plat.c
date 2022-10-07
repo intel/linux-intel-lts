@@ -404,7 +404,8 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 		struct ptp_clock_time *period = &perout->period;
 		struct ptp_clock_time *start = &perout->start;
 
-		ctrl |= TGPIOCTL_TS_TMT0 | TGPIOCTL_ECC | TGPIOCTL_PWS_N(2);
+		ctrl |= TGPIOCTL_TS_TMT0 | TGPIOCTL_ECC | TGPIOCTL_PWS_N(2) |
+			TGPIOCTL_EP_TOGGLE_EDGE;
 
 		if (perout->flags & PTP_PEROUT_ONE_SHOT)
 			ctrl &= ~TGPIOCTL_PM;
@@ -419,7 +420,7 @@ static int intel_tgpio_config_output(struct intel_tgpio *tgpio,
 					   start->sec);
 		}
 		intel_tgpio_writeq(tgpio->base, TGPIOPIV31_0(index),
-				to_intel_tgpio_time(period));
+				to_intel_tgpio_time(period)/2);
 
 		/* gotta program all other bits before EN bit is set */
 		intel_tgpio_writel(tgpio->base, offset, ctrl);
