@@ -247,7 +247,7 @@ static int tb_increase_switch_tmu_accuracy(struct device *dev, void *data)
 	sw = tb_to_switch(dev);
 	if (sw) {
 		tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_HIFI,
-					tb_switch_is_clx_enabled(sw, TB_CL1));
+					tb_switch_clx_is_enabled(sw, TB_CL1));
 		if (tb_switch_tmu_enable(sw))
 			tb_sw_warn(sw, "failed to increase TMU rate\n");
 	}
@@ -281,7 +281,7 @@ static int tb_enable_tmu(struct tb_switch *sw)
 	 * level to normal. Otherwise we keep the TMU running at the
 	 * highest accuracy.
 	 */
-	if (tb_switch_is_clx_enabled(sw, TB_CL1))
+	if (tb_switch_clx_is_enabled(sw, TB_CL1))
 		tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_NORMAL, true);
 	else
 		tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_HIFI, false);
@@ -897,7 +897,7 @@ static void tb_scan_port(struct tb_port *port)
 	 * CL0s and CL1 are enabled and supported together.
 	 * Silently ignore CLx enabling in case CLx is not supported.
 	 */
-	ret = tb_switch_enable_clx(sw, TB_CL1);
+	ret = tb_switch_clx_enable(sw, TB_CL1);
 	if (ret && ret != -EOPNOTSUPP)
 		tb_sw_warn(sw, "failed to enable %s on upstream port\n",
 			   tb_switch_clx_name(TB_CL1));
@@ -2039,7 +2039,7 @@ static void tb_restore_children(struct tb_switch *sw)
 	 * CL0s and CL1 are enabled and supported together.
 	 * Silently ignore CLx re-enabling in case CLx is not supported.
 	 */
-	ret = tb_switch_enable_clx(sw, TB_CL1);
+	ret = tb_switch_clx_enable(sw, TB_CL1);
 	if (ret && ret != -EOPNOTSUPP)
 		tb_sw_warn(sw, "failed to re-enable %s on upstream port\n",
 			   tb_switch_clx_name(TB_CL1));
