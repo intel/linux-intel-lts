@@ -245,10 +245,20 @@ static int tb_enable_clx(struct tb_switch *sw)
 	int ret;
 
 	/*
+	 * Currently only enable CLx for the first link. This is enough
+	 * to allow the CPU to save energy at least on Intel hardware
+	 * and makes it slightly simpler to implement. We may change
+	 * this in the future to cover the whole topology if it turns
+	 * out to be beneficial.
+	 */
+	if (sw->config.depth != 1)
+		return 0;
+
+	/*
 	 * CL0s and CL1 are enabled and supported together.
 	 * Silently ignore CLx enabling in case CLx is not supported.
 	 */
-	ret = tb_switch_clx_enable(sw, TB_CL1);
+	ret = tb_switch_clx_enable(sw, TB_CL0S | TB_CL1);
 	return ret == -EOPNOTSUPP ? 0 : ret;
 }
 
