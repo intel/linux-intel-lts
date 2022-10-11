@@ -264,17 +264,28 @@ static int tb_enable_clx(struct tb_switch *sw)
 
 static int tb_increase_switch_tmu_accuracy(struct device *dev, void *data)
 {
+	enum tb_switch_tmu_mode mode;
 	struct tb_switch *sw;
+	int ret;
 
 	sw = tb_to_switch(dev);
-	if (sw) {
-		tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_HIFI,
-					tb_switch_clx_is_enabled(sw, TB_CL1));
-		if (tb_switch_tmu_enable(sw))
-			tb_sw_warn(sw, "failed to increase TMU rate\n");
-	}
+	if (!sw)
+		return 0;
 
-	return 0;
+	/* No need to do anything for v2 routers */
+	if (tb_switch_tmu_enhanced_is_supported(sw))
+		return 0;
+
+	if (tb_switch_clx_is_enabled(sw, TB_CL1))
+		mode = TB_SWITCH_TMU_MODE_UNI;
+	else
+		mode = TB_SWITCH_TMU_MODE_BI;
+
+	ret = tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_HIFI, mode);
+	if (ret)
+		return ret;
+
+	return tb_switch_tmu_enable(sw);
 }
 
 static void tb_increase_tmu_accuracy(struct tb_tunnel *tunnel)
@@ -289,6 +300,9 @@ static void tb_increase_tmu_accuracy(struct tb_tunnel *tunnel)
 	 * accuracy of first depth child routers (and the host router)
 	 * to the highest. This is needed for the DP tunneling to work
 	 * but also allows CL0s.
+	 *
+	 * If both routers are v2 then we don't need to do anything as
+	 * they are using enhanced TMU mode that allows all CLx.
 	 */
 	sw = tunnel->tb->root_switch;
 	device_for_each_child(&sw->dev, NULL, tb_increase_switch_tmu_accuracy);
@@ -296,17 +310,27 @@ static void tb_increase_tmu_accuracy(struct tb_tunnel *tunnel)
 
 static int tb_enable_tmu(struct tb_switch *sw)
 {
+	struct tb_switch *parent_sw = tb_switch_parent(sw);
 	int ret;
 
 	/*
-	 * If CL1 is enabled then we need to configure the TMU accuracy
-	 * level to normal. Otherwise we keep the TMU running at the
-	 * highest accuracy.
+	 * If both routers at the end of the link are v2 we simply
+	 * enable the enhanched uni-directional mode. That covers all
+	 * the CL states. For v1 and before we need to use the normal
+	 * rate to allow CL1 (when supported). Otherwise we keep the TMU
+	 * running at the highest accuracy.
 	 */
-	if (tb_switch_clx_is_enabled(sw, TB_CL1))
-		ret = tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_NORMAL, true);
-	else
-		ret = tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_HIFI, false);
+	if (tb_switch_tmu_enhanced_is_supported(parent_sw) &&
+	    tb_switch_tmu_enhanced_is_supported(sw)) {
+		ret = tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_HIFI,
+					      TB_SWITCH_TMU_MODE_ENHANCED_UNI);
+	} else if (tb_switch_clx_is_enabled(sw, TB_CL1)) {
+		ret = tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_NORMAL,
+					      TB_SWITCH_TMU_MODE_UNI);
+	} else {
+		ret = tb_switch_tmu_configure(sw, TB_SWITCH_TMU_RATE_HIFI,
+					      TB_SWITCH_TMU_MODE_BI);
+	}
 	if (ret)
 		return ret;
 
@@ -2006,7 +2030,7 @@ static int tb_start(struct tb *tb)
 	 * Normal mode.
 	 */
 	tb_switch_tmu_configure(tb->root_switch, TB_SWITCH_TMU_RATE_NORMAL,
-				false);
+				TB_SWITCH_TMU_MODE_UNI);
 	/* Enable TMU if it is off */
 	tb_switch_tmu_enable(tb->root_switch);
 	/* Full scan to discover devices added before the driver was loaded. */

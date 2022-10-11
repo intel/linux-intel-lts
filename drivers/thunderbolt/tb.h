@@ -88,28 +88,38 @@ enum tb_switch_tmu_rate {
 };
 
 /**
- * struct tb_switch_tmu - Structure holding switch TMU configuration
+ * enum tb_switch_tmu_mode - TMU mode
+ * @TB_SWITCH_TMU_MODE_BI: Bi-directional mode
+ * @TB_SWITCH_TMU_MODE_UNI: Uni-directional mode
+ * @TB_SWITCH_TMU_MODE_ENHANCED_UNI: Enhanced uni-directional mode
+ */
+enum tb_switch_tmu_mode {
+	TB_SWITCH_TMU_MODE_BI,
+	TB_SWITCH_TMU_MODE_UNI,
+	TB_SWITCH_TMU_MODE_ENHANCED_UNI,
+};
+
+/**
+ * struct tb_switch_tmu - Structure holding router TMU configuration
  * @cap: Offset to the TMU capability (%0 if not found)
  * @has_ucap: Does the switch support uni-directional mode
- * @rate: TMU refresh rate related to upstream switch. In case of root
+ * @rate: TMU refresh rate related to upstream router. In case of root
  *	  switch this holds the domain rate. Reflects the HW setting.
- * @unidirectional: Is the TMU in uni-directional or bi-directional mode
- *		    related to upstream switch. Don't care for root switch.
- *		    Reflects the HW setting.
- * @unidirectional_request: Is the new TMU mode: uni-directional or bi-directional
- *			    that is requested to be set. Related to upstream switch.
- *			    Don't care for root switch.
- * @rate_request: TMU new refresh rate related to upstream switch that is
- *		  requested to be set. In case of root switch, this holds
+ * @mode: TMU mode related to the upstream router. Reflects the HW
+ *	  setting. Don't care for host router.
+ * @rate_request: TMU new refresh rate related to upstream router that is
+ *		  requested to be set. In case of host router, this holds
  *		  the new domain rate that is requested to be set.
+ * @mode_request: TMU mode requested to set. Related to upstream router.
+ *		   Don't care for host router.
  */
 struct tb_switch_tmu {
 	int cap;
 	bool has_ucap;
 	enum tb_switch_tmu_rate rate;
-	bool unidirectional;
-	bool unidirectional_request;
+	enum tb_switch_tmu_mode mode;
 	enum tb_switch_tmu_rate rate_request;
+	enum tb_switch_tmu_mode mode_request;
 };
 
 /**
@@ -984,7 +994,8 @@ int tb_switch_tmu_post_time(struct tb_switch *sw);
 int tb_switch_tmu_disable(struct tb_switch *sw);
 int tb_switch_tmu_enable(struct tb_switch *sw);
 int tb_switch_tmu_configure(struct tb_switch *sw, enum tb_switch_tmu_rate rate,
-			    bool unidirectional);
+			    enum tb_switch_tmu_mode mode);
+bool tb_switch_tmu_enhanced_is_supported(const struct tb_switch *sw);
 /**
  * tb_switch_tmu_is_enabled() - Checks if the specified TMU mode is enabled
  * @sw: Router whose TMU mode to check
@@ -995,7 +1006,7 @@ int tb_switch_tmu_configure(struct tb_switch *sw, enum tb_switch_tmu_rate rate,
 static inline bool tb_switch_tmu_is_enabled(const struct tb_switch *sw)
 {
 	return sw->tmu.rate == sw->tmu.rate_request &&
-	       sw->tmu.unidirectional == sw->tmu.unidirectional_request;
+	       sw->tmu.mode == sw->tmu.mode_request;
 }
 
 bool tb_port_clx_is_enabled(struct tb_port *port, unsigned int clx);

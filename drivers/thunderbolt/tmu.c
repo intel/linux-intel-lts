@@ -11,6 +11,15 @@
 
 #include "tb.h"
 
+/*
+ * From v2 connection manager guide used with enhanced uni-directional
+ * HiFi TMU mode.
+ */
+#define	REPL_TIMEOUT	1875
+#define	REPL_THRESHOLD	0
+#define	REPL_N		222
+#define	DIRSWITCH_N	255
+
 static int tb_switch_set_tmu_mode_params(struct tb_switch *sw,
 					 enum tb_switch_tmu_rate rate)
 {
@@ -56,8 +65,25 @@ static int tb_switch_set_tmu_mode_params(struct tb_switch *sw,
 		FIELD_PREP(TMU_RTR_CS_15_OFFSET_AVG_MASK, avg) |
 		FIELD_PREP(TMU_RTR_CS_15_ERROR_AVG_MASK, avg);
 
-	return tb_sw_write(sw, &val, TB_CFG_SWITCH,
-			   sw->tmu.cap + TMU_RTR_CS_15, 1);
+	ret = tb_sw_write(sw, &val, TB_CFG_SWITCH,
+			 sw->tmu.cap + TMU_RTR_CS_15, 1);
+	if (ret)
+		return ret;
+
+	if (tb_switch_tmu_enhanced_is_supported(sw)) {
+		ret = tb_sw_read(sw, &val, TB_CFG_SWITCH,
+				 sw->tmu.cap + TMU_RTR_CS_18, 1);
+		if (ret)
+			return ret;
+
+		val &= ~TMU_RTR_CS_18_DELTA_AVG_CONST_MASK;
+		val |= FIELD_PREP(TMU_RTR_CS_18_DELTA_AVG_CONST_MASK, avg);
+
+		ret = tb_sw_write(sw, &val, TB_CFG_SWITCH,
+				  sw->tmu.cap + TMU_RTR_CS_18, 1);
+	}
+
+	return ret;
 }
 
 static const char *tb_switch_tmu_mode_name(const struct tb_switch *sw)
@@ -72,8 +98,10 @@ static const char *tb_switch_tmu_mode_name(const struct tb_switch *sw)
 		/* Root switch does not have upstream directionality */
 		if (root_switch)
 			return "HiFi";
-		if (sw->tmu.unidirectional)
+		if (sw->tmu.mode == TB_SWITCH_TMU_MODE_UNI)
 			return "uni-directional, HiFi";
+		if (sw->tmu.mode == TB_SWITCH_TMU_MODE_ENHANCED_UNI)
+			return "enhanced uni-directional, HiFi";
 		return "bi-directional, HiFi";
 
 	case TB_SWITCH_TMU_RATE_NORMAL:
@@ -86,7 +114,7 @@ static const char *tb_switch_tmu_mode_name(const struct tb_switch *sw)
 	}
 }
 
-static bool tb_switch_tmu_ucap_supported(struct tb_switch *sw)
+static bool tb_switch_tmu_ucap_is_supported(struct tb_switch *sw)
 {
 	int ret;
 	u32 val;
@@ -182,6 +210,112 @@ static bool tb_port_tmu_is_unidirectional(struct tb_port *port)
 	return val & TMU_ADP_CS_3_UDM;
 }
 
+static bool tb_port_tmu_is_enhanced(struct tb_port *port)
+{
+	int ret;
+	u32 val;
+
+	ret = tb_port_read(port, &val, TB_CFG_PORT,
+			   port->cap_tmu + TMU_ADP_CS_8, 1);
+	if (ret)
+		return false;
+
+	return val & TMU_ADP_CS_8_EUDM;
+}
+
+/* Can be called to non-v2 lane adapters too */
+static int tb_port_tmu_enhanced_enable(struct tb_port *port, bool enable)
+{
+	int ret;
+	u32 val;
+
+	if (!tb_switch_tmu_enhanced_is_supported(port->sw))
+		return 0;
+
+	ret = tb_port_read(port, &val, TB_CFG_PORT,
+			   port->cap_tmu + TMU_ADP_CS_8, 1);
+	if (ret)
+		return ret;
+
+	if (enable)
+		val |= TMU_ADP_CS_8_EUDM;
+	else
+		val &= ~TMU_ADP_CS_8_EUDM;
+
+	return tb_port_write(port, &val, TB_CFG_PORT,
+			     port->cap_tmu + TMU_ADP_CS_8, 1);
+}
+
+static int tb_port_set_tmu_mode_params(struct tb_port *port, int repl_timeout,
+				       int repl_threshold, int repl_n,
+				       int dirswitch_n)
+{
+	int ret;
+	u32 val;
+
+	ret = tb_port_read(port, &val, TB_CFG_PORT,
+			   port->cap_tmu + TMU_ADP_CS_8, 1);
+	if (ret)
+		return ret;
+
+	val &= ~TMU_ADP_CS_8_REPL_TIMEOUT_MASK;
+	val &= ~TMU_ADP_CS_8_REPL_THRESHOLD_MASK;
+	val |= FIELD_PREP(TMU_ADP_CS_8_REPL_TIMEOUT_MASK, repl_timeout);
+	val |= FIELD_PREP(TMU_ADP_CS_8_REPL_THRESHOLD_MASK, repl_threshold);
+
+	ret = tb_port_write(port, &val, TB_CFG_PORT,
+			    port->cap_tmu + TMU_ADP_CS_8, 1);
+	if (ret)
+		return ret;
+
+	ret = tb_port_read(port, &val, TB_CFG_PORT,
+			   port->cap_tmu + TMU_ADP_CS_9, 1);
+	if (ret)
+		return ret;
+
+	val &= ~TMU_ADP_CS_9_REPL_N_MASK;
+	val &= ~TMU_ADP_CS_9_DIRSWITCH_N_MASK;
+	val |= FIELD_PREP(TMU_ADP_CS_9_REPL_N_MASK, repl_n);
+	val |= FIELD_PREP(TMU_ADP_CS_9_DIRSWITCH_N_MASK, dirswitch_n);
+
+	return tb_port_write(port, &val, TB_CFG_PORT,
+			     port->cap_tmu + TMU_ADP_CS_9, 1);
+}
+
+static int tb_port_tmu_rate_read(struct tb_port *port)
+{
+	int ret;
+	u32 val;
+
+	ret = tb_port_read(port, &val, TB_CFG_PORT,
+			   port->cap_tmu + TMU_ADP_CS_9, 1);
+	if (ret)
+		return ret;
+
+	return FIELD_GET(TMU_ADP_CS_9_ADP_TS_INTERVAL_MASK, val);
+}
+
+/* Can be called to non-v2 lane adapters too */
+static int tb_port_tmu_rate_write(struct tb_port *port, int rate)
+{
+	int ret;
+	u32 val;
+
+	if (!tb_switch_tmu_enhanced_is_supported(port->sw))
+		return 0;
+
+	ret = tb_port_read(port, &val, TB_CFG_PORT,
+			   port->cap_tmu + TMU_ADP_CS_9, 1);
+	if (ret)
+		return ret;
+
+	val &= ~TMU_ADP_CS_9_ADP_TS_INTERVAL_MASK;
+	val |= FIELD_PREP(TMU_ADP_CS_9_ADP_TS_INTERVAL_MASK, rate);
+
+	return tb_port_write(port, &val, TB_CFG_PORT,
+			     port->cap_tmu + TMU_ADP_CS_9, 1);
+}
+
 static int tb_port_tmu_time_sync(struct tb_port *port, bool time_sync)
 {
 	u32 val = time_sync ? TMU_ADP_CS_6_DTS : 0;
@@ -225,6 +359,17 @@ static int tb_switch_tmu_set_time_disruption(struct tb_switch *sw, bool set)
 }
 
 /**
+ * tb_switch_tmu_enhanced_is_supported() - Is enhanced TMU mode supported
+ * @sw: Router to check (can be %NULL)
+ */
+bool tb_switch_tmu_enhanced_is_supported(const struct tb_switch *sw)
+{
+	if (sw)
+		return usb4_switch_version(sw) > 1;
+	return false;
+}
+
+/**
  * tb_switch_tmu_init() - Initialize switch TMU structures
  * @sw: Switch to initialized
  *
@@ -258,18 +403,34 @@ int tb_switch_tmu_init(struct tb_switch *sw)
 
 	sw->tmu.rate = ret;
 
-	sw->tmu.has_ucap = tb_switch_tmu_ucap_supported(sw);
+	sw->tmu.has_ucap = tb_switch_tmu_ucap_is_supported(sw);
 	if (sw->tmu.has_ucap) {
-		tb_sw_dbg(sw, "TMU: supports uni-directional mode\n");
+		bool enhanced = tb_switch_tmu_enhanced_is_supported(sw);
+
+		tb_sw_dbg(sw, "TMU: supports %suni-directional mode\n",
+			  enhanced ? "enhanced " : "");
 
 		if (tb_route(sw)) {
 			struct tb_port *up = tb_upstream_port(sw);
 
-			sw->tmu.unidirectional =
-				tb_port_tmu_is_unidirectional(up);
+			if (enhanced && tb_port_tmu_is_enhanced(up)) {
+				sw->tmu.mode = TB_SWITCH_TMU_MODE_ENHANCED_UNI;
+				ret = tb_port_tmu_rate_read(up);
+				if (ret < 0)
+					return ret;
+				/*
+				 * TMU rate is the one configured for
+				 * the upstream adapter on v2 routers.
+				 */
+				sw->tmu.rate = ret;
+			} else {
+				sw->tmu.mode = tb_port_tmu_is_unidirectional(up) ?
+					TB_SWITCH_TMU_MODE_UNI :
+					TB_SWITCH_TMU_MODE_BI;
+			}
 		}
 	} else {
-		sw->tmu.unidirectional = false;
+		sw->tmu.mode = TB_SWITCH_TMU_MODE_BI;
 	}
 
 	tb_sw_dbg(sw, "TMU: current mode: %s\n", tb_switch_tmu_mode_name(sw));
@@ -375,6 +536,23 @@ out:
 	return ret;
 }
 
+static int disable_enhanced(struct tb_port *up, struct tb_port *down)
+{
+	int ret;
+
+	/*
+	 * Router may already been disconnected so ignore errors on the
+	 * upstream port.
+	 */
+	tb_port_tmu_rate_write(up, 0);
+	tb_port_tmu_enhanced_enable(up, false);
+
+	ret = tb_port_tmu_rate_write(down, 0);
+	if (ret)
+		return ret;
+	return tb_port_tmu_enhanced_enable(down, false);
+}
+
 /**
  * tb_switch_tmu_disable() - Disable TMU of a switch
  * @sw: Switch whose TMU to disable
@@ -388,7 +566,6 @@ int tb_switch_tmu_disable(struct tb_switch *sw)
 		return 0;
 
 	if (tb_route(sw)) {
-		bool unidirectional = sw->tmu.unidirectional;
 		struct tb_port *down, *up;
 		int ret;
 
@@ -412,25 +589,36 @@ int tb_switch_tmu_disable(struct tb_switch *sw)
 		if (ret)
 			return ret;
 
-		if (unidirectional) {
+		switch (sw->tmu.mode) {
+		case TB_SWITCH_TMU_MODE_UNI:
 			/* The switch may be unplugged so ignore any errors */
 			tb_port_tmu_unidirectional_disable(up);
 			ret = tb_port_tmu_unidirectional_disable(down);
 			if (ret)
 				return ret;
+			break;
+
+		case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+			ret = disable_enhanced(up, down);
+			if (ret)
+				return ret;
+			break;
+
+		default:
+			break;
 		}
 	} else {
 		tb_switch_tmu_rate_write(sw, TB_SWITCH_TMU_RATE_OFF);
 	}
 
-	sw->tmu.unidirectional = false;
 	sw->tmu.rate = TB_SWITCH_TMU_RATE_OFF;
 
 	tb_sw_dbg(sw, "TMU: disabled\n");
 	return 0;
 }
 
-static void tb_switch_tmu_off(struct tb_switch *sw, bool unidirectional)
+/* Called only when there is failure enabling requested mode */
+static void tb_switch_tmu_off(struct tb_switch *sw)
 {
 	struct tb_port *down, *up;
 
@@ -445,11 +633,21 @@ static void tb_switch_tmu_off(struct tb_switch *sw, bool unidirectional)
 	 */
 	tb_port_tmu_time_sync_disable(down);
 	tb_port_tmu_time_sync_disable(up);
-	if (unidirectional)
+
+	switch (sw->tmu.mode_request) {
+	case TB_SWITCH_TMU_MODE_UNI:
 		tb_switch_tmu_rate_write(tb_switch_parent(sw),
 					 TB_SWITCH_TMU_RATE_OFF);
-	else
-		tb_switch_tmu_rate_write(sw, TB_SWITCH_TMU_RATE_OFF);
+		break;
+	case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+		disable_enhanced(up, down);
+		break;
+	default:
+		break;
+	}
+
+	/* Always set the rate to 0 */
+	tb_switch_tmu_rate_write(sw, TB_SWITCH_TMU_RATE_OFF);
 
 	tb_switch_set_tmu_mode_params(sw, sw->tmu.rate);
 	tb_port_tmu_unidirectional_disable(down);
@@ -491,7 +689,7 @@ static int tb_switch_tmu_enable_bidirectional(struct tb_switch *sw)
 	return 0;
 
 out:
-	tb_switch_tmu_off(sw, false);
+	tb_switch_tmu_off(sw);
 	return ret;
 }
 
@@ -559,7 +757,57 @@ static int tb_switch_tmu_enable_unidirectional(struct tb_switch *sw)
 	return 0;
 
 out:
-	tb_switch_tmu_off(sw, true);
+	tb_switch_tmu_off(sw);
+	return ret;
+}
+
+/*
+ * This function is called when the previous TMU mode was
+ * TB_SWITCH_TMU_RATE_OFF.
+ */
+static int tb_switch_tmu_enable_enhanced(struct tb_switch *sw)
+{
+	struct tb_port *up, *down;
+	int ret;
+
+	/* Router specific parameters first */
+	ret = tb_switch_set_tmu_mode_params(sw, sw->tmu.rate_request);
+	if (ret)
+		return ret;
+
+	up = tb_upstream_port(sw);
+	down = tb_switch_downstream_port(sw);
+
+	ret = tb_port_set_tmu_mode_params(up, REPL_TIMEOUT, REPL_THRESHOLD,
+					  REPL_N, DIRSWITCH_N);
+	if (ret)
+		goto out;
+
+	ret = tb_port_tmu_rate_write(up, sw->tmu.rate_request);
+	if (ret)
+		goto out;
+
+	ret = tb_port_tmu_enhanced_enable(up, true);
+	if (ret)
+		goto out;
+
+	ret = tb_port_set_tmu_mode_params(down, REPL_TIMEOUT, REPL_THRESHOLD,
+					  REPL_N, DIRSWITCH_N);
+	if (ret)
+		goto out;
+
+	ret = tb_port_tmu_rate_write(down, sw->tmu.rate_request);
+	if (ret)
+		goto out;
+
+	ret = tb_port_tmu_enhanced_enable(down, true);
+	if (ret)
+		goto out;
+
+	return 0;
+
+out:
+	tb_switch_tmu_off(sw);
 	return ret;
 }
 
@@ -575,14 +823,41 @@ static void tb_switch_tmu_change_mode_prev(struct tb_switch *sw)
 	 * In case of additional failures in the functions below,
 	 * ignore them since the caller shall already report a failure.
 	 */
-	tb_port_tmu_set_unidirectional(down, sw->tmu.unidirectional);
-	if (sw->tmu.unidirectional_request)
-		tb_switch_tmu_rate_write(tb_switch_parent(sw), sw->tmu.rate);
-	else
+	switch (sw->tmu.mode) {
+	case TB_SWITCH_TMU_MODE_BI:
 		tb_switch_tmu_rate_write(sw, sw->tmu.rate);
+		break;
+
+	case TB_SWITCH_TMU_MODE_UNI:
+		tb_port_tmu_set_unidirectional(up, true);
+		tb_switch_tmu_rate_write(tb_switch_parent(sw), sw->tmu.rate);
+		break;
+
+	case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+		tb_port_set_tmu_mode_params(up, REPL_TIMEOUT, REPL_THRESHOLD,
+					    REPL_N, DIRSWITCH_N);
+		tb_port_tmu_enhanced_enable(up, true);
+		tb_port_tmu_rate_write(up, sw->tmu.rate);
+		break;
+	}
 
 	tb_switch_set_tmu_mode_params(sw, sw->tmu.rate);
-	tb_port_tmu_set_unidirectional(up, sw->tmu.unidirectional);
+
+	switch (sw->tmu.mode) {
+	case TB_SWITCH_TMU_MODE_UNI:
+		tb_port_tmu_set_unidirectional(down, true);
+		break;
+
+	case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+		tb_port_set_tmu_mode_params(down, REPL_TIMEOUT, REPL_THRESHOLD,
+					    REPL_N, DIRSWITCH_N);
+		tb_port_tmu_enhanced_enable(down, true);
+		tb_port_tmu_rate_write(down, sw->tmu.rate);
+		break;
+
+	default:
+		break;
+	}
 }
 
 static int tb_switch_tmu_change_mode(struct tb_switch *sw)
@@ -592,25 +867,83 @@ static int tb_switch_tmu_change_mode(struct tb_switch *sw)
 
 	up = tb_upstream_port(sw);
 	down = tb_switch_downstream_port(sw);
-	ret = tb_port_tmu_set_unidirectional(down, sw->tmu.unidirectional_request);
-	if (ret)
-		goto out;
 
-	if (sw->tmu.unidirectional_request)
-		ret = tb_switch_tmu_rate_write(tb_switch_parent(sw),
-					       sw->tmu.rate_request);
-	else
-		ret = tb_switch_tmu_rate_write(sw, sw->tmu.rate_request);
+	/* Disable any previous mode */
+	ret = tb_port_tmu_set_unidirectional(up, false);
 	if (ret)
 		return ret;
+	ret = tb_port_tmu_enhanced_enable(up, false);
+	if (ret)
+		return ret;
+	ret = tb_port_tmu_rate_write(up, 0);
+	if (ret)
+		return ret;
+
+	/* Program the new mode and the downstream router lane adapter */
+	switch (sw->tmu.mode_request) {
+	case TB_SWITCH_TMU_MODE_BI:
+		ret = tb_switch_tmu_rate_write(sw, sw->tmu.rate_request);
+		if (ret)
+			goto out;
+		break;
+
+	case TB_SWITCH_TMU_MODE_UNI:
+		ret = tb_port_tmu_set_unidirectional(up, true);
+		if (ret)
+			goto out;
+		ret = tb_switch_tmu_rate_write(tb_switch_parent(sw),
+					       sw->tmu.rate_request);
+		if (ret)
+			goto out;
+		break;
+
+	case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+		ret = tb_port_set_tmu_mode_params(up, REPL_TIMEOUT,
+						  REPL_THRESHOLD, REPL_N,
+						  DIRSWITCH_N);
+		if (ret)
+			goto out;
+		ret = tb_port_tmu_enhanced_enable(up, true);
+		if (ret)
+			goto out;
+		ret = tb_port_tmu_rate_write(up, sw->tmu.rate_request);
+		if (ret)
+			goto out;
+		break;
+
+	default:
+		return -EINVAL;
+	}
 
 	ret = tb_switch_set_tmu_mode_params(sw, sw->tmu.rate_request);
 	if (ret)
 		return ret;
 
-	ret = tb_port_tmu_set_unidirectional(up, sw->tmu.unidirectional_request);
-	if (ret)
-		goto out;
+	/* Program the upstream router downstream facing lane adapter */
+	switch (sw->tmu.mode_request) {
+	case TB_SWITCH_TMU_MODE_UNI:
+		ret = tb_port_tmu_set_unidirectional(down, true);
+		if (ret)
+			goto out;
+		break;
+
+	case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+		ret = tb_port_set_tmu_mode_params(down, REPL_TIMEOUT,
+						  REPL_THRESHOLD, REPL_N,
+						  DIRSWITCH_N);
+		if (ret)
+			goto out;
+		ret = tb_port_tmu_enhanced_enable(down, true);
+		if (ret)
+			goto out;
+		ret = tb_port_tmu_rate_write(down, sw->tmu.rate_request);
+		if (ret)
+			goto out;
+		break;
+
+	default:
+		break;
+	}
 
 	ret = tb_port_tmu_time_sync_enable(down);
 	if (ret)
@@ -637,13 +970,13 @@ out:
  */
 int tb_switch_tmu_enable(struct tb_switch *sw)
 {
-	bool unidirectional = sw->tmu.unidirectional_request;
 	int ret;
 
 	if (tb_switch_tmu_is_enabled(sw))
 		return 0;
 
-	if (tb_switch_is_titan_ridge(sw) && unidirectional) {
+	if (tb_switch_is_titan_ridge(sw) &&
+	    sw->tmu.mode_request == TB_SWITCH_TMU_MODE_UNI) {
 		ret = tb_switch_tmu_objection_mask(sw);
 		if (ret)
 			return ret;
@@ -664,10 +997,20 @@ int tb_switch_tmu_enable(struct tb_switch *sw)
 		 * HiFi-Uni.
 		 */
 		if (sw->tmu.rate == TB_SWITCH_TMU_RATE_OFF) {
-			if (unidirectional)
-				ret = tb_switch_tmu_enable_unidirectional(sw);
-			else
+			switch (sw->tmu.mode_request) {
+			case TB_SWITCH_TMU_MODE_BI:
 				ret = tb_switch_tmu_enable_bidirectional(sw);
+				break;
+			case TB_SWITCH_TMU_MODE_UNI:
+				ret = tb_switch_tmu_enable_unidirectional(sw);
+				break;
+			case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+				ret = tb_switch_tmu_enable_enhanced(sw);
+				break;
+			default:
+				ret = -EINVAL;
+				break;
+			}
 			if (ret)
 				return ret;
 		} else if (sw->tmu.rate == TB_SWITCH_TMU_RATE_NORMAL) {
@@ -675,7 +1018,7 @@ int tb_switch_tmu_enable(struct tb_switch *sw)
 			if (ret)
 				return ret;
 		}
-		sw->tmu.unidirectional = unidirectional;
+		sw->tmu.mode = sw->tmu.mode_request;
 	} else {
 		/*
 		 * Host router port configurations are written as
@@ -698,7 +1041,7 @@ int tb_switch_tmu_enable(struct tb_switch *sw)
  * tb_switch_tmu_configure() - Configure the TMU rate and directionality
  * @sw: Router whose mode to change
  * @rate: Rate to configure Off/Normal/HiFi
- * @unidirectional: If uni-directional (bi-directional otherwise)
+ * @mode: Mode to configure
  *
  * Selects the rate of the TMU and directionality (uni-directional or
  * bi-directional). Must be called before tb_switch_tmu_enable().
@@ -706,12 +1049,28 @@ int tb_switch_tmu_enable(struct tb_switch *sw)
  * Returns %0 in success and negative errno otherwise.
  */
 int tb_switch_tmu_configure(struct tb_switch *sw, enum tb_switch_tmu_rate rate,
-			    bool unidirectional)
+			    enum tb_switch_tmu_mode mode)
 {
-	if (unidirectional && !sw->tmu.has_ucap)
+	switch (mode) {
+	case TB_SWITCH_TMU_MODE_BI:
+		break;
+	case TB_SWITCH_TMU_MODE_UNI:
+		if (!sw->tmu.has_ucap)
+			return -EINVAL;
+		break;
+	case TB_SWITCH_TMU_MODE_ENHANCED_UNI:
+		if (!tb_switch_tmu_enhanced_is_supported(sw))
+			return -EINVAL;
+		/* Only support HiFi for now */
+		if (rate != TB_SWITCH_TMU_RATE_HIFI)
+			return -EINVAL;
+		break;
+	default:
+		dev_warn(&sw->dev, "unsupported mode %u\n", mode);
 		return -EINVAL;
+	}
 
-	sw->tmu.unidirectional_request = unidirectional;
+	sw->tmu.mode_request = mode;
 	sw->tmu.rate_request = rate;
 	return 0;
 }
