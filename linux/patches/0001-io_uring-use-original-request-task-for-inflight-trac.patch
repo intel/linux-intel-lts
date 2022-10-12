@@ -1,0 +1,38 @@
+From e3285d286ac0b4f7a4aed02bc0853b30eaaaea4c Mon Sep 17 00:00:00 2001
+From: Jens Axboe <axboe@kernel.dk>
+Date: Thu, 23 Jun 2022 11:06:43 -0600
+Subject: [PATCH] io_uring: use original request task for inflight tracking
+
+commit 386e4fb6962b9f248a80f8870aea0870ca603e89 upstream.
+
+In prior kernels, we did file assignment always at prep time. This meant
+that req->task == current. But after deferring that assignment and then
+pushing the inflight tracking back in, we've got the inflight tracking
+using current when it should in fact now be using req->task.
+
+Fixup that error introduced by adding the inflight tracking back after
+file assignments got modifed.
+
+Fixes: 9cae36a094e7 ("io_uring: reinstate the inflight tracking")
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/io_uring.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/io_uring.c b/fs/io_uring.c
+index be2176575353..5edc7cdd1719 100644
+--- a/fs/io_uring.c
++++ b/fs/io_uring.c
+@@ -1405,7 +1405,7 @@ static void io_req_track_inflight(struct io_kiocb *req)
+ {
+ 	if (!(req->flags & REQ_F_INFLIGHT)) {
+ 		req->flags |= REQ_F_INFLIGHT;
+-		atomic_inc(&current->io_uring->inflight_tracked);
++		atomic_inc(&req->task->io_uring->inflight_tracked);
+ 	}
+ }
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,80 @@
+From 3d498e01f24f43b1062ba135a97f845a81aba79d Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 7 Jun 2022 10:07:11 -0400
+Subject: [PATCH 2/2] KVM: x86: do not set st->preempted when going back to
+ user space
+
+[ Upstream commit 54aa83c90198e68eee8b0850c749bc70efb548da ]
+
+Similar to the Xen path, only change the vCPU's reported state if the vCPU
+was actually preempted.  The reason for KVM's behavior is that for example
+optimistic spinning might not be a good idea if the guest is doing repeated
+exits to userspace; however, it is confusing and unlikely to make a difference,
+because well-tuned guests will hardly ever exit KVM_RUN in the first place.
+
+Suggested-by: Sean Christopherson <seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ arch/x86/kvm/x86.c | 26 ++++++++++++++------------
+ arch/x86/kvm/xen.h |  6 ++++--
+ 2 files changed, 18 insertions(+), 14 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 86ca9fad2097..0ce33101158f 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -4415,19 +4415,21 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
+ {
+ 	int idx;
+ 
+-	if (vcpu->preempted && !vcpu->arch.guest_state_protected)
+-		vcpu->arch.preempted_in_kernel = !static_call(kvm_x86_get_cpl)(vcpu);
++	if (vcpu->preempted) {
++		if (!vcpu->arch.guest_state_protected)
++			vcpu->arch.preempted_in_kernel = !static_call(kvm_x86_get_cpl)(vcpu);
+ 
+-	/*
+-	 * Take the srcu lock as memslots will be accessed to check the gfn
+-	 * cache generation against the memslots generation.
+-	 */
+-	idx = srcu_read_lock(&vcpu->kvm->srcu);
+-	if (kvm_xen_msr_enabled(vcpu->kvm))
+-		kvm_xen_runstate_set_preempted(vcpu);
+-	else
+-		kvm_steal_time_set_preempted(vcpu);
+-	srcu_read_unlock(&vcpu->kvm->srcu, idx);
++		/*
++		 * Take the srcu lock as memslots will be accessed to check the gfn
++		 * cache generation against the memslots generation.
++		 */
++		idx = srcu_read_lock(&vcpu->kvm->srcu);
++		if (kvm_xen_msr_enabled(vcpu->kvm))
++			kvm_xen_runstate_set_preempted(vcpu);
++		else
++			kvm_steal_time_set_preempted(vcpu);
++		srcu_read_unlock(&vcpu->kvm->srcu, idx);
++	}
+ 
+ 	static_call(kvm_x86_vcpu_put)(vcpu);
+ 	vcpu->arch.last_host_tsc = rdtsc();
+diff --git a/arch/x86/kvm/xen.h b/arch/x86/kvm/xen.h
+index cc0cf5f37450..a7693a286e40 100644
+--- a/arch/x86/kvm/xen.h
++++ b/arch/x86/kvm/xen.h
+@@ -97,8 +97,10 @@ static inline void kvm_xen_runstate_set_preempted(struct kvm_vcpu *vcpu)
+ 	 * behalf of the vCPU. Only if the VMM does actually block
+ 	 * does it need to enter RUNSTATE_blocked.
+ 	 */
+-	if (vcpu->preempted)
+-		kvm_xen_update_runstate_guest(vcpu, RUNSTATE_runnable);
++	if (WARN_ON_ONCE(!vcpu->preempted))
++		return;
++
++	kvm_xen_update_runstate_guest(vcpu, RUNSTATE_runnable);
+ }
+ 
+ /* 32-bit compatibility definitions, also used natively in 32-bit build */
+-- 
+2.25.1
+

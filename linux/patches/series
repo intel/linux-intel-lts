@@ -33,3 +33,26 @@
 
 # CVE-2022-36879
 0001-xfrm-xfrm_policy-fix-a-possible-double-xfrm_pols_put.patch
+
+# CVE-2022-3028
+0001-af_key-Do-not-call-xfrm_probe_algs-in-parallel.patch
+
+# CVE-2022-39189
+0001-KVM-x86-do-not-report-a-vCPU-as-preempted-outside-in.patch
+0002-KVM-x86-do-not-set-st-preempted-when-going-back-to-u.patch
+
+# CVE-2022-39190
+0001-netfilter-nf_tables-do-not-leave-chain-stats-enabled.patch
+0002-netfilter-nft_tunnel-restrict-it-to-netdev-family.patch
+0003-netfilter-nf_tables-consolidate-rule-verdict-trace-c.patch
+0004-netfilter-nft_cmp-optimize-comparison-for-16-bytes.patch
+0005-netfilter-bitwise-improve-error-goto-labels.patch
+0007-netfilter-nf_tables-upfront-validation-of-data-via-n.patch
+0008-netfilter-nf_tables-disallow-jump-to-implicit-chain-.patch
+0009-netfilter-nf_tables-disallow-binding-to-already-boun.patch
+
+# CVE-2022-2905
+0001-bpf-Don-t-use-tnum_range-on-array-range-checking-for.patch
+
+# CVE-2022-40476
+0001-io_uring-use-original-request-task-for-inflight-trac.patch
