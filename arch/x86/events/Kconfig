@@ -52,4 +52,11 @@ config PERF_EVENTS_AMD_BRS
 	  Enable AMD Zen3 branch sampling support (BRS) which samples up to
 	  16 consecutive taken branches in registers.
 
+config PERF_EVENTS_INTEL_CIV
+	bool "Intel Celadon in VM"
+	default n
+	help
+	  This is a flag to disable perf event in CiV even we pass host cpu
+	  to qemu, also perf event is not required for Android either.
+
 endmenu

@@ -248,6 +248,15 @@ static void release_pmc_hardware(void) {}
 
 #endif
 
+#ifdef CONFIG_PERF_EVENTS_INTEL_CIV
+bool check_hw_exists(struct pmu *pmu, int num_counters,
+                     int num_counters_fixed)
+{
+	/* Skip perf event even we use host cpu for CIV */
+	pr_cont("PMU not available due to virtualization, using software events only.\n");
+	return false;
+}
+#else
 bool check_hw_exists(struct pmu *pmu, int num_counters, int num_counters_fixed)
 {
 	u64 val, val_fail = -1, val_new= ~0;
@@ -336,6 +345,7 @@ msr_fail:
 
 	return false;
 }
+#endif
 
 static void hw_perf_event_destroy(struct perf_event *event)
 {
