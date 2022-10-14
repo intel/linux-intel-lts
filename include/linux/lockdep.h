@@ -583,22 +583,22 @@ do {									\
 #ifdef CONFIG_PROVE_LOCKING
 # define might_lock(lock)						\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, 0, 0, 0, 1, NULL, _THIS_IP_);	\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), 0, 0, 0, 1, NULL, _THIS_IP_);	\
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);			\
 } while (0)
 # define might_lock_read(lock)						\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, 0, 0, 1, 1, NULL, _THIS_IP_);	\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), 0, 0, 1, 1, NULL, _THIS_IP_); \
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);		\
 } while (0)
 # define might_lock_nested(lock, subclass)				\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, subclass, 0, 1, 1, NULL,		\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), subclass, 0, 1, 1, NULL,	\
 		     _THIS_IP_);					\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);		\
 } while (0)
 
 DECLARE_PER_CPU(int, hardirqs_enabled);
