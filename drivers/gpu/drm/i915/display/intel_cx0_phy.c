@@ -1578,9 +1578,10 @@ int intel_cx0mpllb_calc_state(struct intel_crtc_state *crtc_state,
 	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
 	enum phy phy = intel_port_to_phy(i915, encoder->port);
 
-	drm_WARN_ON(&i915->drm, !intel_is_c10phy(i915, phy));
-
-	return intel_c10mpllb_calc_state(crtc_state, encoder);
+	if (intel_is_c10phy(i915, phy))
+		return intel_c10mpllb_calc_state(crtc_state, encoder);
+	else
+		return intel_c20pll_calc_state(crtc_state, encoder);
 }
 
 void intel_c10mpllb_readout_hw_state(struct intel_encoder *encoder,
@@ -2049,6 +2050,31 @@ int intel_c10mpllb_calc_port_clock(struct intel_encoder *encoder,
 	tmpclk *= (hdmi_div ? 2 : 1);
 
 	return tmpclk;
+}
+
+int intel_c20pll_calc_port_clock(struct intel_encoder *encoder,
+				 const struct intel_c20pll_state *pll_state)
+{
+	unsigned int frac_quot = 0, frac_rem = 0, frac_den = 1;
+	unsigned int multiplier, tx_clk_div, refclk = 38400;
+
+	if (pll_state->mpllb[6] & C20_MPLLB_FRACEN) {
+		frac_quot = pll_state->mpllb[8];
+		frac_rem =  pll_state->mpllb[9];
+		frac_den =  pll_state->mpllb[7];
+		multiplier = REG_FIELD_GET(C20_MULTIPLIER_MASK, pll_state->mpllb[0]);
+		tx_clk_div = REG_FIELD_GET(C20_MPLLB_TX_CLK_DIV_MASK, pll_state->mpllb[0]);
+	} else if (pll_state->mplla[6] & C20_MPLLA_FRACEN) {
+		frac_quot = pll_state->mplla[8];
+		frac_rem =  pll_state->mplla[9];
+		frac_den =  pll_state->mplla[7];
+		multiplier = REG_FIELD_GET(C20_MULTIPLIER_MASK, pll_state->mplla[0]);
+		tx_clk_div = REG_FIELD_GET(C20_MPLLA_TX_CLK_DIV_MASK, pll_state->mplla[1]);
+       }
+
+	return DIV_ROUND_CLOSEST_ULL(mul_u32_u32(refclk, (multiplier << 16) + frac_quot) +
+	       DIV_ROUND_CLOSEST(refclk * frac_rem, frac_den),
+				 10 << (tx_clk_div + 16));
 }
 
 static void intel_program_port_clock_ctl(struct intel_encoder *encoder,
