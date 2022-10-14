@@ -1127,7 +1127,7 @@ notrace bool rcu_is_watching(void)
 	if (on_pipeline_entry())
  		return true;
  
-	if (WARN_ON_ONCE(irq_pipeline_debug() && running_oob()))
+	if (running_oob())
 		return false;
 
 	preempt_disable_notrace();
