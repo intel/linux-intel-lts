@@ -999,6 +999,32 @@ get_reg_and_bit(const struct intel_engine_cs *engine, const bool gen8,
 	return rb;
 }
 
+/*
+ * HW architecture suggest typical invalidation time at 40us,
+ * with pessimistic cases up to 100us and a recommendation to
+ * cap at 1ms. We go a bit higher just in case.
+ */
+#define TLB_INVAL_TIMEOUT_US 100
+#define TLB_INVAL_TIMEOUT_MS 4
+
+/*
+ * On Xe_HP the TLB invalidation registers are located at the same MMIO offsets
+ * but are now considered MCR registers.  Since they exist within a GAM range,
+ * the primary instance of the register rolls up the status from each unit.
+ */
+static int wait_for_invalidate(struct intel_gt *gt, struct reg_and_bit rb)
+{
+	if (GRAPHICS_VER_FULL(gt->i915) >= IP_VER(12, 50))
+		return intel_gt_mcr_wait_for_reg_fw(gt, rb.reg, rb.bit, 0,
+						    TLB_INVAL_TIMEOUT_US,
+						    TLB_INVAL_TIMEOUT_MS);
+	else
+		return __intel_wait_for_register_fw(gt->uncore, rb.reg, rb.bit, 0,
+						    TLB_INVAL_TIMEOUT_US,
+						    TLB_INVAL_TIMEOUT_MS,
+						    NULL);
+}
+
 void intel_gt_invalidate_tlbs(struct intel_gt *gt)
 {
 	static const i915_reg_t gen8_regs[] = {
@@ -1036,7 +1062,7 @@ void intel_gt_invalidate_tlbs(struct intel_gt *gt)
 		return;
 
 	if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 50)) {
-		regs = xehp_regs;
+		regs = NULL;
 		num = ARRAY_SIZE(xehp_regs);
 	} else if (GRAPHICS_VER(i915) == 12) {
 		regs = gen12_regs;
@@ -1066,11 +1092,17 @@ void intel_gt_invalidate_tlbs(struct intel_gt *gt)
 		if (!intel_engine_pm_is_awake(engine))
 			continue;
 
-		rb = get_reg_and_bit(engine, regs == gen8_regs, regs, num);
-		if (!i915_mmio_reg_offset(rb.reg))
-			continue;
+		if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 50)) {
+			intel_gt_mcr_multicast_write_fw(gt,
+							xehp_regs[engine->class],
+							BIT(engine->instance));
+		} else {
+			rb = get_reg_and_bit(engine, regs == gen8_regs, regs, num);
+			if (!i915_mmio_reg_offset(rb.reg))
+				continue;
 
-		intel_uncore_write_fw(uncore, rb.reg, rb.bit);
+			intel_uncore_write_fw(uncore, rb.reg, rb.bit);
+		}
 		awake |= engine->mask;
 	}
 
@@ -1088,22 +1120,12 @@ void intel_gt_invalidate_tlbs(struct intel_gt *gt)
 	for_each_engine_masked(engine, gt, awake, tmp) {
 		struct reg_and_bit rb;
 
-		/*
-		 * HW architecture suggest typical invalidation time at 40us,
-		 * with pessimistic cases up to 100us and a recommendation to
-		 * cap at 1ms. We go a bit higher just in case.
-		 */
-		const unsigned int timeout_us = 100;
-		const unsigned int timeout_ms = 4;
-
 		rb = get_reg_and_bit(engine, regs == gen8_regs, regs, num);
-		if (__intel_wait_for_register_fw(uncore,
-						 rb.reg, rb.bit, 0,
-						 timeout_us, timeout_ms,
-						 NULL))
+
+		if (wait_for_invalidate(gt, rb))
 			drm_err_ratelimited(&gt->i915->drm,
 					    "%s TLB invalidation did not complete in %ums!\n",
-					    engine->name, timeout_ms);
+					    engine->name, TLB_INVAL_TIMEOUT_MS);
 	}
 
 	/*
