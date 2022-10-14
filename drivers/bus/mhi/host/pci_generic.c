@@ -1097,6 +1097,10 @@ static void mhi_pci_recovery_work(struct work_struct *work)
 		mhi_unprepare_after_power_down(mhi_cntrl);
 	}
 
+	dev_dbg(&pdev->dev, "Waiting 40 seconds for allowing the modem to restore PCIe\n");
+	msleep(40000);
+	dev_dbg(&pdev->dev, "Restoring PCI saved state\n");
+
 	pci_set_power_state(pdev, PCI_D0);
 	pci_load_saved_state(pdev, mhi_pdev->pci_state);
 	pci_restore_state(pdev);
