@@ -159,11 +159,25 @@
 #define CX0_P4PG_STATE_DISABLE          0xC
 #define CX0_P2_STATE_RESET              0x2
 
+#define PHY_C10_VDR_OVRD			0xD71
+#define  PHY_C10_VDR_OVRD_TX1		REG_BIT8(0)
+#define  PHY_C10_VDR_OVRD_TX2		REG_BIT8(2)
+#define PHY_C10_VDR_PRE_OVRD_TX1		0xD80
+#define C10_PHY_OVRD_LEVEL_MASK		REG_GENMASK8(5, 0)
+#define C10_PHY_OVRD_LEVEL(val)		REG_FIELD_PREP8(C10_PHY_OVRD_LEVEL_MASK, val)
+#define PHY_CX0_VDR_OVRD_CONTROL(lane, tx, control) (PHY_C10_VDR_PRE_OVRD_TX1 + ((lane) ^ ((tx) - 1)) * 0x10 + (control))
+
 /* PHY_C10_VDR_PLL0 */
 #define PLL_C10_MPLL_SSC_EN             REG_BIT8(0)
 
 /* PIPE SPEC Defined Registers */
 #define PHY_CX0_TX_CONTROL(tx, control) (0x400 + ((tx) - 1) * 0x200 + (control))
 #define CONTROL2_DISABLE_SINGLE_TX      REG_BIT(6)
+
+/* C10 Phy VSWING Masks */
+#define C10_PHY_VSWING_LEVEL_MASK               REG_GENMASK8(2, 0)
+#define C10_PHY_VSWING_LEVEL(val)               REG_FIELD_PREP8(C10_PHY_VSWING_LEVEL_MASK, val)
+#define C10_PHY_VSWING_PREEMPH_MASK             REG_GENMASK8(1, 0)
+#define C10_PHY_VSWING_PREEMPH(val)             REG_FIELD_PREP8(C10_PHY_VSWING_PREEMPH_MASK, val)
 
 #endif /* __INTEL_CX0_REG_DEFS_H__ */
