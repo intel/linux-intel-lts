@@ -133,4 +133,34 @@
 #define XELPDP_SSC_ENABLE_PLLA				REG_BIT(1)
 #define XELPDP_SSC_ENABLE_PLLB				REG_BIT(0)
 
+/* C10 Vendor Registers */
+#define PHY_C10_VDR_PLL(idx)		(0xC00 + (idx))
+#define  C10_PLL0_FRACEN		REG_BIT8(4)
+#define  C10_PLL3_MULTIPLIERH_MASK	REG_GENMASK8(3, 0)
+#define  C10_PLL15_TXCLKDIV_MASK	REG_GENMASK8(2, 0)
+#define PHY_C10_VDR_CMN(idx)		(0xC20 + (idx))
+#define  C10_CMN0_DP_VAL		0x21
+#define  C10_CMN3_TXVBOOST_MASK		REG_GENMASK8(7, 5)
+#define  C10_CMN3_TXVBOOST(val)		REG_FIELD_PREP8(C10_CMN3_TXVBOOST_MASK, val)
+#define PHY_C10_VDR_TX(idx)		(0xC30 + (idx))
+#define  C10_TX0_VAL			0x10
+#define PHY_C10_VDR_CONTROL(idx)	(0xC70 + (idx) - 1)
+#define  C10_VDR_CTRL_MSGBUS_ACCESS	REG_BIT8(2)
+#define  C10_VDR_CTRL_MASTER_LANE	REG_BIT8(1)
+#define  C10_VDR_CTRL_UPDATE_CFG	REG_BIT8(0)
+#define PHY_C10_VDR_CUSTOM_WIDTH	0xD02
+
+#define CX0_P0_STATE_ACTIVE             0x0
+#define CX0_P2_STATE_READY              0x2
+#define CX0_P2PG_STATE_DISABLE          0x9
+#define CX0_P4PG_STATE_DISABLE          0xC
+#define CX0_P2_STATE_RESET              0x2
+
+/* PHY_C10_VDR_PLL0 */
+#define PLL_C10_MPLL_SSC_EN             REG_BIT8(0)
+
+/* PIPE SPEC Defined Registers */
+#define PHY_CX0_TX_CONTROL(tx, control) (0x400 + ((tx) - 1) * 0x200 + (control))
+#define CONTROL2_DISABLE_SINGLE_TX      REG_BIT(6)
+
 #endif /* __INTEL_CX0_REG_DEFS_H__ */
