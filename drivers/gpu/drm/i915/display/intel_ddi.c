@@ -3078,6 +3078,11 @@ intel_ddi_update_prepare(struct intel_atomic_state *state,
 
 	intel_tc_port_get_link(enc_to_dig_port(encoder),
 		               required_lanes);
+
+	/* FIXME: Add MTL pll_mgr */
+	if (DISPLAY_VER(i915) >= 14)
+		return;
+
 	if (crtc_state && crtc_state->hw.active) {
 		struct intel_crtc *slave_crtc;
 
@@ -3531,9 +3536,9 @@ static void mtl_ddi_get_config(struct intel_encoder *encoder,
 
 	drm_WARN_ON(&i915->drm, !intel_is_c10phy(i915, phy));
 
-	intel_c10mpllb_readout_hw_state(encoder, &crtc_state->c10mpllb_state);
-	intel_c10mpllb_dump_hw_state(i915, &crtc_state->c10mpllb_state);
-	crtc_state->port_clock = intel_c10mpllb_calc_port_clock(encoder, &crtc_state->c10mpllb_state);
+	intel_c10mpllb_readout_hw_state(encoder, &crtc_state->cx0pll_state.c10mpllb_state);
+	intel_c10mpllb_dump_hw_state(i915, &crtc_state->cx0pll_state.c10mpllb_state);
+	crtc_state->port_clock = intel_c10mpllb_calc_port_clock(encoder, &crtc_state->cx0pll_state.c10mpllb_state);
 
 	intel_ddi_get_config(encoder, crtc_state);
 }
