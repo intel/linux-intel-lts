@@ -28,11 +28,6 @@ static const u32 intel_cursor_formats[] = {
 	DRM_FORMAT_ARGB8888,
 };
 
-static const u64 cursor_format_modifiers[] = {
-	DRM_FORMAT_MOD_LINEAR,
-	DRM_FORMAT_MOD_INVALID
-};
-
 static u32 intel_cursor_base(const struct intel_plane_state *plane_state)
 {
 	struct drm_i915_private *dev_priv =
@@ -195,7 +190,7 @@ static u32 i845_cursor_ctl(const struct intel_crtc_state *crtc_state,
 {
 	return CURSOR_ENABLE |
 		CURSOR_FORMAT_ARGB |
-		CURSOR_STRIDE(plane_state->view.color_plane[0].stride);
+		CURSOR_STRIDE(plane_state->view.color_plane[0].mapping_stride);
 }
 
 static bool i845_cursor_size_ok(const struct intel_plane_state *plane_state)
@@ -234,7 +229,7 @@ static int i845_check_cursor(struct intel_crtc_state *crtc_state,
 	}
 
 	drm_WARN_ON(&i915->drm, plane_state->uapi.visible &&
-		    plane_state->view.color_plane[0].stride != fb->pitches[0]);
+		    plane_state->view.color_plane[0].mapping_stride != fb->pitches[0]);
 
 	switch (fb->pitches[0]) {
 	case 256:
@@ -455,7 +450,7 @@ static int i9xx_check_cursor(struct intel_crtc_state *crtc_state,
 	}
 
 	drm_WARN_ON(&dev_priv->drm, plane_state->uapi.visible &&
-		    plane_state->view.color_plane[0].stride != fb->pitches[0]);
+		    plane_state->view.color_plane[0].mapping_stride != fb->pitches[0]);
 
 	if (fb->pitches[0] !=
 	    drm_rect_width(&plane_state->uapi.dst) * fb->format->cpp[0]) {
@@ -605,8 +600,10 @@ static bool i9xx_cursor_get_hw_state(struct intel_plane *plane,
 static bool intel_cursor_format_mod_supported(struct drm_plane *_plane,
 					      u32 format, u64 modifier)
 {
-	return modifier == DRM_FORMAT_MOD_LINEAR &&
-		format == DRM_FORMAT_ARGB8888;
+	if (!intel_fb_plane_supports_modifier(to_intel_plane(_plane), modifier))
+		return false;
+
+	return format == DRM_FORMAT_ARGB8888;
 }
 
 static int
@@ -754,6 +751,7 @@ intel_cursor_plane_create(struct drm_i915_private *dev_priv,
 {
 	struct intel_plane *cursor;
 	int ret, zpos;
+	u64 *modifiers;
 
 	cursor = intel_plane_alloc();
 	if (IS_ERR(cursor))
@@ -784,13 +782,18 @@ intel_cursor_plane_create(struct drm_i915_private *dev_priv,
 	if (IS_I845G(dev_priv) || IS_I865G(dev_priv) || HAS_CUR_FBC(dev_priv))
 		cursor->cursor.size = ~0;
 
+	modifiers = intel_fb_plane_get_modifiers(dev_priv, PLANE_HAS_NO_CAPS);
+
 	ret = drm_universal_plane_init(&dev_priv->drm, &cursor->base,
 				       0, &intel_cursor_plane_funcs,
 				       intel_cursor_formats,
 				       ARRAY_SIZE(intel_cursor_formats),
-				       cursor_format_modifiers,
+				       modifiers,
 				       DRM_PLANE_TYPE_CURSOR,
 				       "cursor %c", pipe_name(pipe));
+
+	kfree(modifiers);
+
 	if (ret)
 		goto fail;
 
