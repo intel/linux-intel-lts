@@ -814,7 +814,7 @@ static int gpy_loopback(struct phy_device *phydev, bool enable)
 		/* It takes some time for PHY device to switch into
 		 * loopback mode.
 		 */
-		msleep(100);
+		msleep(600);
 	} else {
 		priv->lb_dis_to = get_jiffies_64() + HZ * 3;
 	}
