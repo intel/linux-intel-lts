@@ -493,7 +493,7 @@ static int gpy_loopback(struct phy_device *phydev, bool enable)
 		/* It takes some time for PHY device to switch
 		 * into/out-of loopback mode.
 		 */
-		msleep(100);
+		msleep(600);
 	}
 
 	return ret;
