@@ -28,6 +28,7 @@
 #include <scsi/scsi_dbg.h>
 #include <scsi/scsi_driver.h>
 #include <scsi/scsi_eh.h>
+#include <scsi/sg.h>
 #include "ufshcd-priv.h"
 #include <ufs/ufs_quirks.h>
 #include <ufs/unipro.h>
@@ -7568,7 +7569,7 @@ retry:
 		dev_err(&sdev->sdev_gendev, "%s: failed with err %0x\n",
 			__func__, ret);
 
-	if (driver_byte(ret) & DRIVER_SENSE)
+	if (status_byte(ret) & DRIVER_SENSE)
 		scsi_print_sense_hdr(sdev, "rpmb: security out", &sshdr);
 
 	return ret;
@@ -7700,7 +7701,7 @@ static inline void ufshcd_rpmb_add(struct ufs_hba *hba)
 	if (ret)
 		goto out_put_dev;
 
-	if (hba->ufs_version >= UFSHCI_VERSION_21) {
+	if (hba->ufs_version >= ufshci_version(2, 1)) {
 		ret = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_GEOMETRY, 0,
 					     GEOMETRY_DESC_PARAM_RPMB_RW_SIZE,
 					     &rpmb_rw_size,
@@ -9755,10 +9756,10 @@ EXPORT_SYMBOL(ufshcd_runtime_resume);
  */
 int ufshcd_shutdown(struct ufs_hba *hba)
 {
+	ufshcd_rpmb_remove(hba);
+
 	if (ufshcd_is_ufs_dev_poweroff(hba) && ufshcd_is_link_off(hba))
 		ufshcd_suspend(hba);
-
-	ufshcd_rpmb_remove(hba);
 
 	hba->is_powered = false;
 	/* allow force shutdown even in case of errors */

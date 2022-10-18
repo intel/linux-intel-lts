@@ -121,7 +121,7 @@ out:
 	return ret;
 }
 
-static int rpmb_virtio_cmd_cap(struct device *dev, u8 target)
+/*static int rpmb_virtio_cmd_cap(struct device *dev, u8 target)
 {
 	struct virtio_device *vdev = dev_to_virtio(dev);
 	struct virtio_rpmb_info *vi = vdev->priv;
@@ -169,7 +169,7 @@ out:
 
 	mutex_unlock(&vi->lock);
 	return ret;
-}
+}*/
 
 static int rpmb_virtio_get_capacity(struct device *dev, u8 target)
 {

@@ -1122,7 +1122,7 @@ static int mmc_blk_rpmb_process(struct mmc_blk_data *md,
 	 */
 	mq = &md->queue;
 	op_mode = idata[0]->ic.write_flag ? REQ_OP_DRV_OUT : REQ_OP_DRV_IN,
-	req = blk_get_request(mq->queue, op_mode, 0);
+	req = blk_mq_alloc_request(mq->queue, op_mode, 0);
 	if (IS_ERR(req)) {
 		err = PTR_ERR(req);
 		goto cmd_err;
@@ -1132,11 +1132,11 @@ static int mmc_blk_rpmb_process(struct mmc_blk_data *md,
 	req_to_mmc_queue_req(req)->drv_op_data = idata;
 	req_to_mmc_queue_req(req)->ioc_count = num_of_cmds;
 
-	blk_execute_rq(mq->queue, NULL, req, 0);
+	blk_execute_rq(req, false);
 
 	err = req_to_mmc_queue_req(req)->drv_op_result;
 
-	blk_put_request(req);
+	blk_mq_free_request(req);
 
 cmd_err:
 	return err;
