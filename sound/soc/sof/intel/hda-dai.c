@@ -212,7 +212,7 @@ static int hda_link_hw_params(struct snd_pcm_substream *substream,
 	int stream_tag;
 	int ret;
 
-	link = snd_hdac_ext_bus_get_link(bus, codec_dai->component->name);
+	link = snd_hdac_ext_bus_get_hlink_by_name(bus, codec_dai->component->name);
 	if (!link)
 		return -EINVAL;
 
@@ -294,7 +294,7 @@ static int hda_link_pcm_trigger(struct snd_pcm_substream *substream,
 	bus = hstream->bus;
 	rtd = asoc_substream_to_rtd(substream);
 
-	link = snd_hdac_ext_bus_get_link(bus, asoc_rtd_to_codec(rtd, 0)->component->name);
+	link = snd_hdac_ext_bus_get_hlink_by_name(bus, asoc_rtd_to_codec(rtd, 0)->component->name);
 	if (!link)
 		return -EINVAL;
 
@@ -375,7 +375,7 @@ static int hda_link_hw_free(struct snd_pcm_substream *substream,
 	if (ret < 0)
 		return ret;
 
-	link = snd_hdac_ext_bus_get_link(bus, asoc_rtd_to_codec(rtd, 0)->component->name);
+	link = snd_hdac_ext_bus_get_hlink_by_name(bus, asoc_rtd_to_codec(rtd, 0)->component->name);
 	if (!link)
 		return -EINVAL;
 
