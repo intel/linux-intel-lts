@@ -25,7 +25,6 @@
 #include <linux/pci_ids.h>
 #include <linux/slab.h>
 #include <linux/bitops.h>
-#include <linux/nmi.h>
 #include <linux/irq_work.h>
 #include <linux/edac.h>
 #include <linux/processor.h>
@@ -33,6 +32,7 @@
 #include <asm/intel-family.h>
 #include <asm/cpu_device_id.h>
 #include <asm/mce.h>
+#include <asm/nmi.h>
 
 #include "edac_mc.h"
 
