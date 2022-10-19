@@ -70,10 +70,18 @@
 #if defined(CONFIG_SMP) || defined(CONFIG_DEBUG_SPINLOCK)
 
 #ifdef CONFIG_DEBUG_SPINLOCK
+/*
+ * Hard spinlocks are not checked for invalid wait context in-band
+ * wise (LD_WAIT_INV). We could be smarter with handling a specific
+ * wait type for them, so that we could detect hard_spin_lock ->
+ * {raw_}spin_lock for instance, but we already have
+ * check_inband_stage() calls all over the place in the latter API, so
+ * that kind of misusage would be detected regardless.
+ */
 #define hard_spin_lock_init(__lock)				\
 	do {							\
 		static struct lock_class_key __key;		\
-		__raw_spin_lock_init((raw_spinlock_t *)__lock, #__lock, &__key, LD_WAIT_SPIN); \
+		__raw_spin_lock_init((raw_spinlock_t *)__lock, #__lock, &__key, LD_WAIT_INV); \
 	} while (0)
 #else
 #define hard_spin_lock_init(__rlock)				\

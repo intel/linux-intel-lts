@@ -144,17 +144,18 @@ void __bad_spinlock_type(void);
 		__ret;					\
 	})
 
-#define __HARD_SPIN_LOCK_UNLOCKED(__rlock)	\
-	__RAW_SPIN_LOCK_UNLOCKED(__rlock)
-
-#define __HARD_SPIN_LOCK_INITIALIZER(__lock)				\
-	{								\
-		.rlock = __HARD_SPIN_LOCK_UNLOCKED((__lock).rlock),	\
+#define __HARD_SPIN_LOCK_INITIALIZER(x)	{			\
+		.rlock = {					\
+			.raw_lock = __ARCH_SPIN_LOCK_UNLOCKED,	\
+			SPIN_DEBUG_INIT(x)			\
+			HARD_SPIN_DEP_MAP_INIT(x)		\
+		}						\
 	}
 
-#define DEFINE_HARD_SPINLOCK(x)	hard_spinlock_t x = {	\
-		.rlock = __HARD_SPIN_LOCK_UNLOCKED(x),	\
-	}
+#define __HARD_SPIN_LOCK_UNLOCKED(x)	\
+	(hard_spinlock_t) __HARD_SPIN_LOCK_INITIALIZER(x)
+
+#define DEFINE_HARD_SPINLOCK(x)  	hard_spinlock_t x = __HARD_SPIN_LOCK_UNLOCKED(x)
 
 #define DECLARE_HARD_SPINLOCK(x)	hard_spinlock_t x
 
