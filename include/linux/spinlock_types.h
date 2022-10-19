@@ -158,11 +158,12 @@ void __bad_spinlock_type(void);
 
 #define DECLARE_HARD_SPINLOCK(x)	hard_spinlock_t x
 
-struct phony_lockdep_map {
-	u8 wait_type_outer;
-	u8 wait_type_inner;
-  	u8 lock_type;
-};
+/*
+ * The presence of a phony depmap is tested by LOCKDEP_ALT_DEPMAP() to
+ * locate the real depmap without enumerating every spinlock type
+ * which may contain one.
+ */
+struct phony_lockdep_map { };
 
 typedef struct hard_spinlock {
 	/* XXX: offset_of(struct hard_spinlock, rlock) == 0 */
