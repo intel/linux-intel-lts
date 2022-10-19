@@ -149,7 +149,7 @@ static int hda_link_dma_cleanup(struct snd_pcm_substream *substream,
 	struct hdac_ext_link *link;
 	int stream_tag;
 
-	link = snd_hdac_ext_bus_get_link(bus, codec_dai->component->name);
+	link = snd_hdac_ext_bus_get_hlink_by_name(bus, codec_dai->component->name);
 	if (!link)
 		return -EINVAL;
 
@@ -216,7 +216,7 @@ static int hda_link_dma_hw_params(struct snd_pcm_substream *substream,
 	struct hdac_bus *bus = hstream->bus;
 	struct hdac_ext_link *link;
 
-	link = snd_hdac_ext_bus_get_link(bus, codec_dai->component->name);
+	link = snd_hdac_ext_bus_get_hlink_by_name(bus, codec_dai->component->name);
 	if (!link)
 		return -EINVAL;
 
