@@ -142,8 +142,8 @@ static int hda_link_dma_params(struct hdac_ext_stream *stream,
 	if (stream->hstream.direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		list_for_each_entry(link, &bus->hlink_list, list) {
 			if (link->index == params->link_index)
-				snd_hdac_ext_link_set_stream_id(link,
-								stream_tag);
+				snd_hdac_ext_bus_link_set_stream_id(link,
+								    stream_tag);
 		}
 	}
 
@@ -329,7 +329,7 @@ static int hda_link_pcm_trigger(struct snd_pcm_substream *substream,
 
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 			stream_tag = hdac_stream(link_dev)->stream_tag;
-			snd_hdac_ext_link_clear_stream_id(link, stream_tag);
+			snd_hdac_ext_bus_link_clear_stream_id(link, stream_tag);
 		}
 
 		link_dev->link_prepared = 0;
@@ -381,7 +381,7 @@ static int hda_link_hw_free(struct snd_pcm_substream *substream,
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		stream_tag = hdac_stream(link_dev)->stream_tag;
-		snd_hdac_ext_link_clear_stream_id(link, stream_tag);
+		snd_hdac_ext_bus_link_clear_stream_id(link, stream_tag);
 	}
 
 	snd_soc_dai_set_dma_data(dai, substream, NULL);
