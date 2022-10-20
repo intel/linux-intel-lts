@@ -6,3 +6,12 @@
 
 # CVE-2022-0998
 0001-vdpa-clean-up-get_config_size-ret-value-handling.patch
+
+# CVE-2022-42720
+0001-wifi-cfg80211-fix-BSS-refcounting-bugs.patch
+
+# CVE-2022-42721
+0001-wifi-cfg80211-avoid-nontransmitted-BSS-list-corrupti.patch
+
+# CVE-2022-42722
+0001-wifi-mac80211-fix-crash-in-beacon-protection-for-P2P.patch
