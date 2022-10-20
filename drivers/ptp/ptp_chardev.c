@@ -12,6 +12,7 @@
 #include <linux/timekeeping.h>
 
 #include <linux/nospec.h>
+#include <linux/string.h>
 
 #include "ptp_private.h"
 
@@ -106,11 +107,34 @@ int ptp_open(struct posix_clock *pc, fmode_t fmode)
 	return 0;
 }
 
+/* Returns -1 if any reserved fields are non-zero */
+static inline int _check_rsv_field(unsigned int *field, size_t size)
+{
+	unsigned int *iter;
+	int ret = 0;
+
+	for (iter = field; iter < field+size && ret == 0; ++iter)
+		ret = *iter == 0 ? 0 : -1;
+
+	return ret;
+}
+#define check_rsv_field(field) _check_rsv_field(field, ARRAY_SIZE(field))
+
+static inline void _zero_rsv_field(unsigned int *field, size_t size)
+{
+	unsigned int *iter;
+
+	for (iter = field; iter < field+size; ++iter)
+		*iter = 0;
+}
+#define zero_rsv_field(field) _zero_rsv_field(field, ARRAY_SIZE(field))
+
 long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 {
 	struct ptp_clock *ptp = container_of(pc, struct ptp_clock, clock);
 	struct ptp_sys_offset_extended *extoff = NULL;
 	struct ptp_sys_offset_precise precise_offset;
+	struct ptp_event_count_tstamp counttstamp;
 	struct system_device_crosststamp xtstamp;
 	struct ptp_clock_info *ops = ptp->info;
 	struct ptp_sys_offset *sysoff = NULL;
@@ -155,7 +179,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			req.extts.flags |= PTP_STRICT_FLAGS;
 			/* Make sure no reserved bit is set. */
 			if ((req.extts.flags & ~PTP_EXTTS_VALID_FLAGS) ||
-			    req.extts.rsv[0] || req.extts.rsv[1]) {
+			    check_rsv_field(req.extts.rsv)) {
 				err = -EINVAL;
 				break;
 			}
@@ -167,8 +191,11 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			}
 		} else if (cmd == PTP_EXTTS_REQUEST) {
 			req.extts.flags &= PTP_EXTTS_V1_VALID_FLAGS;
-			req.extts.rsv[0] = 0;
+			/* zero_rsv_field(req.extts.rsv); */
+			/* TOFIX: Temporarily uses RESERVED field to */
+			/* pass event count value */
 			req.extts.rsv[1] = 0;
+
 		}
 		if (req.extts.index >= ops->n_ext_ts) {
 			err = -EINVAL;
@@ -204,8 +231,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			 * it as reserved, which must be set to zero.
 			 */
 			if (!(perout->flags & PTP_PEROUT_DUTY_CYCLE) &&
-			    (perout->rsv[0] || perout->rsv[1] ||
-			     perout->rsv[2] || perout->rsv[3])) {
+			    check_rsv_field(perout->rsv)) {
 				err = -EINVAL;
 				break;
 			}
@@ -233,10 +259,14 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			}
 		} else if (cmd == PTP_PEROUT_REQUEST) {
 			req.perout.flags &= PTP_PEROUT_V1_VALID_FLAGS;
-			req.perout.rsv[0] = 0;
-			req.perout.rsv[1] = 0;
-			req.perout.rsv[2] = 0;
-			req.perout.rsv[3] = 0;
+			zero_rsv_field(req.perout.rsv);
+		}
+		/* These flags don't make sense together */
+		if (cmd == PTP_PEROUT_REQUEST2 &&
+		    req.perout.flags & PTP_PEROUT_FREQ_ADJ &&
+		    req.perout.flags & PTP_PEROUT_ONE_SHOT) {
+			err = -EINVAL;
+			break;
 		}
 		if (req.perout.index >= ops->n_per_out) {
 			err = -EINVAL;
@@ -248,6 +278,24 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			return -ERESTARTSYS;
 		err = ops->enable(ops, &req, enable);
 		mutex_unlock(&ptp->pincfg_mux);
+		break;
+
+	case PTP_EVENT_COUNT_TSTAMP2:
+		if (!ops->counttstamp)
+			return -ENOTSUPP;
+		if (copy_from_user(&counttstamp, (void __user *)arg,
+				   sizeof(counttstamp))) {
+			err = -EFAULT;
+			break;
+		}
+		if (check_rsv_field(counttstamp.rsv)) {
+			err = -EINVAL;
+			break;
+		}
+		err = ops->counttstamp(ops, &counttstamp);
+		if (!err && copy_to_user((void __user *)arg, &counttstamp,
+						sizeof(counttstamp)))
+			err = -EFAULT;
 		break;
 
 	case PTP_ENABLE_PPS:
@@ -302,7 +350,7 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		if (extoff->n_samples > PTP_MAX_SAMPLES
-		    || extoff->rsv[0] || extoff->rsv[1] || extoff->rsv[2]) {
+		    || check_rsv_field(extoff->rsv)) {
 			err = -EINVAL;
 			break;
 		}
@@ -362,17 +410,11 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			break;
 		}
-		if ((pd.rsv[0] || pd.rsv[1] || pd.rsv[2]
-				|| pd.rsv[3] || pd.rsv[4])
-			&& cmd == PTP_PIN_GETFUNC2) {
+		if (check_rsv_field(pd.rsv) && cmd == PTP_PIN_GETFUNC2) {
 			err = -EINVAL;
 			break;
 		} else if (cmd == PTP_PIN_GETFUNC) {
-			pd.rsv[0] = 0;
-			pd.rsv[1] = 0;
-			pd.rsv[2] = 0;
-			pd.rsv[3] = 0;
-			pd.rsv[4] = 0;
+			zero_rsv_field(pd.rsv);
 		}
 		pin_index = pd.index;
 		if (pin_index >= ops->n_pins) {
@@ -394,17 +436,11 @@ long ptp_ioctl(struct posix_clock *pc, unsigned int cmd, unsigned long arg)
 			err = -EFAULT;
 			break;
 		}
-		if ((pd.rsv[0] || pd.rsv[1] || pd.rsv[2]
-				|| pd.rsv[3] || pd.rsv[4])
-			&& cmd == PTP_PIN_SETFUNC2) {
+		if (check_rsv_field(pd.rsv) && cmd == PTP_PIN_SETFUNC2) {
 			err = -EINVAL;
 			break;
 		} else if (cmd == PTP_PIN_SETFUNC) {
-			pd.rsv[0] = 0;
-			pd.rsv[1] = 0;
-			pd.rsv[2] = 0;
-			pd.rsv[3] = 0;
-			pd.rsv[4] = 0;
+			zero_rsv_field(pd.rsv);
 		}
 		pin_index = pd.index;
 		if (pin_index >= ops->n_pins) {

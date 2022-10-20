@@ -9,6 +9,7 @@
 #include <linux/spinlock.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
+#include <linux/pm_runtime.h>
 #include "client.h"
 #include "hw-ish.h"
 #include "hbm.h"
@@ -311,9 +312,15 @@ static int write_ipc_from_queue(struct ishtp_device *dev)
 		struct ipc_time_update_msg time_update;
 		struct time_sync_format ts_format;
 
-		usec_system = ktime_to_us(ktime_get_boottime());
 		usec_utc = ktime_to_us(ktime_get_real());
-		ts_format.ts1_source = HOST_SYSTEM_TIME_USEC;
+		if (dev->pdev->device == EHL_Ax_DEVICE_ID) {
+			usec_system = read_art();
+			ts_format.ts1_source = HOST_ART_TIME_CYCLE;
+		} else {
+			usec_system = ktime_to_us(ktime_get_boottime());
+			ts_format.ts1_source = HOST_SYSTEM_TIME_USEC;
+		}
+
 		ts_format.ts2_source = HOST_UTC_TIME_USEC;
 		ts_format.reserved = 0;
 
@@ -323,6 +330,11 @@ static int write_ipc_from_queue(struct ishtp_device *dev)
 
 		memcpy(r_buf, &time_update,
 		       sizeof(struct ipc_time_update_msg));
+
+		if (dev->pdev->device == EHL_Ax_DEVICE_ID) {
+			length = sizeof(time_update);
+			doorbell_val = IPC_BUILD_MNG_MSG(MNG_SYNC_FW_CLOCK, length);
+		}
 	}
 
 	for (i = 0, reg_addr = IPC_REG_HOST2ISH_MSG; i < length >> 2; i++,
@@ -362,7 +374,7 @@ static int write_ipc_from_queue(struct ishtp_device *dev)
 }
 
 /**
- * write_ipc_to_queue() - write ipc msg to Tx queue
+ * _write_ipc_to_queue() - write ipc msg to Tx queue
  * @dev: ishtp device instance
  * @ipc_send_compl: Send complete callback
  * @ipc_send_compl_prm:	Parameter to send in complete callback
@@ -377,7 +389,7 @@ static int write_ipc_from_queue(struct ishtp_device *dev)
  *
  * Return: 0 for success else failure code
  */
-static int write_ipc_to_queue(struct ishtp_device *dev,
+static int _write_ipc_to_queue(struct ishtp_device *dev,
 	void (*ipc_send_compl)(void *), void *ipc_send_compl_prm,
 	unsigned char *msg, int length)
 {
@@ -410,6 +422,39 @@ static int write_ipc_to_queue(struct ishtp_device *dev,
 }
 
 /**
+ * write_ipc_to_queue() - wraper of _write_ipc_to_queue() which power safed
+ * @dev: ishtp device instance
+ * @ipc_send_compl: Send complete callback
+ * @ipc_send_compl_prm:	Parameter to send in complete callback
+ * @msg: Pointer to message
+ * @length: Length of message
+ *
+ * resume the device from runtime suspend if needed and then call
+ * _write_ipc_to_queue() sending messag
+ *
+ * Return: 0 for success else failure code
+ */
+static int write_ipc_to_queue(struct ishtp_device *dev,
+	void (*ipc_send_compl)(void *), void *ipc_send_compl_prm,
+	unsigned char *msg, int length)
+{
+	int ret;
+
+	/* if in interrupt context, it's safe to write ipc message directly */
+	if (!in_interrupt())
+		pm_runtime_get_sync(dev->devc);
+
+	pm_runtime_mark_last_busy(dev->devc);
+	ret = _write_ipc_to_queue(dev, ipc_send_compl, ipc_send_compl_prm,
+				msg, length);
+
+	if (!in_interrupt())
+		pm_runtime_put_autosuspend(dev->devc);
+
+	return ret;
+}
+
+/**
  * ipc_send_mng_msg() - Send management message
  * @dev: ishtp device instance
  * @msg_code: Message code
@@ -428,7 +473,7 @@ static int ipc_send_mng_msg(struct ishtp_device *dev, uint32_t msg_code,
 
 	memcpy(ipc_msg, &drbl_val, sizeof(uint32_t));
 	memcpy(ipc_msg + sizeof(uint32_t), msg, size);
-	return	write_ipc_to_queue(dev, NULL, NULL, ipc_msg,
+	return	_write_ipc_to_queue(dev, NULL, NULL, ipc_msg,
 		sizeof(uint32_t) + size);
 }
 
@@ -567,6 +612,15 @@ static void fw_reset_work_fn(struct work_struct *unused)
 			rv);
 }
 
+void ish_send_time_sync(struct ishtp_device *dev)
+{
+	uint64_t usec;
+
+	usec = ktime_to_us(ktime_get_boottime());
+	ipc_send_mng_msg(dev, MNG_SYNC_FW_CLOCK, &usec, sizeof(uint64_t));
+
+}
+
 /**
  * _ish_sync_fw_clock() -Sync FW clock with the OS clock
  * @dev: ishtp device pointer
@@ -576,15 +630,17 @@ static void fw_reset_work_fn(struct work_struct *unused)
 static void _ish_sync_fw_clock(struct ishtp_device *dev)
 {
 	static unsigned long	prev_sync;
-	uint64_t	usec;
 
-	if (prev_sync && jiffies - prev_sync < 20 * HZ)
+	if (dev->pdev->device == EHL_Ax_DEVICE_ID || (prev_sync &&
+	    jiffies - prev_sync < 20 * HZ))
 		return;
 
 	prev_sync = jiffies;
-	usec = ktime_to_us(ktime_get_boottime());
-	ipc_send_mng_msg(dev, MNG_SYNC_FW_CLOCK, &usec, sizeof(uint64_t));
+	ish_send_time_sync(dev);
 }
+
+#define POWER_NOTIFY_WAIT	0xff
+#define POWER_NOTIFY_NOT_READY	0
 
 /**
  * recv_ipc() - Receive and process IPC management messages
@@ -629,6 +685,20 @@ static void	recv_ipc(struct ishtp_device *dev, uint32_t doorbell_val)
 	case MNG_RESET_NOTIFY_ACK:
 		dev->recvd_hw_ready = 1;
 		wake_up_interruptible(&dev->wait_hw_ready);
+		break;
+
+	case MNG_D0_NOTIFY_ACK:
+		if (dev->d0_flag == POWER_NOTIFY_WAIT) {
+			dev->d0_flag = ish_reg_read(dev, IPC_REG_ISH2HOST_MSG);
+			wake_up_interruptible(&dev->d0_wait);
+		}
+		break;
+
+	case MNG_RTD3_NOTIFY_ACK:
+		if (dev->rtd3_flag == POWER_NOTIFY_WAIT) {
+			dev->rtd3_flag = ish_reg_read(dev, IPC_REG_ISH2HOST_MSG);
+			wake_up_interruptible(&dev->rtd3_wait);
+		}
 		break;
 	}
 }
@@ -675,6 +745,7 @@ irqreturn_t ish_irq_handler(int irq, void *dev_id)
 		recv_ipc(dev, doorbell_val);
 		break;
 	case IPC_PROTOCOL_ISHTP:
+		pm_runtime_mark_last_busy(dev->devc);
 		ishtp_recv(dev);
 		break;
 	}
@@ -703,6 +774,9 @@ int ish_disable_dma(struct ishtp_device *dev)
 {
 	unsigned int	dma_delay;
 
+	pm_runtime_get_sync(dev->devc);
+	pm_runtime_mark_last_busy(dev->devc);
+
 	/* Clear the dma enable bit */
 	ish_reg_write(dev, IPC_REG_ISH_RMP2, 0);
 
@@ -711,6 +785,8 @@ int ish_disable_dma(struct ishtp_device *dev)
 		_ish_read_fw_sts_reg(dev) & (IPC_ISH_IN_DMA);
 		dma_delay += 5)
 		mdelay(5);
+
+	pm_runtime_put_autosuspend(dev->devc);
 
 	if (dma_delay >= MAX_DMA_DELAY) {
 		dev_err(dev->devc,
@@ -810,6 +886,9 @@ static int _ish_ipc_reset(struct ishtp_device *dev)
 	ipc_mng_msg.reset_id = 1;
 	ipc_mng_msg.reserved = 0;
 
+	pm_runtime_get_sync(dev->devc);
+	pm_runtime_mark_last_busy(dev->devc);
+
 	set_host_ready(dev);
 
 	/* Clear the incoming doorbell */
@@ -822,6 +901,9 @@ static int _ish_ipc_reset(struct ishtp_device *dev)
 	/* send message */
 	rv = ipc_send_mng_msg(dev, MNG_RESET_NOTIFY, &ipc_mng_msg,
 		sizeof(struct ipc_rst_payload_type));
+
+	pm_runtime_put_autosuspend(dev->devc);
+
 	if (rv) {
 		dev_err(dev->devc, "Failed to send IPC MNG_RESET_NOTIFY\n");
 		return	rv;
@@ -865,6 +947,9 @@ int ish_hw_start(struct ishtp_device *dev)
 			"[ishtp-ish]: Timed out waiting for FW-initiated reset\n");
 		return	-ENODEV;
 	}
+
+	/* clear the status for next waiting */
+	dev->recvd_hw_ready = 0;
 
 	return 0;
 }
@@ -1002,4 +1087,63 @@ void	ish_device_disable(struct ishtp_device *dev)
 
 	dev->dev_state = ISHTP_DEV_DISABLED;
 	ish_clr_host_rdy(dev);
+}
+
+/* Timeout to get ack response for D0 and RTD3 notification */
+#define WAIT_FOR_D0_RTD3_ACK_MS		1000
+
+int ish_notify_d0(struct ishtp_device *dev)
+{
+	uint32_t payload = 0;
+	long ret;
+
+	ipc_send_mng_msg(dev, MNG_D0_NOTIFY, &payload,
+			 sizeof(uint32_t));
+
+	dev->d0_flag = POWER_NOTIFY_WAIT;
+
+wait:
+	ret = wait_event_interruptible_timeout(dev->d0_wait,
+			(dev->d0_flag != POWER_NOTIFY_WAIT),
+			msecs_to_jiffies(WAIT_FOR_D0_RTD3_ACK_MS));
+	if (ret < 0)
+		goto wait;
+
+	if (dev->d0_flag == POWER_NOTIFY_WAIT) {
+		dev_err(dev->devc, "wait fw back to d0 timeout\n");
+		return -EBUSY;
+	} else if (dev->d0_flag == POWER_NOTIFY_NOT_READY) {
+		dev_warn(dev->devc, "fw back to d0 not ready\n");
+		return -EBUSY;
+	} else {
+		return 0;
+	}
+}
+
+int ish_notify_rtd3(struct ishtp_device *dev)
+{
+	uint32_t payload = 0;
+	long ret;
+
+	ipc_send_mng_msg(dev, MNG_RTD3_NOTIFY, &payload,
+			 sizeof(uint32_t));
+
+	dev->rtd3_flag = POWER_NOTIFY_WAIT;
+
+wait:
+	ret = wait_event_interruptible_timeout(dev->rtd3_wait,
+			(dev->rtd3_flag != POWER_NOTIFY_WAIT),
+			msecs_to_jiffies(WAIT_FOR_D0_RTD3_ACK_MS));
+	if (ret < 0)
+		goto wait;
+
+	if (dev->rtd3_flag == POWER_NOTIFY_WAIT) {
+		dev_err(dev->devc, "wait fw enter RTD3 timeout\n");
+		return -EBUSY;
+	} else if (dev->rtd3_flag == POWER_NOTIFY_NOT_READY) {
+		dev_warn(dev->devc, "fw enter RTD3 not ready\n");
+		return -EBUSY;
+	} else {
+		return 0;
+	}
 }

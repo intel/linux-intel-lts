@@ -18,3 +18,5 @@ obj-$(CONFIG_PTP_1588_CLOCK_IDTCM)	+= ptp_clockmatrix.o
 obj-$(CONFIG_PTP_1588_CLOCK_IDT82P33)	+= ptp_idt82p33.o
 obj-$(CONFIG_PTP_1588_CLOCK_VMW)	+= ptp_vmw.o
 obj-$(CONFIG_PTP_1588_CLOCK_OCP)	+= ptp_ocp.o
+obj-$(CONFIG_PTP_INTEL_PMC_TGPIO)	+= ptp-intel-pmc-tgpio.o
+obj-$(CONFIG_PTP_INTEL_TGPIO_PLAT)	+= ptp-intel-tgpio-plat.o
