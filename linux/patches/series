@@ -15,3 +15,14 @@
 
 # CVE-2022-42722
 0001-wifi-mac80211-fix-crash-in-beacon-protection-for-P2P.patch
+
+# CVE-2022-42719
+0001-wifi-cfg80211-mac80211-reject-bad-MBSSID-elements.patch
+0002-mac80211-move-CRC-into-struct-ieee802_11_elems.patch
+0003-mac80211-mlme-find-auth-challenge-directly.patch
+0004-mac80211-mesh-clean-up-rx_bcn_presp-API.patch
+0005-mac80211-always-allocate-struct-ieee802_11_elems.patch
+0006-wifi-mac80211-fix-MBSSID-parsing-use-after-free.patch
+
+# CVE-2022-41674
+0001-wifi-cfg80211-fix-u8-overflow-in-cfg80211_update_not.patch
