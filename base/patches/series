@@ -84,6 +84,3 @@
 0003-Subject-PATCH-drm-serialize-drm_file.master-with-a-n.patch
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
-
-# CVE-2022-39842
-0001-video-fbdev-pxa3xx-gcu-Fix-integer-overflow-in-pxa3x.patch
