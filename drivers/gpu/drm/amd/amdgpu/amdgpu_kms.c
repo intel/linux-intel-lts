@@ -350,10 +350,6 @@ static int amdgpu_firmware_info(struct drm_amdgpu_info_firmware *fw_info,
 		fw_info->ver = adev->gfx.imu_fw_version;
 		fw_info->feature = 0;
 		break;
-	case AMDGPU_INFO_FW_IMU:
-		fw_info->ver = adev->gfx.imu_fw_version;
-		fw_info->feature = 0;
-		break;
 	default:
 		return -EINVAL;
 	}
