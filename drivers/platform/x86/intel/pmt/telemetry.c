@@ -274,7 +274,7 @@ static void pmt_telem_remove(struct auxiliary_device *auxdev)
 		dev_dbg(&auxdev->dev, "kref count of ep #%d [%px] is %d\n", i, entry->ep, kref_read(&entry->ep->kref));
 		intel_pmt_dev_destroy(&priv->entry[i], &pmt_telem_ns);
 	}
-}
+};
 
 static int pmt_telem_probe(struct auxiliary_device *auxdev, const struct auxiliary_device_id *id)
 {
@@ -298,11 +298,8 @@ static int pmt_telem_probe(struct auxiliary_device *auxdev, const struct auxilia
 		ret = intel_pmt_dev_create(entry, &pmt_telem_ns, intel_vsec_dev, i);
 		if (ret < 0)
 			goto abort_probe;
-		if (ret) {
-			/* Skipping this entry. */
-			--entry;
+		if (ret)
 			continue;
-		}
 
 		priv->num_entries++;
 
@@ -342,6 +339,7 @@ static void __exit pmt_telem_exit(void)
 {
 	auxiliary_driver_unregister(&pmt_telem_aux_driver);
 	xa_destroy(&telem_array);
+
 }
 module_exit(pmt_telem_exit);
 
