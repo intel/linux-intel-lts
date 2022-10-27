@@ -3475,6 +3475,7 @@ bool dml32_CalculatePrefetchSchedule(
 	double  min_Lsw;
 	double  Tsw_est1 = 0;
 	double  Tsw_est3 = 0;
+	double  TPreMargin = 0;
 
 	if (v->GPUVMEnable == true && v->HostVMEnable == true)
 		HostVMDynamicLevelsTrips = v->HostVMMaxNonCachedPageTableLevels;
@@ -3701,6 +3702,8 @@ bool dml32_CalculatePrefetchSchedule(
 
 	dst_y_prefetch_equ = dml_floor(4.0 * (dst_y_prefetch_equ + 0.125), 1) / 4.0;
 	Tpre_rounded = dst_y_prefetch_equ * LineTime;
+
+	TPreMargin = Tpre_rounded - TPreReq;
 #ifdef __DML_VBA_DEBUG__
 	dml_print("DML::%s: dst_y_prefetch_equ: %f (after round)\n", __func__, dst_y_prefetch_equ);
 	dml_print("DML::%s: LineTime: %f\n", __func__, LineTime);
