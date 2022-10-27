@@ -669,6 +669,18 @@ static void err_print_pciid(struct drm_i915_error_state_buf *m,
 		   pdev->subsystem_device);
 }
 
+static void err_print_guc_ctb(struct drm_i915_error_state_buf *m,
+				const char *name,
+				const struct intel_ctb_coredump *ctb)
+{
+	if (!ctb->size)
+		return;
+
+	err_printf(m, "GuC %s CTB: raw: 0x%08X, 0x%08X/%08X, cached: 0x%08X/%08X, desc = 0x%08X, buf = 0x%08X x 0x%08X\n",
+			name, ctb->raw_status, ctb->raw_head, ctb->raw_tail,
+			ctb->head, ctb->tail, ctb->desc_offset, ctb->cmds_offset, ctb->size);
+}
+
 static void err_print_uc(struct drm_i915_error_state_buf *m,
 			 const struct intel_uc_coredump *error_uc)
 {
@@ -676,8 +688,12 @@ static void err_print_uc(struct drm_i915_error_state_buf *m,
 
 	intel_uc_fw_dump(&error_uc->guc_fw, &p);
 	intel_uc_fw_dump(&error_uc->huc_fw, &p);
-	err_printf(m, "GuC timestamp: 0x%08x\n", error_uc->timestamp);
-	print_error_vma(m, NULL, error_uc->guc_log);
+	err_printf(m, "GuC timestamp: 0x%08x\n", error_uc->guc.timestamp);
+	print_error_vma(m, NULL, error_uc->guc.vma_log);
+	err_printf(m, "GuC CTB fence: %d\n", error_uc->guc.last_fence);
+	err_print_guc_ctb(m, "Send", error_uc->guc.ctb + 0);
+	err_print_guc_ctb(m, "Recv", error_uc->guc.ctb + 1);
+	print_error_vma(m, NULL, error_uc->guc.vma_ctb);
 }
 
 static void err_free_sgl(struct scatterlist *sgl)
@@ -963,9 +979,12 @@ static void cleanup_params(struct i915_gpu_coredump *error)
 
 static void cleanup_uc(struct intel_uc_coredump *uc)
 {
-	kfree(uc->guc_fw.path);
-	kfree(uc->huc_fw.path);
-	i915_vma_coredump_free(uc->guc_log);
+	kfree(uc->guc_fw.file_selected.path);
+	kfree(uc->huc_fw.file_selected.path);
+	kfree(uc->guc_fw.file_wanted.path);
+	kfree(uc->huc_fw.file_wanted.path);
+	i915_vma_coredump_free(uc->guc.vma_log);
+	i915_vma_coredump_free(uc->guc.vma_ctb);
 
 	kfree(uc);
 }
@@ -1053,8 +1072,12 @@ i915_vma_coredump_create(const struct intel_gt *gt,
 
 		for_each_sgt_daddr(dma, iter, vma->pages) {
 			mutex_lock(&ggtt->error_mutex);
-			ggtt->vm.insert_page(&ggtt->vm, dma, slot,
-					     I915_CACHE_NONE, 0);
+			if (ggtt->vm.raw_insert_page)
+				ggtt->vm.raw_insert_page(&ggtt->vm, dma, slot,
+							I915_CACHE_NONE, 0);
+			else
+				ggtt->vm.insert_page(&ggtt->vm, dma, slot,
+							I915_CACHE_NONE, 0);
 			mb();
 
 			s = io_mapping_map_wc(&ggtt->iomap, slot, PAGE_SIZE);
@@ -1530,6 +1553,23 @@ gt_record_engines(struct intel_gt_coredump *gt,
 	}
 }
 
+static void gt_record_guc_ctb(struct intel_ctb_coredump *saved,
+				const struct intel_guc_ct_buffer *ctb,
+				const void *blob_ptr, struct intel_guc *guc)
+{
+	if (!ctb || !ctb->desc)
+		return;
+
+	saved->raw_status = ctb->desc->status;
+	saved->raw_head = ctb->desc->head;
+	saved->raw_tail = ctb->desc->tail;
+	saved->head = ctb->head;
+	saved->tail = ctb->tail;
+	saved->size = ctb->size;
+	saved->desc_offset = ((void *)ctb->desc) - blob_ptr;
+	saved->cmds_offset = ((void *)ctb->cmds) - blob_ptr;
+}
+
 static struct intel_uc_coredump *
 gt_record_uc(struct intel_gt_coredump *gt,
 	     struct i915_vma_compress *compress)
@@ -1544,23 +1584,26 @@ gt_record_uc(struct intel_gt_coredump *gt,
 	memcpy(&error_uc->guc_fw, &uc->guc.fw, sizeof(uc->guc.fw));
 	memcpy(&error_uc->huc_fw, &uc->huc.fw, sizeof(uc->huc.fw));
 
-	/* Non-default firmware paths will be specified by the modparam.
-	 * As modparams are generally accesible from the userspace make
-	 * explicit copies of the firmware paths.
-	 */
-	error_uc->guc_fw.path = kstrdup(uc->guc.fw.path, ALLOW_FAIL);
-	error_uc->huc_fw.path = kstrdup(uc->huc.fw.path, ALLOW_FAIL);
+	error_uc->guc_fw.file_selected.path = kstrdup(uc->guc.fw.file_selected.path, ALLOW_FAIL);
+	error_uc->huc_fw.file_selected.path = kstrdup(uc->huc.fw.file_selected.path, ALLOW_FAIL);
+	error_uc->guc_fw.file_wanted.path = kstrdup(uc->guc.fw.file_wanted.path, ALLOW_FAIL);
+	error_uc->huc_fw.file_wanted.path = kstrdup(uc->huc.fw.file_wanted.path, ALLOW_FAIL);
 
 	/*
 	 * Save the GuC log and include a timestamp reference for
 	 * converting the log times to system times.
 	 */
-	error_uc->timestamp = intel_uncore_read(gt->_gt->uncore, GUCPMTIMESTAMP);
-	error_uc->guc_log =
-		i915_vma_coredump_create(gt->_gt,
-					 uc->guc.log.vma, "GuC log buffer",
-					 compress);
 
+	error_uc->guc.timestamp = intel_uncore_read(gt->_gt->uncore, GUCPMTIMESTAMP);
+	error_uc->guc.vma_log = i915_vma_coredump_create(gt->_gt, uc->guc.log.vma,
+						"GuC log buffer", compress);
+	error_uc->guc.vma_ctb = i915_vma_coredump_create(gt->_gt, uc->guc.ct.vma,
+						"GuC CT buffer", compress);
+	error_uc->guc.last_fence = uc->guc.ct.requests.last_fence;
+	gt_record_guc_ctb(error_uc->guc.ctb + 0, &uc->guc.ct.ctbs.send,
+			uc->guc.ct.ctbs.send.desc, (struct intel_guc *)&uc->guc);
+	gt_record_guc_ctb(error_uc->guc.ctb + 1, &uc->guc.ct.ctbs.recv,
+			uc->guc.ct.ctbs.send.desc, (struct intel_guc *)&uc->guc);
 
 	return error_uc;
 }
