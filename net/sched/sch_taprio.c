@@ -1568,10 +1568,17 @@ static int taprio_change(struct Qdisc *sch, struct nlattr *opt,
 	if (tb[TCA_TAPRIO_ATTR_PREEMPT_TCS]) {
 		u32 preempt = nla_get_u32(tb[TCA_TAPRIO_ATTR_PREEMPT_TCS]);
 		struct tc_preempt_qopt_offload qopt = { };
+		int bitmask = (int)__ilog2_u32(preempt);
 
 		if (preempt == U32_MAX) {
 			NL_SET_ERR_MSG(extack, "At least one queue must be not be preemptible");
 			err = -EINVAL;
+			goto free_sched;
+		}
+
+		if (bitmask > dev->num_tc) {
+			NL_SET_ERR_MSG(extack, "Bitmask set must not greater than traffic class");
+			err = -EOPNOTSUPP;
 			goto free_sched;
 		}
 
