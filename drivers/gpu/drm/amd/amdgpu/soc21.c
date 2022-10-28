@@ -586,10 +586,6 @@ static int soc21_common_early_init(void *handle)
 			AMD_PG_SUPPORT_JPEG |
 			AMD_PG_SUPPORT_ATHUB |
 			AMD_PG_SUPPORT_MMHUB;
-		if (amdgpu_sriov_vf(adev)) {
-			adev->cg_flags = 0;
-			adev->pg_flags = 0;
-		}
 		adev->external_rev_id = adev->rev_id + 0x1; // TODO: need update
 		break;
 	case IP_VERSION(11, 0, 2):
@@ -647,11 +643,6 @@ static int soc21_common_early_init(void *handle)
 		adev->pg_flags = AMD_PG_SUPPORT_VCN |
 			AMD_PG_SUPPORT_VCN_DPG |
 			AMD_PG_SUPPORT_JPEG;
-		if (amdgpu_sriov_vf(adev)) {
-			/* hypervisor control CG and PG enablement */
-			adev->cg_flags = 0;
-			adev->pg_flags = 0;
-		}
 		adev->external_rev_id = adev->rev_id + 0x20;
 		break;
 	case IP_VERSION(11, 0, 4):
@@ -684,6 +675,9 @@ static int soc21_common_early_init(void *handle)
 		/* FIXME: not supported yet */
 		return -EINVAL;
 	}
+
+	if (amdgpu_sriov_vf(adev))
+		amdgpu_virt_init_setting(adev);
 
 	return 0;
 }
