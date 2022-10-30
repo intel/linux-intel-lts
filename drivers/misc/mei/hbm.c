@@ -1169,7 +1169,8 @@ static void mei_hbm_config_features(struct mei_device *dev)
 		dev->hbm_f_dc_supported = 1;
 
 	dev->hbm_f_ie_supported = 0;
-	if (dev->version.major_version >= HBM_MAJOR_VERSION_IE)
+	if (!dev->forcewake_needed &&
+	    dev->version.major_version >= HBM_MAJOR_VERSION_IE)
 		dev->hbm_f_ie_supported = 1;
 
 	/* disconnect on connect timeout instead of link reset */
