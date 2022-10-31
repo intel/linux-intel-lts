@@ -85,7 +85,7 @@
 	} while (0)
 #else
 #define hard_spin_lock_init(__rlock)				\
-	do { *(__rlock) = __HARD_SPIN_LOCK_UNLOCKED(__rlock); } while (0)
+	do { *(__rlock) = __RAW_SPIN_LOCK_UNLOCKED(__rlock); } while (0)
 #endif
 
 /*
