@@ -229,12 +229,6 @@ static int stmmac_mdio_read(struct mii_bus *bus, int phyaddr, int phyreg)
 	int data = 0;
 	u32 v;
 
-	data = pm_runtime_get_sync(priv->device);
-	if (data < 0) {
-		pm_runtime_put_noidle(priv->device);
-		return data;
-	}
-
 	value |= (phyaddr << priv->hw->mii.addr_shift)
 		& priv->hw->mii.addr_mask;
 	value |= (phyreg << priv->hw->mii.reg_shift) & priv->hw->mii.reg_mask;
@@ -273,8 +267,6 @@ static int stmmac_mdio_read(struct mii_bus *bus, int phyaddr, int phyreg)
 	data = (int)readl(priv->ioaddr + mii_data) & MII_DATA_MASK;
 
 err_disable_clks:
-	pm_runtime_put(priv->device);
-
 	return data;
 }
 
@@ -296,12 +288,6 @@ static int stmmac_mdio_write(struct mii_bus *bus, int phyaddr, int phyreg,
 	int ret, data = phydata;
 	u32 value = MII_BUSY;
 	u32 v;
-
-	ret = pm_runtime_get_sync(priv->device);
-	if (ret < 0) {
-		pm_runtime_put_noidle(priv->device);
-		return ret;
-	}
 
 	value |= (phyaddr << priv->hw->mii.addr_shift)
 		& priv->hw->mii.addr_mask;
@@ -341,8 +327,6 @@ static int stmmac_mdio_write(struct mii_bus *bus, int phyaddr, int phyreg,
 				 100, 10000);
 
 err_disable_clks:
-	pm_runtime_put(priv->device);
-
 	return ret;
 }
 
@@ -403,10 +387,12 @@ int stmmac_xpcs_setup(struct mii_bus *bus)
 	struct mdio_device *mdiodev;
 	struct stmmac_priv *priv;
 	struct dw_xpcs *xpcs;
+	bool skip_xpcs_reset;
 	int mode, addr;
 
 	priv = netdev_priv(ndev);
 	mode = priv->plat->phy_interface;
+	skip_xpcs_reset = priv->plat->skip_xpcs_reset;
 
 	/* Try to probe the XPCS by scanning all addresses. */
 	for (addr = 0; addr < PHY_MAX_ADDR; addr++) {
@@ -414,7 +400,7 @@ int stmmac_xpcs_setup(struct mii_bus *bus)
 		if (IS_ERR(mdiodev))
 			continue;
 
-		xpcs = xpcs_create(mdiodev, mode);
+		xpcs = xpcs_create(mdiodev, mode, skip_xpcs_reset);
 		if (IS_ERR_OR_NULL(xpcs)) {
 			mdio_device_free(mdiodev);
 			continue;

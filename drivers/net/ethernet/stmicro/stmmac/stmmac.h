@@ -34,6 +34,9 @@ struct stmmac_resources {
 	int sfty_ue_irq;
 	int rx_irq[MTL_MAX_RX_QUEUES];
 	int tx_irq[MTL_MAX_TX_QUEUES];
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int netprox_irq;
+#endif
 };
 
 enum stmmac_txbuf_type {
@@ -213,6 +216,7 @@ struct stmmac_priv {
 	struct mac_device_info *hw;
 	int (*hwif_quirks)(struct stmmac_priv *priv);
 	struct mutex lock;
+	int hwts_all;
 
 	/* RX Queue */
 	struct stmmac_rx_queue rx_queue[MTL_MAX_RX_QUEUES];
@@ -277,6 +281,9 @@ struct stmmac_priv {
 	int sfty_ue_irq;
 	int rx_irq[MTL_MAX_RX_QUEUES];
 	int tx_irq[MTL_MAX_TX_QUEUES];
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int netprox_irq;
+#endif
 	/*irq name */
 	char int_name_mac[IFNAMSIZ + 9];
 	char int_name_wol[IFNAMSIZ + 9];
@@ -285,6 +292,11 @@ struct stmmac_priv {
 	char int_name_sfty_ue[IFNAMSIZ + 10];
 	char int_name_rx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 14];
 	char int_name_tx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 18];
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	char int_name_netprox_irq[IFNAMSIZ + 9];
+#endif
+	/* WA for skipping disabling EST during TAPRIO deletion */
+	bool est_hw_del_wa;
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dbgfs_dir;
@@ -299,7 +311,11 @@ struct stmmac_priv {
 	struct workqueue_struct *fpe_wq;
 	struct work_struct fpe_task;
 	char wq_name[IFNAMSIZ + 4];
-
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	/* Network Proxy A2H Worker */
+	struct workqueue_struct *netprox_wq;
+	bool networkproxy_exit;
+#endif
 	/* TC Handling */
 	unsigned int tc_entries_max;
 	unsigned int tc_off_max;
@@ -347,6 +363,7 @@ void stmmac_ptp_unregister(struct stmmac_priv *priv);
 int stmmac_xdp_open(struct net_device *dev);
 void stmmac_xdp_release(struct net_device *dev);
 int stmmac_resume(struct device *dev);
+int stmmac_resume_runtime(struct device *dev, bool rpm);
 int stmmac_suspend(struct device *dev);
 int stmmac_dvr_remove(struct device *dev);
 int stmmac_dvr_probe(struct device *device,
@@ -358,6 +375,13 @@ int stmmac_reinit_queues(struct net_device *dev, u32 rx_cnt, u32 tx_cnt);
 int stmmac_reinit_ringparam(struct net_device *dev, u32 rx_size, u32 tx_size);
 int stmmac_bus_clks_config(struct stmmac_priv *priv, bool enabled);
 void stmmac_fpe_handshake(struct stmmac_priv *priv, bool enable);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+int stmmac_config_dma_channel(struct stmmac_priv *priv);
+int stmmac_suspend_common(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_resume_common(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_suspend_main(struct stmmac_priv *priv, struct net_device *ndev);
+int stmmac_resume_main(struct stmmac_priv *priv, struct net_device *ndev);
+#endif
 
 static inline bool stmmac_xdp_is_enabled(struct stmmac_priv *priv)
 {

@@ -304,6 +304,7 @@ static __maybe_unused int mdio_bus_phy_suspend(struct device *dev)
 
 static __maybe_unused int mdio_bus_phy_resume(struct device *dev)
 {
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
 	struct phy_device *phydev = to_phy_device(dev);
 	int ret;
 
@@ -329,6 +330,13 @@ static __maybe_unused int mdio_bus_phy_resume(struct device *dev)
 	if (ret < 0)
 		return ret;
 no_resume:
+	/* If the PHY has WOL option still enabled, reconfigure the WOL mainly
+	 * to clear the WOL event status.
+	 */
+	phy_ethtool_get_wol(phydev, &wol);
+	if (wol.wolopts)
+		phy_ethtool_set_wol(phydev, &wol);
+
 	if (phy_interrupt_is_valid(phydev)) {
 		phydev->irq_suspended = 0;
 		synchronize_irq(phydev->irq);
@@ -2080,6 +2088,12 @@ static int genphy_setup_master_slave(struct phy_device *phydev)
 				   CTL1000_PREFER_MASTER), ctl);
 }
 
+int __genphy_setup_master_slave(struct phy_device *phydev)
+{
+	return genphy_setup_master_slave(phydev);
+}
+EXPORT_SYMBOL(__genphy_setup_master_slave);
+
 static int genphy_read_master_slave(struct phy_device *phydev)
 {
 	int cfg, state;
@@ -3152,12 +3166,16 @@ static int phy_remove(struct device *dev)
 
 static void phy_shutdown(struct device *dev)
 {
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
 	struct phy_device *phydev = to_phy_device(dev);
 
 	if (phydev->state == PHY_READY || !phydev->attached_dev)
 		return;
 
-	phy_disable_interrupts(phydev);
+	phy_ethtool_get_wol(phydev, &wol);
+	/* If the device has WOL enabled, don't disable interrupts. */
+	if (!wol.wolopts)
+		phy_disable_interrupts(phydev);
 }
 
 /**

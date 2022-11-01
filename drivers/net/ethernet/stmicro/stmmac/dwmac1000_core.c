@@ -28,41 +28,43 @@ static void dwmac1000_core_init(struct mac_device_info *hw,
 	void __iomem *ioaddr = hw->pcsr;
 	u32 value = readl(ioaddr + GMAC_CONTROL);
 	int mtu = dev->mtu;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	if (!priv->networkproxy_exit) {
+#endif
+		/* Configure GMAC core */
+		value |= GMAC_CORE_INIT;
 
-	/* Configure GMAC core */
-	value |= GMAC_CORE_INIT;
+		/* Clear ACS bit because Ethernet switch tagging formats such as
+		 * Broadcom tags can look like invalid LLC/SNAP packets and cause the
+		 * hardware to truncate packets on reception.
+		 */
+		if (netdev_uses_dsa(dev) || !priv->plat->enh_desc)
+			value &= ~GMAC_CONTROL_ACS;
 
-	/* Clear ACS bit because Ethernet switch tagging formats such as
-	 * Broadcom tags can look like invalid LLC/SNAP packets and cause the
-	 * hardware to truncate packets on reception.
-	 */
-	if (netdev_uses_dsa(dev) || !priv->plat->enh_desc)
-		value &= ~GMAC_CONTROL_ACS;
+		if (mtu > 1500)
+			value |= GMAC_CONTROL_2K;
+		if (mtu > 2000)
+			value |= GMAC_CONTROL_JE;
 
-	if (mtu > 1500)
-		value |= GMAC_CONTROL_2K;
-	if (mtu > 2000)
-		value |= GMAC_CONTROL_JE;
-
-	if (hw->ps) {
-		value |= GMAC_CONTROL_TE;
-
-		value &= ~hw->link.speed_mask;
-		switch (hw->ps) {
-		case SPEED_1000:
-			value |= hw->link.speed1000;
-			break;
-		case SPEED_100:
-			value |= hw->link.speed100;
-			break;
-		case SPEED_10:
-			value |= hw->link.speed10;
-			break;
+		if (hw->ps) {
+			value |= GMAC_CONTROL_TE;
+			value &= ~hw->link.speed_mask;
+			switch (hw->ps) {
+			case SPEED_1000:
+				value |= hw->link.speed1000;
+				break;
+			case SPEED_100:
+				value |= hw->link.speed100;
+				break;
+			case SPEED_10:
+				value |= hw->link.speed10;
+				break;
+			}
 		}
+		writel(value, ioaddr + GMAC_CONTROL);
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
 	}
-
-	writel(value, ioaddr + GMAC_CONTROL);
-
+#endif
 	/* Mask GMAC interrupts */
 	value = GMAC_INT_DEFAULT_MASK;
 

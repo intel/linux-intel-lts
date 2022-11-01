@@ -242,6 +242,9 @@ static inline const char *phy_modes(phy_interface_t interface)
 #define PHY_INIT_TIMEOUT	100000
 #define PHY_FORCE_TIMEOUT	10
 
+#define PHY_LOOP_BACK_SLEEP	1000000
+#define PHY_LOOP_BACK_TIMEOUT	8000000
+
 #define PHY_MAX_ADDR	32
 
 /* Used when trying to connect to a specific phy (mii bus id:phy device id) */
@@ -676,6 +679,10 @@ struct phy_device {
 	/* MACsec management functions */
 	const struct macsec_ops *macsec_ops;
 #endif
+	/* Use phydev->cur_link_an_mode to communicate the in-band
+	 * AN mode setting with phylink framework.
+	 */
+	u8 cur_link_an_mode;
 };
 
 static inline struct phy_device *to_phy_device(const struct device *dev)
@@ -1544,6 +1551,7 @@ int genphy_restart_aneg(struct phy_device *phydev);
 int genphy_check_and_restart_aneg(struct phy_device *phydev, bool restart);
 int genphy_config_eee_advert(struct phy_device *phydev);
 int __genphy_config_aneg(struct phy_device *phydev, bool changed);
+int __genphy_setup_master_slave(struct phy_device *phydev);
 int genphy_aneg_done(struct phy_device *phydev);
 int genphy_update_link(struct phy_device *phydev);
 int genphy_read_lpa(struct phy_device *phydev);

@@ -320,6 +320,12 @@ int stmmac_hwif_init(struct stmmac_priv *priv)
 		mac->tc = mac->tc ? : entry->tc;
 		mac->mmc = mac->mmc ? : entry->mmc;
 
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+		if (priv->plat->has_netproxy)
+			mac->pm = &dwmac_netprox_pm_ops;
+		else
+			mac->pm = &dwmac_pm_ops;
+#endif
 		priv->hw = mac;
 		priv->ptpaddr = priv->ioaddr + entry->regs.ptp_off;
 		priv->mmcaddr = priv->ioaddr + entry->regs.mmc_off;

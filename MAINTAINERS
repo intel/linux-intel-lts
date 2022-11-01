@@ -9699,6 +9699,7 @@ L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
 F:	Documentation/ABI/testing/sysfs-platform-intel-pmc
 F:	drivers/platform/x86/intel/pmc/
+F:	include/linux/intel_pmc_core*
 
 INTEL PMIC GPIO DRIVERS
 M:	Andy Shevchenko <andy@kernel.org>
@@ -13328,6 +13329,15 @@ F:	net/tls/*
 NETWORKING [WIRELESS]
 L:	linux-wireless@vger.kernel.org
 Q:	http://patchwork.kernel.org/project/linux-wireless/list/
+
+NETWORK PROXY
+M:	Ong Boon Leong <boon.leong.ong@intel.com>
+M:	Song Yoong Siang <yoong.siang.song@intel.com>
+L:	netdev@vger.kernel.org
+S:	Maintained
+F:	drivers/net/ethernet/stmicro/stmmac/stmmac_netproxy.*
+F:	drivers/net/networkproxy/*
+F:	include/linux/network_proxy*
 
 NETXEN (1/10) GbE SUPPORT
 M:	Manish Chopra <manishc@marvell.com>

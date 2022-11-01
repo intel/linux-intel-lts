@@ -29,6 +29,7 @@
 #include <linux/phy.h>
 #include <linux/sfp.h>
 #include <linux/netdevice.h>
+#include <linux/phylink.h>
 
 #define MV_PHY_ALASKA_NBT_QUIRK_MASK	0xfffffffe
 #define MV_PHY_ALASKA_NBT_QUIRK_REV	(MARVELL_PHY_ID_88X3310 | 0xa)
@@ -75,6 +76,11 @@ enum {
 	MV_PCS_CSSR1_SPD2_5000	= 0x0008,
 	MV_PCS_CSSR1_SPD2_2500	= 0x0004,
 	MV_PCS_CSSR1_SPD2_10000	= 0x0000,
+
+	/* Copper Specific Interrupt registers */
+	MV_PCS_INTR_ENABLE	= 0x8010,
+	MV_PCS_INTR_ENABLE_LSC	= BIT(10),
+	MV_PCS_INTR_STS		= 0x8011,
 
 	/* Temperature read register (88E2110 only) */
 	MV_PCS_TEMP		= 0x8042,
@@ -743,6 +749,9 @@ static void mv3310_update_interface(struct phy_device *phydev)
 	 * xaui / rxaui modes according to the speed.
 	 * Florian suggests setting phydev->interface to communicate this to the
 	 * MAC. Only do this if we are already in one of the above modes.
+	 * In-band Auto-negotiation is not supported in 2500BASE-X.
+	 * Setting phydev->cur_link_an_mode to communicate this to the
+	 * phylink framework.
 	 */
 	switch (phydev->speed) {
 	case SPEED_10000:
@@ -753,11 +762,13 @@ static void mv3310_update_interface(struct phy_device *phydev)
 		break;
 	case SPEED_2500:
 		phydev->interface = PHY_INTERFACE_MODE_2500BASEX;
+		phydev->cur_link_an_mode = MLO_AN_PHY;
 		break;
 	case SPEED_1000:
 	case SPEED_100:
 	case SPEED_10:
 		phydev->interface = PHY_INTERFACE_MODE_SGMII;
+		phydev->cur_link_an_mode = MLO_AN_INBAND;
 		break;
 	default:
 		break;
@@ -1044,7 +1055,7 @@ static void mv3110_get_wol(struct phy_device *phydev,
 {
 	int ret;
 
-	wol->supported = WAKE_MAGIC;
+	wol->supported = WAKE_MAGIC | WAKE_PHY;
 	wol->wolopts = 0;
 
 	ret = phy_read_mmd(phydev, MDIO_MMD_VEND2, MV_V2_WOL_CTRL);
@@ -1053,6 +1064,13 @@ static void mv3110_get_wol(struct phy_device *phydev,
 
 	if (ret & MV_V2_WOL_CTRL_MAGIC_PKT_EN)
 		wol->wolopts |= WAKE_MAGIC;
+
+	ret = phy_read_mmd(phydev, MDIO_MMD_PCS, MV_PCS_INTR_ENABLE);
+	if (ret < 0)
+		return;
+
+	if (ret & MV_PCS_INTR_ENABLE_LSC)
+		wol->wolopts |= WAKE_PHY;
 }
 
 static int mv3110_set_wol(struct phy_device *phydev,
@@ -1103,6 +1121,25 @@ static int mv3110_set_wol(struct phy_device *phydev,
 				     MV_V2_WOL_CTRL,
 				     MV_V2_WOL_CTRL_MAGIC_PKT_EN,
 				     MV_V2_WOL_CTRL_CLEAR_STS);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (wol->wolopts & WAKE_PHY) {
+		/* Enable the link status changed interrupt */
+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_PCS,
+				       MV_PCS_INTR_ENABLE,
+				       MV_PCS_INTR_ENABLE_LSC);
+		if (ret < 0)
+			return ret;
+
+		/* Clear the interrupt status register */
+		ret = phy_read_mmd(phydev, MDIO_MMD_PCS, MV_PCS_INTR_STS);
+	} else {
+		/* Disable the link status changed interrupt */
+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_PCS,
+					 MV_PCS_INTR_ENABLE,
+					 MV_PCS_INTR_ENABLE_LSC);
 		if (ret < 0)
 			return ret;
 	}

@@ -98,6 +98,7 @@ struct stmmac_dma_cfg {
 	bool eame;
 	bool multi_msi_en;
 	bool dche;
+	bool pch_intr_wa;
 };
 
 #define AXI_BLEN	7
@@ -124,6 +125,8 @@ struct stmmac_est {
 	u32 ter;
 	u32 gcl_unaligned[EST_GCL];
 	u32 gcl[EST_GCL];
+	u32 ti_ns[EST_GCL];
+	u32 gates[EST_GCL];
 	u32 gcl_size;
 };
 
@@ -170,6 +173,7 @@ enum stmmac_fpe_task_state_t {
 struct stmmac_fpe_cfg {
 	bool enable;				/* FPE enable */
 	bool hs_enable;				/* FPE handshake enable */
+	u32 txqpec;				/* Preemption classification */
 	enum stmmac_fpe_state lp_fpe_state;	/* Link Partner FPE state */
 	enum stmmac_fpe_state lo_fpe_state;	/* Local station FPE state */
 };
@@ -226,6 +230,7 @@ struct plat_stmmacenet_data {
 	int (*serdes_powerup)(struct net_device *ndev, void *priv);
 	void (*serdes_powerdown)(struct net_device *ndev, void *priv);
 	void (*speed_mode_2500)(struct net_device *ndev, void *priv);
+	int (*config_serdes)(struct net_device *ndev, void *priv);
 	void (*ptp_clk_freq_config)(void *priv);
 	int (*init)(struct platform_device *pdev, void *priv);
 	void (*exit)(struct platform_device *pdev, void *priv);
@@ -253,6 +258,9 @@ struct plat_stmmacenet_data {
 	int mac_port_sel_speed;
 	bool en_tx_lpi_clockgating;
 	int has_xgmac;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int has_netproxy;
+#endif
 	bool vlan_fail_q_en;
 	u8 vlan_fail_q;
 	unsigned int eee_usecs_rate;
@@ -270,7 +278,13 @@ struct plat_stmmacenet_data {
 	int msi_sfty_ue_vec;
 	int msi_rx_base_vec;
 	int msi_tx_base_vec;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	int msi_network_proxy_vec;
+#endif
 	bool use_phy_wol;
 	bool sph_disable;
+	bool skip_xpcs_reset;
+	bool use_hw_vlan;
+	bool fixed_2G5_clock_rate;
 };
 #endif

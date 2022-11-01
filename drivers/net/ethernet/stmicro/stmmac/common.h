@@ -335,6 +335,9 @@ enum dma_irq_dir {
 
 enum request_irq_err {
 	REQ_IRQ_ERR_ALL,
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	REQ_IRQ_ERR_NETWORK_PROXY,
+#endif
 	REQ_IRQ_ERR_TX,
 	REQ_IRQ_ERR_RX,
 	REQ_IRQ_ERR_SFTY_UE,
@@ -516,6 +519,9 @@ struct mac_device_info {
 	const struct stmmac_mode_ops *mode;
 	const struct stmmac_hwtimestamp *ptp;
 	const struct stmmac_tc_ops *tc;
+#ifdef CONFIG_STMMAC_NETWORK_PROXY
+	const struct stmmac_pm_ops *pm;
+#endif
 	const struct stmmac_mmc_ops *mmc;
 	struct dw_xpcs *xpcs;
 	struct mii_regs mii;	/* MII register Addresses */
