@@ -26,3 +26,19 @@
 
 # CVE-2022-41674
 0001-wifi-cfg80211-fix-u8-overflow-in-cfg80211_update_not.patch
+
+# CVE-2022-3522
+0001-mm-hugetlb-use-hugetlb_pte_stable-in-migration-race-.patch
+0002-mm-hugetlb-fix-race-condition-of-uffd-missing-minor-.patch
+0003-mm-selftest-uffd-explain-the-write-missing-fault-che.patch
+0004-mm-hugetlb-handle-pte-markers-in-page-faults.patch
+
+# CVE-2022-3594
+0001-r8152-Rate-limit-overflow-messages.patch
+
+# CVE-2022-3543
+0001-af_unix-Fix-memory-leaks-of-the-whole-sk-due-to-OOB-.patch
+
+# CVE-2022-3542
+0001-bnx2x-fix-potential-memory-leak-in-bnx2x_tpa_stop.patch
+
