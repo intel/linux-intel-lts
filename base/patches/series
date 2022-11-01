@@ -85,5 +85,21 @@
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
-# CVE-2022-39842
-0001-video-fbdev-pxa3xx-gcu-Fix-integer-overflow-in-pxa3x.patch
+# CVE-2022-3303
+0001-ALSA-pcm-oss-Fix-race-at-SNDCTL_DSP_SYNC.patch
+
+# CVE-2022-3524
+0001-tcp-udp-Fix-memory-leak-in-ipv6_renew_options.patch
+0002-udp-Call-inet6_destroy_sock-in-setsockopt-IPV6_ADDRF.patch
+0003-tcp-udp-Call-inet6_destroy_sock-in-IPv6-sk-sk_destru.patch
+0004-ipv6-Fix-data-races-around-sk-sk_prot.patch
+
+# CVE-2022-3594
+0001-r8152-Rate-limit-overflow-messages.patch
+
+# CVE-2022-3521
+0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
+
+# CVE-2022-3542
+0001-bnx2x-fix-potential-memory-leak-in-bnx2x_tpa_stop.patch
+

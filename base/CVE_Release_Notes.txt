@@ -1010,19 +1010,28 @@ CVEs fixed in 4.19.255:
 CVEs fixed in 4.19.256:
   CVE-2021-4159: 6c6b84ef5ea8dc0ca3559ccf69810960e348c555 bpf: Verifer, adjust_scalar_min_max_vals to always call update_reg_bounds()
   CVE-2022-1679: ab7a0ddf5f1cdec63cb21840369873806fc36d80 ath9k: fix use-after-free in ath9k_hif_usb_rx_cb
+  CVE-2022-20422: b51881b1da57fe9877125dfdd0aac5172958fcfd arm64: fix oops in concurrently setting insn_emulation sysctls
   CVE-2022-2153: b8127a0fd21d70ab42d8177f8bb97df74f503cc1 KVM: x86: Avoid theoretical NULL pointer dereference in kvm_irq_delivery_to_apic_fast()
   CVE-2022-2586: 77d3b5038b7462318f5183e2ad704b01d57215a2 netfilter: nf_tables: do not allow SET_ID to refer to another table
   CVE-2022-2588: 73584dab72d0a826f286a45544305819b58f7b92 net_sched: cls_route: remove from list when handle is 0
+  CVE-2022-3629: 2fc2a7767f661e6083f69588718cdf6f07cb9330 vsock: Fix memory leak in vsock_connect()
+  CVE-2022-3635: 52fddbd9754b249546c89315787075b7247b029d atm: idt77252: fix use-after-free bugs caused by tst_timer
 
 CVEs fixed in 4.19.257:
   CVE-2022-3028: 7dbfc8f25f22fe2a64dd808266e00c8d2661ebdd af_key: Do not call xfrm_probe_algs in parallel
+  CVE-2022-42703: 6dbfc25d68d922736381988d64156a649ccf7bf1 mm/rmap: Fix anon_vma->degree ambiguity leading to double-reuse
 
 CVEs fixed in 4.19.258:
+  CVE-2022-20421: 06e5b43ca4dab06a92bf4c2f33766e6fb11b880a binder: fix UAF of ref->proc caused by race condition
   CVE-2022-2663: 3275f7804f40de3c578d2253232349b07c25f146 netfilter: nf_conntrack_irc: Fix forged IP logic
+  CVE-2022-3586: 9245ed20950afe225bc6d1c4b9d28d55aa152e25 sch_sfb: Don't assume the skb is still around after enqueueing to child
   CVE-2022-40307: 021805af5bedeafc76c117fc771c100b358ab419 efi: capsule-loader: Fix use-after-free in efi_capsule_write
 
+CVEs fixed in 4.19.260:
+  CVE-2022-39842: a34547fc43d02f2662b2b62c9a4c578594cf662d video: fbdev: pxa3xx-gcu: Fix integer overflow in pxa3xx_gcu_write
+
  
-CVEs Fixed in this 4.19.259 LTS 4.19 release 
+CVEs Fixed in this 4.19.261 LTS 4.19 release 
 ====================================================
 # CVE-2019-12456
 0001-scsi-mpt3sas_ctl-fix-double-fetch-bug-in-_ctl_ioctl-CVE-2019-12456.patch
@@ -1111,7 +1120,23 @@ CVEs Fixed in this 4.19.259 LTS 4.19 release
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
-# CVE-2022-39842
-0001-video-fbdev-pxa3xx-gcu-Fix-integer-overflow-in-pxa3x.patch
+# CVE-2022-3303
+0001-ALSA-pcm-oss-Fix-race-at-SNDCTL_DSP_SYNC.patch
+
+# CVE-2022-3524
+0001-tcp-udp-Fix-memory-leak-in-ipv6_renew_options.patch
+0002-udp-Call-inet6_destroy_sock-in-setsockopt-IPV6_ADDRF.patch
+0003-tcp-udp-Call-inet6_destroy_sock-in-IPv6-sk-sk_destru.patch
+0004-ipv6-Fix-data-races-around-sk-sk_prot.patch
+
+# CVE-2022-3594
+0001-r8152-Rate-limit-overflow-messages.patch
+
+# CVE-2022-3521
+0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
+
+# CVE-2022-3542
+0001-bnx2x-fix-potential-memory-leak-in-bnx2x_tpa_stop.patch
+
  
 ================
