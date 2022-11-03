@@ -1615,7 +1615,9 @@ static void guc_reset_state(struct intel_context *ce, u32 head, bool scrub)
 
 static void guc_engine_reset_prepare(struct intel_engine_cs *engine)
 {
-	if (!IS_GRAPHICS_VER(engine->i915, 11, 12))
+	if (!(IS_MTL_GRAPHICS_STEP(engine->i915, M, STEP_A0, STEP_B0) ||
+	     (GRAPHICS_VER(engine->i915) >= 11 &&
+	      GRAPHICS_VER_FULL(engine->i915) < IP_VER(12, 70))))
 		return;
 
 	intel_engine_stop_cs(engine);
