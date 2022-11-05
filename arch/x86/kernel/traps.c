@@ -289,19 +289,23 @@ DEFINE_IDTENTRY_RAW(exc_invalid_op)
 {
 	irqentry_state_t state;
 
+	mark_trap_entry_raw(X86_TRAP_UD, regs);
+
 	/*
 	 * We use UD2 as a short encoding for 'CALL __WARN', as such
 	 * handle it before exception entry to avoid recursive WARN
 	 * in case exception entry is the one triggering WARNs.
 	 */
 	if (!user_mode(regs) && handle_bug(regs))
-		return;
+		goto out;
 
 	state = irqentry_enter(regs);
 	instrumentation_begin();
 	handle_invalid_op(regs);
 	instrumentation_end();
 	irqentry_exit(regs, state);
+out:
+	mark_trap_exit_raw(X86_TRAP_UD, regs);
 }
 
 DEFINE_IDTENTRY(exc_coproc_segment_overrun)
