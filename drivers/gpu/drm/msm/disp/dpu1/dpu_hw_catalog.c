@@ -90,7 +90,6 @@
 			 BIT(MDP_INTF1_INTR) | \
 			 BIT(MDP_INTF2_INTR) | \
 			 BIT(MDP_INTF3_INTR) | \
-			 BIT(MDP_INTF4_INTR) | \
 			 BIT(MDP_AD4_0_INTR) | \
 			 BIT(MDP_AD4_1_INTR))
 
