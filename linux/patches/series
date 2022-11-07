@@ -42,3 +42,8 @@
 # CVE-2022-3542
 0001-bnx2x-fix-potential-memory-leak-in-bnx2x_tpa_stop.patch
 
+# CVE-2022-3623
+0001-mm-hugetlb-fix-races-when-looking-up-a-CONT-PTE-PMD-.patch
+
+# CVE-2022-43750
+0001-usb-mon-make-mmapped-memory-read-only.patch
