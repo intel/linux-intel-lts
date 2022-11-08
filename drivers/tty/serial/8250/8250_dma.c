@@ -14,7 +14,12 @@
 
 static int ehl_pse_dma_dev(struct device *dev)
 {
-	struct pci_dev *pdev = to_pci_dev(dev);
+	struct pci_dev *pdev;
+
+	if (!dev_is_pci(dev))
+		return 0;
+
+	pdev = to_pci_dev(dev);
 
 	if ((pdev->vendor == PCI_VENDOR_ID_INTEL) &&
 		(pdev->device == 0x4b96 || pdev->device == 0x4b97 ||
