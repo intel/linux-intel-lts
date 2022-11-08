@@ -22,7 +22,13 @@
 #include "i915_vma.h"
 
 struct __guc_ads_blob;
+struct intel_guc;
 struct intel_guc_state_capture;
+
+struct intel_guc_ops {
+	int (*init)(struct intel_guc *guc);
+	void (*fini)(struct intel_guc *guc);
+};
 
 /**
  * struct intel_guc - Top level structure of GuC.
@@ -31,6 +37,8 @@ struct intel_guc_state_capture;
  * i915_sched_engine for submission.
  */
 struct intel_guc {
+	/** @ops: Operations to init / fini the GuC */
+	struct intel_guc_ops const *ops;
 	/** @fw: the GuC firmware */
 	struct intel_uc_fw fw;
 	/** @log: sub-structure containing GuC log related data and objects */
@@ -77,6 +85,10 @@ struct intel_guc {
 	atomic_t outstanding_submission_g2h;
 
 	/** @interrupts: pointers to GuC interrupt-managing functions. */
+	struct xarray tlb_lookup;
+	u32 serial_slot;
+	u32 next_seqno;
+
 	struct {
 		void (*reset)(struct intel_guc *guc);
 		void (*enable)(struct intel_guc *guc);
@@ -100,7 +112,8 @@ struct intel_guc {
 		struct ida guc_ids;
 		/**
 		 * @num_guc_ids: Number of guc_ids, selftest feature to be able
-		 * to reduce this number while testing.
+		 * to reduce this number while testing. Also used on VFs to
+		 * reduce the pool of guc_ids.
 		 */
 		int num_guc_ids;
 		/**
@@ -253,6 +266,11 @@ struct intel_guc {
 #endif
 };
 
+struct intel_guc_tlb_wait {
+	struct wait_queue_head wq;
+	u8 status;
+} __aligned(4);
+
 static inline struct intel_guc *log_to_guc(struct intel_guc_log *log)
 {
 	return container_of(log, struct intel_guc, log);
@@ -348,6 +366,19 @@ static inline u32 intel_guc_ggtt_offset(struct intel_guc *guc,
 	return offset;
 }
 
+static inline int intel_guc_init(struct intel_guc *guc)
+{
+	if (guc->ops->init)
+		return guc->ops->init(guc);
+	return 0;
+}
+
+static inline void intel_guc_fini(struct intel_guc *guc)
+{
+	if (guc->ops->fini)
+		guc->ops->fini(guc);
+}
+
 void intel_guc_init_early(struct intel_guc *guc);
 void intel_guc_init_late(struct intel_guc *guc);
 void intel_guc_init_send_regs(struct intel_guc *guc);
@@ -368,6 +399,9 @@ int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
 int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
 
+int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
+				 enum intel_guc_tlb_inval_mode mode);
+
 static inline bool intel_guc_is_supported(struct intel_guc *guc)
 {
 	return intel_uc_fw_is_supported(&guc->fw);
@@ -381,7 +415,8 @@ static inline bool intel_guc_is_wanted(struct intel_guc *guc)
 static inline bool intel_guc_is_used(struct intel_guc *guc)
 {
 	GEM_BUG_ON(__intel_uc_fw_status(&guc->fw) == INTEL_UC_FIRMWARE_SELECTED);
-	return intel_uc_fw_is_available(&guc->fw);
+	return intel_uc_fw_is_available(&guc->fw) ||
+	       intel_uc_fw_is_preloaded(&guc->fw);
 }
 
 static inline bool intel_guc_is_fw_running(struct intel_guc *guc)
@@ -445,6 +480,7 @@ int intel_guc_engine_failure_process_msg(struct intel_guc *guc,
 					 const u32 *msg, u32 len);
 int intel_guc_error_capture_process_msg(struct intel_guc *guc,
 					const u32 *msg, u32 len);
+void intel_guc_tlb_invalidation_done(struct intel_guc *guc, u32 seqno);
 
 struct intel_engine_cs *
 intel_guc_lookup_engine(struct intel_guc *guc, u8 guc_class, u8 instance);

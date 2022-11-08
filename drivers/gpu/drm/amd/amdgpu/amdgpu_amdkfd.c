@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /*
  * Copyright 2014 Advanced Micro Devices, Inc.
  *
@@ -130,6 +131,7 @@ static void amdgpu_amdkfd_reset_work(struct work_struct *work)
 						  kfd.reset_work);
 
 	struct amdgpu_reset_context reset_context;
+
 	memset(&reset_context, 0, sizeof(reset_context));
 
 	reset_context.method = AMD_RESET_METHOD_NONE;
@@ -684,6 +686,7 @@ int amdgpu_amdkfd_submit_ib(struct amdgpu_device *adev,
 	ib->length_dw = ib_len;
 	/* This works for NO_HWS. TODO: need to handle without knowing VMID */
 	job->vmid = vmid;
+	job->num_ibs = 1;
 
 	ret = amdgpu_ib_schedule(ring, 1, ib, job, &f);
 
@@ -753,11 +756,7 @@ void amdgpu_amdkfd_ras_poison_consumption_handler(struct amdgpu_device *adev, bo
 {
 	struct ras_err_data err_data = {0, 0, 0, NULL};
 
-	/* CPU MCA will handle page retirement if connected_to_cpu is 1 */
-	if (!adev->gmc.xgmi.connected_to_cpu)
-		amdgpu_umc_poison_handler(adev, &err_data, reset);
-	else if (reset)
-		amdgpu_amdkfd_gpu_reset(adev);
+	amdgpu_umc_poison_handler(adev, &err_data, reset);
 }
 
 bool amdgpu_amdkfd_ras_query_utcl2_poison_status(struct amdgpu_device *adev)

@@ -760,6 +760,11 @@ enum dmub_cmd_dpia_type {
 	DMUB_CMD__DPIA_MST_ALLOC_SLOTS = 2,
 };
 
+enum dmub_cmd_header_sub_type {
+	DMUB_CMD__SUB_TYPE_GENERAL         = 0,
+	DMUB_CMD__SUB_TYPE_CURSOR_POSITION = 1
+};
+
 #pragma pack(push, 1)
 
 /**
@@ -998,7 +1003,8 @@ struct dmub_cmd_fw_assisted_mclk_switch_pipe_data_v2 {
 			uint8_t scale_factor_numerator;
 			uint8_t scale_factor_denominator;
 			uint8_t is_drr;
-			uint8_t pad[2];
+			uint8_t main_split_pipe_index;
+			uint8_t phantom_split_pipe_index;
 		} subvp_data;
 
 		struct {

@@ -5,15 +5,34 @@
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
+#include <linux/property.h>
 #include <linux/serial_8250.h>
 #include <linux/serial_core.h>
 
 #include "8250_dwlib.h"
 
 /* Offsets for the DesignWare specific registers */
+#define DW_UART_TCR	0xac /* Transceiver Control Register (RS485) */
+#define DW_UART_DE_EN	0xb0 /* Driver Output Enable Register */
+#define DW_UART_RE_EN	0xb4 /* Receiver Output Enable Register */
 #define DW_UART_DLF	0xc0 /* Divisor Latch Fraction Register */
+#define DW_UART_RAR	0xc4 /* Receive Address Register */
+#define DW_UART_TAR	0xc8 /* Transmit Address Register */
+#define DW_UART_LCR_EXT	0xcc /* Line Extended Control Register */
 #define DW_UART_CPR	0xf4 /* Component Parameter Register */
 #define DW_UART_UCV	0xf8 /* UART Component Version */
+
+/* Trasceiver Control Register bits */
+#define DW_UART_TCR_RS485_EN		BIT(0)
+#define DW_UART_TCR_RE_POL		BIT(1)
+#define DW_UART_TCR_DE_POL		BIT(2)
+#define DW_UART_TCR_XFER_MODE(_mode_)	((_mode_) << 3)
+
+/* Line Extended Control Register bits */
+#define DW_UART_LCR_EXT_DLS_E		BIT(0)
+#define DW_UART_LCR_EXT_ADDR_MATCH	BIT(1)
+#define DW_UART_LCR_EXT_SEND_ADDR	BIT(2)
+#define DW_UART_LCR_EXT_TRANSMIT_MODE	BIT(3)
 
 /* Component Parameter Register bits */
 #define DW_UART_CPR_ABP_DATA_WIDTH	(3 << 0)
@@ -86,11 +105,103 @@ void dw8250_do_set_termios(struct uart_port *p, struct ktermios *termios, struct
 	serial8250_do_set_termios(p, termios, old);
 }
 EXPORT_SYMBOL_GPL(dw8250_do_set_termios);
+static int dw8250_rs485_config(struct uart_port *p, struct serial_rs485 *rs485)
+{
+	u32 re_en, de_en;
+	u32 lcr = 0;
+	u32 tcr;
+
+	/* Clearing unsupported flags. */
+	rs485->flags &= SER_RS485_ENABLED | SER_RS485_9BIT_ENABLED |
+			SER_RS485_9BIT_TX_ADDR | SER_RS485_9BIT_RX_ADDR |
+			SER_RS485_RX_DURING_TX | SER_RS485_RX_OR_TX |
+			SER_RS485_SW_TX_MODE;
+
+	tcr = dw8250_readl_ext(p, DW_UART_TCR);
+	/* Reset previous Transfer Mode */
+	tcr &= ~DW_UART_TCR_XFER_MODE(3);
+
+	/* REVISIT: Only supporting Hardware Controlled Half Duplex & Duplex mode. */
+	if (rs485->flags & SER_RS485_ENABLED) {
+
+		/* Using SER_RS485_RX_DURING_TX to indicate Full Duplex Mode */
+		if (rs485->flags & SER_RS485_RX_DURING_TX) {
+			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(0);
+			re_en = 1;
+			de_en = 1;
+		}
+		/* Using SER_RS485_RX_OR_TX to indicate SW Half Duplex Mode */
+		else if (rs485->flags & SER_RS485_RX_OR_TX) {
+			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(1);
+			if (rs485->flags & SER_RS485_SW_TX_MODE) {
+				re_en = 0;
+				de_en = 1;
+			} else {
+				re_en = 1;
+				de_en = 0;
+			}
+		} else {
+			tcr |= DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(2);
+			re_en = 1;
+			de_en = 1;
+		}
+		dw8250_writel_ext(p, DW_UART_DE_EN, de_en);
+		dw8250_writel_ext(p, DW_UART_RE_EN, re_en);
+	} else {
+		tcr &= ~(DW_UART_TCR_RS485_EN | DW_UART_TCR_XFER_MODE(3));
+		dw8250_writel_ext(p, DW_UART_DE_EN, 0);
+		dw8250_writel_ext(p, DW_UART_RE_EN, 0);
+	}
+
+	/* Resetting the default DE_POL & RE_POL */
+	tcr &= ~(DW_UART_TCR_DE_POL | DW_UART_TCR_RE_POL);
+
+	if (device_property_read_bool(p->dev, "snps,de-active-high"))
+		tcr |= DW_UART_TCR_DE_POL;
+	if (device_property_read_bool(p->dev, "snps,re-active-high"))
+		tcr |= DW_UART_TCR_RE_POL;
+
+	dw8250_writel_ext(p, DW_UART_TCR, tcr);
+
+	/*
+	 * XXX: Though we could interpret the "RTS" timings as Driver Enable
+	 * (DE) assertion/de-assertion timings, initially not supporting that.
+	 * Ideally we should have timing values for the Driver instead of the
+	 * RTS signal.
+	 */
+	rs485->delay_rts_before_send = 0;
+	rs485->delay_rts_after_send = 0;
+
+	/* XXX: Proof of concept for 9-bit transfer mode. */
+	if (rs485->flags & SER_RS485_9BIT_ENABLED) {
+		/* Clear TAR & RAR of any previous values */
+		dw8250_writel_ext(p, DW_UART_TAR, 0x0);
+		dw8250_writel_ext(p, DW_UART_RAR, 0x0);
+		lcr = DW_UART_LCR_EXT_DLS_E;
+		dw8250_writel_ext(p, DW_UART_LCR_EXT, lcr);
+		if (rs485->flags & SER_RS485_9BIT_TX_ADDR) {
+			dw8250_writel_ext(p, DW_UART_TAR, rs485->padding[0]);
+			lcr |= DW_UART_LCR_EXT_SEND_ADDR;
+		} else if (rs485->flags & SER_RS485_9BIT_RX_ADDR) {
+			dw8250_writel_ext(p, DW_UART_RAR, rs485->padding[0]);
+			lcr |= DW_UART_LCR_EXT_ADDR_MATCH;
+		}
+	}
+
+	dw8250_writel_ext(p, DW_UART_LCR_EXT, lcr);
+
+	p->rs485 = *rs485;
+
+	return 0;
+}
 
 void dw8250_setup_port(struct uart_port *p)
 {
 	struct uart_8250_port *up = up_to_u8250p(p);
 	u32 reg;
+
+	if (device_property_read_bool(p->dev, "snps,rs485-interface-en"))
+		p->rs485_config = dw8250_rs485_config;
 
 	/*
 	 * If the Component Version Register returns zero, we know that

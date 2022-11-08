@@ -1032,10 +1032,12 @@
 #define   FAULT_GTT_SEL				(1 << 4)
 
 #define GEN12_RING_FAULT_REG			_MMIO(0xcec4)
+#define   GEN12_RING_FAULT_FAULT_TYPE(x)	(((x) >> 18) & 0x3)
+#define   GEN12_RING_FAULT_ACCESS_TYPE		(1 << 17)
 #define   GEN8_RING_FAULT_ENGINE_ID(x)		(((x) >> 12) & 0x7)
 #define   RING_FAULT_GTTSEL_MASK		(1 << 11)
 #define   RING_FAULT_SRCID(x)			(((x) >> 3) & 0xff)
-#define   RING_FAULT_FAULT_TYPE(x)		(((x) >> 1) & 0x3)
+#define   RING_FAULT_LEVEL(x)			(((x) >> 1) & 0x3)
 #define   RING_FAULT_VALID			(1 << 0)
 
 #define GEN12_GFX_TLB_INV_CR			_MMIO(0xced8)
@@ -1554,6 +1556,8 @@
 #define   OTHER_GTPM_INSTANCE			1
 #define   OTHER_KCR_INSTANCE			4
 #define   OTHER_GSC_INSTANCE			6
+#define   OTHER_MEDIA_GUC_INSTANCE		16
+#define   OTHER_MEDIA_GTPM_INSTANCE		17
 
 #define GEN11_IIR_REG_SELECTOR(x)		_MMIO(0x190070 + ((x) * 4))
 
@@ -1577,5 +1581,13 @@
 #define XEHPC_BCS7_BCS8_INTR_MASK		_MMIO(0x19011c)
 
 #define GEN12_SFC_DONE(n)			_MMIO(0x1cc000 + (n) * 0x1000)
+
+/*
+ * Standalone Media's non-engine GT registers are located at their regular GT
+ * offsets plus 0x380000.  This extra offset is stored inside the intel_uncore
+ * structure so that the existing code can be used for both GTs without
+ * modification.
+ */
+#define MTL_MEDIA_GSI_BASE			0x380000
 
 #endif /* __INTEL_GT_REGS__ */

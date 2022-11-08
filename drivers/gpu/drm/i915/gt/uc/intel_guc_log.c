@@ -36,24 +36,6 @@ struct guc_log_section {
 	const char *name;
 };
 
-static s32 scale_log_param(struct intel_guc_log *log, const struct guc_log_section *section,
-			   s32 param)
-{
-	/* -1 means default */
-	if (param < 0)
-		return section->default_val;
-
-	/* Check for 32-bit overflow */
-	if (param >= SZ_4K) {
-		drm_err(&guc_to_gt(log_to_guc(log))->i915->drm, "Size too large for GuC %s log: %dMB!",
-			section->name, param);
-		return section->default_val;
-	}
-
-	/* Param units are 1MB */
-	return param * SZ_1M;
-}
-
 static void _guc_log_init_sizes(struct intel_guc_log *log)
 {
 	struct intel_guc *guc = log_to_guc(log);
@@ -78,15 +60,10 @@ static void _guc_log_init_sizes(struct intel_guc_log *log)
 			"capture",
 		}
 	};
-	s32 params[GUC_LOG_SECTIONS_LIMIT] = {
-		GUC_LOG_DEFAULT_CRASH_BUFFER_SIZE / SZ_1M,
-		GUC_LOG_DEFAULT_DEBUG_BUFFER_SIZE / SZ_1M,
-		GUC_LOG_DEFAULT_CAPTURE_BUFFER_SIZE / SZ_1M,
-	};
 	int i;
 
 	for (i = 0; i < GUC_LOG_SECTIONS_LIMIT; i++)
-		log->sizes[i].bytes = scale_log_param(log, sections + i, params[i]);
+		log->sizes[i].bytes = sections[i].default_val;
 
 	/* If debug size > 1MB then bump default crash size to keep the same units */
 	if (log->sizes[GUC_LOG_SECTIONS_DEBUG].bytes >= SZ_1M &&
@@ -164,7 +141,7 @@ u32 intel_guc_log_section_size_capture(struct intel_guc_log *log)
 	return log->sizes[GUC_LOG_SECTIONS_CAPTURE].bytes;
 }
 
-static u32 intel_guc_log_size(struct intel_guc_log *log)
+u32 intel_guc_log_size(struct intel_guc_log *log)
 {
 	/*
 	 *  GuC Log buffer Layout:
@@ -191,6 +168,12 @@ static u32 intel_guc_log_size(struct intel_guc_log *log)
 		intel_guc_log_section_size_crash(log) +
 		intel_guc_log_section_size_debug(log) +
 		intel_guc_log_section_size_capture(log);
+}
+
+#define GUC_LOG_RELAY_SUBBUF_COUNT 8
+u32 intel_guc_log_relay_subbuf_count(struct intel_guc_log *log)
+{
+	return GUC_LOG_RELAY_SUBBUF_COUNT;
 }
 
 /**
@@ -482,13 +465,16 @@ static void _guc_log_copy_debuglogs_for_relay(struct intel_guc_log *log)
 
 		/* Just copy the newly written data */
 		if (read_offset > write_offset) {
-			i915_memcpy_from_wc(dst_data, src_data, write_offset);
+			if (!i915_memcpy_from_wc(dst_data, src_data, write_offset))
+				i915_unaligned_memcpy_from_wc(dst_data, src_data, write_offset);
 			bytes_to_copy = buffer_size - read_offset;
 		} else {
 			bytes_to_copy = write_offset - read_offset;
 		}
-		i915_memcpy_from_wc(dst_data + read_offset,
-				    src_data + read_offset, bytes_to_copy);
+		if (!i915_memcpy_from_wc(dst_data + read_offset,
+					 src_data + read_offset, bytes_to_copy))
+			i915_unaligned_memcpy_from_wc(dst_data + read_offset,
+						      src_data + read_offset, bytes_to_copy);
 
 		src_data += buffer_size;
 		dst_data += buffer_size;
@@ -563,9 +549,9 @@ static int guc_log_relay_create(struct intel_guc_log *log)
 	 * latency, for consuming the logs from relay. Also doesn't take
 	 * up too much memory.
 	 */
-	n_subbufs = 8;
+	n_subbufs = intel_guc_log_relay_subbuf_count(log);
 
-	guc_log_relay_chan = relay_open("guc_log",
+	guc_log_relay_chan = relay_open("guc_log_relay_chan",
 					dev_priv->drm.primary->debugfs_root,
 					subbuf_size, n_subbufs,
 					&relay_callbacks, dev_priv);

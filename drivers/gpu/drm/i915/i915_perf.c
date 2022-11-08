@@ -1376,7 +1376,8 @@ static void i915_oa_stream_destroy(struct i915_perf_stream *stream)
 {
 	struct i915_perf *perf = stream->perf;
 
-	BUG_ON(stream != perf->exclusive_stream);
+	if (WARN_ON(stream != perf->exclusive_stream))
+		return;
 
 	/*
 	 * Unset exclusive_stream first, it will be checked while disabling
@@ -4449,6 +4450,9 @@ void i915_perf_init(struct drm_i915_private *i915)
 	struct i915_perf *perf = &i915->perf;
 
 	/* XXX const struct i915_perf_ops! */
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	/* i915_perf is not enabled for DG2 yet */
 	if (IS_DG2(i915))

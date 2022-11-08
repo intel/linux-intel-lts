@@ -26,18 +26,25 @@
 #include "intel_gt_requests.h"
 #include "intel_migrate.h"
 #include "intel_mocs.h"
+#include "intel_pci_config.h"
 #include "intel_pm.h"
 #include "intel_rc6.h"
 #include "intel_renderstate.h"
 #include "intel_rps.h"
+#include "intel_sa_media.h"
 #include "intel_gt_sysfs.h"
 #include "intel_uncore.h"
+#include "intel_pm.h"
+#include "iov/intel_iov.h"
 #include "shmem_utils.h"
+#include "uc/intel_guc.h"
 
-static void __intel_gt_init_early(struct intel_gt *gt)
+void intel_gt_common_init_early(struct intel_gt *gt)
 {
-	spin_lock_init(&gt->irq_lock);
+	spin_lock_init(gt->irq_lock);
 
+	INIT_LIST_HEAD(&gt->lmem_userfault_list);
+	mutex_init(&gt->lmem_userfault_lock);
 	INIT_LIST_HEAD(&gt->closed_vma);
 	spin_lock_init(&gt->closed_lock);
 
@@ -57,14 +64,19 @@ static void __intel_gt_init_early(struct intel_gt *gt)
 }
 
 /* Preliminary initialization of Tile 0 */
-void intel_root_gt_init_early(struct drm_i915_private *i915)
+int intel_root_gt_init_early(struct drm_i915_private *i915)
 {
 	struct intel_gt *gt = to_gt(i915);
 
 	gt->i915 = i915;
 	gt->uncore = &i915->uncore;
+	gt->irq_lock = drmm_kzalloc(&i915->drm, sizeof(*gt->irq_lock), GFP_KERNEL);
+	if (!gt->irq_lock)
+		return -ENOMEM;
 
-	__intel_gt_init_early(gt);
+	intel_gt_common_init_early(gt);
+
+	return 0;
 }
 
 static int intel_gt_probe_lmem(struct intel_gt *gt)
@@ -108,9 +120,15 @@ int intel_gt_assign_ggtt(struct intel_gt *gt)
 
 int intel_gt_init_mmio(struct intel_gt *gt)
 {
-	intel_gt_init_clock_frequency(gt);
+	int ret;
 
+	ret = intel_iov_init_mmio(&gt->iov);
+	if (ret)
+		return ret;
+
+	intel_gt_init_clock_frequency(gt);
 	intel_uc_init_mmio(&gt->uc);
+
 	intel_sseu_info_init(gt);
 	intel_gt_mcr_init(gt);
 
@@ -191,6 +209,13 @@ int intel_gt_init_hw(struct intel_gt *gt)
 	ret = intel_uc_init_hw(&gt->uc);
 	if (ret) {
 		i915_probe_error(i915, "Enabling uc failed (%d)\n", ret);
+		goto out;
+	}
+
+	ret = intel_iov_init_hw(&gt->iov);
+	if (unlikely(ret)) {
+		i915_probe_error(i915, "Enabling IOV failed (%pe)\n",
+				 ERR_PTR(ret));
 		goto out;
 	}
 
@@ -279,12 +304,12 @@ static void gen6_check_faults(struct intel_gt *gt)
 				"\tAddr: 0x%08lx\n"
 				"\tAddress space: %s\n"
 				"\tSource ID: %d\n"
-				"\tType: %d\n",
+				"\tLevel: %d\n",
 				fault & PAGE_MASK,
 				fault & RING_FAULT_GTTSEL_MASK ?
 				"GGTT" : "PPGTT",
 				RING_FAULT_SRCID(fault),
-				RING_FAULT_FAULT_TYPE(fault));
+				RING_FAULT_LEVEL(fault));
 		}
 	}
 }
@@ -321,18 +346,22 @@ static void gen8_check_faults(struct intel_gt *gt)
 			"\tAddress space: %s\n"
 			"\tEngine ID: %d\n"
 			"\tSource ID: %d\n"
-			"\tType: %d\n",
-			upper_32_bits(fault_addr), lower_32_bits(fault_addr),
+			"\tLevel: %d\n",
+			upper_32_bits(fault_addr),
+			lower_32_bits(fault_addr),
 			fault_data1 & FAULT_GTT_SEL ? "GGTT" : "PPGTT",
 			GEN8_RING_FAULT_ENGINE_ID(fault),
 			RING_FAULT_SRCID(fault),
-			RING_FAULT_FAULT_TYPE(fault));
+			RING_FAULT_LEVEL(fault));
 	}
 }
 
 void intel_gt_check_and_clear_faults(struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	/* From GEN8 onwards we only have one 'All Engine Fault Register' */
 	if (GRAPHICS_VER(i915) >= 8)
@@ -639,10 +668,14 @@ int intel_gt_init(struct intel_gt *gt)
 	 */
 	intel_uncore_forcewake_get(gt->uncore, FORCEWAKE_ALL);
 
+	err = intel_iov_init(&gt->iov);
+	if (unlikely(err))
+		goto out_fw;
+
 	err = intel_gt_init_scratch(gt,
 				    GRAPHICS_VER(gt->i915) == 2 ? SZ_256K : SZ_4K);
 	if (err)
-		goto out_fw;
+		goto err_iov;
 
 	intel_gt_pm_init(gt);
 
@@ -670,6 +703,10 @@ int intel_gt_init(struct intel_gt *gt)
 	if (err)
 		drm_err(&gt->i915->drm, "Failed to retrieve hwconfig table: %pe\n",
 			ERR_PTR(err));
+
+	err = intel_iov_init_late(&gt->iov);
+	if (err)
+		goto err_gt;
 
 	err = __engines_record_defaults(gt);
 	if (err)
@@ -701,6 +738,8 @@ err_engines:
 err_pm:
 	intel_gt_pm_fini(gt);
 	intel_gt_fini_scratch(gt);
+err_iov:
+	intel_iov_fini(&gt->iov);
 out_fw:
 	if (err)
 		intel_gt_set_wedged_on_init(gt);
@@ -710,6 +749,10 @@ out_fw:
 
 void intel_gt_driver_remove(struct intel_gt *gt)
 {
+	intel_gt_fini_clock_frequency(gt);
+
+	intel_iov_fini_hw(&gt->iov);
+
 	__intel_gt_disable(gt);
 
 	intel_migrate_fini(&gt->migrate);
@@ -755,6 +798,7 @@ void intel_gt_driver_release(struct intel_gt *gt)
 	intel_gt_fini_scratch(gt);
 	intel_gt_fini_buffer_pool(gt);
 	intel_gt_fini_hwconfig(gt);
+	intel_iov_fini(&gt->iov);
 }
 
 void intel_gt_driver_late_release_all(struct drm_i915_private *i915)
@@ -766,6 +810,7 @@ void intel_gt_driver_late_release_all(struct drm_i915_private *i915)
 	rcu_barrier();
 
 	for_each_gt(gt, i915, id) {
+		intel_iov_release(&gt->iov);
 		intel_uc_driver_late_release(&gt->uc);
 		intel_gt_fini_requests(gt);
 		intel_gt_fini_reset(gt);
@@ -780,26 +825,25 @@ static int intel_gt_tile_setup(struct intel_gt *gt, phys_addr_t phys_addr)
 	int ret;
 
 	if (!gt_is_root(gt)) {
-		struct intel_uncore_mmio_debug *mmio_debug;
 		struct intel_uncore *uncore;
+		spinlock_t *irq_lock;
 
-		uncore = kzalloc(sizeof(*uncore), GFP_KERNEL);
+		uncore = drmm_kzalloc(&gt->i915->drm, sizeof(*uncore), GFP_KERNEL);
 		if (!uncore)
 			return -ENOMEM;
 
-		mmio_debug = kzalloc(sizeof(*mmio_debug), GFP_KERNEL);
-		if (!mmio_debug) {
-			kfree(uncore);
+		irq_lock = drmm_kzalloc(&gt->i915->drm, sizeof(*irq_lock), GFP_KERNEL);
+		if (!irq_lock)
 			return -ENOMEM;
-		}
 
 		gt->uncore = uncore;
-		gt->uncore->debug = mmio_debug;
+		gt->irq_lock = irq_lock;
 
-		__intel_gt_init_early(gt);
+		intel_gt_common_init_early(gt);
 	}
 
 	intel_uncore_init_early(gt->uncore, gt);
+	intel_wakeref_auto_init(&gt->userfault_wakeref, gt->uncore->rpm);
 
 	ret = intel_uncore_setup_mmio(gt->uncore, phys_addr);
 	if (ret)
@@ -810,27 +854,17 @@ static int intel_gt_tile_setup(struct intel_gt *gt, phys_addr_t phys_addr)
 	return 0;
 }
 
-static void
-intel_gt_tile_cleanup(struct intel_gt *gt)
-{
-	intel_uncore_cleanup_mmio(gt->uncore);
-
-	if (!gt_is_root(gt)) {
-		kfree(gt->uncore->debug);
-		kfree(gt->uncore);
-		kfree(gt);
-	}
-}
-
 int intel_gt_probe_all(struct drm_i915_private *i915)
 {
 	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
 	struct intel_gt *gt = &i915->gt0;
+	const struct intel_gt_definition *gtdef;
 	phys_addr_t phys_addr;
 	unsigned int mmio_bar;
+	unsigned int i;
 	int ret;
 
-	mmio_bar = GRAPHICS_VER(i915) == 2 ? 1 : 0;
+	mmio_bar = GRAPHICS_VER(i915) == 2 ? GEN2_GTTMMADR_BAR : GTTMMADR_BAR;
 	phys_addr = pci_resource_start(pdev, mmio_bar);
 
 	/*
@@ -838,14 +872,74 @@ int intel_gt_probe_all(struct drm_i915_private *i915)
 	 * and it has been already initialized early during probe
 	 * in i915_driver_probe()
 	 */
+	gt->i915 = i915;
+	gt->name = "Primary GT";
+	gt->info.engine_mask = RUNTIME_INFO(i915)->platform_engine_mask;
+
+	drm_dbg(&i915->drm, "Setting up %s\n", gt->name);
 	ret = intel_gt_tile_setup(gt, phys_addr);
 	if (ret)
 		return ret;
 
 	i915->gt[0] = gt;
 
-	/* TODO: add more tiles */
+	if (!HAS_EXTRA_GT_LIST(i915))
+		return 0;
+
+	for (i = 1, gtdef = &INTEL_INFO(i915)->extra_gt_list[i - 1];
+	     gtdef->name != NULL;
+	     i++, gtdef = &INTEL_INFO(i915)->extra_gt_list[i - 1]) {
+		gt = drmm_kzalloc(&i915->drm, sizeof(*gt), GFP_KERNEL);
+		if (!gt) {
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		gt->i915 = i915;
+		gt->name = gtdef->name;
+		gt->type = gtdef->type;
+		gt->info.engine_mask = gtdef->engine_mask;
+		gt->info.id = i;
+
+		drm_dbg(&i915->drm, "Setting up %s\n", gt->name);
+		if (GEM_WARN_ON(range_overflows_t(resource_size_t,
+						  gtdef->mapping_base,
+						  SZ_16M,
+						  pci_resource_len(pdev, mmio_bar)))) {
+			ret = -ENODEV;
+			goto err;
+		}
+
+		switch (gtdef->type) {
+		case GT_TILE:
+			ret = intel_gt_tile_setup(gt, phys_addr + gtdef->mapping_base);
+			break;
+
+		case GT_MEDIA:
+			ret = intel_sa_mediagt_setup(gt, phys_addr + gtdef->mapping_base,
+						     gtdef->gsi_offset);
+			break;
+
+		case GT_PRIMARY:
+			/* Primary GT should not appear in extra GT list */
+		default:
+			MISSING_CASE(gtdef->type);
+			ret = -ENODEV;
+		}
+
+		if (ret)
+			goto err;
+
+		i915->gt[i] = gt;
+	}
+
 	return 0;
+
+err:
+	i915_probe_error(i915, "Failed to initialize %s! (%d)\n", gtdef->name, ret);
+	intel_gt_release_all(i915);
+
+	return ret;
 }
 
 int intel_gt_tiles_init(struct drm_i915_private *i915)
@@ -868,10 +962,8 @@ void intel_gt_release_all(struct drm_i915_private *i915)
 	struct intel_gt *gt;
 	unsigned int id;
 
-	for_each_gt(gt, i915, id) {
-		intel_gt_tile_cleanup(gt);
+	for_each_gt(gt, i915, id)
 		i915->gt[id] = NULL;
-	}
 }
 
 void intel_gt_info_print(const struct intel_gt_info *info,
@@ -1024,11 +1116,15 @@ void intel_gt_invalidate_tlb(struct intel_gt *gt, u32 seqno)
 		return;
 
 	with_intel_gt_pm_if_awake(gt, wakeref) {
+		struct intel_guc *guc = &gt->uc.guc;
 		mutex_lock(&gt->tlb.invalidate_lock);
 		if (tlb_seqno_passed(gt, seqno))
 			goto unlock;
 
-		mmio_invalidate_full(gt);
+		if (INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc)) {
+			intel_guc_invalidate_tlb_guc(guc, INTEL_GUC_TLB_INVAL_MODE_HEAVY);
+		} else
+			mmio_invalidate_full(gt);
 
 		write_seqcount_invalidate(&gt->tlb.seqno);
 unlock:

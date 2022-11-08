@@ -63,12 +63,20 @@ static void virtio_gpu_timeline_value_str(struct dma_fence *f, char *str,
 		 (u64)atomic64_read(&fence->drv->last_fence_id));
 }
 
+static void virtio_gpu_fence_release(struct dma_fence *f)
+{
+	struct virtio_gpu_fence *fence = to_virtio_gpu_fence(f);
+
+	kfree(fence);
+}
+
 static const struct dma_fence_ops virtio_gpu_fence_ops = {
 	.get_driver_name     = virtio_gpu_get_driver_name,
 	.get_timeline_name   = virtio_gpu_get_timeline_name,
 	.signaled            = virtio_gpu_fence_signaled,
 	.fence_value_str     = virtio_gpu_fence_value_str,
 	.timeline_value_str  = virtio_gpu_timeline_value_str,
+	.release	     = virtio_gpu_fence_release,
 };
 
 struct virtio_gpu_fence *virtio_gpu_fence_alloc(struct virtio_gpu_device *vgdev,

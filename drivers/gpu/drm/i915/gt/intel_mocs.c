@@ -207,6 +207,14 @@ static const struct drm_i915_mocs_entry broxton_mocs_table[] = {
 	MOCS_ENTRY(15, \
 		   LE_3_WB | LE_TC_1_LLC | LE_LRUM(2) | LE_AOM(1), \
 		   L3_3_WB), \
+	/* Bypass LLC - Uncached (EHL+) */ \
+	MOCS_ENTRY(16, \
+		   LE_1_UC | LE_TC_1_LLC | LE_SCF(1), \
+		   L3_1_UC), \
+	/* Bypass LLC - L3 (Read-Only) (EHL+) */ \
+	MOCS_ENTRY(17, \
+		   LE_1_UC | LE_TC_1_LLC | LE_SCF(1), \
+		   L3_3_WB), \
 	/* Self-Snoop - L3 + LLC */ \
 	MOCS_ENTRY(18, \
 		   LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_SSE(3), \
@@ -467,7 +475,7 @@ static unsigned int get_mocs_settings(const struct drm_i915_private *i915,
 		table->n_entries = GEN9_NUM_MOCS_ENTRIES;
 		table->uc_index = 1;
 		table->unused_entries_index = 5;
-	} else if (IS_TIGERLAKE(i915) || IS_ROCKETLAKE(i915)) {
+	} else if (IS_TIGERLAKE(i915) || IS_ALDERLAKE_S(i915) || IS_ROCKETLAKE(i915)) {
 		/* For TGL/RKL, Can't be changed now for ABI reasons */
 		table->size  = ARRAY_SIZE(tgl_mocs_table);
 		table->table = tgl_mocs_table;
@@ -498,6 +506,9 @@ static unsigned int get_mocs_settings(const struct drm_i915_private *i915,
 	}
 
 	if (GEM_DEBUG_WARN_ON(table->size > table->n_entries))
+		return 0;
+
+	if (IS_SRIOV_VF(i915))
 		return 0;
 
 	/* WaDisableSkipCaching:skl,bxt,kbl,glk */

@@ -50,6 +50,7 @@ TARGETS += pid_namespace
 TARGETS += powerpc
 TARGETS += proc
 TARGETS += pstore
+TARGETS += ptp
 TARGETS += ptrace
 TARGETS += openat2
 TARGETS += rlimits

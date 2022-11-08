@@ -698,11 +698,8 @@ static int mtk_drm_sys_suspend(struct device *dev)
 {
 	struct mtk_drm_private *private = dev_get_drvdata(dev);
 	struct drm_device *drm = private->drm;
-	int ret;
 
-	ret = drm_mode_config_helper_suspend(drm);
-
-	return ret;
+	return drm_mode_config_helper_suspend(drm);
 }
 
 static int mtk_drm_sys_resume(struct device *dev)
