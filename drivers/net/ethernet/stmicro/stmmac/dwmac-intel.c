@@ -756,6 +756,8 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	    pdev->revision == PCI_PCH_B0)
 		plat->dma_cfg->pch_intr_wa = 1;
 
+	plat->clk_ptp_rate = 204800000;
+
 	return ehl_common_data(pdev, plat);
 }
 
@@ -774,6 +776,8 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 	    pdev->revision == PCI_PCH_A1 ||
 	    pdev->revision == PCI_PCH_B0)
 		plat->dma_cfg->pch_intr_wa = 1;
+
+	plat->clk_ptp_rate = 204800000;
 
 	return ehl_common_data(pdev, plat);
 }
