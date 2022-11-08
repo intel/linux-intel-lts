@@ -751,6 +751,8 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	plat->clk_ptp_rate = 204800000;
 	plat->config_serdes = intel_config_serdes;
 
+	plat->clk_ptp_rate = 204800000;
+
 	if (pdev->revision == PCI_PCH_A0 ||
 	    pdev->revision == PCI_PCH_A1 ||
 	    pdev->revision == PCI_PCH_B0)
@@ -770,6 +772,8 @@ static int ehl_rgmii_data(struct pci_dev *pdev,
 {
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_RGMII;
+	plat->clk_ptp_rate = 204800000;
+
 	plat->clk_ptp_rate = 204800000;
 
 	if (pdev->revision == PCI_PCH_A0 ||
