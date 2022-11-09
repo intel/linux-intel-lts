@@ -212,7 +212,8 @@ static struct ipu_isys_subdev_info ar0234_sd_4 = {
 	},
 	.i2c_adapter_bdf = "0000:00:15.2",
 	},
-#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = ar0234_fixup_spdata,
 #endif
 };
