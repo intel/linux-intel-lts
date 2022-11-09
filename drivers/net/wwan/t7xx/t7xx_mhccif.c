@@ -24,11 +24,6 @@
 #include "t7xx_pcie_mac.h"
 #include "t7xx_reg.h"
 
-#define D2H_INT_SR_ACK		(D2H_INT_SUSPEND_ACK |		\
-				 D2H_INT_RESUME_ACK |		\
-				 D2H_INT_SUSPEND_ACK_AP |	\
-				 D2H_INT_RESUME_ACK_AP)
-
 static void t7xx_mhccif_clear_interrupts(struct t7xx_pci_dev *t7xx_dev, u32 mask)
 {
 	void __iomem *mhccif_pbase = t7xx_dev->base_addr.mhccif_rc_base;
@@ -58,18 +53,6 @@ static irqreturn_t t7xx_mhccif_isr_thread(int irq, void *data)
 	}
 
 	t7xx_mhccif_clear_interrupts(t7xx_dev, int_status);
-
-	if (int_status & D2H_INT_SR_ACK)
-		complete(&t7xx_dev->pm_sr_ack);
-
-	iowrite32(L1_DISABLE_BIT(1), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
-
-	int_status = t7xx_mhccif_read_sw_int_sts(t7xx_dev);
-	if (!int_status) {
-		val = L1_1_DISABLE_BIT(1) | L1_2_DISABLE_BIT(1);
-		iowrite32(val, IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
-	}
-
 	t7xx_pcie_mac_set_int(t7xx_dev, MHCCIF_INT);
 	return IRQ_HANDLED;
 }
