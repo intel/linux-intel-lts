@@ -872,6 +872,10 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 			return;
 
 		oob_trap_notify(X86_TRAP_PF, regs);
+		if (!running_inband()) {
+			local_irq_disable_full();
+			return;
+		}
 
 		/*
 		 * To avoid leaking information about the kernel page table
@@ -1346,9 +1350,12 @@ void do_user_addr_fault(struct pt_regs *regs,
 	 * At this point, we would have to stop running
 	 * out-of-band. Tell the companion core about the page fault
 	 * event, so that it might switch current to in-band mode if
-	 * need be.
+	 * need be. If it does not, then we may assume that it would
+	 * also handle the fixups.
 	 */
 	oob_trap_notify(X86_TRAP_PF, regs);
+	if (!running_inband())
+		return;
 
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);
 
