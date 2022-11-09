@@ -102,9 +102,9 @@ static void t7xx_cldma_rgpd_set_next_ptr(struct cldma_rgpd *rgpd, dma_addr_t nex
 }
 
 static int t7xx_cldma_alloc_and_map_skb(struct cldma_ctrl *md_ctrl, struct cldma_request *req,
-					size_t size, gfp_t gfp_mask)
+					size_t size)
 {
-	req->skb = __dev_alloc_skb(size, gfp_mask);
+	req->skb = __dev_alloc_skb(size, GFP_KERNEL);
 	if (!req->skb)
 		return -ENOMEM;
 
@@ -184,7 +184,7 @@ static int t7xx_cldma_gpd_rx_from_q(struct cldma_queue *queue, int budget, bool 
 		spin_unlock_irqrestore(&queue->ring_lock, flags);
 		req = queue->rx_refill;
 
-		ret = t7xx_cldma_alloc_and_map_skb(md_ctrl, req, queue->tr_ring->pkt_size, GFP_KERNEL);
+		ret = t7xx_cldma_alloc_and_map_skb(md_ctrl, req, queue->tr_ring->pkt_size);
 		if (ret)
 			return ret;
 
@@ -414,7 +414,7 @@ static struct cldma_request *t7xx_alloc_rx_request(struct cldma_ctrl *md_ctrl, s
 	if (!req->gpd)
 		goto err_free_req;
 
-	val = t7xx_cldma_alloc_and_map_skb(md_ctrl, req, pkt_size, GFP_KERNEL);
+	val = t7xx_cldma_alloc_and_map_skb(md_ctrl, req, pkt_size);
 	if (val)
 		goto err_free_pool;
 
@@ -813,7 +813,7 @@ static int t7xx_cldma_clear_rxq(struct cldma_ctrl *md_ctrl, int qnum)
 		if (req->skb)
 			continue;
 
-		ret = t7xx_cldma_alloc_and_map_skb(md_ctrl, req, rxq->tr_ring->pkt_size, GFP_ATOMIC);
+		ret = t7xx_cldma_alloc_and_map_skb(md_ctrl, req, rxq->tr_ring->pkt_size);
 		if (ret)
 			break;
 
