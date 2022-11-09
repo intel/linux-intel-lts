@@ -30,11 +30,11 @@ struct sensor_platform_data {
 	uint32_t i2c_slave_address;
 	int irq_pin;
 	unsigned int irq_pin_flags;
-	char irq_pin_name[IPU_SPLATA_IRQ_PIN_NAME_LEN];
+	char irq_pin_name[IPU_SPDATA_IRQ_PIN_NAME_LEN];
 	int reset_pin;
 	int detect_pin;
 	char suffix;
-	int gpios[IPU_SPLATA_GPIO_NUM];
+	int gpios[IPU_SPDATA_GPIO_NUM];
 };
 
 struct serdes_platform_data {

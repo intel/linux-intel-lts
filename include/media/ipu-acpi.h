@@ -129,7 +129,7 @@ struct ipu_gpio_info {
 
 struct ipu_irq_info {
 	int irq_pin;
-	char irq_pin_name[IPU_SPLATA_IRQ_PIN_NAME_LEN];
+	char irq_pin_name[IPU_SPDATA_IRQ_PIN_NAME_LEN];
 };
 
 /* Each I2C client linked to 1 set of CTL Logic */
