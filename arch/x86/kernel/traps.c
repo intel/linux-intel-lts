@@ -161,10 +161,16 @@ static void show_signal(struct task_struct *tsk, int signr,
 }
 
 static __always_inline
-void mark_trap_entry(int trapnr, struct pt_regs *regs)
+bool mark_trap_entry(int trapnr, struct pt_regs *regs)
 {
 	oob_trap_notify(trapnr, regs);
-	hard_cond_local_irq_enable();
+
+	if (likely(running_inband())) {
+		hard_cond_local_irq_enable();
+		return true;
+	}
+
+	return false;
 }
 
 static __always_inline
@@ -175,9 +181,10 @@ void mark_trap_exit(int trapnr, struct pt_regs *regs)
 }
 
 static __always_inline
-void mark_trap_entry_raw(int trapnr, struct pt_regs *regs)
+bool mark_trap_entry_raw(int trapnr, struct pt_regs *regs)
 {
 	oob_trap_notify(trapnr, regs);
+	return running_inband();
 }
 
 static __always_inline
@@ -209,7 +216,8 @@ static void do_error_trap(struct pt_regs *regs, long error_code, char *str,
 {
 	RCU_LOCKDEP_WARN(!rcu_is_watching(), "entry code didn't wake RCU");
 
-	mark_trap_entry(trapnr, regs);
+	if (!mark_trap_entry(trapnr, regs))
+		return;
 
 	if (notify_die(DIE_TRAP, str, regs, error_code, trapnr, signr) !=
 			NOTIFY_STOP) {
@@ -313,13 +321,14 @@ DEFINE_IDTENTRY_RAW(exc_invalid_op)
 	if (!user_mode(regs) && handle_bug(regs))
 		return;
 
-	mark_trap_entry_raw(X86_TRAP_UD, regs);
-	state = irqentry_enter(regs);
-	instrumentation_begin();
-	handle_invalid_op(regs);
-	instrumentation_end();
-	irqentry_exit(regs, state);
-	mark_trap_exit_raw(X86_TRAP_UD, regs);
+	if (mark_trap_entry_raw(X86_TRAP_UD, regs)) {
+		state = irqentry_enter(regs);
+		instrumentation_begin();
+		handle_invalid_op(regs);
+		instrumentation_end();
+		irqentry_exit(regs, state);
+		mark_trap_exit_raw(X86_TRAP_UD, regs);
+	}
 }
 
 DEFINE_IDTENTRY(exc_coproc_segment_overrun)
@@ -350,7 +359,8 @@ DEFINE_IDTENTRY_ERRORCODE(exc_alignment_check)
 {
 	char *str = "alignment check";
 
-	mark_trap_entry(X86_TRAP_AC, regs);
+	if (!mark_trap_entry(X86_TRAP_AC, regs))
+		return;
 
 	if (notify_die(DIE_TRAP, str, regs, error_code, X86_TRAP_AC, SIGBUS) == NOTIFY_STOP)
 		goto mark_exit;
@@ -534,7 +544,8 @@ DEFINE_IDTENTRY_DF(exc_double_fault)
 
 DEFINE_IDTENTRY(exc_bounds)
 {
-	mark_trap_entry(X86_TRAP_BR, regs);
+	if (!mark_trap_entry(X86_TRAP_BR, regs))
+		return;
 
 	if (notify_die(DIE_TRAP, "bounds", regs, 0,
 			X86_TRAP_BR, SIGSEGV) == NOTIFY_STOP)
@@ -655,11 +666,13 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 		if (fixup_iopl_exception(regs))
 			goto exit;
 
-		mark_trap_entry(X86_TRAP_GP, regs);
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_nr = X86_TRAP_GP;
 
 		if (fixup_vdso_exception(regs, X86_TRAP_GP, error_code, 0))
+			goto exit;
+
+		if (!mark_trap_entry(X86_TRAP_GP, regs))
 			goto exit;
 
 		show_signal(tsk, SIGSEGV, "", desc, regs, error_code);
@@ -682,7 +695,8 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 	    kprobe_fault_handler(regs, X86_TRAP_GP))
 		goto exit;
 
-	mark_trap_entry(X86_TRAP_GP, regs);
+	if (!mark_trap_entry(X86_TRAP_GP, regs))
+		goto exit;
 
 	ret = notify_die(DIE_GPF, desc, regs, error_code, X86_TRAP_GP, SIGSEGV);
 	if (ret == NOTIFY_STOP)
@@ -754,7 +768,8 @@ DEFINE_IDTENTRY_RAW(exc_int3)
 	if (poke_int3_handler(regs))
 		return;
 
-	mark_trap_entry_raw(X86_TRAP_BP, regs);
+	if (!mark_trap_entry_raw(X86_TRAP_BP, regs))
+		return;
 
 	/*
 	 * irqentry_enter_from_user_mode() uses static_branch_{,un}likely()
@@ -1103,17 +1118,19 @@ out:
 /* IST stack entry */
 DEFINE_IDTENTRY_DEBUG(exc_debug)
 {
-	mark_trap_entry_raw(X86_TRAP_DB, regs);
-	exc_debug_kernel(regs, debug_read_clear_dr6());
-	mark_trap_exit_raw(X86_TRAP_DB, regs);
+	if (mark_trap_entry_raw(X86_TRAP_DB, regs)) {
+		exc_debug_kernel(regs, debug_read_clear_dr6());
+		mark_trap_exit_raw(X86_TRAP_DB, regs);
+	}
 }
 
 /* User entry, runs on regular task stack */
 DEFINE_IDTENTRY_DEBUG_USER(exc_debug)
 {
-	mark_trap_entry_raw(X86_TRAP_DB, regs);
-	exc_debug_user(regs, debug_read_clear_dr6());
-	mark_trap_exit_raw(X86_TRAP_DB, regs);
+	if (mark_trap_entry_raw(X86_TRAP_DB, regs)) {
+		exc_debug_user(regs, debug_read_clear_dr6());
+		mark_trap_exit_raw(X86_TRAP_DB, regs);
+	}
 }
 #else
 /* 32 bit does not have separate entry points. */
@@ -1147,7 +1164,9 @@ static void math_error(struct pt_regs *regs, int trapnr)
 		if (fixup_exception(regs, trapnr, 0, 0))
 			goto exit;
 
-		mark_trap_entry(trapnr, regs);
+		if (!mark_trap_entry(trapnr, regs))
+			goto exit;
+
 		task->thread.error_code = 0;
 		task->thread.trap_nr = trapnr;
 
@@ -1174,7 +1193,8 @@ static void math_error(struct pt_regs *regs, int trapnr)
 	if (fixup_vdso_exception(regs, trapnr, 0, 0))
 		goto exit;
 
-	mark_trap_entry(trapnr, regs);
+	if (!mark_trap_entry(trapnr, regs))
+		goto exit;
 
 	force_sig_fault(SIGFPE, si_code,
 			(void __user *)uprobe_get_trap_addr(regs));
@@ -1252,9 +1272,10 @@ DEFINE_IDTENTRY(exc_device_not_available)
 		 * to kill the task than getting stuck in a never-ending
 		 * loop of #NM faults.
 		 */
-		mark_trap_entry(X86_TRAP_NM, regs);
-		die("unexpected #NM exception", regs, 0);
-		mark_trap_exit(X86_TRAP_NM, regs);
+		if (mark_trap_entry(X86_TRAP_NM, regs)) {
+			die("unexpected #NM exception", regs, 0);
+			mark_trap_exit(X86_TRAP_NM, regs);
+		}
 	}
 }
 
