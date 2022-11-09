@@ -489,6 +489,13 @@ void arm64_notify_segfault(unsigned long addr)
 
 void do_undefinstr(struct pt_regs *regs)
 {
+	/*
+	 * If the companion core did not switched us to in-band
+	 * context, we may assume that it has handled the trap.
+	 */
+	if (running_oob())
+		return;
+
 	/* check for AArch32 breakpoint instructions */
 	if (!aarch32_break_handler(regs))
 		return;
