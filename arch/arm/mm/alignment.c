@@ -813,7 +813,7 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	if (interrupts_enabled(regs))
 		hard_local_irq_enable();
 
-	oob_trap_notify(ARM_TRAP_ALIGNMENT, regs);
+	mark_trap_entry(ARM_TRAP_ALIGNMENT, regs);
 
 	instrptr = instruction_pointer(regs);
 
@@ -1002,7 +1002,7 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	}
 
 out:
-	oob_trap_unwind(ARM_TRAP_ALIGNMENT, regs);
+	mark_trap_exit(ARM_TRAP_ALIGNMENT, regs);
 
 	return ret;
 }
