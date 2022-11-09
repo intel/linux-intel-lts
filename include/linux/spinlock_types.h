@@ -159,8 +159,9 @@ void __bad_spinlock_type(void);
 #define DECLARE_HARD_SPINLOCK(x)	hard_spinlock_t x
 
 struct phony_lockdep_map {
-	short	wait_type_outer;
-	short	wait_type_inner;
+	u8 wait_type_outer;
+	u8 wait_type_inner;
+  	u8 lock_type;
 };
 
 typedef struct hard_spinlock {
