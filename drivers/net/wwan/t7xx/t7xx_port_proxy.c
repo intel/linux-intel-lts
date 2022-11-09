@@ -51,30 +51,6 @@
 
 static struct t7xx_port_static t7xx_md_ports[] = {
 	{
-		.tx_ch = PORT_CH_UART2_TX,
-		.rx_ch = PORT_CH_UART2_RX,
-		.txq_index = Q_IDX_AT_CMD,
-		.rxq_index = Q_IDX_AT_CMD,
-		.txq_exp_index = 0xff,
-		.rxq_exp_index = 0xff,
-		.path_id = CLDMA_ID_MD,
-		.flags = 0,
-		.ops = &wwan_sub_port_ops,
-		.name = "AT",
-		.port_type = WWAN_PORT_AT,
-	}, {
-		.tx_ch = PORT_CH_MBIM_TX,
-		.rx_ch = PORT_CH_MBIM_RX,
-		.txq_index = Q_IDX_MBIM,
-		.rxq_index = Q_IDX_MBIM,
-		.txq_exp_index = 0,
-		.rxq_exp_index = 0,
-		.path_id = CLDMA_ID_MD,
-		.flags = 0,
-		.ops = &wwan_sub_port_ops,
-		.name = "MBIM",
-		.port_type = WWAN_PORT_MBIM,
-	}, {
 		.tx_ch = PORT_CH_CONTROL_TX,
 		.rx_ch = PORT_CH_CONTROL_RX,
 		.txq_index = Q_IDX_CTRL,
