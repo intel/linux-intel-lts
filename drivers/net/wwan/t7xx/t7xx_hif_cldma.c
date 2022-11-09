@@ -101,6 +101,11 @@ static void t7xx_cldma_rgpd_set_next_ptr(struct cldma_rgpd *rgpd, dma_addr_t nex
 	rgpd->next_gpd_ptr_l = cpu_to_le32(lower_32_bits(next_ptr));
 }
 
+static unsigned int t7xx_skb_data_area_size(struct sk_buff *skb)
+{
+	return skb_end_pointer(skb) - skb->data;
+}
+
 static int t7xx_cldma_alloc_and_map_skb(struct cldma_ctrl *md_ctrl, struct cldma_request *req,
 					size_t size)
 {
@@ -108,7 +113,8 @@ static int t7xx_cldma_alloc_and_map_skb(struct cldma_ctrl *md_ctrl, struct cldma
 	if (!req->skb)
 		return -ENOMEM;
 
-	req->mapped_buff = dma_map_single(md_ctrl->dev, req->skb->data, size, DMA_FROM_DEVICE);
+	req->mapped_buff = dma_map_single(md_ctrl->dev, req->skb->data,
+					  t7xx_skb_data_area_size(req->skb), DMA_FROM_DEVICE);
 	if (dma_mapping_error(md_ctrl->dev, req->mapped_buff)) {
 		dev_kfree_skb_any(req->skb);
 		req->skb = NULL;
@@ -164,7 +170,7 @@ static int t7xx_cldma_gpd_rx_from_q(struct cldma_queue *queue, int budget, bool 
 
 		if (req->mapped_buff) {
 			dma_unmap_single(md_ctrl->dev, req->mapped_buff,
-					 queue->tr_ring->pkt_size, DMA_FROM_DEVICE);
+					 t7xx_skb_data_area_size(skb), DMA_FROM_DEVICE);
 			req->mapped_buff = 0;
 		}
 
@@ -387,7 +393,7 @@ static void t7xx_cldma_ring_free(struct cldma_ctrl *md_ctrl,
 	list_for_each_entry_safe(req_cur, req_next, &ring->gpd_ring, entry) {
 		if (req_cur->mapped_buff && req_cur->skb) {
 			dma_unmap_single(md_ctrl->dev, req_cur->mapped_buff,
-					 ring->pkt_size, tx_rx);
+					 t7xx_skb_data_area_size(req_cur->skb), tx_rx);
 			req_cur->mapped_buff = 0;
 		}
 
