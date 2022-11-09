@@ -46,14 +46,12 @@ unsigned long fault_entry(int exception, struct pt_regs *regs)
 
 	flags = hard_local_save_flags();
 
-	oob_trap_notify(exception, regs);
-
 	/*
-	 * CAUTION: The co-kernel might have to demote the current
-	 * context to the in-band stage as a result of handling this
-	 * trap, returning with hard irqs on. We expect stall_inband()
-	 * to complain loudly if we are still running oob afterwards.
+	 * The companion core must demote the current context to
+	 * in-band stage if running oob on entry.
 	 */
+	mark_trap_entry(exception, regs);
+
 	if (raw_irqs_disabled_flags(flags)) {
 		stall_inband();
 		trace_hardirqs_off();
@@ -74,7 +72,7 @@ void fault_exit(int exception, struct pt_regs *regs,
 	 * We expect kentry_exit_pipelined() to clear the stall bit if
 	 * kentry_enter_pipelined() observed it that way.
 	 */
-	oob_trap_unwind(exception, regs);
+	mark_trap_exit(exception, regs);
 	trace_ARM_trap_exit(exception, regs);
 	hard_local_irq_restore(flags);
 }
