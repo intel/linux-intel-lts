@@ -21,7 +21,6 @@
 #include <linux/irqreturn.h>
 #include <linux/mutex.h>
 #include <linux/pci.h>
-#include <linux/spinlock.h>
 #include <linux/types.h>
 
 #include "t7xx_reg.h"
@@ -51,10 +50,7 @@ typedef irqreturn_t (*t7xx_intr_callback)(int irq, void *param);
  * @base_addr: memory base addresses of HW components
  * @md: modem interface
  * @md_pm_entities: list of pm entities
- * @md_pm_lock: protects PCIe sleep lock
  * @md_pm_entity_mtx: protects md_pm_entities list
- * @sleep_disable_count: PCIe L1.2 lock counter
- * @sleep_lock_acquire: indicates that sleep has been disabled
  * @pm_sr_ack: ack from the device when went to sleep or woke up
  * @md_pm_state: state for resume/suspend
  * @ccmni_ctlb: context structure used to control the network data path
@@ -71,10 +67,7 @@ struct t7xx_pci_dev {
 
 	/* Low Power Items */
 	struct list_head	md_pm_entities;
-	spinlock_t		md_pm_lock;		/* Protects PCI resource lock */
 	struct mutex		md_pm_entity_mtx;	/* Protects MD PM entities list */
-	atomic_t		sleep_disable_count;
-	struct completion	sleep_lock_acquire;
 	struct completion	pm_sr_ack;
 	atomic_t		md_pm_state;
 
@@ -111,9 +104,6 @@ struct md_pm_entity {
 	void			*entity_param;
 };
 
-void t7xx_pci_disable_sleep(struct t7xx_pci_dev *t7xx_dev);
-void t7xx_pci_enable_sleep(struct t7xx_pci_dev *t7xx_dev);
-int t7xx_pci_sleep_disable_complete(struct t7xx_pci_dev *t7xx_dev);
 int t7xx_pci_pm_entity_register(struct t7xx_pci_dev *t7xx_dev, struct md_pm_entity *pm_entity);
 int t7xx_pci_pm_entity_unregister(struct t7xx_pci_dev *t7xx_dev, struct md_pm_entity *pm_entity);
 void t7xx_pci_pm_init_late(struct t7xx_pci_dev *t7xx_dev);
