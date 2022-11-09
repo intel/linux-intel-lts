@@ -190,7 +190,7 @@ int ipu_get_acpi_devices(void *driver_data,
 		dev_dbg(dev, "Built-in pdata not found");
 	else {
 		dev_dbg(dev, "Built-in pdata found");
-		ptr_built_in_pdata = *built_in_pdata;
+		set_built_in_pdata(*built_in_pdata);
 	}
 
 	if ((!fn) || (!driver_data))
@@ -212,7 +212,7 @@ EXPORT_SYMBOL(ipu_get_acpi_devices);
 
 static int __init ipu_acpi_init(void)
 {
-	ptr_built_in_pdata = NULL;
+	set_built_in_pdata(NULL);
 	return 0;
 }
 

@@ -28,12 +28,7 @@
 #define GPIO_READY_STAT		0x13
 #define GPIO_HDMI_DETECT	0x14
 
-struct ipu_isys_subdev_pdata *ptr_built_in_pdata;
-
-struct ipu_isys_subdev_pdata *get_built_in_pdata(void)
-{
-	return ptr_built_in_pdata;
-};
+void set_built_in_pdata(struct ipu_isys_subdev_pdata *pdata);
 
 enum connection_type {
 	TYPE_DIRECT,

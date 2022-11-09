@@ -13,6 +13,7 @@
  *
  */
 #include <linux/platform_device.h>
+#include <linux/version.h>
 #include <media/ipu-acpi-pdata.h>
 #include <media/ipu-acpi.h>
 

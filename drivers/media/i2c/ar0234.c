@@ -1371,6 +1371,8 @@ struct ar0234 {
 	bool streaming;
 
 	struct ar0234_platform_data *platform_data;
+
+	s64 sub_stream;
 };
 
 static int ar0234_read_reg(struct ar0234 *ar0234, u16 reg, u16 len, u32 *val)
@@ -1782,7 +1784,6 @@ static int ar0234_init_controls(struct ar0234 *ar0234)
 	struct v4l2_ctrl_handler *ctrl_hdlr;
 	s64 exposure_max;
 	s64 hblank;
-	struct v4l2_ctrl_config cfg = { 0 };
 	int ret;
 
 	ctrl_hdlr = &ar0234->ctrl_handler;
@@ -1858,11 +1859,7 @@ static int ar0234_init_controls(struct ar0234 *ar0234)
 	ar0234->hflip = v4l2_ctrl_new_std(ctrl_hdlr, &ar0234_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
 
-	ar0234_q_sub_stream.qmenu_int = devm_kzalloc(&client->dev, sizeof(s64), GFP_KERNEL);
-	if (!ar0234_q_sub_stream.qmenu_int) {
-		dev_dbg(&client->dev, "failed alloc mem for query sub stream.\n");
-		return -ENOMEM;
-	}
+	ar0234_q_sub_stream.qmenu_int = &ar0234->sub_stream;
 	ar0234->query_sub_stream = v4l2_ctrl_new_custom(ctrl_hdlr, &ar0234_q_sub_stream, NULL);
 	if (ctrl_hdlr->error) {
 		dev_dbg(&client->dev, "new query sub stream ctrl, error = %d.\n",
@@ -2041,7 +2038,6 @@ static int ar0234_set_format(struct v4l2_subdev *sd,
 	s32 vblank_def;
 	s64 hblank;
 	int i;
-	s64 *sub_stream;
 
 	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
 		if (supported_modes[i].width != fmt->format.width
@@ -2092,12 +2088,11 @@ static int ar0234_set_format(struct v4l2_subdev *sd,
 
 		__v4l2_ctrl_s_ctrl(ar0234->frame_interval, 1000 / mode->fps);
 
-		sub_stream = ar0234->query_sub_stream->qmenu_int;
-		set_sub_stream_fmt(sub_stream, mode->code);
-		set_sub_stream_h(sub_stream, mode->height);
-		set_sub_stream_w(sub_stream, mode->width);
-		set_sub_stream_dt(sub_stream, mbus_code_to_mipi(mode->code));
-		set_sub_stream_vc_id(sub_stream, 0);
+		set_sub_stream_fmt(&ar0234->sub_stream, mode->code);
+		set_sub_stream_h(&ar0234->sub_stream, mode->height);
+		set_sub_stream_w(&ar0234->sub_stream, mode->width);
+		set_sub_stream_dt(&ar0234->sub_stream, mbus_code_to_mipi(mode->code));
+		set_sub_stream_vc_id(&ar0234->sub_stream, 0);
 	}
 
 	mutex_unlock(&ar0234->mutex);

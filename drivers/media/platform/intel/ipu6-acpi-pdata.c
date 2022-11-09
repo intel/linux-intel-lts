@@ -21,6 +21,14 @@
 #define SUFFIX_BASE 96
 #define MSG_LEN 128
 
+static struct ipu_isys_subdev_pdata *ptr_built_in_pdata;
+
+void set_built_in_pdata(struct ipu_isys_subdev_pdata *pdata)
+{
+	ptr_built_in_pdata = pdata;
+};
+EXPORT_SYMBOL(set_built_in_pdata);
+
 static struct ipu_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
 };
@@ -371,15 +379,12 @@ void update_pdata(struct device *dev,
 			enum connection_type connect)
 {
 	struct ipu_isys_subdev_info *acpi_subdev;
-	struct ipu_isys_subdev_pdata *ptr_built_in_pdata;
 	bool found = false;
 
 	acpi_subdev = new_subdev;
 
 	/* update local ipu_isys_subdev_pdata */
 	add_local_subdevs(acpi_subdev);
-
-	ptr_built_in_pdata = get_built_in_pdata();
 
 	/* if there is existing pdata, update the existing one */
 	if (ptr_built_in_pdata) {
