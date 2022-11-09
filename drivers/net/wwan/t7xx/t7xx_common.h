@@ -18,23 +18,7 @@
 #ifndef __T7XX_COMMON_H__
 #define __T7XX_COMMON_H__
 
-#include <linux/bits.h>
 #include <linux/skbuff.h>
-#include <linux/types.h>
-
-struct ccci_header {
-	__le32 packet_header;
-	__le32 packet_len;
-	__le32 status;
-	__le32 ex_msg;
-};
-
-/* Coupled with HW - indicates if there is data following the CCCI header or not */
-#define CCCI_HEADER_NO_DATA	0xffffffff
-
-#define CCCI_H_AST_BIT		BIT(31)
-#define CCCI_H_SEQ_FLD		GENMASK(30, 16)
-#define CCCI_H_CHN_FLD		GENMASK(15, 0)
 
 enum md_state {
 	MD_STATE_INVALID,
