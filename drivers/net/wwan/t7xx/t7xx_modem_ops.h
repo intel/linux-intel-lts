@@ -56,9 +56,6 @@ enum md_event_id {
 
 struct t7xx_sys_info {
 	bool				ready;
-	bool				handshake_ongoing;
-	u8				feature_set[FEATURE_COUNT];
-	struct t7xx_port		*ctl_port;
 };
 
 struct t7xx_modem {

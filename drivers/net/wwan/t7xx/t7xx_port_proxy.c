@@ -49,20 +49,7 @@
 	     i < (proxy)->port_number;		\
 	     i++, (p) = &(proxy)->ports_private[i])
 
-static struct t7xx_port_static t7xx_md_ports[] = {
-	{
-		.tx_ch = PORT_CH_CONTROL_TX,
-		.rx_ch = PORT_CH_CONTROL_RX,
-		.txq_index = Q_IDX_CTRL,
-		.rxq_index = Q_IDX_CTRL,
-		.txq_exp_index = 0,
-		.rxq_exp_index = 0,
-		.path_id = CLDMA_ID_MD,
-		.flags = 0,
-		.ops = &ctl_port_ops,
-		.name = "t7xx_ctrl",
-	},
-};
+static struct t7xx_port_static t7xx_md_ports[1];
 
 static struct t7xx_port *t7xx_proxy_get_port_by_ch(struct port_proxy *port_prox, enum port_ch ch)
 {
@@ -284,62 +271,6 @@ static void t7xx_proxy_setup_ch_mapping(struct port_proxy *port_prox)
 	}
 }
 
-void t7xx_ccci_header_init(struct ccci_header *ccci_h, unsigned int pkt_header,
-			   size_t pkt_len, enum port_ch ch, unsigned int ex_msg)
-{
-	ccci_h->packet_header = cpu_to_le32(pkt_header);
-	ccci_h->packet_len = cpu_to_le32(pkt_len);
-	ccci_h->status &= cpu_to_le32(~CCCI_H_CHN_FLD);
-	ccci_h->status |= cpu_to_le32(FIELD_PREP(CCCI_H_CHN_FLD, ch));
-	ccci_h->ex_msg = cpu_to_le32(ex_msg);
-}
-
-void t7xx_ctrl_msg_header_init(struct ctrl_msg_header *ctrl_msg_h, unsigned int msg_id,
-			       unsigned int ex_msg, unsigned int len)
-{
-	ctrl_msg_h->ctrl_msg_id = cpu_to_le32(msg_id);
-	ctrl_msg_h->ex_msg = cpu_to_le32(ex_msg);
-	ctrl_msg_h->data_length = cpu_to_le32(len);
-}
-
-void t7xx_port_proxy_send_msg_to_md(struct port_proxy *port_prox, enum port_ch ch,
-				    unsigned int msg, unsigned int ex_msg)
-{
-	struct ctrl_msg_header *ctrl_msg_h;
-	struct ccci_header *ccci_h;
-	struct t7xx_port *port;
-	struct sk_buff *skb;
-	int ret;
-
-	port = t7xx_proxy_get_port_by_ch(port_prox, ch);
-	if (!port)
-		return;
-
-	skb = __dev_alloc_skb(sizeof(*ccci_h), GFP_KERNEL);
-	if (!skb)
-		return;
-
-	if (ch == PORT_CH_CONTROL_TX) {
-		ccci_h = (struct ccci_header *)(skb->data);
-		t7xx_ccci_header_init(ccci_h, CCCI_HEADER_NO_DATA,
-				      sizeof(*ctrl_msg_h) + sizeof(*ccci_h), ch, 0);
-		ctrl_msg_h = (struct ctrl_msg_header *)(skb->data + sizeof(*ccci_h));
-		t7xx_ctrl_msg_header_init(ctrl_msg_h, msg, ex_msg, 0);
-		skb_put(skb, sizeof(*ccci_h) + sizeof(*ctrl_msg_h));
-	} else {
-		ccci_h = skb_put(skb, sizeof(*ccci_h));
-		t7xx_ccci_header_init(ccci_h, CCCI_HEADER_NO_DATA, msg, ch, ex_msg);
-	}
-
-	ret = t7xx_port_proxy_send_skb(port, skb);
-	if (ret) {
-		struct t7xx_port_static *port_static = port->port_static;
-
-		dev_kfree_skb_any(skb);
-		dev_err(port->dev, "port%s send to MD fail\n", port_static->name);
-	}
-}
-
 static struct t7xx_port *t7xx_port_proxy_find_port(struct t7xx_pci_dev *t7xx_dev,
 						   struct cldma_queue *queue, u16 channel)
 {
@@ -448,9 +379,6 @@ static void t7xx_proxy_init_all_ports(struct t7xx_modem *md)
 		struct t7xx_port_static *port_static = port->port_static;
 
 		t7xx_port_struct_init(port);
-
-		if (port_static->tx_ch == PORT_CH_CONTROL_TX)
-			md->core_md.ctl_port = port;
 
 		port->t7xx_dev = md->t7xx_dev;
 		port->dev = &md->t7xx_dev->pdev->dev;
