@@ -6,7 +6,7 @@
 #ifndef __INTEL_AUDIO_REGS_H__
 #define __INTEL_AUDIO_REGS_H__
 
-#include "i915_reg_defs.h"
+#include "intel_display_reg_defs.h"
 
 #define G4X_AUD_VID_DID			_MMIO(DISPLAY_MMIO_BASE(dev_priv) + 0x62020)
 #define   INTEL_AUDIO_DEVCL		0x808629FB

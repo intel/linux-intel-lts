@@ -148,6 +148,4 @@ typedef struct {
 #define i915_mmio_reg_equal(a, b) (i915_mmio_reg_offset(a) == i915_mmio_reg_offset(b))
 #define i915_mmio_reg_valid(r) (!i915_mmio_reg_equal(r, INVALID_MMIO_REG))
 
-#define VLV_DISPLAY_BASE		0x180000
-
 #endif /* __I915_REG_DEFS__ */
