@@ -47,14 +47,12 @@ config VIDEO_INTEL_IPU_WERROR
 
 config VIDEO_INTEL_IPU_USE_PLATFORMDATA
 	tristate "Enable platform data"
-	depends on VIDEO_INTEL_IPU6
 	default y
 	help
 	  Enalbe platform data in IPU.
 
 config VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING
 	tristate "Enable platform data dynamic loading"
-	depends on VIDEO_INTEL_IPU6
 	depends on VIDEO_INTEL_IPU_USE_PLATFORMDATA
 	default n
 	help
