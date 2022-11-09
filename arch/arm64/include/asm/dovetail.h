@@ -42,4 +42,28 @@ static inline void arch_dovetail_switch_finish(bool enter_inband)
 
 #endif
 
+/*
+ * Pass the trap event to the companion core. Return true if running
+ * in-band afterwards.
+ */
+#define mark_cond_trap_entry(__trapnr, __regs)		\
+	({						\
+		oob_trap_notify(__trapnr, __regs);	\
+		running_inband();			\
+	})
+
+/*
+ * Pass the trap event to the companion core. We expect the current
+ * context to be running on the in-band stage upon return so that our
+ * caller can tread on common kernel code.
+ */
+#define mark_trap_entry(__trapnr, __regs)				\
+	do {								\
+		bool __ret = mark_cond_trap_entry(__trapnr, __regs);	\
+		BUG_ON(dovetail_debug() && !__ret);			\
+	} while (0)
+
+#define mark_trap_exit(__trapnr, __regs)				\
+	oob_trap_unwind(__trapnr, __regs)
+
 #endif /* _ASM_ARM64_DOVETAIL_H */
