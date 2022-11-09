@@ -20,16 +20,6 @@
 
 #include <linux/skbuff.h>
 
-enum md_state {
-	MD_STATE_INVALID,
-	MD_STATE_WAITING_FOR_HS1,
-	MD_STATE_WAITING_FOR_HS2,
-	MD_STATE_READY,
-	MD_STATE_EXCEPTION,
-	MD_STATE_WAITING_TO_STOP,
-	MD_STATE_STOPPED,
-};
-
 enum mtk_txrx {
 	MTK_TX,
 	MTK_RX,
