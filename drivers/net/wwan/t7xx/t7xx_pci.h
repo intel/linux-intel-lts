@@ -5,7 +5,7 @@
  *
  * Authors:
  *  Haijun Liu <haijun.liu@mediatek.com>
- *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
  *  Sreehari Kancharla <sreehari.kancharla@intel.com>
  *
  * Contributors:
@@ -50,15 +50,16 @@ typedef irqreturn_t (*t7xx_intr_callback)(int irq, void *param);
  * @pdev: PCI device
  * @base_addr: memory base addresses of HW components
  * @md: modem interface
- * @ccmni_ctlb: context structure used to control the network data path
- * @rgu_pci_irq_en: RGU callback ISR registered and active
  * @md_pm_entities: list of pm entities
- * @md_pm_entity_mtx: protects md_pm_entities list
- * @pm_sr_ack: ack from the device when went to sleep or woke up
- * @md_pm_state: state for resume/suspend
  * @md_pm_lock: protects PCIe sleep lock
+ * @md_pm_entity_mtx: protects md_pm_entities list
  * @sleep_disable_count: PCIe L1.2 lock counter
  * @sleep_lock_acquire: indicates that sleep has been disabled
+ * @pm_sr_ack: ack from the device when went to sleep or woke up
+ * @md_pm_state: state for resume/suspend
+ * @ccmni_ctlb: context structure used to control the network data path
+ * @rgu_pci_irq_en: RGU callback isr registered and active
+ * @pools: pre allocated skb pools
  */
 struct t7xx_pci_dev {
 	t7xx_intr_callback	intr_handler[EXT_INT_NUM];
@@ -67,17 +68,18 @@ struct t7xx_pci_dev {
 	struct pci_dev		*pdev;
 	struct t7xx_addr_base	base_addr;
 	struct t7xx_modem	*md;
-	struct t7xx_ccmni_ctrl	*ccmni_ctlb;
-	bool			rgu_pci_irq_en;
 
 	/* Low Power Items */
 	struct list_head	md_pm_entities;
+	spinlock_t		md_pm_lock;		/* Protects PCI resource lock */
 	struct mutex		md_pm_entity_mtx;	/* Protects MD PM entities list */
+	atomic_t		sleep_disable_count;
+	struct completion	sleep_lock_acquire;
 	struct completion	pm_sr_ack;
 	atomic_t		md_pm_state;
-	spinlock_t		md_pm_lock;		/* Protects PCI resource lock */
-	unsigned int		sleep_disable_count;
-	struct completion	sleep_lock_acquire;
+
+	struct t7xx_ccmni_ctrl	*ccmni_ctlb;
+	bool			rgu_pci_irq_en;
 };
 
 enum t7xx_pm_id {

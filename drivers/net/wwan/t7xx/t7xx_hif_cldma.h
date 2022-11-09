@@ -6,7 +6,7 @@
  * Authors:
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
  *  Sreehari Kancharla <sreehari.kancharla@intel.com>
  *
  * Contributors:
@@ -29,6 +29,7 @@
 #include <linux/types.h>
 
 #include "t7xx_cldma.h"
+#include "t7xx_common.h"
 #include "t7xx_pci.h"
 
 /**
@@ -60,7 +61,7 @@ struct cldma_ring {
 struct cldma_queue {
 	struct cldma_ctrl *md_ctrl;
 	enum mtk_txrx dir;
-	unsigned int index;
+	unsigned char index;
 	struct cldma_ring *tr_ring;
 	struct cldma_request *tr_done;
 	struct cldma_request *rx_refill;

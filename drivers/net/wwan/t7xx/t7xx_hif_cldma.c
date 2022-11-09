@@ -7,7 +7,7 @@
  *  Amir Hanania <amir.hanania@intel.com>
  *  Haijun Liu <haijun.liu@mediatek.com>
  *  Moises Veleta <moises.veleta@intel.com>
- *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
  *  Sreehari Kancharla <sreehari.kancharla@intel.com>
  *
  * Contributors:
@@ -43,6 +43,7 @@
 #include <linux/workqueue.h>
 
 #include "t7xx_cldma.h"
+#include "t7xx_common.h"
 #include "t7xx_hif_cldma.h"
 #include "t7xx_mhccif.h"
 #include "t7xx_pci.h"
@@ -56,10 +57,10 @@
 #define CHECK_Q_STOP_TIMEOUT_US		1000000
 #define CHECK_Q_STOP_STEP_US		10000
 
-#define CLDMA_JUMBO_BUFF_SZ		64528	/* 63kB + CCCI header */
+#define CLDMA_JUMBO_BUFFER		64528	/* 63kB + CCCI header */
 
 static void md_cd_queue_struct_reset(struct cldma_queue *queue, struct cldma_ctrl *md_ctrl,
-				     enum mtk_txrx tx_rx, unsigned int index)
+				     enum mtk_txrx tx_rx, unsigned char index)
 {
 	queue->dir = tx_rx;
 	queue->index = index;
@@ -70,7 +71,7 @@ static void md_cd_queue_struct_reset(struct cldma_queue *queue, struct cldma_ctr
 }
 
 static void md_cd_queue_struct_init(struct cldma_queue *queue, struct cldma_ctrl *md_ctrl,
-				    enum mtk_txrx tx_rx, unsigned int index)
+				    enum mtk_txrx tx_rx, unsigned char index)
 {
 	md_cd_queue_struct_reset(queue, md_ctrl, tx_rx, index);
 	init_waitqueue_head(&queue->req_wq);
@@ -101,11 +102,6 @@ static void t7xx_cldma_rgpd_set_next_ptr(struct cldma_rgpd *rgpd, dma_addr_t nex
 	rgpd->next_gpd_ptr_l = cpu_to_le32(lower_32_bits(next_ptr));
 }
 
-static unsigned int t7xx_skb_data_area_size(struct sk_buff *skb)
-{
-	return skb_end_pointer(skb) - skb->data;
-}
-
 static int t7xx_cldma_alloc_and_map_skb(struct cldma_ctrl *md_ctrl, struct cldma_request *req,
 					size_t size)
 {
@@ -129,7 +125,7 @@ static int t7xx_cldma_alloc_and_map_skb(struct cldma_ctrl *md_ctrl, struct cldma
 static int t7xx_cldma_gpd_rx_from_q(struct cldma_queue *queue, int budget, bool *over_budget)
 {
 	struct cldma_ctrl *md_ctrl = queue->md_ctrl;
-	unsigned int hwo_polling_count = 0;
+	unsigned char hwo_polling_count = 0;
 	struct t7xx_cldma_hw *hw_info;
 	bool rx_not_done = true;
 	unsigned long flags;
@@ -459,7 +455,6 @@ static int t7xx_cldma_rx_ring_init(struct cldma_ctrl *md_ctrl, struct cldma_ring
 		list_add_tail(&req->entry, &ring->gpd_ring);
 	}
 
-	/* Link previous GPD to next GPD, circular */
 	list_for_each_entry(req, &ring->gpd_ring, entry) {
 		t7xx_cldma_rgpd_set_next_ptr(gpd, req->gpd_addr);
 		gpd = req->gpd;
@@ -507,7 +502,6 @@ static int t7xx_cldma_tx_ring_init(struct cldma_ctrl *md_ctrl, struct cldma_ring
 		list_add_tail(&req->entry, &ring->gpd_ring);
 	}
 
-	/* Link previous GPD to next GPD, circular */
 	list_for_each_entry(req, &ring->gpd_ring, entry) {
 		t7xx_cldma_tgpd_set_next_ptr(gpd, req->gpd_addr);
 		gpd = req->gpd;
@@ -891,7 +885,7 @@ static int t7xx_cldma_gpd_handle_tx_request(struct cldma_queue *queue, struct cl
 }
 
 /* Called with cldma_lock */
-static void t7xx_cldma_hw_start_send(struct cldma_ctrl *md_ctrl, int qno,
+static void t7xx_cldma_hw_start_send(struct cldma_ctrl *md_ctrl, u8 qno,
 				     struct cldma_request *prev_req)
 {
 	struct t7xx_cldma_hw *hw_info = &md_ctrl->hw_info;
@@ -935,7 +929,7 @@ void t7xx_cldma_set_recv_skb(struct cldma_ctrl *md_ctrl,
  * * -ENOMEM	- Allocation failure.
  * * -EINVAL	- Invalid queue request.
  * * -EIO	- Queue is not active.
- * * -ETIMEDOUT	- Timeout waiting for the device to wake up.
+ * * -EBUSY	- Resource lock failure.
  */
 int t7xx_cldma_send_skb(struct cldma_ctrl *md_ctrl, int qno, struct sk_buff *skb)
 {
@@ -974,7 +968,7 @@ int t7xx_cldma_send_skb(struct cldma_ctrl *md_ctrl, int qno, struct sk_buff *skb
 			spin_unlock_irqrestore(&queue->ring_lock, flags);
 
 			if (!t7xx_pci_sleep_disable_complete(md_ctrl->t7xx_dev)) {
-				ret = -ETIMEDOUT;
+				ret = -EBUSY;
 				break;
 			}
 
@@ -991,7 +985,7 @@ int t7xx_cldma_send_skb(struct cldma_ctrl *md_ctrl, int qno, struct sk_buff *skb
 		spin_unlock_irqrestore(&queue->ring_lock, flags);
 
 		if (!t7xx_pci_sleep_disable_complete(md_ctrl->t7xx_dev)) {
-			ret = -ETIMEDOUT;
+			ret = -EBUSY;
 			break;
 		}
 
@@ -1042,7 +1036,7 @@ static int t7xx_cldma_late_init(struct cldma_ctrl *md_ctrl)
 		md_ctrl->rx_ring[j].pkt_size = CLDMA_MTU;
 
 		if (j == CLDMA_RXQ_NUM - 1)
-			md_ctrl->rx_ring[j].pkt_size = CLDMA_JUMBO_BUFF_SZ;
+			md_ctrl->rx_ring[j].pkt_size = CLDMA_JUMBO_BUFFER;
 
 		ret = t7xx_cldma_rx_ring_init(md_ctrl, &md_ctrl->rx_ring[j]);
 		if (ret) {

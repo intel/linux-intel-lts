@@ -5,7 +5,7 @@
  *
  * Authors:
  *  Haijun Liu <haijun.liu@mediatek.com>
- *  Ricardo Martinez <ricardo.martinez@linux.intel.com>
+ *  Ricardo Martinez<ricardo.martinez@linux.intel.com>
  *  Sreehari Kancharla <sreehari.kancharla@intel.com>
  *
  * Contributors:
@@ -92,17 +92,23 @@ static int t7xx_pci_pm_init(struct t7xx_pci_dev *t7xx_dev)
 	struct pci_dev *pdev = t7xx_dev->pdev;
 
 	INIT_LIST_HEAD(&t7xx_dev->md_pm_entities);
-	mutex_init(&t7xx_dev->md_pm_entity_mtx);
+
 	spin_lock_init(&t7xx_dev->md_pm_lock);
+
+	mutex_init(&t7xx_dev->md_pm_entity_mtx);
+
 	init_completion(&t7xx_dev->sleep_lock_acquire);
 	init_completion(&t7xx_dev->pm_sr_ack);
-	atomic_set(&t7xx_dev->md_pm_state, MTK_PM_INIT);
 
+	atomic_set(&t7xx_dev->sleep_disable_count, 0);
 	device_init_wakeup(&pdev->dev, true);
+
 	dev_pm_set_driver_flags(&pdev->dev, pdev->dev.power.driver_flags |
 				DPM_FLAG_NO_DIRECT_COMPLETE);
 
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + DISABLE_ASPM_LOWPWR);
+	atomic_set(&t7xx_dev->md_pm_state, MTK_PM_INIT);
+
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_SET_0);
 	pm_runtime_set_autosuspend_delay(&pdev->dev, PM_AUTOSUSPEND_MS);
 	pm_runtime_use_autosuspend(&pdev->dev);
 
@@ -118,7 +124,7 @@ void t7xx_pci_pm_init_late(struct t7xx_pci_dev *t7xx_dev)
 			     D2H_INT_RESUME_ACK |
 			     D2H_INT_SUSPEND_ACK_AP |
 			     D2H_INT_RESUME_ACK_AP);
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
 	atomic_set(&t7xx_dev->md_pm_state, MTK_PM_RESUMED);
 
 	pm_runtime_put_noidle(&t7xx_dev->pdev->dev);
@@ -133,13 +139,13 @@ static int t7xx_pci_pm_reinit(struct t7xx_pci_dev *t7xx_dev)
 
 	pm_runtime_get_noresume(&t7xx_dev->pdev->dev);
 
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + DISABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_SET_0);
 	return t7xx_wait_pm_config(t7xx_dev);
 }
 
 void t7xx_pci_pm_exp_detected(struct t7xx_pci_dev *t7xx_dev)
 {
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + DISABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_SET_0);
 	t7xx_wait_pm_config(t7xx_dev);
 	atomic_set(&t7xx_dev->md_pm_state, MTK_PM_EXCEPTION);
 }
@@ -205,29 +211,30 @@ void t7xx_pci_disable_sleep(struct t7xx_pci_dev *t7xx_dev)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&t7xx_dev->md_pm_lock, flags);
-	t7xx_dev->sleep_disable_count++;
-	if (atomic_read(&t7xx_dev->md_pm_state) < MTK_PM_RESUMED)
-		goto unlock_and_complete;
+	if (atomic_read(&t7xx_dev->md_pm_state) < MTK_PM_RESUMED) {
+		atomic_inc(&t7xx_dev->sleep_disable_count);
+		complete_all(&t7xx_dev->sleep_lock_acquire);
+		return;
+	}
 
-	if (t7xx_dev->sleep_disable_count == 1) {
-		u32 status;
+	spin_lock_irqsave(&t7xx_dev->md_pm_lock, flags);
+	if (atomic_inc_return(&t7xx_dev->sleep_disable_count) == 1) {
+		u32 deep_sleep_enabled;
 
 		reinit_completion(&t7xx_dev->sleep_lock_acquire);
 		t7xx_dev_set_sleep_capability(t7xx_dev, false);
 
-		status = ioread32(IREG_BASE(t7xx_dev) + T7XX_PCIE_RESOURCE_STATUS);
-		if (status & T7XX_PCIE_RESOURCE_STS_MSK)
-			goto unlock_and_complete;
+		deep_sleep_enabled = ioread32(IREG_BASE(t7xx_dev) + T7XX_PCIE_RESOURCE_STATUS);
+		deep_sleep_enabled &= T7XX_PCIE_RESOURCE_STS_MSK;
+		if (deep_sleep_enabled) {
+			spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
+			complete_all(&t7xx_dev->sleep_lock_acquire);
+			return;
+		}
 
 		t7xx_mhccif_h2d_swint_trigger(t7xx_dev, H2D_CH_DS_LOCK);
 	}
 	spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
-	return;
-
-unlock_and_complete:
-	spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
-	complete_all(&t7xx_dev->sleep_lock_acquire);
 }
 
 /**
@@ -240,16 +247,16 @@ void t7xx_pci_enable_sleep(struct t7xx_pci_dev *t7xx_dev)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&t7xx_dev->md_pm_lock, flags);
-	t7xx_dev->sleep_disable_count--;
 	if (atomic_read(&t7xx_dev->md_pm_state) < MTK_PM_RESUMED) {
-		spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
+		atomic_dec(&t7xx_dev->sleep_disable_count);
 		return;
 	}
 
-	if (t7xx_dev->sleep_disable_count == 0)
+	if (atomic_dec_and_test(&t7xx_dev->sleep_disable_count)) {
+		spin_lock_irqsave(&t7xx_dev->md_pm_lock, flags);
 		t7xx_dev_set_sleep_capability(t7xx_dev, true);
-	spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
+		spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
+	}
 }
 
 static int t7xx_send_pm_request(struct t7xx_pci_dev *t7xx_dev, u32 request)
@@ -279,10 +286,10 @@ static int __t7xx_pci_pm_suspend(struct pci_dev *pdev)
 		return -EFAULT;
 	}
 
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + DISABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_SET_0);
 	ret = t7xx_wait_pm_config(t7xx_dev);
 	if (ret) {
-		iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
+		iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
 		return ret;
 	}
 
@@ -320,7 +327,7 @@ static int __t7xx_pci_pm_suspend(struct pci_dev *pdev)
 			entity->suspend_late(t7xx_dev, entity->entity_param);
 	}
 
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
 	return 0;
 
 abort_suspend:
@@ -332,7 +339,7 @@ abort_suspend:
 			entity->resume(t7xx_dev, entity->entity_param);
 	}
 
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
 	atomic_set(&t7xx_dev->md_pm_state, MTK_PM_RESUMED);
 	t7xx_pcie_mac_set_int(t7xx_dev, SAP_RGU_INT);
 	return ret;
@@ -409,7 +416,7 @@ static int __t7xx_pci_pm_resume(struct pci_dev *pdev, bool state_check)
 
 	t7xx_dev = pci_get_drvdata(pdev);
 	if (atomic_read(&t7xx_dev->md_pm_state) <= MTK_PM_INIT) {
-		iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
+		iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
 		return 0;
 	}
 
@@ -477,7 +484,7 @@ static int __t7xx_pci_pm_resume(struct pci_dev *pdev, bool state_check)
 		}
 	}
 
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + DISABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_SET_0);
 	t7xx_wait_pm_config(t7xx_dev);
 
 	list_for_each_entry(entity, &t7xx_dev->md_pm_entities, entity) {
@@ -504,7 +511,7 @@ static int __t7xx_pci_pm_resume(struct pci_dev *pdev, bool state_check)
 
 	t7xx_dev->rgu_pci_irq_en = true;
 	t7xx_pcie_mac_set_int(t7xx_dev, SAP_RGU_INT);
-	iowrite32(T7XX_L1_BIT(0), IREG_BASE(t7xx_dev) + ENABLE_ASPM_LOWPWR);
+	iowrite32(L1_DISABLE_BIT(0), IREG_BASE(t7xx_dev) + DIS_ASPM_LOWPWR_CLR_0);
 	pm_runtime_mark_last_busy(&pdev->dev);
 	atomic_set(&t7xx_dev->md_pm_state, MTK_PM_RESUMED);
 
@@ -643,7 +650,7 @@ static int t7xx_interrupt_init(struct t7xx_pci_dev *t7xx_dev)
 
 	/* IPs enable interrupts when ready */
 	for (i = 0; i < EXT_INT_NUM; i++)
-		t7xx_pcie_mac_set_int(t7xx_dev, i);
+		t7xx_pcie_mac_clear_int(t7xx_dev, i);
 
 	return 0;
 }
