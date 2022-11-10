@@ -246,6 +246,9 @@ static void mei_gsc_mkhi_ver(struct mei_cl_device *cldev)
 	 */
 	if (!cldev->bus->fw_f_fw_ver_supported || cldev->bus->fw_ver_received)
 		return;
+	/* Force-wake races with this call */
+	if (cldev->bus->forcewake_needed)
+		return;
 
 	ret = mei_cldev_enable(cldev);
 	if (ret)
