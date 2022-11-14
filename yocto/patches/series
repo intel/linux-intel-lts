@@ -42,3 +42,9 @@
 
 # CVE-2022-3594
 0001-r8152-Rate-limit-overflow-messages.patch
+
+# CVE-2022-3623
+0001-mm-hugetlb-fix-races-when-looking-up-a-CONT-PTE-PMD-.patch
+
+# CVE-2022-43750
+0001-usb-mon-make-mmapped-memory-read-only.patch
