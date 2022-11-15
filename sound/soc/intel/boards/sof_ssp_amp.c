@@ -422,6 +422,7 @@ static int sof_ssp_amp_probe(struct platform_device *pdev)
 	if (sof_ssp_amp_quirk & SOF_SSP_BT_OFFLOAD_PRESENT)
 		sof_ssp_amp_card.num_links++;
 
+
 	dai_links = sof_card_dai_links_create(&pdev->dev, ssp_codec, dmic_be_num, hdmi_num, ctx->idisp_codec);
 	if (!dai_links)
 		return -ENOMEM;
@@ -461,6 +462,8 @@ static const struct platform_device_id board_ids[] = {
 					SOF_HDMI_CAPTURE_1_SSP(1) |
 					SOF_HDMI_CAPTURE_2_SSP(5) |
 					SOF_SSP_HDMI_CAPTURE_PRESENT |
+					SOF_NO_OF_HDMI_PLAYBACK(3) |
+					SOF_HDMI_PLAYBACK_PRESENT |
 					SOF_RT1308_SPEAKER_AMP_PRESENT),
 	},
 	{
