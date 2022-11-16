@@ -216,6 +216,32 @@ EXPORT_SYMBOL_GPL(rcu_inkernel_boot_has_ended);
 
 #endif /* #ifndef CONFIG_TINY_RCU */
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+/*
+ * Prepare for taking the RCU read lock when running out-of-band. Nop
+ * otherwise.
+ */
+void rcu_oob_prepare_lock(void)
+{
+	if (!on_pipeline_entry() && running_oob())
+		rcu_nmi_enter();
+}
+EXPORT_SYMBOL_GPL(rcu_oob_prepare_lock);
+
+/*
+ * Converse to rcu_oob_prepare_lock(), after dropping the RCU read
+ * lock.
+ */
+void rcu_oob_finish_lock(void)
+{
+	if (!on_pipeline_entry() && running_oob())
+		rcu_nmi_exit();
+}
+EXPORT_SYMBOL_GPL(rcu_oob_finish_lock);
+
+#endif	/* CONFIG_IRQ_PIPELINE */
+
 /*
  * Test each non-SRCU synchronous grace-period wait API.  This is
  * useful just after a change in mode for these primitives, and
