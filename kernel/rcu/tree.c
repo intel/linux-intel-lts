@@ -1113,11 +1113,8 @@ notrace bool rcu_is_watching(void)
 	bool ret;
 
 	if (on_pipeline_entry())
-		return true;
-
-	if (running_oob())
-		return false;
-
+ 		return true;
+ 
 	preempt_disable_notrace();
 	ret = !rcu_dynticks_curr_cpu_in_eqs();
 	preempt_enable_notrace();
