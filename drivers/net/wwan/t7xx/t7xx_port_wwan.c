@@ -55,7 +55,7 @@ static int t7xx_port_ctrl_tx(struct wwan_port *port, struct sk_buff *skb)
 {
 	struct t7xx_port *port_private = wwan_port_get_drvdata(port);
 	size_t len, offset, chunk_len = 0, txq_mtu = CLDMA_MTU;
-	struct t7xx_port_conf *port_conf;
+	const struct t7xx_port_conf *port_conf;
 	struct t7xx_fsm_ctl *ctl;
 	enum md_state md_state;
 
@@ -109,15 +109,10 @@ static int t7xx_port_wwan_init(struct t7xx_port *port)
 
 static void t7xx_port_wwan_uninit(struct t7xx_port *port)
 {
-	unsigned long flags;
-
 	if (!port->wwan_port)
 		return;
 
-	spin_lock_irqsave(&port->rx_wq.lock, flags);
 	port->rx_length_th = 0;
-	spin_unlock_irqrestore(&port->rx_wq.lock, flags);
-
 	wwan_remove_port(port->wwan_port);
 	port->wwan_port = NULL;
 }
@@ -125,11 +120,12 @@ static void t7xx_port_wwan_uninit(struct t7xx_port *port)
 static int t7xx_port_wwan_recv_skb(struct t7xx_port *port, struct sk_buff *skb)
 {
 	if (!atomic_read(&port->usage_cnt) || !port->chan_enable) {
-		struct t7xx_port_conf *port_conf = port->port_conf;
+		const struct t7xx_port_conf *port_conf = port->port_conf;
 
 		dev_kfree_skb_any(skb);
 		dev_err_ratelimited(port->dev, "Port %s is not opened, drop packets\n",
 				    port_conf->name);
+		/* Dropping skb, caller should not access skb.*/
 		return 0;
 	}
 
@@ -157,7 +153,7 @@ static int t7xx_port_wwan_disable_chl(struct t7xx_port *port)
 
 static void t7xx_port_wwan_md_state_notify(struct t7xx_port *port, unsigned int state)
 {
-	struct t7xx_port_conf *port_conf = port->port_conf;
+	const struct t7xx_port_conf *port_conf = port->port_conf;
 
 	if (state != MD_STATE_READY)
 		return;

@@ -382,7 +382,7 @@ static int t7xx_prepare_device_rt_data(struct t7xx_sys_info *core, struct device
 	if (!skb)
 		return -ENOMEM;
 
-	rt_feature  = skb_put(skb, rt_data_len);
+	rt_feature = skb_put(skb, rt_data_len);
 	memset(rt_feature, 0, rt_data_len);
 
 	/* Fill runtime feature */

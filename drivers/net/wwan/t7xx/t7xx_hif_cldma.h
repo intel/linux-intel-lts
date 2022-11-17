@@ -43,8 +43,20 @@ enum cldma_id {
 	CLDMA_NUM
 };
 
+struct cldma_gpd {
+	u8 flags;
+	u8 not_used1;
+	__le16 rx_data_allow_len;
+	__le32 next_gpd_ptr_h;
+	__le32 next_gpd_ptr_l;
+	__le32 data_buff_bd_ptr_h;
+	__le32 data_buff_bd_ptr_l;
+	__le16 data_buff_len;
+	__le16 not_used2;
+};
+
 struct cldma_request {
-	void *gpd;		/* Virtual address for CPU */
+	struct cldma_gpd *gpd;	/* Virtual address for CPU */
 	dma_addr_t gpd_addr;	/* Physical address for DMA */
 	struct sk_buff *skb;
 	dma_addr_t mapped_buff;
@@ -97,32 +109,6 @@ struct cldma_ctrl {
 #define GPD_DMAPOOL_ALIGN	16
 
 #define CLDMA_MTU		3584	/* 3.5kB */
-
-struct cldma_tgpd {
-	u8 gpd_flags;
-	u8 not_used1;
-	u8 not_used2;
-	u8 debug_id;
-	__le32 next_gpd_ptr_h;
-	__le32 next_gpd_ptr_l;
-	__le32 data_buff_bd_ptr_h;
-	__le32 data_buff_bd_ptr_l;
-	__le16 data_buff_len;
-	__le16 not_used3;
-};
-
-struct cldma_rgpd {
-	u8 gpd_flags;
-	u8 not_used1;
-	__le16 data_allow_len;
-	__le32 next_gpd_ptr_h;
-	__le32 next_gpd_ptr_l;
-	__le32 data_buff_bd_ptr_h;
-	__le32 data_buff_bd_ptr_l;
-	__le16 data_buff_len;
-	u8 not_used2;
-	u8 debug_id;
-};
 
 int t7xx_cldma_alloc(enum cldma_id hif_id, struct t7xx_pci_dev *t7xx_dev);
 void t7xx_cldma_hif_hw_init(struct cldma_ctrl *md_ctrl);

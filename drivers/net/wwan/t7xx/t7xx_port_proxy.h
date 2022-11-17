@@ -32,11 +32,11 @@
 #define CTRL_QUEUE_MAXLEN	16
 
 struct port_proxy {
-	int				port_number;
-	struct list_head		rx_ch_ports[PORT_CH_ID_MASK + 1];
-	struct list_head		queue_ports[CLDMA_NUM][MTK_QUEUES];
-	struct device			*dev;
-	struct t7xx_port		ports[];
+	int			port_count;
+	struct list_head	rx_ch_ports[PORT_CH_ID_MASK + 1];
+	struct list_head	queue_ports[CLDMA_NUM][MTK_QUEUES];
+	struct device		*dev;
+	struct t7xx_port	ports[];
 };
 
 struct ccci_header {
@@ -91,7 +91,7 @@ void t7xx_port_proxy_reset(struct port_proxy *port_prox);
 void t7xx_port_proxy_uninit(struct port_proxy *port_prox);
 int t7xx_port_proxy_init(struct t7xx_modem *md);
 void t7xx_port_proxy_md_status_notify(struct port_proxy *port_prox, unsigned int state);
-int t7xx_port_enum_msg_handler(struct t7xx_modem *md,  void *msg);
+int t7xx_port_enum_msg_handler(struct t7xx_modem *md, void *msg);
 int t7xx_port_proxy_chl_enable_disable(struct port_proxy *port_prox, unsigned int ch_id,
 				       bool en_flag);
 

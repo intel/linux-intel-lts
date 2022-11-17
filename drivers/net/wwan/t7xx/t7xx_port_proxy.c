@@ -45,10 +45,10 @@
 
 #define for_each_proxy_port(i, p, proxy)	\
 	for (i = 0, (p) = &(proxy)->ports[i];	\
-	     i < (proxy)->port_number;		\
+	     i < (proxy)->port_count;		\
 	     i++, (p) = &(proxy)->ports[i])
 
-static struct t7xx_port_conf t7xx_md_port_conf[] = {
+static const struct t7xx_port_conf t7xx_md_port_conf[] = {
 	{
 		.tx_ch = PORT_CH_UART2_TX,
 		.rx_ch = PORT_CH_UART2_RX,
@@ -82,7 +82,7 @@ static struct t7xx_port_conf t7xx_md_port_conf[] = {
 
 static struct t7xx_port *t7xx_proxy_get_port_by_ch(struct port_proxy *port_prox, enum port_ch ch)
 {
-	struct t7xx_port_conf *port_conf;
+	const struct t7xx_port_conf *port_conf;
 	struct t7xx_port *port;
 	int i;
 
@@ -97,12 +97,13 @@ static struct t7xx_port *t7xx_proxy_get_port_by_ch(struct port_proxy *port_prox,
 
 static u16 t7xx_port_next_rx_seq_num(struct t7xx_port *port, struct ccci_header *ccci_h)
 {
+	u32 status = le32_to_cpu(ccci_h->status);
 	u16 seq_num, next_seq_num;
 	bool assert_bit;
 
-	seq_num = FIELD_GET(CCCI_H_SEQ_FLD, le32_to_cpu(ccci_h->status));
+	seq_num = FIELD_GET(CCCI_H_SEQ_FLD, status);
 	next_seq_num = (seq_num + 1) & FIELD_MAX(CCCI_H_SEQ_FLD);
-	assert_bit = !!(le32_to_cpu(ccci_h->status) & CCCI_H_AST_BIT);
+	assert_bit = status & CCCI_H_AST_BIT;
 	if (!assert_bit || port->seq_nums[MTK_RX] == INVALID_SEQ_NUM)
 		return next_seq_num;
 
@@ -129,7 +130,7 @@ void t7xx_port_proxy_reset(struct port_proxy *port_prox)
 
 static int t7xx_port_get_queue_no(struct t7xx_port *port)
 {
-	struct t7xx_port_conf *port_conf = port->port_conf;
+	const struct t7xx_port_conf *port_conf = port->port_conf;
 	struct t7xx_fsm_ctl *ctl = port->t7xx_dev->md->fsm_ctl;
 
 	return t7xx_fsm_get_md_state(ctl) == MD_STATE_EXCEPTION ?
@@ -174,7 +175,7 @@ struct sk_buff *t7xx_ctrl_alloc_skb(int payload)
  *
  * Return:
  * * 0		- Success.
- * * -ENOBUFS	- Not enough buffer space.
+ * * -ENOBUFS	- Not enough buffer space. Caller will try again later, skb is not consumed.
  */
 int t7xx_port_enqueue_skb(struct t7xx_port *port, struct sk_buff *skb)
 {
@@ -211,7 +212,7 @@ static int t7xx_port_send_raw_skb(struct t7xx_port *port, struct sk_buff *skb)
 static int t7xx_port_send_ccci_skb(struct t7xx_port *port, struct sk_buff *skb,
 				   unsigned int pkt_header, unsigned int ex_msg)
 {
-	struct t7xx_port_conf *port_conf = port->port_conf;
+	const struct t7xx_port_conf *port_conf = port->port_conf;
 	struct ccci_header *ccci_h;
 	u32 status;
 	int ret;
@@ -258,7 +259,7 @@ int t7xx_port_send_skb(struct t7xx_port *port, struct sk_buff *skb, unsigned int
 
 	fsm_state = t7xx_fsm_get_ctl_state(ctl);
 	if (fsm_state != FSM_STATE_PRE_START) {
-		struct t7xx_port_conf *port_conf = port->port_conf;
+		const struct t7xx_port_conf *port_conf = port->port_conf;
 		enum md_state md_state = t7xx_fsm_get_md_state(ctl);
 
 		switch (md_state) {
@@ -297,7 +298,7 @@ static void t7xx_proxy_setup_ch_mapping(struct port_proxy *port_prox)
 	}
 
 	for_each_proxy_port(i, port, port_prox) {
-		struct t7xx_port_conf *port_conf = port->port_conf;
+		const struct t7xx_port_conf *port_conf = port->port_conf;
 		enum cldma_id path_id = port_conf->path_id;
 		u8 ch_id;
 
@@ -319,7 +320,7 @@ static struct t7xx_port *t7xx_port_proxy_find_port(struct t7xx_pci_dev *t7xx_dev
 	ch_id = FIELD_GET(PORT_CH_ID_MASK, channel);
 	port_list = &port_prox->rx_ch_ports[ch_id];
 	list_for_each_entry(port, port_list, entry) {
-		struct t7xx_port_conf *port_conf = port->port_conf;
+		const struct t7xx_port_conf *port_conf = port->port_conf;
 
 		if (queue->md_ctrl->hif_id == port_conf->path_id &&
 		    channel == port_conf->rx_ch)
@@ -344,7 +345,7 @@ static int t7xx_port_proxy_recv_skb(struct cldma_queue *queue, struct sk_buff *s
 	struct t7xx_pci_dev *t7xx_dev = queue->md_ctrl->t7xx_dev;
 	struct t7xx_fsm_ctl *ctl = t7xx_dev->md->fsm_ctl;
 	struct device *dev = queue->md_ctrl->dev;
-	struct t7xx_port_conf *port_conf;
+	const struct t7xx_port_conf *port_conf;
 	struct t7xx_port *port;
 	u16 seq_num, channel;
 	int ret;
@@ -366,6 +367,7 @@ static int t7xx_port_proxy_recv_skb(struct cldma_queue *queue, struct sk_buff *s
 	skb_pull(skb, sizeof(*ccci_h));
 
 	ret = port_conf->ops->recv_skb(port, skb);
+	/* Error indicates to try again later */
 	if (ret) {
 		skb_push(skb, sizeof(*ccci_h));
 		return ret;
@@ -393,7 +395,7 @@ void t7xx_port_proxy_md_status_notify(struct port_proxy *port_prox, unsigned int
 	int i;
 
 	for_each_proxy_port(i, port, port_prox) {
-		struct t7xx_port_conf *port_conf = port->port_conf;
+		const struct t7xx_port_conf *port_conf = port->port_conf;
 
 		if (port_conf->ops->md_state_notify)
 			port_conf->ops->md_state_notify(port, state);
@@ -407,7 +409,7 @@ static void t7xx_proxy_init_all_ports(struct t7xx_modem *md)
 	int i;
 
 	for_each_proxy_port(i, port, port_prox) {
-		struct t7xx_port_conf *port_conf = port->port_conf;
+		const struct t7xx_port_conf *port_conf = port->port_conf;
 
 		t7xx_port_struct_init(port);
 
@@ -428,12 +430,12 @@ static void t7xx_proxy_init_all_ports(struct t7xx_modem *md)
 
 static int t7xx_proxy_alloc(struct t7xx_modem *md)
 {
-	unsigned int port_number = ARRAY_SIZE(t7xx_md_port_conf);
+	unsigned int port_count = ARRAY_SIZE(t7xx_md_port_conf);
 	struct device *dev = &md->t7xx_dev->pdev->dev;
 	struct port_proxy *port_prox;
 	int i;
 
-	port_prox = devm_kzalloc(dev, sizeof(*port_prox) + sizeof(struct t7xx_port) * port_number,
+	port_prox = devm_kzalloc(dev, sizeof(*port_prox) + sizeof(struct t7xx_port) * port_count,
 				 GFP_KERNEL);
 	if (!port_prox)
 		return -ENOMEM;
@@ -441,10 +443,10 @@ static int t7xx_proxy_alloc(struct t7xx_modem *md)
 	md->port_prox = port_prox;
 	port_prox->dev = dev;
 
-	for (i = 0; i < port_number; i++)
+	for (i = 0; i < port_count; i++)
 		port_prox->ports[i].port_conf = &t7xx_md_port_conf[i];
 
-	port_prox->port_number = port_number;
+	port_prox->port_count = port_count;
 	t7xx_proxy_init_all_ports(md);
 	return 0;
 }
@@ -477,7 +479,7 @@ void t7xx_port_proxy_uninit(struct port_proxy *port_prox)
 	int i;
 
 	for_each_proxy_port(i, port, port_prox) {
-		struct t7xx_port_conf *port_conf = port->port_conf;
+		const struct t7xx_port_conf *port_conf = port->port_conf;
 
 		if (port_conf->ops->uninit)
 			port_conf->ops->uninit(port);
@@ -488,7 +490,7 @@ int t7xx_port_proxy_chl_enable_disable(struct port_proxy *port_prox, unsigned in
 				       bool en_flag)
 {
 	struct t7xx_port *port = t7xx_proxy_get_port_by_ch(port_prox, ch_id);
-	struct t7xx_port_conf *port_conf;
+	const struct t7xx_port_conf *port_conf;
 
 	if (!port)
 		return -EINVAL;

@@ -147,7 +147,7 @@ int t7xx_port_enum_msg_handler(struct t7xx_modem *md, void *msg)
 		bool en_flag;
 
 		ch_id = FIELD_GET(PORT_INFO_CH_ID, port_info);
-		en_flag = !!(port_info & PORT_INFO_ENFLG);
+		en_flag = port_info & PORT_INFO_ENFLG;
 		if (t7xx_port_proxy_chl_enable_disable(md->port_prox, ch_id, en_flag))
 			dev_dbg(dev, "Port:%x not found\n", ch_id);
 	}
@@ -157,8 +157,8 @@ int t7xx_port_enum_msg_handler(struct t7xx_modem *md, void *msg)
 
 static int control_msg_handler(struct t7xx_port *port, struct sk_buff *skb)
 {
+	const struct t7xx_port_conf *port_conf = port->port_conf;
 	struct t7xx_fsm_ctl *ctl = port->t7xx_dev->md->fsm_ctl;
-	struct t7xx_port_conf *port_conf = port->port_conf;
 	struct ctrl_msg_header *ctrl_msg_h;
 	int ret = 0;
 
@@ -239,7 +239,7 @@ static int port_ctl_rx_thread(void *arg)
 
 static int port_ctl_init(struct t7xx_port *port)
 {
-	struct t7xx_port_conf *port_conf = port->port_conf;
+	const struct t7xx_port_conf *port_conf = port->port_conf;
 
 	port->thread = kthread_run(port_ctl_rx_thread, port, "%s", port_conf->name);
 	if (IS_ERR(port->thread)) {

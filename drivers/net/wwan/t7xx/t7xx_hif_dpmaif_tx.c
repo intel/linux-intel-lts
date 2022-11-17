@@ -241,6 +241,7 @@ static void t7xx_record_drb_skb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int q_
 
 static int t7xx_dpmaif_add_skb_to_ring(struct dpmaif_ctrl *dpmaif_ctrl, struct sk_buff *skb)
 {
+	struct dpmaif_callbacks *cb = dpmaif_ctrl->callbacks;
 	unsigned int wr_cnt, send_cnt, payload_cnt;
 	unsigned int cur_idx, drb_wr_idx_backup;
 	struct skb_shared_info *shinfo;
@@ -307,7 +308,9 @@ static int t7xx_dpmaif_add_skb_to_ring(struct dpmaif_ctrl *dpmaif_ctrl, struct s
 		spin_unlock_irqrestore(&txq->tx_lock, flags);
 	}
 
-	atomic_sub(send_cnt, &txq->tx_budget);
+	if (atomic_sub_return(send_cnt, &txq->tx_budget) <= (MAX_SKB_FRAGS + 2))
+		cb->state_notify(dpmaif_ctrl->t7xx_dev, DMPAIF_TXQ_STATE_FULL, txq->index);
+
 	atomic_set(&txq->tx_processing, 0);
 
 	return 0;
@@ -497,37 +500,28 @@ void t7xx_dpmaif_tx_thread_rel(struct dpmaif_ctrl *dpmaif_ctrl)
  *
  * Return:
  * * 0		- Success.
- * * -ERROR	- Error code from failure sub-initializations.
+ * * -EBUSY	- Tx budget exhausted.
+ *		  In normal circumstances t7xx_dpmaif_add_skb_to_ring() must report the txq full
+ *		  state to prevent this error condition.
  */
 int t7xx_dpmaif_tx_send_skb(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int txq_number,
 			    struct sk_buff *skb)
 {
 	struct dpmaif_tx_queue *txq = &dpmaif_ctrl->txq[txq_number];
-	struct dpmaif_callbacks *callbacks;
+	struct dpmaif_callbacks *cb = dpmaif_ctrl->callbacks;
 	struct t7xx_skb_cb *skb_cb;
 
-	if (!(txq->tx_skb_stat++ % DPMAIF_SKB_TX_BURST_CNT)) {
-		unsigned int send_drb_cnt, drb_available_cnt;
-
-		send_drb_cnt = t7xx_skb_drb_cnt(skb);
-		drb_available_cnt = t7xx_txq_drb_wr_available(txq);
-		if (drb_available_cnt < send_drb_cnt)
-			goto report_full_state;
+	if (atomic_read(&txq->tx_budget) <= t7xx_skb_drb_cnt(skb)) {
+		cb->state_notify(dpmaif_ctrl->t7xx_dev, DMPAIF_TXQ_STATE_FULL, txq_number);
+		return -EBUSY;
 	}
-
-	if (txq->tx_skb_head.qlen >= txq->tx_list_max_len)
-		goto report_full_state;
 
 	skb_cb = T7XX_SKB_CB(skb);
 	skb_cb->txq_number = txq_number;
 	skb_queue_tail(&txq->tx_skb_head, skb);
 	wake_up(&dpmaif_ctrl->tx_wq);
-	return 0;
 
-report_full_state:
-	callbacks = dpmaif_ctrl->callbacks;
-	callbacks->state_notify(dpmaif_ctrl->t7xx_dev, DMPAIF_TXQ_STATE_FULL, txq_number);
-	return -EBUSY;
+	return 0;
 }
 
 void t7xx_dpmaif_irq_tx_done(struct dpmaif_ctrl *dpmaif_ctrl, unsigned int que_mask)
@@ -615,8 +609,6 @@ int t7xx_dpmaif_txq_init(struct dpmaif_tx_queue *txq)
 	int ret;
 
 	skb_queue_head_init(&txq->tx_skb_head);
-	txq->tx_skb_stat = 0;
-	txq->tx_list_max_len = DPMAIF_DRB_LIST_LEN / 2;
 	init_waitqueue_head(&txq->req_wq);
 	atomic_set(&txq->tx_budget, DPMAIF_DRB_LIST_LEN);
 
@@ -659,7 +651,7 @@ void t7xx_dpmaif_tx_stop(struct dpmaif_ctrl *dpmaif_ctrl)
 		/* Make sure TXQ is disabled */
 		smp_mb();
 
-		/* Wait for active Tx to be doneg */
+		/* Wait for active Tx to be done */
 		while (atomic_read(&txq->tx_processing)) {
 			if (++count >= DPMAIF_MAX_CHECK_COUNT) {
 				dev_err(dpmaif_ctrl->dev, "TX queue stop failed\n");

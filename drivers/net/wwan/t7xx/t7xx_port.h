@@ -31,10 +31,6 @@
 #include "t7xx_hif_cldma.h"
 #include "t7xx_pci.h"
 
-/* Reused for net TX, Data queue, same bit as RX_FULLED */
-#define PORT_F_TX_DATA_FULLED	BIT(1)
-#define PORT_F_TX_ACK_FULLED	BIT(8)
-
 #define PORT_CH_ID_MASK		GENMASK(7, 0)
 
 /* Channel ID and Message ID definitions.
@@ -102,14 +98,14 @@ struct t7xx_port_conf {
 
 struct t7xx_port {
 	/* Members not initialized in definition */
-	struct t7xx_port_conf	*port_conf;
-	struct wwan_port	*wwan_port;
-	struct t7xx_pci_dev	*t7xx_dev;
-	struct device		*dev;
-	u16			seq_nums[2];	/* TX/RX sequence numbers */
-	atomic_t		usage_cnt;
-	struct			list_head entry;
-	struct			list_head queue_entry;
+	const struct t7xx_port_conf	*port_conf;
+	struct wwan_port		*wwan_port;
+	struct t7xx_pci_dev		*t7xx_dev;
+	struct device			*dev;
+	u16				seq_nums[2];	/* TX/RX sequence numbers */
+	atomic_t			usage_cnt;
+	struct				list_head entry;
+	struct				list_head queue_entry;
 	/* TX and RX flows are asymmetric since ports are multiplexed on
 	 * queues.
 	 *
@@ -120,12 +116,12 @@ struct t7xx_port {
 	 * RX: Each port uses a RX list to hold packets,
 	 * allowing the modem to dispatch RX packet as quickly as possible.
 	 */
-	struct sk_buff_head	rx_skb_list;
-	spinlock_t		port_update_lock; /* Protects port configuration */
-	wait_queue_head_t	rx_wq;
-	int			rx_length_th;
-	bool			chan_enable;
-	struct task_struct	*thread;
+	struct sk_buff_head		rx_skb_list;
+	spinlock_t			port_update_lock; /* Protects port configuration */
+	wait_queue_head_t		rx_wq;
+	int				rx_length_th;
+	bool				chan_enable;
+	struct task_struct		*thread;
 };
 
 struct sk_buff *t7xx_port_alloc_skb(int payload);

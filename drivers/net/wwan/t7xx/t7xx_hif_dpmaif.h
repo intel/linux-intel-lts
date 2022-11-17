@@ -144,8 +144,6 @@ struct dpmaif_tx_queue {
 
 	struct dpmaif_ctrl	*dpmaif_ctrl;
 	struct sk_buff_head	tx_skb_head;
-	unsigned int		tx_list_max_len;
-	unsigned int		tx_skb_stat;
 };
 
 struct dpmaif_isr_para {

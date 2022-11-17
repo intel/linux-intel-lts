@@ -32,14 +32,13 @@ struct dpmaif_drb {
 		struct {
 			__le32 data_addr_l;
 			__le32 data_addr_h;
-			__le32 reserved;
 		} pd;
 		struct {
 			__le32 msg_hdr;
 			__le32 reserved1;
-			__le32 reserved2;
 		} msg;
 	};
+	__le32 reserved2;
 };
 
 /* Header fields */

@@ -242,13 +242,13 @@ void t7xx_pci_enable_sleep(struct t7xx_pci_dev *t7xx_dev)
 
 	spin_lock_irqsave(&t7xx_dev->md_pm_lock, flags);
 	t7xx_dev->sleep_disable_count--;
-	if (atomic_read(&t7xx_dev->md_pm_state) < MTK_PM_RESUMED) {
-		spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
-		return;
-	}
+	if (atomic_read(&t7xx_dev->md_pm_state) < MTK_PM_RESUMED)
+		goto unlock;
 
 	if (t7xx_dev->sleep_disable_count == 0)
 		t7xx_dev_set_sleep_capability(t7xx_dev, true);
+
+unlock:
 	spin_unlock_irqrestore(&t7xx_dev->md_pm_lock, flags);
 }
 
