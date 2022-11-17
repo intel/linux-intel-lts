@@ -1,0 +1,48 @@
+From 97192a4845d449affca6a4bc778180dd36c67eb0 Mon Sep 17 00:00:00 2001
+From: Chuck Lever <chuck.lever@oracle.com>
+Date: Thu, 1 Sep 2022 15:10:18 -0400
+Subject: [PATCH 2/6] NFSD: Protect against send buffer overflow in NFSv2 READ
+
+commit 401bc1f90874280a80b93f23be33a0e7e2d1f912 upstream.
+
+Since before the git era, NFSD has conserved the number of pages
+held by each nfsd thread by combining the RPC receive and send
+buffers into a single array of pages. This works because there are
+no cases where an operation needs a large RPC Call message and a
+large RPC Reply at the same time.
+
+Once an RPC Call has been received, svc_process() updates
+svc_rqst::rq_res to describe the part of rq_pages that can be
+used for constructing the Reply. This means that the send buffer
+(rq_res) shrinks when the received RPC record containing the RPC
+Call is large.
+
+A client can force this shrinkage on TCP by sending a correctly-
+formed RPC Call header contained in an RPC record that is
+excessively large. The full maximum payload size cannot be
+constructed in that case.
+
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+Reviewed-by: Jeff Layton <jlayton@kernel.org>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/nfsd/nfsproc.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/nfsd/nfsproc.c b/fs/nfsd/nfsproc.c
+index 9700ad433b49..081cca405983 100644
+--- a/fs/nfsd/nfsproc.c
++++ b/fs/nfsd/nfsproc.c
+@@ -182,6 +182,7 @@ nfsd_proc_read(struct svc_rqst *rqstp)
+ 		argp->count, argp->offset);
+ 
+ 	argp->count = min_t(u32, argp->count, NFSSVC_MAXBLKSIZE_V2);
++	argp->count = min_t(u32, argp->count, rqstp->rq_res.buflen);
+ 
+ 	v = 0;
+ 	len = argp->count;
+-- 
+2.25.1
+

@@ -1,0 +1,42 @@
+From 312077731117aad77bd0eeec053ae0600da63a9e Mon Sep 17 00:00:00 2001
+From: Chuck Lever <chuck.lever@oracle.com>
+Date: Thu, 1 Sep 2022 15:10:05 -0400
+Subject: [PATCH 4/6] NFSD: Protect against send buffer overflow in NFSv2
+ READDIR
+
+[ Upstream commit 00b4492686e0497fdb924a9d4c8f6f99377e176c ]
+
+Restore the previous limit on the @count argument to prevent a
+buffer overflow attack.
+
+Fixes: 53b1119a6e50 ("NFSD: Fix READDIR buffer overflow")
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+Reviewed-by: Jeff Layton <jlayton@kernel.org>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ fs/nfsd/nfsproc.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/nfsd/nfsproc.c b/fs/nfsd/nfsproc.c
+index 081cca405983..b009da1dcbb5 100644
+--- a/fs/nfsd/nfsproc.c
++++ b/fs/nfsd/nfsproc.c
+@@ -557,12 +557,11 @@ static void nfsd_init_dirlist_pages(struct svc_rqst *rqstp,
+ 	struct xdr_buf *buf = &resp->dirlist;
+ 	struct xdr_stream *xdr = &resp->xdr;
+ 
+-	count = clamp(count, (u32)(XDR_UNIT * 2), svc_max_payload(rqstp));
+-
+ 	memset(buf, 0, sizeof(*buf));
+ 
+ 	/* Reserve room for the NULL ptr & eof flag (-2 words) */
+-	buf->buflen = count - XDR_UNIT * 2;
++	buf->buflen = clamp(count, (u32)(XDR_UNIT * 2), (u32)PAGE_SIZE);
++	buf->buflen -= XDR_UNIT * 2;
+ 	buf->pages = rqstp->rq_next_page;
+ 	rqstp->rq_next_page++;
+ 
+-- 
+2.25.1
+
