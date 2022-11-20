@@ -1173,7 +1173,6 @@ static void __dss_uninit_ports(struct dss_device *dss, unsigned int num_ports)
 		default:
 			break;
 		}
-		of_node_put(port);
 	}
 }
 
@@ -1206,13 +1205,11 @@ static int dss_init_ports(struct dss_device *dss)
 		default:
 			break;
 		}
-		of_node_put(port);
 	}
 
 	return 0;
 
 error:
-	of_node_put(port);
 	__dss_uninit_ports(dss, i);
 	return r;
 }
