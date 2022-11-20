@@ -473,7 +473,7 @@ EXPORT_SYMBOL(drm_invalid_op);
  */
 static int drm_copy_field(char __user *buf, size_t *buf_len, const char *value)
 {
-	size_t len;
+	int len;
 
 	/* don't overflow userbuf */
 	len = strlen(value);
