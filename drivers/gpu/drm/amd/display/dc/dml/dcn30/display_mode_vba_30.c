@@ -6653,7 +6653,8 @@ static double CalculateUrgentLatency(
 	return ret;
 }
 
-static noinline_for_stack void UseMinimumDCFCLK(
+
+static void UseMinimumDCFCLK(
 		struct display_mode_lib *mode_lib,
 		int MaxInterDCNTileRepeaters,
 		int MaxPrefetchMode,
