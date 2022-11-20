@@ -32,6 +32,11 @@
 #include "inc/hw/link_encoder.h"
 #include "core_status.h"
 
+enum vline_select {
+	VLINE0,
+	VLINE1
+};
+
 struct pipe_ctx;
 struct dc_state;
 struct dc_stream_status;
@@ -107,7 +112,8 @@ struct hw_sequencer_funcs {
 			int group_index, int group_size,
 			struct pipe_ctx *grouped_pipes[]);
 	void (*setup_periodic_interrupt)(struct dc *dc,
-			struct pipe_ctx *pipe_ctx);
+			struct pipe_ctx *pipe_ctx,
+			enum vline_select vline);
 	void (*set_drr)(struct pipe_ctx **pipe_ctx, int num_pipes,
 			unsigned int vmin, unsigned int vmax,
 			unsigned int vmid, unsigned int vmid_frame_number);
