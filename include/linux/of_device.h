@@ -64,7 +64,7 @@ static inline int of_driver_match_device(struct device *dev,
 	return 0;
 }
 
-static inline void of_device_uevent(struct device *dev,
+static inline void of_device_uevent(const struct device *dev,
 			struct kobj_uevent_env *env) { }
 
 static inline const void *of_device_get_match_data(const struct device *dev)
