@@ -1,0 +1,63 @@
+From 0d558b2f83ded56bd393da541ef69bd85c415747 Mon Sep 17 00:00:00 2001
+From: Chuck Lever <chuck.lever@oracle.com>
+Date: Thu, 1 Sep 2022 15:10:12 -0400
+Subject: [PATCH 1/6] NFSD: Protect against send buffer overflow in NFSv3
+ READDIR
+
+commit 640f87c190e0d1b2a0fcb2ecf6d2cd53b1c41991 upstream.
+
+Since before the git era, NFSD has conserved the number of pages
+held by each nfsd thread by combining the RPC receive and send
+buffers into a single array of pages. This works because there are
+no cases where an operation needs a large RPC Call message and a
+large RPC Reply message at the same time.
+
+Once an RPC Call has been received, svc_process() updates
+svc_rqst::rq_res to describe the part of rq_pages that can be
+used for constructing the Reply. This means that the send buffer
+(rq_res) shrinks when the received RPC record containing the RPC
+Call is large.
+
+A client can force this shrinkage on TCP by sending a correctly-
+formed RPC Call header contained in an RPC record that is
+excessively large. The full maximum payload size cannot be
+constructed in that case.
+
+Thanks to Aleksi Illikainen and Kari Hulkko for uncovering this
+issue.
+
+Reported-by: Ben Ronallo <Benjamin.Ronallo@synopsys.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+Reviewed-by: Jeff Layton <jlayton@kernel.org>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/nfsd/nfs3proc.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/fs/nfsd/nfs3proc.c b/fs/nfsd/nfs3proc.c
+index 936eebd4c56d..4218a0a8ffef 100644
+--- a/fs/nfsd/nfs3proc.c
++++ b/fs/nfsd/nfs3proc.c
+@@ -447,13 +447,14 @@ static void nfsd3_init_dirlist_pages(struct svc_rqst *rqstp,
+ {
+ 	struct xdr_buf *buf = &resp->dirlist;
+ 	struct xdr_stream *xdr = &resp->xdr;
+-
+-	count = clamp(count, (u32)(XDR_UNIT * 2), svc_max_payload(rqstp));
++	unsigned int sendbuf = min_t(unsigned int, rqstp->rq_res.buflen,
++				     svc_max_payload(rqstp));
+ 
+ 	memset(buf, 0, sizeof(*buf));
+ 
+ 	/* Reserve room for the NULL ptr & eof flag (-2 words) */
+-	buf->buflen = count - XDR_UNIT * 2;
++	buf->buflen = clamp(count, (u32)(XDR_UNIT * 2), sendbuf);
++	buf->buflen -= XDR_UNIT * 2;
+ 	buf->pages = rqstp->rq_next_page;
+ 	rqstp->rq_next_page += (buf->buflen + PAGE_SIZE - 1) >> PAGE_SHIFT;
+ 
+-- 
+2.25.1
+

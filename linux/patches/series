@@ -47,3 +47,11 @@
 
 # CVE-2022-43750
 0001-usb-mon-make-mmapped-memory-read-only.patch
+
+# CVE-2022-43945
+0001-NFSD-Protect-against-send-buffer-overflow-in-NFSv3-R.patch
+0002-NFSD-Protect-against-send-buffer-overflow-in-NFSv2-R.patch
+0003-NFSD-Protect-against-send-buffer-overflow-in-NFSv3-R.patch
+0004-NFSD-Protect-against-send-buffer-overflow-in-NFSv2-R.patch
+0005-SUNRPC-Fix-svcxdr_init_encode-s-buflen-calculation.patch
+0006-SUNRPC-Fix-svcxdr_init_decode-s-end-of-buffer-calcul.patch
