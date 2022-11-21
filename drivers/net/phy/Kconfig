@@ -407,6 +407,7 @@ config DP83848_PHY
 
 config DP83867_PHY
 	tristate "Texas Instruments DP83867 Gigabit PHY"
+	depends on PHYLINK
 	help
 	  Currently supports the DP83867 PHY.
 
