@@ -15,6 +15,7 @@
 #include <linux/etherdevice.h>
 #include <linux/bitfield.h>
 #include <linux/nvmem-consumer.h>
+#include <linux/phylink.h>
 
 #include <dt-bindings/net/ti-dp83867.h>
 
@@ -1007,6 +1008,9 @@ static void dp83867_link_change_notify(struct phy_device *phydev)
 		phy_set_bits(phydev, DP83867_CFG2,
 			     DP83867_SGMII_AUTONEG_EN);
 	}
+
+	if (phydev->state == PHY_NOLINK)
+		phylink_mii_c22_pcs_an_restart(&phydev->mdio);
 }
 
 static int dp83867_loopback(struct phy_device *phydev, bool enable)
