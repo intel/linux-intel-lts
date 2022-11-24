@@ -238,7 +238,7 @@ bool dm_helpers_dp_mst_write_payload_allocation_table(
 	mst_state = to_drm_dp_mst_topology_state(mst_mgr->base.state);
 
 	/* It's OK for this to fail */
-	new_payload = drm_atomic_get_mst_payload_state(mst_state, aconnector->port);
+	new_payload = drm_atomic_get_mst_payload_state(mst_state, aconnector->mst_output_port);
 
 	if (enable) {
 		target_payload = new_payload;
