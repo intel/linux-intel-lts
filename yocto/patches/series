@@ -22,29 +22,14 @@
 # CVE-2022-39189
 0001-KVM-x86-do-not-report-a-vCPU-as-preempted-outside-in.patch
 
-# CVE-2022-42719
-0001-wifi-mac80211-fix-MBSSID-parsing-use-after-free.patch
-
-# CVE-2022-42720
-0001-wifi-cfg80211-fix-BSS-refcounting-bugs.patch
-
-# CVE-2022-41674
-0001-wifi-cfg80211-fix-u8-overflow-in-cfg80211_update_not.patch
-
-# CVE-2022-42721
-0001-wifi-cfg80211-avoid-nontransmitted-BSS-list-corrupti.patch
-
-# CVE-2022-42722
-0001-wifi-mac80211-fix-crash-in-beacon-protection-for-P2P.patch
-
-# CVE-2022-3542
-0001-bnx2x-fix-potential-memory-leak-in-bnx2x_tpa_stop.patch
-
-# CVE-2022-3594
-0001-r8152-Rate-limit-overflow-messages.patch
-
 # CVE-2022-3623
 0001-mm-hugetlb-fix-races-when-looking-up-a-CONT-PTE-PMD-.patch
 
-# CVE-2022-43750
-0001-usb-mon-make-mmapped-memory-read-only.patch
+# CVE-2022-3564
+0001-Bluetooth-L2CAP-Fix-use-after-free-caused-by-l2cap_r.patch
+
+# CVE-2022-3169
+0001-nvme-ensure-subsystem-reset-is-single-threaded.patch
+
+# CVE-2022-3435
+0001-ipv4-Handle-attempt-to-delete-multipath-route-when-f.patch
