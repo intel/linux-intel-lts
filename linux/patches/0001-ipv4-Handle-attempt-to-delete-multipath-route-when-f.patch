@@ -1,0 +1,69 @@
+From 01995743ed0d310f63d81c14a9c1c622519e13eb Mon Sep 17 00:00:00 2001
+From: David Ahern <dsahern@kernel.org>
+Date: Thu, 6 Oct 2022 10:48:49 -0600
+Subject: [PATCH] ipv4: Handle attempt to delete multipath route when fib_info
+ contains an nh reference
+
+Gwangun Jung reported a slab-out-of-bounds access in fib_nh_match:
+    fib_nh_match+0xf98/0x1130 linux-6.0-rc7/net/ipv4/fib_semantics.c:961
+    fib_table_delete+0x5f3/0xa40 linux-6.0-rc7/net/ipv4/fib_trie.c:1753
+    inet_rtm_delroute+0x2b3/0x380 linux-6.0-rc7/net/ipv4/fib_frontend.c:874
+
+Separate nexthop objects are mutually exclusive with the legacy
+multipath spec. Fix fib_nh_match to return if the config for the
+to be deleted route contains a multipath spec while the fib_info
+is using a nexthop object.
+
+Fixes: 493ced1ac47c ("ipv4: Allow routes to use nexthop objects")
+Fixes: 6bf92d70e690 ("net: ipv4: fix route with nexthop object delete warning")
+Reported-by: Gwangun Jung <exsociety@gmail.com>
+Signed-off-by: David Ahern <dsahern@kernel.org>
+Reviewed-by: Ido Schimmel <idosch@nvidia.com>
+Tested-by: Ido Schimmel <idosch@nvidia.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/ipv4/fib_semantics.c                    | 8 ++++----
+ tools/testing/selftests/net/fib_nexthops.sh | 5 +++++
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/net/ipv4/fib_semantics.c b/net/ipv4/fib_semantics.c
+index 55de6fa83dea..c35afa20f6d0 100644
+--- a/net/ipv4/fib_semantics.c
++++ b/net/ipv4/fib_semantics.c
+@@ -886,13 +886,13 @@ int fib_nh_match(struct net *net, struct fib_config *cfg, struct fib_info *fi,
+ 		return 1;
+ 	}
+ 
++	/* cannot match on nexthop object attributes */
++	if (fi->nh)
++		return 1;
++
+ 	if (cfg->fc_oif || cfg->fc_gw_family) {
+ 		struct fib_nh *nh;
+ 
+-		/* cannot match on nexthop object attributes */
+-		if (fi->nh)
+-			return 1;
+-
+ 		nh = fib_info_nh(fi, 0);
+ 		if (cfg->fc_encap) {
+ 			if (fib_encap_match(net, cfg->fc_encap_type,
+diff --git a/tools/testing/selftests/net/fib_nexthops.sh b/tools/testing/selftests/net/fib_nexthops.sh
+index b5a69ad191b0..b2bb06e12c04 100755
+--- a/tools/testing/selftests/net/fib_nexthops.sh
++++ b/tools/testing/selftests/net/fib_nexthops.sh
+@@ -1145,6 +1145,11 @@ ipv4_fcnal()
+ 	set +e
+ 	check_nexthop "dev veth1" ""
+ 	log_test $? 0 "Nexthops removed on admin down"
++
++	run_cmd "$IP nexthop add id 21 via 172.16.1.6 dev veth1"
++	run_cmd "$IP ro add 172.16.101.0/24 nhid 21"
++	run_cmd "$IP ro del 172.16.101.0/24 nexthop via 172.16.1.7 dev veth1 nexthop via 172.16.1.8 dev veth1"
++	log_test $? 2 "Delete multipath route with only nh id based entry"
+ }
+ 
+ ipv4_grp_fcnal()
+-- 
+2.25.1
+

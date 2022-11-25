@@ -1,0 +1,66 @@
+From 1cfef98e6825c71aaaacfc2b69b9e49f018eb3a2 Mon Sep 17 00:00:00 2001
+From: Keith Busch <kbusch@kernel.org>
+Date: Thu, 22 Sep 2022 08:13:47 -0700
+Subject: [PATCH] nvme: ensure subsystem reset is single threaded
+
+The subsystem reset writes to a register, so we have to ensure the
+device state is capable of handling that otherwise the driver may access
+unmapped registers. Use the state machine to ensure the subsystem reset
+doesn't try to write registers on a device already undergoing this type
+of reset.
+
+Link: https://bugzilla.kernel.org/show_bug.cgi?id=214771
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+---
+ drivers/nvme/host/nvme.h | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/nvme/host/nvme.h b/drivers/nvme/host/nvme.h
+index 75a7e7baa1fc..7f52b2b179b8 100644
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -558,11 +558,23 @@ static inline void nvme_fault_inject_fini(struct nvme_fault_inject *fault_inj)
+ static inline void nvme_should_fail(struct request *req) {}
+ #endif
+ 
++bool nvme_wait_reset(struct nvme_ctrl *ctrl);
++int nvme_try_sched_reset(struct nvme_ctrl *ctrl);
++
+ static inline int nvme_reset_subsystem(struct nvme_ctrl *ctrl)
+ {
++	int ret;
++
+ 	if (!ctrl->subsystem)
+ 		return -ENOTTY;
+-	return ctrl->ops->reg_write32(ctrl, NVME_REG_NSSR, 0x4E564D65);
++	if (!nvme_wait_reset(ctrl))
++		return -EBUSY;
++
++	ret = ctrl->ops->reg_write32(ctrl, NVME_REG_NSSR, 0x4E564D65);
++	if (ret)
++		return ret;
++
++	return nvme_try_sched_reset(ctrl);
+ }
+ 
+ /*
+@@ -650,7 +662,6 @@ void nvme_cancel_tagset(struct nvme_ctrl *ctrl);
+ void nvme_cancel_admin_tagset(struct nvme_ctrl *ctrl);
+ bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
+ 		enum nvme_ctrl_state new_state);
+-bool nvme_wait_reset(struct nvme_ctrl *ctrl);
+ int nvme_disable_ctrl(struct nvme_ctrl *ctrl);
+ int nvme_enable_ctrl(struct nvme_ctrl *ctrl);
+ int nvme_shutdown_ctrl(struct nvme_ctrl *ctrl);
+@@ -734,7 +745,6 @@ int nvme_set_queue_count(struct nvme_ctrl *ctrl, int *count);
+ void nvme_stop_keep_alive(struct nvme_ctrl *ctrl);
+ int nvme_reset_ctrl(struct nvme_ctrl *ctrl);
+ int nvme_reset_ctrl_sync(struct nvme_ctrl *ctrl);
+-int nvme_try_sched_reset(struct nvme_ctrl *ctrl);
+ int nvme_delete_ctrl(struct nvme_ctrl *ctrl);
+ void nvme_queue_scan(struct nvme_ctrl *ctrl);
+ int nvme_get_log(struct nvme_ctrl *ctrl, u32 nsid, u8 log_page, u8 lsp, u8 csi,
+-- 
+2.25.1
+

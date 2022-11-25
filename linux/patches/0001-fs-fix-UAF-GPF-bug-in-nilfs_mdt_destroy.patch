@@ -1,0 +1,65 @@
+From ac5ea1161f58cdb957ea8c42ca346a6ee64400c9 Mon Sep 17 00:00:00 2001
+From: Dongliang Mu <mudongliangabcd@gmail.com>
+Date: Tue, 16 Aug 2022 12:08:58 +0800
+Subject: [PATCH] fs: fix UAF/GPF bug in nilfs_mdt_destroy
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 2e488f13755ffbb60f307e991b27024716a33b29 upstream.
+
+In alloc_inode, inode_init_always() could return -ENOMEM if
+security_inode_alloc() fails, which causes inode->i_private
+uninitialized. Then nilfs_is_metadata_file_inode() returns
+true and nilfs_free_inode() wrongly calls nilfs_mdt_destroy(),
+which frees the uninitialized inode->i_private
+and leads to crashes(e.g., UAF/GPF).
+
+Fix this by moving security_inode_alloc just prior to
+this_cpu_inc(nr_inodes)
+
+Link: https://lkml.kernel.org/r/CAFcO6XOcf1Jj2SeGt=jJV59wmhESeSKpfR0omdFRq+J9nD1vfQ@mail.gmail.com
+Reported-by: butt3rflyh4ck <butterflyhuangxx@gmail.com>
+Reported-by: Hao Sun <sunhao.th@gmail.com>
+Reported-by: Jiacheng Xu <stitch@zju.edu.cn>
+Reviewed-by: Christian Brauner (Microsoft) <brauner@kernel.org>
+Signed-off-by: Dongliang Mu <mudongliangabcd@gmail.com>
+Cc: Al Viro <viro@zeniv.linux.org.uk>
+Cc: stable@vger.kernel.org
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/inode.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/fs/inode.c b/fs/inode.c
+index ea380e3a4db1..8279c700a2b7 100644
+--- a/fs/inode.c
++++ b/fs/inode.c
+@@ -167,8 +167,6 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
+ 	inode->i_wb_frn_history = 0;
+ #endif
+ 
+-	if (security_inode_alloc(inode))
+-		goto out;
+ 	spin_lock_init(&inode->i_lock);
+ 	lockdep_set_class(&inode->i_lock, &sb->s_type->i_lock_key);
+ 
+@@ -205,11 +203,12 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
+ 	inode->i_fsnotify_mask = 0;
+ #endif
+ 	inode->i_flctx = NULL;
++
++	if (unlikely(security_inode_alloc(inode)))
++		return -ENOMEM;
+ 	this_cpu_inc(nr_inodes);
+ 
+ 	return 0;
+-out:
+-	return -ENOMEM;
+ }
+ EXPORT_SYMBOL(inode_init_always);
+ 
+-- 
+2.25.1
+

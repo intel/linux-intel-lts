@@ -55,3 +55,18 @@
 0004-NFSD-Protect-against-send-buffer-overflow-in-NFSv2-R.patch
 0005-SUNRPC-Fix-svcxdr_init_encode-s-buflen-calculation.patch
 0006-SUNRPC-Fix-svcxdr_init_decode-s-end-of-buffer-calcul.patch
+
+# CVE-2022-2978
+0001-fs-fix-UAF-GPF-bug-in-nilfs_mdt_destroy.patch
+
+# CVE-2022-3564
+0001-Bluetooth-L2CAP-Fix-use-after-free-caused-by-l2cap_r.patch
+
+# CVE-2022-3169
+0001-nvme-ensure-subsystem-reset-is-single-threaded.patch
+
+# CVE-2022-3435
+0001-ipv4-Handle-attempt-to-delete-multipath-route-when-f.patch
+
+# CVE-2022-3619
+0001-Bluetooth-L2CAP-Fix-memory-leak-in-vhci_write.patch
