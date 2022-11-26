@@ -272,14 +272,22 @@ static noinstr bool handle_bug(struct pt_regs *regs)
 	 * Since we're emulating a CALL with exceptions, restore the interrupt
 	 * state to what it was at the exception site.
 	 */
-	if (regs->flags & X86_EFLAGS_IF)
-		local_irq_enable_full();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_oob())
+			hard_local_irq_enable();
+		else
+			local_irq_enable_full();
+	}
 	if (report_bug(regs->ip, regs) == BUG_TRAP_TYPE_WARN) {
 		regs->ip += LEN_UD2;
 		handled = true;
 	}
-	if (regs->flags & X86_EFLAGS_IF)
-		local_irq_disable_full();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_oob())
+			hard_local_irq_disable();
+		else
+			local_irq_disable_full();
+	}
 	instrumentation_end();
 
 	return handled;
@@ -289,22 +297,28 @@ DEFINE_IDTENTRY_RAW(exc_invalid_op)
 {
 	irqentry_state_t state;
 
-	mark_trap_entry_raw(X86_TRAP_UD, regs);
-
 	/*
 	 * We use UD2 as a short encoding for 'CALL __WARN', as such
 	 * handle it before exception entry to avoid recursive WARN
 	 * in case exception entry is the one triggering WARNs.
+	 *
+	 * dovetail: handle_bug() may run oob, so we do not downgrade
+	 * in-band upon a failed __WARN assertion since it might have
+	 * tripped in a section of code which would not be happy to
+	 * switch stage. However, anything else should be notified to
+	 * the core, because the kernel execution might be about to
+	 * stop, so we'd need to switch in-band to get any output
+	 * before this happens.
 	 */
 	if (!user_mode(regs) && handle_bug(regs))
-		goto out;
+		return;
 
+	mark_trap_entry_raw(X86_TRAP_UD, regs);
 	state = irqentry_enter(regs);
 	instrumentation_begin();
 	handle_invalid_op(regs);
 	instrumentation_end();
 	irqentry_exit(regs, state);
-out:
 	mark_trap_exit_raw(X86_TRAP_UD, regs);
 }
 
