@@ -26,6 +26,7 @@
 #include <linux/ptp_clock.h>
 
 #define DEVICE "/dev/ptp0"
+#define NSEC_PER_SEC 1000000000L
 
 #ifndef ADJ_SETOFFSET
 #define ADJ_SETOFFSET 0x0100
@@ -36,6 +37,10 @@
 #endif
 
 #define NSEC_PER_SEC 1000000000LL
+
+#define POLL_TIME (10000/*ms*/)
+#define ptp_time_to_timespec(s) \
+		((struct timespec) {.tv_sec = s.sec, .tv_nsec = s.nsec })
 
 /* clock_adjtime is not available in GLIBC < 2.14 */
 #if !__GLIBC_PREREQ(2, 14)
@@ -113,6 +118,45 @@ static int64_t pctns(struct ptp_clock_time *t)
 	return t->sec * 1000000000LL + t->nsec;
 }
 
+struct timespec translate_sys_to_device(struct timespec sys_tgpio_time,
+					 uint64_t sys_tgpio_offset,
+					 double sys_tgpio_ratio,
+					 struct timespec sys)
+{
+	uint64_t delta;
+	uint64_t update_time;
+
+	delta = sys.tv_sec - sys_tgpio_time.tv_sec;
+	delta *= NSEC_PER_SEC;
+	delta += sys.tv_nsec;
+	delta -= sys_tgpio_time.tv_nsec;
+
+	delta = delta / sys_tgpio_ratio;
+
+	update_time = sys_tgpio_time.tv_sec * NSEC_PER_SEC + sys_tgpio_time.tv_nsec;
+
+	update_time -= sys_tgpio_offset;
+	update_time += delta;
+
+	return (struct timespec){ .tv_sec = update_time / NSEC_PER_SEC,
+		.tv_nsec = update_time % NSEC_PER_SEC };
+}
+
+int print_time(char *label, struct timespec ts)
+{
+	return printf("%s time: %ld,%09ld\n", label, ts.tv_sec, ts.tv_nsec);
+}
+
+static void millisleep(int millis)
+{
+	struct timespec sleep;
+
+	sleep.tv_sec = millis / 1000;
+	sleep.tv_nsec = (millis % 1000) * 1000000;
+
+	nanosleep(&sleep, NULL);
+}
+
 static void usage(char *progname)
 {
 	fprintf(stderr,
@@ -122,8 +166,10 @@ static void usage(char *progname)
 		" -c         query the ptp clock's capabilities\n"
 		" -d name    device to open\n"
 		" -e val     read 'val' external time stamp events\n"
+		" -E         poll for edge\n"
 		" -f val     adjust the ptp clock frequency by 'val' ppb\n"
 		" -g         get the ptp clock time\n"
+		" -G         Compute TGPIO / System Clock Offset\n"
 		" -h         prints this message\n"
 		" -i val     index for event/trigger\n"
 		" -k val     measure the time offset between system and phc clock\n"
@@ -135,7 +181,12 @@ static void usage(char *progname)
 		"            0 - none\n"
 		"            1 - external time stamp\n"
 		"            2 - periodic output\n"
+		" -o val     enable Input Event Countrol mode for TGPIO pins\n"
+		"            event will only be reported after 'val' matching internally\n"
+		" -O         enable single shot output for TGPIO pins\n"
+		"            this option is ignored for period val greater than 0\n"
 		" -p val     enable output with a period of 'val' nanoseconds\n"
+		"            period val 0 to set single shot output for TGPIO pins\n"
 		" -H val     set output phase to 'val' nanoseconds (requires -p)\n"
 		" -w val     set output pulse width to 'val' nanoseconds (requires -p)\n"
 		" -P val     enable or disable (val=1|0) the system clock PPS\n"
@@ -153,11 +204,13 @@ int main(int argc, char *argv[])
 	struct ptp_extts_event event;
 	struct ptp_extts_request extts_request;
 	struct ptp_perout_request perout_request;
+	struct ptp_event_count_tstamp ect;
 	struct ptp_pin_desc desc;
 	struct timespec ts;
 	struct timex tx;
 	struct ptp_clock_time *pct;
 	struct ptp_sys_offset *sysoff;
+	uint64_t prev_ec;
 
 	char *progname;
 	unsigned int i;
@@ -171,15 +224,19 @@ int main(int argc, char *argv[])
 	int extts = 0;
 	int flagtest = 0;
 	int gettime = 0;
+	int getratio = 0;
 	int index = 0;
 	int list_pins = 0;
 	int pct_offset = 0;
 	int n_samples = 0;
+	int event_count = 0;
+	int single_shot = -1;
 	int new_period = -1;
 	int pin_index = -1, pin_func;
 	int pps = -1;
 	int seconds = 0;
 	int settime = 0;
+	int poll = 0;
 
 	int64_t t1, t2, tp;
 	int64_t interval, offset;
@@ -189,7 +246,7 @@ int main(int argc, char *argv[])
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? 1+progname : argv[0];
-	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:ghi:k:lL:p:P:sSt:T:z"))) {
+	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EGghH:i:k:lL:o:Op:P:sSt:T:z"))) {
 		switch (c) {
 		case 'a':
 			new_period = atoi(optarg);
@@ -203,6 +260,9 @@ int main(int argc, char *argv[])
 		case 'e':
 			extts = atoi(optarg);
 			break;
+		case 'E':
+			poll = 1;
+			break;
 		case 'f':
 			adjfreq = atoi(optarg);
 			break;
@@ -211,6 +271,8 @@ int main(int argc, char *argv[])
 			break;
 		case 'H':
 			perout_phase = atoll(optarg);
+		case 'G':
+			getratio = 1;
 			break;
 		case 'i':
 			index = atoi(optarg);
@@ -228,6 +290,12 @@ int main(int argc, char *argv[])
 				usage(progname);
 				return -1;
 			}
+			break;
+		case 'o':
+			event_count = atoi(optarg);
+			break;
+		case 'O':
+			single_shot = 1;
 			break;
 		case 'p':
 			perout = atoll(optarg);
@@ -332,6 +400,44 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (getratio) {
+		uint64_t sys_tgpio_offset;
+		double sys_tgpio_ratio;
+		uint32_t sys_delta;
+		uint64_t prev_ec;
+		struct timespec sys_tgpio_time;
+		struct ptp_sys_offset_precise sys_offset, sys_offset_0;
+
+		if (ioctl(fd, PTP_SYS_OFFSET_PRECISE, &sys_offset_0)) {
+			perror("PTP_SYS_OFFSET_PRECISE");
+		}
+		millisleep(2000);
+		if (ioctl(fd, PTP_SYS_OFFSET_PRECISE, &sys_offset)) {
+			perror("PTP_SYS_OFFSET_PRECISE");
+		}
+		sys_tgpio_offset = sys_offset.sys_monoraw.sec - sys_offset.device.sec;
+		sys_tgpio_offset *= NSEC_PER_SEC;
+		printf("Offset: %ld\n", sys_tgpio_offset);
+		sys_tgpio_offset += sys_offset.sys_monoraw.nsec;
+		printf("Offset: %ld\n", sys_tgpio_offset);
+		sys_tgpio_offset -= sys_offset.device.nsec;
+		printf("Offset: %ld\n", sys_tgpio_offset);
+		print_time("System", ptp_time_to_timespec(sys_offset.sys_monoraw));
+		print_time("Device", ptp_time_to_timespec(sys_offset.device));
+		sys_delta = sys_offset.sys_monoraw.sec - sys_offset_0.sys_monoraw.sec;
+		sys_delta *= NSEC_PER_SEC;
+		sys_delta += sys_offset.sys_monoraw.nsec - sys_offset_0.sys_monoraw.nsec;
+		printf("system delta: %u\n", sys_delta);
+		sys_tgpio_ratio = sys_offset.device.sec - sys_offset_0.device.sec;
+		sys_tgpio_ratio *= NSEC_PER_SEC;
+		sys_tgpio_ratio += sys_offset.device.nsec;
+		sys_tgpio_ratio -= sys_offset_0.device.nsec;
+		printf("device delta: %.0f\n", sys_tgpio_ratio);
+		sys_tgpio_ratio = sys_delta / sys_tgpio_ratio;
+		sys_tgpio_time = ptp_time_to_timespec(sys_offset.sys_monoraw);
+		printf("system:tgpio clock ratio = %.12f\n\n", sys_tgpio_ratio);
+	}
+
 	if (settime == 1) {
 		clock_gettime(CLOCK_REALTIME, &ts);
 		if (clock_settime(clkid, &ts)) {
@@ -376,6 +482,13 @@ int main(int argc, char *argv[])
 		memset(&extts_request, 0, sizeof(extts_request));
 		extts_request.index = index;
 		extts_request.flags = PTP_ENABLE_FEATURE;
+
+		if (event_count) {
+			extts_request.flags |= PTP_EVENT_COUNTER_MODE;
+			extts_request.rsv[0] = event_count;
+			/* Input Event Control only supports 1 event for now */
+			extts = 1;
+		}
 		if (ioctl(fd, PTP_EXTTS_REQUEST, &extts_request)) {
 			perror("PTP_EXTTS_REQUEST");
 			extts = 0;
@@ -386,7 +499,7 @@ int main(int argc, char *argv[])
 		desc.index = index;
 		if (ioctl(fd, PTP_PIN_GETFUNC2, &desc))
 			perror("PTP_PIN_GETFUNC2");
-		if (!(desc.flags & PTP_PINDESC_INPUTDISABLE)) {
+		if (!(desc.flags & PTP_PINDESC_INPUTPOLL)) {
 			for (; extts; extts--) {
 				cnt = read(fd, &event, sizeof(event));
 				if (cnt != sizeof(event)) {
@@ -449,7 +562,13 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (perout >= 0) {
+	if (perout >= 0 || single_shot == 1) {
+		memset(&desc, 0, sizeof(desc));
+		desc.index = index;
+		if (ioctl(fd, PTP_PIN_GETFUNC2, &desc)) {
+			perror("PTP_PIN_GETFUNC2");
+		}
+
 		if (clock_gettime(clkid, &ts)) {
 			perror("clock_gettime");
 			return -1;
@@ -473,10 +592,54 @@ int main(int argc, char *argv[])
 			perout_request.start.nsec = 0;
 		}
 
-		if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request)) {
-			perror("PTP_PEROUT_REQUEST");
+		if (perout <= 0 && (desc.flags & PTP_PINDESC_INPUTPOLL)) {
+			perout_request.period.nsec = NSEC_PER_SEC / 2;
+			perout_request.flags = PTP_PEROUT_ONE_SHOT;
+			if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request)) {
+				perror("PTP_PEROUT_REQUEST2");
+			} else {
+				puts("single shot output request okay");
+			}
 		} else {
-			puts("periodic output request okay");
+			perout_request.period.nsec = perout;
+			if (ioctl(fd, PTP_PEROUT_REQUEST2, &perout_request)) {
+				perror("PTP_PEROUT_REQUEST2");
+			} else {
+				puts("periodic output request okay");
+			}
+		}
+	}
+
+	if (poll) {
+		struct timespec sys_tgpio_time;
+		uint64_t sys_tgpio_offset;
+		double sys_tgpio_ratio;
+
+		memset(&ect, 0, sizeof(ect));
+		ect.index = index;
+
+		if (ioctl(fd, PTP_EVENT_COUNT_TSTAMP2, &ect)) {
+			perror("PTP_EVENT_COUNT_TSTAMP2");
+		}
+		prev_ec = ect.event_count;
+
+		for (i = 0; i < POLL_TIME; ++i)	{
+			clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+
+			if (ioctl(fd, PTP_EVENT_COUNT_TSTAMP2, &ect)) {
+				perror("PTP_EVENT_COUNT_TSTAMP2");
+			}
+			if (ect.event_count != prev_ec)	{
+				printf("Event count: %llu\n", ect.event_count);
+				print_time("Event time", ptp_time_to_timespec(ect.device_time));
+				print_time("Approx System", ts);
+				print_time("Approx Translated Device",
+					translate_sys_to_device
+					(sys_tgpio_time, sys_tgpio_offset,
+					sys_tgpio_ratio, ts));
+				prev_ec = ect.event_count;
+			}
+			millisleep(1);
 		}
 	}
 

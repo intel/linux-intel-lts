@@ -136,6 +136,8 @@ static bool has_table(struct drm_i915_private *i915)
 {
 	if (IS_ADLP_GT_STEP(i915, STEP_B0, STEP_FOREVER))
 		return 1;
+	if (IS_ALDERLAKE_P(i915) && !IS_ADLP_N(i915))
+		return true;
 
 	return 0;
 }

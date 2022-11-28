@@ -2786,10 +2786,10 @@ static void sof_dai_set_format(struct snd_soc_tplg_hw_config *hw_config,
 			       struct sof_ipc_dai_config *config)
 {
 	/* clock directions wrt codec */
-	if (hw_config->bclk_provider == SND_SOC_TPLG_BCLK_CP) {
-		/* codec is bclk provider */
-		if (hw_config->fsync_provider == SND_SOC_TPLG_FSYNC_CP)
-			config->format |= SOF_DAI_FMT_CBP_CFP;
+	if (hw_config->bclk_provider == SND_SOC_TPLG_BCLK_CM) {
+		/* codec is bclk master */
+		if (hw_config->fsync_provider == SND_SOC_TPLG_FSYNC_CM)
+			config->format |= SOF_DAI_FMT_CBM_CFM;
 		else
 			config->format |= SOF_DAI_FMT_CBP_CFC;
 	} else {

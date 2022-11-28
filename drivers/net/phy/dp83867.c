@@ -776,6 +776,14 @@ static int dp83867_config_init(struct phy_device *phydev)
 		else
 			val &= ~DP83867_SGMII_TYPE;
 		phy_write_mmd(phydev, DP83867_DEVADDR, DP83867_SGMIICTL, val);
+
+		/* This is a SW workaround for link instability if RX_CTRL is
+		 * not strapped to mode 3 or 4 in HW. This is required for SGMII
+		 * in addition to clearing bit 7, handled above.
+		 */
+		if (dp83867->rxctrl_strap_quirk)
+			phy_set_bits_mmd(phydev, DP83867_DEVADDR, DP83867_CFG4,
+					 BIT(8));
 	}
 
 	val = phy_read(phydev, DP83867_CFG3);
@@ -854,6 +862,17 @@ static int dp83867_loopback(struct phy_device *phydev, bool enable)
 			  enable ? BMCR_LOOPBACK : 0);
 }
 
+static int dp83867_config_aneg(struct phy_device *phydev)
+{
+	int err;
+
+	err = genphy_config_aneg(phydev);
+	if (err < 0)
+		return err;
+
+	return dp83867_phy_reset(phydev);
+}
+
 static struct phy_driver dp83867_driver[] = {
 	{
 		.phy_id		= DP83867_PHY_ID,
@@ -881,6 +900,7 @@ static struct phy_driver dp83867_driver[] = {
 
 		.link_change_notify = dp83867_link_change_notify,
 		.set_loopback	= dp83867_loopback,
+		.config_aneg	= dp83867_config_aneg,
 	},
 };
 module_phy_driver(dp83867_driver);

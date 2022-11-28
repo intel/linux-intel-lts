@@ -332,17 +332,10 @@ static int __uc_init(struct intel_uc *uc)
 	if (ret)
 		return ret;
 
-	if (intel_uc_uses_huc(uc)) {
-		ret = intel_huc_init(huc);
-		if (ret)
-			goto out_guc;
-	}
+	if (intel_uc_uses_huc(uc))
+		intel_huc_init(huc);
 
 	return 0;
-
-out_guc:
-	intel_guc_fini(guc);
-	return ret;
 }
 
 static void __uc_fini(struct intel_uc *uc)
@@ -447,9 +440,11 @@ static void print_fw_ver(struct intel_uc *uc, struct intel_uc_fw *fw)
 {
 	struct drm_i915_private *i915 = uc_to_gt(uc)->i915;
 
-	drm_info(&i915->drm, "%s firmware %s version %u.%u\n",
-		 intel_uc_fw_type_repr(fw->type), fw->path,
-		 fw->major_ver_found, fw->minor_ver_found);
+	drm_info(&i915->drm, "%s firmware %s version %u.%u.%u\n",
+		 intel_uc_fw_type_repr(fw->type), fw->file_selected.path,
+		 fw->file_selected.major_ver,
+		 fw->file_selected.minor_ver,
+		 fw->file_selected.patch_ver);
 }
 
 static int __uc_init_hw(struct intel_uc *uc)
@@ -516,7 +511,16 @@ static int __uc_init_hw(struct intel_uc *uc)
 	if (ret)
 		goto err_log_capture;
 
-	intel_huc_auth(huc);
+	/*
+	 * GSC-loaded HuC is authenticated by the GSC, so we don't need to
+	 * trigger the auth here. However, given that the HuC loaded this way
+	 * survive GT reset, we still need to update our SW bookkeeping to make
+	 * sure it reflects the correct HW status.
+	 */
+	if (intel_huc_is_loaded_by_gsc(huc))
+		intel_huc_update_auth_status(huc);
+	else
+		intel_huc_auth(huc);
 
 	/*
 	 * Ignore table load failures for now. Missing tables will cause issues
@@ -641,9 +645,9 @@ static int __vf_uc_init_hw(struct intel_uc *uc)
 
 	intel_guc_submission_enable(guc);
 
-	dev_info(i915->drm.dev, "%s firmware %s version %u.%u %s:%s\n",
-		 intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_GUC), guc->fw.path,
-		 guc->fw.major_ver_found, guc->fw.minor_ver_found,
+	drm_info(&i915->drm, "%s firmware %s version %u.%u %s:%s\n",
+		 intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_GUC), guc->fw.file_selected.path,
+		 guc->fw.file_selected.major_ver, guc->fw.file_selected.minor_ver,
 		 "submission", i915_iov_mode_to_string(IOV_MODE(i915)));
 
 	dev_info(i915->drm.dev, "%s firmware %s\n",

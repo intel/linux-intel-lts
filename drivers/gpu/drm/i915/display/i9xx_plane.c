@@ -60,22 +60,11 @@ static const u32 vlv_primary_formats[] = {
 	DRM_FORMAT_XBGR16161616F,
 };
 
-static const u64 i9xx_format_modifiers[] = {
-	I915_FORMAT_MOD_X_TILED,
-	DRM_FORMAT_MOD_LINEAR,
-	DRM_FORMAT_MOD_INVALID
-};
-
 static bool i8xx_plane_format_mod_supported(struct drm_plane *_plane,
 					    u32 format, u64 modifier)
 {
-	switch (modifier) {
-	case DRM_FORMAT_MOD_LINEAR:
-	case I915_FORMAT_MOD_X_TILED:
-		break;
-	default:
+	if (!intel_fb_plane_supports_modifier(to_intel_plane(_plane), modifier))
 		return false;
-	}
 
 	switch (format) {
 	case DRM_FORMAT_C8:
@@ -92,13 +81,8 @@ static bool i8xx_plane_format_mod_supported(struct drm_plane *_plane,
 static bool i965_plane_format_mod_supported(struct drm_plane *_plane,
 					    u32 format, u64 modifier)
 {
-	switch (modifier) {
-	case DRM_FORMAT_MOD_LINEAR:
-	case I915_FORMAT_MOD_X_TILED:
-		break;
-	default:
+	if (!intel_fb_plane_supports_modifier(to_intel_plane(_plane), modifier))
 		return false;
-	}
 
 	switch (format) {
 	case DRM_FORMAT_C8:
@@ -272,7 +256,7 @@ int i9xx_check_plane_surface(struct intel_plane_state *plane_state)
 		u32 alignment = intel_surf_alignment(fb, 0);
 		int cpp = fb->format->cpp[0];
 
-		while ((src_x + src_w) * cpp > plane_state->view.color_plane[0].stride) {
+		while ((src_x + src_w) * cpp > plane_state->view.color_plane[0].mapping_stride) {
 			if (offset == 0) {
 				drm_dbg_kms(&dev_priv->drm,
 					    "Unable to find suitable display surface offset due to X-tiling\n");
@@ -447,7 +431,7 @@ static void i9xx_update_plane(struct intel_plane *plane,
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
 
 	intel_de_write_fw(dev_priv, DSPSTRIDE(i9xx_plane),
-			  plane_state->view.color_plane[0].stride);
+			  plane_state->view.color_plane[0].mapping_stride);
 
 	if (DISPLAY_VER(dev_priv) < 4) {
 		/*
@@ -768,6 +752,7 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
 	struct intel_plane *plane;
 	const struct drm_plane_funcs *plane_funcs;
 	unsigned int supported_rotations;
+	const u64 *modifiers;
 	const u32 *formats;
 	int num_formats;
 	int ret, zpos;
@@ -875,21 +860,26 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
 		plane->disable_flip_done = ilk_primary_disable_flip_done;
 	}
 
+	modifiers = intel_fb_plane_get_modifiers(dev_priv, PLANE_HAS_TILING);
+
 	if (DISPLAY_VER(dev_priv) >= 5 || IS_G4X(dev_priv))
 		ret = drm_universal_plane_init(&dev_priv->drm, &plane->base,
 					       0, plane_funcs,
 					       formats, num_formats,
-					       i9xx_format_modifiers,
+					       modifiers,
 					       DRM_PLANE_TYPE_PRIMARY,
 					       "primary %c", pipe_name(pipe));
 	else
 		ret = drm_universal_plane_init(&dev_priv->drm, &plane->base,
 					       0, plane_funcs,
 					       formats, num_formats,
-					       i9xx_format_modifiers,
+					       modifiers,
 					       DRM_PLANE_TYPE_PRIMARY,
 					       "plane %c",
 					       plane_name(plane->i9xx_plane));
+
+	kfree(modifiers);
+
 	if (ret)
 		goto fail;
 

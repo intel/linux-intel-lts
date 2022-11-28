@@ -388,6 +388,11 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 		return -EOPNOTSUPP;
 	}
 
+	if (qopt->idleslope - qopt->sendslope != speed_div ||
+	    qopt->idleslope < 0 || qopt->sendslope > 0 ||
+	    qopt->hicredit < 0 || qopt->locredit > 0)
+		return -EINVAL;
+
 	mode_to_use = priv->plat->tx_queues_cfg[queue].mode_to_use;
 	if (mode_to_use == MTL_QUEUE_DCB && qopt->enable) {
 		ret = stmmac_dma_qmode(priv, priv->ioaddr, queue, MTL_QUEUE_AVB);
@@ -983,6 +988,9 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 	int i, ret = 0;
 	u64 ctr;
 
+	if (qopt->base_time < 0)
+		return -ERANGE;
+
 	if (!priv->dma_cap.estsel)
 		return -EOPNOTSUPP;
 
@@ -1102,12 +1110,14 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 	if (fpe) {
 		if (!txqpec) {
 			netdev_err(priv->dev, "FPE preempt must not all 0s!\n");
+			mutex_unlock(&priv->plat->est->lock);
 			return -EINVAL;
 		}
 
 		/* Check PEC is within TxQ range */
 		if (txqpec & ~txqmask) {
 			netdev_err(priv->dev, "FPE preempt is out-of-bound.\n");
+			mutex_unlock(&priv->plat->est->lock);
 			return -EINVAL;
 		}
 

@@ -66,6 +66,7 @@ struct taprio_sched {
 	u32 preemptible_tcs;
 	enum tk_offsets tk_offset;
 	int clockid;
+	bool offloaded;
 	atomic64_t picos_per_byte; /* Using picoseconds because for 10Gbps+
 				    * speeds it's sub-nanoseconds per byte
 				    */
@@ -787,7 +788,8 @@ static const struct nla_policy taprio_policy[TCA_TAPRIO_ATTR_MAX + 1] = {
 
 static int fill_sched_entry(struct taprio_sched *q, struct nlattr **tb,
 			    struct sched_entry *entry,
-			    struct netlink_ext_ack *extack)
+			    struct netlink_ext_ack *extack,
+			    struct tc_mqprio_qopt *mqprio)
 {
 	int min_duration = length_to_duration(q, ETH_ZLEN);
 	u32 interval = 0;
@@ -807,8 +809,13 @@ static int fill_sched_entry(struct taprio_sched *q, struct nlattr **tb,
 	/* The interval should allow at least the minimum ethernet
 	 * frame to go out.
 	 */
-	if (interval < min_duration) {
+	if (interval < min_duration || !interval) {
 		NL_SET_ERR_MSG(extack, "Invalid interval for schedule entry");
+		return -EINVAL;
+	}
+
+	if (mqprio && entry->gate_mask >= BIT_MASK(mqprio->num_tc)) {
+		NL_SET_ERR_MSG(extack, "Traffic Class defined less than gatemask");
 		return -EINVAL;
 	}
 
@@ -819,7 +826,8 @@ static int fill_sched_entry(struct taprio_sched *q, struct nlattr **tb,
 
 static int parse_sched_entry(struct taprio_sched *q, struct nlattr *n,
 			     struct sched_entry *entry, int index,
-			     struct netlink_ext_ack *extack)
+			     struct netlink_ext_ack *extack,
+			     struct tc_mqprio_qopt *mqprio)
 {
 	struct nlattr *tb[TCA_TAPRIO_SCHED_ENTRY_MAX + 1] = { };
 	int err;
@@ -833,12 +841,13 @@ static int parse_sched_entry(struct taprio_sched *q, struct nlattr *n,
 
 	entry->index = index;
 
-	return fill_sched_entry(q, tb, entry, extack);
+	return fill_sched_entry(q, tb, entry, extack, mqprio);
 }
 
 static int parse_sched_list(struct taprio_sched *q, struct nlattr *list,
 			    struct sched_gate_list *sched,
-			    struct netlink_ext_ack *extack)
+			    struct netlink_ext_ack *extack,
+			    struct tc_mqprio_qopt *mqprio)
 {
 	struct nlattr *n;
 	int err, rem;
@@ -861,7 +870,7 @@ static int parse_sched_list(struct taprio_sched *q, struct nlattr *list,
 			return -ENOMEM;
 		}
 
-		err = parse_sched_entry(q, n, entry, i, extack);
+		err = parse_sched_entry(q, n, entry, i, extack, mqprio);
 		if (err < 0) {
 			kfree(entry);
 			return err;
@@ -878,7 +887,8 @@ static int parse_sched_list(struct taprio_sched *q, struct nlattr *list,
 
 static int parse_taprio_schedule(struct taprio_sched *q, struct nlattr **tb,
 				 struct sched_gate_list *new,
-				 struct netlink_ext_ack *extack)
+				 struct netlink_ext_ack *extack,
+				 struct tc_mqprio_qopt *mqprio)
 {
 	int err = 0;
 
@@ -898,7 +908,7 @@ static int parse_taprio_schedule(struct taprio_sched *q, struct nlattr **tb,
 
 	if (tb[TCA_TAPRIO_ATTR_SCHED_ENTRY_LIST])
 		err = parse_sched_list(q, tb[TCA_TAPRIO_ATTR_SCHED_ENTRY_LIST],
-				       new, extack);
+				       new, extack, mqprio);
 	if (err < 0)
 		return err;
 
@@ -1270,6 +1280,8 @@ static int taprio_enable_offload(struct net_device *dev,
 		goto done;
 	}
 
+	q->offloaded = true;
+
 done:
 	taprio_offload_free(offload);
 
@@ -1285,11 +1297,8 @@ static int taprio_disable_offload(struct net_device *dev,
 	struct tc_taprio_qopt_offload *offload;
 	int err;
 
-	if (!FULL_OFFLOAD_IS_ENABLED(q->flags))
+	if (!q->offloaded)
 		return 0;
-
-	if (!ops->ndo_setup_tc)
-		return -EOPNOTSUPP;
 
 	offload = taprio_offload_alloc(0);
 	if (!offload) {
@@ -1308,6 +1317,8 @@ static int taprio_disable_offload(struct net_device *dev,
 	if (err < 0)
 		NL_SET_ERR_MSG(extack,
 			       "Device failed to disable frame preemption offload");
+
+	q->offloaded = false;
 
 	taprio_offload_free(offload);
 
@@ -1499,7 +1510,7 @@ static int taprio_change(struct Qdisc *sch, struct nlattr *opt,
 		goto free_sched;
 	}
 
-	err = parse_taprio_schedule(q, tb, new_admin, extack);
+	err = parse_taprio_schedule(q, tb, new_admin, extack, mqprio);
 	if (err < 0)
 		goto free_sched;
 
@@ -1659,8 +1670,6 @@ static void taprio_reset(struct Qdisc *sch)
 			if (q->qdiscs[i])
 				qdisc_reset(q->qdiscs[i]);
 	}
-	sch->qstats.backlog = 0;
-	sch->q.qlen = 0;
 }
 
 static void taprio_destroy(struct Qdisc *sch)
@@ -1944,12 +1953,14 @@ start_error:
 
 static struct Qdisc *taprio_leaf(struct Qdisc *sch, unsigned long cl)
 {
-	struct netdev_queue *dev_queue = taprio_queue_get(sch, cl);
+	struct taprio_sched *q = qdisc_priv(sch);
+	struct net_device *dev = qdisc_dev(sch);
+	unsigned int ntx = cl - 1;
 
-	if (!dev_queue)
+	if (ntx >= dev->num_tx_queues)
 		return NULL;
 
-	return dev_queue->qdisc_sleeping;
+	return q->qdiscs[ntx];
 }
 
 static unsigned long taprio_find(struct Qdisc *sch, u32 classid)
