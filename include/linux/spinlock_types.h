@@ -43,9 +43,15 @@ typedef struct raw_spinlock {
 		.name = #lockname,			\
 		.wait_type_inner = LD_WAIT_CONFIG,	\
 	}
+# define HARD_SPIN_DEP_MAP_INIT(lockname)		\
+	.dep_map = {					\
+		.name = #lockname,			\
+		.wait_type_inner = LD_WAIT_INV,		\
+	}
 #else
 # define RAW_SPIN_DEP_MAP_INIT(lockname)
 # define SPIN_DEP_MAP_INIT(lockname)
+# define HARD_SPIN_DEP_MAP_INIT(lockname)
 #endif
 
 #ifdef CONFIG_DEBUG_SPINLOCK
@@ -169,25 +175,27 @@ void __bad_spinlock_type(void);
 		__ret;					\
 	})
 
-#define __HARD_SPIN_LOCK_UNLOCKED(__rlock)	\
-	__RAW_SPIN_LOCK_UNLOCKED(__rlock)
-
-#define __HARD_SPIN_LOCK_INITIALIZER(__lock)				\
-	{								\
-		.rlock = __HARD_SPIN_LOCK_UNLOCKED((__lock).rlock),	\
+#define __HARD_SPIN_LOCK_INITIALIZER(x)	{			\
+		.rlock = {					\
+			.raw_lock = __ARCH_SPIN_LOCK_UNLOCKED,	\
+			SPIN_DEBUG_INIT(x)			\
+			HARD_SPIN_DEP_MAP_INIT(x)		\
+		}						\
 	}
 
-#define DEFINE_HARD_SPINLOCK(x)	hard_spinlock_t x = {	\
-		.rlock = __HARD_SPIN_LOCK_UNLOCKED(x),	\
-	}
+#define __HARD_SPIN_LOCK_UNLOCKED(x)	\
+	(hard_spinlock_t) __HARD_SPIN_LOCK_INITIALIZER(x)
+
+#define DEFINE_HARD_SPINLOCK(x)  	hard_spinlock_t x = __HARD_SPIN_LOCK_UNLOCKED(x)
 
 #define DECLARE_HARD_SPINLOCK(x)	hard_spinlock_t x
 
-struct phony_lockdep_map {
-	u8 wait_type_outer;
-	u8 wait_type_inner;
-  	u8 lock_type;
-};
+/*
+ * The presence of a phony depmap is tested by LOCKDEP_ALT_DEPMAP() to
+ * locate the real depmap without enumerating every spinlock type
+ * which may contain one.
+ */
+struct phony_lockdep_map { };
 
 typedef struct hard_spinlock {
 	/* XXX: offset_of(struct hard_spinlock, rlock) == 0 */

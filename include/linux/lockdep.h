@@ -214,29 +214,30 @@ static inline void lockdep_init_map(struct lockdep_map *lock, const char *name,
  * of dependencies wrong: they are either too broad (they need a class-split)
  * or they are too narrow (they suffer from a false class-split):
  */
-#define lockdep_set_class(lock, key)				\
+#define lockdep_set_class(lock, key)					\
 	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #key, key, 0,	\
-			      (lock)->dep_map.wait_type_inner,	\
-			      (lock)->dep_map.wait_type_outer,	\
-			      (lock)->dep_map.lock_type)
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
-#define lockdep_set_class_and_name(lock, key, name)		\
+#define lockdep_set_class_and_name(lock, key, name)			\
 	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), name, key, 0,	\
-			      (lock)->dep_map.wait_type_inner,	\
-			      (lock)->dep_map.wait_type_outer,	\
-			      (lock)->dep_map.lock_type)
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
-#define lockdep_set_class_and_subclass(lock, key, sub)		\
+#define lockdep_set_class_and_subclass(lock, key, sub)			\
 	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #key, key, sub,	\
-			      (lock)->dep_map.wait_type_inner,	\
-			      (lock)->dep_map.wait_type_outer,	\
-			      (lock)->dep_map.lock_type)
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
 #define lockdep_set_subclass(lock, sub)					\
-	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #lock, (lock)->dep_map.key, sub,\
-			      (lock)->dep_map.wait_type_inner,		\
-			      (lock)->dep_map.wait_type_outer,		\
-			      (lock)->dep_map.lock_type)
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #lock,		\
+			LOCKDEP_ALT_DEPMAP(lock)->key, sub,		\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
 #define lockdep_set_novalidate_class(lock) \
 	lockdep_set_class_and_name(lock, &__lockdep_no_validate__, #lock)
@@ -559,22 +560,22 @@ do {									\
 #ifdef CONFIG_PROVE_LOCKING
 # define might_lock(lock)						\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, 0, 0, 0, 1, NULL, _THIS_IP_);	\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), 0, 0, 0, 1, NULL, _THIS_IP_);	\
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);			\
 } while (0)
 # define might_lock_read(lock)						\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, 0, 0, 1, 1, NULL, _THIS_IP_);	\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), 0, 0, 1, 1, NULL, _THIS_IP_); \
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);		\
 } while (0)
 # define might_lock_nested(lock, subclass)				\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, subclass, 0, 1, 1, NULL,		\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), subclass, 0, 1, 1, NULL,	\
 		     _THIS_IP_);					\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);		\
 } while (0)
 
 DECLARE_PER_CPU(int, hardirqs_enabled);
