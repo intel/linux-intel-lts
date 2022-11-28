@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <asm/cacheflush.h>
 
@@ -10,6 +10,7 @@
 #include <linux/dma-mapping.h>
 
 #include "ipu.h"
+#include "ipu-trace.h"
 #include "ipu-fw-com.h"
 #include "ipu-bus.h"
 
@@ -335,11 +336,15 @@ EXPORT_SYMBOL_GPL(ipu_fw_com_prepare);
 
 int ipu_fw_com_open(struct ipu_fw_com_context *ctx)
 {
+	dma_addr_t trace_buff = TUNIT_MAGIC_PATTERN;
+
 	/*
-	 * Disable tunit configuration by FW.
-	 * This feature is used to configure tunit in secure mode.
+	 * Write trace buff start addr to tunit cfg reg.
+	 * This feature is used to enable tunit trace in secure mode.
 	 */
-	writel(TUNIT_MAGIC_PATTERN, ctx->dmem_addr + TUNIT_CFG_DWR_REG * 4);
+	ipu_trace_buffer_dma_handle(&ctx->adev->dev, &trace_buff);
+	writel(trace_buff, ctx->dmem_addr + TUNIT_CFG_DWR_REG * 4);
+
 	/* Check if SP is in valid state */
 	if (!ctx->cell_ready(ctx->adev))
 		return -EIO;

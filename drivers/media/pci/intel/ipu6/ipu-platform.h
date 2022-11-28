@@ -10,9 +10,13 @@
 #define IPU6EP_FIRMWARE_NAME		"intel/ipu6ep_fw.bin"
 #define IPU6EPES_FIRMWARE_NAME		"intel/ipu6epes_fw.bin"
 #define IPU6_FIRMWARE_NAME		"intel/ipu6_fw.bin"
+#define IPU6EPMTL_FIRMWARE_NAME		"intel/ipu6epmtl_fw.bin"
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 /* array of struct ipu_spdata_rep terminated by NULL */
 #define IPU_SPDATA_NAME		"ipu6v1_spdata.bin"
+#endif
 
 /*
  * The following definitions are encoded to the media_device's model field so

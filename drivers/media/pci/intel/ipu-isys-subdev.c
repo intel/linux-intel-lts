@@ -136,13 +136,12 @@ u32 ipu_isys_subdev_code_to_uncompressed(u32 sink_code)
 struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
 					       struct v4l2_subdev_state *state,
 					       unsigned int pad,
-					       unsigned int stream,
 					       unsigned int which)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 
 	if (which == V4L2_SUBDEV_FORMAT_ACTIVE)
-		return &asd->ffmt[pad][stream];
+		return &asd->ffmt[pad];
 	else
 		return v4l2_subdev_get_try_format(sd, state, pad);
 }
@@ -228,7 +227,7 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 	}
 
 	for (i = 0; i < sd->entity.num_pads; i++) {
-		ffmts[i] = __ipu_isys_get_ffmt(sd, state, i, 0, which);
+		ffmts[i] = __ipu_isys_get_ffmt(sd, state, i, which);
 		crops[i] = __ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
 						    i, which);
 		compose[i] = __ipu_isys_get_selection(sd, state,
@@ -263,57 +262,22 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 			goto out_subdev_fmt_propagate;
 		}
 
-		/* 1:n and 1:1 case: only propagate to the first source pad */
-		if (asd->nsinks == 1 && asd->nsources >= 1) {
-			compose[asd->nsinks]->left =
-			    compose[asd->nsinks]->top = 0;
-			compose[asd->nsinks]->width = r->width;
-			compose[asd->nsinks]->height = r->height;
-			rval = ipu_isys_subdev_fmt_propagate(sd, state, ffmt,
-						      compose[asd->nsinks],
-						      tgt + 1, asd->nsinks,
-						      which);
+		for (i = 1; i < sd->entity.num_pads; i++) {
+			if (!(sd->entity.pads[i].flags &
+					MEDIA_PAD_FL_SOURCE))
+				continue;
+
+			compose[i]->left = 0;
+			compose[i]->top = 0;
+			compose[i]->width = r->width;
+			compose[i]->height = r->height;
+			rval = ipu_isys_subdev_fmt_propagate(sd, state,
+							     ffmt,
+							     compose[i],
+							     tgt + 1, i,
+							     which);
 			if (rval)
 				goto out_subdev_fmt_propagate;
-			/* n:n case: propagate according to route info */
-		} else if (asd->nsinks == asd->nsources && asd->nsources > 1) {
-			for (i = asd->nsinks; i < sd->entity.num_pads; i++)
-				if (media_entity_has_route(&sd->entity, pad, i))
-					break;
-
-			if (i != sd->entity.num_pads) {
-				compose[i]->left = 0;
-				compose[i]->top = 0;
-				compose[i]->width = r->width;
-				compose[i]->height = r->height;
-				rval = ipu_isys_subdev_fmt_propagate(sd, state,
-								     ffmt,
-								     compose[i],
-								     tgt + 1, i,
-								     which);
-				if (rval)
-					goto out_subdev_fmt_propagate;
-			}
-			/* n:m case: propagate to all source pad */
-		} else if (asd->nsinks != asd->nsources && asd->nsources > 1 &&
-			   asd->nsources > 1) {
-			for (i = 1; i < sd->entity.num_pads; i++) {
-				if (!(sd->entity.pads[i].flags &
-				      MEDIA_PAD_FL_SOURCE))
-					continue;
-
-				compose[i]->left = 0;
-				compose[i]->top = 0;
-				compose[i]->width = r->width;
-				compose[i]->height = r->height;
-				rval = ipu_isys_subdev_fmt_propagate(sd, state,
-								     ffmt,
-								     compose[i],
-								     tgt + 1, i,
-								     which);
-				if (rval)
-					goto out_subdev_fmt_propagate;
-			}
 		}
 		goto out_subdev_fmt_propagate;
 	case IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_COMPOSE:
@@ -365,14 +329,12 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 				     struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->stream,
-					   fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 
 	/* No propagation for non-zero pads. */
 	if (fmt->pad) {
 		struct v4l2_mbus_framefmt *sink_ffmt =
-			__ipu_isys_get_ffmt(sd, state, 0, fmt->stream,
-						   fmt->which);
+			__ipu_isys_get_ffmt(sd, state, 0, fmt->which);
 
 		ffmt->width = sink_ffmt->width;
 		ffmt->height = sink_ffmt->height;
@@ -398,8 +360,7 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->stream,
-					   fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 	u32 code = asd->supported_codes[fmt->pad][0];
 	unsigned int i;
 
@@ -433,9 +394,6 @@ int ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 	int rval;
 
-	if (fmt->stream >= asd->nstreams)
-		return -EINVAL;
-
 	mutex_lock(&asd->mutex);
 	rval = __ipu_isys_subdev_set_ffmt(sd, state, fmt);
 	mutex_unlock(&asd->mutex);
@@ -449,176 +407,10 @@ int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 
-	if (fmt->stream >= asd->nstreams)
-		return -EINVAL;
-
 	mutex_lock(&asd->mutex);
 	fmt->format = *__ipu_isys_get_ffmt(sd, state, fmt->pad,
-					   fmt->stream,
 					   fmt->which);
 	mutex_unlock(&asd->mutex);
-
-	return 0;
-}
-
-int ipu_isys_subdev_get_frame_desc(struct v4l2_subdev *sd,
-				   struct v4l2_mbus_frame_desc *desc)
-{
-	int i, rval = 0;
-
-	for (i = 0; i < sd->entity.num_pads; i++) {
-		if (!(sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE))
-			continue;
-
-		rval = v4l2_subdev_call(sd, pad, get_frame_desc, i, desc);
-		if (!rval)
-			return rval;
-	}
-
-	if (i == sd->entity.num_pads)
-		rval = -EINVAL;
-
-	return rval;
-}
-
-bool ipu_isys_subdev_has_route(struct media_entity *entity,
-			       unsigned int pad0, unsigned int pad1, int *stream)
-{
-	struct ipu_isys_subdev *asd;
-	int i;
-
-	if (!entity) {
-		WARN_ON(1);
-		return false;
-	}
-	asd = to_ipu_isys_subdev(media_entity_to_v4l2_subdev(entity));
-
-	/* Two sinks are never connected together. */
-	if (pad0 < asd->nsinks && pad1 < asd->nsinks)
-		return false;
-
-	for (i = 0; i < asd->nstreams; i++) {
-		if ((asd->route[i].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE) &&
-		    ((asd->route[i].sink == pad0 &&
-		      asd->route[i].source == pad1) ||
-		     (asd->route[i].sink == pad1 &&
-			  asd->route[i].source == pad0))) {
-			if (stream)
-				*stream = i;
-			return true;
-		}
-	}
-
-	return false;
-}
-
-int ipu_isys_subdev_set_routing(struct v4l2_subdev *sd,
-				struct v4l2_subdev_routing *route)
-{
-	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
-	int i, j, ret = 0;
-
-	WARN_ON(!mutex_is_locked(&sd->entity.
-				 graph_obj.mdev
-				 ->graph_mutex));
-
-	for (i = 0; i < min(route->num_routes, asd->nstreams); ++i) {
-		struct v4l2_subdev_route *t = &route->routes[i];
-
-		if (t->sink_stream > asd->nstreams - 1 ||
-		    t->source_stream > asd->nstreams - 1)
-			continue;
-
-		for (j = 0; j < asd->nstreams; j++) {
-			if (t->sink_pad == asd->route[j].sink &&
-			    t->source_pad == asd->route[j].source)
-				break;
-		}
-
-		if (j == asd->nstreams)
-			continue;
-
-		if (asd->route[j].flags & V4L2_SUBDEV_ROUTE_FL_IMMUTABLE)
-			continue;
-
-		if ((t->flags & V4L2_SUBDEV_ROUTE_FL_SOURCE) && asd->nsinks)
-			continue;
-
-		if (!(t->flags & V4L2_SUBDEV_ROUTE_FL_SOURCE)) {
-			int source_pad = 0;
-
-			if (sd->entity.pads[t->sink_pad].flags &
-			    MEDIA_PAD_FL_MULTIPLEX)
-				source_pad = t->source_pad - asd->nsinks;
-
-			asd->stream[t->sink_pad].stream_id[source_pad] =
-			    t->sink_stream;
-		}
-
-		if (sd->entity.pads[t->source_pad].flags &
-		    MEDIA_PAD_FL_MULTIPLEX)
-			asd->stream[t->source_pad].stream_id[t->sink_pad] =
-			    t->source_stream;
-		else
-			asd->stream[t->source_pad].stream_id[0] =
-			    t->source_stream;
-
-		if (t->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE) {
-			bitmap_set(asd->stream[t->source_pad].streams_stat,
-				   t->source_stream, 1);
-			if (!(t->flags & V4L2_SUBDEV_ROUTE_FL_SOURCE))
-				bitmap_set(asd->stream[t->sink_pad]
-					   .streams_stat, t->sink_stream, 1);
-			asd->route[j].flags |= V4L2_SUBDEV_ROUTE_FL_ACTIVE;
-		} else if (!(t->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE)) {
-			bitmap_clear(asd->stream[t->source_pad].streams_stat,
-				     t->source_stream, 1);
-			if (!(t->flags & V4L2_SUBDEV_ROUTE_FL_SOURCE))
-				bitmap_clear(asd->stream[t->sink_pad]
-					     .streams_stat, t->sink_stream, 1);
-			asd->route[j].flags &= (~V4L2_SUBDEV_ROUTE_FL_ACTIVE);
-		}
-	}
-
-	return ret;
-}
-
-int ipu_isys_subdev_get_routing(struct v4l2_subdev *sd,
-				struct v4l2_subdev_routing *route)
-{
-	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
-	int i, j;
-
-	for (i = 0, j = 0; i < min(asd->nstreams, route->num_routes); ++i) {
-		route->routes[j].sink_pad = asd->route[i].sink;
-		if (sd->entity.pads[asd->route[i].sink].flags &
-		    MEDIA_PAD_FL_MULTIPLEX) {
-			int source_pad = asd->route[i].source - asd->nsinks;
-
-			route->routes[j].sink_stream =
-			    asd->stream[asd->route[i].sink].
-			    stream_id[source_pad];
-		} else {
-			route->routes[j].sink_stream =
-			    asd->stream[asd->route[i].sink].stream_id[0];
-		}
-
-		route->routes[j].source_pad = asd->route[i].source;
-		if (sd->entity.pads[asd->route[i].source].flags &
-		    MEDIA_PAD_FL_MULTIPLEX) {
-			route->routes[j].source_stream =
-			    asd->stream[asd->route[i].source].stream_id[asd->
-									route
-									[i].
-									sink];
-		} else {
-			route->routes[j].source_stream =
-			    asd->stream[asd->route[i].source].stream_id[0];
-		}
-		route->routes[j++].flags = asd->route[i].flags;
-	}
-
-	route->num_routes = j;
 
 	return 0;
 }
@@ -639,8 +431,8 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 	case V4L2_SEL_TGT_CROP:
 		if (pad->flags & MEDIA_PAD_FL_SINK) {
 			struct v4l2_mbus_framefmt *ffmt =
-				__ipu_isys_get_ffmt(sd, state, sel->pad, 0,
-							   sel->which);
+				__ipu_isys_get_ffmt(sd, state, sel->pad,
+						    sel->which);
 
 			__r.width = ffmt->width;
 			__r.height = ffmt->height;
@@ -698,24 +490,6 @@ int ipu_isys_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 	const u32 *supported_codes = asd->supported_codes[code->pad];
 	u32 index;
-	bool next_stream = false;
-
-	if (sd->entity.pads[code->pad].flags & MEDIA_PAD_FL_MULTIPLEX) {
-		if (code->stream & V4L2_SUBDEV_FLAG_NEXT_STREAM) {
-			next_stream = true;
-			code->stream &= ~V4L2_SUBDEV_FLAG_NEXT_STREAM;
-		}
-
-		if (code->stream > asd->nstreams - 1)
-			return -EINVAL;
-
-		if (next_stream && code->stream < asd->nstreams) {
-			code->stream++;
-			return 0;
-		}
-
-		return -EINVAL;
-	}
 
 	for (index = 0; supported_codes[index]; index++) {
 		if (index == code->index) {
@@ -726,57 +500,6 @@ int ipu_isys_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 
 	return -EINVAL;
 }
-
-#ifdef IPU_ISYS_YUV422_I420
-/*
- * IPU private link validation
- * In advanced IPU and special case, there will be format change between
- * sink/source pads in ISYS.
- * Format code checking is not necessary for these features.
- */
-static int
-ipu_isys_subdev_link_validate_private(struct v4l2_subdev *sd,
-				      struct media_link *link,
-				      struct v4l2_subdev_format *source_fmt,
-				      struct v4l2_subdev_format *sink_fmt)
-{
-	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
-
-	/* The width and height must match. */
-	if (source_fmt->format.width != sink_fmt->format.width ||
-	    source_fmt->format.height != sink_fmt->format.height)
-		return -EPIPE;
-
-	/*
-	 * The field order must match, or the sink field order must be NONE
-	 * to support interlaced hardware connected to bridges that support
-	 * progressive formats only.
-	 */
-	if (source_fmt->format.field != sink_fmt->format.field &&
-	    sink_fmt->format.field != V4L2_FIELD_NONE)
-		return -EPIPE;
-
-	if (source_fmt->stream != sink_fmt->stream)
-		return -EINVAL;
-	/*
-	 * For new IPU special case, YUV format changing in BE-SOC,
-	 * from YUV422 to I420, which is used to adapt multiple
-	 * YUV sensors and provide I420 to BB for partial processing.
-	 * If this entity doing format convert, ignore format check
-	 */
-	if (source_fmt->format.code != sink_fmt->format.code) {
-		if (source_fmt->format.code == MEDIA_BUS_FMT_UYVY8_2X8 &&
-		    (sink_fmt->format.code == MEDIA_BUS_FMT_YUYV8_1X16 ||
-		     sink_fmt->format.code == MEDIA_BUS_FMT_UYVY8_1X16))
-			dev_warn(&asd->isys->adev->dev,
-				 "YUV format change, ignore code check\n");
-		else
-			return -EINVAL;
-	}
-
-	return 0;
-}
-#endif
 
 /*
  * Besides validating the link, figure out the external pad and the
@@ -818,13 +541,8 @@ int ipu_isys_subdev_link_validate(struct v4l2_subdev *sd,
 	if (asd->isl_mode != IPU_ISL_OFF)
 		ip->isl_mode = asd->isl_mode;
 
-#if defined(IPU_ISYS_YUV422_I420)
-	return ipu_isys_subdev_link_validate_private(sd, link, source_fmt,
-						    sink_fmt);
-#else
 	return v4l2_subdev_link_validate_default(sd, link, source_fmt,
 						 sink_fmt);
-#endif
 }
 
 int ipu_isys_subdev_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
@@ -842,7 +560,7 @@ int ipu_isys_subdev_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 		struct v4l2_rect *try_compose =
 			v4l2_subdev_get_try_compose(sd, fh->state, i);
 
-		*try_fmt = asd->ffmt[i][0];
+		*try_fmt = asd->ffmt[i];
 		*try_crop = asd->crop[i];
 		*try_compose = asd->compose[i];
 	}
@@ -861,12 +579,10 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 			 struct v4l2_subdev_ops *ops,
 			 unsigned int nr_ctrls,
 			 unsigned int num_pads,
-			 unsigned int num_streams,
 			 unsigned int num_source,
 			 unsigned int num_sink,
 			 unsigned int sd_flags)
 {
-	int i;
 	int rval = -EINVAL;
 
 	mutex_init(&asd->mutex);
@@ -877,17 +593,14 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 	asd->sd.owner = THIS_MODULE;
 	asd->sd.entity.function = MEDIA_ENT_F_VID_IF_BRIDGE;
 
-	asd->nstreams = num_streams;
 	asd->nsources = num_source;
 	asd->nsinks = num_sink;
 
 	asd->pad = devm_kcalloc(&asd->isys->adev->dev, num_pads,
 				sizeof(*asd->pad), GFP_KERNEL);
 
-	asd->ffmt = (struct v4l2_mbus_framefmt **)
-			devm_kcalloc(&asd->isys->adev->dev, num_pads,
-				     sizeof(struct v4l2_mbus_framefmt *),
-				     GFP_KERNEL);
+	asd->ffmt = devm_kcalloc(&asd->isys->adev->dev, num_pads,
+				 sizeof(*asd->ffmt), GFP_KERNEL);
 
 	asd->crop = devm_kcalloc(&asd->isys->adev->dev, num_pads,
 				 sizeof(*asd->crop), GFP_KERNEL);
@@ -897,29 +610,9 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 
 	asd->valid_tgts = devm_kcalloc(&asd->isys->adev->dev, num_pads,
 				       sizeof(*asd->valid_tgts), GFP_KERNEL);
-	asd->route = devm_kcalloc(&asd->isys->adev->dev, num_streams,
-				  sizeof(*asd->route), GFP_KERNEL);
-
-	asd->stream = devm_kcalloc(&asd->isys->adev->dev, num_pads,
-				   sizeof(*asd->stream), GFP_KERNEL);
-
 	if (!asd->pad || !asd->ffmt || !asd->crop || !asd->compose ||
-	    !asd->valid_tgts || !asd->route || !asd->stream)
+	    !asd->valid_tgts)
 		return -ENOMEM;
-
-	for (i = 0; i < num_pads; i++) {
-		asd->ffmt[i] = (struct v4l2_mbus_framefmt *)
-		    devm_kcalloc(&asd->isys->adev->dev, num_streams,
-				 sizeof(struct v4l2_mbus_framefmt), GFP_KERNEL);
-		if (!asd->ffmt[i])
-			return -ENOMEM;
-
-		asd->stream[i].stream_id =
-		    devm_kcalloc(&asd->isys->adev->dev, num_source,
-				 sizeof(*asd->stream[i].stream_id), GFP_KERNEL);
-		if (!asd->stream[i].stream_id)
-			return -ENOMEM;
-	}
 
 	rval = media_entity_pads_init(&asd->sd.entity, num_pads, asd->pad);
 	if (rval)

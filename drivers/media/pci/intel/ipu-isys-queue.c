@@ -18,11 +18,6 @@
 #include "ipu-isys.h"
 #include "ipu-isys-csi2.h"
 #include "ipu-isys-video.h"
-#ifdef IPU_TRACE_EVENT
-#define CREATE_TRACE_POINTS
-#define IPU_ISYSBUF_READY_TRACE
-#include "ipu-trace-event.h"
-#endif
 
 static bool wall_clock_ts_on;
 module_param(wall_clock_ts_on, bool, 0660);
@@ -343,12 +338,10 @@ ipu_isys_buffer_to_fw_frame_buff_pin(struct vb2_buffer *vb,
 				     struct ipu_fw_isys_frame_buff_set_abi *set)
 {
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(vb->vb2_queue);
-#if defined(IPU_ISYS_COMPRESSION)
 	struct ipu_isys_video *av = container_of(aq, struct ipu_isys_video, aq);
 
 	if (av->compression)
 		set->output_pins[aq->fw_output].compress = 1;
-#endif
 
 	set->output_pins[aq->fw_output].addr =
 	    vb2_dma_contig_plane_dma_addr(vb, 0);
@@ -633,7 +626,6 @@ int ipu_isys_link_fmt_validate(struct ipu_isys_queue *aq)
 
 	fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 	fmt.pad = pad->index;
-	fmt.stream = 0;
 	rval = v4l2_subdev_call(sd, pad, get_fmt, NULL, &fmt);
 	if (rval)
 		return rval;
@@ -885,6 +877,7 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 	}
 	spin_unlock_irqrestore(&aq->lock, flags);
 
+	av->skipframe = 1;
 	rval = __start_streaming(&aq->vbq, 0);
 
 	return rval;
@@ -911,22 +904,16 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 	isys->in_reset = true;
 	mutex_unlock(&isys->reset_mutex);
 
-	for (i = 0; i < NR_OF_CSI2_SOURCE_PADS; i++) {
-		av = &isys->csi2->av[i];
+	av = &isys->csi2->av;
 
-		if (av == self_av)
-			continue;
-
+	if (av != self_av) {
 		ip = &av->ip;
 		mutex_lock(&av->mutex);
-		if (!ip->streaming) {
-			mutex_unlock(&av->mutex);
-			continue;
+		if (ip->streaming) {
+			av->reset = true;
+			has_streaming = true;
+			reset_stop_streaming(av);
 		}
-
-		av->reset = true;
-		has_streaming = true;
-		reset_stop_streaming(av);
 		mutex_unlock(&av->mutex);
 	}
 
@@ -943,9 +930,10 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 		mutex_unlock(&av->mutex);
 	}
 
-	csi2_be_soc = &isys->csi2_be_soc;
-	for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
-		av = &csi2_be_soc->av[j];
+	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++) {
+		csi2_be_soc = &isys->csi2_be_soc[i];
+		for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
+			av = &csi2_be_soc->av[j];
 		if (av == self_av)
 			continue;
 
@@ -959,6 +947,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 		has_streaming = true;
 		reset_stop_streaming(av);
 		mutex_unlock(&av->mutex);
+		}
 	}
 
 	if (!has_streaming)
@@ -1002,12 +991,8 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 
 	dev_dbg(&isys->adev->dev, "restart streams\n");
 
-	for (i = 0; i < NR_OF_CSI2_SOURCE_PADS; i++) {
-		av = &isys->csi2->av[i];
-
-		if (!av->reset)
-			continue;
-
+	av = &isys->csi2->av;
+	if (av->reset) {
 		av->reset = false;
 		mutex_lock(&av->mutex);
 		reset_start_streaming(av);
@@ -1022,9 +1007,10 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 		mutex_unlock(&av->mutex);
 	}
 
-	csi2_be_soc = &isys->csi2_be_soc;
-	for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
-		av = &csi2_be_soc->av[j];
+	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++) {
+		csi2_be_soc = &isys->csi2_be_soc[i];
+		for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
+			av = &csi2_be_soc->av[j];
 		if (!av->reset)
 			continue;
 
@@ -1032,6 +1018,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 		mutex_lock(&av->mutex);
 		reset_start_streaming(av);
 		mutex_unlock(&av->mutex);
+		}
 	}
 
 end_of_reset:
@@ -1176,8 +1163,8 @@ ipu_isys_buf_calc_sequence_time(struct ipu_isys_buffer *ib,
 
 	dev_dbg(dev, "buf: %s: buffer done, CPU-timestamp:%lld, sequence:%d\n",
 		av->vdev.name, ktime_get_ns(), sequence);
-	dev_dbg(dev, "vc:%d, index:%d, vbuf timestamp:%lld, endl\n",
-		ip->vc, vb->index, vbuf->vb2_buf.timestamp);
+	dev_dbg(dev, "index:%d, vbuf timestamp:%lld, endl\n",
+		vb->index, vbuf->vb2_buf.timestamp);
 }
 
 void ipu_isys_queue_buf_done(struct ipu_isys_buffer *ib)
@@ -1191,6 +1178,9 @@ void ipu_isys_queue_buf_done(struct ipu_isys_buffer *ib)
 		 * to the userspace when it is de-queued
 		 */
 		atomic_set(&ib->str2mmio_flag, 0);
+	} else if (atomic_read(&ib->skipframe_flag)) {
+		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+		atomic_set(&ib->skipframe_flag, 0);
 	} else {
 		vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
 	}
@@ -1246,15 +1236,6 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 		buf = to_vb2_v4l2_buffer(vb);
 		buf->field = V4L2_FIELD_NONE;
 
-		/*
-		 * Use "reserved" field to pass csi2 index and vc.
-		 * May need to change to other approach.
-		 */
-		buf->reserved &= 0xFFFFFF00;
-		if (ip->csi2)
-			buf->reserved |= ip->csi2->index << 4;
-		buf->reserved |= ip->vc;
-
 		list_del(&ib->head);
 		spin_unlock_irqrestore(&aq->lock, flags);
 
@@ -1271,13 +1252,6 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 			spin_unlock_irqrestore(&ip->short_packet_queue_lock,
 					       flags);
 		} else {
-#ifdef IPU_TRACE_EVENT
-			struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
-
-			trace_ipu_isysbuf_ready(buf->sequence, av->mpix.width,
-						av->mpix.height,
-						av->pfmt->bpp_packed);
-#endif
 			ipu_isys_queue_buf_done(ib);
 		}
 

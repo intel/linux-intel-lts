@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2016--2017 Intel Corporation.
+ * Copyright (c) 2016--2022 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -22,6 +22,23 @@
 #define MAX_ACPI_SENSOR_NUM	4
 #define MAX_ACPI_I2C_NUM	12
 #define MAX_ACPI_GPIO_NUM	12
+
+#define GPIO_RESET		0x0
+#define GPIO_POWER_EN		0xb
+#define GPIO_READY_STAT		0x13
+#define GPIO_HDMI_DETECT	0x14
+
+struct ipu_isys_subdev_pdata *ptr_built_in_pdata;
+
+struct ipu_isys_subdev_pdata *get_built_in_pdata(void)
+{
+	return ptr_built_in_pdata;
+};
+
+enum connection_type {
+	TYPE_DIRECT,
+	TYPE_SERDES
+};
 
 /* Data representation as it is in ACPI SSDB buffer */
 struct sensor_bios_data_packed {
@@ -79,7 +96,9 @@ struct sensor_bios_data {
 	u16 xshutdown;
 	u8 controllogicid;
 	u8 pprval;
+	u8 pprunit;
 	struct ipu_i2c_info i2c[MAX_ACPI_I2C_NUM];
+	u64 i2c_num;
 };
 
 struct control_logic_data_packed {
@@ -133,7 +152,16 @@ int ipu_get_acpi_devices(void *driver_data,
 				 struct ipu_isys_csi2_config *csi2,
 				 bool reprobe));
 
-struct ipu_isys_subdev_pdata get_acpi_adata(void);
+struct ipu_isys_subdev_pdata *get_built_in_pdata(void);
+
+int ipu_acpi_get_cam_data(struct device *dev,
+				struct sensor_bios_data *sensor);
+
+int ipu_acpi_get_dep_data(struct device *dev,
+				struct control_logic_data *ctl_data);
+
+int ipu_acpi_get_control_logic_data(struct device *dev,
+				struct control_logic_data **ctl_data);
 
 struct intel_ipu6_regulator {
 	char *src_dev_name;
@@ -141,8 +169,42 @@ struct intel_ipu6_regulator {
 	char *dest_rail;
 };
 
-#define GPIO_RESET             0x0
-#define GPIO_READY_STAT        0x13
-#define GPIO_HDMI_DETECT       0x14
+struct ipu_i2c_helper {
+	int (*fn)(struct device *dev, void *priv,
+		struct ipu_isys_csi2_config *csi2,
+		bool reprobe);
+	void *driver_data;
+};
+
+struct ipu_i2c_new_dev {
+	struct list_head list;
+	struct i2c_board_info info;
+	unsigned short int bus;
+};
+
+struct ipu_camera_module_data {
+	struct list_head list;
+	struct ipu_isys_subdev_info sd;
+	struct ipu_isys_csi2_config csi2;
+	unsigned int ext_clk;
+	void *pdata; /* Ptr to generated platform data*/
+	void *priv; /* Private for specific subdevice */
+};
+
+struct ipu_acpi_devices {
+	const char *hid_name;
+	const char *real_driver;
+	int (*get_platform_data)(struct i2c_client *client,
+				 struct ipu_camera_module_data *data,
+				 struct ipu_i2c_helper *helper,
+				 void *priv,
+				 size_t size,
+				 enum connection_type type,
+				 const char *serdes_name);
+	void *priv_data;
+	size_t priv_size;
+	enum connection_type connect;
+	const char *serdes_name;
+};
 
 #endif

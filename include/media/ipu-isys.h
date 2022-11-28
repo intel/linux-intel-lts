@@ -21,6 +21,8 @@ struct ipu_isys_subdev_i2c_info {
 	char i2c_adapter_bdf[32];
 };
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 /**
  * struct ipu_spdata_rep - override subdev platform data
  *
@@ -57,12 +59,18 @@ struct ipu_spdata_rep {
 	char irq_pin_name[IPU_SPLATA_IRQ_PIN_NAME_LEN];
 	char suffix;
 };
+#endif
 
 struct ipu_isys_subdev_info {
 	struct ipu_isys_csi2_config *csi2;
 	struct ipu_isys_subdev_i2c_info i2c;
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	void (*fixup_spdata)(const void *spdata_rep, void *spdata);
+#endif
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	char *acpi_hid;
+#endif
 };
 
 struct ipu_isys_clk_mapping {

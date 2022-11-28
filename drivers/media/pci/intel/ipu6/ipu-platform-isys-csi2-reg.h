@@ -54,8 +54,8 @@
 #define CSI_RX_NUM_ERRORS_IN_IRQ		20
 #define CSI_RX_NUM_IRQ				32
 
-#define IPU_CSI_RX_IRQ_FS_VC(chn)	(1 << ((chn) * 2))
-#define IPU_CSI_RX_IRQ_FE_VC(chn)	(2 << ((chn) * 2))
+#define IPU_CSI_RX_IRQ_FS_VC		1
+#define IPU_CSI_RX_IRQ_FE_VC		2
 
 /* PPI2CSI */
 #define CSI_REG_PPI2CSI_ENABLE                  0x200
@@ -226,6 +226,8 @@ enum CSI_FE_SYNC_CNTR_SEL_TYPE {
 
 #define CSI_REG_HUB_DRV_ACCESS_PORT(id)	(CSI_REG_BASE + 0x18018 + (id) * 4)
 #define CSI_REG_HUB_FW_ACCESS_PORT(id)	(CSI_REG_BASE + 0x17000 + (id) * 4)
+#define IPU6V6_CSI_REG_HUB_FW_ACCESS_PORT(id)	\
+	(CSI_REG_BASE + 0x16000 + (id) * 4)
 
 enum CSI_PORT_CLK_GATING_SWITCH {
 	CSI_PORT_CLK_GATING_OFF = 0,

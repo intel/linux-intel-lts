@@ -32,7 +32,7 @@ config VIDEO_INTEL_IPU_SOC
 endchoice
 
 config VIDEO_INTEL_IPU_WERROR
-	bool "Force GCC to throw an error instead of a warning when compiling"
+	tristate "Force GCC to throw an error instead of a warning when compiling"
 	depends on VIDEO_INTEL_IPU6
 	depends on EXPERT
 	depends on !COMPILE_TEST
@@ -46,14 +46,14 @@ config VIDEO_INTEL_IPU_WERROR
 	  If in doubt, say "N".
 
 config VIDEO_INTEL_IPU_USE_PLATFORMDATA
-	bool "Enable platform data"
+	tristate "Enable platform data"
 	depends on VIDEO_INTEL_IPU6
 	default y
 	help
 	  Enalbe platform data in IPU.
 
 config VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING
-	bool "Enable platform data dynamic loading"
+	tristate "Enable platform data dynamic loading"
 	depends on VIDEO_INTEL_IPU6
 	depends on VIDEO_INTEL_IPU_USE_PLATFORMDATA
 	default n

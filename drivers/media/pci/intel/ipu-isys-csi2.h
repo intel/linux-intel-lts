@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2020 Intel Corporation */
+/* Copyright (C) 2013 - 2022 Intel Corporation */
 
 #ifndef IPU_ISYS_CSI2_H
 #define IPU_ISYS_CSI2_H
@@ -18,17 +18,9 @@ struct ipu_isys;
 
 #define NR_OF_CSI2_SINK_PADS		1
 #define CSI2_PAD_SINK			0
-#define NR_OF_CSI2_STREAMS		NR_OF_CSI2_VC
-#define NR_OF_CSI2_SOURCE_PADS		NR_OF_CSI2_STREAMS
-#define CSI2_PAD_SOURCE(n)		\
-	({ typeof(n) __n = (n);		\
-	(__n >= NR_OF_CSI2_SOURCE_PADS ? \
-		(NR_OF_CSI2_PADS - 2) : \
-		(__n + NR_OF_CSI2_SINK_PADS)); })
-#define NR_OF_CSI2_META_PADS		1
-#define NR_OF_CSI2_PADS			\
-	(NR_OF_CSI2_SINK_PADS + NR_OF_CSI2_SOURCE_PADS + NR_OF_CSI2_META_PADS)
-#define CSI2_PAD_META			(NR_OF_CSI2_PADS - 1)
+#define NR_OF_CSI2_SOURCE_PADS		1
+#define CSI2_PAD_SOURCE			1
+#define NR_OF_CSI2_PADS	(NR_OF_CSI2_SINK_PADS + NR_OF_CSI2_SOURCE_PADS)
 
 #define IPU_ISYS_SHORT_PACKET_BUFFER_NUM	VIDEO_MAX_FRAME
 #define IPU_ISYS_SHORT_PACKET_WIDTH	32
@@ -89,8 +81,7 @@ struct ipu_isys_csi2 {
 	struct ipu_isys_csi2_pdata *pdata;
 	struct ipu_isys *isys;
 	struct ipu_isys_subdev asd;
-	struct ipu_isys_video av[NR_OF_CSI2_SOURCE_PADS];
-	struct ipu_isys_video av_meta;
+	struct ipu_isys_video av;
 	struct completion eof_completion;
 
 	void __iomem *base;
@@ -98,11 +89,9 @@ struct ipu_isys_csi2 {
 	unsigned int nlanes;
 	unsigned int index;
 	atomic_t sof_sequence;
-	bool in_frame[NR_OF_CSI2_VC];
-	bool wait_for_sync[NR_OF_CSI2_VC];
-
-	unsigned int remote_streams;
 	unsigned int stream_count;
+	bool in_frame;
+	bool wait_for_sync;
 
 	struct v4l2_ctrl *store_csi2_header;
 };
@@ -160,8 +149,8 @@ void ipu_isys_csi2_cleanup(struct ipu_isys_csi2 *csi2);
 struct ipu_isys_buffer *
 ipu_isys_csi2_get_short_packet_buffer(struct ipu_isys_pipeline *ip,
 				      struct ipu_isys_buffer_list *bl);
-void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc);
-void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc);
+void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2);
+void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2);
 void ipu_isys_csi2_wait_last_eof(struct ipu_isys_csi2 *csi2);
 
 /* interface for platform specific */

@@ -15,12 +15,19 @@
 #include "ipu-platform-regs.h"
 #include "ipu-trace.h"
 
+/*
+ * enabling ipu trace need a 96 MB buffer.
+ */
+static bool ipu_trace_enable;
+module_param(ipu_trace_enable, bool, 0660);
+MODULE_PARM_DESC(ipu_trace_enable, "IPU trace enable");
+
 struct trace_register_range {
 	u32 start;
 	u32 end;
 };
 
-#define MEMORY_RING_BUFFER_SIZE		(SZ_1M * 32)
+#define MEMORY_RING_BUFFER_SIZE		(SZ_1M * 96)
 #define TRACE_MESSAGE_SIZE		16
 /*
  * It looks that the trace unit sometimes writes outside the given buffer.
@@ -773,6 +780,15 @@ int ipu_trace_init(struct ipu_device *isp, void __iomem *base,
 	sys->base = base;
 	sys->blocks = blocks;
 
+	sys->memory.memory_buffer =
+	    dma_alloc_coherent(dev, MEMORY_RING_BUFFER_SIZE +
+			       MEMORY_RING_BUFFER_GUARD,
+			       &sys->memory.dma_handle,
+			       GFP_KERNEL);
+
+	if (!sys->memory.memory_buffer)
+		dev_err(dev, "failed alloc memory for tracing.\n");
+
 leave:
 	mutex_unlock(&isp->trace->lock);
 
@@ -811,6 +827,9 @@ int ipu_trace_debugfs_add(struct ipu_device *isp, struct dentry *dir)
 	struct dentry *files[4];
 	int i = 0;
 
+	if (!ipu_trace_enable)
+		return 0;
+
 	files[i] = debugfs_create_file("traceconf", 0644,
 				       dir, isp, &ipu_traceconf_fops);
 	if (!files[i])
@@ -847,12 +866,17 @@ error:
 
 int ipu_trace_add(struct ipu_device *isp)
 {
+	if (!ipu_trace_enable)
+		return 0;
+
 	isp->trace = devm_kzalloc(&isp->pdev->dev,
 				  sizeof(struct ipu_trace), GFP_KERNEL);
 	if (!isp->trace)
 		return -ENOMEM;
 
 	mutex_init(&isp->trace->lock);
+
+	dev_dbg(&isp->pdev->dev, "ipu trace enabled!");
 
 	return 0;
 }
@@ -863,6 +887,23 @@ void ipu_trace_release(struct ipu_device *isp)
 		return;
 	mutex_destroy(&isp->trace->lock);
 }
+
+int ipu_trace_buffer_dma_handle(struct device *dev, dma_addr_t *dma_handle)
+{
+	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
+	struct ipu_subsystem_trace_config *sys = adev->trace_cfg;
+
+	if (!ipu_trace_enable)
+		return -EACCES;
+
+	if (!sys->memory.memory_buffer)
+		return -EACCES;
+
+	*dma_handle = sys->memory.dma_handle;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(ipu_trace_buffer_dma_handle);
 
 MODULE_AUTHOR("Samu Onkalo <samu.onkalo@intel.com>");
 MODULE_LICENSE("GPL");

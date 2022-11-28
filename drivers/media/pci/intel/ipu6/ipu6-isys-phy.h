@@ -154,6 +154,11 @@ int ipu6_isys_phy_powerdown_ack(struct ipu_isys *isys, unsigned int phy_id);
 int ipu6_isys_phy_reset(struct ipu_isys *isys, unsigned int phy_id,
 			bool assert);
 int ipu6_isys_phy_ready(struct ipu_isys *isys, unsigned int phy_id);
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 int ipu6_isys_phy_common_init(struct ipu_isys *isys, struct ipu_isys_csi2_config *cfg);
 int ipu6_isys_phy_config(struct ipu_isys *isys, struct ipu_isys_csi2_config *cfg);
+#else
+int ipu6_isys_phy_common_init(struct ipu_isys *isys);
+int ipu6_isys_phy_config(struct ipu_isys *isys);
+#endif
 #endif

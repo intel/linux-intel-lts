@@ -430,12 +430,6 @@ enum ipu_fw_isys_pin_type {
 	IPU_FW_ISYS_PIN_TYPE_METADATA_0 = 4,
 	/* Reserved for future use */
 	IPU_FW_ISYS_PIN_TYPE_METADATA_1 = 5,
-#if defined(IPU_ISYS_YUV422_I420)
-	/* Captured through the SoC path
-	 * (2D mode where odd and even lines are handled separately)
-	 */
-	IPU_FW_ISYS_PIN_TYPE_RAW_DUAL_SOC = 10,
-#endif
 	/* Keep always last and max value */
 	N_IPU_FW_ISYS_PIN_TYPE
 };

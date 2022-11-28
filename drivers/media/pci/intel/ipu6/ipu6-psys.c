@@ -19,11 +19,6 @@
 #include "ipu6-ppg.h"
 #include "ipu-platform-regs.h"
 #include "ipu-trace.h"
-#ifdef IPU_TRACE_EVENT
-#define CREATE_TRACE_POINTS
-#define IPU_PG_KCMD_TRACE
-#include "ipu-trace-event.h"
-#endif
 
 static bool early_pg_transfer;
 module_param(early_pg_transfer, bool, 0664);
@@ -33,12 +28,6 @@ MODULE_PARM_DESC(early_pg_transfer,
 bool enable_power_gating = true;
 module_param(enable_power_gating, bool, 0664);
 MODULE_PARM_DESC(enable_power_gating, "enable power gating");
-
-#ifdef IPU_CACHE_DEBUG
-bool enable_cache_flush = true;
-module_param(enable_cache_flush, bool, 0664);
-MODULE_PARM_DESC(enable_cache_flush, "enable cache flush");
-#endif
 
 struct ipu_trace_block psys_trace_blocks[] = {
 	{
@@ -328,10 +317,6 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 	if (ret)
 		goto error;
 
-#ifdef IPU_CACHE_DEBUG
-	dev_dbg(&psys->adev->dev, "enable_cache_flush = %d\n",
-		enable_cache_flush);
-#endif
 	for (i = 0; i < kcmd->nbuffers; i++) {
 		struct ipu_fw_psys_terminal *terminal;
 
@@ -387,10 +372,6 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 			continue;
 
 		prevfd = kcmd->buffers[i].base.fd;
-#ifdef IPU_CACHE_DEBUG
-		if (!enable_cache_flush)
-			continue;
-#endif
 		dma_sync_sg_for_device(&psys->adev->dev,
 				       kcmd->kbufs[i]->sgt->sgl,
 				       kcmd->kbufs[i]->sgt->orig_nents,
@@ -469,17 +450,6 @@ void ipu_psys_kcmd_complete(struct ipu_psys_ppg *kppg,
 	struct ipu_psys_fh *fh = kcmd->fh;
 	struct ipu_psys *psys = fh->psys;
 
-#ifdef IPU_TRACE_EVENT
-	trace_ipu_pg_kcmd(__func__, kcmd->user_token, kcmd->issue_id,
-			  kcmd->priority,
-			  ipu_fw_psys_pg_get_id(kcmd),
-			  ipu_fw_psys_pg_load_cycles(kcmd),
-			  ipu_fw_psys_pg_init_cycles(kcmd),
-			  ipu_fw_psys_pg_server_init_cycles(kcmd),
-			  ipu_fw_psys_pg_next_frame_init_cycles(kcmd),
-			  ipu_fw_psys_pg_complete_cycles(kcmd),
-			  ipu_fw_psys_pg_processing_cycles(kcmd));
-#endif
 	kcmd->ev.type = IPU_PSYS_EVENT_TYPE_CMD_COMPLETE;
 	kcmd->ev.user_token = kcmd->user_token;
 	kcmd->ev.issue_id = kcmd->issue_id;
@@ -677,18 +647,6 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
 		mutex_lock(&kppg->mutex);
 		list_add_tail(&kcmd->list, &kppg->kcmds_new_list);
 		mutex_unlock(&kppg->mutex);
-#ifdef IPU_TRACE_EVENT
-		trace_ipu_pg_kcmd(__func__, kcmd->user_token,
-				  kcmd->issue_id,
-				  kcmd->priority,
-				  ipu_fw_psys_pg_get_id(kcmd),
-				  ipu_fw_psys_pg_load_cycles(kcmd),
-				  ipu_fw_psys_pg_init_cycles(kcmd),
-				  ipu_fw_psys_pg_server_init_cycles(kcmd),
-				  ipu_fw_psys_pg_next_frame_init_cycles(kcmd),
-				  ipu_fw_psys_pg_complete_cycles(kcmd),
-				  ipu_fw_psys_pg_processing_cycles(kcmd));
-#endif
 	}
 
 	if (resche) {
@@ -1072,5 +1030,3 @@ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
 
 	return 0;
 }
-
-MODULE_IMPORT_NS(DMA_BUF);

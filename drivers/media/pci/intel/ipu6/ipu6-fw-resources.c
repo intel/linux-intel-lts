@@ -555,7 +555,8 @@ void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
 		mem_type = IPU6SE_FW_PSYS_N_DATA_MEM_TYPE_ID;
 		max_mem_id = IPU6SE_FW_PSYS_N_MEM_ID;
 		dev_chn = IPU6SE_FW_PSYS_N_DEV_CHN_ID;
-	} else if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) {
+	} else if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		   ipu_ver == IPU_VER_6EP_MTL) {
 		mem_type = IPU6_FW_PSYS_N_DATA_MEM_TYPE_ID;
 		max_mem_id = IPU6_FW_PSYS_N_MEM_ID;
 		dev_chn = IPU6_FW_PSYS_N_DEV_CHN_ID;
@@ -600,7 +601,7 @@ void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
 			  struct ipu_psys_kcmd *kcmd, const char *note)
 {
 	if (ipu_ver == IPU_VER_6SE || ipu_ver == IPU_VER_6 ||
-	    ipu_ver == IPU_VER_6EP)
+	    ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL)
 		return;
 
 	WARN(1, "%s ipu_ver:[%u] is unsupported!\n", __func__, ipu_ver);

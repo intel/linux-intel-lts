@@ -16,6 +16,14 @@
 #include <media/ipu-isys.h>
 #include <media/v4l2-mc.h>
 #include <media/v4l2-subdev.h>
+#if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#include <media/v4l2-fwnode.h>
+#include <media/v4l2-ctrls.h>
+#include <media/v4l2-device.h>
+#include <media/v4l2-event.h>
+#include <media/v4l2-ioctl.h>
+#include <media/v4l2-async.h>
+#endif
 #include "ipu.h"
 #include "ipu-bus.h"
 #include "ipu-cpd.h"
@@ -23,9 +31,6 @@
 #include "ipu-dma.h"
 #include "ipu-isys.h"
 #include "ipu-isys-csi2.h"
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-#include "ipu-isys-tpg.h"
-#endif
 #include "ipu-isys-video.h"
 #include "ipu-platform-regs.h"
 #include "ipu-buttress.h"
@@ -33,6 +38,7 @@
 #include "ipu-platform-buttress-regs.h"
 
 #define ISYS_PM_QOS_VALUE	300
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 /*
  * The param was passed from module to indicate if port
  * could be optimized.
@@ -40,62 +46,9 @@
 static bool csi2_port_optimized = true;
 module_param(csi2_port_optimized, bool, 0660);
 MODULE_PARM_DESC(csi2_port_optimized, "IPU CSI2 port optimization");
-
-#if defined(IPU_IWAKE_ENABLE)
-#define IPU_BUTTRESS_FABIC_CONTROL	    0x68
-#define GDA_ENABLE_IWAKE_INDEX		    2
-#define GDA_IWAKE_THRESHOLD_INDEX           1
-#define GDA_IRQ_CRITICAL_THRESHOLD_INDEX    0
-
-/* LTR & DID value are 10 bit at most */
-#define LTR_DID_VAL_MAX		1023
-#define LTR_DEFAULT_VALUE	0x70503C19
-#define FILL_TIME_DEFAULT_VALUE 0xFFF0783C
-#define LTR_DID_PKGC_2R		20
-#define LTR_DID_PKGC_8		100
-#define LTR_SCALE_DEFAULT	5
-#define LTR_SCALE_1024NS	2
-#define REG_PKGC_PMON_CFG	0xB00
-
-#define VAL_PKGC_PMON_CFG_RESET 0x38
-#define VAL_PKGC_PMON_CFG_START 0x7
-
-#define IS_PIXEL_BUFFER_PAGES		0x80
-/* BIOS provides the driver the LTR and threshold information in IPU,
- * IS pixel buffer is 256KB, MaxSRAMSize is 200KB on IPU6.
- */
-#define IPU6_MAX_SRAM_SIZE			(200 << 10)
-/* IS pixel buffer is 128KB, MaxSRAMSize is 96KB on IPU6SE.
- */
-#define IPU6SE_MAX_SRAM_SIZE			(96 << 10)
-/* When iwake mode is disabled the critical threshold is statically set to 75%
- * of the IS pixel buffer criticalThreshold = (128 * 3) / 4
- */
-#define CRITICAL_THRESHOLD_IWAKE_DISABLE	(IS_PIXEL_BUFFER_PAGES * 3 / 4)
-
-union fabric_ctrl {
-	struct {
-		u16 ltr_val   : 10;
-		u16 ltr_scale : 3;
-		u16 RSVD1     : 3;
-		u16 did_val   : 10;
-		u16 did_scale : 3;
-		u16 RSVD2     : 1;
-		u16 keep_power_in_D0   : 1;
-		u16 keep_power_override : 1;
-	} bits;
-	u32 value;
-};
-
-enum ltr_did_type {
-	LTR_IWAKE_ON,
-	LTR_IWAKE_OFF,
-	LTR_ISYS_ON,
-	LTR_ISYS_OFF,
-	LTR_TYPE_MAX
-};
 #endif
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 struct isys_i2c_test {
 	u8 bus_nr;
 	u16 addr;
@@ -135,6 +88,7 @@ i2c_client *isys_find_i2c_subdev(struct i2c_adapter *adapter,
 		return NULL;
 	return test.client;
 }
+#endif
 static int
 isys_complete_ext_device_registration(struct ipu_isys *isys,
 				      struct v4l2_subdev *sd,
@@ -172,7 +126,7 @@ skip_unregister_subdev:
 	v4l2_device_unregister_subdev(sd);
 	return rval;
 }
-
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 static int isys_register_ext_subdev(struct ipu_isys *isys,
 				    struct ipu_isys_subdev_info *sd_info)
 {
@@ -252,24 +206,17 @@ static void isys_register_ext_subdevs(struct ipu_isys *isys)
 	for (sd_info = spdata->subdevs; *sd_info; sd_info++)
 		isys_register_ext_subdev(isys, *sd_info);
 }
+#endif
 
 static void isys_unregister_subdevices(struct ipu_isys *isys)
 {
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	const struct ipu_isys_internal_tpg_pdata *tpg =
-	    &isys->pdata->ipdata->tpg;
-#endif
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
 	unsigned int i;
 
 	ipu_isys_csi2_be_cleanup(&isys->csi2_be);
-	ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc);
-
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	for (i = 0; i < tpg->ntpgs; i++)
-		ipu_isys_tpg_cleanup(&isys->tpg[i]);
-#endif
+	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++)
+		ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc[i]);
 
 	for (i = 0; i < csi2->nports; i++)
 		ipu_isys_csi2_cleanup(&isys->csi2[i]);
@@ -277,18 +224,18 @@ static void isys_unregister_subdevices(struct ipu_isys *isys)
 
 static int isys_register_subdevices(struct ipu_isys *isys)
 {
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	const struct ipu_isys_internal_tpg_pdata *tpg =
-	    &isys->pdata->ipdata->tpg;
-#endif
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
+	struct ipu_isys_csi2_be_soc *csi2_be_soc;
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
 	struct ipu_isys_subdev_info **sd_info;
 	DECLARE_BITMAP(csi2_enable, 32);
-	unsigned int i, j, k;
+#endif
+	unsigned int i, k;
 	int rval;
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 	/*
 	 * Here is somewhat a workaround, let each platform decide
 	 * if csi2 port can be optimized, which means only registered
@@ -310,6 +257,7 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	} else {
 		bitmap_fill(csi2_enable, 32);
 	}
+#endif
 	isys->csi2 = devm_kcalloc(&isys->adev->dev, csi2->nports,
 				  sizeof(*isys->csi2), GFP_KERNEL);
 	if (!isys->csi2) {
@@ -318,8 +266,10 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	}
 
 	for (i = 0; i < csi2->nports; i++) {
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 		if (!test_bit(i, csi2_enable))
 			continue;
+#endif
 		rval = ipu_isys_csi2_init(&isys->csi2[i], isys,
 					  isys->pdata->base +
 					  csi2->offsets[i], i);
@@ -329,30 +279,14 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 		isys->isr_csi2_bits |= IPU_ISYS_UNISPART_IRQ_CSI2(i);
 	}
 
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	isys->tpg = devm_kcalloc(&isys->adev->dev, tpg->ntpgs,
-				 sizeof(*isys->tpg), GFP_KERNEL);
-	if (!isys->tpg) {
-		rval = -ENOMEM;
-		goto fail;
-	}
-
-	for (i = 0; i < tpg->ntpgs; i++) {
-		rval = ipu_isys_tpg_init(&isys->tpg[i], isys,
-					 isys->pdata->base +
-					 tpg->offsets[i],
-					 tpg->sels ? (isys->pdata->base +
-						      tpg->sels[i]) : NULL, i);
-		if (rval)
+	for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
+		rval = ipu_isys_csi2_be_soc_init(&isys->csi2_be_soc[k],
+						 isys, k);
+		if (rval) {
+			dev_info(&isys->adev->dev,
+				 "can't register csi2 soc be device %d\n", k);
 			goto fail;
-	}
-#endif
-
-	rval = ipu_isys_csi2_be_soc_init(&isys->csi2_be_soc, isys);
-	if (rval) {
-		dev_info(&isys->adev->dev,
-			 "can't register csi2 soc be device\n");
-		goto fail;
+		}
 	}
 
 	rval = ipu_isys_csi2_be_init(&isys->csi2_be, isys);
@@ -363,66 +297,33 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	}
 
 	for (i = 0; i < csi2->nports; i++) {
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 		if (!test_bit(i, csi2_enable))
 			continue;
-		for (j = CSI2_PAD_SOURCE(0);
-		     j < (NR_OF_CSI2_SOURCE_PADS + CSI2_PAD_SOURCE(0)); j++) {
-			rval =
-			    media_create_pad_link(&isys->csi2[i].asd.sd.entity,
-						  j,
-						  &isys->csi2_be.asd.sd.entity,
-						  CSI2_BE_PAD_SINK, 0);
-			if (rval) {
-				dev_info(&isys->adev->dev,
-					 "can't create link csi2 <=> csi2_be\n");
-				goto fail;
-			}
-
-			for (k = CSI2_BE_SOC_PAD_SINK(0);
-			     k < NR_OF_CSI2_BE_SOC_SINK_PADS; k++) {
-				rval =
-				    media_create_pad_link(&isys->csi2[i].asd.sd.
-							  entity, j,
-							  &isys->csi2_be_soc.
-							  asd.sd.entity, k,
-							  MEDIA_LNK_FL_DYNAMIC);
-				if (rval) {
-					dev_info(&isys->adev->dev,
-						 "can't create link csi2->be_soc\n");
-					goto fail;
-				}
-			}
-		}
-	}
-
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	for (i = 0; i < tpg->ntpgs; i++) {
-		rval = media_create_pad_link(&isys->tpg[i].asd.sd.entity,
-					     TPG_PAD_SOURCE,
+#endif
+		rval = media_create_pad_link(&isys->csi2[i].asd.sd.entity,
+					     CSI2_PAD_SOURCE,
 					     &isys->csi2_be.asd.sd.entity,
 					     CSI2_BE_PAD_SINK, 0);
 		if (rval) {
 			dev_info(&isys->adev->dev,
-				 "can't create link between tpg and csi2_be\n");
+				 "can't create link csi2 <=> csi2_be\n");
 			goto fail;
 		}
-
-		for (k = CSI2_BE_SOC_PAD_SINK(0);
-		     k < NR_OF_CSI2_BE_SOC_SINK_PADS; k++) {
+		for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
+			csi2_be_soc = &isys->csi2_be_soc[k];
 			rval =
-			    media_create_pad_link(&isys->tpg[i].asd.sd.entity,
-						  TPG_PAD_SOURCE,
-						  &isys->csi2_be_soc.asd.sd.
-						  entity, k,
-						  MEDIA_LNK_FL_DYNAMIC);
+			    media_create_pad_link(&isys->csi2[i].asd.sd.entity,
+						  CSI2_PAD_SOURCE,
+						  &csi2_be_soc->asd.sd.entity,
+						  CSI2_BE_SOC_PAD_SINK, 0);
 			if (rval) {
 				dev_info(&isys->adev->dev,
-					 "can't create link tpg->be_soc\n");
+					 "can't create link csi2->be_soc\n");
 				goto fail;
 			}
 		}
 	}
-#endif
 
 	return 0;
 
@@ -431,256 +332,100 @@ fail:
 	return rval;
 }
 
-#if defined(IPU_IWAKE_ENABLE)
-/* read ltrdid threshold values from BIOS or system configuration */
-static void get_lut_ltrdid(struct ipu_isys *isys, struct ltr_did *pltr_did)
+#if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+/* The .bound() notifier callback when a match is found */
+static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
+			       struct v4l2_subdev *sd,
+			       struct v4l2_async_subdev *asd)
 {
-	struct isys_iwake_watermark *iwake_watermark = isys->iwake_watermark;
-	/* default values*/
-	struct ltr_did ltrdid_default;
+	struct ipu_isys *isys = container_of(notifier,
+					struct ipu_isys, notifier);
+	struct sensor_async_subdev *s_asd = container_of(asd,
+					struct sensor_async_subdev, asd);
 
-	ltrdid_default.lut_ltr.value = LTR_DEFAULT_VALUE;
-	ltrdid_default.lut_fill_time.value = FILL_TIME_DEFAULT_VALUE;
+	dev_info(&isys->adev->dev, "bind %s nlanes is %d port is %d\n",
+		 sd->name, s_asd->csi2.nlanes, s_asd->csi2.port);
+	isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
 
-	if (iwake_watermark->ltrdid.lut_ltr.value)
-		*pltr_did = iwake_watermark->ltrdid;
-	else
-		*pltr_did = ltrdid_default;
+	return v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
 }
 
-static int set_iwake_register(struct ipu_isys *isys, u32 index, u32 value)
+static void isys_notifier_unbind(struct v4l2_async_notifier *notifier,
+				 struct v4l2_subdev *sd,
+				 struct v4l2_async_subdev *asd)
 {
-	int ret = 0;
-	u32 req_id = index;
-	u32 offset = 0;
+	struct ipu_isys *isys = container_of(notifier,
+					struct ipu_isys, notifier);
 
-	ret = ipu_fw_isys_send_proxy_token(isys, req_id, index, offset, value);
-	if (ret)
-		dev_err(&isys->adev->dev, "write %d failed %d", index, ret);
-
-	return ret;
+	dev_info(&isys->adev->dev, "unbind %s\n", sd->name);
 }
 
-/*
- * When input system is powered up and before enabling any new sensor capture,
- * or after disabling any sensor capture the following values need to be set:
- * LTR_value = LTR(usec) from calculation;
- * LTR_scale = 2;
- * DID_value = DID(usec) from calculation;
- * DID_scale = 2;
- *
- * When input system is powered down, the LTR and DID values
- * must be returned to the default values:
- * LTR_value = 1023;
- * LTR_scale = 5;
- * DID_value = 1023;
- * DID_scale = 2;
- */
-static void set_iwake_ltrdid(struct ipu_isys *isys,
-			     u16 ltr,
-			     u16 did,
-			     enum ltr_did_type use)
+static int isys_notifier_complete(struct v4l2_async_notifier *notifier)
 {
-	/* did_scale will set to 2= 1us */
-	u16 ltr_val, ltr_scale, did_val;
-	union fabric_ctrl fc;
+	struct ipu_isys *isys = container_of(notifier,
+					struct ipu_isys, notifier);
+
+	dev_info(&isys->adev->dev, "All sensor registration completed.\n");
+
+	return v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
+}
+
+static const struct v4l2_async_notifier_operations isys_async_ops = {
+	.bound = isys_notifier_bound,
+	.unbind = isys_notifier_unbind,
+	.complete = isys_notifier_complete,
+};
+
+static int isys_fwnode_parse(struct device *dev,
+			     struct v4l2_fwnode_endpoint *vep,
+			     struct v4l2_async_subdev *asd)
+{
+	struct sensor_async_subdev *s_asd =
+			container_of(asd, struct sensor_async_subdev, asd);
+
+	s_asd->csi2.port = vep->base.port;
+	s_asd->csi2.nlanes = vep->bus.mipi_csi2.num_data_lanes;
+
+	return 0;
+}
+
+static int isys_notifier_init(struct ipu_isys *isys)
+{
 	struct ipu_device *isp = isys->adev->isp;
+	size_t asd_struct_size = sizeof(struct sensor_async_subdev);
+	int ret;
 
-	switch (use) {
-	case LTR_IWAKE_ON:
-		ltr_val = min_t(u16, ltr, (u16)LTR_DID_VAL_MAX);
-		did_val = min_t(u16, did, (u16)LTR_DID_VAL_MAX);
-		ltr_scale = (ltr == LTR_DID_VAL_MAX &&
-				did == LTR_DID_VAL_MAX) ?
-				LTR_SCALE_DEFAULT : LTR_SCALE_1024NS;
-		break;
-	case LTR_ISYS_ON:
-	case LTR_IWAKE_OFF:
-		ltr_val = LTR_DID_PKGC_2R;
-		did_val = LTR_DID_PKGC_2R;
-		ltr_scale = LTR_SCALE_1024NS;
-		break;
-	case LTR_ISYS_OFF:
-		ltr_val   = LTR_DID_VAL_MAX;
-		did_val   = LTR_DID_VAL_MAX;
-		ltr_scale = LTR_SCALE_DEFAULT;
-		break;
-	default:
-		return;
-	}
-
-	fc.value = readl(isp->base + IPU_BUTTRESS_FABIC_CONTROL);
-	fc.bits.ltr_val = ltr_val;
-	fc.bits.ltr_scale = ltr_scale;
-	fc.bits.did_val = did_val;
-	fc.bits.did_scale = 2;
-	dev_dbg(&isys->adev->dev,
-		"%s ltr: %d  did: %d", __func__, ltr_val, did_val);
-	writel(fc.value, isp->base + IPU_BUTTRESS_FABIC_CONTROL);
-}
-
-/* SW driver may clear register GDA_ENABLE_IWAKE before the FW configures the
- * stream for debug purposes. Otherwise SW should not access this register.
- */
-static int enable_iwake(struct ipu_isys *isys, bool enable)
-{
-	int ret = 0;
-	struct isys_iwake_watermark *iwake_watermark = isys->iwake_watermark;
-
-	mutex_lock(&iwake_watermark->mutex);
-	if (iwake_watermark->iwake_enabled == enable) {
-		mutex_unlock(&iwake_watermark->mutex);
+	v4l2_async_nf_init(&isys->notifier);
+	ret = v4l2_async_nf_parse_fwnode_endpoints(&isp->pdev->dev,
+						   &isys->notifier,
+						   asd_struct_size,
+						   isys_fwnode_parse);
+	if (ret < 0) {
+		dev_err(&isys->adev->dev,
+			"v4l2 parse_fwnode_endpoints() failed: %d\n", ret);
 		return ret;
 	}
-	ret = set_iwake_register(isys, GDA_ENABLE_IWAKE_INDEX, enable);
-	if (!ret)
-		iwake_watermark->iwake_enabled = enable;
-	mutex_unlock(&iwake_watermark->mutex);
+	if (list_empty(&isys->notifier.asd_list)) {
+		/* isys probe could continue with async subdevs missing */
+		dev_warn(&isys->adev->dev, "no subdev found in graph\n");
+		return 0;
+	}
+
+	isys->notifier.ops = &isys_async_ops;
+	ret = v4l2_async_nf_register(&isys->v4l2_dev, &isys->notifier);
+	if (ret) {
+		dev_err(&isys->adev->dev,
+			"failed to register async notifier : %d\n", ret);
+		v4l2_async_nf_cleanup(&isys->notifier);
+	}
+
 	return ret;
 }
 
-void update_watermark_setting(struct ipu_isys *isys)
+static void isys_notifier_cleanup(struct ipu_isys *isys)
 {
-	struct isys_iwake_watermark *iwake_watermark = isys->iwake_watermark;
-	struct list_head *stream_node;
-	struct video_stream_watermark *p_watermark;
-	struct ltr_did ltrdid;
-	u16 calc_fill_time_us = 0;
-	u16 ltr = 0;
-	u16 did = 0;
-	u32 iwake_threshold, iwake_critical_threshold;
-	u64 threshold_bytes;
-	u64 isys_pb_datarate_mbs = 0;
-	u16 sram_granulrity_shift =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
-		IPU6_SRAM_GRANULRITY_SHIFT : IPU6SE_SRAM_GRANULRITY_SHIFT;
-	int max_sram_size =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
-		IPU6_MAX_SRAM_SIZE : IPU6SE_MAX_SRAM_SIZE;
-
-	mutex_lock(&iwake_watermark->mutex);
-	if (iwake_watermark->force_iwake_disable) {
-		set_iwake_ltrdid(isys, 0, 0, LTR_IWAKE_OFF);
-		set_iwake_register(isys, GDA_IRQ_CRITICAL_THRESHOLD_INDEX,
-				   CRITICAL_THRESHOLD_IWAKE_DISABLE);
-		mutex_unlock(&iwake_watermark->mutex);
-		return;
-	}
-
-	if (list_empty(&iwake_watermark->video_list)) {
-		isys_pb_datarate_mbs = 0;
-	} else {
-		list_for_each(stream_node, &iwake_watermark->video_list)
-		{
-			p_watermark = list_entry(stream_node,
-						 struct video_stream_watermark,
-						 stream_node);
-			isys_pb_datarate_mbs += p_watermark->stream_data_rate;
-		}
-	}
-	mutex_unlock(&iwake_watermark->mutex);
-
-	if (!isys_pb_datarate_mbs) {
-		enable_iwake(isys, false);
-		set_iwake_ltrdid(isys, 0, 0, LTR_IWAKE_OFF);
-		mutex_lock(&iwake_watermark->mutex);
-		set_iwake_register(isys, GDA_IRQ_CRITICAL_THRESHOLD_INDEX,
-				   CRITICAL_THRESHOLD_IWAKE_DISABLE);
-		mutex_unlock(&iwake_watermark->mutex);
-	} else {
-		/* should enable iwake by default according to FW */
-		enable_iwake(isys, true);
-		calc_fill_time_us = (u16)(max_sram_size / isys_pb_datarate_mbs);
-		get_lut_ltrdid(isys, &ltrdid);
-
-		if (calc_fill_time_us <= ltrdid.lut_fill_time.bits.th0)
-			ltr = 0;
-		else if (calc_fill_time_us <= ltrdid.lut_fill_time.bits.th1)
-			ltr = ltrdid.lut_ltr.bits.val0;
-		else if (calc_fill_time_us <= ltrdid.lut_fill_time.bits.th2)
-			ltr = ltrdid.lut_ltr.bits.val1;
-		else if (calc_fill_time_us <= ltrdid.lut_fill_time.bits.th3)
-			ltr = ltrdid.lut_ltr.bits.val2;
-		else
-			ltr = ltrdid.lut_ltr.bits.val3;
-
-		did = calc_fill_time_us - ltr;
-#ifdef IPU_IWAKE_TUNING
-		if (iwake_watermark->ltrdid_setting) {
-			ltr = min_t(u16, LTR_DID_VAL_MAX,
-				    iwake_watermark->ltrdid_setting & 0xFFFF);
-			did = min_t(u16, LTR_DID_VAL_MAX,
-				    iwake_watermark->ltrdid_setting >> 16 &
-				    0xFFFF);
-		}
-#endif
-
-		threshold_bytes = did * isys_pb_datarate_mbs;
-		/* calculate iwake threshold with 2KB granularity pages */
-		iwake_threshold =
-			max_t(u32, 1, threshold_bytes >> sram_granulrity_shift);
-
-		iwake_threshold = min_t(u32, iwake_threshold, max_sram_size);
-
-		/* set the critical threshold to halfway between
-		 * iwake threshold and the full buffer.
-		 */
-		iwake_critical_threshold = iwake_threshold +
-			(IS_PIXEL_BUFFER_PAGES - iwake_threshold) / 2;
-
-		dev_dbg(&isys->adev->dev, "%s threshold: %u  critical: %u",
-			__func__, iwake_threshold, iwake_critical_threshold);
-		set_iwake_ltrdid(isys, ltr, did, LTR_IWAKE_ON);
-		mutex_lock(&iwake_watermark->mutex);
-		set_iwake_register(isys,
-				   GDA_IWAKE_THRESHOLD_INDEX, iwake_threshold);
-
-		set_iwake_register(isys,
-				   GDA_IRQ_CRITICAL_THRESHOLD_INDEX,
-				   iwake_critical_threshold);
-		mutex_unlock(&iwake_watermark->mutex);
-
-		writel(VAL_PKGC_PMON_CFG_RESET,
-		       isys->adev->isp->base + REG_PKGC_PMON_CFG);
-		writel(VAL_PKGC_PMON_CFG_START,
-		       isys->adev->isp->base + REG_PKGC_PMON_CFG);
-	}
-}
-
-static int isys_iwake_watermark_init(struct ipu_isys *isys)
-{
-	struct isys_iwake_watermark *iwake_watermark;
-
-	if (isys->iwake_watermark)
-		return 0;
-
-	iwake_watermark = devm_kzalloc(&isys->adev->dev,
-				       sizeof(*iwake_watermark), GFP_KERNEL);
-	if (!iwake_watermark)
-		return -ENOMEM;
-	INIT_LIST_HEAD(&iwake_watermark->video_list);
-	mutex_init(&iwake_watermark->mutex);
-
-	iwake_watermark->ltrdid.lut_ltr.value = 0;
-	isys->iwake_watermark = iwake_watermark;
-	iwake_watermark->isys = isys;
-	iwake_watermark->iwake_enabled = false;
-	iwake_watermark->force_iwake_disable = false;
-	return 0;
-}
-
-static int isys_iwake_watermark_cleanup(struct ipu_isys *isys)
-{
-	struct isys_iwake_watermark *iwake_watermark = isys->iwake_watermark;
-
-	if (!iwake_watermark)
-		return -EINVAL;
-	mutex_lock(&iwake_watermark->mutex);
-	list_del(&iwake_watermark->video_list);
-	mutex_unlock(&iwake_watermark->mutex);
-	mutex_destroy(&iwake_watermark->mutex);
-	isys->iwake_watermark = NULL;
-	return 0;
+	v4l2_async_nf_unregister(&isys->notifier);
+	v4l2_async_nf_cleanup(&isys->notifier);
 }
 #endif
 
@@ -721,7 +466,13 @@ static int isys_register_devices(struct ipu_isys *isys)
 	if (rval)
 		goto out_v4l2_device_unregister;
 
+#if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+	rval = isys_notifier_init(isys);
+	if (rval)
+		goto out_isys_unregister_subdevices;
+#else
 	isys_register_ext_subdevs(isys);
+#endif
 
 	rval = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
 	if (rval)
@@ -730,8 +481,16 @@ static int isys_register_devices(struct ipu_isys *isys)
 	return 0;
 
 out_isys_notifier_cleanup:
+#if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+	isys_notifier_cleanup(isys);
+#endif
 
+#if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+out_isys_unregister_subdevices:
 	isys_unregister_subdevices(isys);
+#else
+	isys_unregister_subdevices(isys);
+#endif
 
 out_v4l2_device_unregister:
 	v4l2_device_unregister(&isys->v4l2_dev);
@@ -786,9 +545,6 @@ static int isys_runtime_pm_resume(struct device *dev)
 	}
 	isys_setup_hw(isys);
 
-#if defined(IPU_IWAKE_ENABLE)
-	set_iwake_ltrdid(isys, 0, 0, LTR_ISYS_ON);
-#endif
 	return 0;
 }
 
@@ -810,13 +566,11 @@ static int isys_runtime_pm_suspend(struct device *dev)
 	isys->reset_needed = false;
 	mutex_unlock(&isys->mutex);
 
+	isys->phy_termcal_val = 0;
 	cpu_latency_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
-#if defined(IPU_IWAKE_ENABLE)
-	set_iwake_ltrdid(isys, 0, 0, LTR_ISYS_OFF);
-#endif
 	return 0;
 }
 
@@ -874,11 +628,10 @@ static void isys_remove(struct ipu_bus_device *adev)
 		    );
 	}
 
-#if defined(IPU_IWAKE_ENABLE)
-	isys_iwake_watermark_cleanup(isys);
-#endif
-
 	ipu_trace_uninit(&adev->dev);
+#if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+	isys_notifier_cleanup(isys);
+#endif
 	isys_unregister_devices(isys);
 
 	cpu_latency_qos_remove_request(&isys->pm_qos);
@@ -925,80 +678,9 @@ static int ipu_isys_icache_prefetch_set(void *data, u64 val)
 	return 0;
 }
 
-#if defined(IPU_IWAKE_ENABLE)
-static int isys_iwake_control_get(void *data, u64 *val)
-{
-	struct ipu_isys *isys = data;
-	struct isys_iwake_watermark *iwake_watermark = isys->iwake_watermark;
-
-	mutex_lock(&iwake_watermark->mutex);
-	*val = isys->iwake_watermark->force_iwake_disable;
-	mutex_unlock(&iwake_watermark->mutex);
-	return 0;
-}
-
-static int isys_iwake_control_set(void *data, u64 val)
-{
-	struct ipu_isys *isys = data;
-	struct isys_iwake_watermark *iwake_watermark;
-
-	if (val != !!val)
-		return -EINVAL;
-	/* If stream is open, refuse to set iwake */
-	if (isys->stream_opened)
-		return -EBUSY;
-
-	iwake_watermark = isys->iwake_watermark;
-	mutex_lock(&iwake_watermark->mutex);
-	isys->iwake_watermark->force_iwake_disable = !!val;
-	mutex_unlock(&iwake_watermark->mutex);
-	return 0;
-}
-
-#ifdef IPU_IWAKE_TUNING
-static int ipu_iwake_ltrdid_get(void *data, u64 *val)
-{
-	struct ipu_isys *isys = data;
-
-	*val = isys->iwake_watermark->ltrdid_setting;
-
-	return 0;
-}
-
-static int ipu_iwake_ltrdid_set(void *data, u64 val)
-{
-	struct ipu_isys *isys = data;
-	struct isys_iwake_watermark *iwake_watermark;
-
-	/* If stream is open, refuse to set iwake ltr did */
-	if (isys->stream_opened)
-		return -EBUSY;
-
-	iwake_watermark = isys->iwake_watermark;
-	mutex_lock(&iwake_watermark->mutex);
-	isys->iwake_watermark->ltrdid_setting = val & 0xFFFFFFFF;
-	mutex_unlock(&iwake_watermark->mutex);
-
-	return 0;
-}
-#endif
-#endif
-
 DEFINE_SIMPLE_ATTRIBUTE(isys_icache_prefetch_fops,
 			ipu_isys_icache_prefetch_get,
 			ipu_isys_icache_prefetch_set, "%llu\n");
-
-#if defined(IPU_IWAKE_ENABLE)
-DEFINE_SIMPLE_ATTRIBUTE(isys_iwake_control_fops,
-			isys_iwake_control_get,
-			isys_iwake_control_set, "%llu\n");
-
-#ifdef IPU_IWAKE_TUNING
-DEFINE_SIMPLE_ATTRIBUTE(isys_iwake_ltrdid_fops,
-			ipu_iwake_ltrdid_get,
-			ipu_iwake_ltrdid_set, "%llu\n");
-#endif
-#endif
 
 static int ipu_isys_init_debugfs(struct ipu_isys *isys)
 {
@@ -1016,19 +698,6 @@ static int ipu_isys_init_debugfs(struct ipu_isys *isys)
 				   dir, isys, &isys_icache_prefetch_fops);
 	if (IS_ERR(file))
 		goto err;
-
-#if defined(IPU_IWAKE_ENABLE)
-	file = debugfs_create_file("iwake_disable", 0600,
-				   dir, isys, &isys_iwake_control_fops);
-	if (IS_ERR(file))
-		goto err;
-#ifdef IPU_IWAKE_TUNING
-	file = debugfs_create_file("iwake_ltrdid", 0600,
-				   dir, isys, &isys_iwake_ltrdid_fops);
-	if (IS_ERR(file))
-		goto err;
-#endif
-#endif
 
 	isys->debugfsdir = dir;
 
@@ -1148,10 +817,6 @@ static int isys_probe(struct ipu_bus_device *adev)
 	const struct firmware *fw;
 	int rval = 0;
 
-#ifdef IPU_TRACE_EVENT
-	trace_printk("B|%d|TMWK\n", current->pid);
-#endif
-
 	isys = devm_kzalloc(&adev->dev, sizeof(*isys), GFP_KERNEL);
 	if (!isys)
 		return -ENOMEM;
@@ -1166,7 +831,8 @@ static int isys_probe(struct ipu_bus_device *adev)
 	isys->pdata = adev->pdata;
 
 	/* initial streamID for different sensor types */
-	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) {
+	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+	    ipu_ver == IPU_VER_6EP_MTL) {
 		isys->sensor_info.vc1_data_start =
 			IPU6_FW_ISYS_VC1_SENSOR_DATA_START;
 		isys->sensor_info.vc1_data_end =
@@ -1217,6 +883,7 @@ static int isys_probe(struct ipu_bus_device *adev)
 	spin_lock_init(&isys->lock);
 	spin_lock_init(&isys->power_lock);
 	isys->power = 0;
+	isys->phy_termcal_val = 0;
 
 	mutex_init(&isys->mutex);
 	mutex_init(&isys->stream_mutex);
@@ -1270,24 +937,11 @@ static int isys_probe(struct ipu_bus_device *adev)
 	rval = isys_register_devices(isys);
 	if (rval)
 		goto out_remove_pkg_dir_shared_buffer;
-#if defined(IPU_IWAKE_ENABLE)
-	rval = isys_iwake_watermark_init(isys);
-	if (rval)
-		goto out_unregister_devices;
-#endif
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
-#ifdef IPU_TRACE_EVENT
-	trace_printk("E|%d|TMWK\n", rval);
-#endif
 	return 0;
 
-#if defined(IPU_IWAKE_ENABLE)
-out_unregister_devices:
-	isys_iwake_watermark_cleanup(isys);
-	isys_unregister_devices(isys);
-#endif
 out_remove_pkg_dir_shared_buffer:
 	if (!isp->secure_mode)
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
@@ -1300,10 +954,6 @@ release_firmware:
 	if (!isp->secure_mode)
 		release_firmware(isys->fw);
 	ipu_trace_uninit(&adev->dev);
-
-#ifdef IPU_TRACE_EVENT
-	trace_printk("E|%d|TMWK\n", rval);
-#endif
 
 	mutex_destroy(&isys->mutex);
 	mutex_destroy(&isys->stream_mutex);
@@ -1496,14 +1146,8 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_SOF:
 		if (pipe->csi2)
-			ipu_isys_csi2_sof_event(pipe->csi2, pipe->vc);
+			ipu_isys_csi2_sof_event(pipe->csi2);
 
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-#ifdef IPU_TPG_FRAME_SYNC
-		if (pipe->tpg)
-			ipu_isys_tpg_sof_event(pipe->tpg);
-#endif
-#endif
 		pipe->seq[pipe->seq_index].sequence =
 		    atomic_read(&pipe->sequence) - 1;
 		pipe->seq[pipe->seq_index].timestamp = ts;
@@ -1516,14 +1160,7 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_EOF:
 		if (pipe->csi2)
-			ipu_isys_csi2_eof_event(pipe->csi2, pipe->vc);
-
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-#ifdef IPU_TPG_FRAME_SYNC
-		if (pipe->tpg)
-			ipu_isys_tpg_eof_event(pipe->tpg);
-#endif
-#endif
+			ipu_isys_csi2_eof_event(pipe->csi2);
 
 		dev_dbg(&adev->dev,
 			"eof: handle %d: (index %u), timestamp 0x%16.16llx\n",
@@ -1543,35 +1180,6 @@ leave:
 	return 0;
 }
 
-#ifdef IPU_IRQ_POLL
-static void isys_isr_poll(struct ipu_bus_device *adev)
-{
-	struct ipu_isys *isys = ipu_bus_get_drvdata(adev);
-
-	if (!isys->fwcom) {
-		dev_dbg(&isys->adev->dev,
-			"got interrupt but device not configured yet\n");
-		return;
-	}
-
-	mutex_lock(&isys->mutex);
-	isys_isr(adev);
-	mutex_unlock(&isys->mutex);
-}
-
-int ipu_isys_isr_run(void *ptr)
-{
-	struct ipu_isys *isys = ptr;
-
-	while (!kthread_should_stop()) {
-		usleep_range(500, 1000);
-		if (isys->stream_opened)
-			isys_isr_poll(isys->adev);
-	}
-
-	return 0;
-}
-#endif
 static struct ipu_bus_driver isys_driver = {
 	.probe = isys_probe,
 	.remove = isys_remove,
@@ -1592,6 +1200,7 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_MTL_PCI_ID)},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
