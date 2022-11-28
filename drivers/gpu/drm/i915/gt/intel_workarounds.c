@@ -1733,7 +1733,8 @@ wa_list_apply(struct intel_gt *gt, const struct i915_wa_list *wal)
 
 	fw = wal_get_fw_for_rmw(uncore, wal);
 
-	spin_lock_irqsave(&uncore->lock, flags);
+	intel_gt_mcr_lock(gt, &flags);
+	spin_lock(&uncore->lock);
 	intel_uncore_forcewake_get__locked(uncore, fw);
 
 	for (i = 0, wa = wal->list; i < wal->count; i++, wa++) {
@@ -1762,7 +1763,8 @@ wa_list_apply(struct intel_gt *gt, const struct i915_wa_list *wal)
 	}
 
 	intel_uncore_forcewake_put__locked(uncore, fw);
-	spin_unlock_irqrestore(&uncore->lock, flags);
+	spin_unlock(&uncore->lock);
+	intel_gt_mcr_unlock(gt, flags);
 }
 
 void intel_gt_apply_workarounds(struct intel_gt *gt)
@@ -1783,7 +1785,8 @@ static bool wa_list_verify(struct intel_gt *gt,
 
 	fw = wal_get_fw_for_rmw(uncore, wal);
 
-	spin_lock_irqsave(&uncore->lock, flags);
+	intel_gt_mcr_lock(gt, &flags);
+	spin_lock(&uncore->lock);
 	intel_uncore_forcewake_get__locked(uncore, fw);
 
 	for (i = 0, wa = wal->list; i < wal->count; i++, wa++)
@@ -1793,7 +1796,8 @@ static bool wa_list_verify(struct intel_gt *gt,
 				wal->name, from);
 
 	intel_uncore_forcewake_put__locked(uncore, fw);
-	spin_unlock_irqrestore(&uncore->lock, flags);
+	spin_unlock(&uncore->lock);
+	intel_gt_mcr_unlock(gt, flags);
 
 	return ok;
 }
