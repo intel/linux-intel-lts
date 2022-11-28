@@ -86,3 +86,6 @@
 
 # CVE-2022-3521
 0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
+
+# CVE-2022-42896
+0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
