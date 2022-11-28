@@ -61,6 +61,7 @@
 #define FORCEWAKE_ACK_GT_MTL			_MMIO(0xdfc)
 
 #define MCFG_MCR_SELECTOR			_MMIO(0xfd0)
+#define MTL_STEER_SEMAPHORE			_MMIO(0xfd0)
 #define MTL_MCR_SELECTOR			_MMIO(0xfd4)
 #define SF_MCR_SELECTOR				_MMIO(0xfd8)
 #define GEN8_MCR_SELECTOR			_MMIO(0xfdc)
