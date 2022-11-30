@@ -94,12 +94,8 @@
 0003-tcp-udp-Call-inet6_destroy_sock-in-IPv6-sk-sk_destru.patch
 0004-ipv6-Fix-data-races-around-sk-sk_prot.patch
 
-# CVE-2022-3594
-0001-r8152-Rate-limit-overflow-messages.patch
-
 # CVE-2022-3521
 0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
 
-# CVE-2022-3542
-0001-bnx2x-fix-potential-memory-leak-in-bnx2x_tpa_stop.patch
-
+# CVE-2022-42896
+0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
