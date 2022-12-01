@@ -471,21 +471,21 @@ snd_sof_machine_unregister(struct snd_sof_dev *sdev, void *pdata)
 		sof_ops(sdev)->machine_unregister(sdev, pdata);
 }
 
-static inline void
+static inline struct snd_soc_acpi_mach *
 snd_sof_machine_select(struct snd_sof_dev *sdev)
 {
 	if (sof_ops(sdev) && sof_ops(sdev)->machine_select)
-		sof_ops(sdev)->machine_select(sdev);
+		return sof_ops(sdev)->machine_select(sdev);
+
+	return NULL;
 }
 
 static inline void
-snd_sof_set_mach_params(const struct snd_soc_acpi_mach *mach,
-			struct device *dev)
+snd_sof_set_mach_params(struct snd_soc_acpi_mach *mach,
+			struct snd_sof_dev *sdev)
 {
-	struct snd_sof_dev *sdev = dev_get_drvdata(dev);
-
 	if (sof_ops(sdev) && sof_ops(sdev)->set_mach_params)
-		sof_ops(sdev)->set_mach_params(mach, dev);
+		sof_ops(sdev)->set_mach_params(mach, sdev);
 }
 
 static inline const struct snd_sof_dsp_ops
