@@ -36,6 +36,11 @@
  *     restart from there) or with an end message.
  */
 
+#define INTEL_GSC_HECI2_H_CSR _MMIO(0x117004)
+#define  CSR_H_INTERRUPT_ENABLE	BIT(0)
+#define  CSR_H_INTERRUPT_STATUS	BIT(1)
+#define  CSR_H_RESET		BIT(4)
+
 /* how long do we wait for the component to load on boot? */
 #define GSC_PROXY_INIT_TIMEOUT_MS 20000
 
@@ -294,17 +299,48 @@ int intel_gsc_proxy_request_handler(struct intel_gsc_uc *gsc)
 			"GSC proxy worker called without the component being bound!\n");
 		err = -EIO;
 	} else {
+		/*
+		 * write the status bit to clear it and allow new proxy
+		 * interrupts to be generated while we handle the current
+		 * request, but be sure not to write the reset bit
+		 */
+		intel_uncore_rmw(gt->uncore, INTEL_GSC_HECI2_H_CSR,
+				 CSR_H_RESET, CSR_H_INTERRUPT_STATUS);
 		err = proxy_query(gsc);
 	}
 	mutex_unlock(&gsc->proxy.mutex);
 	return err;
 }
 
+void intel_gsc_proxy_irq_handler(struct intel_gsc_uc *gsc, u32 iir)
+{
+	struct intel_gt *gt = gsc_uc_to_gt(gsc);
+
+	if (unlikely(!iir))
+		return;
+
+	lockdep_assert_held(gt->irq_lock);
+
+	if (!gsc->proxy.component) {
+		drm_err(&gt->i915->drm,
+			"GSC proxy irq received without the component being bound!\n");
+		return;
+	}
+
+	gsc->gsc_work_actions |= GSC_ACTION_SW_PROXY;
+	queue_work(gsc->wq, &gsc->work);
+}
+
 static int i915_gsc_proxy_component_bind(struct device *i915_kdev,
 					 struct device *tee_kdev, void *data)
 {
 	struct drm_i915_private *i915 = kdev_to_i915(i915_kdev);
-	struct intel_gsc_uc *gsc = &i915->media_gt->uc.gsc;
+	struct intel_gt *gt = i915->media_gt;
+	struct intel_gsc_uc *gsc = &gt->uc.gsc;
+
+	/* enable HECI2 IRQs */
+	intel_uncore_rmw(gt->uncore, INTEL_GSC_HECI2_H_CSR,
+			 0, CSR_H_INTERRUPT_ENABLE);
 
 	mutex_lock(&gsc->proxy.mutex);
 	gsc->proxy.component = data;
@@ -318,11 +354,16 @@ static void i915_gsc_proxy_component_unbind(struct device *i915_kdev,
 					    struct device *tee_kdev, void *data)
 {
 	struct drm_i915_private *i915 = kdev_to_i915(i915_kdev);
-	struct intel_gsc_uc *gsc = &i915->media_gt->uc.gsc;
+	struct intel_gt *gt = i915->media_gt;
+	struct intel_gsc_uc *gsc = &gt->uc.gsc;
 
 	mutex_lock(&gsc->proxy.mutex);
 	gsc->proxy.component = NULL;
 	mutex_unlock(&gsc->proxy.mutex);
+
+	/* disable HECI2 IRQs */
+	intel_uncore_rmw(gt->uncore, INTEL_GSC_HECI2_H_CSR,
+			 CSR_H_INTERRUPT_ENABLE, 0);
 }
 
 static const struct component_ops i915_gsc_proxy_component_ops = {
