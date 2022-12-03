@@ -608,18 +608,25 @@ DECLARE_PER_CPU(unsigned int, lockdep_recursion);
 
 #define __lockdep_enabled	(debug_locks && !this_cpu_read(lockdep_recursion))
 
+#define __lockdep_check_irqs_enabled()					\
+	({ !hard_irqs_disabled() &&					\
+		(running_oob() || this_cpu_read(hardirqs_enabled)); })
+
 #define lockdep_assert_irqs_enabled()					\
-do {									\
-	WARN_ON_ONCE(__lockdep_enabled &&				\
-		((running_oob() && hard_irqs_disabled()) ||		\
-		 (running_inband() && !this_cpu_read(hardirqs_enabled)))); \
-} while (0)
+	do {								\
+		WARN_ON_ONCE(__lockdep_enabled &&			\
+			!__lockdep_check_irqs_enabled());		\
+	} while (0)
+
+#define __lockdep_check_irqs_disabled()					\
+	({ hard_irqs_disabled() ||					\
+		(running_inband() && !this_cpu_read(hardirqs_enabled)); })
 
 #define lockdep_assert_irqs_disabled()					\
-do {									\
-	WARN_ON_ONCE(__lockdep_enabled && !hard_irqs_disabled() &&	\
-		(running_oob() || this_cpu_read(hardirqs_enabled)));	\
-} while (0)
+	  do {								\
+		  WARN_ON_ONCE(__lockdep_enabled &&			\
+			  !__lockdep_check_irqs_disabled());		\
+	  } while (0)
 
 #define lockdep_read_irqs_state()					\
 	({ this_cpu_read(hardirqs_enabled); })
