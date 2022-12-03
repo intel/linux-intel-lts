@@ -646,7 +646,7 @@ do {									\
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_PREEMPT_COUNT)	&&		\
 		     __lockdep_enabled			&&		\
 		     (preempt_count() != 0		||		\
-		      !this_cpu_read(hardirqs_enabled)));		\
+		     __lockdep_check_irqs_disabled()));			\
 } while (0)
 
 #define lockdep_assert_preemption_disabled()				\
@@ -654,7 +654,7 @@ do {									\
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_PREEMPT_COUNT)	&&		\
 		     __lockdep_enabled			&&		\
 		     (preempt_count() == 0		&&		\
-		      this_cpu_read(hardirqs_enabled)));		\
+		     __lockdep_check_irqs_enabled()));			\
 } while (0)
 
 /*
