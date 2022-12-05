@@ -799,7 +799,7 @@ static const struct nla_policy taprio_policy[TCA_TAPRIO_ATTR_MAX + 1] = {
 static int fill_sched_entry(struct taprio_sched *q, struct nlattr **tb,
 			    struct sched_entry *entry,
 			    struct netlink_ext_ack *extack,
-			    struct tc_mqprio_qopt *mqprio)
+			    u8 num_tc)
 {
 	int min_duration = length_to_duration(q, ETH_ZLEN);
 	u32 interval = 0;
@@ -824,7 +824,7 @@ static int fill_sched_entry(struct taprio_sched *q, struct nlattr **tb,
 		return -EINVAL;
 	}
 
-	if (mqprio && entry->gate_mask >= BIT_MASK(mqprio->num_tc)) {
+	if (entry->gate_mask >= BIT_MASK(num_tc)) {
 		NL_SET_ERR_MSG(extack, "Traffic Class defined less than gatemask");
 		return -EINVAL;
 	}
@@ -837,7 +837,7 @@ static int fill_sched_entry(struct taprio_sched *q, struct nlattr **tb,
 static int parse_sched_entry(struct taprio_sched *q, struct nlattr *n,
 			     struct sched_entry *entry, int index,
 			     struct netlink_ext_ack *extack,
-			     struct tc_mqprio_qopt *mqprio)
+			     u8 num_tc)
 {
 	struct nlattr *tb[TCA_TAPRIO_SCHED_ENTRY_MAX + 1] = { };
 	int err;
@@ -851,13 +851,13 @@ static int parse_sched_entry(struct taprio_sched *q, struct nlattr *n,
 
 	entry->index = index;
 
-	return fill_sched_entry(q, tb, entry, extack, mqprio);
+	return fill_sched_entry(q, tb, entry, extack, num_tc);
 }
 
 static int parse_sched_list(struct taprio_sched *q, struct nlattr *list,
 			    struct sched_gate_list *sched,
 			    struct netlink_ext_ack *extack,
-			    struct tc_mqprio_qopt *mqprio)
+			    u8 num_tc)
 {
 	struct nlattr *n;
 	int err, rem;
@@ -880,7 +880,7 @@ static int parse_sched_list(struct taprio_sched *q, struct nlattr *list,
 			return -ENOMEM;
 		}
 
-		err = parse_sched_entry(q, n, entry, i, extack, mqprio);
+		err = parse_sched_entry(q, n, entry, i, extack, num_tc);
 		if (err < 0) {
 			kfree(entry);
 			return err;
@@ -898,7 +898,7 @@ static int parse_sched_list(struct taprio_sched *q, struct nlattr *list,
 static int parse_taprio_schedule(struct taprio_sched *q, struct nlattr **tb,
 				 struct sched_gate_list *new,
 				 struct netlink_ext_ack *extack,
-				 struct tc_mqprio_qopt *mqprio)
+				 u8 num_tc)
 {
 	int err = 0;
 
@@ -918,7 +918,7 @@ static int parse_taprio_schedule(struct taprio_sched *q, struct nlattr **tb,
 
 	if (tb[TCA_TAPRIO_ATTR_SCHED_ENTRY_LIST])
 		err = parse_sched_list(q, tb[TCA_TAPRIO_ATTR_SCHED_ENTRY_LIST],
-				       new, extack, mqprio);
+				       new, extack, num_tc);
 	if (err < 0)
 		return err;
 
@@ -1459,14 +1459,17 @@ static int taprio_change(struct Qdisc *sch, struct nlattr *opt,
 	unsigned long flags;
 	ktime_t start;
 	int i, err;
+	u8 num_tc = 0;
 
 	err = nla_parse_nested_deprecated(tb, TCA_TAPRIO_ATTR_MAX, opt,
 					  taprio_policy, extack);
 	if (err < 0)
 		return err;
 
-	if (tb[TCA_TAPRIO_ATTR_PRIOMAP])
+	if (tb[TCA_TAPRIO_ATTR_PRIOMAP]) {
 		mqprio = nla_data(tb[TCA_TAPRIO_ATTR_PRIOMAP]);
+		num_tc = mqprio->num_tc;
+	}
 
 	err = taprio_new_flags(tb[TCA_TAPRIO_ATTR_FLAGS],
 			       q->flags, extack);
@@ -1501,7 +1504,7 @@ static int taprio_change(struct Qdisc *sch, struct nlattr *opt,
 		goto free_sched;
 	}
 
-	err = parse_taprio_schedule(q, tb, new_admin, extack, mqprio);
+	err = parse_taprio_schedule(q, tb, new_admin, extack, num_tc);
 	if (err < 0)
 		goto free_sched;
 
