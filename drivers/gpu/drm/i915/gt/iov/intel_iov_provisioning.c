@@ -996,7 +996,7 @@ static int pf_alloc_vf_ctxs_range(struct intel_iov *iov, unsigned int id, u16 nu
 	u16 max_size = U16_MAX;
 	u16 index = U16_MAX;
 	u16 last_equal = 0;
-	unsigned int rs, re;
+	unsigned int rs = 0, re;
 
 	if (unlikely(!ctxs_bitmap))
 		return -ENOMEM;
@@ -1179,7 +1179,7 @@ static u16 pf_get_ctxs_free(struct intel_iov *iov)
 {
 	u16 reserved = encode_vf_ctxs_count(pf_reserved_ctxs(iov));
 	unsigned long *ctxs_bitmap = pf_get_ctxs_bitmap(iov);
-	unsigned int rs, re;
+	unsigned int rs = 0, re;
 	u16 sum = 0;
 
 	if (unlikely(!ctxs_bitmap))
@@ -1219,7 +1219,7 @@ static u16 pf_get_ctxs_max_quota(struct intel_iov *iov)
 {
 	u16 reserved = encode_vf_ctxs_count(pf_reserved_ctxs(iov));
 	unsigned long *ctxs_bitmap = pf_get_ctxs_bitmap(iov);
-	unsigned int rs, re;
+	unsigned int rs = 0, re;
 	u16 max = 0;
 
 	if (unlikely(!ctxs_bitmap))
@@ -1523,7 +1523,7 @@ u16 intel_iov_provisioning_query_free_dbs(struct intel_iov *iov)
 static u16 pf_get_max_dbs(struct intel_iov *iov)
 {
 	unsigned long *dbs_bitmap = pf_get_dbs_bitmap(iov);
-	unsigned int rs, re;
+	unsigned int rs = 0, re;
 	u16 limit = 0;
 
 	if (unlikely(!dbs_bitmap))
