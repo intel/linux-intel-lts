@@ -81,7 +81,7 @@ static void dwmac4_core_init(struct mac_device_info *hw,
 		init_waitqueue_head(&priv->tstamp_busy_wait);
 }
 
-void dwmac4_mac_start_tx(void __iomem *ioaddr)
+static void dwmac4_mac_start_tx(void __iomem *ioaddr)
 {
 	u32 value;
 
@@ -90,7 +90,7 @@ void dwmac4_mac_start_tx(void __iomem *ioaddr)
 	writel(value, ioaddr + GMAC_CONFIG);
 }
 
-void dwmac4_mac_stop_tx(void __iomem *ioaddr)
+static void dwmac4_mac_stop_tx(void __iomem *ioaddr)
 {
 	u32 value;
 
@@ -99,7 +99,7 @@ void dwmac4_mac_stop_tx(void __iomem *ioaddr)
 	writel(value, ioaddr + GMAC_CONFIG);
 }
 
-void dwmac4_mac_start_rx(void __iomem *ioaddr)
+static void dwmac4_mac_start_rx(void __iomem *ioaddr)
 {
 	u32 value;
 
@@ -108,7 +108,7 @@ void dwmac4_mac_start_rx(void __iomem *ioaddr)
 	writel(value, ioaddr + GMAC_CONFIG);
 }
 
-void dwmac4_mac_stop_rx(void __iomem *ioaddr)
+static void dwmac4_mac_stop_rx(void __iomem *ioaddr)
 {
 	u32 value;
 
