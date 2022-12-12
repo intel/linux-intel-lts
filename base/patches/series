@@ -133,15 +133,11 @@
 0004-drm-use-the-lookup-lock-in-drm_is_current_master.patch
 0005-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
-# CVE-2022-26373
-0001-x86-speculation-Add-RSB-VM-Exit-protections.patch
-0002-x86-speculation-Add-LFENCE-to-RSB-fill-sequence.patch
-
 # CVE-2022-21385
 0001-net-rds-fix-warn-in-rds_message_alloc_sgs.patch
 
-# CVE-2022-39842
-0001-video-fbdev-pxa3xx-gcu-Fix-integer-overflow-in-pxa3x.patch
+# CVE-2022-42896
+0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
 
-# CVE-2022-40307
-0001-efi-capsule-loader-Fix-use-after-free-in-efi_capsule.patch
+# CVE-2022-3303
+0001-ALSA-pcm-oss-Fix-race-at-SNDCTL_DSP_SYNC.patch
