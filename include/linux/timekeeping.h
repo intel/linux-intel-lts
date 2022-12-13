@@ -316,6 +316,9 @@ struct system_counterval_t {
 	enum clocksource_ids	cs_id;
 };
 
+extern int ktime_convert_real_to_system_counter(ktime_t sys_realtime,
+					struct system_counterval_t *ret);
+
 /*
  * Get cross timestamp between system clock and device clock
  */
