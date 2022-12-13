@@ -361,6 +361,31 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 }
 
 /* Timekeeper helper functions. */
+#ifdef CONFIG_ARCH_USES_GETTIMEOFFSET
+static u32 default_arch_gettimeoffset(void) { return 0; }
+u32 (*arch_gettimeoffset)(void) = default_arch_gettimeoffset;
+#else
+static inline u32 arch_gettimeoffset(void) { return 0; }
+#endif
+
+static inline u64 timekeeping_ns_delta_to_cycles(const struct tk_read_base *tkr,
+						u64 nsec)
+{
+	u64 cycles;
+
+	/* If arch requires, subtract get_arch_timeoffset() */
+	cycles = nsec - arch_gettimeoffset();
+
+	if (fls64(cycles) + tkr->shift > sizeof(cycles) * 8)
+		return (typeof(cycles))-1;
+
+	cycles <<= tkr->shift;
+	cycles -= tkr->xtime_nsec;
+	do_div(cycles, tkr->mult);
+
+	return cycles;
+}
+
 static noinline u64 delta_to_ns_safe(const struct tk_read_base *tkr, u64 delta)
 {
 	return mul_u64_u32_add_u64_shr(delta, tkr->mult, tkr->xtime_nsec, tkr->shift);
@@ -1305,6 +1330,36 @@ int get_device_system_crosststamp(int (*get_time_fn)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(get_device_system_crosststamp);
+
+int ktime_convert_real_to_system_counter(ktime_t sys_realtime,
+					struct system_counterval_t *ret)
+{
+	struct timekeeper *tk = &tk_core.timekeeper;
+	u64 ns_delta;
+	ktime_t base_real;
+	unsigned int seq;
+
+	do {
+		seq = read_seqcount_begin(&tk_core.seq);
+
+		base_real = ktime_add(tk->tkr_mono.base,
+					tk_core.timekeeper.offs_real);
+		if (ktime_compare(sys_realtime, base_real) < 0)
+			return -EINVAL;
+
+		ret->cs_id = tk->tkr_mono.clock->id;
+		ns_delta = ktime_to_ns(ktime_sub(sys_realtime, base_real));
+		ret->cycles = timekeeping_ns_delta_to_cycles(&tk->tkr_mono,
+								ns_delta);
+		if (ret->cycles == (typeof(ret->cycles))-1)
+			return -ERANGE;
+
+		ret->cycles += tk->tkr_mono.cycle_last;
+	} while (read_seqcount_retry(&tk_core.seq, seq));
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(ktime_convert_real_to_system_counter);
 
 /**
  * do_settimeofday64 - Sets the time of day.
