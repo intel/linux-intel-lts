@@ -66,6 +66,7 @@ struct intel_pmc_tgpio_t {
 
 		ktime_t			 curr_ns;
 		u64			 curr_art;
+		bool			 out_high;
 
 		struct dentry		*root;
 		struct debugfs_regset32	*regset;
@@ -154,6 +155,45 @@ static int intel_pmc_tgpio_settime64(struct ptp_clock_info *info,
 	return -EOPNOTSUPP;
 }
 
+static int intel_pmc_tgpio_insert_edge(struct intel_pmc_tgpio_t *tgpio,
+					u32 index, u32 ctrl)
+{
+	struct system_counterval_t sys_counter;
+	ktime_t trigger;
+	int err;
+	u64 art;
+
+	trigger = ktime_get_real();
+	trigger = ktime_add_ns(trigger, NSEC_PER_SEC / 20);
+
+	err = ktime_convert_real_to_system_counter(trigger, &sys_counter);
+	if (err)
+		return err;
+
+	err = convert_tsc_to_art(&sys_counter, &art);
+	if (err)
+		return err;
+
+	/* In disabled state */
+	ctrl &= ~(TGPIOCTL_DIR | TGPIOCTL_PM);
+	ctrl &= ~TGPIOCTL_EP;
+	ctrl |= TGPIOCTL_EP_TOGGLE_EDGE;
+
+	INTEL_PMC_TGPIO_WR_REG(TGPIOCOMPV31_0, index, art & 0xFFFFFFFF);
+	INTEL_PMC_TGPIO_WR_REG(TGPIOCOMPV63_32, index, art >> 32);
+
+	ctrl |= TGPIOCTL_EN;
+	INTEL_PMC_TGPIO_WR_REG(TGPIOCTL, index, ctrl);
+
+	/* sleep for 100 milli-second */
+	msleep(2 * (MSEC_PER_SEC / 20));
+	ctrl &= ~TGPIOCTL_EN;
+	INTEL_PMC_TGPIO_WR_REG(TGPIOCTL, index, ctrl);
+	tgpio->pin[index].out_high = 0;
+
+	return 0;
+}
+
 static void intel_pmc_tgpio_pre_config(
 struct intel_pmc_tgpio_t *tgpio, unsigned int index, unsigned int ctrl,
 unsigned int ctrl_new, int *enable_toggle)
@@ -173,6 +213,9 @@ int enable_toggle)
 		ctrl |= TGPIOCTL_EN;
 	if (enable_toggle > 1 || enable_toggle < -1)
 		INTEL_PMC_TGPIO_WR_REG(TGPIOCTL, index, ctrl);
+	if (enable_toggle < -1 && tgpio->pin[index].out_high == 1)
+		intel_pmc_tgpio_insert_edge(tgpio, index, ctrl);
+
 }
 
 static int intel_pmc_tgpio_config_input
@@ -340,7 +383,6 @@ unsigned int flags, int on)
 		ctrl_new &= ~TGPIOCTL_EP;
 		ctrl_new |= TGPIOCTL_EP_TOGGLE_EDGE;
 		ctrl_new &= ~TGPIOCTL_DIR;
-
 		if (flags & PTP_PEROUT_ONE_SHOT)
 			ctrl_new &= ~TGPIOCTL_PM;
 		else
@@ -349,6 +391,14 @@ unsigned int flags, int on)
 		enable_toggle = enable_toggle < 0 ?  2 :  1;
 	} else {
 		enable_toggle = enable_toggle > 0 ? -2 : -1;
+	}
+
+	tgpio->pin[index].out_high = (INTEL_PMC_TGPIO_RD_REG(TGPIOEC31_0, index)
+								& 0x1);
+	if (tgpio->pin[index].out_high == 1 && ((ctrl_new &  TGPIOCTL_PM) != 0)
+					&& !(flags & PTP_PEROUT_FREQ_ADJ)) {
+		ctrl &= ~TGPIOCTL_PM;
+		intel_pmc_tgpio_insert_edge(tgpio, index, ctrl);
 	}
 
 	intel_pmc_tgpio_pre_config
@@ -371,7 +421,6 @@ unsigned int flags, int on)
 		tgpio->pin[index].curr_ns = timespec64_to_ktime(new_period_ns);
 		tgpio->pin[index].curr_art = new_period;
 	}
-
 	intel_pmc_tgpio_post_config(tgpio, index, ctrl_new, enable_toggle);
 
 	return 0;
