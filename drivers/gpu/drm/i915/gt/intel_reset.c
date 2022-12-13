@@ -14,6 +14,8 @@
 
 #include "gt/intel_gt_regs.h"
 
+#include "gt/uc/intel_gsc_fw.h"
+
 #include "i915_drv.h"
 #include "i915_file_private.h"
 #include "i915_gpu_error.h"
@@ -690,6 +692,64 @@ static reset_func intel_get_gpu_reset(const struct intel_gt *gt)
 		return NULL;
 }
 
+static int __reset_guc(struct intel_gt *gt)
+{
+	u32 guc_domain =
+		GRAPHICS_VER(gt->i915) >= 11 ? GEN11_GRDOM_GUC : GEN9_GRDOM_GUC;
+
+	return gen6_hw_domain_reset(gt, guc_domain);
+}
+
+static bool needs_wa_14015076503(struct intel_gt *gt, intel_engine_mask_t engine_mask)
+{
+	if (!IS_METEORLAKE(gt->i915) || !HAS_ENGINE(gt, GSC0))
+		return false;
+
+	if (!__HAS_ENGINE(engine_mask, GSC0))
+		return false;
+
+	return intel_gsc_uc_fw_init_done(&gt->uc.gsc);
+}
+
+static intel_engine_mask_t
+wa_14015076503_start(struct intel_gt *gt, intel_engine_mask_t engine_mask, bool first)
+{
+	if (!needs_wa_14015076503(gt, engine_mask))
+		return engine_mask;
+
+	/*
+	 * wa_14015076503: if the GSC FW is loaded, we need to alert it that
+	 * we're going to do a GSC engine reset and then wait for 200ms for the
+	 * FW to get ready for it. However, if this the first ALL_ENGINES reset
+	 * attempt and the GSC is not busy, we can try to instead reset the GuC
+	 * and all the other engines individually to avoid the 200ms wait.
+	 */
+	if (engine_mask == ALL_ENGINES && first && intel_engine_is_idle(gt->engine[GSC0])) {
+		__reset_guc(gt);
+		engine_mask = gt->info.engine_mask & ~BIT(GSC0);
+	} else {
+		intel_uncore_write(gt->uncore,
+				   HECI_GENERAL_STATUS(MTL_GSC_HECI2_BASE),
+				   BIT(0));
+		intel_uncore_write(gt->uncore,
+				   HECI_CONTROL_AND_STATUS(MTL_GSC_HECI2_BASE),
+				   BIT(2));
+		msleep(200);
+	}
+
+	return engine_mask;
+}
+
+static void
+wa_14015076503_end(struct intel_gt *gt, intel_engine_mask_t engine_mask)
+{
+	if (!needs_wa_14015076503(gt, engine_mask))
+		return;
+
+	intel_uncore_write(gt->uncore,
+			   HECI_GENERAL_STATUS(MTL_GSC_HECI2_BASE), 0);
+}
+
 int __intel_gt_reset(struct intel_gt *gt, intel_engine_mask_t engine_mask)
 {
 	const int retries = engine_mask == ALL_ENGINES ? RESET_MAX_RETRIES : 1;
@@ -707,10 +767,16 @@ int __intel_gt_reset(struct intel_gt *gt, intel_engine_mask_t engine_mask)
 	 */
 	intel_uncore_forcewake_get(gt->uncore, FORCEWAKE_ALL);
 	for (retry = 0; ret == -ETIMEDOUT && retry < retries; retry++) {
-		GT_TRACE(gt, "engine_mask=%x\n", engine_mask);
+		intel_engine_mask_t reset_mask;
+
+		reset_mask = wa_14015076503_start(gt, engine_mask, !retry);
+
+		GT_TRACE(gt, "engine_mask=%x\n", reset_mask);
 		preempt_disable();
-		ret = reset(gt, engine_mask, retry);
+		ret = reset(gt, reset_mask, retry);
 		preempt_enable();
+
+		wa_14015076503_end(gt, reset_mask);
 	}
 	intel_uncore_forcewake_put(gt->uncore, FORCEWAKE_ALL);
 
@@ -735,14 +801,12 @@ bool intel_has_reset_engine(const struct intel_gt *gt)
 
 int intel_reset_guc(struct intel_gt *gt)
 {
-	u32 guc_domain =
-		GRAPHICS_VER(gt->i915) >= 11 ? GEN11_GRDOM_GUC : GEN9_GRDOM_GUC;
 	int ret;
 
 	GEM_BUG_ON(!HAS_GT_UC(gt->i915));
 
 	intel_uncore_forcewake_get(gt->uncore, FORCEWAKE_ALL);
-	ret = gen6_hw_domain_reset(gt, guc_domain);
+	ret = __reset_guc(gt);
 	intel_uncore_forcewake_put(gt->uncore, FORCEWAKE_ALL);
 
 	return ret;
