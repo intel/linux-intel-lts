@@ -1,0 +1,40 @@
+From 488a6c9c2d1cfe08cc02b9a9ebd0140efd60379f Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Thu, 3 Nov 2022 16:13:44 +0200
+Subject: [PATCH 2/4] KVM: x86: nSVM: harden svm_free_nested against freeing
+ vmcb02 while still in use
+
+commit 16ae56d7e0528559bf8dc9070e3bfd8ba3de80df upstream.
+
+Make sure that KVM uses vmcb01 before freeing nested state, and warn if
+that is not the case.
+
+This is a minimal fix for CVE-2022-3344 making the kernel print a warning
+instead of a kernel panic.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20221103141351.50662-3-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/kvm/svm/nested.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index 78f1138753e6..6747c7c5b64b 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -919,6 +919,9 @@ void svm_free_nested(struct vcpu_svm *svm)
+ 	if (!svm->nested.initialized)
+ 		return;
+ 
++	if (WARN_ON_ONCE(svm->vmcb != svm->vmcb01.ptr))
++		svm_switch_vmcb(svm, &svm->vmcb01);
++
+ 	svm_vcpu_free_msrpm(svm->nested.msrpm);
+ 	svm->nested.msrpm = NULL;
+ 
+-- 
+2.25.1
+

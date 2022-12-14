@@ -55,3 +55,22 @@
 0004-NFSD-Protect-against-send-buffer-overflow-in-NFSv2-R.patch
 0005-SUNRPC-Fix-svcxdr_init_encode-s-buflen-calculation.patch
 0006-SUNRPC-Fix-svcxdr_init_decode-s-end-of-buffer-calcul.patch
+
+# CVE-2022-42896
+0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
+0002-Bluetooth-L2CAP-Fix-l2cap_global_chan_by_psm.patch
+
+# CVE-2022-3643
+0001-xen-netback-Ensure-protocol-headers-don-t-fall-in-th.patch
+
+# CVE-2022-3344
+0001-KVM-x86-nSVM-leave-nested-mode-on-vCPU-free.patch
+0002-KVM-x86-nSVM-harden-svm_free_nested-against-freeing-.patch
+0003-KVM-x86-add-kvm_leave_nested.patch
+0004-KVM-x86-forcibly-leave-nested-mode-on-vCPU-reset.patch
+
+# CVE-2022-42895
+0001-Bluetooth-L2CAP-Fix-attempting-to-access-uninitializ.patch
+
+# CVE-2022-45869
+0001-KVM-x86-mmu-Fix-race-condition-in-direct_page_fault.patch

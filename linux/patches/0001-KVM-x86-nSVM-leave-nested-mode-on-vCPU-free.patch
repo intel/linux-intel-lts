@@ -1,0 +1,36 @@
+From 70b80a8fd6eb02bc87d0d98e82426d299bb693cb Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Thu, 3 Nov 2022 16:13:43 +0200
+Subject: [PATCH 1/4] KVM: x86: nSVM: leave nested mode on vCPU free
+
+commit 917401f26a6af5756d89b550a8e1bd50cf42b07e upstream.
+
+If the VM was terminated while nested, we free the nested state
+while the vCPU still is in nested mode.
+
+Soon a warning will be added for this condition.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20221103141351.50662-2-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/kvm/svm/svm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 49bb3db2761a..e3cf11b031e2 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -1427,6 +1427,7 @@ static void svm_free_vcpu(struct kvm_vcpu *vcpu)
+ 	 */
+ 	svm_clear_current_vmcb(svm->vmcb);
+ 
++	svm_leave_nested(vcpu);
+ 	svm_free_nested(svm);
+ 
+ 	sev_free_vcpu(vcpu);
+-- 
+2.25.1
+

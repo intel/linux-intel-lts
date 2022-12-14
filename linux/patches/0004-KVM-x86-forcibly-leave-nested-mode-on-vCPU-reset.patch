@@ -1,0 +1,60 @@
+From b77f5f4180ed6edea1111be83fb8e34f61d4a4a4 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Thu, 3 Nov 2022 16:13:46 +0200
+Subject: [PATCH 4/4] KVM: x86: forcibly leave nested mode on vCPU reset
+
+commit ed129ec9057f89d615ba0c81a4984a90345a1684 upstream.
+
+While not obivous, kvm_vcpu_reset() leaves the nested mode by clearing
+'vcpu->arch.hflags' but it does so without all the required housekeeping.
+
+On SVM,	it is possible to have a vCPU reset while in guest mode because
+unlike VMX, on SVM, INIT's are not latched in SVM non root mode and in
+addition to that L1 doesn't have to intercept triple fault, which should
+also trigger L1's reset if happens in L2 while L1 didn't intercept it.
+
+If one of the above conditions happen, KVM will	continue to use vmcb02
+while not having in the guest mode.
+
+Later the IA32_EFER will be cleared which will lead to freeing of the
+nested guest state which will (correctly) free the vmcb02, but since
+KVM still uses it (incorrectly) this will lead to a use after free
+and kernel crash.
+
+This issue is assigned CVE-2022-3344
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20221103141351.50662-5-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/kvm/x86.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index ccaf86314ab3..1688bcbbfb8f 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -11035,8 +11035,18 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
+ 	unsigned long new_cr0;
+ 	u32 eax, dummy;
+ 
++	/*
++	 * SVM doesn't unconditionally VM-Exit on INIT and SHUTDOWN, thus it's
++	 * possible to INIT the vCPU while L2 is active.  Force the vCPU back
++	 * into L1 as EFER.SVME is cleared on INIT (along with all other EFER
++	 * bits), i.e. virtualization is disabled.
++	 */
++	if (is_guest_mode(vcpu))
++		kvm_leave_nested(vcpu);
++
+ 	kvm_lapic_reset(vcpu, init_event);
+ 
++	WARN_ON_ONCE(is_guest_mode(vcpu) || is_smm(vcpu));
+ 	vcpu->arch.hflags = 0;
+ 
+ 	vcpu->arch.smi_pending = 0;
+-- 
+2.25.1
+
