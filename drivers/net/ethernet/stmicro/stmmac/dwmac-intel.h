@@ -130,10 +130,12 @@ static const struct pmc_serdes_regs pid_modphy1_2p5g_regs[] = {
 	{}
 };
 
+static const int adln_tsn_lanes[] = {6};
 static const int ehl_tsn_lanes[] = {7, 8, 9, 10, 11};
 
 #else
 
+static const int adln_tsn_lanes[] = {};
 static const int ehl_tsn_lanes[] = {};
 
 #endif /* CONFIG_INTEL_PMC_CORE */
