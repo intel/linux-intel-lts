@@ -13,9 +13,6 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
-#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
-#include <linux/syscalls.h>
-#endif
 #include <linux/version.h>
 #include <linux/poll.h>
 #include <uapi/linux/sched/types.h>
@@ -67,9 +64,6 @@ static struct fw_init_task {
 	struct ipu_psys *psys;
 } fw_init_task;
 
-#ifdef IPU_IRQ_POLL
-static int ipu_psys_isr_run(void *data);
-#endif
 static void ipu_psys_remove(struct ipu_bus_device *adev);
 
 static struct bus_type ipu_psys_bus = {
@@ -301,9 +295,8 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 		return NULL;
 
 	attrs = DMA_ATTR_SKIP_CPU_SYNC;
-	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
-			       ipu_attach->sgt->orig_nents, dir, attrs);
-	if (ret < ipu_attach->sgt->orig_nents) {
+	ret = dma_map_sgtable(attach->dev, ipu_attach->sgt, dir, attrs);
+	if (ret < 0) {
 		ipu_psys_put_userpages(ipu_attach);
 		dev_dbg(attach->dev, "buf map failed\n");
 
@@ -321,11 +314,11 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 }
 
 static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
-			      struct sg_table *sg, enum dma_data_direction dir)
+			      struct sg_table *sgt, enum dma_data_direction dir)
 {
 	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
 
-	dma_unmap_sg(attach->dev, sg->sgl, sg->orig_nents, dir);
+	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
 	ipu_psys_put_userpages(ipu_attach);
 }
 
@@ -424,10 +417,6 @@ static int ipu_psys_open(struct inode *inode, struct file *file)
 
 	fh->psys = psys;
 
-#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
-	fh->vfops = &psys_vfops;
-#endif
-
 	file->private_data = fh;
 
 	mutex_init(&fh->mutex);
@@ -439,34 +428,12 @@ static int ipu_psys_open(struct inode *inode, struct file *file)
 		goto open_failed;
 
 	mutex_lock(&psys->mutex);
-#ifdef IPU_IRQ_POLL
-	if (list_empty(&psys->fhs)) {
-		static const struct sched_param param = {
-			.sched_priority = MAX_USER_RT_PRIO / 2,
-		};
-		psys->isr_thread = kthread_run(ipu_psys_isr_run, psys,
-					       IPU_PSYS_NAME);
-
-		if (IS_ERR(psys->isr_thread)) {
-			mutex_unlock(&psys->mutex);
-			goto open_failed;
-		}
-
-		sched_setscheduler(psys->isr_thread, SCHED_FIFO, &param);
-	}
-#endif
 	list_add_tail(&fh->list, &psys->fhs);
 	mutex_unlock(&psys->mutex);
 
 	return 0;
 
 open_failed:
-#ifdef IPU_IRQ_POLL
-	if (list_empty(&psys->fhs) && psys->isr_thread) {
-		kthread_stop(psys->isr_thread);
-		psys->isr_thread = NULL;
-	}
-#endif
 	mutex_destroy(&fh->mutex);
 	kfree(fh);
 	return rval;
@@ -503,9 +470,6 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 	struct ipu_psys_fh *fh = file->private_data;
 	struct ipu_psys_kbuffer *kbuf, *kbuf0;
 	struct dma_buf_attachment *db_attach;
-#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
-	struct ipu_dma_buf_attach *ipu_attach;
-#endif
 
 	mutex_lock(&fh->mutex);
 	/* clean up buffers */
@@ -516,11 +480,6 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 
 			/* Unmap and release buffers */
 			if (kbuf->dbuf && db_attach) {
-#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
-				ipu_attach = db_attach->priv;
-				if (ipu_attach->vma_is_io)
-					ksys_close(kbuf->fd);
-#endif
 
 				ipu_psys_kbuf_unmap(kbuf);
 			} else {
@@ -535,12 +494,6 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 	mutex_lock(&psys->mutex);
 	list_del(&fh->list);
 
-#ifdef IPU_IRQ_POLL
-	if (list_empty(&psys->fhs) && psys->isr_thread) {
-		kthread_stop(psys->isr_thread);
-		psys->isr_thread = NULL;
-	}
-#endif
 	mutex_unlock(&psys->mutex);
 	ipu_psys_fh_deinit(fh);
 
@@ -589,7 +542,6 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 
 	ret = dma_buf_fd(dbuf, 0);
 	if (ret < 0) {
-		kfree(kbuf);
 		dma_buf_put(dbuf);
 		return ret;
 	}
@@ -1289,7 +1241,7 @@ static int ipu_psys_fw_init(struct ipu_psys *psys)
 	int i;
 
 	size = IPU6SE_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
-	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP)
+	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL)
 		size = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
 
 	queue_cfg = devm_kzalloc(&psys->adev->dev, sizeof(*queue_cfg) * size,
@@ -1338,10 +1290,6 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	struct ipu_psys *psys;
 	unsigned int minor;
 	int i, rval = -E2BIG;
-
-#ifdef IPU_TRACE_EVENT
-	trace_printk("B|%d|TMWK\n", current->pid);
-#endif
 
 	rval = ipu_mmu_hw_init(adev->mmu);
 	if (rval)
@@ -1489,9 +1437,6 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
-#ifdef IPU_TRACE_EVENT
-	trace_printk("E|%d|TMWK\n", rval);
-#endif
 	return 0;
 
 out_release_fw_com:
@@ -1518,9 +1463,6 @@ out_unlock:
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
-#ifdef IPU_TRACE_EVENT
-	trace_printk("E|%d|TMWK\n", rval);
-#endif
 	return rval;
 }
 
@@ -1534,8 +1476,6 @@ static void ipu_psys_remove(struct ipu_bus_device *adev)
 	if (isp->ipu_dir)
 		debugfs_remove_recursive(psys->debugfsdir);
 #endif
-
-	flush_workqueue(IPU_PSYS_WORK_QUEUE);
 
 	if (psys->sched_cmd_thread) {
 		kthread_stop(psys->sched_cmd_thread);
@@ -1605,37 +1545,6 @@ static irqreturn_t psys_isr_threaded(struct ipu_bus_device *adev)
 	return status ? IRQ_HANDLED : IRQ_NONE;
 }
 
-#ifdef IPU_IRQ_POLL
-static int ipu_psys_isr_run(void *data)
-{
-	struct ipu_psys *psys = data;
-	int r;
-
-	while (!kthread_should_stop()) {
-		usleep_range(100, 500);
-
-		r = mutex_trylock(&psys->mutex);
-		if (!r)
-			continue;
-#ifdef CONFIG_PM
-		r = pm_runtime_get_if_in_use(&psys->adev->dev);
-		if (!r || WARN_ON_ONCE(r < 0)) {
-			mutex_unlock(&psys->mutex);
-			continue;
-		}
-#endif
-
-		ipu_psys_handle_events(psys);
-
-		pm_runtime_mark_last_busy(&psys->adev->dev);
-		pm_runtime_put_autosuspend(&psys->adev->dev);
-		mutex_unlock(&psys->mutex);
-	}
-
-	return 0;
-}
-#endif /* IPU_IRQ_POLL */
-
 static struct ipu_bus_driver ipu_psys_driver = {
 	.probe = ipu_psys_probe,
 	.remove = ipu_psys_remove,
@@ -1687,6 +1596,7 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_MTL_PCI_ID)},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
@@ -1704,3 +1614,4 @@ MODULE_AUTHOR("Zaikuo Wang <zaikuo.wang@intel.com>");
 MODULE_AUTHOR("Yunliang Ding <yunliang.ding@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel ipu processing system driver");
+MODULE_IMPORT_NS(DMA_BUF);

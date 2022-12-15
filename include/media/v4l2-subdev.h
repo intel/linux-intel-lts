@@ -313,18 +313,6 @@ struct v4l2_subdev_audio_ops {
 };
 
 /**
- * struct v4l2_mbus_frame_desc_entry_csi2
- *
- * @channel: CSI-2 virtual channel
- * @data_type: CSI-2 data type ID
- */
-struct v4l2_mbus_frame_desc_entry_csi2 {
-	u8 channel;
-	u8 data_type;
-};
-
-
-/**
  * enum v4l2_mbus_frame_desc_flags - media bus frame description flags
  *
  * @V4L2_MBUS_FRAME_DESC_FL_LEN_MAX:
@@ -343,50 +331,25 @@ enum v4l2_mbus_frame_desc_flags {
  * struct v4l2_mbus_frame_desc_entry - media bus frame description structure
  *
  * @flags:	bitmask flags, as defined by &enum v4l2_mbus_frame_desc_flags.
- * @bpp:	bits per pixel
  * @pixelcode:	media bus pixel code, valid if @flags
  *		%FRAME_DESC_FL_BLOB is not set.
- * @start_line:	start line of the data for 2D DMA
- * @start_pixel	start pixel of the data for 2D DMA
- * @width	image width for 2D DMA
- * @height	image height for 2D DMA
  * @length:	number of octets per frame, valid if @flags
  *		%V4L2_MBUS_FRAME_DESC_FL_LEN_MAX is set.
- * @csi2:	CSI-2 specific bus configuration
  */
 struct v4l2_mbus_frame_desc_entry {
 	enum v4l2_mbus_frame_desc_flags flags;
-	u8 bpp;
 	u32 pixelcode;
-	struct {
-		u16 start_line;
-		u16 start_pixel;
-		u16 width;
-		u16 height;
-	} two_dim;
 	u32 length;
-	union {
-		struct v4l2_mbus_frame_desc_entry_csi2 csi2;
-	} bus;
 };
 
 #define V4L2_FRAME_DESC_ENTRY_MAX	4
 
-enum {
-	V4L2_MBUS_FRAME_DESC_TYPE_PLATFORM,
-	V4L2_MBUS_FRAME_DESC_TYPE_PARALLEL,
-	V4L2_MBUS_FRAME_DESC_TYPE_CCP2,
-	V4L2_MBUS_FRAME_DESC_TYPE_CSI2,
-};
-
 /**
  * struct v4l2_mbus_frame_desc - media bus data frame description
- * @type: type of the bus (V4L2_MBUS_FRAME_DESC_TYPE_*)
  * @entry: frame descriptors array
  * @num_entries: number of entries in @entry array
  */
 struct v4l2_mbus_frame_desc {
-	u32 type;
 	struct v4l2_mbus_frame_desc_entry entry[V4L2_FRAME_DESC_ENTRY_MAX];
 	unsigned short num_entries;
 };
@@ -801,17 +764,8 @@ struct v4l2_subdev_pad_ops {
 #endif /* CONFIG_MEDIA_CONTROLLER */
 	int (*get_frame_desc)(struct v4l2_subdev *sd, unsigned int pad,
 			      struct v4l2_mbus_frame_desc *fd);
-	/*
-	* DEPRECATED --- frame descriptors should not be settable
-	* since they're rather complex. Changing them should be done
-	* through other interfaces.
-	*/
 	int (*set_frame_desc)(struct v4l2_subdev *sd, unsigned int pad,
 			      struct v4l2_mbus_frame_desc *fd);
-	int (*get_routing)(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_routing *route);
-	int (*set_routing)(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_routing *route);
 	int (*get_mbus_config)(struct v4l2_subdev *sd, unsigned int pad,
 			       struct v4l2_mbus_config *config);
 	int (*set_mbus_config)(struct v4l2_subdev *sd, unsigned int pad,
@@ -890,8 +844,6 @@ struct v4l2_subdev_internal_ops {
  * should set this flag.
  */
 #define V4L2_SUBDEV_FL_HAS_EVENTS		(1U << 3)
-/* Set this flag if this sub-device supports substreams. */
-#define V4L2_SUBDEV_FL_HAS_SUBSTREAMS          (1U << 4)
 
 struct regulator_bulk_data;
 

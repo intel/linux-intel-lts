@@ -15,38 +15,6 @@ int ipu_fw_psys_pg_start(struct ipu_psys_kcmd *kcmd)
 	return 0;
 }
 
-#ifdef IPU_TRACE_EVENT
-int ipu_fw_psys_pg_load_cycles(struct ipu_psys_kcmd *kcmd)
-{
-	return 0;
-}
-
-int ipu_fw_psys_pg_init_cycles(struct ipu_psys_kcmd *kcmd)
-{
-	return 0;
-}
-
-int ipu_fw_psys_pg_processing_cycles(struct ipu_psys_kcmd *kcmd)
-{
-	return 0;
-}
-
-int ipu_fw_psys_pg_server_init_cycles(struct ipu_psys_kcmd *kcmd)
-{
-	return 0;
-}
-
-int ipu_fw_psys_pg_next_frame_init_cycles(struct ipu_psys_kcmd *kcmd)
-{
-	return 0;
-}
-
-int ipu_fw_psys_pg_complete_cycles(struct ipu_psys_kcmd *kcmd)
-{
-	return 0;
-}
-#endif
-
 int ipu_fw_psys_pg_disown(struct ipu_psys_kcmd *kcmd)
 {
 	struct ipu_fw_psys_cmd *psys_cmd;

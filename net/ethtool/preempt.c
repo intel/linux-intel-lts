@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-#include "netlink.h"
 #include "common.h"
+#include "netlink.h"
+#include "bitset.h"
 
 struct preempt_req_info {
 	struct ethnl_req_info		base;
@@ -11,6 +12,9 @@ struct preempt_reply_data {
 	struct ethnl_reply_data		base;
 	struct ethtool_fp		fp;
 };
+
+#define PREEMPT_QUEUES_COUNT \
+	(sizeof_field(struct ethtool_fp, preemptible_mask) * BITS_PER_BYTE)
 
 #define PREEMPT_REPDATA(__reply_base) \
 	container_of(__reply_base, struct preempt_reply_data, base)
@@ -44,7 +48,18 @@ static int preempt_prepare_data(const struct ethnl_req_info *req_base,
 static int preempt_reply_size(const struct ethnl_req_info *req_base,
 			      const struct ethnl_reply_data *reply_base)
 {
+	bool compact = req_base->flags & ETHTOOL_FLAG_COMPACT_BITSETS;
+	const struct preempt_reply_data *data = PREEMPT_REPDATA(reply_base);
+	const struct ethtool_fp *preempt = &data->fp;
 	int len = 0;
+	int ret;
+
+	ret = ethnl_bitset32_size(&preempt->preemptible_mask, NULL,
+				  PREEMPT_QUEUES_COUNT, NULL, compact);
+	if (ret < 0)
+		return ret;
+
+	len += ret;
 
 	len += nla_total_size(sizeof(u8)); /* _PREEMPT_ENABLED */
 	len += nla_total_size(sizeof(u32)); /* _PREEMPT_ADD_FRAG_SIZE */
@@ -58,20 +73,28 @@ static int preempt_fill_reply(struct sk_buff *skb,
 			      const struct ethnl_req_info *req_base,
 			      const struct ethnl_reply_data *reply_base)
 {
+	bool compact = req_base->flags & ETHTOOL_FLAG_COMPACT_BITSETS;
 	const struct preempt_reply_data *data = PREEMPT_REPDATA(reply_base);
 	const struct ethtool_fp *preempt = &data->fp;
+	int ret;
 
-	if (nla_put_u8(skb, ETHTOOL_A_PREEMPT_ENABLED, preempt->enabled))
+	if (nla_put_u32(skb, ETHTOOL_A_PREEMPT_ENABLED, preempt->enabled))
 		return -EMSGSIZE;
 
 	if (nla_put_u32(skb, ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE,
 			preempt->add_frag_size))
 		return -EMSGSIZE;
 
-	if (nla_put_u8(skb, ETHTOOL_A_PREEMPT_DISABLE_VERIFY, preempt->disable_verify))
+	ret = ethnl_put_bitset32(skb, ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK,
+				 &preempt->preemptible_mask, NULL, PREEMPT_QUEUES_COUNT,
+				 NULL, compact);
+	if (ret < 0)
+		return ret;
+
+	if (nla_put_u32(skb, ETHTOOL_A_PREEMPT_DISABLE_VERIFY, preempt->disable_verify))
 		return -EMSGSIZE;
 
-	if (nla_put_u8(skb, ETHTOOL_A_PREEMPT_VERIFIED, preempt->verified))
+	if (nla_put_u32(skb, ETHTOOL_A_PREEMPT_VERIFIED, preempt->verified))
 		return -EMSGSIZE;
 
 	return 0;
@@ -94,6 +117,7 @@ ethnl_preempt_set_policy[ETHTOOL_A_PREEMPT_MAX + 1] = {
 	[ETHTOOL_A_PREEMPT_HEADER]			= NLA_POLICY_NESTED(ethnl_header_policy),
 	[ETHTOOL_A_PREEMPT_ENABLED]			= NLA_POLICY_RANGE(NLA_U8, 0, 1),
 	[ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE]		= { .type = NLA_U32 },
+	[ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK]		= { .type = NLA_NESTED },
 	[ETHTOOL_A_PREEMPT_DISABLE_VERIFY]		= NLA_POLICY_RANGE(NLA_U8, 0, 1),
 };
 
@@ -113,6 +137,7 @@ int ethnl_set_preempt(struct sk_buff *skb, struct genl_info *info)
 	if (ret < 0)
 		return ret;
 	dev = req_info.dev;
+
 	ret = -EOPNOTSUPP;
 	if (!dev->ethtool_ops->get_preempt ||
 	    !dev->ethtool_ops->set_preempt)
@@ -129,12 +154,18 @@ int ethnl_set_preempt(struct sk_buff *skb, struct genl_info *info)
 		goto out_ops;
 	}
 
-	ethnl_update_u8(&preempt.enabled,
-			tb[ETHTOOL_A_PREEMPT_ENABLED], &mod);
+	ret = ethnl_update_bitset32(&preempt.preemptible_mask, PREEMPT_QUEUES_COUNT,
+				    tb[ETHTOOL_A_PREEMPT_PREEMPTIBLE_MASK],
+				    NULL, info->extack, &mod);
+	if (ret < 0)
+		goto out_ops;
+
+	ethnl_update_bool32(&preempt.enabled,
+			    tb[ETHTOOL_A_PREEMPT_ENABLED], &mod);
 	ethnl_update_u32(&preempt.add_frag_size,
 			 tb[ETHTOOL_A_PREEMPT_ADD_FRAG_SIZE], &mod);
-	ethnl_update_u8(&preempt.disable_verify,
-			tb[ETHTOOL_A_PREEMPT_DISABLE_VERIFY], &mod);
+	ethnl_update_bool32(&preempt.disable_verify,
+			    tb[ETHTOOL_A_PREEMPT_DISABLE_VERIFY], &mod);
 	ret = 0;
 	if (!mod)
 		goto out_ops;

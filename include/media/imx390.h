@@ -6,6 +6,8 @@
 
 #include <linux/types.h>
 
+#define IMX390_NAME "imx390"
+
 struct imx390_platform_data {
 	unsigned int port;
 	unsigned int lanes;

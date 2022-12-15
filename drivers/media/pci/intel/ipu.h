@@ -26,6 +26,7 @@ enum ipu_version {
 	IPU_VER_6,
 	IPU_VER_6SE,
 	IPU_VER_6EP,
+	IPU_VER_6EP_MTL,
 };
 
 /*
@@ -80,8 +81,10 @@ struct ipu_device {
 	unsigned int pkg_dir_size;
 	struct sg_table fw_sgt;
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	const struct firmware *spdata_fw;
+#endif
 #endif
 	void __iomem *base;
 #ifdef CONFIG_DEBUG_FS

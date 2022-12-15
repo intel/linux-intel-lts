@@ -24,6 +24,8 @@
 #include <linux/version.h>
 #include <media/lt6911uxc.h>
 
+#include <linux/ipu-isys.h>
+
 /* v4l2 debug level */
 static int debug;
 module_param(debug, int, 0644);
@@ -185,7 +187,6 @@ struct lt6911uxc_state {
 	struct v4l2_ctrl *frame_interval;
 	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_ctrl *link_freq;
-	struct v4l2_ctrl *mipi_lanes;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *exposure;
 	struct v4l2_ctrl *analogue_gain;
@@ -195,6 +196,8 @@ struct lt6911uxc_state {
 	struct v4l2_ctrl *strobe_stop;
 	struct v4l2_ctrl *timeout;
 	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *query_sub_stream;
+	struct v4l2_ctrl *set_sub_stream;
 
 	struct v4l2_dv_timings timings;
 	struct v4l2_dv_timings detected_timings;
@@ -218,6 +221,8 @@ struct lt6911uxc_state {
 	u32 thread_run;
 	struct task_struct *poll_task;
 	bool auxiliary_port;
+
+	s64 sub_stream;
 };
 
 static const struct v4l2_event lt6911uxc_ev_source_change = {
@@ -596,11 +601,6 @@ static int lt6911uxc_set_ctrl(struct v4l2_ctrl *ctrl)
 		dev_dbg(&client->dev, "set vblank %d\n",
 			lt6911uxc->cur_mode->height + ctrl->val);
 		break;
-
-	case V4L2_CID_MIPI_LANES:
-		dev_dbg(&client->dev, "set mipi lane %d\n", ctrl->val);
-		break;
-
 	case V4L2_CID_FLASH_STROBE_SOURCE:
 		dev_dbg(&client->dev, "set led flash source %d\n", ctrl->val);
 		break;
@@ -703,6 +703,29 @@ static struct v4l2_ctrl_config lt6911uxc_frame_interval = {
 	.flags	= V4L2_CTRL_FLAG_READ_ONLY,
 };
 
+static struct v4l2_ctrl_config lt6911uxc_q_sub_stream = {
+	.ops = &lt6911uxc_ctrl_ops,
+	.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+	.name = "query virtual channel",
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.max = 1,
+	.min = 0,
+	.def = 0,
+	.menu_skip_mask = 0,
+	.qmenu_int = NULL,
+};
+
+static const struct v4l2_ctrl_config lt6911uxc_s_sub_stream = {
+	.ops = &lt6911uxc_ctrl_ops,
+	.id = V4L2_CID_IPU_SET_SUB_STREAM,
+	.name = "set virtual channel",
+	.type = V4L2_CTRL_TYPE_INTEGER64,
+	.max = 0xFFFF,
+	.min = 0,
+	.def = 0,
+	.step = 1,
+};
+
 static u64 get_pixel_rate(struct lt6911uxc_state *lt6911uxc)
 {
 	if (lt6911uxc->cur_mode->lanes)
@@ -712,12 +735,62 @@ static u64 get_pixel_rate(struct lt6911uxc_state *lt6911uxc)
 		return 995328000; /* default value: 4K@30 */
 }
 
+#define MIPI_CSI2_TYPE_YUV422_8         0x1e
+
+static unsigned int mbus_code_to_mipi(u32 code)
+{
+	switch (code) {
+	case MEDIA_BUS_FMT_UYVY8_1X16:
+		return MIPI_CSI2_TYPE_YUV422_8;
+	default:
+		WARN_ON(1);
+		return -EINVAL;
+	}
+}
+
+static void set_sub_stream_fmt(s64 *sub_stream, u32 code)
+{
+       *sub_stream &= 0xFFFFFFFFFFFF0000;
+       *sub_stream |= code;
+}
+
+static void set_sub_stream_h(s64 *sub_stream, u32 height)
+{
+       s64 val = height;
+       val &= 0xFFFF;
+       *sub_stream &= 0xFFFFFFFF0000FFFF;
+       *sub_stream |= val << 16;
+}
+
+static void set_sub_stream_w(s64 *sub_stream, u32 width)
+{
+       s64 val = width;
+       val &= 0xFFFF;
+       *sub_stream &= 0xFFFF0000FFFFFFFF;
+       *sub_stream |= val << 32;
+}
+
+static void set_sub_stream_dt(s64 *sub_stream, u32 dt)
+{
+       s64 val = dt;
+       val &= 0xFF;
+       *sub_stream &= 0xFF00FFFFFFFFFFFF;
+       *sub_stream |= val << 48;
+}
+
+static void set_sub_stream_vc_id(s64 *sub_stream, u32 vc_id)
+{
+       s64 val = vc_id;
+       val &= 0xFF;
+       *sub_stream &= 0x00FFFFFFFFFFFFFF;
+       *sub_stream |= val << 56;
+}
+
 static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
 	struct v4l2_ctrl_handler *ctrl_hdlr;
 	s64 hblank;
-	struct v4l2_ctrl_config cfg = { 0 };
 	int ret;
 
 	ctrl_hdlr = &lt6911uxc->ctrl_handler;
@@ -775,20 +848,6 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
-
-	cfg.ops = &lt6911uxc_ctrl_ops;
-	cfg.id = V4L2_CID_MIPI_LANES;
-	cfg.name = "V4L2_CID_MIPI_LANES";
-	cfg.type = V4L2_CTRL_TYPE_INTEGER;
-	cfg.max = 4; cfg.min = 2; cfg.step = 2; cfg.def = 4;
-	cfg.qmenu = 0; cfg.elem_size = 0;
-	lt6911uxc->mipi_lanes = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
-	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
-			ctrl_hdlr->error);
-		return ctrl_hdlr->error;
-	}
-
 	lt6911uxc_csi_port.def = lt6911uxc->platform_data->port;
 	lt6911uxc->csi_port =
 		v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_csi_port, NULL);
@@ -889,6 +948,20 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 		return ctrl_hdlr->error;
 	}
 
+	lt6911uxc_q_sub_stream.qmenu_int = &lt6911uxc->sub_stream;
+	lt6911uxc->query_sub_stream = v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_q_sub_stream, NULL);
+	if (ctrl_hdlr->error) {
+		dev_dbg(&client->dev, "Set query sub stream ctrl, error = %d.\n",
+			ctrl_hdlr->error);
+		return ctrl_hdlr->error;
+	}
+	lt6911uxc->set_sub_stream = v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_s_sub_stream, NULL);
+	if (ctrl_hdlr->error) {
+		dev_dbg(&client->dev, "Set set sub stream ctrl, error = %d.\n",
+			ctrl_hdlr->error);
+		return ctrl_hdlr->error;
+	}
+
 	lt6911uxc->sd.ctrl_handler = ctrl_hdlr;
 	return 0;
 }
@@ -912,7 +985,6 @@ static int lt6911uxc_start_streaming(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc_ext_control(lt6911uxc, true);
 	lt6911uxc_csi_enable(&lt6911uxc->sd, true);
 	lt6911uxc_ext_control(lt6911uxc, false);
-	lt6911uxc->streaming = true;
 
 	ret = __v4l2_ctrl_handler_setup(lt6911uxc->sd.ctrl_handler);
 	if (ret)
@@ -930,8 +1002,6 @@ static void lt6911uxc_stop_streaming(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc_ext_control(lt6911uxc, true);
 	lt6911uxc_csi_enable(&lt6911uxc->sd, false);
 	lt6911uxc_ext_control(lt6911uxc, false);
-
-	lt6911uxc->streaming = false;
 }
 
 static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable)
@@ -945,15 +1015,21 @@ static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable)
 	if (lt6911uxc->auxiliary_port == true)
 		return 0;
 
+	mutex_lock(&lt6911uxc->mutex);
 	if (enable) {
 		dev_dbg(sd->dev, "[%s()], start streaming.\n", __func__);
 		ret = lt6911uxc_start_streaming(lt6911uxc);
-		if (ret)
+		if (ret) {
+			enable = 0;
 			lt6911uxc_stop_streaming(lt6911uxc);
+		}
 	} else {
 		dev_dbg(sd->dev, "[%s()], stop streaming.\n", __func__);
 		lt6911uxc_stop_streaming(lt6911uxc);
 	}
+	mutex_unlock(&lt6911uxc->mutex);
+
+	lt6911uxc->streaming = enable;
 
 	return ret;
 }
@@ -967,16 +1043,6 @@ static int lt6911uxc_g_frame_interval(struct v4l2_subdev *sd,
 	fival->interval.numerator = 1;
 	fival->interval.denominator = lt6911uxc->cur_mode->fps;
 
-	return 0;
-}
-
-static int __maybe_unused lt6911uxc_suspend(struct device *dev)
-{
-	return 0;
-}
-
-static int __maybe_unused lt6911uxc_resume(struct device *dev)
-{
 	return 0;
 }
 
@@ -1021,6 +1087,11 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 		else
 			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 33);
 	}
+	set_sub_stream_fmt(&lt6911uxc->sub_stream, fmt->format.code);
+	set_sub_stream_h(&lt6911uxc->sub_stream, fmt->format.height);
+	set_sub_stream_w(&lt6911uxc->sub_stream, fmt->format.width);
+	set_sub_stream_dt(&lt6911uxc->sub_stream, mbus_code_to_mipi(fmt->format.code));
+	set_sub_stream_vc_id(&lt6911uxc->sub_stream, 0);
 	mutex_unlock(&lt6911uxc->mutex);
 
 	return 0;
@@ -1514,6 +1585,55 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&lt6911uxc->mutex);
 
 	return ret;
+}
+
+static int lt6911uxc_suspend(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct lt6911uxc_state *lt6911uxc = to_state(sd);
+
+	if (-1 != lt6911uxc->platform_data->reset_pin)
+		if (gpio_get_value(lt6911uxc->platform_data->reset_pin))
+			gpio_set_value(lt6911uxc->platform_data->reset_pin, 0);
+
+	mutex_lock(&lt6911uxc->mutex);
+	if (lt6911uxc->streaming)
+		lt6911uxc_stop_streaming(lt6911uxc);
+
+	mutex_unlock(&lt6911uxc->mutex);
+	dev_dbg(sd->dev, "suspend streaming...\n");
+	return 0;
+}
+
+static int lt6911uxc_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct lt6911uxc_state *lt6911uxc = to_state(sd);
+	int ret;
+
+	if (-1 != lt6911uxc->platform_data->reset_pin)
+		if (!gpio_get_value(lt6911uxc->platform_data->reset_pin))
+			gpio_set_value(lt6911uxc->platform_data->reset_pin, 1);
+
+	usleep_range(200000, 205000);
+	//recheck the current HDMI status in case changed
+	lt6911uxc_check_status(lt6911uxc);
+
+	mutex_lock(&lt6911uxc->mutex);
+	if (lt6911uxc->streaming) {
+		ret = lt6911uxc_start_streaming(lt6911uxc);
+		if (ret) {
+			lt6911uxc->streaming = false;
+			lt6911uxc_stop_streaming(lt6911uxc);
+			mutex_unlock(&lt6911uxc->mutex);
+			return ret;
+		}
+	}
+	mutex_unlock(&lt6911uxc->mutex);
+	dev_dbg(sd->dev, "resume streaming...\n");
+	return 0;
 }
 
 static const struct dev_pm_ops lt6911uxc_pm_ops = {

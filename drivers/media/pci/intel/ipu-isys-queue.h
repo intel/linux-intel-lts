@@ -49,6 +49,7 @@ struct ipu_isys_buffer {
 	struct list_head req_head;
 	struct media_device_request *req;
 	atomic_t str2mmio_flag;
+	atomic_t skipframe_flag;
 };
 
 struct ipu_isys_video_buffer {

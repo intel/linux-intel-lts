@@ -48,7 +48,6 @@ static struct v4l2_subdev_internal_ops csi2_be_sd_internal_ops = {
 static const struct v4l2_subdev_core_ops csi2_be_sd_core_ops = {
 };
 
-#if defined(IPU_ISYS_COMPRESSION)
 static const struct v4l2_ctrl_config compression_ctrl_cfg = {
 	.ops = NULL,
 	.id = V4L2_CID_IPU_ISYS_COMPRESSION,
@@ -59,7 +58,6 @@ static const struct v4l2_ctrl_config compression_ctrl_cfg = {
 	.step = 1,
 	.def = 0,
 };
-#endif
 
 static int set_stream(struct v4l2_subdev *sd, int enable)
 {
@@ -105,7 +103,7 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 	    pad->flags & MEDIA_PAD_FL_SOURCE &&
 	    asd->valid_tgts[CSI2_BE_PAD_SOURCE].crop) {
 		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd, state, sel->pad, 0, sel->which);
+			__ipu_isys_get_ffmt(sd, state, sel->pad, sel->which);
 		struct v4l2_rect *r = __ipu_isys_get_selection
 		    (sd, state, sel->target, CSI2_BE_PAD_SINK, sel->which);
 
@@ -165,8 +163,7 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->stream,
-				    fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 
 	switch (fmt->pad) {
 	case CSI2_BE_PAD_SINK:
@@ -181,7 +178,7 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 	case CSI2_BE_PAD_SOURCE: {
 		struct v4l2_mbus_framefmt *sink_ffmt =
 			__ipu_isys_get_ffmt(sd, state, CSI2_BE_PAD_SINK,
-					    fmt->stream, fmt->which);
+					    fmt->which);
 		struct v4l2_rect *r =
 			__ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
 						 CSI2_BE_PAD_SOURCE,
@@ -215,9 +212,7 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 
 void ipu_isys_csi2_be_cleanup(struct ipu_isys_csi2_be *csi2_be)
 {
-#if defined(IPU_ISYS_COMPRESSION)
 	v4l2_ctrl_handler_free(&csi2_be->av.ctrl_handler);
-#endif
 	v4l2_device_unregister_subdev(&csi2_be->asd.sd);
 	ipu_isys_subdev_cleanup(&csi2_be->asd);
 	ipu_isys_video_cleanup(&csi2_be->av);
@@ -250,7 +245,6 @@ int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 
 	rval = ipu_isys_subdev_init(&csi2_be->asd, &csi2_be_sd_ops, 0,
 				    NR_OF_CSI2_BE_PADS,
-				    NR_OF_CSI2_BE_STREAMS,
 				    NR_OF_CSI2_BE_SOURCE_PADS,
 				    NR_OF_CSI2_BE_SINK_PADS, 0);
 	if (rval)
@@ -296,7 +290,6 @@ int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 	csi2_be->av.aq.vbq.buf_struct_size =
 	    sizeof(struct ipu_isys_video_buffer);
 
-#if defined(IPU_ISYS_COMPRESSION)
 	/* create v4l2 ctrl for csi-be video node */
 	rval = v4l2_ctrl_handler_init(&csi2_be->av.ctrl_handler, 0);
 	if (rval) {
@@ -315,7 +308,6 @@ int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 	}
 	csi2_be->av.compression = 0;
 	csi2_be->av.vdev.ctrl_handler = &csi2_be->av.ctrl_handler;
-#endif
 
 	rval = ipu_isys_video_init(&csi2_be->av, &csi2_be->asd.sd.entity,
 				   CSI2_BE_PAD_SOURCE, MEDIA_PAD_FL_SINK, 0);

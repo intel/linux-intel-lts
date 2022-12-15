@@ -143,4 +143,5 @@ int ipu_trace_init(struct ipu_device *isp, void __iomem *base,
 void ipu_trace_restore(struct device *dev);
 void ipu_trace_uninit(struct device *dev);
 void ipu_trace_stop(struct device *dev);
+int ipu_trace_buffer_dma_handle(struct device *dev, dma_addr_t *dma_handle);
 #endif

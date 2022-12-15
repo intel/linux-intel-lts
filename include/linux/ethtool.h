@@ -13,6 +13,7 @@
 #ifndef _LINUX_ETHTOOL_H
 #define _LINUX_ETHTOOL_H
 
+#include "asm-generic/int-ll64.h"
 #include <linux/bitmap.h>
 #include <linux/compat.h>
 #include <linux/netlink.h>
@@ -83,6 +84,7 @@ struct netlink_ext_ack;
 /* Some generic methods drivers may use in their ethtool_ops */
 u32 ethtool_op_get_link(struct net_device *dev);
 int ethtool_op_get_ts_info(struct net_device *dev, struct ethtool_ts_info *eti);
+
 
 /* Link extended state and substate. */
 struct ethtool_link_ext_state_info {
@@ -415,6 +417,22 @@ struct ethtool_module_eeprom {
 };
 
 /**
+ * struct ethtool_fp - Frame Preemption information
+ *
+ * @enabled: Enable frame preemption.
+ * @add_frag_size: Minimum size for additional (non-final) fragments
+ * in bytes, for the value defined in the IEEE 802.3-2018 standard see
+ * ethtool_frag_size_to_mult().
+ */
+struct ethtool_fp {
+	u32 enabled;
+	u32 preemptible_mask;
+	u32 disable_verify;
+	u32 verified;
+	u32 add_frag_size;
+};
+
+/**
  * struct ethtool_ops - optional netdev operations
  * @cap_link_lanes_supported: indicates if the driver supports lanes
  *	parameter.
@@ -688,10 +706,10 @@ struct ethtool_ops {
 				      struct ethtool_fecparam *);
 	int	(*set_fecparam)(struct net_device *,
 				      struct ethtool_fecparam *);
-	int	(*get_preempt)(struct net_device *,
-			       struct ethtool_fp *);
-	int	(*set_preempt)(struct net_device *, struct ethtool_fp *,
-			       struct netlink_ext_ack *);
+	int	(*get_preempt)(struct net_device *dev,
+			       struct ethtool_fp *fp);
+	int	(*set_preempt)(struct net_device *dev, struct ethtool_fp *fp,
+			       struct netlink_ext_ack *extack);
 	void	(*get_ethtool_phy_stats)(struct net_device *,
 					 struct ethtool_stats *, u64 *);
 	int	(*get_phy_tunable)(struct net_device *,

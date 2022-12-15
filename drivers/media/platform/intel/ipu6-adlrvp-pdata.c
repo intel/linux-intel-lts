@@ -11,9 +11,12 @@
 #include <media/ar0234.h>
 #include <media/imx390.h>
 #include <media/lt6911uxc.h>
+#include <media/d4xx.h>
 
 #include "ipu.h"
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 static void ar0234_fixup_spdata(const void *spdata_rep, void *spdata)
 {
 	const struct ipu_spdata_rep *rep = spdata_rep;
@@ -48,6 +51,8 @@ static void lt6911uxc_fixup_spdata(const void *spdata_rep, void *spdata)
 	}
 }
 
+#endif
+
 #define AR0234_LANES       2
 #define AR0234_I2C_ADDRESS 0x10
 
@@ -77,7 +82,10 @@ static struct ipu_isys_subdev_info ar0234_sd_1 = {
 	},
 	.i2c_adapter_bdf = "0000:00:15.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = ar0234_fixup_spdata,
+#endif
 };
 
 static struct ipu_isys_csi2_config ar0234_csi2_cfg_2 = {
@@ -106,7 +114,10 @@ static struct ipu_isys_subdev_info ar0234_sd_2 = {
 	},
 	.i2c_adapter_bdf = "0000:00:19.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = ar0234_fixup_spdata,
+#endif
 };
 
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
@@ -377,13 +388,13 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_1 = {
 	.port = 1,
 	.lanes = LT6911UXC_LANES,
 	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
-	.irq_pin = 749,
+	.irq_pin = -1,
 	.irq_pin_name = "READY_STAT",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'a',
-	.reset_pin = 957,
-	.detect_pin = 687,
+	.reset_pin = -1,
+	.detect_pin = -1,
 	.gpios = {-1, 0, 0, 0},
 };
 
@@ -396,7 +407,10 @@ static struct ipu_isys_subdev_info  lt6911uxc_sd_1 = {
 	},
 	.i2c_adapter_bdf = "0000:00:15.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = lt6911uxc_fixup_spdata,
+#endif
 };
 
 static struct ipu_isys_csi2_config lt6911uxc_csi2_cfg_2 = {
@@ -408,13 +422,13 @@ static struct lt6911uxc_platform_data lt6911uxc_pdata_2 = {
 	.port = 2,
 	.lanes = LT6911UXC_LANES,
 	.i2c_slave_address = LT6911UXC_I2C_ADDRESS,
-	.irq_pin = 956,
+	.irq_pin = -1,
 	.irq_pin_name = "READY_STAT",
 	.irq_pin_flags = IRQF_TRIGGER_RISING
 		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 	.suffix = 'b',
-	.reset_pin = 999,
-	.detect_pin = 1000,
+	.reset_pin = -1,
+	.detect_pin = -1,
 	.gpios = {-1, 0, 0, 0},
 };
 
@@ -427,8 +441,103 @@ static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {
 	},
 	.i2c_adapter_bdf = "0000:00:19.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = lt6911uxc_fixup_spdata,
+#endif
 };
+
+#if IS_ENABLED(CONFIG_VIDEO_D4XX)
+#define D4XX_LANES       2
+#define D4XX_I2C_ADDRESS_0 0x10
+#define D4XX_I2C_ADDRESS_1 0x12
+#define D4XX_I2C_ADDRESS_2 0x14
+#define D4XX_PORT0      0
+#define D4XX_PORT1      1
+#define D4XX_PORT2      2
+#define D4XX_PORT3      3
+
+static struct ipu_isys_csi2_config d4xx_csi2_cfg_0 = {
+	.nlanes = D4XX_LANES,
+	.port = D4XX_PORT0,
+};
+
+static struct d4xx_pdata d4xx_pdata_0 = {
+	.suffix = 'a',
+};
+
+static struct ipu_isys_subdev_info d4xx_sd_0 = {
+	.csi2 = &d4xx_csi2_cfg_0,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO("d4xx", D4XX_I2C_ADDRESS_1),
+			.platform_data = &d4xx_pdata_0,
+		},
+		.i2c_adapter_bdf = "0000:00:15.1",
+	},
+};
+
+static struct ipu_isys_csi2_config d4xx_csi2_cfg_1 = {
+	.nlanes = D4XX_LANES,
+	.port = D4XX_PORT1,
+};
+
+static struct d4xx_pdata d4xx_pdata_1 = {
+	.suffix = 'b',
+};
+
+static struct ipu_isys_subdev_info d4xx_sd_1 = {
+	.csi2 = &d4xx_csi2_cfg_1,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("d4xx", D4XX_I2C_ADDRESS_2),
+		.platform_data = &d4xx_pdata_1,
+	},
+	.i2c_adapter_bdf = "0000:00:15.1",
+	},
+};
+
+static struct ipu_isys_csi2_config d4xx_csi2_cfg_2 = {
+	.nlanes = D4XX_LANES,
+	.port = D4XX_PORT2,
+};
+
+static struct d4xx_pdata d4xx_pdata_2 = {
+	.suffix = 'c',
+};
+
+static struct ipu_isys_subdev_info d4xx_sd_2 = {
+	.csi2 = &d4xx_csi2_cfg_2,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO("d4xx", D4XX_I2C_ADDRESS_1),
+			.platform_data = &d4xx_pdata_2,
+		},
+		.i2c_adapter_bdf = "0000:00:19.1",
+	},
+};
+
+static struct ipu_isys_csi2_config d4xx_csi2_cfg_3 = {
+	.nlanes = D4XX_LANES,
+	.port = D4XX_PORT3,
+};
+
+static struct d4xx_pdata d4xx_pdata_3 = {
+	.suffix = 'd',
+};
+
+static struct ipu_isys_subdev_info d4xx_sd_3 = {
+	.csi2 = &d4xx_csi2_cfg_3,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("d4xx", D4XX_I2C_ADDRESS_2),
+	.platform_data = &d4xx_pdata_3,
+	},
+	.i2c_adapter_bdf = "0000:00:19.1",
+	},
+};
+#endif
+
 static struct ipu_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
 };
@@ -443,6 +552,12 @@ static struct ipu_isys_subdev_pdata pdata = {
 #endif
 		&lt6911uxc_sd_1,
 		&lt6911uxc_sd_2,
+#if IS_ENABLED(CONFIG_VIDEO_D4XX)
+		&d4xx_sd_0,
+		&d4xx_sd_1,
+		&d4xx_sd_2,
+		&d4xx_sd_3,
+#endif
 		NULL,
 	},
 	.clk_map = clk_mapping,
@@ -456,3 +571,6 @@ static void ipu6_quirk(struct pci_dev *pci_dev)
 
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID, ipu6_quirk);
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID, ipu6_quirk);
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID, ipu6_quirk);
+
+MODULE_LICENSE("GPL");

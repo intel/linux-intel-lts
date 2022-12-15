@@ -25,14 +25,6 @@
 #include <media/media-request.h>
 
 #ifdef CONFIG_MEDIA_CONTROLLER
-struct media_device_fh {
-       struct media_devnode_fh fh;
-};
-
-static inline struct media_device_fh *media_device_fh(struct file *filp)
-{
-       return container_of(filp->private_data, struct media_device_fh, fh);
-}
 
 /*
  * Legacy defines from linux/media.h. This is the only place we need this
@@ -55,23 +47,11 @@ static inline void __user *media_get_uptr(__u64 arg)
 
 static int media_device_open(struct file *filp)
 {
-	struct media_device_fh *fh;
-
-	fh = kzalloc(sizeof(*fh), GFP_KERNEL);
-	if (!fh)
-		return -ENOMEM;
-
-	filp->private_data = &fh->fh;
-
 	return 0;
 }
 
 static int media_device_close(struct file *filp)
 {
-	struct media_device_fh *fh = media_device_fh(filp);
-
-	kfree(fh);
-
 	return 0;
 }
 
@@ -501,39 +481,6 @@ out_free:
 	return ret;
 }
 
-static unsigned int media_device_poll(struct file *filp,
-					struct poll_table_struct *wait)
-{
-	/*
-	struct media_device_fh *fh = media_device_fh(filp);
-	struct media_device *mdev = fh->fh.devnode->media_dev;
-	unsigned int poll_events = poll_requested_events(wait);
-	int ret = 0;
-
-	if (poll_events & (POLLIN | POLLOUT))
-		return POLLERR;
-
-	if (poll_events & POLLPRI) {
-		unsigned long flags;
-		bool empty;
-
-		spin_lock_irqsave(&mdev->req_lock, flags);
-		empty = list_empty(&fh->kevents.head);
-		spin_unlock_irqrestore(&mdev->req_lock, flags);
-
-		if (empty)
-			poll_wait(filp, &fh->kevents.wait, wait);
-		else
-			ret |= POLLPRI;
-	}
-
-	return ret;
-	*/
-
-	printk("media_device_poll func\n");
-	return 0;
-}
-
 #ifdef CONFIG_COMPAT
 
 struct media_links_enum32 {
@@ -599,7 +546,6 @@ static const struct media_file_operations media_device_fops = {
 	.owner = THIS_MODULE,
 	.open = media_device_open,
 	.ioctl = media_device_ioctl,
-	.poll = media_device_poll,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = media_device_compat_ioctl,
 #endif /* CONFIG_COMPAT */

@@ -163,9 +163,6 @@ static inline int check_format(struct v4l2_subdev *sd,
 	if (!format)
 		return -EINVAL;
 
-	if (!(sd->flags & V4L2_SUBDEV_FL_HAS_SUBSTREAMS) && format->stream)
-		return -EINVAL;
-
 	return check_which(format->which) ? : check_pad(sd, format->pad) ? :
 	       check_state_pads(format->which, state);
 }
@@ -637,40 +634,6 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 
 		return v4l2_subdev_call(sd, video, s_dv_timings, arg);
 
-	case VIDIOC_SUBDEV_G_ROUTING:
-		return v4l2_subdev_call(sd, pad, get_routing, arg);
-
-	case VIDIOC_SUBDEV_S_ROUTING: {
-		struct v4l2_subdev_routing *route = arg;
-		unsigned int i;
-		int rval;
-
-		if (route->num_routes > sd->entity.num_pads)
-			return -EINVAL;
-
-		for (i = 0; i < route->num_routes; ++i) {
-			unsigned int sink = route->routes[i].sink_pad;
-			unsigned int source = route->routes[i].source_pad;
-			struct media_pad *pads = sd->entity.pads;
-
-			if (sink >= sd->entity.num_pads ||
-			   source >= sd->entity.num_pads)
-				return -EINVAL;
-
-			if ((!(route->routes[i].flags &
-				V4L2_SUBDEV_ROUTE_FL_SOURCE) &&
-			   !(pads[sink].flags & MEDIA_PAD_FL_SINK)) ||
-			   !(pads[source].flags & MEDIA_PAD_FL_SOURCE))
-				return -EINVAL;
-		}
-
-		mutex_lock(&sd->entity.graph_obj.mdev->graph_mutex);
-		rval = v4l2_subdev_call(sd, pad, set_routing, route);
-		mutex_unlock(&sd->entity.graph_obj.mdev->graph_mutex);
-
-		return rval;
-	}
-
 	case VIDIOC_SUBDEV_G_STD:
 		return v4l2_subdev_call(sd, video, g_std, arg);
 
@@ -847,14 +810,6 @@ int v4l2_subdev_link_validate_default(struct v4l2_subdev *sd,
 		pass = false;
 	}
 
-	if (source_fmt->stream != sink_fmt->stream) {
-		dev_dbg(sd->entity.graph_obj.mdev->dev,
-			"%s: stream does not match (source %u, sink %u)\n",
-			__func__,
-			source_fmt->stream, sink_fmt->stream);
-		pass = false;
-	}
-
 	if (pass)
 		return 0;
 
@@ -887,21 +842,19 @@ v4l2_subdev_link_validate_get_format(struct media_pad *pad,
 	return -EINVAL;
 }
 
-static int v4l2_subdev_link_validate_one(struct media_link *link,
-		struct media_pad *source_pad, unsigned int source_stream,
-		struct media_pad *sink_pad, unsigned int sink_stream)
+int v4l2_subdev_link_validate(struct media_link *link)
 {
 	struct v4l2_subdev *sink;
 	struct v4l2_subdev_format sink_fmt, source_fmt;
 	int rval;
 
-	source_fmt.stream = source_stream;
-	rval = v4l2_subdev_link_validate_get_format(source_pad, &source_fmt);
+	rval = v4l2_subdev_link_validate_get_format(
+		link->source, &source_fmt);
 	if (rval < 0)
 		return 0;
 
-	sink_fmt.stream = sink_stream;
-	rval = v4l2_subdev_link_validate_get_format(sink_pad, &sink_fmt);
+	rval = v4l2_subdev_link_validate_get_format(
+		link->sink, &sink_fmt);
 	if (rval < 0)
 		return 0;
 
@@ -914,129 +867,6 @@ static int v4l2_subdev_link_validate_one(struct media_link *link,
 
 	return v4l2_subdev_link_validate_default(
 		sink, link, &source_fmt, &sink_fmt);
-}
-/* How many routes to assume there can be per a sub-device? */
-#define LINK_VALIDATE_ROUTES	16
-
-int v4l2_subdev_link_validate(struct media_link *link)
-{
-	struct v4l2_subdev *sink;
-	struct v4l2_subdev_route sink_routes[LINK_VALIDATE_ROUTES];
-	struct v4l2_subdev_routing sink_routing = {
-		.routes = sink_routes,
-		.num_routes = ARRAY_SIZE(sink_routes),
-	};
-	struct v4l2_subdev_route src_routes[LINK_VALIDATE_ROUTES];
-	struct v4l2_subdev_routing src_routing = {
-		.routes = src_routes,
-		.num_routes = ARRAY_SIZE(src_routes),
-	};
-	unsigned int i, j;
-	int rval;
-
-	sink = media_entity_to_v4l2_subdev(link->sink->entity);
-	if (!sink)
-		return -EINVAL;
-
-	if (!(link->sink->flags & MEDIA_PAD_FL_MULTIPLEX &&
-		link->source->flags & MEDIA_PAD_FL_MULTIPLEX))
-		return v4l2_subdev_link_validate_one(link, link->source, 0,
-						     link->sink, 0);
-	/*
-	 * multiplex link cannot proceed without route information.
-	 */
-	rval = v4l2_subdev_call(sink, pad, get_routing, &sink_routing);
-	if (rval) {
-		dev_err(sink->entity.graph_obj.mdev->dev,
-			"error %d in get_routing() on %s, sink pad %u\n", rval,
-			sink->entity.name, link->sink->index);
-
-		return rval;
-	}
-
-	rval = v4l2_subdev_call(media_entity_to_v4l2_subdev(
-					link->source->entity),
-				pad, get_routing, &src_routing);
-	if (rval) {
-		dev_dbg(sink->entity.graph_obj.mdev->dev,
-			"error %d in get_routing() on %s, source pad %u\n",
-			rval, sink->entity.name, link->source->index);
-
-		return rval;
-	}
-
-	dev_dbg(sink->entity.graph_obj.mdev->dev,
-		"validating multiplexed link \"%s\":%u -> \"%s\":%u; %u/%u routes\n",
-		link->source->entity->name, link->source->index,
-		sink->entity.name, link->sink->index,
-		src_routing.num_routes, sink_routing.num_routes);
-
-	for (i = 0; i < sink_routing.num_routes; i++) {
-		/* Get the first active route for the sink pad. */
-		if (sink_routes[i].sink_pad != link->sink->index ||
-		    !(sink_routes[i].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE)) {
-			dev_dbg(sink->entity.graph_obj.mdev->dev,
-				"skipping sink route %u/%u -> %u/%u[%u]\n",
-				sink_routes[i].sink_pad,
-				sink_routes[i].sink_stream,
-				sink_routes[i].source_pad,
-				sink_routes[i].source_stream,
-				(bool)(sink_routes[i].flags
-				       & V4L2_SUBDEV_ROUTE_FL_ACTIVE));
-			continue;
-		}
-
-		/*
-		 * Get the corresponding route for the source pad.
-		 * It's ok for the source pad to have routes active
-		 * where the sink pad does not, but the routes that
-		 * are active on the source pad have to be active on
-		 * the sink pad as well.
-		 */
-
-		for (j = 0; j < src_routing.num_routes; j++) {
-			if (src_routes[j].source_pad == link->source->index &&
-			    src_routes[j].source_stream
-			    == sink_routes[i].sink_stream)
-				break;
-		}
-
-		if (j == src_routing.num_routes) {
-			dev_err(sink->entity.graph_obj.mdev->dev,
-				"no corresponding source found.\n");
-			return -EINVAL;
-		}
-
-		/* The source route must be active. */
-		if (!(src_routes[j].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE)) {
-			dev_dbg(sink->entity.graph_obj.mdev->dev,
-				"source route not active\n");
-			return -EINVAL;
-		}
-
-		dev_dbg(sink->entity.graph_obj.mdev->dev,
-			"validating link \"%s\": %u/%u => \"%s\" %u/%u\n",
-			link->source->entity->name, src_routes[j].source_pad,
-			src_routes[j].source_stream, sink->entity.name,
-			sink_routes[i].sink_pad, sink_routes[i].sink_stream);
-
-		rval = v4l2_subdev_link_validate_one(
-			link, link->source, src_routes[j].source_stream,
-			link->sink, sink_routes[i].sink_stream);
-		if (rval) {
-			dev_dbg(sink->entity.graph_obj.mdev->dev,
-				"error %d in link validation\n", rval);
-			return rval;
-		}
-	}
-
-	if (i < sink_routing.num_routes) {
-		dev_dbg(sink->entity.graph_obj.mdev->dev,
-			"not all sink routes verified; out of source routes\n");
-		return -EINVAL;
-	}
-
-	return 0;
 }
 EXPORT_SYMBOL_GPL(v4l2_subdev_link_validate);
 

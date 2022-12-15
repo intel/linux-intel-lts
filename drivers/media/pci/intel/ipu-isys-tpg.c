@@ -140,8 +140,7 @@ static void tpg_set_ffmt(struct v4l2_subdev *sd,
 			 struct v4l2_subdev_format *fmt)
 {
 	fmt->format.field = V4L2_FIELD_NONE;
-	*__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->stream,
-			     fmt->which) = fmt->format;
+	*__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which) = fmt->format;
 }
 
 static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
@@ -149,7 +148,7 @@ static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ipu_isys_tpg *tpg = to_ipu_isys_tpg(sd);
-	__u32 code = tpg->asd.ffmt[TPG_PAD_SOURCE][0].code;
+	__u32 code = tpg->asd.ffmt[TPG_PAD_SOURCE].code;
 	unsigned int bpp = ipu_isys_mbus_code_to_bpp(code);
 	s64 tpg_rate = ipu_isys_tpg_rate(tpg, bpp);
 	int rval;
@@ -255,7 +254,6 @@ int ipu_isys_tpg_init(struct ipu_isys_tpg *tpg,
 
 	rval = ipu_isys_subdev_init(&tpg->asd, &tpg_sd_ops, 5,
 				    NR_OF_TPG_PADS,
-				    NR_OF_TPG_STREAMS,
 				    NR_OF_TPG_SOURCE_PADS,
 				    NR_OF_TPG_SINK_PADS,
 				    V4L2_SUBDEV_FL_HAS_EVENTS);

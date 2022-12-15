@@ -104,19 +104,6 @@ static struct dw_scl_sda_cfg hsw_config = {
 	.sda_hold = 0x9,
 };
 
-/* Elkhart Lake HCNT/LCNT/SDA hold time */
-static struct dw_scl_sda_cfg ehl_config = {
-	.ss_hcnt = 0x190,
-	.fs_hcnt = 0x4E,
-	.fp_hcnt = 0x1A,
-	.hs_hcnt = 0x1F,
-	.ss_lcnt = 0x1d6,
-	.fs_lcnt = 0x96,
-	.fp_lcnt = 0x32,
-	.hs_lcnt = 0x36,
-	.sda_hold = 0x1E,
-};
-
 /* NAVI-AMD HCNT/LCNT/SDA hold time */
 static struct dw_scl_sda_cfg navi_amd_config = {
 	.ss_hcnt = 0x1ae,
@@ -233,7 +220,6 @@ static struct dw_pci_controller dw_pci_controllers[] = {
 	},
 	[elkhartlake] = {
 		.bus_num = -1,
-		.scl_sda_cfg = &ehl_config,
 		.get_clk_rate_khz = ehl_get_clk_rate_khz,
 	},
 	[navi_amd] = {
@@ -369,6 +355,7 @@ static int i2c_dw_pci_probe(struct pci_dev *pdev,
 	int r;
 	struct dw_pci_controller *controller;
 	struct dw_scl_sda_cfg *cfg;
+	struct i2c_timings *t;
 
 	if (id->driver_data >= ARRAY_SIZE(dw_pci_controllers)) {
 		dev_err(&pdev->dev, "%s: invalid driver data %ld\n", __func__,
@@ -402,11 +389,13 @@ static int i2c_dw_pci_probe(struct pci_dev *pdev,
 		return r;
 
 	dev->get_clk_rate_khz = controller->get_clk_rate_khz;
-	dev->timings.bus_freq_hz = I2C_MAX_FAST_MODE_FREQ;
 	dev->base = pcim_iomap_table(pdev)[0];
 	dev->dev = &pdev->dev;
 	dev->irq = pci_irq_vector(pdev, 0);
 	dev->flags |= controller->flags;
+
+	t = &dev->timings;
+	i2c_parse_fw_timings(&pdev->dev, t, false);
 
 	pci_set_drvdata(pdev, dev);
 

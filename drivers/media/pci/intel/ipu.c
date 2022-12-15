@@ -26,11 +26,15 @@
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 #include <media/ipu-isys.h>
 #endif
+#endif
 
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 #include <media/ipu-acpi.h>
+#endif
 
 #define IPU_PCI_BAR		0
 enum ipu_version ipu_ver;
@@ -40,12 +44,14 @@ static int isys_freq_overwrite = -1;
 module_param(isys_freq_overwrite, int, 0660);
 MODULE_PARM_DESC(isys_freq_overwrite, "overwrite isys freq default value");
 
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 static int isys_init_acpi_add_device(struct device *dev, void *priv,
 				struct ipu_isys_csi2_config *csi2,
 				bool reprobe)
 {
 	return 0;
 }
+#endif
 
 static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    struct device *parent,
@@ -53,8 +59,10 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    void __iomem *base,
 					    const struct ipu_isys_internal_pdata
 					    *ipdata,
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 					    struct ipu_isys_subdev_pdata
 					    *spdata,
+#endif
 					    unsigned int nr)
 {
 	struct ipu_bus_device *isys;
@@ -62,13 +70,16 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	struct ipu_isys_subdev_pdata *acpi_pdata;
 #endif
+
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return ERR_PTR(-ENOMEM);
 
 	pdata->base = base;
 	pdata->ipdata = ipdata;
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 	pdata->spdata = spdata;
+#endif
 
 	/* Use 250MHz for ipu6 se */
 	if (ipu_ver == IPU_VER_6SE)
@@ -76,6 +87,8 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 
 	isys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
 				  IPU_ISYS_NAME, nr);
+	if (IS_ERR(isys))
+		return ERR_PTR(-ENOMEM);
 
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	if (!spdata) {
@@ -83,14 +96,10 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, NULL, isys_init_acpi_add_device);
 		pdata->spdata = acpi_pdata;
 	} else {
-		dev_info(&pdev->dev, "Subdevice info found");
+		dev_dbg(&pdev->dev, "Subdevice info found");
 		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, &spdata, isys_init_acpi_add_device);
 	}
 #endif
-
-	if (IS_ERR(isys))
-		return ERR_PTR(-ENOMEM);
-
 	isys->mmu = ipu_mmu_init(&pdev->dev, base, ISYS_MMID,
 				 &ipdata->hw_variant);
 	if (IS_ERR(isys->mmu))
@@ -323,7 +332,9 @@ static int ipu_pci_config_setup(struct pci_dev *dev)
 	pci_read_config_word(dev, PCI_COMMAND, &pci_command);
 	pci_command |= PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER;
 	pci_write_config_word(dev, PCI_COMMAND, pci_command);
-	if (ipu_ver == IPU_VER_6EP) {
+
+	/* no msi pci capability for IPU6EP */
+	if (ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL) {
 		/* likely do nothing as msi not enabled by default */
 		pci_disable_msi(dev);
 		return 0;
@@ -388,6 +399,7 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 }
 EXPORT_SYMBOL(request_cpd_fw);
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 static inline int match_spdata(struct ipu_isys_subdev_info *sd,
 			const struct ipu_spdata_rep *rep)
@@ -438,6 +450,7 @@ void fixup_spdata(const void *spdata_rep,
 	}
 }
 #endif
+#endif
 
 static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
@@ -451,10 +464,8 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 	u32 is_es;
 	int rval;
+	u32 val;
 
-#ifdef IPU_TRACE_EVENT
-	trace_printk("B|%d|TMWK\n", current->pid);
-#endif
 	if (!fwnode || fwnode_property_read_u32(fwnode, "is_es", &is_es))
 		is_es = 0;
 
@@ -470,9 +481,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (rval) {
 		dev_err(&pdev->dev, "Failed to enable CI ISP device (%d)\n",
 			rval);
-#ifdef IPU_TRACE_EVENT
-		trace_printk("E|%d|TMWK\n", rval);
-#endif
 		return rval;
 	}
 
@@ -487,9 +495,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (rval) {
 		dev_err(&pdev->dev, "Failed to I/O memory remapping (%d)\n",
 			rval);
-#ifdef IPU_TRACE_EVENT
-		trace_printk("E|%d|TMWK\n", rval);
-#endif
 		return rval;
 	}
 	dev_info(&pdev->dev, "physical base address 0x%llx\n", phys);
@@ -497,9 +502,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	iomap = pcim_iomap_table(pdev);
 	if (!iomap) {
 		dev_err(&pdev->dev, "Failed to iomap table (%d)\n", rval);
-#ifdef IPU_TRACE_EVENT
-		trace_printk("E|%d|TMWK\n", rval);
-#endif
 		return -ENODEV;
 	}
 
@@ -524,6 +526,10 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		ipu_ver = IPU_VER_6EP;
 		isp->cpd_fw_name = is_es ? IPU6EPES_FIRMWARE_NAME : IPU6EP_FIRMWARE_NAME;
 		break;
+	case IPU6EP_MTL_PCI_ID:
+		ipu_ver = IPU_VER_6EP_MTL;
+		isp->cpd_fw_name = IPU6EPMTL_FIRMWARE_NAME;
+		break;
 	default:
 		WARN(1, "Unsupported IPU device");
 		return -ENODEV;
@@ -537,30 +543,17 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	dev_dbg(&pdev->dev, "isys_base: 0x%lx\n", (unsigned long)isys_base);
 	dev_dbg(&pdev->dev, "psys_base: 0x%lx\n", (unsigned long)psys_base);
 
-	rval = pci_set_dma_mask(pdev, DMA_BIT_MASK(dma_mask));
-	if (!rval)
-		rval = pci_set_consistent_dma_mask(pdev,
-						   DMA_BIT_MASK(dma_mask));
+	rval = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(dma_mask));
 	if (rval) {
 		dev_err(&pdev->dev, "Failed to set DMA mask (%d)\n", rval);
-#ifdef IPU_TRACE_EVENT
-		trace_printk("E|%d|TMWK\n", rval);
-#endif
 		return rval;
 	}
 
 	dma_set_max_seg_size(&pdev->dev, UINT_MAX);
 
 	rval = ipu_pci_config_setup(pdev);
-#ifdef IPU_TRACE_EVENT
-	if (rval) {
-		trace_printk("E|%d|TMWK\n", rval);
-		return rval;
-	}
-#else
 	if (rval)
 		return rval;
-#endif
 
 	rval = devm_request_threaded_irq(&pdev->dev, pdev->irq,
 					 ipu_buttress_isr,
@@ -568,31 +561,18 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 					 IRQF_SHARED, IPU_NAME, isp);
 	if (rval) {
 		dev_err(&pdev->dev, "Requesting irq failed(%d)\n", rval);
-#ifdef IPU_TRACE_EVENT
-		trace_printk("E|%d|TMWK\n", rval);
-#endif
 		return rval;
 	}
 
 	rval = ipu_buttress_init(isp);
-#ifdef IPU_TRACE_EVENT
-	if (rval) {
-		trace_printk("E|%d|TMWK\n", rval);
-		return rval;
-	}
-#else
 	if (rval)
 		return rval;
-#endif
 
 	dev_info(&pdev->dev, "cpd file name: %s\n", isp->cpd_fw_name);
 
 	rval = request_cpd_fw(&isp->cpd_fw, isp->cpd_fw_name, &pdev->dev);
 	if (rval) {
 		dev_err(&isp->pdev->dev, "Requesting signed firmware failed\n");
-#ifdef IPU_TRACE_EVENT
-		trace_printk("E|%d|TMWK\n", rval);
-#endif
 		return rval;
 	}
 
@@ -603,6 +583,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	rval = request_firmware(&isp->spdata_fw, IPU_SPDATA_NAME, &pdev->dev);
 	if (rval)
@@ -610,12 +591,10 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	else
 		fixup_spdata(isp->spdata_fw->data, pdev->dev.platform_data);
 #endif
+#endif
 	rval = ipu_trace_add(isp);
 	if (rval)
 		dev_err(&pdev->dev, "Trace support not available\n");
-
-	pm_runtime_put_noidle(&pdev->dev);
-	pm_runtime_allow(&pdev->dev);
 
 	/*
 	 * NOTE Device hierarchy below is important to ensure proper
@@ -637,7 +616,9 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	isp->isys = ipu_isys_init(pdev, &pdev->dev,
 				  isys_ctrl, isys_base,
 				  &isys_ipdata,
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 				  pdev->dev.platform_data,
+#endif
 				  0);
 	if (IS_ERR(isp->isys)) {
 		rval = PTR_ERR(isp->isys);
@@ -720,38 +701,42 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	/* Configure the arbitration mechanisms for VC requests */
 	ipu_configure_vc_mechanism(isp);
 
-	dev_info(&pdev->dev, "IPU driver version %d.%d\n", IPU_MAJOR_VERSION,
+	val = readl(isp->base + BUTTRESS_REG_SKU);
+	dev_info(&pdev->dev, "IPU%u-v%u driver version %d.%d\n",
+		 val & 0xf, (val >> 4) & 0x7,
+		 IPU_MAJOR_VERSION,
 		 IPU_MINOR_VERSION);
 
-#ifdef IPU_TRACE_EVENT
-	trace_printk("E|%d|TMWK\n", rval);
-#endif
+	pm_runtime_put_noidle(&pdev->dev);
+	pm_runtime_allow(&pdev->dev);
+
 	return 0;
 
 out_ipu_bus_del_devices:
 	if (isp->pkg_dir) {
-		ipu_cpd_free_pkg_dir(isp->psys, isp->pkg_dir,
-				     isp->pkg_dir_dma_addr,
-				     isp->pkg_dir_size);
-		ipu_buttress_unmap_fw_image(isp->psys, &isp->fw_sgt);
+		if (isp->psys) {
+			ipu_cpd_free_pkg_dir(isp->psys, isp->pkg_dir,
+					     isp->pkg_dir_dma_addr,
+					     isp->pkg_dir_size);
+			ipu_buttress_unmap_fw_image(isp->psys, &isp->fw_sgt);
+		}
 		isp->pkg_dir = NULL;
 	}
-	if (isp->psys && isp->psys->mmu)
+	if (!IS_ERR_OR_NULL(isp->psys) && !IS_ERR_OR_NULL(isp->psys->mmu))
 		ipu_mmu_cleanup(isp->psys->mmu);
-	if (isp->isys && isp->isys->mmu)
+	if (!IS_ERR_OR_NULL(isp->isys) && !IS_ERR_OR_NULL(isp->isys->mmu))
 		ipu_mmu_cleanup(isp->isys->mmu);
-	if (isp->psys)
+	if (!IS_ERR_OR_NULL(isp->psys))
 		pm_runtime_put(&isp->psys->dev);
 	ipu_bus_del_devices(pdev);
 	ipu_buttress_exit(isp);
 	release_firmware(isp->cpd_fw);
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	release_firmware(isp->spdata_fw);
 #endif
-
-#ifdef IPU_TRACE_EVENT
-	trace_printk("E|%d|TMWK\n", rval);
 #endif
+
 	return rval;
 }
 
@@ -906,6 +891,7 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_MTL_PCI_ID)},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);

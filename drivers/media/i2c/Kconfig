@@ -1622,6 +1622,11 @@ config VIDEO_LT6911UXC
       To compile this driver as a module, choose M here: the
       module will be called lt6911uxc.
 
+config VIDEO_D4XX
+        depends on I2C && VIDEO_V4L2
+        tristate "D4XX Camera Driver"
+        help
+          This is a Video4Linux2 sensor-level driver for intel realsence camera.
 
 endmenu
 

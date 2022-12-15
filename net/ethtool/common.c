@@ -613,8 +613,6 @@ u8 ethtool_frag_size_to_mult(u32 frag_size)
 {
 	u8 mult = (frag_size / 64) - 1;
 
-	mult = clamp_t(u8, mult, 0, 3);
-
-	return mult;
+	return clamp_t(u8, mult, 0, 3);
 }
 EXPORT_SYMBOL_GPL(ethtool_frag_size_to_mult);
