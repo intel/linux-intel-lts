@@ -393,15 +393,12 @@ static void disable_all_event_handlers(struct drm_i915_private *i915)
 	}
 }
 
-static void pipedmc_clock_gating_wa(struct drm_i915_private *i915, bool enable)
+static void adlp_pipedmc_clock_gating_wa(struct drm_i915_private *i915, bool enable)
 {
 	enum pipe pipe;
 
-	if (DISPLAY_VER(i915) < 13)
-		return;
-
 	/*
-	 * Wa_16015201720:adl-p,dg2, mtl
+	 * Wa_16015201720:adl-p,dg2
 	 * The WA requires clock gating to be disabled all the time
 	 * for pipe A and B.
 	 * For pipe C and D clock gating needs to be disabled only
@@ -415,6 +412,34 @@ static void pipedmc_clock_gating_wa(struct drm_i915_private *i915, bool enable)
 		for (pipe = PIPE_C; pipe <= PIPE_D; pipe++)
 			intel_de_rmw(i915, CLKGATE_DIS_PSL_EXT(pipe),
 				     PIPEDMC_GATING_DIS, 0);
+}
+
+static void mtl_pipedmc_clock_gating_wa(struct drm_i915_private *i915, bool enable)
+{
+	/*
+	 * Wa_14015855405
+	 * The WA requires clock gating to be disabled all the time
+	 * for pipe A and B.
+	 * For pipe C and D clock gating needs to be disabled only
+	 * during initializing the firmware.
+	 * TODO/FIXME: WA deviates wrt. enable/disable for Pipes C, D. Needs recheck.
+	 * For now carry-forward the implementation for dg2.
+	 */
+	if (enable)
+		intel_de_rmw(i915, GEN9_CLKGATE_DIS_0, 0,
+			     MTL_PIPEDMC_GATING_DIS_A | MTL_PIPEDMC_GATING_DIS_B |
+			     MTL_PIPEDMC_GATING_DIS_C | MTL_PIPEDMC_GATING_DIS_D);
+	else
+		intel_de_rmw(i915, GEN9_CLKGATE_DIS_0,
+			     MTL_PIPEDMC_GATING_DIS_C | MTL_PIPEDMC_GATING_DIS_D, 0);
+}
+
+static void pipedmc_clock_gating_wa(struct drm_i915_private *i915, bool enable)
+{
+	if (DISPLAY_VER(i915) >= 14)
+		return mtl_pipedmc_clock_gating_wa(i915, enable);
+	else if (DISPLAY_VER(i915) == 13)
+		return adlp_pipedmc_clock_gating_wa(i915, enable);
 }
 
 void intel_dmc_enable_pipe(struct drm_i915_private *i915, enum pipe pipe)
