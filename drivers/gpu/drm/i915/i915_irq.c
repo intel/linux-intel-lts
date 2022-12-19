@@ -1977,7 +1977,6 @@ static void icp_irq_handler(struct drm_i915_private *dev_priv, u32 pch_iir)
 		/* Locking due to DSI native GPIO sequences */
 		spin_lock(&dev_priv->irq_lock);
 		dig_hotplug_reg = intel_uncore_rmw(&dev_priv->uncore, SHOTPLUG_CTL_DDI, 0, 0);
-		intel_uncore_write(&dev_priv->uncore, SHOTPLUG_CTL_DDI, dig_hotplug_reg);
 		spin_unlock(&dev_priv->irq_lock);
 
 		intel_get_hpd_pins(dev_priv, &pin_mask, &long_mask,
