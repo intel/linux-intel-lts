@@ -675,6 +675,32 @@ static int check_fw_header(struct intel_gt *gt,
 	return 0;
 }
 
+static int try_firmware_load(struct intel_uc_fw *uc_fw, const struct firmware **fw)
+{
+	struct intel_gt *gt = __uc_fw_to_gt(uc_fw);
+	struct device *dev = gt->i915->drm.dev;
+	int err;
+
+	err = firmware_request_nowarn(fw, uc_fw->file_selected.path, dev);
+
+	if (err)
+		return err;
+
+	if ((*fw)->size > INTEL_UC_RSVD_GGTT_PER_FW) {
+		drm_err(&gt->i915->drm,
+			"%s firmware %s: size (%zuKB) exceeds max supported size (%uKB)\n",
+			intel_uc_fw_type_repr(uc_fw->type), uc_fw->file_selected.path,
+			(*fw)->size / SZ_1K, INTEL_UC_RSVD_GGTT_PER_FW / SZ_1K);
+
+		/* try to find another blob to load */
+		release_firmware(*fw);
+		*fw = NULL;
+		return -ENOENT;
+	}
+
+	return 0;
+}
+
 /**
  * intel_uc_fw_fetch - fetch uC firmware
  * @uc_fw: uC firmware
