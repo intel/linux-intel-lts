@@ -470,6 +470,9 @@ static void intel_fbdev_hpd_set_suspend(struct drm_i915_private *i915, int state
 	struct intel_fbdev *ifbdev = i915->display.fbdev.fbdev;
 	bool send_hpd = false;
 
+	if (!ifbdev)
+		return;
+
 	mutex_lock(&ifbdev->hpd_lock);
 	ifbdev->hpd_suspended = state == FBINFO_STATE_SUSPENDED;
 	send_hpd = !ifbdev->hpd_suspended && ifbdev->hpd_waiting;
