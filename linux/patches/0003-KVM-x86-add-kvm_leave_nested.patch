@@ -1,0 +1,78 @@
+From e50c3d5a40dabdad6415e2b34425eb346a4e4245 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Thu, 3 Nov 2022 16:13:45 +0200
+Subject: [PATCH 3/4] KVM: x86: add kvm_leave_nested
+
+commit f9697df251438b0798780900e8b43bdb12a56d64 upstream.
+
+add kvm_leave_nested which wraps a call to nested_ops->leave_nested
+into a function.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20221103141351.50662-4-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/kvm/svm/nested.c | 3 ---
+ arch/x86/kvm/vmx/nested.c | 3 ---
+ arch/x86/kvm/x86.c        | 8 +++++++-
+ 3 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index 6747c7c5b64b..e0b4f88b04b3 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -940,9 +940,6 @@ void svm_free_nested(struct vcpu_svm *svm)
+ 	svm->nested.initialized = false;
+ }
+ 
+-/*
+- * Forcibly leave nested mode in order to be able to reset the VCPU later on.
+- */
+ void svm_leave_nested(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+diff --git a/arch/x86/kvm/vmx/nested.c b/arch/x86/kvm/vmx/nested.c
+index 61d601387058..62a8066bb6a2 100644
+--- a/arch/x86/kvm/vmx/nested.c
++++ b/arch/x86/kvm/vmx/nested.c
+@@ -6259,9 +6259,6 @@ static int vmx_get_nested_state(struct kvm_vcpu *vcpu,
+ 	return kvm_state.size;
+ }
+ 
+-/*
+- * Forcibly leave nested mode in order to be able to reset the VCPU later on.
+- */
+ void vmx_leave_nested(struct kvm_vcpu *vcpu)
+ {
+ 	if (is_guest_mode(vcpu)) {
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 8648799d48f8..ccaf86314ab3 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -601,6 +601,12 @@ void kvm_deliver_exception_payload(struct kvm_vcpu *vcpu)
+ }
+ EXPORT_SYMBOL_GPL(kvm_deliver_exception_payload);
+ 
++/* Forcibly leave the nested mode in cases like a vCPU reset */
++static void kvm_leave_nested(struct kvm_vcpu *vcpu)
++{
++	kvm_x86_ops.nested_ops->leave_nested(vcpu);
++}
++
+ static void kvm_multiple_exception(struct kvm_vcpu *vcpu,
+ 		unsigned nr, bool has_error, u32 error_code,
+ 	        bool has_payload, unsigned long payload, bool reinject)
+@@ -4778,7 +4784,7 @@ static int kvm_vcpu_ioctl_x86_set_vcpu_events(struct kvm_vcpu *vcpu,
+ 
+ 	if (events->flags & KVM_VCPUEVENT_VALID_SMM) {
+ 		if (!!(vcpu->arch.hflags & HF_SMM_MASK) != events->smi.smm) {
+-			kvm_x86_ops.nested_ops->leave_nested(vcpu);
++			kvm_leave_nested(vcpu);
+ 			kvm_smm_changed(vcpu, events->smi.smm);
+ 		}
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,30 @@
+From b759fd481a52c67bade96f5c5e3a9c6e9c98b600 Mon Sep 17 00:00:00 2001
+From: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Date: Mon, 31 Oct 2022 16:10:33 -0700
+Subject: [PATCH 2/2] Bluetooth: L2CAP: Fix l2cap_global_chan_by_psm
+
+l2cap_global_chan_by_psm shall not return fixed channels as they are not
+meant to be connected by (S)PSM.
+
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Reviewed-by: Tedd Ho-Jeong An <tedd.an@intel.com>
+---
+ net/bluetooth/l2cap_core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+index 091b207dac48..0bf3a3739a08 100644
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -1984,7 +1984,7 @@ static struct l2cap_chan *l2cap_global_chan_by_psm(int state, __le16 psm,
+ 		if (link_type == LE_LINK && c->src_type == BDADDR_BREDR)
+ 			continue;
+ 
+-		if (c->psm == psm) {
++		if (c->chan_type != L2CAP_CHAN_FIXED && c->psm == psm) {
+ 			int src_match, dst_match;
+ 			int src_any, dst_any;
+ 
+-- 
+2.25.1
+
