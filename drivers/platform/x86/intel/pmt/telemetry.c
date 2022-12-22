@@ -231,6 +231,31 @@ void pmt_telem_runtime_pm_put(struct telem_endpoint *ep)
 }
 EXPORT_SYMBOL(pmt_telem_runtime_pm_put);
 
+struct telem_endpoint *
+pmt_telem_find_and_register_endpoint(struct pci_dev *pcidev, u32 guid, u16 pos)
+{
+	int devid = 0;
+	int inst = 0;
+	int err = 0;
+
+	while ((devid = pmt_telem_get_next_endpoint(devid))) {
+		struct telem_endpoint_info ep_info;
+
+		err = pmt_telem_get_endpoint_info(devid, &ep_info);
+		if (err)
+			return ERR_PTR(err);
+
+		if (ep_info.header.guid == guid && ep_info.pdev == pcidev) {
+			if (inst == pos)
+				return pmt_telem_register_endpoint(devid);
+			++inst;
+		}
+	}
+
+	return ERR_PTR(-ENXIO);
+}
+EXPORT_SYMBOL(pmt_telem_find_and_register_endpoint);
+
 static int pmt_telem_add_endpoint(struct device *dev,
 				  struct pmt_telem_priv *priv,
 				  struct intel_pmt_entry *entry)
