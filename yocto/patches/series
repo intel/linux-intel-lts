@@ -39,3 +39,6 @@
 
 # CVE-2022-42895
 0001-Bluetooth-L2CAP-Fix-attempting-to-access-uninitializ.patch
+
+# CVE-2022-3643
+0001-xen-netback-Ensure-protocol-headers-don-t-fall-in-th.patch
