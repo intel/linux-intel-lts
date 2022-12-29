@@ -74,3 +74,40 @@
 
 # CVE-2022-45869
 0001-KVM-x86-mmu-Fix-race-condition-in-direct_page_fault.patch
+
+# CVE-2022-3524
+0001-tcp-udp-Fix-memory-leak-in-ipv6_renew_options.patch
+
+# CVE-2022-3545
+0001-nfp-fix-use-after-free-in-area_cache_get.patch
+
+# CVE-2022-3567
+0001-ipv6-annotate-some-data-races-around-sk-sk_prot.patch
+0002-ipv6-Fix-data-races-around-sk-sk_prot.patch
+
+# CVE-2022-3566
+0001-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
+
+# CVE-2022-3565
+0001-mISDN-fix-use-after-free-bugs-in-l1oip-timer-handler.patch
+
+# CVE-2022-3621
+0001-nilfs2-fix-NULL-pointer-dereference-at-nilfs_bmap_lo.patch
+
+# CVE-2022-3649
+0001-nilfs2-fix-use-after-free-bug-of-struct-nilfs_root.patch
+
+# CVE-2022-40768
+0001-scsi-stex-Properly-zero-out-the-passthrough-command-.patch
+
+# CVE-2022-41850
+0001-HID-roccat-Fix-use-after-free-in-roccat_read.patch
+
+# CVE-2022-41849
+0001-fbdev-smscufx-Fix-use-after-free-in-ufx_ops_open.patch
+
+# CVE-2022-3521
+0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
+
+# CVE-2022-3646
+0001-nilfs2-fix-leak-of-nilfs_root-in-case-of-writer-thre.patch

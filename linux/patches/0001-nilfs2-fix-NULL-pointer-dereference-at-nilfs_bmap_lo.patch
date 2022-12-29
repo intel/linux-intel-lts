@@ -1,0 +1,45 @@
+From 5bd13da5e134f6584fd7469b5d8a5bedb330769f Mon Sep 17 00:00:00 2001
+From: Ryusuke Konishi <konishi.ryusuke@gmail.com>
+Date: Sun, 2 Oct 2022 12:08:04 +0900
+Subject: [PATCH] nilfs2: fix NULL pointer dereference at
+ nilfs_bmap_lookup_at_level()
+
+commit 21a87d88c2253350e115029f14fe2a10a7e6c856 upstream.
+
+If the i_mode field in inode of metadata files is corrupted on disk, it
+can cause the initialization of bmap structure, which should have been
+called from nilfs_read_inode_common(), not to be called.  This causes a
+lockdep warning followed by a NULL pointer dereference at
+nilfs_bmap_lookup_at_level().
+
+This patch fixes these issues by adding a missing sanitiy check for the
+i_mode field of metadata file's inode.
+
+Link: https://lkml.kernel.org/r/20221002030804.29978-1-konishi.ryusuke@gmail.com
+Signed-off-by: Ryusuke Konishi <konishi.ryusuke@gmail.com>
+Reported-by: syzbot+2b32eb36c1a825b7a74c@syzkaller.appspotmail.com
+Reported-by: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Tested-by: Ryusuke Konishi <konishi.ryusuke@gmail.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/nilfs2/inode.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/nilfs2/inode.c b/fs/nilfs2/inode.c
+index 2466f8b8be95..35bc52d453a9 100644
+--- a/fs/nilfs2/inode.c
++++ b/fs/nilfs2/inode.c
+@@ -444,6 +444,8 @@ int nilfs_read_inode_common(struct inode *inode,
+ 	inode->i_atime.tv_nsec = le32_to_cpu(raw_inode->i_mtime_nsec);
+ 	inode->i_ctime.tv_nsec = le32_to_cpu(raw_inode->i_ctime_nsec);
+ 	inode->i_mtime.tv_nsec = le32_to_cpu(raw_inode->i_mtime_nsec);
++	if (nilfs_is_metadata_file_inode(inode) && !S_ISREG(inode->i_mode))
++		return -EIO; /* this inode is for metadata and corrupted */
+ 	if (inode->i_nlink == 0)
+ 		return -ESTALE; /* this inode is deleted */
+ 
+-- 
+2.25.1
+
