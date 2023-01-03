@@ -25,20 +25,5 @@
 # CVE-2022-3623
 0001-mm-hugetlb-fix-races-when-looking-up-a-CONT-PTE-PMD-.patch
 
-# CVE-2022-3564
-0001-Bluetooth-L2CAP-Fix-use-after-free-caused-by-l2cap_r.patch
-
-# CVE-2022-3169
-0001-nvme-ensure-subsystem-reset-is-single-threaded.patch
-
-# CVE-2022-3435
-0001-ipv4-Handle-attempt-to-delete-multipath-route-when-f.patch
-
-# CVE-2022-42896
-0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
-
-# CVE-2022-42895
-0001-Bluetooth-L2CAP-Fix-attempting-to-access-uninitializ.patch
-
 # CVE-2022-3643
 0001-xen-netback-Ensure-protocol-headers-don-t-fall-in-th.patch
