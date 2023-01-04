@@ -236,6 +236,8 @@ enum sort_type {
 	SORT_LOCAL_INS_LAT,
 	SORT_GLOBAL_INS_LAT,
 	SORT_PIPELINE_STAGE_CYC,
+	SORT_LOCAL_RETIRE_LAT,
+	SORT_GLOBAL_RETIRE_LAT,
 
 	/* branch stack specific sort keys */
 	__SORT_BRANCH_STACK,
