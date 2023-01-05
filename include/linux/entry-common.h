@@ -67,9 +67,9 @@
 # define ARCH_EXIT_TO_USER_MODE_WORK		(0)
 #endif
 
-#define EXIT_TO_USER_MODE_WORK						\
-	(_TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_UPROBE |		\
-	 _TIF_NEED_RESCHED_MASK | _TIF_PATCH_PENDING |			\
+#define EXIT_TO_USER_MODE_WORK						    \
+	(_TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_UPROBE |		    \
+	 _TIF_NEED_RESCHED_MASK | _TIF_PATCH_PENDING | _TIF_NOTIFY_SIGNAL | \
 	 ARCH_EXIT_TO_USER_MODE_WORK)
 
 /**
@@ -259,12 +259,13 @@ static __always_inline void arch_exit_to_user_mode(void) { }
 #endif
 
 /**
- * arch_do_signal -  Architecture specific signal delivery function
+ * arch_do_signal_or_restart -  Architecture specific signal delivery function
  * @regs:	Pointer to currents pt_regs
+ * @has_signal:	actual signal to handle
  *
  * Invoked from exit_to_user_mode_loop().
  */
-void arch_do_signal(struct pt_regs *regs);
+void arch_do_signal_or_restart(struct pt_regs *regs, bool has_signal);
 
 /**
  * arch_syscall_exit_tracehook - Wrapper around tracehook_report_syscall_exit()
