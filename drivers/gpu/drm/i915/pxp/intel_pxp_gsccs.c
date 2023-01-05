@@ -13,11 +13,11 @@
 #include "intel_pxp_gsccs.h"
 #include "intel_pxp_types.h"
 
-__maybe_unused
 static int gsccs_send_message(struct intel_pxp *pxp,
 			      void *msg_in, size_t msg_in_size,
 			      void *msg_out, size_t msg_out_size_max,
-			      size_t *msg_out_len)
+			      size_t *msg_out_len,
+			      u64 *gsc_msg_handle_retry)
 {
 	struct intel_gt *gt = pxp->ctrl_gt;
 	struct drm_i915_private *i915 = gt->i915;
@@ -45,6 +45,9 @@ static int gsccs_send_message(struct intel_pxp *pxp,
 	intel_gsc_uc_heci_cmd_emit_mtl_header(header, GSC_HECI_MEADDRESS_PXP,
 					      msg_in_size + sizeof(*header),
 					      exec->host_session_handle);
+
+	/* copy caller provided gsc message handle if this is polling for a prior msg completion */
+	header->gsc_message_handle = *gsc_msg_handle_retry;
 
 	memcpy(exec->pkt_vaddr + sizeof(*header), msg_in, msg_in_size);
 
@@ -79,6 +82,13 @@ static int gsccs_send_message(struct intel_pxp *pxp,
 	}
 	if (header->flags & GSC_HECI_FLAG_MSG_PENDING) {
 		drm_dbg(&i915->drm, "gsc PXP reply is busy\n");
+		/*
+		 * When the GSC firmware replies with pending bit, it means that the requested
+		 * operation has begun but the completion is pending and the caller needs
+		 * to re-request with the gsc_message_handle that was returned by the firmware.
+		 * until the pending bit is turned off.
+		 */
+		*gsc_msg_handle_retry = header->gsc_message_handle;
 		ret = -EAGAIN;
 		goto unlock;
 	}
@@ -100,6 +110,46 @@ static int gsccs_send_message(struct intel_pxp *pxp,
 
 unlock:
 	mutex_unlock(&pxp->tee_mutex);
+	return ret;
+}
+
+int intel_pxp_gsccs_create_session(struct intel_pxp *pxp,
+				   int arb_session_id)
+{
+	struct gsccs_session_resources *exec =  &pxp->gsccs_res;
+	struct pxp43_create_arb_in msg_in = {0};
+	struct pxp43_create_arb_out msg_out = {0};
+	u64 gsc_session_retry = 0;
+	int ret, tries = 0;
+
+	/* get a unique host-session-handle (used later in HW cmds) at time of session creation */
+	get_random_bytes(&exec->host_session_handle, sizeof(exec->host_session_handle));
+
+	msg_in.header.api_version = PXP_APIVER(4, 3);
+	msg_in.header.command_id = PXP43_CMDID_INIT_SESSION;
+	msg_in.header.stream_id = (FIELD_PREP(PXP43_INIT_SESSION_APPID, arb_session_id) |
+				   FIELD_PREP(PXP43_INIT_SESSION_VALID, 1) |
+				   FIELD_PREP(PXP43_INIT_SESSION_APPTYPE, 0));
+	msg_in.header.buffer_len = sizeof(msg_in) - sizeof(msg_in.header);
+	msg_in.protection_mode = PXP43_INIT_SESSION_PROTECTION_ARB;
+
+	/*
+	 * Keep sending request if GSC firmware was busy.
+	 * Based on specs, we can expects a worst case pending-bit
+	 * delay of 2000 milisecs.
+	 */
+	do {
+		ret = gsccs_send_message(pxp,
+					 &msg_in, sizeof(msg_in),
+					 &msg_out, sizeof(msg_out), NULL,
+					 &gsc_session_retry);
+		/* Only try again if gsc says so */
+		if (ret != -EAGAIN)
+			break;
+
+		msleep(20);
+	} while (++tries < 100);
+
 	return ret;
 }
 

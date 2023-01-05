@@ -11,6 +11,8 @@
 struct intel_pxp;
 
 #ifdef CONFIG_DRM_I915_PXP
+int intel_pxp_gsccs_create_session(struct intel_pxp *pxp,
+				   int arb_session_id);
 void intel_pxp_gsccs_fini(struct intel_pxp *pxp);
 int intel_pxp_gsccs_init(struct intel_pxp *pxp);
 
