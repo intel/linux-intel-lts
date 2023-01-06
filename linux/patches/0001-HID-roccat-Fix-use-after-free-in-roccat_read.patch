@@ -1,0 +1,106 @@
+From 0895121305ce24f8ac0af9f1b927995a05b61bcb Mon Sep 17 00:00:00 2001
+From: Hyunwoo Kim <imv4bel@gmail.com>
+Date: Sun, 4 Sep 2022 12:31:15 -0700
+Subject: [PATCH] HID: roccat: Fix use-after-free in roccat_read()
+
+[ Upstream commit cacdb14b1c8d3804a3a7d31773bc7569837b71a4 ]
+
+roccat_report_event() is responsible for registering
+roccat-related reports in struct roccat_device.
+
+int roccat_report_event(int minor, u8 const *data)
+{
+	struct roccat_device *device;
+	struct roccat_reader *reader;
+	struct roccat_report *report;
+	uint8_t *new_value;
+
+	device = devices[minor];
+
+	new_value = kmemdup(data, device->report_size, GFP_ATOMIC);
+	if (!new_value)
+		return -ENOMEM;
+
+	report = &device->cbuf[device->cbuf_end];
+
+	/* passing NULL is safe */
+	kfree(report->value);
+	...
+
+The registered report is stored in the struct roccat_device member
+"struct roccat_report cbuf[ROCCAT_CBUF_SIZE];".
+If more reports are received than the "ROCCAT_CBUF_SIZE" value,
+kfree() the saved report from cbuf[0] and allocates a new reprot.
+Since there is no lock when this kfree() is performed,
+kfree() can be performed even while reading the saved report.
+
+static ssize_t roccat_read(struct file *file, char __user *buffer,
+		size_t count, loff_t *ppos)
+{
+	struct roccat_reader *reader = file->private_data;
+	struct roccat_device *device = reader->device;
+	struct roccat_report *report;
+	ssize_t retval = 0, len;
+	DECLARE_WAITQUEUE(wait, current);
+
+	mutex_lock(&device->cbuf_lock);
+
+	...
+
+	report = &device->cbuf[reader->cbuf_start];
+	/*
+	 * If report is larger than requested amount of data, rest of report
+	 * is lost!
+	 */
+	len = device->report_size > count ? count : device->report_size;
+
+	if (copy_to_user(buffer, report->value, len)) {
+		retval = -EFAULT;
+		goto exit_unlock;
+	}
+	...
+
+The roccat_read() function receives the device->cbuf report and
+delivers it to the user through copy_to_user().
+If the N+ROCCAT_CBUF_SIZE th report is received while copying of
+the Nth report->value is in progress, the pointer that copy_to_user()
+is working on is kfree()ed and UAF read may occur. (race condition)
+
+Since the device node of this driver does not set separate permissions,
+this is not a security vulnerability, but because it is used for
+requesting screen display of profile or dpi settings,
+a user using the roccat device can apply udev to this device node or
+There is a possibility to use it by giving.
+
+Signed-off-by: Hyunwoo Kim <imv4bel@gmail.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/hid/hid-roccat.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/hid/hid-roccat.c b/drivers/hid/hid-roccat.c
+index 26373b82fe81..6da80e442fdd 100644
+--- a/drivers/hid/hid-roccat.c
++++ b/drivers/hid/hid-roccat.c
+@@ -257,6 +257,8 @@ int roccat_report_event(int minor, u8 const *data)
+ 	if (!new_value)
+ 		return -ENOMEM;
+ 
++	mutex_lock(&device->cbuf_lock);
++
+ 	report = &device->cbuf[device->cbuf_end];
+ 
+ 	/* passing NULL is safe */
+@@ -276,6 +278,8 @@ int roccat_report_event(int minor, u8 const *data)
+ 			reader->cbuf_start = (reader->cbuf_start + 1) % ROCCAT_CBUF_SIZE;
+ 	}
+ 
++	mutex_unlock(&device->cbuf_lock);
++
+ 	wake_up_interruptible(&device->wait);
+ 	return 0;
+ }
+-- 
+2.25.1
+

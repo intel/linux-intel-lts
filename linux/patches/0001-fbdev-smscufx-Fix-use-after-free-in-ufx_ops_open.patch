@@ -1,0 +1,82 @@
+From bd2ed9d854de72fb8c089293a97dee6de92a05c7 Mon Sep 17 00:00:00 2001
+From: Hyunwoo Kim <imv4bel@gmail.com>
+Date: Sun, 25 Sep 2022 06:32:43 -0700
+Subject: [PATCH] fbdev: smscufx: Fix use-after-free in ufx_ops_open()
+
+commit 5610bcfe8693c02e2e4c8b31427f1bdbdecc839c upstream.
+
+A race condition may occur if the user physically removes the
+USB device while calling open() for this device node.
+
+This is a race condition between the ufx_ops_open() function and
+the ufx_usb_disconnect() function, which may eventually result in UAF.
+
+So, add a mutex to the ufx_ops_open() and ufx_usb_disconnect() functions
+to avoid race contidion of krefs.
+
+Signed-off-by: Hyunwoo Kim <imv4bel@gmail.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Helge Deller <deller@gmx.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/video/fbdev/smscufx.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/video/fbdev/smscufx.c b/drivers/video/fbdev/smscufx.c
+index 9383f8d0914c..ca8d940cbdbc 100644
+--- a/drivers/video/fbdev/smscufx.c
++++ b/drivers/video/fbdev/smscufx.c
+@@ -137,6 +137,8 @@ static int ufx_submit_urb(struct ufx_data *dev, struct urb * urb, size_t len);
+ static int ufx_alloc_urb_list(struct ufx_data *dev, int count, size_t size);
+ static void ufx_free_urb_list(struct ufx_data *dev);
+ 
++static DEFINE_MUTEX(disconnect_mutex);
++
+ /* reads a control register */
+ static int ufx_reg_read(struct ufx_data *dev, u32 index, u32 *data)
+ {
+@@ -1073,9 +1075,13 @@ static int ufx_ops_open(struct fb_info *info, int user)
+ 	if (user == 0 && !console)
+ 		return -EBUSY;
+ 
++	mutex_lock(&disconnect_mutex);
++
+ 	/* If the USB device is gone, we don't accept new opens */
+-	if (dev->virtualized)
++	if (dev->virtualized) {
++		mutex_unlock(&disconnect_mutex);
+ 		return -ENODEV;
++	}
+ 
+ 	dev->fb_count++;
+ 
+@@ -1099,6 +1105,8 @@ static int ufx_ops_open(struct fb_info *info, int user)
+ 	pr_debug("open /dev/fb%d user=%d fb_info=%p count=%d",
+ 		info->node, user, info, dev->fb_count);
+ 
++	mutex_unlock(&disconnect_mutex);
++
+ 	return 0;
+ }
+ 
+@@ -1743,6 +1751,8 @@ static void ufx_usb_disconnect(struct usb_interface *interface)
+ {
+ 	struct ufx_data *dev;
+ 
++	mutex_lock(&disconnect_mutex);
++
+ 	dev = usb_get_intfdata(interface);
+ 
+ 	pr_debug("USB disconnect starting\n");
+@@ -1763,6 +1773,8 @@ static void ufx_usb_disconnect(struct usb_interface *interface)
+ 	kref_put(&dev->kref, ufx_free);
+ 
+ 	/* consider ufx_data freed */
++
++	mutex_unlock(&disconnect_mutex);
+ }
+ 
+ static struct usb_driver ufx_driver = {
+-- 
+2.25.1
+
