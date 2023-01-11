@@ -62,6 +62,8 @@ static const struct int3472_sensor_config int3472_sensor_configs[] = {
 	{ "GEFF150023R", REGULATOR_SUPPLY("avdd", NULL), NULL },
 	/* Surface Go 1&2 - OV5693, Front */
 	{ "YHCU", REGULATOR_SUPPLY("avdd", NULL), NULL },
+	/* Lontium Display Bridge */
+	{ "LT6911UXC", { 0 }, NULL, true },
 };
 
 static const struct int3472_sensor_config *
@@ -229,6 +231,8 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
 	const char *err_msg;
 	int ret;
 	u8 type;
+	u8 active_value;
+	u32 polarity = GPIO_LOOKUP_FLAGS_DEFAULT;
 
 	if (!acpi_gpio_get_io_resource(ares, &agpio))
 		return 1;
@@ -250,17 +254,21 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
 
 	type = obj->integer.value & 0xff;
 
+	active_value = obj->integer.value >> 24;
+	if (!active_value)
+		polarity = GPIO_ACTIVE_LOW;
+
 	switch (type) {
 	case INT3472_GPIO_TYPE_RESET:
 		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, "reset",
-						     GPIO_ACTIVE_LOW);
+							polarity);
 		if (ret)
 			err_msg = "Failed to map reset pin to sensor\n";
 
 		break;
 	case INT3472_GPIO_TYPE_POWERDOWN:
 		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, "powerdown",
-						     GPIO_ACTIVE_LOW);
+							polarity);
 		if (ret)
 			err_msg = "Failed to map powerdown pin to sensor\n";
 
@@ -277,6 +285,18 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
 		if (ret)
 			err_msg = "Failed to map regulator to sensor\n";
 
+		break;
+	case INT3472_GPIO_TYPE_READY_STAT:
+		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, "readystat",
+							polarity);
+		if (ret)
+			err_msg = "Failed to map hdmi_detect to sensor\n";
+		break;
+	case INT3472_GPIO_TYPE_HDMI_DETECT:
+		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, "hdmidetect",
+							polarity);
+		if (ret)
+			err_msg = "Failed to map hdmi_detect to sensor\n";
 		break;
 	default:
 		dev_warn(int3472->dev,
