@@ -7,79 +7,11 @@
 # CVE-2022-0998
 0001-vdpa-clean-up-get_config_size-ret-value-handling.patch
 
-# CVE-2022-42720
-0001-wifi-cfg80211-fix-BSS-refcounting-bugs.patch
-
-# CVE-2022-42721
-0001-wifi-cfg80211-avoid-nontransmitted-BSS-list-corrupti.patch
-
-# CVE-2022-42722
-0001-wifi-mac80211-fix-crash-in-beacon-protection-for-P2P.patch
-
-# CVE-2022-42719
-0001-wifi-cfg80211-mac80211-reject-bad-MBSSID-elements.patch
-0002-mac80211-move-CRC-into-struct-ieee802_11_elems.patch
-0003-mac80211-mlme-find-auth-challenge-directly.patch
-0004-mac80211-mesh-clean-up-rx_bcn_presp-API.patch
-0005-mac80211-always-allocate-struct-ieee802_11_elems.patch
-0006-wifi-mac80211-fix-MBSSID-parsing-use-after-free.patch
-
-# CVE-2022-41674
-0001-wifi-cfg80211-fix-u8-overflow-in-cfg80211_update_not.patch
-
 # CVE-2022-3522
 0001-mm-hugetlb-use-hugetlb_pte_stable-in-migration-race-.patch
 0002-mm-hugetlb-fix-race-condition-of-uffd-missing-minor-.patch
 0003-mm-selftest-uffd-explain-the-write-missing-fault-che.patch
 0004-mm-hugetlb-handle-pte-markers-in-page-faults.patch
-
-# CVE-2022-3594
-0001-r8152-Rate-limit-overflow-messages.patch
-
-# CVE-2022-3543
-0001-af_unix-Fix-memory-leaks-of-the-whole-sk-due-to-OOB-.patch
-
-# CVE-2022-3542
-0001-bnx2x-fix-potential-memory-leak-in-bnx2x_tpa_stop.patch
-
-# CVE-2022-3623
-0001-mm-hugetlb-fix-races-when-looking-up-a-CONT-PTE-PMD-.patch
-
-# CVE-2022-43750
-0001-usb-mon-make-mmapped-memory-read-only.patch
-
-# CVE-2022-43945
-0001-NFSD-Protect-against-send-buffer-overflow-in-NFSv3-R.patch
-0002-NFSD-Protect-against-send-buffer-overflow-in-NFSv2-R.patch
-0003-NFSD-Protect-against-send-buffer-overflow-in-NFSv3-R.patch
-0004-NFSD-Protect-against-send-buffer-overflow-in-NFSv2-R.patch
-0005-SUNRPC-Fix-svcxdr_init_encode-s-buflen-calculation.patch
-0006-SUNRPC-Fix-svcxdr_init_decode-s-end-of-buffer-calcul.patch
-
-# CVE-2022-42896
-0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
-0002-Bluetooth-L2CAP-Fix-l2cap_global_chan_by_psm.patch
-
-# CVE-2022-3643
-0001-xen-netback-Ensure-protocol-headers-don-t-fall-in-th.patch
-
-# CVE-2022-3344
-0001-KVM-x86-nSVM-leave-nested-mode-on-vCPU-free.patch
-0002-KVM-x86-nSVM-harden-svm_free_nested-against-freeing-.patch
-0003-KVM-x86-add-kvm_leave_nested.patch
-0004-KVM-x86-forcibly-leave-nested-mode-on-vCPU-reset.patch
-
-# CVE-2022-42895
-0001-Bluetooth-L2CAP-Fix-attempting-to-access-uninitializ.patch
-
-# CVE-2022-45869
-0001-KVM-x86-mmu-Fix-race-condition-in-direct_page_fault.patch
-
-# CVE-2022-3524
-0001-tcp-udp-Fix-memory-leak-in-ipv6_renew_options.patch
-
-# CVE-2022-3545
-0001-nfp-fix-use-after-free-in-area_cache_get.patch
 
 # CVE-2022-3567
 0001-ipv6-annotate-some-data-races-around-sk-sk_prot.patch
@@ -87,27 +19,3 @@
 
 # CVE-2022-3566
 0001-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
-
-# CVE-2022-3565
-0001-mISDN-fix-use-after-free-bugs-in-l1oip-timer-handler.patch
-
-# CVE-2022-3621
-0001-nilfs2-fix-NULL-pointer-dereference-at-nilfs_bmap_lo.patch
-
-# CVE-2022-3649
-0001-nilfs2-fix-use-after-free-bug-of-struct-nilfs_root.patch
-
-# CVE-2022-40768
-0001-scsi-stex-Properly-zero-out-the-passthrough-command-.patch
-
-# CVE-2022-41850
-0001-HID-roccat-Fix-use-after-free-in-roccat_read.patch
-
-# CVE-2022-41849
-0001-fbdev-smscufx-Fix-use-after-free-in-ufx_ops_open.patch
-
-# CVE-2022-3521
-0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
-
-# CVE-2022-3646
-0001-nilfs2-fix-leak-of-nilfs_root-in-case-of-writer-thre.patch
