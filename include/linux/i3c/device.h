@@ -300,7 +300,7 @@ int i3c_device_do_priv_xfers(struct i3c_device *dev,
 			     struct i3c_priv_xfer *xfers,
 			     int nxfers);
 
-void i3c_device_get_info(struct i3c_device *dev, struct i3c_device_info *info);
+void i3c_device_get_info(const struct i3c_device *dev, struct i3c_device_info *info);
 
 struct i3c_ibi_payload {
 	unsigned int len;

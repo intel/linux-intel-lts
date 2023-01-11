@@ -58,7 +58,7 @@ EXPORT_SYMBOL_GPL(i3c_device_do_priv_xfers);
  *
  * Retrieve I3C dev info.
  */
-void i3c_device_get_info(struct i3c_device *dev,
+void i3c_device_get_info(const struct i3c_device *dev,
 			 struct i3c_device_info *info)
 {
 	if (!info)
