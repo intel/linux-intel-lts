@@ -85,11 +85,12 @@ static int tb_path_find_src_hopid(struct tb_port *src,
  * @dst_hopid: HopID to the @dst (%-1 if don't care)
  * @last: Last port is filled here if not %NULL
  * @name: Name of the path
+ * @alloc_hopid: Allocate HopIDs for the ports
  *
  * Follows a path starting from @src and @src_hopid to the last output
- * port of the path. Allocates HopIDs for the visited ports. Call
- * tb_path_free() to release the path and allocated HopIDs when the path
- * is not needed anymore.
+ * port of the path. Allocates HopIDs for the visited ports (if
+ * @alloc_hopid is true). Call tb_path_free() to release the path and
+ * allocated HopIDs when the path is not needed anymore.
  *
  * Note function discovers also incomplete paths so caller should check
  * that the @dst port is the expected one. If it is not, the path can be

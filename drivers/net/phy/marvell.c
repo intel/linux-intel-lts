@@ -1990,8 +1990,8 @@ static int m88e1510_loopback(struct phy_device *phydev, bool enable)
 				return err;
 		}
 
-		err =  phy_modify(phydev, MII_BMCR, BMCR_LOOPBACK,
-				  BMCR_LOOPBACK);
+		err = phy_modify(phydev, MII_BMCR, BMCR_LOOPBACK,
+				 BMCR_LOOPBACK);
 		if (!err) {
 			/* It takes some time for PHY device to switch
 			 * into/out-of loopback mode.

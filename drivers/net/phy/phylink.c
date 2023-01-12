@@ -1053,6 +1053,9 @@ static int phylink_bringup_phy(struct phylink *pl, struct phy_device *phy,
 	if (phy_interrupt_is_valid(phy))
 		phy_request_interrupt(phy);
 
+	if (pl->config->mac_managed_pm)
+		phy->mac_managed_pm = true;
+
 	pl->phydev->cur_link_an_mode = pl->cur_link_an_mode;
 
 	return 0;

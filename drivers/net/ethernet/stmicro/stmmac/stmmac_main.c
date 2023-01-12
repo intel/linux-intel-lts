@@ -1182,7 +1182,7 @@ static void stmmac_mac_link_up(struct phylink_config *config,
 		priv->flow_ctrl = FLOW_RX;
 	else if (!rx_pause && tx_pause)
 		priv->flow_ctrl = FLOW_TX;
-	else if (!rx_pause && !tx_pause)
+	else
 		priv->flow_ctrl = FLOW_OFF;
 
 	stmmac_mac_flow_ctrl(priv, duplex);
@@ -3877,6 +3877,15 @@ static int stmmac_open(struct net_device *dev)
 		goto init_error;
 	}
 
+	if (priv->plat->serdes_powerup) {
+		ret = priv->plat->serdes_powerup(dev, priv->plat->bsp_priv);
+		if (ret < 0) {
+			netdev_err(priv->dev, "%s: Serdes powerup failed\n",
+				   __func__);
+			goto init_error;
+		}
+	}
+
 	ret = stmmac_hw_setup(dev, true);
 	if (ret < 0) {
 		netdev_err(priv->dev, "%s: Hw setup failed\n", __func__);
@@ -3982,6 +3991,11 @@ static int stmmac_release(struct net_device *dev)
 		if (priv->dma_cap.fpesel)
 			stmmac_fpe_stop_wq(priv);
 	}
+	/* Powerdown Serdes if there is */
+	if (priv->plat->serdes_powerdown)
+		priv->plat->serdes_powerdown(dev, priv->plat->bsp_priv);
+
+	netif_carrier_off(dev);
 
 	/* Release and free the Rx/Tx resources */
 	free_dma_desc_resources(priv);
@@ -7428,14 +7442,6 @@ int stmmac_dvr_probe(struct device *device,
 		goto error_netdev_register;
 	}
 
-	if (priv->plat->serdes_powerup) {
-		ret = priv->plat->serdes_powerup(ndev,
-						 priv->plat->bsp_priv);
-
-		if (ret < 0)
-			goto error_serdes_powerup;
-	}
-
 #ifdef CONFIG_DEBUG_FS
 	stmmac_init_fs(ndev);
 #endif
@@ -7466,8 +7472,6 @@ int stmmac_dvr_probe(struct device *device,
 
 	return ret;
 
-error_serdes_powerup:
-	unregister_netdev(ndev);
 error_netdev_register:
 	phylink_destroy(priv->phylink);
 error_xpcs_setup:
