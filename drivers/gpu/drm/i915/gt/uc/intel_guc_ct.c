@@ -481,6 +481,14 @@ static int ct_write(struct intel_guc_ct *ct,
 		}
 	}
 
+	/* Wa_22016122933: Theoretically write combining buffer flush is
+	 * needed here to make the tail update visible to GuC right away,
+	 * but ct_write is always followed by a MMIO write which triggers
+	 * the interrupt to GuC, so an explicit flush is not required.
+	 * Just leave a comment here for now.
+	 */
+	/* intel_guc_write_barrier(ct_to_guc(ct)); */
+
 	return 0;
 
 corrupted:
@@ -953,6 +961,12 @@ static int ct_read(struct intel_guc_ct *ct, struct ct_incoming_msg **msg)
 
 	/* now update descriptor */
 	WRITE_ONCE(desc->head, head);
+
+	/*
+	 * Wa_22016122933: Making sure the head update is
+	 * visible to GuC right away
+	 */
+	intel_guc_write_barrier(ct_to_guc(ct));
 
 	return available - len;
 
