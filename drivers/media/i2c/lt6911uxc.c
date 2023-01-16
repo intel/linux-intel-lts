@@ -912,7 +912,6 @@ static int lt6911uxc_start_streaming(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc_ext_control(lt6911uxc, true);
 	lt6911uxc_csi_enable(&lt6911uxc->sd, true);
 	lt6911uxc_ext_control(lt6911uxc, false);
-	lt6911uxc->streaming = true;
 
 	ret = __v4l2_ctrl_handler_setup(lt6911uxc->sd.ctrl_handler);
 	if (ret)
@@ -930,8 +929,6 @@ static void lt6911uxc_stop_streaming(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc_ext_control(lt6911uxc, true);
 	lt6911uxc_csi_enable(&lt6911uxc->sd, false);
 	lt6911uxc_ext_control(lt6911uxc, false);
-
-	lt6911uxc->streaming = false;
 }
 
 static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable)
@@ -945,15 +942,21 @@ static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable)
 	if (lt6911uxc->auxiliary_port == true)
 		return 0;
 
+	mutex_lock(&lt6911uxc->mutex);
 	if (enable) {
 		dev_dbg(sd->dev, "[%s()], start streaming.\n", __func__);
 		ret = lt6911uxc_start_streaming(lt6911uxc);
-		if (ret)
+		if (ret) {
+			enable = 0;
 			lt6911uxc_stop_streaming(lt6911uxc);
+		}
 	} else {
 		dev_dbg(sd->dev, "[%s()], stop streaming.\n", __func__);
 		lt6911uxc_stop_streaming(lt6911uxc);
 	}
+	mutex_unlock(&lt6911uxc->mutex);
+
+	lt6911uxc->streaming = enable;
 
 	return ret;
 }
@@ -967,16 +970,6 @@ static int lt6911uxc_g_frame_interval(struct v4l2_subdev *sd,
 	fival->interval.numerator = 1;
 	fival->interval.denominator = lt6911uxc->cur_mode->fps;
 
-	return 0;
-}
-
-static int __maybe_unused lt6911uxc_suspend(struct device *dev)
-{
-	return 0;
-}
-
-static int __maybe_unused lt6911uxc_resume(struct device *dev)
-{
 	return 0;
 }
 
@@ -1514,6 +1507,55 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&lt6911uxc->mutex);
 
 	return ret;
+}
+
+static int lt6911uxc_suspend(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct lt6911uxc_state *lt6911uxc = to_state(sd);
+
+	if (-1 != lt6911uxc->platform_data->reset_pin)
+		if (gpio_get_value(lt6911uxc->platform_data->reset_pin))
+			gpio_set_value(lt6911uxc->platform_data->reset_pin, 0);
+
+	mutex_lock(&lt6911uxc->mutex);
+	if (lt6911uxc->streaming)
+		lt6911uxc_stop_streaming(lt6911uxc);
+
+	mutex_unlock(&lt6911uxc->mutex);
+	dev_dbg(sd->dev, "suspend streaming...\n");
+	return 0;
+}
+
+static int lt6911uxc_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct lt6911uxc_state *lt6911uxc = to_state(sd);
+	int ret;
+
+	if (-1 != lt6911uxc->platform_data->reset_pin)
+		if (!gpio_get_value(lt6911uxc->platform_data->reset_pin))
+			gpio_set_value(lt6911uxc->platform_data->reset_pin, 1);
+
+	usleep_range(200000, 205000);
+	//recheck the current HDMI status in case changed
+	lt6911uxc_check_status(lt6911uxc);
+
+	mutex_lock(&lt6911uxc->mutex);
+	if (lt6911uxc->streaming) {
+		ret = lt6911uxc_start_streaming(lt6911uxc);
+		if (ret) {
+			lt6911uxc->streaming = false;
+			lt6911uxc_stop_streaming(lt6911uxc);
+			mutex_unlock(&lt6911uxc->mutex);
+			return ret;
+		}
+	}
+	mutex_unlock(&lt6911uxc->mutex);
+	dev_dbg(sd->dev, "resume streaming...\n");
+	return 0;
 }
 
 static const struct dev_pm_ops lt6911uxc_pm_ops = {
