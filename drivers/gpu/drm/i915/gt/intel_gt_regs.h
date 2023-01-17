@@ -388,8 +388,6 @@
 #define   GEN9_IZ_HASHING_MASK(slice)		(0x3 << ((slice) * 2))
 #define   GEN9_IZ_HASHING(slice, val)		((val) << ((slice) * 2))
 
-#define GEN12_STATE_ACK_DEBUG			_MMIO(0x20bc)
-
 /* GEN7 chicken */
 #define GEN7_COMMON_SLICE_CHICKEN1		_MMIO(0x7010)
 #define   GEN7_CSC1_RHWO_OPT_DISABLE_IN_RCC	(1 << 10)
@@ -895,8 +893,6 @@
 #define GEN7_L3_CHICKEN_MODE_REGISTER		_MMIO(0xb030)
 #define   GEN7_WA_L3_CHICKEN_MODE		0x20000000
 
-#define GEN12_CULLBIT1				_MMIO(0x6100)
-
 #define GEN7_L3SQCREG4				_MMIO(0xb034)
 #define   L3SQ_URB_READ_CAM_MATCH_DISABLE	(1 << 27)
 
@@ -927,8 +923,6 @@
 
 #define GEN10_L3_CHICKEN_MODE_REGISTER		_MMIO(0xb114)
 #define   GEN11_I2M_WRITE_DISABLE		(1 << 28)
-
-#define GEN12_CULLBIT2				_MMIO(0x7030)
 
 #define GEN8_L3SQCREG4				_MMIO(0xb118)
 #define   GEN11_LQSC_CLEAN_EVICT_DISABLE	(1 << 6)
