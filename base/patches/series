@@ -102,3 +102,6 @@
 
 # CVE-2022-3643
 0001-xen-netback-Ensure-protocol-headers-don-t-fall-in-th.patch
+
+# CVE-2022-4378
+0001-Author-Linus-Torvalds-torvalds-linux-foundation.org.patch
