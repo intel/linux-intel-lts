@@ -89,12 +89,12 @@ Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
  mm/hugetlb.c | 45 +++++++++++++++++++++++++++++++++++++++++++++
  1 file changed, 45 insertions(+)
 
-diff --git a/mm/hugetlb.c b/mm/hugetlb.c
-index 735692e6e4f7..5032d15ab1f9 100644
+Index: b/mm/hugetlb.c
+===================================================================
 --- a/mm/hugetlb.c
 +++ b/mm/hugetlb.c
-@@ -4875,6 +4875,23 @@ static inline vm_fault_t hugetlb_handle_userfault(struct vm_area_struct *vma,
- 	return ret;
+@@ -4870,6 +4870,23 @@ static inline vm_fault_t hugetlb_handle_
+ 	return handle_userfault(&vmf, reason);
  }
  
 +/*
@@ -117,10 +117,12 @@ index 735692e6e4f7..5032d15ab1f9 100644
  static vm_fault_t hugetlb_no_page(struct mm_struct *mm,
  			struct vm_area_struct *vma,
  			struct address_space *mapping, pgoff_t idx,
-@@ -4916,6 +4933,28 @@ static vm_fault_t hugetlb_no_page(struct mm_struct *mm,
+@@ -4911,10 +4928,33 @@ retry:
+ 	page = find_lock_page(mapping, idx);
  	if (!page) {
  		/* Check for page in userfault range */
- 		if (userfaultfd_missing(vma)) {
+-		if (userfaultfd_missing(vma))
++		if (userfaultfd_missing(vma)) {
 +			/*
 +			 * Since hugetlb_no_page() was examining pte
 +			 * without pgtable lock, we need to re-test under
@@ -143,10 +145,14 @@ index 735692e6e4f7..5032d15ab1f9 100644
 +				goto out;
 +			}
 +
- 			ret = hugetlb_handle_userfault(vma, mapping, idx,
+ 			return hugetlb_handle_userfault(vma, mapping, idx,
  						       flags, haddr,
  						       VM_UFFD_MISSING);
-@@ -4979,6 +5018,12 @@ static vm_fault_t hugetlb_no_page(struct mm_struct *mm,
++		}
+ 
+ 		page = alloc_huge_page(vma, haddr, 0);
+ 		if (IS_ERR(page)) {
+@@ -4973,6 +5013,12 @@ retry:
  		if (userfaultfd_minor(vma)) {
  			unlock_page(page);
  			put_page(page);
@@ -156,9 +162,6 @@ index 735692e6e4f7..5032d15ab1f9 100644
 +				ret = 0;
 +				goto out;
 +			}
- 			ret = hugetlb_handle_userfault(vma, mapping, idx,
+ 			return hugetlb_handle_userfault(vma, mapping, idx,
  						       flags, haddr,
  						       VM_UFFD_MINOR);
--- 
-2.25.1
-
