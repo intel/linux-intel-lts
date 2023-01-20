@@ -1139,6 +1139,7 @@ static void stmmac_check_pcs_mode(struct stmmac_priv *priv)
 static int stmmac_init_phy(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
+	struct fwnode_handle *fixed_node;
 	struct fwnode_handle *fwnode;
 	int ret;
 
@@ -1146,13 +1147,16 @@ static int stmmac_init_phy(struct net_device *dev)
 	if (!fwnode)
 		fwnode = dev_fwnode(priv->device);
 
-	if (fwnode)
+	if (fwnode) {
+		fixed_node = fwnode_get_named_child_node(fwnode, "fixed-link");
+		fwnode_handle_put(fixed_node);
 		ret = phylink_fwnode_phy_connect(priv->phylink, fwnode, 0);
+	}
 
 	/* Some DT bindings do not set-up the PHY handle. Let's try to
 	 * manually parse it
 	 */
-	if (!fwnode || ret) {
+	if (!fwnode || ret || !fixed_node) {
 		int addr = priv->plat->phy_addr;
 		struct phy_device *phydev;
 
