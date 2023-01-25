@@ -241,6 +241,7 @@ drm_fb_helper_from_client(struct drm_client_dev *client)
 
 #ifdef CONFIG_DRM_FBDEV_EMULATION
 void drm_fb_helper_prepare(struct drm_device *dev, struct drm_fb_helper *helper,
+			   unsigned int preferred_bpp,
 			   const struct drm_fb_helper_funcs *funcs);
 void drm_fb_helper_unprepare(struct drm_fb_helper *fb_helper);
 int drm_fb_helper_init(struct drm_device *dev, struct drm_fb_helper *helper);
@@ -296,7 +297,7 @@ int drm_fb_helper_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg);
 
 int drm_fb_helper_hotplug_event(struct drm_fb_helper *fb_helper);
-int drm_fb_helper_initial_config(struct drm_fb_helper *fb_helper, int bpp_sel);
+int drm_fb_helper_initial_config(struct drm_fb_helper *fb_helper);
 int drm_fb_helper_debug_enter(struct fb_info *info);
 int drm_fb_helper_debug_leave(struct fb_info *info);
 
@@ -304,8 +305,9 @@ void drm_fb_helper_lastclose(struct drm_device *dev);
 void drm_fb_helper_output_poll_changed(struct drm_device *dev);
 #else
 static inline void drm_fb_helper_prepare(struct drm_device *dev,
-					struct drm_fb_helper *helper,
-					const struct drm_fb_helper_funcs *funcs)
+					 struct drm_fb_helper *helper,
+					 unsigned int preferred_bpp,
+					 const struct drm_fb_helper_funcs *funcs)
 {
 }
 
@@ -467,8 +469,7 @@ static inline int drm_fb_helper_hotplug_event(struct drm_fb_helper *fb_helper)
 	return 0;
 }
 
-static inline int drm_fb_helper_initial_config(struct drm_fb_helper *fb_helper,
-					       int bpp_sel)
+static inline int drm_fb_helper_initial_config(struct drm_fb_helper *fb_helper)
 {
 	return 0;
 }
