@@ -4805,9 +4805,17 @@ int intel_guc_engine_failure_process_msg(struct intel_guc *guc,
 	drm_err(&gt->i915->drm, "GuC engine reset request failed on %d:%d (%s) because 0x%08X",
 		guc_class, instance, engine->name, reason);
 
+	/*
+	 * GuC is toast at this point - it dead loops after sending the failed
+	 * reset notification. So need to manually determine the guilty context.
+	 * Note that it should be reliable to do this here because the GuC is
+	 * toast and will not be scheduling behind the KMD's back.
+	 */
+	intel_guc_find_hung_context(engine);
+
 	intel_gt_handle_error(gt, engine->mask,
 			      I915_ERROR_CAPTURE,
-			      "GuC failed to reset %s (reason=0x%08x)\n",
+			      "GuC failed to reset %s (reason=0x%08x)",
 			      engine->name, reason);
 
 	return 0;
