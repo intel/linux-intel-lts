@@ -4692,6 +4692,9 @@ static void guc_handle_context_reset(struct intel_guc *guc,
 {
 	trace_intel_context_reset(ce);
 
+	drm_dbg(&guc_to_gt(guc)->i915->drm, "Got GuC reset of 0x%04X, blocked = %d, banned = %d\n",
+		ce->guc_id.id, context_blocked(ce), intel_context_is_banned(ce));
+
 	/*
 	 * XXX: Racey if request cancellation has occurred, see comment in
 	 * __guc_reset_context().
