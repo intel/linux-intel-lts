@@ -121,10 +121,9 @@ int vmw_gem_object_create_with_handle(struct vmw_private *dev_priv,
 	int ret;
 
 	ret = vmw_bo_create(dev_priv, size,
-			    (dev_priv->has_mob) ?
-				    &vmw_sys_placement :
-				    &vmw_vram_sys_placement,
-			    true, false, &vmw_gem_destroy, p_vbo);
+			    (dev_priv->has_mob) ? VMW_BO_DOMAIN_SYS : VMW_BO_DOMAIN_VRAM,
+			    VMW_BO_DOMAIN_SYS,
+			    true, false, p_vbo);
 
 	(*p_vbo)->base.base.funcs = &vmw_gem_object_funcs;
 	if (ret != 0)
