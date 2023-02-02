@@ -1,0 +1,44 @@
+From 214f2d7d7e0ee226ca8e36c22c204ac743f2fc51 Mon Sep 17 00:00:00 2001
+From: Jens Axboe <axboe@kernel.dk>
+Date: Wed, 16 Nov 2022 09:43:39 +0100
+Subject: [PATCH] io_uring: kill goto error handling in io_sqpoll_wait_sq()
+
+Hunk extracted from commit 70aacfe66136809d7f080f89c492c278298719f4
+upstream.
+
+If the sqpoll thread has died, the out condition doesn't remove the
+waiting task from the waitqueue. The goto and check are not needed, just
+make it a break condition after setting the error value. That ensures
+that we always remove ourselves from sqo_sq_wait waitqueue.
+
+Reported-by: Xingyuan Mo <hdthky0@gmail.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/io_uring.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/io_uring.c b/fs/io_uring.c
+index a952288b2ab8..08869f6c27dd 100644
+--- a/fs/io_uring.c
++++ b/fs/io_uring.c
+@@ -9029,7 +9029,7 @@ static int io_sqpoll_wait_sq(struct io_ring_ctx *ctx)
+ 
+ 		if (unlikely(ctx->sqo_dead)) {
+ 			ret = -EOWNERDEAD;
+-			goto out;
++			break;
+ 		}
+ 
+ 		if (!io_sqring_full(ctx))
+@@ -9039,7 +9039,6 @@ static int io_sqpoll_wait_sq(struct io_ring_ctx *ctx)
+ 	} while (!signal_pending(current));
+ 
+ 	finish_wait(&ctx->sqo_sq_wait, &wait);
+-out:
+ 	return ret;
+ }
+ 
+-- 
+2.25.1
+

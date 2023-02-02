@@ -24,17 +24,39 @@
 # CVE-2022-39189
 0001-KVM-x86-do-not-report-a-vCPU-as-preempted-outside-in.patch
 
-# CVE-2022-40307
-0001-efi-capsule-loader-Fix-use-after-free-in-efi_capsule.patch
-
-# CVE-2022-39188
-0001-mm-Force-TLB-flush-for-PFNMAP-mappings-before-unlink.patch
-
-# CVE-2022-39842
-0001-video-fbdev-pxa3xx-gcu-Fix-integer-overflow-in-pxa3x.patch
-
 # CVE-2021-3759
 0001-memcg-enable-accounting-of-ipc-resources.patch
 
-# CVE-2022-3061
-0001-video-fbdev-i740fb-Error-out-if-pixclock-equals-zero.patch
+# CVE-2022-3623
+0001-mm-hugetlb-fix-races-when-looking-up-a-CONT-PTE-PMD-.patch
+
+# CVE-2022-42896
+0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
+
+# CVE-2022-42895
+0001-Bluetooth-L2CAP-Fix-attempting-to-access-uninitializ.patch
+
+# CVE-2022-3545
+0001-nfp-fix-use-after-free-in-area_cache_get.patch
+
+# CVE-2022-3567
+0001-ipv6-annotate-some-data-races-around-sk-sk_prot.patch
+0002-ipv6-Fix-data-races-around-sk-sk_prot.patch
+
+# CVE-2022-3566
+0001-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
+
+# CVE-2022-4378
+0001-proc-proc_skip_spaces-shouldn-t-think-it-is-working-.patch
+
+# CVE-2022-3628
+0001-wifi-brcmfmac-Fix-potential-buffer-overflow-in-brcmf.patch
+
+# CVE-2022-3524
+0001-tcp-udp-Fix-memory-leak-in-ipv6_renew_options.patch
+
+# CVE-2022-3521
+0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
+
+# CVE-2022-47946
+0001-io_uring-kill-goto-error-handling-in-io_sqpoll_wait_.patch

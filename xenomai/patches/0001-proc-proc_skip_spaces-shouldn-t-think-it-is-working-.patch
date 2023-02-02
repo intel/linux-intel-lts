@@ -1,0 +1,110 @@
+From eb7f80187514407f9a25f4a9271dad209d199fdf Mon Sep 17 00:00:00 2001
+From: Linus Torvalds <torvalds@linux-foundation.org>
+Date: Mon, 5 Dec 2022 12:09:06 -0800
+Subject: [PATCH] proc: proc_skip_spaces() shouldn't think it is working on C
+ strings
+
+commit bce9332220bd677d83b19d21502776ad555a0e73 upstream.
+
+proc_skip_spaces() seems to think it is working on C strings, and ends
+up being just a wrapper around skip_spaces() with a really odd calling
+convention.
+
+Instead of basing it on skip_spaces(), it should have looked more like
+proc_skip_char(), which really is the exact same function (except it
+skips a particular character, rather than whitespace).  So use that as
+inspiration, odd coding and all.
+
+Now the calling convention actually makes sense and works for the
+intended purpose.
+
+Reported-and-tested-by: Kyle Zeng <zengyhkyle@gmail.com>
+Acked-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ kernel/sysctl.c | 25 +++++++++++++------------
+ 1 file changed, 13 insertions(+), 12 deletions(-)
+
+diff --git a/kernel/sysctl.c b/kernel/sysctl.c
+index f0dd1a3b66eb..c609b1051cb0 100644
+--- a/kernel/sysctl.c
++++ b/kernel/sysctl.c
+@@ -391,13 +391,14 @@ int proc_dostring(struct ctl_table *table, int write,
+ 			ppos);
+ }
+ 
+-static size_t proc_skip_spaces(char **buf)
++static void proc_skip_spaces(char **buf, size_t *size)
+ {
+-	size_t ret;
+-	char *tmp = skip_spaces(*buf);
+-	ret = tmp - *buf;
+-	*buf = tmp;
+-	return ret;
++	while (*size) {
++		if (!isspace(**buf))
++			break;
++		(*size)--;
++		(*buf)++;
++	}
+ }
+ 
+ static void proc_skip_char(char **buf, size_t *size, const char v)
+@@ -630,7 +631,7 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
+ 		bool neg;
+ 
+ 		if (write) {
+-			left -= proc_skip_spaces(&p);
++			proc_skip_spaces(&p, &left);
+ 
+ 			if (!left)
+ 				break;
+@@ -657,7 +658,7 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
+ 	if (!write && !first && left && !err)
+ 		proc_put_char(&buffer, &left, '\n');
+ 	if (write && !err && left)
+-		left -= proc_skip_spaces(&p);
++		proc_skip_spaces(&p, &left);
+ 	if (write && first)
+ 		return err ? : -EINVAL;
+ 	*lenp -= left;
+@@ -699,7 +700,7 @@ static int do_proc_douintvec_w(unsigned int *tbl_data,
+ 	if (left > PAGE_SIZE - 1)
+ 		left = PAGE_SIZE - 1;
+ 
+-	left -= proc_skip_spaces(&p);
++	proc_skip_spaces(&p, &left);
+ 	if (!left) {
+ 		err = -EINVAL;
+ 		goto out_free;
+@@ -719,7 +720,7 @@ static int do_proc_douintvec_w(unsigned int *tbl_data,
+ 	}
+ 
+ 	if (!err && left)
+-		left -= proc_skip_spaces(&p);
++		proc_skip_spaces(&p, &left);
+ 
+ out_free:
+ 	if (err)
+@@ -1177,7 +1178,7 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table,
+ 		if (write) {
+ 			bool neg;
+ 
+-			left -= proc_skip_spaces(&p);
++			proc_skip_spaces(&p, &left);
+ 			if (!left)
+ 				break;
+ 
+@@ -1205,7 +1206,7 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table,
+ 	if (!write && !first && left && !err)
+ 		proc_put_char(&buffer, &left, '\n');
+ 	if (write && !err)
+-		left -= proc_skip_spaces(&p);
++		proc_skip_spaces(&p, &left);
+ 	if (write && first)
+ 		return err ? : -EINVAL;
+ 	*lenp -= left;
+-- 
+2.25.1
+
