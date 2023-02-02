@@ -20,6 +20,7 @@
 #include <linux/idr.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/pm_runtime.h>
 #include <linux/types.h>
 
 #include "vsec.h"
@@ -369,7 +370,19 @@ static int intel_vsec_pci_probe(struct pci_dev *pdev, const struct pci_device_id
 	if (!have_devices)
 		return -ENODEV;
 
+	pm_runtime_put(&pdev->dev);
+	pm_runtime_use_autosuspend(&pdev->dev);
+	pm_runtime_set_autosuspend_delay(&pdev->dev, 1000);
+	pm_runtime_allow(&pdev->dev);
+
 	return 0;
+}
+
+static void intel_vsec_pci_remove(struct pci_dev *pdev)
+{
+	pm_runtime_forbid(&pdev->dev);
+	pm_runtime_dont_use_autosuspend(&pdev->dev);
+	pm_runtime_get(&pdev->dev);
 }
 
 /* TGL info */
@@ -397,6 +410,10 @@ static const struct intel_vsec_platform_info dg1_info = {
 	.capabilities = dg1_capabilities,
 	.quirks = VSEC_QUIRK_NO_DVSEC | VSEC_QUIRK_EARLY_HW,
 };
+
+#ifdef CONFIG_PM_SLEEP
+static const struct dev_pm_ops intel_vsec_pm_ops = {};
+#endif
 
 #define PCI_DEVICE_ID_INTEL_VSEC_ADL		0x467d
 #define PCI_DEVICE_ID_INTEL_VSEC_DG1		0x490e
@@ -482,6 +499,13 @@ static struct pci_driver intel_vsec_pci_driver = {
 	.id_table = intel_vsec_pci_ids,
 	.probe = intel_vsec_pci_probe,
 	.err_handler = &intel_vsec_pci_err_handlers,
+	.remove = intel_vsec_pci_remove,
+	.driver = {
+#ifdef CONFIG_PM_SLEEP
+	.pm = &intel_vsec_pm_ops,
+#endif
+	},
+
 };
 module_pci_driver(intel_vsec_pci_driver);
 

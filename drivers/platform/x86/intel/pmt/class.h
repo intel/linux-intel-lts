@@ -18,9 +18,12 @@
 #define GET_BIR(v)		((v) & GENMASK(2, 0))
 #define GET_ADDRESS(v)		((v) & GENMASK(31, 3))
 
+struct pci_dev;
+
 struct intel_pmt_entry {
 	struct bin_attribute	pmt_bin_attr;
 	struct kobject		*kobj;
+	struct pci_dev		*pdev;
 	void __iomem		*disc_table;
 	void __iomem		*base;
 	unsigned long		base_addr;
