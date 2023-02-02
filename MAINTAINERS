@@ -9791,6 +9791,12 @@ F:	include/dt-bindings/reset/thunderbay-reset.h
 F:	include/linux/reset/reset-thunderbay-ss.h
 F:	include/linux/reset/reset-thunderbay.h
 
+INTEL TPMI DRIVER
+M:	Srinivas Pandruvada <srinivas.pandruvada@linux.intel.com>
+L:	platform-driver-x86@vger.kernel.org
+S:	Maintained
+F:	drivers/platform/x86/intel/tpmi.c
+
 INTEL UNCORE FREQUENCY CONTROL
 M:	Srinivas Pandruvada <srinivas.pandruvada@linux.intel.com>
 L:	platform-driver-x86@vger.kernel.org
