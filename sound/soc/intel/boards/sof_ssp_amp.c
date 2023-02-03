@@ -464,6 +464,15 @@ static const struct platform_device_id board_ids[] = {
 					SOF_RT1308_SPEAKER_AMP_PRESENT),
 	},
 	{
+		.name = "adl_lt6911_hdmi_ssp",
+		.driver_data = (kernel_ulong_t)(SOF_NO_OF_HDMI_CAPTURE_SSP(2) |
+					SOF_HDMI_CAPTURE_1_SSP(0) |
+					SOF_HDMI_CAPTURE_2_SSP(2) |
+					SOF_SSP_HDMI_CAPTURE_PRESENT |
+					SOF_NO_OF_HDMI_PLAYBACK(3) |
+					SOF_HDMI_PLAYBACK_PRESENT),
+	},
+	{
 		.name = "adl_cs35l41",
 		.driver_data = (kernel_ulong_t)(SOF_AMPLIFIER_SSP(1) |
 					SOF_NO_OF_HDMI_PLAYBACK(4) |

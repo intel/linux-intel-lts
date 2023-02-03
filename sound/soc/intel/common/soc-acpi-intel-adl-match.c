@@ -350,6 +350,11 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_adl_machines[] = {
 		.drv_name = "adl_cs35l41",
 		.sof_tplg_filename = "sof-adl-cs35l41.tplg",
 	},
+	{
+		.id = "INTC10B0",
+		.drv_name = "adl_lt6911_hdmi_ssp",
+		.sof_tplg_filename = "sof-adl-nocodec-hdmi-ssp02.tplg"
+	},
 	{},
 };
 EXPORT_SYMBOL_GPL(snd_soc_acpi_intel_adl_machines);
