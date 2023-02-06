@@ -288,7 +288,7 @@ static void sti_dvo_set_mode(struct drm_bridge *bridge,
 
 	DRM_DEBUG_DRIVER("\n");
 
-	drm_mode_copy(&dvo->mode, mode);
+	memcpy(&dvo->mode, mode, sizeof(struct drm_display_mode));
 
 	/* According to the path used (main or aux), the dvo clocks should
 	 * have a different parent clock. */

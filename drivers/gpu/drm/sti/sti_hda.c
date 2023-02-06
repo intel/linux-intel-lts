@@ -523,7 +523,7 @@ static void sti_hda_set_mode(struct drm_bridge *bridge,
 
 	DRM_DEBUG_DRIVER("\n");
 
-	drm_mode_copy(&hda->mode, mode);
+	memcpy(&hda->mode, mode, sizeof(struct drm_display_mode));
 
 	if (!hda_get_mode_idx(hda->mode, &mode_idx)) {
 		DRM_ERROR("Undefined mode\n");
