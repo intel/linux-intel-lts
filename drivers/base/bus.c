@@ -1166,6 +1166,26 @@ int subsys_virtual_register(struct bus_type *subsys,
 }
 EXPORT_SYMBOL_GPL(subsys_virtual_register);
 
+/**
+ * bus_get_dev_root - return a pointer to the "device root" of a bus
+ * @bus: bus to return the device root of.
+ *
+ * If a bus has a "device root" structure, return it, WITH THE REFERENCE
+ * COUNT INCREMENTED.
+ *
+ * Note, when finished with the device, a call to put_device() is required.
+ *
+ * If the device root is not present (or bus is not a valid pointer), NULL
+ * will be returned.
+ */
+struct device *bus_get_dev_root(const struct bus_type *bus)
+{
+	if (bus)
+		return get_device(bus->dev_root);
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(bus_get_dev_root);
+
 int __init buses_init(void)
 {
 	bus_kset = kset_create_and_add("bus", &bus_uevent_ops, NULL);
