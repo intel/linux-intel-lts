@@ -5,6 +5,7 @@
  *  Copyright (C) 1996,1997,1998 Russell King.
  *  ARM700 fix by Matthew Godbolt (linux-user@willothewisp.demon.co.uk)
  *  nommu support by Hyok S. Choi (hyok.choi@samsung.com)
+ *  Copyright (C) 2005 Stelian Pop.
  *
  *  Low-level vector interface routines
  *
@@ -32,16 +33,24 @@
 #include "entry-header.S"
 #include <asm/entry-macro-multi.S>
 #include <asm/probes.h>
+#include <asm/dovetail.h>
 
 /*
  * Interrupt handling.
  */
 	.macro	irq_handler
 #ifdef CONFIG_GENERIC_IRQ_MULTI_HANDLER
-	ldr	r1, =handle_arch_irq
 	mov	r0, sp
 	badr	lr, 9997f
+#ifdef CONFIG_IRQ_PIPELINE
+	ldr	r1, =handle_arch_irq_pipelined
+	mov	pc, r1
+#else
+	ldr	r1, =handle_arch_irq
 	ldr	pc, [r1]
+#endif
+#elif CONFIG_IRQ_PIPELINE
+#error "Legacy IRQ handling not pipelined"
 #else
 	arch_irq_handler_default
 #endif
@@ -183,7 +192,10 @@ ENDPROC(__und_invalid)
 	uaccess_entry tsk, r0, r1, r2, \uaccess
 
 	.if \trace
-#ifdef CONFIG_TRACE_IRQFLAGS
+#ifdef CONFIG_IRQ_PIPELINE
+	mov	r0, sp
+	bl	kentry_enter_pipelined
+#elif defined(CONFIG_TRACE_IRQFLAGS)
 	bl	trace_hardirqs_off
 #endif
 	.endif
@@ -203,6 +215,10 @@ ENDPROC(__dabt_svc)
 __irq_svc:
 	svc_entry
 	irq_handler
+#ifdef CONFIG_IRQ_PIPELINE
+	tst	r0, r0				@ skip epilogue if oob or in-band stalled
+	beq	1f
+#endif
 
 #ifdef CONFIG_PREEMPTION
 	ldr	r8, [tsk, #TI_PREEMPT]		@ get preempt count
@@ -213,6 +229,7 @@ __irq_svc:
 	blne	svc_preempt
 #endif
 
+1:
 	svc_exit r5, irq = 1			@ return from exception
  UNWIND(.fnend		)
 ENDPROC(__irq_svc)
@@ -222,7 +239,7 @@ ENDPROC(__irq_svc)
 #ifdef CONFIG_PREEMPTION
 svc_preempt:
 	mov	r8, lr
-1:	bl	preempt_schedule_irq		@ irq en/disable is done inside
+1:	bl	arm_preempt_schedule_irq	@ irq en/disable is done inside
 	ldr	r0, [tsk, #TI_FLAGS]		@ get new tasks TI_FLAGS
 	tst	r0, #_TIF_NEED_RESCHED
 	reteq	r8				@ go again
@@ -252,6 +269,16 @@ __und_svc:
 #else
 	svc_entry
 #endif
+#ifdef CONFIG_DOVETAIL
+	get_thread_info tsk
+	ldr	r0, [tsk, #TI_PREEMPT]		@ get preempt count
+	tst	r0, #TI_OOB_MASK		@ oob stage?
+	beq	1f
+	mov	r0, #ARM_TRAP_UNDEFINSTR
+	mov	r1, sp				@ r1 = &regs
+	bl	__oob_trap_notify
+1:
+#endif
 
 	mov	r1, #4				@ PC correction to apply
  THUMB(	tst	r5, #PSR_T_BIT		)	@ exception taken in Thumb mode?
@@ -261,6 +288,15 @@ __und_svc:
 
 __und_svc_finish:
 	get_thread_info tsk
+#ifdef CONFIG_DOVETAIL
+	ldr	r0, [tsk, #TI_PREEMPT]		@ get preempt count
+	tst	r0, #TI_OOB_MASK		@ oob stage?
+	beq	1f
+	mov	r0, #ARM_TRAP_UNDEFINSTR
+	mov	r1, sp				@ r1 = &regs
+	bl	__oob_trap_unwind
+1:
+#endif
 	ldr	r5, [sp, #S_PSR]		@ Get SVC cpsr
 	svc_exit r5				@ return from exception
  UNWIND(.fnend		)
@@ -391,7 +427,7 @@ ENDPROC(__fiq_abt)
 
 	.if	\trace
 #ifdef CONFIG_TRACE_IRQFLAGS
-	bl	trace_hardirqs_off
+	bl	trace_hardirqs_off_pipelined
 #endif
 	ct_user_exit save = 0
 	.endif
@@ -428,8 +464,12 @@ __irq_usr:
 	usr_entry
 	kuser_cmpxchg_check
 	irq_handler
-	get_thread_info tsk
 	mov	why, #0
+#ifdef CONFIG_IRQ_PIPELINE
+	tst	r0, r0
+	beq	fast_ret_to_user	@ skip epilogue if oob (in-band cannot be stalled)
+#endif
+	get_thread_info tsk
 	b	ret_to_user_from_irq
  UNWIND(.fnend		)
 ENDPROC(__irq_usr)
@@ -716,7 +756,7 @@ ENTRY(ret_from_exception)
  UNWIND(.cantunwind	)
 	get_thread_info tsk
 	mov	why, #0
-	b	ret_to_user
+	ret_to_user_pipelined r1
  UNWIND(.fnend		)
 ENDPROC(__pabt_usr)
 ENDPROC(ret_from_exception)

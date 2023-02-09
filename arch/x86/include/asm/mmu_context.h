@@ -132,6 +132,13 @@ extern void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 			       struct task_struct *tsk);
 #define switch_mm_irqs_off switch_mm_irqs_off
 
+static inline void
+switch_oob_mm(struct mm_struct *prev, struct mm_struct *next,
+	      struct task_struct *tsk)
+{
+	switch_mm_irqs_off(prev, next, tsk);
+}
+
 #define activate_mm(prev, next)			\
 do {						\
 	paravirt_activate_mm((prev), (next));	\

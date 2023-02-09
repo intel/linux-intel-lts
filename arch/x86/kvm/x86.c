@@ -194,6 +194,7 @@ module_param(pi_inject_timer, bint, S_IRUGO | S_IWUSR);
 struct kvm_user_return_msrs {
 	struct user_return_notifier urn;
 	bool registered;
+	bool dirty;
 	struct kvm_user_return_msr_values {
 		u64 host;
 		u64 curr;
@@ -340,12 +341,29 @@ static inline void kvm_async_pf_hash_reset(struct kvm_vcpu *vcpu)
 		vcpu->arch.apf.gfns[i] = ~0;
 }
 
+static void __kvm_on_user_return(struct kvm_user_return_msrs *msrs)
+{
+	struct kvm_user_return_msr_values *values;
+	unsigned slot;
+
+	if (!msrs->dirty)
+		return;
+
+	for (slot = 0; slot < kvm_nr_uret_msrs; ++slot) {
+		values = &msrs->values[slot];
+		if (values->host != values->curr) {
+			wrmsrl(kvm_uret_msrs_list[slot], values->host);
+			values->curr = values->host;
+		}
+	}
+
+	msrs->dirty = false;
+}
+
 static void kvm_on_user_return(struct user_return_notifier *urn)
 {
-	unsigned slot;
 	struct kvm_user_return_msrs *msrs
 		= container_of(urn, struct kvm_user_return_msrs, urn);
-	struct kvm_user_return_msr_values *values;
 	unsigned long flags;
 
 	/*
@@ -358,27 +376,25 @@ static void kvm_on_user_return(struct user_return_notifier *urn)
 		user_return_notifier_unregister(urn);
 	}
 	local_irq_restore(flags);
-	for (slot = 0; slot < kvm_nr_uret_msrs; ++slot) {
-		values = &msrs->values[slot];
-		if (values->host != values->curr) {
-			wrmsrl(kvm_uret_msrs_list[slot], values->host);
-			values->curr = values->host;
-		}
-	}
+	flags = hard_cond_local_irq_save();
+	__kvm_on_user_return(msrs);
+	hard_cond_local_irq_restore(flags);
+	inband_exit_guest();
 }
 
 static int kvm_probe_user_return_msr(u32 msr)
 {
+	unsigned long flags;
 	u64 val;
 	int ret;
 
-	preempt_disable();
+	flags = hard_preempt_disable();
 	ret = rdmsrl_safe(msr, &val);
 	if (ret)
 		goto out;
 	ret = wrmsrl_safe(msr, val);
 out:
-	preempt_enable();
+	hard_preempt_enable(flags);
 	return ret;
 }
 
@@ -433,6 +449,7 @@ int kvm_set_user_return_msr(unsigned slot, u64 value, u64 mask)
 	if (err)
 		return 1;
 
+	msrs->dirty = true;
 	msrs->values[slot].curr = value;
 	if (!msrs->registered) {
 		msrs->urn.on_user_return = kvm_on_user_return;
@@ -4445,12 +4462,23 @@ static void kvm_steal_time_set_preempted(struct kvm_vcpu *vcpu)
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 {
+	struct kvm_user_return_msrs *msrs = this_cpu_ptr(user_return_msrs);
+	unsigned long flags;
 	int idx;
+
+	flags = hard_cond_local_irq_save();
 
 	if (vcpu->preempted) {
 		if (!vcpu->arch.guest_state_protected)
 			vcpu->arch.preempted_in_kernel = !static_call(kvm_x86_get_cpl)(vcpu);
 
+		/*
+		 * Skip steal time accounting from the out-of-band stage since
+		 * this is oob-unsafe. We leave it to the next call from the
+		 * inband stage.
+		 */
+		if (running_oob())
+			goto skip_steal_time_update;
 		/*
 		 * Take the srcu lock as memslots will be accessed to check the gfn
 		 * cache generation against the memslots generation.
@@ -4463,9 +4491,43 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 		srcu_read_unlock(&vcpu->kvm->srcu, idx);
 	}
 
+skip_steal_time_update:
 	static_call(kvm_x86_vcpu_put)(vcpu);
 	vcpu->arch.last_host_tsc = rdtsc();
+
+	inband_set_vcpu_release_state(vcpu, false);
+	if (!msrs->dirty)
+		inband_exit_guest();
+
+	hard_cond_local_irq_restore(flags);
 }
+
+#ifdef CONFIG_DOVETAIL
+/* hard irqs off. */
+void kvm_handle_oob_switch(struct kvm_oob_notifier *nfy)
+{
+	struct kvm_user_return_msrs *msrs = this_cpu_ptr(user_return_msrs);
+	struct kvm_vcpu *vcpu;
+
+	vcpu = container_of(nfy, struct kvm_vcpu, oob_notifier);
+	/*
+	 * If user_return MSRs were still active when leaving
+	 * kvm_arch_vcpu_put(), inband_exit_guest() was not invoked,
+	 * so we might get called later on before kvm_on_user_return()
+	 * had a chance to run, if a switch to out-of-band scheduling
+	 * sneaks in in the meantime.  Prevent kvm_arch_vcpu_put()
+	 * from running twice in such a case by checking ->put_vcpu
+	 * from the notifier block.
+	 */
+	if (nfy->put_vcpu)
+		kvm_arch_vcpu_put(vcpu);
+
+	__kvm_on_user_return(msrs);
+	inband_exit_guest();
+}
+#else
+#define kvm_handle_oob_switch  NULL
+#endif
 
 static int kvm_vcpu_ioctl_get_lapic(struct kvm_vcpu *vcpu,
 				    struct kvm_lapic_state *s)
@@ -9848,6 +9910,10 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	}
 
 	preempt_disable();
+	local_irq_disable_full();
+
+	inband_enter_guest(vcpu);
+	inband_set_vcpu_release_state(vcpu, true);
 
 	static_call(kvm_x86_prepare_guest_switch)(vcpu);
 
@@ -9856,7 +9922,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	 * IPI are then delayed after guest entry, which ensures that they
 	 * result in virtual interrupt delivery.
 	 */
-	local_irq_disable();
 	vcpu->mode = IN_GUEST_MODE;
 
 	srcu_read_unlock(&vcpu->kvm->srcu, vcpu->srcu_idx);
@@ -9887,7 +9952,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	if (kvm_vcpu_exit_request(vcpu)) {
 		vcpu->mode = OUTSIDE_GUEST_MODE;
 		smp_wmb();
-		local_irq_enable();
+		local_irq_enable_full();
 		preempt_enable();
 		vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
 		r = 1;
@@ -9966,9 +10031,9 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	 * stat.exits increment will do nicely.
 	 */
 	kvm_before_interrupt(vcpu);
-	local_irq_enable();
+	local_irq_enable_full();
 	++vcpu->stat.exits;
-	local_irq_disable();
+	local_irq_disable_full();
 	kvm_after_interrupt(vcpu);
 
 	/*
@@ -9988,7 +10053,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		}
 	}
 
-	local_irq_enable();
+	local_irq_enable_full();
 	preempt_enable();
 
 	vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
@@ -10211,7 +10276,9 @@ static void kvm_save_current_fpu(struct fpu *fpu)
 /* Swap (qemu) user FPU context for the guest FPU context. */
 static void kvm_load_guest_fpu(struct kvm_vcpu *vcpu)
 {
-	fpregs_lock();
+	unsigned long flags;
+
+	flags = fpregs_lock();
 
 	kvm_save_current_fpu(vcpu->arch.user_fpu);
 
@@ -10225,7 +10292,7 @@ static void kvm_load_guest_fpu(struct kvm_vcpu *vcpu)
 					~XFEATURE_MASK_PKRU);
 
 	fpregs_mark_activate();
-	fpregs_unlock();
+	fpregs_unlock(flags);
 
 	trace_kvm_fpu(1);
 }
@@ -10233,7 +10300,9 @@ static void kvm_load_guest_fpu(struct kvm_vcpu *vcpu)
 /* When vcpu_run ends, restore user space FPU context. */
 static void kvm_put_guest_fpu(struct kvm_vcpu *vcpu)
 {
-	fpregs_lock();
+	unsigned long flags;
+
+	flags = fpregs_lock();
 
 	/*
 	 * Guests with protected state can't have it read by the hypervisor,
@@ -10245,7 +10314,7 @@ static void kvm_put_guest_fpu(struct kvm_vcpu *vcpu)
 	restore_fpregs_from_fpstate(&vcpu->arch.user_fpu->state);
 
 	fpregs_mark_activate();
-	fpregs_unlock();
+	fpregs_unlock(flags);
 
 	++vcpu->stat.fpu_reload;
 	trace_kvm_fpu(0);
@@ -11036,6 +11105,7 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	if (r)
 		goto free_guest_fpu;
 
+	inband_init_vcpu(vcpu, kvm_handle_oob_switch);
 	vcpu->arch.arch_capabilities = kvm_get_arch_capabilities();
 	vcpu->arch.msr_platform_info = MSR_PLATFORM_INFO_CPUID_FAULT;
 	kvm_vcpu_mtrr_init(vcpu);
