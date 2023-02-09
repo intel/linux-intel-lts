@@ -445,7 +445,7 @@ static int skl_decoupled_trigger(struct snd_pcm_substream *substream,
 	spin_lock_irqsave(&bus->reg_lock, cookie);
 
 	if (start) {
-		snd_hdac_stream_start(hdac_stream(stream), true);
+		snd_hdac_stream_start(hdac_stream(stream));
 		snd_hdac_stream_timecounter_init(hstr, 0);
 	} else {
 		snd_hdac_stream_stop(hdac_stream(stream));
@@ -1130,7 +1130,7 @@ static int skl_coupled_trigger(struct snd_pcm_substream *substream,
 			continue;
 		stream = get_hdac_ext_stream(s);
 		if (start)
-			snd_hdac_stream_start(hdac_stream(stream), true);
+			snd_hdac_stream_start(hdac_stream(stream));
 		else
 			snd_hdac_stream_stop(hdac_stream(stream));
 	}
