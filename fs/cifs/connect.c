@@ -429,7 +429,8 @@ cifs_reconnect(struct TCP_Server_Info *server)
 			 server->ssocket->state, server->ssocket->flags);
 		sock_release(server->ssocket);
 		server->ssocket = NULL;
-	}
+	} else if (cifs_rdma_enabled(server))
+		smbd_destroy(server);
 	server->sequence_number = 0;
 	server->session_estab = false;
 	kfree(server->session_key.response);
@@ -799,10 +800,8 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
 	wake_up_all(&server->request_q);
 	/* give those requests time to exit */
 	msleep(125);
-	if (cifs_rdma_enabled(server) && server->smbd_conn) {
-		smbd_destroy(server->smbd_conn);
-		server->smbd_conn = NULL;
-	}
+	if (cifs_rdma_enabled(server))
+		smbd_destroy(server);
 	if (server->ssocket) {
 		sock_release(server->ssocket);
 		server->ssocket = NULL;
@@ -2940,7 +2939,7 @@ cifs_set_cifscreds(struct smb_vol *vol __attribute__((unused)),
 static struct cifs_ses *
 cifs_get_smb_ses(struct TCP_Server_Info *server, struct smb_vol *volume_info)
 {
-	int rc = -ENOMEM;
+	int rc = 0;
 	unsigned int xid;
 	struct cifs_ses *ses;
 	struct sockaddr_in *addr = (struct sockaddr_in *)&server->dstaddr;
@@ -2981,6 +2980,8 @@ cifs_get_smb_ses(struct TCP_Server_Info *server, struct smb_vol *volume_info)
 		free_xid(xid);
 		return ses;
 	}
+
+	rc = -ENOMEM;
 
 	cifs_dbg(FYI, "Existing smb sess not found\n");
 	ses = sesInfoAlloc();

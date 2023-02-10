@@ -1579,6 +1579,7 @@
 
 # required by msm_adreno.ko
   bpf_trace_run10
+  check_zeroed_user
   __clk_get_name
   devfreq_cooling_unregister
   device_show_int
@@ -2102,6 +2103,7 @@
 # required by qcom_glink_native.ko
   __irq_set_affinity
   sched_setaffinity
+  strscpy_pad
 
 # required by qcom_hwspinlock.ko
   devm_regmap_field_alloc

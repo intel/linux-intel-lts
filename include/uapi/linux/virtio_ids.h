@@ -44,6 +44,7 @@
 #define VIRTIO_ID_VSOCK        19 /* virtio vsock transport */
 #define VIRTIO_ID_CRYPTO       20 /* virtio crypto */
 #define VIRTIO_ID_PMEM         27 /* virtio pmem */
+#define VIRTIO_ID_MAC80211_HWSIM 29 /* virtio mac80211-hwsim */
 
 #ifdef CONFIG_ACRN_VIRTIO_DEVICES
 /* ACRN virtio device types */
