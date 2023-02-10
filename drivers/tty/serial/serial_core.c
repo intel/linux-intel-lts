@@ -2275,7 +2275,8 @@ int uart_suspend_port(struct uart_driver *drv, struct uart_port *uport)
 		pm_runtime_get_sync(uport->dev);
 		spin_lock_irq(&uport->lock);
 		ops->stop_tx(uport);
-		ops->set_mctrl(uport, 0);
+		if (!(uport->rs485.flags & SER_RS485_ENABLED))
+			ops->set_mctrl(uport, 0);
 		ops->stop_rx(uport);
 		spin_unlock_irq(&uport->lock);
 		pm_runtime_mark_last_busy(uport->dev);
