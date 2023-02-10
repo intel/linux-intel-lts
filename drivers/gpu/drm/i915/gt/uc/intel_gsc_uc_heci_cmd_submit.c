@@ -21,7 +21,7 @@ void intel_gsc_uc_heci_cmd_emit_mtl_header(struct intel_gsc_mtl_header *header,
 					   u64 host_session_id)
 {
 	host_session_id &= ~GSC_HECI_HOST_SESSION_USAGE_MASK;
-	if (heci_client_id == GSC_HECI_MEADDRESS_PXP)
+	if (host_session_id && heci_client_id == GSC_HECI_MEADDRESS_PXP)
 		host_session_id |= GSC_HECI_SESSION_PXP_SINGLE;
 
 	header->validity_marker = GSC_HECI_VALIDITY_MARKER;
