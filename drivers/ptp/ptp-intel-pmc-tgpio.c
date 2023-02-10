@@ -433,8 +433,8 @@ static int intel_pmc_tgpio_config_output(struct intel_pmc_tgpio_t *tgpio,
 					 struct ptp_perout_request *perout,
 					 int on)
 {
-	struct timespec64 new_start_ns;
-	struct timespec64 new_period_ns;
+	struct timespec64 new_start_ns = {0, 0};
+	struct timespec64 new_period_ns = {0, 0};
 
 	if (on || perout->flags & PTP_PEROUT_ONE_SHOT) {
 		new_start_ns = ptp_clock_time_to_ts64(perout->start);
