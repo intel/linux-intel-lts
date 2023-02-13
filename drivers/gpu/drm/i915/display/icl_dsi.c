@@ -900,7 +900,7 @@ gen11_dsi_set_transcoder_timings(struct intel_encoder *encoder,
 	for_each_dsi_port(port, intel_dsi->ports) {
 		dsi_trans = dsi_port_to_transcoder(port);
 		intel_de_write(dev_priv, TRANS_HTOTAL(dsi_trans),
-			       (hactive - 1) | ((htotal - 1) << 16));
+			       HACTIVE(hactive - 1) | HTOTAL(htotal - 1));
 	}
 
 	/* TRANS_HSYNC register to be programmed only for video mode */
@@ -923,7 +923,7 @@ gen11_dsi_set_transcoder_timings(struct intel_encoder *encoder,
 		for_each_dsi_port(port, intel_dsi->ports) {
 			dsi_trans = dsi_port_to_transcoder(port);
 			intel_de_write(dev_priv, TRANS_HSYNC(dsi_trans),
-				       (hsync_start - 1) | ((hsync_end - 1) << 16));
+				       HSYNC_START(hsync_start - 1) | HSYNC_END(hsync_end - 1));
 		}
 	}
 
@@ -937,7 +937,7 @@ gen11_dsi_set_transcoder_timings(struct intel_encoder *encoder,
 		 * For interlace mode: program required pixel minus 2
 		 */
 		intel_de_write(dev_priv, TRANS_VTOTAL(dsi_trans),
-			       (vactive - 1) | ((vtotal - 1) << 16));
+			       VACTIVE(vactive - 1) | VTOTAL(vtotal - 1));
 	}
 
 	if (vsync_end < vsync_start || vsync_end > vtotal)
@@ -951,7 +951,7 @@ gen11_dsi_set_transcoder_timings(struct intel_encoder *encoder,
 		for_each_dsi_port(port, intel_dsi->ports) {
 			dsi_trans = dsi_port_to_transcoder(port);
 			intel_de_write(dev_priv, TRANS_VSYNC(dsi_trans),
-				       (vsync_start - 1) | ((vsync_end - 1) << 16));
+				       VSYNC_START(vsync_start - 1) | VSYNC_END(vsync_end - 1));
 		}
 	}
 
@@ -974,7 +974,7 @@ gen11_dsi_set_transcoder_timings(struct intel_encoder *encoder,
 		for_each_dsi_port(port, intel_dsi->ports) {
 			dsi_trans = dsi_port_to_transcoder(port);
 			intel_de_write(dev_priv, TRANS_VBLANK(dsi_trans),
-				       (vactive - 1) | ((vtotal - 1) << 16));
+				       VBLANK_START(vactive - 1) | VBLANK_END(vtotal - 1));
 		}
 	}
 }
