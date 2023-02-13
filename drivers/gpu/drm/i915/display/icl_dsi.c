@@ -311,7 +311,7 @@ static void configure_dual_link_mode(struct intel_encoder *encoder,
 
 		dss_ctl1 &= ~LEFT_DL_BUF_TARGET_DEPTH_MASK;
 		dss_ctl1 |= LEFT_DL_BUF_TARGET_DEPTH(dl_buffer_depth);
-		intel_de_rmw(dev_priv, DSS_CTL2, RIGHT_DL_BUF_TARGET_DEPTH_MASK,
+		intel_de_rmw(dev_priv, dss_ctl2_reg, RIGHT_DL_BUF_TARGET_DEPTH_MASK,
 			     RIGHT_DL_BUF_TARGET_DEPTH(dl_buffer_depth));
 	} else {
 		/* Interleave */
@@ -969,7 +969,12 @@ gen11_dsi_set_transcoder_timings(struct intel_encoder *encoder,
 		}
 	}
 
-	/* program TRANS_VBLANK register, should be same as vtotal programmed */
+	/*
+	 * program TRANS_VBLANK register, should be same as vtotal programmed
+	 *
+	 * FIXME get rid of these local hacks and do it right,
+	 * this will not handle eg. delayed vblank correctly.
+	 */
 	if (DISPLAY_VER(dev_priv) >= 12) {
 		for_each_dsi_port(port, intel_dsi->ports) {
 			dsi_trans = dsi_port_to_transcoder(port);
