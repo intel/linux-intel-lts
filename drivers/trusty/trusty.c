@@ -1144,7 +1144,7 @@ static struct platform_device trusty_platform_dev_virtio = {
 	},
 };
 
-static struct platform_device trusty_platform_dev_irq = {
+static struct platform_device __maybe_unused trusty_platform_dev_irq = {
 	.name = "trusty-irq",
 	.id = -1,
 	.num_resources = 0,
