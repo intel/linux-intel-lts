@@ -78,26 +78,5 @@
 # CVE-2022-3303
 0001-ALSA-pcm-oss-Fix-race-at-SNDCTL_DSP_SYNC.patch
 
-# CVE-2022-3524
-0001-tcp-udp-Fix-memory-leak-in-ipv6_renew_options.patch
-0002-udp-Call-inet6_destroy_sock-in-setsockopt-IPV6_ADDRF.patch
-0003-tcp-udp-Call-inet6_destroy_sock-in-IPv6-sk-sk_destru.patch
-0004-ipv6-Fix-data-races-around-sk-sk_prot.patch
-
-# CVE-2022-3521
-0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
-
-# CVE-2022-42896
-0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
-
-# CVE-2022-3643
-0001-xen-netback-Ensure-protocol-headers-don-t-fall-in-th.patch
-
-# CVE-2022-4378
-0001-Author-Linus-Torvalds-torvalds-linux-foundation.org.patch
-
-# CVE-2023-23455
-0001-net-sched-atm-dont-intepret-cls-results-when-asked-t.patch
-
 # CVE-2023-23454
 0001-net-sched-cbq-dont-intepret-cls-results-when-asked-t.patch
