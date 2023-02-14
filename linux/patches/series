@@ -22,3 +22,18 @@
 
 # CVE-2022-47940
 0001-ksmbd-validate-length-in-smb2_write.patch
+
+# CVE-2022-2196
+0001-KVM-VMX-Execute-IBPB-on-emulated-VM-exit-when-guest-.patch
+
+# CVE-2022-4379
+0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
+
+# CVE-2023-23559
+0001-wifi-rndis_wlan-Prevent-buffer-overflow-in-rndis_que.patch
+
+# CVE-2023-0179
+0001-netfilter-nft_payload-incorrect-arithmetics-when-fet.patch
+
+# CVE-2022-4129
+0001-l2tp-Serialize-access-to-sk_user_data-with-sk_callba.patch
