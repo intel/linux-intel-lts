@@ -29,9 +29,6 @@
 # CVE-2022-4379
 0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
 
-# CVE-2023-23559
-0001-wifi-rndis_wlan-Prevent-buffer-overflow-in-rndis_que.patch
-
 # CVE-2023-0179
 0001-netfilter-nft_payload-incorrect-arithmetics-when-fet.patch
 
