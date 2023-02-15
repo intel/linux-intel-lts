@@ -80,3 +80,9 @@
 
 # CVE-2023-23454
 0001-net-sched-cbq-dont-intepret-cls-results-when-asked-t.patch
+
+# CVE-2023-0590
+0001-net-sched-fix-race-condition-in-qdisc_graft.patch
+
+# CVE-2022-4129
+0001-l2tp-Serialize-access-to-sk_user_data-with-sk_callba.patch
