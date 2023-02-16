@@ -65,6 +65,8 @@ static void drm_fbdev_fb_destroy(struct fb_info *info)
 
 	drm_client_framebuffer_delete(fb_helper->buffer);
 	drm_client_release(&fb_helper->client);
+
+	drm_fb_helper_unprepare(fb_helper);
 	kfree(fb_helper);
 }
 
@@ -205,8 +207,8 @@ static int drm_fbdev_fb_probe(struct drm_fb_helper *fb_helper,
 		fb_helper->fbdefio.delay = HZ / 20;
 		fb_helper->fbdefio.deferred_io = drm_fb_helper_deferred_io;
 
-		info->fbdefio = &drm_fbdev_defio;
-		ret = fb_deferred_io_init(fbi);
+		info->fbdefio = &fb_helper->fbdefio;
+		ret = fb_deferred_io_init(info);
 		if (ret)
 			return ret;
 	} else {
