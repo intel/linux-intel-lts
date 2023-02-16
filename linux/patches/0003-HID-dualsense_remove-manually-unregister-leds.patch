@@ -1,0 +1,39 @@
+From 5aaf7d2d415c9bae32cbf3cfc56173fe86088252 Mon Sep 17 00:00:00 2001
+From: Pietro Borrello <borrello@diag.uniroma1.it>
+Date: Tue, 31 Jan 2023 13:08:47 +0000
+Subject: [PATCH 3/4] HID: dualsense_remove: manually unregister leds
+
+Unregister the LED controllers before device removal, to prevent
+unnecessary runs of dualsense_player_led_set_brightness().
+
+Fixes: 8c0ab553b072 ("HID: playstation: expose DualSense player LEDs through LED class.")
+Signed-off-by: Pietro Borrello <borrello@diag.uniroma1.it>
+---
+ drivers/hid/hid-playstation.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/hid/hid-playstation.c b/drivers/hid/hid-playstation.c
+index 0b58763bfd30..63874c5c5d2b 100644
+--- a/drivers/hid/hid-playstation.c
++++ b/drivers/hid/hid-playstation.c
+@@ -1239,11 +1239,17 @@ static void dualsense_remove(struct ps_device *ps_dev)
+ {
+ 	struct dualsense *ds = container_of(ps_dev, struct dualsense, base);
+ 	unsigned long flags;
++	int i;
+ 
+ 	spin_lock_irqsave(&ds->base.lock, flags);
+ 	ds->output_worker_initialized = false;
+ 	spin_unlock_irqrestore(&ds->base.lock, flags);
+ 
++	for (i = 0; i < ARRAY_SIZE(ds->player_leds); i++)
++		devm_led_classdev_unregister(&ps_dev->hdev->dev, &ds->player_leds[i]);
++
++	devm_led_classdev_multicolor_unregister(&ps_dev->hdev->dev, &ds->lightbar);
++
+ 	cancel_work_sync(&ds->output_worker);
+ }
+ 
+-- 
+2.25.1
+

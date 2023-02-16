@@ -1,0 +1,30 @@
+From 123420c99c872095b56031874e8ef15f5104ba6a Mon Sep 17 00:00:00 2001
+From: Pietro Borrello <borrello@diag.uniroma1.it>
+Date: Tue, 31 Jan 2023 13:08:46 +0000
+Subject: [PATCH 2/4] HID: asus_remove: manually unregister led
+
+Unregister the LED controller before device removal, as
+asus_kbd_backlight_set() may schedule led->work after the structure
+has been freed, causing a use-after-free.
+
+Fixes: af22a610bc38 ("HID: asus: support backlight on USB keyboards")
+Signed-off-by: Pietro Borrello <borrello@diag.uniroma1.it>
+---
+ drivers/hid/hid-asus.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/hid/hid-asus.c b/drivers/hid/hid-asus.c
+index f99752b998f3..0f274c8d1bef 100644
+--- a/drivers/hid/hid-asus.c
++++ b/drivers/hid/hid-asus.c
+@@ -1122,6 +1122,7 @@ static void asus_remove(struct hid_device *hdev)
+ 
+ 	if (drvdata->kbd_backlight) {
+ 		drvdata->kbd_backlight->removed = true;
++		devm_led_classdev_unregister(&hdev->dev, &drvdata->kbd_backlight->cdev);
+ 		cancel_work_sync(&drvdata->kbd_backlight->work);
+ 	}
+ 
+-- 
+2.25.1
+

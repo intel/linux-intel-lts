@@ -1,0 +1,45 @@
+From c6e8fee1c0d5c5e3a15ef1320f2fdb393726bbd9 Mon Sep 17 00:00:00 2001
+From: Pietro Borrello <borrello@diag.uniroma1.it>
+Date: Tue, 31 Jan 2023 13:08:49 +0000
+Subject: [PATCH 4/4] HID: sony_remove: manually unregister leds
+
+Unregister the LED controller before device removal, as
+sony_led_set_brightness() may schedule sc->state_worker
+after the structure has been freed, causing a use-after-free.
+
+Fixes: 0a286ef27852 ("HID: sony: Add LED support for Sixaxis/Dualshock3 USB")
+Signed-off-by: Pietro Borrello <borrello@diag.uniroma1.it>
+Reviewed-by: Sven Eckelmann <sven@narfation.org>
+---
+ drivers/hid/hid-sony.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/hid/hid-sony.c b/drivers/hid/hid-sony.c
+index 03691cdcfb8e..21a2e6f29502 100644
+--- a/drivers/hid/hid-sony.c
++++ b/drivers/hid/hid-sony.c
+@@ -3081,6 +3081,7 @@ static int sony_probe(struct hid_device *hdev, const struct hid_device_id *id)
+ static void sony_remove(struct hid_device *hdev)
+ {
+ 	struct sony_sc *sc = hid_get_drvdata(hdev);
++	int n;
+ 
+ 	if (sc->quirks & (GHL_GUITAR_PS3WIIU | GHL_GUITAR_PS4)) {
+ 		del_timer_sync(&sc->ghl_poke_timer);
+@@ -3098,6 +3099,13 @@ static void sony_remove(struct hid_device *hdev)
+ 	if (sc->hw_version_created)
+ 		device_remove_file(&sc->hdev->dev, &dev_attr_hardware_version);
+ 
++	if (sc->quirks & SONY_LED_SUPPORT) {
++		for (n = 0; n < sc->led_count; n++) {
++			if (sc->leds[n])
++				devm_led_classdev_unregister(&hdev->dev, sc->leds[n]);
++		}
++	}
++
+ 	sony_cancel_work_sync(sc);
+ 
+ 	sony_remove_dev_list(sc);
+-- 
+2.25.1
+
