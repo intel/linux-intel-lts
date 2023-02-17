@@ -2267,6 +2267,10 @@ out:
 /* Must be called within console_lock(). */
 static void start_printk_kthread(struct console *con)
 {
+	/* No need to start a printing thread if the console cannot print. */
+	if (!con->write)
+		return;
+
 	con->thread = kthread_run(printk_kthread_func, con,
 				  "pr/%s%d", con->name, con->index);
 	if (IS_ERR(con->thread)) {
@@ -3565,6 +3569,8 @@ bool pr_flush(int timeout_ms, bool reset_on_progress)
 
 		for_each_console(con) {
 			if (!(con->flags & CON_ENABLED))
+				continue;
+			if (!con->write && !con->write_atomic)
 				continue;
 			printk_seq = atomic64_read(&con->printk_seq);
 			if (printk_seq < seq)
