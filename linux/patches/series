@@ -23,8 +23,8 @@
 # CVE-2022-47940
 0001-ksmbd-validate-length-in-smb2_write.patch
 
-# CVE-2023-23455
-0001-net-sched-atm-dont-intepret-cls-results-when-asked-t.patch
+# CVE-2022-2196
+0001-KVM-VMX-Execute-IBPB-on-emulated-VM-exit-when-guest-.patch
 
-# CVE-2023-23454
-0001-net-sched-cbq-dont-intepret-cls-results-when-asked-t.patch
+# CVE-2022-4379
+0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
