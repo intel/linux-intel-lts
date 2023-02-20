@@ -2294,10 +2294,6 @@ int serial8250_do_startup(struct uart_port *port)
 		}
 	}
 
-	retval = up->ops->setup_irq(up);
-	if (retval)
-		return retval;
-
 	up->ops->setup_timer(up);
 
 	/*
