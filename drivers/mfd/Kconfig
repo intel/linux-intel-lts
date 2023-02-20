@@ -678,7 +678,7 @@ config MFD_INTEL_LPSS_PCI
 	  PCH) in PCI mode.
 
 config MFD_INTEL_PMC_BXT
-	tristate "Intel PMC Driver for Broxton"
+	bool "Intel PMC Driver for Broxton"
 	depends on X86
 	depends on X86_PLATFORM_DEVICES
 	depends on ACPI
