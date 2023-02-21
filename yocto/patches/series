@@ -22,14 +22,26 @@
 # CVE-2022-39189
 0001-KVM-x86-do-not-report-a-vCPU-as-preempted-outside-in.patch
 
-# CVE-2023-23455
-0001-net-sched-atm-dont-intepret-cls-results-when-asked-t.patch
-
-# CVE-2023-23454
-0001-net-sched-cbq-dont-intepret-cls-results-when-asked-t.patch
-
 # CVE-2022-3567
 # CVE-2022-3566
 0001-ipv6-annotate-some-data-races-around-sk-sk_prot.patch
 0002-ipv6-Fix-data-races-around-sk-sk_prot.patch
 0003-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
+
+# CVE-2022-2196
+0001-KVM-VMX-Execute-IBPB-on-emulated-VM-exit-when-guest-.patch
+
+# CVE-2022-4379
+0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
+
+# CVE-2023-20928
+0001-android-binder-stop-saving-a-pointer-to-the-VMA.patch
+
+# CVE-2022-4129
+0001-l2tp-Serialize-access-to-sk_user_data-with-sk_callba.patch
+
+# CVE-2022-3108
+0001-drm-amdkfd-Check-for-null-pointer-after-calling-kmem.patch
+
+# CVE-2023-23559
+0001-wifi-rndis_wlan-Prevent-buffer-overflow-in-rndis_que.patch

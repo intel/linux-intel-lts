@@ -1,0 +1,134 @@
+From f256171a20a031a89328144712f74d24e1f25fc6 Mon Sep 17 00:00:00 2001
+From: "Liam R. Howlett" <Liam.Howlett@oracle.com>
+Date: Mon, 20 Jun 2022 21:09:09 -0400
+Subject: [PATCH] android: binder: stop saving a pointer to the VMA
+
+Do not record a pointer to a VMA outside of the mmap_lock for later use.
+This is unsafe and there are a number of failure paths *after* the
+recorded VMA pointer may be freed during setup.  There is no callback to
+the driver to clear the saved pointer from generic mm code.  Furthermore,
+the VMA pointer may become stale if any number of VMA operations end up
+freeing the VMA so saving it was fragile to being with.
+
+Instead, change the binder_alloc struct to record the start address of the
+VMA and use vma_lookup() to get the vma when needed.  Add lockdep
+mmap_lock checks on updates to the vma pointer to ensure the lock is held
+and depend on that lock for synchronization of readers and writers - which
+was already the case anyways, so the smp_wmb()/smp_rmb() was not
+necessary.
+
+[akpm@linux-foundation.org: fix drivers/android/binder_alloc_selftest.c]
+Link: https://lkml.kernel.org/r/20220621140212.vpkio64idahetbyf@revolver
+Fixes: da1b9564e85b ("android: binder: fix the race mmap and alloc_new_buf_locked")
+Reported-by: syzbot+58b51ac2b04e388ab7b0@syzkaller.appspotmail.com
+Signed-off-by: Liam R. Howlett <Liam.Howlett@oracle.com>
+Cc: Minchan Kim <minchan@kernel.org>
+Cc: Christian Brauner (Microsoft) <brauner@kernel.org>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Cc: Hridya Valsaraju <hridya@google.com>
+Cc: Joel Fernandes <joel@joelfernandes.org>
+Cc: Martijn Coenen <maco@android.com>
+Cc: Suren Baghdasaryan <surenb@google.com>
+Cc: Todd Kjos <tkjos@android.com>
+Cc: Matthew Wilcox (Oracle) <willy@infradead.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+ drivers/android/binder_alloc.c          | 32 ++++++++++++-------------
+ drivers/android/binder_alloc.h          |  2 +-
+ drivers/android/binder_alloc_selftest.c |  2 +-
+ 3 files changed, 17 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/android/binder_alloc.c b/drivers/android/binder_alloc.c
+index a77ed66425f2..d997a58c23fd 100644
+--- a/drivers/android/binder_alloc.c
++++ b/drivers/android/binder_alloc.c
+@@ -212,8 +212,8 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
+ 		mm = alloc->vma_vm_mm;
+ 
+ 	if (mm) {
+-		mmap_write_lock(mm);
+-		vma = alloc->vma;
++		mmap_read_lock(mm);
++		vma = vma_lookup(mm, alloc->vma_addr);
+ 	}
+ 
+ 	if (!vma && need_mm) {
+@@ -313,16 +313,15 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
+ static inline void binder_alloc_set_vma(struct binder_alloc *alloc,
+ 		struct vm_area_struct *vma)
+ {
+-	if (vma)
++	unsigned long vm_start = 0;
++
++	if (vma) {
++		vm_start = vma->vm_start;
+ 		alloc->vma_vm_mm = vma->vm_mm;
+-	/*
+-	 * If we see alloc->vma is not NULL, buffer data structures set up
+-	 * completely. Look at smp_rmb side binder_alloc_get_vma.
+-	 * We also want to guarantee new alloc->vma_vm_mm is always visible
+-	 * if alloc->vma is set.
+-	 */
+-	smp_wmb();
+-	alloc->vma = vma;
++	}
++
++	mmap_assert_write_locked(alloc->vma_vm_mm);
++	alloc->vma_addr = vm_start;
+ }
+ 
+ static inline struct vm_area_struct *binder_alloc_get_vma(
+@@ -330,11 +329,9 @@ static inline struct vm_area_struct *binder_alloc_get_vma(
+ {
+ 	struct vm_area_struct *vma = NULL;
+ 
+-	if (alloc->vma) {
+-		/* Look at description in binder_alloc_set_vma */
+-		smp_rmb();
+-		vma = alloc->vma;
+-	}
++	if (alloc->vma_addr)
++		vma = vma_lookup(alloc->vma_vm_mm, alloc->vma_addr);
++
+ 	return vma;
+ }
+ 
+@@ -808,7 +805,8 @@ void binder_alloc_deferred_release(struct binder_alloc *alloc)
+ 
+ 	buffers = 0;
+ 	mutex_lock(&alloc->mutex);
+-	BUG_ON(alloc->vma);
++	BUG_ON(alloc->vma_addr &&
++	       vma_lookup(alloc->vma_vm_mm, alloc->vma_addr));
+ 
+ 	while ((n = rb_first(&alloc->allocated_buffers))) {
+ 		buffer = rb_entry(n, struct binder_buffer, rb_node);
+diff --git a/drivers/android/binder_alloc.h b/drivers/android/binder_alloc.h
+index 6e8e001381af..31e41c777551 100644
+--- a/drivers/android/binder_alloc.h
++++ b/drivers/android/binder_alloc.h
+@@ -95,7 +95,7 @@ struct binder_lru_page {
+  */
+ struct binder_alloc {
+ 	struct mutex mutex;
+-	struct vm_area_struct *vma;
++	unsigned long vma_addr;
+ 	struct mm_struct *vma_vm_mm;
+ 	void __user *buffer;
+ 	struct list_head buffers;
+diff --git a/drivers/android/binder_alloc_selftest.c b/drivers/android/binder_alloc_selftest.c
+index c2b323bc3b3a..43a881073a42 100644
+--- a/drivers/android/binder_alloc_selftest.c
++++ b/drivers/android/binder_alloc_selftest.c
+@@ -287,7 +287,7 @@ void binder_selftest_alloc(struct binder_alloc *alloc)
+ 	if (!binder_selftest_run)
+ 		return;
+ 	mutex_lock(&binder_selftest_lock);
+-	if (!binder_selftest_run || !alloc->vma)
++	if (!binder_selftest_run || !alloc->vma_addr)
+ 		goto done;
+ 	pr_info("STARTED\n");
+ 	binder_selftest_alloc_offset(alloc, end_offset, 0);
+-- 
+2.25.1
+

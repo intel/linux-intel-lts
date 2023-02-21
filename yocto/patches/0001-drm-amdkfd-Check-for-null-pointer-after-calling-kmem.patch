@@ -1,0 +1,36 @@
+From 90b675693fd0358d90e552ff2be38d78a168b06a Mon Sep 17 00:00:00 2001
+From: Jiasheng Jiang <jiasheng@iscas.ac.cn>
+Date: Wed, 5 Jan 2022 17:09:43 +0800
+Subject: [PATCH] drm/amdkfd: Check for null pointer after calling kmemdup
+
+As the possible failure of the allocation, kmemdup() may return NULL
+pointer.
+Therefore, it should be better to check the 'props2' in order to prevent
+the dereference of NULL pointer.
+
+Fixes: 3a87177eb141 ("drm/amdkfd: Add topology support for dGPUs")
+Signed-off-by: Jiasheng Jiang <jiasheng@iscas.ac.cn>
+Reviewed-by: Felix Kuehling <Felix.Kuehling@amd.com>
+Signed-off-by: Felix Kuehling <Felix.Kuehling@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/amdkfd/kfd_crat.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/amdkfd/kfd_crat.c b/drivers/gpu/drm/amd/amdkfd/kfd_crat.c
+index cfedfb1e8596..c33d689f29e8 100644
+--- a/drivers/gpu/drm/amd/amdkfd/kfd_crat.c
++++ b/drivers/gpu/drm/amd/amdkfd/kfd_crat.c
+@@ -1060,6 +1060,9 @@ static int kfd_parse_subtype_iolink(struct crat_subtype_iolink *iolink,
+ 			return -ENODEV;
+ 		/* same everything but the other direction */
+ 		props2 = kmemdup(props, sizeof(*props2), GFP_KERNEL);
++		if (!props2)
++			return -ENOMEM;
++
+ 		props2->node_from = id_to;
+ 		props2->node_to = id_from;
+ 		props2->kobj = NULL;
+-- 
+2.25.1
+
