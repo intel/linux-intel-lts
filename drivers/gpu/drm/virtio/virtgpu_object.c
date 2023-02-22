@@ -289,7 +289,7 @@ int virtio_gpu_object_restore_all(struct virtio_gpu_device *vgdev)
 	struct virtio_gpu_object_restore *curr, *tmp;
 	struct virtio_gpu_mem_entry *ents;
 	unsigned int nents;
-	int ret;
+	int ret = 0;
 
 	list_for_each_entry_safe(curr, tmp, &vgdev->obj_rec, node) {
 		ret = virtio_gpu_object_shmem_init(vgdev, curr->bo, &ents, &nents);
