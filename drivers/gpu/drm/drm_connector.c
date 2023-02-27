@@ -1612,7 +1612,6 @@ EXPORT_SYMBOL(drm_connector_attach_dp_subconnector_property);
  *   - overscan
  *   - saturation
  *   - select subconnector
- *   - subconnector
  */
 /**
  * DOC: Analog TV Connector Properties
