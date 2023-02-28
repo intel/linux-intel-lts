@@ -248,3 +248,6 @@ core_initcall(trusty_x86_64_irq_init);
 
 subsys_initcall(trusty_x86_64_driver_init);
 module_exit(trusty_x86_64_driver_exit);
+
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("Trusty x86_64 driver");

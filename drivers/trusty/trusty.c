@@ -590,6 +590,7 @@ static int trusty_remove_child(struct device *dev, void *data)
 	return 0;
 }
 
+#if 0
 static ssize_t trusty_version_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
@@ -605,6 +606,7 @@ static struct attribute *trusty_attrs[] = {
 	NULL,
 };
 ATTRIBUTE_GROUPS(trusty);
+#endif
 
 const char *trusty_version_str_get(struct device *dev)
 {
@@ -1050,8 +1052,8 @@ static struct platform_driver trusty_driver = {
 	.remove = trusty_remove,
 	.driver	= {
 		.name = "trusty",
+		.owner = THIS_MODULE,
 		.of_match_table = trusty_of_match,
-		.dev_groups = trusty_groups,
 	},
 };
 
