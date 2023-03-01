@@ -28,3 +28,6 @@
 
 # CVE-2022-4379
 0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
+
+# CVE-2023-0597
+0001-x86-mm-Randomize-per-cpu-entry-area.patch
