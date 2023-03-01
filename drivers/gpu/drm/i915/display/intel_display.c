@@ -112,6 +112,7 @@
 #include "intel_quirks.h"
 #include "intel_sprite.h"
 #include "intel_tc.h"
+#include "intel_vdsc_regs.h"
 #include "intel_vga.h"
 #include "i9xx_plane.h"
 #include "skl_scaler.h"
