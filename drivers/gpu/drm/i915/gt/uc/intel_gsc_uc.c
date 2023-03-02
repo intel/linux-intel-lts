@@ -50,8 +50,10 @@ static void gsc_work(struct work_struct *work)
 		 * Note that we can only do the GSC auth if the GuC auth was
 		 * successful.
 		 */
-		if (intel_uc_uses_huc(&gt->uc) &&
-		    intel_huc_is_authenticated(&gt->uc.huc, INTEL_HUC_AUTH_BY_GUC))
+		if (intel_huc_is_loaded_by_gsc(&gt->uc.huc))
+			intel_huc_fw_load_and_auth_via_gsc_cs(&gt->uc.huc);
+		else if (intel_uc_uses_huc(&gt->uc) &&
+				intel_huc_is_authenticated(&gt->uc.huc, INTEL_HUC_AUTH_BY_GUC))
 			intel_huc_auth(&gt->uc.huc, INTEL_HUC_AUTH_BY_GSC);
 	}
 
