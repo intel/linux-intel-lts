@@ -51,7 +51,9 @@ static void gsc_work(struct work_struct *work)
 		 * then send the HuC proxy request as part of the proxy init
 		 * flow.
 		 */
-		if (intel_uc_uses_huc(&gt->uc))
+		if (intel_huc_is_loaded_by_gsc(&gt->uc.huc))
+			intel_huc_fw_load_and_auth_via_gsc_cs(&gt->uc.huc);
+		else
 			intel_huc_auth(&gt->uc.huc, INTEL_HUC_AUTH_BY_GSC);
 	}
 
