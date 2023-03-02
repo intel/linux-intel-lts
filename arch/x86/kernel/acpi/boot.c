@@ -1309,6 +1309,128 @@ static inline int acpi_parse_madt_ioapic_entries(void)
 }
 #endif	/* !CONFIG_X86_IO_APIC */
 
+/*
+ * Parse pSRAM entry in PTCT
+ * Update PAT cache attribute configuration range
+ */
+static struct ptct_psram_region ptct_psram_regions[MAX_PSRAM_REGIONS];
+static u32 total_psram_region;
+
+#define ACPI_PTCT_FORMAT_V1      1
+#define ACPI_PTCT_FORMAT_V2      2
+static u32 acpi_ptct_format = ACPI_PTCT_FORMAT_V1;
+
+static inline bool is_TCC_range(u64 start, u64 end)
+{
+	int i;
+
+	for (i = 0; i < total_psram_region; i++) {
+		if ((start >= ptct_psram_regions[i].phyaddr_start) &&
+			(end <= ptct_psram_regions[i].phyaddr_end))
+			return true;
+	}
+	return false;
+}
+
+static bool tcc_is_untracked_pat_range(u64 start, u64 end)
+{
+	return is_ISA_range(start, end) || is_TCC_range(start, end);
+}
+
+static int __init acpi_parse_ptct(struct acpi_table_header *table)
+{
+	struct acpi_ptct_compatibility  *compatibility;
+	struct acpi_ptct_entry_header *entry;
+	struct acpi_ptct_psram_v2  *psram_v2;
+	struct acpi_ptct_psram  *psram;
+	u32 total_length;
+	u32 offset;
+	u32 id = 0;
+	u8  *ptr;
+
+	if (!table)
+		return -EINVAL;
+
+	total_length = table->length;
+	/* Parse PTCT table for the first round to determine PTCT version */
+	ptr = (u8 *)table;
+	ptr += PTCT_ACPI_HEADER_SIZE;
+
+	for (offset = PTCT_ACPI_HEADER_SIZE; offset < total_length;) {
+		entry = (struct acpi_ptct_entry_header *)(ptr);
+		offset += entry->size;
+
+		if (entry->type == ACPI_PTCT_V2_ENTRY_COMPATIBILITY) {
+			compatibility = (struct acpi_ptct_compatibility *)(ptr + PTCT_ENTRY_HEADER_SIZE);
+			acpi_ptct_format = compatibility->rtct_version;
+			if ((acpi_ptct_format != ACPI_PTCT_FORMAT_V1) && (acpi_ptct_format != ACPI_PTCT_FORMAT_V2))
+				return -EINVAL;
+		}
+		ptr += entry->size;
+	}
+
+	/* Parse PTCT table for the second round to get number of regions*/
+	ptr = (u8 *)table;
+	ptr += PTCT_ACPI_HEADER_SIZE;
+
+	for (offset = PTCT_ACPI_HEADER_SIZE; offset < total_length;) {
+		entry = (struct acpi_ptct_entry_header *)(ptr);
+		offset += entry->size;
+
+		if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V1) &&
+		    (entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM))
+			total_psram_region++;
+		else if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V2) &&
+		    (entry->type == ACPI_PTCT_V2_ENTRY_SSRAM))
+			total_psram_region++;
+		ptr += entry->size;
+	}
+	if (total_psram_region > MAX_PSRAM_REGIONS)
+		return -EINVAL;
+
+	/* Parse for the third round to record address for each regions */
+	ptr = (u8 *)table;
+	ptr += PTCT_ACPI_HEADER_SIZE;
+
+	for (offset = PTCT_ACPI_HEADER_SIZE; offset < total_length;) {
+		entry = (struct acpi_ptct_entry_header *)(ptr);
+		offset += entry->size;
+
+		if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V1) &&
+		    (entry->type == ACPI_PTCT_ENTRY_PSEUDO_SRAM) &&
+		    (id < total_psram_region)) {
+			psram = (struct acpi_ptct_psram *)(ptr + PTCT_ENTRY_HEADER_SIZE);
+			ptct_psram_regions[id].phyaddr_start = ((u64)(psram->phyaddr_lo)) | ((u64)(psram->phyaddr_hi) << 32);
+			ptct_psram_regions[id].phyaddr_end  = ptct_psram_regions[id].phyaddr_start + psram->size;
+			if (ptct_psram_regions[id].phyaddr_start & (PAGE_SIZE - 1))
+				ptct_psram_regions[id].phyaddr_start -= ptct_psram_regions[id].phyaddr_start & (PAGE_SIZE - 1);
+			if (ptct_psram_regions[id].phyaddr_end & (PAGE_SIZE - 1))
+				ptct_psram_regions[id].phyaddr_end += PAGE_SIZE - (ptct_psram_regions[id].phyaddr_end & (PAGE_SIZE - 1));
+			id++;
+		} else if ((acpi_ptct_format == ACPI_PTCT_FORMAT_V2) &&
+		    (entry->type == ACPI_PTCT_V2_ENTRY_SSRAM) &&
+		    (id < total_psram_region)) {
+			psram_v2 = (struct acpi_ptct_psram_v2 *)(ptr + PTCT_ENTRY_HEADER_SIZE);
+			ptct_psram_regions[id].phyaddr_start = ((u64)(psram_v2->phyaddr_lo)) | ((u64)(psram_v2->phyaddr_hi) << 32);
+			ptct_psram_regions[id].phyaddr_end  = ptct_psram_regions[id].phyaddr_start + psram_v2->size;
+			if (ptct_psram_regions[id].phyaddr_start & (PAGE_SIZE - 1))
+				ptct_psram_regions[id].phyaddr_start -= ptct_psram_regions[id].phyaddr_start & (PAGE_SIZE - 1);
+			if (ptct_psram_regions[id].phyaddr_end & (PAGE_SIZE - 1))
+				ptct_psram_regions[id].phyaddr_end += PAGE_SIZE - (ptct_psram_regions[id].phyaddr_end & (PAGE_SIZE - 1));
+			id++;
+		}
+		ptr += entry->size;
+	}
+
+	return 0;
+}
+
+static void __init acpi_process_ptct(void)
+{
+	if ((!acpi_table_parse(ACPI_SIG_PTCT, acpi_parse_ptct)) || (!acpi_table_parse(ACPI_SIG_RTCT, acpi_parse_ptct)))
+		x86_platform.is_untracked_pat_range = tcc_is_untracked_pat_range;
+}
+
 static void __init early_acpi_process_madt(void)
 {
 #ifdef CONFIG_X86_LOCAL_APIC
@@ -1722,6 +1844,11 @@ int __init acpi_boot_init(void)
 	acpi_table_parse(ACPI_SIG_HPET, acpi_parse_hpet);
 	if (IS_ENABLED(CONFIG_ACPI_BGRT) && !acpi_nobgrt)
 		acpi_table_parse(ACPI_SIG_BGRT, acpi_parse_bgrt);
+
+	/*
+	 * Process the Platform Tuning Configuration Table (PTCT), if present
+	 */
+	acpi_process_ptct();
 
 	if (!acpi_noirq)
 		x86_init.pci.init = pci_acpi_init;

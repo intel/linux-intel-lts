@@ -570,7 +570,7 @@ static int margining_run_write(void *data, u64 val)
 	 * CL states may interfere with lane margining so inform the user know
 	 * and bail out.
 	 */
-	if (tb_port_is_clx_enabled(port, TB_CL1 | TB_CL2)) {
+	if (tb_port_clx_is_enabled(port, TB_CL1 | TB_CL2)) {
 		tb_port_warn(port,
 			     "CL states are enabled, Disable them with clx=0 and re-connect\n");
 		ret = -EINVAL;
@@ -1159,7 +1159,10 @@ static void port_cap_show(struct tb_port *port, struct seq_file *s,
 		if (tb_port_is_pcie_down(port) || tb_port_is_pcie_up(port)) {
 			length = PORT_CAP_PCIE_LEN;
 		} else if (tb_port_is_dpin(port) || tb_port_is_dpout(port)) {
-			length = PORT_CAP_DP_LEN;
+			if (usb4_dp_port_bw_mode_supported(port))
+				length = PORT_CAP_DP_LEN + 1;
+			else
+				length = PORT_CAP_DP_LEN;
 		} else if (tb_port_is_usb3_down(port) ||
 			   tb_port_is_usb3_up(port)) {
 			length = PORT_CAP_USB3_LEN;

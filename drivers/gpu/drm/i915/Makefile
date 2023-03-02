@@ -36,6 +36,7 @@ i915-y += i915_driver.o \
 	  i915_drm_client.o \
 	  i915_config.o \
 	  i915_getparam.o \
+	  i915_hwmon.o \
 	  i915_ioctl.o \
 	  i915_irq.o \
 	  i915_mitigations.o \
@@ -46,6 +47,7 @@ i915-y += i915_driver.o \
 	  i915_suspend.o \
 	  i915_switcheroo.o \
 	  i915_sysfs.o \
+	  i915_sysrq.o \
 	  i915_utils.o \
 	  intel_device_info.o \
 	  intel_dram.o \
@@ -77,6 +79,10 @@ i915-$(CONFIG_DEBUG_FS) += \
 	i915_debugfs_params.o \
 	display/intel_display_debugfs.o \
 	display/intel_pipe_crc.o
+
+i915-$(CONFIG_DRM_I915_TRACK_WAKEREF) += \
+	intel_wakeref_tracker.o
+
 i915-$(CONFIG_PERF_EVENTS) += i915_pmu.o
 
 # "Graphics Technology" (aka we talk to the gpu)
@@ -184,6 +190,7 @@ i915-y += \
 	  i915_ttm_buddy_manager.o \
 	  i915_vma.o \
 	  i915_vma_resource.o \
+	  intel_pagefault.o \
 	  intel_wopcm.o
 
 # general-purpose microcontroller (GuC) support
@@ -208,6 +215,25 @@ i915-y += gt/uc/intel_uc.o \
 
 # graphics system controller (GSC) support
 i915-y += gt/intel_gsc.o
+
+# Virtualization support
+iov-y += \
+	i915_sriov.o \
+	i915_sriov_sysfs.o \
+	gt/iov/intel_iov.o \
+	gt/iov/intel_iov_debugfs.o \
+	gt/iov/intel_iov_event.o \
+	gt/iov/intel_iov_provisioning.o \
+	gt/iov/intel_iov_query.o \
+	gt/iov/intel_iov_relay.o \
+	gt/iov/intel_iov_service.o \
+	gt/iov/intel_iov_state.o \
+	gt/iov/intel_iov_sysfs.o
+i915-y += $(iov-y)
+
+iov-$(CONFIG_DRM_I915_SELFTEST) += \
+	gt/iov/selftests/iov_selftest_actions.o
+i915-y += $(iov-$(CONFIG_DRM_I915_SELFTEST))
 
 # modesetting core code
 i915-y += \
@@ -310,15 +336,18 @@ i915-y += \
 
 i915-y += i915_perf.o
 
-# Protected execution platform (PXP) support
-i915-$(CONFIG_DRM_I915_PXP) += \
+# Protected execution platform (PXP) support. Base support is required for HuC
+i915-y += \
 	pxp/intel_pxp.o \
+	pxp/intel_pxp_tee.o \
+	pxp/intel_pxp_huc.o
+
+i915-$(CONFIG_DRM_I915_PXP) += \
 	pxp/intel_pxp_cmd.o \
 	pxp/intel_pxp_debugfs.o \
 	pxp/intel_pxp_irq.o \
 	pxp/intel_pxp_pm.o \
-	pxp/intel_pxp_session.o \
-	pxp/intel_pxp_tee.o
+	pxp/intel_pxp_session.o
 
 # Post-mortem debug and GPU hang state capture
 i915-$(CONFIG_DRM_I915_CAPTURE_ERROR) += i915_gpu_error.o

@@ -146,7 +146,6 @@ enum intel_ppgtt_type {
 	/* Keep has_* in alphabetical order */ \
 	func(has_64bit_reloc); \
 	func(has_64k_pages); \
-	func(needs_compact_pt); \
 	func(gpu_reset_clobbers_display); \
 	func(has_reset_engine); \
 	func(has_3d_pipeline); \
@@ -171,6 +170,7 @@ enum intel_ppgtt_type {
 	func(has_rps); \
 	func(has_runtime_pm); \
 	func(has_snoop); \
+	func(has_sriov); \
 	func(has_coherent_ggtt); \
 	func(tuning_thread_rr_after_dep); \
 	func(unfenced_needs_alignment); \
