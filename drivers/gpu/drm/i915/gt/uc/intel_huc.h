@@ -63,8 +63,10 @@ int intel_huc_wait_for_auth_complete(struct intel_huc *huc,
 				     enum intel_huc_authentication_type type);
 bool intel_huc_is_authenticated(struct intel_huc *huc,
 				enum intel_huc_authentication_type type);
+bool intel_huc_is_fully_authenticated(struct intel_huc *huc);
 int intel_huc_check_status(struct intel_huc *huc);
 void intel_huc_update_auth_status(struct intel_huc *huc);
+int intel_huc_fw_load_and_auth_via_gsc_cs(struct intel_huc *huc);
 
 void intel_huc_register_gsc_notifier(struct intel_huc *huc, const struct bus_type *bus);
 void intel_huc_unregister_gsc_notifier(struct intel_huc *huc, const struct bus_type *bus);
