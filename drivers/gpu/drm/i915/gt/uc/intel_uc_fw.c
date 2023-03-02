@@ -109,8 +109,8 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 	fw_def(BROXTON,      0, guc_mmp(bxt,  70, 1, 1)) \
 	fw_def(SKYLAKE,      0, guc_mmp(skl,  70, 1, 1))
 
-#define INTEL_HUC_FIRMWARE_DEFS(fw_def, huc_raw, huc_mmp, huc_gsc) \
-	fw_def(METEORLAKE,   0, huc_gsc(mtl)) \
+#define INTEL_HUC_FIRMWARE_DEFS(fw_def, huc_raw, huc_mmp, huc_gsc, huc_gsc_mmp) \
+	fw_def(METEORLAKE,   0, huc_gsc_mmp(mtl, 8, 4, 5)) \
 	fw_def(DG2,          0, huc_gsc(dg2)) \
 	fw_def(ALDERLAKE_P,  0, huc_raw(tgl)) \
 	fw_def(ALDERLAKE_P,  0, huc_mmp(tgl,  7, 9, 3)) \
@@ -152,6 +152,14 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 	__stringify(minor_) "." \
 	__stringify(patch_) ".bin"
 
+#define __MAKE_UC_FW_PATH_MMPP(prefix_, name_, major_, minor_, patch_, postfix_) \
+	"i915/" \
+	__stringify(prefix_) "_" name_ "_" \
+	__stringify(major_) "." \
+	__stringify(minor_) "." \
+	__stringify(patch_) "_" \
+	postfix_ ".bin"
+
 #define __MAKE_UC_FW_PATH_MMPB(prefix_, name_, major_, minor_, patch_, build_) \
 	"i915/" \
 	__stringify(prefix_) "_" name_ "_" \
@@ -173,6 +181,9 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 #define MAKE_HUC_FW_PATH_GSC(prefix_) \
 	__MAKE_UC_FW_PATH_BLANK(prefix_, "huc_gsc")
 
+#define MAKE_HUC_FW_PATH_GSC_MMP(prefix_, major_, minor_, patch_) \
+	__MAKE_UC_FW_PATH_MMPP(prefix_, "huc", major_, minor_, patch_, "gsc")
+
 #define MAKE_HUC_FW_PATH_MMP(prefix_, major_, minor_, patch_) \
 	__MAKE_UC_FW_PATH_MMP(prefix_, "huc", major_, minor_, patch_)
 
@@ -188,7 +199,7 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 	MODULE_FIRMWARE(uc_);
 
 INTEL_GUC_FIRMWARE_DEFS(INTEL_UC_MODULE_FW, MAKE_GUC_FW_PATH_MAJOR, MAKE_GUC_FW_PATH_MMP)
-INTEL_HUC_FIRMWARE_DEFS(INTEL_UC_MODULE_FW, MAKE_HUC_FW_PATH_BLANK, MAKE_HUC_FW_PATH_MMP, MAKE_HUC_FW_PATH_GSC)
+INTEL_HUC_FIRMWARE_DEFS(INTEL_UC_MODULE_FW, MAKE_HUC_FW_PATH_BLANK, MAKE_HUC_FW_PATH_MMP, MAKE_HUC_FW_PATH_GSC, MAKE_HUC_FW_PATH_GSC_MMP)
 INTEL_GSC_FIRMWARE_DEFS(INTEL_UC_MODULE_FW, MAKE_GSC_FW_PATH)
 
 /*
@@ -239,6 +250,10 @@ struct __packed uc_fw_blob {
 #define HUC_FW_BLOB_GSC(prefix_) \
 	UC_FW_BLOB_NEW(0, 0, 0, true, MAKE_HUC_FW_PATH_GSC(prefix_))
 
+#define HUC_FW_BLOB_GSC_MMP(prefix_, major_, minor_, patch_) \
+	UC_FW_BLOB_NEW(major_, minor_, patch_, true, \
+		       MAKE_HUC_FW_PATH_GSC_MMP(prefix_, major_, minor_, patch_))
+
 #define GSC_FW_BLOB(prefix_, major_, minor_, patch_, build_) \
 	UC_FW_BLOB_NEW(major_, minor_, patch_, true, \
 		       MAKE_GSC_FW_PATH(prefix_, major_, minor_, patch_, build_))
@@ -266,7 +281,7 @@ static const struct uc_fw_platform_requirement blobs_guc[] = {
 };
 
 static const struct uc_fw_platform_requirement blobs_huc[] = {
-	INTEL_HUC_FIRMWARE_DEFS(MAKE_FW_LIST, HUC_FW_BLOB, HUC_FW_BLOB_MMP, HUC_FW_BLOB_GSC)
+	INTEL_HUC_FIRMWARE_DEFS(MAKE_FW_LIST, HUC_FW_BLOB, HUC_FW_BLOB_MMP, HUC_FW_BLOB_GSC, HUC_FW_BLOB_GSC_MMP)
 };
 
 static const struct uc_fw_platform_requirement blobs_gsc[] = {
