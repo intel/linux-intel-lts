@@ -7184,6 +7184,7 @@ int stmmac_dvr_probe(struct device *device,
 		     struct stmmac_resources *res)
 {
 	struct net_device *ndev = NULL;
+	struct fwnode_handle *fwnode;
 	struct stmmac_priv *priv;
 	u32 rxq;
 	int i, ret = 0;
@@ -7422,6 +7423,20 @@ int stmmac_dvr_probe(struct device *device,
 		ret = stmmac_xpcs_setup(priv->mii);
 		if (ret)
 			goto error_xpcs_setup;
+	}
+
+	/* For fixed-link setup, we clear xpcs_an_inband */
+	if (!fwnode)
+		fwnode = dev_fwnode(priv->device);
+
+	if (fwnode) {
+		struct fwnode_handle *fixed_node;
+
+		fixed_node = fwnode_get_named_child_node(fwnode, "fixed-link");
+		if (fixed_node)
+			priv->plat->mdio_bus_data->xpcs_an_inband = false;
+
+		fwnode_handle_put(fixed_node);
 	}
 
 	ret = stmmac_phy_setup(priv);
