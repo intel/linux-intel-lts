@@ -872,10 +872,8 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 			return;
 
 		oob_trap_notify(X86_TRAP_PF, regs);
-		if (!running_inband()) {
-			local_irq_disable_full();
-			return;
-		}
+		if (!running_inband())
+			goto out;
 
 		/*
 		 * To avoid leaking information about the kernel page table
@@ -896,7 +894,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		force_sig_fault(SIGSEGV, si_code, (void __user *)address);
 
 		local_irq_disable_full();
-
+	out:
 		oob_trap_unwind(X86_TRAP_PF, regs);
 
 		return;
@@ -1355,7 +1353,7 @@ void do_user_addr_fault(struct pt_regs *regs,
 	 */
 	oob_trap_notify(X86_TRAP_PF, regs);
 	if (!running_inband())
-		return;
+		goto out;
 
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);
 
