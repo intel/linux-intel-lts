@@ -47,10 +47,14 @@ static inline void arch_dovetail_switch_finish(bool enter_inband)
  * Pass the trap event to the companion core. Return true if running
  * in-band afterwards.
  */
-#define mark_cond_trap_entry(__trapnr, __regs)		\
-	({						\
-		oob_trap_notify(__trapnr, __regs);	\
-		running_inband();			\
+#define mark_cond_trap_entry(__trapnr, __regs)			\
+	({							\
+	  	bool __ret;					\
+		oob_trap_notify(__trapnr, __regs);		\
+		__ret = running_inband();			\
+		if (!__ret)					\
+			oob_trap_unwind(__trapnr, __regs);	\
+		__ret;						\
 	})
 
 /*
