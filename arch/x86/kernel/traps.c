@@ -174,6 +174,13 @@ bool mark_trap_entry(int trapnr, struct pt_regs *regs)
 		return true;
 	}
 
+	/*
+	 * If the oob core did not switch us inband, our caller is
+	 * expected to leave the trap handler immediately, so we may
+	 * notify the core about this right now.
+	 */
+	oob_trap_unwind(trapnr, regs);
+
 	return false;
 }
 
@@ -188,7 +195,13 @@ static __always_inline
 bool mark_trap_entry_raw(int trapnr, struct pt_regs *regs)
 {
 	oob_trap_notify(trapnr, regs);
-	return running_inband();
+
+	if (running_oob()) {
+		oob_trap_unwind(trapnr, regs);
+		return false;
+	}
+
+	return true;
 }
 
 static __always_inline
