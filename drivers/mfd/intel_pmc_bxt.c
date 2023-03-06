@@ -226,9 +226,22 @@ static ssize_t northpeak_store(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_WO(northpeak);
 
+static ssize_t ssrambase_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct intel_pmc_dev *pmc = dev_get_drvdata(dev);
+
+	if (pmc->telem_base && pmc->telem_base->start)
+		return sprintf(buf, "%llx\n", pmc->telem_base->start);
+	else
+		return sprintf(buf, "%x\n", 0);
+}
+
+static DEVICE_ATTR_RO(ssrambase);
+
 static struct attribute *intel_pmc_attrs[] = {
 	&dev_attr_northpeak.attr,
 	&dev_attr_simplecmd.attr,
+	&dev_attr_ssrambase.attr,
 	NULL
 };
 
