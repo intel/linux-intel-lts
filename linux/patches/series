@@ -1,8 +1,8 @@
-# CVE-2023-23559
-0001-wifi-rndis_wlan-Prevent-buffer-overflow-in-rndis_que.patch
-
 # CVE-2023-25012
 0001-HID-bigben_remove-manually-unregister-leds.patch
 0002-HID-asus_remove-manually-unregister-led.patch
 0003-HID-dualsense_remove-manually-unregister-leds.patch
 0004-HID-sony_remove-manually-unregister-leds.patch
+
+# CVE-2023-26545
+0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
