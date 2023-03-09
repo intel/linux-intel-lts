@@ -31,3 +31,9 @@
 
 # CVE-2023-0597
 0001-x86-mm-Randomize-per-cpu-entry-area.patch
+
+# CVE-2023-26545
+0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
+
+# CVE-2022-3707
+0001-drm-i915-gvt-fix-double-free-bug-in-split_2MB_gtt_en.patch
