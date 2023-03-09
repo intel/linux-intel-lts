@@ -86,3 +86,6 @@
 
 # CVE-2022-4129
 0001-l2tp-Serialize-access-to-sk_user_data-with-sk_callba.patch
+
+# CVE-2023-26545
+0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
