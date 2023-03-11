@@ -507,6 +507,7 @@ static void error_print_context(struct drm_i915_error_state_buf *m,
 		   ctx->guilty, ctx->active,
 		   ctx->total_runtime * period,
 		   mul_u32_u32(ctx->avg_runtime, period));
+	err_printf(m, "  context timeline seqno %u\n", ctx->hwsp_seqno);
 }
 
 static struct i915_vma_coredump *
@@ -1385,6 +1386,8 @@ static bool record_context(struct i915_gem_context_coredump *e,
 	e->sched_attr = ctx->sched;
 	e->guilty = atomic_read(&ctx->guilty_count);
 	e->active = atomic_read(&ctx->active_count);
+	e->hwsp_seqno = (rq->context->timeline && rq->context->timeline->hwsp_seqno) ?
+				*rq->context->timeline->hwsp_seqno : ~0U;
 
 	e->total_runtime = rq->context->runtime.total;
 	e->avg_runtime = ewma_runtime_read(&rq->context->runtime.avg);
