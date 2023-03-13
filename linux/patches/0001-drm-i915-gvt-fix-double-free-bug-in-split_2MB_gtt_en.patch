@@ -1,0 +1,62 @@
+From c9bbfa455a63ceed2cadf14f54f200447bb82030 Mon Sep 17 00:00:00 2001
+From: Zheng Wang <zyytlz.wz@163.com>
+Date: Fri, 30 Dec 2022 00:56:41 +0800
+Subject: [PATCH] drm/i915/gvt: fix double free bug in split_2MB_gtt_entry
+
+If intel_gvt_dma_map_guest_page failed, it will call
+ppgtt_invalidate_spt, which will finally free the spt.
+But the caller function ppgtt_populate_spt_by_guest_entry
+does not notice that, it will free spt again in its error
+path.
+
+Fix this by canceling the mapping of DMA address and freeing sub_spt.
+Besides, leave the handle of spt destroy to caller function instead
+of callee function when error occurs.
+
+Fixes: b901b252b6cf ("drm/i915/gvt: Add 2M huge gtt support")
+Signed-off-by: Zheng Wang <zyytlz.wz@163.com>
+Reviewed-by: Zhenyu Wang <zhenyuw@linux.intel.com>
+Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
+Link: http://patchwork.freedesktop.org/patch/msgid/20221229165641.1192455-1-zyytlz.wz@163.com
+---
+ drivers/gpu/drm/i915/gvt/gtt.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gvt/gtt.c b/drivers/gpu/drm/i915/gvt/gtt.c
+index 9c5cc2800975..c361d195bbfa 100644
+--- a/drivers/gpu/drm/i915/gvt/gtt.c
++++ b/drivers/gpu/drm/i915/gvt/gtt.c
+@@ -1214,10 +1214,8 @@ static int split_2MB_gtt_entry(struct intel_vgpu *vgpu,
+ 	for_each_shadow_entry(sub_spt, &sub_se, sub_index) {
+ 		ret = intel_gvt_dma_map_guest_page(vgpu, start_gfn + sub_index,
+ 						   PAGE_SIZE, &dma_addr);
+-		if (ret) {
+-			ppgtt_invalidate_spt(spt);
+-			return ret;
+-		}
++		if (ret)
++			goto err;
+ 		sub_se.val64 = se->val64;
+ 
+ 		/* Copy the PAT field from PDE. */
+@@ -1236,6 +1234,17 @@ static int split_2MB_gtt_entry(struct intel_vgpu *vgpu,
+ 	ops->set_pfn(se, sub_spt->shadow_page.mfn);
+ 	ppgtt_set_shadow_entry(spt, se, index);
+ 	return 0;
++err:
++	/* Cancel the existing addess mappings of DMA addr. */
++	for_each_present_shadow_entry(sub_spt, &sub_se, sub_index) {
++		gvt_vdbg_mm("invalidate 4K entry\n");
++		ppgtt_invalidate_pte(sub_spt, &sub_se);
++	}
++	/* Release the new allocated spt. */
++	trace_spt_change(sub_spt->vgpu->id, "release", sub_spt,
++		sub_spt->guest_page.gfn, sub_spt->shadow_page.type);
++	ppgtt_free_spt(sub_spt);
++	return ret;
+ }
+ 
+ static int split_64KB_gtt_entry(struct intel_vgpu *vgpu,
+-- 
+2.25.1
+
