@@ -1992,6 +1992,10 @@ static void tgl_whitelist_build(struct intel_engine_cs *engine)
 
 		/* Wa_1806527549:tgl */
 		whitelist_reg(w, HIZ_CHICKEN);
+
+		/* Required by recommended tuning setting (not a workaround) */
+		whitelist_reg(w, GEN11_COMMON_SLICE_CHICKEN3);
+
 		break;
 	default:
 		break;
@@ -2012,16 +2016,9 @@ static void dg1_whitelist_build(struct intel_engine_cs *engine)
 				  RING_FORCE_TO_NONPRIV_ACCESS_RD);
 }
 
-static void xehpsdv_whitelist_build(struct intel_engine_cs *engine)
-{
-	allow_read_ctx_timestamp(engine);
-}
-
 static void dg2_whitelist_build(struct intel_engine_cs *engine)
 {
 	struct i915_wa_list *w = &engine->whitelist;
-
-	allow_read_ctx_timestamp(engine);
 
 	switch (engine->class) {
 	case RENDER_CLASS:
@@ -2038,6 +2035,9 @@ static void dg2_whitelist_build(struct intel_engine_cs *engine)
 			whitelist_reg_ext(w, PS_INVOCATION_COUNT,
 					  RING_FORCE_TO_NONPRIV_ACCESS_RD |
 					  RING_FORCE_TO_NONPRIV_RANGE_4);
+
+		/* Required by recommended tuning setting (not a workaround) */
+		whitelist_mcr_reg(w, XEHP_COMMON_SLICE_CHICKEN3);
 
 		break;
 	case COMPUTE_CLASS:
@@ -2070,10 +2070,24 @@ static void blacklist_trtt(struct intel_engine_cs *engine)
 
 static void pvc_whitelist_build(struct intel_engine_cs *engine)
 {
-	allow_read_ctx_timestamp(engine);
-
 	/* Wa_16014440446:pvc */
 	blacklist_trtt(engine);
+}
+
+static void mtl_whitelist_build(struct intel_engine_cs *engine)
+{
+	struct i915_wa_list *w = &engine->whitelist;
+
+	switch (engine->class) {
+	case RENDER_CLASS:
+		/* Required by recommended tuning setting (not a workaround) */
+		whitelist_mcr_reg(w, XEHP_COMMON_SLICE_CHICKEN3);
+
+		break;
+	default:
+		break;
+	}
+
 }
 
 void intel_engine_init_whitelist(struct intel_engine_cs *engine)
@@ -2086,12 +2100,14 @@ void intel_engine_init_whitelist(struct intel_engine_cs *engine)
 
 	wa_init_start(w, "whitelist", engine->name);
 
-	if (IS_PONTEVECCHIO(i915))
+	if (IS_METEORLAKE(i915))
+		mtl_whitelist_build(engine);
+	else if (IS_PONTEVECCHIO(i915))
 		pvc_whitelist_build(engine);
 	else if (IS_DG2(i915))
 		dg2_whitelist_build(engine);
 	else if (IS_XEHPSDV(i915))
-		xehpsdv_whitelist_build(engine);
+		; /* none needed */
 	else if (IS_DG1(i915))
 		dg1_whitelist_build(engine);
 	else if (GRAPHICS_VER(i915) == 12)
