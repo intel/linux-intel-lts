@@ -37,11 +37,11 @@
 # CVE-2023-20928
 0001-android-binder-stop-saving-a-pointer-to-the-VMA.patch
 
-# CVE-2022-4129
-0001-l2tp-Serialize-access-to-sk_user_data-with-sk_callba.patch
-
 # CVE-2022-3108
 0001-drm-amdkfd-Check-for-null-pointer-after-calling-kmem.patch
 
-# CVE-2023-23559
-0001-wifi-rndis_wlan-Prevent-buffer-overflow-in-rndis_que.patch
+# CVE-2023-0597
+0001-x86-mm-Randomize-per-cpu-entry-area.patch
+
+# CVE-2023-26545
+0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
