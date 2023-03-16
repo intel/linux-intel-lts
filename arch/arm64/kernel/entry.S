@@ -799,7 +799,8 @@ SYM_CODE_START_LOCAL(ret_to_user)
 	bl	trace_hardirqs_off
 #endif
 	ldr	x19, [tsk, #TSK_TI_FLAGS]
-	and	x2, x19, #_TIF_WORK_MASK
+	mov	x2, #_TIF_WORK_MASK
+	and	x2, x19, x2
 	cbnz	x2, work_pending
 finish_ret_to_user:
 	user_enter_irqoff
