@@ -1,0 +1,77 @@
+From cb0f04feea72cb3b0a107cdb5808a69459f235cc Mon Sep 17 00:00:00 2001
+From: Jakub Sitnicki <jakub@cloudflare.com>
+Date: Mon, 14 Nov 2022 20:16:19 +0100
+Subject: [PATCH] l2tp: Serialize access to sk_user_data with sk_callback_lock
+
+sk->sk_user_data has multiple users, which are not compatible with each
+other. Writers must synchronize by grabbing the sk->sk_callback_lock.
+
+l2tp currently fails to grab the lock when modifying the underlying tunnel
+socket fields. Fix it by adding appropriate locking.
+
+We err on the side of safety and grab the sk_callback_lock also inside the
+sk_destruct callback overridden by l2tp, even though there should be no
+refs allowing access to the sock at the time when sk_destruct gets called.
+
+v4:
+- serialize write to sk_user_data in l2tp sk_destruct
+
+v3:
+- switch from sock lock to sk_callback_lock
+- document write-protection for sk_user_data
+
+v2:
+- update Fixes to point to origin of the bug
+- use real names in Reported/Tested-by tags
+
+Cc: Tom Parkin <tparkin@katalix.com>
+Fixes: 3557baabf280 ("[L2TP]: PPP over L2TP driver core")
+Reported-by: Haowei Yan <g1042620637@gmail.com>
+Signed-off-by: Jakub Sitnicki <jakub@cloudflare.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ include/net/sock.h   | 2 +-
+ net/l2tp/l2tp_core.c | 4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/include/net/sock.h b/include/net/sock.h
+index f9742d12b6ee..4f9f33cb9ac4 100644
+--- a/include/net/sock.h
++++ b/include/net/sock.h
+@@ -297,7 +297,7 @@ struct sock_common {
+   *	@sk_tskey: counter to disambiguate concurrent tstamp requests
+   *	@sk_zckey: counter to order MSG_ZEROCOPY notifications
+   *	@sk_socket: Identd and reporting IO signals
+-  *	@sk_user_data: RPC layer private data
++  *	@sk_user_data: RPC layer private data. Write-protected by @sk_callback_lock.
+   *	@sk_frag: cached page frag
+   *	@sk_peek_off: current peek_offset value
+   *	@sk_send_head: front of stuff to transmit
+diff --git a/net/l2tp/l2tp_core.c b/net/l2tp/l2tp_core.c
+index 84d5650239d9..5b7b8821e069 100644
+--- a/net/l2tp/l2tp_core.c
++++ b/net/l2tp/l2tp_core.c
+@@ -1286,8 +1286,10 @@ static void l2tp_tunnel_destruct(struct sock *sk)
+ 	}
+ 
+ 	/* Remove hooks into tunnel socket */
++	write_lock_bh(&sk->sk_callback_lock);
+ 	sk->sk_destruct = tunnel->old_sk_destruct;
+ 	sk->sk_user_data = NULL;
++	write_unlock_bh(&sk->sk_callback_lock);
+ 
+ 	/* Remove the tunnel struct from the tunnel list */
+ 	pn = l2tp_pernet(tunnel->l2tp_net);
+@@ -1650,7 +1652,9 @@ int l2tp_tunnel_create(struct net *net, int fd, int version, u32 tunnel_id, u32
+ 
+ 		setup_udp_tunnel_sock(net, sock, &udp_cfg);
+ 	} else {
++		write_lock_bh(&sk->sk_callback_lock);
+ 		sk->sk_user_data = tunnel;
++		write_unlock_bh(&sk->sk_callback_lock);
+ 	}
+ 
+ 	/* Hook on the tunnel socket destructor so that we can cleanup
+-- 
+2.25.1
+
