@@ -1614,12 +1614,12 @@ static int ggtt_probe_hw(struct i915_ggtt *ggtt, struct intel_gt *gt)
 
 	if (IS_SRIOV_VF(i915))
 		ret = gen12vf_ggtt_probe(ggtt);
-	else if (GRAPHICS_VER(i915) >= 8)
-		ret = gen8_gmch_probe(ggtt);
-	else if (GRAPHICS_VER(i915) >= 6)
+	else if (GRAPHICS_VER(i915) <= 5)
+		ret = intel_ggtt_gmch_probe(ggtt);
+	else if (GRAPHICS_VER(i915) < 8)
 		ret = gen6_gmch_probe(ggtt);
 	else
-		ret = intel_ggtt_gmch_probe(ggtt);
+		ret = gen8_gmch_probe(ggtt);
 
 	if (ret) {
 		dma_resv_fini(&ggtt->vm._resv);
