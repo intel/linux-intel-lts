@@ -35,6 +35,8 @@
 #include "intel_sa_media.h"
 #include "intel_gt_sysfs.h"
 #include "intel_uncore.h"
+#include "iov/intel_iov.h"
+#include "iov/intel_iov_sysfs.h"
 #include "shmem_utils.h"
 
 void intel_gt_common_init_early(struct intel_gt *gt)
@@ -125,9 +127,15 @@ int intel_gt_assign_ggtt(struct intel_gt *gt)
 
 int intel_gt_init_mmio(struct intel_gt *gt)
 {
-	intel_gt_init_clock_frequency(gt);
+	int ret;
 
+	ret = intel_iov_init_mmio(&gt->iov);
+	if (ret)
+		return ret;
+
+	intel_gt_init_clock_frequency(gt);
 	intel_uc_init_mmio(&gt->uc);
+
 	intel_sseu_info_init(gt);
 	intel_gt_mcr_init(gt);
 
@@ -213,6 +221,13 @@ int intel_gt_init_hw(struct intel_gt *gt)
 
 	intel_mocs_init(gt);
 
+	ret = intel_iov_init_hw(&gt->iov);
+	if (unlikely(ret)) {
+		i915_probe_error(i915, "Enabling IOV failed (%pe)\n",
+				 ERR_PTR(ret));
+		goto out;
+	}
+
 out:
 	intel_uncore_forcewake_put(uncore, FORCEWAKE_ALL);
 	return ret;
@@ -241,6 +256,9 @@ intel_gt_clear_error_registers(struct intel_gt *gt,
 	struct drm_i915_private *i915 = gt->i915;
 	struct intel_uncore *uncore = gt->uncore;
 	u32 eir;
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	if (GRAPHICS_VER(i915) != 2)
 		intel_uncore_write(uncore, PGTBL_ER, 0);
@@ -386,6 +404,9 @@ void intel_gt_check_and_clear_faults(struct intel_gt *gt)
 {
 	struct drm_i915_private *i915 = gt->i915;
 
+	if (IS_SRIOV_VF(i915))
+		return;
+
 	/* From GEN8 onwards we only have one 'All Engine Fault Register' */
 	if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 50))
 		xehp_check_faults(gt);
@@ -455,6 +476,7 @@ void intel_gt_driver_register(struct intel_gt *gt)
 
 	intel_gt_debugfs_register(gt);
 	intel_gt_sysfs_register(gt);
+	intel_iov_sysfs_setup(&gt->iov);
 }
 
 static int intel_gt_init_scratch(struct intel_gt *gt, unsigned int size)
@@ -698,10 +720,14 @@ int intel_gt_init(struct intel_gt *gt)
 	 */
 	intel_uncore_forcewake_get(gt->uncore, FORCEWAKE_ALL);
 
+	err = intel_iov_init(&gt->iov);
+	if (unlikely(err))
+		goto out_fw;
+
 	err = intel_gt_init_scratch(gt,
 				    GRAPHICS_VER(gt->i915) == 2 ? SZ_256K : SZ_4K);
 	if (err)
-		goto out_fw;
+		goto err_iov;
 
 	intel_gt_pm_init(gt);
 
@@ -728,6 +754,10 @@ int intel_gt_init(struct intel_gt *gt)
 	err = intel_gt_init_hwconfig(gt);
 	if (err)
 		gt_err(gt, "Failed to retrieve hwconfig table: %pe\n", ERR_PTR(err));
+
+	err = intel_iov_init_late(&gt->iov);
+	if (err)
+		goto err_gt;
 
 	err = __engines_record_defaults(gt);
 	if (err)
@@ -757,6 +787,8 @@ err_engines:
 err_pm:
 	intel_gt_pm_fini(gt);
 	intel_gt_fini_scratch(gt);
+err_iov:
+	intel_iov_fini(&gt->iov);
 out_fw:
 	if (err)
 		intel_gt_set_wedged_on_init(gt);
@@ -766,6 +798,10 @@ out_fw:
 
 void intel_gt_driver_remove(struct intel_gt *gt)
 {
+	intel_gt_fini_clock_frequency(gt);
+
+	intel_iov_fini_hw(&gt->iov);
+
 	__intel_gt_disable(gt);
 
 	intel_migrate_fini(&gt->migrate);
@@ -779,6 +815,9 @@ void intel_gt_driver_remove(struct intel_gt *gt)
 void intel_gt_driver_unregister(struct intel_gt *gt)
 {
 	intel_wakeref_t wakeref;
+
+	if (!gt->i915->drm.unplugged)
+		intel_iov_sysfs_teardown(&gt->iov);
 
 	intel_gt_sysfs_unregister(gt);
 	intel_rps_driver_unregister(&gt->rps);
@@ -812,6 +851,7 @@ void intel_gt_driver_release(struct intel_gt *gt)
 	intel_gt_fini_scratch(gt);
 	intel_gt_fini_buffer_pool(gt);
 	intel_gt_fini_hwconfig(gt);
+	intel_iov_fini(&gt->iov);
 }
 
 void intel_gt_driver_late_release_all(struct drm_i915_private *i915)
@@ -823,6 +863,7 @@ void intel_gt_driver_late_release_all(struct drm_i915_private *i915)
 	rcu_barrier();
 
 	for_each_gt(gt, i915, id) {
+		intel_iov_release(&gt->iov);
 		intel_uc_driver_late_release(&gt->uc);
 		intel_gt_fini_requests(gt);
 		intel_gt_fini_reset(gt);
@@ -861,6 +902,8 @@ static int intel_gt_tile_setup(struct intel_gt *gt, phys_addr_t phys_addr)
 		return ret;
 
 	gt->phys_addr = phys_addr;
+
+	intel_iov_init_early(&gt->iov);
 
 	return 0;
 }
@@ -1188,7 +1231,10 @@ void intel_gt_invalidate_tlb(struct intel_gt *gt, u32 seqno)
 		if (tlb_seqno_passed(gt, seqno))
 			goto unlock;
 
-		mmio_invalidate_full(gt);
+		if (IS_SRIOV_VF(gt->i915))
+			gt_WARN_ON_ONCE(gt, "No GUC TLB invalidation yet!");
+		else
+			mmio_invalidate_full(gt);
 
 		write_seqcount_invalidate(&gt->tlb.seqno);
 unlock:

@@ -342,6 +342,15 @@ static void intel_ipver_early_init(struct drm_i915_private *i915)
 		return;
 	}
 
+	/* VF can't access IPVER registers directly */
+	if (IS_SRIOV_VF(i915)) {
+		/* 14018060378 not ready yet, use hardcoded values from INTEL_INFO */
+		drm_info(&i915->drm, "Beware, driver is using hardcoded IPVER values!\n");
+		drm_WARN_ON(&i915->drm, RUNTIME_INFO(i915)->graphics.ip.ver < 12);
+		drm_WARN_ON(&i915->drm, !RUNTIME_INFO(i915)->media.ip.ver);
+		return;
+	}
+
 	ip_ver_read(i915, i915_mmio_reg_offset(GMD_ID_GRAPHICS),
 		    &runtime->graphics.ip);
 	/* Wa_22012778468 */
@@ -507,8 +516,10 @@ void intel_device_info_runtime_init(struct drm_i915_private *dev_priv)
 		runtime->ppgtt_type = INTEL_PPGTT_NONE;
 	}
 
-	runtime->rawclk_freq = intel_read_rawclk(dev_priv);
-	drm_dbg(&dev_priv->drm, "rawclk rate: %d kHz\n", runtime->rawclk_freq);
+	if (!IS_SRIOV_VF(dev_priv)) {
+		runtime->rawclk_freq = intel_read_rawclk(dev_priv);
+		drm_dbg(&dev_priv->drm, "rawclk rate: %d kHz\n", runtime->rawclk_freq);
+	}
 
 	if (!HAS_DISPLAY(dev_priv)) {
 		dev_priv->drm.driver_features &= ~(DRIVER_MODESET |

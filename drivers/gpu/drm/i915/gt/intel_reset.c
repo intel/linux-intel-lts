@@ -659,6 +659,50 @@ skip_reset:
 	return ret;
 }
 
+static int gen12_vf_reset(struct intel_gt *gt,
+			  intel_engine_mask_t mask,
+			  unsigned int retry)
+{
+	struct intel_uncore *uncore = gt->uncore;
+	i915_reg_t notify_reg = gt->uc.guc.notify_reg;
+	i915_reg_t send_reg = _MMIO(gt->uc.guc.send_regs.base);
+	u32 request[VF2GUC_VF_RESET_REQUEST_MSG_LEN] = {
+		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_VF2GUC_VF_RESET),
+	};
+	u32 response;
+	int err;
+
+	/* No engine reset since VFs always run with GuC submission enabled */
+	if (GEM_WARN_ON(mask != ALL_ENGINES))
+		return -ENODEV;
+
+	/*
+	 * Can't use intel_guc_send_mmio() since it uses mutex,
+	 * but we don't expect any other MMIO action in flight,
+	 * as we use them only during init and teardown.
+	 */
+	GEM_WARN_ON(mutex_is_locked(&gt->uc.guc.send_mutex));
+
+	intel_uncore_write_fw(uncore, send_reg, request[0]);
+	intel_uncore_write_fw(uncore, notify_reg, GUC_SEND_TRIGGER);
+
+	err = __intel_wait_for_register_fw(uncore, send_reg,
+					   GUC_HXG_MSG_0_ORIGIN,
+					   FIELD_PREP(GUC_HXG_MSG_0_ORIGIN,
+						      GUC_HXG_ORIGIN_GUC),
+					   1000, 0, &response);
+	if (unlikely(err)) {
+		drm_dbg(&gt->i915->drm, "VF reset not completed (%pe)\n",
+			ERR_PTR(err));
+	} else if (FIELD_GET(GUC_HXG_MSG_0_TYPE, response) != GUC_HXG_TYPE_RESPONSE_SUCCESS) {
+		drm_dbg(&gt->i915->drm, "VF reset not completed (%#x)\n",
+			response);
+	}
+	return 0;
+}
+
 static int mock_reset(struct intel_gt *gt,
 		      intel_engine_mask_t mask,
 		      unsigned int retry)
@@ -676,6 +720,8 @@ static reset_func intel_get_gpu_reset(const struct intel_gt *gt)
 
 	if (is_mock_gt(gt))
 		return mock_reset;
+	else if (IS_SRIOV_VF(i915))
+		return gen12_vf_reset;
 	else if (GRAPHICS_VER(i915) >= 8)
 		return gen8_reset_engines;
 	else if (GRAPHICS_VER(i915) >= 6)
@@ -702,7 +748,7 @@ static int __reset_guc(struct intel_gt *gt)
 
 static bool needs_wa_14015076503(struct intel_gt *gt, intel_engine_mask_t engine_mask)
 {
-	if (!IS_METEORLAKE(gt->i915) || !HAS_ENGINE(gt, GSC0))
+	if (!IS_METEORLAKE(gt->i915) || !HAS_ENGINE(gt, GSC0) || IS_SRIOV_VF(gt->i915))
 		return false;
 
 	if (!__HAS_ENGINE(engine_mask, GSC0))

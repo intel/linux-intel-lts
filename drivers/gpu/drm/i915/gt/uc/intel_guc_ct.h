@@ -107,12 +107,13 @@ int intel_guc_ct_enable(struct intel_guc_ct *ct);
 void intel_guc_ct_disable(struct intel_guc_ct *ct);
 void intel_guc_ct_sanitize(struct intel_guc_ct *ct);
 
-static inline bool intel_guc_ct_enabled(struct intel_guc_ct *ct)
+static inline bool intel_guc_ct_enabled(const struct intel_guc_ct *ct)
 {
 	return ct->enabled;
 }
 
 #define INTEL_GUC_CT_SEND_NB		BIT(31)
+#define INTEL_GUC_CT_SEND_SELFTEST	BIT(30)
 #define INTEL_GUC_CT_SEND_G2H_DW_SHIFT	0
 #define INTEL_GUC_CT_SEND_G2H_DW_MASK	(0xff << INTEL_GUC_CT_SEND_G2H_DW_SHIFT)
 #define MAKE_SEND_FLAGS(len) ({ \

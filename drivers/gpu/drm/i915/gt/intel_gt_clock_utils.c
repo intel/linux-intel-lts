@@ -190,9 +190,18 @@ void intel_gt_init_clock_frequency(struct intel_gt *gt)
 			 USEC_PER_SEC));
 }
 
+void intel_gt_fini_clock_frequency(struct intel_gt *gt)
+{
+	/* Clock registers no longer accessible, stop checking */
+	gt->clock_frequency = 0;
+}
+
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 void intel_gt_check_clock_frequency(const struct intel_gt *gt)
 {
+	if (!gt->clock_frequency)
+		return;
+
 	if (gt->clock_frequency != read_clock_frequency(gt->uncore)) {
 		gt_err(gt, "GT clock frequency changed, was %uHz, now %uHz!\n",
 		       gt->clock_frequency,

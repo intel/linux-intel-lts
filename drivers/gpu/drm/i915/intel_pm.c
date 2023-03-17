@@ -5092,7 +5092,9 @@ CG_FUNCS(nop);
  */
 void intel_init_clock_gating_hooks(struct drm_i915_private *dev_priv)
 {
-	if (IS_METEORLAKE(dev_priv))
+	if (IS_SRIOV_VF(dev_priv))
+		dev_priv->clock_gating_funcs = &nop_clock_gating_funcs;
+	else if (IS_METEORLAKE(dev_priv))
 		dev_priv->clock_gating_funcs = &nop_clock_gating_funcs;
 	else if (IS_PONTEVECCHIO(dev_priv))
 		dev_priv->clock_gating_funcs = &pvc_clock_gating_funcs;
@@ -5192,6 +5194,12 @@ static const struct intel_wm_funcs nop_funcs = {
 /* Set up chip specific power management-related functions */
 void intel_init_pm(struct drm_i915_private *dev_priv)
 {
+	if (IS_SRIOV_VF(dev_priv)) {
+		/* XXX */
+		dev_priv->display.funcs.wm = &nop_funcs;
+		return;
+	}
+
 	if (DISPLAY_VER(dev_priv) >= 9) {
 		skl_wm_init(dev_priv);
 		return;

@@ -78,6 +78,16 @@ static int i915_capabilities(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int sriov_info_show(struct seq_file *m, void *data)
+{
+	struct drm_i915_private *i915 = node_to_i915(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	i915_sriov_print_info(i915, &p);
+
+	return 0;
+}
+
 static char get_tiling_flag(struct drm_i915_gem_object *obj)
 {
 	switch (i915_gem_object_get_tiling(obj)) {
@@ -792,6 +802,14 @@ static const struct drm_info_list i915_debugfs_list[] = {
 	{"i915_wa_registers", i915_wa_registers, 0},
 	{"i915_sseu_status", i915_sseu_status, 0},
 	{"i915_rps_boost_info", i915_rps_boost_info, 0},
+	{"i915_sriov_info", sriov_info_show, 0},
+};
+
+static const struct drm_info_list i915_vf_debugfs_list[] = {
+	{"i915_capabilities", i915_capabilities, 0},
+	{"i915_gem_objects", i915_gem_object_info, 0},
+	{"i915_engine_info", i915_engine_info, 0},
+	{"i915_sriov_info", sriov_info_show, 0},
 };
 
 static const struct i915_debugfs_files {
@@ -805,26 +823,48 @@ static const struct i915_debugfs_files {
 	{"i915_error_state", &i915_error_state_fops},
 	{"i915_gpu_info", &i915_gpu_info_fops},
 #endif
+}, i915_vf_debugfs_files[] = {
+	{"i915_wedged", &i915_wedged_fops},
+	{"i915_gem_drop_caches", &i915_drop_caches_fops},
 };
 
 void i915_debugfs_register(struct drm_i915_private *dev_priv)
 {
 	struct drm_minor *minor = dev_priv->drm.primary;
+	const struct drm_info_list *debugfs_list;
+	const struct i915_debugfs_files *debugfs_files;
+	size_t debugfs_files_size;
+	size_t debugfs_list_size;
 	int i;
 
 	i915_debugfs_params(dev_priv);
 
 	debugfs_create_file("i915_forcewake_user", S_IRUSR, minor->debugfs_root,
 			    to_i915(minor->dev), &i915_forcewake_fops);
-	for (i = 0; i < ARRAY_SIZE(i915_debugfs_files); i++) {
-		debugfs_create_file(i915_debugfs_files[i].name,
+
+	if (IS_SRIOV_VF(dev_priv)) {
+		debugfs_files = i915_vf_debugfs_files;
+		debugfs_list = i915_vf_debugfs_list;
+
+		debugfs_files_size = ARRAY_SIZE(i915_vf_debugfs_files);
+		debugfs_list_size = ARRAY_SIZE(i915_vf_debugfs_list);
+	} else {
+		debugfs_files = i915_debugfs_files;
+		debugfs_list = i915_debugfs_list;
+
+		debugfs_files_size = ARRAY_SIZE(i915_debugfs_files);
+		debugfs_list_size = ARRAY_SIZE(i915_debugfs_list);
+	}
+
+	for (i = 0; i < debugfs_files_size; i++) {
+		debugfs_create_file(debugfs_files[i].name,
 				    S_IRUGO | S_IWUSR,
 				    minor->debugfs_root,
 				    to_i915(minor->dev),
-				    i915_debugfs_files[i].fops);
+				    debugfs_files[i].fops);
 	}
 
-	drm_debugfs_create_files(i915_debugfs_list,
-				 ARRAY_SIZE(i915_debugfs_list),
+	drm_debugfs_create_files(debugfs_list,
+				 debugfs_list_size,
 				 minor->debugfs_root, minor);
 }
