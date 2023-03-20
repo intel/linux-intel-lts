@@ -96,6 +96,11 @@ int intel_pmdemand_init(struct drm_i915_private *i915)
 		/* Wa_14016740474 */
 		intel_de_rmw(i915, XELPD_CHICKEN_DCPR_3, 0, DMD_RSP_TIMEOUT_DISABLE);
 
+	if (IS_MTL_DISPLAY_STEP(i915, STEP_A0, STEP_C0))
+		/* Wa_14016740474 */
+		intel_de_rmw(i915, XELPD_CHICKEN_DCPR_3, 0,
+			     DMD_RSP_TIMEOUT_DISABLE);
+
 	return 0;
 }
 
