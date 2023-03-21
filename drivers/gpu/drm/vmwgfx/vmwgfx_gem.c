@@ -132,7 +132,7 @@ int vmw_gem_object_create_with_handle(struct vmw_private *dev_priv,
 	if (ret != 0)
 		goto out_no_bo;
 
-	(*p_vbo)->base.base.funcs = &vmw_gem_object_funcs;
+	(*p_vbo)->tbo.base.funcs = &vmw_gem_object_funcs;
 
 	ret = drm_gem_handle_create(filp, &(*p_vbo)->tbo.base, handle);
 out_no_bo:
@@ -162,7 +162,7 @@ int vmw_gem_object_create_ioctl(struct drm_device *dev, void *data,
 	rep->cur_gmr_id = handle;
 	rep->cur_gmr_offset = 0;
 	/* drop reference from allocate - handle holds it now */
-	drm_gem_object_put(&vbo->base.base);
+	drm_gem_object_put(&vbo->tbo.base);
 out_no_bo:
 	return ret;
 }

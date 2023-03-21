@@ -78,12 +78,7 @@ static int vmw_bo_pin_in_placement(struct vmw_private *dev_priv,
 	if (unlikely(ret != 0))
 		goto err;
 
-	if (buf->base.pin_count > 0)
-		ret = ttm_resource_compat(bo->resource, placement)
-			? 0 : -EINVAL;
-	else
-		ret = ttm_bo_validate(bo, placement, &ctx);
-
+	ret = ttm_bo_validate(bo, placement, &ctx);
 	if (!ret)
 		vmw_bo_pin_reserved(buf, true);
 
@@ -505,7 +500,7 @@ static int vmw_user_bo_synccpu_release(struct drm_file *filp,
 		ttm_bo_put(&vmw_bo->tbo);
 	}
 
-	drm_gem_object_put(&vmw_bo->base.base);
+	drm_gem_object_put(&vmw_bo->tbo.base);
 	return ret;
 }
 
@@ -546,7 +541,7 @@ int vmw_user_bo_synccpu_ioctl(struct drm_device *dev, void *data,
 
 		ret = vmw_user_bo_synccpu_grab(vbo, arg->flags);
 		vmw_bo_unreference(&vbo);
-		drm_gem_object_put(&vbo->base.base);
+		drm_gem_object_put(&vbo->tbo.base);
 		if (unlikely(ret != 0)) {
 			if (ret == -ERESTARTSYS || ret == -EBUSY)
 				return -EBUSY;
@@ -700,7 +695,7 @@ int vmw_dumb_create(struct drm_file *file_priv,
 						args->size, &args->handle,
 						&vbo);
 	/* drop reference from allocate - handle holds it now */
-	drm_gem_object_put(&vbo->base.base);
+	drm_gem_object_put(&vbo->tbo.base);
 	return ret;
 }
 

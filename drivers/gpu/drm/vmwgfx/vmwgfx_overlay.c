@@ -53,12 +53,6 @@ struct vmw_overlay {
 	struct vmw_stream stream[VMW_MAX_NUM_STREAMS];
 };
 
-static inline struct vmw_overlay *vmw_overlay(struct drm_device *dev)
-{
-	struct vmw_private *dev_priv = vmw_priv(dev);
-	return dev_priv ? dev_priv->overlay_priv : NULL;
-}
-
 struct vmw_escape_header {
 	uint32_t cmd;
 	SVGAFifoCmdEscape body;
@@ -458,7 +452,7 @@ int vmw_overlay_ioctl(struct drm_device *dev, void *data,
 	ret = vmw_overlay_update_stream(dev_priv, buf, arg, true);
 
 	vmw_bo_unreference(&buf);
-	drm_gem_object_put(&buf->base.base);
+	drm_gem_object_put(&buf->tbo.base);
 
 out_unlock:
 	mutex_unlock(&overlay->mutex);
