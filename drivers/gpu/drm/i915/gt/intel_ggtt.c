@@ -223,17 +223,6 @@ static void guc_ggtt_invalidate(struct i915_ggtt *ggtt)
 	}
 }
 
-// FIXME! MISSING!
-enum intel_guc_tlb_inval_mode {
-	INTEL_GUC_TLB_INVAL_MODE_HEAVY = 0x0,
-	INTEL_GUC_TLB_INVAL_MODE_LITE = 0x1,
-};
-int intel_guc_invalidate_tlb_guc(struct intel_guc *guc, enum intel_guc_tlb_inval_mode mode)
-{
-	return -ENOTTY;
-}
-// FIXME! MISSING!
-
 static void gen12vf_ggtt_invalidate(struct i915_ggtt *ggtt)
 {
 	intel_wakeref_t wakeref;

@@ -16,6 +16,7 @@
 #include "intel_context.h"
 #include "intel_gt.h"
 #include "intel_ring.h"
+#include "intel_tlb.h"
 
 #include "selftests/igt_flush_test.h"
 #include "selftests/i915_random.h"
@@ -386,4 +387,59 @@ int intel_tlb_live_selftests(struct drm_i915_private *i915)
 	}
 
 	return 0;
+}
+
+static int tlb_page_size(void *arg)
+{
+	int start, size, offset;
+
+	for (start = 0; start < 57; start++) {
+		for (size = 0; size <= 57 - start; size++) {
+			for (offset = 0; offset <= size; offset++) {
+				u64 len = BIT(size);
+				u64 addr = BIT(start) + len - BIT(offset);
+				u64 expected_start = addr;
+				u64 expected_end = addr + len - 1;
+				int err = 0;
+
+				if (addr + len < addr)
+					continue;
+
+				len = tlb_page_selective_size(&addr, len);
+				if (addr > expected_start) {
+					pr_err("(start:%d, size:%d, offset:%d, range:[%llx, %llx]) "
+						"invalidate range:[%llx + %llx] after start:%llx\n",
+					       start, size, offset,
+					       expected_start, expected_end,
+					       addr, len,
+					       expected_start);
+					err = -EINVAL;
+				}
+
+				if (addr + len < expected_end) {
+					pr_err("(start:%d, size:%d, offset:%d, range:[%llx, %llx]) "
+						"invalidate range:[%llx + %llx] before end:%llx\n",
+					       start, size, offset,
+					       expected_start, expected_end,
+					       addr, len,
+					       expected_end);
+					err = -EINVAL;
+				}
+
+				if (err)
+					return err;
+			}
+		}
+	}
+
+	return 0;
+}
+
+int intel_tlb_mock_selftests(void)
+{
+	static const struct i915_subtest tests[] = {
+		SUBTEST(tlb_page_size),
+	};
+
+	return i915_subtests(tests, NULL);
 }

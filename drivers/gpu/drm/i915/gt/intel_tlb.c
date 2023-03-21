@@ -12,6 +12,7 @@
 #include "intel_gt_print.h"
 #include "intel_gt_regs.h"
 #include "intel_tlb.h"
+#include "uc/intel_guc.h"
 
 struct reg_and_bit {
 	union {
@@ -212,19 +213,55 @@ void intel_gt_invalidate_tlb_full(struct intel_gt *gt, u32 seqno)
 		return;
 
 	with_intel_gt_pm_if_awake(gt, wakeref) {
+		struct intel_guc *guc = &gt->uc.guc;
+
 		mutex_lock(&gt->tlb.invalidate_lock);
 		if (tlb_seqno_passed(gt, seqno))
 			goto unlock;
 
-		if (IS_SRIOV_VF(gt->i915))
-			gt_WARN_ON_ONCE(gt, "No GUC TLB invalidation yet!");
-		else
+		if (intel_guc_invalidate_tlb_full(guc, INTEL_GUC_TLB_INVAL_MODE_HEAVY) < 0)
 			mmio_invalidate_full(gt);
 
 		write_seqcount_invalidate(&gt->tlb.seqno);
 unlock:
 		mutex_unlock(&gt->tlb.invalidate_lock);
 	}
+}
+
+static u64 tlb_page_selective_size(u64 *addr, u64 length)
+{
+	u64 start, end, align;
+
+	if (length < SZ_4K)
+		length = SZ_4K;
+
+	align = roundup_pow_of_two(length);
+
+	/*
+	 * We need to invalidate a higher granularity if start address is not
+	 * aligned to length. When start is not aligned with length we need to
+	 * find the length large enough to create an address mask covering the
+	 * required range.
+	 */
+	start = ALIGN_DOWN(*addr, align);
+	end = ALIGN(*addr + length, align);
+	length = align;
+	while (start + length < end) {
+		length <<= 1;
+		start = ALIGN_DOWN(*addr, length);
+	}
+
+	/*
+	 * Minimum invalidation size for a 2MB page that the hardware expects is
+	 * 16MB
+	 */
+	if (length >= SZ_2M) {
+		length = max_t(u64, SZ_16M, length);
+		start = ALIGN_DOWN(*addr, length);
+	}
+	*addr = start;
+
+	return length;
 }
 
 void intel_gt_init_tlb(struct intel_gt *gt)

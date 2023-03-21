@@ -3050,13 +3050,14 @@ static void gen12_oa_disable(struct i915_perf_stream *stream)
 		drm_err(&stream->perf->i915->drm,
 			"wait for OA to be disabled timed out\n");
 
-	intel_uncore_write(uncore, GEN12_OA_TLB_INV_CR, 1);
-	if (intel_wait_for_register(uncore,
-				    GEN12_OA_TLB_INV_CR,
-				    1, 0,
-				    50))
-		drm_err(&stream->perf->i915->drm,
-			"wait for OA tlb invalidate timed out\n");
+	if (!HAS_ASID_TLB_INVALIDATION(stream->perf->i915)) {
+		intel_uncore_write(uncore, GEN12_OA_TLB_INV_CR, 1);
+		if (intel_wait_for_register(uncore,
+					    GEN12_OA_TLB_INV_CR,
+					    1, 0,
+					    50))
+			DRM_ERROR("wait for OA tlb invalidate timed out\n");
+	}
 }
 
 /**
