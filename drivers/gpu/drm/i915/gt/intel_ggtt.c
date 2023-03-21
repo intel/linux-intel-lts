@@ -204,13 +204,37 @@ static void gen8_ggtt_invalidate(struct i915_ggtt *ggtt)
 	intel_uncore_write_fw(uncore, GFX_FLSH_CNTL_GEN6, GFX_FLSH_CNTL_EN);
 }
 
+static void guc_ggtt_ct_invalidate(struct i915_ggtt *ggtt)
+{
+	struct intel_gt *gt = ggtt->vm.gt;
+	struct intel_uncore *uncore = gt->uncore;
+	intel_wakeref_t wakeref;
+
+	with_intel_runtime_pm_if_active(uncore->rpm, wakeref) {
+		struct intel_guc *guc = &gt->uc.guc;
+		int err = -ENODEV;
+
+		if (guc->ct.enabled)
+			err = intel_guc_invalidate_tlb_guc(guc, INTEL_GUC_TLB_INVAL_MODE_HEAVY);
+
+		if (err) {
+			intel_uncore_write_fw(uncore, GEN12_GUC_TLB_INV_DESC1,
+					      GEN12_GUC_TLB_INV_DESC1_INVALIDATE);
+			intel_uncore_write_fw(uncore, GEN12_GUC_TLB_INV_DESC0,
+					      GEN12_GUC_TLB_INV_DESC0_VALID);
+		}
+	}
+}
+
 static void guc_ggtt_invalidate(struct i915_ggtt *ggtt)
 {
 	struct drm_i915_private *i915 = ggtt->vm.i915;
 
 	gen8_ggtt_invalidate(ggtt);
 
-	if (GRAPHICS_VER(i915) >= 12) {
+	if (HAS_ASID_TLB_INVALIDATION(i915)) {
+		guc_ggtt_ct_invalidate(ggtt);
+	} else if (GRAPHICS_VER(i915) >= 12) {
 		struct intel_gt *gt;
 
 		list_for_each_entry(gt, &ggtt->gt_list, ggtt_link)
