@@ -7,7 +7,7 @@
 #include <drm/drm_cache.h>
 
 #include "gt/intel_gt.h"
-#include "gt/intel_gt_pm.h"
+#include "gt/intel_tlb.h"
 
 #include "i915_drv.h"
 #include "i915_gem_object.h"
@@ -198,7 +198,7 @@ static void flush_tlb_invalidate(struct drm_i915_gem_object *obj)
 	if (!obj->mm.tlb)
 		return;
 
-	intel_gt_invalidate_tlb(gt, obj->mm.tlb);
+	intel_gt_invalidate_tlb_full(gt, obj->mm.tlb);
 	obj->mm.tlb = 0;
 }
 
@@ -228,7 +228,6 @@ __i915_gem_object_unset_pages(struct drm_i915_gem_object *obj)
 	obj->mm.page_sizes.phys = obj->mm.page_sizes.sg = 0;
 
 	flush_tlb_invalidate(obj);
-
 	return pages;
 }
 
