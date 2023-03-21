@@ -9,3 +9,10 @@
 
 # CVE-2023-26242
 0001-fpga-dfl-afu-region-Add-overflow-checks-for-region-s.patch
+
+# CVE-2022-4269
+0001-act_mirred-use-the-backlog-for-nested-calls-to-mirre.patch
+0002-net-sched-act_mirred-better-wording-on-protection-ag.patch
+
+# CVE-2023-23005
+0001-mm-demotion-fix-NULL-vs-IS_ERR-checking-in-memory_ti.patch

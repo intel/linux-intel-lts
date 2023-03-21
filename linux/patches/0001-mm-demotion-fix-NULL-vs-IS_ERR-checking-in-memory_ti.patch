@@ -1,0 +1,35 @@
+From 72a52f5867bf1f15a64cbbd8240bc6ecd294dc90 Mon Sep 17 00:00:00 2001
+From: Miaoqian Lin <linmq006@gmail.com>
+Date: Thu, 10 Nov 2022 07:07:51 +0400
+Subject: [PATCH] mm/demotion: fix NULL vs IS_ERR checking in memory_tier_init
+
+alloc_memory_type() returns error pointers on error instead of NULL.  Use
+IS_ERR() to check the return value to fix this.
+
+Link: https://lkml.kernel.org/r/20221110030751.1627266-1-linmq006@gmail.com
+Fixes: 7b88bda3761b ("mm/demotion/dax/kmem: set node's abstract distance to MEMTIER_DEFAULT_DAX_ADISTANCE")
+Signed-off-by: Miaoqian Lin <linmq006@gmail.com>
+Reviewed-by: "Huang, Ying" <ying.huang@intel.com>
+Cc: Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+Cc: Wei Xu <weixugc@google.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+ mm/memory-tiers.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mm/memory-tiers.c b/mm/memory-tiers.c
+index fa8c9d07f9ce..ac0dae9e54bf 100644
+--- a/mm/memory-tiers.c
++++ b/mm/memory-tiers.c
+@@ -645,7 +645,7 @@ static int __init memory_tier_init(void)
+ 	 * than default DRAM tier.
+ 	 */
+ 	default_dram_type = alloc_memory_type(MEMTIER_ADISTANCE_DRAM);
+-	if (!default_dram_type)
++	if (IS_ERR(default_dram_type))
+ 		panic("%s() failed to allocate default DRAM tier\n", __func__);
+ 
+ 	/*
+-- 
+2.25.1
+
