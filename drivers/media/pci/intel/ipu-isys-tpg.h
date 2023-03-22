@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2020 Intel Corporation */
+/* Copyright (C) 2013 - 2023 Intel Corporation */
 
 #ifndef IPU_ISYS_TPG_H
 #define IPU_ISYS_TPG_H
@@ -74,7 +74,6 @@ struct ipu_isys_tpg {
 	void __iomem *base;
 	void __iomem *sel;
 	unsigned int index;
-	int streaming;
 
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *vblank;
