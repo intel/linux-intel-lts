@@ -169,11 +169,6 @@ static int ipu6_csi2_dwc_phy_power_set(struct ipu_isys *isys,
 	primary = port & ~1;
 	secondary = primary + 1;
 	if (on) {
-		/* do rext flow for PHY-E */
-		ret = ipu6_isys_dwc_phy_termcal_rext(isys, mbps);
-		if (ret)
-			return ret;
-
 		if (nlanes == 4) {
 			dev_dbg(&isys->adev->dev,
 				"config phy %u and %u in aggregation mode",
