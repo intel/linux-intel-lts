@@ -170,7 +170,6 @@ enum intel_ppgtt_type {
 	func(has_rps); \
 	func(has_runtime_pm); \
 	func(has_snoop); \
-	func(has_sriov); \
 	func(has_coherent_ggtt); \
 	func(tuning_thread_rr_after_dep); \
 	func(unfenced_needs_alignment); \
