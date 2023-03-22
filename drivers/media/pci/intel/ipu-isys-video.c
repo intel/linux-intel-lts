@@ -1344,13 +1344,12 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 	}
 
 	/* Get the sub stream info and set the current pipe's vc id */
-	for (i = CSI2_BE_SOC_PAD_SOURCE(0);
-	     i < NR_OF_CSI2_BE_SOC_SOURCE_PADS; i++) {
+	for (i = 0; i < CSI2_BE_SOC_SOURCE_PADS_NUM; i++) {
 		/*
 		 * index is sub stream id. sub stream id is
 		 * equalto BE SOC source pad id - sink pad count
 		 */
-		qm.index = i - NR_OF_CSI2_BE_SOC_SINK_PADS;
+		qm.index = i;
 		ret = v4l2_querymenu(sd->ctrl_handler, &qm);
 		if (ret)
 			continue;
@@ -1447,11 +1446,10 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 				continue;
 			}
 			pad_id = source_pad->index;
-			for (i = CSI2_BE_SOC_PAD_SOURCE(0);
-			     i < NR_OF_CSI2_BE_SOC_SOURCE_PADS; i++) {
-				if (ip->asv[i - 1].substream ==
+			for (i = 0; i < CSI2_BE_SOC_SOURCE_PADS_NUM; i++) {
+				if (ip->asv[i].substream ==
 				(pad_id - NR_OF_CSI2_BE_SOC_SINK_PADS)) {
-					entity_vc = ip->asv[i - 1].vc;
+					entity_vc = ip->asv[i].vc;
 					break;
 				}
 			}
