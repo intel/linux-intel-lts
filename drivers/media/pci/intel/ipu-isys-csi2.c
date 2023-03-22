@@ -19,6 +19,7 @@
 #include "ipu-platform-regs.h"
 
 static const u32 csi2_supported_codes_pad_sink[] = {
+	MEDIA_BUS_FMT_Y8_1X8,
 	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
@@ -45,6 +46,7 @@ static const u32 csi2_supported_codes_pad_sink[] = {
 };
 
 static const u32 csi2_supported_codes_pad_source[] = {
+	MEDIA_BUS_FMT_Y8_1X8,
 	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
