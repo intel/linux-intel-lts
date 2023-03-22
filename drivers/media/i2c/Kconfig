@@ -884,7 +884,7 @@ config VIDEO_IMX412
 	  module will be called imx412.
 
 config VIDEO_OV02A10
-	tristate "OmniVision OV02A10 sensor support"
+	tristate "OmniVision OV01A10 sensor support"
 	depends on VIDEO_V4L2 && I2C
 	select MEDIA_CONTROLLER
 	select VIDEO_V4L2_SUBDEV_API
