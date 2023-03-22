@@ -184,7 +184,6 @@ i915-y += \
 	  i915_ttm_buddy_manager.o \
 	  i915_vma.o \
 	  i915_vma_resource.o \
-	  intel_pagefault.o \
 	  intel_wopcm.o
 
 # general-purpose microcontroller (GuC) support
