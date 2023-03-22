@@ -1537,7 +1537,7 @@ static int ds5_configure_depth(struct ds5 *state)
 	struct ds5_sensor *sensor;
 	u16 fmt, md_fmt, vc_id;
 	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
-	int ret;
+	int ret = -1;
 
 	// if (state->is_depth) {
 		sensor = &state->depth.sensor;
@@ -1591,7 +1591,7 @@ static int ds5_configure_rgb(struct ds5 *state)
 	struct ds5_sensor *sensor;
 	u16 fmt, md_fmt, vc_id;
 	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
-	int ret;
+	int ret = -1;
 
 	// } else if (state->is_rgb) {
 		sensor = &state->rgb.sensor;
@@ -1648,7 +1648,7 @@ static int ds5_configure_ir(struct ds5 *state)
 	struct ds5_sensor *sensor;
 	u16 fmt, md_fmt, vc_id;
 	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
-	int ret;
+	int ret = -1;
 
 	// } else if (state->is_y8) {
 		sensor = &state->motion_t.sensor;
@@ -1705,7 +1705,7 @@ static int ds5_configure_imu(struct ds5 *state)
 	struct ds5_sensor *sensor;
 	u16 fmt, md_fmt, vc_id;
 	u16 dt_addr, md_addr, fps_addr, width_addr, height_addr;
-	int ret;
+	int ret = -1;
 
 	sensor = &state->imu.sensor;
 	dt_addr = DS5_IMU_STREAM_DT;
@@ -1884,7 +1884,7 @@ static int ds5_hw_set_auto_exposure(struct ds5 *state, u32 base, s32 val)
  */
 static int ds5_hw_set_exposure(struct ds5 *state, u32 base, s32 val)
 {
-	int ret;
+	int ret = -1;
 
 	if (val < 1)
 		val = 1;
@@ -2062,7 +2062,7 @@ static int ds5_get_hwmc(struct ds5 *state, unsigned char *data)
 static int ds5_set_calibration_data(struct ds5 *state,
 		struct hwm_cmd *cmd, u16 length)
 {
-	int ret;
+	int ret = -1;
 	int retries = 10;
 	u16 status = 2;
 
@@ -2452,7 +2452,7 @@ static int ds5_get_calibration_data(struct ds5 *state, enum table_id id,
 		unsigned char *table, unsigned int length)
 {
 	struct hwm_cmd *cmd;
-	int ret;
+	int ret = -1;
 	int retries = 3;
 	u16 status = 2;
 	u16 table_length;
@@ -2498,7 +2498,7 @@ static int ds5_get_calibration_data(struct ds5 *state, enum table_id id,
 static int ds5_gvd(struct ds5 *state, unsigned char *data)
 {
 	struct hwm_cmd cmd;
-	int ret;
+	int ret = -1;
 	u16 length = 0;
 	u16 status = 2;
 	u8 retries = 3;
@@ -3041,7 +3041,7 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 	struct ds5_ctrls *ctrls = &state->ctrls;
 	struct v4l2_ctrl_handler *hdl = &ctrls->handler;
 	struct v4l2_subdev *sd = &state->mux.sd.subdev;
-	int ret;
+	int ret = -1;
 	struct ds5_sensor *sensor = NULL;
 
 	switch (sid) {
@@ -3243,7 +3243,7 @@ static int ds5_sensor_register(struct ds5 *state, struct ds5_sensor *sensor)
 {
 	struct v4l2_subdev *sd = &sensor->sd;
 	struct media_entity *entity = &sensor->sd.entity;
-	int ret;
+	int ret = -1;
 
 	// FIXME: is async needed?
 	ret = v4l2_device_register_subdev(state->mux.sd.subdev.v4l2_dev, sd);
@@ -3314,7 +3314,7 @@ static int ds5_mux_enum_mbus_code(struct v4l2_subdev *sd,
 	struct ds5 *state = container_of(sd, struct ds5, mux.sd.subdev);
 	struct v4l2_subdev_mbus_code_enum tmp = *mce;
 	struct v4l2_subdev *remote_sd;
-	int ret;
+	int ret = -1;
 
 	dev_info(&state->client->dev, "%s(): %s \n", __func__, sd->name);
 	switch (mce->pad) {
@@ -3379,7 +3379,7 @@ static int ds5_mux_enum_frame_size(struct v4l2_subdev *sd,
 	struct v4l2_subdev_frame_size_enum tmp = *fse;
 	struct v4l2_subdev *remote_sd;
 	u32 pad = fse->pad;
-	int ret;
+	int ret = -1;
 
 	tmp.pad = 0;
 
@@ -3443,7 +3443,7 @@ static int ds5_mux_enum_frame_interval(struct v4l2_subdev *sd,
 	struct v4l2_subdev_frame_interval_enum tmp = *fie;
 	struct v4l2_subdev *remote_sd;
 	u32 pad = fie->pad;
-	int ret;
+	int ret = -1;
 
 	tmp.pad = 0;
 
