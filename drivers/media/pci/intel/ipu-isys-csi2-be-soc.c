@@ -37,6 +37,7 @@ static const u32 csi2_be_soc_supported_codes_pad[] = {
 	MEDIA_BUS_FMT_SGBRG8_1X8,
 	MEDIA_BUS_FMT_SGRBG8_1X8,
 	MEDIA_BUS_FMT_SRGGB8_1X8,
+	MEDIA_BUS_FMT_Y8_1X8,
 	0,
 };
 
@@ -57,6 +58,7 @@ static const u32 csi2_be_soc_supported_raw_bayer_codes_pad[] = {
 	MEDIA_BUS_FMT_SGBRG8_1X8,
 	MEDIA_BUS_FMT_SGRBG8_1X8,
 	MEDIA_BUS_FMT_SRGGB8_1X8,
+	MEDIA_BUS_FMT_Y8_1X8,
 	0,
 };
 
@@ -211,7 +213,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 				+ (idx & ~CSI2_BE_CROP_MASK)];
 
 		}
-		ffmt->code = code;
+		ffmt->code = fmt->format.code;
 		ffmt->width = r->width;
 		ffmt->height = r->height;
 		ffmt->field = sink_ffmt->field;

@@ -821,7 +821,7 @@ static const struct ds5_resolution d46x_calibration_sizes[] = {
 
 static const struct ds5_resolution ds5_size_imu[] = {
 	{
-	.width =  32,
+	.width = 32,
 	.height = 1,
 	.framerates = ds5_imu_framerates,
 	.n_framerates = ARRAY_SIZE(ds5_imu_framerates),
@@ -1161,6 +1161,7 @@ static unsigned int mbus_code_to_mipi(u32 code)
 	case MEDIA_BUS_FMT_SGRBG10_1X10:
 	case MEDIA_BUS_FMT_SRGGB10_1X10:
 		return MIPI_CSI2_TYPE_RAW10;
+	case MEDIA_BUS_FMT_Y8_1X8:
 	case MEDIA_BUS_FMT_SBGGR8_1X8:
 	case MEDIA_BUS_FMT_SGBRG8_1X8:
 	case MEDIA_BUS_FMT_SGRBG8_1X8:
@@ -4068,7 +4069,7 @@ static void ds5_substream_init(void)
 	set_sub_stream_dt(1, MIPI_CSI2_TYPE_EMBEDDED8);
 	set_sub_stream_vc_id(1, 0);
 
-	set_sub_stream_fmt(2, MEDIA_BUS_FMT_UYVY8_1X16);
+	set_sub_stream_fmt(2, MEDIA_BUS_FMT_YUYV8_1X16);
 	set_sub_stream_h(2, 640);
 	set_sub_stream_w(2, 480);
 	set_sub_stream_dt(2, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
