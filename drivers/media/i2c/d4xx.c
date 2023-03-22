@@ -944,14 +944,13 @@ static const struct ds5_format ds5_depth_formats_d46x[] = {
 static const struct ds5_format ds5_y_formats_ds5u[] = {
 	{
 		/* First format: default */
-		.data_type = 0x1e,	/* Y8 */
-		//.mbus_code = MEDIA_BUS_FMT_SBGGR8_1X8,
-		.mbus_code = MEDIA_BUS_FMT_UYVY8_1X16,
+		.data_type = 0x2a,	/* Y8 */
+		.mbus_code = MEDIA_BUS_FMT_SBGGR8_1X8,
 		.n_resolutions = ARRAY_SIZE(y8_sizes),
 		.resolutions = y8_sizes,
 	}, {
 		.data_type = 0x1e,	/* Y8I */
-		.mbus_code = MEDIA_BUS_FMT_VYUY8_1X16,
+		.mbus_code = MEDIA_BUS_FMT_UYVY8_1X16,
 		.n_resolutions = ARRAY_SIZE(y8_sizes),
 		.resolutions = y8_sizes,
 	}, {
@@ -1668,8 +1667,11 @@ static int ds5_configure_ir(struct ds5 *state)
 	 * Set depth stream Z16 data type as 0x31
 	 * Set IR stream Y8I data type as 0x32
 	 */
-	//if (sensor->config.format->data_type == 0x1e)
+	if (sensor->config.format->data_type == 0x1e)
 		ret = ds5_write(state, dt_addr, 0x32);
+	else if (sensor->config.format->data_type == 0x2a)
+		ret = ds5_write(state, dt_addr, 0x2a);
+
 	if (ret < 0)
 		return ret;
 
