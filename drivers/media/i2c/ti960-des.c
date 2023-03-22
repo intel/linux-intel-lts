@@ -134,7 +134,7 @@ static struct regmap_config ti960_reg_config16 = {
 	.reg_format_endian = REGMAP_ENDIAN_BIG,
 };
 
-static s64 ti960_query_sub_stream[] = {
+static s64 ti960_query_sub_stream[NR_OF_TI960_SINK_PADS] = {
 	0, 0, 0, 0
 };
 
@@ -453,6 +453,12 @@ __ti960_get_ffmt(struct v4l2_subdev *subdev,
 {
 	struct ti960 *va = to_ti960(subdev);
 
+	if (pad < 0 || pad >= NR_OF_TI960_PADS ||
+	    stream < 0 || stream >= va->nstreams) {
+		dev_err(subdev->dev, "%s invalid pad %d, or stream %d\n", __func__, pad, stream);
+		return NULL;
+	}
+
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
 		return v4l2_subdev_get_try_format(subdev, sd_state, pad);
 	else
@@ -503,23 +509,22 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 	fmt->format = *ffmt;
 	mutex_unlock(&va->mutex);
 
-	if (fmt->pad >= ARRAY_SIZE(ti960_query_sub_stream)) {
-		dev_info(subdev->dev, "fmt->pad == %d is invalid\n", fmt->pad);
-		return 0;
-	}
-	set_sub_stream_fmt(fmt->pad, ffmt->code);
-	set_sub_stream_h(fmt->pad, ffmt->height);
-	set_sub_stream_w(fmt->pad, ffmt->width);
+	if (fmt->pad < NR_OF_TI960_SINK_PADS) {
+		set_sub_stream_fmt(fmt->pad, ffmt->code);
+		set_sub_stream_h(fmt->pad, ffmt->height);
+		set_sub_stream_w(fmt->pad, ffmt->width);
 
-	// select correct csi-2 data type id
-	if (ffmt->code >= MEDIA_BUS_FMT_UYVY8_1X16 &&
-	    ffmt->code <= MEDIA_BUS_FMT_YVYU8_1X16)
-		set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_YUV422_8);
-	else
-		set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_RAW12);
-	set_sub_stream_vc_id(fmt->pad, fmt->pad);
-	dev_dbg(subdev->dev, "framefmt: width: %d, height: %d, code: 0x%x.\n",
-	       ffmt->width, ffmt->height, ffmt->code);
+		/* select correct csi-2 data type id */
+		if (ffmt->code >= MEDIA_BUS_FMT_UYVY8_1X16 &&
+				ffmt->code <= MEDIA_BUS_FMT_YVYU8_1X16)
+			set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_YUV422_8);
+		else
+			set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_RAW12);
+		set_sub_stream_vc_id(fmt->pad, fmt->pad);
+		dev_dbg(subdev->dev,
+			"framefmt: width: %d, height: %d, code: 0x%x.\n",
+			ffmt->width, ffmt->height, ffmt->code);
+	}
 
 	return 0;
 }
