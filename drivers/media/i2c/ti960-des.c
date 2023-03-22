@@ -741,7 +741,7 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 		for (l = 0; l < va->nsinks; l++) {
 			rval = media_create_pad_link(
 				&va->sub_devs[k].sd->entity, j,
-				&va->sd.entity, l, 0);
+				&va->sd.entity, l, MEDIA_LNK_FL_DYNAMIC);
 			if (rval) {
 				dev_err(va->sd.dev,
 					"can't create link to %c\n",
