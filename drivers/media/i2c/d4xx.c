@@ -956,8 +956,8 @@ static const struct ds5_format ds5_y_formats_ds5u[] = {
 	}, {
 		.data_type = 0x24,	/* 24-bit Calibration */
 		.mbus_code = MEDIA_BUS_FMT_RGB888_1X24,	/* FIXME */
-		.n_resolutions = ARRAY_SIZE(d46x_calibration_sizes),
-		.resolutions = d46x_calibration_sizes,
+		.n_resolutions = ARRAY_SIZE(d43x_calibration_sizes),
+		.resolutions = d43x_calibration_sizes,
 	},
 };
 
