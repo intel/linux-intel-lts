@@ -1403,6 +1403,8 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(pipe);
 	struct media_pad *source_pad = media_entity_remote_pad(&av->pad);
 	unsigned int pad_id;
+	int previous_stream_count = 0;
+	struct media_entity *entity_enum = entity;
 
 	if (!source_pad) {
 		dev_err(entity->graph_obj.mdev->dev, "no remote pad found\n");
@@ -1423,6 +1425,12 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 			goto error_graph_walk_start;
 	}
 
+	media_graph_walk_start(&pipe->graph, entity_enum);
+	while ((entity_enum = media_graph_walk_next(graph))) {
+		if (entity_enum->stream_count > previous_stream_count)
+			previous_stream_count = entity_enum->stream_count;
+	}
+
 	media_graph_walk_start(&pipe->graph, entity);
 	while ((entity = media_graph_walk_next(graph))) {
 		DECLARE_BITMAP(active, MEDIA_ENTITY_MAX_PADS);
@@ -1431,7 +1439,7 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 		dev_dbg(entity->graph_obj.mdev->dev, "entity name:%s\n",
 			entity->name);
 
-		entity->stream_count++;
+		entity->stream_count = previous_stream_count + 1;
 
 		if (entity->pipe && entity->pipe == pipe) {
 			pr_err("Pipe active for %s. Can't start for %s\n",
