@@ -20,10 +20,6 @@ struct ipu_isys_subdev_i2c_info {
 	int i2c_adapter_id;
 	char i2c_adapter_bdf[32];
 };
-#define IPU_SPDATA_NAME_LEN	20
-#define IPU_SPDATA_BDF_LEN	32
-#define IPU_SPLATA_GPIO_NUM 4
-#define IPU_SPLATA_IRQ_PIN_NAME_LEN 16
 
 #if (IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
 	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)) \
