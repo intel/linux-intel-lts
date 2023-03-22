@@ -561,6 +561,8 @@ static u64 __maybe_unused get_hblank(struct lt6911uxc_state *lt6911uxc)
 	return hblank;
 }
 
+static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable);
+
 static int lt6911uxc_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct lt6911uxc_state *lt6911uxc = container_of(ctrl->handler,
@@ -568,6 +570,17 @@ static int lt6911uxc_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
 	s64 exposure_max;
 	int ret = 0;
+	u32 val;
+
+	/* Set streaming when ipu set sub_stream */
+	if (ctrl->id == V4L2_CID_IPU_SET_SUB_STREAM) {
+		val = (*ctrl->p_new.p_s64 & 0xFFFF);
+		dev_info(&client->dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
+		mutex_unlock(&lt6911uxc->mutex);
+		ret = lt6911uxc_set_stream(&lt6911uxc->sd, val & 0x00FF);
+		mutex_lock(&lt6911uxc->mutex);
+		return ret;
+	}
 
 	/* Propagate change of current control to all related controls */
 	if (ctrl->id == V4L2_CID_VBLANK) {
