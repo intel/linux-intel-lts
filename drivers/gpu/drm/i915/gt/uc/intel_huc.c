@@ -285,7 +285,6 @@ int intel_huc_init(struct intel_huc *huc)
 	return 0;
 
 out:
-	intel_uc_fw_change_status(&huc->fw, INTEL_UC_FIRMWARE_INIT_FAIL);
 	drm_info(&i915->drm, "HuC init failed with %d\n", err);
 	return err;
 }
@@ -405,8 +404,13 @@ bool intel_huc_is_authenticated(struct intel_huc *huc)
  * This function reads status register to verify if HuC
  * firmware was successfully loaded.
  *
- * The return values match what is expected for the I915_PARAM_HUC_STATUS
- * getparam.
+ * Returns:
+ *  * -ENODEV if HuC is not present on this platform,
+ *  * -EOPNOTSUPP if HuC firmware is disabled,
+ *  * -ENOPKG if HuC firmware was not installed,
+ *  * -ENOEXEC if HuC firmware is invalid or mismatched,
+ *  * 0 if HuC firmware is not running,
+ *  * 1 if HuC firmware is authenticated and running.
  */
 int intel_huc_check_status(struct intel_huc *huc)
 {
@@ -419,10 +423,6 @@ int intel_huc_check_status(struct intel_huc *huc)
 		return -ENOPKG;
 	case INTEL_UC_FIRMWARE_ERROR:
 		return -ENOEXEC;
-	case INTEL_UC_FIRMWARE_INIT_FAIL:
-		return -ENOMEM;
-	case INTEL_UC_FIRMWARE_LOAD_FAIL:
-		return -EIO;
 	default:
 		break;
 	}
