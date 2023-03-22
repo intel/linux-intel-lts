@@ -386,8 +386,8 @@ static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
 }
 
 static int ti960_enum_mbus_code(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
-				      struct v4l2_subdev_mbus_code_enum *code)
+				struct v4l2_subdev_state *sd_state,
+				struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ti960 *va = to_ti960(sd);
 	const uint32_t *supported_code =
@@ -441,27 +441,27 @@ static int ti960_get_frame_desc(struct v4l2_subdev *sd,
 
 static struct v4l2_mbus_framefmt *
 __ti960_get_ffmt(struct v4l2_subdev *subdev,
-			 struct v4l2_subdev_pad_config *cfg,
-			 unsigned int pad, unsigned int which,
-			 unsigned int stream)
+		 struct v4l2_subdev_state *sd_state,
+		 unsigned int pad, unsigned int which,
+		 unsigned int stream)
 {
 	struct ti960 *va = to_ti960(subdev);
 
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
-		return v4l2_subdev_get_try_format(subdev, cfg, pad);
+		return v4l2_subdev_get_try_format(subdev, sd_state, pad);
 	else
 		return &va->ffmts[pad][stream];
 }
 
 static int ti960_get_format(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg,
-				struct v4l2_subdev_format *fmt)
+			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_format *fmt)
 {
 	struct ti960 *va = to_ti960(subdev);
 
 	mutex_lock(&va->mutex);
-	fmt->format = *__ti960_get_ffmt(subdev, cfg, fmt->pad,
-						    fmt->which, 0);
+	fmt->format = *__ti960_get_ffmt(subdev, sd_state, fmt->pad,
+					fmt->which, 0);
 	mutex_unlock(&va->mutex);
 
 	dev_dbg(subdev->dev, "subdev_format: which: %s, pad: %d.\n",
@@ -476,8 +476,8 @@ static int ti960_get_format(struct v4l2_subdev *subdev,
 }
 
 static int ti960_set_format(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg,
-				struct v4l2_subdev_format *fmt)
+			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_format *fmt)
 {
 	struct ti960 *va = to_ti960(subdev);
 	const struct ti960_csi_data_format *csi_format;
@@ -487,8 +487,7 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 		fmt->format.code);
 
 	mutex_lock(&va->mutex);
-	ffmt = __ti960_get_ffmt(subdev, cfg, fmt->pad, fmt->which,
-				      0);
+	ffmt = __ti960_get_ffmt(subdev, sd_state, fmt->pad, fmt->which, 0);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		ffmt->width = fmt->format.width;
@@ -523,7 +522,7 @@ static int ti960_open(struct v4l2_subdev *subdev,
 				struct v4l2_subdev_fh *fh)
 {
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(subdev, fh->pad, 0);
+		v4l2_subdev_get_try_format(subdev, fh->state, 0);
 
 	struct v4l2_subdev_format fmt = {
 		.which = V4L2_SUBDEV_FORMAT_TRY,
