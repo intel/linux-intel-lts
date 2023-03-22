@@ -135,7 +135,7 @@ static void buf_cleanup(struct vb2_buffer *vb)
 		__func__);
 
 	if (aq->buf_cleanup)
-		return aq->buf_cleanup(vb);
+		aq->buf_cleanup(vb);
 }
 
 /*
