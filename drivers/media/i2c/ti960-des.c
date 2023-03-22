@@ -8,6 +8,7 @@
 #include <linux/wait.h>
 #include <linux/delay.h>
 #include <linux/platform_device.h>
+#include <linux/ipu-isys.h>
 #include <linux/version.h>
 
 #include <media/media-device.h>
@@ -18,6 +19,9 @@
 
 #include "ti960-reg.h"
 #include "ti953.h"
+
+#define MIPI_CSI2_TYPE_RAW12   0x2c
+#define MIPI_CSI2_TYPE_YUV422_8	0x1e
 
 struct ti960_subdev {
 	struct v4l2_subdev *sd;
@@ -46,8 +50,6 @@ struct ti960 {
 	struct v4l2_mbus_framefmt *ffmts[NR_OF_TI960_PADS];
 	struct rect *crop;
 	struct rect *compose;
-
-	struct v4l2_subdev_route *ti960_route;
 
 	unsigned int nsinks;
 	unsigned int nsources;
@@ -126,6 +128,52 @@ static struct regmap_config ti960_reg_config16 = {
 	.reg_format_endian = REGMAP_ENDIAN_BIG,
 };
 
+static s64 ti960_query_sub_stream[] = {
+	0, 0, 0, 0
+};
+
+static void set_sub_stream_fmt(int index, u32 code)
+{
+	ti960_query_sub_stream[index] &= 0xFFFFFFFFFFFF0000;
+	ti960_query_sub_stream[index] |= code;
+}
+
+static void set_sub_stream_h(int index, u32 height)
+{
+	s64 val = height & 0xFFFF;
+
+	ti960_query_sub_stream[index] &= 0xFFFFFFFF0000FFFF;
+	ti960_query_sub_stream[index] |= val << 16;
+}
+
+static void set_sub_stream_w(int index, u32 width)
+{
+	s64 val = width & 0xFFFF;
+
+	ti960_query_sub_stream[index] &= 0xFFFF0000FFFFFFFF;
+	ti960_query_sub_stream[index] |= val << 32;
+}
+
+static void set_sub_stream_dt(int index, u32 dt)
+{
+	s64 val = dt & 0xFF;
+
+	ti960_query_sub_stream[index] &= 0xFF00FFFFFFFFFFFF;
+	ti960_query_sub_stream[index] |= val << 48;
+}
+
+static void set_sub_stream_vc_id(int index, u32 vc_id)
+{
+	s64 val = vc_id & 0xFF;
+
+	ti960_query_sub_stream[index] &= 0x00FFFFFFFFFFFFFF;
+	ti960_query_sub_stream[index] |= val << 56;
+}
+
+static u8 ti960_set_sub_stream[] = {
+	0, 0, 0, 0
+};
+
 int bus_switch(struct ti960 *va)
 {
 	int ret;
@@ -181,6 +229,7 @@ static int ti960_reg_write(struct ti960 *va, unsigned char reg, unsigned int val
 	int ret, retry, timeout = 10;
 
 	for (retry = 0; retry < timeout; retry++) {
+		dev_dbg(va->sd.dev, "write reg %x = %x", reg, val);
 		ret = regmap_write(va->regmap8, reg, val);
 		if (ret < 0) {
 			dev_err(va->sd.dev, "960 reg write ret=%x", ret);
@@ -336,83 +385,6 @@ static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
 	return rval;
 }
 
-static int ti960_get_routing(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_routing *route)
-{
-	struct ti960 *va = to_ti960(sd);
-	int i, j;
-
-	/* active routing first */
-	j = 0;
-	for (i = 0; i < va->nstreams; ++i) {
-		if (j >= route->num_routes)
-			break;
-		if (!(va->ti960_route[i].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
-			continue;
-		route->routes[j].sink_pad = va->ti960_route[i].sink_pad;
-		route->routes[j].sink_stream = va->ti960_route[i].sink_stream;
-		route->routes[j].source_pad = va->ti960_route[i].source_pad;
-		route->routes[j].source_stream = va->ti960_route[i].source_stream;
-		route->routes[j].flags = va->ti960_route[i].flags;
-		j++;
-	}
-
-	for (i = 0; i < va->nstreams; ++i) {
-		if (j >= route->num_routes)
-			break;
-		if (va->ti960_route[i].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE)
-			continue;
-		route->routes[j].sink_pad = va->ti960_route[i].sink_pad;
-		route->routes[j].sink_stream = va->ti960_route[i].sink_stream;
-		route->routes[j].source_pad = va->ti960_route[i].source_pad;
-		route->routes[j].source_stream = va->ti960_route[i].source_stream;
-		route->routes[j].flags = va->ti960_route[i].flags;
-		j++;
-	}
-
-	route->num_routes = i;
-
-	return 0;
-}
-
-static int ti960_set_routing(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_routing *route)
-{
-	struct ti960 *va = to_ti960(sd);
-	int i, j, ret = 0;
-
-	for (i = 0; i < min(route->num_routes, va->nstreams); ++i) {
-		struct v4l2_subdev_route *t = &route->routes[i];
-
-		if (t->sink_stream > va->nstreams - 1 ||
-		    t->source_stream > va->nstreams - 1)
-			continue;
-
-		if (t->source_pad != TI960_PAD_SOURCE)
-			continue;
-
-		for (j = 0; j < va->nstreams; j++) {
-			if (t->sink_pad == va->ti960_route[j].sink_pad &&
-				t->source_pad == va->ti960_route[j].source_pad &&
-				t->sink_stream == va->ti960_route[j].sink_stream &&
-				t->source_stream == va->ti960_route[j].source_stream)
-				break;
-		}
-
-		if (j == va->nstreams)
-			continue;
-
-		if (t->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE)
-			va->ti960_route[j].flags |=
-				V4L2_SUBDEV_ROUTE_FL_ACTIVE;
-		else if (!(t->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
-			va->ti960_route[j].flags &=
-				(~V4L2_SUBDEV_ROUTE_FL_ACTIVE);
-	}
-
-	return ret;
-}
-
 static int ti960_enum_mbus_code(struct v4l2_subdev *sd,
 				      struct v4l2_subdev_pad_config *cfg,
 				      struct v4l2_subdev_mbus_code_enum *code)
@@ -422,25 +394,6 @@ static int ti960_enum_mbus_code(struct v4l2_subdev *sd,
 		ti960_supported_codes[code->pad];
 	bool next_stream = false;
 	int i;
-
-	if (code->stream & V4L2_SUBDEV_FLAG_NEXT_STREAM) {
-		next_stream = true;
-		code->stream &= ~V4L2_SUBDEV_FLAG_NEXT_STREAM;
-	}
-
-	if (code->stream > va->nstreams)
-		return -EINVAL;
-
-	if (next_stream) {
-		if (!(va->pad[code->pad].flags & MEDIA_PAD_FL_MULTIPLEX))
-			return -EINVAL;
-		if (code->stream < va->nstreams - 1) {
-			code->stream++;
-			return 0;
-		} else {
-			return -EINVAL;
-		}
-	}
 
 	for (i = 0; supported_code[i]; i++) {
 		if (i == code->index) {
@@ -465,29 +418,12 @@ static const struct ti960_csi_data_format
 	return &va_csi_data_formats[0];
 }
 
-static int ti960_get_routing_remote_pad(struct v4l2_subdev *sd,
-	unsigned int pad)
-{
-	struct ti960 *va = to_ti960(sd);
-	int i;
-
-	for (i = 0; i < va->nstreams; ++i) {
-		if (va->ti960_route[i].sink_pad == pad)
-			return va->ti960_route[i].source_pad;
-		if (va->ti960_route[i].source_pad == pad)
-			return va->ti960_route[i].sink_pad;
-	}
-	return -1;
-}
-
 static int ti960_get_frame_desc(struct v4l2_subdev *sd,
 	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
 {
 	struct ti960 *va = to_ti960(sd);
 	int sink_pad = pad;
 
-	if (va->pad[pad].flags & MEDIA_PAD_FL_SOURCE)
-		sink_pad = ti960_get_routing_remote_pad(sd, pad);
 	if (sink_pad >= 0) {
 		struct media_pad *remote_pad =
 			media_entity_remote_pad(&sd->entity.pads[sink_pad]);
@@ -523,18 +459,15 @@ static int ti960_get_format(struct v4l2_subdev *subdev,
 {
 	struct ti960 *va = to_ti960(subdev);
 
-	if (fmt->stream > va->nstreams)
-		return -EINVAL;
-
 	mutex_lock(&va->mutex);
 	fmt->format = *__ti960_get_ffmt(subdev, cfg, fmt->pad,
-						    fmt->which, fmt->stream);
+						    fmt->which, 0);
 	mutex_unlock(&va->mutex);
 
-	dev_dbg(subdev->dev, "subdev_format: which: %s, pad: %d, stream: %d.\n",
+	dev_dbg(subdev->dev, "subdev_format: which: %s, pad: %d.\n",
 		 fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE ?
 		 "V4L2_SUBDEV_FORMAT_ACTIVE" : "V4L2_SUBDEV_FORMAT_TRY",
-		 fmt->pad, fmt->stream);
+		 fmt->pad);
 
 	dev_dbg(subdev->dev, "framefmt: width: %d, height: %d, code: 0x%x.\n",
 	       fmt->format.width, fmt->format.height, fmt->format.code);
@@ -550,15 +483,12 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 	const struct ti960_csi_data_format *csi_format;
 	struct v4l2_mbus_framefmt *ffmt;
 
-	if (fmt->stream > va->nstreams)
-		return -EINVAL;
-
 	csi_format = ti960_validate_csi_data_format(
 		fmt->format.code);
 
 	mutex_lock(&va->mutex);
 	ffmt = __ti960_get_ffmt(subdev, cfg, fmt->pad, fmt->which,
-				      fmt->stream);
+				      0);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		ffmt->width = fmt->format.width;
@@ -568,6 +498,21 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 	fmt->format = *ffmt;
 	mutex_unlock(&va->mutex);
 
+	if (fmt->pad >= ARRAY_SIZE(ti960_query_sub_stream)) {
+		dev_info(subdev->dev, "fmt->pad == %d is invalid\n", fmt->pad);
+		return 0;
+	}
+	set_sub_stream_fmt(fmt->pad, ffmt->code);
+	set_sub_stream_h(fmt->pad, ffmt->height);
+	set_sub_stream_w(fmt->pad, ffmt->width);
+
+	// select correct csi-2 data type id
+	if (ffmt->code >= MEDIA_BUS_FMT_UYVY8_1X16 &&
+	    ffmt->code <= MEDIA_BUS_FMT_YVYU8_1X16)
+		set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_YUV422_8);
+	else
+		set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_RAW12);
+	set_sub_stream_vc_id(fmt->pad, fmt->pad);
 	dev_dbg(subdev->dev, "framefmt: width: %d, height: %d, code: 0x%x.\n",
 	       ffmt->width, ffmt->height, ffmt->code);
 
@@ -588,7 +533,6 @@ static int ti960_open(struct v4l2_subdev *subdev,
 			.height = TI960_MAX_HEIGHT,
 			.code = MEDIA_BUS_FMT_SBGGR12_1X12,
 		},
-		.stream = 0,
 	};
 
 	*try_fmt = fmt.format;
@@ -853,10 +797,12 @@ static bool ti960_broadcast_mode(struct v4l2_subdev *subdev)
 		if (!remote_pad)
 			continue;
 
+		if (!ti960_set_sub_stream[i])
+			continue;
+
 		sd = media_entity_to_v4l2_subdev(remote_pad->entity);
 		fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 		fmt.pad = remote_pad->index;
-		fmt.stream = 0;
 
 		rval = v4l2_subdev_call(sd, pad, get_fmt, NULL, &fmt);
 		if (rval)
@@ -910,24 +856,11 @@ static int ti960_rx_port_config(struct ti960 *va, int sink, int rx_port)
 	/*
 	 * CSI VC MAPPING.
 	 */
-	rval = regmap_read(va->regmap8, TI960_CSI_VC_MAP, &csi_vc_map);
-	if (rval < 0) {
-		dev_err(va->sd.dev, "960 reg read ret=%x", rval);
-		return rval;
-	}
-	for (i = 0; i < va->nstreams; ++i) {
-		if (!(va->ti960_route[i].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
-			continue;
-		if (rx_port != va->ti960_route[i].sink_pad)
-			continue;
-		csi_vc_map &= ~(0x3 << (va->ti960_route[i].sink_stream & 0x3) * 2);
-		csi_vc_map |= (va->ti960_route[i].source_stream & 0x3)
-			<< (va->ti960_route[i].sink_stream & 0x3) * 2;
-	}
-	dev_dbg(va->sd.dev, "%s port %d, csi_vc_map %x",
-		__func__, rx_port, csi_vc_map);
+	csi_vc_map = sink * 0x55;
+	dev_info(va->sd.dev, "%s sink pad %d, rx_port %d, csi_vc_map %x",
+		 __func__, sink, rx_port, csi_vc_map);
 	rval = ti960_reg_write(va, TI960_CSI_VC_MAP,
-		csi_vc_map);
+			       csi_vc_map);
 	if (rval) {
 		dev_err(va->sd.dev, "Failed to set port config.\n");
 		return rval;
@@ -944,6 +877,19 @@ static int ti960_find_subdev_index(struct ti960 *va, struct v4l2_subdev *sd)
 			return i;
 	}
 
+	WARN_ON(1);
+
+	return -EINVAL;
+}
+
+static int ti960_find_subdev_index_by_rx_port(struct ti960 *va, u8 rx_port)
+{
+	int i;
+
+	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+		if (va->sub_devs[i].rx_port == rx_port)
+			return i;
+	}
 	WARN_ON(1);
 
 	return -EINVAL;
@@ -992,6 +938,9 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 			media_entity_remote_pad(&va->pad[i]);
 
 		if (!remote_pad)
+			continue;
+
+		if (!ti960_set_sub_stream[i])
 			continue;
 
 		/* Find ti960 subdev */
@@ -1116,35 +1065,57 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 	return 0;
 }
 
+static int ti960_set_stream_vc(struct ti960 *va, u8 vc_id, u8 state)
+{
+	unsigned short rx_port;
+	unsigned short ser_alias;
+	struct v4l2_subdev *sd;
+	int rval;
+	int i;
+
+	i = ti960_find_subdev_index_by_rx_port(va, vc_id);
+	if (i < 0)
+		return -EINVAL;
+	rx_port = va->sub_devs[i].rx_port;
+	ser_alias = va->sub_devs[i].ser_i2c_addr;
+	sd = va->sub_devs[i].sd;
+
+	rval = ti960_rx_port_config(va, vc_id, rx_port);
+	if (rval < 0)
+		return rval;
+
+	rval = v4l2_subdev_call(sd, video, s_stream, state);
+	if (rval) {
+		dev_err(va->sd.dev,
+				"Failed to set stream for %s, enable %d\n",
+				sd->name, state);
+		return rval;
+	}
+	dev_info(va->sd.dev, "set stream for %s, enable %d\n",
+			sd->name, state);
+
+	/* RX port fordward */
+	rval = ti960_reg_set_bit(va, TI960_FWD_CTL1,
+			rx_port + 4, !state);
+	if (rval) {
+		dev_err(va->sd.dev,
+				"Failed to forward RX port%d. enable %d\n",
+				i, state);
+		return rval;
+	}
+	if (va->subdev_pdata[i].module_flags & TI960_FL_RESET) {
+		rval = reset_sensor(va, rx_port, ser_alias,
+				va->subdev_pdata[i].reset);
+		if (rval)
+			return rval;
+	}
+
+	return 0;
+}
+
 static struct v4l2_subdev_internal_ops ti960_sd_internal_ops = {
 	.open = ti960_open,
 	.registered = ti960_registered,
-};
-
-static bool ti960_sd_has_route(struct media_entity *entity,
-		unsigned int pad0, unsigned int pad1, int *stream)
-{
-	struct ti960 *va = to_ti960(media_entity_to_v4l2_subdev(entity));
-	int i;
-
-	if (va == NULL || stream == NULL ||
-		*stream >= va->nstreams || *stream < 0)
-		return false;
-
-	for (i = 0; i < va->nstreams; ++i) {
-		if ((va->ti960_route[*stream].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE) &&
-		((va->ti960_route[*stream].source_pad == pad0 &&
-		 va->ti960_route[*stream].sink_pad == pad1) ||
-		(va->ti960_route[*stream].source_pad == pad1 &&
-		 va->ti960_route[*stream].sink_pad == pad0)))
-			return true;
-	}
-
-	return false;
-}
-
-static const struct media_entity_operations ti960_sd_entity_ops = {
-	.has_route = ti960_sd_has_route,
 };
 
 static const struct v4l2_subdev_video_ops ti960_sd_video_ops = {
@@ -1157,6 +1128,30 @@ static const struct v4l2_subdev_core_ops ti960_core_subdev_ops = {
 
 static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 {
+	struct ti960 *va = container_of(ctrl->handler,
+					     struct ti960, ctrl_handler);
+	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
+	u32 val;
+	u8 vc_id;
+	u8 state;
+
+	switch (ctrl->id) {
+	case V4L2_CID_IPU_SET_SUB_STREAM:
+		val = (*ctrl->p_new.p_s64 & 0xFFFF);
+		dev_info(va->sd.dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
+		vc_id = (val >> 8) & 0x00FF;
+		state = val & 0x00FF;
+		if (vc_id > NR_OF_TI960_SINK_PADS - 1)
+			dev_err(va->sd.dev, "invalid vc %d\n", vc_id);
+		else
+			ti960_set_sub_stream[vc_id] = state;
+
+		ti960_set_stream_vc(va, vc_id, state);
+		break;
+	default:
+		dev_info(va->sd.dev, "unknown control id: 0x%X\n", ctrl->id);
+	}
+
 	return 0;
 }
 
@@ -1186,6 +1181,27 @@ static const struct v4l2_ctrl_config ti960_controls[] = {
 		.step  = 1,
 		.def = 0,
 	},
+	{
+		.ops = &ti960_ctrl_ops,
+		.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+		.name = "query virtual channel",
+		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+		.max = ARRAY_SIZE(ti960_query_sub_stream) - 1,
+		.min = 0,
+		.def = 0,
+		.menu_skip_mask = 0,
+		.qmenu_int = ti960_query_sub_stream,
+	},
+	{
+		.ops = &ti960_ctrl_ops,
+		.id = V4L2_CID_IPU_SET_SUB_STREAM,
+		.name = "set virtual channel",
+		.type = V4L2_CTRL_TYPE_INTEGER64,
+		.max = 0xFFFF,
+		.min = 0,
+		.def = 0,
+		.step = 1,
+	},
 };
 
 static const struct v4l2_subdev_pad_ops ti960_sd_pad_ops = {
@@ -1193,8 +1209,6 @@ static const struct v4l2_subdev_pad_ops ti960_sd_pad_ops = {
 	.set_fmt = ti960_set_format,
 	.get_frame_desc = ti960_get_frame_desc,
 	.enum_mbus_code = ti960_enum_mbus_code,
-	.set_routing = ti960_set_routing,
-	.get_routing = ti960_get_routing,
 };
 
 static struct v4l2_subdev_ops ti960_sd_ops = {
@@ -1212,11 +1226,9 @@ static int ti960_register_subdev(struct ti960 *va)
 	snprintf(va->sd.name, sizeof(va->sd.name), "TI960 %c",
 		va->pdata->suffix);
 
-	va->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
-			V4L2_SUBDEV_FL_HAS_SUBSTREAMS;
+	va->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 
 	va->sd.internal_ops = &ti960_sd_internal_ops;
-	va->sd.entity.ops = &ti960_sd_entity_ops;
 
 	v4l2_set_subdevdata(&va->sd, client);
 
@@ -1252,8 +1264,7 @@ static int ti960_register_subdev(struct ti960 *va)
 
 	for (i = 0; i < va->nsinks; i++)
 		va->pad[i].flags = MEDIA_PAD_FL_SINK;
-	va->pad[TI960_PAD_SOURCE].flags =
-		MEDIA_PAD_FL_SOURCE | MEDIA_PAD_FL_MULTIPLEX;
+	va->pad[TI960_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
 	rval = media_entity_pads_init(&va->sd.entity,
 				      NR_OF_TI960_PADS, va->pad);
 	if (rval) {
@@ -1411,25 +1422,6 @@ static int ti960_probe(struct i2c_client *client,
 					    GFP_KERNEL);
 		if (!va->ffmts[i])
 			return -ENOMEM;
-	}
-
-	va->ti960_route = devm_kcalloc(&client->dev, NR_OF_TI960_STREAMS,
-		sizeof(struct v4l2_subdev_routing), GFP_KERNEL);
-
-	if (!va->ti960_route)
-		return -ENOMEM;
-
-	/* routing for virtual channel supports */
-	l = 0;
-	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++)
-		for (j = 0; j < NR_OF_TI960_VCS_PER_SINK_PAD; j++)
-			for (k = 0; k < NR_OF_TI960_VCS_SOURCE_PAD; k++) {
-				va->ti960_route[l].sink_pad = i;
-				va->ti960_route[l].sink_stream = j;
-				va->ti960_route[l].source_pad = TI960_PAD_SOURCE;
-				va->ti960_route[l].source_stream = k;
-				va->ti960_route[l].flags = MEDIA_PAD_FL_MULTIPLEX;
-				l++;
 	}
 
 	va->regmap8 = devm_regmap_init_i2c(client,

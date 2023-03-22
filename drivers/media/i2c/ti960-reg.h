@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2020 Intel Corporation */
+/* Copyright (C) 2022 Intel Corporation */
 
 #ifndef TI960_REG_H
 #define TI960_REG_H
@@ -90,7 +90,7 @@ static const struct ti960_register_write ti960_init_settings[] = {
 	{0x33, 0x03},
 	{0x32, 0x12},
 	{0x33, 0x03},
-	{0x20, 0x00},
+	{0x20, 0xf0},
 	{0x21, 0x03},
 };
 

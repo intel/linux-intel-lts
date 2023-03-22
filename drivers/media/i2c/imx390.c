@@ -1774,7 +1774,6 @@ static int imx390_get_frame_desc(struct v4l2_subdev *sd,
 		desc->entry[i].flags = 0;
 		desc->entry[i].pixelcode = MEDIA_BUS_FMT_FIXED;
 		desc->entry[i].length = 0;
-		desc->entry[i].bus.csi2.channel = i;
 	}
 
 	return 0;
