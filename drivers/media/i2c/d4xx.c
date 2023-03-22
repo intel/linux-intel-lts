@@ -5041,23 +5041,7 @@ static const struct regmap_config ds5_regmap_max9295 = {
 #define SPLITTER	(0x3)
 static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 {
-	struct d4xx_pdata *dpdata = c->dev.platform_data;
-	unsigned short deser_addr = c->addr;
-	unsigned short ser_alias;
-	unsigned short sensor_alias;
-	int ret, i;
-	u8 val;
-	unsigned short all_deser_addr[NR_DESER] = {0x48, 0x4a, 0x68, 0x6c};
-	u8 all_deser_reset[NR_DESER] = {0x0, 0x0, 0x0, 0x0};
-
-	/* TODO: 2x D457 subdev connect to MAX9296 */
-	if (dpdata->subdev_num >= 1) {
-		sensor_alias = dpdata->subdev_info[0].board_info.addr;
-		ser_alias = dpdata->subdev_info[0].ser_alias;
-	} else {
-		dev_err(&c->dev, "no subdev found!\n");
-		return -EINVAL;
-	}
+	int ret;
 
 	state->regmap_max9296 = devm_regmap_init_i2c(c, &ds5_regmap_max9296);
 	if (IS_ERR(state->regmap_max9296)) {
@@ -5073,35 +5057,58 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 		return ret;
 	}
 
-	for (i = 0; i < NR_DESER; i++) {
-		c->addr = all_deser_addr[i];
-		if (c->addr == deser_addr)
-			continue;
-		ret = max9296_read_8(state, 0x0010, &all_deser_reset[i]);
-		if (!ret)
-			max9296_write_8(state, 0x0010, all_deser_reset[i] | RESET_LINK);
-	}
+	c->addr = 0x48;
+	max9296_write_8(state, 0x0010, 0x23);
+	c->addr = 0x4a;
+	max9296_write_8(state, 0x0010, 0x23);
+	c->addr = 0x68;
+	max9296_write_8(state, 0x0010, 0x23);
+	c->addr = 0x6c;
+	max9296_write_8(state, 0x0010, 0x23);
 
-	c->addr = deser_addr;
-	max9296_write_8(state, 0x0010, RESET_ONESHOT | AUTO_LINK | LINK_A);
+	c->addr = 0x6c;
+	max9296_write_8(state, 0x0010, 0x22);
 	msleep_range(1000);
+
 	c->addr = 0x40;
-	max9295_write_8(state, 0x0000, ser_alias << 1);
+	max9295_write_8(state, 0x0000, 0xc8); // 0x64
+	c->addr = 0x64;
 	msleep_range(1000);
-	c->addr = ser_alias;
-	max9295_write_8(state, 0x0044, sensor_alias << 1);
+
+	max9295_write_8(state, 0x0044, 0x30); // 0x18
 	max9295_write_8(state, 0x0045, 0x20);
+
+	c->addr = 0x68;
+	max9296_write_8(state, 0x0010, 0x22);
 	msleep_range(1000);
 
-	for (i = 0; i < NR_DESER; i++) {
-		c->addr = all_deser_addr[i];
-		if (c->addr == deser_addr)
-			continue;
-		if (all_deser_reset[i])
-			max9296_write_8(state, 0x0010, all_deser_reset[i] & ~RESET_LINK);
-	}
+	c->addr = 0x40;
+	max9295_write_8(state, 0x0000, 0xc4); // 0x62
+	c->addr = 0x62;
+	max9295_write_8(state, 0x0044, 0x2c); // 0x16
+	max9295_write_8(state, 0x0045, 0x20);
 
-	c->addr = sensor_alias;
+	c->addr = 0x4a;
+	max9296_write_8(state, 0x0010, 0x22);
+	msleep_range(1000);
+
+	c->addr = 0x40;
+	max9295_write_8(state, 0x0000, 0x88); // 0x44
+	c->addr = 0x44;
+	max9295_write_8(state, 0x0044, 0x28); // 0x14
+	max9295_write_8(state, 0x0045, 0x20);
+
+	c->addr = 0x48;
+	max9296_write_8(state, 0x0010, 0x22);
+	msleep_range(1000);
+
+	c->addr = 0x40;
+	max9295_write_8(state, 0x0000, 0x84); // 0x42
+	c->addr = 0x42;
+	max9295_write_8(state, 0x0044, 0x24); // 0x12
+	max9295_write_8(state, 0x0045, 0x20);
+
+	c->addr = 0x12;
 
 	return 0;
 }
@@ -5110,7 +5117,7 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 {
 	struct ds5 *state = devm_kzalloc(&c->dev, sizeof(*state), GFP_KERNEL);
 	u16 rec_state;
-	int ret, err = 0;
+	int ret, retry, err = 0;
 	const char *str;
 
 	if (!state)
@@ -5124,12 +5131,6 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 	dev_warn(&c->dev, "Probing new driver for D45x\n");
 	dev_warn(&c->dev, "Driver data NAEL %d\n", (int)id->driver_data);
 	state->variant = ds5_variants + id->driver_data;
-
-	ret = ds5_i2c_addr_setting(c, state);
-	if (ret) {
-		dev_err(&c->dev, "failed apply i2c addr setting\n");
-		return ret;
-	}
 
 	state->vcc = devm_regulator_get(&c->dev, "vcc");
 	if (IS_ERR(state->vcc)) {
@@ -5151,11 +5152,32 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		dev_err(&c->dev, "regmap init failed: %d\n", ret);
 		goto e_regulator;
 	}
+
+	if (c->addr == 0x48)
+		c->addr = 0x12;
+	if (c->addr == 0x4a)
+		c->addr = 0x14;
+	if (c->addr == 0x68)
+		c->addr = 0x16;
+	if (c->addr == 0x6c)
+		c->addr = 0x18;
+
+	if (c->addr == 0x12) {
+		ret = ds5_i2c_addr_setting(c, state);
+		if (ret) {
+			dev_err(&c->dev, "failed apply i2c addr setting\n");
+			return ret;
+		}
+	}
+
 	ret = ds5_chrdev_init(c, state);
 	if (ret < 0)
 		goto e_regulator;
 
+	retry = 100;
+	do {
 	ret = ds5_read(state, 0x5020, &rec_state);
+	} while (retry-- && ret < 0);
 	if (ret < 0) {
 		dev_err(&c->dev, "%s(): cannot communicate with D4XX: %d\n",
 				__func__, ret);
