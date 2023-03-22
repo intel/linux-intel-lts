@@ -512,9 +512,9 @@ int ipu_isys_subdev_link_validate(struct v4l2_subdev *sd,
 {
 	struct v4l2_subdev *source_sd =
 	    media_entity_to_v4l2_subdev(link->source->entity);
-	struct ipu_isys_pipeline *ip =
-		container_of(media_entity_pipeline(&sd->entity),
-			     struct ipu_isys_pipeline, pipe);
+	struct ipu_isys_pipeline *ip = container_of(sd->entity.pipe,
+						    struct ipu_isys_pipeline,
+						    pipe);
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 
 	if (!source_sd)

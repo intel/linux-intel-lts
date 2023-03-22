@@ -588,15 +588,14 @@ static bool is_external(struct ipu_isys_video *av, struct media_entity *entity)
 static int link_validate(struct media_link *link)
 {
 	struct ipu_isys_video *av =
-		container_of(link->sink, struct ipu_isys_video, pad);
-	/* pipe not ready, do not use media_entity_pipeline() to get pipe */
-	struct ipu_isys_pipeline *ip = &av->ip;
+	    container_of(link->sink, struct ipu_isys_video, pad);
+	/* All sub-devices connected to a video node are ours. */
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	struct v4l2_subdev *sd;
 
-	WARN_ON(!ip);
 	if (!link->source->entity)
 		return -EINVAL;
-
 	sd = media_entity_to_v4l2_subdev(link->source->entity);
 	if (is_external(av, link->source->entity)) {
 		ip->external = media_entity_remote_pad(av->vdev.entity.pads);
@@ -631,7 +630,7 @@ static void put_stream_opened(struct ipu_isys_video *av)
 static int get_stream_handle(struct ipu_isys_video *av)
 {
 	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	unsigned int stream_handle;
 	unsigned long flags;
 
@@ -653,7 +652,7 @@ static int get_stream_handle(struct ipu_isys_video *av)
 static void put_stream_handle(struct ipu_isys_video *av)
 {
 	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	unsigned long flags;
 
 	spin_lock_irqsave(&av->isys->lock, flags);
@@ -810,7 +809,7 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 				struct ipu_fw_isys_stream_cfg_data_abi *cfg)
 {
 	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	struct ipu_isys_queue *aq = &av->aq;
 	struct ipu_fw_isys_output_pin_info_abi *pin_info;
 	struct ipu_isys *isys = av->isys;
@@ -1006,7 +1005,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 				 struct ipu_isys_buffer_list *bl)
 {
 	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	struct device *dev = &av->isys->adev->dev;
 	struct v4l2_subdev_selection sel_fmt = {
 		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
@@ -1228,7 +1227,7 @@ out_put_stream_handle:
 static void stop_streaming_firmware(struct ipu_isys_video *av)
 {
 	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	struct device *dev = &av->isys->adev->dev;
 	int rval, tout;
 	enum ipu_fw_isys_send_type send_type =
@@ -1257,7 +1256,7 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 static void close_streaming_firmware(struct ipu_isys_video *av)
 {
 	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	struct device *dev = &av->isys->adev->dev;
 	int rval, tout;
 
@@ -1578,7 +1577,6 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	struct ipu_isys_pipeline *ip;
 	struct media_graph graph;
 	struct media_entity *entity;
-	struct media_pipeline *media_pipe;
 	struct media_device *mdev = &av->isys->media_dev;
 	int rval;
 	unsigned int i;
@@ -1586,8 +1584,7 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	dev_dbg(dev, "prepare stream: %d\n", state);
 
 	if (!state) {
-		media_pipe = media_entity_pipeline(&av->vdev.entity);
-		ip = to_ipu_isys_pipeline(media_pipe);
+		ip = to_ipu_isys_pipeline(av->vdev.entity.pipe);
 
 		if (ip->interlaced && isys->short_packet_source ==
 		    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
@@ -1684,7 +1681,7 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 
 	struct media_entity *entity, *entity2;
 	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
 	struct v4l2_subdev *sd, *esd;
 	int rval = 0;
 	struct v4l2_ext_control c = {.id = V4L2_CID_IPU_SET_SUB_STREAM, };
