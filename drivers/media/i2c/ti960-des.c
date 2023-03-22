@@ -470,10 +470,15 @@ static int ti960_get_format(struct v4l2_subdev *subdev,
 			    struct v4l2_subdev_format *fmt)
 {
 	struct ti960 *va = to_ti960(subdev);
+	struct v4l2_mbus_framefmt *ffmt;
 
 	mutex_lock(&va->mutex);
-	fmt->format = *__ti960_get_ffmt(subdev, sd_state, fmt->pad,
-					fmt->which, 0);
+	ffmt = __ti960_get_ffmt(subdev, sd_state, fmt->pad, fmt->which, 0);
+	if (!ffmt) {
+		mutex_unlock(&va->mutex);
+		return -EINVAL;
+	}
+	fmt->format = *ffmt;
 	mutex_unlock(&va->mutex);
 
 	dev_dbg(subdev->dev, "subdev_format: which: %s, pad: %d.\n",
@@ -501,13 +506,16 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 	mutex_lock(&va->mutex);
 	ffmt = __ti960_get_ffmt(subdev, sd_state, fmt->pad, fmt->which, 0);
 
+	if (!ffmt) {
+		mutex_unlock(&va->mutex);
+		return -EINVAL;
+	}
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		ffmt->width = fmt->format.width;
 		ffmt->height = fmt->format.height;
 		ffmt->code = csi_format->code;
 	}
 	fmt->format = *ffmt;
-	mutex_unlock(&va->mutex);
 
 	if (fmt->pad < NR_OF_TI960_SINK_PADS) {
 		set_sub_stream_fmt(fmt->pad, ffmt->code);
@@ -526,6 +534,7 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 			ffmt->width, ffmt->height, ffmt->code);
 	}
 
+	mutex_unlock(&va->mutex);
 	return 0;
 }
 
