@@ -784,6 +784,8 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 	if (ret || !on)
 		return ret;
 
+	/* Select TX port 0 R/W by default */
+	ret = ti960_reg_write(va, 0x32, 0x01);
 	/* Configure MIPI clock bsaed on control value. */
 	ret = ti960_reg_write(va, TI960_CSI_PLL_CTL,
 			    ti960_op_sys_clock_reg_val[
@@ -793,8 +795,16 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 	val = TI960_CSI_ENABLE;
 	val |= TI960_CSI_CONTS_CLOCK;
 	/* Enable skew calculation when 1.6Gbps output is enabled. */
-	if (v4l2_ctrl_g_ctrl(va->link_freq) == 3)
+	if (v4l2_ctrl_g_ctrl(va->link_freq) == 3) {
 		val |= TI960_CSI_SKEWCAL;
+		/* Enable periodic CSI-2 Skew-Calibration sequence after EOF */
+		ret = ti960_reg_write(va, TI960_CSI_CTL2, 0x09);
+	} else {
+		ret = ti960_reg_write(va, TI960_CSI_CTL2, 0x08);
+	}
+	if (ret)
+		return ret;
+
 	return ti960_reg_write(va, TI960_CSI_CTL, val);
 }
 
@@ -1248,6 +1258,7 @@ static int ti960_register_subdev(struct ti960 *va)
 	va->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 
 	va->sd.internal_ops = &ti960_sd_internal_ops;
+	va->sd.entity.function = MEDIA_ENT_F_VID_MUX;
 
 	v4l2_set_subdevdata(&va->sd, client);
 
