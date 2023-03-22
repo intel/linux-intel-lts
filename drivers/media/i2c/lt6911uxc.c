@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2022 Intel Corporation.
+// Copyright (c) 2022-2023 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -165,7 +165,7 @@ struct lt6911uxc_mode {
 	u32 bpp;
 
 	/* Pixel rate*/
-	u32 pixel_clk;
+	s64 pixel_clk;
 
 	/* Byte rate*/
 	u32 byte_clk;
@@ -636,7 +636,7 @@ static struct v4l2_ctrl_config lt6911uxc_csi_port = {
 	.id	= LT6911UXC_CID_CSI_PORT,
 	.type	= V4L2_CTRL_TYPE_INTEGER,
 	.name	= "CSI port",
-	.min	= 1,
+	.min	= 0,
 	.max	= 5,
 	.def	= 1,
 	.step	= 1,
@@ -804,9 +804,9 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 			&lt6911uxc_ctrl_ops,
 			V4L2_CID_LINK_FREQ,
 			sizeof(lt6911uxc->cur_mode->pixel_clk),
-			0, (s64 *)&lt6911uxc->cur_mode->pixel_clk);
+			0, &lt6911uxc->cur_mode->pixel_clk);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set link_freq ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -817,7 +817,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 				&lt6911uxc_ctrl_ops,
 				V4L2_CID_VBLANK, 0, 1, 1, 1);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set vblank ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -826,7 +826,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 			&lt6911uxc_ctrl_ops,
 			V4L2_CID_ANALOGUE_GAIN, 0, 1, 1, 1);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set analogue_gain ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -835,7 +835,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 			&lt6911uxc_ctrl_ops,
 			V4L2_CID_DIGITAL_GAIN,	0, 1, 1, 1);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set digital_gain ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -844,7 +844,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 				&lt6911uxc_ctrl_ops,
 				V4L2_CID_EXPOSURE, 0, 1, 1, 1);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set exposure ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -852,7 +852,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc->csi_port =
 		v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_csi_port, NULL);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set csi_port ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -861,7 +861,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc->i2c_bus =
 		v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_i2c_bus, NULL);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set i2c_bus ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -870,7 +870,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc->i2c_id = v4l2_ctrl_new_custom(ctrl_hdlr,
 				&lt6911uxc_i2c_id, NULL);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set i2c_id ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -880,7 +880,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc->i2c_slave_address = v4l2_ctrl_new_custom(ctrl_hdlr,
 					&lt6911uxc_i2c_slave_address, NULL);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set i2c_slave_address ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -888,7 +888,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc_fps.def = lt6911uxc->cur_mode->fps;
 	lt6911uxc->fps = v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_fps, NULL);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set fps ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -901,7 +901,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 	lt6911uxc->frame_interval = v4l2_ctrl_new_custom(ctrl_hdlr,
 					&lt6911uxc_frame_interval, NULL);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set frame_interval ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -913,7 +913,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 				get_pixel_rate(lt6911uxc), 1,
 				get_pixel_rate(lt6911uxc));
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set pixel_rate ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -925,7 +925,7 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 				&lt6911uxc_ctrl_ops,
 				V4L2_CID_HBLANK, 0, 1, 1, 1);
 	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set ctrl_hdlr, err=%d.\n",
+		dev_dbg(&client->dev, "Set hblank ctrl_hdlr, err=%d.\n",
 			ctrl_hdlr->error);
 		return ctrl_hdlr->error;
 	}
@@ -1324,6 +1324,8 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 		v4l2_subdev_notify_event(&lt6911uxc->sd,
 			&lt6911uxc_ev_source_change);
 
+		dev_dbg(&client->dev,  "Pixel Clk:%u, %lld\n",
+			pixel_clk, lt6911uxc->cur_mode->pixel_clk);
 		dev_dbg(&client->dev,
 			"width:%u, height:%u, fps:%u, lanes: %d\n",
 			lt6911uxc->cur_mode->width,

@@ -641,11 +641,9 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		if (!pdata)
 			return -ENOMEM;
 		/* use ascii */
-		/* port for D457 start from 0 */
-		if (!strcmp(sensor_name, D457_NAME) && port >= 0)
+		/* port for start from 0 */
+		if (port >= 0)
 			pdata->suffix = port + SUFFIX_BASE + 1;
-		else if (port > 0)
-			pdata->suffix = port + SUFFIX_BASE;
 		else
 			dev_err(dev, "INVALID MIPI PORT");
 
