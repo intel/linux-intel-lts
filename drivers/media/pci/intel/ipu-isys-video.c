@@ -1616,12 +1616,14 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->interlaced = false;
 
 	rval = media_entity_enum_init(&ip->entity_enum, mdev);
-	if (rval)
+	if (rval) {
+		dev_err(dev, "entity enum init failed\n");
 		return rval;
+	}
 
 	rval = media_pipeline_start_by_vc(av, &ip->pipe);
 	if (rval < 0) {
-		dev_dbg(dev, "pipeline start failed\n");
+		dev_err(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
 	}
 
@@ -1632,8 +1634,10 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	rval = media_graph_walk_init(&graph, mdev);
-	if (rval)
+	if (rval) {
+		dev_err(dev, "graph walk init failed\n");
 		goto out_pipeline_stop;
+	}
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
