@@ -1042,8 +1042,25 @@ static void stop_streaming(struct vb2_queue *q)
 	dev_dbg(&av->isys->adev->dev, "stop: %s: enter\n",
 		av->vdev.name);
 
-	if (!ip)
+	mutex_unlock(&av->mutex);
+	mutex_lock(&av->isys->reset_mutex);
+	while (av->isys->in_reset) {
+		mutex_unlock(&av->isys->reset_mutex);
+		dev_dbg(&av->isys->adev->dev, "stop: %s: wait for reset\n",
+			av->vdev.name
+		);
+		usleep_range(10000, 11000);
+		mutex_lock(&av->isys->reset_mutex);
+	}
+	mutex_unlock(&av->isys->reset_mutex);
+	mutex_lock(&av->mutex);
+
+	if (!ip) {
+		dev_err(&av->isys->adev->dev, "stop: %s: ip cleard!\n",
+			av->vdev.name);
+		return_buffers(aq, VB2_BUF_STATE_ERROR);
 		return;
+	}
 
 	mutex_lock(&av->isys->reset_mutex);
 	av->isys->in_stop_streaming = true;
