@@ -180,7 +180,6 @@ static void vf_tweak_device_info(struct drm_i915_private *i915)
 	/* Force PCH_NOOP. We have no access to display */
 	i915->pch_type = PCH_NOP;
 	memset(&info->display, 0, sizeof(info->display));
-	RUNTIME_INFO(i915)->pipe_mask = 0;
 	RUNTIME_INFO(i915)->memory_regions &= ~(REGION_STOLEN_SMEM |
 				  REGION_STOLEN_LMEM);
 }
