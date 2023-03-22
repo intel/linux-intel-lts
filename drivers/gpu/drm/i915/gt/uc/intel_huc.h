@@ -39,6 +39,8 @@ struct intel_huc {
 		struct notifier_block nb;
 		enum intel_huc_delayed_load_status status;
 	} delayed_load;
+
+	bool loaded_via_gsc;
 };
 
 void intel_huc_init_early(struct intel_huc *huc);
@@ -79,7 +81,7 @@ static inline bool intel_huc_is_used(const struct intel_huc *huc)
 
 static inline bool intel_huc_is_loaded_by_gsc(const struct intel_huc *huc)
 {
-	return huc->fw.loaded_via_gsc;
+	return huc->loaded_via_gsc;
 }
 
 static inline bool intel_huc_wait_required(struct intel_huc *huc)

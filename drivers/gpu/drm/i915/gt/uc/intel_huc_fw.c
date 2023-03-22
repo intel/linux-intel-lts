@@ -33,8 +33,8 @@ int intel_huc_fw_get_binary_info(struct intel_uc_fw *huc_fw, const void *data)
 	const struct intel_gsc_cpt_directory_entry *entry;
 	int i;
 
-	if (!huc_fw->loaded_via_gsc) {
-		huc_err(huc, "Invalid FW type for GSC load\n");
+	if (!huc_fw->is_meu_binary) {
+		huc_err(huc, "Invalid FW type for MEU parsing\n");
 		return -EINVAL;
 	}
 
