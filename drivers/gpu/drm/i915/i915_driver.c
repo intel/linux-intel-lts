@@ -81,7 +81,6 @@
 #include "i915_drm_client.h"
 #include "i915_drv.h"
 #include "i915_getparam.h"
-#include "i915_hwmon.h"
 #include "i915_ioc32.h"
 #include "i915_ioctl.h"
 #include "i915_irq.h"
@@ -766,8 +765,6 @@ static void i915_driver_register(struct drm_i915_private *dev_priv)
 
 	for_each_gt(gt, dev_priv, i)
 		intel_gt_driver_register(gt);
-
-	i915_hwmon_register(dev_priv);
 
 	intel_display_driver_register(dev_priv);
 
