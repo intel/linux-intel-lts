@@ -6,8 +6,7 @@ srcpath := $(srctree)
 endif
 
 ccflags-y += -DIPU_HAS_S2M -DIPU_TPG_FRAME_SYNC -DIPU_PSYS_GPC \
-		-DIPU_ISYS_GPC
-ccflags-y += -DI2C_DYNAMIC
+		-DIPU_ISYS_GPC -DI2C_DYNAMIC
 ccflags-y += -DIPU_ISYS_RESET
 
 intel-ipu6-objs				+= ../ipu.o \
