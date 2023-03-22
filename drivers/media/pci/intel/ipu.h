@@ -94,6 +94,7 @@ struct ipu_device {
 	bool flr_done;
 	bool ipc_reinit;
 	bool secure_mode;
+	bool ipu_bus_ready_to_probe;
 
 	int (*cpd_fw_reload)(struct ipu_device *isp);
 };
