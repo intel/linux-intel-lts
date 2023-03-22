@@ -482,8 +482,9 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(vb->vb2_queue);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
 	struct ipu_isys_buffer *ib = vb2_buffer_to_ipu_isys_buffer(vb);
-	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	struct ipu_isys_buffer_list bl;
 
 	struct ipu_fw_isys_frame_buff_set_abi *buf = NULL;
@@ -527,7 +528,7 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	if (ib->req)
 		return;
 
-	if (!pipe_av || !vb->vb2_queue->streaming) {
+	if (!pipe_av || !media_pipe || !vb->vb2_queue->start_streaming_called) {
 		dev_info(&av->isys->adev->dev,
 			"no pipe or streaming, adding to incoming\n");
 		return;
