@@ -1077,8 +1077,8 @@ static int ds5_sensor_enum_mbus_code(struct v4l2_subdev *sd,
 {
 	struct ds5_sensor *sensor = container_of(sd, struct ds5_sensor, sd);
 	//struct ds5_vchan *vchan = sensor->vchan;
-dev_info(sensor->sd.dev, "%s(): sensor %s pad: %d index: %d\n",
-__func__, sensor->sd.name, mce->pad, mce->index);
+	dev_info(sensor->sd.dev, "%s(): sensor %s pad: %d index: %d\n",
+		__func__, sensor->sd.name, mce->pad, mce->index);
 	if (mce->pad)
 		return -EINVAL;
 
@@ -1287,7 +1287,7 @@ static int __ds5_sensor_set_fmt(struct ds5 *state, struct ds5_sensor *sensor,
 				struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *mf;// = &fmt->format;
-	int substream;
+	int substream = -1;
 	//unsigned r;
 
 	dev_dbg(sensor->sd.dev, "%s(): state %p, "
@@ -1852,7 +1852,7 @@ static const struct v4l2_subdev_ops ds5_imu_subdev_ops = {
 static int ds5_hw_set_auto_exposure(struct ds5 *state, u32 base, s32 val)
 {
 	if (val != V4L2_EXPOSURE_APERTURE_PRIORITY &&
-			val != V4L2_EXPOSURE_MANUAL)
+		val != V4L2_EXPOSURE_MANUAL)
 		return -EINVAL;
 
 	/*
@@ -2258,11 +2258,11 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 						sizeof(struct hwm_cmd) + 512);
 				devm_kfree(&state->client->dev, calib_cmd);
 			}
-
 		}
 		break;
 	case DS5_CAMERA_CID_AE_ROI_SET: {
 		struct hwm_cmd ae_roi_cmd;
+
 		memcpy(&ae_roi_cmd, &set_ae_roi, sizeof(ae_roi_cmd));
 		ae_roi_cmd.param1 = *((u16 *)ctrl->p_new.p_u16);
 		ae_roi_cmd.param2 = *((u16 *)ctrl->p_new.p_u16 + 1);
@@ -2274,6 +2274,7 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 		}
 	case DS5_CAMERA_CID_AE_SETPOINT_SET: {
 		struct hwm_cmd *ae_setpoint_cmd;
+
 		if (ctrl->p_new.p_s32) {
 			dev_dbg(&state->client->dev, "%s():0x%x \n",
 				__func__, *(ctrl->p_new.p_s32));
@@ -3216,10 +3217,8 @@ static int ds5_sensor_init(struct i2c_client *c, struct ds5 *state,
 	struct media_entity *entity = &sensor->sd.entity;
 	struct media_pad *pad = &sensor->pad;
 	dev_t *dev_num = &state->client->dev.devt;
-
-	dev_info(sd->dev, "%s(): %p %s %p %p", __func__, c, c->name, state, state->client);
-
 	struct d4xx_pdata *dpdata = c->dev.platform_data;
+
 	v4l2_i2c_subdev_init(sd, c, ops);
 	sd->owner = NULL;
 	sd->internal_ops = &ds5_sensor_internal_ops;
@@ -3509,11 +3508,10 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	struct ds5 *state = container_of(sd, struct ds5, mux.sd.subdev);
 	struct v4l2_mbus_framefmt *ffmt;
 	struct ds5_sensor *sensor = state->mux.last_set;
-
 	u32 pad = sensor->mux_pad;
 	// u32 pad = fmt->pad;
 	int ret = 0;
-	int substream;
+	int substream = -1;
 
 	switch (pad) {
 	case DS5_MUX_PAD_DEPTH_A:
@@ -3546,6 +3544,7 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 		set_sub_stream_w(substream, ffmt->width);
 		set_sub_stream_dt(substream, mbus_code_to_mipi(ffmt->code));
 	}
+
 	dev_info(sd->dev, "%s(): fmt->pad:%d, sensor->mux_pad: %d, \
 		code: 0x%x: %ux%u substream:%d for sensor: %s\n",
 		__func__,
@@ -3584,7 +3583,7 @@ static int ds5_mux_get_fmt(struct v4l2_subdev *sd,
 		return -EINVAL;
 	}
 
-	dev_info(sd->dev, "%s(): fmt->pad:%d, sensor->mux_pad:%u size:%d-%d, code:0x%x field:%d, color:%d\n",
+	dev_dbg(sd->dev, "%s(): fmt->pad:%d, sensor->mux_pad:%u size:%d-%d, code:0x%x field:%d, color:%d\n",
 		__func__, fmt->pad, pad,
 		fmt->format.width, fmt->format.height, fmt->format.code,
 		fmt->format.field, fmt->format.colorspace);
@@ -4123,6 +4122,7 @@ e_depth:
 static void ds5_mux_unregistered(struct v4l2_subdev *sd)
 {
 	struct ds5 *state = v4l2_get_subdevdata(sd);
+
 	ds5_sensor_remove(&state->imu.sensor);
 	ds5_sensor_remove(&state->rgb.sensor);
 	ds5_sensor_remove(&state->motion_t.sensor);
@@ -4205,7 +4205,6 @@ static int ds5_mux_init(struct i2c_client *c, struct ds5 *state)
 
 	struct d4xx_pdata *dpdata = c->dev.platform_data;
 	v4l2_i2c_subdev_init(sd, c, &ds5_mux_subdev_ops);
-
 	// Set owner to NULL so we can unload the driver module
 	sd->owner = NULL;
 	sd->internal_ops = &ds5_mux_internal_ops;
@@ -4213,7 +4212,6 @@ static int ds5_mux_init(struct i2c_client *c, struct ds5 *state)
 	snprintf(sd->name, sizeof(sd->name), "DS5 mux %c", dpdata->suffix);
 
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-
 	entity->obj_type = MEDIA_ENTITY_TYPE_V4L2_SUBDEV;
 	entity->function = MEDIA_ENT_F_CAM_SENSOR;
 
@@ -4482,6 +4480,7 @@ static int ds5_dfu_wait_for_get_dfu_status(struct ds5 *state,
 	u16 status, dfu_state_len = 0x0000;
 	unsigned char dfu_asw_buf[DFU_WAIT_RET_LEN];
 	unsigned int dfu_wr_wait_msec = 0;
+
 	do {
 		ds5_write_with_check(state, 0x5008, 0x0003); // Get Write state
 		do {
