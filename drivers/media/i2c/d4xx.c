@@ -499,6 +499,21 @@ static int max9296_write_8(struct ds5 *state, u16 reg, u8 val)
 	return ret;
 }
 
+static int max9296_read_8(struct ds5 *state, u16 reg, u8 *val)
+{
+	int ret;
+
+	ret = regmap_raw_read(state->regmap_max9296, reg, val, 1);
+	if (ret < 0)
+		dev_err(&state->client->dev, "%s(): i2c read failed %d, 0x%04x\n",
+			__func__, ret, reg);
+	else
+		if (state->dfu_dev.dfu_state_flag == DS5_DFU_IDLE)
+			dev_info(&state->client->dev, "%s(): i2c read 0x%04x = 0x%x\n",
+				 __func__, reg, *val);
+
+	return ret;
+}
 static int max9295_write_8(struct ds5 *state, u16 reg, u8 val)
 {
 	int ret;
@@ -4239,6 +4254,13 @@ static const struct regmap_config ds5_regmap_max9295 = {
 	.val_format_endian = REGMAP_ENDIAN_NATIVE,
 };
 
+#define RESET_LINK	(0x1 << 6)
+#define RESET_ONESHOT	(0x1 << 5)
+#define AUTO_LINK	(0x1 << 4)
+#define DUAL_LINK	(0x0)
+#define LINK_A		(0x1)
+#define LINK_B		(0x2)
+#define SPLITTER	(0x3)
 static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 {
 	struct d4xx_pdata *dpdata = c->dev.platform_data;
@@ -4246,11 +4268,14 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	unsigned short ser_alias;
 	unsigned short sensor_alias;
 	int ret, i;
+	u8 val;
 	unsigned short all_deser_addr[NR_DESER] = {0x48, 0x4a, 0x68, 0x6c};
+	u8 all_deser_reset[NR_DESER] = {0x0, 0x0, 0x0, 0x0};
 
+	/* TODO: 2x D457 subdev connect to MAX9296 */
 	if (dpdata->subdev_num >= 1) {
-		sensor_alias = dpdata->subdev_info[i].board_info.addr;
-		ser_alias = dpdata->subdev_info[i].ser_alias;
+		sensor_alias = dpdata->subdev_info[0].board_info.addr;
+		ser_alias = dpdata->subdev_info[0].ser_alias;
 	} else {
 		dev_err(&c->dev, "no subdev found!\n");
 		return -EINVAL;
@@ -4270,18 +4295,17 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 		return ret;
 	}
 
-	/* splitter mode */
 	for (i = 0; i < NR_DESER; i++) {
 		c->addr = all_deser_addr[i];
-		if (c->addr != deser_addr)
-			max9296_write_8(state, 0x0010, 0x03);
+		if (c->addr == deser_addr)
+			continue;
+		ret = max9296_read_8(state, 0x0010, &all_deser_reset[i]);
+		if (ret)
+			max9296_write_8(state, 0x0010, all_deser_reset[i] | RESET_LINK);
 	}
 
 	c->addr = deser_addr;
-	max9296_write_8_with_check(state, 0x0010, 0x00);
-	max9296_write_8_with_check(state, 0x0010, 0x40);
-	msleep_range(1000);
-	max9296_write_8_with_check(state, 0x0010, 0x02);
+	max9296_write_8_with_check(state, 0x0010, RESET_ONESHOT | AUTO_LINK | LINK_A);
 	msleep_range(1000);
 	c->addr = 0x40;
 	max9295_write_8_with_check(state, 0x0000, ser_alias << 1);
@@ -4291,12 +4315,12 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	max9295_write_8_with_check(state, 0x0045, 0x20);
 	msleep_range(1000);
 
-	/* LINK_CFG */
 	for (i = 0; i < NR_DESER; i++) {
-		if (deser_addr == all_deser_addr[i])
-			continue;
 		c->addr = all_deser_addr[i];
-		max9296_write_8(state, 0x0010, 0x02);
+		if (c->addr == deser_addr)
+			continue;
+		if (all_deser_reset[i])
+			max9296_write_8(state, 0x0010, all_deser_reset[i] & ~RESET_LINK);
 	}
 
 	c->addr = sensor_alias;
