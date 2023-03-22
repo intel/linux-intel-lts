@@ -4300,19 +4300,19 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 		if (c->addr == deser_addr)
 			continue;
 		ret = max9296_read_8(state, 0x0010, &all_deser_reset[i]);
-		if (ret)
+		if (!ret)
 			max9296_write_8(state, 0x0010, all_deser_reset[i] | RESET_LINK);
 	}
 
 	c->addr = deser_addr;
-	max9296_write_8_with_check(state, 0x0010, RESET_ONESHOT | AUTO_LINK | LINK_A);
+	max9296_write_8(state, 0x0010, RESET_ONESHOT | AUTO_LINK | LINK_A);
 	msleep_range(1000);
 	c->addr = 0x40;
-	max9295_write_8_with_check(state, 0x0000, ser_alias << 1);
+	max9295_write_8(state, 0x0000, ser_alias << 1);
 	msleep_range(1000);
 	c->addr = ser_alias;
-	max9295_write_8_with_check(state, 0x0044, sensor_alias << 1);
-	max9295_write_8_with_check(state, 0x0045, 0x20);
+	max9295_write_8(state, 0x0044, sensor_alias << 1);
+	max9295_write_8(state, 0x0045, 0x20);
 	msleep_range(1000);
 
 	for (i = 0; i < NR_DESER; i++) {
