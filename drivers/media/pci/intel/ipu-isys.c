@@ -1153,7 +1153,7 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_SOF:
 		if (pipe->csi2)
-			ipu_isys_csi2_sof_event(pipe->csi2);
+			ipu_isys_csi2_sof_event(pipe->csi2, pipe->vc);
 
 		pipe->seq[pipe->seq_index].sequence =
 		    atomic_read(&pipe->sequence) - 1;
@@ -1167,7 +1167,7 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_EOF:
 		if (pipe->csi2)
-			ipu_isys_csi2_eof_event(pipe->csi2);
+			ipu_isys_csi2_eof_event(pipe->csi2, pipe->vc);
 
 		dev_dbg(&adev->dev,
 			"eof: handle %d: (index %u), timestamp 0x%16.16llx\n",

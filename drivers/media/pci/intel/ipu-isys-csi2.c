@@ -535,7 +535,7 @@ fail:
 	return rval;
 }
 
-void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
+void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 {
 	struct ipu_isys_pipeline *ip = NULL;
 	struct v4l2_event ev = {
@@ -546,10 +546,11 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
 	unsigned int i;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
-	csi2->in_frame = true;
+	csi2->in_frame[vc] = true;
 
 	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
 		if (csi2->isys->pipes[i] &&
+		    csi2->isys->pipes[i]->vc == vc &&
 		    csi2->isys->pipes[i]->csi2 == csi2) {
 			ip = csi2->isys->pipes[i];
 			break;
@@ -567,11 +568,11 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
 
 	v4l2_event_queue(vdev, &ev);
 	dev_dbg(&csi2->isys->adev->dev,
-		"sof_event::csi2-%i sequence: %i\n",
-		csi2->index, ev.u.frame_sync.frame_sequence);
+		"sof_event::csi2-%i CPU-timestamp:%lld, sequence:%i, vc:%d\n",
+		csi2->index, ktime_get_ns(), ev.u.frame_sync.frame_sequence, vc);
 }
 
-void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
+void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 {
 	struct ipu_isys_pipeline *ip = NULL;
 	unsigned long flags;
@@ -579,12 +580,13 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 	u32 frame_sequence;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
-	csi2->in_frame = false;
-	if (csi2->wait_for_sync)
+	csi2->in_frame[vc] = false;
+	if (csi2->wait_for_sync[vc])
 		complete(&csi2->eof_completion);
 
 	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
 		if (csi2->isys->pipes[i] &&
+		    csi2->isys->pipes[i]->vc == vc &&
 		    csi2->isys->pipes[i]->csi2 == csi2) {
 			ip = csi2->isys->pipes[i];
 			break;
@@ -596,8 +598,8 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
 
 		dev_dbg(&csi2->isys->adev->dev,
-			"eof_event::csi2-%i sequence: %i\n",
-			csi2->index, frame_sequence);
+			"eof_event: csi2-%i sequence: %i, vc: %d\n",
+			csi2->index, frame_sequence, vc);
 		return;
 	}
 
@@ -608,24 +610,27 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 void ipu_isys_csi2_wait_last_eof(struct ipu_isys_csi2 *csi2)
 {
 	unsigned long flags, tout;
+	unsigned int i;
 
-	spin_lock_irqsave(&csi2->isys->lock, flags);
+	for (i = 0; i < NR_OF_CSI2_VC; i++) {
+		spin_lock_irqsave(&csi2->isys->lock, flags);
 
-	if (!csi2->in_frame) {
+		if (!csi2->in_frame[i]) {
+			spin_unlock_irqrestore(&csi2->isys->lock, flags);
+			continue;
+		}
+
+		reinit_completion(&csi2->eof_completion);
+		csi2->wait_for_sync[i] = true;
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
-		return;
+		tout = wait_for_completion_timeout(&csi2->eof_completion,
+						   IPU_EOF_TIMEOUT_JIFFIES);
+		if (!tout)
+			dev_err(&csi2->isys->adev->dev,
+				"csi2-%d: timeout at sync to eof of vc %d\n",
+				csi2->index, i);
+		csi2->wait_for_sync[i] = false;
 	}
-
-	reinit_completion(&csi2->eof_completion);
-	csi2->wait_for_sync = true;
-	spin_unlock_irqrestore(&csi2->isys->lock, flags);
-	tout = wait_for_completion_timeout(&csi2->eof_completion,
-					   IPU_EOF_TIMEOUT_JIFFIES);
-	if (!tout)
-		dev_err(&csi2->isys->adev->dev,
-			"csi2-%d: timeout at sync to eof\n",
-			csi2->index);
-	csi2->wait_for_sync = false;
 }
 
 struct ipu_isys_buffer *
