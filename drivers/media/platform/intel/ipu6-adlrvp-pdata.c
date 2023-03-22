@@ -219,8 +219,6 @@ static struct ipu_isys_subdev_info imx390_sd_4 = {
 #endif
 
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
-#define TI960_I2C_ADAPTER	2
-#define TI960_I2C_ADAPTER_2	4
 #define TI960_LANES	4
 
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
@@ -251,9 +249,14 @@ static struct ti960_subdev_pdata imx390_d3cm_pdata_stub = {
 };
 #endif
 
-static struct ipu_isys_csi2_config ti960_csi2_cfg = {
+static struct ipu_isys_csi2_config ti960_csi2_cfg_1 = {
 	.nlanes = TI960_LANES,
 	.port = 1,
+};
+
+static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
+	.nlanes = TI960_LANES,
+	.port = 2,
 };
 
 static struct ti960_subdev_info ti960_subdevs[] = {
@@ -351,23 +354,43 @@ static struct ti960_subdev_info ti960_subdevs[] = {
 #endif
 };
 
-static struct ti960_pdata ti960_pdata = {
+static struct ti960_pdata ti960_pdata_1 = {
 	.subdev_info = ti960_subdevs,
 	.subdev_num = ARRAY_SIZE(ti960_subdevs),
 	.reset_gpio = 0,
-	.FPD_gpio = 175,
+	.FPD_gpio = -1,
 	.suffix = 'a',
 };
 
-static struct ipu_isys_subdev_info ti960_sd = {
-	.csi2 = &ti960_csi2_cfg,
+static struct ti960_pdata ti960_pdata_2 = {
+	.subdev_info = ti960_subdevs,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs),
+	.reset_gpio = 0,
+	.FPD_gpio = -1,
+	.suffix = 'b',
+};
+
+static struct ipu_isys_subdev_info ti960_sd_1 = {
+	.csi2 = &ti960_csi2_cfg_1,
 	.i2c = {
 		.board_info = {
 			 .type = "ti960",
-			 .addr = TI960_I2C_ADDRESS,
-			 .platform_data = &ti960_pdata,
+			 .addr = TI960_I2C_ADDRESS_2,
+			 .platform_data = &ti960_pdata_1,
 		},
 		.i2c_adapter_bdf = "0000:00:15.1",
+	}
+};
+
+static struct ipu_isys_subdev_info ti960_sd_2 = {
+	.csi2 = &ti960_csi2_cfg_2,
+	.i2c = {
+		.board_info = {
+			 .type = "ti960",
+			 .addr = TI960_I2C_ADDRESS_2,
+			 .platform_data = &ti960_pdata_2,
+		},
+		.i2c_adapter_bdf = "0000:00:19.1",
 	}
 };
 #endif
@@ -567,8 +590,8 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&ar0234_sd_2,
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_TI960)
-		//&ti960_sd,
-		//&ti960_sd_2,
+		&ti960_sd_1,
+		&ti960_sd_2,
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 		&lt6911uxc_sd_1,
