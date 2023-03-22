@@ -498,7 +498,7 @@ static int max9296_write_8(struct ds5 *state, u16 reg, u8 val)
 
 	return ret;
 }
-
+#if 0
 static int max9296_read_8(struct ds5 *state, u16 reg, u8 *val)
 {
 	int ret;
@@ -514,6 +514,7 @@ static int max9296_read_8(struct ds5 *state, u16 reg, u8 *val)
 
 	return ret;
 }
+#endif
 static int max9295_write_8(struct ds5 *state, u16 reg, u8 val)
 {
 	int ret;
@@ -529,7 +530,7 @@ static int max9295_write_8(struct ds5 *state, u16 reg, u8 val)
 
 	return ret;
 }
-
+#if 0
 static int ds5_write_8(struct ds5 *state, u16 reg, u8 val)
 {
 	int ret;
@@ -545,7 +546,7 @@ static int ds5_write_8(struct ds5 *state, u16 reg, u8 val)
 
 	return ret;
 }
-
+#endif
 static int ds5_write(struct ds5 *state, u16 reg, u16 val)
 {
 	int ret;
@@ -1016,7 +1017,7 @@ static const char *ds5_get_sensor_name(struct ds5 *state)
 
 	return sensor_name[sensor_id];
 }
-
+#if 0
 static void ds5_set_state_last_set(struct ds5 *state)
 {
 	// dev_info(&state->client->dev, "%s(): %s\n",
@@ -1033,7 +1034,7 @@ static void ds5_set_state_last_set(struct ds5 *state)
 	else
 		state->mux.last_set = &state->imu.sensor;
 }
-
+#endif
 /* This is needed for .get_fmt()
  * and if streaming is started without .set_fmt()
  */
@@ -4150,7 +4151,6 @@ static int ds5_mux_register(struct i2c_client *c, struct ds5 *state)
 
 static int ds5_hw_init(struct i2c_client *c, struct ds5 *state)
 {
-	struct v4l2_subdev *sd = &state->mux.sd.subdev;
 	u16 mipi_status, n_lanes, phy, drate_min, drate_max;
 	int ret = ds5_read(state, DS5_MIPI_SUPPORT_LINES, &n_lanes);
 	if (!ret)
@@ -4613,6 +4613,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 					__func__, ret);
 			goto dfu_write_error;
 		}
+	/* fallthrough - procceed to recovery */
+	__attribute__((__fallthrough__));
 	/*no break - proceed to recovery*/
 	case DS5_DFU_RECOVERY:
 		ret = ds5_dfu_detach(state);
@@ -4623,7 +4625,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 		}
 		state->dfu_dev.dfu_state_flag = DS5_DFU_IN_PROGRESS;
 		state->dfu_dev.init_v4l_f = 1;
-
+	/* fallthrough - procceed to download */
+	__attribute__((__fallthrough__));
 	/*no break - proceed to download*/
 	case DS5_DFU_IN_PROGRESS: {
 		unsigned int dfu_full_blocks = len / DFU_BLOCK_SIZE;
@@ -4685,8 +4688,6 @@ static int ds5_dfu_device_open(struct inode *inode, struct file *file)
 {
 	struct ds5 *state = container_of(inode->i_cdev, struct ds5,
 			dfu_dev.ds5_cdev);
-	struct i2c_adapter *parent = i2c_parent_is_i2c_adapter(
-			state->client->adapter);
 
 	if (state->dfu_dev.device_open_count)
 		return -EBUSY;
