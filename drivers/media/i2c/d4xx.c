@@ -3822,6 +3822,11 @@ static int ds5_mux_s_stream_vc(struct ds5 *state, u16 vc_id, u16 on)
 			ret = ds5_write(state, DS5_START_STOP_STREAM,
 					DS5_STREAM_STOP | DS5_STREAM_RGB);
 		}
+		if ((vc_id == DS5_MUX_PAD_IMU_A - 1) || (vc_id == DS5_MUX_PAD_IMU_B - 1)) {
+			msleep_range(100);
+			ret = ds5_write(state, DS5_START_STOP_STREAM,
+					DS5_STREAM_STOP | DS5_STREAM_IMU);
+		}
 		if ((vc_id == DS5_MUX_PAD_MOTION_T_A - 1) || (vc_id == DS5_MUX_PAD_MOTION_T_B - 1)) {
 			msleep_range(100);
 			ret = ds5_write(state, DS5_START_STOP_STREAM,
