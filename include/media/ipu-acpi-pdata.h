@@ -77,6 +77,9 @@ struct serdes_local {
 	/* current sensor_addr */
 	unsigned short sensor_addr;
 
+	/* physical i2c addr */
+	unsigned short phy_i2c_addr;
+
 	/* last mapped addr */
 	unsigned short sensor_map_addr;
 

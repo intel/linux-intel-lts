@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2016--2022 Intel Corporation.
+ * Copyright (c) 2016--2023 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -61,6 +61,7 @@ void print_serdes_sdinfo(struct serdes_subdev_info *sdinfo)
 	}
 
 	pr_debug("\t\trx_port \t\t= %d", sdinfo->rx_port);
+	pr_debug("\t\tphy_i2c_addr \t\t= 0x%x", sdinfo->phy_i2c_addr);
 	pr_debug("\t\tser_alias \t\t= 0x%x", sdinfo->ser_alias);
 	pr_debug("\t\tsuffix \t\t\t= %c", sdinfo->suffix);
 	pr_debug("\t\tboard_info.type \t= %s", sdinfo->board_info.type);
@@ -395,10 +396,14 @@ void update_pdata(struct device *dev,
 					dev_dbg(dev, "Old sensor subdev\n");
 					print_subdev(sd_info);
 					update_subdev(dev, acpi_subdev, &sd_info);
+					dev_dbg(dev, "Updated subdev\n");
+					print_subdev(sd_info);
 				} else if (connect == TYPE_SERDES) {
 					dev_dbg(dev, "Old serdes subdev\n");
 					print_serdes_subdev(sd_info);
 					update_serdes_subdev(dev, acpi_subdev, &sd_info);
+					dev_dbg(dev, "Updated subdev\n");
+					print_serdes_subdev(sd_info);
 				}
 
 				/* stop once similar subdev updated */
@@ -470,10 +475,6 @@ void set_ti960_gpio(struct control_logic_data *ctl_data, struct serdes_platform_
 		for (i = 0; i < ctl_data->gpio_num; i++) {
 			/* check for RESET selection in BIOS */
 			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_RESET)
-				(*pdata)->reset_gpio = ctl_data->gpio[i].pin;
-
-			/* check for POWER_EN selection in BIOS */
-			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_POWER_EN)
 				(*pdata)->FPD_gpio = ctl_data->gpio[i].pin;
 		}
 	}
@@ -609,11 +610,8 @@ int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 
 		/* serdes_subdev_info */
 		serdes_sdinfo[i].rx_port = i;
-		if (!strcmp(sensor_name, D457_NAME))
-			serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr;
-		else
-			serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr +
-				serdes_info.sensor_num + i;
+		serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr + serdes_info.sensor_num + i;
+		serdes_sdinfo[i].phy_i2c_addr = serdes_info.phy_i2c_addr;
 		serdes_sdinfo[i].suffix = SUFFIX_BASE + serdes_info.sensor_num + i + 1;
 	}
 
@@ -685,7 +683,7 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 	return 0;
 }
 
-void set_serdes_info(struct device *dev, const char *serdes_name, struct sensor_bios_data *cam_data)
+void set_serdes_info(struct device *dev, char *sensor_name, const char *serdes_name, struct sensor_bios_data *cam_data)
 {
 	/* pprunit as num of sensor connected to deserializer */
 	serdes_info.rx_port = cam_data->pprunit;
@@ -704,6 +702,11 @@ void set_serdes_info(struct device *dev, const char *serdes_name, struct sensor_
 		serdes_info.gpio_powerup_seq = TI960_MAX_GPIO_POWERUP_SEQ;
 	else
 		serdes_info.gpio_powerup_seq = 0;
+
+	if (!strcmp(sensor_name, IMX390_NAME))
+		serdes_info.phy_i2c_addr = IMX390_D3RCM_I2C_ADDRESS;
+	else
+		serdes_info.phy_i2c_addr = 0;
 }
 
 int populate_dummy(struct device *dev,
@@ -789,7 +792,7 @@ int populate_sensor_pdata(struct device *dev,
 		}
 
 		/* local serdes info */
-		set_serdes_info(dev, serdes_name, cam_data);
+		set_serdes_info(dev, sensor_name, serdes_name, cam_data);
 	}
 
 	/* Use last I2C device */

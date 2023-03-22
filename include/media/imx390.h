@@ -8,6 +8,8 @@
 
 #define IMX390_NAME "imx390"
 
+#define IMX390_D3RCM_I2C_ADDRESS (0x21 << 1)
+
 struct imx390_platform_data {
 	unsigned int port;
 	unsigned int lanes;
