@@ -704,7 +704,7 @@ void set_serdes_info(struct device *dev, char *sensor_name, const char *serdes_n
 		serdes_info.gpio_powerup_seq = 0;
 
 	if (!strcmp(sensor_name, IMX390_NAME))
-		serdes_info.phy_i2c_addr = IMX390_D3RCM_I2C_ADDRESS;
+		serdes_info.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS;
 	else
 		serdes_info.phy_i2c_addr = 0;
 }
