@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2022 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/gpio.h>
@@ -64,9 +64,15 @@ struct ti960 {
 
 #define to_ti960(_sd) container_of(_sd, struct ti960, sd)
 
-static const s64 ti960_op_sys_clock[] =  {400000000, 800000000};
+static const s64 ti960_op_sys_clock[] =  {200000000,
+					  400000000,
+					  600000000,
+					  800000000};
+
 static const u8 ti960_op_sys_clock_reg_val[] = {
+	TI960_MIPI_400MBPS,
 	TI960_MIPI_800MBPS,
+	TI960_MIPI_1200MBPS,
 	TI960_MIPI_1600MBPS
 };
 
@@ -773,7 +779,7 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 	val = TI960_CSI_ENABLE;
 	val |= TI960_CSI_CONTS_CLOCK;
 	/* Enable skew calculation when 1.6Gbps output is enabled. */
-	if (v4l2_ctrl_g_ctrl(va->link_freq))
+	if (v4l2_ctrl_g_ctrl(va->link_freq) == 3)
 		val |= TI960_CSI_SKEWCAL;
 	return ti960_reg_write(va, TI960_CSI_CTL, val);
 }
@@ -1164,10 +1170,10 @@ static const struct v4l2_ctrl_config ti960_controls[] = {
 		.id = V4L2_CID_LINK_FREQ,
 		.name = "V4L2_CID_LINK_FREQ",
 		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+		.min = 0,
 		.max = ARRAY_SIZE(ti960_op_sys_clock) - 1,
-		.min =  0,
-		.step  = 0,
-		.def = 1,
+		.def = 3,
+		.menu_skip_mask = 0,
 		.qmenu_int = ti960_op_sys_clock,
 	},
 	{
@@ -1175,9 +1181,9 @@ static const struct v4l2_ctrl_config ti960_controls[] = {
 		.id = V4L2_CID_TEST_PATTERN,
 		.name = "V4L2_CID_TEST_PATTERN",
 		.type = V4L2_CTRL_TYPE_INTEGER,
+		.min = 0,
 		.max = 1,
-		.min =	0,
-		.step  = 1,
+		.step = 1,
 		.def = 0,
 	},
 	{
