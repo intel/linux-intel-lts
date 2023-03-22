@@ -6,7 +6,7 @@
 #include <media/lt6911uxc.h>
 #include <media/ti960.h>
 #include <media/imx390.h>
-#include <media/d4xx.h>
+#include <media/d4xx_pdata.h>
 
 #define CL_EMPTY 0
 #define CL_DISCRETE 1

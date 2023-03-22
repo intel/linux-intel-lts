@@ -20,7 +20,7 @@
 #include <media/lt6911uxc.h>
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_D4XX)
-#include <media/d4xx.h>
+#include <media/d4xx_pdata.h>
 #endif
 
 #include "ipu.h"
