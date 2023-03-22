@@ -182,6 +182,14 @@ enum ds5_mux_pad {
 	if (ds5_raw_write(state, addr, buf, size)) \
 		return -EINVAL; \
 	}
+#define max9296_write_8_with_check(state, addr, buf) {\
+	if (max9296_write_8(state, addr, buf)) \
+		return -EINVAL; \
+	}
+#define max9295_write_8_with_check(state, addr, buf) {\
+	if (max9295_write_8(state, addr, buf)) \
+		return -EINVAL; \
+	}
 #define D4XX_LINK_FREQ_360MHZ		360000000ULL
 #define D4XX_LINK_FREQ_300MHZ		300000000ULL
 #define D4XX_LINK_FREQ_288MHZ		288000000ULL
@@ -447,6 +455,8 @@ struct ds5 {
 	/* All below pointers are used for writing, cannot be const */
 	struct mutex lock;
 	struct regmap *regmap;
+	struct regmap *regmap_max9296;
+	struct regmap *regmap_max9295;
 	struct regulator *vcc;
 	const struct ds5_variant *variant;
 	int is_depth;
@@ -470,6 +480,38 @@ struct ds5_counters {
 static inline void msleep_range(unsigned int delay_base)
 {
 	usleep_range(delay_base * 1000, delay_base * 1000 + 500);
+}
+
+static int max9296_write_8(struct ds5 *state, u16 reg, u8 val)
+{
+	int ret;
+
+	ret = regmap_raw_write(state->regmap_max9296, reg, &val, 1);
+	if (ret < 0)
+		dev_err(&state->client->dev, "%s(): i2c write failed %d, 0x%04x = 0x%x\n",
+			__func__, ret, reg, val);
+	else
+		if (state->dfu_dev.dfu_state_flag == DS5_DFU_IDLE)
+			dev_info(&state->client->dev, "%s(): i2c write 0x%04x: 0x%x\n",
+				 __func__, reg, val);
+
+	return ret;
+}
+
+static int max9295_write_8(struct ds5 *state, u16 reg, u8 val)
+{
+	int ret;
+
+	ret = regmap_raw_write(state->regmap_max9295, reg, &val, 1);
+	if (ret < 0)
+		dev_err(&state->client->dev, "%s(): i2c write failed %d, 0x%04x = 0x%x\n",
+			__func__, ret, reg, val);
+	else
+		if (state->dfu_dev.dfu_state_flag == DS5_DFU_IDLE)
+			dev_info(&state->client->dev, "%s(): i2c write 0x%04x: 0x%x\n",
+				 __func__, reg, val);
+
+	return ret;
 }
 
 static int ds5_write_8(struct ds5 *state, u16 reg, u8 val)
@@ -2525,7 +2567,10 @@ static int ds5_sensor_init(struct i2c_client *c, struct ds5 *state,
 	sd->internal_ops = &ds5_sensor_internal_ops;
 	sd->grp_id = *dev_num;
 	v4l2_set_subdevdata(sd, state);
-	snprintf(sd->name, sizeof(sd->name), "D4XX %s %c", name, dpdata->suffix);
+	/*
+	 * TODO: suffix for 2 D457 connected to 1 Deser
+	 */
+	snprintf(sd->name, sizeof(sd->name), "D4XX %s %c", name, dpdata->subdev_info[0].suffix);
 
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 
@@ -4095,6 +4140,87 @@ static void ds5_substream_init(void)
 	pad_to_substream[DS5_MUX_PAD_MOTION_T_A] = 4;
 }
 
+#define NR_DESER 4
+
+static const struct regmap_config ds5_regmap_max9296 = {
+	.reg_bits = 16,
+	.val_bits = 8,
+	.reg_format_endian = REGMAP_ENDIAN_BIG,
+	.val_format_endian = REGMAP_ENDIAN_NATIVE,
+};
+
+static const struct regmap_config ds5_regmap_max9295 = {
+	.reg_bits = 16,
+	.val_bits = 8,
+	.reg_format_endian = REGMAP_ENDIAN_BIG,
+	.val_format_endian = REGMAP_ENDIAN_NATIVE,
+};
+
+static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
+{
+	struct d4xx_pdata *dpdata = c->dev.platform_data;
+	unsigned short deser_addr = c->addr;
+	unsigned short ser_alias;
+	unsigned short sensor_alias;
+	int ret, i;
+	unsigned short all_deser_addr[NR_DESER] = {0x48, 0x4a, 0x68, 0x6c};
+
+	if (dpdata->subdev_num >= 1) {
+		sensor_alias = dpdata->subdev_info[i].board_info.addr;
+		ser_alias = dpdata->subdev_info[i].ser_alias;
+	} else {
+		dev_err(&c->dev, "no subdev found!\n");
+		return -EINVAL;
+	}
+
+	state->regmap_max9296 = devm_regmap_init_i2c(c, &ds5_regmap_max9296);
+	if (IS_ERR(state->regmap_max9296)) {
+		ret = PTR_ERR(state->regmap_max9296);
+		dev_err(&c->dev, "regmap max9296 init failed: %d\n", ret);
+		return ret;
+	}
+
+	state->regmap_max9295 = devm_regmap_init_i2c(c, &ds5_regmap_max9295);
+	if (IS_ERR(state->regmap_max9295)) {
+		ret = PTR_ERR(state->regmap_max9295);
+		dev_err(&c->dev, "regmap max9295 init failed: %d\n", ret);
+		return ret;
+	}
+
+	/* splitter mode */
+	for (i = 0; i < NR_DESER; i++) {
+		c->addr = all_deser_addr[i];
+		if (c->addr != deser_addr)
+			max9296_write_8(state, 0x0010, 0x03);
+	}
+
+	c->addr = deser_addr;
+	max9296_write_8_with_check(state, 0x0010, 0x00);
+	max9296_write_8_with_check(state, 0x0010, 0x40);
+	msleep_range(1000);
+	max9296_write_8_with_check(state, 0x0010, 0x02);
+	msleep_range(1000);
+	c->addr = 0x40;
+	max9295_write_8_with_check(state, 0x0000, ser_alias << 1);
+	msleep_range(1000);
+	c->addr = ser_alias;
+	max9295_write_8_with_check(state, 0x0044, sensor_alias << 1);
+	max9295_write_8_with_check(state, 0x0045, 0x20);
+	msleep_range(1000);
+
+	/* LINK_CFG */
+	for (i = 0; i < NR_DESER; i++) {
+		if (deser_addr == all_deser_addr[i])
+			continue;
+		c->addr = all_deser_addr[i];
+		max9296_write_8(state, 0x0010, 0x02);
+	}
+
+	c->addr = sensor_alias;
+
+	return 0;
+}
+
 static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 {
 	struct ds5 *state = devm_kzalloc(&c->dev, sizeof(*state), GFP_KERNEL);
@@ -4112,6 +4238,12 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 	state->client = c;
 	dev_warn(&c->dev, "Driver data NAEL %d\n", (int)id->driver_data);
 	state->variant = ds5_variants + id->driver_data;
+
+	ret = ds5_i2c_addr_setting(c, state);
+	if (ret) {
+		dev_err(&c->dev, "failed apply i2c addr setting\n");
+		return ret;
+	}
 
 	state->vcc = devm_regulator_get(&c->dev, "vcc");
 	if (IS_ERR(state->vcc)) {
@@ -4136,37 +4268,7 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 	ret = ds5_chrdev_init(c, state);
 	if (ret < 0)
 		goto e_regulator;
-	// The default addr is 0x10 for sensors on the same i2c.
-	// map their addr// to 0x12/0x14 by configuring 9259/9296.
-	if (c->addr == D4XX_I2C_ADDRESS_1) {
-		c->addr = 0x48;
-		ds5_write_8(state, 0x1000, 0x23);
 
-		c->addr = 0x4a;
-		ds5_write_8(state, 0x1000, 0x23);
-		ds5_write_8(state, 0x1000, 0x22);
-		msleep_range(1000);
-
-		c->addr = 0x40;
-		ds5_write_8(state, 0x0000, 0x88);
-		c->addr = 0x44;
-		msleep_range(1000);
-
-		ds5_write_8(state, 0x4400, 0x28);
-		ds5_write_8(state, 0x4500, 0x20);
-
-		c->addr = 0x48;
-		ds5_write_8(state, 0x1000, 0x22);
-		msleep_range(1000);
-
-		c->addr = 0x40;
-		ds5_write_8(state, 0x0000, 0x84);
-		c->addr = 0x42;
-		ds5_write_8(state, 0x4400, 0x24);
-		ds5_write_8(state, 0x4500, 0x20);
-
-		c->addr = 0x12;
-	}
 	ret = ds5_read(state, 0x5020, &rec_state);
 	if (ret < 0) {
 		dev_err(&c->dev, "%s(): cannot communicate with D4XX: %d\n", __func__, ret);
