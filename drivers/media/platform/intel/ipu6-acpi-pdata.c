@@ -591,8 +591,10 @@ int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 
 	for (i = 0; i < subdev_port; i++) {
 		module_pdata[i] = kzalloc(sizeof(*module_pdata[i]), GFP_KERNEL);
-		if (!module_pdata[i])
+		if (!module_pdata[i]) {
+			kfree(serdes_sdinfo);
 			return -ENOMEM;
+		}
 
 		set_serdes_sd_pdata(&module_pdata[i], sensor_name, lanes);
 
