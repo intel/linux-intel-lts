@@ -1786,6 +1786,7 @@ void intel_display_debugfs_register(struct drm_i915_private *i915)
 				 minor->debugfs_root, minor);
 
 	intel_dmc_debugfs_register(i915);
+	intel_drrs_debugfs_register(i915);
 	intel_fbc_debugfs_register(i915);
 	skl_watermark_ipc_debugfs_register(i915);
 }
@@ -2100,8 +2101,6 @@ void intel_connector_debugfs_add(struct intel_connector *intel_connector)
 	if (!root)
 		return;
 
-	intel_drrs_connector_debugfs_add(intel_connector);
-
 	if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
 		debugfs_create_file("i915_panel_timings", S_IRUGO, root,
 				    connector, &i915_panel_fops);
@@ -2154,7 +2153,6 @@ void intel_crtc_debugfs_add(struct drm_crtc *crtc)
 		return;
 
 	crtc_updates_add(crtc);
-	intel_drrs_crtc_debugfs_add(to_intel_crtc(crtc));
 	intel_fbc_crtc_debugfs_add(to_intel_crtc(crtc));
 
 	debugfs_create_file("i915_current_bpc", 0444, crtc->debugfs_entry, crtc,

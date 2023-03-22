@@ -300,26 +300,46 @@ void intel_crtc_drrs_init(struct intel_crtc *crtc)
 
 static int intel_drrs_debugfs_status_show(struct seq_file *m, void *unused)
 {
-	struct intel_crtc *crtc = m->private;
-	const struct intel_crtc_state *crtc_state =
-		to_intel_crtc_state(crtc->base.state);
+	struct drm_i915_private *i915 = m->private;
+	struct drm_connector_list_iter conn_iter;
+	struct intel_connector *connector;
+	struct intel_crtc *crtc;
 
-	mutex_lock(&crtc->drrs.mutex);
+	drm_connector_list_iter_begin(&i915->drm, &conn_iter);
+	for_each_intel_connector_iter(connector, &conn_iter) {
+		seq_printf(m, "[CONNECTOR:%d:%s] DRRS type: %s\n",
+			   connector->base.base.id, connector->base.name,
+			   intel_drrs_type_str(intel_panel_drrs_type(connector)));
+	}
+	drm_connector_list_iter_end(&conn_iter);
 
-	seq_printf(m, "DRRS enabled: %s\n",
-		   str_yes_no(crtc_state->has_drrs));
+	seq_puts(m, "\n");
 
-	seq_printf(m, "DRRS active: %s\n",
-		   str_yes_no(intel_drrs_is_active(crtc)));
+	for_each_intel_crtc(&i915->drm, crtc) {
+		const struct intel_crtc_state *crtc_state =
+			to_intel_crtc_state(crtc->base.state);
 
-	seq_printf(m, "DRRS refresh rate: %s\n",
-		   crtc->drrs.refresh_rate == DRRS_REFRESH_RATE_LOW ?
-		   "low" : "high");
+		seq_printf(m, "[CRTC:%d:%s]:\n",
+			   crtc->base.base.id, crtc->base.name);
 
-	seq_printf(m, "DRRS busy frontbuffer bits: 0x%x\n",
-		   crtc->drrs.busy_frontbuffer_bits);
+		mutex_lock(&crtc->drrs.mutex);
 
-	mutex_unlock(&crtc->drrs.mutex);
+		/* DRRS Supported */
+		seq_printf(m, "\tDRRS enabled: %s\n",
+			   str_yes_no(crtc_state->has_drrs));
+
+		seq_printf(m, "\tDRRS active: %s\n",
+			   str_yes_no(intel_drrs_is_active(crtc)));
+
+		seq_printf(m, "\tDRRS refresh rate: %s\n",
+			   crtc->drrs.refresh_rate == DRRS_REFRESH_RATE_LOW ?
+			   "low" : "high");
+
+		seq_printf(m, "\tDRRS busy frontbuffer bits: 0x%X\n",
+			   crtc->drrs.busy_frontbuffer_bits);
+
+		mutex_unlock(&crtc->drrs.mutex);
+	}
 
 	return 0;
 }
@@ -328,72 +348,58 @@ DEFINE_SHOW_ATTRIBUTE(intel_drrs_debugfs_status);
 
 static int intel_drrs_debugfs_ctl_set(void *data, u64 val)
 {
-	struct intel_crtc *crtc = data;
-	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
-	struct intel_crtc_state *crtc_state;
-	struct drm_crtc_commit *commit;
-	int ret;
+	struct drm_i915_private *i915 = data;
+	struct intel_crtc *crtc;
 
-	ret = drm_modeset_lock_single_interruptible(&crtc->base.mutex);
-	if (ret)
-		return ret;
+	for_each_intel_crtc(&i915->drm, crtc) {
+		struct intel_crtc_state *crtc_state;
+		struct drm_crtc_commit *commit;
+		int ret;
 
-	crtc_state = to_intel_crtc_state(crtc->base.state);
-
-	if (!crtc_state->hw.active ||
-	    !crtc_state->has_drrs)
-		goto out;
-
-	commit = crtc_state->uapi.commit;
-	if (commit) {
-		ret = wait_for_completion_interruptible(&commit->hw_done);
+		ret = drm_modeset_lock_single_interruptible(&crtc->base.mutex);
 		if (ret)
+			return ret;
+
+		crtc_state = to_intel_crtc_state(crtc->base.state);
+
+		if (!crtc_state->hw.active ||
+		    !crtc_state->has_drrs)
 			goto out;
-	}
 
-	drm_dbg(&i915->drm,
-		"Manually %sactivating DRRS\n", val ? "" : "de");
+		commit = crtc_state->uapi.commit;
+		if (commit) {
+			ret = wait_for_completion_interruptible(&commit->hw_done);
+			if (ret)
+				goto out;
+		}
 
-	if (val)
-		intel_drrs_activate(crtc_state);
-	else
-		intel_drrs_deactivate(crtc_state);
+		drm_dbg(&i915->drm,
+			"Manually %sactivating DRRS\n", val ? "" : "de");
+
+		if (val)
+			intel_drrs_activate(crtc_state);
+		else
+			intel_drrs_deactivate(crtc_state);
 
 out:
-	drm_modeset_unlock(&crtc->base.mutex);
+		drm_modeset_unlock(&crtc->base.mutex);
+		if (ret)
+			return ret;
+	}
 
-	return ret;
+	return 0;
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(intel_drrs_debugfs_ctl_fops,
 			NULL, intel_drrs_debugfs_ctl_set, "%llu\n");
 
-void intel_drrs_crtc_debugfs_add(struct intel_crtc *crtc)
+void intel_drrs_debugfs_register(struct drm_i915_private *i915)
 {
-	debugfs_create_file("i915_drrs_status", 0444, crtc->base.debugfs_entry,
-			    crtc, &intel_drrs_debugfs_status_fops);
+	struct drm_minor *minor = i915->drm.primary;
 
-	debugfs_create_file("i915_drrs_ctl", 0644, crtc->base.debugfs_entry,
-			    crtc, &intel_drrs_debugfs_ctl_fops);
-}
+	debugfs_create_file("i915_drrs_status", 0444, minor->debugfs_root,
+			    i915, &intel_drrs_debugfs_status_fops);
 
-static int intel_drrs_debugfs_type_show(struct seq_file *m, void *unused)
-{
-	struct intel_connector *connector = m->private;
-
-	seq_printf(m, "DRRS type: %s\n",
-		   intel_drrs_type_str(intel_panel_drrs_type(connector)));
-
-	return 0;
-}
-
-DEFINE_SHOW_ATTRIBUTE(intel_drrs_debugfs_type);
-
-void intel_drrs_connector_debugfs_add(struct intel_connector *connector)
-{
-	if (intel_panel_drrs_type(connector) == DRRS_TYPE_NONE)
-		return;
-
-	debugfs_create_file("i915_drrs_type", 0444, connector->base.debugfs_entry,
-			    connector, &intel_drrs_debugfs_type_fops);
+	debugfs_create_file("i915_drrs_ctl", 0644, minor->debugfs_root,
+			    i915, &intel_drrs_debugfs_ctl_fops);
 }
