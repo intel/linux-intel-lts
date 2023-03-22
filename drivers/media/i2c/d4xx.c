@@ -5063,16 +5063,16 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	}
 
 	c->addr = 0x48;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 	c->addr = 0x4a;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 	c->addr = 0x68;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 	c->addr = 0x6c;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 
 	c->addr = 0x6c;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
@@ -5084,7 +5084,7 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	max9295_write_8(state, 0x0045, 0x20);
 
 	c->addr = 0x68;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
@@ -5094,7 +5094,7 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	max9295_write_8(state, 0x0045, 0x20);
 
 	c->addr = 0x4a;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
@@ -5104,7 +5104,7 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	max9295_write_8(state, 0x0045, 0x20);
 
 	c->addr = 0x48;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
