@@ -149,7 +149,6 @@ static int run_test(struct intel_gt *gt, int test_type)
 	struct igt_spinner spin;
 	u32 slpc_min_freq, slpc_max_freq;
 	int err = 0;
-	intel_wakeref_t wakeref;
 
 	if (!intel_uc_uses_guc_slpc(&gt->uc))
 		return 0;
@@ -182,7 +181,7 @@ static int run_test(struct intel_gt *gt, int test_type)
 	}
 
 	intel_gt_pm_wait_for_idle(gt);
-	wakeref = intel_gt_pm_get(gt);
+	intel_gt_pm_get(gt);
 	for_each_engine(engine, gt, id) {
 		struct i915_request *rq;
 		u32 max_act_freq;
@@ -261,7 +260,7 @@ static int run_test(struct intel_gt *gt, int test_type)
 	if (igt_flush_test(gt->i915))
 		err = -EIO;
 
-	intel_gt_pm_put(gt, wakeref);
+	intel_gt_pm_put(gt);
 	igt_spinner_fini(&spin);
 	intel_gt_pm_wait_for_idle(gt);
 

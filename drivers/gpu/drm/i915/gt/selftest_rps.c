@@ -223,7 +223,6 @@ int live_rps_clock_interval(void *arg)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 	struct igt_spinner spin;
-	intel_wakeref_t wakeref;
 	int err = 0;
 
 	if (!intel_rps_is_enabled(rps) || GRAPHICS_VER(gt->i915) < 6)
@@ -236,7 +235,7 @@ int live_rps_clock_interval(void *arg)
 	saved_work = rps->work.func;
 	rps->work.func = dummy_rps_work;
 
-	wakeref = intel_gt_pm_get(gt);
+	intel_gt_pm_get(gt);
 	intel_rps_disable(&gt->rps);
 
 	intel_gt_check_clock_frequency(gt);
@@ -355,7 +354,7 @@ int live_rps_clock_interval(void *arg)
 	}
 
 	intel_rps_enable(&gt->rps);
-	intel_gt_pm_put(gt, wakeref);
+	intel_gt_pm_put(gt);
 
 	igt_spinner_fini(&spin);
 
@@ -376,7 +375,6 @@ int live_rps_control(void *arg)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 	struct igt_spinner spin;
-	intel_wakeref_t wakeref;
 	int err = 0;
 
 	/*
@@ -399,7 +397,7 @@ int live_rps_control(void *arg)
 	saved_work = rps->work.func;
 	rps->work.func = dummy_rps_work;
 
-	wakeref = intel_gt_pm_get(gt);
+	intel_gt_pm_get(gt);
 	for_each_engine(engine, gt, id) {
 		struct i915_request *rq;
 		ktime_t min_dt, max_dt;
@@ -489,7 +487,7 @@ int live_rps_control(void *arg)
 			break;
 		}
 	}
-	intel_gt_pm_put(gt, wakeref);
+	intel_gt_pm_put(gt);
 
 	igt_spinner_fini(&spin);
 
@@ -1028,7 +1026,6 @@ int live_rps_interrupt(void *arg)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 	struct igt_spinner spin;
-	intel_wakeref_t wakeref;
 	u32 pm_events;
 	int err = 0;
 
@@ -1039,9 +1036,9 @@ int live_rps_interrupt(void *arg)
 	if (!intel_rps_has_interrupts(rps) || GRAPHICS_VER(gt->i915) < 6)
 		return 0;
 
-	pm_events = 0;
-	with_intel_gt_pm(gt, wakeref)
-		pm_events = rps->pm_events;
+	intel_gt_pm_get(gt);
+	pm_events = rps->pm_events;
+	intel_gt_pm_put(gt);
 	if (!pm_events) {
 		pr_err("No RPS PM events registered, but RPS is enabled?\n");
 		return -ENODEV;
