@@ -30,9 +30,15 @@ struct i915_vma;
 struct intel_context;
 struct intel_engine_cs;
 
+enum report_header {
+	HDR_32_BIT = 0,
+	HDR_64_BIT,
+};
+
 struct i915_oa_format {
 	u32 format;
 	int size;
+	enum report_header header;
 };
 
 struct i915_oa_reg {
