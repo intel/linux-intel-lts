@@ -20,15 +20,6 @@ enum intel_vsec_quirks {
 
 	/* DVSEC not present (provided in driver data) */
 	VSEC_QUIRK_NO_DVSEC	= BIT(3),
-
-	/* Platforms requiring quirk in the auxiliary driver */
-	VSEC_QUIRK_EARLY_HW     = BIT(4),
-};
-
-/* Platform specific data */
-struct intel_vsec_platform_info {
-	struct intel_vsec_header **capabilities;
-	unsigned long quirks;
 };
 
 struct intel_vsec_device {
@@ -36,7 +27,7 @@ struct intel_vsec_device {
 	struct pci_dev *pcidev;
 	struct resource *resource;
 	struct ida *ida;
-	struct intel_vsec_platform_info *info;
+	unsigned long quirks;
 	int num_resources;
 };
 
