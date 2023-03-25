@@ -723,7 +723,7 @@ EXPORT_SYMBOL(drm_sched_job_add_dependency);
 /**
  * drm_sched_job_add_syncobj_dependency - adds a syncobj's fence as a job dependency
  * @job: scheduler job to add the dependencies to
- * @file_private: drm file private pointer
+ * @file: drm file private pointer
  * @handle: syncobj handle to lookup
  * @point: timeline point
  *
