@@ -33,7 +33,7 @@
 #include <asm/mce.h>
 #include <asm/trace/irq_vectors.h>
 #include <asm/kexec.h>
-#include <asm/virtext.h>
+#include <asm/reboot.h>
 
 /*
  *	Some notes on x86 processor bugs affecting SMP operation:
@@ -177,7 +177,7 @@ static int smp_stop_nmi_callback(unsigned int val, struct pt_regs *regs)
 		return NMI_HANDLED;
 
 	store_regs(regs);
-	cpu_emergency_vmxoff();
+	cpu_emergency_disable_virtualization();
 	stop_this_cpu(NULL);
 
 	return NMI_HANDLED;
@@ -191,7 +191,7 @@ __visible void smp_reboot_interrupt(struct pt_regs *regs)
 {
 	ipi_entering_ack_irq();
 	store_regs(regs);
-	cpu_emergency_vmxoff();
+	cpu_emergency_disable_virtualization();
 	stop_this_cpu(NULL);
 	irq_exit();
 }
