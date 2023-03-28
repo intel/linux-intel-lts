@@ -670,6 +670,27 @@ int i915_sriov_pf_disable_vfs(struct drm_i915_private *i915)
 	return 0;
 }
 
+static bool needs_save_restore(struct drm_i915_private *i915, unsigned int vfid)
+{
+	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
+	struct pci_dev *vfpdev = i915_pci_pf_get_vf_dev(pdev, vfid);
+	bool ret;
+
+	if (!vfpdev)
+		return false;
+
+	/*
+	 * If VF has the same driver as PF loaded (from host perspective), we don't need
+	 * to save/restore its state, because the VF driver will receive the same PM
+	 * handling as all the host drivers. There is also no need to save/restore state
+	 * when no driver is loaded on VF.
+	 */
+	ret = (vfpdev->driver && strcmp(vfpdev->driver->name, pdev->driver->name) != 0);
+
+	pci_dev_put(vfpdev);
+	return ret;
+}
+
 static void pf_restore_vfs_pci_state(struct drm_i915_private *i915, unsigned int num_vfs)
 {
 	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
@@ -682,12 +703,14 @@ static void pf_restore_vfs_pci_state(struct drm_i915_private *i915, unsigned int
 
 		if (!vfpdev)
 			continue;
+		if (!needs_save_restore(i915, vfid))
+			continue;
 
 		/*
 		 * XXX: Waiting for other drivers to do their job.
 		 * We can ignore the potential error in this function -
-		 * despite the errors, we will try to reinitialize the MSI
-		 * and set the PCI master
+		 * in case of an error, we still want to try to reinitialize
+		 * the MSI and set the PCI master.
 		 */
 		device_pm_wait_for_dev(&pdev->dev, &vfpdev->dev);
 
@@ -750,6 +773,11 @@ static void pf_save_vfs_guc_state(struct drm_i915_private *i915, unsigned int nu
 	unsigned int vfid;
 
 	for (vfid = 1; vfid <= num_vfs; vfid++) {
+		if (!needs_save_restore(i915, vfid)) {
+			drm_dbg(&i915->drm, "Save of VF%u GuC state has been skipped\n", vfid);
+			continue;
+		}
+
 		for_each_gt(gt, i915, gt_id) {
 			int err = pf_gt_save_vf_guc_state(gt, vfid);
 
@@ -806,6 +834,12 @@ static void pf_restore_vfs_guc_state(struct drm_i915_private *i915, unsigned int
 	unsigned int vfid;
 
 	for (vfid = 1; vfid <= num_vfs; vfid++) {
+		if (!needs_save_restore(i915, vfid)) {
+			drm_dbg(&i915->drm, "Restoration of VF%u GuC state has been skipped\n",
+				vfid);
+			continue;
+		}
+
 		for_each_gt(gt, i915, gt_id) {
 			int err = pf_gt_restore_vf_guc_state(gt, vfid);
 
