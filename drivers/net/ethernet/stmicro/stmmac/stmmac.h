@@ -223,6 +223,7 @@ struct stmmac_priv {
 	struct mac_device_info *hw;
 	int (*hwif_quirks)(struct stmmac_priv *priv);
 	struct mutex lock;
+	int hwts_all;
 
 	struct stmmac_dma_conf dma_conf;
 
@@ -289,6 +290,9 @@ struct stmmac_priv {
 	char int_name_rx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 14];
 	char int_name_tx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 18];
 
+	/* WA for skipping disabling EST during TAPRIO deletion */
+	bool est_hw_del_wa;
+
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dbgfs_dir;
 #endif
@@ -323,6 +327,12 @@ struct stmmac_priv {
 	/* XDP BPF Program */
 	unsigned long *af_xdp_zc_qps;
 	struct bpf_prog *xdp_prog;
+
+#ifdef CONFIG_PM
+	/* Runtime PM */
+	int saved_wolopts;
+	bool phylink_up;
+#endif
 };
 
 enum stmmac_state {
@@ -344,6 +354,7 @@ void stmmac_ptp_unregister(struct stmmac_priv *priv);
 int stmmac_xdp_open(struct net_device *dev);
 void stmmac_xdp_release(struct net_device *dev);
 int stmmac_resume(struct device *dev);
+int stmmac_resume_runtime(struct device *dev, bool rpm);
 int stmmac_suspend(struct device *dev);
 int stmmac_dvr_remove(struct device *dev);
 int stmmac_dvr_probe(struct device *device,
