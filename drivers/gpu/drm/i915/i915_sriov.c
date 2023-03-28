@@ -7,6 +7,7 @@
 #include "i915_sriov_sysfs.h"
 #include "i915_drv.h"
 #include "i915_pci.h"
+#include "i915_utils.h"
 #include "i915_reg.h"
 #include "intel_pci_config.h"
 
@@ -14,6 +15,7 @@
 #include "gt/intel_gt_pm.h"
 #include "gt/iov/intel_iov_provisioning.h"
 #include "gt/iov/intel_iov_service.h"
+#include "gt/iov/intel_iov_reg.h"
 #include "gt/iov/intel_iov_state.h"
 #include "gt/iov/intel_iov_utils.h"
 
@@ -668,6 +670,206 @@ int i915_sriov_pf_disable_vfs(struct drm_i915_private *i915)
 	return 0;
 }
 
+static void pf_restore_vfs_pci_state(struct drm_i915_private *i915, unsigned int num_vfs)
+{
+	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
+	unsigned int vfid;
+
+	GEM_BUG_ON(num_vfs > pci_num_vf(pdev));
+
+	for (vfid = 1; vfid <= num_vfs; vfid++) {
+		struct pci_dev *vfpdev = i915_pci_pf_get_vf_dev(pdev, vfid);
+
+		if (!vfpdev)
+			continue;
+
+		/*
+		 * XXX: Waiting for other drivers to do their job.
+		 * We can ignore the potential error in this function -
+		 * despite the errors, we will try to reinitialize the MSI
+		 * and set the PCI master
+		 */
+		device_pm_wait_for_dev(&pdev->dev, &vfpdev->dev);
+
+		pci_restore_msi_state(vfpdev);
+		pci_set_master(vfpdev);
+
+		pci_dev_put(vfpdev);
+	}
+}
+
+#define I915_VF_PAUSE_TIMEOUT_MS 500
+#define I915_VF_REPROVISION_TIMEOUT_MS 1000
+
+static int pf_gt_save_vf_guc_state(struct intel_gt *gt, unsigned int vfid)
+{
+	struct pci_dev *pdev = to_pci_dev(gt->i915->drm.dev);
+	struct intel_iov *iov = &gt->iov;
+	unsigned long timeout_ms = I915_VF_PAUSE_TIMEOUT_MS;
+	void **guc_state = &iov->pf.state.data[vfid].guc_state;
+	int err;
+
+	GEM_BUG_ON(!vfid);
+	GEM_BUG_ON(vfid > pci_num_vf(pdev));
+
+	err = intel_iov_state_pause_vf(iov, vfid);
+	if (err) {
+		IOV_ERROR(iov, "Failed to pause VF%u: (%pe)", vfid, ERR_PTR(err));
+		return err;
+	}
+
+	/* FIXME: How long we should wait? */
+	if (wait_for(iov->pf.state.data[vfid].paused, timeout_ms)) {
+		IOV_ERROR(iov, "VF%u pause didn't complete within %lu ms\n", vfid, timeout_ms);
+		return -ETIMEDOUT;
+	}
+
+	if (*guc_state)
+		memset(*guc_state, 0, PF2GUC_SAVE_RESTORE_VF_BUFF_SIZE);
+	else
+		*guc_state = kzalloc(PF2GUC_SAVE_RESTORE_VF_BUFF_SIZE, GFP_KERNEL);
+
+	if (!*guc_state) {
+		err = -ENOMEM;
+		goto error;
+	}
+
+	err = intel_iov_state_save_vf(iov, vfid, *guc_state, PF2GUC_SAVE_RESTORE_VF_BUFF_SIZE);
+error:
+	if (err)
+		IOV_ERROR(iov, "Failed to save VF%u GuC state: (%pe)", vfid, ERR_PTR(err));
+
+	return err;
+}
+
+static void pf_save_vfs_guc_state(struct drm_i915_private *i915, unsigned int num_vfs)
+{
+	unsigned int saved = 0;
+	struct intel_gt *gt;
+	unsigned int gt_id;
+	unsigned int vfid;
+
+	for (vfid = 1; vfid <= num_vfs; vfid++) {
+		for_each_gt(gt, i915, gt_id) {
+			int err = pf_gt_save_vf_guc_state(gt, vfid);
+
+			if (err < 0)
+				goto skip_vf;
+		}
+		saved++;
+		continue;
+skip_vf:
+		break;
+	}
+
+	drm_dbg(&i915->drm, "%u of %u VFs GuC state successfully saved", saved, num_vfs);
+}
+
+static int pf_gt_restore_vf_guc_state(struct intel_gt *gt, unsigned int vfid)
+{
+	struct pci_dev *pdev = to_pci_dev(gt->i915->drm.dev);
+	struct intel_iov *iov = &gt->iov;
+	unsigned long timeout_ms = I915_VF_REPROVISION_TIMEOUT_MS;
+	int err;
+
+	GEM_BUG_ON(!vfid);
+	GEM_BUG_ON(vfid > pci_num_vf(pdev));
+
+	if (!iov->pf.state.data[vfid].guc_state)
+		return -EINVAL;
+
+	if (wait_for(iov->pf.provisioning.num_pushed >= vfid, timeout_ms)) {
+		IOV_ERROR(iov,
+			  "Failed to restore VF%u GuC state. Provisioning didn't complete within %lu ms\n",
+			  vfid, timeout_ms);
+		return -ETIMEDOUT;
+	}
+
+	err = intel_iov_state_restore_vf(iov, vfid, iov->pf.state.data[vfid].guc_state,
+					 PF2GUC_SAVE_RESTORE_VF_BUFF_SIZE);
+	if (err < 0) {
+		IOV_ERROR(iov, "Failed to restore VF%u GuC state: (%pe)", vfid, ERR_PTR(err));
+		return err;
+	}
+
+	kfree(iov->pf.state.data[vfid].guc_state);
+	iov->pf.state.data[vfid].guc_state = NULL;
+
+	return 0;
+}
+
+static void pf_restore_vfs_guc_state(struct drm_i915_private *i915, unsigned int num_vfs)
+{
+	unsigned int restored = 0;
+	struct intel_gt *gt;
+	unsigned int gt_id;
+	unsigned int vfid;
+
+	for (vfid = 1; vfid <= num_vfs; vfid++) {
+		for_each_gt(gt, i915, gt_id) {
+			int err = pf_gt_restore_vf_guc_state(gt, vfid);
+
+			if (err < 0)
+				goto skip_vf;
+		}
+		restored++;
+		continue;
+skip_vf:
+		break;
+	}
+
+	drm_dbg(&i915->drm, "%u of %u VFs GuC state restored successfully", restored, num_vfs);
+}
+
+static i915_reg_t vf_master_irq(struct drm_i915_private *i915, unsigned int vfid)
+{
+	return (GRAPHICS_VER_FULL(i915) < IP_VER(12, 50)) ?
+		GEN12_VF_GFX_MSTR_IRQ(vfid) :
+		XEHPSDV_VF_GFX_MSTR_IRQ(vfid);
+}
+
+static void pf_restore_vfs_irqs(struct drm_i915_private *i915, unsigned int num_vfs)
+{
+	struct intel_gt *gt;
+	unsigned int gt_id;
+
+	for_each_gt(gt, i915, gt_id) {
+		unsigned int vfid;
+
+		for (vfid = 1; vfid <= num_vfs; vfid++)
+			raw_reg_write(gt->uncore->regs, vf_master_irq(i915, vfid),
+				      GEN11_MASTER_IRQ);
+	}
+}
+
+static void pf_suspend_active_vfs(struct drm_i915_private *i915)
+{
+	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
+	unsigned int num_vfs = pci_num_vf(pdev);
+
+	GEM_BUG_ON(!IS_SRIOV_PF(i915));
+
+	if (num_vfs == 0)
+		return;
+
+	pf_save_vfs_guc_state(i915, num_vfs);
+}
+
+static void pf_resume_active_vfs(struct drm_i915_private *i915)
+{
+	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
+	unsigned int num_vfs = pci_num_vf(pdev);
+
+	GEM_BUG_ON(!IS_SRIOV_PF(i915));
+
+	if (num_vfs == 0)
+		return;
+
+	pf_restore_vfs_pci_state(i915, num_vfs);
+	pf_restore_vfs_guc_state(i915, num_vfs);
+	pf_restore_vfs_irqs(i915, num_vfs);
+}
+
 /**
  * i915_sriov_pf_stop_vf - Stop VF.
  * @i915: the i915 struct
@@ -807,6 +1009,7 @@ int i915_sriov_suspend_prepare(struct drm_i915_private *i915)
 	unsigned int id;
 
 	if (IS_SRIOV_PF(i915)) {
+		pf_resume_active_vfs(i915);
 		/*
 		 * When we're enabling the VFs in i915_sriov_pf_enable_vfs(), we also get
 		 * a GT PM wakeref which we hold for the whole VFs life cycle.
@@ -817,6 +1020,8 @@ int i915_sriov_suspend_prepare(struct drm_i915_private *i915)
 			for_each_gt(gt, i915, id)
 				intel_gt_pm_put(gt);
 		}
+
+		pf_suspend_active_vfs(i915);
 	}
 
 	return 0;
