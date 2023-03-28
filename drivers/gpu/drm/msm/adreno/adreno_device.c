@@ -551,14 +551,13 @@ static int adreno_bind(struct device *dev, struct device *master, void *data)
 	return 0;
 }
 
-static int adreno_system_suspend(struct device *dev);
 static void adreno_unbind(struct device *dev, struct device *master,
 		void *data)
 {
 	struct msm_drm_private *priv = dev_get_drvdata(master);
 	struct msm_gpu *gpu = dev_to_gpu(dev);
 
-	WARN_ON_ONCE(adreno_system_suspend(dev));
+	pm_runtime_force_suspend(dev);
 	gpu->funcs->destroy(gpu);
 
 	priv->gpu_pdev = NULL;
@@ -610,7 +609,7 @@ static int adreno_remove(struct platform_device *pdev)
 
 static void adreno_shutdown(struct platform_device *pdev)
 {
-	WARN_ON_ONCE(adreno_system_suspend(&pdev->dev));
+	pm_runtime_force_suspend(&pdev->dev);
 }
 
 static const struct of_device_id dt_match[] = {
