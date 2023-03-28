@@ -340,7 +340,7 @@ static int vc4_plane_setup_clipping_and_scaling(struct drm_plane_state *state)
 {
 	struct vc4_plane_state *vc4_state = to_vc4_plane_state(state);
 	struct drm_framebuffer *fb = state->fb;
-	struct drm_gem_dma_object *bo;
+	struct drm_gem_dma_object *bo = drm_fb_dma_get_gem_obj(fb, 0);
 	int num_planes = fb->format->num_planes;
 	struct drm_crtc_state *crtc_state;
 	u32 h_subsample = fb->format->hsub;
@@ -359,10 +359,8 @@ static int vc4_plane_setup_clipping_and_scaling(struct drm_plane_state *state)
 	if (ret)
 		return ret;
 
-	for (i = 0; i < num_planes; i++) {
-		bo = drm_fb_dma_get_gem_obj(fb, i);
+	for (i = 0; i < num_planes; i++)
 		vc4_state->offsets[i] = bo->dma_addr + fb->offsets[i];
-	}
 
 	/*
 	 * We don't support subpixel source positioning for scaling,
