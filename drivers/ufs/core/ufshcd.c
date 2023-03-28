@@ -7817,6 +7817,9 @@ ufshcd_rpmb_security_out(struct scsi_device *sdev, u8 region,
 			 void *frames, u32 trans_len)
 {
 	struct scsi_sense_hdr sshdr;
+	const struct scsi_exec_args exec_args = {
+		.sshdr = &sshdr,
+	};
 	int reset_retries = SEC_PROTOCOL_RETRIES_ON_RESET;
 	int ret;
 	u8 cmd[SEC_PROTOCOL_CMD_SIZE];
@@ -7830,10 +7833,10 @@ ufshcd_rpmb_security_out(struct scsi_device *sdev, u8 region,
 	put_unaligned_be32(trans_len, cmd + 6);  /* transfer length */
 
 retry:
-	ret = scsi_execute_req(sdev, cmd, DMA_TO_DEVICE,
-			       frames, trans_len, &sshdr,
+	ret = scsi_execute_cmd(sdev, cmd, REQ_OP_DRV_OUT,
+			       frames, trans_len,
 			       SEC_PROTOCOL_TIMEOUT, SEC_PROTOCOL_RETRIES,
-			       NULL);
+			       &exec_args);
 
 	if (ret && scsi_sense_valid(&sshdr) &&
 	    sshdr.sense_key == UNIT_ATTENTION &&
@@ -7860,6 +7863,9 @@ ufshcd_rpmb_security_in(struct scsi_device *sdev, u8 region,
 			void *frames, u32 alloc_len)
 {
 	struct scsi_sense_hdr sshdr;
+	const struct scsi_exec_args exec_args = {
+		.sshdr = &sshdr,
+	};
 	int reset_retries = SEC_PROTOCOL_RETRIES_ON_RESET;
 	int ret;
 	u8 cmd[SEC_PROTOCOL_CMD_SIZE];
@@ -7873,10 +7879,10 @@ ufshcd_rpmb_security_in(struct scsi_device *sdev, u8 region,
 	put_unaligned_be32(alloc_len, cmd + 6); /* allocation length */
 
 retry:
-	ret = scsi_execute_req(sdev, cmd, DMA_FROM_DEVICE,
-			       frames, alloc_len, &sshdr,
+	ret = scsi_execute_cmd(sdev, cmd, REQ_OP_DRV_IN,
+			       frames, alloc_len,
 			       SEC_PROTOCOL_TIMEOUT, SEC_PROTOCOL_RETRIES,
-			       NULL);
+			       &exec_args);
 
 	if (ret && scsi_sense_valid(&sshdr) &&
 	    sshdr.sense_key == UNIT_ATTENTION &&
