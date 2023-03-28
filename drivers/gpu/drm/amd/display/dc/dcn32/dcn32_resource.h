@@ -144,8 +144,6 @@ void dcn32_restore_mall_state(struct dc *dc,
 
 bool dcn32_allow_subvp_with_active_margin(struct pipe_ctx *pipe);
 
-unsigned int dcn32_calc_num_avail_chans_for_mall(struct dc *dc, int num_chans);
-
 /* definitions for run time init of reg offsets */
 
 /* CLK SRC */
