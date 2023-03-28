@@ -1928,13 +1928,7 @@ static int a6xx_set_supported_hw(struct device *dev, struct adreno_rev rev)
 	int ret;
 
 	ret = adreno_read_speedbin(dev, &speedbin);
-	/*
-	 * -ENOENT means that the platform doesn't support speedbin which is
-	 * fine
-	 */
-	if (ret == -ENOENT) {
-		return 0;
-	} else if (ret) {
+	if (ret) {
 		dev_err_probe(dev, ret,
 			      "failed to read speed-bin. Some OPPs may not be supported by hardware\n");
 		return ret;
