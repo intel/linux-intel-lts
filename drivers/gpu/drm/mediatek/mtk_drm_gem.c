@@ -262,6 +262,6 @@ void mtk_drm_gem_prime_vunmap(struct drm_gem_object *obj,
 		return;
 
 	vunmap(vaddr);
-	mtk_gem->kvaddr = NULL;
+	mtk_gem->kvaddr = 0;
 	kfree(mtk_gem->pages);
 }
