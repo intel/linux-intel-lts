@@ -1574,26 +1574,34 @@ static const char *sample_flags_to_name(u32 flags)
 
 int perf_sample__sprintf_flags(u32 flags, char *str, size_t sz)
 {
+	u32 xf = PERF_IP_FLAG_IN_TX | PERF_IP_FLAG_INTR_DISABLE |
+		 PERF_IP_FLAG_INTR_TOGGLE;
 	const char *chars = PERF_IP_FLAG_CHARS;
 	const size_t n = strlen(PERF_IP_FLAG_CHARS);
-	bool in_tx = flags & PERF_IP_FLAG_IN_TX;
 	const char *name = NULL;
 	size_t i, pos = 0;
+	char xs[16] = {0};
 
-	name = sample_flags_to_name(flags & ~PERF_IP_FLAG_IN_TX);
+	if (flags & xf)
+		snprintf(xs, sizeof(xs), "(%s%s%s)",
+			 flags & PERF_IP_FLAG_IN_TX ? "x" : "",
+			 flags & PERF_IP_FLAG_INTR_DISABLE ? "D" : "",
+			 flags & PERF_IP_FLAG_INTR_TOGGLE ? "t" : "");
+
+	name = sample_flags_to_name(flags & ~xf);
 	if (name)
-		return snprintf(str, sz, "%-15s%4s", name, in_tx ? "(x)" : "");
+		return snprintf(str, sz, "%-15s%6s", name, xs);
 
 	if (flags & PERF_IP_FLAG_TRACE_BEGIN) {
-		name = sample_flags_to_name(flags & ~(PERF_IP_FLAG_IN_TX | PERF_IP_FLAG_TRACE_BEGIN));
+		name = sample_flags_to_name(flags & ~(xf | PERF_IP_FLAG_TRACE_BEGIN));
 		if (name)
-			return snprintf(str, sz, "tr strt %-7s%4s", name, in_tx ? "(x)" : "");
+			return snprintf(str, sz, "tr strt %-7s%6s", name, xs);
 	}
 
 	if (flags & PERF_IP_FLAG_TRACE_END) {
-		name = sample_flags_to_name(flags & ~(PERF_IP_FLAG_IN_TX | PERF_IP_FLAG_TRACE_END));
+		name = sample_flags_to_name(flags & ~(xf | PERF_IP_FLAG_TRACE_END));
 		if (name)
-			return snprintf(str, sz, "tr end  %-7s%4s", name, in_tx ? "(x)" : "");
+			return snprintf(str, sz, "tr end  %-7s%6s", name, xs);
 	}
 
 	for (i = 0; i < n; i++, flags >>= 1) {
@@ -1615,7 +1623,7 @@ static int perf_sample__fprintf_flags(u32 flags, FILE *fp)
 	char str[SAMPLE_FLAGS_BUF_SIZE];
 
 	perf_sample__sprintf_flags(flags, str, sizeof(str));
-	return fprintf(fp, "  %-19s ", str);
+	return fprintf(fp, "  %-21s ", str);
 }
 
 struct printer_data {
@@ -1806,6 +1814,56 @@ static int perf_sample__fprintf_synth_psb(struct perf_sample *sample, FILE *fp)
 	return len + perf_sample__fprintf_pt_spacing(len, fp);
 }
 
+/* Intel PT Event Trace */
+static int perf_sample__fprintf_synth_evt(struct perf_sample *sample, FILE *fp)
+{
+	struct perf_synth_intel_evt *data = perf_sample__synth_ptr(sample);
+	const char *cfe[32] = {NULL, "INTR", "IRET", "SMI", "RSM", "SIPI",
+			       "INIT", "VMENTRY", "VMEXIT", "VMEXIT_INTR",
+			       "SHUTDOWN"};
+	const char *evd[64] = {"PFA", "VMXQ", "VMXR"};
+	const char *s;
+	int len, i;
+
+	if (perf_sample__bad_synth_size(sample, *data))
+		return 0;
+
+	s = cfe[data->type];
+	if (s) {
+		len = fprintf(fp, " cfe: %s IP: %d vector: %u",
+			      s, data->ip, data->vector);
+	} else {
+		len = fprintf(fp, " cfe: %u IP: %d vector: %u",
+			      data->type, data->ip, data->vector);
+	}
+	for (i = 0; i < data->evd_cnt; i++) {
+		unsigned int et = data->evd[i].evd_type & 0x3f;
+
+		s = evd[et];
+		if (s) {
+			len += fprintf(fp, " %s: %#" PRIx64,
+				       s, data->evd[i].payload);
+		} else {
+			len += fprintf(fp, " EVD_%u: %#" PRIx64,
+				       et, data->evd[i].payload);
+		}
+	}
+	return len + perf_sample__fprintf_pt_spacing(len, fp);
+}
+
+static int perf_sample__fprintf_synth_iflag_chg(struct perf_sample *sample, FILE *fp)
+{
+	struct perf_synth_intel_iflag_chg *data = perf_sample__synth_ptr(sample);
+	int len;
+
+	if (perf_sample__bad_synth_size(sample, *data))
+		return 0;
+
+	len = fprintf(fp, " IFLAG: %d->%d %s branch", !data->iflag, data->iflag,
+		      data->via_branch ? "via" : "non");
+	return len + perf_sample__fprintf_pt_spacing(len, fp);
+}
+
 static int perf_sample__fprintf_synth(struct perf_sample *sample,
 				      struct evsel *evsel, FILE *fp)
 {
@@ -1824,6 +1882,10 @@ static int perf_sample__fprintf_synth(struct perf_sample *sample,
 		return perf_sample__fprintf_synth_cbr(sample, fp);
 	case PERF_SYNTH_INTEL_PSB:
 		return perf_sample__fprintf_synth_psb(sample, fp);
+	case PERF_SYNTH_INTEL_EVT:
+		return perf_sample__fprintf_synth_evt(sample, fp);
+	case PERF_SYNTH_INTEL_IFLAG_CHG:
+		return perf_sample__fprintf_synth_iflag_chg(sample, fp);
 	default:
 		break;
 	}
