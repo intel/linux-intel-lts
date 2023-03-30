@@ -1111,8 +1111,9 @@ EXPORT_SYMBOL(pci_disable_link_state);
  *
  * @pdev: PCI device
  * @state: Mask of ASPM link states to enable
+ * @sem: Boolean to acquire/release pci_bus_sem
  */
-int pci_enable_link_state(struct pci_dev *pdev, int state)
+int pci_enable_link_state(struct pci_dev *pdev, int state, bool sem)
 {
 	struct pcie_link_state *link = pcie_aspm_get_link(pdev);
 
@@ -1129,7 +1130,8 @@ int pci_enable_link_state(struct pci_dev *pdev, int state)
 		return -EPERM;
 	}
 
-	down_read(&pci_bus_sem);
+	if (sem)
+		down_read(&pci_bus_sem);
 	mutex_lock(&aspm_lock);
 	link->aspm_default = 0;
 	if (state & PCIE_LINK_STATE_L0S)
@@ -1150,7 +1152,8 @@ int pci_enable_link_state(struct pci_dev *pdev, int state)
 	link->clkpm_default = (state & PCIE_LINK_STATE_CLKPM) ? 1 : 0;
 	pcie_set_clkpm(link, policy_to_clkpm_state(link));
 	mutex_unlock(&aspm_lock);
-	up_read(&pci_bus_sem);
+	if (sem)
+		up_read(&pci_bus_sem);
 
 	return 0;
 }
