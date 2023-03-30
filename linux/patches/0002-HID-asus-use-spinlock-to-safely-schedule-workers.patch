@@ -1,0 +1,61 @@
+From e0a558cc77b8306d0d3ab6b0cbaa524ca4bfd62f Mon Sep 17 00:00:00 2001
+From: Pietro Borrello <borrello@diag.uniroma1.it>
+Date: Sun, 12 Feb 2023 19:00:03 +0000
+Subject: [PATCH 2/2] HID: asus: use spinlock to safely schedule workers
+
+Use spinlocks to deal with workers introducing a wrapper
+asus_schedule_work(), and several spinlock checks.
+Otherwise, asus_kbd_backlight_set() may schedule led->work after the
+structure has been freed, causing a use-after-free.
+
+Fixes: af22a610bc38 ("HID: asus: support backlight on USB keyboards")
+Signed-off-by: Pietro Borrello <borrello@diag.uniroma1.it>
+Link: https://lore.kernel.org/r/20230125-hid-unregister-leds-v4-5-7860c5763c38@diag.uniroma1.it
+Signed-off-by: Benjamin Tissoires <benjamin.tissoires@redhat.com>
+---
+ drivers/hid/hid-asus.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/hid/hid-asus.c b/drivers/hid/hid-asus.c
+index 37500b645ec4..16832e79f6a8 100644
+--- a/drivers/hid/hid-asus.c
++++ b/drivers/hid/hid-asus.c
+@@ -493,6 +493,16 @@ static int rog_nkey_led_init(struct hid_device *hdev)
+ 	return ret;
+ }
+ 
++static void asus_schedule_work(struct asus_kbd_leds *led)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&led->lock, flags);
++	if (!led->removed)
++		schedule_work(&led->work);
++	spin_unlock_irqrestore(&led->lock, flags);
++}
++
+ static void asus_kbd_backlight_set(struct led_classdev *led_cdev,
+ 				   enum led_brightness brightness)
+ {
+@@ -504,7 +514,7 @@ static void asus_kbd_backlight_set(struct led_classdev *led_cdev,
+ 	led->brightness = brightness;
+ 	spin_unlock_irqrestore(&led->lock, flags);
+ 
+-	schedule_work(&led->work);
++	asus_schedule_work(led);
+ }
+ 
+ static enum led_brightness asus_kbd_backlight_get(struct led_classdev *led_cdev)
+@@ -528,9 +538,6 @@ static void asus_kbd_backlight_work(struct work_struct *work)
+ 	int ret;
+ 	unsigned long flags;
+ 
+-	if (led->removed)
+-		return;
+-
+ 	spin_lock_irqsave(&led->lock, flags);
+ 	buf[4] = led->brightness;
+ 	spin_unlock_irqrestore(&led->lock, flags);
+-- 
+2.25.1
+
