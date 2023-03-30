@@ -253,7 +253,6 @@ static void intel_speed_mode_2500(struct net_device *ndev, void *intel_data)
 		priv->plat->fixed_2G5_clock_rate = true;
 	} else {
 		priv->plat->max_speed = 1000;
-		priv->plat->mdio_bus_data->xpcs_an_inband = true;
 		priv->plat->fixed_2G5_clock_rate = false;
 	}
 }
