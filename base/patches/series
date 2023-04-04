@@ -96,3 +96,21 @@
 
 # CVE-2023-23000
 0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
+
+# CVE-2023-1281
+0001-net-sched-tcindex-update-imperfect-hash-filters-resp.patch
+0002-rcu-Upgrade-rcu_swap_protected-to-rcu_replace_pointe.patch
+
+# CVE-2023-1076
+0001-tun-tun_chr_open-correctly-initialize-socket-uid.patch
+0002-net-add-sock_init_data_uid.patch
+
+# CVE-2023-1079
+0001-HID-asus-use-spinlock-to-protect-concurrent-accesses.patch
+0002-HID-asus-use-spinlock-to-safely-schedule-workers.patch
+
+# CVE-2023-1077
+0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
+
+# CVE-2023-1195
+0001-cifs-fix-use-after-free-caused-by-invalid-pointer-ho.patch
