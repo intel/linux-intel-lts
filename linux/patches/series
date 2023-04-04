@@ -34,3 +34,10 @@
 
 # CVE-2022-3707
 0001-drm-i915-gvt-fix-double-free-bug-in-split_2MB_gtt_en.patch
+
+# CVE-2023-23000
+0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
+
+# CVE-2022-4269
+0001-act_mirred-use-the-backlog-for-nested-calls-to-mirre.patch
+0002-net-sched-act_mirred-better-wording-on-protection-ag.patch
