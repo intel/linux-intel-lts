@@ -1702,8 +1702,7 @@ static int igc_ethtool_set_preempt(struct net_device *netdev,
 	if (fpcmd->add_frag_size < 68 || fpcmd->add_frag_size > 260) {
 		if (extack)
 			NL_SET_ERR_MSG_MOD(extack, "Invalid value for add-frag-size");
-		else
-			return -EINVAL;
+		return -EINVAL;
 	}
 
 	if (!fpcmd->disable_verify && adapter->fp_disable_verify) {
