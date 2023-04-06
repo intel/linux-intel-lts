@@ -2643,7 +2643,7 @@ static void driver_initiated_flr(struct intel_uncore *uncore)
 		drm_err(&i915->drm,
 			"Failed to wait for Driver-FLR bit to clear! %d\n",
 			ret);
-		return;
+		goto flr_failure;
 	}
 	intel_uncore_write_fw(uncore, GU_DEBUG, DRIVERFLR_STATUS);
 
@@ -2656,7 +2656,7 @@ static void driver_initiated_flr(struct intel_uncore *uncore)
 					 flr_timeout_ms);
 	if (ret) {
 		drm_err(&i915->drm, "Driver-FLR-teardown wait completion failed! %d\n", ret);
-		return;
+		goto flr_failure;
 	}
 
 	/* Wait for hardware/firmware re-init to complete */
@@ -2665,11 +2665,20 @@ static void driver_initiated_flr(struct intel_uncore *uncore)
 					 flr_timeout_ms);
 	if (ret) {
 		drm_err(&i915->drm, "Driver-FLR-reinit wait completion failed! %d\n", ret);
-		return;
+		goto flr_failure;
 	}
 
 	/* Clear sticky completion status */
 	intel_uncore_write_fw(uncore, GU_DEBUG, DRIVERFLR_STATUS);
+
+	return;
+
+flr_failure:
+	/*
+	 * The FLR is the biggest hammer we have to reset and re-init the GPU,
+	 * so it that fails it means that we've hit an unrecoverable condition.
+	 */
+	add_taint_for_CI(i915, TAINT_WARN);
 }
 
 /* Called via drm-managed action */
