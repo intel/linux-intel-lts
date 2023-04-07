@@ -1,0 +1,41 @@
+From dc11357863d582b245da3dca3247c3185449df45 Mon Sep 17 00:00:00 2001
+From: Miaoqian Lin <linmq006@gmail.com>
+Date: Thu, 2 Jun 2022 14:42:22 +0400
+Subject: [PATCH] drm/virtio: Fix NULL vs IS_ERR checking in
+ virtio_gpu_object_shmem_init
+
+commit c24968734abfed81c8f93dc5f44a7b7a9aecadfa upstream.
+
+Since drm_prime_pages_to_sg() function return error pointers.
+The drm_gem_shmem_get_sg_table() function returns error pointers too.
+Using IS_ERR() to check the return value to fix this.
+
+Fixes: 2f2aa13724d5 ("drm/virtio: move virtio_gpu_mem_entry initialization to new function")
+Signed-off-by: Miaoqian Lin <linmq006@gmail.com>
+Link: http://patchwork.freedesktop.org/patch/msgid/20220602104223.54527-1-linmq006@gmail.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Ovidiu Panait <ovidiu.panait@windriver.com>
+---
+ drivers/gpu/drm/virtio/virtgpu_object.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/virtio/virtgpu_object.c b/drivers/gpu/drm/virtio/virtgpu_object.c
+index 91c6b3369859..31077946fafb 100644
+--- a/drivers/gpu/drm/virtio/virtgpu_object.c
++++ b/drivers/gpu/drm/virtio/virtgpu_object.c
+@@ -201,9 +201,9 @@ static int virtio_gpu_object_shmem_init(struct virtio_gpu_device *vgdev,
+ 	 * since virtio_gpu doesn't support dma-buf import from other devices.
+ 	 */
+ 	shmem->pages = drm_gem_shmem_get_sg_table(&bo->base.base);
+-	if (!shmem->pages) {
++	if (IS_ERR(shmem->pages)) {
+ 		drm_gem_shmem_unpin(&bo->base.base);
+-		return -EINVAL;
++		return PTR_ERR(shmem->pages);
+ 	}
+ 
+ 	if (use_dma_api) {
+-- 
+2.25.1
+
