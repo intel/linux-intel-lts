@@ -210,6 +210,12 @@ bool i915_gem_object_can_bypass_llc(struct drm_i915_gem_object *obj)
 		return false;
 
 	/*
+	 * Always flush cache for UMD objects at creation time.
+	 */
+	if (obj->cache_level == I915_CACHE_INVAL)
+		return true;
+
+	/*
 	 * EHL and JSL add the 'Bypass LLC' MOCS entry, which should make it
 	 * possible for userspace to bypass the GTT caching bits set by the
 	 * kernel, as per the given object cache_level. This is troublesome
