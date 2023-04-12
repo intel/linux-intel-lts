@@ -1244,6 +1244,8 @@ static int bcm2835_spi_setup(struct spi_device *spi)
 
 		spi_set_ctldata(spi, slv);
 
+		bs->slv = slv;
+
 		ret = bcm2835_spi_setup_dma(ctlr, spi, bs, slv);
 		if (ret)
 			goto err_cleanup;
