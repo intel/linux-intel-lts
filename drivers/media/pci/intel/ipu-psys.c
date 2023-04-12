@@ -262,6 +262,7 @@ static int ipu_dma_buf_attach(struct dma_buf *dbuf,
 {
 	struct ipu_psys_kbuffer *kbuf = dbuf->priv;
 	struct ipu_dma_buf_attach *ipu_attach;
+	int ret;
 
 	ipu_attach = kzalloc(sizeof(*ipu_attach), GFP_KERNEL);
 	if (!ipu_attach)
@@ -269,6 +270,12 @@ static int ipu_dma_buf_attach(struct dma_buf *dbuf,
 
 	ipu_attach->len = kbuf->len;
 	ipu_attach->userptr = kbuf->userptr;
+
+	ret = ipu_psys_get_userpages(ipu_attach);
+	if (ret) {
+		kfree(ipu_attach);
+		return ret;
+	}
 
 	attach->priv = ipu_attach;
 	return 0;
@@ -279,6 +286,7 @@ static void ipu_dma_buf_detach(struct dma_buf *dbuf,
 {
 	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
 
+	ipu_psys_put_userpages(ipu_attach);
 	kfree(ipu_attach);
 	attach->priv = NULL;
 }
@@ -290,14 +298,9 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 	unsigned long attrs;
 	int ret;
 
-	ret = ipu_psys_get_userpages(ipu_attach);
-	if (ret)
-		return NULL;
-
 	attrs = DMA_ATTR_SKIP_CPU_SYNC;
 	ret = dma_map_sgtable(attach->dev, ipu_attach->sgt, dir, attrs);
 	if (ret < 0) {
-		ipu_psys_put_userpages(ipu_attach);
 		dev_dbg(attach->dev, "buf map failed\n");
 
 		return ERR_PTR(-EIO);
@@ -316,10 +319,7 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
 			      struct sg_table *sgt, enum dma_data_direction dir)
 {
-	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
-
 	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
-	ipu_psys_put_userpages(ipu_attach);
 }
 
 static int ipu_dma_buf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
@@ -451,10 +451,11 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
 		dma_buf_vunmap(kbuf->dbuf, &dmap);
 	}
-	if (kbuf->sgt)
+	if (kbuf->sgt) {
 		dma_buf_unmap_attachment(kbuf->db_attach,
 					 kbuf->sgt,
 					 DMA_BIDIRECTIONAL);
+	}
 	if (kbuf->db_attach)
 		dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
 	dma_buf_put(kbuf->dbuf);

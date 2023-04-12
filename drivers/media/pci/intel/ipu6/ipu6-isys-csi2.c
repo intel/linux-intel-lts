@@ -169,11 +169,6 @@ static int ipu6_csi2_dwc_phy_power_set(struct ipu_isys *isys,
 	primary = port & ~1;
 	secondary = primary + 1;
 	if (on) {
-		/* do rext flow for PHY-E */
-		ret = ipu6_isys_dwc_phy_termcal_rext(isys, mbps);
-		if (ret)
-			return ret;
-
 		if (nlanes == 4) {
 			dev_dbg(&isys->adev->dev,
 				"config phy %u and %u in aggregation mode",
@@ -457,9 +452,9 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
 	struct ipu_isys *isys = csi2->isys;
-	struct ipu_isys_pipeline *ip = container_of(sd->entity.pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		container_of(media_entity_pipeline(&sd->entity),
+			     struct ipu_isys_pipeline, pipe);
 	struct ipu_isys_csi2_config *cfg =
 		v4l2_get_subdev_hostdata(media_entity_to_v4l2_subdev
 					 (ip->external->entity));
@@ -612,6 +607,7 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 void ipu_isys_csi2_isr(struct ipu_isys_csi2 *csi2)
 {
 	u32 status;
+	unsigned int i;
 
 	ipu6_isys_register_errors(csi2);
 
@@ -621,10 +617,13 @@ void ipu_isys_csi2_isr(struct ipu_isys_csi2 *csi2)
 	writel(status, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_CLEAR_OFFSET);
 
-	if (status & IPU_CSI_RX_IRQ_FS_VC)
-		ipu_isys_csi2_sof_event(csi2);
-	if (status & IPU_CSI_RX_IRQ_FE_VC)
-		ipu_isys_csi2_eof_event(csi2);
+	for (i = 0; i < NR_OF_CSI2_VC; i++) {
+		if (status & IPU_CSI_RX_IRQ_FS_VC(i))
+			ipu_isys_csi2_sof_event(csi2, i);
+
+		if (status & IPU_CSI_RX_IRQ_FE_VC(i))
+			ipu_isys_csi2_eof_event(csi2, i);
+	}
 }
 
 unsigned int ipu_isys_csi2_get_current_field(struct ipu_isys_pipeline *ip,

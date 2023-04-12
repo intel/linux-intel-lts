@@ -54,8 +54,8 @@
 #define CSI_RX_NUM_ERRORS_IN_IRQ		20
 #define CSI_RX_NUM_IRQ				32
 
-#define IPU_CSI_RX_IRQ_FS_VC		1
-#define IPU_CSI_RX_IRQ_FE_VC		2
+#define IPU_CSI_RX_IRQ_FS_VC(chn)	(1 << ((chn) * 2))
+#define IPU_CSI_RX_IRQ_FE_VC(chn)	(2 << ((chn) * 2))
 
 /* PPI2CSI */
 #define CSI_REG_PPI2CSI_ENABLE                  0x200

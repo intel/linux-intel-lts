@@ -10,9 +10,8 @@
  * FW support max 16 streams
  */
 #define IPU_ISYS_MAX_STREAMS		16
-
 #define NR_OF_CSI2_BE_SOC_STREAMS	16
-
+#define NR_OF_CSI2_VC			16
 #define IPU_ISYS_CSI2_ENTITY_PREFIX	"Intel IPU6 CSI-2"
 
 #define ISYS_UNISPART_IRQS	(IPU_ISYS_UNISPART_IRQ_SW |	\

@@ -512,9 +512,8 @@ int ipu_isys_subdev_link_validate(struct v4l2_subdev *sd,
 {
 	struct v4l2_subdev *source_sd =
 	    media_entity_to_v4l2_subdev(link->source->entity);
-	struct ipu_isys_pipeline *ip = container_of(sd->entity.pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&sd->entity));
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 
 	if (!source_sd)
@@ -529,6 +528,11 @@ int ipu_isys_subdev_link_validate(struct v4l2_subdev *sd,
 		ip->source = to_ipu_isys_subdev(sd)->source;
 		dev_dbg(&asd->isys->adev->dev, "%s: using source %d\n",
 			sd->entity.name, ip->source);
+		/*
+		 * multi streams with different format/resolusion from external,
+		 * without route info, ignore link validate here.
+		 */
+		return 0;
 	} else if (source_sd->entity.num_pads == 1) {
 		/* All internal sources have a single pad. */
 		ip->external = link->source;

@@ -1685,7 +1685,7 @@ static int __maybe_unused imx390_resume(struct device *dev)
 }
 
 static int imx390_set_format(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *sd_state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct imx390 *imx390 = to_imx390(sd);
@@ -1714,7 +1714,7 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 
 	imx390_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 	} else {
 		imx390->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(imx390->link_freq, mode->link_freq_index);
@@ -1746,14 +1746,14 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 }
 
 static int imx390_get_format(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *sd_state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct imx390 *imx390 = to_imx390(sd);
 
 	mutex_lock(&imx390->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
-		fmt->format = *v4l2_subdev_get_try_format(&imx390->sd, cfg,
+		fmt->format = *v4l2_subdev_get_try_format(&imx390->sd, sd_state,
 							  fmt->pad);
 	else
 		imx390_update_pad_format(imx390->cur_mode, &fmt->format);
@@ -1774,14 +1774,13 @@ static int imx390_get_frame_desc(struct v4l2_subdev *sd,
 		desc->entry[i].flags = 0;
 		desc->entry[i].pixelcode = MEDIA_BUS_FMT_FIXED;
 		desc->entry[i].length = 0;
-		desc->entry[i].bus.csi2.channel = i;
 	}
 
 	return 0;
 }
 
 static int imx390_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(supported_formats))
@@ -1793,7 +1792,7 @@ static int imx390_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx390_enum_frame_size(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1810,7 +1809,7 @@ static int imx390_enum_frame_size(struct v4l2_subdev *sd,
 static int imx390_frame_rate[] = { 40, 20 };
 
 static int imx390_enum_frame_interval(struct v4l2_subdev *subdev,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_frame_interval_enum *fie)
 {
 	int mode_size = ARRAY_SIZE(supported_modes);
@@ -1840,7 +1839,7 @@ static int imx390_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	mutex_lock(&imx390->mutex);
 	imx390_update_pad_format(&supported_modes[0],
-				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
+				 v4l2_subdev_get_try_format(sd, fh->state, 0));
 	mutex_unlock(&imx390->mutex);
 
 	return 0;
@@ -1994,7 +1993,7 @@ static int imx390_probe(struct i2c_client *client)
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor_common(&imx390->sd);
+	ret = v4l2_async_register_subdev_sensor(&imx390->sd);
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);

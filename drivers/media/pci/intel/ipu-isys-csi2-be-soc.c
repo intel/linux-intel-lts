@@ -37,6 +37,7 @@ static const u32 csi2_be_soc_supported_codes_pad[] = {
 	MEDIA_BUS_FMT_SGBRG8_1X8,
 	MEDIA_BUS_FMT_SGRBG8_1X8,
 	MEDIA_BUS_FMT_SRGGB8_1X8,
+	MEDIA_BUS_FMT_Y8_1X8,
 	0,
 };
 
@@ -57,6 +58,7 @@ static const u32 csi2_be_soc_supported_raw_bayer_codes_pad[] = {
 	MEDIA_BUS_FMT_SGBRG8_1X8,
 	MEDIA_BUS_FMT_SGRBG8_1X8,
 	MEDIA_BUS_FMT_SRGGB8_1X8,
+	MEDIA_BUS_FMT_Y8_1X8,
 	0,
 };
 
@@ -106,9 +108,9 @@ __subdev_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 		       struct v4l2_subdev_format *source_fmt,
 		       struct v4l2_subdev_format *sink_fmt)
 {
-	struct ipu_isys_pipeline *ip = container_of(sd->entity.pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		container_of(media_entity_pipeline(&sd->entity),
+			     struct ipu_isys_pipeline, pipe);
 
 	ip->csi2_be_soc = to_ipu_isys_csi2_be_soc(sd);
 	return ipu_isys_subdev_link_validate(sd, link, source_fmt, sink_fmt);
@@ -211,7 +213,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 				+ (idx & ~CSI2_BE_CROP_MASK)];
 
 		}
-		ffmt->code = code;
+		ffmt->code = fmt->format.code;
 		ffmt->width = r->width;
 		ffmt->height = r->height;
 		ffmt->field = sink_ffmt->field;

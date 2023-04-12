@@ -41,7 +41,7 @@
 #include <media/lt6911uxc.h>
 #include <media/imx390.h>
 #include <media/ti960.h>
-#include <media/d4xx.h>
+#include <media/d4xx_pdata.h>
 
 static LIST_HEAD(devices);
 
@@ -65,9 +65,7 @@ static const struct ipu_acpi_devices supported_devices[] = {
 	{ "INTC10C0", AR0234_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// AR0234 HID
 	{ "INTC10B1", LT6911UXC_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// Lontium HID
 	{ "INTC10C1", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// IMX390 HID
-	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// D457 HID
-	/* for later usage */
-//	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, MAX9296_NAME },// D457 HID
+	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, D457_NAME },// D457 HID
 };
 
 static int get_table_index(struct device *device, const __u8 *acpi_name)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2016 - 2020 Intel Corporation
+// Copyright (C) 2016 - 2022 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/gpio.h>
@@ -283,8 +283,8 @@ static int ti964_set_routing(struct v4l2_subdev *sd,
 }
 
 static int ti964_enum_mbus_code(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
-				      struct v4l2_subdev_mbus_code_enum *code)
+				struct v4l2_subdev_state *sd_state,
+				struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ti964 *va = to_ti964(sd);
 	const uint32_t *supported_code =
@@ -364,21 +364,21 @@ static int ti964_get_frame_desc(struct v4l2_subdev *sd,
 
 static struct v4l2_mbus_framefmt *
 __ti964_get_ffmt(struct v4l2_subdev *subdev,
-			 struct v4l2_subdev_pad_config *cfg,
+			 struct v4l2_subdev_state *sd_state,
 			 unsigned int pad, unsigned int which,
 			 unsigned int stream)
 {
 	struct ti964 *va = to_ti964(subdev);
 
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
-		return v4l2_subdev_get_try_format(subdev, cfg, pad);
+		return v4l2_subdev_get_try_format(subdev, sd_state, pad);
 	else
 		return &va->ffmts[pad][stream];
 }
 
 static int ti964_get_format(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg,
-				struct v4l2_subdev_format *fmt)
+			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_format *fmt)
 {
 	struct ti964 *va = to_ti964(subdev);
 
@@ -386,8 +386,8 @@ static int ti964_get_format(struct v4l2_subdev *subdev,
 		return -EINVAL;
 
 	mutex_lock(&va->mutex);
-	fmt->format = *__ti964_get_ffmt(subdev, cfg, fmt->pad,
-						    fmt->which, fmt->stream);
+	fmt->format = *__ti964_get_ffmt(subdev, sd_state, fmt->pad,
+					fmt->which, fmt->stream);
 	mutex_unlock(&va->mutex);
 
 	dev_dbg(subdev->dev, "subdev_format: which: %s, pad: %d, stream: %d.\n",
@@ -402,8 +402,8 @@ static int ti964_get_format(struct v4l2_subdev *subdev,
 }
 
 static int ti964_set_format(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg,
-				struct v4l2_subdev_format *fmt)
+			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_format *fmt)
 {
 	struct ti964 *va = to_ti964(subdev);
 	const struct ti964_csi_data_format *csi_format;
@@ -416,8 +416,8 @@ static int ti964_set_format(struct v4l2_subdev *subdev,
 		fmt->format.code);
 
 	mutex_lock(&va->mutex);
-	ffmt = __ti964_get_ffmt(subdev, cfg, fmt->pad, fmt->which,
-				      fmt->stream);
+	ffmt = __ti964_get_ffmt(subdev, sd_state, fmt->pad, fmt->which,
+				fmt->stream);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		ffmt->width = fmt->format.width;
@@ -437,8 +437,7 @@ static int ti964_open(struct v4l2_subdev *subdev,
 				struct v4l2_subdev_fh *fh)
 {
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(subdev, fh->pad, 0);
-
+		v4l2_subdev_get_try_format(subdev, fh->state, 0);
 	struct v4l2_subdev_format fmt = {
 		.which = V4L2_SUBDEV_FORMAT_TRY,
 		.pad = TI964_PAD_SOURCE,
