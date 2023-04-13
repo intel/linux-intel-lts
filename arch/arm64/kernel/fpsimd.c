@@ -1054,8 +1054,6 @@ void do_fpsimd_exc(unsigned int esr, struct pt_regs *regs)
 			si_code = FPE_FLTRES;
 	}
 
-	oob_trap_notify(ARM64_TRAP_FPE, regs);
-
 	send_sig_fault(SIGFPE, si_code,
 		       (void __user *)instruction_pointer(regs),
 		       current);

@@ -196,7 +196,10 @@ out_active:	spin_lock(&timelines->lock);
 	if (flush_submission(gt, timeout)) /* Wait, there's more! */
 		active_count++;
 
-	return active_count ? timeout ?: -ETIME : 0;
+	if (remaining_timeout)
+		*remaining_timeout = timeout;
+
+	return active_count ? timeout : 0;
 }
 
 static void retire_work_handler(struct work_struct *work)

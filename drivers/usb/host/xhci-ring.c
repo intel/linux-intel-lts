@@ -2325,10 +2325,10 @@ static int skip_isoc_td(struct xhci_hcd *xhci, struct xhci_td *td,
 	frame->actual_length = 0;
 
 	/* Update ring dequeue pointer */
-	ep_ring->dequeue = td->last_trb;
-	ep_ring->deq_seg = td->last_trb_seg;
-	ep_ring->num_trbs_free += td->num_trbs - 1;
-	inc_deq(xhci, ep_ring);
+	ep->ring->dequeue = td->last_trb;
+	ep->ring->deq_seg = td->last_trb_seg;
+	ep->ring->num_trbs_free += td->num_trbs - 1;
+	inc_deq(xhci, ep->ring);
 
 	return xhci_td_cleanup(xhci, td, ep->ring, status);
 }

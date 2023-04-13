@@ -356,12 +356,9 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_tgl_machines[] = {
 		.sof_tplg_filename = "sof-tgl-rt1011-rt5682.tplg",
 	},
 	{
-		.id = "ESSX8336",
+		.comp_ids = &essx_83x6,
 		.drv_name = "sof-essx8336",
-		.sof_tplg_filename = "sof-tgl-es8336", /* the tplg suffix is added at run time */
-		.tplg_quirk_mask = SND_SOC_ACPI_TPLG_INTEL_SSP_NUMBER |
-					SND_SOC_ACPI_TPLG_INTEL_SSP_MSB |
-					SND_SOC_ACPI_TPLG_INTEL_DMIC_NUMBER,
+		.sof_tplg_filename = "sof-tgl-es8336-ssp2.tplg",
 	},
 	{
 		.id = "10EC1308",

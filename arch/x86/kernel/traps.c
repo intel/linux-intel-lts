@@ -301,8 +301,6 @@ DEFINE_IDTENTRY_RAW(exc_invalid_op)
 {
 	irqentry_state_t state;
 
-	mark_trap_entry_raw(X86_TRAP_UD, regs);
-
 	/*
 	 * We use UD2 as a short encoding for 'CALL __WARN', as such
 	 * handle it before exception entry to avoid recursive WARN
@@ -663,7 +661,6 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 		if (fixup_iopl_exception(regs))
 			goto exit;
 
-		mark_trap_entry(X86_TRAP_GP, regs);
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_nr = X86_TRAP_GP;
 
