@@ -230,6 +230,9 @@ void replace_inband_fd(unsigned int fd, struct file *file,
 
 #else	/* !CONFIG_DOVETAIL */
 
+/* We may have arch-specific placeholders. */
+#include <asm/dovetail.h>
+
 struct files_struct;
 
 #define protect_inband_mm(__flags)	\

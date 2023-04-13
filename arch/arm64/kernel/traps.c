@@ -145,7 +145,7 @@ void die(const char *str, struct pt_regs *regs, int err)
 	raw_spin_unlock_irqrestore(&die_lock, flags);
 
 	if (ret != NOTIFY_STOP)
-		do_exit(SIGSEGV);
+		make_task_dead(SIGSEGV);
 }
 
 static void arm64_show_signal(int signo, const char *str)
@@ -398,6 +398,13 @@ void arm64_notify_segfault(unsigned long addr)
 
 void do_undefinstr(struct pt_regs *regs)
 {
+	/*
+	 * If the companion core did not switched us to in-band
+	 * context, we may assume that it has handled the trap.
+	 */
+	if (running_oob())
+		return;
+
 	/* check for AArch32 breakpoint instructions */
 	if (!aarch32_break_handler(regs))
 		return;
@@ -406,18 +413,18 @@ void do_undefinstr(struct pt_regs *regs)
 		return;
 
 	BUG_ON(!user_mode(regs));
-	oob_trap_notify(ARM64_TRAP_UNDI, regs);
+	mark_trap_entry(ARM64_TRAP_UNDI, regs);
 	force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
-	oob_trap_unwind(ARM64_TRAP_UNDI, regs);
+	mark_trap_exit(ARM64_TRAP_UNDI, regs);
 }
 NOKPROBE_SYMBOL(do_undefinstr);
 
 void do_bti(struct pt_regs *regs)
 {
 	BUG_ON(!user_mode(regs));
-	oob_trap_notify(ARM64_TRAP_BTI, regs);
+	mark_trap_entry(ARM64_TRAP_BTI, regs);
 	force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
-	oob_trap_unwind(ARM64_TRAP_BTI, regs);
+	mark_trap_exit(ARM64_TRAP_BTI, regs);
 }
 NOKPROBE_SYMBOL(do_bti);
 
@@ -486,9 +493,9 @@ static void user_cache_maint_handler(unsigned int esr, struct pt_regs *regs)
 	}
 
 	if (ret) {
-		oob_trap_notify(ARM64_TRAP_ACCESS, regs);
+		mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 		arm64_notify_segfault(address);
-		oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
+		mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 	} else
 		arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
 }
@@ -536,9 +543,9 @@ static void mrs_handler(unsigned int esr, struct pt_regs *regs)
 	sysreg = esr_sys64_to_sysreg(esr);
 
 	if (do_emulate_mrs(regs, sysreg, rt) != 0) {
-		oob_trap_notify(ARM64_TRAP_ACCESS, regs);
+		mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
-		oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
+		mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 	}
 }
 
@@ -792,13 +799,13 @@ void bad_el0_sync(struct pt_regs *regs, int reason, unsigned int esr)
 {
 	void __user *pc = (void __user *)instruction_pointer(regs);
 
-	oob_trap_notify(ARM64_TRAP_ACCESS, regs);
+	mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 	current->thread.fault_address = 0;
 	current->thread.fault_code = esr;
 
 	arm64_force_sig_fault(SIGILL, ILL_ILLOPC, pc,
 			      "Bad EL0 synchronous exception");
-	oob_trap_unwind(ARM64_TRAP_ACCESS, regs);
+	mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 }
 
 #ifdef CONFIG_VMAP_STACK
