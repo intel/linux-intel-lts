@@ -228,6 +228,7 @@ unlock:
 	}
 }
 
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
 static u64 tlb_page_selective_size(u64 *addr, u64 length)
 {
 	u64 start, end, align;
@@ -263,6 +264,7 @@ static u64 tlb_page_selective_size(u64 *addr, u64 length)
 
 	return length;
 }
+#endif
 
 void intel_gt_init_tlb(struct intel_gt *gt)
 {
