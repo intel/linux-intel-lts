@@ -250,8 +250,9 @@ static int query_perf_config_data(struct drm_i915_private *i915,
 		return total_size;
 
 	if (query_item->length < total_size) {
-		DRM_DEBUG("Invalid query config data item size=%u expected=%u\n",
-			  query_item->length, total_size);
+		drm_dbg(&i915->drm,
+			"Invalid query config data item size=%u expected=%u\n",
+			query_item->length, total_size);
 		return -EINVAL;
 	}
 
@@ -418,9 +419,10 @@ static int query_perf_config_list(struct drm_i915_private *i915,
 	} while (n_configs > alloc);
 
 	if (query_item->length < sizeof_perf_config_list(n_configs)) {
-		DRM_DEBUG("Invalid query config list item size=%u expected=%zu\n",
-			  query_item->length,
-			  sizeof_perf_config_list(n_configs));
+		drm_dbg(&i915->drm,
+			"Invalid query config list item size=%u expected=%zu\n",
+			query_item->length,
+			sizeof_perf_config_list(n_configs));
 		kfree(oa_config_ids);
 		return -EINVAL;
 	}
@@ -498,7 +500,6 @@ static int query_memregion_info(struct drm_i915_private *i915,
 		info.region.memory_class = mr->type;
 		info.region.memory_instance = mr->instance;
 		info.probed_size = mr->total;
-		info.gtt_alignment = mr->min_page_size;
 
 		if (mr->type == INTEL_MEMORY_LOCAL)
 			info.probed_cpu_visible_size = mr->io_size;

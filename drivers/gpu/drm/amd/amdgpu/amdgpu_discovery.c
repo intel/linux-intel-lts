@@ -33,6 +33,7 @@
 #include "gmc_v9_0.h"
 #include "df_v1_7.h"
 #include "df_v3_6.h"
+#include "df_v4_3.h"
 #include "nbio_v6_1.h"
 #include "nbio_v7_0.h"
 #include "nbio_v7_4.h"
@@ -305,8 +306,13 @@ static int amdgpu_discovery_init(struct amdgpu_device *adev)
 		goto out;
 	}
 
-	if (!amdgpu_discovery_verify_binary_signature(adev->mman.discovery_bin)) {
-		dev_warn(adev->dev, "get invalid ip discovery binary signature from vram\n");
+	if (!amdgpu_discovery_verify_binary_signature(adev->mman.discovery_bin) || amdgpu_discovery == 2) {
+		/* ignore the discovery binary from vram if discovery=2 in kernel module parameter */
+		if (amdgpu_discovery == 2)
+			dev_info(adev->dev,"force read ip discovery binary from file");
+		else
+			dev_warn(adev->dev, "get invalid ip discovery binary signature from vram\n");
+
 		/* retry read ip discovery binary from file */
 		r = amdgpu_discovery_read_binary_from_file(adev, adev->mman.discovery_bin);
 		if (r) {
@@ -1701,9 +1707,17 @@ static int amdgpu_discovery_set_smu_ip_blocks(struct amdgpu_device *adev)
 	return 0;
 }
 
+#if defined(CONFIG_DRM_AMD_DC)
+static void amdgpu_discovery_set_sriov_display(struct amdgpu_device *adev)
+{
+	amdgpu_device_set_sriov_virtual_display(adev);
+	amdgpu_device_ip_block_add(adev, &amdgpu_vkms_ip_block);
+}
+#endif
+
 static int amdgpu_discovery_set_display_ip_blocks(struct amdgpu_device *adev)
 {
-	if (adev->enable_virtual_display || amdgpu_sriov_vf(adev)) {
+	if (adev->enable_virtual_display) {
 		amdgpu_device_ip_block_add(adev, &amdgpu_vkms_ip_block);
 		return 0;
 	}
@@ -1731,7 +1745,10 @@ static int amdgpu_discovery_set_display_ip_blocks(struct amdgpu_device *adev)
 		case IP_VERSION(3, 1, 6):
 		case IP_VERSION(3, 2, 0):
 		case IP_VERSION(3, 2, 1):
-			amdgpu_device_ip_block_add(adev, &dm_ip_block);
+			if (amdgpu_sriov_vf(adev))
+				amdgpu_discovery_set_sriov_display(adev);
+			else
+				amdgpu_device_ip_block_add(adev, &dm_ip_block);
 			break;
 		default:
 			dev_err(adev->dev,
@@ -1744,7 +1761,10 @@ static int amdgpu_discovery_set_display_ip_blocks(struct amdgpu_device *adev)
 		case IP_VERSION(12, 0, 0):
 		case IP_VERSION(12, 0, 1):
 		case IP_VERSION(12, 1, 0):
-			amdgpu_device_ip_block_add(adev, &dm_ip_block);
+			if (amdgpu_sriov_vf(adev))
+				amdgpu_discovery_set_sriov_display(adev);
+			else
+				amdgpu_device_ip_block_add(adev, &dm_ip_block);
 			break;
 		default:
 			dev_err(adev->dev,
@@ -2167,6 +2187,7 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 		break;
 	case IP_VERSION(10, 3, 1):
 		adev->family = AMDGPU_FAMILY_VGH;
+		adev->apu_flags |= AMD_APU_IS_VANGOGH;
 		break;
 	case IP_VERSION(10, 3, 3):
 		adev->family = AMDGPU_FAMILY_YC;
@@ -2308,6 +2329,9 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
 	case IP_VERSION(3, 5, 1):
 	case IP_VERSION(3, 5, 2):
 		adev->df.funcs = &df_v1_7_funcs;
+		break;
+	case IP_VERSION(4, 3, 0):
+		adev->df.funcs = &df_v4_3_funcs;
 		break;
 	default:
 		break;

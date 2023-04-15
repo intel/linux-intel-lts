@@ -58,7 +58,8 @@ amdgpu-y += amdgpu_device.o amdgpu_kms.o \
 	amdgpu_vm_sdma.o amdgpu_discovery.o amdgpu_ras_eeprom.o amdgpu_nbio.o \
 	amdgpu_umc.o smu_v11_0_i2c.o amdgpu_fru_eeprom.o amdgpu_rap.o \
 	amdgpu_fw_attestation.o amdgpu_securedisplay.o \
-	amdgpu_eeprom.o amdgpu_mca.o amdgpu_psp_ta.o amdgpu_lsdma.o
+	amdgpu_eeprom.o amdgpu_mca.o amdgpu_psp_ta.o amdgpu_lsdma.o \
+	amdgpu_ring_mux.o
 
 amdgpu-$(CONFIG_PROC_FS) += amdgpu_fdinfo.o
 
@@ -80,7 +81,8 @@ amdgpu-y += \
 # add DF block
 amdgpu-y += \
 	df_v1_7.o \
-	df_v3_6.o
+	df_v3_6.o \
+	df_v4_3.o
 
 # add GMC block
 amdgpu-y += \
@@ -135,6 +137,7 @@ amdgpu-y += \
 	gfx_v10_0.o \
 	imu_v11_0.o \
 	gfx_v11_0.o \
+	gfx_v11_0_3.o \
 	imu_v11_0_3.o
 
 # add async DMA block
@@ -250,7 +253,7 @@ endif
 amdgpu-$(CONFIG_COMPAT) += amdgpu_ioc32.o
 amdgpu-$(CONFIG_VGA_SWITCHEROO) += amdgpu_atpx_handler.o
 amdgpu-$(CONFIG_ACPI) += amdgpu_acpi.o
-amdgpu-$(CONFIG_HMM_MIRROR) += amdgpu_mn.o
+amdgpu-$(CONFIG_HMM_MIRROR) += amdgpu_hmm.o
 
 include $(FULL_AMD_PATH)/pm/Makefile
 

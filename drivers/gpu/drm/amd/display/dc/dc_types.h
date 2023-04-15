@@ -33,6 +33,7 @@
 #include "fixed31_32.h"
 #include "irq_types.h"
 #include "dc_dp_types.h"
+#include "dc_hdmi_types.h"
 #include "dc_hw_types.h"
 #include "dal_types.h"
 #include "grph_object_defs.h"
@@ -992,5 +993,12 @@ struct display_endpoint_id {
 	struct graphics_object_id link_id;
 	enum display_endpoint_type ep_type;
 };
+
+#if defined(CONFIG_DRM_AMD_SECURE_DISPLAY)
+struct otg_phy_mux {
+	uint8_t phy_output_num;
+	uint8_t otg_output_num;
+};
+#endif
 
 #endif /* DC_TYPES_H_ */

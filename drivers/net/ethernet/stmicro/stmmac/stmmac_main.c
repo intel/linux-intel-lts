@@ -1139,24 +1139,22 @@ static void stmmac_check_pcs_mode(struct stmmac_priv *priv)
 static int stmmac_init_phy(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
-	struct fwnode_handle *fixed_node;
 	struct fwnode_handle *fwnode;
+	bool phy_needed;
 	int ret;
 
 	fwnode = of_fwnode_handle(priv->plat->phylink_node);
 	if (!fwnode)
 		fwnode = dev_fwnode(priv->device);
 
-	if (fwnode) {
-		fixed_node = fwnode_get_named_child_node(fwnode, "fixed-link");
-		fwnode_handle_put(fixed_node);
+	if (fwnode)
 		ret = phylink_fwnode_phy_connect(priv->phylink, fwnode, 0);
-	}
 
+	phy_needed = phylink_expects_phy(priv->phylink);
 	/* Some DT bindings do not set-up the PHY handle. Let's try to
 	 * manually parse it
 	 */
-	if (!fwnode || ret || !fixed_node) {
+	if (!fwnode || phy_needed || ret) {
 		int addr = priv->plat->phy_addr;
 		struct phy_device *phydev;
 
@@ -7184,7 +7182,6 @@ int stmmac_dvr_probe(struct device *device,
 		     struct stmmac_resources *res)
 {
 	struct net_device *ndev = NULL;
-	struct fwnode_handle *fwnode;
 	struct stmmac_priv *priv;
 	u32 rxq;
 	int i, ret = 0;
@@ -7423,20 +7420,6 @@ int stmmac_dvr_probe(struct device *device,
 		ret = stmmac_xpcs_setup(priv->mii);
 		if (ret)
 			goto error_xpcs_setup;
-	}
-
-	/* For fixed-link setup, we clear xpcs_an_inband */
-	if (!fwnode)
-		fwnode = dev_fwnode(priv->device);
-
-	if (fwnode) {
-		struct fwnode_handle *fixed_node;
-
-		fixed_node = fwnode_get_named_child_node(fwnode, "fixed-link");
-		if (fixed_node)
-			priv->plat->mdio_bus_data->xpcs_an_inband = false;
-
-		fwnode_handle_put(fixed_node);
 	}
 
 	ret = stmmac_phy_setup(priv);

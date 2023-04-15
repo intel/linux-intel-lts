@@ -196,8 +196,10 @@ void sctp_transport_reset_hb_timer(struct sctp_transport *transport)
 
 	/* When a data chunk is sent, reset the heartbeat interval.  */
 	expires = jiffies + sctp_transport_timeout(transport);
-	if (!mod_timer(&transport->hb_timer,
-		       expires + prandom_u32_max(transport->rto)))
+	if ((time_before(transport->hb_timer.expires, expires) ||
+	     !timer_pending(&transport->hb_timer)) &&
+	    !mod_timer(&transport->hb_timer,
+		       expires + get_random_u32_below(transport->rto)))
 		sctp_transport_hold(transport);
 }
 
