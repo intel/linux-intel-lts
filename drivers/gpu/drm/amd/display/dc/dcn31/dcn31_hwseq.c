@@ -46,7 +46,7 @@
 #include "dpcd_defs.h"
 #include "dce/dmub_outbox.h"
 #include "dc_link_dp.h"
-#include "inc/link_dpcd.h"
+#include "link.h"
 #include "dcn10/dcn10_hw_sequencer.h"
 #include "inc/link_enc_cfg.h"
 #include "dcn30/dcn30_vpg.h"
@@ -89,7 +89,8 @@ static void enable_memory_low_power(struct dc *dc)
 		REG_UPDATE(MMHUBBUB_MEM_PWR_CNTL, VGA_MEM_PWR_FORCE, 1);
 	}
 
-	if (dc->debug.enable_mem_low_power.bits.mpc)
+	if (dc->debug.enable_mem_low_power.bits.mpc &&
+		dc->res_pool->mpc->funcs->set_mpc_mem_lp_mode)
 		dc->res_pool->mpc->funcs->set_mpc_mem_lp_mode(dc->res_pool->mpc);
 
 
@@ -141,7 +142,8 @@ void dcn31_init_hw(struct dc *dc)
 
 	if (!dcb->funcs->is_accelerated_mode(dcb)) {
 		hws->funcs.bios_golden_init(dc);
-		hws->funcs.disable_vga(dc->hwseq);
+		if (hws->funcs.disable_vga)
+			hws->funcs.disable_vga(dc->hwseq);
 	}
 	// Initialize the dccg
 	if (res_pool->dccg->funcs->dccg_init)
@@ -413,7 +415,12 @@ void dcn31_update_info_frame(struct pipe_ctx *pipe_ctx)
 		pipe_ctx->stream_res.stream_enc->funcs->update_hdmi_info_packets(
 			pipe_ctx->stream_res.stream_enc,
 			&pipe_ctx->stream_res.encoder_info_frame);
-	else {
+	else if (link_is_dp_128b_132b_signal(pipe_ctx)) {
+		pipe_ctx->stream_res.hpo_dp_stream_enc->funcs->update_dp_info_packets(
+				pipe_ctx->stream_res.hpo_dp_stream_enc,
+				&pipe_ctx->stream_res.encoder_info_frame);
+		return;
+	} else {
 		pipe_ctx->stream_res.stream_enc->funcs->update_dp_info_packets(
 			pipe_ctx->stream_res.stream_enc,
 			&pipe_ctx->stream_res.encoder_info_frame);

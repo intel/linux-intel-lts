@@ -105,8 +105,7 @@ static void vblank_control_worker(struct work_struct *work)
 	else if (dm->active_vblank_irq_count)
 		dm->active_vblank_irq_count--;
 
-	dc_allow_idle_optimizations(
-		dm->dc, dm->active_vblank_irq_count == 0 ? true : false);
+	dc_allow_idle_optimizations(dm->dc, dm->active_vblank_irq_count == 0);
 
 	DRM_DEBUG_KMS("Allow idle optimizations (MALL): %d\n", dm->active_vblank_irq_count == 0);
 
@@ -127,6 +126,9 @@ static void vblank_control_worker(struct work_struct *work)
 				amdgpu_dm_psr_disable(vblank_work->stream);
 		} else if (vblank_work->stream->link->psr_settings.psr_feature_enabled &&
 			   !vblank_work->stream->link->psr_settings.psr_allow_active &&
+#ifdef CONFIG_DRM_AMD_SECURE_DISPLAY
+			   !amdgpu_dm_crc_window_is_activated(&vblank_work->acrtc->base) &&
+#endif
 			   vblank_work->acrtc->dm_irq_params.allow_psr_entry) {
 			amdgpu_dm_psr_enable(vblank_work->stream);
 		}

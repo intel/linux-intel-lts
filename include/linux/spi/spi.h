@@ -727,6 +727,8 @@ static inline bool spi_controller_is_slave(struct spi_controller *ctlr)
 	return IS_ENABLED(CONFIG_SPI_SLAVE) && ctlr->slave;
 }
 
+extern void spi_set_cs(struct spi_device *spi, bool enable, bool force);
+
 /* PM calls that need to be issued by the driver */
 extern int spi_controller_suspend(struct spi_controller *ctlr);
 extern int spi_controller_resume(struct spi_controller *ctlr);
@@ -1513,6 +1515,9 @@ extern void spi_unregister_device(struct spi_device *spi);
 
 extern const struct spi_device_id *
 spi_get_device_id(const struct spi_device *sdev);
+
+extern const void *
+spi_get_device_match_data(const struct spi_device *sdev);
 
 static inline bool
 spi_transfer_is_last(struct spi_controller *ctlr, struct spi_transfer *xfer)

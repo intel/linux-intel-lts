@@ -88,11 +88,41 @@ typedef u64 gen8_pte_t;
 #define BYT_PTE_SNOOPED_BY_CPU_CACHES	REG_BIT(2)
 #define BYT_PTE_WRITEABLE		REG_BIT(1)
 
+#define GEN12_PPGTT_PTE_PAT3    BIT_ULL(62)
 #define GEN12_PPGTT_PTE_LM	BIT_ULL(11)
+#define GEN12_PPGTT_PTE_PAT2    BIT_ULL(7)
+#define GEN12_PPGTT_PTE_NC      BIT_ULL(5)
+#define GEN12_PPGTT_PTE_PAT1    BIT_ULL(4)
+#define GEN12_PPGTT_PTE_PAT0    BIT_ULL(3)
 
-#define GEN12_GGTT_PTE_LM	BIT_ULL(1)
+/*
+ *  DOC: GEN12 GGTT Table Entry format
+ *
+ * +----------+---------+---------+-----------------+--------------+---------+
+ * |    63:46 |   45:12 |    11:5 |             4:2 |            1 |       0 |
+ * +==========+=========+=========+=================+==============+=========+
+ * |  Ignored | Address | Ignored | Function Number | Local Memory | Present |
+ * +----------+---------+---------+-----------------+--------------+---------+
+ *
+ * ADL-P/S:
+ * +----------+--------------+-------------------+---------+---------+----------+--------+---------+
+ * |    63:46 |        45:42 |             41:39 |   38:12 |   11:5  |      4:2 |      1 |       0 |
+ * +==========+==============+===================+=========+=========+==========+========+=========+
+ * |  Ignored | MKTME key ID | 2LM Far Memory    | Address | Ignored | Function | Local  | Present |
+ * |          |              | address extension |         |         | Number   | Memory |         |
+ * +----------+--------------+-------------------+---------+---------+----------+--------+---------+
+ *
+ */
+
+#define GEN12_GGTT_PTE_LM		BIT_ULL(1)
+#define MTL_GGTT_PTE_PAT0		BIT_ULL(52)
+#define MTL_GGTT_PTE_PAT1		BIT_ULL(53)
+#define TGL_GGTT_PTE_VFID_MASK		GENMASK_ULL(4, 2)
+#define GEN12_GGTT_PTE_ADDR_MASK	GENMASK_ULL(45, 12)
+#define MTL_GGTT_PTE_PAT_MASK		GENMASK_ULL(53, 52)
 
 #define GEN12_PDE_64K BIT(6)
+#define GEN12_PTE_PS64 BIT(8)
 
 /*
  * Cacheability Control is a 4-bit value. The low three bits are stored in bits
@@ -145,6 +175,15 @@ typedef u64 gen8_pte_t;
 
 #define GEN8_PDE_IPS_64K BIT(11)
 #define GEN8_PDE_PS_2M   BIT(7)
+
+#define MTL_PPAT_L4_CACHE_POLICY_MASK	REG_GENMASK(3, 2)
+#define MTL_PAT_INDEX_COH_MODE_MASK	REG_GENMASK(1, 0)
+#define MTL_PPAT_L4_3_UC	REG_FIELD_PREP(MTL_PPAT_L4_CACHE_POLICY_MASK, 3)
+#define MTL_PPAT_L4_1_WT	REG_FIELD_PREP(MTL_PPAT_L4_CACHE_POLICY_MASK, 1)
+#define MTL_PPAT_L4_0_WB	REG_FIELD_PREP(MTL_PPAT_L4_CACHE_POLICY_MASK, 0)
+#define MTL_3_COH_2W	REG_FIELD_PREP(MTL_PAT_INDEX_COH_MODE_MASK, 3)
+#define MTL_2_COH_1W	REG_FIELD_PREP(MTL_PAT_INDEX_COH_MODE_MASK, 2)
+#define MTL_0_COH_NON	REG_FIELD_PREP(MTL_PAT_INDEX_COH_MODE_MASK, 0)
 
 enum i915_cache_level;
 
@@ -354,19 +393,6 @@ struct i915_ggtt {
 
 	bool do_idle_maps;
 
-	/**
-	 * @pte_lost: Are ptes lost on resume?
-	 *
-	 * Whether the system was recently restored from hibernate and
-	 * thus may have lost pte content.
-	 */
-	bool pte_lost;
-
-	/**
-	 * @probed_pte: Probed pte value on suspend. Re-checked on resume.
-	 */
-	u64 probed_pte;
-
 	int mtrr;
 
 	/** Bit 6 swizzling required for X tiling */
@@ -389,6 +415,9 @@ struct i915_ggtt {
 	struct mutex error_mutex;
 	struct drm_mm_node error_capture;
 	struct drm_mm_node uc_fw;
+
+	/** List of GTs mapping this GGTT */
+	struct list_head gt_list;
 };
 
 struct i915_ppgtt {
@@ -578,16 +607,22 @@ void intel_ggtt_unbind_vma(struct i915_address_space *vm,
 int i915_ggtt_probe_hw(struct drm_i915_private *i915);
 int i915_ggtt_init_hw(struct drm_i915_private *i915);
 int i915_ggtt_enable_hw(struct drm_i915_private *i915);
-void i915_ggtt_enable_guc(struct i915_ggtt *ggtt);
-void i915_ggtt_disable_guc(struct i915_ggtt *ggtt);
 int i915_init_ggtt(struct drm_i915_private *i915);
 void i915_ggtt_driver_release(struct drm_i915_private *i915);
 void i915_ggtt_driver_late_release(struct drm_i915_private *i915);
+struct i915_ggtt *i915_ggtt_create(struct drm_i915_private *i915);
 
 static inline bool i915_ggtt_has_aperture(const struct i915_ggtt *ggtt)
 {
 	return ggtt->mappable_end > 0;
 }
+
+int i915_ggtt_balloon(struct i915_ggtt *ggtt, u64 start, u64 end,
+		      struct drm_mm_node *node);
+void i915_ggtt_deballoon(struct i915_ggtt *ggtt, struct drm_mm_node *node);
+
+void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
+			       const struct drm_mm_node *node);
 
 int i915_ppgtt_init_hw(struct intel_gt *gt);
 
@@ -598,17 +633,6 @@ void i915_ggtt_suspend_vm(struct i915_address_space *vm);
 bool i915_ggtt_resume_vm(struct i915_address_space *vm);
 void i915_ggtt_suspend(struct i915_ggtt *gtt);
 void i915_ggtt_resume(struct i915_ggtt *ggtt);
-
-/**
- * i915_ggtt_mark_pte_lost - Mark ggtt ptes as lost or clear such a marking
- * @i915 The device private.
- * @val whether the ptes should be marked as lost.
- *
- * In some cases pte content is retained across suspend, but typically lost
- * across hibernate. Typically they should be marked as lost on
- * hibernation restore and such marking cleared on suspend.
- */
-void i915_ggtt_mark_pte_lost(struct drm_i915_private *i915, bool val);
 
 void
 fill_page_dma(struct drm_i915_gem_object *p, const u64 val, unsigned int count);
@@ -667,7 +691,7 @@ void ppgtt_unbind_vma(struct i915_address_space *vm,
 
 void gtt_write_workarounds(struct intel_gt *gt);
 
-void setup_private_pat(struct intel_uncore *uncore);
+void setup_private_pat(struct intel_gt *gt);
 
 int i915_vm_alloc_pt_stash(struct i915_address_space *vm,
 			   struct i915_vm_pt_stash *stash,

@@ -12,16 +12,39 @@
 #include "gt/intel_engine_types.h"
 
 #include "abi/guc_actions_abi.h"
+#include "abi/guc_actions_pf_abi.h"
 #include "abi/guc_actions_slpc_abi.h"
+#include "abi/guc_actions_vf_abi.h"
 #include "abi/guc_errors_abi.h"
 #include "abi/guc_communication_mmio_abi.h"
 #include "abi/guc_communication_ctb_abi.h"
 #include "abi/guc_klvs_abi.h"
 #include "abi/guc_messages_abi.h"
 
+static inline const char *hxg_type_to_string(u32 type)
+{
+	switch (type) {
+	case GUC_HXG_TYPE_REQUEST:
+		return "request";
+	case GUC_HXG_TYPE_EVENT:
+		return "event";
+	case GUC_HXG_TYPE_NO_RESPONSE_BUSY:
+		return "busy";
+	case GUC_HXG_TYPE_NO_RESPONSE_RETRY:
+		return "retry";
+	case GUC_HXG_TYPE_RESPONSE_FAILURE:
+		return "failure";
+	case GUC_HXG_TYPE_RESPONSE_SUCCESS:
+		return "response";
+	default:
+		return "<invalid>";
+	}
+}
+
 /* Payload length only i.e. don't include G2H header length */
 #define G2H_LEN_DW_SCHED_CONTEXT_MODE_SET	2
 #define G2H_LEN_DW_DEREGISTER_CONTEXT		1
+#define G2H_LEN_DW_INVALIDATE_TLB		1
 
 #define GUC_CONTEXT_DISABLE		0
 #define GUC_CONTEXT_ENABLE		1
@@ -47,7 +70,8 @@
 #define GUC_VIDEOENHANCE_CLASS		2
 #define GUC_BLITTER_CLASS		3
 #define GUC_COMPUTE_CLASS		4
-#define GUC_LAST_ENGINE_CLASS		GUC_COMPUTE_CLASS
+#define GUC_GSC_OTHER_CLASS		5
+#define GUC_LAST_ENGINE_CLASS		GUC_GSC_OTHER_CLASS
 #define GUC_MAX_ENGINE_CLASSES		16
 #define GUC_MAX_INSTANCES_PER_CLASS	32
 
@@ -169,6 +193,7 @@ static u8 engine_class_guc_class_map[] = {
 	[COPY_ENGINE_CLASS]       = GUC_BLITTER_CLASS,
 	[VIDEO_DECODE_CLASS]      = GUC_VIDEO_CLASS,
 	[VIDEO_ENHANCEMENT_CLASS] = GUC_VIDEOENHANCE_CLASS,
+	[OTHER_CLASS]             = GUC_GSC_OTHER_CLASS,
 	[COMPUTE_CLASS]           = GUC_COMPUTE_CLASS,
 };
 
@@ -178,12 +203,13 @@ static u8 guc_class_engine_class_map[] = {
 	[GUC_VIDEO_CLASS]        = VIDEO_DECODE_CLASS,
 	[GUC_VIDEOENHANCE_CLASS] = VIDEO_ENHANCEMENT_CLASS,
 	[GUC_COMPUTE_CLASS]      = COMPUTE_CLASS,
+	[GUC_GSC_OTHER_CLASS]    = OTHER_CLASS,
 };
 
 static inline u8 engine_class_to_guc_class(u8 class)
 {
 	BUILD_BUG_ON(ARRAY_SIZE(engine_class_guc_class_map) != MAX_ENGINE_CLASS + 1);
-	GEM_BUG_ON(class > MAX_ENGINE_CLASS || class == OTHER_CLASS);
+	GEM_BUG_ON(class > MAX_ENGINE_CLASS);
 
 	return engine_class_guc_class_map[class];
 }
@@ -290,6 +316,25 @@ struct guc_update_context_policy {
 	struct guc_klv_generic_dw_t klv[GUC_CONTEXT_POLICIES_KLV_NUM_IDS];
 } __packed;
 
+/* Format of the UPDATE_SCHEDULING_POLICIES H2G data packet */
+struct guc_update_scheduling_policy_header {
+	u32 action;
+} __packed;
+
+/*
+ * Can't dynmically allocate memory for the scheduling policy KLV because
+ * it will be sent from within the reset path. Need a fixed size lump on
+ * the stack instead :(.
+ *
+ * Currently, there is only one KLV defined, which has 1 word of KL + 2 words of V.
+ */
+#define MAX_SCHEDULING_POLICY_SIZE 3
+
+struct guc_update_scheduling_policy {
+	struct guc_update_scheduling_policy_header header;
+	u32 data[MAX_SCHEDULING_POLICY_SIZE];
+} __packed;
+
 #define GUC_POWER_UNSPECIFIED	0
 #define GUC_POWER_D0		1
 #define GUC_POWER_D1		2
@@ -297,6 +342,9 @@ struct guc_update_context_policy {
 #define GUC_POWER_D3		4
 
 /* Scheduling policy settings */
+
+#define GLOBAL_SCHEDULE_POLICY_RC_YIELD_DURATION	100	/* in ms */
+#define GLOBAL_SCHEDULE_POLICY_RC_YIELD_RATIO		50	/* in percent */
 
 #define GLOBAL_POLICY_MAX_NUM_WI 15
 
@@ -496,5 +544,13 @@ enum intel_guc_recv_message {
 	INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED = BIT(1),
 	INTEL_GUC_RECV_MSG_EXCEPTION = BIT(30),
 };
+
+#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) \
+	((intel_guc_ct_enabled(&(guc)->ct)) && \
+	 (intel_guc_submission_is_used(guc)) && \
+	 (GRAPHICS_VER(guc_to_gt((guc))->i915) >= 12))
+#define INTEL_GUC_SUPPORTS_TLB_INVALIDATION_SELECTIVE(guc) \
+	(INTEL_GUC_SUPPORTS_TLB_INVALIDATION(guc) && \
+	HAS_SELECTIVE_TLB_INVALIDATION(guc_to_gt(guc)->i915))
 
 #endif

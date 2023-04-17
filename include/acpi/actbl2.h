@@ -44,6 +44,8 @@
 #define ACPI_SIG_PMTT           "PMTT"	/* Platform Memory Topology Table */
 #define ACPI_SIG_PPTT           "PPTT"	/* Processor Properties Topology Table */
 #define ACPI_SIG_PRMT           "PRMT"	/* Platform Runtime Mechanism Table */
+#define ACPI_SIG_PTCT           "PTCT"	/* Platform Tuning Configuration Table */
+#define ACPI_SIG_RTCT           "RTCT"	/* Real-Time Configuration Table */
 #define ACPI_SIG_RASF           "RASF"	/* RAS Feature table */
 #define ACPI_SIG_RGRT           "RGRT"	/* Regulatory Graphics Resource Table */
 #define ACPI_SIG_SBST           "SBST"	/* Smart Battery Specification Table */
@@ -2308,6 +2310,95 @@ struct acpi_prmt_handler_info {
 	u64 static_data_buffer_address;
 	u64 acpi_param_buffer_address;
 };
+
+/*******************************************************************************
+ *
+ * PTCT - Platform Tuning Configuration Table
+ *        Version 1
+ *
+ ******************************************************************************/
+struct acpi_table_ptct {
+	struct acpi_table_header header;
+};
+
+/* Values for Type field above */
+enum acpi_ptct_entry {
+	ACPI_PTCT_ENTRY_PTCD_LIMITS              = 1,
+	ACPI_PTCT_ENTRY_PTCM_BINARY              = 2,
+	ACPI_PTCT_ENTRY_WRC_L3_WAY_MASKS         = 3,
+	ACPI_PTCT_ENTRY_GT_L3_WAY_MASKS          = 4,
+	ACPI_PTCT_ENTRY_PSEUDO_SRAM              = 5,
+	ACPI_PTCT_ENTRY_STREAM_DATA_PATH         = 6,
+	ACPI_PTCT_ENTRY_TIME_AWARE_SUBSYSTEMS    = 7,
+	ACPI_PTCT_ENTRY_REALTIME_IOMMU           = 8,
+	ACPI_PTCT_ENTRY_MEMORY_HIERARCHY_LATENCY = 9,
+	ACPI_PTCT_ENTRY_RESERVED
+};
+
+struct acpi_ptct_entry_header {
+	u16 size;
+	u16 format;
+	u32 type;
+};
+
+struct acpi_ptct_psram {
+	u32 cache_level;
+	u32 phyaddr_lo;
+	u32 phyaddr_hi;
+	u32 cache_ways;
+	u32 size;
+	u32 apic_id;
+};
+
+struct ptct_psram_region {
+	u64 phyaddr_start;
+	u64 phyaddr_end;
+};
+
+#define PTCT_ENTRY_HEADER_SIZE	sizeof(struct acpi_ptct_entry_header)
+#define PTCT_ENTRY_PSRAM_SIZE	sizeof(struct acpi_ptct_psram)
+#define PTCT_ACPI_HEADER_SIZE	sizeof(struct acpi_table_header)
+#define PSRAM_REGION_INFO_SIZE	sizeof(struct ptct_psram_region)
+#define MAX_PSRAM_REGIONS	40
+
+/*******************************************************************************
+ *
+ * PTCT - Platform Tuning Configuration Table
+ *        Version 2
+ *
+ ******************************************************************************/
+/* Values for Type field above */
+enum acpi_ptct_v2_entry {
+	ACPI_PTCT_V2_ENTRY_COMPATIBILITY        = 0,
+	ACPI_PTCT_V2_ENTRY_RTCD_LIMIT           = 1,
+	ACPI_PTCT_V2_ENTRY_CRL_BINARY           = 2,
+	ACPI_PTCT_V2_ENTRY_IA_WAYMASK           = 3,
+	ACPI_PTCT_V2_ENTRY_WRC_WAYMASK          = 4,
+	ACPI_PTCT_V2_ENTRY_GT_WAYMASK           = 5,
+	ACPI_PTCT_V2_ENTRY_SSRAM_WAYMASK        = 6,
+	ACPI_PTCT_V2_ENTRY_SSRAM                = 7,
+	ACPI_PTCT_V2_ENTRY_MEMORY_HIERARCHY_LATENCY = 8,
+	ACPI_PTCT_V2_ENTRY_ERROR_LOG_ADDRESS    = 9,
+	ACPI_PTCT_V2_ENTRY_RESERVED
+};
+
+struct acpi_ptct_psram_v2 {
+	u32 cache_level;
+	u32 cache_id;
+	u32 phyaddr_lo;
+	u32 phyaddr_hi;
+	u32 size;
+	u32 shared;
+};
+
+struct acpi_ptct_compatibility {
+	u32 rtct_version;
+	u32 rtct_version_minor;
+	u32 rtcd_version;
+	u32 rtcd_version_minor;
+};
+
+#define PTCT_V2_ENTRY_PSRAM_SIZE   sizeof(struct acpi_ptct_psram_v2)
 
 /*******************************************************************************
  *

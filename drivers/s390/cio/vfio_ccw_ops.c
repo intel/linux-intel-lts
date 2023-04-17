@@ -96,6 +96,8 @@ static void vfio_ccw_mdev_release_dev(struct vfio_device *vdev)
 	 */
 	memset(vdev, 0, sizeof(*vdev));
 	complete(&private->release_comp);
+	kfree(private->cp.guest_cp);
+	mutex_destroy(&private->io_mutex);
 }
 
 static void vfio_ccw_mdev_remove(struct mdev_device *mdev)

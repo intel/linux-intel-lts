@@ -970,6 +970,7 @@ enum tc_setup_type {
 	TC_SETUP_QDISC_FIFO,
 	TC_SETUP_QDISC_HTB,
 	TC_SETUP_ACT,
+	TC_SETUP_PREEMPT,
 };
 
 /* These structures hold the attributes of bpf state that are being passed
@@ -985,6 +986,10 @@ enum bpf_netdev_command {
 	 */
 	XDP_SETUP_PROG,
 	XDP_SETUP_PROG_HW,
+	/* Setup/query XDP Meta Data BTF */
+	XDP_SETUP_MD_BTF,
+	XDP_QUERY_MD_BTF,
+
 	/* BPF program for offload callbacks, invoked at program load time. */
 	BPF_OFFLOAD_MAP_ALLOC,
 	BPF_OFFLOAD_MAP_FREE,
@@ -1008,6 +1013,7 @@ struct bpf_xdp_entity {
 	struct bpf_prog *prog;
 	struct bpf_xdp_link *link;
 };
+struct btf;
 
 struct netdev_bpf {
 	enum bpf_netdev_command command;
@@ -1016,7 +1022,11 @@ struct netdev_bpf {
 		struct {
 			u32 flags;
 			struct bpf_prog *prog;
-			struct netlink_ext_ack *extack;
+		};
+		/* XDP_{SETUP/QUERY}_MD_BTF */
+		struct {
+			u8 btf_enable;
+			u32 btf_id;
 		};
 		/* BPF_OFFLOAD_MAP_ALLOC, BPF_OFFLOAD_MAP_FREE */
 		struct {
@@ -1027,6 +1037,7 @@ struct netdev_bpf {
 			struct xsk_buff_pool *pool;
 			u16 queue_id;
 		} xsk;
+		struct netlink_ext_ack *extack;
 	};
 };
 
@@ -2390,6 +2401,7 @@ int netdev_txq_to_tc(struct net_device *dev, unsigned int txq);
 void netdev_reset_tc(struct net_device *dev);
 int netdev_set_tc_queue(struct net_device *dev, u8 tc, u16 count, u16 offset);
 int netdev_set_num_tc(struct net_device *dev, u8 num_tc);
+u32 netdev_tc_map_to_queue_mask(struct net_device *dev, u32 tc_mask);
 
 static inline
 int netdev_get_num_tc(struct net_device *dev)
@@ -3896,6 +3908,9 @@ int bpf_xdp_link_attach(const union bpf_attr *attr, struct bpf_prog *prog);
 u8 dev_xdp_prog_count(struct net_device *dev);
 u32 dev_xdp_prog_id(struct net_device *dev, enum bpf_xdp_mode mode);
 
+int dev_xdp_setup_md_btf(struct net_device *dev, struct netlink_ext_ack *extack,
+			 u8 enable);
+u32 dev_xdp_query_md_btf(struct net_device *dev, u8 *enabled);
 int __dev_forward_skb(struct net_device *dev, struct sk_buff *skb);
 int dev_forward_skb(struct net_device *dev, struct sk_buff *skb);
 int dev_forward_skb_nomtu(struct net_device *dev, struct sk_buff *skb);

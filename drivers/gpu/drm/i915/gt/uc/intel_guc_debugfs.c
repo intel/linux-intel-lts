@@ -5,6 +5,7 @@
 
 #include <drm/drm_print.h>
 
+#include "gt/intel_gt.h"
 #include "gt/intel_gt_debugfs.h"
 #include "gt/uc/intel_guc_ads.h"
 #include "gt/uc/intel_guc_ct.h"
@@ -13,6 +14,7 @@
 #include "intel_guc.h"
 #include "intel_guc_debugfs.h"
 #include "intel_guc_log_debugfs.h"
+#include "i915_sriov.h"
 
 static int guc_info_show(struct seq_file *m, void *data)
 {
@@ -24,7 +26,9 @@ static int guc_info_show(struct seq_file *m, void *data)
 
 	intel_guc_load_status(guc, &p);
 	drm_puts(&p, "\n");
-	intel_guc_log_info(&guc->log, &p);
+
+	if (!IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		intel_guc_log_info(&guc->log, &p);
 
 	if (!intel_guc_submission_is_used(guc))
 		return 0;
@@ -71,12 +75,73 @@ static bool intel_eval_slpc_support(void *data)
 	return intel_guc_slpc_is_used(guc);
 }
 
+static int guc_sched_disable_delay_ms_get(void *data, u64 *val)
+{
+	struct intel_guc *guc = data;
+
+	if (!intel_guc_submission_is_used(guc))
+		return -ENODEV;
+
+	*val = (u64)guc->submission_state.sched_disable_delay_ms;
+
+	return 0;
+}
+
+static int guc_sched_disable_delay_ms_set(void *data, u64 val)
+{
+	struct intel_guc *guc = data;
+
+	if (!intel_guc_submission_is_used(guc))
+		return -ENODEV;
+
+	/* clamp to a practical limit, 1 minute is reasonable for a longest delay */
+	guc->submission_state.sched_disable_delay_ms = min_t(u64, val, 60000);
+
+	return 0;
+}
+DEFINE_SIMPLE_ATTRIBUTE(guc_sched_disable_delay_ms_fops,
+			guc_sched_disable_delay_ms_get,
+			guc_sched_disable_delay_ms_set, "%lld\n");
+
+static int guc_sched_disable_gucid_threshold_get(void *data, u64 *val)
+{
+	struct intel_guc *guc = data;
+
+	if (!intel_guc_submission_is_used(guc))
+		return -ENODEV;
+
+	*val = guc->submission_state.sched_disable_gucid_threshold;
+	return 0;
+}
+
+static int guc_sched_disable_gucid_threshold_set(void *data, u64 val)
+{
+	struct intel_guc *guc = data;
+
+	if (!intel_guc_submission_is_used(guc))
+		return -ENODEV;
+
+	if (val > intel_guc_sched_disable_gucid_threshold_max(guc))
+		guc->submission_state.sched_disable_gucid_threshold =
+			intel_guc_sched_disable_gucid_threshold_max(guc);
+	else
+		guc->submission_state.sched_disable_gucid_threshold = val;
+
+	return 0;
+}
+DEFINE_SIMPLE_ATTRIBUTE(guc_sched_disable_gucid_threshold_fops,
+			guc_sched_disable_gucid_threshold_get,
+			guc_sched_disable_gucid_threshold_set, "%lld\n");
+
 void intel_guc_debugfs_register(struct intel_guc *guc, struct dentry *root)
 {
 	static const struct intel_gt_debugfs_file files[] = {
 		{ "guc_info", &guc_info_fops, NULL },
 		{ "guc_registered_contexts", &guc_registered_contexts_fops, NULL },
 		{ "guc_slpc_info", &guc_slpc_info_fops, &intel_eval_slpc_support},
+		{ "guc_sched_disable_delay_ms", &guc_sched_disable_delay_ms_fops, NULL },
+		{ "guc_sched_disable_gucid_threshold", &guc_sched_disable_gucid_threshold_fops,
+		   NULL },
 	};
 
 	if (!intel_guc_is_supported(guc))

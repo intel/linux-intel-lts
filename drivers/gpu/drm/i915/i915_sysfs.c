@@ -36,6 +36,7 @@
 #include "gt/sysfs_engines.h"
 
 #include "i915_drv.h"
+#include "i915_sriov_sysfs.h"
 #include "i915_sysfs.h"
 #include "intel_pm.h"
 
@@ -218,7 +219,8 @@ static const struct bin_attribute error_state_attr = {
 static void i915_setup_error_capture(struct device *kdev)
 {
 	if (sysfs_create_bin_file(&kdev->kobj, &error_state_attr))
-		DRM_ERROR("error_state sysfs setup failed\n");
+		drm_err(&kdev_minor_to_i915(kdev)->drm,
+			"error_state sysfs setup failed\n");
 }
 
 static void i915_teardown_error_capture(struct device *kdev)
@@ -255,6 +257,8 @@ void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 		drm_warn(&dev_priv->drm,
 			 "failed to register GT sysfs directory\n");
 
+	i915_sriov_sysfs_setup(dev_priv);
+
 	i915_setup_error_capture(kdev);
 
 	intel_engines_add_sysfs(dev_priv);
@@ -265,6 +269,8 @@ void i915_teardown_sysfs(struct drm_i915_private *dev_priv)
 	struct device *kdev = dev_priv->drm.primary->kdev;
 
 	i915_teardown_error_capture(kdev);
+
+	i915_sriov_sysfs_teardown(dev_priv);
 
 	device_remove_bin_file(kdev,  &dpf_attrs_1);
 	device_remove_bin_file(kdev,  &dpf_attrs);

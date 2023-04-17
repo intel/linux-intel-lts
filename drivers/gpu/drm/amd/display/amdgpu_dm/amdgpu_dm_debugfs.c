@@ -35,8 +35,13 @@
 #include "resource.h"
 #include "dsc.h"
 #include "dc_link_dp.h"
+#include "dc_link.h"
 #include "link_hwss.h"
 #include "dc/dc_dmub_srv.h"
+
+#ifdef CONFIG_DRM_AMD_SECURE_DISPLAY
+#include "amdgpu_dm_psr.h"
+#endif
 
 struct dmub_debugfs_trace_header {
 	uint32_t entry_count;
@@ -299,6 +304,8 @@ static ssize_t dp_link_settings_write(struct file *f, const char __user *buf,
 	case LINK_RATE_HIGH2:
 	case LINK_RATE_HIGH3:
 	case LINK_RATE_UHBR10:
+	case LINK_RATE_UHBR13_5:
+	case LINK_RATE_UHBR20:
 		break;
 	default:
 		valid_input = false;
@@ -1369,14 +1376,9 @@ static ssize_t dp_dsc_clock_en_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -1475,12 +1477,12 @@ static ssize_t dp_dsc_clock_en_write(struct file *f, const char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
 	}
 
-	if (!pipe_ctx || !pipe_ctx->stream)
+	if (!pipe_ctx->stream)
 		goto done;
 
 	// Get CRTC state
@@ -1560,14 +1562,9 @@ static ssize_t dp_dsc_slice_width_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -1664,12 +1661,12 @@ static ssize_t dp_dsc_slice_width_write(struct file *f, const char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
 	}
 
-	if (!pipe_ctx || !pipe_ctx->stream)
+	if (!pipe_ctx->stream)
 		goto done;
 
 	// Safely get CRTC state
@@ -1749,14 +1746,9 @@ static ssize_t dp_dsc_slice_height_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -1853,12 +1845,12 @@ static ssize_t dp_dsc_slice_height_write(struct file *f, const char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
 	}
 
-	if (!pipe_ctx || !pipe_ctx->stream)
+	if (!pipe_ctx->stream)
 		goto done;
 
 	// Get CRTC state
@@ -1934,14 +1926,9 @@ static ssize_t dp_dsc_bits_per_pixel_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -2035,12 +2022,12 @@ static ssize_t dp_dsc_bits_per_pixel_write(struct file *f, const char __user *bu
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
 	}
 
-	if (!pipe_ctx || !pipe_ctx->stream)
+	if (!pipe_ctx->stream)
 		goto done;
 
 	// Get CRTC state
@@ -2114,14 +2101,9 @@ static ssize_t dp_dsc_pic_width_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -2175,14 +2157,9 @@ static ssize_t dp_dsc_pic_height_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -2251,14 +2228,9 @@ static ssize_t dp_dsc_chunk_size_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -2327,14 +2299,9 @@ static ssize_t dp_dsc_slice_bpg_offset_read(struct file *f, char __user *buf,
 
 	for (i = 0; i < MAX_PIPES; i++) {
 		pipe_ctx = &aconnector->dc_link->dc->current_state->res_ctx.pipe_ctx[i];
-		if (pipe_ctx && pipe_ctx->stream &&
+		if (pipe_ctx->stream &&
 		    pipe_ctx->stream->link == aconnector->dc_link)
 			break;
-	}
-
-	if (!pipe_ctx) {
-		kfree(rd_buf);
-		return -ENXIO;
 	}
 
 	dsc = pipe_ctx->stream_res.dsc;
@@ -2633,6 +2600,25 @@ static int dp_mst_progress_status_show(struct seq_file *m, void *unused)
 	return 0;
 }
 
+/*
+ * Reports whether the connected display is a USB4 DPIA tunneled display
+ * Example usage: cat /sys/kernel/debug/dri/0/DP-8/is_dpia_link
+ */
+static int is_dpia_link_show(struct seq_file *m, void *data)
+{
+	struct drm_connector *connector = m->private;
+	struct amdgpu_dm_connector *aconnector = to_amdgpu_dm_connector(connector);
+	struct dc_link *link = aconnector->dc_link;
+
+	if (connector->status != connector_status_connected)
+		return -ENODEV;
+
+	seq_printf(m, "%s\n", (link->ep_type == DISPLAY_ENDPOINT_USB4_DPIA) ? "yes" :
+				(link->ep_type == DISPLAY_ENDPOINT_PHY) ? "no" : "unknown");
+
+	return 0;
+}
+
 DEFINE_SHOW_ATTRIBUTE(dp_dsc_fec_support);
 DEFINE_SHOW_ATTRIBUTE(dmub_fw_state);
 DEFINE_SHOW_ATTRIBUTE(dmub_tracebuffer);
@@ -2644,6 +2630,7 @@ DEFINE_SHOW_ATTRIBUTE(internal_display);
 DEFINE_SHOW_ATTRIBUTE(psr_capability);
 DEFINE_SHOW_ATTRIBUTE(dp_is_mst_connector);
 DEFINE_SHOW_ATTRIBUTE(dp_mst_progress_status);
+DEFINE_SHOW_ATTRIBUTE(is_dpia_link);
 
 static const struct file_operations dp_dsc_clock_en_debugfs_fops = {
 	.owner = THIS_MODULE,
@@ -2788,7 +2775,8 @@ static const struct {
 		{"max_bpc", &dp_max_bpc_debugfs_fops},
 		{"dsc_disable_passthrough", &dp_dsc_disable_passthrough_debugfs_fops},
 		{"is_mst_connector", &dp_is_mst_connector_fops},
-		{"mst_progress_status", &dp_mst_progress_status_fops}
+		{"mst_progress_status", &dp_mst_progress_status_fops},
+		{"is_dpia_link", &is_dpia_link_fops}
 };
 
 #ifdef CONFIG_DRM_AMD_DC_HDCP
@@ -3079,8 +3067,8 @@ static int crc_win_x_start_set(void *data, u64 val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	acrtc->dm_irq_params.crc_window.x_start = (uint16_t) val;
-	acrtc->dm_irq_params.crc_window.update_win = false;
+	acrtc->dm_irq_params.window_param.x_start = (uint16_t) val;
+	acrtc->dm_irq_params.window_param.update_win = false;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3096,7 +3084,7 @@ static int crc_win_x_start_get(void *data, u64 *val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	*val = acrtc->dm_irq_params.crc_window.x_start;
+	*val = acrtc->dm_irq_params.window_param.x_start;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3116,8 +3104,8 @@ static int crc_win_y_start_set(void *data, u64 val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	acrtc->dm_irq_params.crc_window.y_start = (uint16_t) val;
-	acrtc->dm_irq_params.crc_window.update_win = false;
+	acrtc->dm_irq_params.window_param.y_start = (uint16_t) val;
+	acrtc->dm_irq_params.window_param.update_win = false;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3133,7 +3121,7 @@ static int crc_win_y_start_get(void *data, u64 *val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	*val = acrtc->dm_irq_params.crc_window.y_start;
+	*val = acrtc->dm_irq_params.window_param.y_start;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3152,8 +3140,8 @@ static int crc_win_x_end_set(void *data, u64 val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	acrtc->dm_irq_params.crc_window.x_end = (uint16_t) val;
-	acrtc->dm_irq_params.crc_window.update_win = false;
+	acrtc->dm_irq_params.window_param.x_end = (uint16_t) val;
+	acrtc->dm_irq_params.window_param.update_win = false;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3169,7 +3157,7 @@ static int crc_win_x_end_get(void *data, u64 *val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	*val = acrtc->dm_irq_params.crc_window.x_end;
+	*val = acrtc->dm_irq_params.window_param.x_end;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3188,8 +3176,8 @@ static int crc_win_y_end_set(void *data, u64 val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	acrtc->dm_irq_params.crc_window.y_end = (uint16_t) val;
-	acrtc->dm_irq_params.crc_window.update_win = false;
+	acrtc->dm_irq_params.window_param.y_end = (uint16_t) val;
+	acrtc->dm_irq_params.window_param.update_win = false;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3205,7 +3193,7 @@ static int crc_win_y_end_get(void *data, u64 *val)
 	struct amdgpu_crtc *acrtc = to_amdgpu_crtc(crtc);
 
 	spin_lock_irq(&drm_dev->event_lock);
-	*val = acrtc->dm_irq_params.crc_window.y_end;
+	*val = acrtc->dm_irq_params.window_param.y_end;
 	spin_unlock_irq(&drm_dev->event_lock);
 
 	return 0;
@@ -3218,41 +3206,26 @@ DEFINE_DEBUGFS_ATTRIBUTE(crc_win_y_end_fops, crc_win_y_end_get,
  */
 static int crc_win_update_set(void *data, u64 val)
 {
-	struct drm_crtc *new_crtc = data;
-	struct drm_crtc *old_crtc = NULL;
-	struct amdgpu_crtc *new_acrtc, *old_acrtc;
-	struct amdgpu_device *adev = drm_to_adev(new_crtc->dev);
-	struct crc_rd_work *crc_rd_wrk = adev->dm.crc_rd_wrk;
-
-	if (!crc_rd_wrk)
-		return 0;
+	struct drm_crtc *crtc = data;
+	struct amdgpu_crtc *acrtc;
+	struct amdgpu_device *adev = drm_to_adev(crtc->dev);
 
 	if (val) {
+		acrtc = to_amdgpu_crtc(crtc);
+		mutex_lock(&adev->dm.dc_lock);
+		/* PSR may write to OTG CRC window control register,
+		 * so close it before starting secure_display.
+		 */
+		amdgpu_dm_psr_disable(acrtc->dm_irq_params.stream);
+
 		spin_lock_irq(&adev_to_drm(adev)->event_lock);
-		spin_lock_irq(&crc_rd_wrk->crc_rd_work_lock);
-		if (crc_rd_wrk->crtc) {
-			old_crtc = crc_rd_wrk->crtc;
-			old_acrtc = to_amdgpu_crtc(old_crtc);
-		}
-		new_acrtc = to_amdgpu_crtc(new_crtc);
 
-		if (old_crtc && old_crtc != new_crtc) {
-			old_acrtc->dm_irq_params.crc_window.activated = false;
-			old_acrtc->dm_irq_params.crc_window.update_win = false;
-			old_acrtc->dm_irq_params.crc_window.skip_frame_cnt = 0;
+		acrtc->dm_irq_params.window_param.activated = true;
+		acrtc->dm_irq_params.window_param.update_win = true;
+		acrtc->dm_irq_params.window_param.skip_frame_cnt = 0;
 
-			new_acrtc->dm_irq_params.crc_window.activated = true;
-			new_acrtc->dm_irq_params.crc_window.update_win = true;
-			new_acrtc->dm_irq_params.crc_window.skip_frame_cnt = 0;
-			crc_rd_wrk->crtc = new_crtc;
-		} else {
-			new_acrtc->dm_irq_params.crc_window.activated = true;
-			new_acrtc->dm_irq_params.crc_window.update_win = true;
-			new_acrtc->dm_irq_params.crc_window.skip_frame_cnt = 0;
-			crc_rd_wrk->crtc = new_crtc;
-		}
-		spin_unlock_irq(&crc_rd_wrk->crc_rd_work_lock);
 		spin_unlock_irq(&adev_to_drm(adev)->event_lock);
+		mutex_unlock(&adev->dm.dc_lock);
 	}
 
 	return 0;
@@ -3423,7 +3396,7 @@ static int trigger_hpd_mst_set(void *data, u64 val)
 				continue;
 
 			link = aconnector->dc_link;
-			dp_receiver_power_ctrl(link, false);
+			dc_link_dp_receiver_power_ctrl(link, false);
 			drm_dp_mst_topology_mgr_set_mst(&aconnector->mst_port->mst_mgr, false);
 			link->mst_stream_alloc_table.stream_count = 0;
 			memset(link->mst_stream_alloc_table.stream_allocations, 0,

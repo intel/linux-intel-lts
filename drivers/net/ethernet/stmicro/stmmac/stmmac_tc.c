@@ -11,6 +11,8 @@
 #include "dwmac5.h"
 #include "stmmac.h"
 
+#define MAX_IDLE_SLOPE_CREDIT 0x1FFFFF
+
 static void tc_fill_all_pass_entry(struct stmmac_tc_entry *entry)
 {
 	memset(entry, 0, sizeof(*entry));
@@ -342,12 +344,13 @@ static int tc_init(struct stmmac_priv *priv)
 static int tc_setup_cbs(struct stmmac_priv *priv,
 			struct tc_cbs_qopt_offload *qopt)
 {
+	u64 value, scaling = 0, cycle_time_ns = 0, open_time = 0, tti_ns = 0;
 	u32 tx_queues_count = priv->plat->tx_queues_to_use;
+	u32 ptr, speed_div, idle_slope;
+	u32 gate = 0x1 << qopt->queue;
 	u32 queue = qopt->queue;
-	u32 ptr, speed_div;
 	u32 mode_to_use;
-	u64 value;
-	int ret;
+	int ret, row;
 
 	/* Queue 0 is not AVB capable */
 	if (queue <= 0 || queue >= tx_queues_count)
@@ -381,6 +384,11 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 		return -EOPNOTSUPP;
 	}
 
+	if (qopt->idleslope - qopt->sendslope != speed_div ||
+	    qopt->idleslope < 0 || qopt->sendslope > 0 ||
+	    qopt->hicredit < 0 || qopt->locredit > 0)
+		return -EINVAL;
+
 	mode_to_use = priv->plat->tx_queues_cfg[queue].mode_to_use;
 	if (mode_to_use == MTL_QUEUE_DCB && qopt->enable) {
 		ret = stmmac_dma_qmode(priv, priv->ioaddr, queue, MTL_QUEUE_AVB);
@@ -410,6 +418,50 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 	value = qopt->locredit * 1024ll * 8;
 	priv->plat->tx_queues_cfg[queue].low_credit = value & GENMASK(31, 0);
 
+	/* If EST is not enable, no need to recalibrate idle slope */
+	if (!priv->plat->est)
+		goto config_cbs;
+	if (!priv->plat->est->enable)
+		goto config_cbs;
+
+	/* Check the GCL cycle time. If 0, no need to recalibrate idle slope */
+	cycle_time_ns = (priv->plat->est->ctr[1] * NSEC_PER_SEC) +
+			 priv->plat->est->ctr[0];
+	if (!cycle_time_ns)
+		goto config_cbs;
+
+	/* Calculate the total open time for the queue. GCL which exceeds the
+	 * cycle time will be truncated. So, time interval that exceeds the
+	 * cycle time will not be included. The gates wihtout any setting of
+	 * open/close within the cycle time are considered as open. The queue
+	 * that having open time of 0, no need idle slope recalibration.
+	 */
+	for (row = 0; row < priv->plat->est->gcl_size; row++) {
+		tti_ns += priv->plat->est->ti_ns[row];
+		if (priv->plat->est->gates[row] & gate) {
+			open_time += priv->plat->est->ti_ns[row];
+			if (tti_ns > cycle_time_ns)
+				open_time -= tti_ns - cycle_time_ns;
+		}
+	}
+	if (tti_ns < cycle_time_ns)
+		open_time += cycle_time_ns - tti_ns;
+	if (!open_time)
+		goto config_cbs;
+
+	/* Calculate the scaling factor to be used to recalculate new idle
+	 * slope.
+	 */
+	scaling = cycle_time_ns;
+	do_div(scaling, open_time);
+	idle_slope = priv->plat->tx_queues_cfg[queue].idle_slope;
+	idle_slope *= scaling;
+	if (idle_slope > MAX_IDLE_SLOPE_CREDIT)
+		idle_slope = MAX_IDLE_SLOPE_CREDIT;
+
+	priv->plat->tx_queues_cfg[queue].idle_slope = idle_slope;
+
+config_cbs:
 	ret = stmmac_config_cbs(priv, priv->hw,
 				priv->plat->tx_queues_cfg[queue].send_slope,
 				priv->plat->tx_queues_cfg[queue].idle_slope,
@@ -915,16 +967,24 @@ struct timespec64 stmmac_calc_tas_basetime(ktime_t old_base_time,
 	return time;
 }
 
+#define FPE_FMT	"If both EST and FPE are enabled, "\
+		"TxQ0 must not be express queue. "\
+		"So, changing TxQ0 setting to preemptible queue.\n"
 static int tc_setup_taprio(struct stmmac_priv *priv,
 			   struct tc_taprio_qopt_offload *qopt)
 {
 	u32 size, wid = priv->dma_cap.estwid, dep = priv->dma_cap.estdep;
+	u32 txqmask = (1 << priv->dma_cap.number_tx_queues) - 1;
 	struct plat_stmmacenet_data *plat = priv->plat;
 	struct timespec64 time, current_time, qopt_time;
+	u32 txqpec = priv->plat->fpe_cfg->txqpec;
 	ktime_t current_time_ns;
 	bool fpe = false;
 	int i, ret = 0;
 	u64 ctr;
+
+	if (qopt->base_time < 0)
+		return -ERANGE;
 
 	if (!priv->dma_cap.estsel)
 		return -EOPNOTSUPP;
@@ -1015,6 +1075,8 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 		}
 
 		priv->plat->est->gcl[i] = delta_ns | (gates << wid);
+		priv->plat->est->ti_ns[i] = delta_ns;
+		priv->plat->est->gates[i] = gates;
 	}
 
 	mutex_lock(&priv->plat->est->lock);
@@ -1038,6 +1100,32 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 	if (fpe && !priv->dma_cap.fpesel) {
 		mutex_unlock(&priv->plat->est->lock);
 		return -EOPNOTSUPP;
+	}
+
+	if (fpe) {
+		if (!txqpec) {
+			netdev_err(priv->dev, "FPE preempt must not all 0s!\n");
+			mutex_unlock(&priv->plat->est->lock);
+			return -EINVAL;
+		}
+
+		/* Check PEC is within TxQ range */
+		if (txqpec & ~txqmask) {
+			netdev_err(priv->dev, "FPE preempt is out-of-bound.\n");
+			mutex_unlock(&priv->plat->est->lock);
+			return -EINVAL;
+		}
+
+		/* When EST and FPE are both enabled, TxQ0 is always preemptible
+		 * queue. If FPE is enabled, we expect at least lsb is set.
+		 */
+		if (txqpec && !(txqpec & BIT(0))) {
+			netdev_warn(priv->dev, FPE_FMT);
+			priv->plat->fpe_cfg->txqpec |= BIT(0);
+		}
+
+		netdev_info(priv->dev, "FPE: TxQ PEC = 0x%X\n",
+			    priv->plat->fpe_cfg->txqpec);
 	}
 
 	/* Actual FPE register configuration will be done after FPE handshake
@@ -1064,18 +1152,21 @@ static int tc_setup_taprio(struct stmmac_priv *priv,
 
 disable:
 	if (priv->plat->est) {
-		mutex_lock(&priv->plat->est->lock);
-		priv->plat->est->enable = false;
-		stmmac_est_configure(priv, priv->ioaddr, priv->plat->est,
-				     priv->plat->clk_ptp_rate);
-		mutex_unlock(&priv->plat->est->lock);
+		if (priv->est_hw_del_wa) {
+			mutex_lock(&priv->plat->est->lock);
+			priv->plat->est->enable = false;
+			stmmac_est_configure(priv, priv->ioaddr,
+					     priv->plat->est,
+					     priv->plat->clk_ptp_rate);
+			mutex_unlock(&priv->plat->est->lock);
+		}
 	}
 
 	priv->plat->fpe_cfg->enable = false;
 	stmmac_fpe_configure(priv, priv->ioaddr,
 			     priv->plat->tx_queues_to_use,
 			     priv->plat->rx_queues_to_use,
-			     false);
+			     0, false);
 	netdev_info(priv->dev, "disabled FPE\n");
 
 	stmmac_fpe_handshake(priv, false);
@@ -1104,6 +1195,13 @@ static int tc_setup_etf(struct stmmac_priv *priv,
 	return 0;
 }
 
+static int tc_setup_preempt(struct stmmac_priv *priv,
+			    struct tc_preempt_qopt_offload *qopt)
+{
+	priv->plat->fpe_cfg->txqpec = qopt->preemptible_queues;
+	return 0;
+}
+
 const struct stmmac_tc_ops dwmac510_tc_ops = {
 	.init = tc_init,
 	.setup_cls_u32 = tc_setup_cls_u32,
@@ -1111,4 +1209,5 @@ const struct stmmac_tc_ops dwmac510_tc_ops = {
 	.setup_cls = tc_setup_cls,
 	.setup_taprio = tc_setup_taprio,
 	.setup_etf = tc_setup_etf,
+	.setup_preempt = tc_setup_preempt,
 };
