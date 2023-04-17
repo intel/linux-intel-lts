@@ -110,6 +110,7 @@ available subsections can be seen below.
    xillybus
    zorro
    hte/index
+   rpmb/index
 
 .. only::  subproject and html
 
