@@ -4693,6 +4693,8 @@ void intel_color_crtc_init(struct intel_crtc *crtc)
 							       mtl_24bit_degamma,
 							       sizeof(mtl_24bit_degamma),
 							       LUT_TYPE_DEGAMMA);
+			drm_crtc_attach_gamma_degamma_mode_property(&crtc->base,
+								    LUT_TYPE_DEGAMMA);
 		}
 	}
 }
