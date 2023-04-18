@@ -23,6 +23,7 @@
  */
 
 #include <drm/drm_plane.h>
+#include "intel_atomic_plane.h"
 #include "i915_reg.h"
 #include "intel_color.h"
 #include "intel_de.h"
@@ -1883,6 +1884,14 @@ static void chv_load_luts(const struct intel_crtc_state *crtc_state)
 
 	intel_de_write_fw(i915, CGM_PIPE_MODE(crtc->pipe),
 			  crtc_state->cgm_mode);
+}
+
+void intel_color_load_plane_luts(const struct drm_plane_state *plane_state)
+{
+	struct drm_i915_private *i915 = to_i915(plane_state->plane->dev);
+
+	if (i915->display.funcs.color->load_plane_luts)
+		i915->display.funcs.color->load_plane_luts(plane_state);
 }
 
 void intel_color_load_luts(const struct intel_crtc_state *crtc_state)
