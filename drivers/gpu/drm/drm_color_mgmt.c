@@ -692,6 +692,11 @@ EXPORT_SYMBOL(drm_plane_create_color_properties);
  *     to query and get the plane gamma color caps and choose the
  *     appropriate gamma mode and create lut values accordingly
  *
+ * gamma_lut_property:
+ *	Blob property which allows a userspace to provide LUT values
+ *	to apply gamma curve using the h/w plane degamma processing
+ *	engine, thereby making the content as non-linear.
+ *
  */
 int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
 					   struct drm_plane *plane,
@@ -726,6 +731,13 @@ int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
 		return -ENOMEM;
 
 	plane->gamma_mode_property = prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB,
+				   "PLANE_GAMMA_LUT", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->gamma_lut_property = prop;
 
 	return 0;
 }
@@ -764,6 +776,12 @@ void drm_plane_attach_gamma_properties(struct drm_plane *plane)
 
 	drm_object_attach_property(&plane->base,
 				   plane->gamma_mode_property, 0);
+
+	if (!plane->gamma_lut_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->gamma_lut_property, 0);
 }
 EXPORT_SYMBOL(drm_plane_attach_gamma_properties);
 
