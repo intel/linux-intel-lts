@@ -972,6 +972,10 @@ static u32 glk_plane_color_ctl(const struct intel_crtc_state *crtc_state,
 	if (plane_state->uapi.degamma_lut)
 		plane_color_ctl |= PLANE_COLOR_PRE_CSC_GAMMA_ENABLE;
 
+	/* FIXME needs hw.ctm */
+	if (plane_state->uapi.ctm)
+		plane_color_ctl |= PLANE_COLOR_PLANE_CSC_ENABLE;
+
 	plane_color_ctl |= glk_plane_color_ctl_alpha(plane_state);
 
 	if (fb->format->is_yuv && !icl_is_hdr_plane(dev_priv, plane->id)) {
@@ -1275,8 +1279,10 @@ icl_plane_update_noarm(struct intel_plane *plane,
 	if (plane_state->force_black)
 		icl_plane_csc_load_black(plane);
 
-	if (plane_state->uapi.color_mgmt_changed)
+	if (plane_state->uapi.color_mgmt_changed) {
 		intel_color_load_plane_luts(&plane_state->uapi);
+		intel_color_load_plane_csc_matrix(&plane_state->uapi);
+	}
 
 	intel_psr2_program_plane_sel_fetch_noarm(plane, crtc_state, plane_state, color_plane);
 }
