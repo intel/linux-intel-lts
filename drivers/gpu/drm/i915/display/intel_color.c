@@ -4375,7 +4375,7 @@ static const struct drm_color_lut_range xelpd_degamma_hdr[] = {
 };
 
  /* FIXME input bpc? */
-static const struct drm_color_lut_range xelpd_degamma_sdr[] = {
+static const struct drm_color_lut_range xelpd_gamma_degamma_sdr[] = {
 	/* segment 1 */
 	{
 		.flags = (DRM_MODE_LUT_GAMMA |
@@ -4425,6 +4425,63 @@ static const struct drm_color_lut_range xelpd_degamma_sdr[] = {
 	},
 };
 
+ /* FIXME input bpc? */
+static const struct drm_color_lut_range xelpd_gamma_hdr[] = {
+	/*
+	 * ToDo: Add Segment 1
+	 * There is an optional fine segment added with 9 lut values
+	 * Will be added later
+	 */
+
+	/* segment 2 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 32,
+		.input_bpc = 24, .output_bpc = 16,
+		.start = 0, .end = (1 << 24) - 1,
+		.min = 0, .max = (1 << 24) - 1,
+	},
+	/* segment 3 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_REUSE_LAST |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 1,
+		.input_bpc = 24, .output_bpc = 16,
+		.start = (1 << 24) - 1, .end = 1 << 24,
+		.min = 0, .max = 1 << 24,
+	},
+	/* Segment 4 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_REUSE_LAST |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 1,
+		.input_bpc = 24, .output_bpc = 16,
+		.start = 1 << 24, .end = 3 << 24,
+		.min = 0, .max = (3 << 24),
+	},
+	/* Segment 5 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_REUSE_LAST |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 1,
+		.input_bpc = 24, .output_bpc = 16,
+		.start = 3 << 24, .end = 7 << 24,
+		.min = 0, .max = (7 << 24),
+	},
+};
+
 int intel_color_plane_init(struct drm_plane *plane)
 {
 	struct drm_i915_private *dev_priv = to_i915(plane->dev);
@@ -4435,23 +4492,52 @@ int intel_color_plane_init(struct drm_plane *plane)
 		ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "no degamma",
 								   NULL, 0,
 								   LUT_TYPE_DEGAMMA);
-		if (icl_is_hdr_plane(dev_priv, to_intel_plane(plane)->id))
+		if (ret)
+			return ret;
+
+		ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "no gamma",
+								   NULL, 0,
+								   LUT_TYPE_GAMMA);
+		if (ret)
+			return ret;
+
+		if (icl_is_hdr_plane(dev_priv, to_intel_plane(plane)->id)) {
 			ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "plane degamma",
 									   xelpd_degamma_hdr,
 									   sizeof(xelpd_degamma_hdr),
 									   LUT_TYPE_DEGAMMA);
-		else
-			ret = drm_plane_color_add_gamma_degamma_mode_range(plane,
-									   "plane degamma",
-									   xelpd_degamma_sdr,
-									   sizeof(xelpd_degamma_sdr),
+			if (ret)
+				return ret;
+
+			ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "plane gamma",
+									   xelpd_gamma_hdr,
+									   sizeof(xelpd_gamma_hdr),
+									   LUT_TYPE_GAMMA);
+			if (ret)
+				return ret;
+		} else {
+			ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "plane degamma",
+									   xelpd_gamma_degamma_sdr,
+									   sizeof(xelpd_gamma_degamma_sdr),
 									   LUT_TYPE_DEGAMMA);
+			if (ret)
+				return ret;
 
-		drm_plane_attach_degamma_properties(plane);
-
-		if (icl_is_hdr_plane(dev_priv, to_intel_plane(plane)->id))
-			drm_plane_attach_ctm_property(plane);
+			ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "plane gamma",
+									   xelpd_gamma_degamma_sdr,
+									   sizeof(xelpd_gamma_degamma_sdr),
+									   LUT_TYPE_GAMMA);
+			if (ret)
+				return ret;
+		}
 	}
+
+	drm_plane_attach_degamma_properties(plane);
+
+	if (icl_is_hdr_plane(dev_priv, to_intel_plane(plane)->id))
+		drm_plane_attach_ctm_property(plane);
+
+	drm_plane_attach_gamma_properties(plane);
 
 	return ret;
 }
