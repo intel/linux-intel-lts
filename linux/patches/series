@@ -19,3 +19,17 @@
 
 # CVE-2023-1281
 0001-net-sched-tcindex-update-imperfect-hash-filters-resp.patch
+
+# CVE-2023-1032
+0001-net-avoid-double-iput-when-sock_alloc_file-fails.patch
+
+# CVE-2023-1077
+0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
+
+# CVE-2023-1076
+0001-tun-tun_chr_open-correctly-initialize-socket-uid.patch
+0002-net-add-sock_init_data_uid.patch
+
+# CVE-2023-1079
+0001-HID-asus-use-spinlock-to-protect-concurrent-accesses.patch
+0002-HID-asus-use-spinlock-to-safely-schedule-workers.patch
