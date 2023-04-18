@@ -76,11 +76,14 @@ static inline int drm_color_lut_size(const struct drm_property_blob *blob)
 
 int drm_color_create_gamma_mode_property(struct drm_crtc *crtc,
 					 int num_values);
-void drm_crtc_attach_gamma_mode_property(struct drm_crtc *crtc);
-int drm_color_add_gamma_mode_range(struct drm_crtc *crtc,
-				   const char *name,
-				   const struct drm_color_lut_range *ranges,
-				   size_t length);
+void drm_crtc_attach_gamma_degamma_mode_property(struct drm_crtc *crtc,
+						 enum lut_type type);
+int drm_color_create_degamma_mode_property(struct drm_crtc *crtc,
+					   int num_values);
+int drm_color_add_gamma_degamma_mode_range(struct drm_crtc *crtc,
+					   const char *name,
+					   const struct drm_color_lut_range *ranges,
+					   size_t length, enum lut_type type);
 
 enum drm_color_encoding {
 	DRM_COLOR_YCBCR_BT601,

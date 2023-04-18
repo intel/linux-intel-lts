@@ -191,15 +191,23 @@ void drm_crtc_enable_color_mgmt(struct drm_crtc *crtc,
 }
 EXPORT_SYMBOL(drm_crtc_enable_color_mgmt);
 
-void drm_crtc_attach_gamma_mode_property(struct drm_crtc *crtc)
+void drm_crtc_attach_gamma_degamma_mode_property(struct drm_crtc *crtc,
+						 enum lut_type type)
 {
-	if (!crtc->gamma_mode_property)
+	struct drm_property *prop;
+
+	if (type == LUT_TYPE_DEGAMMA)
+		prop = crtc->degamma_mode_property;
+	else
+		prop = crtc->gamma_mode_property;
+
+	if (!prop)
 		return;
 
 	drm_object_attach_property(&crtc->base,
-				   crtc->gamma_mode_property, 0);
+				   prop, 0);
 }
-EXPORT_SYMBOL(drm_crtc_attach_gamma_mode_property);
+EXPORT_SYMBOL(drm_crtc_attach_gamma_degamma_mode_property);
 
 int drm_color_create_gamma_mode_property(struct drm_crtc *crtc,
 					 int num_values)
@@ -218,17 +226,38 @@ int drm_color_create_gamma_mode_property(struct drm_crtc *crtc,
 }
 EXPORT_SYMBOL(drm_color_create_gamma_mode_property);
 
-int drm_color_add_gamma_mode_range(struct drm_crtc *crtc,
-				   const char *name,
-				   const struct drm_color_lut_range *ranges,
-				   size_t length)
+int drm_color_create_degamma_mode_property(struct drm_crtc *crtc,
+					   int num_values)
+{
+	struct drm_property *prop;
+
+	prop = drm_property_create(crtc->dev,
+				   DRM_MODE_PROP_ENUM,
+				   "DEGAMMA_MODE", num_values);
+	if (!prop)
+		return -ENOMEM;
+
+	crtc->degamma_mode_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_color_create_degamma_mode_property);
+
+int drm_color_add_gamma_degamma_mode_range(struct drm_crtc *crtc,
+					   const char *name,
+					   const struct drm_color_lut_range *ranges,
+					   size_t length, enum lut_type type)
 {
 	struct drm_property_blob *blob;
 	struct drm_property *prop;
 	int num_ranges = length / sizeof(ranges[0]);
 	int i, ret, num_types_0;
 
-	prop = crtc->gamma_mode_property;
+	if (type == LUT_TYPE_DEGAMMA)
+		prop = crtc->degamma_mode_property;
+	else
+		prop = crtc->gamma_mode_property;
+
 	if (!prop)
 		return -EINVAL;
 
@@ -264,7 +293,7 @@ int drm_color_add_gamma_mode_range(struct drm_crtc *crtc,
 
 	return 0;
 }
-EXPORT_SYMBOL(drm_color_add_gamma_mode_range);
+EXPORT_SYMBOL(drm_color_add_gamma_degamma_mode_range);
 
 /**
  * drm_mode_crtc_set_gamma_size - set the gamma table size
