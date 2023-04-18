@@ -2222,6 +2222,23 @@ static u32 intel_degamma_lut_size(const struct intel_crtc_state *crtc_state)
 	return DISPLAY_INFO(i915)->color.degamma_lut_size;
 }
 
+static int check_lut_ext_size(const struct drm_property_blob *lut, int expected)
+{
+	int len;
+
+	if (!lut)
+		return 0;
+
+	len = drm_color_lut_ext_size(lut);
+	if (len != expected) {
+		DRM_DEBUG_KMS("Invalid LUT size; got %d, expected %d\n",
+			      len, expected);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int check_lut_size(const struct drm_property_blob *lut, int expected)
 {
 	int len;
