@@ -675,6 +675,12 @@ EXPORT_SYMBOL(drm_plane_create_color_properties);
  *     to query and get the plane degamma color caps and choose the
  *     appropriate degamma mode and create lut values accordingly
  *
+ * degamma_lut_property:
+ *	Blob property which allows a userspace to provide LUT values
+ *	to apply degamma curve using the h/w plane degamma processing
+ *	engine, thereby making the content as linear for further color
+ *	processing.
+ *
  */
 int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
 					   struct drm_plane *plane,
@@ -689,6 +695,13 @@ int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
 
 	plane->degamma_mode_property = prop;
 
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB,
+				   "PLANE_DEGAMMA_LUT", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->degamma_lut_property = prop;
+
 	return 0;
 }
 EXPORT_SYMBOL(drm_plane_create_color_mgmt_properties);
@@ -700,6 +713,12 @@ void drm_plane_attach_degamma_properties(struct drm_plane *plane)
 
 	drm_object_attach_property(&plane->base,
 				   plane->degamma_mode_property, 0);
+
+	if (!plane->degamma_lut_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->degamma_lut_property, 0);
 }
 EXPORT_SYMBOL(drm_plane_attach_degamma_properties);
 
