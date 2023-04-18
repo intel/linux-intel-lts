@@ -196,6 +196,29 @@ static bool lut_is_legacy(const struct drm_property_blob *lut)
 }
 
 /*
+ * Added to accommodate enhanced LUT precision.
+ * Max LUT precision is 32 bits.
+ */
+static u64 drm_color_lut_extract_ext(u64 user_input, u32 bit_precision)
+{
+	u64 val = user_input & 0xffffffff;
+	u32 max;
+
+	if (bit_precision > 32)
+		return 0;
+
+	max = 0xffffffff >> (32 - bit_precision);
+	/* Round only if we're not using full precision. */
+	if (bit_precision < 32) {
+		val += 1UL << (32 - bit_precision - 1);
+		val >>= 32 - bit_precision;
+	}
+
+	return ((user_input & 0xffffffff00000000) |
+		clamp_val(val, 0, max));
+}
+
+/*
  * When using limited range, multiply the matrix given by userspace by
  * the matrix that we would use for the limited range.
  */
@@ -3988,6 +4011,96 @@ static const struct drm_color_lut_range xelpd_logarithmic_gamma[] = {
 	},
 };
 
+static void xelpd_program_plane_degamma_lut(const struct drm_plane_state *state,
+					    struct drm_color_lut_ext *degamma_lut,
+					    u32 offset)
+{
+	struct drm_i915_private *dev_priv = to_i915(state->plane->dev);
+	enum pipe pipe = to_intel_plane(state->plane)->pipe;
+	enum plane_id plane = to_intel_plane(state->plane)->id;
+	u32 i, lut_size;
+
+	if (icl_is_hdr_plane(dev_priv, plane)) {
+		lut_size = 128;
+
+		intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_INDEX_ENH(pipe, plane, 0),
+				  PLANE_PAL_PREC_AUTO_INCREMENT);
+
+		if (degamma_lut) {
+			for (i = 0; i < lut_size; i++) {
+				u64 word = drm_color_lut_extract_ext(degamma_lut[i].green, 24);
+				u32 lut_val = (word & 0xffffff);
+
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA_ENH(pipe, plane, 0),
+						  lut_val);
+			}
+
+			/* Program the max register to clamp values > 1.0. */
+			while (i < 131)
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA_ENH(pipe, plane, 0),
+						  degamma_lut[i++].green);
+		} else {
+			for (i = 0; i < lut_size; i++) {
+				u32 v = (i * ((1 << 24) - 1)) / (lut_size - 1);
+
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA_ENH(pipe, plane, 0), v);
+			}
+
+			do {
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA_ENH(pipe, plane, 0),
+						  1 << 24);
+			} while (i++ < 130);
+		}
+
+		intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_INDEX_ENH(pipe, plane, 0), 0);
+	} else {
+		lut_size = 32;
+
+		/*
+		 * First 3 planes are HDR, so reduce by 3 to get to the right
+		 * SDR plane offset
+		 */
+		plane = plane - 3;
+
+		intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_INDEX(pipe, plane, 0),
+				  PLANE_PAL_PREC_AUTO_INCREMENT);
+
+		if (degamma_lut) {
+			for (i = 0; i < lut_size; i++)
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA(pipe, plane, 0),
+						  degamma_lut[i].green);
+			/* Program the max register to clamp values > 1.0. */
+			while (i < 35)
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA(pipe, plane, 0),
+						  degamma_lut[i++].green);
+		} else {
+			for (i = 0; i < lut_size; i++) {
+				u32 v = (i * ((1 << 16) - 1)) / (lut_size - 1);
+
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA(pipe, plane, 0), v);
+			}
+
+			do {
+				intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_DATA(pipe, plane, 0),
+						  1 << 16);
+			} while (i++ < 34);
+		}
+
+		intel_de_write_fw(dev_priv, PLANE_PRE_CSC_GAMC_INDEX(pipe, plane, 0), 0);
+	}
+}
+
+static void xelpd_plane_load_luts(const struct drm_plane_state *plane_state)
+{
+	const struct drm_property_blob *degamma_lut_blob =
+					plane_state->degamma_lut;
+	struct drm_color_lut_ext *degamma_lut = NULL;
+
+	if (degamma_lut_blob) {
+		degamma_lut = degamma_lut_blob->data;
+		xelpd_program_plane_degamma_lut(plane_state, degamma_lut, 0);
+	}
+}
 static const struct intel_color_funcs chv_color_funcs = {
 	.color_check = chv_color_check,
 	.color_commit_arm = i9xx_color_commit_arm,
@@ -4030,6 +4143,7 @@ static const struct intel_color_funcs xelpd_color_funcs = {
 	.read_luts = xelpd_read_luts,
 	.lut_equal = icl_lut_equal,
 	.read_csc = icl_read_csc,
+	.load_plane_luts = xelpd_plane_load_luts,
 };
 
 static const struct intel_color_funcs tgl_color_funcs = {
@@ -4236,6 +4350,7 @@ int intel_color_plane_init(struct drm_plane *plane)
 									   xelpd_degamma_sdr,
 									   sizeof(xelpd_degamma_sdr),
 									   LUT_TYPE_DEGAMMA);
+
 		drm_plane_attach_degamma_properties(plane);
 	}
 
