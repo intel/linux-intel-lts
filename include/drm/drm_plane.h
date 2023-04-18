@@ -245,6 +245,14 @@ struct drm_plane_state {
 	 */
 	u32 degamma_mode;
 
+	/* @degamma_lut:
+	 *
+	 * Lookup table for converting framebuffer pixel data before apply the
+	 * color conversion matrix @ctm. See drm_plane_enable_color_mgmt(). The
+	 * blob (if not NULL) is an array of &struct drm_color_lut_ext.
+	 */
+	struct drm_property_blob *degamma_lut;
+
 	u8 color_mgmt_changed : 1;
 };
 
@@ -763,6 +771,12 @@ struct drm_plane {
 	 * used to convert the framebuffer's colors to linear gamma.
 	 */
 	struct drm_property *degamma_mode_property;
+
+	/**
+	 * @degamma_lut_property: Optional Plane property to set the LUT
+	 * used to convert the framebuffer's colors to linear gamma.
+	 */
+	struct drm_property *degamma_lut_property;
 };
 
 #define obj_to_plane(x) container_of(x, struct drm_plane, base)
