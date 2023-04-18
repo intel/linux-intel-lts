@@ -986,6 +986,21 @@ enum lut_type {
 	LUT_TYPE_GAMMA = 1,
 };
 
+/*
+ * Creating 64 bit palette entries for better data
+ * precision. This will be required for HDR and
+ * similar color processing usecases.
+ */
+struct drm_color_lut_ext {
+	/*
+	 * Data is U32.32 fixed point format.
+	 */
+	__u64 red;
+	__u64 green;
+	__u64 blue;
+	__u64 reserved;
+};
+
 /**
  * DRM_MODE_PAGE_FLIP_EVENT
  *
