@@ -29,6 +29,8 @@
 #include "intel_de.h"
 #include "intel_display_types.h"
 #include "intel_dsb.h"
+#include "intel_sprite.h"
+#include "skl_universal_plane.h"
 
 struct intel_color_funcs {
 	int (*color_check)(struct intel_crtc_state *crtc_state);
@@ -4285,6 +4287,57 @@ static const struct drm_color_lut_range xelpd_degamma_hdr[] = {
 	},
 };
 
+ /* FIXME input bpc? */
+static const struct drm_color_lut_range xelpd_degamma_sdr[] = {
+	/* segment 1 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 32,
+		.input_bpc = 16, .output_bpc = 16,
+		.start = 0, .end = (1 << 16) - (1 << 16) / 33,
+		.min = 0, .max = (1 << 16) - 1,
+	},
+	/* segment 2 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_REUSE_LAST |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 1,
+		.input_bpc = 16, .output_bpc = 16,
+		.start = (1 << 16) - (1 << 16) / 33, .end = 1 << 16,
+		.min = 0, .max = 1 << 16,
+	},
+	/* Segment 3 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_REUSE_LAST |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 1,
+		.input_bpc = 16, .output_bpc = 16,
+		.start = 1 << 16, .end = 3 << 16,
+		.min = 0, .max = (8 << 16) - 1,
+	},
+	/* Segment 4 */
+	{
+		.flags = (DRM_MODE_LUT_GAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_REUSE_LAST |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 1,
+		.input_bpc = 16, .output_bpc = 16,
+		.start = 3 << 16, .end = 7 << 16,
+		.min = 0, .max = (8 << 16) - 1,
+	},
+};
+
 int intel_color_plane_init(struct drm_plane *plane)
 {
 	struct drm_i915_private *dev_priv = to_i915(plane->dev);
@@ -4295,10 +4348,17 @@ int intel_color_plane_init(struct drm_plane *plane)
 		ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "no degamma",
 								   NULL, 0,
 								   LUT_TYPE_DEGAMMA);
-		ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "plane degamma",
-								   xelpd_degamma_hdr,
-								   sizeof(xelpd_degamma_hdr),
-								   LUT_TYPE_DEGAMMA);
+		if (icl_is_hdr_plane(dev_priv, to_intel_plane(plane)->id))
+			ret = drm_plane_color_add_gamma_degamma_mode_range(plane, "plane degamma",
+									   xelpd_degamma_hdr,
+									   sizeof(xelpd_degamma_hdr),
+									   LUT_TYPE_DEGAMMA);
+		else
+			ret = drm_plane_color_add_gamma_degamma_mode_range(plane,
+									   "plane degamma",
+									   xelpd_degamma_sdr,
+									   sizeof(xelpd_degamma_sdr),
+									   LUT_TYPE_DEGAMMA);
 		drm_plane_attach_degamma_properties(plane);
 	}
 
