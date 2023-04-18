@@ -685,6 +685,13 @@ EXPORT_SYMBOL(drm_plane_create_color_properties);
  *	Blob property which allows a userspace to provide CTM coefficients
  *	to do color space conversion or any other enhancement by doing a
  *	matrix multiplication using the h/w CTM processing engine
+ *
+ * gamma_mode_property:
+ *     Blob property which advertizes the possible gamma modes and
+ *     lut ranges supported by the platform. This  allows userspace
+ *     to query and get the plane gamma color caps and choose the
+ *     appropriate gamma mode and create lut values accordingly
+ *
  */
 int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
 					   struct drm_plane *plane,
@@ -712,6 +719,13 @@ int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
 		return -ENOMEM;
 
 	plane->ctm_property = prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_ENUM,
+				   "PLANE_GAMMA_MODE", num_values);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->gamma_mode_property = prop;
 
 	return 0;
 }
@@ -743,6 +757,16 @@ void drm_plane_attach_ctm_property(struct drm_plane *plane)
 }
 EXPORT_SYMBOL(drm_plane_attach_ctm_property);
 
+void drm_plane_attach_gamma_properties(struct drm_plane *plane)
+{
+	if (!plane->gamma_mode_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->gamma_mode_property, 0);
+}
+EXPORT_SYMBOL(drm_plane_attach_gamma_properties);
+
 int drm_plane_color_add_gamma_degamma_mode_range(struct drm_plane *plane,
 						 const char *name,
 						 const struct drm_color_lut_range *ranges,
@@ -755,6 +779,8 @@ int drm_plane_color_add_gamma_degamma_mode_range(struct drm_plane *plane,
 
 	if (type == LUT_TYPE_DEGAMMA)
 		prop = plane->degamma_mode_property;
+	else
+		prop = plane->gamma_mode_property;
 
 	if (!prop)
 		return -EINVAL;
