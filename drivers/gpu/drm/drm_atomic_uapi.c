@@ -424,10 +424,13 @@ static int drm_atomic_crtc_set_property(struct drm_crtc *crtc,
 	} else if (property == config->prop_vrr_enabled) {
 		state->vrr_enabled = val;
 	} else if (property == config->degamma_lut_property) {
+		ssize_t size = state->advance_degamma_mode_active ?
+				sizeof(struct drm_color_lut_ext) :
+				sizeof(struct drm_color_lut);
 		ret = drm_atomic_replace_property_blob_from_id(dev,
 					&state->degamma_lut,
 					val,
-					-1, sizeof(struct drm_color_lut),
+					-1, size,
 					&replaced);
 		state->color_mgmt_changed |= replaced;
 		return ret;
@@ -1094,6 +1097,8 @@ int drm_atomic_set_property(struct drm_atomic_state *state,
 
 		crtc_state->advance_gamma_mode_active =
 					state->advance_gamma_mode_active;
+		crtc_state->advance_degamma_mode_active =
+					state->advance_degamma_mode_active;
 		ret = drm_atomic_crtc_set_property(crtc,
 				crtc_state, prop, prop_value);
 		break;
@@ -1434,6 +1439,7 @@ int drm_mode_atomic_ioctl(struct drm_device *dev,
 	state->acquire_ctx = &ctx;
 	state->allow_modeset = !!(arg->flags & DRM_MODE_ATOMIC_ALLOW_MODESET);
 	state->advance_gamma_mode_active = file_priv->advance_gamma_mode_active;
+	state->advance_degamma_mode_active = file_priv->advance_degamma_mode_active;
 
 retry:
 	copied_objs = 0;
