@@ -10,6 +10,7 @@
 
 struct intel_crtc_state;
 struct intel_crtc;
+struct drm_plane;
 struct drm_i915_private;
 struct drm_property_blob;
 
@@ -29,5 +30,6 @@ bool intel_color_lut_equal(const struct intel_crtc_state *crtc_state,
 			   const struct drm_property_blob *blob2,
 			   bool is_pre_csc_lut);
 void intel_color_assert_luts(const struct intel_crtc_state *crtc_state);
+int intel_color_plane_init(struct drm_plane *plane);
 
 #endif /* __INTEL_COLOR_H__ */
