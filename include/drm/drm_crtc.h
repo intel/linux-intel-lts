@@ -256,6 +256,9 @@ struct drm_crtc_state {
 	 */
 	u32 gamma_mode;
 
+	/** Gamma mode type programmed on the pipe */
+	u32 gamma_mode_type;
+
 	/**
 	 * @degamma_lut:
 	 *
