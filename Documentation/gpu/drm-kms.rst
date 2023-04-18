@@ -555,8 +555,98 @@ Damage Tracking Properties
 Color Management Properties
 ---------------------------
 
+Below is how a typical hardware pipeline for color
+will look like:
+
+.. kernel-render:: DOT
+   :alt: Display Color Pipeline
+   :caption: Display Color Pipeline Overview
+
+   digraph "KMS" {
+      node [shape=box]
+
+      subgraph cluster_static {
+          style=dashed
+          label="Display Color Hardware Blocks"
+
+          node [bgcolor=grey style=filled]
+          "Plane Degamma A" -> "Plane CSC/CTM A"
+          "Plane CSC/CTM A" -> "Plane Gamma A"
+          "Pipe Blender" [color=lightblue,style=filled, width=5.25, height=0.75];
+          "Plane Gamma A" -> "Pipe Blender"
+	  "Pipe Blender" -> "Pipe DeGamma"
+          "Pipe DeGamma" -> "Pipe CSC/CTM"
+          "Pipe CSC/CTM" -> "Pipe Gamma"
+          "Pipe Gamma" -> "Pipe Output"
+      }
+
+      subgraph cluster_static {
+          style=dashed
+
+          node [shape=box]
+          "Plane Degamma B" -> "Plane CSC/CTM B"
+          "Plane CSC/CTM B" -> "Plane Gamma B"
+          "Plane Gamma B" -> "Pipe Blender"
+      }
+
+      subgraph cluster_static {
+          style=dashed
+
+          node [shape=box]
+          "Plane Degamma C" -> "Plane CSC/CTM C"
+          "Plane CSC/CTM C" -> "Plane Gamma C"
+          "Plane Gamma C" -> "Pipe Blender"
+      }
+
+      subgraph cluster_fb {
+          style=dashed
+          label="RAM"
+
+          node [shape=box width=1.7 height=0.2]
+
+          "FB 1" -> "Plane Degamma A"
+          "FB 2" -> "Plane Degamma B"
+          "FB 3" -> "Plane Degamma C"
+      }
+   }
+
+In real world usecases,
+
+1. Plane Degamma can be used to linearize a non linear gamma
+encoded framebuffer. This is needed to do any linear math like
+color space conversion. For ex, linearize frames encoded in SRGB
+or by HDR curve.
+
+2. Later Plane CTM block can convert the content to some different
+colorspace. For ex, SRGB to BT2020 etc.
+
+3. Plane Gamma block can be used later to re-apply the non-linear
+curve. This can also be used to apply Tone Mapping for HDR usecases.
+
+All the layers or framebuffers need to be converted to same color
+space and format before blending. The plane color hardware blocks
+can help with this. Once the Data is blended, similar color processing
+can be done on blended output using pipe color hardware blocks.
+
+DRM Properties have been created to define and expose all these
+hardware blocks to userspace. A userspace application (compositor
+or any color app) can use these interfaces and define policies to
+efficiently use the display hardware for such color operations.
+
+Pipe Color Management Properties
+---------------------------------
+
 .. kernel-doc:: drivers/gpu/drm/drm_color_mgmt.c
    :doc: overview
+
+Plane Color Management Properties
+---------------------------------
+
+.. kernel-doc:: drivers/gpu/drm/drm_color_mgmt.c
+   :doc: Plane Color Properties
+
+.. kernel-doc:: drivers/gpu/drm/drm_color_mgmt.c
+   :doc: export
 
 Tile Group Property
 -------------------
