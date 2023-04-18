@@ -261,6 +261,13 @@ struct drm_plane_state {
 	 */
 	struct drm_property_blob *ctm;
 
+	/**
+	 * @gamma_mode: This is a blob_id and exposes the platform capabilities
+	 * wrt to various gamma modes and the respective lut ranges. This also
+	 * helps user select a gamma mode amongst the supported ones.
+	 */
+	u32 gamma_mode;
+
 	u8 color_mgmt_changed : 1;
 };
 
@@ -792,6 +799,12 @@ struct drm_plane {
 	 * degamma LUT.
 	 */
 	struct drm_property *ctm_property;
+
+	/**
+	 * @gamma_mode_property: Optional Plane property to set the LUT
+	 * used to convert the framebuffer's colors to non-linear gamma.
+	 */
+	struct drm_property *gamma_mode_property;
 };
 
 #define obj_to_plane(x) container_of(x, struct drm_plane, base)
@@ -929,6 +942,7 @@ int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
 					   int num_values);
 void drm_plane_attach_degamma_properties(struct drm_plane *plane);
 void drm_plane_attach_ctm_property(struct drm_plane *plane);
+void drm_plane_attach_gamma_properties(struct drm_plane *plane);
 int drm_plane_color_add_gamma_degamma_mode_range(struct drm_plane *plane,
 						 const char *name,
 						 const struct drm_color_lut_range *ranges,
