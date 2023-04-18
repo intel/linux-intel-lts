@@ -150,6 +150,8 @@ static const struct intel_csc_matrix ilk_csc_matrix_identity = {
 #define GAMMA_MODE_SPLIT_12BIT                 BIT(4)
 #define GAMMA_MODE_LOGARITHMIC_12BIT           BIT(5) /* XELPD+ */
 
+#define DEGAMMA_MODE_24BIT			BIT(0) /* MTL/D14+ */
+
 #define INTEL_GAMMA_MODE_MASK (\
 				GAMMA_MODE_LEGACY_PALETTE_8BIT | \
 				GAMMA_MODE_PRECISION_PALETTE_10BIT | \
@@ -4567,6 +4569,21 @@ static const struct drm_color_lut_range xelpd_gamma_hdr[] = {
 	},
 };
 
+static const struct drm_color_lut_range mtl_24bit_degamma[] = {
+	/* segment 0 */
+	{
+		.flags = (DRM_MODE_LUT_DEGAMMA |
+			  DRM_MODE_LUT_REFLECT_NEGATIVE |
+			  DRM_MODE_LUT_INTERPOLATE |
+			  DRM_MODE_LUT_REUSE_LAST |
+			  DRM_MODE_LUT_NON_DECREASING),
+		.count = 129,
+		.input_bpc = 24, .output_bpc = 16,
+		.start = 0, .end = (1 << 24),
+		.min = 0, .max = (1 << 24),
+	}
+};
+
 int intel_color_plane_init(struct drm_plane *plane)
 {
 	struct drm_i915_private *dev_priv = to_i915(plane->dev);
@@ -4665,6 +4682,18 @@ void intel_color_crtc_init(struct intel_crtc *crtc)
 						       LUT_TYPE_GAMMA);
 		drm_crtc_attach_gamma_degamma_mode_property(&crtc->base,
 							    LUT_TYPE_GAMMA);
+
+		if (DISPLAY_VER(i915) >= 14) {
+			drm_color_create_degamma_mode_property(&crtc->base, 2);
+			drm_color_add_gamma_degamma_mode_range(&crtc->base,
+							       "no degamma", NULL, 0,
+							       LUT_TYPE_DEGAMMA);
+			drm_color_add_gamma_degamma_mode_range(&crtc->base,
+							       "extended degamma",
+							       mtl_24bit_degamma,
+							       sizeof(mtl_24bit_degamma),
+							       LUT_TYPE_DEGAMMA);
+		}
 	}
 }
 
