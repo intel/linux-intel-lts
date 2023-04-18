@@ -1788,13 +1788,24 @@ xelpd_program_logarithmic_gamma_lut(const struct intel_crtc_state *crtc_state)
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
 	const struct drm_property_blob *blob = crtc_state->hw.gamma_lut;
-	const u32 lut_size = DISPLAY_INFO(i915)->color.gamma_lut_size;
+	u32 lut_size;
 	const struct drm_color_lut *lut;
 	enum pipe pipe = crtc->pipe;
 	u32 i;
 
 	if (!blob || !blob->data)
 		return;
+
+	/*
+	 * In case of advance gamma i.e logarithmic, lut size
+	 * is 513. Till the new UAPI is merged, we need to have
+	 * this s/w WA to allow legacy to co-exist with this.
+	 * FixMe: Update once the new UAPI is in place
+	 */
+	if (crtc_state->uapi.advance_gamma_mode_active)
+		lut_size = drm_color_lut_size(blob);
+	else
+		lut_size = DISPLAY_INFO(i915)->color.gamma_lut_size;
 
 	lut = blob->data;
 	ilk_lut_write(crtc_state, PREC_PAL_INDEX(pipe),
@@ -2136,11 +2147,23 @@ static int intel_gamma_lut_size(const struct intel_crtc_state *crtc_state)
 {
 	struct drm_i915_private *i915 = to_i915(crtc_state->uapi.crtc->dev);
 	const struct drm_property_blob *gamma_lut = crtc_state->hw.gamma_lut;
+	u32 gamma_length;
 
 	if (lut_is_legacy(gamma_lut))
 		return LEGACY_LUT_LENGTH;
 
-	return DISPLAY_INFO(i915)->color.gamma_lut_size;
+	/*
+	 * In case of advance gamma i.e logarithmic, lut size
+	 * is 513. Till the new UAPI is merged, we need to have
+	 * this s/w WA to allow legacy to co-exist with this.
+	 * FixMe: Update once the new UAPI is in place
+	 */
+	if (gamma_lut && crtc_state->uapi.advance_gamma_mode_active)
+		gamma_length = drm_color_lut_size(gamma_lut);
+	else
+		gamma_length = DISPLAY_INFO(i915)->color.gamma_lut_size;
+
+	return gamma_length;
 }
 
 static u32 intel_degamma_lut_size(const struct intel_crtc_state *crtc_state)
@@ -3764,11 +3787,25 @@ static struct drm_property_blob *
 xelpd_read_lut_logarithmic(struct intel_crtc *crtc)
 {
 	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
-	int i, lut_size = DISPLAY_INFO(i915)->color.gamma_lut_size;
+	struct intel_crtc_state *crtc_state =
+		to_intel_crtc_state(crtc->base.state);
+	const struct drm_property_blob *gamma_lut = crtc_state->hw.gamma_lut;
+	int i, lut_size;
 	enum pipe pipe = crtc->pipe;
 	struct drm_property_blob *blob;
 	struct drm_color_lut *lut;
 	u32 gamma_max_val = 0xFFFF;
+
+	/*
+	 * In case of advance gamma i.e logarithmic, lut size
+	 * is 513. Till the new UAPI is merged, we need to have
+	 * this s/w WA to allow legacy to co-exist with this.
+	 * FixMe: Update once the new UAPI is in place
+	 * */
+	if (crtc_state->uapi.advance_gamma_mode_active)
+		lut_size = drm_color_lut_size(gamma_lut);
+	else
+		lut_size = DISPLAY_INFO(i915)->color.gamma_lut_size;
 
 	blob = drm_property_create_blob(&i915->drm,
 					sizeof(struct drm_color_lut) * lut_size,
