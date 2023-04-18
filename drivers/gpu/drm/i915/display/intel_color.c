@@ -4146,6 +4146,7 @@ void intel_color_crtc_init(struct intel_crtc *crtc)
 					       "logarithmic gamma",
 					       xelpd_logarithmic_gamma,
 					       sizeof(xelpd_logarithmic_gamma));
+		drm_crtc_attach_gamma_mode_property(&crtc->base);
 	}
 }
 
