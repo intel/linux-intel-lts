@@ -1650,6 +1650,38 @@ static void glk_load_luts(const struct intel_crtc_state *crtc_state)
 	}
 }
 
+static void mtl_load_legacy_lut(const struct intel_crtc_state *crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+	const struct drm_property_blob *degamma_lut_blob = crtc_state->hw.degamma_lut;
+	struct drm_color_lut *degamma_lut = degamma_lut_blob->data;
+	enum pipe pipe = crtc->pipe;
+	int i, lut_size = drm_color_lut_size(degamma_lut_blob);
+
+	/*
+	 * When setting the auto-increment bit, the hardware seems to
+	 * ignore the index bits, so we need to reset it to index 0
+	 * separately.
+	 */
+	intel_de_write_fw(i915, PRE_CSC_GAMC_INDEX(pipe), 0);
+	intel_de_write_fw(i915, PRE_CSC_GAMC_INDEX(pipe),
+			  PRE_CSC_GAMC_AUTO_INCREMENT);
+
+	for (i = 0; i < lut_size; i++) {
+		u64 word = mul_u32_u32(degamma_lut[i].green, (1 << 24)) / (1 << 16);
+		u32 lut_val = (word & 0xffffff);
+
+		intel_de_write_fw(i915, PRE_CSC_GAMC_DATA(pipe),
+				  lut_val);
+	}
+	/* Clamp values > 1.0. */
+	while (i++ < glk_degamma_lut_size(i915))
+		intel_de_write_fw(i915, PRE_CSC_GAMC_DATA(pipe), 1 << 24);
+
+	intel_de_write_fw(i915, PRE_CSC_GAMC_INDEX(pipe), 0);
+}
+
 static void mtl_load_degamma_lut(const struct intel_crtc_state *crtc_state,
 				 const struct drm_property_blob *blob)
 {
@@ -1658,6 +1690,12 @@ static void mtl_load_degamma_lut(const struct intel_crtc_state *crtc_state,
 	struct drm_color_lut_ext *degamma_lut = blob->data;
 	u32 i, lut_size = 128;
 	enum pipe pipe = crtc->pipe;
+
+	if (crtc_state->uapi.degamma_mode_type == 0) {
+		if (!crtc_state->uapi.advance_degamma_mode_active)
+			mtl_load_legacy_lut(crtc_state);
+		return;
+	}
 
 	/*
 	 * When setting the auto-increment bit, the hardware seems to
