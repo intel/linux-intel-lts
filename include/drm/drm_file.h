@@ -207,6 +207,14 @@ struct drm_file {
 	bool writeback_connectors;
 
 	/**
+	 * This is to enable advance gamma modes using
+	 * gamma_mode property
+	 *
+	 * True if client understands advance gamma
+	 */
+	bool advance_gamma_mode_active : 1;
+
+	/**
 	 * @was_master:
 	 *
 	 * This client has or had, master capability. Protected by struct

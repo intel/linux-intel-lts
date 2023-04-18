@@ -158,6 +158,11 @@ struct drm_crtc_state {
 	bool color_mgmt_changed : 1;
 
 	/**
+	 * This is to indicate advance gamma mode support
+	 */
+	bool advance_gamma_mode_active : 1;
+
+	/**
 	 * @no_vblank:
 	 *
 	 * Reflects the ability of a CRTC to send VBLANK events. This state
@@ -1026,6 +1031,9 @@ struct drm_crtc {
 	 * drm_atomic_helper_update_legacy_modeset_state().
 	 */
 	bool enabled;
+
+	/** To handle advance gamma mode support */
+	bool advance_gamma_mode_active : 1;
 
 	/**
 	 * @mode:
