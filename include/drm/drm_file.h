@@ -215,6 +215,14 @@ struct drm_file {
 	bool advance_gamma_mode_active : 1;
 
 	/**
+	 * This is to enable advance degamma modes using
+	 * 64 bit LUT values
+	 *
+	 * True if client understands advance degamma
+	 */
+	bool advance_degamma_mode_active : 1;
+
+	/**
 	 * @was_master:
 	 *
 	 * This client has or had, master capability. Protected by struct
