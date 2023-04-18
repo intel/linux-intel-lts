@@ -3749,6 +3749,80 @@ static void icl_read_luts(struct intel_crtc_state *crtc_state)
 	}
 }
 
+static void xelpd_lut_logarithmic_pack(struct drm_color_lut *entry,
+				       u32 ldw, u32 udw)
+{
+	entry->red = REG_FIELD_GET(PAL_PREC_LOGARITHMIC_RED_UDW_MASK, udw) << 6 |
+				   REG_FIELD_GET(PAL_PREC_LOGARITHMIC_RED_LDW_MASK, ldw);
+	entry->green = REG_FIELD_GET(PAL_PREC_LOGARITHMIC_GREEN_UDW_MASK, udw) << 6 |
+				     REG_FIELD_GET(PAL_PREC_LOGARITHMIC_GREEN_LDW_MASK, ldw);
+	entry->blue = REG_FIELD_GET(PAL_PREC_LOGARITHMIC_BLUE_UDW_MASK, udw) << 6 |
+				    REG_FIELD_GET(PAL_PREC_LOGARITHMIC_BLUE_LDW_MASK, ldw);
+}
+
+static struct drm_property_blob *
+xelpd_read_lut_logarithmic(struct intel_crtc *crtc)
+{
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+	int i, lut_size = DISPLAY_INFO(i915)->color.gamma_lut_size;
+	enum pipe pipe = crtc->pipe;
+	struct drm_property_blob *blob;
+	struct drm_color_lut *lut;
+	u32 gamma_max_val = 0xFFFF;
+
+	blob = drm_property_create_blob(&i915->drm,
+					sizeof(struct drm_color_lut) * lut_size,
+					NULL);
+	if (IS_ERR(blob))
+		return NULL;
+
+	lut = blob->data;
+
+	intel_de_write(i915, PREC_PAL_INDEX(pipe),
+		       PAL_PREC_AUTO_INCREMENT);
+
+	for (i = 0; i < lut_size - 3; i++) {
+		u32 ldw = intel_de_read(i915, PREC_PAL_DATA(pipe));
+		u32 udw = intel_de_read(i915, PREC_PAL_DATA(pipe));
+
+		xelpd_lut_logarithmic_pack(&lut[i], ldw, udw);
+	}
+
+	/* All the extended ranges are now limited to last value of 1.0 */
+	while (i < lut_size) {
+		lut[i].red = gamma_max_val;
+		lut[i].green = gamma_max_val;
+		lut[i].blue = gamma_max_val;
+		i++;
+	};
+
+	intel_de_write(i915, PREC_PAL_INDEX(pipe), 0);
+
+	return blob;
+}
+
+static void xelpd_read_luts(struct intel_crtc_state *crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+
+	if (icl_has_pre_csc_lut(crtc_state))
+		crtc_state->pre_csc_lut = glk_read_degamma_lut(crtc);
+
+	if (!icl_has_post_csc_lut(crtc_state))
+		return;
+
+	switch (crtc_state->gamma_mode & GAMMA_MODE_MODE_MASK) {
+	case GAMMA_MODE_MODE_8BIT:
+		crtc_state->post_csc_lut = ilk_read_lut_8(crtc);
+		break;
+	case GAMMA_MODE_MODE_12BIT_LOGARITHMIC:
+		crtc_state->post_csc_lut = xelpd_read_lut_logarithmic(crtc);
+		break;
+	default:
+		crtc_state->post_csc_lut = bdw_read_lut_10(crtc, PAL_PREC_INDEX_VALUE(0));
+	}
+}
+
 #define XELPD_GAMMA_CAPABILITY_FLAG	(DRM_MODE_LUT_GAMMA | \
 					 DRM_MODE_LUT_REFLECT_NEGATIVE | \
 					 DRM_MODE_LUT_INTERPOLATE | \
@@ -4023,7 +4097,7 @@ static const struct intel_color_funcs xelpd_color_funcs = {
 	.color_commit_noarm = icl_color_commit_noarm,
 	.color_commit_arm = skl_color_commit_arm,
 	.load_luts = xelpd_load_luts,
-	.read_luts = icl_read_luts,
+	.read_luts = xelpd_read_luts,
 	.lut_equal = icl_lut_equal,
 	.read_csc = icl_read_csc,
 	.get_config = skl_get_config,
