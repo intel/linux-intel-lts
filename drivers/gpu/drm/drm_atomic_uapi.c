@@ -1049,6 +1049,8 @@ int drm_atomic_set_property(struct drm_atomic_state *state,
 			break;
 		}
 
+		crtc_state->advance_gamma_mode_active =
+					state->advance_gamma_mode_active;
 		ret = drm_atomic_crtc_set_property(crtc,
 				crtc_state, prop, prop_value);
 		break;
@@ -1388,6 +1390,7 @@ int drm_mode_atomic_ioctl(struct drm_device *dev,
 	drm_modeset_acquire_init(&ctx, DRM_MODESET_ACQUIRE_INTERRUPTIBLE);
 	state->acquire_ctx = &ctx;
 	state->allow_modeset = !!(arg->flags & DRM_MODE_ATOMIC_ALLOW_MODESET);
+	state->advance_gamma_mode_active = file_priv->advance_gamma_mode_active;
 
 retry:
 	copied_objs = 0;
