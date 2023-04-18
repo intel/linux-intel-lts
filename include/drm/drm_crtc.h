@@ -245,6 +245,13 @@ struct drm_crtc_state {
 	struct drm_property_blob *mode_blob;
 
 	/**
+	 * @gamma_mode: This is a blob_id and exposes the platform capabilities
+	 * wrt to various gamma modes and the respective lut ranges. This also
+	 * helps user select a gamma mode amongst the supported ones.
+	 */
+	u32 gamma_mode;
+
+	/**
 	 * @degamma_lut:
 	 *
 	 * Lookup table for converting framebuffer pixel data before apply the
@@ -1087,6 +1094,13 @@ struct drm_crtc {
 	 * scaling.
 	 */
 	struct drm_property *scaling_filter_property;
+
+	/**
+	 * @gamma_mode_property: Optional CRTC property to enumerate and
+	 * select the mode of the crtc gamma/degmama LUTs. This also exposes
+	 * the lut ranges of the various supported gamma modes to userspace.
+	 */
+	struct drm_property *gamma_mode_property;
 
 	/**
 	 * @state:
