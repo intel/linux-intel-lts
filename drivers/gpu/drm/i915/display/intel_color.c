@@ -2190,13 +2190,20 @@ static int _check_luts(const struct intel_crtc_state *crtc_state,
 	degamma_length = intel_degamma_lut_size(crtc_state);
 	gamma_length = intel_gamma_lut_size(crtc_state);
 
-	if (check_lut_size(degamma_lut, degamma_length) ||
-	    check_lut_size(gamma_lut, gamma_length))
-		return -EINVAL;
-
-	if (drm_color_lut_check(degamma_lut, degamma_tests) ||
+	if (check_lut_size(gamma_lut, gamma_length) ||
 	    drm_color_lut_check(gamma_lut, gamma_tests))
 		return -EINVAL;
+
+	/* If extended degamma property set*/
+	if (crtc_state->uapi.advance_degamma_mode_active) {
+		if (check_lut_ext_size(degamma_lut, degamma_length) ||
+		    drm_color_lut_ext_check(degamma_lut, degamma_tests))
+			return -EINVAL;
+	} else {
+		if (check_lut_size(degamma_lut, degamma_length) ||
+		    drm_color_lut_check(degamma_lut, degamma_tests))
+			return -EINVAL;
+	}
 
 	return 0;
 }
@@ -2206,6 +2213,26 @@ static int check_luts(const struct intel_crtc_state *crtc_state)
 	return _check_luts(crtc_state,
 			   intel_degamma_lut_tests(crtc_state),
 			   intel_gamma_lut_tests(crtc_state));
+}
+
+static int mtl_check_degamma_lut(const struct intel_crtc_state *crtc_state)
+{
+	const struct drm_property_blob *degamma_lut_blob = crtc_state->hw.gamma_lut;
+
+	if (!degamma_lut_blob)
+		return 0;
+
+	if (crtc_state->uapi.degamma_mode_type == DEGAMMA_MODE_24BIT &&
+	    crtc_state->uapi.advance_degamma_mode_active)
+		return 0;
+
+	/* 16 bit LUT value usecase */
+	if (crtc_state->uapi.degamma_mode_type == 0)
+		return 0;
+
+	DRM_ERROR("%s check failed\n", __func__);
+
+	return -EINVAL;
 }
 
 static u32 i9xx_gamma_mode(struct intel_crtc_state *crtc_state)
@@ -2826,7 +2853,8 @@ static int icl_color_check(struct intel_crtc_state *crtc_state)
 {
 	struct drm_device *dev = crtc_state->uapi.crtc->dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
-	struct drm_property *property = crtc_state->uapi.crtc->gamma_mode_property;
+	struct drm_property *gamma_mode_property = crtc_state->uapi.crtc->gamma_mode_property;
+	struct drm_property *degamma_mode_property = crtc_state->uapi.crtc->degamma_mode_property;
 	struct drm_property_enum *prop_enum;
 	u32 index = 0;
 	int ret;
@@ -2835,8 +2863,31 @@ static int icl_color_check(struct intel_crtc_state *crtc_state)
 	if (ret)
 		return ret;
 
+	if (DISPLAY_VER(dev_priv) >= 14) {
+		list_for_each_entry(prop_enum, &degamma_mode_property->enum_list, head) {
+			if (prop_enum->value == crtc_state->uapi.degamma_mode) {
+				if (!strcmp(prop_enum->name,
+					    "extended degamma")) {
+					crtc_state->uapi.degamma_mode_type =
+						DEGAMMA_MODE_24BIT;
+					drm_dbg_kms(dev,
+						    "extended degamma enabled\n");
+				} else {
+					crtc_state->uapi.degamma_mode_type = 0;
+					drm_dbg_kms(dev,
+						    "extended degamma disabled\n");
+				}
+				break;
+			}
+		}
+
+		ret = mtl_check_degamma_lut(crtc_state);
+		if (ret)
+			return ret;
+	}
+
 	if (DISPLAY_VER(dev_priv) >= 13) {
-		list_for_each_entry(prop_enum, &property->enum_list, head) {
+		list_for_each_entry(prop_enum, &gamma_mode_property->enum_list, head) {
 			if (prop_enum->value == crtc_state->uapi.gamma_mode) {
 				if (!strcmp(prop_enum->name,
 					    "logarithmic gamma")) {
