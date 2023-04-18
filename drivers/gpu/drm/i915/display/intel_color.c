@@ -2692,6 +2692,7 @@ static int glk_color_check(struct intel_crtc_state *crtc_state)
 
 static u32 icl_gamma_mode(const struct intel_crtc_state *crtc_state)
 {
+	struct drm_i915_private *i915 = to_i915(crtc_state->uapi.crtc->dev);
 	u32 gamma_mode = 0;
 
 	if (crtc_state->hw.degamma_lut)
@@ -2702,13 +2703,18 @@ static u32 icl_gamma_mode(const struct intel_crtc_state *crtc_state)
 		gamma_mode |= POST_CSC_GAMMA_ENABLE;
 
 	if (!crtc_state->hw.gamma_lut ||
-	    lut_is_legacy(crtc_state->hw.gamma_lut))
+	    lut_is_legacy(crtc_state->hw.gamma_lut)) {
 		gamma_mode |= GAMMA_MODE_MODE_8BIT;
-	else if (crtc_state->uapi.gamma_mode_type ==
-		 GAMMA_MODE_LOGARITHMIC_12BIT)
-		gamma_mode |= GAMMA_MODE_MODE_12BIT_LOGARITHMIC;
-	else
+	} else if (DISPLAY_VER(i915) >= 13) {
+		if (crtc_state->uapi.gamma_mode_type ==
+				GAMMA_MODE_LOGARITHMIC_12BIT &&
+				crtc_state->uapi.advance_gamma_mode_active)
+			gamma_mode |= GAMMA_MODE_MODE_12BIT_LOGARITHMIC;
+		else
+			gamma_mode |= GAMMA_MODE_MODE_10BIT;
+	} else {
 		gamma_mode |= GAMMA_MODE_MODE_12BIT_MULTI_SEG;
+	}
 
 	return gamma_mode;
 }
