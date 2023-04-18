@@ -140,6 +140,21 @@ static const struct intel_csc_matrix ilk_csc_matrix_identity = {
 	.postoff = {},
 };
 
+#define GAMMA_MODE_LEGACY_PALETTE_8BIT         BIT(0)
+#define GAMMA_MODE_PRECISION_PALETTE_10BIT     BIT(1)
+#define GAMMA_MODE_INTERPOLATED_12BIT          BIT(2)
+#define GAMMA_MODE_MULTI_SEGMENTED_12BIT       BIT(3)
+#define GAMMA_MODE_SPLIT_12BIT                 BIT(4)
+#define GAMMA_MODE_LOGARITHMIC_12BIT           BIT(5) /* XELPD+ */
+
+#define INTEL_GAMMA_MODE_MASK (\
+		GAMMA_MODE_LEGACY_PALETTE_8BIT | \
+		GAMMA_MODE_PRECISION_PALETTE_10BIT | \
+		GAMMA_MODE_INTERPOLATED_12BIT | \
+		GAMMA_MODE_MULTI_SEGMENTED_12BIT | \
+		GAMMA_MODE_SPLIT_12BIT \
+		GAMMA_MODE_LOGARITHMIC_12BIT)
+
 /* Full range RGB -> limited range RGB matrix */
 static const struct intel_csc_matrix ilk_csc_matrix_limited_range = {
 	.preoff = {},
@@ -1607,12 +1622,20 @@ ivb_load_lut_max(const struct intel_crtc_state *crtc_state,
 		 const struct drm_color_lut *color)
 {
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *i915 = to_i915(crtc_state->uapi.crtc->dev);
 	enum pipe pipe = crtc->pipe;
 
-	/* FIXME LUT entries are 16 bit only, so we can prog 0xFFFF max */
-	ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 0), color->red);
-	ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 1), color->green);
-	ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 2), color->blue);
+	if (DISPLAY_VER(i915) >= 13) {
+		/* MAx val from UAPI is 16bit only, so setting fixed for GC max */
+		ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 0), 1 << 16);
+		ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 1), 1 << 16);
+		ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 2), 1 << 16);
+	} else {
+		/* FIXME LUT entries are 16 bit only, so we can prog 0xFFFF max */
+		ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 0), color->red);
+		ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 1), color->green);
+		ilk_lut_write(crtc_state, PREC_PAL_GC_MAX(pipe, 2), color->blue);
+	}
 }
 
 static void
@@ -1757,6 +1780,59 @@ static void vlv_load_luts(const struct intel_crtc_state *crtc_state)
 		vlv_load_wgc_csc(crtc, &crtc_state->csc);
 
 	i965_load_luts(crtc_state);
+}
+
+static void
+xelpd_program_logarithmic_gamma_lut(const struct intel_crtc_state *crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+	const struct drm_property_blob *blob = crtc_state->hw.gamma_lut;
+	const u32 lut_size = DISPLAY_INFO(i915)->color.gamma_lut_size;
+	const struct drm_color_lut *lut;
+	enum pipe pipe = crtc->pipe;
+	u32 i;
+
+	if (!blob || !blob->data)
+		return;
+
+	lut = blob->data;
+	ilk_lut_write(crtc_state, PREC_PAL_INDEX(pipe),
+			    PAL_PREC_AUTO_INCREMENT);
+
+	for (i = 0; i < lut_size - 3; i++) {
+		ilk_lut_write(crtc_state, PREC_PAL_DATA(pipe),
+					    ilk_lut_12p4_ldw(&lut[i]));
+		ilk_lut_write(crtc_state, PREC_PAL_DATA(pipe),
+					    ilk_lut_12p4_udw(&lut[i]));
+	}
+
+	ivb_load_lut_ext_max(crtc_state);
+	glk_load_lut_ext2_max(crtc_state);
+}
+
+static void xelpd_load_luts(const struct intel_crtc_state *crtc_state)
+{
+	const struct drm_property_blob *pre_csc_lut = crtc_state->pre_csc_lut;
+	const struct drm_property_blob *post_csc_lut = crtc_state->post_csc_lut;
+
+	if (crtc_state->hw.degamma_lut)
+		glk_load_degamma_lut(crtc_state, pre_csc_lut);
+
+	switch (crtc_state->gamma_mode & GAMMA_MODE_MODE_MASK) {
+	case GAMMA_MODE_MODE_8BIT:
+		ilk_load_lut_8(crtc_state, post_csc_lut);
+		break;
+	case GAMMA_MODE_MODE_12BIT_LOGARITHMIC:
+		xelpd_program_logarithmic_gamma_lut(crtc_state);
+		break;
+	default:
+		bdw_load_lut_10(crtc_state, post_csc_lut, PAL_PREC_INDEX_VALUE(0));
+		ivb_load_lut_ext_max(crtc_state);
+	}
+
+	if (crtc_state->dsb)
+		intel_dsb_commit(crtc_state->dsb, false);
 }
 
 static u32 chv_cgm_degamma_ldw(const struct drm_color_lut *color)
@@ -2700,8 +2776,6 @@ static int glk_color_check(struct intel_crtc_state *crtc_state)
 
 static u32 icl_gamma_mode(const struct intel_crtc_state *crtc_state)
 {
-	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
 	u32 gamma_mode = 0;
 
 	if (crtc_state->hw.degamma_lut)
@@ -2714,13 +2788,9 @@ static u32 icl_gamma_mode(const struct intel_crtc_state *crtc_state)
 	if (!crtc_state->hw.gamma_lut ||
 	    lut_is_legacy(crtc_state->hw.gamma_lut))
 		gamma_mode |= GAMMA_MODE_MODE_8BIT;
-	/*
-	 * Enable 10bit gamma for D13
-	 * ToDo: Extend to Logarithmic Gamma once the new UAPI
-	 * is accepted and implemented by a userspace consumer
-	 */
-	else if (DISPLAY_VER(i915) >= 13)
-		gamma_mode |= GAMMA_MODE_MODE_10BIT;
+	else if (crtc_state->uapi.gamma_mode_type ==
+		 GAMMA_MODE_LOGARITHMIC_12BIT)
+		gamma_mode |= GAMMA_MODE_MODE_12BIT_LOGARITHMIC;
 	else
 		gamma_mode |= GAMMA_MODE_MODE_12BIT_MULTI_SEG;
 
@@ -2743,11 +2813,32 @@ static u32 icl_csc_mode(const struct intel_crtc_state *crtc_state)
 
 static int icl_color_check(struct intel_crtc_state *crtc_state)
 {
+	struct drm_device *dev = crtc_state->uapi.crtc->dev;
+	struct drm_i915_private *dev_priv = to_i915(dev);
+	struct drm_property *property = crtc_state->uapi.crtc->gamma_mode_property;
+	struct drm_property_enum *prop_enum;
+	u32 index = 0;
 	int ret;
 
 	ret = check_luts(crtc_state);
 	if (ret)
 		return ret;
+
+	if (DISPLAY_VER(dev_priv) >= 13) {
+		list_for_each_entry(prop_enum, &property->enum_list, head) {
+			if (prop_enum->value == crtc_state->uapi.gamma_mode) {
+				if (!strcmp(prop_enum->name,
+					    "logarithmic gamma")) {
+					crtc_state->uapi.gamma_mode_type =
+						GAMMA_MODE_LOGARITHMIC_12BIT;
+					drm_dbg_kms(dev,
+						    "logarithmic gamma enabled\n");
+				}
+				break;
+			}
+			index++;
+		}
+	}
 
 	crtc_state->gamma_mode = icl_gamma_mode(crtc_state);
 
@@ -3921,6 +4012,17 @@ static const struct intel_color_funcs i9xx_color_funcs = {
 	.get_config = i9xx_get_config,
 };
 
+static const struct intel_color_funcs xelpd_color_funcs = {
+	.color_check = icl_color_check,
+	.color_commit_noarm = icl_color_commit_noarm,
+	.color_commit_arm = skl_color_commit_arm,
+	.load_luts = xelpd_load_luts,
+	.read_luts = icl_read_luts,
+	.lut_equal = icl_lut_equal,
+	.read_csc = icl_read_csc,
+	.get_config = skl_get_config,
+};
+
 static const struct intel_color_funcs tgl_color_funcs = {
 	.color_check = icl_color_check,
 	.color_commit_noarm = icl_color_commit_noarm,
@@ -4076,7 +4178,9 @@ void intel_color_init_hooks(struct drm_i915_private *i915)
 		else
 			i915->display.funcs.color = &i9xx_color_funcs;
 	} else {
-		if (DISPLAY_VER(i915) >= 12)
+		if (DISPLAY_VER(i915) >= 13)
+			i915->display.funcs.color = &xelpd_color_funcs;
+		else if (DISPLAY_VER(i915) >= 12)
 			i915->display.funcs.color = &tgl_color_funcs;
 		else if (DISPLAY_VER(i915) == 11)
 			i915->display.funcs.color = &icl_color_funcs;
