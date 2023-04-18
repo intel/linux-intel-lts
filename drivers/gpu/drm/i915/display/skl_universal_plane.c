@@ -11,6 +11,7 @@
 #include "i915_drv.h"
 #include "i915_reg.h"
 #include "intel_atomic_plane.h"
+#include "intel_color.h"
 #include "intel_de.h"
 #include "intel_display_irq.h"
 #include "intel_display_types.h"
@@ -2371,6 +2372,8 @@ skl_universal_plane_create(struct drm_i915_private *dev_priv,
 		drm_plane_create_scaling_filter_property(&plane->base,
 						BIT(DRM_SCALING_FILTER_DEFAULT) |
 						BIT(DRM_SCALING_FILTER_NEAREST_NEIGHBOR));
+
+	intel_color_plane_init(&plane->base);
 
 	intel_plane_helper_add(plane);
 
