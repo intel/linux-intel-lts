@@ -3312,11 +3312,18 @@ static bool icl_lut_equal(const struct intel_crtc_state *crtc_state,
 			  const struct drm_property_blob *blob2,
 			  bool is_pre_csc_lut)
 {
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+
 	int check_size = 0;
 
-	if (is_pre_csc_lut)
-		return intel_lut_equal(blob1, blob2, 0,
+	if (is_pre_csc_lut) {
+		if (DISPLAY_VER(i915) >= 14)
+			return true;
+		else
+			return intel_lut_equal(blob1, blob2, 0,
 				       icl_pre_csc_lut_precision(crtc_state));
+	}
 
 	/* hw readout broken except for the super fine segment :( */
 	if ((crtc_state->gamma_mode & GAMMA_MODE_MODE_MASK) ==
