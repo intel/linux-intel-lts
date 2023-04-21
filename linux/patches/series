@@ -46,3 +46,12 @@
 
 # CVE-2023-1077
 0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
+
+# CVE-2022-45884
+# CVE-2022-45885
+# CVE-2022-45886
+# CVE-2022-45887
+0001-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
+0002-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
+0003-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
+0004-media-ttusb-dec-Fix-memory-leak-in-ttusb_dec_exit_dv.patch
