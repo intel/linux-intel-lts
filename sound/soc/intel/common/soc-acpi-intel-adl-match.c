@@ -299,6 +299,11 @@ static const struct snd_soc_acpi_codecs adl_lt6911_hdmi = {
 	.codecs = {"INTC10B0"}
 };
 
+static const struct snd_soc_acpi_codecs adl_rt5682_rt5682s = {
+	.num_codecs = 2,
+	.codecs = {"10EC5682", "RTL5682"},
+};
+
 struct snd_soc_acpi_mach snd_soc_acpi_intel_adl_machines[] = {
 	{
 		.id = "10EC5682",
@@ -330,6 +335,25 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_adl_machines[] = {
 		.tplg_quirk_mask = SND_SOC_ACPI_TPLG_INTEL_SSP_NUMBER |
 					SND_SOC_ACPI_TPLG_INTEL_SSP_MSB |
 					SND_SOC_ACPI_TPLG_INTEL_DMIC_NUMBER,
+	},
+	{
+		.comp_ids = &adl_rt5682_rt5682s,
+		.drv_name = "adl_rt5682_c1_h02",
+		.machine_quirk = snd_soc_acpi_codec_list,
+		.quirk_data = &adl_lt6911_hdmi,
+		.sof_fw_filename = "sof-adl.ri",
+		.sof_tplg_filename = "sof-adl-rt5682-ssp1-hdmi-ssp02.tplg",
+	},
+	/* place amp-only boards in the end of table */
+	{
+		.id = "CSC3541",
+		.drv_name = "adl_cs35l41",
+		.sof_tplg_filename = "sof-adl-cs35l41.tplg",
+	},
+	{
+		.id = "INTC10B0",
+		.drv_name = "adl_lt6911_hdmi_ssp",
+		.sof_tplg_filename = "sof-adl-nocodec-hdmi-ssp02.tplg"
 	},
 	{},
 };
