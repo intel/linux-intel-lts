@@ -344,7 +344,7 @@ int skx_get_dimm_info(u32 mtr, u32 mcmtr, u32 amap, struct dimm_info *dimm,
 		      struct skx_imc *imc, int chan, int dimmno,
 		      struct res_config *cfg)
 {
-	int  banks, ranks, rows, cols, npages;
+	int  banks, ranks, rows, cols, npages, log2_bus_width = 3;
 	enum mem_type mtype;
 	u64 size;
 
@@ -356,6 +356,7 @@ int skx_get_dimm_info(u32 mtr, u32 mcmtr, u32 amap, struct dimm_info *dimm,
 		banks = 32;
 		mtype = MEM_HBM2;
 	} else if (cfg->support_ddr5 && (amap & 0x8)) {
+		log2_bus_width = 2;
 		banks = 32;
 		mtype = MEM_DDR5;
 	} else {
@@ -364,9 +365,9 @@ int skx_get_dimm_info(u32 mtr, u32 mcmtr, u32 amap, struct dimm_info *dimm,
 	}
 
 	/*
-	 * Compute size in 8-byte (2^3) words, then shift to MiB (2^20)
+	 * Compute size in 8-byte (2^3) or 4-byte (2^2) words, then shift to MiB (2^20)
 	 */
-	size = ((1ull << (rows + cols + ranks)) * banks) >> (20 - 3);
+	size = ((1ull << (rows + cols + ranks)) * banks) >> (20 - log2_bus_width);
 	npages = MiB_TO_PAGES(size);
 
 	edac_dbg(0, "mc#%d: channel %d, dimm %d, %lld MiB (%d pages) bank: %d, rank: %d, row: 0x%x, col: 0x%x\n",
