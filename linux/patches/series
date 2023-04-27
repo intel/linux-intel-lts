@@ -23,29 +23,11 @@
 # CVE-2022-47940
 0001-ksmbd-validate-length-in-smb2_write.patch
 
-# CVE-2022-4379
-0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
-
 # CVE-2023-0597
 0001-x86-mm-Randomize-per-cpu-entry-area.patch
 
 # CVE-2023-23000
 0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
-
-# CVE-2022-4269
-0001-act_mirred-use-the-backlog-for-nested-calls-to-mirre.patch
-0002-net-sched-act_mirred-better-wording-on-protection-ag.patch
-
-# CVE-2023-1076
-0001-tun-tun_chr_open-correctly-initialize-socket-uid.patch
-0002-net-add-sock_init_data_uid.patch
-
-# CVE-2023-1079
-0001-HID-asus-use-spinlock-to-protect-concurrent-accesses.patch
-0002-HID-asus-use-spinlock-to-safely-schedule-workers.patch
-
-# CVE-2023-1077
-0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
 
 # CVE-2022-45884
 # CVE-2022-45885
