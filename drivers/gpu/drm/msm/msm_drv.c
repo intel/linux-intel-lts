@@ -444,6 +444,8 @@ static int msm_drm_init(struct device *dev, const struct drm_driver *drv)
 	if (ret)
 		return ret;
 
+	dma_set_max_seg_size(dev, UINT_MAX);
+
 	/* Bind all our sub-components: */
 	ret = component_bind_all(dev, ddev);
 	if (ret)
@@ -453,8 +455,6 @@ static int msm_drm_init(struct device *dev, const struct drm_driver *drv)
 	ret = drm_aperture_remove_framebuffers(false, drv);
 	if (ret)
 		goto err_msm_uninit;
-
-	dma_set_max_seg_size(dev, UINT_MAX);
 
 	msm_gem_shrinker_init(ddev);
 
