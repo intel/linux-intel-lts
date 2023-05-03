@@ -43,6 +43,3 @@
 
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
-
-# CVE-2023-1989
-0001-Bluetooth-btsdio-fix-use-after-free-bug-in-btsdio_re.patch
