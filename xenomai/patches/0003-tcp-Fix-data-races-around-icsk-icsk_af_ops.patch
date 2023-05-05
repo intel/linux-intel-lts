@@ -1,7 +1,7 @@
-From ba3cb2dc9b060104fc620b3507375f4b2a1587c1 Mon Sep 17 00:00:00 2001
+From 1b640ac2f0abf6382863b8b181f7413157890f30 Mon Sep 17 00:00:00 2001
 From: Kuniyuki Iwashima <kuniyu@amazon.com>
 Date: Thu, 6 Oct 2022 11:53:49 -0700
-Subject: [PATCH] tcp: Fix data races around icsk->icsk_af_ops.
+Subject: [PATCH 3/3] tcp: Fix data races around icsk->icsk_af_ops.
 
 setsockopt(IPV6_ADDRFORM) and tcp_v6_connect() change icsk->icsk_af_ops
 under lock_sock(), but tcp_(get|set)sockopt() read it locklessly.  To
@@ -52,15 +52,15 @@ Signed-off-by: Kuniyuki Iwashima <kuniyu@amazon.com>
 Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 ---
  net/ipv4/tcp.c           | 10 ++++++----
- net/ipv6/ipv6_sockglue.c |  3 ++-
+ net/ipv6/ipv6_sockglue.c |  4 ++--
  net/ipv6/tcp_ipv6.c      |  6 ++++--
- 3 files changed, 12 insertions(+), 7 deletions(-)
+ 3 files changed, 12 insertions(+), 8 deletions(-)
 
 diff --git a/net/ipv4/tcp.c b/net/ipv4/tcp.c
-index bfeb05f62b94..c8d0fbc3c5c7 100644
+index cc588bc2b11d..10dad4225465 100644
 --- a/net/ipv4/tcp.c
 +++ b/net/ipv4/tcp.c
-@@ -3448,8 +3448,9 @@ int tcp_setsockopt(struct sock *sk, int level, int optname, sockptr_t optval,
+@@ -3449,8 +3449,9 @@ int tcp_setsockopt(struct sock *sk, int level, int optname, sockptr_t optval,
  	const struct inet_connection_sock *icsk = inet_csk(sk);
  
  	if (level != SOL_TCP)
@@ -72,34 +72,37 @@ index bfeb05f62b94..c8d0fbc3c5c7 100644
  	return do_tcp_setsockopt(sk, level, optname, optval, optlen);
  }
  EXPORT_SYMBOL(tcp_setsockopt);
-@@ -3993,8 +3994,9 @@ int tcp_getsockopt(struct sock *sk, int level, int optname, char __user *optval,
+@@ -3994,8 +3995,9 @@ int tcp_getsockopt(struct sock *sk, int level, int optname, char __user *optval,
  	struct inet_connection_sock *icsk = inet_csk(sk);
  
  	if (level != SOL_TCP)
 -		return icsk->icsk_af_ops->getsockopt(sk, level, optname,
 -						     optval, optlen);
 +		/* Paired with WRITE_ONCE() in do_ipv6_setsockopt() and tcp_v6_connect() */
-+		return READ_ONCE(icsk->icsk_af_ops)->getsockopt(sk, level, optname,
-+								optval, optlen);
++                return READ_ONCE(icsk->icsk_af_ops)->getsockopt(sk, level, optname,
++                                                                optval, optlen);
  	return do_tcp_getsockopt(sk, level, optname, optval, optlen);
  }
  EXPORT_SYMBOL(tcp_getsockopt);
 diff --git a/net/ipv6/ipv6_sockglue.c b/net/ipv6/ipv6_sockglue.c
-index 483c901542a1..c280ff9d5a18 100644
+index 265a2cd278cb..38adde80e2f2 100644
 --- a/net/ipv6/ipv6_sockglue.c
 +++ b/net/ipv6/ipv6_sockglue.c
-@@ -476,7 +476,8 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
- 
+@@ -479,10 +479,10 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
+ 				sock_prot_inuse_add(net, sk->sk_prot, -1);
+ 				sock_prot_inuse_add(net, &tcp_prot, 1);
+ 				local_bh_enable();
+-
  				/* Paired with READ_ONCE(sk->sk_prot) in inet6_stream_ops */
  				WRITE_ONCE(sk->sk_prot, &tcp_prot);
 -				icsk->icsk_af_ops = &ipv4_specific;
 +				/* Paired with READ_ONCE() in tcp_(get|set)sockopt() */
-+				WRITE_ONCE(icsk->icsk_af_ops, &ipv4_specific);
++                                WRITE_ONCE(icsk->icsk_af_ops, &ipv4_specific);
  				sk->sk_socket->ops = &inet_stream_ops;
  				sk->sk_family = PF_INET;
  				tcp_sync_mss(sk, icsk->icsk_pmtu_cookie);
 diff --git a/net/ipv6/tcp_ipv6.c b/net/ipv6/tcp_ipv6.c
-index 8d91f36cb11b..e87c537493d9 100644
+index c599e14be414..b728414ce4e7 100644
 --- a/net/ipv6/tcp_ipv6.c
 +++ b/net/ipv6/tcp_ipv6.c
 @@ -237,7 +237,8 @@ static int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,

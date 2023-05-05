@@ -1,7 +1,7 @@
-From 411d728a44c1f2564b15fabe5769fc97b697998d Mon Sep 17 00:00:00 2001
+From 3b1d74cd25bb745b68be636f6f841bd739424e6b Mon Sep 17 00:00:00 2001
 From: Jeremy Cline <jcline@redhat.com>
 Date: Wed, 25 Nov 2020 15:26:47 -0500
-Subject: [PATCH 03/12] drm/nouveau: Add a dedicated mutex for the clients list
+Subject: [PATCH 2/3] drm/nouveau: Add a dedicated mutex for the clients list
 
 Rather than protecting the nouveau_drm clients list with the lock within
 the "client" nouveau_cli, add a dedicated lock to serialize access to
@@ -18,10 +18,10 @@ Signed-off-by: Jeremy Cline <jcline@redhat.com>
  2 files changed, 11 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/gpu/drm/nouveau/nouveau_drm.c b/drivers/gpu/drm/nouveau/nouveau_drm.c
-index 906c55e10d055..14db1598f2825 100644
+index af280bb730f3..3e866a2af538 100644
 --- a/drivers/gpu/drm/nouveau/nouveau_drm.c
 +++ b/drivers/gpu/drm/nouveau/nouveau_drm.c
-@@ -562,6 +562,7 @@ nouveau_drm_device_init(struct drm_device *dev)
+@@ -557,6 +557,7 @@ nouveau_drm_device_init(struct drm_device *dev)
  		nvkm_dbgopt(nouveau_debug, "DRM");
  
  	INIT_LIST_HEAD(&drm->clients);
@@ -29,7 +29,7 @@ index 906c55e10d055..14db1598f2825 100644
  	spin_lock_init(&drm->tile.lock);
  
  	/* workaround an odd issue on nvc1 by disabling the device's
-@@ -659,6 +660,7 @@ nouveau_drm_device_fini(struct drm_device *dev)
+@@ -654,6 +655,7 @@ nouveau_drm_device_fini(struct drm_device *dev)
  	nouveau_cli_fini(&drm->client);
  	nouveau_cli_fini(&drm->master);
  	nvif_parent_dtor(&drm->parent);
@@ -37,7 +37,7 @@ index 906c55e10d055..14db1598f2825 100644
  	kfree(drm);
  }
  
-@@ -1092,9 +1094,9 @@ nouveau_drm_open(struct drm_device *dev, struct drm_file *fpriv)
+@@ -1087,9 +1089,9 @@ nouveau_drm_open(struct drm_device *dev, struct drm_file *fpriv)
  
  	fpriv->driver_priv = cli;
  
@@ -49,7 +49,7 @@ index 906c55e10d055..14db1598f2825 100644
  
  done:
  	if (ret && cli) {
-@@ -1120,9 +1122,9 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
+@@ -1115,9 +1117,9 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
  		nouveau_abi16_fini(cli->abi16);
  	mutex_unlock(&cli->mutex);
  
@@ -62,7 +62,7 @@ index 906c55e10d055..14db1598f2825 100644
  	nouveau_cli_fini(cli);
  	kfree(cli);
 diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
-index ba65f136cf481..b2a970aa9bf4b 100644
+index ba65f136cf48..b2a970aa9bf4 100644
 --- a/drivers/gpu/drm/nouveau/nouveau_drv.h
 +++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
 @@ -139,6 +139,11 @@ struct nouveau_drm {
@@ -78,5 +78,5 @@ index ba65f136cf481..b2a970aa9bf4b 100644
  
  	struct {
 -- 
-2.27.0
+2.17.1
 

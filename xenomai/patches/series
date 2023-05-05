@@ -1,9 +1,16 @@
-# CVE Patches to apply
+# CVE-2020-16120
+0001-ovl-do-not-fail-because-of-O_NOATIME.patch
+
+# CVE-2020-24504
+0001-ice-create-scheduler-aggregator-node-config-and-move.patch
+
+# CVE-2021-32078
+0001-ARM-footbridge-remove-personal-server-platform.patch
 
 # CVE-2020-27820
-0002-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
-0003-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
-0004-drm-nouveau-clean-up-all-clients-on-device-removal.patch
+0001-drm-nouveau-use-drm_dev_unplug-during-device-removal.patch
+0002-drm-nouveau-Add-a-dedicated-mutex-for-the-clients-li.patch
+0003-drm-nouveau-clean-up-all-clients-on-device-removal.patch
 
 # CVE-2021-44879
 0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
@@ -12,51 +19,111 @@
 # CVE-2022-1280
 0001-drm-drm_file-struct-kABI-compatibility-workaround.patch
 
-# CVE-2021-33061
-0001-ixgbe-add-the-ability-for-the-PF-to-disable-VF-link-.patch
-0002-ixgbe-add-improvement-for-MDD-response-functionality.patch
-0003-ixgbevf-add-disable-link-state.patch
-0004-ixgbevf-Rename-MSGTYPE-to-SUCCESS-and-FAILURE.patch
-
-# CVE-2020-24504
-0001-ice-create-scheduler-aggregator-node-config-and-move.patch
-
 # CVE-2022-39189
 0001-KVM-x86-do-not-report-a-vCPU-as-preempted-outside-in.patch
 
-# CVE-2021-3759
-0001-memcg-enable-accounting-of-ipc-resources.patch
-
-# CVE-2022-3623
-0001-mm-hugetlb-fix-races-when-looking-up-a-CONT-PTE-PMD-.patch
-
-# CVE-2022-42896
-0001-Bluetooth-L2CAP-Fix-accepting-connection-request-for.patch
-
-# CVE-2022-42895
-0001-Bluetooth-L2CAP-Fix-attempting-to-access-uninitializ.patch
-
-# CVE-2022-3545
-0001-nfp-fix-use-after-free-in-area_cache_get.patch
-
 # CVE-2022-3567
+# CVE-2022-3566
 0001-ipv6-annotate-some-data-races-around-sk-sk_prot.patch
 0002-ipv6-Fix-data-races-around-sk-sk_prot.patch
+0003-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
 
-# CVE-2022-3566
-0001-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
+# CVE-2022-2196
+0001-KVM-VMX-Execute-IBPB-on-emulated-VM-exit-when-guest-.patch
 
-# CVE-2022-4378
-0001-proc-proc_skip_spaces-shouldn-t-think-it-is-working-.patch
+# CVE-2022-4379
+0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
 
-# CVE-2022-3628
-0001-wifi-brcmfmac-Fix-potential-buffer-overflow-in-brcmf.patch
+# CVE-2023-20928
+0001-android-binder-stop-saving-a-pointer-to-the-VMA.patch
 
-# CVE-2022-3524
-0001-tcp-udp-Fix-memory-leak-in-ipv6_renew_options.patch
+# CVE-2022-3108
+0001-drm-amdkfd-Check-for-null-pointer-after-calling-kmem.patch
 
-# CVE-2022-3521
-0001-kcm-avoid-potential-race-in-kcm_tx_work.patch
+# CVE-2023-0597
+0001-x86-mm-Randomize-per-cpu-entry-area.patch
 
-# CVE-2022-47946
-0001-io_uring-kill-goto-error-handling-in-io_sqpoll_wait_.patch
+# CVE-2023-26545
+0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
+
+# CVE-2023-23000
+0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
+
+# CVE-2022-4269
+0001-act_mirred-use-the-backlog-for-nested-calls-to-mirre.patch
+
+# CVE-2023-22998
+0001-drm-virtio-Fix-NULL-vs-IS_ERR-checking-in-virtio_gpu.patch
+
+# CVE-2023-22998
+0001-drm-i915-gvt-fix-double-free-bug-in-split_2MB_gtt_en.patch
+
+# CVE-2023-1281
+0001-net-sched-tcindex-update-imperfect-hash-filters-resp.patch
+
+# CVE-2023-1076
+0001-tun-tun_chr_open-correctly-initialize-socket-uid.patch
+0002-net-add-sock_init_data_uid.patch
+
+# CVE-2023-1079
+0001-HID-asus-use-spinlock-to-protect-concurrent-accesses.patch
+0002-HID-asus-use-spinlock-to-safely-schedule-workers.patch
+
+# CVE-2023-1077
+0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
+
+# CVE-2023-1195
+0001-cifs-fix-use-after-free-caused-by-invalid-pointer-ho.patch
+
+# CVE-2023-1118
+0001-media-rc-Fix-use-after-free-bugs-caused-by-ene_tx_ir.patch
+
+# CVE-2023-26242
+0001-fpga-dfl-afu-region-Add-overflow-checks-for-region-s.patch
+
+# CVE-2023-25012
+0001-HID-bigben_remove-manually-unregister-leds.patch
+0002-HID-asus_remove-manually-unregister-led.patch
+0003-HID-sony_remove-manually-unregister-leds.patch
+
+# CVE-2022-44032
+0001-char-pcmcia-cm4000_cs-Fix-use-after-free-in-cm4000_f.patch
+
+# CVE-2022-44033
+0001-char-pcmcia-cm4040_cs-Fix-use-after-free-in-reader_f.patch
+
+# CVE-2022-44034
+0001-char-pcmcia-scr24x_cs-Fix-use-after-free-in-scr24x_f.patch
+
+# CVE-2023-28466
+0001-net-tls-fix-possible-race-condition-between-do_tls_g.patch
+
+# CVE-2023-1380
+0001-wifi-brcmfmac-slab-out-of-bounds-read-in-brcmf_get_a.patch
+
+# CVE-2023-28464
+0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
+
+# CVE-2023-1670
+0001-xirc2ps_cs-Fix-use-after-free-bug-in-xirc2ps_detach.patch
+
+# CVE-2023-30456
+0001-KVM-nVMX-add-missing-consistency-checks-for-CR0-and-.patch
+
+# CVE-2023-1989
+0001-Bluetooth-btsdio-fix-use-after-free-bug-in-btsdio_re.patch
+
+# CVE-2023-1829
+0001-net-sched-Retire-tcindex-classifier.patch
+
+# CVE-2023-1513
+0001-kvm-initialize-all-of-the-kvm_debugregs-structure-be.patch
+
+# CVE-2023-1611
+0001-btrfs-fix-race-between-quota-disable-and-quota-assig.patch
+
+# CVE-2023-1990
+0001-nfc-st-nci-Fix-use-after-free-bug-in-ndlc_remove-due.patch
+
+# CVE-2023-1855
+0001-hwmon-xgene-Fix-use-after-free-bug-in-xgene_hwmon_re.patch

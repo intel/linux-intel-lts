@@ -1,7 +1,7 @@
-From 3a1207a630717733bea0b64d141552cf70dc4c83 Mon Sep 17 00:00:00 2001
+From c82617007c5946e7707c030fd16b27720c3d0a23 Mon Sep 17 00:00:00 2001
 From: Kuniyuki Iwashima <kuniyu@amazon.com>
 Date: Thu, 6 Oct 2022 11:53:48 -0700
-Subject: [PATCH 2/2] ipv6: Fix data races around sk->sk_prot.
+Subject: [PATCH 2/3] ipv6: Fix data races around sk->sk_prot.
 
 Commit 086d49058cd8 ("ipv6: annotate some data-races around sk->sk_prot")
 fixed some data-races around sk->sk_prot but it was not enough.
@@ -44,7 +44,7 @@ index 1bb6a003323b..424c33e88618 100644
  EXPORT_SYMBOL(sock_common_setsockopt);
  
 diff --git a/net/ipv4/af_inet.c b/net/ipv4/af_inet.c
-index a733ce1a3f8f..628c72e66406 100644
+index 48223c264991..715bf84d7bdb 100644
 --- a/net/ipv4/af_inet.c
 +++ b/net/ipv4/af_inet.c
 @@ -559,22 +559,27 @@ int inet_dgram_connect(struct socket *sock, struct sockaddr *uaddr,
@@ -111,10 +111,10 @@ index a733ce1a3f8f..628c72e66406 100644
  }
  EXPORT_SYMBOL(inet_sendpage);
 diff --git a/net/ipv6/ipv6_sockglue.c b/net/ipv6/ipv6_sockglue.c
-index 6aab64e931dd..483c901542a1 100644
+index 4e2e6c4cb9a2..265a2cd278cb 100644
 --- a/net/ipv6/ipv6_sockglue.c
 +++ b/net/ipv6/ipv6_sockglue.c
-@@ -474,7 +474,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
+@@ -480,7 +480,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
  				sock_prot_inuse_add(net, &tcp_prot, 1);
  				local_bh_enable();
  
@@ -123,7 +123,7 @@ index 6aab64e931dd..483c901542a1 100644
  				WRITE_ONCE(sk->sk_prot, &tcp_prot);
  				icsk->icsk_af_ops = &ipv4_specific;
  				sk->sk_socket->ops = &inet_stream_ops;
-@@ -490,7 +490,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
+@@ -496,7 +496,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
  				sock_prot_inuse_add(net, prot, 1);
  				local_bh_enable();
  

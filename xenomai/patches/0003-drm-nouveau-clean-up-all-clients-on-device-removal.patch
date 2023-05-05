@@ -1,7 +1,7 @@
-From ace55e49305be1784fdf29bd18f6bc00d97a3ac8 Mon Sep 17 00:00:00 2001
+From 1d78ebc1a786d183f44205444e60c4605ecdd883 Mon Sep 17 00:00:00 2001
 From: Jeremy Cline <jcline@redhat.com>
 Date: Wed, 25 Nov 2020 15:26:48 -0500
-Subject: [PATCH 04/12] drm/nouveau: clean up all clients on device removal
+Subject: [PATCH 3/3] drm/nouveau: clean up all clients on device removal
 
 The postclose handler can run after the device has been removed (or the
 driver has been unbound) since userspace clients are free to hold the
@@ -34,10 +34,10 @@ Signed-off-by: Jeremy Cline <jcline@redhat.com>
  1 file changed, 30 insertions(+)
 
 diff --git a/drivers/gpu/drm/nouveau/nouveau_drm.c b/drivers/gpu/drm/nouveau/nouveau_drm.c
-index 14db1598f2825..24b2a38f281ec 100644
+index 3e866a2af538..71c46769ec8d 100644
 --- a/drivers/gpu/drm/nouveau/nouveau_drm.c
 +++ b/drivers/gpu/drm/nouveau/nouveau_drm.c
-@@ -633,6 +633,7 @@ nouveau_drm_device_init(struct drm_device *dev)
+@@ -628,6 +628,7 @@ nouveau_drm_device_init(struct drm_device *dev)
  static void
  nouveau_drm_device_fini(struct drm_device *dev)
  {
@@ -45,7 +45,7 @@ index 14db1598f2825..24b2a38f281ec 100644
  	struct nouveau_drm *drm = nouveau_drm(dev);
  
  	if (nouveau_pmops_runtime()) {
-@@ -657,6 +658,24 @@ nouveau_drm_device_fini(struct drm_device *dev)
+@@ -652,6 +653,24 @@ nouveau_drm_device_fini(struct drm_device *dev)
  	nouveau_ttm_fini(drm);
  	nouveau_vga_fini(drm);
  
@@ -70,7 +70,7 @@ index 14db1598f2825..24b2a38f281ec 100644
  	nouveau_cli_fini(&drm->client);
  	nouveau_cli_fini(&drm->master);
  	nvif_parent_dtor(&drm->parent);
-@@ -1114,6 +1133,16 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
+@@ -1109,6 +1128,16 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
  {
  	struct nouveau_cli *cli = nouveau_cli(fpriv);
  	struct nouveau_drm *drm = nouveau_drm(dev);
@@ -87,7 +87,7 @@ index 14db1598f2825..24b2a38f281ec 100644
  
  	pm_runtime_get_sync(dev->dev);
  
-@@ -1130,6 +1159,7 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
+@@ -1125,6 +1154,7 @@ nouveau_drm_postclose(struct drm_device *dev, struct drm_file *fpriv)
  	kfree(cli);
  	pm_runtime_mark_last_busy(dev->dev);
  	pm_runtime_put_autosuspend(dev->dev);
@@ -96,5 +96,5 @@ index 14db1598f2825..24b2a38f281ec 100644
  
  static const struct drm_ioctl_desc
 -- 
-2.27.0
+2.17.1
 
