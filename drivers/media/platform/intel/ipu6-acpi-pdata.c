@@ -440,9 +440,8 @@ void update_pdata(struct device *dev,
 				print_serdes_subdev(acpi_subdev);
 			}
 		}
-	}
-	/* does not have existing pdata */
-	else {
+	} else {
+		/* does not have existing pdata */
 		/* print new subdev */
 		if (connect == TYPE_DIRECT) {
 			dev_dbg(dev, "New sensor subdev\n");
@@ -610,7 +609,8 @@ int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 
 		/* serdes_subdev_info */
 		serdes_sdinfo[i].rx_port = i;
-		serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr + serdes_info.sensor_num + i;
+		serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr +
+						serdes_info.sensor_num + i;
 		serdes_sdinfo[i].phy_i2c_addr = serdes_info.phy_i2c_addr;
 		serdes_sdinfo[i].suffix = SUFFIX_BASE + serdes_info.sensor_num + i + 1;
 	}
@@ -683,7 +683,8 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 	return 0;
 }
 
-void set_serdes_info(struct device *dev, char *sensor_name, const char *serdes_name, struct sensor_bios_data *cam_data)
+void set_serdes_info(struct device *dev, char *sensor_name,
+	const char *serdes_name, struct sensor_bios_data *cam_data)
 {
 	/* pprunit as num of sensor connected to deserializer */
 	serdes_info.rx_port = cam_data->pprunit;

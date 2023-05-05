@@ -678,7 +678,7 @@ static int get_external_facing_format(struct ipu_isys_pipeline *ip,
 	}
 	sd = media_entity_to_v4l2_subdev(ip->external->entity);
 	external_facing = (strncmp(sd->name, IPU_ISYS_ENTITY_PREFIX,
-			   strlen(IPU_ISYS_ENTITY_PREFIX)) == 0) ?
+					strlen(IPU_ISYS_ENTITY_PREFIX)) == 0) ?
 			   ip->external :
 			   media_pad_remote_pad_first(ip->external);
 	if (WARN_ON(!external_facing)) {
