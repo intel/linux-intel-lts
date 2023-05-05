@@ -28,9 +28,6 @@
 0002-ipv6-Fix-data-races-around-sk-sk_prot.patch
 0003-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
 
-# CVE-2022-2196
-0001-KVM-VMX-Execute-IBPB-on-emulated-VM-exit-when-guest-.patch
-
 # CVE-2022-4379
 0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
 
@@ -43,9 +40,6 @@
 # CVE-2023-0597
 0001-x86-mm-Randomize-per-cpu-entry-area.patch
 
-# CVE-2023-26545
-0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
-
 # CVE-2023-23000
 0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
 
@@ -57,20 +51,6 @@
 
 # CVE-2023-22998
 0001-drm-i915-gvt-fix-double-free-bug-in-split_2MB_gtt_en.patch
-
-# CVE-2023-1281
-0001-net-sched-tcindex-update-imperfect-hash-filters-resp.patch
-
-# CVE-2023-1076
-0001-tun-tun_chr_open-correctly-initialize-socket-uid.patch
-0002-net-add-sock_init_data_uid.patch
-
-# CVE-2023-1079
-0001-HID-asus-use-spinlock-to-protect-concurrent-accesses.patch
-0002-HID-asus-use-spinlock-to-safely-schedule-workers.patch
-
-# CVE-2023-1077
-0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
 
 # CVE-2023-1195
 0001-cifs-fix-use-after-free-caused-by-invalid-pointer-ho.patch
