@@ -134,6 +134,7 @@ enum intel_platform {
 /* MTL */
 #define INTEL_SUBPLATFORM_M	0
 #define INTEL_SUBPLATFORM_P	1
+#define INTEL_SUBPLATFORM_ARL_P	2
 
 enum intel_ppgtt_type {
 	INTEL_PPGTT_NONE = I915_GEM_PPGTT_NONE,
