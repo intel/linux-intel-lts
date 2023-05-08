@@ -52,6 +52,7 @@ static struct intel_uncore *fence_to_uncore(struct i915_fence_reg *fence)
 
 static void i965_write_fence_reg(struct i915_fence_reg *fence)
 {
+	struct intel_uncore *uncore = fence_to_uncore(fence);
 	i915_reg_t fence_reg_lo, fence_reg_hi;
 	int fence_pitch_shift;
 	u64 val;
@@ -82,9 +83,17 @@ static void i965_write_fence_reg(struct i915_fence_reg *fence)
 		val |= I965_FENCE_REG_VALID;
 	}
 
-	if (!pipelined) {
-		struct intel_uncore *uncore = fence_to_uncore(fence);
-
+	if (intel_vgpu_active(fence_to_i915(fence))) {
+		/* Use the 64-bit RW to write fence reg on VGPU mode.
+		 * The GVT-g can trap the written val of VGPU to program the
+		 * fence reg. And the fence write in gvt-g follows the
+		 * sequence of off/read/double-write/read. This assures that
+		 * the fence reg is configured as expected.
+		 * At the same time the 64-bit op can help to reduce the num
+		 * of VGPU trap for the fence reg.
+		 */
+		intel_uncore_write64_fw(uncore, fence_reg_lo, val);
+	} else if (!pipelined) {
 		/*
 		 * To w/a incoherency with non-atomic 64-bit register updates,
 		 * we split the 64-bit update into two 32-bit writes. In order
