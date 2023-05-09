@@ -99,3 +99,6 @@
 
 # CVE-2023-1195
 0001-cifs-fix-use-after-free-caused-by-invalid-pointer-ho.patch
+
+# CVE-2023-1582
+0001-fs-proc-task_mmu.c-don-t-read-mapcount-for-migration.patch
