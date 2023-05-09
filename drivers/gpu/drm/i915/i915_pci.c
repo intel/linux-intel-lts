@@ -30,6 +30,7 @@
 #include "display/intel_display_driver.h"
 #include "gt/intel_gt_regs.h"
 #include "gt/intel_sa_media.h"
+#include "gem/i915_gem_object_types.h"
 
 #include "i915_driver.h"
 #include "i915_drv.h"
@@ -164,6 +165,38 @@
 		.gamma_lut_tests = DRM_COLOR_LUT_NON_DECREASING, \
 	}
 
+#define LEGACY_CACHELEVEL \
+	.cachelevel_to_pat = { \
+		[I915_CACHE_NONE]   = 0, \
+		[I915_CACHE_LLC]    = 1, \
+		[I915_CACHE_L3_LLC] = 2, \
+		[I915_CACHE_WT]     = 3, \
+	}
+
+#define TGL_CACHELEVEL \
+	.cachelevel_to_pat = { \
+		[I915_CACHE_NONE]   = 3, \
+		[I915_CACHE_LLC]    = 0, \
+		[I915_CACHE_L3_LLC] = 0, \
+		[I915_CACHE_WT]     = 2, \
+	}
+
+#define PVC_CACHELEVEL \
+	.cachelevel_to_pat = { \
+		[I915_CACHE_NONE]   = 0, \
+		[I915_CACHE_LLC]    = 3, \
+		[I915_CACHE_L3_LLC] = 3, \
+		[I915_CACHE_WT]     = 2, \
+	}
+
+#define MTL_CACHELEVEL \
+	.cachelevel_to_pat = { \
+		[I915_CACHE_NONE]   = 2, \
+		[I915_CACHE_LLC]    = 3, \
+		[I915_CACHE_L3_LLC] = 3, \
+		[I915_CACHE_WT]     = 1, \
+	}
+
 /* Keep in gen based order, and chronological order within a gen */
 
 #define GEN_DEFAULT_PAGE_SIZES \
@@ -189,11 +222,13 @@
 	.has_snoop = true, \
 	.has_coherent_ggtt = false, \
 	.dma_mask_size = 32, \
+	.max_pat_index = 3, \
 	I9XX_PIPE_OFFSETS, \
 	I9XX_CURSOR_OFFSETS, \
 	I9XX_COLORS, \
 	GEN_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 #define I845_FEATURES \
 	GEN(2), \
@@ -210,11 +245,13 @@
 	.has_snoop = true, \
 	.has_coherent_ggtt = false, \
 	.dma_mask_size = 32, \
+	.max_pat_index = 3, \
 	I845_PIPE_OFFSETS, \
 	I845_CURSOR_OFFSETS, \
 	I845_COLORS, \
 	GEN_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 static const struct intel_device_info i830_info = {
 	I830_FEATURES,
@@ -249,11 +286,13 @@ static const struct intel_device_info i865g_info = {
 	.has_snoop = true, \
 	.has_coherent_ggtt = true, \
 	.dma_mask_size = 32, \
+	.max_pat_index = 3, \
 	I9XX_PIPE_OFFSETS, \
 	I9XX_CURSOR_OFFSETS, \
 	I9XX_COLORS, \
 	GEN_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 static const struct intel_device_info i915g_info = {
 	GEN3_FEATURES,
@@ -341,11 +380,13 @@ static const struct intel_device_info pnv_m_info = {
 	.has_snoop = true, \
 	.has_coherent_ggtt = true, \
 	.dma_mask_size = 36, \
+	.max_pat_index = 3, \
 	I9XX_PIPE_OFFSETS, \
 	I9XX_CURSOR_OFFSETS, \
 	I9XX_COLORS, \
 	GEN_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 static const struct intel_device_info i965g_info = {
 	GEN4_FEATURES,
@@ -395,11 +436,13 @@ static const struct intel_device_info gm45_info = {
 	/* ilk does support rc6, but we do not implement [power] contexts */ \
 	.has_rc6 = 0, \
 	.dma_mask_size = 36, \
+	.max_pat_index = 3, \
 	I9XX_PIPE_OFFSETS, \
 	I9XX_CURSOR_OFFSETS, \
 	ILK_COLORS, \
 	GEN_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 static const struct intel_device_info ilk_d_info = {
 	GEN5_FEATURES,
@@ -429,13 +472,15 @@ static const struct intel_device_info ilk_m_info = {
 	.has_rc6p = 0, \
 	.has_rps = true, \
 	.dma_mask_size = 40, \
+	.max_pat_index = 3, \
 	.__runtime.ppgtt_type = INTEL_PPGTT_ALIASING, \
 	.__runtime.ppgtt_size = 31, \
 	I9XX_PIPE_OFFSETS, \
 	I9XX_CURSOR_OFFSETS, \
 	ILK_COLORS, \
 	GEN_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 #define SNB_D_PLATFORM \
 	GEN6_FEATURES, \
@@ -482,13 +527,15 @@ static const struct intel_device_info snb_m_gt2_info = {
 	.has_reset_engine = true, \
 	.has_rps = true, \
 	.dma_mask_size = 40, \
+	.max_pat_index = 3, \
 	.__runtime.ppgtt_type = INTEL_PPGTT_ALIASING, \
 	.__runtime.ppgtt_size = 31, \
 	IVB_PIPE_OFFSETS, \
 	IVB_CURSOR_OFFSETS, \
 	IVB_COLORS, \
 	GEN_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 #define IVB_D_PLATFORM \
 	GEN7_FEATURES, \
@@ -542,6 +589,7 @@ static const struct intel_device_info vlv_info = {
 	.display.has_gmch = 1,
 	.display.has_hotplug = 1,
 	.dma_mask_size = 40,
+	.max_pat_index = 3,
 	.__runtime.ppgtt_type = INTEL_PPGTT_ALIASING,
 	.__runtime.ppgtt_size = 31,
 	.has_snoop = true,
@@ -553,6 +601,7 @@ static const struct intel_device_info vlv_info = {
 	I9XX_COLORS,
 	GEN_DEFAULT_PAGE_SIZES,
 	GEN_DEFAULT_REGIONS,
+	LEGACY_CACHELEVEL,
 };
 
 #define G75_FEATURES  \
@@ -640,6 +689,7 @@ static const struct intel_device_info chv_info = {
 	.has_logical_ring_contexts = 1,
 	.display.has_gmch = 1,
 	.dma_mask_size = 39,
+	.max_pat_index = 3,
 	.__runtime.ppgtt_type = INTEL_PPGTT_FULL,
 	.__runtime.ppgtt_size = 32,
 	.has_reset_engine = 1,
@@ -651,6 +701,7 @@ static const struct intel_device_info chv_info = {
 	CHV_COLORS,
 	GEN_DEFAULT_PAGE_SIZES,
 	GEN_DEFAULT_REGIONS,
+	LEGACY_CACHELEVEL,
 };
 
 #define GEN9_DEFAULT_PAGE_SIZES \
@@ -732,11 +783,13 @@ static const struct intel_device_info skl_gt4_info = {
 	.has_snoop = true, \
 	.has_coherent_ggtt = false, \
 	.display.has_ipc = 1, \
+	.max_pat_index = 3, \
 	HSW_PIPE_OFFSETS, \
 	IVB_CURSOR_OFFSETS, \
 	IVB_COLORS, \
 	GEN9_DEFAULT_PAGE_SIZES, \
-	GEN_DEFAULT_REGIONS
+	GEN_DEFAULT_REGIONS, \
+	LEGACY_CACHELEVEL
 
 static const struct intel_device_info bxt_info = {
 	GEN9_LP_FEATURES,
@@ -890,9 +943,11 @@ static const struct intel_device_info jsl_info = {
 		[TRANSCODER_DSI_1] = TRANSCODER_DSI1_OFFSET, \
 	}, \
 	TGL_CURSOR_OFFSETS, \
+	TGL_CACHELEVEL, \
 	.has_global_mocs = 1, \
 	.has_pxp = 1, \
-	.display.has_dsb = 1
+	.display.has_dsb = 1, \
+	.max_pat_index = 3
 
 static const struct intel_device_info tgl_info = {
 	GEN12_FEATURES,
@@ -1014,6 +1069,7 @@ static const struct intel_device_info adl_p_info = {
 	.__runtime.graphics.ip.ver = 12, \
 	.__runtime.graphics.ip.rel = 50, \
 	XE_HP_PAGE_SIZES, \
+	TGL_CACHELEVEL, \
 	.dma_mask_size = 46, \
 	.has_3d_pipeline = 1, \
 	.has_64bit_reloc = 1, \
@@ -1032,6 +1088,7 @@ static const struct intel_device_info adl_p_info = {
 	.has_reset_engine = 1, \
 	.has_rps = 1, \
 	.has_runtime_pm = 1, \
+	.max_pat_index = 3, \
 	.__runtime.ppgtt_size = 48, \
 	.__runtime.ppgtt_type = INTEL_PPGTT_FULL
 
@@ -1108,11 +1165,13 @@ static const struct intel_device_info pvc_info = {
 	PLATFORM(INTEL_PONTEVECCHIO),
 	NO_DISPLAY,
 	.has_flat_ccs = 0,
+	.max_pat_index = 7,
 	.__runtime.platform_engine_mask =
 		BIT(BCS0) |
 		BIT(VCS0) |
 		BIT(CCS0) | BIT(CCS1) | BIT(CCS2) | BIT(CCS3),
 	.require_force_probe = 1,
+	PVC_CACHELEVEL,
 };
 
 #define XE_LPDP_FEATURES	\
@@ -1152,9 +1211,11 @@ static const struct intel_device_info mtl_info = {
 	.has_llc = 0,
 	.has_mslice_steering = 0,
 	.has_snoop = 1,
+	.max_pat_index = 4,
 	.__runtime.memory_regions = REGION_SMEM | REGION_STOLEN_LMEM,
 	.__runtime.platform_engine_mask = BIT(RCS0) | BIT(BCS0) | BIT(CCS0),
 	.require_force_probe = 1,
+	MTL_CACHELEVEL,
 };
 
 #undef PLATFORM
