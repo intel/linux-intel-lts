@@ -37,8 +37,7 @@
 #include <linux/mem_encrypt.h>
 #include <linux/pci.h>
 
-#include <asm/fb.h>
-
+#include <video/nomodeset.h>
 #include <video/vga.h>
 
     /*
