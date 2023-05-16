@@ -9,6 +9,7 @@ config VIDEO_INTEL_IPU6
 	select X86_DEV_DMA_OPS if X86
 	select VIDEOBUF2_DMA_CONTIG
 	select V4L2_FWNODE
+	select VIDEO_V4L2_SUBDEV_API
 	select PHYS_ADDR_T_64BIT
 	select COMMON_CLK
 	help
