@@ -1,6 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
-#
-# Makefile for the IPU3 cio2 and ImGU drivers
-#
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2010 - 2020 Intel Corporation.
 
-obj-y	+= ipu3/
+obj-$(CONFIG_VIDEO_INTEL_IPU6)	+= ipu6/

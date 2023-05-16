@@ -132,10 +132,19 @@ struct ishtp_device {
 	/* waitq for waiting for suspend response */
 	wait_queue_head_t suspend_wait;
 	bool suspend_flag;	/* Suspend is active */
+	bool suspend_to_d0i3;	/* Suspend to D0i3 state */
 
 	/* waitq for waiting for resume response */
 	wait_queue_head_t resume_wait;
-	bool resume_flag;	/*Resume is active */
+	bool resume_flag;	/* Resume is active */
+
+	/* waitq for waiting for D0_notify response */
+	wait_queue_head_t d0_wait;
+	uint32_t d0_flag;		/* D0 notify result */
+
+	/* waitq for waiting for RTD3 response */
+	wait_queue_head_t rtd3_wait;
+	uint32_t rtd3_flag;		/* RTD3 notify result */
 
 	/*
 	 * lock for the device, for everything that doesn't have
@@ -173,6 +182,11 @@ struct ishtp_device {
 	unsigned int rd_msg_fifo_head, rd_msg_fifo_tail;
 	spinlock_t rd_msg_spinlock;
 	struct work_struct bh_hbm_work;
+
+	/* time sync work */
+	#define ISHTP_SYNC_PERIOD_MAX 1024
+	unsigned long time_sync_period;
+	struct delayed_work time_sync_work;
 
 	/* IPC write queue */
 	struct list_head wr_processing_list, wr_free_list;

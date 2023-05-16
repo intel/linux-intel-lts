@@ -21,9 +21,11 @@
 #define INT3472_GPIO_TYPE_POWER_ENABLE				0x0b
 #define INT3472_GPIO_TYPE_CLK_ENABLE				0x0c
 #define INT3472_GPIO_TYPE_PRIVACY_LED				0x0d
+#define INT3472_GPIO_TYPE_READY_STAT				0x13
+#define INT3472_GPIO_TYPE_HDMI_DETECT				0x14
 
 #define INT3472_PDEV_MAX_NAME_LEN				23
-#define INT3472_MAX_SENSOR_GPIOS				3
+#define INT3472_MAX_SENSOR_GPIOS				4
 
 #define GPIO_REGULATOR_NAME_LENGTH				21
 #define GPIO_REGULATOR_SUPPLY_NAME_LENGTH			9
@@ -73,6 +75,7 @@ struct int3472_sensor_config {
 	const char *sensor_module_name;
 	struct regulator_consumer_supply supply_map;
 	const struct int3472_gpio_function_remap *function_maps;
+	const bool independent_clk_gpios;
 };
 
 struct int3472_discrete_device {
