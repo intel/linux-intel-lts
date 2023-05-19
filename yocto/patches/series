@@ -28,9 +28,6 @@
 0002-ipv6-Fix-data-races-around-sk-sk_prot.patch
 0003-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
 
-# CVE-2022-4379
-0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
-
 # CVE-2023-20928
 0001-android-binder-stop-saving-a-pointer-to-the-VMA.patch
 
