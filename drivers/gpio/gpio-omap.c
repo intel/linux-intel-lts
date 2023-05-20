@@ -56,7 +56,7 @@ struct gpio_bank {
 	u32 level_mask;
 	u32 toggle_mask;
 	hard_spinlock_t lock;
-	raw_spinlock_t wa_lock;
+	hard_spinlock_t wa_lock;
 	struct gpio_chip chip;
 	struct clk *dbck;
 	struct notifier_block nb;
