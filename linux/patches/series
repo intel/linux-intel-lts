@@ -38,8 +38,8 @@
 0003-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
 0004-media-ttusb-dec-Fix-memory-leak-in-ttusb_dec_exit_dv.patch
 
-# CVE-2023-1380
-0001-wifi-brcmfmac-slab-out-of-bounds-read-in-brcmf_get_a.patch
-
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
+
+# CVE-2023-21106
+0001-drm-msm-gpu-Fix-potential-double-free.patch
