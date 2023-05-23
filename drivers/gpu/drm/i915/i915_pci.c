@@ -640,8 +640,10 @@ static const struct intel_device_info jsl_info = {
 #define GEN12_FEATURES \
 	GEN11_FEATURES, \
 	GEN(12), \
+	TGL_CACHELEVEL, \
 	.has_global_mocs = 1, \
-	.has_pxp = 1
+	.has_pxp = 1, \
+	.max_pat_index = 3
 
 static const struct intel_device_info tgl_info = {
 	GEN12_FEATURES,
