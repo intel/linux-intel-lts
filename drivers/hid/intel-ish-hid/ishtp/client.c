@@ -678,6 +678,9 @@ static void ipc_tx_send(void *prm)
 			    list);
 	rem = cl_msg->send_buf.size - cl->tx_offs;
 
+	list_del_init(&cl_msg->list);
+	spin_unlock_irqrestore(&cl->tx_list_spinlock, tx_flags);
+
 	while (rem > 0) {
 		ishtp_hdr.host_addr = cl->host_client_id;
 		ishtp_hdr.fw_addr = cl->fw_client_id;
@@ -704,9 +707,6 @@ static void ipc_tx_send(void *prm)
 			rem = cl_msg->send_buf.size - cl->tx_offs;
 		}
 	}
-
-	list_del_init(&cl_msg->list);
-	spin_unlock_irqrestore(&cl->tx_list_spinlock, tx_flags);
 
 	spin_lock_irqsave(&cl->tx_free_list_spinlock, tx_free_flags);
 	list_add_tail(&cl_msg->list, &cl->tx_free_list.list);
