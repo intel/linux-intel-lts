@@ -5686,10 +5686,11 @@ __init int intel_pmu_init(void)
 	struct attribute **td_attr    = &empty_attrs;
 	struct attribute **mem_attr   = &empty_attrs;
 	struct attribute **tsx_attr   = &empty_attrs;
+	unsigned int fixed_mask, plat_id = 0, val[2];
 	union cpuid10_edx edx;
 	union cpuid10_eax eax;
 	union cpuid10_ebx ebx;
-	unsigned int fixed_mask;
+
 	bool pmem = false;
 	int version, i;
 	char *name;
@@ -6327,6 +6328,169 @@ __init int intel_pmu_init(void)
 
 	case INTEL_FAM6_ALDERLAKE:
 	case INTEL_FAM6_ALDERLAKE_L:
+		/*
+		 * Alder Lake has both Hybrid (E & P cores) and Non-Hybrid
+		 * (only E cores) architectures.
+		 *
+		 * Arizone Beach (AZB) is a derivate of ADL-M which has only
+		 * E-cores and use the same CPU ID of Hybrid Alder Lake
+		 * architecture.
+		 *
+		 * However, AZB has a unique Platform ID of value 0x6 to
+		 * differentiate between Non-Hybrid and Hybrid architectures.
+		 *
+		 * So, read the platform id to initialize PerfMon.
+		 */
+		if (boot_cpu_data.x86_model >= 5 ||
+		    boot_cpu_data.x86 > 6) {
+			/* get processor flags from MSR 0x17 */
+			native_rdmsr(MSR_IA32_PLATFORM_ID, val[0], val[1]);
+			plat_id = ((val[1] >> 18) & 7);
+			pr_info("ALDERLAKE Platform_ID = %d\n", plat_id);
+		}
+		if (plat_id != 0x6) {
+				/*
+			* Alder Lake has 2 types of CPU, core and atom.
+			*
+			* Initialize the common PerfMon capabilities here.
+			*/
+			x86_pmu.hybrid_pmu = kcalloc(X86_HYBRID_NUM_PMUS,
+							sizeof(struct x86_hybrid_pmu),
+							GFP_KERNEL);
+			if (!x86_pmu.hybrid_pmu)
+				return -ENOMEM;
+			static_branch_enable(&perf_is_hybrid);
+			x86_pmu.num_hybrid_pmus = X86_HYBRID_NUM_PMUS;
+
+			x86_pmu.pebs_aliases = NULL;
+			x86_pmu.pebs_prec_dist = true;
+			x86_pmu.pebs_block = true;
+			x86_pmu.flags |= PMU_FL_HAS_RSP_1;
+			x86_pmu.flags |= PMU_FL_NO_HT_SHARING;
+			x86_pmu.flags |= PMU_FL_PEBS_ALL;
+			x86_pmu.flags |= PMU_FL_INSTR_LATENCY;
+			x86_pmu.flags |= PMU_FL_MEM_LOADS_AUX;
+			x86_pmu.lbr_pt_coexist = true;
+			intel_pmu_pebs_data_source_adl();
+			x86_pmu.pebs_latency_data = adl_latency_data_small;
+			x86_pmu.num_topdown_events = 8;
+			x86_pmu.update_topdown_event = adl_update_topdown_event;
+			x86_pmu.set_topdown_event_period = adl_set_topdown_event_period;
+
+			x86_pmu.filter_match = intel_pmu_filter_match;
+			x86_pmu.get_event_constraints = adl_get_event_constraints;
+			x86_pmu.hw_config = adl_hw_config;
+			x86_pmu.limit_period = spr_limit_period;
+			x86_pmu.get_hybrid_cpu_type = adl_get_hybrid_cpu_type;
+			/*
+			* The rtm_abort_event is used to check whether to enable GPRs
+			* for the RTM abort event. Atom doesn't have the RTM abort
+			* event. There is no harmful to set it in the common
+			* x86_pmu.rtm_abort_event.
+			*/
+			x86_pmu.rtm_abort_event = X86_CONFIG(.event = 0xc9, .umask = 0x04);
+
+			td_attr = adl_hybrid_events_attrs;
+			mem_attr = adl_hybrid_mem_attrs;
+			tsx_attr = adl_hybrid_tsx_attrs;
+			extra_attr = boot_cpu_has(X86_FEATURE_RTM) ?
+				adl_hybrid_extra_attr_rtm : adl_hybrid_extra_attr;
+
+			/* Initialize big core specific PerfMon capabilities.*/
+			pmu = &x86_pmu.hybrid_pmu[X86_HYBRID_PMU_CORE_IDX];
+			pmu->name = "cpu_core";
+			pmu->cpu_type = hybrid_big;
+			pmu->late_ack = true;
+			if (cpu_feature_enabled(X86_FEATURE_HYBRID_CPU)) {
+				pmu->num_counters = x86_pmu.num_counters + 2;
+				pmu->num_counters_fixed = x86_pmu.num_counters_fixed + 1;
+			} else {
+				pmu->num_counters = x86_pmu.num_counters;
+				pmu->num_counters_fixed = x86_pmu.num_counters_fixed;
+			}
+
+			/*
+			* Quirk: For some Alder Lake machine, when all E-cores are disabled in
+			* a BIOS, the leaf 0xA will enumerate all counters of P-cores. However,
+			* the X86_FEATURE_HYBRID_CPU is still set. The above codes will
+			* mistakenly add extra counters for P-cores. Correct the number of
+			* counters here.
+			*/
+			if ((pmu->num_counters > 8) || (pmu->num_counters_fixed > 4)) {
+				pmu->num_counters = x86_pmu.num_counters;
+				pmu->num_counters_fixed = x86_pmu.num_counters_fixed;
+			}
+
+			pmu->max_pebs_events = min_t(unsigned int, MAX_PEBS_EVENTS, pmu->num_counters);
+			pmu->unconstrained = (struct event_constraint)
+						__EVENT_CONSTRAINT(0, (1ULL << pmu->num_counters) - 1,
+								0, pmu->num_counters, 0, 0);
+			pmu->intel_cap.capabilities = x86_pmu.intel_cap.capabilities;
+			pmu->intel_cap.perf_metrics = 1;
+			pmu->intel_cap.pebs_output_pt_available = 0;
+
+			memcpy(pmu->hw_cache_event_ids, spr_hw_cache_event_ids, sizeof(pmu->hw_cache_event_ids));
+			memcpy(pmu->hw_cache_extra_regs, spr_hw_cache_extra_regs, sizeof(pmu->hw_cache_extra_regs));
+			pmu->event_constraints = intel_spr_event_constraints;
+			pmu->pebs_constraints = intel_spr_pebs_event_constraints;
+			pmu->extra_regs = intel_spr_extra_regs;
+
+			/* Initialize Atom core specific PerfMon capabilities.*/
+			pmu = &x86_pmu.hybrid_pmu[X86_HYBRID_PMU_ATOM_IDX];
+			pmu->name = "cpu_atom";
+			pmu->cpu_type = hybrid_small;
+			pmu->mid_ack = true;
+			pmu->num_counters = x86_pmu.num_counters;
+			pmu->num_counters_fixed = x86_pmu.num_counters_fixed;
+			pmu->max_pebs_events = x86_pmu.max_pebs_events;
+			pmu->unconstrained = (struct event_constraint)
+						__EVENT_CONSTRAINT(0, (1ULL << pmu->num_counters) - 1,
+								0, pmu->num_counters, 0, 0);
+			pmu->intel_cap.capabilities = x86_pmu.intel_cap.capabilities;
+			pmu->intel_cap.perf_metrics = 0;
+			pmu->intel_cap.pebs_output_pt_available = 1;
+
+			memcpy(pmu->hw_cache_event_ids, glp_hw_cache_event_ids, sizeof(pmu->hw_cache_event_ids));
+			memcpy(pmu->hw_cache_extra_regs, tnt_hw_cache_extra_regs, sizeof(pmu->hw_cache_extra_regs));
+			pmu->hw_cache_event_ids[C(ITLB)][C(OP_READ)][C(RESULT_ACCESS)] = -1;
+			pmu->event_constraints = intel_slm_event_constraints;
+			pmu->pebs_constraints = intel_grt_pebs_event_constraints;
+			pmu->extra_regs = intel_grt_extra_regs;
+			pr_cont("Alderlake Hybrid events, ");
+			name = "alderlake_hybrid";
+
+		} else {
+			/* AlderLake M non-hybrid platform: AZB */
+				x86_pmu.mid_ack = true;
+			memcpy(hw_cache_event_ids, glp_hw_cache_event_ids,
+				sizeof(hw_cache_event_ids));
+			memcpy(hw_cache_extra_regs, tnt_hw_cache_extra_regs,
+				sizeof(hw_cache_extra_regs));
+			hw_cache_event_ids[C(ITLB)][C(OP_READ)][C(RESULT_ACCESS)] = -1;
+
+			x86_pmu.event_constraints = intel_slm_event_constraints;
+			x86_pmu.pebs_constraints = intel_grt_pebs_event_constraints;
+			x86_pmu.extra_regs = intel_grt_extra_regs;
+
+			x86_pmu.pebs_aliases = NULL;
+			x86_pmu.pebs_prec_dist = true;
+			x86_pmu.pebs_block = true;
+			x86_pmu.lbr_pt_coexist = true;
+			x86_pmu.flags |= PMU_FL_HAS_RSP_1;
+			x86_pmu.flags |= PMU_FL_INSTR_LATENCY;
+
+			intel_pmu_pebs_data_source_grt();
+			x86_pmu.pebs_latency_data = adl_latency_data_small;
+			x86_pmu.get_event_constraints = tnt_get_event_constraints;
+			x86_pmu.limit_period = spr_limit_period;
+			td_attr = tnt_events_attrs;
+			mem_attr = grt_mem_attrs;
+			extra_attr = nhm_format_attr;
+			pr_cont("Gracemont events, ");
+			name = "gracemont";
+		}
+		break;
+
 	case INTEL_FAM6_RAPTORLAKE:
 	case INTEL_FAM6_RAPTORLAKE_P:
 	case INTEL_FAM6_RAPTORLAKE_S:
