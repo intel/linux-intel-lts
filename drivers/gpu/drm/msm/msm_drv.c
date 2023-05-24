@@ -452,7 +452,7 @@ static int msm_drm_init(struct device *dev, const struct drm_driver *drv)
 		return ret;
 
 	/* the fw fb could be anywhere in memory */
-	ret = drm_aperture_remove_framebuffers(false, drv);
+	ret = drm_aperture_remove_framebuffers(drv);
 	if (ret)
 		goto err_msm_uninit;
 
@@ -1047,6 +1047,8 @@ static void msm_show_fdinfo(struct drm_printer *p, struct drm_file *file)
 		return;
 
 	msm_gpu_show_fdinfo(priv->gpu, file->driver_priv, p);
+
+	drm_show_memory_stats(p, file);
 }
 
 static const struct file_operations fops = {
