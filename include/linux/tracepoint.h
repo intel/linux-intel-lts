@@ -255,7 +255,8 @@ static inline struct tracepoint *tracepoint_ptr_deref(tracepoint_ptr_t *p)
 				TP_PROTO(data_proto),			\
 				TP_ARGS(data_args),			\
 				TP_CONDITION(cond), 0);			\
-		if (IS_ENABLED(CONFIG_LOCKDEP) && (cond)) {		\
+		if (IS_ENABLED(CONFIG_LOCKDEP) &&			\
+			running_inband() && (cond)) {			\
 			WARN_ON_ONCE(!rcu_is_watching());		\
 		}							\
 	}								\
