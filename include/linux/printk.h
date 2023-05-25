@@ -609,7 +609,7 @@ static inline void print_hex_dump_debug(const char *prefix_str, int prefix_type,
 #define print_hex_dump_bytes(prefix_str, prefix_type, buf, len)	\
 	print_hex_dump_debug(prefix_str, prefix_type, 16, 1, buf, len, true)
 
-#ifdef CONFIG_PRINTK
+#if defined(CONFIG_PRINTK) && !defined(CONFIG_PREEMPT_RT)
 extern void __printk_safe_enter(void);
 extern void __printk_safe_exit(void);
 /*
@@ -619,7 +619,7 @@ extern void __printk_safe_exit(void);
  */
 #define printk_deferred_enter __printk_safe_enter
 #define printk_deferred_exit __printk_safe_exit
-#else
+#else /* defined(CONFIG_PRINTK) && !defined(CONFIG_PREEMPT_RT) */
 static inline void printk_deferred_enter(void)
 {
 }
