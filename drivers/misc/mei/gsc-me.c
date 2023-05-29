@@ -302,6 +302,28 @@ static int mei_gsc_hw_reset_null(struct mei_device *dev, bool intr_enable)
 	return 0;
 }
 
+/**
+ * mei_gsc_forcewake_get_null - get forcewake counter (empty implementation)
+ *
+ * @dev: mei device
+ * Return: always true
+ */
+static int mei_gsc_forcewake_get_null(struct mei_device *dev)
+{
+	return 0;
+}
+
+/**
+ * mei_gsc_forcewake_put_null - put forcewake counter (empty implementation)
+ *
+ * @dev: mei device
+ * Return: always true
+ */
+static int mei_gsc_forcewake_put_null(struct mei_device *dev)
+{
+	return 0;
+}
+
 static const struct mei_hw_ops mei_gsc_hw_ops_null = {
 	.trc_status = mei_gsc_trc_status_null,
 	.fw_status = mei_gsc_fw_status_null,
@@ -330,7 +352,10 @@ static const struct mei_hw_ops mei_gsc_hw_ops_null = {
 
 	.rdbuf_full_slots = mei_gsc_count_full_read_slots_null,
 	.read_hdr = mei_gsc_mecbrw_read_null,
-	.read = mei_gsc_read_slots_null
+	.read = mei_gsc_read_slots_null,
+
+	.forcewake_get = mei_gsc_forcewake_get_null,
+	.forcewake_put = mei_gsc_forcewake_put_null,
 };
 
 #define MEI_GSC_RESET_BEGIN_TIMEOUT 300

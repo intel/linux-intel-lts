@@ -357,6 +357,9 @@ struct mei_cl {
  *
  * @read_hdr         : get first 4 bytes (header)
  * @read             : read a buffer from the FW
+ *
+ * @forcewake_get    : get forcewake counter
+ * @forcewake_put    : put forcewake counter
  */
 struct mei_hw_ops {
 
