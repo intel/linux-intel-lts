@@ -259,6 +259,7 @@ static struct resource punit_res[6];
 static struct mfd_cell punit = {
 	.name = "intel_punit_ipc",
 	.resources = punit_res,
+	.ignore_resource_conflicts = true,
 };
 
 static struct itco_wdt_platform_data tco_pdata = {
