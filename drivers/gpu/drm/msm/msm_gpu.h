@@ -199,6 +199,16 @@ struct msm_gpu {
 	struct mutex lock;
 
 	/**
+	 * lock:
+	 *
+	 * General lock for serializing all the gpu things.
+	 *
+	 * TODO move to per-ring locking where feasible (ie. submit/retire
+	 * path, etc)
+	 */
+	struct mutex lock;
+
+	/**
 	 * active_submits:
 	 *
 	 * The number of submitted but not yet retired submits, used to

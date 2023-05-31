@@ -98,6 +98,12 @@ static struct inode *ntfs_read_mft(struct inode *inode,
 	/* Record should contain $I30 root. */
 	is_dir = rec->flags & RECORD_FLAG_DIR;
 
+	/* MFT_REC_MFT is not a dir */
+	if (is_dir && ino == MFT_REC_MFT) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	inode->i_generation = le16_to_cpu(rec->seq);
 
 	/* Enumerate all struct Attributes MFT. */
@@ -128,6 +134,16 @@ next_attr:
 	roff = attr->non_res ? 0 : le16_to_cpu(attr->res.data_off);
 	rsize = attr->non_res ? 0 : le32_to_cpu(attr->res.data_size);
 	asize = le32_to_cpu(attr->size);
+
+	if (le16_to_cpu(attr->name_off) + attr->name_len > asize)
+		goto out;
+
+	if (attr->non_res) {
+		t64 = le64_to_cpu(attr->nres.alloc_size);
+		if (le64_to_cpu(attr->nres.data_size) > t64 ||
+		    le64_to_cpu(attr->nres.valid_size) > t64)
+			goto out;
+	}
 
 	switch (attr->type) {
 	case ATTR_STD:
@@ -247,7 +263,6 @@ next_attr:
 			goto out;
 
 		root = Add2Ptr(attr, roff);
-		is_root = true;
 
 		if (attr->name_len != ARRAY_SIZE(I30_NAME) ||
 		    memcmp(attr_name(attr), I30_NAME, sizeof(I30_NAME)))
@@ -260,6 +275,7 @@ next_attr:
 		if (!is_dir)
 			goto next_attr;
 
+		is_root = true;
 		ni->ni_flags |= NI_FLAG_DIR;
 
 		err = indx_init(&ni->dir, sbi, attr, INDEX_MUTEX_I30);
@@ -364,7 +380,13 @@ next_attr:
 attr_unpack_run:
 	roff = le16_to_cpu(attr->nres.run_off);
 
+	if (roff > asize) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	t64 = le64_to_cpu(attr->nres.svcn);
+
 	err = run_unpack_ex(run, sbi, ino, t64, le64_to_cpu(attr->nres.evcn),
 			    t64, Add2Ptr(attr, roff), asize - roff);
 	if (err < 0)

@@ -242,8 +242,8 @@ struct ATTRIB *mi_enum_attr(struct mft_inode *mi, struct ATTRIB *attr)
 	if ((t32 & 0xf) || (t32 > 0x100))
 		return NULL;
 
-	/* Check boundary. */
-	if (off + asize > used)
+	/* Check overflow and boundary. */
+	if (off + asize < off || off + asize > used)
 		return NULL;
 
 	/* Check size of attribute. */
@@ -259,6 +259,11 @@ struct ATTRIB *mi_enum_attr(struct mft_inode *mi, struct ATTRIB *attr)
 		t32 = le32_to_cpu(attr->res.data_size);
 		if (t16 + t32 > asize)
 			return NULL;
+
+		if (attr->name_len &&
+		    le16_to_cpu(attr->name_off) + sizeof(short) * attr->name_len > t16) {
+			return NULL;
+		}
 
 		return attr;
 	}

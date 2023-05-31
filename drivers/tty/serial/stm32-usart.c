@@ -264,19 +264,22 @@ static unsigned long stm32_usart_get_char(struct uart_port *port, u32 *sr,
 	return c;
 }
 
-static void stm32_usart_receive_chars(struct uart_port *port, bool threaded)
+static void stm32_usart_receive_chars(struct uart_port *port, bool irqflag)
 {
 	struct tty_port *tport = &port->state->port;
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	const struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
-	unsigned long c;
+	unsigned long c, flags;
 	u32 sr;
 	char flag;
 
-	spin_lock(&port->lock);
+	if (irqflag)
+		spin_lock_irqsave(&port->lock, flags);
+	else
+		spin_lock(&port->lock);
 
 	while (stm32_usart_pending_rx(port, &sr, &stm32_port->last_res,
-				      threaded)) {
+				      irqflag)) {
 		sr |= USART_SR_DUMMY_RX;
 		flag = TTY_NORMAL;
 
@@ -330,7 +333,10 @@ static void stm32_usart_receive_chars(struct uart_port *port, bool threaded)
 		uart_insert_char(port, sr, USART_SR_ORE, c, flag);
 	}
 
-	uart_unlock_and_check_sysrq(port);
+	if (irqflag)
+		uart_unlock_and_check_sysrq_irqrestore(port, irqflag);
+	else
+		uart_unlock_and_check_sysrq(port);
 
 	tty_flip_buffer_push(tport);
 }
@@ -496,8 +502,9 @@ static void stm32_usart_transmit_chars(struct uart_port *port)
 	int ret;
 
 	if (!stm32_port->hw_flow_control &&
-	    port->rs485.flags & SER_RS485_ENABLED) {
-		stm32_port->txdone = false;
+	    port->rs485.flags & SER_RS485_ENABLED &&
+	    (port->x_char ||
+	     !(uart_circ_empty(xmit) || uart_tx_stopped(port)))) {
 		stm32_usart_tc_interrupt_disable(port);
 		stm32_usart_rs485_rts_enable(port);
 	}
@@ -599,10 +606,9 @@ static irqreturn_t stm32_usart_interrupt(int irq, void *ptr)
 static irqreturn_t stm32_usart_threaded_interrupt(int irq, void *ptr)
 {
 	struct uart_port *port = ptr;
-	struct stm32_port *stm32_port = to_stm32_port(port);
 
-	if (stm32_port->rx_ch)
-		stm32_usart_receive_chars(port, true);
+	/* Receiver timeout irq for DMA RX */
+	stm32_usart_receive_chars(port, false);
 
 	return IRQ_HANDLED;
 }
@@ -1340,22 +1346,10 @@ static int stm32_usart_serial_probe(struct platform_device *pdev)
 	if (!stm32port->info)
 		return -EINVAL;
 
-	ret = stm32_usart_init_port(stm32port, pdev);
-	if (ret)
-		return ret;
-
-	if (stm32port->wakeup_src) {
-		device_set_wakeup_capable(&pdev->dev, true);
-		ret = dev_pm_set_wake_irq(&pdev->dev, stm32port->port.irq);
-		if (ret)
-			goto err_deinit_port;
-	}
-
 	stm32port->rx_ch = dma_request_chan(&pdev->dev, "rx");
-	if (PTR_ERR(stm32port->rx_ch) == -EPROBE_DEFER) {
-		ret = -EPROBE_DEFER;
-		goto err_wakeirq;
-	}
+	if (PTR_ERR(stm32port->rx_ch) == -EPROBE_DEFER)
+		return -EPROBE_DEFER;
+
 	/* Fall back in interrupt mode for any non-deferral error */
 	if (IS_ERR(stm32port->rx_ch))
 		stm32port->rx_ch = NULL;
@@ -1368,6 +1362,17 @@ static int stm32_usart_serial_probe(struct platform_device *pdev)
 	/* Fall back in interrupt mode for any non-deferral error */
 	if (IS_ERR(stm32port->tx_ch))
 		stm32port->tx_ch = NULL;
+
+	ret = stm32_usart_init_port(stm32port, pdev);
+	if (ret)
+		goto err_dma_tx;
+
+	if (stm32port->wakeup_src) {
+		device_set_wakeup_capable(&pdev->dev, true);
+		ret = dev_pm_set_wake_irq(&pdev->dev, stm32port->port.irq);
+		if (ret)
+			goto err_deinit_port;
+	}
 
 	if (stm32port->rx_ch && stm32_usart_of_dma_rx_probe(stm32port, pdev)) {
 		/* Fall back in interrupt mode */
@@ -1405,19 +1410,11 @@ err_port:
 	pm_runtime_set_suspended(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
 
-	if (stm32port->tx_ch) {
+	if (stm32port->tx_ch)
 		stm32_usart_of_dma_tx_remove(stm32port, pdev);
-		dma_release_channel(stm32port->tx_ch);
-	}
-
 	if (stm32port->rx_ch)
 		stm32_usart_of_dma_rx_remove(stm32port, pdev);
 
-err_dma_rx:
-	if (stm32port->rx_ch)
-		dma_release_channel(stm32port->rx_ch);
-
-err_wakeirq:
 	if (stm32port->wakeup_src)
 		dev_pm_clear_wake_irq(&pdev->dev);
 
@@ -1426,6 +1423,14 @@ err_deinit_port:
 		device_set_wakeup_capable(&pdev->dev, false);
 
 	stm32_usart_deinit_port(stm32port);
+
+err_dma_tx:
+	if (stm32port->tx_ch)
+		dma_release_channel(stm32port->tx_ch);
+
+err_dma_rx:
+	if (stm32port->rx_ch)
+		dma_release_channel(stm32port->rx_ch);
 
 	return ret;
 }
