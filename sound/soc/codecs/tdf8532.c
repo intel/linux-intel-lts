@@ -115,7 +115,7 @@ static int tdf8532_single_read(struct tdf8532_priv *priv, struct get_dev_status_
 	print_hex_dump_debug("tdf8532: Rx:", DUMP_PREFIX_NONE, 32, 1, buf, len, false);
 
 	if (ret < 0 || ret != len) {
-		dev_err(dev, "i2c recv packet returned: %d (expected: %ld)\n", ret, len);
+		dev_err(dev, "i2c recv packet returned: %d (expected: %zu)\n", ret, len);
 		ret = -EINVAL;
 	} else {
 		memcpy(reply, buf, min(sizeof(*reply), len));
