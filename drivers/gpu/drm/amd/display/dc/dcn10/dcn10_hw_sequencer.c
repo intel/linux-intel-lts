@@ -3372,6 +3372,23 @@ static bool dcn10_can_pipe_disable_cursor(struct pipe_ctx *pipe_ctx)
 	return false;
 }
 
+static bool dcn10_dmub_should_update_cursor_data(
+		struct pipe_ctx *pipe_ctx,
+		struct dc_debug_options *debug)
+{
+	if (pipe_ctx->plane_state->address.type == PLN_ADDR_TYPE_VIDEO_PROGRESSIVE)
+		return false;
+
+	if (dcn10_can_pipe_disable_cursor(pipe_ctx))
+		return false;
+
+	if ((pipe_ctx->stream->link->psr_settings.psr_version == DC_PSR_VERSION_SU_1 || pipe_ctx->stream->link->psr_settings.psr_version == DC_PSR_VERSION_1)
+			&& pipe_ctx->stream->ctx->dce_version >= DCN_VERSION_3_1)
+		return true;
+
+	return false;
+}
+
 static void dcn10_dmub_update_cursor_data(
 		struct pipe_ctx *pipe_ctx,
 		struct hubp *hubp,

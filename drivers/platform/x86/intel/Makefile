@@ -26,6 +26,10 @@ intel_int0002_vgpio-y			:= int0002_vgpio.o
 obj-$(CONFIG_INTEL_INT0002_VGPIO)	+= intel_int0002_vgpio.o
 intel_oaktrail-y			:= oaktrail.o
 obj-$(CONFIG_INTEL_OAKTRAIL)		+= intel_oaktrail.o
+intel_sdsi-y				:= sdsi.o
+obj-$(CONFIG_INTEL_SDSI)		+= intel_sdsi.o
+intel_vsec-y				:= vsec.o
+obj-$(CONFIG_INTEL_VSEC)		+= intel_vsec.o
 
 # Intel PMIC / PMC / P-Unit drivers
 intel_bxtwc_tmu-y			:= bxtwc_tmu.o
@@ -36,6 +40,10 @@ intel_mrfld_pwrbtn-y			:= mrfld_pwrbtn.o
 obj-$(CONFIG_INTEL_MRFLD_PWRBTN)	+= intel_mrfld_pwrbtn.o
 intel_punit_ipc-y			:= punit_ipc.o
 obj-$(CONFIG_INTEL_PUNIT_IPC)		+= intel_punit_ipc.o
+
+# TPMI drivers
+intel_vsec_tpmi-y			:= tpmi.o
+obj-$(CONFIG_INTEL_TPMI)		+= intel_vsec_tpmi.o
 
 # Intel Uncore drivers
 intel-rst-y				:= rst.o

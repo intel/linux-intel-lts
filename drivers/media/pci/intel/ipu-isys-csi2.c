@@ -19,6 +19,7 @@
 #include "ipu-platform-regs.h"
 
 static const u32 csi2_supported_codes_pad_sink[] = {
+	MEDIA_BUS_FMT_Y8_1X8,
 	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
@@ -45,6 +46,7 @@ static const u32 csi2_supported_codes_pad_sink[] = {
 };
 
 static const u32 csi2_supported_codes_pad_source[] = {
+	MEDIA_BUS_FMT_Y8_1X8,
 	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
@@ -75,9 +77,9 @@ static struct v4l2_subdev_internal_ops csi2_sd_internal_ops = {
 
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 {
-	struct ipu_isys_pipeline *pipe = container_of(csi2->asd.sd.entity.pipe,
-						      struct ipu_isys_pipeline,
-						      pipe);
+	struct ipu_isys_pipeline *pipe =
+		container_of(media_entity_pipeline(&csi2->asd.sd.entity),
+			     struct ipu_isys_pipeline, pipe);
 	struct v4l2_subdev *ext_sd =
 		media_entity_to_v4l2_subdev(pipe->external->entity);
 	struct device *dev = &csi2->isys->adev->dev;
@@ -203,9 +205,8 @@ ipu_isys_csi2_calc_timing(struct ipu_isys_csi2 *csi2,
 static int set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
-	struct ipu_isys_pipeline *ip = container_of(sd->entity.pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&sd->entity));
 	struct ipu_isys_csi2_config *cfg;
 	struct v4l2_subdev *ext_sd;
 	struct ipu_isys_csi2_timing timing = {0};
@@ -271,21 +272,23 @@ static void csi2_capture_done(struct ipu_isys_pipeline *ip,
 
 static int csi2_link_validate(struct media_link *link)
 {
+	struct media_pipeline *media_pipe;
 	struct ipu_isys_csi2 *csi2;
 	struct ipu_isys_pipeline *ip;
 	int rval;
 
-	if (!link->sink->entity ||
-	    !link->sink->entity->pipe || !link->source->entity)
+	if (!link->sink->entity || !link->source->entity)
+		return -EINVAL;
+	media_pipe = media_entity_pipeline(link->sink->entity);
+	if (!media_pipe)
 		return -EINVAL;
 	csi2 =
 	    to_ipu_isys_csi2(media_entity_to_v4l2_subdev(link->sink->entity));
-	ip = to_ipu_isys_pipeline(link->sink->entity->pipe);
+
+	ip = to_ipu_isys_pipeline(media_pipe);
 	csi2->receiver_errors = 0;
 	ip->csi2 = csi2;
-	ipu_isys_video_add_capture_done(to_ipu_isys_pipeline
-					(link->sink->entity->pipe),
-					csi2_capture_done);
+	ipu_isys_video_add_capture_done(ip, csi2_capture_done);
 
 	rval = v4l2_subdev_link_validate(link);
 	if (rval)
@@ -329,9 +332,8 @@ static int __subdev_link_validate(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_format *source_fmt,
 				  struct v4l2_subdev_format *sink_fmt)
 {
-	struct ipu_isys_pipeline *ip = container_of(sd->entity.pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&sd->entity));
 
 	if (source_fmt->format.field == V4L2_FIELD_ALTERNATE)
 		ip->interlaced = true;
@@ -535,7 +537,7 @@ fail:
 	return rval;
 }
 
-void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
+void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 {
 	struct ipu_isys_pipeline *ip = NULL;
 	struct v4l2_event ev = {
@@ -546,10 +548,11 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
 	unsigned int i;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
-	csi2->in_frame = true;
+	csi2->in_frame[vc] = true;
 
 	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
 		if (csi2->isys->pipes[i] &&
+		    csi2->isys->pipes[i]->vc == vc &&
 		    csi2->isys->pipes[i]->csi2 == csi2) {
 			ip = csi2->isys->pipes[i];
 			break;
@@ -567,11 +570,11 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
 
 	v4l2_event_queue(vdev, &ev);
 	dev_dbg(&csi2->isys->adev->dev,
-		"sof_event::csi2-%i sequence: %i\n",
-		csi2->index, ev.u.frame_sync.frame_sequence);
+		"sof_event::csi2-%i CPU-timestamp:%lld, sequence:%i, vc:%d\n",
+		csi2->index, ktime_get_ns(), ev.u.frame_sync.frame_sequence, vc);
 }
 
-void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
+void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 {
 	struct ipu_isys_pipeline *ip = NULL;
 	unsigned long flags;
@@ -579,12 +582,13 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 	u32 frame_sequence;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
-	csi2->in_frame = false;
-	if (csi2->wait_for_sync)
+	csi2->in_frame[vc] = false;
+	if (csi2->wait_for_sync[vc])
 		complete(&csi2->eof_completion);
 
 	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
 		if (csi2->isys->pipes[i] &&
+		    csi2->isys->pipes[i]->vc == vc &&
 		    csi2->isys->pipes[i]->csi2 == csi2) {
 			ip = csi2->isys->pipes[i];
 			break;
@@ -596,8 +600,8 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
 
 		dev_dbg(&csi2->isys->adev->dev,
-			"eof_event::csi2-%i sequence: %i\n",
-			csi2->index, frame_sequence);
+			"eof_event: csi2-%i sequence: %i, vc: %d\n",
+			csi2->index, frame_sequence, vc);
 		return;
 	}
 
@@ -608,24 +612,27 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 void ipu_isys_csi2_wait_last_eof(struct ipu_isys_csi2 *csi2)
 {
 	unsigned long flags, tout;
+	unsigned int i;
 
-	spin_lock_irqsave(&csi2->isys->lock, flags);
+	for (i = 0; i < NR_OF_CSI2_VC; i++) {
+		spin_lock_irqsave(&csi2->isys->lock, flags);
 
-	if (!csi2->in_frame) {
+		if (!csi2->in_frame[i]) {
+			spin_unlock_irqrestore(&csi2->isys->lock, flags);
+			continue;
+		}
+
+		reinit_completion(&csi2->eof_completion);
+		csi2->wait_for_sync[i] = true;
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
-		return;
+		tout = wait_for_completion_timeout(&csi2->eof_completion,
+						   IPU_EOF_TIMEOUT_JIFFIES);
+		if (!tout)
+			dev_err(&csi2->isys->adev->dev,
+				"csi2-%d: timeout at sync to eof of vc %d\n",
+				csi2->index, i);
+		csi2->wait_for_sync[i] = false;
 	}
-
-	reinit_completion(&csi2->eof_completion);
-	csi2->wait_for_sync = true;
-	spin_unlock_irqrestore(&csi2->isys->lock, flags);
-	tout = wait_for_completion_timeout(&csi2->eof_completion,
-					   IPU_EOF_TIMEOUT_JIFFIES);
-	if (!tout)
-		dev_err(&csi2->isys->adev->dev,
-			"csi2-%d: timeout at sync to eof\n",
-			csi2->index);
-	csi2->wait_for_sync = false;
 }
 
 struct ipu_isys_buffer *

@@ -60,6 +60,23 @@
 #define SOF_SSP_BT_OFFLOAD_PRESENT		BIT(22)
 #define SOF_RT5682S_HEADPHONE_CODEC_PRESENT	BIT(23)
 
+/* HDMI capture*/
+#define SOF_SSP_HDMI_CAPTURE_PRESENT            BIT(24)
+#define SOF_NO_OF_HDMI_CAPTURE_SSP_SHIFT                25
+#define SOF_NO_OF_HDMI_CAPTURE_SSP_MASK         (GENMASK(26, 25))
+#define SOF_NO_OF_HDMI_CAPTURE_SSP(quirk)       \
+	(((quirk) << SOF_NO_OF_HDMI_CAPTURE_SSP_SHIFT) & SOF_NO_OF_HDMI_CAPTURE_SSP_MASK)
+
+#define SOF_HDMI_CAPTURE_1_SSP_SHIFT            27
+#define SOF_HDMI_CAPTURE_1_SSP_MASK             (GENMASK(28, 27))
+#define SOF_HDMI_CAPTURE_1_SSP(quirk)   \
+	(((quirk) << SOF_HDMI_CAPTURE_1_SSP_SHIFT) & SOF_HDMI_CAPTURE_1_SSP_MASK)
+
+#define SOF_HDMI_CAPTURE_2_SSP_SHIFT            29
+#define SOF_HDMI_CAPTURE_2_SSP_MASK             (GENMASK(30, 29))
+#define SOF_HDMI_CAPTURE_2_SSP(quirk)   \
+	(((quirk) << SOF_HDMI_CAPTURE_2_SSP_SHIFT) & SOF_HDMI_CAPTURE_2_SSP_MASK)
+
 /* Default: MCLK on, MCLK 19.2M, SSP0  */
 static unsigned long sof_rt5682_quirk = SOF_RT5682_MCLK_EN |
 					SOF_RT5682_SSP_CODEC(0);
@@ -629,6 +646,7 @@ static struct snd_soc_dai_link *sof_card_dai_links_create(struct device *dev,
 	struct snd_soc_dai_link_component *cpus;
 	struct snd_soc_dai_link *links;
 	int i, id = 0;
+	int hdmi_id_offset = 0;
 
 	links = devm_kzalloc(dev, sizeof(struct snd_soc_dai_link) *
 			     sof_audio_card_rt5682.num_links, GFP_KERNEL);
@@ -835,6 +853,37 @@ static struct snd_soc_dai_link *sof_card_dai_links_create(struct device *dev,
 		links[id].num_cpus = 1;
 	}
 
+	/* HDMI-In SSP */
+	if (sof_rt5682_quirk & SOF_SSP_HDMI_CAPTURE_PRESENT) {
+		int num_of_hdmi_ssp = (sof_rt5682_quirk & SOF_NO_OF_HDMI_CAPTURE_SSP_MASK) >>
+				SOF_NO_OF_HDMI_CAPTURE_SSP_SHIFT;
+
+		for (i = 1; i <= num_of_hdmi_ssp; i++) {
+			int port = (i == 1 ? (sof_rt5682_quirk & SOF_HDMI_CAPTURE_1_SSP_MASK) >>
+						SOF_HDMI_CAPTURE_1_SSP_SHIFT :
+						(sof_rt5682_quirk & SOF_HDMI_CAPTURE_2_SSP_MASK) >>
+						SOF_HDMI_CAPTURE_2_SSP_SHIFT);
+
+			links[id].cpus = &cpus[id];
+			links[id].cpus->dai_name = devm_kasprintf(dev, GFP_KERNEL,
+								  "SSP%d Pin", port);
+			if (!links[id].cpus->dai_name)
+				return NULL;
+			links[id].name = devm_kasprintf(dev, GFP_KERNEL, "SSP%d-HDMI", port);
+			if (!links[id].name)
+				return NULL;
+			links[id].id = id + hdmi_id_offset;
+			links[id].codecs = dummy_component;
+			links[id].num_codecs = ARRAY_SIZE(dummy_component);
+			links[id].platforms = platform_component;
+			links[id].num_platforms = ARRAY_SIZE(platform_component);
+			links[id].dpcm_capture = 1;
+			links[id].no_pcm = 1;
+			links[id].num_cpus = 1;
+			id++;
+		}
+	}
+
 	return links;
 devm_err:
 	return NULL;
@@ -864,6 +913,10 @@ static int sof_audio_probe(struct platform_device *pdev)
 	 */
 	if ((sof_rt5682_quirk & SOF_SPEAKER_AMP_PRESENT) && !mach->quirk_data)
 		sof_rt5682_quirk &= ~SOF_SPEAKER_AMP_PRESENT;
+
+	/* Detect the headset codec variant */
+	if (acpi_dev_present("RTL5682", NULL, -1))
+		sof_rt5682_quirk |= SOF_RT5682S_HEADPHONE_CODEC_PRESENT;
 
 	if (soc_intel_is_byt() || soc_intel_is_cht()) {
 		is_legacy_cpu = 1;
@@ -924,6 +977,11 @@ static int sof_audio_probe(struct platform_device *pdev)
 
 	if (sof_rt5682_quirk & SOF_SSP_BT_OFFLOAD_PRESENT)
 		sof_audio_card_rt5682.num_links++;
+
+	if (sof_rt5682_quirk & SOF_SSP_HDMI_CAPTURE_PRESENT)
+		sof_audio_card_rt5682.num_links +=
+			(sof_rt5682_quirk & SOF_NO_OF_HDMI_CAPTURE_SSP_MASK) >>
+			SOF_NO_OF_HDMI_CAPTURE_SSP_SHIFT;
 
 	dai_links = sof_card_dai_links_create(&pdev->dev, ssp_codec, ssp_amp,
 					      dmic_be_num, hdmi_num);
@@ -1077,6 +1135,16 @@ static const struct platform_device_id board_ids[] = {
 					SOF_MAX98360A_SPEAKER_AMP_PRESENT |
 					SOF_RT5682_SSP_AMP(1)),
 	},
+	{
+		.name = "adl_rt5682_c1_h02",
+		.driver_data = (kernel_ulong_t)(SOF_RT5682_MCLK_EN |
+					SOF_RT5682_SSP_CODEC(1) |
+					SOF_RT5682_NUM_HDMIDEV(3) |
+					SOF_NO_OF_HDMI_CAPTURE_SSP(2) |
+					SOF_HDMI_CAPTURE_1_SSP(0) |
+					SOF_HDMI_CAPTURE_2_SSP(2) |
+					SOF_SSP_HDMI_CAPTURE_PRESENT),
+	},
 	{ }
 };
 MODULE_DEVICE_TABLE(platform, board_ids);
@@ -1099,3 +1167,4 @@ MODULE_AUTHOR("Brent Lu <brent.lu@intel.com>");
 MODULE_LICENSE("GPL v2");
 MODULE_IMPORT_NS(SND_SOC_INTEL_HDA_DSP_COMMON);
 MODULE_IMPORT_NS(SND_SOC_INTEL_SOF_MAXIM_COMMON);
+MODULE_IMPORT_NS(SND_SOC_INTEL_SOF_REALTEK_COMMON);

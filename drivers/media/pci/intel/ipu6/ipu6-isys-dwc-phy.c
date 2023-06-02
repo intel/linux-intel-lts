@@ -418,9 +418,11 @@ void ipu6_isys_dwc_phy_aggr_setup(struct ipu_isys *isys, u32 master, u32 slave,
 	dwc_dphy_ifc_write_mask(isys, slave, 0x305, 0xa, 0, 5);
 }
 
+#define PHY_E	(4)
 int ipu6_isys_dwc_phy_powerup_ack(struct ipu_isys *isys, u32 phy_id)
 {
 	int rval;
+	u32 rescal_done;
 
 	rval = dwc_dphy_pwr_up(isys, phy_id);
 	if (rval != 0) {
@@ -435,6 +437,18 @@ int ipu6_isys_dwc_phy_powerup_ack(struct ipu_isys *isys, u32 phy_id)
 
 	dev_dbg(&isys->adev->dev, "phy %u is ready!", phy_id);
 
+	if (phy_id != PHY_E || isys->phy_termcal_val)
+		return 0;
+
+	usleep_range(100, 200);
+	rescal_done = dwc_dphy_ifc_read_mask(isys, phy_id, 0x221, 7, 1);
+	if (rescal_done) {
+		isys->phy_termcal_val = dwc_dphy_ifc_read_mask(isys, phy_id,
+							       0x220, 2, 4);
+		dev_dbg(&isys->adev->dev, "termcal done with value = %u",
+			isys->phy_termcal_val);
+	}
+
 	return 0;
 }
 
@@ -448,92 +462,4 @@ void ipu6_isys_dwc_phy_reset(struct ipu_isys *isys, u32 phy_id)
 		       TEST_IFC_ACCESS_MODE_FSM);
 	dwc_dphy_write(isys, phy_id, IPU_DWC_DPHY_TEST_IFC_REQ,
 		       TEST_IFC_REQ_RESET);
-}
-
-#define PHY_E	(4)
-int ipu6_isys_dwc_phy_termcal_rext(struct ipu_isys *isys, u32 mbps)
-{
-	u32 index;
-	u32 osc_freq_target;
-	u32 cfg_clk_freqrange;
-	u32 rescal_done;
-	struct ipu_bus_device *adev = to_ipu_bus_device(&isys->adev->dev);
-	struct ipu_device *isp = adev->isp;
-	int ret;
-	u32 phy_id = PHY_E;
-
-	if (isys->phy_termcal_val) {
-		dev_dbg(&isys->adev->dev, "phy term cal already done, ignore.");
-		return 0;
-	}
-
-	dev_dbg(&isys->adev->dev, "phy %u term calibration with %u mbps",
-		phy_id, mbps);
-
-	ipu6_isys_dwc_phy_reset(isys, phy_id);
-
-	index = get_hsfreq_by_mbps(mbps);
-	if (index == DPHY_FREQ_RANGE_INVALID_INDEX) {
-		dev_err(&isys->adev->dev, "link freq not found for mbps %u",
-			mbps);
-		return -EINVAL;
-	}
-
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_HSFREQRANGE,
-			    freqranges[index].hsfreq, 0, 7);
-
-	/*
-	 * Enable override to configure the DDL target oscillation
-	 * frequency on bit 0 of register 0xe4
-	 */
-	dwc_dphy_ifc_write_mask(isys, phy_id, 0xe4, 0x1, 0, 1);
-	/*
-	 * configure registers 0xe2, 0xe3 with the
-	 * appropriate DDL target oscillation frequency
-	 * 0x1cc(460)
-	 */
-	osc_freq_target = freqranges[index].osc_freq_target;
-	dwc_dphy_ifc_write_mask(isys, phy_id, 0xe2,
-				osc_freq_target & 0xff, 0, 8);
-	dwc_dphy_ifc_write_mask(isys, phy_id, 0xe3,
-				(osc_freq_target >> 8) & 0xff, 0, 4);
-
-	if (mbps < 1500) {
-		/* deskew_polarity_rw, for < 1.5Gbps */
-		dwc_dphy_ifc_write_mask(isys, phy_id, 0x8, 0x1, 5, 1);
-	}
-
-	/*
-	 * Set cfgclkfreqrange[5:0] = round[(Fcfg_clk(MHz)-17)*4]
-	 * (38.4 - 17) * 4 = 84 (0x54)
-	 */
-	cfg_clk_freqrange = (isp->buttress.ref_clk / 10 - 17) * 4;
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_CFGCLKFREQRANGE,
-			    cfg_clk_freqrange, 0, 8);
-
-	/*
-	 * run without external reference resistor for 2Gbps
-	 * dwc_dphy_ifc_write_mask(isys, phy_id, 0x4, 0x0, 4, 1);
-	 */
-
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_DFT_CTRL2, 0x1, 4, 1);
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_DFT_CTRL2, 0x1, 8, 1);
-
-	ret = ipu6_isys_dwc_phy_powerup_ack(isys, phy_id);
-	if (ret)
-		return ret;
-
-	usleep_range(100, 200);
-	rescal_done = dwc_dphy_ifc_read_mask(isys, phy_id, 0x221, 7, 1);
-	if (rescal_done) {
-		isys->phy_termcal_val = dwc_dphy_ifc_read_mask(isys, phy_id,
-							       0x220, 2, 4);
-		dev_dbg(&isys->adev->dev, "termcal done with value = %u",
-			isys->phy_termcal_val);
-	}
-
-	/* whatever reset the phy E after rext flow */
-	ipu6_isys_dwc_phy_reset(isys, phy_id);
-
-	return 0;
 }

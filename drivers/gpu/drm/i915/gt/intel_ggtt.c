@@ -30,7 +30,7 @@
 static inline bool suspend_retains_ptes(struct i915_address_space *vm)
 {
 	return GRAPHICS_VER(vm->i915) >= 8 &&
-		!HAS_LMEM(vm->i915) &&
+		!HAS_LMEM(vm->i915) && !IS_SRIOV_VF(vm->i915) &&
 		vm->is_ggtt;
 }
 

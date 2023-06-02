@@ -16,6 +16,9 @@ struct intel_priv_data {
 	int mdio_adhoc_addr;	/* mdio address for serdes & etc */
 	unsigned long crossts_adj;
 	bool is_pse;
+	const int *tsn_lanes;
+	int max_tsn_lanes;
+	int pid_modphy;
 };
 
 /* This struct is used to associate PCI Function of MAC controller on a board,
@@ -422,13 +425,13 @@ static void intel_mgbe_pse_crossts_adj(struct intel_priv_data *intel_priv,
 }
 
 #if IS_ENABLED(CONFIG_INTEL_PMC_CORE)
-static bool intel_tsn_interface_is_available(struct net_device *ndev)
+static bool intel_tsn_interface_is_available(struct net_device *ndev,
+					     struct intel_priv_data *intel_priv)
 {
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	struct pmc_ipc_cmd tmp = {0};
-	bool has_tsn_interface = false;
 	u32 rbuf[4] = {0};
-	int ret, i, lane;
+	int ret, i, j;
 
 	if (priv->plat->serdes_powerup) {
 		tmp.cmd = IPC_SOC_REGISTER_ACCESS;
@@ -444,88 +447,68 @@ static bool intel_tsn_interface_is_available(struct net_device *ndev)
 				return false;
 			}
 
-			/* Possible lanes for TSN are from 7 to 11 */
-			for (lane = 7; lane <= 11; lane++)
-				if ((rbuf[0] >> (4 * (lane % 8)) &
+			for (j = 0; j <= intel_priv->max_tsn_lanes; j++)
+				if ((rbuf[0] >> (4 * (intel_priv->tsn_lanes[j] % 8)) &
 						B_PCH_FIA_PCR_L0O) == 0xB)
-					has_tsn_interface = true;
+					return true;
 		}
 	}
-	return has_tsn_interface;
+	return false;
+}
+
+static int intel_set_reg_access(const struct pmc_serdes_regs *regs, int max_regs)
+{
+	int ret = 0, i;
+
+	for (i = 0; i < max_regs; i++) {
+		struct pmc_ipc_cmd tmp = {0};
+		u32 buf[4] = {0};
+
+		tmp.cmd = IPC_SOC_REGISTER_ACCESS;
+		tmp.sub_cmd = IPC_SOC_SUB_CMD_WRITE;
+		tmp.wbuf[0] = (u32)regs[i].index;
+		tmp.wbuf[1] = regs[i].val;
+
+		ret = intel_pmc_core_ipc(&tmp, buf);
+
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
 }
 
 static int intel_config_serdes(struct net_device *ndev, void *intel_data)
 {
 	struct intel_priv_data *intel_priv = intel_data;
 	struct stmmac_priv *priv = netdev_priv(ndev);
-	int ret = 0, i;
+	int ret = 0;
 
-	if (!intel_tsn_interface_is_available(ndev)) {
+	if (!intel_tsn_interface_is_available(ndev, intel_priv)) {
 		netdev_info(priv->dev, "TSN interface not found.\n");
 		goto pmc_read_error;
 	}
 
-	if (intel_priv->is_pse) {
+	if (intel_priv->pid_modphy == PID_MODPHY1) {
 		if (priv->plat->phy_interface == PHY_INTERFACE_MODE_2500BASEX) {
-			for (i = 0; i < ARRAY_SIZE(pse_2p5g_regs); i++) {
-				struct pmc_ipc_cmd tmp = {0};
-				u32 buf[4] = {0};
-
-				tmp.cmd = IPC_SOC_REGISTER_ACCESS;
-				tmp.sub_cmd = IPC_SOC_SUB_CMD_WRITE;
-				tmp.wbuf[0] = (u32)pse_2p5g_regs[i].index;
-				tmp.wbuf[1] = pse_2p5g_regs[i].val;
-
-				ret = intel_pmc_core_ipc(&tmp, buf);
-				if (ret < 0)
-					goto pmc_read_error;
-			}
+			ret = intel_set_reg_access(pid_modphy1_2p5g_regs,
+						   ARRAY_SIZE(pid_modphy1_2p5g_regs));
 		} else {
-			for (i = 0; i < ARRAY_SIZE(pse_1g_regs); i++) {
-				struct pmc_ipc_cmd tmp = {0};
-				u32 buf[4] = {0};
-
-				tmp.cmd = IPC_SOC_REGISTER_ACCESS;
-				tmp.sub_cmd = IPC_SOC_SUB_CMD_WRITE;
-				tmp.wbuf[0] = (u32)pse_1g_regs[i].index;
-				tmp.wbuf[1] = pse_1g_regs[i].val;
-
-				ret = intel_pmc_core_ipc(&tmp, buf);
-				if (ret < 0)
-					goto pmc_read_error;
-			}
+			ret = intel_set_reg_access(pid_modphy1_1g_regs,
+						   ARRAY_SIZE(pid_modphy1_1g_regs));
 		}
 	} else {
 		if (priv->plat->phy_interface == PHY_INTERFACE_MODE_2500BASEX) {
-			for (i = 0; i < ARRAY_SIZE(pch_2p5g_regs); i++) {
-				struct pmc_ipc_cmd tmp = {0};
-				u32 buf[4] = {0};
-
-				tmp.cmd = IPC_SOC_REGISTER_ACCESS;
-				tmp.sub_cmd = IPC_SOC_SUB_CMD_WRITE;
-				tmp.wbuf[0] = (u32)pch_2p5g_regs[i].index;
-				tmp.wbuf[1] = pch_2p5g_regs[i].val;
-
-				ret = intel_pmc_core_ipc(&tmp, buf);
-				if (ret < 0)
-					goto pmc_read_error;
-			}
+			ret = intel_set_reg_access(pid_modphy3_2p5g_regs,
+						   ARRAY_SIZE(pid_modphy3_2p5g_regs));
 		} else {
-			for (i = 0; i < ARRAY_SIZE(pch_1g_regs); i++) {
-				struct pmc_ipc_cmd tmp = {0};
-				u32 buf[4] = {0};
-
-				tmp.cmd = IPC_SOC_REGISTER_ACCESS;
-				tmp.sub_cmd = IPC_SOC_SUB_CMD_WRITE;
-				tmp.wbuf[0] = (u32)pch_1g_regs[i].index;
-				tmp.wbuf[1] = pch_1g_regs[i].val;
-
-				ret = intel_pmc_core_ipc(&tmp, buf);
-				if (ret < 0)
-					goto pmc_read_error;
-			}
+			ret = intel_set_reg_access(pid_modphy3_1g_regs,
+						   ARRAY_SIZE(pid_modphy3_1g_regs));
 		}
 	}
+
+	if (ret < 0)
+		goto pmc_read_error;
 
 pmc_read_error:
 	intel_serdes_powerdown(ndev, intel_priv);
@@ -723,6 +706,8 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 static int ehl_common_data(struct pci_dev *pdev,
 			   struct plat_stmmacenet_data *plat)
 {
+	struct intel_priv_data *intel_priv = plat->bsp_priv;
+
 	plat->rx_queues_to_use = 8;
 	plat->tx_queues_to_use = 8;
 	plat->use_phy_wol = 1;
@@ -737,12 +722,17 @@ static int ehl_common_data(struct pci_dev *pdev,
 	plat->safety_feat_cfg->prtyen = 0;
 	plat->safety_feat_cfg->tmouten = 0;
 
+	intel_priv->tsn_lanes = ehl_tsn_lanes;
+	intel_priv->max_tsn_lanes = ARRAY_SIZE(ehl_tsn_lanes);
+
 	return intel_mgbe_common_data(pdev, plat);
 }
 
 static int ehl_sgmii_data(struct pci_dev *pdev,
 			  struct plat_stmmacenet_data *plat)
 {
+	struct intel_priv_data *intel_priv = plat->bsp_priv;
+
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	plat->max_speed = SPEED_2500;
@@ -756,6 +746,8 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	    pdev->revision == PCI_PCH_A1 ||
 	    pdev->revision == PCI_PCH_B0)
 		plat->dma_cfg->pch_intr_wa = 1;
+
+	intel_priv->pid_modphy = PID_MODPHY3;
 
 	return ehl_common_data(pdev, plat);
 }
@@ -822,11 +814,16 @@ static struct stmmac_pci_info ehl_pse0_rgmii1g_info = {
 static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
+	struct intel_priv_data *intel_priv = plat->bsp_priv;
+
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	plat->max_speed = SPEED_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
 	plat->config_serdes = intel_config_serdes;
+
+	intel_priv->pid_modphy = PID_MODPHY1;
+
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -872,11 +869,16 @@ static struct stmmac_pci_info ehl_pse1_rgmii1g_info = {
 static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 				 struct plat_stmmacenet_data *plat)
 {
+	struct intel_priv_data *intel_priv = plat->bsp_priv;
+
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
 	plat->max_speed = SPEED_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
 	plat->config_serdes = intel_config_serdes;
+
+	intel_priv->pid_modphy = PID_MODPHY1;
+
 	return ehl_pse1_common_data(pdev, plat);
 }
 
@@ -989,14 +991,46 @@ static struct stmmac_pci_info adls_sgmii1g_phy1_info = {
 	.setup = adls_sgmii_phy1_data,
 };
 
+static int adln_common_data(struct pci_dev *pdev,
+			    struct plat_stmmacenet_data *plat)
+{
+	struct intel_priv_data *intel_priv = plat->bsp_priv;
+
+	plat->rx_queues_to_use = 6;
+	plat->tx_queues_to_use = 4;
+	plat->clk_ptp_rate = 204800000;
+
+	plat->safety_feat_cfg->tsoee = 1;
+	plat->safety_feat_cfg->mrxpee = 0;
+	plat->safety_feat_cfg->mestee = 1;
+	plat->safety_feat_cfg->mrxee = 1;
+	plat->safety_feat_cfg->mtxee = 1;
+	plat->safety_feat_cfg->epsi = 0;
+	plat->safety_feat_cfg->edpp = 0;
+	plat->safety_feat_cfg->prtyen = 0;
+	plat->safety_feat_cfg->tmouten = 0;
+
+	intel_priv->tsn_lanes = adln_tsn_lanes;
+	intel_priv->max_tsn_lanes = ARRAY_SIZE(adln_tsn_lanes);
+
+	return intel_mgbe_common_data(pdev, plat);
+}
+
 static int adln_sgmii_phy0_data(struct pci_dev *pdev,
 				struct plat_stmmacenet_data *plat)
 {
+	struct intel_priv_data *intel_priv = plat->bsp_priv;
+
 	plat->bus_id = 1;
 	plat->phy_interface = PHY_INTERFACE_MODE_SGMII;
+	plat->max_speed = SPEED_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
-	return tgl_common_data(pdev, plat);
+	plat->config_serdes = intel_config_serdes;
+
+	intel_priv->pid_modphy = PID_MODPHY1;
+
+	return adln_common_data(pdev, plat);
 }
 
 static struct stmmac_pci_info adln_sgmii1g_phy0_info = {

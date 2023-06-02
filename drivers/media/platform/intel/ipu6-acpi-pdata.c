@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2016--2022 Intel Corporation.
+ * Copyright (c) 2016--2023 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -17,7 +17,7 @@
 #include <media/ipu-acpi-pdata.h>
 
 #define MIN_SENSOR_I2C 1
-#define MIN_SERDES_I2C 2
+#define MIN_SERDES_I2C 3
 #define SUFFIX_BASE 96
 #define MSG_LEN 128
 
@@ -41,8 +41,6 @@ struct ipu_isys_subdev_pdata acpi_subdev_pdata = {
 };
 
 struct serdes_local serdes_info;
-
-struct serdes_subdev_info serdes_sdinfo[SERDES_MAX_PORT];
 
 struct ipu_isys_subdev_pdata *get_acpi_subdev_pdata(void)
 {
@@ -301,8 +299,6 @@ void update_serdes_subdev(struct device *dev,
 			old_sdinfo->suffix == new_sdinfo->suffix) {
 			update_short(dev, "SdInfo port", &old_sdinfo->rx_port,
 				new_sdinfo->rx_port);
-			update_short(dev, "SdInfo phy_i2c_addr", &old_sdinfo->phy_i2c_addr,
-				new_sdinfo->phy_i2c_addr);
 			update_short(dev, "SdInfo ser_alias", &old_sdinfo->ser_alias,
 				new_sdinfo->ser_alias);
 			update_short(dev, "SdInfo board_info.addr", &old_sdinfo->board_info.addr,
@@ -386,36 +382,37 @@ void update_pdata(struct device *dev,
 	/* update local ipu_isys_subdev_pdata */
 	add_local_subdevs(acpi_subdev);
 
-	/* if there is existing pdata, update the existing one */
+	/* found existing pdata */
 	if (ptr_built_in_pdata) {
 		struct ipu_isys_subdev_info **subdevs, *sd_info;
 
 		for (subdevs = ptr_built_in_pdata->subdevs; *subdevs; subdevs++) {
 			sd_info = *subdevs;
 
+			/* found similar subdev in existing pdata*/
 			if (!compare_subdev(dev, acpi_subdev, sd_info, connect)) {
+				/* print and update old subdev */
 				if (connect == TYPE_DIRECT) {
 					dev_dbg(dev, "Old sensor subdev\n");
 					print_subdev(sd_info);
-					dev_dbg(dev, "New sensor subdev\n");
-					print_subdev(acpi_subdev);
+					update_subdev(dev, acpi_subdev, &sd_info);
+					dev_dbg(dev, "Updated subdev\n");
+					print_subdev(sd_info);
 				} else if (connect == TYPE_SERDES) {
 					dev_dbg(dev, "Old serdes subdev\n");
 					print_serdes_subdev(sd_info);
-					dev_dbg(dev, "New serdes subdev\n");
-					print_serdes_subdev(acpi_subdev);
+					update_serdes_subdev(dev, acpi_subdev, &sd_info);
+					dev_dbg(dev, "Updated subdev\n");
+					print_serdes_subdev(sd_info);
 				}
 
-				if (connect == TYPE_DIRECT)
-					update_subdev(dev, acpi_subdev, &sd_info);
-				else if (connect == TYPE_SERDES)
-					update_serdes_subdev(dev, acpi_subdev, &sd_info);
-
+				/* stop once similar subdev updated */
 				found = true;
 				break;
 			}
 		}
 
+		/* no similar subdev found */
 		if (!found) {
 			if (connect == TYPE_DIRECT) {
 				struct sensor_platform_data *acpi_pdata;
@@ -426,7 +423,11 @@ void update_pdata(struct device *dev,
 				dev_err(dev, "Pdata does not contain %s %c\n",
 					acpi_subdev->i2c.board_info.type,
 					acpi_pdata->suffix);
-			} else if (connect == TYPE_DIRECT) {
+
+				/* print new subdev */
+				print_subdev(acpi_subdev);
+
+			} else {
 				struct serdes_platform_data *acpi_pdata;
 
 				acpi_pdata = (struct serdes_platform_data *)
@@ -435,14 +436,32 @@ void update_pdata(struct device *dev,
 				dev_err(dev, "Pdata does not contain %s %c\n",
 					acpi_subdev->i2c.board_info.type,
 					acpi_pdata->suffix);
+
+				print_serdes_subdev(acpi_subdev);
 			}
 		}
 	}
+	/* does not have existing pdata */
+	else {
+		/* print new subdev */
+		if (connect == TYPE_DIRECT) {
+			dev_dbg(dev, "New sensor subdev\n");
+			print_subdev(acpi_subdev);
+		} else {
+			dev_dbg(dev, "New serdes subdev\n");
+			print_serdes_subdev(acpi_subdev);
+		}
+	}
 
-	if (!serdes_info.sensor_num)
-		serdes_info.sensor_num = serdes_info.rx_port;
-	else
-		serdes_info.sensor_num += serdes_info.rx_port;
+	/* update total num of sensor connected */
+	if (connect == TYPE_SERDES) {
+		if (!serdes_info.sensor_num)
+			serdes_info.sensor_num = serdes_info.rx_port;
+		else
+			serdes_info.sensor_num += serdes_info.rx_port;
+
+		serdes_info.deser_num++;
+	}
 }
 
 void set_ti960_gpio(struct control_logic_data *ctl_data, struct serdes_platform_data **pdata)
@@ -456,10 +475,6 @@ void set_ti960_gpio(struct control_logic_data *ctl_data, struct serdes_platform_
 		for (i = 0; i < ctl_data->gpio_num; i++) {
 			/* check for RESET selection in BIOS */
 			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_RESET)
-				(*pdata)->reset_gpio = ctl_data->gpio[i].pin;
-
-			/* check for POWER_EN selection in BIOS */
-			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_POWER_EN)
 				(*pdata)->FPD_gpio = ctl_data->gpio[i].pin;
 		}
 	}
@@ -496,8 +511,14 @@ void set_lt_gpio(struct control_logic_data *ctl_data, struct sensor_platform_dat
 	}
 }
 
-void set_ar0234_gpio(struct sensor_platform_data **pdata)
+void set_common_gpio(struct sensor_platform_data **pdata)
 {
+	/* TODO: consider remove specific naming such as irq_pin, and use gpios[] */
+
+	(*pdata)->irq_pin = -1;
+	(*pdata)->reset_pin = -1;
+	(*pdata)->detect_pin = -1;
+
 	(*pdata)->gpios[0] = -1;
 	(*pdata)->gpios[1] = 0;
 	(*pdata)->gpios[2] = 0;
@@ -562,28 +583,40 @@ int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 {
 	int i;
 	struct serdes_module_pdata *module_pdata[PORT_NR];
+	struct serdes_subdev_info *serdes_sdinfo;
+	size_t subdev_size = subdev_port * sizeof(*serdes_sdinfo);
+
+	serdes_sdinfo = kzalloc(subdev_size, GFP_KERNEL);
+	if (!serdes_sdinfo)
+		return -ENOMEM;
 
 	for (i = 0; i < subdev_port; i++) {
 		module_pdata[i] = kzalloc(sizeof(*module_pdata[i]), GFP_KERNEL);
-		if (!module_pdata[i])
+		if (!module_pdata[i]) {
+			kfree(serdes_sdinfo);
 			return -ENOMEM;
+		}
 
 		set_serdes_sd_pdata(&module_pdata[i], sensor_name, lanes);
 
 		/* board info */
 		strlcpy(serdes_sdinfo[i].board_info.type, sensor_name, I2C_NAME_SIZE);
-		serdes_sdinfo[i].board_info.addr = DUMMY_SERDES_BASE_ADDR + subdev_port + i;
+		if (!strcmp(sensor_name, D457_NAME))
+			serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr;
+		else
+			serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr +
+			serdes_info.sensor_num + i;
 		serdes_sdinfo[i].board_info.platform_data = module_pdata[i];
 
 		/* serdes_subdev_info */
 		serdes_sdinfo[i].rx_port = i;
-		serdes_sdinfo[i].phy_i2c_addr = (addr << 1);
-		serdes_sdinfo[i].ser_alias = DUMMY_SERDES_BASE_ADDR + i;
-		serdes_sdinfo[i].suffix = i + 1 + SUFFIX_BASE + serdes_info.sensor_num;
+		serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr + serdes_info.sensor_num + i;
+		serdes_sdinfo[i].phy_i2c_addr = serdes_info.phy_i2c_addr;
+		serdes_sdinfo[i].suffix = SUFFIX_BASE + serdes_info.sensor_num + i + 1;
 	}
 
 	(*pdata)->subdev_info = serdes_sdinfo;
-	(*pdata)->subdev_num = ARRAY_SIZE(serdes_sdinfo);
+	(*pdata)->subdev_num = subdev_port;
 
 	return 0;
 }
@@ -606,11 +639,9 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		if (!pdata)
 			return -ENOMEM;
 		/* use ascii */
-		/* port for D457 start from 0 */
-		if (!strcmp(sensor_name, D457_NAME) && port >= 0)
+		/* port for start from 0 */
+		if (port >= 0)
 			pdata->suffix = port + SUFFIX_BASE + 1;
-		else if (port > 0)
-			pdata->suffix = port + SUFFIX_BASE;
 		else
 			dev_err(dev, "INVALID MIPI PORT");
 
@@ -621,8 +652,8 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		/* gpio */
 		if (!strcmp(sensor_name, LT6911UXC_NAME))
 			set_lt_gpio(ctl_data, &pdata, is_dummy);
-		else if (!strcmp(sensor_name, AR0234_NAME))
-			set_ar0234_gpio(&pdata);
+		else
+			set_common_gpio(&pdata);
 
 		(*sensor_sd)->i2c.board_info.platform_data = pdata;
 	} else if (connect == TYPE_SERDES) {
@@ -633,7 +664,9 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 			return -ENOMEM;
 
 		/* use ascii */
-		if (port > 0)
+		if (!strcmp(sensor_name, D457_NAME) && port >= 0)
+			pdata->suffix = serdes_info.deser_num + SUFFIX_BASE + 1;
+		else if (port > 0)
 			pdata->suffix = port + SUFFIX_BASE;
 		else
 			dev_err(dev, "INVALID MIPI PORT");
@@ -644,29 +677,36 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		set_serdes_subdev(sensor_sd, dev, &pdata, sensor_name, lanes, addr, rx_port);
 
 		(*sensor_sd)->i2c.board_info.platform_data = pdata;
+		pdata->deser_board_info = &(*sensor_sd)->i2c.board_info;
 	}
 
 	return 0;
 }
 
-void set_serdes_info(struct device *dev, const char *serdes_name, struct sensor_bios_data *cam_data)
+void set_serdes_info(struct device *dev, char *sensor_name, const char *serdes_name, struct sensor_bios_data *cam_data)
 {
-	/* pprunit as num of sensor connected to deserializer*/
+	/* pprunit as num of sensor connected to deserializer */
 	serdes_info.rx_port = cam_data->pprunit;
 
-	/* init sensor_num */
-	if (!serdes_info.sensor_num)
-		serdes_info.sensor_num = 0;
+	/* i2c devices */
+	serdes_info.i2c_num = cam_data->i2c_num;
 
-	/* save sensor addr */
-	if (!serdes_info.sensor_addr)
-		serdes_info.sensor_addr = cam_data->i2c[1].addr;
+	/* sensor mapped addr */
+	serdes_info.sensor_map_addr = cam_data->i2c[cam_data->i2c_num - 1].addr;
+
+	/* serializer mapped addr */
+	serdes_info.ser_map_addr = cam_data->i2c[cam_data->i2c_num - 2].addr;
 
 	/* TI960 specific */
 	if (!strcmp(serdes_name, TI960_NAME))
 		serdes_info.gpio_powerup_seq = TI960_MAX_GPIO_POWERUP_SEQ;
 	else
 		serdes_info.gpio_powerup_seq = 0;
+
+	if (!strcmp(sensor_name, IMX390_NAME))
+		serdes_info.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS;
+	else
+		serdes_info.phy_i2c_addr = 0;
 }
 
 int populate_dummy(struct device *dev,
@@ -743,7 +783,7 @@ int populate_sensor_pdata(struct device *dev,
 
 		/* serdes i2c info */
 		if (cam_data->i2c_num == MIN_SERDES_I2C) {
-			dev_info(dev, "IPU6 ACPI: correct i2c device for serdes");
+			dev_info(dev, "IPU6 ACPI: Detected minimum number of i2c device for serdes");
 			set_i2c(sensor_sd, dev, serdes_name, cam_data->i2c[0].addr);
 		} else {
 			dev_err(dev, "IPU6 ACPI: Incorrect number of I2C device for serdes (%lld)",
@@ -752,7 +792,7 @@ int populate_sensor_pdata(struct device *dev,
 		}
 
 		/* local serdes info */
-		set_serdes_info(dev, serdes_name, cam_data);
+		set_serdes_info(dev, sensor_name, serdes_name, cam_data);
 	}
 
 	/* Use last I2C device */

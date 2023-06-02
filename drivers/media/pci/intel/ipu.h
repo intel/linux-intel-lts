@@ -94,6 +94,7 @@ struct ipu_device {
 	bool flr_done;
 	bool ipc_reinit;
 	bool secure_mode;
+	bool ipu_bus_ready_to_probe;
 
 	int (*cpd_fw_reload)(struct ipu_device *isp);
 };
@@ -113,5 +114,12 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 		   struct device *device);
 extern enum ipu_version ipu_ver;
 void ipu_internal_pdata_init(void);
+
+#include <media/media-entity.h>
+/* Helpers for building against various kernel versions */
+static inline struct media_pipeline *media_entity_pipeline(struct media_entity *entity)
+{
+	return entity->pipe;
+}
 
 #endif /* IPU_H */

@@ -1131,6 +1131,33 @@ static bool lpc_ich_bxt_set_writeable(void __iomem *base, void *data)
 	return bcr & BCR_WPD;
 }
 
+static int lcp_ich_bios_unlock(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	u32 bcr = 0;
+
+	pci_read_config_dword(pdev, BCR, &bcr);
+	if (!(bcr & BCR_WPD)) {
+		bcr |= BCR_WPD;
+		pci_write_config_dword(pdev, BCR, bcr);
+		pci_read_config_dword(pdev, BCR, &bcr);
+	}
+
+	if (!(bcr & BCR_WPD))
+		return -EIO;
+
+	return 0;
+}
+
+static bool lcp_ich_is_bios_locked(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	u32 bcr = 0;
+
+	pci_read_config_dword(pdev, BCR, &bcr);
+	return !(bcr & BCR_WPD);
+}
+
 static int lpc_ich_init_spi(struct pci_dev *dev)
 {
 	struct lpc_ich_priv *priv = pci_get_drvdata(dev);
@@ -1164,6 +1191,8 @@ static int lpc_ich_init_spi(struct pci_dev *dev)
 
 			info->set_writeable = lpc_ich_lpt_set_writeable;
 			info->data = dev;
+			info->is_bios_locked = lcp_ich_is_bios_locked;
+			info->bios_unlock = lcp_ich_bios_unlock;
 		}
 		break;
 
@@ -1186,6 +1215,8 @@ static int lpc_ich_init_spi(struct pci_dev *dev)
 
 			info->set_writeable = lpc_ich_bxt_set_writeable;
 			info->data = bus;
+			info->is_bios_locked = lcp_ich_is_bios_locked;
+			info->bios_unlock = lcp_ich_bios_unlock;
 		}
 
 		pci_bus_write_config_byte(bus, p2sb, 0xe1, 0x1);

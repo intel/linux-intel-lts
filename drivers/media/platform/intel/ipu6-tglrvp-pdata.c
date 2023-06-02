@@ -84,6 +84,8 @@ static void ar0234_fixup_spdata(const void *spdata_rep, void *spdata)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_VIDEO_AR0234)
+
 #define AR0234_LANES       2
 #define AR0234_I2C_ADDRESS 0x10
 #define AR0234_I2C_ADDRESS_2 0x18
@@ -217,6 +219,7 @@ static struct ipu_isys_subdev_info ar0234_sd_4 = {
 	.fixup_spdata = ar0234_fixup_spdata,
 #endif
 };
+#endif
 
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 #define IMX390_LANES       4
@@ -494,6 +497,8 @@ static struct ipu_isys_subdev_info ti960_sd_2 = {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
+
 #define LT6911UXC_LANES       4
 #define LT6911UXC_I2C_ADDRESS 0x2B
 
@@ -584,6 +589,7 @@ static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {
 	.i2c_adapter_bdf = "0000:00:19.1",
 	},
 };
+#endif
 
 static struct ipu_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
@@ -596,12 +602,14 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&dw9714_sd_1,
 		&ov8856_sd_2,
 #endif
+#if IS_ENABLED(CONFIG_VIDEO_AR0234)
 		&ar0234_sd_1,
 		&ar0234_sd_2,
 #if !IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 		&ar0234_sd_3,
 #endif
 		&ar0234_sd_4,
+#endif
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 		&imx390_sd_1,
 		&imx390_sd_2,
@@ -612,9 +620,11 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&ti960_sd,
 		&ti960_sd_2,
 #endif
+#if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 		&lt6911uxc_sd_0,	//Auxiliary port for 4k60fps
 		&lt6911uxc_sd_1,
 		&lt6911uxc_sd_2,
+#endif
 		NULL,
 	},
 	.clk_map = clk_mapping,

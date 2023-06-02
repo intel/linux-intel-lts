@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2020 Intel Corporation */
+/* Copyright (C) 2013 - 2023 Intel Corporation */
 
 #ifndef IPU_FW_ISYS_H
 #define IPU_FW_ISYS_H
@@ -12,7 +12,7 @@
 #define IPU_MAX_OPINS ((IPU_MAX_IPINS) + 1)
 
 #define IPU6_STREAM_ID_MAX 16
-#define IPU6_NONSECURE_STREAM_ID_MAX 12
+#define IPU6_NONSECURE_STREAM_ID_MAX 16
 #define IPU6_DEV_SEND_QUEUE_SIZE (IPU6_STREAM_ID_MAX)
 #define IPU6_NOF_SRAM_BLOCKS_MAX (IPU6_STREAM_ID_MAX)
 #define IPU6_N_MAX_MSG_SEND_QUEUES (IPU6_STREAM_ID_MAX)

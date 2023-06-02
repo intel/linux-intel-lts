@@ -89,9 +89,10 @@ struct ipu_isys_csi2 {
 	unsigned int nlanes;
 	unsigned int index;
 	atomic_t sof_sequence;
+	bool in_frame[NR_OF_CSI2_VC];
+	bool wait_for_sync[NR_OF_CSI2_VC];
+
 	unsigned int stream_count;
-	bool in_frame;
-	bool wait_for_sync;
 
 	struct v4l2_ctrl *store_csi2_header;
 };
@@ -149,8 +150,8 @@ void ipu_isys_csi2_cleanup(struct ipu_isys_csi2 *csi2);
 struct ipu_isys_buffer *
 ipu_isys_csi2_get_short_packet_buffer(struct ipu_isys_pipeline *ip,
 				      struct ipu_isys_buffer_list *bl);
-void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2);
-void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2);
+void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc);
+void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc);
 void ipu_isys_csi2_wait_last_eof(struct ipu_isys_csi2 *csi2);
 
 /* interface for platform specific */

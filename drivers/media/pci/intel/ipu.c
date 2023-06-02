@@ -281,7 +281,7 @@ static int ipu_init_debugfs(struct ipu_device *isp)
 	struct dentry *file;
 	struct dentry *dir;
 
-	dir = debugfs_create_dir(pci_name(isp->pdev), NULL);
+	dir = debugfs_create_dir(IPU_NAME, NULL);
 	if (!dir)
 		return -ENOMEM;
 
@@ -473,7 +473,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!isp)
 		return -ENOMEM;
 
-	dev_set_name(&pdev->dev, "intel-ipu");
 	isp->pdev = pdev;
 	INIT_LIST_HEAD(&isp->devices);
 
@@ -521,10 +520,13 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		isp->cpd_fw_name = IPU6SE_FIRMWARE_NAME;
 		break;
 	case IPU6EP_ADL_P_PCI_ID:
-	case IPU6EP_ADL_N_PCI_ID:
 	case IPU6EP_RPL_P_PCI_ID:
 		ipu_ver = IPU_VER_6EP;
 		isp->cpd_fw_name = is_es ? IPU6EPES_FIRMWARE_NAME : IPU6EP_FIRMWARE_NAME;
+		break;
+	case IPU6EP_ADL_N_PCI_ID:
+		ipu_ver = IPU_VER_6EP;
+		isp->cpd_fw_name = IPU6EPADLN_FIRMWARE_NAME;
 		break;
 	case IPU6EP_MTL_PCI_ID:
 		ipu_ver = IPU_VER_6EP_MTL;
@@ -709,6 +711,8 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	pm_runtime_put_noidle(&pdev->dev);
 	pm_runtime_allow(&pdev->dev);
+
+	isp->ipu_bus_ready_to_probe = true;
 
 	return 0;
 

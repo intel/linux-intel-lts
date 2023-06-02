@@ -6,9 +6,8 @@
 #include <media/lt6911uxc.h>
 #include <media/ti960.h>
 #include <media/imx390.h>
-#include <media/d4xx.h>
+#include <media/d4xx_pdata.h>
 
-#define DUMMY_SERDES_BASE_ADDR 0x40
 #define CL_EMPTY 0
 #define CL_DISCRETE 1
 #define SERDES_MAX_PORT 4
@@ -43,6 +42,7 @@ struct serdes_platform_data {
 	unsigned int reset_gpio;
 	unsigned int FPD_gpio;
 	char suffix;
+	struct i2c_board_info *deser_board_info;
 };
 
 struct serdes_subdev_info {
@@ -68,9 +68,36 @@ struct serdes_module_pdata {
 };
 
 struct serdes_local {
+	/* num of camera sensor connected to current mipi port */
 	unsigned int rx_port;
+
+	/* num of i2c addr for current ACPI device */
+	unsigned int i2c_num;
+
+	/* current sensor_addr */
 	unsigned short sensor_addr;
+
+	/* physical i2c addr */
+	unsigned short phy_i2c_addr;
+
+	/* last mapped addr */
+	unsigned short sensor_map_addr;
+
+	/* current serializer_addr */
+	unsigned short ser_addr;
+
+	/* last mapped addr */
+	unsigned short ser_map_addr;
+
+	/* current gpio_powerup_seq */
 	unsigned int gpio_powerup_seq;
+
+	/* current module flag */
 	unsigned int module_flags;
+
+	/* counter for total camera sensor connected */
 	unsigned int sensor_num;
+
+	/* counter for total deser connected */
+	unsigned int deser_num;
 };

@@ -1048,7 +1048,7 @@ static __le32 igc_tx_launchtime(struct igc_ring *ring, ktime_t txtime,
 	else
 		launchtime = 0;
 
-	return cpu_to_le32(txtime);
+	return cpu_to_le32(launchtime);
 }
 
 static int igc_init_empty_frame(struct igc_ring *ring,
@@ -1121,9 +1121,8 @@ static void igc_tx_ctxtdesc(struct igc_ring *tx_ring,
 			    u32 mss_l4len_idx)
 {
 	struct igc_adv_tx_context_desc *context_desc;
-	u16 i;
+	u16 i = tx_ring->next_to_use;
 
-	i = tx_ring->next_to_use;
 	context_desc = IGC_TX_CTXTDESC(tx_ring, i);
 
 	i++;

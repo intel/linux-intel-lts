@@ -24,11 +24,10 @@
 static void dwmac4_core_init(struct mac_device_info *hw,
 			     struct net_device *dev)
 {
-	struct stmmac_priv *priv = netdev_priv(dev);
 	void __iomem *ioaddr = hw->pcsr;
 	u32 value = readl(ioaddr + GMAC_CONFIG);
 	u32 clk_rate;
-	
+
 	int mtu = dev->mtu;
 	struct stmmac_priv *priv = netdev_priv(dev);
 #ifdef CONFIG_STMMAC_NETWORK_PROXY
