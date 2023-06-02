@@ -28,12 +28,6 @@
 0002-ipv6-Fix-data-races-around-sk-sk_prot.patch
 0003-tcp-Fix-data-races-around-icsk-icsk_af_ops.patch
 
-# CVE-2022-2196
-0001-KVM-VMX-Execute-IBPB-on-emulated-VM-exit-when-guest-.patch
-
-# CVE-2022-4379
-0001-NFSD-fix-use-after-free-in-__nfs42_ssc_open.patch
-
 # CVE-2023-20928
 0001-android-binder-stop-saving-a-pointer-to-the-VMA.patch
 
@@ -42,9 +36,6 @@
 
 # CVE-2023-0597
 0001-x86-mm-Randomize-per-cpu-entry-area.patch
-
-# CVE-2023-26545
-0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
 
 # CVE-2023-23000
 0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
@@ -58,33 +49,11 @@
 # CVE-2023-22998
 0001-drm-i915-gvt-fix-double-free-bug-in-split_2MB_gtt_en.patch
 
-# CVE-2023-1281
-0001-net-sched-tcindex-update-imperfect-hash-filters-resp.patch
-
-# CVE-2023-1076
-0001-tun-tun_chr_open-correctly-initialize-socket-uid.patch
-0002-net-add-sock_init_data_uid.patch
-
-# CVE-2023-1079
-0001-HID-asus-use-spinlock-to-protect-concurrent-accesses.patch
-0002-HID-asus-use-spinlock-to-safely-schedule-workers.patch
-
-# CVE-2023-1077
-0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
-
 # CVE-2023-1195
 0001-cifs-fix-use-after-free-caused-by-invalid-pointer-ho.patch
 
-# CVE-2023-1118
-0001-media-rc-Fix-use-after-free-bugs-caused-by-ene_tx_ir.patch
-
 # CVE-2023-26242
 0001-fpga-dfl-afu-region-Add-overflow-checks-for-region-s.patch
-
-# CVE-2023-25012
-0001-HID-bigben_remove-manually-unregister-leds.patch
-0002-HID-asus_remove-manually-unregister-led.patch
-0003-HID-sony_remove-manually-unregister-leds.patch
 
 # CVE-2022-44032
 0001-char-pcmcia-cm4000_cs-Fix-use-after-free-in-cm4000_f.patch
@@ -95,35 +64,14 @@
 # CVE-2022-44034
 0001-char-pcmcia-scr24x_cs-Fix-use-after-free-in-scr24x_f.patch
 
-# CVE-2023-28466
-0001-net-tls-fix-possible-race-condition-between-do_tls_g.patch
-
 # CVE-2023-1380
 0001-wifi-brcmfmac-slab-out-of-bounds-read-in-brcmf_get_a.patch
 
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
 
-# CVE-2023-1670
-0001-xirc2ps_cs-Fix-use-after-free-bug-in-xirc2ps_detach.patch
+# CVE-2023-2269
+0001-dm-ioctl-fix-nested-locking-in-table_clear-to-remove.patch
 
-# CVE-2023-30456
-0001-KVM-nVMX-add-missing-consistency-checks-for-CR0-and-.patch
-
-# CVE-2023-1989
-0001-Bluetooth-btsdio-fix-use-after-free-bug-in-btsdio_re.patch
-
-# CVE-2023-1829
-0001-net-sched-Retire-tcindex-classifier.patch
-
-# CVE-2023-1513
-0001-kvm-initialize-all-of-the-kvm_debugregs-structure-be.patch
-
-# CVE-2023-1611
-0001-btrfs-fix-race-between-quota-disable-and-quota-assig.patch
-
-# CVE-2023-1990
-0001-nfc-st-nci-Fix-use-after-free-bug-in-ndlc_remove-due.patch
-
-# CVE-2023-1855
-0001-hwmon-xgene-Fix-use-after-free-bug-in-xgene_hwmon_re.patch
+# CVE-2023-32233
+0001-netfilter-nf_tables-deactivate-anonymous-set-from-pr.patch
