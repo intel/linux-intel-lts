@@ -142,8 +142,11 @@
 # CVE-2022-4129
 0001-l2tp-Serialize-access-to-sk_user_data-with-sk_callba.patch
 
-# CVE-2023-26545
-0001-net-mpls-fix-stale-pointer-if-allocation-fails-durin.patch
-
 # CVE-2023-0590
 0001-net-sched-fix-race-condition-in-qdisc_graft.patch
+
+# CVE-2023-28464
+0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
+
+# CVE-2023-1582
+0001-fs-proc-task_mmu.c-don-t-read-mapcount-for-migration.patch
