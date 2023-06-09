@@ -6,3 +6,6 @@
 
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
+
+# CVE-2023-2898
+0001-f2fs-fix-to-avoid-NULL-pointer-dereference-f2fs_writ.patch
