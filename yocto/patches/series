@@ -51,3 +51,10 @@
 
 # CVE-2023-1195
 0001-cifs-fix-use-after-free-caused-by-invalid-pointer-ho.patch
+
+# CVE-2023-2898
+0001-f2fs-fix-to-avoid-NULL-pointer-dereference-f2fs_writ.patch
+
+# CVE-2023-34255
+# CVE-2023-2124
+0001-xfs-verify-buffer-contents-when-we-skip-log-replay.patch
