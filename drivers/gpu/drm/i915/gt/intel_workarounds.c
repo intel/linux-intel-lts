@@ -2142,7 +2142,7 @@ xehpsdv_wa_1607720814(struct intel_uncore *uncore, const struct i915_wa_list *wa
 static void
 wa_list_apply(struct intel_gt *gt, const struct i915_wa_list *wal)
 {
-	struct intel_uncore *uncore = gt->uncore;
+	struct intel_uncore *uncore;
 	enum forcewake_domains fw;
 	unsigned long flags;
 	struct i915_wa *wa;
@@ -2150,6 +2150,8 @@ wa_list_apply(struct intel_gt *gt, const struct i915_wa_list *wal)
 
 	if (!wal->count)
 		return;
+
+	uncore = gt->uncore;
 
 	fw = wal_get_fw(uncore, wal, FW_REG_READ | FW_REG_WRITE);
 
