@@ -155,8 +155,13 @@ static void ilk_update_pipe_csc(struct intel_crtc *crtc,
 				const u16 coeff[9],
 				const u16 postoff[3])
 {
+	struct intel_crtc_state *crtc_state = to_intel_crtc_state(crtc->base.state);
+	struct drm_crtc_state *uapi = &crtc_state->uapi;
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	enum pipe pipe = crtc->pipe;
+	u16 postoff_red = postoff[0];
+	u16 postoff_green = postoff[1];
+	u16 postoff_blue = postoff[2];
 
 	intel_de_write(dev_priv, PIPE_CSC_PREOFF_HI(pipe), preoff[0]);
 	intel_de_write(dev_priv, PIPE_CSC_PREOFF_ME(pipe), preoff[1]);
@@ -175,12 +180,26 @@ static void ilk_update_pipe_csc(struct intel_crtc *crtc,
 	intel_de_write(dev_priv, PIPE_CSC_COEFF_BV(pipe), coeff[8] << 16);
 
 	if (DISPLAY_VER(dev_priv) >= 7) {
+		if (uapi->ctm_post_offset) {
+			struct drm_color_ctm_post_offset *ctm_post_offset =
+				(struct drm_color_ctm_post_offset *)uapi->ctm_post_offset->data;
+
+			/* Convert to U0.12 format. */
+			postoff_red = ctm_post_offset->red >> 4;
+			postoff_green = ctm_post_offset->green >> 4;
+			postoff_blue = ctm_post_offset->blue >> 4;
+
+			postoff_red = clamp_val(postoff_red, postoff[0], 0xfff);
+			postoff_green = clamp_val(postoff_green, postoff[1], 0xfff);
+			postoff_blue = clamp_val(postoff_blue, postoff[2], 0xfff);
+		}
+
 		intel_de_write(dev_priv, PIPE_CSC_POSTOFF_HI(pipe),
-			       postoff[0]);
+			       postoff_red);
 		intel_de_write(dev_priv, PIPE_CSC_POSTOFF_ME(pipe),
-			       postoff[1]);
+			       postoff_green);
 		intel_de_write(dev_priv, PIPE_CSC_POSTOFF_LO(pipe),
-			       postoff[2]);
+			       postoff_blue);
 	}
 }
 
