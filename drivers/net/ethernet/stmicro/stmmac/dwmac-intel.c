@@ -846,6 +846,7 @@ static int adln_common_data(struct pci_dev *pdev,
 	plat->tx_queues_to_use = 4;
 	plat->clk_ptp_rate = 204800000;
 	plat->speed_mode_2500 = intel_speed_mode_2500;
+	plat->flags |= STMMAC_FLAG_USE_PHY_WOL;
 
 	plat->safety_feat_cfg->tsoee = 1;
 	plat->safety_feat_cfg->mrxpee = 0;
