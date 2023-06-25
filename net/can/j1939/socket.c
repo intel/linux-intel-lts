@@ -189,7 +189,7 @@ activate_next:
 		int time_ms = 0;
 
 		if (err)
-			time_ms = 10 + get_random_u32_below(16);
+			time_ms = 10 + prandom_u32_max(16);
 
 		j1939_tp_schedule_txtimer(first, time_ms);
 	}
@@ -798,7 +798,7 @@ static int j1939_sk_recvmsg(struct socket *sock, struct msghdr *msg,
 	struct j1939_sk_buff_cb *skcb;
 	int ret = 0;
 
-	if (flags & ~(MSG_DONTWAIT | MSG_ERRQUEUE))
+	if (flags & ~(MSG_DONTWAIT | MSG_ERRQUEUE | MSG_CMSG_COMPAT))
 		return -EINVAL;
 
 	if (flags & MSG_ERRQUEUE)
