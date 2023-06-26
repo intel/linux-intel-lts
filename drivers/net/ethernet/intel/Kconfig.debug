@@ -13,3 +13,16 @@ config IGC_TSN_TRACE
 
 	  If in doubt, say "N".
 
+config STMMAC_TSN_TRACE
+	bool "Enable TSN trace printk events"
+	depends on STMMAC_PCI
+	select TRACING
+	default n
+	help
+	  Choose this option to turn on low level request tracing events.
+	  This provides the ability to precisely monitor TSN scheduling
+	  mechanism and also analyze the L2-packet timeline.
+
+	  Recommended for driver developers only.
+
+	  If in doubt, say "N".
