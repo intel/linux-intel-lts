@@ -1089,7 +1089,7 @@ bool intel_pps_have_panel_power_or_vdd(struct intel_dp *intel_dp)
 
 static void pps_init_timestamps(struct intel_dp *intel_dp)
 {
-	intel_dp->pps.panel_power_off_time = ktime_get_boottime();
+	intel_dp->pps.panel_power_off_time = ktime_set(0, 0);
 	intel_dp->pps.last_power_on = jiffies;
 	intel_dp->pps.last_backlight_off = jiffies;
 }
