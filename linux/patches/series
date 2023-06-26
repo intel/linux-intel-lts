@@ -12,5 +12,3 @@
 
 
 # CVE-2023-34255
-# CVE-2023-2124
-0001-xfs-verify-buffer-contents-when-we-skip-log-replay.patch
