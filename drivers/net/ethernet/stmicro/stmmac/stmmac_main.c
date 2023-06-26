@@ -2744,8 +2744,10 @@ static int stmmac_tx_clean(struct stmmac_priv *priv, int budget, u32 queue,
 				ktime_t tx_hwtstamp = { 0 };
 
 				stmmac_get_tx_hwtstamp(priv, p, &tx_hwtstamp);
+#if defined(CONFIG_STMMAC_TSN_TRACE)
 				trace_printk("XDP TX HW TS %llu\n",
 					     tx_hwtstamp);
+#endif
 			}
 		}
 
