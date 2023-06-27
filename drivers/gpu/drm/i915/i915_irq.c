@@ -3758,6 +3758,9 @@ static void gen8_de_irq_postinstall(struct drm_i915_private *dev_priv)
 	if (!HAS_DISPLAY(dev_priv))
 		return;
 
+	if (DISPLAY_VER(dev_priv) >= 9)
+		de_pipe_masked &= ~GEN9_DE_PIPE_IRQ_FAULT_ERRORS;
+
 	if (DISPLAY_VER(dev_priv) <= 10)
 		de_misc_masked |= GEN8_DE_MISC_GSE;
 
