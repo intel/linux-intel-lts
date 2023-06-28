@@ -179,6 +179,16 @@ igt_spinner_create_request(struct igt_spinner *spin,
 
 	*batch++ = arbitration_command;
 
+	/*
+	 * Insert an arbitrary delay between MI_BATCH_BUFFER_STARTs to afford HW
+	 * the chance to interrupt the Command Parser
+	 *
+	 * Caveats:
+	 * - mtl bcs0 fails to reset if there is no MI_NOOP between MI_BB_START.
+	 */
+	memset32(batch, MI_NOOP, 128);
+	batch += 128;
+
 	if (GRAPHICS_VER(rq->engine->i915) >= 8)
 		*batch++ = MI_BATCH_BUFFER_START | BIT(8) | 1;
 	else if (IS_HASWELL(rq->engine->i915))
