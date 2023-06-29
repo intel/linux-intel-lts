@@ -1752,7 +1752,9 @@ static inline bool intel_scanout_needs_vtd_wa(struct drm_i915_private *dev_priv)
 static inline bool
 intel_ggtt_update_needs_vtd_wa(struct drm_i915_private *i915)
 {
-	return IS_BROXTON(i915) && intel_vtd_active();
+	return IS_BROXTON(i915) &&
+		INTEL_REVID(i915) >= 0 && INTEL_REVID(i915) <= 0xC &&
+		intel_vtd_active();
 }
 
 static inline bool
