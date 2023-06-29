@@ -491,6 +491,7 @@ static int es8316_pcm_hw_params(struct snd_pcm_substream *substream,
 		wordlen = ES8316_SERDATA2_LEN_20;
 		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
+	case SNDRV_PCM_FORMAT_S24_3LE:
 		wordlen = ES8316_SERDATA2_LEN_24;
 		break;
 	case SNDRV_PCM_FORMAT_S32_LE:
