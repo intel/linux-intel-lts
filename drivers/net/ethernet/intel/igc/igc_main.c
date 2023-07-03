@@ -260,6 +260,13 @@ static void igc_clean_tx_ring(struct igc_ring *tx_ring)
 	/* reset BQL for queue */
 	netdev_tx_reset_queue(txring_txq(tx_ring));
 
+	/* Zero out the buffer ring */
+	memset(tx_ring->tx_buffer_info, 0,
+	       sizeof(*tx_ring->tx_buffer_info) * tx_ring->count);
+
+	/* Zero out the descriptor ring */
+	memset(tx_ring->desc, 0, tx_ring->size);
+
 	/* reset next_to_use and next_to_clean */
 	tx_ring->next_to_use = 0;
 	tx_ring->next_to_clean = 0;
@@ -273,7 +280,7 @@ static void igc_clean_tx_ring(struct igc_ring *tx_ring)
  */
 void igc_free_tx_resources(struct igc_ring *tx_ring)
 {
-	igc_clean_tx_ring(tx_ring);
+	igc_disable_tx_ring(tx_ring);
 
 	vfree(tx_ring->tx_buffer_info);
 	tx_ring->tx_buffer_info = NULL;
@@ -1039,16 +1046,6 @@ static __le32 igc_tx_launchtime(struct igc_ring *ring, ktime_t txtime,
 	if ((ktime_sub_ns(end_of_cycle, now) < 5 * NSEC_PER_USEC))
 		netdev_warn(ring->netdev, "Packet with txtime=%llu may not be honoured\n",
 			    txtime);
-
-	/* Introducing a window at end of cycle on which packets
-	 * potentially not honor launchtime. Window of 5us chosen
-	 * considering software update the tail pointer and packets
-	 * are dma'ed to packet buffer.
-	 */
-	if ((ktime_sub_ns(end_of_cycle, now) < 5 * NSEC_PER_USEC)) {
-		trace_printk("Packet with txtime=%llu may not be honoured\n",
-			     txtime);
-	}
 
 	ring->last_tx_cycle = end_of_cycle;
 
