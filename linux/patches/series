@@ -29,15 +29,6 @@
 # CVE-2023-23000
 0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
 
-# CVE-2022-45884
-# CVE-2022-45885
-# CVE-2022-45886
-# CVE-2022-45887
-0001-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
-0002-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
-0003-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
-0004-media-ttusb-dec-Fix-memory-leak-in-ttusb_dec_exit_dv.patch
-
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
 
