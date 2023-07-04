@@ -2230,7 +2230,7 @@ static int ar0234_identify_module(struct ar0234 *ar0234)
 	return 0;
 }
 
-static int ar0234_remove(struct i2c_client *client)
+static void ar0234_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ar0234 *ar0234 = to_ar0234(sd);
@@ -2241,7 +2241,6 @@ static int ar0234_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ar0234->mutex);
 
-	return 0;
 }
 
 irqreturn_t ar0234_threaded_irq_fn(int irq, void *dev_id)
