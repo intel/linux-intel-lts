@@ -1096,12 +1096,51 @@ static void stmmac_mac_link_up(struct phylink_config *config,
 		stmmac_fpe_link_state_handle(priv, true);
 }
 
+static void stmmac_validate(struct phylink_config *config,
+			    unsigned long *supported,
+			    struct phylink_link_state *state)
+{
+	struct stmmac_priv *priv = netdev_priv(to_net_dev(config->dev));
+	__ETHTOOL_DECLARE_LINK_MODE_MASK(mac_supported) = { 0, };
+
+	if (!priv->plat->fixed_2G5_clock_rate && priv->plat->max_speed == 2500) {
+		phylink_set_port_modes(mac_supported);
+		phylink_set(mac_supported, Autoneg);
+		phylink_caps_to_linkmodes(mac_supported, config->mac_capabilities);
+
+		linkmode_and(supported, supported, mac_supported);
+		linkmode_and(state->advertising, state->advertising, mac_supported);
+	} else {
+		phylink_generic_validate(config, supported, state);
+	}
+}
+
+#if IS_ENABLED(CONFIG_INTEL_PMC_CORE)
+static int stmmac_mac_prepare(struct phylink_config *config, unsigned int mode,
+			      phy_interface_t interface)
+{
+	struct net_device *ndev = to_net_dev(config->dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	int ret = 0;
+
+	priv->plat->phy_interface = interface;
+
+	if (priv->plat->config_serdes)
+		ret = priv->plat->config_serdes(ndev, priv->plat->bsp_priv);
+
+	return ret;
+}
+#endif
+
 static const struct phylink_mac_ops stmmac_phylink_mac_ops = {
-	.validate = phylink_generic_validate,
+	.validate = stmmac_validate,
 	.mac_select_pcs = stmmac_mac_select_pcs,
 	.mac_config = stmmac_mac_config,
 	.mac_link_down = stmmac_mac_link_down,
 	.mac_link_up = stmmac_mac_link_up,
+#if IS_ENABLED(CONFIG_INTEL_PMC_CORE)
+	.mac_prepare = stmmac_mac_prepare,
+#endif
 };
 
 /**
