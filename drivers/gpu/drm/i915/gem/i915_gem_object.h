@@ -20,8 +20,6 @@
 
 enum intel_region_id;
 
-#define obj_to_i915(obj__) to_i915((obj__)->base.dev)
-
 static inline bool i915_gem_object_size_2big(u64 size)
 {
 	struct drm_i915_gem_object *obj;
@@ -31,9 +29,6 @@ static inline bool i915_gem_object_size_2big(u64 size)
 
 	return false;
 }
-
-unsigned int i915_gem_get_pat_index(struct drm_i915_private *i915,
-				    enum i915_cache_level level);
 
 void i915_gem_init__objects(struct drm_i915_private *i915);
 

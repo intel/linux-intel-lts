@@ -194,7 +194,6 @@ enum i915_cache_level {
 	 * engine.
 	 */
 	I915_CACHE_WT,
-	I915_MAX_CACHE_LEVEL,
 };
 
 enum i915_map_type {
