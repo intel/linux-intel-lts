@@ -17,19 +17,12 @@ struct ref_tracker_dir {
 	bool			dead;
 	struct list_head	list; /* List of active trackers */
 	struct list_head	quarantine; /* List of dead trackers */
-	char			name[32];
 #endif
 };
 
 #ifdef CONFIG_REF_TRACKER
-
-// Temporary allow two and three arguments, until consumers are converted
-#define ref_tracker_dir_init(_d, _q, args...) _ref_tracker_dir_init(_d, _q, ##args, #_d)
-#define _ref_tracker_dir_init(_d, _q, _n, ...) __ref_tracker_dir_init(_d, _q, _n)
-
-static inline void __ref_tracker_dir_init(struct ref_tracker_dir *dir,
-					unsigned int quarantine_count,
-					const char *name)
+static inline void ref_tracker_dir_init(struct ref_tracker_dir *dir,
+					unsigned int quarantine_count)
 {
 	INIT_LIST_HEAD(&dir->list);
 	INIT_LIST_HEAD(&dir->quarantine);
@@ -38,7 +31,6 @@ static inline void __ref_tracker_dir_init(struct ref_tracker_dir *dir,
 	dir->dead = false;
 	refcount_set(&dir->untracked, 1);
 	refcount_set(&dir->no_tracker, 1);
-	strlcpy(dir->name, name, sizeof(dir->name));
 	stack_depot_init();
 }
 
@@ -59,8 +51,7 @@ int ref_tracker_free(struct ref_tracker_dir *dir,
 #else /* CONFIG_REF_TRACKER */
 
 static inline void ref_tracker_dir_init(struct ref_tracker_dir *dir,
-					unsigned int quarantine_count,
-					...)
+					unsigned int quarantine_count)
 {
 }
 
