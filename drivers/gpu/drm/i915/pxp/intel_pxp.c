@@ -14,7 +14,6 @@
 #include "intel_pxp.h"
 #include "intel_pxp_gsccs.h"
 #include "intel_pxp_irq.h"
-#include "intel_pxp_regs.h"
 #include "intel_pxp_session.h"
 #include "intel_pxp_tee.h"
 #include "intel_pxp_types.h"
@@ -62,22 +61,21 @@ bool intel_pxp_is_active(const struct intel_pxp *pxp)
 	return IS_ENABLED(CONFIG_DRM_I915_PXP) && pxp && pxp->arb_is_valid;
 }
 
-static void kcr_pxp_set_status(const struct intel_pxp *pxp, bool enable)
-{
-	u32 val = enable ? _MASKED_BIT_ENABLE(KCR_INIT_ALLOW_DISPLAY_ME_WRITES) :
-		  _MASKED_BIT_DISABLE(KCR_INIT_ALLOW_DISPLAY_ME_WRITES);
+/* KCR register definitions */
+#define KCR_INIT _MMIO(0x320f0)
+/* Setting KCR Init bit is required after system boot */
+#define KCR_INIT_ALLOW_DISPLAY_ME_WRITES REG_BIT(14)
 
-	intel_uncore_write(pxp->ctrl_gt->uncore, KCR_INIT(pxp->kcr_base), val);
+static void kcr_pxp_enable(struct intel_gt *gt)
+{
+	intel_uncore_write(gt->uncore, KCR_INIT,
+			   _MASKED_BIT_ENABLE(KCR_INIT_ALLOW_DISPLAY_ME_WRITES));
 }
 
-static void kcr_pxp_enable(const struct intel_pxp *pxp)
+static void kcr_pxp_disable(struct intel_gt *gt)
 {
-	kcr_pxp_set_status(pxp, true);
-}
-
-static void kcr_pxp_disable(const struct intel_pxp *pxp)
-{
-	kcr_pxp_set_status(pxp, false);
+	intel_uncore_write(gt->uncore, KCR_INIT,
+			   _MASKED_BIT_DISABLE(KCR_INIT_ALLOW_DISPLAY_ME_WRITES));
 }
 
 static int create_vcs_context(struct intel_pxp *pxp)
@@ -128,11 +126,6 @@ static void pxp_init_full(struct intel_pxp *pxp)
 	 */
 	init_completion(&pxp->termination);
 	complete_all(&pxp->termination);
-
-	if (pxp->ctrl_gt->type == GT_MEDIA)
-		pxp->kcr_base = MTL_KCR_BASE;
-	else
-		pxp->kcr_base = GEN12_KCR_BASE;
 
 	intel_pxp_session_management_init(pxp);
 
@@ -373,13 +366,14 @@ unlock:
 
 void intel_pxp_init_hw(struct intel_pxp *pxp)
 {
-	kcr_pxp_enable(pxp);
+	kcr_pxp_enable(pxp->ctrl_gt);
 	intel_pxp_irq_enable(pxp);
 }
 
 void intel_pxp_fini_hw(struct intel_pxp *pxp)
 {
-	kcr_pxp_disable(pxp);
+	kcr_pxp_disable(pxp->ctrl_gt);
+
 	intel_pxp_irq_disable(pxp);
 }
 
