@@ -24,7 +24,7 @@ static struct intel_engine_cs *kobj_to_engine(struct kobject *kobj)
 static ssize_t
 name_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "%s\n", kobj_to_engine(kobj)->name);
+	return sprintf(buf, "%s\n", kobj_to_engine(kobj)->name);
 }
 
 static struct kobj_attribute name_attr =
@@ -33,7 +33,7 @@ __ATTR(name, 0444, name_show, NULL);
 static ssize_t
 class_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "%d\n", kobj_to_engine(kobj)->uabi_class);
+	return sprintf(buf, "%d\n", kobj_to_engine(kobj)->uabi_class);
 }
 
 static struct kobj_attribute class_attr =
@@ -42,7 +42,7 @@ __ATTR(class, 0444, class_show, NULL);
 static ssize_t
 inst_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "%d\n", kobj_to_engine(kobj)->uabi_instance);
+	return sprintf(buf, "%d\n", kobj_to_engine(kobj)->uabi_instance);
 }
 
 static struct kobj_attribute inst_attr =
@@ -51,7 +51,7 @@ __ATTR(instance, 0444, inst_show, NULL);
 static ssize_t
 mmio_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "0x%x\n", kobj_to_engine(kobj)->mmio_base);
+	return sprintf(buf, "0x%x\n", kobj_to_engine(kobj)->mmio_base);
 }
 
 static struct kobj_attribute mmio_attr =
@@ -107,9 +107,11 @@ __caps_show(struct intel_engine_cs *engine,
 	for_each_set_bit(n, &caps, show_unknown ? BITS_PER_LONG : count) {
 		if (n >= count || !repr[n]) {
 			if (GEM_WARN_ON(show_unknown))
-				len += sysfs_emit_at(buf, len, "[%x] ", n);
+				len += snprintf(buf + len, PAGE_SIZE - len,
+						"[%x] ", n);
 		} else {
-			len += sysfs_emit_at(buf, len, "%s ", repr[n]);
+			len += snprintf(buf + len, PAGE_SIZE - len,
+					"%s ", repr[n]);
 		}
 		if (GEM_WARN_ON(len >= PAGE_SIZE))
 			break;
@@ -180,7 +182,7 @@ max_spin_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->props.max_busywait_duration_ns);
+	return sprintf(buf, "%lu\n", engine->props.max_busywait_duration_ns);
 }
 
 static struct kobj_attribute max_spin_attr =
@@ -191,7 +193,7 @@ max_spin_default(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->defaults.max_busywait_duration_ns);
+	return sprintf(buf, "%lu\n", engine->defaults.max_busywait_duration_ns);
 }
 
 static struct kobj_attribute max_spin_def =
@@ -234,7 +236,7 @@ timeslice_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->props.timeslice_duration_ms);
+	return sprintf(buf, "%lu\n", engine->props.timeslice_duration_ms);
 }
 
 static struct kobj_attribute timeslice_duration_attr =
@@ -245,7 +247,7 @@ timeslice_default(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->defaults.timeslice_duration_ms);
+	return sprintf(buf, "%lu\n", engine->defaults.timeslice_duration_ms);
 }
 
 static struct kobj_attribute timeslice_duration_def =
@@ -285,7 +287,7 @@ stop_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->props.stop_timeout_ms);
+	return sprintf(buf, "%lu\n", engine->props.stop_timeout_ms);
 }
 
 static struct kobj_attribute stop_timeout_attr =
@@ -296,7 +298,7 @@ stop_default(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->defaults.stop_timeout_ms);
+	return sprintf(buf, "%lu\n", engine->defaults.stop_timeout_ms);
 }
 
 static struct kobj_attribute stop_timeout_def =
@@ -341,7 +343,7 @@ preempt_timeout_show(struct kobject *kobj, struct kobj_attribute *attr,
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->props.preempt_timeout_ms);
+	return sprintf(buf, "%lu\n", engine->props.preempt_timeout_ms);
 }
 
 static struct kobj_attribute preempt_timeout_attr =
@@ -353,7 +355,7 @@ preempt_timeout_default(struct kobject *kobj, struct kobj_attribute *attr,
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->defaults.preempt_timeout_ms);
+	return sprintf(buf, "%lu\n", engine->defaults.preempt_timeout_ms);
 }
 
 static struct kobj_attribute preempt_timeout_def =
@@ -397,7 +399,7 @@ heartbeat_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->props.heartbeat_interval_ms);
+	return sprintf(buf, "%lu\n", engine->props.heartbeat_interval_ms);
 }
 
 static struct kobj_attribute heartbeat_interval_attr =
@@ -408,7 +410,7 @@ heartbeat_default(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct intel_engine_cs *engine = kobj_to_engine(kobj);
 
-	return sysfs_emit(buf, "%lu\n", engine->defaults.heartbeat_interval_ms);
+	return sprintf(buf, "%lu\n", engine->defaults.heartbeat_interval_ms);
 }
 
 static struct kobj_attribute heartbeat_interval_def =
