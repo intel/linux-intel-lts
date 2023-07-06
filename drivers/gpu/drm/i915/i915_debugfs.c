@@ -575,36 +575,14 @@ static int i915_wa_registers(struct seq_file *m, void *unused)
 static int i915_wedged_get(void *data, u64 *val)
 {
 	struct drm_i915_private *i915 = data;
-	struct intel_gt *gt;
-	unsigned int i;
 
-	*val = 0;
-
-	for_each_gt(gt, i915, i) {
-		int ret;
-		u64 v;
-
-		ret = intel_gt_debugfs_reset_show(gt, &v);
-		if (ret)
-			return ret;
-
-		/* at least one tile should be wedged */
-		*val |= !!v;
-		if (*val)
-			break;
-	}
-
-	return 0;
+	return intel_gt_debugfs_reset_show(to_gt(i915), val);
 }
 
 static int i915_wedged_set(void *data, u64 val)
 {
 	struct drm_i915_private *i915 = data;
-	struct intel_gt *gt;
-	unsigned int i;
-
-	for_each_gt(gt, i915, i)
-		intel_gt_debugfs_reset_store(gt, val);
+	intel_gt_debugfs_reset_store(to_gt(i915), val);
 
 	return 0;
 }
@@ -755,11 +733,7 @@ static int i915_sseu_status(struct seq_file *m, void *unused)
 static int i915_forcewake_open(struct inode *inode, struct file *file)
 {
 	struct drm_i915_private *i915 = inode->i_private;
-	struct intel_gt *gt;
-	unsigned int i;
-
-	for_each_gt(gt, i915, i)
-		intel_gt_pm_debugfs_forcewake_user_open(gt);
+	intel_gt_pm_debugfs_forcewake_user_open(to_gt(i915));
 
 	return 0;
 }
@@ -767,11 +741,7 @@ static int i915_forcewake_open(struct inode *inode, struct file *file)
 static int i915_forcewake_release(struct inode *inode, struct file *file)
 {
 	struct drm_i915_private *i915 = inode->i_private;
-	struct intel_gt *gt;
-	unsigned int i;
-
-	for_each_gt(gt, i915, i)
-		intel_gt_pm_debugfs_forcewake_user_release(gt);
+	intel_gt_pm_debugfs_forcewake_user_release(to_gt(i915));
 
 	return 0;
 }
