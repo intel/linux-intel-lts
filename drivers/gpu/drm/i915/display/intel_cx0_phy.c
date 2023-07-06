@@ -2120,12 +2120,8 @@ static void intel_program_port_clock_ctl(struct intel_encoder *encoder,
 		if (!intel_panel_use_ssc(i915))
 			ssc_enabled = false;
 
-		/* DP2.0 10G and 20G rates enable MPLLA*/
-		if (crtc_state->port_clock == 1000000 || crtc_state->port_clock == 2000000) {
-			val |= ssc_enabled ? XELPDP_SSC_ENABLE_PLLA : 0;
-		} else {
-			val |= ssc_enabled ? XELPDP_SSC_ENABLE_PLLB : 0;
-		}
+		/* TODO: DP2.0 10G and 20G rates enable MPLLA*/
+		val |= ssc_enabled ? XELPDP_SSC_ENABLE_PLLB : 0;
 	}
 
 	intel_de_rmw(i915, XELPDP_PORT_CLOCK_CTL(encoder->port),
