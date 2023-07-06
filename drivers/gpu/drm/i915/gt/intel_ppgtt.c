@@ -9,7 +9,6 @@
 
 #include "i915_trace.h"
 #include "intel_gtt.h"
-#include "intel_tlb.h"
 #include "gen6_ppgtt.h"
 #include "gen8_ppgtt.h"
 
