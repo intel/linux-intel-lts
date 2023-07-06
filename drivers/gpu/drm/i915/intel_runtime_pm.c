@@ -54,35 +54,35 @@
 
 static void init_intel_runtime_pm_wakeref(struct intel_runtime_pm *rpm)
 {
-	ref_tracker_dir_init(&rpm->debug, INTEL_REFTRACK_DEAD_COUNT, dev_name(rpm->kdev));
+	intel_wakeref_tracker_init(&rpm->debug);
 }
 
 static intel_wakeref_t
 track_intel_runtime_pm_wakeref(struct intel_runtime_pm *rpm)
 {
-	if (!rpm->available || rpm->no_wakeref_tracking)
+	if (!rpm->available)
 		return -1;
 
-	return intel_ref_tracker_alloc(&rpm->debug);
+	return intel_wakeref_tracker_add(&rpm->debug);
 }
 
 static void untrack_intel_runtime_pm_wakeref(struct intel_runtime_pm *rpm,
 					     intel_wakeref_t wakeref)
 {
-	if (!rpm->available || rpm->no_wakeref_tracking)
-		return;
-
-	intel_ref_tracker_free(&rpm->debug, wakeref);
+	intel_wakeref_tracker_remove(&rpm->debug, wakeref);
 }
 
 static void untrack_all_intel_runtime_pm_wakerefs(struct intel_runtime_pm *rpm)
 {
-	ref_tracker_dir_exit(&rpm->debug);
+	struct drm_printer p = drm_debug_printer("i915");
+
+	intel_wakeref_tracker_reset(&rpm->debug, &p);
 }
 
 static noinline void
 __intel_wakeref_dec_and_check_tracking(struct intel_runtime_pm *rpm)
 {
+	struct intel_wakeref_tracker saved;
 	unsigned long flags;
 
 	if (!atomic_dec_and_lock_irqsave(&rpm->wakeref_count,
@@ -90,8 +90,15 @@ __intel_wakeref_dec_and_check_tracking(struct intel_runtime_pm *rpm)
 					 flags))
 		return;
 
-	__ref_tracker_dir_print(&rpm->debug, INTEL_REFTRACK_PRINT_LIMIT);
+	saved = __intel_wakeref_tracker_reset(&rpm->debug);
 	spin_unlock_irqrestore(&rpm->debug.lock, flags);
+
+	if (saved.count) {
+		struct drm_printer p = drm_debug_printer("i915");
+
+		__intel_wakeref_tracker_show(&saved, &p);
+		intel_wakeref_tracker_fini(&saved);
+	}
 }
 
 void print_intel_runtime_pm_wakeref(struct intel_runtime_pm *rpm,
@@ -444,11 +451,7 @@ void intel_runtime_pm_driver_release(struct intel_runtime_pm *rpm)
 		 "i915 raw-wakerefs=%d wakelocks=%d on cleanup\n",
 		 intel_rpm_raw_wakeref_count(count),
 		 intel_rpm_wakelock_count(count));
-}
 
-void intel_runtime_pm_driver_last_release(struct intel_runtime_pm *rpm)
-{
-	intel_runtime_pm_driver_release(rpm);
 	untrack_all_intel_runtime_pm_wakerefs(rpm);
 }
 
