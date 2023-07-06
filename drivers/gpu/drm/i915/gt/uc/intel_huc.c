@@ -186,7 +186,7 @@ void intel_huc_register_gsc_notifier(struct intel_huc *huc, struct bus_type *bus
 {
 	int ret;
 
-	if (!intel_huc_is_loaded_by_gsc(huc) || HAS_ENGINE(huc_to_gt(huc), GSC0))
+	if (!intel_huc_is_loaded_by_gsc(huc))
 		return;
 
 	huc->delayed_load.nb.notifier_call = gsc_notifier;
@@ -513,14 +513,6 @@ bool intel_huc_is_authenticated(struct intel_huc *huc,
 static bool huc_is_fully_authenticated(struct intel_huc *huc)
 {
 	struct intel_uc_fw *huc_fw = &huc->fw;
-
-	/*
-	 * in the non-POR MTL flow, the GSC re-uses the same regs as GuC (like
-	 * on DG2). This check can be dropped once the new IFWI which supports
-	 * the POR flow has been propagated to all users.
-	 */
-	if (IS_METEORLAKE(huc_to_gt(huc)->i915) && huc->loaded_via_gsc)
-		return intel_huc_is_authenticated(huc, INTEL_HUC_AUTH_BY_GUC);
 
 	if (!huc_fw->is_meu_binary)
 		return intel_huc_is_authenticated(huc, INTEL_HUC_AUTH_BY_GUC);
