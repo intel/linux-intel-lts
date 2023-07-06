@@ -1462,6 +1462,8 @@ static int mei_gt_forcewake_put(struct mei_device *dev)
 	dev_dbg(dev->dev, "Forcewake put %d\n", dev->forcewake_count);
 	if (dev->forcewake_count <= 0)
 		return 0;
+	if (dev->forcewake_count <= 1)
+		dev->forcewake_wait_done = false;
 	hw->forcewake_put(hw->gsc);
 	return dev->forcewake_count--;
 }

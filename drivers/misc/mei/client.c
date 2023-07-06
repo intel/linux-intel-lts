@@ -650,6 +650,11 @@ static inline int mei_cl_forcewake_get_and_wait(struct mei_cl *cl)
 	 */
 	dev->ops->forcewake_get(dev);
 
+	if (dev->forcewake_wait_done) {
+		cl_dbg(dev, cl, "forcewake is performed already, no need to wait\n");
+		return 0;
+	}
+
 	/* wait for firmware reset or timeout */
 	cl_dbg(dev, cl, "wait for firmware reset or timeout\n");
 	mutex_unlock(&dev->device_lock);
@@ -678,6 +683,7 @@ static inline int mei_cl_forcewake_get_and_wait(struct mei_cl *cl)
 		}
 		cl_dbg(dev, cl, "back from reset\n");
 	}
+	dev->forcewake_wait_done = true;
 	return 0;
 }
 
