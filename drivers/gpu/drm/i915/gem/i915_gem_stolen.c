@@ -561,9 +561,7 @@ static void dbg_poison(struct i915_ggtt *ggtt,
 
 		ggtt->vm.insert_page(&ggtt->vm, addr,
 				     ggtt->error_capture.start,
-				     i915_gem_get_pat_index(ggtt->vm.i915,
-							    I915_CACHE_NONE),
-				     0);
+				     I915_CACHE_NONE, 0);
 		mb();
 
 		s = io_mapping_map_wc(&ggtt->iomap,
