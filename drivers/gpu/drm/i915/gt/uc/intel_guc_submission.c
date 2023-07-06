@@ -150,6 +150,17 @@ guc_create_parallel(struct intel_engine_cs **engines,
 #define GUC_REQUEST_SIZE 64 /* bytes */
 
 /*
+ * We reserve 1/16 of the guc_ids for multi-lrc as these need to be contiguous
+ * per the GuC submission interface. A different allocation algorithm is used
+ * (bitmap vs. ida) between multi-lrc and single-lrc hence the reason to
+ * partition the guc_id space. We believe the number of multi-lrc contexts in
+ * use should be low and 1/16 should be sufficient. Minimum of 32 guc_ids for
+ * multi-lrc.
+ */
+#define NUMBER_MULTI_LRC_GUC_ID(guc)	\
+	((guc)->submission_state.num_guc_ids / 16)
+
+/*
  * Below is a set of functions which control the GuC scheduling state which
  * require a lock.
  */
@@ -1314,8 +1325,7 @@ static ktime_t guc_engine_busyness(struct intel_engine_cs *engine, ktime_t *now)
 	 * start_gt_clk is derived from GuC state. To get a consistent
 	 * view of activity, we query the GuC state only if gt is awake.
 	 */
-	if (!in_reset && !IS_SRIOV_VF(gt->i915) &&
-	    (wakeref = intel_gt_pm_get_if_awake(gt))) {
+	if (!in_reset && (wakeref = intel_gt_pm_get_if_awake(gt))) {
 		stats_saved = *stats;
 		gt_stamp_saved = guc->timestamp.gt_stamp;
 		/*
@@ -1443,9 +1453,6 @@ void intel_guc_busyness_park(struct intel_gt *gt)
 {
 	struct intel_guc *guc = &gt->uc.guc;
 
-	if (IS_SRIOV_VF(gt->i915))
-		return;
-
 	if (!guc_submission_initialized(guc))
 		return;
 
@@ -1474,9 +1481,6 @@ void intel_guc_busyness_unpark(struct intel_gt *gt)
 	struct intel_guc *guc = &gt->uc.guc;
 	unsigned long flags;
 	ktime_t unused;
-
-	if (IS_SRIOV_VF(gt->i915))
-		return;
 
 	if (!guc_submission_initialized(guc))
 		return;
@@ -1548,9 +1552,7 @@ void intel_guc_submission_reset_prepare(struct intel_guc *guc)
 	intel_gt_park_heartbeats(guc_to_gt(guc));
 	disable_submission(guc);
 	guc->interrupts.disable(guc);
-
-	if (!IS_SRIOV_VF(guc_to_gt(guc)->i915))
-		__reset_guc_busyness_stats(guc);
+	__reset_guc_busyness_stats(guc);
 
 	/* Flush IRQ handler */
 	spin_lock_irq(guc_to_gt(guc)->irq_lock);
@@ -1879,7 +1881,6 @@ void intel_guc_submission_reset_finish(struct intel_guc *guc)
 
 static void destroyed_worker_func(struct work_struct *w);
 static void reset_fail_worker_func(struct work_struct *w);
-static int number_mlrc_guc_id(struct intel_guc *guc);
 
 /*
  * Set up the memory resources to be shared with the GuC (via the GGTT)
@@ -1900,7 +1901,7 @@ int intel_guc_submission_init(struct intel_guc *guc)
 	}
 
 	guc->submission_state.guc_ids_bitmap =
-		bitmap_zalloc(number_mlrc_guc_id(guc), GFP_KERNEL);
+		bitmap_zalloc(NUMBER_MULTI_LRC_GUC_ID(guc), GFP_KERNEL);
 	if (!guc->submission_state.guc_ids_bitmap) {
 		ret = -ENOMEM;
 		goto destroy_pool;
@@ -1994,69 +1995,6 @@ static void guc_submit_request(struct i915_request *rq)
 	spin_unlock_irqrestore(&sched_engine->lock, flags);
 }
 
-/*
- * We reserve 1/16 of the guc_ids for multi-lrc as these need to be contiguous
- * per the GuC submission interface. A different allocation algorithm is used
- * (bitmap vs. ida) between multi-lrc and single-lrc hence the reason to
- * partition the guc_id space. We believe the number of multi-lrc contexts in
- * use should be low and 1/16 should be sufficient.
- */
-#define MLRC_GUC_ID_RATIO	16
-
-static int number_mlrc_guc_id(struct intel_guc *guc)
-{
-	return guc->submission_state.num_guc_ids / MLRC_GUC_ID_RATIO;
-}
-
-static int number_slrc_guc_id(struct intel_guc *guc)
-{
-	return guc->submission_state.num_guc_ids - number_mlrc_guc_id(guc);
-}
-
-static int mlrc_guc_id_base(struct intel_guc *guc)
-{
-	return number_slrc_guc_id(guc);
-}
-
-static int new_mlrc_guc_id(struct intel_guc *guc, struct intel_context *ce)
-{
-	int ret;
-
-	GEM_BUG_ON(!intel_context_is_parent(ce));
-	GEM_BUG_ON(!guc->submission_state.guc_ids_bitmap);
-
-	ret =  bitmap_find_free_region(guc->submission_state.guc_ids_bitmap,
-				       number_mlrc_guc_id(guc),
-				       order_base_2(ce->parallel.number_children
-						    + 1));
-	if (unlikely(ret < 0))
-		return ret;
-
-	return ret + mlrc_guc_id_base(guc);
-}
-
-static int new_slrc_guc_id(struct intel_guc *guc, struct intel_context *ce)
-{
-	GEM_BUG_ON(intel_context_is_parent(ce));
-
-	return ida_simple_get(&guc->submission_state.guc_ids,
-			      0, number_slrc_guc_id(guc),
-			      GFP_KERNEL | __GFP_RETRY_MAYFAIL |
-			      __GFP_NOWARN);
-}
-
-int intel_guc_submission_limit_ids(struct intel_guc *guc, u32 limit)
-{
-	if (limit > GUC_MAX_CONTEXT_ID)
-		return -E2BIG;
-
-	if (!ida_is_empty(&guc->submission_state.guc_ids))
-		return -ETXTBSY;
-
-	guc->submission_state.num_guc_ids = limit;
-	return 0;
-}
-
 static int new_guc_id(struct intel_guc *guc, struct intel_context *ce)
 {
 	int ret;
@@ -2064,10 +2002,16 @@ static int new_guc_id(struct intel_guc *guc, struct intel_context *ce)
 	GEM_BUG_ON(intel_context_is_child(ce));
 
 	if (intel_context_is_parent(ce))
-		ret = new_mlrc_guc_id(guc, ce);
+		ret = bitmap_find_free_region(guc->submission_state.guc_ids_bitmap,
+					      NUMBER_MULTI_LRC_GUC_ID(guc),
+					      order_base_2(ce->parallel.number_children
+							   + 1));
 	else
-		ret = new_slrc_guc_id(guc, ce);
-
+		ret = ida_simple_get(&guc->submission_state.guc_ids,
+				     NUMBER_MULTI_LRC_GUC_ID(guc),
+				     guc->submission_state.num_guc_ids,
+				     GFP_KERNEL | __GFP_RETRY_MAYFAIL |
+				     __GFP_NOWARN);
 	if (unlikely(ret < 0))
 		return ret;
 
@@ -2085,7 +2029,7 @@ static void __release_guc_id(struct intel_guc *guc, struct intel_context *ce)
 	if (!context_guc_id_invalid(ce)) {
 		if (intel_context_is_parent(ce)) {
 			bitmap_release_region(guc->submission_state.guc_ids_bitmap,
-					      ce->guc_id.id - mlrc_guc_id_base(guc),
+					      ce->guc_id.id,
 					      order_base_2(ce->parallel.number_children
 							   + 1));
 		} else {
@@ -4156,12 +4100,6 @@ static bool guc_sched_engine_disabled(struct i915_sched_engine *sched_engine)
 	return !sched_engine->tasklet.callback;
 }
 
-static int vf_guc_resume(struct intel_engine_cs *engine)
-{
-	intel_breadcrumbs_reset(engine->breadcrumbs);
-	return 0;
-}
-
 static void guc_set_default_submission(struct intel_engine_cs *engine)
 {
 	engine->submit_request = guc_submit_request;
@@ -4249,8 +4187,6 @@ static void guc_default_vfuncs(struct intel_engine_cs *engine)
 	engine->sched_engine->schedule = i915_schedule;
 
 	engine->reset.prepare = guc_engine_reset_prepare;
-	if (IS_SRIOV_VF(engine->i915))
-		engine->reset.prepare = guc_reset_nop;
 	engine->reset.rewind = guc_rewind_nop;
 	engine->reset.cancel = guc_reset_nop;
 	engine->reset.finish = guc_reset_nop;
@@ -4359,9 +4295,6 @@ int intel_guc_submission_setup(struct intel_engine_cs *engine)
 
 	if (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE)
 		rcs_submission_override(engine);
-
-	if (IS_SRIOV_VF(engine->i915))
-		engine->resume = vf_guc_resume;
 
 	lrc_init_wa_ctx(engine);
 
@@ -4474,8 +4407,7 @@ void intel_guc_submission_enable(struct intel_guc *guc)
 				   GUC_SEM_INTR_ENABLE_ALL);
 
 	guc_init_lrc_mapping(guc);
-	if (!IS_SRIOV_VF(gt->i915))
-		guc_init_engine_stats(guc);
+	guc_init_engine_stats(guc);
 	guc_init_global_schedule_policy(guc);
 }
 
@@ -4509,7 +4441,7 @@ static bool __guc_submission_selected(struct intel_guc *guc)
 
 int intel_guc_sched_disable_gucid_threshold_max(struct intel_guc *guc)
 {
-	return guc->submission_state.num_guc_ids - number_mlrc_guc_id(guc);
+	return guc->submission_state.num_guc_ids - NUMBER_MULTI_LRC_GUC_ID(guc);
 }
 
 /*

@@ -31,7 +31,6 @@
 #include "intel_migrate_types.h"
 #include "intel_wakeref.h"
 #include "intel_wopcm.h"
-#include "iov/intel_iov_types.h"
 
 struct drm_i915_private;
 struct i915_ggtt;
@@ -103,7 +102,6 @@ struct intel_gt {
 	struct intel_uc uc;
 	struct intel_gsc gsc;
 	struct intel_wopcm wopcm;
-	struct intel_iov iov;
 
 	struct {
 		/* Serialize global tlb invalidations */

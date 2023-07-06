@@ -365,8 +365,6 @@ struct intel_engine_cs {
 	u8 class;
 	u8 instance;
 
-	u8 irq_offset;
-
 	u16 uabi_class;
 	u16 uabi_instance;
 
