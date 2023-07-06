@@ -1633,8 +1633,7 @@ static void icl_display_core_init(struct drm_i915_private *dev_priv,
 		return;
 
 	/* 2. Initialize all combo phys */
-	if (DISPLAY_VER(dev_priv) < 14)
-		intel_combo_phy_init(dev_priv);
+	intel_combo_phy_init(dev_priv);
 
 	/*
 	 * 3. Enable Power Well 1 (PG1).
