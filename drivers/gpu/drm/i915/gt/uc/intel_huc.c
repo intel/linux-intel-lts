@@ -291,38 +291,31 @@ void intel_huc_init_early(struct intel_huc *huc)
 static int check_huc_loading_mode(struct intel_huc *huc)
 {
 	struct intel_gt *gt = huc_to_gt(huc);
-	bool fw_is_meu = huc->fw.is_meu_binary;
+	bool fw_needs_gsc = intel_huc_is_loaded_by_gsc(huc);
+	bool hw_uses_gsc = false;
 
 	/*
 	 * The fuse for HuC load via GSC is only valid on platforms that have
 	 * GuC deprivilege.
 	 */
 	if (HAS_GUC_DEPRIVILEGE(gt->i915))
-		huc->loaded_via_gsc = intel_uncore_read(gt->uncore, GUC_SHIM_CONTROL2) &
-				      GSC_LOADS_HUC;
+		hw_uses_gsc = intel_uncore_read(gt->uncore, GUC_SHIM_CONTROL2) &
+			      GSC_LOADS_HUC;
 
-	if (huc->loaded_via_gsc && !fw_is_meu) {
-		huc_err(huc, "HW requires a MEU blob, but we found a legacy one\n");
+	if (fw_needs_gsc != hw_uses_gsc) {
+		huc_err(huc, "mismatch between FW (%s) and HW (%s) load modes\n",
+			HUC_LOAD_MODE_STRING(fw_needs_gsc), HUC_LOAD_MODE_STRING(hw_uses_gsc));
 		return -ENOEXEC;
 	}
 
-	/*
-	 * Newer meu blobs contain the old FW structure inside. If we found
-	 * that, we can use it to load the legacy way.
-	 */
-	if (!huc->loaded_via_gsc && fw_is_meu && !huc->fw.dma_start_offset) {
-		huc_err(huc, " HW in legacy mode, but we have an incompatible meu blob\n");
-		return -ENOEXEC;
-	}
-
-	/* make sure we can access the GSC if we need it */
+	/* make sure we can access the GSC via the mei driver if we need it */
 	if (!(IS_ENABLED(CONFIG_INTEL_MEI_PXP) && IS_ENABLED(CONFIG_INTEL_MEI_GSC)) &&
-	    !HAS_ENGINE(gt, GSC0) && huc->loaded_via_gsc) {
+	    fw_needs_gsc) {
 		huc_info(huc, "can't load due to missing MEI modules\n");
 		return -EIO;
 	}
 
-	huc_dbg(huc, "loaded by GSC = %s\n", str_yes_no(huc->loaded_via_gsc));
+	huc_dbg(huc, "loaded by GSC = %s\n", str_yes_no(fw_needs_gsc));
 
 	return 0;
 }
