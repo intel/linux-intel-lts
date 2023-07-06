@@ -98,11 +98,7 @@ int i915_getparam_ioctl(struct drm_device *dev, void *data,
 		value = sseu->min_eu_in_pool;
 		break;
 	case I915_PARAM_HUC_STATUS:
-		/* On platform with a media GT, the HuC is on that GT */
-		if (i915->media_gt)
-			value = intel_huc_check_status(&i915->media_gt->uc.huc);
-		else
-			value = intel_huc_check_status(&to_gt(i915)->uc.huc);
+		value = intel_huc_check_status(&to_gt(i915)->uc.huc);
 		if (value < 0)
 			return value;
 		break;
