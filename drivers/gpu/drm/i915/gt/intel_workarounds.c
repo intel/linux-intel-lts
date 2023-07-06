@@ -1826,7 +1826,7 @@ wa_verify(struct intel_gt *gt, const struct i915_wa *wa, u32 cur,
 static void wa_list_apply(const struct i915_wa_list *wal)
 {
 	struct intel_gt *gt = wal->gt;
-	struct intel_uncore *uncore;
+	struct intel_uncore *uncore = gt->uncore;
 	enum forcewake_domains fw;
 	unsigned long flags;
 	struct i915_wa *wa;
@@ -1834,8 +1834,6 @@ static void wa_list_apply(const struct i915_wa_list *wal)
 
 	if (!wal->count)
 		return;
-
-	uncore = gt->uncore;
 
 	fw = wal_get_fw_for_rmw(uncore, wal);
 
