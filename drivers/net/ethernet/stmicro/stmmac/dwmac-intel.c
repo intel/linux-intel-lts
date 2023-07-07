@@ -1358,7 +1358,22 @@ static void intel_eth_pci_remove(struct pci_dev *pdev)
 static int __maybe_unused intel_eth_pci_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
+	struct net_device *ndev = dev_get_drvdata(&pdev->dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
 	int ret;
+
+	rtnl_lock();
+	if (priv->plat->use_phy_wol) {
+		struct ethtool_wolinfo wol =  { .cmd = ETHTOOL_GWOL };
+
+		phylink_ethtool_get_wol(priv->phylink, &wol);
+
+		if (wol.wolopts) {
+			phylink_ethtool_set_wol(priv->phylink, &wol);
+			device_set_wakeup_enable(priv->device, !!wol.wolopts);
+		}
+	}
+	rtnl_unlock();
 
 	ret = stmmac_suspend(dev);
 	if (ret)
