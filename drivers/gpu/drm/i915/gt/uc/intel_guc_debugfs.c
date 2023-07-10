@@ -5,6 +5,7 @@
 
 #include <drm/drm_print.h>
 
+#include "gt/intel_gt.h"
 #include "gt/intel_gt_debugfs.h"
 #include "gt/uc/intel_guc_ads.h"
 #include "gt/uc/intel_guc_ct.h"
@@ -13,6 +14,7 @@
 #include "intel_guc.h"
 #include "intel_guc_debugfs.h"
 #include "intel_guc_log_debugfs.h"
+#include "i915_sriov.h"
 
 static int guc_info_show(struct seq_file *m, void *data)
 {
@@ -24,7 +26,9 @@ static int guc_info_show(struct seq_file *m, void *data)
 
 	intel_guc_load_status(guc, &p);
 	drm_puts(&p, "\n");
-	intel_guc_log_info(&guc->log, &p);
+
+	if (!IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		intel_guc_log_info(&guc->log, &p);
 
 	if (!intel_guc_submission_is_used(guc))
 		return 0;

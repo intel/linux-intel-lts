@@ -759,6 +759,9 @@ void intel_gt_sysfs_pm_init(struct intel_gt *gt, struct kobject *kobj)
 {
 	int ret;
 
+	if (IS_SRIOV_VF(gt->i915))
+		return;
+
 	intel_sysfs_rc6_init(gt, kobj);
 
 	ret = intel_sysfs_rps_init(gt, kobj);

@@ -12,6 +12,10 @@
 #include "i915_drv.h"
 #include "intel_guc_ct.h"
 #include "intel_guc_print.h"
+#include "gt/iov/intel_iov_event.h"
+#include "gt/iov/intel_iov_relay.h"
+#include "gt/iov/intel_iov_service.h"
+#include "gt/iov/intel_iov_state.h"
 
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
 enum {
@@ -877,6 +881,9 @@ int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 		return ct_send_nb(ct, action, len, flags);
 
 	ret = ct_send(ct, action, len, response_buf, response_buf_size, &status);
+	if (I915_SELFTEST_ONLY(flags & INTEL_GUC_CT_SEND_SELFTEST))
+		return ret;
+
 	if (unlikely(ret < 0)) {
 		if (ret != -ENODEV)
 			CT_ERROR(ct, "Sending action %#x failed (%pe) status=%#X\n",
@@ -1127,6 +1134,8 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *request)
 {
 	struct intel_guc *guc = ct_to_guc(ct);
+	struct intel_gt *gt = ct_to_gt(ct);
+	struct intel_iov *iov = &gt->iov;
 	const u32 *hxg;
 	const u32 *payload;
 	u32 hxg_len, action, len;
@@ -1162,6 +1171,21 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 		break;
 	case INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
 		ret = intel_guc_engine_failure_process_msg(guc, payload, len);
+		break;
+	case GUC_ACTION_GUC2PF_VF_STATE_NOTIFY:
+		ret = intel_iov_state_process_guc2pf(iov, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_ADVERSE_EVENT:
+		ret = intel_iov_event_process_guc2pf(iov, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_RELAY_FROM_VF:
+		ret = intel_iov_relay_process_guc2pf(&iov->relay, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2VF_RELAY_FROM_PF:
+		ret = intel_iov_relay_process_guc2vf(&iov->relay, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_MMIO_RELAY_SERVICE:
+		ret = intel_iov_service_process_mmio_relay(iov, hxg, hxg_len);
 		break;
 	case INTEL_GUC_ACTION_NOTIFY_FLUSH_LOG_BUFFER_TO_FILE:
 		intel_guc_log_handle_flush_event(&guc->log);
@@ -1246,7 +1270,15 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 	switch (action) {
 	case INTEL_GUC_ACTION_SCHED_CONTEXT_MODE_DONE:
 	case INTEL_GUC_ACTION_DEREGISTER_CONTEXT_DONE:
+	case INTEL_GUC_ACTION_TLB_INVALIDATION_DONE:
 		g2h_release_space(ct, request->size);
+	}
+
+	/* Handle tlb invalidation response in interrupt context */
+	if (action == INTEL_GUC_ACTION_TLB_INVALIDATION_DONE) {
+		int ret = intel_guc_tlb_invalidation_done(ct_to_guc(ct), hxg, request->size);
+		ct_free_msg(request);
+		return ret;
 	}
 
 	spin_lock_irqsave(&ct->requests.lock, flags);
@@ -1361,7 +1393,15 @@ static void ct_receive_tasklet_func(struct tasklet_struct *t)
 void intel_guc_ct_event_handler(struct intel_guc_ct *ct)
 {
 	if (unlikely(!ct->enabled)) {
-		WARN(1, "Unexpected GuC event received while CT disabled!\n");
+		/*
+		 * We are unable to mask memory based interrupt from GuC,
+		 * so there is a chance that an GuC CT event for VF will come
+		 * just as CT will be already disabled. As we are not able to
+		 * handle such an event properly, we should abandon it.
+		 * In this case, calling WARN is not recommended.
+		 */
+		WARN(!HAS_MEMORY_IRQ_STATUS(ct_to_i915(ct)),
+		     "Unexpected GuC event received while CT disabled!\n");
 		return;
 	}
 

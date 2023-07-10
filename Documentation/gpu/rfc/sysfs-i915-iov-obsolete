@@ -1,0 +1,106 @@
+obsolete sysfs interface for i915 virtualization
+------------------------------------------------
+
+
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/contexts_free
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/contexts_max_quota
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/doorbells_free
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/doorbells_max_quota
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/ggtt_free
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/ggtt_max_quota
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/lmem_free
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/available/lmem_max_quota
+Date:		September 2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		These attributes are *deprecated* !
+
+		To provision VFs please either use explicit values from vGPU
+		profile definitions or rely on the auto-provisioning.
+
+		Detailed related information about available resources could
+		be still viewed from un-official debugfs attributes.
+
+		---
+
+		The sysfs "gt%/available" directory holds attributes specific
+		to the device GT tile that shows maximum values of the resources
+		that can be used for VF provisioning.
+
+		Those attributes may return values that depend on actual system
+		usage so for stable results explicit idling of the driver might
+		be needed.
+
+		contexts_free: (RO) 0..U16_MAX
+
+		contexts_max_quota: (RO) integer 0..U16_MAX
+			Maximum number contexts that are available for VF
+			provisioning.
+			This value shall meet all HW/FW requirements.
+			If this value is zero then no more contexts are available
+			for provisioning.
+
+		doorbells_free: (RO) 0..U16_MAX
+
+		doorbells_max_quota: (RO) integer 0..U16_MAX
+			Maximum number doorbells that are available for VF
+			provisioning.
+			This value shall meet all HW/FW requirements.
+			If this value is zero then no more doorbells are
+			available for provisioning.
+
+		ggtt_free: (RO) 0..U64_MAX
+			Summary size of the all free GGTT regions.
+
+		ggtt_max_quota: (RO) integer 0..U64_MAX
+			Size of the largest free GGTT region (in bytes) that
+			can be used for VF provisioning.
+			This value shall meet all HW/FW requirements.
+			If this value is zero then no more GGTT is available
+			for provisioning.
+
+		lmem_free: (RO) 0..U64_MAX
+			Size of the free LMEM space (in bytes) that could be
+			available for the VF provisioning.
+
+		lmem_max_quota: (RO) 0..U64_MAX
+			Size of the maximum LMEM space (in bytes) that can be
+			used for VF provisioning.
+			This value shall meet all HW/FW requirements.
+			If this value is zero then no more LMEM is available
+			for provisioning.
+
+
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/contexts_quota
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/doorbells_quota
+Date:		September 2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		These attributes are *deprecated* !
+
+		Instead of specifying explicit context and doorbells quotas
+		for the PF please use 'spare' attributes that allow to
+		specify minimum sizes of the resources that PF should keep
+		unavailable for the VFs provisioning.
+
+		---
+
+		Writes to these attributes may fail with:
+			-E2BIG if value larger that HW/FW limit.
+			-EDQUOT if value is larger than maximum quota.
+			-ENOSPC if can't allocate required quota.
+			-EIO if GuC refuses to change VF provisioning.
+
+		contexts_quota: (RW) 0..U16_MAX
+			Number of GuC submission contexts assigned to the PF.
+			This value is aligned per HW/FW/SW requirements.
+			Default value is pre-calculated based on number of
+			VFs that could be enabled on the system.
+
+		doorbells_quota: (RW) 0..U16_MAX
+			Number of GuC doorbells assigned to the PF.
+			This value is aligned per HW/FW/SW requirements.
+			Default is 0.
