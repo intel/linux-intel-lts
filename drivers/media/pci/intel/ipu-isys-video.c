@@ -45,7 +45,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_NV16},
 	{V4L2_PIX_FMT_XRGB32, 32, 32, 0, MEDIA_BUS_FMT_RGB565_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
-	{V4L2_PIX_FMT_Y12I, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
+	{V4L2_PIX_FMT_Y12I, 24, 24, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	{V4L2_PIX_FMT_XBGR32, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
@@ -1238,7 +1238,8 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 						      BITS_PER_BYTE),
 					 av->isys->line_align);
 
-	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8)
+	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8 ||
+	    input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_RGB888)
 		pin_info->pt = IPU_FW_ISYS_PIN_TYPE_MIPI;
 	else
 		pin_info->pt = aq->css_pin_type;
