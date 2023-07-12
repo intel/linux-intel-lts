@@ -1774,6 +1774,8 @@ static int ds5_set_calibration_data(struct ds5 *state,
 	return -EINVAL;
 }
 
+static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on);
+
 static int ds5_s_state(struct ds5 *state, int vc)
 {
 	int ret = 0;
@@ -1813,8 +1815,6 @@ static int ds5_s_state(struct ds5 *state, int vc)
 	ds5_set_state_last_set(state);
 	return ret;
 }
-
-static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on);
 
 static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 {
@@ -2126,10 +2126,10 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 		dev_info(&state->client->dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
 		vc_id = (val >> 8) & 0x00FF;
 		on = val & 0x00FF;
-		if (on == 0xff) {
+		if (vc_id < DS5_MUX_PAD_COUNT)
 			ret = ds5_s_state(state, vc_id);
+		if (on == 0xff)
 			break;
-		}
 		if (vc_id > NR_OF_DS5_STREAMS - 1)
 			dev_err(&state->client->dev, "invalid vc %d\n", vc_id);
 		else
@@ -3235,7 +3235,9 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	// u32 pad = fmt->pad;
 	int ret = 0;
 	int substream = -1;
-
+	if (pad != DS5_MUX_PAD_EXTERNAL)
+		ds5_s_state(state, pad - 1);
+	sensor = state->mux.last_set;
 	switch (pad) {
 	case DS5_MUX_PAD_DEPTH_A:
 	case DS5_MUX_PAD_MOTION_T_A:
@@ -3288,8 +3290,10 @@ static int ds5_mux_get_fmt(struct v4l2_subdev *sd,
 	int ret = 0;
 	struct ds5_sensor *sensor = state->mux.last_set;
 	u32 pad = sensor->mux_pad;
-
-	dev_info(sd->dev, "%s(): %u %p\n", __func__, pad, state->mux.last_set);
+	if (pad != DS5_MUX_PAD_EXTERNAL)
+		ds5_s_state(state, pad - 1);
+	sensor = state->mux.last_set;
+	dev_info(sd->dev, "%s(): %u %s %p\n", __func__, pad, ds5_get_sensor_name(state), state->mux.last_set);
 
 	switch (pad) {
 	case DS5_MUX_PAD_DEPTH_A:
