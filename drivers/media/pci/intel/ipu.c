@@ -41,9 +41,13 @@
 enum ipu_version ipu_ver;
 EXPORT_SYMBOL(ipu_ver);
 
-static int isys_freq_overwrite = -1;
-module_param(isys_freq_overwrite, int, 0660);
-MODULE_PARM_DESC(isys_freq_overwrite, "overwrite isys freq default value");
+static int isys_freq_override = -1;
+module_param(isys_freq_override, int, 0660);
+MODULE_PARM_DESC(isys_freq_override, "override isys freq default value");
+
+static int psys_freq_override = -1;
+module_param(psys_freq_override, int, 0660);
+MODULE_PARM_DESC(psys_freq_override, "override psys freq default value");
 
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 static int isys_init_acpi_add_device(struct device *dev, void *priv,
@@ -656,12 +660,16 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
-	if ((isys_freq_overwrite >= IPU_IS_FREQ_MIN) && (isys_freq_overwrite <= IPU_IS_FREQ_MAX)) {
-		u64 val = isys_freq_overwrite;
+	if (isys_freq_override >= IPU_IS_FREQ_MIN &&
+		isys_freq_override <= IPU_IS_FREQ_MAX) {
+		u64 val = isys_freq_override;
 
 		do_div(val, BUTTRESS_IS_FREQ_STEP);
-		dev_info(&isp->pdev->dev, "isys freq overwrite to %d\n", isys_freq_overwrite);
 		isys_ctrl->divisor = val;
+		dev_info(&isp->pdev->dev,
+			 "adusted isys freq from input (%d) and set (%d)\n",
+			 isys_freq_override,
+			 isys_ctrl->divisor * BUTTRESS_IS_FREQ_STEP);
 	}
 
 	psys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*psys_ctrl), GFP_KERNEL);
@@ -681,6 +689,18 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
+	if (psys_freq_override >= BUTTRESS_MIN_FORCE_PS_FREQ &&
+		psys_freq_override <= BUTTRESS_MAX_FORCE_PS_FREQ) {
+		u64 val = psys_freq_override;
+
+		do_div(val, BUTTRESS_PS_FREQ_STEP);
+		psys_ctrl->divisor = val;
+		psys_ctrl->qos_floor = val;
+		dev_info(&isp->pdev->dev,
+			 "adjusted psys freq from input (%d) and set (%d)\n",
+			 psys_freq_override,
+			 psys_ctrl->divisor * BUTTRESS_PS_FREQ_STEP);
+	}
 	rval = pm_runtime_get_sync(&isp->psys->dev);
 	if (rval < 0) {
 		dev_err(&isp->psys->dev, "Failed to get runtime PM\n");
