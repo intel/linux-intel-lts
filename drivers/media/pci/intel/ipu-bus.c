@@ -146,6 +146,7 @@ static void ipu_bus_release(struct device *dev)
 {
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 
+	kfree(adev->pdata);
 	kfree(adev);
 }
 

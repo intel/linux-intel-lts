@@ -77,7 +77,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 #endif
 	int ret;
 
-	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return ERR_PTR(-ENOMEM);
 
@@ -96,6 +96,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	if (IS_ERR(isys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(isys),
 			      "ipu_bus_initialize_device(isys) failed\n");
+		kfree(pdata);
 		return isys;
 	}
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
@@ -115,6 +116,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	if (IS_ERR(isys->mmu)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(isys->mmu),
 			      "ipu_mmu_init(isys->mmu) failed\n");
+		put_device(&isys->dev);
 		return ERR_CAST(isys->mmu);
 	}
 
@@ -138,7 +140,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	struct ipu_psys_pdata *pdata;
 	int ret;
 
-	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return ERR_PTR(-ENOMEM);
 
@@ -150,6 +152,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	if (IS_ERR(psys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(psys),
 			      "ipu_bus_initialize_device(psys) failed\n");
+		kfree(pdata);
 		return psys;
 	}
 
@@ -158,6 +161,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	if (IS_ERR(psys->mmu)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(psys->mmu),
 			      "ipu_mmu_init(psys->mmu) failed\n");
+		put_device(&psys->dev);
 		return ERR_CAST(psys->mmu);
 	}
 
