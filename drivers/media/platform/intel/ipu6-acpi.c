@@ -100,8 +100,7 @@ static int ipu_acpi_get_pdata(struct i2c_client *client,
 	int index = get_table_index(&client->dev, acpi_id->id);
 
 	if (index < 0) {
-		dev_err(&client->dev,
-			"Device is not in supported devices list\n");
+		pr_err("Device is not in supported devices list\n");
 		return -ENODEV;
 	}
 
@@ -112,7 +111,7 @@ static int ipu_acpi_get_pdata(struct i2c_client *client,
 	strlcpy(client->name, supported_devices[index].real_driver,
 		sizeof(client->name));
 
-	dev_info(&client->dev, "Getting BIOS data for %s", client->name);
+	pr_info("IPU6 ACPI: Getting BIOS data for %s (%s)", client->name, dev_name(&client->dev));
 
 	supported_devices[index].get_platform_data(
 		client, camdata, helper,
@@ -139,7 +138,7 @@ static int ipu_i2c_test(struct device *dev, void *priv)
 
 	acpi_id = acpi_match_device(ipu_acpi_match, dev);
 	if (!acpi_id) {
-		dev_err(dev, "acpi id not found, return 0");
+		pr_err("IPU6 ACPI: ACPI device NOT supported in IPU6 ACPI driver");
 		return 0;
 	}
 
@@ -152,7 +151,7 @@ static int ipu_i2c_test(struct device *dev, void *priv)
 
 	/* Looks that we got what we are looking for */
 	if (ipu_acpi_get_pdata(client, acpi_id, priv))
-		dev_err(dev, "Failed to process ACPI data");
+		pr_err("IPU6 ACPI: Failed to process ACPI data");
 
 	/* Don't return error since we want to process remaining devices */
 

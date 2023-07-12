@@ -25,10 +25,9 @@ static int get_integer_dsdt_data(struct device *dev, const u8 *dsdt,
 
 	obj = acpi_evaluate_dsm(dev_handle, (void *)dsdt, 0, func, NULL);
 	if (!obj) {
-		dev_err(dev, "No dsdt\n");
+		pr_err("IPU6 ACPI: Could not find corresponding DSM\n");
 		return -ENODEV;
 	}
-	dev_dbg(dev, "ACPI type %d", obj->type);
 
 	if (obj->type != ACPI_TYPE_INTEGER) {
 		ACPI_FREE(obj);
@@ -48,18 +47,20 @@ static int read_acpi_block(struct device *dev, char *id, void *data, u32 size)
 	u32 buffer_length;
 
 	status = acpi_evaluate_object(dev_handle, id, NULL, &buffer);
-	if (!ACPI_SUCCESS(status))
+	if (!ACPI_SUCCESS(status)) {
+		pr_err("IPU6 ACPI: Could not find ACPI block");
 		return -ENODEV;
+	}
 
 	obj = (union acpi_object *)buffer.pointer;
 	if (!obj || obj->type != ACPI_TYPE_BUFFER) {
-		dev_err(dev, "Could't read acpi buffer\n");
+		pr_err("IPU6 ACPI: Could not read ACPI buffer\n");
 		status = -ENODEV;
 		goto err;
 	}
 
 	if (obj->buffer.length > size) {
-		dev_err(dev, "Given buffer is too small\n");
+		pr_err("IPU6 ACPI: Given buffer is too small\n");
 		status = -ENODEV;
 		goto err;
 	}
@@ -83,15 +84,16 @@ int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int s
 
 	int i = 0, j = 0, retries = 0, loop = 0;
 	u64 num_gpio;
+	int rval;
 
-	int rval = get_integer_dsdt_data(dev, dsdt_cam_gpio, 1, &num_gpio);
+	rval = get_integer_dsdt_data(dev, dsdt_cam_gpio, 1, &num_gpio);
 
 	if (rval < 0) {
-		dev_err(dev, "Failed to get number of GPIO pins\n");
+		pr_err("IPU6 ACPI: Failed to get number of GPIO pins\n");
 		return rval;
 	}
 
-	dev_dbg(dev, "Num of gpio found = %lld", num_gpio);
+	pr_info("IPU6 APCI: Num of gpio found = %lld", num_gpio);
 
 	if (num_gpio == 0) {
 		*gpio_num = num_gpio;
@@ -99,7 +101,7 @@ int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int s
 	}
 
 	if (num_gpio > size) {
-		dev_err(dev, "Incorrect number of GPIO pins\n");
+		pr_err("IPU6 ACPI: Incorrect number of GPIO pins\n");
 		return rval;
 	}
 
@@ -111,7 +113,7 @@ int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int s
 		rval = get_integer_dsdt_data(dev, dsdt_cam_gpio, i + 2, &data);
 
 		if (rval < 0) {
-			dev_err(dev, "No gpio data\n");
+			pr_err("IPU6 ACPI: Failed to get GPIO data\n");
 			return -ENODEV;
 		}
 
@@ -143,6 +145,7 @@ int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int s
 
 			/* save into array */
 			if (save == TRUE) {
+				pr_info("IPU6 ACPI: DSM: Pin number = %lld. Func = %x.", pin, gpio[i].func);
 				gpio[i].pin = pin;
 				gpio[i].valid = TRUE;
 				gpiod_put(desc);
@@ -165,10 +168,12 @@ int ipu_acpi_get_i2c_info(struct device *dev, struct ipu_i2c_info *i2c, int size
 
 	u64 num_i2c;
 	int i;
-	int rval = get_integer_dsdt_data(dev, dsdt_cam_i2c, 1, &num_i2c);
+	int rval;
+
+	rval = get_integer_dsdt_data(dev, dsdt_cam_i2c, 1, &num_i2c);
 
 	if (rval < 0) {
-		dev_err(dev, "Failed to get number of I2C\n");
+		pr_err("IPU6 ACPI: Failed to get number of I2C\n");
 		return -ENODEV;
 	}
 
@@ -179,14 +184,14 @@ int ipu_acpi_get_i2c_info(struct device *dev, struct ipu_i2c_info *i2c, int size
 					     &data);
 
 		if (rval < 0) {
-			dev_err(dev, "Failed to get I2C data\n");
+			pr_err("IPU6 ACPI: Failed to get I2C data\n");
 			return -ENODEV;
 		}
 
 		i2c[i].bus = ((data >> 24) & 0xff);
 		i2c[i].addr = (data >> 8) & 0xff;
 
-		dev_dbg(dev, "ACPI camera option: i2c bus %d addr %x",
+		pr_info("IPU6 ACPI: DSM: i2c bus %d addr %x",
 			i2c[i].bus, i2c[i].addr);
 	}
 
@@ -205,11 +210,13 @@ int ipu_acpi_get_control_logic_data(struct device *dev,
 {
 	/* CLDB data */
 	struct control_logic_data_packed ctl_logic_data;
-	int ret = read_acpi_block(dev, "CLDB", &ctl_logic_data,
+	int ret;
+
+	ret = read_acpi_block(dev, "CLDB", &ctl_logic_data,
 				sizeof(ctl_logic_data));
 
 	if (ret < 0) {
-		dev_err(dev, "no such CLDB block");
+		pr_err("IPU6 ACPI: Fail to read from CLDB");
 		return ret;
 	}
 
@@ -217,7 +224,7 @@ int ipu_acpi_get_control_logic_data(struct device *dev,
 	(*ctl_data)->id = ctl_logic_data.controllogicid;
 	(*ctl_data)->sku = ctl_logic_data.sensorcardsku;
 
-	dev_dbg(dev, "CLDB data version %d clid %d cltype %d sku %d",
+	pr_info("IPU6 ACPI: CLDB: version %d clid %d cltype %d sku %d",
 		ctl_logic_data.version,
 		ctl_logic_data.controllogicid,
 		ctl_logic_data.controllogictype,
@@ -246,7 +253,7 @@ int ipu_acpi_get_dep_data(struct device *dev,
 	ctl_data->completed = false;
 
 	if (!acpi_has_method(dev_handle, "_DEP")) {
-		dev_err(dev, "ACPI does not have _DEP method");
+		pr_err("IPU6 ACPI: %s does not have _DEP method", dev_name(dev));
 		return 0;
 	}
 
@@ -254,7 +261,7 @@ int ipu_acpi_get_dep_data(struct device *dev,
 					 &dep_devices);
 
 	if (ACPI_FAILURE(status)) {
-		dev_err(dev, "Failed to evaluate _DEP.\n");
+		pr_err("IPU6 ACPI: %s failed to evaluate _DEP", dev_name(dev));
 		return -ENODEV;
 	}
 
@@ -266,7 +273,7 @@ int ipu_acpi_get_dep_data(struct device *dev,
 
 		status = acpi_get_object_info(dep_devices.handles[i], &info);
 		if (ACPI_FAILURE(status)) {
-			dev_err(dev, "Error reading _DEP device info\n");
+			pr_err("IPU6 ACPI: %s error reading _DEP device info", dev_name(dev));
 			continue;
 		}
 
@@ -281,36 +288,36 @@ int ipu_acpi_get_dep_data(struct device *dev,
 		/* Process device IN3472 created by acpi */
 		device = acpi_fetch_acpi_dev(dep_devices.handles[i]);
 		if (!device) {
-			dev_err(dev, "INT3472 does not have dep device");
+			pr_err("IPU6 ACPI: Failed to get ACPI device");
 			return -ENODEV;
 		}
 
-		dev_dbg(dev, "Depend ACPI device found: %s\n",
+		pr_info("IPU6 ACPI: Dependent ACPI device found: %s\n",
 			dev_name(&device->dev));
 
 		p_dev = bus_find_device(&platform_bus_type, NULL,
 					&device->fwnode, match_depend);
 
 		if (p_dev) {
-			dev_err(dev, "Dependent platform device found %s\n",
+			pr_info("IPU6 ACPI: Dependent platform device found %s\n",
 				dev_name(p_dev));
 
 			/* obtain Control Logic Data from BIOS */
 			rval = ipu_acpi_get_control_logic_data(p_dev, &ctl_data);
 
 			if (rval) {
-				dev_err(dev, "Error getting Control Logic Data");
+				pr_err("IPU6 ACPI: Error getting Control Logic Data");
 				return rval;
 			}
 
 			ctl_data->completed = true;
 		} else
-			dev_err(dev, "Dependent platform device not found\n");
+			pr_err("IPU6 ACPI: Dependent platform device not found for %s\n", dev_name(dev));
 	}
 
 	if (!ctl_data->completed) {
 		ctl_data->type = CL_EMPTY;
-		dev_err(dev, "No control logic data available");
+		pr_err("IPU6 APCI: No control logic data available");
 	}
 
 	return 0;
@@ -322,12 +329,13 @@ int ipu_acpi_get_cam_data(struct device *dev,
 {
 	/* SSDB */
 	struct sensor_bios_data_packed sensor_data;
+	int ret;
 
-	int ret = read_acpi_block(dev, "SSDB", &sensor_data,
+	ret = read_acpi_block(dev, "SSDB", &sensor_data,
 				  sizeof(sensor_data));
 
 	if (ret < 0) {
-		dev_err(dev, "Fail to read from SSDB");
+		pr_err("IPU6 ACPI: Fail to read from SSDB");
 		return ret;
 	}
 
@@ -337,14 +345,16 @@ int ipu_acpi_get_cam_data(struct device *dev,
 	sensor->pprval = sensor_data.pprval;
 	sensor->pprunit = sensor_data.pprunit;
 
-	dev_dbg(dev, "sensor ACPI data: name %s link %d, lanes %d pprval %d pprunit %x",
+	pr_info("IPU6 ACPI: SSDB: name %s. link %d. lanes %d. pprval %d. pprunit %x",
 		dev_name(dev), sensor->link, sensor->lanes, sensor->pprval, sensor->pprunit);
 
 	/* I2C */
 	ret = ipu_acpi_get_i2c_info(dev, sensor->i2c, ARRAY_SIZE(sensor->i2c), &sensor->i2c_num);
 
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("IPU6 ACPI: Failed to get I2C info");
 		return ret;
+	}
 
 	return 0;
 }
