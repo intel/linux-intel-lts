@@ -567,6 +567,7 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 	}
 
 	ev.u.frame_sync.frame_sequence = atomic_inc_return(&ip->sequence) - 1;
+	ev.id = vc;
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 
 	v4l2_event_queue(vdev, &ev);
