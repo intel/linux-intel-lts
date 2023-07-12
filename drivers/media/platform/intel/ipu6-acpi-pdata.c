@@ -609,8 +609,11 @@ int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 
 		/* serdes_subdev_info */
 		serdes_sdinfo[i].rx_port = i;
-		serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr +
-						serdes_info.sensor_num + i;
+		if (!strcmp(sensor_name, D457_NAME))
+			serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr;
+		else
+			serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr +
+			serdes_info.sensor_num + i;
 		serdes_sdinfo[i].phy_i2c_addr = serdes_info.phy_i2c_addr;
 		serdes_sdinfo[i].suffix = SUFFIX_BASE + serdes_info.sensor_num + i + 1;
 	}
