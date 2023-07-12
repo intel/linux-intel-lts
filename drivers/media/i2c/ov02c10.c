@@ -892,6 +892,7 @@ static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 	const struct ov02c10_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+
 	link_freq_index = ov02c10->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov02c10_write_reg_list(ov02c10, reg_list);
@@ -1139,7 +1140,6 @@ static void ov02c10_read_mipi_lanes(struct ov02c10 *ov02c10)
 	union acpi_object *obj;
 	acpi_status status;
 
-	ov02c10->mipi_lanes = OV02C10_DATA_LANES;
 	if (!adev) {
 		dev_info(&client->dev, "Not ACPI device\n");
 		return;
@@ -1210,10 +1210,8 @@ static int ov02c10_probe(struct i2c_client *client)
 	int ret = 0;
 
 	ov02c10 = devm_kzalloc(&client->dev, sizeof(*ov02c10), GFP_KERNEL);
-	if (!ov02c10) {
-		ret = -ENOMEM;
-		goto probe_error_ret;
-	}
+	if (!ov02c10)
+		return -ENOMEM;
 
 	v4l2_i2c_subdev_init(&ov02c10->sd, client, &ov02c10_subdev_ops);
 
@@ -1270,6 +1268,7 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov02c10->mutex);
 
 probe_error_ret:
+
 	return ret;
 }
 

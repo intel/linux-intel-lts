@@ -314,11 +314,18 @@ struct ov01a1s {
 	struct gpio_desc *reset_gpio;
 	/* GPIO for powerdown */
 	struct gpio_desc *powerdown_gpio;
+	/* Power enable */
+	struct regulator *avdd;
 	/* Clock provider */
 	struct clk *clk;
-	/* GPIO for privacy LED */
-	struct gpio_desc *pled_gpio;
 #endif
+
+	enum {
+		OV01A1S_USE_DEFAULT = 0,
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472) || IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+		OV01A1S_USE_INT3472 = 1,
+#endif
+	} power_type;
 
 	/* Streaming on/off */
 	bool streaming;
@@ -327,24 +334,6 @@ struct ov01a1s {
 static inline struct ov01a1s *to_ov01a1s(struct v4l2_subdev *subdev)
 {
 	return container_of(subdev, struct ov01a1s, sd);
-}
-
-static void ov01a1s_set_power(struct ov01a1s *ov01a1s, int on)
-{
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-	if (!(ov01a1s->reset_gpio && ov01a1s->powerdown_gpio))
-		return;
-	gpiod_set_value_cansleep(ov01a1s->reset_gpio, on);
-	gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, on);
-	if (on)
-		clk_prepare_enable(ov01a1s->clk);
-	else
-		clk_disable_unprepare(ov01a1s->clk);
-	gpiod_set_value_cansleep(ov01a1s->pled_gpio, on);
-	msleep(20);
-#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
-	power_ctrl_logic_set_power(on);
-#endif
 }
 
 static int ov01a1s_read_reg(struct ov01a1s *ov01a1s, u16 reg, u16 len, u32 *val)
@@ -601,7 +590,7 @@ static int ov01a1s_start_streaming(struct ov01a1s *ov01a1s)
 	const struct ov01a1s_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
-	ov01a1s_set_power(ov01a1s, 1);
+
 	link_freq_index = ov01a1s->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov01a1s_write_reg_list(ov01a1s, reg_list);
@@ -638,7 +627,6 @@ static void ov01a1s_stop_streaming(struct ov01a1s *ov01a1s)
 				OV01A1S_MODE_STANDBY);
 	if (ret)
 		dev_err(&client->dev, "failed to stop streaming");
-	ov01a1s_set_power(ov01a1s, 0);
 }
 
 static int ov01a1s_set_stream(struct v4l2_subdev *sd, int enable)
@@ -672,6 +660,56 @@ static int ov01a1s_set_stream(struct v4l2_subdev *sd, int enable)
 
 	ov01a1s->streaming = enable;
 	mutex_unlock(&ov01a1s->mutex);
+
+	return ret;
+}
+
+static int ov01a1s_power_off(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
+	int ret = 0;
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	if (ov01a1s->power_type == OV01A1S_USE_INT3472) {
+		gpiod_set_value_cansleep(ov01a1s->reset_gpio, 1);
+		gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, 1);
+		regulator_disable(ov01a1s->avdd);
+		clk_disable_unprepare(ov01a1s->clk);
+		msleep(20);
+	}
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	if (ov01a1s->power_type == OV01A1S_USE_INT3472)
+		ret = power_ctrl_logic_set_power(0);
+#endif
+
+	return ret;
+}
+
+static int ov01a1s_power_on(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
+	int ret = 0;
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	if (ov01a1s->power_type == OV01A1S_USE_INT3472) {
+		ret = clk_prepare_enable(ov01a1s->clk);
+		if (ret)
+			return ret;
+		if (ov01a1s->avdd) {
+			ret = regulator_enable(ov01a1s->avdd);
+			if (ret)
+				return ret;
+		}
+		gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, 0);
+		gpiod_set_value_cansleep(ov01a1s->reset_gpio, 0);
+		msleep(20);
+	}
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	if (ov01a1s->power_type == OV01A1S_USE_INT3472)
+		ret = power_ctrl_logic_set_power(1);
+#endif
 
 	return ret;
 }
@@ -868,39 +906,67 @@ static void ov01a1s_remove(struct i2c_client *client)
 }
 
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-static int ov01a1s_parse_dt(struct ov01a1s *ov01a1s)
+static int ov01a1s_parse_gpio(struct ov01a1s *ov01a1s)
 {
 	struct device *dev = &ov01a1s->client->dev;
-	int ret;
 
-	ov01a1s->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	ret = PTR_ERR_OR_ZERO(ov01a1s->reset_gpio);
-	if (ret < 0) {
-		dev_err(dev, "error while getting reset gpio: %d\n", ret);
+	ov01a1s->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(ov01a1s->reset_gpio)) {
+		dev_warn(dev, "error while getting reset gpio: %ld\n",
+			 PTR_ERR(ov01a1s->reset_gpio));
+		ov01a1s->reset_gpio = NULL;
 		return -EPROBE_DEFER;
 	}
 
-	ov01a1s->powerdown_gpio = devm_gpiod_get(dev, "powerdown", GPIOD_OUT_HIGH);
-	ret = PTR_ERR_OR_ZERO(ov01a1s->powerdown_gpio);
-	if (ret < 0) {
-		dev_err(dev, "error while getting powerdown gpio: %d\n", ret);
+	ov01a1s->powerdown_gpio =
+		devm_gpiod_get_optional(dev, "powerdown", GPIOD_OUT_LOW);
+	if (IS_ERR(ov01a1s->powerdown_gpio)) {
+		dev_warn(dev, "error while getting powerdown gpio: %ld\n",
+			 PTR_ERR(ov01a1s->powerdown_gpio));
+		ov01a1s->powerdown_gpio = NULL;
+		return -EPROBE_DEFER;
+	}
+
+	ov01a1s->avdd = devm_regulator_get_optional(dev, "avdd");
+	if (IS_ERR(ov01a1s->avdd)) {
+		dev_warn(dev, "error while getting regulator avdd: %ld\n",
+			 PTR_ERR(ov01a1s->avdd));
+		ov01a1s->avdd = NULL;
 		return -EPROBE_DEFER;
 	}
 
 	ov01a1s->clk = devm_clk_get_optional(dev, "clk");
-	if (IS_ERR(ov01a1s->clk))
-		return dev_err_probe(dev, PTR_ERR(ov01a1s->clk), "getting clk\n");
-
-	ov01a1s->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
-	ret = PTR_ERR_OR_ZERO(ov01a1s->pled_gpio);
-	if (ret < 0) {
-		dev_err(dev, "error while getting pled gpio: %d\n", ret);
+	if (IS_ERR(ov01a1s->clk)) {
+		dev_warn(dev, "error while getting clk: %ld\n",
+			 PTR_ERR(ov01a1s->clk));
+		ov01a1s->clk = NULL;
 		return -EPROBE_DEFER;
 	}
 
 	return 0;
 }
 #endif
+
+static int ov01a1s_parse_power(struct ov01a1s *ov01a1s)
+{
+	int ret = 0;
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	ret = ov01a1s_parse_gpio(ov01a1s);
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	ret = power_ctrl_logic_set_power(1);
+#endif
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472) || IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	if (!ret) {
+		ov01a1s->power_type = OV01A1S_USE_INT3472;
+		return 0;
+	}
+#endif
+	if (ret == -EAGAIN)
+		return -EPROBE_DEFER;
+
+	return ret;
+}
 
 static int ov01a1s_probe(struct i2c_client *client)
 {
@@ -910,23 +976,18 @@ static int ov01a1s_probe(struct i2c_client *client)
 	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
 	if (!ov01a1s)
 		return -ENOMEM;
-	ov01a1s->client = client;
 
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-	if (ret == -EAGAIN)
-		ret = ov01a1s_parse_dt(ov01a1s);
-#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
-	if (ret == -EAGAIN)
-		ret = power_ctrl_logic_set_power(1);
-#endif
-	if (ret == -EAGAIN)
-		return -EPROBE_DEFER;
-	else if (ret)
+	ov01a1s->client = client;
+	ret = ov01a1s_parse_power(ov01a1s);
+	if (ret)
 		return ret;
 
-	ov01a1s_set_power(ov01a1s, 1);
-
 	v4l2_i2c_subdev_init(&ov01a1s->sd, client, &ov01a1s_subdev_ops);
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	/* In other cases, power is up in ov01a1s_parse_power */
+	if (ov01a1s->power_type == OV01A1S_USE_INT3472)
+		ov01a1s_power_on(&client->dev);
+#endif
 	ret = ov01a1s_identify_module(ov01a1s);
 	if (ret) {
 		dev_err(&client->dev, "failed to find sensor: %d", ret);
@@ -967,7 +1028,6 @@ static int ov01a1s_probe(struct i2c_client *client)
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
 
-	ov01a1s_set_power(ov01a1s, 0);
 	return 0;
 
 probe_error_media_entity_cleanup:
@@ -978,12 +1038,14 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov01a1s->mutex);
 
 probe_error_power_off:
-	ov01a1s_set_power(ov01a1s, 0);
+	ov01a1s_power_off(&client->dev);
+
 	return ret;
 }
 
 static const struct dev_pm_ops ov01a1s_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(ov01a1s_suspend, ov01a1s_resume)
+	SET_RUNTIME_PM_OPS(ov01a1s_power_off, ov01a1s_power_on, NULL)
 };
 
 #ifdef CONFIG_ACPI
