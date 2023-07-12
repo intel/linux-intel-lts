@@ -2007,6 +2007,7 @@ static int imx390_probe(struct i2c_client *client)
 	pm_runtime_set_active(&client->dev);
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
+	dev_err(&client->dev, "Probe Succeeded");
 
 	return 0;
 
@@ -2016,6 +2017,7 @@ probe_error_media_entity_cleanup:
 probe_error_v4l2_ctrl_handler_free:
 	v4l2_ctrl_handler_free(imx390->sd.ctrl_handler);
 	mutex_destroy(&imx390->mutex);
+	dev_err(&client->dev, "Probe Failed");
 
 	return ret;
 }

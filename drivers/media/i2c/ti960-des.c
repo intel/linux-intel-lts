@@ -1525,6 +1525,7 @@ static int ti960_probe(struct i2c_client *client,
 		goto free_gpio;
 	}
 
+	dev_err(&client->dev, "%s Probe Succeeded", va->sd.name);
 	return 0;
 
 free_gpio:
@@ -1538,6 +1539,7 @@ free_gpio:
 			va->pdata->FPD_gpio);
 	}
 
+	dev_err(&client->dev, "%s Probe Failed", va->sd.name);
 	return rval;
 }
 

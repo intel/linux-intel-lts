@@ -98,6 +98,8 @@ bool ti953_detect(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short
 
 	if (i == ARRAY_SIZE(ti953_FPD3_RX_ID))
 		ret = true;
+	else
+		dev_err(sd->dev, "TI953 Probe Failed");
 
 	return ret;
 }
