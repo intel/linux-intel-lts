@@ -660,8 +660,8 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
-	if (isys_freq_override >= IPU_IS_FREQ_MIN &&
-		isys_freq_override <= IPU_IS_FREQ_MAX) {
+	if (isys_freq_override >= BUTTRESS_MIN_FORCE_IS_FREQ &&
+		isys_freq_override <= BUTTRESS_MAX_FORCE_IS_FREQ) {
 		u64 val = isys_freq_override;
 
 		do_div(val, BUTTRESS_IS_FREQ_STEP);
