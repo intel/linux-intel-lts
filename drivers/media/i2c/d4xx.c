@@ -4587,22 +4587,6 @@ static const struct regmap_config ds5_regmap_max9295 = {
 #define SPLITTER	(0x3)
 static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 {
-	int ret;
-
-	state->regmap_max9296 = devm_regmap_init_i2c(c, &ds5_regmap_max9296);
-	if (IS_ERR(state->regmap_max9296)) {
-		ret = PTR_ERR(state->regmap_max9296);
-		dev_err(&c->dev, "regmap max9296 init failed: %d\n", ret);
-		return ret;
-	}
-
-	state->regmap_max9295 = devm_regmap_init_i2c(c, &ds5_regmap_max9295);
-	if (IS_ERR(state->regmap_max9295)) {
-		ret = PTR_ERR(state->regmap_max9295);
-		dev_err(&c->dev, "regmap max9295 init failed: %d\n", ret);
-		return ret;
-	}
-
 	c->addr = 0x48;
 	max9296_write_8(state, 0x0010, 0x40);
 	c->addr = 0x4a;
@@ -4707,6 +4691,20 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		c->addr = 0x16;
 	if (c->addr == 0x6c)
 		c->addr = 0x18;
+
+	state->regmap_max9296 = devm_regmap_init_i2c(c, &ds5_regmap_max9296);
+	if (IS_ERR(state->regmap_max9296)) {
+		ret = PTR_ERR(state->regmap_max9296);
+		dev_err(&c->dev, "regmap max9296 init failed: %d\n", ret);
+		return ret;
+	}
+
+	state->regmap_max9295 = devm_regmap_init_i2c(c, &ds5_regmap_max9295);
+	if (IS_ERR(state->regmap_max9295)) {
+		ret = PTR_ERR(state->regmap_max9295);
+		dev_err(&c->dev, "regmap max9295 init failed: %d\n", ret);
+		return ret;
+	}
 
 	if (c->addr == 0x12) {
 		ret = ds5_i2c_addr_setting(c, state);
