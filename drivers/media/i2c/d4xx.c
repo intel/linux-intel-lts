@@ -3516,25 +3516,31 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 	unsigned int i = 0;
 	int restore_val = 0;
 	u16 config_status_base, stream_status_base, stream_id, vc_id;
+	struct ds5_sensor *sensor;
+
 	// spare duplicate calls
 	if (state->mux.last_set->streaming == on)
 		return 0;
 	if (state->is_depth) {
+		sensor = &state->depth.sensor;
 		config_status_base = DS5_DEPTH_CONFIG_STATUS;
 		stream_status_base = DS5_DEPTH_STREAM_STATUS;
 		stream_id = DS5_STREAM_DEPTH;
 		vc_id = 0;
 	} else if (state->is_rgb) {
+		sensor = &state->rgb.sensor;
 		config_status_base = DS5_RGB_CONFIG_STATUS;
 		stream_status_base = DS5_RGB_STREAM_STATUS;
 		stream_id = DS5_STREAM_RGB;
 		vc_id = 1;
 	} else if (state->is_y8) {
+		sensor = &state->motion_t.sensor;
 		config_status_base = DS5_IR_CONFIG_STATUS;
 		stream_status_base = DS5_IR_STREAM_STATUS;
 		stream_id = DS5_STREAM_IR;
 		vc_id = 2;
 	} else if (state->is_imu) {
+		sensor = &state->imu.sensor;
 		config_status_base = DS5_IMU_CONFIG_STATUS;
 		stream_status_base = DS5_IMU_STREAM_STATUS;
 		stream_id = DS5_STREAM_IMU;
@@ -3548,6 +3554,7 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 
 	restore_val = state->mux.last_set->streaming;
 	state->mux.last_set->streaming = on;
+	sensor->streaming = on;
 
 	if (on) {
 
@@ -3589,7 +3596,11 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 		if (ret < 0)
 			goto restore_s_state;
 
-		d4xx_reset_oneshot(state);
+		if (!state->depth.sensor.streaming
+			&& !state->rgb.sensor.streaming
+			&& !state->motion_t.sensor.streaming
+			&& !state->imu.sensor.streaming)
+			d4xx_reset_oneshot(state);
 	}
 
 	ds5_read(state, config_status_base, &status);
@@ -3611,6 +3622,7 @@ restore_s_state:
 			ds5_get_sensor_name(state), restore_val, status);
 
 	state->mux.last_set->streaming = restore_val;
+	sensor->streaming = restore_val;
 
 	return ret;
 }
