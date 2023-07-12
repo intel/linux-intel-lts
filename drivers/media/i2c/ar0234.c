@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2023 Intel Corporation.
+// Copyright (c) 2019-2023 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -1379,8 +1379,11 @@ static int ar0234_read_reg(struct ar0234 *ar0234, u16 reg, u16 len, u32 *val)
 	u8 data_buf[4] = {0};
 	int ret;
 
-	if (len > 4)
+	if (len > 4) {
+		dev_err(&client->dev, "%s: invalid length %d. i2c read register failed\n",
+			__func__, len);
 		return -EINVAL;
+	}
 
 	put_unaligned_be16(reg, addr_buf);
 	msgs[0].addr = client->addr;
@@ -1393,8 +1396,11 @@ static int ar0234_read_reg(struct ar0234 *ar0234, u16 reg, u16 len, u32 *val)
 	msgs[1].buf = &data_buf[4 - len];
 
 	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
-	if (ret != ARRAY_SIZE(msgs))
+	if (ret != ARRAY_SIZE(msgs)) {
+		dev_err(&client->dev, "%s: i2c read register 0x%x from 0x%x failed\n",
+			__func__, reg, client->addr);
 		return -EIO;
+	}
 
 	*val = get_unaligned_be32(data_buf);
 
@@ -1411,12 +1417,18 @@ static int ar0234_write_reg(struct ar0234 *ar0234, u16 reg, u16 len, u32 val)
 		return 0;
 	}
 
-	if (len > 4)
+	if (len > 4) {
+		dev_err(&client->dev, "%s: invalid length %d. i2c write register failed\n",
+			__func__, len);
 		return -EINVAL;
+	}
 
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << 8 * (4 - len), buf + 2);
-	if (i2c_master_send(client, buf, len + 2) != len + 2)
+	if (i2c_master_send(client, buf, len + 2) != len + 2) {
+		dev_err(&client->dev, "%s: i2c write register 0x%x from 0x%x failed\n",
+			__func__, reg, client->addr);
+	}
 		return -EIO;
 
 	return 0;
