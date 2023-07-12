@@ -95,8 +95,8 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					 IPU_ISYS_NAME, nr);
 	if (IS_ERR(isys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(isys),
-			      "ipu_bus_add_device(isys) failed\n");
-		return ERR_CAST(isys);
+			      "ipu_bus_initialize_device(isys) failed\n");
+		return isys;
 	}
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	if (!spdata) {
@@ -113,7 +113,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	isys->mmu = ipu_mmu_init(&pdev->dev, base, ISYS_MMID,
 				 &ipdata->hw_variant);
 	if (IS_ERR(isys->mmu)) {
-		dev_err_probe(&pdev->dev, PTR_ERR(isys),
+		dev_err_probe(&pdev->dev, PTR_ERR(isys->mmu),
 			      "ipu_mmu_init(isys->mmu) failed\n");
 		return ERR_CAST(isys->mmu);
 	}
@@ -149,14 +149,14 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 					 IPU_PSYS_NAME, nr);
 	if (IS_ERR(psys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(psys),
-			      "ipu_bus_add_device(psys) failed\n");
-		return ERR_CAST(psys);
+			      "ipu_bus_initialize_device(psys) failed\n");
+		return psys;
 	}
 
 	psys->mmu = ipu_mmu_init(&pdev->dev, base, PSYS_MMID,
 				 &ipdata->hw_variant);
 	if (IS_ERR(psys->mmu)) {
-		dev_err_probe(&pdev->dev, PTR_ERR(psys),
+		dev_err_probe(&pdev->dev, PTR_ERR(psys->mmu),
 			      "ipu_mmu_init(psys->mmu) failed\n");
 		return ERR_CAST(psys->mmu);
 	}
