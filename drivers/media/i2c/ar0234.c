@@ -1428,8 +1428,8 @@ static int ar0234_write_reg(struct ar0234 *ar0234, u16 reg, u16 len, u32 val)
 	if (i2c_master_send(client, buf, len + 2) != len + 2) {
 		dev_err(&client->dev, "%s: i2c write register 0x%x from 0x%x failed\n",
 			__func__, reg, client->addr);
-	}
 		return -EIO;
+	}
 
 	return 0;
 }
