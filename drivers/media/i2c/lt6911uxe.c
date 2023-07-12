@@ -371,19 +371,6 @@ static u8 lt6911uxe_i2c_rd8(struct v4l2_subdev *sd, u16 reg)
 	return val;
 }
 
-static u16 lt6911uxe_i2c_rd16(struct v4l2_subdev *sd, u16 reg)
-{
-	u16 val = 0;
-	u8 tmp;
-
-	lt6911uxe_i2c_rd(sd, reg, (u8 *)&val, 2);
-	/* high byte always at lower address -> swap */
-	tmp = val & 0xFF;
-	val = (val >> 8) | tmp << 8;
-
-	dev_dbg(sd->dev, "i2c: read 0x%04X = 0x%04X\n", reg, val);
-	return val;
-}
 static void lt6911uxe_ext_control(
 	struct lt6911uxe_state *lt6911uxe,
 	bool enable)

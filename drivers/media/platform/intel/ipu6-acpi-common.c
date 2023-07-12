@@ -145,7 +145,7 @@ int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int s
 
 			/* save into array */
 			if (save == TRUE) {
-				pr_info("IPU6 ACPI: DSM: Pin number = %lld. Func = %x.", pin, gpio[i].func);
+				pr_info("IPU6 ACPI: DSM: Pin number = %d. Func = %x.", pin, gpio[i].func);
 				gpio[i].pin = pin;
 				gpio[i].valid = TRUE;
 				gpiod_put(desc);
