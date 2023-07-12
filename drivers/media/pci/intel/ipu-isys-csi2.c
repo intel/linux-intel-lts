@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2023 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/module.h>
@@ -279,8 +279,6 @@ static int csi2_link_validate(struct media_link *link)
 	struct ipu_isys_pipeline *ip;
 	struct v4l2_subdev *source_sd;
 	struct v4l2_subdev *sink_sd;
-
-	int rval;
 
 	if (!link->sink->entity || !link->source->entity)
 		return -EINVAL;
