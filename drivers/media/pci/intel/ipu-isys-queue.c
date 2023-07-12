@@ -528,7 +528,8 @@ static void buf_queue(struct vb2_buffer *vb)
 	if (ib->req)
 		return;
 
-	if (!pipe_av || !media_pipe || !vb->vb2_queue->start_streaming_called) {
+	if (!pipe_av || !media_pipe ||
+	    !vb->vb2_queue->start_streaming_called) {
 		dev_dbg(&av->isys->adev->dev,
 			"no pipe or streaming, adding to incoming\n");
 		return;
