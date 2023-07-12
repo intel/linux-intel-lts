@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2022 Intel Corporation.
+// Copyright (c) 2023 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -15,8 +15,6 @@
 #include <media/v4l2-fwnode.h>
 #include <media/ar0234.h>
 #include <linux/version.h>
-
-#include <linux/ipu-isys.h>
 
 #define AR0234_REG_VALUE_08BIT		1
 #define AR0234_REG_VALUE_16BIT		2
@@ -1358,8 +1356,6 @@ struct ar0234 {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *vflip;
 	struct v4l2_ctrl *hflip;
-	struct v4l2_ctrl *query_sub_stream;
-	struct v4l2_ctrl *set_sub_stream;
 
 	/* Current mode */
 	const struct ar0234_mode *cur_mode;
@@ -1498,8 +1494,6 @@ static u64 get_hblank(struct ar0234 *ar0234)
 	return hblank;
 }
 
-static int ar0234_set_stream(struct v4l2_subdev *sd, int enable);
-
 static int ar0234_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ar0234 *ar0234 = container_of(ctrl->handler,
@@ -1508,15 +1502,6 @@ static int ar0234_set_ctrl(struct v4l2_ctrl *ctrl)
 	s64 exposure_max;
 	int ret = 0;
 	u32 val;
-
-	if (ctrl->id == V4L2_CID_IPU_SET_SUB_STREAM) {
-		val = (*ctrl->p_new.p_s64 & 0xFFFF);
-		dev_info(&client->dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
-		mutex_unlock(&ar0234->mutex);
-		ret = ar0234_set_stream(&ar0234->sd, val & 0x00FF);
-		mutex_lock(&ar0234->mutex);
-		return ret;
-	}
 
 	/* Propagate change of current control to all related controls */
 	if (ctrl->id == V4L2_CID_VBLANK) {
@@ -1611,11 +1596,7 @@ static int ar0234_set_ctrl(struct v4l2_ctrl *ctrl)
 				val);
 		dev_info(&client->dev, "set hflip %d\n", ctrl->val);
 		break;
-	case V4L2_CID_IPU_QUERY_SUB_STREAM:
-		dev_dbg(&client->dev, "query stream\n");
-		break;
 	default:
-		dev_err(&client->dev, "unexpected ctrl id 0x%08x\n", ctrl->id);
 		ret = -EINVAL;
 		break;
 	}
@@ -1701,83 +1682,6 @@ static struct v4l2_ctrl_config ar0234_frame_interval = {
 	.flags	= V4L2_CTRL_FLAG_READ_ONLY,
 };
 
-static struct v4l2_ctrl_config ar0234_q_sub_stream = {
-	.ops = &ar0234_ctrl_ops,
-	.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
-	.name = "query virtual channel",
-	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
-	.max = 1,
-	.min = 0,
-	.def = 0,
-	.menu_skip_mask = 0,
-	.qmenu_int = NULL,
-};
-
-static const struct v4l2_ctrl_config ar0234_s_sub_stream = {
-	.ops = &ar0234_ctrl_ops,
-	.id = V4L2_CID_IPU_SET_SUB_STREAM,
-	.name = "set virtual channel",
-	.type = V4L2_CTRL_TYPE_INTEGER64,
-	.max = 0xFFFF,
-	.min = 0,
-	.def = 0,
-	.step = 1,
-};
-
-#define MIPI_CSI2_TYPE_RAW8    0x2a
-#define MIPI_CSI2_TYPE_RAW10   0x2b
-
-static unsigned int mbus_code_to_mipi(u32 code)
-{
-	switch (code) {
-	case MEDIA_BUS_FMT_SGRBG10_1X10:
-		return MIPI_CSI2_TYPE_RAW10;
-	case MEDIA_BUS_FMT_SGRBG8_1X8:
-		return MIPI_CSI2_TYPE_RAW8;
-	default:
-		WARN_ON(1);
-		return -EINVAL;
-	}
-}
-
-static void set_sub_stream_fmt(s64 *sub_stream, u32 code)
-{
-       *sub_stream &= 0xFFFFFFFFFFFF0000;
-       *sub_stream |= code;
-}
-
-static void set_sub_stream_h(s64 *sub_stream, u32 height)
-{
-       s64 val = height;
-       val &= 0xFFFF;
-       *sub_stream &= 0xFFFFFFFF0000FFFF;
-       *sub_stream |= val << 16;
-}
-
-static void set_sub_stream_w(s64 *sub_stream, u32 width)
-{
-       s64 val = width;
-       val &= 0xFFFF;
-       *sub_stream &= 0xFFFF0000FFFFFFFF;
-       *sub_stream |= val << 32;
-}
-
-static void set_sub_stream_dt(s64 *sub_stream, u32 dt)
-{
-       s64 val = dt;
-       val &= 0xFF;
-       *sub_stream &= 0xFF00FFFFFFFFFFFF;
-       *sub_stream |= val << 48;
-}
-
-static void set_sub_stream_vc_id(s64 *sub_stream, u32 vc_id)
-{
-       s64 val = vc_id;
-       val &= 0xFF;
-       *sub_stream &= 0x00FFFFFFFFFFFFFF;
-       *sub_stream |= val << 56;
-}
-
 static int ar0234_init_controls(struct ar0234 *ar0234)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ar0234->sd);
@@ -1859,27 +1763,12 @@ static int ar0234_init_controls(struct ar0234 *ar0234)
 	ar0234->hflip = v4l2_ctrl_new_std(ctrl_hdlr, &ar0234_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
 
-	ar0234_q_sub_stream.qmenu_int = &ar0234->sub_stream;
-	ar0234->query_sub_stream = v4l2_ctrl_new_custom(ctrl_hdlr, &ar0234_q_sub_stream, NULL);
-	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "new query sub stream ctrl, error = %d.\n",
-			ctrl_hdlr->error);
-		return ctrl_hdlr->error;
-	}
-
-	ar0234->set_sub_stream = v4l2_ctrl_new_custom(ctrl_hdlr, &ar0234_s_sub_stream, NULL);
-	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "new set sub stream ctrl, error = %d.\n",
-			ctrl_hdlr->error);
-		return ctrl_hdlr->error;
-	}
-
 	if (ctrl_hdlr->error)
 		return ctrl_hdlr->error;
 
 	ar0234->sd.ctrl_handler = ctrl_hdlr;
 
-	return ret;
+	return 0;
 }
 
 static void ar0234_update_pad_format(const struct ar0234_mode *mode,
@@ -1914,9 +1803,7 @@ static int ar0234_start_streaming(struct ar0234 *ar0234)
 		}
 	}
 
-	ar0234->set_sub_stream->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 	ret = __v4l2_ctrl_handler_setup(ar0234->sd.ctrl_handler);
-	ar0234->set_sub_stream->flags &= ~V4L2_CTRL_FLAG_READ_ONLY;
 	if (ret)
 		return ret;
 
@@ -2087,12 +1974,6 @@ static int ar0234_set_format(struct v4l2_subdev *sd,
 		__v4l2_ctrl_s_ctrl(ar0234->fps, mode->fps);
 
 		__v4l2_ctrl_s_ctrl(ar0234->frame_interval, 1000 / mode->fps);
-
-		set_sub_stream_fmt(&ar0234->sub_stream, mode->code);
-		set_sub_stream_h(&ar0234->sub_stream, mode->height);
-		set_sub_stream_w(&ar0234->sub_stream, mode->width);
-		set_sub_stream_dt(&ar0234->sub_stream, mbus_code_to_mipi(mode->code));
-		set_sub_stream_vc_id(&ar0234->sub_stream, 0);
 	}
 
 	mutex_unlock(&ar0234->mutex);
