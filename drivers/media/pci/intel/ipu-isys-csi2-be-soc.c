@@ -170,7 +170,6 @@ static struct v4l2_subdev_ops csi2_be_soc_sd_ops = {
 };
 
 static struct media_entity_operations csi2_be_soc_entity_ops = {
-	.link_validate = v4l2_subdev_link_validate,
 };
 
 static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,

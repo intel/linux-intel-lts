@@ -751,14 +751,6 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 
 	mutex_unlock(&av->isys->stream_mutex);
 
-	rval = aq->link_fmt_validate(aq);
-	if (rval) {
-		dev_err(&av->isys->adev->dev,
-			"%s: link format validation failed (%d)\n",
-			av->vdev.name, rval);
-		goto out_unprepare_streaming;
-	}
-
 	ip = to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	pipe_av = container_of(ip, struct ipu_isys_video, ip);
 	if (pipe_av != av) {
@@ -814,7 +806,6 @@ out_stream_start:
 		mutex_lock(&av->mutex);
 	}
 
-out_unprepare_streaming:
 	mutex_lock(&av->isys->stream_mutex);
 	if (first)
 		ipu_isys_video_prepare_streaming(av, 0);
