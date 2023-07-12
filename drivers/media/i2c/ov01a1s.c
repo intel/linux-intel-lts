@@ -314,8 +314,8 @@ struct ov01a1s {
 	struct gpio_desc *reset_gpio;
 	/* GPIO for powerdown */
 	struct gpio_desc *powerdown_gpio;
-	/* GPIO for clock enable */
-	struct gpio_desc *clken_gpio;
+	/* Clock provider */
+	struct clk *clk;
 	/* GPIO for privacy LED */
 	struct gpio_desc *pled_gpio;
 #endif
@@ -336,7 +336,10 @@ static void ov01a1s_set_power(struct ov01a1s *ov01a1s, int on)
 		return;
 	gpiod_set_value_cansleep(ov01a1s->reset_gpio, on);
 	gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, on);
-	gpiod_set_value_cansleep(ov01a1s->clken_gpio, on);
+	if (on)
+		clk_prepare_enable(ov01a1s->clk);
+	else
+		clk_disable_unprepare(ov01a1s->clk);
 	gpiod_set_value_cansleep(ov01a1s->pled_gpio, on);
 	msleep(20);
 #elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
@@ -884,12 +887,9 @@ static int ov01a1s_parse_dt(struct ov01a1s *ov01a1s)
 		return -EPROBE_DEFER;
 	}
 
-	ov01a1s->clken_gpio = devm_gpiod_get(dev, "clken", GPIOD_OUT_HIGH);
-	ret = PTR_ERR_OR_ZERO(ov01a1s->clken_gpio);
-	if (ret < 0) {
-		dev_err(dev, "error while getting clken_gpio gpio: %d\n", ret);
-		return -EPROBE_DEFER;
-	}
+	ov01a1s->clk = devm_clk_get_optional(dev, "clk");
+	if (IS_ERR(ov01a1s->clk))
+		return dev_err_probe(dev, PTR_ERR(ov01a1s->clk), "getting clk\n");
 
 	ov01a1s->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov01a1s->pled_gpio);
