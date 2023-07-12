@@ -674,7 +674,8 @@ static int ov01a1s_power_off(struct device *dev)
 	if (ov01a1s->power_type == OV01A1S_USE_INT3472) {
 		gpiod_set_value_cansleep(ov01a1s->reset_gpio, 1);
 		gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, 1);
-		regulator_disable(ov01a1s->avdd);
+		if (ov01a1s->avdd)
+			ret = regulator_disable(ov01a1s->avdd);
 		clk_disable_unprepare(ov01a1s->clk);
 		msleep(20);
 	}
@@ -697,11 +698,10 @@ static int ov01a1s_power_on(struct device *dev)
 		ret = clk_prepare_enable(ov01a1s->clk);
 		if (ret)
 			return ret;
-		if (ov01a1s->avdd) {
+		if (ov01a1s->avdd)
 			ret = regulator_enable(ov01a1s->avdd);
-			if (ret)
-				return ret;
-		}
+		if (ret)
+			return ret;
 		gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, 0);
 		gpiod_set_value_cansleep(ov01a1s->reset_gpio, 0);
 		msleep(20);
@@ -918,29 +918,26 @@ static int ov01a1s_parse_gpio(struct ov01a1s *ov01a1s)
 		return -EPROBE_DEFER;
 	}
 
+	/* For optional, don't return or print warn if can't get it */
 	ov01a1s->powerdown_gpio =
 		devm_gpiod_get_optional(dev, "powerdown", GPIOD_OUT_LOW);
 	if (IS_ERR(ov01a1s->powerdown_gpio)) {
-		dev_warn(dev, "error while getting powerdown gpio: %ld\n",
-			 PTR_ERR(ov01a1s->powerdown_gpio));
+		dev_dbg(dev, "no powerdown gpio: %ld\n",
+			PTR_ERR(ov01a1s->powerdown_gpio));
 		ov01a1s->powerdown_gpio = NULL;
-		return -EPROBE_DEFER;
 	}
 
 	ov01a1s->avdd = devm_regulator_get_optional(dev, "avdd");
 	if (IS_ERR(ov01a1s->avdd)) {
-		dev_warn(dev, "error while getting regulator avdd: %ld\n",
-			 PTR_ERR(ov01a1s->avdd));
+		dev_dbg(dev, "no regulator avdd: %ld\n",
+			PTR_ERR(ov01a1s->avdd));
 		ov01a1s->avdd = NULL;
-		return -EPROBE_DEFER;
 	}
 
 	ov01a1s->clk = devm_clk_get_optional(dev, "clk");
 	if (IS_ERR(ov01a1s->clk)) {
-		dev_warn(dev, "error while getting clk: %ld\n",
-			 PTR_ERR(ov01a1s->clk));
+		dev_dbg(dev, "no clk: %ld\n", PTR_ERR(ov01a1s->clk));
 		ov01a1s->clk = NULL;
-		return -EPROBE_DEFER;
 	}
 
 	return 0;
