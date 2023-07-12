@@ -1023,10 +1023,9 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 			entity->name);
 
 		if (entity->pads[0].pipe && entity->pads[0].pipe == pipe) {
-			pr_err("Pipe active for %s. Can't start for %s\n",
+			dev_dbg(entity->graph_obj.mdev->dev,
+			       "Pipe active for %s. when start for %s\n",
 			       entity->name, entity_err->name);
-			ret = -EBUSY;
-			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1698,6 +1697,7 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 		    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 			short_packet_queue_destroy(ip);
 		media_pipeline_stop_for_vc(av);
+		av->vdev.entity.pads[0].pipe = NULL;
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;
 	}
