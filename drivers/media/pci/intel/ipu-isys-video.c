@@ -76,6 +76,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
+	{V4L2_META_FMT_D4XX, 8, 8, 0, MEDIA_BUS_FMT_FIXED, 0},
 	{}
 };
 
@@ -379,6 +380,16 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *fh,
 {
 	struct ipu_isys_video *av = video_drvdata(file);
 
+	if (fmt->type == V4L2_BUF_TYPE_META_CAPTURE) {
+		fmt->fmt.meta.buffersize = av->mpix.plane_fmt[0].sizeimage;
+		fmt->fmt.meta.bytesperline = av->mpix.plane_fmt[0].bytesperline;
+		fmt->fmt.meta.width = av->mpix.width;
+		fmt->fmt.meta.height = av->mpix.height;
+		fmt->fmt.meta.dataformat = av->mpix.pixelformat;
+
+		return 0;
+	}
+
 	fmt->fmt.pix_mp = av->mpix;
 
 	return 0;
@@ -502,10 +513,29 @@ static int vidioc_s_fmt_vid_cap_mplane(struct file *file, void *fh,
 				       struct v4l2_format *f)
 {
 	struct ipu_isys_video *av = video_drvdata(file);
+	struct v4l2_pix_format_mplane mpix;
 
 	if (av->aq.vbq.streaming)
 		return -EBUSY;
 
+	if (f->type == V4L2_BUF_TYPE_META_CAPTURE) {
+		memset(&av->mpix, 0, sizeof(av->mpix));
+		memset(&mpix, 0, sizeof(mpix));
+		mpix.width = f->fmt.meta.width;
+		mpix.height = f->fmt.meta.height;
+		mpix.pixelformat = f->fmt.meta.dataformat;
+		av->pfmt = av->try_fmt_vid_mplane(av, &mpix);
+		av->aq.vbq.type = V4L2_BUF_TYPE_META_CAPTURE;
+		av->aq.vbq.is_multiplanar = false;
+		av->aq.vbq.is_output = false;
+		av->mpix = mpix;
+		f->fmt.meta.width = mpix.width;
+		f->fmt.meta.height = mpix.height;
+		f->fmt.meta.dataformat = mpix.pixelformat;
+		f->fmt.meta.bytesperline = mpix.plane_fmt[0].bytesperline;
+		f->fmt.meta.buffersize = mpix.plane_fmt[0].sizeimage;
+		return 0;
+	}
 	av->pfmt = av->try_fmt_vid_mplane(av, &f->fmt.pix_mp);
 	av->mpix = f->fmt.pix_mp;
 
@@ -1950,6 +1980,10 @@ static const struct v4l2_ioctl_ops ioctl_ops_mplane = {
 	.vidioc_g_fmt_vid_cap_mplane = vidioc_g_fmt_vid_cap_mplane,
 	.vidioc_s_fmt_vid_cap_mplane = vidioc_s_fmt_vid_cap_mplane,
 	.vidioc_try_fmt_vid_cap_mplane = vidioc_try_fmt_vid_cap_mplane,
+	.vidioc_enum_fmt_meta_cap = ipu_isys_vidioc_enum_fmt,
+	.vidioc_g_fmt_meta_cap = vidioc_g_fmt_vid_cap_mplane,
+	.vidioc_s_fmt_meta_cap = vidioc_s_fmt_vid_cap_mplane,
+	.vidioc_try_fmt_meta_cap = vidioc_try_fmt_vid_cap_mplane,
 	.vidioc_reqbufs = vb2_ioctl_reqbufs,
 	.vidioc_create_bufs = vb2_ioctl_create_bufs,
 	.vidioc_prepare_buf = vb2_ioctl_prepare_buf,
@@ -2018,6 +2052,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 		av->aq.vbq.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 		ioctl_ops = &ioctl_ops_mplane;
 		av->vdev.device_caps |= V4L2_CAP_VIDEO_CAPTURE_MPLANE;
+		av->vdev.device_caps |= V4L2_CAP_META_CAPTURE;
 		av->vdev.vfl_dir = VFL_DIR_RX;
 	} else {
 		av->aq.vbq.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
