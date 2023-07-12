@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2022 Intel Corporation
+// Copyright (C) 2023 Intel Corporation
 #include <linux/clk.h>
 #include <linux/clkdev.h>
 #include <linux/gpio.h>
@@ -18,6 +18,9 @@
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 #include <media/lt6911uxc.h>
+#endif
+#if IS_ENABLED(CONFIG_VIDEO_LT6911UXE)
+#include <media/lt6911uxe.h>
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_D4XX)
 #include <media/d4xx_pdata.h>
@@ -488,6 +491,99 @@ static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_VIDEO_LT6911UXE)
+#define LT6911UXE_LANES       4
+#define LT6911UXE_I2C_ADDRESS 0x2B
+
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+static void lt6911uxe_fixup_spdata(const void *spdata_rep, void *spdata)
+{
+	const struct ipu_spdata_rep *rep = spdata_rep;
+	struct lt6911uxe_platform_data *platform = spdata;
+
+	if (spdata_rep && spdata) {
+		platform->port = rep->port_n;
+		platform->lanes = rep->lanes;
+		platform->i2c_slave_address = rep->slave_addr_n;
+		platform->gpios[0] = rep->gpios[0];
+		platform->irq_pin = rep->irq_pin;
+		platform->irq_pin_flags = rep->irq_pin_flags;
+		strcpy(platform->irq_pin_name, rep->irq_pin_name);
+		platform->suffix = rep->suffix;
+	}
+}
+#endif
+
+static struct ipu_isys_csi2_config lt6911uxe_csi2_cfg_1 = {
+	.nlanes = LT6911UXE_LANES,
+	.port = 1,
+};
+
+static struct lt6911uxe_platform_data lt6911uxe_pdata_1 = {
+	.port = 1,
+	.lanes = LT6911UXE_LANES,
+	.i2c_slave_address = LT6911UXE_I2C_ADDRESS,
+	.irq_pin = -1,
+	.irq_pin_name = "READY_STAT",
+	.irq_pin_flags = IRQF_TRIGGER_RISING
+		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+	.suffix = 'a',
+	.reset_pin = -1,
+	.detect_pin = -1,
+	.gpios = {-1, 0, 0, 0},
+};
+
+static struct ipu_isys_subdev_info  lt6911uxe_sd_1 = {
+	.csi2 = &lt6911uxe_csi2_cfg_1,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("lt6911uxe", LT6911UXE_I2C_ADDRESS),
+		.platform_data = &lt6911uxe_pdata_1,
+	},
+	.i2c_adapter_bdf = "0000:00:15.1",
+	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+	.fixup_spdata = lt6911uxe_fixup_spdata,
+#endif
+};
+
+static struct ipu_isys_csi2_config lt6911uxe_csi2_cfg_2 = {
+	.nlanes = LT6911UXE_LANES,
+	.port = 2,
+};
+
+static struct lt6911uxe_platform_data lt6911uxe_pdata_2 = {
+	.port = 2,
+	.lanes = LT6911UXE_LANES,
+	.i2c_slave_address = LT6911UXE_I2C_ADDRESS,
+	.irq_pin = -1,
+	.irq_pin_name = "READY_STAT",
+	.irq_pin_flags = IRQF_TRIGGER_RISING
+		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+	.suffix = 'b',
+	.reset_pin = -1,
+	.detect_pin = -1,
+	.gpios = {-1, 0, 0, 0},
+};
+
+static struct ipu_isys_subdev_info lt6911uxe_sd_2 = {
+	.csi2 = &lt6911uxe_csi2_cfg_2,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("lt6911uxe", LT6911UXE_I2C_ADDRESS),
+		.platform_data = &lt6911uxe_pdata_2,
+	},
+	.i2c_adapter_bdf = "0000:00:19.1",
+	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+	.fixup_spdata = lt6911uxe_fixup_spdata,
+#endif
+};
+#endif
+
 #if IS_ENABLED(CONFIG_VIDEO_D4XX)
 #define D4XX_LANES       2
 #define D4XX_I2C_ADDRESS_0 0x10
@@ -596,6 +692,10 @@ static struct ipu_isys_subdev_pdata pdata = {
 #if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 		&lt6911uxc_sd_1,
 		&lt6911uxc_sd_2,
+#endif
+#if IS_ENABLED(CONFIG_VIDEO_LT6911UXE)
+		&lt6911uxe_sd_1,
+		&lt6911uxe_sd_2,
 #endif
 #if IS_ENABLED(CONFIG_VIDEO_D4XX)
 		&d4xx_sd_0,

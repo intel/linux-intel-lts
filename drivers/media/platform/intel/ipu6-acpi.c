@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2016--2022 Intel Corporation.
+ * Copyright (c) 2016--2023 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -63,8 +63,9 @@ static const struct ipu_acpi_devices supported_devices[] = {
  *	{ "ACPI ID", sensor_name, get_sensor_pdata, NULL, 0, TYPE, serdes_name },	// Custom HID
  */
 	{ "INTC10C0", AR0234_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// AR0234 HID
-	{ "INTC10B1", LT6911UXC_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// Lontium HID
+	{ "INTC10B1", LT6911UXC_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// LT6911UXC HID
 	{ "INTC10C1", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// IMX390 HID
+	{ "INTC10C5", LT6911UXE_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },   // LT6911UXE HID
 	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, D457_NAME },// D457 HID
 };
 
@@ -87,8 +88,9 @@ static const struct acpi_device_id ipu_acpi_match[] = {
  *	{ "AR0234A", 0 },	// Custom HID
  */
 	{ "INTC10C0", 0 },	// AR0234 HID
-	{ "INTC10B1", 0 },	// Lontium HID
+	{ "INTC10B1", 0 },	// LT6911UXC HID
 	{ "INTC10C1", 0 },	// IMX390 HID
+	{ "INTC10C5", 0 },	// LT6911UXE HID
 	{ "INTC10CD", 0 },	// D457 HID
 	{},
 };

@@ -1611,7 +1611,7 @@ config VIDEO_IMX390
 
 config VIDEO_LT6911UXC
 	tristate "Lontium LT6911UXC decoder"
-	depends on I2C && VIDEO_V4L2
+	depends on VIDEO_DEV && I2C
 	select VIDEO_V4L2_SUBDEV_API
 	help
 	This is a Video4Linux2 sensor-level driver for the Lontium
@@ -1619,6 +1619,17 @@ config VIDEO_LT6911UXC
 
 	To compile this driver as a module, choose M here: the
 	module will be called lt6911uxc.
+
+config VIDEO_LT6911UXE
+	tristate "Lontium LT6911UXE decoder"
+	depends on VIDEO_DEV && I2C
+	select VIDEO_V4L2_SUBDEV_API
+	help
+	This is a Video4Linux2 sensor-level driver for the Lontium
+	LT6911UXE HDMI to MIPI CSI-2 bridge.
+
+	To compile this driver as a module, choose M here: the
+	module will be called lt6911uxe.
 
 config VIDEO_D4XX
 	tristate "D4XX Camera Driver"

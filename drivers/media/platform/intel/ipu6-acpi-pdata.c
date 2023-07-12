@@ -655,7 +655,7 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		pdata->i2c_slave_address = addr;
 
 		/* gpio */
-		if (!strcmp(sensor_name, LT6911UXC_NAME))
+		if (!strcmp(sensor_name, LT6911UXC_NAME) || !strcmp(sensor_name, LT6911UXE_NAME))
 			set_lt_gpio(ctl_data, &pdata, is_dummy);
 		else
 			set_common_gpio(&pdata);
@@ -819,7 +819,7 @@ int populate_sensor_pdata(struct device *dev,
 	update_pdata(dev, *sensor_sd, connect);
 
 	/* Lontium specific */
-	if (!strcmp(sensor_name, LT6911UXC_NAME)) {
+	if (!strcmp(sensor_name, LT6911UXC_NAME) || !strcmp(sensor_name, LT6911UXE_NAME)) {
 		if (cam_data->pprval != cam_data->link) {
 			ret = populate_dummy(dev, sensor_name, cam_data, ctl_data, connect);
 			if (ret)
