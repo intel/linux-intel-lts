@@ -29,24 +29,11 @@
 # CVE-2023-23000
 0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
 
-# CVE-2022-45884
-# CVE-2022-45885
-# CVE-2022-45886
-# CVE-2022-45887
-0001-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
-0002-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
-0003-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
-0004-media-ttusb-dec-Fix-memory-leak-in-ttusb_dec_exit_dv.patch
-
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
 
 # CVE-2023-21106
 0001-drm-msm-gpu-Fix-potential-double-free.patch
-
-# CVE-2023-34255
-# CVE-2023-2124
-0001-xfs-verify-buffer-contents-when-we-skip-log-replay.patch
 
 # CVE-2023-26242
 0001-fpga-dfl-afu-region-Add-overflow-checks-for-region-s.patch
