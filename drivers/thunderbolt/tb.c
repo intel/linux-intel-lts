@@ -851,6 +851,7 @@ static void tb_scan_port(struct tb_port *port)
 {
 	struct tb_cm *tcm = tb_priv(port->sw->tb);
 	struct tb_port *upstream_port;
+	bool discovery = false;
 	struct tb_switch *sw;
 
 	if (tb_is_upstream_port(port))
@@ -917,8 +918,10 @@ static void tb_scan_port(struct tb_port *port)
 	 * tunnels and know which switches were authorized already by
 	 * the boot firmware.
 	 */
-	if (!tcm->hotplug_active)
+	if (!tcm->hotplug_active) {
 		dev_set_uevent_suppress(&sw->dev, true);
+		discovery = true;
+	}
 
 	/*
 	 * At the moment Thunderbolt 2 and beyond (devices with LC) we
@@ -944,9 +947,12 @@ static void tb_scan_port(struct tb_port *port)
 	tb_switch_lane_bonding_enable(sw);
 	/* Set the link configured */
 	tb_switch_configure_link(sw);
-
-	if (tb_enable_clx(sw))
-		tb_sw_warn(sw, "failed to enable CL states\n");
+	if (discovery) {
+		tb_sw_dbg(sw, "discovery, not touching CL states\n");
+	} else {
+		if (tb_enable_clx(sw))
+			tb_sw_warn(sw, "failed to enable CL states\n");
+	}
 
 	if (tb_enable_tmu(sw))
 		tb_sw_warn(sw, "failed to enable TMU\n");
