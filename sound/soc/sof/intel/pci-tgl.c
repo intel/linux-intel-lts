@@ -105,24 +105,15 @@ static const struct sof_dev_desc adl_desc = {
 
 /* PCI IDs */
 static const struct pci_device_id sof_pci_ids[] = {
-	{ PCI_DEVICE(0x8086, 0xa0c8), /* TGL-LP */
-		.driver_data = (unsigned long)&tgl_desc},
-	{ PCI_DEVICE(0x8086, 0x43c8), /* TGL-H */
-		.driver_data = (unsigned long)&tglh_desc},
-	{ PCI_DEVICE(0x8086, 0x4b55), /* EHL */
-		.driver_data = (unsigned long)&ehl_desc},
-	{ PCI_DEVICE(0x8086, 0x4b58), /* EHL */
-		.driver_data = (unsigned long)&ehl_desc},
-	{ PCI_DEVICE(0x8086, 0x7ad0), /* ADL-S */
-		.driver_data = (unsigned long)&adls_desc},
-	{ PCI_DEVICE(0x8086, 0x51c8), /* ADL-P */
-		.driver_data = (unsigned long)&adl_desc},
-	{ PCI_DEVICE(0x8086, 0x51cd), /* ADL-P */
-		.driver_data = (unsigned long)&adl_desc},
-	{ PCI_DEVICE(0x8086, 0x51cc), /* ADL-M */
-		.driver_data = (unsigned long)&adl_desc},
-	{ PCI_DEVICE(0x8086, 0x54c8), /* ADL-N */
-		.driver_data = (unsigned long)&adl_desc},
+	{ PCI_DEVICE_DATA(INTEL, HDA_TGL_LP, &tgl_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_TGL_H, &tglh_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_EHL_0, &ehl_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_EHL_3, &ehl_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_ADL_S, &adls_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_ADL_P, &adl_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_ADL_PX, &adl_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_ADL_M, &adl_desc) },
+	{ PCI_DEVICE_DATA(INTEL, HDA_ADL_N, &adl_desc) },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, sof_pci_ids);
