@@ -717,9 +717,9 @@ void intel_mocs_init_engine(struct intel_engine_cs *engine)
 		init_l3cc_table(engine->gt, &table);
 }
 
-static u32 global_mocs_offset(struct intel_gt *gt)
+static u32 global_mocs_offset(void)
 {
-	return i915_mmio_reg_offset(GEN12_GLOBAL_MOCS(0)) + gt->uncore->gsi_offset;
+	return i915_mmio_reg_offset(GEN12_GLOBAL_MOCS(0));
 }
 
 void intel_set_mocs_index(struct intel_gt *gt)
@@ -742,7 +742,7 @@ void intel_mocs_init(struct intel_gt *gt)
 	 */
 	flags = get_mocs_settings(gt->i915, &table);
 	if (flags & HAS_GLOBAL_MOCS)
-		__init_mocs_table(gt->uncore, &table, global_mocs_offset(gt));
+		__init_mocs_table(gt->uncore, &table, global_mocs_offset());
 
 	/*
 	 * Initialize the L3CC table as part of mocs initalization to make

@@ -362,6 +362,16 @@ drm_setclientcap(struct drm_device *dev, void *data, struct drm_file *file_priv)
 			return -EINVAL;
 		file_priv->writeback_connectors = req->value;
 		break;
+	case DRM_CLIENT_CAP_ADVANCE_GAMMA_MODES:
+		if (req->value > 1)
+			return -EINVAL;
+		file_priv->advance_gamma_mode_active = req->value;
+		break;
+	case DRM_CLIENT_CAP_ADVANCE_DEGAMMA_MODES:
+		if (req->value > 1)
+			return -EINVAL;
+		file_priv->advance_degamma_mode_active = req->value;
+		break;
 	default:
 		return -EINVAL;
 	}

@@ -305,14 +305,14 @@ void intel_iov_pf_get_pm_vfs(struct intel_iov *iov)
 {
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
-	intel_gt_pm_get_untracked(iov_to_gt(iov));
+	intel_gt_pm_get(iov_to_gt(iov));
 }
 
 void intel_iov_pf_put_pm_vfs(struct intel_iov *iov)
 {
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
-	intel_gt_pm_put_untracked(iov_to_gt(iov));
+	intel_gt_pm_put(iov_to_gt(iov));
 }
 
 void intel_iov_suspend(struct intel_iov *iov)

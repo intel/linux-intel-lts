@@ -1692,7 +1692,7 @@ static int mtk_dp_training(struct mtk_dp *mtk_dp)
 				break;
 			default:
 				return -EINVAL;
-			};
+			}
 			continue;
 		}
 

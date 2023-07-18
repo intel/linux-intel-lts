@@ -101,9 +101,9 @@ static int ipu_bus_probe(struct device *dev)
 		rval = -ENODEV;
 		goto out_err;
 	}
-	rval = pm_runtime_get_sync(&adev->dev);
+
+	rval = pm_runtime_resume_and_get(&adev->dev);
 	if (rval < 0) {
-		pm_runtime_put(&adev->dev);
 		dev_err(&adev->dev, "Failed to get runtime PM\n");
 		goto out_err;
 	}
@@ -146,6 +146,7 @@ static void ipu_bus_release(struct device *dev)
 {
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 
+	kfree(adev->pdata);
 	kfree(adev);
 }
 

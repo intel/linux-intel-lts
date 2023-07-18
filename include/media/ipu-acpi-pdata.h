@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2022 Intel Corporation */
+/* Copyright (C) 2023 Intel Corporation */
 #include <linux/interrupt.h>
 #include <media/ipu-acpi.h>
 #include <media/ar0234.h>
 #include <media/lt6911uxc.h>
+#include <media/lt6911uxe.h>
 #include <media/ti960.h>
 #include <media/imx390.h>
 #include <media/d4xx_pdata.h>

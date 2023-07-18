@@ -144,7 +144,7 @@ struct test_pattern {
 	unsigned int cust_pattern_size;
 };
 
-#define SUBVP_DRR_MARGIN_US 600 // 600us for DRR margin (SubVP + DRR)
+#define SUBVP_DRR_MARGIN_US 100 // 100us for DRR margin (SubVP + DRR)
 
 enum mall_stream_type {
 	SUBVP_NONE, // subvp not in use
@@ -190,6 +190,7 @@ struct dc_stream_state {
 	struct dc_info_packet vsp_infopacket;
 	struct dc_info_packet hfvsif_infopacket;
 	struct dc_info_packet vtem_infopacket;
+	struct dc_info_packet adaptive_sync_infopacket;
 	uint8_t dsc_packed_pps[128];
 	struct rect src; /* composition area */
 	struct rect dst; /* stream addressable area */
@@ -292,6 +293,7 @@ struct dc_stream_state {
 
 	bool has_non_synchronizable_pclk;
 	bool vblank_synchronized;
+	bool fpo_in_use;
 	struct mall_stream_config mall_stream_config;
 };
 
@@ -313,6 +315,7 @@ struct dc_stream_update {
 	struct dc_info_packet *vsp_infopacket;
 	struct dc_info_packet *hfvsif_infopacket;
 	struct dc_info_packet *vtem_infopacket;
+	struct dc_info_packet *adaptive_sync_infopacket;
 	bool *dpms_off;
 	bool integer_scaling_update;
 	bool *allow_freesync;

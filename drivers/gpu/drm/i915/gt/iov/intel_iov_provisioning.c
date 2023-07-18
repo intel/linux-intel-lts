@@ -492,6 +492,7 @@ static u64 pf_get_spare_ggtt(struct intel_iov *iov)
 /**
  * intel_iov_provisioning_set_spare_ggtt - Set size of the PF spare GGTT.
  * @iov: the IOV struct
+ * @size: size of the spare GGTT
  *
  * This function can only be called on PF.
  */
@@ -831,6 +832,7 @@ u16 intel_iov_provisioning_get_spare_ctxs(struct intel_iov *iov)
 /**
  * intel_iov_provisioning_set_spare_ctxs - Set number of the PF's spare contexts.
  * @iov: the IOV struct
+ * @spare: number of spare contexts
  *
  * This function can only be called on PF.
  */
@@ -1292,6 +1294,7 @@ u16 intel_iov_provisioning_get_spare_dbs(struct intel_iov *iov)
 /**
  * intel_iov_provisioning_set_spare_dbs - Set number of the PF's spare doorbells.
  * @iov: the IOV struct
+ * @spare: number of spare doorbells
  *
  * This function can only be called on PF.
  */
@@ -2090,7 +2093,8 @@ static int pf_validate_config(struct intel_iov *iov, unsigned int id)
 		GEM_BUG_ON(iov_is_root(iov));
 		valid_ggtt = pf_is_valid_config_ggtt(root, id);
 		valid_any = valid_ctxs || valid_dbs;
-		valid_all = valid_any && valid_ggtt && valid_ctxs && pf_validate_config(root, id);
+		valid_all = valid_any && valid_ggtt && valid_ctxs &&
+			    pf_validate_config(root, id) == 0;
 	}
 
 	if (!valid_all) {
@@ -2379,6 +2383,7 @@ void intel_iov_provisioning_restart(struct intel_iov *iov)
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
 	iov->pf.provisioning.num_pushed = 0;
+	iov->pf.provisioning.self_done = false;
 
 	if (pf_get_status(iov) > 0)
 		pf_start_reprovisioning_worker(iov);
@@ -2387,6 +2392,8 @@ void intel_iov_provisioning_restart(struct intel_iov *iov)
 static void pf_reprovision_pf(struct intel_iov *iov)
 {
 	IOV_DEBUG(iov, "reprovisioning PF\n");
+
+	intel_iov_provisioning_force_vgt_mode(iov);
 
 	mutex_lock(pf_provisioning_mutex(iov));
 	pf_reprovision_sched_if_idle(iov);
@@ -2635,8 +2642,6 @@ int intel_iov_provisioning_print_dbs(struct intel_iov *iov, struct drm_printer *
 	return 0;
 }
 
-#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
-
 static int pf_push_self_config(struct intel_iov *iov)
 {
 	struct intel_guc *guc = iov_to_guc(iov);
@@ -2694,5 +2699,6 @@ int intel_iov_provisioning_force_vgt_mode(struct intel_iov *iov)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
 #include "selftests/selftest_live_iov_provisioning.c"
 #endif /* CONFIG_DRM_I915_SELFTEST */

@@ -50,9 +50,9 @@
 #include "i915_debugfs_params.h"
 #include "i915_driver.h"
 #include "i915_irq.h"
+#include "i915_reg.h"
 #include "i915_scheduler.h"
 #include "intel_mchbar_regs.h"
-#include "intel_pm.h"
 
 static inline struct drm_i915_private *node_to_i915(struct drm_info_node *node)
 {
@@ -183,16 +183,14 @@ static const char *i915_cache_level_str(struct drm_i915_gem_object *obj)
 		default: return " not defined";
 		}
 	} else {
-		if (i915_gem_object_has_cache_level(obj, I915_CACHE_NONE))
-			return " uncached";
-		else if (i915_gem_object_has_cache_level(obj, I915_CACHE_LLC))
-			return HAS_LLC(i915) ? " LLC" : " snooped";
-		else if (i915_gem_object_has_cache_level(obj, I915_CACHE_L3_LLC))
-			return " L3+LLC";
-		else if (i915_gem_object_has_cache_level(obj, I915_CACHE_WT))
-			return " WT";
-		else
-			return " not defined";
+		switch (obj->pat_index) {
+		case 0: return " UC";
+		case 1: return HAS_LLC(i915) ?
+			       " LLC" : " snooped";
+		case 2: return " L3+LLC";
+		case 3: return " WT";
+		default: return " not defined";
+		}
 	}
 }
 
@@ -627,14 +625,12 @@ static int i915_wedged_get(void *data, u64 *val)
 
 	for_each_gt(gt, i915, i) {
 		int ret;
-		u64 v;
 
-		ret = intel_gt_debugfs_reset_show(gt, &v);
+		ret = intel_gt_debugfs_reset_show(gt, val);
 		if (ret)
 			return ret;
 
 		/* at least one tile should be wedged */
-		*val |= !!v;
 		if (*val)
 			break;
 	}
@@ -716,6 +712,15 @@ i915_drop_caches_get(void *data, u64 *val)
 	return 0;
 }
 
+static bool has_permanent_wakeref(struct drm_i915_private *i915)
+{
+	/*
+	 * XXX: When we have VFs enabled, PF take an untracked wakeref, so
+	 * we can't determine properly whether the GT PM is idle.
+	 */
+	return IS_SRIOV_PF(i915) && (pci_num_vf(to_pci_dev(i915->drm.dev)) > 0);
+}
+
 static int
 gt_drop_caches(struct intel_gt *gt, u64 val)
 {
@@ -735,9 +740,11 @@ gt_drop_caches(struct intel_gt *gt, u64 val)
 	}
 
 	if (val & DROP_IDLE) {
-		ret = intel_gt_pm_wait_for_idle(gt);
-		if (ret)
-			return ret;
+		if (!has_permanent_wakeref(gt->i915)) {
+			ret = intel_gt_pm_wait_for_idle(gt);
+			if (ret)
+				return ret;
+		}
 	}
 
 	if (val & DROP_RESET_ACTIVE && intel_gt_terminally_wedged(gt))

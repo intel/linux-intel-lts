@@ -15,11 +15,6 @@
 #include "intel_gt.h"
 #include "intel_gtt.h"
 
-/**
- * For pre-gen12 platforms pat_index is the same as enum i915_cache_level,
- * so the code here is still valid. See translation table defined by
- * LEGACY_CACHELEVEL
- */
 static u64 gen8_pde_encode(const dma_addr_t addr,
 			   const enum i915_cache_level level)
 {
@@ -34,7 +29,7 @@ static u64 gen8_pde_encode(const dma_addr_t addr,
 }
 
 static u64 gen8_pte_encode(dma_addr_t addr,
-			   enum i915_cache_level level,
+			   unsigned int pat_index,
 			   u32 flags)
 {
 	gen8_pte_t pte = addr | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
@@ -45,7 +40,12 @@ static u64 gen8_pte_encode(dma_addr_t addr,
 	if (flags & PTE_LM)
 		pte |= GEN12_PPGTT_PTE_LM;
 
-	switch (level) {
+	/*
+	 * For pre-gen12 platforms pat_index is the same as enum
+	 * i915_cache_level, so the switch-case here is still valid.
+	 * See translation table defined by LEGACY_CACHELEVEL.
+	 */
+	switch (pat_index) {
 	case I915_CACHE_NONE:
 		pte |= PPAT_UNCACHED;
 		break;
@@ -61,8 +61,8 @@ static u64 gen8_pte_encode(dma_addr_t addr,
 }
 
 static u64 gen12_pte_encode(dma_addr_t addr,
-			  unsigned int pat_index,
-			  u32 flags)
+			    unsigned int pat_index,
+			    u32 flags)
 {
 	gen8_pte_t pte = addr | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 
@@ -70,7 +70,7 @@ static u64 gen12_pte_encode(dma_addr_t addr,
 		pte &= ~GEN8_PAGE_RW;
 
 	if (flags & PTE_LM)
-		pte |= GEN12_PPGTT_PTE_LM | GEN12_PPGTT_PTE_NC;
+		pte |= GEN12_PPGTT_PTE_LM;
 
 	if (pat_index & BIT(0))
 		pte |= GEN12_PPGTT_PTE_PAT0;
@@ -82,7 +82,7 @@ static u64 gen12_pte_encode(dma_addr_t addr,
 		pte |= GEN12_PPGTT_PTE_PAT2;
 
 	if (pat_index & BIT(3))
-		pte |= GEN12_PPGTT_PTE_PAT3;
+		pte |= MTL_PPGTT_PTE_PAT3;
 
 	return pte;
 }
@@ -602,6 +602,7 @@ xehpsdv_ppgtt_insert_huge(struct i915_address_space *vm,
 			}
 		} while (rem >= page_size && index < max);
 
+		drm_clflush_virt_range(vaddr, PAGE_SIZE);
 		vma_res->page_sizes_gtt |= page_size;
 	} while (iter->sg && sg_dma_len(iter->sg));
 }
@@ -739,8 +740,6 @@ static void gen8_ppgtt_insert(struct i915_address_space *vm,
 	struct sgt_dma iter = sgt_dma(vma_res);
 
 	if (vma_res->bi.page_sizes.sg > I915_GTT_PAGE_SIZE) {
-		if (HAS_64K_PAGES(vm->i915))
-			xehpsdv_ppgtt_insert_huge(vm, vma_res, &iter, pat_index, flags);
 		if (GRAPHICS_VER_FULL(vm->i915) >= IP_VER(12, 50))
 			xehpsdv_ppgtt_insert_huge(vm, vma_res, &iter, pat_index, flags);
 		else
@@ -875,9 +874,7 @@ static int gen8_init_scratch(struct i915_address_space *vm)
 		}
 
 		fill_px(obj, vm->scratch[i - 1]->encode);
-		obj->encode = gen8_pde_encode(px_dma(obj),
-					      i915_gem_get_pat_index(vm->i915,
-							I915_CACHE_NONE));
+		obj->encode = gen8_pde_encode(px_dma(obj), I915_CACHE_NONE);
 
 		vm->scratch[i] = obj;
 	}

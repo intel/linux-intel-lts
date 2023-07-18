@@ -27,6 +27,7 @@
 #include "i915_irq.h"
 #include "intel_display_types.h"
 #include "intel_hotplug.h"
+#include "intel_hotplug_irq.h"
 
 /**
  * DOC: Hotplug
@@ -211,7 +212,8 @@ intel_hpd_irq_storm_switch_to_polling(struct drm_i915_private *dev_priv)
 	/* Enable polling and queue hotplug re-enabling. */
 	if (hpd_disabled) {
 		drm_kms_helper_poll_enable(&dev_priv->drm);
-		mod_delayed_work(system_wq, &dev_priv->display.hotplug.reenable_work,
+		mod_delayed_work(dev_priv->unordered_wq,
+				 &dev_priv->display.hotplug.reenable_work,
 				 msecs_to_jiffies(HPD_STORM_REENABLE_DELAY));
 	}
 }
@@ -338,7 +340,8 @@ static void i915_digport_work_func(struct work_struct *work)
 		spin_lock_irq(&dev_priv->irq_lock);
 		dev_priv->display.hotplug.event_bits |= old_bits;
 		spin_unlock_irq(&dev_priv->irq_lock);
-		queue_delayed_work(system_wq, &dev_priv->display.hotplug.hotplug_work, 0);
+		queue_delayed_work(dev_priv->unordered_wq,
+				   &dev_priv->display.hotplug.hotplug_work, 0);
 	}
 }
 
@@ -389,6 +392,13 @@ static void i915_hotplug_work_func(struct work_struct *work)
 
 	spin_unlock_irq(&dev_priv->irq_lock);
 
+	/* Skip calling encode hotplug handlers if ignore long HPD set*/
+	if (dev_priv->display.hotplug.ignore_long_hpd) {
+		drm_dbg_kms(&dev_priv->drm, "Ignore HPD flag on - skip encoder hotplug handlers\n");
+		mutex_unlock(&dev_priv->drm.mode_config.mutex);
+		return;
+	}
+
 	drm_connector_list_iter_begin(&dev_priv->drm, &conn_iter);
 	for_each_intel_connector_iter(connector, &conn_iter) {
 		enum hpd_pin pin;
@@ -438,7 +448,8 @@ static void i915_hotplug_work_func(struct work_struct *work)
 		dev_priv->display.hotplug.retry_bits |= retry;
 		spin_unlock_irq(&dev_priv->irq_lock);
 
-		mod_delayed_work(system_wq, &dev_priv->display.hotplug.hotplug_work,
+		mod_delayed_work(dev_priv->unordered_wq,
+				 &dev_priv->display.hotplug.hotplug_work,
 				 msecs_to_jiffies(HPD_RETRY_DELAY));
 	}
 }
@@ -569,7 +580,8 @@ void intel_hpd_irq_handler(struct drm_i915_private *dev_priv,
 	if (queue_dig)
 		queue_work(dev_priv->display.hotplug.dp_wq, &dev_priv->display.hotplug.dig_port_work);
 	if (queue_hp)
-		queue_delayed_work(system_wq, &dev_priv->display.hotplug.hotplug_work, 0);
+		queue_delayed_work(dev_priv->unordered_wq,
+				   &dev_priv->display.hotplug.hotplug_work, 0);
 }
 
 /**
@@ -679,7 +691,8 @@ void intel_hpd_poll_enable(struct drm_i915_private *dev_priv)
 	 * As well, there's no issue if we race here since we always reschedule
 	 * this worker anyway
 	 */
-	schedule_work(&dev_priv->display.hotplug.poll_init_work);
+	queue_work(dev_priv->unordered_wq,
+		   &dev_priv->display.hotplug.poll_init_work);
 }
 
 /**
@@ -707,7 +720,8 @@ void intel_hpd_poll_disable(struct drm_i915_private *dev_priv)
 		return;
 
 	WRITE_ONCE(dev_priv->display.hotplug.poll_enabled, false);
-	schedule_work(&dev_priv->display.hotplug.poll_init_work);
+	queue_work(dev_priv->unordered_wq,
+		   &dev_priv->display.hotplug.poll_init_work);
 }
 
 void intel_hpd_init_early(struct drm_i915_private *i915)
@@ -940,4 +954,6 @@ void intel_hpd_debugfs_register(struct drm_i915_private *i915)
 			    i915, &i915_hpd_storm_ctl_fops);
 	debugfs_create_file("i915_hpd_short_storm_ctl", 0644, minor->debugfs_root,
 			    i915, &i915_hpd_short_storm_ctl_fops);
+	debugfs_create_bool("i915_ignore_long_hpd", 0644, minor->debugfs_root,
+			    &i915->display.hotplug.ignore_long_hpd);
 }

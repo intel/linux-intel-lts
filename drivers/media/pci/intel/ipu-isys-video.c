@@ -30,6 +30,13 @@
 #include "ipu-fw-isys.h"
 #include "ipu-fw-com.h"
 
+#define MAX_VIDEO_DEVICES	8
+
+static int video_nr[MAX_VIDEO_DEVICES] = { [0 ...(MAX_VIDEO_DEVICES - 1)] = -1 };
+module_param_array(video_nr, int, NULL, 0444);
+MODULE_PARM_DESC(video_nr,
+		 "video device numbers (-1=auto, 0=/dev/video0, etc.)");
+
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW16},
@@ -76,6 +83,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
+	{V4L2_META_FMT_D4XX, 8, 8, 0, MEDIA_BUS_FMT_FIXED, 0},
 	{}
 };
 
@@ -379,6 +387,16 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *fh,
 {
 	struct ipu_isys_video *av = video_drvdata(file);
 
+	if (fmt->type == V4L2_BUF_TYPE_META_CAPTURE) {
+		fmt->fmt.meta.buffersize = av->mpix.plane_fmt[0].sizeimage;
+		fmt->fmt.meta.bytesperline = av->mpix.plane_fmt[0].bytesperline;
+		fmt->fmt.meta.width = av->mpix.width;
+		fmt->fmt.meta.height = av->mpix.height;
+		fmt->fmt.meta.dataformat = av->mpix.pixelformat;
+
+		return 0;
+	}
+
 	fmt->fmt.pix_mp = av->mpix;
 
 	return 0;
@@ -502,10 +520,29 @@ static int vidioc_s_fmt_vid_cap_mplane(struct file *file, void *fh,
 				       struct v4l2_format *f)
 {
 	struct ipu_isys_video *av = video_drvdata(file);
+	struct v4l2_pix_format_mplane mpix;
 
 	if (av->aq.vbq.streaming)
 		return -EBUSY;
 
+	if (f->type == V4L2_BUF_TYPE_META_CAPTURE) {
+		memset(&av->mpix, 0, sizeof(av->mpix));
+		memset(&mpix, 0, sizeof(mpix));
+		mpix.width = f->fmt.meta.width;
+		mpix.height = f->fmt.meta.height;
+		mpix.pixelformat = f->fmt.meta.dataformat;
+		av->pfmt = av->try_fmt_vid_mplane(av, &mpix);
+		av->aq.vbq.type = V4L2_BUF_TYPE_META_CAPTURE;
+		av->aq.vbq.is_multiplanar = false;
+		av->aq.vbq.is_output = false;
+		av->mpix = mpix;
+		f->fmt.meta.width = mpix.width;
+		f->fmt.meta.height = mpix.height;
+		f->fmt.meta.dataformat = mpix.pixelformat;
+		f->fmt.meta.bytesperline = mpix.plane_fmt[0].bytesperline;
+		f->fmt.meta.buffersize = mpix.plane_fmt[0].sizeimage;
+		return 0;
+	}
 	av->pfmt = av->try_fmt_vid_mplane(av, &f->fmt.pix_mp);
 	av->mpix = f->fmt.pix_mp;
 
@@ -930,8 +967,12 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 			(pad_id - NR_OF_CSI2_BE_SOC_SINK_PADS)) {
 			ip->vc = ip->asv[qm.index].vc;
 			flag = true;
-			pr_info("The current entityvc:id:%d\n", ip->vc);
+			pr_info("The current entity vc:id:%d\n", ip->vc);
 		}
+		dev_dbg(source_pad->entity->graph_obj.mdev->dev,
+			"dentity vc:%d, dt:%x, substream:%d\n",
+			ip->vc, ip->asv[qm.index].dt,
+			ip->asv[qm.index].substream);
 	}
 
 	if (flag)
@@ -1019,10 +1060,9 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 			entity->name);
 
 		if (entity->pads[0].pipe && entity->pads[0].pipe == pipe) {
-			pr_err("Pipe active for %s. Can't start for %s\n",
+			dev_dbg(entity->graph_obj.mdev->dev,
+			       "Pipe active for %s. when start for %s\n",
 			       entity->name, entity_err->name);
-			ret = -EBUSY;
-			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1694,6 +1734,7 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 		    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 			short_packet_queue_destroy(ip);
 		media_pipeline_stop_for_vc(av);
+		av->vdev.entity.pads[0].pipe = NULL;
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;
 	}
@@ -1719,14 +1760,12 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->interlaced = false;
 
 	rval = media_entity_enum_init(&ip->entity_enum, mdev);
-	if (rval) {
-		dev_err(dev, "entity enum init failed\n");
+	if (rval)
 		return rval;
-	}
 
 	rval = media_pipeline_start_by_vc(av, &ip->pipe);
 	if (rval < 0) {
-		dev_err(dev, "pipeline start failed\n");
+		dev_dbg(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
 	}
 
@@ -1737,10 +1776,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	rval = media_graph_walk_init(&graph, mdev);
-	if (rval) {
-		dev_err(dev, "graph walk init failed\n");
+	if (rval)
 		goto out_pipeline_stop;
-	}
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
@@ -1950,6 +1987,10 @@ static const struct v4l2_ioctl_ops ioctl_ops_mplane = {
 	.vidioc_g_fmt_vid_cap_mplane = vidioc_g_fmt_vid_cap_mplane,
 	.vidioc_s_fmt_vid_cap_mplane = vidioc_s_fmt_vid_cap_mplane,
 	.vidioc_try_fmt_vid_cap_mplane = vidioc_try_fmt_vid_cap_mplane,
+	.vidioc_enum_fmt_meta_cap = ipu_isys_vidioc_enum_fmt,
+	.vidioc_g_fmt_meta_cap = vidioc_g_fmt_vid_cap_mplane,
+	.vidioc_s_fmt_meta_cap = vidioc_s_fmt_vid_cap_mplane,
+	.vidioc_try_fmt_meta_cap = vidioc_try_fmt_vid_cap_mplane,
 	.vidioc_reqbufs = vb2_ioctl_reqbufs,
 	.vidioc_create_bufs = vb2_ioctl_create_bufs,
 	.vidioc_prepare_buf = vb2_ioctl_prepare_buf,
@@ -1992,8 +2033,9 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 			unsigned int pad, unsigned long pad_flags,
 			unsigned int flags)
 {
+	static atomic_t video_dev_count = ATOMIC_INIT(0);
 	const struct v4l2_ioctl_ops *ioctl_ops = NULL;
-	int rval;
+	int rval, video_dev_nr;
 	int i;
 
 	mutex_init(&av->mutex);
@@ -2018,6 +2060,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 		av->aq.vbq.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 		ioctl_ops = &ioctl_ops_mplane;
 		av->vdev.device_caps |= V4L2_CAP_VIDEO_CAPTURE_MPLANE;
+		av->vdev.device_caps |= V4L2_CAP_META_CAPTURE;
 		av->vdev.vfl_dir = VFL_DIR_RX;
 	} else {
 		av->aq.vbq.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
@@ -2044,9 +2087,15 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	set_bit(V4L2_FL_USES_V4L2_FH, &av->vdev.flags);
 	video_set_drvdata(&av->vdev, av);
 
+	video_dev_nr = atomic_inc_return(&video_dev_count) - 1;
+	if (video_dev_nr < MAX_VIDEO_DEVICES)
+		video_dev_nr = video_nr[video_dev_nr];
+	else
+		video_dev_nr = -1;
+
 	mutex_lock(&av->mutex);
 
-	rval = video_register_device(&av->vdev, VFL_TYPE_VIDEO, -1);
+	rval = video_register_device(&av->vdev, VFL_TYPE_VIDEO, video_dev_nr);
 	if (rval)
 		goto out_media_entity_cleanup;
 

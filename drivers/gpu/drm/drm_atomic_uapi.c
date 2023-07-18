@@ -415,10 +415,13 @@ static int drm_atomic_crtc_set_property(struct drm_crtc *crtc,
 	} else if (property == config->prop_vrr_enabled) {
 		state->vrr_enabled = val;
 	} else if (property == config->degamma_lut_property) {
+		ssize_t size = state->advance_degamma_mode_active ?
+				sizeof(struct drm_color_lut_ext) :
+				sizeof(struct drm_color_lut);
 		ret = drm_atomic_replace_property_blob_from_id(dev,
 					&state->degamma_lut,
 					val,
-					-1, sizeof(struct drm_color_lut),
+					-1, size,
 					&replaced);
 		state->color_mgmt_changed |= replaced;
 		return ret;
@@ -438,6 +441,12 @@ static int drm_atomic_crtc_set_property(struct drm_crtc *crtc,
 					&replaced);
 		state->color_mgmt_changed |= replaced;
 		return ret;
+	} else if (property == crtc->gamma_mode_property) {
+		state->gamma_mode = val;
+		state->color_mgmt_changed |= true;
+	} else if (property == crtc->degamma_mode_property) {
+		state->degamma_mode = val;
+		state->color_mgmt_changed |= true;
 	} else if (property == config->prop_out_fence_ptr) {
 		s32 __user *fence_ptr = u64_to_user_ptr(val);
 
@@ -477,6 +486,10 @@ drm_atomic_crtc_get_property(struct drm_crtc *crtc,
 		*val = (state->mode_blob) ? state->mode_blob->base.id : 0;
 	else if (property == config->prop_vrr_enabled)
 		*val = state->vrr_enabled;
+	else if (property == crtc->gamma_mode_property)
+		*val = state->gamma_mode;
+	else if (property == crtc->degamma_mode_property)
+		*val = state->degamma_mode;
 	else if (property == config->degamma_lut_property)
 		*val = (state->degamma_lut) ? state->degamma_lut->base.id : 0;
 	else if (property == config->ctm_property)
@@ -562,6 +575,32 @@ static int drm_atomic_plane_set_property(struct drm_plane *plane,
 		state->color_encoding = val;
 	} else if (property == plane->color_range_property) {
 		state->color_range = val;
+	} else if (property == plane->degamma_mode_property) {
+		state->degamma_mode = val;
+	} else if (property == plane->degamma_lut_property) {
+		ret = drm_atomic_replace_property_blob_from_id(dev,
+					&state->degamma_lut,
+					val, -1, sizeof(struct drm_color_lut_ext),
+					&replaced);
+		state->color_mgmt_changed |= replaced;
+		return ret;
+	} else if (property == plane->ctm_property) {
+		ret = drm_atomic_replace_property_blob_from_id(dev,
+					&state->ctm,
+					val,
+					sizeof(struct drm_color_ctm), -1,
+					&replaced);
+		state->color_mgmt_changed |= replaced;
+		return ret;
+	} else if (property == plane->gamma_mode_property) {
+		state->gamma_mode = val;
+	} else if (property == plane->gamma_lut_property) {
+		ret = drm_atomic_replace_property_blob_from_id(dev,
+					&state->gamma_lut,
+					val, -1, sizeof(struct drm_color_lut_ext),
+					&replaced);
+		state->color_mgmt_changed |= replaced;
+		return ret;
 	} else if (property == config->prop_fb_damage_clips) {
 		ret = drm_atomic_replace_property_blob_from_id(dev,
 					&state->fb_damage_clips,
@@ -628,6 +667,18 @@ drm_atomic_plane_get_property(struct drm_plane *plane,
 		*val = state->color_encoding;
 	} else if (property == plane->color_range_property) {
 		*val = state->color_range;
+	} else if (property == plane->degamma_mode_property) {
+		*val = state->degamma_mode;
+	} else if (property == plane->degamma_lut_property) {
+		*val = (state->degamma_lut) ?
+			state->degamma_lut->base.id : 0;
+	} else if (property == plane->ctm_property) {
+		*val = (state->ctm) ? state->ctm->base.id : 0;
+	} else if (property == plane->gamma_mode_property) {
+		*val = state->gamma_mode;
+	} else if (property == plane->gamma_lut_property) {
+		*val = (state->gamma_lut) ?
+			state->gamma_lut->base.id : 0;
 	} else if (property == config->prop_fb_damage_clips) {
 		*val = (state->fb_damage_clips) ?
 			state->fb_damage_clips->base.id : 0;
@@ -1010,6 +1061,10 @@ int drm_atomic_set_property(struct drm_atomic_state *state,
 			break;
 		}
 
+		crtc_state->advance_gamma_mode_active =
+					state->advance_gamma_mode_active;
+		crtc_state->advance_degamma_mode_active =
+					state->advance_degamma_mode_active;
 		ret = drm_atomic_crtc_set_property(crtc,
 				crtc_state, prop, prop_value);
 		break;
@@ -1346,6 +1401,8 @@ int drm_mode_atomic_ioctl(struct drm_device *dev,
 	drm_modeset_acquire_init(&ctx, DRM_MODESET_ACQUIRE_INTERRUPTIBLE);
 	state->acquire_ctx = &ctx;
 	state->allow_modeset = !!(arg->flags & DRM_MODE_ATOMIC_ALLOW_MODESET);
+	state->advance_gamma_mode_active = file_priv->advance_gamma_mode_active;
+	state->advance_degamma_mode_active = file_priv->advance_degamma_mode_active;
 
 retry:
 	copied_objs = 0;

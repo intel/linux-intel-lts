@@ -50,7 +50,6 @@ struct dp_hdmi_dongle_signature_data {
 
 /* DP-HDMI dongle slave address for retrieving dongle signature*/
 #define DP_HDMI_DONGLE_ADDRESS 0x40
-static const uint8_t dp_hdmi_dongle_signature_str[] = "DP-HDMI ADAPTOR";
 #define DP_HDMI_DONGLE_SIGNATURE_EOT 0x04
 
 
@@ -68,6 +67,9 @@ static const uint8_t dp_hdmi_dongle_signature_str[] = "DP-HDMI ADAPTOR";
 #define HDMI_SCDC_STATUS_FLAGS 0x40
 #define HDMI_SCDC_ERR_DETECT 0x50
 #define HDMI_SCDC_TEST_CONFIG 0xC0
+
+#define HDMI_SCDC_MANUFACTURER_OUI 0xD0
+#define HDMI_SCDC_DEVICE_ID 0xDB
 
 union hdmi_scdc_update_read_data {
 	uint8_t byte[2];
@@ -108,6 +110,23 @@ union hdmi_scdc_ced_data {
 		uint8_t RESERVED2:8;
 		uint8_t RESERVED3:8;
 		uint8_t RESERVED4:4;
+	} fields;
+};
+
+union hdmi_scdc_manufacturer_OUI_data {
+	uint8_t byte[3];
+	struct {
+		uint8_t Manufacturer_OUI_1:8;
+		uint8_t Manufacturer_OUI_2:8;
+		uint8_t Manufacturer_OUI_3:8;
+	} fields;
+};
+
+union hdmi_scdc_device_id_data {
+	uint8_t byte;
+	struct {
+		uint8_t Hardware_Minor_Rev:4;
+		uint8_t Hardware_Major_Rev:4;
 	} fields;
 };
 

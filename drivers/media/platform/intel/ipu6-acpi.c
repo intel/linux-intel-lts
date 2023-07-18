@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2016--2022 Intel Corporation.
+ * Copyright (c) 2016--2023 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -63,8 +63,9 @@ static const struct ipu_acpi_devices supported_devices[] = {
  *	{ "ACPI ID", sensor_name, get_sensor_pdata, NULL, 0, TYPE, serdes_name },	// Custom HID
  */
 	{ "INTC10C0", AR0234_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// AR0234 HID
-	{ "INTC10B1", LT6911UXC_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// Lontium HID
+	{ "INTC10B1", LT6911UXC_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// LT6911UXC HID
 	{ "INTC10C1", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// IMX390 HID
+	{ "INTC10C5", LT6911UXE_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },   // LT6911UXE HID
 	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, D457_NAME },// D457 HID
 };
 
@@ -87,8 +88,9 @@ static const struct acpi_device_id ipu_acpi_match[] = {
  *	{ "AR0234A", 0 },	// Custom HID
  */
 	{ "INTC10C0", 0 },	// AR0234 HID
-	{ "INTC10B1", 0 },	// Lontium HID
+	{ "INTC10B1", 0 },	// LT6911UXC HID
 	{ "INTC10C1", 0 },	// IMX390 HID
+	{ "INTC10C5", 0 },	// LT6911UXE HID
 	{ "INTC10CD", 0 },	// D457 HID
 	{},
 };
@@ -100,8 +102,7 @@ static int ipu_acpi_get_pdata(struct i2c_client *client,
 	int index = get_table_index(&client->dev, acpi_id->id);
 
 	if (index < 0) {
-		dev_err(&client->dev,
-			"Device is not in supported devices list\n");
+		pr_err("Device is not in supported devices list\n");
 		return -ENODEV;
 	}
 
@@ -112,7 +113,7 @@ static int ipu_acpi_get_pdata(struct i2c_client *client,
 	strlcpy(client->name, supported_devices[index].real_driver,
 		sizeof(client->name));
 
-	dev_info(&client->dev, "Getting BIOS data for %s", client->name);
+	pr_info("IPU6 ACPI: Getting BIOS data for %s (%s)", client->name, dev_name(&client->dev));
 
 	supported_devices[index].get_platform_data(
 		client, camdata, helper,
@@ -139,7 +140,7 @@ static int ipu_i2c_test(struct device *dev, void *priv)
 
 	acpi_id = acpi_match_device(ipu_acpi_match, dev);
 	if (!acpi_id) {
-		dev_err(dev, "acpi id not found, return 0");
+		pr_err("IPU6 ACPI: ACPI device NOT supported in IPU6 ACPI driver");
 		return 0;
 	}
 
@@ -152,7 +153,7 @@ static int ipu_i2c_test(struct device *dev, void *priv)
 
 	/* Looks that we got what we are looking for */
 	if (ipu_acpi_get_pdata(client, acpi_id, priv))
-		dev_err(dev, "Failed to process ACPI data");
+		pr_err("IPU6 ACPI: Failed to process ACPI data");
 
 	/* Don't return error since we want to process remaining devices */
 

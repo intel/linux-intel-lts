@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/pci.h>
+#include <linux/pci-ats.h>
 #include <linux/pm_qos.h>
 #include <linux/pm_runtime.h>
 #include <linux/timer.h>
@@ -40,9 +41,13 @@
 enum ipu_version ipu_ver;
 EXPORT_SYMBOL(ipu_ver);
 
-static int isys_freq_overwrite = -1;
-module_param(isys_freq_overwrite, int, 0660);
-MODULE_PARM_DESC(isys_freq_overwrite, "overwrite isys freq default value");
+static int isys_freq_override = -1;
+module_param(isys_freq_override, int, 0660);
+MODULE_PARM_DESC(isys_freq_override, "override isys freq default value");
+
+static int psys_freq_override = -1;
+module_param(psys_freq_override, int, 0660);
+MODULE_PARM_DESC(psys_freq_override, "override psys freq default value");
 
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 static int isys_init_acpi_add_device(struct device *dev, void *priv,
@@ -72,7 +77,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 #endif
 	int ret;
 
-	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return ERR_PTR(-ENOMEM);
 
@@ -90,8 +95,9 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					 IPU_ISYS_NAME, nr);
 	if (IS_ERR(isys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(isys),
-			      "ipu_bus_add_device(isys) failed\n");
-		return ERR_CAST(isys);
+			      "ipu_bus_initialize_device(isys) failed\n");
+		kfree(pdata);
+		return isys;
 	}
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	if (!spdata) {
@@ -108,8 +114,9 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	isys->mmu = ipu_mmu_init(&pdev->dev, base, ISYS_MMID,
 				 &ipdata->hw_variant);
 	if (IS_ERR(isys->mmu)) {
-		dev_err_probe(&pdev->dev, PTR_ERR(isys),
+		dev_err_probe(&pdev->dev, PTR_ERR(isys->mmu),
 			      "ipu_mmu_init(isys->mmu) failed\n");
+		put_device(&isys->dev);
 		return ERR_CAST(isys->mmu);
 	}
 
@@ -133,7 +140,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	struct ipu_psys_pdata *pdata;
 	int ret;
 
-	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return ERR_PTR(-ENOMEM);
 
@@ -144,15 +151,17 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 					 IPU_PSYS_NAME, nr);
 	if (IS_ERR(psys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(psys),
-			      "ipu_bus_add_device(psys) failed\n");
-		return ERR_CAST(psys);
+			      "ipu_bus_initialize_device(psys) failed\n");
+		kfree(pdata);
+		return psys;
 	}
 
 	psys->mmu = ipu_mmu_init(&pdev->dev, base, PSYS_MMID,
 				 &ipdata->hw_variant);
 	if (IS_ERR(psys->mmu)) {
-		dev_err_probe(&pdev->dev, PTR_ERR(psys),
+		dev_err_probe(&pdev->dev, PTR_ERR(psys->mmu),
 			      "ipu_mmu_init(psys->mmu) failed\n");
+		put_device(&psys->dev);
 		return ERR_CAST(psys->mmu);
 	}
 
@@ -355,6 +364,11 @@ static int ipu_pci_config_setup(struct pci_dev *dev)
 	pci_read_config_word(dev, PCI_COMMAND, &pci_command);
 	pci_command |= PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER;
 	pci_write_config_word(dev, PCI_COMMAND, pci_command);
+
+	/* disable IPU6 PCI ATS on mtl ES2 */
+	if (ipu_ver == IPU_VER_6EP_MTL && boot_cpu_data.x86_stepping == 0x2 &&
+	    pci_ats_supported(dev))
+		pci_disable_ats(dev);
 
 	/* no msi pci capability for IPU6EP */
 	if (ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL) {
@@ -650,12 +664,16 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
-	if ((isys_freq_overwrite >= IPU_IS_FREQ_MIN) && (isys_freq_overwrite <= IPU_IS_FREQ_MAX)) {
-		u64 val = isys_freq_overwrite;
+	if (isys_freq_override >= BUTTRESS_MIN_FORCE_IS_FREQ &&
+		isys_freq_override <= BUTTRESS_MAX_FORCE_IS_FREQ) {
+		u64 val = isys_freq_override;
 
 		do_div(val, BUTTRESS_IS_FREQ_STEP);
-		dev_info(&isp->pdev->dev, "isys freq overwrite to %d\n", isys_freq_overwrite);
 		isys_ctrl->divisor = val;
+		dev_info(&isp->pdev->dev,
+			 "adusted isys freq from input (%d) and set (%d)\n",
+			 isys_freq_override,
+			 isys_ctrl->divisor * BUTTRESS_IS_FREQ_STEP);
 	}
 
 	psys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*psys_ctrl), GFP_KERNEL);
@@ -675,6 +693,18 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
+	if (psys_freq_override >= BUTTRESS_MIN_FORCE_PS_FREQ &&
+		psys_freq_override <= BUTTRESS_MAX_FORCE_PS_FREQ) {
+		u64 val = psys_freq_override;
+
+		do_div(val, BUTTRESS_PS_FREQ_STEP);
+		psys_ctrl->divisor = val;
+		psys_ctrl->qos_floor = val;
+		dev_info(&isp->pdev->dev,
+			 "adjusted psys freq from input (%d) and set (%d)\n",
+			 psys_freq_override,
+			 psys_ctrl->divisor * BUTTRESS_PS_FREQ_STEP);
+	}
 	rval = pm_runtime_get_sync(&isp->psys->dev);
 	if (rval < 0) {
 		dev_err(&isp->psys->dev, "Failed to get runtime PM\n");

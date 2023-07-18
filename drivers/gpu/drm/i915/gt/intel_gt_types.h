@@ -23,6 +23,7 @@
 #include "i915_perf_types.h"
 #include "intel_engine_types.h"
 #include "intel_gt_buffer_pool_types.h"
+#include "intel_gt_defines.h"
 #include "intel_hwconfig.h"
 #include "intel_llc_types.h"
 #include "intel_reset_types.h"

@@ -50,6 +50,7 @@ struct intel_guc {
 	/** @capture: the error-state-capture module's data and objects */
 	struct intel_guc_state_capture *capture;
 
+	/** @dbgfs_node: debugfs node */
 	struct dentry *dbgfs_node;
 
 	/** @sched_engine: Global engine used to submit requests to GuC */
@@ -86,11 +87,19 @@ struct intel_guc {
 	 */
 	atomic_t outstanding_submission_g2h;
 
-	/** @interrupts: pointers to GuC interrupt-managing functions. */
+	/** @tlb_lookup: xarray to store all pending TLB invalidation requests */
 	struct xarray tlb_lookup;
+
+	/**
+	 * @serial_slot: id to the initial waiter created in tlb_lookup,
+	 * which is used only when failed to allocate new waiter.
+	 */
 	u32 serial_slot;
+
+	/** @next_seqno: the next id (sequence no.) to allocate. */
 	u32 next_seqno;
 
+	/** @interrupts: pointers to GuC interrupt-managing functions. */
 	struct {
 		bool enabled;
 		void (*reset)(struct intel_guc *guc);
@@ -429,10 +438,10 @@ int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
 int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
 
-int intel_guc_invalidate_tlb_full(struct intel_guc *guc,
-				  enum intel_guc_tlb_inval_mode mode);
-int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
-				 enum intel_guc_tlb_inval_mode mode);
+int intel_guc_invalidate_tlb_full(struct intel_guc *guc);
+int intel_guc_invalidate_tlb(struct intel_guc *guc);
+int intel_guc_tlb_invalidation_done(struct intel_guc *guc, const u32 *hxg,
+				    u32 size);
 
 static inline bool intel_guc_is_supported(const struct intel_guc *guc)
 {
@@ -512,7 +521,6 @@ int intel_guc_engine_failure_process_msg(struct intel_guc *guc,
 					 const u32 *msg, u32 len);
 int intel_guc_error_capture_process_msg(struct intel_guc *guc,
 					const u32 *msg, u32 len);
-void intel_guc_tlb_invalidation_done(struct intel_guc *guc, u32 seqno);
 
 struct intel_engine_cs *
 intel_guc_lookup_engine(struct intel_guc *guc, u8 guc_class, u8 instance);
@@ -536,4 +544,5 @@ void intel_guc_dump_time_info(struct intel_guc *guc, struct drm_printer *p);
 
 int intel_guc_sched_disable_gucid_threshold_max(struct intel_guc *guc);
 
+void wake_up_all_tlb_invalidate(struct intel_guc *guc);
 #endif

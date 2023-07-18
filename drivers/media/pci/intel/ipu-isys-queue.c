@@ -528,8 +528,9 @@ static void buf_queue(struct vb2_buffer *vb)
 	if (ib->req)
 		return;
 
-	if (!pipe_av || !media_pipe || !vb->vb2_queue->start_streaming_called) {
-		dev_info(&av->isys->adev->dev,
+	if (!pipe_av || !media_pipe ||
+	    !vb->vb2_queue->start_streaming_called) {
+		dev_dbg(&av->isys->adev->dev,
 			"no pipe or streaming, adding to incoming\n");
 		return;
 	}
@@ -538,7 +539,7 @@ static void buf_queue(struct vb2_buffer *vb)
 	mutex_lock(&pipe_av->mutex);
 
 	if (ip->nr_streaming != ip->nr_queues) {
-		dev_info(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"not streaming yet, adding to incoming\n");
 		goto out;
 	}
@@ -555,7 +556,7 @@ static void buf_queue(struct vb2_buffer *vb)
 				"error: buffer list get failed\n");
 			WARN_ON(1);
 		} else {
-			dev_info(&av->isys->adev->dev,
+			dev_dbg(&av->isys->adev->dev,
 				"not enough buffers available\n");
 		}
 		goto out;
@@ -564,8 +565,6 @@ static void buf_queue(struct vb2_buffer *vb)
 	msg = ipu_get_fw_msg_buf(ip);
 	if (!msg) {
 		rval = -ENOMEM;
-		dev_err(&av->isys->adev->dev,
-			"failed to get fw msg buf\n");
 		goto out;
 	}
 	buf = to_frame_msg_buf(msg);
@@ -576,7 +575,7 @@ static void buf_queue(struct vb2_buffer *vb)
 					ip->nr_output_pins);
 
 	if (!ip->streaming) {
-		dev_info(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"got a buffer to start streaming!\n");
 		rval = ipu_isys_stream_start(ip, &bl, true);
 		if (rval)
@@ -751,14 +750,6 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 
 	mutex_unlock(&av->isys->stream_mutex);
 
-	rval = aq->link_fmt_validate(aq);
-	if (rval) {
-		dev_err(&av->isys->adev->dev,
-			"%s: link format validation failed (%d)\n",
-			av->vdev.name, rval);
-		goto out_unprepare_streaming;
-	}
-
 	ip = to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	pipe_av = container_of(ip, struct ipu_isys_video, ip);
 	if (pipe_av != av) {
@@ -771,7 +762,7 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 		ip->nr_queues);
 	list_add(&aq->node, &ip->queues);
 	if (ip->nr_streaming != ip->nr_queues) {
-		dev_err(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"%s: streaming queue not match (%d)(%d)\n",
 			av->vdev.name, ip->nr_streaming, ip->nr_queues);
 		goto out;
@@ -785,7 +776,7 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 				"buffer list invalid\n");
 			goto out_stream_start;
 		} else if (rval < 0) {
-			dev_err(&av->isys->adev->dev,
+			dev_dbg(&av->isys->adev->dev,
 				"no request available, postponing streamon\n");
 			goto out;
 		}
@@ -814,7 +805,6 @@ out_stream_start:
 		mutex_lock(&av->mutex);
 	}
 
-out_unprepare_streaming:
 	mutex_lock(&av->isys->stream_mutex);
 	if (first)
 		ipu_isys_video_prepare_streaming(av, 0);
@@ -852,7 +842,8 @@ static int start_streaming(struct vb2_queue *q, unsigned int count)
 
 static void reset_stop_streaming(struct ipu_isys_video *av)
 {
-	struct ipu_isys_pipeline *ip = &av->ip;
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	struct ipu_isys_queue *aq = &av->aq;
 
 	dev_dbg(&av->isys->adev->dev, "%s: stop streaming\n", av->vdev.name);
@@ -862,6 +853,8 @@ static void reset_stop_streaming(struct ipu_isys_video *av)
 		ipu_isys_video_set_streaming(av, 0, NULL);
 	if (ip->nr_streaming == 1)
 		ipu_isys_video_prepare_streaming(av, 0);
+	else
+		av->vdev.entity.pads[0].pipe = NULL;
 	mutex_unlock(&av->isys->stream_mutex);
 
 	ip->nr_streaming--;
@@ -900,7 +893,8 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 	return rval;
 }
 
-static int ipu_isys_reset(struct ipu_isys_video *self_av)
+static int ipu_isys_reset(struct ipu_isys_video *self_av,
+			  struct ipu_isys_pipeline *self_ip)
 {
 	struct ipu_isys *isys = self_av->isys;
 	struct ipu_bus_device *adev = isys->adev;
@@ -922,11 +916,11 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 	mutex_unlock(&isys->reset_mutex);
 
 	av = &isys->csi2->av;
+	ip = to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 
-	if (av != self_av) {
-		ip = &av->ip;
+	if (av != self_av && ip && ip != self_ip) {
 		mutex_lock(&av->mutex);
-		if (ip->streaming) {
+		if (ip->streaming && !ip->nr_streaming) {
 			av->reset = true;
 			has_streaming = true;
 			reset_stop_streaming(av);
@@ -935,11 +929,11 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 	}
 
 	av = &isys->csi2_be.av;
+	ip = to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 
-	if (av != self_av) {
-		ip = &av->ip;
+	if (av != self_av && ip && ip != self_ip) {
 		mutex_lock(&av->mutex);
-		if (ip->streaming) {
+		if (ip->streaming && !ip->nr_streaming) {
 			av->reset = true;
 			has_streaming = true;
 			reset_stop_streaming(av);
@@ -954,9 +948,13 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av)
 		if (av == self_av)
 			continue;
 
-		ip = &av->ip;
+		ip = to_ipu_isys_pipeline
+			(media_entity_pipeline(&av->vdev.entity));
+		if (!ip || ip == self_ip)
+			continue;
+
 		mutex_lock(&av->mutex);
-		if (!ip->streaming) {
+		if (!ip->streaming && !ip->nr_streaming) {
 			mutex_unlock(&av->mutex);
 			continue;
 		}
@@ -1093,6 +1091,8 @@ static void stop_streaming(struct vb2_queue *q)
 		ipu_isys_video_set_streaming(av, 0, NULL);
 	if (ip->nr_streaming == 1)
 		ipu_isys_video_prepare_streaming(av, 0);
+	else
+		av->vdev.entity.pads[0].pipe = NULL;
 	mutex_unlock(&av->isys->stream_mutex);
 
 	ip->nr_streaming--;
@@ -1105,8 +1105,12 @@ static void stop_streaming(struct vb2_queue *q)
 	}
 
 	return_buffers(aq, VB2_BUF_STATE_ERROR);
-	if (av->isys->reset_needed)
-		ipu_isys_reset(av);
+	if (av->isys->reset_needed) {
+		if (!ip->nr_streaming)
+			ipu_isys_reset(av, ip);
+		else
+			av->isys->reset_needed = 0;
+	}
 
 	dev_dbg(&av->isys->adev->dev, "stop: %s: exit\n",
 		av->vdev.name);
@@ -1114,7 +1118,6 @@ static void stop_streaming(struct vb2_queue *q)
 	mutex_lock(&av->isys->reset_mutex);
 	av->isys->in_stop_streaming = false;
 	mutex_unlock(&av->isys->reset_mutex);
-
 }
 
 static unsigned int

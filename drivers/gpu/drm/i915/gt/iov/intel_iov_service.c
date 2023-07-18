@@ -54,6 +54,7 @@ static const i915_reg_t mtl_runtime_regs[] = {
 	GEN11_HUC_KERNEL_LOAD_INFO,	/* _MMIO(0xC1DC) */
 	GEN9_TIMESTAMP_OVERRIDE,	/* _MMIO(0x44074) */
 	_MMIO(0x10100C),
+	_MMIO(MTL_GSC_HECI1_BASE + HECI_FWSTS5),/* _MMIO(0x116c68) */
 	MTL_GT_ACTIVITY_FACTOR,		/* _MMIO(0x138010) */
 	_MMIO(0x389140),
 };
@@ -353,7 +354,7 @@ int intel_iov_service_process_msg(struct intel_iov *iov, u32 origin,
 {
 	int err = -EOPNOTSUPP;
 	u32 action;
-	u32 data;
+	u32 __maybe_unused data;
 
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 	GEM_BUG_ON(len < GUC_HXG_MSG_MIN_LEN);
@@ -473,6 +474,60 @@ static int lookup_reg_index(struct intel_iov *iov, u32 offset)
 	return found ? found - iov->pf.service.runtime.regs : -ENODATA;
 }
 
+static int reply_mmio_relay_update_ggtt(struct intel_iov *iov, u32 vfid, u32 magic, const u32 *msg)
+{
+	struct i915_ggtt *ggtt = iov_to_gt(iov)->ggtt;
+	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
+	struct drm_mm_node *node = &iov->pf.provisioning.configs[vfid].ggtt_region;
+	gen8_pte_t pte = i915_ggtt_prepare_vf_pte(vfid);
+	u64 vf_ggtt_end = node->start + node->size - 1;
+	u32 data[PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_NUM_DATA + 1] = { };
+	u64 pfn;
+	u16 pte_num;
+	u32 pte_lo, pte_hi;
+	u32 pte_offset;
+	gen8_pte_t rq_pte;
+	u64 ggtt_addr;
+	u64 ggtt_addr_end;
+	int i;
+
+	if (!IS_METEORLAKE(iov_to_i915(iov)))
+		return -EOPNOTSUPP;
+
+	if (unlikely(!msg[0]))
+		return -EPROTO;
+	if (unlikely(!msg[1]))
+		return -EINVAL;
+
+	pte_num = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_NUM_PTES, msg[1]);
+	pte_offset = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_OFFSET, msg[1]);
+	pte_lo = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_2_PTE_LO, msg[2]);
+	pte_hi = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_3_PTE_HI, msg[3]);
+
+	ggtt_addr = node->start + pte_offset * I915_GTT_PAGE_SIZE_4K;
+	ggtt_addr_end = ggtt_addr + pte_num * I915_GTT_PAGE_SIZE_4K - 1;
+
+	if (ggtt_addr_end > vf_ggtt_end)
+		return -ERANGE;
+
+	rq_pte = make_u64(pte_hi, pte_lo);
+	pfn = FIELD_GET(GEN12_GGTT_PTE_ADDR_MASK, rq_pte);
+
+	pte |= rq_pte & MTL_GGTT_PTE_PAT_MASK;
+
+	gtt_entries += (node->start >> PAGE_SHIFT) + pte_offset;
+
+	for (i = 0; i < pte_num; i++) {
+		u64 pfn_masked = FIELD_PREP(GEN12_GGTT_PTE_ADDR_MASK, pfn + i);
+
+		writeq(pte | pfn_masked, gtt_entries++);
+	}
+
+	data[0] = FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_RESPONSE_MSG_1_NUM_PTES, pte_num);
+
+	return send_mmio_relay_reply(iov, vfid, magic, data);
+}
+
 static int reply_mmio_relay_get_reg(struct intel_iov *iov,
 				    u32 vfid, u32 magic, const u32 *msg)
 {
@@ -543,6 +598,9 @@ int intel_iov_service_process_mmio_relay(struct intel_iov *iov, const u32 *msg,
 	switch (opcode) {
 	case IOV_OPCODE_VF2PF_MMIO_HANDSHAKE:
 		err = reply_mmio_relay_handshake(iov, vfid, magic, msg + 2);
+		break;
+	case IOV_OPCODE_VF2PF_MMIO_UPDATE_GGTT:
+		err = reply_mmio_relay_update_ggtt(iov, vfid, magic, msg + 2);
 		break;
 	case IOV_OPCODE_VF2PF_MMIO_GET_RUNTIME:
 		err = reply_mmio_relay_get_reg(iov, vfid, magic, msg + 2);

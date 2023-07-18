@@ -556,6 +556,7 @@ static int ov01a10_start_streaming(struct ov01a10 *ov01a10)
 	const struct ov01a10_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+
 	link_freq_index = ov01a10->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov01a10_write_reg_list(ov01a10, reg_list);
@@ -826,10 +827,8 @@ static int ov01a10_probe(struct i2c_client *client)
 	int ret = 0;
 
 	ov01a10 = devm_kzalloc(&client->dev, sizeof(*ov01a10), GFP_KERNEL);
-	if (!ov01a10) {
-		ret = -ENOMEM;
-		goto probe_error_ret;
-	}
+	if (!ov01a10)
+		return -ENOMEM;
 
 	v4l2_i2c_subdev_init(&ov01a10->sd, client, &ov01a10_subdev_ops);
 
@@ -883,6 +882,7 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov01a10->mutex);
 
 probe_error_ret:
+
 	return ret;
 }
 

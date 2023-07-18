@@ -69,6 +69,7 @@ static void mock_device_release(struct drm_device *dev)
 	i915_gem_drain_workqueue(i915);
 
 	mock_fini_ggtt(to_gt(i915)->ggtt);
+	destroy_workqueue(i915->unordered_wq);
 	destroy_workqueue(i915->wq);
 
 	intel_region_ttm_device_fini(i915);
@@ -123,6 +124,7 @@ struct drm_i915_private *mock_gem_device(void)
 	static struct dev_iommu fake_iommu = { .priv = (void *)-1 };
 #endif
 	struct drm_i915_private *i915;
+	struct intel_device_info *i915_info;
 	struct pci_dev *pdev;
 	unsigned int i;
 	int ret;
@@ -184,8 +186,10 @@ struct drm_i915_private *mock_gem_device(void)
 	RUNTIME_INFO(i915)->memory_regions = REGION_SMEM;
 
 	/* simply use legacy cache level for mock device */
+	i915_info = (struct intel_device_info *)INTEL_INFO(i915);
+	i915_info->max_pat_index = 3;
 	for (i = 0; i < I915_MAX_CACHE_LEVEL; i++)
-		mkwrite_device_info(i915)->cachelevel_to_pat[i] = i;
+		i915_info->cachelevel_to_pat[i] = i;
 
 	intel_memory_regions_hw_probe(i915);
 
@@ -205,6 +209,10 @@ struct drm_i915_private *mock_gem_device(void)
 	i915->wq = alloc_ordered_workqueue("mock", 0);
 	if (!i915->wq)
 		goto err_drv;
+
+	i915->unordered_wq = alloc_workqueue("mock-unordered", 0, 0);
+	if (!i915->unordered_wq)
+		goto err_wq;
 
 	mock_init_contexts(i915);
 
@@ -237,6 +245,8 @@ struct drm_i915_private *mock_gem_device(void)
 err_context:
 	intel_gt_driver_remove(to_gt(i915));
 err_unlock:
+	destroy_workqueue(i915->unordered_wq);
+err_wq:
 	destroy_workqueue(i915->wq);
 err_drv:
 	intel_region_ttm_device_fini(i915);

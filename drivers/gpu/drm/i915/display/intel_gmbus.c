@@ -215,41 +215,23 @@ intel_gmbus_reset(struct drm_i915_private *i915)
 static void pnv_gmbus_clock_gating(struct drm_i915_private *i915,
 				   bool enable)
 {
-	u32 val;
-
 	/* When using bit bashing for I2C, this bit needs to be set to 1 */
-	val = intel_de_read(i915, DSPCLK_GATE_D(i915));
-	if (!enable)
-		val |= PNV_GMBUSUNIT_CLOCK_GATE_DISABLE;
-	else
-		val &= ~PNV_GMBUSUNIT_CLOCK_GATE_DISABLE;
-	intel_de_write(i915, DSPCLK_GATE_D(i915), val);
+	intel_de_rmw(i915, DSPCLK_GATE_D(i915), PNV_GMBUSUNIT_CLOCK_GATE_DISABLE,
+		     !enable ? PNV_GMBUSUNIT_CLOCK_GATE_DISABLE : 0);
 }
 
 static void pch_gmbus_clock_gating(struct drm_i915_private *i915,
 				   bool enable)
 {
-	u32 val;
-
-	val = intel_de_read(i915, SOUTH_DSPCLK_GATE_D);
-	if (!enable)
-		val |= PCH_GMBUSUNIT_CLOCK_GATE_DISABLE;
-	else
-		val &= ~PCH_GMBUSUNIT_CLOCK_GATE_DISABLE;
-	intel_de_write(i915, SOUTH_DSPCLK_GATE_D, val);
+	intel_de_rmw(i915, SOUTH_DSPCLK_GATE_D, PCH_GMBUSUNIT_CLOCK_GATE_DISABLE,
+		     !enable ? PCH_GMBUSUNIT_CLOCK_GATE_DISABLE : 0);
 }
 
 static void bxt_gmbus_clock_gating(struct drm_i915_private *i915,
 				   bool enable)
 {
-	u32 val;
-
-	val = intel_de_read(i915, GEN9_CLKGATE_DIS_4);
-	if (!enable)
-		val |= BXT_GMBUS_GATING_DIS;
-	else
-		val &= ~BXT_GMBUS_GATING_DIS;
-	intel_de_write(i915, GEN9_CLKGATE_DIS_4, val);
+	intel_de_rmw(i915, GEN9_CLKGATE_DIS_4, BXT_GMBUS_GATING_DIS,
+		     !enable ? BXT_GMBUS_GATING_DIS : 0);
 }
 
 static u32 get_reserved(struct intel_gmbus *bus)
@@ -1008,4 +990,9 @@ void intel_gmbus_teardown(struct drm_i915_private *i915)
 		kfree(bus);
 		i915->display.gmbus.bus[pin] = NULL;
 	}
+}
+
+void intel_gmbus_irq_handler(struct drm_i915_private *i915)
+{
+	wake_up_all(&i915->display.gmbus.wait_queue);
 }

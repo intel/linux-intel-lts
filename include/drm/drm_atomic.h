@@ -398,6 +398,8 @@ struct drm_atomic_state {
 	 * states.
 	 */
 	bool duplicated : 1;
+	bool advance_gamma_mode_active : 1;
+	bool advance_degamma_mode_active : 1;
 	struct __drm_planes_state *planes;
 	struct __drm_crtcs_state *crtcs;
 	int num_connector;
@@ -526,6 +528,13 @@ drm_atomic_get_old_connector_for_encoder(const struct drm_atomic_state *state,
 					 struct drm_encoder *encoder);
 struct drm_connector *
 drm_atomic_get_new_connector_for_encoder(const struct drm_atomic_state *state,
+					 struct drm_encoder *encoder);
+
+struct drm_crtc *
+drm_atomic_get_old_crtc_for_encoder(struct drm_atomic_state *state,
+					 struct drm_encoder *encoder);
+struct drm_crtc *
+drm_atomic_get_new_crtc_for_encoder(struct drm_atomic_state *state,
 					 struct drm_encoder *encoder);
 
 /**

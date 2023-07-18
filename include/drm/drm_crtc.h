@@ -158,6 +158,16 @@ struct drm_crtc_state {
 	bool color_mgmt_changed : 1;
 
 	/**
+	 * This is to indicate advance gamma mode support
+	 */
+	bool advance_gamma_mode_active : 1;
+
+	/**
+	 * This is to indicate advance degamma mode support
+	 */
+	bool advance_degamma_mode_active : 1;
+
+	/**
 	 * @no_vblank:
 	 *
 	 * Reflects the ability of a CRTC to send VBLANK events. This state
@@ -248,6 +258,26 @@ struct drm_crtc_state {
 	 * atomic userspace.
 	 */
 	struct drm_property_blob *mode_blob;
+
+	/**
+	 * @gamma_mode: This is a blob_id and exposes the platform capabilities
+	 * wrt to various gamma modes and the respective lut ranges. This also
+	 * helps user select a gamma mode amongst the supported ones.
+	 */
+	u32 gamma_mode;
+
+	/** Gamma mode type programmed on the pipe */
+	u32 gamma_mode_type;
+
+	/**
+	 * @degamma_mode: This is a blob_id and exposes the platform capabilities
+	 * wrt to various degamma modes and the respective lut ranges. This also
+	 * helps user select a degamma mode amongst the supported ones.
+	 */
+	u32 degamma_mode;
+
+	/** @degamma_mode_type: degamma mode type programmed on the pipe */
+	u32 degamma_mode_type;
 
 	/**
 	 * @degamma_lut:
@@ -1017,6 +1047,12 @@ struct drm_crtc {
 	 */
 	bool enabled;
 
+	/** To handle advance gamma mode support */
+	bool advance_gamma_mode_active : 1;
+
+	/** To handle advance degamma mode support */
+	bool advance_degamma_mode_active : 1;
+
 	/**
 	 * @mode:
 	 *
@@ -1092,6 +1128,20 @@ struct drm_crtc {
 	 * scaling.
 	 */
 	struct drm_property *scaling_filter_property;
+
+	/**
+	 * @gamma_mode_property: Optional CRTC property to enumerate and
+	 * select the mode of the crtc gamma LUTs. This also exposes
+	 * the lut ranges of the various supported gamma modes to userspace.
+	 */
+	struct drm_property *gamma_mode_property;
+
+	/**
+	 * @degamma_mode_property: Optional CRTC property to enumerate and
+	 * select the mode of the crtc degmama LUTs. This also exposes
+	 * the lut ranges of the various supported gamma modes to userspace.
+	 */
+	struct drm_property *degamma_mode_property;
 
 	/**
 	 * @state:

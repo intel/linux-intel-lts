@@ -14,6 +14,7 @@
 #include "gt/intel_gt_pm.h"
 #include "gt/iov/intel_iov.h"
 #include "gt/iov/intel_iov_provisioning.h"
+#include "gt/iov/intel_iov_service.h"
 #include "gt/iov/intel_iov_state.h"
 #include "gt/iov/intel_iov_utils.h"
 
@@ -162,16 +163,20 @@ static int vf_check_guc_submission_support(struct drm_i915_private *i915)
 	return 0;
 }
 
+extern const struct intel_display_device_info no_display;
+
 static void vf_tweak_device_info(struct drm_i915_private *i915)
 {
-	struct intel_device_info *info = mkwrite_device_info(i915);
+	/* FIXME: info shouldn't be written to outside of intel_device_info.c */
+	struct intel_device_info *info = (struct intel_device_info *)INTEL_INFO(i915);
 	struct intel_runtime_info *rinfo = RUNTIME_INFO(i915);
+	struct intel_display_runtime_info *drinfo = DISPLAY_RUNTIME_INFO(i915);
 
 	/* Force PCH_NOOP. We have no access to display */
 	i915->pch_type = PCH_NOP;
-	memset(&info->display, 0, sizeof(info->display));
+	info->display = &no_display;
 	rinfo->memory_regions &= ~(REGION_STOLEN_SMEM | REGION_STOLEN_LMEM);
-	rinfo->pipe_mask = 0;
+	drinfo->pipe_mask = 0;
 }
 
 /**
@@ -246,6 +251,8 @@ void i915_sriov_pf_confirm(struct drm_i915_private *i915)
 {
 	struct device *dev = i915->drm.dev;
 	int totalvfs = i915_sriov_pf_get_totalvfs(i915);
+	struct intel_gt *gt;
+	unsigned int id;
 
 	GEM_BUG_ON(!IS_SRIOV_PF(i915));
 
@@ -257,11 +264,20 @@ void i915_sriov_pf_confirm(struct drm_i915_private *i915)
 
 	dev_info(dev, "%d VFs could be associated with this PF\n", totalvfs);
 	pf_set_status(i915, totalvfs);
+
+	/*
+	 * FIXME: Temporary solution to force VGT mode in GuC throughout
+	 * the life cycle of the PF.
+	 */
+	for_each_gt(gt, i915, id)
+		intel_iov_provisioning_force_vgt_mode(&gt->iov);
+
 }
 
 /**
  * i915_sriov_pf_abort - Abort PF initialization.
  * @i915: the i915 struct
+ * @err: error code that caused abort
  *
  * This function should be called by the PF when some of the necessary
  * initialization steps failed and PF won't be able to manage VFs.
@@ -351,7 +367,7 @@ set:
 
 /**
  * i915_sriov_print_info - Print SR-IOV information.
- * @iov: the i915 struct
+ * @i915: the i915 struct
  * @p: the DRM printer
  *
  * Print SR-IOV related info into provided DRM printer.
@@ -440,6 +456,14 @@ int i915_sriov_pf_enable_vfs(struct drm_i915_private *i915, int num_vfs)
 		}
 		if (unlikely(err))
 			goto fail_pm;
+
+		/*
+		 * Update cached values of runtime registers shared with the VFs in case
+		 * HuC status register has been updated by the GSC after our initial probe.
+		 */
+		if (intel_uc_wants_huc(&gt->uc) && intel_huc_is_loaded_by_gsc(&gt->uc.huc)) {
+			intel_iov_service_update(&gt->iov);
+		}
 	}
 
 	for_each_gt(gt, i915, id) {
@@ -544,7 +568,7 @@ int i915_sriov_pf_disable_vfs(struct drm_i915_private *i915)
 	}
 
 	for_each_gt(gt, i915, id)
-		intel_gt_pm_put_untracked(gt);
+		intel_gt_pm_put(gt);
 
 	dev_info(dev, "Disabled %u VFs\n", num_vfs);
 	return 0;
@@ -696,7 +720,7 @@ int i915_sriov_suspend_late(struct drm_i915_private *i915)
 		 */
 		if (pci_num_vf(to_pci_dev(i915->drm.dev)) != 0) {
 			for_each_gt(gt, i915, id)
-				intel_gt_pm_put_untracked(gt);
+				intel_gt_pm_put(gt);
 		}
 	}
 
@@ -725,7 +749,7 @@ int i915_sriov_resume_early(struct drm_i915_private *i915)
 		 */
 		if (pci_num_vf(to_pci_dev(i915->drm.dev)) != 0) {
 			for_each_gt(gt, i915, id)
-				intel_gt_pm_get_untracked(gt);
+				intel_gt_pm_get(gt);
 		}
 	}
 

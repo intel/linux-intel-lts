@@ -6,13 +6,15 @@
 #include "i915_drv.h"
 #include "i915_reg.h"
 #include "i915_trace.h"
+#include "intel_bios.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
 #include "intel_dp_aux.h"
+#include "intel_dp_aux_regs.h"
 #include "intel_pps.h"
 #include "intel_tc.h"
 
-static u32 intel_dp_aux_pack(const u8 *src, int src_bytes)
+u32 intel_dp_aux_pack(const u8 *src, int src_bytes)
 {
 	int i;
 	u32 v = 0;
@@ -159,14 +161,14 @@ static u32 g4x_get_aux_send_ctl(struct intel_dp *intel_dp,
 		timeout = DP_AUX_CH_CTL_TIME_OUT_400us;
 
 	return DP_AUX_CH_CTL_SEND_BUSY |
-	       DP_AUX_CH_CTL_DONE |
-	       DP_AUX_CH_CTL_INTERRUPT |
-	       DP_AUX_CH_CTL_TIME_OUT_ERROR |
-	       timeout |
-	       DP_AUX_CH_CTL_RECEIVE_ERROR |
-	       (send_bytes << DP_AUX_CH_CTL_MESSAGE_SIZE_SHIFT) |
-	       (g4x_dp_aux_precharge_len() << DP_AUX_CH_CTL_PRECHARGE_2US_SHIFT) |
-	       (aux_clock_divider << DP_AUX_CH_CTL_BIT_CLOCK_2X_SHIFT);
+		DP_AUX_CH_CTL_DONE |
+		DP_AUX_CH_CTL_INTERRUPT |
+		DP_AUX_CH_CTL_TIME_OUT_ERROR |
+		timeout |
+		DP_AUX_CH_CTL_RECEIVE_ERROR |
+		DP_AUX_CH_CTL_MESSAGE_SIZE(send_bytes) |
+		DP_AUX_CH_CTL_PRECHARGE_2US(g4x_dp_aux_precharge_len()) |
+		DP_AUX_CH_CTL_BIT_CLOCK_2X(aux_clock_divider);
 }
 
 static u32 skl_get_aux_send_ctl(struct intel_dp *intel_dp,
@@ -183,14 +185,14 @@ static u32 skl_get_aux_send_ctl(struct intel_dp *intel_dp,
 	 * ICL+: 4ms
 	 */
 	ret = DP_AUX_CH_CTL_SEND_BUSY |
-	      DP_AUX_CH_CTL_DONE |
-	      DP_AUX_CH_CTL_INTERRUPT |
-	      DP_AUX_CH_CTL_TIME_OUT_ERROR |
-	      DP_AUX_CH_CTL_TIME_OUT_MAX |
-	      DP_AUX_CH_CTL_RECEIVE_ERROR |
-	      (send_bytes << DP_AUX_CH_CTL_MESSAGE_SIZE_SHIFT) |
-	      DP_AUX_CH_CTL_FW_SYNC_PULSE_SKL(intel_dp_aux_fw_sync_len()) |
-	      DP_AUX_CH_CTL_SYNC_PULSE_SKL(intel_dp_aux_sync_len());
+		DP_AUX_CH_CTL_DONE |
+		DP_AUX_CH_CTL_INTERRUPT |
+		DP_AUX_CH_CTL_TIME_OUT_ERROR |
+		DP_AUX_CH_CTL_TIME_OUT_MAX |
+		DP_AUX_CH_CTL_RECEIVE_ERROR |
+		DP_AUX_CH_CTL_MESSAGE_SIZE(send_bytes) |
+		DP_AUX_CH_CTL_FW_SYNC_PULSE_SKL(intel_dp_aux_fw_sync_len()) |
+		DP_AUX_CH_CTL_SYNC_PULSE_SKL(intel_dp_aux_sync_len());
 
 	if (intel_tc_port_in_tbt_alt_mode(dig_port))
 		ret |= DP_AUX_CH_CTL_TBT_IO;
@@ -230,8 +232,19 @@ intel_dp_aux_xfer(struct intel_dp *intel_dp,
 	for (i = 0; i < ARRAY_SIZE(ch_data); i++)
 		ch_data[i] = intel_dp->aux_ch_data_reg(intel_dp, i);
 
-	if (is_tc_port)
+	if (is_tc_port) {
 		intel_tc_port_lock(dig_port);
+		/*
+		 * Abort transfers on a disconnected port as required by
+		 * DP 1.4a link CTS 4.2.1.5, also avoiding the long AUX
+		 * timeouts that would otherwise happen.
+		 * TODO: abort the transfer on non-TC ports as well.
+		 */
+		if (!intel_tc_port_connected_locked(&dig_port->base)) {
+			ret = -ENXIO;
+			goto out_unlock;
+		}
+	}
 
 	aux_domain = intel_aux_power_domain(dig_port);
 
@@ -254,6 +267,11 @@ intel_dp_aux_xfer(struct intel_dp *intel_dp,
 	cpu_latency_qos_update_request(&intel_dp->pm_qos, 0);
 
 	intel_pps_check_power_unlocked(intel_dp);
+
+	/*
+	 * FIXME PSR should be disabled here to prevent
+	 * it using the same AUX CH simultaneously
+	 */
 
 	/* Try to wait for any previous AUX channel activity */
 	for (try = 0; try < 3; try++) {
@@ -360,8 +378,7 @@ done:
 	}
 
 	/* Unload any bytes sent back from the other side */
-	recv_bytes = ((status & DP_AUX_CH_CTL_MESSAGE_SIZE_MASK) >>
-		      DP_AUX_CH_CTL_MESSAGE_SIZE_SHIFT);
+	recv_bytes = REG_FIELD_GET(DP_AUX_CH_CTL_MESSAGE_SIZE_MASK, status);
 
 	/*
 	 * By BSpec: "Message sizes of 0 or >20 are not allowed."
@@ -392,7 +409,7 @@ out:
 
 	intel_pps_unlock(intel_dp, pps_wakeref);
 	intel_display_power_put_async(i915, aux_domain, aux_wakeref);
-
+out_unlock:
 	if (is_tc_port)
 		intel_tc_port_unlock(dig_port);
 
@@ -762,4 +779,43 @@ void intel_dp_aux_init(struct intel_dp *intel_dp)
 
 	intel_dp->aux.transfer = intel_dp_aux_transfer;
 	cpu_latency_qos_add_request(&intel_dp->pm_qos, PM_QOS_DEFAULT_VALUE);
+}
+
+static enum aux_ch default_aux_ch(struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+
+	/* SKL has DDI E but no AUX E */
+	if (DISPLAY_VER(i915) == 9 && encoder->port == PORT_E)
+		return AUX_CH_A;
+
+	return (enum aux_ch)encoder->port;
+}
+
+enum aux_ch intel_dp_aux_ch(struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+	enum aux_ch aux_ch;
+
+	aux_ch = intel_bios_dp_aux_ch(encoder->devdata);
+	if (aux_ch != AUX_CH_NONE) {
+		drm_dbg_kms(&i915->drm, "[ENCODER:%d:%s] using AUX %c (VBT)\n",
+			    encoder->base.base.id, encoder->base.name,
+			    aux_ch_name(aux_ch));
+		return aux_ch;
+	}
+
+	aux_ch = default_aux_ch(encoder);
+
+	drm_dbg_kms(&i915->drm,
+		    "[ENCODER:%d:%s] using AUX %c (platform default)\n",
+		    encoder->base.base.id, encoder->base.name,
+		    aux_ch_name(aux_ch));
+
+	return aux_ch;
+}
+
+void intel_dp_aux_irq_handler(struct drm_i915_private *i915)
+{
+	wake_up_all(&i915->display.gmbus.wait_queue);
 }

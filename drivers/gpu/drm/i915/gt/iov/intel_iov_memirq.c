@@ -21,7 +21,7 @@
 #define MEMIRQ_DEBUG(...)
 #endif
 
-/**
+/*
  * Memory based irq page layout
  * We use a single page to contain the different objects used for memory
  * based irq (which are also called "page" in the specs, even if they
@@ -151,7 +151,7 @@ int intel_iov_memirq_init(struct intel_iov *iov)
 }
 
 /**
- * intel_iov_irq_fini - Release data used by memory based interrupts.
+ * intel_iov_memirq_fini - Release data used by memory based interrupts.
  * @iov: the IOV struct
  *
  * Release data used by memory based interrupts.

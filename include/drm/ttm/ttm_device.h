@@ -141,7 +141,7 @@ struct ttm_device_funcs {
 	 * the graphics address space
 	 * @ctx: context for this move with parameters
 	 * @new_mem: the new memory region receiving the buffer
-	 @ @hop: placement for driver directed intermediate hop
+	 * @hop: placement for driver directed intermediate hop
 	 *
 	 * Move a buffer between two memory regions.
 	 * Returns errno -EMULTIHOP if driver requests a hop
@@ -223,7 +223,7 @@ struct ttm_device {
 	 * @funcs: Function table for the device.
 	 * Constant after bo device init
 	 */
-	struct ttm_device_funcs *funcs;
+	const struct ttm_device_funcs *funcs;
 
 	/**
 	 * @sysman: Resource manager for the system domain.
@@ -287,7 +287,7 @@ static inline void ttm_set_driver_manager(struct ttm_device *bdev, int type,
 	bdev->man_drv[type] = manager;
 }
 
-int ttm_device_init(struct ttm_device *bdev, struct ttm_device_funcs *funcs,
+int ttm_device_init(struct ttm_device *bdev, const struct ttm_device_funcs *funcs,
 		    struct device *dev, struct address_space *mapping,
 		    struct drm_vma_offset_manager *vma_manager,
 		    bool use_dma_alloc, bool use_dma32);

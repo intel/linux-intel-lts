@@ -47,6 +47,7 @@ IOV_THRESHOLDS(__to_intel_iov_threshold_enum)
  * @begin_db: start index of GuC doorbells.
  * @exec_quantum: execution-quantum in milliseconds.
  * @preempt_timeout: preemption timeout in microseconds.
+ * @thresholds: FIXME missing docs
  */
 struct intel_iov_config {
 	struct drm_mm_node ggtt_region;
@@ -94,9 +95,13 @@ struct intel_iov_policies {
 /**
  * struct intel_iov_provisioning - IOV provisioning data.
  * @auto_mode: indicates manual or automatic provisioning mode.
+ * @num_pushed: FIXME missing doc
+ * @worker: FIXME missing doc
  * @policies: provisioning policies.
+ * @spare: spare resources configuration
  * @configs: flexible array with configuration data for PF and VFs.
  * @lock: protects provisionining data
+ * @self_done: FIXME missing doc
  */
 struct intel_iov_provisioning {
 	bool auto_mode;
@@ -107,7 +112,7 @@ struct intel_iov_provisioning {
 	struct intel_iov_config *configs;
 	struct mutex lock;
 
-	I915_SELFTEST_DECLARE(bool self_done);
+	bool self_done;
 };
 
 #define VFID(n)		(n)
@@ -116,6 +121,7 @@ struct intel_iov_provisioning {
 /**
  * struct intel_iov_data - Data related to one VF.
  * @state: VF state bits
+ * @adverse_events: FIXME missing doc
  */
 struct intel_iov_data {
 	unsigned long state;
@@ -130,6 +136,7 @@ struct intel_iov_data {
 /**
  * struct intel_iov_state - Placeholder for all VFs data.
  * @worker: event processing worker
+ * @data: FIXME missing doc
  */
 struct intel_iov_state {
 	struct work_struct worker;
@@ -186,6 +193,7 @@ struct intel_iov_memirq {
  * @lock: protects #pending_relays and #last_fence.
  * @pending_relays: list of relay requests that await a response.
  * @last_fence: fence used with last message.
+ * @selftest: FIXME missing doc
  */
 struct intel_iov_relay {
 	spinlock_t lock;
@@ -204,6 +212,7 @@ struct intel_iov_relay {
 
 /**
  * struct intel_iov_vf_config - VF configuration data.
+ * @guc_abi: FIXME missing doc
  * @ggtt_base: base of GGTT region.
  * @ggtt_size: size of GGTT region.
  * @num_ctxs: number of GuC submission contexts.
@@ -224,10 +233,12 @@ struct intel_iov_vf_config {
 
 /**
  * struct intel_iov - I/O Virtualization related data.
+ * @pf: PF's data.
  * @pf.sysfs: sysfs data.
  * @pf.provisioning: provisioning data.
  * @pf.service: placeholder for service data.
  * @pf.state: placeholder for VFs data.
+ * @vf: FIXME missing doc
  * @vf.config: configuration of the resources assigned to VF.
  * @vf.runtime: retrieved runtime info.
  * @vf.irq: Memory based interrupts data.

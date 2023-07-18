@@ -16,7 +16,7 @@ struct intel_engine_cs;
 void intel_guc_submission_init_early(struct intel_guc *guc);
 int intel_guc_submission_limit_ids(struct intel_guc *guc, u32 limit);
 int intel_guc_submission_init(struct intel_guc *guc);
-void intel_guc_submission_enable(struct intel_guc *guc);
+int intel_guc_submission_enable(struct intel_guc *guc);
 void intel_guc_submission_disable(struct intel_guc *guc);
 void intel_guc_submission_fini(struct intel_guc *guc);
 int intel_guc_preempt_work_create(struct intel_guc *guc);

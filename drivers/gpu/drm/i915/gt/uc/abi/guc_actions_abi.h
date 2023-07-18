@@ -183,10 +183,9 @@ enum intel_guc_state_capture_event_status {
 
 #define INTEL_GUC_STATE_CAPTURE_EVENT_STATUS_MASK      0x000000FF
 
-#define INTEL_GUC_TLB_INVAL_TYPE_SHIFT 0
-#define INTEL_GUC_TLB_INVAL_MODE_SHIFT 8
-/* Flush PPC or SMRO caches along with TLB invalidation request */
-#define INTEL_GUC_TLB_INVAL_FLUSH_CACHE (1 << 31)
+#define INTEL_GUC_TLB_INVAL_TYPE_MASK	REG_GENMASK(7, 0)
+#define INTEL_GUC_TLB_INVAL_MODE_MASK	REG_GENMASK(11, 8)
+#define INTEL_GUC_TLB_INVAL_FLUSH_CACHE REG_BIT(31)
 
 enum intel_guc_tlb_invalidation_type {
 	INTEL_GUC_TLB_INVAL_FULL = 0x0,

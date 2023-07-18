@@ -39,6 +39,7 @@ static const u32 csi2_be_soc_supported_codes_pad[] = {
 	MEDIA_BUS_FMT_SGRBG8_1X8,
 	MEDIA_BUS_FMT_SRGGB8_1X8,
 	MEDIA_BUS_FMT_Y8_1X8,
+	MEDIA_BUS_FMT_FIXED,
 	0,
 };
 
@@ -170,7 +171,6 @@ static struct v4l2_subdev_ops csi2_be_soc_sd_ops = {
 };
 
 static struct media_entity_operations csi2_be_soc_entity_ops = {
-	.link_validate = v4l2_subdev_link_validate,
 };
 
 static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,

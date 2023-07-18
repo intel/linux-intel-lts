@@ -24,6 +24,8 @@
 #include <linux/random.h>
 
 #include "gt/intel_gt_pm.h"
+#include "gt/uc/intel_gsc_fw.h"
+
 #include "i915_driver.h"
 #include "i915_drv.h"
 #include "i915_selftest.h"
@@ -127,12 +129,71 @@ static void set_default_test_all(struct selftest *st, unsigned int count)
 		st[i].enabled = true;
 }
 
+static int
+__wait_gsc_proxy_completed(struct drm_i915_private *i915,
+			   unsigned long timeout_ms)
+{
+	bool need_to_wait = (IS_ENABLED(CONFIG_INTEL_MEI_GSC_PROXY) &&
+			     i915->media_gt &&
+			     HAS_ENGINE(i915->media_gt, GSC0) &&
+			     intel_uc_fw_is_loadable(&i915->media_gt->uc.gsc.fw));
+
+	/*
+	 * For gsc proxy component loading + init, we need a much longer timeout
+	 * than what CI selftest infrastrucutre currently uses. This longer wait
+	 * period depends on the kernel config and component driver load ordering
+	 */
+	if (timeout_ms < 8000)
+		timeout_ms = 8000;
+
+	if (need_to_wait &&
+	    (wait_for(intel_gsc_uc_fw_proxy_init_done(&i915->media_gt->uc.gsc, true),
+	    timeout_ms)))
+		return -ETIME;
+
+	return 0;
+}
+
+struct __startup_waiter {
+	const char *name;
+	int (*wait_to_completed)(struct drm_i915_private *i915, unsigned long timeout_ms);
+};
+
+static struct __startup_waiter all_startup_waiters[] = { \
+	{"gsc_proxy", __wait_gsc_proxy_completed} \
+	};
+
+static int __wait_on_all_system_dependencies(struct drm_i915_private *i915)
+{
+	struct __startup_waiter *waiter = all_startup_waiters;
+	int count = ARRAY_SIZE(all_startup_waiters);
+	int ret;
+
+	if (!waiter || !count || !i915)
+		return 0;
+
+	for (; count--; waiter++) {
+		if (!waiter->wait_to_completed)
+			continue;
+		ret = waiter->wait_to_completed(i915, i915_selftest.timeout_ms);
+		if (ret) {
+			pr_info(DRIVER_NAME ": Pre-selftest waiter %s failed with %d\n",
+				waiter->name, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 static int __run_selftests(const char *name,
 			   struct selftest *st,
 			   unsigned int count,
 			   void *data)
 {
 	int err = 0;
+
+	__wait_on_all_system_dependencies(data);
 
 	while (!i915_selftest.random_seed)
 		i915_selftest.random_seed = get_random_u32();

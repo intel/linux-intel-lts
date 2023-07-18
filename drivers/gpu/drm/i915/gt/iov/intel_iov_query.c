@@ -102,9 +102,11 @@ static int vf_handshake_with_guc(struct intel_iov *iov)
 	if (unlikely(err))
 		goto fail;
 
-	/* XXX we only support one version, there must be a match */
-	if (major != GUC_VF_VERSION_LATEST_MAJOR || minor != GUC_VF_VERSION_LATEST_MINOR)
+	/* we shouldn't get anything newer than requested */
+	if (major > GUC_VF_VERSION_LATEST_MAJOR) {
+		err = -EPROTO;
 		goto fail;
+	}
 
 	guc_info(iov_to_guc(iov), "interface version %u.%u.%u.%u\n",
 		 branch, major, minor, patch);
@@ -401,6 +403,7 @@ static const i915_reg_t mtl_early_regs[] = {
 	XEHPC_GT_COMPUTE_DSS_ENABLE_EXT,/* _MMIO(0x9148) */
 	CTC_MODE,			/* _MMIO(0xA26C) */
 	GEN11_HUC_KERNEL_LOAD_INFO,	/* _MMIO(0xC1DC) */
+	_MMIO(MTL_GSC_HECI1_BASE + HECI_FWSTS5),/* _MMIO(0x116c68) */
 	MTL_GT_ACTIVITY_FACTOR,		/* _MMIO(0x138010) */
 };
 
