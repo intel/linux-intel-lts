@@ -9,6 +9,3 @@
 
 # CVE-2023-2898
 0001-f2fs-fix-to-avoid-NULL-pointer-dereference-f2fs_writ.patch
-
-
-# CVE-2023-34255
