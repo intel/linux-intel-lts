@@ -337,6 +337,150 @@ static int pf_reply_runtime_query(struct intel_iov *iov, u32 origin,
 					   response, 2 + 2 * chunk);
 }
 
+static gen8_pte_t preapare_pte(u16 vfid, gen8_pte_t source_pte, bool ignore_addr)
+{
+	gen8_pte_t pte = (source_pte & MTL_GGTT_PTE_PAT_MASK) | i915_ggtt_prepare_vf_pte(vfid);
+
+	if (!ignore_addr)
+		pte |= (source_pte & GEN12_GGTT_PTE_ADDR_MASK);
+
+	return pte;
+}
+
+static void duplicate_and_set_pte(struct intel_iov *iov, gen8_pte_t pte, u16 vfid,
+				  gen8_pte_t __iomem *addr, u16 count)
+{
+	pte = preapare_pte(vfid, pte, false);
+
+	while (count--)
+		writeq(pte, addr++);
+}
+
+static void replicate_and_set_pte(struct intel_iov *iov, gen8_pte_t pte, u16 vfid,
+				  gen8_pte_t __iomem **addr, u16 count)
+{
+	u64 pfn = FIELD_GET(GEN12_GGTT_PTE_ADDR_MASK, pte);
+
+	pte = preapare_pte(vfid, pte, true);
+
+	while (count--)
+		writeq(pte | FIELD_PREP(GEN12_GGTT_PTE_ADDR_MASK, pfn++), (*addr)++);
+}
+
+static int pf_update_vf_ggtt(struct intel_iov *iov, u32 vfid, u32 pte_offset, u8 mode,
+			     u16 num_copies, gen8_pte_t *ptes, u16 count)
+{
+	struct i915_ggtt *ggtt = iov_to_gt(iov)->ggtt;
+	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
+	struct drm_mm_node *node = &iov->pf.provisioning.configs[vfid].ggtt_region;
+	u64 ggtt_addr = node->start + pte_offset * I915_GTT_PAGE_SIZE_4K;
+	u64 ggtt_addr_end = ggtt_addr + count * I915_GTT_PAGE_SIZE_4K - 1;
+	u64 vf_ggtt_end = node->start + node->size - 1;
+	u16 updated;
+
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_DUPLICATE != VF2PF_UPDATE_GGTT32_MODE_DUPLICATE);
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_REPLICATE != VF2PF_UPDATE_GGTT32_MODE_REPLICATE);
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_DUPLICATE_LAST !=
+		     VF2PF_UPDATE_GGTT32_MODE_DUPLICATE_LAST);
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_REPLICATE_LAST !=
+		     VF2PF_UPDATE_GGTT32_MODE_REPLICATE_LAST);
+
+	if (!count)
+		return -EINVAL;
+
+	if (ggtt_addr_end > vf_ggtt_end)
+		return -ERANGE;
+
+	gtt_entries += (node->start >> PAGE_SHIFT) + pte_offset;
+
+	updated = (num_copies) ? num_copies + (count) : count;
+
+	/*
+	 * To simplify the code, always let at least one PTE be updated by
+	 * a function to duplicate or replicate.
+	 */
+	num_copies++;
+	count--;
+
+	switch (mode) {
+	case MMIO_UPDATE_GGTT_MODE_DUPLICATE:
+		duplicate_and_set_pte(iov, *(ptes++), vfid, gtt_entries++, num_copies);
+
+		while (count--)
+			writeq(preapare_pte(vfid, *(ptes++), false), gtt_entries++);
+		break;
+	case MMIO_UPDATE_GGTT_MODE_DUPLICATE_LAST:
+		while (count--)
+			writeq(preapare_pte(vfid, *(ptes++), false), gtt_entries++);
+
+		duplicate_and_set_pte(iov, *(ptes), vfid, gtt_entries, num_copies);
+		break;
+	case MMIO_UPDATE_GGTT_MODE_REPLICATE:
+		replicate_and_set_pte(iov, *(ptes++), vfid, &gtt_entries, num_copies);
+
+		while (count--)
+			writeq(preapare_pte(vfid, *(ptes++), false), gtt_entries++);
+		break;
+
+	case MMIO_UPDATE_GGTT_MODE_REPLICATE_LAST:
+		while (count--)
+			writeq(preapare_pte(vfid, *(ptes++), false), gtt_entries++);
+
+		replicate_and_set_pte(iov, *(ptes), vfid, &gtt_entries, num_copies);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	IOV_DEBUG(iov, "PF updated GGTT for %d PTE(s) from VF%u\n", updated, vfid);
+
+	return updated;
+}
+
+static int pf_reply_update_ggtt(struct intel_iov *iov, u32 origin,
+				u32 relay_id, const u32 *msg, u32 len)
+{
+	u32 response[VF2PF_UPDATE_GGTT32_RESPONSE_MSG_LEN];
+	u16 num_copies;
+	u8 mode;
+	u32 pte_offset;
+	u16 count;
+	gen8_pte_t ptes[VF2PF_UPDATE_GGTT_MAX_PTES];
+	int ret;
+	int i;
+
+	if (!IS_METEORLAKE(iov_to_i915(iov)))
+		return -EOPNOTSUPP;
+
+	if (unlikely(!msg[0]))
+		return -EPROTO;
+
+	num_copies = FIELD_GET(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_NUM_COPIES, msg[1]);
+	mode = FIELD_GET(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_MODE, msg[1]);
+	pte_offset = FIELD_GET(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_OFFSET, msg[1]);
+	count = (len - 2) / 2;
+
+	if (count > VF2PF_UPDATE_GGTT_MAX_PTES)
+		return -EMSGSIZE;
+
+	for (i = 0; i < count; i++) {
+		u32 pte_lo = FIELD_GET(VF2PF_UPDATE_GGTT32_REQUEST_DATAn_PTE_LO, msg[i * 2 + 2]);
+		u32 pte_hi = FIELD_GET(VF2PF_UPDATE_GGTT32_REQUEST_DATAn_PTE_HI, msg[i * 2 + 3]);
+
+		ptes[i] = make_u64(pte_hi, pte_lo);
+	}
+	ret = pf_update_vf_ggtt(iov, origin, pte_offset, mode, num_copies, ptes, (len - 2) / 2);
+	if (ret < 0)
+		return ret;
+
+	response[0] = FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		      FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_RESPONSE_SUCCESS) |
+		      FIELD_PREP(VF2PF_UPDATE_GGTT32_RESPONSE_MSG_0_NUM_PTES, (u16)ret);
+
+	return intel_iov_relay_reply_to_vf(&iov->relay, origin, relay_id,
+					   response, ARRAY_SIZE(response));
+}
+
 /**
  * intel_iov_service_process_msg - Service request message from VF.
  * @iov: the IOV struct
@@ -373,6 +517,9 @@ int intel_iov_service_process_msg(struct intel_iov *iov, u32 origin,
 		break;
 	case IOV_ACTION_VF2PF_QUERY_RUNTIME:
 		err = pf_reply_runtime_query(iov, origin, relay_id, msg, len);
+		break;
+	case IOV_ACTION_VF2PF_UPDATE_GGTT32:
+		err = pf_reply_update_ggtt(iov, origin, relay_id, msg, len);
 		break;
 	default:
 		break;
@@ -458,6 +605,38 @@ static int reply_mmio_relay_handshake(struct intel_iov *iov,
 	return send_mmio_relay_reply(iov, vfid, magic, data);
 }
 
+static int reply_mmio_relay_update_ggtt(struct intel_iov *iov, u32 vfid, u32 magic, const u32 *msg)
+{
+	u32 data[PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_NUM_DATA + 1] = { };
+	u16 num_copies;
+	u8 mode;
+	u32 pte_lo, pte_hi;
+	u32 pte_offset;
+	gen8_pte_t pte;
+	int ret;
+
+	if (!IS_METEORLAKE(iov_to_i915(iov)))
+		return -EOPNOTSUPP;
+
+	if (unlikely(!msg[0]))
+		return -EPROTO;
+
+	num_copies = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_NUM_COPIES, msg[1]);
+	mode = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_MODE, msg[1]);
+	pte_offset = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_OFFSET, msg[1]);
+	pte_lo = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_2_PTE_LO, msg[2]);
+	pte_hi = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_3_PTE_HI, msg[3]);
+
+	pte = make_u64(pte_hi, pte_lo);
+
+	ret = pf_update_vf_ggtt(iov, vfid, pte_offset, mode, num_copies, &pte, 1);
+	if (ret < 0)
+		return ret;
+	data[0] = FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_RESPONSE_MSG_1_NUM_PTES, (u16)ret);
+
+	return send_mmio_relay_reply(iov, vfid, magic, data);
+}
+
 static int __i915_reg_cmp(const void *a, const void *b)
 {
 	return i915_mmio_reg_offset(*(const i915_reg_t *)a) -
@@ -472,60 +651,6 @@ static int lookup_reg_index(struct intel_iov *iov, u32 offset)
 				    __i915_reg_cmp);
 
 	return found ? found - iov->pf.service.runtime.regs : -ENODATA;
-}
-
-static int reply_mmio_relay_update_ggtt(struct intel_iov *iov, u32 vfid, u32 magic, const u32 *msg)
-{
-	struct i915_ggtt *ggtt = iov_to_gt(iov)->ggtt;
-	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
-	struct drm_mm_node *node = &iov->pf.provisioning.configs[vfid].ggtt_region;
-	gen8_pte_t pte = i915_ggtt_prepare_vf_pte(vfid);
-	u64 vf_ggtt_end = node->start + node->size - 1;
-	u32 data[PF2GUC_MMIO_RELAY_SUCCESS_REQUEST_MSG_NUM_DATA + 1] = { };
-	u64 pfn;
-	u16 pte_num;
-	u32 pte_lo, pte_hi;
-	u32 pte_offset;
-	gen8_pte_t rq_pte;
-	u64 ggtt_addr;
-	u64 ggtt_addr_end;
-	int i;
-
-	if (!IS_METEORLAKE(iov_to_i915(iov)))
-		return -EOPNOTSUPP;
-
-	if (unlikely(!msg[0]))
-		return -EPROTO;
-	if (unlikely(!msg[1]))
-		return -EINVAL;
-
-	pte_num = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_NUM_PTES, msg[1]);
-	pte_offset = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_OFFSET, msg[1]);
-	pte_lo = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_2_PTE_LO, msg[2]);
-	pte_hi = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_3_PTE_HI, msg[3]);
-
-	ggtt_addr = node->start + pte_offset * I915_GTT_PAGE_SIZE_4K;
-	ggtt_addr_end = ggtt_addr + pte_num * I915_GTT_PAGE_SIZE_4K - 1;
-
-	if (ggtt_addr_end > vf_ggtt_end)
-		return -ERANGE;
-
-	rq_pte = make_u64(pte_hi, pte_lo);
-	pfn = FIELD_GET(GEN12_GGTT_PTE_ADDR_MASK, rq_pte);
-
-	pte |= rq_pte & MTL_GGTT_PTE_PAT_MASK;
-
-	gtt_entries += (node->start >> PAGE_SHIFT) + pte_offset;
-
-	for (i = 0; i < pte_num; i++) {
-		u64 pfn_masked = FIELD_PREP(GEN12_GGTT_PTE_ADDR_MASK, pfn + i);
-
-		writeq(pte | pfn_masked, gtt_entries++);
-	}
-
-	data[0] = FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_RESPONSE_MSG_1_NUM_PTES, pte_num);
-
-	return send_mmio_relay_reply(iov, vfid, magic, data);
 }
 
 static int reply_mmio_relay_get_reg(struct intel_iov *iov,
