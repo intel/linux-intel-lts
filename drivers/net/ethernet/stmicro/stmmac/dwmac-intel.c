@@ -1185,7 +1185,12 @@ static void intel_eth_pci_remove(struct pci_dev *pdev)
 static int __maybe_unused intel_eth_pci_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
+	struct net_device *ndev = dev_get_drvdata(&pdev->dev);
 	int ret;
+
+	rtnl_lock();
+	stmmac_rearm_wol(ndev);
+	rtnl_unlock();
 
 	ret = stmmac_suspend(dev);
 	if (ret)
