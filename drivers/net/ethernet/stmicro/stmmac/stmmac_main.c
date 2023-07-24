@@ -4086,6 +4086,29 @@ static int stmmac_release(struct net_device *dev)
 	return 0;
 }
 
+void stmmac_rearm_wol(struct net_device *dev)
+{
+	struct stmmac_priv *priv = netdev_priv(dev);
+
+	if (priv->plat->flags & STMMAC_FLAG_USE_PHY_WOL) {
+		struct ethtool_wolinfo wol =  { .cmd = ETHTOOL_GWOL };
+
+		phylink_ethtool_get_wol(priv->phylink, &wol);
+
+		if (wol.wolopts) {
+			phylink_ethtool_set_wol(priv->phylink, &wol);
+			device_set_wakeup_enable(priv->device, !!wol.wolopts);
+		}
+	}
+}
+EXPORT_SYMBOL_GPL(stmmac_rearm_wol);
+
+static int stmmac_stop(struct net_device *dev)
+{
+	stmmac_rearm_wol(dev);
+	return stmmac_release(dev);
+}
+
 static bool stmmac_vlan_insert(struct stmmac_priv *priv, struct sk_buff *skb,
 			       struct stmmac_tx_queue *tx_q)
 {
@@ -7126,7 +7149,7 @@ static void stmmac_get_stats64(struct net_device *dev, struct rtnl_link_stats64 
 static const struct net_device_ops stmmac_netdev_ops = {
 	.ndo_open = stmmac_open,
 	.ndo_start_xmit = stmmac_xmit,
-	.ndo_stop = stmmac_release,
+	.ndo_stop = stmmac_stop,
 	.ndo_change_mtu = stmmac_change_mtu,
 	.ndo_fix_features = stmmac_fix_features,
 	.ndo_set_features = stmmac_set_features,
