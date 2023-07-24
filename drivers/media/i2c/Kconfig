@@ -781,7 +781,7 @@ config VIDEO_VS6624
 
 config VIDEO_AR0234
 	tristate "OnSemi AR0234 sensor support"
-	depends on I2C && VIDEO_V4L2
+	depends on I2C && VIDEO_DEV
 	depends on MEDIA_CAMERA_SUPPORT
 	select VIDEO_V4L2_SUBDEV_API
 	help
