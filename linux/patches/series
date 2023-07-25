@@ -34,3 +34,9 @@
 
 # CVE-2023-21106
 0001-drm-msm-gpu-Fix-potential-double-free.patch
+
+# CVE-2023-37454
+0001-KASAN-use-after-free-Write-in-udf_close_lvid.patch
+
+# CVE-2023-37453
+0001-Revert-USB-core-Don-t-hold-device-lock-while-reading.patch
