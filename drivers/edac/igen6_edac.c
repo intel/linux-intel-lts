@@ -28,7 +28,7 @@
 #include "edac_module.h"
 #include "igen6_edac.h"
 
-#define IGEN6_REVISION	"v2.5"
+#define IGEN6_REVISION	"v2.5.1"
 
 #define EDAC_MOD_STR	"igen6_edac"
 #define IGEN6_NMI_NAME	"igen6_ibecc"
@@ -1274,9 +1274,6 @@ static int igen6_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_WORK(&ecclog_work, ecclog_work_cb);
 	init_irq_work(&ecclog_irq_work, ecclog_irq_work_cb);
 
-	/* Check if any pending errors before registering the NMI handler */
-	ecclog_handler();
-
 	rc = register_err_handler();
 	if (rc)
 		goto fail3;
@@ -1287,6 +1284,9 @@ static int igen6_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		igen6_printk(KERN_ERR, "Failed to enable error reporting\n");
 		goto fail4;
 	}
+
+	/* Check if any pending errors before/during the registration of the error handler */
+	ecclog_handler();
 
 	igen6_debug_setup();
 	return 0;
