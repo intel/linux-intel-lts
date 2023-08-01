@@ -1138,6 +1138,28 @@ static struct pci_driver i915_pci_driver = {
 	.sriov_configure = i915_pci_sriov_configure,
 };
 
+#ifdef CONFIG_PCI_IOV
+/* our Gen12 SR-IOV platforms are simple */
+#define GEN12_VF_OFFSET 1
+#define GEN12_VF_STRIDE 1
+#define GEN12_VF_ROUTING_OFFSET(id) (GEN12_VF_OFFSET + ((id) - 1) * GEN12_VF_STRIDE)
+
+struct pci_dev *i915_pci_pf_get_vf_dev(struct pci_dev *pdev, unsigned int id)
+{
+	u16 vf_devid = pci_dev_id(pdev) + GEN12_VF_ROUTING_OFFSET(id);
+
+	GEM_BUG_ON(!dev_is_pf(&pdev->dev));
+	GEM_BUG_ON(!id);
+	GEM_BUG_ON(id > pci_num_vf(pdev));
+
+	/* caller must use pci_dev_put() */
+	return pci_get_domain_bus_and_slot(pci_domain_nr(pdev->bus),
+					   PCI_BUS_NUM(vf_devid),
+					   PCI_DEVFN(PCI_SLOT(vf_devid),
+					   PCI_FUNC(vf_devid)));
+}
+#endif
+
 int i915_pci_register_driver(void)
 {
 	return pci_register_driver(&i915_pci_driver);
