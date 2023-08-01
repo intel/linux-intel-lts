@@ -1,0 +1,55 @@
+From cbb296fbed471762663f795952c804e5a0663991 Mon Sep 17 00:00:00 2001
+From: jiahuamx <jiahuax.man@intel.com>
+Date: Tue, 1 Aug 2023 15:48:18 +0000
+Subject: [PATCH] Revert "USB: core: Don't hold device lock while reading the
+ "descriptors" sysfs file"
+
+This reverts commit c87fb861ec185fdc578b4fdc6a05920b6a843840.
+---
+ drivers/usb/core/hub.c   | 5 +++--
+ drivers/usb/core/sysfs.c | 5 +++++
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/core/hub.c b/drivers/usb/core/hub.c
+index fa6fcaaceb4b..00638038a6cf 100644
+--- a/drivers/usb/core/hub.c
++++ b/drivers/usb/core/hub.c
+@@ -2346,8 +2346,9 @@ static int usb_enumerate_device_otg(struct usb_device *udev)
+  * usb_enumerate_device - Read device configs/intfs/otg (usbcore-internal)
+  * @udev: newly addressed device (in ADDRESS state)
+  *
+- * This is only called by usb_new_device() -- all comments that apply there
+- * apply here wrt to environment.
++ * This is only called by usb_new_device() and usb_authorize_device()
++ * and FIXME -- all comments that apply to them apply here wrt to
++ * environment.
+  *
+  * If the device is WUSB and not authorized, we don't attempt to read
+  * the string descriptors, as they will be errored out by the device
+diff --git a/drivers/usb/core/sysfs.c b/drivers/usb/core/sysfs.c
+index 7e88fdfe3cf5..b93b18ba89df 100644
+--- a/drivers/usb/core/sysfs.c
++++ b/drivers/usb/core/sysfs.c
+@@ -888,7 +888,11 @@ read_descriptors(struct file *filp, struct kobject *kobj,
+ 	size_t srclen, n;
+ 	int cfgno;
+ 	void *src;
++	int retval;
+ 
++	retval = usb_lock_device_interruptible(udev);
++	if (retval < 0)
++		return -EINTR;
+ 	/* The binary attribute begins with the device descriptor.
+ 	 * Following that are the raw descriptor entries for all the
+ 	 * configurations (config plus subsidiary descriptors).
+@@ -913,6 +917,7 @@ read_descriptors(struct file *filp, struct kobject *kobj,
+ 			off -= srclen;
+ 		}
+ 	}
++	usb_unlock_device(udev);
+ 	return count - nleft;
+ }
+ 
+-- 
+2.25.1
+
