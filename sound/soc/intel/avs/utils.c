@@ -9,6 +9,7 @@
 #include <linux/firmware.h>
 #include <linux/kfifo.h>
 #include <linux/slab.h>
+#include <linux/string_helpers.h>
 #include "avs.h"
 #include "messages.h"
 
@@ -299,4 +300,29 @@ void avs_release_firmwares(struct avs_dev *adev)
 		kfree(entry->name);
 		kfree(entry);
 	}
+}
+
+int avs_parse_sched_cfg(struct avs_dev *adev, const char *buf, size_t len)
+{
+	struct avs_fw_sched_cfg *cfg;
+	u32 *array, num_elems;
+	int ret;
+
+	ret = parse_int_array(buf, len, (int **)&array);
+	if (ret < 0)
+		return ret;
+
+	num_elems = *array;
+	cfg = (struct avs_fw_sched_cfg *)&array[1];
+
+	if (array_size(sizeof(*array), num_elems) > sizeof(*cfg)) {
+		dev_err(adev->dev, "bad scheduler config string: %s\n", buf);
+		return -EINVAL;
+	}
+
+	kfree(adev->sched_cfg);
+	adev->sched_cfg = kmemdup(cfg, array_size(sizeof(*array), num_elems), GFP_KERNEL);
+
+	kfree(array);
+	return 0;
 }
