@@ -21,6 +21,10 @@
 
 #include <net/xdp.h>
 
+#ifdef CONFIG_IGB_AVB
+#include <linux/miscdevice.h>
+#include "kcompat.h"
+#endif /* CONFIG_IGB_AVB */
 struct igb_adapter;
 
 #define E1000_PCS_CFG_IGN_SD	1
@@ -584,7 +588,14 @@ struct igb_adapter {
 
 	/* OS defined structs */
 	struct pci_dev *pdev;
-
+#ifdef CONFIG_IGB_AVB
+	/* user-dma specific variables */
+	u32 uring_tx_init;
+	u32 uring_rx_init;
+	struct mutex lock;
+	u32 lli_port;
+	u32 lli_size;
+#endif /* CONFIG_IGB_AVB */
 	spinlock_t stats64_lock;
 	struct rtnl_link_stats64 stats64;
 
@@ -806,5 +817,74 @@ int igb_add_mac_steering_filter(struct igb_adapter *adapter,
 				const u8 *addr, u8 queue, u8 flags);
 int igb_del_mac_steering_filter(struct igb_adapter *adapter,
 				const u8 *addr, u8 queue, u8 flags);
+#ifdef CONFIG_IGB_AVB
+#define IGB_FLAG_LLI_PUSH	(1 << 2)
+#define IGB_BIND		_IOW('E', 200, int)
+#define IGB_UNBIND		_IOW('E', 201, int)
+#define IGB_MAPRING		_IOW('E', 202, int)
+#define IGB_MAP_TX_RING		IGB_MAPRING
+#define IGB_UNMAPRING		_IOW('E', 203, int)
+#define IGB_UNMAP_TX_RING	IGB_UNMAPRING
+#define IGB_MAPBUF		_IOW('E', 204, int)
+#define IGB_UNMAPBUF		_IOW('E', 205, int)
+#define IGB_LINKSPEED		_IOW('E', 206, int)
+#define IGB_MAP_RX_RING		_IOW('E', 207, int)
+#define IGB_UNMAP_RX_RING	_IOW('E', 208, int)
 
+/* set of newly defined ioctl calls - new libigb compatibility
+ * each of them is an equivalent of the old ioctl
+ * changed numberiong convention: new_ioctl = old_ioctl + 100
+ */
+
+#define IGB_IOCTL_MAPRING	_IOW('E', 302, int)
+#define IGB_IOCTL_MAP_TX_RING	IGB_IOCTL_MAPRING
+#define IGB_IOCTL_UNMAPRING	_IOW('E', 303, int)
+#define IGB_IOCTL_UNMAP_TX_RING	IGB_IOCTL_UNMAPRING
+#define IGB_IOCTL_MAPBUF	_IOW('E', 304, int)
+#define IGB_IOCTL_UNMAPBUF	_IOW('E', 305, int)
+#define IGB_IOCTL_MAP_RX_RING	_IOW('E', 307, int)
+#define IGB_IOCTL_UNMAP_RX_RING	_IOW('E', 308, int)
+
+#define IGB_BIND_NAMESZ		24
+
+struct igb_bind_cmd {
+	char iface[IGB_BIND_NAMESZ];
+	u32 mmap_size;
+};
+
+struct igb_pci_lookup {
+	struct igb_adapter *adapter;
+	char *pci_info;
+};
+
+/* used with both map/unmap ring & buf ioctls */
+struct igb_buf_cmd {
+	u64 physaddr;
+	u32 queue;
+	u32 mmap_size;
+	u64 pa;
+};
+
+struct igb_link_cmd {
+	u32 up;
+	u32 speed;
+	u32 duplex;
+};
+
+struct igb_user_page {
+	struct igb_user_page *prev;
+	struct igb_user_page *next;
+	struct page *page;
+	dma_addr_t page_dma;
+};
+
+struct igb_private_data {
+	struct igb_adapter *adapter;
+	/* user-dma specific variable for buffer */
+	struct igb_user_page *userpages;
+	/* user-dma specific variable for TX and RX */
+	u32 uring_tx_init;
+	u32 uring_rx_init;
+};
+#endif /* CONFIG_IGB_AVB */
 #endif /* _IGB_H_ */

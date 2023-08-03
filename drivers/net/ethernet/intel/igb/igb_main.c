@@ -50,7 +50,11 @@ enum tx_queue_prio {
 	TX_QUEUE_PRIO_LOW,
 };
 
+#ifdef CONFIG_IGB_AVB
+char igb_driver_name[] = "igb_avb";
+#else
 char igb_driver_name[] = "igb";
+#endif /* CONFIG_IGB_AVB */
 static const char igb_driver_string[] =
 				"Intel(R) Gigabit Ethernet Network Driver";
 static const char igb_copyright[] =
@@ -123,6 +127,13 @@ static void igb_set_rx_mode(struct net_device *);
 static void igb_update_phy_info(struct timer_list *);
 static void igb_watchdog(struct timer_list *);
 static void igb_watchdog_task(struct work_struct *);
+
+#ifdef CONFIG_IGB_AVB
+/* AVB specific */
+static u16 igb_select_queue(struct net_device *dev, struct sk_buff *skb,
+			    struct net_device *sb_dev);
+#endif /* CONFIG_IGB_AVB */
+
 static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *);
 static void igb_get_stats64(struct net_device *dev,
 			    struct rtnl_link_stats64 *stats);
@@ -180,6 +191,32 @@ static int igb_disable_sriov(struct pci_dev *dev);
 static int igb_pci_disable_sriov(struct pci_dev *dev);
 #endif
 
+#ifdef CONFIG_IGB_AVB
+/* AVB specific */
+static int igb_init_avb(struct e1000_hw *hw);
+
+/* AVB user-mode API forward definitions */
+static int igb_open_file(struct inode *inode, struct file *file);
+static int igb_close_file(struct inode *inode, struct file *file);
+static long igb_ioctl_file(struct file *file, unsigned int cmd,
+			   unsigned long arg);
+static void igb_vm_open(struct vm_area_struct *vma);
+static void igb_vm_close(struct vm_area_struct *vma);
+static vm_fault_t igb_vm_fault(struct vm_fault *fdata);
+static int igb_mmap(struct file *file, struct vm_area_struct *vma);
+static ssize_t igb_read(struct file *file, char __user *buf, size_t count,
+			loff_t *pos);
+static ssize_t igb_write(struct file *file, const char __user *buf,
+			 size_t count, loff_t *pos);
+static unsigned int igb_pollfd(struct file *file, poll_table *wait);
+
+static const struct vm_operations_struct igb_mmap_ops = {
+		.open   = igb_vm_open,
+		.close  = igb_vm_close,
+		.fault  = igb_vm_fault
+};
+#endif /* CONFIG_IGB_AVB */
+
 static int igb_suspend(struct device *);
 static int igb_resume(struct device *);
 static int igb_runtime_suspend(struct device *dev);
@@ -218,6 +255,29 @@ static const struct pci_error_handlers igb_err_handler = {
 };
 
 static void igb_init_dmac(struct igb_adapter *adapter, u32 pba);
+#ifdef CONFIG_IGB_AVB
+/* user-mode IO API registrations */
+static const struct file_operations igb_fops = {
+		.owner   = THIS_MODULE,
+		.llseek  = no_llseek,
+		.read	= igb_read,
+		.write   = igb_write,
+		.poll	= igb_pollfd,
+		.open	= igb_open_file,
+		.release = igb_close_file,
+		.mmap	= igb_mmap,
+		.unlocked_ioctl = igb_ioctl_file,
+#if defined(CONFIG_IGB_SUPPORT_32BIT_IOCTL)
+		.compat_ioctl = igb_ioctl_file,
+#endif
+};
+
+static struct miscdevice igb_miscdev = {
+		.minor = MISC_DYNAMIC_MINOR,
+		.name = "igb_avb",
+		.fops = &igb_fops,
+};
+#endif /* CONFIG_IGB_AVB */
 
 static struct pci_driver igb_driver = {
 	.name     = igb_driver_name,
@@ -649,6 +709,9 @@ struct net_device *igb_get_hw_dev(struct e1000_hw *hw)
 	return adapter->netdev;
 }
 
+static int tx_size = IGB_DEFAULT_TXD; /*default value*/
+module_param(tx_size, int, 0);
+MODULE_PARM_DESC(tx_size, "Tx Ring size passed in insmod parameter");
 /**
  *  igb_init_module - Driver Registration Routine
  *
@@ -665,6 +728,9 @@ static int __init igb_init_module(void)
 #ifdef CONFIG_IGB_DCA
 	dca_register_notify(&dca_notifier);
 #endif
+#ifdef CONFIG_IGB_AVB
+	misc_register(&igb_miscdev);
+#endif /* CONFIG_IGB_AVB */
 	ret = pci_register_driver(&igb_driver);
 	return ret;
 }
@@ -682,6 +748,9 @@ static void __exit igb_exit_module(void)
 #ifdef CONFIG_IGB_DCA
 	dca_unregister_notify(&dca_notifier);
 #endif
+#ifdef CONFIG_IGB_AVB
+	misc_deregister(&igb_miscdev);
+#endif /* CONFIG_IGB_AVB */
 	pci_unregister_driver(&igb_driver);
 }
 
@@ -750,6 +819,37 @@ u32 igb_rd32(struct e1000_hw *hw, u32 reg)
 
 	return value;
 }
+
+#ifdef CONFIG_IGB_AVB
+static void igb_configure_lli(struct igb_adapter *adapter)
+{
+	struct e1000_hw *hw = &adapter->hw;
+	u16 port;
+
+	/* LLI should only be enabled for MSI-X or MSI interrupts */
+	if (!(adapter->flags & IGB_FLAG_HAS_MSIX) && !(adapter->flags & IGB_FLAG_HAS_MSI))
+		return;
+
+	if (adapter->lli_port) {
+		/* use filter 0 for port */
+		port = htons((u16)adapter->lli_port);
+		wr32(E1000_IMIR(0), (port | E1000_IMIR_PORT_IM_EN));
+		wr32(E1000_IMIREXT(0), (E1000_IMIREXT_SIZE_BP | E1000_IMIREXT_CTRL_BP));
+	}
+
+	if (adapter->flags & IGB_FLAG_LLI_PUSH) {
+		/* use filter 1 for push flag */
+		wr32(E1000_IMIR(1), (E1000_IMIR_PORT_BP | E1000_IMIR_PORT_IM_EN));
+		wr32(E1000_IMIREXT(1), (E1000_IMIREXT_SIZE_BP | E1000_IMIREXT_CTRL_PSH));
+	}
+
+	if (adapter->lli_size) {
+		/* use filter 2 for size */
+		wr32(E1000_IMIR(2), (E1000_IMIR_PORT_BP | E1000_IMIR_PORT_IM_EN));
+		wr32(E1000_IMIREXT(2), (adapter->lli_size | E1000_IMIREXT_CTRL_BP));
+	}
+}
+#endif
 
 /**
  *  igb_write_ivar - configure ivar for given MSI-X vector
@@ -2008,6 +2108,11 @@ static void igb_configure(struct igb_adapter *adapter)
 	igb_configure_tx(adapter);
 	igb_configure_rx(adapter);
 
+#ifdef CONFIG_IGB_AVB
+	igb_configure_lli(adapter);
+	igb_init_avb(&adapter->hw);
+#endif
+
 	igb_rx_fifo_flush_82575(&adapter->hw);
 
 	/* call igb_desc_unused which always leaves
@@ -2393,7 +2498,9 @@ void igb_reset(struct igb_adapter *adapter)
 	 */
 	if (!hw->mac.autoneg)
 		igb_force_mac_fc(hw);
-
+#ifdef CONFIG_IGB_AVB
+	igb_init_avb(hw);
+#endif /* CONFIG_IGB_AVB */
 	igb_init_dmac(adapter, pba);
 #ifdef CONFIG_IGB_HWMON
 	/* Re-initialize the thermal sensor on i350 devices. */
@@ -2991,6 +3098,9 @@ static const struct net_device_ops igb_netdev_ops = {
 	.ndo_open		= igb_open,
 	.ndo_stop		= igb_close,
 	.ndo_start_xmit		= igb_xmit_frame,
+	#ifdef CONFIG_IGB_AVB
+	.ndo_select_queue	= igb_select_queue,
+	#endif /* CONFIG_IGB_AVB */
 	.ndo_get_stats64	= igb_get_stats64,
 	.ndo_set_rx_mode	= igb_set_rx_mode,
 	.ndo_set_mac_address	= igb_set_mac,
@@ -3214,6 +3324,13 @@ static int igb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	hw = &adapter->hw;
 	hw->back = adapter;
 	adapter->msg_enable = netif_msg_init(debug, DEFAULT_MSG_ENABLE);
+
+#ifdef CONFIG_IGB_AVB
+	/* AVB specific */
+	adapter->uring_tx_init = 0;
+	adapter->uring_rx_init = 0;
+	mutex_init(&adapter->lock);
+#endif /* CONFIG_IGB_AVB */
 
 	err = -EIO;
 	adapter->io_addr = pci_iomap(pdev, 0, 0);
@@ -3915,7 +4032,11 @@ static void igb_init_queue_configuration(struct igb_adapter *adapter)
 	u32 max_rss_queues;
 
 	max_rss_queues = igb_get_max_rss_queues(adapter);
+#ifdef CONFIG_IGB_AVB
+	adapter->rss_queues = max_rss_queues;
+#else
 	adapter->rss_queues = min_t(u32, max_rss_queues, num_online_cpus());
+#endif /* CONFIG_IGB_AVB */
 
 	igb_set_flag_queue_pairs(adapter, max_rss_queues);
 }
@@ -3966,6 +4087,10 @@ static int igb_sw_init(struct igb_adapter *adapter)
 
 	/* set default ring sizes */
 	adapter->tx_ring_count = IGB_DEFAULT_TXD;
+#ifdef CONFIG_IGB_AVB
+	adapter->tx_ring_count = tx_size;
+	dev_warn(&pdev->dev, "igb_avb adapter->tx_ring_size %d", tx_size);
+#endif /* CONFIG_IGB_AVB */
 	adapter->rx_ring_count = IGB_DEFAULT_RXD;
 
 	/* set default ITR values */
@@ -4511,6 +4636,12 @@ static void igb_setup_mrqc(struct igb_adapter *adapter)
 	}
 	igb_vmm_control(adapter);
 
+#ifdef CONFIG_IGB_AVB
+	/* AVB specific use queue 3 for all non-filtered packets */
+#define E1000_MRQC_ENABLE_DEF_Q3 (3 << 3)
+	mrqc = E1000_MRQC_ENABLE_DEF_Q3; /* AVB specific */
+#endif /* CONFIG_IGB_AVB */
+
 	wr32(E1000_MRQC, mrqc);
 }
 
@@ -4986,9 +5117,16 @@ static void igb_clean_all_rx_rings(struct igb_adapter *adapter)
 {
 	int i;
 
+#ifdef CONFIG_IGB_AVB
+	/* AVB specific */
+	for (i = 2; i < adapter->num_rx_queues; i++)
+		if (adapter->tx_ring[i])
+			igb_clean_rx_ring(adapter->rx_ring[i]);
+#else
 	for (i = 0; i < adapter->num_rx_queues; i++)
 		if (adapter->rx_ring[i])
 			igb_clean_rx_ring(adapter->rx_ring[i]);
+#endif /* CONFIG_IGB_AVB */
 }
 
 /**
@@ -5232,8 +5370,10 @@ static void igb_set_rx_mode(struct net_device *netdev)
 		vmolr |= E1000_VMOLR_ROPE;
 	}
 
+#ifndef CONFIG_IGB_AVB
 	/* enable VLAN filtering by default */
 	rctl |= E1000_RCTL_VFE;
+#endif /* CONFIG _IGB_AVB */
 
 	/* disable VLAN filtering for modes that require it */
 	if ((netdev->flags & IFF_PROMISC) ||
@@ -5448,7 +5588,6 @@ static void igb_watchdog_task(struct work_struct *work)
 		else
 			link = false;
 	}
-
 	/* Force link down if we have fiber to swap to */
 	if (adapter->flags & IGB_FLAG_MAS_ENABLE) {
 		if (hw->phy.media_type == e1000_media_type_copper) {
@@ -6374,7 +6513,6 @@ netdev_tx_t igb_xmit_frame_ring(struct sk_buff *skb,
 
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)) {
 		struct igb_adapter *adapter = netdev_priv(tx_ring->netdev);
-
 		if (adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON &&
 		    !test_and_set_bit_lock(__IGB_PTP_TX_IN_PROGRESS,
 					   &adapter->state)) {
@@ -6437,6 +6575,15 @@ static inline struct igb_ring *igb_tx_queue_mapping(struct igb_adapter *adapter,
 
 	return adapter->tx_ring[r_idx];
 }
+
+#ifdef CONFIG_IGB_AVB
+static u16 igb_select_queue(struct net_device *dev, struct sk_buff *skb,
+			    struct net_device *sb_dev)
+{
+	/* remap normal LAN to best effort queue[3] */
+	return 3;
+}
+#endif /* CONFIG_IGB_AVB */
 
 static netdev_tx_t igb_xmit_frame(struct sk_buff *skb,
 				  struct net_device *netdev)
@@ -8065,6 +8212,12 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector, int napi_budget)
 	if (test_bit(__IGB_DOWN, &adapter->state))
 		return true;
 
+#ifdef CONFIG_IGB_AVB
+	/* don't service user (AVB) queues */
+	if (tx_ring->queue_index < 2)
+		return true;
+#endif /* CONFIG_IGB_AVB */
+
 	tx_buffer = &tx_ring->tx_buffer_info[i];
 	tx_desc = IGB_TX_DESC(tx_ring, i);
 	i -= tx_ring->count;
@@ -8582,6 +8735,7 @@ static bool igb_cleanup_headers(struct igb_ring *rx_ring,
 	if (unlikely((igb_test_staterr(rx_desc,
 				       E1000_RXDEXT_ERR_FRAME_ERR_MASK)))) {
 		struct net_device *netdev = rx_ring->netdev;
+
 		if (!(netdev->features & NETIF_F_RXALL)) {
 			dev_kfree_skb_any(skb);
 			return true;
@@ -8700,6 +8854,12 @@ static int igb_clean_rx_irq(struct igb_q_vector *q_vector, const int budget)
 	struct xdp_buff xdp;
 	u32 frame_sz = 0;
 	int rx_buf_pgcnt;
+
+#ifdef CONFIG_IGB_AVB
+	/* don't service user (AVB) queues */
+	if (rx_ring->queue_index < 2)
+		return true;
+#endif /* CONFIG_IGB_AVB */
 
 	/* Frame size depend on rx_ring setup when PAGE_SIZE=4K */
 #if (PAGE_SIZE < 8192)
@@ -9456,7 +9616,7 @@ static pci_ers_result_t igb_io_error_detected(struct pci_dev *pdev,
 		igb_down(adapter);
 	pci_disable_device(pdev);
 
-	/* Request a slot slot reset. */
+	/* Request a slot reset. */
 	return PCI_ERS_RESULT_NEED_RESET;
 }
 
@@ -9776,6 +9936,7 @@ static int igb_ndo_get_vf_config(struct net_device *netdev,
 				 int vf, struct ifla_vf_info *ivi)
 {
 	struct igb_adapter *adapter = netdev_priv(netdev);
+
 	if (vf >= adapter->vfs_allocated_count)
 		return -EINVAL;
 	ivi->vf = vf;
@@ -9972,6 +10133,702 @@ s32 igb_write_i2c_byte(struct e1000_hw *hw, u8 byte_offset,
 		return 0;
 
 }
+
+#ifdef CONFIG_IGB_AVB
+static int igb_init_avb(struct e1000_hw *hw)
+{
+	u32 tqavctrl;
+	u32 tqavcc0, tqavcc1;
+	u32 tqavhc0, tqavhc1;
+	u32 txpbsize;
+
+	/* reconfigure the tx packet buffer allocation */
+	txpbsize = (8);
+	txpbsize |= (8) << E1000_TXPBSIZE_TX1PB_SHIFT;
+	txpbsize |= (4) << E1000_TXPBSIZE_TX2PB_SHIFT;
+	txpbsize |= (4) << E1000_TXPBSIZE_TX3PB_SHIFT;
+
+	wr32(E1000_TXPBS, txpbsize);
+
+	/* std sized frames in 64 byte units with VLAN tags applied */
+	wr32(E1000_I210_DTXMXPKTSZ, 1536 / 64);
+
+	/* this function defaults the QAV shaper to OFF (TX_ARB=0)
+	 * user-mode library can reconfigure thresholds and enable
+	 * after the device has started.
+	 */
+
+	tqavcc0 = E1000_TQAVCC_QUEUEMODE; /* no idle slope */
+	tqavcc1 = E1000_TQAVCC_QUEUEMODE; /* no idle slope */
+	tqavhc0 = 0xFFFFFFFF; /* unlimited credits */
+	tqavhc1 = 0xFFFFFFFF; /* unlimited credits */
+
+	wr32(E1000_I210_TQAVCC(0), tqavcc0);
+	wr32(E1000_I210_TQAVCC(1), tqavcc1);
+	wr32(E1000_I210_TQAVHC(0), tqavhc0);
+	wr32(E1000_I210_TQAVHC(1), tqavhc1);
+
+	tqavctrl = E1000_TQAVCTRL_TXMODE |
+		   E1000_TQAVCTRL_DATA_FETCH_ARB |
+		   E1000_TQAVCTRL_DATA_TRAN_ARB |
+		   E1000_TQAVCTRL_DATA_TRAN_TIM |
+		   E1000_TQAVCTRL_SP_WAIT_SR;
+
+	/* default to a 10 usec prefetch delta from launch time - time for
+	 * a 1500 byte rx frame to be received over the PCIe Gen1 x1 link.
+	 */
+	tqavctrl |= (10 << 5) << E1000_TQAVCTRL_FETCH_TM_SHIFT;
+
+	wr32(E1000_I210_TQAVCTRL, tqavctrl);
+
+	return 0;
+}
+
+/* user-mode API routines */
+
+static unsigned int igb_pollfd(struct file *file, poll_table *wait)
+{
+	return -EINVAL; /* don't support reads for any status or data */
+}
+
+static ssize_t igb_read(struct file *file, char __user *buf, size_t count,
+			loff_t *pos)
+{
+	return -EINVAL; /* don't support reads for any status or data */
+}
+
+static ssize_t igb_write(struct file *file, const char __user *buf,
+			 size_t count, loff_t *pos)
+{
+	return -EINVAL; /* don't support writes for any status or data */
+}
+
+static int __igb_notify_lookup(struct device *dev, void *data)
+{
+	struct igb_pci_lookup *adapter_lookup = (struct igb_pci_lookup *)data;
+	struct net_device *netdev = dev_get_drvdata(dev);
+	struct igb_adapter *adapter = netdev_priv(netdev);
+	/* look at pci string - if its me, update the adapter pointer */
+	pr_info("checking against adapter name %s\n", pci_name(adapter->pdev));
+
+	if (!(strncmp(pci_name(adapter->pdev), adapter_lookup->pci_info,
+		      IGB_BIND_NAMESZ)))
+		adapter_lookup->adapter = adapter;
+
+	return E1000_SUCCESS;
+}
+
+static struct igb_adapter *igb_lookup(char *id)
+{
+	struct igb_pci_lookup adapter_lookup;
+	int ret_val;
+
+	adapter_lookup.adapter = NULL;
+	adapter_lookup.pci_info = id;
+
+	/* iterate over the loaded intefaces and match on their
+	 * pci device ID identifier - e.g. "0000:7:0.0"
+	 */
+	ret_val = driver_for_each_device(&igb_driver.driver, NULL,
+					 &adapter_lookup, __igb_notify_lookup);
+
+	return adapter_lookup.adapter;
+}
+
+static int igb_bind(struct file *file, void __user *argp)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	struct igb_adapter *adapter;
+	struct igb_bind_cmd req;
+	int err = 0;
+
+	if (copy_from_user(&req, argp, sizeof(req)))
+		return -EFAULT;
+	/* Set the last character of req.iface to '/0' to
+	 * guarantee null termination of req.iface string
+	 * param in printk call.
+	 */
+	req.iface[IGB_BIND_NAMESZ - 1] = 0;
+	pr_info("bind to iface %s\n", req.iface);
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_lookup(req.iface);
+	if (adapter == NULL) {
+		pr_err("lookup failed to iface %s\n", req.iface);
+		return -ENOENT;
+	}
+
+	igb_priv->adapter = adapter;
+
+	req.mmap_size = 0;
+	req.mmap_size = pci_resource_len(adapter->pdev, 0);
+
+	if (copy_to_user(argp, &req, sizeof(req))) {
+		pr_err("copyout to user failed\n");
+		err = -EFAULT;
+		goto failed;
+	}
+
+	return 0;
+
+failed:
+	igb_priv->adapter = NULL;
+	return err;
+}
+
+static int igb_unbind(struct file *file)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	struct igb_adapter *adapter;
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_priv->adapter;
+	if (adapter == NULL)
+		return -EBADFD;
+
+	igb_priv->adapter = NULL;
+	return 0;
+}
+
+static long igb_getspeed(struct file *file, void __user *arg)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	struct igb_adapter *adapter;
+	struct igb_link_cmd req;
+	u32 link;
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_priv->adapter;
+	if (adapter == NULL) {
+		pr_err("map to unbound device!\n");
+		return -ENOENT;
+	}
+
+	link = igb_has_link(adapter);
+
+	if (link) {
+		req.up = link;
+		req.speed = adapter->link_speed;
+		req.duplex = adapter->link_duplex;
+	} else {
+		req.up = link;
+		req.speed = 0;
+		req.duplex = DUPLEX_FULL;
+	}
+
+	if (copy_to_user(arg, &req, sizeof(req))) {
+		pr_err("copyout to user failed\n");
+		return -EFAULT;
+	}
+	return 0;
+}
+
+static long igb_mapbuf_user(struct file *file, void __user *arg, int ring)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	struct igb_user_page *userpage;
+	struct igb_adapter *adapter;
+	struct igb_buf_cmd req;
+	/* size used for the purpose of copying the contents of igb_buf_cmd
+	 * between userspace and kernel space
+	 * introduced to handle possible mismatch in libigb and igb version
+	 */
+	int buf_cmd_size = 0;
+	dma_addr_t page_dma;
+	struct page *page;
+	int err = 0;
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_priv->adapter;
+	if (adapter == NULL) {
+		pr_err("map to unbound device!\n");
+		return -ENOENT;
+	}
+
+	if (ring != IGB_IOCTL_MAPBUF) {
+		pr_warn("Old ioctl value used: %d, consider using a new one from libigb\n", ring);
+		/* this situation suggest using an old ioctl by libigb as a consequence the
+		 * igb_buf_cmd struct from libigb perspective does not contain the "pa" field
+		 * we need to align the requested size in copy_from_user() for possibility
+		 */
+		buf_cmd_size = sizeof(req) - sizeof(u64);
+	} else {
+		/* assuming no compatibility issue:
+		 * libigb and kernel module have the same
+		 * igb_buf_cmd structs ("pa" field included in both)
+		 */
+		buf_cmd_size = sizeof(req);
+	}
+
+	if (copy_from_user(&req, arg, buf_cmd_size))
+		return -EFAULT;
+
+	userpage = vzalloc(sizeof(struct igb_user_page));
+	if (unlikely(!userpage)) {
+		err = -ENOMEM;
+		goto failed;
+	}
+
+	mutex_lock(&adapter->lock);
+	if (igb_priv->userpages == NULL) {
+		igb_priv->userpages = userpage;
+	} else {
+		userpage->next = igb_priv->userpages;
+		igb_priv->userpages->prev = userpage;
+		igb_priv->userpages = userpage;
+	}
+
+#if defined(CONFIG_IGB_SUPPORT_32BIT_IOCTL)
+#if defined(CONFIG_ZONE_DMA32)
+	page = alloc_page(GFP_ATOMIC | __GFP_COLD | GFP_DMA32);
+#else /* defined(CONFIG_ZONE_DMA32) */
+	page = alloc_page(GFP_ATOMIC | __GFP_COLD | GFP_DMA);
+#endif /* defined(CONFIG_ZONE_DMA32) */
+#else /* defined(CONFIG_IGB_SUPPORT_32BIT_IOCTL) */
+	page = alloc_page(GFP_ATOMIC | __GFP_COLD);
+#endif /* defined(CONFIG_IGB_SUPPORT_32BIT_IOCTL) */
+	if (unlikely(!page)) {
+		err = -ENOMEM;
+		goto page_failed;
+	}
+
+	page_dma = dma_map_page(pci_dev_to_dev(adapter->pdev), page,
+				0, PAGE_SIZE, DMA_BIDIRECTIONAL);
+
+	if (dma_mapping_error(pci_dev_to_dev(adapter->pdev), page_dma)) {
+		err = -ENOMEM;
+		goto map_failed;
+	}
+
+	igb_priv->userpages->page = page;
+	igb_priv->userpages->page_dma = page_dma;
+
+	if (ring == IGB_IOCTL_MAPBUF)
+		req.pa = page_to_phys(page);
+
+	req.physaddr = page_dma;
+	req.mmap_size = PAGE_SIZE;
+	mutex_unlock(&adapter->lock);
+
+	if (copy_to_user(arg, &req, buf_cmd_size)) {
+		dev_err(&adapter->pdev->dev, "copyout to user failed\n");
+		err = -EFAULT;
+		mutex_lock(&adapter->lock);
+		goto copy_failed;
+	}
+
+	return 0;
+
+copy_failed:
+	dma_unmap_page(pci_dev_to_dev(adapter->pdev),
+		       userpage->page_dma, PAGE_SIZE,
+		       DMA_BIDIRECTIONAL);
+map_failed:
+	put_page(userpage->page);
+page_failed:
+	if (userpage->prev)
+		userpage->prev->next = userpage->next;
+	if (userpage->next)
+		userpage->next->prev = userpage->prev;
+	if (userpage == igb_priv->userpages)
+		igb_priv->userpages = userpage->next;
+	vfree(userpage);
+	mutex_unlock(&adapter->lock);
+failed:
+	return err;
+}
+
+static long igb_mapbuf(struct file *file, void __user *arg, int ring)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	struct igb_adapter *adapter;
+	struct igb_buf_cmd req;
+	/* size used for the purpose of copying the contents of igb_buf_cmd
+	 * between userspace and kernel space
+	 * introduced to handle possible mismatch in libigb and igb version
+	 */
+	int buf_cmd_size = 0;
+	int err = 0;
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_priv->adapter;
+	if (adapter == NULL) {
+		pr_err("map to unbound device!\n");
+		return -ENOENT;
+	}
+
+	if ((ring != IGB_IOCTL_MAP_TX_RING) && (ring != IGB_IOCTL_MAP_RX_RING))	{
+		pr_warn("Old ioctl value used: %d, consider using new one from libigb\n", ring);
+		/* this situation suggest using an old ioctl by libigb as a consequence the
+		 * igb_buf_cmd struct from libigb perspective does not contain the "pa" field
+		 * we need to align the requested size in copy_from_user() for possibility
+		 */
+		buf_cmd_size = sizeof(req) - sizeof(u64);
+	} else {
+		/* assuming no compatibility issue:
+		 * libigb and kernel module have the same
+		 * igb_buf_cmd structs ("pa" field included in both)
+		 */
+		buf_cmd_size = sizeof(req);
+	}
+
+	if (copy_from_user(&req, arg, buf_cmd_size))
+		return -EFAULT;
+
+	if ((ring == IGB_MAPRING) || (ring == IGB_MAP_TX_RING) ||
+	    ring == IGB_IOCTL_MAP_TX_RING) {
+		if (req.queue >= 3) {
+			pr_err("mapring:invalid queue specified(%d)\n", req.queue);
+			return -EINVAL;
+		}
+
+		if (!adapter->num_tx_queues) {
+			pr_err("igb_avb %s:tx ring freed %s\n", __func__, adapter->netdev->name);
+			return -EINVAL;
+		}
+
+		mutex_lock(&adapter->lock);
+		if (adapter->uring_tx_init & (1 << req.queue)) {
+			mutex_unlock(&adapter->lock);
+			pr_err("mapring:queue in use (%d)\n", req.queue);
+			return -EBUSY;
+		}
+
+		adapter->uring_tx_init |= (1 << req.queue);
+		igb_priv->uring_tx_init |= (1 << req.queue);
+
+		if (ring == IGB_IOCTL_MAP_TX_RING)
+			req.pa = virt_to_phys(adapter->tx_ring[req.queue]->desc);
+
+		req.physaddr = adapter->tx_ring[req.queue]->dma;
+		req.mmap_size = adapter->tx_ring[req.queue]->size;
+		mutex_unlock(&adapter->lock);
+	} else if ((ring == IGB_MAP_RX_RING) || (ring == IGB_IOCTL_MAP_RX_RING)) {
+		if (req.queue >= 3) {
+			pr_err("mapring:invalid queue specified(%d)\n", req.queue);
+			return -EINVAL;
+		}
+
+		if (!adapter->num_rx_queues) {
+			pr_err("igb_avb %s:rx ring freed %s\n", __func__, adapter->netdev->name);
+			return -EINVAL;
+		}
+
+		mutex_lock(&adapter->lock);
+		if (adapter->uring_rx_init & (1 << req.queue)) {
+			mutex_unlock(&adapter->lock);
+			pr_err("mapring:queue in use (%d)\n", req.queue);
+			return -EBUSY;
+		}
+
+		adapter->uring_rx_init |= (1 << req.queue);
+		igb_priv->uring_rx_init |= (1 << req.queue);
+
+		if (ring == IGB_IOCTL_MAP_RX_RING)
+			req.pa = virt_to_phys(adapter->rx_ring[req.queue]->desc);
+
+		req.physaddr = adapter->rx_ring[req.queue]->dma;
+		req.mmap_size = adapter->rx_ring[req.queue]->size;
+		mutex_unlock(&adapter->lock);
+	} else {
+		pr_err("mapring: invalid ioctl %d\n", _IOC_NR(ring));
+		return -EINVAL;
+	}
+
+	if (copy_to_user(arg, &req, buf_cmd_size)) {
+		pr_err("copyout to user failed\n");
+		err = -EFAULT;
+		goto failed;
+	}
+
+	return 0;
+
+failed:
+	return err;
+}
+
+static long igb_unmapbuf(struct file *file, void __user *arg, int ring)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	struct igb_adapter *adapter;
+	struct igb_buf_cmd req;
+	int buf_cmd_size = 0;
+	int err = 0;
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_priv->adapter;
+	if (adapter == NULL) {
+		pr_err("map to unbound device!\n");
+		return -ENOENT;
+	}
+
+	if ((ring != IGB_IOCTL_UNMAPBUF) && (ring != IGB_IOCTL_UNMAP_TX_RING) &&
+	    (ring != IGB_IOCTL_UNMAP_RX_RING)) {
+		pr_warn("Old ioctl number used: %d, consider using new one from libigb\n", ring);
+		buf_cmd_size = sizeof(req) - sizeof(u64);
+	} else {
+		buf_cmd_size = sizeof(req);
+	}
+
+	if (copy_from_user(&req, arg, buf_cmd_size))
+		return -EFAULT;
+
+	if ((ring == IGB_UNMAP_TX_RING) || (ring == IGB_IOCTL_UNMAP_TX_RING)) {
+		/* its easy to figure out what to free on the rings ... */
+		if (req.queue >= 3)
+			return -EINVAL;
+
+		mutex_lock(&adapter->lock);
+		if (0 == (igb_priv->uring_tx_init & (1 << req.queue))) {
+			mutex_unlock(&adapter->lock);
+			return -EINVAL;
+		} else {
+			if (0 == (adapter->uring_tx_init & (1 << req.queue)))
+				pr_warn("Warning: invalid tx ring buffer state!\n");
+		}
+
+		adapter->uring_tx_init &= ~(1 << req.queue);
+		igb_priv->uring_tx_init &= ~(1 << req.queue);
+		mutex_unlock(&adapter->lock);
+	} else if ((ring == IGB_UNMAP_RX_RING) || (ring == IGB_IOCTL_UNMAP_RX_RING)) {
+		/* its easy to figure out what to free on the rings ... */
+		if (req.queue >= 3)
+			return -EINVAL;
+
+		mutex_lock(&adapter->lock);
+		if (0 == (igb_priv->uring_rx_init & (1 << req.queue))) {
+			mutex_unlock(&adapter->lock);
+			return -EINVAL;
+		} else {
+			if (0 == (adapter->uring_rx_init & (1 << req.queue)))
+				pr_warn("Warning: invalid rx ring buffer state!\n");
+		}
+
+		adapter->uring_rx_init &= ~(1 << req.queue);
+		igb_priv->uring_rx_init &= ~(1 << req.queue);
+		mutex_unlock(&adapter->lock);
+	} else {
+		/* have to find the corresponding page to free */
+		struct igb_user_page *userpage;
+
+		mutex_lock(&adapter->lock);
+		userpage = igb_priv->userpages;
+
+		while (userpage != NULL) {
+			if (req.physaddr == userpage->page_dma)
+				break;
+			userpage = userpage->next;
+		}
+
+		if (userpage == NULL) {
+			mutex_unlock(&adapter->lock);
+			return -EINVAL;
+		}
+
+		dma_unmap_page(pci_dev_to_dev(adapter->pdev),
+			       userpage->page_dma,
+			       PAGE_SIZE,
+			       DMA_BIDIRECTIONAL);
+
+		put_page(userpage->page);
+
+		/* take the page out of our list and free it */
+		if (userpage->prev)
+			userpage->prev->next = userpage->next;
+
+		if (userpage->next)
+			userpage->next->prev = userpage->prev;
+
+		if (userpage == igb_priv->userpages)
+			igb_priv->userpages = userpage->next;
+
+		vfree(userpage);
+		mutex_unlock(&adapter->lock);
+	}
+	return err;
+}
+
+static long igb_ioctl_file(struct file *file, unsigned int cmd,
+			   unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	int err;
+
+	switch (cmd) {
+	case IGB_BIND:
+		err = igb_bind(file, argp);
+		break;
+	case IGB_UNBIND:
+		err = igb_unbind(file);
+		break;
+	case IGB_MAP_TX_RING:
+	case IGB_MAP_RX_RING:
+	case IGB_IOCTL_MAP_TX_RING:
+	case IGB_IOCTL_MAP_RX_RING:
+		err = igb_mapbuf(file, argp, cmd);
+		break;
+	case IGB_MAPBUF:
+	case IGB_IOCTL_MAPBUF:
+		err = igb_mapbuf_user(file, argp, cmd);
+		break;
+	case IGB_UNMAP_TX_RING:
+	case IGB_UNMAP_RX_RING:
+	case IGB_UNMAPBUF:
+	case IGB_IOCTL_UNMAPBUF:
+	case IGB_IOCTL_UNMAP_TX_RING:
+	case IGB_IOCTL_UNMAP_RX_RING:
+		err = igb_unmapbuf(file, argp, cmd);
+		break;
+	case IGB_LINKSPEED:
+		err = igb_getspeed(file, argp);
+		break;
+	default:
+		err = -EINVAL;
+		break;
+	};
+
+	return err;
+}
+
+static int igb_open_file(struct inode *inode, struct file *file)
+{
+	struct igb_private_data *igb_priv = NULL;
+	int ret = 0;
+
+	igb_priv = kzalloc(sizeof(struct igb_private_data), GFP_KERNEL);
+	if (igb_priv == NULL) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	igb_priv->uring_tx_init = 0;
+	igb_priv->uring_rx_init = 0;
+	igb_priv->userpages = NULL;
+	igb_priv->adapter = NULL;
+out:
+	file->private_data = igb_priv;
+	return ret;
+}
+
+static int igb_close_file(struct inode *inode, struct file *file)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	struct igb_adapter *adapter = NULL;
+	struct igb_user_page *userpage;
+	int err = 0;
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_priv->adapter;
+	if (adapter == NULL)
+		goto out;
+
+	mutex_lock(&adapter->lock);
+
+	adapter->uring_tx_init &= ~igb_priv->uring_tx_init;
+	adapter->uring_rx_init &= ~igb_priv->uring_rx_init;
+
+	userpage = igb_priv->userpages;
+
+	while (userpage != NULL) {
+		dma_unmap_page(pci_dev_to_dev(adapter->pdev),
+			       userpage->page_dma,
+			       PAGE_SIZE,
+			       DMA_BIDIRECTIONAL);
+
+		put_page(userpage->page);
+
+		/* take the page out of our list and free it */
+		if (userpage->prev)
+			userpage->prev->next = userpage->next;
+
+		if (userpage->next)
+			userpage->next->prev = userpage->prev;
+
+		if (userpage == igb_priv->userpages)
+			igb_priv->userpages = userpage->next;
+
+		vfree(userpage);
+		userpage = igb_priv->userpages;
+	}
+	mutex_unlock(&adapter->lock);
+
+	err = igb_unbind(file);
+out:
+	file->private_data = NULL;
+	kfree(igb_priv);
+	return err;
+}
+
+static void igb_vm_open(struct vm_area_struct *vma)
+{
+}
+
+static void igb_vm_close(struct vm_area_struct *vma)
+{
+}
+
+static vm_fault_t igb_vm_fault(struct vm_fault *fdata)
+{
+	return VM_FAULT_SIGBUS;
+}
+
+static int igb_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct igb_private_data *igb_priv = file->private_data;
+	unsigned long size  = vma->vm_end - vma->vm_start;
+	struct igb_adapter *adapter = NULL;
+	dma_addr_t pgoff = vma->vm_pgoff;
+	dma_addr_t physaddr;
+
+	if (igb_priv == NULL) {
+		pr_err("cannot find private data!\n");
+		return -ENOENT;
+	}
+
+	adapter = igb_priv->adapter;
+	if (adapter == NULL)
+		return -ENODEV;
+
+	if (pgoff == 0)
+		physaddr = pci_resource_start(adapter->pdev, 0) >> PAGE_SHIFT;
+	else
+		physaddr = pgoff;
+
+	if (remap_pfn_range(vma, vma->vm_start, physaddr, size,
+			    vma->vm_page_prot))
+		return -EAGAIN;
+
+	vma->vm_ops = &igb_mmap_ops;
+	return 0;
+}
+#endif /* CONFIG_IGB_AVB */
 
 int igb_reinit_queues(struct igb_adapter *adapter)
 {

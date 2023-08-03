@@ -481,6 +481,10 @@
 #define E1000_RAH_POOL_1 0x00040000
 
 /* Error Codes */
+#ifdef CONFIG_IGB_AVB
+#define E1000_SUCCESS	0
+#endif /* CONFIG_IGB_AVB */
+
 #define E1000_ERR_NVM      1
 #define E1000_ERR_PHY      2
 #define E1000_ERR_CONFIG   3
@@ -1072,7 +1076,31 @@
 #define E1000_TQAVCC_IDLESLOPE_MASK	0xFFFF
 #define E1000_TQAVCC_QUEUEMODE		BIT(31)
 
+#ifdef CONFIG_IGB_AVB
+#define E1000_TQAVCTRL_TXMODE          0x00000001 /* Transmit mode, 0=legacy, 1=QAV */
+#define E1000_TQAVCTRL_DATA_FETCH_ARB  0x00000010 /* data fetch arbitration */
+#define E1000_TQAVCTRL_DATA_TRAN_ARB   0x00000100 /* data tx arbitration */
+#define E1000_TQAVCTRL_DATA_TRAN_TIM   0x00000200 /* data launch time valid */
+#define E1000_TQAVCTRL_FETCH_TM_SHIFT  (16)       /* ... and associated shift value */
+#endif /* CONFIG_IGB_AVB */
+
 /* Transmit Descriptor Control fields */
 #define E1000_TXDCTL_PRIORITY		BIT(27)
 
 #endif
+
+#ifdef CONFIG_IGB_AVB
+/* Tx packet buffer fields */
+#define E1000_TXPBSIZE_PBSZ_MASK      0x3F
+#define E1000_TXPBSIZE_TX0PB_SHIFT    0
+#define E1000_TXPBSIZE_TX1PB_SHIFT    6
+#define E1000_TXPBSIZE_TX2PB_SHIFT    12
+#define E1000_TXPBSIZE_TX3PB_SHIFT    18
+#ifndef E1000_UNUSEDARG
+#define E1000_UNUSEDARG
+#endif /* E1000_UNUSEDARG */
+#ifndef ERROR_REPORT
+#define ERROR_REPORT(fmt)	do { } while (0)
+#endif /* ERROR_REPORT */
+#define E1000_TSAUXC_SAMP_AUTO          0x00000008 /* sample current ts */
+#endif /* CONFIG_IGB_AVB */

@@ -56,8 +56,16 @@ s32 igb_write_i2c_byte(struct e1000_hw *hw, u8 byte_offset, u8 dev_addr,
 	E1000_EICR_RX_QUEUE3)
 
 /* Immediate Interrupt Rx (A.K.A. Low Latency Interrupt) */
-#define E1000_IMIREXT_SIZE_BP     0x00001000  /* Packet size bypass */
-#define E1000_IMIREXT_CTRL_BP     0x00080000  /* Bypass check of ctrl bits */
+#define E1000_IMIR_PORT_IM_EN	0x00010000  /* TCP port enable */
+#define E1000_IMIR_PORT_BP	0x00020000  /* TCP port check bypass */
+#define E1000_IMIREXT_SIZE_BP	0x00001000  /* Packet size bypass */
+#define E1000_IMIREXT_CTRL_URG	0x00002000  /* Check URG bit in header */
+#define E1000_IMIREXT_CTRL_ACK	0x00004000  /* Check ACK bit in header */
+#define E1000_IMIREXT_CTRL_PSH	0x00008000  /* Check PSH bit in header */
+#define E1000_IMIREXT_CTRL_RST	0x00010000  /* Check RST bit in header */
+#define E1000_IMIREXT_CTRL_SYN	0x00020000  /* Check SYN bit in header */
+#define E1000_IMIREXT_CTRL_FIN	0x00040000  /* Check FIN bit in header */
+#define E1000_IMIREXT_CTRL_BP	0x00080000  /* Bypass check of ctrl bits */
 
 /* Receive Descriptor - Advanced */
 union e1000_adv_rx_desc {

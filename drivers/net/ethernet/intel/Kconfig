@@ -103,6 +103,14 @@ config IGB
 	  To compile this driver as a module, choose M here. The module
 	  will be called igb.
 
+config IGB_AVB
+	bool "Intel(R) 82575/82576 PCI-Express Gigabit Ethernet with AVB support"
+	depends on IGB
+	help
+	  Say Y if you want to install the AVB version of the IGB driver.
+
+	  The module will be called igb_avb.
+
 config IGB_HWMON
 	bool "Intel(R) PCI-Express Gigabit adapters HWMON support"
 	default y

@@ -4,8 +4,18 @@
 # Makefile for the Intel(R) 82575 PCI-Express ethernet driver
 #
 
+ifeq ($(CONFIG_IGB_AVB),y)
+obj-$(CONFIG_IGB) += igb_avb.o
+else
 obj-$(CONFIG_IGB) += igb.o
+endif
 
+ifeq ($(CONFIG_IGB_AVB),y)
+igb_avb-objs := igb_main.o igb_ethtool.o e1000_82575.o \
+		e1000_mac.o e1000_nvm.o e1000_phy.o e1000_mbx.o \
+		e1000_i210.o igb_ptp.o igb_hwmon.o
+else
 igb-objs := igb_main.o igb_ethtool.o e1000_82575.o \
 	    e1000_mac.o e1000_nvm.o e1000_phy.o e1000_mbx.o \
 	    e1000_i210.o igb_ptp.o igb_hwmon.o
+endif
