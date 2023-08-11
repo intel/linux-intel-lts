@@ -150,3 +150,6 @@
 
 # CVE-2023-1582
 0001-fs-proc-task_mmu.c-don-t-read-mapcount-for-migration.patch
+
+# CVE-2023-37453
+0001-Revert-USB-core-Don-t-hold-device-lock-while-reading.patch
