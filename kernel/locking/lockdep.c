@@ -5579,7 +5579,7 @@ static noinstr void check_flags(unsigned long flags)
 	/* Get the warning out..  */
 	instrumentation_begin();
 
-	if (irqs_disabled_flags(flags)) {
+	if (stage_disabled_flags(flags)) {
 		if (DEBUG_LOCKS_WARN_ON(lockdep_hardirqs_enabled())) {
 			printk("possible reason: unannotated irqs-off.\n");
 		}

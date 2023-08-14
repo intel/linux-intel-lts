@@ -456,6 +456,33 @@ noinstr bool stage_disabled(void)
 EXPORT_SYMBOL_GPL(stage_disabled);
 
 /**
+ *	stage_disabled_flags - test a particular interrupt state
+ *
+ *	Returns non-zero if interrupts are marked as disabled in the
+ *	interrupt state, zero otherwise.
+ *      In other words, returns non-zero either if:
+ *      - interrupts are disabled for the OOB context (i.e. hard disabled),
+ *      - inband interrupts are stalled (meaning that we were running in-band
+ *        when building that interrupt state).
+ *
+ *      CAUTION: in general, you cannot infer from an interrupt state
+ *      value which stage was active at the time such state was
+ *      snapshot. However, as mentioned earlier, you may assume that
+ *      the in-band stage can be reported as stalled only when current
+ *      though, since this is guaranteed by the implementation of
+ *      test_and_lock_stage().
+ */
+noinstr bool stage_disabled_flags(unsigned long irqstate)
+{
+	unsigned long flags;
+	int stalled;
+
+	flags = irqs_split_flags(irqstate, &stalled);
+	return hard_irqs_disabled_flags(flags) || stalled;
+}
+EXPORT_SYMBOL_GPL(stage_disabled_flags);
+
+/**
  *	test_and_lock_stage - test and disable interrupts for the current stage
  *	@irqsoff:	Pointer to boolean denoting stage_disabled()
  *                      on entry
