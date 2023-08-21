@@ -560,6 +560,22 @@ static __poll_t uio_poll(struct file *filep, poll_table *wait)
 	return 0;
 }
 
+#ifdef CONFIG_PCI_MSI
+static long uio_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+{
+	struct uio_listener *listener = filep->private_data;
+	struct uio_device *idev = listener->dev;
+
+	if (!idev->info)
+		return -EIO;
+
+	if (!idev->info->ioctl)
+		return -ENOTTY;
+
+	return idev->info->ioctl(idev->info, cmd, arg);
+}
+#endif
+
 static ssize_t uio_read(struct file *filep, char __user *buf,
 			size_t count, loff_t *ppos)
 {
@@ -821,6 +837,9 @@ static const struct file_operations uio_fops = {
 	.write		= uio_write,
 	.mmap		= uio_mmap,
 	.poll		= uio_poll,
+#ifdef CONFIG_PCI_MSI
+	.unlocked_ioctl	= uio_ioctl,
+#endif
 	.fasync		= uio_fasync,
 	.llseek		= noop_llseek,
 };
