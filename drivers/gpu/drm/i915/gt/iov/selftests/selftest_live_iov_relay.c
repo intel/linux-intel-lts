@@ -351,7 +351,7 @@ static int pf_loopback_one_way_to_vf(void *arg)
 static int pf_full_loopback_to_vf(void *arg)
 {
 	struct intel_iov *iov = arg;
-	u32 msg[PF2GUC_RELAY_TO_VF_REQUEST_MSG_NUM_RELAY_DATA] = {
+	u32 msg[] = {
 		MSG_IOV_SELFTEST_RELAY(SELFTEST_RELAY_OPCODE_NOP),
 		FIELD_PREP(GUC_HXG_REQUEST_MSG_n_DATAn, SELFTEST_RELAY_DATA),
 		/* ... */
@@ -389,7 +389,7 @@ static int pf_full_loopback_to_vf(void *arg)
 static int pf_loopback_one_way_to_pf(void *arg)
 {
 	struct intel_iov *iov = arg;
-	u32 msg[VF2GUC_RELAY_TO_PF_REQUEST_MSG_NUM_RELAY_DATA] = {
+	u32 msg[] = {
 		MSG_IOV_SELFTEST_RELAY_EVENT(SELFTEST_RELAY_OPCODE_NOP),
 		FIELD_PREP(GUC_HXG_REQUEST_MSG_n_DATAn, SELFTEST_RELAY_DATA),
 		/* ... */
@@ -440,7 +440,7 @@ static int pf_loopback_one_way_to_pf(void *arg)
 
 static int relay_request_to_pf(struct intel_iov *iov)
 {
-	u32 msg[VF2GUC_RELAY_TO_PF_REQUEST_MSG_NUM_RELAY_DATA] = {
+	u32 msg[] = {
 		MSG_IOV_SELFTEST_RELAY(SELFTEST_RELAY_OPCODE_NOP),
 		FIELD_PREP(GUC_HXG_REQUEST_MSG_n_DATAn, SELFTEST_RELAY_DATA),
 		/* ... */

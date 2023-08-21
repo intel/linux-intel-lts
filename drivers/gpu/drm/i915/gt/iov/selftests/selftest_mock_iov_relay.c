@@ -405,7 +405,7 @@ static int mock_prepares_pf2guc(void *arg)
 {
 	struct intel_iov *iov = arg;
 	u32 vfid = VFID(1);
-	u32 msg[PF2GUC_RELAY_TO_VF_REQUEST_MSG_NUM_RELAY_DATA] = {
+	u32 msg[] = {
 		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
 		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_EVENT) |
 		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, IOV_ACTION_SELFTEST_RELAY),

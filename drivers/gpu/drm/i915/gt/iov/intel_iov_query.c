@@ -544,6 +544,124 @@ failed:
 	return -ECONNREFUSED;
 }
 
+static int intel_iov_query_update_ggtt_pte_mmio(struct intel_iov *iov, u32 pte_offset, u8 mode,
+						u16 num_copies, gen8_pte_t pte)
+{
+	u32 request[VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_MAX_LEN] = {
+		mmio_relay_header(IOV_OPCODE_VF2PF_MMIO_UPDATE_GGTT, 0xF),
+		FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_MODE, mode) |
+		FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_NUM_COPIES, num_copies) |
+		FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_OFFSET, pte_offset),
+		FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_2_PTE_LO, lower_32_bits(pte)),
+		FIELD_PREP(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_3_PTE_HI, upper_32_bits(pte)),
+	};
+	u32 response[VF2PF_MMIO_UPDATE_GGTT_RESPONSE_MSG_LEN];
+	u16 expected = (num_copies) ? num_copies + 1 : 1;
+	u16 updated;
+	int ret;
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+	GEM_BUG_ON(FIELD_MAX(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_MODE) < mode);
+	GEM_BUG_ON(FIELD_MAX(VF2PF_MMIO_UPDATE_GGTT_REQUEST_MSG_1_NUM_COPIES) < num_copies);
+
+	ret = guc_send_mmio_relay(iov_to_guc(iov), request, ARRAY_SIZE(request),
+				  response, ARRAY_SIZE(response));
+	if (unlikely(ret < 0))
+		return ret;
+
+	updated = FIELD_GET(VF2PF_MMIO_UPDATE_GGTT_RESPONSE_MSG_1_NUM_PTES, response[0]);
+	WARN_ON(updated != expected);
+	return updated;
+}
+
+static int intel_iov_query_update_ggtt_pte_relay(struct intel_iov *iov, u32 pte_offset, u8 mode,
+						 u16 num_copies, gen8_pte_t *ptes, u16 count)
+{
+	struct drm_i915_private *i915 = iov_to_i915(iov);
+	u32 request[VF2PF_UPDATE_GGTT32_REQUEST_MSG_MAX_LEN];
+	u32 response[VF2PF_UPDATE_GGTT32_RESPONSE_MSG_LEN];
+	u16 expected =  num_copies + count;
+	u16 updated;
+	int i;
+	int ret;
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+	GEM_BUG_ON(FIELD_MAX(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_MODE) < mode);
+	GEM_BUG_ON(FIELD_MAX(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_NUM_COPIES) < num_copies);
+	assert_rpm_wakelock_held(&i915->runtime_pm);
+
+	request[0] = FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		     FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+		     FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, IOV_ACTION_VF2PF_UPDATE_GGTT32);
+
+	request[1] = FIELD_PREP(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_MODE, mode) |
+		     FIELD_PREP(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_NUM_COPIES, num_copies) |
+		     FIELD_PREP(VF2PF_UPDATE_GGTT32_REQUEST_MSG_1_OFFSET, pte_offset);
+
+	for (i = 0; i < count; i++) {
+		request[i * 2 + 2] = FIELD_PREP(VF2PF_UPDATE_GGTT32_REQUEST_DATAn_PTE_LO,
+						lower_32_bits(ptes[i]));
+		request[i * 2 + 3] = FIELD_PREP(VF2PF_UPDATE_GGTT32_REQUEST_DATAn_PTE_HI,
+						upper_32_bits(ptes[i]));
+	}
+
+	ret = intel_iov_relay_send_to_pf(&iov->relay,
+					 request, count * 2 + 2,
+					 response, ARRAY_SIZE(response));
+	if (unlikely(ret < 0))
+		return ret;
+
+	updated = FIELD_GET(VF2PF_UPDATE_GGTT32_RESPONSE_MSG_0_NUM_PTES, response[0]);
+	WARN_ON(updated != expected);
+	return updated;
+}
+
+/**
+ * intel_iov_query_update_ggtt_ptes - Send buffered PTEs to PF to update GGTT
+ * @iov: the IOV struct
+ *
+ * This function is for VF use only.
+ *
+ * Return: Number of successfully updated PTEs on success or a negative error code on failure.
+ */
+int intel_iov_query_update_ggtt_ptes(struct intel_iov *iov)
+{
+	struct intel_iov_vf_ggtt_ptes *buffer = &iov->vf.ptes_buffer;
+	int ret;
+
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_DUPLICATE != VF2PF_UPDATE_GGTT32_MODE_DUPLICATE);
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_REPLICATE != VF2PF_UPDATE_GGTT32_MODE_REPLICATE);
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_DUPLICATE_LAST !=
+		     VF2PF_UPDATE_GGTT32_MODE_DUPLICATE_LAST);
+	BUILD_BUG_ON(MMIO_UPDATE_GGTT_MODE_REPLICATE_LAST !=
+		     VF2PF_UPDATE_GGTT32_MODE_REPLICATE_LAST);
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+	GEM_BUG_ON(buffer->mode == VF_RELAY_UPDATE_GGTT_MODE_INVALID && buffer->num_copies);
+
+	/*
+	 * If we don't have any PTEs to REPLICATE or DUPLICATE,
+	 * let's zero out the mode to be ABI compliant.
+	 * In this case, the value of the MODE field is irrelevant
+	 * to the operation of the ABI, as long as it has a value
+	 * within the allowed range
+	 */
+	if (buffer->mode == VF_RELAY_UPDATE_GGTT_MODE_INVALID && !buffer->num_copies)
+		buffer->mode = 0;
+
+	if (!intel_guc_ct_enabled(&iov_to_guc(iov)->ct))
+		ret = intel_iov_query_update_ggtt_pte_mmio(iov, buffer->offset, buffer->mode,
+							   buffer->num_copies, buffer->ptes[0]);
+	else
+		ret = intel_iov_query_update_ggtt_pte_relay(iov, buffer->offset, buffer->mode,
+							    buffer->num_copies, buffer->ptes,
+							    buffer->count);
+	if (unlikely(ret < 0))
+		IOV_ERROR(iov, "Failed to update VFs PTE by PF (%pe)\n", ERR_PTR(ret));
+
+	return ret;
+}
+
 static int vf_get_runtime_info_mmio(struct intel_iov *iov)
 {
 	u32 request[VF2GUC_MMIO_RELAY_SERVICE_REQUEST_MSG_MAX_LEN];

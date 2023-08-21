@@ -16,6 +16,8 @@
 #include "gem/i915_gem_lmem.h"
 
 #include "iov/intel_iov.h"
+#include "iov/intel_iov_ggtt.h"
+#include "iov/intel_iov_utils.h"
 
 #include "intel_ggtt_gmch.h"
 #include "intel_gt.h"
@@ -1208,6 +1210,71 @@ static int gen6_gmch_probe(struct i915_ggtt *ggtt)
 	return ggtt_probe_common(ggtt, size);
 }
 
+static void ggtt_insert_page_vf_relay_wa(struct i915_address_space *vm, dma_addr_t addr, u64 offset,
+					 unsigned int pat_index, u32 flags)
+{
+	struct intel_iov *iov = &vm->gt->iov;
+	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+
+	mutex_lock(&iov->vf.ptes_buffer.lock);
+
+	intel_iov_ggtt_vf_update_pte(iov, offset, ggtt->vm.pte_encode(addr, pat_index, flags));
+	intel_iov_ggtt_vf_flush_ptes(iov);
+
+	mutex_unlock(&iov->vf.ptes_buffer.lock);
+
+	ggtt->invalidate(ggtt);
+}
+
+static void ggtt_insert_entries_vf_relay_wa(struct i915_address_space *vm,
+					    struct i915_vma_resource *vma_res,
+					    unsigned int pat_index, u32 flags)
+{
+	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
+	struct intel_iov *iov = &vm->gt->iov;
+	const gen8_pte_t pte_encode = ggtt->vm.pte_encode(0, pat_index, flags);
+	u64 gte;
+	u64 end;
+	struct sgt_iter iter;
+	dma_addr_t addr;
+
+	GEM_BUG_ON(!intel_iov_is_vf(iov));
+
+	gte = vma_res->start - vma_res->guard;
+	end = gte + vma_res->guard;
+
+	mutex_lock(&iov->vf.ptes_buffer.lock);
+
+	while (gte < end) {
+		intel_iov_ggtt_vf_update_pte(iov, gte, vm->scratch[0]->encode);
+		gte += I915_GTT_PAGE_SIZE;
+	}
+	end += vma_res->node_size + vma_res->guard;
+
+	for_each_sgt_daddr(addr, iter, vma_res->bi.pages) {
+		intel_iov_ggtt_vf_update_pte(iov, gte, pte_encode | addr);
+		gte += I915_GTT_PAGE_SIZE;
+	}
+	GEM_BUG_ON(gte > end);
+
+	/* Fill the allocated but "unused" space beyond the end of the buffer */
+	while (gte < end) {
+		intel_iov_ggtt_vf_update_pte(iov, gte, vm->scratch[0]->encode);
+		gte += I915_GTT_PAGE_SIZE;
+	}
+
+	/*
+	 * We want to flush the TLBs only after we're certain all the PTE
+	 * updates have finished.
+	 */
+	intel_iov_ggtt_vf_flush_ptes(iov);
+	mutex_unlock(&iov->vf.ptes_buffer.lock);
+
+	ggtt->invalidate(ggtt);
+}
+
 static int gen12vf_ggtt_probe(struct i915_ggtt *ggtt)
 {
 	struct drm_i915_private *i915 = ggtt->vm.i915;
@@ -1226,10 +1293,19 @@ static int gen12vf_ggtt_probe(struct i915_ggtt *ggtt)
 	/* can't use roundup_pow_of_two(GUC_GGTT_TOP); */
 	ggtt->vm.total = 1ULL << (ilog2(GUC_GGTT_TOP - 1) + 1);
 	ggtt->vm.cleanup = gen6_gmch_remove;
-	ggtt->vm.insert_page = gen8_ggtt_insert_page;
 	ggtt->vm.clear_range = nop_clear_range;
 
-	ggtt->vm.insert_entries = gen8_ggtt_insert_entries;
+	/* Wa_22018453856 */
+	if (IS_METEORLAKE(i915)) {
+		IOV_DEBUG(&ggtt->vm.gt->iov,
+			  "VF update GGTT via VF2PF relay WA is enbaled!\n");
+		ggtt->vm.insert_page = ggtt_insert_page_vf_relay_wa;
+		ggtt->vm.insert_entries = ggtt_insert_entries_vf_relay_wa;
+
+	} else {
+		ggtt->vm.insert_page = gen8_ggtt_insert_page;
+		ggtt->vm.insert_entries = gen8_ggtt_insert_entries;
+	}
 
 	/* can't use guc_ggtt_invalidate() */
 	ggtt->invalidate = gen12vf_ggtt_invalidate;

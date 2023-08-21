@@ -9,6 +9,8 @@
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
 #include <drm/drm_mm.h>
+#include "abi/iov_actions_abi.h"
+#include "gt/intel_gtt.h"
 #include "i915_reg.h"
 #include "i915_selftest.h"
 #include "intel_wakeref.h"
@@ -177,6 +179,25 @@ struct intel_iov_vf_runtime {
 };
 
 /**
+ * struct intel_iov_vf_ggtt_ptes - Placeholder for the VF PTEs data.
+ * @ptes: an array of buffered GGTT PTEs awaiting update by PF.
+ * @count: count of the buffered PTEs in the array.
+ * @offset: GGTT offset for the first PTE from the array.
+ * @num_copies: number of copies of the first or last PTE (depending on mode).
+ * @mode: mode of generating PTEs on PF.
+ * @lock: protects PTEs data
+ */
+struct intel_iov_vf_ggtt_ptes {
+	gen8_pte_t ptes[VF2PF_UPDATE_GGTT_MAX_PTES];
+	u16 count;
+	u32 offset;
+	u16 num_copies;
+	u8 mode;
+#define VF_RELAY_UPDATE_GGTT_MODE_INVALID	U8_MAX
+	struct mutex lock;
+};
+
+/**
  * struct intel_iov_memirq - IOV interrupts data.
  * @obj: GEM object with memory interrupt data.
  * @vma: VMA of the object.
@@ -256,6 +277,7 @@ struct intel_iov {
 		struct {
 			struct intel_iov_vf_config config;
 			struct intel_iov_vf_runtime runtime;
+			struct intel_iov_vf_ggtt_ptes ptes_buffer;
 			struct drm_mm_node ggtt_balloon[2];
 			struct intel_iov_memirq irq;
 		} vf;
