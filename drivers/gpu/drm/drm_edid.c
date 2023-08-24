@@ -29,6 +29,7 @@
  */
 
 #include <linux/bitfield.h>
+#include <linux/cec.h>
 #include <linux/hdmi.h>
 #include <linux/i2c.h>
 #include <linux/kernel.h>
@@ -6203,6 +6204,8 @@ drm_parse_hdmi_vsdb_video(struct drm_connector *connector, const u8 *db)
 
 	info->is_hdmi = true;
 
+	info->source_physical_address = (db[4] << 8) | db[5];
+
 	if (len >= 6)
 		info->dvi_dual = db[6] & 1;
 	if (len >= 7)
@@ -6481,6 +6484,8 @@ static void drm_reset_display_info(struct drm_connector *connector)
 	info->vics_len = 0;
 
 	info->quirks = 0;
+
+	info->source_physical_address = CEC_PHYS_ADDR_INVALID;
 }
 
 static void update_displayid_info(struct drm_connector *connector,
