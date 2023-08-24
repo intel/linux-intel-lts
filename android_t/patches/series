@@ -32,9 +32,6 @@
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
 
-# CVE-2023-21106
-0001-drm-msm-gpu-Fix-potential-double-free.patch
-
 # CVE-2023-37454
 0001-KASAN-use-after-free-Write-in-udf_close_lvid.patch
 
