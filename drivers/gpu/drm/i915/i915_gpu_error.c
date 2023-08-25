@@ -142,7 +142,7 @@ static void i915_error_vprintf(struct drm_i915_error_state_buf *e,
 	e->bytes += len;
 }
 
-static void i915_error_puts(struct drm_i915_error_state_buf *e, const char *str)
+void i915_error_puts(struct drm_i915_error_state_buf *e, const char *str)
 {
 	unsigned len;
 
@@ -579,6 +579,59 @@ static void error_print_engine(struct drm_i915_error_state_buf *m,
 
 	error_print_context(m, "  Active context: ", &ee->context);
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+bool i915_error_ok(struct drm_i915_error_state_buf *e)
+{
+	return !e->err;
+}
+
+int i915_obj_state_buf_init(struct drm_i915_error_state_buf *ebuf,
+		size_t count)
+{
+	memset(ebuf, 0, sizeof(*ebuf));
+	ebuf->buf = kmalloc(count, GFP_KERNEL);
+	if (ebuf->buf == NULL)
+		return -ENOMEM;
+
+	ebuf->size = count;
+	return 0;
+}
+
+int i915_error_state_buf_init(struct drm_i915_error_state_buf *ebuf,
+		struct drm_i915_private *i915, size_t count, loff_t pos)
+{
+	memset(ebuf, 0, sizeof(*ebuf));
+	ebuf->i915 = i915;
+
+	/* We need to have enough room to store any i915_error_state printf
+	 * so that we can move it to start position.
+	 */
+	ebuf->size = count + 1 > PAGE_SIZE ? count + 1 : PAGE_SIZE;
+	ebuf->buf = kmalloc(ebuf->size,
+					GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN);
+
+	if (ebuf->buf == NULL) {
+		ebuf->size = PAGE_SIZE;
+		ebuf->buf = kmalloc(ebuf->size, GFP_KERNEL);
+	}
+
+	if (ebuf->buf == NULL) {
+		ebuf->size = 128;
+		ebuf->buf = kmalloc(ebuf->size, GFP_KERNEL);
+	}
+
+	if (ebuf->buf == NULL)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void i915_error_state_buf_release(struct drm_i915_error_state_buf *eb)
+{
+	kfree(eb->buf);
+}
+#endif
 
 void i915_error_printf(struct drm_i915_error_state_buf *e, const char *f, ...)
 {

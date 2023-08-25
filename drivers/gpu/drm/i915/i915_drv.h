@@ -105,6 +105,9 @@
 #include "gt/intel_timeline.h"
 #include "i915_vma.h"
 #include "i915_irq.h"
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+#include "i915_gpu_error.h"
+#endif
 
 
 /* General customization:
@@ -202,6 +205,11 @@ struct drm_i915_file_private {
 		struct rcu_head rcu;
 	};
 
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	char *process_name;
+	struct pid *tgid;
+#endif
+
 	/** @proto_context_lock: Guards all struct i915_gem_proto_context
 	 * operations
 	 *
@@ -268,6 +276,10 @@ struct drm_i915_file_private {
 	struct xarray vm_xa;
 
 	unsigned int bsd_engine;
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	struct bin_attribute *obj_attr;
+#endif
 
 /*
  * Every context ban increments per client ban score. Also
@@ -615,6 +627,10 @@ struct i915_gem_mm {
 	/* shrinker accounting, also useful for userland debugging */
 	u64 shrink_memory;
 	u32 shrink_count;
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	size_t phys_mem_total;
+#endif
 };
 
 #define I915_IDLE_ENGINES_TIMEOUT (200) /* in ms */
@@ -924,6 +940,10 @@ struct drm_i915_private {
 	struct intel_vbt_data vbt;
 
 	bool preserve_bios_swizzle;
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	struct kobject memtrack_kobj;
+#endif
 
 	/* overlay */
 	struct intel_overlay *overlay;
@@ -1925,6 +1945,23 @@ u32 i915_gem_fence_size(struct drm_i915_private *dev_priv, u32 size,
 			unsigned int tiling, unsigned int stride);
 u32 i915_gem_fence_alignment(struct drm_i915_private *dev_priv, u32 size,
 			     unsigned int tiling, unsigned int stride);
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+int i915_get_pid_cmdline(struct task_struct *task, char *buffer);
+int i915_gem_obj_insert_pid(struct drm_i915_gem_object *obj);
+void i915_gem_obj_remove_all_pids(struct drm_i915_gem_object *obj);
+int i915_obj_insert_virt_addr(struct drm_i915_gem_object *obj,
+			unsigned long addr, bool is_map_gtt,
+			bool is_mutex_locked);
+int i915_get_drm_clients_info(struct drm_i915_error_state_buf *m,
+			struct drm_device *dev);
+int i915_gem_get_obj_info(struct drm_i915_error_state_buf *m,
+			struct drm_device *dev, struct pid *tgid);
+int i915_gem_create_sysfs_file_entry(struct drm_device *dev,
+			struct drm_file *file);
+void i915_gem_remove_sysfs_file_entry(struct drm_device *dev,
+			struct drm_file *file);
+#endif
 
 const char *i915_cache_level_str(struct drm_i915_private *i915, int type);
 

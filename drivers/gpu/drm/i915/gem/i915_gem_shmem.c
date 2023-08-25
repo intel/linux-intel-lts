@@ -182,6 +182,13 @@ rebuild_st:
 	if (i915_gem_object_needs_bit17_swizzle(obj))
 		i915_gem_object_do_bit_17_swizzle(obj, st);
 
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	if (obj->has_backing_pages == 0) {
+		i915->mm.phys_mem_total += obj->base.size;
+		obj->has_backing_pages = 1;
+	}
+#endif
+
 	/*
 	 * EHL and JSL add the 'Bypass LLC' MOCS entry, which should make it
 	 * possible for userspace to bypass the GTT caching bits set by the
@@ -249,6 +256,19 @@ shmem_truncate(struct drm_i915_gem_object *obj)
 	shmem_truncate_range(file_inode(obj->base.filp), 0, (loff_t)-1);
 	obj->mm.madv = __I915_MADV_PURGED;
 	obj->mm.pages = ERR_PTR(-EFAULT);
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	/*
+	 * Mark the object as not having backing pages, as physical space
+	 * returned back to kernel
+	 */
+	if (obj->has_backing_pages == 1) {
+		struct drm_i915_private *i915 = to_i915(obj->base.dev);
+
+		i915->mm.phys_mem_total -= obj->base.size;
+		obj->has_backing_pages = 0;
+	}
+#endif
 }
 
 static void

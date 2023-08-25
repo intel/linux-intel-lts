@@ -87,6 +87,23 @@ config DRM_I915_COMPRESS_ERROR
 
 	  If in doubt, say "Y".
 
+config DRM_I915_MEMTRACK
+	bool "Enable shmem usage status track"
+	depends on DRM_I915_CAPTURE_ERROR
+	default y
+	help
+	  This option enables graphics shmem usage status track of
+	  system summary and each process.
+
+	  There are two files created in sysfs:
+	    'i915_gem_meminfo' will provide summary of the graphics resources used by
+	    each graphics client.
+
+	    'i915_gem_objinfo' will provide detailed view of each object created by
+	    individual clients.
+
+	  If in doubt, say "N".
+
 config DRM_I915_USERPTR
 	bool "Always enable userptr support"
 	depends on DRM_I915

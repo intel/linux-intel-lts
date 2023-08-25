@@ -61,6 +61,9 @@ i915_gem_mmap_ioctl(struct drm_device *dev, void *data,
 	struct drm_i915_gem_mmap *args = data;
 	struct drm_i915_gem_object *obj;
 	unsigned long addr;
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	int ret;
+#endif
 
 	/*
 	 * mmap ioctl is disallowed for all discrete platforms,
@@ -117,6 +120,12 @@ i915_gem_mmap_ioctl(struct drm_device *dev, void *data,
 			goto err;
 	}
 	i915_gem_object_put(obj);
+
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	ret = i915_obj_insert_virt_addr(obj, addr, false, false);
+	if (ret)
+		return ret;
+#endif
 
 	args->addr_ptr = (u64)addr;
 	return 0;
@@ -381,6 +390,9 @@ retry:
 			       (ggtt->gmadr.start + vma->node.start) >> PAGE_SHIFT,
 			       min_t(u64, vma->size, area->vm_end - area->vm_start),
 			       &ggtt->iomap);
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+	ret = i915_obj_insert_virt_addr(obj, (unsigned long)area->vm_start, true, true);
+#endif
 	if (ret)
 		goto err_fence;
 

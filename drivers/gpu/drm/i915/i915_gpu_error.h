@@ -213,6 +213,16 @@ struct drm_i915_error_state_buf {
 };
 
 #if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+void i915_error_puts(struct drm_i915_error_state_buf *e,
+		const char *str);
+bool i915_error_ok(struct drm_i915_error_state_buf *e);
+int i915_obj_state_buf_init(struct drm_i915_error_state_buf *eb,
+		size_t count);
+int i915_error_state_buf_init(struct drm_i915_error_state_buf *eb,
+		struct drm_i915_private *i915, size_t count, loff_t pos);
+void i915_error_state_buf_release(struct drm_i915_error_state_buf *eb);
+#endif
 
 __printf(2, 3)
 void i915_error_printf(struct drm_i915_error_state_buf *e, const char *f, ...);

@@ -56,6 +56,10 @@
 /* from BKL pushdown */
 DEFINE_MUTEX(drm_global_mutex);
 
+#if IS_ENABLED(CONFIG_DRM_I915_MEMTRACK)
+EXPORT_SYMBOL(drm_global_mutex);
+#endif
+
 bool drm_dev_needs_global_mutex(struct drm_device *dev)
 {
 	/*
