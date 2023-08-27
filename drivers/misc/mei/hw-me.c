@@ -593,7 +593,7 @@ static void mei_me_check_fw_reset(struct mei_device *dev)
 	if (!dev->saved_fw_status_flag)
 		goto end;
 
-	if (dev->gsc_reset_to_pxp == MEI_DEV_RESET_TO_PXP_PERFORMED) {
+	if (dev->gsc_reset_to_pxp == MEI_DEV_RESET_TO_PXP_PERFORMED || dev->forcewake_needed) {
 		ret = mei_fw_status(dev, &fw_status);
 		if (!ret) {
 			fw_pm_event = fw_status.status[1] & PCI_CFG_HFS_2_PM_EVENT_MASK;
