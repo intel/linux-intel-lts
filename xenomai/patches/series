@@ -35,17 +35,8 @@
 # CVE-2023-21106
 0001-drm-msm-gpu-Fix-potential-double-free.patch
 
-# CVE-2023-26242
-0001-fpga-dfl-afu-region-Add-overflow-checks-for-region-s.patch
+# CVE-2023-37454
+0001-KASAN-use-after-free-Write-in-udf_close_lvid.patch
 
-# CVE-2023-2898
-0001-f2fs-fix-to-avoid-NULL-pointer-dereference-f2fs_writ.patch
-
-# CVE-2022-44032
-0001-char-pcmcia-cm4000_cs-Fix-use-after-free-in-cm4000_f.patch
-
-# CVE-2022-44033
-0001-char-pcmcia-cm4040_cs-Fix-use-after-free-in-reader_f.patch
-
-# CVE-2022-44034
-0001-char-pcmcia-scr24x_cs-Fix-use-after-free-in-scr24x_f.patch
+# CVE-2023-37453
+0001-Revert-USB-core-Don-t-hold-device-lock-while-reading.patch
