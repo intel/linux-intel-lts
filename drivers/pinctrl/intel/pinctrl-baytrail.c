@@ -538,7 +538,7 @@ static const struct intel_pinctrl_soc_data *byt_soc_data[] = {
 	NULL
 };
 
-static DEFINE_RAW_SPINLOCK(byt_lock);
+static DEFINE_HARD_SPINLOCK(byt_lock);
 
 static struct intel_community *byt_get_community(struct intel_pinctrl *vg,
 						 unsigned int pin)
@@ -1577,7 +1577,8 @@ static int byt_gpio_probe(struct intel_pinctrl *vg)
 		vg->irqchip.irq_mask = byt_irq_mask,
 		vg->irqchip.irq_unmask = byt_irq_unmask,
 		vg->irqchip.irq_set_type = byt_irq_type,
-		vg->irqchip.flags = IRQCHIP_SKIP_SET_WAKE,
+		vg->irqchip.flags = IRQCHIP_SKIP_SET_WAKE |
+			IRQCHIP_PIPELINE_SAFE,
 
 		girq = &gc->irq;
 		girq->chip = &vg->irqchip;
