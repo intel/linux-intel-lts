@@ -1331,7 +1331,8 @@ static int intel_gpio_probe(struct intel_pinctrl *pctrl, int irq)
 	pctrl->irqchip.irq_unmask = intel_gpio_irq_unmask;
 	pctrl->irqchip.irq_set_type = intel_gpio_irq_type;
 	pctrl->irqchip.irq_set_wake = intel_gpio_irq_wake;
-	pctrl->irqchip.flags = IRQCHIP_MASK_ON_SUSPEND;
+	pctrl->irqchip.flags = IRQCHIP_MASK_ON_SUSPEND |
+			IRQCHIP_PIPELINE_SAFE;
 
 	/*
 	 * On some platforms several GPIO controllers share the same interrupt
