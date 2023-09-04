@@ -94,9 +94,6 @@
 0001-tun-tun_chr_open-correctly-initialize-socket-uid.patch
 0002-net-add-sock_init_data_uid.patch
 
-# CVE-2023-1077
-0001-sched-rt-pick_next_rt_entity-check-list_entry.patch
-
 # CVE-2023-1195
 0001-cifs-fix-use-after-free-caused-by-invalid-pointer-ho.patch
 
