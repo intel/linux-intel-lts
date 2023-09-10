@@ -1704,6 +1704,8 @@ __i915_request_ensure_ordering(struct i915_request *rq,
 							 &rq->dep,
 							 0);
 	}
+	if (prev)
+		i915_request_put(prev);
 
 	return prev;
 }
