@@ -715,7 +715,9 @@ static const struct avs_spec apl_desc = {
 	},
 	.dsp_ops = &apl_dsp_ops,
 	.core_init_mask = 3,
+#ifndef CONFIG_SND_SOC_INTEL_AVS_APL_ULL
 	.attributes = AVS_PLATATTR_IMR,
+#endif
 	.sram_base_offset = APL_ADSP_SRAM_BASE_OFFSET,
 	.sram_window_size = APL_ADSP_SRAM_WINDOW_SIZE,
 	.rom_status = APL_ADSP_SRAM_BASE_OFFSET,

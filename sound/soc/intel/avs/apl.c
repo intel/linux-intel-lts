@@ -197,7 +197,7 @@ static bool apl_lp_streaming(struct avs_dev *adev)
 	return true;
 }
 
-static bool apl_d0ix_toggle(struct avs_dev *adev, struct avs_ipc_msg *tx, bool wake)
+static bool __maybe_unused apl_d0ix_toggle(struct avs_dev *adev, struct avs_ipc_msg *tx, bool wake)
 {
 	/* wake in all cases */
 	if (wake)
@@ -214,7 +214,7 @@ static bool apl_d0ix_toggle(struct avs_dev *adev, struct avs_ipc_msg *tx, bool w
 	return apl_lp_streaming(adev);
 }
 
-static int apl_set_d0ix(struct avs_dev *adev, bool enable)
+static int __maybe_unused apl_set_d0ix(struct avs_dev *adev, bool enable)
 {
 	bool streaming = false;
 	int ret;
@@ -240,7 +240,13 @@ const struct avs_dsp_ops apl_dsp_ops = {
 	.log_buffer_offset = skl_log_buffer_offset,
 	.log_buffer_status = apl_log_buffer_status,
 	.coredump = apl_coredump,
+#ifdef CONFIG_SND_SOC_INTEL_AVS_APL_ULL
+	/* ULL FW doesn't support D0ix */
+	.d0ix_toggle = skl_d0ix_toggle,
+	.set_d0ix = skl_set_d0ix,
+#else
 	.d0ix_toggle = apl_d0ix_toggle,
 	.set_d0ix = apl_set_d0ix,
+#endif
 	AVS_SET_ENABLE_LOGS_OP(apl)
 };

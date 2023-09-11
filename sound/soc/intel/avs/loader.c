@@ -631,6 +631,15 @@ int avs_dsp_boot_firmware(struct avs_dev *adev, bool purge)
 	}
 	mutex_unlock(&adev->comp_list_mutex);
 
+	if (adev->sched_cfg) {
+		ret = avs_ipc_set_fw_config(adev, 1, AVS_FW_CFG_SCHEDULER_CONFIG,
+					    sizeof(*adev->sched_cfg), adev->sched_cfg);
+		if (ret) {
+			dev_err(adev->dev, "set fw sched cfg failed: %d\n", ret);
+			return AVS_IPC_RET(ret);
+		}
+	}
+
 reenable_gating:
 	avs_hda_l1sen_enable(adev, true);
 	avs_hda_clock_gating_enable(adev, true);

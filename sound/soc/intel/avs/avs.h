@@ -266,6 +266,8 @@ int avs_dsp_disable_d0ix(struct avs_dev *adev);
 int avs_dsp_enable_d0ix(struct avs_dev *adev);
 
 int skl_log_buffer_offset(struct avs_dev *adev, u32 core);
+bool skl_d0ix_toggle(struct avs_dev *adev, struct avs_ipc_msg *tx, bool wake);
+int skl_set_d0ix(struct avs_dev *adev, bool enable);
 
 /* Firmware resources management */
 

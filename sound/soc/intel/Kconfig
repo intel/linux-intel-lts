@@ -227,6 +227,15 @@ config SND_SOC_INTEL_AVS
 	  capabilities. This includes Skylake, Kabylake, Amberlake and
 	  Apollolake.
 
+config SND_SOC_INTEL_AVS_APL_ULL
+	bool "APL Ultra Low Latency configuration"
+	depends on EXPERT && SND_SOC_INTEL_AVS
+	help
+	  Changes AVS driver configuration to work with Ultra Low Latency FW
+	  for Intel(R) APL (cAVS 1.5) platforms with DSP capabilites. Unless
+	  you know that you have such device, you don't have such device, so
+	  say N as this changes behavior of AVS driver.
+
 # Machine board drivers
 source "sound/soc/intel/avs/boards/Kconfig"
 

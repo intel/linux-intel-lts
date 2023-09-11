@@ -88,14 +88,13 @@ static int skl_coredump(struct avs_dev *adev, union avs_notify_msg *msg)
 	return 0;
 }
 
-static bool
-skl_d0ix_toggle(struct avs_dev *adev, struct avs_ipc_msg *tx, bool wake)
+bool skl_d0ix_toggle(struct avs_dev *adev, struct avs_ipc_msg *tx, bool wake)
 {
 	/* unsupported on cAVS 1.5 hw */
 	return false;
 }
 
-static int skl_set_d0ix(struct avs_dev *adev, bool enable)
+int skl_set_d0ix(struct avs_dev *adev, bool enable)
 {
 	/* unsupported on cAVS 1.5 hw */
 	return 0;
