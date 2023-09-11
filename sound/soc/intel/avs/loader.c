@@ -634,10 +634,8 @@ int avs_dsp_boot_firmware(struct avs_dev *adev, bool purge)
 	if (adev->sched_cfg) {
 		ret = avs_ipc_set_fw_config(adev, 1, AVS_FW_CFG_SCHEDULER_CONFIG,
 					    sizeof(*adev->sched_cfg), adev->sched_cfg);
-		if (ret) {
-			dev_err(adev->dev, "set fw sched cfg failed: %d\n", ret);
+		if (ret)
 			return AVS_IPC_RET(ret);
-		}
 	}
 
 reenable_gating:
@@ -687,6 +685,13 @@ int avs_dsp_first_boot_firmware(struct avs_dev *adev)
 	if (ret) {
 		dev_err(adev->dev, "get fw cfg failed: %d\n", ret);
 		return AVS_IPC_RET(ret);
+	}
+
+	if (adev->sched_cfg) {
+		ret = avs_ipc_set_fw_config(adev, 1, AVS_FW_CFG_SCHEDULER_CONFIG,
+					    sizeof(*adev->sched_cfg), adev->sched_cfg);
+		if (ret)
+			return AVS_IPC_RET(ret);
 	}
 
 	adev->core_refs = devm_kcalloc(adev->dev, adev->hw_cfg.dsp_cores,
