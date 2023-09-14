@@ -116,6 +116,8 @@ static void do_sysvec_inband(struct irq_desc *desc, struct pt_regs *regs)
 	 * don't want to break.
 	 */
 
+	irq_clear_deferral(desc);
+
 	switch (vector) {
 #ifdef CONFIG_SMP
 	case RESCHEDULE_VECTOR:
@@ -174,7 +176,6 @@ static void do_sysvec_inband(struct irq_desc *desc, struct pt_regs *regs)
 
 static void do_irq_inband(struct pt_regs *regs, u32 irq)
 {
-
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	desc->handle_irq(desc);
