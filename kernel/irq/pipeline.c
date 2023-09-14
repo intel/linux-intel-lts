@@ -189,7 +189,12 @@ static struct irq_desc *irq_to_cached_desc(unsigned int irq)
  *	@desc:	the interrupt description structure for this irq
  *
  *	Handles synthetic interrupts flowing down the IRQ pipeline
- *	with per-CPU semantics.
+ *	with per-CPU semantics (accessing desc needs no locking).
+ *
+ *	Since the SIPIC cannot be stacked on top of a parent irqchip,
+ * 	we can bypass most of the IRQS_DEFERRED logic, testing
+ * 	on_pipeline_entry() directly - although we should still clear
+ * 	IRQS_DEFERRED when in-band since handle_oob_irq() raises it.
  *
  *      CAUTION: synthetic IRQs may be used to map hardware-generated
  *      events (e.g. IPIs or traps), we must start handling them as
@@ -206,6 +211,8 @@ void handle_synthetic_irq(struct irq_desc *desc)
 		handle_oob_irq(desc);
 		return;
 	}
+
+	irq_clear_deferral(desc);
 
 	action = desc->action;
 	if (action == NULL) {
@@ -966,7 +973,8 @@ static inline bool is_active_edge_event(struct irq_desc *desc)
 		!irqd_irq_disabled(&desc->irq_data);
 }
 
-bool handle_oob_irq(struct irq_desc *desc) /* hardirqs off */
+/* desc->lock held unless per-CPU, hardirqs off. */
+bool handle_oob_irq(struct irq_desc *desc)
 {
 	struct irq_stage_data *oobd = this_oob_staged();
 	unsigned int irq = irq_desc_get_irq(desc);
@@ -992,6 +1000,7 @@ bool handle_oob_irq(struct irq_desc *desc) /* hardirqs off */
 	 * whether an out-of-band interrupt was delivered.
 	 */
 	if (!oob_stage_present() || !irq_settings_is_oob(desc)) {
+		desc->istate |= IRQS_DEFERRED;
 		irq_post_stage(&inband_stage, irq);
 		return false;
 	}
