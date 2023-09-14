@@ -1210,9 +1210,12 @@ static inline struct irq_chip_type *irq_data_get_chip_type(struct irq_data *d)
 #define IRQ_MSK(n) (u32)((n) < 32 ? ((1 << (n)) - 1) : UINT_MAX)
 
 #ifdef CONFIG_IRQ_PIPELINE
-
 int irq_switch_oob(unsigned int irq, bool on);
-
+void irq_clear_deferral(struct irq_desc *desc);
+#else
+static inline void irq_clear_deferral(struct irq_desc *desc)
+{
+}
 #endif	/* !CONFIG_IRQ_PIPELINE */
 
 #ifdef CONFIG_SMP
