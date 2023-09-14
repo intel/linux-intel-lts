@@ -1226,10 +1226,15 @@ static inline struct irq_chip_type *irq_data_get_chip_type(struct irq_data *d)
 
 #ifdef CONFIG_IRQ_PIPELINE
 int irq_switch_oob(unsigned int irq, bool on);
+void irq_clear_deferral(struct irq_desc *desc);
 #else
 static inline int irq_switch_oob(unsigned int irq, bool on)
 {
 	return 0;
+}
+
+static inline void irq_clear_deferral(struct irq_desc *desc)
+{
 }
 #endif	/* !CONFIG_IRQ_PIPELINE */
 

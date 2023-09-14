@@ -639,6 +639,17 @@ void irq_init_desc(unsigned int irq)
 
 #endif /* !CONFIG_SPARSE_IRQ */
 
+static inline bool is_hardirq(struct irq_desc *desc)
+{
+	if (!irqs_pipelined())
+		return in_hardirq();
+
+	if (in_pipeline() || !(desc->istate & IRQS_DEFERRED))
+		return true;
+
+	return false;
+}
+
 int handle_irq_desc(struct irq_desc *desc)
 {
 	struct irq_data *data;
@@ -647,7 +658,7 @@ int handle_irq_desc(struct irq_desc *desc)
 		return -EINVAL;
 
 	data = irq_desc_get_irq_data(desc);
-	if (WARN_ON_ONCE(!in_hard_irq() && handle_enforce_irqctx(data)))
+	if (WARN_ON_ONCE(!is_hardirq(desc) && handle_enforce_irqctx(data)))
 		return -EPERM;
 
 	generic_handle_irq_desc(desc);
