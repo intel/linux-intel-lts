@@ -405,6 +405,101 @@ static const struct file_operations trace_control_fops = {
 	.open = simple_open,
 };
 
+static ssize_t large_config_read(struct file *file, char __user *to, size_t count, loff_t *ppos,
+				 u32 param_id)
+{
+	struct avs_dev *adev = file->private_data;
+	size_t payload_size;
+	u8 *payload;
+	int ret;
+
+	/* Prevent chaining, send and dump IPC value just once. */
+	if (*ppos)
+		return 0;
+
+	pm_runtime_get_sync(adev->dev);
+	ret = avs_ipc_get_large_config(adev, AVS_BASEFW_MOD_ID, AVS_BASEFW_INST_ID, param_id,
+				       NULL, 0, &payload, &payload_size);
+	pm_runtime_mark_last_busy(adev->dev);
+	pm_runtime_put_autosuspend(adev->dev);
+	if (ret)
+		return ret;
+	/* Non-zero payload expected. */
+	if (!payload_size)
+		return -EREMOTEIO;
+
+	ret = simple_read_from_buffer(to, count, ppos, payload, payload_size);
+
+	kfree(payload);
+	return ret;
+}
+
+static ssize_t hw_cfg_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+{
+	return large_config_read(file, to, count, ppos, AVS_BASEFW_HARDWARE_CONFIG);
+}
+
+static const struct file_operations hw_cfg_fops = {
+	.open = simple_open,
+	.read = hw_cfg_read,
+	.llseek = no_llseek,
+};
+
+static ssize_t fw_cfg_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+{
+	return large_config_read(file, to, count, ppos, AVS_BASEFW_FIRMWARE_CONFIG);
+}
+
+static const struct file_operations fw_cfg_fops = {
+	.open = simple_open,
+	.read = fw_cfg_read,
+	.llseek = no_llseek,
+};
+
+static ssize_t modules_info_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+{
+	return large_config_read(file, to, count, ppos, AVS_BASEFW_MODULES_INFO);
+}
+
+static const struct file_operations modules_info_fops = {
+	.open = simple_open,
+	.read = modules_info_read,
+	.llseek = no_llseek,
+};
+
+static ssize_t gtws_info_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+{
+	return large_config_read(file, to, count, ppos, AVS_BASEFW_GATEWAYS_INFO);
+}
+
+static const struct file_operations gtws_info_fops = {
+	.open = simple_open,
+	.read = gtws_info_read,
+	.llseek = no_llseek,
+};
+
+static ssize_t ppllist_info_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+{
+	return large_config_read(file, to, count, ppos, AVS_BASEFW_PIPELINE_LIST_INFO);
+}
+
+static const struct file_operations ppllist_info_fops = {
+	.open = simple_open,
+	.read = ppllist_info_read,
+	.llseek = no_llseek,
+};
+
+static ssize_t sched_info_read(struct file *file, char __user *to, size_t count, loff_t *ppos)
+{
+	return large_config_read(file, to, count, ppos, AVS_BASEFW_SCHEDULER_INFO);
+}
+
+static const struct file_operations sched_info_fops = {
+	.open = simple_open,
+	.read = sched_info_read,
+	.llseek = no_llseek,
+};
+
 void avs_debugfs_init(struct avs_dev *adev)
 {
 	init_waitqueue_head(&adev->trace_waitq);
@@ -429,6 +524,13 @@ void avs_debugfs_init(struct avs_dev *adev)
 	debugfs_create_file("probe_points", 0644, adev->debugfs_root, adev, &probe_points_fops);
 	debugfs_create_file("probe_points_disconnect", 0200, adev->debugfs_root, adev,
 			    &probe_points_disconnect_fops);
+
+	debugfs_create_file("hw_cfg", 0444, adev->debugfs_root, adev, &hw_cfg_fops);
+	debugfs_create_file("fw_cfg", 0444, adev->debugfs_root, adev, &fw_cfg_fops);
+	debugfs_create_file("modules_info", 0444, adev->debugfs_root, adev, &modules_info_fops);
+	debugfs_create_file("gtws_info", 0444, adev->debugfs_root, adev, &gtws_info_fops);
+	debugfs_create_file("ppllist_info", 0444, adev->debugfs_root, adev, &ppllist_info_fops);
+	debugfs_create_file("sched_info", 0444, adev->debugfs_root, adev, &sched_info_fops);
 }
 
 void avs_debugfs_exit(struct avs_dev *adev)
