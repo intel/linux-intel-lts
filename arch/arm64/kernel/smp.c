@@ -1039,7 +1039,7 @@ void __init set_smp_ipi_range(int ipi_base, int n)
 	/*
 	 * irq_pipeline: the in-band stage traps SGI0 only,
 	 * over which IPI messages are mutiplexed. Other SGIs
-	 * are available for exchanging out-of-band IPIs.
+	 * are available for delivering out-of-band IPIs.
 	 */
 	inband_nr_ipi = irqs_pipelined() ? 1 : nr_ipi;
 
