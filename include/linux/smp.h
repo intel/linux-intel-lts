@@ -285,6 +285,19 @@ static inline int get_boot_cpu_id(void)
 		raw_smp_processor_id();		\
 	})
 #define hard_put_cpu_bh(flags)	hard_bh_enable(flags)
+
+int up_oob_call(smp_call_func_t func, void *info);
+
+#ifdef CONFIG_SMP
+int smp_call_function_oob(int cpu, smp_call_func_t func, void *info, bool wait);
+void smp_flush_oob_call_function_queue(void);
+#else
+static inline int smp_call_function_oob(int cpu, smp_call_func_t func,
+					void *info, bool wait)
+{
+	return up_oob_call(func, info);
+}
+#endif /* !CONFIG_SMP */
 #else
 #define hard_get_cpu(flags)	({ (void)(flags); get_cpu(); })
 #define hard_put_cpu(flags)		\
@@ -305,6 +318,12 @@ static inline int get_boot_cpu_id(void)
 		put_cpu();		\
 		(void)(flags);		\
 	} while (0)
+
+static inline int smp_call_function_oob(int cpu, smp_call_func_t func,
+					void *info, bool wait)
+{
+	return -ENOTSUPP;
+}
 #endif
 
 /*

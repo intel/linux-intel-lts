@@ -3,22 +3,22 @@
  *
  * Copyright (C) 2017 Philippe Gerum  <rpm@xenomai.org>.
  */
-#include <linux/kernel.h>
-#include <linux/ktime.h>
-#include <linux/torture.h>
-#include <linux/printk.h>
-#include <linux/delay.h>
-#include <linux/tick.h>
-#include <linux/smp.h>
-#include <linux/cpumask.h>
 #include <linux/clockchips.h>
+#include <linux/completion.h>
+#include <linux/cpumask.h>
+#include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/irq_pipeline.h>
-#include <linux/stop_machine.h>
 #include <linux/irq_work.h>
-#include <linux/completion.h>
+#include <linux/kernel.h>
+#include <linux/ktime.h>
+#include <linux/printk.h>
 #include <linux/slab.h>
+#include <linux/smp.h>
+#include <linux/stop_machine.h>
+#include <linux/tick.h>
+#include <linux/torture.h>
 #include "settings.h"
 
 static void torture_event_handler(struct clock_event_device *dev)
@@ -70,8 +70,8 @@ static int stop_machine_handler(void *arg)
 }
 
 /*
- * We test stop_machine() as a way to validate IPI handling in a
- * pipelined interrupt context.
+ * We test stop_machine() as a way to validate IPI broadcast when irqs
+ * are pipelined.
  */
 static int test_stop_machine(void)
 {
@@ -116,6 +116,73 @@ static int test_stop_machine(void)
 	free_cpumask_var(tmp_mask);
 fail:
 	free_cpumask_var(d.disable_mask);
+
+	return ret;
+}
+
+struct call_function_p_data {
+	int origin_cpu;
+	cpumask_var_t oob_mask;
+};
+
+static void remote_function_handler(void *arg)
+{
+	struct call_function_p_data *p = arg;
+	int cpu = raw_smp_processor_id();
+
+	if (running_oob())
+		cpumask_set_cpu(cpu, p->oob_mask);
+
+	if (cpu != p->origin_cpu)
+		pr_alert("irq_pipeline" TORTURE_FLAG
+			 " CPU%d handles remote function call\n", cpu);
+}
+
+static int test_call_function_oob(void)
+{
+	struct call_function_p_data d;
+	cpumask_var_t tmp_mask;
+	int ret = -ENOMEM, cpu;
+
+	if (!zalloc_cpumask_var(&d.oob_mask, GFP_KERNEL)) {
+		WARN_ON(1);
+		return ret;
+	}
+
+	if (!alloc_cpumask_var(&tmp_mask, GFP_KERNEL)) {
+		WARN_ON(1);
+		goto fail;
+	}
+
+	ret = -EINVAL;
+	d.origin_cpu = raw_smp_processor_id();
+	pr_alert("irq_pipeline" TORTURE_FLAG
+		 " CPU%d calls function on remote(s)\n",
+		 d.origin_cpu);
+
+	for_each_cpu(cpu, cpu_online_mask) {
+		/* Issue a synchronous call to each online CPU. */
+		ret = smp_call_function_oob(cpu, remote_function_handler, &d, true);
+		WARN_ON(ret);
+		if (ret)
+			goto fail;
+	}
+
+	/*
+	 * Check whether all callback functions did run as expected on
+	 * the oob stage.
+	 */
+	cpumask_xor(tmp_mask, cpu_online_mask, d.oob_mask);
+	if (!cpumask_empty(tmp_mask)) {
+		for_each_cpu(cpu, tmp_mask)
+			pr_alert("irq_pipeline" TORTURE_FLAG
+				" CPU%d: remote function call did not run out-of-band!\n",
+				cpu);
+	}
+
+	free_cpumask_var(tmp_mask);
+fail:
+	free_cpumask_var(d.oob_mask);
 
 	return ret;
 }
@@ -234,6 +301,10 @@ static int __init irqp_torture_init(void)
 	}
 
 	ret = test_stop_machine();
+	if (ret)
+		goto out;
+
+	ret = test_call_function_oob();
 	if (ret)
 		goto out;
 
