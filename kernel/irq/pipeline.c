@@ -3,16 +3,17 @@
  *
  * Copyright (C) 2016 Philippe Gerum  <rpm@xenomai.org>.
  */
-#include <linux/kernel.h>
-#include <linux/sched.h>
-#include <linux/interrupt.h>
-#include <linux/irq.h>
-#include <linux/irqdomain.h>
-#include <linux/irq_pipeline.h>
-#include <linux/irq_work.h>
-#include <linux/jhash.h>
 #include <linux/debug_locks.h>
 #include <linux/dovetail.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/irq_pipeline.h>
+#include <linux/irq_work.h>
+#include <linux/irqdomain.h>
+#include <linux/jhash.h>
+#include <linux/kernel.h>
+#include <linux/sched.h>
+#include <linux/smp.h>
 #include <dovetail/irq.h>
 #include <trace/events/irq.h>
 #include "internals.h"
@@ -78,6 +79,16 @@ DEFINE_PER_CPU(struct irq_pipeline_data, irq_pipeline) = {
 		},
 	},
 };
+
+struct pipeline_percpu_data { };
+static DEFINE_PER_CPU(struct pipeline_percpu_data, pipeline_percpu_data);
+
+static irqreturn_t smp_call_function_ipi_handler(int irq, void *dev_id)
+{
+	smp_flush_oob_call_function_queue();
+
+	return IRQ_HANDLED;
+}
 
 #else /* !CONFIG_SMP */
 
@@ -1488,6 +1499,30 @@ out:
 }
 EXPORT_SYMBOL_GPL(run_oob_call);
 
+struct up_oob_call_tramp {
+	smp_call_func_t func;
+	void *info;
+};
+
+static int __up_oob_call(void *arg)
+{
+	struct up_oob_call_tramp *tramp = arg;
+
+	tramp->func(tramp->info);
+
+	return 0;
+}
+
+/*
+ * up_oob_call_tramp - run_oob_call() trampoline to smp function calls
+ * for uniprocessor configuration.
+ */
+int up_oob_call(smp_call_func_t func, void *info)
+{
+	struct up_oob_call_tramp tramp = { .func = func, .info = info };
+	return run_oob_call(__up_oob_call, &tramp);
+}
+
 int enable_oob_stage(const char *name)
 {
 	struct irq_event_map *map;
@@ -1790,6 +1825,19 @@ void __init irq_pipeline_init(void)
 	 * arch-specific code for enabling the pipeline.
 	 */
 	arch_irq_pipeline_init();
+
+#ifdef CONFIG_SMP
+	/*
+	 * Now that the arch-specific code has prepared for handling
+	 * the oob call function IPI, hook the latter to the generic
+	 * call queue flushing routine.
+	 */
+	if (__request_percpu_irq(CALL_FUNCTION_OOB_IPI,
+				 smp_call_function_ipi_handler,
+				 IRQF_OOB, "Out-of-band function call IPI",
+				 &pipeline_percpu_data))
+		WARN_ON(1);
+#endif
 
 	irq_pipeline_active = true;
 
