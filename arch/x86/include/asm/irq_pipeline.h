@@ -15,6 +15,7 @@
 #define FIRST_SYSTEM_IRQ	NR_IRQS
 #define TIMER_OOB_IPI		apicm_vector_irq(TIMER_OOB_VECTOR)
 #define RESCHEDULE_OOB_IPI	apicm_vector_irq(RESCHEDULE_OOB_VECTOR)
+#define CALL_FUNCTION_OOB_IPI	apicm_vector_irq(CALL_FUNCTION_OOB_VECTOR)
 #define apicm_irq_vector(__irq) ((__irq) - FIRST_SYSTEM_IRQ + FIRST_SYSTEM_VECTOR)
 #define apicm_vector_irq(__vec) ((__vec) - FIRST_SYSTEM_VECTOR + FIRST_SYSTEM_IRQ)
 
