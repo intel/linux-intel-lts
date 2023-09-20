@@ -53,13 +53,6 @@ void handle_apic_irq(struct irq_desc *desc)
 	handle_oob_irq(desc);
 }
 
-void irq_send_oob_ipi(unsigned int ipi,
-		const struct cpumask *cpumask)
-{
-	apic->send_IPI_mask_allbutself(cpumask,	apicm_irq_vector(ipi));
-}
-EXPORT_SYMBOL_GPL(irq_send_oob_ipi);
-
 static irqentry_state_t pipeline_enter_rcu(void)
 {
 	irqentry_state_t state = {
