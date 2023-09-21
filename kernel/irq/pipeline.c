@@ -490,12 +490,13 @@ EXPORT_SYMBOL_GPL(stage_disabled);
  *      though, since this is guaranteed by the implementation of
  *      test_and_lock_stage().
  */
-noinstr bool stage_disabled_flags(unsigned long irqstate)
+noinstr bool stage_disabled_flags(unsigned long irqstate, bool *stalled)
 {
 	unsigned long flags;
-	int stalled;
+	int _stalled;
 
-	flags = irqs_split_flags(irqstate, &stalled);
+	flags = irqs_split_flags(irqstate, &_stalled);
+	*stalled = _stalled;
 	return hard_irqs_disabled_flags(flags) || stalled;
 }
 EXPORT_SYMBOL_GPL(stage_disabled_flags);
