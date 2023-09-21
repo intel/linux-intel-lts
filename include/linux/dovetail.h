@@ -6,6 +6,12 @@
 #ifndef _LINUX_DOVETAIL_H
 #define _LINUX_DOVETAIL_H
 
+struct pt_regs;
+struct mm_struct;
+struct task_struct;
+struct file;
+struct files_struct;
+
 #ifdef CONFIG_DOVETAIL
 
 #include <linux/sched.h>
@@ -14,11 +20,6 @@
 #include <linux/irqstage.h>
 #include <uapi/asm-generic/dovetail.h>
 #include <asm/dovetail.h>
-
-struct pt_regs;
-struct task_struct;
-struct file;
-struct files_struct;
 
 enum inband_event_type {
 	INBAND_TASK_SIGNAL,
@@ -230,12 +231,12 @@ void replace_inband_fd(unsigned int fd, struct file *file,
 
 #else	/* !CONFIG_DOVETAIL */
 
+#include <linux/irqflags.h>
+
 #ifdef CONFIG_HAVE_DOVETAIL
 /* We may have arch-specific placeholders. */
 #include <asm/dovetail.h>
 #endif
-
-struct files_struct;
 
 #define protect_inband_mm(__flags)	\
 	do { (void)(__flags); } while (0)
