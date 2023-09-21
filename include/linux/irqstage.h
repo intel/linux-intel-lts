@@ -318,7 +318,7 @@ static __always_inline void oob_irq_restore(unsigned long x)
 
 bool stage_disabled(void);
 
-bool stage_disabled_flags(unsigned long irqstate);
+bool stage_disabled_flags(unsigned long irqstate, bool *stalled);
 
 unsigned long test_and_lock_stage(int *irqsoff);
 
@@ -367,9 +367,10 @@ static __always_inline bool stage_disabled(void)
 	return irqs_disabled();
 }
 
-static __always_inline bool stage_disabled_flags(unsigned long flags)
+static __always_inline bool stage_disabled_flags(unsigned long flags, bool *stalled)
 {
-	return irqs_disabled_flags(flags);
+	*stalled = irqs_disabled_flags(flags);
+	return *stalled;
 }
 
 static __always_inline void irq_post_inband(unsigned int irq)
