@@ -1838,14 +1838,18 @@ void __init irq_pipeline_init(void)
 
 #ifdef CONFIG_SMP
 	/*
-	 * Now that the arch-specific code has prepared for handling
-	 * the oob call function IPI, hook the latter to the generic
-	 * call queue flushing routine.
+	 * Hook the remote call IPI which smp_call_function_oob()
+	 * sends to notify remote CPUs of pending work.
+	 *
+	 * CAUTION: the base interrupt controller of a uniprocessor
+	 * machine provides no IPI: skip the operation if the hardware
+	 * cannot support multiple CPUs.
 	 */
-	if (__request_percpu_irq(CALL_FUNCTION_OOB_IPI,
-				 smp_call_function_ipi_handler,
-				 IRQF_OOB, "Out-of-band function call IPI",
-				 &pipeline_percpu_data))
+	if (num_possible_cpus() > 1 &&
+		__request_percpu_irq(CALL_FUNCTION_OOB_IPI,
+				smp_call_function_ipi_handler,
+				IRQF_OOB, "out-of-band function call IPI",
+				&pipeline_percpu_data))
 		WARN_ON(1);
 #endif
 
