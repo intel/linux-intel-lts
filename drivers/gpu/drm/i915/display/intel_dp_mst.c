@@ -160,12 +160,9 @@ static int intel_dp_mst_find_vcpi_slots_for_bpp(struct intel_encoder *encoder,
 		crtc_state->fec_enable = !intel_dp_is_uhbr(crtc_state);
 	}
 
-	// TODO: Handle pbn_div changes by adding a new MST helper
-	if (!mst_state->pbn_div) {
-		mst_state->pbn_div = drm_dp_get_vc_payload_bw(&intel_dp->mst_mgr,
-							      crtc_state->port_clock,
-							      crtc_state->lane_count);
-	}
+	mst_state->pbn_div = drm_dp_get_vc_payload_bw(&intel_dp->mst_mgr,
+						      crtc_state->port_clock,
+						      crtc_state->lane_count);
 
 	drm_dbg_kms(&i915->drm, "Looking for slots in range min bpp %d max bpp %d\n",
 		    min_bpp, max_bpp);
