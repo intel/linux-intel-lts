@@ -158,7 +158,7 @@ int __weak sock_oob_attach(struct socket *sock)
 	return 0;
 }
 
-void __weak sock_oob_detach(struct socket *sock)
+void __weak sock_oob_detach(struct sock *sk)
 {
 }
 
@@ -209,10 +209,6 @@ static inline bool sock_oob_capable(struct socket *sock)
 static inline int sock_oob_attach(struct socket *sock)
 {
 	return 0;
-}
-
-static inline void sock_oob_detach(struct socket *sock)
-{
 }
 
 static int sock_oob_bind(struct socket *sock,
@@ -753,9 +749,6 @@ EXPORT_SYMBOL(sock_alloc);
 static void __sock_release(struct socket *sock, struct inode *inode)
 {
 	const struct proto_ops *ops = READ_ONCE(sock->ops);
-
-	if (sock_oob_capable(sock))
-		sock_oob_detach(sock);
 
 	if (ops) {
 		struct module *owner = ops->owner;
