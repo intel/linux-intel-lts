@@ -1864,6 +1864,17 @@ void sock_pfree(struct sk_buff *skb);
 #define sock_edemux sock_efree
 #endif
 
+#ifdef CONFIG_NET_OOB
+static inline void sock_oob_destruct(struct sock *sk)
+{
+	void sock_oob_detach(struct sock *sk);
+	if (sk->oob_data)
+		sock_oob_detach(sk);
+}
+#else
+static inline void sock_oob_destruct(struct sock *sk) { }
+#endif
+
 int sk_setsockopt(struct sock *sk, int level, int optname,
 		  sockptr_t optval, unsigned int optlen);
 int sock_setsockopt(struct socket *sock, int level, int op,
