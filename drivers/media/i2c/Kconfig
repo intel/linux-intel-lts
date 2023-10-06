@@ -606,7 +606,7 @@ config VIDEO_THS8200
 endmenu
 
 menu "Video improvement chips"
-	visible if !MEDIA_HIDE_ANCILLARY_SUBDRV
+    visible if !MEDIA_HIDE_ANCILLARY_SUBDRV
 
 config VIDEO_UPD64031A
 	tristate "NEC Electronics uPD64031A Ghost Reduction"
@@ -715,6 +715,14 @@ config VIDEO_ST_MIPID02
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called st-mipid02.
+
+config VIDEO_TI964
+	tristate "TI964 driver support"
+	depends on I2C && VIDEO_V4L2
+    depends on GPIOLIB
+	help
+	    This is a driver for TI964 camera.
+
 endmenu
 
 #
@@ -1379,6 +1387,7 @@ config VIDEO_S5K5BAF
 
 source "drivers/media/i2c/ccs/Kconfig"
 source "drivers/media/i2c/et8ek8/Kconfig"
+source "drivers/media/i2c/crlmodule/Kconfig"
 
 config VIDEO_S5C73M3
 	tristate "Samsung S5C73M3 sensor support"
@@ -1389,6 +1398,13 @@ config VIDEO_S5C73M3
 	help
 	  This is a V4L2 sensor driver for Samsung S5C73M3
 	  8 Mpixel camera.
+
+config VIDEO_TI960
+	tristate "TI960 driver support"
+	depends on I2C && VIDEO_V4L2
+    depends on GPIOLIB
+	help
+	  This is a driver for TI960 Deserializer.
 
 endmenu
 

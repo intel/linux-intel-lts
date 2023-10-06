@@ -563,6 +563,8 @@ int v4l2_pipeline_link_notify(struct media_link *link, u32 flags,
 	int sink_use;
 	int ret = 0;
 
+	source->start = link->source;
+	sink->start = link->sink;
 	source_use = pipeline_pm_use_count(source, graph);
 	sink_use = pipeline_pm_use_count(sink, graph);
 
@@ -571,6 +573,8 @@ int v4l2_pipeline_link_notify(struct media_link *link, u32 flags,
 		/* Powering off entities is assumed to never fail. */
 		pipeline_pm_power(source, -sink_use, graph);
 		pipeline_pm_power(sink, -source_use, graph);
+		source->use_count = 0;
+		sink->use_count = 0;
 		return 0;
 	}
 

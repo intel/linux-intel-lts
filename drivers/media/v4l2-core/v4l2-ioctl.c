@@ -282,7 +282,7 @@ static void v4l_print_format(const void *arg, bool write_only)
 	const struct v4l2_meta_format *meta;
 	u32 pixelformat;
 	u32 planes;
-	unsigned i;
+	unsigned int i;
 
 	pr_cont("type=%s", prt_names(p->type, v4l2_type_names));
 	switch (p->type) {
@@ -1019,7 +1019,7 @@ static void v4l_sanitize_format(struct v4l2_format *fmt)
 	/*
 	 * The v4l2_pix_format structure has been extended with fields that were
 	 * not previously required to be set to zero by applications. The priv
-	 * field, when set to a magic value, indicates the the extended fields
+	 * field, when set to a magic value, indicates the extended fields
 	 * are valid. Otherwise they will contain undefined values. To simplify
 	 * the API towards drivers zero the extended fields and set the priv
 	 * field to the magic value when the extended pixel format structure
@@ -1204,7 +1204,7 @@ static int v4l_enumoutput(const struct v4l2_ioctl_ops *ops,
 
 static void v4l_fill_fmtdesc(struct v4l2_fmtdesc *fmt)
 {
-	const unsigned sz = sizeof(fmt->description);
+	const unsigned int sz = sizeof(fmt->description);
 	const char *descr = NULL;
 	u32 flags = 0;
 
@@ -3090,6 +3090,22 @@ static int check_array_args(unsigned int cmd, void *parg, size_t *array_size,
 		ret = 1;
 		break;
 	}
+	case VIDIOC_SUBDEV_G_ROUTING:
+	case VIDIOC_SUBDEV_S_ROUTING: {
+		struct v4l2_subdev_routing *route = parg;
+
+		if (route->num_routes > 0) {
+			if (route->num_routes > 256)
+				return -EINVAL;
+
+			*user_ptr = (void __user *)route->routes;
+			*kernel_ptr = (void *)&route->routes;
+			*array_size = sizeof(struct v4l2_subdev_route)
+				    * route->num_routes;
+			ret = 1;
+		}
+		break;
+	}
 	}
 
 	return ret;
@@ -3286,7 +3302,7 @@ video_usercopy(struct file *file, unsigned int orig_cmd, unsigned long arg,
 		} else {
 			/* too big to allocate from stack */
 			mbuf = kmalloc(ioc_size, GFP_KERNEL);
-			if (NULL == mbuf)
+			if (mbuf == NULL)
 				return -ENOMEM;
 			parg = mbuf;
 		}

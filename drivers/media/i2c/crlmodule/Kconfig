@@ -1,0 +1,9 @@
+config VIDEO_CRLMODULE
+	tristate "CRL Module sensor support"
+	depends on I2C
+    depends on VIDEO_V4L2
+    depends on VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+    select V4L2_ASYNC
+	help
+	  This is a generic driver for CRL based camera modules.

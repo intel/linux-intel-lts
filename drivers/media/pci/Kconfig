@@ -18,6 +18,7 @@ source "drivers/media/pci/sta2x11/Kconfig"
 source "drivers/media/pci/tw5864/Kconfig"
 source "drivers/media/pci/tw68/Kconfig"
 source "drivers/media/pci/tw686x/Kconfig"
+source "drivers/media/pci/intel/Kconfig"
 endif
 
 if MEDIA_ANALOG_TV_SUPPORT

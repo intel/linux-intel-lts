@@ -16,7 +16,7 @@
 
 #include "virtio_pci_common.h"
 
-static bool force_legacy = false;
+static bool force_legacy;
 
 #if IS_ENABLED(CONFIG_VIRTIO_PCI_LEGACY)
 module_param(force_legacy, bool, 0444);
@@ -492,6 +492,35 @@ static const struct dev_pm_ops virtio_pci_pm_ops = {
 /* Qumranet donated their vendor ID for devices 0x1000 thru 0x10FF. */
 static const struct pci_device_id virtio_pci_id_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_REDHAT_QUMRANET, PCI_ANY_ID) },
+#ifdef CONFIG_ACRN_VIRTIO_DEVICES
+	/*
+	 * To support ACRN virtio devices which haven't obtained valid
+	 * virtio VID:DID in time, we relax the probing conditions a little.
+	 */
+#define ACRN_VIRTIO_DEVICE_ID_RPMB 0x8601
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_RPMB) },
+
+#define ACRN_VIRTIO_DEVICE_ID_HECI 0x8602
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_HECI) },
+
+#define ACRN_VIRTIO_DEVICE_ID_AUDIO 0x8603
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_AUDIO) },
+
+#define ACRN_VIRTIO_DEVICE_ID_IPU 0x8604
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_IPU) },
+
+#define ACRN_VIRTIO_DEVICE_ID_TSN 0x8605
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_TSN) },
+
+#define ACRN_VIRTIO_DEVICE_ID_HYPERDMABUF 0x8606
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_HYPERDMABUF) },
+
+#define ACRN_VIRTIO_DEVICE_ID_HDCP 0x8607
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_HDCP) },
+
+#define ACRN_VIRTIO_DEVICE_ID_COREU 0x8608
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, ACRN_VIRTIO_DEVICE_ID_COREU) },
+#endif /* CONFIG_ACRN_VIRTIO_DEVICES */
 	{ 0 }
 };
 

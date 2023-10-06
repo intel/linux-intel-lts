@@ -776,6 +776,38 @@ static int put_v4l2_event32(struct v4l2_event *p64,
 	return 0;
 }
 
+struct v4l2_subdev_routing32 {
+	compat_caddr_t routes;
+	__u32 num_routes;
+	__u32 reserved[5];
+};
+
+static int get_v4l2_subdev_routing32(struct v4l2_subdev_routing __user *p64,
+				   struct v4l2_subdev_routing32 __user *p32)
+{
+	compat_caddr_t tmp;
+
+    if (get_user(tmp, &p32->routes) ||
+	get_user(p64->num_routes, &p32->num_routes) ||
+	copy_from_user(&p64->reserved, &p32->reserved, sizeof(p64->reserved)))
+	return -EFAULT;
+    p64->routes = (void __force *)compat_ptr(tmp);
+
+	return 0;
+}
+
+static int put_v4l2_subdev_routing32(struct v4l2_subdev_routing __user *p64,
+				   struct v4l2_subdev_routing32 __user *p32)
+{
+    if (put_user((uintptr_t)p64->routes, &p32->routes) ||
+	put_user(p64->num_routes, &p32->num_routes) ||
+	copy_to_user(&p32->reserved, &p64->reserved, sizeof(p64->reserved))) {
+	return -EFAULT;
+    }
+
+	return 0;
+}
+
 #endif
 
 #ifdef CONFIG_COMPAT_32BIT_TIME
@@ -848,8 +880,8 @@ static int put_v4l2_edid32(struct v4l2_edid *p64,
 #define VIDIOC_G_FMT32		_IOWR('V',  4, struct v4l2_format32)
 #define VIDIOC_S_FMT32		_IOWR('V',  5, struct v4l2_format32)
 #define VIDIOC_QUERYBUF32	_IOWR('V',  9, struct v4l2_buffer32)
-#define VIDIOC_G_FBUF32		_IOR ('V', 10, struct v4l2_framebuffer32)
-#define VIDIOC_S_FBUF32		_IOW ('V', 11, struct v4l2_framebuffer32)
+#define VIDIOC_G_FBUF32		_IOR('V', 10, struct v4l2_framebuffer32)
+#define VIDIOC_S_FBUF32		_IOW('V', 11, struct v4l2_framebuffer32)
 #define VIDIOC_QBUF32		_IOWR('V', 15, struct v4l2_buffer32)
 #define VIDIOC_DQBUF32		_IOWR('V', 17, struct v4l2_buffer32)
 #define VIDIOC_ENUMSTD32	_IOWR('V', 25, struct v4l2_standard32)
@@ -860,7 +892,7 @@ static int put_v4l2_edid32(struct v4l2_edid *p64,
 #define VIDIOC_G_EXT_CTRLS32    _IOWR('V', 71, struct v4l2_ext_controls32)
 #define VIDIOC_S_EXT_CTRLS32    _IOWR('V', 72, struct v4l2_ext_controls32)
 #define VIDIOC_TRY_EXT_CTRLS32  _IOWR('V', 73, struct v4l2_ext_controls32)
-#define	VIDIOC_DQEVENT32	_IOR ('V', 89, struct v4l2_event32)
+#define	VIDIOC_DQEVENT32	_IOR('V', 89, struct v4l2_event32)
 #define VIDIOC_CREATE_BUFS32	_IOWR('V', 92, struct v4l2_create_buffers32)
 #define VIDIOC_PREPARE_BUF32	_IOWR('V', 93, struct v4l2_buffer32)
 
@@ -868,9 +900,18 @@ static int put_v4l2_edid32(struct v4l2_edid *p64,
 #define VIDIOC_QUERYBUF32_TIME32	_IOWR('V',  9, struct v4l2_buffer32_time32)
 #define VIDIOC_QBUF32_TIME32		_IOWR('V', 15, struct v4l2_buffer32_time32)
 #define VIDIOC_DQBUF32_TIME32		_IOWR('V', 17, struct v4l2_buffer32_time32)
-#define	VIDIOC_DQEVENT32_TIME32		_IOR ('V', 89, struct v4l2_event32_time32)
+#define	VIDIOC_DQEVENT32_TIME32		_IOR('V', 89, struct v4l2_event32_time32)
 #define VIDIOC_PREPARE_BUF32_TIME32	_IOWR('V', 93, struct v4l2_buffer32_time32)
 #endif
+#define VIDIOC_OVERLAY32	_IOW('V', 14, s32)
+#define VIDIOC_STREAMON32	_IOW('V', 18, s32)
+#define VIDIOC_STREAMOFF32	_IOW('V', 19, s32)
+#define VIDIOC_G_INPUT32	_IOR('V', 38, s32)
+#define VIDIOC_S_INPUT32	_IOWR('V', 39, s32)
+#define VIDIOC_SUBDEV_G_ROUTING32 _IOWR('V', 38, struct v4l2_subdev_routing32)
+#define VIDIOC_SUBDEV_S_ROUTING32 _IOWR('V', 39, struct v4l2_subdev_routing32)
+#define VIDIOC_G_OUTPUT32	_IOR('V', 46, s32)
+#define VIDIOC_S_OUTPUT32	_IOWR('V', 47, s32)
 
 unsigned int v4l2_compat_translate_cmd(unsigned int cmd)
 {
@@ -895,6 +936,24 @@ unsigned int v4l2_compat_translate_cmd(unsigned int cmd)
 	case VIDIOC_PREPARE_BUF32_TIME32:
 		return VIDIOC_PREPARE_BUF;
 #endif
+    case VIDIOC_G_INPUT32:
+	return VIDIOC_G_INPUT;
+    case VIDIOC_S_INPUT32:
+	return VIDIOC_S_INPUT;
+    case VIDIOC_G_OUTPUT32:
+	return VIDIOC_G_OUTPUT;
+    case VIDIOC_S_OUTPUT32:
+	return VIDIOC_S_OUTPUT;
+    case VIDIOC_OVERLAY32:
+	return VIDIOC_OVERLAY;
+    case VIDIOC_STREAMON32:
+	return VIDIOC_STREAMON;
+    case VIDIOC_STREAMOFF32:
+	return VIDIOC_STREAMOFF;
+    case VIDIOC_SUBDEV_G_ROUTING32:
+	return VIDIOC_SUBDEV_G_ROUTING;
+    case VIDIOC_SUBDEV_S_ROUTING32:
+	return VIDIOC_SUBDEV_S_ROUTING;
 	case VIDIOC_QUERYBUF32:
 		return VIDIOC_QUERYBUF;
 	case VIDIOC_QBUF32:
@@ -971,6 +1030,10 @@ int v4l2_compat_get_user(void __user *arg, void *parg, unsigned int cmd)
 	case VIDIOC_G_EDID32:
 	case VIDIOC_S_EDID32:
 		return get_v4l2_edid32(parg, arg);
+
+	case VIDIOC_SUBDEV_G_ROUTING32:
+	case VIDIOC_SUBDEV_S_ROUTING32:
+	return get_v4l2_subdev_routing32(parg, arg);
 	}
 	return 0;
 }
@@ -1023,6 +1086,9 @@ int v4l2_compat_put_user(void __user *arg, void *parg, unsigned int cmd)
 	case VIDIOC_DQEVENT32_TIME32:
 		return put_v4l2_event32_time32(parg, arg);
 #endif
+	case VIDIOC_SUBDEV_G_ROUTING32:
+	case VIDIOC_SUBDEV_S_ROUTING32:
+	return put_v4l2_subdev_routing32(parg, arg);
 	}
 	return 0;
 }
@@ -1056,9 +1122,9 @@ int v4l2_compat_get_array_args(struct file *file, void *mbuf,
 			c64->next = NULL;
 			c64++;
 			c32++;
-		}
-		break;
 	}
+	break;
+    }
 #ifdef CONFIG_COMPAT_32BIT_TIME
 	case VIDIOC_QUERYBUF32_TIME32:
 	case VIDIOC_QBUF32_TIME32:
