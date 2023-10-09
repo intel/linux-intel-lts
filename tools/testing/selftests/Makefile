@@ -53,6 +53,7 @@ TARGETS += pstore
 TARGETS += ptp
 TARGETS += ptrace
 TARGETS += openat2
+TARGETS += resctrl
 TARGETS += rlimits
 TARGETS += rseq
 TARGETS += rtc
