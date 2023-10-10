@@ -46,3 +46,6 @@
 0002-ixgbevf-Rename-MSGTYPE-to-SUCCESS-and-FAILURE.patch
 0003-ixgbe-add-improvement-for-MDD-response-functionality.patch
 0004-ixgbe-add-the-ability-for-the-PF-to-disable-VF-link-.patch
+
+# CVE-2023-31083
+0001-Bluetooth-hci_ldisc-check-HCI_UART_PROTO_READY-flag-.patch
