@@ -7,11 +7,11 @@
 # CVE-2023-28464
 0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
 
-# CVE-2023-2898
-0001-f2fs-fix-to-avoid-NULL-pointer-dereference-f2fs_writ.patch
-
 # CVE-2023-37454
 0001-KASAN-use-after-free-Write-in-udf_close_lvid.patch
 
 # CVE-2023-37453
 0001-Revert-USB-core-Don-t-hold-device-lock-while-reading.patch
+
+# CVE-2022-45885
+0001-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
