@@ -52,3 +52,6 @@
 
 # CVE-2023-5197
 0001-netfilter-nf_tables-disallow-rule-removal-from-chain.patch
+
+# CVE-2023-25775
+0001-RDMA-irdma-Prevent-zero-length-STAG-registration.patch
