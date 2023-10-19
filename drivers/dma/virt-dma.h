@@ -30,7 +30,7 @@ struct virt_dma_chan {
 	struct virt_dma_lockops *lock_ops;
 	union {
 		spinlock_t lock;
-		hard_spinlock_t oob_lock;
+		hybrid_spinlock_t oob_lock;
 	};
 #else
 	spinlock_t lock;
@@ -201,6 +201,11 @@ static inline bool vchan_issue_pending(struct virt_dma_chan *vc)
  * @vd: virtual descriptor to update
  *
  * vc.lock must be held by caller
+ *
+ * irq_pipeline: calling with hard irqs off is ok as long as we are
+ * running in-band from an interrupt context (i.e. in_interrupt()
+ * yields true), so that there is no attempt to wake up softirqd until
+ * the interrupt frame unwinds.
  */
 static inline void vchan_cookie_complete(struct virt_dma_desc *vd)
 {
