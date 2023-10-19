@@ -497,6 +497,7 @@ static inline bool is_base_irq_handler(void)
 
 static irqreturn_t bcm2835_dma_callback(int irq, void *data)
 {
+	irqreturn_t ret = IRQ_HANDLED;
 	struct bcm2835_chan *c = data;
 	struct bcm2835_desc *d;
 	unsigned long flags;
@@ -510,8 +511,12 @@ static irqreturn_t bcm2835_dma_callback(int irq, void *data)
 			return IRQ_NONE;
 	}
 
-	/* CAUTION: If running in-band, hard irqs are on. */
-	vchan_lock_irqsave(&c->vc, flags);
+	/*
+	 * Hybrid locking of oob-enabled vchans ensures that hard IRQ
+	 * are disabled across the locked section, including from the
+	 * in-band stage.
+	 */
+	vchan_lock(&c->vc);
 
 	/*
 	 * Clear the INT flag to receive further interrupts. Keep the channel
@@ -534,15 +539,14 @@ static irqreturn_t bcm2835_dma_callback(int irq, void *data)
 		 * stage, schedule a callback from in-band context.
 		 */
 		if (!do_channel(c, d))
-			irq_post_inband(irq);
+			ret = IRQ_FORWARD;
 	} else {
 		do_channel(c, d);
 	}
-
 out:
-	vchan_unlock_irqrestore(&c->vc, flags);
+	vchan_unlock(&c->vc);
 
-	return IRQ_HANDLED;
+	return ret;
 }
 
 static int bcm2835_dma_alloc_chan_resources(struct dma_chan *chan)
