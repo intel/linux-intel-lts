@@ -984,7 +984,7 @@ static unsigned long sdma_do_channels(struct sdma_engine *sdma,
 		__clear_bit(channel, &mask);
 	}
 
-	return stat;
+	return stat;	/* => channels pending in-band handling. */
 }
 
 static irqreturn_t sdma_int_handler(int irq, void *dev_id)
@@ -1008,17 +1008,21 @@ static irqreturn_t sdma_int_handler(int irq, void *dev_id)
 			sdma->pending_stat |= stat;
 			raw_spin_unlock(&sdma->oob_lock);
 			/* Call us back from in-band context. */
-			irq_post_inband(irq);
+			return IRQ_FORWARD;
 		}
-		return IRQ_HANDLED;
+	} else {
+		/* In-band IRQ context: stalled, but hard irqs are on. */
+		raw_spin_lock_irqsave(&sdma->oob_lock, flags);
+		stat = sdma->pending_stat;
+		sdma->pending_stat = 0;
+		raw_spin_unlock_irqrestore(&sdma->oob_lock, flags);
+		/*
+		 * Hybrid locking of oob-enabled vchans ensures that
+		 * hard IRQ are disabled across the locked section,
+		 * including from the in-band stage.
+		 */
+		sdma_do_channels(sdma, stat);
 	}
-
-	/* In-band IRQ context: stalled, but hard irqs are on. */
-	raw_spin_lock_irqsave(&sdma->oob_lock, flags);
-	stat = sdma->pending_stat;
-	sdma->pending_stat = 0;
-	raw_spin_unlock_irqrestore(&sdma->oob_lock, flags);
-	sdma_do_channels(sdma, stat);
 #else
 	stat = readl_relaxed(sdma->regs + SDMA_H_INTR);
 	writel_relaxed(stat, sdma->regs + SDMA_H_INTR);
