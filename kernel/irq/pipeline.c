@@ -178,7 +178,11 @@ void handle_synthetic_irq(struct irq_desc *desc)
 		return;
 	}
 
-	irq_clear_deferral(desc);
+	if (desc->istate & IRQS_DEFERRED)
+		irq_clear_deferral(desc);
+
+	if (desc->istate & IRQS_FORWARDED)
+		irq_clear_forward(desc);
 
 	action = desc->action;
 	if (action == NULL) {
@@ -854,8 +858,8 @@ static void handle_unexpected_irq(struct irq_desc *desc, irqreturn_t ret)
 	 * detection logic is as follows:
 	 *
 	 * - check and complain about any bogus return value from a
-	 * out-of-band IRQ handler: we only allow IRQ_HANDLED and
-	 * IRQ_NONE from those routines.
+	 * out-of-band IRQ handler: we only allow IRQ_HANDLED,
+	 * IRQ_FORWARD or IRQ_NONE from those routines.
 	 *
 	 * - filter out spurious IRQs which may have been due to bus
 	 * asynchronicity, those tend to happen infrequently and
@@ -944,10 +948,19 @@ static void do_oob_irq(struct irq_desc *desc)
 		raw_spin_lock(&desc->lock);
 		irqd_clear(&desc->irq_data, IRQD_IRQ_INPROGRESS);
 	}
+	/*
+	 * The oob handler might request to forward the event
+	 * downstream to the in-band stage. Post the event to the
+	 * in-band log, marking the descriptor accordingly if so.
+	 */
+	if (ret & IRQ_FORWARD) {
+		irq_post_stage(&inband_stage, irq);
+		desc->istate |= IRQS_FORWARDED;
+	}
 done:
 	incr_irq_kstat(desc);
 
-	if (likely(ret & IRQ_HANDLED)) {
+	if (likely(ret & (IRQ_HANDLED|IRQ_FORWARD))) {
 		desc->irqs_unhandled = 0;
 		return;
 	}
