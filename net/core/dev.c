@@ -5095,9 +5095,6 @@ static bool netif_receive_oob_list(struct list_head *head)
 	struct sk_buff *skb, *next;
 	struct net_device *dev;
 
-	if (list_empty(head))
-		return false;
-
 	dev = list_first_entry(head, struct sk_buff, list)->dev;
 	if (!dev || !netif_oob_diversion(dev))
 		return false;
@@ -5920,9 +5917,9 @@ void netif_receive_skb_list(struct list_head *head)
 {
 	struct sk_buff *skb;
 
-	if (netif_receive_oob_list(head))
-		return;
 	if (list_empty(head))
+		return;
+	if (netif_receive_oob_list(head))
 		return;
 	if (trace_netif_receive_skb_list_entry_enabled()) {
 		list_for_each_entry(skb, head, list)
