@@ -1,0 +1,62 @@
+From 08f82a28ee1ff0f7df09e7ec7273cd1e936ad2f0 Mon Sep 17 00:00:00 2001
+From: Will Deacon <will@kernel.org>
+Date: Tue, 17 Oct 2023 14:25:40 +0000
+Subject: [PATCH] KVM: arm64: Prevent unconditional donation of unmapped
+ regions from the host
+
+Since host stage-2 mappings are created lazily, we cannot rely solely on
+the pte in order to recover the target physical address when checking a
+host-initiated memory transition as this permits donation of unmapped
+regions corresponding to MMIO or "no-map" memory.
+
+Instead of inspecting the pte, move the addr_is_allowed_memory() check
+into the host callback function where it is passed the physical address
+directly from the walker.
+
+Cc: Quentin Perret <qperret@google.com>
+Fixes: e82edcc75c4e ("KVM: arm64: Implement do_share() helper for sharing memory")
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Link: https://lore.kernel.org/r/20230518095844.1178-1-will@kernel.org
+---
+ arch/arm64/kvm/hyp/nvhe/mem_protect.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/kvm/hyp/nvhe/mem_protect.c b/arch/arm64/kvm/hyp/nvhe/mem_protect.c
+index 07f9dc9848ef..b361e1669ebd 100644
+--- a/arch/arm64/kvm/hyp/nvhe/mem_protect.c
++++ b/arch/arm64/kvm/hyp/nvhe/mem_protect.c
+@@ -414,7 +414,7 @@ struct pkvm_mem_share {
+ 
+ struct check_walk_data {
+ 	enum pkvm_page_state	desired;
+-	enum pkvm_page_state	(*get_page_state)(kvm_pte_t pte);
++	enum pkvm_page_state	(*get_page_state)(kvm_pte_t pte, u64 addr);
+ };
+ 
+ static int __check_page_state_visitor(u64 addr, u64 end, u32 level,
+@@ -443,8 +443,11 @@ static int check_page_state_range(struct kvm_pgtable *pgt, u64 addr, u64 size,
+ 	return kvm_pgtable_walk(pgt, addr, size, &walker);
+ }
+ 
+-static enum pkvm_page_state host_get_page_state(kvm_pte_t pte)
++static enum pkvm_page_state host_get_page_state(kvm_pte_t pte, u64 addr)
+ {
++	if (!addr_is_allowed_memory(addr))
++		return PKVM_NOPAGE;
++
+ 	if (!kvm_pte_valid(pte) && pte)
+ 		return PKVM_NOPAGE;
+ 
+@@ -511,7 +514,7 @@ static int host_initiate_unshare(u64 *completer_addr,
+ 	return __host_set_page_state_range(addr, size, PKVM_PAGE_OWNED);
+ }
+ 
+-static enum pkvm_page_state hyp_get_page_state(kvm_pte_t pte)
++static enum pkvm_page_state hyp_get_page_state(kvm_pte_t pte, u64 addr)
+ {
+ 	if (!kvm_pte_valid(pte))
+ 		return PKVM_NOPAGE;
+-- 
+2.25.1
+
