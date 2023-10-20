@@ -167,6 +167,11 @@ int __weak sock_oob_bind(struct socket *sock, struct sockaddr *addr, int len)
 	return 0;
 }
 
+int __weak sock_oob_connect(struct socket *sock, struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
 long __weak sock_inband_ioctl_redirect(struct socket *sock,
 				unsigned int cmd, unsigned long arg)
 {
@@ -211,8 +216,14 @@ static inline int sock_oob_attach(struct socket *sock)
 	return 0;
 }
 
-static int sock_oob_bind(struct socket *sock,
-			struct sockaddr *addr, int len)
+static inline int sock_oob_bind(struct socket *sock,
+				struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+static inline int sock_oob_connect(struct socket *sock,
+				struct sockaddr *addr, int len)
 {
 	return 0;
 }
@@ -2154,6 +2165,13 @@ int __sys_connect_file(struct file *file, struct sockaddr_storage *address,
 	    security_socket_connect(sock, (struct sockaddr *)address, addrlen);
 	if (err)
 		goto out;
+
+	if (sock_oob_capable(sock)) {
+		err = sock_oob_connect(sock, (struct sockaddr *)address,
+				addrlen);
+		if (err)
+			goto out;
+	}
 
 	err = READ_ONCE(sock->ops)->connect(sock, (struct sockaddr *)address,
 				addrlen, sock->file->f_flags | file_flags);
