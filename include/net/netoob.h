@@ -2,6 +2,7 @@
 #ifndef _NET_OOBNET_H
 #define _NET_OOBNET_H
 
+#include <dovetail/net.h>
 #include <dovetail/netdevice.h>
 
 /* Device supports direct out-of-band operations (RX & TX) */
@@ -9,6 +10,7 @@
 /* Device is an out-of-band port */
 #define IFF_OOB_PORT		BIT(1)
 
+/* Netdevice context extension for oob handling. */
 struct oob_netdev_context {
 	int flags;
 	struct oob_netdev_state dev_state;
