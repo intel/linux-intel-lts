@@ -2972,6 +2972,24 @@ intel_dp_sink_set_dsc_decompression(struct intel_connector *connector,
 			    str_enable_disable(enable));
 }
 
+static void
+intel_dp_sink_set_dsc_passthrough(const struct intel_connector *connector,
+				  bool enable)
+{
+	struct drm_i915_private *i915 = to_i915(connector->base.dev);
+	struct drm_dp_aux *aux = connector->port ?
+				 connector->port->passthrough_aux : NULL;
+
+	if (!aux)
+		return;
+
+	if (write_dsc_decompression_flag(aux,
+					 DP_DSC_PASSTHROUGH_EN, enable) < 0)
+		drm_dbg_kms(&i915->drm,
+			    "Failed to %s sink compression passthrough state\n",
+			    str_enable_disable(enable));
+}
+
 /**
  * intel_dp_sink_enable_decompression - Enable DSC decompression in sink/last branch device
  * @state: atomic state
@@ -2998,7 +3016,7 @@ void intel_dp_sink_enable_decompression(struct intel_atomic_state *state,
 			!connector->dp.dsc_decompression_aux))
 		return;
 
-	/* TODO: Enable passthrough in the MST last branch device if needed. */
+	intel_dp_sink_set_dsc_passthrough(connector, true);
 	intel_dp_sink_set_dsc_decompression(connector, true);
 }
 
@@ -3026,7 +3044,7 @@ void intel_dp_sink_disable_decompression(struct intel_atomic_state *state,
 		return;
 
 	intel_dp_sink_set_dsc_decompression(connector, false);
-	/* TODO: Disable passthrough in the MST last branch device if needed. */
+	intel_dp_sink_set_dsc_passthrough(connector, false);
 }
 
 static void
