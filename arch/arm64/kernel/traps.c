@@ -456,29 +456,32 @@ void do_el0_undef(struct pt_regs *regs, unsigned long esr)
 {
 	u32 insn;
 
+	mark_trap_entry(ARM64_TRAP_UNDI, regs);
+
 	/*
 	 * If the companion core did not switched us to in-band
 	 * context, we may assume that it has handled the trap.
 	 */
 	if (running_oob())
-		return;
+		goto out_exit;
 
 	/* check for AArch32 breakpoint instructions */
 	if (!aarch32_break_handler(regs))
-		return;
+		goto out_exit;
 
 	if (user_insn_read(regs, &insn))
 		goto out_err;
 
 	if (try_emulate_mrs(regs, insn))
-		return;
+		goto out_exit;
 
 	if (try_emulate_armv8_deprecated(regs, insn))
-		return;
+		goto out_exit;
 
 out_err:
-	mark_trap_entry(ARM64_TRAP_UNDI, regs);
 	force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
+
+out_exit:
 	mark_trap_exit(ARM64_TRAP_UNDI, regs);
 }
 
