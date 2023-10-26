@@ -2251,7 +2251,7 @@ static int hns3_nic_net_set_mac_address(struct net_device *netdev, void *p)
 		return ret;
 	}
 
-	ether_addr_copy(netdev->dev_addr, mac_addr->sa_data);
+	eth_hw_addr_set(netdev, mac_addr->sa_data);
 
 	return 0;
 }
@@ -3118,8 +3118,6 @@ static void hns3_set_default_feature(struct net_device *netdev)
 
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 
-	netdev->gso_partial_features |= NETIF_F_GSO_GRE_CSUM;
-
 	netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER |
 		NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX |
 		NETIF_F_RXCSUM | NETIF_F_SG | NETIF_F_GSO |
@@ -3158,6 +3156,15 @@ static void hns3_set_default_feature(struct net_device *netdev)
 		  NETIF_F_HW_TC);
 
 	netdev->hw_enc_features |= netdev->vlan_features | NETIF_F_TSO_MANGLEID;
+
+	/* The device_version V3 hardware can't offload the checksum for IP in
+	 * GRE packets, but can do it for NvGRE. So default to disable the
+	 * checksum and GSO offload for GRE.
+	 */
+	if (ae_dev->dev_version > HNAE3_DEVICE_VERSION_V2) {
+		netdev->features &= ~NETIF_F_GSO_GRE;
+		netdev->features &= ~NETIF_F_GSO_GRE_CSUM;
+	}
 }
 
 static int hns3_alloc_buffer(struct hns3_enet_ring *ring,
@@ -4921,7 +4928,7 @@ static int hns3_init_mac_addr(struct net_device *netdev)
 		dev_warn(priv->dev, "using random MAC address %s\n",
 			 format_mac_addr);
 	} else if (!ether_addr_equal(netdev->dev_addr, mac_addr_temp)) {
-		ether_addr_copy(netdev->dev_addr, mac_addr_temp);
+		eth_hw_addr_set(netdev, mac_addr_temp);
 		ether_addr_copy(netdev->perm_addr, mac_addr_temp);
 	} else {
 		return 0;

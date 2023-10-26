@@ -122,6 +122,12 @@
   ioc_lookup_icq
   percpu_counter_add_batch
 
+#required by mq-deadline module
+  blk_mq_debugfs_rq_show
+  seq_list_start
+  seq_list_next
+  __blk_mq_debugfs_rq_show
+
 #required by cs35l41 module
   regcache_drop_region
   regmap_async_complete
@@ -545,3 +551,9 @@
 #required by io module
   __traceiter_android_vh_psi_group
   __tracepoint_android_vh_psi_group
+
+# required by mi_mem_center.ko
+  __traceiter_android_vh_rmqueue_smallest_bypass
+  __tracepoint_android_vh_rmqueue_smallest_bypass
+  __traceiter_android_vh_free_one_page_bypass
+  __tracepoint_android_vh_free_one_page_bypass

@@ -843,7 +843,7 @@ static void qede_init_ndev(struct qede_dev *edev)
 	ndev->max_mtu = QEDE_MAX_JUMBO_PACKET_SIZE;
 
 	/* Set network device HW mac */
-	ether_addr_copy(edev->ndev->dev_addr, edev->dev_info.common.hw_mac);
+	eth_hw_addr_set(edev->ndev, edev->dev_info.common.hw_mac);
 
 	ndev->mtu = edev->dev_info.common.mtu;
 }
@@ -2832,9 +2832,12 @@ static void qede_get_eth_tlv_data(void *dev, void *data)
 }
 
 /**
- * qede_io_error_detected - called when PCI error is detected
+ * qede_io_error_detected(): Called when PCI error is detected
+ *
  * @pdev: Pointer to PCI device
  * @state: The current pci connection state
+ *
+ *Return: pci_ers_result_t.
  *
  * This function is called after a PCI bus error affecting
  * this device has been detected.
