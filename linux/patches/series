@@ -25,8 +25,5 @@
 # CVE-2023-5197
 0001-netfilter-nf_tables-disallow-rule-removal-from-chain.patch
 
-# CVE-2023-4622
-0001-af_unix-Fix-null-ptr-deref-in-unix_stream_sendpage.patch
-
 # CVE-2023-31083
 0001-Bluetooth-hci_ldisc-check-HCI_UART_PROTO_READY-flag-.patch
