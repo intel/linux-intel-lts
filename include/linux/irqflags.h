@@ -266,18 +266,13 @@ extern void warn_bogus_irq_restore(void);
 		local_irq_disable();		\
 	} while (0)
 
-#define local_irq_save_full(__flags)		\
-  	do {					\
-		hard_local_irq_disable();	\
-		local_irq_save(__flags);	\
+#define local_irq_save_full(__flags)			\
+	do {						\
+		(__flags) = test_and_lock_stage(NULL);	\
 	} while (0)
 
-#define local_irq_restore_full(__flags)			\
-	do {						\
-		if (!irqs_disabled_flags(__flags))	\
-			hard_local_irq_enable();	\
-		local_irq_restore(__flags);		\
-	} while (0)
+#define local_irq_restore_full(__flags)	unlock_stage(__flags)
+
 #else
 #define local_irq_enable_full()		local_irq_enable()
 #define local_irq_disable_full()	local_irq_disable()
