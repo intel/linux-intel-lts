@@ -2893,7 +2893,7 @@ EXPORT_SYMBOL(is_console_locked);
  *
  * Requires the console_lock.
  */
-static inline bool console_is_usable(struct console *con)
+static inline bool __console_is_usable(short flags)
 {
 	if (!(flags & CON_ENABLED))
 		return false;
