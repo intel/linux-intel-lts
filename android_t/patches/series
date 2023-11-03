@@ -52,3 +52,9 @@
 
 # CVE-2023-25775
 0001-RDMA-irdma-Prevent-zero-length-STAG-registration.patch
+
+# CVE-2023-5717
+0001-perf-Disallow-mis-matched-inherited-group-reads.patch
+
+# CVE-2022-45885
+0001-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
