@@ -318,7 +318,7 @@ u32 shared_memory_map(unsigned int ssid, unsigned int mmid, u64 addr)
 
 	if (!mine) {
 		pr_err("Invalid mem subsystem, return NULL. mmid=%d", mmid);
-		return NULL;
+		return 0;
 	}
 
 	if ((void *)(unsigned long)addr == &alloc_cookie)
