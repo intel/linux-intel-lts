@@ -1394,11 +1394,11 @@ static struct ti960_subdev_info ti960_subdevs_2[] = {
 			.addr = OX03A10A_I2C_ADDRESS,
 			.platform_data = &ox03a10_pdata,
 		},
-		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
 		.rx_port = 0,
 		.phy_i2c_addr = OX03A10_I2C_PHY_ADDR,
 		.ser_alias = OX03A10A_SER_ADDRESS,
-		.suffix = 'a',
+		.suffix = 'e',
 	},
 	{
 		.board_info = {
@@ -1406,11 +1406,11 @@ static struct ti960_subdev_info ti960_subdevs_2[] = {
 			.addr = OX03A10B_I2C_ADDRESS,
 			.platform_data = &ox03a10_pdata,
 		},
-		.i2c_adapter_id = TI960_I2C_ADAPTER,
+		.i2c_adapter_id = TI960_I2C_ADAPTER_2,
 		.rx_port = 1,
 		.phy_i2c_addr = OX03A10_I2C_PHY_ADDR,
 		.ser_alias = OX03A10B_SER_ADDRESS,
-		.suffix = 'b',
+		.suffix = 'f',
 	},
 #endif
 #ifdef CONFIG_INTEL_IPU4_OV495
