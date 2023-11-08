@@ -71,3 +71,6 @@
 
 # CVE-2021-0929
 0001-ANDROID-staging-ion-move-buffer-kmap-from-begin-end_.patch
+
+# CVE-2023-5717
+0001-perf-Disallow-mis-matched-inherited-group-reads.patch
