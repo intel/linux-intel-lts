@@ -2846,6 +2846,14 @@ struct dst_entry *ipv4_blackhole_route(struct net *net, struct dst_entry *dst_or
 	return rt ? &rt->dst : ERR_PTR(-ENOMEM);
 }
 
+#ifdef CONFIG_NET_OOB
+__weak
+#else
+static inline
+#endif
+void ip_learn_oob_route(struct net *net, struct flowi4 *flp4, struct rtable *rt)
+{ }
+
 struct rtable *ip_route_output_flow(struct net *net, struct flowi4 *flp4,
 				    const struct sock *sk)
 {
@@ -2860,6 +2868,14 @@ struct rtable *ip_route_output_flow(struct net *net, struct flowi4 *flp4,
 						  flowi4_to_flowi(flp4),
 						  sk, 0));
 	}
+
+	/*
+	 * If the route goes through an oob-enabled device, the oob
+	 * core might want to learn about the routing decision, pass
+	 * it on.
+	 */
+	if (!IS_ERR(rt) && netdev_is_oob_port(rt->dst.dev))
+		ip_learn_oob_route(net, flp4, rt);
 
 	return rt;
 }
