@@ -338,6 +338,12 @@ static u32 guc_ctl_wa_flags(struct intel_guc *guc)
 	if (IS_METEORLAKE(gt->i915) && IS_SRIOV_PF(gt->i915) && HAS_ENGINE(gt, GSC0))
 		flags |= GUC_WA_DISABLE_GSC_RESET_IN_VF;
 
+	/* Wa_14018913170 */
+	if (GUC_FIRMWARE_VER(guc) >= MAKE_GUC_VER(70, 7, 0)) {
+		if (IS_DG2(gt->i915) || IS_METEORLAKE(gt->i915) || IS_PONTEVECCHIO(gt->i915))
+			flags |= GUC_WA_ENABLE_TSC_CHECK_ON_RC6;
+	}
+
 	return flags;
 }
 
