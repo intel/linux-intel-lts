@@ -338,7 +338,7 @@ static __net_init int setup_net(struct net *net, struct user_namespace *user_ns)
 	spin_lock_init(&net->nsid_lock);
 	mutex_init(&net->ipv4.ra_mutex);
 	/* Dovetail: set up the oob-specific state. */
-	net_init_oob_state(&net->oob);
+	net_init_oob_state(net);
 
 	list_for_each_entry(ops, &pernet_list, list) {
 		error = ops_init(ops, net);
@@ -601,7 +601,7 @@ static void cleanup_net(struct work_struct *work)
 		unhash_nsid(net, last);
 		list_add_tail(&net->exit_list, &net_exit_list);
 		/* Dovetail: drop the oob-specific state. */
-		net_cleanup_oob_state(&net->oob);
+		net_cleanup_oob_state(net);
 	}
 
 	/* Run all of the network namespace pre_exit methods */
