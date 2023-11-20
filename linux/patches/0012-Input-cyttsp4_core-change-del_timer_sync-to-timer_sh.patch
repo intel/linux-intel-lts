@@ -1,0 +1,67 @@
+From 7d191dd01e77ece7d5cbe8c6e99d18dfd0790bf0 Mon Sep 17 00:00:00 2001
+From: Duoming Zhou <duoming@zju.edu.cn>
+Date: Mon, 1 May 2023 17:37:02 -0700
+Subject: [PATCH 12/15] Input: cyttsp4_core - change del_timer_sync() to
+ timer_shutdown_sync()
+
+The watchdog_timer can schedule tx_timeout_task and watchdog_work
+can also arm watchdog_timer. The process is shown below:
+
+----------- timer schedules work ------------
+cyttsp4_watchdog_timer() //timer handler
+  schedule_work(&cd->watchdog_work)
+
+----------- work arms timer ------------
+cyttsp4_watchdog_work() //workqueue callback function
+  cyttsp4_start_wd_timer()
+    mod_timer(&cd->watchdog_timer, ...)
+
+Although del_timer_sync() and cancel_work_sync() are called in
+cyttsp4_remove(), the timer and workqueue could still be rearmed.
+As a result, the possible use after free bugs could happen. The
+process is shown below:
+
+  (cleanup routine)           |  (timer and workqueue routine)
+cyttsp4_remove()              | cyttsp4_watchdog_timer() //timer
+  cyttsp4_stop_wd_timer()     |   schedule_work()
+    del_timer_sync()          |
+                              | cyttsp4_watchdog_work() //worker
+                              |   cyttsp4_start_wd_timer()
+                              |     mod_timer()
+    cancel_work_sync()        |
+                              | cyttsp4_watchdog_timer() //timer
+                              |   schedule_work()
+    del_timer_sync()          |
+  kfree(cd) //FREE            |
+                              | cyttsp4_watchdog_work() // reschedule!
+                              |   cd-> //USE
+
+This patch changes del_timer_sync() to timer_shutdown_sync(),
+which could prevent rearming of the timer from the workqueue.
+
+Fixes: 17fb1563d69b ("Input: cyttsp4 - add core driver for Cypress TMA4XX touchscreen devices")
+Signed-off-by: Duoming Zhou <duoming@zju.edu.cn>
+Link: https://lore.kernel.org/r/20230421082919.8471-1-duoming@zju.edu.cn
+Signed-off-by: Dmitry Torokhov <dmitry.torokhov@gmail.com>
+---
+ drivers/input/touchscreen/cyttsp4_core.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/input/touchscreen/cyttsp4_core.c b/drivers/input/touchscreen/cyttsp4_core.c
+index dccbcb942fe59..f999265896f44 100644
+--- a/drivers/input/touchscreen/cyttsp4_core.c
++++ b/drivers/input/touchscreen/cyttsp4_core.c
+@@ -1263,9 +1263,8 @@ static void cyttsp4_stop_wd_timer(struct cyttsp4 *cd)
+ 	 * Ensure we wait until the watchdog timer
+ 	 * running on a different CPU finishes
+ 	 */
+-	del_timer_sync(&cd->watchdog_timer);
++	timer_shutdown_sync(&cd->watchdog_timer);
+ 	cancel_work_sync(&cd->watchdog_work);
+-	del_timer_sync(&cd->watchdog_timer);
+ }
+ 
+ static void cyttsp4_watchdog_timer(struct timer_list *t)
+-- 
+2.25.1
+
