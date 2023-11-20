@@ -247,6 +247,10 @@ i915_param_named(max_vfs, uint, 0400,
 i915_param_named(enable_mtl_rcs_ccs_wa, bool, 0400,
 	"Enable the RCS/CCS switchout hold workaround for MTL (only some workloads are affected by issue and w/a has a performance penalty) (default:false)");
 
+i915_param_named(force_disable_ccs, int, 0400,
+	"Force to disable CCS engine. "
+	"(0 = fallback to default [default]; 1 = disable CCS)");
+
 static void _param_print_bool(struct drm_printer *p, const char *name,
 			      bool val)
 {
