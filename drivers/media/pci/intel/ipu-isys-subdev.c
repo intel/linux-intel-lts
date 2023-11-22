@@ -23,7 +23,6 @@ unsigned int ipu_isys_mbus_code_to_bpp(u32 code)
 	case MEDIA_BUS_FMT_RGB565_1X16:
 	case MEDIA_BUS_FMT_UYVY8_1X16:
 	case MEDIA_BUS_FMT_YUYV8_1X16:
-	case MEDIA_BUS_FMT_VYUY8_1X16:
 		return 16;
 	case MEDIA_BUS_FMT_SBGGR12_1X12:
 	case MEDIA_BUS_FMT_SGBRG12_1X12:
@@ -62,7 +61,6 @@ unsigned int ipu_isys_mbus_code_to_mipi(u32 code)
 		return IPU_ISYS_MIPI_CSI2_TYPE_YUV422_10;
 	case MEDIA_BUS_FMT_UYVY8_1X16:
 	case MEDIA_BUS_FMT_YUYV8_1X16:
-	case MEDIA_BUS_FMT_VYUY8_1X16:
 		return IPU_ISYS_MIPI_CSI2_TYPE_YUV422_8;
 	case MEDIA_BUS_FMT_SBGGR12_1X12:
 	case MEDIA_BUS_FMT_SGBRG12_1X12:
