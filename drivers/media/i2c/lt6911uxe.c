@@ -1263,6 +1263,7 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 			lt6911uxe->cur_mode->lanes);
 	break;
 	case INT_HDMI_DISCONNECT:
+		lt6911uxe_stop_streaming(lt6911uxe);
 		lt6911uxe->cur_mode->width = 0;
 		lt6911uxe->cur_mode->height = 0;
 		lt6911uxe->cur_mode->fps = 30;
