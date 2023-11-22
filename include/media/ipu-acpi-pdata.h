@@ -91,6 +91,10 @@ struct serdes_local {
 	/* last mapped addr */
 	unsigned short ser_map_addr;
 
+	/* 2nd group of mapped addr for 2x sensors */
+	unsigned short sensor_map_addr_2;
+	unsigned short ser_map_addr_2;
+
 	/* current gpio_powerup_seq */
 	unsigned int gpio_powerup_seq;
 

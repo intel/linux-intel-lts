@@ -18,6 +18,7 @@
 
 #define MIN_SENSOR_I2C 1
 #define MIN_SERDES_I2C 3
+#define SENSOR_2X_I2C 5
 #define SUFFIX_BASE 96
 #define MSG_LEN 128
 
@@ -623,20 +624,28 @@ int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 
 		/* board info */
 		strlcpy(serdes_sdinfo[i].board_info.type, sensor_name, I2C_NAME_SIZE);
-		if (!strcmp(sensor_name, D457_NAME))
-			serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr;
-		else
+		if (!strcmp(sensor_name, D457_NAME)) {
+			if (i == 0)
+				serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr;
+			else
+				serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr_2;
+		} else
 			serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr +
 			serdes_info.sensor_num + i;
+
 		serdes_sdinfo[i].board_info.platform_data = module_pdata[i];
 
 		/* serdes_subdev_info */
 		serdes_sdinfo[i].rx_port = i;
-		if (!strcmp(sensor_name, D457_NAME))
-			serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr;
-		else
+		if (!strcmp(sensor_name, D457_NAME)) {
+			if (i == 0)
+				serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr;
+			else
+				serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr_2;
+		} else
 			serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr +
 			serdes_info.sensor_num + i;
+
 		serdes_sdinfo[i].phy_i2c_addr = serdes_info.phy_i2c_addr;
 		serdes_sdinfo[i].suffix = SUFFIX_BASE + serdes_info.sensor_num + i + 1;
 	}
@@ -716,17 +725,25 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 void set_serdes_info(struct device *dev, char *sensor_name,
 	const char *serdes_name, struct sensor_bios_data *cam_data)
 {
+	int i;
+
 	/* pprunit as num of sensor connected to deserializer */
 	serdes_info.rx_port = cam_data->pprunit;
 
 	/* i2c devices */
 	serdes_info.i2c_num = cam_data->i2c_num;
 
-	/* sensor mapped addr */
-	serdes_info.sensor_map_addr = cam_data->i2c[cam_data->i2c_num - 1].addr;
+	i = 1;
 
 	/* serializer mapped addr */
-	serdes_info.ser_map_addr = cam_data->i2c[cam_data->i2c_num - 2].addr;
+	serdes_info.ser_map_addr = cam_data->i2c[i++].addr;
+	/* sensor mapped addr */
+	serdes_info.sensor_map_addr = cam_data->i2c[i++].addr;
+	if (!strcmp(sensor_name, D457_NAME) && serdes_info.i2c_num == SENSOR_2X_I2C) {
+		/* 2nd group of mapped addr */
+		serdes_info.ser_map_addr_2 = cam_data->i2c[i++].addr;
+		serdes_info.sensor_map_addr_2 = cam_data->i2c[i++].addr;
+	}
 
 	/* TI960 specific */
 	if (!strcmp(serdes_name, TI960_NAME))
@@ -832,7 +849,7 @@ int populate_sensor_pdata(struct device *dev,
 		}
 
 		/* serdes i2c info */
-		if (cam_data->i2c_num == MIN_SERDES_I2C) {
+		if (cam_data->i2c_num >= MIN_SERDES_I2C) {
 			pr_debug("IPU6 ACPI: num of I2C device for Serdes connection: %lld is Correct",
 				cam_data->i2c_num);
 			set_i2c(sensor_sd, dev, serdes_name, cam_data->i2c[0].addr);
