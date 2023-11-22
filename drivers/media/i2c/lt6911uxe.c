@@ -1071,28 +1071,14 @@ static int lt6911uxe_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct lt6911uxe_state *lt6911uxe = to_state(sd);
 
-	if (!lt6911uxe->auxiliary_port)
-		lt6911uxe_set_stream(sd, true);
 	lt6911uxe_update_pad_format(lt6911uxe->cur_mode,
 			v4l2_subdev_get_try_format(sd, fh->state, 0));
 
 	return 0;
 }
 
-static int lt6911uxe_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
-{
-
-	struct lt6911uxe_state *lt6911uxe = to_state(sd);
-
-	if (!lt6911uxe->auxiliary_port)
-		lt6911uxe_set_stream(sd, false);
-
-	return 0;
-}
-
 static const struct v4l2_subdev_internal_ops lt6911uxe_subdev_internal_ops = {
 	.open = lt6911uxe_open,
-	.close = lt6911uxe_close,
 };
 
 static const struct v4l2_subdev_video_ops lt6911uxe_video_ops = {
@@ -1172,7 +1158,7 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 			REG_INT_HDMI);
 	switch (int_event) {
 	case INT_HDMI_STABLE:
-		dev_dbg(&client->dev, "Video signal stable\n");
+		dev_info(&client->dev, "Video signal stable\n");
 
 		/* byte clock / MIPI clock */
 		fm2 = lt6911uxe_i2c_rd8(&lt6911uxe->sd,
@@ -1274,7 +1260,7 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 		v4l2_subdev_notify_event(&lt6911uxe->sd,
 			&lt6911uxe_ev_stream_end);
 
-		dev_dbg(&client->dev, "Video signal disconnected\n");
+		dev_info(&client->dev, "Video signal disconnected\n");
 	break;
 	default:
 		dev_dbg(&client->dev, "Unhandled video= 0x%02X\n", int_event);
