@@ -253,7 +253,7 @@ struct hwm_cmd {
 	u32 param2;
 	u32 param3;
 	u32 param4;
-	unsigned char Data[0];
+	unsigned char Data[];
 };
 
 static const struct hwm_cmd cmd_switch_to_dfu = {
