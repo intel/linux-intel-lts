@@ -1503,8 +1503,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 		csi_short_packet_prepare_fw_cfg(ip, stream_cfg);
 
-	ipu_fw_isys_dump_stream_cfg(dev, stream_cfg);
-
 	ip->nr_output_pins = stream_cfg->nof_output_pins;
 
 	rval = get_stream_handle(av);
@@ -1516,6 +1514,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	reinit_completion(&ip->stream_open_completion);
 
 	ipu_fw_isys_set_params(stream_cfg);
+
+	ipu_fw_isys_dump_stream_cfg(dev, stream_cfg);
 
 	rval = ipu_fw_isys_complex_cmd(av->isys,
 				       ip->stream_handle,
