@@ -837,6 +837,10 @@ static int start_streaming(struct vb2_queue *q, unsigned int count)
 	mutex_lock(&av->mutex);
 
 	rval = __start_streaming(q, count);
+	if (rval)
+		av->start_streaming = 0;
+	else
+		av->start_streaming = 1;
 
 	return rval;
 }
@@ -861,6 +865,7 @@ static void reset_stop_streaming(struct ipu_isys_video *av)
 	ip->nr_streaming--;
 	list_del(&aq->node);
 	ip->streaming = 0;
+	av->start_streaming = 0;
 }
 
 static int reset_start_streaming(struct ipu_isys_video *av)
@@ -887,9 +892,11 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 	rval = __start_streaming(&aq->vbq, 0);
 	if (rval) {
 		dev_dbg(&av->isys->adev->dev,
-			"%s: start streaming failed in reset\n",
+			"%s: start streaming failed in reset ! set av->start_streaming = 0.\n",
 			av->vdev.name);
-	}
+		av->start_streaming = 0;
+	} else
+		av->start_streaming = 1;
 
 	return rval;
 }
@@ -914,6 +921,15 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av,
 		return 0;
 	}
 	isys->in_reset = true;
+
+	while (isys->in_stop_streaming) {
+		dev_dbg(&isys->adev->dev, "isys reset: %s: wait for stop\n",
+			self_av->vdev.name);
+		mutex_unlock(&isys->reset_mutex);
+		usleep_range(10000, 11000);
+		mutex_lock(&isys->reset_mutex);
+	}
+
 	mutex_unlock(&isys->reset_mutex);
 
 	av = &isys->csi2->av;
@@ -959,6 +975,12 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av,
 			mutex_unlock(&av->mutex);
 			continue;
 		}
+
+		if (!av->start_streaming) {
+			mutex_unlock(&av->mutex);
+			continue;
+		}
+
 		av->reset = true;
 		has_streaming = true;
 		reset_stop_streaming(av);
@@ -1050,37 +1072,44 @@ static void stop_streaming(struct vb2_queue *q)
 {
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(q);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
-	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
-	struct ipu_isys_video *pipe_av =
-	    container_of(ip, struct ipu_isys_video, ip);
-
 	dev_dbg(&av->isys->adev->dev, "stop: %s: enter\n",
 		av->vdev.name);
 
 	mutex_unlock(&av->mutex);
 	mutex_lock(&av->isys->reset_mutex);
-	while (av->isys->in_reset) {
+	while (av->isys->in_reset || av->isys->in_stop_streaming) {
 		mutex_unlock(&av->isys->reset_mutex);
-		dev_dbg(&av->isys->adev->dev, "stop: %s: wait for reset\n",
-			av->vdev.name
-		);
+		dev_dbg(&av->isys->adev->dev, "stop: %s: wait for in_reset = %d\n",
+			av->vdev.name, av->isys->in_reset);
+		dev_dbg(&av->isys->adev->dev, "stop: %s: wait for in_stop = %d\n",
+			av->vdev.name, av->isys->in_stop_streaming);
 		usleep_range(10000, 11000);
 		mutex_lock(&av->isys->reset_mutex);
 	}
+
+	if (!av->start_streaming) {
+		mutex_unlock(&av->isys->reset_mutex);
+		return;
+	}
+
+	av->isys->in_stop_streaming = true;
 	mutex_unlock(&av->isys->reset_mutex);
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	struct ipu_isys_video *pipe_av =
+	    container_of(ip, struct ipu_isys_video, ip);
+
 	mutex_lock(&av->mutex);
 
 	if (!ip) {
 		dev_err(&av->isys->adev->dev, "stop: %s: ip cleard!\n",
 			av->vdev.name);
 		return_buffers(aq, VB2_BUF_STATE_ERROR);
+		mutex_lock(&av->isys->reset_mutex);
+		av->isys->in_stop_streaming = false;
+		mutex_unlock(&av->isys->reset_mutex);
 		return;
 	}
-
-	mutex_lock(&av->isys->reset_mutex);
-	av->isys->in_stop_streaming = true;
-	mutex_unlock(&av->isys->reset_mutex);
 
 	if (pipe_av != av) {
 		mutex_unlock(&av->mutex);
@@ -1106,6 +1135,11 @@ static void stop_streaming(struct vb2_queue *q)
 	}
 
 	return_buffers(aq, VB2_BUF_STATE_ERROR);
+	av->start_streaming = 0;
+	mutex_lock(&av->isys->reset_mutex);
+	av->isys->in_stop_streaming = false;
+	mutex_unlock(&av->isys->reset_mutex);
+
 	if (av->isys->reset_needed) {
 		if (!ip->nr_streaming)
 			ipu_isys_reset(av, ip);
@@ -1115,10 +1149,6 @@ static void stop_streaming(struct vb2_queue *q)
 
 	dev_dbg(&av->isys->adev->dev, "stop: %s: exit\n",
 		av->vdev.name);
-
-	mutex_lock(&av->isys->reset_mutex);
-	av->isys->in_stop_streaming = false;
-	mutex_unlock(&av->isys->reset_mutex);
 }
 
 static unsigned int

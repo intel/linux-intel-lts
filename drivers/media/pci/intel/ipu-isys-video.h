@@ -134,6 +134,7 @@ struct ipu_isys_video {
 	unsigned int streaming;
 	unsigned int reset;
 	unsigned int skipframe;
+	unsigned int start_streaming;
 	bool packed;
 	bool compression;
 	struct v4l2_ctrl_handler ctrl_handler;
