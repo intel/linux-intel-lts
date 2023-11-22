@@ -475,6 +475,7 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 	/* overwrite bpl/height with compression alignment */
 	if (av->compression) {
 		u32 planar_tile_status_size, tile_status_size;
+		u64 planar_bytes;
 
 		mpix->plane_fmt[0].bytesperline =
 		    ALIGN(mpix->plane_fmt[0].bytesperline,
@@ -487,10 +488,11 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 			  IPU_ISYS_COMPRESSION_PAGE_ALIGN);
 
 		/* ISYS compression only for RAW and single plannar */
+		planar_bytes =
+		    mul_u32_u32(mpix->plane_fmt[0].bytesperline, mpix->height);
 		planar_tile_status_size =
-		    DIV_ROUND_UP_ULL((mpix->plane_fmt[0].bytesperline *
-				      mpix->height /
-				      IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
+		    DIV_ROUND_UP_ULL((planar_bytes /
+				     IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
 				     IPU_ISYS_COMPRESSION_TILE_STATUS_BITS,
 				     BITS_PER_BYTE);
 		tile_status_size = ALIGN(planar_tile_status_size,
