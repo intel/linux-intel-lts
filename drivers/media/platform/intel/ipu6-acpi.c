@@ -140,7 +140,8 @@ static int ipu_i2c_test(struct device *dev, void *priv)
 
 	acpi_id = acpi_match_device(ipu_acpi_match, dev);
 	if (!acpi_id) {
-		pr_err("IPU6 ACPI: ACPI device NOT supported in IPU6 ACPI driver");
+		dev_err(dev, "IPU6 ACPI: ACPI device %s NOT supported\n",
+			dev_name(dev));
 		return 0;
 	}
 

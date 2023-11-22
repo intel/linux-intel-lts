@@ -11,6 +11,7 @@
 
 #define CL_EMPTY 0
 #define CL_DISCRETE 1
+#define CL_LT 5
 #define SERDES_MAX_PORT 4
 #define SERDES_MAX_GPIO_POWERUP_SEQ 4
 #define LOOP_SIZE 10

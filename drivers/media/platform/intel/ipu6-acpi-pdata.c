@@ -472,6 +472,11 @@ void set_ti960_gpio(struct control_logic_data *ctl_data, struct serdes_platform_
 
 	if (ctl_data->completed && ctl_data->gpio_num > 0) {
 		for (i = 0; i < ctl_data->gpio_num; i++) {
+			if (ctl_data->gpio[i].func != GPIO_RESET)
+				dev_err(ctl_data->dev,
+					"IPU6 ACPI: Invalid GPIO func: %d\n",
+					ctl_data->gpio[i].func);
+
 			/* check for RESET selection in BIOS */
 			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_RESET)
 				(*pdata)->FPD_gpio = ctl_data->gpio[i].pin;
@@ -490,6 +495,14 @@ void set_lt_gpio(struct control_logic_data *ctl_data, struct sensor_platform_dat
 
 	if (ctl_data->completed && ctl_data->gpio_num > 0 && !is_dummy) {
 		for (i = 0; i < ctl_data->gpio_num; i++) {
+			/* check for unsupported GPIO function */
+			if (ctl_data->gpio[i].func != GPIO_RESET &&
+			    ctl_data->gpio[i].func != GPIO_READY_STAT &&
+			    ctl_data->gpio[i].func != GPIO_HDMI_DETECT)
+				dev_err(ctl_data->dev,
+					"IPU6 ACPI: Invalid GPIO func: %d\n",
+					ctl_data->gpio[i].func);
+
 			/* check for RESET selection in BIOS */
 			if (ctl_data->gpio[i].valid && ctl_data->gpio[i].func == GPIO_RESET)
 				(*pdata)->reset_pin = ctl_data->gpio[i].pin;
@@ -510,10 +523,12 @@ void set_lt_gpio(struct control_logic_data *ctl_data, struct sensor_platform_dat
 	}
 }
 
-void set_common_gpio(struct sensor_platform_data **pdata)
+void set_common_gpio(struct control_logic_data *ctl_data,
+		     struct sensor_platform_data **pdata)
 {
-	/* TODO: consider remove specific naming such as irq_pin, and use gpios[] */
+	int i;
 
+	/* TODO: consider remove specific naming such as irq_pin, and use gpios[] */
 	(*pdata)->irq_pin = -1;
 	(*pdata)->reset_pin = -1;
 	(*pdata)->detect_pin = -1;
@@ -522,6 +537,14 @@ void set_common_gpio(struct sensor_platform_data **pdata)
 	(*pdata)->gpios[1] = 0;
 	(*pdata)->gpios[2] = 0;
 	(*pdata)->gpios[3] = 0;
+
+	/* all sensors should have RESET GPIO */
+	if (ctl_data->completed && ctl_data->gpio_num > 0)
+		for (i = 0; i < ctl_data->gpio_num; i++)
+			if (ctl_data->gpio[i].func != GPIO_RESET)
+				dev_err(ctl_data->dev,
+					"IPU6 ACPI: Invalid GPIO func: %d\n",
+					ctl_data->gpio[i].func);
 }
 
 int set_csi2(struct ipu_isys_subdev_info **sensor_sd,
@@ -658,7 +681,7 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		if (!strcmp(sensor_name, LT6911UXC_NAME) || !strcmp(sensor_name, LT6911UXE_NAME))
 			set_lt_gpio(ctl_data, &pdata, is_dummy);
 		else
-			set_common_gpio(&pdata);
+			set_common_gpio(ctl_data, &pdata);
 
 		(*sensor_sd)->i2c.board_info.platform_data = pdata;
 	} else if (connect == TYPE_SERDES) {
@@ -779,7 +802,22 @@ int populate_sensor_pdata(struct device *dev,
 				cam_data->i2c_num);
 			return -1;
 		}
-
+		/* LT use LT Control Logic type */
+		if (!strcmp(sensor_name, LT6911UXC_NAME) ||
+		    !strcmp(sensor_name, LT6911UXE_NAME)) {
+			if (ctl_data->type != CL_LT) {
+				dev_err(dev, "IPU6 ACPI: Control Logic Type\n");
+				dev_err(dev, "for %s: %d is Incorrect\n",
+					sensor_name, ctl_data->type);
+				return -EINVAL;
+			}
+		/* Others use DISCRETE Control Logic */
+		} else if (ctl_data->type != CL_DISCRETE) {
+			dev_err(dev, "IPU6 ACPI: Control Logic Type\n");
+			dev_err(dev, "for %s: %d is Incorrect\n",
+				sensor_name, ctl_data->type);
+			return -EINVAL;
+		}
 	} else if (connect == TYPE_SERDES) {
 		/* serdes csi2 info. pprval as deserializer lane */
 		ret = set_csi2(sensor_sd, cam_data->pprval, cam_data->link);
@@ -852,6 +890,8 @@ int get_sensor_pdata(struct i2c_client *client,
 		kfree(cam_data);
 		return -ENOMEM;
 	}
+
+	ctl_data->dev = &client->dev;
 
 	sensor_sd = kzalloc(sizeof(*sensor_sd), GFP_KERNEL);
 	if (!sensor_sd) {
