@@ -49,6 +49,12 @@
 #define OV02C10_DGTL_GAIN_STEP		1
 #define OV02C10_DGTL_GAIN_DEFAULT	0x0400
 
+/* Rotate */
+#define OV02C10_ROTATE_CONTROL			0x3820
+#define OV02C10_ISP_X_WIN_CONTROL		0x3811
+#define OV02C10_ISP_Y_WIN_CONTROL		0x3813
+#define OV02C10_CONFIG_ROTATE			0x18
+
 /* Test Pattern Control */
 #define OV02C10_REG_TEST_PATTERN		0x4503
 #define OV02C10_TEST_PATTERN_ENABLE	BIT(7)
@@ -56,6 +62,14 @@
 
 enum {
 	OV02C10_LINK_FREQ_400MHZ_INDEX,
+};
+
+enum module_names {
+	MODULE_EMPTY = 0,
+	MODULE_2BG203N3,
+	MODULE_CJFME32,
+	/* etc. */
+	MODULE_MAX
 };
 
 struct ov02c10_reg {
@@ -126,6 +140,15 @@ struct mipi_camera_link_ssdb {
 	u8 mclkport;
 	u8 reserved2[13];
 } __packed;
+
+/*
+ * 822ace8f-2814-4174-a56b-5f029fe079ee
+ * This _DSM GUID returns a string from the sensor device, which acts as a
+ * module identifier.
+ */
+static const guid_t cio2_sensor_module_guid =
+	GUID_INIT(0x822ace8f, 0x2814, 0x4174,
+		  0xa5, 0x6b, 0x5f, 0x02, 0x9f, 0xe0, 0x79, 0xee);
 
 static const struct ov02c10_reg mipi_data_rate_960mbps[] = {
 };
@@ -595,6 +618,12 @@ static const char * const ov02c10_test_pattern_menu[] = {
 	"Color Bar type 4",
 };
 
+static const char * const ov02c10_module_names[] = {
+	[MODULE_EMPTY] = "",
+	[MODULE_CJFME32] = "CJFME32",
+	[MODULE_2BG203N3] = "2BG203N3",
+};
+
 static const s64 link_freq_menu_items[] = {
 	OV02C10_LINK_FREQ_400MHZ,
 };
@@ -659,6 +688,9 @@ struct ov02c10 {
 
 	/* Streaming on/off */
 	bool streaming;
+
+	/* Module name index */
+	u8 module_name_index;
 };
 
 static inline struct ov02c10 *to_ov02c10(struct v4l2_subdev *subdev)
@@ -911,6 +943,51 @@ static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 	ret = __v4l2_ctrl_handler_setup(ov02c10->sd.ctrl_handler);
 	if (ret)
 		return ret;
+
+	if ((ov02c10->module_name_index == MODULE_CJFME32) ||
+		(ov02c10->module_name_index == MODULE_2BG203N3)) {
+		u32 rotateReg, shiftXReg, shiftYReg;
+
+		ret = ov02c10_read_reg(ov02c10, OV02C10_ROTATE_CONTROL, 1,
+								&rotateReg);
+		if (ret)
+			dev_err(&client->dev, "OV02C10_ROTATE_CONTROL read Fail = 0x%x",
+								rotateReg);
+
+		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL, 1,
+								&shiftXReg);
+		if (ret)
+			dev_err(&client->dev, "OV02C10_ISP_X_WIN_CONTROL read Fail = 0x%x",
+								shiftXReg);
+
+		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL, 1,
+								&shiftYReg);
+		if (ret)
+			dev_err(&client->dev, "OV02C10_ISP_Y_WIN_CONTROL read Fail = 0x%x",
+								shiftYReg);
+
+		rotateReg ^= OV02C10_CONFIG_ROTATE;
+		shiftXReg = shiftXReg - 1;
+		shiftYReg = shiftYReg - 1;
+
+		ret = ov02c10_write_reg(ov02c10, OV02C10_ROTATE_CONTROL, 1,
+								rotateReg);
+		if (ret)
+			dev_err(&client->dev, "OV02C10_ROTATE_CONTROL write Fail = 0x%x",
+								rotateReg);
+
+		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL, 1,
+								shiftXReg);
+		if (ret)
+			dev_err(&client->dev, "OV02C10_ISP_X_WIN_CONTROL write Fail = 0x%x",
+								shiftXReg);
+
+		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL, 1,
+								shiftYReg);
+		if (ret)
+			dev_err(&client->dev, "OV02C10_ISP_Y_WIN_CONTROL write Fail = 0x%x",
+								shiftYReg);
+	}
 
 	ret = ov02c10_write_reg(ov02c10, OV02C10_REG_MODE_SELECT, 1,
 				OV02C10_MODE_STREAMING);
@@ -1204,6 +1281,31 @@ static void ov02c10_remove(struct i2c_client *client)
 
 }
 
+static int ov02c10_read_module_name(struct ov02c10 *ov02c10)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&ov02c10->sd);
+	struct device *dev = &client->dev;
+	int i = 0;
+	union acpi_object *obj;
+
+	obj = acpi_evaluate_dsm_typed(ACPI_COMPANION(dev)->handle,
+				     &cio2_sensor_module_guid, 0x00,
+				     0x01, NULL, ACPI_TYPE_STRING);
+
+	ov02c10->module_name_index = 0;
+	if (obj && obj->string.type == ACPI_TYPE_STRING) {
+		for (i = 1; i < ARRAY_SIZE(ov02c10_module_names); i++) {
+			if (!strcmp(ov02c10_module_names[i], obj->string.pointer)) {
+				ov02c10->module_name_index = i;
+				break;
+			}
+		}
+	}
+	ACPI_FREE(obj);
+
+	return 0;
+}
+
 static int ov02c10_probe(struct i2c_client *client)
 {
 	struct ov02c10 *ov02c10;
@@ -1214,6 +1316,7 @@ static int ov02c10_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	v4l2_i2c_subdev_init(&ov02c10->sd, client, &ov02c10_subdev_ops);
+	ov02c10_read_module_name(ov02c10);
 
 	ret = ov02c10_identify_module(ov02c10);
 	if (ret) {
