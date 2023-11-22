@@ -571,7 +571,9 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 {
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
-	struct iosys_map dmap;
+	struct iosys_map dmap = {
+		.is_iomem = false,
+	};
 	int ret;
 
 	dbuf = dma_buf_get(fd);
