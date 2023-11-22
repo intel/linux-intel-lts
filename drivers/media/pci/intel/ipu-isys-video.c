@@ -1424,7 +1424,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	struct v4l2_subdev *be_sd = NULL;
 	struct media_pad *source_pad = media_pad_remote_pad_first(&av->pad);
 	struct ipu_fw_isys_cropping_abi *crop;
-	enum ipu_fw_isys_send_type send_type;
 	int rval, rvalout, tout;
 
 	rval = get_external_facing_format(ip, &source_fmt);
@@ -1562,22 +1561,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	if (bl) {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
-		ipu_fw_isys_dump_frame_buff_set(dev, buf,
-						stream_cfg->nof_output_pins);
-		rval = ipu_fw_isys_complex_cmd(av->isys,
-					       ip->stream_handle,
-					       buf, to_dma_addr(msg),
-					       sizeof(*buf),
-					       send_type);
-	} else {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
-		rval = ipu_fw_isys_simple_cmd(av->isys,
-					      ip->stream_handle,
-					      send_type);
-	}
-
+	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
+				      IPU_FW_ISYS_SEND_TYPE_STREAM_START);
 	if (rval < 0) {
 		dev_err(dev, "can't start streaming (%d)\n", rval);
 		goto out_stream_close;
@@ -1595,7 +1580,18 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		rval = -EIO;
 		goto out_stream_close;
 	}
-	dev_dbg(dev, "start stream: complete\n");
+
+	if (!bl)
+		return 0;
+
+	ipu_fw_isys_dump_frame_buff_set(dev, buf, stream_cfg->nof_output_pins);
+	rval = ipu_fw_isys_complex_cmd(av->isys, ip->stream_handle, buf,
+				       to_dma_addr(msg), sizeof(*buf),
+				       IPU_FW_ISYS_SEND_TYPE_STREAM_CAPTURE);
+	if (rval < 0) {
+		dev_err(dev, "can't queue buffers (%d)\n", rval);
+		goto out_stream_close;
+	}
 
 	return 0;
 
