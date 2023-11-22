@@ -570,6 +570,8 @@ void set_i2c(struct ipu_isys_subdev_info **sensor_sd,
 		const char sensor_name[I2C_NAME_SIZE],
 		unsigned int addr)
 {
+	dev_info(dev, "IPU6 ACPI: kernel I2C BDF: %s, kernel I2C bus = %s",
+		dev_name(dev->parent->parent->parent), dev_name(dev->parent));
 	(*sensor_sd)->i2c.board_info.addr = addr;
 	strlcpy((*sensor_sd)->i2c.board_info.type, sensor_name, I2C_NAME_SIZE);
 	strlcpy((*sensor_sd)->i2c.i2c_adapter_bdf, dev_name(dev->parent->parent->parent),
@@ -677,9 +679,12 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		pr_debug("IPU6 ACPI: %s - Direct connection", __func__);
 		/* use ascii */
 		/* port for start from 0 */
-		if (port >= 0)
+		if (port >= 0) {
 			pdata->suffix = port + SUFFIX_BASE + 1;
-		else
+			pr_info("IPU6 ACPI: create %s %c, on port %d",
+			sensor_name, pdata->suffix, port);
+
+		} else
 			dev_err(dev, "INVALID MIPI PORT");
 
 		pdata->port = port;
@@ -703,11 +708,15 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		pr_debug("IPU6 ACPI: %s - Serdes connection", __func__);
 
 		/* use ascii */
-		if (!strcmp(sensor_name, D457_NAME) && port >= 0)
+		if (!strcmp(sensor_name, D457_NAME) && port >= 0) {
 			pdata->suffix = serdes_info.deser_num + SUFFIX_BASE + 1;
-		else if (port > 0)
+			pr_info("IPU6 ACPI: create %s %c, on deserializer port %d",
+			sensor_name, pdata->suffix, serdes_info.deser_num);
+		} else if (port > 0) {
 			pdata->suffix = port + SUFFIX_BASE;
-		else
+			pr_info("IPU6 ACPI: create %s %c, on mipi port %d",
+			sensor_name, pdata->suffix, port);
+		} else
 			pr_err("IPU6 ACPI: Invalid MIPI Port : %d", port);
 
 		if (!strcmp(sensor_name, IMX390_NAME))
@@ -722,8 +731,8 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 	return 0;
 }
 
-void set_serdes_info(struct device *dev, char *sensor_name,
-	const char *serdes_name, struct sensor_bios_data *cam_data)
+void set_serdes_info(struct device *dev, char *sensor_name, const char *serdes_name,
+			struct sensor_bios_data *cam_data)
 {
 	int i;
 
