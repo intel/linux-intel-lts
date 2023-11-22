@@ -948,45 +948,45 @@ static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 		(ov02c10->module_name_index == MODULE_2BG203N3)) {
 		u32 rotateReg, shiftXReg, shiftYReg;
 
-		ret = ov02c10_read_reg(ov02c10, OV02C10_ROTATE_CONTROL, 1,
-								&rotateReg);
+		ret = ov02c10_read_reg(ov02c10, OV02C10_ROTATE_CONTROL,
+				       1, &rotateReg);
 		if (ret)
-			dev_err(&client->dev, "OV02C10_ROTATE_CONTROL read Fail = 0x%x",
-								rotateReg);
+			dev_err(&client->dev,
+				"read ROTATE_CONTROL fail: %d", ret);
 
-		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL, 1,
-								&shiftXReg);
+		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL,
+				       1, &shiftXReg);
 		if (ret)
-			dev_err(&client->dev, "OV02C10_ISP_X_WIN_CONTROL read Fail = 0x%x",
-								shiftXReg);
+			dev_err(&client->dev,
+				"read ISP_X_WIN_CONTROL fail: %d", ret);
 
-		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL, 1,
-								&shiftYReg);
+		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL,
+				       1, &shiftYReg);
 		if (ret)
-			dev_err(&client->dev, "OV02C10_ISP_Y_WIN_CONTROL read Fail = 0x%x",
-								shiftYReg);
+			dev_err(&client->dev,
+				"read ISP_Y_WIN_CONTROL fail: %d", ret);
 
 		rotateReg ^= OV02C10_CONFIG_ROTATE;
 		shiftXReg = shiftXReg - 1;
 		shiftYReg = shiftYReg - 1;
 
-		ret = ov02c10_write_reg(ov02c10, OV02C10_ROTATE_CONTROL, 1,
-								rotateReg);
+		ret = ov02c10_write_reg(ov02c10, OV02C10_ROTATE_CONTROL,
+					1, rotateReg);
 		if (ret)
-			dev_err(&client->dev, "OV02C10_ROTATE_CONTROL write Fail = 0x%x",
-								rotateReg);
+			dev_err(&client->dev,
+				"write ROTATE_CONTROL fail: %d", ret);
 
-		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL, 1,
-								shiftXReg);
+		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL,
+					1, shiftXReg);
 		if (ret)
-			dev_err(&client->dev, "OV02C10_ISP_X_WIN_CONTROL write Fail = 0x%x",
-								shiftXReg);
+			dev_err(&client->dev,
+				"write ISP_X_WIN_CONTROL fail: %d", ret);
 
-		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL, 1,
-								shiftYReg);
+		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL,
+					1, shiftYReg);
 		if (ret)
-			dev_err(&client->dev, "OV02C10_ISP_Y_WIN_CONTROL write Fail = 0x%x",
-								shiftYReg);
+			dev_err(&client->dev,
+				"write ISP_Y_WIN_CONTROL fail: %d", ret);
 	}
 
 	ret = ov02c10_write_reg(ov02c10, OV02C10_REG_MODE_SELECT, 1,
