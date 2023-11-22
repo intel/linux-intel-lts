@@ -613,7 +613,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	rval = request_cpd_fw(&isp->cpd_fw, isp->cpd_fw_name, &pdev->dev);
 	if (rval) {
 		dev_err(&isp->pdev->dev, "Requesting signed firmware failed\n");
-		return rval;
+		goto buttress_exit;
 	}
 
 	rval = ipu_cpd_validate_cpd_file(isp, isp->cpd_fw->data,
@@ -787,13 +787,14 @@ out_ipu_bus_del_devices:
 	if (!IS_ERR_OR_NULL(isp->psys))
 		pm_runtime_put(&isp->psys->dev);
 	ipu_bus_del_devices(pdev);
-	ipu_buttress_exit(isp);
 	release_firmware(isp->cpd_fw);
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	release_firmware(isp->spdata_fw);
 #endif
 #endif
+buttress_exit:
+	ipu_buttress_exit(isp);
 
 	return rval;
 }
