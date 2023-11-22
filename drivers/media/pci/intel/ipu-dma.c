@@ -304,6 +304,7 @@ static int ipu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
 	struct vm_info *info;
 	size_t count = PAGE_ALIGN(size) >> PAGE_SHIFT;
 	size_t i;
+	int ret;
 
 	info = get_vm_info(mmu, iova);
 	if (!info)
@@ -318,9 +319,12 @@ static int ipu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
 	if (size > info->size)
 		return -EFAULT;
 
-	for (i = 0; i < count; i++)
-		vm_insert_page(vma, vma->vm_start + (i << PAGE_SHIFT),
-			       info->pages[i]);
+	for (i = 0; i < count; i++) {
+		ret = vm_insert_page(vma, vma->vm_start + (i << PAGE_SHIFT),
+				     info->pages[i]);
+		if (ret < 0)
+			return ret;
+	}
 
 	return 0;
 }
