@@ -283,7 +283,7 @@ static void isys_unregister_subdevices(struct ipu_isys *isys)
 	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++)
 		ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc[i]);
 
-	for (i = 0; i < csi2->nports; i++)
+	for (i = 0; i < csi2->nports && isys->csi2; i++)
 		ipu_isys_csi2_cleanup(&isys->csi2[i]);
 }
 
