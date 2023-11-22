@@ -11,6 +11,7 @@
 #define IPU6EPES_FIRMWARE_NAME		"intel/ipu6epes_fw.bin"
 #define IPU6_FIRMWARE_NAME		"intel/ipu6_fw.bin"
 #define IPU6EPMTL_FIRMWARE_NAME		"intel/ipu6epmtl_fw.bin"
+#define IPU6EPMTLES_FIRMWARE_NAME	"intel/ipu6epmtles_fw.bin"
 #define IPU6EPADLN_FIRMWARE_NAME	"intel/ipu6epadln_fw.bin"
 
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
