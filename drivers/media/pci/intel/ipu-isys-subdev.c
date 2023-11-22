@@ -17,8 +17,10 @@ unsigned int ipu_isys_mbus_code_to_bpp(u32 code)
 	switch (code) {
 	case MEDIA_BUS_FMT_RGB888_1X24:
 		return 24;
+#ifdef V4L2_PIX_FMT_Y210
 	case MEDIA_BUS_FMT_YUYV10_1X20:
 		return 20;
+#endif
 	case MEDIA_BUS_FMT_Y10_1X10:
 	case MEDIA_BUS_FMT_RGB565_1X16:
 	case MEDIA_BUS_FMT_UYVY8_1X16:
@@ -57,8 +59,10 @@ unsigned int ipu_isys_mbus_code_to_mipi(u32 code)
 		return IPU_ISYS_MIPI_CSI2_TYPE_RGB565;
 	case MEDIA_BUS_FMT_RGB888_1X24:
 		return IPU_ISYS_MIPI_CSI2_TYPE_RGB888;
+#ifdef V4L2_PIX_FMT_Y210
 	case MEDIA_BUS_FMT_YUYV10_1X20:
 		return IPU_ISYS_MIPI_CSI2_TYPE_YUV422_10;
+#endif
 	case MEDIA_BUS_FMT_UYVY8_1X16:
 	case MEDIA_BUS_FMT_YUYV8_1X16:
 		return IPU_ISYS_MIPI_CSI2_TYPE_YUV422_8;
