@@ -412,18 +412,6 @@ void irq_percpu_disable(struct irq_desc *desc, unsigned int cpu)
 	cpumask_clear_cpu(cpu, desc->percpu_enabled);
 }
 
-#ifdef CONFIG_IRQ_PIPELINE
-void irq_clear_deferral(struct irq_desc *desc)
-{
-	desc->istate &= ~IRQS_DEFERRED;
-}
-
-void irq_clear_forward(struct irq_desc *desc)
-{
-	desc->istate &= ~IRQS_FORWARDED;
-}
-#endif
-
 static inline void mask_ack_irq(struct irq_desc *desc)
 {
 	if (desc->irq_data.chip->irq_mask_ack) {
@@ -527,6 +515,48 @@ enum {
 	IRQ_FLOW_FORWARD,
 };
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+static inline bool may_start_flow(int flow)
+{
+	return flow != IRQ_FLOW_REPLAY && flow != IRQ_FLOW_FORWARD;
+}
+
+void irq_clear_deferral(struct irq_desc *desc)
+{
+	desc->istate &= ~IRQS_DEFERRED;
+}
+
+void irq_clear_forward(struct irq_desc *desc)
+{
+	desc->istate &= ~IRQS_FORWARDED;
+}
+
+static irqreturn_t forward_irq_event(struct irq_desc *desc)
+{
+	irqreturn_t ret;
+
+	raw_spin_unlock(&desc->lock);
+	ret = handle_irq_event_percpu(desc);
+	raw_spin_lock(&desc->lock);
+
+	return ret;
+}
+
+#else
+
+static inline bool may_start_flow(int flow)
+{
+	return true;
+}
+
+irqreturn_t forward_irq_event(struct irq_desc *desc)
+{
+	return IRQ_NONE;
+}
+
+#endif
+
 /*
  * get_flow_step - Determine which step of the interrupt flow handling
  * we are in.
@@ -626,11 +656,6 @@ static inline bool should_feed_pipeline(struct irq_desc *desc, int state)
 	}
 
 	return false;
-}
-
-static inline bool may_start_flow(int flow)
-{
-	return flow != IRQ_FLOW_REPLAY && flow != IRQ_FLOW_FORWARD;
 }
 
 static bool irq_may_run(struct irq_desc *desc)
@@ -745,16 +770,19 @@ void handle_untracked_irq(struct irq_desc *desc)
 		goto out_unlock;
 	}
 
-	if (flow != IRQ_FLOW_FORWARD) {
-		desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
-
-		if (unlikely(!desc->action || irqd_irq_disabled(&desc->irq_data))) {
-			desc->istate |= IRQS_PENDING;
-			goto out_unlock;
-		}
-
-		desc->istate &= ~IRQS_PENDING;
+	if (flow == IRQ_FLOW_FORWARD) {
+		forward_irq_event(desc);
+		goto out_unlock;
 	}
+
+	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+
+	if (unlikely(!desc->action || irqd_irq_disabled(&desc->irq_data))) {
+		desc->istate |= IRQS_PENDING;
+		goto out_unlock;
+	}
+
+	desc->istate &= ~IRQS_PENDING;
 	irqd_set(&desc->irq_data, IRQD_IRQ_INPROGRESS);
 	raw_spin_unlock(&desc->lock);
 
@@ -1147,42 +1175,39 @@ void handle_percpu_irq(struct irq_desc *desc)
 	bool handled;
 	int flow;
 
-	flow = get_flow_step(desc);
-	if (may_start_flow(flow)) {
-		if (chip->irq_ack)
-			chip->irq_ack(&desc->irq_data);
-		handled = handle_oob_irq(desc);
-		if (chip->irq_eoi)
-			chip->irq_eoi(&desc->irq_data);
-		if (!handled && chip->irq_mask)
-			chip->irq_mask(&desc->irq_data);
-		return;
-	}
-
-	if (flow == IRQ_FLOW_FORWARD) {
-		handle_irq_event_percpu(desc);
-		return;
-	}
-
-	/*
-	 * PER CPU interrupts are not serialized. Do not touch
-	 * desc->tot_count.
-	 */
-	__kstat_incr_irqs_this_cpu(desc);
-
 	if (irqs_pipelined()) {
-		handle_irq_event_percpu(desc);
-		if (chip->irq_unmask) {
+		flow = get_flow_step(desc);
+		if (may_start_flow(flow)) {
+			if (chip->irq_ack)
+				chip->irq_ack(&desc->irq_data);
+			handled = handle_oob_irq(desc);
+			if (chip->irq_eoi)
+				chip->irq_eoi(&desc->irq_data);
+			if (!handled && chip->irq_mask)
+				chip->irq_mask(&desc->irq_data);
+		} else if (flow == IRQ_FLOW_FORWARD) {
+			handle_irq_event_percpu(desc);
+		} else {
+			__kstat_incr_irqs_this_cpu(desc);
+			handle_irq_event_percpu(desc);
 			/*
 			 * irqchip handlers assume that hard irqs are
 			 * off, which is not the case on replay of
 			 * unserialized percpu irqs: fix this up.
 			 */
-			flags = hard_cond_local_irq_save();
-			chip->irq_unmask(&desc->irq_data);
-			hard_cond_local_irq_restore(flags);
+			if (chip->irq_unmask) {
+				flags = hard_cond_local_irq_save();
+				chip->irq_unmask(&desc->irq_data);
+				hard_cond_local_irq_restore(flags);
+			}
 		}
 	} else {
+		/*
+		 * PER CPU interrupts are not serialized. Do not touch
+		 * desc->tot_count.
+		 */
+		__kstat_incr_irqs_this_cpu(desc);
+
 		if (chip->irq_ack)
 			chip->irq_ack(&desc->irq_data);
 		handle_irq_event_percpu(desc);
@@ -1213,20 +1238,22 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 	int flow;
 
 	flow = get_flow_step(desc);
-	if (may_start_flow(flow)) {
-		if (chip->irq_ack)
-			chip->irq_ack(&desc->irq_data);
-		handled = handle_oob_irq(desc);
-		if (chip->irq_eoi)
-			chip->irq_eoi(&desc->irq_data);
-		if (!handled && chip->irq_mask)
-			chip->irq_mask(&desc->irq_data);
-		return;
-	}
-
-	if (flow == IRQ_FLOW_FORWARD) {
-		handle_irq_event_percpu(desc);
-		return;
+	if (irqs_pipelined()) {
+		if (may_start_flow(flow)) {
+			if (chip->irq_ack)
+				chip->irq_ack(&desc->irq_data);
+			handled = handle_oob_irq(desc);
+			if (chip->irq_eoi)
+				chip->irq_eoi(&desc->irq_data);
+			if (!handled && chip->irq_mask)
+				chip->irq_mask(&desc->irq_data);
+			return;
+		} else if (flow == IRQ_FLOW_FORWARD) {
+			handle_irq_event_percpu(desc);
+			return;
+		}
+	} else if (chip->irq_ack) {
+		chip->irq_ack(&desc->irq_data);
 	}
 
 	/*
@@ -1234,9 +1261,6 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 	 * desc->tot_count.
 	 */
 	__kstat_incr_irqs_this_cpu(desc);
-
-	if (!irqs_pipelined() && chip->irq_ack)
-		chip->irq_ack(&desc->irq_data);
 
 	if (likely(action)) {
 		trace_irq_handler_entry(irq, action);
@@ -1263,8 +1287,9 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 		if (chip->irq_unmask)
 			chip->irq_unmask(&desc->irq_data);
 		hard_cond_local_irq_restore(flags);
-	} else if (chip->irq_eoi)
-			chip->irq_eoi(&desc->irq_data);
+	} else if (chip->irq_eoi) {
+		chip->irq_eoi(&desc->irq_data);
+	}
 }
 
 /**
