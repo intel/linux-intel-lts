@@ -47,9 +47,6 @@
 # CVE-2023-31083
 0001-Bluetooth-hci_ldisc-check-HCI_UART_PROTO_READY-flag-.patch
 
-# CVE-2023-5197
-0001-netfilter-nf_tables-disallow-rule-removal-from-chain.patch
-
 # CVE-2023-25775
 0001-RDMA-irdma-Prevent-zero-length-STAG-registration.patch
 
