@@ -1,0 +1,14 @@
+# CVE-2023-31085
+0001-ubi-Refuse-attaching-if-mtd-s-erasesize-is-0.patch
+
+# CVE-2023-4623
+0001-net-sched-sch_hfsc-Ensure-inner-classes-have-fsc-cur.patch
+
+# CVE-2023-37454
+0001-KASAN-use-after-free-Write-in-udf_close_lvid.patch
+
+# CVE-2023-6238
+0001-nvme-fix-corruption-for-passthrough-meta-data.patch
+
+# CVE-2023-6111
+0001-netfilter-nf_tables-remove-catchall-element-in-GC-sy.patch

@@ -1,0 +1,40 @@
+From 5b02c5051eee49ffb0546e9ff7b39119b4b94789 Mon Sep 17 00:00:00 2001
+From: Zhihao Cheng <chengzhihao1@huawei.com>
+Date: Sun, 23 Apr 2023 19:10:41 +0800
+Subject: [PATCH] ubi: Refuse attaching if mtd's erasesize is 0
+
+There exists mtd devices with zero erasesize, which will trigger a
+divide-by-zero exception while attaching ubi device.
+Fix it by refusing attaching if mtd's erasesize is 0.
+
+Fixes: 801c135ce73d ("UBI: Unsorted Block Images")
+Reported-by: Yu Hao <yhao016@ucr.edu>
+Link: https://lore.kernel.org/lkml/977347543.226888.1682011999468.JavaMail.zimbra@nod.at/T/
+Signed-off-by: Zhihao Cheng <chengzhihao1@huawei.com>
+Reviewed-by: Miquel Raynal <miquel.raynal@bootlin.com>
+Signed-off-by: Richard Weinberger <richard@nod.at>
+---
+ drivers/mtd/ubi/build.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/mtd/ubi/build.c b/drivers/mtd/ubi/build.c
+index 8b91a55ec0d2..8ee51e49fced 100644
+--- a/drivers/mtd/ubi/build.c
++++ b/drivers/mtd/ubi/build.c
+@@ -894,6 +894,13 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
+ 		return -EINVAL;
+ 	}
+ 
++	/* UBI cannot work on flashes with zero erasesize. */
++	if (!mtd->erasesize) {
++		pr_err("ubi: refuse attaching mtd%d - zero erasesize flash is not supported\n",
++			mtd->index);
++		return -EINVAL;
++	}
++
+ 	if (ubi_num == UBI_DEV_NUM_AUTO) {
+ 		/* Search for an empty slot in the @ubi_devices array */
+ 		for (ubi_num = 0; ubi_num < UBI_MAX_DEVICES; ubi_num++)
+-- 
+2.25.1
+
