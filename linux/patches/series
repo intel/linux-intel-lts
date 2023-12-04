@@ -68,3 +68,9 @@
 
 # CVE-2023-5717
 0001-perf-Disallow-mis-matched-inherited-group-reads.patch
+
+# CVE-2023-6111
+0001-netfilter-nf_tables-remove-catchall-element-in-GC-sy.patch
+
+# CVE-2023-6238
+0001-nvme-fix-corruption-for-passthrough-meta-data.patch
