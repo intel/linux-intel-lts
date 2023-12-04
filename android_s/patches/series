@@ -65,9 +65,6 @@
 # CVE-2021-4148
 0001-mm-khugepaged-skip-huge-page-collapse-for-special-fi.patch
 
-# CVE-2021-44879
-0001-f2fs-fix-to-do-sanity-check-on-inode-type-during-gar.patch
-
 # CVE-2022-1280
 0001-drm-add-a-locked-version-of-drm_is_current_master.patch
 0002-drm-protect-drm_master-pointers-in-drm_lease.c.patch
@@ -77,9 +74,6 @@
 
 # CVE-2022-3303
 0001-ALSA-pcm-oss-Fix-race-at-SNDCTL_DSP_SYNC.patch
-
-# CVE-2023-0590
-0001-net-sched-fix-race-condition-in-qdisc_graft.patch
 
 # CVE-2022-4129
 0001-l2tp-Serialize-access-to-sk_user_data-with-sk_callba.patch
