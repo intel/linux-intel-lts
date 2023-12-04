@@ -1,0 +1,125 @@
+From 30d9db8846b68d22490d1e0fe63619a3dd9dac69 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Wed, 23 Nov 2022 21:18:37 +0100
+Subject: [PATCH 02/15] timers: Get rid of del_singleshot_timer_sync()
+
+del_singleshot_timer_sync() used to be an optimization for deleting timers
+which are not rearmed from the timer callback function.
+
+This optimization turned out to be broken and got mapped to
+del_timer_sync() about 17 years ago.
+
+Get rid of the undocumented indirection and use del_timer_sync() directly.
+
+No functional change.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Tested-by: Guenter Roeck <linux@roeck-us.net>
+Reviewed-by: Jacob Keller <jacob.e.keller@intel.com>
+Reviewed-by: Anna-Maria Behnsen <anna-maria@linutronix.de>
+Link: https://lore.kernel.org/r/20221123201624.706987932@linutronix.de
+---
+ drivers/char/tpm/tpm-dev-common.c     | 4 ++--
+ drivers/staging/wlan-ng/hfa384x_usb.c | 4 ++--
+ drivers/staging/wlan-ng/prism2usb.c   | 6 +++---
+ include/linux/timer.h                 | 2 --
+ kernel/time/timer.c                   | 2 +-
+ net/sunrpc/xprt.c                     | 2 +-
+ 6 files changed, 9 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-dev-common.c b/drivers/char/tpm/tpm-dev-common.c
+index dc4c0a0a5129..30b4c288c1bb 100644
+--- a/drivers/char/tpm/tpm-dev-common.c
++++ b/drivers/char/tpm/tpm-dev-common.c
+@@ -155,7 +155,7 @@ ssize_t tpm_common_read(struct file *file, char __user *buf,
+ out:
+ 	if (!priv->response_length) {
+ 		*off = 0;
+-		del_singleshot_timer_sync(&priv->user_read_timer);
++		del_timer_sync(&priv->user_read_timer);
+ 		flush_work(&priv->timeout_work);
+ 	}
+ 	mutex_unlock(&priv->buffer_mutex);
+@@ -262,7 +262,7 @@ __poll_t tpm_common_poll(struct file *file, poll_table *wait)
+ void tpm_common_release(struct file *file, struct file_priv *priv)
+ {
+ 	flush_work(&priv->async_work);
+-	del_singleshot_timer_sync(&priv->user_read_timer);
++	del_timer_sync(&priv->user_read_timer);
+ 	flush_work(&priv->timeout_work);
+ 	file->private_data = NULL;
+ 	priv->response_length = 0;
+diff --git a/drivers/staging/wlan-ng/hfa384x_usb.c b/drivers/staging/wlan-ng/hfa384x_usb.c
+index 0d869b5e309c..8687e0bf3315 100644
+--- a/drivers/staging/wlan-ng/hfa384x_usb.c
++++ b/drivers/staging/wlan-ng/hfa384x_usb.c
+@@ -1116,8 +1116,8 @@ static int hfa384x_usbctlx_complete_sync(struct hfa384x *hw,
+ 		if (ctlx == get_active_ctlx(hw)) {
+ 			spin_unlock_irqrestore(&hw->ctlxq.lock, flags);
+ 
+-			del_singleshot_timer_sync(&hw->reqtimer);
+-			del_singleshot_timer_sync(&hw->resptimer);
++			del_timer_sync(&hw->reqtimer);
++			del_timer_sync(&hw->resptimer);
+ 			hw->req_timer_done = 1;
+ 			hw->resp_timer_done = 1;
+ 			usb_kill_urb(&hw->ctlx_urb);
+diff --git a/drivers/staging/wlan-ng/prism2usb.c b/drivers/staging/wlan-ng/prism2usb.c
+index 4b08dc1da4f9..83fcb937a58e 100644
+--- a/drivers/staging/wlan-ng/prism2usb.c
++++ b/drivers/staging/wlan-ng/prism2usb.c
+@@ -171,9 +171,9 @@ static void prism2sta_disconnect_usb(struct usb_interface *interface)
+ 		 */
+ 		prism2sta_ifstate(wlandev, P80211ENUM_ifstate_disable);
+ 
+-		del_singleshot_timer_sync(&hw->throttle);
+-		del_singleshot_timer_sync(&hw->reqtimer);
+-		del_singleshot_timer_sync(&hw->resptimer);
++		del_timer_sync(&hw->throttle);
++		del_timer_sync(&hw->reqtimer);
++		del_timer_sync(&hw->resptimer);
+ 
+ 		/* Unlink all the URBs. This "removes the wheels"
+ 		 * from the entire CTLX handling mechanism.
+diff --git a/include/linux/timer.h b/include/linux/timer.h
+index 6d765a94e1d5..776689a3de5f 100644
+--- a/include/linux/timer.h
++++ b/include/linux/timer.h
+@@ -194,8 +194,6 @@ extern int try_to_del_timer_sync(struct timer_list *timer);
+ # define del_timer_sync(t)		del_timer(t)
+ #endif
+ 
+-#define del_singleshot_timer_sync(t) del_timer_sync(t)
+-
+ extern void init_timers(void);
+ struct hrtimer;
+ extern enum hrtimer_restart it_real_fn(struct hrtimer *);
+diff --git a/kernel/time/timer.c b/kernel/time/timer.c
+index 68d7280291bc..308bf37a99ce 100644
+--- a/kernel/time/timer.c
++++ b/kernel/time/timer.c
+@@ -1888,7 +1888,7 @@ signed long __sched schedule_timeout(signed long timeout)
+ 	timer_setup_on_stack(&timer.timer, process_timeout, 0);
+ 	__mod_timer(&timer.timer, expire, MOD_TIMER_NOTPENDING);
+ 	schedule();
+-	del_singleshot_timer_sync(&timer.timer);
++	del_timer_sync(&timer.timer);
+ 
+ 	/* Remove the timer from the object tracker */
+ 	destroy_timer_on_stack(&timer.timer);
+diff --git a/net/sunrpc/xprt.c b/net/sunrpc/xprt.c
+index 2db834318d14..2bccb5a90934 100644
+--- a/net/sunrpc/xprt.c
++++ b/net/sunrpc/xprt.c
+@@ -1160,7 +1160,7 @@ xprt_request_enqueue_receive(struct rpc_task *task)
+ 	spin_unlock(&xprt->queue_lock);
+ 
+ 	/* Turn off autodisconnect */
+-	del_singleshot_timer_sync(&xprt->timer);
++	del_timer_sync(&xprt->timer);
+ }
+ 
+ /**
+-- 
+2.25.1
+

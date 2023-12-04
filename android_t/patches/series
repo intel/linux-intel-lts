@@ -55,3 +55,36 @@
 
 # CVE-2022-45885
 0001-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
+
+# CVE-2023-6039
+0001-timers-Replace-in_irq-with-in_hardirq.patch
+0002-timers-Get-rid-of-del_singleshot_timer_sync.patch
+0003-timers-Replace-BUG_ON-s.patch
+0004-timers-Update-kernel-doc-for-various-functions.patch
+0005-timers-Use-del_timer_sync-even-on-UP.patch
+0006-timers-Rename-del_timer_sync-to-timer_delete_sync.patch
+0007-timers-Rename-del_timer-to-timer_delete.patch
+0008-timers-Silently-ignore-timers-with-a-NULL-function.patch
+0009-timers-Split-try_to_-del_timer-_sync-to-prepare-for-.patch
+0010-timers-Add-shutdown-mechanism-to-the-internal-functi.patch
+0011-timers-Provide-timer_shutdown-_sync.patch
+0012-ARM-spear-Do-not-use-timer-namespace-for-timer_shutd.patch
+0013-clocksource-drivers-arm_arch_timer-Do-not-use-timer-.patch
+0014-clocksource-drivers-sp804-Do-not-use-timer-namespace.patch
+0015-net-usb-lan78xx-reorder-cleanup-operations-to-avoid-.patch
+
+# CVE-2023-25775
+# 0001-timers-Replace-in_irq-with-in_hardirq.patch
+0002-RDMA-irdma-Prevent-zero-length-STAG-registration.patch
+
+# CVE-2023-5178
+0001-nvmet-tcp-Fix-a-possible-UAF-in-queue-intialization-.patch
+
+# CVE-2023-46813
+0001-x86-sev-Check-for-user-space-IOIO-pointing-to-kernel.patch
+
+# CVE-2023-1194
+0001-ksmbd-fix-out-of-bound-read-in-parse_lease_state.patch
+
+# CVE-2023-6111
+0001-netfilter-nf_tables-remove-catchall-element-in-GC-sy.patch

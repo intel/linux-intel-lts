@@ -1,0 +1,64 @@
+From 72a9ac2bcc2b0debc9f2ba0406e1ee50bfd02d98 Mon Sep 17 00:00:00 2001
+From: Sagi Grimberg <sagi@grimberg.me>
+Date: Mon, 2 Oct 2023 13:54:28 +0300
+Subject: [PATCH] nvmet-tcp: Fix a possible UAF in queue intialization setup
+
+commit d920abd1e7c4884f9ecd0749d1921b7ab19ddfbd upstream.
+
+From Alon:
+"Due to a logical bug in the NVMe-oF/TCP subsystem in the Linux kernel,
+a malicious user can cause a UAF and a double free, which may lead to
+RCE (may also lead to an LPE in case the attacker already has local
+privileges)."
+
+Hence, when a queue initialization fails after the ahash requests are
+allocated, it is guaranteed that the queue removal async work will be
+called, hence leave the deallocation to the queue removal.
+
+Also, be extra careful not to continue processing the socket, so set
+queue rcv_state to NVMET_TCP_RECV_ERR upon a socket error.
+
+Cc: stable@vger.kernel.org
+Reported-by: Alon Zahavi <zahavi.alon@gmail.com>
+Tested-by: Alon Zahavi <zahavi.alon@gmail.com>
+Signed-off-by: Sagi Grimberg <sagi@grimberg.me>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Chaitanya Kulkarni <kch@nvidia.com>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/nvme/target/tcp.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/nvme/target/tcp.c b/drivers/nvme/target/tcp.c
+index 2add26637c87..6a57cf885db1 100644
+--- a/drivers/nvme/target/tcp.c
++++ b/drivers/nvme/target/tcp.c
+@@ -348,6 +348,7 @@ static void nvmet_tcp_fatal_error(struct nvmet_tcp_queue *queue)
+ 
+ static void nvmet_tcp_socket_error(struct nvmet_tcp_queue *queue, int status)
+ {
++	queue->rcv_state = NVMET_TCP_RECV_ERR;
+ 	if (status == -EPIPE || status == -ECONNRESET)
+ 		kernel_sock_shutdown(queue->sock, SHUT_RDWR);
+ 	else
+@@ -894,15 +895,11 @@ static int nvmet_tcp_handle_icreq(struct nvmet_tcp_queue *queue)
+ 	iov.iov_len = sizeof(*icresp);
+ 	ret = kernel_sendmsg(queue->sock, &msg, &iov, 1, iov.iov_len);
+ 	if (ret < 0)
+-		goto free_crypto;
++		return ret; /* queue removal will cleanup */
+ 
+ 	queue->state = NVMET_TCP_Q_LIVE;
+ 	nvmet_prepare_receive_pdu(queue);
+ 	return 0;
+-free_crypto:
+-	if (queue->hdr_digest || queue->data_digest)
+-		nvmet_tcp_free_crypto(queue);
+-	return ret;
+ }
+ 
+ static void nvmet_tcp_handle_req_failure(struct nvmet_tcp_queue *queue,
+-- 
+2.25.1
+

@@ -1,0 +1,71 @@
+From 7b4558aed85073e0cc906cde2de30a74d9d6e443 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Wed, 23 Nov 2022 21:18:39 +0100
+Subject: [PATCH 03/15] timers: Replace BUG_ON()s
+
+The timer code still has a few BUG_ON()s left which are crashing the kernel
+in situations where it still can recover or simply refuse to take an
+action.
+
+Remove the one in the hotplug callback which checks for the CPU being
+offline. If that happens then the whole hotplug machinery will explode in
+colourful ways.
+
+Replace the rest with WARN_ON_ONCE() and conditional returns where
+appropriate.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Tested-by: Guenter Roeck <linux@roeck-us.net>
+Reviewed-by: Jacob Keller <jacob.e.keller@intel.com>
+Reviewed-by: Anna-Maria Behnsen <anna-maria@linutronix.de>
+Link: https://lore.kernel.org/r/20221123201624.769128888@linutronix.de
+---
+ kernel/time/timer.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/time/timer.c b/kernel/time/timer.c
+index 308bf37a99ce..568f27916651 100644
+--- a/kernel/time/timer.c
++++ b/kernel/time/timer.c
+@@ -1146,7 +1146,8 @@ EXPORT_SYMBOL(timer_reduce);
+  */
+ void add_timer(struct timer_list *timer)
+ {
+-	BUG_ON(timer_pending(timer));
++	if (WARN_ON_ONCE(timer_pending(timer)))
++		return;
+ 	__mod_timer(timer, timer->expires, MOD_TIMER_NOTPENDING);
+ }
+ EXPORT_SYMBOL(add_timer);
+@@ -1163,7 +1164,8 @@ void add_timer_on(struct timer_list *timer, int cpu)
+ 	struct timer_base *new_base, *base;
+ 	unsigned long flags;
+ 
+-	BUG_ON(timer_pending(timer) || !timer->function);
++	if (WARN_ON_ONCE(timer_pending(timer) || !timer->function))
++		return;
+ 
+ 	new_base = get_timer_cpu_base(timer->flags, cpu);
+ 
+@@ -1971,8 +1973,6 @@ int timers_dead_cpu(unsigned int cpu)
+ 	struct timer_base *new_base;
+ 	int b, i;
+ 
+-	BUG_ON(cpu_online(cpu));
+-
+ 	for (b = 0; b < NR_BASES; b++) {
+ 		old_base = per_cpu_ptr(&timer_bases[b], cpu);
+ 		new_base = get_cpu_ptr(&timer_bases[b]);
+@@ -1989,7 +1989,8 @@ int timers_dead_cpu(unsigned int cpu)
+ 		 */
+ 		forward_timer_base(new_base);
+ 
+-		BUG_ON(old_base->running_timer);
++		WARN_ON_ONCE(old_base->running_timer);
++		old_base->running_timer = NULL;
+ 
+ 		for (i = 0; i < WHEEL_SIZE; i++)
+ 			migrate_timer_list(new_base, old_base->vectors + i);
+-- 
+2.25.1
+

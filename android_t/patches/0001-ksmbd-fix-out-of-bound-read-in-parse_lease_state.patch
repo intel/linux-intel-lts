@@ -1,0 +1,132 @@
+From d17123aa2816d63b6ba74a36517b656ba7975666 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <linkinjeon@kernel.org>
+Date: Sun, 28 May 2023 00:23:41 +0900
+Subject: [PATCH] ksmbd: fix out-of-bound read in parse_lease_state()
+
+commit fc6c6a3c324c1b3e93a03d0cfa3749c781f23de0 upstream.
+
+This bug is in parse_lease_state, and it is caused by the missing check
+of `struct create_context`. When the ksmbd traverses the create_contexts,
+it doesn't check if the field of `NameOffset` and `Next` is valid,
+The KASAN message is following:
+
+[    6.664323] BUG: KASAN: slab-out-of-bounds in parse_lease_state+0x7d/0x280
+[    6.664738] Read of size 2 at addr ffff888005c08988 by task kworker/0:3/103
+...
+[    6.666644] Call Trace:
+[    6.666796]  <TASK>
+[    6.666933]  dump_stack_lvl+0x33/0x50
+[    6.667167]  print_report+0xcc/0x620
+[    6.667903]  kasan_report+0xae/0xe0
+[    6.668374]  kasan_check_range+0x35/0x1b0
+[    6.668621]  parse_lease_state+0x7d/0x280
+[    6.668868]  smb2_open+0xbe8/0x4420
+[    6.675137]  handle_ksmbd_work+0x282/0x820
+
+Use smb2_find_context_vals() to find smb2 create request lease context.
+smb2_find_context_vals validate create context fields.
+
+Cc: stable@vger.kernel.org
+Reported-by: Chih-Yen Chang <cc85nod@gmail.com>
+Tested-by: Chih-Yen Chang <cc85nod@gmail.com>
+Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/ksmbd/oplock.c | 74 ++++++++++++++++++-----------------------------
+ 1 file changed, 28 insertions(+), 46 deletions(-)
+
+diff --git a/fs/ksmbd/oplock.c b/fs/ksmbd/oplock.c
+index 9722e5237799..f2fee4820409 100644
+--- a/fs/ksmbd/oplock.c
++++ b/fs/ksmbd/oplock.c
+@@ -1388,58 +1388,40 @@ void create_lease_buf(u8 *rbuf, struct lease *lease)
+  */
+ struct lease_ctx_info *parse_lease_state(void *open_req)
+ {
+-	char *data_offset;
+ 	struct create_context *cc;
+-	unsigned int next = 0;
+-	char *name;
+-	bool found = false;
+ 	struct smb2_create_req *req = (struct smb2_create_req *)open_req;
+-	struct lease_ctx_info *lreq = kzalloc(sizeof(struct lease_ctx_info),
+-		GFP_KERNEL);
+-	if (!lreq)
++	struct lease_ctx_info *lreq;
++
++	cc = smb2_find_context_vals(req, SMB2_CREATE_REQUEST_LEASE, 4);
++	if (IS_ERR_OR_NULL(cc))
+ 		return NULL;
+ 
+-	data_offset = (char *)req + 4 + le32_to_cpu(req->CreateContextsOffset);
+-	cc = (struct create_context *)data_offset;
+-	do {
+-		cc = (struct create_context *)((char *)cc + next);
+-		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
+-		if (le16_to_cpu(cc->NameLength) != 4 ||
+-		    strncmp(name, SMB2_CREATE_REQUEST_LEASE, 4)) {
+-			next = le32_to_cpu(cc->Next);
+-			continue;
+-		}
+-		found = true;
+-		break;
+-	} while (next != 0);
++	lreq = kzalloc(sizeof(struct lease_ctx_info), GFP_KERNEL);
++	if (!lreq)
++		return NULL;
+ 
+-	if (found) {
+-		if (sizeof(struct lease_context_v2) == le32_to_cpu(cc->DataLength)) {
+-			struct create_lease_v2 *lc = (struct create_lease_v2 *)cc;
+-
+-			*((__le64 *)lreq->lease_key) = lc->lcontext.LeaseKeyLow;
+-			*((__le64 *)(lreq->lease_key + 8)) = lc->lcontext.LeaseKeyHigh;
+-			lreq->req_state = lc->lcontext.LeaseState;
+-			lreq->flags = lc->lcontext.LeaseFlags;
+-			lreq->duration = lc->lcontext.LeaseDuration;
+-			*((__le64 *)lreq->parent_lease_key) = lc->lcontext.ParentLeaseKeyLow;
+-			*((__le64 *)(lreq->parent_lease_key + 8)) = lc->lcontext.ParentLeaseKeyHigh;
+-			lreq->version = 2;
+-		} else {
+-			struct create_lease *lc = (struct create_lease *)cc;
+-
+-			*((__le64 *)lreq->lease_key) = lc->lcontext.LeaseKeyLow;
+-			*((__le64 *)(lreq->lease_key + 8)) = lc->lcontext.LeaseKeyHigh;
+-			lreq->req_state = lc->lcontext.LeaseState;
+-			lreq->flags = lc->lcontext.LeaseFlags;
+-			lreq->duration = lc->lcontext.LeaseDuration;
+-			lreq->version = 1;
+-		}
+-		return lreq;
++	if (sizeof(struct lease_context_v2) == le32_to_cpu(cc->DataLength)) {
++		struct create_lease_v2 *lc = (struct create_lease_v2 *)cc;
++
++		*((__le64 *)lreq->lease_key) = lc->lcontext.LeaseKeyLow;
++		*((__le64 *)(lreq->lease_key + 8)) = lc->lcontext.LeaseKeyHigh;
++		lreq->req_state = lc->lcontext.LeaseState;
++		lreq->flags = lc->lcontext.LeaseFlags;
++		lreq->duration = lc->lcontext.LeaseDuration;
++		*((__le64 *)lreq->parent_lease_key) = lc->lcontext.ParentLeaseKeyLow;
++		*((__le64 *)(lreq->parent_lease_key + 8)) = lc->lcontext.ParentLeaseKeyHigh;
++		lreq->version = 2;
++	} else {
++		struct create_lease *lc = (struct create_lease *)cc;
++
++		*((__le64 *)lreq->lease_key) = lc->lcontext.LeaseKeyLow;
++		*((__le64 *)(lreq->lease_key + 8)) = lc->lcontext.LeaseKeyHigh;
++		lreq->req_state = lc->lcontext.LeaseState;
++		lreq->flags = lc->lcontext.LeaseFlags;
++		lreq->duration = lc->lcontext.LeaseDuration;
++		lreq->version = 1;
+ 	}
+-
+-	kfree(lreq);
+-	return NULL;
++	return lreq;
+ }
+ 
+ /**
+-- 
+2.25.1
+

@@ -1,0 +1,100 @@
+From c62269ca248b7cae994789dd1e974f6cccf854a0 Mon Sep 17 00:00:00 2001
+From: Joerg Roedel <jroedel@suse.de>
+Date: Mon, 16 Oct 2023 14:42:50 +0200
+Subject: [PATCH] x86/sev: Check for user-space IOIO pointing to kernel space
+
+Upstream commit: 63e44bc52047f182601e7817da969a105aa1f721
+
+Check the memory operand of INS/OUTS before emulating the instruction.
+The #VC exception can get raised from user-space, but the memory operand
+can be manipulated to access kernel memory before the emulation actually
+begins and after the exception handler has run.
+
+  [ bp: Massage commit message. ]
+
+Fixes: 597cfe48212a ("x86/boot/compressed/64: Setup a GHCB-based VC Exception handler")
+Reported-by: Tom Dohrmann <erbse.13@gmx.de>
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Borislav Petkov (AMD) <bp@alien8.de>
+Cc: <stable@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/boot/compressed/sev.c |  5 +++++
+ arch/x86/kernel/sev-shared.c   | 31 +++++++++++++++++++++++++++++--
+ 2 files changed, 34 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/boot/compressed/sev.c b/arch/x86/boot/compressed/sev.c
+index 670e998fe930..9a3ac8bd29e9 100644
+--- a/arch/x86/boot/compressed/sev.c
++++ b/arch/x86/boot/compressed/sev.c
+@@ -105,6 +105,11 @@ static enum es_result vc_read_mem(struct es_em_ctxt *ctxt,
+ 	return ES_OK;
+ }
+ 
++static bool fault_in_kernel_space(unsigned long address)
++{
++	return false;
++}
++
+ #undef __init
+ #undef __pa
+ #define __init
+diff --git a/arch/x86/kernel/sev-shared.c b/arch/x86/kernel/sev-shared.c
+index bf1033a62e48..7685671c91f2 100644
+--- a/arch/x86/kernel/sev-shared.c
++++ b/arch/x86/kernel/sev-shared.c
+@@ -213,6 +213,23 @@ void __init do_vc_no_ghcb(struct pt_regs *regs, unsigned long exit_code)
+ 	sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
+ }
+ 
++static enum es_result vc_insn_string_check(struct es_em_ctxt *ctxt,
++					   unsigned long address,
++					   bool write)
++{
++	if (user_mode(ctxt->regs) && fault_in_kernel_space(address)) {
++		ctxt->fi.vector     = X86_TRAP_PF;
++		ctxt->fi.error_code = X86_PF_USER;
++		ctxt->fi.cr2        = address;
++		if (write)
++			ctxt->fi.error_code |= X86_PF_WRITE;
++
++		return ES_EXCEPTION;
++	}
++
++	return ES_OK;
++}
++
+ static enum es_result vc_insn_string_read(struct es_em_ctxt *ctxt,
+ 					  void *src, char *buf,
+ 					  unsigned int data_size,
+@@ -220,7 +237,12 @@ static enum es_result vc_insn_string_read(struct es_em_ctxt *ctxt,
+ 					  bool backwards)
+ {
+ 	int i, b = backwards ? -1 : 1;
+-	enum es_result ret = ES_OK;
++	unsigned long address = (unsigned long)src;
++	enum es_result ret;
++
++	ret = vc_insn_string_check(ctxt, address, false);
++	if (ret != ES_OK)
++		return ret;
+ 
+ 	for (i = 0; i < count; i++) {
+ 		void *s = src + (i * data_size * b);
+@@ -241,7 +263,12 @@ static enum es_result vc_insn_string_write(struct es_em_ctxt *ctxt,
+ 					   bool backwards)
+ {
+ 	int i, s = backwards ? -1 : 1;
+-	enum es_result ret = ES_OK;
++	unsigned long address = (unsigned long)dst;
++	enum es_result ret;
++
++	ret = vc_insn_string_check(ctxt, address, true);
++	if (ret != ES_OK)
++		return ret;
+ 
+ 	for (i = 0; i < count; i++) {
+ 		void *d = dst + (i * data_size * s);
+-- 
+2.25.1
+

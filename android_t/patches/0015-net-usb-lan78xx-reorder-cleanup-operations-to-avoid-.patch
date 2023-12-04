@@ -1,0 +1,97 @@
+From ea90919a0c2fc13929b1c2f5a75cbbe4ed355066 Mon Sep 17 00:00:00 2001
+From: Duoming Zhou <duoming@zju.edu.cn>
+Date: Wed, 26 Jul 2023 16:14:07 +0800
+Subject: [PATCH 15/15] net: usb: lan78xx: reorder cleanup operations to avoid
+ UAF bugs
+
+The timer dev->stat_monitor can schedule the delayed work dev->wq and
+the delayed work dev->wq can also arm the dev->stat_monitor timer.
+
+When the device is detaching, the net_device will be deallocated. but
+the net_device private data could still be dereferenced in delayed work
+or timer handler. As a result, the UAF bugs will happen.
+
+One racy situation is shown below:
+
+      (Thread 1)                 |      (Thread 2)
+lan78xx_stat_monitor()           |
+ ...                             |  lan78xx_disconnect()
+ lan78xx_defer_kevent()          |    ...
+  ...                            |    cancel_delayed_work_sync(&dev->wq);
+  schedule_delayed_work()        |    ...
+  (wait some time)               |    free_netdev(net); //free net_device
+  lan78xx_delayedwork()          |
+  //use net_device private data  |
+  dev-> //use                    |
+
+Although we use cancel_delayed_work_sync() to cancel the delayed work
+in lan78xx_disconnect(), it could still be scheduled in timer handler
+lan78xx_stat_monitor().
+
+Another racy situation is shown below:
+
+      (Thread 1)                |      (Thread 2)
+lan78xx_delayedwork             |
+ mod_timer()                    |  lan78xx_disconnect()
+                                |   cancel_delayed_work_sync()
+ (wait some time)               |   if (timer_pending(&dev->stat_monitor))
+             	                |       del_timer_sync(&dev->stat_monitor);
+ lan78xx_stat_monitor()         |   ...
+  lan78xx_defer_kevent()        |   free_netdev(net); //free
+   //use net_device private data|
+   dev-> //use                  |
+
+Although we use del_timer_sync() to delete the timer, the function
+timer_pending() returns 0 when the timer is activated. As a result,
+the del_timer_sync() will not be executed and the timer could be
+re-armed.
+
+In order to mitigate this bug, We use timer_shutdown_sync() to shutdown
+the timer and then use cancel_delayed_work_sync() to cancel the delayed
+work. As a result, the net_device could be deallocated safely.
+
+What's more, the dev->flags is set to EVENT_DEV_DISCONNECT in
+lan78xx_disconnect(). But it could still be set to EVENT_STAT_UPDATE
+in lan78xx_stat_monitor(). So this patch put the set_bit() behind
+timer_shutdown_sync().
+
+Fixes: 77dfff5bb7e2 ("lan78xx: Fix race condition in disconnect handling")
+Signed-off-by: Duoming Zhou <duoming@zju.edu.cn>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/usb/lan78xx.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/usb/lan78xx.c b/drivers/net/usb/lan78xx.c
+index 5700c9d20a3e..64f3b403116f 100644
+--- a/drivers/net/usb/lan78xx.c
++++ b/drivers/net/usb/lan78xx.c
+@@ -3912,13 +3912,13 @@ static void lan78xx_disconnect(struct usb_interface *intf)
+ 	if (!dev)
+ 		return;
+ 
+-	set_bit(EVENT_DEV_DISCONNECT, &dev->flags);
+-
+ 	udev = interface_to_usbdev(intf);
+ 	net = dev->net;
+ 
+ 	unregister_netdev(net);
+ 
++	timer_shutdown_sync(&dev->stat_monitor);
++	set_bit(EVENT_DEV_DISCONNECT, &dev->flags);
+ 	cancel_delayed_work_sync(&dev->wq);
+ 
+ 	phydev = net->phydev;
+@@ -3933,9 +3933,6 @@ static void lan78xx_disconnect(struct usb_interface *intf)
+ 
+ 	usb_scuttle_anchored_urbs(&dev->deferred);
+ 
+-	if (timer_pending(&dev->stat_monitor))
+-		del_timer_sync(&dev->stat_monitor);
+-
+ 	lan78xx_unbind(dev, intf);
+ 
+ 	usb_kill_urb(dev->urb_intr);
+-- 
+2.25.1
+

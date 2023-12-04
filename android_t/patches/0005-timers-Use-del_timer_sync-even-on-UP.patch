@@ -1,0 +1,74 @@
+From 11c3ea15226b26010f041b9081e23ca16459b842 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Wed, 23 Nov 2022 21:18:42 +0100
+Subject: [PATCH 05/15] timers: Use del_timer_sync() even on UP
+
+del_timer_sync() is assumed to be pointless on uniprocessor systems and can
+be mapped to del_timer() because in theory del_timer() can never be invoked
+while the timer callback function is executed.
+
+This is not entirely true because del_timer() can be invoked from interrupt
+context and therefore hit in the middle of a running timer callback.
+
+Contrary to that del_timer_sync() is not allowed to be invoked from
+interrupt context unless the affected timer is marked with TIMER_IRQSAFE.
+del_timer_sync() has proper checks in place to detect such a situation.
+
+Give up on the UP optimization and make del_timer_sync() unconditionally
+available.
+
+Co-developed-by: Steven Rostedt <rostedt@goodmis.org>
+Signed-off-by: Steven Rostedt <rostedt@goodmis.org>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Tested-by: Guenter Roeck <linux@roeck-us.net>
+Reviewed-by: Jacob Keller <jacob.e.keller@intel.com>
+Reviewed-by: Anna-Maria Behnsen <anna-maria@linutronix.de>
+Link: https://lore.kernel.org/all/20220407161745.7d6754b3@gandalf.local.home
+Link: https://lore.kernel.org/all/20221110064101.429013735@goodmis.org
+Link: https://lore.kernel.org/r/20221123201624.888306160@linutronix.de
+---
+ include/linux/timer.h | 7 +------
+ kernel/time/timer.c   | 2 --
+ 2 files changed, 1 insertion(+), 8 deletions(-)
+
+diff --git a/include/linux/timer.h b/include/linux/timer.h
+index 776689a3de5f..0ad53500b029 100644
+--- a/include/linux/timer.h
++++ b/include/linux/timer.h
+@@ -187,12 +187,7 @@ extern int timer_reduce(struct timer_list *timer, unsigned long expires);
+ extern void add_timer(struct timer_list *timer);
+ 
+ extern int try_to_del_timer_sync(struct timer_list *timer);
+-
+-#if defined(CONFIG_SMP) || defined(CONFIG_PREEMPT_RT)
+-  extern int del_timer_sync(struct timer_list *timer);
+-#else
+-# define del_timer_sync(t)		del_timer(t)
+-#endif
++extern int del_timer_sync(struct timer_list *timer);
+ 
+ extern void init_timers(void);
+ struct hrtimer;
+diff --git a/kernel/time/timer.c b/kernel/time/timer.c
+index 4673183a0288..b0d00d85ff50 100644
+--- a/kernel/time/timer.c
++++ b/kernel/time/timer.c
+@@ -1349,7 +1349,6 @@ static inline void timer_sync_wait_running(struct timer_base *base) { }
+ static inline void del_timer_wait_running(struct timer_list *timer) { }
+ #endif
+ 
+-#if defined(CONFIG_SMP) || defined(CONFIG_PREEMPT_RT)
+ /**
+  * del_timer_sync - Deactivate a timer and wait for the handler to finish.
+  * @timer:	The timer to be deactivated
+@@ -1430,7 +1429,6 @@ int del_timer_sync(struct timer_list *timer)
+ 	return ret;
+ }
+ EXPORT_SYMBOL(del_timer_sync);
+-#endif
+ 
+ static void call_timer_fn(struct timer_list *timer,
+ 			  void (*fn)(struct timer_list *),
+-- 
+2.25.1
+
