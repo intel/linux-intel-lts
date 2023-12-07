@@ -338,6 +338,14 @@ static struct snd_soc_acpi_mach avs_tgl_i2s_machines[] = {
 		},
 		.tplg_filename = "rt5640-tplg.bin",
 	},
+	{
+		.id = "PCM3168A",
+		.drv_name = "avs_pcm3168a",
+		.mach_params = {
+			.i2s_link_mask = AVS_SSP(0) | AVS_SSP(2),
+		},
+		.tplg_filename = "pcm3168a-tplg.bin",
+	},
 	{},
 };
 
