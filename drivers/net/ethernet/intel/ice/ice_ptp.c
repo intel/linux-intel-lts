@@ -11,11 +11,11 @@
 
 static const struct ptp_pin_desc ice_pin_desc_e810t[] = {
 	/* name    idx   func         chan */
-	{ "GNSS",  GNSS, PTP_PF_EXTTS, 0, { 0, } },
-	{ "SMA1",  SMA1, PTP_PF_NONE, 1, { 0, } },
-	{ "U.FL1", UFL1, PTP_PF_NONE, 1, { 0, } },
-	{ "SMA2",  SMA2, PTP_PF_NONE, 2, { 0, } },
-	{ "U.FL2", UFL2, PTP_PF_NONE, 2, { 0, } },
+	{ "GNSS",  GNSS, PTP_PF_EXTTS, 0, 0, { 0, } },
+	{ "SMA1",  SMA1, PTP_PF_NONE, 1, 0, { 0, } },
+	{ "U.FL1", UFL1, PTP_PF_NONE, 1, 0, { 0, } },
+	{ "SMA2",  SMA2, PTP_PF_NONE, 2, 0, { 0, } },
+	{ "U.FL2", UFL2, PTP_PF_NONE, 2, 0, { 0, } },
 };
 
 /**

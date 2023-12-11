@@ -585,6 +585,18 @@ config MFD_INTEL_QUARK_I2C_GPIO
 	  their respective IO driver.
 	  The GPIO exports a total amount of 8 interrupt-capable GPIOs.
 
+config MFD_INTEL_EHL_PSE_GPIO
+	tristate "Intel Elkhart Lake PSE GPIO MFD"
+	depends on PCI
+	depends on X86
+	select MFD_CORE
+	help
+	  This MFD provides support for GPIO and TGPIO that exist only
+	  in a signle PCI device.
+
+	  IT splits the 2 IO devices to their
+	  respective drivers.
+
 config LPC_ICH
 	tristate "Intel ICH LPC"
 	depends on PCI

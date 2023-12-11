@@ -344,6 +344,28 @@ static int __init tsc_setup(char *str)
 
 __setup("tsc=", tsc_setup);
 
+#define ART_DISABLE	-1
+#define ART_DEFAULT	 0
+#define ART_VIRTALLOW	 1
+#define ART_FORCE	 2
+
+static int force_art_enable;
+
+static int __init art_setup(char *str)
+{
+	if (!strncmp(str, "force", 5))
+		force_art_enable = ART_FORCE;
+	else if (!strncmp(str, "disable", 7))
+		force_art_enable = ART_DISABLE;
+	else if (!strncmp(str, "virtallow", 9))
+		force_art_enable = ART_VIRTALLOW;
+	else if (!strncmp(str, "default", 7))
+		force_art_enable = ART_DEFAULT;
+	return 1;
+}
+
+__setup("art=", art_setup);
+
 #define MAX_RETRIES		5
 #define TSC_DEFAULT_THRESHOLD	0x20000
 
@@ -1068,7 +1090,6 @@ core_initcall(cpufreq_register_tsc_scaling);
 #define ART_CPUID_LEAF (0x15)
 #define ART_MIN_DENOMINATOR (1)
 
-
 /*
  * If ART is present detect the numerator:denominator to convert to TSC
  */
@@ -1076,26 +1097,35 @@ static void __init detect_art(void)
 {
 	unsigned int unused[2];
 
-	if (boot_cpu_data.cpuid_level < ART_CPUID_LEAF)
+	if (force_art_enable == ART_DISABLE)
 		return;
 
+	if (force_art_enable == ART_FORCE)
+		goto art_bypass_check;
+
 	/*
-	 * Don't enable ART in a VM, non-stop TSC and TSC_ADJUST required,
-	 * and the TSC counter resets must not occur asynchronously.
+	 * Non-stop TSC required, and TSC counter resets must not occur
+	 * asynchronously.
 	 */
-	if (boot_cpu_has(X86_FEATURE_HYPERVISOR) ||
-	    !boot_cpu_has(X86_FEATURE_NONSTOP_TSC) ||
-	    !boot_cpu_has(X86_FEATURE_TSC_ADJUST) ||
+	if (!boot_cpu_has(X86_FEATURE_NONSTOP_TSC) ||
 	    tsc_async_resets)
 		return;
 
-	cpuid(ART_CPUID_LEAF, &art_to_tsc_denominator,
-	      &art_to_tsc_numerator, unused, unused+1);
-
-	if (art_to_tsc_denominator < ART_MIN_DENOMINATOR)
+	/*
+	 * Don't enable ART in a VM, unless the bypass flag is passed on the
+	 * command line
+	 */
+	if (boot_cpu_has(X86_FEATURE_HYPERVISOR) &&
+	    force_art_enable != ART_VIRTALLOW)
 		return;
 
-	rdmsrl(MSR_IA32_TSC_ADJUST, art_to_tsc_offset);
+art_bypass_check:
+	if (boot_cpu_data.cpuid_level >= ART_CPUID_LEAF) {
+		cpuid(ART_CPUID_LEAF, &art_to_tsc_denominator,
+		      &art_to_tsc_numerator, unused, unused+1);
+	}
+	if (boot_cpu_has(X86_FEATURE_TSC_ADJUST))
+		rdmsrl(MSR_IA32_TSC_ADJUST, art_to_tsc_offset);
 
 	/* Make this sticky over multiple CPU init calls */
 	setup_force_cpu_cap(X86_FEATURE_ART);
@@ -1294,10 +1324,62 @@ int unsynchronized_tsc(void)
 	return 0;
 }
 
+/**
+ * convert_tsc_to_art() - Returns ART value associated with system counter
+ *
+ * Converts input TSC to the corresponding ART value using conversion
+ * factors discovered by detect_art()
+ *
+ * Return:
+ * u64 ART value
+ */
+int convert_tsc_to_art(
+	const struct system_counterval_t *system_counter, u64 *art)
+{
+	u64 tmp, res, rem;
+
+	if (system_counter->cs != art_related_clocksource)
+		return -EINVAL;
+
+	res = system_counter->cycles - art_to_tsc_offset;
+	rem = do_div(res, art_to_tsc_numerator);
+
+	*art = res * art_to_tsc_denominator;
+	tmp = rem * art_to_tsc_denominator;
+
+	do_div(tmp, art_to_tsc_numerator);
+	*art += tmp;
+
+	return 0;
+}
+EXPORT_SYMBOL(convert_tsc_to_art);
+
+/**
+ * read_art() - Returns current ART value
+ *
+ * Converts the current TSC to the current ART value using conversion
+ * factors discovered by detect_art()
+ *
+ * Return:
+ * u64 ART value
+ */
+u64 read_art(void)
+{
+	struct system_counterval_t tsc;
+	u64 art = 0;
+
+	tsc.cs = art_related_clocksource;
+	tsc.cycles = read_tsc(NULL);
+	convert_tsc_to_art(&tsc, &art);
+
+	return art;
+}
+EXPORT_SYMBOL(read_art);
+
 /*
  * Convert ART to TSC given numerator/denominator found in detect_art()
  */
-struct system_counterval_t convert_art_to_tsc(u64 art)
+static struct system_counterval_t _convert_art_to_tsc(u64 art, bool dur)
 {
 	u64 tmp, res, rem;
 
@@ -1307,12 +1389,118 @@ struct system_counterval_t convert_art_to_tsc(u64 art)
 	tmp = rem * art_to_tsc_numerator;
 
 	do_div(tmp, art_to_tsc_denominator);
-	res += tmp + art_to_tsc_offset;
+	res += tmp;
+	if (!dur)
+		res += art_to_tsc_offset;
 
 	return (struct system_counterval_t) {.cs = art_related_clocksource,
 			.cycles = res};
 }
+
+struct system_counterval_t convert_art_to_tsc(u64 art)
+{
+	return _convert_art_to_tsc(art, false);
+}
 EXPORT_SYMBOL(convert_art_to_tsc);
+
+static struct timespec64 get_tsc_ns(struct system_counterval_t *system_counter)
+{
+	u64 tmp, res, rem;
+	u64 cycles;
+
+	cycles = system_counter->cycles;
+	rem = do_div(cycles, tsc_khz);
+
+	res = cycles * USEC_PER_SEC;
+	tmp = rem * USEC_PER_SEC;
+
+	rem = do_div(tmp, tsc_khz);
+	tmp += rem > tsc_khz >> 2 ? 1 : 0;
+	res += tmp;
+
+	rem = do_div(res, NSEC_PER_SEC);
+
+	return (struct timespec64) {.tv_sec = res, .tv_nsec = rem};
+}
+
+struct timespec64 get_tsc_ns_now(struct system_counterval_t *system_counter)
+{
+	struct system_counterval_t counterval;
+
+	if (system_counter == NULL)
+		system_counter = &counterval;
+
+	system_counter->cycles = clocksource_tsc.read(NULL);
+	system_counter->cs = art_related_clocksource;
+
+	return get_tsc_ns(system_counter);
+}
+EXPORT_SYMBOL(get_tsc_ns_now);
+
+struct timespec64 convert_art_to_tsc_ns(u64 art)
+{
+	struct system_counterval_t counterval = _convert_art_to_tsc(art, false);
+
+	return get_tsc_ns(&counterval);
+}
+EXPORT_SYMBOL(convert_art_to_tsc_ns);
+
+struct timespec64 convert_art_to_tsc_ns_duration(u64 art)
+{
+	struct system_counterval_t counterval = _convert_art_to_tsc(art, true);
+
+	return get_tsc_ns(&counterval);
+}
+EXPORT_SYMBOL(convert_art_to_tsc_ns_duration);
+
+static u64 convert_tsc_ns_to_tsc(struct timespec64 *tsc_ns)
+{
+	u64 tmp, res, rem;
+	u64 cycles;
+
+	cycles = timespec64_to_ns(tsc_ns);
+	rem = do_div(cycles, USEC_PER_SEC);
+
+	res = cycles * tsc_khz;
+	tmp = rem * tsc_khz;
+
+	do_div(tmp, USEC_PER_SEC);
+
+	return res + tmp;
+}
+
+
+static u64 _convert_tsc_ns_to_art(struct timespec64 *tsc_ns, bool dur)
+{
+	u64 tmp, res, rem;
+	u64 cycles;
+
+	cycles = convert_tsc_ns_to_tsc(tsc_ns);
+	if (!dur)
+		cycles -= art_to_tsc_offset;
+
+	rem = do_div(cycles, art_to_tsc_numerator);
+
+	res = cycles * art_to_tsc_denominator;
+	tmp = rem * art_to_tsc_denominator;
+
+	rem = do_div(tmp, art_to_tsc_numerator);
+	tmp += rem > art_to_tsc_numerator >> 2 ? 1 : 0;
+
+	return res + tmp;
+}
+
+u64 convert_tsc_ns_to_art(struct timespec64 *tsc_ns)
+{
+	return _convert_tsc_ns_to_art(tsc_ns, false);
+}
+EXPORT_SYMBOL(convert_tsc_ns_to_art);
+
+u64 convert_tsc_ns_to_art_duration(struct timespec64 *tsc_ns)
+{
+	return _convert_tsc_ns_to_art(tsc_ns, true);
+}
+EXPORT_SYMBOL(convert_tsc_ns_to_art_duration);
 
 /**
  * convert_art_ns_to_tsc() - Convert ART in nanoseconds to TSC.
@@ -1584,6 +1772,11 @@ void __init tsc_init(void)
 	 */
 	if (x86_platform.calibrate_cpu == native_calibrate_cpu_early)
 		x86_platform.calibrate_cpu = native_calibrate_cpu;
+
+	if (tsc_clocksource_reliable || no_tsc_watchdog) {
+		clocksource_tsc.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
+		clocksource_tsc_early.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
+	}
 
 	if (!tsc_khz) {
 		/* We failed to determine frequencies earlier, try again */
