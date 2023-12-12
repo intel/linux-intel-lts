@@ -269,11 +269,11 @@ static bool __kprobes is_spurious_el1_translation_fault(unsigned long addr,
 	    (esr & ESR_ELx_FSC_TYPE) != ESR_ELx_FSC_FAULT)
 		return false;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	asm volatile("at s1e1r, %0" :: "r" (addr));
 	isb();
 	par = read_sysreg_par();
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 	/*
 	 * If we now have a valid translation, treat the translation fault as
@@ -401,6 +401,12 @@ static void __do_kernel_fault(unsigned long addr, unsigned long esr,
 	if (efi_runtime_fixup_exception(regs, msg))
 		return;
 
+	/*
+	 * Dovetail: Don't bother restoring the in-band stage in the
+	 * non-recoverable fault case, we got busted and a full stage
+	 * switch is likely to make things even worse. Try at least to
+	 * get some debug output before panicking.
+	 */
 	die_kernel_fault(msg, addr, esr, regs);
 }
 
@@ -473,8 +479,10 @@ static void do_bad_area(unsigned long far, unsigned long esr,
 	if (user_mode(regs)) {
 		const struct fault_info *inf = esr_to_fault_info(esr);
 
+		mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 		set_thread_esr(addr, esr);
 		arm64_force_sig_fault(inf->sig, inf->code, far, inf->name);
+		mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 	} else {
 		__do_kernel_fault(addr, esr, regs);
 	}
@@ -526,6 +534,8 @@ static int __kprobes do_page_fault(unsigned long far, unsigned long esr,
 
 	if (kprobe_page_fault(regs, esr))
 		return 0;
+
+	mark_trap_entry(ARM64_TRAP_ACCESS, regs);
 
 	/*
 	 * If we're in an interrupt or have no user context, we must not take
@@ -586,7 +596,7 @@ retry:
 	if (fault_signal_pending(fault, regs)) {
 		if (!user_mode(regs))
 			goto no_context;
-		return 0;
+		goto out;
 	}
 
 	/* The fault is fully completed (including releasing mmap lock) */
@@ -605,7 +615,7 @@ done:
 	 */
 	if (likely(!(fault & (VM_FAULT_ERROR | VM_FAULT_BADMAP |
 			      VM_FAULT_BADACCESS))))
-		return 0;
+		goto out;
 
 	/*
 	 * If we are in kernel mode at this point, we have no context to
@@ -621,7 +631,7 @@ done:
 		 * oom-killed).
 		 */
 		pagefault_out_of_memory();
-		return 0;
+		goto out;
 	}
 
 	inf = esr_to_fault_info(esr);
@@ -650,10 +660,12 @@ done:
 				      far, inf->name);
 	}
 
-	return 0;
+	goto out;
 
 no_context:
 	__do_kernel_fault(addr, esr, regs);
+out:
+	mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 	return 0;
 }
 
@@ -690,6 +702,8 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	const struct fault_info *inf;
 	unsigned long siaddr;
 
+	mark_trap_entry(ARM64_TRAP_SEA, regs);
+
 	inf = esr_to_fault_info(esr);
 
 	if (user_mode(regs) && apei_claim_sea(regs) == 0) {
@@ -697,7 +711,7 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
 		 * APEI claimed this as a firmware-first notification.
 		 * Some processing deferred to task_work before ret_to_user().
 		 */
-		return 0;
+		goto out;
 	}
 
 	if (esr & ESR_ELx_FnV) {
@@ -711,6 +725,8 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
 		siaddr  = untagged_addr(far);
 	}
 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
+out:
+	mark_trap_exit(ARM64_TRAP_SEA, regs);
 
 	return 0;
 }
@@ -803,6 +819,8 @@ void do_mem_abort(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	if (!inf->fn(far, esr, regs))
 		return;
 
+	mark_trap_entry(ARM64_TRAP_ACCESS, regs);
+
 	if (!user_mode(regs))
 		die_kernel_fault(inf->name, addr, esr, regs);
 
@@ -812,13 +830,19 @@ void do_mem_abort(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	 * address to the signal handler.
 	 */
 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, addr, esr);
+
+	mark_trap_exit(ARM64_TRAP_ACCESS, regs);
 }
 NOKPROBE_SYMBOL(do_mem_abort);
 
 void do_sp_pc_abort(unsigned long addr, unsigned long esr, struct pt_regs *regs)
 {
+	mark_trap_entry(ARM64_TRAP_ALIGN, regs);
+
 	arm64_notify_die("SP/PC alignment exception", regs, SIGBUS, BUS_ADRALN,
 			 addr, esr);
+
+	mark_trap_exit(ARM64_TRAP_ALIGN, regs);
 }
 NOKPROBE_SYMBOL(do_sp_pc_abort);
 
@@ -881,6 +905,8 @@ void do_debug_exception(unsigned long addr_if_watchpoint, unsigned long esr,
 	const struct fault_info *inf = esr_to_debug_fault_info(esr);
 	unsigned long pc = instruction_pointer(regs);
 
+	mark_trap_entry(ARM64_TRAP_DEBUG, regs);
+
 	debug_exception_enter(regs);
 
 	if (user_mode(regs) && !is_ttbr0_addr(pc))
@@ -891,6 +917,8 @@ void do_debug_exception(unsigned long addr_if_watchpoint, unsigned long esr,
 	}
 
 	debug_exception_exit(regs);
+
+	mark_trap_exit(ARM64_TRAP_DEBUG, regs);
 }
 NOKPROBE_SYMBOL(do_debug_exception);
 

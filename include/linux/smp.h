@@ -267,6 +267,41 @@ static inline int get_boot_cpu_id(void)
 #define get_cpu()		({ preempt_disable(); __smp_processor_id(); })
 #define put_cpu()		preempt_enable()
 
+#ifdef CONFIG_IRQ_PIPELINE
+#define hard_get_cpu(flags)	({			\
+		(flags) = hard_preempt_disable();	\
+		raw_smp_processor_id();			\
+	})
+#define hard_put_cpu(flags)	hard_preempt_enable(flags)
+
+int up_oob_call(smp_call_func_t func, void *info);
+
+#ifdef CONFIG_SMP
+int smp_call_function_oob(int cpu, smp_call_func_t func, void *info, bool wait);
+void smp_flush_oob_call_function_queue(void);
+#else
+static inline int smp_call_function_oob(int cpu, smp_call_func_t func,
+					void *info, bool wait)
+{
+	return up_oob_call(func, info);
+}
+#endif /* !CONFIG_SMP */
+
+#else
+#define hard_get_cpu(flags)	({ (void)(flags); get_cpu(); })
+#define hard_put_cpu(flags)	\
+	do {			\
+		(void)(flags);	\
+		put_cpu();	\
+	} while (0)
+
+static inline int smp_call_function_oob(int cpu, smp_call_func_t func,
+					void *info, bool wait)
+{
+	return -ENOTSUPP;
+}
+#endif
+
 /*
  * Callback to arch code if there's nosmp or maxcpus=0 on the
  * boot command line:

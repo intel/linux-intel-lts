@@ -1993,10 +1993,10 @@ static u8 *__printk_recursion_counter(void)
 	bool success = true;				\
 							\
 	typecheck(u8 *, recursion_ptr);			\
-	local_irq_save(flags);				\
+	prb_irq_save(flags);				\
 	(recursion_ptr) = __printk_recursion_counter();	\
 	if (*(recursion_ptr) > PRINTK_MAX_RECURSION) {	\
-		local_irq_restore(flags);		\
+		prb_irq_restore(flags);			\
 		success = false;			\
 	} else {					\
 		(*(recursion_ptr))++;			\
@@ -2009,7 +2009,7 @@ static u8 *__printk_recursion_counter(void)
 	do {						\
 		typecheck(u8 *, recursion_ptr);		\
 		(*(recursion_ptr))--;			\
-		local_irq_restore(flags);		\
+		prb_irq_restore(flags);			\
 	} while (0)
 
 int printk_delay_msec __read_mostly;
@@ -2129,9 +2129,6 @@ int vprintk_store(int facility, int level,
 	int ret = 0;
 	u64 ts_nsec;
 
-	if (!printk_enter_irqsave(recursion_ptr, irqflags))
-		return 0;
-
 	/*
 	 * Since the duration of printk() can vary depending on the message
 	 * and state of the ringbuffer, grab the timestamp now so that it is
@@ -2139,8 +2136,6 @@ int vprintk_store(int facility, int level,
 	 * timestamp with respect to the caller.
 	 */
 	ts_nsec = local_clock();
-
-	caller_id = printk_caller_id();
 
 	/*
 	 * The sprintf needs to come first since the syslog prefix might be
@@ -2164,6 +2159,12 @@ int vprintk_store(int facility, int level,
 
 	if (dev_info)
 		flags |= LOG_NEWLINE;
+
+	/* Disable interrupts as late as possible. */
+	if (!printk_enter_irqsave(recursion_ptr, irqflags))
+		return 0;
+
+	caller_id = printk_caller_id();
 
 	if (flags & LOG_CONT) {
 		prb_rec_init_wr(&r, reserve_size);
@@ -2238,6 +2239,12 @@ asmlinkage int vprintk_emit(int facility, int level,
 	if (unlikely(suppress_panic_printk) &&
 	    atomic_read(&panic_cpu) != raw_smp_processor_id())
 		return 0;
+
+	if (unlikely(!printk_stage_safe())) {
+		printed_len = vprintk_store(facility, level, dev_info, fmt, args);
+		defer_console_output();
+		return printed_len;
+	}
 
 	if (level == LOGLEVEL_SCHED) {
 		level = LOGLEVEL_DEFAULT;
@@ -2370,6 +2377,73 @@ static void set_user_specified(struct console_cmdline *c, bool user_specified)
 	/* At least one console defined by the user on the command line. */
 	console_set_on_cmdline = 1;
 }
+
+#ifdef CONFIG_RAW_PRINTK
+static struct console *raw_console;
+static DEFINE_HARD_SPINLOCK(raw_console_lock);
+
+void raw_puts(const char *s, size_t len)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&raw_console_lock, flags);
+	if (raw_console)
+		raw_console->write_raw(raw_console, s, len);
+	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+}
+EXPORT_SYMBOL(raw_puts);
+
+void raw_vprintk(const char *fmt, va_list ap)
+{
+	char buf[256];
+	size_t n;
+
+	if (raw_console == NULL || console_suspended)
+		return;
+
+        touch_nmi_watchdog();
+	n = vscnprintf(buf, sizeof(buf), fmt, ap);
+	raw_puts(buf, n);
+}
+EXPORT_SYMBOL(raw_vprintk);
+
+asmlinkage __visible void raw_printk(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	raw_vprintk(fmt, ap);
+	va_end(ap);
+}
+EXPORT_SYMBOL(raw_printk);
+
+static inline void register_raw_console(struct console *newcon)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&raw_console_lock, flags);
+	if (newcon->write_raw)
+		raw_console = newcon;
+	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+}
+
+static inline void unregister_raw_console(struct console *oldcon)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&raw_console_lock, flags);
+	if (oldcon == raw_console)
+		raw_console = NULL;
+	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
+}
+
+#else
+
+static inline void register_raw_console(struct console *newcon) { }
+
+static inline void unregister_raw_console(struct console *oldcon) { }
+
+#endif
 
 static int __add_preferred_console(char *name, int idx, char *options,
 				   char *brl_options, bool user_specified)
@@ -3168,6 +3242,9 @@ void register_console(struct console *newcon)
 	if (err || newcon->flags & CON_BRL)
 		return;
 
+	/* The latest raw console to register is current. */
+	register_raw_console(newcon);
+
 	/*
 	 * If we have a bootconsole, and are switching to a real console,
 	 * don't print everything out again, since when the boot console, and
@@ -3233,6 +3310,8 @@ int unregister_console(struct console *console)
 	int res;
 
 	con_printk(KERN_INFO, console, "disabled\n");
+
+	unregister_raw_console(console);
 
 	res = _braille_unregister_console(console);
 	if (res < 0)

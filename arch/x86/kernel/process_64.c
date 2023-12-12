@@ -273,9 +273,9 @@ void current_save_fsgs(void)
 	unsigned long flags;
 
 	/* Interrupts need to be off for FSGSBASE */
-	local_irq_save(flags);
+	local_irq_save_full(flags);
 	save_fsgs(current);
-	local_irq_restore(flags);
+	local_irq_restore_full(flags);
 }
 #if IS_ENABLED(CONFIG_KVM)
 EXPORT_SYMBOL_GPL(current_save_fsgs);
@@ -434,9 +434,9 @@ unsigned long x86_gsbase_read_cpu_inactive(void)
 	if (boot_cpu_has(X86_FEATURE_FSGSBASE)) {
 		unsigned long flags;
 
-		local_irq_save(flags);
+		local_irq_save_full(flags);
 		gsbase = __rdgsbase_inactive();
-		local_irq_restore(flags);
+		local_irq_restore_full(flags);
 	} else {
 		rdmsrl(MSR_KERNEL_GS_BASE, gsbase);
 	}
@@ -449,9 +449,9 @@ void x86_gsbase_write_cpu_inactive(unsigned long gsbase)
 	if (boot_cpu_has(X86_FEATURE_FSGSBASE)) {
 		unsigned long flags;
 
-		local_irq_save(flags);
+		local_irq_save_full(flags);
 		__wrgsbase_inactive(gsbase);
-		local_irq_restore(flags);
+		local_irq_restore_full(flags);
 	} else {
 		wrmsrl(MSR_KERNEL_GS_BASE, gsbase);
 	}
@@ -562,8 +562,17 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	struct fpu *prev_fpu = &prev->fpu;
 	int cpu = smp_processor_id();
 
+	/*
+	 * Dovetail: Switching context on the out-of-band stage is
+	 * legit, and we may have preempted an in-band (soft)irq
+	 * handler earlier. Since oob handlers never switch stack,
+	 * make sure to restrict the following test to in-band
+	 * callers.
+	 */
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_DEBUG_ENTRY) &&
-		     this_cpu_read(hardirq_stack_inuse));
+		     running_inband() && this_cpu_read(hardirq_stack_inuse));
+
+	WARN_ON_ONCE(dovetail_debug() && !hard_irqs_disabled());
 
 	if (!test_thread_flag(TIF_NEED_FPU_LOAD))
 		switch_fpu_prepare(prev_fpu, cpu);
@@ -745,6 +754,7 @@ static long prctl_map_vdso(const struct vdso_image *image, unsigned long addr)
 
 long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 {
+	unsigned long flags;
 	int ret = 0;
 
 	switch (option) {
@@ -752,7 +762,7 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 		if (unlikely(arg2 >= TASK_SIZE_MAX))
 			return -EPERM;
 
-		preempt_disable();
+		flags = hard_preempt_disable();
 		/*
 		 * ARCH_SET_GS has always overwritten the index
 		 * and the base. Zero is the most sensible value
@@ -773,7 +783,7 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 			task->thread.gsindex = 0;
 			x86_gsbase_write_task(task, arg2);
 		}
-		preempt_enable();
+		hard_preempt_enable(flags);
 		break;
 	}
 	case ARCH_SET_FS: {
@@ -784,7 +794,7 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 		if (unlikely(arg2 >= TASK_SIZE_MAX))
 			return -EPERM;
 
-		preempt_disable();
+		flags = hard_preempt_disable();
 		/*
 		 * Set the selector to 0 for the same reason
 		 * as %gs above.
@@ -802,7 +812,7 @@ long do_arch_prctl_64(struct task_struct *task, int option, unsigned long arg2)
 			task->thread.fsindex = 0;
 			x86_fsbase_write_task(task, arg2);
 		}
-		preempt_enable();
+		hard_preempt_enable(flags);
 		break;
 	}
 	case ARCH_GET_FS: {

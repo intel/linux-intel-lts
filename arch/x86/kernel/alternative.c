@@ -8,6 +8,7 @@
 #include <linux/list.h>
 #include <linux/stringify.h>
 #include <linux/highmem.h>
+#include <linux/irq_pipeline.h>
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
 #include <linux/memory.h>
@@ -212,9 +213,9 @@ static __always_inline int optimize_nops_range(u8 *instr, u8 instrlen, int off)
 	if (nnops <= 1)
 		return nnops;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	add_nops(instr + off, nnops);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 	DUMP_BYTES(instr, instrlen, "%px: [%d:%d) optimized NOPs: ", instr, off, i);
 
@@ -1013,9 +1014,9 @@ void __init_or_module text_poke_early(void *addr, const void *opcode,
 		 */
 		memcpy(addr, opcode, len);
 	} else {
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		memcpy(addr, opcode, len);
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		sync_core();
 
 		/*
@@ -1047,6 +1048,7 @@ static inline temp_mm_state_t use_temporary_mm(struct mm_struct *mm)
 	temp_mm_state_t temp_state;
 
 	lockdep_assert_irqs_disabled();
+	WARN_ON_ONCE(irq_pipeline_debug() && !hard_irqs_disabled());
 
 	/*
 	 * Make sure not to be in TLB lazy mode, as otherwise we'll end up
@@ -1154,7 +1156,7 @@ static void *__text_poke(text_poke_f func, void *addr, const void *src, size_t l
 	 */
 	VM_BUG_ON(!ptep);
 
-	local_irq_save(flags);
+	local_irq_save_full(flags);
 
 	pte = mk_pte(pages[0], pgprot);
 	set_pte_at(poking_mm, poking_addr, ptep, pte);
@@ -1207,7 +1209,7 @@ static void *__text_poke(text_poke_f func, void *addr, const void *src, size_t l
 		BUG_ON(memcmp(addr, src, len));
 	}
 
-	local_irq_restore(flags);
+	local_irq_restore_full(flags);
 	pte_unmap_unlock(ptep, ptl);
 	return addr;
 }

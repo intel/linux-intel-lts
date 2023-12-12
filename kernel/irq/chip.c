@@ -14,6 +14,7 @@
 #include <linux/interrupt.h>
 #include <linux/kernel_stat.h>
 #include <linux/irqdomain.h>
+#include <linux/irq_pipeline.h>
 
 #include <trace/events/irq.h>
 
@@ -47,6 +48,11 @@ int irq_set_chip(unsigned int irq, const struct irq_chip *chip)
 		return -EINVAL;
 
 	desc->irq_data.chip = (struct irq_chip *)(chip ?: &no_irq_chip);
+
+	WARN_ONCE(irqs_pipelined() && chip &&
+		  (chip->flags & IRQCHIP_PIPELINE_SAFE) == 0,
+		  "irqchip %s is not pipeline-safe!", chip->name);
+
 	irq_put_desc_unlock(desc, flags);
 	/*
 	 * For !CONFIG_SPARSE_IRQ make the irq show up in
@@ -384,7 +390,8 @@ static void __irq_disable(struct irq_desc *desc, bool mask)
  */
 void irq_disable(struct irq_desc *desc)
 {
-	__irq_disable(desc, irq_settings_disable_unlazy(desc));
+	__irq_disable(desc,
+	      irq_settings_disable_unlazy(desc) || irqs_pipelined());
 }
 
 void irq_percpu_enable(struct irq_desc *desc, unsigned int cpu)
@@ -404,6 +411,13 @@ void irq_percpu_disable(struct irq_desc *desc, unsigned int cpu)
 		desc->irq_data.chip->irq_mask(&desc->irq_data);
 	cpumask_clear_cpu(cpu, desc->percpu_enabled);
 }
+
+#ifdef CONFIG_IRQ_PIPELINE
+void irq_clear_deferral(struct irq_desc *desc)
+{
+	desc->istate &= ~IRQS_DEFERRED;
+}
+#endif
 
 static inline void mask_ack_irq(struct irq_desc *desc)
 {
@@ -501,6 +515,75 @@ static bool irq_check_poll(struct irq_desc *desc)
 	return irq_wait_for_poll(desc);
 }
 
+enum {
+	IRQ_FLOW_START,
+	IRQ_FLOW_PILEUP,
+	IRQ_FLOW_REPLAY,
+};
+
+/*
+ * irq_starting_flow - Determine whether we are actually starting an
+ * interrupt flow.
+ *
+ * When interrupt pipelining is enabled, interrupt flow handlers may
+ * be called twice for each event, once from the pipeline entry
+ * context in an attempt to handle the hardware event from the oob
+ * stage, a second time if the event was deferred to the in-band
+ * stage. In the first case, we have to ack the hardware before
+ * feeding the pipeline. Otherwise, we should simply run the action
+ * associated to the event from the in-band stage.
+ *
+ * With stacked irqchips, handlers of parent irqs not delivered to the
+ * oob stage would decode and post the cascaded events to the in-band
+ * stage as well. The internal per-descriptor IRQS_DEFERRED flag
+ * disambiguates between the latter context and events being replayed
+ * after deferral to the in-band stage, so that we do ack the hardware
+ * for cascaded events as expected.
+ *
+ * We might also receive a subsequent unmasked edge event on the same
+ * line while a deferred one is still pending replay from the in-band
+ * stage (hard irqs are on for replay). The flow state enumeration
+ * disambiguates all cases as follows:
+ *
+ * - IRQ_FLOW_START: we are running oob on behalf of the low-level irq
+ *   entry code, no deferred event is pending replay for the same
+ *   line, we need to send ack to the hardware.
+ *
+ * - IRQ_FLOW_PILEUP: we are running in-band for synchronizing the irq
+ *   log, one or more deferred events are already pending replay for
+ *   the same line, we need to ack the subsequent event to the
+ *   hardware too.
+ *
+ * - IRQ_FLOW_REPLAY: we are (re)playing a deferred event from the
+ *   in-band stage, as a result of synchronizing the irq log.
+ */
+static inline unsigned int irq_starting_flow(struct irq_desc *desc)
+{
+	if (!irqs_pipelined() || !(desc->istate & IRQS_DEFERRED))
+		return IRQ_FLOW_START;
+
+	return in_pipeline() ? IRQ_FLOW_PILEUP : IRQ_FLOW_REPLAY;
+}
+
+/*
+ * irq_feeding_pipeline - Determine whether we should be feeding the
+ * interrupt pipeline with the incoming event.
+ *
+ * Depending on the flow state determined by irq_starting_flow(), the
+ * event is passed to the oob handler or directly replayed from the
+ * current in-band stage.
+ */
+static inline bool irq_feeding_pipeline(struct irq_desc *desc, int state)
+{
+	if (irqs_pipelined()) {
+		if (state != IRQ_FLOW_REPLAY)
+			return true;
+		irq_clear_deferral(desc);
+	}
+
+	return false;
+}
+
 static bool irq_may_run(struct irq_desc *desc)
 {
 	unsigned int mask = IRQD_IRQ_INPROGRESS | IRQD_WAKEUP_ARMED;
@@ -516,8 +599,22 @@ static bool irq_may_run(struct irq_desc *desc)
 	 * If the interrupt is an armed wakeup source, mark it pending
 	 * and suspended, disable it and notify the pm core about the
 	 * event.
+	 *
+	 * When pipelining, the logic is as follows:
+	 *
+	 * - from a pipeline entry context, we might have preempted
+	 * the oob stage, or irqs might be [virtually] off, so we may
+	 * not run the in-band PM code. Just make sure any wakeup
+	 * interrupt is detected later on when the flow handler
+	 * re-runs from the in-band stage.
+	 *
+	 * - from the in-band context, run the PM wakeup check.
 	 */
-	if (irq_pm_check_wakeup(desc))
+	if (irqs_pipelined()) {
+		WARN_ON_ONCE(irq_pipeline_debug() && !in_pipeline());
+		if (irqd_is_wakeup_armed(&desc->irq_data))
+			return true;
+	} else if (irq_pm_check_wakeup(desc))
 		return false;
 
 	/*
@@ -539,10 +636,18 @@ static bool irq_may_run(struct irq_desc *desc)
  */
 void handle_simple_irq(struct irq_desc *desc)
 {
+	int flow;
+
 	raw_spin_lock(&desc->lock);
 
-	if (!irq_may_run(desc))
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY && !irq_may_run(desc))
 		goto out_unlock;
+
+	if (irq_feeding_pipeline(desc, flow)) {
+		handle_oob_irq(desc);
+		goto out_unlock;
+	}
 
 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
@@ -574,10 +679,18 @@ EXPORT_SYMBOL_GPL(handle_simple_irq);
  */
 void handle_untracked_irq(struct irq_desc *desc)
 {
+	int flow;
+
 	raw_spin_lock(&desc->lock);
 
-	if (!irq_may_run(desc))
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY && !irq_may_run(desc))
 		goto out_unlock;
+
+	if (irq_feeding_pipeline(desc, flow)) {
+		handle_oob_irq(desc);
+		goto out_unlock;
+	}
 
 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
@@ -599,6 +712,20 @@ out_unlock:
 	raw_spin_unlock(&desc->lock);
 }
 EXPORT_SYMBOL_GPL(handle_untracked_irq);
+
+static inline void cond_eoi_irq(struct irq_desc *desc)
+{
+	struct irq_chip *chip = desc->irq_data.chip;
+
+	if (!(chip->flags & IRQCHIP_EOI_THREADED))
+		chip->irq_eoi(&desc->irq_data);
+}
+
+static inline void mask_cond_eoi_irq(struct irq_desc *desc)
+{
+	mask_irq(desc);
+	cond_eoi_irq(desc);
+}
 
 /*
  * Called unconditionally from handle_level_irq() and only for oneshot
@@ -629,11 +756,23 @@ static void cond_unmask_irq(struct irq_desc *desc)
  */
 void handle_level_irq(struct irq_desc *desc)
 {
-	raw_spin_lock(&desc->lock);
-	mask_ack_irq(desc);
+	int flow;
 
-	if (!irq_may_run(desc))
+	raw_spin_lock(&desc->lock);
+
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY) {
+		mask_ack_irq(desc);
+
+		if (!irq_may_run(desc))
+			goto out_unlock;
+	}
+
+	if (irq_feeding_pipeline(desc, flow)) {
+		if (handle_oob_irq(desc))
+			goto out_unmask;
 		goto out_unlock;
+	}
 
 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
@@ -648,7 +787,7 @@ void handle_level_irq(struct irq_desc *desc)
 
 	kstat_incr_irqs_this_cpu(desc);
 	handle_irq_event(desc);
-
+out_unmask:
 	cond_unmask_irq(desc);
 
 out_unlock:
@@ -659,7 +798,10 @@ EXPORT_SYMBOL_GPL(handle_level_irq);
 static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
 {
 	if (!(desc->istate & IRQS_ONESHOT)) {
-		chip->irq_eoi(&desc->irq_data);
+		if (!irqs_pipelined())
+			chip->irq_eoi(&desc->irq_data);
+		else if (!irqd_irq_disabled(&desc->irq_data))
+			unmask_irq(desc);
 		return;
 	}
 	/*
@@ -670,9 +812,11 @@ static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
 	 */
 	if (!irqd_irq_disabled(&desc->irq_data) &&
 	    irqd_irq_masked(&desc->irq_data) && !desc->threads_oneshot) {
-		chip->irq_eoi(&desc->irq_data);
+		if (!irqs_pipelined())
+			chip->irq_eoi(&desc->irq_data);
 		unmask_irq(desc);
-	} else if (!(chip->flags & IRQCHIP_EOI_THREADED)) {
+	} else if (!irqs_pipelined() &&
+		   !(chip->flags & IRQCHIP_EOI_THREADED)) {
 		chip->irq_eoi(&desc->irq_data);
 	}
 }
@@ -689,11 +833,21 @@ static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
 void handle_fasteoi_irq(struct irq_desc *desc)
 {
 	struct irq_chip *chip = desc->irq_data.chip;
+	int flow;
 
 	raw_spin_lock(&desc->lock);
 
-	if (!irq_may_run(desc))
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY && !irq_may_run(desc))
 		goto out;
+
+	if (irq_feeding_pipeline(desc, flow)) {
+		if (handle_oob_irq(desc))
+			chip->irq_eoi(&desc->irq_data);
+		else
+			mask_cond_eoi_irq(desc);
+		goto out_unlock;
+	}
 
 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
@@ -708,13 +862,13 @@ void handle_fasteoi_irq(struct irq_desc *desc)
 	}
 
 	kstat_incr_irqs_this_cpu(desc);
-	if (desc->istate & IRQS_ONESHOT)
+	if (!irqs_pipelined() && (desc->istate & IRQS_ONESHOT))
 		mask_irq(desc);
 
 	handle_irq_event(desc);
 
 	cond_unmask_eoi_irq(desc, chip);
-
+out_unlock:
 	raw_spin_unlock(&desc->lock);
 	return;
 out:
@@ -774,30 +928,44 @@ EXPORT_SYMBOL_GPL(handle_fasteoi_nmi);
  */
 void handle_edge_irq(struct irq_desc *desc)
 {
+	struct irq_chip *chip = irq_desc_get_chip(desc);
+	int flow;
+
 	raw_spin_lock(&desc->lock);
 
-	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY) {
+		desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
-	if (!irq_may_run(desc)) {
-		desc->istate |= IRQS_PENDING;
-		mask_ack_irq(desc);
-		goto out_unlock;
+		if (!irq_may_run(desc)) {
+			desc->istate |= IRQS_PENDING;
+			mask_ack_irq(desc);
+			goto out_unlock;
+		}
+
+		/*
+		 * If its disabled or no action available then mask it
+		 * and get out of here.
+		 */
+		if (irqd_irq_disabled(&desc->irq_data) || !desc->action) {
+			desc->istate |= IRQS_PENDING;
+			mask_ack_irq(desc);
+			goto out_unlock;
+		}
 	}
 
-	/*
-	 * If its disabled or no action available then mask it and get
-	 * out of here.
-	 */
-	if (irqd_irq_disabled(&desc->irq_data) || !desc->action) {
-		desc->istate |= IRQS_PENDING;
-		mask_ack_irq(desc);
+	if (irq_feeding_pipeline(desc, flow)) {
+		chip->irq_ack(&desc->irq_data);
+		desc->istate |= IRQS_EDGE;
+		handle_oob_irq(desc);
 		goto out_unlock;
 	}
 
 	kstat_incr_irqs_this_cpu(desc);
 
 	/* Start handling the irq */
-	desc->irq_data.chip->irq_ack(&desc->irq_data);
+	if (!irqs_pipelined())
+		chip->irq_ack(&desc->irq_data);
 
 	do {
 		if (unlikely(!desc->action)) {
@@ -822,6 +990,8 @@ void handle_edge_irq(struct irq_desc *desc)
 		 !irqd_irq_disabled(&desc->irq_data));
 
 out_unlock:
+	if (on_pipeline_entry())
+		desc->istate &= ~IRQS_EDGE;
 	raw_spin_unlock(&desc->lock);
 }
 EXPORT_SYMBOL(handle_edge_irq);
@@ -837,14 +1007,25 @@ EXPORT_SYMBOL(handle_edge_irq);
 void handle_edge_eoi_irq(struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
+	int flow;
 
 	raw_spin_lock(&desc->lock);
 
-	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY) {
+		desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
-	if (!irq_may_run(desc)) {
-		desc->istate |= IRQS_PENDING;
-		goto out_eoi;
+		if (!irq_may_run(desc)) {
+			desc->istate |= IRQS_PENDING;
+			goto out_eoi;
+		}
+	}
+
+	if (irq_feeding_pipeline(desc, flow)) {
+		desc->istate |= IRQS_EDGE;
+		if (handle_oob_irq(desc))
+			goto out_eoi;
+		goto out;
 	}
 
 	/*
@@ -869,6 +1050,9 @@ void handle_edge_eoi_irq(struct irq_desc *desc)
 
 out_eoi:
 	chip->irq_eoi(&desc->irq_data);
+out:
+	if (on_pipeline_entry())
+		desc->istate &= ~IRQS_EDGE;
 	raw_spin_unlock(&desc->lock);
 }
 #endif
@@ -882,6 +1066,20 @@ out_eoi:
 void handle_percpu_irq(struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
+	unsigned long flags;
+	bool handled;
+
+	if (on_pipeline_entry()) {
+		/* on_pipeline_entry() implies hard irqs off. */
+		if (chip->irq_ack)
+			chip->irq_ack(&desc->irq_data);
+		handled = handle_oob_irq(desc);
+		if (chip->irq_eoi)
+			chip->irq_eoi(&desc->irq_data);
+		if (!handled && chip->irq_mask)
+			chip->irq_mask(&desc->irq_data);
+		return;
+	}
 
 	/*
 	 * PER CPU interrupts are not serialized. Do not touch
@@ -889,13 +1087,25 @@ void handle_percpu_irq(struct irq_desc *desc)
 	 */
 	__kstat_incr_irqs_this_cpu(desc);
 
-	if (chip->irq_ack)
-		chip->irq_ack(&desc->irq_data);
-
-	handle_irq_event_percpu(desc);
-
-	if (chip->irq_eoi)
-		chip->irq_eoi(&desc->irq_data);
+	if (irqs_pipelined()) {
+		handle_irq_event_percpu(desc);
+		if (chip->irq_unmask) {
+			/*
+			 * irqchip handlers assume that hard irqs are
+			 * off, which is not the case on replay of
+			 * unserialized percpu irqs: fix this up.
+			 */
+			flags = hard_cond_local_irq_save();
+			chip->irq_unmask(&desc->irq_data);
+			hard_cond_local_irq_restore(flags);
+		}
+	} else {
+		if (chip->irq_ack)
+			chip->irq_ack(&desc->irq_data);
+		handle_irq_event_percpu(desc);
+		if (chip->irq_eoi)
+			chip->irq_eoi(&desc->irq_data);
+	}
 }
 
 /**
@@ -914,7 +1124,21 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	struct irqaction *action = desc->action;
 	unsigned int irq = irq_desc_get_irq(desc);
+	unsigned long flags;
 	irqreturn_t res;
+	bool handled;
+
+	if (on_pipeline_entry()) {
+		/* on_pipeline_entry() implies hard irqs off. */
+		if (chip->irq_ack)
+			chip->irq_ack(&desc->irq_data);
+		handled = handle_oob_irq(desc);
+		if (chip->irq_eoi)
+			chip->irq_eoi(&desc->irq_data);
+		if (!handled && chip->irq_mask)
+			chip->irq_mask(&desc->irq_data);
+		return;
+	}
 
 	/*
 	 * PER CPU interrupts are not serialized. Do not touch
@@ -922,7 +1146,7 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 	 */
 	__kstat_incr_irqs_this_cpu(desc);
 
-	if (chip->irq_ack)
+	if (!irqs_pipelined() && chip->irq_ack)
 		chip->irq_ack(&desc->irq_data);
 
 	if (likely(action)) {
@@ -940,8 +1164,18 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 			    enabled ? " and unmasked" : "", irq, cpu);
 	}
 
-	if (chip->irq_eoi)
-		chip->irq_eoi(&desc->irq_data);
+	if (irqs_pipelined()) {
+		/*
+		 * irqchip handlers assume that hard irqs are off,
+		 * which is not the case on replay of unserialized
+		 * percpu irqs: fix this up.
+		 */
+		flags = hard_cond_local_irq_save();
+		if (chip->irq_unmask)
+			chip->irq_unmask(&desc->irq_data);
+		hard_cond_local_irq_restore(flags);
+	} else if (chip->irq_eoi)
+			chip->irq_eoi(&desc->irq_data);
 }
 
 /**
@@ -951,6 +1185,8 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
  *
  * Similar to handle_fasteoi_nmi, but handling the dev_id cookie
  * as a percpu pointer.
+ *
+ * irq_pipeline: we never log & replay NMIs.
  */
 void handle_percpu_devid_fasteoi_nmi(struct irq_desc *desc)
 {
@@ -1033,6 +1269,7 @@ __irq_do_set_handler(struct irq_desc *desc, irq_flow_handler_t handle,
 			desc->handle_irq = handle;
 		}
 
+		irq_settings_set_chained(desc);
 		irq_settings_set_noprobe(desc);
 		irq_settings_set_norequest(desc);
 		irq_settings_set_nothread(desc);
@@ -1200,11 +1437,22 @@ void irq_cpu_offline(void)
 void handle_fasteoi_ack_irq(struct irq_desc *desc)
 {
 	struct irq_chip *chip = desc->irq_data.chip;
+	int flow;
 
 	raw_spin_lock(&desc->lock);
 
-	if (!irq_may_run(desc))
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY && !irq_may_run(desc))
 		goto out;
+
+	if (irq_feeding_pipeline(desc, flow)) {
+		chip->irq_ack(&desc->irq_data);
+		if (handle_oob_irq(desc))
+			chip->irq_eoi(&desc->irq_data);
+		else
+			mask_cond_eoi_irq(desc);
+		goto out_unlock;
+	}
 
 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
@@ -1219,11 +1467,13 @@ void handle_fasteoi_ack_irq(struct irq_desc *desc)
 	}
 
 	kstat_incr_irqs_this_cpu(desc);
-	if (desc->istate & IRQS_ONESHOT)
-		mask_irq(desc);
+	if (!irqs_pipelined()) {
+		if (desc->istate & IRQS_ONESHOT)
+			mask_irq(desc);
 
-	/* Start handling the irq */
-	desc->irq_data.chip->irq_ack(&desc->irq_data);
+		/* Start handling the irq */
+		chip->irq_ack(&desc->irq_data);
+	}
 
 	handle_irq_event(desc);
 
@@ -1234,6 +1484,7 @@ void handle_fasteoi_ack_irq(struct irq_desc *desc)
 out:
 	if (!(chip->flags & IRQCHIP_EOI_IF_HANDLED))
 		chip->irq_eoi(&desc->irq_data);
+out_unlock:
 	raw_spin_unlock(&desc->lock);
 }
 EXPORT_SYMBOL_GPL(handle_fasteoi_ack_irq);
@@ -1251,12 +1502,25 @@ EXPORT_SYMBOL_GPL(handle_fasteoi_ack_irq);
 void handle_fasteoi_mask_irq(struct irq_desc *desc)
 {
 	struct irq_chip *chip = desc->irq_data.chip;
+	int flow;
 
 	raw_spin_lock(&desc->lock);
-	mask_ack_irq(desc);
 
-	if (!irq_may_run(desc))
-		goto out;
+	flow = irq_starting_flow(desc);
+	if (flow != IRQ_FLOW_REPLAY) {
+		mask_ack_irq(desc);
+
+		if (!irq_may_run(desc))
+			goto out;
+	}
+
+	if (irq_feeding_pipeline(desc, flow)) {
+		if (handle_oob_irq(desc))
+			chip->irq_eoi(&desc->irq_data);
+		else
+			cond_eoi_irq(desc);
+		goto out_unlock;
+	}
 
 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
 
@@ -1271,7 +1535,7 @@ void handle_fasteoi_mask_irq(struct irq_desc *desc)
 	}
 
 	kstat_incr_irqs_this_cpu(desc);
-	if (desc->istate & IRQS_ONESHOT)
+	if (!irqs_pipelined() && (desc->istate & IRQS_ONESHOT))
 		mask_irq(desc);
 
 	handle_irq_event(desc);
@@ -1283,6 +1547,7 @@ void handle_fasteoi_mask_irq(struct irq_desc *desc)
 out:
 	if (!(chip->flags & IRQCHIP_EOI_IF_HANDLED))
 		chip->irq_eoi(&desc->irq_data);
+out_unlock:
 	raw_spin_unlock(&desc->lock);
 }
 EXPORT_SYMBOL_GPL(handle_fasteoi_mask_irq);

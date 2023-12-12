@@ -16,6 +16,7 @@
 #include <linux/bitmap.h>
 #include <linux/irqdomain.h>
 #include <linux/sysfs.h>
+#include <linux/irq_pipeline.h>
 
 #include "internals.h"
 
@@ -458,6 +459,7 @@ static void free_desc(unsigned int irq)
 	 * irq_sysfs_init() as well.
 	 */
 	irq_sysfs_del(desc);
+	uncache_irq_desc(irq);
 	delete_irq_desc(irq);
 
 	/*
@@ -637,6 +639,17 @@ void irq_init_desc(unsigned int irq)
 
 #endif /* !CONFIG_SPARSE_IRQ */
 
+static inline bool is_hardirq(struct irq_desc *desc)
+{
+	if (!irqs_pipelined())
+		return in_hardirq();
+
+	if (in_pipeline() || !(desc->istate & IRQS_DEFERRED))
+		return true;
+
+	return false;
+}
+
 int handle_irq_desc(struct irq_desc *desc)
 {
 	struct irq_data *data;
@@ -645,7 +658,7 @@ int handle_irq_desc(struct irq_desc *desc)
 		return -EINVAL;
 
 	data = irq_desc_get_irq_data(desc);
-	if (WARN_ON_ONCE(!in_hardirq() && handle_enforce_irqctx(data)))
+	if (WARN_ON_ONCE(!is_hardirq(desc) && handle_enforce_irqctx(data)))
 		return -EPERM;
 
 	generic_handle_irq_desc(desc);
@@ -653,14 +666,18 @@ int handle_irq_desc(struct irq_desc *desc)
 }
 
 /**
- * generic_handle_irq - Invoke the handler for a particular irq
+ * generic_handle_irq - Handle a particular irq
  * @irq:	The irq number to handle
  *
  * Returns:	0 on success, or -EINVAL if conversion has failed
  *
  * 		This function must be called from an IRQ context with irq regs
  * 		initialized.
-  */
+ *
+ * The handler is invoked, unless we are entering the interrupt
+ * pipeline, in which case the incoming IRQ is only scheduled for
+ * deferred delivery.
+ */
 int generic_handle_irq(unsigned int irq)
 {
 	return handle_irq_desc(irq_to_desc(irq));
@@ -704,7 +721,10 @@ EXPORT_SYMBOL_GPL(generic_handle_irq_safe);
  */
 int generic_handle_domain_irq(struct irq_domain *domain, unsigned int hwirq)
 {
-	return handle_irq_desc(irq_resolve_mapping(domain, hwirq));
+	struct irq_desc *desc = irq_resolve_mapping(domain, hwirq);
+
+	return irqs_pipelined() ? generic_pipeline_irq_desc(desc)
+		: handle_irq_desc(desc);
 }
 EXPORT_SYMBOL_GPL(generic_handle_domain_irq);
 

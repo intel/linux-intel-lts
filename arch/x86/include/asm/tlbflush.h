@@ -38,9 +38,9 @@ static inline void cr4_set_bits(unsigned long mask)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	cr4_set_bits_irqsoff(mask);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 /* Clear in this cpu's CR4. */
@@ -48,9 +48,9 @@ static inline void cr4_clear_bits(unsigned long mask)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	cr4_clear_bits_irqsoff(mask);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 #ifndef MODULE

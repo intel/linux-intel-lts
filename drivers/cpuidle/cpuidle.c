@@ -18,6 +18,7 @@
 #include <linux/pm_qos.h>
 #include <linux/cpu.h>
 #include <linux/cpuidle.h>
+#include <linux/irq_pipeline.h>
 #include <linux/ktime.h>
 #include <linux/hrtimer.h>
 #include <linux/module.h>
@@ -209,6 +210,22 @@ int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
 	ktime_t time_start, time_end;
 
 	/*
+	 * A companion core running on the oob stage of the IRQ
+	 * pipeline may deny switching to a deeper C-state. If so,
+	 * call the default idle routine instead. If the core cannot
+	 * bear with the latency induced by the default idling
+	 * operation, then CPUIDLE is not usable and should be
+	 * disabled at build time. The in-band stage is currently
+	 * stalled, hard irqs are on. irq_cpuidle_enter() leaves us
+	 * stalled but returns with hard irqs off so that no event may
+	 * sneak in until we actually go idle.
+	 */
+	if (!irq_cpuidle_enter(dev, target_state)) {
+		default_idle_call();
+		return -EBUSY;
+	}
+
+	/*
 	 * Tell the time framework to switch to a broadcast timer because our
 	 * local timer will be shut down.  If a local timer is used from another
 	 * CPU as a broadcast timer, this call may fail if it is not available.
@@ -237,6 +254,7 @@ int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
 	if (!(target_state->flags & CPUIDLE_FLAG_RCU_IDLE))
 		ct_idle_enter();
 	entered_state = target_state->enter(dev, drv, index);
+	hard_cond_local_irq_enable();
 	if (!(target_state->flags & CPUIDLE_FLAG_RCU_IDLE))
 		ct_idle_exit();
 	start_critical_timings();
