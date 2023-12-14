@@ -9,6 +9,3 @@
 
 # CVE-2023-6238
 0001-nvme-fix-corruption-for-passthrough-meta-data.patch
-
-# CVE-2023-6111
-0001-netfilter-nf_tables-remove-catchall-element-in-GC-sy.patch
