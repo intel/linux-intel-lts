@@ -193,9 +193,11 @@ struct igc_adapter {
 	u32 max_frame_size;
 	u32 min_frame_size;
 
+	int tc_setup_type;
 	ktime_t base_time;
 	ktime_t cycle_time;
 	bool qbv_enable;
+	u32 qbv_config_change_errors;
 
 	bool frame_preemption_active;
 	u32 add_frag_size;
@@ -241,7 +243,7 @@ struct igc_adapter {
 	struct ptp_clock *ptp_clock;
 	struct ptp_clock_info ptp_caps;
 	struct work_struct ptp_tx_work;
-	/* Access to ptp_tx_skb and ptp_tx_start is protected by the
+	/* Access to ptp_tx_skb and ptp_tx_start are protected by the
 	 * ptp_tx_lock.
 	 */
 	spinlock_t ptp_tx_lock;
