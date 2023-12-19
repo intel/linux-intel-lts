@@ -63,6 +63,7 @@ struct sched_entry {
 	u32 gate_mask;
 	u32 interval;
 	u8 command;
+	bool correction_active;
 };
 
 struct sched_gate_list {
@@ -222,6 +223,14 @@ static bool sched_switch_pending(const struct sched_gate_list *oper)
 	return oper->cycle_time_correction != CYCLE_TIME_CORRECTION_UNSPEC;
 }
 
+static s64 get_cycle_time(const struct sched_gate_list *oper)
+{
+	if (sched_switch_pending(oper))
+		return oper->cycle_time + oper->cycle_time_correction;
+	else
+		return oper->cycle_time;
+}
+
 /* Get how much time has been already elapsed in the current cycle. */
 static s32 get_cycle_time_elapsed(struct sched_gate_list *sched, ktime_t time)
 {
@@ -229,9 +238,18 @@ static s32 get_cycle_time_elapsed(struct sched_gate_list *sched, ktime_t time)
 	s32 time_elapsed;
 
 	time_since_sched_start = ktime_sub(time, sched->base_time);
-	div_s64_rem(time_since_sched_start, sched->cycle_time, &time_elapsed);
+	div_s64_rem(time_since_sched_start, get_cycle_time(sched), &time_elapsed);
 
 	return time_elapsed;
+}
+
+static u32 get_interval(const struct sched_entry *entry,
+			const struct sched_gate_list *oper)
+{
+	if (entry->correction_active)
+		return entry->interval + oper->cycle_time_correction;
+	else
+		return entry->interval;
 }
 
 static ktime_t get_interval_end_time(struct sched_gate_list *sched,
@@ -242,8 +260,9 @@ static ktime_t get_interval_end_time(struct sched_gate_list *sched,
 	s32 cycle_elapsed = get_cycle_time_elapsed(sched, intv_start);
 	ktime_t intv_end, cycle_ext_end, cycle_end;
 
-	cycle_end = ktime_add_ns(intv_start, sched->cycle_time - cycle_elapsed);
-	intv_end = ktime_add_ns(intv_start, entry->interval);
+	cycle_end = ktime_add_ns(intv_start,
+				 get_cycle_time(sched) - cycle_elapsed);
+	intv_end = ktime_add_ns(intv_start, get_interval(entry, sched));
 	cycle_ext_end = ktime_add(cycle_end, sched->cycle_time_extension);
 
 	if (ktime_before(intv_end, cycle_end))
@@ -350,7 +369,7 @@ static struct sched_entry *find_entry_to_transmit(struct sk_buff *skb,
 	if (!sched)
 		return NULL;
 
-	cycle = sched->cycle_time;
+	cycle = get_cycle_time(sched);
 	cycle_elapsed = get_cycle_time_elapsed(sched, time);
 	curr_intv_end = ktime_sub_ns(time, cycle_elapsed);
 	cycle_end = ktime_add_ns(curr_intv_end, cycle);
@@ -364,7 +383,7 @@ static struct sched_entry *find_entry_to_transmit(struct sk_buff *skb,
 			break;
 
 		if (!(entry->gate_mask & BIT(tc)) ||
-		    packet_transmit_time > entry->interval)
+		    packet_transmit_time > get_interval(entry, sched))
 			continue;
 
 		txtime = entry->next_txtime;
@@ -529,7 +548,8 @@ static long get_packet_txtime(struct sk_buff *skb, struct Qdisc *sch)
 		 * interval starts.
 		 */
 		if (ktime_after(transmit_end_time, interval_end))
-			entry->next_txtime = ktime_add(interval_start, sched->cycle_time);
+			entry->next_txtime =
+				ktime_add(interval_start, get_cycle_time(sched));
 	} while (sched_changed || ktime_after(transmit_end_time, interval_end));
 
 	entry->next_txtime = transmit_end_time;
@@ -1022,6 +1042,7 @@ static enum hrtimer_restart advance_sched(struct hrtimer *timer)
 
 			oper->cycle_end_time = new_base_time;
 			end_time = new_base_time;
+			next->correction_active = true;
 
 			update_open_gate_duration(next, oper, num_tc,
 						  new_gate_duration);
@@ -1124,6 +1145,7 @@ static int fill_sched_entry(struct taprio_sched *q, struct nlattr **tb,
 	}
 
 	entry->interval = interval;
+	entry->correction_active = false;
 
 	return 0;
 }
