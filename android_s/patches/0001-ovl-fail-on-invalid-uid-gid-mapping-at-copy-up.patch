@@ -1,0 +1,48 @@
+From 826bd78789f80ce1a3e0331c1cba2997ecf010d1 Mon Sep 17 00:00:00 2001
+From: Miklos Szeredi <mszeredi@redhat.com>
+Date: Tue, 24 Jan 2023 16:41:18 +0100
+Subject: [PATCH] ovl: fail on invalid uid/gid mapping at copy up
+
+If st_uid/st_gid doesn't have a mapping in the mounter's user_ns, then
+copy-up should fail, just like it would fail if the mounter task was doing
+the copy using "cp -a".
+
+There's a corner case where the "cp -a" would succeed but copy up fail: if
+there's a mapping of the invalid uid/gid (65534 by default) in the user
+namespace.  This is because stat(2) will return this value if the mapping
+doesn't exist in the current user_ns and "cp -a" will in turn be able to
+create a file with this uid/gid.
+
+This behavior would be inconsistent with POSIX ACL's, which return -1 for
+invalid uid/gid which result in a failed copy.
+
+For consistency and simplicity fail the copy of the st_uid/st_gid are
+invalid.
+
+Fixes: 459c7c565ac3 ("ovl: unprivieged mounts")
+Cc: <stable@vger.kernel.org> # v5.11
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+Reviewed-by: Christian Brauner <brauner@kernel.org>
+Reviewed-by: Seth Forshee <sforshee@kernel.org>
+---
+ fs/overlayfs/copy_up.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/fs/overlayfs/copy_up.c b/fs/overlayfs/copy_up.c
+index bda5d2015a599..56ca79b16474f 100644
+--- a/fs/overlayfs/copy_up.c
++++ b/fs/overlayfs/copy_up.c
+@@ -778,6 +778,10 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
+ 	if (err)
+ 		return err;
+ 
++	if (!kuid_has_mapping(current_user_ns(), ctx.stat.uid) ||
++	    !kgid_has_mapping(current_user_ns(), ctx.stat.gid))
++		return -EOVERFLOW;
++
+ 	ctx.metacopy = ovl_need_meta_copy_up(dentry, ctx.stat.mode, flags);
+ 
+ 	if (parent) {
+-- 
+2.25.1
+

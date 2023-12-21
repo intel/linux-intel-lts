@@ -1,0 +1,107 @@
+From 62a02998440638093cfe3ac83a746df7dc949532 Mon Sep 17 00:00:00 2001
+From: Xin Long <lucien.xin@gmail.com>
+Date: Mon, 25 Jul 2022 18:11:06 -0400
+Subject: [PATCH] sctp: leave the err path free in sctp_stream_init to
+ sctp_stream_free
+
+[ Upstream commit 181d8d2066c000ba0a0e6940a7ad80f1a0e68e9d ]
+
+A NULL pointer dereference was reported by Wei Chen:
+
+  BUG: kernel NULL pointer dereference, address: 0000000000000000
+  RIP: 0010:__list_del_entry_valid+0x26/0x80
+  Call Trace:
+   <TASK>
+   sctp_sched_dequeue_common+0x1c/0x90
+   sctp_sched_prio_dequeue+0x67/0x80
+   __sctp_outq_teardown+0x299/0x380
+   sctp_outq_free+0x15/0x20
+   sctp_association_free+0xc3/0x440
+   sctp_do_sm+0x1ca7/0x2210
+   sctp_assoc_bh_rcv+0x1f6/0x340
+
+This happens when calling sctp_sendmsg without connecting to server first.
+In this case, a data chunk already queues up in send queue of client side
+when processing the INIT_ACK from server in sctp_process_init() where it
+calls sctp_stream_init() to alloc stream_in. If it fails to alloc stream_in
+all stream_out will be freed in sctp_stream_init's err path. Then in the
+asoc freeing it will crash when dequeuing this data chunk as stream_out
+is missing.
+
+As we can't free stream out before dequeuing all data from send queue, and
+this patch is to fix it by moving the err path stream_out/in freeing in
+sctp_stream_init() to sctp_stream_free() which is eventually called when
+freeing the asoc in sctp_association_free(). This fix also makes the code
+in sctp_process_init() more clear.
+
+Note that in sctp_association_init() when it fails in sctp_stream_init(),
+sctp_association_free() will not be called, and in that case it should
+go to 'stream_free' err path to free stream instead of 'fail_init'.
+
+Fixes: 5bbbbe32a431 ("sctp: introduce stream scheduler foundations")
+Reported-by: Wei Chen <harperchen1110@gmail.com>
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Link: https://lore.kernel.org/r/831a3dc100c4908ff76e5bcc363be97f2778bc0b.1658787066.git.lucien.xin@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/sctp/associola.c |  5 ++---
+ net/sctp/stream.c    | 18 +++---------------
+ 2 files changed, 5 insertions(+), 18 deletions(-)
+
+diff --git a/net/sctp/associola.c b/net/sctp/associola.c
+index 78c1429d1301c..4a9b4bf8e718d 100644
+--- a/net/sctp/associola.c
++++ b/net/sctp/associola.c
+@@ -246,9 +246,8 @@ static struct sctp_association *sctp_association_init(
+ 	if (!sctp_ulpq_init(&asoc->ulpq, asoc))
+ 		goto fail_init;
+ 
+-	if (sctp_stream_init(&asoc->stream, asoc->c.sinit_num_ostreams,
+-			     0, gfp))
+-		goto fail_init;
++	if (sctp_stream_init(&asoc->stream, asoc->c.sinit_num_ostreams, 0, gfp))
++		goto stream_free;
+ 
+ 	/* Initialize default path MTU. */
+ 	asoc->pathmtu = sp->pathmtu;
+diff --git a/net/sctp/stream.c b/net/sctp/stream.c
+index 516bc48be5bc7..435cbf4549e77 100644
+--- a/net/sctp/stream.c
++++ b/net/sctp/stream.c
+@@ -231,7 +231,7 @@ int sctp_stream_init(struct sctp_stream *stream, __u16 outcnt, __u16 incnt,
+ 
+ 	ret = sctp_stream_alloc_out(stream, outcnt, gfp);
+ 	if (ret)
+-		goto out;
++		return ret;
+ 
+ 	stream->outcnt = outcnt;
+ 	for (i = 0; i < stream->outcnt; i++)
+@@ -240,21 +240,9 @@ int sctp_stream_init(struct sctp_stream *stream, __u16 outcnt, __u16 incnt,
+ in:
+ 	sctp_stream_interleave_init(stream);
+ 	if (!incnt)
+-		goto out;
++		return 0;
+ 
+-	ret = sctp_stream_alloc_in(stream, incnt, gfp);
+-	if (ret) {
+-		sched->free(stream);
+-		fa_free(stream->out);
+-		stream->out = NULL;
+-		stream->outcnt = 0;
+-		goto out;
+-	}
+-
+-	stream->incnt = incnt;
+-
+-out:
+-	return ret;
++	return sctp_stream_alloc_in(stream, incnt, gfp);
+ }
+ 
+ int sctp_stream_init_ext(struct sctp_stream *stream, __u16 sid)
+-- 
+2.25.1
+

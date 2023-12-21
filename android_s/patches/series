@@ -99,3 +99,9 @@
 
 # CVE-2023-37453
 0001-Revert-USB-core-Don-t-hold-device-lock-while-reading.patch
+
+# CVE-2023-0386
+0001-ovl-fail-on-invalid-uid-gid-mapping-at-copy-up.patch
+
+# CVE-2023-2177
+0001-sctp-leave-the-err-path-free-in-sctp_stream_init-to-.patch
