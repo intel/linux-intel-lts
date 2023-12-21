@@ -4,9 +4,6 @@
 # CVE-2023-23005
 0001-mm-demotion-fix-NULL-vs-IS_ERR-checking-in-memory_ti.patch
 
-# CVE-2023-28464
-0001-Bluetooth-Fix-double-free-in-hci_conn_cleanup.patch
-
 # CVE-2023-37454
 0001-KASAN-use-after-free-Write-in-udf_close_lvid.patch
 
@@ -56,21 +53,6 @@
 #0015-ARM-spear-Do-not-use-timer-namespace-for-timer_shutd.patch
 #0013-clocksource-drivers-arm_arch_timer-Do-not-use-timer-.patch
 #0014-clocksource-drivers-sp804-Do-not-use-timer-namespace.patch
-
-# CVE-2023-5178
-0001-nvmet-tcp-Fix-a-possible-UAF-in-queue-intialization-.patch
-
-# CVE-2023-46813
-0001-x86-sev-Check-for-user-space-IOIO-pointing-to-kernel.patch
-
-# CVE-2023-46862
-0001-io_uring-fdinfo-lock-SQ-thread-while-retrieving-thre.patch
-
-# CVE-2023-5717
-0001-perf-Disallow-mis-matched-inherited-group-reads.patch
-
-# CVE-2023-6111
-0001-netfilter-nf_tables-remove-catchall-element-in-GC-sy.patch
 
 # CVE-2023-6238
 0001-nvme-fix-corruption-for-passthrough-meta-data.patch
