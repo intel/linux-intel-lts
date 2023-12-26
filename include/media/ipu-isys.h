@@ -6,6 +6,7 @@
 
 #include <linux/i2c.h>
 #include <linux/clkdev.h>
+#include <linux/version.h>
 #include <media/v4l2-async.h>
 
 #define IPU_ISYS_MAX_CSI2_LANES		4

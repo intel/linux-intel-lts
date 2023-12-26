@@ -15,6 +15,9 @@
 #include "ipu6-isys-dwc-phy.h"
 #include "ipu-isys-csi2.h"
 
+bool enable_hw_sof_irq;
+module_param(enable_hw_sof_irq, bool, 0660);
+MODULE_PARM_DESC(enable_hw_sof_irq, "enable hw sof for debug!");
 struct ipu6_csi2_error {
 	const char *error_string;
 	bool is_info_only;
@@ -455,14 +458,18 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	struct ipu_isys_pipeline *ip =
 		container_of(media_entity_pipeline(&sd->entity),
 			     struct ipu_isys_pipeline, pipe);
-	struct ipu_isys_csi2_config *cfg =
-		v4l2_get_subdev_hostdata(media_entity_to_v4l2_subdev
-					 (ip->external->entity));
+	struct v4l2_subdev *esd =
+		media_entity_to_v4l2_subdev(ip->external->entity);
+	struct ipu_isys_csi2_config *cfg;
 	unsigned int port, port_max;
 	int ret = 0;
 	u32 mask = 0;
 	unsigned int i;
 
+	if (!esd)
+		return -EPIPE;
+
+	cfg = v4l2_get_subdev_hostdata(esd);
 	port = cfg->port;
 	dev_dbg(&isys->adev->dev, "for port %u with %u lanes\n", port, nlanes);
 
@@ -545,7 +552,10 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	/* To save CPU wakeups, disable CSI SOF/EOF irq */
 	writel(0xffffffff, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_STATUS_OFFSET);
-	writel(0, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
+	dev_dbg(&isys->adev->dev, "HW CSI SOF irq enable %d\n",
+		enable_hw_sof_irq);
+	writel(enable_hw_sof_irq ? 0x55555555 : 0,
+	       csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_MASK_OFFSET);
 	writel(0xffffffff, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_CLEAR_OFFSET);

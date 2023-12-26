@@ -701,11 +701,16 @@ static struct v4l2_ctrl_config lt6911uxc_frame_interval = {
 
 static u64 get_pixel_rate(struct lt6911uxc_state *lt6911uxc)
 {
-	if (lt6911uxc->cur_mode->lanes)
-		return lt6911uxc->cur_mode->width * lt6911uxc->cur_mode->height *
-			lt6911uxc->cur_mode->fps * 16 / lt6911uxc->cur_mode->lanes;
-	else
-		return 995328000; /* default value: 4K@30 */
+	u64 pixel_rate = 995328000ULL; /* default value: 4K@30 */
+
+	if (lt6911uxc->cur_mode->lanes) {
+		pixel_rate = (u64)lt6911uxc->cur_mode->width *
+			lt6911uxc->cur_mode->height *
+			lt6911uxc->cur_mode->fps * 16;
+		do_div(pixel_rate, lt6911uxc->cur_mode->lanes);
+	}
+
+	return pixel_rate;
 }
 
 static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
@@ -1058,28 +1063,14 @@ static int lt6911uxc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
 
-	if (!lt6911uxc->auxiliary_port)
-		lt6911uxc_set_stream(sd, true);
 	lt6911uxc_update_pad_format(lt6911uxc->cur_mode,
 			v4l2_subdev_get_try_format(sd, fh->state, 0));
 
 	return 0;
 }
 
-static int lt6911uxc_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
-{
-
-	struct lt6911uxc_state *lt6911uxc = to_state(sd);
-
-	if (!lt6911uxc->auxiliary_port)
-		lt6911uxc_set_stream(sd, false);
-
-	return 0;
-}
-
 static const struct v4l2_subdev_internal_ops lt6911uxc_subdev_internal_ops = {
 	.open = lt6911uxc_open,
-	.close = lt6911uxc_close,
 };
 
 static const struct v4l2_subdev_video_ops lt6911uxc_video_ops = {
@@ -1159,7 +1150,7 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 			REG_INT_HDMI);
 	switch (int_event) {
 	case INT_HDMI_STABLE:
-		dev_dbg(&client->dev, "Video signal stable\n");
+		dev_info(&client->dev, "Video signal stable\n");
 
 		/* byte clock / MIPI clock */
 		lt6911uxc_i2c_wr8(&lt6911uxc->sd,
@@ -1246,7 +1237,7 @@ static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
 		v4l2_subdev_notify_event(&lt6911uxc->sd,
 			&lt6911uxc_ev_stream_end);
 
-		dev_dbg(&client->dev, "Video signal disconnected\n");
+		dev_info(&client->dev, "Video signal disconnected\n");
 	break;
 	default:
 		dev_dbg(&client->dev, "Unhandled video= 0x%02X\n", int_event);

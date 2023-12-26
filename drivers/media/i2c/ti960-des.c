@@ -785,7 +785,7 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 		return ret;
 
 	/* Select TX port 0 R/W by default */
-	ret = ti960_reg_write(va, 0x32, 0x01);
+	ret = ti960_reg_write(va, TI960_CSI_PORT_SEL, 0x01);
 	/* Configure MIPI clock bsaed on control value. */
 	ret = ti960_reg_write(va, TI960_CSI_PLL_CTL,
 			    ti960_op_sys_clock_reg_val[
@@ -793,7 +793,6 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 	if (ret)
 		return ret;
 	val = TI960_CSI_ENABLE;
-	val |= TI960_CSI_CONTS_CLOCK;
 	/* Enable skew calculation when 1.6Gbps output is enabled. */
 	if (v4l2_ctrl_g_ctrl(va->link_freq) == 3) {
 		val |= TI960_CSI_SKEWCAL;
@@ -1155,6 +1154,19 @@ static const struct v4l2_subdev_core_ops ti960_core_subdev_ops = {
 	.s_power = ti960_set_power,
 };
 
+static u8 ti960_get_nubmer_of_streaming(void)
+{
+	u8 n = 0;
+	u8 i = 0;
+
+	for (; i < ARRAY_SIZE(ti960_set_sub_stream); i++) {
+		if (ti960_set_sub_stream[i])
+			n++;
+	}
+
+	return n;
+}
+
 static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ti960 *va = container_of(ctrl->handler,
@@ -1170,11 +1182,24 @@ static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 		dev_info(va->sd.dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
 		vc_id = (val >> 8) & 0x00FF;
 		state = val & 0x00FF;
-		if (vc_id > NR_OF_TI960_SINK_PADS - 1)
+		if (vc_id > NR_OF_TI960_SINK_PADS - 1) {
 			dev_err(va->sd.dev, "invalid vc %d\n", vc_id);
-		else
-			ti960_set_sub_stream[vc_id] = state;
+			break;
+		}
 
+		ti960_reg_write(va, TI960_CSI_PORT_SEL, 0x01);
+		ti960_reg_read(va, TI960_CSI_CTL, &val);
+		if (state) {
+			if (ti960_get_nubmer_of_streaming() == 0)
+				val |= TI960_CSI_CONTS_CLOCK;
+			ti960_set_sub_stream[vc_id] = state;
+		} else {
+			ti960_set_sub_stream[vc_id] = state;
+			if (ti960_get_nubmer_of_streaming() == 0)
+				val &= ~TI960_CSI_CONTS_CLOCK;
+		}
+
+		ti960_reg_write(va, TI960_CSI_CTL, val);
 		ti960_set_stream_vc(va, vc_id, state);
 		break;
 	default:

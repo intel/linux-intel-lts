@@ -265,7 +265,7 @@ void *ipu_cpd_create_pkg_dir(struct ipu_bus_device *adev,
 	if (ret) {
 		dev_err(&isp->pdev->dev,
 			"Unable to parse module data section!\n");
-		dma_free_attrs(&isp->psys->dev, *pkg_dir_size, pkg_dir,
+		dma_free_attrs(&adev->dev, *pkg_dir_size, pkg_dir,
 			       *dma_addr,
 			       0);
 		return NULL;

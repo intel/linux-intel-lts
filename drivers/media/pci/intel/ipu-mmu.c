@@ -376,7 +376,7 @@ static int allocate_trash_buffer(struct ipu_mmu *mmu)
 {
 	unsigned int n_pages = PAGE_ALIGN(IPU_MMUV2_TRASH_RANGE) >> PAGE_SHIFT;
 	struct iova *iova;
-	u32 iova_addr;
+	unsigned long iova_addr;
 	unsigned int i;
 	dma_addr_t dma;
 	int ret;
@@ -785,7 +785,7 @@ static void ipu_mmu_destroy(struct ipu_mmu *mmu)
 	}
 
 	free_dummy_page(mmu_info);
-	dma_unmap_single(mmu_info->dev, mmu_info->l1_pt_dma << ISP_PADDR_SHIFT,
+	dma_unmap_single(mmu_info->dev, TBL_PHYS_ADDR(mmu_info->l1_pt_dma),
 			 PAGE_SIZE, DMA_BIDIRECTIONAL);
 	free_page((unsigned long)mmu_info->dummy_l2_pt);
 	free_page((unsigned long)mmu_info->l1_pt);

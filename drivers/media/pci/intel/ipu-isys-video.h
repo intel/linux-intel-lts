@@ -67,6 +67,7 @@ struct ipu_isys_pipeline {
 	struct media_pipeline pipe;
 	struct media_pad *external;
 	atomic_t sequence;
+	int last_sequence;
 	unsigned int seq_index;
 	struct sequence_info seq[IPU_ISYS_MAX_PARALLEL_SOF];
 	int source;	/* SSI stream source */
@@ -133,6 +134,7 @@ struct ipu_isys_video {
 	unsigned int streaming;
 	unsigned int reset;
 	unsigned int skipframe;
+	unsigned int start_streaming;
 	bool packed;
 	bool compression;
 	struct v4l2_ctrl_handler ctrl_handler;
