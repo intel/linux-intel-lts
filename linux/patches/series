@@ -56,3 +56,12 @@
 
 # CVE-2023-6238
 0001-nvme-fix-corruption-for-passthrough-meta-data.patch
+
+# CVE-2023-2176
+0001-RDMA-core-Refactor-rdma_bind_addr.patch
+
+# CVE-2023-6817
+0001-netfilter-nft_set_pipapo-skip-inactive-elements-duri.patch
+
+# CVE-2023-39191
+0001-bpf-Fix-state-pruning-for-STACK_DYNPTR-stack-slots.patch

@@ -1,0 +1,33 @@
+From 4da91630c54d7df55d9c13dbc8c7d28790831849 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Fri, 1 Dec 2023 15:47:13 +0100
+Subject: [PATCH] netfilter: nft_set_pipapo: skip inactive elements during set
+ walk
+
+Otherwise set elements can be deactivated twice which will cause a crash.
+
+Reported-by: Xingyuan Mo <hdthky0@gmail.com>
+Fixes: 3c4287f62044 ("nf_tables: Add set type for arbitrary concatenation of ranges")
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ net/netfilter/nft_set_pipapo.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nft_set_pipapo.c b/net/netfilter/nft_set_pipapo.c
+index deea6196d9925..89ec9bdde731b 100644
+--- a/net/netfilter/nft_set_pipapo.c
++++ b/net/netfilter/nft_set_pipapo.c
+@@ -2042,7 +2042,8 @@ static void nft_pipapo_walk(const struct nft_ctx *ctx, struct nft_set *set,
+ 
+ 		e = f->mt[r].e;
+ 
+-		elem.priv = e;
++		if (!nft_set_elem_active(&e->ext, iter->genmask))
++			goto cont;
+ 
+ 		iter->err = iter->fn(ctx, set, iter, &elem);
+ 		if (iter->err < 0)
+-- 
+2.25.1
+
