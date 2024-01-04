@@ -100,7 +100,7 @@ static bool pf_has_valid_vf_bars(struct drm_i915_private *i915)
 	if (!i915_pci_resource_valid(pdev, GEN12_VF_GTTMMADR_BAR))
 		return false;
 
-	if ((INTEL_INFO(i915)->memory_regions & REGION_LMEM) &&
+	if ((RUNTIME_INFO(i915)->memory_regions & REGION_LMEM) &&
 	    !i915_pci_resource_valid(pdev, GEN12_VF_LMEM_BAR))
 		return false;
 

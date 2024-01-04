@@ -785,7 +785,7 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 #define HAS_64K_PAGES(i915) (INTEL_INFO(i915)->has_64k_pages)
 
 #define HAS_REGION(i915, i) 					\
-	(INTEL_INFO(i915)->memory_regions & (i) &		\
+	(RUNTIME_INFO(i915)->memory_regions & (i) &		\
 	 (IS_SRIOV_VF(i915) ? ~VF_RESTRICTED_REGIONS : ~0))
 #define HAS_LMEM(i915) HAS_REGION(i915, REGION_LMEM)
 
