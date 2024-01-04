@@ -1,0 +1,46 @@
+From 494f666c3ae9ad4f531deb469313643ba77c8eb9 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Mon, 4 Dec 2023 14:25:33 +0100
+Subject: [PATCH] netfilter: nf_tables: bail out on mismatching dynset and set
+ expressions
+
+[ Upstream commit 3701cd390fd731ee7ae8b8006246c8db82c72bea ]
+
+If dynset expressions provided by userspace is larger than the declared
+set expressions, then bail out.
+
+Fixes: 48b0ae046ee9 ("netfilter: nftables: netlink support for several set element expressions")
+Reported-by: Xingyuan Mo <hdthky0@gmail.com>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nft_dynset.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/net/netfilter/nft_dynset.c b/net/netfilter/nft_dynset.c
+index cf9a1ae87d9b1..a470e5f612843 100644
+--- a/net/netfilter/nft_dynset.c
++++ b/net/netfilter/nft_dynset.c
+@@ -279,10 +279,15 @@ static int nft_dynset_init(const struct nft_ctx *ctx,
+ 			priv->expr_array[i] = dynset_expr;
+ 			priv->num_exprs++;
+ 
+-			if (set->num_exprs &&
+-			    dynset_expr->ops != set->exprs[i]->ops) {
+-				err = -EOPNOTSUPP;
+-				goto err_expr_free;
++			if (set->num_exprs) {
++				if (i >= set->num_exprs) {
++					err = -EINVAL;
++					goto err_expr_free;
++				}
++				if (dynset_expr->ops != set->exprs[i]->ops) {
++					err = -EOPNOTSUPP;
++					goto err_expr_free;
++				}
+ 			}
+ 			i++;
+ 		}
+-- 
+2.25.1
+

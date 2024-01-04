@@ -65,3 +65,12 @@
 
 # CVE-2023-39191
 0001-bpf-Fix-state-pruning-for-STACK_DYNPTR-stack-slots.patch
+
+# CVE-2023-6622
+0001-netfilter-nf_tables-bail-out-on-mismatching-dynset-a.patch
+
+# CVE-2023-6931
+0001-perf-Fix-perf_event_validate_size.patch
+
+# CVE-2023-6932
+0001-ipv4-igmp-fix-refcnt-uaf-issue-when-receiving-igmp-q.patch
