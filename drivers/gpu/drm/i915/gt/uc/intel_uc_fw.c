@@ -85,12 +85,12 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
  * security fixes, etc. to be enabled.
  */
 #define INTEL_GUC_FIRMWARE_DEFS(fw_def, guc_maj, guc_mmp) \
-	fw_def(METEORLAKE,   0, guc_mmp(mtl,  70, 6, 8)) \
+	fw_def(METEORLAKE,   0, guc_maj(mtl,  70, 13, 1)) \
 	fw_def(PONTEVECCHIO, 0, guc_mmp(pvc,  70, 9, 1)) \
-	fw_def(DG2,          0, guc_mmp(dg2,  70, 9, 1)) \
+	fw_def(DG2,          0, guc_maj(dg2,  70, 13, 1)) \
 	fw_def(XEHPSDV,  0, guc_mmp(xehpsdv,  70, 9, 1)) \
-	fw_def(ALDERLAKE_P,  0, guc_mmp(adlp, 70, 9, 1)) \
-	fw_def(ALDERLAKE_S,  0, guc_mmp(tgl,  70, 9, 1)) \
+	fw_def(ALDERLAKE_P,  0, guc_maj(adlp, 70, 13, 1)) \
+	fw_def(ALDERLAKE_S,  0, guc_maj(tgl,  70, 13, 1)) \
 	fw_def(DG1,          0, guc_mmp(dg1,  70, 9, 1)) \
 	fw_def(ROCKETLAKE,   0, guc_mmp(tgl,  70, 9, 1)) \
 	fw_def(TIGERLAKE,    0, guc_mmp(tgl,  70, 9, 1)) \
