@@ -9,6 +9,7 @@
 #include <linux/list.h>
 #include <linux/mm.h>
 #include <linux/pci.h>
+#include <linux/iommu.h>
 
 #define IPU_BUS_NAME	IPU_NAME "-bus"
 
@@ -21,6 +22,7 @@ struct ipu_bus_device {
 	void *pdata;
 	struct ipu_bus_driver *adrv;
 	struct device *iommu;
+	struct iommu_device iommu_dev;
 	struct ipu_device *isp;
 	struct ipu_subsystem_trace_config *trace_cfg;
 	struct ipu_buttress_ctrl *ctrl;

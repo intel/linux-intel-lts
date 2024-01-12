@@ -710,31 +710,41 @@ static void set_mapping(struct ipu_mmu *mmu, struct ipu_dma_mapping *dmap)
 	pm_runtime_put(mmu->dev);
 }
 
-#if 0
-static int ipu_mmu_add_device(struct device *dev)
+static struct iommu_device *ipu_mmu_probe_device(struct device *dev)
+{
+	struct ipu_bus_device *ipu_dev = to_ipu_bus_device(dev);
+	struct device *aiommu = ipu_dev->iommu;
+
+	if (!aiommu)
+		return ERR_PTR(-ENODEV);
+
+	return &ipu_dev->iommu_dev;
+}
+
+static void ipu_mmu_probe_finalize(struct device *dev)
 {
 	struct device *aiommu = to_ipu_bus_device(dev)->iommu;
 	struct ipu_dma_mapping *dmap;
 	int rval;
 
 	if (!aiommu || !dev->iommu_group)
-		return 0;
+		return;
 
 	dmap = iommu_group_get_iommudata(dev->iommu_group);
 	if (!dmap)
-		return 0;
+		return;
 
 	pr_debug("attach dev %s\n", dev_name(dev));
 
 	rval = iommu_attach_device(dmap->domain, dev);
 	if (rval)
-		return rval;
+		return;
 
 	kref_get(&dmap->ref);
 
-	return 0;
+	return;
+
 }
-#endif
 
 static struct iommu_ops ipu_iommu_ops = {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
@@ -749,9 +759,8 @@ static struct iommu_ops ipu_iommu_ops = {
 	.map = ipu_mmu_map,
 	.unmap = ipu_mmu_unmap,
 	.iova_to_phys = ipu_mmu_iova_to_phys,
-#if 0
-    .add_device = ipu_mmu_add_device,
-#endif
+	.probe_device = ipu_mmu_probe_device,
+	.probe_finalize = ipu_mmu_probe_finalize,
 	.pgsize_bitmap = SZ_4K,
 };
 
