@@ -110,7 +110,6 @@
 /* min and max should not be macros as they will evaluate their arguments twice.
    if you really need a macro (e.g. for CPP or for initializing an array)
    use MIN() and MAX(), otherwise use min() and max() */
-
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) ((sizeof(a) / sizeof(*(a))))
 #endif

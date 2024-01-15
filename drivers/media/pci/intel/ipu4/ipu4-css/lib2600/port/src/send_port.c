@@ -19,12 +19,13 @@
 #include "regmem_access.h"       /* for regmem_load_32, regmem_store_32 */
 #include "buffer_access.h"       /* for buffer_store, buffer_address    */
 #include "storage_class.h"       /* for STORAGE_CLASS_INLINE            */
-#include "math_support.h"        /* for OP_std_modadd                   */
 #include "type_support.h"        /* for HOST_ADDRESS                    */
 
 #ifndef __VIED_CELL
 #include "cpu_mem_support.h"     /* for ia_css_cpu_mem_cache_flush      */
 #endif
+
+#include "math_support.h"        /* for OP_std_modadd                   */
 
 void
 send_port_open(struct send_port *p, const struct sys_queue *q,
