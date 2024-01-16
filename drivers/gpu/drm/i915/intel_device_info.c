@@ -115,7 +115,7 @@ void intel_device_info_print(const struct intel_device_info *info,
 	drm_printf(p, "base die stepping: %s\n", intel_step_name(runtime->step.basedie_step));
 
 	drm_printf(p, "gt: %d\n", info->gt);
-	drm_printf(p, "memory-regions: 0x%x\n", info->memory_regions);
+	drm_printf(p, "memory-regions: 0x%x\n", runtime->memory_regions);
 	drm_printf(p, "page-sizes: 0x%x\n", runtime->page_sizes);
 	drm_printf(p, "platform: %s\n", intel_platform_name(info->platform));
 	drm_printf(p, "ppgtt-size: %d\n", runtime->ppgtt_size);
@@ -206,14 +206,6 @@ static const u16 subplatform_g12_ids[] = {
 	INTEL_DG2_G12_IDS(0),
 };
 
-static const u16 subplatform_m_ids[] = {
-	INTEL_MTL_M_IDS(0),
-};
-
-static const u16 subplatform_p_ids[] = {
-	INTEL_MTL_P_IDS(0),
-};
-
 static bool find_devid(u16 id, const u16 *p, unsigned int num)
 {
 	for (; num; num--, p++) {
@@ -275,12 +267,6 @@ static void intel_device_info_subplatform_init(struct drm_i915_private *i915)
 	} else if (find_devid(devid, subplatform_g12_ids,
 			      ARRAY_SIZE(subplatform_g12_ids))) {
 		mask = BIT(INTEL_SUBPLATFORM_G12);
-	} else if (find_devid(devid, subplatform_m_ids,
-			      ARRAY_SIZE(subplatform_m_ids))) {
-		mask = BIT(INTEL_SUBPLATFORM_M);
-	} else if (find_devid(devid, subplatform_p_ids,
-			      ARRAY_SIZE(subplatform_p_ids))) {
-		mask = BIT(INTEL_SUBPLATFORM_P);
 	}
 
 	GEM_BUG_ON(mask & ~INTEL_SUBPLATFORM_MASK);
@@ -336,6 +322,23 @@ static void intel_ipver_early_init(struct drm_i915_private *i915)
 		 */
 		RUNTIME_INFO(i915)->media.ip =
 			RUNTIME_INFO(i915)->graphics.ip;
+		return;
+	}
+
+	if (IS_SRIOV_VF(i915)) {
+		/*
+		 * VF can't access GMDID registers and must use H2G to get their values from GuC.
+		 * Use hardcoded preliminary IP versions until we finish GuC initialization.
+		 */
+		drm_info(&i915->drm, "preliminary graphics version %u.%02u media version %u.%02u\n",
+			 RUNTIME_INFO(i915)->graphics.ip.ver, RUNTIME_INFO(i915)->graphics.ip.rel,
+			 RUNTIME_INFO(i915)->media.ip.ver, RUNTIME_INFO(i915)->media.ip.rel);
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG)
+		drm_WARN_ON(&i915->drm, RUNTIME_INFO(i915)->graphics.ip.ver < 12);
+		drm_WARN_ON(&i915->drm, RUNTIME_INFO(i915)->media.ip.ver < 13);
+		RUNTIME_INFO(i915)->graphics.ip.preliminary = true;
+		RUNTIME_INFO(i915)->media.ip.preliminary = true;
+#endif
 		return;
 	}
 
@@ -409,8 +412,10 @@ void intel_device_info_runtime_init(struct drm_i915_private *dev_priv)
 		runtime->ppgtt_type = INTEL_PPGTT_NONE;
 	}
 
-	runtime->rawclk_freq = intel_read_rawclk(dev_priv);
-	drm_dbg(&dev_priv->drm, "rawclk rate: %d kHz\n", runtime->rawclk_freq);
+	if (!IS_SRIOV_VF(dev_priv)) {
+		runtime->rawclk_freq = intel_read_rawclk(dev_priv);
+		drm_dbg(&dev_priv->drm, "rawclk rate: %d kHz\n", runtime->rawclk_freq);
+	}
 
 }
 
@@ -424,7 +429,6 @@ void intel_device_info_driver_create(struct drm_i915_private *i915,
 				     const struct intel_device_info *match_info)
 {
 	struct intel_runtime_info *runtime;
-	u16 ver, rel, step;
 
 	/* Setup INTEL_INFO() */
 	i915->__info = match_info;
@@ -432,19 +436,6 @@ void intel_device_info_driver_create(struct drm_i915_private *i915,
 	/* Initialize initial runtime info from static const data and pdev. */
 	runtime = RUNTIME_INFO(i915);
 	memcpy(runtime, &INTEL_INFO(i915)->__runtime, sizeof(*runtime));
-
-	/* Probe display support */
-	i915->display.info.__device_info = intel_display_device_probe(i915, HAS_GMD_ID(i915),
-								      &ver, &rel, &step);
-	memcpy(DISPLAY_RUNTIME_INFO(i915),
-	       &DISPLAY_INFO(i915)->__runtime_defaults,
-	       sizeof(*DISPLAY_RUNTIME_INFO(i915)));
-
-	if (HAS_GMD_ID(i915)) {
-		DISPLAY_RUNTIME_INFO(i915)->ip.ver = ver;
-		DISPLAY_RUNTIME_INFO(i915)->ip.rel = rel;
-		DISPLAY_RUNTIME_INFO(i915)->ip.step = step;
-	}
 
 	runtime->device_id = device_id;
 }

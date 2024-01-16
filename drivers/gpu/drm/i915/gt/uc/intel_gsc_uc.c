@@ -7,6 +7,7 @@
 
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_print.h"
+#include "gt/iov/intel_iov_utils.h"
 #include "intel_gsc_fw.h"
 #include "intel_gsc_proxy.h"
 #include "intel_gsc_uc.h"
@@ -50,9 +51,11 @@ static void gsc_work(struct work_struct *work)
 		 * Note that we can only do the GSC auth if the GuC auth was
 		 * successful.
 		 */
-		if (intel_uc_uses_huc(&gt->uc) &&
-		    intel_huc_is_authenticated(&gt->uc.huc, INTEL_HUC_AUTH_BY_GUC))
-			intel_huc_auth(&gt->uc.huc, INTEL_HUC_AUTH_BY_GSC);
+		if (intel_huc_is_loaded_by_gsc(&gt->uc.huc))
+			intel_huc_fw_load_and_auth_via_gsc_cs(&gt->uc.huc);
+		else if (intel_uc_uses_huc(&gt->uc) &&
+			 intel_huc_is_authenticated(&gt->uc.huc, INTEL_HUC_AUTH_BY_GUC))
+			 intel_huc_auth(&gt->uc.huc, INTEL_HUC_AUTH_BY_GSC);
 	}
 
 	if (actions & GSC_ACTION_SW_PROXY) {
@@ -97,6 +100,21 @@ out_put:
 	intel_runtime_pm_put(gt->uncore->rpm, wakeref);
 }
 
+static void disable_gsc_engine_work(struct work_struct *work)
+{
+	struct intel_gsc_uc *gsc = container_of(work, typeof(*gsc), disable_gsc_engine_work);
+	struct intel_gt *gt = gsc_uc_to_gt(gsc);
+	intel_wakeref_t wakeref;
+	int err = 0;
+
+	intel_gsc_uc_flush_work(gsc);
+
+	with_intel_runtime_pm(gt->uncore->rpm, wakeref)
+		err = intel_guc_disable_gsc_engine(&gt->uc.guc);
+	if (err < 0)
+		gt_warn(gt, "Failed to disable GSC engine (%pe)\n", ERR_PTR(err));
+}
+
 static bool gsc_engine_supported(struct intel_gt *gt)
 {
 	intel_engine_mask_t mask;
@@ -110,7 +128,7 @@ static bool gsc_engine_supported(struct intel_gt *gt)
 	GEM_BUG_ON(!gt_is_root(gt) && !gt->info.engine_mask);
 
 	if (gt_is_root(gt))
-		mask = INTEL_INFO(gt->i915)->platform_engine_mask;
+		mask = RUNTIME_INFO(gt->i915)->platform_engine_mask;
 	else
 		mask = gt->info.engine_mask;
 
@@ -128,6 +146,7 @@ void intel_gsc_uc_init_early(struct intel_gsc_uc *gsc)
 	 */
 	intel_uc_fw_init_early(&gsc->fw, INTEL_UC_FW_TYPE_GSC, false);
 	INIT_WORK(&gsc->work, gsc_work);
+	INIT_WORK(&gsc->disable_gsc_engine_work, disable_gsc_engine_work);
 
 	/* we can arrive here from i915_driver_early_probe for primary
 	 * GT with it being not fully setup hence check device info's
@@ -258,6 +277,7 @@ void intel_gsc_uc_fini(struct intel_gsc_uc *gsc)
 		return;
 
 	flush_work(&gsc->work);
+	flush_work(&gsc->disable_gsc_engine_work);
 	if (gsc->wq) {
 		destroy_workqueue(gsc->wq);
 		gsc->wq = NULL;
@@ -303,6 +323,7 @@ void intel_gsc_uc_resume(struct intel_gsc_uc *gsc)
 void intel_gsc_uc_load_start(struct intel_gsc_uc *gsc)
 {
 	struct intel_gt *gt = gsc_uc_to_gt(gsc);
+	struct drm_i915_private *i915 = gt->i915;
 
 	if (!intel_uc_fw_is_loadable(&gsc->fw))
 		return;
@@ -315,6 +336,17 @@ void intel_gsc_uc_load_start(struct intel_gsc_uc *gsc)
 	spin_unlock_irq(gt->irq_lock);
 
 	queue_work(gsc->wq, &gsc->work);
+
+	/*
+	 * Wa_14019103365:
+	 * In case VFs are enabled, and gsc_work is re-triggered
+	 * (e.g. after S4), we need to disable GSC engine in GuC,
+	 * but only after gsc_work finishes its work.
+	 */
+	if (IS_METEORLAKE(i915) &&
+	    IS_SRIOV_PF(i915) &&
+	    pf_has_vfs_enabled(&gt->iov))
+		queue_work(gsc->wq, &gsc->disable_gsc_engine_work);
 }
 
 void intel_gsc_uc_load_status(struct intel_gsc_uc *gsc, struct drm_printer *p)

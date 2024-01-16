@@ -8,7 +8,7 @@
  *
  */
 
-#include "core.h"
+#include <linux/intel_pmc_core.h>
 
 const struct pmc_bit_map icl_pfear_map[] = {
 	{"RES_65",		BIT(0)},

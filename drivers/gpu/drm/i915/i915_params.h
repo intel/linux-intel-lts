@@ -63,6 +63,9 @@ struct drm_printer;
 	param(int, invert_brightness, 0, 0600) \
 	param(int, enable_guc, -1, 0400) \
 	param(int, guc_log_level, -1, 0400) \
+	param(int, guc_log_size_crash, -1, 0400) \
+	param(int, guc_log_size_debug, -1, 0400) \
+	param(int, guc_log_size_capture, -1, 0400) \
 	param(char *, guc_firmware_path, NULL, 0400) \
 	param(char *, huc_firmware_path, NULL, 0400) \
 	param(char *, dmc_firmware_path, NULL, 0400) \
@@ -78,7 +81,10 @@ struct drm_printer;
 	param(unsigned int, request_timeout_ms, CONFIG_DRM_I915_REQUEST_TIMEOUT, CONFIG_DRM_I915_REQUEST_TIMEOUT ? 0600 : 0) \
 	param(unsigned int, lmem_size, 0, 0400) \
 	param(unsigned int, lmem_bar_size, 0, 0400) \
+	param(unsigned int, max_vfs, 0, 0400) \
+	param(int, force_disable_ccs, 0, 0400) \
 	/* leave bools at the end to not create holes */ \
+	param(bool, enable_mtl_rcs_ccs_wa, false, 0x400) \
 	param(bool, enable_hangcheck, true, 0600) \
 	param(bool, load_detect_test, false, 0600) \
 	param(bool, force_reset_modeset_test, false, 0600) \

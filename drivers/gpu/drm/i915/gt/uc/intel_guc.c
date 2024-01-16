@@ -18,6 +18,15 @@
 #include "i915_irq.h"
 #include "i915_reg.h"
 
+#ifdef CONFIG_DRM_I915_DEBUG_GUC
+#define GUC_DEBUG(_guc, _fmt, ...) guc_dbg(_guc, _fmt, ##__VA_ARGS__)
+#else
+#define GUC_DEBUG(_guc, _fmt, ...) typecheck(struct intel_guc *, _guc)
+#endif
+
+static const struct intel_guc_ops guc_ops_default;
+static const struct intel_guc_ops guc_ops_vf;
+
 /**
  * DOC: GuC
  *
@@ -76,6 +85,10 @@ void intel_guc_init_send_regs(struct intel_guc *guc)
 					FW_REG_READ | FW_REG_WRITE);
 	}
 	guc->send_regs.fw_domains = fw_domains;
+
+	/* XXX: move to init_early when safe to call IS_SRIOV_VF */
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		guc->ops = &guc_ops_vf;
 }
 
 static void gen9_reset_guc_interrupts(struct intel_guc *guc)
@@ -159,6 +172,21 @@ static void gen11_disable_guc_interrupts(struct intel_guc *guc)
 	gen11_reset_guc_interrupts(guc);
 }
 
+static void guc_dead_worker_func(struct work_struct *w)
+{
+	struct intel_guc *guc = container_of(w, struct intel_guc, dead_guc_worker);
+	struct intel_gt *gt = guc_to_gt(guc);
+	unsigned long last = guc->last_dead_guc_jiffies;
+	unsigned long delta = jiffies_to_msecs(jiffies - last);
+
+	if (delta < 500) {
+		intel_gt_set_wedged(gt);
+	} else {
+		intel_gt_handle_error(gt, ALL_ENGINES, I915_ERROR_CAPTURE, "dead GuC");
+		guc->last_dead_guc_jiffies = jiffies;
+	}
+}
+
 void intel_guc_init_early(struct intel_guc *guc)
 {
 	struct intel_gt *gt = guc_to_gt(guc);
@@ -170,6 +198,8 @@ void intel_guc_init_early(struct intel_guc *guc)
 	intel_guc_submission_init_early(guc);
 	intel_guc_slpc_init_early(&guc->slpc);
 	intel_guc_rc_init_early(guc);
+
+	INIT_WORK(&guc->dead_guc_worker, guc_dead_worker_func);
 
 	mutex_init(&guc->send_mutex);
 	spin_lock_init(&guc->irq_lock);
@@ -199,6 +229,8 @@ void intel_guc_init_early(struct intel_guc *guc)
 
 	intel_guc_enable_msg(guc, INTEL_GUC_RECV_MSG_EXCEPTION |
 				  INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED);
+
+	guc->ops = &guc_ops_default;
 }
 
 void intel_guc_init_late(struct intel_guc *guc)
@@ -272,18 +304,20 @@ static u32 guc_ctl_wa_flags(struct intel_guc *guc)
 	    GRAPHICS_VER_FULL(gt->i915) < IP_VER(12, 50))
 		flags |= GUC_WA_POLLCS;
 
-	/* Wa_16011759253:dg2_g10:a0 */
-	if (IS_DG2_GRAPHICS_STEP(gt->i915, G10, STEP_A0, STEP_B0))
-		flags |= GUC_WA_GAM_CREDITS;
-
 	/* Wa_14014475959 */
-	if (IS_MTL_GRAPHICS_STEP(gt->i915, M, STEP_A0, STEP_B0) ||
+	if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
 	    IS_DG2(gt->i915))
 		flags |= GUC_WA_HOLD_CCS_SWITCHOUT;
 
+	/* Wa_16019325821 */
+	/* Wa_14019159160 */
+	if (gt->i915->params.enable_mtl_rcs_ccs_wa &&
+	    IS_GFX_GT_IP_RANGE(gt, IP_VER(12, 70), IP_VER(12, 71)))
+		flags |= GUC_WA_RCS_CCS_SWITCHOUT;
+
 	/*
-	 * Wa_14012197797:dg2_g10:a0,dg2_g11:a0
-	 * Wa_22011391025:dg2_g10,dg2_g11,dg2_g12
+	 * Wa_14012197797
+	 * Wa_22011391025
 	 *
 	 * The same WA bit is used for both and 22011391025 is applicable to
 	 * all DG2.
@@ -292,27 +326,29 @@ static u32 guc_ctl_wa_flags(struct intel_guc *guc)
 		flags |= GUC_WA_DUAL_QUEUE;
 
 	/* Wa_22011802037: graphics version 11/12 */
-	if (IS_MTL_GRAPHICS_STEP(gt->i915, M, STEP_A0, STEP_B0) ||
-	    (GRAPHICS_VER(gt->i915) >= 11 &&
-	    GRAPHICS_VER_FULL(gt->i915) < IP_VER(12, 70)))
+	if (intel_engine_reset_needs_wa_22011802037(gt))
 		flags |= GUC_WA_PRE_PARSER;
 
-	/* Wa_16011777198:dg2 */
-	if (IS_DG2_GRAPHICS_STEP(gt->i915, G10, STEP_A0, STEP_C0) ||
-	    IS_DG2_GRAPHICS_STEP(gt->i915, G11, STEP_A0, STEP_B0))
-		flags |= GUC_WA_RCS_RESET_BEFORE_RC6;
-
 	/*
-	 * Wa_22012727170:dg2_g10[a0-c0), dg2_g11[a0..)
-	 * Wa_22012727685:dg2_g11[a0..)
+	 * Wa_22012727170
+	 * Wa_22012727685
 	 */
-	if (IS_DG2_GRAPHICS_STEP(gt->i915, G10, STEP_A0, STEP_C0) ||
-	    IS_DG2_GRAPHICS_STEP(gt->i915, G11, STEP_A0, STEP_FOREVER))
+	if (IS_DG2_G11(gt->i915))
 		flags |= GUC_WA_CONTEXT_ISOLATION;
 
 	/* Wa_16015675438 */
 	if (!RCS_MASK(gt))
 		flags |= GUC_WA_RCS_REGS_IN_CCS_REGS_LIST;
+
+	/* Wa_14019103365 */
+	if (IS_METEORLAKE(gt->i915) && IS_SRIOV_PF(gt->i915) && HAS_ENGINE(gt, GSC0))
+		flags |= GUC_WA_DISABLE_GSC_RESET_IN_VF;
+
+	/* Wa_14018913170 */
+	if (GUC_FIRMWARE_VER(guc) >= MAKE_GUC_VER(70, 7, 0)) {
+		if (IS_DG2(gt->i915) || IS_METEORLAKE(gt->i915) || IS_PONTEVECCHIO(gt->i915))
+			flags |= GUC_WA_ENABLE_TSC_CHECK_ON_RC6;
+	}
 
 	return flags;
 }
@@ -389,7 +425,7 @@ void intel_guc_dump_time_info(struct intel_guc *guc, struct drm_printer *p)
 		   gt->clock_frequency, gt->clock_period_ns);
 }
 
-int intel_guc_init(struct intel_guc *guc)
+static int __guc_init(struct intel_guc *guc)
 {
 	int ret;
 
@@ -456,10 +492,12 @@ out:
 	return ret;
 }
 
-void intel_guc_fini(struct intel_guc *guc)
+static void __guc_fini(struct intel_guc *guc)
 {
 	if (!intel_uc_fw_is_loadable(&guc->fw))
 		return;
+
+	flush_work(&guc->dead_guc_worker);
 
 	if (intel_guc_slpc_is_used(guc))
 		intel_guc_slpc_fini(&guc->slpc);
@@ -473,6 +511,50 @@ void intel_guc_fini(struct intel_guc *guc)
 	intel_guc_capture_destroy(guc);
 	intel_guc_log_destroy(&guc->log);
 	intel_uc_fw_fini(&guc->fw);
+}
+
+static int __vf_guc_init(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+	int err;
+
+	GEM_BUG_ON(!IS_SRIOV_VF(gt->i915));
+
+	err = intel_guc_ct_init(&guc->ct);
+	if (err)
+		return err;
+
+	/* GuC submission is mandatory for VFs */
+	err = intel_guc_submission_init(guc);
+	if (err)
+		goto err_ct;
+
+	/*
+	 * Disable slpc controls for VF. This cannot be done in
+	 * __guc_slpc_selected since the VF probe is not complete
+	 * at that point.
+	 */
+	guc->slpc.supported = false;
+	guc->slpc.selected = false;
+
+	/* Disable GUCRC for VF */
+	guc->rc_supported = false;
+
+	return 0;
+
+err_ct:
+	intel_guc_ct_fini(&guc->ct);
+	return err;
+}
+
+static void __vf_guc_fini(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+
+	GEM_BUG_ON(!IS_SRIOV_VF(gt->i915));
+
+	intel_guc_submission_fini(guc);
+	intel_guc_ct_fini(&guc->ct);
 }
 
 /*
@@ -494,6 +576,8 @@ int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
 
 	mutex_lock(&guc->send_mutex);
 	intel_uncore_forcewake_get(uncore, guc->send_regs.fw_domains);
+
+	GUC_DEBUG(guc, "mmio sending %*ph\n", len * 4, request);
 
 retry:
 	for (i = 0; i < len; i++)
@@ -521,11 +605,19 @@ timeout:
 	}
 
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) == GUC_HXG_TYPE_NO_RESPONSE_BUSY) {
+		int loop = IS_SRIOV_VF(guc_to_gt(guc)->i915) ? 20 : 1;
+
 #define done ({ header = intel_uncore_read(uncore, guc_send_reg(guc, 0)); \
 		FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != GUC_HXG_ORIGIN_GUC || \
 		FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != GUC_HXG_TYPE_NO_RESPONSE_BUSY; })
 
+busy_loop:
 		ret = wait_for(done, 1000);
+		if (unlikely(ret && --loop)) {
+			guc_dbg(guc, "mmio request %#x: still busy, countdown %u\n",
+				request[0], loop);
+			goto busy_loop;
+		}
 		if (unlikely(ret))
 			goto timeout;
 		if (unlikely(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) !=
@@ -570,10 +662,13 @@ proto:
 		for (i = 1; i < count; i++)
 			response_buf[i] = intel_uncore_read(uncore,
 							    guc_send_reg(guc, i));
+		GUC_DEBUG(guc, "mmio received %*ph\n", count * 4, response_buf);
 
 		/* Use number of copied dwords as our return value */
 		ret = count;
 	} else {
+		GUC_DEBUG(guc, "mmio received %*ph\n", 4, &header);
+
 		/* Use data from the GuC response as our return value */
 		ret = FIELD_GET(GUC_HXG_RESPONSE_MSG_0_DATA0, header);
 	}
@@ -583,6 +678,20 @@ out:
 	mutex_unlock(&guc->send_mutex);
 
 	return ret;
+}
+
+int intel_guc_crash_process_msg(struct intel_guc *guc, u32 action)
+{
+	if (action == INTEL_GUC_ACTION_NOTIFY_CRASH_DUMP_POSTED)
+		guc_err(guc, "Crash dump notification\n");
+	else if (action == INTEL_GUC_ACTION_NOTIFY_EXCEPTION)
+		guc_err(guc, "Exception notification\n");
+	else
+		guc_err(guc, "Unknown crash notification: 0x%04X\n", action);
+
+	queue_work(system_unbound_wq, &guc->dead_guc_worker);
+
+	return 0;
 }
 
 int intel_guc_to_host_process_recv_msg(struct intel_guc *guc,
@@ -600,6 +709,9 @@ int intel_guc_to_host_process_recv_msg(struct intel_guc *guc,
 		guc_err(guc, "Received early crash dump notification!\n");
 	if (msg & INTEL_GUC_RECV_MSG_EXCEPTION)
 		guc_err(guc, "Received early exception notification!\n");
+
+	if (msg & (INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED | INTEL_GUC_RECV_MSG_EXCEPTION))
+		queue_work(system_unbound_wq, &guc->dead_guc_worker);
 
 	return 0;
 }
@@ -640,6 +752,8 @@ int intel_guc_suspend(struct intel_guc *guc)
 		return 0;
 
 	if (intel_guc_submission_is_used(guc)) {
+		flush_work(&guc->dead_guc_worker);
+
 		/*
 		 * This H2G MMIO command tears down the GuC in two steps. First it will
 		 * generate a G2H CTB for every active context indicating a reset. In
@@ -855,6 +969,34 @@ int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value)
 	return __guc_self_cfg(guc, key, 2, value);
 }
 
+int intel_guc_enable_gsc_engine(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+
+	if (!HAS_ENGINE(gt, GSC0))
+		return 0;
+
+	return intel_guc_set_engine_sched(guc, GUC_GSC_OTHER_CLASS, SET_ENGINE_SCHED_FLAGS_ENABLE);
+}
+
+int intel_guc_disable_gsc_engine(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+	int err;
+
+	if (!HAS_ENGINE(gt, GSC0))
+		return 0;
+
+	if (wait_for(intel_engine_is_idle(gt->engine[GSC0]), I915_GEM_IDLE_TIMEOUT))
+		return -EBUSY;
+
+	err = intel_guc_set_engine_sched(guc, GUC_GSC_OTHER_CLASS, 0);
+	if (err < 0)
+		return err;
+
+	return __intel_gt_reset(gt, gt->engine[GSC0]->mask);
+}
+
 /**
  * intel_guc_load_status - dump information about GuC load status
  * @guc: the GuC
@@ -879,6 +1021,9 @@ void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p)
 	}
 
 	intel_uc_fw_dump(&guc->fw, p);
+
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		return;
 
 	with_intel_runtime_pm(uncore->rpm, wakeref) {
 		u32 status = intel_uncore_read(uncore, GUC_STATUS);
@@ -927,3 +1072,13 @@ void intel_guc_write_barrier(struct intel_guc *guc)
 		wmb();
 	}
 }
+
+static const struct intel_guc_ops guc_ops_default = {
+	.init = __guc_init,
+	.fini = __guc_fini,
+};
+
+static const struct intel_guc_ops guc_ops_vf = {
+	.init = __vf_guc_init,
+	.fini = __vf_guc_fini,
+};

@@ -1742,6 +1742,11 @@ static void phylink_phy_change(struct phy_device *phydev, bool up)
 		pl->phy_state.pause |= MLO_PAUSE_RX;
 	pl->phy_state.interface = phydev->interface;
 	pl->phy_state.link = up;
+	/* Update current link and config link AN mode if phy driver has changed it */
+	if (pl->cur_link_an_mode != phydev->cur_link_an_mode) {
+		pl->cur_link_an_mode = phydev->cur_link_an_mode;
+		pl->cfg_link_an_mode = phydev->cur_link_an_mode;
+	}
 	mutex_unlock(&pl->state_mutex);
 
 	phylink_run_resolve(pl);
@@ -1845,6 +1850,8 @@ static int phylink_bringup_phy(struct phylink *pl, struct phy_device *phy,
 
 	if (pl->config->mac_managed_pm)
 		phy->mac_managed_pm = true;
+
+	pl->phydev->cur_link_an_mode = pl->cur_link_an_mode;
 
 	return 0;
 }

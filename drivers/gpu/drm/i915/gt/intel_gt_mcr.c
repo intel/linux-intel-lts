@@ -3,8 +3,7 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "i915_drv.h"
-
+#include "intel_gt.h"
 #include "intel_gt_mcr.h"
 #include "intel_gt_print.h"
 #include "intel_gt_regs.h"
@@ -162,12 +161,12 @@ void intel_gt_mcr_init(struct intel_gt *gt)
 			gt_warn(gt, "mslice mask all zero!\n");
 	}
 
-	if (MEDIA_VER(i915) >= 13 && gt->type == GT_MEDIA) {
+	if (gt->type == GT_MEDIA && MEDIA_VER(i915) >= 13) {
 		gt->steering_table[OADDRM] = xelpmp_oaddrm_steering_table;
 	} else if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 70)) {
 		/* Wa_14016747170 */
-		if (IS_MTL_GRAPHICS_STEP(i915, M, STEP_A0, STEP_B0) ||
-		    IS_MTL_GRAPHICS_STEP(i915, P, STEP_A0, STEP_B0))
+		if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		    IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_A0, STEP_B0))
 			fuse = REG_FIELD_GET(MTL_GT_L3_EXC_MASK,
 					     intel_uncore_read(gt->uncore,
 							       MTL_GT_ACTIVITY_FACTOR));
@@ -437,6 +436,28 @@ void intel_gt_mcr_unlock(struct intel_gt *gt, unsigned long flags)
 
 		intel_uncore_forcewake_put(gt->uncore, FORCEWAKE_GT);
 	}
+}
+
+/**
+ * intel_gt_mcr_lock_sanitize - Sanitize MCR steering lock
+ * @gt: GT structure
+ *
+ * This will be used to sanitize the initial status of the hardware lock
+ * during driver load and resume since there won't be any concurrent access
+ * from other agents at those times, but it's possible that boot firmware
+ * may have left the lock in a bad state.
+ *
+ */
+void intel_gt_mcr_lock_sanitize(struct intel_gt *gt)
+{
+	/*
+	 * This gets called at load/resume time, so we shouldn't be
+	 * racing with other driver threads grabbing the mcr lock.
+	 */
+	lockdep_assert_not_held(&gt->mcr_lock);
+
+	if (GRAPHICS_VER_FULL(gt->i915) >= IP_VER(12, 70))
+		intel_uncore_write_fw(gt->uncore, MTL_STEER_SEMAPHORE, 0x1);
 }
 
 /**

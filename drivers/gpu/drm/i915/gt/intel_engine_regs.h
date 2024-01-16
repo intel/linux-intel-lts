@@ -77,7 +77,10 @@
 #define   MODE_IDLE				REG_BIT(9)
 #define   STOP_RING				REG_BIT(8)
 #define   VS_TIMER_DISPATCH			REG_BIT(6)
+#define GEN12_RING_INT_SRC(base)		_MMIO((base) + 0xa4)
 #define RING_IMR(base)				_MMIO((base) + 0xa8)
+#define GEN12_RING_INT_MASK(base)		_MMIO((base) + 0xa8)
+#define GEN12_RING_INT_STATUS(base)		_MMIO((base) + 0xac)
 #define RING_EIR(base)				_MMIO((base) + 0xb0)
 #define RING_EMR(base)				_MMIO((base) + 0xb4)
 #define RING_ESR(base)				_MMIO((base) + 0xb8)
@@ -177,6 +180,7 @@
 #define   CTX_CTRL_RS_CTX_ENABLE		REG_BIT(1)
 #define	  CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT	REG_BIT(2)
 #define	  CTX_CTRL_INHIBIT_SYN_CTX_SWITCH	REG_BIT(3)
+#define	  GEN12_CTX_CTRL_RUNALONE_MODE		REG_BIT(7)
 #define	  GEN12_CTX_CTRL_OAR_CONTEXT_ENABLE	REG_BIT(8)
 #define RING_CTX_SR_CTL(base)			_MMIO((base) + 0x244)
 #define RING_SEMA_WAIT_POLL(base)		_MMIO((base) + 0x24c)
@@ -256,5 +260,7 @@
 #define VDBOX_CGCTL3F18(base)			_MMIO((base) + 0x3f18)
 #define   ALNUNIT_CLKGATE_DIS			REG_BIT(13)
 
+#define VDBOX_CGCTL3F1C(base)			_MMIO((base) + 0x3f1c)
+#define   MFXPIPE_CLKGATE_DIS			REG_BIT(3)
 
 #endif /* __INTEL_ENGINE_REGS__ */

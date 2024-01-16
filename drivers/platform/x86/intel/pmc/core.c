@@ -16,6 +16,7 @@
 #include <linux/delay.h>
 #include <linux/dmi.h>
 #include <linux/io.h>
+#include <linux/intel_pmc_core.h>
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
@@ -26,7 +27,9 @@
 #include <asm/msr.h>
 #include <asm/tsc.h>
 
-#include "core.h"
+#define PMC_IPCS_PARAM_COUNT           7
+
+static const struct x86_cpu_id *pmc_cpu_id;
 
 /* Maximum number of modes supported by platfoms that has low power mode capability */
 const char *pmc_lpm_modes[] = {
@@ -52,6 +55,67 @@ const struct pmc_bit_map msr_map[] = {
 	{"Package C10",                 MSR_PKG_C10_RESIDENCY},
 	{}
 };
+
+int intel_pmc_core_ipc(struct pmc_ipc_cmd *ipc_cmd, u32 *rbuf)
+{
+	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
+	union acpi_object params[PMC_IPCS_PARAM_COUNT] = {
+		{.type = ACPI_TYPE_INTEGER,},
+		{.type = ACPI_TYPE_INTEGER,},
+		{.type = ACPI_TYPE_INTEGER,},
+		{.type = ACPI_TYPE_INTEGER,},
+		{.type = ACPI_TYPE_INTEGER,},
+		{.type = ACPI_TYPE_INTEGER,},
+		{.type = ACPI_TYPE_INTEGER,},
+	};
+	struct acpi_object_list arg_list = { PMC_IPCS_PARAM_COUNT, params };
+	union acpi_object *obj;
+	int status;
+
+	/* check the platform is Elkhart Lake */
+	if (!pmc_cpu_id)
+		return -EINVAL;
+
+	if (!ipc_cmd || !rbuf)
+		return -EINVAL;
+
+	/*
+	 * 0: IPC Command
+	 * 1: IPC Sub Command
+	 * 2: Size
+	 * 3-6: Write Buffer for offset
+	 */
+	params[0].integer.value = ipc_cmd->cmd;
+	params[1].integer.value = ipc_cmd->sub_cmd;
+	params[2].integer.value = ipc_cmd->size;
+	params[3].integer.value = ipc_cmd->wbuf[0];
+	params[4].integer.value = ipc_cmd->wbuf[1];
+	params[5].integer.value = ipc_cmd->wbuf[2];
+	params[6].integer.value = ipc_cmd->wbuf[3];
+
+	status = acpi_evaluate_object(NULL, "\\IPCS", &arg_list, &buffer);
+	if (ACPI_FAILURE(status))
+		return -ENODEV;
+
+	obj = buffer.pointer;
+	/* Check if the number of elements in package is 5 */
+	if (obj && obj->type == ACPI_TYPE_PACKAGE && obj->package.count == 5) {
+		const union acpi_object *objs = obj->package.elements;
+
+		if ((u8)objs[0].integer.value != 0)
+			return -EINVAL;
+
+		rbuf[0] = objs[1].integer.value;
+		rbuf[1] = objs[2].integer.value;
+		rbuf[2] = objs[3].integer.value;
+		rbuf[3] = objs[4].integer.value;
+	} else {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(intel_pmc_core_ipc);
 
 static inline u32 pmc_core_reg_read(struct pmc *pmc, int reg_offset)
 {
@@ -1241,6 +1305,8 @@ static int pmc_core_probe(struct platform_device *pdev)
 	 */
 	if (core_init == spt_core_init && !pci_dev_present(pmc_pci_ids))
 		core_init = cnp_core_init;
+
+	pmc_cpu_id = cpu_id;
 
 	mutex_init(&pmcdev->lock);
 	ret = core_init(pmcdev);

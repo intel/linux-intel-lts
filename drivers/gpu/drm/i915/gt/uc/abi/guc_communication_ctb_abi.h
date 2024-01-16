@@ -83,12 +83,13 @@ static_assert(sizeof(struct guc_ct_buffer_desc) == 64);
 
 #define GUC_CTB_HDR_LEN				1u
 #define GUC_CTB_MSG_MIN_LEN			GUC_CTB_HDR_LEN
-#define GUC_CTB_MSG_MAX_LEN			256u
+#define GUC_CTB_MSG_MAX_LEN			(GUC_CTB_MSG_MIN_LEN + GUC_CTB_MAX_DWORDS)
 #define GUC_CTB_MSG_0_FENCE			(0xffffU << 16)
 #define GUC_CTB_MSG_0_FORMAT			(0xf << 12)
 #define   GUC_CTB_FORMAT_HXG			0u
 #define GUC_CTB_MSG_0_RESERVED			(0xf << 8)
 #define GUC_CTB_MSG_0_NUM_DWORDS		(0xff << 0)
+#define   GUC_CTB_MAX_DWORDS			255
 
 /**
  * DOC: CTB HXG Message
@@ -113,7 +114,8 @@ static_assert(sizeof(struct guc_ct_buffer_desc) == 64);
  */
 
 #define GUC_CTB_HXG_MSG_MIN_LEN		(GUC_CTB_MSG_MIN_LEN + GUC_HXG_MSG_MIN_LEN)
-#define GUC_CTB_HXG_MSG_MAX_LEN		GUC_CTB_MSG_MAX_LEN
+#define GUC_CTB_HXG_MSG_MAX_LEN		(GUC_CTB_MSG_MIN_LEN + GUC_CTB_HXG_MAX_DWORDS)
+#define GUC_CTB_HXG_MAX_DWORDS		GUC_CTB_MAX_DWORDS
 
 /**
  * DOC: CTB based communication

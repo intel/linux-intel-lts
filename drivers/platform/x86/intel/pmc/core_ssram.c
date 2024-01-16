@@ -10,8 +10,7 @@
 
 #include <linux/pci.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
-
-#include "core.h"
+#include <linux/intel_pmc_core.h>
 
 #define SSRAM_HDR_SIZE		0x100
 #define SSRAM_PWRM_OFFSET	0x14

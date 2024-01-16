@@ -999,7 +999,7 @@ int track_pfn_remap(struct vm_area_struct *vma, pgprot_t *prot,
 
 		ret = reserve_pfn_range(paddr, size, prot, 0);
 		if (ret == 0 && vma)
-			vm_flags_set(vma, VM_PAT);
+			ACCESS_PRIVATE(vma, __vm_flags) |= VM_PAT;
 		return ret;
 	}
 

@@ -398,6 +398,8 @@ struct drm_atomic_state {
 	 * states.
 	 */
 	bool duplicated : 1;
+	bool advance_gamma_mode_active : 1;
+	bool advance_degamma_mode_active : 1;
 	struct __drm_planes_state *planes;
 	struct __drm_crtcs_state *crtcs;
 	int num_connector;
