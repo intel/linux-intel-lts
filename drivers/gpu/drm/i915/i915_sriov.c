@@ -1306,7 +1306,6 @@ int i915_sriov_suspend_prepare(struct drm_i915_private *i915)
 	unsigned int id;
 
 	if (IS_SRIOV_PF(i915)) {
-		pf_resume_active_vfs(i915);
 		/*
 		 * When we're enabling the VFs in i915_sriov_pf_enable_vfs(), we also get
 		 * a GT PM wakeref which we hold for the whole VFs life cycle.
@@ -1338,6 +1337,7 @@ int i915_sriov_resume(struct drm_i915_private *i915)
 	unsigned int id;
 
 	if (IS_SRIOV_PF(i915)) {
+		pf_resume_active_vfs(i915);
 		/*
 		 * When we're enabling the VFs in i915_sriov_pf_enable_vfs(), we also get
 		 * a GT PM wakeref which we hold for the whole VFs life cycle.
