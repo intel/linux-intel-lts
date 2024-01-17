@@ -12,7 +12,6 @@
 #include "intel_iov_service.h"
 #include "intel_iov_state.h"
 #include "intel_iov_utils.h"
-#include "gt/intel_gt_pm.h"
 
 #include "i915_reg.h"
 
@@ -308,36 +307,4 @@ int intel_iov_init_late(struct intel_iov *iov)
 	}
 
 	return 0;
-}
-
-void intel_iov_pf_get_pm_vfs(struct intel_iov *iov)
-{
-	GEM_BUG_ON(!intel_iov_is_pf(iov));
-
-	intel_gt_pm_get(iov_to_gt(iov));
-}
-
-void intel_iov_pf_put_pm_vfs(struct intel_iov *iov)
-{
-	GEM_BUG_ON(!intel_iov_is_pf(iov));
-
-	intel_gt_pm_put(iov_to_gt(iov));
-}
-
-void intel_iov_suspend(struct intel_iov *iov)
-{
-	if (!intel_iov_is_pf(iov))
-		return;
-
-	if (pci_num_vf(to_pci_dev(iov_to_i915(iov)->drm.dev)) != 0)
-		intel_iov_pf_put_pm_vfs(iov);
-}
-
-void intel_iov_resume(struct intel_iov *iov)
-{
-	if (!intel_iov_is_pf(iov))
-		return;
-
-	if (pci_num_vf(to_pci_dev(iov_to_i915(iov)->drm.dev)) != 0)
-		intel_iov_pf_get_pm_vfs(iov);
 }

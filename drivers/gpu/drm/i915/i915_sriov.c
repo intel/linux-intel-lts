@@ -15,7 +15,6 @@
 
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_pm.h"
-#include "gt/iov/intel_iov.h"
 #include "gt/iov/intel_iov_provisioning.h"
 #include "gt/iov/intel_iov_service.h"
 #include "gt/iov/intel_iov_reg.h"
@@ -517,7 +516,7 @@ int i915_sriov_pf_enable_vfs(struct drm_i915_private *i915, int num_vfs)
 
 	/* hold the reference to runtime pm as long as VFs are enabled */
 	for_each_gt(gt, i915, id)
-		intel_iov_pf_get_pm_vfs(&gt->iov);
+		intel_gt_pm_get(gt);
 
 	/* Wa_14019103365 */
 	if (IS_METEORLAKE(i915)) {
@@ -567,7 +566,7 @@ fail_guc:
 fail_pm:
 	for_each_gt(gt, i915, id) {
 		intel_iov_provisioning_auto(&gt->iov, 0);
-		intel_iov_pf_put_pm_vfs(&gt->iov);
+		intel_gt_pm_put(gt);
 	}
 fail:
 	drm_err(&i915->drm, "Failed to enable %u VFs (%pe)\n",
