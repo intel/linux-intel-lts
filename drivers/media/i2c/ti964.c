@@ -1152,8 +1152,7 @@ static int ti964_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
-static int ti964_probe(struct i2c_client *client,
-			const struct i2c_device_id *devid)
+static int ti964_probe(struct i2c_client *client)
 {
 	struct ti964 *va;
 	int i, rval = 0;
@@ -1332,7 +1331,7 @@ static struct i2c_driver ti964_i2c_driver = {
 		.pm = &ti964_pm_ops,
 	},
 	.probe = ti964_probe,
-	.remove	= ti964_remove,
+	.remove = ti964_remove,
 	.id_table = ti964_id_table,
 };
 module_i2c_driver(ti964_i2c_driver);

@@ -1465,8 +1465,7 @@ static int ti960_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
-static int ti960_probe(struct i2c_client *client,
-			const struct i2c_device_id *devid)
+static int ti960_probe(struct i2c_client *client)
 {
 	struct ti960 *va;
 	int i, j, k, l, rval = 0;
