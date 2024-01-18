@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2023 Intel Corporation
 
 #include <linux/completion.h>
 #include <linux/device.h>
@@ -1072,6 +1072,10 @@ static void stop_streaming(struct vb2_queue *q)
 {
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(q);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	struct ipu_isys_video *pipe_av =
+		container_of(ip, struct ipu_isys_video, ip);
 	dev_dbg(&av->isys->adev->dev, "stop: %s: enter\n",
 		av->vdev.name);
 
@@ -1094,10 +1098,9 @@ static void stop_streaming(struct vb2_queue *q)
 
 	av->isys->in_stop_streaming = true;
 	mutex_unlock(&av->isys->reset_mutex);
-	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
-	struct ipu_isys_video *pipe_av =
-	    container_of(ip, struct ipu_isys_video, ip);
+
+	ip = to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
+	pipe_av = container_of(ip, struct ipu_isys_video, ip);
 
 	mutex_lock(&av->mutex);
 
