@@ -396,7 +396,7 @@ static int ipu_dma_map_sg(struct device *dev, struct scatterlist *sglist,
 	struct scatterlist *sg;
 	struct iova *iova;
 	size_t npages = 0;
-	u32 iova_addr;
+	unsigned long iova_addr;
 	int i, count;
 
 	dev_dbg(dev, "pci_dma_map_sg trying to map %d ents\n", nents);
@@ -424,7 +424,7 @@ static int ipu_dma_map_sg(struct device *dev, struct scatterlist *sglist,
 		int rval;
 
 		dev_dbg(dev, "mapping entry %d: iova 0x%lx phy %pad size %d\n",
-			i, (unsigned long)iova_addr << PAGE_SHIFT,
+			i, iova_addr << PAGE_SHIFT,
 			&sg_dma_address(sg), sg_dma_len(sg));
 
 		dev_dbg(dev, "mapping entry %d: sg->length = %d\n", i,
