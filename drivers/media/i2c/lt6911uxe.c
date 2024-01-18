@@ -713,11 +713,16 @@ static struct v4l2_ctrl_config lt6911uxe_frame_interval = {
 
 static u64 get_pixel_rate(struct lt6911uxe_state *lt6911uxe)
 {
-	if (lt6911uxe->cur_mode->lanes)
-		return lt6911uxe->cur_mode->width * lt6911uxe->cur_mode->height *
-			lt6911uxe->cur_mode->fps * 16 / lt6911uxe->cur_mode->lanes;
-	else
-		return 995328000; /* default value: 4K@30 */
+	u64 pixel_rate = 995328000ULL; /* default value: 4K@30 */
+
+	if (lt6911uxe->cur_mode->lanes) {
+		pixel_rate = (u64)lt6911uxe->cur_mode->width *
+			lt6911uxe->cur_mode->height *
+			lt6911uxe->cur_mode->fps * 16;
+		do_div(pixel_rate, lt6911uxe->cur_mode->lanes);
+	}
+
+	return pixel_rate;
 }
 
 static int lt6911uxe_init_controls(struct lt6911uxe_state *lt6911uxe)
