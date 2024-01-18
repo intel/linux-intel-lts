@@ -1393,6 +1393,8 @@ static int lt6911uxe_probe(struct i2c_client *client)
 		if (!gpio_get_value(lt6911uxe->platform_data->reset_pin))
 			gpio_set_value(lt6911uxe->platform_data->reset_pin, 1);
 
+	msleep(50);
+
 	if (-1 != lt6911uxe->platform_data->irq_pin) {
 		lt6911uxe->auxiliary_port = false;
 		dev_info(&client->dev, "Probing lt6911uxe chip...\n");
