@@ -9,3 +9,6 @@
 
 # CVE-2023-6238
 0001-nvme-fix-corruption-for-passthrough-meta-data.patch
+
+# CVE-2024-0193
+0001-netfilter-nf_tables-skip-set-commit-for-deleted-dest.patch
