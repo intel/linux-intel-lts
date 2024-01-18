@@ -1,4 +1,4 @@
-From f60fc3a661d210435e3beb58917de87529e15249 Mon Sep 17 00:00:00 2001
+From 9888e5a399484e0223653a92a27a67db7e6ed3ff Mon Sep 17 00:00:00 2001
 From: Slawomir Mrozowicz <slawomirx.mrozowicz@intel.com>
 Date: Tue, 1 Mar 2022 11:40:09 +0000
 Subject: [PATCH 3/4] ixgbe: add improvement for MDD response functionality

@@ -1,4 +1,4 @@
-From ae7c3db280691d280b52e710e2f0d82c0d4c2294 Mon Sep 17 00:00:00 2001
+From 0d67876a4af3636b7e42316ee1b816a8416ef0e7 Mon Sep 17 00:00:00 2001
 From: Miaoqian Lin <linmq006@gmail.com>
 Date: Mon, 13 Dec 2021 02:05:07 +0000
 Subject: [PATCH] phy: tegra: xusb: Fix return value of
@@ -17,7 +17,7 @@ Signed-off-by: Vinod Koul <vkoul@kernel.org>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/drivers/phy/tegra/xusb.c b/drivers/phy/tegra/xusb.c
-index 963de5913e50..aa5237eacd29 100644
+index 119e2c039225..6869d82e9ac9 100644
 --- a/drivers/phy/tegra/xusb.c
 +++ b/drivers/phy/tegra/xusb.c
 @@ -455,7 +455,7 @@ tegra_xusb_find_port_node(struct tegra_xusb_padctl *padctl, const char *type,

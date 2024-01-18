@@ -1,4 +1,4 @@
-From 5c433bbda2b505fbdc1bddc74186b89aebd636ad Mon Sep 17 00:00:00 2001
+From 13a91561a22bb6cc92af5dfe080ec62061e3742c Mon Sep 17 00:00:00 2001
 From: Slawomir Mrozowicz <slawomirx.mrozowicz@intel.com>
 Date: Tue, 1 Mar 2022 11:40:08 +0000
 Subject: [PATCH 4/4] ixgbe: add the ability for the PF to disable VF link

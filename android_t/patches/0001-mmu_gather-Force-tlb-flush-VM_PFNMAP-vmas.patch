@@ -1,0 +1,101 @@
+From 6f4a8227f373b596465b635ba87d5f5a42dc9b4a Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Fri, 8 Jul 2022 09:18:06 +0200
+Subject: [PATCH] mmu_gather: Force tlb-flush VM_PFNMAP vmas
+
+Jann reported a race between munmap() and unmap_mapping_range(), where
+unmap_mapping_range() will no-op once unmap_vmas() has unlinked the
+VMA; however munmap() will not yet have invalidated the TLBs.
+
+Therefore unmap_mapping_range() will complete while there are still
+(stale) TLB entries for the specified range.
+
+Mitigate this by force flushing TLBs for VM_PFNMAP ranges.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Will Deacon <will@kernel.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ include/asm-generic/tlb.h | 35 ++++++++++++++++-------------------
+ 1 file changed, 16 insertions(+), 19 deletions(-)
+
+diff --git a/include/asm-generic/tlb.h b/include/asm-generic/tlb.h
+index c99710b3027a..0239d748eb36 100644
+--- a/include/asm-generic/tlb.h
++++ b/include/asm-generic/tlb.h
+@@ -292,6 +292,7 @@ struct mmu_gather {
+ 	 */
+ 	unsigned int		vma_exec : 1;
+ 	unsigned int		vma_huge : 1;
++	unsigned int		vma_pfn  : 1;
+ 
+ 	unsigned int		batch_count;
+ 
+@@ -365,11 +366,6 @@ static inline void tlb_end_vma(struct mmu_gather *tlb, struct vm_area_struct *vm
+ #else /* CONFIG_MMU_GATHER_NO_RANGE */
+ 
+ #ifndef tlb_flush
+-
+-#if defined(tlb_start_vma) || defined(tlb_end_vma)
+-#error Default tlb_flush() relies on default tlb_start_vma() and tlb_end_vma()
+-#endif
+-
+ /*
+  * When an architecture does not provide its own tlb_flush() implementation
+  * but does have a reasonably efficient flush_vma_range() implementation
+@@ -389,6 +385,9 @@ static inline void tlb_flush(struct mmu_gather *tlb)
+ 		flush_tlb_range(&vma, tlb->start, tlb->end);
+ 	}
+ }
++#endif
++
++#endif /* CONFIG_MMU_GATHER_NO_RANGE */
+ 
+ static inline void
+ tlb_update_vma_flags(struct mmu_gather *tlb, struct vm_area_struct *vma)
+@@ -406,17 +405,9 @@ tlb_update_vma_flags(struct mmu_gather *tlb, struct vm_area_struct *vma)
+ 	 */
+ 	tlb->vma_huge = is_vm_hugetlb_page(vma);
+ 	tlb->vma_exec = !!(vma->vm_flags & VM_EXEC);
++	tlb->vma_pfn  = !!(vma->vm_flags & (VM_PFNMAP|VM_MIXEDMAP));
+ }
+ 
+-#else
+-
+-static inline void
+-tlb_update_vma_flags(struct mmu_gather *tlb, struct vm_area_struct *vma) { }
+-
+-#endif
+-
+-#endif /* CONFIG_MMU_GATHER_NO_RANGE */
+-
+ static inline void tlb_flush_mmu_tlbonly(struct mmu_gather *tlb)
+ {
+ 	/*
+@@ -508,12 +499,18 @@ static inline void tlb_end_vma(struct mmu_gather *tlb, struct vm_area_struct *vm
+ 		return;
+ 
+ 	/*
+-	 * Do a TLB flush and reset the range at VMA boundaries; this avoids
+-	 * the ranges growing with the unused space between consecutive VMAs,
+-	 * but also the mmu_gather::vma_* flags from tlb_start_vma() rely on
+-	 * this.
++	 * VM_PFNMAP is more fragile because the core mm will not track the
++	 * page mapcount -- there might not be page-frames for these PFNs after
++	 * all. Force flush TLBs for such ranges to avoid munmap() vs
++	 * unmap_mapping_range() races.
+ 	 */
+-	tlb_flush_mmu_tlbonly(tlb);
++	if (tlb->vma_pfn || !IS_ENABLED(CONFIG_MMU_GATHER_MERGE_VMAS)) {
++		/*
++		 * Do a TLB flush and reset the range at VMA boundaries; this avoids
++		 * the ranges growing with the unused space between consecutive VMAs.
++		 */
++		tlb_flush_mmu_tlbonly(tlb);
++	}
+ }
+ #endif
+ 
+-- 
+2.25.1
+

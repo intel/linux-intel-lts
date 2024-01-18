@@ -1,4 +1,4 @@
-From 2db7f66ce19c521b4a73b58c8cfe69fedff63f3d Mon Sep 17 00:00:00 2001
+From 20b443cd0f3c850d96e7534a4d9319f238664aec Mon Sep 17 00:00:00 2001
 From: Radoslaw Tyl <radoslawx.tyl@intel.com>
 Date: Wed, 30 Jun 2021 10:15:28 +0200
 Subject: [PATCH 2/4] ixgbevf: Rename MSGTYPE to SUCCESS and FAILURE

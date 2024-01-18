@@ -1,4 +1,4 @@
-From 71aa53ca2eeff956850c8181057f2e05ad2a1a83 Mon Sep 17 00:00:00 2001
+From f65e3ec4232c5a0b612754790ef45a42d0c6fd96 Mon Sep 17 00:00:00 2001
 From: Slawomir Mrozowicz <slawomirx.mrozowicz@intel.com>
 Date: Tue, 1 Mar 2022 11:40:10 +0000
 Subject: [PATCH 1/4] ixgbevf: add disable link state

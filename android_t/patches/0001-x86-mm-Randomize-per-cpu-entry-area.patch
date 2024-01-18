@@ -1,4 +1,4 @@
-From 2accf837dc77927896d33980c04a0fe1b472b912 Mon Sep 17 00:00:00 2001
+From 898dcccfd5486cf8fe4e09ffff72601f25d63760 Mon Sep 17 00:00:00 2001
 From: Peter Zijlstra <peterz@infradead.org>
 Date: Thu, 27 Oct 2022 14:54:41 -0700
 Subject: [PATCH] x86/mm: Randomize per-cpu entry area
@@ -25,8 +25,8 @@ Signed-off-by: Borislav Petkov <bp@suse.de>
  arch/x86/include/asm/cpu_entry_area.h |  4 ---
  arch/x86/include/asm/pgtable_areas.h  |  8 ++++-
  arch/x86/kernel/hw_breakpoint.c       |  2 +-
- arch/x86/mm/cpu_entry_area.c          | 52 ++++++++++++++++++++++++---
- 4 files changed, 56 insertions(+), 10 deletions(-)
+ arch/x86/mm/cpu_entry_area.c          | 47 ++++++++++++++++++++++++---
+ 4 files changed, 51 insertions(+), 10 deletions(-)
 
 diff --git a/arch/x86/include/asm/cpu_entry_area.h b/arch/x86/include/asm/cpu_entry_area.h
 index 75efc4c6f076..462fc34f1317 100644
@@ -75,16 +75,18 @@ index 668a4a6533d9..bbb0f737aab1 100644
  
  	/*
 diff --git a/arch/x86/mm/cpu_entry_area.c b/arch/x86/mm/cpu_entry_area.c
-index 6c2f1b76a0b6..2327bb3b3af0 100644
+index 6c2f1b76a0b6..998aedb73319 100644
 --- a/arch/x86/mm/cpu_entry_area.c
 +++ b/arch/x86/mm/cpu_entry_area.c
-@@ -10,21 +10,64 @@
+@@ -5,6 +5,7 @@
+ #include <linux/kallsyms.h>
+ #include <linux/kcore.h>
+ #include <linux/pgtable.h>
++#include <linux/prandom.h>
+ 
+ #include <asm/cpu_entry_area.h>
  #include <asm/fixmap.h>
- #include <asm/desc.h>
- 
-+u32 prandom_u32(void);
- static DEFINE_PER_CPU_PAGE_ALIGNED(struct entry_stack_page, entry_stack_storage);
- 
+@@ -15,16 +16,53 @@ static DEFINE_PER_CPU_PAGE_ALIGNED(struct entry_stack_page, entry_stack_storage)
  #ifdef CONFIG_X86_64
  static DEFINE_PER_CPU_PAGE_ALIGNED(struct exception_stacks, exception_stacks);
  DEFINE_PER_CPU(struct cea_exception_stacks*, cea_exception_stacks);
@@ -96,11 +98,6 @@ index 6c2f1b76a0b6..2327bb3b3af0 100644
 +static __always_inline unsigned int cea_offset(unsigned int cpu)
 +{
 +	return per_cpu(_cea_offset, cpu);
-+}
-+
-+static inline u32 prandom_u32_max(u32 ep_ro)
-+{
-+	return (u32)(((u64) prandom_u32() * ep_ro) >> 32);
 +}
 +
 +static __init void init_cea_offsets(void)
@@ -146,7 +143,7 @@ index 6c2f1b76a0b6..2327bb3b3af0 100644
  	BUILD_BUG_ON(sizeof(struct cpu_entry_area) % PAGE_SIZE != 0);
  
  	return (struct cpu_entry_area *) va;
-@@ -205,7 +248,6 @@ static __init void setup_cpu_entry_area_ptes(void)
+@@ -205,7 +243,6 @@ static __init void setup_cpu_entry_area_ptes(void)
  
  	/* The +1 is for the readonly IDT: */
  	BUILD_BUG_ON((CPU_ENTRY_AREA_PAGES+1)*PAGE_SIZE != CPU_ENTRY_AREA_MAP_SIZE);
@@ -154,7 +151,7 @@ index 6c2f1b76a0b6..2327bb3b3af0 100644
  	BUG_ON(CPU_ENTRY_AREA_BASE & ~PMD_MASK);
  
  	start = CPU_ENTRY_AREA_BASE;
-@@ -221,6 +263,8 @@ void __init setup_cpu_entry_areas(void)
+@@ -221,6 +258,8 @@ void __init setup_cpu_entry_areas(void)
  {
  	unsigned int cpu;
  
