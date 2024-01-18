@@ -22,6 +22,7 @@
 static bool wall_clock_ts_on;
 module_param(wall_clock_ts_on, bool, 0660);
 MODULE_PARM_DESC(wall_clock_ts_on, "Timestamp based on REALTIME clock");
+extern bool enable_hw_sof_irq;
 
 static int queue_setup(struct vb2_queue *q,
 		       unsigned int *num_buffers, unsigned int *num_planes,
@@ -363,8 +364,8 @@ ipu_isys_buffer_to_fw_frame_buff(struct ipu_fw_isys_frame_buff_set_abi *set,
 
 	WARN_ON(!bl->nbufs);
 
-	set->send_irq_sof = 1;
-	set->send_resp_sof = 1;
+	set->send_irq_sof = enable_hw_sof_irq ? 0 : 1;
+	set->send_resp_sof = enable_hw_sof_irq ? 0 : 1;
 	set->send_irq_eof = 0;
 	set->send_resp_eof = 0;
 

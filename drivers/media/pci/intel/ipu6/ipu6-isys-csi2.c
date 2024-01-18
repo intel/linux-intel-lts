@@ -15,6 +15,9 @@
 #include "ipu6-isys-dwc-phy.h"
 #include "ipu-isys-csi2.h"
 
+bool enable_hw_sof_irq;
+module_param(enable_hw_sof_irq, bool, 0660);
+MODULE_PARM_DESC(enable_hw_sof_irq, "enable hw sof for debug!");
 struct ipu6_csi2_error {
 	const char *error_string;
 	bool is_info_only;
@@ -545,7 +548,9 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	/* To save CPU wakeups, disable CSI SOF/EOF irq */
 	writel(0xffffffff, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_STATUS_OFFSET);
-	writel(0, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
+	dev_dbg(&isys->adev->dev, "HW CSI SOF irq enable %d\n", enable_hw_sof_irq);
+	writel(enable_hw_sof_irq ? 0x55555555 : 0,
+	       csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_MASK_OFFSET);
 	writel(0xffffffff, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_CLEAR_OFFSET);
