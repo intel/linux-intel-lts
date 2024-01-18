@@ -1189,7 +1189,7 @@ static struct i2c_driver hm11b1_i2c_driver = {
 		.pm = &hm11b1_pm_ops,
 		.acpi_match_table = ACPI_PTR(hm11b1_acpi_ids),
 	},
-	.probe_new = hm11b1_probe,
+	.probe = hm11b1_probe,
 	.remove = hm11b1_remove,
 };
 

@@ -1267,7 +1267,7 @@ static struct i2c_driver ov8856_i2c_driver = {
 		.pm = &ov8856_pm_ops,
 		.acpi_match_table = ACPI_PTR(ov8856_acpi_ids),
 	},
-	.probe_new = ov8856_probe,
+	.probe = ov8856_probe,
 	.remove = ov8856_remove,
 	.id_table = ov8856_id_table,
 };
