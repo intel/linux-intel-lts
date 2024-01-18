@@ -458,7 +458,8 @@ static int traceconf_release(struct inode *inode, struct file *file)
 	struct ipu_device *isp = file->private_data;
 	struct device *psys_dev = isp->psys ? &isp->psys->dev : NULL;
 	struct device *isys_dev = isp->isys ? &isp->isys->dev : NULL;
-	int pm_rval = -EINVAL;
+	int isys_pm_rval = -EINVAL;
+	int psys_pm_rval = -EINVAL;
 
 	/*
 	 * Turn devices on outside trace->lock mutex. PM transition may
@@ -471,21 +472,9 @@ static int traceconf_release(struct inode *inode, struct file *file)
 
 	if (file->f_mode & FMODE_WRITE) {
 		if (isys_dev)
-			pm_rval = pm_runtime_get_sync(isys_dev);
-
-		if (pm_rval >= 0) {
-			/* ISYS ok or missing */
-			if (psys_dev)
-				pm_rval = pm_runtime_get_sync(psys_dev);
-
-			if (pm_rval < 0) {
-				pm_runtime_put_noidle(psys_dev);
-				if (isys_dev)
-					pm_runtime_put(isys_dev);
-			}
-		} else {
-			pm_runtime_put_noidle(&isp->isys->dev);
-		}
+			isys_pm_rval = pm_runtime_resume_and_get(isys_dev);
+		if (isys_pm_rval >= 0 && psys_dev)
+			psys_pm_rval = pm_runtime_resume_and_get(psys_dev);
 	}
 
 	mutex_lock(&isp->trace->lock);
@@ -493,30 +482,25 @@ static int traceconf_release(struct inode *inode, struct file *file)
 	vfree(isp->trace->conf_dump_buffer);
 	isp->trace->conf_dump_buffer = NULL;
 
-	if (pm_rval >= 0) {
-		/* Update new cfg to HW */
-		if (isys_dev) {
-			__ipu_trace_stop(isys_dev);
-			clear_trace_buffer(isp->isys->trace_cfg);
-			__ipu_trace_restore(isys_dev);
-		}
-
-		if (psys_dev) {
-			__ipu_trace_stop(psys_dev);
-			clear_trace_buffer(isp->psys->trace_cfg);
-			__ipu_trace_restore(psys_dev);
-		}
+	/* Update new cfg to HW */
+	if (isys_pm_rval >= 0) {
+		__ipu_trace_stop(isys_dev);
+		clear_trace_buffer(isp->isys->trace_cfg);
+		__ipu_trace_restore(isys_dev);
 	}
 
+	if (psys_pm_rval >= 0) {
+		__ipu_trace_stop(psys_dev);
+		clear_trace_buffer(isp->psys->trace_cfg);
+		__ipu_trace_restore(psys_dev);
+	}
 	mutex_unlock(&isp->trace->lock);
 
-	if (pm_rval >= 0) {
-		/* Again - this must be done with trace->lock not taken */
-		if (psys_dev)
-			pm_runtime_put(psys_dev);
-		if (isys_dev)
-			pm_runtime_put(isys_dev);
-	}
+	if (psys_pm_rval >= 0)
+		pm_runtime_put(psys_dev);
+	if (isys_pm_rval >= 0)
+		pm_runtime_put(isys_dev);
+
 	return 0;
 }
 
