@@ -621,6 +621,8 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 	struct i2c_client *client = v4l2_get_subdevdata(subdev);
 	int i, j, k, l, m, rval;
 	bool port_registered[NR_OF_TI960_SINK_PADS];
+	bool speed_detect_fail;
+	unsigned char val;
 
 	for (i = 0 ; i < NR_OF_TI960_SINK_PADS; i++)
 		port_registered[i] = false;
@@ -717,6 +719,28 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 				info->board_info.addr << 1);
 		if (rval)
 			return rval;
+
+		ti953_bus_speed(&va->sd, info->rx_port, info->ser_alias,
+				TI953_I2C_SPEED_FAST_PLUS);
+		speed_detect_fail =
+			ti953_reg_read(&va->sd, info->rx_port,
+				       info->board_info.addr, 0, &val);
+		if (speed_detect_fail) {
+			ti953_bus_speed(&va->sd, info->rx_port, info->ser_alias,
+					TI953_I2C_SPEED_FAST);
+			speed_detect_fail =
+				ti953_reg_read(&va->sd, info->rx_port,
+					       info->board_info.addr, 0, &val);
+		}
+		if (speed_detect_fail) {
+			ti953_bus_speed(&va->sd, info->rx_port, info->ser_alias,
+					TI953_I2C_SPEED_STANDARD);
+			speed_detect_fail =
+				ti953_reg_read(&va->sd, info->rx_port,
+					       info->board_info.addr, 0, &val);
+		}
+		if (speed_detect_fail)
+			dev_err(va->sd.dev, "i2c bus speed standard failed!");
 
 		va->sub_devs[k].sd = v4l2_i2c_new_subdev_board(
 			va->sd.v4l2_dev, client->adapter,

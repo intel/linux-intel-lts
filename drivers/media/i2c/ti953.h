@@ -18,6 +18,8 @@ struct ti953_register_devid {
 #define TI953_RESET_CTL		0x1
 #define TI953_LOCAL_GPIO_DATA	0xd
 #define TI953_GPIO_INPUT_CTRL	0xe
+#define TI953_SCL_HIGH_TIME		0xbU
+#define TI953_SCL_LOW_TIME		0xcU
 
 /* register value definition */
 #define TI953_DIGITAL_RESET_1	0x2
@@ -25,6 +27,17 @@ struct ti953_register_devid {
 #define TI953_GPIO0_OUT		0x1
 #define TI953_GPIO1_OUT		(0x1 << 1)
 #define TI953_GPIO_OUT_EN	0xf0
+#define TI953_I2C_SCL_HIGH_TIME_STANDARD	0x7F
+#define TI953_I2C_SCL_LOW_TIME_STANDARD		0x7F
+#define TI953_I2C_SCL_HIGH_TIME_FAST		0x13
+#define TI953_I2C_SCL_LOW_TIME_FAST		0x26
+#define TI953_I2C_SCL_HIGH_TIME_FAST_PLUS	0x06
+#define TI953_I2C_SCL_LOW_TIME_FAST_PLUS	0x0b
+
+#define TI953_I2C_SPEED_STANDARD	0x1U
+#define TI953_I2C_SPEED_FAST		0x2U
+#define TI953_I2C_SPEED_HIGH		0x3U
+#define TI953_I2C_SPEED_FAST_PLUS	0x4U
 
 static const struct ti953_register_write ti953_init_settings[] = {
 	{0x4c, 0x01}, /* ox03a10 init sequence */
@@ -118,5 +131,6 @@ bool ti953_detect(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short
 
 int ti953_init(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
 int ti953_init_clk(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
+int32_t ti953_bus_speed(struct v4l2_subdev *sd, uint16_t rx_port, uint16_t ser_alias, uint8_t i2c_speed);
 
 #endif

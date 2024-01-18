@@ -53,18 +53,20 @@ int ti953_reg_write(struct v4l2_subdev *sd, unsigned short rx_port,
 int ti953_reg_read(struct v4l2_subdev *sd, unsigned short rx_port,
 	unsigned short ser_alias, unsigned char reg, unsigned char *val)
 {
-	int retry, timeout = 10;
+	int ret, retry, timeout = 10;
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	unsigned short addr_backup;
 
 	addr_backup = client->addr;
 	client->addr = ser_alias;
 	for (retry = 0; retry < timeout; retry++) {
-		*val = i2c_smbus_read_byte_data(client, reg);
-		if (*val < 0)
+		ret = i2c_smbus_read_byte_data(client, reg);
+		if (ret < 0)
 			usleep_range(5000, 6000);
-		else
+		else {
+			*val = ret & 0xFF;
 			break;
+		}
 	}
 
 	client->addr = addr_backup;
@@ -135,6 +137,56 @@ int ti953_init_clk(struct v4l2_subdev *sd, unsigned short rx_port, unsigned shor
 			dev_err(sd->dev, "port %d, ti953 write timeout %d\n", 0, rval);
 			break;
 		}
+	}
+
+	return 0;
+}
+
+int32_t ti953_bus_speed(struct v4l2_subdev *sd, uint16_t rx_port, uint16_t ser_alias, uint8_t i2c_speed)
+{
+	struct ti953_register_write scl_high_reg;
+	struct ti953_register_write scl_low_reg;
+	int32_t ret = 0;
+
+	scl_high_reg.reg = TI953_SCL_HIGH_TIME;
+	scl_low_reg.reg = TI953_SCL_LOW_TIME;
+	switch (i2c_speed) {
+	case TI953_I2C_SPEED_STANDARD:
+		scl_high_reg.val = TI953_I2C_SCL_HIGH_TIME_STANDARD;
+		scl_low_reg.val = TI953_I2C_SCL_LOW_TIME_STANDARD;
+		break;
+	case TI953_I2C_SPEED_FAST:
+		scl_high_reg.val = TI953_I2C_SCL_HIGH_TIME_FAST;
+		scl_low_reg.val = TI953_I2C_SCL_LOW_TIME_FAST;
+		break;
+	case TI953_I2C_SPEED_FAST_PLUS:
+		scl_high_reg.val = TI953_I2C_SCL_HIGH_TIME_FAST_PLUS;
+		scl_low_reg.val = TI953_I2C_SCL_LOW_TIME_FAST_PLUS;
+		break;
+	case TI953_I2C_SPEED_HIGH:
+	default:
+		dev_err(sd->dev, "port %u, ti953 unsupported I2C speed mode %u",
+			rx_port, i2c_speed);
+		scl_high_reg.val = TI953_I2C_SCL_HIGH_TIME_STANDARD;
+		scl_low_reg.val = TI953_I2C_SCL_LOW_TIME_STANDARD;
+		ret = -EINVAL;
+		break;
+	}
+	if (ret != 0)
+		return ret;
+	ret = ti953_reg_write(sd, rx_port, ser_alias,
+			      scl_high_reg.reg, scl_high_reg.val);
+	if (ret != 0) {
+		dev_err(sd->dev, "port %u, ti953 write SCL_HIGH_TIME failed %d",
+			rx_port, ret);
+		return ret;
+	}
+	ret = ti953_reg_write(sd, rx_port, ser_alias,
+			      scl_low_reg.reg, scl_low_reg.val);
+	if (ret != 0) {
+		dev_err(sd->dev, "port %u, ti953 write SCL_LOW_TIME failed %d",
+			rx_port, ret);
+		return ret;
 	}
 
 	return 0;
