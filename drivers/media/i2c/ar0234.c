@@ -2277,7 +2277,7 @@ static struct i2c_driver ar0234_i2c_driver = {
 		.name = "ar0234",
 		.pm = &ar0234_pm_ops,
 	},
-	.probe_new = ar0234_probe,
+	.probe = ar0234_probe,
 	.remove = ar0234_remove,
 	.id_table = ar0234_id_table,
 };

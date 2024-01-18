@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2016 - 2022 Intel Corporation
+// Copyright (C) 2016 - 2023 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/gpio.h>
@@ -1331,7 +1331,7 @@ static struct i2c_driver ti964_i2c_driver = {
 		.name = TI964_NAME,
 		.pm = &ti964_pm_ops,
 	},
-	.probe	= ti964_probe,
+	.probe = ti964_probe,
 	.remove	= ti964_remove,
 	.id_table = ti964_id_table,
 };

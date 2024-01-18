@@ -1578,7 +1578,7 @@ static struct i2c_driver lt6911uxe_i2c_driver = {
 		.name = "lt6911uxe",
 		.pm = &lt6911uxe_pm_ops,
 	},
-	.probe_new = lt6911uxe_probe,
+	.probe = lt6911uxe_probe,
 	.remove = lt6911uxe_remove,
 	.id_table = lt6911uxe_id_table,
 };

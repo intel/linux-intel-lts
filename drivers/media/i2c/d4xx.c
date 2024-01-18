@@ -5374,9 +5374,9 @@ static struct i2c_driver ds5_i2c_driver = {
 		.owner = THIS_MODULE,
 		.name = DS5_DRIVER_NAME
 	},
-	.probe		= ds5_probe,
-	.remove		= ds5_remove,
-	.id_table	= ds5_id,
+	.probe          = ds5_probe,
+	.remove         = ds5_remove,
+	.id_table       = ds5_id,
 };
 
 module_i2c_driver(ds5_i2c_driver);
