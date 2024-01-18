@@ -6,6 +6,7 @@
 
 #include <linux/i2c.h>
 #include <linux/clkdev.h>
+#include <linux/version.h>
 #include <media/v4l2-async.h>
 
 #define IPU_ISYS_MAX_CSI2_LANES		4
@@ -88,9 +89,8 @@ struct ipu_isys_subdev_pdata {
 	struct ipu_isys_clk_mapping *clk_map;
 };
 
-struct sensor_async_subdev {
-	struct v4l2_async_subdev asd;
+struct sensor_async_sd {
+	struct v4l2_async_connection asc;
 	struct ipu_isys_csi2_config csi2;
 };
-
 #endif /* MEDIA_IPU_H */
