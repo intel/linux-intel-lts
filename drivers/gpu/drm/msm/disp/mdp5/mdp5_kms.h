@@ -100,11 +100,6 @@ struct mdp5_plane_state {
 
 	/* assigned by crtc blender */
 	enum mdp_mixer_stage_id stage;
-
-	/* whether attached CRTC needs pixel data explicitly flushed to
-	 * display (ex. DSI command mode display)
-	 */
-	bool needs_dirtyfb;
 };
 #define to_mdp5_plane_state(x) \
 		container_of(x, struct mdp5_plane_state, base)

@@ -894,7 +894,7 @@ static int dpu_plane_prepare_fb(struct drm_plane *plane,
 
 	if (pstate->aspace) {
 		ret = msm_framebuffer_prepare(new_state->fb,
-				pstate->aspace, pstate->needs_dirtyfb);
+				pstate->aspace);
 		if (ret) {
 			DPU_ERROR("failed to prepare framebuffer\n");
 			return ret;
@@ -925,8 +925,7 @@ static void dpu_plane_cleanup_fb(struct drm_plane *plane,
 
 	DPU_DEBUG_PLANE(pdpu, "FB[%u]\n", old_state->fb->base.id);
 
-	msm_framebuffer_cleanup(old_state->fb, old_pstate->aspace,
-				old_pstate->needs_dirtyfb);
+	msm_framebuffer_cleanup(old_state->fb, old_pstate->aspace);
 }
 
 static bool dpu_plane_validate_src(struct drm_rect *src,
