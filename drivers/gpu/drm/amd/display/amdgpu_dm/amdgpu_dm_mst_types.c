@@ -331,17 +331,13 @@ static int dm_dp_mst_get_modes(struct drm_connector *connector)
 		if (aconnector->dc_sink && connector->state) {
 			struct drm_device *dev = connector->dev;
 			struct amdgpu_device *adev = drm_to_adev(dev);
+			struct hdcp_workqueue *hdcp_work = adev->dm.hdcp_workqueue;
+			struct hdcp_workqueue *hdcp_w = &hdcp_work[aconnector->dc_link->link_index];
 
-			if (adev->dm.hdcp_workqueue) {
-				struct hdcp_workqueue *hdcp_work = adev->dm.hdcp_workqueue;
-				struct hdcp_workqueue *hdcp_w =
-					&hdcp_work[aconnector->dc_link->link_index];
-
-				connector->state->hdcp_content_type =
-				hdcp_w->hdcp_content_type[connector->index];
-				connector->state->content_protection =
-				hdcp_w->content_protection[connector->index];
-			}
+			connector->state->hdcp_content_type =
+			hdcp_w->hdcp_content_type[connector->index];
+			connector->state->content_protection =
+			hdcp_w->content_protection[connector->index];
 		}
 #endif
 
