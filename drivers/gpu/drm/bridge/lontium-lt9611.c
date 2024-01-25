@@ -190,9 +190,8 @@ static void lt9611_mipi_video_setup(struct lt9611 *lt9611,
 	regmap_write(lt9611->regmap, 0x831b, (u8)(hsync_porch % 256));
 }
 
-static void lt9611_pcr_setup(struct lt9611 *lt9611, const struct drm_display_mode *mode, unsigned int postdiv)
+static void lt9611_pcr_setup(struct lt9611 *lt9611, const struct drm_display_mode *mode)
 {
-	unsigned int pcr_m = mode->clock * 5 * postdiv / 27000;
 	const struct reg_sequence reg_cfg[] = {
 		{ 0x830b, 0x01 },
 		{ 0x830c, 0x10 },
@@ -235,14 +234,24 @@ static void lt9611_pcr_setup(struct lt9611 *lt9611, const struct drm_display_mod
 	else
 		regmap_multi_reg_write(lt9611->regmap, reg_cfg, ARRAY_SIZE(reg_cfg));
 
-	regmap_write(lt9611->regmap, 0x8326, pcr_m);
+	switch (mode->hdisplay) {
+	case 640:
+		regmap_write(lt9611->regmap, 0x8326, 0x14);
+		break;
+	case 1920:
+		regmap_write(lt9611->regmap, 0x8326, 0x37);
+		break;
+	case 3840:
+		regmap_write(lt9611->regmap, 0x8326, 0x37);
+		break;
+	}
 
 	/* pcr rst */
 	regmap_write(lt9611->regmap, 0x8011, 0x5a);
 	regmap_write(lt9611->regmap, 0x8011, 0xfa);
 }
 
-static int lt9611_pll_setup(struct lt9611 *lt9611, const struct drm_display_mode *mode, unsigned int *postdiv)
+static int lt9611_pll_setup(struct lt9611 *lt9611, const struct drm_display_mode *mode)
 {
 	unsigned int pclk = mode->clock;
 	const struct reg_sequence reg_cfg[] = {
@@ -260,16 +269,12 @@ static int lt9611_pll_setup(struct lt9611 *lt9611, const struct drm_display_mode
 
 	regmap_multi_reg_write(lt9611->regmap, reg_cfg, ARRAY_SIZE(reg_cfg));
 
-	if (pclk > 150000) {
+	if (pclk > 150000)
 		regmap_write(lt9611->regmap, 0x812d, 0x88);
-		*postdiv = 1;
-	} else if (pclk > 70000) {
+	else if (pclk > 70000)
 		regmap_write(lt9611->regmap, 0x812d, 0x99);
-		*postdiv = 2;
-	} else {
+	else
 		regmap_write(lt9611->regmap, 0x812d, 0xaa);
-		*postdiv = 4;
-	}
 
 	/*
 	 * first divide pclk by 2 first
@@ -912,15 +917,14 @@ static void lt9611_bridge_mode_set(struct drm_bridge *bridge,
 {
 	struct lt9611 *lt9611 = bridge_to_lt9611(bridge);
 	struct hdmi_avi_infoframe avi_frame;
-	unsigned int postdiv;
 	int ret;
 
 	lt9611_bridge_pre_enable(bridge);
 
 	lt9611_mipi_input_digital(lt9611, mode);
-	lt9611_pll_setup(lt9611, mode, &postdiv);
+	lt9611_pll_setup(lt9611, mode);
 	lt9611_mipi_video_setup(lt9611, mode);
-	lt9611_pcr_setup(lt9611, mode, postdiv);
+	lt9611_pcr_setup(lt9611, mode);
 
 	ret = drm_hdmi_avi_infoframe_from_display_mode(&avi_frame,
 						       &lt9611->connector,
