@@ -444,11 +444,7 @@ static int __init stdpxxxx_ge_b850v3_init(void)
 	if (ret)
 		return ret;
 
-	ret = i2c_add_driver(&stdp2690_ge_b850v3_fw_driver);
-	if (ret)
-		i2c_del_driver(&stdp4028_ge_b850v3_fw_driver);
-
-	return ret;
+	return i2c_add_driver(&stdp2690_ge_b850v3_fw_driver);
 }
 module_init(stdpxxxx_ge_b850v3_init);
 
