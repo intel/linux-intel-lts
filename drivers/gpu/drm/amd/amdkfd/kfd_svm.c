@@ -550,15 +550,8 @@ create_bo_failed:
 
 void svm_range_vram_node_free(struct svm_range *prange)
 {
-	/* serialize prange->svm_bo unref */
-	mutex_lock(&prange->lock);
-	/* prange->svm_bo has not been unref */
-	if (prange->ttm_res) {
-		prange->ttm_res = NULL;
-		mutex_unlock(&prange->lock);
-		svm_range_bo_unref(prange->svm_bo);
-	} else
-		mutex_unlock(&prange->lock);
+	svm_range_bo_unref(prange->svm_bo);
+	prange->ttm_res = NULL;
 }
 
 struct amdgpu_device *
