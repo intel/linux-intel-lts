@@ -281,10 +281,8 @@ nouveau_bo_alloc(struct nouveau_cli *cli, u64 *size, int *align, u32 domain,
 			break;
 	}
 
-	if (WARN_ON(pi < 0)) {
-		kfree(nvbo);
+	if (WARN_ON(pi < 0))
 		return ERR_PTR(-EINVAL);
-	}
 
 	/* Disable compression if suitable settings couldn't be found. */
 	if (nvbo->comp && !vmm->page[pi].comp) {
