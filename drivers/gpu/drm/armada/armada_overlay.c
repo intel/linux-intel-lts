@@ -4,8 +4,6 @@
  *  Rewritten from the dovefb driver, and Armada510 manuals.
  */
 
-#include <linux/bitfield.h>
-
 #include <drm/armada_drm.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
@@ -453,8 +451,8 @@ static int armada_overlay_get_property(struct drm_plane *plane,
 			     drm_to_overlay_state(state)->colorkey_ug,
 			     drm_to_overlay_state(state)->colorkey_vb, 0);
 	} else if (property == priv->colorkey_mode_prop) {
-		*val = FIELD_GET(CFG_CKMODE_MASK,
-				 drm_to_overlay_state(state)->colorkey_mode);
+		*val = (drm_to_overlay_state(state)->colorkey_mode &
+			CFG_CKMODE_MASK) >> ffs(CFG_CKMODE_MASK);
 	} else if (property == priv->brightness_prop) {
 		*val = drm_to_overlay_state(state)->brightness + 256;
 	} else if (property == priv->contrast_prop) {
