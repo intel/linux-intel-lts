@@ -138,12 +138,6 @@ drm_atomic_state_init(struct drm_device *dev, struct drm_atomic_state *state)
 	if (!state->planes)
 		goto fail;
 
-	/*
-	 * Because drm_atomic_state can be committed asynchronously we need our
-	 * own reference and cannot rely on the on implied by drm_file in the
-	 * ioctl call.
-	 */
-	drm_dev_get(dev);
 	state->dev = dev;
 
 	DRM_DEBUG_ATOMIC("Allocated atomic state %p\n", state);
@@ -303,8 +297,7 @@ EXPORT_SYMBOL(drm_atomic_state_clear);
 void __drm_atomic_state_free(struct kref *ref)
 {
 	struct drm_atomic_state *state = container_of(ref, typeof(*state), ref);
-	struct drm_device *dev = state->dev;
-	struct drm_mode_config *config = &dev->mode_config;
+	struct drm_mode_config *config = &state->dev->mode_config;
 
 	drm_atomic_state_clear(state);
 
@@ -316,8 +309,6 @@ void __drm_atomic_state_free(struct kref *ref)
 		drm_atomic_state_default_release(state);
 		kfree(state);
 	}
-
-	drm_dev_put(dev);
 }
 EXPORT_SYMBOL(__drm_atomic_state_free);
 
