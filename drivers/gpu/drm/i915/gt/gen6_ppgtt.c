@@ -244,7 +244,6 @@ err_scratch1:
 	i915_gem_object_put(vm->scratch[1]);
 err_scratch0:
 	i915_gem_object_put(vm->scratch[0]);
-	vm->scratch[0] = NULL;
 	return ret;
 }
 
@@ -266,10 +265,9 @@ static void gen6_ppgtt_cleanup(struct i915_address_space *vm)
 	gen6_ppgtt_free_pd(ppgtt);
 	free_scratch(vm);
 
-	if (ppgtt->base.pd)
-		free_pd(&ppgtt->base.vm, ppgtt->base.pd);
-
 	mutex_destroy(&ppgtt->flush);
+
+	free_pd(&ppgtt->base.vm, ppgtt->base.pd);
 }
 
 static int pd_vma_set_pages(struct i915_vma *vma)
@@ -472,17 +470,19 @@ struct i915_ppgtt *gen6_ppgtt_create(struct intel_gt *gt)
 
 	err = gen6_ppgtt_init_scratch(ppgtt);
 	if (err)
-		goto err_put;
+		goto err_free;
 
 	ppgtt->base.pd = gen6_alloc_top_pd(ppgtt);
 	if (IS_ERR(ppgtt->base.pd)) {
 		err = PTR_ERR(ppgtt->base.pd);
-		goto err_put;
+		goto err_scratch;
 	}
 
 	return &ppgtt->base;
 
-err_put:
-	i915_vm_put(&ppgtt->base.vm);
+err_scratch:
+	free_scratch(&ppgtt->base.vm);
+err_free:
+	kfree(ppgtt);
 	return ERR_PTR(err);
 }
