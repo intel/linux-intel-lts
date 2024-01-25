@@ -34,11 +34,11 @@ static inline int exynos_g2d_exec_ioctl(struct drm_device *dev, void *data,
 	return -ENODEV;
 }
 
-static inline int g2d_open(struct drm_device *drm_dev, struct drm_file *file)
+int g2d_open(struct drm_device *drm_dev, struct drm_file *file)
 {
 	return 0;
 }
 
-static inline void g2d_close(struct drm_device *drm_dev, struct drm_file *file)
+void g2d_close(struct drm_device *drm_dev, struct drm_file *file)
 { }
 #endif
