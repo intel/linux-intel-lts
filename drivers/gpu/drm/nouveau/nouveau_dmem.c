@@ -679,11 +679,7 @@ nouveau_dmem_migrate_vma(struct nouveau_drm *drm,
 		goto out_free_dma;
 
 	for (i = 0; i < npages; i += max) {
-		if (args.start + (max << PAGE_SHIFT) > end)
-			args.end = end;
-		else
-			args.end = args.start + (max << PAGE_SHIFT);
-
+		args.end = start + (max << PAGE_SHIFT);
 		ret = migrate_vma_setup(&args);
 		if (ret)
 			goto out_free_pfns;
