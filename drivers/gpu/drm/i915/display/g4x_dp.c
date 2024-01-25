@@ -7,7 +7,6 @@
 
 #include "g4x_dp.h"
 #include "intel_audio.h"
-#include "intel_backlight.h"
 #include "intel_connector.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
@@ -17,6 +16,7 @@
 #include "intel_fifo_underrun.h"
 #include "intel_hdmi.h"
 #include "intel_hotplug.h"
+#include "intel_panel.h"
 #include "intel_pps.h"
 #include "intel_sideband.h"
 
