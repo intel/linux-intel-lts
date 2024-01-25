@@ -1361,11 +1361,13 @@ nouveau_connector_create(struct drm_device *dev,
 		snprintf(aux_name, sizeof(aux_name), "sor-%04x-%04x",
 			 dcbe->hasht, dcbe->hashm);
 		nv_connector->aux.name = kstrdup(aux_name, GFP_KERNEL);
-		if (!nv_connector->aux.name) {
-			kfree(nv_connector);
-			return ERR_PTR(-ENOMEM);
-		}
 		drm_dp_aux_init(&nv_connector->aux);
+		if (ret) {
+			NV_ERROR(drm, "Failed to init AUX adapter for sor-%04x-%04x: %d\n",
+				 dcbe->hasht, dcbe->hashm, ret);
+			kfree(nv_connector);
+			return ERR_PTR(ret);
+		}
 		fallthrough;
 	default:
 		funcs = &nouveau_connector_funcs;
