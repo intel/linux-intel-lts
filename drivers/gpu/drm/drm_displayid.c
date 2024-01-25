@@ -7,28 +7,13 @@
 #include <drm/drm_edid.h>
 #include <drm/drm_print.h>
 
-static const struct displayid_header *
-displayid_get_header(const u8 *displayid, int length, int index)
-{
-	const struct displayid_header *base;
-
-	if (sizeof(*base) > length - index)
-		return ERR_PTR(-EINVAL);
-
-	base = (const struct displayid_header *)&displayid[index];
-
-	return base;
-}
-
 static int validate_displayid(const u8 *displayid, int length, int idx)
 {
 	int i, dispid_length;
 	u8 csum = 0;
 	const struct displayid_header *base;
 
-	base = displayid_get_header(displayid, length, idx);
-	if (IS_ERR(base))
-		return PTR_ERR(base);
+	base = (const struct displayid_header *)&displayid[idx];
 
 	DRM_DEBUG_KMS("base revision 0x%x, length %d, %d %d\n",
 		      base->rev, base->bytes, base->prod_id, base->ext_count);
