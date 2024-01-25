@@ -729,8 +729,7 @@ out:
 #endif
 
 	nouveau_connector_set_edid(nv_connector, edid);
-	if (nv_encoder)
-		nouveau_connector_set_encoder(connector, nv_encoder);
+	nouveau_connector_set_encoder(connector, nv_encoder);
 	return status;
 }
 
