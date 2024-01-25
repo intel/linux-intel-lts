@@ -29,14 +29,14 @@ static int msm_gpu_show(struct seq_file *m, void *arg)
 	struct msm_gpu *gpu = priv->gpu;
 	int ret;
 
-	ret = mutex_lock_interruptible(&gpu->lock);
+	ret = mutex_lock_interruptible(&show_priv->dev->struct_mutex);
 	if (ret)
 		return ret;
 
 	drm_printf(&p, "%s Status:\n", gpu->name);
 	gpu->funcs->show(gpu, show_priv->state, &p);
 
-	mutex_unlock(&gpu->lock);
+	mutex_unlock(&show_priv->dev->struct_mutex);
 
 	return 0;
 }
@@ -48,9 +48,9 @@ static int msm_gpu_release(struct inode *inode, struct file *file)
 	struct msm_drm_private *priv = show_priv->dev->dev_private;
 	struct msm_gpu *gpu = priv->gpu;
 
-	mutex_lock(&gpu->lock);
+	mutex_lock(&show_priv->dev->struct_mutex);
 	gpu->funcs->gpu_state_put(show_priv->state);
-	mutex_unlock(&gpu->lock);
+	mutex_unlock(&show_priv->dev->struct_mutex);
 
 	kfree(show_priv);
 
@@ -72,7 +72,7 @@ static int msm_gpu_open(struct inode *inode, struct file *file)
 	if (!show_priv)
 		return -ENOMEM;
 
-	ret = mutex_lock_interruptible(&gpu->lock);
+	ret = mutex_lock_interruptible(&dev->struct_mutex);
 	if (ret)
 		goto free_priv;
 
@@ -81,7 +81,7 @@ static int msm_gpu_open(struct inode *inode, struct file *file)
 	show_priv->state = gpu->funcs->gpu_state_get(gpu);
 	pm_runtime_put_sync(&gpu->pdev->dev);
 
-	mutex_unlock(&gpu->lock);
+	mutex_unlock(&dev->struct_mutex);
 
 	if (IS_ERR(show_priv->state)) {
 		ret = PTR_ERR(show_priv->state);

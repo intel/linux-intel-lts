@@ -86,7 +86,7 @@ struct msm_rd_state {
 	struct msm_gem_submit *submit;
 
 	/* fifo access is synchronized on the producer side by
-	 * gpu->lock held by submit code (otherwise we could
+	 * struct_mutex held by submit code (otherwise we could
 	 * end up w/ cmds logged in different order than they
 	 * were executed).  And read_lock synchronizes the reads
 	 */
@@ -181,12 +181,9 @@ static int rd_open(struct inode *inode, struct file *file)
 	uint32_t gpu_id;
 	int ret = 0;
 
-	if (!gpu)
-		return -ENODEV;
+	mutex_lock(&dev->struct_mutex);
 
-	mutex_lock(&gpu->lock);
-
-	if (rd->open) {
+	if (rd->open || !gpu) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -206,7 +203,7 @@ static int rd_open(struct inode *inode, struct file *file)
 	rd_write_section(rd, RD_GPU_ID, &gpu_id, sizeof(gpu_id));
 
 out:
-	mutex_unlock(&gpu->lock);
+	mutex_unlock(&dev->struct_mutex);
 	return ret;
 }
 
@@ -346,10 +343,11 @@ out_unlock:
 	msm_gem_unlock(&obj->base);
 }
 
-/* called under gpu->lock */
+/* called under struct_mutex */
 void msm_rd_dump_submit(struct msm_rd_state *rd, struct msm_gem_submit *submit,
 		const char *fmt, ...)
 {
+	struct drm_device *dev = submit->dev;
 	struct task_struct *task;
 	char msg[256];
 	int i, n;
@@ -360,7 +358,7 @@ void msm_rd_dump_submit(struct msm_rd_state *rd, struct msm_gem_submit *submit,
 	/* writing into fifo is serialized by caller, and
 	 * rd->read_lock is used to serialize the reads
 	 */
-	WARN_ON(!mutex_is_locked(&submit->gpu->lock));
+	WARN_ON(!mutex_is_locked(&dev->struct_mutex));
 
 	if (fmt) {
 		va_list args;
