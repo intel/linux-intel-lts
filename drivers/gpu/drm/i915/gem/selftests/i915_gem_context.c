@@ -349,10 +349,8 @@ static int live_parallel_switch(void *arg)
 				continue;
 
 			ce = intel_context_create(data[m].ce[0]->engine);
-			if (IS_ERR(ce)) {
-				err = PTR_ERR(ce);
+			if (IS_ERR(ce))
 				goto out;
-			}
 
 			err = intel_context_pin(ce);
 			if (err) {
@@ -372,10 +370,8 @@ static int live_parallel_switch(void *arg)
 
 		worker = kthread_create_worker(0, "igt/parallel:%s",
 					       data[n].ce[0]->engine->name);
-		if (IS_ERR(worker)) {
-			err = PTR_ERR(worker);
+		if (IS_ERR(worker))
 			goto out;
-		}
 
 		data[n].worker = worker;
 	}
@@ -404,10 +400,8 @@ static int live_parallel_switch(void *arg)
 			}
 		}
 
-		if (igt_live_test_end(&t)) {
-			err = err ?: -EIO;
-			break;
-		}
+		if (igt_live_test_end(&t))
+			err = -EIO;
 	}
 
 out:
