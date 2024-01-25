@@ -218,7 +218,6 @@ out_unregister:
 
 static int __init vkms_init(void)
 {
-	int ret;
 	struct vkms_config *config;
 
 	config = kmalloc(sizeof(*config), GFP_KERNEL);
@@ -231,11 +230,7 @@ static int __init vkms_init(void)
 	config->writeback = enable_writeback;
 	config->overlay = enable_overlay;
 
-	ret = vkms_create(config);
-	if (ret)
-		kfree(config);
-
-	return ret;
+	return vkms_create(config);
 }
 
 static void vkms_destroy(struct vkms_config *config)
