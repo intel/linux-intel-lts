@@ -768,8 +768,7 @@ int amdgpu_amdkfd_flush_gpu_tlb_pasid(struct kgd_dev *kgd, uint16_t pasid,
 	struct amdgpu_device *adev = (struct amdgpu_device *)kgd;
 	bool all_hub = false;
 
-	if (adev->family == AMDGPU_FAMILY_AI ||
-	    adev->family == AMDGPU_FAMILY_RV)
+	if (adev->family == AMDGPU_FAMILY_AI)
 		all_hub = true;
 
 	return amdgpu_gmc_flush_gpu_tlb_pasid(adev, pasid, flush_type, all_hub);
