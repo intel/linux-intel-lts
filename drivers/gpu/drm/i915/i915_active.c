@@ -422,7 +422,8 @@ replace_barrier(struct i915_active *ref, struct i915_active_fence *active)
 	 * we can use it to substitute for the pending idle-barrer
 	 * request that we want to emit on the kernel_context.
 	 */
-	return __active_del_barrier(ref, node_from_active(active));
+	__active_del_barrier(ref, node_from_active(active));
+	return true;
 }
 
 int i915_active_ref(struct i915_active *ref, u64 idx, struct dma_fence *fence)
@@ -435,19 +436,16 @@ int i915_active_ref(struct i915_active *ref, u64 idx, struct dma_fence *fence)
 	if (err)
 		return err;
 
-	do {
-		active = active_instance(ref, idx);
-		if (!active) {
-			err = -ENOMEM;
-			goto out;
-		}
+	active = active_instance(ref, idx);
+	if (!active) {
+		err = -ENOMEM;
+		goto out;
+	}
 
-		if (replace_barrier(ref, active)) {
-			RCU_INIT_POINTER(active->fence, NULL);
-			atomic_dec(&ref->count);
-		}
-	} while (unlikely(is_barrier(active)));
-
+	if (replace_barrier(ref, active)) {
+		RCU_INIT_POINTER(active->fence, NULL);
+		atomic_dec(&ref->count);
+	}
 	if (!__i915_active_fence_set(active, fence))
 		__i915_active_acquire(ref);
 
