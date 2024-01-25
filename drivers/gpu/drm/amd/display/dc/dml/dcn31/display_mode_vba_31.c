@@ -259,13 +259,33 @@ static void CalculateRowBandwidth(
 
 static void CalculateFlipSchedule(
 		struct display_mode_lib *mode_lib,
-		unsigned int k,
 		double HostVMInefficiencyFactor,
 		double UrgentExtraLatency,
 		double UrgentLatency,
+		unsigned int GPUVMMaxPageTableLevels,
+		bool HostVMEnable,
+		unsigned int HostVMMaxNonCachedPageTableLevels,
+		bool GPUVMEnable,
+		double HostVMMinPageSize,
 		double PDEAndMetaPTEBytesPerFrame,
 		double MetaRowBytes,
-		double DPTEBytesPerRow);
+		double DPTEBytesPerRow,
+		double BandwidthAvailableForImmediateFlip,
+		unsigned int TotImmediateFlipBytes,
+		enum source_format_class SourcePixelFormat,
+		double LineTime,
+		double VRatio,
+		double VRatioChroma,
+		double Tno_bw,
+		bool DCCEnable,
+		unsigned int dpte_row_height,
+		unsigned int meta_row_height,
+		unsigned int dpte_row_height_chroma,
+		unsigned int meta_row_height_chroma,
+		double *DestinationLinesToRequestVMInImmediateFlip,
+		double *DestinationLinesToRequestRowInImmediateFlip,
+		double *final_flip_bw,
+		bool *ImmediateFlipSupportedForPipe);
 static double CalculateWriteBackDelay(
 		enum source_format_class WritebackPixelFormat,
 		double WritebackHRatio,
@@ -2903,13 +2923,33 @@ static void DISPCLKDPPCLKDCFCLKDeepSleepPrefetchParametersWatermarksAndPerforman
 			for (k = 0; k < v->NumberOfActivePlanes; ++k) {
 				CalculateFlipSchedule(
 						mode_lib,
-						k,
 						HostVMInefficiencyFactor,
 						v->UrgentExtraLatency,
 						v->UrgentLatency,
+						v->GPUVMMaxPageTableLevels,
+						v->HostVMEnable,
+						v->HostVMMaxNonCachedPageTableLevels,
+						v->GPUVMEnable,
+						v->HostVMMinPageSize,
 						v->PDEAndMetaPTEBytesFrame[k],
 						v->MetaRowByte[k],
-						v->PixelPTEBytesPerRow[k]);
+						v->PixelPTEBytesPerRow[k],
+						v->BandwidthAvailableForImmediateFlip,
+						v->TotImmediateFlipBytes,
+						v->SourcePixelFormat[k],
+						v->HTotal[k] / v->PixelClock[k],
+						v->VRatio[k],
+						v->VRatioChroma[k],
+						v->Tno_bw[k],
+						v->DCCEnable[k],
+						v->dpte_row_height[k],
+						v->meta_row_height[k],
+						v->dpte_row_height_chroma[k],
+						v->meta_row_height_chroma[k],
+						&v->DestinationLinesToRequestVMInImmediateFlip[k],
+						&v->DestinationLinesToRequestRowInImmediateFlip[k],
+						&v->final_flip_bw[k],
+						&v->ImmediateFlipSupportedForPipe[k]);
 			}
 
 			v->total_dcn_read_bw_with_flip = 0.0;
@@ -3629,43 +3669,61 @@ static void CalculateRowBandwidth(
 
 static void CalculateFlipSchedule(
 		struct display_mode_lib *mode_lib,
-		unsigned int k,
 		double HostVMInefficiencyFactor,
 		double UrgentExtraLatency,
 		double UrgentLatency,
+		unsigned int GPUVMMaxPageTableLevels,
+		bool HostVMEnable,
+		unsigned int HostVMMaxNonCachedPageTableLevels,
+		bool GPUVMEnable,
+		double HostVMMinPageSize,
 		double PDEAndMetaPTEBytesPerFrame,
 		double MetaRowBytes,
-		double DPTEBytesPerRow)
+		double DPTEBytesPerRow,
+		double BandwidthAvailableForImmediateFlip,
+		unsigned int TotImmediateFlipBytes,
+		enum source_format_class SourcePixelFormat,
+		double LineTime,
+		double VRatio,
+		double VRatioChroma,
+		double Tno_bw,
+		bool DCCEnable,
+		unsigned int dpte_row_height,
+		unsigned int meta_row_height,
+		unsigned int dpte_row_height_chroma,
+		unsigned int meta_row_height_chroma,
+		double *DestinationLinesToRequestVMInImmediateFlip,
+		double *DestinationLinesToRequestRowInImmediateFlip,
+		double *final_flip_bw,
+		bool *ImmediateFlipSupportedForPipe)
 {
-	struct vba_vars_st *v = &mode_lib->vba;
 	double min_row_time = 0.0;
 	unsigned int HostVMDynamicLevelsTrips;
 	double TimeForFetchingMetaPTEImmediateFlip;
 	double TimeForFetchingRowInVBlankImmediateFlip;
 	double ImmediateFlipBW;
-	double LineTime = v->HTotal[k] / v->PixelClock[k];
 
-	if (v->GPUVMEnable == true && v->HostVMEnable == true) {
-		HostVMDynamicLevelsTrips = v->HostVMMaxNonCachedPageTableLevels;
+	if (GPUVMEnable == true && HostVMEnable == true) {
+		HostVMDynamicLevelsTrips = HostVMMaxNonCachedPageTableLevels;
 	} else {
 		HostVMDynamicLevelsTrips = 0;
 	}
 
-	if (v->GPUVMEnable == true || v->DCCEnable[k] == true) {
-		ImmediateFlipBW = (PDEAndMetaPTEBytesPerFrame + MetaRowBytes + DPTEBytesPerRow) * v->BandwidthAvailableForImmediateFlip / v->TotImmediateFlipBytes;
+	if (GPUVMEnable == true || DCCEnable == true) {
+		ImmediateFlipBW = (PDEAndMetaPTEBytesPerFrame + MetaRowBytes + DPTEBytesPerRow) * BandwidthAvailableForImmediateFlip / TotImmediateFlipBytes;
 	}
 
-	if (v->GPUVMEnable == true) {
+	if (GPUVMEnable == true) {
 		TimeForFetchingMetaPTEImmediateFlip = dml_max3(
-				v->Tno_bw[k] + PDEAndMetaPTEBytesPerFrame * HostVMInefficiencyFactor / ImmediateFlipBW,
-				UrgentExtraLatency + UrgentLatency * (v->GPUVMMaxPageTableLevels * (HostVMDynamicLevelsTrips + 1) - 1),
+				Tno_bw + PDEAndMetaPTEBytesPerFrame * HostVMInefficiencyFactor / ImmediateFlipBW,
+				UrgentExtraLatency + UrgentLatency * (GPUVMMaxPageTableLevels * (HostVMDynamicLevelsTrips + 1) - 1),
 				LineTime / 4.0);
 	} else {
 		TimeForFetchingMetaPTEImmediateFlip = 0;
 	}
 
-	v->DestinationLinesToRequestVMInImmediateFlip[k] = dml_ceil(4.0 * (TimeForFetchingMetaPTEImmediateFlip / LineTime), 1) / 4.0;
-	if ((v->GPUVMEnable == true || v->DCCEnable[k] == true)) {
+	*DestinationLinesToRequestVMInImmediateFlip = dml_ceil(4.0 * (TimeForFetchingMetaPTEImmediateFlip / LineTime), 1) / 4.0;
+	if ((GPUVMEnable == true || DCCEnable == true)) {
 		TimeForFetchingRowInVBlankImmediateFlip = dml_max3(
 				(MetaRowBytes + DPTEBytesPerRow * HostVMInefficiencyFactor) / ImmediateFlipBW,
 				UrgentLatency * (HostVMDynamicLevelsTrips + 1),
@@ -3674,54 +3732,54 @@ static void CalculateFlipSchedule(
 		TimeForFetchingRowInVBlankImmediateFlip = 0;
 	}
 
-	v->DestinationLinesToRequestRowInImmediateFlip[k] = dml_ceil(4.0 * (TimeForFetchingRowInVBlankImmediateFlip / LineTime), 1) / 4.0;
+	*DestinationLinesToRequestRowInImmediateFlip = dml_ceil(4.0 * (TimeForFetchingRowInVBlankImmediateFlip / LineTime), 1) / 4.0;
 
-	if (v->GPUVMEnable == true) {
-		v->final_flip_bw[k] = dml_max(
-				PDEAndMetaPTEBytesPerFrame * HostVMInefficiencyFactor / (v->DestinationLinesToRequestVMInImmediateFlip[k] * LineTime),
-				(MetaRowBytes + DPTEBytesPerRow * HostVMInefficiencyFactor) / (v->DestinationLinesToRequestRowInImmediateFlip[k] * LineTime));
-	} else if ((v->GPUVMEnable == true || v->DCCEnable[k] == true)) {
-		v->final_flip_bw[k] = (MetaRowBytes + DPTEBytesPerRow * HostVMInefficiencyFactor) / (v->DestinationLinesToRequestRowInImmediateFlip[k] * LineTime);
+	if (GPUVMEnable == true) {
+		*final_flip_bw = dml_max(
+				PDEAndMetaPTEBytesPerFrame * HostVMInefficiencyFactor / (*DestinationLinesToRequestVMInImmediateFlip * LineTime),
+				(MetaRowBytes + DPTEBytesPerRow * HostVMInefficiencyFactor) / (*DestinationLinesToRequestRowInImmediateFlip * LineTime));
+	} else if ((GPUVMEnable == true || DCCEnable == true)) {
+		*final_flip_bw = (MetaRowBytes + DPTEBytesPerRow * HostVMInefficiencyFactor) / (*DestinationLinesToRequestRowInImmediateFlip * LineTime);
 	} else {
-		v->final_flip_bw[k] = 0;
+		*final_flip_bw = 0;
 	}
 
-	if (v->SourcePixelFormat[k] == dm_420_8 || v->SourcePixelFormat[k] == dm_420_10 || v->SourcePixelFormat[k] == dm_rgbe_alpha) {
-		if (v->GPUVMEnable == true && v->DCCEnable[k] != true) {
-			min_row_time = dml_min(v->dpte_row_height[k] * LineTime / v->VRatio[k], v->dpte_row_height_chroma[k] * LineTime / v->VRatioChroma[k]);
-		} else if (v->GPUVMEnable != true && v->DCCEnable[k] == true) {
-			min_row_time = dml_min(v->meta_row_height[k] * LineTime / v->VRatio[k], v->meta_row_height_chroma[k] * LineTime / v->VRatioChroma[k]);
+	if (SourcePixelFormat == dm_420_8 || SourcePixelFormat == dm_420_10 || SourcePixelFormat == dm_rgbe_alpha) {
+		if (GPUVMEnable == true && DCCEnable != true) {
+			min_row_time = dml_min(dpte_row_height * LineTime / VRatio, dpte_row_height_chroma * LineTime / VRatioChroma);
+		} else if (GPUVMEnable != true && DCCEnable == true) {
+			min_row_time = dml_min(meta_row_height * LineTime / VRatio, meta_row_height_chroma * LineTime / VRatioChroma);
 		} else {
 			min_row_time = dml_min4(
-					v->dpte_row_height[k] * LineTime / v->VRatio[k],
-					v->meta_row_height[k] * LineTime / v->VRatio[k],
-					v->dpte_row_height_chroma[k] * LineTime / v->VRatioChroma[k],
-					v->meta_row_height_chroma[k] * LineTime / v->VRatioChroma[k]);
+					dpte_row_height * LineTime / VRatio,
+					meta_row_height * LineTime / VRatio,
+					dpte_row_height_chroma * LineTime / VRatioChroma,
+					meta_row_height_chroma * LineTime / VRatioChroma);
 		}
 	} else {
-		if (v->GPUVMEnable == true && v->DCCEnable[k] != true) {
-			min_row_time = v->dpte_row_height[k] * LineTime / v->VRatio[k];
-		} else if (v->GPUVMEnable != true && v->DCCEnable[k] == true) {
-			min_row_time = v->meta_row_height[k] * LineTime / v->VRatio[k];
+		if (GPUVMEnable == true && DCCEnable != true) {
+			min_row_time = dpte_row_height * LineTime / VRatio;
+		} else if (GPUVMEnable != true && DCCEnable == true) {
+			min_row_time = meta_row_height * LineTime / VRatio;
 		} else {
-			min_row_time = dml_min(v->dpte_row_height[k] * LineTime / v->VRatio[k], v->meta_row_height[k] * LineTime / v->VRatio[k]);
+			min_row_time = dml_min(dpte_row_height * LineTime / VRatio, meta_row_height * LineTime / VRatio);
 		}
 	}
 
-	if (v->DestinationLinesToRequestVMInImmediateFlip[k] >= 32 || v->DestinationLinesToRequestRowInImmediateFlip[k] >= 16
+	if (*DestinationLinesToRequestVMInImmediateFlip >= 32 || *DestinationLinesToRequestRowInImmediateFlip >= 16
 			|| TimeForFetchingMetaPTEImmediateFlip + 2 * TimeForFetchingRowInVBlankImmediateFlip > min_row_time) {
-		v->ImmediateFlipSupportedForPipe[k] = false;
+		*ImmediateFlipSupportedForPipe = false;
 	} else {
-		v->ImmediateFlipSupportedForPipe[k] = true;
+		*ImmediateFlipSupportedForPipe = true;
 	}
 
 #ifdef __DML_VBA_DEBUG__
-	dml_print("DML::%s: DestinationLinesToRequestVMInImmediateFlip = %f\n", __func__, v->DestinationLinesToRequestVMInImmediateFlip[k]);
-	dml_print("DML::%s: DestinationLinesToRequestRowInImmediateFlip = %f\n", __func__, v->DestinationLinesToRequestRowInImmediateFlip[k]);
+	dml_print("DML::%s: DestinationLinesToRequestVMInImmediateFlip = %f\n", __func__, *DestinationLinesToRequestVMInImmediateFlip);
+	dml_print("DML::%s: DestinationLinesToRequestRowInImmediateFlip = %f\n", __func__, *DestinationLinesToRequestRowInImmediateFlip);
 	dml_print("DML::%s: TimeForFetchingMetaPTEImmediateFlip = %f\n", __func__, TimeForFetchingMetaPTEImmediateFlip);
 	dml_print("DML::%s: TimeForFetchingRowInVBlankImmediateFlip = %f\n", __func__, TimeForFetchingRowInVBlankImmediateFlip);
 	dml_print("DML::%s: min_row_time = %f\n", __func__, min_row_time);
-	dml_print("DML::%s: ImmediateFlipSupportedForPipe = %d\n", __func__, v->ImmediateFlipSupportedForPipe[k]);
+	dml_print("DML::%s: ImmediateFlipSupportedForPipe = %d\n", __func__, *ImmediateFlipSupportedForPipe);
 #endif
 
 }
@@ -5347,13 +5405,33 @@ void dml31_ModeSupportAndSystemConfigurationFull(struct display_mode_lib *mode_l
 					for (k = 0; k < v->NumberOfActivePlanes; k++) {
 						CalculateFlipSchedule(
 								mode_lib,
-								k,
 								HostVMInefficiencyFactor,
 								v->ExtraLatency,
 								v->UrgLatency[i],
+								v->GPUVMMaxPageTableLevels,
+								v->HostVMEnable,
+								v->HostVMMaxNonCachedPageTableLevels,
+								v->GPUVMEnable,
+								v->HostVMMinPageSize,
 								v->PDEAndMetaPTEBytesPerFrame[i][j][k],
 								v->MetaRowBytes[i][j][k],
-								v->DPTEBytesPerRow[i][j][k]);
+								v->DPTEBytesPerRow[i][j][k],
+								v->BandwidthAvailableForImmediateFlip,
+								v->TotImmediateFlipBytes,
+								v->SourcePixelFormat[k],
+								v->HTotal[k] / v->PixelClock[k],
+								v->VRatio[k],
+								v->VRatioChroma[k],
+								v->Tno_bw[k],
+								v->DCCEnable[k],
+								v->dpte_row_height[k],
+								v->meta_row_height[k],
+								v->dpte_row_height_chroma[k],
+								v->meta_row_height_chroma[k],
+								&v->DestinationLinesToRequestVMInImmediateFlip[k],
+								&v->DestinationLinesToRequestRowInImmediateFlip[k],
+								&v->final_flip_bw[k],
+								&v->ImmediateFlipSupportedForPipe[k]);
 					}
 					v->total_dcn_read_bw_with_flip = 0.0;
 					for (k = 0; k < v->NumberOfActivePlanes; k++) {
