@@ -3860,7 +3860,9 @@ int drm_dp_mst_topology_mgr_resume(struct drm_dp_mst_topology_mgr *mgr,
 	if (!mgr->mst_primary)
 		goto out_fail;
 
-	if (drm_dp_read_dpcd_caps(mgr->aux, mgr->dpcd) < 0) {
+	ret = drm_dp_dpcd_read(mgr->aux, DP_DPCD_REV, mgr->dpcd,
+			       DP_RECEIVER_CAP_SIZE);
+	if (ret != DP_RECEIVER_CAP_SIZE) {
 		drm_dbg_kms(mgr->dev, "dpcd read failed - undocked during suspend?\n");
 		goto out_fail;
 	}
@@ -4892,7 +4894,8 @@ void drm_dp_mst_dump_topology(struct seq_file *m,
 		u8 buf[DP_PAYLOAD_TABLE_SIZE];
 		int ret;
 
-		if (drm_dp_read_dpcd_caps(mgr->aux, buf) < 0) {
+		ret = drm_dp_dpcd_read(mgr->aux, DP_DPCD_REV, buf, DP_RECEIVER_CAP_SIZE);
+		if (ret) {
 			seq_printf(m, "dpcd read failed\n");
 			goto out;
 		}
