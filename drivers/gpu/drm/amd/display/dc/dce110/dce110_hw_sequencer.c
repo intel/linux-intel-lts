@@ -980,9 +980,7 @@ void dce110_edp_backlight_control(
 		return;
 	}
 
-	if (link->panel_cntl && !(link->dpcd_sink_ext_caps.bits.oled ||
-		link->dpcd_sink_ext_caps.bits.hdr_aux_backlight_control == 1 ||
-		link->dpcd_sink_ext_caps.bits.sdr_aux_backlight_control == 1)) {
+	if (link->panel_cntl) {
 		bool is_backlight_on = link->panel_cntl->funcs->is_panel_backlight_on(link->panel_cntl);
 
 		if ((enable && is_backlight_on) || (!enable && !is_backlight_on)) {
