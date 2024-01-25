@@ -359,8 +359,7 @@ static int msm_drm_uninit(struct device *dev)
 		msm_fbdev_free(ddev);
 #endif
 
-	if (kms)
-		msm_disp_snapshot_destroy(ddev);
+	msm_disp_snapshot_destroy(ddev);
 
 	drm_mode_config_cleanup(ddev);
 
