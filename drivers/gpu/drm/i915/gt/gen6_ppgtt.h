@@ -19,6 +19,7 @@ struct gen6_ppgtt {
 	u32 pp_dir;
 
 	atomic_t pin_count;
+	struct mutex pin_mutex;
 
 	bool scan_for_unused_pt;
 };
