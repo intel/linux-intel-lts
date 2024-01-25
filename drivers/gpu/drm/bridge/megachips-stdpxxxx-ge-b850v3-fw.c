@@ -296,9 +296,7 @@ static void ge_b850v3_lvds_remove(void)
 	 * This check is to avoid both the drivers
 	 * removing the bridge in their remove() function
 	 */
-	if (!ge_b850v3_lvds_ptr ||
-	    !ge_b850v3_lvds_ptr->stdp2690_i2c ||
-		!ge_b850v3_lvds_ptr->stdp4028_i2c)
+	if (!ge_b850v3_lvds_ptr)
 		goto out;
 
 	drm_bridge_remove(&ge_b850v3_lvds_ptr->bridge);
