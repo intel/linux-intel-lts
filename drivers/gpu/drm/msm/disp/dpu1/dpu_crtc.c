@@ -230,9 +230,6 @@ static void _dpu_crtc_blend_setup_mixer(struct drm_crtc *crtc,
 		if (!state)
 			continue;
 
-		if (!state->visible)
-			continue;
-
 		pstate = to_dpu_plane_state(state);
 		fb = state->fb;
 
@@ -977,9 +974,6 @@ static int dpu_crtc_atomic_check(struct drm_crtc *crtc,
 			goto end;
 		}
 		if (cnt >= DPU_STAGE_MAX * 4)
-			continue;
-
-		if (!pstate->visible)
 			continue;
 
 		pstates[cnt].dpu_pstate = dpu_pstate;
