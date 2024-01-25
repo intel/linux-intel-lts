@@ -780,7 +780,7 @@ svm_migrate_to_vram(struct svm_range *prange, uint32_t best_loc,
 static vm_fault_t svm_migrate_to_ram(struct vm_fault *vmf)
 {
 	unsigned long addr = vmf->address;
-	struct svm_range_bo *svm_bo;
+	struct vm_area_struct *vma;
 	enum svm_work_list_ops op;
 	struct svm_range *parent;
 	struct svm_range *prange;
@@ -788,42 +788,29 @@ static vm_fault_t svm_migrate_to_ram(struct vm_fault *vmf)
 	struct mm_struct *mm;
 	int r = 0;
 
-	svm_bo = vmf->page->zone_device_data;
-	if (!svm_bo) {
-		pr_debug("failed get device page at addr 0x%lx\n", addr);
-		return VM_FAULT_SIGBUS;
-	}
-	if (!mmget_not_zero(svm_bo->eviction_fence->mm)) {
-		pr_debug("addr 0x%lx of process mm is detroyed\n", addr);
-		return VM_FAULT_SIGBUS;
-	}
+	vma = vmf->vma;
+	mm = vma->vm_mm;
 
-	mm = svm_bo->eviction_fence->mm;
-	if (mm != vmf->vma->vm_mm)
-		pr_debug("addr 0x%lx is COW mapping in child process\n", addr);
-
-	p = kfd_lookup_process_by_mm(mm);
+	p = kfd_lookup_process_by_mm(vma->vm_mm);
 	if (!p) {
 		pr_debug("failed find process at fault address 0x%lx\n", addr);
-		r = VM_FAULT_SIGBUS;
-		goto out_mmput;
+		return VM_FAULT_SIGBUS;
 	}
 	if (READ_ONCE(p->svms.faulting_task) == current) {
 		pr_debug("skipping ram migration\n");
-		r = 0;
-		goto out_unref_process;
+		kfd_unref_process(p);
+		return 0;
 	}
-
-	pr_debug("CPU page fault svms 0x%p address 0x%lx\n", &p->svms, addr);
 	addr >>= PAGE_SHIFT;
+	pr_debug("CPU page fault svms 0x%p address 0x%lx\n", &p->svms, addr);
 
 	mutex_lock(&p->svms.lock);
 
 	prange = svm_range_from_addr(&p->svms, addr, &parent);
 	if (!prange) {
-		pr_debug("failed get range svms 0x%p addr 0x%lx\n", &p->svms, addr);
+		pr_debug("cannot find svm range at 0x%lx\n", addr);
 		r = -EFAULT;
-		goto out_unlock_svms;
+		goto out;
 	}
 
 	mutex_lock(&parent->migrate_mutex);
@@ -847,8 +834,8 @@ static vm_fault_t svm_migrate_to_ram(struct vm_fault *vmf)
 
 	r = svm_migrate_vram_to_ram(prange, mm);
 	if (r)
-		pr_debug("failed %d migrate svms 0x%p range 0x%p [0x%lx 0x%lx]\n",
-			 r, prange->svms, prange, prange->start, prange->last);
+		pr_debug("failed %d migrate 0x%p [0x%lx 0x%lx] to ram\n", r,
+			 prange, prange->start, prange->last);
 
 	/* xnack on, update mapping on GPUs with ACCESS_IN_PLACE */
 	if (p->xnack_enabled && parent == prange)
@@ -862,12 +849,9 @@ out_unlock_prange:
 	if (prange != parent)
 		mutex_unlock(&prange->migrate_mutex);
 	mutex_unlock(&parent->migrate_mutex);
-out_unlock_svms:
+out:
 	mutex_unlock(&p->svms.lock);
-out_unref_process:
 	kfd_unref_process(p);
-out_mmput:
-	mmput(mm);
 
 	pr_debug("CPU fault svms 0x%p address 0x%lx done\n", &p->svms, addr);
 
