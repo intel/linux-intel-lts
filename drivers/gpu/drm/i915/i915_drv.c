@@ -990,7 +990,8 @@ static void i915_driver_lastclose(struct drm_device *dev)
 
 	intel_fbdev_restore_mode(dev);
 
-	vga_switcheroo_process_delayed_switch();
+	if (HAS_DISPLAY(i915))
+		vga_switcheroo_process_delayed_switch();
 }
 
 static void i915_driver_postclose(struct drm_device *dev, struct drm_file *file)
