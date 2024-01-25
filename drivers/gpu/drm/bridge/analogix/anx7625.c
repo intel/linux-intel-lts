@@ -796,7 +796,7 @@ static int sp_tx_edid_read(struct anx7625_data *ctx,
 	int count, blocks_num;
 	u8 pblock_buf[MAX_DPCD_BUFFER_SIZE];
 	u8 i, j;
-	int g_edid_break = 0;
+	u8 g_edid_break = 0;
 	int ret;
 	struct device *dev = &ctx->client->dev;
 
@@ -827,7 +827,7 @@ static int sp_tx_edid_read(struct anx7625_data *ctx,
 				g_edid_break = edid_read(ctx, offset,
 							 pblock_buf);
 
-				if (g_edid_break < 0)
+				if (g_edid_break)
 					break;
 
 				memcpy(&pedid_blocks_buf[offset],
