@@ -6638,10 +6638,7 @@ void skl_wm_get_hw_state(struct drm_i915_private *dev_priv)
 		enum plane_id plane_id;
 		u8 slices;
 
-		memset(&crtc_state->wm.skl.optimal, 0,
-		       sizeof(crtc_state->wm.skl.optimal));
-		if (crtc_state->hw.active)
-			skl_pipe_wm_get_hw_state(crtc, &crtc_state->wm.skl.optimal);
+		skl_pipe_wm_get_hw_state(crtc, &crtc_state->wm.skl.optimal);
 		crtc_state->wm.skl.raw = crtc_state->wm.skl.optimal;
 
 		memset(&dbuf_state->ddb[pipe], 0, sizeof(dbuf_state->ddb[pipe]));
@@ -6651,9 +6648,6 @@ void skl_wm_get_hw_state(struct drm_i915_private *dev_priv)
 				&crtc_state->wm.skl.plane_ddb_y[plane_id];
 			struct skl_ddb_entry *ddb_uv =
 				&crtc_state->wm.skl.plane_ddb_uv[plane_id];
-
-			if (!crtc_state->hw.active)
-				continue;
 
 			skl_ddb_get_hw_plane_state(dev_priv, crtc->pipe,
 						   plane_id, ddb_y, ddb_uv);
