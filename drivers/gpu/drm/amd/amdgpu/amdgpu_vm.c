@@ -3224,11 +3224,7 @@ void amdgpu_vm_manager_init(struct amdgpu_device *adev)
 	 */
 #ifdef CONFIG_X86_64
 	if (amdgpu_vm_update_mode == -1) {
-		/* For asic with VF MMIO access protection
-		 * avoid using CPU for VM table updates
-		 */
-		if (amdgpu_gmc_vram_full_visible(&adev->gmc) &&
-		    !amdgpu_sriov_vf_mmio_access_protection(adev))
+		if (amdgpu_gmc_vram_full_visible(&adev->gmc))
 			adev->vm_manager.vm_update_mode =
 				AMDGPU_VM_USE_CPU_FOR_COMPUTE;
 		else
