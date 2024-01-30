@@ -263,17 +263,10 @@ int i915_active_live_selftests(struct drm_i915_private *i915)
 
 static struct intel_engine_cs *node_to_barrier(struct active_node *it)
 {
-	struct intel_engine_cs *engine;
-
 	if (!is_barrier(&it->base))
 		return NULL;
 
-	engine = __barrier_to_engine(it);
-	smp_rmb(); /* serialise with add_active_barriers */
-	if (!is_barrier(&it->base))
-		return NULL;
-
-	return engine;
+	return it->engine;
 }
 
 void i915_active_print(struct i915_active *ref, struct drm_printer *m)

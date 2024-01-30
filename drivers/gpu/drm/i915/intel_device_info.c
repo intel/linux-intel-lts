@@ -91,6 +91,27 @@ const char *intel_platform_name(enum intel_platform platform)
 void intel_device_info_print_static(const struct intel_device_info *info,
 				    struct drm_printer *p)
 {
+	drm_printf(p, "gt: %d\n", info->gt);
+	drm_printf(p, "memory-regions: %x\n", info->memory_regions);
+	drm_printf(p, "page-sizes: %x\n", info->page_sizes);
+	drm_printf(p, "platform: %s\n", intel_platform_name(info->platform));
+	drm_printf(p, "ppgtt-size: %d\n", info->ppgtt_size);
+	drm_printf(p, "ppgtt-msb: %d\n", info->ppgtt_msb);
+	drm_printf(p, "ppgtt-type: %d\n", info->ppgtt_type);
+	drm_printf(p, "dma_mask_size: %u\n", info->dma_mask_size);
+
+#define PRINT_FLAG(name) drm_printf(p, "%s: %s\n", #name, str_yes_no(info->name))
+	DEV_INFO_FOR_EACH_FLAG(PRINT_FLAG);
+#undef PRINT_FLAG
+
+#define PRINT_FLAG(name) drm_printf(p, "%s: %s\n", #name, str_yes_no(info->display.name))
+	DEV_INFO_DISPLAY_FOR_EACH_FLAG(PRINT_FLAG);
+#undef PRINT_FLAG
+}
+
+void intel_device_info_print_runtime(const struct intel_runtime_info *info,
+				     struct drm_printer *p)
+{
 	if (info->graphics.rel)
 		drm_printf(p, "graphics version: %u.%02u\n", info->graphics.ver,
 			   info->graphics.rel);
@@ -107,26 +128,6 @@ void intel_device_info_print_static(const struct intel_device_info *info,
 	else
 		drm_printf(p, "display version: %u\n", info->display.ver);
 
-	drm_printf(p, "gt: %d\n", info->gt);
-	drm_printf(p, "memory-regions: %x\n", info->memory_regions);
-	drm_printf(p, "page-sizes: %x\n", info->page_sizes);
-	drm_printf(p, "platform: %s\n", intel_platform_name(info->platform));
-	drm_printf(p, "ppgtt-size: %d\n", info->ppgtt_size);
-	drm_printf(p, "ppgtt-type: %d\n", info->ppgtt_type);
-	drm_printf(p, "dma_mask_size: %u\n", info->dma_mask_size);
-
-#define PRINT_FLAG(name) drm_printf(p, "%s: %s\n", #name, str_yes_no(info->name))
-	DEV_INFO_FOR_EACH_FLAG(PRINT_FLAG);
-#undef PRINT_FLAG
-
-#define PRINT_FLAG(name) drm_printf(p, "%s: %s\n", #name, str_yes_no(info->display.name))
-	DEV_INFO_DISPLAY_FOR_EACH_FLAG(PRINT_FLAG);
-#undef PRINT_FLAG
-}
-
-void intel_device_info_print_runtime(const struct intel_runtime_info *info,
-				     struct drm_printer *p)
-{
 	drm_printf(p, "rawclk rate: %u kHz\n", info->rawclk_freq);
 }
 
@@ -415,8 +416,10 @@ void intel_device_info_runtime_init(struct drm_i915_private *dev_priv)
 		info->ppgtt_type = INTEL_PPGTT_NONE;
 	}
 
-	runtime->rawclk_freq = intel_read_rawclk(dev_priv);
-	drm_dbg(&dev_priv->drm, "rawclk rate: %d kHz\n", runtime->rawclk_freq);
+	if (!IS_SRIOV_VF(dev_priv)) {
+		runtime->rawclk_freq = intel_read_rawclk(dev_priv);
+		drm_dbg(&dev_priv->drm, "rawclk rate: %d kHz\n", runtime->rawclk_freq);
+	}
 
 	if (!HAS_DISPLAY(dev_priv)) {
 		dev_priv->drm.driver_features &= ~(DRIVER_MODESET |
@@ -425,6 +428,14 @@ void intel_device_info_runtime_init(struct drm_i915_private *dev_priv)
 		memset(runtime->num_sprites, 0, sizeof(runtime->num_sprites));
 		memset(runtime->num_scalers, 0, sizeof(runtime->num_scalers));
 	}
+
+	/*
+	 * Early PVC steppings don't have the GuC depriv feature. We can't
+	 * rely on the fuse on those platforms because the meaning of the
+	 * fuse bit is inverted on platforms that do have the feature.
+	 */
+	if (IS_PVC_BD_STEP(dev_priv, STEP_A0, STEP_B0))
+		info->has_guc_deprivilege = 0;
 }
 
 void intel_driver_caps_print(const struct intel_driver_caps *caps,

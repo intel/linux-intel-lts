@@ -46,6 +46,11 @@ struct intel_bw_state {
 	u8 num_active_planes[I915_MAX_PIPES];
 };
 
+/* Parameters for Qclk Geyserville (QGV) */
+struct intel_qgv_point {
+	u16 dclk, t_rp, t_rdpre, t_rc, t_ras, t_rcd;
+};
+
 #define to_intel_bw_state(x) container_of((x), struct intel_bw_state, base)
 
 struct intel_bw_state *
@@ -62,11 +67,17 @@ int intel_bw_init(struct drm_i915_private *dev_priv);
 int intel_bw_atomic_check(struct intel_atomic_state *state);
 void intel_bw_crtc_update(struct intel_bw_state *bw_state,
 			  const struct intel_crtc_state *crtc_state);
+unsigned int intel_bw_data_rate(struct drm_i915_private *dev_priv,
+				const struct intel_bw_state *bw_state);
 int icl_pcode_restrict_qgv_points(struct drm_i915_private *dev_priv,
 				  u32 points_mask);
 int intel_bw_calc_min_cdclk(struct intel_atomic_state *state,
 			    bool *need_cdclk_calc);
 int intel_bw_min_cdclk(struct drm_i915_private *i915,
 		       const struct intel_bw_state *bw_state);
+
+int intel_read_qgv_point_info(struct drm_i915_private *dev_priv,
+			      struct intel_qgv_point *sp,
+			      int point);
 
 #endif /* __INTEL_BW_H__ */

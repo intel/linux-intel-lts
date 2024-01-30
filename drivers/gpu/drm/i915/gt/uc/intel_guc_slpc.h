@@ -12,17 +12,17 @@
 struct intel_gt;
 struct drm_printer;
 
-static inline bool intel_guc_slpc_is_supported(struct intel_guc *guc)
+static inline bool intel_guc_slpc_is_supported(const struct intel_guc *guc)
 {
 	return guc->slpc.supported;
 }
 
-static inline bool intel_guc_slpc_is_wanted(struct intel_guc *guc)
+static inline bool intel_guc_slpc_is_wanted(const struct intel_guc *guc)
 {
 	return guc->slpc.selected;
 }
 
-static inline bool intel_guc_slpc_is_used(struct intel_guc *guc)
+static inline bool intel_guc_slpc_is_used(const struct intel_guc *guc)
 {
 	return intel_guc_submission_is_used(guc) && intel_guc_slpc_is_wanted(guc);
 }
@@ -38,6 +38,7 @@ int intel_guc_slpc_set_boost_freq(struct intel_guc_slpc *slpc, u32 val);
 int intel_guc_slpc_get_max_freq(struct intel_guc_slpc *slpc, u32 *val);
 int intel_guc_slpc_get_min_freq(struct intel_guc_slpc *slpc, u32 *val);
 int intel_guc_slpc_print_info(struct intel_guc_slpc *slpc, struct drm_printer *p);
+int intel_guc_slpc_set_media_ratio_mode(struct intel_guc_slpc *slpc, u32 val);
 void intel_guc_pm_intrmsk_enable(struct intel_gt *gt);
 void intel_guc_slpc_boost(struct intel_guc_slpc *slpc);
 void intel_guc_slpc_dec_waiters(struct intel_guc_slpc *slpc);

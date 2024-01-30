@@ -120,11 +120,6 @@ static void rps_timer(struct timer_list *t)
 
 			busy += div_u64(max_busy[i], 1 << i);
 		}
-		GT_TRACE(rps_to_gt(rps),
-			 "busy:%lld [%d%%], max:[%lld, %lld, %lld], interval:%d\n",
-			 busy, (int)div64_u64(100 * busy, dt),
-			 max_busy[0], max_busy[1], max_busy[2],
-			 rps->pm_interval);
 
 		if (100 * busy > rps->power.up_threshold * dt &&
 		    rps->cur_freq < rps->max_freq_softlimit) {
@@ -138,6 +133,14 @@ static void rps_timer(struct timer_list *t)
 			schedule_work(&rps->work);
 		} else {
 			rps->last_adj = 0;
+		}
+
+		if (rps->pm_interval < BUSY_MAX_EI) {
+			GT_TRACE(rps_to_gt(rps),
+				 "busy:%lld [%d%%], max:[%lld, %lld, %lld], interval:%d\n",
+				 busy, (int)div64_u64(100 * busy, dt),
+				 max_busy[0], max_busy[1], max_busy[2],
+				 rps->pm_interval);
 		}
 
 		mod_timer(&rps->timer,
@@ -989,59 +992,47 @@ int intel_rps_set_boost_frequency(struct intel_rps *rps, u32 freq)
 	}
 }
 
-void intel_rps_dec_waiters(struct intel_rps *rps)
+void intel_rps_cancel_boost(struct intel_rps *rps)
 {
-	struct intel_guc_slpc *slpc;
-
-	if (rps_uses_slpc(rps)) {
-		slpc = rps_to_slpc(rps);
-
-		intel_guc_slpc_dec_waiters(slpc);
-	} else {
+	if (rps_uses_slpc(rps))
+		intel_guc_slpc_dec_waiters(rps_to_slpc(rps));
+	else
 		atomic_dec(&rps->num_waiters);
-	}
 }
 
-void intel_rps_boost(struct i915_request *rq)
+void intel_rps_boost(struct intel_rps *rps)
 {
-	struct intel_guc_slpc *slpc;
+	if (rps_uses_slpc(rps)) {
+		struct intel_guc_slpc *slpc = rps_to_slpc(rps);
 
+		if (slpc->min_freq_softlimit < slpc->boost_freq &&
+		    !atomic_fetch_inc(&slpc->num_waiters))
+			schedule_work(&slpc->boost_work);
+
+		return;
+	}
+
+	if (atomic_fetch_inc(&rps->num_waiters))
+		return;
+
+	if (!intel_rps_is_active(rps))
+		return;
+
+	if (READ_ONCE(rps->cur_freq) < rps->boost_freq)
+		schedule_work(&rps->work);
+
+	WRITE_ONCE(rps->boosts, rps->boosts + 1); /* debug only */
+}
+
+void intel_rps_boost_for_request(struct i915_request *rq)
+{
 	if (i915_request_signaled(rq) || i915_request_has_waitboost(rq))
 		return;
 
 	/* Serializes with i915_request_retire() */
 	if (!test_and_set_bit(I915_FENCE_FLAG_BOOST, &rq->fence.flags)) {
-		struct intel_rps *rps = &READ_ONCE(rq->engine)->gt->rps;
-
-		if (rps_uses_slpc(rps)) {
-			slpc = rps_to_slpc(rps);
-
-			if (slpc->min_freq_softlimit >= slpc->boost_freq)
-				return;
-
-			/* Return if old value is non zero */
-			if (!atomic_fetch_inc(&slpc->num_waiters)) {
-				GT_TRACE(rps_to_gt(rps), "boost fence:%llx:%llx\n",
-					 rq->fence.context, rq->fence.seqno);
-				schedule_work(&slpc->boost_work);
-			}
-
-			return;
-		}
-
-		if (atomic_fetch_inc(&rps->num_waiters))
-			return;
-
-		if (!intel_rps_is_active(rps))
-			return;
-
-		GT_TRACE(rps_to_gt(rps), "boost fence:%llx:%llx\n",
-			 rq->fence.context, rq->fence.seqno);
-
-		if (READ_ONCE(rps->cur_freq) < rps->boost_freq)
-			schedule_work(&rps->work);
-
-		WRITE_ONCE(rps->boosts, rps->boosts + 1); /* debug only */
+		RQ_TRACE(rq, "rps boost\n");
+		intel_rps_boost(&READ_ONCE(rq->engine)->gt->rps);
 	}
 }
 
@@ -1999,6 +1990,9 @@ void intel_rps_init(struct intel_rps *rps)
 {
 	struct drm_i915_private *i915 = rps_to_i915(rps);
 
+	if (IS_SRIOV_VF(i915))
+		return;
+
 	if (rps_uses_slpc(rps))
 		return;
 
@@ -2013,7 +2007,9 @@ void intel_rps_init(struct intel_rps *rps)
 
 	/* Derive initial user preferences/limits from the hardware limits */
 	rps->max_freq_softlimit = rps->max_freq;
+	rps_to_gt(rps)->rps_defaults.max_freq = rps->max_freq_softlimit;
 	rps->min_freq_softlimit = rps->min_freq;
+	rps_to_gt(rps)->rps_defaults.min_freq = rps->min_freq_softlimit;
 
 	/* After setting max-softlimit, find the overclock max freq */
 	if (GRAPHICS_VER(i915) == 6 || IS_IVYBRIDGE(i915) || IS_HASWELL(i915)) {
@@ -2031,6 +2027,7 @@ void intel_rps_init(struct intel_rps *rps)
 
 	/* Finally allow us to boost to max by default */
 	rps->boost_freq = rps->max_freq;
+	rps_to_gt(rps)->rps_defaults.boost_freq = rps->boost_freq;
 	rps->idle_freq = rps->min_freq;
 
 	/* Start in the middle, from here we will autotune based on workload */
@@ -2057,6 +2054,9 @@ void intel_rps_init(struct intel_rps *rps)
 
 void intel_rps_sanitize(struct intel_rps *rps)
 {
+	if (IS_SRIOV_VF(rps_to_i915(rps)))
+		return;
+
 	if (rps_uses_slpc(rps))
 		return;
 
@@ -2069,7 +2069,12 @@ u32 intel_rps_read_rpstat(struct intel_rps *rps)
 	struct drm_i915_private *i915 = rps_to_i915(rps);
 	i915_reg_t rpstat;
 
-	rpstat = (GRAPHICS_VER(i915) >= 12) ? GEN12_RPSTAT1 : GEN6_RPSTAT1;
+	if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 70))
+		rpstat = MTL_MIRROR_TARGET_WP1;
+	else if (GRAPHICS_VER(i915) >= 12)
+		rpstat = GEN12_RPSTAT1;
+	else
+		rpstat = GEN6_RPSTAT1;
 
 	return intel_uncore_read(rps_to_gt(rps)->uncore, rpstat);
 }
@@ -2150,17 +2155,36 @@ u32 intel_rps_read_actual_frequency_fw(struct intel_rps *rps)
 	return intel_gpu_freq(rps, __read_cagf(rps, false));
 }
 
-static u32 intel_rps_read_punit_req(struct intel_rps *rps)
+u32 intel_rps_read_chiplet_frequency(struct intel_rps *rps)
 {
-	struct intel_uncore *uncore = rps_to_uncore(rps);
 	struct intel_runtime_pm *rpm = rps_to_uncore(rps)->rpm;
 	intel_wakeref_t wakeref;
-	u32 freq = 0;
+	u32 val = 0;
 
 	with_intel_runtime_pm_if_in_use(rpm, wakeref)
-		freq = intel_uncore_read(uncore, GEN6_RPNSWREQ);
+		val = intel_uncore_read_fw(rps_to_uncore(rps), GEN12_RPSTAT1);
 
-	return freq;
+	val = REG_FIELD_GET(PVC_RPSTAT1_CHIPLET_FREQ, val);
+	return intel_gpu_freq(rps, val);
+}
+
+static u32 __rps_read_mmio(struct intel_gt *gt, i915_reg_t reg32)
+{
+	intel_wakeref_t wakeref;
+	u32 val = 0;
+
+	with_intel_runtime_pm(gt->uncore->rpm, wakeref)
+		val = intel_uncore_read(gt->uncore, reg32);
+
+	return val;
+}
+
+u32 intel_rps_read_punit_req(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 pureq = __rps_read_mmio(gt, GEN6_RPNSWREQ);
+
+	return pureq;
 }
 
 static u32 intel_rps_get_req(u32 pureq)
@@ -2640,6 +2664,131 @@ void intel_rps_lower_unslice(struct intel_rps *rps)
 	}
 
 	mutex_unlock(&rps->lock);
+}
+
+u32 intel_rps_read_rapl_pl1(struct intel_rps *rps)
+{
+	struct drm_i915_private *i915 = rps_to_i915(rps);
+	struct intel_gt *gt = rps_to_gt(rps);
+	i915_reg_t rgadr;
+	u32 rapl_pl1;
+
+	if (IS_PONTEVECCHIO(i915)) {
+		rgadr = PVC_RAPL_PL1_FREQ_LIMIT;
+	} else if (IS_XEHPSDV(i915)) {
+		rgadr = XEHPSDV_RAPL_PL1_FREQ_LIMIT;
+	} else if (IS_DG1(i915) || IS_DG2(i915)) {
+		rgadr = GEN9_RAPL_PL1_FREQ_LIMIT;
+	} else {
+		MISSING_CASE(GRAPHICS_VER(i915));
+		rgadr = INVALID_MMIO_REG;
+	}
+
+	if (!i915_mmio_reg_valid(rgadr))
+		rapl_pl1 = 0;
+	else
+		rapl_pl1 = __rps_read_mmio(gt, rgadr);
+
+	return rapl_pl1;
+}
+
+u32 intel_rps_get_rapl(struct intel_rps *rps, u32 rapl_pl1)
+{
+	struct drm_i915_private *i915 = rps_to_i915(rps);
+	u32 rapl = 0;
+
+	if (IS_PONTEVECCHIO(i915) || IS_XEHPSDV(i915))
+		rapl = rapl_pl1 & RAPL_PL1_FREQ_LIMIT_MASK;
+	else if (IS_DG1(i915) || IS_DG2(i915))
+		rapl = le32_get_bits(rapl_pl1, GEN9_RAPL_PL1_FREQ_LIMIT_MASK);
+	else
+		MISSING_CASE(GRAPHICS_VER(i915));
+
+	return rapl;
+}
+
+u32 intel_rps_read_rapl_pl1_frequency(struct intel_rps *rps)
+{
+	u32 rapl_freq = intel_rps_get_rapl(rps, intel_rps_read_rapl_pl1(rps));
+
+	return (rapl_freq >> 8) * GT_FREQUENCY_MULTIPLIER;
+}
+
+static u32 read_perf_limit_reasons(struct intel_gt *gt)
+{
+	return __rps_read_mmio(gt, intel_gt_perf_limit_reasons_reg(gt));
+}
+
+u32 intel_rps_read_throttle_reason_status(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 status = read_perf_limit_reasons(gt) & GT0_PERF_LIMIT_REASONS_MASK;
+
+	return status;
+}
+
+u32 intel_rps_read_throttle_reason_pl1(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 pl1 = read_perf_limit_reasons(gt) & POWER_LIMIT_1_MASK;
+
+	return pl1;
+}
+
+u32 intel_rps_read_throttle_reason_pl2(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 pl2 = read_perf_limit_reasons(gt) & POWER_LIMIT_2_MASK;
+
+	return pl2;
+}
+
+u32 intel_rps_read_throttle_reason_pl4(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 pl4 = read_perf_limit_reasons(gt) & POWER_LIMIT_4_MASK;
+
+	return pl4;
+}
+
+u32 intel_rps_read_throttle_reason_thermal(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 thermal = read_perf_limit_reasons(gt) & THERMAL_LIMIT_MASK;
+
+	return thermal;
+}
+
+u32 intel_rps_read_throttle_reason_prochot(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 prochot = read_perf_limit_reasons(gt) & PROCHOT_MASK;
+
+	return prochot;
+}
+
+u32 intel_rps_read_throttle_reason_ratl(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 ratl = read_perf_limit_reasons(gt) & RATL_MASK;
+
+	return ratl;
+}
+
+u32 intel_rps_read_throttle_reason_vr_thermalert(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 thermalert = read_perf_limit_reasons(gt) & VR_THERMALERT_MASK;
+
+	return thermalert;
+}
+
+u32 intel_rps_read_throttle_reason_vr_tdc(struct intel_rps *rps)
+{
+	struct intel_gt *gt = rps_to_gt(rps);
+	u32 tdc = read_perf_limit_reasons(gt) & VR_TDC_MASK;
+
+	return tdc;
 }
 
 /* External interface for intel_ips.ko */

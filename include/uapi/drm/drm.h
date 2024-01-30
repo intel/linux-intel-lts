@@ -836,6 +836,26 @@ struct drm_get_cap {
  */
 #define DRM_CLIENT_CAP_WRITEBACK_CONNECTORS	5
 
+/**
+ * DRM_CLIENT_CAP_ADVANCE_GAMMA_MODES
+ *
+ * Add support for advance gamma mode UAPI
+ * If set to 1, DRM will enable advance gamma mode
+ * UAPI to process the gamma mode based on extended
+ * range and segments.
+ */
+#define DRM_CLIENT_CAP_ADVANCE_GAMMA_MODES     6
+
+/**
+ * DRM_CLIENT_CAP_ADVANCE_DEGAMMA_MODES
+ *
+ * Add support for advance degamma mode UAPI
+ * If set to 1, DRM will enable advance degamma mode
+ * UAPI to process degamma mode with 64 bit LUT
+ * values
+ */
+#define DRM_CLIENT_CAP_ADVANCE_DEGAMMA_MODES     7
+
 /* DRM_IOCTL_SET_CLIENT_CAP ioctl argument type */
 struct drm_set_client_cap {
 	__u64 capability;

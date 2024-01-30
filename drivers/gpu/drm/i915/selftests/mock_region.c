@@ -3,54 +3,32 @@
  * Copyright © 2019-2021 Intel Corporation
  */
 
-#include <drm/ttm/ttm_placement.h>
 #include <linux/scatterlist.h>
 
 #include <drm/ttm/ttm_placement.h>
 
 #include "gem/i915_gem_region.h"
 #include "intel_memory_region.h"
-#include "intel_region_ttm.h"
 
 #include "mock_region.h"
 
-static void mock_region_put_pages(struct drm_i915_gem_object *obj,
-				  struct sg_table *pages)
+static int mock_region_put_pages(struct drm_i915_gem_object *obj,
+				 struct sg_table *pages)
 {
-	intel_region_ttm_resource_free(obj->mm.region, obj->mm.res);
-	sg_free_table(pages);
-	kfree(pages);
+	return i915_gem_object_put_pages_buddy(obj, pages, true);
 }
 
 static int mock_region_get_pages(struct drm_i915_gem_object *obj)
 {
-	unsigned int flags;
 	struct sg_table *pages;
-	int err;
+	unsigned int sizes;
 
-	flags = I915_ALLOC_MIN_PAGE_SIZE;
-	if (obj->flags & I915_BO_ALLOC_CONTIGUOUS)
-		flags |= TTM_PL_FLAG_CONTIGUOUS;
+	pages = i915_gem_object_get_pages_buddy(obj, &sizes);
+	if (IS_ERR(pages))
+		return PTR_ERR(pages);
 
-	obj->mm.res = intel_region_ttm_resource_alloc(obj->mm.region,
-						      obj->base.size,
-						      flags);
-	if (IS_ERR(obj->mm.res))
-		return PTR_ERR(obj->mm.res);
-
-	pages = intel_region_ttm_resource_to_st(obj->mm.region, obj->mm.res);
-	if (IS_ERR(pages)) {
-		err = PTR_ERR(pages);
-		goto err_free_resource;
-	}
-
-	__i915_gem_object_set_pages(obj, pages, i915_sg_dma_sizes(pages->sgl));
-
+	__i915_gem_object_set_pages(obj, pages, sizes);
 	return 0;
-
-err_free_resource:
-	intel_region_ttm_resource_free(obj->mm.region, obj->mm.res);
-	return err;
 }
 
 static const struct drm_i915_gem_object_ops mock_region_obj_ops = {
@@ -83,6 +61,7 @@ static int mock_object_init(struct intel_memory_region *mem,
 	return 0;
 }
 
+#if 0
 static void mock_region_fini(struct intel_memory_region *mem)
 {
 	struct drm_i915_private *i915 = mem->i915;
@@ -91,30 +70,32 @@ static void mock_region_fini(struct intel_memory_region *mem)
 	intel_region_ttm_fini(mem);
 	ida_free(&i915->selftest.mock_region_instances, instance);
 }
+#endif
+
+static int mock_init_region(struct intel_memory_region *mem)
+{
+	return intel_memory_region_init_buddy(mem,
+					      mem->region.start,
+					      mem->region.end + 1,
+					      PAGE_SIZE);
+}
 
 static const struct intel_memory_region_ops mock_region_ops = {
-	.init = intel_region_ttm_init,
-	.release = mock_region_fini,
+	.init = mock_init_region,
+	.release = intel_memory_region_release_buddy,
 	.init_object = mock_object_init,
 };
 
 struct intel_memory_region *
-mock_region_create(struct drm_i915_private *i915,
+mock_region_create(struct intel_gt *gt,
 		   resource_size_t start,
 		   resource_size_t size,
 		   resource_size_t min_page_size,
 		   resource_size_t io_start,
 		   resource_size_t io_size)
 {
-	int instance = ida_alloc_max(&i915->selftest.mock_region_instances,
-				     TTM_NUM_MEM_TYPES - TTM_PL_PRIV - 1,
-				     GFP_KERNEL);
-
-	if (instance < 0)
-		return ERR_PTR(instance);
-
-	return intel_memory_region_create(i915, start, size, min_page_size,
+	return intel_memory_region_create(gt, start, size, min_page_size,
 					  io_start, io_size,
-					  INTEL_MEMORY_MOCK, instance,
+					  INTEL_MEMORY_MOCK, 0,
 					  &mock_region_ops);
 }

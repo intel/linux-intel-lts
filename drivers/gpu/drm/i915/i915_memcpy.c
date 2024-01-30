@@ -24,6 +24,7 @@
 
 #include <linux/kernel.h>
 #include <asm/fpu/api.h>
+#include <linux/iosys-map.h>
 
 #include "i915_memcpy.h"
 
@@ -165,4 +166,32 @@ void i915_memcpy_init_early(struct drm_i915_private *dev_priv)
 	if (static_cpu_has(X86_FEATURE_XMM4_1) &&
 	    !boot_cpu_has(X86_FEATURE_HYPERVISOR))
 		static_branch_enable(&has_movntdqa);
+}
+
+/**
+ * i915_memcpy_iosys_map: perform a memcpy between address in smap to dmap
+ * @dmap: destination iosys map pointer
+ * @src: source iosysmap pointer
+ * @len: how many bytes to copy
+ *
+ * i915_memcpy_iosys_map copies @len bytes from adress in @smap to @dmap
+ * Note that vaddr in smap and dmap must be aligned to 16 bytes and
+ * @len must be a multiple of 16.
+ *
+ */
+void i915_memcpy_iosys_map(struct iosys_map *dmap,
+			struct iosys_map *smap, unsigned long len)
+{
+	WARN_ON(!IS_ALIGNED((uintptr_t)smap->vaddr, 16));
+	WARN_ON(!IS_ALIGNED((uintptr_t)dmap->vaddr, 16));
+	WARN_ON(!IS_ALIGNED(len, 16));
+
+	/* a performance optimization */
+	if (!smap->is_iomem) {
+		if (!i915_memcpy_from_wc(dmap->vaddr_iomem, smap->vaddr, len))
+			iosys_map_memcpy_to(dmap, 0, smap->vaddr, len);
+	} else {
+		iosys_map_memcpy_from(dmap->vaddr, smap, 0, len);
+	}
+
 }

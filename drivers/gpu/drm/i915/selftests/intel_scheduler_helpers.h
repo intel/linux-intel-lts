@@ -22,6 +22,7 @@ struct intel_selftest_saved_policy {
 enum selftest_scheduler_modify {
 	SELFTEST_SCHEDULER_MODIFY_NO_HANGCHECK = 0,
 	SELFTEST_SCHEDULER_MODIFY_FAST_RESET,
+	SELFTEST_SCHEDULER_MODIFY_ENGINE_RESET,
 };
 
 struct intel_engine_cs *intel_selftest_find_any_engine(struct intel_gt *gt);

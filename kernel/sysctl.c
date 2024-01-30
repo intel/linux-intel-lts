@@ -2931,6 +2931,17 @@ static struct ctl_table vm_table[] = {
 	},
 
 #endif /* CONFIG_COMPACTION */
+
+#ifdef CONFIG_NUMA_BALANCING
+	{
+		.procname	= "numa_rebalance",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0200,
+		.proc_handler	= sysctl_numa_rebalance_handler,
+	},
+#endif
+
 	{
 		.procname	= "min_free_kbytes",
 		.data		= &min_free_kbytes,

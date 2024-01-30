@@ -6,17 +6,16 @@
 #ifndef INTEL_GT_REQUESTS_H
 #define INTEL_GT_REQUESTS_H
 
-#include <stddef.h>
+#include <linux/types.h>
 
 struct intel_engine_cs;
 struct intel_gt;
 struct intel_timeline;
 
-long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout,
-				      long *remaining_timeout);
+bool intel_gt_retire_requests_timeout(struct intel_gt *gt, long *timeout);
 static inline void intel_gt_retire_requests(struct intel_gt *gt)
 {
-	intel_gt_retire_requests_timeout(gt, 0, NULL);
+	intel_gt_retire_requests_timeout(gt, NULL);
 }
 
 void intel_engine_init_retire(struct intel_engine_cs *engine);

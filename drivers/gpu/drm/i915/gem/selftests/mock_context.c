@@ -28,6 +28,8 @@ mock_context(struct drm_i915_private *i915,
 	spin_lock_init(&ctx->stale.lock);
 	INIT_LIST_HEAD(&ctx->stale.engines);
 
+	init_waitqueue_head(&ctx->user_fence_wq);
+
 	i915_gem_context_set_persistence(ctx);
 
 	mutex_init(&ctx->engines_mutex);
@@ -78,13 +80,13 @@ void mock_init_contexts(struct drm_i915_private *i915)
 }
 
 struct i915_gem_context *
-live_context(struct drm_i915_private *i915, struct file *file)
+live_gt_context(struct intel_gt *gt, struct file *file)
 {
 	struct i915_gem_context *ctx;
 	int err;
 	u32 id;
 
-	ctx = i915_gem_create_context(i915, 0);
+	ctx = i915_gem_context_create_for_gt(gt, 0);
 	if (IS_ERR(ctx))
 		return ctx;
 
@@ -102,6 +104,12 @@ err_ctx:
 }
 
 struct i915_gem_context *
+live_context(struct drm_i915_private *i915, struct file *file)
+{
+	return live_gt_context(to_gt(i915), file);
+}
+
+struct i915_gem_context *
 live_context_for_engine(struct intel_engine_cs *engine, struct file *file)
 {
 	struct i915_gem_engines *engines;
@@ -112,7 +120,7 @@ live_context_for_engine(struct intel_engine_cs *engine, struct file *file)
 	if (!engines)
 		return ERR_PTR(-ENOMEM);
 
-	ctx = live_context(engine->i915, file);
+	ctx = live_gt_context(engine->gt, file);
 	if (IS_ERR(ctx)) {
 		__free_engines(engines, 0);
 		return ctx;
@@ -143,7 +151,7 @@ kernel_context(struct drm_i915_private *i915)
 {
 	struct i915_gem_context *ctx;
 
-	ctx = i915_gem_create_context(i915, 0);
+	ctx = i915_gem_context_create_for_gt(to_gt(i915), 0);
 	if (IS_ERR(ctx))
 		return ctx;
 

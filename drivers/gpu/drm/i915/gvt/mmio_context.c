@@ -108,7 +108,7 @@ static struct engine_mmio gen9_engine_mmio_list[] __cacheline_aligned = {
 	{RCS0, GEN9_CS_DEBUG_MODE1, 0xffff, false}, /* 0x20ec */
 	{RCS0, _MMIO(0xb118), 0, false}, /* GEN8_L3SQCREG4 */
 	{RCS0, _MMIO(0xb11c), 0, false}, /* GEN9_SCRATCH1 */
-	{RCS0, GEN9_SCRATCH_LNCF1, 0, false}, /* 0xb008 */
+	{RCS0, _MMIO(0xb008), 0, false}, /* GEN9_SCRATCH_LNCF1 */
 	{RCS0, GEN7_HALF_SLICE_CHICKEN1, 0xffff, true}, /* 0xe100 */
 	{RCS0, _MMIO(0xe180), 0xffff, true}, /* HALF_SLICE_CHICKEN2 */
 	{RCS0, _MMIO(0xe184), 0xffff, true}, /* GEN8_HALF_SLICE_CHICKEN3 */
@@ -142,7 +142,7 @@ static struct engine_mmio gen9_engine_mmio_list[] __cacheline_aligned = {
 	{RCS0, GEN9_CSFE_CHICKEN1_RCS, 0xffff, false}, /* 0x20d4 */
 	{RCS0, _MMIO(0x20D8), 0xffff, true}, /* 0x20d8 */
 
-	{RCS0, GEN8_GARBCNTL, 0x0, false}, /* 0xb004 */
+	{RCS0, _MMIO(0xb004), 0x0, false}, /* 0xb004 */
 	{RCS0, GEN7_FF_THREAD_MODE, 0x0, false}, /* 0x20a0 */
 	{RCS0, FF_SLICE_CS_CHICKEN2, 0xffff, false}, /* 0x20e4 */
 	{RCS0, INVALID_MMIO_REG, 0, false } /* Terminated */

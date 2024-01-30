@@ -44,4 +44,6 @@ struct i915_active {
 	struct llist_head preallocated_barriers;
 };
 
+#define IDLE_BARRIER ERR_PTR(-EPERM)
+
 #endif /* _I915_ACTIVE_TYPES_H_ */

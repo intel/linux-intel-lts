@@ -1275,6 +1275,7 @@ static struct mei_cl_device *mei_cl_bus_dev_alloc(struct mei_device *bus,
 	mei_cl_bus_set_name(cldev);
 	cldev->is_added   = 0;
 	INIT_LIST_HEAD(&cldev->bus_list);
+	device_enable_async_suspend(&cldev->dev);
 
 	return cldev;
 }
@@ -1329,6 +1330,7 @@ static int mei_cl_bus_dev_add(struct mei_cl_device *cldev)
  */
 static void mei_cl_bus_dev_stop(struct mei_cl_device *cldev)
 {
+	cldev->do_match = 0;
 	if (cldev->is_added)
 		device_release_driver(&cldev->dev);
 }

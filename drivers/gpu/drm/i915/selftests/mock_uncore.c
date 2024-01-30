@@ -39,11 +39,23 @@ __nop_read(16)
 __nop_read(32)
 __nop_read(64)
 
-void mock_uncore_init(struct intel_uncore *uncore,
+int mock_uncore_init(struct intel_uncore *uncore,
 		      struct drm_i915_private *i915)
 {
 	intel_uncore_init_early(uncore, to_gt(i915));
 
 	ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, nop);
 	ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, nop);
+
+	uncore->regs = kzalloc(4 * 1024 * 1024, GFP_KERNEL);
+	if (uncore->regs)
+		return 0;
+	return -ENOMEM;
+}
+
+void mock_uncore_uninit(struct intel_uncore *uncore,
+			struct drm_i915_private *i915)
+{
+	if (uncore->regs)
+		kfree(uncore->regs);
 }

@@ -32,6 +32,8 @@ int igt_flush_test(struct drm_i915_private *i915)
 				  __builtin_return_address(0));
 			GEM_TRACE_DUMP();
 
+			intel_klog_error_capture(gt, ALL_ENGINES);
+
 			intel_gt_set_wedged(gt);
 			ret = -EIO;
 		}

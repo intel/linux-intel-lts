@@ -18,6 +18,7 @@
 #include "intel_gt_types.h"
 #include "intel_timeline.h"
 #include "intel_workarounds.h"
+#include "uc/intel_guc_submission.h"
 
 struct drm_printer;
 struct intel_context;
@@ -169,9 +170,15 @@ intel_write_status_page(struct intel_engine_cs *engine, int reg, u32 value)
 #define I915_GEM_HWS_PREEMPT_ADDR	(I915_GEM_HWS_PREEMPT * sizeof(u32))
 #define I915_GEM_HWS_SEQNO		0x40
 #define I915_GEM_HWS_SEQNO_ADDR		(I915_GEM_HWS_SEQNO * sizeof(u32))
-#define I915_GEM_HWS_MIGRATE		(0x42 * sizeof(u32))
+#define I915_GEM_HWS_MIGRATE		(0x42 * sizeof(u32)) /* XXX: NOT USED */
+#define I915_GEM_HWS_BLITTER		0x42
+#define I915_GEM_HWS_BLITTER_ADDR	(I915_GEM_HWS_BLITTER * sizeof(u32))
+#define I915_GEM_HWS_BIND		0x46
+#define I915_GEM_HWS_BIND_ADDR		(I915_GEM_HWS_BIND * sizeof(u32))
 #define I915_GEM_HWS_PXP		0x60
 #define I915_GEM_HWS_PXP_ADDR		(I915_GEM_HWS_PXP * sizeof(u32))
+#define I915_GEM_HWS_GSC		0x62
+#define I915_GEM_HWS_GSC_ADDR		(I915_GEM_HWS_GSC * sizeof(u32))
 #define I915_GEM_HWS_SCRATCH		0x80
 
 #define I915_HWS_CSB_BUF0_INDEX		0x10
@@ -193,6 +200,7 @@ void intel_engines_free(struct intel_gt *gt);
 
 int intel_engine_init_common(struct intel_engine_cs *engine);
 void intel_engine_cleanup_common(struct intel_engine_cs *engine);
+void intel_engine_quiesce(struct intel_engine_cs *engine);
 
 int intel_engine_resume(struct intel_engine_cs *engine);
 
@@ -224,7 +232,6 @@ static inline void __intel_engine_reset(struct intel_engine_cs *engine,
 	engine->serial++; /* contexts lost */
 }
 
-bool intel_engines_are_idle(struct intel_gt *gt);
 bool intel_engine_is_idle(struct intel_engine_cs *engine);
 
 void __intel_engine_flush_submission(struct intel_engine_cs *engine, bool sync);
@@ -241,15 +248,12 @@ __printf(3, 4)
 void intel_engine_dump(struct intel_engine_cs *engine,
 		       struct drm_printer *m,
 		       const char *header, ...);
-void intel_engine_dump_active_requests(struct list_head *requests,
-				       struct i915_request *hung_rq,
-				       struct drm_printer *m);
 
 ktime_t intel_engine_get_busy_time(struct intel_engine_cs *engine,
 				   ktime_t *now);
 
 struct i915_request *
-intel_engine_execlist_find_hung_request(struct intel_engine_cs *engine);
+intel_engine_find_active_request(struct intel_engine_cs *engine);
 
 u32 intel_engine_context_size(struct intel_gt *gt, u8 class);
 struct intel_context *
@@ -322,6 +326,24 @@ intel_engine_has_heartbeat(const struct intel_engine_cs *engine)
 		return READ_ONCE(engine->props.heartbeat_interval_ms);
 }
 
+static inline struct intel_context *
+intel_engine_clone_virtual(struct intel_engine_cs *src)
+{
+	GEM_BUG_ON(!intel_engine_is_virtual(src));
+	return src->cops->clone_virtual(src);
+}
+
+static inline int
+intel_engine_attach_bond(struct intel_engine_cs *engine,
+			 const struct intel_engine_cs *master,
+			 const struct intel_engine_cs *sibling)
+{
+	if (!engine->cops->attach_bond)
+		return 0;
+
+	return engine->cops->attach_bond(engine, master, sibling);
+}
+
 static inline struct intel_engine_cs *
 intel_engine_get_sibling(struct intel_engine_cs *engine, unsigned int sibling)
 {
@@ -353,5 +375,8 @@ u64 intel_clamp_max_busywait_duration_ns(struct intel_engine_cs *engine, u64 val
 u64 intel_clamp_preempt_timeout_ms(struct intel_engine_cs *engine, u64 value);
 u64 intel_clamp_stop_timeout_ms(struct intel_engine_cs *engine, u64 value);
 u64 intel_clamp_timeslice_duration_ms(struct intel_engine_cs *engine, u64 value);
+
+void
+intel_engine_reset_failed_uevent(struct intel_engine_cs *engine);
 
 #endif /* _INTEL_RINGBUFFER_H_ */

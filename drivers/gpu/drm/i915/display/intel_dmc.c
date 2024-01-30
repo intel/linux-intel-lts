@@ -48,9 +48,13 @@
 	__stringify(major) "_"		 \
 	__stringify(minor) ".bin"
 
+#define XELPDP_DMC_MAX_FW_SIZE          0x7000
 #define DISPLAY_VER13_DMC_MAX_FW_SIZE	0x20000
-
 #define DISPLAY_VER12_DMC_MAX_FW_SIZE	ICL_DMC_MAX_FW_SIZE
+
+#define MTL_DMC_PATH			DMC_PATH(mtl, 2, 12)
+#define MTL_DMC_VERSION_REQUIRED	DMC_VERSION(2, 12)
+MODULE_FIRMWARE(MTL_DMC_PATH);
 
 #define DG2_DMC_PATH			DMC_PATH(dg2, 2, 07)
 #define DG2_DMC_VERSION_REQUIRED	DMC_VERSION(2, 07)
@@ -941,7 +945,11 @@ void intel_dmc_ucode_init(struct drm_i915_private *dev_priv)
 	 */
 	intel_dmc_runtime_pm_get(dev_priv);
 
-	if (IS_DG2(dev_priv)) {
+	if (IS_METEORLAKE(dev_priv)) {
+		dmc->fw_path = MTL_DMC_PATH;
+		dmc->required_version = MTL_DMC_VERSION_REQUIRED;
+		dmc->max_fw_size = XELPDP_DMC_MAX_FW_SIZE;
+	} else if (IS_DG2(dev_priv)) {
 		dmc->fw_path = DG2_DMC_PATH;
 		dmc->required_version = DG2_DMC_VERSION_REQUIRED;
 		dmc->max_fw_size = DISPLAY_VER13_DMC_MAX_FW_SIZE;

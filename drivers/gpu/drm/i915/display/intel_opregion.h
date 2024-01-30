@@ -35,6 +35,7 @@ struct opregion_header;
 struct opregion_acpi;
 struct opregion_swsci;
 struct opregion_asle;
+struct i915_opregion_func;
 
 struct intel_opregion {
 	struct opregion_header *header;
@@ -43,9 +44,12 @@ struct intel_opregion {
 	u32 swsci_gbda_sub_functions;
 	u32 swsci_sbcb_sub_functions;
 	struct opregion_asle *asle;
+	const struct i915_opregion_func *opregion_func;
+	resource_size_t asls;
 	void *rvda;
 	void *vbt_firmware;
 	const void *vbt;
+	const void *dgfx_oprom_opreg;
 	u32 vbt_size;
 	u32 *lid_state;
 	struct work_struct asle_work;
@@ -56,8 +60,7 @@ struct intel_opregion {
 
 #ifdef CONFIG_ACPI
 
-int intel_opregion_setup(struct drm_i915_private *dev_priv);
-
+int intel_opregion_init(struct drm_i915_private *i915);
 void intel_opregion_register(struct drm_i915_private *dev_priv);
 void intel_opregion_unregister(struct drm_i915_private *dev_priv);
 
@@ -76,7 +79,7 @@ bool intel_opregion_headless_sku(struct drm_i915_private *i915);
 
 #else /* CONFIG_ACPI*/
 
-static inline int intel_opregion_setup(struct drm_i915_private *dev_priv)
+static inline int intel_opregion_init(struct drm_i915_private *i915)
 {
 	return 0;
 }

@@ -32,32 +32,28 @@ i915_vm_to_dpt(struct i915_address_space *vm)
 
 #define dpt_total_entries(dpt) ((dpt)->vm.total >> PAGE_SHIFT)
 
-static void gen8_set_pte(void __iomem *addr, gen8_pte_t pte)
-{
-	writeq(pte, addr);
-}
-
 static void dpt_insert_page(struct i915_address_space *vm,
 			    dma_addr_t addr,
 			    u64 offset,
-			    enum i915_cache_level level,
+			    unsigned int pat_index,
 			    u32 flags)
 {
 	struct i915_dpt *dpt = i915_vm_to_dpt(vm);
 	gen8_pte_t __iomem *base = dpt->iomem;
 
 	gen8_set_pte(base + offset / I915_GTT_PAGE_SIZE,
-		     vm->pte_encode(addr, level, flags));
+		     vm->pte_encode(addr, pat_index, flags));
 }
 
 static void dpt_insert_entries(struct i915_address_space *vm,
+			       struct i915_vm_pt_stash *stash,
 			       struct i915_vma *vma,
-			       enum i915_cache_level level,
+			       unsigned int pat_index,
 			       u32 flags)
 {
 	struct i915_dpt *dpt = i915_vm_to_dpt(vm);
 	gen8_pte_t __iomem *base = dpt->iomem;
-	const gen8_pte_t pte_encode = vm->pte_encode(0, level, flags);
+	const gen8_pte_t pte_encode = vm->pte_encode(0, pat_index, flags);
 	struct sgt_iter sgt_iter;
 	dma_addr_t addr;
 	int i;
@@ -67,7 +63,7 @@ static void dpt_insert_entries(struct i915_address_space *vm,
 	 * not to allow the user to override access to a read only page.
 	 */
 
-	i = vma->node.start / I915_GTT_PAGE_SIZE;
+	i = i915_vma_offset(vma) / I915_GTT_PAGE_SIZE;
 	for_each_sgt_daddr(addr, sgt_iter, vma->pages)
 		gen8_set_pte(&base[i++], pte_encode | addr);
 }
@@ -80,7 +76,7 @@ static void dpt_clear_range(struct i915_address_space *vm,
 static void dpt_bind_vma(struct i915_address_space *vm,
 			 struct i915_vm_pt_stash *stash,
 			 struct i915_vma *vma,
-			 enum i915_cache_level cache_level,
+			 unsigned int pat_index,
 			 u32 flags)
 {
 	struct drm_i915_gem_object *obj = vma->obj;
@@ -93,9 +89,8 @@ static void dpt_bind_vma(struct i915_address_space *vm,
 	if (i915_gem_object_is_lmem(obj))
 		pte_flags |= PTE_LM;
 
-	vma->vm->insert_entries(vma->vm, vma, cache_level, pte_flags);
-
-	vma->page_sizes.gtt = I915_GTT_PAGE_SIZE;
+	vma->vm->insert_entries(vma->vm, stash, vma, pat_index, pte_flags);
+	vma->page_sizes = I915_GTT_PAGE_SIZE;
 
 	/*
 	 * Without aliasing PPGTT there's no difference between
@@ -107,7 +102,7 @@ static void dpt_bind_vma(struct i915_address_space *vm,
 
 static void dpt_unbind_vma(struct i915_address_space *vm, struct i915_vma *vma)
 {
-	vm->clear_range(vm, vma->node.start, vma->size);
+	vm->clear_range(vm, i915_vma_offset(vma), vma->size);
 }
 
 static void dpt_cleanup(struct i915_address_space *vm)
@@ -139,7 +134,7 @@ struct i915_vma *intel_dpt_pin(struct i915_address_space *vm)
 		if (err)
 			continue;
 
-		vma = i915_gem_object_ggtt_pin_ww(dpt->obj, &ww, NULL, 0, 4096,
+		vma = i915_gem_object_ggtt_pin_ww(dpt->obj, &ww, vm->gt->ggtt, NULL, 0, 4096,
 						  pin_flags);
 		if (IS_ERR(vma)) {
 			err = PTR_ERR(vma);
@@ -241,7 +236,7 @@ intel_dpt_create(struct intel_framebuffer *fb)
 	struct i915_address_space *vm;
 	struct i915_dpt *dpt;
 	size_t size;
-	int ret;
+	int err;
 
 	if (intel_fb_needs_pot_stride_remap(fb))
 		size = intel_remapped_info_size(&fb->remapped_view.gtt.remapped);
@@ -250,7 +245,7 @@ intel_dpt_create(struct intel_framebuffer *fb)
 
 	size = round_up(size * sizeof(gen8_pte_t), I915_GTT_PAGE_SIZE);
 
-	dpt_obj = i915_gem_object_create_lmem(i915, size, I915_BO_ALLOC_CONTIGUOUS);
+	dpt_obj = i915_gem_object_create_lmem(i915, size, 0);
 	if (IS_ERR(dpt_obj) && i915_ggtt_has_aperture(to_gt(i915)->ggtt))
 		dpt_obj = i915_gem_object_create_stolen(i915, size);
 	if (IS_ERR(dpt_obj) && !HAS_LMEM(i915)) {
@@ -260,15 +255,7 @@ intel_dpt_create(struct intel_framebuffer *fb)
 	if (IS_ERR(dpt_obj))
 		return ERR_CAST(dpt_obj);
 
-	ret = i915_gem_object_lock_interruptible(dpt_obj, NULL);
-	if (!ret) {
-		ret = i915_gem_object_set_cache_level(dpt_obj, I915_CACHE_NONE);
-		i915_gem_object_unlock(dpt_obj);
-	}
-	if (ret) {
-		i915_gem_object_put(dpt_obj);
-		return ERR_PTR(ret);
-	}
+	i915_gem_object_set_cache_coherency(dpt_obj, I915_CACHE_NONE);
 
 	dpt = kzalloc(sizeof(*dpt), GFP_KERNEL);
 	if (!dpt) {
@@ -284,7 +271,11 @@ intel_dpt_create(struct intel_framebuffer *fb)
 	vm->total = (size / sizeof(gen8_pte_t)) * I915_GTT_PAGE_SIZE;
 	vm->is_dpt = true;
 
-	i915_address_space_init(vm, VM_CLASS_DPT);
+	err = i915_address_space_init(vm, VM_CLASS_DPT);
+	if (err) {
+		i915_gem_object_put(dpt_obj);
+		return ERR_PTR(err);
+	}
 
 	vm->insert_page = dpt_insert_page;
 	vm->clear_range = dpt_clear_range;
@@ -296,7 +287,7 @@ intel_dpt_create(struct intel_framebuffer *fb)
 	vm->vma_ops.set_pages   = ggtt_set_pages;
 	vm->vma_ops.clear_pages = clear_pages;
 
-	vm->pte_encode = gen8_ggtt_pte_encode;
+	vm->pte_encode = vm->gt->ggtt->vm.pte_encode;
 
 	dpt->obj = dpt_obj;
 

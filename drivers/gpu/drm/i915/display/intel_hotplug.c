@@ -389,6 +389,13 @@ static void i915_hotplug_work_func(struct work_struct *work)
 
 	spin_unlock_irq(&dev_priv->irq_lock);
 
+	/* Skip calling encode hotplug handlers if ignore long HPD set*/
+	if (dev_priv->hotplug.ignore_long_hpd) {
+		drm_dbg_kms(&dev_priv->drm, "Ignore HPD flag on - skip encoder hotplug handlers\n");
+		mutex_unlock(&dev->mode_config.mutex);
+		return;
+	}
+
 	drm_connector_list_iter_begin(dev, &conn_iter);
 	for_each_intel_connector_iter(connector, &conn_iter) {
 		enum hpd_pin pin;

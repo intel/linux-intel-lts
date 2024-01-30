@@ -26,9 +26,56 @@
 #include "i915_scheduler.h"
 
 struct drm_i915_private;
-struct i915_vma_compress;
+struct i915_page_compress;
 struct intel_engine_capture_vma;
 struct intel_overlay_error_state;
+
+struct i915_compressed_pages {
+	int num_pages;
+	int page_count;
+	int unused;
+	u32 *pages[0];
+};
+
+struct i915_uuid_resource {
+	/* This is for internal tracking.
+	 * During error handler the whole structure is passed
+	 * to error dump which holds data structure for a while.
+	 * Use i915_uuid_get() and i915_uuid_put() for this.
+	 */
+	struct kref ref;
+	/* Helps keep track if someting depends on this uuid */
+	atomic_t bind_count;
+
+	/* String formatted like "%08x-%04x-%04x-%04x-%012x" */
+	char uuid[36];
+	/* Predefined or previously registered UUID indicating class */
+	u32 uuid_class;
+	/* Copy of the CPU memory payload associated with UUID */
+	void *ptr;
+	/* Length of the payload in bytes */
+	u64 size;
+	u32 handle;
+};
+
+struct i915_uuid_resource_coredump {
+	struct i915_uuid_resource_coredump *next;
+	/* UUID of the resource */
+	char uuid[36];
+	/* UUID of the class this is instance of. 0 means base */
+	char class[36];
+
+	bool string_class;
+	union {
+		char *str;
+		struct i915_compressed_pages *cpages;
+	};
+};
+
+struct i915_vma_metadata_coredump {
+	char uuid[36]; /* String formatted like "%08x-%04x-%04x-%04x-%012x" */
+	struct i915_vma_metadata_coredump *next;
+};
 
 struct i915_vma_coredump {
 	struct i915_vma_coredump *next;
@@ -39,10 +86,8 @@ struct i915_vma_coredump {
 	u64 gtt_size;
 	u32 gtt_page_sizes;
 
-	int num_pages;
-	int page_count;
-	int unused;
-	u32 *pages[];
+	struct i915_compressed_pages *cpages;
+	struct i915_vma_metadata_coredump *metadata;
 };
 
 struct i915_request_coredump {
@@ -62,10 +107,10 @@ struct intel_engine_coredump {
 
 	bool hung;
 	bool simulated;
-	u32 reset_count;
+	int reset_count;
 
 	/* position of active request inside the ring */
-	u32 rq_head, rq_post, rq_tail;
+	u32 rq_head, rq_post, rq_tail, vm_poison;
 
 	/* Register state */
 	u32 ccid;
@@ -84,6 +129,7 @@ struct intel_engine_coredump {
 	u64 bbaddr;
 	u64 acthd;
 	u32 fault_reg;
+	u32 ctxt_sr_ctl;
 	u64 faddr;
 	u32 rc_psmi; /* sleep state */
 	u32 nopid;
@@ -103,13 +149,16 @@ struct intel_engine_coredump {
 		char comm[TASK_COMM_LEN];
 
 		u64 total_runtime;
-		u32 avg_runtime;
+		u64 avg_runtime;
 
 		pid_t pid;
 		int active;
 		int guilty;
 		struct i915_sched_attr sched_attr;
 		u32 hwsp_seqno;
+		bool sip_installed;
+
+		struct i915_uuid_resource_coredump *uuid_dump;
 	} context;
 
 	struct i915_vma_coredump *vma;
@@ -137,12 +186,28 @@ struct intel_ctb_coredump {
 	u32 size;
 };
 
+struct intel_eu_attentions {
+#define ES_MAX_EUS 1024
+#define ES_MAX_THREADS 8
+
+	u8 att[ES_MAX_EUS * ES_MAX_THREADS / BITS_PER_BYTE];
+	unsigned int size;
+	ktime_t ts;
+};
+
+static inline unsigned int
+intel_eu_attentions_count(const struct intel_eu_attentions *a)
+{
+	return bitmap_weight((void *)a->att, a->size * BITS_PER_BYTE);
+}
+
 struct intel_gt_coredump {
 	const struct intel_gt *_gt;
 	bool awake;
 	bool simulated;
 
 	struct intel_gt_info info;
+	u32 engines_reset_count;
 
 	/* Generic register state */
 	u32 eir;
@@ -164,6 +229,7 @@ struct intel_gt_coredump {
 	u32 gam_done; /* gen12 */
 	u32 clock_frequency;
 	u32 clock_period_ns;
+	u32 eu_global_sip;
 
 	/* Display related */
 	u32 derrmr;
@@ -187,6 +253,14 @@ struct intel_gt_coredump {
 		} guc;
 	} *uc;
 
+	struct {
+		u32 td_ctl; /* can be in power ctx on newer gens */
+
+		struct intel_eu_attentions before;
+		struct intel_eu_attentions after;
+		struct intel_eu_attentions resolved;
+	} attentions;
+
 	struct intel_gt_coredump *next;
 };
 
@@ -209,6 +283,13 @@ struct i915_gpu_coredump {
 	u32 reset_count;
 	u32 suspend_count;
 
+	struct {
+		u64 addr;
+		int type;
+		int level;
+		int access;
+	} fault;
+
 	struct intel_device_info device_info;
 	struct intel_runtime_info runtime_info;
 	struct intel_driver_caps driver_caps;
@@ -217,6 +298,8 @@ struct i915_gpu_coredump {
 	struct intel_overlay_error_state *overlay;
 
 	struct scatterlist *sgl, *fit;
+
+	void *private;
 };
 
 struct i915_gpu_error {
@@ -229,9 +312,6 @@ struct i915_gpu_error {
 
 	/** Number of times the device has been reset (global) */
 	atomic_t reset_count;
-
-	/** Number of times an engine has been reset */
-	atomic_t reset_engine_count[I915_NUM_ENGINES];
 };
 
 struct drm_i915_error_state_buf {
@@ -251,10 +331,13 @@ static inline u32 i915_reset_count(struct i915_gpu_error *error)
 	return atomic_read(&error->reset_count);
 }
 
-static inline u32 i915_reset_engine_count(struct i915_gpu_error *error,
-					  const struct intel_engine_cs *engine)
+static inline int i915_reset_engine_count(const struct intel_engine_cs *engine)
 {
-	return atomic_read(&error->reset_engine_count[engine->uabi_class]);
+	/* the present guc interface doesn't support per engine reset counts */
+	if (intel_engine_uses_guc(engine))
+		return -1;
+
+	return atomic_read(&engine->reset.count);
 }
 
 #define CORE_DUMP_FLAG_NONE           0x0
@@ -294,20 +377,24 @@ intel_gt_coredump_alloc(struct intel_gt *gt, gfp_t gfp, u32 dump_flags);
 struct intel_engine_coredump *
 intel_engine_coredump_alloc(struct intel_engine_cs *engine, gfp_t gfp, u32 dump_flags);
 
+struct i915_gpu_coredump *
+i915_gpu_coredump_create_for_engine(struct intel_engine_cs *engine, gfp_t gfp);
+
 struct intel_engine_capture_vma *
 intel_engine_coredump_add_request(struct intel_engine_coredump *ee,
 				  struct i915_request *rq,
-				  gfp_t gfp);
+				  gfp_t gfp,
+				  struct i915_page_compress *compress);
 
 void intel_engine_coredump_add_vma(struct intel_engine_coredump *ee,
 				   struct intel_engine_capture_vma *capture,
-				   struct i915_vma_compress *compress);
+				   struct i915_page_compress *compress);
 
-struct i915_vma_compress *
+struct i915_page_compress *
 i915_vma_capture_prepare(struct intel_gt_coredump *gt);
 
 void i915_vma_capture_finish(struct intel_gt_coredump *gt,
-			     struct i915_vma_compress *compress);
+			     struct i915_page_compress *compress);
 
 void i915_error_state_store(struct i915_gpu_coredump *error);
 
@@ -333,6 +420,28 @@ struct i915_gpu_coredump *i915_first_error_state(struct drm_i915_private *i915);
 void i915_reset_error_state(struct drm_i915_private *i915);
 void i915_disable_error_state(struct drm_i915_private *i915, int err);
 
+int i915_uuid_register_ioctl(struct drm_device *dev, void *data,
+			     struct drm_file *file);
+int i915_uuid_unregister_ioctl(struct drm_device *dev, void *data,
+			       struct drm_file *file);
+void i915_uuid_init(struct i915_drm_client *client);
+void i915_uuid_cleanup(struct i915_drm_client *client);
+
+static inline void i915_uuid_get(struct i915_uuid_resource *uuid_res)
+{
+	kref_get(&uuid_res->ref);
+}
+
+void __i915_uuid_free(struct kref *ref);
+static inline void i915_uuid_put(struct i915_uuid_resource *uuid_res)
+{
+	kref_put(&uuid_res->ref, __i915_uuid_free);
+}
+
+void intel_eu_attentions_read(struct intel_gt *gt,
+			      struct intel_eu_attentions *a,
+			      const unsigned int settle_time_ms);
+
 #else
 
 __printf(2, 3)
@@ -352,6 +461,12 @@ i915_gpu_coredump_alloc(struct drm_i915_private *i915, gfp_t gfp)
 	return NULL;
 }
 
+static inline struct i915_gpu_coredump *
+i915_gpu_coredump_create_for_engine(struct intel_engine_cs *engine, gfp_t gfp)
+{
+	return NULL;
+}
+
 static inline struct intel_gt_coredump *
 intel_gt_coredump_alloc(struct intel_gt *gt, gfp_t gfp, u32 dump_flags)
 {
@@ -367,7 +482,8 @@ intel_engine_coredump_alloc(struct intel_engine_cs *engine, gfp_t gfp, u32 dump_
 static inline struct intel_engine_capture_vma *
 intel_engine_coredump_add_request(struct intel_engine_coredump *ee,
 				  struct i915_request *rq,
-				  gfp_t gfp)
+				  gfp_t gfp,
+				  struct i915_page_compress *compress)
 {
 	return NULL;
 }
@@ -375,11 +491,11 @@ intel_engine_coredump_add_request(struct intel_engine_coredump *ee,
 static inline void
 intel_engine_coredump_add_vma(struct intel_engine_coredump *ee,
 			      struct intel_engine_capture_vma *capture,
-			      struct i915_vma_compress *compress)
+			      struct i915_page_compress *compress)
 {
 }
 
-static inline struct i915_vma_compress *
+static inline struct i915_page_compress *
 i915_vma_capture_prepare(struct intel_gt_coredump *gt)
 {
 	return NULL;
@@ -387,7 +503,7 @@ i915_vma_capture_prepare(struct intel_gt_coredump *gt)
 
 static inline void
 i915_vma_capture_finish(struct intel_gt_coredump *gt,
-			struct i915_vma_compress *compress)
+			struct i915_page_compress *compress)
 {
 }
 
@@ -412,6 +528,44 @@ static inline void i915_reset_error_state(struct drm_i915_private *i915)
 
 static inline void i915_disable_error_state(struct drm_i915_private *i915,
 					    int err)
+{
+}
+
+static inline int
+i915_uuid_register_ioctl(struct drm_device *dev, void *data,
+			 struct drm_file *file)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+i915_uuid_unregister_ioctl(struct drm_device *dev, void *data,
+			   struct drm_file *file)
+{
+	return -EOPNOTSUPP;
+}
+
+
+static inline void i915_uuid_init(struct i915_drm_client *client)
+{
+}
+
+static inline void i915_uuid_cleanup(struct i915_drm_client *client)
+{
+}
+
+static inline void i915_uuid_get(struct i915_uuid_resource *uuid_res)
+{
+}
+
+static inline void i915_uuid_put(struct i915_uuid_resource *uuid_res)
+{
+}
+
+static inline void
+intel_eu_attentions_read(struct intel_gt *gt,
+			 struct intel_eu_attentions *a,
+			 const unsigned int settle_time_ms)
 {
 }
 

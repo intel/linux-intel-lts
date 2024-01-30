@@ -28,6 +28,9 @@ config DRM_I915
 	select VMAP_PFN
 	select DRM_TTM
 	select AUXILIARY_BUS
+	select MTD
+	select MTD_PARTITIONED_MASTER
+	select MFD_CORE
 	help
 	  Choose this option if you have a system that has "Intel Graphics
 	  Media Accelerator" or "HD Graphics" integrated graphics,
@@ -71,8 +74,7 @@ config DRM_I915_CAPTURE_ERROR
 	help
 	  This option enables capturing the GPU state when a hang is detected.
 	  This information is vital for triaging hangs and assists in debugging.
-	  Please report any hang for triaging according to:
-	    https://gitlab.freedesktop.org/drm/intel/-/wikis/How-to-file-i915-bugs
+	  Please report any hang to your Intel representative to help with triaging.
 
 	  If in doubt, say "Y".
 
@@ -144,6 +146,55 @@ config DRM_I915_PXP
 	  manage the status of the alive software session, as well as its life
 	  cycle.
 
+config DRM_I915_DEBUGGER
+       bool "Enable Debugger support in i915"
+       depends on DRM_I915
+       default y if DRM_I915_DEBUG
+       select DRM_I915_CAPTURE_ERROR
+       help
+	 Choose this option if you want to add support for debugger (gdb) to
+	 attach into processes using i915 and debug the gpu/gpgpu programs.
+	 With debugger support, i915 will provide interface for a debugger
+	 process to track, inspect and modify resources.
+
+config DRM_I915_SVM
+	bool "Enable Shared Virtual Memory support in i915"
+	depends on DRM_I915
+	depends on ARCH_ENABLE_MEMORY_HOTPLUG
+	depends on ARCH_ENABLE_MEMORY_HOTREMOVE
+	depends on MEMORY_HOTPLUG
+	depends on MEMORY_HOTREMOVE
+	depends on ARCH_HAS_PTE_DEVMAP
+	depends on SPARSEMEM_VMEMMAP
+	depends on ZONE_DEVICE
+	depends on DEVICE_PRIVATE
+	depends on MMU
+	select HMM_MIRROR
+	select MMU_NOTIFIER
+	default y if DRM_I915_DEBUG
+	help
+	  Choose this option if you want Shared Virtual Memory (SVM)
+	  support in i915. With SVM support, one can share the virtual
+	  address space between a process and the GPU. SVM is supported
+	  on both integrated and discrete Intel GPUs.
+
+config DRM_I915_ATS
+	bool "Enable Address Translation Services (ATS) support in i915"
+	depends on DRM_I915
+	depends on DRM_I915_SVM
+	depends on INTEL_IOMMU
+	depends on INTEL_IOMMU_SVM
+	depends on PCI_PRI
+	depends on PCI_PASID
+	depends on PCI_IOV
+	default y if DRM_I915_DEBUG
+	help
+	  Choose this option if you prefer to have Address Translation
+	  Services (ATS) support in i915. With ATS enabled, device would
+	  be able to request a system translation of a Virtual Address (VA)
+	  into either a Host Physical Address (HPA) or Guest Physical
+	  Address (GPA) for native and virtualized environments respectively.
+
 menu "drm/i915 Debugging"
 depends on DRM_I915
 depends on EXPERT
@@ -160,4 +211,15 @@ menu "drm/i915 Unstable Evolution"
 	visible if EXPERT && STAGING && BROKEN
 	depends on DRM_I915
 	source "drivers/gpu/drm/i915/Kconfig.unstable"
+endmenu
+
+menu "drm/i915 Chickens"
+	visible if EXPERT && STAGING
+	depends on DRM_I915
+	source "drivers/gpu/drm/i915/Kconfig.chicken"
+endmenu
+
+menu "drm/i915/fabric Intel Fabric Connectivity driver support"
+	depends on DRM_I915
+	source "drivers/gpu/drm/i915/fabric/Kconfig"
 endmenu

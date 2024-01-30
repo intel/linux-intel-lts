@@ -180,11 +180,9 @@ int snd_hdac_i915_init(struct hdac_bus *bus)
 	if (!acomp)
 		return -ENODEV;
 	if (!acomp->ops) {
-		if (!IS_ENABLED(CONFIG_MODULES) ||
-		    !request_module("i915")) {
-			/* 60s timeout */
+		if (!IS_ENABLED(CONFIG_MODULES) || !request_module("i915")) {
 			wait_for_completion_timeout(&acomp->master_bind_complete,
-						    msecs_to_jiffies(60 * 1000));
+						    5 * HZ); /* 5s timeout */
 		}
 	}
 	if (!acomp->ops) {

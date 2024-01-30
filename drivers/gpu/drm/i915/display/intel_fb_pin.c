@@ -51,14 +51,6 @@ intel_pin_fb_obj_dpt(struct drm_framebuffer *fb,
 	if (IS_ERR(vma))
 		goto err;
 
-	if (i915_vma_misplaced(vma, 0, alignment, 0)) {
-		ret = i915_vma_unbind(vma);
-		if (ret) {
-			vma = ERR_PTR(ret);
-			goto err;
-		}
-	}
-
 	ret = i915_vma_pin(vma, 0, alignment, PIN_GLOBAL);
 	if (ret) {
 		vma = ERR_PTR(ret);
@@ -86,6 +78,7 @@ intel_pin_and_fence_fb_obj(struct drm_framebuffer *fb,
 	struct drm_device *dev = fb->dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_i915_gem_object *obj = intel_fb_obj(fb);
+	struct i915_ggtt *ggtt = to_gt(dev_priv)->ggtt;
 	intel_wakeref_t wakeref;
 	struct i915_gem_ww_ctx ww;
 	struct i915_vma *vma;
@@ -145,8 +138,9 @@ retry:
 		goto err;
 
 	if (!ret) {
-		vma = i915_gem_object_pin_to_display_plane(obj, &ww, alignment,
-							   view, pinctl);
+		vma = i915_gem_object_pin_to_display_plane(obj, &ww,
+							   ggtt, view,
+							   alignment, pinctl);
 		if (IS_ERR(vma)) {
 			ret = PTR_ERR(vma);
 			goto err_unpin;
@@ -248,6 +242,31 @@ int intel_plane_pin_fb(struct intel_plane_state *plane_state)
 		plane_state->dpt_vma = vma;
 
 		WARN_ON(plane_state->ggtt_vma == plane_state->dpt_vma);
+	}
+
+	return 0;
+}
+
+int intel_plane_sync_fb(struct intel_plane_state *plane_state)
+{
+	int err;
+
+	if (plane_state->ggtt_vma) {
+		err = i915_vma_wait_for_bind(plane_state->ggtt_vma);
+		if (err)
+			return err;
+	}
+
+	if (plane_state->dpt_vma) {
+		err = i915_vma_wait_for_bind(plane_state->dpt_vma);
+		if (err)
+			return err;
+	}
+
+	if (plane_state->hw.fb) {
+		err = i915_gem_object_migrate_sync(intel_fb_obj(plane_state->hw.fb));
+		if (err)
+			return err;
 	}
 
 	return 0;

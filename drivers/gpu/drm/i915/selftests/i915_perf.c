@@ -95,11 +95,12 @@ test_stream(struct i915_perf *perf)
 	struct i915_oa_config *oa_config = get_empty_config(perf);
 	struct perf_open_properties props = {
 		.engine = intel_engine_lookup_user(perf->i915,
-						   I915_ENGINE_CLASS_RENDER,
-						   0),
+						   perf->default_ci.engine_class,
+						   perf->default_ci.engine_instance),
 		.sample_flags = SAMPLE_OA_REPORT,
 		.oa_format = GRAPHICS_VER(perf->i915) == 12 ?
 		I915_OA_FORMAT_A32u40_A4u32_B8_C8 : I915_OA_FORMAT_C4_B8,
+		.oa_buffer_size_exponent = order_base_2(SZ_16M),
 	};
 	struct i915_perf_stream *stream;
 	struct intel_gt *gt;
@@ -158,26 +159,21 @@ static int live_sanitycheck(void *arg)
 	return 0;
 }
 
-static int write_timestamp(struct i915_request *rq, int slot)
+static int write_timestamp(struct i915_request *rq, u32 ggtt_offset)
 {
-	u32 *cs;
-	int len;
+	u32 *cs, cmd, base = rq->engine->mmio_base;
 
-	cs = intel_ring_begin(rq, 6);
+	cmd = MI_STORE_REGISTER_MEM | MI_SRM_LRM_GLOBAL_GTT;
+	if (GRAPHICS_VER(rq->engine->i915) >= 8)
+		cmd++;
+
+	cs = intel_ring_begin(rq, 4);
 	if (IS_ERR(cs))
 		return PTR_ERR(cs);
 
-	len = 5;
-	if (GRAPHICS_VER(rq->engine->i915) >= 8)
-		len++;
-
-	*cs++ = GFX_OP_PIPE_CONTROL(len);
-	*cs++ = PIPE_CONTROL_GLOBAL_GTT_IVB |
-		PIPE_CONTROL_STORE_DATA_INDEX |
-		PIPE_CONTROL_WRITE_TIMESTAMP;
-	*cs++ = slot * sizeof(u32);
-	*cs++ = 0;
-	*cs++ = 0;
+	*cs++ = cmd;
+	*cs++ = i915_mmio_reg_offset(RING_TIMESTAMP(base));
+	*cs++ = ggtt_offset;
 	*cs++ = 0;
 
 	intel_ring_advance(rq, cs);
@@ -199,9 +195,9 @@ static int live_noa_delay(void *arg)
 	struct drm_i915_private *i915 = arg;
 	struct i915_perf_stream *stream;
 	struct i915_request *rq;
+	u32 delay, ggtt_offset;
 	ktime_t t0, t1;
 	u64 expected;
-	u32 delay;
 	int err;
 	int i;
 
@@ -212,11 +208,6 @@ static int live_noa_delay(void *arg)
 		return -ENOMEM;
 
 	expected = atomic64_read(&stream->perf->noa_programming_delay);
-
-	if (stream->engine->class != RENDER_CLASS) {
-		err = -ENODEV;
-		goto out;
-	}
 
 	for (i = 0; i < 4; i++)
 		intel_write_status_page(stream->engine, 0x100 + i, 0);
@@ -235,7 +226,8 @@ static int live_noa_delay(void *arg)
 		}
 	}
 
-	err = write_timestamp(rq, 0x100);
+	ggtt_offset = i915_ggtt_offset(stream->engine->status_page.vma);
+	err = write_timestamp(rq, ggtt_offset + (0x100 * sizeof(u32)));
 	if (err) {
 		i915_request_add(rq);
 		goto out;
@@ -249,7 +241,7 @@ static int live_noa_delay(void *arg)
 		goto out;
 	}
 
-	err = write_timestamp(rq, 0x102);
+	err = write_timestamp(rq, ggtt_offset + (0x102 * sizeof(u32)));
 	if (err) {
 		i915_request_add(rq);
 		goto out;
@@ -312,9 +304,13 @@ static int live_noa_gpr(void *arg)
 		goto out;
 	}
 
-	/* Poison the ce->vm so we detect writes not to the GGTT gt->scratch */
-	scratch = __px_vaddr(ce->vm->scratch[0]);
-	memset(scratch, POISON_FREE, PAGE_SIZE);
+	if (ce->vm->scratch[0]) {
+		/* Poison the ce->vm so we detect writes not to the GGTT gt->scratch */
+		scratch = __px_vaddr(ce->vm->scratch[0], NULL);
+		memset(scratch, POISON_FREE, PAGE_SIZE);
+	} else {
+		scratch = NULL;
+	}
 
 	rq = intel_context_create_request(ce);
 	if (IS_ERR(rq)) {
@@ -402,7 +398,7 @@ static int live_noa_gpr(void *arg)
 	}
 
 	/* Verify that the user's scratch page was not used for GPR storage */
-	if (memchr_inv(scratch, POISON_FREE, PAGE_SIZE)) {
+	if (scratch && memchr_inv(scratch, POISON_FREE, PAGE_SIZE)) {
 		pr_err("Scratch page overwritten!\n");
 		igt_hexdump(scratch, 4096);
 		err = -EINVAL;
@@ -437,7 +433,7 @@ int i915_perf_live_selftests(struct drm_i915_private *i915)
 	if (err)
 		return err;
 
-	err = i915_subtests(tests, i915);
+	err = i915_live_subtests(tests, i915);
 
 	destroy_empty_config(&i915->perf);
 

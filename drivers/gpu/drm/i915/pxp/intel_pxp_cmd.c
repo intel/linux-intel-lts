@@ -80,14 +80,13 @@ static u32 *pxp_emit_wait(u32 *cs)
 
 static void pxp_request_commit(struct i915_request *rq)
 {
-	struct i915_sched_attr attr = { .priority = I915_PRIORITY_MAX };
 	struct intel_timeline * const tl = i915_request_timeline(rq);
 
 	lockdep_unpin_lock(&tl->mutex, rq->cookie);
 
 	trace_i915_request_add(rq);
 	__i915_request_commit(rq);
-	__i915_request_queue(rq, &attr);
+	__i915_request_queue(rq, I915_PRIORITY_MAX);
 
 	mutex_unlock(&tl->mutex);
 }

@@ -11,6 +11,9 @@
 struct intel_engine_cs;
 struct intel_rc6;
 
+void intel_rc6_rpm_get(struct intel_rc6 *rc6);
+void intel_rc6_rpm_put(struct intel_rc6 *rc6);
+
 void intel_rc6_init(struct intel_rc6 *rc6);
 void intel_rc6_fini(struct intel_rc6 *rc6);
 

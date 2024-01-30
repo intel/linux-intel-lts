@@ -13,6 +13,9 @@
 
 /* Definitions of GuC H/W registers, bits, etc */
 
+#define GUCDBG_RANGE_START		0xC000
+#define GUCDBG_RANGE_END		0xC7FF
+
 #define GUC_STATUS			_MMIO(0xc000)
 #define   GS_RESET_SHIFT		0
 #define   GS_MIA_IN_RESET		  (0x01 << GS_RESET_SHIFT)
@@ -36,6 +39,7 @@
 #define SOFT_SCRATCH_COUNT		16
 
 #define GEN11_SOFT_SCRATCH(n)		_MMIO(0x190240 + (n) * 4)
+#define MEDIA_SOFT_SCRATCH(n)		_MMIO(0x190310 + (n) * 4)
 #define GEN11_SOFT_SCRATCH_COUNT	4
 
 #define UOS_RSA_SCRATCH(i)		_MMIO(0xc200 + (i) * 4)
@@ -82,7 +86,15 @@
 #define GEN12_GUC_TLB_INV_CR		_MMIO(0xcee8)
 #define   GEN12_GUC_TLB_INV_CR_INVALIDATE	(1 << 0)
 
+#define PVC_GUC_TLB_INV_DESC0		_MMIO(0xcf7c)
+#define   PVC_GUC_TLB_INV_DESC0_VALID	(1 << 0)
+#define PVC_GUC_TLB_INV_DESC1		_MMIO(0xcf80)
+#define   PVC_GUC_TLB_INV_DESC1_INVALIDATE	(1 << 6)
+
 #define GUC_ARAT_C6DIS			_MMIO(0xA178)
+
+#define GUC_EIP				_MMIO(0xc0b0)
+#define GUC_EIP_COUNTER			_MMIO(0xc0b4)
 
 #define GUC_SHIM_CONTROL		_MMIO(0xc064)
 #define   GUC_DISABLE_SRAM_INIT_TO_ZEROES	(1<<0)
@@ -93,18 +105,29 @@
 #define   GUC_ENABLE_READ_CACHE_FOR_WOPCM_DATA	(1<<10)
 #define   GUC_ENABLE_MIA_CLOCK_GATING		(1<<15)
 #define   GUC_GEN10_SHIM_WC_ENABLE		(1<<21)
+#define   GUC_PVC_MOCS_INDEX_MASK		REG_GENMASK(25, 24)
+
+#define PVC_MOCS_UC_INDEX		1
+#define PVC_GUC_MOCS_INDEX(index)	REG_FIELD_PREP(GUC_PVC_MOCS_INDEX_MASK,\
+							index)
 
 #define GUC_SHIM_CONTROL2		_MMIO(0xc068)
+#define   ENABLE_EIP			(1<<11)
 #define   GUC_IS_PRIVILEGED		(1<<29)
 #define   GSC_LOADS_HUC			(1<<30)
 
 #define GUC_SEND_INTERRUPT		_MMIO(0xc4c8)
 #define   GUC_SEND_TRIGGER		  (1<<0)
 #define GEN11_GUC_HOST_INTERRUPT	_MMIO(0x1901f0)
+#define MEDIA_GUC_HOST_INTERRUPT	_MMIO(0x190304)
 
 #define GEN12_GUC_SEM_INTR_ENABLES	_MMIO(0xc71c)
 #define   GUC_SEM_INTR_ROUTE_TO_GUC	BIT(31)
 #define   GUC_SEM_INTR_ENABLE_ALL	(0xff)
+
+#define XEHP_GUC_SEM_INTR_MASK		_MMIO(0xc718)
+#define   GUC_SEM_INTR_MASK_NONE	(0)
+#define   GUC_SEM_INTR_MASK_ALL		(0xff)
 
 #define GUC_NUM_DOORBELLS		256
 

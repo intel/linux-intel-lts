@@ -19,8 +19,17 @@ struct intel_engine_cs *intel_selftest_find_any_engine(struct intel_gt *gt)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 
-	for_each_engine(engine, gt, id)
+	for_each_engine(engine, gt, id) {
+		/*
+		 * Avoid the 'bind' engine as that can lead to problems,
+		 * e.g. due to a test blocking that engine but then
+		 * requiring a bind operation to complete.
+		 */
+		if (engine->bind_context)
+			continue;
+
 		return engine;
+	}
 
 	pr_err("No valid engine found!\n");
 	return NULL;
@@ -52,6 +61,10 @@ int intel_selftest_modify_policy(struct intel_engine_cs *engine,
 		engine->flags |= I915_ENGINE_WANT_FORCED_PREEMPTION;
 		engine->props.timeslice_duration_ms = REDUCED_TIMESLICE;
 		engine->props.preempt_timeout_ms = REDUCED_PREEMPT;
+		break;
+
+	case SELFTEST_SCHEDULER_MODIFY_ENGINE_RESET:
+		engine->i915->params.reset = 2;
 		break;
 
 	case SELFTEST_SCHEDULER_MODIFY_NO_HANGCHECK:

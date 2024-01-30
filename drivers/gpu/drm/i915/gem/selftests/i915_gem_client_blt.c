@@ -102,6 +102,7 @@ struct tiled_blits {
 	struct blit_buffer scratch;
 	struct i915_vma *batch;
 	u64 hole;
+	u64 align;
 	u32 width;
 	u32 height;
 };
@@ -191,12 +192,12 @@ static int prepare_blit(const struct tiled_blits *t,
 		*cs++ = src_4t | dst_4t | BLT_DEPTH_32 | dst_pitch;
 		*cs++ = 0;
 		*cs++ = t->height << 16 | t->width;
-		*cs++ = lower_32_bits(dst->vma->node.start);
-		*cs++ = upper_32_bits(dst->vma->node.start);
+		*cs++ = lower_32_bits(i915_vma_offset(dst->vma));
+		*cs++ = upper_32_bits(i915_vma_offset(dst->vma));
 		*cs++ = 0;
 		*cs++ = src_pitch;
-		*cs++ = lower_32_bits(src->vma->node.start);
-		*cs++ = upper_32_bits(src->vma->node.start);
+		*cs++ = lower_32_bits(i915_vma_offset(src->vma));
+		*cs++ = upper_32_bits(i915_vma_offset(src->vma));
 	} else {
 		if (ver >= 6) {
 			*cs++ = MI_LOAD_REGISTER_IMM(1);
@@ -237,14 +238,14 @@ static int prepare_blit(const struct tiled_blits *t,
 		*cs++ = BLT_DEPTH_32 | BLT_ROP_SRC_COPY | dst_pitch;
 		*cs++ = 0;
 		*cs++ = t->height << 16 | t->width;
-		*cs++ = lower_32_bits(dst->vma->node.start);
+		*cs++ = lower_32_bits(i915_vma_offset(dst->vma));
 		if (use_64b_reloc)
-			*cs++ = upper_32_bits(dst->vma->node.start);
+			*cs++ = upper_32_bits(i915_vma_offset(dst->vma));
 		*cs++ = 0;
 		*cs++ = src_pitch;
-		*cs++ = lower_32_bits(src->vma->node.start);
+		*cs++ = lower_32_bits(i915_vma_offset(src->vma));
 		if (use_64b_reloc)
-			*cs++ = upper_32_bits(src->vma->node.start);
+			*cs++ = upper_32_bits(i915_vma_offset(src->vma));
 	}
 
 	*cs++ = MI_BATCH_BUFFER_END;
@@ -330,6 +331,10 @@ static int tiled_blits_create_buffers(struct tiled_blits *t,
 			t->buffers[i].tiling = CLIENT_TILING_4;
 		else if (!HAS_4TILE(i915) && t->buffers[i].tiling == CLIENT_TILING_4)
 			t->buffers[i].tiling = CLIENT_TILING_Y;
+
+		/* PVC also does not support X-tile */
+		if (IS_PONTEVECCHIO(i915) && t->buffers[i].tiling == CLIENT_TILING_X)
+			t->buffers[i].tiling = CLIENT_TILING_4;
 	}
 
 	return 0;
@@ -474,7 +479,7 @@ static int pin_buffer(struct i915_vma *vma, u64 addr)
 {
 	int err;
 
-	if (drm_mm_node_allocated(&vma->node) && vma->node.start != addr) {
+	if (drm_mm_node_allocated(&vma->node) && i915_vma_offset(vma) != addr) {
 		err = i915_vma_unbind(vma);
 		if (err)
 			return err;
@@ -484,6 +489,7 @@ static int pin_buffer(struct i915_vma *vma, u64 addr)
 	if (err)
 		return err;
 
+	GEM_BUG_ON(i915_vma_offset(vma) != addr);
 	return 0;
 }
 
@@ -507,7 +513,7 @@ tiled_blit(struct tiled_blits *t,
 		goto err_src;
 	}
 
-	err = i915_vma_pin(t->batch, 0, 0, PIN_USER | PIN_HIGH);
+	err = i915_vma_pin(t->batch, 0, 0, PIN_USER | PIN_ZONE_48);
 	if (err) {
 		pr_err("cannot pin batch\n");
 		goto err_dst;
@@ -530,8 +536,8 @@ tiled_blit(struct tiled_blits *t,
 		err = move_to_active(dst->vma, rq, 0);
 	if (!err)
 		err = rq->engine->emit_bb_start(rq,
-						t->batch->node.start,
-						t->batch->node.size,
+						i915_vma_offset(t->batch),
+						i915_vma_size(t->batch),
 						0);
 	i915_request_get(rq);
 	i915_request_add(rq);
@@ -567,14 +573,21 @@ tiled_blits_create(struct intel_engine_cs *engine, struct rnd_state *prng)
 		goto err_free;
 	}
 
-	hole_size = 2 * PAGE_ALIGN(WIDTH * HEIGHT * 4);
+	t->align = I915_GTT_PAGE_SIZE_2M; /* XXX worst case, derive from vm! */
+	t->align = max(t->align,
+		       i915_vm_min_alignment(t->ce->vm, INTEL_MEMORY_LOCAL));
+	t->align = max(t->align,
+		       i915_vm_min_alignment(t->ce->vm, INTEL_MEMORY_SYSTEM));
+
+	hole_size = 2 * round_up(WIDTH * HEIGHT * 4, t->align);
 	hole_size *= 2; /* room to maneuver */
-	hole_size += 2 * I915_GTT_MIN_ALIGNMENT;
+	hole_size += 2 * t->align; /* padding on either side */
 
 	mutex_lock(&t->ce->vm->mutex);
 	memset(&hole, 0, sizeof(hole));
 	err = drm_mm_insert_node_in_range(&t->ce->vm->mm, &hole,
-					  hole_size, 0, I915_COLOR_UNEVICTABLE,
+					  hole_size, t->align,
+					  I915_COLOR_UNEVICTABLE,
 					  0, U64_MAX,
 					  DRM_MM_INSERT_BEST);
 	if (!err)
@@ -585,7 +598,7 @@ tiled_blits_create(struct intel_engine_cs *engine, struct rnd_state *prng)
 		goto err_put;
 	}
 
-	t->hole = hole.start + I915_GTT_MIN_ALIGNMENT;
+	t->hole = hole.start + t->align;
 	pr_info("Using hole at %llx\n", t->hole);
 
 	err = tiled_blits_create_buffers(t, WIDTH, HEIGHT, prng);
@@ -612,7 +625,7 @@ static void tiled_blits_destroy(struct tiled_blits *t)
 static int tiled_blits_prepare(struct tiled_blits *t,
 			       struct rnd_state *prng)
 {
-	u64 offset = PAGE_ALIGN(t->width * t->height * 4);
+	u64 offset = round_up(t->width * t->height * 4, t->align);
 	u32 *map;
 	int err;
 	int i;
@@ -643,8 +656,7 @@ static int tiled_blits_prepare(struct tiled_blits *t,
 
 static int tiled_blits_bounce(struct tiled_blits *t, struct rnd_state *prng)
 {
-	u64 offset =
-		round_up(t->width * t->height * 4, 2 * I915_GTT_MIN_ALIGNMENT);
+	u64 offset = round_up(t->width * t->height * 4, 2 * t->align);
 	int err;
 
 	/* We want to check position invariant tiling across GTT eviction */
@@ -660,7 +672,7 @@ static int tiled_blits_bounce(struct tiled_blits *t, struct rnd_state *prng)
 
 	/* Reposition so that we overlap the old addresses, and slightly off */
 	err = tiled_blit(t,
-			 &t->buffers[2], t->hole + I915_GTT_MIN_ALIGNMENT,
+			 &t->buffers[2], t->hole + t->align,
 			 &t->buffers[1], t->hole + 3 * offset / 2);
 	if (err)
 		return err;

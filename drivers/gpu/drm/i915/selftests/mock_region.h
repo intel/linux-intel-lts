@@ -8,11 +8,11 @@
 
 #include <linux/types.h>
 
-struct drm_i915_private;
+struct intel_gt;
 struct intel_memory_region;
 
 struct intel_memory_region *
-mock_region_create(struct drm_i915_private *i915,
+mock_region_create(struct intel_gt *gt,
 		   resource_size_t start,
 		   resource_size_t size,
 		   resource_size_t min_page_size,

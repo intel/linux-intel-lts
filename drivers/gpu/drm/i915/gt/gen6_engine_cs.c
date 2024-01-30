@@ -164,7 +164,7 @@ u32 *gen6_emit_breadcrumb_rcs(struct i915_request *rq, u32 *cs)
 		 PIPE_CONTROL_CS_STALL);
 	*cs++ = i915_request_active_seqno(rq) |
 		PIPE_CONTROL_GLOBAL_GTT;
-	*cs++ = rq->fence.seqno;
+	*cs++ = i915_request_seqno(rq);
 
 	*cs++ = MI_USER_INTERRUPT;
 	*cs++ = MI_NOOP;
@@ -361,7 +361,7 @@ u32 *gen7_emit_breadcrumb_rcs(struct i915_request *rq, u32 *cs)
 		 PIPE_CONTROL_GLOBAL_GTT_IVB |
 		 PIPE_CONTROL_CS_STALL);
 	*cs++ = i915_request_active_seqno(rq);
-	*cs++ = rq->fence.seqno;
+	*cs++ = i915_request_seqno(rq);
 
 	*cs++ = MI_USER_INTERRUPT;
 	*cs++ = MI_NOOP;
@@ -379,7 +379,7 @@ u32 *gen6_emit_breadcrumb_xcs(struct i915_request *rq, u32 *cs)
 
 	*cs++ = MI_FLUSH_DW | MI_FLUSH_DW_OP_STOREDW | MI_FLUSH_DW_STORE_INDEX;
 	*cs++ = I915_GEM_HWS_SEQNO_ADDR | MI_FLUSH_DW_USE_GTT;
-	*cs++ = rq->fence.seqno;
+	*cs++ = i915_request_seqno(rq);
 
 	*cs++ = MI_USER_INTERRUPT;
 
@@ -400,12 +400,12 @@ u32 *gen7_emit_breadcrumb_xcs(struct i915_request *rq, u32 *cs)
 	*cs++ = MI_FLUSH_DW | MI_INVALIDATE_TLB |
 		MI_FLUSH_DW_OP_STOREDW | MI_FLUSH_DW_STORE_INDEX;
 	*cs++ = I915_GEM_HWS_SEQNO_ADDR | MI_FLUSH_DW_USE_GTT;
-	*cs++ = rq->fence.seqno;
+	*cs++ = i915_request_seqno(rq);
 
 	for (i = 0; i < GEN7_XCS_WA; i++) {
 		*cs++ = MI_STORE_DWORD_INDEX;
 		*cs++ = I915_GEM_HWS_SEQNO_ADDR;
-		*cs++ = rq->fence.seqno;
+		*cs++ = i915_request_seqno(rq);
 	}
 
 	*cs++ = MI_FLUSH_DW;

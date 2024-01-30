@@ -21,6 +21,7 @@
 #define INSTR_CLIENT_SHIFT      29
 #define   INSTR_MI_CLIENT       0x0
 #define   INSTR_BC_CLIENT       0x2
+#define   INSTR_GSC_CLIENT      0x2 /* MTL + */
 #define   INSTR_RC_CLIENT       0x3
 #define INSTR_SUBCLIENT_SHIFT   27
 #define INSTR_SUBCLIENT_MASK    0x18000000
@@ -58,6 +59,8 @@
 #define MI_ARB_ON_OFF		MI_INSTR(0x08, 0)
 #define   MI_ARB_ENABLE			(1<<0)
 #define   MI_ARB_DISABLE		(0<<0)
+#define MI_MEM_FENCE		MI_INSTR(0x09, 0)
+#define MI_ACQUIRE_ENABLE	(1 << 0)
 #define MI_BATCH_BUFFER_END	MI_INSTR(0x0a, 0)
 #define MI_SUSPEND_FLUSH	MI_INSTR(0x0b, 0)
 #define   MI_SUSPEND_FLUSH_EN	(1<<0)
@@ -127,21 +130,34 @@
 #define   MI_SEMAPHORE_SAD_LTE_SDD	(3 << 12)
 #define   MI_SEMAPHORE_SAD_EQ_SDD	(4 << 12)
 #define   MI_SEMAPHORE_SAD_NEQ_SDD	(5 << 12)
-#define   MI_SEMAPHORE_TOKEN_MASK	REG_GENMASK(9, 5)
-#define   MI_SEMAPHORE_TOKEN_SHIFT	5
+#define   MI_SEMAPHORE_27_TOKEN_MASK	REG_GENMASK(9, 5)
+#define   MI_SEMAPHORE_256_TOKEN_MASK	REG_GENMASK(9, 2)
+#define   MI_SEMAPHORE_27_TOKEN_SHIFT	5
+#define   MI_SEMAPHORE_256_TOKEN_SHIFT	2
 #define MI_STORE_DATA_IMM	MI_INSTR(0x20, 0)
 #define MI_STORE_DWORD_IMM	MI_INSTR(0x20, 1)
 #define MI_STORE_DWORD_IMM_GEN4	MI_INSTR(0x20, 2)
-#define MI_STORE_QWORD_IMM_GEN8 (MI_INSTR(0x20, 3) | REG_BIT(21))
+#define MI_STORE_QWORD_IMM_GEN8_POSTED (MI_INSTR(0x20, 3) | (1 << 21))
+#define MI_STORE_QWORD_IMM_GEN8 (MI_INSTR(0x20, 3) | (1 << 10) | (1 << 21))
 #define   MI_MEM_VIRTUAL	(1 << 22) /* 945,g33,965 */
 #define   MI_USE_GGTT		(1 << 22) /* g4x+ */
+#define   MI_POSTED		REG_BIT(10)
 #define MI_STORE_DWORD_INDEX	MI_INSTR(0x21, 1)
+#define   MI_USE_PPHWSP		REG_BIT(21)
 #define MI_ATOMIC		MI_INSTR(0x2f, 1)
 #define MI_ATOMIC_INLINE	(MI_INSTR(0x2f, 9) | MI_ATOMIC_INLINE_DATA)
+#define   MI_ATOMIC32                  (0 << 19)
+#define   MI_ATOMIC64                  (1 << 19)
+#define   MI_ATOMIC128                 (2 << 19)
 #define   MI_ATOMIC_GLOBAL_GTT		(1 << 22)
 #define   MI_ATOMIC_INLINE_DATA		(1 << 18)
 #define   MI_ATOMIC_CS_STALL		(1 << 17)
 #define	  MI_ATOMIC_MOVE		(0x4 << 8)
+#define	  MI_ATOMIC_INC			(0x5 << 8)
+#define	  MI_ATOMIC_DEC			(0x6 << 8)
+#define	  MI_ATOMIC_ADD			(0x7 << 8)
+#define	  MI_ATOMIC_SUB			(0x8 << 8)
+#define	  MI_ATOMIC_ADD64		(0x27 << 8)
 
 /*
  * Official intel docs are somewhat sloppy concerning MI_LOAD_REGISTER_IMM:
@@ -152,6 +168,7 @@
  */
 #define MI_LOAD_REGISTER_IMM(x)	MI_INSTR(0x22, 2*(x)-1)
 /* Gen11+. addr = base + (ctx_restore ? offset & GENMASK(12,2) : offset) */
+#define   MI_LRI_DEST_CS_MMIO		REG_BIT(19)
 #define   MI_LRI_LRM_CS_MMIO		REG_BIT(19)
 #define   MI_LRI_MMIO_REMAP_EN		REG_BIT(17)
 #define   MI_LRI_FORCE_POSTED		(1<<12)
@@ -175,6 +192,7 @@
 #define MI_LOAD_REGISTER_MEM_GEN8  MI_INSTR(0x29, 2)
 #define MI_LOAD_REGISTER_REG    MI_INSTR(0x2A, 1)
 #define   MI_LRR_SOURCE_CS_MMIO		REG_BIT(18)
+#define   MI_LRR_DEST_CS_MMIO		REG_BIT(19)
 #define MI_BATCH_BUFFER		MI_INSTR(0x30, 1)
 #define   MI_BATCH_NON_SECURE		(1)
 /* for snb/ivb/vlv this also means "batch in ppgtt" when ppgtt is enabled. */
@@ -224,9 +242,10 @@
 #define XY_CTRL_SURF_COPY_BLT		((2 << 29) | (0x48 << 22) | 3)
 #define   SRC_ACCESS_TYPE_SHIFT		21
 #define   DST_ACCESS_TYPE_SHIFT		20
-#define   CCS_SIZE_MASK			0x3FF
-#define   CCS_SIZE_SHIFT		8
-#define   XY_CTRL_SURF_MOCS_MASK	GENMASK(31, 25)
+#define   CCS_SIZE_MASK_XEHP		GENMASK(17, 8)
+/* This is the subset of XY_CTRL_SURF_MOCS_MASK that corresponds to MOCS index */
+#define   XY_CSC_BLT_MOCS_INDEX_MASK_XEHP	GENMASK(31, 26)
+
 #define   NUM_CCS_BYTES_PER_BLOCK	256
 #define   NUM_BYTES_PER_CCS_BYTE	256
 #define   NUM_CCS_BLKS_PER_XFER		1024
@@ -234,13 +253,24 @@
 #define   DIRECT_ACCESS			1
 
 #define COLOR_BLT_CMD			(2 << 29 | 0x40 << 22 | (5 - 2))
-#define XY_COLOR_BLT_CMD		(2 << 29 | 0x50 << 22)
-#define XY_FAST_COLOR_BLT_CMD		(2 << 29 | 0x44 << 22)
-#define   XY_FAST_COLOR_BLT_DEPTH_32	(2 << 19)
-#define   XY_FAST_COLOR_BLT_DW		16
-#define   XY_FAST_COLOR_BLT_MOCS_MASK	GENMASK(27, 21)
-#define   XY_FAST_COLOR_BLT_MEM_TYPE_SHIFT 31
-
+#define XY_BLOCK_COPY_BLT_CMD       	(2 << 29 | 0x41 << 22)
+#define   DEST_MEM_TYPE_SHIFT		(31)
+#define   SRC_MEM_TYPE_SHIFT		(31)
+#define   MEM_TYPE_SYS			1
+#define   MEM_TYPE_LOCAL		0
+#define   COMPRESSION_ENABLE		(1 << 29)
+#define   AUX_CCS_E			(5 << 18)
+#define   FULL_RESOLVE			(1 << 12)
+#define   TILE_4_FORMAT			(2 << 30)
+#define   TILE_4_WIDTH			(128)
+#define   TILE_4_WIDTH_DWORD		((128 >> 2) - 1)
+#define   TILE_4_HEIGHT			(32)
+#define   SURFACE_TYPE_2D		(1 << 29)
+#define   DEST_SURF_WIDTH_SHIFT		(14)
+#define   SRC_SURF_WIDTH_SHIFT		(14)
+/* Bspec lists this field as 27:21, but the index alone is in 27:22 */
+#define   XY_BCB_MOCS_INDEX_MASK	GENMASK(27, 22)
+#define GEN9_XY_FAST_COPY_BLT_CMD	(2 << 29 | 0x42 << 22)
 #define   XY_FAST_COPY_BLT_D0_SRC_TILING_MASK     REG_GENMASK(21, 20)
 #define   XY_FAST_COPY_BLT_D0_DST_TILING_MASK     REG_GENMASK(14, 13)
 #define   XY_FAST_COPY_BLT_D0_SRC_TILE_MODE(mode)  \
@@ -251,21 +281,45 @@
 #define     TILE_X				0x1
 #define     XMAJOR				0x1
 #define     YMAJOR				0x2
-#define     TILE_64			0x3
-#define   XY_FAST_COPY_BLT_D1_SRC_TILE4	REG_BIT(31)
-#define   XY_FAST_COPY_BLT_D1_DST_TILE4	REG_BIT(30)
-#define BLIT_CCTL_SRC_MOCS_MASK  REG_GENMASK(6, 0)
-#define BLIT_CCTL_DST_MOCS_MASK  REG_GENMASK(14, 8)
+#define     TILE_64				0x3
+#define   XY_FAST_COPY_BLT_D1_SRC_TILE4		REG_BIT(31)
+#define   XY_FAST_COPY_BLT_D1_DST_TILE4		REG_BIT(30)
+#define   PVC_ENABLE_COMPRESSED_SURFACE		REG_BIT(16)
+#define   BLIT_CCTL_SRC_MOCS_MASK		REG_GENMASK(6, 0)
+#define   BLIT_CCTL_DST_MOCS_MASK		REG_GENMASK(14, 8)
 /* Note:  MOCS value = (index << 1) */
-#define BLIT_CCTL_SRC_MOCS(idx) \
+#define   BLIT_CCTL_SRC_MOCS(idx) \
 	REG_FIELD_PREP(BLIT_CCTL_SRC_MOCS_MASK, (idx) << 1)
-#define BLIT_CCTL_DST_MOCS(idx) \
+#define   BLIT_CCTL_DST_MOCS(idx) \
 	REG_FIELD_PREP(BLIT_CCTL_DST_MOCS_MASK, (idx) << 1)
 
 #define SRC_COPY_BLT_CMD		(2 << 29 | 0x43 << 22)
-#define GEN9_XY_FAST_COPY_BLT_CMD	(2 << 29 | 0x42 << 22)
+#define GEN9_XY_FAST_COLOR_BLT_CMD	(2 << 29 | 0x44 << 22)
+#define   XY_FAST_COLOR_BLT_DW		16
+#define   XY_FAST_COLOR_BLT_MOCS_MASK	GENMASK(27, 21)
+#define   XY_FAST_COLOR_BLT_MEM_TYPE_SHIFT 31
+#define   XY_FAST_CLEAR_1		(1 << 12)
+#define   XY_FAST_CLEAR_0		(2 << 12)
+#define   XY_FAST_TILE_Y		(1 << 30)
+#define   XY_FAST_TILE_X		(1 << 30)
+#define   XY_FAST_TILE_4		(2 << 30)
+#define   XY_FAST_TILE_64		(3 << 30)
+#define   XY_FAST_COLOR_BLT_DEPTH_8	(0 << 19)
+#define   XY_FAST_COLOR_BLT_DEPTH_16	(1 << 19)
+#define   XY_FAST_COLOR_BLT_DEPTH_32	(2 << 19)
+#define   XY_FAST_COLOR_BLT_DEPTH_64	(3 << 19)
+#define   XY_FAST_COLOR_BLT_DEPTH_128	(5 << 19)
+#define   XY_FAST_COMPRESSION		REG_BIT(29)
+#define   AUX_CCS_NONE			(0 << 18)
+#define   AUX_CCS_E			(5 << 18)
+#define   SURFTYPE_1D			(0 << 29)
+#define   SURFTYPE_2D			(1 << 29)
+#define   SURFTYPE_3D			(2 << 29)
+#define   SURFTYPE_CUBE			(3 << 29)
+#define XY_COLOR_BLT_CMD		(2 << 29 | 0x50 << 22)
 #define XY_SRC_COPY_BLT_CMD		(2 << 29 | 0x53 << 22)
 #define XY_MONO_SRC_COPY_IMM_BLT	(2 << 29 | 0x71 << 22 | 5)
+#define   BLT_SRCMEM_SYS		(1<<29)
 #define   BLT_WRITE_A			(2<<20)
 #define   BLT_WRITE_RGB			(1<<20)
 #define   BLT_WRITE_RGBA		(BLT_WRITE_RGB | BLT_WRITE_A)
@@ -275,6 +329,18 @@
 #define   BLT_DEPTH_32			(3<<24)
 #define   BLT_ROP_SRC_COPY		(0xcc<<16)
 #define   BLT_ROP_COLOR_COPY		(0xf0<<16)
+#define PVC_MEM_COPY_CMD		(2 << 29 | 0x5a << 22)
+/*
+ * Bspec lists MOCS fields as [31:25] and [6:0], but the actual indices are
+ * in [31:26] and [6:1].
+ */
+#define   MC_SRC_MOCS_INDEX_MASK	GENMASK(31, 26)
+#define   MC_DST_MOCS_INDEX_MASK	GENMASK(6, 1)
+#define PVC_MEM_SET_CMD			(2 << 29 | 0x5b << 22)
+#define   MS_LINEAR			0
+#define   MS_MATRIX			REG_BIT(17)
+/* Bspec lists field as [6:0], but index alone is from [6:1] */
+#define   MS_MOCS_INDEX_MASK		GENMASK(6, 1)
 #define XY_SRC_COPY_BLT_SRC_TILED	(1<<15) /* 965+ only */
 #define XY_SRC_COPY_BLT_DST_TILED	(1<<11) /* 965+ only */
 #define CMD_OP_DISPLAYBUFFER_INFO ((0x0<<29)|(0x14<<23)|2)
@@ -352,6 +418,9 @@
 #define   MI_MATH_XOR			MI_MATH_INSTR(0x104, 0x0, 0x0)
 #define   MI_MATH_STORE(op1, op2)	MI_MATH_INSTR(0x180, op1, op2)
 #define   MI_MATH_STOREINV(op1, op2)	MI_MATH_INSTR(0x580, op1, op2)
+/* DG2+ */
+#define   MI_MATH_SHR			MI_MATH_INSTR(0x106, 0x0, 0x0)
+
 /* Registers used as operands in MI_MATH_INSTR */
 #define   MI_MATH_REG(x)		(x)
 #define   MI_MATH_REG_SRCA		0x20
@@ -393,7 +462,10 @@
 #define MI_LOAD_URB_MEM         MI_INSTR(0x2C, 0)
 #define MI_STORE_URB_MEM        MI_INSTR(0x2D, 0)
 #define MI_CONDITIONAL_BATCH_BUFFER_END MI_INSTR(0x36, 0)
+#define  MI_DO_COMPARE		REG_BIT(21)
 
+#define STATE_SYSTEM_MEM_FENCE_ADDRESS \
+	((0x3 << 29) | (0x0 << 27) | (0x1 << 24) | (0x9 << 16) | 0x1)
 #define STATE_BASE_ADDRESS \
 	((0x3 << 29) | (0x0 << 27) | (0x1 << 24) | (0x1 << 16))
 #define BASE_ADDRESS_MODIFY		REG_BIT(0)
@@ -432,23 +504,33 @@
 #define COLOR_BLT     ((0x2<<29)|(0x40<<22))
 #define SRC_COPY_BLT  ((0x2<<29)|(0x43<<22))
 
+/* Bspec 63347*/
+#define GSC_INSTR(opcode, data, flags) \
+	(__INSTR(INSTR_GSC_CLIENT) | (opcode) << 22 | (data) << 9 | (flags))
+
+/* bspec 65346 */
+#define GSC_FW_LOAD GSC_INSTR(1, 0, 2)
+#define   HECI1_FW_LIMIT_VALID (1<<31)
+
+#define GSC_HECI_CMD_PKT GSC_INSTR(0, 0, 6)
+
 /*
- * Used to convert any address to canonical form.
+ * Used to convert an address to canonical form based on size of
+ * virtual address space.
  * Starting from gen8, some commands (e.g. STATE_BASE_ADDRESS,
  * MI_LOAD_REGISTER_MEM and others, see Broadwell PRM Vol2a) require the
  * addresses to be in a canonical form:
  * "GraphicsAddress[63:48] are ignored by the HW and assumed to be in correct
  * canonical form [63:48] == [47]."
  */
-#define GEN8_HIGH_ADDRESS_BIT 47
-static inline u64 gen8_canonical_addr(u64 address)
+static inline u64 intel_canonical_addr(u32 ppgtt_msb, u64 address)
 {
-	return sign_extend64(address, GEN8_HIGH_ADDRESS_BIT);
+	return sign_extend64(address, ppgtt_msb);
 }
 
-static inline u64 gen8_noncanonical_addr(u64 address)
+static inline u64 intel_noncanonical_addr(u32 ppgtt_msb, u64 address)
 {
-	return address & GENMASK_ULL(GEN8_HIGH_ADDRESS_BIT, 0);
+	return address & GENMASK_ULL(ppgtt_msb, 0);
 }
 
 static inline u32 *__gen6_emit_bb_start(u32 *cs, u32 addr, unsigned int flags)

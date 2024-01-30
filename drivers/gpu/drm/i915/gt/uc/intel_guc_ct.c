@@ -12,8 +12,14 @@
 #include "i915_drv.h"
 #include "intel_guc_ct.h"
 #include "intel_guc_print.h"
+#include "gt/intel_gt.h"
+#include "gt/intel_pagefault.h"
+#include "gt/iov/intel_iov_event.h"
+#include "gt/iov/intel_iov_relay.h"
+#include "gt/iov/intel_iov_service.h"
+#include "gt/iov/intel_iov_state.h"
 
-#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 enum {
 	CT_DEAD_ALIVE = 0,
 	CT_DEAD_SETUP,
@@ -43,7 +49,8 @@ static inline struct intel_guc *ct_to_guc(struct intel_guc_ct *ct)
 }
 
 #define CT_ERROR(_ct, _fmt, ...) \
-	guc_err(ct_to_guc(_ct), "CT: " _fmt, ##__VA_ARGS__)
+	intel_gt_log_driver_error(guc_to_gt(ct_to_guc(_ct)), INTEL_GT_DRIVER_ERROR_GUC_COMMUNICATION, \
+				  "CT: " _fmt, ##__VA_ARGS__)
 #ifdef CONFIG_DRM_I915_DEBUG_GUC
 #define CT_DEBUG(_ct, _fmt, ...) \
 	guc_dbg(ct_to_guc(_ct), "CT: " _fmt, ##__VA_ARGS__)
@@ -82,8 +89,7 @@ static inline struct intel_guc *ct_to_guc(struct intel_guc_ct *ct)
  */
 #define CTB_DESC_SIZE		ALIGN(sizeof(struct guc_ct_buffer_desc), SZ_2K)
 #define CTB_H2G_BUFFER_SIZE	(SZ_4K)
-#define CTB_G2H_BUFFER_SIZE	(4 * CTB_H2G_BUFFER_SIZE)
-#define G2H_ROOM_BUFFER_SIZE	(CTB_G2H_BUFFER_SIZE / 4)
+#define PVC_CTB_H2G_BUFFER_SIZE	(SZ_32K) /* concurrent pagefault replies */
 
 struct ct_request {
 	struct list_head link;
@@ -102,9 +108,11 @@ struct ct_incoming_msg {
 enum { CTB_SEND = 0, CTB_RECV = 1 };
 
 enum { CTB_OWNER_HOST = 0 };
-
-static void ct_receive_tasklet_func(struct tasklet_struct *t);
-static void ct_incoming_request_worker_func(struct work_struct *w);
+/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+static noinline void mtl_workaround_worker_func(struct work_struct *wrk);
+static noinline void ct_receive_tasklet_func(struct tasklet_struct *t);
+static noinline  void ct_incoming_request_worker_func(struct work_struct *w);
+static void ct_try_receive_message(struct intel_guc_ct *ct);
 
 /**
  * intel_guc_ct_init_early - Initialize CT state without requiring device access
@@ -117,12 +125,20 @@ void intel_guc_ct_init_early(struct intel_guc_ct *ct)
 	spin_lock_init(&ct->requests.lock);
 	INIT_LIST_HEAD(&ct->requests.pending);
 	INIT_LIST_HEAD(&ct->requests.incoming);
-#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 	INIT_WORK(&ct->dead_ct_worker, ct_dead_ct_worker_func);
 #endif
 	INIT_WORK(&ct->requests.worker, ct_incoming_request_worker_func);
 	tasklet_setup(&ct->receive_tasklet, ct_receive_tasklet_func);
 	init_waitqueue_head(&ct->wq);
+	mutex_init(&ct->send_mutex);
+
+	/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+	if (IS_METEORLAKE(guc_to_gt(ct_to_guc(ct))->i915)) {
+		ct->mtl_workaround.delay = msecs_to_jiffies(100); /* 100 ms */
+		INIT_DELAYED_WORK(&ct->mtl_workaround.work,
+				  mtl_workaround_worker_func);
+	}
 }
 
 static void guc_ct_buffer_desc_init(struct guc_ct_buffer_desc *desc)
@@ -231,6 +247,7 @@ int intel_guc_ct_init(struct intel_guc_ct *ct)
 {
 	struct intel_guc *guc = ct_to_guc(ct);
 	struct guc_ct_buffer_desc *desc;
+	u32 h2g_bufsz, g2h_bufsz;
 	u32 blob_size;
 	u32 cmds_size;
 	u32 resv_space;
@@ -244,8 +261,13 @@ int intel_guc_ct_init(struct intel_guc_ct *ct)
 
 	GEM_BUG_ON(ct->vma);
 
-	blob_size = 2 * CTB_DESC_SIZE + CTB_H2G_BUFFER_SIZE + CTB_G2H_BUFFER_SIZE;
-	err = intel_guc_allocate_and_map_vma(guc, blob_size, &ct->vma, &blob);
+	h2g_bufsz = CTB_H2G_BUFFER_SIZE;
+	if (HAS_RECOVERABLE_PAGE_FAULT(guc_to_gt(guc)->i915))
+		h2g_bufsz = max_t(u32, h2g_bufsz, PVC_CTB_H2G_BUFFER_SIZE);
+	g2h_bufsz = 4 * h2g_bufsz; /* expect each h2g to generate a reply */
+
+	blob_size = 2 * CTB_DESC_SIZE + h2g_bufsz + g2h_bufsz;
+	err = __intel_guc_allocate_and_map_vma(guc, blob_size, true, &ct->vma, &blob);
 	if (unlikely(err)) {
 		CT_PROBE_ERROR(ct, "Failed to allocate %u for CTB data (%pe)\n",
 			       blob_size, ERR_PTR(err));
@@ -257,7 +279,7 @@ int intel_guc_ct_init(struct intel_guc_ct *ct)
 	/* store pointers to desc and cmds for send ctb */
 	desc = blob;
 	cmds = blob + 2 * CTB_DESC_SIZE;
-	cmds_size = CTB_H2G_BUFFER_SIZE;
+	cmds_size = h2g_bufsz;
 	resv_space = 0;
 	CT_DEBUG(ct, "%s desc %#tx cmds %#tx size %u/%u\n", "send",
 		 ptrdiff(desc, blob), ptrdiff(cmds, blob), cmds_size,
@@ -267,9 +289,9 @@ int intel_guc_ct_init(struct intel_guc_ct *ct)
 
 	/* store pointers to desc and cmds for recv ctb */
 	desc = blob + CTB_DESC_SIZE;
-	cmds = blob + 2 * CTB_DESC_SIZE + CTB_H2G_BUFFER_SIZE;
-	cmds_size = CTB_G2H_BUFFER_SIZE;
-	resv_space = G2H_ROOM_BUFFER_SIZE;
+	cmds = blob + 2 * CTB_DESC_SIZE + h2g_bufsz;
+	cmds_size = g2h_bufsz;
+	resv_space = cmds_size / 4;
 	CT_DEBUG(ct, "%s desc %#tx cmds %#tx size %u/%u\n", "recv",
 		 ptrdiff(desc, blob), ptrdiff(cmds, blob), cmds_size,
 		 resv_space);
@@ -277,6 +299,15 @@ int intel_guc_ct_init(struct intel_guc_ct *ct)
 	guc_ct_buffer_init(&ct->ctbs.recv, desc, cmds, cmds_size, resv_space);
 
 	return 0;
+}
+
+void intel_guc_ct_sanitize(struct intel_guc_ct *ct)
+{
+	ct->enabled = false;
+
+	/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+	if (IS_METEORLAKE(guc_to_gt(ct_to_guc(ct))->i915) && ct->mtl_workaround.work.wq)
+		cancel_delayed_work_sync(&ct->mtl_workaround.work);
 }
 
 /**
@@ -288,6 +319,10 @@ int intel_guc_ct_init(struct intel_guc_ct *ct)
 void intel_guc_ct_fini(struct intel_guc_ct *ct)
 {
 	GEM_BUG_ON(ct->enabled);
+
+	/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+	if (IS_METEORLAKE(guc_to_gt(ct_to_guc(ct))->i915) && ct->mtl_workaround.work.wq)
+		cancel_delayed_work_sync(&ct->mtl_workaround.work);
 
 	tasklet_kill(&ct->receive_tasklet);
 	i915_vma_unpin_and_release(&ct->vma, I915_VMA_RELEASE_MAP);
@@ -315,7 +350,7 @@ int intel_guc_ct_enable(struct intel_guc_ct *ct)
 	base = intel_guc_ggtt_offset(guc, ct->vma);
 
 	/* blob should start with send descriptor */
-	blob = __px_vaddr(ct->vma->obj);
+	blob = __px_vaddr(ct->vma->obj, NULL);
 	GEM_BUG_ON(blob != ct->ctbs.send.desc);
 
 	/* (re)initialize descriptors */
@@ -346,10 +381,15 @@ int intel_guc_ct_enable(struct intel_guc_ct *ct)
 
 	ct->enabled = true;
 	ct->stall_time = KTIME_MAX;
-#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 	ct->dead_ct_reported = false;
 	ct->dead_ct_reason = CT_DEAD_ALIVE;
 #endif
+
+	/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+	if (IS_METEORLAKE(guc_to_gt(ct_to_guc(ct))->i915))
+		mod_delayed_work(system_highpri_wq, &ct->mtl_workaround.work,
+				 ct->mtl_workaround.delay);
 
 	return 0;
 
@@ -370,11 +410,32 @@ void intel_guc_ct_disable(struct intel_guc_ct *ct)
 	GEM_BUG_ON(!ct->enabled);
 
 	ct->enabled = false;
+	/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+	if (IS_METEORLAKE(guc_to_gt(ct_to_guc(ct))->i915))
+		cancel_delayed_work_sync(&ct->mtl_workaround.work);
 
 	if (intel_guc_is_fw_running(guc)) {
 		ct_control_enable(ct, false);
 	}
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
+static void ct_track_lost_and_found(struct intel_guc_ct *ct, u32 fence, u32 action)
+{
+	unsigned int lost = fence % ARRAY_SIZE(ct->requests.lost_and_found);
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+	unsigned long entries[SZ_32];
+	unsigned int n;
+
+	n = stack_trace_save(entries, ARRAY_SIZE(entries), 1);
+
+	/* May be called under spinlock, so avoid sleeping */
+	ct->requests.lost_and_found[lost].stack = stack_depot_save(entries, n, GFP_NOWAIT);
+#endif
+	ct->requests.lost_and_found[lost].fence = fence;
+	ct->requests.lost_and_found[lost].action = action;
+}
+#endif
 
 static u32 ct_get_next_fence(struct intel_guc_ct *ct)
 {
@@ -397,8 +458,24 @@ static int ct_write(struct intel_guc_ct *ct,
 	u32 *cmds = ctb->cmds;
 	unsigned int i;
 
-	if (unlikely(desc->status))
-		goto corrupted;
+	if (unlikely(desc->status)) {
+		/*
+		 * After VF migration, H2G link is not usable any more.
+		 * Let the caller know, so it can do recovery and retry.
+		 * Any other (non-migration) status is still fatal.
+		 */
+		if (desc->status & GUC_CTB_STATUS_UNUSED) {
+			CT_ERROR(ct, "Unexpected H2G status %#x\n", desc->status);
+			desc->status &= ~GUC_CTB_STATUS_UNUSED;
+		}
+		if (desc->status) {
+			if (desc->status & ~GUC_CTB_STATUS_MIGRATED)
+				goto corrupted;
+			if (!IS_SRIOV_VF(guc_to_gt(ct_to_guc(ct))->i915))
+				goto corrupted;
+			return -EREMCHG;
+		}
+	}
 
 	GEM_BUG_ON(tail > size);
 
@@ -426,11 +503,15 @@ static int ct_write(struct intel_guc_ct *ct,
 		 FIELD_PREP(GUC_CTB_MSG_0_NUM_DWORDS, len) |
 		 FIELD_PREP(GUC_CTB_MSG_0_FENCE, fence);
 
-	type = (flags & INTEL_GUC_CT_SEND_NB) ? GUC_HXG_TYPE_EVENT :
+/* Disable fast request temporarily as it is exposing a bug */
+#undef GUC_HXG_TYPE_FAST_REQUEST
+#define GUC_HXG_TYPE_FAST_REQUEST	GUC_HXG_TYPE_EVENT
+
+	type = (flags & INTEL_GUC_CT_SEND_NB) ? GUC_HXG_TYPE_FAST_REQUEST :
 		GUC_HXG_TYPE_REQUEST;
 	hxg = FIELD_PREP(GUC_HXG_MSG_0_TYPE, type) |
-		FIELD_PREP(GUC_HXG_EVENT_MSG_0_ACTION |
-			   GUC_HXG_EVENT_MSG_0_DATA0, action[0]);
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION |
+			   GUC_HXG_REQUEST_MSG_0_DATA0, action[0]);
 
 	CT_DEBUG(ct, "writing (tail %u) %*ph %*ph %*ph\n",
 		 tail, 4, &header, 4, &hxg, 4 * (len - 1), &action[1]);
@@ -447,11 +528,16 @@ static int ct_write(struct intel_guc_ct *ct,
 	}
 	GEM_BUG_ON(tail > size);
 
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
+	ct_track_lost_and_found(ct, fence,
+				FIELD_GET(GUC_HXG_EVENT_MSG_0_ACTION, action[0]));
+#endif
+
 	/*
 	 * make sure H2G buffer update and LRC tail update (if this triggering a
 	 * submission) are visible before updating the descriptor tail
 	 */
-	intel_guc_write_barrier(ct_to_guc(ct));
+	i915_write_barrier(guc_to_gt(ct_to_guc(ct))->i915);
 
 	/* update local copies */
 	ctb->tail = tail;
@@ -460,6 +546,26 @@ static int ct_write(struct intel_guc_ct *ct,
 
 	/* now update descriptor */
 	WRITE_ONCE(desc->tail, tail);
+	/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+	if (IS_METEORLAKE(guc_to_gt(ct_to_guc(ct))->i915)) {
+		u32 desc_tail = READ_ONCE(desc->tail);
+
+		if (tail != desc_tail) {
+			CT_ERROR(ct, "Lost H2G: %u/%u\n", tail, desc_tail);
+			WRITE_ONCE(desc->tail, tail);
+			READ_ONCE(desc->tail);
+			intel_uncore_read(guc_to_gt(ct_to_guc(ct))->uncore,
+					  ct_to_guc(ct)->notify_reg);
+		}
+	}
+
+	/* Wa_22016122933: Theoretically write combining buffer flush is
+	 * needed here to make the tail update visible to GuC right away,
+	 * but ct_write is always followed by a MMIO write which triggers
+	 * the interrupt to GuC, so an explicit flush is not required.
+	 * Just leave a comment here for now.
+	 */
+	/* i915_write_barrier(guc_to_gt(ct_to_guc(ct))->i915); */
 
 	return 0;
 
@@ -504,12 +610,18 @@ static int wait_for_ct_request_update(struct intel_guc_ct *ct, struct ct_request
 	(!(ct_enabled = intel_guc_ct_enabled(ct)) || \
 	 FIELD_GET(GUC_HXG_MSG_0_ORIGIN, READ_ONCE(req->status)) == \
 	 GUC_HXG_ORIGIN_GUC)
+	intel_boost_fake_int_timer(guc_to_gt(ct_to_guc(ct)), true);
 	err = wait_for_us(done, GUC_CTB_RESPONSE_TIMEOUT_SHORT_MS);
 	if (err)
 		err = wait_for(done, GUC_CTB_RESPONSE_TIMEOUT_LONG_MS);
 #undef done
 	if (!ct_enabled)
 		err = -ENODEV;
+
+	if (unlikely(err))
+		DRM_ERROR("CT: fence %u err %d\n", req->fence, err);
+
+	intel_boost_fake_int_timer(guc_to_gt(ct_to_guc(ct)), false);
 
 	*status = req->status;
 	return err;
@@ -655,6 +767,9 @@ static int ct_send_nb(struct intel_guc_ct *ct,
 out:
 	spin_unlock_irqrestore(&ctb->lock, spin_flags);
 
+	if (unlikely(ret == -EREMCHG))
+		i915_sriov_vf_start_migration_recovery(guc_to_gt(ct_to_guc(ct))->i915);
+
 	return ret;
 }
 
@@ -666,21 +781,24 @@ static int ct_send(struct intel_guc_ct *ct,
 		   u32 *status)
 {
 	struct intel_guc_ct_buffer *ctb = &ct->ctbs.send;
+	unsigned int sleep_period_us = 1;
 	struct ct_request request;
 	unsigned long flags;
-	unsigned int sleep_period_ms = 1;
 	bool send_again;
 	u32 fence;
 	int err;
 
 	GEM_BUG_ON(!ct->enabled);
 	GEM_BUG_ON(!len);
-	GEM_BUG_ON(len & ~GUC_CT_MSG_LEN_MASK);
+	GEM_BUG_ON(len > GUC_CTB_HXG_MSG_MAX_LEN - GUC_CTB_HDR_LEN);
 	GEM_BUG_ON(!response_buf && response_buf_size);
 	might_sleep();
 
 resend:
 	send_again = false;
+
+	if (mutex_lock_interruptible(&ct->send_mutex))
+		return -EINTR;
 
 	/*
 	 * We use a lazy spin wait loop here as we believe that if the CT
@@ -696,13 +814,18 @@ retry:
 			ct->stall_time = ktime_get();
 		spin_unlock_irqrestore(&ctb->lock, flags);
 
-		if (unlikely(ct_deadlocked(ct)))
+		if (unlikely(ct_deadlocked(ct))) {
+			mutex_unlock(&ct->send_mutex);
 			return -EPIPE;
+		}
 
-		if (msleep_interruptible(sleep_period_ms))
+		if (signal_pending(current)) {
+			mutex_unlock(&ct->send_mutex);
 			return -EINTR;
-		sleep_period_ms = sleep_period_ms << 1;
+		}
 
+		usleep_range(sleep_period_us, 2 * sleep_period_us);
+		sleep_period_us = min(sleep_period_us << 1, 1000u);
 		goto retry;
 	}
 
@@ -772,6 +895,18 @@ unlink:
 	list_del(&request.link);
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
 
+	mutex_unlock(&ct->send_mutex);
+
+	if (unlikely(err == -EREMCHG)) {
+		/*
+		 * This retcode means that we're a VF and we've got migrated. Schedule
+		 * post-migration recovery procedure. Do not try to re-send, as values
+		 * of action parameters may no longer be valid after migration. Also,
+		 * the action itself might no longer be needed since HW was reset.
+		 */
+		i915_sriov_vf_start_migration_recovery(guc_to_gt(ct_to_guc(ct))->i915);
+	}
+
 	if (unlikely(send_again))
 		goto resend;
 
@@ -784,24 +919,37 @@ unlink:
 int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 		      u32 *response_buf, u32 response_buf_size, u32 flags)
 {
+	struct intel_guc *guc = ct_to_guc(ct);
+	struct intel_gt *gt = guc_to_gt(guc);
 	u32 status = ~0; /* undefined */
 	int ret;
 
-	if (unlikely(!ct->enabled)) {
-		struct intel_guc *guc = ct_to_guc(ct);
-		struct intel_uc *uc = container_of(guc, struct intel_uc, guc);
+	ret = i915_inject_probe_error(gt->i915, -ENXIO);
+	if (ret)
+		return ret;
 
-		WARN(!uc->reset_in_progress, "Unexpected send: action=%#x\n", *action);
+	ret = i915_inject_probe_error(gt->i915, -EBUSY);
+	if (ret)
+		return ret;
+
+	if (unlikely(!ct->enabled)) {
+		WARN(!gt->uc.reset_in_progress, "Unexpected send: action=%#x\n", *action);
 		return -ENODEV;
 	}
 
 	if (unlikely(ct->ctbs.send.broken))
 		return -EPIPE;
 
+	/* Drain the interrupt workqueue to prevent overfilling send/recv ct */
+	ct_try_receive_message(ct);
+
 	if (flags & INTEL_GUC_CT_SEND_NB)
 		return ct_send_nb(ct, action, len, flags);
 
 	ret = ct_send(ct, action, len, response_buf, response_buf_size, &status);
+	if (I915_SELFTEST_ONLY(flags & INTEL_GUC_CT_SEND_SELFTEST))
+		return ret;
+
 	if (unlikely(ret < 0)) {
 		if (ret != -ENODEV)
 			CT_ERROR(ct, "Sending action %#x failed (%pe) status=%#X\n",
@@ -813,6 +961,7 @@ int intel_guc_ct_send(struct intel_guc_ct *ct, const u32 *action, u32 len,
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(intel_guc_ct_send, ERRNO);
 
 static struct ct_incoming_msg *ct_alloc_msg(u32 num_dwords)
 {
@@ -858,12 +1007,23 @@ static int ct_read(struct intel_guc_ct *ct, struct ct_incoming_msg **msg)
 			 * contexts/engines being reset. But should never happen as
 			 * no contexts should be active when CLIENT_RESET is sent.
 			 */
-			CT_ERROR(ct, "Unexpected G2H after GuC has stopped!\n");
+			CT_ERROR(ct, "Unexpected G2H status %#x\n", status);
 			status &= ~GUC_CTB_STATUS_UNUSED;
+			desc->status &= ~GUC_CTB_STATUS_UNUSED;
 		}
 
-		if (status)
-			goto corrupted;
+		if (status) {
+			/*
+			 * after VF migration G2H shall be still usable
+			 * only any other non-migration status is fatal
+			 */
+			if (status & ~GUC_CTB_STATUS_MIGRATED)
+				goto corrupted;
+			if (!IS_SRIOV_VF(guc_to_gt(ct_to_guc(ct))->i915))
+				goto corrupted;
+			desc->status &= ~GUC_CTB_STATUS_MIGRATED;
+			return -EREMCHG;
+		}
 	}
 
 	GEM_BUG_ON(head > size);
@@ -932,10 +1092,16 @@ static int ct_read(struct intel_guc_ct *ct, struct ct_incoming_msg **msg)
 	CT_DEBUG(ct, "received %*ph\n", 4 * len, (*msg)->msg);
 
 	/* update local copies */
-	ctb->head = head;
+	WRITE_ONCE(ctb->head, head);
 
 	/* now update descriptor */
 	WRITE_ONCE(desc->head, head);
+
+	/*
+	 * Wa_22016122933: Making sure the head update is
+	 * visible to GuC right away
+	 */
+	i915_write_barrier(guc_to_gt(ct_to_guc(ct))->i915);
 
 	return available - len;
 
@@ -946,6 +1112,43 @@ corrupted:
 	CT_DEAD(ct, READ);
 	return -EPIPE;
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
+static bool ct_check_lost_and_found(struct intel_guc_ct *ct, u32 fence)
+{
+	unsigned int n;
+	char *buf = NULL;
+	bool found = false;
+
+	lockdep_assert_held(&ct->requests.lock);
+
+	for (n = 0; n < ARRAY_SIZE(ct->requests.lost_and_found); n++) {
+		if (ct->requests.lost_and_found[n].fence != fence)
+			continue;
+		found = true;
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+		buf = kmalloc(SZ_4K, GFP_NOWAIT);
+		if (buf && stack_depot_snprint(ct->requests.lost_and_found[n].stack,
+					       buf, SZ_4K, 0)) {
+			CT_ERROR(ct, "Fence %u was used by action %#04x sent at\n%s",
+				 fence, ct->requests.lost_and_found[n].action, buf);
+			break;
+		}
+#endif
+		CT_ERROR(ct, "Fence %u was used by action %#04x\n",
+			 fence, ct->requests.lost_and_found[n].action);
+		break;
+	}
+	kfree(buf);
+	return found;
+}
+#else
+static bool ct_check_lost_and_found(struct intel_guc_ct *ct, u32 fence)
+{
+	return false;
+}
+#endif
 
 static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *response)
 {
@@ -988,12 +1191,13 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 		break;
 	}
 	if (!found) {
-		CT_ERROR(ct, "Unsolicited response (fence %u)\n", fence);
-		CT_ERROR(ct, "Could not find fence=%u, last_fence=%u\n", fence,
-			 ct->requests.last_fence);
-		list_for_each_entry(req, &ct->requests.pending, link)
-			CT_ERROR(ct, "request %u awaits response\n",
-				 req->fence);
+		CT_ERROR(ct, "Unsolicited response message: len %u, data %#x (fence %u, last %u)\n",
+			 len, hxg[0], fence, ct->requests.last_fence);
+		if (!ct_check_lost_and_found(ct, fence)) {
+			list_for_each_entry(req, &ct->requests.pending, link)
+				CT_ERROR(ct, "request %u awaits response\n",
+					 req->fence);
+		}
 		err = -ENOKEY;
 	}
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
@@ -1008,6 +1212,8 @@ static int ct_handle_response(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *request)
 {
 	struct intel_guc *guc = ct_to_guc(ct);
+	struct intel_gt *gt = guc_to_gt(guc);
+	struct intel_iov *iov = &gt->iov;
 	const u32 *hxg;
 	const u32 *payload;
 	u32 hxg_len, action, len;
@@ -1032,8 +1238,18 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_SCHED_CONTEXT_MODE_DONE:
 		ret = intel_guc_sched_done_process_msg(guc, payload, len);
 		break;
+	case INTEL_GUC_ACTION_SCHED_ENGINE_MODE_DONE:
+		ret = intel_guc_engine_sched_done_process_msg(guc, payload,
+							      len);
+		if (unlikely(ret))
+			CT_ERROR(ct, "engine schedule context failed %x %*ph\n",
+				  action, 4 * len, payload);
+		break;
 	case INTEL_GUC_ACTION_CONTEXT_RESET_NOTIFICATION:
 		ret = intel_guc_context_reset_process_msg(guc, payload, len);
+		break;
+	case GUC_ACTION_GUC2HOST_NOTIFY_PAGE_FAULT:
+		ret = intel_gt_pagefault_process_page_fault_msg(gt, hxg, hxg_len);
 		break;
 	case INTEL_GUC_ACTION_STATE_CAPTURE_NOTIFICATION:
 		ret = intel_guc_error_capture_process_msg(guc, payload, len);
@@ -1044,17 +1260,34 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
 		ret = intel_guc_engine_failure_process_msg(guc, payload, len);
 		break;
+	case GUC_ACTION_GUC2PF_VF_STATE_NOTIFY:
+		ret = intel_iov_state_process_guc2pf(iov, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_ADVERSE_EVENT:
+		ret = intel_iov_event_process_guc2pf(iov, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_RELAY_FROM_VF:
+		ret = intel_iov_relay_process_guc2pf(&iov->relay, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2VF_RELAY_FROM_PF:
+		ret = intel_iov_relay_process_guc2vf(&iov->relay, hxg, hxg_len);
+		break;
+	case GUC_ACTION_GUC2PF_MMIO_RELAY_SERVICE:
+		ret = intel_iov_service_process_mmio_relay(iov, hxg, hxg_len);
+		break;
+	case INTEL_GUC_ACTION_REPORT_PAGE_FAULT_REQ_DESC:
+		ret = intel_pagefault_req_process_msg(guc, payload, len);
+		break;
 	case INTEL_GUC_ACTION_NOTIFY_FLUSH_LOG_BUFFER_TO_FILE:
 		intel_guc_log_handle_flush_event(&guc->log);
 		ret = 0;
 		break;
 	case INTEL_GUC_ACTION_NOTIFY_CRASH_DUMP_POSTED:
-		CT_ERROR(ct, "Received GuC crash dump notification!\n");
-		ret = 0;
-		break;
 	case INTEL_GUC_ACTION_NOTIFY_EXCEPTION:
-		CT_ERROR(ct, "Received GuC exception notification!\n");
-		ret = 0;
+		ret = intel_guc_crash_process_msg(guc, action);
+		break;
+	case INTEL_GUC_ACTION_ACCESS_COUNTER_NOTIFY:
+		ret = intel_access_counter_req_process_msg(guc, payload, len);
 		break;
 	default:
 		ret = -EOPNOTSUPP;
@@ -1071,7 +1304,7 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	return 0;
 }
 
-static bool ct_process_incoming_requests(struct intel_guc_ct *ct)
+static bool ct_process_incoming_requests(struct intel_guc_ct *ct, struct list_head *incoming)
 {
 	unsigned long flags;
 	struct ct_incoming_msg *request;
@@ -1079,11 +1312,11 @@ static bool ct_process_incoming_requests(struct intel_guc_ct *ct)
 	int err;
 
 	spin_lock_irqsave(&ct->requests.lock, flags);
-	request = list_first_entry_or_null(&ct->requests.incoming,
+	request = list_first_entry_or_null(incoming,
 					   struct ct_incoming_msg, link);
 	if (request)
 		list_del(&request->link);
-	done = !!list_empty(&ct->requests.incoming);
+	done = !!list_empty(incoming);
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
 
 	if (!request)
@@ -1100,14 +1333,14 @@ static bool ct_process_incoming_requests(struct intel_guc_ct *ct)
 	return done;
 }
 
-static void ct_incoming_request_worker_func(struct work_struct *w)
+static noinline void ct_incoming_request_worker_func(struct work_struct *w)
 {
 	struct intel_guc_ct *ct =
 		container_of(w, struct intel_guc_ct, requests.worker);
 	bool done;
 
 	do {
-		done = ct_process_incoming_requests(ct);
+		done = ct_process_incoming_requests(ct, &ct->requests.incoming);
 	} while (!done);
 }
 
@@ -1125,9 +1358,30 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 	 * circular dependency if the space was returned there.
 	 */
 	switch (action) {
+	case INTEL_GUC_ACTION_SCHED_ENGINE_MODE_DONE:
 	case INTEL_GUC_ACTION_SCHED_CONTEXT_MODE_DONE:
 	case INTEL_GUC_ACTION_DEREGISTER_CONTEXT_DONE:
+	case INTEL_GUC_ACTION_TLB_INVALIDATION_DONE:
 		g2h_release_space(ct, request->size);
+	}
+	/* Handle tlb invalidation response in interrupt context */
+	if (action == INTEL_GUC_ACTION_TLB_INVALIDATION_DONE ||
+	    action == GUC_ACTION_GUC2HOST_NOTIFY_MEMORY_CAT_ERROR) {
+		const u32 *payload;
+		u32 hxg_len, len;
+
+		hxg_len = request->size - GUC_CTB_MSG_MIN_LEN;
+		len = hxg_len - GUC_HXG_MSG_MIN_LEN;
+		if (unlikely(len < 1))
+			return -EPROTO;
+		payload = &hxg[GUC_HXG_MSG_MIN_LEN];
+		if (action == INTEL_GUC_ACTION_TLB_INVALIDATION_DONE)
+			intel_guc_tlb_invalidation_done(ct_to_guc(ct),  payload[0]);
+		else
+			intel_gt_pagefault_process_cat_error_msg(guc_to_gt(ct_to_guc(ct)), payload[0]);
+
+		ct_free_msg(request);
+		return 0;
 	}
 
 	spin_lock_irqsave(&ct->requests.lock, flags);
@@ -1135,6 +1389,7 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 	spin_unlock_irqrestore(&ct->requests.lock, flags);
 
 	queue_work(system_unbound_wq, &ct->requests.worker);
+
 	return 0;
 }
 
@@ -1182,6 +1437,13 @@ static void ct_handle_msg(struct intel_guc_ct *ct, struct ct_incoming_msg *msg)
 	u32 format = FIELD_GET(GUC_CTB_MSG_0_FORMAT, msg->msg[0]);
 	int err;
 
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+	if (unlikely(ct->rcv_override && ct->rcv_override(ct, msg->msg) != -ENOTSUPP)) {
+		ct_free_msg(msg);
+		return;
+	}
+#endif
+
 	if (format == GUC_CTB_FORMAT_HXG)
 		err = ct_handle_hxg(ct, msg);
 	else
@@ -1200,15 +1462,25 @@ static void ct_handle_msg(struct intel_guc_ct *ct, struct ct_incoming_msg *msg)
  */
 static int ct_receive(struct intel_guc_ct *ct)
 {
+	struct intel_guc_ct_buffer *ctb = &ct->ctbs.recv;
 	struct ct_incoming_msg *msg = NULL;
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&ct->ctbs.recv.lock, flags);
+	if (READ_ONCE(ctb->head) == READ_ONCE(ctb->desc->tail))
+		return 0;
+
+retry:
+	spin_lock_irqsave(&ctb->lock, flags);
 	ret = ct_read(ct, &msg);
-	spin_unlock_irqrestore(&ct->ctbs.recv.lock, flags);
-	if (ret < 0)
+	spin_unlock_irqrestore(&ctb->lock, flags);
+	if (ret < 0) {
+		if (ret == -EREMCHG) {
+			i915_sriov_vf_start_migration_recovery(guc_to_gt(ct_to_guc(ct))->i915);
+			goto retry;
+		}
 		return ret;
+	}
 
 	if (msg)
 		ct_handle_msg(ct, msg);
@@ -1218,21 +1490,19 @@ static int ct_receive(struct intel_guc_ct *ct)
 
 static void ct_try_receive_message(struct intel_guc_ct *ct)
 {
-	int ret;
-
-	if (GEM_WARN_ON(!ct->enabled))
-		return;
-
-	ret = ct_receive(ct);
-	if (ret > 0)
+	if (ct_receive(ct) > 0)
 		tasklet_hi_schedule(&ct->receive_tasklet);
 }
 
-static void ct_receive_tasklet_func(struct tasklet_struct *t)
+static noinline void ct_receive_tasklet_func(struct tasklet_struct *t)
 {
 	struct intel_guc_ct *ct = from_tasklet(ct, t, receive_tasklet);
 
-	ct_try_receive_message(ct);
+	if (!ct->enabled)
+		return;
+
+	while (ct_receive(ct) > 0)
+		;
 }
 
 /*
@@ -1242,11 +1512,56 @@ static void ct_receive_tasklet_func(struct tasklet_struct *t)
 void intel_guc_ct_event_handler(struct intel_guc_ct *ct)
 {
 	if (unlikely(!ct->enabled)) {
-		WARN(1, "Unexpected GuC event received while CT disabled!\n");
+		/*
+		 * We are unable to mask memory based interrupt from GuC,
+		 * so there is a chance that an GuC CT event for VF will come
+		 * just as CT will be already disabled. As we are not able to
+		 * handle such an event properly, we should abandon it.
+		 * In this case, calling WARN is not recommended.
+		 */
+		WARN(!HAS_MEMORY_IRQ_STATUS(guc_to_gt(ct_to_guc(ct))->i915),
+		     "Unexpected GuC event received while CT disabled!\n");
 		return;
 	}
 
 	ct_try_receive_message(ct);
+}
+
+/* FIXME: There is an known H2G loss issue that may be
+ * caused by MTL cache coherence issue. This temporary WA will:
+ * 1. Detect H2G loss and print to dmesg.
+ * 2. When triggered, rewrite CTB to resume communication
+ * HSD: 22016122933
+ */
+static noinline void mtl_workaround_worker_func(struct work_struct *wrk)
+{
+	struct intel_guc_ct *ct = container_of(wrk, typeof(*ct),
+					     mtl_workaround.work.work);
+
+	if (ct->enabled) {
+		struct intel_guc_ct_buffer *send_ctb = &ct->ctbs.send;
+		struct guc_ct_buffer_desc *send_desc = send_ctb->desc;
+		u32 send_tail;
+		u32 desc_tail;
+		unsigned long spin_flags;
+
+		spin_lock_irqsave(&send_ctb->lock, spin_flags);
+
+		send_tail = send_ctb->tail;
+		desc_tail = READ_ONCE(send_desc->tail);
+		if (send_tail != desc_tail) {
+			CT_ERROR(ct, "Lost H2G: %u/%u\n", send_tail, desc_tail);
+			WRITE_ONCE(send_desc->tail, send_tail);
+			READ_ONCE(send_desc->tail);
+			intel_uncore_read(guc_to_gt(ct_to_guc(ct))->uncore,
+					  ct_to_guc(ct)->notify_reg);
+			intel_guc_notify(ct_to_guc(ct));
+		}
+		spin_unlock_irqrestore(&send_ctb->lock, spin_flags);
+
+		mod_delayed_work(system_highpri_wq, &ct->mtl_workaround.work,
+				 ct->mtl_workaround.delay);
+	}
 }
 
 void intel_guc_ct_print_info(struct intel_guc_ct *ct,
@@ -1271,7 +1586,7 @@ void intel_guc_ct_print_info(struct intel_guc_ct *ct,
 		   ct->ctbs.recv.desc->tail);
 }
 
-#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 static void ct_dead_ct_worker_func(struct work_struct *w)
 {
 	struct intel_guc_ct *ct = container_of(w, struct intel_guc_ct, dead_ct_worker);

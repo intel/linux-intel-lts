@@ -29,6 +29,7 @@ static void gmch_ggtt_insert_page(struct i915_address_space *vm,
 }
 
 static void gmch_ggtt_insert_entries(struct i915_address_space *vm,
+				     struct i915_vm_pt_stash *stash,
 				     struct i915_vma *vma,
 				     enum i915_cache_level cache_level,
 				     u32 unused)
@@ -36,7 +37,8 @@ static void gmch_ggtt_insert_entries(struct i915_address_space *vm,
 	unsigned int flags = (cache_level == I915_CACHE_NONE) ?
 		AGP_USER_MEMORY : AGP_USER_CACHED_MEMORY;
 
-	intel_gmch_gtt_insert_sg_entries(vma->pages, vma->node.start >> PAGE_SHIFT,
+	intel_gmch_gtt_insert_sg_entries(vma->pages,
+					 i915_ggtt_offset(vma) >> PAGE_SHIFT,
 					 flags);
 }
 

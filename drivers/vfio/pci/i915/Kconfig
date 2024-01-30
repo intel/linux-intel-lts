@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config I915_VFIO_PCI
+	tristate "VFIO vendor-specific PCI driver for Intel Graphics"
+	depends on DRM_I915
+	help
+	  This option enables vendor-specific VFIO driver for Intel Graphics.
+	  In addition to generic VFIO PCI functionality, it implements VFIO
+	  migration uAPI (v1) allowing userspace to enable migration for
+	  Intel Graphics SR-IOV Virtual Functions.
+
+config I915_VFIO_PCI_TEST
+	tristate "KUnit tests for Intel Graphics VFIO" if !KUNIT_ALL_TESTS
+	depends on I915_VFIO_PCI && KUNIT
+	default KUNIT_ALL_TESTS
+	help
+	  This option enables unit tests for i915-vfio-pci.
+	  It is not useful for distributions or general kernels,
+	  but only for kernel developers working on the driver.
+
+	  For more information on KUnit and unit tests in general,
+	  please refer to the KUnit documentation in
+	  Documentation/dev-tools/kunit/.
+
+	  If in doubt, say "N".

@@ -11,6 +11,11 @@
 static enum intel_pch
 intel_pch_type(const struct drm_i915_private *dev_priv, unsigned short id)
 {
+	if (dev_priv->params.force_pch >= 0) {
+		DRM_DEBUG_KMS("Forcing PCH type to %i\n",
+			      dev_priv->params.force_pch);
+		return dev_priv->params.force_pch;
+	}
 	switch (id) {
 	case INTEL_PCH_IBX_DEVICE_ID_TYPE:
 		drm_dbg_kms(&dev_priv->drm, "Found Ibex Peak PCH\n");

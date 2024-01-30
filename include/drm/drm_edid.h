@@ -545,6 +545,8 @@ drm_display_mode_from_cea_vic(struct drm_device *dev,
 			      u8 video_code);
 const u8 *drm_find_edid_extension(const struct edid *edid,
 				  int ext_id, int *ext_index);
+int drm_hdmi_sink_max_frl_rate(struct drm_connector *connector);
+int drm_hdmi_sink_dsc_max_frl_rate(struct drm_connector *connector);
 
 
 #endif /* __DRM_EDID_H__ */

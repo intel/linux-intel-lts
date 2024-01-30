@@ -80,12 +80,17 @@ static void update_shadow_pdps(struct intel_vgpu_workload *workload)
  * when populating shadow ctx from guest, we should not overrride oa related
  * registers, so that they will not be overlapped by guest oa configs. Thus
  * made it possible to capture oa data from host for both host and guests.
+ *
+ * In newer platforms, ctx_oactxctrl_offset is an array indexed using the engine
+ * class. For platforms prior to gen12, this would default to render class. If
+ * GVT were enabled on gen12, this code needs to handle indexing into the right
+ * engine class.
  */
 static void sr_oa_regs(struct intel_vgpu_workload *workload,
 		u32 *reg_state, bool save)
 {
 	struct drm_i915_private *dev_priv = workload->vgpu->gvt->gt->i915;
-	u32 ctx_oactxctrl = dev_priv->perf.ctx_oactxctrl_offset;
+	u32 ctx_oactxctrl = dev_priv->perf.ctx_oactxctrl_offset[I915_ENGINE_CLASS_RENDER];
 	u32 ctx_flexeu0 = dev_priv->perf.ctx_flexeu0_offset;
 	int i = 0;
 	u32 flex_mmio[] = {
@@ -522,6 +527,7 @@ static void release_shadow_batch_buffer(struct intel_vgpu_workload *workload);
 static int prepare_shadow_batch_buffer(struct intel_vgpu_workload *workload)
 {
 	struct intel_gvt *gvt = workload->vgpu->gvt;
+	struct i915_ggtt *ggtt = gvt->gt->ggtt;
 	const int gmadr_bytes = gvt->device_info.gmadr_bytes_in_cmd;
 	struct intel_vgpu_shadow_bb *bb;
 	struct i915_gem_ww_ctx ww;
@@ -554,7 +560,8 @@ retry:
 			i915_gem_object_lock(bb->obj, &ww);
 
 			bb->vma = i915_gem_object_ggtt_pin_ww(bb->obj, &ww,
-							      NULL, 0, 0, 0);
+							      ggtt, NULL,
+							      0, 0, 0);
 			if (IS_ERR(bb->vma)) {
 				ret = PTR_ERR(bb->vma);
 				if (ret == -EDEADLK) {
@@ -604,13 +611,14 @@ static void update_wa_ctx_2_shadow_ctx(struct intel_shadow_wa_ctx *wa_ctx)
 		(~INDIRECT_CTX_ADDR_MASK)) | wa_ctx->indirect_ctx.shadow_gma;
 }
 
-static int prepare_shadow_wa_ctx(struct intel_shadow_wa_ctx *wa_ctx)
+static int prepare_shadow_wa_ctx(struct intel_vgpu_workload *workload)
 {
-	struct i915_vma *vma;
+	struct intel_shadow_wa_ctx *wa_ctx = &workload->wa_ctx;
 	unsigned char *per_ctx_va =
 		(unsigned char *)wa_ctx->indirect_ctx.shadow_va +
 		wa_ctx->indirect_ctx.size;
 	struct i915_gem_ww_ctx ww;
+	struct i915_vma *vma;
 	int ret;
 
 	if (wa_ctx->indirect_ctx.size == 0)
@@ -620,7 +628,9 @@ static int prepare_shadow_wa_ctx(struct intel_shadow_wa_ctx *wa_ctx)
 retry:
 	i915_gem_object_lock(wa_ctx->indirect_ctx.obj, &ww);
 
-	vma = i915_gem_object_ggtt_pin_ww(wa_ctx->indirect_ctx.obj, &ww, NULL,
+	vma = i915_gem_object_ggtt_pin_ww(wa_ctx->indirect_ctx.obj, &ww,
+					  workload->vgpu->gvt->gt->ggtt,
+					  NULL,
 					  0, CACHELINE_BYTES, 0);
 	if (IS_ERR(vma)) {
 		ret = PTR_ERR(vma);
@@ -774,7 +784,7 @@ static int prepare_workload(struct intel_vgpu_workload *workload)
 		goto err_unpin_mm;
 	}
 
-	ret = prepare_shadow_wa_ctx(&workload->wa_ctx);
+	ret = prepare_shadow_wa_ctx(workload);
 	if (ret) {
 		gvt_vgpu_err("fail to prepare_shadow_wa_ctx\n");
 		goto err_shadow_batch;
@@ -1296,7 +1306,7 @@ i915_context_ppgtt_root_restore(struct intel_vgpu_submission *s,
 {
 	int i;
 
-	if (i915_vm_is_4lvl(&ppgtt->vm)) {
+	if (i915_vm_lvl(&ppgtt->vm) >= 4) {
 		set_dma_address(ppgtt->pd, s->i915_context_pml4);
 	} else {
 		for (i = 0; i < GEN8_3LVL_PDPES; i++) {
@@ -1357,7 +1367,7 @@ i915_context_ppgtt_root_save(struct intel_vgpu_submission *s,
 {
 	int i;
 
-	if (i915_vm_is_4lvl(&ppgtt->vm)) {
+	if (i915_vm_lvl(&ppgtt->vm) >= 4) {
 		s->i915_context_pml4 = px_dma(ppgtt->pd);
 	} else {
 		for (i = 0; i < GEN8_3LVL_PDPES; i++) {
@@ -1388,7 +1398,7 @@ int intel_vgpu_setup_submission(struct intel_vgpu *vgpu)
 	enum intel_engine_id i;
 	int ret;
 
-	ppgtt = i915_ppgtt_create(to_gt(i915));
+	ppgtt = i915_ppgtt_create(to_gt(i915), 0);
 	if (IS_ERR(ppgtt))
 		return PTR_ERR(ppgtt);
 

@@ -9,18 +9,22 @@
 int intel_engine_live_selftests(struct drm_i915_private *i915)
 {
 	static int (* const tests[])(struct intel_gt *) = {
+		live_engine_mi_selftests,
 		live_engine_pm_selftests,
 		NULL,
 	};
-	struct intel_gt *gt = to_gt(i915);
+	struct intel_gt *gt;
 	typeof(*tests) *fn;
+	int id;
 
 	for (fn = tests; *fn; fn++) {
 		int err;
 
-		err = (*fn)(gt);
-		if (err)
-			return err;
+		for_each_gt(gt, i915, id) {
+			err = (*fn)(gt);
+			if (err)
+				return err;
+		}
 	}
 
 	return 0;

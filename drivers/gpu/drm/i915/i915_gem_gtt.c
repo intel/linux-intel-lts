@@ -44,8 +44,7 @@ int i915_gem_gtt_prepare_pages(struct drm_i915_gem_object *obj,
 		 * try again - if there are no more pages to remove from
 		 * the DMA remapper, i915_gem_shrink will return 0.
 		 */
-		GEM_BUG_ON(obj->mm.pages == pages);
-	} while (i915_gem_shrink(NULL, to_i915(obj->base.dev),
+	} while (i915_gem_shrink(to_i915(obj->base.dev),
 				 obj->base.size >> PAGE_SHIFT, NULL,
 				 I915_SHRINK_BOUND |
 				 I915_SHRINK_UNBOUND));
@@ -64,8 +63,9 @@ void i915_gem_gtt_finish_pages(struct drm_i915_gem_object *obj,
 		/* Wait a bit, in the hope it avoids the hang */
 		usleep_range(100, 250);
 
-	dma_unmap_sg(i915->drm.dev, pages->sgl, pages->nents,
-		     DMA_BIDIRECTIONAL);
+	dma_unmap_sg_attrs(i915->drm.dev, pages->sgl, pages->nents,
+			DMA_BIDIRECTIONAL,
+			DMA_ATTR_SKIP_CPU_SYNC);
 }
 
 /**
@@ -286,6 +286,28 @@ int i915_gem_gtt_insert(struct i915_address_space *vm,
 	return drm_mm_insert_node_in_range(&vm->mm, node,
 					   size, alignment, color,
 					   start, end, DRM_MM_INSERT_EVICT);
+}
+
+struct drm_mm_node *i915_gem_gtt_lookup(struct i915_address_space *vm, u64 addr)
+{
+	struct drm_mm_node *node;
+	u64 page_size, start, end;
+
+	lockdep_assert_held(&vm->mutex);
+
+	if (unlikely(!(addr < vm->total)))
+		return NULL;
+
+	page_size = BIT(__ffs(INTEL_INFO(vm->i915)->page_sizes));
+	start = round_down(addr, page_size);
+	end = start + page_size;
+
+	drm_mm_for_each_node_in_range(node, &vm->mm, start, end)
+		if (addr >= node->start && addr < node->start + node->size &&
+		    drm_mm_node_allocated(node))
+			return node;
+
+	return NULL;
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

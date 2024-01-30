@@ -6,6 +6,7 @@
 
 #include <linux/highmem.h>
 #include <linux/prime_numbers.h>
+#include <linux/sched/mm.h>
 
 #include "gem/i915_gem_internal.h"
 #include "gem/i915_gem_region.h"
@@ -28,6 +29,17 @@ struct tile {
 	unsigned int tiling;
 	unsigned int swizzle;
 };
+
+static void i915_vma_remove(struct i915_vma *vma)
+{
+	struct i915_address_space *vm = i915_vm_get(vma->vm);
+
+	mutex_lock(&vm->mutex);
+	i915_vma_unpublish(vma);
+	mutex_unlock(&vm->mutex);
+
+	i915_vm_put(vm);
+}
 
 static u64 swizzle_bit(unsigned int bit, u64 offset)
 {
@@ -88,13 +100,14 @@ static int check_partial_mapping(struct drm_i915_gem_object *obj,
 {
 	const unsigned long npages = obj->base.size / PAGE_SIZE;
 	struct drm_i915_private *i915 = to_i915(obj->base.dev);
+	struct i915_ggtt *ggtt = to_gt(i915)->ggtt;
 	struct i915_ggtt_view view;
 	struct i915_vma *vma;
+	unsigned long offset;
 	unsigned long page;
 	u32 __iomem *io;
 	struct page *p;
 	unsigned int n;
-	u64 offset;
 	u32 *cpu;
 	int err;
 
@@ -116,10 +129,13 @@ static int check_partial_mapping(struct drm_i915_gem_object *obj,
 		return err;
 	}
 
-	page = i915_prandom_u32_max_state(npages, prng);
-	view = compute_partial_view(obj, page, MIN_CHUNK_PAGES);
+	do {
+		page = i915_prandom_u32_max_state(npages, prng);
+		offset = tiled_offset(tile, page << PAGE_SHIFT);
+	} while (offset >= obj->base.size);
 
-	vma = i915_gem_object_ggtt_pin(obj, &view, 0, 0, PIN_MAPPABLE);
+	view = compute_partial_view(obj, page, MIN_CHUNK_PAGES);
+	vma = i915_gem_object_ggtt_pin(obj, ggtt, &view, 0, 0, PIN_MAPPABLE);
 	if (IS_ERR(vma)) {
 		pr_err("Failed to pin partial view: offset=%lu; err=%d\n",
 		       page, (int)PTR_ERR(vma));
@@ -141,17 +157,13 @@ static int check_partial_mapping(struct drm_i915_gem_object *obj,
 	iowrite32(page, io + n * PAGE_SIZE / sizeof(*io));
 	i915_vma_unpin_iomap(vma);
 
-	offset = tiled_offset(tile, page << PAGE_SHIFT);
-	if (offset >= obj->base.size)
-		goto out;
-
 	intel_gt_flush_ggtt_writes(to_gt(i915));
 
 	p = i915_gem_object_get_page(obj, offset >> PAGE_SHIFT);
 	cpu = kmap(p) + offset_in_page(offset);
 	drm_clflush_virt_range(cpu, sizeof(*cpu));
 	if (*cpu != (u32)page) {
-		pr_err("Partial view for %lu [%u] (offset=%llu, size=%u [%llu, row size %u], fence=%d, tiling=%d, stride=%d) misalignment, expected write to page (%llu + %u [0x%llx]) of 0x%x, found 0x%x\n",
+		pr_err("Partial view for %lu [%u] (offset=%llu, size=%u [%llu, row size %u], fence=%d, tiling=%d, stride=%d) misalignment, expected write to page (%lu + %u [0x%lx]) of 0x%x, found 0x%x\n",
 		       page, n,
 		       view.partial.offset,
 		       view.partial.size,
@@ -169,7 +181,7 @@ static int check_partial_mapping(struct drm_i915_gem_object *obj,
 	kunmap(p);
 
 out:
-	__i915_vma_put(vma);
+	i915_vma_remove(vma);
 	return err;
 }
 
@@ -180,6 +192,7 @@ static int check_partial_mappings(struct drm_i915_gem_object *obj,
 	const unsigned int nreal = obj->scratch / PAGE_SIZE;
 	const unsigned long npages = obj->base.size / PAGE_SIZE;
 	struct drm_i915_private *i915 = to_i915(obj->base.dev);
+	struct i915_ggtt *ggtt = to_gt(i915)->ggtt;
 	struct i915_vma *vma;
 	unsigned long page;
 	int err;
@@ -205,16 +218,16 @@ static int check_partial_mappings(struct drm_i915_gem_object *obj,
 	for_each_prime_number_from(page, 1, npages) {
 		struct i915_ggtt_view view =
 			compute_partial_view(obj, page, MIN_CHUNK_PAGES);
+		unsigned long offset;
 		u32 __iomem *io;
 		struct page *p;
 		unsigned int n;
-		u64 offset;
 		u32 *cpu;
 
 		GEM_BUG_ON(view.partial.size > nreal);
 		cond_resched();
 
-		vma = i915_gem_object_ggtt_pin(obj, &view, 0, 0, PIN_MAPPABLE);
+		vma = i915_gem_object_ggtt_pin(obj, ggtt, &view, 0, 0, PIN_MAPPABLE);
 		if (IS_ERR(vma)) {
 			pr_err("Failed to pin partial view: offset=%lu; err=%d\n",
 			       page, (int)PTR_ERR(vma));
@@ -245,7 +258,7 @@ static int check_partial_mappings(struct drm_i915_gem_object *obj,
 		cpu = kmap(p) + offset_in_page(offset);
 		drm_clflush_virt_range(cpu, sizeof(*cpu));
 		if (*cpu != (u32)page) {
-			pr_err("Partial view for %lu [%u] (offset=%llu, size=%u [%llu, row size %u], fence=%d, tiling=%d, stride=%d) misalignment, expected write to page (%llu + %u [0x%llx]) of 0x%x, found 0x%x\n",
+			pr_err("Partial view for %lu [%u] (offset=%llu, size=%u [%llu, row size %u], fence=%d, tiling=%d, stride=%d) misalignment, expected write to page (%lu + %u [0x%lx]) of 0x%x, found 0x%x\n",
 			       page, n,
 			       view.partial.offset,
 			       view.partial.size,
@@ -264,7 +277,7 @@ static int check_partial_mappings(struct drm_i915_gem_object *obj,
 		if (err)
 			return err;
 
-		__i915_vma_put(vma);
+		i915_vma_remove(vma);
 
 		if (igt_timeout(end_time,
 				"%s: timed out after tiling=%d stride=%d\n",
@@ -583,30 +596,30 @@ static bool assert_mmap_offset(struct drm_i915_private *i915,
 			       int expected)
 {
 	struct drm_i915_gem_object *obj;
-	u64 offset;
-	int ret;
+	struct i915_mmap_offset *mmo;
 
 	obj = i915_gem_object_create_internal(i915, size);
 	if (IS_ERR(obj))
 		return expected && expected == PTR_ERR(obj);
 
-	ret = __assign_mmap_offset(obj, I915_MMAP_TYPE_GTT, &offset, NULL);
+	mmo = i915_gem_mmap_offset_attach(obj, I915_MMAP_TYPE_GTT, NULL);
+
 	i915_gem_object_put(obj);
 
-	return ret == expected;
+	return PTR_ERR_OR_ZERO(mmo) == expected;
 }
 
 static void disable_retire_worker(struct drm_i915_private *i915)
 {
 	i915_gem_driver_unregister__shrinker(i915);
-	intel_gt_pm_get(to_gt(i915));
+	intel_gt_pm_get_untracked(to_gt(i915));
 	cancel_delayed_work_sync(&to_gt(i915)->requests.retire_work);
 }
 
 static void restore_retire_worker(struct drm_i915_private *i915)
 {
 	igt_flush_test(i915);
-	intel_gt_pm_put(to_gt(i915));
+	intel_gt_pm_put_untracked(to_gt(i915));
 	i915_gem_driver_register__shrinker(i915);
 }
 
@@ -746,15 +759,17 @@ err_obj:
 
 static int gtt_set(struct drm_i915_gem_object *obj)
 {
+	struct i915_ggtt *ggtt = to_gt(to_i915(obj->base.dev))->ggtt;
+	intel_wakeref_t wakeref;
 	struct i915_vma *vma;
 	void __iomem *map;
 	int err = 0;
 
-	vma = i915_gem_object_ggtt_pin(obj, NULL, 0, 0, PIN_MAPPABLE);
+	vma = i915_gem_object_ggtt_pin(obj, ggtt, NULL, 0, 0, PIN_MAPPABLE);
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
-	intel_gt_pm_get(vma->vm->gt);
+	wakeref = intel_gt_pm_get(vma->vm->gt);
 	map = i915_vma_pin_iomap(vma);
 	i915_vma_unpin(vma);
 	if (IS_ERR(map)) {
@@ -766,21 +781,23 @@ static int gtt_set(struct drm_i915_gem_object *obj)
 	i915_vma_unpin_iomap(vma);
 
 out:
-	intel_gt_pm_put(vma->vm->gt);
+	intel_gt_pm_put(vma->vm->gt, wakeref);
 	return err;
 }
 
 static int gtt_check(struct drm_i915_gem_object *obj)
 {
+	struct i915_ggtt *ggtt = to_gt(to_i915(obj->base.dev))->ggtt;
+	intel_wakeref_t wakeref;
 	struct i915_vma *vma;
 	void __iomem *map;
 	int err = 0;
 
-	vma = i915_gem_object_ggtt_pin(obj, NULL, 0, 0, PIN_MAPPABLE);
+	vma = i915_gem_object_ggtt_pin(obj, ggtt, NULL, 0, 0, PIN_MAPPABLE);
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
-	intel_gt_pm_get(vma->vm->gt);
+	wakeref = intel_gt_pm_get(vma->vm->gt);
 	map = i915_vma_pin_iomap(vma);
 	i915_vma_unpin(vma);
 	if (IS_ERR(map)) {
@@ -790,13 +807,13 @@ static int gtt_check(struct drm_i915_gem_object *obj)
 
 	if (memchr_inv((void __force *)map, POISON_FREE, obj->base.size)) {
 		pr_err("%s: Write via mmap did not land in backing store (GTT)\n",
-		       obj->mm.region->name);
+		       obj->mm.region.mem->name);
 		err = -EINVAL;
 	}
 	i915_vma_unpin_iomap(vma);
 
 out:
-	intel_gt_pm_put(vma->vm->gt);
+	intel_gt_pm_put(vma->vm->gt, wakeref);
 	return err;
 }
 
@@ -826,7 +843,7 @@ static int wc_check(struct drm_i915_gem_object *obj)
 
 	if (memchr_inv(vaddr, POISON_FREE, obj->base.size)) {
 		pr_err("%s: Write via mmap did not land in backing store (WC)\n",
-		       obj->mm.region->name);
+		       obj->mm.region.mem->name);
 		err = -EINVAL;
 	}
 	i915_gem_object_unpin_map(obj);
@@ -895,14 +912,14 @@ static int __igt_mmap(struct drm_i915_private *i915,
 	if (IS_ERR_VALUE(addr))
 		return addr;
 
-	pr_debug("igt_mmap(%s, %d) @ %lx\n", obj->mm.region->name, type, addr);
+	pr_debug("igt_mmap(%s, %d) @ %lx\n", obj->mm.region.mem->name, type, addr);
 
 	mmap_read_lock(current->mm);
 	area = vma_lookup(current->mm, addr);
 	mmap_read_unlock(current->mm);
 	if (!area) {
 		pr_err("%s: Did not create a vm_area_struct for the mmap\n",
-		       obj->mm.region->name);
+		       obj->mm.region.mem->name);
 		err = -EINVAL;
 		goto out_unmap;
 	}
@@ -913,14 +930,14 @@ static int __igt_mmap(struct drm_i915_private *i915,
 
 		if (get_user(x, ux)) {
 			pr_err("%s: Unable to read from mmap, offset:%zd\n",
-			       obj->mm.region->name, i * sizeof(x));
+			       obj->mm.region.mem->name, i * sizeof(x));
 			err = -EFAULT;
 			goto out_unmap;
 		}
 
 		if (x != expand32(POISON_INUSE)) {
 			pr_err("%s: Read incorrect value from mmap, offset:%zd, found:%x, expected:%x\n",
-			       obj->mm.region->name,
+			       obj->mm.region.mem->name,
 			       i * sizeof(x), x, expand32(POISON_INUSE));
 			err = -EINVAL;
 			goto out_unmap;
@@ -929,7 +946,7 @@ static int __igt_mmap(struct drm_i915_private *i915,
 		x = expand32(POISON_FREE);
 		if (put_user(x, ux)) {
 			pr_err("%s: Unable to write to mmap, offset:%zd\n",
-			       obj->mm.region->name, i * sizeof(x));
+			       obj->mm.region.mem->name, i * sizeof(x));
 			err = -EFAULT;
 			goto out_unmap;
 		}
@@ -1032,7 +1049,7 @@ static int __igt_mmap_access(struct drm_i915_private *i915,
 	err = __put_user(A, ptr);
 	if (err) {
 		pr_err("%s(%s): failed to write into user mmap\n",
-		       obj->mm.region->name, repr_mmap_type(type));
+		       obj->mm.region.mem->name, repr_mmap_type(type));
 		goto out_unmap;
 	}
 
@@ -1041,14 +1058,14 @@ static int __igt_mmap_access(struct drm_i915_private *i915,
 	err = access_process_vm(current, addr, &x, sizeof(x), 0);
 	if (err != sizeof(x)) {
 		pr_err("%s(%s): access_process_vm() read failed\n",
-		       obj->mm.region->name, repr_mmap_type(type));
+		       obj->mm.region.mem->name, repr_mmap_type(type));
 		goto out_unmap;
 	}
 
 	err = access_process_vm(current, addr, &B, sizeof(B), FOLL_WRITE);
 	if (err != sizeof(B)) {
 		pr_err("%s(%s): access_process_vm() write failed\n",
-		       obj->mm.region->name, repr_mmap_type(type));
+		       obj->mm.region.mem->name, repr_mmap_type(type));
 		goto out_unmap;
 	}
 
@@ -1057,13 +1074,13 @@ static int __igt_mmap_access(struct drm_i915_private *i915,
 	err = __get_user(y, ptr);
 	if (err) {
 		pr_err("%s(%s): failed to read from user mmap\n",
-		       obj->mm.region->name, repr_mmap_type(type));
+		       obj->mm.region.mem->name, repr_mmap_type(type));
 		goto out_unmap;
 	}
 
 	if (x != A || y != B) {
 		pr_err("%s(%s): failed to read/write values, found (%lx, %lx)\n",
-		       obj->mm.region->name, repr_mmap_type(type),
+		       obj->mm.region.mem->name, repr_mmap_type(type),
 		       x, y);
 		err = -EINVAL;
 		goto out_unmap;
@@ -1146,7 +1163,7 @@ static int __igt_mmap_gpu(struct drm_i915_private *i915,
 	ux = u64_to_user_ptr((u64)addr);
 	bbe = MI_BATCH_BUFFER_END;
 	if (put_user(bbe, ux)) {
-		pr_err("%s: Unable to write to mmap\n", obj->mm.region->name);
+		pr_err("%s: Unable to write to mmap\n", obj->mm.region.mem->name);
 		err = -EFAULT;
 		goto out_unmap;
 	}
@@ -1183,7 +1200,7 @@ retry:
 		if (err == 0)
 			err = i915_vma_move_to_active(vma, rq, 0);
 
-		err = engine->emit_bb_start(rq, vma->node.start, 0, 0);
+		err = engine->emit_bb_start(rq, i915_vma_offset(vma), 0, 0);
 		i915_request_get(rq);
 		i915_request_add(rq);
 
@@ -1192,7 +1209,7 @@ retry:
 				drm_info_printer(engine->i915->drm.dev);
 
 			pr_err("%s(%s, %s): Failed to execute batch\n",
-			       __func__, engine->name, obj->mm.region->name);
+			       __func__, engine->name, obj->mm.region.mem->name);
 			intel_engine_dump(engine, &p,
 					  "%s\n", engine->name);
 
@@ -1327,16 +1344,19 @@ static int __igt_mmap_revoke(struct drm_i915_private *i915,
 
 	err = check_present(addr, obj->base.size);
 	if (err) {
-		pr_err("%s: was not present\n", obj->mm.region->name);
+		pr_err("%s: was not present\n", obj->mm.region.mem->name);
 		goto out_unmap;
 	}
+
+	if (!i915_gem_object_has_pages(obj)) /* mapped via obj->swapto */
+		goto out_unmap;
 
 	/*
 	 * After unbinding the object from the GGTT, its address may be reused
 	 * for other objects. Ergo we have to revoke the previous mmap PTE
 	 * access as it no longer points to the same object.
 	 */
-	err = i915_gem_object_unbind(obj, I915_GEM_OBJECT_UNBIND_ACTIVE);
+	err = i915_gem_object_unbind(obj, NULL, I915_GEM_OBJECT_UNBIND_ACTIVE);
 	if (err) {
 		pr_err("Failed to unbind object!\n");
 		goto out_unmap;
@@ -1356,7 +1376,7 @@ static int __igt_mmap_revoke(struct drm_i915_private *i915,
 	if (!obj->ops->mmap_ops) {
 		err = check_absent(addr, obj->base.size);
 		if (err) {
-			pr_err("%s: was not absent\n", obj->mm.region->name);
+			pr_err("%s: was not absent\n", obj->mm.region.mem->name);
 			goto out_unmap;
 		}
 	} else {
@@ -1364,7 +1384,7 @@ static int __igt_mmap_revoke(struct drm_i915_private *i915,
 
 		err = check_present(addr, obj->base.size);
 		if (err) {
-			pr_err("%s: was not present\n", obj->mm.region->name);
+			pr_err("%s: was not present\n", obj->mm.region.mem->name);
 			goto out_unmap;
 		}
 	}
@@ -1416,6 +1436,30 @@ int i915_gem_mman_live_selftests(struct drm_i915_private *i915)
 		SUBTEST(igt_mmap_revoke),
 		SUBTEST(igt_mmap_gpu),
 	};
+	struct mm_struct *mm = NULL;
+	int err;
 
-	return i915_subtests(tests, i915);
+	/*
+	 * These tests emulate userspace mmaps and so operate on
+	 * current->mm. However, this selftest could be running
+	 * in an anonymous kernel thread, where current->mm is NULL
+	 * and current->active_mm is the "borrowed address space".
+	 * Promote that borrowed address space for use with vm_mmap().
+	 */
+	if (!current->mm) {
+		mm = current->active_mm;
+		mmget(mm);
+		current->mm = mm;
+	}
+
+	err = i915_live_subtests(tests, i915);
+
+	/* restore current->mm in case a persistent kernel thread */
+	if (mm) {
+		GEM_BUG_ON(current->mm != mm);
+		mmput(mm);
+		current->mm = NULL;
+	}
+
+	return err;
 }

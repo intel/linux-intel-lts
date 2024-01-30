@@ -7,54 +7,68 @@
 
 #include "i915_drv.h" /* for_each_engine() */
 #include "i915_request.h"
+#include "intel_breadcrumbs.h"
 #include "intel_engine_heartbeat.h"
+#include "intel_engine_pm.h"
 #include "intel_execlists_submission.h"
 #include "intel_gt.h"
 #include "intel_gt_pm.h"
 #include "intel_gt_requests.h"
 #include "intel_timeline.h"
 
-static bool retire_requests(struct intel_timeline *tl)
+static void retire_requests(const struct intel_timeline *tl)
 {
 	struct i915_request *rq, *rn;
 
 	list_for_each_entry_safe(rq, rn, &tl->requests, link)
 		if (!i915_request_retire(rq))
-			return false;
-
-	/* And check nothing new was submitted */
-	return !i915_active_fence_isset(&tl->last_request);
+			return;
 }
 
-static bool engine_active(const struct intel_engine_cs *engine)
+static bool timeline_retire(struct intel_timeline *tl)
 {
-	return !list_empty(&engine->kernel_context->timeline->requests);
+	if (list_empty(&tl->requests))
+		return true;
+
+	if (mutex_trylock(&tl->mutex)) {
+		retire_requests(tl);
+		mutex_unlock(&tl->mutex);
+	}
+
+	return list_empty(&tl->requests);
 }
 
-static bool flush_submission(struct intel_gt *gt, long timeout)
+static bool engine_idle(const struct intel_engine_cs *engine)
+{
+	return timeline_retire(engine->kernel_context->timeline);
+}
+
+static bool flush_submission(struct intel_gt *gt)
 {
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
-	bool active = false;
-
-	if (!timeout)
-		return false;
+	bool idle = true;
 
 	if (!intel_gt_pm_is_awake(gt))
-		return false;
+		return true;
 
 	for_each_engine(engine, gt, id) {
+		if (!intel_engine_pm_is_awake(engine))
+			continue;
+
 		intel_engine_flush_submission(engine);
+		intel_engine_signal_breadcrumbs(engine);
 
 		/* Flush the background retirement and idle barriers */
 		flush_work(&engine->retire_work);
 		flush_delayed_work(&engine->wakeref.work);
 
 		/* Is the idle barrier still outstanding? */
-		active |= engine_active(engine);
+		if (engine->kernel_context)
+			idle &= engine_idle(engine);
 	}
 
-	return active;
+	return idle;
 }
 
 static void engine_retire(struct work_struct *work)
@@ -130,76 +144,63 @@ void intel_engine_fini_retire(struct intel_engine_cs *engine)
 	GEM_BUG_ON(engine->retire);
 }
 
-long intel_gt_retire_requests_timeout(struct intel_gt *gt, long timeout,
-				      long *remaining_timeout)
+/**
+ * intel_gt_retire_requests_timeout - try to retire all completed requests
+ * @gt - the GT from which to retire outstanding requests
+ * @remain - How long we should wait in total for any outstanding request
+ *
+ * Look through all the active timelines/contexts on the GT, and try to
+ * retire all the requests. If @remain is provided, any incomplete
+ * timeline will be waited on upto the remaining timeout (in jiffies).
+ * Any time not consumed by waiting is returned via @remain.
+ *
+ * Returns true if all requests were retired and the GT is now idle.
+ */
+bool intel_gt_retire_requests_timeout(struct intel_gt *gt, long *remain)
 {
 	struct intel_gt_timelines *timelines = &gt->timelines;
-	struct intel_timeline *tl, *tn;
-	unsigned long active_count = 0;
-	LIST_HEAD(free);
+	long timeout = remain ? *remain : -ETIME;
+	struct intel_timeline *tl;
+	bool idle = true;
 
-	flush_submission(gt, timeout); /* kick the ksoftirqd tasklets */
-	spin_lock(&timelines->lock);
-	list_for_each_entry_safe(tl, tn, &timelines->active_list, link) {
-		if (!mutex_trylock(&tl->mutex)) {
-			active_count++; /* report busy to caller, try again? */
+	if (gt->i915->quiesce_gpu)
+		return true;
+
+	if (remain)
+		flush_submission(gt); /* kick the ksoftirqd tasklets */
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(tl, &timelines->active_list, link) {
+		if (!intel_timeline_get_if_active(tl)) /* pin the link */
 			continue;
-		}
-
-		intel_timeline_get(tl);
-		GEM_BUG_ON(!atomic_read(&tl->active_count));
-		atomic_inc(&tl->active_count); /* pin the list element */
-		spin_unlock(&timelines->lock);
+		rcu_read_unlock();
 
 		if (timeout > 0) {
 			struct dma_fence *fence;
 
 			fence = i915_active_fence_get(&tl->last_request);
 			if (fence) {
-				mutex_unlock(&tl->mutex);
-
 				timeout = dma_fence_wait_timeout(fence,
 								 true,
 								 timeout);
 				dma_fence_put(fence);
-
-				/* Retirement is best effort */
-				if (!mutex_trylock(&tl->mutex)) {
-					active_count++;
-					goto out_active;
-				}
 			}
 		}
 
-		if (!retire_requests(tl))
-			active_count++;
-		mutex_unlock(&tl->mutex);
+		/* Retirement is best effort */
+		idle &= timeline_retire(tl);
 
-out_active:	spin_lock(&timelines->lock);
-
-		/* Resume list iteration after reacquiring spinlock */
-		list_safe_reset_next(tl, tn, link);
-		if (atomic_dec_and_test(&tl->active_count))
-			list_del(&tl->link);
-
-		/* Defer the final release to after the spinlock */
-		if (refcount_dec_and_test(&tl->kref.refcount)) {
-			GEM_BUG_ON(atomic_read(&tl->active_count));
-			list_add(&tl->link, &free);
-		}
+		rcu_read_lock();
+		intel_timeline_put_active(tl);
 	}
-	spin_unlock(&timelines->lock);
+	rcu_read_unlock();
 
-	list_for_each_entry_safe(tl, tn, &free, link)
-		__intel_timeline_free(&tl->kref);
+	if (remain) {
+		idle &= flush_submission(gt); /* Wait, there's more! */
+		*remain = max(timeout, 0l);
+	}
 
-	if (flush_submission(gt, timeout)) /* Wait, there's more! */
-		active_count++;
-
-	if (remaining_timeout)
-		*remaining_timeout = timeout;
-
-	return active_count ? timeout : 0;
+	return idle;
 }
 
 static void retire_work_handler(struct work_struct *work)

@@ -64,9 +64,9 @@ static void *igt_spinner_pin_obj(struct intel_context *ce,
 		return vaddr;
 
 	if (ww)
-		ret = i915_vma_pin_ww(*vma, ww, 0, 0, PIN_USER);
+		ret = i915_vma_pin_ww(*vma, ww, 0, 0, PIN_USER | PIN_ZONE_48);
 	else
-		ret = i915_vma_pin(*vma, 0, 0, PIN_USER);
+		ret = i915_vma_pin(*vma, 0, 0, PIN_USER | PIN_ZONE_48);
 
 	if (ret) {
 		i915_gem_object_unpin_map(obj);
@@ -116,7 +116,7 @@ static unsigned int seqno_offset(u64 fence)
 static u64 hws_address(const struct i915_vma *hws,
 		       const struct i915_request *rq)
 {
-	return hws->node.start + seqno_offset(rq->fence.context);
+	return i915_vma_offset(hws) + seqno_offset(rq->fence.context);
 }
 
 static int move_to_active(struct i915_vma *vma,
@@ -191,7 +191,7 @@ igt_spinner_create_request(struct igt_spinner *spin,
 		*batch++ = MI_STORE_DWORD_IMM | MI_MEM_VIRTUAL;
 		*batch++ = hws_address(hws, rq);
 	}
-	*batch++ = rq->fence.seqno;
+	*batch++ = i915_request_seqno(rq);
 
 	*batch++ = arbitration_command;
 
@@ -203,8 +203,8 @@ igt_spinner_create_request(struct igt_spinner *spin,
 		*batch++ = MI_BATCH_BUFFER_START;
 	else
 		*batch++ = MI_BATCH_BUFFER_START | MI_BATCH_GTT;
-	*batch++ = lower_32_bits(vma->node.start);
-	*batch++ = upper_32_bits(vma->node.start);
+	*batch++ = lower_32_bits(i915_vma_offset(vma));
+	*batch++ = upper_32_bits(i915_vma_offset(vma));
 
 	*batch++ = MI_BATCH_BUFFER_END; /* not reached */
 
@@ -219,7 +219,10 @@ igt_spinner_create_request(struct igt_spinner *spin,
 	flags = 0;
 	if (GRAPHICS_VER(rq->engine->i915) <= 5)
 		flags |= I915_DISPATCH_SECURE;
-	err = engine->emit_bb_start(rq, vma->node.start, PAGE_SIZE, flags);
+	err = engine->emit_bb_start(rq,
+				    i915_vma_offset(vma),
+				    PAGE_SIZE,
+				    flags);
 
 cancel_rq:
 	if (err) {
@@ -269,9 +272,9 @@ bool igt_wait_for_spinner(struct igt_spinner *spin, struct i915_request *rq)
 		intel_engine_flush_submission(rq->engine);
 
 	return !(wait_for_us(i915_seqno_passed(hws_seqno(spin, rq),
-					       rq->fence.seqno),
+					       i915_request_seqno(rq)),
 			     100) &&
 		 wait_for(i915_seqno_passed(hws_seqno(spin, rq),
-					    rq->fence.seqno),
+					    i915_request_seqno(rq)),
 			  50));
 }

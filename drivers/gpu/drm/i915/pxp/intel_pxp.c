@@ -7,6 +7,7 @@
 #include "intel_pxp_irq.h"
 #include "intel_pxp_session.h"
 #include "intel_pxp_tee.h"
+#include "gem/i915_gem_context.h"
 #include "gt/intel_context.h"
 #include "i915_drv.h"
 
@@ -97,18 +98,14 @@ static int create_vcs_context(struct intel_pxp *pxp)
 
 static void destroy_vcs_context(struct intel_pxp *pxp)
 {
-	intel_engine_destroy_pinned_context(fetch_and_zero(&pxp->ce));
+	if (pxp->ce)
+		intel_engine_destroy_pinned_context(fetch_and_zero(&pxp->ce));
 }
 
-void intel_pxp_init(struct intel_pxp *pxp)
+static void pxp_init_full(struct intel_pxp *pxp)
 {
 	struct intel_gt *gt = pxp_to_gt(pxp);
 	int ret;
-
-	if (!HAS_PXP(gt->i915))
-		return;
-
-	mutex_init(&pxp->tee_mutex);
 
 	/*
 	 * we'll use the completion to check if there is a termination pending,
@@ -118,7 +115,7 @@ void intel_pxp_init(struct intel_pxp *pxp)
 	init_completion(&pxp->termination);
 	complete_all(&pxp->termination);
 
-	INIT_WORK(&pxp->session_work, intel_pxp_session_work);
+	intel_pxp_session_management_init(pxp);
 
 	ret = create_vcs_context(pxp);
 	if (ret)
@@ -136,11 +133,26 @@ out_context:
 	destroy_vcs_context(pxp);
 }
 
-void intel_pxp_fini(struct intel_pxp *pxp)
+void intel_pxp_init(struct intel_pxp *pxp)
 {
-	if (!intel_pxp_is_enabled(pxp))
+	struct intel_gt *gt = pxp_to_gt(pxp);
+
+	/* on pre-MTL we rely on the mei PXP module; on MTL+ we own the GSC uC */
+	if (!IS_ENABLED(CONFIG_INTEL_MEI_PXP) && !intel_uc_uses_gsc_uc(&gt->uc))
 		return;
 
+	/*
+	 * If HuC is loaded by GSC but PXP is disabled, we can skip the init of
+	 * the full PXP session/object management and just init the tee channel.
+	 */
+	if (HAS_PXP(gt->i915))
+		pxp_init_full(pxp);
+	else if (intel_huc_is_loaded_by_gsc(&gt->uc.huc) && intel_uc_uses_huc(&gt->uc))
+		intel_pxp_tee_component_init(pxp);
+}
+
+void intel_pxp_fini(struct intel_pxp *pxp)
+{
 	pxp->arb_is_valid = false;
 
 	intel_pxp_tee_component_fini(pxp);
@@ -154,7 +166,7 @@ void intel_pxp_mark_termination_in_progress(struct intel_pxp *pxp)
 	reinit_completion(&pxp->termination);
 }
 
-static void intel_pxp_queue_termination(struct intel_pxp *pxp)
+static void pxp_queue_termination(struct intel_pxp *pxp)
 {
 	struct intel_gt *gt = pxp_to_gt(pxp);
 
@@ -173,31 +185,41 @@ static void intel_pxp_queue_termination(struct intel_pxp *pxp)
  * the arb session is restarted from the irq work when we receive the
  * termination completion interrupt
  */
-int intel_pxp_wait_for_arb_start(struct intel_pxp *pxp)
+int intel_pxp_start(struct intel_pxp *pxp)
 {
+	int ret = 0;
+
 	if (!intel_pxp_is_enabled(pxp))
-		return 0;
+		return -ENODEV;
+
+	mutex_lock(&pxp->arb_mutex);
+
+	if (pxp->arb_is_valid)
+		goto unlock;
+
+	pxp_queue_termination(pxp);
 
 	if (!wait_for_completion_timeout(&pxp->termination,
-					 msecs_to_jiffies(100)))
-		return -ETIMEDOUT;
+					msecs_to_jiffies(250))) {
+		ret = -ETIMEDOUT;
+		goto unlock;
+	}
+
+	/* make sure the compiler doesn't optimize the double access */
+	barrier();
 
 	if (!pxp->arb_is_valid)
-		return -EIO;
+		ret = -EIO;
 
-	return 0;
+unlock:
+	mutex_unlock(&pxp->arb_mutex);
+	return ret;
 }
 
 void intel_pxp_init_hw(struct intel_pxp *pxp)
 {
 	kcr_pxp_enable(pxp_to_gt(pxp));
 	intel_pxp_irq_enable(pxp);
-
-	/*
-	 * the session could've been attacked while we weren't loaded, so
-	 * handle it as if it was and re-create it.
-	 */
-	intel_pxp_queue_termination(pxp);
 }
 
 void intel_pxp_fini_hw(struct intel_pxp *pxp)
@@ -205,4 +227,83 @@ void intel_pxp_fini_hw(struct intel_pxp *pxp)
 	kcr_pxp_disable(pxp_to_gt(pxp));
 
 	intel_pxp_irq_disable(pxp);
+}
+
+int intel_pxp_key_check(struct intel_pxp *pxp,
+			struct drm_i915_gem_object *obj,
+			bool assign)
+{
+	if (!intel_pxp_is_active(pxp))
+		return -ENODEV;
+
+	if (!i915_gem_object_is_protected(obj))
+		return -EINVAL;
+
+	GEM_BUG_ON(!pxp->key_instance);
+
+	/*
+	 * If this is the first time we're using this object, it's not
+	 * encrypted yet; it will be encrypted with the current key, so mark it
+	 * as such. If the object is already encrypted, check instead if the
+	 * used key is still valid.
+	 */
+	if (!obj->pxp_key_instance && assign)
+		obj->pxp_key_instance = pxp->key_instance;
+
+	if (obj->pxp_key_instance != pxp->key_instance)
+		return -ENOEXEC;
+
+	return 0;
+}
+
+void intel_pxp_invalidate(struct intel_pxp *pxp)
+{
+	struct drm_i915_private *i915 = pxp_to_gt(pxp)->i915;
+	struct i915_gem_context *ctx, *cn;
+
+	/* ban all contexts marked as protected */
+	spin_lock_irq(&i915->gem.contexts.lock);
+	list_for_each_entry_safe(ctx, cn, &i915->gem.contexts.list, link) {
+		struct i915_gem_engines_iter it;
+		struct intel_context *ce;
+
+		if (!kref_get_unless_zero(&ctx->ref))
+			continue;
+
+		if (likely(!i915_gem_context_uses_protected_content(ctx))) {
+			i915_gem_context_put(ctx);
+			continue;
+		}
+
+		spin_unlock_irq(&i915->gem.contexts.lock);
+
+		/*
+		 * By the time we get here we are either going to suspend with
+		 * quiesced execution or the HW keys are already long gone and
+		 * in this case it is worthless to attempt to close the context
+		 * and wait for its execution. It will hang the GPU if it has
+		 * not already. So, as a fast mitigation, we can ban the
+		 * context as quick as we can. That might race with the
+		 * execbuffer, but currently this is the best that can be done.
+		 */
+		for_each_gem_engine(ce, i915_gem_context_lock_engines(ctx), it)
+			intel_context_ban(ce, NULL);
+		i915_gem_context_unlock_engines(ctx);
+
+		/*
+		 * The context has been banned, no need to keep the wakeref.
+		 * This is safe from races because the only other place this
+		 * is touched is context_release and we're holding a ctx ref
+		 */
+		if (ctx->pxp_wakeref) {
+			intel_runtime_pm_put(&i915->runtime_pm,
+					     ctx->pxp_wakeref);
+			ctx->pxp_wakeref = 0;
+		}
+
+		spin_lock_irq(&i915->gem.contexts.lock);
+		list_safe_reset_next(ctx, cn, link);
+		i915_gem_context_put(ctx);
+	}
+	spin_unlock_irq(&i915->gem.contexts.lock);
 }

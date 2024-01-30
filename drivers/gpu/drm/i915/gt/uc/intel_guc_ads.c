@@ -19,6 +19,10 @@
 #include "intel_uc.h"
 #include "i915_drv.h"
 
+/* UM Queue parameters: */
+#define GUC_UM_QUEUE_SIZE	(SZ_4K)
+#define GUC_PAGE_RES_TIMEOUT_US	(-1)
+
 /*
  * The Additional Data Struct (ADS) has pointers for different buffers used by
  * the GuC. One single gem object contains the ADS struct itself (guc_ads) and
@@ -34,6 +38,8 @@
  *      | guc_gt_system_info                    |
  *      +---------------------------------------+
  *      | guc_engine_usage                      |
+ *      +---------------------------------------+
+ *      | guc_um_init_params                    |
  *      +---------------------------------------+ <== static
  *      | guc_mmio_reg[countA] (engine 0.0)     |
  *      | guc_mmio_reg[countB] (engine 0.1)     |
@@ -50,6 +56,10 @@
  *      +---------------------------------------+
  *      | padding                               |
  *      +---------------------------------------+ <== 4K aligned
+ *      | UM queues                             |
+ *      +---------------------------------------+
+ *      | padding                               |
+ *      +---------------------------------------+ <== 4K aligned
  *      | private data                          |
  *      +---------------------------------------+
  *      | padding                               |
@@ -60,6 +70,7 @@ struct __guc_ads_blob {
 	struct guc_policies policies;
 	struct guc_gt_system_info system_info;
 	struct guc_engine_usage engine_usage;
+	struct guc_um_init_params um_init_params;
 	/* From here on, location is dynamic! Refer to above diagram. */
 	struct guc_mmio_reg regset[0];
 } __packed;
@@ -93,6 +104,16 @@ static u32 guc_ads_capture_size(struct intel_guc *guc)
 	return PAGE_ALIGN(guc->ads_capture_size);
 }
 
+static u32 guc_ads_um_queues_size(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+
+	if (!HAS_UM_QUEUES(gt->i915))
+		return 0;
+
+	return GUC_UM_QUEUE_SIZE * GUC_UM_HW_QUEUE_MAX;
+}
+
 static u32 guc_ads_private_data_size(struct intel_guc *guc)
 {
 	return PAGE_ALIGN(guc->fw.private_data_size);
@@ -123,12 +144,22 @@ static u32 guc_ads_capture_offset(struct intel_guc *guc)
 	return PAGE_ALIGN(offset);
 }
 
-static u32 guc_ads_private_data_offset(struct intel_guc *guc)
+static u32 guc_ads_um_queues_offset(struct intel_guc *guc)
 {
 	u32 offset;
 
 	offset = guc_ads_capture_offset(guc) +
 		 guc_ads_capture_size(guc);
+
+	return PAGE_ALIGN(offset);
+}
+
+static u32 guc_ads_private_data_offset(struct intel_guc *guc)
+{
+	u32 offset;
+
+	offset = guc_ads_um_queues_offset(guc) +
+		 guc_ads_um_queues_size(guc);
 
 	return PAGE_ALIGN(offset);
 }
@@ -305,7 +336,23 @@ static long __must_check guc_mmio_reg_add(struct intel_gt *gt,
 		return PTR_ERR(slot);
 
 	while (slot-- > regset->registers) {
-		GEM_BUG_ON(slot[0].offset == slot[1].offset);
+		/*
+		 * XXX: this condition should be impossible given the above
+		 * bsearch, but we sometimes hit it when LMEM doesn't work
+		 * properly and the returned read value is not what we wrote.
+		 * Instead of exploding on a GEM_BUG_ON, log the value so we can
+		 * confirm if it is a LMEM bug or if a duplicated register
+		 * somehow slipped through the search.
+		 * Note that having a duplicated entry in the list is not a
+		 * problem per-se, GuC will just save the register twice and
+		 * restore it twice.
+		 */
+		if (unlikely(slot[0].offset == slot[1].offset)) {
+			DRM_ERROR("duplicated guc regset entry 0x%x [0x%x]\n",
+				  slot[0].offset, offset);
+			break;
+		}
+
 		if (slot[1].offset > slot[0].offset)
 			break;
 
@@ -357,6 +404,7 @@ static int guc_mmio_regset_init(struct temp_regset *regset,
 				struct intel_engine_cs *engine)
 {
 	struct intel_gt *gt = engine->gt;
+	struct drm_i915_private *i915 = gt->i915;
 	const u32 base = engine->mmio_base;
 	struct i915_wa_list *wal = &engine->wa_list;
 	struct i915_wa *wa;
@@ -374,11 +422,29 @@ static int guc_mmio_regset_init(struct temp_regset *regset,
 	ret |= GUC_MMIO_REG_ADD(gt, regset, RING_IMR(base), false);
 
 	if ((engine->flags & I915_ENGINE_FIRST_RENDER_COMPUTE) &&
-	    CCS_MASK(engine->gt))
+	    CCS_MASK(engine->gt)) {
 		ret |= GUC_MMIO_REG_ADD(gt, regset, GEN12_RCU_MODE, true);
+		ret |= GUC_MMIO_REG_ADD(gt, regset, XEHP_CCS_MODE, false);
+	}
 
-	for (i = 0, wa = wal->list; i < wal->count; i++, wa++)
+	/*
+	 * i915_debugger.c uses runtime enabling of TD_CTL, not captured
+	 * by a static engine->wa_list, and so requires manual addition
+	 * to the reset list.
+	 */
+	if (engine->flags & I915_ENGINE_FIRST_RENDER_COMPUTE) {
+		ret |= GUC_MCR_REG_ADD(gt, regset, TD_CTL, false);
+		ret |= GUC_MCR_REG_ADD(gt, regset, GEN8_ROW_CHICKEN, true);
+	}
+
+	for (i = 0, wa = wal->list; i < wal->count; i++, wa++) {
+		/* Wa_1607720814 - dummy write must be last not sorted! */
+		if (IS_XEHPSDV(i915) &&
+		    i915_mmio_reg_offset(wa->reg) == 0xB0CC)
+			continue;
+
 		ret |= GUC_MMIO_REG_ADD(gt, regset, wa->reg, wa->masked_reg);
+	}
 
 	/* Be extra paranoid and include all whitelist registers. */
 	for (i = 0; i < RING_MAX_NONPRIV_SLOTS; i++)
@@ -401,6 +467,49 @@ static int guc_mmio_regset_init(struct temp_regset *regset,
 		ret |= GUC_MMIO_REG_ADD(gt, regset, EU_PERF_CNTL4, false);
 		ret |= GUC_MMIO_REG_ADD(gt, regset, EU_PERF_CNTL5, false);
 		ret |= GUC_MMIO_REG_ADD(gt, regset, EU_PERF_CNTL6, false);
+	}
+
+	/*
+	 * Wa_1607720814:
+	 *
+	 * NB: The dummy write must be the last entry in the list. Specifically,
+	 * it has to be after all entries in the broken range which potentially
+	 * means it is out of order. So, to be safe, just add it manually as the
+	 * last entry.
+	 */
+	if (IS_XEHPSDV(i915)) {
+		bool found = false;
+
+		for (i = 0; i < regset->storage_used; i++) {
+			u32 offset = regset->storage[i].offset;
+			if ((offset >= 0xB000) && (offset <= 0xB01F)) {
+				found = true;
+				break;
+			}
+
+			if ((offset >= 0xB0A0) && (offset <= 0xB0FF)) {
+				found = true;
+				break;
+			}
+		}
+
+		if (found) {
+			struct guc_mmio_reg *slot;
+			struct guc_mmio_reg reg = {
+				.offset = 0xB0CC,
+				.flags = 0,
+			};
+
+			slot = __mmio_reg_add(regset, &reg);
+			ret |= IS_ERR(slot);
+		}
+	}
+
+	if (HAS_EU_STALL_SAMPLING(i915)) {
+		ret |= GUC_MMIO_REG_ADD(gt, regset, XEHPC_EUSTALL_BASE, false);
+		ret |= GUC_MMIO_REG_ADD(gt, regset, XEHPC_EUSTALL_BASE_UPPER, false);
+		ret |= GUC_MMIO_REG_ADD(gt, regset, XEHPC_EUSTALL_CTRL, true);
+		ret |= GUC_MMIO_REG_ADD(gt, regset, GEN8_ROW_CHICKEN2, true);
 	}
 
 	return ret ? -1 : 0;
@@ -479,6 +588,32 @@ static void guc_mmio_reg_state_init(struct intel_guc *guc)
 
 		addr_ggtt += count * sizeof(struct guc_mmio_reg);
 	}
+}
+
+static void guc_um_init_params(struct intel_guc *guc)
+{
+	u32 um_queue_offset = guc_ads_um_queues_offset(guc);
+	struct i915_vma *vma = guc->ads_vma;
+	u64 base_dpa;
+	u32 base_ggtt;
+	int i;
+
+	GEM_BUG_ON(!(vma->obj->flags & I915_BO_ALLOC_CONTIGUOUS));
+
+	base_ggtt = intel_guc_ggtt_offset(guc, vma) + um_queue_offset;
+	base_dpa = sg_dma_address(vma->pages->sgl) + um_queue_offset;
+
+	for (i = 0; i < GUC_UM_HW_QUEUE_MAX; ++i) {
+		ads_blob_write(guc, um_init_params.queue_params[i].base_dpa,
+			       base_dpa + (i * GUC_UM_QUEUE_SIZE));
+		ads_blob_write(guc, um_init_params.queue_params[i].base_ggtt_address,
+			       base_ggtt + (i * GUC_UM_QUEUE_SIZE));
+		ads_blob_write(guc, um_init_params.queue_params[i].size_in_bytes,
+			       GUC_UM_QUEUE_SIZE);
+	}
+
+	ads_blob_write(guc, um_init_params.page_response_timeout_in_us,
+		       GUC_PAGE_RES_TIMEOUT_US);
 }
 
 static void fill_engine_enable_masks(struct intel_gt *gt,
@@ -566,6 +701,9 @@ static int guc_prep_golden_context(struct intel_guc *guc)
 		addr_ggtt += alloc_size;
 	}
 
+	drm_dbg(&gt->i915->drm, "total_size:%d, previous:%d\n",
+		total_size, guc->ads_golden_ctxt_size);
+
 	/* Make sure current size matches what we calculated previously */
 	if (guc->ads_golden_ctxt_size)
 		GEM_BUG_ON(guc->ads_golden_ctxt_size != total_size);
@@ -602,6 +740,9 @@ static void guc_init_golden_context(struct intel_guc *guc)
 	if (!intel_uc_uses_guc_submission(&gt->uc))
 		return;
 
+	if (IS_SRIOV_VF(gt->i915))
+		return;
+
 	GEM_BUG_ON(iosys_map_is_null(&guc->ads_map));
 
 	/*
@@ -622,8 +763,9 @@ static void guc_init_golden_context(struct intel_guc *guc)
 
 		engine = find_engine_state(gt, engine_class);
 		if (!engine) {
-			guc_err(guc, "No engine state recorded for class %d!\n",
-				engine_class);
+			intel_gt_log_driver_error(gt, INTEL_GT_DRIVER_ERROR_ENGINE_OTHER,
+						  "No engine state recorded for class %d!\n",
+						  engine_class);
 			ads_blob_write(guc, ads.eng_state_size[guc_class], 0);
 			ads_blob_write(guc, ads.golden_context_lrca[guc_class], 0);
 			continue;
@@ -830,6 +972,12 @@ static void __guc_ads_init(struct intel_guc *guc)
 	guc_capture_prep_lists(guc);
 
 	/* ADS */
+	if (HAS_UM_QUEUES(i915)) {
+		guc_um_init_params(guc);
+		ads_blob_write(guc, ads.um_init_data, base +
+			       offsetof(struct __guc_ads_blob, um_init_params));
+	}
+
 	ads_blob_write(guc, ads.scheduler_policies, base +
 		       offsetof(struct __guc_ads_blob, policies));
 	ads_blob_write(guc, ads.gt_system_info, base +
@@ -884,8 +1032,14 @@ int intel_guc_ads_create(struct intel_guc *guc)
 	/* Now the total size can be determined: */
 	size = guc_ads_blob_size(guc);
 
-	ret = intel_guc_allocate_and_map_vma(guc, size, &guc->ads_vma,
-					     &ads_blob);
+	/*
+	 * When I915_WA_FORCE_SMEM_OBJECT is enabled we normally create objects
+	 * in SMEM but guc_ads is not accessed by the host and it has
+	 * requirement that physical pages are contiguous in memory for this
+	 * vma. Hence always create guc_ads object in LMEM.
+	 */
+	ret = __intel_guc_allocate_and_map_vma(guc, size, false,
+					       &guc->ads_vma, &ads_blob);
 	if (ret)
 		return ret;
 

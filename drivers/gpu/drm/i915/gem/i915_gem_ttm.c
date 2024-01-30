@@ -102,7 +102,7 @@ i915_ttm_select_tt_caching(const struct drm_i915_gem_object *obj)
 	 * Objects only allowed in system get cached cpu-mappings.
 	 * Other objects get WC mapping for now. Even if in system.
 	 */
-	if (obj->mm.region->type == INTEL_MEMORY_SYSTEM &&
+	if (obj->mm.region.mem->type == INTEL_MEMORY_SYSTEM &&
 	    obj->mm.n_placements <= 1)
 		return ttm_cached;
 
@@ -133,7 +133,7 @@ i915_ttm_placement_from_obj(const struct drm_i915_gem_object *obj,
 
 	placement->num_placement = 1;
 	i915_ttm_place_from_region(num_allowed ? obj->mm.placements[0] :
-				   obj->mm.region, requested, flags);
+				   obj->mm.region.mem, requested, flags);
 
 	/* Cache this on object? */
 	placement->num_busy_placement = num_allowed;
@@ -162,7 +162,7 @@ static struct ttm_tt *i915_ttm_tt_create(struct ttm_buffer_object *bo,
 	if (!i915_tt)
 		return NULL;
 
-	if (obj->flags & I915_BO_ALLOC_CPU_CLEAR &&
+	if (obj->flags & I915_BO_CPU_CLEAR &&
 	    man->use_tt)
 		page_flags |= TTM_PAGE_FLAG_ZERO_ALLOC;
 
@@ -221,7 +221,9 @@ static int i915_ttm_move_notify(struct ttm_buffer_object *bo)
 	struct drm_i915_gem_object *obj = i915_ttm_to_gem(bo);
 	int ret;
 
-	ret = i915_gem_object_unbind(obj, I915_GEM_OBJECT_UNBIND_ACTIVE);
+	i915_gem_object_move_notify(obj);
+
+	ret = i915_gem_object_unbind(obj, NULL, I915_GEM_OBJECT_UNBIND_ACTIVE);
 	if (ret)
 		return ret;
 
@@ -354,7 +356,7 @@ i915_ttm_resource_get_st(struct drm_i915_gem_object *obj,
 	if (man->use_tt)
 		return i915_ttm_tt_get_st(bo->ttm);
 
-	return intel_region_ttm_resource_to_st(obj->mm.region, res);
+	return intel_region_ttm_resource_to_st(obj->mm.region.mem, res);
 }
 
 static int i915_ttm_accel_move(struct ttm_buffer_object *bo,
@@ -383,7 +385,8 @@ static int i915_ttm_accel_move(struct ttm_buffer_object *bo,
 
 		intel_engine_pm_get(to_gt(i915)->migrate.context->engine);
 		ret = intel_context_migrate_clear(to_gt(i915)->migrate.context, NULL,
-						  dst_st->sgl, I915_CACHE_NONE,
+						  dst_st->sgl,
+						  i915_gem_get_pat_index(i915, I915_CACHE_NONE),
 						  dst_mem->mem_type >= I915_PL_LMEM0,
 						  0, &rq);
 
@@ -398,9 +401,11 @@ static int i915_ttm_accel_move(struct ttm_buffer_object *bo,
 
 		intel_engine_pm_get(to_gt(i915)->migrate.context->engine);
 		ret = intel_context_migrate_copy(to_gt(i915)->migrate.context,
-						 NULL, src_st->sgl, I915_CACHE_NONE,
+						 NULL, src_st->sgl,
+						 i915_gem_get_pat_index(i915, I915_CACHE_NONE),
 						 bo->resource->mem_type >= I915_PL_LMEM0,
-						 dst_st->sgl, I915_CACHE_NONE,
+						 dst_st->sgl,
+						 i915_gem_get_pat_index(i915, I915_CACHE_NONE),
 						 dst_mem->mem_type >= I915_PL_LMEM0,
 						 &rq);
 		if (!ret && rq) {
@@ -506,13 +511,14 @@ static unsigned long i915_ttm_io_mem_pfn(struct ttm_buffer_object *bo,
 					 unsigned long page_offset)
 {
 	struct drm_i915_gem_object *obj = i915_ttm_to_gem(bo);
-	unsigned long base = obj->mm.region->iomap.base - obj->mm.region->region.start;
+	struct intel_memory_region *mem = obj->mm.region.mem;
+	unsigned long base = mem->iomap.base - mem->region.start;
 	struct scatterlist *sg;
 	unsigned int ofs;
 
 	GEM_WARN_ON(bo->ttm);
 
-	sg = __i915_gem_object_get_sg(obj, &obj->ttm.get_io_page, page_offset, &ofs, true, true);
+	sg = __i915_gem_object_get_sg(obj, &obj->ttm.get_io_page, page_offset, &ofs);
 
 	return ((base + sg_dma_address(sg)) >> PAGE_SHIFT) + ofs;
 }
@@ -603,7 +609,7 @@ static int i915_ttm_get_pages(struct drm_i915_gem_object *obj)
 	return ret;
 }
 
-static void i915_ttm_put_pages(struct drm_i915_gem_object *obj,
+static int i915_ttm_put_pages(struct drm_i915_gem_object *obj,
 			       struct sg_table *st)
 {
 	/*
@@ -615,6 +621,8 @@ static void i915_ttm_put_pages(struct drm_i915_gem_object *obj,
 	 */
 
 	i915_ttm_adjust_lru(obj);
+
+	return 0;
 }
 
 static void i915_ttm_adjust_lru(struct drm_i915_gem_object *obj)

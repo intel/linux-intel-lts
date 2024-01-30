@@ -38,6 +38,7 @@
 #include <linux/xarray.h>
 
 #include <drm/drm_connector.h>
+#include <drm/i915_cp_fw_hdcp_interface.h>
 #include <drm/ttm/ttm_device.h>
 
 #include "display/intel_cdclk.h"
@@ -64,6 +65,9 @@
 #include "gt/intel_workarounds.h"
 #include "gt/uc/intel_uc.h"
 
+#include "spi/intel_spi.h"
+
+#include "i915_drm_client.h"
 #include "i915_gem.h"
 #include "i915_gem_gtt.h"
 #include "i915_gpu_error.h"
@@ -71,7 +75,10 @@
 #include "i915_perf_types.h"
 #include "i915_request.h"
 #include "i915_scheduler.h"
+#include "i915_sriov.h"
+#include "i915_sriov_types.h"
 #include "i915_utils.h"
+#include "i915_virtualization.h"
 #include "i915_vma.h"
 #include "intel_device_info.h"
 #include "intel_memory_region.h"
@@ -80,12 +87,14 @@
 #include "intel_runtime_pm.h"
 #include "intel_step.h"
 #include "intel_uncore.h"
-#include "intel_wopcm.h"
+#include "i915_addr_trans_svc.h"
 
 struct dpll;
 struct drm_i915_clock_gating_funcs;
 struct drm_i915_gem_object;
 struct drm_i915_private;
+struct i915_ggtt;
+struct i915_sched_engine;
 struct intel_atomic_state;
 struct intel_audio_funcs;
 struct intel_cdclk_config;
@@ -107,6 +116,13 @@ struct intel_limit;
 struct intel_overlay;
 struct intel_overlay_error_state;
 struct vlv_s0ix_state;
+
+#define I915_GFP_ALLOW_FAIL (GFP_KERNEL | __GFP_RETRY_MAYFAIL | __GFP_NOWARN)
+
+enum i915_driver_errors {
+	I915_DRIVER_ERROR_OBJECT_MIGRATION = 0,
+	I915_DRIVER_ERROR_COUNT,
+};
 
 /* Threshold == 5 for long IRQs, 50 for short */
 #define HPD_STORM_DEFAULT_THRESHOLD 50
@@ -148,6 +164,17 @@ struct i915_hotplug {
 	 * blocked behind the non-DP one.
 	 */
 	struct workqueue_struct *dp_wq;
+
+	/*
+	 * Flag to track if long HPDs need not to be processed
+	 *
+	 * Some panels generate long HPDs while keep connected to the port.
+	 * This can cause issues with CI tests results. In CI systems we
+	 * don't expect to disconnect the panels and could ignore the long
+	 * HPDs generated from the faulty panels. This flag can be used as
+	 * cue to ignore the long HPDs and can be set / unset using debugfs.
+	 */
+	bool ignore_long_hpd;
 };
 
 #define I915_GEM_GPU_DOMAINS \
@@ -185,6 +212,13 @@ struct drm_i915_file_private {
 	/** ban_score: Accumulated score of all ctx bans and fast hangs. */
 	atomic_t ban_score;
 	unsigned long hang_timestamp;
+
+	struct i915_drm_client *client;
+
+	struct clos_reservation {
+		u32 clos_mask;         // Mask of CLOS sets reserved by client
+		u8 l3_rsvd_ways;      // Number of L3 Ways reserved by client, across all CLOS
+	} clos_resv;
 };
 
 struct sdvo_device_mapping {
@@ -303,20 +337,33 @@ struct i915_gem_mm {
 	struct notifier_block vmap_notifier;
 	struct shrinker shrinker;
 
-#ifdef CONFIG_MMU_NOTIFIER
-	/**
-	 * notifier_lock for mmu notifiers, memory may not be allocated
-	 * while holding this lock.
-	 */
-	rwlock_t notifier_lock;
-#endif
-
 	/* shrinker accounting, also useful for userland debugging */
 	u64 shrink_memory;
 	u32 shrink_count;
+
+	/* lmemovercommit limit in %, set through sysfs */
+	u8 user_acct_limit[2];
+
+	/* background task for returning bound system pages */
+	struct {
+		struct task_struct *tsk; /* our kswapd equivalent */
+
+		/*
+		 * Track the number of pages do_shrink_slab() has asked us
+		 * to reclaim, and we have failed to find. This count of
+		 * outstanding reclaims is passed to the swapper thread,
+		 * which then blocks as it tries to achieve that goal.
+		 * It is likely that the target overshoots due to the
+		 * latency between our thread and kswapd making new requests.
+		 */
+		atomic_long_t target;
+	} swapper;
+
+	struct workqueue_struct *wq;
+	struct i915_sched_engine *sched;
 };
 
-#define I915_IDLE_ENGINES_TIMEOUT (200) /* in ms */
+#define I915_IDLE_ENGINES_TIMEOUT (500) /* in ms */
 
 unsigned long i915_fence_context_timeout(const struct drm_i915_private *i915,
 					 u64 context);
@@ -415,6 +462,14 @@ struct drm_i915_private {
 	/* i915 device parameters */
 	struct i915_params params;
 
+	/* i915 virtualization mode, use IOV_MODE() to access */
+	enum i915_iov_mode __mode;
+#define IOV_MODE(i915) ({				\
+	BUILD_BUG_ON(!I915_IOV_MODE_NONE);		\
+	GEM_BUG_ON(!(i915)->__mode);			\
+	(i915)->__mode;					\
+})
+
 	const struct intel_device_info __info; /* Use INTEL_INFO() to access. */
 	struct intel_runtime_info __runtime; /* Use RUNTIME_INFO() to access. */
 	struct intel_driver_caps caps;
@@ -443,14 +498,14 @@ struct drm_i915_private {
 	 */
 	resource_size_t stolen_usable_size;	/* Total size minus reserved ranges */
 
+	unsigned int remote_tiles;
 	struct intel_uncore uncore;
 	struct intel_uncore_mmio_debug mmio_debug;
 
+	struct i915_sriov sriov;
 	struct i915_virtual_gpu vgpu;
 
 	struct intel_gvt *gvt;
-
-	struct intel_wopcm wopcm;
 
 	struct intel_dmc dmc;
 
@@ -459,6 +514,9 @@ struct drm_i915_private {
 	/** gmbus_mutex protects against concurrent usage of the single hw gmbus
 	 * controller on different i2c buses. */
 	struct mutex gmbus_mutex;
+
+	/* svm_init_mutex  protects concurrent svm devmem initialization for lmem regions */
+	struct mutex svm_init_mutex;
 
 	/**
 	 * Base address of where the gmbus and gpio blocks are located (either
@@ -537,6 +595,12 @@ struct drm_i915_private {
 		struct intel_global_obj obj;
 	} dbuf;
 
+	struct {
+		wait_queue_head_t waitqueue;
+		struct mutex lock;
+		struct intel_global_obj obj;
+	} pmdemand;
+
 	/**
 	 * wq - Driver workqueue for GEM.
 	 *
@@ -545,6 +609,7 @@ struct drm_i915_private {
 	 * result in deadlocks.
 	 */
 	struct workqueue_struct *wq;
+	struct i915_sched_engine *sched;
 
 	/* ordered wq for modesets */
 	struct workqueue_struct *modeset_wq;
@@ -740,6 +805,8 @@ struct drm_i915_private {
 
 	struct i915_perf perf;
 
+	struct intel_spi spi;
+
 	struct i915_hwmon *hwmon;
 
 	/* Abstract the submission mechanism (legacy ringbuffer or execlists) away */
@@ -748,11 +815,12 @@ struct drm_i915_private {
 	/*
 	 * i915->gt[0] == &i915->gt0
 	 */
-#define I915_MAX_GT 4
 	struct intel_gt *gt[I915_MAX_GT];
 
 	/* Quick lookup of media GT (current platforms only have one) */
 	struct intel_gt *media_gt;
+
+	struct kobject *sysfs_gt;
 
 	struct {
 		struct i915_gem_contexts {
@@ -770,6 +838,14 @@ struct drm_i915_private {
 		 */
 		struct file *mmap_singleton;
 	} gem;
+
+	struct {
+		/* Xarry to hold address space entries */
+		struct xarray xa;
+		/* Support cyclic allocation of asid */
+		u32 next_id;
+#define I915_MAX_ASID BIT(20)
+	} asid_resv;
 
 	u8 pch_ssc_use;
 
@@ -791,9 +867,34 @@ struct drm_i915_private {
 
 	struct intel_audio_private audio;
 
+	bool quiesce_gpu;
+
+	bool invalidate_lmem_mmaps;
+
+	atomic_t active_fault_handlers;
+
 	struct i915_pmu pmu;
 
-	struct i915_hdcp_comp_master *hdcp_master;
+	struct i915_drm_clients clients;
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUGGER)
+	struct {
+		spinlock_t lock; /* lock for list */
+		struct list_head list;
+		u64 session_count;
+
+		struct mutex eu_flush_lock;
+
+		/* Allow to enable the debugger */
+		bool allow_eu_debug;
+		/* lock for enable_eu_debug */
+		struct mutex enable_eu_debug_lock;
+		/* debugger state */
+		bool enable_eu_debug;
+	} debuggers;
+#endif
+
+	struct i915_hdcp_fw_master *hdcp_master;
 	bool hdcp_comp_added;
 
 	/* Mutex to protect the above hdcp component related values. */
@@ -802,12 +903,69 @@ struct drm_i915_private {
 	/* The TTM device structure. */
 	struct ttm_device bdev;
 
+	bool bind_ctxt_ready;
+
+	atomic_t level4_wa_disabled;
+
 	I915_SELFTEST_DECLARE(struct i915_selftest_stash selftest;)
+
+	/**
+	 * struct intel_iaf - fabric information (if available)
+	 * @ops: shared interface operations
+	 * @handle: fabric device handle
+	 * @pd: platform data needed for auxiliary bus
+	 * @dpa: base device physical address
+	 * @irq_base: base IRQ for multi tile devices
+	 * @index: internal index for i915 devices
+	 * @fabric_id: fabric id generated by the fabric device
+	 * @socket_id: socket from certain platforms
+	 * @power_enabled: IAF power state
+	 * @present: Reflect PUNIT presence information
+	 * @power_mutex: Lock to protect power state changes
+	 *
+	 * For those gpus with fabric connectivity
+	 */
+	struct {
+		const struct iaf_ops *ops;
+		void *handle;
+#if IS_ENABLED(CONFIG_AUXILIARY_BUS)
+		struct iaf_pdata *pd;
+#endif
+		u64 dpa;
+		int irq_base;
+		int index;
+		u32 fabric_id;
+		u8 socket_id;
+		bool power_enabled;
+		bool present;
+		/* protect handle and power_enabled during power changes */
+		struct mutex power_mutex;
+	} intel_iaf;
 
 	/*
 	 * NOTE: This is the dri1/ums dungeon, don't add stuff here. Your patch
 	 * will be rejected. Instead look for a better place.
 	 */
+
+	struct wait_queue_head user_fence_wq;
+
+	unsigned long errors[I915_DRIVER_ERROR_COUNT];
+
+#define NUM_CLOS 4
+	struct cache_reservation {
+		u32 free_clos_mask;    // Mask of CLOS sets that have not been reserved
+		struct mutex clos_mutex;
+		u8 ways[NUM_CLOS];
+	} cache_resv;
+
+	bool device_faulted;
+	struct pci_saved_state *pci_state;
+
+	/* Address translation service support */
+	struct i915_ats_priv *ats_priv;
+	unsigned long flags;
+	int pasid_counter;
+#define INTEL_FLAG_ATS_ENABLED		0
 };
 
 static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
@@ -825,10 +983,13 @@ static inline struct drm_i915_private *pdev_to_i915(struct pci_dev *pdev)
 	return pci_get_drvdata(pdev);
 }
 
-static inline struct intel_gt *to_gt(struct drm_i915_private *i915)
-{
-	return &i915->gt0;
-}
+#define PRELIM_DRM_IOCTL_DEF_DRV(ioctl, _func, _flags)			\
+	[DRM_IOCTL_NR(PRELIM_DRM_IOCTL_##ioctl) - DRM_COMMAND_BASE] = {	\
+		.cmd = PRELIM_DRM_IOCTL_##ioctl,			\
+		.func = _func,						\
+		.flags = _flags,					\
+		.name = #ioctl						\
+	}
 
 /* Simple iterator over all initialised engines */
 #define for_each_engine(engine__, dev_priv__, id__) \
@@ -864,22 +1025,25 @@ static inline struct intel_gt *to_gt(struct drm_i915_private *i915)
 #define DRIVER_CAPS(dev_priv)	(&(dev_priv)->caps)
 
 #define INTEL_DEVID(dev_priv)	(RUNTIME_INFO(dev_priv)->device_id)
+#define INTEL_PPGTT_MSB(dev_priv)	(INTEL_INFO(dev_priv)->ppgtt_msb)
 
 #define IP_VER(ver, rel)		((ver) << 8 | (rel))
 
-#define GRAPHICS_VER(i915)		(INTEL_INFO(i915)->graphics.ver)
-#define GRAPHICS_VER_FULL(i915)		IP_VER(INTEL_INFO(i915)->graphics.ver, \
-					       INTEL_INFO(i915)->graphics.rel)
+#define GRAPHICS_VER(i915)		(RUNTIME_INFO(i915)->graphics.ver)
+#define GRAPHICS_VER_FULL(i915)		IP_VER(RUNTIME_INFO(i915)->graphics.ver, \
+					       RUNTIME_INFO(i915)->graphics.rel)
 #define IS_GRAPHICS_VER(i915, from, until) \
 	(GRAPHICS_VER(i915) >= (from) && GRAPHICS_VER(i915) <= (until))
 
-#define MEDIA_VER(i915)			(INTEL_INFO(i915)->media.ver)
-#define MEDIA_VER_FULL(i915)		IP_VER(INTEL_INFO(i915)->media.ver, \
-					       INTEL_INFO(i915)->media.rel)
+#define MEDIA_VER(i915)			(RUNTIME_INFO(i915)->media.ver)
+#define MEDIA_VER_FULL(i915)		IP_VER(RUNTIME_INFO(i915)->media.ver, \
+					       RUNTIME_INFO(i915)->media.rel)
 #define IS_MEDIA_VER(i915, from, until) \
 	(MEDIA_VER(i915) >= (from) && MEDIA_VER(i915) <= (until))
 
-#define DISPLAY_VER(i915)	(INTEL_INFO(i915)->display.ver)
+#define DISPLAY_VER(i915)		(RUNTIME_INFO(i915)->display.ver)
+#define DISPLAY_VER_FULL(i915)		IP_VER(RUNTIME_INFO(i915)->display.ver, \
+					       RUNTIME_INFO(i915)->display.rel)
 #define IS_DISPLAY_VER(i915, from, until) \
 	(DISPLAY_VER(i915) >= (from) && DISPLAY_VER(i915) <= (until))
 
@@ -1198,6 +1362,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 
 #define HAS_MEDIA_RATIO_MODE(dev_priv) (INTEL_INFO(dev_priv)->has_media_ratio_mode)
 
+#define HAS_LINK_COPY_ENGINES(dev_priv) (INTEL_INFO(dev_priv)->has_link_copy_engines)
+
 /*
  * The Gen7 cmdparser copies the scanned buffer to the ggtt for execution
  * All later gens can run the final buffer from the ppgtt
@@ -1225,6 +1391,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 	(INTEL_PPGTT(dev_priv) != INTEL_PPGTT_NONE)
 #define HAS_FULL_PPGTT(dev_priv) \
 	(INTEL_PPGTT(dev_priv) >= INTEL_PPGTT_FULL)
+#define HAS_RECOVERABLE_PAGE_FAULT(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_recoverable_page_fault)
 
 #define HAS_PAGE_SIZES(dev_priv, sizes) ({ \
 	GEM_BUG_ON((sizes) == 0); \
@@ -1299,6 +1467,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 #define HAS_RUNTIME_PM(dev_priv) (INTEL_INFO(dev_priv)->has_runtime_pm)
 #define HAS_64BIT_RELOC(dev_priv) (INTEL_INFO(dev_priv)->has_64bit_reloc)
 
+#define HAS_SEMAPHORE_XEHPSDV(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_semaphore_xehpsdv)
 #define HAS_OA_BPC_REPORTING(dev_priv) \
 	(INTEL_INFO(dev_priv)->has_oa_bpc_reporting)
 #define HAS_OA_SLICE_CONTRIB_LIMITS(dev_priv) \
@@ -1311,11 +1481,26 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
  * GTT pages.
  */
 #define HAS_64K_PAGES(dev_priv) (INTEL_INFO(dev_priv)->has_64k_pages)
+#define HAS_OA_BUF_128M(dev_priv) (INTEL_INFO(dev_priv)->has_oa_buf_128m)
+#define HAS_OA_MMIO_TRIGGER(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_oa_mmio_trigger)
+#define HAS_OAM(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_oam)
+#define OAM_USES_VDBOX0_CHANNEL(dev_priv) \
+	(INTEL_INFO(dev_priv)->oam_uses_vdbox0_channel)
+#define HAS_OAC(dev_priv) (INTEL_INFO(dev_priv)->has_oac)
+
+#define HAS_FULL_PS64(dev_priv) (INTEL_INFO(dev_priv)->has_full_ps64)
+
+#define HAS_GMD_ID(i915)	INTEL_INFO(i915)->has_gmd_id
 
 #define HAS_IPC(dev_priv)		 (INTEL_INFO(dev_priv)->display.has_ipc)
 
 #define HAS_REGION(i915, i) (INTEL_INFO(i915)->memory_regions & (i))
 #define HAS_LMEM(i915) HAS_REGION(i915, REGION_LMEM)
+#define HAS_LMEM_MAX_BW(dev_priv) (INTEL_INFO(dev_priv)->has_lmem_max_bandwidth)
+#define HAS_REMOTE_TILES(dev_priv)   (INTEL_INFO(dev_priv)->has_remote_tiles)
+#define HAS_IAF(dev_priv)   (INTEL_INFO(dev_priv)->has_iaf)
 
 #define HAS_EXTRA_GT_LIST(dev_priv)   (INTEL_INFO(dev_priv)->extra_gt_list)
 
@@ -1325,7 +1510,16 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
  */
 #define HAS_FLAT_CCS(dev_priv)   (INTEL_INFO(dev_priv)->has_flat_ccs)
 
+#define HAS_UM_QUEUES(dev_priv) (INTEL_INFO(dev_priv)->has_um_queues)
+
+#define HAS_NULL_PAGE(dev_priv) (INTEL_INFO(dev_priv)->has_null_page)
+
 #define HAS_GT_UC(dev_priv)	(INTEL_INFO(dev_priv)->has_gt_uc)
+
+#define HAS_SRIOV(dev_priv)	(INTEL_INFO(dev_priv)->has_sriov)
+
+#define HAS_SELECTIVE_TLB_INVALIDATION(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_selective_tlb_invalidation)
 
 #define HAS_POOLED_EU(dev_priv)	(INTEL_INFO(dev_priv)->has_pooled_eu)
 
@@ -1334,6 +1528,9 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 #define HAS_PXP(dev_priv)  ((IS_ENABLED(CONFIG_DRM_I915_PXP) && \
 			    INTEL_INFO(dev_priv)->has_pxp) && \
 			    VDBOX_MASK(to_gt(dev_priv)))
+
+#define HAS_MEMORY_IRQ_STATUS(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_iov_memirq && IS_SRIOV_VF(dev_priv))
 
 #define HAS_GMCH(dev_priv) (INTEL_INFO(dev_priv)->display.has_gmch)
 
@@ -1375,11 +1572,67 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 
 #define HAS_ONE_EU_PER_FUSE_BIT(i915)	(INTEL_INFO(i915)->has_one_eu_per_fuse_bit)
 
+#define HAS_BAR2_SMEM_STOLEN(i915) (!HAS_LMEM(i915) && \
+				    GRAPHICS_VER_FULL(i915) >= IP_VER(12, 70))
+#define HAS_MEM_SPARING_SUPPORT(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_mem_sparing)
+
+#define HAS_ASID_TLB_INVALIDATION(i915) \
+	(INTEL_INFO(i915)->has_asid_tlb_invalidation)
+
+#define HAS_SLIM_VDBOX(i915) (INTEL_INFO(i915)->has_slim_vdbox)
+
+#define HAS_CACHE_CLOS(i915) (INTEL_INFO(i915)->has_cache_clos)
+
+#define HAS_GUC_PROGRAMMABLE_MOCS(i915) (INTEL_INFO(i915)->has_guc_programmable_mocs)
+
+#define HAS_EU_STALL_SAMPLING(i915) (INTEL_INFO(i915)->has_eu_stall_sampling)
+
+#define HAS_GT_ERROR_VECTORS(i915) (INTEL_INFO(i915)->has_gt_error_vectors)
+
+#define HAS_MEM_FENCE_SUPPORT(i915) ((i915)->params.enable_mem_fence && IS_PONTEVECCHIO((i915)))
+
+#define HAS_LMTT_LVL2(i915) (INTEL_INFO(i915)->has_lmtt_lvl2)
+
+static inline bool i915_has_svm(struct drm_i915_private *dev_priv)
+{
+#ifdef CONFIG_DRM_I915_SVM
+	return HAS_RECOVERABLE_PAGE_FAULT(dev_priv);
+#else
+	return false;
+#endif
+}
+
+static inline struct intel_gt *to_root_gt(struct drm_i915_private *i915)
+{
+	return &i915->gt0;
+}
+
+static inline struct intel_gt *to_gt(struct drm_i915_private *i915)
+{
+	if (HAS_REMOTE_TILES(i915) && IOV_MODE(i915) == I915_IOV_MODE_SRIOV_VF)
+		return i915->gt[__ffs(to_root_gt(i915)->iov.vf.config.tile_mask)];
+
+	return &i915->gt0;
+}
+
+static inline bool
+intel_ggtt_needs_same_mem_type_within_cl_wa(struct drm_i915_private *dev_priv)
+{
+	/*
+	 * Wa_14011411649:xehpsdv,dg2_g10
+	 * We can't mix LMEM and SMEM allocation within the same GGTT
+	 * cacheline (i.e. 16 PTEs, 64k address block).
+	 */
+	return IS_DG2_GRAPHICS_STEP(dev_priv, G10, STEP_A0, STEP_B0) ||
+		IS_XEHPSDV(dev_priv);
+}
+
 /* i915_gem.c */
 void i915_gem_init_early(struct drm_i915_private *dev_priv);
 void i915_gem_cleanup_early(struct drm_i915_private *dev_priv);
 
-struct intel_memory_region *i915_gem_shmem_setup(struct drm_i915_private *i915,
+struct intel_memory_region *i915_gem_shmem_setup(struct intel_gt *gt,
 						 u16 type, u16 instance);
 
 static inline void i915_gem_drain_freed_objects(struct drm_i915_private *i915)
@@ -1422,25 +1675,34 @@ static inline void i915_gem_drain_workqueue(struct drm_i915_private *i915)
 struct i915_vma * __must_check
 i915_gem_object_ggtt_pin_ww(struct drm_i915_gem_object *obj,
 			    struct i915_gem_ww_ctx *ww,
+			    struct i915_ggtt *ggtt,
 			    const struct i915_ggtt_view *view,
 			    u64 size, u64 alignment, u64 flags);
 
 static inline struct i915_vma * __must_check
 i915_gem_object_ggtt_pin(struct drm_i915_gem_object *obj,
+			 struct i915_ggtt *ggtt,
 			 const struct i915_ggtt_view *view,
 			 u64 size, u64 alignment, u64 flags)
 {
-	return i915_gem_object_ggtt_pin_ww(obj, NULL, view, size, alignment, flags);
+	return i915_gem_object_ggtt_pin_ww(obj, NULL, ggtt, view,
+					   size, alignment, flags);
 }
 
 int i915_gem_object_unbind(struct drm_i915_gem_object *obj,
+			   struct i915_gem_ww_ctx *ww,
 			   unsigned long flags);
 #define I915_GEM_OBJECT_UNBIND_ACTIVE BIT(0)
 #define I915_GEM_OBJECT_UNBIND_BARRIER BIT(1)
 #define I915_GEM_OBJECT_UNBIND_TEST BIT(2)
-#define I915_GEM_OBJECT_UNBIND_VM_TRYLOCK BIT(3)
+#define I915_GEM_OBJECT_UNBIND_KEEP_RESIDENT BIT(3)
 
 void i915_gem_runtime_suspend(struct drm_i915_private *dev_priv);
+
+struct drm_i915_gem_object *
+i915_gem_object_create_user(struct drm_i915_private *i915, u64 size,
+			    struct intel_memory_region **placements,
+			    unsigned int n_placements);
 
 int __must_check i915_gem_set_global_seqno(struct drm_device *dev, u32 seqno);
 
@@ -1449,6 +1711,8 @@ void i915_gem_driver_register(struct drm_i915_private *i915);
 void i915_gem_driver_unregister(struct drm_i915_private *i915);
 void i915_gem_driver_remove(struct drm_i915_private *dev_priv);
 void i915_gem_driver_release(struct drm_i915_private *dev_priv);
+int i915_gem_idle_engines(struct drm_i915_private *i915);
+int i915_gem_resume_engines(struct drm_i915_private *i915);
 
 int i915_gem_open(struct drm_i915_private *i915, struct drm_file *file);
 
@@ -1472,6 +1736,28 @@ i915_gem_context_lookup(struct drm_i915_file_private *file_priv, u32 id)
 	return ctx;
 }
 
+static inline struct i915_address_space *
+__i915_address_space_lookup_rcu(struct drm_i915_file_private *file_priv,
+				u32 id)
+{
+	return xa_load(&file_priv->vm_xa, id);
+}
+
+static inline struct i915_address_space *
+i915_address_space_lookup(struct drm_i915_file_private *file_priv,
+			  u32 id)
+{
+	struct i915_address_space *vm;
+
+	rcu_read_lock();
+	vm = __i915_address_space_lookup_rcu(file_priv, id);
+	if (vm)
+		vm = i915_vm_tryget(vm);
+	rcu_read_unlock();
+
+	return vm;
+}
+
 /* intel_device_info.c */
 static inline struct intel_device_info *
 mkwrite_device_info(struct drm_i915_private *dev_priv)
@@ -1483,12 +1769,97 @@ static inline enum i915_map_type
 i915_coherent_map_type(struct drm_i915_private *i915,
 		       struct drm_i915_gem_object *obj, bool always_coherent)
 {
-	if (i915_gem_object_is_lmem(obj))
+	/*
+	 * Wa_22016122933: FIXME: always return I915_MAP_WC for MTL
+	 * Issue is expected to be tracked as Wa_22016122933, but not
+	 * finalized by hardware team yet. So marked as fixme for now.
+	 */
+	if (i915_gem_object_is_lmem(obj) || IS_METEORLAKE(i915))
 		return I915_MAP_WC;
 	if (HAS_LLC(i915) || always_coherent)
 		return I915_MAP_WB;
 	else
 		return I915_MAP_WC;
+}
+
+static inline void i915_write_barrier(struct drm_i915_private *i915)
+{
+	/*
+	 * We need a MMIO write as barrier to lmem. A following lmem write
+	 * will stall until all previous writes are pushed to lmem.
+	 *
+	 * We don't need to use a local uncore. A mmio write to a root
+	 * tile register also ensures remote tile lmem writes are
+	 * pushed.
+	 */
+	raw_reg_write(i915->uncore.regs, SOFTWARE_FLAGS_SPR33, 0);
+}
+
+void i915_silent_driver_error(struct drm_i915_private *i915,
+			      const enum i915_driver_errors error);
+
+__printf(3, 4)
+void i915_log_driver_error(struct drm_i915_private *i915,
+			   const enum i915_driver_errors error,
+			   const char *fmt, ...);
+
+/* Below are various work arounds available for the pcie deadlock issue:
+ * Each WA can be enabled by setting corresponding bit in module parameter.
+ * Note that I915_WA_IDLE_GPU_BEFORE_UPDATE & I915_WA_USE_FLAT_PPGTT_UPDATE cannot
+ * co-exist, so the only legal values for module parameter smem_access_control are
+ * 0, 1, 2, 3 and 5. But 3 and 5 are recommended values to avoid pcie deadlock.
+ *
+ * When I915_WA_FORCE_SMEM_OBJECT is enabled, certain objects like(lrc, hwsp, ringbuffer)
+ * are created in smem instead of creating in lmem to avoid access from host while GPU
+ * access smem to  * avoid the possibility of pcie deadlock.
+ *
+ * When I915_WA_IDLE_GPU_BEFORE_UPDATE is enabled, engines are stalled completely before
+ * writing to page tables which are located in lmem, to avoid the possibility of deadlock
+ * due to simultaneous traffic from host to lmem and traffice from GPU to access smem.
+ *
+ * When I915_WA_USE_FLAT_PPGTT_UPDATE, i915 makes use of blitter engine to update the
+ * page tables. Also note this mechanism of updating page tables cannot be used during
+ * driver load since resources required are not yet initialized when driver loading is
+ * started, bind_ctxt_ready is used to indicate when i915 ready to use blitter commands
+ * to update page tables.
+ */
+#define I915_WA_FORCE_SMEM_OBJECT	0
+#define I915_WA_IDLE_GPU_BEFORE_UPDATE	1
+#define I915_WA_USE_FLAT_PPGTT_UPDATE	2
+
+/*
+ * Default WA is Level-4 which set with during driver load if the
+ * module parameter value is DEFAULT value (256).
+ */
+#define I915_SMEM_ACCESS_CONTROL_DEFAULT	256
+
+static inline bool
+i915_is_mem_wa_enabled(struct drm_i915_private *i915, int val)
+{
+	return i915->params.smem_access_control & BIT(val);
+}
+static inline bool i915_allows_overcommit(const struct drm_i915_private *i915)
+{
+	/* If either acct_limit[] is non-zero, both are non-zero */
+	return !i915->mm.user_acct_limit[INTEL_MEMORY_OVERCOMMIT_LMEM];
+}
+
+static inline void
+i915_pci_error_set_fault(struct drm_i915_private *i915)
+{
+	WRITE_ONCE(i915->device_faulted, true);
+}
+
+static inline void
+i915_pci_error_clear_fault(struct drm_i915_private *i915)
+{
+	WRITE_ONCE(i915->device_faulted, false);
+}
+
+static inline bool
+i915_is_pci_faulted(const struct drm_i915_private *i915)
+{
+	return READ_ONCE(i915->device_faulted);
 }
 
 #endif

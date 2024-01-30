@@ -88,6 +88,17 @@ static bool cpt_can_enable_serr_int(struct drm_device *dev)
 	return true;
 }
 
+static void intel_fifo_underrun_inc_count(struct intel_crtc *crtc,
+					  bool is_cpu_fifo)
+{
+#ifdef CONFIG_DEBUG_FS
+	if (is_cpu_fifo)
+		crtc->cpu_fifo_underrun_count++;
+	else
+		crtc->pch_fifo_underrun_count++;
+#endif
+}
+
 static void i9xx_check_fifo_underruns(struct intel_crtc *crtc)
 {
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
@@ -103,6 +114,7 @@ static void i9xx_check_fifo_underruns(struct intel_crtc *crtc)
 	intel_de_write(dev_priv, reg, enable_mask | PIPE_FIFO_UNDERRUN_STATUS);
 	intel_de_posting_read(dev_priv, reg);
 
+	intel_fifo_underrun_inc_count(crtc, true);
 	trace_intel_cpu_fifo_underrun(dev_priv, crtc->pipe);
 	drm_err(&dev_priv->drm, "pipe %c underrun\n", pipe_name(crtc->pipe));
 }
@@ -156,6 +168,7 @@ static void ivb_check_fifo_underruns(struct intel_crtc *crtc)
 	intel_de_write(dev_priv, GEN7_ERR_INT, ERR_INT_FIFO_UNDERRUN(pipe));
 	intel_de_posting_read(dev_priv, GEN7_ERR_INT);
 
+	intel_fifo_underrun_inc_count(crtc, true);
 	trace_intel_cpu_fifo_underrun(dev_priv, pipe);
 	drm_err(&dev_priv->drm, "fifo underrun on pipe %c\n", pipe_name(pipe));
 }
@@ -244,6 +257,7 @@ static void cpt_check_pch_fifo_underruns(struct intel_crtc *crtc)
 		       SERR_INT_TRANS_FIFO_UNDERRUN(pch_transcoder));
 	intel_de_posting_read(dev_priv, SERR_INT);
 
+	intel_fifo_underrun_inc_count(crtc, false);
 	trace_intel_pch_fifo_underrun(dev_priv, pch_transcoder);
 	drm_err(&dev_priv->drm, "pch fifo underrun on pch transcoder %c\n",
 		pipe_name(pch_transcoder));
@@ -286,6 +300,11 @@ static bool __intel_set_cpu_fifo_underrun_reporting(struct drm_device *dev,
 
 	old = !crtc->cpu_fifo_underrun_disabled;
 	crtc->cpu_fifo_underrun_disabled = !enable;
+#ifdef CONFIG_DEBUG_FS
+	/* don't reset count in fifo underrun irq path */
+	if (!in_irq() && !enable)
+		crtc->cpu_fifo_underrun_count = 0;
+#endif
 
 	if (HAS_GMCH(dev_priv))
 		i9xx_set_fifo_underrun_reporting(dev, pipe, enable, old);
@@ -365,6 +384,11 @@ bool intel_set_pch_fifo_underrun_reporting(struct drm_i915_private *dev_priv,
 
 	old = !crtc->pch_fifo_underrun_disabled;
 	crtc->pch_fifo_underrun_disabled = !enable;
+#ifdef CONFIG_DEBUG_FS
+	/* don't reset count in fifo underrun irq path */
+	if (!in_irq() && !enable)
+		crtc->pch_fifo_underrun_count = 0;
+#endif
 
 	if (HAS_PCH_IBX(dev_priv))
 		ibx_set_fifo_underrun_reporting(&dev_priv->drm,
@@ -434,6 +458,7 @@ void intel_cpu_fifo_underrun_irq_handler(struct drm_i915_private *dev_priv,
 			drm_err(&dev_priv->drm, "CPU pipe %c FIFO underrun\n", pipe_name(pipe));
 	}
 
+	intel_fifo_underrun_inc_count(crtc, true);
 	intel_fbc_handle_fifo_underrun_irq(dev_priv);
 }
 
@@ -449,6 +474,10 @@ void intel_cpu_fifo_underrun_irq_handler(struct drm_i915_private *dev_priv,
 void intel_pch_fifo_underrun_irq_handler(struct drm_i915_private *dev_priv,
 					 enum pipe pch_transcoder)
 {
+	struct intel_crtc *crtc = intel_crtc_for_pipe(dev_priv, pch_transcoder);
+
+	intel_fifo_underrun_inc_count(crtc, false);
+
 	if (intel_set_pch_fifo_underrun_reporting(dev_priv, pch_transcoder,
 						  false)) {
 		trace_intel_pch_fifo_underrun(dev_priv, pch_transcoder);

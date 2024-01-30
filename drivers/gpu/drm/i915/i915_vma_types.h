@@ -32,8 +32,6 @@
 
 #include "gem/i915_gem_object_types.h"
 
-enum i915_cache_level;
-
 /**
  * DOC: Global GTT views
  *
@@ -170,6 +168,18 @@ struct i915_ggtt_view {
 	};
 };
 
+struct i915_vma_clock {
+	spinlock_t lock;
+	struct list_head age[2];
+	struct rw_semaphore sem;
+	struct delayed_work work;
+};
+
+struct i915_vma_metadata {
+	struct list_head vma_link;
+	struct i915_uuid_resource *uuid;
+};
+
 /**
  * DOC: Virtual Memory Address
  *
@@ -195,15 +205,16 @@ struct i915_vma {
 
 	struct i915_fence_reg *fence;
 
-	u64 size;
-	u64 display_alignment;
-	struct i915_page_sizes page_sizes;
-
 	/* mmap-offset associated with fencing for this vma */
 	struct i915_mmap_offset	*mmo;
 
+	u64 size;
+	u32 page_sizes;
+
+	u32 guard; /* padding allocated around vma->pages within the node */
 	u32 fence_size;
 	u32 fence_alignment;
+	u32 display_alignment;
 
 	/**
 	 * Count of the number of times this vma has been opened by different
@@ -266,6 +277,11 @@ struct i915_vma {
 #define I915_VMA_SCANOUT_BIT	18
 #define I915_VMA_SCANOUT	((int)BIT(I915_VMA_SCANOUT_BIT))
 
+#define I915_VMA_PERSISTENT_BIT	19
+#define I915_VMA_RESIDENT_BIT	20
+#define I915_VMA_PURGED_BIT	21
+#define I915_VMA_HAS_LUT_BIT	22
+
 	struct i915_active active;
 
 #define I915_VMA_PAGES_BIAS 24
@@ -285,14 +301,29 @@ struct i915_vma {
 	/** This object's place on the active/inactive lists */
 	struct list_head vm_link;
 
+	struct list_head vm_bind_link; /* Link in persistent VMA list */
+	struct list_head vm_capture_link; /* Link in captureable VMA list */
+	struct i915_sw_fence *bind_fence;
+	/* (segmented BO) walk adjacent VMAs at unbind or during capture_vma */
+	struct i915_vma *adjacent_next;
+	struct i915_vma *adjacent_start;
+
+	/** Interval tree structures for persistent vma */
+	struct rb_node rb;
+	u64 __subtree_last;
+
 	struct list_head obj_link; /* Link in the object's VMA list */
 	struct rb_node obj_node;
 	struct hlist_node obj_hash;
+	struct intel_flat_ppgtt_request_pool *pool;
 
 	/** This vma's place in the eviction list */
 	struct list_head evict_link;
 
 	struct list_head closed_link;
+
+	spinlock_t metadata_lock;
+	struct list_head metadata_list;
 };
 
 #endif

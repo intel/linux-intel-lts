@@ -19,6 +19,17 @@
 struct drm_device;
 struct drm_file;
 
+static inline bool i915_gem_context_is_banned(const struct i915_gem_context *ctx)
+{
+	return test_bit(CONTEXT_BAN, &ctx->flags);
+}
+
+static inline void i915_gem_context_set_banned(struct i915_gem_context *ctx)
+{
+	set_bit(CONTEXT_BAN, &ctx->flags);
+	wake_up_all(&ctx->user_fence_wq);
+}
+
 static inline bool i915_gem_context_is_closed(const struct i915_gem_context *ctx)
 {
 	return test_bit(CONTEXT_CLOSED, &ctx->flags);
@@ -90,6 +101,36 @@ static inline void i915_gem_context_clear_persistence(struct i915_gem_context *c
 	clear_bit(UCONTEXT_PERSISTENCE, &ctx->user_flags);
 }
 
+static inline bool i915_gem_context_has_sip(const struct i915_gem_context *ctx)
+{
+	return test_bit(UCONTEXT_SIP, &ctx->user_flags);
+}
+
+static inline void i915_gem_context_set_sip(struct i915_gem_context *ctx)
+{
+	set_bit(UCONTEXT_SIP, &ctx->user_flags);
+}
+
+static inline void i915_gem_context_clear_sip(struct i915_gem_context *ctx)
+{
+	clear_bit(UCONTEXT_SIP, &ctx->user_flags);
+}
+
+static inline bool i915_gem_context_is_lr(const struct i915_gem_context *ctx)
+{
+	return test_bit(UCONTEXT_LR, &ctx->user_flags);
+}
+
+static inline void i915_gem_context_set_lr(struct i915_gem_context *ctx)
+{
+	set_bit(UCONTEXT_LR, &ctx->user_flags);
+}
+
+static inline void i915_gem_context_clear_lr(struct i915_gem_context *ctx)
+{
+	clear_bit(UCONTEXT_LR, &ctx->user_flags);
+}
+
 static inline bool
 i915_gem_context_user_engines(const struct i915_gem_context *ctx)
 {
@@ -106,6 +147,12 @@ static inline void
 i915_gem_context_clear_user_engines(struct i915_gem_context *ctx)
 {
 	clear_bit(CONTEXT_USER_ENGINES, &ctx->flags);
+}
+
+static inline bool
+i915_gem_context_uses_protected_content(const struct i915_gem_context *ctx)
+{
+	return ctx->uses_protected_content;
 }
 
 /* i915_gem_context.c */
@@ -130,13 +177,29 @@ int i915_gem_context_getparam_ioctl(struct drm_device *dev, void *data,
 				    struct drm_file *file_priv);
 int i915_gem_context_setparam_ioctl(struct drm_device *dev, void *data,
 				    struct drm_file *file_priv);
+int i915_gem_getparam_ioctl(struct drm_device *dev, void *data,
+			    struct drm_file *file);
+int i915_gem_setparam_ioctl(struct drm_device *dev, void *data,
+			    struct drm_file *file);
 int i915_gem_context_reset_stats_ioctl(struct drm_device *dev, void *data,
 				       struct drm_file *file);
+struct i915_gem_engines *
+i915_gem_context_engines_get(struct i915_gem_context *ctx, bool *user_engines);
+void i915_gem_context_engines_put(struct i915_gem_engines *e);
 
 static inline struct i915_gem_context *
 i915_gem_context_get(struct i915_gem_context *ctx)
 {
 	kref_get(&ctx->ref);
+	return ctx;
+}
+
+static inline struct i915_gem_context *
+i915_gem_context_get_rcu(struct i915_gem_context *ctx)
+{
+	if (!kref_get_unless_zero(&ctx->ref))
+		ctx = NULL;
+
 	return ctx;
 }
 

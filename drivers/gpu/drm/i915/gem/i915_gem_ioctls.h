@@ -48,5 +48,13 @@ int i915_gem_userptr_ioctl(struct drm_device *dev, void *data,
 			   struct drm_file *file);
 int i915_gem_wait_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file);
+int i915_gem_wait_user_fence_ioctl(struct drm_device *dev, void *data,
+				   struct drm_file *file);
+int i915_gem_clos_reserve_ioctl(struct drm_device *dev, void *data,
+				struct drm_file *file);
+int i915_gem_clos_free_ioctl(struct drm_device *dev, void *data,
+			     struct drm_file *file);
+int i915_gem_cache_reserve_ioctl(struct drm_device *dev, void *data,
+				 struct drm_file *file);
 
 #endif

@@ -642,6 +642,33 @@ unsigned long change_prot_numa(struct vm_area_struct *vma,
 
 	return nr_updated;
 }
+
+static void rebalance_nodes(void)
+{
+	struct vm_area_struct *vma;
+
+	for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
+		if (!vma_migratable(vma) || !vma_policy_mof(vma))
+			continue;
+
+		/* Similar to task_numa_work, skip inaccessible VMAs */
+		if (!vma_is_accessible(vma) ||
+		    is_vm_hugetlb_page(vma) ||
+		    vma->vm_flags & VM_MIXEDMAP)
+			continue;
+
+		change_prot_numa(vma, vma->vm_start, vma->vm_end);
+	}
+}
+
+int sysctl_numa_rebalance_handler(struct ctl_table *table, int write,
+				  void *buffer, size_t *length, loff_t *ppos)
+{
+	if (write)
+		rebalance_nodes();
+
+	return 0;
+}
 #else
 static unsigned long change_prot_numa(struct vm_area_struct *vma,
 			unsigned long addr, unsigned long end)

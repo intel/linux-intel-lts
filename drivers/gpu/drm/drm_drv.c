@@ -125,8 +125,8 @@ static int drm_minor_alloc(struct drm_device *dev, unsigned int type)
 	spin_lock_irqsave(&drm_minor_lock, flags);
 	r = idr_alloc(&drm_minors_idr,
 		      NULL,
-		      64 * type,
-		      64 * (type + 1),
+		      128 * type,
+		      128 * (type + 1),
 		      GFP_NOWAIT);
 	spin_unlock_irqrestore(&drm_minor_lock, flags);
 	idr_preload_end();
@@ -681,6 +681,12 @@ static int devm_drm_dev_init(struct device *parent,
 	return devm_add_action_or_reset(parent,
 					devm_drm_dev_init_release, dev);
 }
+
+void __devm_drm_dev_release_action(struct drm_device *dev)
+{
+	devm_release_action(dev->dev, devm_drm_dev_init_release, dev);
+}
+EXPORT_SYMBOL(__devm_drm_dev_release_action);
 
 void *__devm_drm_dev_alloc(struct device *parent,
 			   const struct drm_driver *driver,

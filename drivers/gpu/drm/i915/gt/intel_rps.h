@@ -23,8 +23,11 @@ void intel_rps_disable(struct intel_rps *rps);
 
 void intel_rps_park(struct intel_rps *rps);
 void intel_rps_unpark(struct intel_rps *rps);
-void intel_rps_boost(struct i915_request *rq);
-void intel_rps_dec_waiters(struct intel_rps *rps);
+
+void intel_rps_boost(struct intel_rps *rps);
+void intel_rps_boost_for_request(struct i915_request *rq);
+void intel_rps_cancel_boost(struct intel_rps *rps);
+
 u32 intel_rps_get_boost_frequency(struct intel_rps *rps);
 int intel_rps_set_boost_frequency(struct intel_rps *rps, u32 freq);
 
@@ -33,8 +36,10 @@ void intel_rps_mark_interactive(struct intel_rps *rps, bool interactive);
 
 int intel_gpu_freq(struct intel_rps *rps, int val);
 int intel_freq_opcode(struct intel_rps *rps, int val);
+u32 intel_rps_get_rapl(struct intel_rps *rps, u32 rapl_pl1);
 u32 intel_rps_read_actual_frequency(struct intel_rps *rps);
 u32 intel_rps_read_actual_frequency_fw(struct intel_rps *rps);
+u32 intel_rps_read_chiplet_frequency(struct intel_rps *rps);
 u32 intel_rps_get_requested_frequency(struct intel_rps *rps);
 u32 intel_rps_get_min_frequency(struct intel_rps *rps);
 u32 intel_rps_get_min_raw_freq(struct intel_rps *rps);
@@ -46,11 +51,24 @@ u32 intel_rps_get_rp0_frequency(struct intel_rps *rps);
 u32 intel_rps_get_rp1_frequency(struct intel_rps *rps);
 u32 intel_rps_get_rpn_frequency(struct intel_rps *rps);
 u32 intel_rps_read_punit_req_frequency(struct intel_rps *rps);
+u32 intel_rps_read_rapl_pl1(struct intel_rps *rps);
 u32 intel_rps_read_rpstat(struct intel_rps *rps);
+u32 intel_rps_read_rapl_pl1_frequency(struct intel_rps *rps);
 void gen6_rps_get_freq_caps(struct intel_rps *rps, struct intel_rps_freq_caps *caps);
 void intel_rps_raise_unslice(struct intel_rps *rps);
 void intel_rps_lower_unslice(struct intel_rps *rps);
 void gen6_rps_frequency_dump(struct intel_rps *rps, struct drm_printer *p);
+u32 intel_rps_read_throttle_reason(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_status(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_pl1(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_pl2(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_pl4(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_thermal(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_prochot(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_ratl(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_vr_thermalert(struct intel_rps *rps);
+u32 intel_rps_read_throttle_reason_vr_tdc(struct intel_rps *rps);
+
 void gen5_rps_irq_handler(struct intel_rps *rps);
 void gen6_rps_irq_handler(struct intel_rps *rps, u32 pm_iir);
 void gen11_rps_irq_handler(struct intel_rps *rps, u32 pm_iir);

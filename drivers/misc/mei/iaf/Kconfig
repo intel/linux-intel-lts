@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2020-2021, Intel Corporation. All rights reserved.
+#
+config INTEL_MEI_IAF
+	tristate "Intel Accelerator Fabric services of ME Interface"
+	select INTEL_MEI_ME
+	depends on DRM_I915
+	help
+	  MEI Support for IAF Services on Intel graphics card.
+
+	  Enables the ME FW services required for IAF support through
+	  I915 display driver of Intel.

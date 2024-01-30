@@ -55,6 +55,10 @@ i915_param_named(modeset, int, 0400,
 	"Use kernel modesetting [KMS] (0=disable, "
 	"1=on, -1=force vga console preference [default])");
 
+i915_param_named_unsafe(force_pch, int, 0400,
+	"Force PCH type on boot (-1=auto detected by PCI ID, "
+	"0=PCH_NONE, see enum intel_pch for additional values)");
+
 i915_param_named_unsafe(enable_dc, int, 0400,
 	"Enable power-saving display C-states. "
 	"(-1=auto [default]; 0=disable; 1=up to DC5; 2=up to DC6; "
@@ -78,6 +82,9 @@ i915_param_named_unsafe(vbt_sdvo_panel_type, int, 0400,
 
 i915_param_named_unsafe(reset, uint, 0400,
 	"Attempt GPU resets (0=disabled, 1=full gpu reset, 2=engine reset [default])");
+
+i915_param_named_unsafe(allow_non_persist_without_reset, bool, 0400,
+	"Allow non-persistent contexts even if reset is disabled (default: false)");
 
 i915_param_named_unsafe(vbt_firmware, charp, 0400,
 	"Load VBT from specified file under /lib/firmware");
@@ -113,6 +120,9 @@ i915_param_named_unsafe(force_probe, charp, 0400,
 	"Force probe the driver for specified devices. "
 	"See CONFIG_DRM_I915_FORCE_PROBE for details.");
 
+i915_param_named_unsafe(enable_secure_batch, bool, 0400,
+	"Enable for legacy tests I915_EXEC_SECURE. (default: 0)");
+
 i915_param_named_unsafe(disable_power_well, int, 0400,
 	"Disable display power wells when possible "
 	"(-1=auto [default], 0=power wells always on, 1=power wells disabled when possible)");
@@ -135,8 +145,7 @@ i915_param_named_unsafe(force_reset_modeset_test, bool, 0400,
 i915_param_named_unsafe(invert_brightness, int, 0400,
 	"Invert backlight brightness "
 	"(-1 force normal, 0 machine defaults, 1 force inversion), please "
-	"report PCI device ID, subsystem vendor and subsystem device ID "
-	"to dri-devel@lists.freedesktop.org, if your machine needs it. "
+	"contact your Intel support representative, if your machine needs it. "
 	"It will then be included in an upcoming module version.");
 
 i915_param_named(disable_display, bool, 0400,
@@ -167,9 +176,24 @@ i915_param_named_unsafe(enable_guc, int, 0400,
 	"Required functionality can be selected using bitmask values. "
 	"(-1=auto [default], 0=disable, 1=GuC submission, 2=HuC load)");
 
+i915_param_named_unsafe(guc_feature_flags, uint, 0400,
+	"GuC feature flags. Requires GuC to be loaded. (0=none [default])");
+
 i915_param_named(guc_log_level, int, 0400,
 	"GuC firmware logging level. Requires GuC to be loaded. "
 	"(-1=auto [default], 0=disable, 1..4=enable with verbosity min..max)");
+
+i915_param_named(guc_log_size_crash, int, 0400,
+	"GuC firmware logging buffer size for crash dumps (in MB)"
+	"(-1=auto [default], NB: max = 4, other restrictions apply)");
+
+i915_param_named(guc_log_size_debug, int, 0400,
+	"GuC firmware logging buffer size for debug logs (in MB)"
+	"(-1=auto [default], NB: max = 16, other restrictions apply)");
+
+i915_param_named(guc_log_size_capture, int, 0400,
+	"GuC error capture register dump buffer size (in MB)"
+	"(-1=auto [default], NB: max = 4, other restrictions apply)");
 
 i915_param_named_unsafe(guc_firmware_path, charp, 0400,
 	"GuC firmware path to use instead of the default one");
@@ -180,17 +204,33 @@ i915_param_named_unsafe(huc_firmware_path, charp, 0400,
 i915_param_named_unsafe(dmc_firmware_path, charp, 0400,
 	"DMC firmware path to use instead of the default one");
 
+i915_param_named_unsafe(gsc_firmware_path, charp, 0400,
+	"GSC firmware path to use instead of the default one");
+
 i915_param_named_unsafe(enable_dp_mst, bool, 0400,
 	"Enable multi-stream transport (MST) for new DisplayPort sinks. (default: true)");
 
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG)
-i915_param_named_unsafe(inject_probe_failure, uint, 0400,
+i915_param_named_unsafe(inject_probe_failure, int, 0400,
 	"Force an error after a number of failure check points (0:disabled (default), N:force failure at the Nth failure check point)");
 #endif
 
 i915_param_named(enable_dpcd_backlight, int, 0400,
 	"Enable support for DPCD backlight control"
 	"(-1=use per-VBT LFP backlight type setting [default], 0=disabled, 1=enable, 2=force VESA interface, 3=force Intel interface)");
+
+i915_param_named_unsafe(enable_rc6, bool, 0400,
+	"Enable power-saving render C-state 6. (default: true)");
+i915_param_named_unsafe(rc6_ignore_steppings, bool, 0400,
+	"Allow RC6 to be enabled on steppings where it would be disabled. (default: false)");
+
+#if IS_ENABLED(CONFIG_DRM_I915_CHICKEN_SOFT_PG)
+i915_param_named_unsafe(enable_softpg, bool, 0400,
+	"Enable software controlled power-gating. (default: false)");
+#endif
+
+i915_param_named_unsafe(enable_pagefault, bool, 0600,
+	"Enable device page fault. (default: false)");
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 i915_param_named(enable_gvt, bool, 0400,
@@ -204,6 +244,85 @@ i915_param_named_unsafe(request_timeout_ms, uint, 0600,
 
 i915_param_named_unsafe(lmem_size, uint, 0400,
 			"Set the lmem size(in MiB) for each region. (default: 0, all memory)");
+
+i915_param_named(max_vfs, uint, 0400,
+	"Limit number of virtual functions to allocate. "
+	"(0 = no VFs [default]; N = allow up to N VFs)");
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV)
+i915_param_named_unsafe(vfs_flr_mask, ulong, 0600,
+	"Bitmask to enable (1) or disable (0) cleaning by PF VF's resources "
+	"(GGTT and LMEM) after FLR (default: ~0 - cleaning enable for all VFs) "
+	"Bit number indicates VF number, e.g. bit 1 indicates VF1");
+#endif
+
+i915_param_named_unsafe(debug_eu, int, 0400,
+	"Enable EU debug capabilities (default: 0)");
+
+i915_param_named_unsafe(debugger_timeout_ms, uint, 0400,
+	"Setup debugger disconnect timeout in milliseconds (default: 3000, 0 never)");
+
+i915_param_named_unsafe(debugger_log_level, int, 0600,
+	"EU debugger log level (-1 = default, 0=none, 1=err, 2=warn, 3=info, 4=verbose)");
+
+i915_param_named_unsafe(enable_hw_throttle_blt, bool, 0400,
+	"Enable hardware throttling BLT on XEHPSDV A0. (default: yes)");
+
+i915_param_named_unsafe(enable_fake_int_wa, bool, 0400,
+			"Enable fake interrupts via polling timer w/a for multi-tile platforms. (default: true)");
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_CONTIGUOUS)
+i915_param_named_unsafe(force_alloc_contig, int, 0400,
+	"Force allocation of LMEM and SMEM objects from physically contiguous pages. "
+	"0=disabled [default], 1=SMEM only, 2=LMEM only, 3=both");
+#endif
+
+i915_param_named_unsafe(prelim_override_p2p_dist, uint, 0400,
+			"Flags to determine P2P behavior: "
+			"Use kernel configured behavior (default: 0), "
+			"Override distance check (1), "
+			"Fabric path only (2)");
+
+i915_param_named_unsafe(smem_access_control, int, 0600,
+			"Bitmask to indicate WA enabled for pcie deadlock, bits 1 and 2 are mutually exclusive"
+			"bit-0 if set LRC, hwsp and guc objects in smem, "
+			"bit-1 stall gpu before ppgtt updates, "
+			"bit-2 Update ppgtt and ggtt using blitter commands");
+
+i915_param_named_unsafe(page_sz_mask, uint, 0600,
+			"mask to force the huge page sizes\n"
+			"bit0 4K page, bit1 64K page bit2 2M page, bit3 1G page size");
+
+i915_param_named_unsafe(ulls_bcs0_pm_wa, bool, 0600,
+	"Workaround for VLK-20104 which disables bcs0 PM (default: true)");
+
+i915_param_named_unsafe(debug_pages, uint, 0400,
+			"Extra pages allocated for debug (default=0, Bit 31 indicates LMEM)");
+
+i915_param_named_unsafe(enable_mem_fence, bool, 0400,
+			"Set this true to enable MEM_FENCE workaround (default: false");
+
+i915_param_named_unsafe(force_driver_flr, int, 0400,
+			"Set this to enforce doing or skipping a driver-FLR at MMIO init and fini"
+			"-1=driver decides[default], 0=skip driver flr, 1=trigger driver flr");
+
+i915_param_named_unsafe(disable_bo_chunking, bool, 0600,
+	"Disable buffer object chunking feature (default: false)");
+
+/*
+ * This module parameter is needed because SRIOV PF and IAF are mutually
+ * exclusive (see HSDES #14014623804).  Until this is fixed, the driver
+ * needs to be able to enable/disable the IAF infrastructure (specifically
+ * Device Physical Addressing).  Since there will be no enable/disable for the
+ * SRIOV PF path, this parameter is needed to explicitly disable IAF when
+ * SRIOV PF is required.
+ */
+i915_param_named(enable_iaf, bool, 0400, "Enable IAF feature (default: true)");
+
+#if IS_ENABLED(CONFIG_DRM_I915_ATS)
+i915_param_named_unsafe(address_translation_services, bool, 0400,
+			"Enable Address Translation Services (ATS) (default: false)");
+#endif
 
 static __always_inline void _print_param(struct drm_printer *p,
 					 const char *name,

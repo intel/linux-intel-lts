@@ -41,6 +41,8 @@ int i915_user_extensions(struct i915_user_extension __user *ext,
 		if (get_user(name, &ext->name))
 			return -EFAULT;
 
+		name = PRELIM_I915_USER_EXT_MASK(name);
+
 		err = -EINVAL;
 		if (name < count) {
 			name = array_index_nospec(name, count);

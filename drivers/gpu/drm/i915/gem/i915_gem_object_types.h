@@ -16,6 +16,8 @@
 #include "i915_active.h"
 #include "i915_selftest.h"
 
+#include "gt/intel_gt_defines.h"
+
 struct drm_i915_gem_object;
 struct intel_fronbuffer;
 
@@ -52,8 +54,8 @@ struct drm_i915_gem_object_ops {
 	 * reap pages for the shrinker).
 	 */
 	int (*get_pages)(struct drm_i915_gem_object *obj);
-	void (*put_pages)(struct drm_i915_gem_object *obj,
-			  struct sg_table *pages);
+	int (*put_pages)(struct drm_i915_gem_object *obj,
+			 struct sg_table *pages);
 	void (*truncate)(struct drm_i915_gem_object *obj);
 	void (*writeback)(struct drm_i915_gem_object *obj);
 
@@ -162,6 +164,7 @@ enum i915_cache_level {
 	 * engine.
 	 */
 	I915_CACHE_WT,
+	I915_MAX_CACHE_LEVEL,
 };
 
 enum i915_map_type {
@@ -195,6 +198,16 @@ struct i915_gem_object_page_iter {
 	struct mutex lock; /* protects this cache */
 };
 
+struct i915_resv {
+	struct dma_resv base;
+	union {
+		struct kref refcount;
+		struct rcu_head rcu;
+	};
+};
+
+#define I915_BO_MIN_CHUNK_SIZE	SZ_64K
+
 struct drm_i915_gem_object {
 	/*
 	 * We might have reason to revisit the below since it wastes
@@ -208,6 +221,15 @@ struct drm_i915_gem_object {
 	};
 
 	const struct drm_i915_gem_object_ops *ops;
+
+	struct rb_root_cached segments;
+	struct rb_node segment_node;
+	unsigned long segment_offset;
+	struct drm_i915_gem_object *parent;
+
+	/* VM pointer if the object is private to a VM; NULL otherwise */
+	struct i915_address_space *vm;
+	struct list_head priv_obj_link;
 
 	struct {
 		/**
@@ -255,10 +277,7 @@ struct drm_i915_gem_object {
 	 * when i915_gem_ww_ctx_backoff() or i915_gem_ww_ctx_fini() are called.
 	 */
 	struct list_head obj_link;
-	/**
-	 * @shared_resv_from: The object shares the resv from this vm.
-	 */
-	struct i915_address_space *shares_resv_from;
+	struct i915_resv *shares_resv;
 
 	union {
 		struct rcu_head rcu;
@@ -281,25 +300,47 @@ struct drm_i915_gem_object {
 	unsigned long flags;
 #define I915_BO_ALLOC_CONTIGUOUS BIT(0)
 #define I915_BO_ALLOC_VOLATILE   BIT(1)
-#define I915_BO_ALLOC_STRUCT_PAGE BIT(2)
-#define I915_BO_ALLOC_CPU_CLEAR  BIT(3)
-#define I915_BO_ALLOC_USER       BIT(4)
+#define I915_BO_ALLOC_USER       BIT(2)
+#define I915_BO_ALLOC_IGNORE_MIN_PAGE_SIZE     BIT(3)
+#define I915_BO_ALLOC_CHUNK_4K   BIT(4)
+#define I915_BO_ALLOC_CHUNK_64K  BIT(5)
+#define I915_BO_ALLOC_CHUNK_2M   BIT(6)
+#define I915_BO_ALLOC_CHUNK_1G   BIT(7)
 #define I915_BO_ALLOC_FLAGS (I915_BO_ALLOC_CONTIGUOUS | \
 			     I915_BO_ALLOC_VOLATILE | \
-			     I915_BO_ALLOC_STRUCT_PAGE | \
-			     I915_BO_ALLOC_CPU_CLEAR | \
-			     I915_BO_ALLOC_USER)
-#define I915_BO_READONLY         BIT(5)
-#define I915_TILING_QUIRK_BIT    6 /* unknown swizzling; do not release! */
-#define I915_BO_WAS_BOUND_BIT     9
+			     I915_BO_ALLOC_USER | \
+			     I915_BO_ALLOC_IGNORE_MIN_PAGE_SIZE | \
+			     I915_BO_ALLOC_CHUNK_4K | \
+			     I915_BO_ALLOC_CHUNK_64K | \
+			     I915_BO_ALLOC_CHUNK_2M | \
+			     I915_BO_ALLOC_CHUNK_1G)
+#define I915_BO_STRUCT_PAGE	BIT(8)
+#define I915_BO_READONLY	BIT(9)
+#define I915_BO_HAS_BACKING_STORE	BIT(10)
+#define I915_TILING_QUIRK_BIT	11 /* unknown swizzling; do not release! */
+#define I915_BO_PROTECTED	BIT(12)
+#define I915_BO_SKIP_CLEAR	BIT(13)
+#define I915_BO_CPU_CLEAR	BIT(14)
+#define I915_BO_FAULT_CLEAR	BIT(15)
+#define I915_BO_SYNC_HINT	BIT(16)
+#define I915_BO_FABRIC		BIT(17)
 
 	/**
-	 * @cache_level: The desired GTT caching level.
+	 * @pat_index: The desired PAT index.
 	 *
-	 * See enum i915_cache_level for possible values, along with what
-	 * each does.
+	 * See hardware specification for valid PAT indices for each platform.
+	 * This field used to contain a value of enum i915_cache_level. It's
+	 * changed to an unsigned int because PAT indices are being used by
+	 * both UMD and KMD for caching policy control after GEN12.
+	 * For backward compatibility, this field will continue to contain
+	 * value of i915_cache_level for pre-GEN12 platforms so that the PTE
+	 * encode functions for these legacy platforms can stay the same.
+	 * In the meantime platform specific tables are created to translate
+	 * i915_cache_level into pat index, for more details check the macros
+	 * defined i915/i915_pci.c, e.g. PVC_CACHELEVEL.
 	 */
-	unsigned int cache_level:3;
+	unsigned int pat_index:4;
+
 	/**
 	 * @cache_coherent:
 	 *
@@ -436,6 +477,11 @@ struct drm_i915_gem_object {
 	unsigned int cache_dirty:1;
 
 	/**
+	 * @evict_locked: Whether @obj_link sits on the eviction_list
+	 */
+	bool evict_locked:1;
+
+	/**
 	 * @read_domains: Read memory domains.
 	 *
 	 * These monitor which caches contain read/write data related to the
@@ -488,58 +534,38 @@ struct drm_i915_gem_object {
 		 */
 		atomic_t shrink_pin;
 
+		struct intel_memory_region_link {
+			/**
+			 * Memory region for this object.
+			 */
+			struct intel_memory_region *mem;
+
+			/**
+			 * Element within memory_region->objects or region->purgeable
+			 * if the object is marked as DONTNEED. Access is protected by
+			 * region->obj_lock.
+			 */
+			struct list_head link;
+		} region;
+
 		/**
 		 * Priority list of potential placements for this object.
 		 */
 		struct intel_memory_region **placements;
+		struct intel_memory_region *preferred_region;
 		int n_placements;
-
-		/**
-		 * Memory region for this object.
-		 */
-		struct intel_memory_region *region;
 
 		/**
 		 * Memory manager resource allocated for this object. Only
 		 * needed for the mock region.
 		 */
 		struct ttm_resource *res;
-
-		/**
-		 * Element within memory_region->objects or region->purgeable
-		 * if the object is marked as DONTNEED. Access is protected by
-		 * region->obj_lock.
-		 */
-		struct list_head region_link;
+		struct list_head blocks;
 
 		struct sg_table *pages;
 		void *mapping;
 
-		struct i915_page_sizes {
-			/**
-			 * The sg mask of the pages sg_table. i.e the mask of
-			 * of the lengths for each sg entry.
-			 */
-			unsigned int phys;
-
-			/**
-			 * The gtt page sizes we are allowed to use given the
-			 * sg mask and the supported page sizes. This will
-			 * express the smallest unit we can use for the whole
-			 * object, as well as the larger sizes we may be able
-			 * to use opportunistically.
-			 */
-			unsigned int sg;
-
-			/**
-			 * The actual gtt page size usage. Since we can have
-			 * multiple vma associated with this object we need to
-			 * prevent any trampling of state, hence a copy of this
-			 * struct also lives in each vma, therefore the gtt
-			 * value here should only be read/write through the vma.
-			 */
-			unsigned int gtt;
-		} page_sizes;
+		unsigned int page_sizes;
 
 		I915_SELFTEST_DECLARE(unsigned int page_mask);
 
@@ -553,15 +579,29 @@ struct drm_i915_gem_object {
 		struct list_head link;
 
 		/**
-		 * Advice: are the backing pages purgeable?
+		 * Advice: are the backing pages purgeable, atomics enabled?
 		 */
 		unsigned int madv:2;
+		unsigned int madv_atomic:2;
+#define I915_BO_ATOMIC_NONE	0
+#define I915_BO_ATOMIC_SYSTEM	1
+#define I915_BO_ATOMIC_DEVICE	2
 
-		/**
-		 * This is set if the object has been written to since the
-		 * pages were last acquired.
+		/*
+		 * Track the completion of the page construction if using the
+		 * blitter for swapin/swapout and for clears. Following
+		 * completion, it holds a persistent ERR_PTR should the
+		 * GPU operation to instantiate the pages fail and all
+		 * attempts to utilise the backing store must be prevented
+		 * (as the backing store is in undefined state) until the
+		 * taint is removed. All operations on the backing store
+		 * must wait for the fence to be signaled, be it asynchronously
+		 * as part of the scheduling pipeline or synchronously before
+		 * CPU access.
 		 */
-		bool dirty:1;
+		struct i915_active_fence migrate;
+
+		u32 tlb[I915_MAX_GT];
 	} mm;
 
 	struct {
@@ -570,28 +610,51 @@ struct drm_i915_gem_object {
 		bool created:1;
 	} ttm;
 
+	/*
+	 * Record which PXP key instance this object was created against (if
+	 * any), so we can use it to determine if the encryption is valid by
+	 * comparing against the current key instance.
+	 */
+	u32 pxp_key_instance;
+
 	/** Record of address bit 17 of each page at last unbind. */
 	unsigned long *bit_17;
 
 	union {
-#ifdef CONFIG_MMU_NOTIFIER
 		struct i915_gem_userptr {
 			uintptr_t ptr;
-			unsigned long notifier_seq;
-
 			struct mmu_interval_notifier notifier;
-			struct page **pvec;
-			int page_ref;
 		} userptr;
-#endif
 
 		struct drm_mm_node *stolen;
 
 		unsigned long scratch;
-		u64 encode;
 
 		void *gvt_info;
 	};
+
+	struct drm_i915_gem_object *swapto;
+
+	/*
+	 * To store the memory mask which represents the user preference about
+	 * which memory region the object should reside in
+	 */
+	u32 memory_mask;
+
+	struct {
+		spinlock_t lock;
+
+		/* list of clients which allocated/imported this object */
+		struct rb_root rb;
+
+		/* Whether this object currently resides in local memory */
+		bool resident:1;
+	} client;
+
+	/*
+	 * Implicity scaling uses two objects, allow them to be connected
+	 */
+	struct drm_i915_gem_object *pair;
 };
 
 static inline struct drm_i915_gem_object *

@@ -77,14 +77,28 @@ void i915_gem_stolen_remove_node(struct drm_i915_private *i915,
 	mutex_unlock(&i915->mm.stolen_lock);
 }
 
-static int i915_adjust_stolen(struct drm_i915_private *i915,
+static bool is_dsm_invalid(struct drm_i915_private *i915, struct resource *dsm)
+{
+	if (!HAS_BAR2_SMEM_STOLEN(i915)) {
+		if (dsm->start == 0)
+			return true;
+	}
+
+	if (dsm->end <= dsm->start)
+		return true;
+
+	return false;
+}
+
+static int i915_adjust_stolen(struct intel_memory_region *mem,
 			      struct resource *dsm)
 {
-	struct i915_ggtt *ggtt = to_gt(i915)->ggtt;
-	struct intel_uncore *uncore = ggtt->vm.gt->uncore;
+	struct i915_ggtt *ggtt = mem->gt->ggtt;
+	struct intel_uncore *uncore = mem->gt->uncore;
+	struct drm_i915_private *i915 = mem->i915;
 	struct resource *r;
 
-	if (dsm->start == 0 || dsm->end <= dsm->start)
+	if (is_dsm_invalid(i915, dsm))
 		return -EINVAL;
 
 	/*
@@ -136,7 +150,7 @@ static int i915_adjust_stolen(struct drm_i915_private *i915,
 	 * overlaps with the non-stolen system memory range, since lmem is local
 	 * to the gpu.
 	 */
-	if (HAS_LMEM(i915))
+	if (HAS_LMEM(i915) || HAS_BAR2_SMEM_STOLEN(i915))
 		return 0;
 
 	/*
@@ -371,8 +385,6 @@ static void icl_get_stolen_reserved(struct drm_i915_private *i915,
 
 	drm_dbg(&i915->drm, "GEN6_STOLEN_RESERVED = 0x%016llx\n", reg_val);
 
-	*base = reg_val & GEN11_STOLEN_RESERVED_ADDR_MASK;
-
 	switch (reg_val & GEN8_STOLEN_RESERVED_SIZE_MASK) {
 	case GEN8_STOLEN_RESERVED_1M:
 		*size = 1024 * 1024;
@@ -390,12 +402,18 @@ static void icl_get_stolen_reserved(struct drm_i915_private *i915,
 		*size = 8 * 1024 * 1024;
 		MISSING_CASE(reg_val & GEN8_STOLEN_RESERVED_SIZE_MASK);
 	}
+
+	if ((GRAPHICS_VER_FULL(i915) >= IP_VER(12, 70)) && !IS_DGFX(i915))
+		/* the base is initialized to stolen top so subtract size to get base */
+		*base -= *size;
+	else
+		*base = reg_val & GEN11_STOLEN_RESERVED_ADDR_MASK;
 }
 
 static int i915_gem_init_stolen(struct intel_memory_region *mem)
 {
 	struct drm_i915_private *i915 = mem->i915;
-	struct intel_uncore *uncore = &i915->uncore;
+	struct intel_uncore *uncore = mem->gt->uncore;
 	resource_size_t reserved_base, stolen_top;
 	resource_size_t reserved_total, reserved_size;
 
@@ -420,11 +438,10 @@ static int i915_gem_init_stolen(struct intel_memory_region *mem)
 
 	i915->dsm = mem->region;
 
-	if (i915_adjust_stolen(i915, &i915->dsm))
+	if (i915_adjust_stolen(mem, &i915->dsm))
 		return 0;
 
-	GEM_BUG_ON(i915->dsm.start == 0);
-	GEM_BUG_ON(i915->dsm.end <= i915->dsm.start);
+	GEM_BUG_ON(is_dsm_invalid(i915, &i915->dsm));
 
 	stolen_top = i915->dsm.end + 1;
 	reserved_base = stolen_top;
@@ -522,7 +539,9 @@ static void dbg_poison(struct i915_ggtt *ggtt,
 
 		ggtt->vm.insert_page(&ggtt->vm, addr,
 				     ggtt->error_capture.start,
-				     I915_CACHE_NONE, 0);
+				     i915_gem_get_pat_index(ggtt->vm.i915,
+							    I915_CACHE_NONE),
+				     0);
 		mb();
 
 		s = io_mapping_map_wc(&ggtt->iomap,
@@ -594,7 +613,7 @@ static int i915_gem_object_get_pages_stolen(struct drm_i915_gem_object *obj)
 	return 0;
 }
 
-static void i915_gem_object_put_pages_stolen(struct drm_i915_gem_object *obj,
+static int i915_gem_object_put_pages_stolen(struct drm_i915_gem_object *obj,
 					     struct sg_table *pages)
 {
 	struct drm_i915_private *i915 = to_i915(obj->base.dev);
@@ -607,6 +626,8 @@ static void i915_gem_object_put_pages_stolen(struct drm_i915_gem_object *obj,
 
 	sg_free_table(pages);
 	kfree(pages);
+
+	return 0;
 }
 
 static void
@@ -658,11 +679,15 @@ static int __i915_gem_object_create_stolen(struct intel_memory_region *mem,
 	i915_gem_object_init_memory_region(obj, mem);
 
 	err = i915_gem_object_pin_pages(obj);
-	if (err)
+	if (err) {
 		i915_gem_object_release_memory_region(obj);
+		i915_gem_object_unlock(obj);
+		return err;
+	}
+
 	i915_gem_object_unlock(obj);
 
-	return err;
+	return 0;
 }
 
 static int _i915_gem_object_stolen_init(struct intel_memory_region *mem,
@@ -772,50 +797,95 @@ static const struct intel_memory_region_ops i915_region_stolen_lmem_ops = {
 	.init_object = _i915_gem_object_stolen_init,
 };
 
-struct intel_memory_region *
-i915_gem_stolen_lmem_setup(struct drm_i915_private *i915, u16 type,
-			   u16 instance)
+static int get_mtl_gms_size(struct intel_uncore *uncore)
 {
-	struct intel_uncore *uncore = &i915->uncore;
+	u16 ggc, gms;
+
+	ggc = intel_uncore_read16(uncore, _MMIO(0x108040));
+
+	/* check GGMS, should be fixed 0x3 (8MB) */
+	if ((ggc & 0xc0) != 0xc0)
+		return -EIO;
+
+	/* return valid GMS value, -EIO if invalid */
+	gms = ggc >> 8;
+	switch (gms) {
+	case 0x0 ... 0x10:
+		return gms * 32;
+	case 0x20:
+		return 1024;
+	case 0x30:
+		return 1536;
+	case 0x40:
+		return 2048;
+	case 0xf0 ... 0xfe:
+		return (gms - 0xf0 + 1) * 4;
+	default:
+		return -EIO;
+	}
+}
+
+static struct intel_memory_region *
+stolen_lmem_setup(struct intel_gt *gt, u16 type,  u16 instance)
+{
+	struct intel_uncore *uncore = gt->uncore;
+	struct drm_i915_private *i915 = gt->i915;
 	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
-	resource_size_t dsm_size, dsm_base, lmem_size;
+	resource_size_t dsm_size, dsm_base, lmem_size, lmem_base;
 	struct intel_memory_region *mem;
 	resource_size_t io_start, io_size;
 	resource_size_t min_page_size;
+	int ret;
 
 	if (WARN_ON_ONCE(instance))
 		return ERR_PTR(-ENODEV);
 
-	if (!i915_pci_resource_valid(pdev, GEN12_LMEM_BAR))
+	if (!i915_pci_resource_valid(pdev, GFXMEM_BAR))
 		return ERR_PTR(-ENXIO);
 
-	/* Use DSM base address instead for stolen memory */
-	dsm_base = intel_uncore_read64(uncore, GEN12_DSMBASE);
-	if (IS_DG1(uncore->i915)) {
-		lmem_size = pci_resource_len(pdev, GEN12_LMEM_BAR);
+	ret = intel_get_tile_range(gt, &lmem_base, &lmem_size);
+	if (ret)
+		return ERR_PTR(ret);
+
+	if (HAS_BAR2_SMEM_STOLEN(i915)) {
+		/*
+		 * MTL dsm size is in GGC register, not the bar size.
+		 * also MTL uses offset to DSMBASE in ptes, so i915
+		 * uses dsm_base = 0 to setup stolen region.
+		 */
+		ret = get_mtl_gms_size(uncore);
+		if (ret < 0) {
+			drm_err(&i915->drm, "invalid MTL GGC register setting\n");
+			return ERR_PTR(ret);
+		}
+
+		dsm_base = 0;
+		dsm_size = (resource_size_t)(ret * SZ_1M);
+
+		GEM_BUG_ON(pci_resource_len(pdev, GFXMEM_BAR) != 256 * SZ_1M);
+		GEM_BUG_ON((dsm_size + 8 * SZ_1M) > lmem_size);
+	} else {
+		/* Use DSM base address instead for stolen memory */
+		dsm_base = intel_uncore_read64(uncore, GEN12_DSMBASE);
 		if (WARN_ON(lmem_size < dsm_base))
 			return ERR_PTR(-ENODEV);
-	} else {
-		resource_size_t lmem_range;
-
-		lmem_range = intel_gt_mcr_read_any(&i915->gt0, XEHP_TILE0_ADDR_RANGE) & 0xFFFF;
-		lmem_size = lmem_range >> XEHP_TILE_LMEM_RANGE_SHIFT;
-		lmem_size *= SZ_1G;
+		dsm_size = lmem_size - dsm_base;
 	}
 
-	dsm_size = lmem_size - dsm_base;
-	if (pci_resource_len(pdev, GEN12_LMEM_BAR) < lmem_size) {
+	io_size = dsm_size;
+	if (pci_resource_len(pdev, GFXMEM_BAR) < dsm_size) {
 		io_start = 0;
 		io_size = 0;
+	} else if (HAS_BAR2_SMEM_STOLEN(i915)) {
+		io_start = pci_resource_start(pdev, GFXMEM_BAR) + 8 * SZ_1M;
 	} else {
-		io_start = pci_resource_start(pdev, GEN12_LMEM_BAR) + dsm_base;
-		io_size = dsm_size;
+		io_start = pci_resource_start(pdev, GFXMEM_BAR) + dsm_base;
 	}
 
 	min_page_size = HAS_64K_PAGES(i915) ? I915_GTT_PAGE_SIZE_64K :
 						I915_GTT_PAGE_SIZE_4K;
 
-	mem = intel_memory_region_create(i915, dsm_base, dsm_size,
+	mem = intel_memory_region_create(gt, dsm_base, dsm_size,
 					 min_page_size,
 					 io_start, io_size,
 					 type, instance,
@@ -831,22 +901,22 @@ i915_gem_stolen_lmem_setup(struct drm_i915_private *i915, u16 type,
 
 	drm_dbg(&i915->drm, "Stolen Local memory IO start: %pa\n",
 		&mem->io_start);
-	drm_dbg(&i915->drm, "Stolen Local DSM base: %pa\n", &dsm_base);
+	drm_dbg(&i915->drm,
+		"Local Memory base: %pa, Stolen Local DSM base: %pa\n",
+		&lmem_base, &dsm_base);
 
 	intel_memory_region_set_name(mem, "stolen-local");
 
 	mem->private = true;
-
 	return mem;
 }
 
-struct intel_memory_region*
-i915_gem_stolen_smem_setup(struct drm_i915_private *i915, u16 type,
-			   u16 instance)
+static struct intel_memory_region*
+stolen_smem_setup(struct intel_gt *gt, u16 type, u16 instance)
 {
 	struct intel_memory_region *mem;
 
-	mem = intel_memory_region_create(i915,
+	mem = intel_memory_region_create(gt,
 					 intel_graphics_stolen_res.start,
 					 resource_size(&intel_graphics_stolen_res),
 					 PAGE_SIZE, 0, 0, type, instance,
@@ -858,6 +928,15 @@ i915_gem_stolen_smem_setup(struct drm_i915_private *i915, u16 type,
 
 	mem->private = true;
 	return mem;
+}
+
+struct intel_memory_region*
+i915_gem_stolen_setup(struct intel_gt *gt, u16 type, u16 instance)
+{
+	if (IS_DGFX(gt->i915))
+		return stolen_lmem_setup(gt, type, instance);
+
+	return stolen_smem_setup(gt, type, instance);
 }
 
 struct drm_i915_gem_object *

@@ -28,7 +28,10 @@
 struct drm_i915_private;
 struct intel_uncore;
 
-void mock_uncore_init(struct intel_uncore *uncore,
+int mock_uncore_init(struct intel_uncore *uncore,
 		      struct drm_i915_private *i915);
+
+void mock_uncore_uninit(struct intel_uncore *uncore,
+			struct drm_i915_private *i915);
 
 #endif /* !__MOCK_UNCORE_H */

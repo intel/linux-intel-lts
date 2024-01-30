@@ -163,6 +163,7 @@ static int mock_context_alloc(struct intel_context *ce)
 		return err;
 	}
 
+	__set_bit(CONTEXT_BARRIER_BIT, &ce->flags);
 	return 0;
 }
 
@@ -233,34 +234,6 @@ static void mock_submit_request(struct i915_request *request)
 			advance(request);
 	}
 	spin_unlock_irqrestore(&engine->hw_lock, flags);
-}
-
-static void mock_add_to_engine(struct i915_request *rq)
-{
-	lockdep_assert_held(&rq->engine->sched_engine->lock);
-	list_move_tail(&rq->sched.link, &rq->engine->sched_engine->requests);
-}
-
-static void mock_remove_from_engine(struct i915_request *rq)
-{
-	struct intel_engine_cs *engine, *locked;
-
-	/*
-	 * Virtual engines complicate acquiring the engine timeline lock,
-	 * as their rq->engine pointer is not stable until under that
-	 * engine lock. The simple ploy we use is to take the lock then
-	 * check that the rq still belongs to the newly locked engine.
-	 */
-
-	locked = READ_ONCE(rq->engine);
-	spin_lock_irq(&locked->sched_engine->lock);
-	while (unlikely(locked != (engine = READ_ONCE(rq->engine)))) {
-		spin_unlock(&locked->sched_engine->lock);
-		spin_lock(&engine->sched_engine->lock);
-		locked = engine;
-	}
-	list_del_init(&rq->sched.link);
-	spin_unlock_irq(&locked->sched_engine->lock);
 }
 
 static void mock_reset_prepare(struct intel_engine_cs *engine)
@@ -349,8 +322,6 @@ struct intel_engine_cs *mock_engine(struct drm_i915_private *i915,
 	engine->base.emit_flush = mock_emit_flush;
 	engine->base.emit_fini_breadcrumb = mock_emit_breadcrumb;
 	engine->base.submit_request = mock_submit_request;
-	engine->base.add_active_request = mock_add_to_engine;
-	engine->base.remove_active_request = mock_remove_from_engine;
 
 	engine->base.reset.prepare = mock_reset_prepare;
 	engine->base.reset.rewind = mock_reset_rewind;
@@ -376,6 +347,9 @@ int mock_engine_init(struct intel_engine_cs *engine)
 {
 	struct intel_context *ce;
 
+	spin_lock_init(&engine->barrier_lock);
+	INIT_LIST_HEAD(&engine->barrier_tasks);
+
 	INIT_LIST_HEAD(&engine->pinned_contexts_list);
 
 	engine->sched_engine = i915_sched_engine_create(ENGINE_MOCK);
@@ -390,6 +364,7 @@ int mock_engine_init(struct intel_engine_cs *engine)
 	engine->breadcrumbs = intel_breadcrumbs_create(NULL);
 	if (!engine->breadcrumbs)
 		goto err_schedule;
+	engine->breadcrumbs->irq_enabled++;
 
 	ce = create_kernel_context(engine);
 	if (IS_ERR(ce))

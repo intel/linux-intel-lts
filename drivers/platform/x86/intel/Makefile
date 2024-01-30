@@ -27,6 +27,8 @@ intel_oaktrail-y			:= oaktrail.o
 obj-$(CONFIG_INTEL_OAKTRAIL)		+= intel_oaktrail.o
 intel_vsec-y				:= vsec.o
 obj-$(CONFIG_INTEL_VSEC)		+= intel_vsec.o
+intel_vsec_dummy-y			:= vsec_dummy.o
+obj-$(CONFIG_INTEL_VSEC)		+= intel_vsec_dummy.o
 
 # Intel PMIC / PMC / P-Unit drivers
 intel_bxtwc_tmu-y			:= bxtwc_tmu.o

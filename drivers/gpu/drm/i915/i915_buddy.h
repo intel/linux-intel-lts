@@ -8,17 +8,20 @@
 
 #include <linux/bitops.h>
 #include <linux/list.h>
+#include <linux/llist.h>
 #include <linux/slab.h>
 
+#include "i915_active.h"
+
+/* 512 bits (one per pages) supports 2MB blocks */
+#define I915_BUDDY_MAX_PAGES   512
+
 struct i915_buddy_block {
-#define I915_BUDDY_HEADER_OFFSET GENMASK_ULL(63, 12)
-#define I915_BUDDY_HEADER_STATE  GENMASK_ULL(11, 10)
-#define   I915_BUDDY_ALLOCATED	   (1 << 10)
-#define   I915_BUDDY_FREE	   (2 << 10)
-#define   I915_BUDDY_SPLIT	   (3 << 10)
+#define I915_BUDDY_OFFSET	 	GENMASK_ULL(63, 12)
+#define I915_BUDDY_CLEAR_BIT		11
 /* Free to be used, if needed in the future */
-#define I915_BUDDY_HEADER_UNUSED GENMASK_ULL(9, 6)
-#define I915_BUDDY_HEADER_ORDER  GENMASK_ULL(5, 0)
+#define I915_BUDDY_HEADER_UNUSED	GENMASK_ULL(9, 6)
+#define I915_BUDDY_ORDER	 	GENMASK_ULL(5, 0)
 	u64 header;
 
 	struct i915_buddy_block *left;
@@ -27,28 +30,58 @@ struct i915_buddy_block {
 
 	void *private; /* owned by creator */
 
+	struct i915_active_fence active;
+
 	/*
-	 * While the block is allocated by the user through i915_buddy_alloc*,
-	 * the user has ownership of the link, for example to maintain within
-	 * a list, if so desired. As soon as the block is freed with
-	 * i915_buddy_free* ownership is given back to the mm.
+	 * While the block is allocated by the user through
+	 * i915_buddy_alloc*, the user has ownership of the link, for
+	 * example to maintain within a list, if so desired. As soon as
+	 * the block is freed with i915_buddy_free* ownership is given
+	 * back to the mm.
 	 */
-	struct list_head link;
-	struct list_head tmp_link;
+	union {
+		struct i915_buddy_link {
+			struct list_head link;
+			struct i915_buddy_list *list;
+		} node;
+		struct list_head link;
+
+		/*
+		 * XXX: consider moving this somewhere specific to the pd
+		 * stuff. In an ideal world we would like to keep i915_buddy as
+		 * non-i915 specific as possible and in this case the delayed
+		 * freeing is only required for our pd handling, which is only
+		 * one part of our overall i915_buddy use.
+		 */
+		struct llist_node freed;
+	};
+
+	unsigned long pfn_first;
+	/*
+	 * FIXME: There are other alternatives to bitmap. Like splitting the
+	 * block into contiguous 4K sized blocks. But it is part of bigger
+	 * issues involving partially invalidating large mapping, freeing the
+	 * blocks etc., revisit.
+	 */
+	unsigned long bitmap[BITS_TO_LONGS(I915_BUDDY_MAX_PAGES)];
 };
 
 /* Order-zero must be at least PAGE_SIZE */
 #define I915_BUDDY_MAX_ORDER (63 - PAGE_SHIFT)
 
+struct i915_buddy_list {
+	struct list_head list;
+	spinlock_t lock;
+	bool defrag;
+};
+
 /*
  * Binary Buddy System.
- *
- * Locking should be handled by the user, a simple mutex around
- * i915_buddy_alloc* and i915_buddy_free* should suffice.
  */
 struct i915_buddy_mm {
 	/* Maintain a free list for each order. */
-	struct list_head *free_list;
+	struct i915_buddy_list *clear_list;
+	struct i915_buddy_list *dirty_list;
 
 	/*
 	 * Maintain explicit binary tree(s) to track the allocation of the
@@ -72,62 +105,126 @@ struct i915_buddy_mm {
 };
 
 static inline u64
-i915_buddy_block_offset(struct i915_buddy_block *block)
+i915_buddy_block_offset(const struct i915_buddy_block *block)
 {
-	return block->header & I915_BUDDY_HEADER_OFFSET;
+	return READ_ONCE(block->header) & I915_BUDDY_OFFSET;
 }
 
 static inline unsigned int
-i915_buddy_block_order(struct i915_buddy_block *block)
+i915_buddy_block_order(const struct i915_buddy_block *block)
 {
-	return block->header & I915_BUDDY_HEADER_ORDER;
+	return READ_ONCE(block->header) & I915_BUDDY_ORDER;
 }
 
-static inline unsigned int
-i915_buddy_block_state(struct i915_buddy_block *block)
+static inline const unsigned long *
+__i915_buddy_header_read(const struct i915_buddy_block *block)
 {
-	return block->header & I915_BUDDY_HEADER_STATE;
+	return (const unsigned long *)&block->header;
 }
 
-static inline bool
-i915_buddy_block_is_allocated(struct i915_buddy_block *block)
+static inline unsigned long *
+__i915_buddy_header_state(struct i915_buddy_block *block)
 {
-	return i915_buddy_block_state(block) == I915_BUDDY_ALLOCATED;
-}
-
-static inline bool
-i915_buddy_block_is_free(struct i915_buddy_block *block)
-{
-	return i915_buddy_block_state(block) == I915_BUDDY_FREE;
+	return (unsigned long *)&block->header;
 }
 
 static inline bool
-i915_buddy_block_is_split(struct i915_buddy_block *block)
+i915_buddy_block_is_free(const struct i915_buddy_block *block)
 {
-	return i915_buddy_block_state(block) == I915_BUDDY_SPLIT;
+	return READ_ONCE(block->node.list);
+}
+
+static inline bool
+i915_buddy_block_is_split(const struct i915_buddy_block *block)
+{
+	return block->left;
+}
+
+static inline bool
+__i915_buddy_block_is_clear(const struct i915_buddy_block *block)
+{
+	return test_bit(I915_BUDDY_CLEAR_BIT, __i915_buddy_header_read(block));
+}
+
+static inline bool
+i915_buddy_block_is_clear(const struct i915_buddy_block *block)
+{
+	if (!__i915_buddy_block_is_clear(block))
+		return false;
+
+	/* Did the last operation to clear this block fail? */
+	return !i915_active_fence_has_error(&block->active);
+}
+
+static inline void
+__i915_buddy_block_set_clear(struct i915_buddy_block *block)
+{
+	__set_bit(I915_BUDDY_CLEAR_BIT, __i915_buddy_header_state(block));
+}
+
+static inline void
+__i915_buddy_block_clr_clear(struct i915_buddy_block *block)
+{
+	__clear_bit(I915_BUDDY_CLEAR_BIT, __i915_buddy_header_state(block));
+}
+
+static inline void
+i915_buddy_block_set_clear(struct i915_buddy_block *block, bool state)
+{
+	if (state)
+		__i915_buddy_block_set_clear(block);
+	else
+		__i915_buddy_block_clr_clear(block);
 }
 
 static inline u64
-i915_buddy_block_size(struct i915_buddy_mm *mm,
-		      struct i915_buddy_block *block)
+i915_buddy_block_size(const struct i915_buddy_mm *mm,
+		      const struct i915_buddy_block *block)
 {
 	return mm->chunk_size << i915_buddy_block_order(block);
 }
 
-int i915_buddy_init(struct i915_buddy_mm *mm, u64 size, u64 chunk_size);
+static inline bool
+i915_buddy_block_is_active(const struct i915_buddy_block *block)
+{
+       return i915_active_fence_isset(&block->active);
+}
 
+int i915_buddy_init(struct i915_buddy_mm *mm, u64 start, u64 end, u64 chunk);
+
+void i915_buddy_discard_clears(struct i915_buddy_mm *mm);
 void i915_buddy_fini(struct i915_buddy_mm *mm);
 
+enum {
+	I915_BUDDY_ALLOC_CLEAR_BIT = 0,
+	I915_BUDDY_ALLOC_ACTIVE_BIT,
+	__I915_BUDDY_ALLOC_USER_BITS
+};
+
 struct i915_buddy_block *
-i915_buddy_alloc(struct i915_buddy_mm *mm, unsigned int order);
+__i915_buddy_alloc(struct i915_buddy_mm *mm, unsigned int order, unsigned int flags);
+#define I915_BUDDY_ALLOC_WANT_CLEAR BIT(I915_BUDDY_ALLOC_CLEAR_BIT)
+#define I915_BUDDY_ALLOC_ALLOW_ACTIVE BIT(I915_BUDDY_ALLOC_ACTIVE_BIT)
+
+static inline struct i915_buddy_block *
+i915_buddy_alloc(struct i915_buddy_mm *mm, unsigned int order)
+{
+	return __i915_buddy_alloc(mm, order, 0);
+}
 
 int i915_buddy_alloc_range(struct i915_buddy_mm *mm,
 			   struct list_head *blocks,
 			   u64 start, u64 size);
 
-void i915_buddy_free(struct i915_buddy_mm *mm, struct i915_buddy_block *block);
+void i915_buddy_mark_free(struct i915_buddy_mm *mm,
+			  struct i915_buddy_block *block);
 
+void i915_buddy_free(struct i915_buddy_mm *mm, struct i915_buddy_block *block);
 void i915_buddy_free_list(struct i915_buddy_mm *mm, struct list_head *objects);
+
+bool i915_buddy_defrag(struct i915_buddy_mm *mm,
+		       unsigned int min_order,
+		       unsigned int max_order);
 
 void i915_buddy_module_exit(void);
 int i915_buddy_module_init(void);

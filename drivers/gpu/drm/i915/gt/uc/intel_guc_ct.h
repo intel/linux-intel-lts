@@ -8,6 +8,7 @@
 
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
+#include <linux/stackdepot.h>
 #include <linux/workqueue.h>
 #include <linux/ktime.h>
 #include <linux/wait.h>
@@ -69,6 +70,7 @@ struct intel_guc_ct {
 	} ctbs;
 
 	struct tasklet_struct receive_tasklet;
+	struct mutex send_mutex;
 
 	/** @wq: wait queue for g2h chanenl */
 	wait_queue_head_t wq;
@@ -81,16 +83,41 @@ struct intel_guc_ct {
 
 		struct list_head incoming; /* incoming requests */
 		struct work_struct worker; /* handler for incoming requests */
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
+		struct {
+			u16 fence;
+			u16 action;
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+			depot_stack_handle_t stack;
+#endif
+		} lost_and_found[SZ_16];
+#endif
 	} requests;
+
+	I915_SELFTEST_DECLARE(int (*rcv_override)(struct intel_guc_ct *ct, const u32 *msg));
 
 	/** @stall_time: time of first time a CTB submission is stalled */
 	ktime_t stall_time;
 
-#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GUC)
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 	int dead_ct_reason;
 	bool dead_ct_reported;
 	struct work_struct dead_ct_worker;
 #endif
+
+	/* FIXME: MTL cache coherency issue - HSD 22016122933 */
+	struct {
+		/**
+		 * @delay: Period for polling the CTB tail
+		 */
+		unsigned long delay;
+
+		/**
+		 * @work: Periodic work to detect and fix CTB tail loss.
+		 */
+		struct delayed_work work;
+	} mtl_workaround;
 };
 
 void intel_guc_ct_init_early(struct intel_guc_ct *ct);
@@ -98,18 +125,15 @@ int intel_guc_ct_init(struct intel_guc_ct *ct);
 void intel_guc_ct_fini(struct intel_guc_ct *ct);
 int intel_guc_ct_enable(struct intel_guc_ct *ct);
 void intel_guc_ct_disable(struct intel_guc_ct *ct);
+void intel_guc_ct_sanitize(struct intel_guc_ct *ct);
 
-static inline void intel_guc_ct_sanitize(struct intel_guc_ct *ct)
-{
-	ct->enabled = false;
-}
-
-static inline bool intel_guc_ct_enabled(struct intel_guc_ct *ct)
+static inline bool intel_guc_ct_enabled(const struct intel_guc_ct *ct)
 {
 	return ct->enabled;
 }
 
 #define INTEL_GUC_CT_SEND_NB		BIT(31)
+#define INTEL_GUC_CT_SEND_SELFTEST	BIT(30)
 #define INTEL_GUC_CT_SEND_G2H_DW_SHIFT	0
 #define INTEL_GUC_CT_SEND_G2H_DW_MASK	(0xff << INTEL_GUC_CT_SEND_G2H_DW_SHIFT)
 #define MAKE_SEND_FLAGS(len) ({ \

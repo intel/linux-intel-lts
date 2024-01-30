@@ -13,6 +13,8 @@
 
 #include "i915_gem.h"
 
+#define I915_MAX_CHAIN_ALLOC (SG_MAX_SINGLE_ALLOC - 1)
+
 struct drm_mm_node;
 struct ttm_resource;
 
@@ -105,6 +107,15 @@ static inline struct scatterlist *__sg_next(struct scatterlist *sg)
 	     (__iter) = __sgt_iter(__sg_next((__iter).sgp), false), 0 : 0)
 
 /**
+ * __for_each_daddr - iterates over the device addresses with pre-initialized
+ * iterator.
+ */
+#define __for_each_daddr(__dp, __iter, __step)			\
+	for (; ((__dp) = (__iter).dma + (__iter).curr), (__iter).sgp;	\
+	     (((__iter).curr += (__step)) >= (__iter).max) ?		\
+	     (__iter) = __sgt_iter(__sg_next((__iter).sgp), true), 0 : 0)
+
+/**
  * i915_sg_dma_sizes - Record the dma segment sizes of a scatterlist
  * @sg: The scatterlist
  *
@@ -142,7 +153,20 @@ static inline unsigned int i915_sg_segment_size(void)
 	return size;
 }
 
-bool i915_sg_trim(struct sg_table *orig_st);
+void i915_sg_trim(struct sg_table *sgt);
+unsigned long i915_sg_compact(struct sg_table *st, unsigned long max);
+
+/* Wrap scatterlist.h to sanity check for integer truncation */
+typedef unsigned int __sg_size_t; /* see linux/scatterlist.h */
+#define sg_alloc_table(sgt, nents, gfp) \
+	overflows_type(nents, __sg_size_t) ? -E2BIG : (sg_alloc_table)(sgt, (__sg_size_t)(nents), gfp)
+
+#define __sg_alloc_table_from_pages(sgt, pages, npages, offset, size, max_segment, prv, left, gfp) \
+	overflows_type(npages, __sg_size_t) ? ERR_PTR(-E2BIG) : (__sg_alloc_table_from_pages)(sgt, pages, (__sg_size_t)(npages), offset, size, max_segment, prv, left, gfp)
+
+#define sg_alloc_table_from_pages(sgt, pages, npages, offset, size, gfp) \
+	overflows_type(npages, __sg_size_t) ? -E2BIG : (sg_alloc_table_from_pages)(sgt, pages, (__sg_size_t)(npages), offset, size, gfp)
+
 
 struct sg_table *i915_sg_from_mm_node(const struct drm_mm_node *node,
 				      u64 region_start);

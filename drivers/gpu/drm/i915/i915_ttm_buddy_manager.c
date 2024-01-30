@@ -164,7 +164,7 @@ int i915_ttm_buddy_man_init(struct ttm_device *bdev,
 	if (!bman)
 		return -ENOMEM;
 
-	err = i915_buddy_init(&bman->mm, size, chunk_size);
+	err = i915_buddy_init(&bman->mm, 0, size, chunk_size);
 	if (err)
 		goto err_free_bman;
 

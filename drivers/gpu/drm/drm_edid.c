@@ -6111,3 +6111,41 @@ void drm_update_tile_info(struct drm_connector *connector,
 		connector->tile_group = NULL;
 	}
 }
+
+/**
+ * drm_hdmi_sink_max_frl_rate - get the max frl rate, if supported
+ * @connector - connector with HDMI sink
+ *
+ * RETURNS:
+ * max frl rate supported by the HDMI sink, 0 if FRL not supported
+ */
+int drm_hdmi_sink_max_frl_rate(struct drm_connector *connector)
+{
+	int max_lanes = connector->display_info.hdmi.max_lanes;
+	int rate_per_lane = connector->display_info.hdmi.max_frl_rate_per_lane;
+
+	return max_lanes * rate_per_lane;
+}
+EXPORT_SYMBOL(drm_hdmi_sink_max_frl_rate);
+
+/**
+ * drm_hdmi_sink_dsc_max_frl_rate - get the max frl rate from HDMI sink with
+ * DSC1.2 compression.
+ * @connector - connector with HDMI sink
+ *
+ * RETURNS:
+ * max frl rate supported by the HDMI sink with DSC1.2, 0 if FRL not supported
+ */
+int drm_hdmi_sink_dsc_max_frl_rate(struct drm_connector *connector)
+{
+	int max_dsc_lanes, dsc_rate_per_lane;
+
+	if (!connector->display_info.hdmi.dsc_cap.v_1p2)
+		return 0;
+
+	max_dsc_lanes = connector->display_info.hdmi.dsc_cap.max_lanes;
+	dsc_rate_per_lane = connector->display_info.hdmi.dsc_cap.max_frl_rate_per_lane;
+
+	return max_dsc_lanes * dsc_rate_per_lane;
+}
+EXPORT_SYMBOL(drm_hdmi_sink_dsc_max_frl_rate);

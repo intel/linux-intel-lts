@@ -1,0 +1,383 @@
+preliminary sysfs interface for i915 virtualization
+---------------------------------------------------
+
+
+What:		/sys/class/drm/card%/prelim_iov/
+What:		/sys/class/drm/card%/prelim_iov/mode
+Date:		September 2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		The sysfs "iov" directory is used as root of all driver specific
+		attributes used to manage and examine device support for the I/O
+		virtualization (IOV).
+
+		Note that "prelim_" prefix used here indicates that this version
+		of the sysfs ABI is still preliminary and subject to change.
+
+		mode: (RO) string
+			Shows IOV mode (if any) of the device or the driver.
+
+			Intel GVT-g is a full GPU virtualization software
+			solution, supported starting from 5th generation of Intel
+			Core(TM) processors with Intel Graphics processors.
+
+			The Single Root I/O Virtualization (SR-IOV) extension to
+			the PCI Express (PCIe) specification suite, is supported
+			starting from 12th generation of Intel Graphics processors.
+
+			"GVT" - DRM device is running as GVT-g guest.
+
+			"SR-IOV PF" - DRM device is running on PCI Function that
+				      supports the SR-IOV capabilities, known as
+				      Physical Function (PF)
+
+			"SR-IOV VF" - DRM device is running on PCI Function that
+				      is associated with a PF, known as Virtual
+				      Function (VF)
+
+
+What:		/sys/class/drm/card%/prelim_iov/pf/
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/
+What:		/sys/class/drm/card%/prelim_iov/vf%/
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+
+		pf/
+			The sysfs "pf" directory holds attributes specific to the
+			PF and will be available only when mode is "SR-IOV PF".
+
+		vf1/
+		vf%/
+			The sysfs "vf1".."vfN" directories hold attributes for
+			the VFs, where VFs are numbered according to the PCI
+			specification starting from 1 to "sriov_totalvfs", and
+			will be available only when mode is "SR-IOV PF".
+
+		pf/gt0/
+		pf/gt%/
+		vf%/gt0/
+		vf%/gt%/
+			The sysfs "gt%" directories hold attributes specific to
+			the device GT tile. Root tile is represented as "gt0" and
+			is always present. If remote tiles are also present and
+			enabled they are represented as "gt1", "gt2, ...
+
+
+What:		/sys/class/drm/card%/prelim_iov/pf/auto_provisioning
+What:		/sys/class/drm/card%/prelim_iov/pf/device
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+
+		auto_provisioning: (RW) bool
+			Controls whether the PF driver shall perform automatic
+			provisioning of the VFs when no manual provisioning was
+			performed but VFs are being enabled.
+
+			When this flag is true, VFs will be provisioned with
+			fair amount of hard resources (like GGTT or LMEM), but
+			any scheduling parameters (like execution time) will
+			not be modified.
+
+			This flag will be automatically turned off on any
+			attempt of manual provisioning of the VF using other
+			provisioning attributes.
+
+			This flag can be always turned off.
+			This flag can be manually turned on only if all VFs are
+			fully unprovisioned, otherwise it will return -ESTALE.
+
+		device: symbolic link
+			Backlink to the PCI device entry representing this PF.
+
+
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/exec_quantum_ms
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/preempt_timeout_us
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		exec_quantum_ms: (RW) integer 0..U32_MAX
+			GT execution quantum in [ms] assigned to the PF.
+			Requested quantum might be aligned per HW/FW requirements.
+
+			Default is 0 (unlimited).
+
+		preempt_timeout_us: (RW) integer 0..U32_MAX
+			GT preemption timeout in [us] for to the PF.
+			Requested timeout might be aligned per HW/FW requirements.
+
+			Default is 0 (unlimited).
+
+
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/ggtt_spare
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/lmem_spare
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/contexts_spare
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/doorbells_spare
+Date:		September 2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+
+		ggtt_spare: (RW) integer 0..U64_MAX
+			Total size of the GGTT address space (in bytes) that PF
+			shall preserve for its own use. PF shall refuse VF GGTT
+			provisioning if remaining GGTT after such provisioning
+			will be smaller than this value.
+
+			Default value is minimal GGTT size as required by the PF.
+
+			PF's minimal GGTT size depends on the platform or driver
+			implementation and can be reinforced by writing 0 to this
+			attribute.
+
+			Requested size may be aligned per HW/FW/SW requirements.
+			If requested size is smaller than minimum then -EINVAL
+			error will be returned.
+
+		lmem_spare: (RW) integer 0..U64_MAX
+			Total size of the LMEM blocks (in bytes) that PF shall
+			preserve for its own use. PF shall refuse to provision
+			VF with LMEM if remaining available LMEM after such
+			provisioning will be smaller than this value.
+
+			This attribute is only available on discrete platforms.
+
+			Default value is minimal LMEM size as required by the PF.
+
+			PF's minimal LMEM size depends on the platform or driver
+			implementation and can be reinforced by writing 0 to this
+			attribute.
+
+			Requested size may be aligned per HW/FW/SW requirements.
+			If requested size is smaller than minimum (but not zero)
+			then -EINVAL error will be returned.
+
+		contexts_spare: (RW) integer 0..U16_MAX
+			Number of the GuC submission contexts that PF shall
+			preserve for its own use. PF shall refuse VF contexts
+			provisioning if remaining available contexts after such
+			provisioning will be smaller than this value.
+
+			Default value is minimal number of contexts as required
+			by the PF.
+
+			PF's minimal contexts number depends on the platform
+			or the driver implementation and can be reinforced by
+			writing 0 to this attribute.
+
+			Requested number may be aligned per HW/FW/SW requirements.
+			If requested count is smaller than minimum (but not zero)
+			then -EINVAL error will be returned.
+
+		doorbells_spare: (RW) integer 0..U16_MAX
+			Number of the GuC doorbells that PF shall preserve for
+			its own use. PF shall refuse VF doorbell provisioning if
+			remaining available doorbells after such provisioning
+			will be smaller than this value.
+
+			Default value is minimal number of contexts as required
+			by the PF.
+
+			PF's minimal contexts number depends on the platform
+			or the driver implementation and can be reinforced by
+			writing 0 to this attribute.
+
+			Requested number may be aligned per HW/FW/SW requirements.
+			If requested count is smaller than minimum (but not zero)
+			then -EINVAL error will be returned.
+
+
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/policy/engine_reset
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/policy/sched_if_idle
+What:		/sys/class/drm/card%/prelim_iov/pf/gt%/policy/sample_period_ms
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		Set of the per-GT policy attributes that corresponds to the
+		configuration KLVs supported by the GuC.
+
+		sched_if_idle: (RW) bool
+			This attribute controls whether strict scheduling is
+			enabled whereby any VF that doesn't have work to submit
+			is still allocated a fixed execution time-slice to
+			ensure active VFs execution is always consitent even
+			during other VF reprovisiong or rebooting events.
+			Changing this param impacts all VFs and takes effect
+			on the next VF switch event.
+
+			Default is false (disabled).
+
+		engine_reset: (RW) bool
+			This attribute controls whether to reset utilized HW
+			engine after VF switch to clean up any stale HW
+			registers left behind by the previous VF.
+
+			Default is false (disabled).
+
+		sample_period_ms: (RW) integer 0..1000
+			This attribute controls a the sample period for tracking
+			adverse event counters. A sample period is the period in
+			millisecs during which events are counted and the total
+			is checked against threshold. The sample period is
+			continuous, i.e. not only during the time-slice of a VF,
+			but across globally. This is applicable for all the VFs.
+
+			Default is 0 (disabled).
+
+			0 = disabled
+			1..1000 = sample period in [ms]
+
+
+What:		/sys/class/drm/card%/prelim_iov/vf%/id
+What:		/sys/class/drm/card%/prelim_iov/vf%/device
+What:		/sys/class/drm/card%/prelim_iov/vf%/control
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+
+		id: (RO) integer 0..U32_MAX
+			VF identifier. VF identifiers start from 1.
+
+		device: symbolic link
+			Backlink to the PCI device entry representing this VF.
+
+			This link is present only if VF is enabled.
+
+		control: (WO) string
+
+			This attribute allows admin to pause, resume or stop
+			handling submission requests from given VF.
+
+			This operation will be performed on all GTs where
+			VF is provisioned.
+
+			Writes to this attribute may fail with:
+				-EIO if GuC refuses such control
+
+			"pause" = will temporarily pause VF scheduling on GuC.
+			To restore VF scheduling admin shall use "resume".
+
+			"resume" = will resume VF scheduling on GuC.
+
+			"stop" = will stop completely VF scheduling on GuC.
+			To restore VF scheduling admin must trigger VF FLR.
+
+
+
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/exec_quantum_ms
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/preempt_timeout_us
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		exec_quantum_ms: (RW) 0..U32_MAX
+			GT execution quantum (in millisecs) assigned to the VF.
+			Requested value might be aligned per HW/FW requirements.
+
+			Default is 0 (unlimited).
+
+		preempt_timeout_us: (RW) 0..U32_MAX
+			GT preemption timeout (in microsecs) allowed for the VF.
+			Requested value might be aligned per HW/FW requirements.
+
+			Default is 0 (unlimited).
+
+
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/ggtt_quota
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/lmem_quota
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/contexts_quota
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/doorbells_quota
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		Writes to these attributes may fail with:
+			-E2BIG if value larger that HW/FW limit.
+			-EDQUOT if value is larger than maximum quota.
+			-ENOSPC if can't allocate required quota.
+			-EIO if GuC refuses to change VF provisioning.
+
+		ggtt_quota: (RW) integer 0..U64_MAX
+			Size of the GGTT region (in bytes) assigned to the VF.
+			Value is aligned per HW/FW requirements.
+
+			Default is 0 (unprovisioned).
+
+		lmem_quota: (RW) integer 0..U64_MAX
+			Size of the local memory (in bytes) assigned to the VF.
+			Value is aligned per HW/FW requirements.
+
+			This attribute is only available on discrete platforms.
+
+			Default is 0 (unprovisioned).
+
+		contexts_quota: (RW) 0..U16_MAX
+			Number of GuC submission contexts assigned to the VF.
+			This value is aligned per HW/FW requirements.
+
+			Default is 0 (unprovisioned).
+
+		doorbells_quota: (RW) 0..U16_MAX
+			Number of GuC doorbells assigned to the VF.
+			This value is aligned per HW/FW requirements.
+
+			Default is 0 (unprovisioned).
+
+
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/state
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+
+		state: (RW) binary
+			This binary attribute allows to save or restore VF's
+			state that is maintained in the GuC.
+
+			Read of this attribute will fail if VF is not paused.
+			Write to this attribute will fail if VF is not idle
+			(provisioned but not running).
+
+			Size of this binary blob is 4096 bytes (4KiB).
+
+
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/threshold/cat_error_count
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/threshold/doorbell_time_us
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/threshold/engine_reset_count
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/threshold/h2g_time_us
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/threshold/irq_time_us
+What:		/sys/class/drm/card%/prelim_iov/vf%/gt%/threshold/page_fault_count
+Date:		2022
+KernelVersion:	DII
+Contact:	gfx-internal-devel@eclists.intel.com
+Description:
+		The sysfs "threshold" directory holds attributes specific
+		to the device GT tile and represents VF security thresholds.
+
+		Default value for all thresholds is 0 (disabled).
+
+		Security events are triggered by the GuC only if global policy
+		attribute "sample_period_ms" is non-zero and related thresholds
+		are also non zero.
+
+		Refer to GuC ABI for details about each threshold category.
+
+		cat_error_count: (RW) integer
+
+		doorbell_time_us: (RW) integer
+
+		engine_reset_count: (RW) integer
+
+		h2g_time_us: (RW) integer
+
+		irq_time_us: (RW) integer
+
+		page_fault_count: (RW) integer

@@ -8,13 +8,19 @@
 #define _I915_SCHEDULER_TYPES_H_
 
 #include <linux/list.h>
+#include <linux/kref.h>
+#include <linux/interrupt.h>
+#include <linux/workqueue.h>
 
-#include "gt/intel_engine_types.h"
 #include "i915_priolist_types.h"
 
-struct drm_i915_private;
 struct i915_request;
-struct intel_engine_cs;
+
+/* Inter-engine scheduling delegation */
+struct i915_sched_ipi {
+	struct i915_request *list;
+	struct work_struct work;
+};
 
 struct i915_sched_attr {
 	/**
@@ -60,13 +66,23 @@ struct i915_sched_attr {
  * others.
  */
 struct i915_sched_node {
+	spinlock_t lock; /* protect the lists */
 	struct list_head signalers_list; /* those before us, we depend upon */
 	struct list_head waiters_list; /* those after us, they depend upon us */
-	struct list_head link;
+	struct list_head link; /* guarded by engine->active.lock */
+	struct i915_sched_stack {
+		/* Branch memoization used during depth-first search */
+		struct i915_request *prev;
+		struct list_head *pos;
+	} dfs; /* guarded by engine->active.lock */
 	struct i915_sched_attr attr;
-	unsigned int flags;
+	unsigned long flags;
 #define I915_SCHED_HAS_EXTERNAL_CHAIN	BIT(0)
-	intel_engine_mask_t semaphores;
+	unsigned long semaphores;
+
+	/* handle being scheduled for PI from outside of our active.lock */
+	struct i915_request *ipi_link;
+	int ipi_priority;
 };
 
 struct i915_dependency {
@@ -74,7 +90,7 @@ struct i915_dependency {
 	struct i915_sched_node *waiter;
 	struct list_head signal_link;
 	struct list_head wait_link;
-	struct list_head dfs_link;
+	struct rcu_head rcu;
 	unsigned long flags;
 #define I915_DEPENDENCY_ALLOC		BIT(0)
 #define I915_DEPENDENCY_EXTERNAL	BIT(1)
@@ -157,6 +173,8 @@ struct i915_sched_engine {
 	 * @no_priolist: priority lists disabled
 	 */
 	bool no_priolist;
+
+	struct i915_sched_ipi ipi;
 
 	/**
 	 * @private_data: private data of the submission backend

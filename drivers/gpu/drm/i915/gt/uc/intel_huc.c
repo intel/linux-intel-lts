@@ -10,6 +10,8 @@
 #include "intel_guc_reg.h"
 #include "intel_huc.h"
 #include "i915_drv.h"
+#include "pxp/intel_pxp_tee_interface.h"
+#include "pxp/intel_pxp_huc.h"
 
 #define huc_printk(_huc, _level, _fmt, ...) \
 	gt_##_level(huc_to_gt(_huc), "HuC: " _fmt, ##__VA_ARGS__)
@@ -52,11 +54,28 @@
  * HuC-specific commands.
  */
 
+static bool vcs_supported(struct intel_gt *gt)
+{
+	return gt->info.engine_mask ?
+		VDBOX_MASK(gt) :
+		INTEL_INFO(gt->i915)->platform_engine_mask & BIT(VCS0);
+}
+
 void intel_huc_init_early(struct intel_huc *huc)
 {
 	struct drm_i915_private *i915 = huc_to_gt(huc)->i915;
+	struct intel_gt *gt = huc_to_gt(huc);
 
 	intel_uc_fw_init_early(&huc->fw, INTEL_UC_FW_TYPE_HUC);
+
+	/* we can arrive here from i915_driver_early_probe for primary
+	 * GT with it being not fully setup hence check device info's
+	 * engine mask
+	 */
+	if (!vcs_supported(gt)) {
+		intel_uc_fw_change_status(&huc->fw, INTEL_UC_FIRMWARE_NOT_SUPPORTED);
+		return;
+	}
 
 	if (GRAPHICS_VER(i915) >= 11) {
 		huc->status.reg = GEN11_HUC_KERNEL_LOAD_INFO;
@@ -131,6 +150,27 @@ void intel_huc_fini(struct intel_huc *huc)
 	intel_uc_fw_fini(&huc->fw);
 }
 
+int intel_huc_wait_for_auth_complete(struct intel_huc *huc)
+{
+	struct intel_gt *gt = huc_to_gt(huc);
+	int ret;
+
+	ret = __intel_wait_for_register(gt->uncore,
+					huc->status.reg,
+					huc->status.mask,
+					huc->status.value,
+					2, 50, NULL);
+
+	if (ret) {
+		huc_probe_error(huc, "firmware not verified %pe\n", ERR_PTR(ret));
+		return ret;
+	}
+
+	intel_uc_fw_change_status(&huc->fw, INTEL_UC_FIRMWARE_RUNNING);
+	huc_info(huc, "authenticated!\n");
+	return 0;
+}
+
 /**
  * intel_huc_auth() - Authenticate HuC uCode
  * @huc: intel_huc structure
@@ -158,27 +198,23 @@ int intel_huc_auth(struct intel_huc *huc)
 	if (ret)
 		goto fail;
 
+	/* GSC will do the auth */
+	if (intel_huc_is_loaded_by_gsc(huc))
+		return -ENODEV;
+
 	GEM_BUG_ON(intel_uc_fw_is_running(&huc->fw));
 
 	ret = intel_guc_auth_huc(guc, intel_guc_ggtt_offset(guc, huc->fw.rsa_data));
 	if (ret) {
-		huc_err(huc, "authentication by GuC failed %pe\n", ERR_PTR(ret));
+		huc_probe_error(huc, "authentication by GuC failed %pe\n", ERR_PTR(ret));
 		goto fail;
 	}
 
 	/* Check authentication status, it should be done by now */
-	ret = __intel_wait_for_register(gt->uncore,
-					huc->status.reg,
-					huc->status.mask,
-					huc->status.value,
-					2, 50, NULL);
-	if (ret) {
-		huc_err(huc, "firmware not verified %pe\n", ERR_PTR(ret));
+	ret = intel_huc_wait_for_auth_complete(huc);
+	if (ret)
 		goto fail;
-	}
 
-	intel_uc_fw_change_status(&huc->fw, INTEL_UC_FIRMWARE_RUNNING);
-	huc_info(huc, "authenticated!\n");
 	return 0;
 
 fail:

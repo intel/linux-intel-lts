@@ -41,10 +41,34 @@ void gen8_gt_irq_handler(struct intel_gt *gt, u32 master_ctl);
 void gen8_gt_irq_reset(struct intel_gt *gt);
 void gen8_gt_irq_postinstall(struct intel_gt *gt);
 
+static void intel_gt_stats_irq_time(struct intel_gt_stats_irq_time *stats, u64 t0)
+{
+	unsigned long dt = local_clock() - t0;
+
+	ewma_irq_time_add(&stats->avg, dt);
+	WRITE_ONCE(stats->total, stats->total + dt);
+	WRITE_ONCE(stats->max, max(stats->max, dt));
+	WRITE_ONCE(stats->count, stats->count + 1);
+}
+
+static inline void __intel_engine_cs_irq(struct intel_engine_cs *engine, u16 iir)
+{
+	engine->irq_handler(engine, iir);
+}
+
 static inline void intel_engine_cs_irq(struct intel_engine_cs *engine, u16 iir)
 {
-	if (iir)
-		engine->irq_handler(engine, iir);
+	if (!iir)
+		return;
+
+	__intel_engine_cs_irq(engine, iir);
+	WRITE_ONCE(engine->stats.irq.count, engine->stats.irq.count + 1);
+}
+
+static inline void intel_engine_cs_irq_time(struct intel_engine_cs *engine, u16 iir, u64 t0)
+{
+	__intel_engine_cs_irq(engine, iir);
+	intel_gt_stats_irq_time(&engine->stats.irq, t0);
 }
 
 static inline void

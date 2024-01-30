@@ -28,6 +28,10 @@ static int i915_gem_object_get_pages_phys(struct drm_i915_gem_object *obj)
 	void *dst;
 	int i;
 
+	/* Contiguous chunk, with a single scatterlist element */
+	if (overflows_type(obj->base.size, sg->length))
+		return -E2BIG;
+
 	if (GEM_WARN_ON(i915_gem_object_needs_bit17_swizzle(obj)))
 		return -EINVAL;
 
@@ -78,7 +82,7 @@ static int i915_gem_object_get_pages_phys(struct drm_i915_gem_object *obj)
 	intel_gt_chipset_flush(to_gt(i915));
 
 	/* We're no longer struct page backed */
-	obj->flags &= ~I915_BO_ALLOC_STRUCT_PAGE;
+	obj->flags &= ~I915_BO_STRUCT_PAGE;
 	__i915_gem_object_set_pages(obj, st, sg->length);
 
 	return 0;
@@ -92,7 +96,7 @@ err_pci:
 	return -ENOMEM;
 }
 
-void
+int
 i915_gem_object_put_pages_phys(struct drm_i915_gem_object *obj,
 			       struct sg_table *pages)
 {
@@ -101,7 +105,7 @@ i915_gem_object_put_pages_phys(struct drm_i915_gem_object *obj,
 
 	__i915_gem_object_release_shmem(obj, pages, false);
 
-	if (obj->mm.dirty) {
+	if (obj->mm.madv == I915_MADV_WILLNEED) {
 		struct address_space *mapping = obj->base.filp->f_mapping;
 		void *src = vaddr;
 		int i;
@@ -126,7 +130,6 @@ i915_gem_object_put_pages_phys(struct drm_i915_gem_object *obj,
 
 			src += PAGE_SIZE;
 		}
-		obj->mm.dirty = false;
 	}
 
 	sg_free_table(pages);
@@ -135,6 +138,7 @@ i915_gem_object_put_pages_phys(struct drm_i915_gem_object *obj,
 	dma_free_coherent(obj->base.dev->dev,
 			  roundup_pow_of_two(obj->base.size),
 			  vaddr, dma);
+	return 0;
 }
 
 int i915_gem_object_pwrite_phys(struct drm_i915_gem_object *obj,
@@ -202,8 +206,11 @@ static int i915_gem_object_shmem_to_phys(struct drm_i915_gem_object *obj)
 	/* Perma-pin (until release) the physical set of pages */
 	__i915_gem_object_pin_pages(obj);
 
-	if (!IS_ERR_OR_NULL(pages))
-		i915_gem_object_put_pages_shmem(obj, pages);
+	if (!IS_ERR_OR_NULL(pages)) {
+		err = i915_gem_object_put_pages_shmem(obj, pages);
+		if (err)
+			goto err_xfer;
+	}
 
 	i915_gem_object_release_memory_region(obj);
 	return 0;
@@ -232,7 +239,7 @@ int i915_gem_object_attach_phys(struct drm_i915_gem_object *obj, int align)
 	if (!i915_gem_object_has_struct_page(obj))
 		return 0;
 
-	err = i915_gem_object_unbind(obj, I915_GEM_OBJECT_UNBIND_ACTIVE);
+	err = i915_gem_object_unbind(obj, NULL, I915_GEM_OBJECT_UNBIND_ACTIVE);
 	if (err)
 		return err;
 

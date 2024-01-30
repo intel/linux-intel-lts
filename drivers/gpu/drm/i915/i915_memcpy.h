@@ -7,6 +7,7 @@
 #define __I915_MEMCPY_H__
 
 #include <linux/types.h>
+#include <linux/iosys-map.h>
 
 struct drm_i915_private;
 
@@ -14,6 +15,7 @@ void i915_memcpy_init_early(struct drm_i915_private *i915);
 
 bool i915_memcpy_from_wc(void *dst, const void *src, unsigned long len);
 void i915_unaligned_memcpy_from_wc(void *dst, const void *src, unsigned long len);
+void i915_memcpy_iosys_map(struct iosys_map *dmap, struct iosys_map *smap, unsigned long len);
 
 /* The movntdqa instructions used for memcpy-from-wc require 16-byte alignment,
  * as well as SSE4.1 support. i915_memcpy_from_wc() will report if it cannot

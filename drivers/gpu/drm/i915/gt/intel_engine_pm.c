@@ -11,10 +11,12 @@
 #include "intel_engine_heartbeat.h"
 #include "intel_engine_pm.h"
 #include "intel_gt.h"
+#include "intel_gt_ccs_mode.h"
 #include "intel_gt_pm.h"
 #include "intel_rc6.h"
 #include "intel_ring.h"
 #include "shmem_utils.h"
+#include "intel_gt_regs.h"
 
 static void dbg_poison_ce(struct intel_context *ce)
 {
@@ -47,7 +49,9 @@ static int __engine_unpark(struct intel_wakeref *wf)
 
 	ENGINE_TRACE(engine, "\n");
 
-	intel_gt_pm_get(engine->gt);
+	GEM_BUG_ON(engine->i915->quiesce_gpu);
+
+	engine->wakeref_track = intel_gt_pm_get(engine->gt);
 
 	/* Discard stale context state from across idling */
 	ce = engine->kernel_context;
@@ -68,8 +72,6 @@ static int __engine_unpark(struct intel_wakeref *wf)
 			 ce->timeline->seqno,
 			 READ_ONCE(*ce->timeline->hwsp_seqno),
 			 ce->ring->emit);
-		GEM_BUG_ON(ce->timeline->seqno !=
-			   READ_ONCE(*ce->timeline->hwsp_seqno));
 	}
 
 	if (engine->unpark)
@@ -130,6 +132,10 @@ __queue_and_release_pm(struct i915_request *rq,
 	struct intel_gt_timelines *timelines = &engine->gt->timelines;
 
 	ENGINE_TRACE(engine, "parking\n");
+
+	GEM_BUG_ON(rq->context->active_count != 1);
+	__intel_gt_pm_get(engine->gt);
+	rq->context->wakeref = intel_wakeref_track(&engine->gt->wakeref);
 
 	/*
 	 * We have to serialise all potential retirement paths with our
@@ -228,18 +234,20 @@ static bool switch_to_kernel_context(struct intel_engine_cs *engine)
 
 	/* Install ourselves as a preemption barrier */
 	rq->sched.attr.priority = I915_PRIORITY_BARRIER;
-	if (likely(!__i915_request_commit(rq))) { /* engine should be idle! */
-		/*
-		 * Use an interrupt for precise measurement of duration,
-		 * otherwise we rely on someone else retiring all the requests
-		 * which may delay the signaling (i.e. we will likely wait
-		 * until the background request retirement running every
-		 * second or two).
-		 */
-		BUILD_BUG_ON(sizeof(rq->duration) > sizeof(rq->submitq));
-		dma_fence_add_callback(&rq->fence, &rq->duration.cb, duration);
-		rq->duration.emitted = ktime_get();
-	}
+
+	GEM_BUG_ON(i915_active_fence_isset(&ce->timeline->last_request));
+	__i915_request_commit(rq); /* engine should be idle! */
+
+	/*
+	 * Use an interrupt for precise measurement of duration,
+	 * otherwise we rely on someone else retiring all the requests
+	 * which may delay the signaling (i.e. we will likely wait
+	 * until the background request retirement running every
+	 * second or two).
+	 */
+	BUILD_BUG_ON(sizeof(rq->duration) > sizeof(rq->submitq));
+	dma_fence_add_callback(&rq->fence, &rq->duration.cb, duration);
+	rq->duration.emitted = ktime_get();
 
 	/* Expose ourselves to the world */
 	__queue_and_release_pm(rq, ce->timeline, engine);
@@ -252,15 +260,14 @@ out_unlock:
 
 static void call_idle_barriers(struct intel_engine_cs *engine)
 {
-	struct llist_node *node, *next;
+	struct list_head *node, *next;
 
-	llist_for_each_safe(node, next, llist_del_all(&engine->barrier_tasks)) {
-		struct dma_fence_cb *cb =
-			container_of((struct list_head *)node,
-				     typeof(*cb), node);
+	list_for_each_safe(node, next, &engine->barrier_tasks) {
+		struct dma_fence_cb *cb = container_of(node, typeof(*cb), node);
 
-		cb->func(ERR_PTR(-EAGAIN), cb);
+		cb->func(IDLE_BARRIER, cb);
 	}
+	INIT_LIST_HEAD(&engine->barrier_tasks);
 }
 
 static int __engine_park(struct intel_wakeref *wf)
@@ -287,14 +294,13 @@ static int __engine_park(struct intel_wakeref *wf)
 	intel_engine_park_heartbeat(engine);
 	intel_breadcrumbs_park(engine->breadcrumbs);
 
-	/* Must be reset upon idling, or we may miss the busy wakeup. */
-	GEM_BUG_ON(engine->sched_engine->queue_priority_hint != INT_MIN);
-
 	if (engine->park)
 		engine->park(engine);
 
+	intel_gt_park_ccs_mode(engine->gt, engine);
+
 	/* While gt calls i915_vma_parked(), we have to break the lock cycle */
-	intel_gt_pm_put_async(engine->gt);
+	intel_gt_pm_put_async(engine->gt, engine->wakeref_track);
 	return 0;
 }
 
@@ -305,10 +311,22 @@ static const struct intel_wakeref_ops wf_ops = {
 
 void intel_engine_init__pm(struct intel_engine_cs *engine)
 {
+	struct drm_i915_private *i915 = engine->i915;
 	struct intel_runtime_pm *rpm = engine->uncore->rpm;
 
-	intel_wakeref_init(&engine->wakeref, rpm, &wf_ops);
+	intel_wakeref_init(&engine->wakeref, rpm, &wf_ops, engine->name);
 	intel_engine_init_heartbeat(engine);
+
+	if (IS_METEORLAKE(i915) && engine->id == GSC0 && !IS_SRIOV_VF(i915)) {
+		/* FIXME: Enable GSC CS Idle messaging */
+		intel_uncore_write(engine->gt->uncore,
+				   RC_PSMI_CTRL_GSCCS,
+				   _MASKED_BIT_DISABLE(IDLE_MSG_DISABLE));
+		drm_dbg(&i915->drm,
+			"Set GSC CS Idle Reg to: 0x%x",
+			intel_uncore_read(engine->gt->uncore, RC_PSMI_CTRL_GSCCS));
+	}
+
 }
 
 /**
@@ -325,13 +343,35 @@ void intel_engine_reset_pinned_contexts(struct intel_engine_cs *engine)
 
 	list_for_each_entry(ce, &engine->pinned_contexts_list,
 			    pinned_contexts_link) {
-		/* kernel context gets reset at __engine_unpark() */
-		if (ce == engine->kernel_context)
-			continue;
-
 		dbg_poison_ce(ce);
 		ce->ops->reset(ce);
 	}
+}
+
+struct i915_request *
+intel_engine_create_kernel_request(struct intel_engine_cs *engine)
+{
+	struct i915_request *rq;
+
+	/*
+	 * The engine->kernel_context is special as it is used inside
+	 * the engine-pm barrier (see __engine_park()), circumventing
+	 * the usual mutexes and relying on the engine-pm barrier
+	 * instead. So whenever we use the engine->kernel_context
+	 * outside of the barrier, we must manually handle the
+	 * engine wakeref to serialise with the use inside.
+	 */
+	intel_engine_pm_get(engine);
+
+	rq = i915_request_create(engine->kernel_context);
+	if (!IS_ERR(rq)) {
+		engine->wakeref_serial = engine->serial + 1;
+		i915_request_add_active_barriers(rq);
+	}
+
+	intel_engine_pm_put(engine);
+
+	return rq;
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

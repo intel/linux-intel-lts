@@ -10,6 +10,7 @@
 #include <linux/types.h>
 
 struct drm_connector;
+struct drm_display_mode;
 struct drm_encoder;
 struct drm_i915_private;
 struct intel_connector;
@@ -20,6 +21,7 @@ struct intel_hdmi;
 struct drm_connector_state;
 union hdmi_infoframe;
 enum port;
+enum intel_output_format;
 
 void intel_hdmi_init_connector(struct intel_digital_port *dig_port,
 			       struct intel_connector *intel_connector);
@@ -48,11 +50,13 @@ bool intel_hdmi_bpc_possible(const struct intel_crtc_state *crtc_state,
 			     int bpc, bool has_hdmi_sink, bool ycbcr420_output);
 int intel_hdmi_tmds_clock(int clock, int bpc, bool ycbcr420_output);
 int intel_hdmi_dsc_get_bpp(int src_fractional_bpp, int slice_width,
-			   int num_slices, int output_format, bool hdmi_all_bpp,
-			   int hdmi_max_chunk_bytes);
-int intel_hdmi_dsc_get_num_slices(const struct intel_crtc_state *crtc_state,
+			   int num_slices, enum intel_output_format output_format,
+			   u8 bpc, bool hdmi_all_bpp, int hdmi_max_chunk_bytes);
+int intel_hdmi_dsc_get_num_slices(const struct drm_display_mode *mode,
+				  enum intel_output_format output_format,
 				  int src_max_slices, int src_max_slice_width,
 				  int hdmi_max_slices, int hdmi_throughput);
 int intel_hdmi_dsc_get_slice_height(int vactive);
+struct drm_i915_private *intel_hdmi_to_i915(struct intel_hdmi *intel_hdmi);
 
 #endif /* __INTEL_HDMI_H__ */

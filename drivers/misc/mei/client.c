@@ -636,6 +636,57 @@ struct mei_cl *mei_cl_allocate(struct mei_device *dev)
 	return cl;
 }
 
+
+static inline int mei_cl_forcewake_get_and_wait(struct mei_cl *cl)
+{
+	struct mei_device *dev = cl->dev;
+
+	if (!dev->forcewake_needed)
+		return 0;
+
+	/*
+	 * grab the GT forcewake bit to prevent RC6-exit
+	 * which would cause firmware reset
+	 */
+	dev->ops->forcewake_get(dev);
+
+	if (dev->forcewake_wait_done) {
+		cl_dbg(dev, cl, "forcewake is performed already, no need to wait\n");
+		return 0;
+	}
+
+	/* wait for firmware reset or timeout */
+	cl_dbg(dev, cl, "wait for firmware reset or timeout\n");
+	mutex_unlock(&dev->device_lock);
+	wait_event_timeout(dev->wait_dev_state,
+			   dev->dev_state != MEI_DEV_ENABLED,
+			   dev->timeouts.gt_forcewake);
+	mutex_lock(&dev->device_lock);
+
+	cl_dbg(dev, cl, "firmware reset or timeout dev_state = %d\n", dev->dev_state);
+	if (dev->dev_state >= MEI_DEV_DISABLED) { /* device is going down */
+		cl_err(dev, cl, "device is going down dev_state = %d\n",
+		       dev->dev_state);
+		return -ENODEV;
+	}
+	if (dev->dev_state != MEI_DEV_ENABLED) { /* not timed out */
+		mutex_unlock(&dev->device_lock);
+		wait_event_timeout(dev->wait_dev_state,
+				   dev->dev_state == MEI_DEV_ENABLED,
+				   dev->timeouts.gt_forcewake_link);
+		mutex_lock(&dev->device_lock);
+
+		if (dev->dev_state != MEI_DEV_ENABLED) {
+			cl_err(dev, cl, "device is not back from reset dev_state = %d\n",
+			       dev->dev_state);
+			return -ENODEV;
+		}
+		cl_dbg(dev, cl, "back from reset\n");
+	}
+	dev->forcewake_wait_done = true;
+	return 0;
+}
+
 /**
  * mei_cl_link - allocate host id in the host map
  *
@@ -649,22 +700,29 @@ int mei_cl_link(struct mei_cl *cl)
 {
 	struct mei_device *dev;
 	int id;
+	int ret;
 
 	if (WARN_ON(!cl || !cl->dev))
 		return -EINVAL;
 
 	dev = cl->dev;
 
+	ret = mei_cl_forcewake_get_and_wait(cl);
+	if (ret)
+		goto err;
+
 	id = find_first_zero_bit(dev->host_clients_map, MEI_CLIENTS_MAX);
 	if (id >= MEI_CLIENTS_MAX) {
 		dev_err(dev->dev, "id exceeded %d", MEI_CLIENTS_MAX);
-		return -EMFILE;
+		ret = -EMFILE;
+		goto err;
 	}
 
 	if (dev->open_handle_count >= MEI_MAX_OPEN_HANDLE_COUNT) {
 		dev_err(dev->dev, "open_handle_count exceeded %d",
 			MEI_MAX_OPEN_HANDLE_COUNT);
-		return -EMFILE;
+		ret = -EMFILE;
+		goto err;
 	}
 
 	dev->open_handle_count++;
@@ -678,6 +736,10 @@ int mei_cl_link(struct mei_cl *cl)
 
 	cl_dbg(dev, cl, "link cl\n");
 	return 0;
+
+err:
+	mei_forcewake_put(dev);
+	return ret;
 }
 
 /**
@@ -718,6 +780,8 @@ int mei_cl_unlink(struct mei_cl *cl)
 		!list_empty(&cl->rd_pending) ||
 		!list_empty(&cl->link));
 
+	mei_forcewake_put(dev);
+
 	return 0;
 }
 
@@ -727,6 +791,12 @@ void mei_host_client_init(struct mei_device *dev)
 	dev->reset_count = 0;
 
 	schedule_work(&dev->bus_rescan_work);
+
+	if (dev->forcewake_needed && dev->gt_forcewake_init_on) {
+		dev->ops->forcewake_put(dev);
+		dev->gt_forcewake_init_on = false;
+		pm_runtime_put_noidle(dev->dev);
+	}
 
 	pm_runtime_mark_last_busy(dev->dev);
 	dev_dbg(dev->dev, "rpm: autosuspend\n");

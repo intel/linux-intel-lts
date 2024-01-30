@@ -44,21 +44,24 @@
 
 #include "gem/i915_gem_context.h"
 #include "gem/i915_gem_lmem.h"
+#include "gt/intel_engine_pm.h"
 #include "gt/intel_engine_regs.h"
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_mcr.h"
 #include "gt/intel_gt_pm.h"
 #include "gt/intel_gt_regs.h"
+#include "gt/intel_gt_debug.h"
 #include "gt/uc/intel_guc_capture.h"
 
+#include "i915_debugger.h"
 #include "i915_driver.h"
 #include "i915_drv.h"
 #include "i915_gpu_error.h"
 #include "i915_memcpy.h"
 #include "i915_scatterlist.h"
+#include "i915_user_extensions.h"
 #include "i915_utils.h"
 
-#define ALLOW_FAIL (GFP_KERNEL | __GFP_RETRY_MAYFAIL | __GFP_NOWARN)
 #define ATOMIC_MAYFAIL (GFP_ATOMIC | __GFP_NOWARN)
 
 static void __sg_set_buf(struct scatterlist *sg,
@@ -88,7 +91,7 @@ static bool __i915_error_grow(struct drm_i915_error_state_buf *e, size_t len)
 	if (e->cur == e->end) {
 		struct scatterlist *sgl;
 
-		sgl = (typeof(sgl))__get_free_page(ALLOW_FAIL);
+		sgl = (typeof(sgl))__get_free_page(I915_GFP_ALLOW_FAIL);
 		if (!sgl) {
 			e->err = -ENOMEM;
 			return false;
@@ -104,11 +107,11 @@ static bool __i915_error_grow(struct drm_i915_error_state_buf *e, size_t len)
 		}
 
 		e->cur = sgl;
-		e->end = sgl + SG_MAX_SINGLE_ALLOC - 1;
+		e->end = sgl + I915_MAX_CHAIN_ALLOC;
 	}
 
 	e->size = ALIGN(len + 1, SZ_64K);
-	e->buf = kmalloc(e->size, ALLOW_FAIL);
+	e->buf = kmalloc(e->size, I915_GFP_ALLOW_FAIL);
 	if (!e->buf) {
 		e->size = PAGE_ALIGN(len + 1);
 		e->buf = kmalloc(e->size, GFP_KERNEL);
@@ -242,22 +245,22 @@ static void pool_free(struct pagevec *pv, void *addr)
 
 #ifdef CONFIG_DRM_I915_COMPRESS_ERROR
 
-struct i915_vma_compress {
+struct i915_page_compress {
 	struct pagevec pool;
 	struct z_stream_s zstream;
 	void *tmp;
 };
 
-static bool compress_init(struct i915_vma_compress *c)
+static bool compress_init(struct i915_page_compress *c)
 {
 	struct z_stream_s *zstream = &c->zstream;
 
-	if (pool_init(&c->pool, ALLOW_FAIL))
+	if (pool_init(&c->pool, I915_GFP_ALLOW_FAIL))
 		return false;
 
 	zstream->workspace =
 		kmalloc(zlib_deflate_workspacesize(MAX_WBITS, MAX_MEM_LEVEL),
-			ALLOW_FAIL);
+			I915_GFP_ALLOW_FAIL);
 	if (!zstream->workspace) {
 		pool_fini(&c->pool);
 		return false;
@@ -265,12 +268,12 @@ static bool compress_init(struct i915_vma_compress *c)
 
 	c->tmp = NULL;
 	if (i915_has_memcpy_from_wc())
-		c->tmp = pool_alloc(&c->pool, ALLOW_FAIL);
+		c->tmp = pool_alloc(&c->pool, I915_GFP_ALLOW_FAIL);
 
 	return true;
 }
 
-static bool compress_start(struct i915_vma_compress *c)
+static bool compress_start(struct i915_page_compress *c)
 {
 	struct z_stream_s *zstream = &c->zstream;
 	void *workspace = zstream->workspace;
@@ -281,24 +284,24 @@ static bool compress_start(struct i915_vma_compress *c)
 	return zlib_deflateInit(zstream, Z_DEFAULT_COMPRESSION) == Z_OK;
 }
 
-static void *compress_next_page(struct i915_vma_compress *c,
-				struct i915_vma_coredump *dst)
+static void *compress_next_page(struct i915_page_compress *c,
+				struct i915_compressed_pages *dst)
 {
 	void *page;
 
 	if (dst->page_count >= dst->num_pages)
 		return ERR_PTR(-ENOSPC);
 
-	page = pool_alloc(&c->pool, ALLOW_FAIL);
+	page = pool_alloc(&c->pool, I915_GFP_ALLOW_FAIL);
 	if (!page)
 		return ERR_PTR(-ENOMEM);
 
 	return dst->pages[dst->page_count++] = page;
 }
 
-static int compress_page(struct i915_vma_compress *c,
+static int compress_page(struct i915_page_compress *c,
 			 void *src,
-			 struct i915_vma_coredump *dst,
+			 struct i915_compressed_pages *dst,
 			 bool wc)
 {
 	struct z_stream_s *zstream = &c->zstream;
@@ -330,8 +333,8 @@ static int compress_page(struct i915_vma_compress *c,
 	return 0;
 }
 
-static int compress_flush(struct i915_vma_compress *c,
-			  struct i915_vma_coredump *dst)
+static int compress_flush(struct i915_page_compress *c,
+			  struct i915_compressed_pages *dst)
 {
 	struct z_stream_s *zstream = &c->zstream;
 
@@ -359,12 +362,12 @@ end:
 	return 0;
 }
 
-static void compress_finish(struct i915_vma_compress *c)
+static void compress_finish(struct i915_page_compress *c)
 {
 	zlib_deflateEnd(&c->zstream);
 }
 
-static void compress_fini(struct i915_vma_compress *c)
+static void compress_fini(struct i915_page_compress *c)
 {
 	kfree(c->zstream.workspace);
 	if (c->tmp)
@@ -379,28 +382,28 @@ static void err_compression_marker(struct drm_i915_error_state_buf *m)
 
 #else
 
-struct i915_vma_compress {
+struct i915_page_compress {
 	struct pagevec pool;
 };
 
-static bool compress_init(struct i915_vma_compress *c)
+static bool compress_init(struct i915_page_compress *c)
 {
-	return pool_init(&c->pool, ALLOW_FAIL) == 0;
+	return pool_init(&c->pool, I915_GFP_ALLOW_FAIL) == 0;
 }
 
-static bool compress_start(struct i915_vma_compress *c)
+static bool compress_start(struct i915_page_compress *c)
 {
 	return true;
 }
 
-static int compress_page(struct i915_vma_compress *c,
+static int compress_page(struct i915_page_compress *c,
 			 void *src,
-			 struct i915_vma_coredump *dst,
+			 struct i915_compressed_pages *dst,
 			 bool wc)
 {
 	void *ptr;
 
-	ptr = pool_alloc(&c->pool, ALLOW_FAIL);
+	ptr = pool_alloc(&c->pool, I915_GFP_ALLOW_FAIL);
 	if (!ptr)
 		return -ENOMEM;
 
@@ -412,17 +415,17 @@ static int compress_page(struct i915_vma_compress *c,
 	return 0;
 }
 
-static int compress_flush(struct i915_vma_compress *c,
-			  struct i915_vma_coredump *dst)
+static int compress_flush(struct i915_page_compress *c,
+			  struct i915_compressed_pages *dst)
 {
 	return 0;
 }
 
-static void compress_finish(struct i915_vma_compress *c)
+static void compress_finish(struct i915_page_compress *c)
 {
 }
 
-static void compress_fini(struct i915_vma_compress *c)
+static void compress_fini(struct i915_page_compress *c)
 {
 	pool_fini(&c->pool);
 }
@@ -433,6 +436,29 @@ static void err_compression_marker(struct drm_i915_error_state_buf *m)
 }
 
 #endif
+
+static void compress_print_pages(struct drm_i915_error_state_buf *m,
+				 struct i915_compressed_pages *cpages)
+{
+	char out[ASCII85_BUFSZ];
+	u64 page;
+
+	err_compression_marker(m);
+	for (page = 0; page < cpages->page_count; page++) {
+		u64 i, len;
+
+		len = PAGE_SIZE;
+		if (page == cpages->page_count - 1)
+			len -= cpages->unused;
+
+		len = ascii85_encode_len(len);
+
+		for (i = 0; i < len; i++)
+			err_puts(m, ascii85_encode(cpages->pages[page][i],
+						   out));
+	}
+	i915_error_printf(m, "\n");
+}
 
 static void error_print_instdone(struct drm_i915_error_state_buf *m,
 				 const struct intel_engine_coredump *ee)
@@ -496,18 +522,47 @@ static void error_print_request(struct drm_i915_error_state_buf *m,
 		   erq->head, erq->tail);
 }
 
+static void i915_uuid_resources_dump(const struct i915_gem_context_coredump *ctx,
+				     struct drm_i915_error_state_buf *m)
+{
+	struct i915_uuid_resource_coredump *uuid_dump = ctx->uuid_dump;
+
+	while (uuid_dump) {
+		if (uuid_dump->string_class) {
+			if (!uuid_dump->str)
+				continue;
+			i915_error_printf(m, "    UUID: %.36s, Class: %.36s, Type: %s\n",
+					  uuid_dump->uuid,
+					  uuid_dump->class,
+					  uuid_dump->str);
+		} else {
+			i915_error_printf(m, "    UUID: %.36s, Class: %.36s\n",
+					  uuid_dump->uuid,
+					  uuid_dump->class);
+			if (uuid_dump->cpages)
+				compress_print_pages(m, uuid_dump->cpages);
+		}
+		uuid_dump = uuid_dump->next;
+	}
+}
+
 static void error_print_context(struct drm_i915_error_state_buf *m,
 				const char *header,
 				const struct i915_gem_context_coredump *ctx)
 {
-	const u32 period = to_gt(m->i915)->clock_period_ns;
-
-	err_printf(m, "%s%s[%d] prio %d, guilty %d active %d, runtime total %lluns, avg %lluns\n",
+	err_printf(m, "%s%s[%d] prio %d, guilty %d active %d sip %s, runtime total %lluns, avg %lluns\n",
 		   header, ctx->comm, ctx->pid, ctx->sched_attr.priority,
-		   ctx->guilty, ctx->active,
-		   ctx->total_runtime * period,
-		   mul_u32_u32(ctx->avg_runtime, period));
-	err_printf(m, "  context timeline seqno %u\n", ctx->hwsp_seqno);
+		   ctx->guilty, ctx->active, ctx->sip_installed ? "true" : "false",
+		   ctx->total_runtime, ctx->avg_runtime);
+
+	/*
+	 * FIXME: igt@gem_exec_offlinedebug@context_save_area can't cope with
+	 * extra information being added to the context dump. So comment out
+	 * this upstraem addition until the IGT test has been fixed.
+	 */
+//	err_printf(m, "  context timeline seqno %u\n", ctx->hwsp_seqno);
+
+	i915_uuid_resources_dump(ctx, m);
 }
 
 static struct i915_vma_coredump *
@@ -547,6 +602,7 @@ static void error_print_engine(struct drm_i915_error_state_buf *m,
 		   (u32)(ee->acthd>>32), (u32)ee->acthd);
 	err_printf(m, "  IPEIR: 0x%08x\n", ee->ipeir);
 	err_printf(m, "  IPEHR: 0x%08x\n", ee->ipehr);
+	err_printf(m, "  POISON: 0x%08x\n", ee->vm_poison);
 	err_printf(m, "  ESR:   0x%08x\n", ee->esr);
 
 	error_print_instdone(m, ee);
@@ -596,6 +652,9 @@ static void error_print_engine(struct drm_i915_error_state_buf *m,
 		}
 	}
 
+	if (GRAPHICS_VER(m->i915) >= 8)
+		err_printf(m, "  CTXT_SR_CTL: 0x%08x\n", ee->ctxt_sr_ctl);
+
 	for (n = 0; n < ee->num_ports; n++) {
 		err_printf(m, "  ELSP[%d]:", n);
 		error_print_request(m, " ", &ee->execlist[n]);
@@ -611,13 +670,27 @@ void i915_error_printf(struct drm_i915_error_state_buf *e, const char *f, ...)
 	va_end(args);
 }
 
+static void i915_vma_metadata_coredump_print(
+	struct drm_i915_error_state_buf *m,
+	struct i915_vma_metadata_coredump *metadata_dump)
+{
+	if (!metadata_dump)
+		return;
+
+	err_puts(m, "metadata UUIDs: ");
+	while (metadata_dump) {
+		err_printf(m, "%.36s", metadata_dump->uuid);
+		if (metadata_dump->next)
+			err_puts(m, ", ");
+		metadata_dump = metadata_dump->next;
+	}
+	err_puts(m, "\n");
+}
+
 void intel_gpu_error_print_vma(struct drm_i915_error_state_buf *m,
 			       const struct intel_engine_cs *engine,
 			       const struct i915_vma_coredump *vma)
 {
-	char out[ASCII85_BUFSZ];
-	int page;
-
 	if (!vma)
 		return;
 
@@ -629,19 +702,9 @@ void intel_gpu_error_print_vma(struct drm_i915_error_state_buf *m,
 	if (vma->gtt_page_sizes > I915_GTT_PAGE_SIZE_4K)
 		err_printf(m, "gtt_page_sizes = 0x%08x\n", vma->gtt_page_sizes);
 
-	err_compression_marker(m);
-	for (page = 0; page < vma->page_count; page++) {
-		int i, len;
-
-		len = PAGE_SIZE;
-		if (page == vma->page_count - 1)
-			len -= vma->unused;
-		len = ascii85_encode_len(len);
-
-		for (i = 0; i < len; i++)
-			err_puts(m, ascii85_encode(vma->pages[page][i], out));
-	}
-	err_puts(m, "\n");
+	i915_vma_metadata_coredump_print(m, vma->metadata);
+	if (vma->cpages)
+		compress_print_pages(m, vma->cpages);
 }
 
 static void err_print_capabilities(struct drm_i915_error_state_buf *m,
@@ -718,6 +781,41 @@ static void err_free_sgl(struct scatterlist *sgl)
 	}
 }
 
+static void __err_print_attn(struct drm_i915_error_state_buf *m,
+			     const char *name,
+			     const struct intel_eu_attentions *a,
+			     ktime_t epoc)
+{
+	int max = a->size * BITS_PER_BYTE;
+	const u32 *bm = (const u32 *)a->att;
+	unsigned int count;
+
+	count = intel_eu_attentions_count(a);
+
+	err_printf(m, "TD_ATT %s (%d):", name, count);
+
+	max /= BITS_PER_TYPE(*bm);
+	while (max--)
+		err_printf(m, " %08x", *bm++);
+
+	if (count && epoc)
+		err_printf(m, " %lldus after FEH\n",
+			   ktime_us_delta(a->ts, epoc));
+	else
+		err_printf(m, "\n");
+}
+
+static void err_print_gt_attentions(struct drm_i915_error_state_buf *m,
+				    struct intel_gt_coredump *gt)
+{
+	const ktime_t halt_ts = gt->attentions.before.ts;
+
+	err_printf(m, "TD_CTL: 0x%08x\n", gt->attentions.td_ctl);
+	__err_print_attn(m, "before", &gt->attentions.before, 0);
+	__err_print_attn(m, "after", &gt->attentions.after, halt_ts);
+	__err_print_attn(m, "resolved", &gt->attentions.resolved, halt_ts);
+}
+
 static void err_print_gt_info(struct drm_i915_error_state_buf *m,
 			      struct intel_gt_coredump *gt)
 {
@@ -740,6 +838,10 @@ static void err_print_gt_global_nonguc(struct drm_i915_error_state_buf *m,
 	int i;
 
 	err_printf(m, "GT awake: %s\n", str_yes_no(gt->awake));
+
+	if (IS_SRIOV_VF(gt->_gt->i915))
+		return;
+
 	err_printf(m, "CS timestamp frequency: %u Hz, %d ns\n",
 		   gt->clock_frequency, gt->clock_period_ns);
 	err_printf(m, "EIR: 0x%08x\n", gt->eir);
@@ -759,9 +861,11 @@ static void err_print_gt_global(struct drm_i915_error_state_buf *m,
 		err_printf(m, "DONE_REG: 0x%08x\n", gt->done_reg);
 	}
 
-	if (GRAPHICS_VER(m->i915) >= 8)
+	if (GRAPHICS_VER(m->i915) >= 8) {
+		err_printf(m, "EU_GLOBAL_SIP: 0x%08x\n", gt->eu_global_sip);
 		err_printf(m, "FAULT_TLB_DATA: 0x%08x 0x%08x\n",
 			   gt->fault_data1, gt->fault_data0);
+	}
 
 	if (GRAPHICS_VER(m->i915) == 7)
 		err_printf(m, "ERR_INT: 0x%08x\n", gt->err_int);
@@ -821,13 +925,15 @@ static void err_print_gt_engines(struct drm_i915_error_state_buf *m,
 		}
 
 		err_printf(m, "  hung: %u\n", ee->hung);
-		err_printf(m, "  engine reset count: %u\n", ee->reset_count);
+		err_printf(m, "  engine reset count: %d\n", ee->reset_count);
 		error_print_context(m, "  Active context: ", &ee->context);
 
 		for (vma = ee->vma; vma; vma = vma->next)
 			intel_gpu_error_print_vma(m, ee->engine, vma);
 	}
 
+	err_printf(m, "GT total engines reset count: %u\n",
+		   gt->engines_reset_count);
 }
 
 static void __err_print_to_sgl(struct drm_i915_error_state_buf *m,
@@ -875,6 +981,15 @@ static void __err_print_to_sgl(struct drm_i915_error_state_buf *m,
 	err_printf(m, "RPM wakelock: %s\n", str_yes_no(error->wakelock));
 	err_printf(m, "PM suspended: %s\n", str_yes_no(error->suspended));
 
+	if (error->fault.addr) {
+		err_printf(m, "Fault addr: 0x%08x_%08x\n",
+			   upper_32_bits(error->fault.addr & ~BIT_ULL(0)),
+			   lower_32_bits(error->fault.addr & ~BIT_ULL(0)));
+		err_printf(m, "Fault type: %d\n", error->fault.type);
+		err_printf(m, "Fault level: %d\n", error->fault.level);
+		err_printf(m, "Fault access: %d\n", error->fault.access);
+	}
+
 	if (error->gt) {
 		bool print_guc_capture = false;
 
@@ -898,6 +1013,7 @@ static void __err_print_to_sgl(struct drm_i915_error_state_buf *m,
 			err_print_uc(m, error->gt->uc);
 
 		err_print_gt_info(m, error->gt);
+		err_print_gt_attentions(m, error->gt);
 	}
 
 	if (error->overlay)
@@ -1008,14 +1124,34 @@ ssize_t i915_gpu_coredump_copy_to_buffer(struct i915_gpu_coredump *error,
 	return count;
 }
 
+static void i915_vma_metadata_coredump_free(
+	struct i915_vma_metadata_coredump *metadata)
+{
+	struct i915_vma_metadata_coredump *next;
+
+	while (metadata) {
+		next = metadata->next;
+		kfree(metadata);
+		metadata = next;
+	}
+}
+
 static void i915_vma_coredump_free(struct i915_vma_coredump *vma)
 {
 	while (vma) {
 		struct i915_vma_coredump *next = vma->next;
+		struct i915_compressed_pages *cpages;
 		int page;
 
-		for (page = 0; page < vma->page_count; page++)
-			free_page((unsigned long)vma->pages[page]);
+		cpages = vma->cpages;
+		if (cpages) {
+			for (page = 0; page < cpages->page_count; page++)
+				free_page((unsigned long)cpages->pages[page]);
+			kfree(cpages);
+		}
+
+		if (vma->metadata)
+			i915_vma_metadata_coredump_free(vma->metadata);
 
 		kfree(vma);
 		vma = next;
@@ -1039,12 +1175,42 @@ static void cleanup_uc(struct intel_uc_coredump *uc)
 	kfree(uc);
 }
 
+static void
+i915_uuid_resource_coredump_free(struct i915_uuid_resource_coredump *uuid_dump)
+{
+	u64 page;
+	struct i915_compressed_pages *cpages;
+	struct i915_uuid_resource_coredump *next;
+
+	while (uuid_dump) {
+		if (uuid_dump->string_class) {
+			kfree(uuid_dump->str);
+		} else {
+			cpages = uuid_dump->cpages;
+
+			for (page = 0;
+			     cpages && page < cpages->page_count;
+			     page++)
+				if (cpages->pages[page])
+					free_page((unsigned long)
+						  cpages->pages[page]);
+			kfree(cpages);
+		}
+		next = uuid_dump->next;
+		kfree(uuid_dump);
+		uuid_dump = next;
+	}
+}
+
 static void cleanup_gt(struct intel_gt_coredump *gt)
 {
 	while (gt->engine) {
 		struct intel_engine_coredump *ee = gt->engine;
 
 		gt->engine = ee->next;
+
+		if (ee->context.uuid_dump)
+			i915_uuid_resource_coredump_free(ee->context.uuid_dump);
 
 		i915_vma_coredump_free(ee->vma);
 		intel_guc_capture_free_node(ee);
@@ -1077,112 +1243,194 @@ void __i915_gpu_coredump_free(struct kref *error_ref)
 	kfree(error);
 }
 
+static struct i915_vma_metadata_coredump *
+i915_vma_metadata_coredump_create(const struct i915_vma *vma)
+{
+	struct i915_vma_metadata *metadata;
+	struct i915_vma_metadata_coredump *dump, *head = NULL;
+
+	list_for_each_entry(metadata, &vma->metadata_list, vma_link) {
+		dump = kzalloc(sizeof(*dump), GFP_KERNEL);
+		if (!dump)
+			break;
+
+		memcpy(dump->uuid,
+		       metadata->uuid->uuid,
+		       sizeof(dump->uuid));
+
+		dump->next = head;
+		head = dump;
+	}
+
+	return head;
+}
+
 static struct i915_vma_coredump *
 i915_vma_coredump_create(const struct intel_gt *gt,
 			 const struct i915_vma *vma,
 			 const char *name,
-			 struct i915_vma_compress *compress)
+			 struct sg_table *pages,
+			 struct i915_page_compress *compress)
 {
 	struct i915_ggtt *ggtt = gt->ggtt;
 	const u64 slot = ggtt->error_capture.start;
+	struct drm_i915_gem_object *obj = NULL;
 	struct i915_vma_coredump *dst;
 	unsigned long num_pages;
 	struct sgt_iter iter;
+	u64 offset, n = 0;
 	int ret;
 
 	might_sleep();
 
-	if (!vma || !vma->pages || !compress)
+	if (!vma)
 		return NULL;
 
-	num_pages = min_t(u64, vma->size, vma->obj->base.size) >> PAGE_SHIFT;
-	num_pages = DIV_ROUND_UP(10 * num_pages, 8); /* worstcase zlib growth */
-	dst = kmalloc(sizeof(*dst) + num_pages * sizeof(u32 *), ALLOW_FAIL);
+	dst = kzalloc(sizeof(*dst), I915_GFP_ALLOW_FAIL);
 	if (!dst)
 		return NULL;
 
-	if (!compress_start(compress)) {
-		kfree(dst);
-		return NULL;
-	}
-
 	strcpy(dst->name, name);
 	dst->next = NULL;
-
 	dst->gtt_offset = vma->node.start;
 	dst->gtt_size = vma->node.size;
-	dst->gtt_page_sizes = vma->page_sizes.gtt;
-	dst->num_pages = num_pages;
-	dst->page_count = 0;
-	dst->unused = 0;
+	dst->gtt_page_sizes = vma->page_sizes;
+	dst->metadata = i915_vma_metadata_coredump_create(vma);
+
+	if (!compress)
+		return dst;
+
+	if (!pages) {
+		obj = i915_gem_object_get_rcu(vma->obj);
+		if (!obj)
+			return dst;
+
+		if (!atomic_add_unless(&obj->mm.pages_pin_count, 1, 0)) {
+			int err = -EBUSY;
+
+			if (i915_gem_object_trylock(obj)) {
+				err = i915_gem_object_pin_pages_sync(obj);
+				i915_gem_object_unlock(obj);
+			}
+
+			if (err) {
+				i915_gem_object_put(obj);
+				return dst;
+			}
+		}
+
+		if (i915_gem_object_migrate_sync(obj))
+			goto out;
+
+		pages = obj->mm.pages;
+	}
+
+	num_pages = vma->size >> PAGE_SHIFT;
+	num_pages = DIV_ROUND_UP(10 * num_pages, 8); /* worstcase zlib growth */
+
+	dst->cpages = kmalloc(sizeof(*dst->cpages) + num_pages * sizeof(u32 *),
+			      I915_GFP_ALLOW_FAIL);
+	if (!dst->cpages)
+		goto out;
+
+	dst->cpages->num_pages = num_pages;
+	dst->cpages->page_count = 0;
+	dst->cpages->unused = 0;
+
+	if (!compress_start(compress)) {
+		kfree(dst->cpages);
+		dst->cpages = NULL;
+		goto out;
+	}
+
+	offset = (vma->ggtt_view.type == I915_GGTT_VIEW_PARTIAL) ?
+		 vma->ggtt_view.partial.offset : 0;
 
 	ret = -EINVAL;
 	if (drm_mm_node_allocated(&ggtt->error_capture)) {
 		void __iomem *s;
 		dma_addr_t dma;
 
-		for_each_sgt_daddr(dma, iter, vma->pages) {
+		for_each_sgt_daddr(dma, iter, pages) {
+			if (n++ < offset)
+				continue;
+
 			mutex_lock(&ggtt->error_mutex);
 			ggtt->vm.insert_page(&ggtt->vm, dma, slot,
-					     I915_CACHE_NONE, 0);
+					     i915_gem_get_pat_index(gt->i915,
+							I915_CACHE_NONE),
+					     0);
 			mb();
 
 			s = io_mapping_map_wc(&ggtt->iomap, slot, PAGE_SIZE);
 			ret = compress_page(compress,
-					    (void  __force *)s, dst,
+					    (void  __force *)s, dst->cpages,
 					    true);
 			io_mapping_unmap(s);
 
 			mb();
 			ggtt->vm.clear_range(&ggtt->vm, slot, PAGE_SIZE);
 			mutex_unlock(&ggtt->error_mutex);
-			if (ret)
+
+			if (ret || (vma->size <= ((n - offset) * PAGE_SIZE)))
 				break;
 		}
 	} else if (i915_gem_object_is_lmem(vma->obj)) {
-		struct intel_memory_region *mem = vma->obj->mm.region;
+		struct intel_memory_region *mem = vma->obj->mm.region.mem;
 		dma_addr_t dma;
 
-		for_each_sgt_daddr(dma, iter, vma->pages) {
+		for_each_sgt_daddr(dma, iter, pages) {
 			void __iomem *s;
+
+			if (n++ < offset)
+				continue;
 
 			s = io_mapping_map_wc(&mem->iomap,
 					      dma - mem->region.start,
 					      PAGE_SIZE);
 			ret = compress_page(compress,
-					    (void __force *)s, dst,
+					    (void __force *)s, dst->cpages,
 					    true);
 			io_mapping_unmap(s);
-			if (ret)
+			if (ret || (vma->size <= ((n - offset) * PAGE_SIZE)))
 				break;
 		}
 	} else {
 		struct page *page;
 
-		for_each_sgt_page(page, iter, vma->pages) {
+		for_each_sgt_page(page, iter, pages) {
 			void *s;
+
+			if (n++ < offset)
+				continue;
 
 			drm_clflush_pages(&page, 1);
 
 			s = kmap(page);
-			ret = compress_page(compress, s, dst, false);
+			ret = compress_page(compress, s, dst->cpages, false);
 			kunmap(page);
 
 			drm_clflush_pages(&page, 1);
 
-			if (ret)
+			if (ret || (vma->size <= ((n - offset) * PAGE_SIZE)))
 				break;
 		}
 	}
 
-	if (ret || compress_flush(compress, dst)) {
-		while (dst->page_count--)
-			pool_free(&compress->pool, dst->pages[dst->page_count]);
-		kfree(dst);
-		dst = NULL;
+	if (ret || compress_flush(compress, dst->cpages)) {
+		while (dst->cpages->page_count--)
+			pool_free(&compress->pool,
+				  dst->cpages->pages[dst->cpages->page_count]);
+		kfree(dst->cpages);
+		dst->cpages = NULL;
 	}
 	compress_finish(compress);
 
+out:
+	if (obj) {
+		__i915_gem_object_unpin_pages(obj);
+		i915_gem_object_put(obj);
+	}
 	return dst;
 }
 
@@ -1214,6 +1462,9 @@ static void engine_record_registers(struct intel_engine_coredump *ee)
 {
 	const struct intel_engine_cs *engine = ee->engine;
 	struct drm_i915_private *i915 = engine->i915;
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	if (GRAPHICS_VER(i915) >= 6) {
 		ee->rc_psmi = ENGINE_READ(engine, RING_PSMI_CTL);
@@ -1271,6 +1522,9 @@ static void engine_record_registers(struct intel_engine_coredump *ee)
 	if (GRAPHICS_VER(i915) > 2)
 		ee->mode = ENGINE_READ(engine, RING_MI_MODE);
 
+	if (GRAPHICS_VER(i915) >= 8)
+		ee->ctxt_sr_ctl = ENGINE_READ(engine, RING_CONTEXT_CONTROL);
+
 	if (!HWS_NEEDS_PHYSICAL(i915)) {
 		i915_reg_t mmio;
 
@@ -1302,7 +1556,7 @@ static void engine_record_registers(struct intel_engine_coredump *ee)
 		ee->hws = intel_uncore_read(engine->uncore, mmio);
 	}
 
-	ee->reset_count = i915_reset_engine_count(&i915->gpu_error, engine);
+	ee->reset_count = i915_reset_engine_count(engine);
 
 	if (HAS_PPGTT(i915)) {
 		int i;
@@ -1336,7 +1590,7 @@ static void record_request(const struct i915_request *request,
 {
 	erq->flags = request->fence.flags;
 	erq->context = request->fence.context;
-	erq->seqno = request->fence.seqno;
+	erq->seqno = i915_request_seqno(request);
 	erq->sched_attr = request->sched.attr;
 	erq->head = request->head;
 	erq->tail = request->tail;
@@ -1348,7 +1602,9 @@ static void record_request(const struct i915_request *request,
 
 		ctx = rcu_dereference(request->context->gem_context);
 		if (ctx)
-			erq->pid = pid_nr(ctx->pid);
+			erq->pid = I915_SELFTEST_ONLY(!ctx->client) ?
+				   0 :
+				   pid_nr(i915_drm_client_pid(ctx->client));
 	}
 	rcu_read_unlock();
 }
@@ -1365,27 +1621,177 @@ static void engine_record_execlists(struct intel_engine_coredump *ee)
 	ee->num_ports = n;
 }
 
+static struct i915_compressed_pages *
+i915_compress_data(void *ptr, u64 size, struct i915_page_compress *compress)
+{
+	struct i915_compressed_pages *cpages;
+	unsigned long page_buffer;
+	u64 num_pages_user, num_cpages;
+	u64 offset, to_copy;
+	long ret;
+
+	if (!size || !compress_start(compress))
+		return NULL;
+
+	num_pages_user = DIV_ROUND_UP(size, PAGE_SIZE);
+
+	/* worstcase zlib growth */
+	num_cpages = DIV_ROUND_UP(10 * num_pages_user, 8);
+
+	cpages = kmalloc(sizeof(*cpages) + num_cpages * sizeof(u32 *),
+			 I915_GFP_ALLOW_FAIL);
+	if (!cpages)
+		return NULL;
+
+	cpages->num_pages = num_cpages;
+	cpages->page_count = 0;
+	cpages->unused = 0;
+
+	offset = 0;
+
+	page_buffer = __get_free_page(GFP_KERNEL);
+	if (!page_buffer) {
+		kfree(cpages);
+		return NULL;
+	}
+
+	while (size) {
+		if (size < PAGE_SIZE) {
+			to_copy = size;
+			memset((void *)page_buffer + to_copy,
+			       0,
+			       PAGE_SIZE - to_copy);
+		} else {
+			to_copy = PAGE_SIZE;
+		}
+
+		size -= to_copy;
+
+		memcpy((void *)page_buffer, ptr + offset, to_copy);
+
+		offset += to_copy;
+		ret = compress_page(compress, (void *)page_buffer,
+				    cpages, false);
+		if (ret)
+			break;
+	}
+	free_page(page_buffer);
+
+	if (ret || compress_flush(compress, cpages)) {
+		while (cpages->page_count--)
+			pool_free(&compress->pool,
+				  cpages->pages[cpages->page_count]);
+		kfree(cpages);
+		cpages = NULL;
+	}
+
+	return cpages;
+}
+
+static char *
+i915_uuid_capture_string(struct i915_uuid_resource *uuid_res)
+{
+	char *s;
+
+	if (uuid_res->uuid_class != PRELIM_I915_UUID_CLASS_STRING)
+		return NULL;
+
+	s = kzalloc(uuid_res->size + 1, GFP_KERNEL);
+	if (!s)
+		return NULL;
+
+	strncpy(s, (const char *)uuid_res->ptr, uuid_res->size);
+	return s;
+}
+
+static struct i915_uuid_resource_coredump *
+capture_uuid(struct xarray *uuids,
+	     u32 handle,
+	     struct i915_page_compress *compress)
+{
+	struct i915_uuid_resource *uuid, *uuid_base;
+	struct i915_uuid_resource_coredump *dump;
+
+	xa_lock(uuids);
+	uuid = xa_load(uuids, handle);
+	if (!uuid) {
+		xa_unlock(uuids);
+		return NULL;
+	}
+	uuid_base = xa_load(uuids, uuid->uuid_class);
+	GEM_BUG_ON(uuid_base == NULL);
+	i915_uuid_get(uuid);
+	i915_uuid_get(uuid_base);
+	xa_unlock(uuids);
+
+	dump = kzalloc(sizeof(*dump), GFP_KERNEL);
+	if (!dump) {
+		i915_uuid_put(uuid);
+		i915_uuid_put(uuid_base);
+		return NULL;
+	}
+	memcpy(dump->uuid, uuid->uuid, sizeof(dump->uuid));
+
+	if (uuid->handle > PRELIM_I915_UUID_CLASS_MAX_RESERVED ||
+	    uuid->uuid_class == PRELIM_I915_UUID_CLASS_STRING) {
+		dump->str = i915_uuid_capture_string(uuid);
+		dump->string_class = true;
+	} else {
+		if (uuid->ptr)
+			dump->cpages = i915_compress_data(uuid->ptr,
+							  uuid->size,
+							  compress);
+	}
+
+	memcpy(dump->class, uuid_base->uuid, sizeof(dump->class));
+
+	i915_uuid_put(uuid_base);
+	i915_uuid_put(uuid);
+	return dump;
+}
+
+static struct i915_uuid_resource_coredump *
+i915_uuid_resource_coredump_create(struct i915_drm_client *client,
+				   struct i915_page_compress *compress)
+{
+	struct i915_uuid_resource *uuid;
+	struct i915_uuid_resource_coredump *dump, *head = NULL;
+	unsigned long idx;
+
+	xa_for_each(&client->uuids_xa, idx, uuid) {
+		dump = capture_uuid(&client->uuids_xa, idx, compress);
+		if (!dump)
+			break;
+		dump->next = head;
+		head = dump;
+	}
+	return head;
+}
+
 static bool record_context(struct i915_gem_context_coredump *e,
-			   const struct i915_request *rq)
+			   const struct i915_request *rq,
+			   struct i915_page_compress *compress)
 {
 	struct i915_gem_context *ctx;
-	struct task_struct *task;
 	bool simulated;
 
 	rcu_read_lock();
+
 	ctx = rcu_dereference(rq->context->gem_context);
 	if (ctx && !kref_get_unless_zero(&ctx->ref))
 		ctx = NULL;
-	rcu_read_unlock();
-	if (!ctx)
+	if (!ctx) {
+		rcu_read_unlock();
 		return true;
-
-	rcu_read_lock();
-	task = pid_task(ctx->pid, PIDTYPE_PID);
-	if (task) {
-		strcpy(e->comm, task->comm);
-		e->pid = task->pid;
 	}
+
+	if (I915_SELFTEST_ONLY(!ctx->client)) {
+		strcpy(e->comm, "[kernel]");
+	} else {
+		strcpy(e->comm, i915_drm_client_name(ctx->client));
+		e->pid = pid_nr(i915_drm_client_pid(ctx->client));
+	}
+
 	rcu_read_unlock();
 
 	e->sched_attr = ctx->sched;
@@ -1394,10 +1800,16 @@ static bool record_context(struct i915_gem_context_coredump *e,
 	e->hwsp_seqno = (rq->context->timeline && rq->context->timeline->hwsp_seqno) ?
 				*rq->context->timeline->hwsp_seqno : ~0U;
 
-	e->total_runtime = rq->context->runtime.total;
-	e->avg_runtime = ewma_runtime_read(&rq->context->runtime.avg);
+	e->total_runtime = intel_context_get_total_runtime_ns(rq->context);
+	e->avg_runtime = intel_context_get_avg_runtime_ns(rq->context);
 
 	simulated = i915_gem_context_no_error_capture(ctx);
+
+	e->sip_installed = i915_gem_context_has_sip(ctx);
+
+	if (ctx->client)
+		e->uuid_dump = i915_uuid_resource_coredump_create(ctx->client,
+								  compress);
 
 	i915_gem_context_put(ctx);
 	return simulated;
@@ -1406,6 +1818,7 @@ static bool record_context(struct i915_gem_context_coredump *e,
 struct intel_engine_capture_vma {
 	struct intel_engine_capture_vma *next;
 	struct i915_vma *vma;
+	struct sg_table *pages;
 	char name[16];
 };
 
@@ -1420,20 +1833,45 @@ capture_vma(struct intel_engine_capture_vma *next,
 	if (!vma)
 		return next;
 
-	c = kmalloc(sizeof(*c), gfp);
+	c = kzalloc(sizeof(*c), gfp);
 	if (!c)
 		return next;
 
-	if (!i915_active_acquire_if_busy(&vma->active)) {
-		kfree(c);
-		return next;
-	}
+	if (!__i915_vma_get(vma))
+		goto err_free;
+
+	if (!i915_gem_object_get_rcu(vma->obj))
+		goto err_vma;
+
+	if (!i915_gem_object_has_migrate(vma->obj) &&
+	    i915_vma_active_acquire_if_busy(vma))
+		c->pages = vma->pages;
 
 	strcpy(c->name, name);
 	c->vma = vma; /* reference held while active */
 
 	c->next = next;
 	return c;
+
+err_vma:
+	__i915_vma_put(vma);
+err_free:
+	kfree(c);
+	return next;
+}
+
+static struct intel_engine_capture_vma *
+capture_user_vm(struct intel_engine_capture_vma *capture,
+		struct i915_address_space *vm, gfp_t gfp)
+{
+	struct i915_vma *vma;
+
+	spin_lock(&vm->vm_capture_lock);
+	list_for_each_entry(vma, &vm->vm_capture_list, vm_capture_link)
+		capture = capture_vma(capture, vma, "user", gfp);
+	spin_unlock(&vm->vm_capture_lock);
+
+	return capture;
 }
 
 static struct intel_engine_capture_vma *
@@ -1445,6 +1883,13 @@ capture_user(struct intel_engine_capture_vma *capture,
 
 	for (c = rq->capture_list; c; c = c->next)
 		capture = capture_vma(capture, c->vma, "user", gfp);
+
+	/*
+	 * include persistent VMAs
+	 * XXX overrides gfp due to execlists_capture_work caller
+	 */
+	gfp = GFP_NOWAIT | __GFP_NOWARN;
+	capture = capture_user_vm(capture, rq->context->vm, gfp);
 
 	return capture;
 }
@@ -1480,11 +1925,12 @@ intel_engine_coredump_alloc(struct intel_engine_cs *engine, gfp_t gfp, u32 dump_
 struct intel_engine_capture_vma *
 intel_engine_coredump_add_request(struct intel_engine_coredump *ee,
 				  struct i915_request *rq,
-				  gfp_t gfp)
+				  gfp_t gfp,
+				  struct i915_page_compress *compress)
 {
 	struct intel_engine_capture_vma *vma = NULL;
 
-	ee->simulated |= record_context(&ee->context, rq);
+	ee->simulated |= record_context(&ee->context, rq, compress);
 	if (ee->simulated)
 		return NULL;
 
@@ -1501,14 +1947,20 @@ intel_engine_coredump_add_request(struct intel_engine_coredump *ee,
 	ee->rq_head = rq->head;
 	ee->rq_post = rq->postfix;
 	ee->rq_tail = rq->tail;
+	ee->vm_poison = rq->context->vm->poison;
 
 	return vma;
+}
+
+static struct sg_table *__vma_pages(struct i915_vma *vma)
+{
+	return vma ? vma->pages : NULL;
 }
 
 void
 intel_engine_coredump_add_vma(struct intel_engine_coredump *ee,
 			      struct intel_engine_capture_vma *capture,
-			      struct i915_vma_compress *compress)
+			      struct i915_page_compress *compress)
 {
 	const struct intel_engine_cs *engine = ee->engine;
 
@@ -1519,9 +1971,12 @@ intel_engine_coredump_add_vma(struct intel_engine_coredump *ee,
 		add_vma(ee,
 			i915_vma_coredump_create(engine->gt,
 						 vma, this->name,
+						 capture->pages,
 						 compress));
-
-		i915_active_release(&vma->active);
+		if (capture->pages)
+			i915_vma_active_release(vma);
+		i915_gem_object_put(vma->obj);
+		__i915_vma_put(vma);
 
 		capture = this->next;
 		kfree(this);
@@ -1531,56 +1986,54 @@ intel_engine_coredump_add_vma(struct intel_engine_coredump *ee,
 		i915_vma_coredump_create(engine->gt,
 					 engine->status_page.vma,
 					 "HW Status",
+					 __vma_pages(engine->status_page.vma),
 					 compress));
 
 	add_vma(ee,
 		i915_vma_coredump_create(engine->gt,
 					 engine->wa_ctx.vma,
 					 "WA context",
+					 __vma_pages(engine->wa_ctx.vma),
 					 compress));
 }
 
 static struct intel_engine_coredump *
 capture_engine(struct intel_engine_cs *engine,
-	       struct i915_vma_compress *compress,
+	       struct i915_page_compress *compress,
 	       u32 dump_flags)
 {
-	struct intel_engine_capture_vma *capture = NULL;
+	struct intel_engine_capture_vma *capture;
 	struct intel_engine_coredump *ee;
 	struct intel_context *ce;
-	struct i915_request *rq = NULL;
-	unsigned long flags;
+	struct i915_request *rq;
 
-	ee = intel_engine_coredump_alloc(engine, ALLOW_FAIL, dump_flags);
+	ee = intel_engine_coredump_alloc(engine, I915_GFP_ALLOW_FAIL, dump_flags);
 	if (!ee)
 		return NULL;
 
+	rcu_read_lock();
 	ce = intel_engine_get_hung_context(engine);
 	if (ce) {
 		intel_engine_clear_hung_context(engine);
 		rq = intel_context_find_active_request(ce);
-		if (!rq || !i915_request_started(rq))
-			goto no_request_capture;
 	} else {
-		/*
-		 * Getting here with GuC enabled means it is a forced error capture
-		 * with no actual hang. So, no need to attempt the execlist search.
-		 */
-		if (!intel_uc_uses_guc_submission(&engine->gt->uc)) {
-			spin_lock_irqsave(&engine->sched_engine->lock, flags);
-			rq = intel_engine_execlist_find_hung_request(engine);
-			spin_unlock_irqrestore(&engine->sched_engine->lock,
-					       flags);
-		}
+		rq = intel_engine_find_active_request(engine);
 	}
-	if (rq)
+	rq = rq ? i915_request_get_rcu(rq) : NULL;
+	rcu_read_unlock();
+
+	capture = NULL;
+	if (rq) {
 		capture = intel_engine_coredump_add_request(ee, rq,
-							    ATOMIC_MAYFAIL);
+							    ATOMIC_MAYFAIL,
+							    compress);
+		i915_request_put(rq);
+	}
 	if (!capture) {
-no_request_capture:
 		kfree(ee);
 		return NULL;
 	}
+
 	if (dump_flags & CORE_DUMP_FLAG_IS_GUC_CAPTURE)
 		intel_guc_capture_get_matching_node(engine->gt, ee, ce);
 
@@ -1592,7 +2045,7 @@ no_request_capture:
 static void
 gt_record_engines(struct intel_gt_coredump *gt,
 		  intel_engine_mask_t engine_mask,
-		  struct i915_vma_compress *compress,
+		  struct i915_page_compress *compress,
 		  u32 dump_flags)
 {
 	struct intel_engine_cs *engine;
@@ -1601,8 +2054,11 @@ gt_record_engines(struct intel_gt_coredump *gt,
 	for_each_engine(engine, gt->_gt, id) {
 		struct intel_engine_coredump *ee;
 
+		if (!intel_engine_pm_is_awake(engine))
+			continue;
+
 		/* Refill our page pool before entering atomic section */
-		pool_refill(&compress->pool, ALLOW_FAIL);
+		pool_refill(&compress->pool, I915_GFP_ALLOW_FAIL);
 
 		ee = capture_engine(engine, compress, dump_flags);
 		if (!ee)
@@ -1642,33 +2098,43 @@ static void gt_record_guc_ctb(struct intel_ctb_coredump *saved,
 
 static struct intel_uc_coredump *
 gt_record_uc(struct intel_gt_coredump *gt,
-	     struct i915_vma_compress *compress)
+	     struct i915_page_compress *compress)
 {
 	const struct intel_uc *uc = &gt->_gt->uc;
 	struct intel_uc_coredump *error_uc;
 
-	error_uc = kzalloc(sizeof(*error_uc), ALLOW_FAIL);
+	error_uc = kzalloc(sizeof(*error_uc), I915_GFP_ALLOW_FAIL);
 	if (!error_uc)
 		return NULL;
 
 	memcpy(&error_uc->guc_fw, &uc->guc.fw, sizeof(uc->guc.fw));
 	memcpy(&error_uc->huc_fw, &uc->huc.fw, sizeof(uc->huc.fw));
 
-	error_uc->guc_fw.file_selected.path = kstrdup(uc->guc.fw.file_selected.path, ALLOW_FAIL);
-	error_uc->huc_fw.file_selected.path = kstrdup(uc->huc.fw.file_selected.path, ALLOW_FAIL);
-	error_uc->guc_fw.file_wanted.path = kstrdup(uc->guc.fw.file_wanted.path, ALLOW_FAIL);
-	error_uc->huc_fw.file_wanted.path = kstrdup(uc->huc.fw.file_wanted.path, ALLOW_FAIL);
+	error_uc->guc_fw.file_selected.path = kstrdup(uc->guc.fw.file_selected.path, I915_GFP_ALLOW_FAIL);
+	error_uc->huc_fw.file_selected.path = kstrdup(uc->huc.fw.file_selected.path, I915_GFP_ALLOW_FAIL);
+	error_uc->guc_fw.file_wanted.path = kstrdup(uc->guc.fw.file_wanted.path, I915_GFP_ALLOW_FAIL);
+	error_uc->huc_fw.file_wanted.path = kstrdup(uc->huc.fw.file_wanted.path, I915_GFP_ALLOW_FAIL);
 
 	/*
 	 * Save the GuC log and include a timestamp reference for converting the
 	 * log times to system times (in conjunction with the error->boottime and
 	 * gt->clock_frequency fields saved elsewhere).
 	 */
-	error_uc->guc.timestamp = intel_uncore_read(gt->_gt->uncore, GUCPMTIMESTAMP);
-	error_uc->guc.vma_log = i915_vma_coredump_create(gt->_gt, uc->guc.log.vma,
-							 "GuC log buffer", compress);
-	error_uc->guc.vma_ctb = i915_vma_coredump_create(gt->_gt, uc->guc.ct.vma,
-							 "GuC CT buffer", compress);
+	if (!IS_SRIOV_VF(gt->_gt->i915)) {
+		error_uc->guc.timestamp = intel_uncore_read(gt->_gt->uncore, GUCPMTIMESTAMP);
+		error_uc->guc.vma_log =
+			i915_vma_coredump_create(gt->_gt,
+						 uc->guc.log.vma,
+						 "GuC log buffer",
+						 __vma_pages(uc->guc.log.vma),
+						 compress);
+	}
+	error_uc->guc.vma_ctb =
+		i915_vma_coredump_create(gt->_gt,
+					 uc->guc.ct.vma,
+					 "GuC CT buffer",
+					 __vma_pages(uc->guc.ct.vma),
+					 compress);
 	error_uc->guc.last_fence = uc->guc.ct.requests.last_fence;
 	gt_record_guc_ctb(error_uc->guc.ctb + 0, &uc->guc.ct.ctbs.send,
 			  uc->guc.ct.ctbs.send.desc, (struct intel_guc *)&uc->guc);
@@ -1737,6 +2203,9 @@ static void gt_record_global_nonguc_regs(struct intel_gt_coredump *gt)
 		gt->ngtier = 1;
 	}
 
+	if (IS_SRIOV_VF(i915))
+		return;
+
 	gt->eir = intel_uncore_read(uncore, EIR);
 	gt->pgtbl_er = intel_uncore_read(uncore, PGTBL_ER);
 }
@@ -1778,6 +2247,8 @@ static void gt_record_global_regs(struct intel_gt_coredump *gt)
 		gt->fault_data1 = intel_uncore_read(uncore,
 						    GEN12_FAULT_TLB_DATA1);
 	} else if (GRAPHICS_VER(i915) >= 8) {
+		gt->eu_global_sip = intel_gt_mcr_read_any((struct intel_gt *)gt->_gt,
+							  EU_GLOBAL_SIP);
 		gt->fault_data0 = intel_uncore_read(uncore,
 						    GEN8_FAULT_TLB_DATA0);
 		gt->fault_data1 = intel_uncore_read(uncore,
@@ -1839,6 +2310,54 @@ static void gt_record_info(struct intel_gt_coredump *gt)
 	gt->clock_period_ns = gt->_gt->clock_period_ns;
 }
 
+static void gt_record_attentions(struct intel_gt_coredump *gt_dump)
+{
+	struct intel_gt *gt = (struct intel_gt *)gt_dump->_gt;
+	struct drm_i915_private *i915 = gt->i915;
+	u32 td_ctl;
+
+	if (GRAPHICS_VER(i915) < 9)
+		return;
+
+	td_ctl = intel_gt_mcr_read_any(gt, TD_CTL);
+	gt_dump->attentions.td_ctl = td_ctl;
+
+	intel_eu_attentions_read(gt, &gt_dump->attentions.before, 0);
+
+	/* If there is no debug functionality, dont invoke sip */
+	if (!td_ctl)
+		return;
+
+	/* Halt on next thread dispatch */
+	while (!(td_ctl & TD_CTL_FORCE_EXTERNAL_HALT)) {
+		intel_gt_mcr_multicast_write(gt, TD_CTL,
+					     td_ctl | TD_CTL_FORCE_EXTERNAL_HALT);
+		/*
+		 * The sleep is needed because some interrupts are ignored
+		 * by the HW, hence we allow the HW some time to acknowledge
+		 * that.
+		 */
+		udelay(200);
+
+		td_ctl = intel_gt_mcr_read_any(gt, TD_CTL);
+	}
+
+	/* Halt regardless of thread dependencies */
+	while (!(td_ctl & TD_CTL_FORCE_EXCEPTION)) {
+		intel_gt_mcr_multicast_write(gt, TD_CTL,
+					     td_ctl | TD_CTL_FORCE_EXCEPTION);
+		udelay(200);
+
+		td_ctl = intel_gt_mcr_read_any(gt, TD_CTL);
+	}
+
+	intel_eu_attentions_read(gt, &gt_dump->attentions.after,
+				 INTEL_GT_ATTENTION_TIMEOUT_MS);
+
+	i915_debugger_gpu_flush_engines(gt,
+					GEN12_RCU_ASYNC_FLUSH_AND_INVALIDATE_ALL);
+}
+
 /*
  * Generate a semi-unique error code. The code is not meant to have meaning, The
  * code's only purpose is to try to prevent false duplicated bug reports by
@@ -1879,16 +2398,24 @@ static const char *error_msg(struct i915_gpu_coredump *error)
 		}
 	}
 
-	len = scnprintf(error->error_msg, sizeof(error->error_msg),
-			"GPU HANG: ecode %d:%x:%08x",
-			GRAPHICS_VER(error->i915), hung_classes,
-			generate_ecode(first));
+	if (error->fault.addr) {
+		len = scnprintf(error->error_msg, sizeof(error->error_msg),
+				"page fault @ 0x%016llx",
+				error->fault.addr & ~BIT_ULL(0));
+	} else {
+		len = scnprintf(error->error_msg, sizeof(error->error_msg),
+				"GPU HANG: ecode %d:%x:%08x",
+				GRAPHICS_VER(error->i915), hung_classes,
+				generate_ecode(first));
+	}
 	if (first && first->context.pid) {
 		/* Just show the first executing process, more is confusing */
 		len += scnprintf(error->error_msg + len,
 				 sizeof(error->error_msg) - len,
-				 ", in %s [%d]",
-				 first->context.comm, first->context.pid);
+				 ", %s in %s [%d]",
+				 first->engine->name,
+				 first->context.comm,
+				 first->context.pid);
 	}
 
 	return error->error_msg;
@@ -1953,6 +2480,11 @@ intel_gt_coredump_alloc(struct intel_gt *gt, gfp_t gfp, u32 dump_flags)
 
 	gc->_gt = gt;
 	gc->awake = intel_gt_pm_is_awake(gt);
+	gt_record_info(gc);
+
+	/* We can't record anything more on VF */
+	if (IS_SRIOV_VF(gt->i915))
+		return gc;
 
 	gt_record_display_regs(gc);
 	gt_record_global_nonguc_regs(gc);
@@ -1971,15 +2503,19 @@ intel_gt_coredump_alloc(struct intel_gt *gt, gfp_t gfp, u32 dump_flags)
 
 	gt_record_fences(gc);
 
+	gt_record_attentions(gc);
+
+	gc->engines_reset_count = atomic_read(&gt->reset.engines_reset_count);
+
 	return gc;
 }
 
-struct i915_vma_compress *
+struct i915_page_compress *
 i915_vma_capture_prepare(struct intel_gt_coredump *gt)
 {
-	struct i915_vma_compress *compress;
+	struct i915_page_compress *compress;
 
-	compress = kmalloc(sizeof(*compress), ALLOW_FAIL);
+	compress = kmalloc(sizeof(*compress), I915_GFP_ALLOW_FAIL);
 	if (!compress)
 		return NULL;
 
@@ -1992,7 +2528,7 @@ i915_vma_capture_prepare(struct intel_gt_coredump *gt)
 }
 
 void i915_vma_capture_finish(struct intel_gt_coredump *gt,
-			     struct i915_vma_compress *compress)
+			     struct i915_page_compress *compress)
 {
 	if (!compress)
 		return;
@@ -2012,13 +2548,13 @@ i915_gpu_coredump(struct intel_gt *gt, intel_engine_mask_t engine_mask, u32 dump
 	if (IS_ERR(error))
 		return error;
 
-	error = i915_gpu_coredump_alloc(i915, ALLOW_FAIL);
+	error = i915_gpu_coredump_alloc(i915, I915_GFP_ALLOW_FAIL);
 	if (!error)
 		return ERR_PTR(-ENOMEM);
 
-	error->gt = intel_gt_coredump_alloc(gt, ALLOW_FAIL, dump_flags);
+	error->gt = intel_gt_coredump_alloc(gt, I915_GFP_ALLOW_FAIL, dump_flags);
 	if (error->gt) {
-		struct i915_vma_compress *compress;
+		struct i915_page_compress *compress;
 
 		compress = i915_vma_capture_prepare(error->gt);
 		if (!compress) {
@@ -2037,7 +2573,6 @@ i915_gpu_coredump(struct intel_gt *gt, intel_engine_mask_t engine_mask, u32 dump
 			}
 		}
 
-		gt_record_info(error->gt);
 		gt_record_engines(error->gt, engine_mask, compress, dump_flags);
 
 
@@ -2051,6 +2586,33 @@ i915_gpu_coredump(struct intel_gt *gt, intel_engine_mask_t engine_mask, u32 dump
 	return error;
 }
 
+struct i915_gpu_coredump *
+i915_gpu_coredump_create_for_engine(struct intel_engine_cs *engine, gfp_t gfp)
+{
+	struct i915_gpu_coredump *error;
+
+	error = i915_gpu_coredump_alloc(engine->i915, gfp);
+	if (!error)
+		return NULL;
+
+	error->gt = intel_gt_coredump_alloc(engine->gt, gfp, CORE_DUMP_FLAG_NONE);
+	if (!error->gt)
+		goto err;
+
+	error->gt->engine = intel_engine_coredump_alloc(engine, gfp, CORE_DUMP_FLAG_NONE);
+	if (!error->gt->engine)
+		goto err_gt;
+
+	error->gt->engine->hung = true;
+	return error;
+
+err_gt:
+	kfree(error->gt);
+err:
+	kfree(error);
+	return NULL;
+}
+
 void i915_error_state_store(struct i915_gpu_coredump *error)
 {
 	struct drm_i915_private *i915;
@@ -2060,19 +2622,22 @@ void i915_error_state_store(struct i915_gpu_coredump *error)
 		return;
 
 	i915 = error->i915;
-	drm_info(&i915->drm, "%s\n", error_msg(error));
-
-	if (error->simulated ||
-	    cmpxchg(&i915->gpu_error.first_error, NULL, error))
-		return;
+	dev_info(i915->drm.dev, "%s\n", error_msg(error));
 
 	i915_gpu_coredump_get(error);
+
+	if (error->simulated ||
+	    cmpxchg(&i915->gpu_error.first_error, NULL, error)) {
+		i915_gpu_coredump_put(error);
+		return;
+	}
+
+	sysfs_notify(&i915->drm.primary->kdev->kobj, NULL, "error");
 
 	if (!xchg(&warned, true) &&
 	    ktime_get_real_seconds() - DRIVER_TIMESTAMP < DAY_AS_SECONDS(180)) {
 		pr_info("GPU hangs can indicate a bug anywhere in the entire gfx stack, including userspace.\n");
-		pr_info("Please file a _new_ bug report at https://gitlab.freedesktop.org/drm/intel/issues/new.\n");
-		pr_info("Please see https://gitlab.freedesktop.org/drm/intel/-/wikis/How-to-file-i915-bugs for details.\n");
+		pr_info("Please contact your Intel support representative for this issue.\n");
 		pr_info("drm/i915 developers can then reassign to the right component if it's not a kernel issue.\n");
 		pr_info("The GPU crash dump is required to analyze GPU hangs, so please always attach it.\n");
 		pr_info("GPU crash dump saved to /sys/class/drm/card%d/error\n",
@@ -2142,6 +2707,286 @@ void i915_disable_error_state(struct drm_i915_private *i915, int err)
 	spin_unlock_irq(&i915->gpu_error.lock);
 }
 
+/** FIXME:
+ * The copying of the data shall be postponed to
+ * creation of the error dump. This is temporary
+ * and will be fixed.
+ */
+static int
+__i915_uuid_copy_from_user(struct prelim_drm_i915_uuid_control *uuid_arg,
+			   struct i915_uuid_resource *uuid_res)
+{
+	if (!access_ok(u64_to_user_ptr(uuid_arg->ptr), uuid_arg->size))
+		return -EFAULT;
+
+	uuid_res->ptr = kvmalloc(uuid_arg->size, GFP_KERNEL);
+	if (!uuid_res->ptr)
+		return -ENOMEM;
+
+	/* This limits us to a maximum payload size of 2G */
+	if (copy_from_user(uuid_res->ptr, u64_to_user_ptr(uuid_arg->ptr),
+			   uuid_arg->size)) {
+		kvfree(uuid_res->ptr);
+		uuid_res->ptr = NULL;
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+int i915_uuid_register_ioctl(struct drm_device *dev, void *data,
+			     struct drm_file *file)
+{
+	struct drm_i915_file_private *file_priv = file->driver_priv;
+	struct i915_drm_client *client = file_priv->client;
+	struct prelim_drm_i915_uuid_control *uuid_arg = data;
+	struct i915_uuid_resource *uuid_res;
+	struct i915_uuid_resource *uuid_res_base;
+	struct xa_limit uuid_limit_32b;
+	int ret;
+
+	/* MBZ */
+	if (uuid_arg->flags)
+		return -EINVAL;
+
+	ret = i915_user_extensions(u64_to_user_ptr(uuid_arg->extensions),
+				   NULL, 0, NULL);
+	if (ret)
+		return ret;
+
+	if (!uuid_is_valid((const char *)uuid_arg->uuid))
+		return -EINVAL;
+
+	/* For class STRING pointer and size must be valid */
+	if (uuid_arg->uuid_class == PRELIM_I915_UUID_CLASS_STRING) {
+		if (!uuid_arg->ptr || !uuid_arg->size)
+			return -EINVAL;
+	} else {
+		if ((!uuid_arg->ptr && uuid_arg->size) ||
+		    (uuid_arg->ptr && !uuid_arg->size))
+			return -EINVAL;
+	}
+
+	uuid_res = kzalloc(sizeof(*uuid_res), GFP_KERNEL);
+	if (!uuid_res)
+		return -ENOMEM;
+
+	if (uuid_arg->ptr) {
+		ret = __i915_uuid_copy_from_user(uuid_arg, uuid_res);
+		if (ret)
+			goto err;
+	}
+
+	i915_debugger_wait_on_discovery(to_i915(dev), client);
+
+	xa_lock(&client->uuids_xa);
+	uuid_res_base = xa_load(&client->uuids_xa, uuid_arg->uuid_class);
+	if (!uuid_res_base) {
+		ret = -EINVAL;
+		goto err_unlock;
+	}
+
+	kref_init(&uuid_res->ref);
+	atomic_set(&uuid_res->bind_count, 0);
+	uuid_res->size = uuid_arg->size;
+	uuid_res->uuid_class = uuid_arg->uuid_class;
+	memcpy(uuid_res->uuid, uuid_arg->uuid, sizeof(uuid_res->uuid));
+
+	/* Limit upper so that the string class is special */
+	uuid_limit_32b.min = 0;
+	uuid_limit_32b.max = PRELIM_I915_UUID_CLASS_MAX_RESERVED - 1;
+
+	ret = __xa_alloc(&client->uuids_xa,
+			 &uuid_res->handle,
+			 uuid_res,
+			 uuid_limit_32b,
+			 GFP_ATOMIC);
+	if (ret < 0)
+		goto err_unlock;
+
+	atomic_inc(&uuid_res_base->bind_count);
+	xa_unlock(&client->uuids_xa);
+
+	/* Output for the client */
+	uuid_arg->handle = uuid_res->handle;
+	i915_debugger_uuid_create(client, uuid_res);
+	return 0;
+
+ err_unlock:
+	xa_unlock(&client->uuids_xa);
+err:
+	kfree(uuid_res);
+	return ret;
+}
+
+int i915_uuid_unregister_ioctl(struct drm_device *dev, void *data,
+			       struct drm_file *file)
+{
+	struct drm_i915_file_private *file_priv = file->driver_priv;
+	struct i915_drm_client *client = file_priv->client;
+	struct i915_uuid_resource *uuid_res;
+	struct i915_uuid_resource *uuid_res_base;
+	struct prelim_drm_i915_uuid_control *uuid_arg = data;
+	int ret;
+
+	/* MBZ */
+	if (uuid_arg->flags)
+		return -EINVAL;
+
+	ret = i915_user_extensions(u64_to_user_ptr(uuid_arg->extensions),
+				   NULL, 0, NULL);
+	if (ret)
+		return ret;
+
+	if (uuid_arg->handle >= PRELIM_I915_UUID_CLASS_MAX_RESERVED)
+		return -EINVAL;
+
+	i915_debugger_wait_on_discovery(to_i915(dev), client);
+	flush_workqueue(to_i915(dev)->wq);
+
+	xa_lock(&client->uuids_xa);
+	uuid_res = xa_load(&client->uuids_xa, uuid_arg->handle);
+	if (!uuid_res) {
+		ret = -ENOENT;
+		goto err;
+	}
+
+	if (atomic_read(&uuid_res->bind_count)) {
+		ret =  -EBUSY;
+		goto err;
+	}
+
+	__xa_erase(&client->uuids_xa, uuid_arg->handle);
+
+	uuid_res_base = xa_load(&client->uuids_xa, uuid_res->uuid_class);
+	GEM_BUG_ON(!uuid_res_base);
+	GEM_BUG_ON(!atomic_read(&uuid_res_base->bind_count));
+	atomic_dec(&uuid_res_base->bind_count);
+	xa_unlock(&client->uuids_xa);
+
+	i915_debugger_uuid_destroy(client, uuid_res);
+	i915_uuid_put(uuid_res);
+	return 0;
+
+err:
+	xa_unlock(&client->uuids_xa);
+	return ret;
+}
+
+void __i915_uuid_free(struct kref *ref)
+{
+	struct i915_uuid_resource *uuid =
+		container_of(ref, typeof(*uuid), ref);
+
+	if (uuid->handle < PRELIM_I915_UUID_CLASS_MAX_RESERVED)
+		kvfree(uuid->ptr);
+
+	kfree(uuid);
+}
+
+/* Those are predefined UUID Resource classes.
+ * The handle must be > than I915_UUID_CLASS_MAX_RESERVED.
+ * The uuid shall be valid UUID type.
+ *
+ * Note: A predefined class shall be of a type STRING and contain
+ *       a valid string describing it.
+ */
+static struct i915_uuid_resource_predefined {
+	u32 handle;
+	char uuid[36];
+	u32 class;
+	const char *str;
+} uuid_predefined_classes[] = {
+	{
+		.handle = PRELIM_I915_UUID_CLASS_STRING,
+		.uuid = {"d9900de4-be09-56ab-84a5-dfc280f52ee5"},
+		.class = PRELIM_I915_UUID_CLASS_STRING,
+		.str = __stringify_1(PRELIM_I915_UUID_CLASS_STRING),
+	},
+
+	/* last */
+	{ .uuid[0] = 0, }
+};
+
+static void __uuid_init_classes(struct i915_drm_client *client)
+{
+	struct i915_uuid_resource_predefined *u;
+	struct i915_uuid_resource *uuid_res;
+	unsigned long index = 0;
+
+	u = uuid_predefined_classes;
+	BUILD_BUG_ON(sizeof(u->uuid) != UUID_STRING_LEN);
+
+	while (u->uuid[0]) {
+		if (u->handle <= PRELIM_I915_UUID_CLASS_MAX_RESERVED)
+			goto err;
+
+		if (u->class != PRELIM_I915_UUID_CLASS_STRING)
+			goto err;
+
+		if (!u->str)
+			goto err;
+
+		if (!uuid_is_valid((const char *)u->uuid))
+			goto err;
+
+		uuid_res = kzalloc(sizeof(*uuid_res), GFP_KERNEL);
+		if (!uuid_res)
+			goto err;
+
+		memcpy(uuid_res->uuid,
+		       u->uuid,
+		       sizeof(uuid_res->uuid));
+		uuid_res->uuid_class = u->class;
+		uuid_res->ptr = (void *)u->str;
+		uuid_res->size = strlen(u->str);
+		uuid_res->handle = u->handle;
+		kref_init(&uuid_res->ref);
+		atomic_set(&uuid_res->bind_count, 0);
+		if (xa_insert(&client->uuids_xa, uuid_res->handle,
+			      uuid_res, GFP_KERNEL)) {
+			kfree(uuid_res);
+			goto err;
+		}
+		i915_debugger_uuid_create(client, uuid_res);
+		u = &uuid_predefined_classes[++index];
+	}
+	return;
+
+err:
+	do {
+		u = &uuid_predefined_classes[index];
+		uuid_res = __xa_erase(&client->uuids_xa, u->handle);
+		if (uuid_res)
+			i915_debugger_uuid_destroy(client, uuid_res);
+		kfree(uuid_res);
+	} while (index--);
+
+	DRM_DEBUG_DRIVER("Failed to initialize predefined UUID Classes. "
+			 "UUID Resources funcionality is not operational\n");
+}
+
+void i915_uuid_init(struct i915_drm_client *client)
+{
+	__uuid_init_classes(client);
+}
+
+void i915_uuid_cleanup(struct i915_drm_client *client)
+{
+	struct i915_uuid_resource *uuid_res = NULL;
+	unsigned long idx;
+
+	/*
+	 * Generaly lock should not be needed but EU Debugger
+	 * discovery thread scans this table
+	 */
+	xa_lock(&client->uuids_xa);
+	xa_for_each(&client->uuids_xa, idx, uuid_res)
+		i915_uuid_put(uuid_res);
+	xa_unlock(&client->uuids_xa);
+	xa_destroy(&client->uuids_xa);
+}
+
 #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)
 void intel_klog_error_capture(struct intel_gt *gt,
 			      intel_engine_mask_t engine_mask)
@@ -2160,6 +3005,11 @@ void intel_klog_error_capture(struct intel_gt *gt,
 	if (test_bit(I915_RESET_BACKOFF, &gt->reset.flags)) {
 		drm_err(&gt->i915->drm, "[Capture/%d.%d] Inside GT reset, skipping error capture :(\n",
 			l_count, line++);
+		return;
+	}
+
+	if (i915_is_pci_faulted(i915)) {
+		drm_err(&gt->i915->drm, "[Capture/%d.%d] PCI is faulted, skipping error capture :(\n", l_count, line++);
 		return;
 	}
 
@@ -2273,3 +3123,44 @@ void intel_klog_error_capture(struct intel_gt *gt,
 	drm_info(&i915->drm, "[Capture/%d.%d] Dumped %zd bytes\n", l_count, line++, pos_err);
 }
 #endif
+
+void intel_eu_attentions_read(struct intel_gt *gt,
+			      struct intel_eu_attentions *a,
+			      const unsigned int settle_time_ms)
+{
+	unsigned int prev = 0;
+	ktime_t end, now;
+
+	now = ktime_get_raw();
+	end = ktime_add_ms(now, settle_time_ms);
+
+	a->ts = 0;
+	a->size = min_t(int,
+			intel_gt_eu_attention_bitmap_size(gt),
+			sizeof(a->att));
+
+	do {
+		unsigned int attn;
+
+		intel_gt_eu_attention_bitmap(gt, a->att, a->size);
+		attn = intel_eu_attentions_count(a);
+
+		now = ktime_get_raw();
+
+		if (a->ts == 0)
+			a->ts = now;
+		else if (attn && attn != prev)
+			a->ts = now;
+
+		prev = attn;
+
+		if (settle_time_ms)
+			udelay(5);
+
+		/*
+		 * XXX We are gathering data for production SIP to find
+		 * the upper limit of settle time. For now, we wait full
+		 * timeout value regardless.
+		 */
+	} while (ktime_before(now, end));
+}

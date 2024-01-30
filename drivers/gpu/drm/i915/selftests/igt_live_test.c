@@ -36,7 +36,7 @@ int igt_live_test_begin(struct igt_live_test *t,
 
 	for_each_engine(engine, gt, id)
 		t->reset_engine[id] =
-			i915_reset_engine_count(&i915->gpu_error, engine);
+			i915_reset_engine_count(engine);
 
 	return 0;
 }
@@ -59,12 +59,12 @@ int igt_live_test_end(struct igt_live_test *t)
 
 	for_each_engine(engine, to_gt(i915), id) {
 		if (t->reset_engine[id] ==
-		    i915_reset_engine_count(&i915->gpu_error, engine))
+		    i915_reset_engine_count(engine))
 			continue;
 
 		pr_err("%s(%s): engine '%s' was reset %d times!\n",
 		       t->func, t->name, engine->name,
-		       i915_reset_engine_count(&i915->gpu_error, engine) -
+		       i915_reset_engine_count(engine) -
 		       t->reset_engine[id]);
 		return -EIO;
 	}

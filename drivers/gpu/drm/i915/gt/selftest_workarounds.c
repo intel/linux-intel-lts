@@ -19,13 +19,6 @@
 #include "gem/selftests/igt_gem_utils.h"
 #include "gem/selftests/mock_context.h"
 
-static const struct wo_register {
-	enum intel_platform platform;
-	u32 reg;
-} wo_registers[] = {
-	{ INTEL_GEMINILAKE, 0x731c }
-};
-
 struct wa_lists {
 	struct i915_wa_list gt_wa_list;
 	struct {
@@ -33,6 +26,45 @@ struct wa_lists {
 		struct i915_wa_list ctx_wa_list;
 	} engine[I915_NUM_ENGINES];
 };
+
+static u32 reg_offset(i915_reg_t reg)
+{
+	return i915_mmio_reg_offset(reg) & RING_FORCE_TO_NONPRIV_ADDRESS_MASK;
+}
+
+static u32 reg_access(i915_reg_t reg)
+{
+	return i915_mmio_reg_offset(reg) & RING_FORCE_TO_NONPRIV_ACCESS_MASK;
+}
+
+static bool deny_register(i915_reg_t reg)
+{
+	return i915_mmio_reg_offset(reg) & RING_FORCE_TO_NONPRIV_DENY;
+}
+
+static bool wo_register(i915_reg_t reg)
+{
+	return reg_access(reg) == RING_FORCE_TO_NONPRIV_ACCESS_WR;
+}
+
+static bool ro_register(i915_reg_t reg)
+{
+	return reg_access(reg) == RING_FORCE_TO_NONPRIV_ACCESS_RD;
+}
+
+static const char *repr_access(i915_reg_t reg)
+{
+	if (deny_register(reg))
+		return "deny";
+
+	if (ro_register(reg))
+		return "ro";
+
+	if (wo_register(reg))
+		return "wo";
+
+	return "allow";
+}
 
 static int request_add_sync(struct i915_request *rq, int err)
 {
@@ -66,16 +98,14 @@ reference_lists_init(struct intel_gt *gt, struct wa_lists *lists)
 
 	memset(lists, 0, sizeof(*lists));
 
-	wa_init_start(&lists->gt_wa_list, "GT_REF", "global");
+	wa_init(&lists->gt_wa_list, "GT_REF", "global");
 	gt_init_workarounds(gt, &lists->gt_wa_list);
-	wa_init_finish(&lists->gt_wa_list);
 
 	for_each_engine(engine, gt, id) {
 		struct i915_wa_list *wal = &lists->engine[id].wa_list;
 
-		wa_init_start(wal, "REF", engine->name);
+		wa_init(wal, "REF", engine->name);
 		engine_init_workarounds(engine, wal);
-		wa_init_finish(wal);
 
 		__intel_engine_init_ctx_wa(engine,
 					   &lists->engine[id].ctx_wa_list,
@@ -395,7 +425,7 @@ static struct i915_vma *create_batch(struct i915_address_space *vm)
 		goto err_obj;
 	}
 
-	err = i915_vma_pin(vma, 0, 0, PIN_USER);
+	err = i915_vma_pin(vma, 0, 0, PIN_USER | PIN_ZONE_48);
 	if (err)
 		goto err_obj;
 
@@ -419,28 +449,9 @@ static u32 reg_write(u32 old, u32 new, u32 rsvd)
 	return old;
 }
 
-static bool wo_register(struct intel_engine_cs *engine, u32 reg)
+static bool timestamp(const struct intel_engine_cs *engine, i915_reg_t reg)
 {
-	enum intel_platform platform = INTEL_INFO(engine->i915)->platform;
-	int i;
-
-	if ((reg & RING_FORCE_TO_NONPRIV_ACCESS_MASK) ==
-	     RING_FORCE_TO_NONPRIV_ACCESS_WR)
-		return true;
-
-	for (i = 0; i < ARRAY_SIZE(wo_registers); i++) {
-		if (wo_registers[i].platform == platform &&
-		    wo_registers[i].reg == reg)
-			return true;
-	}
-
-	return false;
-}
-
-static bool timestamp(const struct intel_engine_cs *engine, u32 reg)
-{
-	reg = (reg - engine->mmio_base) & ~RING_FORCE_TO_NONPRIV_ACCESS_MASK;
-	switch (reg) {
+	switch (reg_offset(reg) - engine->mmio_base) {
 	case 0x358:
 	case 0x35c:
 	case 0x3a8:
@@ -449,30 +460,6 @@ static bool timestamp(const struct intel_engine_cs *engine, u32 reg)
 	default:
 		return false;
 	}
-}
-
-static bool ro_register(u32 reg)
-{
-	if ((reg & RING_FORCE_TO_NONPRIV_ACCESS_MASK) ==
-	     RING_FORCE_TO_NONPRIV_ACCESS_RD)
-		return true;
-
-	return false;
-}
-
-static int whitelist_writable_count(struct intel_engine_cs *engine)
-{
-	int count = engine->whitelist.count;
-	int i;
-
-	for (i = 0; i < engine->whitelist.count; i++) {
-		u32 reg = i915_mmio_reg_offset(engine->whitelist.list[i].reg);
-
-		if (ro_register(reg))
-			count--;
-	}
-
-	return count;
 }
 
 static int check_dirty_whitelist(struct intel_context *ce)
@@ -521,22 +508,17 @@ static int check_dirty_whitelist(struct intel_context *ce)
 	}
 
 	for (i = 0; i < engine->whitelist.count; i++) {
-		u32 reg = i915_mmio_reg_offset(engine->whitelist.list[i].reg);
+		bool ro_reg = (ro_register(engine->whitelist.list[i].reg) ||
+			       deny_register(engine->whitelist.list[i].reg));
+		bool varying_reg =
+			timestamp(engine, engine->whitelist.list[i].reg);
+		u32 reg = reg_offset(engine->whitelist.list[i].reg);
+		u64 addr = i915_vma_offset(scratch);
 		struct i915_gem_ww_ctx ww;
-		u64 addr = scratch->node.start;
 		struct i915_request *rq;
 		u32 srm, lrm, rsvd;
 		u32 expect;
 		int idx;
-		bool ro_reg;
-
-		if (wo_register(engine, reg))
-			continue;
-
-		if (timestamp(engine, reg))
-			continue; /* timestamps are expected to autoincrement */
-
-		ro_reg = ro_register(reg);
 
 		i915_gem_ww_ctx_init(&ww, false);
 retry:
@@ -561,16 +543,13 @@ retry:
 			goto out_unmap_batch;
 		}
 
-		/* Clear non priv flags */
-		reg &= RING_FORCE_TO_NONPRIV_ADDRESS_MASK;
-
 		srm = MI_STORE_REGISTER_MEM;
 		lrm = MI_LOAD_REGISTER_MEM;
 		if (GRAPHICS_VER(engine->i915) >= 8)
 			lrm++, srm++;
 
-		pr_debug("%s: Writing garbage to %x\n",
-			 engine->name, reg);
+		pr_debug("%s: Writing garbage to %x[%s\n",
+			 engine->name, reg, repr_access(engine->whitelist.list[i].reg));
 
 		/* SRM original */
 		*cs++ = srm;
@@ -646,7 +625,8 @@ retry:
 			goto err_request;
 
 		err = engine->emit_bb_start(rq,
-					    batch->node.start, PAGE_SIZE,
+					    i915_vma_offset(batch),
+					    PAGE_SIZE,
 					    0);
 		if (err)
 			goto err_request;
@@ -696,16 +676,15 @@ err_request:
 				err++;
 			idx++;
 		}
+		if (varying_reg)
+			err = 0;
 		if (err) {
-			pr_err("%s: %d mismatch between values written to whitelisted register [%x], and values read back!\n",
-			       engine->name, err, reg);
+			pr_err("%s: %d mismatch between values written to whitelisted register [%x:%s], and values read back!\n",
+			       engine->name, err,
+			       reg, repr_access(engine->whitelist.list[i].reg));
 
-			if (ro_reg)
-				pr_info("%s: Whitelisted read-only register: %x, original value %08x\n",
-					engine->name, reg, results[0]);
-			else
-				pr_info("%s: Whitelisted register: %x, original value %08x, rsvd %08x\n",
-					engine->name, reg, results[0], rsvd);
+			pr_info("%s: Whitelisted register: %x, original value %08x, rsvd %08x\n",
+				engine->name, reg, results[0], rsvd);
 
 			expect = results[0];
 			idx = 1;
@@ -878,14 +857,10 @@ static int read_whitelisted_registers(struct intel_context *ce,
 	}
 
 	for (i = 0; i < engine->whitelist.count; i++) {
-		u64 offset = results->node.start + sizeof(u32) * i;
-		u32 reg = i915_mmio_reg_offset(engine->whitelist.list[i].reg);
-
-		/* Clear non priv flags */
-		reg &= RING_FORCE_TO_NONPRIV_ADDRESS_MASK;
+		u64 offset = i915_vma_offset(results) + sizeof(u32) * i;
 
 		*cs++ = srm;
-		*cs++ = reg;
+		*cs++ = reg_offset(engine->whitelist.list[i].reg);
 		*cs++ = lower_32_bits(offset);
 		*cs++ = upper_32_bits(offset);
 	}
@@ -913,17 +888,9 @@ static int scrub_whitelisted_registers(struct intel_context *ce)
 		goto err_batch;
 	}
 
-	*cs++ = MI_LOAD_REGISTER_IMM(whitelist_writable_count(engine));
+	*cs++ = MI_LOAD_REGISTER_IMM(engine->whitelist.count);
 	for (i = 0; i < engine->whitelist.count; i++) {
-		u32 reg = i915_mmio_reg_offset(engine->whitelist.list[i].reg);
-
-		if (ro_register(reg))
-			continue;
-
-		/* Clear non priv flags */
-		reg &= RING_FORCE_TO_NONPRIV_ADDRESS_MASK;
-
-		*cs++ = reg;
+		*cs++ = reg_offset(engine->whitelist.list[i].reg);
 		*cs++ = 0xffffffff;
 	}
 	*cs++ = MI_BATCH_BUFFER_END;
@@ -952,7 +919,7 @@ static int scrub_whitelisted_registers(struct intel_context *ce)
 		goto err_request;
 
 	/* Perform the writes from an unprivileged "user" batch */
-	err = engine->emit_bb_start(rq, batch->node.start, 0, 0);
+	err = engine->emit_bb_start(rq, i915_vma_offset(batch), 0, 0);
 
 err_request:
 	err = request_add_sync(rq, err);
@@ -967,6 +934,7 @@ err_batch:
 struct regmask {
 	i915_reg_t reg;
 	u8 graphics_ver;
+	u32 platforms;
 };
 
 static bool find_reg(struct drm_i915_private *i915,
@@ -974,10 +942,12 @@ static bool find_reg(struct drm_i915_private *i915,
 		     const struct regmask *tbl,
 		     unsigned long count)
 {
+	enum intel_platform platform = BIT(INTEL_INFO(i915)->platform);
 	u32 offset = i915_mmio_reg_offset(reg);
 
 	while (count--) {
 		if (GRAPHICS_VER(i915) == tbl->graphics_ver &&
+		    (!tbl->platforms || tbl->platforms & platform) &&
 		    i915_mmio_reg_offset(tbl->reg) == offset)
 			return true;
 		tbl++;
@@ -1000,20 +970,30 @@ static bool pardon_reg(struct drm_i915_private *i915, i915_reg_t reg)
 static bool result_eq(struct intel_engine_cs *engine,
 		      u32 a, u32 b, i915_reg_t reg)
 {
-	if (a != b && !pardon_reg(engine->i915, reg)) {
-		pr_err("Whitelisted register 0x%4x not context saved: A=%08x, B=%08x\n",
-		       i915_mmio_reg_offset(reg), a, b);
+	if (wo_register(reg) || deny_register(reg)) /* read undefined */
+		return true;
+
+	if (ro_register(reg) || timestamp(engine, reg)) /* expect varying */
+		return true;
+
+	if (pardon_reg(engine->i915, reg)) /* mistakes were made */
+		return true;
+
+	if (a != b) {
+		pr_err("%s: Whitelisted register 0x%4x[%s] not context saved: A=%08x, B=%08x\n",
+		       engine->name, reg_offset(reg), repr_access(reg), a, b);
 		return false;
 	}
 
 	return true;
 }
 
-static bool writeonly_reg(struct drm_i915_private *i915, i915_reg_t reg)
+static bool ignore_reg(struct drm_i915_private *i915, i915_reg_t reg)
 {
 	/* Some registers do not seem to behave and our writes unreadable */
 	static const struct regmask wo[] = {
 		{ GEN9_SLICE_COMMON_ECO_CHICKEN1, 9 },
+		{ _MMIO(0x731c), .platforms = BIT(INTEL_GEMINILAKE) },
 	};
 
 	return find_reg(i915, reg, wo, ARRAY_SIZE(wo));
@@ -1022,9 +1002,18 @@ static bool writeonly_reg(struct drm_i915_private *i915, i915_reg_t reg)
 static bool result_neq(struct intel_engine_cs *engine,
 		       u32 a, u32 b, i915_reg_t reg)
 {
-	if (a == b && !writeonly_reg(engine->i915, reg)) {
-		pr_err("Whitelist register 0x%4x:%08x was unwritable\n",
-		       i915_mmio_reg_offset(reg), a);
+	if (wo_register(reg) || deny_register(reg)) /* read undefined */
+		return true;
+
+	if (ro_register(reg) || timestamp(engine, reg)) /* expect varying */
+		return true;
+
+	if (ignore_reg(engine->i915, reg)) /* fail for unknown reasons */
+		return true;
+
+	if (a == b) {
+		pr_err("%s: Whitelist register 0x%4x[%s]:%08x was unwritable!\n",
+		       engine->name, reg_offset(reg), repr_access(reg), a);
 		return false;
 	}
 
@@ -1055,10 +1044,6 @@ check_whitelisted_registers(struct intel_engine_cs *engine,
 	err = 0;
 	for (i = 0; i < engine->whitelist.count; i++) {
 		const struct i915_wa *wa = &engine->whitelist.list[i];
-
-		if (i915_mmio_reg_offset(wa->reg) &
-		    RING_FORCE_TO_NONPRIV_ACCESS_RD)
-			continue;
 
 		if (!fn(engine, a[i], b[i], wa->reg))
 			err = -EINVAL;
@@ -1108,10 +1093,10 @@ static int live_isolated_whitelist(void *arg)
 	for_each_engine(engine, gt, id) {
 		struct intel_context *ce[2];
 
-		if (!engine->kernel_context->vm)
+		if (!engine->whitelist.count)
 			continue;
 
-		if (!whitelist_writable_count(engine))
+		if (!engine->kernel_context->vm)
 			continue;
 
 		ce[0] = intel_context_create(engine);
@@ -1178,15 +1163,20 @@ err:
 	return err;
 }
 
-static bool
+static void set_error_once(int *err, int result)
+{
+	cmpxchg(err, 0, result);
+}
+
+static int
 verify_wa_lists(struct intel_gt *gt, struct wa_lists *lists,
 		const char *str)
 {
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
-	bool ok = true;
+	int err = 0;
 
-	ok &= wa_list_verify(gt, &lists->gt_wa_list, str);
+	set_error_once(&err, wa_list_verify(gt, &lists->gt_wa_list, wa_verify, (void *)str));
 
 	for_each_engine(engine, gt, id) {
 		struct intel_context *ce;
@@ -1195,18 +1185,22 @@ verify_wa_lists(struct intel_gt *gt, struct wa_lists *lists,
 		if (IS_ERR(ce))
 			return false;
 
-		ok &= engine_wa_list_verify(ce,
-					    &lists->engine[id].wa_list,
-					    str) == 0;
+		set_error_once(&err,
+			       engine_wa_list_verify(ce,
+						     &lists->engine[id].wa_list,
+						     wa_verify,
+						     (void *)str));
 
-		ok &= engine_wa_list_verify(ce,
-					    &lists->engine[id].ctx_wa_list,
-					    str) == 0;
+		set_error_once(&err,
+			       engine_wa_list_verify(ce,
+						     &lists->engine[id].ctx_wa_list,
+						     wa_verify,
+						     (void *)str));
 
 		intel_context_put(ce);
 	}
 
-	return ok;
+	return err;
 }
 
 static int
@@ -1215,7 +1209,7 @@ live_gpu_reset_workarounds(void *arg)
 	struct intel_gt *gt = arg;
 	intel_wakeref_t wakeref;
 	struct wa_lists *lists;
-	bool ok;
+	int err;
 
 	if (!intel_has_gpu_reset(gt))
 		return 0;
@@ -1231,13 +1225,13 @@ live_gpu_reset_workarounds(void *arg)
 
 	reference_lists_init(gt, lists);
 
-	ok = verify_wa_lists(gt, lists, "before reset");
-	if (!ok)
+	err = verify_wa_lists(gt, lists, "before reset");
+	if (err)
 		goto out;
 
 	intel_gt_reset(gt, ALL_ENGINES, "live_workarounds");
 
-	ok = verify_wa_lists(gt, lists, "after reset");
+	err = verify_wa_lists(gt, lists, "after reset");
 
 out:
 	reference_lists_fini(gt, lists);
@@ -1245,7 +1239,7 @@ out:
 	igt_global_reset_unlock(gt);
 	kfree(lists);
 
-	return ok ? 0 : -ESRCH;
+	return err;
 }
 
 static int
@@ -1276,7 +1270,6 @@ live_engine_reset_workarounds(void *arg)
 	for_each_engine(engine, gt, id) {
 		struct intel_selftest_saved_policy saved;
 		bool using_guc = intel_engine_uses_guc(engine);
-		bool ok;
 		int ret2;
 
 		pr_info("Verifying after %s reset...\n", engine->name);
@@ -1292,11 +1285,9 @@ live_engine_reset_workarounds(void *arg)
 		}
 
 		if (!using_guc) {
-			ok = verify_wa_lists(gt, lists, "before reset");
-			if (!ok) {
-				ret = -ESRCH;
+			ret = verify_wa_lists(gt, lists, "before reset");
+			if (ret)
 				goto err;
-			}
 
 			ret = intel_engine_reset(engine, "live_workarounds:idle");
 			if (ret) {
@@ -1304,11 +1295,9 @@ live_engine_reset_workarounds(void *arg)
 				goto err;
 			}
 
-			ok = verify_wa_lists(gt, lists, "after idle reset");
-			if (!ok) {
-				ret = -ESRCH;
+			ret = verify_wa_lists(gt, lists, "after idle reset");
+			if (ret)
 				goto err;
-			}
 		}
 
 		ret = igt_spinner_init(&spin, engine->gt);
@@ -1353,9 +1342,8 @@ skip:
 		igt_spinner_end(&spin);
 		igt_spinner_fini(&spin);
 
-		ok = verify_wa_lists(gt, lists, "after busy reset");
-		if (!ok)
-			ret = -ESRCH;
+		if (ret == 0)
+			ret = verify_wa_lists(gt, lists, "after busy reset");
 
 err:
 		intel_context_put(ce);
@@ -1387,9 +1375,18 @@ int intel_workarounds_live_selftests(struct drm_i915_private *i915)
 		SUBTEST(live_gpu_reset_workarounds),
 		SUBTEST(live_engine_reset_workarounds),
 	};
+	struct intel_gt *gt;
+	unsigned int i;
+	int ret = 0;
 
-	if (intel_gt_is_wedged(to_gt(i915)))
-		return 0;
+	for_each_gt(gt, i915, i) {
+		if (intel_gt_is_wedged(gt))
+			continue;
 
-	return intel_gt_live_subtests(tests, to_gt(i915));
+		ret = intel_gt_live_subtests(tests, gt);
+		if (ret)
+			break;
+	}
+
+	return ret;
 }

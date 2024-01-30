@@ -86,6 +86,54 @@ static inline bool __must_check __must_check_overflow(bool overflow)
 	__builtin_mul_overflow(__a, __b, __d);	\
 }))
 
+/**
+ * check_roundup_overflow() - Round up to the next specified multiple.
+ * @a: Value to round up
+ * @b: Multiple to round up to
+ * @d: Pointer to where to store the result
+ *
+ * Rounds @a up to next multiple of @b and stores result in *@d,
+ * but result is not considered "safe for use" if true is returned.
+ *
+ * If @b will always be a power of 2, consider using the faster
+ * check_round_up_overflow().
+ *
+ * Return: true if *@d cannot hold the result.
+ */
+#define check_roundup_overflow(a, b, d) __must_check_overflow(({	\
+	typeof(a) __a = (a);						\
+	typeof(b) __b = (b);						\
+	typeof(d) __d = (d);						\
+	(void) (&__a == &__b);						\
+	(void) (&__a == __d);						\
+	__builtin_sub_overflow(__b, 1, __d) ||				\
+	__builtin_add_overflow(__a, *__d, __d) ||			\
+	__builtin_mul_overflow(*__d / __b, __b, __d);			\
+}))
+
+/**
+ * check_round_up_overflow() - Round up to the next specified power of 2.
+ * @a: Value to round up
+ * @b: Multiple to round up to (must be a power of 2)
+ * @d: Pointer to where to store the result
+ *
+ * Rounds @a up to next multiple of @b (which must be a power of 2) and
+ * stores result in *@d, but result is not considered "safe for use" if
+ * true is returned.
+ *
+ * To perform arbitrary rounding up, use check_roundup_overflow().
+ *
+ * Return: true if *@d cannot hold the result.
+ */
+#define check_round_up_overflow(a, b, d) __must_check_overflow(({		\
+	typeof(a) __a = (a);							\
+	typeof(b) __b = (b);							\
+	typeof(d) __d = (d);							\
+	(void) (&__a == &__b);							\
+	(void) (&__a == __d);							\
+	(*__d = __a) && __builtin_add_overflow((__a - 1) | (__b - 1), 1, __d);	\
+}))
+
 /** check_shl_overflow() - Calculate a left-shifted value and check overflow
  *
  * @a: Value to be shifted

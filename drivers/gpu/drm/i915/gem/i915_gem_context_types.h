@@ -101,6 +101,8 @@ struct i915_gem_context {
 	 * CONTEXT_USER_ENGINES flag is set).
 	 */
 	struct i915_gem_engines __rcu *engines;
+	/* Track the condensed set of physical engines enabled for this user */
+	intel_engine_mask_t engine_mask;
 
 	/** @engines_mutex: guards writes to engines */
 	struct mutex engines_mutex;
@@ -130,18 +132,14 @@ struct i915_gem_context {
 	 */
 	struct i915_address_space __rcu *vm;
 
-	/**
-	 * @pid: process id of creator
-	 *
-	 * Note that who created the context may not be the principle user,
-	 * as the context may be shared across a local socket. However,
-	 * that should only affect the default context, all contexts created
-	 * explicitly by the client are expected to be isolated.
-	 */
-	struct pid *pid;
-
 	/** @link: place with &drm_i915_private.context_list */
 	struct list_head link;
+
+	/** client: struct i915_drm_client */
+	struct i915_drm_client *client;
+
+	/** link: &drm_client.context_list */
+	struct list_head client_link;
 
 	/**
 	 * @ref: reference count
@@ -167,6 +165,10 @@ struct i915_gem_context {
 #define UCONTEXT_BANNABLE		2
 #define UCONTEXT_RECOVERABLE		3
 #define UCONTEXT_PERSISTENCE		4
+#define UCONTEXT_SIP			5
+#define UCONTEXT_LR			6
+#define UCONTEXT_RUNALONE		7
+#define UCONTEXT_SVM_ENABLED		8
 
 	/**
 	 * @flags: small set of booleans
@@ -174,12 +176,37 @@ struct i915_gem_context {
 	unsigned long flags;
 #define CONTEXT_CLOSED			0
 #define CONTEXT_USER_ENGINES		1
+#define CONTEXT_BAN			2
+
+	/**
+	 * @uses_protected_content: context uses PXP-encrypted objects.
+	 *
+	 * This flag can only be set at ctx creation time and it's immutable for
+	 * the lifetime of the context. See I915_CONTEXT_PARAM_PROTECTED_CONTENT
+	 * in uapi/drm/i915_drm.h for more info on setting restrictions and
+	 * expected behaviour of marked contexts.
+	 */
+	bool uses_protected_content;
+
+	/**
+	 * @pxp_wakeref: wakeref to keep the device awake when PXP is in use
+	 *
+	 * PXP sessions are invalidated when the device is suspended, which in
+	 * turns invalidates all contexts and objects using it. To keep the
+	 * flow simple, we keep the device awake when contexts using PXP objects
+	 * are in use. It is expected that the userspace application only uses
+	 * PXP when the display is on, so taking a wakeref here shouldn't worsen
+	 * our power metrics.
+	 */
+	intel_wakeref_t pxp_wakeref;
 
 	/** @mutex: guards everything that isn't engines or handles_vma */
 	struct mutex mutex;
 
 	/** @sched: scheduler parameters */
 	struct i915_sched_attr sched;
+
+	u32 semaphore_token;
 
 	/** @guilty_count: How many times this context has caused a GPU hang. */
 	atomic_t guilty_count;
@@ -217,6 +244,10 @@ struct i915_gem_context {
 	 */
 	char name[TASK_COMM_LEN + 8];
 
+	u8 acc_granularity;
+	u16 acc_trigger;
+	u16 acc_notify;
+
 	/** @stale: tracks stale engines to be destroyed */
 	struct {
 		/** @lock: guards engines */
@@ -224,6 +255,11 @@ struct i915_gem_context {
 		/** @engines: list of stale engines */
 		struct list_head engines;
 	} stale;
+
+	struct wait_queue_head user_fence_wq;
+
+	/* WA for VLK-20104 */
+	bool  bcs0_pm_disabled;
 };
 
 #endif /* __I915_GEM_CONTEXT_TYPES_H__ */

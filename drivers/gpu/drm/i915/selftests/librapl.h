@@ -10,8 +10,11 @@
 
 struct drm_i915_private;
 
-bool librapl_supported(const struct drm_i915_private *i915);
+u64 librapl_energy_uJ(struct drm_i915_private *i915);
 
-u64 librapl_energy_uJ(void);
+static inline bool librapl_supported(struct drm_i915_private *i915)
+{
+	return librapl_energy_uJ(i915);
+}
 
 #endif /* SELFTEST_LIBRAPL_H */

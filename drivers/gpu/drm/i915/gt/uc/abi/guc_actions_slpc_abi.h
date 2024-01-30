@@ -123,6 +123,12 @@ enum slpc_param_id {
 	SLPC_MAX_PARAM = 32,
 };
 
+enum slpc_media_ratio_mode {
+	SLPC_MEDIA_RATIO_MODE_DYNAMIC_CONTROL = 0,
+	SLPC_MEDIA_RATIO_MODE_FIXED_ONE_TO_ONE = 1,
+	SLPC_MEDIA_RATIO_MODE_FIXED_ONE_TO_TWO = 2,
+};
+
 enum slpc_gucrc_mode {
 	SLPC_GUCRC_MODE_HW = 0,
 	SLPC_GUCRC_MODE_GUCRC_NO_RC6 = 1,

@@ -1,0 +1,94 @@
+config DRM_I915_CHICKEN_ASYNC_GET_PAGES
+	bool "Asynchronous backing store fetch (get_pages)"
+	default y
+	help
+	  Acquire and clear the backing store (chunks of local memory or pages
+	  of system memory) in a background thread, returning to userspace
+	  without blocking. Access or execution of the object is deferred
+	  instead.
+
+config DRM_I915_CHICKEN_PARALLEL_USERPTR
+       bool "Parallelised backing store fetch of get_user_pages"
+       default y
+       help
+         Allow the userptr backing store acquire to parallelise its work over
+	 multiple threads.
+
+config DRM_I915_CHICKEN_PARALLEL_SHMEMFS
+	bool "Parallelised backing store fetch of shmemfs (swapin)"
+	default y
+	help
+	  Allow system memory backing store acquire parallelise its work over
+	  multiple threads.
+
+config DRM_I915_CHICKEN_NUMA_ALLOC
+	bool "Allocate system memory on the nearest numa node"
+	default y
+	help
+	  Select the numa node nearest to the device for system memory
+	  allocations.
+
+config DRM_I915_CHICKEN_CLEAR_ON_CREATE
+	bool "Clear backing store immediately upon create"
+	default n
+	help
+	  Queue the clear of all objects at the point of creation (GEM_CREATE
+	  ioctl), ahead of first use.
+
+config DRM_I915_CHICKEN_CLEAR_ON_FREE
+	bool "Clear backing store on release"
+	default y
+	help
+	  Clear pages on release, ahead of reuse. Only applies to local memory.
+
+config DRM_I915_CHICKEN_CLEAR_ON_IDLE
+	bool "Clear backing store on idle (boot)"
+	default y
+	help
+	  Clear local memory on idling, and upon boot.
+
+config DRM_I915_CHICKEN_MMAP_SWAP
+	bool "Allow mmap to directly use a swapped out (local memory) object"
+	default y
+	help
+	  Allow userspace to mmap a swapped out object's backing store directly,
+	  rather than swapping that object back into local memory.
+
+config DRM_I915_CHICKEN_MMAP_SWAP_CREATE
+	bool "Allow mmap to create a swapped out (local memory) object"
+	depends on DRM_I915_CHICKEN_MMAP_SWAP
+	default y
+	help
+	  Allow userspace to create a swapped out object.
+
+config DRM_I915_CHICKEN_ULL_DMA_BOOST
+	bool "Disable processor C-states to minimise DMA latency"
+	default y
+	help
+	  Set the CPU-DMA latency requirement to 0 to disable processor C-states
+	  as we wait for an interrupt on user-fences for ULL compute contexts.
+
+config DRM_I915_CHICKEN_SOFT_PG
+	bool "Manually disable/enable powergating around execution"
+	default y
+	help
+	  Powergating is used to put the GT completely asleep by turning the
+	  clocks off when idle. This is normally driven by a HW hysteresis
+	  monitoring when all engines are idle. However, this can incur a large
+	  exit latency delaying the start of subsequeny execution, and in any
+	  sitations the client will remain active for the entire duration that
+	  the GT is awake, and so we can effectively disable powergating upon
+	  wakeup, restoring the power saving when we know all clients are idle.
+
+config DRM_I915_CHICKEN_ASYNC_PAGEFAULTS
+	bool "Asynchronous GPU pagefaults"
+	default y
+	help
+	  Process all the background work, such as migration between backing
+	  store, waiting for debugger acks and installing the PTE, for a
+	  pagefault asynchronously
+
+	  When false, each pagefault will be processed in turn, drip feeding
+	  the responses back to the GUC. When true, the pagefault responses
+	  (possibly in the 100s) will be sent as soon as they are ready,
+	  often faster than the guc is able to process each individual response.

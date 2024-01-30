@@ -816,6 +816,7 @@ static int igt_vma_partial(void *arg)
 			for_each_prime_number_from(offset, 0, npages - sz) {
 				struct i915_ggtt_view view;
 
+				memset(&view, 0, sizeof(view));
 				view.type = I915_GGTT_VIEW_PARTIAL;
 				view.partial.offset = offset;
 				view.partial.size = sz;
@@ -908,29 +909,16 @@ int i915_vma_mock_selftests(void)
 		SUBTEST(igt_vma_partial),
 	};
 	struct drm_i915_private *i915;
-	struct intel_gt *gt;
 	int err;
 
 	i915 = mock_gem_device();
 	if (!i915)
 		return -ENOMEM;
 
-	/* allocate the ggtt */
-	err = intel_gt_assign_ggtt(to_gt(i915));
-	if (err)
-		goto out_put;
-
-	gt = to_gt(i915);
-
-	mock_init_ggtt(gt);
-
-	err = i915_subtests(tests, gt->ggtt);
+	err = i915_subtests(tests, to_gt(i915)->ggtt);
 
 	mock_device_flush(i915);
 	i915_gem_drain_freed_objects(i915);
-	mock_fini_ggtt(gt->ggtt);
-
-out_put:
 	mock_destroy_device(i915);
 	return err;
 }
@@ -967,10 +955,11 @@ static int igt_vma_remapped_gtt(void *arg)
 		0,
 	}, *t;
 	struct drm_i915_gem_object *obj;
+	struct i915_ggtt *ggtt = to_gt(i915)->ggtt;
 	intel_wakeref_t wakeref;
 	int err = 0;
 
-	if (!i915_ggtt_has_aperture(to_gt(i915)->ggtt))
+	if (!i915_ggtt_has_aperture(ggtt))
 		return 0;
 
 	obj = i915_gem_object_create_internal(i915, 10 * 10 * PAGE_SIZE);
@@ -1000,7 +989,8 @@ static int igt_vma_remapped_gtt(void *arg)
 				plane_info[0].dst_stride = *t == I915_GGTT_VIEW_ROTATED ?
 								 p->height : p->width;
 
-			vma = i915_gem_object_ggtt_pin(obj, &view, 0, 0, PIN_MAPPABLE);
+			vma = i915_gem_object_ggtt_pin(obj, ggtt, &view,
+						       0, 0, PIN_MAPPABLE);
 			if (IS_ERR(vma)) {
 				err = PTR_ERR(vma);
 				goto out;
@@ -1031,7 +1021,8 @@ static int igt_vma_remapped_gtt(void *arg)
 
 			i915_vma_unpin_iomap(vma);
 
-			vma = i915_gem_object_ggtt_pin(obj, NULL, 0, 0, PIN_MAPPABLE);
+			vma = i915_gem_object_ggtt_pin(obj, ggtt, NULL,
+						       0, 0, PIN_MAPPABLE);
 			if (IS_ERR(vma)) {
 				err = PTR_ERR(vma);
 				goto out;
@@ -1088,5 +1079,5 @@ int i915_vma_live_selftests(struct drm_i915_private *i915)
 		SUBTEST(igt_vma_remapped_gtt),
 	};
 
-	return i915_subtests(tests, i915);
+	return i915_live_subtests(tests, i915);
 }

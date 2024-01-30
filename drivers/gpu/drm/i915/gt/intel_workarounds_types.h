@@ -10,6 +10,11 @@
 
 #include "i915_reg_defs.h"
 
+struct i915_whitelist_reg {
+	i915_reg_t reg;
+	u32 flags;
+};
+
 struct i915_wa {
 	union {
 		i915_reg_t	reg;
@@ -28,7 +33,6 @@ struct i915_wa_list {
 	const char	*engine_name;
 	struct i915_wa	*list;
 	unsigned int	count;
-	unsigned int	wa_count;
 };
 
 #endif /* __INTEL_WORKAROUNDS_TYPES_H__ */

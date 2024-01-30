@@ -125,10 +125,11 @@ static inline void debug_fence_assert(struct i915_sw_fence *fence)
 
 #endif
 
-static int __i915_sw_fence_notify(struct i915_sw_fence *fence,
+static int __i915_sw_fence_notify(i915_sw_fence_notify_t fn,
+				  struct i915_sw_fence *fence,
 				  enum i915_sw_fence_notify state)
 {
-	return fence->fn(fence, state);
+	return fn ? fn(fence, state) : NOTIFY_DONE;
 }
 
 #ifdef CONFIG_DRM_I915_SW_FENCE_DEBUG_OBJECTS
@@ -146,7 +147,6 @@ static void __i915_sw_fence_wake_up_all(struct i915_sw_fence *fence,
 	unsigned long flags;
 
 	debug_fence_deactivate(fence);
-	atomic_set_release(&fence->pending, -1); /* 0 -> -1 [done] */
 
 	/*
 	 * To prevent unbounded recursion as we traverse the graph of
@@ -156,6 +156,8 @@ static void __i915_sw_fence_wake_up_all(struct i915_sw_fence *fence,
 	 */
 
 	spin_lock_irqsave_nested(&x->lock, flags, 1 + !!continuation);
+	atomic_set_release(&fence->pending, -1); /* 0 -> -1 [done] */
+
 	if (continuation) {
 		list_for_each_entry_safe(pos, next, &x->head, entry) {
 			if (pos->flags & I915_SW_FENCE_FLAG_FENCE)
@@ -183,14 +185,16 @@ static void __i915_sw_fence_wake_up_all(struct i915_sw_fence *fence,
 			list_splice_tail_init(&extra, &x->head);
 		} while (1);
 	}
-	spin_unlock_irqrestore(&x->lock, flags);
 
-	debug_fence_assert(fence);
+	debug_fence_destroy(fence);
+	spin_unlock_irqrestore(&x->lock, flags);
 }
 
 static void __i915_sw_fence_complete(struct i915_sw_fence *fence,
 				     struct list_head *continuation)
 {
+	i915_sw_fence_notify_t fn = fence->fn;
+
 	debug_fence_assert(fence);
 
 	if (!atomic_dec_and_test(&fence->pending))
@@ -198,15 +202,14 @@ static void __i915_sw_fence_complete(struct i915_sw_fence *fence,
 
 	debug_fence_set_state(fence, DEBUG_FENCE_IDLE, DEBUG_FENCE_NOTIFY);
 
-	if (__i915_sw_fence_notify(fence, FENCE_COMPLETE) != NOTIFY_DONE)
+	if (__i915_sw_fence_notify(fn, fence, FENCE_COMPLETE) != NOTIFY_DONE)
 		return;
 
 	debug_fence_set_state(fence, DEBUG_FENCE_NOTIFY, DEBUG_FENCE_IDLE);
 
 	__i915_sw_fence_wake_up_all(fence, continuation);
 
-	debug_fence_destroy(fence);
-	__i915_sw_fence_notify(fence, FENCE_FREE);
+	__i915_sw_fence_notify(fn, fence, FENCE_FREE);
 }
 
 void i915_sw_fence_complete(struct i915_sw_fence *fence)
@@ -217,6 +220,14 @@ void i915_sw_fence_complete(struct i915_sw_fence *fence)
 		return;
 
 	__i915_sw_fence_complete(fence, NULL);
+}
+
+void i915_sw_fence_unlock_wait(struct i915_sw_fence *fence)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&fence->wait.lock, flags);
+	spin_unlock_irqrestore(&fence->wait.lock, flags);
 }
 
 bool i915_sw_fence_await(struct i915_sw_fence *fence)
@@ -260,6 +271,21 @@ void i915_sw_fence_reinit(struct i915_sw_fence *fence)
 	fence->error = 0;
 
 	I915_SW_FENCE_BUG_ON(!list_empty(&fence->wait.head));
+}
+
+void __i915_sw_fence_init_onstack(struct i915_sw_fence *fence,
+				  const char *name,
+				  struct lock_class_key *key)
+{
+	debug_fence_init_onstack(fence);
+
+	__init_waitqueue_head(&fence->wait, name, key);
+	fence->fn = NULL;
+#ifdef CONFIG_DRM_I915_SW_FENCE_CHECK_DAG
+	fence->flags = 0;
+#endif
+	atomic_set(&fence->pending, 1);
+	fence->error = 0;
 }
 
 void i915_sw_fence_commit(struct i915_sw_fence *fence)
@@ -436,11 +462,13 @@ static void timer_i915_sw_fence_wake(struct timer_list *t)
 	if (!fence)
 		return;
 
+	rcu_read_lock();
 	pr_notice("Asynchronous wait on fence %s:%s:%llx timed out (hint:%ps)\n",
 		  cb->dma->ops->get_driver_name(cb->dma),
 		  cb->dma->ops->get_timeline_name(cb->dma),
 		  cb->dma->seqno,
 		  i915_sw_fence_debug_hint(fence));
+	rcu_read_unlock();
 
 	i915_sw_fence_set_error_once(fence, -ETIMEDOUT);
 	i915_sw_fence_complete(fence);

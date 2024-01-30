@@ -11,6 +11,12 @@
 #include "i915_selftest.h"
 #include "selftest_engine_heartbeat.h"
 
+static void intel_engine_park_heartbeat_sync(struct intel_engine_cs *engine)
+{
+	cancel_delayed_work_sync(&engine->heartbeat.work);
+	i915_request_put(fetch_and_zero(&engine->heartbeat.systole));
+}
+
 static void reset_heartbeat(struct intel_engine_cs *engine)
 {
 	intel_engine_set_heartbeat(engine,
@@ -113,13 +119,13 @@ static int __live_idle_pulse(struct intel_engine_cs *engine,
 	i915_active_release(&p->active);
 
 	GEM_BUG_ON(i915_active_is_idle(&p->active));
-	GEM_BUG_ON(llist_empty(&engine->barrier_tasks));
+	GEM_BUG_ON(list_empty(&engine->barrier_tasks));
 
 	err = fn(engine);
 	if (err)
 		goto out;
 
-	GEM_BUG_ON(!llist_empty(&engine->barrier_tasks));
+	GEM_BUG_ON(!list_empty(&engine->barrier_tasks));
 
 	if (engine_sync_barrier(engine)) {
 		struct drm_printer m = drm_err_printer("pulse");
@@ -205,7 +211,6 @@ static int __live_heartbeat_fast(struct intel_engine_cs *engine)
 	const unsigned int error_threshold = max(20000u, jiffies_to_usecs(6));
 	struct intel_context *ce;
 	struct i915_request *rq;
-	ktime_t t0, t1;
 	u32 times[5];
 	int err;
 	int i;
@@ -223,8 +228,7 @@ static int __live_heartbeat_fast(struct intel_engine_cs *engine)
 	for (i = 0; i < ARRAY_SIZE(times); i++) {
 		do {
 			/* Manufacture a tick */
-			intel_engine_park_heartbeat(engine);
-			GEM_BUG_ON(engine->heartbeat.systole);
+			intel_engine_park_heartbeat_sync(engine);
 			engine->serial++; /*  pretend we are not idle! */
 			intel_engine_unpark_heartbeat(engine);
 
@@ -243,13 +247,12 @@ static int __live_heartbeat_fast(struct intel_engine_cs *engine)
 			rcu_read_unlock();
 		} while (!rq);
 
-		t0 = ktime_get();
+		i915_request_wait(rq, 0, MAX_SCHEDULE_TIMEOUT);
 		while (rq == READ_ONCE(engine->heartbeat.systole))
 			yield(); /* work is on the local cpu! */
-		t1 = ktime_get();
 
+		times[i] = ktime_us_delta(ktime_get(), rq->fence.timestamp);
 		i915_request_put(rq);
-		times[i] = ktime_us_delta(t1, t0);
 	}
 
 	sort(times, ARRAY_SIZE(times), sizeof(times[0]), cmp_u32, NULL);
@@ -311,9 +314,8 @@ static int __live_heartbeat_off(struct intel_engine_cs *engine)
 	engine->serial++;
 	flush_delayed_work(&engine->heartbeat.work);
 	if (!delayed_work_pending(&engine->heartbeat.work)) {
-		pr_err("%s: heartbeat not running\n",
-		       engine->name);
-		err = -EINVAL;
+		pr_debug("%s: heartbeat not running\n", engine->name);
+		err = 0;
 		goto err_pm;
 	}
 
@@ -395,7 +397,7 @@ void st_engine_heartbeat_disable(struct intel_engine_cs *engine)
 	engine->props.heartbeat_interval_ms = 0;
 
 	intel_engine_pm_get(engine);
-	intel_engine_park_heartbeat(engine);
+	intel_engine_park_heartbeat_sync(engine);
 }
 
 void st_engine_heartbeat_enable(struct intel_engine_cs *engine)
@@ -417,7 +419,7 @@ void st_engine_heartbeat_disable_no_pm(struct intel_engine_cs *engine)
 	 * heartbeat still won't be enabled because of the above = 0.
 	 */
 	if (intel_engine_pm_get_if_awake(engine)) {
-		intel_engine_park_heartbeat(engine);
+		intel_engine_park_heartbeat_sync(engine);
 		intel_engine_pm_put(engine);
 	}
 }

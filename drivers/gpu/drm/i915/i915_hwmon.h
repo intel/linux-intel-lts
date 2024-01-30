@@ -23,5 +23,6 @@ static inline void i915_hwmon_unregister(struct drm_i915_private *i915) { };
 static inline void i915_hwmon_power_max_disable(struct drm_i915_private *i915, bool *old) { };
 static inline void i915_hwmon_power_max_restore(struct drm_i915_private *i915, bool old) { };
 #endif
+int i915_hwmon_energy_status_get(struct drm_i915_private *i915, long *energy);
 
 #endif /* __I915_HWMON_H__ */

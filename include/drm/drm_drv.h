@@ -498,12 +498,13 @@ struct drm_driver {
 	 */
 	const struct file_operations *fops;
 
+	void (*preclose) (struct drm_device *, struct drm_file *file_priv);
+
 #ifdef CONFIG_DRM_LEGACY
 	/* Everything below here is for legacy driver, never use! */
 	/* private: */
 
 	int (*firstopen) (struct drm_device *);
-	void (*preclose) (struct drm_device *, struct drm_file *file_priv);
 	int (*dma_ioctl) (struct drm_device *dev, void *data, struct drm_file *file_priv);
 	int (*dma_quiescent) (struct drm_device *);
 	int (*context_dtor) (struct drm_device *dev, int context);
@@ -514,6 +515,7 @@ struct drm_driver {
 #endif
 };
 
+void __devm_drm_dev_release_action(struct drm_device *dev);
 void *__devm_drm_dev_alloc(struct device *parent,
 			   const struct drm_driver *driver,
 			   size_t size, size_t offset);
@@ -547,6 +549,9 @@ void *__devm_drm_dev_alloc(struct device *parent,
 #define devm_drm_dev_alloc(parent, driver, type, member) \
 	((type *) __devm_drm_dev_alloc(parent, driver, sizeof(type), \
 				       offsetof(type, member)))
+
+#define devm_drm_release_action(drm_dev) \
+	__devm_drm_dev_release_action(drm_dev)
 
 struct drm_device *drm_dev_alloc(const struct drm_driver *driver,
 				 struct device *parent);

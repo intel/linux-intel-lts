@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config DRM_I915_INTEL_FABRIC
+	tristate "Intel Fabric Connectivity driver support"
+	depends on 64BIT
+	depends on NET
+	select LIBCRC32C
+	default m
+	help
+	  This kernel driver provides support for the Intel glueless
+	  fabric adapter. The Intel fabric adapter allows GPUs to share
+	  device memory space in a device specific address space.
+
+config IAF_DEBUG_ENABLE
+	bool "Enable Intel Accelerator Fabric debug configurations"
+	depends on DRM_I915_INTEL_FABRIC
+	default n
+	help
+	  Support Intel Accelerator Fabric debug Kconfig options
+
+config IAF_DEBUG_ALTERNATE_FW_LOAD
+	bool "Enable Intel Accelerator Fabric load of alternative FW images"
+	depends on IAF_DEBUG_ENABLE
+	default y
+	help
+	  Allow fw_image to specify alternate firmware and psc_file_override
+	  to load PSC binaries using the FW API instead of SPI flash
+
+config IAF_DEBUG_SELFTESTS
+	bool "Enable Intel Accelerator Fabric tests"
+	depends on IAF_DEBUG_ENABLE
+	default n
+	help
+	  Enable Intel Accelerator Fabric driver self-tests to be triggered
+	  by the 'selftests' module parameter
+
+config IAF_DEBUG_MBOX_ACCESS
+	bool "Enable Intel Accelerator Fabric mbox access interface"
+	depends on IAF_DEBUG_ENABLE
+	default y
+	help
+	  The mbox interface is an external debug mechanism
+	  for supporting debugging of the fabric device firmware
+
+config IAF_DEBUG_STARTUP
+	bool "Enable Intel Accelerator Fabric debug startup mode"
+	depends on IAF_DEBUG_ENABLE
+	default y
+	help
+	  Allow startup_mode parameter to boot devices into debug modes
+

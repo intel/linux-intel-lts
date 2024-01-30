@@ -30,121 +30,62 @@
 #include <linux/stat.h>
 #include <linux/sysfs.h>
 
+#include "gem/i915_gem_mman.h"
+#include "gt/intel_gt.h"
+#include "gt/intel_gt_pm.h"
 #include "gt/intel_gt_regs.h"
+#include "gt/intel_gt_requests.h"
 #include "gt/intel_rc6.h"
 #include "gt/intel_rps.h"
+#include "gt/intel_gt_sysfs.h"
 #include "gt/sysfs_engines.h"
 
 #include "i915_drv.h"
+#include "i915_sriov_sysfs.h"
 #include "i915_sysfs.h"
+#include "intel_pcode.h"
 #include "intel_pm.h"
+#include "intel_sysfs_mem_health.h"
+#include "i915_debugger.h"
+#include "i915_addr_trans_svc.h"
 
-static inline struct drm_i915_private *kdev_minor_to_i915(struct device *kdev)
+static ssize_t
+i915_sysfs_show(struct device *dev, struct device_attribute *attr, char *buf);
+
+static ssize_t
+i915_sysfs_store(struct device *dev, struct device_attribute *attr, const char
+		 *buf, size_t count);
+
+typedef ssize_t (*show)(struct device *dev, struct device_attribute *attr, char
+			*buf);
+typedef ssize_t (*store)(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count);
+
+struct ext_attr {
+	struct device_attribute attr;
+	unsigned long id;
+	show i915_show;
+};
+
+struct i915_ext_attr {
+	struct device_attribute attr;
+	show i915_show;
+	store i915_store;
+};
+
+struct sysfs_bin_ext_attr {
+	struct bin_attribute attr;
+	ssize_t (*i915_read)(struct file *, struct kobject *, struct
+			     bin_attribute *, char *, loff_t, size_t);
+	ssize_t (*i915_write)(struct file *, struct kobject *, struct
+			      bin_attribute *, char *, loff_t, size_t);
+};
+
+struct drm_i915_private *kdev_minor_to_i915(struct device *kdev)
 {
 	struct drm_minor *minor = dev_get_drvdata(kdev);
 	return to_i915(minor->dev);
 }
-
-#ifdef CONFIG_PM
-static u32 calc_residency(struct drm_i915_private *dev_priv,
-			  i915_reg_t reg)
-{
-	intel_wakeref_t wakeref;
-	u64 res = 0;
-
-	with_intel_runtime_pm(&dev_priv->runtime_pm, wakeref)
-		res = intel_rc6_residency_us(&to_gt(dev_priv)->rc6, reg);
-
-	return DIV_ROUND_CLOSEST_ULL(res, 1000);
-}
-
-static ssize_t rc6_enable_show(struct device *kdev,
-			       struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	unsigned int mask;
-
-	mask = 0;
-	if (HAS_RC6(dev_priv))
-		mask |= BIT(0);
-	if (HAS_RC6p(dev_priv))
-		mask |= BIT(1);
-	if (HAS_RC6pp(dev_priv))
-		mask |= BIT(2);
-
-	return sysfs_emit(buf, "%x\n", mask);
-}
-
-static ssize_t rc6_residency_ms_show(struct device *kdev,
-				     struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	u32 rc6_residency = calc_residency(dev_priv, GEN6_GT_GFX_RC6);
-	return sysfs_emit(buf, "%u\n", rc6_residency);
-}
-
-static ssize_t rc6p_residency_ms_show(struct device *kdev,
-				      struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	u32 rc6p_residency = calc_residency(dev_priv, GEN6_GT_GFX_RC6p);
-	return sysfs_emit(buf, "%u\n", rc6p_residency);
-}
-
-static ssize_t rc6pp_residency_ms_show(struct device *kdev,
-				       struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	u32 rc6pp_residency = calc_residency(dev_priv, GEN6_GT_GFX_RC6pp);
-	return sysfs_emit(buf, "%u\n", rc6pp_residency);
-}
-
-static ssize_t media_rc6_residency_ms_show(struct device *kdev,
-					   struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	u32 rc6_residency = calc_residency(dev_priv, VLV_GT_MEDIA_RC6);
-	return sysfs_emit(buf, "%u\n", rc6_residency);
-}
-
-static DEVICE_ATTR_RO(rc6_enable);
-static DEVICE_ATTR_RO(rc6_residency_ms);
-static DEVICE_ATTR_RO(rc6p_residency_ms);
-static DEVICE_ATTR_RO(rc6pp_residency_ms);
-static DEVICE_ATTR_RO(media_rc6_residency_ms);
-
-static struct attribute *rc6_attrs[] = {
-	&dev_attr_rc6_enable.attr,
-	&dev_attr_rc6_residency_ms.attr,
-	NULL
-};
-
-static const struct attribute_group rc6_attr_group = {
-	.name = power_group_name,
-	.attrs =  rc6_attrs
-};
-
-static struct attribute *rc6p_attrs[] = {
-	&dev_attr_rc6p_residency_ms.attr,
-	&dev_attr_rc6pp_residency_ms.attr,
-	NULL
-};
-
-static const struct attribute_group rc6p_attr_group = {
-	.name = power_group_name,
-	.attrs =  rc6p_attrs
-};
-
-static struct attribute *media_rc6_attrs[] = {
-	&dev_attr_media_rc6_residency_ms.attr,
-	NULL
-};
-
-static const struct attribute_group media_rc6_attr_group = {
-	.name = power_group_name,
-	.attrs =  media_rc6_attrs
-};
-#endif
 
 static int l3_access_valid(struct drm_i915_private *i915, loff_t offset)
 {
@@ -178,12 +119,12 @@ i915_l3_read(struct file *filp, struct kobject *kobj,
 	count = min_t(size_t, GEN7_L3LOG_SIZE - offset, count);
 	memset(buf, 0, count);
 
-	spin_lock(&i915->gem.contexts.lock);
+	spin_lock_irq(&i915->gem.contexts.lock);
 	if (i915->l3_parity.remap_info[slice])
 		memcpy(buf,
 		       i915->l3_parity.remap_info[slice] + offset / sizeof(u32),
 		       count);
-	spin_unlock(&i915->gem.contexts.lock);
+	spin_unlock_irq(&i915->gem.contexts.lock);
 
 	return count;
 }
@@ -211,7 +152,7 @@ i915_l3_write(struct file *filp, struct kobject *kobj,
 	if (!remap_info)
 		return -ENOMEM;
 
-	spin_lock(&i915->gem.contexts.lock);
+	spin_lock_irq(&i915->gem.contexts.lock);
 
 	if (i915->l3_parity.remap_info[slice]) {
 		freeme = remap_info;
@@ -227,7 +168,7 @@ i915_l3_write(struct file *filp, struct kobject *kobj,
 	list_for_each_entry(ctx, &i915->gem.contexts.list, link)
 		ctx->remap_slice |= BIT(slice);
 
-	spin_unlock(&i915->gem.contexts.lock);
+	spin_unlock_irq(&i915->gem.contexts.lock);
 	kfree(freeme);
 
 	/*
@@ -239,187 +180,244 @@ i915_l3_write(struct file *filp, struct kobject *kobj,
 	return count;
 }
 
-static const struct bin_attribute dpf_attrs = {
-	.attr = {.name = "l3_parity", .mode = (S_IRUSR | S_IWUSR)},
-	.size = GEN7_L3LOG_SIZE,
-	.read = i915_l3_read,
-	.write = i915_l3_write,
-	.mmap = NULL,
-	.private = (void *)0
+static ssize_t
+i915_sysfs_read(struct file *filp, struct kobject *kobj, struct bin_attribute
+	      *attr, char *buf, loff_t offset, size_t count)
+{
+	ssize_t value;
+	struct sysfs_bin_ext_attr *ea = container_of(attr, struct
+						     sysfs_bin_ext_attr, attr);
+	struct device *kdev = kobj_to_dev(kobj);
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+
+	/* Wa_16015476723 & Wa_16015666671 */
+	pvc_wa_disallow_rc6(i915);
+
+	value = ea->i915_read(filp, kobj, attr, buf, offset, count);
+
+	pvc_wa_allow_rc6(i915);
+
+	return value;
+}
+
+static ssize_t
+i915_sysfs_write(struct file *filp, struct kobject *kobj, struct bin_attribute
+		 *attr, char *buf, loff_t offset, size_t count)
+{
+	ssize_t value;
+	struct  sysfs_bin_ext_attr *ea = container_of(attr, struct
+						      sysfs_bin_ext_attr, attr);
+	struct device *kdev = kobj_to_dev(kobj);
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+
+	/* Wa_16015476723 & Wa_16015666671 */
+	pvc_wa_disallow_rc6(i915);
+
+	value = ea->i915_write(filp, kobj, attr, buf, offset, count);
+
+	pvc_wa_allow_rc6(i915);
+
+	return value;
+}
+
+#define I915_DPF_ERROR_ATTR_WR(_name, _mode, _read, _write, _size, _private,	\
+				_sysfs_read, _sysfs_write)			\
+	struct sysfs_bin_ext_attr dev_attr_##_name = {{				\
+		.attr = { .name = __stringify(_name), .mode = _mode },		\
+		.read   = _read,						\
+		.write  = _write,						\
+		.size   = _size,						\
+		.mmap   = NULL,							\
+		.private = (void *) _private					\
+		}, _sysfs_read, _sysfs_write }
+
+I915_DPF_ERROR_ATTR_WR(l3_parity, (S_IRUSR | S_IWUSR), i915_sysfs_read,
+		       i915_sysfs_write, GEN7_L3LOG_SIZE, 0, i915_l3_read,
+		       i915_l3_write);
+I915_DPF_ERROR_ATTR_WR(l3_parity_slice_1, (S_IRUSR | S_IWUSR), i915_sysfs_read,
+		       i915_sysfs_write, GEN7_L3LOG_SIZE, 1, i915_l3_read,
+		       i915_l3_write);
+
+static ssize_t
+lmem_total_bytes_show(struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+	struct intel_memory_region *mr;
+	u64 value = 0;
+	int id;
+
+	for_each_memory_region(mr, i915, id)
+		if (mr->type == INTEL_MEMORY_LOCAL)
+			value += mr->total;
+
+	return sysfs_emit(buf, "%llu\n", value);
+}
+
+static ssize_t
+lmem_avail_bytes_show(struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+	struct intel_memory_region *mr;
+	u64 value = 0;
+	int id;
+
+	for_each_memory_region(mr, i915, id)
+		if (mr->type == INTEL_MEMORY_LOCAL)
+			value += atomic64_read(&mr->avail);
+
+	return sysfs_emit(buf, "%llu\n", value);
+}
+
+#define I915_DEVICE_ATTR_RO(_name, _show) \
+	struct i915_ext_attr dev_attr_##_name = \
+	{ __ATTR(_name, 0444, i915_sysfs_show, NULL), _show, NULL}
+
+#define I915_DEVICE_ATTR_WO(_name, _store) \
+	struct i915_ext_attr dev_attr_##_name = \
+	{ __ATTR(_name, 0200, NULL, i915_sysfs_store), NULL, _store}
+
+#define I915_DEVICE_ATTR_RW(_name, _mode, _show, _store) \
+	struct i915_ext_attr dev_attr_##_name = \
+	{ __ATTR(_name, _mode, i915_sysfs_show, i915_sysfs_store), _show, _store}
+
+static DEVICE_ATTR_RO(lmem_total_bytes);
+static DEVICE_ATTR_RO(lmem_avail_bytes);
+
+static const struct attribute *lmem_attrs[] = {
+	&dev_attr_lmem_total_bytes.attr,
+	&dev_attr_lmem_avail_bytes.attr,
+	NULL
 };
 
-static const struct bin_attribute dpf_attrs_1 = {
-	.attr = {.name = "l3_parity_slice_1", .mode = (S_IRUSR | S_IWUSR)},
-	.size = GEN7_L3LOG_SIZE,
-	.read = i915_l3_read,
-	.write = i915_l3_write,
-	.mmap = NULL,
-	.private = (void *)1
-};
-
-static ssize_t gt_act_freq_mhz_show(struct device *kdev,
-				    struct device_attribute *attr, char *buf)
+static int
+__i915_set_mem_region_acct_limit(struct drm_i915_private *i915,
+				 u32 index, u8 val)
 {
-	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
-	struct intel_rps *rps = &to_gt(i915)->rps;
+	struct intel_memory_region *mem;
+	int id;
 
-	return sysfs_emit(buf, "%d\n", intel_rps_read_actual_frequency(rps));
+	for_each_memory_region(mem, i915, id) {
+		resource_size_t limit;
+		int err = 0;
+
+		if (mem->type != INTEL_MEMORY_LOCAL)
+			continue;
+
+		limit = min_t(resource_size_t,
+			      mem->total, div_u64(val * mem->total, 100));
+
+		spin_lock(&mem->acct_lock);
+		if (limit >= mem->acct_user[index])
+			mem->acct_limit[index] = limit - mem->acct_user[index];
+		else
+			err = -EINVAL;
+		spin_unlock(&mem->acct_lock);
+		if (err)
+			return err;
+	}
+
+	return 0;
 }
 
-static ssize_t gt_cur_freq_mhz_show(struct device *kdev,
-				    struct device_attribute *attr, char *buf)
+static int
+i915_set_mem_region_acct_limit(struct drm_i915_private *i915, u32 index, u8 val)
 {
-	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
-	struct intel_rps *rps = &to_gt(i915)->rps;
+	int ret;
 
-	return sysfs_emit(buf, "%d\n", intel_rps_get_requested_frequency(rps));
-}
+	if (i915->mm.user_acct_limit[index] == val)
+		return 0;
 
-static ssize_t gt_boost_freq_mhz_show(struct device *kdev, struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
-	struct intel_rps *rps = &to_gt(i915)->rps;
+	i915_gem_drain_freed_objects(i915);
 
-	return sysfs_emit(buf, "%d\n", intel_rps_get_boost_frequency(rps));
-}
-
-static ssize_t gt_boost_freq_mhz_store(struct device *kdev,
-				       struct device_attribute *attr,
-				       const char *buf, size_t count)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	struct intel_rps *rps = &to_gt(dev_priv)->rps;
-	ssize_t ret;
-	u32 val;
-
-	ret = kstrtou32(buf, 0, &val);
-	if (ret)
-		return ret;
-
-	ret = intel_rps_set_boost_frequency(rps, val);
-
-	return ret ?: count;
-}
-
-static ssize_t vlv_rpe_freq_mhz_show(struct device *kdev,
-				     struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	struct intel_rps *rps = &to_gt(dev_priv)->rps;
-
-	return sysfs_emit(buf, "%d\n", intel_gpu_freq(rps, rps->efficient_freq));
-}
-
-static ssize_t gt_max_freq_mhz_show(struct device *kdev, struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	struct intel_gt *gt = to_gt(dev_priv);
-	struct intel_rps *rps = &gt->rps;
-
-	return sysfs_emit(buf, "%d\n", intel_rps_get_max_frequency(rps));
-}
-
-static ssize_t gt_max_freq_mhz_store(struct device *kdev,
-				     struct device_attribute *attr,
-				     const char *buf, size_t count)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	struct intel_gt *gt = to_gt(dev_priv);
-	struct intel_rps *rps = &gt->rps;
-	ssize_t ret;
-	u32 val;
-
-	ret = kstrtou32(buf, 0, &val);
-	if (ret)
-		return ret;
-
-	ret = intel_rps_set_max_frequency(rps, val);
-
-	return ret ?: count;
-}
-
-static ssize_t gt_min_freq_mhz_show(struct device *kdev, struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
-	struct intel_gt *gt = to_gt(i915);
-	struct intel_rps *rps = &gt->rps;
-
-	return sysfs_emit(buf, "%d\n", intel_rps_get_min_frequency(rps));
-}
-
-static ssize_t gt_min_freq_mhz_store(struct device *kdev,
-				     struct device_attribute *attr,
-				     const char *buf, size_t count)
-{
-	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
-	struct intel_rps *rps = &to_gt(i915)->rps;
-	ssize_t ret;
-	u32 val;
-
-	ret = kstrtou32(buf, 0, &val);
-	if (ret)
-		return ret;
-
-	ret = intel_rps_set_min_frequency(rps, val);
-
-	return ret ?: count;
-}
-
-static DEVICE_ATTR_RO(gt_act_freq_mhz);
-static DEVICE_ATTR_RO(gt_cur_freq_mhz);
-static DEVICE_ATTR_RW(gt_boost_freq_mhz);
-static DEVICE_ATTR_RW(gt_max_freq_mhz);
-static DEVICE_ATTR_RW(gt_min_freq_mhz);
-
-static DEVICE_ATTR_RO(vlv_rpe_freq_mhz);
-
-static ssize_t gt_rp_mhz_show(struct device *kdev, struct device_attribute *attr, char *buf);
-static DEVICE_ATTR(gt_RP0_freq_mhz, S_IRUGO, gt_rp_mhz_show, NULL);
-static DEVICE_ATTR(gt_RP1_freq_mhz, S_IRUGO, gt_rp_mhz_show, NULL);
-static DEVICE_ATTR(gt_RPn_freq_mhz, S_IRUGO, gt_rp_mhz_show, NULL);
-
-/* For now we have a static number of RP states */
-static ssize_t gt_rp_mhz_show(struct device *kdev, struct device_attribute *attr, char *buf)
-{
-	struct drm_i915_private *dev_priv = kdev_minor_to_i915(kdev);
-	struct intel_rps *rps = &to_gt(dev_priv)->rps;
-	u32 val;
-
-	if (attr == &dev_attr_gt_RP0_freq_mhz)
-		val = intel_rps_get_rp0_frequency(rps);
-	else if (attr == &dev_attr_gt_RP1_freq_mhz)
-		val = intel_rps_get_rp1_frequency(rps);
-	else if (attr == &dev_attr_gt_RPn_freq_mhz)
-		val = intel_rps_get_rpn_frequency(rps);
+	ret = __i915_set_mem_region_acct_limit(i915, index, val);
+	if (!ret)
+		WRITE_ONCE(i915->mm.user_acct_limit[index], val);
 	else
-		BUG();
+		__i915_set_mem_region_acct_limit(i915, index, i915->mm.user_acct_limit[index]);
 
-	return sysfs_emit(buf, "%d\n", val);
+	return ret;
 }
 
-static const struct attribute * const gen6_attrs[] = {
-	&dev_attr_gt_act_freq_mhz.attr,
-	&dev_attr_gt_cur_freq_mhz.attr,
-	&dev_attr_gt_boost_freq_mhz.attr,
-	&dev_attr_gt_max_freq_mhz.attr,
-	&dev_attr_gt_min_freq_mhz.attr,
-	&dev_attr_gt_RP0_freq_mhz.attr,
-	&dev_attr_gt_RP1_freq_mhz.attr,
-	&dev_attr_gt_RPn_freq_mhz.attr,
-	NULL,
-};
+static ssize_t alloc_limit_show(struct device *dev, char *buf, u32 index)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
 
-static const struct attribute * const vlv_attrs[] = {
-	&dev_attr_gt_act_freq_mhz.attr,
-	&dev_attr_gt_cur_freq_mhz.attr,
-	&dev_attr_gt_boost_freq_mhz.attr,
-	&dev_attr_gt_max_freq_mhz.attr,
-	&dev_attr_gt_min_freq_mhz.attr,
-	&dev_attr_gt_RP0_freq_mhz.attr,
-	&dev_attr_gt_RP1_freq_mhz.attr,
-	&dev_attr_gt_RPn_freq_mhz.attr,
-	&dev_attr_vlv_rpe_freq_mhz.attr,
-	NULL,
+	return sysfs_emit(buf, "%u\n", i915->mm.user_acct_limit[index]);
+}
+
+static void reset_alloc_limit(struct drm_i915_private *i915)
+{
+	memset(i915->mm.user_acct_limit, 0, sizeof(i915->mm.user_acct_limit));
+}
+
+static ssize_t
+alloc_limit_store(struct device *dev, int id, const char *buf, size_t count)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+	int ret;
+	u8 val;
+
+	ret = kstrtou8(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val >= 100)
+		return -EINVAL;
+
+	if (val + i915->mm.user_acct_limit[!id] > 100)
+		return -EINVAL;
+
+	if (!val) {
+		reset_alloc_limit(i915);
+		goto out;
+	}
+
+	ret = i915_set_mem_region_acct_limit(i915, id, val);
+out:
+	return ret ?: count;
+}
+
+static ssize_t
+prelim_lmem_alloc_limit_store(struct device *dev,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	return alloc_limit_store(dev, INTEL_MEMORY_OVERCOMMIT_LMEM,
+				 buf, count);
+}
+
+static ssize_t
+prelim_lmem_alloc_limit_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	return alloc_limit_show(dev, buf, INTEL_MEMORY_OVERCOMMIT_LMEM);
+}
+
+static ssize_t
+prelim_sharedmem_alloc_limit_store(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	return alloc_limit_store(dev, INTEL_MEMORY_OVERCOMMIT_SHARED,
+				 buf, count);
+}
+
+static ssize_t
+prelim_sharedmem_alloc_limit_show(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
+{
+	return alloc_limit_show(dev, buf, INTEL_MEMORY_OVERCOMMIT_SHARED);
+}
+
+static DEVICE_ATTR_RW(prelim_lmem_alloc_limit);
+static DEVICE_ATTR_RW(prelim_sharedmem_alloc_limit);
+
+static const struct attribute *alloc_limit_attrs[] = {
+	&dev_attr_prelim_lmem_alloc_limit.attr,
+	&dev_attr_prelim_sharedmem_alloc_limit.attr,
+	NULL
 };
 
 #if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
@@ -464,99 +462,548 @@ static ssize_t error_state_write(struct file *file, struct kobject *kobj,
 	return count;
 }
 
-static const struct bin_attribute error_state_attr = {
-	.attr.name = "error",
-	.attr.mode = S_IRUSR | S_IWUSR,
-	.size = 0,
-	.read = error_state_read,
-	.write = error_state_write,
-};
+I915_DPF_ERROR_ATTR_WR(error, (S_IRUSR | S_IWUSR), i915_sysfs_read,
+		       i915_sysfs_write, 0, 0, error_state_read,
+		       error_state_write);
 
 static void i915_setup_error_capture(struct device *kdev)
 {
-	if (sysfs_create_bin_file(&kdev->kobj, &error_state_attr))
+	if (sysfs_create_bin_file(&kdev->kobj, &dev_attr_error.attr))
 		DRM_ERROR("error_state sysfs setup failed\n");
 }
 
 static void i915_teardown_error_capture(struct device *kdev)
 {
-	sysfs_remove_bin_file(&kdev->kobj, &error_state_attr);
+	sysfs_remove_bin_file(&kdev->kobj, &dev_attr_error.attr);
 }
 #else
 static void i915_setup_error_capture(struct device *kdev) {}
 static void i915_teardown_error_capture(struct device *kdev) {}
 #endif
 
+static ssize_t prelim_uapi_version_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	return sysfs_emit(buf, "%d.%d\n", PRELIM_UAPI_MAJOR, PRELIM_UAPI_MINOR);
+}
+
+static I915_DEVICE_ATTR_RO(prelim_uapi_version, prelim_uapi_version_show);
+
+static ssize_t
+prelim_csc_unique_id_show(struct device *kdev, struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+
+	return sysfs_emit(buf, "%llx\n", RUNTIME_INFO(i915)->uid);
+}
+
+static DEVICE_ATTR_RO(prelim_csc_unique_id);
+
+static ssize_t
+prelim_lmem_max_bw_Mbps_show(struct device *dev, struct device_attribute *attr, char *buff)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+	u32 val;
+	int err;
+
+	err = snb_pcode_read_p(&i915->uncore, PCODE_MEMORY_CONFIG,
+			       MEMORY_CONFIG_SUBCOMMAND_READ_MAX_BANDWIDTH,
+			       0x0, &val);
+	if (err)
+		return err;
+
+	return sysfs_emit(buff, "%u\n", val);
+}
+
+static I915_DEVICE_ATTR_RO(prelim_lmem_max_bw_Mbps, prelim_lmem_max_bw_Mbps_show);
+
+static ssize_t i915_driver_error_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct device *kdev = kobj_to_dev(dev->kobj.parent);
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+	struct ext_attr *ea = container_of(attr, struct ext_attr, attr);
+
+	if (GEM_WARN_ON(ea->id > ARRAY_SIZE(i915->errors)))
+		return -ENOENT;
+
+	return scnprintf(buf, PAGE_SIZE, "%lu\n", i915->errors[ea->id]);
+}
+
+static ssize_t
+i915_sysfs_id_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t value;
+	struct ext_attr *ea = container_of(attr, struct ext_attr, attr);
+	struct device *kdev = kobj_to_dev(dev->kobj.parent);
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+
+	/* Wa_16015476723 & Wa_16015666671 */
+	pvc_wa_disallow_rc6(i915);
+
+	value = ea->i915_show(dev, attr, buf);
+
+	pvc_wa_allow_rc6(i915);
+
+	return value;
+}
+
+#define I915_DRIVER_SYSFS_ERROR_ATTR_RO(_name,  _id) \
+	struct ext_attr dev_attr_##_name = \
+	{ __ATTR(_name, 0444, i915_sysfs_id_show, NULL), (_id), i915_driver_error_show}
+
+static I915_DRIVER_SYSFS_ERROR_ATTR_RO(driver_object_migration, I915_DRIVER_ERROR_OBJECT_MIGRATION);
+
+static const struct attribute *i915_error_counter_attrs[] = {
+	&dev_attr_driver_object_migration.attr.attr,
+	NULL
+};
+
+static void i915_setup_error_counter(struct drm_i915_private *i915)
+{
+	struct device *kdev = i915->drm.primary->kdev;
+	struct kobject *kobj;
+	int ret;
+
+	kobj = kobject_create_and_add("error_counter", &kdev->kobj);
+	if (!kobj)
+		goto err;
+
+	ret = sysfs_create_files(kobj, i915_error_counter_attrs);
+	if (ret)
+		goto err;
+
+	return;
+
+err:
+	drm_notice(&i915->drm, "Failed to create error_counter sysfs files at device level\n");
+	kobject_put(kobj);
+}
+
+static struct kobject *i915_setup_gt_sysfs(struct kobject *parent)
+{
+	return kobject_create_and_add("gt", parent);
+}
+
+static ssize_t invalidate_lmem_mmaps_store(struct device *dev,
+					   struct device_attribute *attr,
+					   const char *buff, size_t count)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+	struct intel_memory_region *mem;
+	ssize_t ret;
+	bool val;
+	int id;
+
+	ret = kstrtobool(buff, &val);
+	if (ret)
+		return ret;
+
+	if (!val)
+		return -EINVAL;
+
+	if (i915->invalidate_lmem_mmaps)
+		return -EBUSY;
+
+	if (!i915->quiesce_gpu) {
+		drm_dbg(&i915->drm, "Invalidating LMEM mmaps is not allowed if GPU is unwedged\n");
+		return -EPERM;
+	}
+
+	WRITE_ONCE(i915->invalidate_lmem_mmaps, val);
+	ret = wait_var_event_interruptible(&i915->active_fault_handlers,
+					   !atomic_read(&i915->active_fault_handlers));
+	if (ret)
+		return ret;
+
+	for_each_memory_region(mem, i915, id) {
+		struct intel_memory_region_link bookmark = {};
+		struct intel_memory_region_link *pos;
+		struct list_head *phases[] = {
+			&mem->objects.purgeable,
+			&mem->objects.list,
+			NULL,
+		}, **phase = phases;
+
+		if (mem->type != INTEL_MEMORY_LOCAL)
+			continue;
+
+		spin_lock(&mem->objects.lock);
+		do list_for_each_entry(pos, *phase, link) {
+			struct drm_i915_gem_object *obj;
+
+			if (!pos->mem)
+				continue;
+
+			obj = container_of(pos, struct drm_i915_gem_object, mm.region);
+			i915_gem_object_get(obj);
+
+			list_add(&bookmark.link, &pos->link);
+			spin_unlock(&mem->objects.lock);
+
+			i915_gem_object_lock(obj, NULL);
+			i915_gem_object_release_mmap(obj);
+			i915_gem_object_unlock(obj);
+			i915_gem_object_put(obj);
+
+			spin_lock(&mem->objects.lock);
+			__list_del_entry(&bookmark.link);
+			pos = &bookmark;
+		} while (*++phase);
+		spin_unlock(&mem->objects.lock);
+	}
+
+	return count;
+}
+
+static I915_DEVICE_ATTR_WO(invalidate_lmem_mmaps, invalidate_lmem_mmaps_store);
+
+static ssize_t quiesce_gpu_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buff, size_t count)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id;
+	intel_wakeref_t wakeref;
+	unsigned int i;
+	ssize_t ret;
+	bool val;
+	u8 retry = 2;
+
+	ret = kstrtobool(buff, &val);
+	if (ret)
+		return ret;
+
+	if (!val)
+		return -EINVAL;
+
+	if (i915->quiesce_gpu)
+		return -EBUSY;
+
+	/* Do not quiesce the GPU if there are active clients */
+	while (!xa_empty(&i915->clients.xarray) && retry--) {
+		if (!retry)
+			return -EBUSY;
+
+		rcu_barrier();
+		flush_workqueue(system_wq);
+	}
+
+	wakeref = intel_runtime_pm_get(&i915->runtime_pm);
+	for_each_gt(gt, i915, i) {
+		/*
+		 * Disable rc6 and render power gate to make sure GT and
+		 * Render are awake for EUs Array and Scan Diagnostics
+		 */
+		intel_gt_pm_fini(gt);
+		if (intel_gt_terminally_wedged(gt))
+			continue;
+		intel_gt_set_wedged(gt);
+		intel_gt_retire_requests(gt);
+		for_each_engine(engine, gt, id) {
+			intel_engine_quiesce(engine);
+		}
+		GEM_BUG_ON(intel_gt_pm_is_awake(gt));
+	}
+	intel_runtime_pm_put(&i915->runtime_pm, wakeref);
+
+	/* flush the scheduled jobs when clients were closed */
+	rcu_barrier();
+	flush_workqueue(system_wq);
+	i915->drm.unplugged = true;
+	WRITE_ONCE(i915->quiesce_gpu, val);
+
+	return count;
+}
+
+static I915_DEVICE_ATTR_WO(quiesce_gpu, quiesce_gpu_store);
+
+static const struct attribute *setup_quiesce_gpu_attrs[] = {
+	&dev_attr_quiesce_gpu.attr.attr,
+	&dev_attr_invalidate_lmem_mmaps.attr.attr,
+	NULL
+};
+
+static void i915_setup_quiesce_gpu_sysfs(struct drm_i915_private *i915)
+{
+	struct device *kdev = i915->drm.primary->kdev;
+
+	if (sysfs_create_files(&kdev->kobj, setup_quiesce_gpu_attrs))
+		dev_err(kdev, "Failed to add sysfs files to setup quiesce GPU\n");
+}
+
+static ssize_t prelim_reset_all_gt_store(struct device *dev,
+					 struct device_attribute *attr,
+					 const char *buf, size_t count)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+	struct intel_gt *gt;
+	unsigned int id;
+	bool val;
+	int ret;
+
+	ret = kstrtobool(buf, &val);
+	if (ret)
+		return ret;
+
+	if (!val)
+		return count;
+
+	for_each_gt(gt, i915, id) {
+		int __ret = intel_gt_sysfs_reset(gt);
+
+		/*
+		 * try to reset as much as possible but return
+		 * error if any of the GTs are wedged
+		 */
+		if (!ret && __ret)
+			ret = __ret;
+	}
+
+	return ret ?: count;
+}
+
+DEVICE_ATTR_WO(prelim_reset_all_gt);
+
+static ssize_t
+i915_sysfs_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t value;
+	struct i915_ext_attr *ea = container_of(attr, struct i915_ext_attr, attr);
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+
+	/* Wa_16015476723 & Wa_16015666671 */
+	pvc_wa_disallow_rc6(i915);
+
+	value = ea->i915_show(dev, attr, buf);
+
+	pvc_wa_allow_rc6(i915);
+
+	return value;
+}
+
+static ssize_t
+i915_sysfs_store(struct device *dev, struct device_attribute *attr, const char
+		 *buf, size_t count)
+{
+	struct i915_ext_attr *ea = container_of(attr, struct i915_ext_attr, attr);
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+
+	/* Wa_16015476723 & Wa_16015666671 */
+	pvc_wa_disallow_rc6(i915);
+
+	count = ea->i915_store(dev, attr, buf, count);
+
+	pvc_wa_allow_rc6(i915);
+
+	return count;
+}
+
+#if IS_ENABLED(CONFIG_DRM_I915_DEBUGGER)
+
+static ssize_t enable_eu_debug_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+
+	return sysfs_emit(buf, "%u\n", i915->debuggers.enable_eu_debug);
+}
+
+static ssize_t enable_eu_debug_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+	bool enable;
+	int ret;
+
+	ret = kstrtobool(buf, &enable);
+	if (ret)
+		return ret;
+
+	ret = i915_debugger_enable(i915, enable);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static I915_DEVICE_ATTR_RW(prelim_enable_eu_debug, 0644, enable_eu_debug_show,
+			   enable_eu_debug_store);
+
+static void i915_setup_enable_eu_debug_sysfs(struct drm_i915_private *i915)
+{
+	struct device *kdev = i915->drm.primary->kdev;
+
+	if (IS_SRIOV_VF(i915))
+		return;
+
+	if (sysfs_create_file(&kdev->kobj,
+			      &dev_attr_prelim_enable_eu_debug.attr.attr))
+		dev_warn(kdev, "Failed to add prelim_enable_eu_deubg sysfs param\n");
+}
+
+#else /* CONFIG_DRM_I915_DEBUGGER */
+
+static void i915_setup_enable_eu_debug_sysfs(struct drm_i915_private *i915) {}
+
+#endif /* CONFIG_DRM_I915_DEBUGGER */
+
+static ssize_t iaf_socket_id_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(dev);
+
+	return sysfs_emit(buf, "0x%x\n", i915->intel_iaf.socket_id);
+}
+
+static I915_DEVICE_ATTR_RO(iaf_socket_id, iaf_socket_id_show);
+
+static const struct attribute *iaf_attrs[] = {
+	&dev_attr_iaf_socket_id.attr.attr,
+	NULL
+};
+
+/* Provide Address Translation Services Status: enabled/disabled */
+static ssize_t
+addr_trans_services_status_show(struct device *kdev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+
+	return sysfs_emit(buf, "%s\n",
+			  i915_ats_enabled(i915) ? "Enabled" : "Disabled");
+}
+
+static ssize_t
+global_pasid_counter_show(struct device *kdev,
+			  struct device_attribute *attr,
+			  char *buf)
+{
+	struct drm_i915_private *i915 = kdev_minor_to_i915(kdev);
+	u64 global_pasid_counter = 0;
+
+	global_pasid_counter = i915_global_pasid_counter(i915);
+	return sysfs_emit(buf, "%llu\n", global_pasid_counter);
+}
+
+static DEVICE_ATTR(addr_trans_services_status, S_IRUGO,
+		   addr_trans_services_status_show, NULL);
+static DEVICE_ATTR(global_pasid_counter, S_IRUGO,
+		   global_pasid_counter_show, NULL);
+
+static const struct attribute *mode_b_attrs[] = {
+	&dev_attr_addr_trans_services_status.attr,
+	&dev_attr_global_pasid_counter.attr,
+	NULL
+};
+
 void i915_setup_sysfs(struct drm_i915_private *dev_priv)
 {
 	struct device *kdev = dev_priv->drm.primary->kdev;
 	int ret;
 
-#ifdef CONFIG_PM
-	if (HAS_RC6(dev_priv)) {
-		ret = sysfs_merge_group(&kdev->kobj,
-					&rc6_attr_group);
+	if (sysfs_create_file(&kdev->kobj, &dev_attr_prelim_uapi_version.attr.attr))
+		dev_err(kdev, "Failed adding prelim_uapi_version to sysfs\n");
+
+	if (INTEL_INFO(dev_priv)->has_csc_uid) {
+		ret = sysfs_create_file(&kdev->kobj, &dev_attr_prelim_csc_unique_id.attr);
 		if (ret)
-			drm_err(&dev_priv->drm,
-				"RC6 residency sysfs setup failed\n");
+			drm_warn(&dev_priv->drm, "UID sysfs setup failed\n");
 	}
-	if (HAS_RC6p(dev_priv)) {
-		ret = sysfs_merge_group(&kdev->kobj,
-					&rc6p_attr_group);
+
+	if (HAS_LMEM_MAX_BW(dev_priv)) {
+		ret = sysfs_create_file(&kdev->kobj, &dev_attr_prelim_lmem_max_bw_Mbps.attr.attr);
 		if (ret)
-			drm_err(&dev_priv->drm,
-				"RC6p residency sysfs setup failed\n");
+			drm_warn(&dev_priv->drm, "Failed to create maximum memory bandwidth sysfs file\n");
 	}
-	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv)) {
-		ret = sysfs_merge_group(&kdev->kobj,
-					&media_rc6_attr_group);
+
+	if (HAS_LMEM(dev_priv)) {
+		ret = sysfs_create_files(&kdev->kobj, lmem_attrs);
 		if (ret)
-			drm_err(&dev_priv->drm,
-				"Media RC6 residency sysfs setup failed\n");
+			DRM_ERROR("Local memory sysfs setup failed\n");
 	}
-#endif
+
+	if (HAS_IAF(dev_priv)) {
+		ret = sysfs_create_files(&kdev->kobj, iaf_attrs);
+		if (ret)
+			drm_warn(&dev_priv->drm, "PVC socket sysfs setup failed\n");
+	}
+
+	dev_priv->clients.root =
+		kobject_create_and_add("clients", &kdev->kobj);
+	if (!dev_priv->clients.root)
+		drm_warn(&dev_priv->drm, "Per-client sysfs setup failed\n");
+
 	if (HAS_L3_DPF(dev_priv)) {
-		ret = device_create_bin_file(kdev, &dpf_attrs);
+		ret = device_create_bin_file(kdev, &dev_attr_l3_parity.attr);
 		if (ret)
 			drm_err(&dev_priv->drm,
 				"l3 parity sysfs setup failed\n");
 
 		if (NUM_L3_SLICES(dev_priv) > 1) {
 			ret = device_create_bin_file(kdev,
-						     &dpf_attrs_1);
+						     &dev_attr_l3_parity_slice_1.attr);
 			if (ret)
 				drm_err(&dev_priv->drm,
 					"l3 parity slice 1 setup failed\n");
 		}
 	}
 
-	ret = 0;
-	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
-		ret = sysfs_create_files(&kdev->kobj, vlv_attrs);
-	else if (GRAPHICS_VER(dev_priv) >= 6)
-		ret = sysfs_create_files(&kdev->kobj, gen6_attrs);
+	if (sysfs_create_file(&kdev->kobj, &dev_attr_prelim_reset_all_gt.attr))
+		drm_warn(&dev_priv->drm,
+			 "failed to create sysfs reset interface\n");
+
+	dev_priv->sysfs_gt = i915_setup_gt_sysfs(&kdev->kobj);
+	if (!dev_priv->sysfs_gt)
+		drm_err(&dev_priv->drm,
+			"failed to register GT sysfs directory\n");
+
+	ret = sysfs_create_files(&kdev->kobj, alloc_limit_attrs);
 	if (ret)
-		drm_err(&dev_priv->drm, "RPS sysfs setup failed\n");
+		drm_warn(&dev_priv->drm, "failed to create prelim_lmem/shared_alloc_limit sysfs entries\n");
+
+	i915_sriov_sysfs_setup(dev_priv);
 
 	i915_setup_error_capture(kdev);
 
+	i915_setup_error_counter(dev_priv);
+
 	intel_engines_add_sysfs(dev_priv);
+
+	i915_setup_quiesce_gpu_sysfs(dev_priv);
+
+	intel_mem_health_report_sysfs(dev_priv);
+
+	if (i915_ats_enabled(dev_priv)) {
+		ret = sysfs_create_files(&kdev->kobj, mode_b_attrs);
+		if (ret)
+			DRM_ERROR("Failed to setup Address Translation Services sysfs\n");
+	}
+
+	i915_setup_enable_eu_debug_sysfs(dev_priv);
 }
 
 void i915_teardown_sysfs(struct drm_i915_private *dev_priv)
 {
 	struct device *kdev = dev_priv->drm.primary->kdev;
 
+	sysfs_remove_file(&kdev->kobj, &dev_attr_prelim_uapi_version.attr.attr);
+
 	i915_teardown_error_capture(kdev);
 
-	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
-		sysfs_remove_files(&kdev->kobj, vlv_attrs);
-	else
-		sysfs_remove_files(&kdev->kobj, gen6_attrs);
-	device_remove_bin_file(kdev,  &dpf_attrs_1);
-	device_remove_bin_file(kdev,  &dpf_attrs);
-#ifdef CONFIG_PM
-	sysfs_unmerge_group(&kdev->kobj, &rc6_attr_group);
-	sysfs_unmerge_group(&kdev->kobj, &rc6p_attr_group);
-#endif
+	i915_sriov_sysfs_teardown(dev_priv);
+
+	device_remove_bin_file(kdev,  &dev_attr_l3_parity_slice_1.attr);
+	device_remove_bin_file(kdev,  &dev_attr_l3_parity.attr);
+
+	if (dev_priv->clients.root)
+		kobject_put(dev_priv->clients.root);
+
+	kobject_put(dev_priv->sysfs_gt);
 }

@@ -22,7 +22,13 @@
 #include "i915_vma.h"
 
 struct __guc_ads_blob;
+struct intel_guc;
 struct intel_guc_state_capture;
+
+struct intel_guc_ops {
+	int (*init)(struct intel_guc *guc);
+	void (*fini)(struct intel_guc *guc);
+};
 
 /**
  * struct intel_guc - Top level structure of GuC.
@@ -31,6 +37,8 @@ struct intel_guc_state_capture;
  * i915_sched_engine for submission.
  */
 struct intel_guc {
+	/** @ops: Operations to init / fini the GuC */
+	struct intel_guc_ops const *ops;
 	/** @fw: the GuC firmware */
 	struct intel_uc_fw fw;
 	/** @log: sub-structure containing GuC log related data and objects */
@@ -41,6 +49,8 @@ struct intel_guc {
 	struct intel_guc_slpc slpc;
 	/** @capture: the error-state-capture module's data and objects */
 	struct intel_guc_state_capture *capture;
+
+	struct dentry *dbgfs_node;
 
 	/** @sched_engine: Global engine used to submit requests to GuC */
 	struct i915_sched_engine *sched_engine;
@@ -77,7 +87,12 @@ struct intel_guc {
 	atomic_t outstanding_submission_g2h;
 
 	/** @interrupts: pointers to GuC interrupt-managing functions. */
+	struct xarray tlb_lookup;
+	u32 serial_slot;
+	u32 next_seqno;
+
 	struct {
+		bool enabled;
 		void (*reset)(struct intel_guc *guc);
 		void (*enable)(struct intel_guc *guc);
 		void (*disable)(struct intel_guc *guc);
@@ -100,7 +115,8 @@ struct intel_guc {
 		struct ida guc_ids;
 		/**
 		 * @num_guc_ids: Number of guc_ids, selftest feature to be able
-		 * to reduce this number while testing.
+		 * to reduce this number while testing. Also used on VFs to
+		 * reduce the pool of guc_ids.
 		 */
 		int num_guc_ids;
 		/**
@@ -183,6 +199,15 @@ struct intel_guc {
 	/** @lrc_desc_pool_vaddr_v69: contents of the GuC LRC descriptor pool */
 	void *lrc_desc_pool_vaddr_v69;
 
+	spinlock_t sched_lock;
+	int sched_enable_ref;
+
+	struct {
+		struct drm_i915_gem_object *obj;
+		struct i915_vma *vma;
+		void *vaddr;
+	} g2g;
+
 	/**
 	 * @context_lookup: used to resolve intel_context from guc_id, if a
 	 * context is present in this structure it is registered with the GuC
@@ -253,6 +278,21 @@ struct intel_guc {
 		unsigned long last_stat_jiffies;
 	} timestamp;
 
+	/**
+	 * @dead_guc_worker: Asynchronous worker thread for forcing a GuC reset.
+	 * Specifically used when the G2H handler wants to issue a reset. Resets
+	 * require flushing the G2H queue. So, the G2H processing itself must not
+	 * trigger a reset directly. Instead, go via this worker.
+	 */
+	struct work_struct dead_guc_worker;
+
+	struct {
+		struct intel_gt_stats_irq_time irq;
+	} stats;
+
+	/* @stall_ms: To insert GuC stalls */
+	u32  stall_ms;
+
 #ifdef CONFIG_DRM_I915_SELFTEST
 	/**
 	 * @number_guc_id_stolen: The number of guc_ids that have been stolen
@@ -268,6 +308,11 @@ struct intel_guc {
 #define MAKE_GUC_VER(maj, min, pat)	(((maj) << 16) | ((min) << 8) | (pat))
 #define MAKE_GUC_VER_STRUCT(ver)	MAKE_GUC_VER((ver).major, (ver).minor, (ver).patch)
 #define GUC_SUBMIT_VER(guc)		MAKE_GUC_VER_STRUCT((guc)->submission_version)
+
+struct intel_guc_tlb_wait {
+	struct wait_queue_head wq;
+	u8 status;
+} __aligned(4);
 
 static inline struct intel_guc *log_to_guc(struct intel_guc_log *log)
 {
@@ -332,9 +377,11 @@ retry:
 	return err;
 }
 
+/* Only call this from the interrupt handler code */
 static inline void intel_guc_to_host_event_handler(struct intel_guc *guc)
 {
-	intel_guc_ct_event_handler(&guc->ct);
+	if (guc->interrupts.enabled)
+		intel_guc_ct_event_handler(&guc->ct);
 }
 
 /* GuC addresses above GUC_GGTT_TOP also don't map through the GTT */
@@ -364,6 +411,19 @@ static inline u32 intel_guc_ggtt_offset(struct intel_guc *guc,
 	return offset;
 }
 
+static inline int intel_guc_init(struct intel_guc *guc)
+{
+	if (guc->ops->init)
+		return guc->ops->init(guc);
+	return 0;
+}
+
+static inline void intel_guc_fini(struct intel_guc *guc)
+{
+	if (guc->ops->fini)
+		guc->ops->fini(guc);
+}
+
 void intel_guc_init_early(struct intel_guc *guc);
 void intel_guc_init_late(struct intel_guc *guc);
 void intel_guc_init_send_regs(struct intel_guc *guc);
@@ -378,34 +438,56 @@ int intel_guc_to_host_process_recv_msg(struct intel_guc *guc,
 int intel_guc_auth_huc(struct intel_guc *guc, u32 rsa_offset);
 int intel_guc_suspend(struct intel_guc *guc);
 int intel_guc_resume(struct intel_guc *guc);
+struct i915_vma *intel_guc_allocate_vma_with_bias(struct intel_guc *guc,
+						  u32 size, u32 bias);
+struct i915_vma *__intel_guc_allocate_vma_with_bias(struct intel_guc *guc,
+						    u32 size, u32 bias, bool force_smem);
+
 struct i915_vma *intel_guc_allocate_vma(struct intel_guc *guc, u32 size);
 int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 				   struct i915_vma **out_vma, void **out_vaddr);
+int __intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size, bool force_smem,
+				     struct i915_vma **out_vma, void **out_vaddr);
 int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
 int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
 
-static inline bool intel_guc_is_supported(struct intel_guc *guc)
+int intel_guc_g2g_register(struct intel_guc *guc);
+
+int intel_guc_invalidate_tlb_full(struct intel_guc *guc,
+				  enum intel_guc_tlb_inval_mode mode);
+int intel_guc_invalidate_tlb_page_selective(struct intel_guc *guc,
+					    enum intel_guc_tlb_inval_mode mode,
+					    u64 start, u64 length, u32 asid);
+int intel_guc_invalidate_tlb_page_selective_ctx(struct intel_guc *guc,
+						enum intel_guc_tlb_inval_mode mode,
+						u64 start, u64 length, u32 ctxid);
+int intel_guc_invalidate_tlb_guc(struct intel_guc *guc,
+				 enum intel_guc_tlb_inval_mode mode);
+int intel_guc_invalidate_tlb_all(struct intel_guc *guc);
+
+static inline bool intel_guc_is_supported(const struct intel_guc *guc)
 {
 	return intel_uc_fw_is_supported(&guc->fw);
 }
 
-static inline bool intel_guc_is_wanted(struct intel_guc *guc)
+static inline bool intel_guc_is_wanted(const struct intel_guc *guc)
 {
 	return intel_uc_fw_is_enabled(&guc->fw);
 }
 
-static inline bool intel_guc_is_used(struct intel_guc *guc)
+static inline bool intel_guc_is_used(const struct intel_guc *guc)
 {
 	GEM_BUG_ON(__intel_uc_fw_status(&guc->fw) == INTEL_UC_FIRMWARE_SELECTED);
-	return intel_uc_fw_is_available(&guc->fw);
+	return intel_uc_fw_is_available(&guc->fw) ||
+	       intel_uc_fw_is_preloaded(&guc->fw);
 }
 
-static inline bool intel_guc_is_fw_running(struct intel_guc *guc)
+static inline bool intel_guc_is_fw_running(const struct intel_guc *guc)
 {
 	return intel_uc_fw_is_running(&guc->fw);
 }
 
-static inline bool intel_guc_is_ready(struct intel_guc *guc)
+static inline bool intel_guc_is_ready(const struct intel_guc *guc)
 {
 	return intel_guc_is_fw_running(guc) && intel_guc_ct_enabled(&guc->ct);
 }
@@ -461,11 +543,13 @@ int intel_guc_engine_failure_process_msg(struct intel_guc *guc,
 					 const u32 *msg, u32 len);
 int intel_guc_error_capture_process_msg(struct intel_guc *guc,
 					const u32 *msg, u32 len);
+int intel_guc_crash_process_msg(struct intel_guc *guc, u32 action);
+void intel_guc_tlb_invalidation_done(struct intel_guc *guc, u32 seqno);
+int intel_guc_engine_sched_done_process_msg(struct intel_guc *guc,
+					    const u32 *msg, u32 len);
 
 struct intel_engine_cs *
 intel_guc_lookup_engine(struct intel_guc *guc, u8 guc_class, u8 instance);
-
-void intel_guc_find_hung_context(struct intel_engine_cs *engine);
 
 int intel_guc_global_policies_update(struct intel_guc *guc);
 
@@ -475,13 +559,16 @@ void intel_guc_submission_reset_prepare(struct intel_guc *guc);
 void intel_guc_submission_reset(struct intel_guc *guc, intel_engine_mask_t stalled);
 void intel_guc_submission_reset_finish(struct intel_guc *guc);
 void intel_guc_submission_cancel_requests(struct intel_guc *guc);
+int intel_guc_set_schedule_mode(struct intel_guc *guc,
+				enum intel_guc_scheduler_mode mode, u32 delay);
 
 void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p);
-
-void intel_guc_write_barrier(struct intel_guc *guc);
+void intel_guc_print_info(struct intel_guc *guc, struct drm_printer *p);
 
 void intel_guc_dump_time_info(struct intel_guc *guc, struct drm_printer *p);
 
 int intel_guc_sched_disable_gucid_threshold_max(struct intel_guc *guc);
+
+void intel_guc_init_fake_interrupts(struct intel_guc *guc);
 
 #endif

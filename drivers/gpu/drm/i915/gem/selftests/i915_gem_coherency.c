@@ -85,6 +85,8 @@ out:
 
 static int gtt_set(struct context *ctx, unsigned long offset, u32 v)
 {
+	struct intel_gt *gt = ctx->engine->gt;
+	intel_wakeref_t wakeref;
 	struct i915_vma *vma;
 	u32 __iomem *map;
 	int err = 0;
@@ -95,11 +97,12 @@ static int gtt_set(struct context *ctx, unsigned long offset, u32 v)
 	if (err)
 		return err;
 
-	vma = i915_gem_object_ggtt_pin(ctx->obj, NULL, 0, 0, PIN_MAPPABLE);
+	vma = i915_gem_object_ggtt_pin(ctx->obj, gt->ggtt,
+				       NULL, 0, 0, PIN_MAPPABLE);
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
-	intel_gt_pm_get(vma->vm->gt);
+	wakeref = intel_gt_pm_get(gt);
 
 	map = i915_vma_pin_iomap(vma);
 	i915_vma_unpin(vma);
@@ -112,12 +115,14 @@ static int gtt_set(struct context *ctx, unsigned long offset, u32 v)
 	i915_vma_unpin_iomap(vma);
 
 out_rpm:
-	intel_gt_pm_put(vma->vm->gt);
+	intel_gt_pm_put(gt, wakeref);
 	return err;
 }
 
 static int gtt_get(struct context *ctx, unsigned long offset, u32 *v)
 {
+	struct intel_gt *gt = ctx->engine->gt;
+	intel_wakeref_t wakeref;
 	struct i915_vma *vma;
 	u32 __iomem *map;
 	int err = 0;
@@ -128,11 +133,12 @@ static int gtt_get(struct context *ctx, unsigned long offset, u32 *v)
 	if (err)
 		return err;
 
-	vma = i915_gem_object_ggtt_pin(ctx->obj, NULL, 0, 0, PIN_MAPPABLE);
+	vma = i915_gem_object_ggtt_pin(ctx->obj, gt->ggtt,
+				       NULL, 0, 0, PIN_MAPPABLE);
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
-	intel_gt_pm_get(vma->vm->gt);
+	wakeref = intel_gt_pm_get(gt);
 
 	map = i915_vma_pin_iomap(vma);
 	i915_vma_unpin(vma);
@@ -145,7 +151,7 @@ static int gtt_get(struct context *ctx, unsigned long offset, u32 *v)
 	i915_vma_unpin_iomap(vma);
 
 out_rpm:
-	intel_gt_pm_put(vma->vm->gt);
+	intel_gt_pm_put(gt, wakeref);
 	return err;
 }
 
@@ -195,12 +201,13 @@ static int wc_get(struct context *ctx, unsigned long offset, u32 *v)
 
 static int gpu_set(struct context *ctx, unsigned long offset, u32 v)
 {
+	struct intel_gt *gt = ctx->engine->gt;
 	struct i915_request *rq;
 	struct i915_vma *vma;
 	u32 *cs;
 	int err;
 
-	vma = i915_gem_object_ggtt_pin(ctx->obj, NULL, 0, 0, 0);
+	vma = i915_gem_object_ggtt_pin(ctx->obj, gt->ggtt, NULL, 0, 0, 0);
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
@@ -434,5 +441,5 @@ int i915_gem_coherency_live_selftests(struct drm_i915_private *i915)
 		SUBTEST(igt_gem_coherency),
 	};
 
-	return i915_subtests(tests, i915);
+	return i915_live_subtests(tests, i915);
 }

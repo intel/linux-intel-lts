@@ -19,6 +19,7 @@
 #define INVALID_TYPE	0
 #define SMT_TYPE	1
 #define CORE_TYPE	2
+#define MODULE_TYPE	3
 #define DIE_TYPE	5
 
 #define LEAFB_SUBTYPE(ecx)		(((ecx) >> 8) & 0xff)
@@ -122,7 +123,8 @@ int detect_extended_topology(struct cpuinfo_x86 *c)
 		/*
 		 * Check for the Core type in the implemented sub leaves.
 		 */
-		if (LEAFB_SUBTYPE(ecx) == CORE_TYPE) {
+		if (LEAFB_SUBTYPE(ecx) == CORE_TYPE ||
+		    LEAFB_SUBTYPE(ecx) == MODULE_TYPE) {
 			core_level_siblings = LEVEL_MAX_SIBLINGS(ebx);
 			core_plus_mask_width = BITS_SHIFT_NEXT_LEVEL(eax);
 			die_level_siblings = core_level_siblings;

@@ -160,15 +160,15 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 
 	obj = ERR_PTR(-ENODEV);
 	if (HAS_LMEM(dev_priv)) {
-		obj = i915_gem_object_create_lmem(dev_priv, size,
-						  I915_BO_ALLOC_CONTIGUOUS);
+		obj = i915_gem_object_create_lmem(dev_priv, size, 0);
 	} else {
 		/*
 		 * If the FB is too big, just don't use it since fbdev is not very
 		 * important and we should probably use that space with FBC or other
 		 * features.
 		 */
-		if (size * 2 < dev_priv->stolen_usable_size)
+		if (size * 2 < dev_priv->stolen_usable_size &&
+		    i915_ggtt_has_aperture(to_gt(dev_priv)->ggtt))
 			obj = i915_gem_object_create_stolen(dev_priv, size);
 		if (IS_ERR(obj))
 			obj = i915_gem_object_create_shmem(dev_priv, size);
@@ -208,6 +208,7 @@ static int intelfb_create(struct drm_fb_helper *helper,
 	bool prealloc = false;
 	void __iomem *vaddr;
 	struct drm_i915_gem_object *obj;
+	struct i915_gem_ww_ctx ww;
 	int ret;
 
 	if (intel_fb &&
@@ -262,7 +263,7 @@ static int intelfb_create(struct drm_fb_helper *helper,
 	/* setup aperture base/size for vesafb takeover */
 	obj = intel_fb_obj(&intel_fb->base);
 	if (i915_gem_object_is_lmem(obj)) {
-		struct intel_memory_region *mem = obj->mm.region;
+		struct intel_memory_region *mem = obj->mm.region.mem;
 
 		info->apertures->ranges[0].base = mem->io_start;
 		info->apertures->ranges[0].size = mem->io_size;
@@ -278,28 +279,34 @@ static int intelfb_create(struct drm_fb_helper *helper,
 
 		/* Our framebuffer is the entirety of fbdev's system memory */
 		info->fix.smem_start =
-			(unsigned long)(ggtt->gmadr.start + vma->node.start);
+			(unsigned long)(ggtt->gmadr.start + i915_ggtt_offset(vma));
 		info->fix.smem_len = vma->size;
 	}
 
-	vaddr = i915_vma_pin_iomap(vma);
-	if (IS_ERR(vaddr)) {
-		drm_err(&dev_priv->drm,
-			"Failed to remap framebuffer into virtual memory\n");
-		ret = PTR_ERR(vaddr);
-		goto out_unpin;
+	for_i915_gem_ww(&ww, ret, false) {
+		ret = i915_gem_object_lock(vma->obj, &ww);
+		if (ret)
+			continue;
+
+		vaddr = i915_vma_pin_iomap(vma);
+		if (IS_ERR(vaddr)) {
+			drm_err(&dev_priv->drm,
+				"Failed to remap framebuffer into virtual memory, error %pe\n",
+				vaddr);
+			ret = PTR_ERR(vaddr);
+			continue;
+		}
 	}
+	if (ret)
+		goto out_unpin;
+
+	if (!prealloc) /* keep preallocated contents for seamless boot */
+		memset_io(vaddr, 0, vma->size);
+
 	info->screen_base = vaddr;
 	info->screen_size = vma->size;
 
 	drm_fb_helper_fill_info(info, &ifbdev->helper, sizes);
-
-	/* If the object is shmemfs backed, it will have given us zeroed pages.
-	 * If the object is stolen however, it will be full of whatever
-	 * garbage was left in there.
-	 */
-	if (!i915_gem_object_is_shmem(vma->obj) && !prealloc)
-		memset_io(info->screen_base, 0, info->screen_size);
 
 	/* Use default scratch pixmap (info->pixmap.flags = FB_PIXMAP_SYSTEM) */
 

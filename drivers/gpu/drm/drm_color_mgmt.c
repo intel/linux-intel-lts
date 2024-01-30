@@ -34,8 +34,8 @@
 /**
  * DOC: overview
  *
- * Color management or color space adjustments is supported through a set of 5
- * properties on the &drm_crtc object. They are set up by calling
+ * Pipe Color management or color space adjustments is supported through a
+ * set of 5 properties on the &drm_crtc object. They are set up by calling
  * drm_crtc_enable_color_mgmt().
  *
  * "DEGAMMA_LUT”:
@@ -190,6 +190,110 @@ void drm_crtc_enable_color_mgmt(struct drm_crtc *crtc,
 	}
 }
 EXPORT_SYMBOL(drm_crtc_enable_color_mgmt);
+
+void drm_crtc_attach_gamma_degamma_mode_property(struct drm_crtc *crtc,
+						 enum lut_type type)
+{
+	struct drm_property *prop;
+
+	if (type == LUT_TYPE_DEGAMMA)
+		prop = crtc->degamma_mode_property;
+	else
+		prop = crtc->gamma_mode_property;
+
+	if (!prop)
+		return;
+
+	drm_object_attach_property(&crtc->base,
+				   prop, 0);
+}
+EXPORT_SYMBOL(drm_crtc_attach_gamma_degamma_mode_property);
+
+int drm_color_create_gamma_mode_property(struct drm_crtc *crtc,
+					 int num_values)
+{
+	struct drm_property *prop;
+
+	prop = drm_property_create(crtc->dev,
+				   DRM_MODE_PROP_ENUM,
+				   "GAMMA_MODE", num_values);
+	if (!prop)
+		return -ENOMEM;
+
+	crtc->gamma_mode_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_color_create_gamma_mode_property);
+
+int drm_color_create_degamma_mode_property(struct drm_crtc *crtc,
+					   int num_values)
+{
+	struct drm_property *prop;
+
+	prop = drm_property_create(crtc->dev,
+				   DRM_MODE_PROP_ENUM,
+				   "DEGAMMA_MODE", num_values);
+	if (!prop)
+		return -ENOMEM;
+
+	crtc->degamma_mode_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_color_create_degamma_mode_property);
+
+int drm_color_add_gamma_degamma_mode_range(struct drm_crtc *crtc,
+					   const char *name,
+					   const struct drm_color_lut_range *ranges,
+					   size_t length, enum lut_type type)
+{
+	struct drm_property_blob *blob;
+	struct drm_property *prop;
+	int num_ranges = length / sizeof(ranges[0]);
+	int i, ret, num_types_0;
+
+	if (type == LUT_TYPE_DEGAMMA)
+		prop = crtc->degamma_mode_property;
+	else
+		prop = crtc->gamma_mode_property;
+
+	if (!prop)
+		return -EINVAL;
+
+	if (length == 0 && name)
+		return drm_property_add_enum(prop, 0, name);
+
+	if (WARN_ON(length == 0 || length % sizeof(ranges[0]) != 0))
+		return -EINVAL;
+
+	num_types_0 = hweight8(ranges[0].flags & (DRM_MODE_LUT_GAMMA |
+			       DRM_MODE_LUT_DEGAMMA));
+	if (num_types_0 == 0)
+		return -EINVAL;
+
+	for (i = 1; i < num_ranges; i++) {
+		int num_types = hweight8(ranges[i].flags & (DRM_MODE_LUT_GAMMA |
+					 DRM_MODE_LUT_DEGAMMA));
+
+		/* either all ranges have DEGAMMA|GAMMA or none have it */
+		if (num_types_0 != num_types)
+			return -EINVAL;
+	}
+
+	blob = drm_property_create_blob(crtc->dev, length, ranges);
+	if (IS_ERR(blob))
+		return PTR_ERR(blob);
+
+	ret = drm_property_add_enum(prop, blob->base.id, name);
+	if (ret) {
+		drm_property_blob_put(blob);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_color_add_gamma_degamma_mode_range);
 
 /**
  * drm_mode_crtc_set_gamma_size - set the gamma table size
@@ -589,6 +693,179 @@ int drm_plane_create_color_properties(struct drm_plane *plane,
 EXPORT_SYMBOL(drm_plane_create_color_properties);
 
 /**
+ * DOC: Plane Color Properties
+ *
+ * Plane Color management or color space adjustments is supported
+ * through a set of 5 properties on the &drm_plane object.
+ *
+ * degamma_mode_property:
+ *     Blob property which advertizes the possible degamma modes and
+ *     lut ranges supported by the platform. This  allows userspace
+ *     to query and get the plane degamma color caps and choose the
+ *     appropriate degamma mode and create lut values accordingly
+ *
+ * degamma_lut_property:
+ *	Blob property which allows a userspace to provide LUT values
+ *	to apply degamma curve using the h/w plane degamma processing
+ *	engine, thereby making the content as linear for further color
+ *	processing.
+ *
+ * ctm_property:
+ *	Blob property which allows a userspace to provide CTM coefficients
+ *	to do color space conversion or any other enhancement by doing a
+ *	matrix multiplication using the h/w CTM processing engine
+ *
+ * gamma_mode_property:
+ *     Blob property which advertizes the possible gamma modes and
+ *     lut ranges supported by the platform. This  allows userspace
+ *     to query and get the plane gamma color caps and choose the
+ *     appropriate gamma mode and create lut values accordingly
+ *
+ * gamma_lut_property:
+ *	Blob property which allows a userspace to provide LUT values
+ *	to apply gamma curve using the h/w plane degamma processing
+ *	engine, thereby making the content as non-linear.
+ *
+ */
+int drm_plane_create_color_mgmt_properties(struct drm_device *dev,
+					   struct drm_plane *plane,
+					   int num_values)
+{
+	struct drm_property *prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_ENUM,
+				   "PLANE_DEGAMMA_MODE", num_values);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->degamma_mode_property = prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB,
+				   "PLANE_DEGAMMA_LUT", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->degamma_lut_property = prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB,
+				   "PLANE_CTM", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->ctm_property = prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_ENUM,
+				   "PLANE_GAMMA_MODE", num_values);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->gamma_mode_property = prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB,
+				   "PLANE_GAMMA_LUT", 0);
+	if (!prop)
+		return -ENOMEM;
+
+	plane->gamma_lut_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_plane_create_color_mgmt_properties);
+
+void drm_plane_attach_degamma_properties(struct drm_plane *plane)
+{
+	if (!plane->degamma_mode_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->degamma_mode_property, 0);
+
+	if (!plane->degamma_lut_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->degamma_lut_property, 0);
+}
+EXPORT_SYMBOL(drm_plane_attach_degamma_properties);
+
+void drm_plane_attach_ctm_property(struct drm_plane *plane)
+{
+	if (!plane->ctm_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->ctm_property, 0);
+}
+EXPORT_SYMBOL(drm_plane_attach_ctm_property);
+
+void drm_plane_attach_gamma_properties(struct drm_plane *plane)
+{
+	if (!plane->gamma_mode_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->gamma_mode_property, 0);
+
+	if (!plane->gamma_lut_property)
+		return;
+
+	drm_object_attach_property(&plane->base,
+				   plane->gamma_lut_property, 0);
+}
+EXPORT_SYMBOL(drm_plane_attach_gamma_properties);
+
+int drm_plane_color_add_gamma_degamma_mode_range(struct drm_plane *plane,
+						 const char *name,
+						 const struct drm_color_lut_range *ranges,
+						 size_t length, enum lut_type type)
+{
+	struct drm_property_blob *blob;
+	struct drm_property *prop = NULL;
+	int num_ranges = length / sizeof(ranges[0]);
+	int i, ret, num_types_0;
+
+	if (type == LUT_TYPE_DEGAMMA)
+		prop = plane->degamma_mode_property;
+	else
+		prop = plane->gamma_mode_property;
+
+	if (!prop)
+		return -EINVAL;
+
+	if (length == 0 && name)
+		return drm_property_add_enum(prop, 0, name);
+
+	if (WARN_ON(length == 0 || length % sizeof(ranges[0]) != 0))
+		return -EINVAL;
+	num_types_0 = hweight8(ranges[0].flags & (DRM_MODE_LUT_GAMMA |
+			       DRM_MODE_LUT_DEGAMMA));
+	if (num_types_0 == 0)
+		return -EINVAL;
+
+	for (i = 1; i < num_ranges; i++) {
+		int num_types = hweight8(ranges[i].flags & (DRM_MODE_LUT_GAMMA |
+					 DRM_MODE_LUT_DEGAMMA));
+
+		/* either all ranges have DEGAMMA|GAMMA or none have it */
+		if (num_types_0 != num_types)
+			return -EINVAL;
+	}
+
+	blob = drm_property_create_blob(plane->dev, length, ranges);
+	if (IS_ERR(blob))
+		return PTR_ERR(blob);
+
+	ret = drm_property_add_enum(prop, blob->base.id, name);
+	if (ret) {
+		drm_property_blob_put(blob);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_plane_color_add_gamma_degamma_mode_range);
+
+/**
  * drm_color_lut_check - check validity of lookup table
  * @lut: property blob containing LUT to check
  * @tests: bitmask of tests to run
@@ -630,3 +907,46 @@ int drm_color_lut_check(const struct drm_property_blob *lut, u32 tests)
 	return 0;
 }
 EXPORT_SYMBOL(drm_color_lut_check);
+
+/**
+ * drm_color_lut_ext_check - check validity of extended lookup table
+ * @lut: property blob containing extended LUT to check
+ * @tests: bitmask of tests to run
+ *
+ * Helper to check whether a userspace-provided extended lookup table is valid and
+ * satisfies hardware requirements.  Drivers pass a bitmask indicating which of
+ * the tests in &drm_color_lut_tests should be performed.
+ *
+ * Returns 0 on success, -EINVAL on failure.
+ */
+int drm_color_lut_ext_check(const struct drm_property_blob *lut, u32 tests)
+{
+	const struct drm_color_lut_ext *entry;
+	int i;
+
+	if (!lut || !tests)
+		return 0;
+
+	entry = lut->data;
+	for (i = 0; i < drm_color_lut_ext_size(lut); i++) {
+		if (tests & DRM_COLOR_LUT_EQUAL_CHANNELS) {
+			if (entry[i].red != entry[i].blue ||
+			    entry[i].red != entry[i].green) {
+				DRM_DEBUG_KMS("All LUT entries must have equal r/g/b\n");
+				return -EINVAL;
+			}
+		}
+
+		if (i > 0 && tests & DRM_COLOR_LUT_NON_DECREASING) {
+			if (entry[i].red < entry[i - 1].red ||
+			    entry[i].green < entry[i - 1].green ||
+			    entry[i].blue < entry[i - 1].blue) {
+				DRM_DEBUG_KMS("LUT entries must never decrease.\n");
+				return -EINVAL;
+			}
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_color_lut_ext_check);

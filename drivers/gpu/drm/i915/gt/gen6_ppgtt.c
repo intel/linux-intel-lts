@@ -76,7 +76,7 @@ static void gen6_ppgtt_clear_range(struct i915_address_space *vm,
 {
 	struct gen6_ppgtt * const ppgtt = to_gen6_ppgtt(i915_vm_to_ppgtt(vm));
 	const unsigned int first_entry = start / I915_GTT_PAGE_SIZE;
-	const gen6_pte_t scratch_pte = vm->scratch[0]->encode;
+	const gen6_pte_t scratch_pte = i915_vm_scratch0_encode(vm);
 	unsigned int pde = first_entry / GEN6_PTES;
 	unsigned int pte = first_entry % GEN6_PTES;
 	unsigned int num_entries = length / I915_GTT_PAGE_SIZE;
@@ -100,7 +100,7 @@ static void gen6_ppgtt_clear_range(struct i915_address_space *vm,
 		 * entries back to scratch.
 		 */
 
-		vaddr = px_vaddr(pt);
+		vaddr = px_vaddr(pt, NULL);
 		memset32(vaddr + pte, scratch_pte, count);
 
 		pte = 0;
@@ -108,22 +108,23 @@ static void gen6_ppgtt_clear_range(struct i915_address_space *vm,
 }
 
 static void gen6_ppgtt_insert_entries(struct i915_address_space *vm,
+				      struct i915_vm_pt_stash *stash,
 				      struct i915_vma *vma,
-				      enum i915_cache_level cache_level,
+				      unsigned int pat_index,
 				      u32 flags)
 {
 	struct i915_ppgtt *ppgtt = i915_vm_to_ppgtt(vm);
 	struct i915_page_directory * const pd = ppgtt->pd;
-	unsigned int first_entry = vma->node.start / I915_GTT_PAGE_SIZE;
+	unsigned int first_entry = i915_vma_offset(vma) / I915_GTT_PAGE_SIZE;
 	unsigned int act_pt = first_entry / GEN6_PTES;
 	unsigned int act_pte = first_entry % GEN6_PTES;
-	const u32 pte_encode = vm->pte_encode(0, cache_level, flags);
+	const u32 pte_encode = vm->pte_encode(0, pat_index, flags);
 	struct sgt_dma iter = sgt_dma(vma);
 	gen6_pte_t *vaddr;
 
 	GEM_BUG_ON(!pd->entry[act_pt]);
 
-	vaddr = px_vaddr(i915_pt_entry(pd, act_pt));
+	vaddr = px_vaddr(i915_pt_entry(pd, act_pt), NULL);
 	do {
 		GEM_BUG_ON(sg_dma_len(iter.sg) < I915_GTT_PAGE_SIZE);
 		vaddr[act_pte] = pte_encode | GEN6_PTE_ADDR_ENCODE(iter.dma);
@@ -139,12 +140,12 @@ static void gen6_ppgtt_insert_entries(struct i915_address_space *vm,
 		}
 
 		if (++act_pte == GEN6_PTES) {
-			vaddr = px_vaddr(i915_pt_entry(pd, ++act_pt));
+			vaddr = px_vaddr(i915_pt_entry(pd, ++act_pt), NULL);
 			act_pte = 0;
 		}
 	} while (1);
 
-	vma->page_sizes.gtt = I915_GTT_PAGE_SIZE;
+	vma->page_sizes = I915_GTT_PAGE_SIZE;
 }
 
 static void gen6_flush_pd(struct gen6_ppgtt *ppgtt, u64 start, u64 end)
@@ -190,7 +191,7 @@ static void gen6_alloc_va_range(struct i915_address_space *vm,
 			pt = stash->pt[0];
 			__i915_gem_object_pin_pages(pt->base);
 
-			fill32_px(pt, vm->scratch[0]->encode);
+			fill32_px(pt, i915_vm_scratch0_encode(vm));
 
 			spin_lock(&pd->lock);
 			if (!pd->entry[pde]) {
@@ -221,32 +222,26 @@ static int gen6_ppgtt_init_scratch(struct gen6_ppgtt *ppgtt)
 	struct i915_address_space * const vm = &ppgtt->base.vm;
 	int ret;
 
-	ret = setup_scratch_page(vm);
+	ret = i915_vm_setup_scratch0(vm);
 	if (ret)
 		return ret;
-
-	vm->scratch[0]->encode =
-		vm->pte_encode(px_dma(vm->scratch[0]),
-			       I915_CACHE_NONE, PTE_READ_ONLY);
 
 	vm->scratch[1] = vm->alloc_pt_dma(vm, I915_GTT_PAGE_SIZE_4K);
 	if (IS_ERR(vm->scratch[1])) {
 		ret = PTR_ERR(vm->scratch[1]);
-		goto err_scratch0;
+		goto err_scratch;
 	}
 
 	ret = map_pt_dma(vm, vm->scratch[1]);
 	if (ret)
-		goto err_scratch1;
+		goto err_scratch;
 
-	fill32_px(vm->scratch[1], vm->scratch[0]->encode);
+	fill32_px(vm->scratch[1], i915_vm_scratch0_encode(vm));
 
 	return 0;
 
-err_scratch1:
-	i915_gem_object_put(vm->scratch[1]);
-err_scratch0:
-	i915_gem_object_put(vm->scratch[0]);
+err_scratch:
+	i915_vm_free_scratch(vm);
 	return ret;
 }
 
@@ -265,15 +260,17 @@ static void gen6_ppgtt_cleanup(struct i915_address_space *vm)
 {
 	struct gen6_ppgtt *ppgtt = to_gen6_ppgtt(i915_vm_to_ppgtt(vm));
 
-	__i915_vma_put(ppgtt->vma);
+	if (ppgtt->vma)
+		__i915_vma_put(ppgtt->vma);
 
 	gen6_ppgtt_free_pd(ppgtt);
-	free_scratch(vm);
+	i915_vm_free_scratch(vm);
+
+	if (ppgtt->base.pd)
+		free_pd(&ppgtt->base.vm, ppgtt->base.pd);
 
 	mutex_destroy(&ppgtt->flush);
 	mutex_destroy(&ppgtt->pin_mutex);
-
-	free_pd(&ppgtt->base.vm, ppgtt->base.pd);
 }
 
 static int pd_vma_set_pages(struct i915_vma *vma)
@@ -292,7 +289,7 @@ static void pd_vma_clear_pages(struct i915_vma *vma)
 static void pd_vma_bind(struct i915_address_space *vm,
 			struct i915_vm_pt_stash *stash,
 			struct i915_vma *vma,
-			enum i915_cache_level cache_level,
+			unsigned int pat_index,
 			u32 unused)
 {
 	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
@@ -423,6 +420,7 @@ struct i915_ppgtt *gen6_ppgtt_create(struct intel_gt *gt)
 {
 	struct i915_ggtt * const ggtt = gt->ggtt;
 	struct gen6_ppgtt *ppgtt;
+	struct i915_vma *vma;
 	int err;
 
 	ppgtt = kzalloc(sizeof(*ppgtt), GFP_KERNEL);
@@ -432,7 +430,12 @@ struct i915_ppgtt *gen6_ppgtt_create(struct intel_gt *gt)
 	mutex_init(&ppgtt->flush);
 	mutex_init(&ppgtt->pin_mutex);
 
-	ppgtt_init(&ppgtt->base, gt);
+	err = ppgtt_init(&ppgtt->base, gt);
+	if (err) {
+		kfree(ppgtt);
+		return ERR_PTR(err);
+	}
+
 	ppgtt->base.vm.pd_shift = ilog2(SZ_4K * SZ_4K / sizeof(gen6_pte_t));
 	ppgtt->base.vm.top = 1;
 
@@ -449,27 +452,23 @@ struct i915_ppgtt *gen6_ppgtt_create(struct intel_gt *gt)
 	ppgtt->base.pd = __alloc_pd(I915_PDES);
 	if (!ppgtt->base.pd) {
 		err = -ENOMEM;
-		goto err_free;
+		goto err_put;
 	}
 
 	err = gen6_ppgtt_init_scratch(ppgtt);
 	if (err)
-		goto err_pd;
+		goto err_put;
 
-	ppgtt->vma = pd_vma_create(ppgtt, GEN6_PD_SIZE);
-	if (IS_ERR(ppgtt->vma)) {
-		err = PTR_ERR(ppgtt->vma);
-		goto err_scratch;
+	vma = pd_vma_create(ppgtt, GEN6_PD_SIZE);
+	if (IS_ERR(vma)) {
+		err = PTR_ERR(vma);
+		goto err_put;
 	}
+	ppgtt->vma = vma;
 
 	return &ppgtt->base;
 
-err_scratch:
-	free_scratch(&ppgtt->base.vm);
-err_pd:
-	free_pd(&ppgtt->base.vm, ppgtt->base.pd);
-err_free:
-	mutex_destroy(&ppgtt->pin_mutex);
-	kfree(ppgtt);
+err_put:
+	i915_vm_put(&ppgtt->base.vm);
 	return ERR_PTR(err);
 }

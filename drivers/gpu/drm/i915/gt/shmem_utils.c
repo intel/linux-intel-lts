@@ -32,17 +32,23 @@ struct file *shmem_create_from_data(const char *name, void *data, size_t len)
 
 struct file *shmem_create_from_object(struct drm_i915_gem_object *obj)
 {
-	struct file *file;
+	struct file *file = obj->base.filp;
+	enum i915_map_type type;
 	void *ptr;
 
-	if (i915_gem_object_is_shmem(obj)) {
-		file = obj->base.filp;
+	if (file && file->f_mapping->nrpages) {
 		atomic_long_inc(&file->f_count);
 		return file;
 	}
 
-	ptr = i915_gem_object_pin_map_unlocked(obj, i915_gem_object_is_lmem(obj) ?
-						I915_MAP_WC : I915_MAP_WB);
+	if (obj->mm.mapping)
+		type = page_unmask_bits(obj->mm.mapping);
+	else if (i915_gem_object_is_lmem(obj))
+		type = I915_MAP_WC;
+	else
+		type = I915_MAP_WB;
+
+	ptr = i915_gem_object_pin_map_unlocked(obj, type);
 	if (IS_ERR(ptr))
 		return ERR_CAST(ptr);
 

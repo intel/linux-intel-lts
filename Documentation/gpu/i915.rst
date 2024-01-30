@@ -479,6 +479,35 @@ Protected Objects
 
 .. kernel-doc:: drivers/gpu/drm/i915/pxp/intel_pxp_types.h
 
+Shared Virtual Memory (SVM)
+---------------------------
+
+Shared Virtual Memory (SVM) allows the programmer to use a single virtual
+address space which will be shared between threads executing on CPUs and GPUs.
+It abstracts away from the user the location of the backing memory, and hence
+simplifies the user programming model.
+SVM supports two types of virtual memory allocation methods.
+Runtime allocator requires the driver to provide memory allocation and
+management interface, like buffer object (BO) interface.
+Whereas system allocator makes use of default OS memory allocation and
+management support like malloc().
+
+Linux kernel has a Heterogeneous Memory Management (HMM) framework to
+Support SVM system allocator. HMM’s address space mirroring support allows
+sharing of the address space by duplicating sections of CPU page tables in the
+device page tables. This enables both CPU and GPU access a physical memory
+location using the same virtual address. Linux kernel also provides the ability
+to plugin device memory with the system (as a special ZONE_DEVICE type) and
+allocates struct page for each device memory page. It also provides a mechanism
+to migrate pages from host to device memory and vice versa.
+More information on HMM can be found here.
+https://www.kernel.org/doc/Documentation/vm/hmm.rst
+
+i915 supports both SVM system and runtime allocator. As PCIe is a non-coherent
+bus, it plugs in device memory as DEVICE_PRIVATE and no memory access across
+PCIe link is allowed. Any such access will trigger migration of the page/s
+or BOs before the memory is accessed.
+
 Microcontrollers
 ================
 
@@ -540,6 +569,22 @@ GuC ABI
 .. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_communication_ctb_abi.h
 .. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_actions_abi.h
 .. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_klvs_abi.h
+
+GuC Virtualization ABI
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_actions_pf_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/uc/abi/guc_actions_vf_abi.h
+
+GuC VF/PF Virtualization ABI
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_communication_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_communication_mmio_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_messages_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_actions_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_actions_mmio_abi.h
+.. kernel-doc:: drivers/gpu/drm/i915/gt/iov/abi/iov_errors_abi.h
 
 HuC
 ---

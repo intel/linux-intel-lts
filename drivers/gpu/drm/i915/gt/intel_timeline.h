@@ -51,7 +51,8 @@ static inline int __intel_timeline_sync_set(struct intel_timeline *tl,
 static inline int intel_timeline_sync_set(struct intel_timeline *tl,
 					  const struct dma_fence *fence)
 {
-	return __intel_timeline_sync_set(tl, fence->context, fence->seqno);
+	/* An external fence may be 64b, but we are only tracking the low 32b */
+	return __intel_timeline_sync_set(tl, fence->context, lower_32_bits(fence->seqno));
 }
 
 static inline bool __intel_timeline_sync_is_later(struct intel_timeline *tl,
@@ -63,8 +64,11 @@ static inline bool __intel_timeline_sync_is_later(struct intel_timeline *tl,
 static inline bool intel_timeline_sync_is_later(struct intel_timeline *tl,
 						const struct dma_fence *fence)
 {
-	return __intel_timeline_sync_is_later(tl, fence->context, fence->seqno);
+	return __intel_timeline_sync_is_later(tl, fence->context, lower_32_bits(fence->seqno));
 }
+
+bool intel_timeline_get_if_active(struct intel_timeline *tl);
+void intel_timeline_put_active(struct intel_timeline *tl);
 
 void __intel_timeline_pin(struct intel_timeline *tl);
 int intel_timeline_pin(struct intel_timeline *tl, struct i915_gem_ww_ctx *ww);
@@ -80,6 +84,7 @@ void intel_timeline_reset_seqno(const struct intel_timeline *tl);
 int intel_timeline_read_hwsp(struct i915_request *from,
 			     struct i915_request *until,
 			     u32 *hwsp_offset);
+void intel_timeline_rebase_hwsp(struct intel_timeline *tl);
 
 void intel_gt_init_timelines(struct intel_gt *gt);
 void intel_gt_fini_timelines(struct intel_gt *gt);

@@ -35,7 +35,7 @@ static int clflush_work(struct dma_fence_work *base)
 	return 0;
 }
 
-static void clflush_release(struct dma_fence_work *base)
+static void clflush_complete(struct dma_fence_work *base)
 {
 	struct clflush *clflush = container_of(base, typeof(*clflush), base);
 
@@ -46,7 +46,7 @@ static void clflush_release(struct dma_fence_work *base)
 static const struct dma_fence_work_ops clflush_ops = {
 	.name = "clflush",
 	.work = clflush_work,
-	.release = clflush_release,
+	.complete = clflush_complete,
 };
 
 static struct clflush *clflush_work_create(struct drm_i915_gem_object *obj)
@@ -64,7 +64,7 @@ static struct clflush *clflush_work_create(struct drm_i915_gem_object *obj)
 		return NULL;
 	}
 
-	dma_fence_work_init(&clflush->base, &clflush_ops);
+	dma_fence_work_init(&clflush->base, &clflush_ops, to_i915(obj->base.dev)->sched);
 	clflush->obj = i915_gem_object_get(obj); /* obj <-> clflush cycle */
 
 	return clflush;
@@ -107,11 +107,12 @@ bool i915_gem_clflush_object(struct drm_i915_gem_object *obj,
 	if (!(flags & I915_CLFLUSH_SYNC))
 		clflush = clflush_work_create(obj);
 	if (clflush) {
-		i915_sw_fence_await_reservation(&clflush->base.chain,
+		i915_sw_fence_await_reservation(&clflush->base.rq.submit,
 						obj->base.resv, NULL, true,
 						i915_fence_timeout(to_i915(obj->base.dev)),
 						I915_FENCE_GFP);
-		dma_resv_add_excl_fence(obj->base.resv, &clflush->base.dma);
+		dma_resv_add_excl_fence(obj->base.resv,
+					&clflush->base.rq.fence);
 		dma_fence_work_commit(&clflush->base);
 		/*
 		 * We must have successfully populated the pages(since we are

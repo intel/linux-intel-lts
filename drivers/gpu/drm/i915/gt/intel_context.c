@@ -6,12 +6,16 @@
 #include "gem/i915_gem_context.h"
 #include "gem/i915_gem_pm.h"
 
+#include "gt/intel_lrc.h"
+
 #include "i915_drv.h"
 #include "i915_trace.h"
+#include "i915_suspend_fence.h"
 
 #include "intel_context.h"
 #include "intel_engine.h"
 #include "intel_engine_pm.h"
+#include "intel_lrc_reg.h"
 #include "intel_ring.h"
 
 static struct kmem_cache *slab_ce;
@@ -101,10 +105,9 @@ static void intel_context_active_release(struct intel_context *ce)
 
 static int __context_pin_state(struct i915_vma *vma, struct i915_gem_ww_ctx *ww)
 {
-	unsigned int bias = i915_ggtt_pin_bias(vma) | PIN_OFFSET_BIAS;
 	int err;
 
-	err = i915_ggtt_pin(vma, ww, 0, bias | PIN_HIGH);
+	err = i915_ggtt_pin_for_gt(vma, ww, 0, PIN_HIGH);
 	if (err)
 		return err;
 
@@ -117,8 +120,6 @@ static int __context_pin_state(struct i915_vma *vma, struct i915_gem_ww_ctx *ww)
 	 * it cannot reclaim the object until we release it.
 	 */
 	i915_vma_make_unshrinkable(vma);
-	vma->obj->mm.dirty = true;
-
 	return 0;
 
 err_unpin:
@@ -340,6 +341,9 @@ static void __intel_context_retire(struct i915_active *active)
 		 intel_context_get_avg_runtime_ns(ce));
 
 	set_bit(CONTEXT_VALID_BIT, &ce->flags);
+
+	atomic_dec(&ce->vm->active_contexts_gt[ce->engine->gt->info.id]);
+
 	intel_context_post_unpin(ce);
 	intel_context_put(ce);
 }
@@ -362,6 +366,7 @@ static int __intel_context_active(struct i915_active *active)
 		i915_vma_make_unshrinkable(ce->state);
 	}
 
+	atomic_inc(&ce->vm->active_contexts_gt[ce->engine->gt->info.id]);
 	return 0;
 }
 
@@ -370,6 +375,58 @@ sw_fence_dummy_notify(struct i915_sw_fence *sf,
 		      enum i915_sw_fence_notify state)
 {
 	return NOTIFY_DONE;
+}
+
+void intel_context_update_schedule_policy(struct intel_context *ce)
+{
+	atomic_t *count = &ce->schedule_policy.preempt_disable_count;
+	struct intel_engine_cs *engine = ce->engine;
+
+	if (atomic_read(count))
+		return;
+
+	ce->schedule_policy.preempt_timeout_ms =
+					engine->props.preempt_timeout_ms;
+	ce->schedule_policy.timeslice_duration_ms =
+					engine->props.timeslice_duration_ms;
+}
+
+void intel_context_init_schedule_policy(struct intel_context *ce)
+{
+	atomic_set(&ce->schedule_policy.preempt_disable_count, 0);
+	intel_context_update_schedule_policy(ce);
+}
+
+static void __intel_context_set_preemption_timeout(struct intel_context *ce,
+						   u32 preemption_timeout_ms)
+{
+	/* FIXME: This needs execlist support as well */
+	if (!intel_uc_wants_guc_submission(&ce->engine->gt->uc))
+		return;
+
+	ce->schedule_policy.preempt_timeout_ms = preemption_timeout_ms;
+
+	intel_guc_context_set_preemption_timeout(ce);
+}
+
+void intel_context_reset_preemption_timeout(struct intel_context *ce)
+{
+	atomic_t *count = &ce->schedule_policy.preempt_disable_count;
+	struct intel_engine_cs *engine = ce->engine;
+
+	GEM_WARN_ON(atomic_read(count) <= 0);
+
+	if (atomic_dec_and_test(count))
+		__intel_context_set_preemption_timeout(ce,
+					engine->props.preempt_timeout_ms);
+}
+
+void intel_context_disable_preemption_timeout(struct intel_context *ce)
+{
+	atomic_t *count = &ce->schedule_policy.preempt_disable_count;
+
+	if (atomic_inc_return(count) == 1)
+		__intel_context_set_preemption_timeout(ce, 0);
 }
 
 void
@@ -385,8 +442,9 @@ intel_context_init(struct intel_context *ce, struct intel_engine_cs *engine)
 	ce->sseu = engine->sseu;
 	ce->ring = NULL;
 	ce->ring_size = SZ_4K;
+	get_random_bytes(&ce->debugger_lrc_id, sizeof(ce->debugger_lrc_id));
 
-	ewma_runtime_init(&ce->runtime.avg);
+	ewma_runtime_init(&ce->stats.runtime.avg);
 
 	ce->vm = i915_vm_get(engine->gt->vm);
 
@@ -398,7 +456,6 @@ intel_context_init(struct intel_context *ce, struct intel_engine_cs *engine)
 
 	spin_lock_init(&ce->guc_state.lock);
 	INIT_LIST_HEAD(&ce->guc_state.fences);
-	INIT_LIST_HEAD(&ce->guc_state.requests);
 
 	ce->guc_id.id = GUC_INVALID_CONTEXT_ID;
 	INIT_LIST_HEAD(&ce->guc_id.link);
@@ -426,6 +483,9 @@ void intel_context_fini(struct intel_context *ce)
 	if (ce->timeline)
 		intel_timeline_put(ce->timeline);
 	i915_vm_put(ce->vm);
+
+	if (ce->client)
+		i915_drm_client_put(ce->client);
 
 	/* Need to put the creation ref for the children */
 	if (intel_context_is_parent(ce))
@@ -460,7 +520,7 @@ void intel_context_enter_engine(struct intel_context *ce)
 void intel_context_exit_engine(struct intel_context *ce)
 {
 	intel_timeline_exit(ce->timeline);
-	intel_engine_pm_put(ce->engine);
+	intel_engine_pm_put_delay(ce->engine, 2); /* short keepalive */
 }
 
 int intel_context_prepare_remote_request(struct intel_context *ce,
@@ -528,13 +588,11 @@ retry:
 	return rq;
 }
 
-struct i915_request *intel_context_find_active_request(struct intel_context *ce)
+struct i915_request *
+__intel_context_find_active_request(struct intel_context *ce,
+				    bool rq_get_ref)
 {
-	struct intel_context *parent = intel_context_to_parent(ce);
 	struct i915_request *rq, *active = NULL;
-	unsigned long flags;
-
-	GEM_BUG_ON(!intel_engine_uses_guc(ce->engine));
 
 	/*
 	 * We search the parent list to find an active request on the submitted
@@ -542,17 +600,19 @@ struct i915_request *intel_context_find_active_request(struct intel_context *ce)
 	 * in the relationship so we have to do a compare of each request's
 	 * context.
 	 */
-	spin_lock_irqsave(&parent->guc_state.lock, flags);
-	list_for_each_entry_reverse(rq, &parent->guc_state.requests,
-				    sched.link) {
-		if (rq->context != ce)
-			continue;
-		if (i915_request_completed(rq))
+	rcu_read_lock();
+	list_for_each_entry_reverse(rq, &ce->timeline->requests, link) {
+		if (__i915_request_is_complete(rq))
 			break;
 
-		active = rq;
+		if (i915_request_is_active(rq))
+			active = rq;
 	}
-	spin_unlock_irqrestore(&parent->guc_state.lock, flags);
+
+	if (rq_get_ref && active)
+		active = i915_request_get(active);
+
+	rcu_read_unlock();
 
 	return active;
 }
@@ -570,10 +630,167 @@ void intel_context_bind_parent_child(struct intel_context *parent,
 	GEM_BUG_ON(intel_context_is_child(child));
 	GEM_BUG_ON(intel_context_is_parent(child));
 
-	parent->parallel.child_index = parent->parallel.number_children++;
+	child->parallel.child_index = parent->parallel.number_children++;
 	list_add_tail(&child->parallel.child_link,
 		      &parent->parallel.child_list);
 	child->parallel.parent = parent;
+}
+
+u64 intel_context_get_total_runtime_ns(const struct intel_context *ce)
+{
+	u64 total, active;
+
+	total = ce->stats.runtime.total;
+	if (ce->ops->flags & COPS_RUNTIME_CYCLES)
+		total *= ce->engine->gt->clock_period_ns;
+
+	active = READ_ONCE(ce->stats.active);
+	if (active)
+		active = intel_context_clock() - active;
+
+	return total + active;
+}
+
+u64 intel_context_get_avg_runtime_ns(struct intel_context *ce)
+{
+	u64 avg = ewma_runtime_read(&ce->stats.runtime.avg);
+
+	if (ce->ops->flags & COPS_RUNTIME_CYCLES)
+		avg *= ce->engine->gt->clock_period_ns;
+
+	return avg;
+}
+
+int intel_context_throttle(const struct intel_context *ce, long timeout)
+{
+	const struct intel_timeline *tl = ce->timeline;
+	const struct intel_ring *ring = ce->ring;
+	struct i915_request *rq;
+	int err = 0;
+
+	if (READ_ONCE(ring->space) >= SZ_1K)
+		return 0;
+
+	rcu_read_lock();
+	list_for_each_entry_reverse(rq, &tl->requests, link) {
+		if (i915_request_signaled(rq))
+			break;
+
+		if (rq->ring != ring)
+			continue;
+
+		/* Wait until there will be enough space following that rq */
+		if (__intel_ring_space(rq->postfix,
+				       ring->emit,
+				       ring->size) < ring->size / 2) {
+			if (!__i915_request_is_complete(rq) &&
+			    i915_request_get_rcu(rq)) {
+				rcu_read_unlock();
+
+				if (timeout && intel_context_is_barrier(ce))
+					i915_request_set_priority(rq, I915_PRIORITY_BARRIER);
+
+				timeout = i915_request_wait(rq,
+							    I915_WAIT_INTERRUPTIBLE,
+							    timeout);
+				if (timeout < 0)
+					err = timeout;
+
+				rcu_read_lock();
+				i915_request_put(rq);
+			}
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return err;
+}
+
+bool intel_context_ban(struct intel_context *ce, struct i915_request *rq)
+{
+	bool ret = intel_context_set_banned(ce);
+
+	trace_intel_context_ban(ce);
+	if (ce->ops->ban)
+		ce->ops->ban(ce, rq);
+
+	if (!ret) {
+		struct i915_gem_context *ctx;
+
+		rcu_read_lock();
+		ctx = rcu_dereference(ce->gem_context);
+		if (ctx)
+			i915_gem_context_set_banned(ctx);
+		rcu_read_unlock();
+	}
+
+	return ret;
+}
+
+void intel_context_rebase_hwsp(struct intel_context *ce)
+{
+	if (!intel_context_is_pinned(ce))
+		return;
+	intel_timeline_rebase_hwsp(ce->timeline);
+	/*
+	 * The below is part of ce->ops->reset(ce) = lrc_reset(ce), but
+	 * without changing ring positions
+	 */
+	lrc_init_regs(ce, ce->engine, true);
+	ce->lrc.lrca = lrc_update_regs(ce, ce->engine, ce->ring->tail);
+}
+
+/**
+ * intel_context_revert_ring_heads - Set ring heads to the start of scheduled submissions.
+ * @ce: Intel Context instance struct
+ */
+void intel_context_revert_ring_heads(struct intel_context *ce)
+{
+	struct intel_timeline *tl;
+	struct i915_request *rq;
+	u32 *regs;
+
+	if (unlikely(!test_bit(CONTEXT_ALLOC_BIT, &ce->flags)))
+		return;
+
+	tl = ce->timeline;
+
+	while (!mutex_trylock(&tl->mutex))
+		udelay(1);
+
+	list_for_each_entry_rcu(rq, &tl->requests, link) {
+		u32 head, size;
+
+		if (i915_request_completed(rq))
+			continue;
+
+		head = READ_ONCE(rq->ring->head);
+		size = rq->ring->size;
+
+		/*
+		 * We need to revert the ring head to the beginning of a request.
+		 * Sounds simple, but it's a ring - it might have wrapped, either
+		 * within a request, or between requests. Assuming that a single
+		 * request is always smaller that 1/8 of the ring, we can
+		 * revert the head with high accuracy.
+		 */
+		if (((rq->tail > rq->head) && ((head > rq->head) ||
+		     ((head < size/4) && (rq->head > 3*size/4)))) ||
+		    ((rq->tail < rq->head) && ((head > rq->head) ||
+		     (head < rq->tail) || (head < size/4)))) {
+
+			WRITE_ONCE(rq->ring->head, rq->head);
+		}
+	}
+	intel_ring_set_tail(ce->ring, ce->ring->head);
+	regs = ce->lrc_reg_state;
+	if (regs) {
+		regs[CTX_RING_HEAD] = ce->ring->head;
+		regs[CTX_RING_TAIL] = ce->ring->tail;
+	}
+
+	mutex_unlock(&tl->mutex);
 }
 
 #if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)

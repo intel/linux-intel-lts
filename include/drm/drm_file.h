@@ -54,7 +54,6 @@ struct file;
  */
 enum drm_minor_type {
 	DRM_MINOR_PRIMARY,
-	DRM_MINOR_CONTROL,
 	DRM_MINOR_RENDER,
 };
 
@@ -200,6 +199,22 @@ struct drm_file {
 	 * True if client understands writeback connectors
 	 */
 	bool writeback_connectors;
+
+	/**
+	 * This is to enable advance gamma modes using
+	 * gamma_mode property
+	 *
+	 * True if client understands advance gamma
+	 */
+	bool advance_gamma_mode_active : 1;
+
+	/**
+	 * This is to enable advance degamma modes using
+	 * 64 bit LUT values
+	 *
+	 * True if client understands advance degamma
+	 */
+	bool advance_degamma_mode_active : 1;
 
 	/**
 	 * @was_master:

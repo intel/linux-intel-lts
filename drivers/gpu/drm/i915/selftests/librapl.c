@@ -6,29 +6,31 @@
 #include <asm/msr.h>
 
 #include "i915_drv.h"
+#include "i915_hwmon.h"
 #include "librapl.h"
 
-bool librapl_supported(const struct drm_i915_private *i915)
-{
-	/* Discrete cards require hwmon integration */
-	if (IS_DGFX(i915))
-		return false;
-
-	return librapl_energy_uJ();
-}
-
-u64 librapl_energy_uJ(void)
+u64 librapl_energy_uJ(struct drm_i915_private *i915)
 {
 	unsigned long long power;
 	u32 units;
+	long energy_uJ = 0;
 
-	if (rdmsrl_safe(MSR_RAPL_POWER_UNIT, &power))
-		return 0;
+	if (IS_DGFX(i915)) {
+#ifdef CONFIG_HWMON
+		if (i915_hwmon_energy_status_get(i915, &energy_uJ))
+#endif
+			return 0;
 
-	units = (power & 0x1f00) >> 8;
+	} else {
+		if (rdmsrl_safe(MSR_RAPL_POWER_UNIT, &power))
+			return 0;
 
-	if (rdmsrl_safe(MSR_PP1_ENERGY_STATUS, &power))
-		return 0;
+		units = (power & 0x1f00) >> 8;
 
-	return (1000000 * power) >> units; /* convert to uJ */
+		if (rdmsrl_safe(MSR_PP1_ENERGY_STATUS, &power))
+			return 0;
+
+		energy_uJ = (1000000 * power) >> units; /* convert to uJ */
+	}
+	return energy_uJ;
 }

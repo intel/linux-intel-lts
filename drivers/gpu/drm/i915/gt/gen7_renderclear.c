@@ -106,7 +106,7 @@ static u32 batch_offset(const struct batch_chunk *bc, u32 *cs)
 
 static u32 batch_addr(const struct batch_chunk *bc)
 {
-	return bc->vma->node.start;
+	return i915_vma_offset(bc->vma);
 }
 
 static void batch_add(struct batch_chunk *bc, const u32 d)
@@ -392,6 +392,9 @@ static void emit_batch(struct i915_vma * const vma,
 						     &cb_kernel_hsw :
 						     &cb_kernel_ivb,
 						     desc_count);
+
+	/* Disable hostile predication */
+	batch_add(&cmds, MI_PREDICATE | 2 << 6 | 1);
 
 	/* Reset inherited context registers */
 	gen7_emit_pipeline_flush(&cmds);

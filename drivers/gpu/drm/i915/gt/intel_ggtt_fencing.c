@@ -220,7 +220,8 @@ static int fence_update(struct i915_fence_reg *fence,
 				return ret;
 		}
 
-		fence->start = vma->node.start;
+		GEM_BUG_ON(vma->fence_size > i915_vma_size(vma));
+		fence->start = i915_ggtt_offset(vma);
 		fence->size = vma->fence_size;
 		fence->stride = i915_gem_object_get_stride(vma->obj);
 		fence->tiling = i915_gem_object_get_tiling(vma->obj);
@@ -385,6 +386,8 @@ int __i915_vma_pin_fence(struct i915_vma *vma)
 		return 0;
 	}
 
+	/* We have a fence, let the caller skip the waitqueue */
+	__set_current_state(TASK_RUNNING);
 	err = fence_update(fence, set);
 	if (err)
 		goto out_unpin;
@@ -396,7 +399,9 @@ int __i915_vma_pin_fence(struct i915_vma *vma)
 		return 0;
 
 out_unpin:
-	atomic_dec(&fence->pin_count);
+	/* Caller will return the error; wake up the next in the waitqueue */
+	if (atomic_dec_and_test(&fence->pin_count))
+		wake_up(&ggtt->fence_wq);
 	return err;
 }
 
@@ -439,6 +444,54 @@ int i915_vma_pin_fence(struct i915_vma *vma)
 
 	err = __i915_vma_pin_fence(vma);
 	mutex_unlock(&vma->vm->mutex);
+
+	return err;
+}
+
+void __i915_vma_unpin_fence(struct i915_vma *vma)
+{
+	struct i915_fence_reg *fence = vma->fence;
+
+	GEM_BUG_ON(atomic_read(&fence->pin_count) <= 0);
+	if (atomic_dec_and_test(&fence->pin_count))
+		wake_up(&i915_vm_to_ggtt(vma->vm)->fence_wq);
+}
+
+static bool fence_ok(int err)
+{
+	switch (err) {
+	case -EDEADLK:
+	case -EAGAIN:
+		return false;
+	default:
+		return true;
+	}
+}
+
+int i915_vma_pin_fence_wait(struct i915_vma *vma)
+{
+	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vma->vm);
+	DEFINE_WAIT(wait);
+	int err;
+
+	add_wait_queue(&ggtt->fence_wq, &wait);
+	do {
+		err = mutex_lock_interruptible(&vma->vm->mutex);
+		if (err)
+			break;
+
+		set_current_state(TASK_INTERRUPTIBLE);
+		err = __i915_vma_pin_fence(vma);
+
+		mutex_unlock(&vma->vm->mutex);
+
+		if (fence_ok(err))
+			break;
+
+		schedule();
+	} while (1);
+	remove_wait_queue(&ggtt->fence_wq, &wait);
+	__set_current_state(TASK_RUNNING);
 
 	return err;
 }
@@ -841,6 +894,7 @@ void intel_ggtt_init_fences(struct i915_ggtt *ggtt)
 	int num_fences;
 	int i;
 
+	init_waitqueue_head(&ggtt->fence_wq);
 	INIT_LIST_HEAD(&ggtt->fence_list);
 	INIT_LIST_HEAD(&ggtt->userfault_list);
 	intel_wakeref_auto_init(&ggtt->userfault_wakeref, uncore->rpm);

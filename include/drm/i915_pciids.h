@@ -747,4 +747,16 @@
 	INTEL_MTL_M_IDS(info), \
 	INTEL_MTL_P_IDS(info)
 
+/* PVC */
+#define INTEL_PVC_IDS(info) \
+	INTEL_VGA_DEVICE(0x0B69, info), \
+	INTEL_VGA_DEVICE(0x0BD0, info), \
+	INTEL_VGA_DEVICE(0x0BD5, info), \
+	INTEL_VGA_DEVICE(0x0BD6, info), \
+	INTEL_VGA_DEVICE(0x0BD7, info), \
+	INTEL_VGA_DEVICE(0x0BD8, info), \
+	INTEL_VGA_DEVICE(0x0BD9, info), \
+	INTEL_VGA_DEVICE(0x0BDA, info), \
+	INTEL_VGA_DEVICE(0x0BDB, info)
+
 #endif /* _I915_PCIIDS_H */

@@ -17,6 +17,7 @@
 
 #include "dma_resv_utils.h"
 #include "i915_trace.h"
+#include "gt/intel_gt_requests.h"
 
 static bool swap_available(void)
 {
@@ -38,42 +39,31 @@ static bool can_release_pages(struct drm_i915_gem_object *obj)
 }
 
 static bool drop_pages(struct drm_i915_gem_object *obj,
-		       unsigned long shrink, bool trylock_vm)
+		      unsigned long shrink)
 {
 	unsigned long flags;
+	int err;
 
 	flags = 0;
-	if (shrink & I915_SHRINK_ACTIVE)
-		flags |= I915_GEM_OBJECT_UNBIND_ACTIVE;
 	if (!(shrink & I915_SHRINK_BOUND))
 		flags |= I915_GEM_OBJECT_UNBIND_TEST;
-	if (trylock_vm)
-		flags |= I915_GEM_OBJECT_UNBIND_VM_TRYLOCK;
 
-	if (i915_gem_object_unbind(obj, flags) == 0)
-		return true;
+	err = i915_gem_object_unbind(obj, NULL, flags);
+	if (err == 0)
+		err = __i915_gem_object_put_pages(obj);
 
-	return false;
+	return err == 0;
 }
 
 static void try_to_writeback(struct drm_i915_gem_object *obj,
 			     unsigned int flags)
 {
-	switch (obj->mm.madv) {
-	case I915_MADV_DONTNEED:
-		i915_gem_object_truncate(obj);
-		return;
-	case __I915_MADV_PURGED:
-		return;
-	}
-
-	if (flags & I915_SHRINK_WRITEBACK)
+	if (flags & I915_SHRINK_WRITEBACK && obj->mm.madv == I915_MADV_WILLNEED)
 		i915_gem_object_writeback(obj);
 }
 
 /**
  * i915_gem_shrink - Shrink buffer object caches
- * @ww: i915 gem ww acquire ctx, or NULL
  * @i915: i915 device
  * @target: amount of memory to make available, in pages
  * @nr_scanned: optional output for number of pages scanned (incremental)
@@ -98,12 +88,12 @@ static void try_to_writeback(struct drm_i915_gem_object *obj,
  * The number of pages of backing storage actually released.
  */
 unsigned long
-i915_gem_shrink(struct i915_gem_ww_ctx *ww,
-		struct drm_i915_private *i915,
+i915_gem_shrink(struct drm_i915_private *i915,
 		unsigned long target,
 		unsigned long *nr_scanned,
 		unsigned int shrink)
 {
+	struct drm_i915_gem_object *obj;
 	const struct {
 		struct list_head *list;
 		unsigned int bit;
@@ -118,10 +108,6 @@ i915_gem_shrink(struct i915_gem_ww_ctx *ww,
 	intel_wakeref_t wakeref = 0;
 	unsigned long count = 0;
 	unsigned long scanned = 0;
-	int err = 0;
-
-	/* CHV + VTD workaround use stop_machine(); need to trylock vm->mutex */
-	bool trylock_vm = !ww && intel_vm_no_concurrent_access_wa(i915);
 
 	trace_i915_gem_shrink(i915, target, shrink);
 
@@ -171,7 +157,6 @@ i915_gem_shrink(struct i915_gem_ww_ctx *ww,
 	 */
 	for (phase = phases; phase->list; phase++) {
 		struct list_head still_in_list;
-		struct drm_i915_gem_object *obj;
 		unsigned long flags;
 
 		if ((shrink & phase->bit) == 0)
@@ -191,64 +176,67 @@ i915_gem_shrink(struct i915_gem_ww_ctx *ww,
 		       (obj = list_first_entry_or_null(phase->list,
 						       typeof(*obj),
 						       mm.link))) {
+			if (signal_pending(current))
+				break;
+
 			list_move_tail(&obj->mm.link, &still_in_list);
+
+			/* only segment BOs should be in i915->mm.shrink.list */
+			GEM_BUG_ON(i915_gem_object_has_segments(obj));
 
 			if (shrink & I915_SHRINK_VMAPS &&
 			    !is_vmalloc_addr(obj->mm.mapping))
 				continue;
 
-			if (!(shrink & I915_SHRINK_ACTIVE) &&
-			    i915_gem_object_is_framebuffer(obj))
-				continue;
+			if (!(shrink & I915_SHRINK_ACTIVE)) {
+				if (i915_gem_object_has_migrate(obj))
+					continue;
 
-			if (!can_release_pages(obj))
-				continue;
+				if (i915_gem_object_is_framebuffer(obj))
+					continue;
+
+				if (!can_release_pages(obj))
+					continue;
+			}
 
 			if (!kref_get_unless_zero(&obj->base.refcount))
 				continue;
 
 			spin_unlock_irqrestore(&i915->mm.obj_lock, flags);
 
-			/* May arrive from get_pages on another bo */
-			if (!ww) {
-				if (!i915_gem_object_trylock(obj))
-					goto skip;
-			} else {
-				err = i915_gem_object_lock(obj, ww);
-				if (err)
-					goto skip;
-			}
+			if (shrink & I915_SHRINK_ACTIVE &&
+			    i915_gem_object_wait(obj,
+						 I915_WAIT_ALL |
+						 I915_WAIT_INTERRUPTIBLE |
+						 I915_WAIT_PRIORITY,
+						 msecs_to_jiffies(CONFIG_DRM_I915_FENCE_TIMEOUT)) < 0)
+				goto skip;
 
-			if (drop_pages(obj, shrink, trylock_vm) &&
-			    !__i915_gem_object_put_pages(obj)) {
+			/* May arrive from get_pages on another bo */
+			if (!i915_gem_object_trylock(obj))
+				goto skip;
+
+			i915_gem_object_move_notify(obj);
+
+			if (drop_pages(obj, shrink)) {
 				try_to_writeback(obj, shrink);
 				count += obj->base.size >> PAGE_SHIFT;
 			}
 
-			if (!ww)
-				i915_gem_object_unlock(obj);
-
-			dma_resv_prune(obj->base.resv);
+			i915_gem_object_unlock(obj);
 
 			scanned += obj->base.size >> PAGE_SHIFT;
+
 skip:
 			i915_gem_object_put(obj);
-
 			spin_lock_irqsave(&i915->mm.obj_lock, flags);
-			if (err)
-				break;
 		}
 		list_splice_tail(&still_in_list, phase->list);
 		spin_unlock_irqrestore(&i915->mm.obj_lock, flags);
-		if (err)
-			break;
 	}
 
 	if (shrink & I915_SHRINK_BOUND)
 		intel_runtime_pm_put(&i915->runtime_pm, wakeref);
-
-	if (err)
-		return err;
 
 	if (nr_scanned)
 		*nr_scanned += scanned;
@@ -275,9 +263,10 @@ unsigned long i915_gem_shrink_all(struct drm_i915_private *i915)
 	unsigned long freed = 0;
 
 	with_intel_runtime_pm(&i915->runtime_pm, wakeref) {
-		freed = i915_gem_shrink(NULL, i915, -1UL, NULL,
+		freed = i915_gem_shrink(i915, -1UL, NULL,
 					I915_SHRINK_BOUND |
-					I915_SHRINK_UNBOUND);
+					I915_SHRINK_UNBOUND |
+					I915_SHRINK_ACTIVE);
 	}
 
 	return freed;
@@ -312,6 +301,121 @@ i915_gem_shrinker_count(struct shrinker *shrinker, struct shrink_control *sc)
 	return count;
 }
 
+static unsigned long run_swapper(struct drm_i915_private *i915,
+				 unsigned long target,
+				 unsigned long *nr_scanned)
+{
+	unsigned long found = 0;
+
+	found += i915_gem_shrink(i915, target, nr_scanned,
+				 I915_SHRINK_BOUND |
+				 I915_SHRINK_UNBOUND |
+				 I915_SHRINK_WRITEBACK);
+	if (found < target)
+		found += i915_gem_shrink(i915, target, nr_scanned,
+					 I915_SHRINK_ACTIVE |
+					 I915_SHRINK_BOUND |
+					 I915_SHRINK_UNBOUND |
+					 I915_SHRINK_WRITEBACK);
+
+	return found;
+}
+
+static int swapper(void *arg)
+{
+	struct drm_i915_private *i915 = arg;
+	atomic_long_t *target = &i915->mm.swapper.target;
+	unsigned int noreclaim_state;
+
+	/*
+	 * For us to be running the swapper implies that the system is under
+	 * enough memory pressure to be swapping. At that point, we both want
+	 * to ensure we make forward progress in order to reclaim pages from
+	 * the device and not contribute further to direct reclaim pressure. We
+	 * mark ourselves as a memalloc task in order to not trigger direct
+	 * reclaim ourselves, but dip into the system memory reserves for
+	 * shrinkers.
+	 */
+	noreclaim_state = memalloc_noreclaim_save();
+
+	do {
+		intel_wakeref_t wakeref;
+
+		___wait_var_event(target,
+				  atomic_long_read(target) ||
+				  kthread_should_stop(),
+				  TASK_IDLE, 0, 0, schedule());
+		if (kthread_should_stop())
+			break;
+
+		with_intel_runtime_pm(&i915->runtime_pm, wakeref) {
+			unsigned long nr_scan = atomic_long_xchg(target, 0);
+
+			/*
+			 * Now that we have woken up the device hierarchy,
+			 * act as a normal shrinker. Our shrinker is primarily
+			 * focussed on supporting direct reclaim (low latency,
+			 * avoiding contention that may lead to more reclaim,
+			 * or prevent that reclaim from making forward progress)
+			 * and we wish to continue that good practice even
+			 * here where we could accidentally sleep holding locks.
+			 *
+			 * Let lockdep know and warn us about any bad practice
+			 * that may lead to high latency in direct reclaim, or
+			 * anywhere else.
+			 *
+			 * While the swapper is active, direct reclaim from
+			 * other threads will also be running in parallel
+			 * through i915_gem_shrink(), scouring for idle pages.
+			 */
+			fs_reclaim_acquire(GFP_KERNEL);
+			run_swapper(i915, nr_scan, &nr_scan);
+			fs_reclaim_release(GFP_KERNEL);
+		}
+	} while (1);
+
+	memalloc_noreclaim_restore(noreclaim_state);
+	return 0;
+}
+
+static void start_swapper(struct drm_i915_private *i915)
+{
+	i915->mm.swapper.tsk = kthread_run(swapper, i915, "i915-swapd");
+	if (IS_ERR(i915->mm.swapper.tsk))
+		drm_err(&i915->drm,
+			"Failed to launch swapper; memory reclaim may be degraded\n");
+}
+
+static unsigned long kick_swapper(struct drm_i915_private *i915,
+				  unsigned long nr_scan,
+				  unsigned long *scanned)
+{
+	/* Run immediately under kswap if disabled */
+	if (IS_ERR_OR_NULL(i915->mm.swapper.tsk))
+		/*
+		 * Note that as we are still inside kswapd, we are still
+		 * inside a fs_reclaim context and cannot forcibly wake the
+		 * device and so can only opportunitiscally reclaim bound
+		 * memory.
+		 */
+		return run_swapper(i915, nr_scan, scanned);
+
+	if (!atomic_long_fetch_add(nr_scan, &i915->mm.swapper.target))
+		wake_up_var(&i915->mm.swapper.target);
+
+	return 0;
+}
+
+static void stop_swapper(struct drm_i915_private *i915)
+{
+	struct task_struct *tsk = fetch_and_zero(&i915->mm.swapper.tsk);
+
+	if (IS_ERR_OR_NULL(tsk))
+		return;
+
+	kthread_stop(tsk);
+}
+
 static unsigned long
 i915_gem_shrinker_scan(struct shrinker *shrinker, struct shrink_control *sc)
 {
@@ -320,27 +424,22 @@ i915_gem_shrinker_scan(struct shrinker *shrinker, struct shrink_control *sc)
 	unsigned long freed;
 
 	sc->nr_scanned = 0;
-
-	freed = i915_gem_shrink(NULL, i915,
+	freed = i915_gem_shrink(i915,
 				sc->nr_to_scan,
 				&sc->nr_scanned,
 				I915_SHRINK_BOUND |
 				I915_SHRINK_UNBOUND);
-	if (sc->nr_scanned < sc->nr_to_scan && current_is_kswapd()) {
-		intel_wakeref_t wakeref;
+	if (!sc->nr_scanned) /* nothing left to reclaim */
+		return SHRINK_STOP;
 
-		with_intel_runtime_pm(&i915->runtime_pm, wakeref) {
-			freed += i915_gem_shrink(NULL, i915,
-						 sc->nr_to_scan - sc->nr_scanned,
-						 &sc->nr_scanned,
-						 I915_SHRINK_ACTIVE |
-						 I915_SHRINK_BOUND |
-						 I915_SHRINK_UNBOUND |
-						 I915_SHRINK_WRITEBACK);
-		}
-	}
+	/* Pages still bound and system is failing with direct reclaim? */
+	if (sc->nr_scanned < sc->nr_to_scan && current_is_kswapd())
+		/* Defer high latency tasks to a background thread. */
+		freed += kick_swapper(i915,
+				      sc->nr_to_scan - sc->nr_scanned,
+				      &sc->nr_scanned);
 
-	return sc->nr_scanned ? freed : SHRINK_STOP;
+	return freed;
 }
 
 static int
@@ -355,7 +454,7 @@ i915_gem_shrinker_oom(struct notifier_block *nb, unsigned long event, void *ptr)
 
 	freed_pages = 0;
 	with_intel_runtime_pm(&i915->runtime_pm, wakeref)
-		freed_pages += i915_gem_shrink(NULL, i915, -1UL, NULL,
+		freed_pages += i915_gem_shrink(i915, -1UL, NULL,
 					       I915_SHRINK_BOUND |
 					       I915_SHRINK_UNBOUND |
 					       I915_SHRINK_WRITEBACK);
@@ -393,7 +492,7 @@ i915_gem_shrinker_vmap(struct notifier_block *nb, unsigned long event, void *ptr
 	intel_wakeref_t wakeref;
 
 	with_intel_runtime_pm(&i915->runtime_pm, wakeref)
-		freed_pages += i915_gem_shrink(NULL, i915, -1UL, NULL,
+		freed_pages += i915_gem_shrink(i915, -1UL, NULL,
 					       I915_SHRINK_BOUND |
 					       I915_SHRINK_UNBOUND |
 					       I915_SHRINK_VMAPS);
@@ -402,7 +501,7 @@ i915_gem_shrinker_vmap(struct notifier_block *nb, unsigned long event, void *ptr
 	mutex_lock(&to_gt(i915)->ggtt->vm.mutex);
 	list_for_each_entry_safe(vma, next,
 				 &to_gt(i915)->ggtt->vm.bound_list, vm_link) {
-		unsigned long count = vma->node.size >> PAGE_SHIFT;
+		unsigned long count = i915_vma_size(vma) >> PAGE_SHIFT;
 
 		if (!vma->iomap || i915_vma_is_active(vma))
 			continue;
@@ -430,32 +529,20 @@ void i915_gem_driver_register__shrinker(struct drm_i915_private *i915)
 	i915->mm.vmap_notifier.notifier_call = i915_gem_shrinker_vmap;
 	drm_WARN_ON(&i915->drm,
 		    register_vmap_purge_notifier(&i915->mm.vmap_notifier));
+
+	start_swapper(i915);
 }
 
 void i915_gem_driver_unregister__shrinker(struct drm_i915_private *i915)
 {
+	stop_swapper(i915);
+
 	drm_WARN_ON(&i915->drm,
 		    unregister_vmap_purge_notifier(&i915->mm.vmap_notifier));
 	drm_WARN_ON(&i915->drm,
 		    unregister_oom_notifier(&i915->mm.oom_notifier));
 	unregister_shrinker(&i915->mm.shrinker);
 }
-
-void i915_gem_shrinker_taints_mutex(struct drm_i915_private *i915,
-				    struct mutex *mutex)
-{
-	if (!IS_ENABLED(CONFIG_LOCKDEP))
-		return;
-
-	fs_reclaim_acquire(GFP_KERNEL);
-
-	mutex_acquire(&mutex->dep_map, 0, 0, _RET_IP_);
-	mutex_release(&mutex->dep_map, _RET_IP_);
-
-	fs_reclaim_release(GFP_KERNEL);
-}
-
-#define obj_to_i915(obj__) to_i915((obj__)->base.dev)
 
 /**
  * i915_gem_object_make_unshrinkable - Hide the object from the shrinker. By

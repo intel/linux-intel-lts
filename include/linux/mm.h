@@ -2794,6 +2794,8 @@ void vma_set_file(struct vm_area_struct *vma, struct file *file);
 #ifdef CONFIG_NUMA_BALANCING
 unsigned long change_prot_numa(struct vm_area_struct *vma,
 			unsigned long start, unsigned long end);
+extern int sysctl_numa_rebalance_handler(struct ctl_table *table, int write,
+					 void *buffer, size_t *length, loff_t *ppos);
 #endif
 
 struct vm_area_struct *find_extend_vma(struct mm_struct *, unsigned long addr);

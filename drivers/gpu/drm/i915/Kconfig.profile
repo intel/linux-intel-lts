@@ -1,6 +1,6 @@
 config DRM_I915_REQUEST_TIMEOUT
 	int "Default timeout for requests (ms)"
-	default 20000 # milliseconds
+	default 0 # milliseconds
 	help
 	  Configures the default timeout after which any user submissions will
 	  be forcefully terminated.
@@ -89,6 +89,25 @@ config DRM_I915_PREEMPT_TIMEOUT_COMPUTE
 	  certain platforms and certain engines which will be reflected in the
 	  sysfs control.
 
+config DRM_I915_PREEMPT_TIMEOUT_COMPUTE_COPY
+	int "Preempt timeout for copy engines on heavy compute systems (ms, jiffy granularity)"
+	default 2500 # milliseconds
+	help
+	  How long to wait (in milliseconds) for a preemption event to occur
+	  when submitting a new context to a copy engine on a heavy compute
+	  system. If the current context does not hit an arbitration point
+	  and yield to HW before the timer expires, the HW will be reset to
+	  allow the more important context to execute.
+
+	  This is adjustable via
+	  /sys/class/drm/card?/engine/*/preempt_timeout_ms
+
+	  May be 0 to disable the timeout.
+
+	  The compiled in default may get overridden at driver probe time on
+	  certain platforms and certain engines which will be reflected in the
+	  sysfs control.
+
 config DRM_I915_MAX_REQUEST_BUSYWAIT
 	int "Busywait for request completion limit (ns)"
 	default 8000 # nanoseconds
@@ -117,6 +136,10 @@ config DRM_I915_STOP_TIMEOUT
 	  that the reset itself may take longer and so be more disruptive to
 	  interactive or low latency workloads.
 
+	  If context has been marked to be SIP enabled, this timeout is also
+	  maximum time driver will wait for SIP to signal that it is ready and
+	  reset can be made.
+
 	  This is adjustable via
 	  /sys/class/drm/card?/engine/*/stop_timeout_ms
 
@@ -137,3 +160,8 @@ config DRM_I915_TIMESLICE_DURATION
 	  /sys/class/drm/card?/engine/*/timeslice_duration_ms
 
 	  May be 0 to disable timeslicing.
+
+config DRM_I915_DEBUGGER_KFIFO
+	int "Select kfifo event queue size for EU debugger"
+	default 256
+	range 2 512

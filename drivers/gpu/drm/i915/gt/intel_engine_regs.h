@@ -68,6 +68,8 @@
 #define IPEIR(base)				_MMIO((base) + 0x88)
 #define IPEHR(base)				_MMIO((base) + 0x8c)
 #define RING_ID(base)				_MMIO((base) + 0x8c)
+/* LSB used to determine whether the engine instance is even or odd */
+#define   RING_ENGINE_ID_LSB			REG_BIT(4)
 #define RING_NOPID(base)			_MMIO((base) + 0x94)
 #define RING_HWSTAM(base)			_MMIO((base) + 0x98)
 #define RING_MI_MODE(base)			_MMIO((base) + 0x9c)
@@ -77,7 +79,10 @@
 #define   MODE_IDLE				REG_BIT(9)
 #define   STOP_RING				REG_BIT(8)
 #define   VS_TIMER_DISPATCH			REG_BIT(6)
+#define GEN12_RING_INT_SRC(base)		_MMIO((base) + 0xa4)
 #define RING_IMR(base)				_MMIO((base) + 0xa8)
+#define GEN12_RING_INT_MASK(base)		_MMIO((base) + 0xa8)
+#define GEN12_RING_INT_STATUS(base)		_MMIO((base) + 0xac)
 #define RING_EIR(base)				_MMIO((base) + 0xb0)
 #define RING_EMR(base)				_MMIO((base) + 0xb4)
 #define RING_ESR(base)				_MMIO((base) + 0xb8)
@@ -111,6 +116,7 @@
 #define RING_SBBSTATE(base)			_MMIO((base) + 0x118) /* hsw+ */
 #define RING_SBBADDR_UDW(base)			_MMIO((base) + 0x11c) /* gen8+ */
 #define RING_BBADDR(base)			_MMIO((base) + 0x140)
+#define RING_BB_OFFSET(base)			_MMIO((base) + 0x158)
 #define RING_BBADDR_UDW(base)			_MMIO((base) + 0x168) /* gen8+ */
 #define CCID(base)				_MMIO((base) + 0x180)
 #define   CCID_EN				BIT(0)
@@ -120,12 +126,16 @@
 #define RING_INDIRECT_CTX(base)			_MMIO((base) + 0x1c4) /* gen8+ */
 #define RING_INDIRECT_CTX_OFFSET(base)		_MMIO((base) + 0x1c8) /* gen8+ */
 #define ECOSKPD(base)				_MMIO((base) + 0x1d0)
+#define   XEHP_BLITTER_SCHEDULING_MODE_MASK	REG_GENMASK(12, 11)
+#define   XEHP_BLITTER_ROUND_ROBIN_MODE		REG_FIELD_PREP(XEHP_BLITTER_SCHEDULING_MODE_MASK, 0x1)
 #define   ECO_CONSTANT_BUFFER_SR_DISABLE	REG_BIT(4)
 #define   ECO_GATING_CX_ONLY			REG_BIT(3)
 #define   GEN6_BLITTER_FBC_NOTIFY		REG_BIT(3)
 #define   ECO_FLIP_DONE				REG_BIT(0)
 #define   GEN6_BLITTER_LOCK_SHIFT		16
 
+#define BCS_ENGINE_SWCTL(base)			_MMIO((base) + 0x200)
+#define   BCS_ENGINE_SWCTL_DISABLE_256B		REG_BIT(2)
 #define BLIT_CCTL(base)				_MMIO((base) + 0x204)
 #define   BLIT_CCTL_DST_MOCS_MASK		REG_GENMASK(14, 8)
 #define   BLIT_CCTL_SRC_MOCS_MASK		REG_GENMASK(6, 0)
@@ -171,11 +181,14 @@
 #define RING_ELSP(base)				_MMIO((base) + 0x230)
 #define RING_EXECLIST_STATUS_LO(base)		_MMIO((base) + 0x234)
 #define RING_EXECLIST_STATUS_HI(base)		_MMIO((base) + 0x234 + 4)
+#define RING_CURRENT_LRCA(base)			_MMIO((base) + 0x240)
+#define   CURRENT_LRCA_VALID			REG_BIT(0)
 #define RING_CONTEXT_CONTROL(base)		_MMIO((base) + 0x244)
 #define	  CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT	REG_BIT(0)
 #define   CTX_CTRL_RS_CTX_ENABLE		REG_BIT(1)
 #define	  CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT	REG_BIT(2)
 #define	  CTX_CTRL_INHIBIT_SYN_CTX_SWITCH	REG_BIT(3)
+#define	  CTX_CTRL_RUN_ALONE			REG_BIT(7)
 #define	  GEN12_CTX_CTRL_OAR_CONTEXT_ENABLE	REG_BIT(8)
 #define RING_CTX_SR_CTL(base)			_MMIO((base) + 0x244)
 #define RING_SEMA_WAIT_POLL(base)		_MMIO((base) + 0x24c)
@@ -196,6 +209,20 @@
 #define   GFX_FORWARD_VBLANK_ALWAYS		(1 << 5)
 #define   GFX_FORWARD_VBLANK_COND		(2 << 5)
 #define   GEN11_GFX_DISABLE_LEGACY_MODE		(1 << 3)
+#define GEN12_ENGINE_SEMAPHORE_TOKEN(engine)	_MMIO((engine)->mmio_base + 0x2b4)
+/* In GEN12 prior to XEHPSDV the semaphore token register is a bit mask
+ * supporting 27 tokens. */
+#define GEN12_ENGINE_SEMAPHORE_TOKEN_CTX_VALUE(tok) (1 << (tok))
+/* In GEN12 >= XEHPSDV 256 tokens are supported by setting 1 token bit in one of
+ * 8 GuC registers on interrupt. 8 registers x 32 bits == 256 tokens.
+ * Programming the below register configures the interrupt flow. */
+#define XEHPSDV_ENGINE_SEMAPHORE_TOKEN_REG_MASK	GENMASK(7, 5)
+#define XEHPSDV_ENGINE_SEMAPHORE_TOKEN_NUM_MASK	GENMASK(4, 0)
+#define XEHPSDV_ENGINE_SEMAPHORE_TOKEN_CTX_VALUE(tok) ({		\
+	typeof(tok) _tok = (tok);				\
+	((_tok & XEHPSDV_ENGINE_SEMAPHORE_TOKEN_NUM_MASK) |		\
+	((_tok & XEHPSDV_ENGINE_SEMAPHORE_TOKEN_REG_MASK) << 22));	\
+})
 #define RING_TIMESTAMP(base)			_MMIO((base) + 0x358)
 #define RING_TIMESTAMP_UDW(base)		_MMIO((base) + 0x358 + 4)
 #define RING_CONTEXT_STATUS_PTR(base)		_MMIO((base) + 0x3a0)

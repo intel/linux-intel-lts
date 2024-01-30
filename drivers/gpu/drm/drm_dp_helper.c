@@ -2333,6 +2333,31 @@ u8 drm_dp_dsc_sink_max_slice_count(const u8 dsc_dpcd[DP_DSC_RECEIVER_CAP_SIZE],
 EXPORT_SYMBOL(drm_dp_dsc_sink_max_slice_count);
 
 /**
+  * drm_dp_dsc_sink_bpp_increment_div - Get the bits per pixel precision
+  * which DP DSC sink device supports.
+  */
+u8 drm_dp_dsc_sink_bpp_increment_div(const u8 dsc_dpcd[DP_DSC_RECEIVER_CAP_SIZE])
+{
+	u8 bpp_increment_dpcd = dsc_dpcd[DP_DSC_BITS_PER_PIXEL_INC - DP_DSC_SUPPORT];
+
+	switch (bpp_increment_dpcd) {
+	case DP_DSC_BITS_PER_PIXEL_1_16:
+		return 16;
+	case DP_DSC_BITS_PER_PIXEL_1_8:
+		return 8;
+	case DP_DSC_BITS_PER_PIXEL_1_4:
+		return 4;
+	case DP_DSC_BITS_PER_PIXEL_1_2:
+		return 2;
+	case DP_DSC_BITS_PER_PIXEL_1_1:
+		return 1;
+	}
+
+	return 0;
+}
+
+
+/**
  * drm_dp_dsc_sink_line_buf_depth() - Get the line buffer depth in bits
  * @dsc_dpcd: DSC capabilities from DPCD
  *

@@ -130,9 +130,11 @@ int snb_pcode_write_timeout(struct intel_uncore *uncore, u32 mbox, u32 val,
 
 static bool skl_pcode_try_request(struct intel_uncore *uncore, u32 mbox,
 				  u32 request, u32 reply_mask, u32 reply,
-				  u32 *status)
+				  u32 *status, u32 fast_timeout_us,
+				  u32 slow_timeout_ms)
 {
-	*status = __snb_pcode_rw(uncore, mbox, &request, NULL, 500, 0, true);
+	*status = __snb_pcode_rw(uncore, mbox, &request, NULL, fast_timeout_us,
+				 slow_timeout_ms, true);
 
 	return *status || ((request & reply_mask) == reply);
 }
@@ -165,7 +167,10 @@ int skl_pcode_request(struct intel_uncore *uncore, u32 mbox, u32 request,
 	mutex_lock(&uncore->i915->sb_lock);
 
 #define COND \
-	skl_pcode_try_request(uncore, mbox, request, reply_mask, reply, &status)
+	skl_pcode_try_request(uncore, mbox, request, reply_mask, reply, &status, 500, 20)
+
+#define COND_NO_SLOW_TIMEOUT \
+	skl_pcode_try_request(uncore, mbox, request, reply_mask, reply, &status, 500, 0)
 
 	/*
 	 * Prime the PCODE by doing a request first. Normally it guarantees
@@ -195,7 +200,7 @@ int skl_pcode_request(struct intel_uncore *uncore, u32 mbox, u32 request,
 		    "PCODE timeout, retrying with preemption disabled\n");
 	drm_WARN_ON_ONCE(&uncore->i915->drm, timeout_base_ms > 3);
 	preempt_disable();
-	ret = wait_for_atomic(COND, 50);
+	ret = wait_for_atomic(COND_NO_SLOW_TIMEOUT, 50);
 	preempt_enable();
 
 out:
@@ -204,15 +209,37 @@ out:
 #undef COND
 }
 
-int intel_pcode_init(struct intel_uncore *uncore)
+static int pcode_init_wait(struct intel_uncore *uncore, int timeout_ms)
 {
-	if (!IS_DGFX(uncore->i915))
-		return 0;
+	if (__intel_wait_for_register_fw(uncore,
+					 GEN6_PCODE_MAILBOX,
+					 GEN6_PCODE_READY, 0,
+					 500, timeout_ms,
+					 NULL))
+		return -EPROBE_DEFER;
 
-	return skl_pcode_request(uncore, DG1_PCODE_STATUS,
+	return skl_pcode_request(uncore,
+				 DG1_PCODE_STATUS,
 				 DG1_UNCORE_GET_INIT_STATUS,
 				 DG1_UNCORE_INIT_STATUS_COMPLETE,
-				 DG1_UNCORE_INIT_STATUS_COMPLETE, 180000);
+				 DG1_UNCORE_INIT_STATUS_COMPLETE,
+				 timeout_ms);
+}
+
+int intel_pcode_init(struct intel_uncore *uncore)
+{
+	int err = 0;
+
+	if (!IS_DGFX(uncore->i915) || IS_SRIOV_VF(uncore->i915))
+		return 0;
+
+	if (pcode_init_wait(uncore, 10000)) {
+		drm_notice(&uncore->i915->drm,
+			   "Waiting for HW initialisation...\n");
+		err = pcode_init_wait(uncore, 3 * 60 * 1000 /* 3 minutes! */);
+	}
+
+	return err;
 }
 
 int snb_pcode_read_p(struct intel_uncore *uncore, u32 mbcmd, u32 p1, u32 p2, u32 *val)

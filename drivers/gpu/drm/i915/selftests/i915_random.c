@@ -28,6 +28,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
+#include "i915_drv.h"
 #include "i915_random.h"
 #include "i915_utils.h"
 
@@ -77,8 +78,7 @@ unsigned int *i915_random_order(unsigned int count, struct rnd_state *state)
 {
 	unsigned int *order, i;
 
-	order = kmalloc_array(count, sizeof(*order),
-			      GFP_KERNEL | __GFP_RETRY_MAYFAIL | __GFP_NOWARN);
+	order = kmalloc_array(count, sizeof(*order), I915_GFP_ALLOW_FAIL);
 	if (!order)
 		return order;
 

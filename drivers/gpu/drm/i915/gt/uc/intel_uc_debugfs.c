@@ -8,6 +8,7 @@
 
 #include <drm/drm_print.h>
 
+#include "gt/intel_gt.h"
 #include "gt/intel_gt_debugfs.h"
 #include "intel_guc_debugfs.h"
 #include "intel_huc_debugfs.h"
@@ -16,7 +17,8 @@
 
 static int uc_usage_show(struct seq_file *m, void *data)
 {
-	struct intel_uc *uc = m->private;
+	struct intel_gt *gt = m->private;
+	struct intel_uc *uc = &gt->uc;
 	struct drm_printer p = drm_seq_file_printer(m);
 
 	drm_printf(&p, "[guc] supported:%s wanted:%s used:%s\n",
@@ -54,7 +56,9 @@ void intel_uc_debugfs_register(struct intel_uc *uc, struct dentry *gt_root)
 	if (IS_ERR(root))
 		return;
 
-	intel_gt_debugfs_register_files(root, files, ARRAY_SIZE(files), uc);
+	uc->guc.dbgfs_node = root;
+
+	intel_gt_debugfs_register_files(root, files, ARRAY_SIZE(files), uc_to_gt(uc));
 
 	intel_guc_debugfs_register(&uc->guc, root);
 	intel_huc_debugfs_register(&uc->huc, root);

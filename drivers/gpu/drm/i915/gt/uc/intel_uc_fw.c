@@ -26,11 +26,18 @@
 static inline struct intel_gt *
 ____uc_fw_to_gt(struct intel_uc_fw *uc_fw, enum intel_uc_fw_type type)
 {
-	if (type == INTEL_UC_FW_TYPE_GUC)
-		return container_of(uc_fw, struct intel_gt, uc.guc.fw);
+	GEM_BUG_ON(type >= INTEL_UC_FW_NUM_TYPES);
 
-	GEM_BUG_ON(type != INTEL_UC_FW_TYPE_HUC);
-	return container_of(uc_fw, struct intel_gt, uc.huc.fw);
+	switch (type) {
+	case INTEL_UC_FW_TYPE_GUC:
+		return container_of(uc_fw, struct intel_gt, uc.guc.fw);
+	case INTEL_UC_FW_TYPE_HUC:
+		return container_of(uc_fw, struct intel_gt, uc.huc.fw);
+	case INTEL_UC_FW_TYPE_GSC:
+		return container_of(uc_fw, struct intel_gt, uc.gsc.fw);
+	}
+
+	return NULL;
 }
 
 static inline struct intel_gt *__uc_fw_to_gt(struct intel_uc_fw *uc_fw)
@@ -78,35 +85,33 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
  * security fixes, etc. to be enabled.
  */
 #define INTEL_GUC_FIRMWARE_DEFS(fw_def, guc_maj, guc_mmp) \
-	fw_def(METEORLAKE,   0, guc_maj(mtl,  70, 6, 6)) \
-	fw_def(DG2,          0, guc_maj(dg2,  70, 5, 1)) \
-	fw_def(ALDERLAKE_P,  0, guc_maj(adlp, 70, 5, 1)) \
-	fw_def(ALDERLAKE_P,  0, guc_mmp(adlp, 70, 1, 1)) \
-	fw_def(ALDERLAKE_P,  0, guc_mmp(adlp, 69, 0, 3)) \
-	fw_def(ALDERLAKE_S,  0, guc_maj(tgl,  70, 5, 1)) \
-	fw_def(ALDERLAKE_S,  0, guc_mmp(tgl,  70, 1, 1)) \
-	fw_def(ALDERLAKE_S,  0, guc_mmp(tgl,  69, 0, 3)) \
-	fw_def(DG1,          0, guc_maj(dg1,  70, 5, 1)) \
-	fw_def(ROCKETLAKE,   0, guc_mmp(tgl,  70, 1, 1)) \
-	fw_def(TIGERLAKE,    0, guc_mmp(tgl,  70, 1, 1)) \
-	fw_def(JASPERLAKE,   0, guc_mmp(ehl,  70, 1, 1)) \
-	fw_def(ELKHARTLAKE,  0, guc_mmp(ehl,  70, 1, 1)) \
-	fw_def(ICELAKE,      0, guc_mmp(icl,  70, 1, 1)) \
-	fw_def(COMETLAKE,    5, guc_mmp(cml,  70, 1, 1)) \
-	fw_def(COMETLAKE,    0, guc_mmp(kbl,  70, 1, 1)) \
-	fw_def(COFFEELAKE,   0, guc_mmp(kbl,  70, 1, 1)) \
-	fw_def(GEMINILAKE,   0, guc_mmp(glk,  70, 1, 1)) \
-	fw_def(KABYLAKE,     0, guc_mmp(kbl,  70, 1, 1)) \
-	fw_def(BROXTON,      0, guc_mmp(bxt,  70, 1, 1)) \
-	fw_def(SKYLAKE,      0, guc_mmp(skl,  70, 1, 1))
+	fw_def(METEORLAKE,   0, guc_mmp(mtl,  70, 6, 8)) \
+	fw_def(PONTEVECCHIO, 0, guc_mmp(pvc,  70, 9, 1)) \
+	fw_def(DG2,          0, guc_mmp(dg2,  70, 9, 1)) \
+	fw_def(XEHPSDV,  0, guc_mmp(xehpsdv,  70, 9, 1)) \
+	fw_def(ALDERLAKE_P,  0, guc_mmp(adlp, 70, 9, 1)) \
+	fw_def(ALDERLAKE_S,  0, guc_mmp(tgl,  70, 9, 1)) \
+	fw_def(DG1,          0, guc_mmp(dg1,  70, 9, 1)) \
+	fw_def(ROCKETLAKE,   0, guc_mmp(tgl,  70, 9, 1)) \
+	fw_def(TIGERLAKE,    0, guc_mmp(tgl,  70, 9, 1)) \
+	fw_def(JASPERLAKE,   0, guc_mmp(ehl,  70, 9, 1)) \
+	fw_def(ELKHARTLAKE,  0, guc_mmp(ehl,  70, 9, 1)) \
+	fw_def(ICELAKE,      0, guc_mmp(icl,  70, 9, 1)) \
+	fw_def(COMETLAKE,    5, guc_mmp(cml,  70, 9, 1)) \
+	fw_def(COMETLAKE,    0, guc_mmp(kbl,  70, 9, 1)) \
+	fw_def(COFFEELAKE,   0, guc_mmp(kbl,  70, 9, 1)) \
+	fw_def(GEMINILAKE,   0, guc_mmp(glk,  70, 9, 1)) \
+	fw_def(KABYLAKE,     0, guc_mmp(kbl,  70, 9, 1)) \
+	fw_def(BROXTON,      0, guc_mmp(bxt,  70, 9, 1)) \
+	fw_def(SKYLAKE,      0, guc_mmp(skl,  70, 9, 1))
 
 #define INTEL_HUC_FIRMWARE_DEFS(fw_def, huc_raw, huc_mmp, huc_gsc) \
-	fw_def(DG2,          0, huc_gsc(dg2)) \
-	fw_def(ALDERLAKE_P,  0, huc_raw(tgl)) \
+	fw_def(METEORLAKE,   0, huc_gsc(mtl,  8, 3, 7)) \
+	fw_def(PONTEVECCHIO, 0, huc_mmp(pvc,  7, 8, 7)) \
+	fw_def(DG2,          0, huc_gsc(dg2,  7, 10, 3)) \
 	fw_def(ALDERLAKE_P,  0, huc_mmp(tgl,  7, 9, 3)) \
-	fw_def(ALDERLAKE_S,  0, huc_raw(tgl)) \
 	fw_def(ALDERLAKE_S,  0, huc_mmp(tgl,  7, 9, 3)) \
-	fw_def(DG1,          0, huc_raw(dg1)) \
+	fw_def(DG1,          0, huc_mmp(dg1,  7, 9, 3)) \
 	fw_def(ROCKETLAKE,   0, huc_mmp(tgl,  7, 9, 3)) \
 	fw_def(TIGERLAKE,    0, huc_mmp(tgl,  7, 9, 3)) \
 	fw_def(JASPERLAKE,   0, huc_mmp(ehl,  9, 0, 0)) \
@@ -119,6 +124,9 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 	fw_def(KABYLAKE,     0, huc_mmp(kbl,  4, 0, 0)) \
 	fw_def(BROXTON,      0, huc_mmp(bxt,  2, 0, 0)) \
 	fw_def(SKYLAKE,      0, huc_mmp(skl,  2, 0, 0))
+
+#define INTEL_GSC_FIRMWARE_DEFS(fw_def, gsc_def) \
+	fw_def(METEORLAKE,   0, gsc_def(mtl, 102, 0, 0, 7366))
 
 /*
  * Set of macros for producing a list of filenames from the above table.
@@ -139,6 +147,21 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 	__stringify(minor_) "." \
 	__stringify(patch_) ".bin"
 
+#define __MAKE_UC_FW_PATH_MMPS(prefix_, name_, major_, minor_, patch_, suffix_) \
+	"i915/" \
+	__stringify(prefix_) "_" name_ "_" \
+	__stringify(major_) "." \
+	__stringify(minor_) "." \
+	__stringify(patch_) "_" suffix_ ".bin"
+
+#define __MAKE_UC_FW_PATH_MMPB(prefix_, name_, major_, minor_, patch_, build_) \
+	"i915/" \
+	__stringify(prefix_) "_" name_ "_" \
+	__stringify(major_) "." \
+	__stringify(minor_) "." \
+	__stringify(patch_) "." \
+	__stringify(build_) ".bin"
+
 /* Minor for internal driver use, not part of file name */
 #define MAKE_GUC_FW_PATH_MAJOR(prefix_, major_, minor_, patch_) \
 	__MAKE_UC_FW_PATH_MAJOR(prefix_, "guc", major_)
@@ -149,11 +172,14 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 #define MAKE_HUC_FW_PATH_BLANK(prefix_) \
 	__MAKE_UC_FW_PATH_BLANK(prefix_, "huc")
 
-#define MAKE_HUC_FW_PATH_GSC(prefix_) \
-	__MAKE_UC_FW_PATH_BLANK(prefix_, "huc_gsc")
+#define MAKE_HUC_FW_PATH_GSC(prefix_, major_, minor_, patch_) \
+	__MAKE_UC_FW_PATH_MMPS(prefix_, "huc", major_, minor_, patch_, "gsc")
 
 #define MAKE_HUC_FW_PATH_MMP(prefix_, major_, minor_, patch_) \
 	__MAKE_UC_FW_PATH_MMP(prefix_, "huc", major_, minor_, patch_)
+
+#define MAKE_GSC_FW_PATH(prefix_, major_, minor_, patch, build_) \
+	__MAKE_UC_FW_PATH_MMPB(prefix_, "gsc", major_, minor_, patch, build_)
 
 /*
  * All blobs need to be declared via MODULE_FIRMWARE().
@@ -165,6 +191,7 @@ void intel_uc_fw_change_status(struct intel_uc_fw *uc_fw,
 
 INTEL_GUC_FIRMWARE_DEFS(INTEL_UC_MODULE_FW, MAKE_GUC_FW_PATH_MAJOR, MAKE_GUC_FW_PATH_MMP)
 INTEL_HUC_FIRMWARE_DEFS(INTEL_UC_MODULE_FW, MAKE_HUC_FW_PATH_BLANK, MAKE_HUC_FW_PATH_MMP, MAKE_HUC_FW_PATH_GSC)
+INTEL_GSC_FIRMWARE_DEFS(INTEL_UC_MODULE_FW, MAKE_GSC_FW_PATH)
 
 /*
  * The next expansion of the table macros (in __uc_fw_auto_select below) provides
@@ -211,8 +238,13 @@ struct __packed uc_fw_blob {
 	UC_FW_BLOB_OLD(major_, minor_, patch_, \
 		       MAKE_HUC_FW_PATH_MMP(prefix_, major_, minor_, patch_))
 
-#define HUC_FW_BLOB_GSC(prefix_) \
-	UC_FW_BLOB_NEW(0, 0, 0, true, MAKE_HUC_FW_PATH_GSC(prefix_))
+#define HUC_FW_BLOB_GSC(prefix_, major_, minor_, patch_) \
+	UC_FW_BLOB_NEW(major_, minor_, patch_, true, \
+		       MAKE_HUC_FW_PATH_GSC(prefix_, major_, minor_, patch_))
+
+#define GSC_FW_BLOB(prefix_, major_, minor_, patch_, build_) \
+	UC_FW_BLOB_OLD(major_, minor_, patch_, \
+		       MAKE_GSC_FW_PATH(prefix_, major_, minor_, patch_, build_))
 
 struct __packed uc_fw_platform_requirement {
 	enum intel_platform p;
@@ -240,9 +272,14 @@ static const struct uc_fw_platform_requirement blobs_huc[] = {
 	INTEL_HUC_FIRMWARE_DEFS(MAKE_FW_LIST, HUC_FW_BLOB, HUC_FW_BLOB_MMP, HUC_FW_BLOB_GSC)
 };
 
+static const struct uc_fw_platform_requirement blobs_gsc[] = {
+	INTEL_GSC_FIRMWARE_DEFS(MAKE_FW_LIST, GSC_FW_BLOB)
+};
+
 static const struct fw_blobs_by_type blobs_all[INTEL_UC_FW_NUM_TYPES] = {
 	[INTEL_UC_FW_TYPE_GUC] = { blobs_guc, ARRAY_SIZE(blobs_guc) },
 	[INTEL_UC_FW_TYPE_HUC] = { blobs_huc, ARRAY_SIZE(blobs_huc) },
+	[INTEL_UC_FW_TYPE_GSC] = { blobs_gsc, ARRAY_SIZE(blobs_gsc) },
 };
 
 static void
@@ -425,6 +462,14 @@ static const char *__override_huc_firmware_path(struct drm_i915_private *i915)
 	return "";
 }
 
+static const char *__override_gsc_firmware_path(struct drm_i915_private *i915)
+{
+	/* GSC only user is HuC loading for now, so we use the same param */
+	if (i915->params.enable_guc & ENABLE_GUC_LOAD_HUC)
+		return i915->params.gsc_firmware_path;
+	return "";
+}
+
 static void __uc_fw_user_override(struct drm_i915_private *i915, struct intel_uc_fw *uc_fw)
 {
 	const char *path = NULL;
@@ -435,6 +480,9 @@ static void __uc_fw_user_override(struct drm_i915_private *i915, struct intel_uc
 		break;
 	case INTEL_UC_FW_TYPE_HUC:
 		path = __override_huc_firmware_path(i915);
+		break;
+	case INTEL_UC_FW_TYPE_GSC:
+		path = __override_gsc_firmware_path(i915);
 		break;
 	}
 
@@ -483,6 +531,32 @@ void intel_uc_fw_init_early(struct intel_uc_fw *uc_fw,
 				  INTEL_UC_FIRMWARE_SELECTED :
 				  INTEL_UC_FIRMWARE_DISABLED :
 				  INTEL_UC_FIRMWARE_NOT_SUPPORTED);
+}
+
+/**
+ * intel_uc_fw_set_preloaded() - set uC firmware as pre-loaded
+ * @uc_fw: uC firmware structure
+ * @major: major version of the pre-loaded firmware
+ * @minor: minor version of the pre-loaded firmware
+ *
+ * If the uC firmware was loaded to h/w by other entity, just
+ * mark it as loaded.
+ */
+void intel_uc_fw_set_preloaded(struct intel_uc_fw *uc_fw, u16 major, u16 minor)
+{
+	uc_fw->file_selected.path = "PRELOADED";
+	uc_fw->file_selected.ver.major = major;
+	uc_fw->file_selected.ver.minor = minor;
+
+	if (uc_fw->type == INTEL_UC_FW_TYPE_GUC) {
+		struct intel_guc *guc = container_of(uc_fw, struct intel_guc, fw);
+
+		guc->submission_version.major = major;
+		guc->submission_version.minor = minor;
+		guc->submission_version.patch = 0;
+	}
+
+	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_PRELOADED);
 }
 
 static void __force_fw_fetch_failures(struct intel_uc_fw *uc_fw, int e)
@@ -636,10 +710,10 @@ static int check_ccs_header(struct intel_gt *gt,
 
 	/* Sanity check whether this fw is not larger than whole WOPCM memory */
 	size = __intel_uc_fw_get_upload_size(uc_fw);
-	if (unlikely(size >= gt->i915->wopcm.size)) {
+	if (unlikely(size >= gt->wopcm.size)) {
 		gt_warn(gt, "%s firmware %s: invalid size: %zu > %zu\n",
 			intel_uc_fw_type_repr(uc_fw->type), uc_fw->file_selected.path,
-			 size, (size_t)gt->i915->wopcm.size);
+			size, (size_t)gt->wopcm.size);
 		return -E2BIG;
 	}
 
@@ -647,6 +721,26 @@ static int check_ccs_header(struct intel_gt *gt,
 
 	if (uc_fw->type == INTEL_UC_FW_TYPE_GUC)
 		guc_read_css_info(uc_fw, css);
+
+	return 0;
+}
+
+static int check_fw_header(struct intel_gt *gt,
+			   const struct firmware *fw,
+			   struct intel_uc_fw *uc_fw)
+{
+	int err = 0;
+
+	/* XXX: can we read something? spec says to load blindly */
+	if (uc_fw->type == INTEL_UC_FW_TYPE_GSC)
+		return 0;
+
+	if (uc_fw->loaded_via_gsc)
+		err = check_gsc_manifest(fw, uc_fw);
+	else
+		err = check_ccs_header(gt, fw, uc_fw);
+	if (err)
+		return err;
 
 	return 0;
 }
@@ -707,7 +801,7 @@ int intel_uc_fw_fetch(struct intel_uc_fw *uc_fw)
 	bool old_ver = false;
 	int err;
 
-	GEM_BUG_ON(!i915->wopcm.size);
+	GEM_BUG_ON(!gt->wopcm.size);
 	GEM_BUG_ON(!intel_uc_fw_is_enabled(uc_fw));
 
 	err = i915_inject_probe_error(i915, -ENXIO);
@@ -746,10 +840,7 @@ int intel_uc_fw_fetch(struct intel_uc_fw *uc_fw)
 	if (err)
 		goto fail;
 
-	if (uc_fw->loaded_via_gsc)
-		err = check_gsc_manifest(fw, uc_fw);
-	else
-		err = check_ccs_header(gt, fw, uc_fw);
+	err = check_fw_header(gt, fw, uc_fw);
 	if (err)
 		goto fail;
 
@@ -759,7 +850,7 @@ int intel_uc_fw_fetch(struct intel_uc_fw *uc_fw)
 			goto fail;
 	}
 
-	if (uc_fw->file_wanted.ver.major) {
+	if (uc_fw->file_wanted.ver.major && uc_fw->file_selected.ver.major) {
 		/* Check the file's major version was as it claimed */
 		if (uc_fw->file_selected.ver.major != uc_fw->file_wanted.ver.major) {
 			UNEXPECTED(gt, "%s firmware %s: unexpected version: %u.%u != %u.%u\n",
@@ -783,22 +874,24 @@ int intel_uc_fw_fetch(struct intel_uc_fw *uc_fw)
 		/* Preserve the version that was really wanted */
 		memcpy(&uc_fw->file_wanted, &file_ideal, sizeof(uc_fw->file_wanted));
 
-		UNEXPECTED(gt, "%s firmware %s (%d.%d.%d) is recommended, but only %s (%d.%d.%d) was found\n",
-			   intel_uc_fw_type_repr(uc_fw->type),
-			   uc_fw->file_wanted.path,
-			   uc_fw->file_wanted.ver.major,
-			   uc_fw->file_wanted.ver.minor,
-			   uc_fw->file_wanted.ver.patch,
-			   uc_fw->file_selected.path,
-			   uc_fw->file_selected.ver.major,
-			   uc_fw->file_selected.ver.minor,
-			   uc_fw->file_selected.ver.patch);
-		gt_info(gt, "Consider updating your linux-firmware pkg or downloading from %s\n",
-			INTEL_UC_FIRMWARE_URL);
+		if (uc_fw->file_selected.ver.major) {
+			UNEXPECTED(gt, "%s firmware %s (%d.%d.%d) is recommended, but only %s (%d.%d.%d) was found\n",
+				   intel_uc_fw_type_repr(uc_fw->type),
+				   uc_fw->file_wanted.path,
+				   uc_fw->file_wanted.ver.major,
+				   uc_fw->file_wanted.ver.minor,
+				   uc_fw->file_wanted.ver.patch,
+				   uc_fw->file_selected.path,
+				   uc_fw->file_selected.ver.major,
+				   uc_fw->file_selected.ver.minor,
+				   uc_fw->file_selected.ver.patch);
+			gt_info(gt, "Consider updating your linux-firmware pkg or downloading from %s\n",
+				INTEL_UC_FIRMWARE_URL);
+		}
 	}
 
-	if (HAS_LMEM(i915))
-		obj = i915_gem_object_create_lmem_from_data(i915, fw->data, fw->size);
+	if (HAS_LMEM(i915) && !i915_is_mem_wa_enabled(i915, I915_WA_FORCE_SMEM_OBJECT))
+		obj = i915_gem_object_create_lmem_from_data(gt->lmem, fw->data, fw->size);
 	else
 		obj = i915_gem_object_create_shmem_from_data(i915, fw->data, fw->size);
 
@@ -828,52 +921,6 @@ fail:
 	return err;
 }
 
-static u32 uc_fw_ggtt_offset(struct intel_uc_fw *uc_fw)
-{
-	struct i915_ggtt *ggtt = __uc_fw_to_gt(uc_fw)->ggtt;
-	struct drm_mm_node *node = &ggtt->uc_fw;
-
-	GEM_BUG_ON(!drm_mm_node_allocated(node));
-	GEM_BUG_ON(upper_32_bits(node->start));
-	GEM_BUG_ON(upper_32_bits(node->start + node->size - 1));
-
-	return lower_32_bits(node->start);
-}
-
-static void uc_fw_bind_ggtt(struct intel_uc_fw *uc_fw)
-{
-	struct drm_i915_gem_object *obj = uc_fw->obj;
-	struct i915_ggtt *ggtt = __uc_fw_to_gt(uc_fw)->ggtt;
-	struct i915_vma *dummy = &uc_fw->dummy;
-	u32 pte_flags = 0;
-
-	dummy->node.start = uc_fw_ggtt_offset(uc_fw);
-	dummy->node.size = obj->base.size;
-	dummy->pages = obj->mm.pages;
-	dummy->vm = &ggtt->vm;
-
-	GEM_BUG_ON(!i915_gem_object_has_pinned_pages(obj));
-	GEM_BUG_ON(dummy->node.size > ggtt->uc_fw.size);
-
-	/* uc_fw->obj cache domains were not controlled across suspend */
-	if (i915_gem_object_has_struct_page(obj))
-		drm_clflush_sg(dummy->pages);
-
-	if (i915_gem_object_is_lmem(obj))
-		pte_flags |= PTE_LM;
-
-	ggtt->vm.insert_entries(&ggtt->vm, dummy, I915_CACHE_NONE, pte_flags);
-}
-
-static void uc_fw_unbind_ggtt(struct intel_uc_fw *uc_fw)
-{
-	struct drm_i915_gem_object *obj = uc_fw->obj;
-	struct i915_ggtt *ggtt = __uc_fw_to_gt(uc_fw)->ggtt;
-	u64 start = uc_fw_ggtt_offset(uc_fw);
-
-	ggtt->vm.clear_range(&ggtt->vm, start, obj->base.size);
-}
-
 static int uc_fw_xfer(struct intel_uc_fw *uc_fw, u32 dst_offset, u32 dma_flags)
 {
 	struct intel_gt *gt = __uc_fw_to_gt(uc_fw);
@@ -888,7 +935,7 @@ static int uc_fw_xfer(struct intel_uc_fw *uc_fw, u32 dst_offset, u32 dma_flags)
 	intel_uncore_forcewake_get(uncore, FORCEWAKE_ALL);
 
 	/* Set the source address for the uCode */
-	offset = uc_fw_ggtt_offset(uc_fw);
+	offset = uc_fw->dummy.node.start;
 	GEM_BUG_ON(upper_32_bits(offset) & 0xFFFF0000);
 	intel_uncore_write_fw(uncore, DMA_ADDR_0_LOW, lower_32_bits(offset));
 	intel_uncore_write_fw(uncore, DMA_ADDR_0_HIGH, upper_32_bits(offset));
@@ -923,6 +970,19 @@ static int uc_fw_xfer(struct intel_uc_fw *uc_fw, u32 dst_offset, u32 dma_flags)
 	return ret;
 }
 
+int intel_uc_fw_mark_load_failed(struct intel_uc_fw *uc_fw, int err)
+{
+	struct intel_gt *gt = __uc_fw_to_gt(uc_fw);
+
+	GEM_BUG_ON(!intel_uc_fw_is_loadable(uc_fw));
+
+	gt_probe_error(gt, "Failed to load %s firmware %s %pe\n",
+		       intel_uc_fw_type_repr(uc_fw->type), uc_fw->file_selected.path, ERR_PTR(err));
+	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_LOAD_FAIL);
+
+	return err;
+}
+
 /**
  * intel_uc_fw_upload - load uC firmware using custom loader
  * @uc_fw: uC firmware
@@ -949,9 +1009,7 @@ int intel_uc_fw_upload(struct intel_uc_fw *uc_fw, u32 dst_offset, u32 dma_flags)
 		return -ENOEXEC;
 
 	/* Call custom loader */
-	uc_fw_bind_ggtt(uc_fw);
 	err = uc_fw_xfer(uc_fw, dst_offset, dma_flags);
-	uc_fw_unbind_ggtt(uc_fw);
 	if (err)
 		goto fail;
 
@@ -959,10 +1017,7 @@ int intel_uc_fw_upload(struct intel_uc_fw *uc_fw, u32 dst_offset, u32 dma_flags)
 	return 0;
 
 fail:
-	gt_probe_error(gt, "Failed to load %s firmware %s %pe\n",
-		       intel_uc_fw_type_repr(uc_fw->type), uc_fw->file_selected.path, ERR_PTR(err));
-	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_LOAD_FAIL);
-	return err;
+	return intel_uc_fw_mark_load_failed(uc_fw, err);
 }
 
 static inline bool uc_fw_need_rsa_in_memory(struct intel_uc_fw *uc_fw)
@@ -978,6 +1033,7 @@ static inline bool uc_fw_need_rsa_in_memory(struct intel_uc_fw *uc_fw)
 static int uc_fw_rsa_data_create(struct intel_uc_fw *uc_fw)
 {
 	struct intel_gt *gt = __uc_fw_to_gt(uc_fw);
+	struct intel_wopcm *wopcm = &gt->wopcm;
 	struct i915_vma *vma;
 	size_t copied;
 	void *vaddr;
@@ -998,9 +1054,17 @@ static int uc_fw_rsa_data_create(struct intel_uc_fw *uc_fw)
 	 * within the accessible range that only contains the RSA signature.
 	 * The GuC HW can use this extra pinning to perform the authentication
 	 * since its GGTT offset will be GuC accessible.
+	 *
+	 * Wa_14011315852
+	 * Bootrom requires the GuC RSA to be pinned above the max WOPCM address
+	 * assigned to the firmwares. Since pinning this slightly higher doesn't
+	 * hurt, we can do it unconditionally on all platforms and for both
+	 * binaries to keep the code simple.
 	 */
 	GEM_BUG_ON(uc_fw->rsa_size > PAGE_SIZE);
-	vma = intel_guc_allocate_vma(&gt->uc.guc, PAGE_SIZE);
+	vma = intel_guc_allocate_vma_with_bias(&gt->uc.guc, PAGE_SIZE,
+					       intel_wopcm_guc_base(wopcm) +
+					       intel_wopcm_guc_size(wopcm));
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
@@ -1034,6 +1098,72 @@ static void uc_fw_rsa_data_destroy(struct intel_uc_fw *uc_fw)
 	i915_vma_unpin_and_release(&uc_fw->rsa_data, 0);
 }
 
+/*
+ * The reserved GGTT space is ~18 MBs. All our blobs are well below 1MB, so for
+ * safety we reserve 2MB each.
+ */
+#define INTEL_UC_RSVD_GGTT_PER_FW SZ_2M
+static u32 uc_fw_ggtt_offset(struct intel_uc_fw *uc_fw)
+{
+	struct intel_gt *gt = __uc_fw_to_gt(uc_fw);
+	struct i915_ggtt *ggtt = gt->ggtt;
+	struct drm_mm_node *node = &ggtt->uc_fw;
+	u32 offset = uc_fw->type * INTEL_UC_RSVD_GGTT_PER_FW;
+
+	/*
+	 * To keep the math simple, we use 8MB for the root tile and 8MB for
+	 * the media one.
+	 */
+	BUILD_BUG_ON(INTEL_UC_FW_NUM_TYPES * INTEL_UC_RSVD_GGTT_PER_FW > SZ_8M);
+	if (gt->type == GT_MEDIA)
+		offset += SZ_8M;
+
+	GEM_BUG_ON(!drm_mm_node_allocated(node));
+	GEM_BUG_ON(upper_32_bits(node->start));
+	GEM_BUG_ON(upper_32_bits(node->start + node->size - 1));
+	GEM_BUG_ON(offset + uc_fw->obj->base.size > node->size);
+	GEM_BUG_ON(uc_fw->obj->base.size > INTEL_UC_RSVD_GGTT_PER_FW);
+
+	return lower_32_bits(node->start + offset);
+}
+
+static void uc_fw_bind_ggtt(struct intel_uc_fw *uc_fw)
+{
+	struct drm_i915_gem_object *obj = uc_fw->obj;
+	struct i915_ggtt *ggtt = __uc_fw_to_gt(uc_fw)->ggtt;
+	struct i915_vma *dummy = &uc_fw->dummy;
+	u32 pte_flags = 0;
+
+	dummy->node.start = uc_fw_ggtt_offset(uc_fw);
+	dummy->node.size = obj->base.size;
+	dummy->pages = obj->mm.pages;
+	dummy->vm = &ggtt->vm;
+
+	GEM_BUG_ON(!i915_gem_object_has_pinned_pages(obj));
+
+	/* uc_fw->obj cache domains were not controlled across suspend */
+	if (i915_gem_object_has_struct_page(obj))
+		drm_clflush_sg(dummy->pages);
+
+	if (i915_gem_object_is_lmem(obj))
+		pte_flags |= PTE_LM;
+
+	ggtt->vm.insert_entries(&ggtt->vm, NULL, dummy,
+				i915_gem_get_pat_index(ggtt->vm.i915,
+						       I915_CACHE_NONE),
+				pte_flags);
+}
+
+static void uc_fw_unbind_ggtt(struct intel_uc_fw *uc_fw)
+{
+	struct i915_vma *dummy = &uc_fw->dummy;
+
+	if (!dummy->vm)
+		return;
+
+	dummy->vm->clear_range(dummy->vm, dummy->node.start, dummy->node.size);
+}
+
 int intel_uc_fw_init(struct intel_uc_fw *uc_fw)
 {
 	int err;
@@ -1058,6 +1188,8 @@ int intel_uc_fw_init(struct intel_uc_fw *uc_fw)
 		goto out_unpin;
 	}
 
+	uc_fw_bind_ggtt(uc_fw);
+
 	return 0;
 
 out_unpin:
@@ -1069,12 +1201,24 @@ out:
 
 void intel_uc_fw_fini(struct intel_uc_fw *uc_fw)
 {
+	uc_fw_unbind_ggtt(uc_fw);
 	uc_fw_rsa_data_destroy(uc_fw);
 
 	if (i915_gem_object_has_pinned_pages(uc_fw->obj))
 		i915_gem_object_unpin_pages(uc_fw->obj);
 
 	intel_uc_fw_change_status(uc_fw, INTEL_UC_FIRMWARE_AVAILABLE);
+}
+
+void intel_uc_fw_resume(struct intel_uc_fw *uc_fw)
+{
+	if (!intel_uc_fw_is_available(uc_fw))
+		return;
+
+	if (!i915_gem_object_has_pinned_pages(uc_fw->obj))
+		return;
+
+	uc_fw_bind_ggtt(uc_fw);
 }
 
 /**
@@ -1104,7 +1248,7 @@ void intel_uc_fw_cleanup_fetch(struct intel_uc_fw *uc_fw)
  */
 size_t intel_uc_fw_copy_rsa(struct intel_uc_fw *uc_fw, void *dst, u32 max_len)
 {
-	struct intel_memory_region *mr = uc_fw->obj->mm.region;
+	struct intel_memory_region *mr = uc_fw->obj->mm.region.mem;
 	u32 size = min_t(u32, uc_fw->rsa_size, max_len);
 	u32 offset = sizeof(struct uc_css_header) + uc_fw->ucode_size;
 	struct sgt_iter iter;

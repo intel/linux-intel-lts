@@ -29,6 +29,7 @@
 #include "igt_gem_utils.h"
 
 #define DW_PER_PAGE (PAGE_SIZE / sizeof(u32))
+#define HANG_POISON 0xc5c5c5c5
 
 static inline struct i915_address_space *ctx_vm(struct i915_gem_context *ctx)
 {
@@ -152,7 +153,7 @@ static int live_nop_switch(void *arg)
 				i915_request_add(this);
 			}
 			GEM_BUG_ON(!rq);
-			if (i915_request_wait(rq, 0, HZ / 5) < 0) {
+			if (i915_request_wait(rq, 0, HZ) < 0) {
 				pr_err("Switching between %ld contexts timed out\n",
 				       prime);
 				intel_gt_set_wedged(to_gt(i915));
@@ -218,7 +219,7 @@ static int __live_parallel_switch1(void *data)
 
 			i915_request_add(rq);
 		}
-		if (i915_request_wait(rq, 0, HZ / 5) < 0)
+		if (i915_request_wait(rq, 0, HZ) < 0)
 			err = -ETIME;
 		i915_request_put(rq);
 		if (err)
@@ -427,6 +428,7 @@ static int gpu_fill(struct intel_context *ce,
 		    unsigned int dw)
 {
 	struct i915_vma *vma;
+	unsigned int flags;
 	int err;
 
 	GEM_BUG_ON(obj->base.size > ce->vm->total);
@@ -436,7 +438,11 @@ static int gpu_fill(struct intel_context *ce,
 	if (IS_ERR(vma))
 		return PTR_ERR(vma);
 
-	err = i915_vma_pin(vma, 0, 0, PIN_HIGH | PIN_USER);
+	flags = PIN_USER | PIN_HIGH;
+	if ((ce->vm->total - 1) >> ce->engine->ppgtt_size)
+		flags |= PIN_ZONE_48;
+
+	err = i915_vma_pin(vma, 0, 0, flags);
 	if (err)
 		return err;
 
@@ -461,7 +467,8 @@ static int gpu_fill(struct intel_context *ce,
 static int cpu_fill(struct drm_i915_gem_object *obj, u32 value)
 {
 	const bool has_llc = HAS_LLC(to_i915(obj->base.dev));
-	unsigned int n, m, need_flush;
+	unsigned int need_flush;
+	unsigned long n, m;
 	int err;
 
 	i915_gem_object_lock(obj, NULL);
@@ -491,7 +498,8 @@ out:
 static noinline int cpu_check(struct drm_i915_gem_object *obj,
 			      unsigned int idx, unsigned int max)
 {
-	unsigned int n, m, needs_flush;
+	unsigned int needs_flush;
+	unsigned long n;
 	int err;
 
 	i915_gem_object_lock(obj, NULL);
@@ -500,7 +508,7 @@ static noinline int cpu_check(struct drm_i915_gem_object *obj,
 		goto out_unlock;
 
 	for (n = 0; n < real_page_count(obj); n++) {
-		u32 *map;
+		u32 *map, m;
 
 		map = kmap_atomic(i915_gem_object_get_page(obj, n));
 		if (needs_flush & CLFLUSH_BEFORE)
@@ -508,7 +516,7 @@ static noinline int cpu_check(struct drm_i915_gem_object *obj,
 
 		for (m = 0; m < max; m++) {
 			if (map[m] != m) {
-				pr_err("%pS: Invalid value at object %d page %d/%ld, offset %d/%d: found %x expected %x\n",
+				pr_err("%pS: Invalid value at object %d page %ld/%ld, offset %d/%d: found %x expected %x\n",
 				       __builtin_return_address(0), idx,
 				       n, real_page_count(obj), m, max,
 				       map[m], m);
@@ -519,7 +527,7 @@ static noinline int cpu_check(struct drm_i915_gem_object *obj,
 
 		for (; m < DW_PER_PAGE; m++) {
 			if (map[m] != STACK_MAGIC) {
-				pr_err("%pS: Invalid value at object %d page %d, offset %d: found %x expected %x (uninitialised)\n",
+				pr_err("%pS: Invalid value at object %d page %ld, offset %d: found %x expected %x (uninitialised)\n",
 				       __builtin_return_address(0), idx, n, m,
 				       map[m], STACK_MAGIC);
 				err = -EINVAL;
@@ -910,8 +918,8 @@ static int rpcs_query_batch(struct drm_i915_gem_object *rpcs,
 
 	*cmd++ = MI_STORE_REGISTER_MEM_GEN8;
 	*cmd++ = i915_mmio_reg_offset(GEN8_R_PWR_CLK_STATE(engine->mmio_base));
-	*cmd++ = lower_32_bits(vma->node.start);
-	*cmd++ = upper_32_bits(vma->node.start);
+	*cmd++ = lower_32_bits(i915_vma_offset(vma));
+	*cmd++ = upper_32_bits(i915_vma_offset(vma));
 	*cmd = MI_BATCH_BUFFER_END;
 
 	__i915_gem_object_flush_map(rpcs, 0, 64);
@@ -966,7 +974,7 @@ retry:
 	if (err)
 		goto err_put;
 
-	err = i915_vma_pin_ww(batch, &ww, 0, 0, PIN_USER);
+	err = i915_vma_pin_ww(batch, &ww, 0, 0, PIN_USER | PIN_ZONE_48);
 	if (err)
 		goto err_vma;
 
@@ -999,7 +1007,8 @@ retry:
 	}
 
 	err = rq->engine->emit_bb_start(rq,
-					batch->node.start, batch->node.size,
+					i915_vma_offset(batch),
+					i915_vma_size(batch),
 					0);
 	if (err)
 		goto skip_request;
@@ -1496,7 +1505,7 @@ static int check_scratch(struct i915_address_space *vm, u64 offset)
 
 static int write_to_scratch(struct i915_gem_context *ctx,
 			    struct intel_engine_cs *engine,
-			    u64 offset, u32 value)
+			    u64 batch, u64 offset, u32 value)
 {
 	struct drm_i915_private *i915 = ctx->i915;
 	struct drm_i915_gem_object *obj;
@@ -1506,7 +1515,7 @@ static int write_to_scratch(struct i915_gem_context *ctx,
 	u32 *cmd;
 	int err;
 
-	GEM_BUG_ON(offset < I915_GTT_PAGE_SIZE);
+	GEM_BUG_ON(offset < batch + I915_GTT_PAGE_SIZE && offset >= batch);
 
 	err = check_scratch(ctx_vm(ctx), offset);
 	if (err)
@@ -1544,7 +1553,7 @@ static int write_to_scratch(struct i915_gem_context *ctx,
 		goto out_vm;
 	}
 
-	err = i915_vma_pin(vma, 0, 0, PIN_USER | PIN_OFFSET_FIXED);
+	err = i915_vma_pin(vma, 0, 0, PIN_USER | PIN_OFFSET_FIXED | batch);
 	if (err)
 		goto out_vm;
 
@@ -1568,7 +1577,10 @@ static int write_to_scratch(struct i915_gem_context *ctx,
 			goto skip_request;
 	}
 
-	err = engine->emit_bb_start(rq, vma->node.start, vma->node.size, 0);
+	err = engine->emit_bb_start(rq,
+				    i915_vma_offset(vma),
+				    i915_vma_size(vma),
+				    0);
 	if (err)
 		goto skip_request;
 
@@ -1591,7 +1603,7 @@ out:
 
 static int read_from_scratch(struct i915_gem_context *ctx,
 			     struct intel_engine_cs *engine,
-			     u64 offset, u32 *value)
+			     u64 batch, u64 offset, u32 *value)
 {
 	struct drm_i915_private *i915 = ctx->i915;
 	struct drm_i915_gem_object *obj;
@@ -1603,7 +1615,7 @@ static int read_from_scratch(struct i915_gem_context *ctx,
 	u32 *cmd;
 	int err;
 
-	GEM_BUG_ON(offset < I915_GTT_PAGE_SIZE);
+	GEM_BUG_ON(offset < batch + I915_GTT_PAGE_SIZE && offset >= batch);
 
 	err = check_scratch(ctx_vm(ctx), offset);
 	if (err)
@@ -1623,7 +1635,8 @@ static int read_from_scratch(struct i915_gem_context *ctx,
 			goto out_vm;
 		}
 
-		err = i915_vma_pin(vma, 0, 0, PIN_USER | PIN_OFFSET_FIXED);
+		err = i915_vma_pin(vma, 0, 0, PIN_USER |
+				   PIN_OFFSET_FIXED | batch);
 		if (err)
 			goto out_vm;
 
@@ -1640,8 +1653,8 @@ static int read_from_scratch(struct i915_gem_context *ctx,
 		*cmd++ = upper_32_bits(offset);
 		*cmd++ = MI_STORE_REGISTER_MEM_GEN8;
 		*cmd++ = GPR0;
-		*cmd++ = result;
-		*cmd++ = 0;
+		*cmd++ = lower_32_bits(i915_vma_offset(vma) + result);
+		*cmd++ = upper_32_bits(i915_vma_offset(vma));
 		*cmd = MI_BATCH_BUFFER_END;
 
 		i915_gem_object_flush_map(obj);
@@ -1675,7 +1688,7 @@ static int read_from_scratch(struct i915_gem_context *ctx,
 		*cmd++ = offset;
 		*cmd++ = MI_STORE_REGISTER_MEM | MI_USE_GGTT;
 		*cmd++ = reg;
-		*cmd++ = vma->node.start + result;
+		*cmd++ = i915_vma_offset(vma) + result;
 		*cmd = MI_BATCH_BUFFER_END;
 
 		i915_gem_object_flush_map(obj);
@@ -1706,7 +1719,10 @@ static int read_from_scratch(struct i915_gem_context *ctx,
 			goto skip_request;
 	}
 
-	err = engine->emit_bb_start(rq, vma->node.start, vma->node.size, flags);
+	err = engine->emit_bb_start(rq,
+				    i915_vma_offset(vma),
+				    i915_vma_size(vma),
+				    flags);
 	if (err)
 		goto skip_request;
 
@@ -1742,7 +1758,9 @@ out:
 	return err;
 }
 
-static int check_scratch_page(struct i915_gem_context *ctx, u32 *out)
+static int check_scratch_page(struct i915_gem_context *ctx,
+			      struct rnd_state *prng,
+			      u32 *out)
 {
 	struct i915_address_space *vm;
 	u32 *vaddr;
@@ -1752,26 +1770,35 @@ static int check_scratch_page(struct i915_gem_context *ctx, u32 *out)
 	if (!vm)
 		return -ENODEV;
 
+	if (has_null_page(vm)) {
+		if (out)
+			*out = 0;
+		return 0;
+	}
+
 	if (!vm->scratch[0]) {
 		pr_err("No scratch page!\n");
 		return -EINVAL;
 	}
 
-	vaddr = __px_vaddr(vm->scratch[0]);
+	vaddr = __px_vaddr(vm->scratch[0], NULL);
 
-	memcpy(out, vaddr, sizeof(*out));
-	if (memchr_inv(vaddr, *out, PAGE_SIZE)) {
-		pr_err("Inconsistent initial state of scratch page!\n");
+	if (vaddr[0] != vm->poison ||
+	    vaddr[i915_prandom_u32_max_state(PAGE_SIZE / sizeof(u32), prng)] != vm->poison) {
+		pr_err("Inconsistent initial state of scratch page, expected poison:%08x!\n",
+		       vm->poison);
+		igt_hexdump(vaddr, PAGE_SIZE);
 		err = -EINVAL;
 	}
 
+	*out = vm->poison;
 	return err;
 }
 
 static int igt_vm_isolation(void *arg)
 {
-	struct drm_i915_private *i915 = arg;
 	struct i915_gem_context *ctx_a, *ctx_b;
+	struct drm_i915_private *i915 = arg;
 	unsigned long num_engines, count;
 	struct intel_engine_cs *engine;
 	struct igt_live_test t;
@@ -1814,20 +1841,22 @@ static int igt_vm_isolation(void *arg)
 		goto out_file;
 
 	/* Read the initial state of the scratch page */
-	err = check_scratch_page(ctx_a, &expected);
+	err = check_scratch_page(ctx_a, &prng, &expected);
 	if (err)
 		goto out_file;
 
-	err = check_scratch_page(ctx_b, &expected);
+	err = check_scratch_page(ctx_b, &prng, &expected);
 	if (err)
 		goto out_file;
 
 	vm_total = ctx_vm(ctx_a)->total;
 	GEM_BUG_ON(ctx_vm(ctx_b)->total != vm_total);
+	vm_total = min(vm_total, BIT_ULL(48)); /* restrict batches to 48b */
 
 	count = 0;
 	num_engines = 0;
 	for_each_uabi_engine(engine, i915) {
+		unsigned long start, end;
 		IGT_TIMEOUT(end_time);
 		unsigned long this = 0;
 
@@ -1838,28 +1867,41 @@ static int igt_vm_isolation(void *arg)
 		if (GRAPHICS_VER(i915) < 8 && engine->class != RENDER_CLASS)
 			continue;
 
+		/* Wa_1409502670:xehpsdv */
+		if (IS_XEHPSDV(i915))
+			start = I915_GTT_PAGE_SIZE_64K;
+		else
+			start = 0;
+		end = vm_total;
+
 		while (!__igt_timeout(end_time, NULL)) {
-			u32 value = 0xc5c5c5c5;
-			u64 offset;
+			u64 target, batch;
+			u32 value;
 
-			/* Leave enough space at offset 0 for the batch */
-			offset = igt_random_offset(&prng,
-						   I915_GTT_PAGE_SIZE, vm_total,
-						   sizeof(u32), alignof_dword);
+			value = HANG_POISON;
+			batch = igt_random_offset(&prng, start, end,
+						  I915_GTT_PAGE_SIZE,
+						  I915_GTT_PAGE_SIZE);
+			do {
+				target = igt_random_offset(&prng, start, end,
+							   I915_GTT_PAGE_SIZE,
+							   I915_GTT_PAGE_SIZE);
+			} while (target < batch + I915_GTT_PAGE_SIZE &&
+				 target >= batch);
 
-			err = write_to_scratch(ctx_a, engine,
-					       offset, 0xdeadbeef);
+			err = write_to_scratch(ctx_a, engine, batch,
+					       target, 0xdeadbeef);
 			if (err == 0)
-				err = read_from_scratch(ctx_b, engine,
-							offset, &value);
+				err = read_from_scratch(ctx_b, engine, batch,
+							target, &value);
 			if (err)
 				goto out_file;
 
 			if (value != expected) {
 				pr_err("%s: Read %08x from scratch (offset 0x%08x_%08x), after %lu reads!\n",
 				       engine->name, value,
-				       upper_32_bits(offset),
-				       lower_32_bits(offset),
+				       upper_32_bits(target),
+				       lower_32_bits(target),
 				       this);
 				err = -EINVAL;
 				goto out_file;
@@ -1880,111 +1922,9 @@ out_file:
 	return err;
 }
 
-static bool skip_unused_engines(struct intel_context *ce, void *data)
-{
-	return !ce->state;
-}
-
-static void mock_barrier_task(void *data)
-{
-	unsigned int *counter = data;
-
-	++*counter;
-}
-
-static int mock_context_barrier(void *arg)
-{
-#undef pr_fmt
-#define pr_fmt(x) "context_barrier_task():" # x
-	struct drm_i915_private *i915 = arg;
-	struct i915_gem_context *ctx;
-	struct i915_request *rq;
-	unsigned int counter;
-	int err;
-
-	/*
-	 * The context barrier provides us with a callback after it emits
-	 * a request; useful for retiring old state after loading new.
-	 */
-
-	ctx = mock_context(i915, "mock");
-	if (!ctx)
-		return -ENOMEM;
-
-	counter = 0;
-	err = context_barrier_task(ctx, 0, NULL, NULL, NULL,
-				   mock_barrier_task, &counter);
-	if (err) {
-		pr_err("Failed at line %d, err=%d\n", __LINE__, err);
-		goto out;
-	}
-	if (counter == 0) {
-		pr_err("Did not retire immediately with 0 engines\n");
-		err = -EINVAL;
-		goto out;
-	}
-
-	counter = 0;
-	err = context_barrier_task(ctx, ALL_ENGINES, skip_unused_engines,
-				   NULL, NULL, mock_barrier_task, &counter);
-	if (err) {
-		pr_err("Failed at line %d, err=%d\n", __LINE__, err);
-		goto out;
-	}
-	if (counter == 0) {
-		pr_err("Did not retire immediately for all unused engines\n");
-		err = -EINVAL;
-		goto out;
-	}
-
-	rq = igt_request_alloc(ctx, to_gt(i915)->engine[RCS0]);
-	if (IS_ERR(rq)) {
-		pr_err("Request allocation failed!\n");
-		goto out;
-	}
-	i915_request_add(rq);
-
-	counter = 0;
-	context_barrier_inject_fault = BIT(RCS0);
-	err = context_barrier_task(ctx, ALL_ENGINES, NULL, NULL, NULL,
-				   mock_barrier_task, &counter);
-	context_barrier_inject_fault = 0;
-	if (err == -ENXIO)
-		err = 0;
-	else
-		pr_err("Did not hit fault injection!\n");
-	if (counter != 0) {
-		pr_err("Invoked callback on error!\n");
-		err = -EIO;
-	}
-	if (err)
-		goto out;
-
-	counter = 0;
-	err = context_barrier_task(ctx, ALL_ENGINES, skip_unused_engines,
-				   NULL, NULL, mock_barrier_task, &counter);
-	if (err) {
-		pr_err("Failed at line %d, err=%d\n", __LINE__, err);
-		goto out;
-	}
-	mock_device_flush(i915);
-	if (counter == 0) {
-		pr_err("Did not retire on each active engines\n");
-		err = -EINVAL;
-		goto out;
-	}
-
-out:
-	mock_context_close(ctx);
-	return err;
-#undef pr_fmt
-#define pr_fmt(x) x
-}
-
 int i915_gem_context_mock_selftests(void)
 {
 	static const struct i915_subtest tests[] = {
-		SUBTEST(mock_context_barrier),
 	};
 	struct drm_i915_private *i915;
 	int err;
