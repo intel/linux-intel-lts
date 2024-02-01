@@ -173,6 +173,11 @@ int __weak sock_oob_connect(struct socket *sock,
 	return 0;
 }
 
+int __weak sock_oob_shutdown(struct socket *sock, int how)
+{
+	return 0;
+}
+
 long __weak sock_inband_ioctl_redirect(struct socket *sock,
 				unsigned int cmd, unsigned long arg)
 {
@@ -225,6 +230,11 @@ static inline int sock_oob_bind(struct socket *sock,
 
 static inline int sock_oob_connect(struct socket *sock,
 				struct sockaddr *addr, int len, int flags)
+{
+	return 0;
+}
+
+static inline int sock_oob_shutdown(struct socket *sock, int how)
 {
 	return 0;
 }
@@ -2573,8 +2583,11 @@ int __sys_shutdown_sock(struct socket *sock, int how)
 	int err;
 
 	err = security_socket_shutdown(sock, how);
-	if (!err)
+	if (!err) {
 		err = READ_ONCE(sock->ops)->shutdown(sock, how);
+		if (!err && sock_oob_capable(sock))
+			err = sock_oob_shutdown(sock, how);
+	}
 
 	return err;
 }
