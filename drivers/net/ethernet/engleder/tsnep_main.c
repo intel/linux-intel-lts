@@ -1434,7 +1434,7 @@ static int tsnep_rx_poll(struct tsnep_rx *rx, struct napi_struct *napi,
 
 			xdp_prepare_buff(&xdp, page_address(entry->page),
 					 XDP_PACKET_HEADROOM + TSNEP_RX_INLINE_METADATA_SIZE,
-					 length, false);
+					 length - ETH_FCS_LEN, false);
 
 			consume = tsnep_xdp_run_prog(rx, prog, &xdp,
 						     &xdp_status, tx_nq, tx);
@@ -1517,7 +1517,7 @@ static int tsnep_rx_poll_zc(struct tsnep_rx *rx, struct napi_struct *napi,
 		prefetch(entry->xdp->data);
 		length = __le32_to_cpu(entry->desc_wb->properties) &
 			 TSNEP_DESC_LENGTH_MASK;
-		xsk_buff_set_size(entry->xdp, length);
+		xsk_buff_set_size(entry->xdp, length - ETH_FCS_LEN);
 		xsk_buff_dma_sync_for_cpu(entry->xdp, rx->xsk_pool);
 
 		/* RX metadata with timestamps is in front of actual data,
@@ -1711,6 +1711,19 @@ static void tsnep_rx_reopen_xsk(struct tsnep_rx *rx)
 			allocated--;
 		}
 	}
+
+	/* set need wakeup flag immediately if ring is not filled completely,
+	 * first polling would be too late as need wakeup signalisation would
+	 * be delayed for an indefinite time
+	 */
+	if (xsk_uses_need_wakeup(rx->xsk_pool)) {
+		int desc_available = tsnep_rx_desc_available(rx);
+
+		if (desc_available)
+			xsk_set_rx_need_wakeup(rx->xsk_pool);
+		else
+			xsk_clear_rx_need_wakeup(rx->xsk_pool);
+	}
 }
 
 static bool tsnep_pending(struct tsnep_queue *queue)
@@ -1779,14 +1792,14 @@ static int tsnep_request_irq(struct tsnep_queue *queue, bool first)
 		dev = queue->adapter;
 	} else {
 		if (queue->tx && queue->rx)
-			sprintf(queue->name, "%s-txrx-%d", name,
-				queue->rx->queue_index);
+			snprintf(queue->name, sizeof(queue->name), "%s-txrx-%d",
+				 name, queue->rx->queue_index);
 		else if (queue->tx)
-			sprintf(queue->name, "%s-tx-%d", name,
-				queue->tx->queue_index);
+			snprintf(queue->name, sizeof(queue->name), "%s-tx-%d",
+				 name, queue->tx->queue_index);
 		else
-			sprintf(queue->name, "%s-rx-%d", name,
-				queue->rx->queue_index);
+			snprintf(queue->name, sizeof(queue->name), "%s-rx-%d",
+				 name, queue->rx->queue_index);
 		handler = tsnep_irq_txrx;
 		dev = queue;
 	}
