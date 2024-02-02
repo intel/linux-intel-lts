@@ -158,7 +158,7 @@ int __weak sock_oob_attach(struct socket *sock)
 	return 0;
 }
 
-void __weak sock_oob_detach(struct sock *sk)
+void __weak sock_oob_destroy(struct sock *sk)
 {
 }
 
