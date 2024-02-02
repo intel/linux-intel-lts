@@ -1770,9 +1770,9 @@ void sock_pfree(struct sk_buff *skb);
 #ifdef CONFIG_NET_OOB
 static inline void sock_oob_destruct(struct sock *sk)
 {
-	void sock_oob_detach(struct sock *sk);
+	void sock_oob_destroy(struct sock *sk);
 	if (sk->oob_data)
-		sock_oob_detach(sk);
+		sock_oob_destroy(sk);
 }
 #else
 static inline void sock_oob_destruct(struct sock *sk) { }
