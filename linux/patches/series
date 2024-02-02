@@ -60,17 +60,8 @@
 # CVE-2023-2176
 0001-RDMA-core-Refactor-rdma_bind_addr.patch
 
-# CVE-2023-6817
-0001-netfilter-nft_set_pipapo-skip-inactive-elements-duri.patch
-
 # CVE-2023-39191
 0001-bpf-Fix-state-pruning-for-STACK_DYNPTR-stack-slots.patch
 
-# CVE-2023-6622
-0001-netfilter-nf_tables-bail-out-on-mismatching-dynset-a.patch
-
-# CVE-2023-6931
-0001-perf-Fix-perf_event_validate_size.patch
-
-# CVE-2023-6932
-0001-ipv4-igmp-fix-refcnt-uaf-issue-when-receiving-igmp-q.patch
+# CVE-2024-0340
+0001-vhost-use-kzalloc-instead-of-kmalloc-followed-by-mem.patch
