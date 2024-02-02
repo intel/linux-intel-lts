@@ -150,7 +150,7 @@ static void sock_show_fdinfo(struct seq_file *m, struct file *f)
 
 static inline bool sock_oob_capable(struct socket *sock)
 {
-	return sock->sk && sock->sk->oob_data;
+	return sock->file && sock->file->oob_data;
 }
 
 int __weak sock_oob_attach(struct socket *sock)
