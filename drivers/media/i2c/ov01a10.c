@@ -1,24 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/*
- * Copyright (c) 2023 Intel Corporation.
- */
+// SPDX-License-Identifier: GPL-2.0
+// Copyright (c) 2020-2022 Intel Corporation.
 
 #include <asm/unaligned.h>
-
 #include <linux/acpi.h>
-#include <linux/bitfield.h>
+#include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
-
+#include <linux/version.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
-#include <media/v4l2-event.h>
 #include <media/v4l2-fwnode.h>
 
 #define OV01A10_LINK_FREQ_400MHZ	400000000ULL
 #define OV01A10_SCLK			40000000LL
+#define OV01A10_MCLK			19200000
 #define OV01A10_DATA_LANES		1
+#define OV01A10_RGB_DEPTH		10
 
 #define OV01A10_REG_CHIP_ID		0x300a
 #define OV01A10_CHIP_ID			0x560141
@@ -27,33 +25,26 @@
 #define OV01A10_MODE_STANDBY		0x00
 #define OV01A10_MODE_STREAMING		0x01
 
-/* pixel array */
-#define OV01A10_PIXEL_ARRAY_WIDTH	1296
-#define OV01A10_PIXEL_ARRAY_HEIGHT	816
-#define OV01A10_ACITVE_WIDTH		1280
-#define OV01A10_ACITVE_HEIGHT		800
-
-/* vertical and horizontal timings */
+/* vertical-timings from sensor */
 #define OV01A10_REG_VTS			0x380e
 #define OV01A10_VTS_DEF			0x0380
 #define OV01A10_VTS_MIN			0x0380
 #define OV01A10_VTS_MAX			0xffff
-#define OV01A10_HTS_DEF			1488
 
-/* exposure controls */
+/* Exposure controls from sensor */
 #define OV01A10_REG_EXPOSURE		0x3501
 #define OV01A10_EXPOSURE_MIN		4
 #define OV01A10_EXPOSURE_MAX_MARGIN	8
 #define OV01A10_EXPOSURE_STEP		1
 
-/* analog gain controls */
+/* Analog gain controls from sensor */
 #define OV01A10_REG_ANALOG_GAIN		0x3508
 #define OV01A10_ANAL_GAIN_MIN		0x100
 #define OV01A10_ANAL_GAIN_MAX		0xffff
 #define OV01A10_ANAL_GAIN_STEP		1
 
-/* digital gain controls */
-#define OV01A10_REG_DIGITAL_GAIN_B	0x350a
+/* Digital gain controls from sensor */
+#define OV01A10_REG_DIGILAL_GAIN_B	0x350A
 #define OV01A10_REG_DIGITAL_GAIN_GB	0x3510
 #define OV01A10_REG_DIGITAL_GAIN_GR	0x3513
 #define OV01A10_REG_DIGITAL_GAIN_R	0x3516
@@ -62,19 +53,14 @@
 #define OV01A10_DGTL_GAIN_STEP		1
 #define OV01A10_DGTL_GAIN_DEFAULT	1024
 
-/* test pattern control */
-#define OV01A10_REG_TEST_PATTERN	0x4503
+/* Test Pattern Control */
+#define OV01A10_REG_TEST_PATTERN		0x4503
 #define OV01A10_TEST_PATTERN_ENABLE	BIT(7)
-#define OV01A10_LINK_FREQ_400MHZ_INDEX	0
+#define OV01A10_TEST_PATTERN_BAR_SHIFT	0
 
-/* flip and mirror control */
-#define OV01A10_REG_FORMAT1		0x3820
-#define OV01A10_VFLIP_MASK		BIT(4)
-#define OV01A10_HFLIP_MASK		BIT(3)
-
-/* window offset */
-#define OV01A10_REG_X_WIN		0x3811
-#define OV01A10_REG_Y_WIN		0x3813
+enum {
+	OV01A10_LINK_FREQ_400MHZ_INDEX,
+};
 
 struct ov01a10_reg {
 	u16 address;
@@ -91,17 +77,32 @@ struct ov01a10_link_freq_config {
 };
 
 struct ov01a10_mode {
+	/* Frame width in pixels */
 	u32 width;
+
+	/* Frame height in pixels */
 	u32 height;
+
+	/* Horizontal timining size */
 	u32 hts;
+
+	/* Default vertical timining size */
 	u32 vts_def;
+
+	/* Min vertical timining size */
 	u32 vts_min;
+
+	/* Link frequency needed for this resolution */
 	u32 link_freq_index;
 
+	/* Sensor register settings for this resolution */
 	const struct ov01a10_reg_list reg_list;
 };
 
 static const struct ov01a10_reg mipi_data_rate_720mbps[] = {
+};
+
+static const struct ov01a10_reg sensor_1280x800_setting[] = {
 	{0x0103, 0x01},
 	{0x0302, 0x00},
 	{0x0303, 0x06},
@@ -115,9 +116,6 @@ static const struct ov01a10_reg mipi_data_rate_720mbps[] = {
 	{0x0323, 0x06},
 	{0x0324, 0x01},
 	{0x0325, 0x68},
-};
-
-static const struct ov01a10_reg sensor_1280x800_setting[] = {
 	{0x3002, 0xa1},
 	{0x301e, 0xf0},
 	{0x3022, 0x01},
@@ -186,14 +184,14 @@ static const struct ov01a10_reg sensor_1280x800_setting[] = {
 	{0x380e, 0x03},
 	{0x380f, 0x80},
 	{0x3810, 0x00},
-	{0x3811, 0x08},
+	{0x3811, 0x09},
 	{0x3812, 0x00},
 	{0x3813, 0x08},
 	{0x3814, 0x01},
 	{0x3815, 0x01},
 	{0x3816, 0x01},
 	{0x3817, 0x01},
-	{0x3820, 0xa0},
+	{0x3820, 0xa8},
 	{0x3822, 0x13},
 	{0x3832, 0x28},
 	{0x3833, 0x10},
@@ -236,6 +234,8 @@ static const struct ov01a10_reg sensor_1280x800_setting[] = {
 	{0x5080, 0x40},
 	{0x0305, 0xf4},
 	{0x0325, 0xc2},
+	{0x380c, 0x05},
+	{0x380d, 0xd0},
 };
 
 static const char * const ov01a10_test_pattern_menu[] = {
@@ -261,9 +261,9 @@ static const struct ov01a10_link_freq_config link_freq_configs[] = {
 
 static const struct ov01a10_mode supported_modes[] = {
 	{
-		.width = OV01A10_ACITVE_WIDTH,
-		.height = OV01A10_ACITVE_HEIGHT,
-		.hts = OV01A10_HTS_DEF,
+		.width = 1280,
+		.height = 800,
+		.hts = 1488,
 		.vts_def = OV01A10_VTS_DEF,
 		.vts_min = OV01A10_VTS_MIN,
 		.reg_list = {
@@ -279,16 +279,20 @@ struct ov01a10 {
 	struct media_pad pad;
 	struct v4l2_ctrl_handler ctrl_handler;
 
-	/* v4l2 controls */
+	/* V4L2 Controls */
 	struct v4l2_ctrl *link_freq;
 	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
 
+	/* Current mode */
 	const struct ov01a10_mode *cur_mode;
 
-	/* streaming state */
+	/* To serialize asynchronus callbacks */
+	struct mutex mutex;
+
+	/* Streaming on/off */
 	bool streaming;
 };
 
@@ -359,7 +363,7 @@ static int ov01a10_write_reg_list(struct ov01a10 *ov01a10,
 					r_list->regs[i].val);
 		if (ret) {
 			dev_err_ratelimited(&client->dev,
-					    "write reg 0x%4.4x err = %d\n",
+					    "write reg 0x%4.4x return err = %d",
 					    r_list->regs[i].address, ret);
 			return ret;
 		}
@@ -374,99 +378,59 @@ static int ov01a10_update_digital_gain(struct ov01a10 *ov01a10, u32 d_gain)
 	u32 real = d_gain << 6;
 	int ret = 0;
 
-	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_DIGITAL_GAIN_B, 3, real);
+	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_DIGILAL_GAIN_B, 3, real);
 	if (ret) {
-		dev_err(&client->dev, "failed to set DIGITAL_GAIN_B\n");
+		dev_err(&client->dev, "failed to set OV01A10_REG_DIGITAL_GAIN_B");
 		return ret;
 	}
-
 	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_DIGITAL_GAIN_GB, 3, real);
 	if (ret) {
-		dev_err(&client->dev, "failed to set DIGITAL_GAIN_GB\n");
+		dev_err(&client->dev, "failed to set OV01A10_REG_DIGITAL_GAIN_GB");
 		return ret;
 	}
-
 	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_DIGITAL_GAIN_GR, 3, real);
 	if (ret) {
-		dev_err(&client->dev, "failed to set DIGITAL_GAIN_GR\n");
+		dev_err(&client->dev, "failed to set OV01A10_REG_DIGITAL_GAIN_GR");
 		return ret;
 	}
 
 	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_DIGITAL_GAIN_R, 3, real);
-	if (ret)
-		dev_err(&client->dev, "failed to set DIGITAL_GAIN_R\n");
-
+	if (ret) {
+		dev_err(&client->dev, "failed to set OV01A10_REG_DIGITAL_GAIN_R");
+		return ret;
+	}
 	return ret;
 }
 
 static int ov01a10_test_pattern(struct ov01a10 *ov01a10, u32 pattern)
 {
-	if (!pattern)
-		return 0;
-
-	pattern = (pattern - 1) | OV01A10_TEST_PATTERN_ENABLE;
+	if (pattern)
+		pattern = (pattern - 1) << OV01A10_TEST_PATTERN_BAR_SHIFT |
+			  OV01A10_TEST_PATTERN_ENABLE;
 
 	return ov01a10_write_reg(ov01a10, OV01A10_REG_TEST_PATTERN, 1, pattern);
-}
-
-/* for vflip and hflip, use 0x9 as window offset to keep the bayer */
-static int ov01a10_set_hflip(struct ov01a10 *ov01a10, u32 hflip)
-{
-	int ret;
-	u32 val, offset;
-
-	offset = hflip ? 0x9 : 0x8;
-	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_X_WIN, 1, offset);
-	if (ret)
-		return ret;
-
-	ret = ov01a10_read_reg(ov01a10, OV01A10_REG_FORMAT1, 1, &val);
-	if (ret)
-		return ret;
-
-	val = hflip ? val | FIELD_PREP(OV01A10_HFLIP_MASK, 0x1) :
-		val & ~OV01A10_HFLIP_MASK;
-
-	return ov01a10_write_reg(ov01a10, OV01A10_REG_FORMAT1, 1, val);
-}
-
-static int ov01a10_set_vflip(struct ov01a10 *ov01a10, u32 vflip)
-{
-	int ret;
-	u32 val, offset;
-
-	offset = vflip ? 0x9 : 0x8;
-	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_Y_WIN, 1, offset);
-	if (ret)
-		return ret;
-
-	ret = ov01a10_read_reg(ov01a10, OV01A10_REG_FORMAT1, 1, &val);
-	if (ret)
-		return ret;
-
-	val = vflip ? val | FIELD_PREP(OV01A10_VFLIP_MASK, 0x1) :
-		val & ~OV01A10_VFLIP_MASK;
-
-	return ov01a10_write_reg(ov01a10, OV01A10_REG_FORMAT1, 1, val);
 }
 
 static int ov01a10_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ov01a10 *ov01a10 = container_of(ctrl->handler,
-					       struct ov01a10, ctrl_handler);
+					     struct ov01a10, ctrl_handler);
 	struct i2c_client *client = v4l2_get_subdevdata(&ov01a10->sd);
 	s64 exposure_max;
 	int ret = 0;
 
+	/* Propagate change of current control to all related controls */
 	if (ctrl->id == V4L2_CID_VBLANK) {
+		/* Update max exposure while meeting expected vblanking */
 		exposure_max = ov01a10->cur_mode->height + ctrl->val -
-			OV01A10_EXPOSURE_MAX_MARGIN;
+			       OV01A10_EXPOSURE_MAX_MARGIN;
 		__v4l2_ctrl_modify_range(ov01a10->exposure,
 					 ov01a10->exposure->minimum,
 					 exposure_max, ov01a10->exposure->step,
 					 exposure_max);
 	}
 
+	/* V4L2 controls values will be applied only when power is already up */
 	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
@@ -494,14 +458,6 @@ static int ov01a10_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = ov01a10_test_pattern(ov01a10, ctrl->val);
 		break;
 
-	case V4L2_CID_HFLIP:
-		ov01a10_set_hflip(ov01a10, ctrl->val);
-		break;
-
-	case V4L2_CID_VFLIP:
-		ov01a10_set_vflip(ov01a10, ctrl->val);
-		break;
-
 	default:
 		ret = -EINVAL;
 		break;
@@ -518,24 +474,19 @@ static const struct v4l2_ctrl_ops ov01a10_ctrl_ops = {
 
 static int ov01a10_init_controls(struct ov01a10 *ov01a10)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a10->sd);
-	struct v4l2_fwnode_device_properties props;
-	u32 vblank_min, vblank_max, vblank_default;
 	struct v4l2_ctrl_handler *ctrl_hdlr;
 	const struct ov01a10_mode *cur_mode;
 	s64 exposure_max, h_blank;
-	int ret = 0;
+	u32 vblank_min, vblank_max, vblank_default;
 	int size;
-
-	ret = v4l2_fwnode_device_parse(&client->dev, &props);
-	if (ret)
-		return ret;
+	int ret = 0;
 
 	ctrl_hdlr = &ov01a10->ctrl_handler;
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 12);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
 	if (ret)
 		return ret;
 
+	ctrl_hdlr->lock = &ov01a10->mutex;
 	cur_mode = ov01a10->cur_mode;
 	size = ARRAY_SIZE(link_freq_menu_items);
 
@@ -571,7 +522,6 @@ static int ov01a10_init_controls(struct ov01a10 *ov01a10)
 	v4l2_ctrl_new_std(ctrl_hdlr, &ov01a10_ctrl_ops, V4L2_CID_DIGITAL_GAIN,
 			  OV01A10_DGTL_GAIN_MIN, OV01A10_DGTL_GAIN_MAX,
 			  OV01A10_DGTL_GAIN_STEP, OV01A10_DGTL_GAIN_DEFAULT);
-
 	exposure_max = cur_mode->vts_def - OV01A10_EXPOSURE_MAX_MARGIN;
 	ov01a10->exposure = v4l2_ctrl_new_std(ctrl_hdlr, &ov01a10_ctrl_ops,
 					      V4L2_CID_EXPOSURE,
@@ -579,34 +529,16 @@ static int ov01a10_init_controls(struct ov01a10 *ov01a10)
 					      exposure_max,
 					      OV01A10_EXPOSURE_STEP,
 					      exposure_max);
-
 	v4l2_ctrl_new_std_menu_items(ctrl_hdlr, &ov01a10_ctrl_ops,
 				     V4L2_CID_TEST_PATTERN,
 				     ARRAY_SIZE(ov01a10_test_pattern_menu) - 1,
 				     0, 0, ov01a10_test_pattern_menu);
-
-	v4l2_ctrl_new_std(ctrl_hdlr, &ov01a10_ctrl_ops, V4L2_CID_HFLIP,
-			  0, 1, 1, 0);
-	v4l2_ctrl_new_std(ctrl_hdlr, &ov01a10_ctrl_ops, V4L2_CID_VFLIP,
-			  0, 1, 1, 0);
-
-	ret = v4l2_ctrl_new_fwnode_properties(ctrl_hdlr, &ov01a10_ctrl_ops,
-					      &props);
-	if (ret)
-		goto fail;
-
-	if (ctrl_hdlr->error) {
-		ret = ctrl_hdlr->error;
-		goto fail;
-	}
+	if (ctrl_hdlr->error)
+		return ctrl_hdlr->error;
 
 	ov01a10->sd.ctrl_handler = ctrl_hdlr;
 
 	return 0;
-fail:
-	v4l2_ctrl_handler_free(ctrl_hdlr);
-
-	return ret;
 }
 
 static void ov01a10_update_pad_format(const struct ov01a10_mode *mode,
@@ -616,7 +548,6 @@ static void ov01a10_update_pad_format(const struct ov01a10_mode *mode,
 	fmt->height = mode->height;
 	fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10;
 	fmt->field = V4L2_FIELD_NONE;
-	fmt->colorspace = V4L2_COLORSPACE_RAW;
 }
 
 static int ov01a10_start_streaming(struct ov01a10 *ov01a10)
@@ -630,14 +561,14 @@ static int ov01a10_start_streaming(struct ov01a10 *ov01a10)
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov01a10_write_reg_list(ov01a10, reg_list);
 	if (ret) {
-		dev_err(&client->dev, "failed to set plls\n");
+		dev_err(&client->dev, "failed to set plls");
 		return ret;
 	}
 
 	reg_list = &ov01a10->cur_mode->reg_list;
 	ret = ov01a10_write_reg_list(ov01a10, reg_list);
 	if (ret) {
-		dev_err(&client->dev, "failed to set mode\n");
+		dev_err(&client->dev, "failed to set mode");
 		return ret;
 	}
 
@@ -648,7 +579,7 @@ static int ov01a10_start_streaming(struct ov01a10 *ov01a10)
 	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_MODE_SELECT, 1,
 				OV01A10_MODE_STREAMING);
 	if (ret)
-		dev_err(&client->dev, "failed to start streaming\n");
+		dev_err(&client->dev, "failed to start streaming");
 
 	return ret;
 }
@@ -661,40 +592,40 @@ static void ov01a10_stop_streaming(struct ov01a10 *ov01a10)
 	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_MODE_SELECT, 1,
 				OV01A10_MODE_STANDBY);
 	if (ret)
-		dev_err(&client->dev, "failed to stop streaming\n");
+		dev_err(&client->dev, "failed to stop streaming");
 }
 
 static int ov01a10_set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct v4l2_subdev_state *state;
 	int ret = 0;
 
-	state = v4l2_subdev_lock_and_get_active_state(sd);
 	if (ov01a10->streaming == enable)
-		goto unlock;
+		return 0;
 
+	mutex_lock(&ov01a10->mutex);
 	if (enable) {
-		ret = pm_runtime_resume_and_get(&client->dev);
-		if (ret < 0)
-			goto unlock;
+		ret = pm_runtime_get_sync(&client->dev);
+		if (ret < 0) {
+			pm_runtime_put_noidle(&client->dev);
+			mutex_unlock(&ov01a10->mutex);
+			return ret;
+		}
 
 		ret = ov01a10_start_streaming(ov01a10);
 		if (ret) {
+			enable = 0;
+			ov01a10_stop_streaming(ov01a10);
 			pm_runtime_put(&client->dev);
-			goto unlock;
 		}
-
-		goto done;
+	} else {
+		ov01a10_stop_streaming(ov01a10);
+		pm_runtime_put(&client->dev);
 	}
 
-	ov01a10_stop_streaming(ov01a10);
-	pm_runtime_put(&client->dev);
-done:
 	ov01a10->streaming = enable;
-unlock:
-	v4l2_subdev_unlock_state(state);
+	mutex_unlock(&ov01a10->mutex);
 
 	return ret;
 }
@@ -704,13 +635,12 @@ static int __maybe_unused ov01a10_suspend(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
-	struct v4l2_subdev_state *state;
 
-	state = v4l2_subdev_lock_and_get_active_state(sd);
+	mutex_lock(&ov01a10->mutex);
 	if (ov01a10->streaming)
 		ov01a10_stop_streaming(ov01a10);
 
-	v4l2_subdev_unlock_state(state);
+	mutex_unlock(&ov01a10->mutex);
 
 	return 0;
 }
@@ -720,10 +650,9 @@ static int __maybe_unused ov01a10_resume(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
-	struct v4l2_subdev_state *state;
 	int ret = 0;
 
-	state = v4l2_subdev_lock_and_get_active_state(sd);
+	mutex_lock(&ov01a10->mutex);
 	if (!ov01a10->streaming)
 		goto exit;
 
@@ -734,8 +663,7 @@ static int __maybe_unused ov01a10_resume(struct device *dev)
 	}
 
 exit:
-	v4l2_subdev_unlock_state(state);
-
+	mutex_unlock(&ov01a10->mutex);
 	return ret;
 }
 
@@ -745,7 +673,6 @@ static int ov01a10_set_format(struct v4l2_subdev *sd,
 {
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 	const struct ov01a10_mode *mode;
-	struct v4l2_mbus_framefmt *format;
 	s32 vblank_def, h_blank;
 
 	mode = v4l2_find_nearest_size(supported_modes,
@@ -753,13 +680,16 @@ static int ov01a10_set_format(struct v4l2_subdev *sd,
 				      height, fmt->format.width,
 				      fmt->format.height);
 
+	mutex_lock(&ov01a10->mutex);
 	ov01a10_update_pad_format(mode, &fmt->format);
-
-	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+	} else {
 		ov01a10->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ov01a10->link_freq, mode->link_freq_index);
 		__v4l2_ctrl_s_ctrl_int64(ov01a10->pixel_rate, OV01A10_SCLK);
 
+		/* Update limits and set FPS to default */
 		vblank_def = mode->vts_def - mode->height;
 		__v4l2_ctrl_modify_range(ov01a10->vblank,
 					 mode->vts_min - mode->height,
@@ -770,25 +700,25 @@ static int ov01a10_set_format(struct v4l2_subdev *sd,
 		__v4l2_ctrl_modify_range(ov01a10->hblank, h_blank, h_blank, 1,
 					 h_blank);
 	}
-
-	format = v4l2_subdev_get_pad_format(sd, sd_state, fmt->stream);
-	*format = fmt->format;
+	mutex_unlock(&ov01a10->mutex);
 
 	return 0;
 }
 
-static int ov01a10_init_cfg(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_state *state)
+static int ov01a10_get_format(struct v4l2_subdev *sd,
+			      struct v4l2_subdev_state *sd_state,
+			      struct v4l2_subdev_format *fmt)
 {
-	struct v4l2_subdev_format fmt = {
-		.which = V4L2_SUBDEV_FORMAT_TRY,
-		.format = {
-			.width = OV01A10_ACITVE_WIDTH,
-			.height = OV01A10_ACITVE_HEIGHT,
-		},
-	};
+	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 
-	ov01a10_set_format(sd, state, &fmt);
+	mutex_lock(&ov01a10->mutex);
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+		fmt->format = *v4l2_subdev_get_try_format(&ov01a10->sd,
+							  sd_state, fmt->pad);
+	else
+		ov01a10_update_pad_format(ov01a10->cur_mode, &fmt->format);
+
+	mutex_unlock(&ov01a10->mutex);
 
 	return 0;
 }
@@ -809,8 +739,10 @@ static int ov01a10_enum_frame_size(struct v4l2_subdev *sd,
 				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
-	if (fse->index >= ARRAY_SIZE(supported_modes) ||
-	    fse->code != MEDIA_BUS_FMT_SBGGR10_1X10)
+	if (fse->index >= ARRAY_SIZE(supported_modes))
+		return -EINVAL;
+
+	if (fse->code != MEDIA_BUS_FMT_SBGGR10_1X10)
 		return -EINVAL;
 
 	fse->min_width = supported_modes[fse->index].width;
@@ -821,62 +753,40 @@ static int ov01a10_enum_frame_size(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int ov01a10_get_selection(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *state,
-				 struct v4l2_subdev_selection *sel)
+static int ov01a10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
-	if (sel->which != V4L2_SUBDEV_FORMAT_ACTIVE)
-		return -EINVAL;
+	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 
-	switch (sel->target) {
-	case V4L2_SEL_TGT_NATIVE_SIZE:
-	case V4L2_SEL_TGT_CROP_BOUNDS:
-		sel->r.top = 0;
-		sel->r.left = 0;
-		sel->r.width = OV01A10_PIXEL_ARRAY_WIDTH;
-		sel->r.height = OV01A10_PIXEL_ARRAY_HEIGHT;
-		return 0;
-	case V4L2_SEL_TGT_CROP:
-	case V4L2_SEL_TGT_CROP_DEFAULT:
-		sel->r.top = (OV01A10_PIXEL_ARRAY_HEIGHT -
-			      OV01A10_ACITVE_HEIGHT) / 2;
-		sel->r.left = (OV01A10_PIXEL_ARRAY_WIDTH -
-			       OV01A10_ACITVE_WIDTH) / 2;
-		sel->r.width = OV01A10_ACITVE_WIDTH;
-		sel->r.height = OV01A10_ACITVE_HEIGHT;
-		return 0;
-	}
+	mutex_lock(&ov01a10->mutex);
+	ov01a10_update_pad_format(&supported_modes[0],
+				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+	mutex_unlock(&ov01a10->mutex);
 
-	return -EINVAL;
+	return 0;
 }
-
-static const struct v4l2_subdev_core_ops ov01a10_core_ops = {
-	.log_status = v4l2_ctrl_subdev_log_status,
-	.subscribe_event = v4l2_ctrl_subdev_subscribe_event,
-	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
-};
 
 static const struct v4l2_subdev_video_ops ov01a10_video_ops = {
 	.s_stream = ov01a10_set_stream,
 };
 
 static const struct v4l2_subdev_pad_ops ov01a10_pad_ops = {
-	.init_cfg = ov01a10_init_cfg,
 	.set_fmt = ov01a10_set_format,
-	.get_fmt = v4l2_subdev_get_fmt,
-	.get_selection = ov01a10_get_selection,
+	.get_fmt = ov01a10_get_format,
 	.enum_mbus_code = ov01a10_enum_mbus_code,
 	.enum_frame_size = ov01a10_enum_frame_size,
 };
 
 static const struct v4l2_subdev_ops ov01a10_subdev_ops = {
-	.core = &ov01a10_core_ops,
 	.video = &ov01a10_video_ops,
 	.pad = &ov01a10_pad_ops,
 };
 
 static const struct media_entity_operations ov01a10_subdev_entity_ops = {
 	.link_validate = v4l2_subdev_link_validate,
+};
+
+static const struct v4l2_subdev_internal_ops ov01a10_internal_ops = {
+	.open = ov01a10_open,
 };
 
 static int ov01a10_identify_module(struct ov01a10 *ov01a10)
@@ -890,9 +800,9 @@ static int ov01a10_identify_module(struct ov01a10 *ov01a10)
 		return ret;
 
 	if (val != OV01A10_CHIP_ID) {
-		dev_err(&client->dev, "chip id mismatch: %x!=%x\n",
+		dev_err(&client->dev, "chip id mismatch: %x!=%x",
 			OV01A10_CHIP_ID, val);
-		return -EIO;
+		return -ENXIO;
 	}
 
 	return 0;
@@ -901,74 +811,77 @@ static int ov01a10_identify_module(struct ov01a10 *ov01a10)
 static void ov01a10_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 
 	v4l2_async_unregister_subdev(sd);
 	media_entity_cleanup(&sd->entity);
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
-
 	pm_runtime_disable(&client->dev);
+	mutex_destroy(&ov01a10->mutex);
+
 }
 
 static int ov01a10_probe(struct i2c_client *client)
 {
-	struct device *dev = &client->dev;
 	struct ov01a10 *ov01a10;
 	int ret = 0;
 
-	ov01a10 = devm_kzalloc(dev, sizeof(*ov01a10), GFP_KERNEL);
+	ov01a10 = devm_kzalloc(&client->dev, sizeof(*ov01a10), GFP_KERNEL);
 	if (!ov01a10)
 		return -ENOMEM;
 
 	v4l2_i2c_subdev_init(&ov01a10->sd, client, &ov01a10_subdev_ops);
 
 	ret = ov01a10_identify_module(ov01a10);
-	if (ret)
-		return dev_err_probe(dev, ret,
-				     "failed to find sensor\n");
-
-	ov01a10->cur_mode = &supported_modes[0];
-
-	ret = ov01a10_init_controls(ov01a10);
 	if (ret) {
-		dev_err(dev, "failed to init controls: %d\n", ret);
-		return ret;
+		dev_err(&client->dev, "failed to find sensor: %d", ret);
+		goto probe_error_ret;
 	}
 
-	ov01a10->sd.state_lock = ov01a10->ctrl_handler.lock;
-	ov01a10->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
-		V4L2_SUBDEV_FL_HAS_EVENTS;
+	mutex_init(&ov01a10->mutex);
+	ov01a10->cur_mode = &supported_modes[0];
+	ret = ov01a10_init_controls(ov01a10);
+	if (ret) {
+		dev_err(&client->dev, "failed to init controls: %d", ret);
+		goto probe_error_v4l2_ctrl_handler_free;
+	}
+
+	ov01a10->sd.internal_ops = &ov01a10_internal_ops;
+	ov01a10->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	ov01a10->sd.entity.ops = &ov01a10_subdev_entity_ops;
 	ov01a10->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 	ov01a10->pad.flags = MEDIA_PAD_FL_SOURCE;
-
 	ret = media_entity_pads_init(&ov01a10->sd.entity, 1, &ov01a10->pad);
 	if (ret) {
-		dev_err(dev, "Failed to init entity pads: %d\n", ret);
-		goto err_handler_free;
-	}
-
-	ret = v4l2_subdev_init_finalize(&ov01a10->sd);
-	if (ret) {
-		dev_err(dev, "Failed to allocate subdev state: %d\n", ret);
-		goto err_media_entity_cleanup;
+		dev_err(&client->dev, "failed to init entity pads: %d", ret);
+		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
 	ret = v4l2_async_register_subdev_sensor(&ov01a10->sd);
 	if (ret < 0) {
-		dev_err(dev, "Failed to register subdev: %d\n", ret);
-		goto err_media_entity_cleanup;
+		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
+			ret);
+		goto probe_error_media_entity_cleanup;
 	}
 
-	pm_runtime_enable(dev);
-	pm_runtime_idle(dev);
+	/*
+	 * Device is already turned on by i2c-core with ACPI domain PM.
+	 * Enable runtime PM and turn off the device.
+	 */
+	pm_runtime_set_active(&client->dev);
+	pm_runtime_enable(&client->dev);
+	pm_runtime_idle(&client->dev);
 
 	return 0;
 
-err_media_entity_cleanup:
+probe_error_media_entity_cleanup:
 	media_entity_cleanup(&ov01a10->sd.entity);
 
-err_handler_free:
+probe_error_v4l2_ctrl_handler_free:
 	v4l2_ctrl_handler_free(ov01a10->sd.ctrl_handler);
+	mutex_destroy(&ov01a10->mutex);
+
+probe_error_ret:
 
 	return ret;
 }
@@ -979,8 +892,8 @@ static const struct dev_pm_ops ov01a10_pm_ops = {
 
 #ifdef CONFIG_ACPI
 static const struct acpi_device_id ov01a10_acpi_ids[] = {
-	{ "OVTI01A0" },
-	{ }
+	{"OVTI01A0"},
+	{}
 };
 
 MODULE_DEVICE_TABLE(acpi, ov01a10_acpi_ids);
@@ -998,7 +911,6 @@ static struct i2c_driver ov01a10_i2c_driver = {
 
 module_i2c_driver(ov01a10_i2c_driver);
 
-MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");
 MODULE_AUTHOR("Wang Yating <yating.wang@intel.com>");
 MODULE_DESCRIPTION("OmniVision OV01A10 sensor driver");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
