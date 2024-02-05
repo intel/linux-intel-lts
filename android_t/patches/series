@@ -122,3 +122,9 @@
 
 # CVE-2023-6040
 0001-netfilter-nf_tables-Reject-tables-of-unsupported-fam.patch
+
+# CVE-2024-1085
+0001-netfilter-nf_tables-check-if-catch-all-set-element-i.patch
+
+# CVE-2024-1086
+0001-netfilter-nf_tables-reject-QUEUE-DROP-verdict-parame.patch
