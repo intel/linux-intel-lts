@@ -352,7 +352,7 @@ int bpf_set_link_xdp_md_btf(int ifindex, __u8  enable)
 		char             attrbuf[64];
 	} req;
 
-	sock = libbpf_netlink_open(&nl_pid);
+	sock = libbpf_netlink_open(&nl_pid, NETLINK_ROUTE);
 	if (sock < 0)
 		return sock;
 
