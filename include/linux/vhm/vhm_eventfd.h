@@ -3,9 +3,9 @@
 
 /* ioeventfd APIs */
 struct acrn_ioeventfd;
-int acrn_ioeventfd_init(int vmid);
-int acrn_ioeventfd(int vmid, struct acrn_ioeventfd *args);
-void acrn_ioeventfd_deinit(int vmid);
+int acrn_ioeventfd_init(uint16_t vmid);
+int acrn_ioeventfd(uint16_t vmid, struct acrn_ioeventfd *args);
+void acrn_ioeventfd_deinit(uint16_t vmid);
 
 /* irqfd APIs */
 struct acrn_irqfd;

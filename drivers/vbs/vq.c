@@ -66,7 +66,7 @@
 #include <linux/vhm/acrn_vhm_mm.h>
 
 /* helper function for remote memory map */
-void * paddr_guest2host(struct ctx *ctx, uintptr_t gaddr, size_t len)
+static void * paddr_guest2host(struct ctx *ctx, uintptr_t gaddr, size_t len)
 {
 	return map_guest_phys(ctx->vmid, gaddr, len);
 }

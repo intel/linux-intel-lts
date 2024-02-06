@@ -212,7 +212,7 @@ static long vhm_dev_ioctl(struct file *filep,
 
 		ret = hcall_create_vm(virt_to_phys(&created_vm));
 		if ((ret < 0) ||
-			(created_vm.vmid == ACRN_INVALID_VMID)) {
+			(created_vm.vmid == (uint16_t)ACRN_INVALID_VMID)) {
 			pr_err("vhm: failed to create VM from Hypervisor !\n");
 			return -EFAULT;
 		}
