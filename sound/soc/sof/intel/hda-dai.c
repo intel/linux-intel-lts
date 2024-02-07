@@ -179,12 +179,13 @@ static int hda_link_dma_params(struct hdac_ext_stream *hext_stream,
 	struct hdac_bus *bus = hstream->bus;
 	struct hdac_ext_link *link;
 	unsigned int format_val;
+	unsigned int bits;
 
 	snd_hdac_ext_stream_reset(hext_stream);
 
-	format_val = snd_hdac_calc_stream_format(params->s_freq, params->ch,
-						 params->format,
-						 params->link_bps, 0);
+	bits = snd_hdac_stream_format_bits(params->format, SNDRV_PCM_SUBFORMAT_STD,
+					   params->link_bps);
+	format_val = snd_hdac_stream_format(params->ch, bits, params->s_freq);
 
 	dev_dbg(bus->dev, "format_val=%d, rate=%d, ch=%d, format=%d\n",
 		format_val, params->s_freq, params->ch, params->format);
