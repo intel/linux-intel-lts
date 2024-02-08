@@ -462,6 +462,14 @@ static const struct config_entry config_table[] = {
 	},
 #endif
 
+/* Malibou Lake */
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_AVS)
+	{
+		.flags = FLAG_SST,
+		.device = PCI_DEVICE_ID_INTEL_HDA_RPL_M,
+	},
+#endif
+
 /* Meteor Lake */
 #if IS_ENABLED(CONFIG_SND_SOC_SOF_METEORLAKE)
 	/* Meteorlake-P */
@@ -608,10 +616,10 @@ int snd_intel_dsp_driver_probe(struct pci_dev *pci)
 		if (cfg->flags & FLAG_SST_ONLY_IF_DMIC) {
 			if (snd_intel_dsp_check_dmic(pci)) {
 				dev_info(&pci->dev, "Digital mics found on Skylake+ platform, using SST driver\n");
-				return SND_INTEL_DSP_DRIVER_SST;
+				return SND_INTEL_DSP_DRIVER_AVS;
 			}
 		} else {
-			return SND_INTEL_DSP_DRIVER_SST;
+			return SND_INTEL_DSP_DRIVER_AVS;
 		}
 	}
 
