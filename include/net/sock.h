@@ -1768,14 +1768,44 @@ void sock_pfree(struct sk_buff *skb);
 #endif
 
 #ifdef CONFIG_NET_OOB
+
+static inline bool sock_oob_capable(struct socket *sock)
+{
+	return sock && sock->sk && sock->file && sock->file->oob_data;
+}
+
+int sock_oob_bind(struct sock *sk,
+		struct sockaddr *addr, int len);
+
+int sock_oob_shutdown(struct sock *sk, int how);
+
 static inline void sock_oob_destruct(struct sock *sk)
 {
 	void sock_oob_destroy(struct sock *sk);
 	if (sk->oob_data)
 		sock_oob_destroy(sk);
 }
+
 #else
+
+static inline bool sock_oob_capable(struct socket *sock)
+{
+	return false;
+}
+
+static inline int sock_oob_bind(struct sock *sk,
+				struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+static inline int sock_oob_shutdown(struct sock *sk, int how)
+{
+	return 0;
+}
+
 static inline void sock_oob_destruct(struct sock *sk) { }
+
 #endif
 
 int sk_setsockopt(struct sock *sk, int level, int optname,

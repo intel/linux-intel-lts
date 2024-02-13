@@ -148,11 +148,6 @@ static void sock_show_fdinfo(struct seq_file *m, struct file *f)
 
 #ifdef CONFIG_NET_OOB
 
-static inline bool sock_oob_capable(struct socket *sock)
-{
-	return sock->file && sock->file->oob_data;
-}
-
 int __weak sock_oob_attach(struct socket *sock)
 {
 	return 0;
@@ -166,23 +161,23 @@ void __weak sock_oob_destroy(struct sock *sk)
 {
 }
 
-int __weak sock_oob_bind(struct socket *sock, struct sockaddr *addr, int len)
+int __weak sock_oob_bind(struct sock *sk, struct sockaddr *addr, int len)
 {
 	return 0;
 }
 
-int __weak sock_oob_connect(struct socket *sock,
+int __weak sock_oob_shutdown(struct sock *sk, int how)
+{
+	return 0;
+}
+
+int __weak sock_oob_connect(struct sock *sk,
 			struct sockaddr *addr, int len, int flags)
 {
 	return 0;
 }
 
-int __weak sock_oob_shutdown(struct socket *sock, int how)
-{
-	return 0;
-}
-
-long __weak sock_inband_ioctl_redirect(struct socket *sock,
+long __weak sock_inband_ioctl_redirect(struct sock *sk,
 				unsigned int cmd, unsigned long arg)
 {
 	return -ENOTTY;
@@ -216,11 +211,6 @@ __poll_t __weak sock_oob_poll(struct file *filp,
 
 #else	/* !CONFIG_NET_OOB */
 
-static inline bool sock_oob_capable(struct socket *sock)
-{
-	return false;
-}
-
 static inline int sock_oob_attach(struct socket *sock)
 {
 	return 0;
@@ -230,24 +220,13 @@ static inline void sock_oob_release(struct socket *sock)
 {
 }
 
-static inline int sock_oob_bind(struct socket *sock,
-				struct sockaddr *addr, int len)
-{
-	return 0;
-}
-
-static inline int sock_oob_connect(struct socket *sock,
+static inline int sock_oob_connect(struct sock *sk,
 				struct sockaddr *addr, int len, int flags)
 {
 	return 0;
 }
 
-static inline int sock_oob_shutdown(struct socket *sock, int how)
-{
-	return 0;
-}
-
-static inline long sock_inband_ioctl_redirect(struct socket *sock,
+static inline long sock_inband_ioctl_redirect(struct sock *sk,
 					unsigned int cmd, unsigned long arg)
 {
 	return -ENOTTY;
@@ -1476,7 +1455,7 @@ static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 
 		default:
 			if (sock_oob_capable(sock)) {
-				err = sock_inband_ioctl_redirect(sock, cmd, arg);
+				err = sock_inband_ioctl_redirect(sock->sk, cmd, arg);
 				if (!err || err != -ENOIOCTLCMD)
 					break;
 			}
@@ -1977,16 +1956,10 @@ int __sys_bind_socket(struct socket *sock, struct sockaddr_storage *address,
 
 	err = security_socket_bind(sock, (struct sockaddr *)address,
 				   addrlen);
-	if (!err && sock_oob_capable(sock))
-		err = sock_oob_bind(sock, (struct sockaddr *)
-				&address, addrlen);
 	if (!err)
 		err = READ_ONCE(sock->ops)->bind(sock,
 						 (struct sockaddr *)address,
 						 addrlen);
-	if (!err && sock_oob_capable(sock))
-		err = sock_oob_bind(sock, (struct sockaddr *)
-				&address, addrlen);
 	return err;
 }
 
@@ -2214,8 +2187,8 @@ int __sys_connect_file(struct file *file, struct sockaddr_storage *address,
 
 	err = READ_ONCE(sock->ops)->connect(sock, (struct sockaddr *)address,
 				addrlen, sock->file->f_flags | file_flags);
-	if (!err && sock_oob_capable(sock)) {
-		err = sock_oob_connect(sock, (struct sockaddr *)address,
+	if (!err && sock_oob_capable(sock))
+		err = sock_oob_connect(sock->sk, (struct sockaddr *)address,
 				addrlen, sock->file->f_flags | file_flags);
 		if (err)
 			goto out;
@@ -2594,11 +2567,8 @@ int __sys_shutdown_sock(struct socket *sock, int how)
 	int err;
 
 	err = security_socket_shutdown(sock, how);
-	if (!err) {
+	if (!err)
 		err = READ_ONCE(sock->ops)->shutdown(sock, how);
-		if (!err && sock_oob_capable(sock))
-			err = sock_oob_shutdown(sock, how);
-	}
 
 	return err;
 }
