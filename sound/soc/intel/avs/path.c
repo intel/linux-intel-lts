@@ -578,12 +578,55 @@ static ssize_t avs_path_module_fw_instance_show(struct kobject *kobj,
 static struct kobj_attribute avs_path_module_fw_instance =
 		__ATTR(fw_instance, 0444, avs_path_module_fw_instance_show, NULL);
 
+
+static ssize_t avs_path_module_props_read(struct file *file, struct kobject *kobj,
+					  struct bin_attribute *attr, char *buf, loff_t pos,
+					  size_t buf_size)
+{
+	struct avs_path_module *mod = container_of(kobj, struct avs_path_module, kobj);
+	struct avs_dev *adev = mod->owner->owner->owner;
+	size_t data_size;
+	u8 *data;
+	int ret;
+
+	/* Prevent chaining, send and dump IPC value just once. */
+	if (pos)
+		return 0;
+
+	ret = avs_ipc_get_large_config(adev, mod->module_id, mod->instance_id, AVS_MOD_INST_PROPS,
+				       NULL, 0, &data, &data_size);
+	if (ret < 0)
+		return AVS_IPC_RET(ret);
+
+	if (buf_size > data_size - pos)
+		buf_size = data_size - pos;
+	memcpy(buf, data, buf_size);
+	kfree(data);
+	return buf_size;
+}
+static struct bin_attribute avs_path_module_props =
+	__BIN_ATTR(props, 0444, avs_path_module_props_read, NULL, AVS_MAILBOX_SIZE);
+
 static struct attribute *avs_path_module_attrs[] = {
 	&avs_path_module_fw_id.attr,
 	&avs_path_module_fw_instance.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(avs_path_module);
+
+static struct bin_attribute *avs_path_module_bin_attrs[] = {
+	&avs_path_module_props,
+	NULL
+};
+
+static const struct attribute_group avs_path_module_group = {
+	.attrs = avs_path_module_attrs,
+	.bin_attrs = avs_path_module_bin_attrs,
+};
+
+static const struct attribute_group *avs_path_module_groups[] = {
+	&avs_path_module_group,
+	NULL
+};
 
 static struct kobj_type avs_path_module_ktype = {
 	.release = avs_path_module_release,
@@ -776,11 +819,59 @@ static ssize_t avs_path_pipeline_state_store(struct kobject *kobj,
 static struct kobj_attribute avs_path_pipeline_state =
 	__ATTR(state, 0664, avs_path_pipeline_state_show, avs_path_pipeline_state_store);
 
+static ssize_t avs_path_pipeline_props_read(struct file *file, struct kobject *kobj,
+					    struct bin_attribute *attr, char *buf, loff_t pos,
+					    size_t buf_size)
+{
+	struct avs_path_pipeline *ppl = container_of(kobj, struct avs_path_pipeline, kobj);
+	struct avs_dev *adev = ppl->owner->owner;
+	struct avs_tlv tlv;
+	size_t data_size;
+	u8 *data;
+	int ret;
+
+	/* Prevent chaining, send and dump IPC value just once. */
+	if (pos)
+		return 0;
+
+	tlv.ext.type = AVS_BASEFW_PIPELINE_PROPS;
+	tlv.ext.instance = ppl->instance_id;
+	tlv.length = AVS_MAILBOX_SIZE - sizeof(tlv);
+
+	ret = avs_ipc_get_large_config(adev, AVS_BASEFW_MOD_ID, AVS_BASEFW_INST_ID,
+				       AVS_VENDOR_CONFIG, (u8 *)&tlv, sizeof(tlv),
+				       &data, &data_size);
+	if (ret < 0)
+		return AVS_IPC_RET(ret);
+
+	if (buf_size > data_size - pos)
+		buf_size = data_size - pos;
+	memcpy(buf, data, buf_size);
+	kfree(data);
+	return buf_size;
+}
+static struct bin_attribute avs_path_pipeline_props =
+	__BIN_ATTR(props, 0444, avs_path_pipeline_props_read, NULL, AVS_MAILBOX_SIZE);
+
 static struct attribute *avs_path_pipeline_attrs[] = {
 	&avs_path_pipeline_state.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(avs_path_pipeline);
+
+static struct bin_attribute *avs_path_pipeline_bin_attrs[] = {
+	&avs_path_pipeline_props,
+	NULL
+};
+
+static const struct attribute_group avs_path_pipeline_group = {
+	.attrs = avs_path_pipeline_attrs,
+	.bin_attrs = avs_path_pipeline_bin_attrs,
+};
+
+static const struct attribute_group *avs_path_pipeline_groups[] = {
+	&avs_path_pipeline_group,
+	NULL
+};
 
 static struct kobj_type avs_path_pipeline_ktype = {
 	.release = avs_path_pipeline_release,
