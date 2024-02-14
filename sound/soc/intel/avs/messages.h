@@ -93,7 +93,13 @@ union avs_global_msg {
 } __packed;
 
 struct avs_tlv {
-	u32 type;
+	union {
+		u32 type;
+		struct {
+			u32 type:8;
+			u32 instance:24;
+		} ext;
+	};
 	u32 length;
 	u32 value[];
 } __packed;
@@ -334,6 +340,12 @@ struct avs_dxstate_info {
 int avs_ipc_set_dx(struct avs_dev *adev, u32 core_mask, bool powerup);
 int avs_ipc_set_d0ix(struct avs_dev *adev, bool enable_pg, bool streaming);
 
+#define AVS_VENDOR_CONFIG	0xFF
+
+enum avs_mod_runtime_param {
+	AVS_MOD_INST_PROPS = 0xFE,
+};
+
 /* Base-firmware runtime parameters */
 
 #define AVS_BASEFW_MOD_ID	0
@@ -345,6 +357,7 @@ enum avs_basefw_runtime_param {
 	AVS_BASEFW_HARDWARE_CONFIG = 8,
 	AVS_BASEFW_MODULES_INFO = 9,
 	AVS_BASEFW_PIPELINE_LIST_INFO = 10,
+	AVS_BASEFW_PIPELINE_PROPS = 11,
 	AVS_BASEFW_SCHEDULER_INFO = 12,
 	AVS_BASEFW_GATEWAYS_INFO = 13,
 	AVS_BASEFW_LIBRARIES_INFO = 16,
