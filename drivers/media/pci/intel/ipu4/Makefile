@@ -12,6 +12,7 @@ ccflags-y += -DIPU_META_DATA_SUPPORT -DI2C_WA
 intel-ipu4-objs				+= ../ipu.o \
 					   ../ipu-bus.o \
 					   ../ipu-dma.o \
+					   ../ipu-mmu.o \
 					   ../ipu-buttress.o \
 					   ../ipu-trace.o \
 					   ../ipu-cpd.o \
@@ -19,9 +20,6 @@ intel-ipu4-objs				+= ../ipu.o \
 					   ipu4.o
 
 obj-$(CONFIG_VIDEO_INTEL_IPU)		+= intel-ipu4.o
-
-intel-ipu4-mmu-objs			+= ../ipu-mmu.o
-obj-$(CONFIG_VIDEO_INTEL_IPU)		+= intel-ipu4-mmu.o
 
 intel-ipu4-isys-objs			+= ../ipu-isys.o \
 					   ../ipu-isys-csi2.o \
@@ -75,6 +73,7 @@ ccflags-y += -DIPU_META_DATA_SUPPORT
 intel-ipu4p-objs			+= ../ipu.o \
 					   ../ipu-bus.o \
 					   ../ipu-dma.o \
+					   ../ipu-mmu.o \
 					   ../ipu-buttress.o \
 					   ../ipu-trace.o \
 					   ../ipu-cpd.o \
@@ -82,9 +81,6 @@ intel-ipu4p-objs			+= ../ipu.o \
 					   ipu4.o
 
 obj-$(CONFIG_VIDEO_INTEL_IPU)		+= intel-ipu4p.o
-
-intel-ipu4p-mmu-objs			+= ../ipu-mmu.o
-obj-$(CONFIG_VIDEO_INTEL_IPU)		+= intel-ipu4p-mmu.o
 
 intel-ipu4p-isys-objs			+= ../ipu-isys.o \
 					   ../ipu-isys-csi2.o \

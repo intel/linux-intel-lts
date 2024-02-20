@@ -3,18 +3,19 @@
 
 #include <asm/cacheflush.h>
 
+#include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-map-ops.h>
 #include <linux/gfp.h>
 #include <linux/highmem.h>
-#include <linux/iommu.h>
 #include <linux/iova.h>
 #include <linux/module.h>
 #include <linux/scatterlist.h>
 #include <linux/vmalloc.h>
 
 #include "ipu-dma.h"
+#include "ipu-bus.h"
 #include "ipu-mmu.h"
 
 /* Begin of things adapted from arch/arm/mm/dma-mapping.c */
@@ -58,7 +59,7 @@ static void __dma_clear_buffer(struct page *page, size_t size,
 	}
 }
 
-static struct page **__iommu_alloc_buffer(struct device *dev, size_t size,
+static struct page **__dma_alloc_buffer(struct device *dev, size_t size,
 					  gfp_t gfp,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 					  struct dma_attrs *attrs
@@ -114,7 +115,7 @@ error:
 	return NULL;
 }
 
-static int __iommu_free_buffer(struct device *dev, struct page **pages,
+static int __dma_free_buffer(struct device *dev, struct page **pages,
 			       size_t size,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 			       struct dma_attrs *attrs
@@ -150,7 +151,8 @@ static void ipu_dma_sync_single_for_cpu(struct device *dev,
 {
 	struct device *aiommu = to_ipu_bus_device(dev)->iommu;
 	struct ipu_mmu *mmu = dev_get_drvdata(aiommu);
-	unsigned long pa = iommu_iova_to_phys(mmu->dmap->domain, dma_handle);
+	unsigned long pa = ipu_mmu_iova_to_phys(mmu->dmap->mmu_info,
+						dma_handle);
 
 	clflush_cache_range(phys_to_virt(pa), size);
 }
@@ -192,14 +194,14 @@ static void *ipu_dma_alloc(struct device *dev, size_t size,
 	if (!iova)
 		return NULL;
 
-	pages = __iommu_alloc_buffer(dev, size, gfp, attrs);
+	pages = __dma_alloc_buffer(dev, size, gfp, attrs);
 	if (!pages)
 		goto out_free_iova;
 
 	for (i = 0; iova->pfn_lo + i <= iova->pfn_hi; i++) {
-		rval = iommu_map(mmu->dmap->domain,
+		rval = ipu_mmu_map(mmu->dmap->mmu_info,
 				 (iova->pfn_lo + i) << PAGE_SHIFT,
-				 page_to_phys(pages[i]), PAGE_SIZE, 0);
+				 page_to_phys(pages[i]), PAGE_SIZE);
 		if (rval)
 			goto out_unmap;
 	}
@@ -231,10 +233,11 @@ static void *ipu_dma_alloc(struct device *dev, size_t size,
 
 out_unmap:
 	for (i--; i >= 0; i--) {
-		iommu_unmap(mmu->dmap->domain, (iova->pfn_lo + i) << PAGE_SHIFT,
-			    PAGE_SIZE);
+		ipu_mmu_unmap(mmu->dmap->mmu_info,
+			(iova->pfn_lo + i) << PAGE_SHIFT,
+			PAGE_SIZE);
 	}
-	__iommu_free_buffer(dev, pages, size, attrs);
+	__dma_free_buffer(dev, pages, size, attrs);
 
 out_free_iova:
 	__free_iova(&mmu->dmap->iovad, iova);
@@ -273,10 +276,10 @@ static void ipu_dma_free(struct device *dev, size_t size, void *vaddr,
 
 	vunmap(vaddr);
 
-	iommu_unmap(mmu->dmap->domain, iova->pfn_lo << PAGE_SHIFT,
+	ipu_mmu_unmap(mmu->dmap->mmu_info, iova->pfn_lo << PAGE_SHIFT,
 		    (iova->pfn_hi - iova->pfn_lo + 1) << PAGE_SHIFT);
 
-	__iommu_free_buffer(dev, pages, size, attrs);
+	__dma_free_buffer(dev, pages, size, attrs);
 
 	__free_iova(&mmu->dmap->iovad, iova);
 
@@ -340,7 +343,7 @@ static void ipu_dma_unmap_sg(struct device *dev,
 #endif
 		ipu_dma_sync_sg_for_cpu(dev, sglist, nents, DMA_BIDIRECTIONAL);
 
-	iommu_unmap(mmu->dmap->domain, iova->pfn_lo << PAGE_SHIFT,
+	ipu_mmu_unmap(mmu->dmap->mmu_info, iova->pfn_lo << PAGE_SHIFT,
 		    (iova->pfn_hi - iova->pfn_lo + 1) << PAGE_SHIFT);
 
 	mmu->tlb_invalidate(mmu);
@@ -386,9 +389,9 @@ static int ipu_dma_map_sg(struct device *dev, struct scatterlist *sglist,
 		dev_dbg(dev, "mapping entry %d: iova 0x%8.8x,phy 0x%16.16llx\n",
 			i, iova_addr << PAGE_SHIFT,
 			(unsigned long long)page_to_phys(sg_page(sg)));
-		rval = iommu_map(mmu->dmap->domain, iova_addr << PAGE_SHIFT,
+		rval = ipu_mmu_map(mmu->dmap->mmu_info, iova_addr << PAGE_SHIFT,
 				 page_to_phys(sg_page(sg)),
-				 PAGE_ALIGN(sg->length), 0);
+				 PAGE_ALIGN(sg->length));
 		if (rval)
 			goto out_fail;
 		sg_dma_address(sg) = iova_addr << PAGE_SHIFT;

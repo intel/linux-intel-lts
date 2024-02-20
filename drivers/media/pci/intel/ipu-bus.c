@@ -4,7 +4,6 @@
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/interrupt.h>
-#include <linux/iommu.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -183,8 +182,8 @@ static struct ipu_dma_mapping *alloc_dma_mapping(struct device *dev)
 	if (!dmap)
 		return NULL;
 
-	dmap->domain = iommu_domain_alloc(dev->bus);
-	if (!dmap->domain) {
+	dmap->mmu_info = ipu_mmu_alloc();
+	if (!dmap->mmu_info) {
 		kfree(dmap);
 		return NULL;
 	}
@@ -196,6 +195,7 @@ static struct ipu_dma_mapping *alloc_dma_mapping(struct device *dev)
 #else
 	init_iova_domain(&dmap->iovad, SZ_4K, 1);
 #endif
+	dmap->mmu_info->dmap = dmap;
 
 	kref_init(&dmap->ref);
 
@@ -206,80 +206,46 @@ static struct ipu_dma_mapping *alloc_dma_mapping(struct device *dev)
 	return dmap;
 }
 
-static void free_dma_mapping(void *ptr)
+static void free_dma_mapping(struct ipu_mmu *mmu)
 {
-	struct ipu_mmu *mmu = ptr;
 	struct ipu_dma_mapping *dmap = mmu->dmap;
 
-	iommu_domain_free(dmap->domain);
+	ipu_mmu_destroy(dmap->mmu_info);
 	mmu->set_mapping(mmu, NULL);
 	iova_cache_put();
 	put_iova_domain(&dmap->iovad);
 	kfree(dmap);
 }
 
-static struct iommu_group *ipu_bus_get_group(struct device *dev)
-{
-	struct device *aiommu = to_ipu_bus_device(dev)->iommu;
-	struct ipu_mmu *mmu = dev_get_drvdata(aiommu);
-	struct iommu_group *group;
-	struct ipu_dma_mapping *dmap;
-
-	if (!mmu) {
-		dev_err(dev, "%s: no iommu available\n", __func__);
-		return NULL;
-	}
-
-	group = iommu_group_get(dev);
-	if (group)
-		return group;
-
-	group = iommu_group_alloc();
-	if (!group) {
-		dev_err(dev, "%s: can't alloc iommu group\n", __func__);
-		return NULL;
-	}
-
-	dmap = alloc_dma_mapping(dev);
-	if (!dmap) {
-		dev_err(dev, "%s: can't alloc dma mapping\n", __func__);
-		iommu_group_put(group);
-		return NULL;
-	}
-
-	iommu_group_set_iommudata(group, mmu, free_dma_mapping);
-
-	/*
-	 * Turn mmu on and off synchronously. Otherwise it may still be on
-	 * at psys / isys probing phase and that may cause problems on
-	 * develoment environments.
-	 */
-	pm_runtime_get_sync(aiommu);
-	mmu->set_mapping(mmu, dmap);
-	pm_runtime_put_sync(aiommu);
-
-	return group;
-}
-
 static int ipu_bus_probe(struct device *dev)
 {
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 	struct ipu_bus_driver *adrv = to_ipu_bus_driver(dev->driver);
-	struct iommu_group *group = NULL;
+	struct ipu_mmu *mmu;
+	struct ipu_dma_mapping *dmap;
 	int rval;
 
 	dev_dbg(dev, "bus probe dev %s\n", dev_name(dev));
 
 	if (adev->iommu) {
-		dev_dbg(dev, "iommu %s\n", dev_name(adev->iommu));
+		dev_dbg(dev, "alloc dma mapping\n");
+		mmu = ipu_bus_get_drvdata(to_ipu_bus_device(adev->iommu));
 
-		group = ipu_bus_get_group(dev);
-		if (!group)
-			return -EPROBE_DEFER;
-
-		rval = iommu_group_add_device(group, dev);
-		if (rval)
+		dmap = alloc_dma_mapping(dev);
+		if (!dmap) {
+			dev_err(dev, "%s: can't alloc dma mapping\n", __func__);
+			rval = -ENOMEM;
 			goto out_err;
+		}
+
+		/*
+		 * Turn mmu on and off synchronously. Otherwise it may still
+		 * be on at psys / isys probing phase and that may cause
+		 * problems on development environments.
+		 */
+		pm_runtime_get_sync(dev);
+		mmu->set_mapping(mmu, dmap);
+		pm_runtime_put_sync(dev);
 	}
 
 	adev->adrv = adrv;
@@ -310,8 +276,6 @@ static int ipu_bus_probe(struct device *dev)
 out_err:
 	ipu_bus_set_drvdata(adev, NULL);
 	adev->adrv = NULL;
-	iommu_group_remove_device(dev);
-	iommu_group_put(group);
 	return rval;
 }
 
@@ -319,12 +283,14 @@ static void ipu_bus_remove(struct device *dev)
 {
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 	struct ipu_bus_driver *adrv = to_ipu_bus_driver(dev->driver);
+	struct ipu_bus_device *adev_iommu = to_ipu_bus_device(adev->iommu);
+	struct ipu_mmu *mmu = ipu_bus_get_drvdata(adev_iommu);
 
 	if (adrv->remove)
 		adrv->remove(adev);
 
 	if (adev->iommu)
-		iommu_group_remove_device(dev);
+		free_dma_mapping(mmu);
 }
 
 static struct bus_type ipu_bus = {
@@ -433,15 +399,6 @@ void ipu_bus_unregister(void)
 	return bus_unregister(&ipu_bus);
 }
 EXPORT_SYMBOL(ipu_bus_unregister);
-
-int ipu_bus_set_iommu(struct iommu_ops *ops)
-{
-	if (iommu_present(&ipu_bus))
-		return 0;
-
-	return bus_set_iommu(&ipu_bus, ops);
-}
-EXPORT_SYMBOL(ipu_bus_set_iommu);
 
 static int flr_rpm_recovery(struct device *dev, void *p)
 {

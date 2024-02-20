@@ -58,8 +58,6 @@ int ipu_bus_unregister_driver(struct ipu_bus_driver *adrv);
 int ipu_bus_register(void);
 void ipu_bus_unregister(void);
 
-int ipu_bus_set_iommu(struct iommu_ops *ops);
-
 #define module_ipu_bus_driver(drv)			\
 	module_driver(drv, ipu_bus_register_driver, \
 		ipu_bus_unregister_driver)

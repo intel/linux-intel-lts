@@ -4,7 +4,7 @@
 #ifndef IPU_MMU_H
 #define IPU_MMU_H
 
-#include <linux/iommu.h>
+#include <linux/dma-mapping.h>
 
 #include "ipu.h"
 #include "ipu-pdata.h"
@@ -12,16 +12,16 @@
 #define ISYS_MMID 1
 #define PSYS_MMID 0
 
+extern struct ipu_bus_driver ipu_mmu_driver;
 /*
  * @pgtbl: virtual address of the l1 page table (one page)
  */
-struct ipu_mmu_domain {
+struct ipu_mmu_info {
 	u32 __iomem *pgtbl;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
-	struct iommu_domain *domain;
-#else
-	struct iommu_domain domain;
-#endif
+	dma_addr_t aperture_start;
+	dma_addr_t aperture_end;
+	unsigned long pgsize_bitmap;
+
 	spinlock_t lock;	/* Serialize access to users */
 	unsigned int users;
 	struct ipu_dma_mapping *dmap;
@@ -59,4 +59,12 @@ struct ipu_mmu {
 			     struct ipu_dma_mapping *dmap);
 };
 
+struct ipu_mmu_info *ipu_mmu_alloc(void);
+void ipu_mmu_destroy(struct ipu_mmu_info *mmu_info);
+int ipu_mmu_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
+	      phys_addr_t paddr, size_t size);
+size_t ipu_mmu_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
+		      size_t size);
+phys_addr_t ipu_mmu_iova_to_phys(struct ipu_mmu_info *mmu_info,
+				dma_addr_t iova);
 #endif

@@ -6,10 +6,10 @@
 
 #include <linux/iova.h>
 
-struct iommu_domain;
+struct ipu_mmu_info;
 
 struct ipu_dma_mapping {
-	struct iommu_domain *domain;
+	struct ipu_mmu_info *mmu_info;
 	struct iova_domain iovad;
 	struct kref ref;
 };
