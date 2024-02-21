@@ -1602,10 +1602,14 @@ static void hsw_crtc_enable(struct intel_atomic_state *state,
 	if (psl_clkgate_wa)
 		glk_pipe_scaler_clock_gating_wa(dev_priv, pipe, true);
 
-	if (DISPLAY_VER(dev_priv) >= 9)
-		skl_pfit_enable(new_crtc_state);
-	else
+	if (DISPLAY_VER(dev_priv) >= 9) {
+		const struct drm_rect *dst = &new_crtc_state->pch_pfit.dst;
+
+		if (new_crtc_state->pch_pfit.enabled)
+			skl_program_crtc_scaler(new_crtc_state, dst);
+	} else {
 		ilk_pfit_enable(new_crtc_state);
+	}
 
 	/*
 	 * On ILK+ LUT must be loaded before the pipe is running but with
@@ -6653,8 +6657,10 @@ static void intel_pipe_fastset(const struct intel_crtc_state *old_crtc_state,
 
 	/* on skylake this is done by detaching scalers */
 	if (DISPLAY_VER(dev_priv) >= 9) {
+		const struct drm_rect *dst = &new_crtc_state->pch_pfit.dst;
+
 		if (new_crtc_state->pch_pfit.enabled)
-			skl_pfit_enable(new_crtc_state);
+			skl_program_crtc_scaler(new_crtc_state, dst);
 	} else if (HAS_PCH_SPLIT(dev_priv)) {
 		if (new_crtc_state->pch_pfit.enabled)
 			ilk_pfit_enable(new_crtc_state);

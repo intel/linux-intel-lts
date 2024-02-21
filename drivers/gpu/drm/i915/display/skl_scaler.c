@@ -704,13 +704,13 @@ static void skl_scaler_setup_filter(struct drm_i915_private *dev_priv, enum pipe
 	}
 }
 
-void skl_pfit_enable(const struct intel_crtc_state *crtc_state)
+void skl_program_crtc_scaler(const struct intel_crtc_state *crtc_state,
+			     const struct drm_rect *dst)
 {
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	const struct intel_crtc_scaler_state *scaler_state =
 		&crtc_state->scaler_state;
-	const struct drm_rect *dst = &crtc_state->pch_pfit.dst;
 	u16 uv_rgb_hphase, uv_rgb_vphase;
 	enum pipe pipe = crtc->pipe;
 	int width = drm_rect_width(dst);
@@ -721,9 +721,6 @@ void skl_pfit_enable(const struct intel_crtc_state *crtc_state)
 	struct drm_rect src;
 	int id;
 	u32 ps_ctrl;
-
-	if (!crtc_state->pch_pfit.enabled)
-		return;
 
 	if (drm_WARN_ON(&dev_priv->drm,
 			crtc_state->scaler_state.scaler_id < 0))
