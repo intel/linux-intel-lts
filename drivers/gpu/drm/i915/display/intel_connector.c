@@ -308,3 +308,23 @@ intel_attach_scaling_mode_property(struct drm_connector *connector)
 
 	connector->state->scaling_mode = DRM_MODE_SCALE_ASPECT;
 }
+
+void
+intel_attach_border_property(struct drm_connector *connector)
+{
+	struct drm_device *dev = connector->dev;
+	struct drm_i915_private *dev_priv = to_i915(dev);
+	struct drm_property *prop;
+
+	prop = dev_priv->display.properties.border;
+	if (prop == NULL) {
+		prop = drm_property_create(dev, DRM_MODE_PROP_BLOB,
+					   "Border", 0);
+		if (prop == NULL)
+			return;
+
+		dev_priv->display.properties.border = prop;
+	}
+
+	drm_object_attach_property(&connector->base, prop, 0);
+}

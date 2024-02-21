@@ -6171,6 +6171,8 @@ intel_dp_add_properties(struct intel_dp *intel_dp, struct drm_connector *connect
 
 	if (HAS_VRR(dev_priv))
 		drm_connector_attach_vrr_capable_property(connector);
+
+	intel_attach_border_property(connector);
 }
 
 static void
