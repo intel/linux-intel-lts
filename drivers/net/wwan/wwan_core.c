@@ -327,6 +327,14 @@ static const struct {
 		.name = "XMMRPC",
 		.devsuf = "xmmrpc",
 	},
+	[WWAN_PORT_SAHARA] = {
+		.name = "SAHARA",
+		.devsuf = "sahara",
+	},
+	[WWAN_PORT_NMEA] = {
+		.name = "NMEA",
+		.devsuf = "nmea",
+	},
 };
 
 static ssize_t type_show(struct device *dev, struct device_attribute *attr,
@@ -552,6 +560,12 @@ void *wwan_port_get_drvdata(struct wwan_port *port)
 	return dev_get_drvdata(&port->dev);
 }
 EXPORT_SYMBOL_GPL(wwan_port_get_drvdata);
+
+enum wwan_port_type wwan_port_get_type(struct wwan_port *port)
+{
+	return port->type;
+}
+EXPORT_SYMBOL_GPL(wwan_port_get_type);
 
 static int wwan_port_op_start(struct wwan_port *port)
 {

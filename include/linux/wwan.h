@@ -28,6 +28,8 @@ enum wwan_port_type {
 	WWAN_PORT_QCDM,
 	WWAN_PORT_FIREHOSE,
 	WWAN_PORT_XMMRPC,
+	WWAN_PORT_SAHARA,
+	WWAN_PORT_NMEA,
 
 	/* Add new port types above this line */
 
@@ -140,6 +142,12 @@ void wwan_port_txon(struct wwan_port *port);
  * @port: Related WWAN port
  */
 void *wwan_port_get_drvdata(struct wwan_port *port);
+
+/**
+ * wwan_port_get_type - Retrieve the WWAN port type
+ * @port: Related WWAN port
+ */
+enum wwan_port_type wwan_port_get_type(struct wwan_port *port);
 
 /**
  * struct wwan_netdev_priv - WWAN core network device private data

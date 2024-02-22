@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2021, Linaro Ltd <loic.poulain@linaro.org> */
+/* Copyright (c) 2023, Linaro Ltd <loic.poulain@linaro.org> */
 #include <linux/kernel.h>
 #include <linux/mhi.h>
 #include <linux/mod_devicetable.h>
@@ -104,6 +104,8 @@ static void mhi_wwan_ctrl_refill_work(struct work_struct *work)
 	}
 }
 
+int mhi_wwan_dtr_set(struct wwan_port *port, int dtr, int rts);
+
 static int mhi_wwan_ctrl_start(struct wwan_port *port)
 {
 	struct mhi_wwan_dev *mhiwwan = wwan_port_get_drvdata(port);
@@ -123,12 +125,22 @@ static int mhi_wwan_ctrl_start(struct wwan_port *port)
 		mhi_wwan_ctrl_refill_work(&mhiwwan->rx_refill);
 	}
 
+	if (wwan_port_get_type(port) == WWAN_PORT_AT) {
+		dev_dbg(&mhiwwan->mhi_dev->dev, "Setting DTR and RTS for port\n");
+		mhi_wwan_dtr_set(port, 1, 1);
+	}
+
 	return 0;
 }
 
 static void mhi_wwan_ctrl_stop(struct wwan_port *port)
 {
 	struct mhi_wwan_dev *mhiwwan = wwan_port_get_drvdata(port);
+
+	if (wwan_port_get_type(port) == WWAN_PORT_AT) {
+		dev_dbg(&mhiwwan->mhi_dev->dev, "Unsetting DTR and RTS for port\n");
+		mhi_wwan_dtr_set(port, 0, 0);
+	}
 
 	spin_lock_bh(&mhiwwan->rx_lock);
 	clear_bit(MHI_WWAN_RX_REFILL, &mhiwwan->flags);
@@ -263,6 +275,8 @@ static const struct mhi_device_id mhi_wwan_ctrl_match_table[] = {
 	{ .chan = "QMI", .driver_data = WWAN_PORT_QMI },
 	{ .chan = "DIAG", .driver_data = WWAN_PORT_QCDM },
 	{ .chan = "FIREHOSE", .driver_data = WWAN_PORT_FIREHOSE },
+	{ .chan = "SAHARA", .driver_data = WWAN_PORT_SAHARA },
+	{ .chan = "NMEA", .driver_data = WWAN_PORT_NMEA },
 	{},
 };
 MODULE_DEVICE_TABLE(mhi, mhi_wwan_ctrl_match_table);
