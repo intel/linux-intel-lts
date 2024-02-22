@@ -101,4 +101,7 @@ config BPF_LSM
 
 	  If you are unsure how to answer this question, answer N.
 
+config BPF_OOB
+	bool
+
 endmenu # "BPF subsystem"
