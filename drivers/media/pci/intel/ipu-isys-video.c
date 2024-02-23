@@ -1879,6 +1879,23 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 		av->vdev.ioctl_ops = ioctl_ops;
 	av->vdev.queue = &av->aq.vbq;
 	av->vdev.lock = &av->mutex;
+
+	av->vdev.device_caps = V4L2_CAP_STREAMING;
+
+	switch (av->aq.vbq.type) {
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
+		av->vdev.device_caps |= V4L2_CAP_VIDEO_CAPTURE;
+		break;
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
+		av->vdev.device_caps |= V4L2_CAP_VIDEO_CAPTURE_MPLANE;
+		break;
+	case V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE:
+		av->vdev.device_caps |= V4L2_CAP_VIDEO_OUTPUT_MPLANE;
+		break;
+	default:
+		WARN_ON(1);
+	}
+
 	set_bit(V4L2_FL_USES_V4L2_FH, &av->vdev.flags);
 	video_set_drvdata(&av->vdev, av);
 
