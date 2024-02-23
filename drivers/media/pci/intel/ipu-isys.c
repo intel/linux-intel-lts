@@ -1040,7 +1040,6 @@ EXPORT_SYMBOL_GPL(ipu_put_fw_mgs_buffer);
 
 static int isys_probe(struct ipu_bus_device *adev)
 {
-	struct ipu_mmu *mmu = dev_get_drvdata(adev->iommu);
 	struct ipu_isys *isys;
 	struct ipu_device *isp = adev->isp;
 #if defined(CONFIG_VIDEO_INTEL_IPU4) || defined(CONFIG_VIDEO_INTEL_IPU4P)
@@ -1058,7 +1057,7 @@ static int isys_probe(struct ipu_bus_device *adev)
 	trace_printk("B|%d|TMWK\n", current->pid);
 
 	/* Has the domain been attached? */
-	if (!mmu || !isp->pkg_dir_dma_addr) {
+	if (!isp->secure_mode && !isp->pkg_dir_dma_addr) {
 		trace_printk("E|TMWK\n");
 		return -EPROBE_DEFER;
 	}

@@ -1282,7 +1282,6 @@ static void run_fw_init_work(struct work_struct *work)
 
 static int ipu_psys_probe(struct ipu_bus_device *adev)
 {
-	struct ipu_mmu *mmu = dev_get_drvdata(adev->iommu);
 	struct ipu_device *isp = adev->isp;
 	struct ipu_psys_pg *kpg, *kpg0;
 	struct ipu_psys *psys;
@@ -1292,11 +1291,6 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 
 	trace_printk("B|%d|TMWK\n", current->pid);
 
-	/* Has the domain been attached? */
-	if (!mmu) {
-		trace_printk("E|TMWK\n");
-		return -EPROBE_DEFER;
-	}
 
 	mutex_lock(&ipu_psys_mutex);
 
