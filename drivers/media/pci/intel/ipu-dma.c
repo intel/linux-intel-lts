@@ -206,7 +206,7 @@ static void *ipu_dma_alloc(struct device *dev, size_t size,
 			goto out_unmap;
 	}
 
-    count = iova->pfn_hi - iova->pfn_lo;
+    count = iova->pfn_hi - iova->pfn_lo + 1;
 
     addr = vm_map_ram(pages, count, 0);
 
