@@ -170,6 +170,8 @@ next:
 
 static inline bool maybe_oob_syscall(unsigned int nr, struct pt_regs *regs)
 {
+	struct task_struct *tsk = current;
+
 	/*
 	 * Check whether the companion core might be interested in the
 	 * syscall call. If the old syscall form is handled, pass the
@@ -182,7 +184,8 @@ static inline bool maybe_oob_syscall(unsigned int nr, struct pt_regs *regs)
 			return true;
 	}
 
-	return arch_dovetail_is_syscall(nr) && syscall_get_arg0(regs) & __OOB_SYSCALL_BIT;
+	return arch_dovetail_is_syscall(nr) &&
+	       syscall_get_arg0(tsk, regs) & __OOB_SYSCALL_BIT;
 }
 
 int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
