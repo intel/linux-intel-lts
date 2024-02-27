@@ -99,6 +99,8 @@ static inline void __u64_stats_update_begin(struct u64_stats_sync *syncp) { }
 static inline void __u64_stats_update_end(struct u64_stats_sync *syncp) { }
 static inline unsigned long __u64_stats_irqsave(void) { return 0; }
 static inline void __u64_stats_irqrestore(unsigned long flags) { }
+static inline unsigned long __u64_stats_hard_irqsave(void) { return 0; }
+static inline void __u64_stats_hard_irqrestore(unsigned long flags) { }
 static inline unsigned int __u64_stats_fetch_begin(const struct u64_stats_sync *syncp)
 {
 	return 0;
@@ -166,6 +168,32 @@ static inline void __u64_stats_irqrestore(unsigned long flags)
 	local_irq_restore(flags);
 }
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+static inline unsigned long __u64_stats_hard_irqsave(void)
+{
+	return hard_local_irq_save();
+}
+
+static inline void __u64_stats_hard_irqrestore(unsigned long flags)
+{
+	hard_local_irq_restore(flags);
+}
+
+#else  /* !CONFIG_IRQ_PIPELINE */
+
+static inline unsigned long __u64_stats_hard_irqsave(void)
+{
+	return __u64_stats_irqsave();
+}
+
+static inline void __u64_stats_hard_irqrestore(unsigned long flags)
+{
+	__u64_stats_irqrestore(flags);
+}
+
+#endif	/* !CONFIG_IRQ_PIPELINE */
+
 static inline unsigned int __u64_stats_fetch_begin(const struct u64_stats_sync *syncp)
 {
 	return read_seqcount_begin(&syncp->seq);
@@ -202,6 +230,38 @@ static inline void u64_stats_update_end_irqrestore(struct u64_stats_sync *syncp,
 	__u64_stats_update_end(syncp);
 	__u64_stats_irqrestore(flags);
 }
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+static inline unsigned long u64_stats_update_begin_hard_irqsave(struct u64_stats_sync *syncp)
+{
+	unsigned long flags = __u64_stats_hard_irqsave();
+
+	__u64_stats_update_begin(syncp);
+	return flags;
+}
+
+static inline void u64_stats_update_end_hard_irqrestore(struct u64_stats_sync *syncp,
+						   unsigned long flags)
+{
+	__u64_stats_update_end(syncp);
+	__u64_stats_hard_irqrestore(flags);
+}
+
+#else  /* !CONFIG_IRQ_PIPELINE */
+
+static inline unsigned long u64_stats_update_begin_hard_irqsave(struct u64_stats_sync *syncp)
+{
+	return u64_stats_update_begin_irqsave(syncp);
+}
+
+static inline void u64_stats_update_end_hard_irqrestore(struct u64_stats_sync *syncp,
+						   unsigned long flags)
+{
+	u64_stats_update_end_irqrestore(syncp, flags);
+}
+
+#endif	/* !CONFIG_IRQ_PIPELINE */
 
 static inline unsigned int u64_stats_fetch_begin(const struct u64_stats_sync *syncp)
 {
