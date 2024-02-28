@@ -143,14 +143,7 @@ static int buf_prepare(struct vb2_buffer *vb)
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(vb->vb2_queue);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
 	struct ipu_isys_buffer *ib = vb2_buffer_to_ipu_isys_buffer(vb);
-	u32 request =
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
-	    vb->v4l2_buf.request;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-	    to_vb2_v4l2_buffer(vb)->request;
-#else
-	to_vb2_v4l2_buffer(vb)->request_fd;
-#endif
+	struct vb2_v4l2_buffer *b = to_vb2_v4l2_buffer(vb);
 	struct ipu_isys_request *ireq;
 	u32 request_state;
 	unsigned long flags;
@@ -159,18 +152,21 @@ static int buf_prepare(struct vb2_buffer *vb)
 	if (av->isys->adev->isp->flr_done)
 		return -EIO;
 
-	if (request) {
-		ib->req = media_request_get_by_fd(&av->isys->media_dev,
-						    request);
-		if (!ib->req) {
+	if (b->flags & V4L2_BUF_FLAG_REQUEST_FD) {
+		ib->req = media_request_get_by_fd(&av->isys->media_dev, b->request_fd);
+		if (IS_ERR(ib->req)) {
+			dev_err(&av->isys->adev->dev,
+				"can't find request %u (%ld)\n", b->request_fd, PTR_ERR(ib->req));
+			return ib->req;
+		} else if (!ib->req) {
 			dev_dbg(&av->isys->adev->dev,
-				"can't find request %u\n", request);
+				"can't find request %u\n", b->request_fd);
 			return -ENOENT;
 		}
 	}
 
 	rval = aq->buf_prepare(vb);
-	if (!request)
+	if (!ib->req)
 		return rval;
 	if (rval)
 		goto out_put_request;
