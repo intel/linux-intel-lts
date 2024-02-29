@@ -904,10 +904,14 @@ intel_primary_plane_create(struct drm_i915_private *dev_priv, enum pipe pipe)
 		supported_rotations = DRM_MODE_ROTATE_0;
 	}
 
-	if (DISPLAY_VER(dev_priv) >= 4)
+	if (DISPLAY_VER(dev_priv) >= 4) {
 		drm_plane_create_rotation_property(&plane->base,
 						   DRM_MODE_ROTATE_0,
 						   supported_rotations);
+
+		if (drm_plane_create_decryption_property(&plane->base))
+			DRM_ERROR("Failed to create decryption property\n");
+	}
 
 	zpos = 0;
 	drm_plane_create_zpos_immutable_property(&plane->base, zpos);
