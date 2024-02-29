@@ -604,6 +604,8 @@ static int drm_atomic_plane_set_property(struct drm_plane *plane,
 		state->rotation = val;
 	} else if (property == plane->zpos_property) {
 		state->zpos = val;
+	} else if (property == plane->decryption_property) {
+		state->decryption_reqd = val;
 	} else if (property == plane->color_encoding_property) {
 		state->color_encoding = val;
 	} else if (property == plane->color_range_property) {
@@ -670,6 +672,8 @@ drm_atomic_plane_get_property(struct drm_plane *plane,
 		*val = state->rotation;
 	} else if (property == plane->zpos_property) {
 		*val = state->zpos;
+	} else if (property == plane->decryption_property) {
+		*val = state->decryption_reqd;
 	} else if (property == plane->color_encoding_property) {
 		*val = state->color_encoding;
 	} else if (property == plane->color_range_property) {
