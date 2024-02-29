@@ -223,6 +223,14 @@ struct drm_plane_state {
 	bool visible;
 
 	/**
+	 * @decryption_reqd:
+	 *
+	 * Plane decryption required. This enables/disables the plane level
+	 * framebuffer decryption.
+	 */
+	bool decryption_reqd;
+
+	/**
 	 * @scaling_filter:
 	 *
 	 * Scaling filter to be applied
@@ -713,6 +721,15 @@ struct drm_plane {
 	 * drm_plane_create_zpos_property().
 	 */
 	struct drm_property *zpos_property;
+
+	/**
+	 * @decryption_property:
+	 *
+	 * Plane decryption property for enabling/disabling plane
+	 * level framebuffer decryption.
+	 */
+	struct drm_property *decryption_property;
+
 	/**
 	 * @rotation_property:
 	 * Optional rotation property for this plane. See

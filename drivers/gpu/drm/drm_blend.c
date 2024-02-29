@@ -204,6 +204,37 @@
  */
 
 /**
+ * drm_plane_create_decryption_property - create a decryption property
+ * @plane: drm plane
+ *
+ * This function creates a generic decryption property and enables support
+ * for it in the DRM core. It is attached to @plane.
+ *
+ * The decryption property will enable(1) or disable(0) the framebuffer
+ * decryption on this plane.
+ *
+ * Returns:
+ * 0 on success, negative error code on failure.
+ */
+int drm_plane_create_decryption_property(struct drm_plane *plane)
+{
+	struct drm_property *prop;
+
+	prop = drm_property_create_bool(plane->dev, 0,
+					"DECRYPTION");
+	if (!prop)
+		return -ENOMEM;
+
+	drm_object_attach_property(&plane->base, prop, false);
+	plane->decryption_property = prop;
+
+	if (plane->state)
+		plane->state->decryption_reqd = false;
+
+	return 0;
+}
+
+/**
  * drm_plane_create_alpha_property - create a new alpha property
  * @plane: drm plane
  *
