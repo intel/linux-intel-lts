@@ -99,17 +99,12 @@
 0001-ksmbd-Implements-sess-ksmbd_chann_list-as-xarray.patch
 0002-ksmbd-add-smb-direct-shutdown.patch
 0003-ksmdb-use-cmd-helper-variable-in-smb2_get_ksmbd_tcon.patch
-0004-ksmbd-remove-smb2_buf_length-in-smb2_hdr.patch
-0005-ksmbd-fix-racy-issue-from-session-setup-and-logoff.patch
 
 # CVE-2023-38431
 0001-ksmbd-check-the-validation-of-pdu_size-in-ksmbd_conn.patch
 
 # CVE-2023-38430
 0001-ksmbd-validate-smb-request-protocol-id.patch
-
-# CVE-2023-38427
-0001-x86-mm-Randomize-per-cpu-entry-area.patch
 
 # CVE-2023-6931
 0001-perf-Fix-perf_event_validate_size.patch
