@@ -1,0 +1,54 @@
+From 0aff3c393de9d10fff83064f75a9799f1e92b67a Mon Sep 17 00:00:00 2001
+From: Jean Delvare <jdelvare@suse.de>
+Date: Wed, 14 Feb 2024 15:59:39 +0100
+Subject: [PATCH] i2c: i801: Fix block process call transactions
+
+[ Upstream commit c1c9d0f6f7f1dbf29db996bd8e166242843a5f21 ]
+
+According to the Intel datasheets, software must reset the block
+buffer index twice for block process call transactions: once before
+writing the outgoing data to the buffer, and once again before
+reading the incoming data from the buffer.
+
+The driver is currently missing the second reset, causing the wrong
+portion of the block buffer to be read.
+
+Signed-off-by: Jean Delvare <jdelvare@suse.de>
+Reported-by: Piotr Zakowski <piotr.zakowski@intel.com>
+Closes: https://lore.kernel.org/linux-i2c/20240213120553.7b0ab120@endymion.delvare/
+Fixes: 315cd67c9453 ("i2c: i801: Add Block Write-Block Read Process Call support")
+Reviewed-by: Alexander Sverdlin <alexander.sverdlin@gmail.com>
+Signed-off-by: Andi Shyti <andi.shyti@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/i2c/busses/i2c-i801.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-i801.c b/drivers/i2c/busses/i2c-i801.c
+index a87e3c15e5fc6..f1c82b2016f30 100644
+--- a/drivers/i2c/busses/i2c-i801.c
++++ b/drivers/i2c/busses/i2c-i801.c
+@@ -500,11 +500,10 @@ static int i801_block_transaction_by_block(struct i801_priv *priv,
+ 	/* Set block buffer mode */
+ 	outb_p(inb_p(SMBAUXCTL(priv)) | SMBAUXCTL_E32B, SMBAUXCTL(priv));
+ 
+-	inb_p(SMBHSTCNT(priv)); /* reset the data buffer index */
+-
+ 	if (read_write == I2C_SMBUS_WRITE) {
+ 		len = data->block[0];
+ 		outb_p(len, SMBHSTDAT0(priv));
++		inb_p(SMBHSTCNT(priv));	/* reset the data buffer index */
+ 		for (i = 0; i < len; i++)
+ 			outb_p(data->block[i+1], SMBBLKDAT(priv));
+ 	}
+@@ -522,6 +521,7 @@ static int i801_block_transaction_by_block(struct i801_priv *priv,
+ 		}
+ 
+ 		data->block[0] = len;
++		inb_p(SMBHSTCNT(priv));	/* reset the data buffer index */
+ 		for (i = 0; i < len; i++)
+ 			data->block[i + 1] = inb_p(SMBBLKDAT(priv));
+ 	}
+-- 
+2.25.1
+

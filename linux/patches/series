@@ -9,3 +9,6 @@
 
 # CVE-2023-6238
 0001-nvme-fix-corruption-for-passthrough-meta-data.patch
+
+# CVE-2024-26593
+0001-i2c-i801-Fix-block-process-call-transactions.patch
