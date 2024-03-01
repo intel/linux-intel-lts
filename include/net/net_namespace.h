@@ -38,7 +38,7 @@
 #include <net/netns/bpf.h>
 #include <net/netns/mctp.h>
 #include <net/net_trackers.h>
-#include <net/netoob.h>
+#include <dovetail/net.h>
 #include <linux/ns_common.h>
 #include <linux/idr.h>
 #include <linux/skbuff.h>
