@@ -40,7 +40,6 @@
 #include <net/dcbnl.h>
 #endif
 #include <net/netprio_cgroup.h>
-#include <net/netoob.h>
 
 #include <linux/netdev_features.h>
 #include <linux/neighbour.h>
@@ -50,6 +49,7 @@
 #include <uapi/linux/netdev.h>
 #include <linux/hashtable.h>
 #include <linux/rbtree.h>
+#include <dovetail/netdevice.h>
 #include <net/net_trackers.h>
 #include <net/net_debug.h>
 #include <net/dropreason-core.h>
@@ -1877,7 +1877,7 @@ enum netdev_stat_type {
  *	@tlsdev_ops:	Transport Layer Security offload operations
  *	@header_ops:	Includes callbacks for creating,parsing,caching,etc
  *			of Layer 2 headers.
- *	@net_oob_context:	Out-of-band networking context (oob stage diversion)
+ *	@oob_state:	Out-of-band networking state (oob stage diversion)
  *
  *	@flags:		Interface flags (a la BSD)
  *	@xdp_features:	XDP capability supported by the device
@@ -2188,7 +2188,7 @@ struct net_device {
 #endif
 
 #ifdef CONFIG_NET_OOB
-	struct oob_netdev_context  oob_context;
+	struct oob_netdev_state  oob_state;
 #endif
 
 	const struct header_ops *header_ops;
