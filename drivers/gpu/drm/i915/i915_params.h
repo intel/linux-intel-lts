@@ -84,7 +84,7 @@ struct drm_printer;
 	param(unsigned int, max_vfs, 0, 0400) \
 	param(int, force_disable_ccs, 0, 0400) \
 	/* leave bools at the end to not create holes */ \
-	param(bool, enable_mtl_rcs_ccs_wa, false, 0x400) \
+	param(bool, enable_mtl_rcs_ccs_wa, true, 0x400) \
 	param(bool, enable_hangcheck, true, 0600) \
 	param(bool, load_detect_test, false, 0600) \
 	param(bool, force_reset_modeset_test, false, 0600) \
