@@ -1207,7 +1207,7 @@ static bool intel_sdvo_set_tv_format(struct intel_sdvo *intel_sdvo,
 	struct intel_sdvo_tv_format format;
 	u32 format_map;
 
-	format_map = 1 << conn_state->tv.mode;
+	format_map = 1 << conn_state->tv.legacy_mode;
 	memset(&format, 0, sizeof(format));
 	memcpy(&format, &format_map, min(sizeof(format), sizeof(format_map)));
 
@@ -2283,7 +2283,7 @@ static int intel_sdvo_get_tv_modes(struct drm_connector *connector)
 	 * Read the list of supported input resolutions for the selected TV
 	 * format.
 	 */
-	format_map = 1 << conn_state->tv.mode;
+	format_map = 1 << conn_state->tv.legacy_mode;
 	memcpy(&tv_res, &format_map,
 	       min(sizeof(format_map), sizeof(struct intel_sdvo_sdtv_resolution_request)));
 
@@ -2348,7 +2348,7 @@ intel_sdvo_connector_atomic_get_property(struct drm_connector *connector,
 		int i;
 
 		for (i = 0; i < intel_sdvo_connector->format_supported_num; i++)
-			if (state->tv.mode == intel_sdvo_connector->tv_format_supported[i]) {
+			if (state->tv.legacy_mode == intel_sdvo_connector->tv_format_supported[i]) {
 				*val = i;
 
 				return 0;
@@ -2404,7 +2404,7 @@ intel_sdvo_connector_atomic_set_property(struct drm_connector *connector,
 	struct intel_sdvo_connector_state *sdvo_state = to_intel_sdvo_connector_state(state);
 
 	if (property == intel_sdvo_connector->tv_format) {
-		state->tv.mode = intel_sdvo_connector->tv_format_supported[val];
+		state->tv.legacy_mode = intel_sdvo_connector->tv_format_supported[val];
 
 		if (state->crtc) {
 			struct drm_crtc_state *crtc_state =
@@ -3061,7 +3061,7 @@ static bool intel_sdvo_tv_create_property(struct intel_sdvo *intel_sdvo,
 		drm_property_add_enum(intel_sdvo_connector->tv_format, i,
 				      tv_format_names[intel_sdvo_connector->tv_format_supported[i]]);
 
-	intel_sdvo_connector->base.base.state->tv.mode = intel_sdvo_connector->tv_format_supported[0];
+	intel_sdvo_connector->base.base.state->tv.legacy_mode = intel_sdvo_connector->tv_format_supported[0];
 	drm_object_attach_property(&intel_sdvo_connector->base.base.base,
 				   intel_sdvo_connector->tv_format, 0);
 	return true;
