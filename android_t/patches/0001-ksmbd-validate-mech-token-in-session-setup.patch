@@ -1,0 +1,111 @@
+From e413359ca6c16c71fa8cc505f4d45dd08e225f8d Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <linkinjeon@kernel.org>
+Date: Sat, 13 Jan 2024 15:11:41 +0900
+Subject: [PATCH] ksmbd: validate mech token in session setup
+
+[ Upstream commit 92e470163d96df8db6c4fa0f484e4a229edb903d ]
+
+If client send invalid mech token in session setup request, ksmbd
+validate and make the error if it is invalid.
+
+Cc: stable@vger.kernel.org
+Reported-by: zdi-disclosures@trendmicro.com # ZDI-CAN-22890
+Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ fs/ksmbd/asn1.c       |  5 +++++
+ fs/ksmbd/connection.h |  1 +
+ fs/ksmbd/smb2pdu.c    | 22 +++++++++++++++++-----
+ 3 files changed, 23 insertions(+), 5 deletions(-)
+
+diff --git a/fs/ksmbd/asn1.c b/fs/ksmbd/asn1.c
+index 4a4b2b03ff33d..b931a99ab9c85 100644
+--- a/fs/ksmbd/asn1.c
++++ b/fs/ksmbd/asn1.c
+@@ -214,10 +214,15 @@ static int ksmbd_neg_token_alloc(void *context, size_t hdrlen,
+ {
+ 	struct ksmbd_conn *conn = context;
+ 
++	if (!vlen)
++		return -EINVAL;
++
+ 	conn->mechToken = kmemdup_nul(value, vlen, GFP_KERNEL);
+ 	if (!conn->mechToken)
+ 		return -ENOMEM;
+ 
++	conn->mechTokenLen = (unsigned int)vlen;
++
+ 	return 0;
+ }
+ 
+diff --git a/fs/ksmbd/connection.h b/fs/ksmbd/connection.h
+index 3c005246a32e8..342f935f57705 100644
+--- a/fs/ksmbd/connection.h
++++ b/fs/ksmbd/connection.h
+@@ -88,6 +88,7 @@ struct ksmbd_conn {
+ 	__u16				dialect;
+ 
+ 	char				*mechToken;
++	unsigned int			mechTokenLen;
+ 
+ 	struct ksmbd_conn_ops	*conn_ops;
+ 
+diff --git a/fs/ksmbd/smb2pdu.c b/fs/ksmbd/smb2pdu.c
+index 8875c04e83827..771e1b431f825 100644
+--- a/fs/ksmbd/smb2pdu.c
++++ b/fs/ksmbd/smb2pdu.c
+@@ -1414,7 +1414,10 @@ static struct ksmbd_user *session_user(struct ksmbd_conn *conn,
+ 	char *name;
+ 	unsigned int name_off, name_len, secbuf_len;
+ 
+-	secbuf_len = le16_to_cpu(req->SecurityBufferLength);
++	if (conn->use_spnego && conn->mechToken)
++		secbuf_len = conn->mechTokenLen;
++	else
++		secbuf_len = le16_to_cpu(req->SecurityBufferLength);
+ 	if (secbuf_len < sizeof(struct authenticate_message)) {
+ 		ksmbd_debug(SMB, "blob len %d too small\n", secbuf_len);
+ 		return NULL;
+@@ -1505,7 +1508,10 @@ static int ntlm_authenticate(struct ksmbd_work *work,
+ 		struct authenticate_message *authblob;
+ 
+ 		authblob = user_authblob(conn, req);
+-		sz = le16_to_cpu(req->SecurityBufferLength);
++		if (conn->use_spnego && conn->mechToken)
++			sz = conn->mechTokenLen;
++		else
++			sz = le16_to_cpu(req->SecurityBufferLength);
+ 		rc = ksmbd_decode_ntlmssp_auth_blob(authblob, sz, conn, sess);
+ 		if (rc) {
+ 			set_user_flag(sess->user, KSMBD_USER_FLAG_BAD_PASSWORD);
+@@ -1778,8 +1784,7 @@ int smb2_sess_setup(struct ksmbd_work *work)
+ 
+ 	negblob_off = le16_to_cpu(req->SecurityBufferOffset);
+ 	negblob_len = le16_to_cpu(req->SecurityBufferLength);
+-	if (negblob_off < offsetof(struct smb2_sess_setup_req, Buffer) ||
+-	    negblob_len < offsetof(struct negotiate_message, NegotiateFlags)) {
++	if (negblob_off < offsetof(struct smb2_sess_setup_req, Buffer)) {
+ 		rc = -EINVAL;
+ 		goto out_err;
+ 	}
+@@ -1788,8 +1793,15 @@ int smb2_sess_setup(struct ksmbd_work *work)
+ 			negblob_off);
+ 
+ 	if (decode_negotiation_token(conn, negblob, negblob_len) == 0) {
+-		if (conn->mechToken)
++		if (conn->mechToken) {
+ 			negblob = (struct negotiate_message *)conn->mechToken;
++			negblob_len = conn->mechTokenLen;
++		}
++	}
++
++	if (negblob_len < offsetof(struct negotiate_message, NegotiateFlags)) {
++		rc = -EINVAL;
++		goto out_err;
+ 	}
+ 
+ 	if (server_conf.auth_mechs & conn->auth_mechs) {
+-- 
+2.25.1
+
