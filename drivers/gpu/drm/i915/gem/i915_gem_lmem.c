@@ -836,13 +836,13 @@ swap_blt(struct intel_context *ce,
 	const bool use_flat_ccs = !use_pvc_memcpy && object_needs_flat_ccs(lmem);
 	const struct intel_migrate_window *w = ce->private;
 	const u64 encode = ce->vm->pte_encode(0, smem->pat_index, 0);
-	u64 pte_window, pte_end, pd_offset;
+	u64 pte_window, pte_end, pd_offset = 0;
 	const u32 step = w->swap_chunk;
 	struct i915_buddy_block *block;
 	u64 remain = lmem->base.size;
 	struct i915_request *rq;
 	struct sgt_iter it_smem;
-	int err;
+	int err = 0;
 
 	GEM_BUG_ON(ce->ring->size < SZ_256K);
 	GEM_BUG_ON(ce->vm != ce->engine->gt->vm);
@@ -1567,7 +1567,7 @@ clear_blt(struct intel_context *ce,
 	const u32 step = w->clear_chunk;
 	struct i915_buddy_block *block;
 	struct i915_request *rq;
-	int err;
+	int err = 0;
 
 	GEM_BUG_ON(ce->ring->size < SZ_64K);
 	GEM_BUG_ON(ce->vm != ce->engine->gt->vm);
@@ -3193,7 +3193,7 @@ copy_blt(struct intel_context *ce,
 	struct i915_buddy_mm *mm = &lmem->mm.region.mem->mm;
 	const struct intel_migrate_window *w = ce->private;
 	struct i915_request *last = NULL, *rq;
-	u64 pd_offset, pte_window, pte_end;
+	u64 pd_offset = 0, pte_window, pte_end;
 	const u32 step = w->swap_chunk;
 	struct i915_buddy_block *block;
 	struct sgt_iter it_pte;
