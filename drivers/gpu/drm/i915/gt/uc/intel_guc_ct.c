@@ -1232,6 +1232,9 @@ static int ct_process_request(struct intel_guc_ct *ct, struct ct_incoming_msg *r
 	case INTEL_GUC_ACTION_NOTIFY_EXCEPTION:
 		ret = intel_guc_crash_process_msg(guc, action);
 		break;
+	case INTEL_GUC_ACTION_TLB_INVALIDATION_DONE:
+		ret = intel_guc_tlb_invalidation_done(guc, payload, len);
+		break;
 	default:
 		ret = -EOPNOTSUPP;
 		break;
@@ -1310,9 +1313,7 @@ static int ct_handle_event(struct intel_guc_ct *ct, struct ct_incoming_msg *requ
 
 	/* Handle tlb invalidation response in interrupt context */
 	if (action == INTEL_GUC_ACTION_TLB_INVALIDATION_DONE) {
-		int ret = intel_guc_tlb_invalidation_done(ct_to_guc(ct), hxg, request->size);
-		ct_free_msg(request);
-		return ret;
+		return ct_process_request(ct, request);
 	}
 
 	spin_lock_irqsave(&ct->requests.lock, flags);

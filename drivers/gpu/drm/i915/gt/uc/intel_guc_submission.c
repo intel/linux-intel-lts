@@ -1795,20 +1795,18 @@ next_context:
 	intel_context_put(parent);
 }
 
-static void wake_up_tlb_invalidate(struct intel_guc_tlb_wait *wait)
-{
-	/* Barrier to ensure the store is observed by the woken thread */
-	smp_store_mb(wait->status, 0);
-	wake_up(&wait->wq);
-}
-
 void wake_up_all_tlb_invalidate(struct intel_guc *guc)
 {
 	struct intel_guc_tlb_wait *wait;
 	unsigned long i;
 
+	if (!intel_guc_tlb_invalidation_is_available(guc))
+		return;
+
+	xa_lock_irq(&guc->tlb_lookup);
 	xa_for_each(&guc->tlb_lookup, i, wait)
-		wake_up_tlb_invalidate(wait);
+		wake_up(&wait->wq);
+	xa_unlock_irq(&guc->tlb_lookup);
 }
 
 void intel_guc_submission_reset(struct intel_guc *guc, intel_engine_mask_t stalled)
@@ -1970,16 +1968,31 @@ void intel_guc_submission_reset_finish(struct intel_guc *guc)
 	intel_guc_global_policies_update(guc);
 	enable_submission(guc);
 	intel_gt_unpark_heartbeats(guc_to_gt(guc));
+
+	/*
+	 * The full GT reset will have cleared the TLB caches and flushed the
+	 * G2H message queue; we can release all the blocked waiters.
+	 */
+	wake_up_all_tlb_invalidate(guc);
 }
 
 static void destroyed_worker_func(struct work_struct *w);
 static void reset_fail_worker_func(struct work_struct *w);
 static int number_mlrc_guc_id(struct intel_guc *guc);
 
+bool intel_guc_tlb_invalidation_is_available(struct intel_guc *guc)
+{
+	return HAS_GUC_TLB_INVALIDATION(guc_to_gt(guc)->i915) &&
+		intel_guc_is_ready(guc);
+}
+
 static int init_tlb_lookup(struct intel_guc *guc)
 {
 	struct intel_guc_tlb_wait *wait;
 	int err;
+
+	if (!HAS_GUC_TLB_INVALIDATION(guc_to_gt(guc)->i915))
+		return 0;
 
 	xa_init_flags(&guc->tlb_lookup, XA_FLAGS_ALLOC);
 
@@ -1988,9 +2001,11 @@ static int init_tlb_lookup(struct intel_guc *guc)
 		return -ENOMEM;
 
 	init_waitqueue_head(&wait->wq);
+
+	/* Preallocate a shared id for use under memory pressure. */
 	err = xa_alloc_cyclic_irq(&guc->tlb_lookup, &guc->serial_slot, wait,
 				  xa_limit_32b, &guc->next_seqno, GFP_KERNEL);
-	if (err == -ENOMEM) {
+	if (err < 0) {
 		kfree(wait);
 		return err;
 	}
@@ -2002,11 +2017,13 @@ static void fini_tlb_lookup(struct intel_guc *guc)
 {
 	struct intel_guc_tlb_wait *wait;
 
+	if (!HAS_GUC_TLB_INVALIDATION(guc_to_gt(guc)->i915))
+		return;
+
 	wait = xa_load(&guc->tlb_lookup, guc->serial_slot);
-	if (wait) {
-		GEM_BUG_ON(wait->status);
-		kfree(wait);
-	}
+	if (wait && wait->busy)
+		guc_err(guc, "Unexpected busy item in tlb_lookup on fini\n");
+	kfree(wait);
 
 	xa_destroy(&guc->tlb_lookup);
 }
@@ -4813,33 +4830,22 @@ static void wait_wake_outstanding_tlb_g2h(struct intel_guc *guc, u32 seqno)
 	xa_lock_irqsave(&guc->tlb_lookup, flags);
 	wait = xa_load(&guc->tlb_lookup, seqno);
 
-	/* We received a response after the waiting task did exit with a timeout */
-	if (unlikely(!wait))
-		drm_dbg(&guc_to_gt(guc)->i915->drm,
-			"Stale TLB invalidation response with seqno %d\n", seqno);
-
 	if (wait)
-		wake_up_tlb_invalidate(wait);
+		wake_up(&wait->wq);
+	else
+		guc_dbg(guc,
+			"Stale TLB invalidation response with seqno %d\n", seqno);
 
 	xa_unlock_irqrestore(&guc->tlb_lookup, flags);
 }
 
-int intel_guc_tlb_invalidation_done(struct intel_guc *guc, const u32 *hxg, u32 size)
+int intel_guc_tlb_invalidation_done(struct intel_guc *guc,
+				    const u32 *payload, u32 len)
 {
-	u32 seqno, hxg_len, len;
-
-	/*
-	 * FIXME: these calculations would be better done signed. That
-	 * way underflow can be detected as well.
-	 */
-	hxg_len = size - GUC_CTB_MSG_MIN_LEN;
-	len = hxg_len - GUC_HXG_MSG_MIN_LEN;
-
-	if (unlikely(len < 1))
+	if (len < 1)
 		return -EPROTO;
 
-	seqno = hxg[GUC_HXG_MSG_MIN_LEN];
-	wait_wake_outstanding_tlb_g2h(guc, seqno);
+	wait_wake_outstanding_tlb_g2h(guc, payload[0]);
 	return 0;
 }
 
@@ -4850,12 +4856,7 @@ static long must_wait_woken(struct wait_queue_entry *wq_entry, long timeout)
 	 * we do not wake up early if the kthread task has been completed.
 	 * As we are called from page reclaim in any task context,
 	 * we may be invoked from stopped kthreads, but we *must*
-	 * complete the wait from the HW .
-	 *
-	 * A second problem is that since we are called under reclaim
-	 * and wait_woken() inspected the thread state, it makes an invalid
-	 * assumption that all PF_KTHREAD tasks have set_kthread_struct()
-	 * called upon them, and will trigger a GPF in is_kthread_should_stop().
+	 * complete the wait from the HW.
 	 */
 	do {
 		set_current_state(TASK_UNINTERRUPTIBLE);
@@ -4864,34 +4865,45 @@ static long must_wait_woken(struct wait_queue_entry *wq_entry, long timeout)
 
 		timeout = schedule_timeout(timeout);
 	} while (timeout);
-	__set_current_state(TASK_RUNNING);
 
 	/* See wait_woken() and woken_wake_function() */
+	__set_current_state(TASK_RUNNING);
 	smp_store_mb(wq_entry->flags, wq_entry->flags & ~WQ_FLAG_WOKEN);
 
 	return timeout;
 }
 
-static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 type)
+static bool intel_gt_is_enabled(const struct intel_gt *gt)
+{
+	/* Check if GT is wedged or suspended */
+	if (intel_gt_is_wedged(gt) || !intel_irqs_enabled(gt->i915))
+		return false;
+	return true;
+}
+
+static int guc_send_invalidate_tlb(struct intel_guc *guc,
+				   enum intel_guc_tlb_invalidation_type type)
 {
 	struct intel_guc_tlb_wait _wq, *wq = &_wq;
-	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 	struct intel_gt *gt = guc_to_gt(guc);
-	long timeout = 0;
-	u32 elapsed = 0;
-	int err = 0;
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+	int err;
 	u32 seqno;
 	u32 action[] = {
 		INTEL_GUC_ACTION_TLB_INVALIDATION,
 		0,
 		REG_FIELD_PREP(INTEL_GUC_TLB_INVAL_TYPE_MASK, type) |
-			REG_FIELD_PREP(INTEL_GUC_TLB_INVAL_MODE_MASK, INTEL_GUC_TLB_INVAL_MODE_HEAVY) |
+			REG_FIELD_PREP(INTEL_GUC_TLB_INVAL_MODE_MASK,
+				       INTEL_GUC_TLB_INVAL_MODE_HEAVY) |
 			INTEL_GUC_TLB_INVAL_FLUSH_CACHE,
 	};
 	u32 size = ARRAY_SIZE(action);
 
-	if (!intel_guc_ct_enabled(&guc->ct) ||
-	    !intel_gt_is_enabled(gt))
+	/*
+	 * Early guard against GT enablement.  TLB invalidation should not be
+	 * attempted if the GT is disabled due to suspend/wedge.
+	 */
+	if (!intel_gt_is_enabled(gt))
 		return -EINVAL;
 
 	init_waitqueue_head(&_wq.wq);
@@ -4903,15 +4915,15 @@ static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 type)
 		xa_lock_irq(&guc->tlb_lookup);
 		wq = xa_load(&guc->tlb_lookup, guc->serial_slot);
 		wait_event_lock_irq(wq->wq,
-				    !READ_ONCE(wq->status),
+				    !READ_ONCE(wq->busy),
 				    guc->tlb_lookup.xa_lock);
 		/*
-		 * Update wq->status under lock to ensure only one waiter can
+		 * Update wq->busy under lock to ensure only one waiter can
 		 * issue the TLB invalidation command using the serial slot at a
-		 * time. The condition is set to false before releasing the lock
+		 * time. The condition is set to true before releasing the lock
 		 * so that other caller continue to wait until woken up again.
 		 */
-		wq->status = 1;
+		wq->busy = true;
 		xa_unlock_irq(&guc->tlb_lookup);
 
 		seqno = guc->serial_slot;
@@ -4921,52 +4933,23 @@ static int guc_send_invalidate_tlb(struct intel_guc *guc, u32 type)
 
 	add_wait_queue(&wq->wq, &wait);
 
+	/* This is a critical reclaim path and thus we must loop here. */
 	err = intel_guc_send_busy_loop(guc, action, size, G2H_LEN_DW_INVALIDATE_TLB, true);
-	if (err) {
+	if (err)
 		goto out;
-	}
-	/*
-	 * GuC has a timeout of 1ms for a TLB invalidation response from GAM. On a
-	 * timeout GuC drops the request and has no mechanism to notify the host about
-	 * the timeout. So keep a larger timeout that accounts for this individual
-	 * timeout and max number of outstanding invalidation requests that can be
-	 * queued in CT buffer.
-	 *
-	 * Although the invalidation request itself should complete within 1ms, the
-	 * request might be in a long queue of other, slower, CTB requests. If the
-	 * CTB buffer is fully backed up, a multi-second delay is possible. Make a
-	 * while loop of two 1-second-waits with debug prints to catch attention for
-	 * potential issues.
-	 *
-	 * FIXME: Add a check for the CTB buffer processing to have passed the TLB
-	 * invalidation request before starting the timeout. Blindly waiting for 2
-	 * seconds doesn't really ensure the failure is not just a consequence of
-	 * slow GuC processing.
-	 */
-#define OUTSTANDING_GUC_TIMEOUT_PERIOD  (HZ)
-	while (!timeout) {
-		timeout = must_wait_woken(&wait, OUTSTANDING_GUC_TIMEOUT_PERIOD);
-		if (timeout)
-			break;
-		gt_dbg(gt, "TLB invalidation (seqno=%u) pending for %us\n", seqno, ++elapsed);
-		if (elapsed >= 2) {
-			/*
-			 * FIXME: Real TLB invalidation timeout is critical and warrants a GT
-			 * reset. However, it's possible that after this long wait the GT could
-			 * just come out from a reset thus it appears to be enabled, then this
-			 * code here wedges the GT again.
-			 */
-			if (intel_gt_is_enabled(gt)) {
-				gt_err(gt,
-				       "TLB invalidation response timed out for seqno %u\n",
-				       seqno);
-				intel_gt_set_wedged(gt);
-				err = -ETIME;
-			}
-			break;
-		}
-	}
 
+	/*
+	 * Late guard against GT enablement.  It is not an error for the TLB
+	 * invalidation to time out if the GT is disabled during the process
+	 * due to suspend/wedge.  In fact, the TLB invalidation is cancelled
+	 * in this case.
+	 */
+	if (!must_wait_woken(&wait, intel_guc_ct_max_queue_time_jiffies()) &&
+	    intel_gt_is_enabled(gt)) {
+		guc_err(guc,
+			"TLB invalidation response timed out for seqno %u\n", seqno);
+		err = -ETIME;
+	}
 out:
 	remove_wait_queue(&wq->wq, &wait);
 	if (seqno != guc->serial_slot)
@@ -4975,18 +4958,17 @@ out:
 	return err;
 }
 
-/* Full TLB invalidation */
-int intel_guc_invalidate_tlb_full(struct intel_guc *guc)
+/* Send a H2G command to invalidate the TLBs at engine level and beyond. */
+int intel_guc_invalidate_tlb_engines(struct intel_guc *guc)
 {
-	return guc_send_invalidate_tlb(guc, INTEL_GUC_TLB_INVAL_FULL);
+	return guc_send_invalidate_tlb(guc, INTEL_GUC_TLB_INVAL_ENGINES);
 }
 
-/* GuC TLB Invalidation: Invalidate the TLB's of GuC itself. */
-int intel_guc_invalidate_tlb(struct intel_guc *guc)
+/* Send a H2G command to invalidate the GuC's internal TLB. */
+int intel_guc_invalidate_tlb_guc(struct intel_guc *guc)
 {
 	return guc_send_invalidate_tlb(guc, INTEL_GUC_TLB_INVAL_GUC);
 }
-
 
 int intel_guc_deregister_done_process_msg(struct intel_guc *guc,
 					  const u32 *msg,
