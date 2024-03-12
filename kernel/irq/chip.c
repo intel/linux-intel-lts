@@ -532,11 +532,13 @@ void irq_clear_forward(struct irq_desc *desc)
 
 static irqreturn_t forward_irq_event(struct irq_desc *desc)
 {
-	irqreturn_t ret;
+	irqreturn_t ret = IRQ_HANDLED;
 
-	raw_spin_unlock(&desc->lock);
-	ret = handle_irq_event_percpu(desc);
-	raw_spin_lock(&desc->lock);
+	if (likely(running_inband())) {
+		raw_spin_unlock(&desc->lock);
+		ret = handle_irq_event_percpu(desc);
+		raw_spin_lock(&desc->lock);
+	}
 
 	return ret;
 }
