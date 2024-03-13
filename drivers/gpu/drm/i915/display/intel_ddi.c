@@ -3142,13 +3142,6 @@ static void intel_enable_ddi(struct intel_atomic_state *state,
 		intel_enable_ddi_hdmi(state, encoder, crtc_state, conn_state);
 	else
 		intel_enable_ddi_dp(state, encoder, crtc_state, conn_state);
-
-	/* Enable hdcp if it's desired */
-	if (conn_state->content_protection ==
-	    DRM_MODE_CONTENT_PROTECTION_DESIRED)
-		intel_hdcp_enable(to_intel_connector(conn_state->connector),
-				  crtc_state,
-				  (u8)conn_state->hdcp_content_type);
 }
 
 static void intel_disable_ddi_dp(struct intel_atomic_state *state,
@@ -3208,8 +3201,6 @@ static void intel_disable_ddi(struct intel_atomic_state *state,
 			      const struct intel_crtc_state *old_crtc_state,
 			      const struct drm_connector_state *old_conn_state)
 {
-	intel_hdcp_disable(to_intel_connector(old_conn_state->connector));
-
 	if (intel_crtc_has_type(old_crtc_state, INTEL_OUTPUT_HDMI))
 		intel_disable_ddi_hdmi(state, encoder, old_crtc_state,
 				       old_conn_state);

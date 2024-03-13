@@ -10561,6 +10561,8 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 	struct drm_device *dev = state->base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_crtc_state *new_crtc_state, *old_crtc_state;
+	struct drm_connector_state *old_conn_state, *new_conn_state;
+	struct drm_connector *connector;
 	struct intel_crtc *crtc;
 	u64 put_domains[I915_MAX_PIPES] = {};
 	intel_wakeref_t wakeref = 0;
@@ -10626,8 +10628,25 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 			intel_crtc_enable_flip_done(state, crtc);
 	}
 
+	for_each_oldnew_connector_in_state(&state->base, connector, old_conn_state,
+					   new_conn_state, i)
+		intel_hdcp_atomic_pre_commit(connector, old_conn_state,
+					     new_conn_state);
+
 	/* Now enable the clocks, plane, pipe, and connectors that we set up. */
 	dev_priv->display.commit_modeset_enables(state);
+
+	for_each_new_connector_in_state(&state->base, connector, new_conn_state, i) {
+		struct intel_crtc *crtc = to_intel_crtc(new_conn_state->crtc);
+		const struct intel_crtc_state *crtc_state;
+
+		if (!crtc)
+			continue;
+
+		crtc_state = intel_atomic_get_new_crtc_state(state, crtc);
+
+		intel_hdcp_atomic_commit(crtc_state, new_conn_state);
+	}
 
 	if (state->modeset) {
 		intel_encoders_update_complete(state);
