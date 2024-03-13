@@ -623,6 +623,7 @@ int intel_hdcp_auth_downstream(struct intel_connector *connector)
 	struct intel_digital_port *dig_port = intel_attached_dig_port(connector);
 	struct drm_i915_private *dev_priv = to_i915(connector->base.dev);
 	const struct intel_hdcp_shim *shim = connector->hdcp.shim;
+	struct intel_hdcp *hdcp = &connector->hdcp;
 	u8 bstatus[2], num_downstream, *ksv_fifo;
 	int ret, i, tries = 3;
 
@@ -657,6 +658,9 @@ int intel_hdcp_auth_downstream(struct intel_connector *connector)
 		return -EINVAL;
 	}
 
+	hdcp->topology_info->device_count = num_downstream;
+	hdcp->topology_info->depth = DRM_HDCP_DEPTH(bstatus[1]);
+
 	ksv_fifo = kcalloc(DRM_HDCP_KSV_LEN, num_downstream, GFP_KERNEL);
 	if (!ksv_fifo) {
 		drm_dbg_kms(&dev_priv->drm, "Out of mem: ksv_fifo\n");
@@ -673,6 +677,9 @@ int intel_hdcp_auth_downstream(struct intel_connector *connector)
 		ret = -EPERM;
 		goto err;
 	}
+
+	memcpy(hdcp->topology_info->ksv_list, ksv_fifo,
+	       num_downstream * DRM_HDCP_KSV_LEN);
 
 	/*
 	 * When V prime mismatches, DP Spec mandates re-read of
@@ -779,6 +786,9 @@ static int intel_hdcp_auth(struct intel_connector *connector)
 		return -EPERM;
 	}
 
+	hdcp->topology_info->ver_in_force = DRM_MODE_HDCP14_IN_FORCE;
+	memcpy(hdcp->topology_info->bksv, bksv.shim, DRM_MODE_HDCP_KSV_LEN);
+
 	intel_de_write(dev_priv, HDCP_BKSVLO(dev_priv, cpu_transcoder, port),
 		       bksv.reg[0]);
 	intel_de_write(dev_priv, HDCP_BKSVHI(dev_priv, cpu_transcoder, port),
@@ -787,9 +797,11 @@ static int intel_hdcp_auth(struct intel_connector *connector)
 	ret = shim->repeater_present(dig_port, &repeater_present);
 	if (ret)
 		return ret;
-	if (repeater_present)
+	if (repeater_present) {
 		intel_de_write(dev_priv, HDCP_REP_CTL,
 			       intel_hdcp_get_repeater_ctl(dev_priv, cpu_transcoder, port));
+		hdcp->topology_info->is_repeater = true;
+	}
 
 	ret = shim->toggle_signalling(dig_port, cpu_transcoder, true);
 	if (ret)
@@ -925,6 +937,12 @@ static int _intel_hdcp_disable(struct intel_connector *connector)
 		return ret;
 	}
 
+	memset(hdcp->topology_info, 0, sizeof(struct hdcp_topology_info));
+
+	if (drm_connector_update_hdcp_topology_property(&connector->base,
+						connector->hdcp.topology_info))
+		drm_err(&dev_priv->drm, "Downstream_info update failed.\n");
+
 	drm_dbg_kms(&dev_priv->drm, "HDCP is disabled\n");
 	return 0;
 }
@@ -932,7 +950,6 @@ static int _intel_hdcp_disable(struct intel_connector *connector)
 static int _intel_hdcp_enable(struct intel_connector *connector)
 {
 	struct drm_i915_private *dev_priv = to_i915(connector->base.dev);
-	struct intel_hdcp *hdcp = &connector->hdcp;
 	int i, ret, tries = 3;
 
 	drm_dbg_kms(&dev_priv->drm, "[%s:%d] HDCP is being enabled...\n",
@@ -959,7 +976,11 @@ static int _intel_hdcp_enable(struct intel_connector *connector)
 	for (i = 0; i < tries; i++) {
 		ret = intel_hdcp_auth(connector);
 		if (!ret) {
-			hdcp->hdcp_encrypted = true;
+			connector->hdcp.hdcp_encrypted = true;
+			if (drm_connector_update_hdcp_topology_property(
+					&connector->base,
+					connector->hdcp.topology_info))
+				drm_err(&dev_priv->drm, "Downstream_info update failed.\n");
 			return 0;
 		}
 
@@ -1458,6 +1479,12 @@ static int hdcp2_authentication_key_exchange(struct intel_connector *connector)
 		return -EPERM;
 	}
 
+	hdcp->topology_info->ver_in_force = DRM_MODE_HDCP22_IN_FORCE;
+	hdcp->topology_info->content_type = hdcp->content_type;
+	memcpy(hdcp->topology_info->bksv, msgs.send_cert.cert_rx.receiver_id,
+	       HDCP_2_2_RECEIVER_ID_LEN);
+	hdcp->topology_info->is_repeater = hdcp->is_repeater;
+
 	/*
 	 * Here msgs.no_stored_km will hold msgs corresponding to the km
 	 * stored also.
@@ -1656,6 +1683,11 @@ int hdcp2_authenticate_repeater_topology(struct intel_connector *connector)
 		drm_err(&dev_priv->drm, "Revoked receiver ID(s) is in list\n");
 		return -EPERM;
 	}
+
+	hdcp->topology_info->device_count = device_cnt;
+	hdcp->topology_info->depth = HDCP_2_2_DEPTH(rx_info[0]);
+	memcpy(hdcp->topology_info->ksv_list, msgs.recvid_list.receiver_ids,
+	       device_cnt * HDCP_2_2_RECEIVER_ID_LEN);
 
 	ret = hdcp2_verify_rep_topology_prepare_ack(connector,
 						    &msgs.recvid_list,
@@ -1945,6 +1977,11 @@ static int _intel_hdcp2_enable(struct intel_connector *connector)
 	if (ret) {
 		drm_dbg_kms(&i915->drm, "HDCP2 Type%d  Enabling Failed. (%d)\n",
 			    hdcp->content_type, ret);
+
+		memset(hdcp->topology_info, 0,
+		       sizeof(struct hdcp_topology_info));
+		drm_connector_update_hdcp_topology_property(&connector->base,
+							hdcp->topology_info);
 		return ret;
 	}
 
@@ -1952,7 +1989,10 @@ static int _intel_hdcp2_enable(struct intel_connector *connector)
 		    connector->base.name, connector->base.base.id,
 		    hdcp->content_type);
 
+	drm_connector_update_hdcp_topology_property(&connector->base,
+							hdcp->topology_info);
 	hdcp->hdcp2_encrypted = true;
+
 	return 0;
 }
 
@@ -1987,7 +2027,11 @@ _intel_hdcp2_disable(struct intel_connector *connector, bool hdcp2_link_recovery
 	if (hdcp2_deauthenticate_port(connector) < 0)
 		drm_dbg_kms(&i915->drm, "Port deauth failed.\n");
 
-	connector->hdcp.hdcp2_encrypted = false;
+	hdcp->hdcp2_encrypted = false;
+
+	memset(hdcp->topology_info, 0, sizeof(struct hdcp_topology_info));
+	drm_connector_update_hdcp_topology_property(&connector->base,
+						    hdcp->topology_info);
 	dig_port->hdcp_auth_status = false;
 	data->k = 0;
 
@@ -2271,10 +2315,17 @@ int intel_hdcp_init(struct intel_connector *connector,
 	ret =
 	drm_connector_attach_content_protection_property(&connector->base,
 							 hdcp->hdcp2_supported);
-	if (ret) {
-		hdcp->hdcp2_supported = false;
-		kfree(dig_port->hdcp_port_data.streams);
-		return ret;
+	if (ret)
+		goto err_exit;
+
+	ret = drm_connector_attach_hdcp_topology_property(&connector->base);
+	if (ret)
+		goto err_exit;
+
+	hdcp->topology_info = kzalloc(sizeof(*hdcp->topology_info), GFP_KERNEL);
+	if (!hdcp->topology_info) {
+		ret = -ENOMEM;
+		goto err_exit;
 	}
 
 	hdcp->shim = shim;
@@ -2284,6 +2335,11 @@ int intel_hdcp_init(struct intel_connector *connector,
 	init_waitqueue_head(&hdcp->cp_irq_queue);
 
 	return 0;
+
+err_exit:
+	hdcp->hdcp2_supported = false;
+	kfree(dig_port->hdcp_port_data.streams);
+	return ret;
 }
 
 int intel_hdcp_enable(struct intel_connector *connector,
