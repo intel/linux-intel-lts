@@ -872,6 +872,12 @@ struct drm_mode_config {
 	 */
 	struct drm_property *hdcp_content_type_property;
 
+	/**
+	 * @hdcp_topology_property: DRM BLOB property for hdcp downstream
+	 * topology information.
+	 */
+	struct drm_property *hdcp_topology_property;
+
 	/* dumb ioctl parameters */
 	uint32_t preferred_depth, prefer_shadow;
 
