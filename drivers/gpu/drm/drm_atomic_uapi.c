@@ -883,6 +883,9 @@ drm_atomic_connector_get_property(struct drm_connector *connector,
 		*val = state->content_protection;
 	} else if (property == config->hdcp_content_type_property) {
 		*val = state->hdcp_content_type;
+	} else if (property == config->hdcp_topology_property) {
+		*val = connector->hdcp_topology_blob_ptr ?
+			connector->hdcp_topology_blob_ptr->base.id : 0;
 	} else if (property == config->writeback_fb_id_property) {
 		/* Writeback framebuffer is one-shot, write and forget */
 		*val = 0;

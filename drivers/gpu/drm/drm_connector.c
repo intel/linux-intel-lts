@@ -273,6 +273,7 @@ int drm_connector_init(struct drm_device *dev,
 	connector->edid_blob_ptr = NULL;
 	connector->epoch_counter = 0;
 	connector->tile_blob_ptr = NULL;
+	connector->hdcp_topology_blob_ptr = NULL;
 	connector->status = connector_status_unknown;
 	connector->display_info.panel_orientation =
 		DRM_MODE_PANEL_ORIENTATION_UNKNOWN;
@@ -1151,6 +1152,26 @@ static const struct drm_prop_enum_list dp_colorspaces[] = {
  *	same atomic commit. And when "Content Protection" is ENABLED, it means
  *	that link is HDCP authenticated and encrypted, for the transmission of
  *	the Type of stream mentioned at "HDCP Content Type".
+ *
+ * HDCP Topology:
+ *	This blob property is used to pass the HDCP downstream topology details
+ *	of a HDCP encrypted connector, from kernel to userspace.
+ *	This provides all required information to userspace, so that userspace
+ *	can implement the HDCP repeater using the kernel as downstream ports of
+ *	the repeater. as illustrated below:
+ *
+ *                          HDCP Repeaters
+ * +--------------------------------------------------------------+
+ * |                                                              |
+ * |                               |                              |
+ * |   Userspace HDCP Receiver  +----->    KMD HDCP transmitters  |
+ * |      (Upstream Port)      <------+     (Downstream Ports)    |
+ * |                               |                              |
+ * |                                                              |
+ * +--------------------------------------------------------------+
+ *
+ *	Kernel will populate this blob only when the HDCP authentication is
+ *	successful.
  *
  * HDR_OUTPUT_METADATA:
  *	Connector property to enable userspace to send HDR Metadata to
