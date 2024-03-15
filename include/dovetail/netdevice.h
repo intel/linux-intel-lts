@@ -9,4 +9,15 @@
 struct oob_netdev_state {
 };
 
+struct oob_netqueue_state {
+};
+
+static inline void netqueue_init_oob(struct oob_netqueue_state *qs)
+{
+}
+
+static inline void netqueue_destroy_oob(struct oob_netqueue_state *qs)
+{
+}
+
 #endif /* !_DOVETAIL_NETDEVICE_H */
