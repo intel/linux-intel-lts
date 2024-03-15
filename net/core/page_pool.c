@@ -168,6 +168,10 @@ static void page_pool_producer_unlock(struct page_pool *pool,
 		spin_unlock_bh(&pool->ring.producer_lock);
 }
 
+noinline
+static struct page *__page_pool_alloc_pages_slow(struct page_pool *pool,
+						gfp_t gfp);
+
 static int page_pool_init(struct page_pool *pool,
 			  const struct page_pool_params *params)
 {
@@ -181,6 +185,9 @@ static int page_pool_init(struct page_pool *pool,
 
 	if (pool->p.pool_size)
 		ring_qsize = pool->p.pool_size;
+	/* Size of oob-accessed pools must be specified. */
+	else if (page_pool_is_oob(pool))
+		return -EINVAL;
 
 	/* Sanity limit mem that can be pinned down */
 	if (ring_qsize > 32768)
@@ -215,6 +222,11 @@ static int page_pool_init(struct page_pool *pool,
 	    pool->p.flags & PP_FLAG_PAGE_FRAG)
 		return -EINVAL;
 
+	/* Cannot manage page frags in oob-accessed pools. */
+	if (page_pool_is_oob(pool) &&
+		pool->p.flags & PP_FLAG_PAGE_FRAG)
+		return -EINVAL;
+
 #ifdef CONFIG_PAGE_POOL_STATS
 	pool->recycle_stats = alloc_percpu(struct page_pool_recycle_stats);
 	if (!pool->recycle_stats)
@@ -235,6 +247,23 @@ static int page_pool_init(struct page_pool *pool,
 
 	if (pool->p.flags & PP_FLAG_DMA_MAP)
 		get_device(pool->p.dev);
+
+#ifdef CONFIG_PAGE_POOL_OOB
+	pool->alloc.cache = kzalloc_node(
+		sizeof(struct page *) * params->pool_size,
+		GFP_KERNEL, params->nid);
+	if (pool->alloc.cache == NULL) {
+#ifdef CONFIG_PAGE_POOL_STATS
+		free_percpu(pool->recycle_stats);
+#endif
+		ptr_ring_cleanup(&pool->ring, NULL);
+		return -ENOMEM;
+	}
+	raw_spin_lock_init(&pool->alloc.oob_lock);
+	/* Populate the fast cache of oob-accessed pools at init. */
+	if (page_pool_is_oob(pool))
+		__page_pool_alloc_pages_slow(pool, GFP_KERNEL);
+#endif
 
 	return 0;
 }
@@ -307,7 +336,7 @@ static struct page *page_pool_refill_alloc_cache(struct page_pool *pool)
 			page = NULL;
 			break;
 		}
-	} while (pool->alloc.count < PP_ALLOC_CACHE_REFILL);
+	} while (pool->alloc.count < PP_ALLOC_CACHE_REFILL(pool));
 
 	/* Return last page */
 	if (likely(pool->alloc.count > 0)) {
@@ -329,6 +358,9 @@ static struct page *__page_pool_get_cached(struct page_pool *pool)
 		page = pool->alloc.cache[--pool->alloc.count];
 		alloc_stat_inc(pool, fast);
 	} else {
+		/* Cache refilling is disabled for oob-accessed pools. */
+		if (unlikely(page_pool_is_oob(pool)))
+			return NULL;
 		page = page_pool_refill_alloc_cache(pool);
 	}
 
@@ -416,7 +448,7 @@ noinline
 static struct page *__page_pool_alloc_pages_slow(struct page_pool *pool,
 						 gfp_t gfp)
 {
-	const int bulk = PP_ALLOC_CACHE_REFILL;
+	const int bulk = PP_ALLOC_CACHE_REFILL(pool);
 	unsigned int pp_flags = pool->p.flags;
 	unsigned int pp_order = pool->p.order;
 	struct page *page;
@@ -431,7 +463,7 @@ static struct page *__page_pool_alloc_pages_slow(struct page_pool *pool,
 		return pool->alloc.cache[--pool->alloc.count];
 
 	/* Mark empty alloc.cache slots "empty" for alloc_pages_bulk_array */
-	memset(&pool->alloc.cache, 0, sizeof(void *) * bulk);
+	memset(pool->alloc.cache, 0, sizeof(void *) * bulk);
 
 	nr_pages = alloc_pages_bulk_array_node(gfp, pool->p.nid, bulk,
 					       pool->alloc.cache);
@@ -477,6 +509,27 @@ struct page *page_pool_alloc_pages(struct page_pool *pool, gfp_t gfp)
 	struct page *page;
 
 	/* Fast-path: Get a page from cache */
+
+#ifdef CONFIG_PAGE_POOL_OOB
+	if (page_pool_is_oob(pool)) {
+		unsigned long flags;
+		/*
+		 * Fast, but still serialized. Out-of-band NAPI
+		 * context would not protect us from races since we
+		 * might have in-band vs oob races too.
+		 */
+		raw_spin_lock_irqsave(&pool->alloc.oob_lock, flags);
+		page = __page_pool_get_cached(pool);
+		raw_spin_unlock_irqrestore(&pool->alloc.oob_lock, flags);
+		/*
+		 * Slow path is disabled for oob-accessed pools,
+		 * either we did find a free page in the cache, or
+		 * things are about to get ugly.
+		 */
+		return page;
+	}
+#endif
+
 	page = __page_pool_get_cached(pool);
 	if (page)
 		return page;
@@ -570,7 +623,7 @@ static bool page_pool_recycle_in_ring(struct page_pool *pool, struct page *page)
 static bool page_pool_recycle_in_cache(struct page *page,
 				       struct page_pool *pool)
 {
-	if (unlikely(pool->alloc.count == PP_ALLOC_CACHE_SIZE)) {
+	if (unlikely(pool->alloc.count == PP_ALLOC_CACHE_SIZE(pool))) {
 		recycle_stat_inc(pool, cache_full);
 		return false;
 	}
@@ -592,6 +645,35 @@ __page_pool_put_page(struct page_pool *pool, struct page *page,
 		     unsigned int dma_sync_size, bool allow_direct)
 {
 	lockdep_assert_no_hardirq();
+
+#ifdef CONFIG_PAGE_POOL_OOB
+	/*
+	 * Pages from oob-accessed pools always live in the fast
+	 * cache, never in the ring. They are released to the global
+	 * page allocator only when the pool is destroyed.
+	 */
+	if (page_pool_is_oob(pool)) {
+		unsigned long flags;
+		bool ret;
+		/*
+		 * If a page from an oob-accessed pool is still
+		 * referenced when released or the fast cache would
+		 * overflow, we bark at the console then bluntly leak
+		 * it. This situation should never occur, or would
+		 * denote a serious API usage issue anyway.
+		 */
+		if (WARN_ON(dovetail_debug() && page_ref_count(page) != 1))
+			return NULL;
+		if (pool->p.flags & PP_FLAG_DMA_SYNC_DEV)
+			page_pool_dma_sync_for_device(pool, page,
+						      dma_sync_size);
+		raw_spin_lock_irqsave(&pool->alloc.oob_lock, flags);
+		ret = page_pool_recycle_in_cache(page, pool);
+		raw_spin_unlock_irqrestore(&pool->alloc.oob_lock, flags);
+		WARN_ON(!ret);
+		return NULL;
+	}
+#endif
 
 	/* This allocator is optimized for the XDP mode that uses
 	 * one-frame-per-page, but have fallbacks that act like the
@@ -814,6 +896,9 @@ static void page_pool_free(struct page_pool *pool)
 
 #ifdef CONFIG_PAGE_POOL_STATS
 	free_percpu(pool->recycle_stats);
+#endif
+#ifdef CONFIG_PAGE_POOL_OOB
+	kfree(pool->alloc.cache);
 #endif
 	kfree(pool);
 }
