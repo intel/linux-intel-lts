@@ -2874,7 +2874,7 @@ struct rtable *ip_route_output_flow(struct net *net, struct flowi4 *flp4,
 	 * core might want to learn about the routing decision, pass
 	 * it on.
 	 */
-	if (!IS_ERR(rt) && netdev_is_oob_port(rt->dst.dev))
+	if (!IS_ERR(rt) && netif_oob_port(rt->dst.dev))
 		ip_learn_oob_route(net, flp4, rt);
 
 	return rt;
