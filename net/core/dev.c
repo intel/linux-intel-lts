@@ -5182,11 +5182,6 @@ __weak bool netif_deliver_oob(struct sk_buff *skb)
 	return false;
 }
 
-__weak int netif_xmit_oob(struct sk_buff *skb)
-{
-	return NET_XMIT_DROP;
-}
-
 bool netif_receive_oob(struct sk_buff *skb)
 {
 	struct softnet_data *sd = this_cpu_ptr(&softnet_data);
