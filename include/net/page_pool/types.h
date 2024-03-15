@@ -29,9 +29,11 @@
  * page_pool_params.slow.queue_idx.
  */
 #define PP_FLAG_ALLOW_UNREADABLE_NETMEM BIT(3)
+#define PP_FLAG_PAGE_OOB	BIT(4) /* Enable access from the oob stage (Dovetail) */
 
 #define PP_FLAG_ALL		(PP_FLAG_DMA_MAP | PP_FLAG_DMA_SYNC_DEV | \
-				 PP_FLAG_SYSTEM_POOL | PP_FLAG_ALLOW_UNREADABLE_NETMEM)
+				 PP_FLAG_SYSTEM_POOL | PP_FLAG_ALLOW_UNREADABLE_NETMEM | \
+				 PP_FLAG_PAGE_OOB)
 
 /*
  * Fast allocation side cache array/stack
@@ -47,12 +49,24 @@
  * cache is already full (or partly full) then the XDP_DROP recycles
  * would have to take a slower code path.
  */
-#define PP_ALLOC_CACHE_SIZE	128
-#define PP_ALLOC_CACHE_REFILL	64
+#ifdef CONFIG_PAGE_POOL_OOB
+#define PP_ALLOC_CACHE_SIZE(__pool)	((__pool)->p.pool_size)
+#define PP_ALLOC_CACHE_REFILL(__pool)	PP_ALLOC_CACHE_SIZE(__pool)
 struct pp_alloc_cache {
 	u32 count;
-	netmem_ref cache[PP_ALLOC_CACHE_SIZE];
+	netmem_ref *cache;
+	hard_spinlock_t oob_lock;
 };
+#else	/* !CONFIG_PAGE_POOL_OOB */
+#define __PP_ALLOC_CACHE_SIZE	128
+#define __PP_ALLOC_CACHE_REFILL	64
+#define PP_ALLOC_CACHE_SIZE(__pool)	({ (void)__pool; __PP_ALLOC_CACHE_SIZE; })
+#define PP_ALLOC_CACHE_REFILL(__pool)	({ (void)__pool; __PP_ALLOC_CACHE_REFILL; })
+struct pp_alloc_cache {
+	u32 count;
+	netmem_ref cache[__PP_ALLOC_CACHE_SIZE];
+};
+#endif	/* !CONFIG_PAGE_POOL_OOB */
 
 /**
  * struct page_pool_params - page pool parameters
@@ -261,6 +275,12 @@ void page_pool_use_xdp_mem(struct page_pool *pool, void (*disconnect)(void *),
 			   const struct xdp_mem_info *mem);
 void page_pool_put_page_bulk(struct page_pool *pool, void **data,
 			     int count);
+
+static inline bool page_pool_is_oob(struct page_pool *pool)
+{
+	return IS_ENABLED(CONFIG_PAGE_POOL_OOB) &&
+		pool->slow.flags & PP_FLAG_PAGE_OOB;
+}
 #else
 static inline void page_pool_destroy(struct page_pool *pool)
 {

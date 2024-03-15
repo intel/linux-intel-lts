@@ -519,6 +519,9 @@ enum {
 	 * use frags only up until ubuf_info is released
 	 */
 	SKBFL_MANAGED_FRAG_REFS = BIT(4),
+
+	/* data lives into an oob-enabled storage. */
+	SKBFL_OOB_STORAGE = BIT(5),
 };
 
 #define SKBFL_ZEROCOPY_FRAG	(SKBFL_ZEROCOPY_ENABLE | SKBFL_SHARED_FRAG)
@@ -940,13 +943,11 @@ struct sk_buff {
 				head_frag:1,
 				pfmemalloc:1,
 				pp_recycle:1; /* page_pool recycle indicator */
+#ifdef CONFIG_NET_OOB
+	__u8			oob_head:1;
+#endif
 #ifdef CONFIG_SKB_EXTENSIONS
 	__u8			active_extensions;
-#endif
-#ifdef CONFIG_NET_OOB
-	__u8			oob:1;
-	__u8			oob_clone:1;
-	__u8			oob_cloned:1;
 #endif
 
 	/* Fields enclosed in headers group are copied
@@ -1311,70 +1312,6 @@ struct sk_buff *build_skb_around(struct sk_buff *skb,
 				 void *data, unsigned int frag_size);
 
 void skb_attempt_defer_free(struct sk_buff *skb);
-
-#ifdef CONFIG_NET_OOB
-
-static inline void __skb_oob_copy(struct sk_buff *new,
-				const struct sk_buff *old)
-{
-	new->oob = old->oob;
-	new->oob_clone = old->oob_clone;
-	new->oob_cloned = old->oob_cloned;
-}
-
-static inline bool skb_is_oob(const struct sk_buff *skb)
-{
-	return skb->oob;
-}
-
-static inline bool skb_is_oob_clone(const struct sk_buff *skb)
-{
-	return skb->oob_clone;
-}
-
-static inline bool skb_has_oob_clone(const struct sk_buff *skb)
-{
-	return skb->oob_cloned;
-}
-
-struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev,
-				size_t len, size_t headroom,
-				gfp_t gfp_mask);
-void __netdev_free_oob_skb(struct net_device *dev, struct sk_buff *skb);
-void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb,
-			size_t headroom);
-struct sk_buff *skb_alloc_oob_head(gfp_t gfp_mask);
-void skb_morph_oob_skb(struct sk_buff *n, struct sk_buff *skb);
-bool skb_release_oob_skb(struct sk_buff *skb, int *dref);
-
-static inline bool recycle_oob_skb(struct sk_buff *skb)
-{
-	bool skb_oob_recycle(struct sk_buff *skb);
-
-	if (!skb->oob)
-		return false;
-
-	return skb_oob_recycle(skb);
-}
-
-#else  /* !CONFIG_NET_OOB */
-
-static inline void __skb_oob_copy(struct sk_buff *new,
-				const struct sk_buff *old)
-{
-}
-
-static inline bool skb_is_oob(const struct sk_buff *skb)
-{
-	return false;
-}
-
-static inline bool recycle_oob_skb(struct sk_buff *skb)
-{
-	return false;
-}
-
-#endif	/* !CONFIG_NET_OOB */
 
 struct sk_buff *napi_build_skb(void *data, unsigned int frag_size);
 struct sk_buff *slab_build_skb(void *data);
@@ -5275,6 +5212,130 @@ static inline void skb_mark_for_recycle(struct sk_buff *skb)
 
 ssize_t skb_splice_from_iter(struct sk_buff *skb, struct iov_iter *iter,
 			     ssize_t maxsize, gfp_t gfp);
+
+#ifdef CONFIG_NET_OOB
+
+#include <net/page_pool/helpers.h>
+
+extern unsigned int sysctl_max_oob_skb;
+
+struct skbuff_oob_pool {
+	struct list_head pool;
+	hard_spinlock_t lock;
+};
+
+struct sk_buff *get_oob_skb(void);
+
+void put_oob_skb(struct sk_buff *skb);
+
+/**
+ * skb_is_oob - Whether the buffer was allocated from the oob
+ * pool. Caution: this is distinct from the skb conveying oob storage,
+ * see skb_has_oob_storage().
+ */
+static inline bool skb_is_oob(const struct sk_buff *skb)
+{
+	return skb->oob_head;
+}
+
+static inline void skb_mark_oob(struct sk_buff *skb)
+{
+	skb->oob_head = 1;
+}
+
+/**
+ * skb_has_oob_storage - Whether the skb data lives in an oob-enabled
+ * page pool.
+ */
+static inline bool skb_has_oob_storage(const struct sk_buff *skb)
+{
+	return skb_shinfo(skb)->flags & SKBFL_OOB_STORAGE;
+}
+
+static inline void skb_mark_oob_storage(struct sk_buff *skb)
+{
+	skb_shinfo(skb)->flags |= SKBFL_OOB_STORAGE;
+}
+
+static inline dma_addr_t skb_oob_storage_addr(const struct sk_buff *skb)
+{
+	if (!skb->head || !skb_has_oob_storage(skb) || !skb->pp_recycle)
+		return DMA_MAPPING_ERROR;
+
+	return page_pool_get_dma_addr(virt_to_page(skb->head));
+}
+
+bool recycle_skb_oob(struct sk_buff *skb);
+void free_skb_oob(struct sk_buff *skb);
+void finalize_skb_inband(struct sk_buff *skb);
+
+/**
+ *	__skb_inband_clone - In-band specific setup for skbs for a
+ *	newly allocated clone head. Other allocation places don't need
+ *	that because they are memset-zeroed from skb to &skb->end
+ *	before building the buffer around a data storage area.
+ */
+static inline void __skb_inband_clone(struct sk_buff *skb)
+{
+	skb->oob_head = 0;
+}
+
+/**
+ *	__skb_oob_free_head - Called from the in-band net core after
+ *      the last reference to the buffer (->users) was dropped, and
+ *      any (shared) data was unref'ed (and possibly freed). By
+ *      construction, this is only called for buffers which refer(red)
+ *      to non-oob storage. Out-of-band allocated buffers which also
+ *      convey out-of-band acessible storage must flow through
+ *      free_skb_oob() instead.
+ */
+static inline bool __skb_oob_free_head(struct sk_buff *skb)
+{
+	if (skb_is_oob(skb)) {
+		put_oob_skb(skb);
+		return true;
+	}
+
+	return false;
+}
+
+#else  /* !CONFIG_NET_OOB */
+
+static inline bool skb_is_oob(const struct sk_buff *skb)
+{
+	return false;
+}
+
+static inline void __skb_inband_clone(struct sk_buff *skb)
+{
+}
+
+static inline bool __skb_oob_free_head(struct sk_buff *skb)
+{
+	return false;
+}
+
+static inline bool skb_has_oob_storage(const struct sk_buff *skb)
+{
+	return false;
+}
+
+static inline dma_addr_t skb_oob_storage_addr(const struct sk_buff *skb)
+{
+	return DMA_MAPPING_ERROR;
+}
+
+static inline bool recycle_skb_oob(struct sk_buff *skb)
+{
+	return false;
+}
+
+static inline struct sk_buff *get_oob_skb(void)
+{
+	return NULL;
+}
+
+#endif	/* !CONFIG_NET_OOB */
 
 #endif	/* __KERNEL__ */
 #endif	/* _LINUX_SKBUFF_H */

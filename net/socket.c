@@ -2187,7 +2187,7 @@ int __sys_connect_file(struct file *file, struct sockaddr_storage *address,
 
 	err = READ_ONCE(sock->ops)->connect(sock, (struct sockaddr *)address,
 				addrlen, sock->file->f_flags | file_flags);
-	if (!err && sock_oob_capable(sock))
+	if (!err && sock_oob_capable(sock)) {
 		err = sock_oob_connect(sock->sk, (struct sockaddr *)address,
 				addrlen, sock->file->f_flags | file_flags);
 		if (err)
