@@ -1,0 +1,51 @@
+From dc2b66b0fd42538beb5132ac6be9d288544e9b84 Mon Sep 17 00:00:00 2001
+From: Jean Delvare <jdelvare@suse.de>
+Date: Wed, 14 Feb 2024 15:59:39 +0100
+Subject: [PATCH] i2c: i801: Fix block process call transactions
+
+According to the Intel datasheets, software must reset the block
+buffer index twice for block process call transactions: once before
+writing the outgoing data to the buffer, and once again before
+reading the incoming data from the buffer.
+
+The driver is currently missing the second reset, causing the wrong
+portion of the block buffer to be read.
+
+Signed-off-by: Jean Delvare <jdelvare@suse.de>
+Reported-by: Piotr Zakowski <piotr.zakowski@intel.com>
+Closes: https://lore.kernel.org/linux-i2c/20240213120553.7b0ab120@endymion.delvare/
+Fixes: 315cd67c9453 ("i2c: i801: Add Block Write-Block Read Process Call support")
+Reviewed-by: Alexander Sverdlin <alexander.sverdlin@gmail.com>
+Signed-off-by: Andi Shyti <andi.shyti@kernel.org>
+---
+ drivers/i2c/busses/i2c-i801.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-i801.c b/drivers/i2c/busses/i2c-i801.c
+index 3159ffbb77a20..9a4e9bf304c28 100644
+--- a/drivers/i2c/busses/i2c-i801.c
++++ b/drivers/i2c/busses/i2c-i801.c
+@@ -500,11 +500,10 @@ static int i801_block_transaction_by_block(struct i801_priv *priv,
+ 	/* Set block buffer mode */
+ 	outb_p(inb_p(SMBAUXCTL(priv)) | SMBAUXCTL_E32B, SMBAUXCTL(priv));
+ 
+-	inb_p(SMBHSTCNT(priv)); /* reset the data buffer index */
+-
+ 	if (read_write == I2C_SMBUS_WRITE) {
+ 		len = data->block[0];
+ 		outb_p(len, SMBHSTDAT0(priv));
++		inb_p(SMBHSTCNT(priv));	/* reset the data buffer index */
+ 		for (i = 0; i < len; i++)
+ 			outb_p(data->block[i+1], SMBBLKDAT(priv));
+ 	}
+@@ -520,6 +519,7 @@ static int i801_block_transaction_by_block(struct i801_priv *priv,
+ 			return -EPROTO;
+ 
+ 		data->block[0] = len;
++		inb_p(SMBHSTCNT(priv));	/* reset the data buffer index */
+ 		for (i = 0; i < len; i++)
+ 			data->block[i + 1] = inb_p(SMBBLKDAT(priv));
+ 	}
+-- 
+2.25.1
+
