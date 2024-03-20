@@ -19,6 +19,8 @@
 #include "ipu-isys-csi2.h"
 #include "ipu-isys-video.h"
 
+extern int vnode_num;
+
 static bool wall_clock_ts_on;
 module_param(wall_clock_ts_on, bool, 0660);
 MODULE_PARM_DESC(wall_clock_ts_on, "Timestamp based on REALTIME clock");
@@ -960,7 +962,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av,
 
 	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++) {
 		csi2_be_soc = &isys->csi2_be_soc[i];
-		for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
+		for (j = 0; j < vnode_num; j++) {
 			av = &csi2_be_soc->av[j];
 		if (av == self_av)
 			continue;
@@ -1047,7 +1049,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av,
 
 	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++) {
 		csi2_be_soc = &isys->csi2_be_soc[i];
-		for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
+		for (j = 0; j < vnode_num; j++) {
 			av = &csi2_be_soc->av[j];
 		if (!av->reset)
 			continue;

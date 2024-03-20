@@ -15,6 +15,8 @@
 #include "ipu-isys-subdev.h"
 #include "ipu-isys-video.h"
 
+extern int vnode_num;
+
 /*
  * Raw bayer format pixel order MUST BE MAINTAINED in groups of four codes.
  * Otherwise pixel order calculation below WILL BREAK!
@@ -228,7 +230,7 @@ void ipu_isys_csi2_be_soc_cleanup(struct ipu_isys_csi2_be_soc *csi2_be_soc)
 
 	v4l2_device_unregister_subdev(&csi2_be_soc->asd.sd);
 	ipu_isys_subdev_cleanup(&csi2_be_soc->asd);
-	for (i = 0; i < NR_OF_CSI2_BE_SOC_STREAMS; i++) {
+	for (i = 0; i < vnode_num; i++) {
 		v4l2_ctrl_handler_free(&csi2_be_soc->av[i].ctrl_handler);
 		ipu_isys_video_cleanup(&csi2_be_soc->av[i]);
 	}
@@ -289,7 +291,7 @@ int ipu_isys_csi2_be_soc_init(struct ipu_isys_csi2_be_soc *csi2_be_soc,
 		goto fail;
 	}
 
-	for (i = 0; i < NR_OF_CSI2_BE_SOC_SOURCE_PADS; i++) {
+	for (i = 0; i < vnode_num; i++) {
 		if (!index)
 			snprintf(csi2_be_soc->av[i].vdev.name,
 				 sizeof(csi2_be_soc->av[i].vdev.name),

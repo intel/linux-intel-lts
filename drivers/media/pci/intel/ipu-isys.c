@@ -37,6 +37,10 @@
 #include "ipu-platform.h"
 #include "ipu-platform-buttress-regs.h"
 
+int vnode_num = NR_OF_CSI2_BE_SOC_STREAMS;
+module_param(vnode_num, int, 0440);
+MODULE_PARM_DESC(vnode_num, "override vnode_num default value is 16");
+
 #define ISYS_PM_QOS_VALUE	300
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 /*
@@ -343,6 +347,10 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 
 		isys->isr_csi2_bits |= IPU_ISYS_UNISPART_IRQ_CSI2(i);
 	}
+
+	if (vnode_num < 1 || vnode_num > NR_OF_CSI2_BE_SOC_STREAMS) {
+		vnode_num = NR_OF_CSI2_BE_SOC_STREAMS;
+		dev_warn(&isys->adev->dev, "Invalid video node number %d\n", vnode_num); }
 
 	for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
 		rval = ipu_isys_csi2_be_soc_init(&isys->csi2_be_soc[k],
