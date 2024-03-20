@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2020 - 2024 Intel Corporation
 
 #ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>

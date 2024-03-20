@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2015 - 2019 Intel Corporation
+// Copyright (C) 2015 - 2024 Intel Corporation
 
 #include <linux/err.h>
 #include <linux/string.h>

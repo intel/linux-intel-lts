@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2013 - 2020 Intel Corporation
+ * Copyright (C) 2013 - 2024 Intel Corporation
  */
 
 #include <linux/delay.h>

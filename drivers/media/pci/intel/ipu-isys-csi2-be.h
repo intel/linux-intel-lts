@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2014 - 2022 Intel Corporation */
+/* Copyright (C) 2014 - 2024 Intel Corporation */
 
 #ifndef IPU_ISYS_CSI2_BE_H
 #define IPU_ISYS_CSI2_BE_H
