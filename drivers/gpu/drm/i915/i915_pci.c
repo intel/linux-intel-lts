@@ -650,6 +650,7 @@ static const struct intel_device_info tgl_info = {
 	PLATFORM(INTEL_TIGERLAKE),
 	.__runtime.platform_engine_mask =
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
+	.has_guc_tlb_invalidation = 1, /* Required for SR-IOV */
 	.has_sriov = 1,
 };
 
@@ -687,6 +688,7 @@ static const struct intel_device_info adl_s_info = {
 	.__runtime.platform_engine_mask =
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
 	.dma_mask_size = 39,
+	.has_guc_tlb_invalidation = 1, /* Required for SR-IOV */
 	.has_sriov = 1,
 };
 
@@ -697,6 +699,7 @@ static const struct intel_device_info adl_p_info = {
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
 	.__runtime.ppgtt_size = 48,
 	.dma_mask_size = 39,
+	.has_guc_tlb_invalidation = 1, /* Required for SR-IOV */
 	.has_sriov = 1,
 };
 
@@ -832,6 +835,7 @@ static const struct intel_device_info mtl_info = {
 	.has_flat_ccs = 0,
 	.has_gmd_id = 1,
 	.has_guc_deprivilege = 1,
+	.has_guc_tlb_invalidation = 1,
 	.has_llc = 0,
 	.has_memirq = 1,
 	.has_mslice_steering = 0,
