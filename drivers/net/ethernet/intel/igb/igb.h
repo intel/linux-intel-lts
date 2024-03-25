@@ -21,6 +21,7 @@
 
 #include <net/xdp.h>
 #include <net/xdp_sock_drv.h>
+#include <asm-generic/int-ll64.h>
 
 struct igb_adapter;
 
@@ -544,6 +545,8 @@ struct igb_adapter {
 
 	struct net_device *netdev;
 	struct bpf_prog *xdp_prog;
+	struct btf *btf;
+	u8 btf_enabled;
 
 	unsigned long state;
 	unsigned int flags;
@@ -720,6 +723,10 @@ enum igb_boards {
 	board_82575,
 };
 
+struct igb_md_desc {
+	u64 timestamp;
+};
+
 extern char igb_driver_name[];
 
 int igb_xmit_xdp_ring(struct igb_adapter *adapter,
@@ -839,5 +846,10 @@ void igb_clean_rx_ring_zc(struct igb_ring *rx_ring);
 int igb_clean_rx_irq_zc(struct igb_q_vector *q_vector, const int budget);
 bool igb_xmit_zc(struct igb_ring *tx_ring);
 int igb_xsk_wakeup(struct net_device *dev, u32 qid, u32 flags);
+
+int igb_xdp_register_rxq_info(struct igb_ring *ring);
+void igb_xdp_unregister_rxq_info(struct igb_ring *ring);
+int igb_xdp_query_btf(struct net_device *dev, u8 *enabled);
+int igb_xdp_set_btf_md(struct net_device *dev, u8 enable);
 
 #endif /* _IGB_H_ */
