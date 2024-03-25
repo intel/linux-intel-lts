@@ -30,6 +30,7 @@
 #include <linux/if_ether.h>
 #include <linux/prefetch.h>
 #include <linux/bpf.h>
+#include <linux/btf.h>
 #include <linux/bpf_trace.h>
 #include <linux/pm_runtime.h>
 #include <linux/etherdevice.h>
@@ -2925,6 +2926,11 @@ static int igb_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 	case XDP_SETUP_XSK_POOL:
 		return igb_xsk_pool_setup(adapter, xdp->xsk.pool,
 					  xdp->xsk.queue_id);
+	case XDP_SETUP_MD_BTF:
+		return igb_xdp_set_btf_md(dev, xdp->btf_enable);
+	case XDP_QUERY_MD_BTF:
+		xdp->btf_id = igb_xdp_query_btf(dev, &xdp->btf_enable);
+		return 0;
 	default:
 		return -EINVAL;
 	}
@@ -3884,6 +3890,11 @@ static void igb_remove(struct pci_dev *pdev)
 
 	cancel_work_sync(&adapter->reset_task);
 	cancel_work_sync(&adapter->watchdog_task);
+
+	if (adapter->btf) {
+		adapter->btf_enabled = 0;
+		btf_unregister(adapter->btf);
+	}
 
 #ifdef CONFIG_IGB_DCA
 	if (adapter->flags & IGB_FLAG_DCA_ENABLED) {
