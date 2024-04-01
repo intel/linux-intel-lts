@@ -2356,6 +2356,7 @@ int skl_platform_component_register(struct device *dev,
 
 	dais = devm_kcalloc(dev, total_dais, sizeof(*dais), GFP_KERNEL);
 	if (!dais) {
+		kfree(skl->dais);
 		ret = -ENOMEM;
 		goto err;
 	}
@@ -2397,8 +2398,10 @@ int skl_platform_component_register(struct device *dev,
 
 	ret = devm_snd_soc_register_component(dev, component_drv, dais,
 					      total_dais);
-	if (ret)
+	if (ret) {
+		kfree(skl->dais);
 		goto err;
+	}
 
 	skl->dais = dais;
 
