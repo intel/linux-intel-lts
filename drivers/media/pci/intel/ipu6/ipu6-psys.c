@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2022 Intel Corporation
+// Copyright (C) 2020 - 2024 Intel Corporation
 
 #include <linux/uaccess.h>
 #include <linux/device.h>
@@ -844,7 +844,7 @@ int ipu_psys_fh_init(struct ipu_psys_fh *fh)
 	mutex_init(&sched->bs_mutex);
 	INIT_LIST_HEAD(&sched->buf_sets);
 	INIT_LIST_HEAD(&sched->ppgs);
-	pm_runtime_dont_use_autosuspend(&psys->adev->dev);
+
 	/* allocate and map memory for buf_sets */
 	for (i = 0; i < IPU_PSYS_BUF_SET_POOL_SIZE; i++) {
 		kbuf_set = kzalloc(sizeof(*kbuf_set), GFP_KERNEL);

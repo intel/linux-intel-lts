@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2015 - 2020 Intel Corporation */
+/* Copyright (C) 2015 - 2024 Intel Corporation */
 
 #ifndef IPU_CPD_H
 #define IPU_CPD_H
