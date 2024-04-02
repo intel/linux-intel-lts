@@ -105,3 +105,6 @@
 
 # CVE-2023-2177
 0001-sctp-leave-the-err-path-free-in-sctp_stream_init-to-.patch
+
+# CVE-2023-52435
+0001-net-prevent-mss-overflow-in-skb_segment.patch
