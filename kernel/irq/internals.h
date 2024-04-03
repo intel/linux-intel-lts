@@ -55,6 +55,7 @@ enum {
  * IRQS_SYSFS			- descriptor has been added to sysfs
  * IRQS_EDGE			- irq line received an edge event (irq_pipeline)
  * IRQS_DEFERRED		- irq event deferred to inband (irq_pipeline)
+ * IRQS_FORWARDED		- irq event handled and forwarded to inband (irq_pipeline)
  */
 enum {
 	IRQS_AUTODETECT		= 0x00000001,
@@ -70,6 +71,7 @@ enum {
 	IRQS_SYSFS		= 0x00004000,
 	IRQS_EDGE		= 0x00008000,
 	IRQS_DEFERRED		= 0x00010000,
+	IRQS_FORWARDED		= 0x00020000,
 };
 
 #include "debug.h"

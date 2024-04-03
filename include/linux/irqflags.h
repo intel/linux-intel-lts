@@ -13,8 +13,8 @@
 #define _LINUX_TRACE_IRQFLAGS_H
 
 #include <linux/typecheck.h>
-#include <asm-generic/irq_pipeline.h>
 #include <linux/cleanup.h>
+#include <asm-generic/irq_pipeline.h>
 #include <asm/irqflags.h>
 #include <asm/percpu.h>
 
@@ -266,18 +266,25 @@ extern void warn_bogus_irq_restore(void);
 		local_irq_disable();		\
 	} while (0)
 
-#define local_irq_save_full(__flags)		\
-  	do {					\
-		hard_local_irq_disable();	\
-		local_irq_save(__flags);	\
+#define local_irq_save_full(__flags)					\
+	do {								\
+		bool __was_unstalled = running_inband() && !raw_irqs_disabled(); \
+		(__flags) = test_and_lock_stage(NULL);			\
+		if (__was_unstalled)					\
+			trace_hardirqs_off();				\
 	} while (0)
 
-#define local_irq_restore_full(__flags)			\
-	do {						\
-		if (!irqs_disabled_flags(__flags))	\
-			hard_local_irq_enable();	\
-		local_irq_restore(__flags);		\
+#define local_irq_restore_full(__flags)					\
+	do {								\
+		if (running_inband()) {					\
+			bool __stalled;					\
+			stage_disabled_flags(__flags, &__stalled);	\
+			if (!__stalled)					\
+				trace_hardirqs_on();			\
+		}							\
+		unlock_stage(__flags);					\
 	} while (0)
+
 #else
 #define local_irq_enable_full()		local_irq_enable()
 #define local_irq_disable_full()	local_irq_disable()

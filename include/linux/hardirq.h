@@ -150,7 +150,12 @@ static inline bool on_pipeline_entry(void)
 
 static inline bool in_nonmaskable(void)
 {
-	return on_pipeline_entry() || in_nmi();
+	/*
+	 * From the standpoint of tne in-band stage, any oob activity
+	 * stands for a non-maskable event being handled (including
+	 * the pipeline entry context).
+	 */
+	return running_oob() || in_nmi();
 }
 
 #endif /* LINUX_HARDIRQ_H */

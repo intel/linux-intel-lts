@@ -133,7 +133,7 @@ static int smp_stop_nmi_callback(unsigned int val, struct pt_regs *regs)
 /*
  * this function calls the 'stop' function on all other CPUs in the system.
  */
-DEFINE_IDTENTRY_SYSVEC_PIPELINED(REBOOT_VECTOR, sysvec_reboot)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED_NORETURN(REBOOT_VECTOR, sysvec_reboot)
 {
 	ack_APIC_irq();
 	cpu_emergency_disable_virtualization();

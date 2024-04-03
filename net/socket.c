@@ -156,11 +156,16 @@ int __weak sock_oob_attach(struct socket *sock)
 	return 0;
 }
 
-void __weak sock_oob_detach(struct socket *sock)
+void __weak sock_oob_detach(struct sock *sk)
 {
 }
 
 int __weak sock_oob_bind(struct socket *sock, struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+int __weak sock_oob_connect(struct socket *sock, struct sockaddr *addr, int len)
 {
 	return 0;
 }
@@ -209,12 +214,14 @@ static inline int sock_oob_attach(struct socket *sock)
 	return 0;
 }
 
-static inline void sock_oob_detach(struct socket *sock)
+static inline int sock_oob_bind(struct socket *sock,
+				struct sockaddr *addr, int len)
 {
+	return 0;
 }
 
-static int sock_oob_bind(struct socket *sock,
-			struct sockaddr *addr, int len)
+static inline int sock_oob_connect(struct socket *sock,
+				struct sockaddr *addr, int len)
 {
 	return 0;
 }
@@ -749,9 +756,6 @@ EXPORT_SYMBOL(sock_alloc);
 
 static void __sock_release(struct socket *sock, struct inode *inode)
 {
-	if (sock_oob_capable(sock))
-		sock_oob_detach(sock);
-
 	if (sock->ops) {
 		struct module *owner = sock->ops->owner;
 
@@ -2115,6 +2119,12 @@ int __sys_connect_file(struct file *file, struct sockaddr_storage *address,
 
 	err =
 	    security_socket_connect(sock, (struct sockaddr *)address, addrlen);
+	if (err)
+		goto out;
+
+	if (sock_oob_capable(sock))
+		err = sock_oob_connect(sock, (struct sockaddr *)address,
+				addrlen);
 	if (err)
 		goto out;
 

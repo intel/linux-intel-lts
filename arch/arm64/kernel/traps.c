@@ -489,25 +489,28 @@ void arm64_notify_segfault(unsigned long addr)
 
 void do_undefinstr(struct pt_regs *regs, unsigned long esr)
 {
+	mark_trap_entry(ARM64_TRAP_UNDI, regs);
+
 	/*
 	 * If the companion core did not switched us to in-band
 	 * context, we may assume that it has handled the trap.
 	 */
 	if (running_oob())
-		return;
+		goto out_exit;
 
 	/* check for AArch32 breakpoint instructions */
 	if (!aarch32_break_handler(regs))
-		return;
+		goto out_exit;
 
 	if (call_undef_hook(regs) == 0)
-		return;
+		goto out_exit;
 
 	if (!user_mode(regs))
 		die("Oops - Undefined instruction", regs, esr);
 
-	mark_trap_entry(ARM64_TRAP_UNDI, regs);
 	force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc, 0);
+
+out_exit:
 	mark_trap_exit(ARM64_TRAP_UNDI, regs);
 }
 NOKPROBE_SYMBOL(do_undefinstr);
