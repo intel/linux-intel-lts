@@ -87,10 +87,10 @@ static const struct ti960_register_write ti960_init_settings[] = {
 	{0xb1, 0x04},
 	{0xb2, 0x04},
 	{0x32, 0x12}, /* select TX1 R/W */
-	{0x33, 0x03}, /* CSI_ENABLE, CONTS_CLOCK */
+	{0x33, 0x01}, /* CSI_ENABLE */
 	{0x34, 0x08}, /* CSI_PASS_MODE all */
 	{0x32, 0x01}, /* select TX0 R/W */
-	{0x33, 0x03}, /* CSI_ENABLE, CONTS_CLOCK */
+	{0x33, 0x01}, /* CSI_ENABLE */
 	{0x34, 0x08}, /* CSI_PASS_MODE all */
 	{0x20, 0xf0},
 	{0x21, 0x03},
@@ -113,6 +113,7 @@ static const struct ti960_register_write ti960_init_settings[] = {
 #define TI960_RAW12_ID		0x71
 #define TI960_CSI_VC_MAP	0x72
 #define TI960_PORT_CONFIG2	0x7c
+#define TI960_CSI_PORT_SEL	0x32
 #define TI960_CSI_CTL		0x33
 #define TI960_CSI_CTL2		0x34
 

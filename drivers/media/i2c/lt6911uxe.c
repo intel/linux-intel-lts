@@ -713,11 +713,16 @@ static struct v4l2_ctrl_config lt6911uxe_frame_interval = {
 
 static u64 get_pixel_rate(struct lt6911uxe_state *lt6911uxe)
 {
-	if (lt6911uxe->cur_mode->lanes)
-		return lt6911uxe->cur_mode->width * lt6911uxe->cur_mode->height *
-			lt6911uxe->cur_mode->fps * 16 / lt6911uxe->cur_mode->lanes;
-	else
-		return 995328000; /* default value: 4K@30 */
+	u64 pixel_rate = 995328000ULL; /* default value: 4K@30 */
+
+	if (lt6911uxe->cur_mode->lanes) {
+		pixel_rate = (u64)lt6911uxe->cur_mode->width *
+			lt6911uxe->cur_mode->height *
+			lt6911uxe->cur_mode->fps * 16;
+		do_div(pixel_rate, lt6911uxe->cur_mode->lanes);
+	}
+
+	return pixel_rate;
 }
 
 static int lt6911uxe_init_controls(struct lt6911uxe_state *lt6911uxe)
@@ -1071,28 +1076,14 @@ static int lt6911uxe_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct lt6911uxe_state *lt6911uxe = to_state(sd);
 
-	if (!lt6911uxe->auxiliary_port)
-		lt6911uxe_set_stream(sd, true);
 	lt6911uxe_update_pad_format(lt6911uxe->cur_mode,
 			v4l2_subdev_get_try_format(sd, fh->state, 0));
 
 	return 0;
 }
 
-static int lt6911uxe_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
-{
-
-	struct lt6911uxe_state *lt6911uxe = to_state(sd);
-
-	if (!lt6911uxe->auxiliary_port)
-		lt6911uxe_set_stream(sd, false);
-
-	return 0;
-}
-
 static const struct v4l2_subdev_internal_ops lt6911uxe_subdev_internal_ops = {
 	.open = lt6911uxe_open,
-	.close = lt6911uxe_close,
 };
 
 static const struct v4l2_subdev_video_ops lt6911uxe_video_ops = {
@@ -1172,7 +1163,7 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 			REG_INT_HDMI);
 	switch (int_event) {
 	case INT_HDMI_STABLE:
-		dev_dbg(&client->dev, "Video signal stable\n");
+		dev_info(&client->dev, "Video signal stable\n");
 
 		/* byte clock / MIPI clock */
 		fm2 = lt6911uxe_i2c_rd8(&lt6911uxe->sd,
@@ -1182,7 +1173,7 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 		fm0 = lt6911uxe_i2c_rd8(&lt6911uxe->sd,
 			REG_FM1_FREQ_IN0);
 
-		byte_clock = (fm2<<16 | fm1<<8 | fm0);// * 1000;
+		byte_clock = (fm2<<16 | fm1<<8 | fm0) * 1000;
 
 		/* Pixel clock */
 		val =  lt6911uxe_i2c_rd8(&lt6911uxe->sd,
@@ -1235,18 +1226,19 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 		lt6911uxe->cur_mode->fps = fps;
 		lt6911uxe->cur_mode->code = MEDIA_BUS_FMT_UYVY8_1X16;
 		if (lanes == 8) {
+			dev_dbg(&client->dev,  "Lane number:%u is unexpected.\n", lanes);
 			/* 4K60fps with 2 MIPI ports*/
 			if (width >= 3840)
-				lt6911uxe->cur_mode->width = width/2; /* YUV422 */
+				lt6911uxe->cur_mode->width = width / 2; /* YUV422 */
 			else
-				lt6911uxe->cur_mode->width = width; /* YUV420 */
-			lt6911uxe->cur_mode->lanes = lanes/2;
-			lt6911uxe->cur_mode->pixel_clk = pixel_clk/2;
-			lt6911uxe->cur_mode->byte_clk = byte_clock/2;
+				lt6911uxe->cur_mode->width = width; /* YUV422 */
+			lt6911uxe->cur_mode->lanes = lanes / 2;
+			lt6911uxe->cur_mode->pixel_clk = byte_clock * 4;
+			lt6911uxe->cur_mode->byte_clk = byte_clock;
 		} else {
 			lt6911uxe->cur_mode->width = width;
 			lt6911uxe->cur_mode->lanes = lanes;
-			lt6911uxe->cur_mode->pixel_clk = pixel_clk;
+			lt6911uxe->cur_mode->pixel_clk = byte_clock * 4;
 			lt6911uxe->cur_mode->byte_clk = byte_clock;
 		}
 		v4l2_subdev_notify_event(&lt6911uxe->sd,
@@ -1262,6 +1254,7 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 			lt6911uxe->cur_mode->lanes);
 	break;
 	case INT_HDMI_DISCONNECT:
+		lt6911uxe_stop_streaming(lt6911uxe);
 		lt6911uxe->cur_mode->width = 0;
 		lt6911uxe->cur_mode->height = 0;
 		lt6911uxe->cur_mode->fps = 30;
@@ -1272,7 +1265,7 @@ static int lt6911uxe_video_status_update(struct lt6911uxe_state *lt6911uxe)
 		v4l2_subdev_notify_event(&lt6911uxe->sd,
 			&lt6911uxe_ev_stream_end);
 
-		dev_dbg(&client->dev, "Video signal disconnected\n");
+		dev_info(&client->dev, "Video signal disconnected\n");
 	break;
 	default:
 		dev_dbg(&client->dev, "Unhandled video= 0x%02X\n", int_event);

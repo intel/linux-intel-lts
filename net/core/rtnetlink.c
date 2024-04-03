@@ -2811,18 +2811,18 @@ static int do_setlink(const struct sk_buff *skb,
 		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
 	}
 
-	if (tb[IFLA_MASTER]) {
-		err = do_set_master(dev, nla_get_u32(tb[IFLA_MASTER]), extack);
-		if (err)
-			goto errout;
-		status |= DO_SETLINK_MODIFIED;
-	}
-
 	if (ifm->ifi_flags || ifm->ifi_change) {
 		err = dev_change_flags(dev, rtnl_dev_combine_flags(dev, ifm),
 				       extack);
 		if (err < 0)
 			goto errout;
+	}
+
+	if (tb[IFLA_MASTER]) {
+		err = do_set_master(dev, nla_get_u32(tb[IFLA_MASTER]), extack);
+		if (err)
+			goto errout;
+		status |= DO_SETLINK_MODIFIED;
 	}
 
 	if (tb[IFLA_CARRIER]) {
@@ -5417,13 +5417,11 @@ static unsigned int
 rtnl_offload_xstats_get_size_hw_s_info_one(const struct net_device *dev,
 					   enum netdev_offload_xstats_type type)
 {
-	bool enabled = netdev_offload_xstats_enabled(dev, type);
-
 	return nla_total_size(0) +
 		/* IFLA_OFFLOAD_XSTATS_HW_S_INFO_REQUEST */
 		nla_total_size(sizeof(u8)) +
 		/* IFLA_OFFLOAD_XSTATS_HW_S_INFO_USED */
-		(enabled ? nla_total_size(sizeof(u8)) : 0) +
+		nla_total_size(sizeof(u8)) +
 		0;
 }
 

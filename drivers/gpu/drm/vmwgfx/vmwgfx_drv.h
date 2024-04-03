@@ -47,6 +47,7 @@
 #include "vmwgfx_fence.h"
 #include "vmwgfx_reg.h"
 #include "vmwgfx_validation.h"
+#include "vmwgfx_bo.h"
 
 /*
  * FIXME: vmwgfx_drm.h needs to be last due to dependencies.
@@ -1428,6 +1429,14 @@ static inline struct vmw_surface *vmw_surface_reference(struct vmw_surface *srf)
 {
 	(void) vmw_resource_reference(&srf->res);
 	return srf;
+}
+
+static inline void vmw_user_bo_unref(struct vmw_bo *vbo)
+{
+	if (vbo) {
+		ttm_bo_put(&vbo->tbo);
+		drm_gem_object_put(&vbo->tbo.base);
+	}
 }
 
 static inline void vmw_fifo_resource_inc(struct vmw_private *dev_priv)

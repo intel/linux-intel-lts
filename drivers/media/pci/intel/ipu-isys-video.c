@@ -40,7 +40,7 @@ MODULE_PARM_DESC(video_nr,
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW16},
-	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_VYUY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
@@ -83,6 +83,10 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
+#ifdef V4L2_PIX_FMT_Y210
+	{V4L2_PIX_FMT_Y210, 20, 20, 0, MEDIA_BUS_FMT_YUYV10_1X20,
+	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
+#endif
 	{V4L2_META_FMT_D4XX, 8, 8, 0, MEDIA_BUS_FMT_FIXED, 0},
 	{}
 };
@@ -94,7 +98,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	{V4L2_PIX_FMT_Y210, 20, 20, 0, MEDIA_BUS_FMT_YUYV10_1X20,
 	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
 #endif
-	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_VYUY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
@@ -471,6 +475,7 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 	/* overwrite bpl/height with compression alignment */
 	if (av->compression) {
 		u32 planar_tile_status_size, tile_status_size;
+		u64 planar_bytes;
 
 		mpix->plane_fmt[0].bytesperline =
 		    ALIGN(mpix->plane_fmt[0].bytesperline,
@@ -483,10 +488,11 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 			  IPU_ISYS_COMPRESSION_PAGE_ALIGN);
 
 		/* ISYS compression only for RAW and single plannar */
+		planar_bytes =
+		    mul_u32_u32(mpix->plane_fmt[0].bytesperline, mpix->height);
 		planar_tile_status_size =
-		    DIV_ROUND_UP_ULL((mpix->plane_fmt[0].bytesperline *
-				      mpix->height /
-				      IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
+		    DIV_ROUND_UP_ULL((planar_bytes /
+				     IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
 				     IPU_ISYS_COMPRESSION_TILE_STATUS_BITS,
 				     BITS_PER_BYTE);
 		tile_status_size = ALIGN(planar_tile_status_size,
@@ -1424,7 +1430,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	struct v4l2_subdev *be_sd = NULL;
 	struct media_pad *source_pad = media_pad_remote_pad_first(&av->pad);
 	struct ipu_fw_isys_cropping_abi *crop;
-	enum ipu_fw_isys_send_type send_type;
 	int rval, rvalout, tout;
 
 	rval = get_external_facing_format(ip, &source_fmt);
@@ -1500,8 +1505,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 		csi_short_packet_prepare_fw_cfg(ip, stream_cfg);
 
-	ipu_fw_isys_dump_stream_cfg(dev, stream_cfg);
-
 	ip->nr_output_pins = stream_cfg->nof_output_pins;
 
 	rval = get_stream_handle(av);
@@ -1513,6 +1516,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	reinit_completion(&ip->stream_open_completion);
 
 	ipu_fw_isys_set_params(stream_cfg);
+
+	ipu_fw_isys_dump_stream_cfg(dev, stream_cfg);
 
 	rval = ipu_fw_isys_complex_cmd(av->isys,
 				       ip->stream_handle,
@@ -1562,22 +1567,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	if (bl) {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
-		ipu_fw_isys_dump_frame_buff_set(dev, buf,
-						stream_cfg->nof_output_pins);
-		rval = ipu_fw_isys_complex_cmd(av->isys,
-					       ip->stream_handle,
-					       buf, to_dma_addr(msg),
-					       sizeof(*buf),
-					       send_type);
-	} else {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
-		rval = ipu_fw_isys_simple_cmd(av->isys,
-					      ip->stream_handle,
-					      send_type);
-	}
-
+	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
+				      IPU_FW_ISYS_SEND_TYPE_STREAM_START);
 	if (rval < 0) {
 		dev_err(dev, "can't start streaming (%d)\n", rval);
 		goto out_stream_close;
@@ -1595,7 +1586,18 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		rval = -EIO;
 		goto out_stream_close;
 	}
-	dev_dbg(dev, "start stream: complete\n");
+
+	if (!bl)
+		return 0;
+
+	ipu_fw_isys_dump_frame_buff_set(dev, buf, stream_cfg->nof_output_pins);
+	rval = ipu_fw_isys_complex_cmd(av->isys, ip->stream_handle, buf,
+				       to_dma_addr(msg), sizeof(*buf),
+				       IPU_FW_ISYS_SEND_TYPE_STREAM_CAPTURE);
+	if (rval < 0) {
+		dev_err(dev, "can't queue buffers (%d)\n", rval);
+		goto out_stream_close;
+	}
 
 	return 0;
 
@@ -1680,7 +1682,9 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 		dev_err(dev, "stream close error: %d\n", ip->error);
 	else
 		dev_dbg(dev, "close stream: complete\n");
-
+	ip->last_sequence = atomic_read(&ip->sequence);
+	dev_dbg(dev, "IPU_ISYS_RESET: ip->last_sequence = %d\n",
+		ip->last_sequence);
 	put_stream_opened(av);
 	put_stream_handle(av);
 }
@@ -1745,7 +1749,13 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->has_sof = false;
 	ip->nr_queues = 0;
 	ip->external = NULL;
-	atomic_set(&ip->sequence, 0);
+	if (av->isys->in_reset) {
+		atomic_set(&ip->sequence, ip->last_sequence);
+		dev_dbg(dev, "atomic_set : ip->last_sequence = %d\n",
+			ip->last_sequence);
+	} else {
+		atomic_set(&ip->sequence, 0);
+	}
 	ip->isl_mode = IPU_ISL_OFF;
 
 	for (i = 0; i < IPU_NUM_CAPTURE_DONE; i++)

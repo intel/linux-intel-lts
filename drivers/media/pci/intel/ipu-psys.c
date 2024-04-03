@@ -196,8 +196,7 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 		}
 	} else {
 		nr = get_user_pages(start & PAGE_MASK, npages,
-				    FOLL_WRITE,
-				    pages, NULL);
+				    FOLL_WRITE, pages, NULL);
 		if (nr < npages)
 			goto error_up_read;
 	}
@@ -572,7 +571,9 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 {
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
-	struct iosys_map dmap;
+	struct iosys_map dmap = {
+		.is_iomem = false,
+	};
 	int ret;
 
 	dbuf = dma_buf_get(fd);
