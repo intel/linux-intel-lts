@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 - 2022 Intel Corporation
+// Copyright (C) 2020 - 2024 Intel Corporation
 
 #include <linux/delay.h>
 #include <linux/spinlock.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2020 - 2024 Intel Corporation
 
 #include "ipu-psys.h"
 #include "ipu6-ppg.h"

@@ -277,7 +277,7 @@ enum intel_guc_state_capture_event_status {
 #define INTEL_GUC_TLB_INVAL_FLUSH_CACHE REG_BIT(31)
 
 enum intel_guc_tlb_invalidation_type {
-	INTEL_GUC_TLB_INVAL_FULL = 0x0,
+	INTEL_GUC_TLB_INVAL_ENGINES = 0x0,
 	INTEL_GUC_TLB_INVAL_GUC = 0x3,
 };
 

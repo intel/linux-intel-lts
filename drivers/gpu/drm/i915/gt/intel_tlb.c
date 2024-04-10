@@ -138,14 +138,16 @@ void intel_gt_invalidate_tlb_full(struct intel_gt *gt, u32 seqno)
 		if (tlb_seqno_passed(gt, seqno))
 			goto unlock;
 
-		if (intel_guc_submission_is_used(guc)) {
-			if (intel_guc_is_ready(guc))
-				intel_guc_invalidate_tlb_full(guc);
-		} else {
+		if (HAS_GUC_TLB_INVALIDATION(gt->i915)) {
 			/*
-			 * Fall back to old path if GuC is disabled.
-			 * This is safe because GuC is not enabled and not writing to MMIO.
+			 * Only perform GuC TLB invalidation if GuC is ready.
+			 * The only time GuC could not be ready is on GT reset,
+			 * which would clobber all the TLBs anyways, making
+			 * any TLB invalidation path here unnecessary.
 			 */
+			if (intel_guc_is_ready(guc))
+				intel_guc_invalidate_tlb_engines(guc);
+		} else {
 			mmio_invalidate_full(gt);
 		}
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2023 Intel Corporation
+// Copyright (C) 2013 - 2024 Intel Corporation
 
 #include <linux/completion.h>
 #include <linux/device.h>
@@ -18,6 +18,8 @@
 #include "ipu-isys.h"
 #include "ipu-isys-csi2.h"
 #include "ipu-isys-video.h"
+
+extern int vnode_num;
 
 static bool wall_clock_ts_on;
 module_param(wall_clock_ts_on, bool, 0660);
@@ -960,7 +962,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av,
 
 	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++) {
 		csi2_be_soc = &isys->csi2_be_soc[i];
-		for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
+		for (j = 0; j < vnode_num; j++) {
 			av = &csi2_be_soc->av[j];
 		if (av == self_av)
 			continue;
@@ -1047,7 +1049,7 @@ static int ipu_isys_reset(struct ipu_isys_video *self_av,
 
 	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++) {
 		csi2_be_soc = &isys->csi2_be_soc[i];
-		for (j = 0; j < NR_OF_CSI2_BE_SOC_SOURCE_PADS; j++) {
+		for (j = 0; j < vnode_num; j++) {
 			av = &csi2_be_soc->av[j];
 		if (!av->reset)
 			continue;

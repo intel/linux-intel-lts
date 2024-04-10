@@ -238,7 +238,7 @@ static void guc_ggtt_ct_invalidate(struct intel_gt *gt)
 	with_intel_runtime_pm_if_active(uncore->rpm, wakeref) {
 		struct intel_guc *guc = &gt->uc.guc;
 
-		intel_guc_invalidate_tlb(guc);
+		intel_guc_invalidate_tlb_guc(guc);
 	}
 }
 
@@ -276,7 +276,7 @@ static void gen12vf_ggtt_invalidate(struct i915_ggtt *ggtt)
 			continue;
 
 		with_intel_runtime_pm(gt->uncore->rpm, wakeref)
-			intel_guc_invalidate_tlb(guc);
+			intel_guc_invalidate_tlb_guc(guc);
 	}
 }
 
@@ -1292,8 +1292,7 @@ static int gen8_gmch_probe(struct i915_ggtt *ggtt)
 		ggtt->vm.raw_insert_page = gen8_ggtt_insert_page;
 	}
 
-	if (intel_uc_wants_guc(&ggtt->vm.gt->uc) &&
-	    intel_uc_wants_guc_submission(&ggtt->vm.gt->uc))
+	if (intel_uc_wants_guc_submission(&ggtt->vm.gt->uc))
 		ggtt->invalidate = guc_ggtt_invalidate;
 	else
 		ggtt->invalidate = gen8_ggtt_invalidate;

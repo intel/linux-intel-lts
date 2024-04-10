@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2018 - 2020 Intel Corporation */
+/* Copyright (C) 2018 - 2024 Intel Corporation */
 
 #ifndef IPU_PLATFORM_RESOURCES_COMMON_H
 #define IPU_PLATFORM_RESOURCES_COMMON_H

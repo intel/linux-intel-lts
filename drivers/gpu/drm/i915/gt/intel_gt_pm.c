@@ -22,7 +22,6 @@
 #include "intel_rps.h"
 #include "intel_wakeref.h"
 #include "pxp/intel_pxp_pm.h"
-#include "iov/intel_iov.h"
 
 #define I915_GT_SUSPEND_IDLE_TIMEOUT (HZ / 2)
 
@@ -323,8 +322,6 @@ static void wait_for_suspend(struct intel_gt *gt)
 
 void intel_gt_suspend_prepare(struct intel_gt *gt)
 {
-	intel_iov_suspend(&gt->iov);
-
 	user_forcewake(gt, true);
 	wait_for_suspend(gt);
 }
