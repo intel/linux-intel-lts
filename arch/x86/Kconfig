@@ -1555,19 +1555,6 @@ config AMD_MEM_ENCRYPT
 	  This requires an AMD processor that supports Secure Memory
 	  Encryption (SME).
 
-config AMD_MEM_ENCRYPT_ACTIVE_BY_DEFAULT
-	bool "Activate AMD Secure Memory Encryption (SME) by default"
-	depends on AMD_MEM_ENCRYPT
-	help
-	  Say yes to have system memory encrypted by default if running on
-	  an AMD processor that supports Secure Memory Encryption (SME).
-
-	  If set to Y, then the encryption of system memory can be
-	  deactivated with the mem_encrypt=off command line option.
-
-	  If set to N, then the encryption of system memory can be
-	  activated with the mem_encrypt=on command line option.
-
 # Common NUMA Features
 config NUMA
 	bool "NUMA Memory Allocation and Scheduler Support"
@@ -2577,6 +2564,31 @@ config MITIGATION_RFDS
 	  allows unprivileged speculative access to stale data previously
 	  stored in floating point, vector and integer registers.
 	  See also <file:Documentation/admin-guide/hw-vuln/reg-file-data-sampling.rst>
+
+choice
+	prompt "Clear branch history"
+	depends on CPU_SUP_INTEL
+	default SPECTRE_BHI_ON
+	help
+	  Enable BHI mitigations. BHI attacks are a form of Spectre V2 attacks
+	  where the branch history buffer is poisoned to speculatively steer
+	  indirect branches.
+	  See <file:Documentation/admin-guide/hw-vuln/spectre.rst>
+
+config SPECTRE_BHI_ON
+	bool "on"
+	help
+	  Equivalent to setting spectre_bhi=on command line parameter.
+config SPECTRE_BHI_OFF
+	bool "off"
+	help
+	  Equivalent to setting spectre_bhi=off command line parameter.
+config SPECTRE_BHI_AUTO
+	bool "auto"
+	help
+	  Equivalent to setting spectre_bhi=auto command line parameter.
+
+endchoice
 
 endif
 
