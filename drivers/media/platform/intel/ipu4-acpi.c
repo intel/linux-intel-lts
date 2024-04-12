@@ -678,7 +678,7 @@ static int get_smiapp_pdata(struct i2c_client *client,
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	struct smiapp_platform_data *pdata;
-#elseif LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
 	struct smiapp_hwconfig *pdata;
 #else
     struct ccs_hwconfig *pdata;
