@@ -212,9 +212,21 @@ DEFINE_IDTENTRY_RAW(int80_emulation)
 
 	local_irq_enable();
 	nr = syscall_enter_from_user_mode_work(regs, nr);
+
+	if (dovetailing()) {
+		if (nr == EXIT_SYSCALL_OOB) {
+			hard_local_irq_disable();
+			return;
+		}
+		if (nr == EXIT_SYSCALL_TAIL)
+			goto done;
+	}
+
 	do_syscall_32_irqs_on(regs, nr);
 
 	instrumentation_end();
+
+done:
 	syscall_exit_to_user_mode(regs);
 }
 #else /* CONFIG_IA32_EMULATION */
