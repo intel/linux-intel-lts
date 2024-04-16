@@ -1568,7 +1568,9 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	if (bl) {
+	if (bl && !av->isys->in_reset) {
+		dev_dbg(dev, "start stream: start and capture\n");
+
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
 		ipu_fw_isys_dump_frame_buff_set(dev, buf,
 						stream_cfg->nof_output_pins);
@@ -1578,6 +1580,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 					       sizeof(*buf),
 					       send_type);
 	} else {
+		dev_dbg(dev, "start stream: start\n");
+
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
 		rval = ipu_fw_isys_simple_cmd(av->isys,
 					      ip->stream_handle,
@@ -1601,7 +1605,21 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		rval = -EIO;
 		goto out_stream_close;
 	}
+	if (av->isys->in_reset) {
+		if (bl) {
+			dev_dbg(dev, "start stream: capture\n");
 
+			ipu_fw_isys_dump_frame_buff_set(dev, buf, stream_cfg->nof_output_pins);
+			rval = ipu_fw_isys_complex_cmd(av->isys, ip->stream_handle, buf,
+				to_dma_addr(msg), sizeof(*buf),
+				IPU_FW_ISYS_SEND_TYPE_STREAM_CAPTURE);
+
+			if (rval < 0) {
+				dev_err(dev, "can't queue buffers (%d)\n", rval);
+				goto out_stream_close;
+			}
+		}
+	}
 	dev_dbg(dev, "start stream: complete\n");
 	return 0;
 
