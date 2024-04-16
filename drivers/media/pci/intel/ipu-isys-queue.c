@@ -14,6 +14,7 @@
 #include "ipu.h"
 #include "ipu-bus.h"
 #include "ipu-cpd.h"
+#include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-buttress.h"
 #include "ipu-isys.h"
 #include "ipu-isys-csi2.h"
@@ -1244,13 +1245,13 @@ void ipu_isys_queue_buf_done(struct ipu_isys_buffer *ib)
 {
 	struct vb2_buffer *vb = ipu_isys_buffer_to_vb2_buffer(ib);
 
-	if (atomic_read(&ib->str2mmio_flag)) {
+	if (atomic_read(&ib->ib_err_flag)) {
 		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
 		/*
 		 * Operation on buffer is ended with error and will be reported
 		 * to the userspace when it is de-queued
 		 */
-		atomic_set(&ib->str2mmio_flag, 0);
+		atomic_set(&ib->ib_err_flag, 0);
 	} else if (atomic_read(&ib->skipframe_flag)) {
 		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
 		atomic_set(&ib->skipframe_flag, 0);
@@ -1295,14 +1296,29 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 			first = false;
 			continue;
 		}
+		unsigned int i;
+		u32 mask = 0;
+		u32 csi2_status = ip->csi2->receiver_errors;
+		u32 irq = readl(ip->csi2->base + CSI_PORT_REG_BASE_IRQ_CSI +
+			CSI_PORT_REG_BASE_IRQ_STATUS_OFFSET);
+
+		mask = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+			ipu_ver == IPU_VER_6EP_MTL) ?
+			IPU6_CSI_RX_ERROR_IRQ_MASK : IPU6SE_CSI_RX_ERROR_IRQ_MASK;
+
+		csi2_status |= irq & mask;
 
 		if (info->error_info.error ==
-		    IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO) {
+		    IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO ||
+		    csi2_status != 0) {
 			/*
 			 * Check for error message:
-			 * 'IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO'
+			 * 'IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO' &
+			 * CSI2 errors
 			 */
-			atomic_set(&ib->str2mmio_flag, 1);
+			dev_dbg(&isys->adev->dev, "buffer: csi2_status: 0x%x, info error: %d\n",
+				csi2_status, info->error_info.error);
+			atomic_set(&ib->ib_err_flag, 1);
 		}
 		dev_dbg(&isys->adev->dev, "buffer: found buffer %pad\n", &addr);
 
