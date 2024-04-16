@@ -224,7 +224,7 @@ void update_str(struct device *dev,
 {
 	if (strcmp(old_str, new_str) != 0) {
 		dev_info(dev, "%s %s -> %s", msg, old_str, new_str);
-		strlcpy(old_str, new_str, strlen(new_str)+1);
+		strscpy(old_str, new_str, strlen(new_str)+1);
 	}
 }
 
@@ -515,7 +515,7 @@ void set_lt_gpio(struct control_logic_data *ctl_data, struct sensor_platform_dat
 				(*pdata)->irq_pin_flags = IRQF_TRIGGER_RISING |
 							IRQF_TRIGGER_FALLING |
 							IRQF_ONESHOT;
-				strlcpy((*pdata)->irq_pin_name, "READY_STAT", sizeof("READY_STAT"));
+				strscpy((*pdata)->irq_pin_name, "READY_STAT", sizeof("READY_STAT"));
 			}
 
 			/* check for HDMI_DETECT selection in BIOS */
@@ -574,8 +574,8 @@ void set_i2c(struct ipu_isys_subdev_info **sensor_sd,
 	dev_info(dev, "IPU6 ACPI: kernel I2C BDF: %s, kernel I2C bus = %s",
 		dev_name(dev->parent->parent->parent), dev_name(dev->parent));
 	(*sensor_sd)->i2c.board_info.addr = addr;
-	strlcpy((*sensor_sd)->i2c.board_info.type, sensor_name, I2C_NAME_SIZE);
-	strlcpy((*sensor_sd)->i2c.i2c_adapter_bdf, dev_name(dev->parent->parent->parent),
+	strscpy((*sensor_sd)->i2c.board_info.type, sensor_name, I2C_NAME_SIZE);
+	strscpy((*sensor_sd)->i2c.i2c_adapter_bdf, dev_name(dev->parent->parent->parent),
 		sizeof((*sensor_sd)->i2c.i2c_adapter_bdf));
 }
 
@@ -584,7 +584,7 @@ void set_serdes_sd_pdata(struct serdes_module_pdata **module_pdata, char sensor_
 {
 	/* general */
 	(*module_pdata)->lanes = lanes;
-	strlcpy((*module_pdata)->module_name, sensor_name, I2C_NAME_SIZE);
+	strscpy((*module_pdata)->module_name, sensor_name, I2C_NAME_SIZE);
 
 	/* TI960 and IMX390 specific */
 	if (!strcmp(sensor_name, IMX390_NAME)) {
@@ -626,7 +626,7 @@ int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 		set_serdes_sd_pdata(&module_pdata[i], sensor_name, lanes);
 
 		/* board info */
-		strlcpy(serdes_sdinfo[i].board_info.type, sensor_name, I2C_NAME_SIZE);
+		strscpy(serdes_sdinfo[i].board_info.type, sensor_name, I2C_NAME_SIZE);
 		if (!strcmp(sensor_name, D457_NAME)) {
 			if (i == 0)
 				serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr;

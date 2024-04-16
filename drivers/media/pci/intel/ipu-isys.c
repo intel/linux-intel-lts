@@ -530,11 +530,11 @@ static int isys_register_devices(struct ipu_isys *isys)
 
 	isys->media_dev.dev = &isys->adev->dev;
 	isys->media_dev.ops = &isys_mdev_ops;
-	strlcpy(isys->media_dev.model,
+	strscpy(isys->media_dev.model,
 		IPU_MEDIA_DEV_MODEL_NAME, sizeof(isys->media_dev.model));
 	snprintf(isys->media_dev.bus_info, sizeof(isys->media_dev.bus_info),
 		 "pci:%s", dev_name(isys->adev->dev.parent->parent));
-	strlcpy(isys->v4l2_dev.name, isys->media_dev.model,
+	strscpy(isys->v4l2_dev.name, isys->media_dev.model,
 		sizeof(isys->v4l2_dev.name));
 
 	media_device_init(&isys->media_dev);

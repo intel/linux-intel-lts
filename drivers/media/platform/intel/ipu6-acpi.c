@@ -110,7 +110,7 @@ static int ipu_acpi_get_pdata(struct i2c_client *client,
 	if (!camdata)
 		return -ENOMEM;
 
-	strlcpy(client->name, supported_devices[index].real_driver,
+	strscpy(client->name, supported_devices[index].real_driver,
 		sizeof(client->name));
 
 	pr_info("IPU6 ACPI: Getting BIOS data for %s (%s)", client->name, dev_name(&client->dev));
