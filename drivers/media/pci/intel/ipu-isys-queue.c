@@ -1315,6 +1315,8 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 			 * 'IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO' &
 			 * CSI2 errors
 			 */
+			dev_dbg(&isys->adev->dev, "buffer: csi2_status: 0x%x, fw error: %d\n",
+				csi2_status, info->error_info.error);
 			atomic_set(&ib->ib_err_flag, 1);
 		}
 		dev_dbg(&isys->adev->dev, "buffer: found buffer %pad\n", &addr);
@@ -1328,15 +1330,10 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 		ipu_isys_buf_calc_sequence_time(ib, info);
 		struct vb2_buffer *vb = ipu_isys_buffer_to_vb2_buffer(ib);
 		struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
-		int i = 0;
 
-		if (atomic_read(&ib->ib_err_flag)) {
-			for (i = 0; i < CSI_RX_NUM_ERRORS_IN_IRQ; i++) {
-				if (csi2_status & BIT(i))
-					dev_err(&isys->adev->dev, "csi2-%i error: bit = %d #%d\n",
-							ip->csi2->index, i, vbuf->sequence);
-			}
-		}
+		if (atomic_read(&ib->ib_err_flag))
+			dev_err(&isys->adev->dev, "csi2-%i error: #%d\n",
+					ip->csi2->index, vbuf->sequence);
 		/*
 		 * For interlaced buffers, the notification to user space
 		 * is postponed to capture_done event since the field
