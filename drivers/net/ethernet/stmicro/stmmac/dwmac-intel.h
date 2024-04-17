@@ -123,6 +123,12 @@ static const struct pmc_serdes_regs pid_modphy1_2p5g_regs[] = {
 	{ PID_MODPHY1_N_MODPHY_PCR_CMN_ANA_DWORD30,	N_MODPHY_PCR_CMN_ANA_DWORD30_2P5G },
 	{}
 };
+
+static const int adln_rplp_tsn_lane_registers[] = {6, 7};
+static const int ehl_tsn_lane_registers[] = {7, 8, 9, 10, 11};
+#else
+static const int adln_rplp_tsn_lane_registers[] = {};
+static const int ehl_tsn_lane_registers[] = {};
 #endif /* CONFIG_INTEL_PMC_IPC */
 
 #endif /* __DWMAC_INTEL_H__ */
