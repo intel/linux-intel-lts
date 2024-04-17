@@ -236,6 +236,9 @@ struct plat_stmmacenet_data {
 	void (*speed_mode_2500)(struct net_device *ndev, void *priv);
 	unsigned int (*get_pcs_neg_mode)(phy_interface_t interface,
 					 struct pci_dev *pdev);
+	int (*config_serdes)(struct net_device *ndev,
+			     void *priv,
+			     phy_interface_t interface);
 	void (*ptp_clk_freq_config)(struct stmmac_priv *priv);
 	int (*init)(struct platform_device *pdev, void *priv);
 	void (*exit)(struct platform_device *pdev, void *priv);
