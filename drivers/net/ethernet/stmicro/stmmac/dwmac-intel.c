@@ -416,6 +416,39 @@ static void intel_mgbe_pse_crossts_adj(struct intel_priv_data *intel_priv,
 	}
 }
 
+static bool is_fixed_link(struct pci_dev *pdev)
+{
+	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+	bool is_fixed_link = false;
+
+	if (fwnode) {
+		struct fwnode_handle *fixed_node;
+
+		fixed_node = fwnode_get_named_child_node(fwnode, "fixed-link");
+		if (fixed_node)
+			is_fixed_link = true;
+
+		fwnode_handle_put(fixed_node);
+	}
+
+	return is_fixed_link;
+}
+
+static unsigned int intel_get_pcs_neg_mode(phy_interface_t interface,
+					   struct pci_dev *pdev)
+{
+	unsigned int neg_mode;
+
+	if ((interface == PHY_INTERFACE_MODE_SGMII ||
+	     interface == PHY_INTERFACE_MODE_1000BASEX) &&
+	     !is_fixed_link(pdev))
+		neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
+	else
+		neg_mode = PHYLINK_PCS_NEG_OUTBAND;
+
+	return neg_mode;
+}
+
 static void common_default_data(struct plat_stmmacenet_data *plat)
 {
 	plat->clk_csr = 2;	/* clk_csr_i = 20-35MHz & MDC = clk_csr_i/16 */
@@ -651,7 +684,7 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	plat->speed_mode_2500 = intel_speed_mode_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
-
+	plat->get_pcs_neg_mode = intel_get_pcs_neg_mode;
 	plat->clk_ptp_rate = 204800000;
 
 	return ehl_common_data(pdev, plat);
@@ -710,6 +743,7 @@ static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 	plat->speed_mode_2500 = intel_speed_mode_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
+	plat->get_pcs_neg_mode = intel_get_pcs_neg_mode;
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -751,6 +785,7 @@ static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 	plat->speed_mode_2500 = intel_speed_mode_2500;
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
+	plat->get_pcs_neg_mode = intel_get_pcs_neg_mode;
 	return ehl_pse1_common_data(pdev, plat);
 }
 
