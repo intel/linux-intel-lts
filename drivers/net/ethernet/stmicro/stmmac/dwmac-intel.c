@@ -5,6 +5,7 @@
 #include <linux/clk-provider.h>
 #include <linux/pci.h>
 #include <linux/dmi.h>
+#include <linux/platform_data/x86/intel_pmc_ipc.h>
 #include "dwmac-intel.h"
 #include "dwmac4.h"
 #include "stmmac.h"
@@ -14,6 +15,9 @@ struct intel_priv_data {
 	int mdio_adhoc_addr;	/* mdio address for serdes & etc */
 	unsigned long crossts_adj;
 	bool is_pse;
+	const int *tsn_lane_registers;
+	int max_tsn_lane_registers;
+	int pid_modphy;
 };
 
 /* This struct is used to associate PCI Function of MAC controller on a board,
@@ -93,7 +97,7 @@ static int intel_serdes_powerup(struct net_device *ndev, void *priv_data)
 	data &= ~SERDES_RATE_MASK;
 	data &= ~SERDES_PCLK_MASK;
 
-	if (priv->plat->max_speed == 2500)
+	if (priv->plat->phy_interface == PHY_INTERFACE_MODE_2500BASEX)
 		data |= SERDES_RATE_PCIE_GEN2 << SERDES_RATE_PCIE_SHIFT |
 			SERDES_PCLK_37p5MHZ << SERDES_PCLK_SHIFT;
 	else
@@ -449,6 +453,103 @@ static unsigned int intel_get_pcs_neg_mode(phy_interface_t interface,
 	return neg_mode;
 }
 
+static bool intel_tsn_interface_is_available(struct net_device *ndev,
+					     struct intel_priv_data *intel_priv)
+{
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	struct pmc_ipc_cmd tmp = {0};
+	u32 rbuf[4] = {0};
+	int ret, i, j;
+
+	if (priv->plat->serdes_powerup) {
+		tmp.cmd = IPC_SOC_REGISTER_ACCESS;
+		tmp.sub_cmd = IPC_SOC_SUB_CMD_READ;
+
+		for (i = 0; i < 5; i++) {
+			tmp.wbuf[0] = R_PCH_FIA_15_PCR_LOS1_REG_BASE + i;
+
+			ret = intel_pmc_ipc(&tmp, rbuf);
+			if (ret < 0) {
+				netdev_info(priv->dev,
+					    "Failed to read from PMC.\n");
+				return false;
+			}
+
+			for (j = 0; j <= intel_priv->max_tsn_lane_registers; j++)
+				if ((rbuf[0] >>
+				    (4 * (intel_priv->tsn_lane_registers[j] % 8)) &
+				     B_PCH_FIA_PCR_L0O) == 0xB)
+					return true;
+		}
+	}
+	return false;
+}
+
+static int intel_set_reg_access(const struct pmc_serdes_regs *regs, int max_regs)
+{
+	int ret = 0, i;
+
+	for (i = 0; i < max_regs; i++) {
+		struct pmc_ipc_cmd tmp = {0};
+		u32 buf[4] = {0};
+
+		tmp.cmd = IPC_SOC_REGISTER_ACCESS;
+		tmp.sub_cmd = IPC_SOC_SUB_CMD_WRITE;
+		tmp.wbuf[0] = (u32)regs[i].index;
+		tmp.wbuf[1] = regs[i].val;
+
+		ret = intel_pmc_ipc(&tmp, buf);
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
+}
+
+static int intel_config_serdes(struct net_device *ndev,
+			       void *intel_data,
+			       phy_interface_t interface)
+{
+	struct intel_priv_data *intel_priv = intel_data;
+	struct stmmac_priv *priv = netdev_priv(ndev);
+	int ret = 0;
+
+	if (!intel_tsn_interface_is_available(ndev, intel_priv)) {
+		netdev_info(priv->dev,
+			    "No TSN interface available to set the registers.\n");
+		goto pmc_read_error;
+	}
+
+	if (intel_priv->pid_modphy == PID_MODPHY1) {
+		if (interface == PHY_INTERFACE_MODE_2500BASEX) {
+			ret = intel_set_reg_access(pid_modphy1_2p5g_regs,
+						   ARRAY_SIZE(pid_modphy1_2p5g_regs));
+		} else {
+			ret = intel_set_reg_access(pid_modphy1_1g_regs,
+						   ARRAY_SIZE(pid_modphy1_1g_regs));
+		}
+	} else {
+		if (interface == PHY_INTERFACE_MODE_2500BASEX) {
+			ret = intel_set_reg_access(pid_modphy3_2p5g_regs,
+						   ARRAY_SIZE(pid_modphy3_2p5g_regs));
+		} else {
+			ret = intel_set_reg_access(pid_modphy3_1g_regs,
+						   ARRAY_SIZE(pid_modphy3_1g_regs));
+		}
+	}
+
+	priv->plat->phy_interface = interface;
+
+	if (ret < 0)
+		goto pmc_read_error;
+
+pmc_read_error:
+	intel_serdes_powerdown(ndev, intel_priv);
+	intel_serdes_powerup(ndev, intel_priv);
+
+	return ret;
+}
+
 static void common_default_data(struct plat_stmmacenet_data *plat)
 {
 	plat->clk_csr = 2;	/* clk_csr_i = 20-35MHz & MDC = clk_csr_i/16 */
@@ -635,6 +736,15 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 		plat->select_pcs = intel_mgbe_select_pcs;
 	}
 
+	/* When the platform is able to switch between PHY_INTERFACE_MODE_SGMII
+	 * and PHY_INTERFACE_MODE_2500BASEX interfaces, we clear xpcs_an_inband
+	 * for PHY_INTERFACE_MODE_2500BASEX interface
+	 */
+	if (plat->phy_interface == PHY_INTERFACE_MODE_SGMII &&
+	    plat->max_speed == 2500) {
+		plat->mdio_bus_data->default_an_inband = false;
+	}
+
 	/* Ensure mdio bus scan skips intel serdes and pcs-xpcs */
 	plat->mdio_bus_data->phy_mask = 1 << INTEL_MGBE_ADHOC_ADDR;
 	plat->mdio_bus_data->phy_mask |= 1 << INTEL_MGBE_XPCS_ADDR;
@@ -685,6 +795,7 @@ static int ehl_sgmii_data(struct pci_dev *pdev,
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
 	plat->get_pcs_neg_mode = intel_get_pcs_neg_mode;
+	plat->config_serdes = intel_config_serdes;
 	plat->clk_ptp_rate = 204800000;
 
 	return ehl_common_data(pdev, plat);
@@ -744,6 +855,7 @@ static int ehl_pse0_sgmii1g_data(struct pci_dev *pdev,
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
 	plat->get_pcs_neg_mode = intel_get_pcs_neg_mode;
+	plat->config_serdes = intel_config_serdes;
 	return ehl_pse0_common_data(pdev, plat);
 }
 
@@ -786,6 +898,7 @@ static int ehl_pse1_sgmii1g_data(struct pci_dev *pdev,
 	plat->serdes_powerup = intel_serdes_powerup;
 	plat->serdes_powerdown = intel_serdes_powerdown;
 	plat->get_pcs_neg_mode = intel_get_pcs_neg_mode;
+	plat->config_serdes = intel_config_serdes;
 	return ehl_pse1_common_data(pdev, plat);
 }
 

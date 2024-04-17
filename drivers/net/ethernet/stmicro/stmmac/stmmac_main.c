@@ -1133,6 +1133,18 @@ static unsigned int stmmac_get_pcs_neg_mode(struct phylink_config *config,
 	return neg_mode;
 }
 
+static int stmmac_mac_finish(struct phylink_config *config, unsigned int mode,
+			     phy_interface_t interface)
+{
+	struct net_device *ndev = to_net_dev(config->dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
+
+	if (priv->plat->config_serdes)
+		priv->plat->config_serdes(ndev, priv->plat->bsp_priv, interface);
+
+	return 0;
+}
+
 static const struct phylink_mac_ops stmmac_phylink_mac_ops = {
 	.mac_get_caps = stmmac_mac_get_caps,
 	.mac_select_pcs = stmmac_mac_select_pcs,
@@ -1140,6 +1152,7 @@ static const struct phylink_mac_ops stmmac_phylink_mac_ops = {
 	.mac_link_down = stmmac_mac_link_down,
 	.mac_link_up = stmmac_mac_link_up,
 	.mac_get_pcs_neg_mode = stmmac_get_pcs_neg_mode,
+	.mac_finish = stmmac_mac_finish,
 };
 
 /**
