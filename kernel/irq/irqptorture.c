@@ -89,7 +89,6 @@ static int test_stop_machine(void)
 		goto fail;
 	}
 
-	ret = -EINVAL;
 	d.origin_cpu = raw_smp_processor_id();
 	pr_alert("irq_pipeline" TORTURE_FLAG
 		 " CPU%d initiates stop_machine()\n",
