@@ -268,7 +268,7 @@ static int test_interstage_work_injection(void)
 	if (ret)
 		return ret;
 
-	ret = wait_for_completion_timeout(&p->done, HZ / 10);
+	rem = wait_for_completion_timeout(&p->done, HZ / 10);
 	if (!rem) {
 		pr_alert("irq_pipeline" TORTURE_FLAG
 			 " CPU%d: irq_work trigger from oob"
