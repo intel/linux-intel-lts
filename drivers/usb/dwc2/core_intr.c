@@ -406,7 +406,10 @@ void dwc2_wakeup_from_lpm_l1(struct dwc2_hsotg *hsotg, bool remotewakeup)
 		call_gadget(hsotg, resume);
 		/* Change to L0 state */
 		hsotg->lx_state = DWC2_L0;
+#if IS_ENABLED(CONFIG_USB_DWC2_HOST) ||	\
+	IS_ENABLED(CONFIG_USB_DWC2_DUAL_ROLE)
 		hsotg->bus_suspended = false;
+#endif
 fail:		dwc2_gadget_init_lpm(hsotg);
 	} else {
 		/* TODO */
