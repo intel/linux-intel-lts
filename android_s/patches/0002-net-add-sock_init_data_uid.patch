@@ -18,11 +18,11 @@ Signed-off-by: David S. Miller <davem@davemloft.net>
  net/core/sock.c    | 24 ++++++++++++++++++++----
  2 files changed, 26 insertions(+), 5 deletions(-)
 
-diff --git a/include/net/sock.h b/include/net/sock.h
-index 30315a03b4ab..94d53f1fcd9d 100644
+Index: b/include/net/sock.h
+===================================================================
 --- a/include/net/sock.h
 +++ b/include/net/sock.h
-@@ -1678,7 +1678,12 @@ void sk_common_release(struct sock *sk);
+@@ -1718,7 +1718,12 @@ void sk_common_release(struct sock *sk);
   *	Default socket callbacks and setup code
   */
  
@@ -36,27 +36,20 @@ index 30315a03b4ab..94d53f1fcd9d 100644
  void sock_init_data(struct socket *sock, struct sock *sk);
  
  /*
-diff --git a/net/core/sock.c b/net/core/sock.c
-index cd23a8e4556c..c98bf0beec3c 100644
+Index: b/net/core/sock.c
+===================================================================
 --- a/net/core/sock.c
 +++ b/net/core/sock.c
-@@ -2792,7 +2792,14 @@ void sk_stop_timer(struct sock *sk, struct timer_list* timer)
+@@ -2811,7 +2811,7 @@ void sk_stop_timer_sync(struct sock *sk,
  }
- EXPORT_SYMBOL(sk_stop_timer);
+ EXPORT_SYMBOL(sk_stop_timer_sync);
  
 -void sock_init_data(struct socket *sock, struct sock *sk)
-+void sk_stop_timer_sync(struct sock *sk, struct timer_list *timer)
-+{
-+	if (del_timer_sync(timer))
-+		__sock_put(sk);
-+}
-+EXPORT_SYMBOL(sk_stop_timer_sync);
-+
 +void sock_init_data_uid(struct socket *sock, struct sock *sk, kuid_t uid)
  {
  	sk_init_common(sk);
  	sk->sk_send_head	=	NULL;
-@@ -2811,11 +2818,10 @@ void sock_init_data(struct socket *sock, struct sock *sk)
+@@ -2830,11 +2830,10 @@ void sock_init_data(struct socket *sock,
  		sk->sk_type	=	sock->type;
  		sk->sk_wq	=	sock->wq;
  		sock->sk	=	sk;
@@ -70,7 +63,7 @@ index cd23a8e4556c..c98bf0beec3c 100644
  
  	rwlock_init(&sk->sk_callback_lock);
  	if (sk->sk_kern_sock)
-@@ -2873,6 +2879,16 @@ void sock_init_data(struct socket *sock, struct sock *sk)
+@@ -2892,6 +2891,16 @@ void sock_init_data(struct socket *sock,
  	refcount_set(&sk->sk_refcnt, 1);
  	atomic_set(&sk->sk_drops, 0);
  }
@@ -87,6 +80,3 @@ index cd23a8e4556c..c98bf0beec3c 100644
  EXPORT_SYMBOL(sock_init_data);
  
  void lock_sock_nested(struct sock *sk, int subclass)
--- 
-2.25.1
-
