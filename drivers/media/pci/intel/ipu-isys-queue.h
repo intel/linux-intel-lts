@@ -48,7 +48,7 @@ struct ipu_isys_buffer {
 	enum ipu_isys_buffer_type type;
 	struct list_head req_head;
 	struct media_device_request *req;
-	atomic_t str2mmio_flag;
+	atomic_t ib_err_flag;
 	atomic_t skipframe_flag;
 };
 
