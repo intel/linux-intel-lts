@@ -584,3 +584,7 @@ int intel_iov_ggtt_shadow_restore(struct intel_iov *iov, unsigned int vfid, cons
 
 	return err ?: size;
 }
+
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+#include "selftests/selftest_mock_iov_ggtt.c"
+#endif
