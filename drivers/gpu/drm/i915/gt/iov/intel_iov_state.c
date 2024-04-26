@@ -6,6 +6,7 @@
 #include "i915_pci.h"
 #include "intel_iov.h"
 #include "intel_iov_event.h"
+#include "intel_iov_ggtt.h"
 #include "intel_iov_state.h"
 #include "intel_iov_utils.h"
 #include "gt/intel_gt.h"
