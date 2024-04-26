@@ -1870,7 +1870,16 @@ int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, unsigned int vfid, u64
 				  struct sg_table *st, u32 num_entries,
 				  const gen8_pte_t pte_pattern)
 {
+	I915_SELFTEST_DECLARE(struct intel_iov_pf_ggtt *iov_ggtt);
 	int ret;
+
+	GEM_BUG_ON(!IS_SRIOV_PF(ggtt->vm.i915));
+
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+	iov_ggtt = &ggtt->vm.gt->iov.pf.ggtt;
+	if (iov_ggtt->selftest.mock_update_ptes)
+		return iov_ggtt->selftest.mock_update_ptes(&ggtt->vm.gt->iov, st, pte_pattern);
+#endif
 
 	if (should_update_ggtt_with_bind(ggtt))
 		ret = gen8_ggtt_bind_ptes(ggtt, ggtt_addr >> PAGE_SHIFT, st, num_entries,
