@@ -58,6 +58,7 @@ static const i915_reg_t mtl_runtime_regs[] = {
 	_MMIO(MTL_GSC_HECI1_BASE + HECI_FWSTS5),/* _MMIO(0x116c68) */
 	MTL_GT_ACTIVITY_FACTOR,		/* _MMIO(0x138010) */
 	_MMIO(0x389140),
+	_MMIO(0x38C1DC),                /* _MMIO(0x38C1DC) */
 };
 
 static const i915_reg_t *get_runtime_regs(struct drm_i915_private *i915,
@@ -229,9 +230,20 @@ void intel_iov_service_release(struct intel_iov *iov)
  */
 void intel_iov_service_update(struct intel_iov *iov)
 {
+	struct intel_gt *media_gt = iov_to_i915(iov)->media_gt;
+	enum forcewake_domains fw;
+
 	GEM_BUG_ON(!intel_iov_is_pf(iov));
 
+	if (media_gt) {
+		fw = intel_uncore_forcewake_for_reg(media_gt->uncore, _MMIO(0x38c1dc), FW_REG_READ);
+		intel_uncore_forcewake_get(media_gt->uncore, fw);
+	}
+
 	pf_prepare_runtime_info(iov);
+
+	if (media_gt)
+		intel_uncore_forcewake_put(media_gt->uncore, fw);
 }
 
 /**
