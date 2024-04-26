@@ -540,9 +540,7 @@ int i915_sriov_pf_enable_vfs(struct drm_i915_private *i915, int num_vfs)
 		 * Update cached values of runtime registers shared with the VFs in case
 		 * HuC status register has been updated by the GSC after our initial probe.
 		 */
-		if (intel_uc_wants_huc(&gt->uc) && intel_huc_is_loaded_by_gsc(&gt->uc.huc)) {
-			intel_iov_service_update(&gt->iov);
-		}
+		intel_iov_service_update(&gt->iov);
 	}
 
 	for_each_gt(gt, i915, id) {
