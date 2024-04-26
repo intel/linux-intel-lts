@@ -578,8 +578,15 @@ ssize_t intel_iov_state_save_ggtt(struct intel_iov *iov, u32 vfid, void *buf, si
 		goto out;
 	}
 
-	with_intel_runtime_pm(rpm, wakeref)
-		ret = i915_ggtt_save_ptes(ggtt, node, buf, size, I915_GGTT_SAVE_PTES_NO_VFID);
+	with_intel_runtime_pm(rpm, wakeref) {
+		unsigned int flags = I915_GGTT_SAVE_PTES_NO_VFID;
+
+		/* Wa_22018453856 */
+		if (i915_ggtt_require_binder(iov_to_i915(iov)))
+			ret = intel_iov_ggtt_shadow_save(iov, vfid, buf, size, flags);
+		else
+			ret = i915_ggtt_save_ptes(ggtt, node, buf, size, flags);
+	}
 
 out:
 	mutex_unlock(pf_provisioning_mutex(iov));
@@ -610,10 +617,16 @@ int intel_iov_state_restore_ggtt(struct intel_iov *iov, u32 vfid, const void *bu
 
 	mutex_lock(pf_provisioning_mutex(iov));
 
-	with_intel_runtime_pm(rpm, wakeref)
-		ret = i915_ggtt_restore_ptes(ggtt, node, buf, size,
-					     FIELD_PREP(I915_GGTT_RESTORE_PTES_VFID_MASK, vfid) |
-					     I915_GGTT_RESTORE_PTES_NEW_VFID);
+	with_intel_runtime_pm(rpm, wakeref) {
+		unsigned int flags = FIELD_PREP(I915_GGTT_RESTORE_PTES_VFID_MASK, vfid) |
+						I915_GGTT_RESTORE_PTES_NEW_VFID;
+
+		/* Wa_22018453856 */
+		if (i915_ggtt_require_binder(iov_to_i915(iov)))
+			ret = intel_iov_ggtt_shadow_restore(iov, vfid, buf, size, flags);
+		else
+			ret = i915_ggtt_restore_ptes(ggtt, node, buf, size, flags);
+	}
 
 	mutex_unlock(pf_provisioning_mutex(iov));
 
