@@ -179,6 +179,8 @@ struct intel_iov_vf_runtime {
 	} *regs;
 };
 
+struct intel_iov;
+
 /**
  * struct intel_iov_ggtt_shadow - shadow GGTT data for single VF.
  * @ptes: pointer to a buffer that stores the GGTT PTEs of a specific VF.
@@ -197,6 +199,16 @@ struct intel_iov_ggtt_shadow {
  */
 struct intel_iov_pf_ggtt {
 	struct intel_iov_ggtt_shadow *shadows_ggtt;
+	/** @selftest: IOV GGTT selftests data.*/
+	I915_SELFTEST_DECLARE(struct {
+		/**
+		 * @selftest.mock_update_ptes: pointer to a function used to mock GGTT
+		 * updates by the GPU. (For selftest purposes only)
+		 */
+		int (*mock_update_ptes)(struct intel_iov *, struct sg_table *, gen8_pte_t);
+		/** @selftest.ptes: GGTT storage buffer during selftests.*/
+		gen8_pte_t *ptes;
+	} selftest);
 };
 
 /**
