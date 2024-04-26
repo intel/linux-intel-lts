@@ -627,8 +627,9 @@ int i915_ggtt_balloon(struct i915_ggtt *ggtt, u64 start, u64 end,
 		      struct drm_mm_node *node);
 void i915_ggtt_deballoon(struct i915_ggtt *ggtt, struct drm_mm_node *node);
 
-int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, u32 offset, struct sg_table *st,
-				  u32 num_entries, const gen8_pte_t pte_pattern);
+int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, unsigned int vfid, u64 ggtt_addr,
+				  struct sg_table *st, u32 num_entries,
+				  const gen8_pte_t pte_pattern);
 gen8_pte_t i915_ggtt_prepare_vf_pte(u16 vfid);
 void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
 			       const struct drm_mm_node *node);

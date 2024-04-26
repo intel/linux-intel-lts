@@ -1846,8 +1846,29 @@ static int sgtable_update_ptes_via_cpu(struct i915_ggtt *ggtt, u32 ggtt_addr, st
 	return n;
 }
 
-int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, u32 ggtt_addr, struct sg_table *st,
-				  u32 num_entries, const gen8_pte_t pte_pattern)
+static void sgtable_update_shadow_ggtt(struct i915_ggtt *ggtt, unsigned int vfid,
+					    u64 ggtt_addr, struct sg_table *st, u32 num_entries,
+					    const gen8_pte_t pte_pattern)
+{
+	struct intel_iov *iov = &ggtt->vm.gt->iov;
+	dma_addr_t addr;
+	struct sgt_iter iter;
+
+	if (!st) {
+		while (num_entries--) {
+			intel_iov_ggtt_shadow_set_pte(iov, vfid, ggtt_addr, pte_pattern);
+			ggtt_addr += I915_GTT_PAGE_SIZE_4K;
+		}
+		return;
+	}
+
+	for_each_sgt_daddr(addr, iter, st)
+		intel_iov_ggtt_shadow_set_pte(iov, vfid, ggtt_addr, pte_pattern | addr);
+}
+
+int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, unsigned int vfid, u64 ggtt_addr,
+				  struct sg_table *st, u32 num_entries,
+				  const gen8_pte_t pte_pattern)
 {
 	int ret;
 
@@ -1857,6 +1878,18 @@ int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, u32 ggtt_addr, struct 
 	else
 		ret = sgtable_update_ptes_via_cpu(ggtt, ggtt_addr, st, num_entries, pte_pattern);
 
+	if (ret <= 0)
+		goto out;
+
+	/*
+	 * If we update the GGTT for PF in this function, it means that we
+	 * release the GGTT owned by VF. In this case, we don't need to update
+	 * the GGTT shadow, because it should be removed immediately.
+	 */
+	if (vfid != PFID)
+		sgtable_update_shadow_ggtt(ggtt, vfid, ggtt_addr, st, num_entries, pte_pattern);
+
+out:
 	return (ret) ? 0 : -EIO;
 }
 
@@ -1890,8 +1923,8 @@ void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
 	/* Wa_22018453856 */
 	if (i915_ggtt_require_binder(ggtt->vm.i915) &&
 	    should_update_ggtt_with_bind(ggtt) &&
-	    gen8_ggtt_bind_ptes(ggtt, base >> PAGE_SHIFT, NULL, size / PAGE_SIZE, pte))
-		goto invalidate;
+	    i915_ggtt_sgtable_update_ptes(ggtt, vfid, base, NULL, size / PAGE_SIZE, pte))
+			goto invalidate;
 
 	gtt_entries += base >> PAGE_SHIFT;
 	while (size) {
