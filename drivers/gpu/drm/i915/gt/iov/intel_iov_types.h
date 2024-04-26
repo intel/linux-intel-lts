@@ -180,6 +180,26 @@ struct intel_iov_vf_runtime {
 };
 
 /**
+ * struct intel_iov_ggtt_shadow - shadow GGTT data for single VF.
+ * @ptes: pointer to a buffer that stores the GGTT PTEs of a specific VF.
+ * @ggtt_region: pointer to the ggtt_region assigned to a specific VF during provisioning.
+ * @vfid: vfid VF, to which the data in this structure belongs.
+ */
+struct intel_iov_ggtt_shadow {
+	gen8_pte_t *ptes;
+	struct drm_mm_node *ggtt_region;
+	unsigned int vfid;
+};
+
+/**
+ * struct intel_iov_pf_ggtt - PF-specific GGTT data.
+ * @shadows_ggtt: shadow GGTT VFs array.
+ */
+struct intel_iov_pf_ggtt {
+	struct intel_iov_ggtt_shadow *shadows_ggtt;
+};
+
+/**
  * struct intel_iov_vf_ggtt_ptes - Placeholder for the VF PTEs data.
  * @ptes: an array of buffered GGTT PTEs awaiting update by PF.
  * @count: count of the buffered PTEs in the array.
@@ -273,6 +293,7 @@ struct intel_iov {
 			struct intel_iov_provisioning provisioning;
 			struct intel_iov_service service;
 			struct intel_iov_state state;
+			struct intel_iov_pf_ggtt ggtt;
 		} pf;
 
 		struct {
