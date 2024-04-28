@@ -1,0 +1,51 @@
+From 467e494f737c52a1db193176b2869dcbc8000670 Mon Sep 17 00:00:00 2001
+From: Daniil Dulov <d.dulov@aladdin.ru>
+Date: Mon, 19 Feb 2024 14:39:03 +0000
+Subject: [PATCH] afs: Increase buffer size in afs_update_volume_status()
+
+[ Upstream commit 6ea38e2aeb72349cad50e38899b0ba6fbcb2af3d ]
+
+The max length of volume->vid value is 20 characters.
+So increase idbuf[] size up to 24 to avoid overflow.
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+[DH: Actually, it's 20 + NUL, so increase it to 24 and use snprintf()]
+
+Fixes: d2ddc776a458 ("afs: Overhaul volume and server record caching and fileserver rotation")
+Signed-off-by: Daniil Dulov <d.dulov@aladdin.ru>
+Signed-off-by: David Howells <dhowells@redhat.com>
+Link: https://lore.kernel.org/r/20240211150442.3416-1-d.dulov@aladdin.ru/ # v1
+Link: https://lore.kernel.org/r/20240212083347.10742-1-d.dulov@aladdin.ru/ # v2
+Link: https://lore.kernel.org/r/20240219143906.138346-3-dhowells@redhat.com
+Signed-off-by: Christian Brauner <brauner@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ fs/afs/volume.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/afs/volume.c b/fs/afs/volume.c
+index 5ec186ec56519..c27e57726a414 100644
+--- a/fs/afs/volume.c
++++ b/fs/afs/volume.c
+@@ -263,7 +263,7 @@ static int afs_update_volume_status(struct afs_volume *volume, struct key *key)
+ {
+ 	struct afs_server_list *new, *old, *discard;
+ 	struct afs_vldb_entry *vldb;
+-	char idbuf[16];
++	char idbuf[24];
+ 	int ret, idsz;
+ 
+ 	_enter("");
+@@ -271,7 +271,7 @@ static int afs_update_volume_status(struct afs_volume *volume, struct key *key)
+ 	/* We look up an ID by passing it as a decimal string in the
+ 	 * operation's name parameter.
+ 	 */
+-	idsz = sprintf(idbuf, "%u", volume->vid);
++	idsz = snprintf(idbuf, sizeof(idbuf), "%llu", volume->vid);
+ 
+ 	vldb = afs_vl_lookup_vldb(volume->cell, key, idbuf, idsz);
+ 	if (IS_ERR(vldb)) {
+-- 
+2.25.1
+

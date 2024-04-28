@@ -108,3 +108,30 @@
 
 # CVE-2023-52435
 0001-net-prevent-mss-overflow-in-skb_segment.patch
+
+# CVE-2021-47063
+0001-drm-bridge-panel-Cleanup-connector-on-bridge-detach.patch
+
+# CVE-2021-47076
+0001-RDMA-rxe-Return-CQE-error-if-invalid-lkey-was-suppli.patch
+
+# CVE-2023-52531
+0001-wifi-iwlwifi-mvm-Fix-a-memory-corruption-issue.patch
+
+# CVE-2024-26622
+0001-tomoyo-fix-UAF-write-bug-in-tomoyo_write_control.patch
+
+# CVE-2021-47112
+0001-x86-kvm-Teardown-PV-features-on-boot-CPU-as-well.patch
+
+# CVE-2023-52629
+0001-sh-push-switch-Reorder-cleanup-operations-to-avoid-u.patch
+
+# CVE-2024-26654
+0001-ALSA-sh-aica-reorder-cleanup-operations-to-avoid-UAF.patch
+
+# CVE-2024-26687
+0001-xen-events-close-evtchn-after-mapping-cleanup.patch
+
+# CVE-2024-26736
+0001-afs-Increase-buffer-size-in-afs_update_volume_status.patch

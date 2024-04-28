@@ -1,0 +1,47 @@
+From 7260b8d0ec05ba47424cf6b4b55d6b29093ec79d Mon Sep 17 00:00:00 2001
+From: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Date: Fri, 1 Mar 2024 22:04:06 +0900
+Subject: [PATCH] tomoyo: fix UAF write bug in tomoyo_write_control()
+
+commit 2f03fc340cac9ea1dc63cbf8c93dd2eb0f227815 upstream.
+
+Since tomoyo_write_control() updates head->write_buf when write()
+of long lines is requested, we need to fetch head->write_buf after
+head->io_sem is held.  Otherwise, concurrent write() requests can
+cause use-after-free-write and double-free problems.
+
+Reported-by: Sam Sun <samsun1006219@gmail.com>
+Closes: https://lkml.kernel.org/r/CAEkJfYNDspuGxYx5kym8Lvp--D36CMDUErg4rxfWFJuPbbji8g@mail.gmail.com
+Fixes: bd03a3e4c9a9 ("TOMOYO: Add policy namespace support.")
+Cc:  <stable@vger.kernel.org> # Linux 3.1+
+Signed-off-by: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ security/tomoyo/common.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/security/tomoyo/common.c b/security/tomoyo/common.c
+index 5ebbf4d063881..7b8af520a3c2c 100644
+--- a/security/tomoyo/common.c
++++ b/security/tomoyo/common.c
+@@ -2584,7 +2584,7 @@ ssize_t tomoyo_write_control(struct tomoyo_io_buffer *head,
+ {
+ 	int error = buffer_len;
+ 	size_t avail_len = buffer_len;
+-	char *cp0 = head->write_buf;
++	char *cp0;
+ 	int idx;
+ 	if (!head->write)
+ 		return -ENOSYS;
+@@ -2592,6 +2592,7 @@ ssize_t tomoyo_write_control(struct tomoyo_io_buffer *head,
+ 		return -EFAULT;
+ 	if (mutex_lock_interruptible(&head->io_sem))
+ 		return -EINTR;
++	cp0 = head->write_buf;
+ 	head->read_user_buf_avail = 0;
+ 	idx = tomoyo_read_lock();
+ 	/* Read a line and dispatch it to the policy handler. */
+-- 
+2.25.1
+

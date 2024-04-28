@@ -1,0 +1,52 @@
+From 1245e5fa0aefc3067d823fe20720283151fbc0f5 Mon Sep 17 00:00:00 2001
+From: Duoming Zhou <duoming@zju.edu.cn>
+Date: Wed, 2 Aug 2023 11:37:37 +0800
+Subject: [PATCH] sh: push-switch: Reorder cleanup operations to avoid
+ use-after-free bug
+
+The original code puts flush_work() before timer_shutdown_sync()
+in switch_drv_remove(). Although we use flush_work() to stop
+the worker, it could be rescheduled in switch_timer(). As a result,
+a use-after-free bug can occur. The details are shown below:
+
+      (cpu 0)                    |      (cpu 1)
+switch_drv_remove()              |
+ flush_work()                    |
+  ...                            |  switch_timer // timer
+                                 |   schedule_work(&psw->work)
+ timer_shutdown_sync()           |
+ ...                             |  switch_work_handler // worker
+ kfree(psw) // free              |
+                                 |   psw->state = 0 // use
+
+This patch puts timer_shutdown_sync() before flush_work() to
+mitigate the bugs. As a result, the worker and timer will be
+stopped safely before the deallocate operations.
+
+Fixes: 9f5e8eee5cfe ("sh: generic push-switch framework.")
+Signed-off-by: Duoming Zhou <duoming@zju.edu.cn>
+Reviewed-by: Geert Uytterhoeven <geert+renesas@glider.be>
+Reviewed-by: John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>
+Link: https://lore.kernel.org/r/20230802033737.9738-1-duoming@zju.edu.cn
+Signed-off-by: John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>
+---
+ arch/sh/drivers/push-switch.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/sh/drivers/push-switch.c b/arch/sh/drivers/push-switch.c
+index 762bc56199105..c258be1dcafa7 100644
+--- a/arch/sh/drivers/push-switch.c
++++ b/arch/sh/drivers/push-switch.c
+@@ -104,8 +104,8 @@ static int switch_drv_remove(struct platform_device *pdev)
+ 		device_remove_file(&pdev->dev, &dev_attr_switch);
+ 
+ 	platform_set_drvdata(pdev, NULL);
++	timer_shutdown_sync(&psw->debounce);
+ 	flush_work(&psw->work);
+-	del_timer_sync(&psw->debounce);
+ 	free_irq(irq, pdev);
+ 
+ 	kfree(psw);
+-- 
+2.25.1
+
