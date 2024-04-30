@@ -203,11 +203,13 @@ long ipu_psys_compat_ioctl32(struct file *file, unsigned int cmd,
 	if (compatible_arg) {
 		err = native_ioctl(file, cmd, (unsigned long)up);
 	} else {
-//		mm_segment_t old_fs = get_fs();
-
-//		set_fs(KERNEL_DS);
-		err = native_ioctl(file, cmd, (unsigned long)&karg);
-//		set_fs(old_fs);
+		err = copy_to_user(up, &karg);
+		if (err)
+			return err;
+		err = native_ioctl(file, cmd, (unsigned long)up);
+		if (err)
+			return err;
+		err = copy_from_user(&karg, up, _IOC_SIZE(cmd));
 	}
 
 	if (err)
