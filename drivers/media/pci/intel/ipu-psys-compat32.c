@@ -203,7 +203,7 @@ long ipu_psys_compat_ioctl32(struct file *file, unsigned int cmd,
 	if (compatible_arg) {
 		err = native_ioctl(file, cmd, (unsigned long)up);
 	} else {
-		err = copy_to_user(up, &karg);
+		err = copy_to_user(up, &karg, _IOC_SIZE(cmd));
 		if (err)
 			return err;
 		err = native_ioctl(file, cmd, (unsigned long)up);
