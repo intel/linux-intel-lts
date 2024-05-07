@@ -181,11 +181,10 @@ static void *ipu_dma_alloc(struct device *dev, size_t size,
 	struct ipu_mmu *mmu = dev_get_drvdata(aiommu);
 	struct page **pages;
 	struct iova *iova;
-	//struct vm_struct *area;
 	int i;
 	int rval;
-    unsigned int count;
-    void *addr;
+	unsigned int count;
+	void *addr;
 
 	size = PAGE_ALIGN(size);
 
@@ -206,30 +205,18 @@ static void *ipu_dma_alloc(struct device *dev, size_t size,
 			goto out_unmap;
 	}
 
-    count = iova->pfn_hi - iova->pfn_lo + 1;
+	count = iova->pfn_hi - iova->pfn_lo + 1;
 
-    addr = vm_map_ram(pages, count, 0);
-
-#if 0
-	area = __get_vm_area_caller(size, 0, VMALLOC_START, VMALLOC_END,
-			     __builtin_return_address(0));
-	if (!area)
+	addr = vmap(pages, count, VM_MAP_PUT_PAGES, PAGE_KERNEL);
+	if (!addr)
 		goto out_unmap;
 
-	area->pages = pages;
-
-	if (map_vm_area(area, PAGE_KERNEL, pages))
-		goto out_vunmap;
-#endif
 
 	*dma_handle = iova->pfn_lo << PAGE_SHIFT;
 
 	mmu->tlb_invalidate(mmu);
 
 	return addr;
-
-//out_vunmap:
-//	vunmap(area->addr);
 
 out_unmap:
 	for (i--; i >= 0; i--) {
@@ -299,7 +286,7 @@ static int ipu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
 	size_t count = PAGE_ALIGN(size) >> PAGE_SHIFT;
 	size_t i;
 
-	if (!area)
+	if (!area || !area->pages)
 		return -EFAULT;
 
 	if (vma->vm_start & ~PAGE_MASK)
