@@ -514,6 +514,7 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 	struct ipu_psys *psys = inode_to_ipu_psys(inode);
 	struct ipu_psys_fh *fh = file->private_data;
 	struct ipu_psys_kbuffer *kbuf, *kbuf0;
+    struct dma_buf_map map;
 
 	mutex_lock(&fh->mutex);
 	/* clean up buffers */
@@ -524,8 +525,9 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 			if (kbuf->dbuf && kbuf->db_attach) {
 				struct dma_buf *dbuf;
 
+				map = (struct dma_buf_map)DMA_BUF_MAP_INIT_VADDR(kbuf->kaddr);
 				kbuf->valid = false;
-				dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
+				dma_buf_vunmap(kbuf->dbuf, &map);
 				dma_buf_unmap_attachment(kbuf->db_attach,
 							 kbuf->sgt,
 							 DMA_BIDIRECTIONAL);
@@ -684,7 +686,7 @@ static long ipu_psys_mapbuf(int fd, struct ipu_psys_fh *fh)
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
 	ret = dma_buf_vmap(kbuf->dbuf, &map);
-	if (!ret) {
+	if (ret) {
 		ret = -EINVAL;
 		goto error_unmap;
 	}
@@ -723,6 +725,7 @@ static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dmabuf;
+    struct dma_buf_map map;
 
 	mutex_lock(&fh->mutex);
 	kbuf = ipu_psys_lookup_kbuffer(fh, fd);
@@ -732,10 +735,12 @@ static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
 		return -EINVAL;
 	}
 
+    map = (struct dma_buf_map)DMA_BUF_MAP_INIT_VADDR(kbuf->kaddr);
+
 	/* From now on it is not safe to use this kbuffer */
 	kbuf->valid = false;
 
-	dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
+	dma_buf_vunmap(kbuf->dbuf, &map);
 	dma_buf_unmap_attachment(kbuf->db_attach, kbuf->sgt, DMA_BIDIRECTIONAL);
 
 	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
