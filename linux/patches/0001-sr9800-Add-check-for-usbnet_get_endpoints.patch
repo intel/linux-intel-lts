@@ -1,0 +1,38 @@
+From 46337775cd246df26eb531b4a65d11393eb01ef5 Mon Sep 17 00:00:00 2001
+From: Chen Ni <nichen@iscas.ac.cn>
+Date: Tue, 5 Mar 2024 07:59:27 +0000
+Subject: [PATCH] sr9800: Add check for usbnet_get_endpoints
+
+[ Upstream commit 07161b2416f740a2cb87faa5566873f401440a61 ]
+
+Add check for usbnet_get_endpoints() and return the error if it fails
+in order to transfer the error.
+
+Signed-off-by: Chen Ni <nichen@iscas.ac.cn>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Fixes: 19a38d8e0aa3 ("USB2NET : SR9800 : One chip USB2.0 USB2NET SR9800 Device Driver Support")
+Link: https://lore.kernel.org/r/20240305075927.261284-1-nichen@iscas.ac.cn
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/usb/sr9800.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/usb/sr9800.c b/drivers/net/usb/sr9800.c
+index f5e19f3ef6cd..4de514482183 100644
+--- a/drivers/net/usb/sr9800.c
++++ b/drivers/net/usb/sr9800.c
+@@ -737,7 +737,9 @@ static int sr9800_bind(struct usbnet *dev, struct usb_interface *intf)
+ 
+ 	data->eeprom_len = SR9800_EEPROM_LEN;
+ 
+-	usbnet_get_endpoints(dev, intf);
++	ret = usbnet_get_endpoints(dev, intf);
++	if (ret)
++		goto out;
+ 
+ 	/* LED Setting Rule :
+ 	 * AABB:CCDD
+-- 
+2.25.1
+

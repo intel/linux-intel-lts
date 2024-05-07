@@ -1,0 +1,94 @@
+From c8d917dae016576c7dbafbf3d61b19242d784209 Mon Sep 17 00:00:00 2001
+From: "Jiri Slaby (SUSE)" <jirislaby@kernel.org>
+Date: Thu, 8 Feb 2024 12:44:11 +0100
+Subject: [PATCH] fbcon: always restore the old font data in
+ fbcon_do_set_font()
+
+[ Upstream commit 00d6a284fcf3fad1b7e1b5bc3cd87cbfb60ce03f ]
+
+Commit a5a923038d70 (fbdev: fbcon: Properly revert changes when
+vc_resize() failed) started restoring old font data upon failure (of
+vc_resize()). But it performs so only for user fonts. It means that the
+"system"/internal fonts are not restored at all. So in result, the very
+first call to fbcon_do_set_font() performs no restore at all upon
+failing vc_resize().
+
+This can be reproduced by Syzkaller to crash the system on the next
+invocation of font_get(). It's rather hard to hit the allocation failure
+in vc_resize() on the first font_set(), but not impossible. Esp. if
+fault injection is used to aid the execution/failure. It was
+demonstrated by Sirius:
+  BUG: unable to handle page fault for address: fffffffffffffff8
+  #PF: supervisor read access in kernel mode
+  #PF: error_code(0x0000) - not-present page
+  PGD cb7b067 P4D cb7b067 PUD cb7d067 PMD 0
+  Oops: 0000 [#1] PREEMPT SMP KASAN
+  CPU: 1 PID: 8007 Comm: poc Not tainted 6.7.0-g9d1694dc91ce #20
+  Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.15.0-1 04/01/2014
+  RIP: 0010:fbcon_get_font+0x229/0x800 drivers/video/fbdev/core/fbcon.c:2286
+  Call Trace:
+   <TASK>
+   con_font_get drivers/tty/vt/vt.c:4558 [inline]
+   con_font_op+0x1fc/0xf20 drivers/tty/vt/vt.c:4673
+   vt_k_ioctl drivers/tty/vt/vt_ioctl.c:474 [inline]
+   vt_ioctl+0x632/0x2ec0 drivers/tty/vt/vt_ioctl.c:752
+   tty_ioctl+0x6f8/0x1570 drivers/tty/tty_io.c:2803
+   vfs_ioctl fs/ioctl.c:51 [inline]
+  ...
+
+So restore the font data in any case, not only for user fonts. Note the
+later 'if' is now protected by 'old_userfont' and not 'old_data' as the
+latter is always set now. (And it is supposed to be non-NULL. Otherwise
+we would see the bug above again.)
+
+Signed-off-by: Jiri Slaby (SUSE) <jirislaby@kernel.org>
+Fixes: a5a923038d70 ("fbdev: fbcon: Properly revert changes when vc_resize() failed")
+Reported-and-tested-by: Ubisectech Sirius <bugreport@ubisectech.com>
+Cc: Ubisectech Sirius <bugreport@ubisectech.com>
+Cc: Daniel Vetter <daniel@ffwll.ch>
+Cc: Helge Deller <deller@gmx.de>
+Cc: linux-fbdev@vger.kernel.org
+Cc: dri-devel@lists.freedesktop.org
+Signed-off-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240208114411.14604-1-jirislaby@kernel.org
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/video/fbdev/core/fbcon.c | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/video/fbdev/core/fbcon.c b/drivers/video/fbdev/core/fbcon.c
+index 92162c980367..dfe6774959a4 100644
+--- a/drivers/video/fbdev/core/fbcon.c
++++ b/drivers/video/fbdev/core/fbcon.c
+@@ -2396,11 +2396,9 @@ static int fbcon_do_set_font(struct vc_data *vc, int w, int h, int charcount,
+ 	struct fbcon_ops *ops = info->fbcon_par;
+ 	struct fbcon_display *p = &fb_display[vc->vc_num];
+ 	int resize, ret, old_userfont, old_width, old_height, old_charcount;
+-	char *old_data = NULL;
++	u8 *old_data = vc->vc_font.data;
+ 
+ 	resize = (w != vc->vc_font.width) || (h != vc->vc_font.height);
+-	if (p->userfont)
+-		old_data = vc->vc_font.data;
+ 	vc->vc_font.data = (void *)(p->fontdata = data);
+ 	old_userfont = p->userfont;
+ 	if ((p->userfont = userfont))
+@@ -2434,13 +2432,13 @@ static int fbcon_do_set_font(struct vc_data *vc, int w, int h, int charcount,
+ 		update_screen(vc);
+ 	}
+ 
+-	if (old_data && (--REFCOUNT(old_data) == 0))
++	if (old_userfont && (--REFCOUNT(old_data) == 0))
+ 		kfree(old_data - FONT_EXTRA_WORDS * sizeof(int));
+ 	return 0;
+ 
+ err_out:
+ 	p->fontdata = old_data;
+-	vc->vc_font.data = (void *)old_data;
++	vc->vc_font.data = old_data;
+ 
+ 	if (userfont) {
+ 		p->userfont = old_userfont;
+-- 
+2.25.1
+

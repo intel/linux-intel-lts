@@ -1,0 +1,96 @@
+From aa2bbe3788ea2a9230d0d342e6fc2249ee6e3a93 Mon Sep 17 00:00:00 2001
+From: Dave Airlie <airlied@redhat.com>
+Date: Mon, 29 Jan 2024 11:26:45 +1000
+Subject: [PATCH] nouveau: offload fence uevents work to workqueue
+
+commit 39126abc5e20611579602f03b66627d7cd1422f0 upstream.
+
+This should break the deadlock between the fctx lock and the irq lock.
+
+This offloads the processing off the work from the irq into a workqueue.
+
+Cc: linux-stable@vger.kernel.org
+Signed-off-by: Dave Airlie <airlied@redhat.com>
+Link: https://patchwork.freedesktop.org/patch/576237/
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/gpu/drm/nouveau/nouveau_fence.c | 24 ++++++++++++++++++------
+ drivers/gpu/drm/nouveau/nouveau_fence.h |  1 +
+ 2 files changed, 19 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_fence.c b/drivers/gpu/drm/nouveau/nouveau_fence.c
+index ee5e9d40c166..302d7e994a93 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_fence.c
++++ b/drivers/gpu/drm/nouveau/nouveau_fence.c
+@@ -102,6 +102,7 @@ nouveau_fence_context_kill(struct nouveau_fence_chan *fctx, int error)
+ void
+ nouveau_fence_context_del(struct nouveau_fence_chan *fctx)
+ {
++	cancel_work_sync(&fctx->uevent_work);
+ 	nouveau_fence_context_kill(fctx, 0);
+ 	nvif_event_dtor(&fctx->event);
+ 	fctx->dead = 1;
+@@ -144,12 +145,13 @@ nouveau_fence_update(struct nouveau_channel *chan, struct nouveau_fence_chan *fc
+ 	return drop;
+ }
+ 
+-static int
+-nouveau_fence_wait_uevent_handler(struct nvif_event *event, void *repv, u32 repc)
++static void
++nouveau_fence_uevent_work(struct work_struct *work)
+ {
+-	struct nouveau_fence_chan *fctx = container_of(event, typeof(*fctx), event);
++	struct nouveau_fence_chan *fctx = container_of(work, struct nouveau_fence_chan,
++						       uevent_work);
+ 	unsigned long flags;
+-	int ret = NVIF_EVENT_KEEP;
++	int drop = 0;
+ 
+ 	spin_lock_irqsave(&fctx->lock, flags);
+ 	if (!list_empty(&fctx->pending)) {
+@@ -159,11 +161,20 @@ nouveau_fence_wait_uevent_handler(struct nvif_event *event, void *repv, u32 repc
+ 		fence = list_entry(fctx->pending.next, typeof(*fence), head);
+ 		chan = rcu_dereference_protected(fence->channel, lockdep_is_held(&fctx->lock));
+ 		if (nouveau_fence_update(chan, fctx))
+-			ret = NVIF_EVENT_DROP;
++			drop = 1;
+ 	}
++	if (drop)
++		nvif_event_block(&fctx->event);
++
+ 	spin_unlock_irqrestore(&fctx->lock, flags);
++}
+ 
+-	return ret;
++static int
++nouveau_fence_wait_uevent_handler(struct nvif_event *event, void *repv, u32 repc)
++{
++	struct nouveau_fence_chan *fctx = container_of(event, typeof(*fctx), event);
++	schedule_work(&fctx->uevent_work);
++	return NVIF_EVENT_KEEP;
+ }
+ 
+ void
+@@ -177,6 +188,7 @@ nouveau_fence_context_new(struct nouveau_channel *chan, struct nouveau_fence_cha
+ 	} args;
+ 	int ret;
+ 
++	INIT_WORK(&fctx->uevent_work, nouveau_fence_uevent_work);
+ 	INIT_LIST_HEAD(&fctx->flip);
+ 	INIT_LIST_HEAD(&fctx->pending);
+ 	spin_lock_init(&fctx->lock);
+diff --git a/drivers/gpu/drm/nouveau/nouveau_fence.h b/drivers/gpu/drm/nouveau/nouveau_fence.h
+index 0ca2bc85adf6..8265a497e15b 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_fence.h
++++ b/drivers/gpu/drm/nouveau/nouveau_fence.h
+@@ -44,6 +44,7 @@ struct nouveau_fence_chan {
+ 	u32 context;
+ 	char name[32];
+ 
++	struct work_struct uevent_work;
+ 	struct nvif_event event;
+ 	int notify_ref, dead;
+ };
+-- 
+2.25.1
+

@@ -1,0 +1,65 @@
+From 39755385247c3f0ef8897551ced9d0926b4430a2 Mon Sep 17 00:00:00 2001
+From: Christian Borntraeger <borntraeger@linux.ibm.com>
+Date: Wed, 20 Dec 2023 13:53:17 +0100
+Subject: [PATCH] KVM: s390: vsie: fix race during shadow creation
+
+[ Upstream commit fe752331d4b361d43cfd0b89534b4b2176057c32 ]
+
+Right now it is possible to see gmap->private being zero in
+kvm_s390_vsie_gmap_notifier resulting in a crash.  This is due to the
+fact that we add gmap->private == kvm after creation:
+
+static int acquire_gmap_shadow(struct kvm_vcpu *vcpu,
+                               struct vsie_page *vsie_page)
+{
+[...]
+        gmap = gmap_shadow(vcpu->arch.gmap, asce, edat);
+        if (IS_ERR(gmap))
+                return PTR_ERR(gmap);
+        gmap->private = vcpu->kvm;
+
+Let children inherit the private field of the parent.
+
+Reported-by: Marc Hartmayer <mhartmay@linux.ibm.com>
+Fixes: a3508fbe9dc6 ("KVM: s390: vsie: initial support for nested virtualization")
+Cc: <stable@vger.kernel.org>
+Cc: David Hildenbrand <david@redhat.com>
+Reviewed-by: Janosch Frank <frankja@linux.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Claudio Imbrenda <imbrenda@linux.ibm.com>
+Signed-off-by: Christian Borntraeger <borntraeger@linux.ibm.com>
+Link: https://lore.kernel.org/r/20231220125317.4258-1-borntraeger@linux.ibm.com
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ arch/s390/kvm/vsie.c | 2 +-
+ arch/s390/mm/gmap.c  | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/s390/kvm/vsie.c b/arch/s390/kvm/vsie.c
+index 740f8b56e63f..fb949f2ea887 100644
+--- a/arch/s390/kvm/vsie.c
++++ b/arch/s390/kvm/vsie.c
+@@ -1214,7 +1214,7 @@ static int acquire_gmap_shadow(struct kvm_vcpu *vcpu,
+ 	gmap = gmap_shadow(vcpu->arch.gmap, asce, edat);
+ 	if (IS_ERR(gmap))
+ 		return PTR_ERR(gmap);
+-	gmap->private = vcpu->kvm;
++	vcpu->kvm->stat.gmap_shadow_create++;
+ 	WRITE_ONCE(vsie_page->gmap, gmap);
+ 	return 0;
+ }
+diff --git a/arch/s390/mm/gmap.c b/arch/s390/mm/gmap.c
+index 243f673fa651..662cf23a1b44 100644
+--- a/arch/s390/mm/gmap.c
++++ b/arch/s390/mm/gmap.c
+@@ -1675,6 +1675,7 @@ struct gmap *gmap_shadow(struct gmap *parent, unsigned long asce,
+ 		return ERR_PTR(-ENOMEM);
+ 	new->mm = parent->mm;
+ 	new->parent = gmap_get(parent);
++	new->private = parent->private;
+ 	new->orig_asce = asce;
+ 	new->edat_level = edat_level;
+ 	new->initialized = false;
+-- 
+2.25.1
+

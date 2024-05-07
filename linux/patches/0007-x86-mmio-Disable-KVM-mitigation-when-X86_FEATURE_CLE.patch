@@ -1,0 +1,61 @@
+From fdce08488f653aab4895fd20a0dd02cdbee579f3 Mon Sep 17 00:00:00 2001
+From: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Date: Mon, 11 Mar 2024 12:29:43 -0700
+Subject: [PATCH 7/7] x86/mmio: Disable KVM mitigation when
+ X86_FEATURE_CLEAR_CPU_BUF is set
+
+commit e95df4ec0c0c9791941f112db699fae794b9862a upstream.
+
+Currently MMIO Stale Data mitigation for CPUs not affected by MDS/TAA is
+to only deploy VERW at VMentry by enabling mmio_stale_data_clear static
+branch. No mitigation is needed for kernel->user transitions. If such
+CPUs are also affected by RFDS, its mitigation may set
+X86_FEATURE_CLEAR_CPU_BUF to deploy VERW at kernel->user and VMentry.
+This could result in duplicate VERW at VMentry.
+
+Fix this by disabling mmio_stale_data_clear static branch when
+X86_FEATURE_CLEAR_CPU_BUF is enabled.
+
+Signed-off-by: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Signed-off-by: Dave Hansen <dave.hansen@linux.intel.com>
+Reviewed-by: Dave Hansen <dave.hansen@linux.intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/kernel/cpu/bugs.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kernel/cpu/bugs.c b/arch/x86/kernel/cpu/bugs.c
+index d1895930e6eb..c66f6eb40afb 100644
+--- a/arch/x86/kernel/cpu/bugs.c
++++ b/arch/x86/kernel/cpu/bugs.c
+@@ -421,6 +421,13 @@ static void __init mmio_select_mitigation(void)
+ 	if (boot_cpu_has_bug(X86_BUG_MDS) || (boot_cpu_has_bug(X86_BUG_TAA) &&
+ 					      boot_cpu_has(X86_FEATURE_RTM)))
+ 		setup_force_cpu_cap(X86_FEATURE_CLEAR_CPU_BUF);
++
++	/*
++	 * X86_FEATURE_CLEAR_CPU_BUF could be enabled by other VERW based
++	 * mitigations, disable KVM-only mitigation in that case.
++	 */
++	if (boot_cpu_has(X86_FEATURE_CLEAR_CPU_BUF))
++		static_branch_disable(&mmio_stale_data_clear);
+ 	else
+ 		static_branch_enable(&mmio_stale_data_clear);
+ 
+@@ -497,8 +504,11 @@ static void __init md_clear_update_mitigation(void)
+ 		taa_mitigation = TAA_MITIGATION_VERW;
+ 		taa_select_mitigation();
+ 	}
+-	if (mmio_mitigation == MMIO_MITIGATION_OFF &&
+-	    boot_cpu_has_bug(X86_BUG_MMIO_STALE_DATA)) {
++	/*
++	 * MMIO_MITIGATION_OFF is not checked here so that mmio_stale_data_clear
++	 * gets updated correctly as per X86_FEATURE_CLEAR_CPU_BUF state.
++	 */
++	if (boot_cpu_has_bug(X86_BUG_MMIO_STALE_DATA)) {
+ 		mmio_mitigation = MMIO_MITIGATION_VERW;
+ 		mmio_select_mitigation();
+ 	}
+-- 
+2.25.1
+

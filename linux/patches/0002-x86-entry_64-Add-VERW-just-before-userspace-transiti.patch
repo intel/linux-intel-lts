@@ -1,0 +1,114 @@
+From 23915c140200f0093c7fc7f170cc1d8305b5d05e Mon Sep 17 00:00:00 2001
+From: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Date: Mon, 4 Mar 2024 01:23:59 -0800
+Subject: [PATCH 2/7] x86/entry_64: Add VERW just before userspace transition
+
+commit 3c7501722e6b31a6e56edd23cea5e77dbb9ffd1a upstream.
+
+Mitigation for MDS is to use VERW instruction to clear any secrets in
+CPU Buffers. Any memory accesses after VERW execution can still remain
+in CPU buffers. It is safer to execute VERW late in return to user path
+to minimize the window in which kernel data can end up in CPU buffers.
+There are not many kernel secrets to be had after SWITCH_TO_USER_CR3.
+
+Add support for deploying VERW mitigation after user register state is
+restored. This helps minimize the chances of kernel data ending up into
+CPU buffers after executing VERW.
+
+Note that the mitigation at the new location is not yet enabled.
+
+  Corner case not handled
+  =======================
+  Interrupts returning to kernel don't clear CPUs buffers since the
+  exit-to-user path is expected to do that anyways. But, there could be
+  a case when an NMI is generated in kernel after the exit-to-user path
+  has cleared the buffers. This case is not handled and NMI returning to
+  kernel don't clear CPU buffers because:
+
+  1. It is rare to get an NMI after VERW, but before returning to user.
+  2. For an unprivileged user, there is no known way to make that NMI
+     less rare or target it.
+  3. It would take a large number of these precisely-timed NMIs to mount
+     an actual attack.  There's presumably not enough bandwidth.
+  4. The NMI in question occurs after a VERW, i.e. when user state is
+     restored and most interesting data is already scrubbed. Whats left
+     is only the data that NMI touches, and that may or may not be of
+     any interest.
+
+  [ pawan: resolved conflict for hunk swapgs_restore_regs_and_return_to_usermode in backport ]
+
+Suggested-by: Dave Hansen <dave.hansen@intel.com>
+Signed-off-by: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Signed-off-by: Dave Hansen <dave.hansen@linux.intel.com>
+Link: https://lore.kernel.org/all/20240213-delay-verw-v8-2-a6216d83edb7%40linux.intel.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/entry/entry_64.S        | 11 +++++++++++
+ arch/x86/entry/entry_64_compat.S |  1 +
+ 2 files changed, 12 insertions(+)
+
+diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
+index 9953d966d124..c2383c2880ec 100644
+--- a/arch/x86/entry/entry_64.S
++++ b/arch/x86/entry/entry_64.S
+@@ -223,6 +223,7 @@ syscall_return_via_sysret:
+ SYM_INNER_LABEL(entry_SYSRETQ_unsafe_stack, SYM_L_GLOBAL)
+ 	ANNOTATE_NOENDBR
+ 	swapgs
++	CLEAR_CPU_BUFFERS
+ 	sysretq
+ SYM_INNER_LABEL(entry_SYSRETQ_end, SYM_L_GLOBAL)
+ 	ANNOTATE_NOENDBR
+@@ -656,6 +657,7 @@ SYM_INNER_LABEL(swapgs_restore_regs_and_return_to_usermode, SYM_L_GLOBAL)
+ 	/* Restore RDI. */
+ 	popq	%rdi
+ 	swapgs
++	CLEAR_CPU_BUFFERS
+ 	jmp	.Lnative_iret
+ 
+ 
+@@ -767,6 +769,8 @@ native_irq_return_ldt:
+ 	 */
+ 	popq	%rax				/* Restore user RAX */
+ 
++	CLEAR_CPU_BUFFERS
++
+ 	/*
+ 	 * RSP now points to an ordinary IRET frame, except that the page
+ 	 * is read-only and RSP[31:16] are preloaded with the userspace
+@@ -1493,6 +1497,12 @@ nmi_restore:
+ 	std
+ 	movq	$0, 5*8(%rsp)		/* clear "NMI executing" */
+ 
++	/*
++	 * Skip CLEAR_CPU_BUFFERS here, since it only helps in rare cases like
++	 * NMI in kernel after user state is restored. For an unprivileged user
++	 * these conditions are hard to meet.
++	 */
++
+ 	/*
+ 	 * iretq reads the "iret" frame and exits the NMI stack in a
+ 	 * single instruction.  We are returning to kernel mode, so this
+@@ -1511,6 +1521,7 @@ SYM_CODE_START(ignore_sysret)
+ 	UNWIND_HINT_EMPTY
+ 	ENDBR
+ 	mov	$-ENOSYS, %eax
++	CLEAR_CPU_BUFFERS
+ 	sysretl
+ SYM_CODE_END(ignore_sysret)
+ #endif
+diff --git a/arch/x86/entry/entry_64_compat.S b/arch/x86/entry/entry_64_compat.S
+index d6c08d8986b1..4bcd009a232b 100644
+--- a/arch/x86/entry/entry_64_compat.S
++++ b/arch/x86/entry/entry_64_compat.S
+@@ -272,6 +272,7 @@ SYM_INNER_LABEL(entry_SYSRETL_compat_unsafe_stack, SYM_L_GLOBAL)
+ 	xorl	%r9d, %r9d
+ 	xorl	%r10d, %r10d
+ 	swapgs
++	CLEAR_CPU_BUFFERS
+ 	sysretl
+ SYM_INNER_LABEL(entry_SYSRETL_compat_end, SYM_L_GLOBAL)
+ 	ANNOTATE_NOENDBR
+-- 
+2.25.1
+

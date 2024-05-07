@@ -1,0 +1,61 @@
+From 6da8c8e66bd3ad176c312f8b61db953c09b60551 Mon Sep 17 00:00:00 2001
+From: Ard Biesheuvel <ardb@kernel.org>
+Date: Fri, 23 Feb 2024 14:20:35 +0100
+Subject: [PATCH] crypto: arm64/neonbs - fix out-of-bounds access on short
+ input
+
+commit 1c0cf6d19690141002889d72622b90fc01562ce4 upstream.
+
+The bit-sliced implementation of AES-CTR operates on blocks of 128
+bytes, and will fall back to the plain NEON version for tail blocks or
+inputs that are shorter than 128 bytes to begin with.
+
+It will call straight into the plain NEON asm helper, which performs all
+memory accesses in granules of 16 bytes (the size of a NEON register).
+For this reason, the associated plain NEON glue code will copy inputs
+shorter than 16 bytes into a temporary buffer, given that this is a rare
+occurrence and it is not worth the effort to work around this in the asm
+code.
+
+The fallback from the bit-sliced NEON version fails to take this into
+account, potentially resulting in out-of-bounds accesses. So clone the
+same workaround, and use a temp buffer for short in/outputs.
+
+Fixes: fc074e130051 ("crypto: arm64/aes-neonbs-ctr - fallback to plain NEON for final chunk")
+Cc: <stable@vger.kernel.org>
+Reported-by: syzbot+f1ceaa1a09ab891e1934@syzkaller.appspotmail.com
+Reviewed-by: Eric Biggers <ebiggers@google.com>
+Signed-off-by: Ard Biesheuvel <ardb@kernel.org>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/arm64/crypto/aes-neonbs-glue.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/arch/arm64/crypto/aes-neonbs-glue.c b/arch/arm64/crypto/aes-neonbs-glue.c
+index bac4cabef607..467ac2f768ac 100644
+--- a/arch/arm64/crypto/aes-neonbs-glue.c
++++ b/arch/arm64/crypto/aes-neonbs-glue.c
+@@ -227,8 +227,19 @@ static int ctr_encrypt(struct skcipher_request *req)
+ 			src += blocks * AES_BLOCK_SIZE;
+ 		}
+ 		if (nbytes && walk.nbytes == walk.total) {
++			u8 buf[AES_BLOCK_SIZE];
++			u8 *d = dst;
++
++			if (unlikely(nbytes < AES_BLOCK_SIZE))
++				src = dst = memcpy(buf + sizeof(buf) - nbytes,
++						   src, nbytes);
++
+ 			neon_aes_ctr_encrypt(dst, src, ctx->enc, ctx->key.rounds,
+ 					     nbytes, walk.iv);
++
++			if (unlikely(nbytes < AES_BLOCK_SIZE))
++				memcpy(d, dst, nbytes);
++
+ 			nbytes = 0;
+ 		}
+ 		kernel_neon_end();
+-- 
+2.25.1
+

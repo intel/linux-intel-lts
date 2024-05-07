@@ -62,3 +62,94 @@
 
 # CVE-2023-39191
 0001-bpf-Fix-state-pruning-for-STACK_DYNPTR-stack-slots.patch
+
+# CVE-2023-7042
+0001-wifi-ath10k-fix-NULL-pointer-dereference-in-ath10k_w.patch
+
+# CVE-2024-22099
+0001-Bluetooth-rfcomm-Fix-null-ptr-deref-in-rfcomm_check_.patch
+
+# CVE-2024-24861
+0001-media-xc4000-Fix-atomicity-violation-in-xc4000_get_f.patch
+
+# CVE-2024-26622
+0001-tomoyo-fix-UAF-write-bug-in-tomoyo_write_control.patch
+
+# CVE-2023-28746
+0001-x86-bugs-Add-asm-helpers-for-executing-VERW.patch
+0002-x86-entry_64-Add-VERW-just-before-userspace-transiti.patch
+0003-x86-entry_32-Add-VERW-just-before-userspace-transiti.patch
+0004-x86-bugs-Use-ALTERNATIVE-instead-of-mds_user_clear-s.patch
+0005-Revert-x86-alternative-Make-custom-return-thunk-unco.patch
+0006-x86-alternative-Make-custom-return-thunk-uncondition.patch
+0007-x86-mmio-Disable-KVM-mitigation-when-X86_FEATURE_CLE.patch
+
+# CVE-2024-26651
+0001-sr9800-Add-check-for-usbnet_get_endpoints.patch
+
+# CVE-2023-52629
+0001-sh-push-switch-Reorder-cleanup-operations-to-avoid-u.patch
+
+# CVE-2024-26654
+0001-ALSA-sh-aica-reorder-cleanup-operations-to-avoid-UAF.patch
+
+# CVE-2024-26656
+0001-drm-amdgpu-fix-use-after-free-bug.patch
+
+# CVE-2024-26719
+0001-nouveau-offload-fence-uevents-work-to-workqueue.patch
+
+# CVE-2024-26687
+0001-xen-events-close-evtchn-after-mapping-cleanup.patch
+
+# CVE-2024-26642
+0001-netfilter-nf_tables-disallow-anonymous-set-with-time.patch
+
+# CVE-2024-26740
+# CVE-2024-26739
+0001-net-sched-act_mirred-Create-function-tcf_mirred_to_d.patch
+0002-net-sched-act_mirred-use-the-backlog-for-mirred-ingr.patch
+0003-net-sched-act_mirred-don-t-override-retval-if-we-alr.patch
+
+# CVE-2024-26745
+0001-powerpc-pseries-iommu-IOMMU-table-is-not-initialized.patch
+
+# CVE-2024-26782
+0001-mptcp-fix-double-free-on-socket-dismantle.patch
+
+# CVE-2024-26795
+0001-riscv-Sparse-Memory-vmemmap-out-of-bounds-fix.patch
+
+# CVE-2024-26809
+0001-netfilter-nft_set_pipapo-release-elements-in-clone-o.patch
+
+# CVE-2024-26801
+0001-Bluetooth-Avoid-potential-use-after-free-in-hci_erro.patch
+
+# CVE-2024-26804
+0001-net-ip_tunnel-prevent-perpetual-headroom-growth.patch
+
+# CVE-2023-52639
+0001-KVM-s390-vsie-fix-race-during-shadow-creation.patch
+
+# CVE-2024-26686
+0001-fs-proc-do_task_stat-use-__for_each_thread.patch
+0002-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
+
+# CVE-2024-26783
+0001-mm-vmscan-fix-a-bug-calling-wakeup_kswapd-with-a-wro.patch
+
+# CVE-2024-26789
+0001-crypto-arm64-neonbs-fix-out-of-bounds-access-on-shor.patch
+
+# CVE-2024-26798
+0001-fbcon-always-restore-the-old-font-data-in-fbcon_do_s.patch
+
+# CVE-2024-26802
+0001-stmmac-Clear-variable-when-destroying-workqueue.patch
+
+# CVE-2024-26805
+0001-netlink-Fix-kernel-infoleak-after-free-in-__skb_data.patch
+
+# CVE-2023-52620
+0001-netfilter-nf_tables-disallow-timeout-for-anonymous-s.patch

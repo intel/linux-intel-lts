@@ -1,0 +1,48 @@
+From 348605191293ded77058d521de4a64fe8fdb2d6a Mon Sep 17 00:00:00 2001
+From: Dimitris Vlachos <dvlachos@ics.forth.gr>
+Date: Thu, 29 Feb 2024 21:17:23 +0200
+Subject: [PATCH] riscv: Sparse-Memory/vmemmap out-of-bounds fix
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[ Upstream commit a11dd49dcb9376776193e15641f84fcc1e5980c9 ]
+
+Offset vmemmap so that the first page of vmemmap will be mapped
+to the first page of physical memory in order to ensure that
+vmemmap’s bounds will be respected during
+pfn_to_page()/page_to_pfn() operations.
+The conversion macros will produce correct SV39/48/57 addresses
+for every possible/valid DRAM_BASE inside the physical memory limits.
+
+v2:Address Alex's comments
+
+Suggested-by: Alexandre Ghiti <alexghiti@rivosinc.com>
+Signed-off-by: Dimitris Vlachos <dvlachos@ics.forth.gr>
+Reported-by: Dimitris Vlachos <dvlachos@ics.forth.gr>
+Closes: https://lore.kernel.org/linux-riscv/20240202135030.42265-1-csd4492@csd.uoc.gr
+Fixes: d95f1a542c3d ("RISC-V: Implement sparsemem")
+Reviewed-by: Alexandre Ghiti <alexghiti@rivosinc.com>
+Link: https://lore.kernel.org/r/20240229191723.32779-1-dvlachos@ics.forth.gr
+Signed-off-by: Palmer Dabbelt <palmer@rivosinc.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ arch/riscv/include/asm/pgtable.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/riscv/include/asm/pgtable.h b/arch/riscv/include/asm/pgtable.h
+index 59bb53da473d..63055c6ad2c2 100644
+--- a/arch/riscv/include/asm/pgtable.h
++++ b/arch/riscv/include/asm/pgtable.h
+@@ -79,7 +79,7 @@
+  * Define vmemmap for pfn_to_page & page_to_pfn calls. Needed if kernel
+  * is configured with CONFIG_SPARSEMEM_VMEMMAP enabled.
+  */
+-#define vmemmap		((struct page *)VMEMMAP_START)
++#define vmemmap		((struct page *)VMEMMAP_START - (phys_ram_base >> PAGE_SHIFT))
+ 
+ #define PCI_IO_SIZE      SZ_16M
+ #define PCI_IO_END       VMEMMAP_START
+-- 
+2.25.1
+

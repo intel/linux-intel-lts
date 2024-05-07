@@ -1,0 +1,59 @@
+From d05e991fb78359fe34eeaf4534303cd76b326e5b Mon Sep 17 00:00:00 2001
+From: "Borislav Petkov (AMD)" <bp@alien8.de>
+Date: Sat, 24 Feb 2024 12:01:34 +0100
+Subject: [PATCH 5/7] Revert "x86/alternative: Make custom return thunk
+ unconditional"
+
+This reverts commit 53ebbe1c8c02aa7b7f072dd2f96bca4faa1daa59.
+
+Revert the backport of upstream commit:
+
+  095b8303f383 ("x86/alternative: Make custom return thunk unconditional")
+
+in order to backport the full version now that
+
+  770ae1b70952 ("x86/returnthunk: Allow different return thunks")
+
+has been backported.
+
+Revert it here so that the build breakage is kept at minimum.
+
+Signed-off-by: Borislav Petkov (AMD) <bp@alien8.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/include/asm/nospec-branch.h | 4 ----
+ arch/x86/kernel/cpu/bugs.c           | 2 --
+ 2 files changed, 6 deletions(-)
+
+diff --git a/arch/x86/include/asm/nospec-branch.h b/arch/x86/include/asm/nospec-branch.h
+index 8f6f17a8617b..dc192812ca67 100644
+--- a/arch/x86/include/asm/nospec-branch.h
++++ b/arch/x86/include/asm/nospec-branch.h
+@@ -218,11 +218,7 @@
+ typedef u8 retpoline_thunk_t[RETPOLINE_THUNK_SIZE];
+ extern retpoline_thunk_t __x86_indirect_thunk_array[];
+ 
+-#ifdef CONFIG_RETHUNK
+ extern void __x86_return_thunk(void);
+-#else
+-static inline void __x86_return_thunk(void) {}
+-#endif
+ 
+ extern void retbleed_return_thunk(void);
+ extern void srso_return_thunk(void);
+diff --git a/arch/x86/kernel/cpu/bugs.c b/arch/x86/kernel/cpu/bugs.c
+index d1895930e6eb..e6eb3eb89356 100644
+--- a/arch/x86/kernel/cpu/bugs.c
++++ b/arch/x86/kernel/cpu/bugs.c
+@@ -62,8 +62,6 @@ EXPORT_SYMBOL_GPL(x86_pred_cmd);
+ 
+ static DEFINE_MUTEX(spec_ctrl_mutex);
+ 
+-void (*x86_return_thunk)(void) __ro_after_init = &__x86_return_thunk;
+-
+ /* Update SPEC_CTRL MSR and its cached copy unconditionally */
+ static void update_spec_ctrl(u64 val)
+ {
+-- 
+2.25.1
+

@@ -1,0 +1,49 @@
+From 93797cc085d5097c73fc60f13bb8f35ee4a2e322 Mon Sep 17 00:00:00 2001
+From: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Date: Mon, 4 Mar 2024 01:24:05 -0800
+Subject: [PATCH 3/7] x86/entry_32: Add VERW just before userspace transition
+
+commit a0e2dab44d22b913b4c228c8b52b2a104434b0b3 upstream.
+
+As done for entry_64, add support for executing VERW late in exit to
+user path for 32-bit mode.
+
+Signed-off-by: Pawan Gupta <pawan.kumar.gupta@linux.intel.com>
+Signed-off-by: Dave Hansen <dave.hansen@linux.intel.com>
+Link: https://lore.kernel.org/all/20240213-delay-verw-v8-3-a6216d83edb7%40linux.intel.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/entry/entry_32.S | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/x86/entry/entry_32.S b/arch/x86/entry/entry_32.S
+index e309e7156038..ee5def1060c8 100644
+--- a/arch/x86/entry/entry_32.S
++++ b/arch/x86/entry/entry_32.S
+@@ -912,6 +912,7 @@ SYM_FUNC_START(entry_SYSENTER_32)
+ 	BUG_IF_WRONG_CR3 no_user_check=1
+ 	popfl
+ 	popl	%eax
++	CLEAR_CPU_BUFFERS
+ 
+ 	/*
+ 	 * Return back to the vDSO, which will pop ecx and edx.
+@@ -981,6 +982,7 @@ restore_all_switch_stack:
+ 
+ 	/* Restore user state */
+ 	RESTORE_REGS pop=4			# skip orig_eax/error_code
++	CLEAR_CPU_BUFFERS
+ .Lirq_return:
+ 	/*
+ 	 * ARCH_HAS_MEMBARRIER_SYNC_CORE rely on IRET core serialization
+@@ -1173,6 +1175,7 @@ SYM_CODE_START(asm_exc_nmi)
+ 
+ 	/* Not on SYSENTER stack. */
+ 	call	exc_nmi
++	CLEAR_CPU_BUFFERS
+ 	jmp	.Lnmi_return
+ 
+ .Lnmi_from_sysenter_stack:
+-- 
+2.25.1
+

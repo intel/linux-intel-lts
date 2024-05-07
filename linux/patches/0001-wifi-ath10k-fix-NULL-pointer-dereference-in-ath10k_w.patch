@@ -1,0 +1,40 @@
+From d004ba084a299806404a33639ec86c33c9d8723e Mon Sep 17 00:00:00 2001
+From: Xingyuan Mo <hdthky0@gmail.com>
+Date: Sun, 17 Dec 2023 13:29:01 +0200
+Subject: [PATCH] wifi: ath10k: fix NULL pointer dereference in
+ ath10k_wmi_tlv_op_pull_mgmt_tx_compl_ev()
+
+[ Upstream commit ad25ee36f00172f7d53242dc77c69fff7ced0755 ]
+
+We should check whether the WMI_TLV_TAG_STRUCT_MGMT_TX_COMPL_EVENT tlv is
+present before accessing it, otherwise a null pointer deference error will
+occur.
+
+Fixes: dc405152bb64 ("ath10k: handle mgmt tx completion event")
+Signed-off-by: Xingyuan Mo <hdthky0@gmail.com>
+Acked-by: Jeff Johnson <quic_jjohnson@quicinc.com>
+Signed-off-by: Kalle Valo <quic_kvalo@quicinc.com>
+Link: https://msgid.link/20231208043433.271449-1-hdthky0@gmail.com
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/wireless/ath/ath10k/wmi-tlv.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/ath10k/wmi-tlv.c b/drivers/net/wireless/ath/ath10k/wmi-tlv.c
+index 876410a47d1d..4d5009604eee 100644
+--- a/drivers/net/wireless/ath/ath10k/wmi-tlv.c
++++ b/drivers/net/wireless/ath/ath10k/wmi-tlv.c
+@@ -844,6 +844,10 @@ ath10k_wmi_tlv_op_pull_mgmt_tx_compl_ev(struct ath10k *ar, struct sk_buff *skb,
+ 	}
+ 
+ 	ev = tb[WMI_TLV_TAG_STRUCT_MGMT_TX_COMPL_EVENT];
++	if (!ev) {
++		kfree(tb);
++		return -EPROTO;
++	}
+ 
+ 	arg->desc_id = ev->desc_id;
+ 	arg->status = ev->status;
+-- 
+2.25.1
+

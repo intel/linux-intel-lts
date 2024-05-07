@@ -1,0 +1,52 @@
+From ba7f5fb84b71b58d58600494dcf9653a2ab7d65d Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Sun, 10 Mar 2024 10:02:41 +0100
+Subject: [PATCH] netfilter: nft_set_pipapo: release elements in clone only
+ from destroy path
+
+[ Upstream commit b0e256f3dd2ba6532f37c5c22e07cb07a36031ee ]
+
+Clone already always provides a current view of the lookup table, use it
+to destroy the set, otherwise it is possible to destroy elements twice.
+
+This fix requires:
+
+ 212ed75dc5fb ("netfilter: nf_tables: integrate pipapo into commit protocol")
+
+which came after:
+
+ 9827a0e6e23b ("netfilter: nft_set_pipapo: release elements in clone from abort path").
+
+Fixes: 9827a0e6e23b ("netfilter: nft_set_pipapo: release elements in clone from abort path")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nft_set_pipapo.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/net/netfilter/nft_set_pipapo.c b/net/netfilter/nft_set_pipapo.c
+index e1969209b3ab..58eca2616273 100644
+--- a/net/netfilter/nft_set_pipapo.c
++++ b/net/netfilter/nft_set_pipapo.c
+@@ -2240,8 +2240,6 @@ static void nft_pipapo_destroy(const struct nft_ctx *ctx,
+ 	if (m) {
+ 		rcu_barrier();
+ 
+-		nft_set_pipapo_match_destroy(ctx, set, m);
+-
+ 		for_each_possible_cpu(cpu)
+ 			pipapo_free_scratch(m, cpu);
+ 		free_percpu(m->scratch);
+@@ -2253,8 +2251,7 @@ static void nft_pipapo_destroy(const struct nft_ctx *ctx,
+ 	if (priv->clone) {
+ 		m = priv->clone;
+ 
+-		if (priv->dirty)
+-			nft_set_pipapo_match_destroy(ctx, set, m);
++		nft_set_pipapo_match_destroy(ctx, set, m);
+ 
+ 		for_each_possible_cpu(cpu)
+ 			pipapo_free_scratch(priv->clone, cpu);
+-- 
+2.25.1
+
