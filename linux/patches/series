@@ -13,3 +13,6 @@
 # CVE-2024-26686
 0001-fs-proc-do_task_stat-use-__for_each_thread.patch
 0002-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
+
+# CVE-2024-26900
+0001-md-fix-kmemleak-of-rdev-serial.patch
