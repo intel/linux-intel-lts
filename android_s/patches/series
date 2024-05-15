@@ -132,3 +132,6 @@
 
 # CVE-2024-26736
 0001-afs-Increase-buffer-size-in-afs_update_volume_status.patch
+
+# CVE-2024-26882
+0001-net-ip_tunnel-make-sure-to-pull-inner-header-in-ip_t.patch
