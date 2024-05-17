@@ -81,6 +81,31 @@ get_ipu_psys_command32(struct ipu_psys_command *kp,
 }
 
 static int
+put_ipu_psys_command32(struct ipu_psys_command *kp,
+		       struct ipu_psys_command32 __user *up)
+{
+	compat_uptr_t pgm = (u32)((unsigned long)kp->pg_manifest);
+	compat_uptr_t bufs = (u32)((unsigned long)kp->buffers);
+
+	if (!access_ok(up,
+		       sizeof(struct ipu_psys_command32)) ||
+	    put_user(kp->issue_id, &up->issue_id) ||
+	    put_user(kp->user_token, &up->user_token) ||
+	    put_user(kp->priority, &up->priority) ||
+	    put_user(pgm, &up->pg_manifest) ||
+	    put_user(bufs, &up->buffers) ||
+	    put_user(kp->pg, &up->pg) ||
+	    put_user(kp->pg_manifest_size, &up->pg_manifest_size) ||
+	    put_user(kp->bufcount, &up->bufcount) ||
+	    put_user(kp->min_psys_freq, &up->min_psys_freq)
+	    || put_user(kp->frame_counter, &up->frame_counter)
+	    )
+		return -EFAULT;
+
+	return 0;
+}
+
+static int
 get_ipu_psys_buffer32(struct ipu_psys_buffer *kp,
 		      struct ipu_psys_buffer32 __user *up)
 {
@@ -221,6 +246,9 @@ long ipu_psys_compat_ioctl32(struct file *file, unsigned int cmd,
 		break;
 	case IPU_IOC_GET_MANIFEST:
 		err = put_ipu_psys_manifest32(&karg.m, up);
+		break;
+	case IPU_IOC_QCMD:
+		err = put_ipu_psys_command32(&karg.cmd, up);
 		break;
 	}
 	return err;
