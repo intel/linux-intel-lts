@@ -224,9 +224,9 @@ __visible noinstr void do_int80_emulation(struct pt_regs *regs)
 
 	do_syscall_32_irqs_on(regs, nr);
 
+done:
 	instrumentation_end();
 
-done:
 	syscall_exit_to_user_mode(regs);
 }
 #else /* CONFIG_IA32_EMULATION */
