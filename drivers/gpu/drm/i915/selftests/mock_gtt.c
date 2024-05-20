@@ -108,6 +108,8 @@ void mock_init_ggtt(struct intel_gt *gt)
 {
 	struct i915_ggtt *ggtt = gt->ggtt;
 
+	i915_ggtt_address_lock_init(ggtt);
+
 	ggtt->vm.gt = gt;
 	ggtt->vm.i915 = gt->i915;
 	ggtt->vm.is_ggtt = true;
@@ -133,4 +135,5 @@ void mock_init_ggtt(struct intel_gt *gt)
 void mock_fini_ggtt(struct i915_ggtt *ggtt)
 {
 	i915_address_space_fini(&ggtt->vm);
+	i915_ggtt_address_lock_fini(ggtt);
 }

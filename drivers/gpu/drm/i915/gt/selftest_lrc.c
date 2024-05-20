@@ -433,7 +433,7 @@ retry:
 		goto err_unpin;
 	}
 
-	cs = intel_ring_begin(rq, 4 * MAX_IDX);
+	cs = intel_ring_begin(rq, 4 * 2);
 	if (IS_ERR(cs)) {
 		err = PTR_ERR(cs);
 		i915_request_add(rq);
@@ -451,6 +451,8 @@ retry:
 	*cs++ = i915_mmio_reg_offset(RING_TAIL(engine->mmio_base));
 	*cs++ = i915_ggtt_offset(scratch) + RING_TAIL_IDX * sizeof(u32);
 	*cs++ = 0;
+
+	intel_ring_advance(rq, cs);
 
 	err = i915_vma_move_to_active(scratch, rq, EXEC_OBJECT_WRITE);
 
@@ -598,6 +600,8 @@ __gpr_read(struct intel_context *ce, struct i915_vma *scratch, u32 *slot)
 		*cs++ = i915_ggtt_offset(scratch) + n * sizeof(u32);
 		*cs++ = 0;
 	}
+
+	intel_ring_advance(rq, cs);
 
 	err = igt_vma_move_to_active_unlocked(scratch, rq, EXEC_OBJECT_WRITE);
 

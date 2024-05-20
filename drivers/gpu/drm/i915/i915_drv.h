@@ -216,6 +216,8 @@ struct drm_i915_private {
 	struct intel_uncore uncore;
 	struct intel_uncore_mmio_debug mmio_debug;
 
+	unsigned int remote_tiles;
+
 	struct i915_sriov sriov;
 	struct i915_virtual_gpu vgpu;
 
@@ -727,6 +729,7 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 	(INTEL_INFO(i915)->has_oa_slice_contrib_limits)
 #define HAS_OAM(i915) \
 	(INTEL_INFO(i915)->has_oam)
+#define HAS_REMOTE_TILES(dev_priv)   (INTEL_INFO(dev_priv)->has_remote_tiles)
 
 /*
  * Set this flag, when platform requires 64K GTT page sizes or larger for
@@ -745,7 +748,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 
 #define HAS_MEMORY_IRQ(dev_priv) (INTEL_INFO(dev_priv)->has_memirq)
 
-#define HAS_MEMORY_IRQ_STATUS(dev_priv) (HAS_MEMORY_IRQ(dev_priv) && IS_SRIOV_VF(dev_priv))
+#define HAS_MEMORY_IRQ_STATUS(dev_priv) \
+	(INTEL_INFO(dev_priv)->has_iov_memirq && IS_SRIOV_VF(dev_priv))
 
 /*
  * Platform has the dedicated compression control state for each lmem surfaces

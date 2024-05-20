@@ -635,6 +635,13 @@ busy_loop:
 		u32 hint = FIELD_GET(GUC_HXG_FAILURE_MSG_0_HINT, header);
 		u32 error = FIELD_GET(GUC_HXG_FAILURE_MSG_0_ERROR, header);
 
+		if (error == INTEL_GUC_RESPONSE_VF_MIGRATED) {
+			ret = intel_sriov_vf_migrated_event_handler(guc);
+			if (ret == -EAGAIN)
+				goto retry;
+			goto out;
+		}
+
 		guc_err(guc, "mmio request %#x: failure %x/%u\n",
 			request[0], error, hint);
 		ret = -ENXIO;
@@ -676,6 +683,7 @@ out:
 
 	return ret;
 }
+ALLOW_ERROR_INJECTION(intel_guc_send_mmio, ERRNO);
 
 int intel_guc_crash_process_msg(struct intel_guc *guc, u32 action)
 {

@@ -1729,6 +1729,96 @@ void intel_guc_submission_reset_prepare(struct intel_guc *guc)
 	scrub_guc_desc_for_outstanding_g2h(guc);
 }
 
+static void guc_submission_refresh_request_ring_content(struct i915_request *rq)
+{
+	u32 rhead, remit, rspace;
+	int err;
+
+	if (!test_bit(I915_FENCE_FLAG_GGTT_EMITTED, &rq->fence.flags))
+		return;
+
+	/*
+	 * Pretend we have an empty, uninitialized request, being added at
+	 * end of the ring. This allows us to re-use the emit callbacks,
+	 * despite them being designed for exec only during request creation.
+	*/
+	rhead = rq->ring->head;
+	remit = rq->ring->emit;
+	rspace = rq->ring->space;
+	rq->ring->emit = get_init_breadcrumb_pos(rq);
+	rq->ring->head = rq->head;
+	intel_ring_update_space(rq->ring);
+	rq->reserved_space =
+		2 * rq->engine->emit_fini_breadcrumb_dw * sizeof(u32);
+
+	err = reemit_init_breadcrumb(rq);
+	if (err)
+		DRM_DEBUG_DRIVER("Request prefix ring content not recognized, fence %llx:%lld, err=%pe\n",
+				  rq->fence.context, rq->fence.seqno, ERR_PTR(err));
+
+	err = reemit_bb_start(rq);
+
+	if (err)
+		DRM_DEBUG_DRIVER("Request infix ring content not recognized, fence %llx:%lld, err=%pe\n",
+				  rq->fence.context, rq->fence.seqno, ERR_PTR(err));
+
+	rq->ring->head = rhead;
+	rq->ring->emit = remit;
+	rq->ring->space = rspace;
+	rq->reserved_space = 0;
+
+	if (test_bit(I915_FENCE_FLAG_ACTIVE, &rq->fence.flags))
+		rq->engine->emit_fini_breadcrumb(rq, rq->ring->vaddr + rq->postfix);
+}
+
+static void guc_submission_noop_request_ring_content(struct i915_request *rq)
+{
+	ring_range_emit_noop(rq->ring, rq->head, rq->tail);
+}
+
+void guc_submission_refresh_ctx_rings_content(struct intel_context *ce)
+{
+	struct intel_timeline *tl;
+	struct i915_request *rq;
+
+	if (unlikely(!test_bit(CONTEXT_ALLOC_BIT, &ce->flags)))
+		return;
+
+	tl = ce->timeline;
+
+	list_for_each_entry_rcu(rq, &tl->requests, link) {
+		if (i915_request_completed(rq))
+			guc_submission_noop_request_ring_content(rq);
+		else
+			guc_submission_refresh_request_ring_content(rq);
+	}
+}
+
+/**
+ * intel_guc_submission_pause - temporarily stop GuC submission mechanics
+ * @guc: intel_guc struct instance for the target tile
+ */
+void intel_guc_submission_pause(struct intel_guc *guc)
+{
+	struct i915_sched_engine * const sched_engine = guc->sched_engine;
+
+	tasklet_disable_nosync(&sched_engine->tasklet);
+}
+
+/**
+ * intel_guc_submission_restore - unpause GuC submission mechanics
+ * @guc: intel_guc struct instance for the target tile
+ */
+void intel_guc_submission_restore(struct intel_guc *guc)
+{
+	/*
+	 * If the submissions were only paused, there should be no need
+	 * to perform all the enabling operations; but since other threads
+	 * could have disabled the submissions fully, we need a full enable.
+	*/
+	enable_submission(guc);
+}
+
 static struct intel_engine_cs *
 guc_virtual_get_sibling(struct intel_engine_cs *ve, unsigned int sibling)
 {
@@ -1757,12 +1847,14 @@ __context_to_physical_engine(struct intel_context *ce)
 static void guc_reset_state(struct intel_context *ce, u32 head, bool scrub)
 {
 	struct intel_engine_cs *engine = __context_to_physical_engine(ce);
+	int srcu;
 
 	if (!intel_context_is_schedulable(ce))
 		return;
 
 	GEM_BUG_ON(!intel_context_is_pinned(ce));
 
+	gt_ggtt_address_read_lock(ce->engine->gt, &srcu);
 	/*
 	 * We want a simple context + ring to execute the breadcrumb update.
 	 * We cannot rely on the context being intact across the GPU hang,
@@ -1776,6 +1868,7 @@ static void guc_reset_state(struct intel_context *ce, u32 head, bool scrub)
 
 	/* Rerun the request; its payload has been neutered (if guilty). */
 	lrc_update_regs(ce, engine, head);
+	gt_ggtt_address_read_unlock(ce->engine->gt, srcu);
 }
 
 static void guc_engine_reset_prepare(struct intel_engine_cs *engine)
@@ -2520,33 +2613,36 @@ static int __guc_action_register_multi_lrc_v69(struct intel_guc *guc,
 	return guc_submission_send_busy_loop(guc, action, len, 0, loop);
 }
 
-static int __guc_action_register_multi_lrc_v70(struct intel_guc *guc,
-					       struct intel_context *ce,
-					       struct guc_ctxt_registration_info *info,
-					       bool loop)
+static void prepare_context_registration_info_v69(struct intel_context *ce);
+static void prepare_context_registration_info_v70(struct intel_context *ce,
+						  struct guc_ctxt_registration_info *info);
+
+static int __prepare_context_registration_action_multi_lrc_v70(struct intel_context *ce, u32 *action)
 {
+	struct guc_ctxt_registration_info info;
 	struct intel_context *child;
-	u32 action[13 + (MAX_ENGINE_INSTANCE * 2)];
 	int len = 0;
 	u32 next_id;
 
 	GEM_BUG_ON(ce->parallel.number_children > MAX_ENGINE_INSTANCE);
 
-	action[len++] = INTEL_GUC_ACTION_REGISTER_CONTEXT_MULTI_LRC;
-	action[len++] = info->flags;
-	action[len++] = info->context_idx;
-	action[len++] = info->engine_class;
-	action[len++] = info->engine_submit_mask;
-	action[len++] = info->wq_desc_lo;
-	action[len++] = info->wq_desc_hi;
-	action[len++] = info->wq_base_lo;
-	action[len++] = info->wq_base_hi;
-	action[len++] = info->wq_size;
-	action[len++] = ce->parallel.number_children + 1;
-	action[len++] = info->hwlrca_lo;
-	action[len++] = info->hwlrca_hi;
+	prepare_context_registration_info_v70(ce, &info);
 
-	next_id = info->context_idx + 1;
+	action[len++] = INTEL_GUC_ACTION_REGISTER_CONTEXT_MULTI_LRC;
+	action[len++] = info.flags;
+	action[len++] = info.context_idx;
+	action[len++] = info.engine_class;
+	action[len++] = info.engine_submit_mask;
+	action[len++] = info.wq_desc_lo;
+	action[len++] = info.wq_desc_hi;
+	action[len++] = info.wq_base_lo;
+	action[len++] = info.wq_base_hi;
+	action[len++] = info.wq_size;
+	action[len++] = ce->parallel.number_children + 1;
+	action[len++] = info.hwlrca_lo;
+	action[len++] = info.hwlrca_hi;
+
+	next_id = info.context_idx + 1;
 	for_each_child(ce, child) {
 		GEM_BUG_ON(next_id++ != child->guc_id.id);
 
@@ -2558,9 +2654,7 @@ static int __guc_action_register_multi_lrc_v70(struct intel_guc *guc,
 		action[len++] = upper_32_bits(child->lrc.lrca);
 	}
 
-	GEM_BUG_ON(len > ARRAY_SIZE(action));
-
-	return guc_submission_send_busy_loop(guc, action, len, 0, loop);
+	return len;
 }
 
 static int __guc_action_register_context_v69(struct intel_guc *guc,
@@ -2578,32 +2672,31 @@ static int __guc_action_register_context_v69(struct intel_guc *guc,
 					     0, loop);
 }
 
-static int __guc_action_register_context_v70(struct intel_guc *guc,
-					     struct guc_ctxt_registration_info *info,
-					     bool loop)
+
+static int __prepare_context_registration_action_single_v70(struct intel_context *ce, u32 *action)
 {
-	u32 action[] = {
-		INTEL_GUC_ACTION_REGISTER_CONTEXT,
-		info->flags,
-		info->context_idx,
-		info->engine_class,
-		info->engine_submit_mask,
-		info->wq_desc_lo,
-		info->wq_desc_hi,
-		info->wq_base_lo,
-		info->wq_base_hi,
-		info->wq_size,
-		info->hwlrca_lo,
-		info->hwlrca_hi,
-	};
+	struct guc_ctxt_registration_info info;
+	int len = 0;
 
-	return guc_submission_send_busy_loop(guc, action, ARRAY_SIZE(action),
-					     0, loop);
+	GEM_BUG_ON(ce->parallel.number_children > MAX_ENGINE_INSTANCE);
+
+	prepare_context_registration_info_v70(ce, &info);
+
+	action[len++] = INTEL_GUC_ACTION_REGISTER_CONTEXT;
+	action[len++] = info.flags;
+	action[len++] = info.context_idx;
+	action[len++] = info.engine_class;
+	action[len++] = info.engine_submit_mask;
+	action[len++] = info.wq_desc_lo;
+	action[len++] = info.wq_desc_hi;
+	action[len++] = info.wq_base_lo;
+	action[len++] = info.wq_base_hi;
+	action[len++] = info.wq_size;
+	action[len++] = info.hwlrca_lo;
+	action[len++] = info.hwlrca_hi;
+
+	return len;
 }
-
-static void prepare_context_registration_info_v69(struct intel_context *ce);
-static void prepare_context_registration_info_v70(struct intel_context *ce,
-						  struct guc_ctxt_registration_info *info);
 
 static int
 register_context_v69(struct intel_guc *guc, struct intel_context *ce, bool loop)
@@ -2624,14 +2717,34 @@ register_context_v69(struct intel_guc *guc, struct intel_context *ce, bool loop)
 static int
 register_context_v70(struct intel_guc *guc, struct intel_context *ce, bool loop)
 {
-	struct guc_ctxt_registration_info info;
+	u32 action[13 + (MAX_ENGINE_INSTANCE * 2)];
+	bool not_atomic = !in_atomic() && !rcu_preempt_depth() && !irqs_disabled();
+	unsigned int sleep_period_us = 1;
+	int srcu, len, err;
 
-	prepare_context_registration_info_v70(ce, &info);
+	/* No sleeping with spin locks, just busy loop */
+	might_sleep_if(loop && not_atomic);
+
+retry:
+	err = gt_ggtt_address_read_lock_interruptible(guc_to_gt(guc), &srcu);
+	if (unlikely(err))
+		return err;
 
 	if (intel_context_is_parent(ce))
-		return __guc_action_register_multi_lrc_v70(guc, ce, &info, loop);
+		len = __prepare_context_registration_action_multi_lrc_v70(ce, action);
 	else
-		return __guc_action_register_context_v70(guc, &info, loop);
+		len = __prepare_context_registration_action_single_v70(ce, action);
+
+	GEM_BUG_ON(len > ARRAY_SIZE(action));
+
+	err = intel_guc_send_nb(guc, action, len, 0);
+	gt_ggtt_address_read_unlock(guc_to_gt(guc), srcu);
+	if (unlikely(err == -EBUSY && loop)) {
+		intel_guc_send_wait(&sleep_period_us, not_atomic);
+		goto retry;
+	}
+
+	return err;
 }
 
 static int register_context(struct intel_context *ce, bool loop)
@@ -3044,6 +3157,12 @@ static int __guc_context_pin(struct intel_context *ce,
 			     struct intel_engine_cs *engine,
 			     void *vaddr)
 {
+	int ret, srcu;
+
+	ret = gt_ggtt_address_read_lock_sync(engine->gt, &srcu);
+	if (unlikely(ret))
+		return ret;
+
 	if (i915_ggtt_offset(ce->state) !=
 	    (ce->lrc.lrca & CTX_GTT_ADDRESS_MASK))
 		set_bit(CONTEXT_LRCA_DIRTY, &ce->flags);
@@ -3052,8 +3171,10 @@ static int __guc_context_pin(struct intel_context *ce,
 	 * GuC context gets pinned in guc_request_alloc. See that function for
 	 * explaination of why.
 	 */
+	ret = lrc_pin(ce, engine, vaddr);
 
-	return lrc_pin(ce, engine, vaddr);
+	gt_ggtt_address_read_unlock(engine->gt, srcu);
+	return ret;
 }
 
 static int guc_context_pre_pin(struct intel_context *ce,
@@ -5724,12 +5845,13 @@ static int emit_bb_start_parent_no_preempt_mid_batch(struct i915_request *rq,
 						     const unsigned int flags)
 {
 	struct intel_context *ce = rq->context;
+	int srcu;
 	u32 *cs;
 	u8 i;
 
 	GEM_BUG_ON(!intel_context_is_parent(ce));
 
-	cs = intel_ring_begin(rq, 10 + 4 * ce->parallel.number_children);
+	cs = intel_ring_begin_ggtt(rq, &srcu, 10 + 4 * ce->parallel.number_children);
 	if (IS_ERR(cs))
 		return PTR_ERR(cs);
 
@@ -5761,7 +5883,7 @@ static int emit_bb_start_parent_no_preempt_mid_batch(struct i915_request *rq,
 	*cs++ = upper_32_bits(offset);
 	*cs++ = MI_NOOP;
 
-	intel_ring_advance(rq, cs);
+	intel_ring_advance_ggtt(rq, srcu, cs);
 
 	return 0;
 }
@@ -5772,11 +5894,12 @@ static int emit_bb_start_child_no_preempt_mid_batch(struct i915_request *rq,
 {
 	struct intel_context *ce = rq->context;
 	struct intel_context *parent = intel_context_to_parent(ce);
+	int srcu;
 	u32 *cs;
 
 	GEM_BUG_ON(!intel_context_is_child(ce));
 
-	cs = intel_ring_begin(rq, 12);
+	cs = intel_ring_begin_ggtt(rq, &srcu, 12);
 	if (IS_ERR(cs))
 		return PTR_ERR(cs);
 
@@ -5805,7 +5928,7 @@ static int emit_bb_start_child_no_preempt_mid_batch(struct i915_request *rq,
 	*cs++ = lower_32_bits(offset);
 	*cs++ = upper_32_bits(offset);
 
-	intel_ring_advance(rq, cs);
+	intel_ring_advance_ggtt(rq, srcu, cs);
 
 	return 0;
 }
@@ -5867,8 +5990,11 @@ emit_fini_breadcrumb_parent_no_preempt_mid_batch(struct i915_request *rq,
 	struct intel_context *ce = rq->context;
 	__maybe_unused u32 *before_fini_breadcrumb_user_interrupt_cs;
 	__maybe_unused u32 *start_fini_breadcrumb_cs = cs;
+	int srcu;
 
 	GEM_BUG_ON(!intel_context_is_parent(ce));
+
+	intel_ring_fini_begin_ggtt(rq, &srcu);
 
 	if (unlikely(skip_handshake(rq))) {
 		/*
@@ -5899,7 +6025,7 @@ emit_fini_breadcrumb_parent_no_preempt_mid_batch(struct i915_request *rq,
 	GEM_BUG_ON(start_fini_breadcrumb_cs +
 		   ce->engine->emit_fini_breadcrumb_dw != cs);
 
-	rq->tail = intel_ring_offset(rq, cs);
+	intel_ring_fini_advance_ggtt(rq, srcu, cs);
 
 	return cs;
 }
@@ -5943,8 +6069,11 @@ emit_fini_breadcrumb_child_no_preempt_mid_batch(struct i915_request *rq,
 	struct intel_context *ce = rq->context;
 	__maybe_unused u32 *before_fini_breadcrumb_user_interrupt_cs;
 	__maybe_unused u32 *start_fini_breadcrumb_cs = cs;
+	int srcu;
 
 	GEM_BUG_ON(!intel_context_is_child(ce));
+
+	intel_ring_fini_begin_ggtt(rq, &srcu);
 
 	if (unlikely(skip_handshake(rq))) {
 		/*
@@ -5975,7 +6104,7 @@ emit_fini_breadcrumb_child_no_preempt_mid_batch(struct i915_request *rq,
 	GEM_BUG_ON(start_fini_breadcrumb_cs +
 		   ce->engine->emit_fini_breadcrumb_dw != cs);
 
-	rq->tail = intel_ring_offset(rq, cs);
+	intel_ring_fini_advance_ggtt(rq, srcu, cs);
 
 	return cs;
 }

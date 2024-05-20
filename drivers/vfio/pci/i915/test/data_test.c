@@ -20,7 +20,7 @@ struct i915_vfio_pci_data_test {
 	struct i915_vfio_pci_core_device *i915_vdev;
 };
 
-static size_t
+static ssize_t
 i915_vfio_test_res_size(struct pci_dev *pdev, unsigned int vfid, unsigned int tile)
 {
 	struct i915_vfio_pci_data_test *priv = pci_get_drvdata(pdev);

@@ -291,6 +291,7 @@ static int i915_vfio_pci_get_device_state(struct vfio_device *core_vdev,
 static int i915_vfio_pci_get_data_size(struct vfio_device *vdev,
 				       unsigned long *stop_copy_length)
 {
+	*stop_copy_length = I915_VFIO_MIGRATION_DATA_SIZE;
 	return 0;
 }
 
@@ -398,4 +399,4 @@ module_pci_driver(i915_vfio_pci_driver);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Intel Corporation");
 MODULE_DESCRIPTION("VFIO PCI driver with migration support for Intel Graphics");
-MODULE_IMPORT_NS(DRM_I915);
+MODULE_IMPORT_NS(I915_SRIOV_NS);

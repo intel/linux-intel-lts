@@ -1321,6 +1321,9 @@ __store_reg_to_mem(struct i915_request *rq, i915_reg_t reg, u32 ggtt_offset)
 {
 	u32 *cs, cmd;
 
+	/* GGTT address cannot be transferred unlocked on VF */
+	GEM_BUG_ON(IS_SRIOV_VF(rq->i915));
+
 	cmd = MI_STORE_REGISTER_MEM | MI_SRM_LRM_GLOBAL_GTT;
 	if (GRAPHICS_VER(rq->i915) >= 8)
 		cmd++;

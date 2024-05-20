@@ -754,6 +754,7 @@ static int live_error_interrupt(void *arg)
 					*cs++ = MI_NOOP;
 					*cs++ = MI_NOOP;
 				}
+				intel_ring_advance(rq, cs);
 
 				client[i] = i915_request_get(rq);
 				i915_request_add(rq);

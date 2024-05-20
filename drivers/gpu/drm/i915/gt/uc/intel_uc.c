@@ -227,7 +227,7 @@ static int guc_enable_communication(struct intel_guc *guc)
 {
 	struct intel_gt *gt = guc_to_gt(guc);
 	struct drm_i915_private *i915 = gt->i915;
-	int ret;
+	int srcu, ret;
 
 	GEM_BUG_ON(intel_guc_ct_enabled(&guc->ct));
 
@@ -235,7 +235,11 @@ static int guc_enable_communication(struct intel_guc *guc)
 	if (ret)
 		return ret;
 
+	ret = gt_ggtt_address_read_lock_sync(gt, &srcu);
+	if (unlikely(ret))
+		return ret;
 	ret = intel_guc_ct_enable(&guc->ct);
+	gt_ggtt_address_read_unlock(gt, srcu);
 	if (ret)
 		return ret;
 

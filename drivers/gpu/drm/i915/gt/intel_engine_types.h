@@ -594,6 +594,7 @@ struct intel_engine_cs {
 #define I915_ENGINE_HAS_EU_PRIORITY    BIT(10)
 #define I915_ENGINE_FIRST_RENDER_COMPUTE BIT(11)
 #define I915_ENGINE_USES_WA_HOLD_SWITCHOUT BIT(12)
+#define I915_ENGINE_HAS_EU_ATTENTION   BIT(14)
 	unsigned int flags;
 
 	/*

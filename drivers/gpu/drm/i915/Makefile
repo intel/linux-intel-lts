@@ -218,6 +218,7 @@ iov-y += \
        gt/iov/intel_iov.o \
        gt/iov/intel_iov_debugfs.o \
        gt/iov/intel_iov_event.o \
+       gt/iov/intel_iov_migration.o \
        gt/iov/intel_iov_ggtt.o \
        gt/iov/intel_iov_memirq.o \
        gt/iov/intel_iov_provisioning.o \

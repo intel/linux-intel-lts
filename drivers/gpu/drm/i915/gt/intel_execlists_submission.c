@@ -2783,7 +2783,6 @@ static int emit_pdps(struct i915_request *rq)
 		*cs++ = lower_32_bits(pd_daddr);
 	}
 	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
-	intel_ring_advance(rq, cs);
 
 	intel_ring_advance(rq, cs);
 

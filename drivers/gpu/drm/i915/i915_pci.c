@@ -728,6 +728,10 @@ static const struct intel_device_info adl_p_info = {
 	.__runtime.ppgtt_size = 48, \
 	.__runtime.ppgtt_type = INTEL_PPGTT_FULL
 
+#define REMOTE_TILE_FEATURES \
+	.has_remote_tiles = 1, \
+	.memory_regions = (REGION_SMEM | REGION_STOLEN | REGION_LMEM)
+
 #define DG2_FEATURES \
 	XE_HP_FEATURES, \
 	DGFX_FEATURES, \
@@ -780,6 +784,7 @@ static const struct intel_device_info mtl_info = {
 	.has_flat_ccs = 0,
 	.has_gmd_id = 1,
 	.has_guc_deprivilege = 1,
+	.has_iov_memirq = 1,
 	.has_guc_tlb_invalidation = 1,
 	.has_llc = 0,
 	.has_memirq = 1,

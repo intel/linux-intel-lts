@@ -9,6 +9,7 @@
 #include <drm/i915_sriov.h>
 
 #define I915_VFIO_MAX_DATA_SIZE SZ_32M
+#define I915_VFIO_MIGRATION_DATA_SIZE SZ_1M
 #define I915_VFIO_MAX_TILE 2
 
 /**
@@ -80,13 +81,13 @@ struct i915_vfio_pci_core_device {
 };
 
 struct i915_vfio_pci_mappable_resource_ops {
-	size_t (*size)(struct pci_dev *pf, unsigned int vfid, unsigned int tile);
+	ssize_t (*size)(struct pci_dev *pf, unsigned int vfid, unsigned int tile);
 	void * (*map)(struct pci_dev *pf, unsigned int vfid, unsigned int tile);
 	void (*unmap)(struct pci_dev *pf, unsigned int vfid, unsigned int tile);
 };
 
 struct i915_vfio_pci_resource_ops {
-	size_t (*size)(struct pci_dev *pf, unsigned int vfid, unsigned int tile);
+	ssize_t (*size)(struct pci_dev *pf, unsigned int vfid, unsigned int tile);
 	ssize_t (*save)(struct pci_dev *pf, unsigned int vfid, unsigned int tile,
 			void *buf, size_t size);
 	int (*load)(struct pci_dev *pf, unsigned int vfid, unsigned int tile,
