@@ -26,6 +26,8 @@ bool intel_connector_get_hw_state(struct intel_connector *connector);
 enum pipe intel_connector_get_pipe(struct intel_connector *connector);
 int intel_connector_update_modes(struct drm_connector *connector,
 				 const struct drm_edid *drm_edid);
+int intel_connector_apply_border(struct intel_crtc_state *crtc_state,
+				 void *border_data);
 int intel_ddc_get_modes(struct drm_connector *c, struct i2c_adapter *ddc);
 void intel_attach_force_audio_property(struct drm_connector *connector);
 void intel_attach_broadcast_rgb_property(struct drm_connector *connector);
@@ -33,5 +35,6 @@ void intel_attach_aspect_ratio_property(struct drm_connector *connector);
 void intel_attach_hdmi_colorspace_property(struct drm_connector *connector);
 void intel_attach_dp_colorspace_property(struct drm_connector *connector);
 void intel_attach_scaling_mode_property(struct drm_connector *connector);
+void intel_attach_border_property(struct drm_connector *connector);
 
 #endif /* __INTEL_CONNECTOR_H__ */

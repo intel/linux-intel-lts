@@ -460,6 +460,7 @@ struct intel_display {
 	struct {
 		struct drm_property *broadcast_rgb;
 		struct drm_property *force_audio;
+		struct drm_property *border;
 	} properties;
 
 	struct {

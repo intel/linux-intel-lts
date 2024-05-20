@@ -2848,6 +2848,8 @@ intel_dp_compute_config(struct intel_encoder *encoder,
 			struct intel_crtc_state *pipe_config,
 			struct drm_connector_state *conn_state)
 {
+	const struct intel_digital_connector_state *intel_conn_state =
+		to_intel_digital_connector_state(conn_state);
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 	struct drm_display_mode *adjusted_mode = &pipe_config->hw.adjusted_mode;
 	struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
@@ -2891,6 +2893,13 @@ intel_dp_compute_config(struct intel_encoder *encoder,
 	if ((intel_dp_is_edp(intel_dp) && fixed_mode) ||
 	    pipe_config->output_format == INTEL_OUTPUT_FORMAT_YCBCR420) {
 		ret = intel_panel_fitting(pipe_config, conn_state);
+		if (ret)
+			return ret;
+	}
+
+	if (intel_conn_state->border) {
+		ret = intel_connector_apply_border(pipe_config,
+					intel_conn_state->border->data);
 		if (ret)
 			return ret;
 	}
@@ -6171,6 +6180,8 @@ intel_dp_add_properties(struct intel_dp *intel_dp, struct drm_connector *connect
 
 	if (HAS_VRR(dev_priv))
 		drm_connector_attach_vrr_capable_property(connector);
+
+	intel_attach_border_property(connector);
 }
 
 static void
