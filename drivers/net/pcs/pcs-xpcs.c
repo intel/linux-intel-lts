@@ -1330,7 +1330,7 @@ static const struct xpcs_compat synopsys_xpcs_compat[DW_XPCS_INTERFACE_MAX] = {
 	[DW_XPCS_SGMII_2500BASEX] = {
 		.supported = xpcs_sgmii_2500basex_features,
 		.interface = xpcs_sgmii_2500basex_interfaces,
-		.num_interfaces = ARRAY_SIZE(xpcs_sgmii_2500basex_features),
+		.num_interfaces = ARRAY_SIZE(xpcs_sgmii_2500basex_interfaces),
 		.an_mode = DW_SGMII_2500BASEX,
 	},
 };
