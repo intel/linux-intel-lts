@@ -148,3 +148,6 @@ obj-$(CONFIG_VIDEO_WM8775) += wm8775.o
 obj-$(CONFIG_VIDEO_LT6911UXC) += lt6911uxc.o
 obj-$(CONFIG_VIDEO_LT6911UXE) += lt6911uxe.o
 obj-$(CONFIG_VIDEO_AR0234) += ar0234.o
+ti960-objs      := ti953-ser.o ti960-des.o
+obj-$(CONFIG_VIDEO_TI960) += ti960.o
+obj-$(CONFIG_VIDEO_IMX390) += imx390.o

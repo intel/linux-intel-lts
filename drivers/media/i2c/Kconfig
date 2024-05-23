@@ -181,6 +181,16 @@ config VIDEO_IMX355
 	  To compile this driver as a module, choose M here: the
 	  module will be called imx355.
 
+config VIDEO_IMX390
+	tristate "IMX390 Camera Driver Support"
+	depends on I2C && VIDEO_DEV
+	help
+	  This is a Video4Linux2 sensor-level driver for
+	  Sony IMX390 camera with a MIPI CSI-2 interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called imx390.
+
 config VIDEO_IMX412
 	tristate "Sony IMX412 sensor support"
 	depends on OF_GPIO
@@ -1226,6 +1236,16 @@ config VIDEO_VPX3220
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called vpx3220.
+
+config VIDEO_TI960
+	tristate "TI960 driver support"
+	depends on I2C && VIDEO_DEV
+	help
+	  This is a driver for TI960 Deserializer
+	  with a MIPI CSI-2 interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ti960.
 
 comment "Video and audio decoders"
 
