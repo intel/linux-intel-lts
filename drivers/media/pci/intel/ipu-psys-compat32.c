@@ -216,34 +216,21 @@ long ipu_psys_compat_ioctl32(struct file *file, unsigned int cmd,
 	case IPU_IOC_QCMD:
 		err = get_ipu_psys_command32(&karg.cmd, up);
 		copy_to_user_size = sizeof(struct ipu_psys_command32);
-
-		pr_err("=========== IPU PSYS32 QMD IN ============");
-		pr_err("    issue_id: %i", karg.cmd.issue_id);
-		pr_err("    user_token: %i", karg.cmd.user_token);
-		pr_err("    priority: %i", karg.cmd.priority);
-		pr_err("    pg_manifest: %x", karg.cmd.pg_manifest);
-		pr_err("    buffers: %x", karg.cmd.buffers);
-		pr_err("    pg: %i", karg.cmd.pg);
-		pr_err("    pf_manifest_size: %i", karg.cmd.pg_manifest_size);
-		pr_err("    bufcount: %i", karg.cmd.bufcount);
-		pr_err("    min_psys_freq: %i", karg.cmd.min_psys_freq);
-		pr_err("    frame_counter: %i", karg.cmd.frame_counter);
-
 		compatible_arg = 0;
 		break;
 	case IPU_IOC_GET_MANIFEST:
 		err = get_ipu_psys_manifest32(&karg.m, up);
+		copy_to_user_size = sizeof(struct ipu_psys_manifest32);
 		compatible_arg = 0;
 		break;
 	}
 	if (err)
 		return err;
 
-	pr_err("=================== IOCTL: 0x%x ======================", cmd);
-
 	if (compatible_arg) {
 		err = native_ioctl(file, cmd, (unsigned long)up);
 	} else {
+		// This will lose 4/8 bytes from the end of the 64bit struct.
 		err = copy_to_user(up, &karg, copy_to_user_size ? copy_to_user_size : _IOC_SIZE(cmd));
 		if (err)
 			return err;
@@ -265,17 +252,6 @@ long ipu_psys_compat_ioctl32(struct file *file, unsigned int cmd,
 		break;
 	case IPU_IOC_QCMD:
 		err = put_ipu_psys_command32(&karg.cmd, up);
-		pr_err("=========== IPU PSYS32 QMD OUT ============");
-		pr_err("    issue_id: %i", karg.cmd.issue_id);
-		pr_err("    user_token: %i", karg.cmd.user_token);
-		pr_err("    priority: %i", karg.cmd.priority);
-		pr_err("    pg_manifest: %x", karg.cmd.pg_manifest);
-		pr_err("    buffers: %x", karg.cmd.buffers);
-		pr_err("    pg: %i", karg.cmd.pg);
-		pr_err("    pf_manifest_size: %i", karg.cmd.pg_manifest_size);
-		pr_err("    bufcount: %i", karg.cmd.bufcount);
-		pr_err("    min_psys_freq: %i", karg.cmd.min_psys_freq);
-		pr_err("    frame_counter: %i", karg.cmd.frame_counter);
 		break;
 	}
 	return err;
