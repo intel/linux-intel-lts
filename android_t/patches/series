@@ -58,20 +58,8 @@
 # CVE-2022-39188
 0001-mmu_gather-Force-tlb-flush-VM_PFNMAP-vmas.patch
 
-# CVE-2023-0597
-0001-x86-mm-Randomize-per-cpu-entry-area.patch
-
 # CVE-2023-23000
 0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
 
 # CVE-2023-2176
 0001-RDMA-core-Refactor-rdma_bind_addr.patch
-
-# CVE-2024-1086
-0001-netfilter-nf_tables-reject-QUEUE-DROP-verdict-parame.patch
-
-# CVE-2024-26594
-0001-ksmbd-validate-mech-token-in-session-setup.patch
-
-# CVE-2024-26592
-0001-ksmbd-fix-UAF-issue-in-ksmbd_tcp_new_connection.patch
