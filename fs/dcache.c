@@ -510,7 +510,7 @@ void d_drop(struct dentry *dentry)
 	__d_drop(dentry);
 	spin_unlock(&dentry->d_lock);
 }
-EXPORT_SYMBOL(d_drop);
+EXPORT_SYMBOL_NS(d_drop, ANDROID_GKI_VFS_EXPORT_ONLY);
 
 static inline void dentry_unlist(struct dentry *dentry, struct dentry *parent)
 {
@@ -762,12 +762,12 @@ static inline bool fast_dput(struct dentry *dentry)
 	 */
 	if (unlikely(ret < 0)) {
 		spin_lock(&dentry->d_lock);
-		if (dentry->d_lockref.count > 1) {
-			dentry->d_lockref.count--;
+		if (WARN_ON_ONCE(dentry->d_lockref.count <= 0)) {
 			spin_unlock(&dentry->d_lock);
 			return true;
 		}
-		return false;
+		dentry->d_lockref.count--;
+		goto locked;
 	}
 
 	/*
@@ -825,6 +825,7 @@ static inline bool fast_dput(struct dentry *dentry)
 	 * else could have killed it and marked it dead. Either way, we
 	 * don't need to do anything else.
 	 */
+locked:
 	if (dentry->d_lockref.count) {
 		spin_unlock(&dentry->d_lock);
 		return true;
@@ -968,7 +969,7 @@ repeat:
 	spin_unlock(&ret->d_lock);
 	return ret;
 }
-EXPORT_SYMBOL(dget_parent);
+EXPORT_SYMBOL_NS(dget_parent, ANDROID_GKI_VFS_EXPORT_ONLY);
 
 static struct dentry * __d_find_any_alias(struct inode *inode)
 {
@@ -1914,7 +1915,7 @@ void d_set_d_op(struct dentry *dentry, const struct dentry_operations *op)
 		dentry->d_flags |= DCACHE_OP_REAL;
 
 }
-EXPORT_SYMBOL(d_set_d_op);
+EXPORT_SYMBOL_NS(d_set_d_op, ANDROID_GKI_VFS_EXPORT_ONLY);
 
 
 /*
@@ -2533,7 +2534,7 @@ void d_rehash(struct dentry * entry)
 	__d_rehash(entry);
 	spin_unlock(&entry->d_lock);
 }
-EXPORT_SYMBOL(d_rehash);
+EXPORT_SYMBOL_NS(d_rehash, ANDROID_GKI_VFS_EXPORT_ONLY);
 
 static inline unsigned start_dir_add(struct inode *dir)
 {

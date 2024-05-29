@@ -14,6 +14,7 @@ ADDITIONAL_KMI_SYMBOL_LISTS="
 android/abi_gki_aarch64_virtual_device
 android/abi_gki_aarch64_virtual_device_removed
 android/abi_gki_aarch64_type_visibility
+android/abi_gki_aarch64_arcvm
 android/abi_gki_aarch64_arg
 android/abi_gki_aarch64_db845c
 android/abi_gki_aarch64_exynos
@@ -29,6 +30,7 @@ android/abi_gki_aarch64_microsoft
 android/abi_gki_aarch64_moto
 android/abi_gki_aarch64_mtktv
 android/abi_gki_aarch64_mtk
+android/abi_gki_aarch64_nothing
 android/abi_gki_aarch64_qcom
 android/abi_gki_aarch64_rtktv
 android/abi_gki_aarch64_sony
