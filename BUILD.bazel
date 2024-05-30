@@ -13,6 +13,7 @@ package(
 _aarch64_additional_kmi_symbol_lists = [
     # keep sorted
     "android/abi_gki_aarch64_amlogic",
+    "android/abi_gki_aarch64_arcvm",
     "android/abi_gki_aarch64_arg",
     "android/abi_gki_aarch64_db845c",
     "android/abi_gki_aarch64_exynos",
@@ -29,6 +30,7 @@ _aarch64_additional_kmi_symbol_lists = [
     "android/abi_gki_aarch64_moto",
     "android/abi_gki_aarch64_mtk",
     "android/abi_gki_aarch64_mtktv",
+    "android/abi_gki_aarch64_nothing",
     "android/abi_gki_aarch64_oplus",
     "android/abi_gki_aarch64_pasa",
     "android/abi_gki_aarch64_pixel",
