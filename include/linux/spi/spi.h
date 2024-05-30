@@ -919,6 +919,7 @@ static inline int acpi_spi_count_resources(struct acpi_device *adev)
 	return 0;
 }
 #endif
+extern struct spi_controller *spi_busnum_to_master(u16 busnum);
 
 /*
  * SPI resource management while processing a SPI message
