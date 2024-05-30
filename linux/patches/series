@@ -14,5 +14,8 @@
 0001-fs-proc-do_task_stat-use-__for_each_thread.patch
 0002-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
 
-# CVE-2024-26900
-0001-md-fix-kmemleak-of-rdev-serial.patch
+# CVE-2024-27017
+0001-netfilter-nft_set_pipapo-walk-over-current-view-on-n.patch
+
+# CVE-2024-27012
+0001-netfilter-nf_tables-restore-set-elements-when-delete.patch
