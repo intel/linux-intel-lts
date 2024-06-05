@@ -14,7 +14,7 @@
 #include <media/max9286.h>
 #include "ipu.h"
 
-#define GPIO_BASE		422
+#define GPIO_BASE		934
 
 #ifdef CONFIG_INTEL_IPU4_OV2740
 #define OV2740_LANES		2
