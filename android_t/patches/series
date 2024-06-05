@@ -68,6 +68,7 @@
 0001-wifi-ath10k-fix-NULL-pointer-dereference-in-ath10k_w.patch
 
 #CVE-2024-0841
+#CVE-2024-26688
 0001-fs-hugetlb-fix-NULL-pointer-dereference-in-hugetlbs_.patch
 
 #CVE-2024-26601
@@ -96,9 +97,6 @@
 
 #CVE-2024-26687
 0001-xen-events-close-evtchn-after-mapping-cleanup.patch
-
-#CVE-2024-26688
-0001-fs-hugetlb-fix-NULL-pointer-dereference-in-hugetlbs_.patch
 
 #CVE-2024-26642
 #0001-netfilter-nf_tables-disallow-anonymous-set-with-time.patch
@@ -130,8 +128,6 @@
 0001-fs-aio-Restrict-kiocb_set_cancel_fn-to-I-O-submitted.patch
 
 #CVE-2024-26772
-0001-ext4-avoid-allocating-blocks-from-corrupted-group-in.patch
-
 #CVE-2024-26773
 0001-ext4-avoid-allocating-blocks-from-corrupted-group-in.patch
 
@@ -245,6 +241,7 @@
 0041-netfilter-nf_tables-discard-table-flag-update-with-p.patch
 0042-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
 0043-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
+0044-netfilter-br_netfilter-skip-conntrack-input-hook-for.patch
 
 #CVE-2024-27020
 #0001-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
