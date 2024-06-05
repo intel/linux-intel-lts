@@ -1,0 +1,45 @@
+From df1bc269da889f40daf1182a7c6b3df160b93421 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Mon, 8 Apr 2024 23:19:29 +0200
+Subject: [PATCH 25/29] netfilter: nf_tables: release mutex after
+ nft_gc_seq_end from abort path
+
+commit 0d459e2ffb541841714839e8228b845458ed3b27 upstream.
+
+The commit mutex should not be released during the critical section
+between nft_gc_seq_begin() and nft_gc_seq_end(), otherwise, async GC
+worker could collect expired objects and get the released commit lock
+within the same GC sequence.
+
+nf_tables_module_autoload() temporarily releases the mutex to load
+module dependencies, then it goes back to replay the transaction again.
+Move it at the end of the abort phase after nft_gc_seq_end() is called.
+
+Cc: stable@vger.kernel.org
+Fixes: 720344340fb9 ("netfilter: nf_tables: GC transaction race with abort path")
+Reported-by: Kuan-Ting Chen <hexrabbit@devco.re>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nf_tables_api.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index 79e447d05a6e5..ca061fc0b1def 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -9880,11 +9880,6 @@ static int __nf_tables_abort(struct net *net, enum nfnl_abort_action action)
+ 		nf_tables_abort_release(trans);
+ 	}
+ 
+-	if (action == NFNL_ABORT_AUTOLOAD)
+-		nf_tables_module_autoload(net);
+-	else
+-		nf_tables_module_autoload_cleanup(net);
+-
+ 	return err;
+ }
+ 
+-- 
+2.25.1
+

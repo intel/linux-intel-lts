@@ -1,0 +1,49 @@
+From 855a369acd39cdaf7bad5e755cf814e21cf1b06b Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Mon, 8 Apr 2024 23:19:28 +0200
+Subject: [PATCH 24/29] netfilter: nf_tables: release batch on table validation
+ from abort path
+
+commit a45e6889575c2067d3c0212b6bc1022891e65b91 upstream.
+
+Unlike early commit path stage which triggers a call to abort, an
+explicit release of the batch is required on abort, otherwise mutex is
+released and commit_list remains in place.
+
+Add WARN_ON_ONCE to ensure commit_list is empty from the abort path
+before releasing the mutex.
+
+After this patch, commit_list is always assumed to be empty before
+grabbing the mutex, therefore
+
+  03c1f1ef1584 ("netfilter: Cleanup nft_net->module_list from nf_tables_exit_net()")
+
+only needs to release the pending modules for registration.
+
+Cc: stable@vger.kernel.org
+Fixes: c0391b6ab810 ("netfilter: nf_tables: missing validation from the abort path")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nf_tables_api.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index ca061fc0b1def..79e447d05a6e5 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -9880,6 +9880,11 @@ static int __nf_tables_abort(struct net *net, enum nfnl_abort_action action)
+ 		nf_tables_abort_release(trans);
+ 	}
+ 
++	if (action == NFNL_ABORT_AUTOLOAD)
++		nf_tables_module_autoload(net);
++	else
++		nf_tables_module_autoload_cleanup(net);
++
+ 	return err;
+ }
+ 
+-- 
+2.25.1
+
