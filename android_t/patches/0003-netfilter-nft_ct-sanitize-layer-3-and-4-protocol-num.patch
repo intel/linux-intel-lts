@@ -1,0 +1,58 @@
+From 7dbaa978d396b657dee1d3ab05b1de19aa40c021 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Mon, 29 Jan 2024 13:12:33 +0100
+Subject: [PATCH 03/43] netfilter: nft_ct: sanitize layer 3 and 4 protocol
+ number in custom expectations
+
+[ Upstream commit 8059918a1377f2f1fff06af4f5a4ed3d5acd6bc4 ]
+
+- Disallow families other than NFPROTO_{IPV4,IPV6,INET}.
+- Disallow layer 4 protocol with no ports, since destination port is a
+  mandatory attribute for this object.
+
+Fixes: 857b46027d6f ("netfilter: nft_ct: add ct expectations support")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nft_ct.c | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/net/netfilter/nft_ct.c b/net/netfilter/nft_ct.c
+index bd468e955a21..d8fd7e487e47 100644
+--- a/net/netfilter/nft_ct.c
++++ b/net/netfilter/nft_ct.c
+@@ -1186,7 +1186,31 @@ static int nft_ct_expect_obj_init(const struct nft_ctx *ctx,
+ 	if (tb[NFTA_CT_EXPECT_L3PROTO])
+ 		priv->l3num = ntohs(nla_get_be16(tb[NFTA_CT_EXPECT_L3PROTO]));
+ 
++	switch (priv->l3num) {
++	case NFPROTO_IPV4:
++	case NFPROTO_IPV6:
++		if (priv->l3num != ctx->family)
++			return -EINVAL;
++
++		fallthrough;
++	case NFPROTO_INET:
++		break;
++	default:
++		return -EOPNOTSUPP;
++	}
++
+ 	priv->l4proto = nla_get_u8(tb[NFTA_CT_EXPECT_L4PROTO]);
++	switch (priv->l4proto) {
++	case IPPROTO_TCP:
++	case IPPROTO_UDP:
++	case IPPROTO_UDPLITE:
++	case IPPROTO_DCCP:
++	case IPPROTO_SCTP:
++		break;
++	default:
++		return -EOPNOTSUPP;
++	}
++
+ 	priv->dport = nla_get_be16(tb[NFTA_CT_EXPECT_DPORT]);
+ 	priv->timeout = nla_get_u32(tb[NFTA_CT_EXPECT_TIMEOUT]);
+ 	priv->size = nla_get_u8(tb[NFTA_CT_EXPECT_SIZE]);
+-- 
+2.25.1
+

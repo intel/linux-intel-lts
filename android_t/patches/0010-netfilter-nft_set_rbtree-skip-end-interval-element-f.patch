@@ -1,0 +1,55 @@
+From 73a2ceddd34ae26110e8ea2782dac5b9bdb61107 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Wed, 7 Feb 2024 18:49:51 +0100
+Subject: [PATCH 10/43] netfilter: nft_set_rbtree: skip end interval element
+ from gc
+
+commit 60c0c230c6f046da536d3df8b39a20b9a9fd6af0 upstream.
+
+rbtree lazy gc on insert might collect an end interval element that has
+been just added in this transactions, skip end interval elements that
+are not yet active.
+
+Fixes: f718863aca46 ("netfilter: nft_set_rbtree: fix overlap expiration walk")
+Cc: stable@vger.kernel.org
+Reported-by: lonial con <kongln9170@gmail.com>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ net/netfilter/nft_set_rbtree.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/net/netfilter/nft_set_rbtree.c b/net/netfilter/nft_set_rbtree.c
+index e34662f4a71e..5bf5572e945c 100644
+--- a/net/netfilter/nft_set_rbtree.c
++++ b/net/netfilter/nft_set_rbtree.c
+@@ -235,7 +235,7 @@ static void nft_rbtree_gc_remove(struct net *net, struct nft_set *set,
+ 
+ static const struct nft_rbtree_elem *
+ nft_rbtree_gc_elem(const struct nft_set *__set, struct nft_rbtree *priv,
+-		   struct nft_rbtree_elem *rbe, u8 genmask)
++		   struct nft_rbtree_elem *rbe)
+ {
+ 	struct nft_set *set = (struct nft_set *)__set;
+ 	struct rb_node *prev = rb_prev(&rbe->node);
+@@ -254,7 +254,7 @@ nft_rbtree_gc_elem(const struct nft_set *__set, struct nft_rbtree *priv,
+ 	while (prev) {
+ 		rbe_prev = rb_entry(prev, struct nft_rbtree_elem, node);
+ 		if (nft_rbtree_interval_end(rbe_prev) &&
+-		    nft_set_elem_active(&rbe_prev->ext, genmask))
++		    nft_set_elem_active(&rbe_prev->ext, NFT_GENMASK_ANY))
+ 			break;
+ 
+ 		prev = rb_prev(prev);
+@@ -365,7 +365,7 @@ static int __nft_rbtree_insert(const struct net *net, const struct nft_set *set,
+ 		    nft_set_elem_active(&rbe->ext, cur_genmask)) {
+ 			const struct nft_rbtree_elem *removed_end;
+ 
+-			removed_end = nft_rbtree_gc_elem(set, priv, rbe, genmask);
++			removed_end = nft_rbtree_gc_elem(set, priv, rbe);
+ 			if (IS_ERR(removed_end))
+ 				return PTR_ERR(removed_end);
+ 
+-- 
+2.25.1
+

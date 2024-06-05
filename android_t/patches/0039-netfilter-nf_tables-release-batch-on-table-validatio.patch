@@ -1,0 +1,82 @@
+From 63b28fc5aeddac16230293b4f05650f63787d032 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Mon, 8 Apr 2024 23:19:28 +0200
+Subject: [PATCH 39/43] netfilter: nf_tables: release batch on table validation
+ from abort path
+
+commit a45e6889575c2067d3c0212b6bc1022891e65b91 upstream.
+
+Unlike early commit path stage which triggers a call to abort, an
+explicit release of the batch is required on abort, otherwise mutex is
+released and commit_list remains in place.
+
+Add WARN_ON_ONCE to ensure commit_list is empty from the abort path
+before releasing the mutex.
+
+After this patch, commit_list is always assumed to be empty before
+grabbing the mutex, therefore
+
+  03c1f1ef1584 ("netfilter: Cleanup nft_net->module_list from nf_tables_exit_net()")
+
+only needs to release the pending modules for registration.
+
+Cc: stable@vger.kernel.org
+Fixes: c0391b6ab810 ("netfilter: nf_tables: missing validation from the abort path")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nf_tables_api.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index c8b3201c1be2..c55f44843db2 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -9701,10 +9701,11 @@ static int __nf_tables_abort(struct net *net, enum nfnl_abort_action action)
+ 	struct nft_trans *trans, *next;
+ 	LIST_HEAD(set_update_list);
+ 	struct nft_trans_elem *te;
++	int err = 0;
+ 
+ 	if (action == NFNL_ABORT_VALIDATE &&
+ 	    nf_tables_validate(net) < 0)
+-		return -EAGAIN;
++		err = -EAGAIN;
+ 
+ 	list_for_each_entry_safe_reverse(trans, next, &nft_net->commit_list,
+ 					 list) {
+@@ -9880,7 +9881,7 @@ static int __nf_tables_abort(struct net *net, enum nfnl_abort_action action)
+ 	else
+ 		nf_tables_module_autoload_cleanup(net);
+ 
+-	return 0;
++	return err;
+ }
+ 
+ static int nf_tables_abort(struct net *net, struct sk_buff *skb,
+@@ -9894,6 +9895,8 @@ static int nf_tables_abort(struct net *net, struct sk_buff *skb,
+ 	ret = __nf_tables_abort(net, action);
+ 	nft_gc_seq_end(nft_net, gc_seq);
+ 
++	WARN_ON_ONCE(!list_empty(&nft_net->commit_list));
++
+ 	mutex_unlock(&nft_net->commit_mutex);
+ 
+ 	return ret;
+@@ -10695,9 +10698,10 @@ static void __net_exit nf_tables_exit_net(struct net *net)
+ 
+ 	gc_seq = nft_gc_seq_begin(nft_net);
+ 
+-	if (!list_empty(&nft_net->commit_list) ||
+-	    !list_empty(&nft_net->module_list))
+-		__nf_tables_abort(net, NFNL_ABORT_NONE);
++	WARN_ON_ONCE(!list_empty(&nft_net->commit_list));
++
++	if (!list_empty(&nft_net->module_list))
++		nf_tables_module_autoload_cleanup(net);
+ 
+ 	__nft_release_tables(net);
+ 
+-- 
+2.25.1
+

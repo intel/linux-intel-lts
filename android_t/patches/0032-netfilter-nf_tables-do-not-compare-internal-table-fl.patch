@@ -1,0 +1,33 @@
+From fa7906a780e30b877e4f17ed618176f70ff6b61c Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Thu, 14 Mar 2024 18:51:38 +0100
+Subject: [PATCH 32/43] netfilter: nf_tables: do not compare internal table
+ flags on updates
+
+[ Upstream commit 4a0e7f2decbf9bd72461226f1f5f7dcc4b08f139 ]
+
+Restore skipping transaction if table update does not modify flags.
+
+Fixes: 179d9ba5559a ("netfilter: nf_tables: fix table flag updates")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nf_tables_api.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index d6f10a9f9359..b4299ecfcbd3 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -1151,7 +1151,7 @@ static int nf_tables_updtable(struct nft_ctx *ctx)
+ 	if (flags & ~NFT_TABLE_F_MASK)
+ 		return -EOPNOTSUPP;
+ 
+-	if (flags == ctx->table->flags)
++	if (flags == (ctx->table->flags & NFT_TABLE_F_MASK))
+ 		return 0;
+ 
+ 	if ((nft_table_has_owner(ctx->table) &&
+-- 
+2.25.1
+

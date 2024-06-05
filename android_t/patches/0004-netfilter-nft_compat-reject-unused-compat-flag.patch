@@ -1,0 +1,51 @@
+From 9ac853f28bbbd101a2a6a727cfe0adc2ad4fa3fc Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Thu, 1 Feb 2024 23:33:29 +0100
+Subject: [PATCH 04/43] netfilter: nft_compat: reject unused compat flag
+
+[ Upstream commit 292781c3c5485ce33bd22b2ef1b2bed709b4d672 ]
+
+Flag (1 << 0) is ignored is set, never used, reject it it with EINVAL
+instead.
+
+Fixes: 0ca743a55991 ("netfilter: nf_tables: add compatibility layer for x_tables")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ include/uapi/linux/netfilter/nf_tables.h | 2 ++
+ net/netfilter/nft_compat.c               | 3 ++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/include/uapi/linux/netfilter/nf_tables.h b/include/uapi/linux/netfilter/nf_tables.h
+index 07871c8a0601..62cc780a168a 100644
+--- a/include/uapi/linux/netfilter/nf_tables.h
++++ b/include/uapi/linux/netfilter/nf_tables.h
+@@ -266,9 +266,11 @@ enum nft_rule_attributes {
+ /**
+  * enum nft_rule_compat_flags - nf_tables rule compat flags
+  *
++ * @NFT_RULE_COMPAT_F_UNUSED: unused
+  * @NFT_RULE_COMPAT_F_INV: invert the check result
+  */
+ enum nft_rule_compat_flags {
++	NFT_RULE_COMPAT_F_UNUSED = (1 << 0),
+ 	NFT_RULE_COMPAT_F_INV	= (1 << 1),
+ 	NFT_RULE_COMPAT_F_MASK	= NFT_RULE_COMPAT_F_INV,
+ };
+diff --git a/net/netfilter/nft_compat.c b/net/netfilter/nft_compat.c
+index f69cc73c5813..f3854751fe6a 100644
+--- a/net/netfilter/nft_compat.c
++++ b/net/netfilter/nft_compat.c
+@@ -212,7 +212,8 @@ static int nft_parse_compat(const struct nlattr *attr, u16 *proto, bool *inv)
+ 		return -EINVAL;
+ 
+ 	flags = ntohl(nla_get_be32(tb[NFTA_RULE_COMPAT_FLAGS]));
+-	if (flags & ~NFT_RULE_COMPAT_F_MASK)
++	if (flags & NFT_RULE_COMPAT_F_UNUSED ||
++	    flags & ~NFT_RULE_COMPAT_F_MASK)
+ 		return -EINVAL;
+ 	if (flags & NFT_RULE_COMPAT_F_INV)
+ 		*inv = true;
+-- 
+2.25.1
+

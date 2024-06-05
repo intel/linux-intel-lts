@@ -1,0 +1,45 @@
+From a6f5d505a8c6315dac611372897fb5386e58bcdb Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Mon, 29 Jan 2024 11:09:43 +0100
+Subject: [PATCH 02/43] netfilter: nf_log: replace BUG_ON by WARN_ON_ONCE when
+ putting logger
+
+[ Upstream commit 259eb32971e9eb24d1777a28d82730659f50fdcb ]
+
+Module reference is bumped for each user, this should not ever happen.
+
+But BUG_ON check should use rcu_access_pointer() instead.
+
+If this ever happens, do WARN_ON_ONCE() instead of BUG_ON() and
+consolidate pointer check under the rcu read side lock section.
+
+Fixes: fab4085f4e24 ("netfilter: log: nf_log_packet() as real unified interface")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/netfilter/nf_log.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/net/netfilter/nf_log.c b/net/netfilter/nf_log.c
+index edee7fa944c1..8f5362a19b15 100644
+--- a/net/netfilter/nf_log.c
++++ b/net/netfilter/nf_log.c
+@@ -193,11 +193,12 @@ void nf_logger_put(int pf, enum nf_log_type type)
+ 		return;
+ 	}
+ 
+-	BUG_ON(loggers[pf][type] == NULL);
+-
+ 	rcu_read_lock();
+ 	logger = rcu_dereference(loggers[pf][type]);
+-	module_put(logger->me);
++	if (!logger)
++		WARN_ON_ONCE(1);
++	else
++		module_put(logger->me);
+ 	rcu_read_unlock();
+ }
+ EXPORT_SYMBOL_GPL(nf_logger_put);
+-- 
+2.25.1
+

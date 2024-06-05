@@ -1,0 +1,54 @@
+From 1db75bdb298b59f1932fcefb67fa90fdef003661 Mon Sep 17 00:00:00 2001
+From: Nigel Kirkland <nkirkland2304@gmail.com>
+Date: Thu, 17 Aug 2023 12:43:01 -0700
+Subject: [PATCH] nvme-fc: Prevent null pointer dereference in
+ nvme_fc_io_getuuid()
+
+[ Upstream commit 8ae5b3a685dc59a8cf7ccfe0e850999ba9727a3c ]
+
+The nvme_fc_fcp_op structure describing an AEN operation is initialized with a
+null request structure pointer. An FC LLDD may make a call to
+nvme_fc_io_getuuid passing a pointer to an nvmefc_fcp_req for an AEN operation.
+
+Add validation of the request structure pointer before dereference.
+
+Signed-off-by: Nigel Kirkland <nkirkland2304@gmail.com>
+Reviewed-by: James Smart <jsmart2021@gmail.com>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/nvme/host/fc.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/drivers/nvme/host/fc.c b/drivers/nvme/host/fc.c
+index aa14ad963d91..286c79050b42 100644
+--- a/drivers/nvme/host/fc.c
++++ b/drivers/nvme/host/fc.c
+@@ -1898,6 +1898,24 @@ nvme_fc_ctrl_ioerr_work(struct work_struct *work)
+ 	nvme_fc_error_recovery(ctrl, "transport detected io error");
+ }
+ 
++/*
++ * nvme_fc_io_getuuid - Routine called to get the appid field
++ * associated with request by the lldd
++ * @req:IO request from nvme fc to driver
++ * Returns: UUID if there is an appid associated with VM or
++ * NULL if the user/libvirt has not set the appid to VM
++ */
++char *nvme_fc_io_getuuid(struct nvmefc_fcp_req *req)
++{
++	struct nvme_fc_fcp_op *op = fcp_req_to_fcp_op(req);
++	struct request *rq = op->rq;
++
++	if (!IS_ENABLED(CONFIG_BLK_CGROUP_FC_APPID) || !rq || !rq->bio)
++		return NULL;
++	return blkcg_get_fc_appid(rq->bio);
++}
++EXPORT_SYMBOL_GPL(nvme_fc_io_getuuid);
++
+ static void
+ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
+ {
+-- 
+2.25.1
+

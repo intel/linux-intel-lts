@@ -1,0 +1,134 @@
+From 9aacd55d7baf85ecf34e3bd3b5761174deab639a Mon Sep 17 00:00:00 2001
+From: Kees Cook <keescook@chromium.org>
+Date: Tue, 18 Oct 2022 02:56:03 -0700
+Subject: [PATCH 2/3] net: dev: Convert sa_data to flexible array in struct
+ sockaddr
+
+[ Upstream commit b5f0de6df6dce8d641ef58ef7012f3304dffb9a1 ]
+
+One of the worst offenders of "fake flexible arrays" is struct sockaddr,
+as it is the classic example of why GCC and Clang have been traditionally
+forced to treat all trailing arrays as fake flexible arrays: in the
+distant misty past, sa_data became too small, and code started just
+treating it as a flexible array, even though it was fixed-size. The
+special case by the compiler is specifically that sizeof(sa->sa_data)
+and FORTIFY_SOURCE (which uses __builtin_object_size(sa->sa_data, 1))
+do not agree (14 and -1 respectively), which makes FORTIFY_SOURCE treat
+it as a flexible array.
+
+However, the coming -fstrict-flex-arrays compiler flag will remove
+these special cases so that FORTIFY_SOURCE can gain coverage over all
+the trailing arrays in the kernel that are _not_ supposed to be treated
+as a flexible array. To deal with this change, convert sa_data to a true
+flexible array. To keep the structure size the same, move sa_data into
+a union with a newly introduced sa_data_min with the original size. The
+result is that FORTIFY_SOURCE can continue to have no idea how large
+sa_data may actually be, but anything using sizeof(sa->sa_data) must
+switch to sizeof(sa->sa_data_min).
+
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Pavel Begunkov <asml.silence@gmail.com>
+Cc: David Ahern <dsahern@kernel.org>
+Cc: Dylan Yudaken <dylany@fb.com>
+Cc: Yajun Deng <yajun.deng@linux.dev>
+Cc: Petr Machata <petrm@nvidia.com>
+Cc: Hangbin Liu <liuhangbin@gmail.com>
+Cc: Leon Romanovsky <leon@kernel.org>
+Cc: syzbot <syzkaller@googlegroups.com>
+Cc: Willem de Bruijn <willemb@google.com>
+Cc: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Link: https://lore.kernel.org/r/20221018095503.never.671-kees@kernel.org
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Stable-dep-of: a7d6027790ac ("arp: Prevent overflow in arp_req_get().")
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ include/linux/socket.h |  5 ++++-
+ net/core/dev.c         |  2 +-
+ net/core/dev_ioctl.c   |  2 +-
+ net/packet/af_packet.c | 10 +++++-----
+ 4 files changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/include/linux/socket.h b/include/linux/socket.h
+index 041d6032a348..4c5ce8124f8e 100644
+--- a/include/linux/socket.h
++++ b/include/linux/socket.h
+@@ -31,7 +31,10 @@ typedef __kernel_sa_family_t	sa_family_t;
+ 
+ struct sockaddr {
+ 	sa_family_t	sa_family;	/* address family, AF_xxx	*/
+-	char		sa_data[14];	/* 14 bytes of protocol address	*/
++	union {
++		char sa_data_min[14];		/* Minimum 14 bytes of protocol address	*/
++		DECLARE_FLEX_ARRAY(char, sa_data);
++	};
+ };
+ 
+ struct linger {
+diff --git a/net/core/dev.c b/net/core/dev.c
+index 5452b7fc4851..415b8600a2ff 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -9097,7 +9097,7 @@ EXPORT_SYMBOL(dev_set_mac_address_user);
+ 
+ int dev_get_mac_address(struct sockaddr *sa, struct net *net, char *dev_name)
+ {
+-	size_t size = sizeof(sa->sa_data);
++	size_t size = sizeof(sa->sa_data_min);
+ 	struct net_device *dev;
+ 	int ret = 0;
+ 
+diff --git a/net/core/dev_ioctl.c b/net/core/dev_ioctl.c
+index 0e87237fd871..6ddfd7bfc512 100644
+--- a/net/core/dev_ioctl.c
++++ b/net/core/dev_ioctl.c
+@@ -339,7 +339,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, void __user *data,
+ 		if (ifr->ifr_hwaddr.sa_family != dev->type)
+ 			return -EINVAL;
+ 		memcpy(dev->broadcast, ifr->ifr_hwaddr.sa_data,
+-		       min(sizeof(ifr->ifr_hwaddr.sa_data),
++		       min(sizeof(ifr->ifr_hwaddr.sa_data_min),
+ 			   (size_t)dev->addr_len));
+ 		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+ 		return 0;
+diff --git a/net/packet/af_packet.c b/net/packet/af_packet.c
+index d62f79cf873d..75fb80717e48 100644
+--- a/net/packet/af_packet.c
++++ b/net/packet/af_packet.c
+@@ -3252,7 +3252,7 @@ static int packet_bind_spkt(struct socket *sock, struct sockaddr *uaddr,
+ 			    int addr_len)
+ {
+ 	struct sock *sk = sock->sk;
+-	char name[sizeof(uaddr->sa_data) + 1];
++	char name[sizeof(uaddr->sa_data_min) + 1];
+ 
+ 	/*
+ 	 *	Check legality
+@@ -3263,8 +3263,8 @@ static int packet_bind_spkt(struct socket *sock, struct sockaddr *uaddr,
+ 	/* uaddr->sa_data comes from the userspace, it's not guaranteed to be
+ 	 * zero-terminated.
+ 	 */
+-	memcpy(name, uaddr->sa_data, sizeof(uaddr->sa_data));
+-	name[sizeof(uaddr->sa_data)] = 0;
++	memcpy(name, uaddr->sa_data, sizeof(uaddr->sa_data_min));
++	name[sizeof(uaddr->sa_data_min)] = 0;
+ 
+ 	return packet_do_bind(sk, name, 0, 0);
+ }
+@@ -3536,11 +3536,11 @@ static int packet_getname_spkt(struct socket *sock, struct sockaddr *uaddr,
+ 		return -EOPNOTSUPP;
+ 
+ 	uaddr->sa_family = AF_PACKET;
+-	memset(uaddr->sa_data, 0, sizeof(uaddr->sa_data));
++	memset(uaddr->sa_data, 0, sizeof(uaddr->sa_data_min));
+ 	rcu_read_lock();
+ 	dev = dev_get_by_index_rcu(sock_net(sk), READ_ONCE(pkt_sk(sk)->ifindex));
+ 	if (dev)
+-		strscpy(uaddr->sa_data, dev->name, sizeof(uaddr->sa_data));
++		strscpy(uaddr->sa_data, dev->name, sizeof(uaddr->sa_data_min));
+ 	rcu_read_unlock();
+ 
+ 	return sizeof(*uaddr);
+-- 
+2.25.1
+

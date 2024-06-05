@@ -1,0 +1,108 @@
+From 138e0b40bbccecabce373c58348bd0caeb536108 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Tue, 23 Jan 2024 23:45:32 +0100
+Subject: [PATCH 01/43] netfilter: nf_tables: restrict tunnel object to
+ NFPROTO_NETDEV
+
+[ Upstream commit 776d451648443f9884be4a1b4e38e8faf1c621f9 ]
+
+Bail out on using the tunnel dst template from other than netdev family.
+Add the infrastructure to check for the family in objects.
+
+Fixes: af308b94a2a4 ("netfilter: nf_tables: add tunnel support")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ include/net/netfilter/nf_tables.h |  2 ++
+ net/netfilter/nf_tables_api.c     | 14 +++++++++-----
+ net/netfilter/nft_tunnel.c        |  1 +
+ 3 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/include/net/netfilter/nf_tables.h b/include/net/netfilter/nf_tables.h
+index 8e9c5bc1a9e6..1e6e4af4df0a 100644
+--- a/include/net/netfilter/nf_tables.h
++++ b/include/net/netfilter/nf_tables.h
+@@ -1253,6 +1253,7 @@ void nft_obj_notify(struct net *net, const struct nft_table *table,
+  *	@type: stateful object numeric type
+  *	@owner: module owner
+  *	@maxattr: maximum netlink attribute
++ *	@family: address family for AF-specific object types
+  *	@policy: netlink attribute policy
+  */
+ struct nft_object_type {
+@@ -1262,6 +1263,7 @@ struct nft_object_type {
+ 	struct list_head		list;
+ 	u32				type;
+ 	unsigned int                    maxattr;
++	u8				family;
+ 	struct module			*owner;
+ 	const struct nla_policy		*policy;
+ };
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index e2e3ccbb635f..446e98e5aab1 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -6995,11 +6995,15 @@ static int nft_object_dump(struct sk_buff *skb, unsigned int attr,
+ 	return -1;
+ }
+ 
+-static const struct nft_object_type *__nft_obj_type_get(u32 objtype)
++static const struct nft_object_type *__nft_obj_type_get(u32 objtype, u8 family)
+ {
+ 	const struct nft_object_type *type;
+ 
+ 	list_for_each_entry(type, &nf_tables_objects, list) {
++		if (type->family != NFPROTO_UNSPEC &&
++		    type->family != family)
++			continue;
++
+ 		if (objtype == type->type)
+ 			return type;
+ 	}
+@@ -7007,11 +7011,11 @@ static const struct nft_object_type *__nft_obj_type_get(u32 objtype)
+ }
+ 
+ static const struct nft_object_type *
+-nft_obj_type_get(struct net *net, u32 objtype)
++nft_obj_type_get(struct net *net, u32 objtype, u8 family)
+ {
+ 	const struct nft_object_type *type;
+ 
+-	type = __nft_obj_type_get(objtype);
++	type = __nft_obj_type_get(objtype, family);
+ 	if (type != NULL && try_module_get(type->owner))
+ 		return type;
+ 
+@@ -7104,7 +7108,7 @@ static int nf_tables_newobj(struct sk_buff *skb, const struct nfnl_info *info,
+ 		if (info->nlh->nlmsg_flags & NLM_F_REPLACE)
+ 			return -EOPNOTSUPP;
+ 
+-		type = __nft_obj_type_get(objtype);
++		type = __nft_obj_type_get(objtype, family);
+ 		if (WARN_ON_ONCE(!type))
+ 			return -ENOENT;
+ 
+@@ -7118,7 +7122,7 @@ static int nf_tables_newobj(struct sk_buff *skb, const struct nfnl_info *info,
+ 	if (!nft_use_inc(&table->use))
+ 		return -EMFILE;
+ 
+-	type = nft_obj_type_get(net, objtype);
++	type = nft_obj_type_get(net, objtype, family);
+ 	if (IS_ERR(type)) {
+ 		err = PTR_ERR(type);
+ 		goto err_type;
+diff --git a/net/netfilter/nft_tunnel.c b/net/netfilter/nft_tunnel.c
+index 2ee50996da8c..c8822fa8196d 100644
+--- a/net/netfilter/nft_tunnel.c
++++ b/net/netfilter/nft_tunnel.c
+@@ -684,6 +684,7 @@ static const struct nft_object_ops nft_tunnel_obj_ops = {
+ 
+ static struct nft_object_type nft_tunnel_obj_type __read_mostly = {
+ 	.type		= NFT_OBJECT_TUNNEL,
++	.family		= NFPROTO_NETDEV,
+ 	.ops		= &nft_tunnel_obj_ops,
+ 	.maxattr	= NFTA_TUNNEL_KEY_MAX,
+ 	.policy		= nft_tunnel_key_policy,
+-- 
+2.25.1
+

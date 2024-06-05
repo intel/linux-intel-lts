@@ -1,0 +1,56 @@
+From 7a51fdba898ef81252e7fe21f296b473672d5ab5 Mon Sep 17 00:00:00 2001
+From: Amit Pundir <amit.pundir@linaro.org>
+Date: Wed, 26 Jul 2023 18:57:19 +0530
+Subject: [PATCH] arm64: dts: qcom: sdm845-db845c: Mark cont splash memory
+ region as reserved
+
+[ Upstream commit 110e70fccce4f22b53986ae797d665ffb1950aa6 ]
+
+Adding a reserved memory region for the framebuffer memory
+(the splash memory region set up by the bootloader).
+
+It fixes a kernel panic (arm-smmu: Unhandled context fault
+at this particular memory region) reported on DB845c running
+v5.10.y.
+
+Cc: stable@vger.kernel.org # v5.10+
+Reviewed-by: Caleb Connolly <caleb.connolly@linaro.org>
+Signed-off-by: Amit Pundir <amit.pundir@linaro.org>
+Acked-by: Krzysztof Kozlowski <krzysztof.kozlowski@linaro.org>
+Link: https://lore.kernel.org/r/20230726132719.2117369-2-amit.pundir@linaro.org
+Signed-off-by: Bjorn Andersson <andersson@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ arch/arm64/boot/dts/qcom/sdm845-db845c.dts | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sdm845-db845c.dts b/arch/arm64/boot/dts/qcom/sdm845-db845c.dts
+index e7c4f74ad150..6d51f9174a50 100644
+--- a/arch/arm64/boot/dts/qcom/sdm845-db845c.dts
++++ b/arch/arm64/boot/dts/qcom/sdm845-db845c.dts
+@@ -87,6 +87,14 @@ hdmi_con: endpoint {
+ 		};
+ 	};
+ 
++	reserved-memory {
++		/* Cont splash region set up by the bootloader */
++		cont_splash_mem: framebuffer@9d400000 {
++			reg = <0x0 0x9d400000 0x0 0x2400000>;
++			no-map;
++		};
++	};
++
+ 	lt9611_1v8: lt9611-vdd18-regulator {
+ 		compatible = "regulator-fixed";
+ 		regulator-name = "LT9611_1V8";
+@@ -484,6 +492,7 @@ &i2c14 {
+ };
+ 
+ &mdss {
++	memory-region = <&cont_splash_mem>;
+ 	status = "okay";
+ };
+ 
+-- 
+2.25.1
+

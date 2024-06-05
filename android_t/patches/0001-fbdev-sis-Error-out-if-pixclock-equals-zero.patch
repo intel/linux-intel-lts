@@ -1,0 +1,41 @@
+From e8cd8753db0b9a32bbd6ec4fed0a9f343290ac6e Mon Sep 17 00:00:00 2001
+From: Fullway Wang <fullwaywang@outlook.com>
+Date: Thu, 18 Jan 2024 14:24:43 +0800
+Subject: [PATCH] fbdev: sis: Error out if pixclock equals zero
+
+[ Upstream commit e421946be7d9bf545147bea8419ef8239cb7ca52 ]
+
+The userspace program could pass any values to the driver through
+ioctl() interface. If the driver doesn't check the value of pixclock,
+it may cause divide-by-zero error.
+
+In sisfb_check_var(), var->pixclock is used as a divisor to caculate
+drate before it is checked against zero. Fix this by checking it
+at the beginning.
+
+This is similar to CVE-2022-3061 in i740fb which was fixed by
+commit 15cf0b8.
+
+Signed-off-by: Fullway Wang <fullwaywang@outlook.com>
+Signed-off-by: Helge Deller <deller@gmx.de>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/video/fbdev/sis/sis_main.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/video/fbdev/sis/sis_main.c b/drivers/video/fbdev/sis/sis_main.c
+index 266a5582f94d..c6e21ba00895 100644
+--- a/drivers/video/fbdev/sis/sis_main.c
++++ b/drivers/video/fbdev/sis/sis_main.c
+@@ -1474,6 +1474,8 @@ sisfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
+ 
+ 	vtotal = var->upper_margin + var->lower_margin + var->vsync_len;
+ 
++	if (!var->pixclock)
++		return -EINVAL;
+ 	pixclock = var->pixclock;
+ 
+ 	if((var->vmode & FB_VMODE_MASK) == FB_VMODE_NONINTERLACED) {
+-- 
+2.25.1
+
