@@ -83,6 +83,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
 	IPU_SENSOR_CONFIG("OVTI2680", 1, 331200000),
 	/* Omnivision OV8856 */
 	IPU_SENSOR_CONFIG("OVTI8856", 3, 180000000, 360000000, 720000000),
+	/* OnSemiconductor ar0234 */
+	IPU_SENSOR_CONFIG("INTC10C0", 1, 360000000),
 };
 
 static const struct ipu_property_names prop_names = {
