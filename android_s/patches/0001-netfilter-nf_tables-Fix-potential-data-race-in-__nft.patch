@@ -1,0 +1,58 @@
+From 9bde52e99b33d9259c7611d0a3ef7d0d20b43d8f Mon Sep 17 00:00:00 2001
+From: Ziyang Xuan <william.xuanziyang@huawei.com>
+Date: Sun, 7 Apr 2024 14:56:05 +0800
+Subject: [PATCH] netfilter: nf_tables: Fix potential data-race in
+ __nft_obj_type_get()
+
+nft_unregister_obj() can concurrent with __nft_obj_type_get(),
+and there is not any protection when iterate over nf_tables_objects
+list in __nft_obj_type_get(). Therefore, there is potential data-race
+of nf_tables_objects list entry.
+
+Use list_for_each_entry_rcu() to iterate over nf_tables_objects
+list in __nft_obj_type_get(), and use rcu_read_lock() in the caller
+nft_obj_type_get() to protect the entire type query process.
+
+Fixes: e50092404c1b ("netfilter: nf_tables: add stateful objects")
+Signed-off-by: Ziyang Xuan <william.xuanziyang@huawei.com>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ net/netfilter/nf_tables_api.c | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index db453d19f2a0..2a45b215da76 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -5155,7 +5155,11 @@ static const struct nft_object_type *__nft_obj_type_get(u32 objtype)
+ {
+ 	const struct nft_object_type *type;
+ 
+-	list_for_each_entry(type, &nf_tables_objects, list) {
++	list_for_each_entry_rcu(type, &nf_tables_objects, list) {
++		if (type->family != NFPROTO_UNSPEC &&
++		    type->family != family)
++			continue;
++
+ 		if (objtype == type->type)
+ 			return type;
+ 	}
+@@ -5167,9 +5171,13 @@ nft_obj_type_get(struct net *net, u32 objtype)
+ {
+ 	const struct nft_object_type *type;
+ 
+-	type = __nft_obj_type_get(objtype);
+-	if (type != NULL && try_module_get(type->owner))
++	rcu_read_lock();
++	type = __nft_obj_type_get(objtype, family);
++	if (type != NULL && try_module_get(type->owner)) {
++		rcu_read_unlock();
+ 		return type;
++	}
++	rcu_read_unlock();
+ 
+ 	lockdep_nfnl_nft_mutex_not_held();
+ #ifdef CONFIG_MODULES
+-- 
+2.25.1
+
