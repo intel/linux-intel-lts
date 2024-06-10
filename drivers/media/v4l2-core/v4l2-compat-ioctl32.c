@@ -776,38 +776,6 @@ static int put_v4l2_event32(struct v4l2_event *p64,
 	return 0;
 }
 
-struct v4l2_subdev_routing32 {
-	compat_caddr_t routes;
-	__u32 num_routes;
-	__u32 reserved[5];
-};
-
-static int get_v4l2_subdev_routing32(struct v4l2_subdev_routing __user *p64,
-				   struct v4l2_subdev_routing32 __user *p32)
-{
-	compat_caddr_t tmp;
-
-    if (get_user(tmp, &p32->routes) ||
-	get_user(p64->num_routes, &p32->num_routes) ||
-	copy_from_user(&p64->reserved, &p32->reserved, sizeof(p64->reserved)))
-	return -EFAULT;
-    p64->routes = (void __force *)compat_ptr(tmp);
-
-	return 0;
-}
-
-static int put_v4l2_subdev_routing32(struct v4l2_subdev_routing __user *p64,
-				   struct v4l2_subdev_routing32 __user *p32)
-{
-    if (put_user((uintptr_t)p64->routes, &p32->routes) ||
-	put_user(p64->num_routes, &p32->num_routes) ||
-	copy_to_user(&p32->reserved, &p64->reserved, sizeof(p64->reserved))) {
-	return -EFAULT;
-    }
-
-	return 0;
-}
-
 #endif
 
 #ifdef CONFIG_COMPAT_32BIT_TIME
@@ -908,8 +876,6 @@ static int put_v4l2_edid32(struct v4l2_edid *p64,
 #define VIDIOC_STREAMOFF32	_IOW('V', 19, s32)
 #define VIDIOC_G_INPUT32	_IOR('V', 38, s32)
 #define VIDIOC_S_INPUT32	_IOWR('V', 39, s32)
-#define VIDIOC_SUBDEV_G_ROUTING32 _IOWR('V', 38, struct v4l2_subdev_routing32)
-#define VIDIOC_SUBDEV_S_ROUTING32 _IOWR('V', 39, struct v4l2_subdev_routing32)
 #define VIDIOC_G_OUTPUT32	_IOR('V', 46, s32)
 #define VIDIOC_S_OUTPUT32	_IOWR('V', 47, s32)
 
@@ -950,10 +916,6 @@ unsigned int v4l2_compat_translate_cmd(unsigned int cmd)
 	return VIDIOC_STREAMON;
     case VIDIOC_STREAMOFF32:
 	return VIDIOC_STREAMOFF;
-    case VIDIOC_SUBDEV_G_ROUTING32:
-	return VIDIOC_SUBDEV_G_ROUTING;
-    case VIDIOC_SUBDEV_S_ROUTING32:
-	return VIDIOC_SUBDEV_S_ROUTING;
 	case VIDIOC_QUERYBUF32:
 		return VIDIOC_QUERYBUF;
 	case VIDIOC_QBUF32:
@@ -1030,10 +992,6 @@ int v4l2_compat_get_user(void __user *arg, void *parg, unsigned int cmd)
 	case VIDIOC_G_EDID32:
 	case VIDIOC_S_EDID32:
 		return get_v4l2_edid32(parg, arg);
-
-	case VIDIOC_SUBDEV_G_ROUTING32:
-	case VIDIOC_SUBDEV_S_ROUTING32:
-	return get_v4l2_subdev_routing32(parg, arg);
 	}
 	return 0;
 }
@@ -1086,9 +1044,6 @@ int v4l2_compat_put_user(void __user *arg, void *parg, unsigned int cmd)
 	case VIDIOC_DQEVENT32_TIME32:
 		return put_v4l2_event32_time32(parg, arg);
 #endif
-	case VIDIOC_SUBDEV_G_ROUTING32:
-	case VIDIOC_SUBDEV_S_ROUTING32:
-	return put_v4l2_subdev_routing32(parg, arg);
 	}
 	return 0;
 }
