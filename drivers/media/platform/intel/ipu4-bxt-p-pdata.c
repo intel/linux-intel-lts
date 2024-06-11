@@ -1531,7 +1531,7 @@ static struct ipu_isys_subdev_info ti960_sd_2 = {
 #endif
 
 
-#if IS_ENABLED(CONFIG_VIDEO_MAX9286)
+#if IS_ENABLED(CONFIG_VIDEO_MAX9286_INTEL)
 #define DS_MAX9286_LANES                4
 #define DS_MAX9286_I2C_ADAPTER          4
 #define DS_MAX9286_I2C_ADDRESS          0x48
@@ -1610,7 +1610,7 @@ static struct ipu_isys_subdev_info max9286_sd = {
 	.csi2 = &max9286_csi2_cfg,
 	.i2c = {
 		.board_info = {
-			.type = "max9286",
+			.type = "max9286_intel",
 			.addr = DS_MAX9286_I2C_ADDRESS,
 			.platform_data = &max9286_pdata,
 		},
@@ -1693,7 +1693,7 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&ti960_sd,
 		&ti960_sd_2,
 #endif
-#if IS_ENABLED(CONFIG_VIDEO_MAX9286)
+#if IS_ENABLED(CONFIG_VIDEO_MAX9286_INTEL)
 		&max9286_sd,
 #endif
 		NULL,
