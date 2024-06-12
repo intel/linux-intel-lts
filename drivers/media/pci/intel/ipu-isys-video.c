@@ -1515,7 +1515,7 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
-	media_graph_walk_start(&graph, &av->vdev.entity);
+	media_graph_walk_start(&graph, &av->vdev.entity.pads[0]);
 	while ((entity = media_graph_walk_next(&graph)))
 		media_entity_enum_set(&ip->entity_enum, entity);
 
@@ -1637,7 +1637,7 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 				      ip->
 #endif
 				      graph,
-				      &av->vdev.entity);
+				      &av->vdev.entity.pads[0]);
 
 	while ((entity = media_graph_walk_next(&
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
@@ -1721,7 +1721,7 @@ out_media_entity_stop_streaming:
 				      ip->
 #endif
 				      graph,
-				      &av->vdev.entity);
+				      &av->vdev.entity.pads[0]);
 
 	while (state && (entity2 = media_graph_walk_next(&
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)

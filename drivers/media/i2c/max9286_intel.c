@@ -588,7 +588,7 @@ static int max9286_open(struct v4l2_subdev *subdev,
 	struct v4l2_subdev_fh *fh)
 {
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(subdev, fh->pad, 0);
+		v4l2_subdev_get_try_format(subdev, fh->state, 0);
 
 	struct v4l2_subdev_format fmt = {
 		.which = V4L2_SUBDEV_FORMAT_TRY,
