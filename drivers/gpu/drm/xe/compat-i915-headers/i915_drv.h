@@ -21,6 +21,8 @@ static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
 	return container_of(dev, struct drm_i915_private, drm);
 }
 
+#define IS_SRIOV_VF(i915) false
+
 #define IS_PLATFORM(xe, x) ((xe)->info.platform == x)
 #define INTEL_INFO(dev_priv)	(&((dev_priv)->info))
 #define IS_I830(dev_priv)	(dev_priv && 0)
