@@ -564,8 +564,6 @@ int v4l2_pipeline_link_notify(struct media_link *link, u32 flags,
 	int sink_use;
 	int ret = 0;
 
-	source->start = link->source;
-	sink->start = link->sink;
 	source_use = pipeline_pm_use_count(link->source, graph);
 	sink_use = pipeline_pm_use_count(link->sink, graph);
 
