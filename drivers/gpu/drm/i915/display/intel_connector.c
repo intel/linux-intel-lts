@@ -233,6 +233,9 @@ int intel_connector_apply_border(struct intel_crtc_state *crtc_state,
 	int right = border->x2;
 	int bottom = border->y2;
 
+	if (left == 0 && top == 0 && right == 0 && bottom == 0)
+		return 0;
+
 	if (left < 0 || top < 0 || right < 0 || bottom < 0)
 		return -EINVAL;
 
