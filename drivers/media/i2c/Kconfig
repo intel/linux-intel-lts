@@ -1495,6 +1495,16 @@ config VIDEO_LT6911UXE
 	To compile this driver as a module, choose M here: the
 	module will be called lt6911uxe.
 
+config VIDEO_D4XX
+        tristate "D4XX Camera Driver"
+        depends on VIDEO_DEV && I2C
+        select VIDEO_V4L2_SUBDEV_API
+	 help
+	   This is a Video4Linux2 sensor-level driver for
+	   intel realsence camera with MIPI Interface.
+
+	   To compile this driver as a module, choose M here: the
+	   module will be called d4xx.
 endmenu
 
 #
