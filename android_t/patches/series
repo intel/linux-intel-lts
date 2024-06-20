@@ -242,3 +242,18 @@
 
 #CVE-2024-36008
 0001-ipv4-check-for-NULL-idev-in-ip_route_use_hint.patch
+
+# CVE-2024-36902
+0001-ipv6-fib6_rules-avoid-possible-NULL-dereference-in-f.patch
+
+# CVE-2024-36938
+0001-bpf-skmsg-Fix-NULL-pointer-dereference-in-sk_psock_s.patch
+
+# CVE-2024-36897
+0001-drm-amd-display-Atom-Integrated-System-Info-v2_2-for.patch
+
+# CVE-2024-36901
+0001-ipv6-prevent-NULL-dereference-in-ip6_output.patch
+
+# CVE-2024-36971
+0001-net-fix-__dst_negative_advice-race.patch
