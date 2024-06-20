@@ -74,9 +74,6 @@
 #CVE-2024-26601
 0001-ext4-regenerate-buddy-after-block-freeing-failed-if-.patch
 
-#CVE-2024-26603
-0001-x86-fpu-Stop-relying-on-userspace-for-info-to-fault-.patch
-
 #CVE-2023-52508
 0001-nvme-fc-Prevent-null-pointer-dereference-in-nvme_fc_.patch
 
@@ -115,21 +112,11 @@
 #CVE-2024-26747
 0001-usb-roles-fix-NULL-pointer-issue-when-put-module-s-r.patch
 
-#CVE-2024-26751
-0001-ARM-ep93xx-Add-terminator-to-gpiod_lookup_table.patch
-
 #CVE-2024-26763
 0001-dm-crypt-don-t-modify-the-data-when-using-authentica.patch
 
 #CVE-2024-26764
 0001-fs-aio-Restrict-kiocb_set_cancel_fn-to-I-O-submitted.patch
-
-#CVE-2024-26772
-#CVE-2024-26773
-0001-ext4-avoid-allocating-blocks-from-corrupted-group-in.patch
-
-#CVE-2024-26774
-0001-ext4-avoid-dividing-by-0-in-mb_update_avg_fragment_s.patch
 
 #CVE-2024-26777
 0001-fbdev-sis-Error-out-if-pixclock-equals-zero.patch
@@ -176,9 +163,6 @@
 #CVE-2024-26898
 0001-aoe-fix-the-potential-use-after-free-problem-in-aoec.patch
 
-#CVE-2023-52645
-0001-pmdomain-mediatek-fix-race-conditions-with-genpd.patch
-
 #CVE-2024-26929
 0001-scsi-qla2xxx-Fix-double-free-of-fcport.patch
 
@@ -192,7 +176,6 @@
 0001-netfilter-flowtable-incorrect-pppoe-tuple.patch
 
 #CVE-2024-27018
-0001-netfilter-conntrack-check-SCTP_CID_SHUTDOWN_ACK-for-.patch
 0002-netfilter-nf_tables-add-rescheduling-points-during-l.patch
 0003-netfilter-nf_tables-set-dormant-flag-on-hook-registe.patch
 0004-netfilter-flowtable-simplify-route-logic.patch
@@ -254,6 +237,3 @@
 
 # CVE-2024-36901
 0001-ipv6-prevent-NULL-dereference-in-ip6_output.patch
-
-# CVE-2024-36971
-0001-net-fix-__dst_negative_advice-race.patch
