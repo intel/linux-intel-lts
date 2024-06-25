@@ -145,6 +145,14 @@ static void int3472_get_func_and_polarity(u8 type, const char **func, u32 *polar
 		*func = "power-enable";
 		*polarity = GPIO_ACTIVE_HIGH;
 		break;
+	case INT3472_GPIO_TYPE_READY_STAT:
+		*func = "readystat";
+		*polarity = GPIO_LOOKUP_FLAGS_DEFAULT;
+		break;
+	case INT3472_GPIO_TYPE_HDMI_DETECT:
+		*func = "hdmidetect";
+		*polarity = GPIO_LOOKUP_FLAGS_DEFAULT;
+		break;
 	default:
 		*func = "unknown";
 		*polarity = GPIO_ACTIVE_HIGH;
@@ -236,9 +244,15 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
 	switch (type) {
 	case INT3472_GPIO_TYPE_RESET:
 	case INT3472_GPIO_TYPE_POWERDOWN:
+	case INT3472_GPIO_TYPE_READY_STAT:
+	case INT3472_GPIO_TYPE_HDMI_DETECT:
 		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, func, polarity);
-		if (ret)
+		if (ret) {
 			err_msg = "Failed to map GPIO pin to sensor\n";
+			dev_warn(int3472->dev,
+				"Failed to map GPIO pin to sensor, type %02x, func %s, polarity %u\n",
+				type, func, polarity);
+		}
 
 		break;
 	case INT3472_GPIO_TYPE_CLK_ENABLE:
@@ -342,7 +356,7 @@ static int skl_int3472_discrete_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	if (cldb.control_logic_type != 1) {
+	if (cldb.control_logic_type != 1 && cldb.control_logic_type != 5) {
 		dev_err(&pdev->dev, "Unsupported control logic type %u\n",
 			cldb.control_logic_type);
 		return -EINVAL;
