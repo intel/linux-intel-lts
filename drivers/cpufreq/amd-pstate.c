@@ -320,7 +320,7 @@ static void amd_pstate_adjust_perf(unsigned int cpu,
 	if (target_perf < capacity)
 		des_perf = DIV_ROUND_UP(cap_perf * target_perf, capacity);
 
-	min_perf = READ_ONCE(cpudata->highest_perf);
+	min_perf = READ_ONCE(cpudata->lowest_perf);
 	if (_min_perf < capacity)
 		min_perf = DIV_ROUND_UP(cap_perf * _min_perf, capacity);
 
@@ -424,7 +424,7 @@ static int amd_pstate_set_boost(struct cpufreq_policy *policy, int state)
 	if (state)
 		policy->cpuinfo.max_freq = cpudata->max_freq;
 	else
-		policy->cpuinfo.max_freq = cpudata->nominal_freq;
+		policy->cpuinfo.max_freq = cpudata->nominal_freq * 1000;
 
 	policy->max = policy->cpuinfo.max_freq;
 

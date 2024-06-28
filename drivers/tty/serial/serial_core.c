@@ -2623,13 +2623,22 @@ uart_configure_port(struct uart_driver *drv, struct uart_state *state,
 			port->type = PORT_UNKNOWN;
 			flags |= UART_CONFIG_TYPE;
 		}
+		/* Synchronize with possible boot console. */
+		if (uart_console(port))
+			console_lock();
 		port->ops->config_port(port, flags);
+		if (uart_console(port))
+			console_unlock();
 	}
 
 	if (port->type != PORT_UNKNOWN) {
 		unsigned long flags;
 
 		uart_report_port(drv, port);
+
+		/* Synchronize with possible boot console. */
+		if (uart_console(port))
+			console_lock();
 
 		/*
 		 * Ensure that the modem control lines are de-activated.
@@ -2646,6 +2655,9 @@ uart_configure_port(struct uart_driver *drv, struct uart_state *state,
 		pm_runtime_put_autosuspend(port->dev);
 
 		uart_rs485_config(port);
+
+		if (uart_console(port))
+			console_unlock();
 
 		/*
 		 * If this driver supports console, and it hasn't been

@@ -293,14 +293,17 @@ static void reschedule_output_poll_work(struct drm_device *dev)
  * Drivers can call this helper from their device resume implementation. It is
  * not an error to call this even when output polling isn't enabled.
  *
+ * If device polling was never initialized before, this call will trigger a
+ * warning and return.
+ *
  * Note that calls to enable and disable polling must be strictly ordered, which
  * is automatically the case when they're only call from suspend/resume
  * callbacks.
  */
 void drm_kms_helper_poll_enable(struct drm_device *dev)
 {
-	if (!dev->mode_config.poll_enabled || !drm_kms_helper_poll ||
-	    dev->mode_config.poll_running)
+	if (drm_WARN_ON_ONCE(dev, !dev->mode_config.poll_enabled) ||
+	    !drm_kms_helper_poll || dev->mode_config.poll_running)
 		return;
 
 	if (drm_kms_helper_enable_hpd(dev) ||
@@ -418,6 +421,13 @@ static int drm_helper_probe_get_modes(struct drm_connector *connector)
 	int count;
 
 	count = connector_funcs->get_modes(connector);
+
+	/* The .get_modes() callback should not return negative values. */
+	if (count < 0) {
+		drm_err(connector->dev, ".get_modes() returned %pe\n",
+			ERR_PTR(count));
+		count = 0;
+	}
 
 	/*
 	 * Fallback for when DDC probe failed in drm_get_edid() and thus skipped
@@ -870,6 +880,9 @@ EXPORT_SYMBOL(drm_kms_helper_is_poll_worker);
  * Drivers can call this helper from their device suspend implementation. It is
  * not an error to call this even when output polling isn't enabled or already
  * disabled. Polling is re-enabled by calling drm_kms_helper_poll_enable().
+ *
+ * If however, the polling was never initialized, this call will trigger a
+ * warning and return
  *
  * Note that calls to enable and disable polling must be strictly ordered, which
  * is automatically the case when they're only call from suspend/resume
