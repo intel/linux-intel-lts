@@ -138,3 +138,6 @@
 
 # CVE-2024-27019
 0001-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
+
+# CVE-2024-36901
+0001-ipv6-prevent-NULL-dereference-in-ip6_output.patch
