@@ -100,6 +100,8 @@ int avs_control_volume_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_va
 	if (active_module) {
 		dspvol.channel_id = AVS_ALL_CHANNELS_MASK;
 		dspvol.target_volume = *volume;
+		dspvol.curve_type = active_module->template->cfg_ext->peakvol.curve_type;
+		dspvol.curve_duration = active_module->template->cfg_ext->peakvol.curve_duration;
 
 		ret = avs_ipc_peakvol_set_volume(adev, active_module->module_id,
 						 active_module->instance_id, &dspvol);
