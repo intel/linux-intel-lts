@@ -1588,7 +1588,7 @@ static int avs_tplg_parse_condpath_templates(struct snd_soc_component *comp,
 
 static const struct avs_tplg_token_parser mod_init_config_parsers[] = {
 	{
-		.token = AVS_TKN_MOD_INIT_CONFIG_ID_U32,
+		.token = AVS_TKN_INIT_CONFIG_ID_U32,
 		.type = SND_SOC_TPLG_TUPLE_TYPE_WORD,
 		.offset = offsetof(struct avs_tplg_init_config, id),
 		.parse = avs_parse_word_token,
@@ -1641,7 +1641,7 @@ static int avs_tplg_parse_initial_configs(struct snd_soc_component *comp,
 		esize = le32_to_cpu(tuples->size) + le32_to_cpu(tmp->size);
 
 		ret = parse_dictionary_entries(comp, tuples, esize, config, 1, sizeof(*config),
-					       AVS_TKN_MOD_INIT_CONFIG_ID_U32,
+					       AVS_TKN_INIT_CONFIG_ID_U32,
 					       mod_init_config_parsers,
 					       ARRAY_SIZE(mod_init_config_parsers));
 
