@@ -89,6 +89,7 @@ static struct snd_soc_dai_link card_links[] = {
 		.nonatomic = 1,
 		.no_pcm = 1,
 		.dpcm_playback = 1,
+		.dpcm_capture = 1,
 		SND_SOC_DAILINK_REG(cpu_ssp0, pcm3168a_dac, platform),
 	},
 	{
