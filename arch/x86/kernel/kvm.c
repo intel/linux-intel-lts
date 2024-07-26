@@ -291,7 +291,8 @@ noinstr bool __kvm_handle_async_pf(struct pt_regs *regs, u32 token)
 	return true;
 }
 
-DEFINE_IDTENTRY_SYSVEC(sysvec_kvm_asyncpf_interrupt)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR,
+				 sysvec_kvm_asyncpf_interrupt)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 	u32 token;
@@ -1056,22 +1057,36 @@ static void kvm_wait(u8 *ptr, u8 val)
 	 * for irq enabled case to avoid hang when lock info is overwritten
 	 * in irq spinlock slowpath and no spurious interrupt occur to save us.
 	 */
-	if (irqs_disabled()) {
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+	if (hard_irqs_disabled()) {
+		if (READ_ONCE(*ptr) == val)
+			halt();
+	} else {
 		hard_local_irq_disable();
 
 		if (READ_ONCE(*ptr) == val)
-			halt();
+			native_safe_halt(); /* enables hard IRQs */
+		else
+			hard_local_irq_enable();
+	}
 
-		hard_local_irq_enable();
+#else /* !CONFIG_IRQ_PIPELINE */
+
+	if (irqs_disabled()) {
+		if (READ_ONCE(*ptr) == val)
+			halt();
 	} else {
-		local_irq_disable_full();
+		local_irq_disable();
 
 		/* safe_halt() will enable IRQ */
 		if (READ_ONCE(*ptr) == val)
 			safe_halt();
-
-		local_irq_enable_full();
+		else
+			local_irq_enable();
 	}
+#endif
 }
 
 /*
