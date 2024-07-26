@@ -24,7 +24,8 @@ int intel_atomic_setup_scalers(struct drm_i915_private *dev_priv,
 			       struct intel_crtc *intel_crtc,
 			       struct intel_crtc_state *crtc_state);
 
-void skl_pfit_enable(const struct intel_crtc_state *crtc_state);
+void skl_program_crtc_scaler(const struct intel_crtc_state *crtc_state,
+			     const struct drm_rect *dst);
 
 void skl_program_plane_scaler(struct intel_plane *plane,
 			      const struct intel_crtc_state *crtc_state,

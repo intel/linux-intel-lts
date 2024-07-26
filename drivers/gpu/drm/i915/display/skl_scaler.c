@@ -237,11 +237,16 @@ skl_update_scaler(struct intel_crtc_state *crtc_state, bool force_detach,
 int skl_update_scaler_crtc(struct intel_crtc_state *crtc_state)
 {
 	const struct drm_display_mode *pipe_mode = &crtc_state->hw.pipe_mode;
+	bool need_scaler = crtc_state->pch_pfit.enabled ||
+			   crtc_state->border.enabled;
 	int width, height;
 
 	if (crtc_state->pch_pfit.enabled) {
 		width = drm_rect_width(&crtc_state->pch_pfit.dst);
 		height = drm_rect_height(&crtc_state->pch_pfit.dst);
+	} else if (crtc_state->border.enabled) {
+		width = drm_rect_width(&crtc_state->border.dst);
+		height = drm_rect_height(&crtc_state->border.dst);
 	} else {
 		width = pipe_mode->crtc_hdisplay;
 		height = pipe_mode->crtc_vdisplay;
@@ -251,8 +256,7 @@ int skl_update_scaler_crtc(struct intel_crtc_state *crtc_state)
 				 &crtc_state->scaler_state.scaler_id,
 				 drm_rect_width(&crtc_state->pipe_src),
 				 drm_rect_height(&crtc_state->pipe_src),
-				 width, height, NULL, 0,
-				 crtc_state->pch_pfit.enabled);
+				 width, height, NULL, 0, need_scaler);
 }
 
 /**
@@ -704,13 +708,13 @@ static void skl_scaler_setup_filter(struct drm_i915_private *dev_priv, enum pipe
 	}
 }
 
-void skl_pfit_enable(const struct intel_crtc_state *crtc_state)
+void skl_program_crtc_scaler(const struct intel_crtc_state *crtc_state,
+			     const struct drm_rect *dst)
 {
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	const struct intel_crtc_scaler_state *scaler_state =
 		&crtc_state->scaler_state;
-	const struct drm_rect *dst = &crtc_state->pch_pfit.dst;
 	u16 uv_rgb_hphase, uv_rgb_vphase;
 	enum pipe pipe = crtc->pipe;
 	int width = drm_rect_width(dst);
@@ -721,9 +725,6 @@ void skl_pfit_enable(const struct intel_crtc_state *crtc_state)
 	struct drm_rect src;
 	int id;
 	u32 ps_ctrl;
-
-	if (!crtc_state->pch_pfit.enabled)
-		return;
 
 	if (drm_WARN_ON(&dev_priv->drm,
 			crtc_state->scaler_state.scaler_id < 0))
@@ -862,6 +863,7 @@ void skl_scaler_get_config(struct intel_crtc_state *crtc_state)
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	struct intel_crtc_scaler_state *scaler_state = &crtc_state->scaler_state;
+	struct drm_rect *dst;
 	int id = -1;
 	int i;
 
@@ -874,12 +876,19 @@ void skl_scaler_get_config(struct intel_crtc_state *crtc_state)
 			continue;
 
 		id = i;
-		crtc_state->pch_pfit.enabled = true;
 
 		pos = intel_de_read(dev_priv, SKL_PS_WIN_POS(crtc->pipe, i));
 		size = intel_de_read(dev_priv, SKL_PS_WIN_SZ(crtc->pipe, i));
 
-		drm_rect_init(&crtc_state->pch_pfit.dst,
+		if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_LVDS)) {
+			crtc_state->pch_pfit.enabled = true;
+			dst = &crtc_state->pch_pfit.dst;
+		} else {
+			crtc_state->border.enabled = true;
+			dst = &crtc_state->border.dst;
+		}
+
+		drm_rect_init(dst,
 			      REG_FIELD_GET(PS_WIN_XPOS_MASK, pos),
 			      REG_FIELD_GET(PS_WIN_YPOS_MASK, pos),
 			      REG_FIELD_GET(PS_WIN_XSIZE_MASK, size),

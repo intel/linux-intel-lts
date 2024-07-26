@@ -67,6 +67,9 @@ int intel_digital_connector_atomic_get_property(struct drm_connector *connector,
 		*val = intel_conn_state->force_audio;
 	else if (property == dev_priv->display.properties.broadcast_rgb)
 		*val = intel_conn_state->broadcast_rgb;
+	else if (property == dev_priv->display.properties.border)
+		*val = (intel_conn_state->border) ?
+		       intel_conn_state->border->base.id : 0;
 	else {
 		drm_dbg_atomic(&dev_priv->drm,
 			       "Unknown property [PROP:%d:%s]\n",
@@ -95,6 +98,8 @@ int intel_digital_connector_atomic_set_property(struct drm_connector *connector,
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_digital_connector_state *intel_conn_state =
 		to_intel_digital_connector_state(state);
+	bool replaced;
+	int ret;
 
 	if (property == dev_priv->display.properties.force_audio) {
 		intel_conn_state->force_audio = val;
@@ -106,9 +111,30 @@ int intel_digital_connector_atomic_set_property(struct drm_connector *connector,
 		return 0;
 	}
 
+	if (property == dev_priv->display.properties.border) {
+		ret = drm_property_replace_blob_from_id(dev,
+						&intel_conn_state->border,
+						val,
+						sizeof(struct drm_rect), -1,
+						&replaced);
+		return ret;
+	}
+
 	drm_dbg_atomic(&dev_priv->drm, "Unknown property [PROP:%d:%s]\n",
 		       property->base.id, property->name);
 	return -EINVAL;
+}
+
+static bool intel_connector_blob_equal(struct drm_property_blob *old_blob,
+				       struct drm_property_blob *new_blob)
+{
+	if (!old_blob || !new_blob)
+		return false;
+
+	if (old_blob->length != new_blob->length)
+		return false;
+
+	return !memcmp(old_blob->data, new_blob->data, old_blob->length);
 }
 
 int intel_digital_connector_atomic_check(struct drm_connector *conn,
@@ -142,7 +168,8 @@ int intel_digital_connector_atomic_check(struct drm_connector *conn,
 	    new_conn_state->base.content_type != old_conn_state->base.content_type ||
 	    new_conn_state->base.scaling_mode != old_conn_state->base.scaling_mode ||
 	    new_conn_state->base.privacy_screen_sw_state != old_conn_state->base.privacy_screen_sw_state ||
-	    !drm_connector_atomic_hdr_metadata_equal(old_state, new_state))
+	    !drm_connector_atomic_hdr_metadata_equal(old_state, new_state) ||
+	    !intel_connector_blob_equal(old_conn_state->border, new_conn_state->border))
 		crtc_state->mode_changed = true;
 
 	return 0;

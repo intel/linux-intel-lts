@@ -593,8 +593,11 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 			 unsigned int num_pads,
 			 unsigned int num_source,
 			 unsigned int num_sink,
-			 unsigned int sd_flags)
+			 unsigned int sd_flags,
+			 int src_pad_idx,
+			 int sink_pad_idx)
 {
+	int i;
 	int rval = -EINVAL;
 
 	mutex_init(&asd->mutex);
@@ -610,6 +613,19 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 
 	asd->pad = devm_kcalloc(&asd->isys->adev->dev, num_pads,
 				sizeof(*asd->pad), GFP_KERNEL);
+
+	/*
+	 * Out of range IDX means that this particular type of pad
+	 * does not exist.
+	 */
+	if (src_pad_idx != ISYS_SUBDEV_NO_PAD) {
+		for (i = 0; i < num_source; i++)
+			asd->pad[src_pad_idx + i].flags = MEDIA_PAD_FL_SOURCE;
+	}
+	if (sink_pad_idx != ISYS_SUBDEV_NO_PAD) {
+		for (i = 0; i < num_sink; i++)
+			asd->pad[sink_pad_idx + i].flags = MEDIA_PAD_FL_SINK;
+	}
 
 	asd->ffmt = devm_kcalloc(&asd->isys->adev->dev, num_pads,
 				 sizeof(*asd->ffmt), GFP_KERNEL);

@@ -247,18 +247,17 @@ static void guc_ggtt_invalidate(struct i915_ggtt *ggtt)
 	struct drm_i915_private *i915 = ggtt->vm.i915;
 	struct intel_gt *gt;
 
-	if (!IS_GEN9_LP(i915) && GRAPHICS_VER(i915) < 11)
-		gen8_ggtt_invalidate(ggtt);
+	gen8_ggtt_invalidate(ggtt);
 
 	list_for_each_entry(gt, &ggtt->gt_list, ggtt_link) {
-		if (intel_guc_is_ready(&gt->uc.guc)) {
+		if (intel_guc_tlb_invalidation_is_available(&gt->uc.guc)) {
 			guc_ggtt_ct_invalidate(gt);
 		} else if (GRAPHICS_VER(i915) >= 12) {
-			intel_uncore_write(gt->uncore,
+			intel_uncore_write_fw(gt->uncore,
 					   GEN12_GUC_TLB_INV_CR,
 					   GEN12_GUC_TLB_INV_CR_INVALIDATE);
 		} else {
-			intel_uncore_write(gt->uncore,
+			intel_uncore_write_fw(gt->uncore,
 					   GEN8_GTCR, GEN8_GTCR_INVALIDATE);
 		}
 	}

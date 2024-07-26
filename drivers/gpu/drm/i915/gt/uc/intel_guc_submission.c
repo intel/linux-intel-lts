@@ -1983,7 +1983,7 @@ static int number_mlrc_guc_id(struct intel_guc *guc);
 bool intel_guc_tlb_invalidation_is_available(struct intel_guc *guc)
 {
 	return HAS_GUC_TLB_INVALIDATION(guc_to_gt(guc)->i915) &&
-		intel_guc_is_ready(guc);
+		intel_guc_is_ready(guc) && guc_submission_initialized(guc);
 }
 
 static int init_tlb_lookup(struct intel_guc *guc)
@@ -4904,6 +4904,12 @@ static int guc_send_invalidate_tlb(struct intel_guc *guc,
 	 * attempted if the GT is disabled due to suspend/wedge.
 	 */
 	if (!intel_gt_is_enabled(gt))
+		return -EINVAL;
+
+	/* If guc submission is not initialized, guc tlb lookup couldn't be
+	 * accessed either.
+	 */
+	if (!guc_submission_initialized(guc))
 		return -EINVAL;
 
 	init_waitqueue_head(&_wq.wq);

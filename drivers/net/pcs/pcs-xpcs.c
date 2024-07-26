@@ -316,7 +316,7 @@ static int xpcs_soft_reset(struct dw_xpcs *xpcs,
 		dev = MDIO_MMD_VEND2;
 		break;
 	default:
-		return -1;
+		return -EINVAL;
 	}
 
 	ret = xpcs_write(xpcs, dev, MDIO_CTRL1, MDIO_CTRL1_RESET);
@@ -941,7 +941,7 @@ int xpcs_do_config(struct dw_xpcs *xpcs, phy_interface_t interface,
 			return ret;
 		break;
 	default:
-		return -1;
+		return -EINVAL;
 	}
 
 	if (compat->pma_config) {
@@ -1330,7 +1330,7 @@ static const struct xpcs_compat synopsys_xpcs_compat[DW_XPCS_INTERFACE_MAX] = {
 	[DW_XPCS_SGMII_2500BASEX] = {
 		.supported = xpcs_sgmii_2500basex_features,
 		.interface = xpcs_sgmii_2500basex_interfaces,
-		.num_interfaces = ARRAY_SIZE(xpcs_sgmii_2500basex_features),
+		.num_interfaces = ARRAY_SIZE(xpcs_sgmii_2500basex_interfaces),
 		.an_mode = DW_SGMII_2500BASEX,
 	},
 };

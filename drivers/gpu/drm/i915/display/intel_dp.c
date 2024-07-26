@@ -434,6 +434,10 @@ bool intel_dp_can_bigjoiner(struct intel_dp *intel_dp)
 	struct intel_encoder *encoder = &intel_dig_port->base;
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 
+	/* eDP MSO is not compatible with joiner */
+	if (intel_dp->mso_link_count)
+		return false;
+
 	return DISPLAY_VER(dev_priv) >= 12 ||
 		(DISPLAY_VER(dev_priv) == 11 &&
 		 encoder->port != PORT_A);
@@ -1422,7 +1426,8 @@ static bool intel_dp_source_supports_fec(struct intel_dp *intel_dp,
 	if (DISPLAY_VER(dev_priv) >= 12)
 		return true;
 
-	if (DISPLAY_VER(dev_priv) == 11 && encoder->port != PORT_A)
+	if (DISPLAY_VER(dev_priv) == 11 && encoder->port != PORT_A &&
+	    !intel_crtc_has_type(pipe_config, INTEL_OUTPUT_DP_MST))
 		return true;
 
 	return false;
@@ -2726,7 +2731,11 @@ intel_dp_drrs_compute_config(struct intel_connector *connector,
 		intel_panel_downclock_mode(connector, &pipe_config->hw.adjusted_mode);
 	int pixel_clock;
 
-	if (has_seamless_m_n(connector))
+	/*
+	 * FIXME all joined pipes share the same transcoder.
+	 * Need to account for that when updating M/N live.
+	 */
+	if (has_seamless_m_n(connector) && !pipe_config->bigjoiner_pipes)
 		pipe_config->update_m_n = true;
 
 	if (!can_enable_drrs(connector, pipe_config, downclock_mode)) {
@@ -2843,6 +2852,8 @@ intel_dp_compute_config(struct intel_encoder *encoder,
 			struct intel_crtc_state *pipe_config,
 			struct drm_connector_state *conn_state)
 {
+	const struct intel_digital_connector_state *intel_conn_state =
+		to_intel_digital_connector_state(conn_state);
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 	struct drm_display_mode *adjusted_mode = &pipe_config->hw.adjusted_mode;
 	struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
@@ -2886,6 +2897,13 @@ intel_dp_compute_config(struct intel_encoder *encoder,
 	if ((intel_dp_is_edp(intel_dp) && fixed_mode) ||
 	    pipe_config->output_format == INTEL_OUTPUT_FORMAT_YCBCR420) {
 		ret = intel_panel_fitting(pipe_config, conn_state);
+		if (ret)
+			return ret;
+	}
+
+	if (intel_conn_state->border) {
+		ret = intel_connector_apply_border(pipe_config,
+					intel_conn_state->border->data);
 		if (ret)
 			return ret;
 	}
@@ -6166,6 +6184,8 @@ intel_dp_add_properties(struct intel_dp *intel_dp, struct drm_connector *connect
 
 	if (HAS_VRR(dev_priv))
 		drm_connector_attach_vrr_capable_property(connector);
+
+	intel_attach_border_property(connector);
 }
 
 static void

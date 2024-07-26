@@ -2284,6 +2284,8 @@ int intel_hdmi_compute_config(struct intel_encoder *encoder,
 			      struct intel_crtc_state *pipe_config,
 			      struct drm_connector_state *conn_state)
 {
+	const struct intel_digital_connector_state *intel_conn_state =
+		to_intel_digital_connector_state(conn_state);
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 	struct drm_display_mode *adjusted_mode = &pipe_config->hw.adjusted_mode;
 	struct drm_connector *connector = conn_state->connector;
@@ -2325,6 +2327,13 @@ int intel_hdmi_compute_config(struct intel_encoder *encoder,
 
 	if (intel_hdmi_is_ycbcr420(pipe_config)) {
 		ret = intel_panel_fitting(pipe_config, conn_state);
+		if (ret)
+			return ret;
+	}
+
+	if (intel_conn_state->border) {
+		ret = intel_connector_apply_border(pipe_config,
+					intel_conn_state->border->data);
 		if (ret)
 			return ret;
 	}
@@ -2615,6 +2624,8 @@ intel_hdmi_add_properties(struct intel_hdmi *intel_hdmi, struct drm_connector *c
 
 	if (!HAS_GMCH(dev_priv))
 		drm_connector_attach_max_bpc_property(connector, 8, 12);
+
+	intel_attach_border_property(connector);
 }
 
 /*

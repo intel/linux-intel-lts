@@ -640,6 +640,7 @@ struct intel_digital_connector_state {
 
 	enum hdmi_force_audio force_audio;
 	int broadcast_rgb;
+	struct drm_property_blob *border;
 };
 
 #define to_intel_digital_connector_state(x) container_of(x, struct intel_digital_connector_state, base)
@@ -710,6 +711,7 @@ struct intel_plane_state {
 #define PLANE_HAS_FENCE BIT(0)
 
 	struct intel_fb_view view;
+	u32 phys_dma_addr; /* for cursor_needs_physical */
 
 	/* Plane pxp decryption state */
 	bool decrypt;
@@ -1413,6 +1415,11 @@ struct intel_crtc_state {
 		u8 link_count;
 		u8 pixel_overlap;
 	} splitter;
+
+	struct {
+		struct drm_rect dst;
+		bool enabled;
+	} border;
 
 	/* for loading single buffered registers during vblank */
 	struct drm_vblank_work vblank_work;

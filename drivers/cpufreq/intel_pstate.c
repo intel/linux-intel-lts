@@ -25,6 +25,7 @@
 #include <linux/acpi.h>
 #include <linux/vmalloc.h>
 #include <linux/pm_qos.h>
+#include <linux/bitfield.h>
 #include <trace/events/power.h>
 
 #include <asm/cpu.h>
@@ -359,15 +360,14 @@ static void intel_pstate_set_itmt_prio(int cpu)
 	int ret;
 
 	ret = cppc_get_perf_caps(cpu, &cppc_perf);
-	if (ret)
-		return;
-
 	/*
-	 * On some systems with overclocking enabled, CPPC.highest_perf is hardcoded to 0xff.
-	 * In this case we can't use CPPC.highest_perf to enable ITMT.
-	 * In this case we can look at MSR_HWP_CAPABILITIES bits [8:0] to decide.
+	 * If CPPC is not available, fall back to MSR_HWP_CAPABILITIES bits [8:0].
+	 *
+	 * Also, on some systems with overclocking enabled, CPPC.highest_perf is
+	 * hardcoded to 0xff, so CPPC.highest_perf cannot be used to enable ITMT.
+	 * Fall back to MSR_HWP_CAPABILITIES then too.
 	 */
-	if (cppc_perf.highest_perf == CPPC_MAX_PERF)
+	if (ret || cppc_perf.highest_perf == CPPC_MAX_PERF)
 		cppc_perf.highest_perf = HWP_HIGHEST_PERF(READ_ONCE(all_cpu_data[cpu]->hwp_cap_cached));
 
 	/*
@@ -599,13 +599,9 @@ static void intel_pstate_hybrid_hwp_adjust(struct cpudata *cpu)
 static inline void update_turbo_state(void)
 {
 	u64 misc_en;
-	struct cpudata *cpu;
 
-	cpu = all_cpu_data[0];
 	rdmsrl(MSR_IA32_MISC_ENABLE, misc_en);
-	global.turbo_disabled =
-		(misc_en & MSR_IA32_MISC_ENABLE_TURBO_DISABLE ||
-		 cpu->pstate.max_pstate == cpu->pstate.turbo_pstate);
+	global.turbo_disabled = misc_en & MSR_IA32_MISC_ENABLE_TURBO_DISABLE;
 }
 
 static int min_perf_pct_min(void)
@@ -1724,13 +1720,6 @@ static void intel_pstate_update_epp_defaults(struct cpudata *cpudata)
 	cpudata->epp_default = intel_pstate_get_epp(cpudata, 0);
 
 	/*
-	 * If this CPU gen doesn't call for change in balance_perf
-	 * EPP return.
-	 */
-	if (epp_values[EPP_INDEX_BALANCE_PERFORMANCE] == HWP_EPP_BALANCE_PERFORMANCE)
-		return;
-
-	/*
 	 * If the EPP is set by firmware, which means that firmware enabled HWP
 	 * - Is equal or less than 0x80 (default balance_perf EPP)
 	 * - But less performance oriented than performance EPP
@@ -1741,6 +1730,13 @@ static void intel_pstate_update_epp_defaults(struct cpudata *cpudata)
 		epp_values[EPP_INDEX_BALANCE_PERFORMANCE] = cpudata->epp_default;
 		return;
 	}
+
+	/*
+	 * If this CPU gen doesn't call for change in balance_perf
+	 * EPP return.
+	 */
+	if (epp_values[EPP_INDEX_BALANCE_PERFORMANCE] == HWP_EPP_BALANCE_PERFORMANCE)
+		return;
 
 	/*
 	 * Use hard coded value per gen to update the balance_perf
@@ -3410,14 +3406,31 @@ static bool intel_pstate_hwp_is_enabled(void)
 	return !!(value & 0x1);
 }
 
-static const struct x86_cpu_id intel_epp_balance_perf[] = {
+#define POWERSAVE_MASK			GENMASK(7, 0)
+#define BALANCE_POWER_MASK		GENMASK(15, 8)
+#define BALANCE_PERFORMANCE_MASK	GENMASK(23, 16)
+#define PERFORMANCE_MASK		GENMASK(31, 24)
+
+#define HWP_SET_EPP_VALUES(powersave, balance_power, balance_perf, performance) \
+	(FIELD_PREP_CONST(POWERSAVE_MASK, powersave) |\
+	 FIELD_PREP_CONST(BALANCE_POWER_MASK, balance_power) |\
+	 FIELD_PREP_CONST(BALANCE_PERFORMANCE_MASK, balance_perf) |\
+	 FIELD_PREP_CONST(PERFORMANCE_MASK, performance))
+
+#define HWP_SET_DEF_BALANCE_PERF_EPP(balance_perf) \
+	(HWP_SET_EPP_VALUES(HWP_EPP_POWERSAVE, HWP_EPP_BALANCE_POWERSAVE,\
+	 balance_perf, HWP_EPP_PERFORMANCE))
+
+static const struct x86_cpu_id intel_epp_default[] = {
 	/*
 	 * Set EPP value as 102, this is the max suggested EPP
 	 * which can result in one core turbo frequency for
 	 * AlderLake Mobile CPUs.
 	 */
-	X86_MATCH_INTEL_FAM6_MODEL(ALDERLAKE_L, 102),
-	X86_MATCH_INTEL_FAM6_MODEL(SAPPHIRERAPIDS_X, 32),
+	X86_MATCH_INTEL_FAM6_MODEL(ALDERLAKE_L, HWP_SET_DEF_BALANCE_PERF_EPP(102)),
+	X86_MATCH_INTEL_FAM6_MODEL(SAPPHIRERAPIDS_X, HWP_SET_DEF_BALANCE_PERF_EPP(32)),
+	X86_MATCH_INTEL_FAM6_MODEL(METEORLAKE_L, HWP_SET_EPP_VALUES(HWP_EPP_POWERSAVE,
+		      179, 64, 16)),
 	{}
 };
 
@@ -3515,11 +3528,24 @@ hwp_cpu_matched:
 	intel_pstate_sysfs_expose_params();
 
 	if (hwp_active) {
-		const struct x86_cpu_id *id = x86_match_cpu(intel_epp_balance_perf);
+		const struct x86_cpu_id *id = x86_match_cpu(intel_epp_default);
 		const struct x86_cpu_id *hybrid_id = x86_match_cpu(intel_hybrid_scaling_factor);
 
-		if (id)
-			epp_values[EPP_INDEX_BALANCE_PERFORMANCE] = id->driver_data;
+		if (id) {
+			epp_values[EPP_INDEX_POWERSAVE] =
+					FIELD_GET(POWERSAVE_MASK, id->driver_data);
+			epp_values[EPP_INDEX_BALANCE_POWERSAVE] =
+					FIELD_GET(BALANCE_POWER_MASK, id->driver_data);
+			epp_values[EPP_INDEX_BALANCE_PERFORMANCE] =
+					FIELD_GET(BALANCE_PERFORMANCE_MASK, id->driver_data);
+			epp_values[EPP_INDEX_PERFORMANCE] =
+					FIELD_GET(PERFORMANCE_MASK, id->driver_data);
+			pr_debug("Updated EPPs powersave:%x balanced power:%x balanced perf:%x performance:%x\n",
+				 epp_values[EPP_INDEX_POWERSAVE],
+				 epp_values[EPP_INDEX_BALANCE_POWERSAVE],
+				 epp_values[EPP_INDEX_BALANCE_PERFORMANCE],
+				 epp_values[EPP_INDEX_PERFORMANCE]);
+		}
 
 		if (hybrid_id) {
 			hybrid_scaling_factor = hybrid_id->driver_data;

@@ -14,6 +14,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/timer.h>
 #include <linux/sched.h>
+#include <linux/version.h>
 
 #include "ipu.h"
 #include "ipu-buttress.h"
@@ -26,6 +27,9 @@
 #include "ipu-platform-regs.h"
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
+#include <media/ipu-bridge.h>
+#endif
 
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
@@ -58,6 +62,24 @@ static int isys_init_acpi_add_device(struct device *dev, void *priv,
 }
 #endif
 
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
+static int ipu_isys_check_fwnode_graph(struct fwnode_handle *fwnode)
+{
+	struct fwnode_handle *endpoint;
+
+	if (IS_ERR_OR_NULL(fwnode))
+		return -EINVAL;
+
+	endpoint = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (endpoint) {
+		fwnode_handle_put(endpoint);
+		return 0;
+	}
+
+	return ipu_isys_check_fwnode_graph(fwnode->secondary);
+}
+#endif
+
 static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    struct device *parent,
 					    struct ipu_buttress_ctrl *ctrl,
@@ -76,6 +98,25 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	struct ipu_isys_subdev_pdata *acpi_pdata;
 #endif
 	int ret;
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
+	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+
+	ret = ipu_isys_check_fwnode_graph(fwnode);
+	if (ret) {
+		if (fwnode && !IS_ERR_OR_NULL(fwnode->secondary)) {
+			dev_err(&pdev->dev,
+				"fwnode graph has no endpoints connection\n");
+			return ERR_PTR(-EINVAL);
+		}
+
+		ret = ipu_bridge_init(&pdev->dev, ipu_bridge_parse_ssdb);
+		if (ret) {
+			dev_err_probe(&pdev->dev, ret,
+				      "IPU bridge init failed\n");
+			return ERR_PTR(ret);
+		}
+	}
+#endif
 
 	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -1003,6 +1044,9 @@ static void __exit ipu_exit(void)
 module_init(ipu_init);
 module_exit(ipu_exit);
 
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
+MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+#endif
 MODULE_AUTHOR("Sakari Ailus <sakari.ailus@linux.intel.com>");
 MODULE_AUTHOR("Jouni Högander <jouni.hogander@intel.com>");
 MODULE_AUTHOR("Antti Laakso <antti.laakso@intel.com>");

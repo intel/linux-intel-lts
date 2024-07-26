@@ -1602,10 +1602,17 @@ static void hsw_crtc_enable(struct intel_atomic_state *state,
 	if (psl_clkgate_wa)
 		glk_pipe_scaler_clock_gating_wa(dev_priv, pipe, true);
 
-	if (DISPLAY_VER(dev_priv) >= 9)
-		skl_pfit_enable(new_crtc_state);
-	else
+	if (DISPLAY_VER(dev_priv) >= 9) {
+		const struct drm_rect *dst = new_crtc_state->pch_pfit.enabled ?
+					     &new_crtc_state->pch_pfit.dst :
+					     &new_crtc_state->border.dst;
+
+		if (new_crtc_state->pch_pfit.enabled ||
+		    new_crtc_state->border.enabled)
+			skl_program_crtc_scaler(new_crtc_state, dst);
+	} else {
 		ilk_pfit_enable(new_crtc_state);
+	}
 
 	/*
 	 * On ILK+ LUT must be loaded before the pipe is running but with
@@ -2111,6 +2118,9 @@ static bool intel_crtc_supports_double_wide(const struct intel_crtc *crtc)
 
 static u32 ilk_pipe_pixel_rate(const struct intel_crtc_state *crtc_state)
 {
+	const struct drm_rect *dst = crtc_state->pch_pfit.enabled ?
+				     &crtc_state->pch_pfit.dst :
+				     &crtc_state->border.dst;
 	u32 pixel_rate = crtc_state->hw.pipe_mode.crtc_clock;
 	struct drm_rect src;
 
@@ -2119,15 +2129,14 @@ static u32 ilk_pipe_pixel_rate(const struct intel_crtc_state *crtc_state)
 	 * PF-ID we'll need to adjust the pixel_rate here.
 	 */
 
-	if (!crtc_state->pch_pfit.enabled)
+	if (!crtc_state->pch_pfit.enabled && !crtc_state->border.enabled)
 		return pixel_rate;
 
 	drm_rect_init(&src, 0, 0,
 		      drm_rect_width(&crtc_state->pipe_src) << 16,
 		      drm_rect_height(&crtc_state->pipe_src) << 16);
 
-	return intel_adjusted_rate(&src, &crtc_state->pch_pfit.dst,
-				   pixel_rate);
+	return intel_adjusted_rate(&src, dst, pixel_rate);
 }
 
 static void intel_mode_from_crtc_timings(struct drm_display_mode *mode,
@@ -5287,6 +5296,9 @@ intel_pipe_config_compare(const struct intel_crtc_state *current_config,
 		PIPE_CONF_CHECK_BOOL(pch_pfit.enabled);
 		PIPE_CONF_CHECK_RECT(pch_pfit.dst);
 
+		PIPE_CONF_CHECK_BOOL(border.enabled);
+		PIPE_CONF_CHECK_RECT(border.dst);
+
 		PIPE_CONF_CHECK_I(scaler_state.scaler_id);
 		PIPE_CONF_CHECK_I(pixel_rate);
 
@@ -6653,8 +6665,13 @@ static void intel_pipe_fastset(const struct intel_crtc_state *old_crtc_state,
 
 	/* on skylake this is done by detaching scalers */
 	if (DISPLAY_VER(dev_priv) >= 9) {
-		if (new_crtc_state->pch_pfit.enabled)
-			skl_pfit_enable(new_crtc_state);
+		const struct drm_rect *dst = new_crtc_state->pch_pfit.enabled ?
+					     &new_crtc_state->pch_pfit.dst :
+					     &new_crtc_state->border.dst;
+
+		if (new_crtc_state->pch_pfit.enabled ||
+		    new_crtc_state->border.enabled)
+			skl_program_crtc_scaler(new_crtc_state, dst);
 	} else if (HAS_PCH_SPLIT(dev_priv)) {
 		if (new_crtc_state->pch_pfit.enabled)
 			ilk_pfit_enable(new_crtc_state);
