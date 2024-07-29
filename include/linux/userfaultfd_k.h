@@ -39,6 +39,9 @@ static_assert(UFFDIO_ZEROPAGE_MODE_MMAP_TRYLOCK == UFFDIO_COPY_MODE_MMAP_TRYLOCK
 extern int sysctl_unprivileged_userfaultfd;
 
 extern vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason);
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+extern bool userfaultfd_using_sigbus(struct vm_area_struct *vma, unsigned long seq);
+#endif
 
 /*
  * The mode of operation for __mcopy_atomic and its helpers.

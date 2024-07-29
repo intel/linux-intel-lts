@@ -350,6 +350,32 @@ static inline unsigned int userfaultfd_get_blocking_state(unsigned int flags)
 	return TASK_UNINTERRUPTIBLE;
 }
 
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+bool userfaultfd_using_sigbus(struct vm_area_struct *vma, unsigned long seq)
+{
+	bool ret = false;
+
+	/*
+	 * Do it inside RCU section to ensure that the ctx doesn't
+	 * disappear under us.
+	 */
+	rcu_read_lock();
+	/*
+	 * Ensure that we are not looking at dangling pointer to
+	 * userfaultfd_ctx, which could happen if userfaultfd_release() is
+	 * called after vma is copied.
+	 */
+	if (mmap_seq_read_check(vma->vm_mm, seq, SPF_ABORT_USERFAULTFD)) {
+		struct userfaultfd_ctx *ctx;
+
+		ctx = rcu_dereference(vma->vm_userfaultfd_ctx.ctx);
+		ret = ctx && (ctx->features & UFFD_FEATURE_SIGBUS);
+	}
+	rcu_read_unlock();
+	return ret;
+}
+#endif
+
 /*
  * The locking rules involved in returning VM_FAULT_RETRY depending on
  * FAULT_FLAG_ALLOW_RETRY, FAULT_FLAG_RETRY_NOWAIT and

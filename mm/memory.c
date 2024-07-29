@@ -4941,6 +4941,17 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 		pgd_t pgdval;
 		p4d_t p4dval;
 		pud_t pudval;
+		bool uffd_missing_sigbus = false;
+
+#ifdef CONFIG_USERFAULTFD
+		/*
+		 * Only support SPF for SIGBUS+MISSING userfaults in private
+		 * anonymous VMAs.
+		 */
+		uffd_missing_sigbus = vma_is_anonymous(vma) &&
+					(vma->vm_flags & VM_UFFD_MISSING) &&
+					userfaultfd_using_sigbus(vma, seq);
+#endif
 
 		vmf.seq = seq;
 
