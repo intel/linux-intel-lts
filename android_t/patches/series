@@ -67,21 +67,11 @@
 #CVE-2023-7042
 0001-wifi-ath10k-fix-NULL-pointer-dereference-in-ath10k_w.patch
 
-#CVE-2024-0841
-#CVE-2024-26688
-0001-fs-hugetlb-fix-NULL-pointer-dereference-in-hugetlbs_.patch
-
-#CVE-2024-26601
-0001-ext4-regenerate-buddy-after-block-freeing-failed-if-.patch
-
 #CVE-2023-52508
 0001-nvme-fc-Prevent-null-pointer-dereference-in-nvme_fc_.patch
 
 #CVE-2023-52561
 0001-arm64-dts-qcom-sdm845-db845c-Mark-cont-splash-memory.patch
-
-#CVE-2024-26622
-0001-tomoyo-fix-UAF-write-bug-in-tomoyo_write_control.patch
 
 #CVE-2023-52629
 0001-sh-push-switch-Reorder-cleanup-operations-to-avoid-u.patch
@@ -98,16 +88,9 @@
 #CVE-2024-26718
 0001-dm-crypt-dm-verity-disable-tasklets.patch
 
-#CVE-2024-26735
-0001-ipv6-sr-fix-possible-use-after-free-and-null-ptr-der.patch
-
 #CVE-2024-26733
-0001-packet-move-from-strlcpy-with-unused-retval-to-strsc.patch
 0002-net-dev-Convert-sa_data-to-flexible-array-in-struct-.patch
 0003-arp-Prevent-overflow-in-arp_req_get.patch
-
-#CVE-2024-26736
-0001-afs-Increase-buffer-size-in-afs_update_volume_status.patch
 
 #CVE-2024-26747
 0001-usb-roles-fix-NULL-pointer-issue-when-put-module-s-r.patch
@@ -115,26 +98,8 @@
 #CVE-2024-26763
 0001-dm-crypt-don-t-modify-the-data-when-using-authentica.patch
 
-#CVE-2024-26764
-0001-fs-aio-Restrict-kiocb_set_cancel_fn-to-I-O-submitted.patch
-
 #CVE-2024-26777
 0001-fbdev-sis-Error-out-if-pixclock-equals-zero.patch
-
-#CVE-2024-26782
-0001-mptcp-fix-double-free-on-socket-dismantle.patch
-
-#CVE-2024-26795
-0001-riscv-Sparse-Memory-vmemmap-out-of-bounds-fix.patch
-
-#CVE-2024-26798
-0001-fbcon-always-restore-the-old-font-data-in-fbcon_do_s.patch
-
-#CVE-2024-26803
-0001-net-veth-clear-GRO-when-clearing-XDP-even-when-down.patch
-
-#CVE-2024-26804
-0001-net-ip_tunnel-prevent-perpetual-headroom-growth.patch
 
 #CVE-2024-26881
 0001-net-hns3-fix-kernel-crash-when-1588-is-received-on-H.patch
@@ -177,20 +142,8 @@
 
 #CVE-2024-27018
 0002-netfilter-nf_tables-add-rescheduling-points-during-l.patch
-0003-netfilter-nf_tables-set-dormant-flag-on-hook-registe.patch
-0004-netfilter-flowtable-simplify-route-logic.patch
-0005-netfilter-nft_flow_offload-reset-dst-in-route-object.patch
-0006-netfilter-nft_flow_offload-release-dst-in-case-direc.patch
 0007-netfilter-nf_tables-fix-scheduling-while-atomic-spla.patch
 0008-netfilter-nf_tables-can-t-schedule-in-nft_chain_vali.patch
-0009-netfilter-nf_tables-allow-NFPROTO_INET-in-nft_-match.patch
-0010-netfilter-nfnetlink_queue-silence-bogus-compiler-war.patch
-0011-netfilter-core-move-ip_ct_attach-indirection-to-stru.patch
-0012-netfilter-make-function-op-structures-const.patch
-0013-netfilter-let-reset-rules-clean-out-conntrack-entrie.patch
-0014-netfilter-bridge-confirm-multicast-packets-before-pa.patch
-0015-netfilter-nft_ct-fix-l3num-expectations-with-inet-ps.patch
-0016-netfilter-nf_conntrack_h323-Add-protection-for-bmp-l.patch
 0017-netfilter-nft_set_pipapo-release-elements-in-clone-o.patch
 0018-netfilter-nf_tables-do-not-compare-internal-table-fl.patch
 0019-netfilter-nf_tables-disallow-anonymous-set-with-time.patch
