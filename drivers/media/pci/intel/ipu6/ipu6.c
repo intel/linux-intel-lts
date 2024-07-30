@@ -37,6 +37,10 @@ static unsigned int isys_freq_override;
 module_param(isys_freq_override, uint, 0660);
 MODULE_PARM_DESC(isys_freq_override, "Override ISYS freq(mhz)");
 
+static unsigned int psys_freq_override;
+module_param(psys_freq_override, uint, 0660);
+MODULE_PARM_DESC(psys_freq_override, "Override PSYS freq(mhz)");
+
 #define IPU6_PCI_BAR		0
 
 struct ipu6_cell_program {
@@ -442,6 +446,15 @@ ipu6_psys_init(struct pci_dev *pdev, struct device *parent,
 
 	pdata->base = base;
 	pdata->ipdata = ipdata;
+
+	/* Override the isys freq */
+	if (psys_freq_override >= BUTTRESS_MIN_FORCE_PS_FREQ &&
+	    psys_freq_override <= BUTTRESS_MAX_FORCE_PS_FREQ) {
+		ctrl->ratio = psys_freq_override / BUTTRESS_PS_FREQ_STEP;
+		ctrl->qos_floor = psys_freq_override;
+		dev_dbg(&pdev->dev, "Override the psys freq:%u(mhz)\n",
+			psys_freq_override);
+	}
 
 	psys_adev = ipu6_bus_initialize_device(pdev, parent, pdata, ctrl,
 					       IPU6_PSYS_NAME);
