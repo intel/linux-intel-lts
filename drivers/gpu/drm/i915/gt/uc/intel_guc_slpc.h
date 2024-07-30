@@ -14,17 +14,17 @@
 struct intel_gt;
 struct drm_printer;
 
-static inline bool intel_guc_slpc_is_supported(struct intel_guc *guc)
+static inline bool intel_guc_slpc_is_supported(const struct intel_guc *guc)
 {
 	return guc->slpc.supported;
 }
 
-static inline bool intel_guc_slpc_is_wanted(struct intel_guc *guc)
+static inline bool intel_guc_slpc_is_wanted(const struct intel_guc *guc)
 {
 	return guc->slpc.selected;
 }
 
-static inline bool intel_guc_slpc_is_used(struct intel_guc *guc)
+static inline bool intel_guc_slpc_is_used(const struct intel_guc *guc)
 {
 	return intel_guc_submission_is_used(guc) && intel_guc_slpc_is_wanted(guc);
 }

@@ -644,6 +644,8 @@ static const struct intel_device_info tgl_info = {
 	PLATFORM(INTEL_TIGERLAKE),
 	.platform_engine_mask =
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
+	.has_guc_tlb_invalidation = 1, /* Required for SR-IOV */
+	.has_sriov = 1,
 };
 
 static const struct intel_device_info rkl_info = {
@@ -680,6 +682,8 @@ static const struct intel_device_info adl_s_info = {
 	.platform_engine_mask =
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
 	.dma_mask_size = 39,
+	.has_guc_tlb_invalidation = 1, /* Required for SR-IOV */
+	.has_sriov = 1,
 };
 
 static const struct intel_device_info adl_p_info = {
@@ -689,6 +693,8 @@ static const struct intel_device_info adl_p_info = {
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
 	.__runtime.ppgtt_size = 48,
 	.dma_mask_size = 39,
+	.has_guc_tlb_invalidation = 1, /* Required for SR-IOV */
+	.has_sriov = 1,
 };
 
 #undef GEN
@@ -776,8 +782,10 @@ static const struct intel_device_info mtl_info = {
 	.has_guc_deprivilege = 1,
 	.has_guc_tlb_invalidation = 1,
 	.has_llc = 0,
+	.has_memirq = 1,
 	.has_mslice_steering = 0,
 	.has_snoop = 1,
+	.has_sriov = 1,
 	.max_pat_index = 4,
 	.has_pxp = 1,
 	.memory_regions = BIT(INTEL_REGION_SMEM) | BIT(INTEL_REGION_STOLEN_LMEM),
@@ -883,6 +891,9 @@ static void i915_pci_remove(struct pci_dev *pdev)
 	if (!i915) /* driver load aborted, nothing to cleanup */
 		return;
 
+	if (IS_SRIOV_PF(i915))
+		i915_sriov_pf_disable_vfs(i915);
+
 	i915_driver_remove(i915);
 	pci_set_drvdata(pdev, NULL);
 }
@@ -983,12 +994,13 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		add_taint(TAINT_USER, LOCKDEP_STILL_OK);
 	}
 
-	/* Only bind to function 0 of the device. Early generations
-	 * used function 1 as a placeholder for multi-head. This causes
-	 * us confusion instead, especially on the systems where both
-	 * functions have the same PCI-ID!
+	/*
+	 * Don't bind to non-zero function, unless it is a virtual function.
+	 * Early generations used function 1 as a placeholder for multi-head.
+	 * This causes us confusion instead, especially on the systems where
+	 * both functions have the same PCI-ID!
 	 */
-	if (PCI_FUNC(pdev->devfn))
+	if (PCI_FUNC(pdev->devfn) && !pdev->is_virtfn)
 		return -ENODEV;
 
 	if (!intel_mmio_bar_valid(pdev, intel_info))
@@ -1026,7 +1038,45 @@ static void i915_pci_shutdown(struct pci_dev *pdev)
 {
 	struct drm_i915_private *i915 = pdev_to_i915(pdev);
 
+	if (IS_SRIOV_PF(i915))
+		i915_sriov_pf_disable_vfs(i915);
+
 	i915_driver_shutdown(i915);
+}
+
+/**
+ * i915_pci_sriov_configure - Configure SR-IOV (enable/disable VFs).
+ * @pdev: pci_dev struct
+ * @num_vfs: number of VFs to enable (or zero to disable all)
+ *
+ * This function will be called when user requests SR-IOV configuration via the
+ * sysfs interface. Note that VFs configuration can be done only on the PF and
+ * after successful PF initialization.
+ *
+ * Return: number of configured VFs or a negative error code on failure.
+ */
+static int i915_pci_sriov_configure(struct pci_dev *pdev, int num_vfs)
+{
+	struct drm_device *dev = pci_get_drvdata(pdev);
+	struct drm_i915_private *i915 = to_i915(dev);
+	int ret;
+
+	/* handled in drivers/pci/pci-sysfs.c */
+	GEM_BUG_ON(num_vfs < 0);
+	GEM_BUG_ON(num_vfs > U16_MAX);
+	GEM_BUG_ON(num_vfs > pci_sriov_get_totalvfs(pdev));
+	GEM_BUG_ON(num_vfs && pci_num_vf(pdev));
+	GEM_BUG_ON(!num_vfs && !pci_num_vf(pdev));
+
+	if (!IS_SRIOV_PF(i915))
+		return -ENODEV;
+
+	if (num_vfs > 0)
+		ret = i915_sriov_pf_enable_vfs(i915, num_vfs);
+	else
+		ret = i915_sriov_pf_disable_vfs(i915);
+
+	return ret;
 }
 
 static struct pci_driver i915_pci_driver = {
@@ -1036,7 +1086,30 @@ static struct pci_driver i915_pci_driver = {
 	.remove = i915_pci_remove,
 	.shutdown = i915_pci_shutdown,
 	.driver.pm = &i915_pm_ops,
+	.sriov_configure = i915_pci_sriov_configure,
 };
+
+#ifdef CONFIG_PCI_IOV
+/* our Gen12 SR-IOV platforms are simple */
+#define GEN12_VF_OFFSET 1
+#define GEN12_VF_STRIDE 1
+#define GEN12_VF_ROUTING_OFFSET(id) (GEN12_VF_OFFSET + ((id) - 1) * GEN12_VF_STRIDE)
+
+struct pci_dev *i915_pci_pf_get_vf_dev(struct pci_dev *pdev, unsigned int id)
+{
+	u16 vf_devid = pci_dev_id(pdev) + GEN12_VF_ROUTING_OFFSET(id);
+
+	GEM_BUG_ON(!dev_is_pf(&pdev->dev));
+	GEM_BUG_ON(!id);
+	GEM_BUG_ON(id > pci_num_vf(pdev));
+
+	/* caller must use pci_dev_put() */
+	return pci_get_domain_bus_and_slot(pci_domain_nr(pdev->bus),
+					PCI_BUS_NUM(vf_devid),
+					PCI_DEVFN(PCI_SLOT(vf_devid),
+					PCI_FUNC(vf_devid)));
+}
+#endif
 
 int i915_pci_register_driver(void)
 {

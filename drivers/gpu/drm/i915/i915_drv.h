@@ -57,7 +57,10 @@
 #include "i915_params.h"
 #include "i915_perf_types.h"
 #include "i915_scheduler.h"
+#include "i915_sriov.h"
+#include "i915_sriov_types.h"
 #include "i915_utils.h"
+#include "i915_virtualization.h"
 #include "intel_device_info.h"
 #include "intel_memory_region.h"
 #include "intel_runtime_pm.h"
@@ -196,6 +199,15 @@ struct drm_i915_private {
 	struct i915_params params;
 
 	const struct intel_device_info *__info; /* Use INTEL_INFO() to access. */
+
+	/* i915 virtualization mode, use IOV_MODE() to access */
+	enum i915_iov_mode __mode;
+#define IOV_MODE(i915) ({                              \
+	BUILD_BUG_ON(!I915_IOV_MODE_NONE);              \
+	GEM_BUG_ON(!(i915)->__mode);                    \
+	(i915)->__mode;                                 \
+})
+
 	struct intel_runtime_info __runtime; /* Use RUNTIME_INFO() to access. */
 	struct intel_driver_caps caps;
 
@@ -204,6 +216,7 @@ struct drm_i915_private {
 	struct intel_uncore uncore;
 	struct intel_uncore_mmio_debug mmio_debug;
 
+	struct i915_sriov sriov;
 	struct i915_virtual_gpu vgpu;
 
 	struct intel_gvt *gvt;
@@ -398,15 +411,15 @@ static inline struct intel_gt *to_gt(const struct drm_i915_private *i915)
 
 #define IP_VER(ver, rel)		((ver) << 8 | (rel))
 
-#define GRAPHICS_VER(i915)		(RUNTIME_INFO(i915)->graphics.ip.ver)
-#define GRAPHICS_VER_FULL(i915)		IP_VER(RUNTIME_INFO(i915)->graphics.ip.ver, \
-					       RUNTIME_INFO(i915)->graphics.ip.rel)
+#define GRAPHICS_VER(i915)	(assert_graphics_ip_ver_ready(i915), RUNTIME_INFO(i915)->graphics.ip.ver)
+#define GRAPHICS_VER_FULL(i915)	IP_VER(GRAPHICS_VER(i915), \
+				RUNTIME_INFO(i915)->graphics.ip.rel)
 #define IS_GRAPHICS_VER(i915, from, until) \
 	(GRAPHICS_VER(i915) >= (from) && GRAPHICS_VER(i915) <= (until))
 
-#define MEDIA_VER(i915)			(RUNTIME_INFO(i915)->media.ip.ver)
-#define MEDIA_VER_FULL(i915)		IP_VER(RUNTIME_INFO(i915)->media.ip.ver, \
-					       RUNTIME_INFO(i915)->media.ip.rel)
+#define MEDIA_VER(i915)		(assert_media_ip_ver_ready(i915), RUNTIME_INFO(i915)->media.ip.ver)
+#define MEDIA_VER_FULL(i915)	IP_VER(MEDIA_VER(i915), \
+				RUNTIME_INFO(i915)->media.ip.rel)
 #define IS_MEDIA_VER(i915, from, until) \
 	(MEDIA_VER(i915) >= (from) && MEDIA_VER(i915) <= (until))
 
@@ -721,10 +734,18 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
  */
 #define HAS_64K_PAGES(i915) (INTEL_INFO(i915)->has_64k_pages)
 
-#define HAS_REGION(i915, id) (INTEL_INFO(i915)->memory_regions & BIT(id))
-#define HAS_LMEM(i915) HAS_REGION(i915, INTEL_REGION_LMEM_0)
+#define HAS_REGION(i915, i)                                    \
+	(RUNTIME_INFO(i915)->memory_regions & (i) &               \
+	(IS_SRIOV_VF(i915) ? ~VF_RESTRICTED_REGIONS : ~0))
+#define HAS_LMEM(i915) HAS_REGION(i915, BIT(INTEL_REGION_LMEM_0))
 
 #define HAS_EXTRA_GT_LIST(i915)   (INTEL_INFO(i915)->extra_gt_list)
+
+#define HAS_SRIOV(dev_priv)	(INTEL_INFO(dev_priv)->has_sriov)
+
+#define HAS_MEMORY_IRQ(dev_priv) (INTEL_INFO(dev_priv)->has_memirq)
+
+#define HAS_MEMORY_IRQ_STATUS(dev_priv) (HAS_MEMORY_IRQ(dev_priv) && IS_SRIOV_VF(dev_priv))
 
 /*
  * Platform has the dedicated compression control state for each lmem surfaces

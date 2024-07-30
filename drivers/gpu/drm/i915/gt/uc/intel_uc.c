@@ -8,6 +8,9 @@
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_print.h"
 #include "gt/intel_reset.h"
+#include "gt/iov/intel_iov_memirq.h"
+#include "gt/iov/intel_iov_query.h"
+#include "gt/iov/intel_iov_utils.h"
 #include "intel_gsc_fw.h"
 #include "intel_gsc_uc.h"
 #include "intel_guc.h"
@@ -22,6 +25,7 @@
 
 static const struct intel_uc_ops uc_ops_off;
 static const struct intel_uc_ops uc_ops_on;
+static const struct intel_uc_ops uc_ops_vf;
 
 static void uc_expand_default_options(struct intel_uc *uc)
 {
@@ -122,7 +126,9 @@ void intel_uc_init_early(struct intel_uc *uc)
 
 	__confirm_options(uc);
 
-	if (intel_uc_wants_guc(uc))
+	if (IS_SRIOV_VF(uc_to_gt(uc)->i915))
+		uc->ops = &uc_ops_vf;
+	else if (intel_uc_wants_guc(uc))
 		uc->ops = &uc_ops_on;
 	else
 		uc->ops = &uc_ops_off;
@@ -181,12 +187,18 @@ void intel_uc_driver_remove(struct intel_uc *uc)
  */
 static void guc_clear_mmio_msg(struct intel_guc *guc)
 {
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		return;
+
 	intel_uncore_write(guc_to_gt(guc)->uncore, SOFT_SCRATCH(15), 0);
 }
 
 static void guc_get_mmio_msg(struct intel_guc *guc)
 {
 	u32 val;
+
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		return;
 
 	spin_lock_irq(&guc->irq_lock);
 
@@ -593,6 +605,114 @@ static void __uc_fini_hw(struct intel_uc *uc)
 	__uc_sanitize(uc);
 }
 
+static int __vf_uc_sanitize(struct intel_uc *uc)
+{
+	intel_huc_sanitize(&uc->huc);
+	intel_guc_sanitize(&uc->guc);
+
+	return 0;
+}
+
+static void __vf_uc_init_fw(struct intel_uc *uc)
+{
+	struct intel_gt *gt = uc_to_gt(uc);
+	unsigned int major = gt->iov.vf.config.guc_abi.major;
+	unsigned int minor = gt->iov.vf.config.guc_abi.minor;
+	unsigned int patch = gt->iov.vf.config.guc_abi.patch;
+
+	intel_uc_fw_set_preloaded(&uc->guc.fw, major, minor, patch);
+}
+
+static int __vf_uc_init(struct intel_uc *uc)
+{
+	return intel_guc_init(&uc->guc);
+}
+
+static void __vf_uc_fini(struct intel_uc *uc)
+{
+	intel_guc_fini(&uc->guc);
+}
+
+static int __vf_uc_init_hw(struct intel_uc *uc)
+{
+	struct intel_gt *gt = uc_to_gt(uc);
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_guc *guc = &uc->guc;
+	struct intel_huc *huc = &uc->huc;
+	int err;
+
+	GEM_BUG_ON(!HAS_GT_UC(i915));
+	GEM_BUG_ON(!IS_SRIOV_VF(i915));
+	GEM_BUG_ON(!intel_uc_uses_guc_submission(&gt->uc));
+
+	err = intel_iov_query_bootstrap(&gt->iov);
+	if (unlikely(err))
+		goto err_out;
+
+	if (!intel_uc_fw_is_running(&guc->fw)) {
+		err = intel_uc_fw_status_to_error(guc->fw.status);
+		goto err_out;
+	}
+
+	intel_guc_reset_interrupts(guc);
+
+	if (HAS_MEMORY_IRQ_STATUS(i915)) {
+		err = intel_iov_memirq_prepare_guc(&gt->iov);
+		if (unlikely(err))
+			goto err_out;
+	}
+
+	err = guc_enable_communication(guc);
+	if (unlikely(err))
+		goto err_out;
+
+	err = intel_iov_query_version(&gt->iov);
+	if (unlikely(err))
+		goto err_out;
+
+	/*
+	 * pretend that HuC is running if it is supported
+	 * for status rely on runtime reg shared by PF
+	 */
+	if (intel_uc_fw_is_supported(&huc->fw)) {
+		if (intel_huc_check_status(huc) > 0)
+			/* XXX: We don't know how to get the HuC version yet */
+			intel_uc_fw_set_preloaded(&huc->fw, 0, 0, 0);
+		else
+			intel_uc_fw_change_status(&huc->fw, INTEL_UC_FIRMWARE_DISABLED);
+	}
+
+	intel_guc_submission_enable(guc);
+
+	dev_info(i915->drm.dev, "%s firmware %s version %u.%u %s:%s\n",
+		intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_GUC), guc->fw.file_selected.path,
+		guc->fw.file_selected.ver.major, guc->fw.file_selected.ver.minor,
+		"submission", i915_iov_mode_to_string(IOV_MODE(i915)));
+
+	dev_info(i915->drm.dev, "%s firmware %s\n",
+		intel_uc_fw_type_repr(INTEL_UC_FW_TYPE_HUC),
+		intel_uc_fw_status_repr(__intel_uc_fw_status(&huc->fw)));
+
+	return 0;
+
+err_out:
+	__vf_uc_sanitize(uc);
+	i915_probe_error(i915, "GuC initialization failed (%pe)\n", ERR_PTR(err));
+	return -EIO;
+}
+
+static void __vf_uc_fini_hw(struct intel_uc *uc)
+{
+	struct intel_guc *guc = &uc->guc;
+
+	intel_guc_submission_disable(guc);
+
+	if (intel_guc_ct_enabled(&guc->ct))
+		guc_disable_communication(guc);
+
+	__vf_uc_sanitize(uc);
+}
+
 /**
  * intel_uc_reset_prepare - Prepare for reset
  * @uc: the intel_uc structure
@@ -617,7 +737,7 @@ void intel_uc_reset_prepare(struct intel_uc *uc)
 		intel_guc_submission_reset_prepare(guc);
 
 sanitize:
-	__uc_sanitize(uc);
+	intel_uc_sanitize(uc);
 }
 
 void intel_uc_reset(struct intel_uc *uc, intel_engine_mask_t stalled)
@@ -640,8 +760,21 @@ void intel_uc_reset_finish(struct intel_uc *uc)
 	uc->reset_in_progress = false;
 
 	/* Firmware expected to be running when this function is called */
-	if (intel_uc_uses_guc_submission(uc))
+	if (intel_uc_uses_guc_submission(uc)) {
+		struct drm_i915_private *i915 = uc_to_gt(uc)->i915;
+
 		intel_guc_submission_reset_finish(guc);
+
+		/*
+		 * Wa_14019103365:
+		 * In case the VFs are enabled and the GuC is reset,
+		 * we need to re-disableGSC engine in GuC.
+		 */
+		if (IS_METEORLAKE(i915) &&
+			pf_has_vfs_enabled(&uc_to_gt(uc)->iov) &&
+			intel_gsc_uc_fw_init_done(&uc->gsc))
+			intel_guc_disable_gsc_engine(guc);
+	}
 }
 
 void intel_uc_cancel_requests(struct intel_uc *uc)
@@ -710,6 +843,9 @@ static int __uc_resume(struct intel_uc *uc, bool enable_communication)
 	struct intel_guc *guc = &uc->guc;
 	struct intel_gt *gt = guc_to_gt(guc);
 	int err;
+
+	if (intel_gt_terminally_wedged(gt))
+		return 0;
 
 	if (!intel_guc_is_fw_running(guc))
 		return 0;
@@ -780,3 +916,14 @@ static const struct intel_uc_ops uc_ops_on = {
 
 	.resume_mappings = __uc_resume_mappings,
 };
+
+static const struct intel_uc_ops uc_ops_vf = {
+	.sanitize = __vf_uc_sanitize,
+	.init_fw = __vf_uc_init_fw,
+	.init = __vf_uc_init,
+	.fini = __vf_uc_fini,
+	.init_hw = __vf_uc_init_hw,
+	.fini_hw = __vf_uc_fini_hw,
+};
+
+

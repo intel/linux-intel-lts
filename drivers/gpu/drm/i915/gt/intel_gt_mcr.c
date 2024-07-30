@@ -129,7 +129,7 @@ void intel_gt_mcr_init(struct intel_gt *gt)
 			gt_warn(gt, "mslice mask all zero!\n");
 	}
 
-	if (MEDIA_VER(i915) >= 13 && gt->type == GT_MEDIA) {
+	if (gt->type == GT_MEDIA && MEDIA_VER(i915) >= 13) {
 		gt->steering_table[OADDRM] = xelpmp_oaddrm_steering_table;
 	} else if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 70)) {
 		/* Wa_14016747170 */

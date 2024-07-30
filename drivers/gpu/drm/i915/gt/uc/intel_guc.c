@@ -18,6 +18,15 @@
 #include "i915_irq.h"
 #include "i915_reg.h"
 
+#ifdef CONFIG_DRM_I915_DEBUG_GUC
+#define GUC_DEBUG(_guc, _fmt, ...) guc_dbg(_guc, _fmt, ##__VA_ARGS__)
+#else
+#define GUC_DEBUG(_guc, _fmt, ...) typecheck(struct intel_guc *, _guc)
+#endif
+
+static const struct intel_guc_ops guc_ops_default;
+static const struct intel_guc_ops guc_ops_vf;
+
 /**
  * DOC: GuC
  *
@@ -76,6 +85,10 @@ void intel_guc_init_send_regs(struct intel_guc *guc)
 					FW_REG_READ | FW_REG_WRITE);
 	}
 	guc->send_regs.fw_domains = fw_domains;
+
+	/* XXX: move to init_early when safe to call IS_SRIOV_VF */
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		guc->ops = &guc_ops_vf;
 }
 
 static void gen9_reset_guc_interrupts(struct intel_guc *guc)
@@ -216,6 +229,8 @@ void intel_guc_init_early(struct intel_guc *guc)
 
 	intel_guc_enable_msg(guc, INTEL_GUC_RECV_MSG_EXCEPTION |
 				  INTEL_GUC_RECV_MSG_CRASH_DUMP_POSTED);
+
+	guc->ops = &guc_ops_default;
 }
 
 void intel_guc_init_late(struct intel_guc *guc)
@@ -327,6 +342,10 @@ static u32 guc_ctl_wa_flags(struct intel_guc *guc)
 	if (GUC_FIRMWARE_VER(guc) >= MAKE_GUC_VER(70, 7, 0))
 		flags |= GUC_WA_ENABLE_TSC_CHECK_ON_RC6;
 
+	/* Wa_14019103365 */
+	if (IS_METEORLAKE(gt->i915) && IS_SRIOV_PF(gt->i915) && HAS_ENGINE(gt, GSC0))
+		flags |= GUC_WA_DISABLE_GSC_RESET_IN_VF;
+
 	return flags;
 }
 
@@ -402,7 +421,7 @@ void intel_guc_dump_time_info(struct intel_guc *guc, struct drm_printer *p)
 		   gt->clock_frequency, gt->clock_period_ns);
 }
 
-int intel_guc_init(struct intel_guc *guc)
+static int __guc_init(struct intel_guc *guc)
 {
 	int ret;
 
@@ -469,7 +488,7 @@ out:
 	return ret;
 }
 
-void intel_guc_fini(struct intel_guc *guc)
+static void __guc_fini(struct intel_guc *guc)
 {
 	if (!intel_uc_fw_is_loadable(&guc->fw))
 		return;
@@ -488,6 +507,50 @@ void intel_guc_fini(struct intel_guc *guc)
 	intel_guc_capture_destroy(guc);
 	intel_guc_log_destroy(&guc->log);
 	intel_uc_fw_fini(&guc->fw);
+}
+
+static int __vf_guc_init(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+	int err;
+
+	GEM_BUG_ON(!IS_SRIOV_VF(gt->i915));
+
+	err = intel_guc_ct_init(&guc->ct);
+	if (err)
+		return err;
+
+	/* GuC submission is mandatory for VFs */
+	err = intel_guc_submission_init(guc);
+	if (err)
+		goto err_ct;
+
+	/*
+	 * Disable slpc controls for VF. This cannot be done in
+	 * __guc_slpc_selected since the VF probe is not complete
+	 * at that point.
+	 */
+	guc->slpc.supported = false;
+	guc->slpc.selected = false;
+
+	/* Disable GUCRC for VF */
+	guc->rc_supported = false;
+
+	return 0;
+
+err_ct:
+	intel_guc_ct_fini(&guc->ct);
+	return err;
+}
+
+static void __vf_guc_fini(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+
+	GEM_BUG_ON(!IS_SRIOV_VF(gt->i915));
+
+	intel_guc_submission_fini(guc);
+	intel_guc_ct_fini(&guc->ct);
 }
 
 /*
@@ -509,6 +572,8 @@ int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
 
 	mutex_lock(&guc->send_mutex);
 	intel_uncore_forcewake_get(uncore, guc->send_regs.fw_domains);
+
+	GUC_DEBUG(guc, "mmio sending %*ph\n", len * 4, request);
 
 retry:
 	for (i = 0; i < len; i++)
@@ -536,11 +601,19 @@ timeout:
 	}
 
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) == GUC_HXG_TYPE_NO_RESPONSE_BUSY) {
+		int loop = IS_SRIOV_VF(guc_to_gt(guc)->i915) ? 20 : 1;
+
 #define done ({ header = intel_uncore_read(uncore, guc_send_reg(guc, 0)); \
 		FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != GUC_HXG_ORIGIN_GUC || \
 		FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != GUC_HXG_TYPE_NO_RESPONSE_BUSY; })
 
+busy_loop:
 		ret = wait_for(done, 1000);
+		if (unlikely(ret && --loop)) {
+			guc_dbg(guc, "mmio request %#x: still busy, countdown %u\n",
+				request[0], loop);
+			goto busy_loop;
+		}
 		if (unlikely(ret))
 			goto timeout;
 		if (unlikely(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) !=
@@ -585,10 +658,13 @@ proto:
 		for (i = 1; i < count; i++)
 			response_buf[i] = intel_uncore_read(uncore,
 							    guc_send_reg(guc, i));
+		GUC_DEBUG(guc, "mmio received %*ph\n", count * 4, response_buf);
 
 		/* Use number of copied dwords as our return value */
 		ret = count;
 	} else {
+		GUC_DEBUG(guc, "mmio received %*ph\n", 4, &header);
+
 		/* Use data from the GuC response as our return value */
 		ret = FIELD_GET(GUC_HXG_RESPONSE_MSG_0_DATA0, header);
 	}
@@ -889,6 +965,34 @@ int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value)
 	return __guc_self_cfg(guc, key, 2, value);
 }
 
+int intel_guc_enable_gsc_engine(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+
+	if (!HAS_ENGINE(gt, GSC0))
+		return 0;
+
+	return intel_guc_set_engine_sched(guc, GUC_GSC_OTHER_CLASS, SET_ENGINE_SCHED_FLAGS_ENABLE);
+}
+
+int intel_guc_disable_gsc_engine(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc_to_gt(guc);
+	int err;
+
+	if (!HAS_ENGINE(gt, GSC0))
+		return 0;
+
+	if (wait_for(intel_engine_is_idle(gt->engine[GSC0]), I915_GEM_IDLE_TIMEOUT))
+		return -EBUSY;
+
+	err = intel_guc_set_engine_sched(guc, GUC_GSC_OTHER_CLASS, 0);
+	if (err < 0)
+		return err;
+
+	return intel_gt_reset_engine(gt->engine[GSC0]);
+}
+
 /**
  * intel_guc_load_status - dump information about GuC load status
  * @guc: the GuC
@@ -913,6 +1017,9 @@ void intel_guc_load_status(struct intel_guc *guc, struct drm_printer *p)
 	}
 
 	intel_uc_fw_dump(&guc->fw, p);
+
+	if (IS_SRIOV_VF(guc_to_gt(guc)->i915))
+		return;
 
 	with_intel_runtime_pm(uncore->rpm, wakeref) {
 		u32 status = intel_uncore_read(uncore, GUC_STATUS);
@@ -961,3 +1068,13 @@ void intel_guc_write_barrier(struct intel_guc *guc)
 		wmb();
 	}
 }
+
+static const struct intel_guc_ops guc_ops_default = {
+	.init = __guc_init,
+	.fini = __guc_fini,
+};
+
+static const struct intel_guc_ops guc_ops_vf = {
+	.init = __vf_guc_init,
+	.fini = __vf_guc_fini,
+};

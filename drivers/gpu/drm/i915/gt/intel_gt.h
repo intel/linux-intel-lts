@@ -9,6 +9,7 @@
 #include "intel_engine_types.h"
 #include "intel_gt_types.h"
 #include "intel_reset.h"
+#include "i915_irq.h"
 
 struct drm_i915_private;
 struct drm_printer;

@@ -1816,6 +1816,26 @@ __vgpu_read(16)
 __vgpu_read(32)
 __vgpu_read(64)
 
+#define __early_read(x) \
+static u##x \
+early_read##x(struct intel_uncore *uncore, i915_reg_t reg, bool trace) { \
+	return __raw_uncore_read##x(uncore, reg); \
+}
+
+#define __early_write(x) \
+static void \
+early_write##x(struct intel_uncore *uncore, i915_reg_t reg, u##x val, bool trace) { \
+	__raw_uncore_write##x(uncore, reg, val); \
+}
+
+__early_read(8)
+__early_read(16)
+__early_read(32)
+__early_read(64)
+__early_write(8)
+__early_write(16)
+__early_write(32)
+
 #define GEN2_READ_HEADER(x) \
 	u##x val = 0; \
 	assert_rpm_wakelock_held(uncore->rpm);
@@ -2024,6 +2044,77 @@ vgpu_write##x(struct intel_uncore *uncore, i915_reg_t reg, u##x val, bool trace)
 __vgpu_write(8)
 __vgpu_write(16)
 __vgpu_write(32)
+
+static const struct i915_range vf_accessible_regs[] = {
+	{ .start = 0x190010, .end = 0x190010 },
+	{ .start = 0x190018, .end = 0x19001C },
+	{ .start = 0x190030, .end = 0x190048 },
+	{ .start = 0x190060, .end = 0x190064 },
+	{ .start = 0x190070, .end = 0x190074 },
+	{ .start = 0x190090, .end = 0x190090 },
+	{ .start = 0x1900a0, .end = 0x1900a0 },
+	{ .start = 0x1900a8, .end = 0x1900ac },
+	{ .start = 0x1900b0, .end = 0x1900b4 },
+	{ .start = 0x1900d0, .end = 0x1900d4 },
+	{ .start = 0x1900e8, .end = 0x1900ec },
+	{ .start = 0x1900F0, .end = 0x1900F4 },
+	{ .start = 0x190100, .end = 0x190100 },
+	{ .start = 0x1901f0, .end = 0x1901f0 },
+	{ .start = 0x1901f8, .end = 0x1901f8 },
+	{ .start = 0x190240, .end = 0x19024c },
+	{ .start = 0x190300, .end = 0x190304 },
+	{ .start = 0x19030c, .end = 0x19031c },
+};
+
+static bool reg_is_vf_accessible(u32 offset)
+{
+	return BSEARCH(offset, &vf_accessible_regs[0],
+			ARRAY_SIZE(vf_accessible_regs), mmio_range_cmp);
+}
+
+static int __vf_runtime_reg_cmp(u32 key, const struct vf_runtime_reg *reg)
+{
+	u32 offset = reg->offset;
+
+	if (key < offset)
+		return -1;
+	else if (key > offset)
+		return 1;
+	else
+		return 0;
+}
+
+static const struct vf_runtime_reg *
+__vf_runtime_reg_find(struct intel_gt *gt, u32 offset)
+{
+	const struct vf_runtime_reg *regs = gt->iov.vf.runtime.regs;
+	u32 regs_num = gt->iov.vf.runtime.regs_size;
+
+	return BSEARCH(offset, regs, regs_num, __vf_runtime_reg_cmp);
+}
+
+#define __vf_read(x) \
+static u##x vf_read##x(struct intel_uncore *uncore, \
+			i915_reg_t reg, bool trace) \
+{ \
+	u32 offset = i915_mmio_reg_offset(reg); \
+	const struct vf_runtime_reg *vf_reg = __vf_runtime_reg_find(uncore->gt, offset); \
+	if (IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV) && vf_reg) \
+	drm_dbg(&uncore->i915->drm, "runtime MMIO %#04x = %#x\n", \
+		offset, vf_reg->value); \
+	if (vf_reg) \
+		return vf_reg->value; \
+	if (IS_ENABLED(CONFIG_DRM_I915_DEBUG_IOV) && !reg_is_vf_accessible(offset)) { \
+		WARN(1, "rejected read MMIO %#04x\n", offset); \
+		return 0; \
+	} \
+	return gen2_read##x(uncore, reg, trace); \
+}
+
+__vf_read(8)
+__vf_read(16)
+__vf_read(32)
+#define vf_read64 gen2_read64 /* no support for 64 */
 
 #define ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, x) \
 do { \
@@ -2370,6 +2461,9 @@ void intel_uncore_init_early(struct intel_uncore *uncore,
 	uncore->i915 = gt->i915;
 	uncore->gt = gt;
 	uncore->rpm = &gt->i915->runtime_pm;
+
+	ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, early);
+	ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, early);
 }
 
 static void uncore_raw_init(struct intel_uncore *uncore)
@@ -2379,6 +2473,9 @@ static void uncore_raw_init(struct intel_uncore *uncore)
 	if (intel_vgpu_active(uncore->i915)) {
 		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, vgpu);
 		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, vgpu);
+	} else if (IS_SRIOV_VF(uncore->i915)) {
+		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen2);
+		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, vf);
 	} else if (GRAPHICS_VER(uncore->i915) == 5) {
 		ASSIGN_RAW_WRITE_MMIO_VFUNCS(uncore, gen5);
 		ASSIGN_RAW_READ_MMIO_VFUNCS(uncore, gen5);
@@ -2467,6 +2564,9 @@ static int sanity_check_mmio_access(struct intel_uncore *uncore)
 {
 	struct drm_i915_private *i915 = uncore->i915;
 
+	if (IS_SRIOV_VF(i915))
+		return 0;
+
 	if (GRAPHICS_VER(i915) < 8)
 		return 0;
 
@@ -2514,7 +2614,7 @@ int intel_uncore_init_mmio(struct intel_uncore *uncore)
 		return -ENODEV;
 	}
 
-	if (GRAPHICS_VER(i915) > 5 && !intel_vgpu_active(i915))
+	if (!IS_SRIOV_VF(i915) && !intel_vgpu_active(i915) && GRAPHICS_VER(i915))
 		uncore->flags |= UNCORE_HAS_FORCEWAKE;
 
 	if (!intel_uncore_has_forcewake(uncore)) {
@@ -2536,7 +2636,7 @@ int intel_uncore_init_mmio(struct intel_uncore *uncore)
 	if (IS_VALLEYVIEW(i915) || IS_CHERRYVIEW(i915))
 		uncore->flags |= UNCORE_HAS_DBG_UNCLAIMED;
 
-	if (IS_GRAPHICS_VER(i915, 6, 7))
+	if (!IS_SRIOV_VF(i915) && IS_GRAPHICS_VER(i915, 6, 7))
 		uncore->flags |= UNCORE_HAS_FIFO;
 
 	/* clear out unclaimed reg detection bit */

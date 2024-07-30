@@ -51,7 +51,7 @@ struct platform_desc {
 
 #define ID(id) (id)
 
-static const struct intel_display_device_info no_display = {};
+const struct intel_display_device_info no_display = {};
 
 #define PIPE_A_OFFSET		0x70000
 #define PIPE_B_OFFSET		0x71000
@@ -1351,6 +1351,22 @@ probe_gmdid_display(struct drm_i915_private *i915, struct intel_display_ip_ver *
 	val = ioread32(addr);
 	pci_iounmap(pdev, addr);
 
+	if (val == 0xffffffff) {
+		/*
+		 * Bugs in PCI programming (or failing hardware) can occasionally cause
+		 * lost access to the MMIO BAR.  When this happens, register reads will
+		 * come back with 0xFFFFFFFF for every register, including GMD_ID, and
+		 * then we may wrongly claim that we are using future display IP version.
+		 *
+		 * Additionally, when running on the VF devices, read of GMD_ID register
+		 * might also return 0xFFFFFFFF as this register is not available for VFs.
+		 *
+		 * Disable display if that happen. Proper handling will be done later.
+		 */
+		drm_info(&i915->drm, "Cannot read valid display IP version; disabling display.\n");
+		return &no_display;
+	}
+
 	if (val == 0) {
 		drm_dbg_kms(&i915->drm, "Device doesn't have display\n");
 		return NULL;
@@ -1677,8 +1693,10 @@ static void __intel_display_device_info_runtime_init(struct drm_i915_private *i9
 		}
 	}
 
-	display_runtime->rawclk_freq = intel_read_rawclk(i915);
-	drm_dbg_kms(&i915->drm, "rawclk rate: %d kHz\n", display_runtime->rawclk_freq);
+	if (!IS_SRIOV_VF(i915)) {
+		display_runtime->rawclk_freq = intel_read_rawclk(i915);
+		drm_dbg_kms(&i915->drm, "rawclk rate: %d kHz\n", display_runtime->rawclk_freq);
+	}
 
 	return;
 

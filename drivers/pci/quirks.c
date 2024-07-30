@@ -1064,6 +1064,30 @@ static void quirk_vt8235_acpi(struct pci_dev *dev)
 }
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_VIA,	PCI_DEVICE_ID_VIA_8235,	quirk_vt8235_acpi);
 
+#if defined(CONFIG_PCI_IOV)
+/*
+ * Intel MTL graphics has a hardware issue where it can hang upon parallel
+ * read/writes to GGTT.
+ * Disallow SR-IOV VF accesses to GGTT by reducing BAR0 size.
+ */
+static void quirk_mtl_gfx_vf_bar0(struct pci_dev *dev)
+{
+	struct resource *r = &dev->resource[0];
+
+	if (!dev->is_virtfn)
+		return;
+
+	r->end -= SZ_8M;
+	pci_info(dev, "reduced BAR0 size: %pR", r);
+}
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x7d40, quirk_mtl_gfx_vf_bar0);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x7d45, quirk_mtl_gfx_vf_bar0);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x7d55, quirk_mtl_gfx_vf_bar0);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x7d60, quirk_mtl_gfx_vf_bar0);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x7d67, quirk_mtl_gfx_vf_bar0);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, 0x7dd5, quirk_mtl_gfx_vf_bar0);
+#endif
+
 /*
  * TI XIO2000a PCIe-PCI Bridge erroneously reports it supports fast
  * back-to-back: Disable fast back-to-back on the secondary bus segment

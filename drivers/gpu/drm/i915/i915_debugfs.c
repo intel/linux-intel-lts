@@ -84,6 +84,16 @@ static int i915_capabilities(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int sriov_info_show(struct seq_file *m, void *data)
+{
+	struct drm_i915_private *i915 = node_to_i915(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	i915_sriov_print_info(i915, &p);
+
+	return 0;
+}
+
 static char get_tiling_flag(struct drm_i915_gem_object *obj)
 {
 	switch (i915_gem_object_get_tiling(obj)) {
@@ -595,6 +605,15 @@ i915_drop_caches_get(void *data, u64 *val)
 	return 0;
 }
 
+static bool has_permanent_wakeref(struct drm_i915_private *i915)
+{
+	/*
+	 * XXX: When we have VFs enabled, PF take an untracked wakeref, so
+	 * we can't determine properly whether the GT PM is idle.
+	 */
+	return IS_SRIOV_PF(i915) && (pci_num_vf(to_pci_dev(i915->drm.dev)) > 0);
+}
+
 static int
 gt_drop_caches(struct intel_gt *gt, u64 val)
 {
@@ -614,9 +633,12 @@ gt_drop_caches(struct intel_gt *gt, u64 val)
 	}
 
 	if (val & DROP_IDLE) {
-		ret = intel_gt_pm_wait_for_idle(gt);
-		if (ret)
-			return ret;
+		if (!has_permanent_wakeref(gt->i915)) {
+			ret = intel_gt_pm_wait_for_idle(gt);
+			if (ret)
+				return ret;
+		}
+
 	}
 
 	if (val & DROP_RESET_ACTIVE && intel_gt_terminally_wedged(gt))
@@ -720,6 +742,14 @@ static const struct drm_info_list i915_debugfs_list[] = {
 	{"i915_wa_registers", i915_wa_registers, 0},
 	{"i915_sseu_status", i915_sseu_status, 0},
 	{"i915_rps_boost_info", i915_rps_boost_info, 0},
+	{"i915_sriov_info", sriov_info_show, 0},
+};
+
+static const struct drm_info_list i915_vf_debugfs_list[] = {
+	{"i915_capabilities", i915_capabilities, 0},
+	{"i915_gem_objects", i915_gem_object_info, 0},
+	{"i915_engine_info", i915_engine_info, 0},
+	{"i915_sriov_info", sriov_info_show, 0},
 };
 
 static const struct i915_debugfs_files {
@@ -729,28 +759,50 @@ static const struct i915_debugfs_files {
 	{"i915_perf_noa_delay", &i915_perf_noa_delay_fops},
 	{"i915_wedged", &i915_wedged_fops},
 	{"i915_gem_drop_caches", &i915_drop_caches_fops},
+}, i915_vf_debugfs_files[] = {
+	{"i915_wedged", &i915_wedged_fops},
+	{"i915_gem_drop_caches", &i915_drop_caches_fops},
 };
 
 void i915_debugfs_register(struct drm_i915_private *dev_priv)
 {
 	struct drm_minor *minor = dev_priv->drm.primary;
+	const struct drm_info_list *debugfs_list;
+	const struct i915_debugfs_files *debugfs_files;
+	size_t debugfs_files_size;
+	size_t debugfs_list_size;
 	int i;
 
 	i915_debugfs_params(dev_priv);
 
 	debugfs_create_file("i915_forcewake_user", S_IRUSR, minor->debugfs_root,
 			    to_i915(minor->dev), &i915_forcewake_fops);
-	for (i = 0; i < ARRAY_SIZE(i915_debugfs_files); i++) {
-		debugfs_create_file(i915_debugfs_files[i].name,
+
+	if (IS_SRIOV_VF(dev_priv)) {
+		debugfs_files = i915_vf_debugfs_files;
+		debugfs_list = i915_vf_debugfs_list;
+
+		debugfs_files_size = ARRAY_SIZE(i915_vf_debugfs_files);
+		debugfs_list_size = ARRAY_SIZE(i915_vf_debugfs_list);
+	} else {
+		debugfs_files = i915_debugfs_files;
+		debugfs_list = i915_debugfs_list;
+
+		debugfs_files_size = ARRAY_SIZE(i915_debugfs_files);
+		debugfs_list_size = ARRAY_SIZE(i915_debugfs_list);
+	}
+
+	for (i = 0; i < debugfs_files_size; i++) {
+		debugfs_create_file(debugfs_files[i].name,
 				    S_IRUGO | S_IWUSR,
 				    minor->debugfs_root,
 				    to_i915(minor->dev),
-				    i915_debugfs_files[i].fops);
+				    debugfs_files[i].fops);
 	}
 
-	drm_debugfs_create_files(i915_debugfs_list,
-				 ARRAY_SIZE(i915_debugfs_list),
-				 minor->debugfs_root, minor);
+	drm_debugfs_create_files(debugfs_list,
+				debugfs_list_size,
+				minor->debugfs_root, minor);
 
 	i915_gpu_error_debugfs_register(dev_priv);
 }
