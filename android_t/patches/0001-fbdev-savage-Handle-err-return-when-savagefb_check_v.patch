@@ -1,0 +1,41 @@
+From 395b7607d92663e731c82522934b2f86c273005a Mon Sep 17 00:00:00 2001
+From: Cai Xinchen <caixinchen1@huawei.com>
+Date: Tue, 16 Apr 2024 06:51:37 +0000
+Subject: [PATCH] fbdev: savage: Handle err return when savagefb_check_var
+ failed
+
+commit 6ad959b6703e2c4c5d7af03b4cfd5ff608036339 upstream.
+
+The commit 04e5eac8f3ab("fbdev: savage: Error out if pixclock equals zero")
+checks the value of pixclock to avoid divide-by-zero error. However
+the function savagefb_probe doesn't handle the error return of
+savagefb_check_var. When pixclock is 0, it will cause divide-by-zero error.
+
+Fixes: 04e5eac8f3ab ("fbdev: savage: Error out if pixclock equals zero")
+Signed-off-by: Cai Xinchen <caixinchen1@huawei.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Helge Deller <deller@gmx.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/video/fbdev/savage/savagefb_driver.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/video/fbdev/savage/savagefb_driver.c b/drivers/video/fbdev/savage/savagefb_driver.c
+index 94ebd8af50cf..224d7c8146a9 100644
+--- a/drivers/video/fbdev/savage/savagefb_driver.c
++++ b/drivers/video/fbdev/savage/savagefb_driver.c
+@@ -2271,7 +2271,10 @@ static int savagefb_probe(struct pci_dev *dev, const struct pci_device_id *id)
+ 	if (info->var.xres_virtual > 0x1000)
+ 		info->var.xres_virtual = 0x1000;
+ #endif
+-	savagefb_check_var(&info->var, info);
++	err = savagefb_check_var(&info->var, info);
++	if (err)
++		goto failed;
++
+ 	savagefb_set_fix(info);
+ 
+ 	/*
+-- 
+2.25.1
+

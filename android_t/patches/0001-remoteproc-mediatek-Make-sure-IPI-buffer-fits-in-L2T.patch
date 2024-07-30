@@ -1,0 +1,62 @@
+From 505e46c2ec1d749d9ab0c38cfb38813227164e89 Mon Sep 17 00:00:00 2001
+From: AngeloGioacchino Del Regno <angelogioacchino.delregno@collabora.com>
+Date: Thu, 21 Mar 2024 09:46:13 +0100
+Subject: [PATCH] remoteproc: mediatek: Make sure IPI buffer fits in L2TCM
+
+commit 331f91d86f71d0bb89a44217cc0b2a22810bbd42 upstream.
+
+The IPI buffer location is read from the firmware that we load to the
+System Companion Processor, and it's not granted that both the SRAM
+(L2TCM) size that is defined in the devicetree node is large enough
+for that, and while this is especially true for multi-core SCP, it's
+still useful to check on single-core variants as well.
+
+Failing to perform this check may make this driver perform R/W
+operations out of the L2TCM boundary, resulting (at best) in a
+kernel panic.
+
+To fix that, check that the IPI buffer fits, otherwise return a
+failure and refuse to boot the relevant SCP core (or the SCP at
+all, if this is single core).
+
+Fixes: 3efa0ea743b7 ("remoteproc/mediatek: read IPI buffer offset from FW")
+Signed-off-by: AngeloGioacchino Del Regno <angelogioacchino.delregno@collabora.com>
+Cc: stable@vger.kernel.org
+Link: https://lore.kernel.org/r/20240321084614.45253-2-angelogioacchino.delregno@collabora.com
+Signed-off-by: Mathieu Poirier <mathieu.poirier@linaro.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/remoteproc/mtk_scp.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/remoteproc/mtk_scp.c b/drivers/remoteproc/mtk_scp.c
+index 9679cc26895e..211c7e3b848e 100644
+--- a/drivers/remoteproc/mtk_scp.c
++++ b/drivers/remoteproc/mtk_scp.c
+@@ -126,7 +126,7 @@ static int scp_elf_read_ipi_buf_addr(struct mtk_scp *scp,
+ static int scp_ipi_init(struct mtk_scp *scp, const struct firmware *fw)
+ {
+ 	int ret;
+-	size_t offset;
++	size_t buf_sz, offset;
+ 
+ 	/* read the ipi buf addr from FW itself first */
+ 	ret = scp_elf_read_ipi_buf_addr(scp, fw, &offset);
+@@ -138,6 +138,14 @@ static int scp_ipi_init(struct mtk_scp *scp, const struct firmware *fw)
+ 	}
+ 	dev_info(scp->dev, "IPI buf addr %#010zx\n", offset);
+ 
++	/* Make sure IPI buffer fits in the L2TCM range assigned to this core */
++	buf_sz = sizeof(*scp->recv_buf) + sizeof(*scp->send_buf);
++
++	if (scp->sram_size < buf_sz + offset) {
++		dev_err(scp->dev, "IPI buffer does not fit in SRAM.\n");
++		return -EOVERFLOW;
++	}
++
+ 	scp->recv_buf = (struct mtk_share_obj __iomem *)
+ 			(scp->sram_base + offset);
+ 	scp->send_buf = (struct mtk_share_obj __iomem *)
+-- 
+2.25.1
+
