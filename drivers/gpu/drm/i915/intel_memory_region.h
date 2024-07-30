@@ -44,7 +44,11 @@ enum intel_region_id {
 	for (id = 0; id < ARRAY_SIZE((i915)->mm.regions); id++) \
 		for_each_if((mr) = (i915)->mm.regions[id])
 
+#define VF_RESTRICTED_REGIONS (BIT(INTEL_REGION_STOLEN_SMEM) | BIT(INTEL_REGION_STOLEN_LMEM))
+
 struct intel_memory_region_ops {
+	unsigned int flags;
+
 	int (*init)(struct intel_memory_region *mem);
 	int (*release)(struct intel_memory_region *mem);
 

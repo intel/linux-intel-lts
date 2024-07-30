@@ -211,6 +211,23 @@ i915-y += \
 i915-y += \
 	gt/intel_gsc.o
 
+# Virtualization support
+iov-y += \
+       i915_sriov.o \
+       i915_sriov_sysfs.o \
+       gt/iov/intel_iov.o \
+       gt/iov/intel_iov_debugfs.o \
+       gt/iov/intel_iov_event.o \
+       gt/iov/intel_iov_ggtt.o \
+       gt/iov/intel_iov_memirq.o \
+       gt/iov/intel_iov_provisioning.o \
+       gt/iov/intel_iov_query.o \
+       gt/iov/intel_iov_relay.o \
+       gt/iov/intel_iov_service.o \
+       gt/iov/intel_iov_state.o \
+       gt/iov/intel_iov_sysfs.o
+i915-y += $(iov-y)
+
 # graphics hardware monitoring (HWMON) support
 i915-$(CONFIG_HWMON) += \
 	i915_hwmon.o

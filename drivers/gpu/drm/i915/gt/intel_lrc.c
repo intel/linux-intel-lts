@@ -18,6 +18,7 @@
 #include "intel_lrc.h"
 #include "intel_lrc_reg.h"
 #include "intel_ring.h"
+#include "iov/intel_iov_reg.h"
 #include "shmem_utils.h"
 
 /*
@@ -906,6 +907,29 @@ static struct i915_ppgtt *vm_alias(struct i915_address_space *vm)
 		return i915_vm_to_ppgtt(vm);
 }
 
+static void init_vf_irq_reg_state(u32 *regs, const struct intel_engine_cs *engine)
+{
+	struct i915_vma *vma = engine->gt->iov.vf.irq.vma;
+
+	GEM_BUG_ON(!IS_SRIOV_VF(engine->i915));
+	GEM_BUG_ON(!vma);
+
+	BUILD_BUG_ON(!IS_ALIGNED(I915_VF_IRQ_STATUS, SZ_4K));
+	BUILD_BUG_ON(!IS_ALIGNED(I915_VF_IRQ_SOURCE, SZ_64));
+
+	regs[GEN12_CTX_LRM_HEADER_0] =
+		MI_LOAD_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT | MI_LRI_LRM_CS_MMIO;
+	regs[GEN12_CTX_INT_MASK_REG] = i915_mmio_reg_offset(GEN12_RING_INT_MASK(0));
+	regs[GEN12_CTX_INT_MASK_PTR] = i915_ggtt_offset(vma) + I915_VF_IRQ_ENABLE;
+
+	regs[GEN12_CTX_LRI_HEADER_4] =
+		MI_LOAD_REGISTER_IMM(2) | MI_LRI_FORCE_POSTED | MI_LRI_LRM_CS_MMIO;
+	regs[GEN12_CTX_INT_STATUS_REPORT_PTR] = i915_mmio_reg_offset(GEN12_RING_INT_STATUS(0));
+	regs[GEN12_CTX_INT_STATUS_REPORT_PTR + 1] = i915_ggtt_offset(vma) + I915_VF_IRQ_STATUS;
+	regs[GEN12_CTX_INT_SRC_REPORT_PTR] = i915_mmio_reg_offset(GEN12_RING_INT_SRC(0));
+	regs[GEN12_CTX_INT_SRC_REPORT_PTR + 1] = i915_ggtt_offset(vma) + I915_VF_IRQ_SOURCE;
+}
+
 static void __reset_stop_ring(u32 *regs, const struct intel_engine_cs *engine)
 {
 	int x;
@@ -942,6 +966,9 @@ static void __lrc_init_regs(u32 *regs,
 	init_ppgtt_regs(regs, vm_alias(ce->vm));
 
 	init_wa_bb_regs(regs, engine);
+
+	if (HAS_MEMORY_IRQ_STATUS(engine->i915))
+		init_vf_irq_reg_state(regs, engine);
 
 	__reset_stop_ring(regs, engine);
 }

@@ -98,6 +98,6 @@ bool i915_direct_stolen_access(struct drm_i915_private *i915)
 	 * should have relaxed the access permissions sufficiently.
 	 * 0x138914==0x1 indicates that the firmware has done its job.
 	 */
-	return IS_METEORLAKE(i915) && !i915_run_as_guest() &&
+	return IS_METEORLAKE(i915) && !i915_run_as_guest() && !IS_SRIOV_VF(i915) &&
 		intel_uncore_read(&i915->uncore, MTL_PCODE_STOLEN_ACCESS) == STOLEN_ACCESS_ALLOWED;
 }

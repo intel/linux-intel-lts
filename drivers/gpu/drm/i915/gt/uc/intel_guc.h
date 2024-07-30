@@ -22,7 +22,13 @@
 #include "i915_vma.h"
 
 struct __guc_ads_blob;
+struct intel_guc;
 struct intel_guc_state_capture;
+
+struct intel_guc_ops {
+	int (*init)(struct intel_guc *guc);
+	void (*fini)(struct intel_guc *guc);
+};
 
 /**
  * struct intel_guc - Top level structure of GuC.
@@ -31,6 +37,8 @@ struct intel_guc_state_capture;
  * i915_sched_engine for submission.
  */
 struct intel_guc {
+	/** @ops: Operations to init / fini the GuC */
+	struct intel_guc_ops const *ops;
 	/** @fw: the GuC firmware */
 	struct intel_uc_fw fw;
 	/** @log: sub-structure containing GuC log related data and objects */
@@ -424,6 +432,19 @@ static inline u32 intel_guc_ggtt_offset(struct intel_guc *guc,
 	return offset;
 }
 
+static inline int intel_guc_init(struct intel_guc *guc)
+{
+	if (guc->ops->init)
+		return guc->ops->init(guc);
+	return 0;
+}
+
+static inline void intel_guc_fini(struct intel_guc *guc)
+{
+	if (guc->ops->fini)
+		guc->ops->fini(guc);
+}
+
 void intel_guc_init_early(struct intel_guc *guc);
 void intel_guc_init_late(struct intel_guc *guc);
 void intel_guc_init_send_regs(struct intel_guc *guc);
@@ -444,28 +465,29 @@ int intel_guc_allocate_and_map_vma(struct intel_guc *guc, u32 size,
 int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value);
 int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value);
 
-static inline bool intel_guc_is_supported(struct intel_guc *guc)
+static inline bool intel_guc_is_supported(const struct intel_guc *guc)
 {
 	return intel_uc_fw_is_supported(&guc->fw);
 }
 
-static inline bool intel_guc_is_wanted(struct intel_guc *guc)
+static inline bool intel_guc_is_wanted(const struct intel_guc *guc)
 {
 	return intel_uc_fw_is_enabled(&guc->fw);
 }
 
-static inline bool intel_guc_is_used(struct intel_guc *guc)
+static inline bool intel_guc_is_used(const struct intel_guc *guc)
 {
 	GEM_BUG_ON(__intel_uc_fw_status(&guc->fw) == INTEL_UC_FIRMWARE_SELECTED);
-	return intel_uc_fw_is_available(&guc->fw);
+	return intel_uc_fw_is_available(&guc->fw) ||
+	       intel_uc_fw_is_preloaded(&guc->fw);
 }
 
-static inline bool intel_guc_is_fw_running(struct intel_guc *guc)
+static inline bool intel_guc_is_fw_running(const struct intel_guc *guc)
 {
 	return intel_uc_fw_is_running(&guc->fw);
 }
 
-static inline bool intel_guc_is_ready(struct intel_guc *guc)
+static inline bool intel_guc_is_ready(const struct intel_guc *guc)
 {
 	return intel_guc_is_fw_running(guc) && intel_guc_ct_enabled(&guc->ct);
 }
@@ -550,5 +572,9 @@ int intel_guc_invalidate_tlb_engines(struct intel_guc *guc);
 int intel_guc_invalidate_tlb_guc(struct intel_guc *guc);
 int intel_guc_tlb_invalidation_done(struct intel_guc *guc,
 				    const u32 *payload, u32 len);
+
+int intel_guc_enable_gsc_engine(struct intel_guc *guc);
+int intel_guc_disable_gsc_engine(struct intel_guc *guc);
+
 void wake_up_all_tlb_invalidate(struct intel_guc *guc);
 #endif

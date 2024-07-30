@@ -188,6 +188,8 @@ struct drm_i915_private *mock_gem_device(void)
 	if (pm_runtime_enabled(&pdev->dev))
 		WARN_ON(pm_runtime_get_sync(&pdev->dev));
 
+	i915->__mode = I915_IOV_MODE_NONE;
+
 	intel_runtime_pm_init_early(&i915->runtime_pm);
 	/* wakeref tracking has significant overhead */
 	i915->runtime_pm.no_wakeref_tracking = true;

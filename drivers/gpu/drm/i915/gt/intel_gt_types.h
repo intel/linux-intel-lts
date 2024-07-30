@@ -23,6 +23,7 @@
 #include "i915_perf_types.h"
 #include "intel_engine_types.h"
 #include "intel_gt_buffer_pool_types.h"
+#include "intel_gt_defines.h"
 #include "intel_hwconfig.h"
 #include "intel_llc_types.h"
 #include "intel_reset_types.h"
@@ -31,6 +32,7 @@
 #include "intel_migrate_types.h"
 #include "intel_wakeref.h"
 #include "intel_wopcm.h"
+#include "iov/intel_iov_types.h"
 
 struct drm_i915_private;
 struct i915_ggtt;
@@ -105,6 +107,7 @@ struct intel_gt {
 	struct intel_uc uc;
 	struct intel_gsc gsc;
 	struct intel_wopcm wopcm;
+	struct intel_iov iov;
 
 	struct {
 		/* Serialize global tlb invalidations */

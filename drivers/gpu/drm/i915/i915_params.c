@@ -69,6 +69,10 @@ i915_param_named(modeset, int, 0400,
 i915_param_named_unsafe(reset, uint, 0400,
 	"Attempt GPU resets (0=disabled, 1=full gpu reset, 2=engine reset [default])");
 
+i915_param_named(max_vfs, uint, 0400,
+	"Limit number of virtual functions to allocate. "
+	"(0 = no VFs [default]; N = allow up to N VFs)");
+
 #if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
 i915_param_named(error_capture, bool, 0400,
 	"Record the GPU state following a hang. "

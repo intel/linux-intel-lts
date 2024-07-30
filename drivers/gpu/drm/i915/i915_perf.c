@@ -3395,6 +3395,9 @@ void i915_oa_init_reg_state(const struct intel_context *ce,
 {
 	struct i915_perf_stream *stream;
 
+	if (IS_SRIOV_VF(engine->i915))
+		return;
+
 	if (engine->class != RENDER_CLASS)
 		return;
 
@@ -5053,6 +5056,10 @@ static void i915_perf_init_info(struct drm_i915_private *i915)
 int i915_perf_init(struct drm_i915_private *i915)
 {
 	struct i915_perf *perf = &i915->perf;
+
+	/* XXX const struct i915_perf_ops! */
+	if (IS_SRIOV_VF(i915))
+		return 0;
 
 	perf->oa_formats = oa_formats;
 	if (IS_HASWELL(i915)) {

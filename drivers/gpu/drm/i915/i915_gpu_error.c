@@ -744,6 +744,10 @@ static void err_print_gt_global_nonguc(struct drm_i915_error_state_buf *m,
 	int i;
 
 	err_printf(m, "GT awake: %s\n", str_yes_no(gt->awake));
+
+	if (IS_SRIOV_VF(gt->_gt->i915))
+		return;
+
 	err_printf(m, "CS timestamp frequency: %u Hz, %d ns\n",
 		   gt->clock_frequency, gt->clock_period_ns);
 	err_printf(m, "EIR: 0x%08x\n", gt->eir);
@@ -1236,6 +1240,9 @@ static void engine_record_registers(struct intel_engine_coredump *ee)
 {
 	const struct intel_engine_cs *engine = ee->engine;
 	struct drm_i915_private *i915 = engine->i915;
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	if (GRAPHICS_VER(i915) >= 6) {
 		ee->rc_psmi = ENGINE_READ(engine, RING_PSMI_CTL);
@@ -1751,9 +1758,11 @@ gt_record_uc(struct intel_gt_coredump *gt,
 	 * log times to system times (in conjunction with the error->boottime and
 	 * gt->clock_frequency fields saved elsewhere).
 	 */
-	error_uc->guc.timestamp = intel_uncore_read(gt->_gt->uncore, GUCPMTIMESTAMP);
-	error_uc->guc.vma_log = create_vma_coredump(gt->_gt, uc->guc.log.vma,
-						    "GuC log buffer", compress);
+	if (!IS_SRIOV_VF(gt->_gt->i915)) {
+		error_uc->guc.timestamp = intel_uncore_read(gt->_gt->uncore, GUCPMTIMESTAMP);
+		error_uc->guc.vma_log = create_vma_coredump(gt->_gt, uc->guc.log.vma,
+				"GuC log buffer", compress);
+	}
 	error_uc->guc.vma_ctb = create_vma_coredump(gt->_gt, uc->guc.ct.vma,
 						    "GuC CT buffer", compress);
 	error_uc->guc.last_fence = uc->guc.ct.requests.last_fence;
@@ -1823,6 +1832,9 @@ static void gt_record_global_nonguc_regs(struct intel_gt_coredump *gt)
 		gt->gtier[0] = intel_uncore_read(uncore, GTIER);
 		gt->ngtier = 1;
 	}
+
+	if (IS_SRIOV_VF(i915))
+		return;
 
 	gt->eir = intel_uncore_read(uncore, EIR);
 	gt->pgtbl_er = intel_uncore_read(uncore, PGTBL_ER);
@@ -2045,6 +2057,10 @@ intel_gt_coredump_alloc(struct intel_gt *gt, gfp_t gfp, u32 dump_flags)
 
 	gc->_gt = gt;
 	gc->awake = intel_gt_pm_is_awake(gt);
+
+	/* We can't record anything more on VF */
+	if (IS_SRIOV_VF(gt->i915))
+		return gc;
 
 	gt_record_display_regs(gc);
 	gt_record_global_nonguc_regs(gc);
