@@ -215,12 +215,16 @@ struct intel_runtime_info {
 
 	u16 device_id;
 
+	intel_engine_mask_t platform_engine_mask; /* Engines supported by the HW */
+
 	struct intel_step_info step;
 
 	unsigned int page_sizes; /* page sizes supported by the HW */
 
 	enum intel_ppgtt_type ppgtt_type;
 	unsigned int ppgtt_size; /* log2, e.g. 31/32/48 bits */
+
+	u32 memory_regions; /* regions supported by the HW */
 
 	bool has_pooled_eu;
 };
@@ -233,9 +237,6 @@ struct intel_device_info {
 	const struct intel_gt_definition *extra_gt_list;
 
 	u8 gt; /* GT number, 0 if undefined */
-
-	intel_engine_mask_t platform_engine_mask; /* Engines supported by the HW */
-	u32 memory_regions; /* regions supported by the HW */
 
 #define DEFINE_FLAG(name) u8 name:1
 	DEV_INFO_FOR_EACH_FLAG(DEFINE_FLAG);
