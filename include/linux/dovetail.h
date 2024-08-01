@@ -229,6 +229,20 @@ void uninstall_inband_fd(unsigned int fd, struct file *file,
 void replace_inband_fd(unsigned int fd, struct file *file,
 		       struct files_struct *files);
 
+#ifndef arch_dovetail_is_prctl
+#define arch_dovetail_is_prctl(__nr)	((__nr) == __NR_prctl)
+#endif
+
+#ifndef arch_dovetail_is_syscall
+#define arch_dovetail_is_syscall(__tsk, __nr, __regs)			\
+	({								\
+		bool __is_prctl = arch_dovetail_is_prctl(__nr);		\
+		__is_prctl && syscall_get_arg0(__tsk, __regs) == PR_OOB_SYSCALL; \
+	})
+#endif
+
+bool in_oob_syscall(struct pt_regs *regs);
+
 #else	/* !CONFIG_DOVETAIL */
 
 #include <linux/irqflags.h>
@@ -309,6 +323,11 @@ static inline
 void replace_inband_fd(unsigned int fd, struct file *file,
 		       struct files_struct *files) { }
 
+static inline bool in_oob_syscall(struct pt_regs *regs)
+{
+	return false;
+}
+
 #endif	/* !CONFIG_DOVETAIL */
 
 static __always_inline bool dovetailing(void)
@@ -320,9 +339,5 @@ static __always_inline bool dovetail_debug(void)
 {
 	return IS_ENABLED(CONFIG_DEBUG_DOVETAIL);
 }
-
-#ifndef arch_dovetail_is_syscall
-#define arch_dovetail_is_syscall(__nr)	((__nr) == __NR_prctl)
-#endif
 
 #endif /* _LINUX_DOVETAIL_H */
