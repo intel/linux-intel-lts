@@ -7,6 +7,7 @@
 #include <linux/sched/signal.h>
 #include <linux/irq_pipeline.h>
 #include <linux/dovetail.h>
+#include <linux/prctl.h>
 #include <asm/unistd.h>
 #include <asm/syscall.h>
 #include <uapi/asm-generic/dovetail.h>
@@ -105,6 +106,35 @@ void inband_retuser_notify(void)
 	/* CAUTION: we might have switched out-of-band here. */
 }
 
+static bool __in_oob_syscall(struct task_struct *tsk,
+			unsigned int nr, struct pt_regs *regs)
+{
+	/*
+	 * Given a syscall number and a register file encoding a
+	 * system call issued by a task, check whether the companion
+	 * core might be interested in the request. If the old syscall
+	 * form is handled, pass the syscall to the core if
+	 * __OOB_SYSCALL_BIT is set in @nr. Otherwise, only check
+	 * whether an oob syscall is folded into a prctl() request as
+	 * a PR_OOB_SYSCALL command (new/current call form).
+	 */
+	if (IS_ENABLED(CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE)) {
+		if (nr & __OOB_SYSCALL_BIT)
+			return true;
+	}
+
+	return arch_dovetail_is_syscall(tsk, nr, regs);
+}
+
+/* Whether an oob syscall is to be handled for the current task. */
+bool in_oob_syscall(struct pt_regs *regs)
+{
+	struct task_struct *tsk = current;
+	unsigned int nr = syscall_get_nr(tsk, regs);
+
+	return __in_oob_syscall(tsk, nr, regs);
+}
+
 int __pipeline_syscall(struct pt_regs *regs)
 {
 	struct thread_info *ti = current_thread_info();
@@ -168,30 +198,11 @@ next:
 	return ret;
 }
 
-static inline bool maybe_oob_syscall(unsigned int nr, struct pt_regs *regs)
-{
-	struct task_struct *tsk = current;
-
-	/*
-	 * Check whether the companion core might be interested in the
-	 * syscall call. If the old syscall form is handled, pass the
-	 * request to the core if __OOB_SYSCALL_BIT is set in
-	 * @nr. Otherwise, only check whether an oob syscall is folded
-	 * into a prctl() request.
-	 */
-	if (IS_ENABLED(CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE)) {
-		if (nr & __OOB_SYSCALL_BIT)
-			return true;
-	}
-
-	return arch_dovetail_is_syscall(nr) &&
-	       syscall_get_arg0(tsk, regs) & __OOB_SYSCALL_BIT;
-}
-
 int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 {
 	struct thread_info *ti = current_thread_info();
 	unsigned long local_flags = READ_ONCE(ti_local_flags(ti));
+	struct task_struct *tsk = current;
 	int ret;
 
 	WARN_ON_ONCE(dovetail_debug() && hard_irqs_disabled());
@@ -226,7 +237,7 @@ int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 	 * after exiting to user.
 	 */
 
-	if ((local_flags & _TLF_OOB) && maybe_oob_syscall(nr, regs)) {
+	if ((local_flags & _TLF_OOB) && __in_oob_syscall(tsk, nr, regs)) {
 		ret = handle_oob_syscall(regs);
 		if (!IS_ENABLED(CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE))
 			WARN_ON_ONCE(dovetail_debug() && !ret);
@@ -243,7 +254,7 @@ int pipeline_syscall(unsigned int nr, struct pt_regs *regs)
 		}
 	}
 
-	if ((local_flags & _TLF_DOVETAIL) || maybe_oob_syscall(nr, regs)) {
+	if ((local_flags & _TLF_DOVETAIL) || __in_oob_syscall(tsk, nr, regs)) {
 		ret = __pipeline_syscall(regs);
 		local_flags = READ_ONCE(ti_local_flags(ti));
 		if (local_flags & _TLF_OOB)
