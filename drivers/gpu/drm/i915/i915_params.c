@@ -73,6 +73,9 @@ i915_param_named(max_vfs, uint, 0400,
 	"Limit number of virtual functions to allocate. "
 	"(0 = no VFs [default]; N = allow up to N VFs)");
 
+i915_param_named(enable_mtl_rcs_ccs_wa, bool, 0400,
+       "Enable the RCS/CCS switchout hold workaround for MTL (only some workloads are affected by issue and w/a has a performance penalty) (default:false)");
+
 #if IS_ENABLED(CONFIG_DRM_I915_CAPTURE_ERROR)
 i915_param_named(error_capture, bool, 0400,
 	"Record the GPU state following a hang. "
