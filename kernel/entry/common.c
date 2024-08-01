@@ -185,14 +185,13 @@ static inline bool syscall_has_exit_work(struct pt_regs *regs,
 {
 	/*
 	 * Dovetail: if this does not look like an in-band syscall, it
-	 * has to belong to the companion core. Typically,
-	 * __OOB_SYSCALL_BIT would be set in this value. Skip the
-	 * work for those syscalls.
+	 * has to belong to the companion core.  Skip the work for
+	 * those syscalls.
 	 */
 	if (unlikely(work & SYSCALL_WORK_EXIT)) {
 		if (!irqs_pipelined())
 			return true;
-		return syscall_get_nr(current, regs) < NR_syscalls;
+		return !in_oob_syscall(regs);
 	}
 
 	return false;
