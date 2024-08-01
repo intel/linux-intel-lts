@@ -815,6 +815,16 @@ int i915_driver_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		RUNTIME_INFO(i915)->platform_engine_mask |= BIT(CCS0);
 	}
 
+	/*
+	 * Force to disable CCS on MTL.
+	 * Will remove this code once CCS enablement is completed on MTL
+	 *
+	 */
+	if (i915->params.force_disable_ccs &&
+		match_info->platform == INTEL_METEORLAKE) {
+		RUNTIME_INFO(i915)->platform_engine_mask = BIT(RCS0) | BIT(BCS0);
+	}
+
 	/* This must be called before any calls to IS/IOV_MODE() macros */
 	i915_virtualization_probe(i915);
 
