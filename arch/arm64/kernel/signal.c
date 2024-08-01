@@ -1464,17 +1464,6 @@ void do_signal(struct pt_regs *regs)
 	restore_saved_sigmask();
 }
 
-static inline void do_retuser(void)
-{
-	unsigned long thread_flags;
-
-	if (dovetailing()) {
-		thread_flags = current_thread_info()->flags;
-		if (thread_flags & _TIF_RETUSER)
-			inband_retuser_notify();
-	}
-}
-
 unsigned long __ro_after_init signal_minsigstksz;
 
 /*

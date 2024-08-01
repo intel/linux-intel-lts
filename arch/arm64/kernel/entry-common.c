@@ -205,6 +205,17 @@ static __always_inline void __exit_to_user_mode(void)
 	unstall_inband_nocheck();
 }
 
+static inline void do_retuser(void)
+{
+	unsigned long thread_flags;
+
+	if (dovetailing()) {
+		thread_flags = current_thread_info()->flags;
+		if (thread_flags & _TIF_RETUSER)
+			inband_retuser_notify();
+	}
+}
+
 static void do_notify_resume(struct pt_regs *regs, unsigned long thread_flags)
 {
 	WARN_ON_ONCE(irq_pipeline_debug() && running_oob());
@@ -242,9 +253,11 @@ static void do_notify_resume(struct pt_regs *regs, unsigned long thread_flags)
 				fpsimd_restore_current_state();
 		}
 
+		do_retuser();
 		local_daif_mask();
 		thread_flags = read_thread_flags();
-	} while (thread_flags & _TIF_WORK_MASK);
+		/* RETUSER might have switched us oob */
+	} while (running_inband() && thread_flags & _TIF_WORK_MASK);
 
 	/*
 	 * irq_pipeline: trace_hardirqs_off was in effect on entry, we
