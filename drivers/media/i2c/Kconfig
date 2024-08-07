@@ -1473,6 +1473,15 @@ config VIDEO_THS7303
 	  To compile this driver as a module, choose M here: the
 	  module will be called ths7303.
 
+config VIDEO_ISX031
+       depends on I2C && VIDEO_DEV
+       tristate "ISX031 Camera Driver"
+	help
+	  This is a Video4Linux2 sensor-level driver for
+	  Sony ISX031 camera with a MIPI CSI-2 interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called isx031.
 config VIDEO_LT6911UXC
 	tristate "Lontium LT6911UXC decoder"
 	depends on VIDEO_DEV && I2C

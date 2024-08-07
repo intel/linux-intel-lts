@@ -16,6 +16,9 @@
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 #include <media/imx390.h>
 #endif
+#if IS_ENABLED(CONFIG_VIDEO_ISX031)
+#include <media/isx031.h>
+#endif
 #if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 #include <media/lt6911uxc.h>
 #endif
@@ -160,6 +163,27 @@ static struct ti960_subdev_pdata imx390_d3cm_pdata_stub = {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_VIDEO_ISX031)
+
+#define ISX031A_ADDRESS		0x44
+#define ISX031B_ADDRESS		0x45
+#define ISX031C_ADDRESS		0x46
+#define ISX031D_ADDRESS		0x47
+
+#define ISX031A_SER_ADDRESS	0x40
+#define ISX031B_SER_ADDRESS	0x41
+#define ISX031C_SER_ADDRESS	0x42
+#define ISX031D_SER_ADDRESS	0x43
+
+static struct ti960_subdev_pdata isx031_pdata_stub = {
+.lanes = 4,
+.fsin = 2,
+.gpio_powerup_seq = {0x00, 0x08, 0x08, -1},
+.module_flags = TI960_FL_POWERUP,
+.module_name = "isx031",
+};
+#endif
+
 static struct ipu_isys_csi2_config ti960_csi2_cfg_1 = {
 	.nlanes = TI960_LANES,
 	.port = 1,
@@ -170,7 +194,53 @@ static struct ipu_isys_csi2_config ti960_csi2_cfg_2 = {
 	.port = 2,
 };
 
-static struct ti960_subdev_info ti960_subdevs[] = {
+static struct ti960_subdev_info ti960_subdevs_1[] = {
+#if IS_ENABLED(CONFIG_VIDEO_ISX031)
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031A_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 0,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031A_SER_ADDRESS,
+		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031B_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 1,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031B_SER_ADDRESS,
+		.suffix = 'b',
+	},
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031C_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 2,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031C_SER_ADDRESS,
+		.suffix = 'c',
+	},
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031D_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 3,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031D_SER_ADDRESS,
+		.suffix = 'd',
+	},
+#endif
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
 	/* D3RCM */
 	{
@@ -265,17 +335,66 @@ static struct ti960_subdev_info ti960_subdevs[] = {
 #endif
 };
 
+static struct ti960_subdev_info ti960_subdevs_2[] = {
+#if IS_ENABLED(CONFIG_VIDEO_ISX031)
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031A_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 0,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031A_SER_ADDRESS,
+		.suffix = 'e',
+	},
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031B_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 1,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031B_SER_ADDRESS,
+		.suffix = 'f',
+	},
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031C_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 2,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031C_SER_ADDRESS,
+		.suffix = 'g',
+	},
+	{
+		.board_info = {
+			.type = "isx031",
+			.addr = ISX031D_ADDRESS,
+			.platform_data = &isx031_pdata_stub,
+		},
+		.rx_port = 3,
+		.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT,
+		.ser_alias = ISX031D_SER_ADDRESS,
+		.suffix = 'h',
+	},
+#endif
+};
+
 static struct ti960_pdata ti960_pdata_1 = {
-	.subdev_info = ti960_subdevs,
-	.subdev_num = ARRAY_SIZE(ti960_subdevs),
+	.subdev_info = ti960_subdevs_1,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs_1),
 	.reset_gpio = 0,
 	.FPD_gpio = -1,
 	.suffix = 'a',
 };
 
 static struct ti960_pdata ti960_pdata_2 = {
-	.subdev_info = ti960_subdevs,
-	.subdev_num = ARRAY_SIZE(ti960_subdevs),
+	.subdev_info = ti960_subdevs_2,
+	.subdev_num = ARRAY_SIZE(ti960_subdevs_2),
 	.reset_gpio = 0,
 	.FPD_gpio = -1,
 	.suffix = 'b',
