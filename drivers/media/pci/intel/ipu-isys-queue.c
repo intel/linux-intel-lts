@@ -1080,14 +1080,12 @@ static void stop_streaming(struct vb2_queue *q)
 	dev_dbg(&av->isys->adev->dev, "stop: %s: enter\n",
 		av->vdev.name);
 
-	bool is_vc = false;
 	struct media_pad *source_pad = media_pad_remote_pad_first(&av->pad);
 
 	if (!source_pad) {
 		dev_err(&av->isys->adev->dev, "stop stream: no link.\n");
 		return;
 	}
-	is_vc = is_support_vc(source_pad, ip);
 
 	mutex_unlock(&av->mutex);
 	mutex_lock(&av->isys->reset_mutex);
@@ -1154,7 +1152,7 @@ static void stop_streaming(struct vb2_queue *q)
 	mutex_unlock(&av->isys->reset_mutex);
 
 	if (av->isys->reset_needed) {
-		if (!ip->nr_streaming && (!is_vc || is_has_metadata(ip)))
+		if (!ip->nr_streaming && (!is_support_vc(source_pad, ip) || is_has_metadata(ip)))
 			ipu_isys_reset(av, ip);
 		else
 			av->isys->reset_needed = 0;
