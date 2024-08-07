@@ -40,6 +40,10 @@ MODULE_PARM_DESC(async_fw_init, "Enable asynchronous firmware initialization");
 
 #define IPU_PSYS_NUM_DEVICES		4
 
+#define IPU_PSYS_MAX_NUM_DESCS		1024
+#define IPU_PSYS_MAX_NUM_BUFS		1024
+#define IPU_PSYS_MAX_NUM_BUFS_LRU	12
+
 static int psys_runtime_pm_resume(struct device *dev);
 static int psys_runtime_pm_suspend(struct device *dev);
 
@@ -57,6 +61,81 @@ static void ipu_psys_remove(struct ipu_bus_device *adev);
 static struct bus_type ipu_psys_bus = {
 	.name = IPU_PSYS_NAME,
 };
+
+/*
+ * These are some trivial wrappers that save us from open-coding some
+ * common patterns and also that's were we have some checking (for the
+ * time being)
+ */
+static void ipu_desc_add(struct ipu_psys_fh *fh, struct ipu_psys_desc *desc)
+{
+	fh->num_descs++;
+
+	WARN_ON_ONCE(fh->num_descs >= IPU_PSYS_MAX_NUM_DESCS);
+	list_add(&desc->list, &fh->descs_list);
+}
+
+static void ipu_desc_del(struct ipu_psys_fh *fh, struct ipu_psys_desc *desc)
+{
+	fh->num_descs--;
+	list_del_init(&desc->list);
+}
+
+static void ipu_buffer_add(struct ipu_psys_fh *fh,
+			   struct ipu_psys_kbuffer *kbuf)
+{
+	fh->num_bufs++;
+
+	WARN_ON_ONCE(fh->num_bufs >= IPU_PSYS_MAX_NUM_BUFS);
+	list_add(&kbuf->list, &fh->bufs_list);
+}
+
+static void ipu_buffer_del(struct ipu_psys_fh *fh,
+			   struct ipu_psys_kbuffer *kbuf)
+{
+	fh->num_bufs--;
+	list_del_init(&kbuf->list);
+}
+
+static void ipu_buffer_lru_add(struct ipu_psys_fh *fh,
+			       struct ipu_psys_kbuffer *kbuf)
+{
+	fh->num_bufs_lru++;
+	list_add_tail(&kbuf->list, &fh->bufs_lru);
+}
+
+static void ipu_buffer_lru_del(struct ipu_psys_fh *fh,
+			       struct ipu_psys_kbuffer *kbuf)
+{
+	fh->num_bufs_lru--;
+	list_del_init(&kbuf->list);
+}
+
+static struct ipu_psys_kbuffer *ipu_psys_kbuffer_alloc(void)
+{
+	struct ipu_psys_kbuffer *kbuf;
+
+	kbuf = kzalloc(sizeof(*kbuf), GFP_KERNEL);
+	if (!kbuf)
+		return NULL;
+
+	atomic_set(&kbuf->map_count, 0);
+	INIT_LIST_HEAD(&kbuf->list);
+	return kbuf;
+}
+
+static struct ipu_psys_desc *ipu_psys_desc_alloc(int fd)
+{
+	struct ipu_psys_desc *desc;
+
+	desc = kzalloc(sizeof(*desc), GFP_KERNEL);
+	if (!desc)
+		return NULL;
+
+	desc->fd = fd;
+	INIT_LIST_HEAD(&desc->list);
+	return desc;
+}
 
 struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
 {
@@ -93,18 +172,69 @@ struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
 	return kpg;
 }
 
-static int ipu_psys_unmapbuf_locked(int fd, struct ipu_psys_fh *fh,
-				    struct ipu_psys_kbuffer *kbuf);
-struct ipu_psys_kbuffer *ipu_psys_lookup_kbuffer(struct ipu_psys_fh *fh, int fd)
+static struct ipu_psys_desc *psys_desc_lookup(struct ipu_psys_fh *fh, int fd)
 {
-	struct ipu_psys_kbuffer *kbuf;
+	struct ipu_psys_desc *desc;
 
-	list_for_each_entry(kbuf, &fh->bufmap, list) {
-		if (kbuf->fd == fd)
-			return kbuf;
+	list_for_each_entry(desc, &fh->descs_list, list) {
+		if (desc->fd == fd)
+			return desc;
 	}
 
 	return NULL;
+}
+
+static bool dmabuf_cmp(struct dma_buf *lb, struct dma_buf *rb)
+{
+	return lb == rb && lb->size == rb->size;
+}
+
+static struct ipu_psys_kbuffer *psys_buf_lookup(struct ipu_psys_fh *fh, int fd)
+{
+	struct ipu_psys_kbuffer *kbuf;
+	struct dma_buf *dma_buf;
+
+	dma_buf = dma_buf_get(fd);
+	if (IS_ERR(dma_buf))
+		return NULL;
+
+	/*
+	 * First lookup so-called `active` list, that is the list of
+	 * referenced buffers
+	 */
+	list_for_each_entry(kbuf, &fh->bufs_list, list) {
+		if (dmabuf_cmp(kbuf->dbuf, dma_buf)) {
+			dma_buf_put(dma_buf);
+			return kbuf;
+		}
+	}
+
+	/*
+	 * We didn't find anything on the `active` list, try the LRU list
+	 * (list of unreferenced buffers) and possibly resurrect a buffer
+	 */
+	list_for_each_entry(kbuf, &fh->bufs_lru, list) {
+		if (dmabuf_cmp(kbuf->dbuf, dma_buf)) {
+			dma_buf_put(dma_buf);
+			ipu_buffer_lru_del(fh, kbuf);
+			ipu_buffer_add(fh, kbuf);
+			return kbuf;
+		}
+	}
+
+	dma_buf_put(dma_buf);
+	return NULL;
+}
+
+struct ipu_psys_kbuffer *ipu_psys_lookup_kbuffer(struct ipu_psys_fh *fh, int fd)
+{
+	struct ipu_psys_desc *desc;
+
+	desc = psys_desc_lookup(fh, fd);
+	if (!desc)
+		return NULL;
+
+	return desc->kbuf;
 }
 
 struct ipu_psys_kbuffer *
@@ -112,7 +242,7 @@ ipu_psys_lookup_kbuffer_by_kaddr(struct ipu_psys_fh *fh, void *kaddr)
 {
 	struct ipu_psys_kbuffer *kbuffer;
 
-	list_for_each_entry(kbuffer, &fh->bufmap, list) {
+	list_for_each_entry(kbuffer, &fh->bufs_list, list) {
 		if (kbuffer->kaddr == kaddr)
 			return kbuffer;
 	}
@@ -321,11 +451,9 @@ static void ipu_dma_buf_release(struct dma_buf *buf)
 	if (!kbuf)
 		return;
 
-	if (kbuf->db_attach) {
-		dev_dbg(kbuf->db_attach->dev,
-			"releasing buffer %d\n", kbuf->fd);
+	if (kbuf->db_attach)
 		ipu_psys_put_userpages(kbuf->db_attach->priv);
-	}
+
 	kfree(kbuf);
 }
 
@@ -407,7 +535,9 @@ static int ipu_psys_open(struct inode *inode, struct file *file)
 	file->private_data = fh;
 
 	mutex_init(&fh->mutex);
-	INIT_LIST_HEAD(&fh->bufmap);
+	INIT_LIST_HEAD(&fh->bufs_list);
+	INIT_LIST_HEAD(&fh->descs_list);
+	INIT_LIST_HEAD(&fh->bufs_lru);
 	init_waitqueue_head(&fh->wait);
 
 	rval = ipu_psys_fh_init(fh);
@@ -438,11 +568,11 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
 		dma_buf_vunmap_unlocked(kbuf->dbuf, &dmap);
 	}
-	if (kbuf->sgt)
+	if (!IS_ERR_OR_NULL(kbuf->sgt))
 		dma_buf_unmap_attachment_unlocked(kbuf->db_attach,
 						  kbuf->sgt,
 						  DMA_BIDIRECTIONAL);
-	if (kbuf->db_attach)
+	if (!IS_ERR_OR_NULL(kbuf->db_attach))
 		dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
 	dma_buf_put(kbuf->dbuf);
 
@@ -451,29 +581,93 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 	kbuf->sgt = NULL;
 }
 
+static void __ipu_psys_unmapbuf(struct ipu_psys_fh *fh,
+				struct ipu_psys_kbuffer *kbuf)
+{
+	/* From now on it is not safe to use this kbuffer */
+	ipu_psys_kbuf_unmap(kbuf);
+	ipu_buffer_del(fh, kbuf);
+	if (!kbuf->userptr)
+		kfree(kbuf);
+}
+
+static int ipu_psys_unmapbuf_locked(int fd, struct ipu_psys_fh *fh)
+{
+	struct ipu_psys *psys = fh->psys;
+	struct ipu_psys_kbuffer *kbuf;
+	struct ipu_psys_desc *desc;
+
+	desc = psys_desc_lookup(fh, fd);
+	if (WARN_ON_ONCE(!desc)) {
+		dev_err(&psys->adev->dev, "descriptor not found: %d\n", fd);
+		return -EINVAL;
+	}
+
+	kbuf = desc->kbuf;
+	/* descriptor is gone now */
+	ipu_desc_del(fh, desc);
+	kfree(desc);
+
+	if (WARN_ON_ONCE(!kbuf || !kbuf->dbuf)) {
+		dev_err(&psys->adev->dev,
+			"descriptor with no buffer: %d\n", fd);
+		return -EINVAL;
+	}
+
+	/* Wait for final UNMAP */
+	if (!atomic_dec_and_test(&kbuf->map_count))
+		return 0;
+
+	__ipu_psys_unmapbuf(fh, kbuf);
+	return 0;
+}
+
 static int ipu_psys_release(struct inode *inode, struct file *file)
 {
 	struct ipu_psys *psys = inode_to_ipu_psys(inode);
 	struct ipu_psys_fh *fh = file->private_data;
-	struct ipu_psys_kbuffer *kbuf, *kbuf0;
-	struct dma_buf_attachment *db_attach;
 
 	mutex_lock(&fh->mutex);
-	/* clean up buffers */
-	if (!list_empty(&fh->bufmap)) {
-		list_for_each_entry_safe(kbuf, kbuf0, &fh->bufmap, list) {
-			list_del(&kbuf->list);
-			db_attach = kbuf->db_attach;
+	while (!list_empty(&fh->descs_list)) {
+		struct ipu_psys_desc *desc;
 
-			/* Unmap and release buffers */
-			if (kbuf->dbuf && db_attach) {
+		desc = list_first_entry(&fh->descs_list,
+					struct ipu_psys_desc,
+					list);
 
-				ipu_psys_kbuf_unmap(kbuf);
-			} else {
-				if (db_attach)
-					ipu_psys_put_userpages(db_attach->priv);
-				kfree(kbuf);
-			}
+		ipu_desc_del(fh, desc);
+		kfree(desc);
+	}
+
+	while (!list_empty(&fh->bufs_lru)) {
+		struct ipu_psys_kbuffer *kbuf;
+
+		kbuf = list_first_entry(&fh->bufs_lru,
+					struct ipu_psys_kbuffer,
+					list);
+
+		ipu_buffer_lru_del(fh, kbuf);
+		__ipu_psys_unmapbuf(fh, kbuf);
+	}
+
+	while (!list_empty(&fh->bufs_list)) {
+		struct dma_buf_attachment *db_attach;
+		struct ipu_psys_kbuffer *kbuf;
+
+		kbuf = list_first_entry(&fh->bufs_list,
+					struct ipu_psys_kbuffer,
+					list);
+
+		ipu_buffer_del(fh, kbuf);
+		db_attach = kbuf->db_attach;
+
+		/* Unmap and release buffers */
+		if (kbuf->dbuf && db_attach) {
+			ipu_psys_kbuf_unmap(kbuf);
+		} else {
+			if (db_attach)
+				ipu_psys_put_userpages(db_attach->priv);
+			kfree(kbuf);
 		}
 	}
 	mutex_unlock(&fh->mutex);
@@ -498,7 +692,7 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys *psys = fh->psys;
-
+	struct ipu_psys_desc *desc;
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 	struct dma_buf *dbuf;
 	int ret;
@@ -508,7 +702,7 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 		return -EINVAL;
 	}
 
-	kbuf = kzalloc(sizeof(*kbuf), GFP_KERNEL);
+	kbuf = ipu_psys_kbuffer_alloc();
 	if (!kbuf)
 		return -ENOMEM;
 
@@ -533,14 +727,22 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 		return ret;
 	}
 
-	kbuf->fd = ret;
 	buf->base.fd = ret;
 	buf->flags &= ~IPU_BUFFER_FLAG_USERPTR;
 	buf->flags |= IPU_BUFFER_FLAG_DMA_HANDLE;
 	kbuf->flags = buf->flags;
 
+	desc = ipu_psys_desc_alloc(ret);
+	if (!desc) {
+		dma_buf_put(dbuf);
+		return -ENOMEM;
+	}
+
+	kbuf->dbuf = dbuf;
+
 	mutex_lock(&fh->mutex);
-	list_add(&kbuf->list, &fh->bufmap);
+	ipu_desc_add(fh, desc);
+	ipu_buffer_add(fh, kbuf);
 	mutex_unlock(&fh->mutex);
 
 	dev_dbg(&psys->adev->dev, "IOC_GETBUF: userptr %p size %llu to fd %d",
@@ -554,54 +756,68 @@ static int ipu_psys_putbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 	return 0;
 }
 
-int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
-			   struct ipu_psys_kbuffer *kbuf)
+static void ipu_psys_kbuffer_lru(struct ipu_psys_fh *fh,
+				 struct ipu_psys_kbuffer *kbuf)
+{
+	ipu_buffer_del(fh, kbuf);
+	ipu_buffer_lru_add(fh, kbuf);
+
+	while (fh->num_bufs_lru > IPU_PSYS_MAX_NUM_BUFS_LRU) {
+		kbuf = list_first_entry(&fh->bufs_lru,
+					struct ipu_psys_kbuffer,
+					list);
+
+		ipu_buffer_lru_del(fh, kbuf);
+		__ipu_psys_unmapbuf(fh, kbuf);
+	}
+}
+
+struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys *psys = fh->psys;
+	struct ipu_psys_kbuffer *kbuf;
+	struct ipu_psys_desc *desc;
 	struct dma_buf *dbuf;
 	struct iosys_map dmap = {
 		.is_iomem = false,
 	};
-	int ret;
 
 	dbuf = dma_buf_get(fd);
 	if (IS_ERR(dbuf))
-		return -EINVAL;
+		return NULL;
 
+	desc = psys_desc_lookup(fh, fd);
+	if (!desc) {
+		desc = ipu_psys_desc_alloc(fd);
+		if (!desc)
+			goto desc_alloc_fail;
+		ipu_desc_add(fh, desc);
+	}
+
+	kbuf = psys_buf_lookup(fh, fd);
 	if (!kbuf) {
-		/* This fd isn't generated by ipu_psys_getbuf, it
-		 * is a new fd. Create a new kbuf item for this fd, and
-		 * add this kbuf to bufmap list.
-		 */
-		kbuf = kzalloc(sizeof(*kbuf), GFP_KERNEL);
-		if (!kbuf) {
-			ret = -ENOMEM;
-			goto mapbuf_fail;
-		}
-
-		list_add(&kbuf->list, &fh->bufmap);
+		kbuf = ipu_psys_kbuffer_alloc();
+		if (!kbuf)
+			goto buf_alloc_fail;
+		ipu_buffer_add(fh, kbuf);
 	}
 
-	/* fd valid and found, need remap */
-	if (kbuf->dbuf && (kbuf->dbuf != dbuf || kbuf->len != dbuf->size)) {
-		dev_dbg(&psys->adev->dev,
-			"dmabuf fd %d with kbuf %p changed, need remap.\n",
-			fd, kbuf);
-		ret = ipu_psys_unmapbuf_locked(fd, fh, kbuf);
-		if (ret)
-			goto mapbuf_fail;
-
-		kbuf = ipu_psys_lookup_kbuffer(fh, fd);
-		/* changed external dmabuf */
-		if (!kbuf) {
-			kbuf = kzalloc(sizeof(*kbuf), GFP_KERNEL);
-			if (!kbuf) {
-				ret = -ENOMEM;
-				goto mapbuf_fail;
-			}
-			list_add(&kbuf->list, &fh->bufmap);
+	/* If this descriptor references no buffer or new buffer */
+	if (desc->kbuf != kbuf) {
+		if (desc->kbuf) {
+			/*
+			 * Un-reference old buffer and possibly put it on
+			 * the LRU list
+			 */
+			if (atomic_dec_and_test(&desc->kbuf->map_count))
+				ipu_psys_kbuffer_lru(fh, desc->kbuf);
 		}
+
+		/* Grab reference of the new buffer */
+		atomic_inc(&kbuf->map_count);
 	}
+
+	desc->kbuf = kbuf;
 
 	if (kbuf->sgt) {
 		dev_dbg(&psys->adev->dev, "fd %d has been mapped!\n", fd);
@@ -614,18 +830,15 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 	if (kbuf->len == 0)
 		kbuf->len = kbuf->dbuf->size;
 
-	kbuf->fd = fd;
-
 	kbuf->db_attach = dma_buf_attach(kbuf->dbuf, &psys->adev->dev);
 	if (IS_ERR(kbuf->db_attach)) {
-		ret = PTR_ERR(kbuf->db_attach);
 		dev_dbg(&psys->adev->dev, "dma buf attach failed\n");
 		goto kbuf_map_fail;
 	}
 
-	kbuf->sgt = dma_buf_map_attachment_unlocked(kbuf->db_attach, DMA_BIDIRECTIONAL);
+	kbuf->sgt = dma_buf_map_attachment_unlocked(kbuf->db_attach,
+						    DMA_BIDIRECTIONAL);
 	if (IS_ERR_OR_NULL(kbuf->sgt)) {
-		ret = -EINVAL;
 		kbuf->sgt = NULL;
 		dev_dbg(&psys->adev->dev, "dma buf map attachment failed\n");
 		goto kbuf_map_fail;
@@ -633,8 +846,7 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
-	ret = dma_buf_vmap_unlocked(kbuf->dbuf, &dmap);
-	if (ret) {
+	if (dma_buf_vmap_unlocked(kbuf->dbuf, &dmap)) {
 		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
 		goto kbuf_map_fail;
 	}
@@ -642,78 +854,47 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 
 	dev_dbg(&psys->adev->dev, "%s kbuf %p fd %d with len %llu mapped\n",
 		__func__, kbuf, fd, kbuf->len);
+
 mapbuf_end:
-
 	kbuf->valid = true;
-
-	return 0;
+	return kbuf;
 
 kbuf_map_fail:
+	ipu_buffer_del(fh, kbuf);
 	ipu_psys_kbuf_unmap(kbuf);
-
-	list_del(&kbuf->list);
+	dbuf = ERR_PTR(-EINVAL);
 	if (!kbuf->userptr)
 		kfree(kbuf);
 
-mapbuf_fail:
-	dma_buf_put(dbuf);
+buf_alloc_fail:
+	ipu_desc_del(fh, desc);
+	kfree(desc);
 
-	dev_err(&psys->adev->dev, "%s failed for fd %d\n", __func__, fd);
-	return ret;
+desc_alloc_fail:
+	if (!IS_ERR(dbuf))
+		dma_buf_put(dbuf);
+	return NULL;
 }
 
 static long ipu_psys_mapbuf(int fd, struct ipu_psys_fh *fh)
 {
-	long ret;
 	struct ipu_psys_kbuffer *kbuf;
 
 	mutex_lock(&fh->mutex);
-	kbuf = ipu_psys_lookup_kbuffer(fh, fd);
-	ret = ipu_psys_mapbuf_locked(fd, fh, kbuf);
+	kbuf = ipu_psys_mapbuf_locked(fd, fh);
 	mutex_unlock(&fh->mutex);
 
-	dev_dbg(&fh->psys->adev->dev, "IOC_MAPBUF ret %ld\n", ret);
+	dev_dbg(&fh->psys->adev->dev, "IOC_MAPBUF\n");
 
-	return ret;
-}
-
-static int ipu_psys_unmapbuf_locked(int fd, struct ipu_psys_fh *fh,
-				    struct ipu_psys_kbuffer *kbuf)
-{
-	struct ipu_psys *psys = fh->psys;
-
-	if (!kbuf || fd != kbuf->fd) {
-		dev_err(&psys->adev->dev, "invalid kbuffer\n");
-		return -EINVAL;
-	}
-
-	/* From now on it is not safe to use this kbuffer */
-	ipu_psys_kbuf_unmap(kbuf);
-
-	list_del(&kbuf->list);
-
-	if (!kbuf->userptr)
-		kfree(kbuf);
-
-	dev_dbg(&psys->adev->dev, "%s fd %d unmapped\n", __func__, fd);
-
-	return 0;
+	return kbuf ? 0 : -EINVAL;
 }
 
 static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
 {
-	struct ipu_psys_kbuffer *kbuf;
 	long ret;
 
 	mutex_lock(&fh->mutex);
-	kbuf = ipu_psys_lookup_kbuffer(fh, fd);
-	if (!kbuf) {
-		dev_err(&fh->psys->adev->dev,
-			"buffer with fd %d not found\n", fd);
-		mutex_unlock(&fh->mutex);
-		return -EINVAL;
-	}
-	ret = ipu_psys_unmapbuf_locked(fd, fh, kbuf);
+	ret = ipu_psys_unmapbuf_locked(fd, fh);
 	mutex_unlock(&fh->mutex);
 
 	dev_dbg(&fh->psys->adev->dev, "IOC_UNMAPBUF\n");
