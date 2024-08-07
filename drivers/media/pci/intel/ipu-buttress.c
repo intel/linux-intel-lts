@@ -1131,16 +1131,30 @@ static int ipu_buttress_tsc_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(ipu_buttress_tsc_fops, ipu_buttress_tsc_get,
 			NULL, "%llu\n");
 
-static int ipu_buttress_psys_force_freq_get(void *data, u64 *val)
+static int ipu_buttress_psys_freq_get(void *data, u64 *val)
 {
 	struct ipu_device *isp = data;
+	u32 reg_val;
+	int rval;
 
-	*val = isp->buttress.psys_force_ratio * BUTTRESS_PS_FREQ_STEP;
+	rval = pm_runtime_get_sync(&isp->psys->dev);
+	if (rval < 0) {
+		pm_runtime_put(&isp->psys->dev);
+		dev_err(&isp->pdev->dev, "Runtime PM failed (%d)\n", rval);
+		return rval;
+	}
+
+	reg_val = readl(isp->base + BUTTRESS_REG_PS_FREQ_CTL);
+
+	pm_runtime_put(&isp->psys->dev);
+
+	*val = IPU_PS_FREQ_RATIO_BASE *
+	    (reg_val & IPU_BUTTRESS_PS_FREQ_CTL_DIVISOR_MASK);
 
 	return 0;
 }
 
-static int ipu_buttress_psys_force_freq_set(void *data, u64 val)
+static int ipu_buttress_psys_freq_set(void *data, u64 val)
 {
 	struct ipu_device *isp = data;
 
@@ -1184,12 +1198,9 @@ static int ipu_buttress_isys_freq_get(void *data, u64 *val)
 	return 0;
 }
 
-DEFINE_SIMPLE_ATTRIBUTE(ipu_buttress_psys_force_freq_fops,
-			ipu_buttress_psys_force_freq_get,
-			ipu_buttress_psys_force_freq_set, "%llu\n");
-
 DEFINE_SIMPLE_ATTRIBUTE(ipu_buttress_psys_freq_fops,
-			ipu_buttress_psys_freq_get, NULL, "%llu\n");
+			ipu_buttress_psys_freq_get,
+			ipu_buttress_psys_freq_set, "%llu\n");
 
 DEFINE_SIMPLE_ATTRIBUTE(ipu_buttress_isys_freq_fops,
 			ipu_buttress_isys_freq_get,
@@ -1228,12 +1239,7 @@ int ipu_buttress_debugfs_init(struct ipu_device *isp)
 				   &ipu_buttress_tsc_fops);
 	if (!file)
 		goto err;
-	file = debugfs_create_file("psys_force_freq", 0700, dir, isp,
-				   &ipu_buttress_psys_force_freq_fops);
-	if (!file)
-		goto err;
-
-	file = debugfs_create_file("psys_freq", 0400, dir, isp,
+	file = debugfs_create_file("psys_freq", 0700, dir, isp,
 				   &ipu_buttress_psys_freq_fops);
 	if (!file)
 		goto err;
