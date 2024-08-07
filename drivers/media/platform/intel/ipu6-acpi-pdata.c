@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2016--2023 Intel Corporation.
+ * Copyright (c) 2016--2024 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -712,12 +712,11 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 			pdata->suffix = serdes_info.deser_num + SUFFIX_BASE + 1;
 			pr_info("IPU6 ACPI: create %s %c, on deserializer port %d",
 				sensor_name, pdata->suffix, serdes_info.deser_num);
-		} else if (port > 0) {
-			pdata->suffix = port + SUFFIX_BASE;
-			pr_info("IPU6 ACPI: create %s %c, on mipi port %d",
+		} else if (port >= 0) {
+			pdata->suffix = port + SUFFIX_BASE + 1;
+			pr_info("IPU6 ACPI: create %s %c, on deserializer port %d",
 				sensor_name, pdata->suffix, port);
-		} else
-			pr_err("IPU6 ACPI: Invalid MIPI Port : %d", port);
+		}
 
 		if (!strcmp(sensor_name, IMX390_NAME))
 			set_ti960_gpio(ctl_data, &pdata);
