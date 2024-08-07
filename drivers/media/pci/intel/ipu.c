@@ -880,9 +880,6 @@ static void ipu_pci_remove(struct pci_dev *pdev)
 	pm_runtime_forbid(&pdev->dev);
 	pm_runtime_get_noresume(&pdev->dev);
 
-	pci_release_regions(pdev);
-	pci_disable_device(pdev);
-
 	ipu_buttress_exit(isp);
 
 	release_firmware(isp->cpd_fw);
