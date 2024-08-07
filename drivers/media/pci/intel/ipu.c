@@ -497,8 +497,8 @@ static inline int match_spdata(struct ipu_isys_subdev_info *sd,
 	return 1;
 }
 
-void fixup_spdata(const void *spdata_rep,
-		struct ipu_isys_subdev_pdata *spdata)
+static void fixup_spdata(const void *spdata_rep,
+			 struct ipu_isys_subdev_pdata *spdata)
 {
 	const struct ipu_spdata_rep *rep = spdata_rep;
 	struct ipu_isys_subdev_info **subdevs, *sd_info;
