@@ -7,6 +7,7 @@
 #include <media/lt6911uxe.h>
 #include <media/ti960.h>
 #include <media/imx390.h>
+#include <media/isx031.h>
 #include <media/d4xx_pdata.h>
 
 #define CL_EMPTY 0

@@ -596,6 +596,16 @@ static void set_serdes_sd_pdata(struct serdes_module_pdata **module_pdata,
 		(*module_pdata)->module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK;
 		(*module_pdata)->fsin = 3;
 	}
+
+	/* TI960 and ISX031 specific */
+	if (!strcmp(sensor_name, ISX031_NAME)) {
+		(*module_pdata)->gpio_powerup_seq[0] = 0x0;
+		(*module_pdata)->gpio_powerup_seq[1] = 0x08;
+		(*module_pdata)->gpio_powerup_seq[2] = 0X08;
+		(*module_pdata)->gpio_powerup_seq[3] = -1;
+		(*module_pdata)->module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK;
+		(*module_pdata)->fsin = 2;
+	}
 }
 
 #define PORT_NR 8
@@ -719,7 +729,7 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 				sensor_name, pdata->suffix, port);
 		}
 
-		if (!strcmp(sensor_name, IMX390_NAME))
+		if (!strcmp(sensor_name, IMX390_NAME) || !strcmp(sensor_name, ISX031_NAME))
 			set_ti960_gpio(ctl_data, &pdata);
 
 		set_serdes_subdev(sensor_sd, dev, &pdata, sensor_name, lanes, addr, rx_port);
@@ -761,6 +771,8 @@ static void set_serdes_info(struct device *dev, char *sensor_name, const char *s
 
 	if (!strcmp(sensor_name, IMX390_NAME))
 		serdes_info.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS;
+	else if (!strcmp(sensor_name, ISX031_NAME))
+		serdes_info.phy_i2c_addr = ISX031_I2C_ADDRESS_8BIT;
 	else
 		serdes_info.phy_i2c_addr = 0;
 }

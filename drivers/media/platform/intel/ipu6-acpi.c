@@ -40,6 +40,7 @@
 #include <media/ar0234.h>
 #include <media/lt6911uxc.h>
 #include <media/imx390.h>
+#include <media/isx031.h>
 #include <media/ti960.h>
 #include <media/d4xx_pdata.h>
 
@@ -65,6 +66,7 @@ static const struct ipu_acpi_devices supported_devices[] = {
 	{ "INTC10C0", AR0234_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// AR0234 HID
 	{ "INTC10B1", LT6911UXC_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// LT6911UXC HID
 	{ "INTC10C1", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// IMX390 HID
+	{ "INTC1031", ISX031_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// ISX031 HID
 	{ "INTC10C5", LT6911UXE_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },   // LT6911UXE HID
 	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, D457_NAME },// D457 HID
 };
@@ -90,6 +92,7 @@ static const struct acpi_device_id ipu_acpi_match[] = {
 	{ "INTC10C0", 0 },	// AR0234 HID
 	{ "INTC10B1", 0 },	// LT6911UXC HID
 	{ "INTC10C1", 0 },	// IMX390 HID
+	{ "INTC1031", 0 },	// ISX031 HID
 	{ "INTC10C5", 0 },	// LT6911UXE HID
 	{ "INTC10CD", 0 },	// D457 HID
 	{},
