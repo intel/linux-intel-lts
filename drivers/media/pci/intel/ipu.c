@@ -665,6 +665,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		rval = request_cpd_fw(&isp->cpd_fw, isp->cpd_fw_name_new,
 				      &pdev->dev);
 	}
+
 	if (rval) {
 		dev_err(&isp->pdev->dev, "Requesting signed firmware failed\n");
 		goto buttress_exit;

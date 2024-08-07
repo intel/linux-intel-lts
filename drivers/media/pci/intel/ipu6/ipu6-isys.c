@@ -187,4 +187,3 @@ irqreturn_t isys_isr(struct ipu_bus_device *adev)
 
 	return IRQ_HANDLED;
 }
-
