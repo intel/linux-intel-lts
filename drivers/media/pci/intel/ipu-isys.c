@@ -419,8 +419,8 @@ static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
 					struct ipu_isys, notifier);
 	struct sensor_async_sd *s_asd = container_of(asc,
 					struct sensor_async_sd, asc);
-#if IS_ENABLED(CONFIG_IPU_BRIDGE)
 	int ret;
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
 
 	ret = ipu_bridge_instantiate_vcm(sd->dev);
 	if (ret) {
