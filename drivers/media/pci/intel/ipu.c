@@ -856,6 +856,8 @@ buttress_exit:
 static void ipu_pci_remove(struct pci_dev *pdev)
 {
 	struct ipu_device *isp = pci_get_drvdata(pdev);
+	struct ipu_mmu *isys_mmu = isp->isys->mmu;
+	struct ipu_mmu *psys_mmu = isp->psys->mmu;
 
 #ifdef CONFIG_DEBUG_FS
 	ipu_remove_debugfs(isp);
@@ -883,8 +885,8 @@ static void ipu_pci_remove(struct pci_dev *pdev)
 
 	release_firmware(isp->cpd_fw);
 
-	ipu_mmu_cleanup(isp->psys->mmu);
-	ipu_mmu_cleanup(isp->isys->mmu);
+	ipu_mmu_cleanup(psys_mmu);
+	ipu_mmu_cleanup(isys_mmu);
 }
 
 static void ipu_pci_reset_prepare(struct pci_dev *pdev)
