@@ -142,7 +142,7 @@ struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 	}
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	if (!spdata) {
-		dev_err(&pdev->dev, "No subdevice info provided");
+		dev_dbg(&pdev->dev, "No subdevice info provided");
 		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, NULL,
 				     isys_init_acpi_add_device);
 		pdata->spdata = acpi_pdata;
@@ -727,7 +727,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		do_div(val, BUTTRESS_IS_FREQ_STEP);
 		isys_ctrl->divisor = val;
 		dev_info(&isp->pdev->dev,
-			 "adusted isys freq from input (%d) and set (%d)\n",
+			 "set isys freq as (%d), actually set (%d)\n",
 			 isys_freq_override,
 			 isys_ctrl->divisor * BUTTRESS_IS_FREQ_STEP);
 	}
