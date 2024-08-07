@@ -1245,7 +1245,7 @@ static const struct v4l2_ctrl_config ti960_controls[] = {
 		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
 		.min = 0,
 		.max = ARRAY_SIZE(ti960_op_sys_clock) - 1,
-		.def = 3,
+		.def = 2,
 		.menu_skip_mask = 0,
 		.qmenu_int = ti960_op_sys_clock,
 	},
