@@ -1603,9 +1603,6 @@ void __napi_kfree_skb(struct sk_buff *skb, enum skb_drop_reason reason)
 
 void napi_skb_free_stolen_head(struct sk_buff *skb)
 {
-	if (recycle_oob_skb(skb))
-		return;
-
 	if (unlikely(skb->slow_gro)) {
 		nf_reset_ct(skb);
 		skb_dst_drop(skb);
