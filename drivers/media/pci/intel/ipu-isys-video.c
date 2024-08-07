@@ -1587,7 +1587,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	if (bl && (is_support_vc(source_pad, ip))) {
+	if (bl && source_pad && (is_support_vc(source_pad, ip))) {
 		dev_dbg(dev, "start stream: start and capture\n");
 
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
@@ -1624,7 +1624,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		rval = -EIO;
 		goto out_stream_close;
 	}
-	if (!is_support_vc(source_pad, ip)) {
+	if (source_pad && !is_support_vc(source_pad, ip)) {
 		if (bl) {
 			dev_dbg(dev, "start stream: capture\n");
 
