@@ -1918,27 +1918,6 @@ static void imx390_remove(struct i2c_client *client)
 	mutex_destroy(&imx390->mutex);
 
 }
-
-irqreturn_t imx390_threaded_irq_fn(int irq, void *dev_id)
-{
-	struct imx390 *imx390 = dev_id;
-
-	mutex_lock(&imx390->mutex);
-	if (imx390->streaming == false) {
-		gpio_set_value(imx390->platform_data->gpios[0], 0);
-		goto imx390_irq_handled;
-	}
-	if (imx390->strobe_source->val == V4L2_FLASH_STROBE_SOURCE_EXTERNAL) {
-
-		gpio_set_value(imx390->platform_data->gpios[0],
-				gpio_get_value(imx390->platform_data->irq_pin));
-	}
-
-imx390_irq_handled:
-	mutex_unlock(&imx390->mutex);
-	return IRQ_HANDLED;
-}
-
 static int imx390_probe(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd;

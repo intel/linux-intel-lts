@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2019-2023 Intel Corporation.
+// Copyright (c) 2019-2024 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -2136,7 +2136,7 @@ static void ar0234_remove(struct i2c_client *client)
 
 }
 
-irqreturn_t ar0234_threaded_irq_fn(int irq, void *dev_id)
+static irqreturn_t ar0234_threaded_irq_fn(int irq, void *dev_id)
 {
 	struct ar0234 *ar0234 = dev_id;
 

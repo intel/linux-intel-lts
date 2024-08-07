@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2016--2022 Intel Corporation.
+ * Copyright (c) 2016--2024 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -75,7 +75,7 @@ err:
 	return status;
 }
 
-int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int size,
+static int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int size,
 				u64 *gpio_num)
 {
 	const u8 dsdt_cam_gpio[] = {
@@ -160,7 +160,7 @@ int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio, int s
 	return rval;
 }
 
-int ipu_acpi_get_i2c_info(struct device *dev, struct ipu_i2c_info *i2c, int size, u64 *num)
+static int ipu_acpi_get_i2c_info(struct device *dev, struct ipu_i2c_info *i2c, int size, u64 *num)
 {
 	const u8 dsdt_cam_i2c[] = {
 		0x49, 0x75, 0x25, 0x26, 0x71, 0x92, 0xA4, 0x4C,

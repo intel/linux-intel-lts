@@ -182,7 +182,7 @@ static u8 ti960_set_sub_stream[] = {
 	0, 0, 0, 0
 };
 
-int bus_switch(struct ti960 *va)
+static int bus_switch(struct ti960 *va)
 {
 	int ret;
 	int retry, timeout = 10;
@@ -1358,7 +1358,9 @@ failed_out:
 
 static int ti960_init(struct ti960 *va)
 {
+#ifdef TI960_RESET_NEEDED
 	unsigned int reset_gpio = va->pdata->reset_gpio;
+#endif
 	int i, rval;
 	unsigned int val;
 
