@@ -99,7 +99,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 #endif
 	int ret;
 #if IS_ENABLED(CONFIG_IPU_BRIDGE)
-	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 
 	ret = ipu_isys_check_fwnode_graph(fwnode);
 	if (ret) {
