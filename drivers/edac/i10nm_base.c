@@ -406,7 +406,9 @@ static int i10nm_get_imc_num(struct res_config *cfg)
 
 static bool i10nm_check_2lm(struct res_config *cfg)
 {
+	bool two_level = false;
 	struct skx_dev *d;
+	u64 limit;
 	u32 reg;
 	int i;
 
@@ -421,12 +423,16 @@ static bool i10nm_check_2lm(struct res_config *cfg)
 			I10NM_GET_SAD(d, cfg->sad_all_offset, i, reg);
 			if (I10NM_SAD_ENABLE(reg) && I10NM_SAD_NM_CACHEABLE(reg)) {
 				edac_dbg(2, "2-level memory configuration.\n");
-				return true;
+				two_level = true;
 			}
+
+			limit = GET_BITFIELD(reg, 6, 31) << 26;
+			edac_dbg(2, "dram rule cfg %02d (reg 0x%08x), enabled %llu, top limit 0x%016llx, cacheable %llu\n",
+				 i, reg, I10NM_SAD_ENABLE(reg), limit, I10NM_SAD_NM_CACHEABLE(reg));
 		}
 	}
 
-	return false;
+	return two_level;
 }
 
 /*
