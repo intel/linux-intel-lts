@@ -1,0 +1,50 @@
+From ef654f56c3b9aab75a8dc63833b2688eb6d14bc9 Mon Sep 17 00:00:00 2001
+From: Alexey Khoroshilov <khoroshilov@ispras.ru>
+Date: Fri, 4 Mar 2022 21:25:36 +0300
+Subject: [PATCH] mISDN: Fix memory leak in dsp_pipeline_build()
+
+[ Upstream commit c6a502c2299941c8326d029cfc8a3bc8a4607ad5 ]
+
+dsp_pipeline_build() allocates dup pointer by kstrdup(cfg),
+but then it updates dup variable by strsep(&dup, "|").
+As a result when it calls kfree(dup), the dup variable contains NULL.
+
+Found by Linux Driver Verification project (linuxtesting.org) with SVACE.
+
+Signed-off-by: Alexey Khoroshilov <khoroshilov@ispras.ru>
+Fixes: 960366cf8dbb ("Add mISDN DSP")
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/isdn/mISDN/dsp_pipeline.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/isdn/mISDN/dsp_pipeline.c b/drivers/isdn/mISDN/dsp_pipeline.c
+index 796cae691560..c094e553e083 100644
+--- a/drivers/isdn/mISDN/dsp_pipeline.c
++++ b/drivers/isdn/mISDN/dsp_pipeline.c
+@@ -237,7 +237,7 @@ void dsp_pipeline_destroy(struct dsp_pipeline *pipeline)
+ int dsp_pipeline_build(struct dsp_pipeline *pipeline, const char *cfg)
+ {
+ 	int incomplete = 0, found = 0;
+-	char *dup, *tok, *name, *args;
++	char *dup, *next, *tok, *name, *args;
+ 	struct dsp_element_entry *entry, *n;
+ 	struct dsp_pipeline_entry *pipeline_entry;
+ 	struct mISDN_dsp_element *elem;
+@@ -248,10 +248,10 @@ int dsp_pipeline_build(struct dsp_pipeline *pipeline, const char *cfg)
+ 	if (!list_empty(&pipeline->list))
+ 		_dsp_pipeline_destroy(pipeline);
+ 
+-	dup = kstrdup(cfg, GFP_ATOMIC);
++	dup = next = kstrdup(cfg, GFP_ATOMIC);
+ 	if (!dup)
+ 		return 0;
+-	while ((tok = strsep(&dup, "|"))) {
++	while ((tok = strsep(&next, "|"))) {
+ 		if (!strlen(tok))
+ 			continue;
+ 		name = strsep(&tok, "(");
+-- 
+2.25.1
+

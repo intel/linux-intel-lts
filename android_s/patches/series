@@ -141,3 +141,15 @@
 
 # CVE-2024-36901
 0001-ipv6-prevent-NULL-dereference-in-ip6_output.patch
+
+# CVE-2022-48863
+0001-mISDN-Fix-memory-leak-in-dsp_pipeline_build.patch
+
+# CVE-2022-48865
+0001-tipc-fix-kernel-panic-when-enabling-bearer.patch
+
+# CVE-2024-42082
+0001-xdp-Remove-WARN-from-__xdp_reg_mem_model.patch
+
+# CVE-2024-42077
+0001-ocfs2-fix-DIO-failure-due-to-insufficient-transactio.patch
