@@ -10,22 +10,21 @@
 # CVE-2023-6238
 0001-nvme-fix-corruption-for-passthrough-meta-data.patch
 
-# CVE-2023-52590
-0001-ocfs2-Avoid-touching-renamed-directory-if-parent-doe.patch
-
-# CVE-2024-26654
-0001-ALSA-sh-aica-reorder-cleanup-operations-to-avoid-UAF.patch
-
-# CVE-2024-26656
-0001-drm-amdgpu-fix-use-after-free-bug.patch
-
-# CVE-2024-26642
-0001-netfilter-nf_tables-disallow-anonymous-set-with-time.patch
-
-# CVE-2024-26643
-0001-netfilter-nf_tables-mark-set-as-dead-when-unbinding-.patch
-
 # CVE-2024-26686
 0001-fs-proc-do_task_stat-use-__for_each_thread.patch
-#0002-fs-proc-do_task_stat-move-thread_group_cputime_adjus.patch
-0003-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
+0002-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
+
+# CVE-2024-27017
+0001-netfilter-nft_set_pipapo-walk-over-current-view-on-n.patch
+
+# CVE-2024-27012
+0001-netfilter-nf_tables-restore-set-elements-when-delete.patch
+
+# CVE-2024-42226
+0001-usb-xhci-prevent-potential-failure-in-handle_tx_even.patch
+
+# CVE-2024-42158
+0002-s390-pkey-Use-kfree_sensitive-to-fix-Coccinelle-warn.patch
+
+# CVE-2024-42156
+0001-s390-pkey-Wipe-copies-of-clear-key-structures-on-fai.patch

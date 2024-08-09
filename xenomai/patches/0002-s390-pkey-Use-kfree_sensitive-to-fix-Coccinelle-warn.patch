@@ -1,0 +1,59 @@
+From 7afdcae9abe64b861c4779662666d8c44eaed091 Mon Sep 17 00:00:00 2001
+From: Jules Irenge <jbi.octave@gmail.com>
+Date: Tue, 7 May 2024 22:13:52 +0100
+Subject: [PATCH 2/3] s390/pkey: Use kfree_sensitive() to fix Coccinelle
+ warnings
+
+Replace memzero_explicit() and kfree() with kfree_sensitive() to fix
+warnings reported by Coccinelle:
+
+WARNING opportunity for kfree_sensitive/kvfree_sensitive (line 1506)
+WARNING opportunity for kfree_sensitive/kvfree_sensitive (line 1643)
+WARNING opportunity for kfree_sensitive/kvfree_sensitive (line 1770)
+
+Signed-off-by: Jules Irenge <jbi.octave@gmail.com>
+Reviewed-by: Holger Dengler <dengler@linux.ibm.com>
+Link: https://lore.kernel.org/r/ZjqZkNi_JUJu73Rg@octinomon.home
+Signed-off-by: Heiko Carstens <hca@linux.ibm.com>
+Signed-off-by: Alexander Gordeev <agordeev@linux.ibm.com>
+---
+ drivers/s390/crypto/pkey_api.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/s390/crypto/pkey_api.c b/drivers/s390/crypto/pkey_api.c
+index 6cfb6b2340c9..7a2bd0a5b6ac 100644
+--- a/drivers/s390/crypto/pkey_api.c
++++ b/drivers/s390/crypto/pkey_api.c
+@@ -1495,8 +1495,7 @@ static long pkey_unlocked_ioctl(struct file *filp, unsigned int cmd,
+ 		rc = pkey_keyblob2pkey(kkey, ktp.keylen, ktp.protkey.protkey,
+ 				       &ktp.protkey.len, &ktp.protkey.type);
+ 		DEBUG_DBG("%s pkey_keyblob2pkey()=%d\n", __func__, rc);
+-		memzero_explicit(kkey, ktp.keylen);
+-		kfree(kkey);
++		kfree_sensitive(kkey);
+ 		if (rc)
+ 			break;
+ 		if (copy_to_user(utp, &ktp, sizeof(ktp)))
+@@ -1632,8 +1631,7 @@ static long pkey_unlocked_ioctl(struct file *filp, unsigned int cmd,
+ 					&ktp.protkey.type);
+ 		DEBUG_DBG("%s pkey_keyblob2pkey2()=%d\n", __func__, rc);
+ 		kfree(apqns);
+-		memzero_explicit(kkey, ktp.keylen);
+-		kfree(kkey);
++		kfree_sensitive(kkey);
+ 		if (rc)
+ 			break;
+ 		if (copy_to_user(utp, &ktp, sizeof(ktp)))
+@@ -1759,8 +1757,7 @@ static long pkey_unlocked_ioctl(struct file *filp, unsigned int cmd,
+ 					protkey, &protkeylen, &ktp.pkeytype);
+ 		DEBUG_DBG("%s pkey_keyblob2pkey3()=%d\n", __func__, rc);
+ 		kfree(apqns);
+-		memzero_explicit(kkey, ktp.keylen);
+-		kfree(kkey);
++		kfree_sensitive(kkey);
+ 		if (rc) {
+ 			kfree(protkey);
+ 			break;
+-- 
+2.34.1
+

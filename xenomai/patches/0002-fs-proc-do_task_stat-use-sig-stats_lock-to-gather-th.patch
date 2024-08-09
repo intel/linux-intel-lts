@@ -1,7 +1,7 @@
-From 3f0d09c4df8e81f0daab73c7b71dd25aff841665 Mon Sep 17 00:00:00 2001
+From c1a0f20270c66a5254ebd9382a1b5213b4a514db Mon Sep 17 00:00:00 2001
 From: Oleg Nesterov <oleg@redhat.com>
 Date: Tue, 23 Jan 2024 16:33:57 +0100
-Subject: [PATCH 3/3] fs/proc: do_task_stat: use sig->stats_lock to gather the
+Subject: [PATCH 2/2] fs/proc: do_task_stat: use sig->stats_lock to gather the
  threads/children stats
 
 lock_task_sighand() can trigger a hard lockup.  If NR_CPUS threads call
