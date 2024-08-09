@@ -1,0 +1,177 @@
+From 90c7ceea8e174d0b72f1aa6b4b528b789b8dedb3 Mon Sep 17 00:00:00 2001
+From: Kanchan Joshi <joshi.k@samsung.com>
+Date: Mon, 27 Nov 2023 09:31:26 -0100
+Subject: [PATCH] nvme: fix corruption for passthrough meta/data
+
+User can specify a smaller meta buffer than what the device is
+wired to update/access. Kernel makes a copy of the meta buffer into
+which the device does DMA.
+As a result, the device overwrites the unrelated kernel memory, causing
+random kernel crashes.
+
+Same issue is possible for extended-lba case also. When user specifies a
+short unaligned buffer, the kernel makes a copy and uses that for DMA.
+
+Detect these situations and prevent corruption for unprivileged user
+passthrough. No change to status-quo for privileged/root user.
+
+Fixes: 63263d60e0f9 ("nvme: Use metadata for passthrough commands")
+Cc: stable@vger.kernel.org
+
+Reported-by: Vincent Fu <vincent.fu@samsung.com>
+Signed-off-by: Kanchan Joshi <joshi.k@samsung.com>
+---
+ drivers/nvme/host/ioctl.c | 116 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 116 insertions(+)
+
+diff --git a/drivers/nvme/host/ioctl.c b/drivers/nvme/host/ioctl.c
+index 747c879e8982..6cbb2f50e421 100644
+--- a/drivers/nvme/host/ioctl.c
++++ b/drivers/nvme/host/ioctl.c
+@@ -96,6 +96,76 @@ static void __user *nvme_to_user_ptr(uintptr_t ptrval)
+ 	return (void __user *)ptrval;
+ }
+ 
++static inline bool nvme_nlb_in_cdw12(struct nvme_ns *ns, u8 opcode)
++{
++	u8 csi = ns->head->ids.csi;
++
++	if (csi != NVME_CSI_NVM && csi != NVME_CSI_ZNS)
++		return false;
++
++	switch (opcode) {
++	case nvme_cmd_read:
++	case nvme_cmd_write:
++	case nvme_cmd_compare:
++	case nvme_cmd_zone_append:
++		return true;
++	default:
++		return false;
++	}
++}
++
++/*
++ * NVMe has no separate field to encode the metadata length expected
++ * (except when using SGLs).
++ *
++ * Because of that we can't allow to transfer arbitrary metadata, as
++ * a metadata buffer that is shorted than what the device expects for
++ * the command will lead to arbitrary kernel (if bounce buffering) or
++ * userspace (if not) memory corruption.
++ *
++ * Check that external metadata is only specified for the few commands
++ * where we know the length based of other fields, and that it fits
++ * the actual data transfer from/to the device.
++ */
++static bool nvme_validate_metadata_len(struct request *req, unsigned meta_len)
++{
++	struct nvme_ns *ns = req->q->queuedata;
++	struct nvme_command *c = nvme_req(req)->cmd;
++	u32 len_by_nlb;
++
++	/* Do not guard admin */
++	if (capable(CAP_SYS_ADMIN))
++		return true;
++
++	/* Block commands that do not have nlb in cdw12 */
++	if (!nvme_nlb_in_cdw12(ns, c->common.opcode)) {
++		dev_err(ns->ctrl->device,
++			"unknown metadata command %c\n", c->common.opcode);
++		return false;
++	}
++
++	/* Skip when PI is inserted or stripped and not transferred */
++	if (ns->ms == ns->pi_size &&
++	    (c->rw.control & cpu_to_le16(NVME_RW_PRINFO_PRACT)))
++		return true;
++
++	if (ns->features & NVME_NS_EXT_LBAS) {
++		dev_err(ns->ctrl->device,
++			"requires extended LBAs for metadata\n");
++		return false;
++	}
++
++	len_by_nlb = (le16_to_cpu(c->rw.length) + 1) * ns->ms;
++	if (meta_len < len_by_nlb) {
++		dev_err(ns->ctrl->device,
++			"metadata length (%u instad of %u) is too small.\n",
++			meta_len, len_by_nlb);
++		return false;
++	}
++
++	return true;
++}
++
+ static void *nvme_add_user_metadata(struct request *req, void __user *ubuf,
+ 		unsigned len, u32 seed)
+ {
+@@ -104,6 +174,9 @@ static void *nvme_add_user_metadata(struct request *req, void __user *ubuf,
+ 	void *buf;
+ 	struct bio *bio = req->bio;
+ 
++	if (!nvme_validate_metadata_len(req, len))
++		return ERR_PTR(-EINVAL);
++
+ 	buf = kmalloc(len, GFP_KERNEL);
+ 	if (!buf)
+ 		goto out;
+@@ -138,6 +211,41 @@ static void *nvme_add_user_metadata(struct request *req, void __user *ubuf,
+ 	return ERR_PTR(ret);
+ }
+ 
++static bool nvme_validate_buffer_len(struct nvme_ns *ns, struct nvme_command *c,
++				     unsigned meta_len, unsigned data_len)
++{
++	u32 mlen_by_nlb, dlen_by_nlb;
++
++	/* Do not guard admin */
++	if (capable(CAP_SYS_ADMIN))
++		return true;
++
++	/* Block commands that do not have nlb in cdw12 */
++	if (!nvme_nlb_in_cdw12(ns, c->common.opcode)) {
++		dev_err(ns->ctrl->device,
++			"unknown metadata command %c.\n", c->common.opcode);
++		return false;
++	}
++
++	/* When PI is inserted or stripped and not transferred.*/
++	if (ns->ms == ns->pi_size &&
++	    (c->rw.control & cpu_to_le16(NVME_RW_PRINFO_PRACT)))
++		mlen_by_nlb = 0;
++	else
++		mlen_by_nlb = (le16_to_cpu(c->rw.length) + 1) * ns->ms;
++
++	dlen_by_nlb = (le16_to_cpu(c->rw.length) + 1) << ns->lba_shift;
++
++	if (data_len < (dlen_by_nlb + mlen_by_nlb)) {
++		dev_err(ns->ctrl->device,
++			"buffer length (%u instad of %u) is too small.\n",
++			data_len, dlen_by_nlb + mlen_by_nlb);
++		return false;
++	}
++
++	return true;
++}
++
+ static int nvme_finish_user_metadata(struct request *req, void __user *ubuf,
+ 		void *meta, unsigned len, int ret)
+ {
+@@ -206,6 +314,14 @@ static int nvme_map_user_request(struct request *req, u64 ubuffer,
+ 		}
+ 		*metap = meta;
+ 	}
++	/* Guard for a short bounce buffer */
++	if (bio->bi_private) {
++		if (!nvme_validate_buffer_len(ns, nvme_req(req)->cmd,
++					      meta_len, bufflen)) {
++			ret = -EINVAL;
++			goto out_unmap;
++		}
++	}
+ 
+ 	return ret;
+ 
+-- 
+2.25.1
+

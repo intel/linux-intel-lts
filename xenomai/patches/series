@@ -1,0 +1,31 @@
+# CVE-2023-31085
+0001-ubi-Refuse-attaching-if-mtd-s-erasesize-is-0.patch
+
+# CVE-2023-4623
+0001-net-sched-sch_hfsc-Ensure-inner-classes-have-fsc-cur.patch
+
+# CVE-2023-37454
+0001-KASAN-use-after-free-Write-in-udf_close_lvid.patch
+
+# CVE-2023-6238
+0001-nvme-fix-corruption-for-passthrough-meta-data.patch
+
+# CVE-2023-52590
+0001-ocfs2-Avoid-touching-renamed-directory-if-parent-doe.patch
+
+# CVE-2024-26654
+0001-ALSA-sh-aica-reorder-cleanup-operations-to-avoid-UAF.patch
+
+# CVE-2024-26656
+0001-drm-amdgpu-fix-use-after-free-bug.patch
+
+# CVE-2024-26642
+0001-netfilter-nf_tables-disallow-anonymous-set-with-time.patch
+
+# CVE-2024-26643
+0001-netfilter-nf_tables-mark-set-as-dead-when-unbinding-.patch
+
+# CVE-2024-26686
+0001-fs-proc-do_task_stat-use-__for_each_thread.patch
+#0002-fs-proc-do_task_stat-move-thread_group_cputime_adjus.patch
+0003-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch

@@ -1,0 +1,42 @@
+From fe79c1e8d020df0d54e76b1660115440bbfa825b Mon Sep 17 00:00:00 2001
+From: Budimir Markovic <markovicbudimir@gmail.com>
+Date: Thu, 24 Aug 2023 01:49:05 -0700
+Subject: [PATCH] net/sched: sch_hfsc: Ensure inner classes have fsc curve
+
+[ Upstream commit b3d26c5702c7d6c45456326e56d2ccf3f103e60f ]
+
+HFSC assumes that inner classes have an fsc curve, but it is currently
+possible for classes without an fsc curve to become parents. This leads
+to bugs including a use-after-free.
+
+Don't allow non-root classes without HFSC_FSC to become parents.
+
+Fixes: 1da177e4c3f4 ("Linux-2.6.12-rc2")
+Reported-by: Budimir Markovic <markovicbudimir@gmail.com>
+Signed-off-by: Budimir Markovic <markovicbudimir@gmail.com>
+Acked-by: Jamal Hadi Salim <jhs@mojatatu.com>
+Link: https://lore.kernel.org/r/20230824084905.422-1-markovicbudimir@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/sched/sch_hfsc.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/sched/sch_hfsc.c b/net/sched/sch_hfsc.c
+index 70b0c5873d32..61d52594ff6d 100644
+--- a/net/sched/sch_hfsc.c
++++ b/net/sched/sch_hfsc.c
+@@ -1012,6 +1012,10 @@ hfsc_change_class(struct Qdisc *sch, u32 classid, u32 parentid,
+ 		if (parent == NULL)
+ 			return -ENOENT;
+ 	}
++	if (!(parent->cl_flags & HFSC_FSC) && parent != &q->root) {
++		NL_SET_ERR_MSG(extack, "Invalid parent - parent class must have FSC");
++		return -EINVAL;
++	}
+ 
+ 	if (classid == 0 || TC_H_MAJ(classid ^ sch->handle) != 0)
+ 		return -EINVAL;
+-- 
+2.25.1
+
