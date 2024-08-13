@@ -22,8 +22,8 @@ Signed-off-by: Sasha Levin <sashal@kernel.org>
  net/netfilter/nft_set_pipapo.c    |  5 +++--
  3 files changed, 22 insertions(+), 2 deletions(-)
 
-diff --git a/include/net/netfilter/nf_tables.h b/include/net/netfilter/nf_tables.h
-index 5bb8a83e2604..11a82108febf 100644
+Index: b/include/net/netfilter/nf_tables.h
+===================================================================
 --- a/include/net/netfilter/nf_tables.h
 +++ b/include/net/netfilter/nf_tables.h
 @@ -297,9 +297,22 @@ struct nft_set_elem {
@@ -49,11 +49,11 @@ index 5bb8a83e2604..11a82108febf 100644
  	unsigned int	count;
  	unsigned int	skip;
  	int		err;
-diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
-index 387eee416b0b..7d479398b0d2 100644
+Index: b/net/netfilter/nf_tables_api.c
+===================================================================
 --- a/net/netfilter/nf_tables_api.c
 +++ b/net/netfilter/nf_tables_api.c
-@@ -628,6 +628,7 @@ static void nft_map_deactivate(const struct nft_ctx *ctx, struct nft_set *set)
+@@ -628,6 +628,7 @@ static void nft_map_deactivate(const str
  {
  	struct nft_set_iter iter = {
  		.genmask	= nft_genmask_next(ctx->net),
@@ -61,7 +61,7 @@ index 387eee416b0b..7d479398b0d2 100644
  		.fn		= nft_mapelem_deactivate,
  	};
  
-@@ -5380,6 +5381,7 @@ int nf_tables_bind_set(const struct nft_ctx *ctx, struct nft_set *set,
+@@ -5380,6 +5381,7 @@ int nf_tables_bind_set(const struct nft_
  		}
  
  		iter.genmask	= nft_genmask_next(ctx->net);
@@ -69,7 +69,7 @@ index 387eee416b0b..7d479398b0d2 100644
  		iter.skip 	= 0;
  		iter.count	= 0;
  		iter.err	= 0;
-@@ -5455,6 +5457,7 @@ static void nft_map_activate(const struct nft_ctx *ctx, struct nft_set *set)
+@@ -5455,6 +5457,7 @@ static void nft_map_activate(const struc
  {
  	struct nft_set_iter iter = {
  		.genmask	= nft_genmask_next(ctx->net),
@@ -77,7 +77,7 @@ index 387eee416b0b..7d479398b0d2 100644
  		.fn		= nft_mapelem_activate,
  	};
  
-@@ -5834,6 +5837,7 @@ static int nf_tables_dump_set(struct sk_buff *skb, struct netlink_callback *cb)
+@@ -5833,6 +5836,7 @@ static int nf_tables_dump_set(struct sk_
  	args.skb		= skb;
  	args.reset		= reset;
  	args.iter.genmask	= nft_genmask_cur(net);
@@ -85,7 +85,7 @@ index 387eee416b0b..7d479398b0d2 100644
  	args.iter.skip		= cb->args[0];
  	args.iter.count		= 0;
  	args.iter.err		= 0;
-@@ -7235,6 +7239,7 @@ static int nft_set_flush(struct nft_ctx *ctx, struct nft_set *set, u8 genmask)
+@@ -7234,6 +7238,7 @@ static int nft_set_flush(struct nft_ctx
  {
  	struct nft_set_iter iter = {
  		.genmask	= genmask,
@@ -93,7 +93,7 @@ index 387eee416b0b..7d479398b0d2 100644
  		.fn		= nft_setelem_flush,
  	};
  
-@@ -10745,6 +10750,7 @@ static int nf_tables_check_loops(const struct nft_ctx *ctx,
+@@ -10744,6 +10749,7 @@ static int nf_tables_check_loops(const s
  				continue;
  
  			iter.genmask	= nft_genmask_next(ctx->net);
@@ -101,17 +101,17 @@ index 387eee416b0b..7d479398b0d2 100644
  			iter.skip 	= 0;
  			iter.count	= 0;
  			iter.err	= 0;
-diff --git a/net/netfilter/nft_set_pipapo.c b/net/netfilter/nft_set_pipapo.c
-index 69b02a3f1ff0..1a60847741a7 100644
+Index: b/net/netfilter/nft_set_pipapo.c
+===================================================================
 --- a/net/netfilter/nft_set_pipapo.c
 +++ b/net/netfilter/nft_set_pipapo.c
-@@ -2035,13 +2035,14 @@ static void nft_pipapo_walk(const struct nft_ctx *ctx, struct nft_set *set,
+@@ -2037,13 +2037,14 @@ static void nft_pipapo_walk(const struct
  			    struct nft_set_iter *iter)
  {
  	struct nft_pipapo *priv = nft_set_priv(set);
 -	struct net *net = read_pnet(&set->net);
- 	struct nft_pipapo_match *m;
- 	struct nft_pipapo_field *f;
+ 	const struct nft_pipapo_match *m;
+ 	const struct nft_pipapo_field *f;
  	int i, r;
  
 +	WARN_ON_ONCE(iter->type == NFT_ITER_UNSPEC);
@@ -122,6 +122,3 @@ index 69b02a3f1ff0..1a60847741a7 100644
  		m = rcu_dereference(priv->match);
  	else
  		m = priv->clone;
--- 
-2.25.1
-

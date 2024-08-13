@@ -19,3 +19,12 @@
 
 # CVE-2024-27012
 0001-netfilter-nf_tables-restore-set-elements-when-delete.patch
+
+#CVE-2024-42156
+0001-s390-pkey-Wipe-copies-of-clear-key-structures-on-fai.patch
+
+#CVE-2024-42158
+0001-s390-pkey-Use-kfree_sensitive-to-fix-Coccinelle-warn.patch
+
+#CVE-2024-42162
+0001-gve-Account-for-stopped-queues-when-reading-NIC-stat.patch

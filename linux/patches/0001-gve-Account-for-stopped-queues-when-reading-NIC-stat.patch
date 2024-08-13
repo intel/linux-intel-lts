@@ -1,0 +1,207 @@
+From a8df8bc2f3d85af937e29884e5bb39c7bd835d5c Mon Sep 17 00:00:00 2001
+From: Shailend Chand <shailend@google.com>
+Date: Wed, 1 May 2024 23:25:47 +0000
+Subject: [PATCH] gve: Account for stopped queues when reading NIC stats
+
+We now account for the fact that the NIC might send us stats for a
+subset of queues. Without this change, gve_get_ethtool_stats might make
+an invalid access on the priv->stats_report->stats array.
+
+Tested-by: Mina Almasry <almasrymina@google.com>
+Reviewed-by: Praveen Kaligineedi <pkaligineedi@google.com>
+Reviewed-by: Harshitha Ramamurthy <hramamurthy@google.com>
+Signed-off-by: Shailend Chand <shailend@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/ethernet/google/gve/gve_ethtool.c | 51 +++++++++++++++----
+ drivers/net/ethernet/google/gve/gve_utils.c   | 16 ++++++
+ drivers/net/ethernet/google/gve/gve_utils.h   |  2 +
+ 3 files changed, 59 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/net/ethernet/google/gve/gve_ethtool.c b/drivers/net/ethernet/google/gve/gve_ethtool.c
+index 233e5946905e..139d4261cff2 100644
+--- a/drivers/net/ethernet/google/gve/gve_ethtool.c
++++ b/drivers/net/ethernet/google/gve/gve_ethtool.c
+@@ -9,6 +9,7 @@
+ #include "gve.h"
+ #include "gve_adminq.h"
+ #include "gve_dqo.h"
++#include "gve_utils.h"
+ 
+ static void gve_get_drvinfo(struct net_device *netdev,
+ 			    struct ethtool_drvinfo *info)
+@@ -157,12 +158,14 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 	u64 tmp_rx_pkts, tmp_rx_bytes, tmp_rx_skb_alloc_fail,
+ 		tmp_rx_buf_alloc_fail, tmp_rx_desc_err_dropped_pkt,
+ 		tmp_tx_pkts, tmp_tx_bytes;
+-	u64 rx_buf_alloc_fail, rx_desc_err_dropped_pkt, rx_pkts,
+-		rx_skb_alloc_fail, rx_bytes, tx_pkts, tx_bytes, tx_dropped;
++	u64 rx_buf_alloc_fail, rx_desc_err_dropped_pkt, rx_hsplit_unsplit_pkt, rx_pkts,
++		rx_skb_alloc_fail, rx_bytes, tx_pkts, tx_bytes, tx_dropped, rx_hsplit_pkt;
+ 	int stats_idx, base_stats_idx, max_stats_idx;
+ 	struct stats *report_stats;
+ 	int *rx_qid_to_stats_idx;
+ 	int *tx_qid_to_stats_idx;
++	int num_stopped_rxqs = 0;
++	int num_stopped_txqs = 0;
+ 	struct gve_priv *priv;
+ 	bool skip_nic_stats;
+ 	unsigned int start;
+@@ -179,14 +182,27 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 					    sizeof(int), GFP_KERNEL);
+ 	if (!rx_qid_to_stats_idx)
+ 		return;
++	for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
++		rx_qid_to_stats_idx[ring] = -1;
++		if (!gve_rx_was_added_to_block(priv, ring))
++			num_stopped_rxqs++;
++	}
+ 	tx_qid_to_stats_idx = kmalloc_array(num_tx_queues,
+ 					    sizeof(int), GFP_KERNEL);
+ 	if (!tx_qid_to_stats_idx) {
+ 		kfree(rx_qid_to_stats_idx);
+ 		return;
+ 	}
+-	for (rx_pkts = 0, rx_bytes = 0, rx_skb_alloc_fail = 0,
+-	     rx_buf_alloc_fail = 0, rx_desc_err_dropped_pkt = 0, ring = 0;
++	for (ring = 0; ring < num_tx_queues; ring++) {
++		tx_qid_to_stats_idx[ring] = -1;
++		if (!gve_tx_was_added_to_block(priv, ring))
++			num_stopped_txqs++;
++	}
++
++	for (rx_pkts = 0, rx_bytes = 0, rx_hsplit_pkt = 0,
++	     rx_skb_alloc_fail = 0, rx_buf_alloc_fail = 0,
++	     rx_desc_err_dropped_pkt = 0, rx_hsplit_unsplit_pkt = 0,
++	     ring = 0;
+ 	     ring < priv->rx_cfg.num_queues; ring++) {
+ 		if (priv->rx) {
+ 			do {
+@@ -249,7 +265,13 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 	/* For rx cross-reporting stats, start from nic rx stats in report */
+ 	base_stats_idx = GVE_TX_STATS_REPORT_NUM * num_tx_queues +
+ 		GVE_RX_STATS_REPORT_NUM * priv->rx_cfg.num_queues;
+-	max_stats_idx = NIC_RX_STATS_REPORT_NUM * priv->rx_cfg.num_queues +
++	/* The boundary between driver stats and NIC stats shifts if there are
++	 * stopped queues.
++	 */
++	base_stats_idx += NIC_RX_STATS_REPORT_NUM * num_stopped_rxqs +
++		NIC_TX_STATS_REPORT_NUM * num_stopped_txqs;
++	max_stats_idx = NIC_RX_STATS_REPORT_NUM *
++		(priv->rx_cfg.num_queues - num_stopped_rxqs) +
+ 		base_stats_idx;
+ 	/* Preprocess the stats report for rx, map queue id to start index */
+ 	skip_nic_stats = false;
+@@ -263,6 +285,10 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 			skip_nic_stats = true;
+ 			break;
+ 		}
++		if (queue_id < 0 || queue_id >= priv->rx_cfg.num_queues) {
++			net_err_ratelimited("Invalid rxq id in NIC stats\n");
++			continue;
++		}
+ 		rx_qid_to_stats_idx[queue_id] = stats_idx;
+ 	}
+ 	/* walk RX rings */
+@@ -295,11 +321,11 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 			data[i++] = rx->rx_copybreak_pkt;
+ 			data[i++] = rx->rx_copied_pkt;
+ 			/* stats from NIC */
+-			if (skip_nic_stats) {
++			stats_idx = rx_qid_to_stats_idx[ring];
++			if (skip_nic_stats || stats_idx < 0) {
+ 				/* skip NIC rx stats */
+ 				i += NIC_RX_STATS_REPORT_NUM;
+ 			} else {
+-				stats_idx = rx_qid_to_stats_idx[ring];
+ 				for (j = 0; j < NIC_RX_STATS_REPORT_NUM; j++) {
+ 					u64 value =
+ 						be64_to_cpu(report_stats[stats_idx + j].value);
+@@ -325,7 +351,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 
+ 	/* For tx cross-reporting stats, start from nic tx stats in report */
+ 	base_stats_idx = max_stats_idx;
+-	max_stats_idx = NIC_TX_STATS_REPORT_NUM * num_tx_queues +
++	max_stats_idx = NIC_TX_STATS_REPORT_NUM *
++		(num_tx_queues - num_stopped_txqs) +
+ 		max_stats_idx;
+ 	/* Preprocess the stats report for tx, map queue id to start index */
+ 	skip_nic_stats = false;
+@@ -339,6 +366,10 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 			skip_nic_stats = true;
+ 			break;
+ 		}
++		if (queue_id < 0 || queue_id >= num_tx_queues) {
++			net_err_ratelimited("Invalid txq id in NIC stats\n");
++			continue;
++		}
+ 		tx_qid_to_stats_idx[queue_id] = stats_idx;
+ 	}
+ 	/* walk TX rings */
+@@ -370,11 +401,11 @@ gve_get_ethtool_stats(struct net_device *netdev,
+ 			data[i++] = gve_tx_load_event_counter(priv, tx);
+ 			data[i++] = tx->dma_mapping_error;
+ 			/* stats from NIC */
+-			if (skip_nic_stats) {
++			stats_idx = tx_qid_to_stats_idx[ring];
++			if (skip_nic_stats || stats_idx < 0) {
+ 				/* skip NIC tx stats */
+ 				i += NIC_TX_STATS_REPORT_NUM;
+ 			} else {
+-				stats_idx = tx_qid_to_stats_idx[ring];
+ 				for (j = 0; j < NIC_TX_STATS_REPORT_NUM; j++) {
+ 					u64 value =
+ 						be64_to_cpu(report_stats[stats_idx + j].value);
+diff --git a/drivers/net/ethernet/google/gve/gve_utils.c b/drivers/net/ethernet/google/gve/gve_utils.c
+index 26e08d753270..e61ec887367a 100644
+--- a/drivers/net/ethernet/google/gve/gve_utils.c
++++ b/drivers/net/ethernet/google/gve/gve_utils.c
+@@ -8,6 +8,14 @@
+ #include "gve_adminq.h"
+ #include "gve_utils.h"
+ 
++bool gve_tx_was_added_to_block(struct gve_priv *priv, int queue_idx)
++{
++        struct gve_notify_block *block =
++                        &priv->ntfy_blocks[gve_tx_idx_to_ntfy(priv, queue_idx)];
++
++        return block->tx != NULL;
++}
++
+ void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
+ {
+ 	struct gve_notify_block *block =
+@@ -30,6 +38,14 @@ void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
+ 			    queue_idx);
+ }
+ 
++bool gve_rx_was_added_to_block(struct gve_priv *priv, int queue_idx)
++{
++        struct gve_notify_block *block =
++                        &priv->ntfy_blocks[gve_rx_idx_to_ntfy(priv, queue_idx)];
++
++        return block->rx != NULL;
++}
++
+ void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
+ {
+ 	struct gve_notify_block *block =
+diff --git a/drivers/net/ethernet/google/gve/gve_utils.h b/drivers/net/ethernet/google/gve/gve_utils.h
+index 324fd98a6112..45f25f0e9fa0 100644
+--- a/drivers/net/ethernet/google/gve/gve_utils.h
++++ b/drivers/net/ethernet/google/gve/gve_utils.h
+@@ -11,9 +11,11 @@
+ 
+ #include "gve.h"
+ 
++bool gve_tx_was_added_to_block(struct gve_priv *priv, int queue_idx);
+ void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx);
+ void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx);
+ 
++bool gve_rx_was_added_to_block(struct gve_priv *priv, int queue_idx);
+ void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx);
+ void gve_rx_add_to_block(struct gve_priv *priv, int queue_idx);
+ 
+-- 
+2.25.1
+
