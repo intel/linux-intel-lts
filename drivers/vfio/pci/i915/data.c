@@ -26,6 +26,7 @@ enum i915_vfio_pci_migration_data_type {
 	I915_VFIO_DATA_DESC = 0,
 	I915_VFIO_DATA_GGTT,
 	I915_VFIO_DATA_GUC,
+	I915_VFIO_DATA_MMIO,
 	I915_VFIO_DATA_DONE,
 };
 
@@ -35,6 +36,7 @@ static const char *i915_vfio_data_type_str(enum i915_vfio_pci_migration_data_typ
 	case I915_VFIO_DATA_DESC: return "DESC";
 	case I915_VFIO_DATA_GGTT: return "GGTT";
 	case I915_VFIO_DATA_GUC: return "GUC";
+	case I915_VFIO_DATA_MMIO: return "MMIO";
 	case I915_VFIO_DATA_DONE: return "DONE";
 	default: return "";
 	}
@@ -57,6 +59,9 @@ __i915_vfio_produce(struct i915_vfio_pci_migration_file *migf, unsigned int tile
 		break;
 	case I915_VFIO_DATA_GUC:
 		ops = &i915_vdev->pf_ops->fw;
+		break;
+	case I915_VFIO_DATA_MMIO:
+		ops = &i915_vdev->pf_ops->mmio;
 		break;
 	default:
 		return -EINVAL;
@@ -122,6 +127,9 @@ static int __i915_vfio_consume(struct i915_vfio_pci_migration_file *migf, unsign
 	case I915_VFIO_DATA_GUC:
 		ops = &i915_vdev->pf_ops->fw;
 		break;
+	case I915_VFIO_DATA_MMIO:
+		ops = &i915_vdev->pf_ops->mmio;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -169,6 +177,7 @@ i915_vfio_consume_##x(struct i915_vfio_pci_migration_file *migf, \
 
 __resource(ggtt, I915_VFIO_DATA_GGTT);
 __resource(fw, I915_VFIO_DATA_GUC);
+__resource(mmio, I915_VFIO_DATA_MMIO);
 
 static int i915_vfio_produce_desc(struct i915_vfio_pci_migration_file *migf)
 {
@@ -250,6 +259,8 @@ i915_vfio_pci_produce_data(struct i915_vfio_pci_migration_file *migf,
 		return i915_vfio_produce_ggtt(migf, tile);
 	case I915_VFIO_DATA_GUC:
 		return i915_vfio_produce_fw(migf, tile);
+	case I915_VFIO_DATA_MMIO:
+		return i915_vfio_produce_mmio(migf, tile);
 	default:
 		return -EINVAL;
 	}
@@ -268,6 +279,8 @@ i915_vfio_consume_data(struct i915_vfio_pci_migration_file *migf, const char __u
 		return i915_vfio_consume_ggtt(migf, hdr->tile, ubuf, len);
 	case I915_VFIO_DATA_GUC:
 		return i915_vfio_consume_fw(migf, hdr->tile, ubuf, len);
+	case I915_VFIO_DATA_MMIO:
+		return i915_vfio_consume_mmio(migf, hdr->tile, ubuf, len);
 	default:
 		return -EINVAL;
 	}

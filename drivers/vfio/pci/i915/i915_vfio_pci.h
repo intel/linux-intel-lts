@@ -97,7 +97,7 @@ struct i915_vfio_pci_migration_pf_ops {
 	int (*pause)(struct pci_dev *pf, unsigned int vfid);
 	int (*resume)(struct pci_dev *pf, unsigned int vfid);
 	int (*wait_flr_done)(struct pci_dev *pf, unsigned int vfid);
-	struct i915_vfio_pci_resource_ops ggtt, fw;
+	struct i915_vfio_pci_resource_ops ggtt, fw, mmio;
 	struct i915_vfio_pci_mappable_resource_ops lmem;
 };
 
