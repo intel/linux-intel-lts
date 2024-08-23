@@ -235,6 +235,13 @@ __visible __noreturn void __##func(struct pt_regs *regs)
 #define DEFINE_IDTENTRY_SYSVEC_SIMPLE_PIPELINED(vector, func)		\
 	DEFINE_IDTENTRY_SYSVEC_PIPELINED(vector, func)
 
+extern void (*pipeline_hv_callback_fn)(struct pt_regs *regs);
+static inline void pipeline_install_sysvec(int vector, const void *function)
+{
+	if (vector == HYPERVISOR_CALLBACK_VECTOR)
+		pipeline_hv_callback_fn = function;
+}
+
 #else  /* !CONFIG_IRQ_PIPELINE */
 
 #define DECLARE_IDTENTRY_SYSVEC_PIPELINED(vector, func)		DECLARE_IDTENTRY_SYSVEC(vector, func)
@@ -273,6 +280,8 @@ __visible noinstr void func(struct pt_regs *regs,			\
 }									\
 									\
 static noinline void __##func(struct pt_regs *regs, u32 vector)
+
+static inline void pipeline_install_sysvec(vector, function) {}
 
 #endif	/* !CONFIG_IRQ_PIPELINE */
 
@@ -523,6 +532,7 @@ static inline void fred_install_sysvec(unsigned int vector, const idtentry_t fun
 #endif
 
 #define sysvec_install(vector, function) {				\
+	pipeline_install_sysvec(vector, __##function);			\
 	if (cpu_feature_enabled(X86_FEATURE_FRED))			\
 		fred_install_sysvec(vector, function);			\
 	else								\
