@@ -14,6 +14,8 @@
 #include <asm/mshyperv.h>
 #include <asm/idtentry.h>
 
+void (*pipeline_hv_callback_fn)(struct pt_regs *regs) = NULL;
+
 static struct irq_domain *sipic_domain;
 
 static void sipic_irq_noop(struct irq_data *data) { }
@@ -74,6 +76,11 @@ static void pipeline_exit_rcu(irqentry_state_t state)
 {
 	if (state.exit_rcu)
 		ct_irq_exit();
+}
+
+static void pipeline_hv_callback(struct pt_regs *regs)
+{
+	pipeline_hv_callback_fn(regs);
 }
 
 static void do_sysvec_inband(struct irq_desc *desc, struct pt_regs *regs)
@@ -150,18 +157,9 @@ static void do_sysvec_inband(struct irq_desc *desc, struct pt_regs *regs)
 					regs);
 		break;
 #endif
-#ifdef CONFIG_ACRN_GUEST
 	case HYPERVISOR_CALLBACK_VECTOR:
-		run_sysvec_on_irqstack_cond(__sysvec_acrn_hv_callback,
-					regs);
+		run_sysvec_on_irqstack_cond(pipeline_hv_callback, regs);
 		break;
-#endif
-#ifdef CONFIG_KVM_GUEST
-	case HYPERVISOR_CALLBACK_VECTOR:
-		run_sysvec_on_irqstack_cond(__sysvec_kvm_asyncpf_interrupt,
-					    regs);
-		break;
-#endif
 	case LOCAL_TIMER_VECTOR:
 		run_sysvec_on_irqstack_cond(__sysvec_apic_timer_interrupt,
 					regs);
