@@ -119,7 +119,7 @@ static bool __in_oob_syscall(struct task_struct *tsk,
 	 * a PR_OOB_SYSCALL command (new/current call form).
 	 */
 	if (IS_ENABLED(CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE)) {
-		if (nr & __OOB_SYSCALL_BIT)
+		if (nr != -1 && nr & __OOB_SYSCALL_BIT)
 			return true;
 	}
 
