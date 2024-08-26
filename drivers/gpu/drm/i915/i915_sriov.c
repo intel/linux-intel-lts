@@ -721,31 +721,56 @@ static void pf_restore_vfs_pci_state(struct drm_i915_private *i915, unsigned int
 	}
 }
 
-#define I915_VF_PAUSE_TIMEOUT_MS 500
 #define I915_VF_REPROVISION_TIMEOUT_MS 1000
+
+static int pf_gt_save_vf_running(struct intel_gt *gt, unsigned int vfid)
+{
+	struct pci_dev *pdev = to_pci_dev(gt->i915->drm.dev);
+	struct intel_iov *iov = &gt->iov;
+
+	GEM_BUG_ON(!vfid);
+	GEM_BUG_ON(vfid > pci_num_vf(pdev));
+
+	return intel_iov_state_pause_vf_sync(iov, vfid, true);
+}
+
+static void pf_save_vfs_running(struct drm_i915_private *i915, unsigned int num_vfs)
+{
+	unsigned int saved = 0;
+	struct intel_gt *gt;
+	unsigned int gt_id;
+	unsigned int vfid;
+
+	for (vfid = 1; vfid <= num_vfs; vfid++) {
+		if (!needs_save_restore(i915, vfid)) {
+			drm_dbg(&i915->drm, "Save of VF%u running state has been skipped\n", vfid);
+			continue;
+		}
+
+		for_each_gt(gt, i915, gt_id) {
+			int err = pf_gt_save_vf_running(gt, vfid);
+
+			if (err < 0)
+				goto skip_vf;
+		}
+		saved++;
+		continue;
+skip_vf:
+		break;
+	}
+
+	drm_dbg(&i915->drm, "%u of %u VFs running state successfully saved", saved, num_vfs);
+}
 
 static int pf_gt_save_vf_guc_state(struct intel_gt *gt, unsigned int vfid)
 {
 	struct pci_dev *pdev = to_pci_dev(gt->i915->drm.dev);
 	struct intel_iov *iov = &gt->iov;
 	struct intel_iov_data *data = &iov->pf.state.data[vfid];
-	unsigned long timeout_ms = I915_VF_PAUSE_TIMEOUT_MS;
 	int ret, size;
 
 	GEM_BUG_ON(!vfid);
 	GEM_BUG_ON(vfid > pci_num_vf(pdev));
-
-	ret = intel_iov_state_pause_vf(iov, vfid);
-	if (ret) {
-		IOV_ERROR(iov, "Failed to pause VF%u: (%pe)", vfid, ERR_PTR(ret));
-		return ret;
-	}
-
-	/* FIXME: How long we should wait? */
-	if (wait_for(data->paused, timeout_ms)) {
-		IOV_ERROR(iov, "VF%u pause didn't complete within %lu ms\n", vfid, timeout_ms);
-		return -ETIMEDOUT;
-	}
 
 	ret = intel_iov_state_save_vf_size(iov, vfid);
 	if (unlikely(ret < 0)) {
@@ -891,6 +916,38 @@ static void pf_restore_vfs_irqs(struct drm_i915_private *i915, unsigned int num_
 	}
 }
 
+static int pf_gt_restore_vf_running(struct intel_gt *gt, unsigned int vfid)
+{
+	struct intel_iov *iov = &gt->iov;
+
+	if (!test_and_clear_bit(IOV_VF_PAUSE_BY_SUSPEND, &iov->pf.state.data[vfid].state))
+		return 0;
+
+	return intel_iov_state_resume_vf(iov, vfid);
+}
+
+static void pf_restore_vfs_running(struct drm_i915_private *i915, unsigned int num_vfs)
+{
+	unsigned int running = 0;
+	struct intel_gt *gt;
+	unsigned int gt_id;
+	unsigned int vfid;
+
+	for (vfid = 1; vfid <= num_vfs; vfid++) {
+		for_each_gt(gt, i915, gt_id) {
+			int err = pf_gt_restore_vf_running(gt, vfid);
+
+			if (err < 0)
+				goto skip_vf;
+		}
+		running++;
+skip_vf:
+		continue;
+	}
+
+	drm_dbg(&i915->drm, "%u of %u VFs restored to proper running state", running, num_vfs);
+}
+
 static void pf_suspend_active_vfs(struct drm_i915_private *i915)
 {
 	struct pci_dev *pdev = to_pci_dev(i915->drm.dev);
@@ -901,6 +958,7 @@ static void pf_suspend_active_vfs(struct drm_i915_private *i915)
 	if (num_vfs == 0)
 		return;
 
+	pf_save_vfs_running(i915, num_vfs);
 	pf_save_vfs_guc_state(i915, num_vfs);
 }
 
@@ -917,6 +975,7 @@ static void pf_resume_active_vfs(struct drm_i915_private *i915)
 	pf_restore_vfs_pci_state(i915, num_vfs);
 	pf_restore_vfs_guc_state(i915, num_vfs);
 	pf_restore_vfs_irqs(i915, num_vfs);
+	pf_restore_vfs_running(i915, num_vfs);
 }
 
 /**
