@@ -135,6 +135,7 @@ struct intel_iov_data {
 #define IOV_VF_NEEDS_FLR_FINISH		3
 #define IOV_VF_NEEDS_FLR_DONE_SYNC	4
 #define IOV_VF_PAUSE_IN_PROGRESS	5
+#define IOV_VF_PAUSE_BY_SUSPEND		6
 #define IOV_VF_FLR_FAILED		(BITS_PER_LONG - 1)
 	bool paused;
 	unsigned int adverse_events[IOV_THRESHOLD_MAX];
