@@ -18,6 +18,7 @@ void intel_iov_state_start_flr(struct intel_iov *iov, u32 vfid);
 bool intel_iov_state_no_flr(struct intel_iov *iov, u32 vfid);
 
 int intel_iov_state_pause_vf(struct intel_iov *iov, u32 vfid);
+bool intel_iov_state_no_pause(struct intel_iov *iov, u32 vfid);
 int intel_iov_state_resume_vf(struct intel_iov *iov, u32 vfid);
 int intel_iov_state_stop_vf(struct intel_iov *iov, u32 vfid);
 int intel_iov_state_save_vf_size(struct intel_iov *iov, u32 vfid);
