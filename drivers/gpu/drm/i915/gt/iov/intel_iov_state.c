@@ -225,6 +225,7 @@ static bool pf_process_vf(struct intel_iov *iov, u32 vfid)
 			clear_bit(IOV_VF_FLR_IN_PROGRESS, state);
 			return false;
 		}
+		clear_bit(IOV_VF_PAUSE_IN_PROGRESS, state);
 		return true;
 	}
 
@@ -392,8 +393,10 @@ static void pf_handle_vf_flr_done(struct intel_iov *iov, u32 vfid)
 static void pf_handle_vf_pause_done(struct intel_iov *iov, u32 vfid)
 {
 	struct device *dev = iov_to_dev(iov);
+	struct intel_iov_data *data = &iov->pf.state.data[vfid];
 
-	iov->pf.state.data[vfid].paused = true;
+	data->paused = true;
+	clear_bit(IOV_VF_PAUSE_IN_PROGRESS, &data->state);
 	dev_info(dev, "VF%u %s\n", vfid, "paused");
 }
 
@@ -503,6 +506,26 @@ bool intel_iov_state_no_flr(struct intel_iov *iov, u32 vfid)
 }
 
 /**
+ * intel_iov_state_no_pause - Test if VF pause is not pending nor active.
+ * @iov: the IOV struct instance
+ * @vfid: VF identifier
+ *
+ * This function is for PF only.
+ *
+ * Return: true if VF pause is not pending nor active.
+ */
+bool intel_iov_state_no_pause(struct intel_iov *iov, u32 vfid)
+{
+	struct intel_iov_data *data = &iov->pf.state.data[vfid];
+
+	GEM_BUG_ON(!intel_iov_is_pf(iov));
+	GEM_BUG_ON(vfid > pf_get_totalvfs(iov));
+	GEM_BUG_ON(!vfid);
+
+	return !test_bit(IOV_VF_PAUSE_IN_PROGRESS, &data->state) && !data->paused;
+}
+
+/**
  * intel_iov_state_pause_vf - Pause VF.
  * @iov: the IOV struct
  * @vfid: VF identifier
@@ -513,7 +536,29 @@ bool intel_iov_state_no_flr(struct intel_iov *iov, u32 vfid)
  */
 int intel_iov_state_pause_vf(struct intel_iov *iov, u32 vfid)
 {
-	return pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_PAUSE);
+	struct intel_iov_data *data = &iov->pf.state.data[vfid];
+	int err;
+
+
+	if (!intel_iov_state_no_flr(iov, vfid) || !intel_iov_state_no_pause(iov, vfid)) {
+		IOV_ERROR(iov, "VF%u cannot be paused in current state\n", vfid);
+		return -EBUSY;
+	}
+
+	if (test_and_set_bit(IOV_VF_PAUSE_IN_PROGRESS, &data->state)) {
+		IOV_ERROR(iov, "VF%u pause is already in progress\n", vfid);
+		return -EBUSY;
+	}
+
+	err = pf_control_vf(iov, vfid, GUC_PF_TRIGGER_VF_PAUSE);
+
+	if (unlikely(err < 0)) {
+		clear_bit(IOV_VF_PAUSE_IN_PROGRESS, &data->state);
+		IOV_ERROR(iov, "Failed to trigger VF%u pause (%pe)\n", vfid, ERR_PTR(err));
+		return err;
+	}
+
+	return 0;
 }
 
 /**
