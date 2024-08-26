@@ -561,6 +561,48 @@ int intel_iov_state_pause_vf(struct intel_iov *iov, u32 vfid)
 	return 0;
 }
 
+#define I915_VF_PAUSE_TIMEOUT_MS 500
+
+/**
+ * intel_iov_state_pause_vf_sync - Pause VF on one GuC, wait until the state settles.
+ * @iov: the IOV struct instance linked to target GuC
+ * @vfid: VF identifier
+ * @inferred: marks if the pause was not requested by user, but by the kernel
+ *
+ * The function issues a pause command only if the VF is not already paused or
+ * in process of pausing. Then it waits for the confirmation of pause completion.
+ * This function is for PF only.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
+int intel_iov_state_pause_vf_sync(struct intel_iov *iov, u32 vfid, bool inferred)
+{
+	struct intel_iov_data *data = &iov->pf.state.data[vfid];
+	unsigned long timeout_ms = I915_VF_PAUSE_TIMEOUT_MS;
+	int ret;
+
+	if (intel_iov_state_no_pause(iov, vfid)) {
+		ret = intel_iov_state_pause_vf(iov, vfid);
+		if (ret) {
+			IOV_ERROR(iov, "Failed to pause VF%u: (%pe)", vfid, ERR_PTR(ret));
+			return ret;
+		}
+		if (inferred)
+			set_bit(IOV_VF_PAUSE_BY_SUSPEND, &data->state);
+	}
+
+	if (!inferred)
+		clear_bit(IOV_VF_PAUSE_BY_SUSPEND, &data->state);
+
+	/* FIXME: How long we should wait? */
+	if (wait_for(data->paused, timeout_ms)) {
+		IOV_ERROR(iov, "VF%u pause didn't complete within %lu ms\n", vfid, timeout_ms);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
 /**
  * intel_iov_state_resume_vf - Resume VF.
  * @iov: the IOV struct
