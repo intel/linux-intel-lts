@@ -36,8 +36,6 @@
 0001-timers-Replace-in_irq-with-in_hardirq.patch
 0002-timers-Get-rid-of-del_singleshot_timer_sync.patch
 0003-timers-Replace-BUG_ON-s.patch
-0004-timers-Update-kernel-doc-for-various-functions.patch
-0005-timers-Use-del_timer_sync-even-on-UP.patch
 0006-timers-Rename-del_timer_sync-to-timer_delete_sync.patch
 0007-timers-Rename-del_timer-to-timer_delete.patch
 0008-timers-Silently-ignore-timers-with-a-NULL-function.patch
@@ -64,9 +62,6 @@
 # CVE-2023-2176
 0001-RDMA-core-Refactor-rdma_bind_addr.patch
 
-#CVE-2023-7042
-0001-wifi-ath10k-fix-NULL-pointer-dereference-in-ath10k_w.patch
-
 #CVE-2023-52508
 0001-nvme-fc-Prevent-null-pointer-dereference-in-nvme_fc_.patch
 
@@ -76,14 +71,8 @@
 #CVE-2023-52629
 0001-sh-push-switch-Reorder-cleanup-operations-to-avoid-u.patch
 
-#CVE-2024-26654
-0001-ALSA-sh-aica-reorder-cleanup-operations-to-avoid-UAF.patch
-
 #CVE-2023-52639
 0001-KVM-s390-vsie-fix-race-during-shadow-creation.patch
-
-#CVE-2024-26687
-0001-xen-events-close-evtchn-after-mapping-cleanup.patch
 
 #CVE-2024-26718
 0001-dm-crypt-dm-verity-disable-tasklets.patch
@@ -101,38 +90,8 @@
 #CVE-2024-26777
 0001-fbdev-sis-Error-out-if-pixclock-equals-zero.patch
 
-#CVE-2024-26881
-0001-net-hns3-fix-kernel-crash-when-1588-is-received-on-H.patch
-
-#CVE-2024-26883
-0001-bpf-Fix-stackmap-overflow-check-on-32-bit-arches.patch
-
-#CVE-2024-26885
-0001-bpf-Fix-DEVMAP_HASH-overflow-check-on-32-bit-arches.patch
-
 #CVE-2024-26900
 0001-md-fix-kmemleak-of-rdev-serial.patch
-
-#CVE-2024-26901
-0001-do_sys_name_to_handle-use-kzalloc-to-fix-kernel-info.patch
-
-#CVE-2024-26903
-0001-Bluetooth-rfcomm-Fix-null-ptr-deref-in-rfcomm_check_.patch
-
-#CVE-2024-26907
-0001-RDMA-mlx5-Fix-fortify-source-warning-while-accessing.patch
-
-#CVE-2024-26884
-0001-bpf-Fix-hashtab-overflow-check-on-32-bit-arches.patch
-
-#CVE-2024-26898
-0001-aoe-fix-the-potential-use-after-free-problem-in-aoec.patch
-
-#CVE-2024-26929
-0001-scsi-qla2xxx-Fix-double-free-of-fcport.patch
-
-#CVE-2024-26979
-0001-drm-vmwgfx-Fix-possible-null-pointer-derefence-with-.patch
 
 #CVE-2024-27013
 0001-tun-limit-printing-rate-when-illegal-packet-received.patch
@@ -145,30 +104,17 @@
 0007-netfilter-nf_tables-fix-scheduling-while-atomic-spla.patch
 0008-netfilter-nf_tables-can-t-schedule-in-nft_chain_vali.patch
 0017-netfilter-nft_set_pipapo-release-elements-in-clone-o.patch
-0018-netfilter-nf_tables-do-not-compare-internal-table-fl.patch
 0019-netfilter-nf_tables-disallow-anonymous-set-with-time.patch
 0020-netfilter-nf_tables-reject-constant-set-with-timeout.patch
 0021-netfilter-nf_tables-reject-new-basechain-after-table.patch
-0022-netfilter-nf_tables-flush-pending-destroy-work-befor.patch
-0023-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
 0024-netfilter-nf_tables-release-batch-on-table-validatio.patch
 0025-netfilter-nf_tables-release-mutex-after-nft_gc_seq_e.patch
-0026-netfilter-nf_tables-discard-table-flag-update-with-p.patch
 0027-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
 0028-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
 0029-netfilter-br_netfilter-skip-conntrack-input-hook-for.patch
 
-#CVE-2024-26934
-0001-USB-core-Fix-deadlock-in-usb_deauthorize_interface.patch
-
 #CVE-2022-48673
 0001-net-smc-Fix-possible-access-to-freed-memory-in-link-.patch
-
-#CVE-2024-35978
-0001-Bluetooth-Fix-memory-leak-in-hci_req_sync_complete.patch
-
-#CVE-2024-35982
-0001-batman-adv-Avoid-infinite-loop-trying-to-resize-loca.patch
 
 #CVE-2024-35984
 0001-i2c-smbus-fix-NULL-function-pointer-dereference.patch
