@@ -9,9 +9,11 @@
 #ifndef __SOUND_SOC_INTEL_AVS_MSGS_H
 #define __SOUND_SOC_INTEL_AVS_MSGS_H
 
+#include <linux/sizes.h>
+
 struct avs_dev;
 
-#define AVS_MAILBOX_SIZE 4096
+#define AVS_MAILBOX_SIZE SZ_4K
 
 enum avs_msg_target {
 	AVS_FW_GEN_MSG = 0,
@@ -143,12 +145,18 @@ union avs_module_msg {
 				u32 src_queue:3;
 			} bind_unbind;
 			struct {
+				/* pre-IceLake */
 				u32 wake:1;
 				u32 streaming:1;
+				/* IceLake and onwards */
+				u32 prevent_pg:1;
+				u32 prevent_local_cg:1;
 			} set_d0ix;
 		} ext;
 	};
 } __packed;
+
+#define AVS_IPC_NOT_SUPPORTED 15
 
 union avs_reply_msg {
 	u64 val;
@@ -355,21 +363,45 @@ enum avs_skl_log_priority {
 	AVS_SKL_LOG_VERBOSE,
 };
 
-struct skl_log_state {
+struct avs_skl_log_state {
 	u32 enable;
 	u32 min_priority;
 } __packed;
 
-struct skl_log_state_info {
+struct avs_skl_log_state_info {
 	u32 core_mask;
-	struct skl_log_state logs_core[];
+	struct avs_skl_log_state logs_core[];
 } __packed;
 
-struct apl_log_state_info {
+struct avs_apl_log_state_info {
 	u32 aging_timer_period;
 	u32 fifo_full_timer_period;
 	u32 core_mask;
-	struct skl_log_state logs_core[];
+	struct avs_skl_log_state logs_core[];
+} __packed;
+
+enum avs_icl_log_priority {
+	AVS_ICL_LOG_CRITICAL = 0,
+	AVS_ICL_LOG_HIGH,
+	AVS_ICL_LOG_MEDIUM,
+	AVS_ICL_LOG_LOW,
+	AVS_ICL_LOG_VERBOSE,
+};
+
+enum avs_icl_log_source {
+	AVS_ICL_LOG_INFRA = 0,
+	AVS_ICL_LOG_HAL,
+	AVS_ICL_LOG_MODULE,
+	AVS_ICL_LOG_AUDIO,
+	AVS_ICL_LOG_SENSING,
+	AVS_ICL_LOG_ULP_INFRA,
+};
+
+struct avs_icl_log_state_info {
+	u32 aging_timer_period;
+	u32 fifo_full_timer_period;
+	u32 enable;
+	u32 logs_priorities_mask[];
 } __packed;
 
 int avs_ipc_set_enable_logs(struct avs_dev *adev, u8 *log_info, size_t size);
@@ -559,6 +591,12 @@ int avs_ipc_set_system_time(struct avs_dev *adev);
 #define AVS_COPIER_MOD_UUID \
 	GUID_INIT(0x9BA00C83, 0xCA12, 0x4A83, 0x94, 0x3C, 0x1F, 0xA2, 0xE8, 0x2F, 0x9D, 0xDA)
 
+#define AVS_PEAKVOL_MOD_UUID \
+	GUID_INIT(0x8A171323, 0x94A3, 0x4E1D, 0xAF, 0xE9, 0xFE, 0x5D, 0xBA, 0xa4, 0xC3, 0x93)
+
+#define AVS_GAIN_MOD_UUID \
+	GUID_INIT(0x61BCA9A8, 0x18D0, 0x4A18, 0x8E, 0x7B, 0x26, 0x39, 0x21, 0x98, 0x04, 0xB7)
+
 #define AVS_KPBUFF_MOD_UUID \
 	GUID_INIT(0xA8A0CB32, 0x4A77, 0x4DB1, 0x85, 0xC7, 0x53, 0xD7, 0xEE, 0x07, 0xBC, 0xE6)
 
@@ -714,9 +752,9 @@ struct avs_copier_gtw_cfg {
 	union avs_connector_node_id node_id;
 	u32 dma_buffer_size;
 	u32 config_length;
-	struct {
+	union {
 		union avs_gtw_attributes attrs;
-		u32 blob[];
+		DECLARE_FLEX_ARRAY(u32, blob);
 	} config;
 } __packed;
 
@@ -725,6 +763,19 @@ struct avs_copier_cfg {
 	struct avs_audio_format out_fmt;
 	u32 feature_mask;
 	struct avs_copier_gtw_cfg gtw_cfg;
+} __packed;
+
+struct avs_volume_cfg {
+	u32 channel_id;
+	u32 target_volume;
+	u32 curve_type;
+	u32 reserved; /* alignment */
+	u64 curve_duration;
+} __packed;
+
+struct avs_peakvol_cfg {
+	struct avs_modcfg_base base;
+	struct avs_volume_cfg vols[];
 } __packed;
 
 struct avs_micsel_cfg {
@@ -771,8 +822,7 @@ struct avs_aec_cfg {
 struct avs_asrc_cfg {
 	struct avs_modcfg_base base;
 	u32 out_freq;
-	u32 rsvd0:1;
-	u32 mode:1;
+	u32 mode:2;
 	u32 rsvd2:2;
 	u32 disable_jitter_buffer:1;
 	u32 rsvd3:27;
@@ -799,5 +849,72 @@ int avs_ipc_copier_set_sink_format(struct avs_dev *adev, u16 module_id,
 				   u8 instance_id, u32 sink_id,
 				   const struct avs_audio_format *src_fmt,
 				   const struct avs_audio_format *sink_fmt);
+
+enum avs_peakvol_runtime_param {
+	AVS_PEAKVOL_VOLUME = 0,
+};
+
+enum avs_audio_curve_type {
+	AVS_AUDIO_CURVE_NONE = 0,
+	AVS_AUDIO_CURVE_WINDOWS_FADE = 1,
+};
+
+int avs_ipc_peakvol_set_volume(struct avs_dev *adev, u16 module_id, u8 instance_id,
+			       struct avs_volume_cfg *vol);
+int avs_ipc_peakvol_get_volume(struct avs_dev *adev, u16 module_id, u8 instance_id,
+			       struct avs_volume_cfg **vols, size_t *num_vols);
+
+#define AVS_PROBE_INST_ID	0
+
+enum avs_probe_runtime_param {
+	AVS_PROBE_INJECTION_DMA = 1,
+	AVS_PROBE_INJECTION_DMA_DETACH,
+	AVS_PROBE_POINTS,
+	AVS_PROBE_POINTS_DISCONNECT,
+};
+
+struct avs_probe_dma {
+	union avs_connector_node_id node_id;
+	u32 dma_buffer_size;
+} __packed;
+
+enum avs_probe_type {
+	AVS_PROBE_TYPE_INPUT = 0,
+	AVS_PROBE_TYPE_OUTPUT,
+	AVS_PROBE_TYPE_INTERNAL
+};
+
+union avs_probe_point_id {
+	u32 value;
+	struct {
+		u32 module_id:16;
+		u32 instance_id:8;
+		u32 type:2;
+		u32 index:6;
+	} id;
+} __packed;
+
+enum avs_connection_purpose {
+	AVS_CONNECTION_PURPOSE_EXTRACT = 0,
+	AVS_CONNECTION_PURPOSE_INJECT,
+	AVS_CONNECTION_PURPOSE_INJECT_REEXTRACT,
+};
+
+struct avs_probe_point_desc {
+	union avs_probe_point_id id;
+	u32 purpose;
+	union avs_connector_node_id node_id;
+} __packed;
+
+int avs_ipc_probe_get_dma(struct avs_dev *adev, struct avs_probe_dma **dmas, size_t *num_dmas);
+int avs_ipc_probe_attach_dma(struct avs_dev *adev, struct avs_probe_dma *dmas, size_t num_dmas);
+int avs_ipc_probe_detach_dma(struct avs_dev *adev, union avs_connector_node_id *node_ids,
+			     size_t num_node_ids);
+int avs_ipc_probe_get_points(struct avs_dev *adev, struct avs_probe_point_desc **descs,
+			     size_t *num_descs);
+int avs_ipc_probe_connect_points(struct avs_dev *adev, struct avs_probe_point_desc *descs,
+				 size_t num_descs);
+int avs_ipc_probe_disconnect_points(struct avs_dev *adev, union avs_probe_point_id *ids,
+				    size_t num_ids);
 
 #endif /* __SOUND_SOC_INTEL_AVS_MSGS_H */

@@ -13,10 +13,23 @@
 #include "avs.h"
 #include "topology.h"
 
+#define AVS_COND_TYPE_NONE	0
+#define AVS_COND_TYPE_AECREF	1
+
 struct avs_path {
 	u32 dma_id;
 	struct list_head ppl_list;
 	u32 state;
+
+	/* condpath navigation for standard paths */
+	struct list_head source_list;
+	struct list_head sink_list;
+
+	/* conditional path fields */
+	struct avs_path *source;
+	struct avs_path *sink;
+	struct list_head source_node;
+	struct list_head sink_node;
 
 	struct avs_tplg_path *template;
 	struct avs_dev *owner;
@@ -37,7 +50,7 @@ struct avs_path_pipeline {
 
 struct avs_path_module {
 	u16 module_id;
-	u16 instance_id;
+	u8 instance_id;
 	union avs_gtw_attributes gtw_attrs;
 
 	struct avs_tplg_module *template;

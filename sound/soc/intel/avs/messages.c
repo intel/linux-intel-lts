@@ -16,71 +16,52 @@ int avs_ipc_set_boot_config(struct avs_dev *adev, u32 dma_id, u32 purge)
 {
 	union avs_global_msg msg = AVS_GLOBAL_REQUEST(ROM_CONTROL);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.boot_cfg.rom_ctrl_msg_type = AVS_ROM_SET_BOOT_CONFIG;
 	msg.boot_cfg.dma_id = dma_id;
 	msg.boot_cfg.purge_request = purge;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_rom_msg(adev, &request);
-	if (ret)
-		avs_ipc_err(adev, &request, "set boot config", ret);
-
-	return ret;
+	return avs_dsp_send_rom_msg(adev, &request, "set boot config");
 }
 
 int avs_ipc_load_modules(struct avs_dev *adev, u16 *mod_ids, u32 num_mod_ids)
 {
 	union avs_global_msg msg = AVS_GLOBAL_REQUEST(LOAD_MULTIPLE_MODULES);
 	struct avs_ipc_msg request;
-	int ret;
 
 	msg.load_multi_mods.mod_cnt = num_mod_ids;
 	request.header = msg.val;
 	request.data = mod_ids;
 	request.size = sizeof(*mod_ids) * num_mod_ids;
 
-	ret = avs_dsp_send_msg_timeout(adev, &request, NULL, AVS_CL_TIMEOUT_MS);
-	if (ret)
-		avs_ipc_err(adev, &request, "load multiple modules", ret);
-
-	return ret;
+	return avs_dsp_send_msg_timeout(adev, &request, NULL, AVS_CL_TIMEOUT_MS,
+					"load multiple modules");
 }
 
 int avs_ipc_unload_modules(struct avs_dev *adev, u16 *mod_ids, u32 num_mod_ids)
 {
 	union avs_global_msg msg = AVS_GLOBAL_REQUEST(UNLOAD_MULTIPLE_MODULES);
 	struct avs_ipc_msg request;
-	int ret;
 
 	msg.load_multi_mods.mod_cnt = num_mod_ids;
 	request.header = msg.val;
 	request.data = mod_ids;
 	request.size = sizeof(*mod_ids) * num_mod_ids;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "unload multiple modules", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "unload multiple modules");
 }
 
 int avs_ipc_load_library(struct avs_dev *adev, u32 dma_id, u32 lib_id)
 {
 	union avs_global_msg msg = AVS_GLOBAL_REQUEST(LOAD_LIBRARY);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.load_lib.dma_id = dma_id;
 	msg.load_lib.lib_id = lib_id;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg_timeout(adev, &request, NULL, AVS_CL_TIMEOUT_MS);
-	if (ret)
-		avs_ipc_err(adev, &request, "load library", ret);
-
-	return ret;
+	return avs_dsp_send_msg_timeout(adev, &request, NULL, AVS_CL_TIMEOUT_MS, "load library");
 }
 
 int avs_ipc_create_pipeline(struct avs_dev *adev, u16 req_size, u8 priority,
@@ -88,7 +69,6 @@ int avs_ipc_create_pipeline(struct avs_dev *adev, u16 req_size, u8 priority,
 {
 	union avs_global_msg msg = AVS_GLOBAL_REQUEST(CREATE_PIPELINE);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.create_ppl.ppl_mem_size = req_size;
 	msg.create_ppl.ppl_priority = priority;
@@ -97,27 +77,18 @@ int avs_ipc_create_pipeline(struct avs_dev *adev, u16 req_size, u8 priority,
 	msg.ext.create_ppl.attributes = attributes;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "create pipeline", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "create pipeline");
 }
 
 int avs_ipc_delete_pipeline(struct avs_dev *adev, u8 instance_id)
 {
 	union avs_global_msg msg = AVS_GLOBAL_REQUEST(DELETE_PIPELINE);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.ppl.instance_id = instance_id;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "delete pipeline", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "delete pipeline");
 }
 
 int avs_ipc_set_pipeline_state(struct avs_dev *adev, u8 instance_id,
@@ -125,17 +96,12 @@ int avs_ipc_set_pipeline_state(struct avs_dev *adev, u8 instance_id,
 {
 	union avs_global_msg msg = AVS_GLOBAL_REQUEST(SET_PIPELINE_STATE);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.set_ppl_state.ppl_id = instance_id;
 	msg.set_ppl_state.state = state;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "set pipeline state", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "set pipeline state");
 }
 
 int avs_ipc_get_pipeline_state(struct avs_dev *adev, u8 instance_id,
@@ -149,13 +115,9 @@ int avs_ipc_get_pipeline_state(struct avs_dev *adev, u8 instance_id,
 	msg.get_ppl_state.ppl_id = instance_id;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg(adev, &request, &reply);
-	if (ret) {
-		avs_ipc_err(adev, &request, "get pipeline state", ret);
-		return ret;
-	}
-
-	*state = reply.rsp.ext.get_ppl_state.state;
+	ret = avs_dsp_send_msg(adev, &request, &reply, "get pipeline state");
+	if (!ret)
+		*state = reply.rsp.ext.get_ppl_state.state;
 	return ret;
 }
 
@@ -183,7 +145,6 @@ int avs_ipc_init_instance(struct avs_dev *adev, u16 module_id, u8 instance_id,
 {
 	union avs_module_msg msg = AVS_MODULE_REQUEST(INIT_INSTANCE);
 	struct avs_ipc_msg request;
-	int ret;
 
 	msg.module_id = module_id;
 	msg.instance_id = instance_id;
@@ -197,11 +158,7 @@ int avs_ipc_init_instance(struct avs_dev *adev, u16 module_id, u8 instance_id,
 	request.data = param;
 	request.size = param_size;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "init instance", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "init instance");
 }
 
 /*
@@ -222,17 +179,12 @@ int avs_ipc_delete_instance(struct avs_dev *adev, u16 module_id, u8 instance_id)
 {
 	union avs_module_msg msg = AVS_MODULE_REQUEST(DELETE_INSTANCE);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.module_id = module_id;
 	msg.instance_id = instance_id;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "delete instance", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "delete instance");
 }
 
 /*
@@ -252,7 +204,6 @@ int avs_ipc_bind(struct avs_dev *adev, u16 module_id, u8 instance_id,
 {
 	union avs_module_msg msg = AVS_MODULE_REQUEST(BIND);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.module_id = module_id;
 	msg.instance_id = instance_id;
@@ -262,11 +213,7 @@ int avs_ipc_bind(struct avs_dev *adev, u16 module_id, u8 instance_id,
 	msg.ext.bind_unbind.src_queue = src_queue;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "bind modules", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "bind modules");
 }
 
 /*
@@ -286,7 +233,6 @@ int avs_ipc_unbind(struct avs_dev *adev, u16 module_id, u8 instance_id,
 {
 	union avs_module_msg msg = AVS_MODULE_REQUEST(UNBIND);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.module_id = module_id;
 	msg.instance_id = instance_id;
@@ -296,11 +242,7 @@ int avs_ipc_unbind(struct avs_dev *adev, u16 module_id, u8 instance_id,
 	msg.ext.bind_unbind.src_queue = src_queue;
 	request.header = msg.val;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "unbind modules", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "unbind modules");
 }
 
 static int __avs_ipc_set_large_config(struct avs_dev *adev, u16 module_id, u8 instance_id,
@@ -309,7 +251,6 @@ static int __avs_ipc_set_large_config(struct avs_dev *adev, u16 module_id, u8 in
 {
 	union avs_module_msg msg = AVS_MODULE_REQUEST(LARGE_CONFIG_SET);
 	struct avs_ipc_msg request;
-	int ret;
 
 	msg.module_id = module_id;
 	msg.instance_id = instance_id;
@@ -322,11 +263,7 @@ static int __avs_ipc_set_large_config(struct avs_dev *adev, u16 module_id, u8 in
 	request.data = request_data;
 	request.size = request_size;
 
-	ret = avs_dsp_send_msg(adev, &request, NULL);
-	if (ret)
-		avs_ipc_err(adev, &request, "large config set", ret);
-
-	return ret;
+	return avs_dsp_send_msg(adev, &request, NULL, "large config set");
 }
 
 int avs_ipc_set_large_config(struct avs_dev *adev, u16 module_id,
@@ -398,9 +335,8 @@ int avs_ipc_get_large_config(struct avs_dev *adev, u16 module_id, u8 instance_id
 	request.size = request_size;
 	reply.size = AVS_MAILBOX_SIZE;
 
-	ret = avs_dsp_send_msg(adev, &request, &reply);
+	ret = avs_dsp_send_msg(adev, &request, &reply, "large config get");
 	if (ret) {
-		avs_ipc_err(adev, &request, "large config get", ret);
 		kfree(reply.data);
 		return ret;
 	}
@@ -422,7 +358,6 @@ int avs_ipc_set_dx(struct avs_dev *adev, u32 core_mask, bool powerup)
 	union avs_module_msg msg = AVS_MODULE_REQUEST(SET_DX);
 	struct avs_ipc_msg request;
 	struct avs_dxstate_info dx;
-	int ret;
 
 	dx.core_mask = core_mask;
 	dx.dx_mask = powerup ? core_mask : 0;
@@ -430,11 +365,7 @@ int avs_ipc_set_dx(struct avs_dev *adev, u32 core_mask, bool powerup)
 	request.data = &dx;
 	request.size = sizeof(dx);
 
-	ret = avs_dsp_send_pm_msg(adev, &request, NULL, true);
-	if (ret)
-		avs_ipc_err(adev, &request, "set dx", ret);
-
-	return ret;
+	return avs_dsp_send_pm_msg(adev, &request, NULL, true, "set dx");
 }
 
 /*
@@ -447,18 +378,14 @@ int avs_ipc_set_d0ix(struct avs_dev *adev, bool enable_pg, bool streaming)
 {
 	union avs_module_msg msg = AVS_MODULE_REQUEST(SET_D0IX);
 	struct avs_ipc_msg request = {{0}};
-	int ret;
 
 	msg.ext.set_d0ix.wake = enable_pg;
 	msg.ext.set_d0ix.streaming = streaming;
+	msg.ext.set_d0ix.prevent_pg = !enable_pg;
 
 	request.header = msg.val;
 
-	ret = avs_dsp_send_pm_msg(adev, &request, NULL, false);
-	if (ret)
-		avs_ipc_err(adev, &request, "set d0ix", ret);
-
-	return ret;
+	return avs_dsp_send_pm_msg(adev, &request, NULL, false, "set d0ix");
 }
 
 int avs_ipc_get_fw_config(struct avs_dev *adev, struct avs_fw_cfg *cfg)
@@ -685,37 +612,6 @@ int avs_ipc_get_modules_info(struct avs_dev *adev, struct avs_mods_info **info)
 	return 0;
 }
 
-int avs_ipc_set_enable_logs(struct avs_dev *adev, u8 *log_info, size_t size)
-{
-	int ret;
-
-	ret = avs_ipc_set_large_config(adev, AVS_BASEFW_MOD_ID, AVS_BASEFW_INST_ID,
-				       AVS_BASEFW_ENABLE_LOGS, log_info, size);
-	if (ret)
-		dev_err(adev->dev, "enable logs failed: %d\n", ret);
-
-	return ret;
-}
-
-int avs_ipc_set_system_time(struct avs_dev *adev)
-{
-	struct avs_sys_time sys_time;
-	int ret;
-	u64 us;
-
-	/* firmware expects UTC time in micro seconds */
-	us = ktime_to_us(ktime_get());
-	sys_time.val_l = us & UINT_MAX;
-	sys_time.val_u = us >> 32;
-
-	ret = avs_ipc_set_large_config(adev, AVS_BASEFW_MOD_ID, AVS_BASEFW_INST_ID,
-				       AVS_BASEFW_SYSTEM_TIME, (u8 *)&sys_time, sizeof(sys_time));
-	if (ret)
-		dev_err(adev->dev, "set system time failed: %d\n", ret);
-
-	return ret;
-}
-
 int avs_ipc_copier_set_sink_format(struct avs_dev *adev, u16 module_id,
 				   u8 instance_id, u32 sink_id,
 				   const struct avs_audio_format *src_fmt,
@@ -732,3 +628,132 @@ int avs_ipc_copier_set_sink_format(struct avs_dev *adev, u16 module_id,
 					AVS_COPIER_SET_SINK_FORMAT,
 					(u8 *)&cpr_fmt, sizeof(cpr_fmt));
 }
+
+int avs_ipc_peakvol_set_volume(struct avs_dev *adev, u16 module_id, u8 instance_id,
+			       struct avs_volume_cfg *vol)
+{
+	return avs_ipc_set_large_config(adev, module_id, instance_id, AVS_PEAKVOL_VOLUME, (u8 *)vol,
+					sizeof(*vol));
+}
+
+int avs_ipc_peakvol_get_volume(struct avs_dev *adev, u16 module_id, u8 instance_id,
+			       struct avs_volume_cfg **vols, size_t *num_vols)
+{
+	size_t payload_size;
+	u8 *payload;
+	int ret;
+
+	ret = avs_ipc_get_large_config(adev, module_id, instance_id, AVS_PEAKVOL_VOLUME, NULL, 0,
+				       &payload, &payload_size);
+	if (ret)
+		return ret;
+
+	/* Non-zero payload expected for PEAKVOL_VOLUME. */
+	if (!payload_size)
+		return -EREMOTEIO;
+
+	*vols = (struct avs_volume_cfg *)payload;
+	*num_vols = payload_size / sizeof(**vols);
+
+	return 0;
+}
+
+#ifdef CONFIG_DEBUG_FS
+int avs_ipc_set_enable_logs(struct avs_dev *adev, u8 *log_info, size_t size)
+{
+	return avs_ipc_set_large_config(adev, AVS_BASEFW_MOD_ID, AVS_BASEFW_INST_ID,
+					AVS_BASEFW_ENABLE_LOGS, log_info, size);
+}
+
+int avs_ipc_set_system_time(struct avs_dev *adev)
+{
+	struct avs_sys_time sys_time;
+	u64 us;
+
+	/* firmware expects UTC time in micro seconds */
+	us = ktime_to_us(ktime_get());
+	sys_time.val_l = us & UINT_MAX;
+	sys_time.val_u = us >> 32;
+
+	return avs_ipc_set_large_config(adev, AVS_BASEFW_MOD_ID, AVS_BASEFW_INST_ID,
+					AVS_BASEFW_SYSTEM_TIME, (u8 *)&sys_time, sizeof(sys_time));
+}
+
+int avs_ipc_probe_get_dma(struct avs_dev *adev, struct avs_probe_dma **dmas, size_t *num_dmas)
+{
+	size_t payload_size;
+	u32 module_id;
+	u8 *payload;
+	int ret;
+
+	module_id = avs_get_module_id(adev, &AVS_PROBE_MOD_UUID);
+
+	ret = avs_ipc_get_large_config(adev, module_id, AVS_PROBE_INST_ID, AVS_PROBE_INJECTION_DMA,
+				       NULL, 0, &payload, &payload_size);
+	if (ret)
+		return ret;
+
+	*dmas = (struct avs_probe_dma *)payload;
+	*num_dmas = payload_size / sizeof(**dmas);
+
+	return 0;
+}
+
+int avs_ipc_probe_attach_dma(struct avs_dev *adev, struct avs_probe_dma *dmas, size_t num_dmas)
+{
+	u32 module_id = avs_get_module_id(adev, &AVS_PROBE_MOD_UUID);
+
+	return avs_ipc_set_large_config(adev, module_id, AVS_PROBE_INST_ID, AVS_PROBE_INJECTION_DMA,
+					(u8 *)dmas, array_size(sizeof(*dmas), num_dmas));
+}
+
+int avs_ipc_probe_detach_dma(struct avs_dev *adev, union avs_connector_node_id *node_ids,
+			     size_t num_node_ids)
+{
+	u32 module_id = avs_get_module_id(adev, &AVS_PROBE_MOD_UUID);
+
+	return avs_ipc_set_large_config(adev, module_id, AVS_PROBE_INST_ID,
+					AVS_PROBE_INJECTION_DMA_DETACH, (u8 *)node_ids,
+					array_size(sizeof(*node_ids), num_node_ids));
+}
+
+int avs_ipc_probe_get_points(struct avs_dev *adev, struct avs_probe_point_desc **descs,
+			     size_t *num_descs)
+{
+	size_t payload_size;
+	u32 module_id;
+	u8 *payload;
+	int ret;
+
+	module_id = avs_get_module_id(adev, &AVS_PROBE_MOD_UUID);
+
+	ret = avs_ipc_get_large_config(adev, module_id, AVS_PROBE_INST_ID, AVS_PROBE_POINTS, NULL,
+				       0, &payload, &payload_size);
+	if (ret)
+		return ret;
+
+	*descs = (struct avs_probe_point_desc *)payload;
+	*num_descs = payload_size / sizeof(**descs);
+
+	return 0;
+}
+
+int avs_ipc_probe_connect_points(struct avs_dev *adev, struct avs_probe_point_desc *descs,
+				 size_t num_descs)
+{
+	u32 module_id = avs_get_module_id(adev, &AVS_PROBE_MOD_UUID);
+
+	return avs_ipc_set_large_config(adev, module_id, AVS_PROBE_INST_ID, AVS_PROBE_POINTS,
+					(u8 *)descs, array_size(sizeof(*descs), num_descs));
+}
+
+int avs_ipc_probe_disconnect_points(struct avs_dev *adev, union avs_probe_point_id *ids,
+				    size_t num_ids)
+{
+	u32 module_id = avs_get_module_id(adev, &AVS_PROBE_MOD_UUID);
+
+	return avs_ipc_set_large_config(adev, module_id, AVS_PROBE_INST_ID,
+					AVS_PROBE_POINTS_DISCONNECT, (u8 *)ids,
+					array_size(sizeof(*ids), num_ids));
+}
+#endif

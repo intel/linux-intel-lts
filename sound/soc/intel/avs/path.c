@@ -10,6 +10,7 @@
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include "avs.h"
+#include "control.h"
 #include "path.h"
 #include "topology.h"
 
@@ -86,7 +87,7 @@ static bool avs_test_hw_params(struct snd_pcm_hw_params *params,
 	return (params_rate(params) == fmt->sampling_freq &&
 		params_channels(params) == fmt->num_channels &&
 		params_physical_width(params) == fmt->bit_depth &&
-		params_width(params) == fmt->valid_bit_depth);
+		snd_pcm_hw_params_bits(params) == fmt->valid_bit_depth);
 }
 
 static struct avs_tplg_path *
@@ -108,6 +109,79 @@ avs_path_find_variant(struct avs_dev *adev,
 		if (variant->fe_fmt && avs_test_hw_params(fe_params, variant->fe_fmt) &&
 		    variant->be_fmt && avs_test_hw_params(be_params, variant->be_fmt))
 			return variant;
+	}
+
+	return NULL;
+}
+
+static struct avs_tplg_path *
+avs_condpath_find_variant(struct avs_dev *adev,
+			  struct avs_tplg_path_template *template,
+			  struct avs_path *source, struct avs_path *sink)
+{
+	struct avs_tplg_path *variant;
+
+	list_for_each_entry(variant, &template->path_list, node) {
+		if (variant->source_path_id == source->template->id &&
+		    variant->sink_path_id == sink->template->id)
+			return variant;
+	}
+
+	return NULL;
+}
+
+static bool avs_tplg_path_template_id_equal(struct avs_tplg_path_template_id *id,
+					    struct avs_tplg_path_template_id *id2)
+{
+	return id->id == id2->id && !strcmp(id->tplg_name, id2->tplg_name);
+}
+
+static struct avs_path *
+avs_condpath_find_match(struct avs_dev *adev,
+			struct avs_tplg_path_template *template,
+			struct avs_path *path, int dir)
+{
+	struct avs_tplg_path_template_id *id, *id2;
+
+	if (dir) {
+		id = &template->source;
+		id2 = &template->sink;
+	} else {
+		id = &template->sink;
+		id2 = &template->source;
+	}
+
+	/* Check whether this path is either source or sink of condpath template. */
+	if (id->id != path->template->owner->id ||
+	    strcmp(id->tplg_name, path->template->owner->owner->name))
+		return NULL;
+
+	/* Unidirectional condpaths are allowed. */
+	if (avs_tplg_path_template_id_equal(id, id2))
+		return path;
+
+	/* Now find the counterpart. */
+	return avs_path_find_path(adev, id2->tplg_name, id2->id);
+}
+
+static struct avs_path *
+avs_condpath_find_conflict(struct avs_dev *adev, u32 cond_type,
+			   struct avs_path *path, int dir)
+{
+	struct avs_path *pos, *target;
+
+	if (cond_type != AVS_COND_TYPE_NONE) {
+		spin_lock(&adev->path_list_lock);
+		list_for_each_entry(pos, &adev->path_list, node) {
+			if (pos->template->owner->cond_type != cond_type)
+				continue;
+			target = dir ? pos->source : pos->sink;
+			if (path == target) {
+				spin_unlock(&adev->path_list_lock);
+				return pos;
+			}
+		}
+		spin_unlock(&adev->path_list_lock);
 	}
 
 	return NULL;
@@ -236,11 +310,11 @@ static int avs_copier_create(struct avs_dev *adev, struct avs_path_module *mod)
 	/* Every config-BLOB contains gateway attributes. */
 	if (data_size)
 		cfg_size -= sizeof(cfg->gtw_cfg.config.attrs);
+	if (cfg_size > AVS_MAILBOX_SIZE)
+		return -EINVAL;
 
-	cfg = kzalloc(cfg_size, GFP_KERNEL);
-	if (!cfg)
-		return -ENOMEM;
-
+	cfg = adev->modcfg_buf;
+	memset(cfg, 0, cfg_size);
 	cfg->base.cpc = t->cfg_base->cpc;
 	cfg->base.ibs = t->cfg_base->ibs;
 	cfg->base.obs = t->cfg_base->obs;
@@ -253,14 +327,72 @@ static int avs_copier_create(struct avs_dev *adev, struct avs_path_module *mod)
 	/* config_length in DWORDs */
 	cfg->gtw_cfg.config_length = DIV_ROUND_UP(data_size, 4);
 	if (data)
-		memcpy(&cfg->gtw_cfg.config, data, data_size);
+		memcpy(&cfg->gtw_cfg.config.blob, data, data_size);
 
 	mod->gtw_attrs = cfg->gtw_cfg.config.attrs;
 
 	ret = avs_dsp_init_module(adev, mod->module_id, mod->owner->instance_id,
 				  t->core_id, t->domain, cfg, cfg_size,
 				  &mod->instance_id);
-	kfree(cfg);
+	return ret;
+}
+
+static struct avs_control_data *avs_get_module_control(struct avs_path_module *mod)
+{
+	struct avs_tplg_module *t = mod->template;
+	struct avs_tplg_path_template *path_tmpl;
+	struct snd_soc_dapm_widget *w;
+	int i;
+
+	path_tmpl = t->owner->owner->owner;
+	w = path_tmpl->w;
+
+	for (i = 0; i < w->num_kcontrols; i++) {
+		struct avs_control_data *ctl_data;
+		struct soc_mixer_control *mc;
+
+		mc = (struct soc_mixer_control *)w->kcontrols[i]->private_value;
+		ctl_data = (struct avs_control_data *)mc->dobj.private;
+		if (ctl_data->id == t->ctl_id)
+			return ctl_data;
+	}
+
+	return NULL;
+}
+
+static int avs_peakvol_create(struct avs_dev *adev, struct avs_path_module *mod)
+{
+	struct avs_tplg_module *t = mod->template;
+	struct avs_control_data *ctl_data;
+	struct avs_peakvol_cfg *cfg;
+	int volume = S32_MAX;
+	size_t cfg_size;
+	int ret;
+
+	ctl_data = avs_get_module_control(mod);
+	if (ctl_data)
+		volume = ctl_data->volume;
+
+	/* As 2+ channels controls are unsupported, have a single block for all channels. */
+	cfg_size = struct_size(cfg, vols, 1);
+	if (cfg_size > AVS_MAILBOX_SIZE)
+		return -EINVAL;
+
+	cfg = adev->modcfg_buf;
+	memset(cfg, 0, cfg_size);
+	cfg->base.cpc = t->cfg_base->cpc;
+	cfg->base.ibs = t->cfg_base->ibs;
+	cfg->base.obs = t->cfg_base->obs;
+	cfg->base.is_pages = t->cfg_base->is_pages;
+	cfg->base.audio_fmt = *t->in_fmt;
+	cfg->vols[0].target_volume = volume;
+	cfg->vols[0].channel_id = AVS_ALL_CHANNELS_MASK;
+	cfg->vols[0].curve_type = AVS_AUDIO_CURVE_NONE;
+	cfg->vols[0].curve_duration = 0;
+
+	ret = avs_dsp_init_module(adev, mod->module_id, mod->owner->instance_id, t->core_id,
+				  t->domain, cfg, cfg_size, &mod->instance_id);
+
 	return ret;
 }
 
@@ -308,6 +440,7 @@ static int avs_asrc_create(struct avs_dev *adev, struct avs_path_module *mod)
 	struct avs_tplg_module *t = mod->template;
 	struct avs_asrc_cfg cfg;
 
+	memset(&cfg, 0, sizeof(cfg));
 	cfg.base.cpc = t->cfg_base->cpc;
 	cfg.base.ibs = t->cfg_base->ibs;
 	cfg.base.obs = t->cfg_base->obs;
@@ -418,12 +551,13 @@ static int avs_modext_create(struct avs_dev *adev, struct avs_path_module *mod)
 	int ret, i;
 
 	num_pins = tcfg->generic.num_input_pins + tcfg->generic.num_output_pins;
-	cfg_size = sizeof(*cfg) + sizeof(*cfg->pin_fmts) * num_pins;
+	cfg_size = struct_size(cfg, pin_fmts, num_pins);
 
-	cfg = kzalloc(cfg_size, GFP_KERNEL);
-	if (!cfg)
-		return -ENOMEM;
+	if (cfg_size > AVS_MAILBOX_SIZE)
+		return -EINVAL;
 
+	cfg = adev->modcfg_buf;
+	memset(cfg, 0, cfg_size);
 	cfg->base.cpc = t->cfg_base->cpc;
 	cfg->base.ibs = t->cfg_base->ibs;
 	cfg->base.obs = t->cfg_base->obs;
@@ -445,7 +579,6 @@ static int avs_modext_create(struct avs_dev *adev, struct avs_path_module *mod)
 	ret = avs_dsp_init_module(adev, mod->module_id, mod->owner->instance_id,
 				  t->core_id, t->domain, cfg, cfg_size,
 				  &mod->instance_id);
-	kfree(cfg);
 	return ret;
 }
 
@@ -465,6 +598,8 @@ static struct avs_module_create avs_module_create[] = {
 	{ &AVS_MIXOUT_MOD_UUID, avs_modbase_create },
 	{ &AVS_KPBUFF_MOD_UUID, avs_modbase_create },
 	{ &AVS_COPIER_MOD_UUID, avs_copier_create },
+	{ &AVS_PEAKVOL_MOD_UUID, avs_peakvol_create },
+	{ &AVS_GAIN_MOD_UUID, avs_peakvol_create },
 	{ &AVS_MICSEL_MOD_UUID, avs_micsel_create },
 	{ &AVS_MUX_MOD_UUID, avs_mux_create },
 	{ &AVS_UPDWMIX_MOD_UUID, avs_updown_mix_create },
@@ -724,6 +859,10 @@ static int avs_path_init(struct avs_dev *adev, struct avs_path *path,
 	path->dma_id = dma_id;
 	INIT_LIST_HEAD(&path->ppl_list);
 	INIT_LIST_HEAD(&path->node);
+	INIT_LIST_HEAD(&path->source_list);
+	INIT_LIST_HEAD(&path->sink_list);
+	INIT_LIST_HEAD(&path->source_node);
+	INIT_LIST_HEAD(&path->sink_node);
 
 	/* create all the pipelines */
 	list_for_each_entry(tppl, &template->ppl_list, node) {
@@ -807,12 +946,177 @@ err:
 	return ERR_PTR(ret);
 }
 
+static void avs_condpath_free(struct avs_dev *adev, struct avs_path *path)
+{
+	int ret;
+
+	list_del(&path->source_node);
+	list_del(&path->sink_node);
+
+	ret = avs_path_reset(path);
+	if (ret < 0)
+		dev_err(adev->dev, "reset condpath failed: %d\n", ret);
+
+	ret = avs_path_unbind(path);
+	if (ret < 0)
+		dev_err(adev->dev, "unbind condpath failed: %d\n", ret);
+
+	avs_path_free_unlocked(path);
+}
+
+static struct avs_path *avs_condpath_create(struct avs_dev *adev, u32 dma_id,
+					    struct avs_tplg_path *template,
+					    struct avs_path *source,
+					    struct avs_path *sink)
+{
+	struct avs_path *path;
+	int ret;
+
+	path = avs_path_create_unlocked(adev, dma_id, template);
+	if (IS_ERR(path))
+		return path;
+
+	ret = avs_path_bind(path);
+	if (ret)
+		goto err;
+
+	ret = avs_path_reset(path);
+	if (ret)
+		goto err;
+
+	path->source = source;
+	path->sink = sink;
+	list_add_tail(&path->source_node, &source->source_list);
+	list_add_tail(&path->sink_node, &sink->sink_list);
+
+	return path;
+err:
+	avs_path_free_unlocked(path);
+	return ERR_PTR(ret);
+}
+
+static int avs_condpath_walk(struct avs_dev *adev, struct avs_path *path, int dir)
+{
+	struct avs_tplg_path_template *template;
+	struct avs_soc_component *acomp;
+	struct avs_tplg_path *variant;
+	struct avs_path **other, *conflict;
+	struct avs_path *source, *sink;
+	struct avs_path *cpath;
+	unsigned long type, types = 0;
+	int max, i;
+
+	if (dir) {
+		source = path;
+		other = &sink;
+	} else {
+		sink = path;
+		other = &source;
+	}
+
+	/* First create all non-conflicting condpaths. */
+	list_for_each_entry(acomp, &adev->comp_list, node) {
+		for (i = 0; i < acomp->tplg->num_condpath_tmpls; i++) {
+			template = &acomp->tplg->condpath_tmpls[i];
+
+			/* Do not create unidirectional condpaths twice */
+			if (avs_tplg_path_template_id_equal(&template->source,
+							    &template->sink) && dir)
+				continue;
+
+			if (template->cond_type != AVS_COND_TYPE_NONE) {
+				/* Save conflicting types to check later on. */
+				types |= BIT(template->cond_type);
+				continue;
+			}
+
+			*other = avs_condpath_find_match(adev, template, path, dir);
+			if (!*other)
+				continue;
+			variant = avs_condpath_find_variant(adev, template, source, sink);
+			if (!variant)
+				continue;
+
+			cpath = avs_condpath_create(adev, 0, variant, source, sink);
+			if (IS_ERR(cpath))
+				return PTR_ERR(cpath);
+		}
+	}
+	/* Now deal with exclusive condpaths. */
+	for_each_set_bit(type, &types, 32) {
+		variant = NULL;
+		*other = NULL;
+
+		conflict = avs_condpath_find_conflict(adev, type, path, dir);
+		if (conflict) {
+			/* Does existing conflict allow for override? */
+			if (!conflict->template->owner->overridable)
+				continue;
+			max = conflict->template->owner->priority;
+		} else {
+			max = -1;
+		}
+
+		/* Find best match - with highest priority. */
+		list_for_each_entry(acomp, &adev->comp_list, node) {
+			for (i = 0; i < acomp->tplg->num_condpath_tmpls; i++) {
+				template = &acomp->tplg->condpath_tmpls[i];
+
+				/* Do not create unidirectional condpaths twice */
+				if (avs_tplg_path_template_id_equal(&template->source,
+								    &template->sink) && dir)
+					continue;
+
+				if (template->cond_type != type || template->priority <= max)
+					continue;
+
+				*other = avs_condpath_find_match(adev, template, path, dir);
+				if (!*other)
+					continue;
+				variant = avs_condpath_find_variant(adev, template, source,
+								    sink);
+				if (variant)
+					max = template->priority;
+			}
+		}
+
+		if (variant) {
+			cpath = avs_condpath_create(adev, 0, variant, source, sink);
+			if (IS_ERR(cpath))
+				return PTR_ERR(cpath);
+		}
+	}
+
+	return 0;
+}
+
+/* caller responsible for holding adev->path_mutex */
+static int avs_condpath_walk_all(struct avs_dev *adev, struct avs_path *path)
+{
+	int ret;
+
+	ret = avs_condpath_walk(adev, path, 1);
+	if (ret)
+		return ret;
+
+	return avs_condpath_walk(adev, path, 0);
+}
+
 void avs_path_free(struct avs_path *path)
 {
+	struct avs_path *cpath, *csave;
 	struct avs_dev *adev = path->owner;
 
 	mutex_lock(&adev->path_mutex);
+
+	/* Free all condpaths this path spawned. */
+	list_for_each_entry_safe(cpath, csave, &path->source_list, source_node)
+		avs_condpath_free(path->owner, cpath);
+	list_for_each_entry_safe(cpath, csave, &path->sink_list, sink_node)
+		avs_condpath_free(path->owner, cpath);
+
 	avs_path_free_unlocked(path);
+
 	mutex_unlock(&adev->path_mutex);
 }
 
@@ -823,6 +1127,7 @@ struct avs_path *avs_path_create(struct avs_dev *adev, u32 dma_id,
 {
 	struct avs_tplg_path *variant;
 	struct avs_path *path;
+	int ret;
 
 	variant = avs_path_find_variant(adev, template, fe_params, be_params);
 	if (!variant) {
@@ -836,7 +1141,16 @@ struct avs_path *avs_path_create(struct avs_dev *adev, u32 dma_id,
 	mutex_lock(&adev->comp_list_mutex);
 
 	path = avs_path_create_unlocked(adev, dma_id, variant);
+	if (IS_ERR(path))
+		goto exit;
 
+	ret = avs_condpath_walk_all(adev, path);
+	if (ret) {
+		avs_path_free_unlocked(path);
+		path = ERR_PTR(ret);
+	}
+
+exit:
 	mutex_unlock(&adev->comp_list_mutex);
 	mutex_unlock(&adev->path_mutex);
 
@@ -962,11 +1276,18 @@ int avs_path_reset(struct avs_path *path)
 int avs_path_pause(struct avs_path *path)
 {
 	struct avs_path_pipeline *ppl;
+	struct avs_path *cpath;
 	struct avs_dev *adev = path->owner;
 	int ret;
 
 	if (path->state == AVS_PPL_STATE_PAUSED)
 		return 0;
+
+	/* if either source or sink stops, so do attached conditional paths */
+	list_for_each_entry(cpath, &path->source_list, source_node)
+		avs_path_pause(cpath);
+	list_for_each_entry(cpath, &path->sink_list, sink_node)
+		avs_path_pause(cpath);
 
 	list_for_each_entry_reverse(ppl, &path->ppl_list, node) {
 		ret = avs_ipc_set_pipeline_state(adev, ppl->instance_id,
@@ -985,6 +1306,7 @@ int avs_path_pause(struct avs_path *path)
 int avs_path_run(struct avs_path *path, int trigger)
 {
 	struct avs_path_pipeline *ppl;
+	struct avs_path *cpath;
 	struct avs_dev *adev = path->owner;
 	int ret;
 
@@ -1005,5 +1327,20 @@ int avs_path_run(struct avs_path *path, int trigger)
 	}
 
 	path->state = AVS_PPL_STATE_RUNNING;
+
+	/* granular pipeline triggering not intended for conditional paths */
+	if (trigger == AVS_TPLG_TRIGGER_AUTO) {
+		/* run conditional paths only if source and sink are both running */
+		list_for_each_entry(cpath, &path->source_list, source_node)
+			if (cpath->source->state == AVS_PPL_STATE_RUNNING &&
+			    cpath->sink->state == AVS_PPL_STATE_RUNNING)
+				avs_path_run(cpath, trigger);
+
+		list_for_each_entry(cpath, &path->sink_list, sink_node)
+			if (cpath->source->state == AVS_PPL_STATE_RUNNING &&
+			    cpath->sink->state == AVS_PPL_STATE_RUNNING)
+				avs_path_run(cpath, trigger);
+	}
+
 	return 0;
 }
