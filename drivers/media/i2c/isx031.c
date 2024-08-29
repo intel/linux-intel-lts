@@ -283,7 +283,7 @@ static void isx031_update_pad_format(const struct isx031_mode *mode,
 
 static int isx031_start_streaming(struct isx031 *isx031)
 {
-	int retries, ret;
+	int ret;
 	struct i2c_client *client = isx031->client;
 	const struct isx031_reg_list *reg_list;
 
