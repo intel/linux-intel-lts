@@ -74,3 +74,28 @@
 
 # CVE-2024-26783
 0001-mm-vmscan-fix-a-bug-calling-wakeup_kswapd-with-a-wro.patch
+
+#CVE-2024-42155
+0001-s390-pkey-Wipe-copies-of-protected-and-secure-keys.patch
+
+#CVE-2024-42226
+0001-usb-xhci-prevent-potential-failure-in-handle_tx_even.patch
+
+#CVE-2024-41096
+0001-PCI-MSI-Fix-UAF-in-msi_capability_init.patch
+
+#CVE-2024-41098
+0001-ata-libata-core-Fix-null-pointer-dereference-on-erro.patch
+
+#CVE-2024-42239
+0001-bpf-Fail-bpf_timer_cancel-when-callback-is-being-can.patch
+
+#CVE-2024-42241
+0001-mm-shmem-disable-PMD-sized-page-cache-if-needed.patch
+0002-mm-filemap-make-MAX_PAGECACHE_ORDER-acceptable-to-xa.patch
+
+#CVE-2024-42314
+0001-btrfs-fix-extent-map-use-after-free-when-adding-page.patch
+
+#CVE-2024-43859
+0001-f2fs-fix-to-truncate-preallocated-blocks-in-f2fs_fil.patch
