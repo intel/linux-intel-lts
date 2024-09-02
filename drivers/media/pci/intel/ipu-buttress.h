@@ -126,6 +126,5 @@ void ipu_buttress_csi_port_config(struct ipu_device *isp,
 int ipu_buttress_restore(struct ipu_device *isp);
 
 int ipu_buttress_isys_freq_set(void *data, u64 val);
-int ipu_buttress_psys_freq_get(void *data, u64 *val);
 int ipu_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len);
 #endif /* IPU_BUTTRESS_H */

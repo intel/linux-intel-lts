@@ -81,7 +81,6 @@ static int ipu6_psys_gpc_global_enable_set(void *data, u64 val)
 			psys_gpcs->gpc[idx].route = 0;
 			psys_gpcs->gpc[idx].source = 0;
 		}
-
 		pm_runtime_put(&psys->adev->dev);
 	} else {
 		/* Set gpc reg and start all gpc here.

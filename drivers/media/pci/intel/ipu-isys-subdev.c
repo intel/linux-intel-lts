@@ -520,8 +520,10 @@ int ipu_isys_subdev_link_validate(struct v4l2_subdev *sd,
 {
 	struct v4l2_subdev *source_sd =
 	    media_entity_to_v4l2_subdev(link->source->entity);
-	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(media_entity_pipeline(&sd->entity));
+	struct media_pipeline *mp = media_entity_pipeline(&sd->entity);
+	struct ipu_isys_pipeline *ip = container_of(mp,
+						    struct ipu_isys_pipeline,
+						    pipe);
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 
 	if (!source_sd)
@@ -597,7 +599,7 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 			 int src_pad_idx,
 			 int sink_pad_idx)
 {
-	int i;
+	unsigned int i;
 	int rval = -EINVAL;
 
 	mutex_init(&asd->mutex);

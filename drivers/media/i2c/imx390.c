@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2021-2023 Intel Corporation.
+// Copyright (c) 2021-2024 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -1702,7 +1702,6 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 {
 	struct imx390 *imx390 = to_imx390(sd);
 	const struct imx390_mode *mode;
-	int ret = 0;
 	s32 vblank_def;
 	s64 hblank;
 	int i;
@@ -1907,7 +1906,7 @@ static int imx390_identify_module(struct imx390 *imx390)
 	return 0;
 }
 
-static int imx390_remove(struct i2c_client *client)
+static void imx390_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx390 *imx390 = to_imx390(sd);
@@ -1918,29 +1917,7 @@ static int imx390_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&imx390->mutex);
 
-	return 0;
 }
-
-irqreturn_t imx390_threaded_irq_fn(int irq, void *dev_id)
-{
-	struct imx390 *imx390 = dev_id;
-
-	mutex_lock(&imx390->mutex);
-	if (imx390->streaming == false) {
-		gpio_set_value(imx390->platform_data->gpios[0], 0);
-		goto imx390_irq_handled;
-	}
-	if (imx390->strobe_source->val == V4L2_FLASH_STROBE_SOURCE_EXTERNAL) {
-
-		gpio_set_value(imx390->platform_data->gpios[0],
-				gpio_get_value(imx390->platform_data->irq_pin));
-	}
-
-imx390_irq_handled:
-	mutex_unlock(&imx390->mutex);
-	return IRQ_HANDLED;
-}
-
 static int imx390_probe(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd;
