@@ -16,3 +16,12 @@ config VIDEO_INTEL_IPU6
 
 	  To compile this driver, say Y here! It contains 2 modules -
 	  intel_ipu6 and intel_ipu6_isys.
+
+config VIDEO_INTEL_IPU6_ISYS_RESET
+	depends on VIDEO_INTEL_IPU6
+	bool "Enable isys reset"
+	default n
+	help
+	  Support ISYS reset in IPU6.
+
+	  To compile this driver, say Y here!

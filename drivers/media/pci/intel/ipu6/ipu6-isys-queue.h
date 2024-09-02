@@ -33,6 +33,9 @@ struct ipu6_isys_queue {
 struct ipu6_isys_buffer {
 	struct list_head head;
 	atomic_t str2mmio_flag;
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	atomic_t skipframe_flag;
+#endif
 };
 
 struct ipu6_isys_video_buffer {

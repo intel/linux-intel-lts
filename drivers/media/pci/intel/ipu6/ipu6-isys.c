@@ -1084,6 +1084,10 @@ static int isys_probe(struct auxiliary_device *auxdev,
 
 	mutex_init(&isys->mutex);
 	mutex_init(&isys->stream_mutex);
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	mutex_init(&isys->reset_mutex);
+	isys->in_reset = false;
+#endif
 
 	spin_lock_init(&isys->listlock);
 	INIT_LIST_HEAD(&isys->framebuflist);
@@ -1126,6 +1130,9 @@ static int isys_probe(struct auxiliary_device *auxdev,
 	if (ret)
 		goto free_fw_msg_bufs;
 
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	mutex_destroy(&isys->reset_mutex);
+#endif
 	ipu6_mmu_hw_cleanup(adev->mmu);
 
 	return 0;
@@ -1180,6 +1187,9 @@ static void isys_remove(struct auxiliary_device *auxdev)
 	isys_iwake_watermark_cleanup(isys);
 	mutex_destroy(&isys->stream_mutex);
 	mutex_destroy(&isys->mutex);
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	mutex_destroy(&isys->reset_mutex);
+#endif
 }
 
 struct fwmsg {

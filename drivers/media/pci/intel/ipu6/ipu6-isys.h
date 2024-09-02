@@ -167,6 +167,11 @@ struct ipu6_isys {
 	struct list_head framebuflist_fw;
 	struct v4l2_async_notifier notifier;
 	struct isys_iwake_watermark iwake_watermark;
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	struct mutex reset_mutex;
+	bool in_reset;
+	bool in_stop_streaming;
+#endif
 };
 
 struct isys_fw_msgs {
