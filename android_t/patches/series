@@ -270,10 +270,6 @@
 #CVE-2024-39489
 0001-ipv6-sr-fix-memleak-in-seg6_hmac_init_algo.patch
 
-#CVE-2024-39493
-0001-crypto-qat-fix-double-free-during-reset.patch
-0002-crypto-qat-resolve-race-condition-during-AER-recover.patch
-
 #CVE-2024-40960
 0001-ipv6-prevent-possible-NULL-dereference-in-rt6_probe.patch
 
@@ -350,14 +346,8 @@
 #CVE-2024-42155
 0001-s390-pkey-Wipe-copies-of-protected-and-secure-keys.patch
 
-#CVE-2024-42156
-0001-s390-pkey-Wipe-copies-of-clear-key-structures-on-fai.patch
-
 #CVE-2024-42157
 0001-s390-pkey-Wipe-sensitive-data-on-failure.patch
-
-#CVE-2024-42158
-0001-s390-pkey-Use-kfree_sensitive-to-fix-Coccinelle-warn.patch
 
 #CVE-2024-42101
 0001-drm-nouveau-fix-null-pointer-dereference-in-nouveau_.patch
@@ -388,9 +378,6 @@
 
 #CVE-2024-41087
 0001-ata-libata-core-Fix-double-free-on-error.patch
-
-#CVE-2024-41089
-0001-drm-nouveau-dispnv04-fix-null-pointer-dereference-in.patch
 
 #CVE-2024-41092
 0001-drm-i915-gt-Fix-potential-UAF-by-revoke-of-fence-reg.patch
