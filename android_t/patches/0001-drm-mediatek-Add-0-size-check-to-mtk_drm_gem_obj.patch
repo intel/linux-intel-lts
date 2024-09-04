@@ -1,0 +1,42 @@
+From e4ff17bdb71230d87535de0fcd0b1e96031b184d Mon Sep 17 00:00:00 2001
+From: Justin Green <greenjustin@chromium.org>
+Date: Thu, 7 Mar 2024 13:00:51 -0500
+Subject: [PATCH] drm/mediatek: Add 0 size check to mtk_drm_gem_obj
+
+[ Upstream commit 1e4350095e8ab2577ee05f8c3b044e661b5af9a0 ]
+
+Add a check to mtk_drm_gem_init if we attempt to allocate a GEM object
+of 0 bytes. Currently, no such check exists and the kernel will panic if
+a userspace application attempts to allocate a 0x0 GBM buffer.
+
+Tested by attempting to allocate a 0x0 GBM buffer on an MT8188 and
+verifying that we now return EINVAL.
+
+Fixes: 119f5173628a ("drm/mediatek: Add DRM Driver for Mediatek SoC MT8173.")
+Signed-off-by: Justin Green <greenjustin@chromium.org>
+Reviewed-by: AngeloGioacchino Del Regno <angelogioacchino.delregno@collabora.com>
+Reviewed-by: CK Hu <ck.hu@mediatek.com>
+Link: https://patchwork.kernel.org/project/dri-devel/patch/20240307180051.4104425-1-greenjustin@chromium.org/
+Signed-off-by: Chun-Kuang Hu <chunkuang.hu@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/gpu/drm/mediatek/mtk_drm_gem.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/gpu/drm/mediatek/mtk_drm_gem.c b/drivers/gpu/drm/mediatek/mtk_drm_gem.c
+index b983adffa392..88bdb8eeba81 100644
+--- a/drivers/gpu/drm/mediatek/mtk_drm_gem.c
++++ b/drivers/gpu/drm/mediatek/mtk_drm_gem.c
+@@ -33,6 +33,9 @@ static struct mtk_drm_gem_obj *mtk_drm_gem_init(struct drm_device *dev,
+ 
+ 	size = round_up(size, PAGE_SIZE);
+ 
++	if (size == 0)
++		return ERR_PTR(-EINVAL);
++
+ 	mtk_gem_obj = kzalloc(sizeof(*mtk_gem_obj), GFP_KERNEL);
+ 	if (!mtk_gem_obj)
+ 		return ERR_PTR(-ENOMEM);
+-- 
+2.25.1
+

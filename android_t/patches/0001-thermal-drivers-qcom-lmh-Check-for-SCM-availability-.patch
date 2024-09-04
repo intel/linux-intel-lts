@@ -1,0 +1,42 @@
+From 48e113de600ff05fcdab1054f3004c2304c09f06 Mon Sep 17 00:00:00 2001
+From: Konrad Dybcio <konrad.dybcio@linaro.org>
+Date: Sat, 9 Mar 2024 14:15:03 +0100
+Subject: [PATCH] thermal/drivers/qcom/lmh: Check for SCM availability at probe
+
+commit d9d3490c48df572edefc0b64655259eefdcbb9be upstream.
+
+Up until now, the necessary scm availability check has not been
+performed, leading to possible null pointer dereferences (which did
+happen for me on RB1).
+
+Fix that.
+
+Fixes: 53bca371cdf7 ("thermal/drivers/qcom: Add support for LMh driver")
+Cc: <stable@vger.kernel.org>
+Reviewed-by: Dmitry Baryshkov <dmitry.baryshkov@linaro.org>
+Reviewed-by: Bjorn Andersson <andersson@kernel.org>
+Signed-off-by: Konrad Dybcio <konrad.dybcio@linaro.org>
+Signed-off-by: Daniel Lezcano <daniel.lezcano@linaro.org>
+Link: https://lore.kernel.org/r/20240308-topic-rb1_lmh-v2-2-bac3914b0fe3@linaro.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/thermal/qcom/lmh.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/thermal/qcom/lmh.c b/drivers/thermal/qcom/lmh.c
+index cc94d8b005d4..36f0e92d92ce 100644
+--- a/drivers/thermal/qcom/lmh.c
++++ b/drivers/thermal/qcom/lmh.c
+@@ -92,6 +92,9 @@ static int lmh_probe(struct platform_device *pdev)
+ 	int temp_low, temp_high, temp_arm, cpu_id, ret;
+ 	u32 node_id;
+ 
++	if (!qcom_scm_is_available())
++		return -EPROBE_DEFER;
++
+ 	lmh_data = devm_kzalloc(dev, sizeof(*lmh_data), GFP_KERNEL);
+ 	if (!lmh_data)
+ 		return -ENOMEM;
+-- 
+2.25.1
+

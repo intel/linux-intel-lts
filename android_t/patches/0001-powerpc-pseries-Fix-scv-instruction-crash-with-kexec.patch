@@ -1,0 +1,79 @@
+From 533323ba4079d68a8f0bb80a577b98b6276e75fb Mon Sep 17 00:00:00 2001
+From: Nicholas Piggin <npiggin@gmail.com>
+Date: Tue, 25 Jun 2024 23:40:47 +1000
+Subject: [PATCH] powerpc/pseries: Fix scv instruction crash with kexec
+
+commit 21a741eb75f80397e5f7d3739e24d7d75e619011 upstream.
+
+kexec on pseries disables AIL (reloc_on_exc), required for scv
+instruction support, before other CPUs have been shut down. This means
+they can execute scv instructions after AIL is disabled, which causes an
+interrupt at an unexpected entry location that crashes the kernel.
+
+Change the kexec sequence to disable AIL after other CPUs have been
+brought down.
+
+As a refresher, the real-mode scv interrupt vector is 0x17000, and the
+fixed-location head code probably couldn't easily deal with implementing
+such high addresses so it was just decided not to support that interrupt
+at all.
+
+Fixes: 7fa95f9adaee ("powerpc/64s: system call support for scv/rfscv instructions")
+Cc: stable@vger.kernel.org # v5.9+
+Reported-by: Sourabh Jain <sourabhjain@linux.ibm.com>
+Closes: https://lore.kernel.org/3b4b2943-49ad-4619-b195-bc416f1d1409@linux.ibm.com
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Tested-by: Gautam Menghani <gautam@linux.ibm.com>
+Tested-by: Sourabh Jain <sourabhjain@linux.ibm.com>
+Link: https://msgid.link/20240625134047.298759-1-npiggin@gmail.com
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/powerpc/kexec/core_64.c           | 11 +++++++++++
+ arch/powerpc/platforms/pseries/setup.c |  1 -
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/kexec/core_64.c b/arch/powerpc/kexec/core_64.c
+index 89c069d664a5..09d59628a499 100644
+--- a/arch/powerpc/kexec/core_64.c
++++ b/arch/powerpc/kexec/core_64.c
+@@ -26,6 +26,7 @@
+ #include <asm/mmu.h>
+ #include <asm/sections.h>	/* _end */
+ #include <asm/prom.h>
++#include <asm/setup.h>
+ #include <asm/smp.h>
+ #include <asm/hw_breakpoint.h>
+ #include <asm/asm-prototypes.h>
+@@ -317,6 +318,16 @@ void default_machine_kexec(struct kimage *image)
+ 	if (!kdump_in_progress())
+ 		kexec_prepare_cpus();
+ 
++#ifdef CONFIG_PPC_PSERIES
++	/*
++	 * This must be done after other CPUs have shut down, otherwise they
++	 * could execute the 'scv' instruction, which is not supported with
++	 * reloc disabled (see configure_exceptions()).
++	 */
++	if (firmware_has_feature(FW_FEATURE_SET_MODE))
++		pseries_disable_reloc_on_exc();
++#endif
++
+ 	printk("kexec: Starting switchover sequence.\n");
+ 
+ 	/* switch to a staticly allocated stack.  Based on irq stack code.
+diff --git a/arch/powerpc/platforms/pseries/setup.c b/arch/powerpc/platforms/pseries/setup.c
+index d25053755c8b..42496fe0a980 100644
+--- a/arch/powerpc/platforms/pseries/setup.c
++++ b/arch/powerpc/platforms/pseries/setup.c
+@@ -1088,7 +1088,6 @@ define_machine(pseries) {
+ 	.machine_check_early	= pseries_machine_check_realmode,
+ 	.machine_check_exception = pSeries_machine_check_exception,
+ #ifdef CONFIG_KEXEC_CORE
+-	.machine_kexec          = pSeries_machine_kexec,
+ 	.kexec_cpu_down         = pseries_kexec_cpu_down,
+ #endif
+ #ifdef CONFIG_MEMORY_HOTPLUG_SPARSE
+-- 
+2.25.1
+

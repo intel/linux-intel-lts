@@ -1,0 +1,42 @@
+From 9c70213ed09f791114bf6295761489b619bba6ca Mon Sep 17 00:00:00 2001
+From: Waiman Long <longman@redhat.com>
+Date: Tue, 25 Jun 2024 20:16:39 -0400
+Subject: [PATCH] mm: prevent derefencing NULL ptr in pfn_section_valid()
+
+[ Upstream commit 82f0b6f041fad768c28b4ad05a683065412c226e ]
+
+Commit 5ec8e8ea8b77 ("mm/sparsemem: fix race in accessing
+memory_section->usage") changed pfn_section_valid() to add a READ_ONCE()
+call around "ms->usage" to fix a race with section_deactivate() where
+ms->usage can be cleared.  The READ_ONCE() call, by itself, is not enough
+to prevent NULL pointer dereference.  We need to check its value before
+dereferencing it.
+
+Link: https://lkml.kernel.org/r/20240626001639.1350646-1-longman@redhat.com
+Fixes: 5ec8e8ea8b77 ("mm/sparsemem: fix race in accessing memory_section->usage")
+Signed-off-by: Waiman Long <longman@redhat.com>
+Cc: Charan Teja Kalla <quic_charante@quicinc.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ include/linux/mmzone.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
+index 110c14d11f72..4838a4738c9d 100644
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -1687,8 +1687,9 @@ static inline int subsection_map_index(unsigned long pfn)
+ static inline int pfn_section_valid(struct mem_section *ms, unsigned long pfn)
+ {
+ 	int idx = subsection_map_index(pfn);
++	struct mem_section_usage *usage = READ_ONCE(ms->usage);
+ 
+-	return test_bit(idx, ms->usage->subsection_map);
++	return usage ? test_bit(idx, usage->subsection_map) : 0;
+ }
+ #else
+ static inline int pfn_section_valid(struct mem_section *ms, unsigned long pfn)
+-- 
+2.25.1
+

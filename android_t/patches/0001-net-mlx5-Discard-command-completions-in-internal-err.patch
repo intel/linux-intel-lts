@@ -1,0 +1,73 @@
+From e6956f3fd18f200ab7a79714be6a956818652e49 Mon Sep 17 00:00:00 2001
+From: Akiva Goldberger <agoldberger@nvidia.com>
+Date: Thu, 9 May 2024 14:29:51 +0300
+Subject: [PATCH] net/mlx5: Discard command completions in internal error
+
+[ Upstream commit db9b31aa9bc56ff0d15b78f7e827d61c4a096e40 ]
+
+Fix use after free when FW completion arrives while device is in
+internal error state. Avoid calling completion handler in this case,
+since the device will flush the command interface and trigger all
+completions manually.
+
+Kernel log:
+------------[ cut here ]------------
+refcount_t: underflow; use-after-free.
+...
+RIP: 0010:refcount_warn_saturate+0xd8/0xe0
+...
+Call Trace:
+<IRQ>
+? __warn+0x79/0x120
+? refcount_warn_saturate+0xd8/0xe0
+? report_bug+0x17c/0x190
+? handle_bug+0x3c/0x60
+? exc_invalid_op+0x14/0x70
+? asm_exc_invalid_op+0x16/0x20
+? refcount_warn_saturate+0xd8/0xe0
+cmd_ent_put+0x13b/0x160 [mlx5_core]
+mlx5_cmd_comp_handler+0x5f9/0x670 [mlx5_core]
+cmd_comp_notifier+0x1f/0x30 [mlx5_core]
+notifier_call_chain+0x35/0xb0
+atomic_notifier_call_chain+0x16/0x20
+mlx5_eq_async_int+0xf6/0x290 [mlx5_core]
+notifier_call_chain+0x35/0xb0
+atomic_notifier_call_chain+0x16/0x20
+irq_int_handler+0x19/0x30 [mlx5_core]
+__handle_irq_event_percpu+0x4b/0x160
+handle_irq_event+0x2e/0x80
+handle_edge_irq+0x98/0x230
+__common_interrupt+0x3b/0xa0
+common_interrupt+0x7b/0xa0
+</IRQ>
+<TASK>
+asm_common_interrupt+0x22/0x40
+
+Fixes: 51d138c2610a ("net/mlx5: Fix health error state handling")
+Signed-off-by: Akiva Goldberger <agoldberger@nvidia.com>
+Reviewed-by: Moshe Shemesh <moshe@nvidia.com>
+Signed-off-by: Tariq Toukan <tariqt@nvidia.com>
+Link: https://lore.kernel.org/r/20240509112951.590184-6-tariqt@nvidia.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/cmd.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
+index 41c15a65fb45..8d36616924cf 100644
+--- a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
+@@ -1533,6 +1533,9 @@ static int cmd_comp_notifier(struct notifier_block *nb,
+ 	dev = container_of(cmd, struct mlx5_core_dev, cmd);
+ 	eqe = data;
+ 
++	if (dev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR)
++		return NOTIFY_DONE;
++
+ 	mlx5_cmd_comp_handler(dev, be32_to_cpu(eqe->data.cmd.vector), false);
+ 
+ 	return NOTIFY_OK;
+-- 
+2.25.1
+

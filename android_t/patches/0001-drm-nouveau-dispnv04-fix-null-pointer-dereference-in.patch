@@ -1,0 +1,37 @@
+From 5d52b40d2bdf6728e06ee6b5d69103f58e11244c Mon Sep 17 00:00:00 2001
+From: Ma Ke <make24@iscas.ac.cn>
+Date: Tue, 25 Jun 2024 16:18:28 +0800
+Subject: [PATCH] drm/nouveau/dispnv04: fix null pointer dereference in
+ nv17_tv_get_ld_modes
+
+commit 66edf3fb331b6c55439b10f9862987b0916b3726 upstream.
+
+In nv17_tv_get_ld_modes(), the return value of drm_mode_duplicate() is
+assigned to mode, which will lead to a possible NULL pointer dereference
+on failure of drm_mode_duplicate(). Add a check to avoid npd.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Ma Ke <make24@iscas.ac.cn>
+Signed-off-by: Lyude Paul <lyude@redhat.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240625081828.2620794-1-make24@iscas.ac.cn
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/gpu/drm/nouveau/dispnv04/tvnv17.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/gpu/drm/nouveau/dispnv04/tvnv17.c b/drivers/gpu/drm/nouveau/dispnv04/tvnv17.c
+index be28e7bd7490..f0251866e6dd 100644
+--- a/drivers/gpu/drm/nouveau/dispnv04/tvnv17.c
++++ b/drivers/gpu/drm/nouveau/dispnv04/tvnv17.c
+@@ -208,6 +208,8 @@ static int nv17_tv_get_ld_modes(struct drm_encoder *encoder,
+ 		struct drm_display_mode *mode;
+ 
+ 		mode = drm_mode_duplicate(encoder->dev, tv_mode);
++		if (!mode)
++			continue;
+ 
+ 		mode->clock = tv_norm->tv_enc_mode.vrefresh *
+ 			mode->htotal / 1000 *
+-- 
+2.25.1
+
