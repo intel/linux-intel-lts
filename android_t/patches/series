@@ -528,3 +528,23 @@
 #CVE-2024-43817
 0001-net-missing-check-virtio.patch
 
+#CVE-2024-43824
+0001-PCI-endpoint-pci-epf-test-Make-use-of-cached-epc_fea.patch
+
+#CVE-2024-43861
+0001-net-usb-qmi_wwan-fix-memory-leak-for-not-ip-packets.patch
+
+#CVE-2024-43863
+0001-drm-vmwgfx-Fix-a-deadlock-in-dma-buf-fence-polling.patch
+
+#CVE-2024-43871
+0001-devres-Fix-memory-leakage-caused-by-driver-API-devm_.patch
+
+#CVE-2024-43873
+0001-vhost-vsock-always-initialize-seqpacket_allow.patch
+
+#CVE-2024-43882
+0001-exec-Fix-ToCToU-between-perm-check-and-set-uid-gid-u.patch
+
+#CVE-2024-44944
+0001-netfilter-ctnetlink-use-helper-function-to-calculate.patch
