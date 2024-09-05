@@ -1,0 +1,54 @@
+From a8a7fa837283e16bd4dc4c5e720c04431f0f9855 Mon Sep 17 00:00:00 2001
+From: Zheyu Ma <zheyuma97@gmail.com>
+Date: Tue, 5 Apr 2022 10:50:18 +0100
+Subject: [PATCH] media: lgdt3306a: Add a check against null-pointer-def
+
+commit c1115ddbda9c930fba0fdd062e7a8873ebaf898d upstream.
+
+The driver should check whether the client provides the platform_data.
+
+The following log reveals it:
+
+[   29.610324] BUG: KASAN: null-ptr-deref in kmemdup+0x30/0x40
+[   29.610730] Read of size 40 at addr 0000000000000000 by task bash/414
+[   29.612820] Call Trace:
+[   29.613030]  <TASK>
+[   29.613201]  dump_stack_lvl+0x56/0x6f
+[   29.613496]  ? kmemdup+0x30/0x40
+[   29.613754]  print_report.cold+0x494/0x6b7
+[   29.614082]  ? kmemdup+0x30/0x40
+[   29.614340]  kasan_report+0x8a/0x190
+[   29.614628]  ? kmemdup+0x30/0x40
+[   29.614888]  kasan_check_range+0x14d/0x1d0
+[   29.615213]  memcpy+0x20/0x60
+[   29.615454]  kmemdup+0x30/0x40
+[   29.615700]  lgdt3306a_probe+0x52/0x310
+[   29.616339]  i2c_device_probe+0x951/0xa90
+
+Link: https://lore.kernel.org/linux-media/20220405095018.3993578-1-zheyuma97@gmail.com
+Signed-off-by: Zheyu Ma <zheyuma97@gmail.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/media/dvb-frontends/lgdt3306a.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/media/dvb-frontends/lgdt3306a.c b/drivers/media/dvb-frontends/lgdt3306a.c
+index f6e83a38738d..79174336faec 100644
+--- a/drivers/media/dvb-frontends/lgdt3306a.c
++++ b/drivers/media/dvb-frontends/lgdt3306a.c
+@@ -2177,6 +2177,11 @@ static int lgdt3306a_probe(struct i2c_client *client,
+ 	struct dvb_frontend *fe;
+ 	int ret;
+ 
++	if (!client->dev.platform_data) {
++		dev_err(&client->dev, "platform data is mandatory\n");
++		return -EINVAL;
++	}
++
+ 	config = kmemdup(client->dev.platform_data,
+ 			 sizeof(struct lgdt3306a_config), GFP_KERNEL);
+ 	if (config == NULL) {
+-- 
+2.25.1
+
