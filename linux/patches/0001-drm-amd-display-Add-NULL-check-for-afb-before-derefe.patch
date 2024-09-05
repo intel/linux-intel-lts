@@ -1,0 +1,62 @@
+From 95e0bd59999126188cd2cd83064b936fd3e68473 Mon Sep 17 00:00:00 2001
+From: Srinivasan Shanmugam <srinivasan.shanmugam@amd.com>
+Date: Wed, 5 Jun 2024 21:13:40 +0530
+Subject: [PATCH] drm/amd/display: Add NULL check for 'afb' before
+ dereferencing in amdgpu_dm_plane_handle_cursor_update
+
+This commit adds a null check for the 'afb' variable in the
+amdgpu_dm_plane_handle_cursor_update function. Previously, 'afb' was
+assumed to be null, but was used later in the code without a null check.
+This could potentially lead to a null pointer dereference.
+
+Fixes the below:
+drivers/gpu/drm/amd/amdgpu/../display/amdgpu_dm/amdgpu_dm_plane.c:1298 amdgpu_dm_plane_handle_cursor_update() error: we previously assumed 'afb' could be null (see line 1252)
+
+Cc: Tom Chung <chiahsuan.chung@amd.com>
+Cc: Rodrigo Siqueira <Rodrigo.Siqueira@amd.com>
+Cc: Roman Li <roman.li@amd.com>
+Cc: Hersen Wu <hersenxs.wu@amd.com>
+Cc: Alex Hung <alex.hung@amd.com>
+Cc: Aurabindo Pillai <aurabindo.pillai@amd.com>
+Cc: Harry Wentland <harry.wentland@amd.com>
+Signed-off-by: Srinivasan Shanmugam <srinivasan.shanmugam@amd.com>
+Reviewed-by: Harry Wentland <harry.wentland@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ .../drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c  | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c
+index cc74dd69acf2..eb77de95f26f 100644
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c
+@@ -1225,14 +1225,22 @@ void amdgpu_dm_plane_handle_cursor_update(struct drm_plane *plane,
+ {
+ 	struct amdgpu_device *adev = drm_to_adev(plane->dev);
+ 	struct amdgpu_framebuffer *afb = to_amdgpu_framebuffer(plane->state->fb);
+-	struct drm_crtc *crtc = afb ? plane->state->crtc : old_plane_state->crtc;
+-	struct dm_crtc_state *crtc_state = crtc ? to_dm_crtc_state(crtc->state) : NULL;
+-	struct amdgpu_crtc *amdgpu_crtc = to_amdgpu_crtc(crtc);
+-	uint64_t address = afb ? afb->address : 0;
++	struct drm_crtc *crtc;
++	struct dm_crtc_state *crtc_state;
++	struct amdgpu_crtc *amdgpu_crtc;
++	u64 address;
+ 	struct dc_cursor_position position = {0};
+ 	struct dc_cursor_attributes attributes;
+ 	int ret;
+ 
++	if (!afb)
++		return;
++
++	crtc = plane->state->crtc ? plane->state->crtc : old_plane_state->crtc;
++	crtc_state = crtc ? to_dm_crtc_state(crtc->state) : NULL;
++	amdgpu_crtc = to_amdgpu_crtc(crtc);
++	address = afb->address;
++
+ 	if (!plane->state->fb && !old_plane_state->fb)
+ 		return;
+ 
+-- 
+2.25.1
+

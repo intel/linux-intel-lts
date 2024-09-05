@@ -1,0 +1,42 @@
+From 649e6c9b3a0dbc42b7dd35db683d871450d6882e Mon Sep 17 00:00:00 2001
+From: Ma Jun <Jun.Ma2@amd.com>
+Date: Sat, 11 May 2024 15:48:02 +0800
+Subject: [PATCH] drm/amdgpu: Fix the null pointer dereference to ras_manager
+
+[ Upstream commit 4c11d30c95576937c6c35e6f29884761f2dddb43 ]
+
+Check ras_manager before using it
+
+Signed-off-by: Ma Jun <Jun.Ma2@amd.com>
+Reviewed-by: Lijo Lazar <lijo.lazar@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu_ras.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_ras.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_ras.c
+index 67b75ff0f7c3..7cba98f8bbdc 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_ras.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_ras.c
+@@ -1780,12 +1780,15 @@ static void amdgpu_ras_interrupt_process_handler(struct work_struct *work)
+ int amdgpu_ras_interrupt_dispatch(struct amdgpu_device *adev,
+ 		struct ras_dispatch_if *info)
+ {
+-	struct ras_manager *obj = amdgpu_ras_find_obj(adev, &info->head);
+-	struct ras_ih_data *data = &obj->ih_data;
++	struct ras_manager *obj;
++	struct ras_ih_data *data;
+ 
++	obj = amdgpu_ras_find_obj(adev, &info->head);
+ 	if (!obj)
+ 		return -EINVAL;
+ 
++	data = &obj->ih_data;
++
+ 	if (data->inuse == 0)
+ 		return 0;
+ 
+-- 
+2.25.1
+

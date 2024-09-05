@@ -1,0 +1,103 @@
+From 8e1f6f4ee1aab2c75fa889523c5eb5511f12d3c7 Mon Sep 17 00:00:00 2001
+From: Ma Jun <Jun.Ma2@amd.com>
+Date: Thu, 9 May 2024 15:51:35 +0800
+Subject: [PATCH] drm/amdgpu/pm: Fix the null pointer dereference in
+ apply_state_adjust_rules
+
+[ Upstream commit d19fb10085a49b77578314f69fff21562f7cd054 ]
+
+Check the pointer value to fix potential null pointer
+dereference
+
+Acked-by: Yang Wang<kevinyang.wang@amd.com>
+Signed-off-by: Ma Jun <Jun.Ma2@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ .../gpu/drm/amd/pm/powerplay/hwmgr/smu7_hwmgr.c    |  7 +++++--
+ .../gpu/drm/amd/pm/powerplay/hwmgr/smu8_hwmgr.c    | 14 ++++++++------
+ .../gpu/drm/amd/pm/powerplay/hwmgr/vega10_hwmgr.c  |  7 +++++--
+ 3 files changed, 18 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu7_hwmgr.c b/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu7_hwmgr.c
+index aa91730e4eaf..d02046de09e5 100644
+--- a/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu7_hwmgr.c
++++ b/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu7_hwmgr.c
+@@ -3316,8 +3316,7 @@ static int smu7_apply_state_adjust_rules(struct pp_hwmgr *hwmgr,
+ 			const struct pp_power_state *current_ps)
+ {
+ 	struct amdgpu_device *adev = hwmgr->adev;
+-	struct smu7_power_state *smu7_ps =
+-				cast_phw_smu7_power_state(&request_ps->hardware);
++	struct smu7_power_state *smu7_ps;
+ 	uint32_t sclk;
+ 	uint32_t mclk;
+ 	struct PP_Clocks minimum_clocks = {0};
+@@ -3334,6 +3333,10 @@ static int smu7_apply_state_adjust_rules(struct pp_hwmgr *hwmgr,
+ 	uint32_t latency;
+ 	bool latency_allowed = false;
+ 
++	smu7_ps = cast_phw_smu7_power_state(&request_ps->hardware);
++	if (!smu7_ps)
++		return -EINVAL;
++
+ 	data->battery_state = (PP_StateUILabel_Battery ==
+ 			request_ps->classification.ui_label);
+ 	data->mclk_ignore_signal = false;
+diff --git a/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu8_hwmgr.c b/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu8_hwmgr.c
+index b015a601b385..eb744401e056 100644
+--- a/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu8_hwmgr.c
++++ b/drivers/gpu/drm/amd/pm/powerplay/hwmgr/smu8_hwmgr.c
+@@ -1065,16 +1065,18 @@ static int smu8_apply_state_adjust_rules(struct pp_hwmgr *hwmgr,
+ 				struct pp_power_state  *prequest_ps,
+ 			const struct pp_power_state *pcurrent_ps)
+ {
+-	struct smu8_power_state *smu8_ps =
+-				cast_smu8_power_state(&prequest_ps->hardware);
+-
+-	const struct smu8_power_state *smu8_current_ps =
+-				cast_const_smu8_power_state(&pcurrent_ps->hardware);
+-
++	struct smu8_power_state *smu8_ps;
++	const struct smu8_power_state *smu8_current_ps;
+ 	struct smu8_hwmgr *data = hwmgr->backend;
+ 	struct PP_Clocks clocks = {0, 0, 0, 0};
+ 	bool force_high;
+ 
++	smu8_ps = cast_smu8_power_state(&prequest_ps->hardware);
++	smu8_current_ps = cast_const_smu8_power_state(&pcurrent_ps->hardware);
++
++	if (!smu8_ps || !smu8_current_ps)
++		return -EINVAL;
++
+ 	smu8_ps->need_dfs_bypass = true;
+ 
+ 	data->battery_state = (PP_StateUILabel_Battery == prequest_ps->classification.ui_label);
+diff --git a/drivers/gpu/drm/amd/pm/powerplay/hwmgr/vega10_hwmgr.c b/drivers/gpu/drm/amd/pm/powerplay/hwmgr/vega10_hwmgr.c
+index 6d6bc6a380b3..49c984f14e6b 100644
+--- a/drivers/gpu/drm/amd/pm/powerplay/hwmgr/vega10_hwmgr.c
++++ b/drivers/gpu/drm/amd/pm/powerplay/hwmgr/vega10_hwmgr.c
+@@ -3259,8 +3259,7 @@ static int vega10_apply_state_adjust_rules(struct pp_hwmgr *hwmgr,
+ 			const struct pp_power_state *current_ps)
+ {
+ 	struct amdgpu_device *adev = hwmgr->adev;
+-	struct vega10_power_state *vega10_ps =
+-				cast_phw_vega10_power_state(&request_ps->hardware);
++	struct vega10_power_state *vega10_ps;
+ 	uint32_t sclk;
+ 	uint32_t mclk;
+ 	struct PP_Clocks minimum_clocks = {0};
+@@ -3278,6 +3277,10 @@ static int vega10_apply_state_adjust_rules(struct pp_hwmgr *hwmgr,
+ 	uint32_t stable_pstate_sclk = 0, stable_pstate_mclk = 0;
+ 	uint32_t latency;
+ 
++	vega10_ps = cast_phw_vega10_power_state(&request_ps->hardware);
++	if (!vega10_ps)
++		return -EINVAL;
++
+ 	data->battery_state = (PP_StateUILabel_Battery ==
+ 			request_ps->classification.ui_label);
+ 
+-- 
+2.25.1
+
