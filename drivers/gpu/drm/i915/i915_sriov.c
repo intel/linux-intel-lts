@@ -833,6 +833,12 @@ skip_vf:
 	drm_dbg(&i915->drm, "%u of %u VFs GuC state successfully saved", saved, num_vfs);
 }
 
+static bool guc_supports_save_restore_v2(struct intel_guc *guc)
+{
+	return MAKE_GUC_VER_STRUCT(guc->fw.file_selected.ver)
+	       >= MAKE_GUC_VER(70, 25, 0);
+}
+
 static int pf_gt_restore_vf_guc_state(struct intel_gt *gt, unsigned int vfid)
 {
 	struct pci_dev *pdev = to_pci_dev(gt->i915->drm.dev);
@@ -852,6 +858,17 @@ static int pf_gt_restore_vf_guc_state(struct intel_gt *gt, unsigned int vfid)
 			  "Failed to restore VF%u GuC state. Provisioning didn't complete within %lu ms\n",
 			  vfid, timeout_ms);
 		return -ETIMEDOUT;
+	}
+
+	/*
+	 * For save/restore v2, GuC requires the VF to be in paused state
+	 * before restore. However, after suspend, VF is in ready state.
+	 * So in order to restore the GuC state, we must first pause the VF
+	 */
+	if (guc_supports_save_restore_v2(&gt->uc.guc)) {
+		err = intel_iov_state_pause_vf_sync(iov, vfid, true);
+		if (err < 0)
+			return err;
 	}
 
 	err = intel_iov_state_restore_vf(iov, vfid, data->guc_state.blob, data->guc_state.size);
