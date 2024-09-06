@@ -1,0 +1,37 @@
+From d211a8213b1d23cf1735f79abf95f873871db219 Mon Sep 17 00:00:00 2001
+From: Aleksandr Mishin <amishin@t-argos.ru>
+Date: Tue, 9 Apr 2024 10:56:22 +0300
+Subject: [PATCH] drm: vc4: Fix possible null pointer dereference
+
+[ Upstream commit c534b63bede6cb987c2946ed4d0b0013a52c5ba7 ]
+
+In vc4_hdmi_audio_init() of_get_address() may return
+NULL which is later dereferenced. Fix this bug by adding NULL check.
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+Fixes: bb7d78568814 ("drm/vc4: Add HDMI audio support")
+Signed-off-by: Aleksandr Mishin <amishin@t-argos.ru>
+Signed-off-by: Maxime Ripard <mripard@kernel.org>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240409075622.11783-1-amishin@t-argos.ru
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/gpu/drm/vc4/vc4_hdmi.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/gpu/drm/vc4/vc4_hdmi.c b/drivers/gpu/drm/vc4/vc4_hdmi.c
+index 013dfc63c824..b48ab1d781f5 100644
+--- a/drivers/gpu/drm/vc4/vc4_hdmi.c
++++ b/drivers/gpu/drm/vc4/vc4_hdmi.c
+@@ -1098,6 +1098,8 @@ static int vc4_hdmi_audio_init(struct vc4_hdmi *hdmi)
+ 	 * This VC/MMU should probably be exposed to avoid this kind of hacks.
+ 	 */
+ 	addr = of_get_address(dev->of_node, 1, NULL, NULL);
++	if (!addr)
++		return -EINVAL;
+ 	hdmi->audio.dma_data.addr = be32_to_cpup(addr) + VC4_HD_MAI_DATA;
+ 	hdmi->audio.dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+ 	hdmi->audio.dma_data.maxburst = 2;
+-- 
+2.25.1
+
