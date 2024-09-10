@@ -14,12 +14,6 @@
 0001-fs-proc-do_task_stat-use-__for_each_thread.patch
 0002-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
 
-# CVE-2024-27017
-0001-netfilter-nft_set_pipapo-walk-over-current-view-on-n.patch
-
-# CVE-2024-27012
-0001-netfilter-nf_tables-restore-set-elements-when-delete.patch
-
 #CVE-2024-42156
 0001-s390-pkey-Wipe-copies-of-clear-key-structures-on-fai.patch
 
@@ -32,56 +26,14 @@
 #CVE-2024-41085
 0001-cxl-mem-Fix-no-cxl_nvd-during-pmem-region-auto-assem.patch
 
-#CVE-2024-42268
-0001-net-mlx5-Fix-missing-lock-on-sync-reset-reload.patch
-
-#CVE-2024-42269
-0001-netfilter-iptables-Fix-potential-null-ptr-deref-in-i.patch
-
-#CVE-2024-42270
-0001-netfilter-iptables-Fix-null-ptr-deref-in-iptable_nat.patch
-
-#CVE-2024-42271
-0001-net-iucv-fix-use-after-free-in-iucv_sock_close.patch
-
 #CVE-2024-43857
 0001-f2fs-fix-null-reference-error-when-checking-end-of-z.patch
-
-#CVE-2024-42114
-0001-wifi-cfg80211-restrict-NL80211_ATTR_TXQ_QUANTUM-valu.patch
-
-#CVE-2024-43884
-0001-Bluetooth-MGMT-Add-error-handling-to-pair_device.patch
 
 #CVE-2024-43903
 0001-drm-amd-display-Add-NULL-check-for-afb-before-derefe.patch
 
-#CVE-2024-43905
-0001-drm-amd-pm-Fix-the-null-pointer-dereference-for-vega.patch
-
-#CVE-2024-43906
-0001-drm-admgpu-fix-dereferencing-null-pointer-context.patch
-
-#CVE-2024-43907
-0001-drm-amdgpu-pm-Fix-the-null-pointer-dereference-in-ap.patch
-
-#CVE-2024-43908
-0001-drm-amdgpu-Fix-the-null-pointer-dereference-to-ras_m.patch
-
-#CVE-2024-43909
-0001-drm-amdgpu-pm-Fix-the-null-pointer-dereference-for-s.patch
-
-#CVE-2024-43900
-0001-media-xc2028-avoid-use-after-free-in-load_firmware_c.patch
-
 #CVE-2024-44942
 0001-f2fs-fix-to-do-sanity-check-on-F2FS_INLINE_DATA-flag.patch
 
-#CVE-2024-43902
-0001-drm-amd-display-Add-null-checker-before-passing-vari.patch
-
-#CVE-2024-44934
-0001-net-bridge-mcast-wait-for-previous-gc-cycles-when-re.patch
-
-#CVE-2024-44935
-0001-sctp-Fix-null-ptr-deref-in-reuseport_add_sock.patch
+#CVE-2024-43824
+0001-PCI-endpoint-pci-epf-test-Make-use-of-cached-epc_fea.patch
