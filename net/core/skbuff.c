@@ -2393,6 +2393,10 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 
 	BUG_ON(skb_shared(skb));
 
+	/* skb_reserve() is your friend for out-of-band operations. */
+	if (skb_is_oob(skb))
+		return -ENOMEM;
+
 	skb_zcopy_downgrade_managed(skb);
 
 	if (skb_pfmemalloc(skb))
