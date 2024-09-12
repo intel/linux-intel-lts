@@ -53,6 +53,7 @@
 
 #include <linux/msi.h>
 #include <linux/pci.h>
+#include <linux/vhm/vhm_msi.h>
 #include <linux/vhm/acrn_hv_defs.h>
 #include <linux/vhm/vhm_hypercall.h>
 
