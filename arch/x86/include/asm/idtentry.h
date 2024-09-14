@@ -281,7 +281,8 @@ __visible noinstr void func(struct pt_regs *regs,			\
 									\
 static noinline void __##func(struct pt_regs *regs, u32 vector)
 
-static inline void pipeline_install_sysvec(vector, function) {}
+#define pipeline_install_sysvec(__vector, __function)	\
+	do { (void)__vector; (void)__function; } while (0)
 
 #endif	/* !CONFIG_IRQ_PIPELINE */
 
