@@ -88,6 +88,7 @@ void noinstr kentry_exit_pipelined(struct pt_regs *regs);
 static inline void irq_pipeline_idling_checks(void)
 {
 	if (irq_pipeline_debug()) {
+		WARN_ON_ONCE(!raw_irqs_disabled());
 		WARN_ON_ONCE(!hard_irqs_disabled());
 		WARN_ON_ONCE(stage_irqs_pending(this_inband_staged()));
 	}
