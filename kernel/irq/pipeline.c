@@ -1638,8 +1638,8 @@ EXPORT_SYMBOL(irq_pipeline_nmi_exit);
  *	Returns @true if the caller may proceed with idling, @false
  *	otherwise. If @true, hard irqs are left disabled so that no
  *	event might sneak in until the caller actually
- *	idles. Otherwise, the stage is unstalled and hard irqs are
- *	turned on.
+ *	idles. Otherwise, the interrupt log is synchronized before
+ *	leaving this routine with hard irqs on.
  */
 bool irq_pipeline_can_idle(void)
 {
@@ -1656,7 +1656,6 @@ bool irq_pipeline_can_idle(void)
 		synchronize_pipeline();
 		stall_inband_nocheck();
 		trace_hardirqs_off();
-		local_irq_enable_full();
 		return false;
 	}
 
@@ -1691,12 +1690,17 @@ bool __weak irq_cpuidle_control(struct cpuidle_device *dev,
 bool irq_cpuidle_enter(struct cpuidle_device *dev,
 		       struct cpuidle_state *state)
 {
-	if (!irq_pipeline_can_idle()) {
-		hard_local_irq_disable();
-		return false;
-	}
+	bool ret;
 
-	return irq_cpuidle_control(dev, state);
+	ret = irq_pipeline_can_idle();
+	irq_pipeline_idling_checks();
+	if (!ret)
+		return false;
+
+	ret = irq_cpuidle_control(dev, state);
+	irq_pipeline_idling_checks();
+
+	return ret;
 }
 
 static unsigned int inband_work_sirq;
