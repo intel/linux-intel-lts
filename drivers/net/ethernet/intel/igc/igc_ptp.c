@@ -1089,8 +1089,8 @@ static int igc_phc_get_syncdevicetime(ktime_t *device,
 	u32 stat, t2_curr_h, t2_curr_l;
 	struct igc_adapter *adapter = ctx;
 	struct igc_hw *hw = &adapter->hw;
-	int err, count = 100;
 	ktime_t t1, t2_curr;
+	int err, count = 8;
 
 	/* Get a snapshot of system clocks to use as historic value. */
 	ktime_get_snapshot(&adapter->snapshot);
