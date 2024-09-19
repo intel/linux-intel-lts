@@ -38,8 +38,5 @@
 #CVE-2024-43824
 0001-PCI-endpoint-pci-epf-test-Make-use-of-cached-epc_fea.patch
 
-#CVE-2024-43891
-0001-tracing-Have-format-file-honor-EVENT_FILE_FL_FREED.patch
-
 #CVE-2024-36478
 0001-null_blk-fix-null-ptr-dereference-while-configuring-.patch
