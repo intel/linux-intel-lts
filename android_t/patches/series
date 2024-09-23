@@ -90,15 +90,6 @@
 #CVE-2024-26777
 0001-fbdev-sis-Error-out-if-pixclock-equals-zero.patch
 
-#CVE-2024-26900
-0001-md-fix-kmemleak-of-rdev-serial.patch
-
-#CVE-2024-27013
-0001-tun-limit-printing-rate-when-illegal-packet-received.patch
-
-#CVE-2024-27015
-0001-netfilter-flowtable-incorrect-pppoe-tuple.patch
-
 #CVE-2024-27018
 0002-netfilter-nf_tables-add-rescheduling-points-during-l.patch
 0007-netfilter-nf_tables-fix-scheduling-while-atomic-spla.patch
@@ -109,69 +100,21 @@
 0021-netfilter-nf_tables-reject-new-basechain-after-table.patch
 0024-netfilter-nf_tables-release-batch-on-table-validatio.patch
 0025-netfilter-nf_tables-release-mutex-after-nft_gc_seq_e.patch
-0027-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
-0028-netfilter-nf_tables-Fix-potential-data-race-in-__nft.patch
-0029-netfilter-br_netfilter-skip-conntrack-input-hook-for.patch
 
 #CVE-2022-48673
 0001-net-smc-Fix-possible-access-to-freed-memory-in-link-.patch
 
-#CVE-2024-35984
-0001-i2c-smbus-fix-NULL-function-pointer-dereference.patch
-
-#CVE-2024-35990
-0001-dma-xilinx_dpdma-Fix-locking.patch
-
 #CVE-2024-36008
 0001-ipv4-check-for-NULL-idev-in-ip_route_use_hint.patch
 
-# CVE-2024-36902
-0001-ipv6-fib6_rules-avoid-possible-NULL-dereference-in-f.patch
-
-# CVE-2024-36938
-0001-bpf-skmsg-Fix-NULL-pointer-dereference-in-sk_psock_s.patch
-
-# CVE-2024-36897
-0001-drm-amd-display-Atom-Integrated-System-Info-v2_2-for.patch
-
 # CVE-2024-36901
 0001-ipv6-prevent-NULL-dereference-in-ip6_output.patch
-
-#CVE-2024-36965
-0001-remoteproc-mediatek-Make-sure-IPI-buffer-fits-in-L2T.patch
-
-#CVE-2024-36967
-0001-KEYS-trusted-Fix-memory-leak-in-tpm2_key_encode.patch
-
-#CVE-2024-36969
-0001-drm-amd-display-Fix-division-by-zero-in-setup_dsc_co.patch
-
-#CVE-2024-39277
-0001-dma-mapping-benchmark-handle-NUMA_NO_NODE-correctly.patch
-
-#CVE-2024-38662
-0001-bpf-Allow-delete-from-sockmap-sockhash-only-if-updat.patch
-
-#CVE-2024-38780
-0001-dma-buf-sw-sync-don-t-enable-IRQ-from-sync_print_obj.patch
-
-#CVE-2024-39292
-0001-um-Add-winch-to-winch_handlers-before-registering-wi.patch
-
-#CVE-2024-39475
-0001-fbdev-savage-Handle-err-return-when-savagefb_check_v.patch
-
-#CVE-2024-39480
-0001-kdb-Fix-buffer-overflow-during-tab-complete.patch
 
 #CVE-2024-39482
 0001-bcache-fix-variable-length-array-abuse-in-btree_iter.patch
 
 #CVE-2024-39484
 0001-mmc-davinci-Don-t-strip-remove-function-when-driver-.patch
-
-#CVE-2024-39476
-0001-md-raid5-fix-deadlock-that-raid5d-wait-for-itself-to.patch
 
 #CVE-2024-40902
 0001-jfs-xattr-fix-buffer-overflow-for-invalid-xattr.patch
