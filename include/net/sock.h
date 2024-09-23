@@ -1768,14 +1768,39 @@ static inline bool sock_oob_capable(struct socket *sock)
 	return sock && sock->sk && sock->file && sock->file->oob_data;
 }
 
+int sock_oob_attach(struct socket *sock);
+
+void sock_oob_release(struct socket *sock);
+
+void sock_oob_destroy(struct sock *sk);
+
 int sock_oob_bind(struct sock *sk,
 		struct sockaddr *addr, int len);
 
 int sock_oob_shutdown(struct sock *sk, int how);
 
+int sock_oob_connect(struct sock *sk,
+		struct sockaddr *addr, int len, int flags);
+
+long sock_inband_ioctl_redirect(struct sock *sk,
+				unsigned int cmd, unsigned long arg);
+
+long sock_oob_ioctl(struct file *file,
+		unsigned int cmd, unsigned long arg);
+
+void sock_oob_release(struct socket *sock);
+
+ssize_t sock_oob_write(struct file *filp,
+		const char __user *u_buf, size_t count);
+
+ssize_t sock_oob_read(struct file *filp,
+		char __user *u_buf, size_t count);
+
+__poll_t sock_oob_poll(struct file *filp,
+		struct oob_poll_wait *wait);
+
 static inline void sock_oob_destruct(struct sock *sk)
 {
-	void sock_oob_destroy(struct sock *sk);
 	if (sk->oob_data)
 		sock_oob_destroy(sk);
 }
