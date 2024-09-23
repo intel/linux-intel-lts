@@ -162,15 +162,6 @@
 #CVE-2024-36978
 0001-net-sched-sch_multiq-fix-possible-OOB-write-in-multi.patch
 
-#CVE-2024-38583
-0001-nilfs2-fix-use-after-free-of-timer-for-log-writer-th.patch
-
-#CVE-2024-38597
-0001-eth-sungem-remove-.ndo_poll_controller-to-avoid-dead.patch
-
-#CVE-2024-38598
-0001-md-fix-resync-softlockup-when-bitmap-size-is-less-th.patch
-
 #CVE-2024-38547
 0001-media-atomisp-ssh_css-Fix-a-null-pointer-dereference.patch
 
@@ -179,9 +170,6 @@
 
 #CVE-2024-38545
 0001-RDMA-hns-Fix-UAF-for-cq-async-event.patch
-
-#CVE-2024-38546
-0001-drm-vc4-Fix-possible-null-pointer-dereference.patch
 
 #CVE-2024-38549
 0001-drm-mediatek-Add-0-size-check-to-mtk_drm_gem_obj.patch
@@ -192,15 +180,6 @@
 #CVE-2024-38555
 0001-net-mlx5-Discard-command-completions-in-internal-err.patch
 
-#CVE-2024-38571
-0001-thermal-drivers-tsens-Fix-null-pointer-dereference.patch
-
-#CVE-2024-38600
-0001-ALSA-Fix-deadlocks-with-kctl-removals-at-disconnecti.patch
-
-#CVE-2024-38591
-0001-RDMA-hns-Fix-deadlock-on-SRQ-async-events.patch
-
 #CVE-2024-39463
 0001-9p-add-missing-locking-around-taking-dentry-fid-list.patch
 
@@ -209,9 +188,6 @@
 
 #CVE-2024-39487
 0001-bonding-Fix-out-of-bounds-read-in-bond_option_arp_ip.patch
-
-#CVE-2024-39489
-0001-ipv6-sr-fix-memleak-in-seg6_hmac_init_algo.patch
 
 #CVE-2024-40960
 0001-ipv6-prevent-possible-NULL-dereference-in-rt6_probe.patch
@@ -327,9 +303,6 @@
 
 #CVE-2024-41093
 0001-drm-amdgpu-avoid-using-null-object-of-framebuffer.patch
-
-#CVE-2024-41095
-0001-drm-nouveau-dispnv04-fix-null-pointer-dereference-in.patch
 
 #CVE-2024-41097
 0001-usb-atm-cxacru-fix-endpoint-checking-in-cxacru_bind.patch
@@ -447,20 +420,11 @@
 #CVE-2024-44935
 0001-sctp-Fix-null-ptr-deref-in-reuseport_add_sock.patch
 
-#CVE-2024-39471
-0001-drm-amdgpu-add-error-handle-to-avoid-out-of-bounds.patch
-
 #CVE-2022-48772
 0001-media-lgdt3306a-Add-a-check-against-null-pointer-def.patch
 
-#CVE-2024-38661
-0001-s390-ap-Fix-crash-in-AP-internal-function-modify_bit.patch
-
 #CVE-2024-39468
 0001-smb-client-fix-deadlock-in-smb2_find_smb_tcon.patch
-
-#CVE-2024-39301
-0001-net-9p-fix-uninit-value-in-p9_client_rpc.patch
 
 #CVE-2024-42308
 0001-drm-amd-display-Check-for-NULL-pointer.patch
