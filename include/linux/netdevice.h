@@ -4418,6 +4418,9 @@ bool netif_deliver_oob(struct sk_buff *skb);
 void netif_tx_lock_oob(struct netdev_queue *txq);
 void netif_tx_unlock_oob(struct netdev_queue *txq);
 void process_inband_tx_backlog(struct softnet_data *sd);
+int netif_oob_switch_port(struct net_device *dev, bool enabled);
+bool netif_oob_get_port(struct net_device *dev);
+ssize_t netif_oob_query_pool(struct net_device *dev, char *buf);
 
 static inline void netdev_set_oob_capable(struct net_device *dev)
 {

@@ -400,4 +400,9 @@ static inline struct neighbour *ip_neigh_for_gw(struct rtable *rt,
 	return neigh;
 }
 
+#ifdef CONFIG_NET_OOB
+void ip_learn_oob_route(struct net *net, struct flowi4 *flp4,
+			struct rtable *rt);
+#endif
+
 #endif	/* _ROUTE_H */

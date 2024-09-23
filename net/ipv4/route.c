@@ -2847,12 +2847,12 @@ struct dst_entry *ipv4_blackhole_route(struct net *net, struct dst_entry *dst_or
 }
 
 #ifdef CONFIG_NET_OOB
-__weak
-#else
-static inline
-#endif
-void ip_learn_oob_route(struct net *net, struct flowi4 *flp4, struct rtable *rt)
+__weak void ip_learn_oob_route(struct net *net, struct flowi4 *flp4, struct rtable *rt)
 { }
+#else
+static inline void ip_learn_oob_route(struct net *net, struct flowi4 *flp4, struct rtable *rt)
+{ }
+#endif
 
 struct rtable *ip_route_output_flow(struct net *net, struct flowi4 *flp4,
 				    const struct sock *sk)
