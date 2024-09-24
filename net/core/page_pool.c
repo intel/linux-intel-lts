@@ -336,7 +336,7 @@ static struct page *page_pool_refill_alloc_cache(struct page_pool *pool)
 			page = NULL;
 			break;
 		}
-	} while (pool->alloc.count < PP_ALLOC_CACHE_REFILL(pool));
+	} while (pool->alloc.count < page_pool_cache_refill(pool));
 
 	/* Return last page */
 	if (likely(pool->alloc.count > 0)) {
@@ -448,7 +448,7 @@ noinline
 static struct page *__page_pool_alloc_pages_slow(struct page_pool *pool,
 						 gfp_t gfp)
 {
-	const int bulk = PP_ALLOC_CACHE_REFILL(pool);
+	const int bulk = page_pool_cache_refill(pool);
 	unsigned int pp_flags = pool->p.flags;
 	unsigned int pp_order = pool->p.order;
 	struct page *page;
@@ -623,7 +623,7 @@ static bool page_pool_recycle_in_ring(struct page_pool *pool, struct page *page)
 static bool page_pool_recycle_in_cache(struct page *page,
 				       struct page_pool *pool)
 {
-	if (unlikely(pool->alloc.count == PP_ALLOC_CACHE_SIZE(pool))) {
+	if (unlikely(pool->alloc.count == page_pool_cache_size(pool))) {
 		recycle_stat_inc(pool, cache_full);
 		return false;
 	}
