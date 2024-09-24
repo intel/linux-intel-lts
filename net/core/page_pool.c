@@ -797,8 +797,6 @@ static __always_inline netmem_ref
 __page_pool_put_page(struct page_pool *pool, netmem_ref netmem,
 		     unsigned int dma_sync_size, bool allow_direct)
 {
-	lockdep_assert_no_hardirq();
-
 #ifdef CONFIG_PAGE_POOL_OOB
 	/*
 	 * Pages from oob-accessed pools always live in the fast
@@ -826,6 +824,8 @@ __page_pool_put_page(struct page_pool *pool, netmem_ref netmem,
 		return 0;
 	}
 #endif
+
+	lockdep_assert_no_hardirq();
 
 	/* This allocator is optimized for the XDP mode that uses
 	 * one-frame-per-page, but have fallbacks that act like the
