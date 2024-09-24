@@ -38,24 +38,17 @@
  * cache is already full (or partly full) then the XDP_DROP recycles
  * would have to take a slower code path.
  */
-#ifdef CONFIG_PAGE_POOL_OOB
-#define PP_ALLOC_CACHE_SIZE(__pool)	((__pool)->p.pool_size)
-#define PP_ALLOC_CACHE_REFILL(__pool)	PP_ALLOC_CACHE_SIZE(__pool)
+#define PP_ALLOC_CACHE_SIZE	128
+#define PP_ALLOC_CACHE_REFILL	64
 struct pp_alloc_cache {
 	u32 count;
+#ifdef CONFIG_PAGE_POOL_OOB
 	struct page **cache;
 	hard_spinlock_t oob_lock;
-};
 #else	/* !CONFIG_PAGE_POOL_OOB */
-#define __PP_ALLOC_CACHE_SIZE	128
-#define __PP_ALLOC_CACHE_REFILL	64
-#define PP_ALLOC_CACHE_SIZE(__pool)	({ (void)__pool; __PP_ALLOC_CACHE_SIZE; })
-#define PP_ALLOC_CACHE_REFILL(__pool)	({ (void)__pool; __PP_ALLOC_CACHE_REFILL; })
-struct pp_alloc_cache {
-	u32 count;
-	struct page *cache[__PP_ALLOC_CACHE_SIZE];
-};
+	struct page *cache[PP_ALLOC_CACHE_SIZE];
 #endif	/* !CONFIG_PAGE_POOL_OOB */
+};
 
 /**
  * struct page_pool_params - page pool parameters
@@ -215,6 +208,18 @@ static inline bool page_pool_is_oob(struct page_pool *pool)
 {
 	return IS_ENABLED(CONFIG_PAGE_POOL_OOB) &&
 		pool->p.flags & PP_FLAG_PAGE_OOB;
+}
+
+static inline unsigned int page_pool_cache_size(struct page_pool *pool)
+{
+	return IS_ENABLED(CONFIG_PAGE_POOL_OOB) &&
+		pool->p.flags & PP_FLAG_PAGE_OOB ? pool->p.pool_size : PP_ALLOC_CACHE_SIZE;
+}
+
+static inline unsigned int page_pool_cache_refill(struct page_pool *pool)
+{
+	return IS_ENABLED(CONFIG_PAGE_POOL_OOB) &&
+		pool->p.flags & PP_FLAG_PAGE_OOB ? pool->p.pool_size : PP_ALLOC_CACHE_REFILL;
 }
 #else
 static inline void page_pool_unlink_napi(struct page_pool *pool)
