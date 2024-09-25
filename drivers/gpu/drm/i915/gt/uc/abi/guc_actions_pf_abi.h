@@ -477,6 +477,10 @@
  *  | 3 |  31:0 | DATA3 = **BUFF_HI** - upper 32-bits of GGTT offset to the 4K |
  *  |   |       | buffer where the VF info will be save to or restored from.   |
  *  +---+-------+--------------------------------------------------------------+
+ *  | 4 |  27:0 | DATA4 = **BUFF_SZ** - size of the buffer provided (in dwords)|
+ *  |   +-------+--------------------------------------------------------------+
+ *  |   | 31:28 | DATA5 = MBZ                                                  |
+ *  +---+-------+--------------------------------------------------------------+
  *
  *  +---+-------+--------------------------------------------------------------+
  *  |   | Bits  | Description                                                  |
@@ -485,22 +489,24 @@
  *  |   +-------+--------------------------------------------------------------+
  *  |   | 30:28 | TYPE = GUC_HXG_TYPE_RESPONSE_SUCCESS_                        |
  *  |   +-------+--------------------------------------------------------------+
- *  |   |  27:0 | DATA0 = **USED** - size of buffer used (in bytes)            |
+ *  |   |  27:0 | DATA0 = **USED** - size of used buffer space (in dwords)     |
  *  +---+-------+--------------------------------------------------------------+
  */
 #define GUC_ACTION_PF2GUC_SAVE_RESTORE_VF		0x550B
 
-#define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_LEN		(GUC_HXG_EVENT_MSG_MIN_LEN + 3u)
+#define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_LEN		(GUC_HXG_EVENT_MSG_MIN_LEN + 5u)
 #define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_0_OPCODE	GUC_HXG_EVENT_MSG_0_DATA0
 #define   GUC_PF_OPCODE_VF_SAVE				0
 #define   GUC_PF_OPCODE_VF_RESTORE			1
 #define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_1_VFID	GUC_HXG_EVENT_MSG_n_DATAn
 #define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_2_BUFF_LO	GUC_HXG_EVENT_MSG_n_DATAn
 #define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_3_BUFF_HI	GUC_HXG_EVENT_MSG_n_DATAn
+#define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_4_BUFF_SZ	(0x0fffffff << 0)
+#define PF2GUC_SAVE_RESTORE_VF_REQUEST_MSG_4_MBZ	(0xf << 28)
 
 #define PF2GUC_SAVE_RESTORE_VF_RESPONSE_MSG_LEN		GUC_HXG_RESPONSE_MSG_MIN_LEN
 #define PF2GUC_SAVE_RESTORE_VF_RESPONSE_MSG_0_USED	GUC_HXG_RESPONSE_MSG_0_DATA0
 
-#define PF2GUC_SAVE_RESTORE_VF_BUFF_SIZE		SZ_4K
+#define PF2GUC_SAVE_RESTORE_VF_BUFF_MIN_SIZE		32
 
 #endif /* __GUC_ACTIONS_PF_ABI_H__ */
