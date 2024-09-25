@@ -426,10 +426,7 @@ static int ehl_pse_gpio_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int ehl_pse_gpio_remove(struct platform_device *pdev)
-{
-	return 0;
-}
+static void ehl_pse_gpio_remove(struct platform_device *pdev) {}
 
 static int ehl_pse_gpio_suspend(struct device *dev)
 {
