@@ -676,15 +676,13 @@ err0:
 	return ret;
 }
 
-static int intel_tgpio_remove(struct platform_device *pdev)
+static void intel_tgpio_remove(struct platform_device *pdev)
 {
 	struct intel_tgpio *tgpio = platform_get_drvdata(pdev);
 	int irq = platform_get_irq(pdev, 0);
 
 	devm_free_irq(&pdev->dev, irq, tgpio);
 	ptp_clock_unregister(tgpio->clock);
-
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP

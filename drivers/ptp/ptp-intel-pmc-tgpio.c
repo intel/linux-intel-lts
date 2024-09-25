@@ -765,12 +765,11 @@ unlock:
 	return ret;
 }
 
-static int intel_pmc_tgpio_remove(struct platform_device *pdev)
+static void intel_pmc_tgpio_remove(struct platform_device *pdev)
 {
 	struct intel_pmc_tgpio_t *tgpio = platform_get_drvdata(pdev);
 	unsigned int pin_index;
 	struct intel_pmc_tgpio_pin *tgpio_pin;
-	int ret = 0;
 
 	mutex_lock(&tgpio->lock);
 
@@ -780,7 +779,6 @@ static int intel_pmc_tgpio_remove(struct platform_device *pdev)
 			break;
 	}
 	if (pin_index == MAX_PINS_PER_PLAT || tgpio_pin->pdev == NULL) {
-		ret = -ENODEV;
 		goto unlock;
 	}
 
@@ -801,7 +799,6 @@ static int intel_pmc_tgpio_remove(struct platform_device *pdev)
 
 unlock:
 	mutex_unlock(&tgpio->lock);
-	return ret;
 }
 
 static const struct acpi_device_id intel_pmc_acpi_match[] = {
