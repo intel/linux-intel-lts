@@ -493,6 +493,7 @@ config PAGE_POOL
 
 config PAGE_POOL_OOB
 	def_bool n
+	select PAGE_POOL
 
 config PAGE_POOL_STATS
 	default n
