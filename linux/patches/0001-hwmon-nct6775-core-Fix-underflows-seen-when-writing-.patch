@@ -1,0 +1,34 @@
+From a8d31ddbd844b1c94ce453b1ae28a34f17685dae Mon Sep 17 00:00:00 2001
+From: Guenter Roeck <linux@roeck-us.net>
+Date: Sat, 6 Jul 2024 23:50:08 -0700
+Subject: [PATCH] hwmon: (nct6775-core) Fix underflows seen when writing limit
+ attributes
+
+[ Upstream commit 0403e10bf0824bf0ec2bb135d4cf1c0cc3bf4bf0 ]
+
+DIV_ROUND_CLOSEST() after kstrtol() results in an underflow if a large
+negative number such as -9223372036854775808 is provided by the user.
+Fix it by reordering clamp_val() and DIV_ROUND_CLOSEST() operations.
+
+Signed-off-by: Guenter Roeck <linux@roeck-us.net>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/hwmon/nct6775-core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/nct6775-core.c b/drivers/hwmon/nct6775-core.c
+index f3bf2e4701c3..8da7aa1614d7 100644
+--- a/drivers/hwmon/nct6775-core.c
++++ b/drivers/hwmon/nct6775-core.c
+@@ -2262,7 +2262,7 @@ store_temp_offset(struct device *dev, struct device_attribute *attr,
+ 	if (err < 0)
+ 		return err;
+ 
+-	val = clamp_val(DIV_ROUND_CLOSEST(val, 1000), -128, 127);
++	val = DIV_ROUND_CLOSEST(clamp_val(val, -128000, 127000), 1000);
+ 
+ 	mutex_lock(&data->update_lock);
+ 	data->temp_offset[nr] = val;
+-- 
+2.25.1
+

@@ -1,0 +1,89 @@
+From 299351de7bc50673958f80bb9900d41caa307c94 Mon Sep 17 00:00:00 2001
+From: Viresh Kumar <viresh.kumar@linaro.org>
+Date: Tue, 18 Jun 2024 15:12:29 +0530
+Subject: [PATCH] xen: privcmd: Fix possible access to a freed kirqfd instance
+
+[ Upstream commit 611ff1b1ae989a7bcce3e2a8e132ee30e968c557 ]
+
+Nothing prevents simultaneous ioctl calls to privcmd_irqfd_assign() and
+privcmd_irqfd_deassign(). If that happens, it is possible that a kirqfd
+created and added to the irqfds_list by privcmd_irqfd_assign() may get
+removed by another thread executing privcmd_irqfd_deassign(), while the
+former is still using it after dropping the locks.
+
+This can lead to a situation where an already freed kirqfd instance may
+be accessed and cause kernel oops.
+
+Use SRCU locking to prevent the same, as is done for the KVM
+implementation for irqfds.
+
+Reported-by: Al Viro <viro@zeniv.linux.org.uk>
+Suggested-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Viresh Kumar <viresh.kumar@linaro.org>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Link: https://lore.kernel.org/r/9e884af1f1f842eacbb7afc5672c8feb4dea7f3f.1718703669.git.viresh.kumar@linaro.org
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/xen/privcmd.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/xen/privcmd.c b/drivers/xen/privcmd.c
+index 923f064c7e3e..61aaded483e1 100644
+--- a/drivers/xen/privcmd.c
++++ b/drivers/xen/privcmd.c
+@@ -17,6 +17,7 @@
+ #include <linux/poll.h>
+ #include <linux/sched.h>
+ #include <linux/slab.h>
++#include <linux/srcu.h>
+ #include <linux/string.h>
+ #include <linux/workqueue.h>
+ #include <linux/errno.h>
+@@ -842,6 +843,7 @@ static long privcmd_ioctl_mmap_resource(struct file *file,
+ /* Irqfd support */
+ static struct workqueue_struct *irqfd_cleanup_wq;
+ static DEFINE_SPINLOCK(irqfds_lock);
++DEFINE_STATIC_SRCU(irqfds_srcu);
+ static LIST_HEAD(irqfds_list);
+ 
+ struct privcmd_kernel_irqfd {
+@@ -869,6 +871,9 @@ static void irqfd_shutdown(struct work_struct *work)
+ 		container_of(work, struct privcmd_kernel_irqfd, shutdown);
+ 	u64 cnt;
+ 
++	/* Make sure irqfd has been initialized in assign path */
++	synchronize_srcu(&irqfds_srcu);
++
+ 	eventfd_ctx_remove_wait_queue(kirqfd->eventfd, &kirqfd->wait, &cnt);
+ 	eventfd_ctx_put(kirqfd->eventfd);
+ 	kfree(kirqfd);
+@@ -931,7 +936,7 @@ static int privcmd_irqfd_assign(struct privcmd_irqfd *irqfd)
+ 	__poll_t events;
+ 	struct fd f;
+ 	void *dm_op;
+-	int ret;
++	int ret, idx;
+ 
+ 	kirqfd = kzalloc(sizeof(*kirqfd) + irqfd->size, GFP_KERNEL);
+ 	if (!kirqfd)
+@@ -977,6 +982,7 @@ static int privcmd_irqfd_assign(struct privcmd_irqfd *irqfd)
+ 		}
+ 	}
+ 
++	idx = srcu_read_lock(&irqfds_srcu);
+ 	list_add_tail(&kirqfd->list, &irqfds_list);
+ 	spin_unlock_irqrestore(&irqfds_lock, flags);
+ 
+@@ -988,6 +994,8 @@ static int privcmd_irqfd_assign(struct privcmd_irqfd *irqfd)
+ 	if (events & EPOLLIN)
+ 		irqfd_inject(kirqfd);
+ 
++	srcu_read_unlock(&irqfds_srcu, idx);
++
+ 	/*
+ 	 * Do not drop the file until the kirqfd is fully initialized, otherwise
+ 	 * we might race against the EPOLLHUP.
+-- 
+2.25.1
+

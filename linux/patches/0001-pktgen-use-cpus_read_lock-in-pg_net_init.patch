@@ -1,0 +1,61 @@
+From 21f5ef3fcede827264b41a08adeaf165caef3429 Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Wed, 21 Aug 2024 17:53:39 +0000
+Subject: [PATCH] pktgen: use cpus_read_lock() in pg_net_init()
+
+I have seen the WARN_ON(smp_processor_id() != cpu) firing
+in pktgen_thread_worker() during tests.
+
+We must use cpus_read_lock()/cpus_read_unlock()
+around the for_each_online_cpu(cpu) loop.
+
+While we are at it use WARN_ON_ONCE() to avoid a possible syslog flood.
+
+Fixes: 1da177e4c3f4 ("Linux-2.6.12-rc2")
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Link: https://patch.msgid.link/20240821175339.1191779-1-edumazet@google.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/core/pktgen.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/net/core/pktgen.c b/net/core/pktgen.c
+index 0e472f6fab85..473503217201 100644
+--- a/net/core/pktgen.c
++++ b/net/core/pktgen.c
+@@ -170,6 +170,7 @@
+ #include <linux/uaccess.h>
+ #include <asm/dma.h>
+ #include <asm/div64.h>		/* do_div */
++#include <linux/cpu.h>
+ 
+ #define VERSION	"2.75"
+ #define IP_NAME_SZ 32
+@@ -3605,7 +3606,7 @@ static int pktgen_thread_worker(void *arg)
+ 	struct pktgen_dev *pkt_dev = NULL;
+ 	int cpu = t->cpu;
+ 
+-	WARN_ON(smp_processor_id() != cpu);
++	WARN_ON_ONCE(smp_processor_id() != cpu);
+ 
+ 	init_waitqueue_head(&t->queue);
+ 	complete(&t->start_done);
+@@ -3941,6 +3942,7 @@ static int __net_init pg_net_init(struct net *net)
+ 		goto remove;
+ 	}
+ 
++	cpus_read_lock();
+ 	for_each_online_cpu(cpu) {
+ 		int err;
+ 
+@@ -3949,6 +3951,7 @@ static int __net_init pg_net_init(struct net *net)
+ 			pr_warn("Cannot create thread for cpu %d (%d)\n",
+ 				   cpu, err);
+ 	}
++	cpus_read_unlock();
+ 
+ 	if (list_empty(&pn->pktgen_threads)) {
+ 		pr_err("Initialization failed for all threads\n");
+-- 
+2.25.1
+
