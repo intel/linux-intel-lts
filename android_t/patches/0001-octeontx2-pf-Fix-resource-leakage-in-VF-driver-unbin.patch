@@ -1,0 +1,47 @@
+From 30244698772cc414992a5ae7f2d080e13cc31387 Mon Sep 17 00:00:00 2001
+From: Hariprasad Kelam <hkelam@marvell.com>
+Date: Mon, 9 Jan 2023 11:43:25 +0530
+Subject: [PATCH] octeontx2-pf: Fix resource leakage in VF driver unbind
+
+[ Upstream commit 53da7aec32982f5ee775b69dce06d63992ce4af3 ]
+
+resources allocated like mcam entries to support the Ntuple feature
+and hash tables for the tc feature are not getting freed in driver
+unbind. This patch fixes the issue.
+
+Fixes: 2da489432747 ("octeontx2-pf: devlink params support to set mcam entry count")
+Signed-off-by: Hariprasad Kelam <hkelam@marvell.com>
+Signed-off-by: Sunil Kovvuri Goutham <sgoutham@marvell.com>
+Link: https://lore.kernel.org/r/20230109061325.21395-1-hkelam@marvell.com
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/ethernet/marvell/octeontx2/nic/otx2_tc.c | 1 +
+ drivers/net/ethernet/marvell/octeontx2/nic/otx2_vf.c | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/drivers/net/ethernet/marvell/octeontx2/nic/otx2_tc.c b/drivers/net/ethernet/marvell/octeontx2/nic/otx2_tc.c
+index 26231c59b024..819bd2e9ef0b 100644
+--- a/drivers/net/ethernet/marvell/octeontx2/nic/otx2_tc.c
++++ b/drivers/net/ethernet/marvell/octeontx2/nic/otx2_tc.c
+@@ -1120,3 +1120,4 @@ void otx2_shutdown_tc(struct otx2_nic *nic)
+ 	kfree(tc->tc_entries_bitmap);
+ 	rhashtable_destroy(&tc->flow_table);
+ }
++EXPORT_SYMBOL(otx2_shutdown_tc);
+diff --git a/drivers/net/ethernet/marvell/octeontx2/nic/otx2_vf.c b/drivers/net/ethernet/marvell/octeontx2/nic/otx2_vf.c
+index 689e0853ab9c..dc1b97861d9d 100644
+--- a/drivers/net/ethernet/marvell/octeontx2/nic/otx2_vf.c
++++ b/drivers/net/ethernet/marvell/octeontx2/nic/otx2_vf.c
+@@ -741,6 +741,8 @@ static void otx2vf_remove(struct pci_dev *pdev)
+ 	unregister_netdev(netdev);
+ 	if (vf->otx2_wq)
+ 		destroy_workqueue(vf->otx2_wq);
++	otx2_mcam_flow_del(vf);
++	otx2_shutdown_tc(vf);
+ 	otx2vf_disable_mbox_intr(vf);
+ 	otx2_detach_resources(&vf->mbox);
+ 	free_percpu(vf->hw.lmt_info);
+-- 
+2.25.1
+

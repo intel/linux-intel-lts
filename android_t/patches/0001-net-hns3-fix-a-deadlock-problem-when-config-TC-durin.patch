@@ -1,0 +1,75 @@
+From 95f06f9a1e8f7c9efaef753855c8cc774f913063 Mon Sep 17 00:00:00 2001
+From: Jie Wang <wangjie125@huawei.com>
+Date: Tue, 13 Aug 2024 22:10:22 +0800
+Subject: [PATCH] net: hns3: fix a deadlock problem when config TC during
+ resetting
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[ Upstream commit be5e816d00a506719e9dbb1a9c861c5ced30a109 ]
+
+When config TC during the reset process, may cause a deadlock, the flow is
+as below:
+                             pf reset start
+                                 │
+                                 ▼
+                              ......
+setup tc                         │
+    │                            ▼
+    ▼                      DOWN: napi_disable()
+napi_disable()(skip)             │
+    │                            │
+    ▼                            ▼
+  ......                      ......
+    │                            │
+    ▼                            │
+napi_enable()                    │
+                                 ▼
+                           UINIT: netif_napi_del()
+                                 │
+                                 ▼
+                              ......
+                                 │
+                                 ▼
+                           INIT: netif_napi_add()
+                                 │
+                                 ▼
+                              ......                 global reset start
+                                 │                      │
+                                 ▼                      ▼
+                           UP: napi_enable()(skip)    ......
+                                 │                      │
+                                 ▼                      ▼
+                              ......                 napi_disable()
+
+In reset process, the driver will DOWN the port and then UINIT, in this
+case, the setup tc process will UP the port before UINIT, so cause the
+problem. Adds a DOWN process in UINIT to fix it.
+
+Fixes: bb6b94a896d4 ("net: hns3: Add reset interface implementation in client")
+Signed-off-by: Jie Wang <wangjie125@huawei.com>
+Signed-off-by: Jijie Shao <shaojijie@huawei.com>
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/ethernet/hisilicon/hns3/hns3_enet.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c b/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
+index bbbafd8aa1b0..d026ac61430f 100644
+--- a/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
++++ b/drivers/net/ethernet/hisilicon/hns3/hns3_enet.c
+@@ -5500,6 +5500,9 @@ static int hns3_reset_notify_uninit_enet(struct hnae3_handle *handle)
+ 	struct net_device *netdev = handle->kinfo.netdev;
+ 	struct hns3_nic_priv *priv = netdev_priv(netdev);
+ 
++	if (!test_bit(HNS3_NIC_STATE_DOWN, &priv->state))
++		hns3_nic_net_stop(netdev);
++
+ 	if (!test_and_clear_bit(HNS3_NIC_STATE_INITED, &priv->state)) {
+ 		netdev_warn(netdev, "already uninitialized\n");
+ 		return 0;
+-- 
+2.25.1
+
