@@ -463,12 +463,7 @@
 0001-nfc-nci-Fix-uninit-value-in-nci_rx_work.patch
 
 #CVE-2024-38630
-0001-timers-Rename-del_timer_sync-to-timer_delete_sync.patch
-0002-timers-Rename-del_timer-to-timer_delete.patch
-0003-timers-Split-try_to_-del_timer-_sync-to-prepare-for-.patch
 0004-watchdog-cpu5wdt.c-Fix-use-after-free-bug-caused-by-.patch
-0005-timers-Add-shutdown-mechanism-to-the-internal-functi.patch
-0006-timers-Provide-timer_shutdown-_sync.patch
 
 #CVE-2024-40967
 0001-serial-imx-Introduce-timeout-when-waiting-on-transmi.patch
