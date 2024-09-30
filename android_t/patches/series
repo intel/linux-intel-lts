@@ -459,9 +459,6 @@
 #CVE-2024-38588
 0001-ftrace-Fix-possible-use-after-free-issue-in-ftrace_l.patch
 
-#CVE-2024-38381
-0001-nfc-nci-Fix-uninit-value-in-nci_rx_work.patch
-
 #CVE-2024-38630
 0004-watchdog-cpu5wdt.c-Fix-use-after-free-bug-caused-by-.patch
 
