@@ -350,13 +350,15 @@ unsigned long exit_to_user_mode_loop(struct pt_regs *regs,
 
 static inline bool do_retuser(unsigned long ti_work)
 {
-	if (dovetailing() && (ti_work & _TIF_RETUSER)) {
+#ifdef CONFIG_DOVETAIL
+	if (ti_work & _TIF_RETUSER) {
 		hard_local_irq_enable();
 		inband_retuser_notify();
 		hard_local_irq_disable();
 		/* RETUSER might have switched oob */
 		return running_inband();
 	}
+#endif
 
 	return false;
 }
