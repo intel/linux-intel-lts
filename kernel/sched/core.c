@@ -1083,6 +1083,9 @@ static void __resched_curr(struct rq *rq, int tif)
 
 	lockdep_assert_rq_held(rq);
 
+	if (is_idle_task(curr) && tif == TIF_NEED_RESCHED_LAZY)
+		tif = TIF_NEED_RESCHED;
+
 	if (cti->flags & ((1 << tif) | _TIF_NEED_RESCHED))
 		return;
 
@@ -1106,6 +1109,32 @@ static void __resched_curr(struct rq *rq, int tif)
 void resched_curr(struct rq *rq)
 {
 	__resched_curr(rq, TIF_NEED_RESCHED);
+}
+
+#ifdef CONFIG_PREEMPT_DYNAMIC
+static DEFINE_STATIC_KEY_FALSE(sk_dynamic_preempt_lazy);
+static __always_inline bool dynamic_preempt_lazy(void)
+{
+	return static_branch_unlikely(&sk_dynamic_preempt_lazy);
+}
+#else
+static __always_inline bool dynamic_preempt_lazy(void)
+{
+	return IS_ENABLED(PREEMPT_LAZY);
+}
+#endif
+
+static __always_inline int tif_need_resched_lazy(void)
+{
+	if (dynamic_preempt_lazy())
+		return TIF_NEED_RESCHED_LAZY;
+
+	return TIF_NEED_RESCHED;
+}
+
+void resched_curr_lazy(struct rq *rq)
+{
+	__resched_curr(rq, tif_need_resched_lazy());
 }
 
 void resched_cpu(int cpu)
@@ -5612,6 +5641,10 @@ void sched_tick(void)
 	update_rq_clock(rq);
 	hw_pressure = arch_scale_hw_pressure(cpu_of(rq));
 	update_hw_load_avg(rq_clock_task(rq), rq, hw_pressure);
+
+	if (dynamic_preempt_lazy() && tif_test_bit(TIF_NEED_RESCHED_LAZY))
+		resched_curr(rq);
+
 	curr->sched_class->task_tick(rq, curr, 0);
 	if (sched_feat(LATENCY_WARN))
 		resched_latency = cpu_resched_latency(rq);
@@ -7360,6 +7393,7 @@ EXPORT_SYMBOL(__cond_resched_rwlock_write);
  *   preempt_schedule           <- NOP
  *   preempt_schedule_notrace   <- NOP
  *   irqentry_exit_cond_resched <- NOP
+ *   dynamic_preempt_lazy       <- false
  *
  * VOLUNTARY:
  *   cond_resched               <- __cond_resched
@@ -7367,6 +7401,7 @@ EXPORT_SYMBOL(__cond_resched_rwlock_write);
  *   preempt_schedule           <- NOP
  *   preempt_schedule_notrace   <- NOP
  *   irqentry_exit_cond_resched <- NOP
+ *   dynamic_preempt_lazy       <- false
  *
  * FULL:
  *   cond_resched               <- RET0
@@ -7374,6 +7409,15 @@ EXPORT_SYMBOL(__cond_resched_rwlock_write);
  *   preempt_schedule           <- preempt_schedule
  *   preempt_schedule_notrace   <- preempt_schedule_notrace
  *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
+ *   dynamic_preempt_lazy       <- false
+ *
+ * LAZY:
+ *   cond_resched               <- RET0
+ *   might_resched              <- RET0
+ *   preempt_schedule           <- preempt_schedule
+ *   preempt_schedule_notrace   <- preempt_schedule_notrace
+ *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
+ *   dynamic_preempt_lazy       <- true
  */
 
 enum {
@@ -7381,6 +7425,7 @@ enum {
 	preempt_dynamic_none,
 	preempt_dynamic_voluntary,
 	preempt_dynamic_full,
+	preempt_dynamic_lazy,
 };
 
 int preempt_dynamic_mode = preempt_dynamic_undefined;
@@ -7396,15 +7441,23 @@ int sched_dynamic_mode(const char *str)
 	if (!strcmp(str, "full"))
 		return preempt_dynamic_full;
 
+#ifdef CONFIG_ARCH_HAS_PREEMPT_LAZY
+	if (!strcmp(str, "lazy"))
+		return preempt_dynamic_lazy;
+#endif
+
 	return -EINVAL;
 }
+
+#define preempt_dynamic_key_enable(f)	static_key_enable(&sk_dynamic_##f.key)
+#define preempt_dynamic_key_disable(f)	static_key_disable(&sk_dynamic_##f.key)
 
 #if defined(CONFIG_HAVE_PREEMPT_DYNAMIC_CALL)
 #define preempt_dynamic_enable(f)	static_call_update(f, f##_dynamic_enabled)
 #define preempt_dynamic_disable(f)	static_call_update(f, f##_dynamic_disabled)
 #elif defined(CONFIG_HAVE_PREEMPT_DYNAMIC_KEY)
-#define preempt_dynamic_enable(f)	static_key_enable(&sk_dynamic_##f.key)
-#define preempt_dynamic_disable(f)	static_key_disable(&sk_dynamic_##f.key)
+#define preempt_dynamic_enable(f)	preempt_dynamic_key_enable(f)
+#define preempt_dynamic_disable(f)	preempt_dynamic_key_disable(f)
 #else
 #error "Unsupported PREEMPT_DYNAMIC mechanism"
 #endif
@@ -7424,6 +7477,7 @@ static void __sched_dynamic_update(int mode)
 	preempt_dynamic_enable(preempt_schedule);
 	preempt_dynamic_enable(preempt_schedule_notrace);
 	preempt_dynamic_enable(irqentry_exit_cond_resched);
+	preempt_dynamic_key_disable(preempt_lazy);
 
 	switch (mode) {
 	case preempt_dynamic_none:
@@ -7433,6 +7487,7 @@ static void __sched_dynamic_update(int mode)
 		preempt_dynamic_disable(preempt_schedule);
 		preempt_dynamic_disable(preempt_schedule_notrace);
 		preempt_dynamic_disable(irqentry_exit_cond_resched);
+		preempt_dynamic_key_disable(preempt_lazy);
 		if (mode != preempt_dynamic_mode)
 			pr_info("Dynamic Preempt: none\n");
 		break;
@@ -7444,6 +7499,7 @@ static void __sched_dynamic_update(int mode)
 		preempt_dynamic_disable(preempt_schedule);
 		preempt_dynamic_disable(preempt_schedule_notrace);
 		preempt_dynamic_disable(irqentry_exit_cond_resched);
+		preempt_dynamic_key_disable(preempt_lazy);
 		if (mode != preempt_dynamic_mode)
 			pr_info("Dynamic Preempt: voluntary\n");
 		break;
@@ -7455,8 +7511,21 @@ static void __sched_dynamic_update(int mode)
 		preempt_dynamic_enable(preempt_schedule);
 		preempt_dynamic_enable(preempt_schedule_notrace);
 		preempt_dynamic_enable(irqentry_exit_cond_resched);
+		preempt_dynamic_key_disable(preempt_lazy);
 		if (mode != preempt_dynamic_mode)
 			pr_info("Dynamic Preempt: full\n");
+		break;
+
+	case preempt_dynamic_lazy:
+		if (!klp_override)
+			preempt_dynamic_disable(cond_resched);
+		preempt_dynamic_disable(might_resched);
+		preempt_dynamic_enable(preempt_schedule);
+		preempt_dynamic_enable(preempt_schedule_notrace);
+		preempt_dynamic_enable(irqentry_exit_cond_resched);
+		preempt_dynamic_key_enable(preempt_lazy);
+		if (mode != preempt_dynamic_mode)
+			pr_info("Dynamic Preempt: lazy\n");
 		break;
 	}
 
@@ -7520,6 +7589,8 @@ static void __init preempt_dynamic_init(void)
 			sched_dynamic_update(preempt_dynamic_none);
 		} else if (IS_ENABLED(CONFIG_PREEMPT_VOLUNTARY)) {
 			sched_dynamic_update(preempt_dynamic_voluntary);
+		} else if (IS_ENABLED(CONFIG_PREEMPT_LAZY)) {
+			sched_dynamic_update(preempt_dynamic_lazy);
 		} else {
 			/* Default static call setting, nothing to do */
 			WARN_ON_ONCE(!IS_ENABLED(CONFIG_PREEMPT));
@@ -7540,6 +7611,7 @@ static void __init preempt_dynamic_init(void)
 PREEMPT_MODEL_ACCESSOR(none);
 PREEMPT_MODEL_ACCESSOR(voluntary);
 PREEMPT_MODEL_ACCESSOR(full);
+PREEMPT_MODEL_ACCESSOR(lazy);
 
 #else /* !CONFIG_PREEMPT_DYNAMIC: */
 
