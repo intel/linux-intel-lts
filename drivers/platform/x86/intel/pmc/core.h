@@ -365,6 +365,11 @@ struct pmc_info {
 	const struct pmc_reg_map *map;
 };
 
+enum soc_type {
+	SOC_M,
+	SOC_S
+};
+
 /**
  * struct pmc - pmc private info structure
  * @base_addr:		contains pmc base address
@@ -601,6 +606,8 @@ int tgl_core_generic_init(struct pmc_dev *pmcdev, int pch_tp);
 int adl_core_init(struct pmc_dev *pmcdev);
 int mtl_core_init(struct pmc_dev *pmcdev);
 int arl_core_init(struct pmc_dev *pmcdev);
+int arl_h_core_init(struct pmc_dev *pmcdev);
+int arl_core_generic_init(struct pmc_dev *pmcdev, int pch_tp);
 int lnl_core_init(struct pmc_dev *pmcdev);
 
 void cnl_suspend(struct pmc_dev *pmcdev);
