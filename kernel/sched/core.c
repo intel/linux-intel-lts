@@ -1116,12 +1116,21 @@ void resched_curr(struct rq *rq)
 
 #ifdef CONFIG_PREEMPT_DYNAMIC
 static DEFINE_STATIC_KEY_FALSE(sk_dynamic_preempt_lazy);
+static DEFINE_STATIC_KEY_FALSE(sk_dynamic_preempt_promote);
 static __always_inline bool dynamic_preempt_lazy(void)
 {
 	return static_branch_unlikely(&sk_dynamic_preempt_lazy);
 }
+static __always_inline bool dynamic_preempt_promote(void)
+{
+	return static_branch_unlikely(&sk_dynamic_preempt_promote);
+}
 #else
 static __always_inline bool dynamic_preempt_lazy(void)
+{
+	return IS_ENABLED(PREEMPT_LAZY) | IS_ENABLED(PREEMPT_LAZIEST);
+}
+static __always_inline bool dynamic_preempt_promote(void)
 {
 	return IS_ENABLED(PREEMPT_LAZY);
 }
@@ -5645,7 +5654,7 @@ void sched_tick(void)
 	hw_pressure = arch_scale_hw_pressure(cpu_of(rq));
 	update_hw_load_avg(rq_clock_task(rq), rq, hw_pressure);
 
-	if (dynamic_preempt_lazy() && tif_test_bit(TIF_NEED_RESCHED_LAZY))
+	if (dynamic_preempt_promote() && tif_test_bit(TIF_NEED_RESCHED_LAZY))
 		resched_curr(rq);
 
 	curr->sched_class->task_tick(rq, curr, 0);
@@ -7410,6 +7419,7 @@ EXPORT_SYMBOL(__cond_resched_rwlock_write);
  *   preempt_schedule_notrace   <- NOP
  *   irqentry_exit_cond_resched <- NOP
  *   dynamic_preempt_lazy       <- false
+ *   dynamic_preempt_promote    <- false
  *
  * VOLUNTARY:
  *   cond_resched               <- __cond_resched
@@ -7418,6 +7428,7 @@ EXPORT_SYMBOL(__cond_resched_rwlock_write);
  *   preempt_schedule_notrace   <- NOP
  *   irqentry_exit_cond_resched <- NOP
  *   dynamic_preempt_lazy       <- false
+ *   dynamic_preempt_promote    <- false
  *
  * FULL:
  *   cond_resched               <- RET0
@@ -7426,6 +7437,7 @@ EXPORT_SYMBOL(__cond_resched_rwlock_write);
  *   preempt_schedule_notrace   <- preempt_schedule_notrace
  *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
  *   dynamic_preempt_lazy       <- false
+ *   dynamic_preempt_promote    <- false
  *
  * LAZY:
  *   cond_resched               <- RET0
@@ -7434,6 +7446,16 @@ EXPORT_SYMBOL(__cond_resched_rwlock_write);
  *   preempt_schedule_notrace   <- preempt_schedule_notrace
  *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
  *   dynamic_preempt_lazy       <- true
+ *   dynamic_preempt_promote    <- true
+ *
+ * LAZIEST:
+ *   cond_resched               <- RET0
+ *   might_resched              <- RET0
+ *   preempt_schedule           <- preempt_schedule
+ *   preempt_schedule_notrace   <- preempt_schedule_notrace
+ *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
+ *   dynamic_preempt_lazy       <- true
+ *   dynamic_preempt_promote    <- false
  */
 
 enum {
@@ -7442,6 +7464,7 @@ enum {
 	preempt_dynamic_voluntary,
 	preempt_dynamic_full,
 	preempt_dynamic_lazy,
+	preempt_dynamic_laziest,
 };
 
 int preempt_dynamic_mode = preempt_dynamic_undefined;
@@ -7462,6 +7485,9 @@ int sched_dynamic_mode(const char *str)
 #ifdef CONFIG_ARCH_HAS_PREEMPT_LAZY
 	if (!strcmp(str, "lazy"))
 		return preempt_dynamic_lazy;
+
+	if (!strcmp(str, "laziest"))
+		return preempt_dynamic_laziest;
 #endif
 
 	return -EINVAL;
@@ -7496,6 +7522,7 @@ static void __sched_dynamic_update(int mode)
 	preempt_dynamic_enable(preempt_schedule_notrace);
 	preempt_dynamic_enable(irqentry_exit_cond_resched);
 	preempt_dynamic_key_disable(preempt_lazy);
+	preempt_dynamic_key_disable(preempt_promote);
 
 	switch (mode) {
 	case preempt_dynamic_none:
@@ -7506,6 +7533,7 @@ static void __sched_dynamic_update(int mode)
 		preempt_dynamic_disable(preempt_schedule_notrace);
 		preempt_dynamic_disable(irqentry_exit_cond_resched);
 		preempt_dynamic_key_disable(preempt_lazy);
+		preempt_dynamic_key_disable(preempt_promote);
 		if (mode != preempt_dynamic_mode)
 			pr_info("Dynamic Preempt: none\n");
 		break;
@@ -7518,6 +7546,7 @@ static void __sched_dynamic_update(int mode)
 		preempt_dynamic_disable(preempt_schedule_notrace);
 		preempt_dynamic_disable(irqentry_exit_cond_resched);
 		preempt_dynamic_key_disable(preempt_lazy);
+		preempt_dynamic_key_disable(preempt_promote);
 		if (mode != preempt_dynamic_mode)
 			pr_info("Dynamic Preempt: voluntary\n");
 		break;
@@ -7530,6 +7559,7 @@ static void __sched_dynamic_update(int mode)
 		preempt_dynamic_enable(preempt_schedule_notrace);
 		preempt_dynamic_enable(irqentry_exit_cond_resched);
 		preempt_dynamic_key_disable(preempt_lazy);
+		preempt_dynamic_key_disable(preempt_promote);
 		if (mode != preempt_dynamic_mode)
 			pr_info("Dynamic Preempt: full\n");
 		break;
@@ -7542,8 +7572,22 @@ static void __sched_dynamic_update(int mode)
 		preempt_dynamic_enable(preempt_schedule_notrace);
 		preempt_dynamic_enable(irqentry_exit_cond_resched);
 		preempt_dynamic_key_enable(preempt_lazy);
+		preempt_dynamic_key_enable(preempt_promote);
 		if (mode != preempt_dynamic_mode)
 			pr_info("Dynamic Preempt: lazy\n");
+		break;
+
+	case preempt_dynamic_laziest:
+		if (!klp_override)
+			preempt_dynamic_disable(cond_resched);
+		preempt_dynamic_disable(might_resched);
+		preempt_dynamic_enable(preempt_schedule);
+		preempt_dynamic_enable(preempt_schedule_notrace);
+		preempt_dynamic_enable(irqentry_exit_cond_resched);
+		preempt_dynamic_key_enable(preempt_lazy);
+		preempt_dynamic_key_disable(preempt_promote);
+		if (mode != preempt_dynamic_mode)
+			pr_info("Dynamic Preempt: laziest\n");
 		break;
 	}
 
@@ -7609,6 +7653,8 @@ static void __init preempt_dynamic_init(void)
 			sched_dynamic_update(preempt_dynamic_voluntary);
 		} else if (IS_ENABLED(CONFIG_PREEMPT_LAZY)) {
 			sched_dynamic_update(preempt_dynamic_lazy);
+		} else if (IS_ENABLED(CONFIG_PREEMPT_LAZIEST)) {
+			sched_dynamic_update(preempt_dynamic_laziest);
 		} else {
 			/* Default static call setting, nothing to do */
 			WARN_ON_ONCE(!IS_ENABLED(CONFIG_PREEMPT));
@@ -7630,6 +7676,7 @@ PREEMPT_MODEL_ACCESSOR(none);
 PREEMPT_MODEL_ACCESSOR(voluntary);
 PREEMPT_MODEL_ACCESSOR(full);
 PREEMPT_MODEL_ACCESSOR(lazy);
+PREEMPT_MODEL_ACCESSOR(laziest);
 
 #else /* !CONFIG_PREEMPT_DYNAMIC: */
 
