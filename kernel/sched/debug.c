@@ -245,9 +245,9 @@ static ssize_t sched_dynamic_write(struct file *filp, const char __user *ubuf,
 static int sched_dynamic_show(struct seq_file *m, void *v)
 {
 	static const char * preempt_modes[] = {
-		"none", "voluntary", "full", "lazy",
+		"none", "voluntary", "full", "lazy", "laziest",
 	};
-	int j = ARRAY_SIZE(preempt_modes) - !IS_ENABLED(CONFIG_ARCH_HAS_PREEMPT_LAZY);
+	int j = ARRAY_SIZE(preempt_modes) - 2*!IS_ENABLED(CONFIG_ARCH_HAS_PREEMPT_LAZY);
 	int i = IS_ENABLED(CONFIG_PREEMPT_RT) * 2;
 
 	for (; i < j; i++) {
