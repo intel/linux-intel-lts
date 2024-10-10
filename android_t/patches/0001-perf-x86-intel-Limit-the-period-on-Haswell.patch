@@ -1,4 +1,4 @@
-From 50913bf3e2e2919d08ca257b529c33faac5f1b3c Mon Sep 17 00:00:00 2001
+From f1956430df354e59da51eb53fbb3a5f480eb86da Mon Sep 17 00:00:00 2001
 From: jiahuamx <jiahuax.man@intel.com>
 Date: Wed, 9 Oct 2024 11:30:39 +0800
 Subject: [PATCH] perf/x86/intel: Limit the period on Haswell
@@ -61,7 +61,7 @@ Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
  1 file changed, 21 insertions(+), 3 deletions(-)
 
 diff --git a/arch/x86/events/intel/core.c b/arch/x86/events/intel/core.c
-index b70e1522a27a..ad49ad1375d5 100644
+index b70e1522a27a..fec71e2f1fd1 100644
 --- a/arch/x86/events/intel/core.c
 +++ b/arch/x86/events/intel/core.c
 @@ -4149,6 +4149,25 @@ static u8 adl_get_hybrid_cpu_type(void)
@@ -71,7 +71,7 @@ index b70e1522a27a..ad49ad1375d5 100644
 +static inline bool erratum_hsw11(struct perf_event *event)
 +{
 +	return (event->hw.config & INTEL_ARCH_EVENT_MASK) ==
-+		X86_CONFIG(.event=0xc0, .umask=0x01);
++		X86_CONFIG(.event = 0xc0, .umask = 0x01);
 +}
 +
 +/*
@@ -84,7 +84,7 @@ index b70e1522a27a..ad49ad1375d5 100644
 + */
 +static u64 hsw_limit_period(struct perf_event *event, u64 left)
 +{
-+        return max(left, erratum_hsw11(event) ? 128ULL : 32ULL);
++	return max(left, erratum_hsw11(event) ? 128ULL : 32ULL);
 +}
 +
  /*
