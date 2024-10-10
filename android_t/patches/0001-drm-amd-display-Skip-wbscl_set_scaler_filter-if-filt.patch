@@ -1,0 +1,40 @@
+From 7172c861fa00a457cebffc6b2172d22906e7d779 Mon Sep 17 00:00:00 2001
+From: Alex Hung <alex.hung@amd.com>
+Date: Mon, 3 Jun 2024 10:47:37 -0600
+Subject: [PATCH] drm/amd/display: Skip wbscl_set_scaler_filter if filter is
+ null
+
+[ Upstream commit c4d31653c03b90e51515b1380115d1aedad925dd ]
+
+Callers can pass null in filter (i.e. from returned from the function
+wbscl_get_filter_coeffs_16p) and a null check is added to ensure that is
+not the case.
+
+This fixes 4 NULL_RETURNS issues reported by Coverity.
+
+Reviewed-by: Harry Wentland <harry.wentland@amd.com>
+Acked-by: Hamza Mahfooz <hamza.mahfooz@amd.com>
+Signed-off-by: Alex Hung <alex.hung@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/gpu/drm/amd/display/dc/dcn20/dcn20_dwb_scl.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/display/dc/dcn20/dcn20_dwb_scl.c b/drivers/gpu/drm/amd/display/dc/dcn20/dcn20_dwb_scl.c
+index 880954ac0b02..1b3cba5b1d74 100644
+--- a/drivers/gpu/drm/amd/display/dc/dcn20/dcn20_dwb_scl.c
++++ b/drivers/gpu/drm/amd/display/dc/dcn20/dcn20_dwb_scl.c
+@@ -690,6 +690,9 @@ static void wbscl_set_scaler_filter(
+ 	int pair;
+ 	uint16_t odd_coef, even_coef;
+ 
++	if (!filter)
++		return;
++
+ 	for (phase = 0; phase < (NUM_PHASES / 2 + 1); phase++) {
+ 		for (pair = 0; pair < tap_pairs; pair++) {
+ 			even_coef = filter[phase * taps + 2 * pair];
+-- 
+2.25.1
+
