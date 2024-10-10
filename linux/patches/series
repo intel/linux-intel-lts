@@ -128,3 +128,17 @@
 #CVE-2024-46763
 0001-fou-Fix-null-ptr-deref-in-GRO.patch
 
+#CVE-2024-46765
+0001-ice-protect-XDP-configuration-with-a-mutex.patch
+
+#CVE-2024-46784
+0001-net-mana-Fix-error-handling-in-mana_create_txq-rxq-s.patch
+
+#CVE-2024-46746
+0001-HID-amd_sfh-free-driver_data-after-destroying-hid-de.patch
+
+#CVE-2024-46755
+0001-wifi-mwifiex-Do-not-return-unused-priv-in-mwifiex_ge.patch
+
+#CVE-2024-46786
+0001-fscache-delete-fscache_cookie_lru_timer-when-fscache.patch
