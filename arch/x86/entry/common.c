@@ -210,7 +210,7 @@ __visible noinstr void do_int80_emulation(struct pt_regs *regs)
 
 	nr = syscall_32_enter(regs);
 
-	local_irq_enable_full();
+	syscall_enter_from_user_enable_irqs();
 	nr = syscall_enter_from_user_mode_work(regs, nr);
 
 	if (dovetailing()) {

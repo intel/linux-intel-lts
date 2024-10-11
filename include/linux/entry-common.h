@@ -150,6 +150,29 @@ void syscall_enter_from_user_mode_prepare(struct pt_regs *regs);
  */
 long syscall_enter_from_user_mode_work(struct pt_regs *regs, long syscall);
 
+static __always_inline void syscall_enter_from_user_enable_irqs(void)
+{
+	if (running_inband()) {
+		/*
+		 * If pipelining interrupts, prepare for emulating a
+		 * stall -> unstall transition (we are currently
+		 * unstalled), fixing up the IRQ trace state in order
+		 * to keep lockdep happy (and silent).
+		 */
+		stall_inband_nocheck();
+		hard_cond_local_irq_enable();
+		local_irq_enable();
+	} else {
+		/*
+		 * We are running on the out-of-band stage, don't mess
+		 * with the in-band interrupt state. This is none of
+		 * our business. We may manipulate the hardware state
+		 * only.
+		 */
+		hard_local_irq_enable();
+	}
+}
+
 /**
  * syscall_enter_from_user_mode - Establish state and check and handle work
  *				  before invoking a syscall
