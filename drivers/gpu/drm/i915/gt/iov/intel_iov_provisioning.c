@@ -4,6 +4,7 @@
  */
 
 #include "intel_iov.h"
+#include "intel_iov_ggtt.h"
 #include "intel_iov_provisioning.h"
 #include "intel_iov_utils.h"
 #include "gt/intel_gt.h"
@@ -654,6 +655,7 @@ static int pf_provision_ggtt(struct intel_iov *iov, unsigned int id, u64 size)
 		err = pf_push_config_ggtt(iov, id, 0, 0);
 release:
 		i915_ggtt_set_space_owner(ggtt, 0, node);
+		intel_iov_ggtt_shadow_vf_free(iov, id);
 
 		mutex_lock(&ggtt->vm.mutex);
 		drm_mm_remove_node(node);
@@ -681,6 +683,10 @@ release:
 	mutex_unlock(&ggtt->vm.mutex);
 	if (unlikely(err))
 		return err;
+
+	err = intel_iov_ggtt_shadow_vf_alloc(iov, id, node);
+	if (unlikely(err))
+		goto release;
 
 	i915_ggtt_set_space_owner(ggtt, id, node);
 

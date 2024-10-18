@@ -76,6 +76,7 @@ struct ipu_device {
 
 	const struct firmware *cpd_fw;
 	const char *cpd_fw_name;
+	const char *cpd_fw_name_new;
 	u64 *pkg_dir;
 	dma_addr_t pkg_dir_dma_addr;
 	unsigned int pkg_dir_size;

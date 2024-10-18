@@ -455,21 +455,18 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
 	struct ipu_isys *isys = csi2->isys;
-	struct ipu_isys_pipeline *ip =
-		container_of(media_entity_pipeline(&sd->entity),
-			     struct ipu_isys_pipeline, pipe);
-	struct v4l2_subdev *esd =
-		media_entity_to_v4l2_subdev(ip->external->entity);
-	struct ipu_isys_csi2_config *cfg;
+	struct media_pipeline *mp = media_entity_pipeline(&sd->entity);
+	struct ipu_isys_pipeline *ip = container_of(mp,
+						    struct ipu_isys_pipeline,
+						    pipe);
+	struct ipu_isys_csi2_config *cfg =
+		v4l2_get_subdev_hostdata(media_entity_to_v4l2_subdev
+					 (ip->external->entity));
 	unsigned int port, port_max;
 	int ret = 0;
 	u32 mask = 0;
 	unsigned int i;
 
-	if (!esd)
-		return -EPIPE;
-
-	cfg = v4l2_get_subdev_hostdata(esd);
 	port = cfg->port;
 	dev_dbg(&isys->adev->dev, "for port %u with %u lanes\n", port, nlanes);
 

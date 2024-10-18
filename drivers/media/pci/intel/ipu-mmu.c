@@ -243,8 +243,8 @@ static u32 *alloc_l2_pt(struct ipu_mmu_info *mmu_info)
 	return pt;
 }
 
-static size_t l2_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
-		       phys_addr_t dummy, size_t size);
+static void l2_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
+		     phys_addr_t dummy, size_t size);
 static int l2_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
 		  phys_addr_t paddr, size_t size)
 {
@@ -256,7 +256,7 @@ static int l2_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
 	unsigned long flags;
 	dma_addr_t dma;
 	unsigned int l2_entries;
-	size_t mapped_size = 0;
+	size_t mapped = 0;
 	int err = 0;
 
 	spin_lock_irqsave(&mmu_info->lock, flags);
@@ -274,8 +274,6 @@ static int l2_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
 			if (likely(!l2_virt)) {
 				l2_virt = alloc_l2_pt(mmu_info);
 				if (!l2_virt) {
-					spin_unlock_irqrestore(&mmu_info->lock,
-							       flags);
 					err = -ENOMEM;
 					goto error;
 				}
@@ -285,8 +283,6 @@ static int l2_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
 			if (!dma) {
 				dev_err(dev, "Failed to map l2pt page\n");
 				free_page((unsigned long)l2_virt);
-
-				spin_unlock_irqrestore(&mmu_info->lock, flags);
 				err = -EINVAL;
 				goto error;
 			}
@@ -314,15 +310,15 @@ static int l2_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
 
 			iova += ISP_PAGE_SIZE;
 			paddr += ISP_PAGE_SIZE;
-			mapped_size += ISP_PAGE_SIZE;
+			mapped += ISP_PAGE_SIZE;
 			size -= ISP_PAGE_SIZE;
 
 			l2_entries++;
 		}
 
-		if (l2_entries)
-			clflush_cache_range(&l2_pt[l2_idx - l2_entries],
-					    sizeof(l2_pt[0]) * l2_entries);
+		WARN_ON_ONCE(!l2_entries);
+		clflush_cache_range(&l2_pt[l2_idx - l2_entries],
+				    sizeof(l2_pt[0]) * l2_entries);
 	}
 
 	spin_unlock_irqrestore(&mmu_info->lock, flags);
@@ -330,10 +326,10 @@ static int l2_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
 	return 0;
 
 error:
+	spin_unlock_irqrestore(&mmu_info->lock, flags);
 	/* unroll mapping in case something went wrong */
-	if (size && mapped_size)
-		l2_unmap(mmu_info, iova - mapped_size, paddr - mapped_size,
-			 mapped_size);
+	if (mapped)
+		l2_unmap(mmu_info, iova - mapped, paddr - mapped, mapped);
 
 	return err;
 }
@@ -351,8 +347,8 @@ static int __ipu_mmu_map(struct ipu_mmu_info *mmu_info, unsigned long iova,
 	return l2_map(mmu_info, iova_start, paddr, size);
 }
 
-static size_t l2_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
-		       phys_addr_t dummy, size_t size)
+static void l2_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
+		     phys_addr_t dummy, size_t size)
 {
 	u32 l1_idx;
 	u32 *l2_pt;
@@ -369,11 +365,10 @@ static size_t l2_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
 			l1_idx, iova);
 
 		if (mmu_info->l1_pt[l1_idx] == mmu_info->dummy_l2_pteval) {
-			spin_unlock_irqrestore(&mmu_info->lock, flags);
 			dev_err(mmu_info->dev,
 				"unmap iova 0x%8.8lx l1 idx %u which was not mapped\n",
 				iova, l1_idx);
-			return unmapped << ISP_PAGE_SHIFT;
+			continue;
 		}
 		l2_pt = mmu_info->l2_pts[l1_idx];
 
@@ -386,24 +381,23 @@ static size_t l2_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
 			l2_pt[l2_idx] = mmu_info->dummy_page_pteval;
 
 			iova += ISP_PAGE_SIZE;
+			unmapped += ISP_PAGE_SIZE;
 			size -= ISP_PAGE_SIZE;
+
 			l2_entries++;
 		}
 
-		if (l2_entries) {
-			clflush_cache_range(&l2_pt[l2_idx - l2_entries],
-					    sizeof(l2_pt[0]) * l2_entries);
-			unmapped += l2_entries;
-		}
+		WARN_ON_ONCE(!l2_entries);
+		clflush_cache_range(&l2_pt[l2_idx - l2_entries],
+				    sizeof(l2_pt[0]) * l2_entries);
 	}
 
+	WARN_ON_ONCE(size);
 	spin_unlock_irqrestore(&mmu_info->lock, flags);
-
-	return unmapped << ISP_PAGE_SHIFT;
 }
 
-static size_t __ipu_mmu_unmap(struct ipu_mmu_info *mmu_info,
-			      unsigned long iova, size_t size)
+static void __ipu_mmu_unmap(struct ipu_mmu_info *mmu_info,
+			    unsigned long iova, size_t size)
 {
 	return l2_unmap(mmu_info, iova, 0, size);
 }
@@ -651,8 +645,8 @@ phys_addr_t ipu_mmu_iova_to_phys(struct ipu_mmu_info *mmu_info,
 }
 
 /* drivers/iommu/iommu.c:iommu_unmap() */
-size_t ipu_mmu_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
-		     size_t size)
+void ipu_mmu_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
+		   size_t size)
 {
 	unsigned int min_pagesz;
 
@@ -669,7 +663,7 @@ size_t ipu_mmu_unmap(struct ipu_mmu_info *mmu_info, unsigned long iova,
 	if (!IS_ALIGNED(iova | size, min_pagesz)) {
 		dev_err(NULL, "unaligned: iova 0x%lx size 0x%zx min_pagesz 0x%x\n",
 			iova, size, min_pagesz);
-		return -EINVAL;
+		return;
 	}
 
 	return __ipu_mmu_unmap(mmu_info, iova, size);
@@ -742,7 +736,7 @@ static void ipu_mmu_destroy(struct ipu_mmu *mmu)
 	}
 
 	free_dummy_page(mmu_info);
-	dma_unmap_single(mmu_info->dev, TBL_PHYS_ADDR(mmu_info->l1_pt_dma),
+	dma_unmap_single(mmu_info->dev, mmu_info->l1_pt_dma << ISP_PADDR_SHIFT,
 			 PAGE_SIZE, DMA_BIDIRECTIONAL);
 	free_page((unsigned long)mmu_info->dummy_l2_pt);
 	free_page((unsigned long)mmu_info->l1_pt);

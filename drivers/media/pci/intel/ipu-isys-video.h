@@ -192,4 +192,9 @@ void ipu_isys_video_add_capture_done(struct ipu_isys_pipeline *ip,
 				      (struct ipu_isys_pipeline *ip,
 				       struct ipu_fw_isys_resp_info_abi *resp));
 
+bool is_support_vc(struct media_pad *source_pad,
+						struct ipu_isys_pipeline *ip);
+
+bool is_has_metadata(const struct ipu_isys_pipeline *ip);
+
 #endif /* IPU_ISYS_VIDEO_H */

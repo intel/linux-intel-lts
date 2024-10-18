@@ -181,6 +181,16 @@ config VIDEO_IMX355
 	  To compile this driver as a module, choose M here: the
 	  module will be called imx355.
 
+config VIDEO_IMX390
+	tristate "IMX390 Camera Driver Support"
+	depends on I2C && VIDEO_DEV
+	help
+	  This is a Video4Linux2 sensor-level driver for
+	  Sony IMX390 camera with a MIPI CSI-2 interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called imx390.
+
 config VIDEO_IMX412
 	tristate "Sony IMX412 sensor support"
 	depends on OF_GPIO
@@ -1227,6 +1237,16 @@ config VIDEO_VPX3220
 	  To compile this driver as a module, choose M here: the
 	  module will be called vpx3220.
 
+config VIDEO_TI960
+	tristate "TI960 driver support"
+	depends on I2C && VIDEO_DEV
+	help
+	  This is a driver for TI960 Deserializer
+	  with a MIPI CSI-2 interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ti960.
+
 comment "Video and audio decoders"
 
 config VIDEO_SAA717X
@@ -1453,6 +1473,15 @@ config VIDEO_THS7303
 	  To compile this driver as a module, choose M here: the
 	  module will be called ths7303.
 
+config VIDEO_ISX031
+       depends on I2C && VIDEO_DEV
+       tristate "ISX031 Camera Driver"
+	help
+	  This is a Video4Linux2 sensor-level driver for
+	  Sony ISX031 camera with a MIPI CSI-2 interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called isx031.
 config VIDEO_LT6911UXC
 	tristate "Lontium LT6911UXC decoder"
 	depends on VIDEO_DEV && I2C
@@ -1475,6 +1504,16 @@ config VIDEO_LT6911UXE
 	To compile this driver as a module, choose M here: the
 	module will be called lt6911uxe.
 
+config VIDEO_D4XX
+        tristate "D4XX Camera Driver"
+        depends on VIDEO_DEV && I2C
+        select VIDEO_V4L2_SUBDEV_API
+	 help
+	   This is a Video4Linux2 sensor-level driver for
+	   intel realsence camera with MIPI Interface.
+
+	   To compile this driver as a module, choose M here: the
+	   module will be called d4xx.
 endmenu
 
 #

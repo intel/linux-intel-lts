@@ -134,10 +134,15 @@ struct intel_iov_data {
 #define IOV_VF_FLR_DONE_RECEIVED	2
 #define IOV_VF_NEEDS_FLR_FINISH		3
 #define IOV_VF_NEEDS_FLR_DONE_SYNC	4
+#define IOV_VF_PAUSE_IN_PROGRESS	5
+#define IOV_VF_PAUSE_BY_SUSPEND		6
 #define IOV_VF_FLR_FAILED		(BITS_PER_LONG - 1)
 	bool paused;
 	unsigned int adverse_events[IOV_THRESHOLD_MAX];
-	void *guc_state;
+	struct {
+		void *blob;
+		u32 size;
+	} guc_state;
 };
 
 /**
@@ -181,6 +186,38 @@ struct intel_iov_vf_runtime {
 		u32 offset;
 		u32 value;
 	} *regs;
+};
+
+struct intel_iov;
+
+/**
+ * struct intel_iov_ggtt_shadow - shadow GGTT data for single VF.
+ * @ptes: pointer to a buffer that stores the GGTT PTEs of a specific VF.
+ * @ggtt_region: pointer to the ggtt_region assigned to a specific VF during provisioning.
+ * @vfid: vfid VF, to which the data in this structure belongs.
+ */
+struct intel_iov_ggtt_shadow {
+	gen8_pte_t *ptes;
+	struct drm_mm_node *ggtt_region;
+	unsigned int vfid;
+};
+
+/**
+ * struct intel_iov_pf_ggtt - PF-specific GGTT data.
+ * @shadows_ggtt: shadow GGTT VFs array.
+ */
+struct intel_iov_pf_ggtt {
+	struct intel_iov_ggtt_shadow *shadows_ggtt;
+	/** @selftest: IOV GGTT selftests data.*/
+	I915_SELFTEST_DECLARE(struct {
+		/**
+		 * @selftest.mock_update_ptes: pointer to a function used to mock GGTT
+		 * updates by the GPU. (For selftest purposes only)
+		 */
+		int (*mock_update_ptes)(struct intel_iov *, struct sg_table *, gen8_pte_t);
+		/** @selftest.ptes: GGTT storage buffer during selftests.*/
+		gen8_pte_t *ptes;
+	} selftest);
 };
 
 /**
@@ -277,6 +314,7 @@ struct intel_iov {
 			struct intel_iov_provisioning provisioning;
 			struct intel_iov_service service;
 			struct intel_iov_state state;
+			struct intel_iov_pf_ggtt ggtt;
 		} pf;
 
 		struct {

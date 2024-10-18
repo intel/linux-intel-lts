@@ -1818,10 +1818,40 @@ static int sgtable_update_ptes_via_cpu(struct i915_ggtt *ggtt, u32 ggtt_addr, st
 	return n;
 }
 
-int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, u32 ggtt_addr, struct sg_table *st,
-				  u32 num_entries, const gen8_pte_t pte_pattern)
+static void sgtable_update_shadow_ggtt(struct i915_ggtt *ggtt, unsigned int vfid,
+					    u64 ggtt_addr, struct sg_table *st, u32 num_entries,
+					    const gen8_pte_t pte_pattern)
 {
+	struct intel_iov *iov = &ggtt->vm.gt->iov;
+	dma_addr_t addr;
+	struct sgt_iter iter;
+
+	if (!st) {
+		while (num_entries--) {
+			intel_iov_ggtt_shadow_set_pte(iov, vfid, ggtt_addr, pte_pattern);
+			ggtt_addr += I915_GTT_PAGE_SIZE_4K;
+		}
+		return;
+	}
+
+	for_each_sgt_daddr(addr, iter, st)
+		intel_iov_ggtt_shadow_set_pte(iov, vfid, ggtt_addr, pte_pattern | addr);
+}
+
+int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, unsigned int vfid, u64 ggtt_addr,
+				  struct sg_table *st, u32 num_entries,
+				  const gen8_pte_t pte_pattern)
+{
+	I915_SELFTEST_DECLARE(struct intel_iov_pf_ggtt *iov_ggtt);
 	int ret;
+
+	GEM_BUG_ON(!IS_SRIOV_PF(ggtt->vm.i915));
+
+#if IS_ENABLED(CONFIG_DRM_I915_SELFTEST)
+	iov_ggtt = &ggtt->vm.gt->iov.pf.ggtt;
+	if (iov_ggtt->selftest.mock_update_ptes)
+		return iov_ggtt->selftest.mock_update_ptes(&ggtt->vm.gt->iov, st, pte_pattern);
+#endif
 
 	if (should_update_ggtt_with_bind(ggtt))
 		ret = gen8_ggtt_bind_ptes(ggtt, ggtt_addr >> PAGE_SHIFT, st, num_entries,
@@ -1829,6 +1859,18 @@ int i915_ggtt_sgtable_update_ptes(struct i915_ggtt *ggtt, u32 ggtt_addr, struct 
 	else
 		ret = sgtable_update_ptes_via_cpu(ggtt, ggtt_addr, st, num_entries, pte_pattern);
 
+	if (ret <= 0)
+		goto out;
+
+	/*
+	 * If we update the GGTT for PF in this function, it means that we
+	 * release the GGTT owned by VF. In this case, we don't need to update
+	 * the GGTT shadow, because it should be removed immediately.
+	 */
+	if (vfid != PFID)
+		sgtable_update_shadow_ggtt(ggtt, vfid, ggtt_addr, st, num_entries, pte_pattern);
+
+out:
 	return (ret) ? 0 : -EIO;
 }
 
@@ -1862,7 +1904,7 @@ void i915_ggtt_set_space_owner(struct i915_ggtt *ggtt, u16 vfid,
 	/* Wa_22018453856 */
 	if (i915_ggtt_require_binder(ggtt->vm.i915) &&
 	    should_update_ggtt_with_bind(ggtt) &&
-	    gen8_ggtt_bind_ptes(ggtt, base >> PAGE_SHIFT, NULL, size / PAGE_SIZE, pte))
+	    i915_ggtt_sgtable_update_ptes(ggtt, vfid, base, NULL, size / PAGE_SIZE, pte))
 			goto invalidate;
 
 	gtt_entries += base >> PAGE_SHIFT;
@@ -1875,14 +1917,14 @@ invalidate:
 	ggtt->invalidate(ggtt);
 }
 
-static inline unsigned int __ggtt_size_to_ptes_size(u64 ggtt_size)
+unsigned int ggtt_size_to_ptes_size(u64 ggtt_size)
 {
 	GEM_BUG_ON(!IS_ALIGNED(ggtt_size, I915_GTT_MIN_ALIGNMENT));
 
 	return (ggtt_size >> PAGE_SHIFT) * sizeof(gen8_pte_t);
 }
 
-static void ggtt_pte_clear_vfid(void *buf, u64 size)
+void ggtt_pte_clear_vfid(void *buf, u64 size)
 {
 	while (size) {
 		*(gen8_pte_t *)buf &= ~TGL_GGTT_PTE_VFID_MASK;
@@ -1897,31 +1939,34 @@ static void ggtt_pte_clear_vfid(void *buf, u64 size)
  * @ggtt: the &struct i915_ggtt
  * @node: the &struct drm_mm_node - the @node->start is used as the start offset for save
  * @buf: preallocated buffer in which PTEs will be saved
- * @size: size of prealocated buffer (in bytes)
+ * @size: size of preallocated buffer (in bytes)
  *        - must be sizeof(gen8_pte_t) aligned
  * @flags: function flags:
  *         - #I915_GGTT_SAVE_PTES_NO_VFID BIT - save PTEs without VFID
  *
  * Returns: size of the buffer used (or needed if both @buf and @size are (0)) to store all PTEs
- *          for a given node, -EINVAL if one of @buf or @size is 0.
+ *          for a given node, -EINVAL if one of @buf or @size is 0, -EOPNOTSUPP when not supported.
  */
 int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, void *buf,
 			unsigned int size, unsigned int flags)
 {
 	gen8_pte_t __iomem *gtt_entries = ggtt->gsm;
 
+	if (i915_ggtt_require_binder(ggtt->vm.i915))
+		return -EOPNOTSUPP;
+
 	if (!buf && !size)
-		return __ggtt_size_to_ptes_size(node->size);
+		return ggtt_size_to_ptes_size(node->size);
 
 	if (!buf || !size)
 		return -EINVAL;
 
 	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
-	GEM_WARN_ON(size > __ggtt_size_to_ptes_size(SZ_4G));
+	GEM_WARN_ON(size > ggtt_size_to_ptes_size(SZ_4G));
 
-	if (size < __ggtt_size_to_ptes_size(node->size))
+	if (size < ggtt_size_to_ptes_size(node->size))
 		return -ENOSPC;
-	size = __ggtt_size_to_ptes_size(node->size);
+	size = ggtt_size_to_ptes_size(node->size);
 
 	gtt_entries += node->start >> PAGE_SHIFT;
 
@@ -1938,14 +1983,14 @@ int i915_ggtt_save_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, 
  * @ggtt: the &struct i915_ggtt
  * @node: the &struct drm_mm_node - the @node->start is used as the start offset for restore
  * @buf: buffer from which PTEs will be restored
- * @size: size of prealocated buffer (in bytes)
+ * @size: size of preallocated buffer (in bytes)
  *        - must be sizeof(gen8_pte_t) aligned
  * @flags: function flags:
  *         - #I915_GGTT_RESTORE_PTES_VFID_MASK - VFID for restored PTEs
  *         - #I915_GGTT_RESTORE_PTES_NEW_VFID - restore PTEs with new VFID
  *           (from #I915_GGTT_RESTORE_PTES_VFID_MASK)
  *
- * Returns: 0 on success, -ENOSPC if @node->size is less than size.
+ * Returns: 0 on success, -ENOSPC if @node->size is less than size, -EOPNOTSUPP when not supported.
  */
 int i915_ggtt_restore_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *node, const void *buf,
 			   unsigned int size, unsigned int flags)
@@ -1954,10 +1999,13 @@ int i915_ggtt_restore_ptes(struct i915_ggtt *ggtt, const struct drm_mm_node *nod
 	u32 vfid = FIELD_GET(I915_GGTT_RESTORE_PTES_VFID_MASK, flags);
 	gen8_pte_t pte;
 
+	if (i915_ggtt_require_binder(ggtt->vm.i915))
+		return -EOPNOTSUPP;
+
 	GEM_BUG_ON(!size);
 	GEM_BUG_ON(!IS_ALIGNED(size, sizeof(gen8_pte_t)));
 
-	if (size > __ggtt_size_to_ptes_size(node->size))
+	if (size > ggtt_size_to_ptes_size(node->size))
 		return -ENOSPC;
 
 	gtt_entries += node->start >> PAGE_SHIFT;

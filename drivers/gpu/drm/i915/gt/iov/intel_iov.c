@@ -199,7 +199,15 @@ int intel_iov_init_ggtt(struct intel_iov *iov)
 {
 	int err;
 
-	if (intel_iov_is_vf(iov)) {
+	if (intel_iov_is_pf(iov)) {
+		/* Wa_22018453856 */
+		if (i915_ggtt_require_binder(iov_to_i915(iov)) &&
+		    iov_to_gt(iov)->type != GT_MEDIA) {
+			err = intel_iov_ggtt_shadow_init(iov);
+			if (unlikely(err))
+				return err;
+		}
+	} else if (intel_iov_is_vf(iov)) {
 		err = vf_balloon_ggtt(iov);
 		if (unlikely(err))
 			return err;
@@ -214,7 +222,9 @@ int intel_iov_init_ggtt(struct intel_iov *iov)
  */
 void intel_iov_fini_ggtt(struct intel_iov *iov)
 {
-	if (intel_iov_is_vf(iov))
+	if (intel_iov_is_pf(iov))
+		intel_iov_ggtt_shadow_fini(iov);
+	else if (intel_iov_is_vf(iov))
 		vf_deballoon_ggtt(iov);
 }
 

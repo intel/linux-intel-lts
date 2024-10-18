@@ -99,7 +99,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 #endif
 	int ret;
 #if IS_ENABLED(CONFIG_IPU_BRIDGE)
-	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 
 	ret = ipu_isys_check_fwnode_graph(fwnode);
 	if (ret) {
@@ -142,7 +142,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	}
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	if (!spdata) {
-		dev_err(&pdev->dev, "No subdevice info provided");
+		dev_dbg(&pdev->dev, "No subdevice info provided");
 		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, NULL,
 				     isys_init_acpi_add_device);
 		pdata->spdata = acpi_pdata;
@@ -497,8 +497,8 @@ static inline int match_spdata(struct ipu_isys_subdev_info *sd,
 	return 1;
 }
 
-void fixup_spdata(const void *spdata_rep,
-		struct ipu_isys_subdev_pdata *spdata)
+static void fixup_spdata(const void *spdata_rep,
+			 struct ipu_isys_subdev_pdata *spdata)
 {
 	const struct ipu_spdata_rep *rep = spdata_rep;
 	struct ipu_isys_subdev_info **subdevs, *sd_info;
@@ -592,24 +592,31 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	case IPU6_PCI_ID:
 		ipu_ver = IPU_VER_6;
 		isp->cpd_fw_name = IPU6_FIRMWARE_NAME;
+		isp->cpd_fw_name_new = IPU6_FIRMWARE_NAME_NEW;
 		break;
 	case IPU6SE_PCI_ID:
 		ipu_ver = IPU_VER_6SE;
 		isp->cpd_fw_name = IPU6SE_FIRMWARE_NAME;
+		isp->cpd_fw_name_new = IPU6SE_FIRMWARE_NAME_NEW;
 		break;
 	case IPU6EP_ADL_P_PCI_ID:
 	case IPU6EP_RPL_P_PCI_ID:
 		ipu_ver = IPU_VER_6EP;
 		isp->cpd_fw_name = is_es ? IPU6EPES_FIRMWARE_NAME : IPU6EP_FIRMWARE_NAME;
+		isp->cpd_fw_name_new = is_es ? IPU6EPES_FIRMWARE_NAME_NEW
+					     : IPU6EP_FIRMWARE_NAME_NEW;
 		break;
 	case IPU6EP_ADL_N_PCI_ID:
 		ipu_ver = IPU_VER_6EP;
 		isp->cpd_fw_name = IPU6EPADLN_FIRMWARE_NAME;
+		isp->cpd_fw_name_new = IPU6EPADLN_FIRMWARE_NAME_NEW;
 		break;
 	case IPU6EP_MTL_PCI_ID:
 		ipu_ver = IPU_VER_6EP_MTL;
 		isp->cpd_fw_name = is_es ? IPU6EPMTLES_FIRMWARE_NAME
 					 : IPU6EPMTL_FIRMWARE_NAME;
+		isp->cpd_fw_name_new = is_es ? IPU6EPMTLES_FIRMWARE_NAME_NEW
+					     : IPU6EPMTL_FIRMWARE_NAME_NEW;
 		break;
 	default:
 		WARN(1, "Unsupported IPU device");
@@ -649,9 +656,16 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (rval)
 		return rval;
 
-	dev_info(&pdev->dev, "cpd file name: %s\n", isp->cpd_fw_name);
-
+	dev_dbg(&pdev->dev, "cpd file name: %s\n", isp->cpd_fw_name);
 	rval = request_cpd_fw(&isp->cpd_fw, isp->cpd_fw_name, &pdev->dev);
+	if (rval == -ENOENT) {
+		/* Try again with new FW path */
+		dev_dbg(&pdev->dev, "cpd file name: %s\n",
+			isp->cpd_fw_name_new);
+		rval = request_cpd_fw(&isp->cpd_fw, isp->cpd_fw_name_new,
+				      &pdev->dev);
+	}
+
 	if (rval) {
 		dev_err(&isp->pdev->dev, "Requesting signed firmware failed\n");
 		goto buttress_exit;
@@ -713,7 +727,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		do_div(val, BUTTRESS_IS_FREQ_STEP);
 		isys_ctrl->divisor = val;
 		dev_info(&isp->pdev->dev,
-			 "adusted isys freq from input (%d) and set (%d)\n",
+			 "set isys freq as (%d), actually set (%d)\n",
 			 isys_freq_override,
 			 isys_ctrl->divisor * BUTTRESS_IS_FREQ_STEP);
 	}
@@ -858,20 +872,17 @@ static void ipu_pci_remove(struct pci_dev *pdev)
 	isp->pkg_dir_dma_addr = 0;
 	isp->pkg_dir_size = 0;
 
+	ipu_mmu_cleanup(isp->psys->mmu);
+	ipu_mmu_cleanup(isp->isys->mmu);
+
 	ipu_bus_del_devices(pdev);
 
 	pm_runtime_forbid(&pdev->dev);
 	pm_runtime_get_noresume(&pdev->dev);
 
-	pci_release_regions(pdev);
-	pci_disable_device(pdev);
-
 	ipu_buttress_exit(isp);
 
 	release_firmware(isp->cpd_fw);
-
-	ipu_mmu_cleanup(isp->psys->mmu);
-	ipu_mmu_cleanup(isp->isys->mmu);
 }
 
 static void ipu_pci_reset_prepare(struct pci_dev *pdev)

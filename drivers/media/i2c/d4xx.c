@@ -2,7 +2,7 @@
 /*
  * ds5.c - Intel(R) RealSense(TM) D4XX camera driver
  *
- * Copyright (c) 2017-2023, INTEL CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2024, INTEL CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -597,22 +597,6 @@ static int max9295_read_8(struct ds5 *state, u16 reg, u8 *val)
 	return ret;
 }
 
-static int ds5_write_8(struct ds5 *state, u16 reg, u8 val)
-{
-	int ret;
-
-	ret = regmap_raw_write(state->regmap, reg, &val, 1);
-	if (ret < 0)
-		dev_err(&state->client->dev, "%s(): i2c write failed %d, 0x%04x = 0x%x\n",
-			__func__, ret, reg, val);
-	else
-		if (state->dfu_dev.dfu_state_flag == DS5_DFU_IDLE)
-			dev_info(&state->client->dev, "%s(): i2c write 0x%04x: 0x%x\n",
-				 __func__, reg, val);
-
-	return ret;
-}
-
 static int ds5_write(struct ds5 *state, u16 reg, u16 val)
 {
 	int ret;
@@ -726,7 +710,7 @@ static void set_sub_stream_vc_id(s64 *query_sub_stream, int index, u32 vc_id)
 	query_sub_stream[index] |= val << 56;
 }
 
-static int get_sub_stream_vc_id(s64 *query_sub_stream, int index)
+static int get_sub_stream_vc_id(const s64 *query_sub_stream, int index)
 {
 	s64 val = 0;
 	val = query_sub_stream[index] >> 56;
@@ -1342,6 +1326,21 @@ static unsigned int mbus_code_to_mipi(u32 code)
 	}
 }
 
+static s64 *match_d4xx_sub_stream_qmenu(const s64 *qmenu_int)
+{
+	int i = 0;
+	s64 *matched_qmenu_int = NULL;
+
+	for (i = 0; i < MAX_D457_COUNT; i++) {
+		if (d4xx_query_sub_stream[i] == qmenu_int) {
+			matched_qmenu_int = d4xx_query_sub_stream[i];
+			break;
+		}
+	}
+
+	return matched_qmenu_int;
+}
+
 static int __ds5_sensor_set_fmt(struct ds5 *state, struct ds5_sensor *sensor,
 				     struct v4l2_subdev_state *v4l2_state,
 				struct v4l2_subdev_format *fmt)
@@ -1382,12 +1381,17 @@ static int __ds5_sensor_set_fmt(struct ds5 *state, struct ds5_sensor *sensor,
 	substream = pad_to_substream[sensor->mux_pad];
 
 	if (substream != -1) {
-		query_sub_stream = state->ctrls.query_sub_stream->qmenu_int;
+		query_sub_stream = match_d4xx_sub_stream_qmenu(
+			state->ctrls.query_sub_stream->qmenu_int);
 		if (query_sub_stream) {
 			set_sub_stream_fmt(query_sub_stream, substream, mf->code);
 			set_sub_stream_h(query_sub_stream, substream, mf->height);
 			set_sub_stream_w(query_sub_stream, substream, mf->width);
 			set_sub_stream_dt(query_sub_stream, substream, mbus_code_to_mipi(mf->code));
+		} else {
+			dev_err(sensor->sd.dev,
+				"failed to find sub stream fmt info: %s\n",
+				sensor->sd.name);
 		}
 	}
 
@@ -3111,7 +3115,7 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 	default:
 		dev_err(state->rgb.sensor.sd.dev,
 		"%s():!! can not get d4xx_controls_q_sub_stream: sd->name is %s\n",
-		__func__, __LINE__, sd->name);
+		__func__, sd->name);
 		break;
 	}
 	ctrls->query_sub_stream->flags |=
@@ -3599,12 +3603,17 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	substream = pad_to_substream[pad];
 
 	if (substream != -1) {
-		query_sub_stream = state->ctrls.query_sub_stream->qmenu_int;
+		query_sub_stream = match_d4xx_sub_stream_qmenu(
+			state->ctrls.query_sub_stream->qmenu_int);
 		if (query_sub_stream) {
 			set_sub_stream_fmt(query_sub_stream, substream, ffmt->code);
 			set_sub_stream_h(query_sub_stream, substream, ffmt->height);
 			set_sub_stream_w(query_sub_stream, substream, ffmt->width);
 			set_sub_stream_dt(query_sub_stream, substream, mbus_code_to_mipi(ffmt->code));
+		} else {
+			dev_err(sd->dev,
+				"failed to find sub stream fmt info: %s\n",
+				sensor->sd.name);
 		}
 	}
 
@@ -3715,7 +3724,7 @@ static int ds5_mux_s_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
-int d4xx_reset_oneshot(struct ds5 *state)
+static int d4xx_reset_oneshot(struct ds5 *state)
 {
 	struct d4xx_pdata *dpdata = state->client->dev.platform_data;
 	struct i2c_board_info *deser = dpdata->deser_board_info;
@@ -4791,7 +4800,7 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 		dev_dbg(&c->dev, "%s(): <Major, Minor>: <%d, %d>\n",
 				__func__, MAJOR(*dev_num), MINOR(*dev_num));
 		/* Create a class : appears at /sys/class */
-		*ds5_class = class_create(THIS_MODULE, DS5_DRIVER_NAME_CLASS);
+		*ds5_class = class_create(DS5_DRIVER_NAME_CLASS);
 		if (IS_ERR(*ds5_class)) {
 			dev_err(&c->dev, "Could not create class device\n");
 			unregister_chrdev_region(0, 1);
@@ -4839,8 +4848,7 @@ static void ds5_substream_init(void)
 {
 	int i, j;
 	unsigned int mipi_csi2_type;
-	s64 sub_stream;
-
+	s64 *sub_stream = NULL;
 	/*
 	 * 0, vc 0, depth
 	 * 1, vc 0, meta data
@@ -5338,8 +5346,7 @@ e_regulator:
 		regulator_disable(state->vcc);
 	return ret;
 }
-
-static int ds5_remove(struct i2c_client *c)
+static void ds5_remove(struct i2c_client *c)
 {
 	struct ds5 *state = container_of(i2c_get_clientdata(c), struct ds5, mux.sd.subdev);
 
@@ -5357,7 +5364,7 @@ static int ds5_remove(struct i2c_client *c)
 #endif
 		ds5_mux_remove(state);
 	}
-	return 0;
+
 }
 
 static const struct i2c_device_id ds5_id[] = {
