@@ -1,0 +1,73 @@
+From 9ca6c28cf9f057d79383b281cb336cf0a16a27a2 Mon Sep 17 00:00:00 2001
+From: Jiaxun Yang <jiaxun.yang@flygoat.com>
+Date: Tue, 13 Aug 2024 10:59:08 +0100
+Subject: [PATCH] MIPS: cevt-r4k: Don't call get_c0_compare_int if timer irq is
+ installed
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This avoids warning:
+
+[    0.118053] BUG: sleeping function called from invalid context at kernel/locking/mutex.c:283
+
+Caused by get_c0_compare_int on secondary CPU.
+
+We also skipped saving IRQ number to struct clock_event_device *cd as
+it's never used by clockevent core, as per comments it's only meant
+for "non CPU local devices".
+
+Reported-by: Serge Semin <fancer.lancer@gmail.com>
+Closes: https://lore.kernel.org/linux-mips/6szkkqxpsw26zajwysdrwplpjvhl5abpnmxgu2xuj3dkzjnvsf@4daqrz4mf44k/
+Signed-off-by: Jiaxun Yang <jiaxun.yang@flygoat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@linaro.org>
+Reviewed-by: Serge Semin <fancer.lancer@gmail.com>
+Tested-by: Serge Semin <fancer.lancer@gmail.com>
+Signed-off-by: Thomas Bogendoerfer <tsbogend@alpha.franken.de>
+---
+ arch/mips/kernel/cevt-r4k.c | 15 +++++++--------
+ 1 file changed, 7 insertions(+), 8 deletions(-)
+
+diff --git a/arch/mips/kernel/cevt-r4k.c b/arch/mips/kernel/cevt-r4k.c
+index 32ec67c9ab67..77028aa8c107 100644
+--- a/arch/mips/kernel/cevt-r4k.c
++++ b/arch/mips/kernel/cevt-r4k.c
+@@ -303,13 +303,6 @@ int r4k_clockevent_init(void)
+ 	if (!c0_compare_int_usable())
+ 		return -ENXIO;
+ 
+-	/*
+-	 * With vectored interrupts things are getting platform specific.
+-	 * get_c0_compare_int is a hook to allow a platform to return the
+-	 * interrupt number of its liking.
+-	 */
+-	irq = get_c0_compare_int();
+-
+ 	cd = &per_cpu(mips_clockevent_device, cpu);
+ 
+ 	cd->name		= "MIPS";
+@@ -320,7 +313,6 @@ int r4k_clockevent_init(void)
+ 	min_delta		= calculate_min_delta();
+ 
+ 	cd->rating		= 300;
+-	cd->irq			= irq;
+ 	cd->cpumask		= cpumask_of(cpu);
+ 	cd->set_next_event	= mips_next_event;
+ 	cd->event_handler	= mips_event_handler;
+@@ -332,6 +324,13 @@ int r4k_clockevent_init(void)
+ 
+ 	cp0_timer_irq_installed = 1;
+ 
++	/*
++	 * With vectored interrupts things are getting platform specific.
++	 * get_c0_compare_int is a hook to allow a platform to return the
++	 * interrupt number of its liking.
++	 */
++	irq = get_c0_compare_int();
++
+ 	if (request_irq(irq, c0_compare_interrupt, flags, "timer",
+ 			c0_compare_interrupt))
+ 		pr_err("Failed to request irq %d (timer)\n", irq);
+-- 
+2.25.1
+

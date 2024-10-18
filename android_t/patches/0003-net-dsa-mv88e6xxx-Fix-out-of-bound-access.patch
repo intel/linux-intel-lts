@@ -1,0 +1,37 @@
+From f982e778ad36ee7e82227f24ba798bca0531be29 Mon Sep 17 00:00:00 2001
+From: Joseph Huang <Joseph.Huang@garmin.com>
+Date: Mon, 19 Aug 2024 19:52:50 -0400
+Subject: [PATCH 3/3] net: dsa: mv88e6xxx: Fix out-of-bound access
+
+[ Upstream commit 528876d867a23b5198022baf2e388052ca67c952 ]
+
+If an ATU violation was caused by a CPU Load operation, the SPID could
+be larger than DSA_MAX_PORTS (the size of mv88e6xxx_chip.ports[] array).
+
+Fixes: 75c05a74e745 ("net: dsa: mv88e6xxx: Fix counting of ATU violations")
+Signed-off-by: Joseph Huang <Joseph.Huang@garmin.com>
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Link: https://patch.msgid.link/20240819235251.1331763-1-Joseph.Huang@garmin.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/dsa/mv88e6xxx/global1_atu.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/dsa/mv88e6xxx/global1_atu.c b/drivers/net/dsa/mv88e6xxx/global1_atu.c
+index 7c513a03789c..17fd62616ce6 100644
+--- a/drivers/net/dsa/mv88e6xxx/global1_atu.c
++++ b/drivers/net/dsa/mv88e6xxx/global1_atu.c
+@@ -453,7 +453,8 @@ static irqreturn_t mv88e6xxx_g1_atu_prob_irq_thread_fn(int irq, void *dev_id)
+ 		trace_mv88e6xxx_atu_full_violation(chip->dev, spid,
+ 						   entry.portvec, entry.mac,
+ 						   fid);
+-		chip->ports[spid].atu_full_violation++;
++		if (spid < ARRAY_SIZE(chip->ports))
++			chip->ports[spid].atu_full_violation++;
+ 	}
+ 	mv88e6xxx_reg_unlock(chip);
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,63 @@
+From c3937c54f7516d3b131f107d332cacefcbbb6f4b Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Mon, 5 Aug 2024 15:01:28 +0200
+Subject: [PATCH] ALSA: line6: Fix racy access to midibuf
+
+commit 15b7a03205b31bc5623378c190d22b7ff60026f1 upstream.
+
+There can be concurrent accesses to line6 midibuf from both the URB
+completion callback and the rawmidi API access.  This could be a cause
+of KMSAN warning triggered by syzkaller below (so put as reported-by
+here).
+
+This patch protects the midibuf call of the former code path with a
+spinlock for avoiding the possible races.
+
+Reported-by: syzbot+78eccfb8b3c9a85fc6c5@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/00000000000000949c061df288c5@google.com
+Cc: <stable@vger.kernel.org>
+Link: https://patch.msgid.link/20240805130129.10872-1-tiwai@suse.de
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ sound/usb/line6/driver.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/sound/usb/line6/driver.c b/sound/usb/line6/driver.c
+index f4437015d43a..9df49a880b75 100644
+--- a/sound/usb/line6/driver.c
++++ b/sound/usb/line6/driver.c
+@@ -286,12 +286,14 @@ static void line6_data_received(struct urb *urb)
+ {
+ 	struct usb_line6 *line6 = (struct usb_line6 *)urb->context;
+ 	struct midi_buffer *mb = &line6->line6midi->midibuf_in;
++	unsigned long flags;
+ 	int done;
+ 
+ 	if (urb->status == -ESHUTDOWN)
+ 		return;
+ 
+ 	if (line6->properties->capabilities & LINE6_CAP_CONTROL_MIDI) {
++		spin_lock_irqsave(&line6->line6midi->lock, flags);
+ 		done =
+ 			line6_midibuf_write(mb, urb->transfer_buffer, urb->actual_length);
+ 
+@@ -300,12 +302,15 @@ static void line6_data_received(struct urb *urb)
+ 			dev_dbg(line6->ifcdev, "%d %d buffer overflow - message skipped\n",
+ 				done, urb->actual_length);
+ 		}
++		spin_unlock_irqrestore(&line6->line6midi->lock, flags);
+ 
+ 		for (;;) {
++			spin_lock_irqsave(&line6->line6midi->lock, flags);
+ 			done =
+ 				line6_midibuf_read(mb, line6->buffer_message,
+ 						   LINE6_MIDI_MESSAGE_MAXLEN,
+ 						   LINE6_MIDIBUF_READ_RX);
++			spin_unlock_irqrestore(&line6->line6midi->lock, flags);
+ 
+ 			if (done <= 0)
+ 				break;
+-- 
+2.25.1
+

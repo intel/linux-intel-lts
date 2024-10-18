@@ -804,3 +804,27 @@
 
 #CVE-2024-46859
 0001-platform-x86-panasonic-laptop-Fix-SINF-array-out-of-.patch
+
+#CVE-2024-44988
+0001-net-dsa-mv88e6xxx-read-FID-when-handling-ATU-violati.patch
+0002-net-dsa-mv88e6xxx-replace-ATU-violation-prints-with-.patch
+0003-net-dsa-mv88e6xxx-Fix-out-of-bound-access.patch
+
+#CVE-2024-44954
+0001-ALSA-line6-Fix-racy-access-to-midibuf.patch
+
+#CVE-2024-44958
+0001-sched-smt-Introduce-sched_smt_present_inc-dec-helper.patch
+0002-sched-smt-Fix-unbalance-sched_smt_present-dec-inc.patch
+
+#CVE-2024-44982
+0001-drm-msm-dpu-cleanup-FB-if-dpu_format_populate_layout.patch
+
+#CVE-2024-45003
+0001-vfs-Don-t-evict-inode-under-the-inode-lru-traversing.patch
+
+#CVE-2024-46840
+0001-btrfs-clean-up-our-handling-of-refs-0-in-snapshot-de.patch
+
+#CVE-2024-46832
+0001-MIPS-cevt-r4k-Don-t-call-get_c0_compare_int-if-timer.patch

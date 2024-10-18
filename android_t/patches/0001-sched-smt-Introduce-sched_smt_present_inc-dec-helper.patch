@@ -1,0 +1,80 @@
+From 38d85ed204402ca2fc4dd4e85412f1ced7c159ee Mon Sep 17 00:00:00 2001
+From: Yang Yingliang <yangyingliang@huawei.com>
+Date: Wed, 3 Jul 2024 11:16:07 +0800
+Subject: [PATCH 1/2] sched/smt: Introduce sched_smt_present_inc/dec() helper
+
+commit 31b164e2e4af84d08d2498083676e7eeaa102493 upstream.
+
+Introduce sched_smt_present_inc/dec() helper, so it can be called
+in normal or error path simply. No functional changed.
+
+Cc: stable@kernel.org
+Signed-off-by: Yang Yingliang <yangyingliang@huawei.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lore.kernel.org/r/20240703031610.587047-2-yangyingliang@huaweicloud.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ kernel/sched/core.c | 26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 42ed0b71c945..2bf855cf2d7d 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -9280,6 +9280,22 @@ static int cpuset_cpu_inactive(unsigned int cpu)
+ 	return 0;
+ }
+ 
++static inline void sched_smt_present_inc(int cpu)
++{
++#ifdef CONFIG_SCHED_SMT
++	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
++		static_branch_inc_cpuslocked(&sched_smt_present);
++#endif
++}
++
++static inline void sched_smt_present_dec(int cpu)
++{
++#ifdef CONFIG_SCHED_SMT
++	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
++		static_branch_dec_cpuslocked(&sched_smt_present);
++#endif
++}
++
+ int sched_cpu_activate(unsigned int cpu)
+ {
+ 	struct rq *rq = cpu_rq(cpu);
+@@ -9291,13 +9307,10 @@ int sched_cpu_activate(unsigned int cpu)
+ 	 */
+ 	balance_push_set(cpu, false);
+ 
+-#ifdef CONFIG_SCHED_SMT
+ 	/*
+ 	 * When going up, increment the number of cores with SMT present.
+ 	 */
+-	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+-		static_branch_inc_cpuslocked(&sched_smt_present);
+-#endif
++	sched_smt_present_inc(cpu);
+ 	set_cpu_active(cpu, true);
+ 
+ 	if (sched_smp_initialized) {
+@@ -9366,13 +9379,12 @@ int sched_cpu_deactivate(unsigned int cpu)
+ 	}
+ 	rq_unlock_irqrestore(rq, &rf);
+ 
+-#ifdef CONFIG_SCHED_SMT
+ 	/*
+ 	 * When going down, decrement the number of cores with SMT present.
+ 	 */
+-	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+-		static_branch_dec_cpuslocked(&sched_smt_present);
++	sched_smt_present_dec(cpu);
+ 
++#ifdef CONFIG_SCHED_SMT
+ 	sched_core_cpu_deactivate(cpu);
+ #endif
+ 
+-- 
+2.25.1
+
