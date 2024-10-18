@@ -148,31 +148,36 @@ static void sock_show_fdinfo(struct seq_file *m, struct file *f)
 
 #ifdef CONFIG_NET_OOB
 
-static inline bool sock_oob_capable(struct socket *sock)
-{
-	return sock->sk && sock->sk->oob_data;
-}
-
 int __weak sock_oob_attach(struct socket *sock)
 {
 	return 0;
 }
 
-void __weak sock_oob_detach(struct sock *sk)
+void __weak sock_oob_release(struct socket *sock)
 {
 }
 
-int __weak sock_oob_bind(struct socket *sock, struct sockaddr *addr, int len)
+void __weak sock_oob_destroy(struct sock *sk)
+{
+}
+
+int __weak sock_oob_bind(struct sock *sk, struct sockaddr *addr, int len)
 {
 	return 0;
 }
 
-int __weak sock_oob_connect(struct socket *sock, struct sockaddr *addr, int len)
+int __weak sock_oob_shutdown(struct sock *sk, int how)
 {
 	return 0;
 }
 
-long __weak sock_inband_ioctl_redirect(struct socket *sock,
+int __weak sock_oob_connect(struct sock *sk,
+			struct sockaddr *addr, int len, int flags)
+{
+	return 0;
+}
+
+long __weak sock_inband_ioctl_redirect(struct sock *sk,
 				unsigned int cmd, unsigned long arg)
 {
 	return -ENOTTY;
@@ -206,29 +211,22 @@ __poll_t __weak sock_oob_poll(struct file *filp,
 
 #else	/* !CONFIG_NET_OOB */
 
-static inline bool sock_oob_capable(struct socket *sock)
-{
-	return false;
-}
-
 static inline int sock_oob_attach(struct socket *sock)
 {
 	return 0;
 }
 
-static inline int sock_oob_bind(struct socket *sock,
-				struct sockaddr *addr, int len)
+static inline void sock_oob_release(struct socket *sock)
+{
+}
+
+static inline int sock_oob_connect(struct sock *sk,
+				struct sockaddr *addr, int len, int flags)
 {
 	return 0;
 }
 
-static inline int sock_oob_connect(struct socket *sock,
-				struct sockaddr *addr, int len)
-{
-	return 0;
-}
-
-static inline long sock_inband_ioctl_redirect(struct socket *sock,
+static inline long sock_inband_ioctl_redirect(struct sock *sk,
 					unsigned int cmd, unsigned long arg)
 {
 	return -ENOTTY;
@@ -760,6 +758,9 @@ EXPORT_SYMBOL(sock_alloc);
 static void __sock_release(struct socket *sock, struct inode *inode)
 {
 	const struct proto_ops *ops = READ_ONCE(sock->ops);
+
+	if (sock_oob_capable(sock))
+		sock_oob_release(sock);
 
 	if (ops) {
 		struct module *owner = ops->owner;
@@ -1449,7 +1450,7 @@ static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 
 		default:
 			if (sock_oob_capable(sock)) {
-				err = sock_inband_ioctl_redirect(sock, cmd, arg);
+				err = sock_inband_ioctl_redirect(sock->sk, cmd, arg);
 				if (!err || err != -ENOIOCTLCMD)
 					break;
 			}
@@ -1963,9 +1964,6 @@ int __sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
 			err = security_socket_bind(sock,
 						   (struct sockaddr *)&address,
 						   addrlen);
-			if (sock_oob_capable(sock) && !err)
-				err = sock_oob_bind(sock, (struct sockaddr *)
-						&address, addrlen);
 			if (!err)
 				err = READ_ONCE(sock->ops)->bind(sock,
 						      (struct sockaddr *)
@@ -2168,15 +2166,14 @@ int __sys_connect_file(struct file *file, struct sockaddr_storage *address,
 	if (err)
 		goto out;
 
-	if (sock_oob_capable(sock)) {
-		err = sock_oob_connect(sock, (struct sockaddr *)address,
-				addrlen);
+	err = READ_ONCE(sock->ops)->connect(sock, (struct sockaddr *)address,
+				addrlen, sock->file->f_flags | file_flags);
+	if (!err && sock_oob_capable(sock)) {
+		err = sock_oob_connect(sock->sk, (struct sockaddr *)address,
+				addrlen, sock->file->f_flags | file_flags);
 		if (err)
 			goto out;
 	}
-
-	err = READ_ONCE(sock->ops)->connect(sock, (struct sockaddr *)address,
-				addrlen, sock->file->f_flags | file_flags);
 out:
 	return err;
 }

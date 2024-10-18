@@ -18,9 +18,11 @@
 					* device driver responsibility
 					*/
 #define PP_FLAG_PAGE_FRAG	BIT(2) /* for page frag feature */
+#define PP_FLAG_PAGE_OOB	BIT(3) /* Enable access from the oob stage (Dovetail) */
 #define PP_FLAG_ALL		(PP_FLAG_DMA_MAP |\
 				 PP_FLAG_DMA_SYNC_DEV |\
-				 PP_FLAG_PAGE_FRAG)
+				 PP_FLAG_PAGE_FRAG |\
+				 PP_FLAG_PAGE_OOB)
 
 /*
  * Fast allocation side cache array/stack
@@ -40,7 +42,12 @@
 #define PP_ALLOC_CACHE_REFILL	64
 struct pp_alloc_cache {
 	u32 count;
+#ifdef CONFIG_PAGE_POOL_OOB
+	struct page **cache;
+	hard_spinlock_t oob_lock;
+#else	/* !CONFIG_PAGE_POOL_OOB */
 	struct page *cache[PP_ALLOC_CACHE_SIZE];
+#endif	/* !CONFIG_PAGE_POOL_OOB */
 };
 
 /**
@@ -196,6 +203,24 @@ void page_pool_use_xdp_mem(struct page_pool *pool, void (*disconnect)(void *),
 			   struct xdp_mem_info *mem);
 void page_pool_put_page_bulk(struct page_pool *pool, void **data,
 			     int count);
+
+static inline bool page_pool_is_oob(struct page_pool *pool)
+{
+	return IS_ENABLED(CONFIG_PAGE_POOL_OOB) &&
+		pool->p.flags & PP_FLAG_PAGE_OOB;
+}
+
+static inline unsigned int page_pool_cache_size(struct page_pool *pool)
+{
+	return IS_ENABLED(CONFIG_PAGE_POOL_OOB) &&
+		pool->p.flags & PP_FLAG_PAGE_OOB ? pool->p.pool_size : PP_ALLOC_CACHE_SIZE;
+}
+
+static inline unsigned int page_pool_cache_refill(struct page_pool *pool)
+{
+	return IS_ENABLED(CONFIG_PAGE_POOL_OOB) &&
+		pool->p.flags & PP_FLAG_PAGE_OOB ? pool->p.pool_size : PP_ALLOC_CACHE_REFILL;
+}
 #else
 static inline void page_pool_unlink_napi(struct page_pool *pool)
 {

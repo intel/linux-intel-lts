@@ -9,7 +9,9 @@
 struct oob_net_state {
 };
 
-static inline void net_init_oob_state(struct oob_net_state *nets) { }
-static inline void net_cleanup_oob_state(struct oob_net_state *nets) { }
+struct net;
+
+static inline void net_init_oob_state(struct net *net) { }
+static inline void net_cleanup_oob_state(struct net *net) { }
 
 #endif /* !_DOVETAIL_NET_H */

@@ -93,7 +93,7 @@ static const struct irq_chip imx_irqsteer_irq_chip = {
 	.irq_unmask		= imx_irqsteer_irq_unmask,
 	.irq_bus_lock		= imx_irqsteer_irq_bus_lock,
 	.irq_bus_sync_unlock	= imx_irqsteer_irq_bus_sync_unlock,
-	.flags		= IRQCHIP_PIPELINE_SAFE,
+	.flags			= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int imx_irqsteer_irq_map(struct irq_domain *h, unsigned int irq,
