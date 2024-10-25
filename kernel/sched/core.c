@@ -1125,11 +1125,11 @@ static __always_inline bool dynamic_preempt_promote(void)
 #else
 static __always_inline bool dynamic_preempt_lazy(void)
 {
-	return IS_ENABLED(PREEMPT_LAZY) | IS_ENABLED(PREEMPT_LAZIEST);
+	return IS_ENABLED(CONFIG_PREEMPT_LAZY) | IS_ENABLED(CONFIG_PREEMPT_LAZIEST);
 }
 static __always_inline bool dynamic_preempt_promote(void)
 {
-	return IS_ENABLED(PREEMPT_LAZY);
+	return IS_ENABLED(CONFIG_PREEMPT_LAZY);
 }
 #endif
 
