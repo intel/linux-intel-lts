@@ -137,7 +137,6 @@ static void e1000_gate_hw_phy_config_ich8lan(struct e1000_hw *hw, bool gate);
 static s32 e1000_disable_ulp_lpt_lp(struct e1000_hw *hw, bool force);
 static s32 e1000_setup_copper_link_pch_lpt(struct e1000_hw *hw);
 static s32 e1000_oem_bits_config_ich8lan(struct e1000_hw *hw, bool d0_state);
-static s32 e1000e_force_smbus(struct e1000_hw *hw);
 
 static inline u16 __er16flash(struct e1000_hw *hw, unsigned long reg)
 {
@@ -1277,7 +1276,8 @@ release:
 	if (hw->mac.type == e1000_pch_mtp) {
 		ret_val = e1000e_force_smbus(hw);
 		if (ret_val)
-			e_dbg("Failed to force SMBUS over MTL system: %d\n", ret_val);
+			e_dbg("Failed to force SMBUS over MTL system: %d\n",
+			      ret_val);
 	}
 
 	hw->phy.ops.release(hw);
