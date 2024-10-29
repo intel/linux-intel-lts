@@ -17,6 +17,7 @@
 #define AVS_COND_TYPE_AECREF	1
 
 struct avs_path {
+	struct kobject kobj;
 	u32 dma_id;
 	struct list_head ppl_list;
 	u32 state;
@@ -38,6 +39,7 @@ struct avs_path {
 };
 
 struct avs_path_pipeline {
+	struct kobject kobj;
 	u8 instance_id;
 	struct list_head mod_list;
 	struct list_head binding_list;
@@ -49,6 +51,7 @@ struct avs_path_pipeline {
 };
 
 struct avs_path_module {
+	struct kobject kobj;
 	u16 module_id;
 	u8 instance_id;
 	union avs_gtw_attributes gtw_attrs;

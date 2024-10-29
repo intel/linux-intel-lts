@@ -332,6 +332,7 @@ int avs_icl_load_basefw(struct avs_dev *adev, struct firmware *fw);
 struct avs_soc_component {
 	struct snd_soc_component base;
 	struct avs_tplg *tplg;
+	struct kobject *kobj;
 
 	struct list_head node;
 };
@@ -425,5 +426,9 @@ static inline int avs_probe_platform_register(struct avs_dev *adev, const char *
 static inline void avs_debugfs_init(struct avs_dev *adev) { }
 static inline void avs_debugfs_exit(struct avs_dev *adev) { }
 #endif
+
+/* Filesystems integration */
+
+extern const struct attribute_group *avs_attr_groups[];
 
 #endif /* __SOUND_SOC_INTEL_AVS_H */
