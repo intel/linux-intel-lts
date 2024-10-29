@@ -38,9 +38,6 @@
 #CVE-2024-43824
 0001-PCI-endpoint-pci-epf-test-Make-use-of-cached-epc_fea.patch
 
-#CVE-2024-36478
-0001-null_blk-fix-null-ptr-dereference-while-configuring-.patch
-
 #CVE-2024-46681
 0001-pktgen-use-cpus_read_lock-in-pg_net_init.patch
 
