@@ -1,0 +1,86 @@
+From 10b46a6fe62d7d11502e8945cbb518f21a9d4300 Mon Sep 17 00:00:00 2001
+From: Qianqiang Liu <qianqiang.liu@163.com>
+Date: Wed, 25 Sep 2024 13:29:36 +0800
+Subject: [PATCH] fbcon: Fix a NULL pointer dereference issue in fbcon_putcs
+
+[ Upstream commit 5b97eebcce1b4f3f07a71f635d6aa3af96c236e7 ]
+
+syzbot has found a NULL pointer dereference bug in fbcon.
+Here is the simplified C reproducer:
+
+struct param {
+	uint8_t type;
+	struct tiocl_selection ts;
+};
+
+int main()
+{
+	struct fb_con2fbmap con2fb;
+	struct param param;
+
+	int fd = open("/dev/fb1", 0, 0);
+
+	con2fb.console = 0x19;
+	con2fb.framebuffer = 0;
+	ioctl(fd, FBIOPUT_CON2FBMAP, &con2fb);
+
+	param.type = 2;
+	param.ts.xs = 0; param.ts.ys = 0;
+	param.ts.xe = 0; param.ts.ye = 0;
+	param.ts.sel_mode = 0;
+
+	int fd1 = open("/dev/tty1", O_RDWR, 0);
+	ioctl(fd1, TIOCLINUX, &param);
+
+	con2fb.console = 1;
+	con2fb.framebuffer = 0;
+	ioctl(fd, FBIOPUT_CON2FBMAP, &con2fb);
+
+	return 0;
+}
+
+After calling ioctl(fd1, TIOCLINUX, &param), the subsequent ioctl(fd, FBIOPUT_CON2FBMAP, &con2fb)
+causes the kernel to follow a different execution path:
+
+ set_con2fb_map
+  -> con2fb_init_display
+   -> fbcon_set_disp
+    -> redraw_screen
+     -> hide_cursor
+      -> clear_selection
+       -> highlight
+        -> invert_screen
+         -> do_update_region
+          -> fbcon_putcs
+           -> ops->putcs
+
+Since ops->putcs is a NULL pointer, this leads to a kernel panic.
+To prevent this, we need to call set_blitting_type() within set_con2fb_map()
+to properly initialize ops->putcs.
+
+Reported-by: syzbot+3d613ae53c031502687a@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=3d613ae53c031502687a
+Tested-by: syzbot+3d613ae53c031502687a@syzkaller.appspotmail.com
+Signed-off-by: Qianqiang Liu <qianqiang.liu@163.com>
+Signed-off-by: Helge Deller <deller@gmx.de>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/video/fbdev/core/fbcon.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/video/fbdev/core/fbcon.c b/drivers/video/fbdev/core/fbcon.c
+index dfe6774959a4..852d1d3423b4 100644
+--- a/drivers/video/fbdev/core/fbcon.c
++++ b/drivers/video/fbdev/core/fbcon.c
+@@ -846,6 +846,8 @@ static int set_con2fb_map(int unit, int newidx, int user)
+ 			return err;
+ 
+ 		fbcon_add_cursor_work(info);
++	} else if (vc) {
++		set_blitting_type(vc, info);
+ 	}
+ 
+ 	con2fb_map[unit] = newidx;
+-- 
+2.25.1
+

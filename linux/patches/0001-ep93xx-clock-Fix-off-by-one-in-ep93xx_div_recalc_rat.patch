@@ -1,0 +1,40 @@
+From e1fa6283300b73a2e734e6a60ccdefcb0cfdd3bb Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <alexander.sverdlin@gmail.com>
+Date: Wed, 11 Sep 2024 10:39:15 +0300
+Subject: [PATCH] ep93xx: clock: Fix off by one in ep93xx_div_recalc_rate()
+
+[ Upstream commit c7f06284a6427475e3df742215535ec3f6cd9662 ]
+
+The psc->div[] array has psc->num_div elements.  These values come from
+when we call clk_hw_register_div().  It's adc_divisors and
+ARRAY_SIZE(adc_divisors)) and so on.  So this condition needs to be >=
+instead of > to prevent an out of bounds read.
+
+Fixes: 9645ccc7bd7a ("ep93xx: clock: convert in-place to COMMON_CLK")
+Signed-off-by: Dan Carpenter <dan.carpenter@linaro.org>
+Acked-by: Alexander Sverdlin <alexander.sverdlin@gmail.com>
+Reviewed-by: Nikita Shubin <nikita.shubin@maquefel.me>
+Signed-off-by: Alexander Sverdlin <alexander.sverdlin@gmail.com>
+Link: https://lore.kernel.org/r/1caf01ad4c0a8069535813c26c7f0b8ea011155e.camel@linaro.org
+Signed-off-by: Arnd Bergmann <arnd@arndb.de>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ arch/arm/mach-ep93xx/clock.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-ep93xx/clock.c b/arch/arm/mach-ep93xx/clock.c
+index 85a496ddc619..e9f72a529b50 100644
+--- a/arch/arm/mach-ep93xx/clock.c
++++ b/arch/arm/mach-ep93xx/clock.c
+@@ -359,7 +359,7 @@ static unsigned long ep93xx_div_recalc_rate(struct clk_hw *hw,
+ 	u32 val = __raw_readl(psc->reg);
+ 	u8 index = (val & psc->mask) >> psc->shift;
+ 
+-	if (index > psc->num_div)
++	if (index >= psc->num_div)
+ 		return 0;
+ 
+ 	return DIV_ROUND_UP_ULL(parent_rate, psc->div[index]);
+-- 
+2.25.1
+

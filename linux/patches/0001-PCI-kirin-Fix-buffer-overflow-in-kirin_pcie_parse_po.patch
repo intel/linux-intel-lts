@@ -1,0 +1,53 @@
+From cf546ba08ff59e76e7a17ba96d2ed10001ee9b55 Mon Sep 17 00:00:00 2001
+From: Alexandra Diupina <adiupina@astralinux.ru>
+Date: Tue, 3 Sep 2024 14:58:23 +0300
+Subject: [PATCH] PCI: kirin: Fix buffer overflow in kirin_pcie_parse_port()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[ Upstream commit c500a86693a126c9393e602741e348f80f1b0fc5 ]
+
+Within kirin_pcie_parse_port(), the pcie->num_slots is compared to
+pcie->gpio_id_reset size (MAX_PCI_SLOTS) which is correct and would lead
+to an overflow.
+
+Thus, fix condition to pcie->num_slots + 1 >= MAX_PCI_SLOTS and move
+pcie->num_slots increment below the if-statement to avoid out-of-bounds
+array access.
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+Fixes: b22dbbb24571 ("PCI: kirin: Support PERST# GPIOs for HiKey970 external PEX 8606 bridge")
+Link: https://lore.kernel.org/linux-pci/20240903115823.30647-1-adiupina@astralinux.ru
+Signed-off-by: Alexandra Diupina <adiupina@astralinux.ru>
+[kwilczynski: commit log]
+Signed-off-by: Krzysztof Wilczyński <kwilczynski@kernel.org>
+Reviewed-by: Mauro Carvalho Chehab <mchehab+huawei@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/pci/controller/dwc/pcie-kirin.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/pcie-kirin.c b/drivers/pci/controller/dwc/pcie-kirin.c
+index a824d8e8edb9..68395d19a264 100644
+--- a/drivers/pci/controller/dwc/pcie-kirin.c
++++ b/drivers/pci/controller/dwc/pcie-kirin.c
+@@ -416,12 +416,12 @@ static int kirin_pcie_parse_port(struct kirin_pcie *pcie,
+ 			if (pcie->gpio_id_reset[i] < 0)
+ 				continue;
+ 
+-			pcie->num_slots++;
+-			if (pcie->num_slots > MAX_PCI_SLOTS) {
++			if (pcie->num_slots + 1 >= MAX_PCI_SLOTS) {
+ 				dev_err(dev, "Too many PCI slots!\n");
+ 				ret = -EINVAL;
+ 				goto put_node;
+ 			}
++			pcie->num_slots++;
+ 
+ 			ret = of_pci_get_devfn(child);
+ 			if (ret < 0) {
+-- 
+2.25.1
+

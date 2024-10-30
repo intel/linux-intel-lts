@@ -1,0 +1,43 @@
+From 1aca737e8ded3e0757866fe8aea4100c8599feeb Mon Sep 17 00:00:00 2001
+From: Cristian Marussi <cristian.marussi@arm.com>
+Date: Mon, 12 Aug 2024 18:33:32 +0100
+Subject: [PATCH] firmware: arm_scmi: Fix double free in OPTEE transport
+
+[ Upstream commit e98dba934b2fc587eafb83f47ad64d9053b18ae0 ]
+
+Channels can be shared between protocols, avoid freeing the same channel
+descriptors twice when unloading the stack.
+
+Fixes: 5f90f189a052 ("firmware: arm_scmi: Add optee transport")
+Signed-off-by: Cristian Marussi <cristian.marussi@arm.com>
+Tested-by: Peng Fan <peng.fan@nxp.com>  #i.MX95 19x19 EVK
+Reviewed-by: Peng Fan <peng.fan@nxp.com>
+Tested-by: Florian Fainelli <florian.fainelli@broadcom.com>
+Message-Id: <20240812173340.3912830-2-cristian.marussi@arm.com>
+Signed-off-by: Sudeep Holla <sudeep.holla@arm.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/firmware/arm_scmi/optee.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/firmware/arm_scmi/optee.c b/drivers/firmware/arm_scmi/optee.c
+index 2a7aeab40e54..f5f6ec83d3e1 100644
+--- a/drivers/firmware/arm_scmi/optee.c
++++ b/drivers/firmware/arm_scmi/optee.c
+@@ -467,6 +467,13 @@ static int scmi_optee_chan_free(int id, void *p, void *data)
+ 	struct scmi_chan_info *cinfo = p;
+ 	struct scmi_optee_channel *channel = cinfo->transport_info;
+ 
++	/*
++	 * Different protocols might share the same chan info, so a previous
++	 * call might have already freed the structure.
++	 */
++	if (!channel)
++		return 0;
++
+ 	mutex_lock(&scmi_optee_private->mu);
+ 	list_del(&channel->link);
+ 	mutex_unlock(&scmi_optee_private->mu);
+-- 
+2.25.1
+

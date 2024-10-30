@@ -1,0 +1,49 @@
+From fcbcc5aa0545ba5ed137423ed8476bcd5a00f80b Mon Sep 17 00:00:00 2001
+From: wenglianfa <wenglianfa@huawei.com>
+Date: Fri, 6 Sep 2024 17:34:37 +0800
+Subject: [PATCH] RDMA/hns: Fix Use-After-Free of rsv_qp on HIP08
+
+[ Upstream commit fd8489294dd2beefb70f12ec4f6132aeec61a4d0 ]
+
+Currently rsv_qp is freed before ib_unregister_device() is called
+on HIP08. During the time interval, users can still dereg MR and
+rsv_qp will be used in this process, leading to a UAF. Move the
+release of rsv_qp after calling ib_unregister_device() to fix it.
+
+Fixes: 70f92521584f ("RDMA/hns: Use the reserved loopback QPs to free MR before destroying MPT")
+Signed-off-by: wenglianfa <wenglianfa@huawei.com>
+Signed-off-by: Junxian Huang <huangjunxian6@hisilicon.com>
+Link: https://patch.msgid.link/20240906093444.3571619-3-huangjunxian6@hisilicon.com
+Signed-off-by: Leon Romanovsky <leon@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/infiniband/hw/hns/hns_roce_hw_v2.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/infiniband/hw/hns/hns_roce_hw_v2.c b/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
+index c4521ab66ee4..34d16e88b5d6 100644
+--- a/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
++++ b/drivers/infiniband/hw/hns/hns_roce_hw_v2.c
+@@ -3058,6 +3058,9 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
+ 
+ static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
+ {
++	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
++		free_mr_exit(hr_dev);
++
+ 	hns_roce_function_clear(hr_dev);
+ 
+ 	if (!hr_dev->is_vf)
+@@ -6933,9 +6936,6 @@ static void __hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
+ 	hr_dev->state = HNS_ROCE_DEVICE_STATE_UNINIT;
+ 	hns_roce_handle_device_err(hr_dev);
+ 
+-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
+-		free_mr_exit(hr_dev);
+-
+ 	hns_roce_exit(hr_dev);
+ 	kfree(hr_dev->priv);
+ 	ib_dealloc_device(&hr_dev->ib_dev);
+-- 
+2.25.1
+

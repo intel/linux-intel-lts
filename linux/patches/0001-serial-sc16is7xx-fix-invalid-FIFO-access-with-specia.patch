@@ -1,0 +1,59 @@
+From 877f6aa1301c9710bde6af4a07c0a3f45c06a845 Mon Sep 17 00:00:00 2001
+From: jiahuamx <jiahuax.man@intel.com>
+Date: Fri, 11 Oct 2024 16:06:24 +0800
+Subject: [PATCH] serial: sc16is7xx: fix invalid FIFO access with special
+ register set
+
+When enabling access to the special register set, Receiver time-out and
+RHR interrupts can happen. In this case, the IRQ handler will try to read
+from the FIFO thru the RHR register at address 0x00, but address 0x00 is
+mapped to DLL register, resulting in erroneous FIFO reading.
+
+Call graph example:
+    sc16is7xx_startup(): entry
+    sc16is7xx_ms_proc(): entry
+    sc16is7xx_set_termios(): entry
+    sc16is7xx_set_baud(): DLH/DLL = $009C --> access special register set
+    sc16is7xx_port_irq() entry            --> IIR is 0x0C
+    sc16is7xx_handle_rx() entry
+    sc16is7xx_fifo_read(): --> unable to access FIFO (RHR) because it is
+                               mapped to DLL (LCR=LCR_CONF_MODE_A)
+    sc16is7xx_set_baud(): exit --> Restore access to general register set
+
+Fix the problem by claiming the efr_lock mutex when accessing the Special
+register set.
+
+Fixes: dfeae619d781 ("serial: sc16is7xx")
+Cc: stable@vger.kernel.org
+Signed-off-by: Hugo Villeneuve <hvilleneuve@dimonoff.com>
+Link: https://lore.kernel.org/r/20240723125302.1305372-3-hugo@hugovil.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/tty/serial/sc16is7xx.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/tty/serial/sc16is7xx.c b/drivers/tty/serial/sc16is7xx.c
+index 5b40b493bde3..64910e5956e5 100644
+--- a/drivers/tty/serial/sc16is7xx.c
++++ b/drivers/tty/serial/sc16is7xx.c
+@@ -545,6 +545,8 @@ static int sc16is7xx_set_baud(struct uart_port *port, int baud)
+ 			      SC16IS7XX_MCR_CLKSEL_BIT,
+ 			      prescaler == 1 ? 0 : SC16IS7XX_MCR_CLKSEL_BIT);
+ 
++	mutex_lock(&one->efr_lock);
++
+ 	/* Open the LCR divisors for configuration */
+ 	sc16is7xx_port_write(port, SC16IS7XX_LCR_REG,
+ 			     SC16IS7XX_LCR_CONF_MODE_A);
+@@ -558,6 +560,8 @@ static int sc16is7xx_set_baud(struct uart_port *port, int baud)
+ 	/* Put LCR back to the normal mode */
+ 	sc16is7xx_port_write(port, SC16IS7XX_LCR_REG, lcr);
+ 
++	mutex_unlock(&one->efr_lock);
++
+ 	return DIV_ROUND_CLOSEST((clk / prescaler) / 16, div);
+ }
+ 
+-- 
+2.25.1
+

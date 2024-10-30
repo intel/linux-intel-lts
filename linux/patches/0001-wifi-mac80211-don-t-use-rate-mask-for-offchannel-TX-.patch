@@ -1,0 +1,115 @@
+From fc36ec1d2eb23db7dfdb210b387f91ac651fc53a Mon Sep 17 00:00:00 2001
+From: Ping-Ke Shih <pkshih@realtek.com>
+Date: Mon, 29 Jul 2024 15:48:16 +0800
+Subject: [PATCH] wifi: mac80211: don't use rate mask for offchannel TX either
+
+[ Upstream commit e7a7ef9a0742dbd0818d5b15fba2c5313ace765b ]
+
+Like the commit ab9177d83c04 ("wifi: mac80211: don't use rate mask for
+scanning"), ignore incorrect settings to avoid no supported rate warning
+reported by syzbot.
+
+The syzbot did bisect and found cause is commit 9df66d5b9f45 ("cfg80211:
+fix default HE tx bitrate mask in 2G band"), which however corrects
+bitmask of HE MCS and recognizes correctly settings of empty legacy rate
+plus HE MCS rate instead of returning -EINVAL.
+
+As suggestions [1], follow the change of SCAN TX to consider this case of
+offchannel TX as well.
+
+[1] https://lore.kernel.org/linux-wireless/6ab2dc9c3afe753ca6fdcdd1421e7a1f47e87b84.camel@sipsolutions.net/T/#m2ac2a6d2be06a37c9c47a3d8a44b4f647ed4f024
+
+Reported-by: syzbot+8dd98a9e98ee28dc484a@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/linux-wireless/000000000000fdef8706191a3f7b@google.com/
+Fixes: 9df66d5b9f45 ("cfg80211: fix default HE tx bitrate mask in 2G band")
+Signed-off-by: Ping-Ke Shih <pkshih@realtek.com>
+Link: https://patch.msgid.link/20240729074816.20323-1-pkshih@realtek.com
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ include/net/mac80211.h    | 7 ++++---
+ net/mac80211/offchannel.c | 1 +
+ net/mac80211/rate.c       | 2 +-
+ net/mac80211/scan.c       | 2 +-
+ net/mac80211/tx.c         | 2 +-
+ 5 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/include/net/mac80211.h b/include/net/mac80211.h
+index 87a4f334c22a..a5a5a2915736 100644
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -885,8 +885,9 @@ enum mac80211_tx_info_flags {
+  *	of their QoS TID or other priority field values.
+  * @IEEE80211_TX_CTRL_MCAST_MLO_FIRST_TX: first MLO TX, used mostly internally
+  *	for sequence number assignment
+- * @IEEE80211_TX_CTRL_SCAN_TX: Indicates that this frame is transmitted
+- *	due to scanning, not in normal operation on the interface.
++ * @IEEE80211_TX_CTRL_DONT_USE_RATE_MASK: Don't use rate mask for this frame
++ *	which is transmitted due to scanning or offchannel TX, not in normal
++ *	operation on the interface.
+  * @IEEE80211_TX_CTRL_MLO_LINK: If not @IEEE80211_LINK_UNSPECIFIED, this
+  *	frame should be transmitted on the specific link. This really is
+  *	only relevant for frames that do not have data present, and is
+@@ -907,7 +908,7 @@ enum mac80211_tx_control_flags {
+ 	IEEE80211_TX_CTRL_NO_SEQNO		= BIT(7),
+ 	IEEE80211_TX_CTRL_DONT_REORDER		= BIT(8),
+ 	IEEE80211_TX_CTRL_MCAST_MLO_FIRST_TX	= BIT(9),
+-	IEEE80211_TX_CTRL_SCAN_TX		= BIT(10),
++	IEEE80211_TX_CTRL_DONT_USE_RATE_MASK	= BIT(10),
+ 	IEEE80211_TX_CTRL_MLO_LINK		= 0xf0000000,
+ };
+ 
+diff --git a/net/mac80211/offchannel.c b/net/mac80211/offchannel.c
+index 50dc379ca097..b2f895ea752d 100644
+--- a/net/mac80211/offchannel.c
++++ b/net/mac80211/offchannel.c
+@@ -940,6 +940,7 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 	}
+ 
+ 	IEEE80211_SKB_CB(skb)->flags = flags;
++	IEEE80211_SKB_CB(skb)->control.flags |= IEEE80211_TX_CTRL_DONT_USE_RATE_MASK;
+ 
+ 	skb->dev = sdata->dev;
+ 
+diff --git a/net/mac80211/rate.c b/net/mac80211/rate.c
+index 3cf252418bd3..78e7ac6c0af0 100644
+--- a/net/mac80211/rate.c
++++ b/net/mac80211/rate.c
+@@ -890,7 +890,7 @@ void ieee80211_get_tx_rates(struct ieee80211_vif *vif,
+ 	if (ieee80211_is_tx_data(skb))
+ 		rate_control_apply_mask(sdata, sta, sband, dest, max_rates);
+ 
+-	if (!(info->control.flags & IEEE80211_TX_CTRL_SCAN_TX))
++	if (!(info->control.flags & IEEE80211_TX_CTRL_DONT_USE_RATE_MASK))
+ 		mask = sdata->rc_rateidx_mask[info->band];
+ 
+ 	if (dest[0].idx < 0)
+diff --git a/net/mac80211/scan.c b/net/mac80211/scan.c
+index 62c22ff329ad..6432dd3ec2a7 100644
+--- a/net/mac80211/scan.c
++++ b/net/mac80211/scan.c
+@@ -647,7 +647,7 @@ static void ieee80211_send_scan_probe_req(struct ieee80211_sub_if_data *sdata,
+ 				cpu_to_le16(IEEE80211_SN_TO_SEQ(sn));
+ 		}
+ 		IEEE80211_SKB_CB(skb)->flags |= tx_flags;
+-		IEEE80211_SKB_CB(skb)->control.flags |= IEEE80211_TX_CTRL_SCAN_TX;
++		IEEE80211_SKB_CB(skb)->control.flags |= IEEE80211_TX_CTRL_DONT_USE_RATE_MASK;
+ 		ieee80211_tx_skb_tid_band(sdata, skb, 7, channel->band);
+ 	}
+ }
+diff --git a/net/mac80211/tx.c b/net/mac80211/tx.c
+index 419baf8efdde..ff95b4b4e20e 100644
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -721,7 +721,7 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
+ 	txrc.skb = tx->skb;
+ 	txrc.reported_rate.idx = -1;
+ 
+-	if (unlikely(info->control.flags & IEEE80211_TX_CTRL_SCAN_TX)) {
++	if (unlikely(info->control.flags & IEEE80211_TX_CTRL_DONT_USE_RATE_MASK)) {
+ 		txrc.rate_idx_mask = ~0;
+ 	} else {
+ 		txrc.rate_idx_mask = tx->sdata->rc_rateidx_mask[info->band];
+-- 
+2.25.1
+

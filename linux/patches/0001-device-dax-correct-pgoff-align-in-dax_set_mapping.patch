@@ -1,0 +1,115 @@
+From b21fed3f0efd37e2e971c606bd37d27cd061139d Mon Sep 17 00:00:00 2001
+From: "Kun(llfl)" <llfl@linux.alibaba.com>
+Date: Fri, 27 Sep 2024 15:45:09 +0800
+Subject: [PATCH] device-dax: correct pgoff align in dax_set_mapping()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 7fcbd9785d4c17ea533c42f20a9083a83f301fa6 upstream.
+
+pgoff should be aligned using ALIGN_DOWN() instead of ALIGN().  Otherwise,
+vmf->address not aligned to fault_size will be aligned to the next
+alignment, that can result in memory failure getting the wrong address.
+
+It's a subtle situation that only can be observed in
+page_mapped_in_vma() after the page is page fault handled by
+dev_dax_huge_fault.  Generally, there is little chance to perform
+page_mapped_in_vma in dev-dax's page unless in specific error injection
+to the dax device to trigger an MCE - memory-failure.  In that case,
+page_mapped_in_vma() will be triggered to determine which task is
+accessing the failure address and kill that task in the end.
+
+
+We used self-developed dax device (which is 2M aligned mapping) , to
+perform error injection to random address.  It turned out that error
+injected to non-2M-aligned address was causing endless MCE until panic.
+Because page_mapped_in_vma() kept resulting wrong address and the task
+accessing the failure address was never killed properly:
+
+
+[ 3783.719419] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3784.049006] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3784.049190] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3784.448042] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3784.448186] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3784.792026] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3784.792179] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3785.162502] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3785.162633] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3785.461116] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3785.461247] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3785.764730] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3785.764859] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3786.042128] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3786.042259] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3786.464293] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3786.464423] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3786.818090] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3786.818217] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+[ 3787.085297] mce: Uncorrected hardware memory error in user-access at
+200c9742380
+[ 3787.085424] Memory failure: 0x200c9742: recovery action for dax page:
+Recovered
+
+It took us several weeks to pinpoint this problem,  but we eventually
+used bpftrace to trace the page fault and mce address and successfully
+identified the issue.
+
+
+Joao added:
+
+; Likely we never reproduce in production because we always pin
+: device-dax regions in the region align they provide (Qemu does
+: similarly with prealloc in hugetlb/file backed memory).  I think this
+: bug requires that we touch *unpinned* device-dax regions unaligned to
+: the device-dax selected alignment (page size i.e.  4K/2M/1G)
+
+Link: https://lkml.kernel.org/r/23c02a03e8d666fef11bbe13e85c69c8b4ca0624.1727421694.git.llfl@linux.alibaba.com
+Fixes: b9b5777f09be ("device-dax: use ALIGN() for determining pgoff")
+Signed-off-by: Kun(llfl) <llfl@linux.alibaba.com>
+Tested-by: JianXiong Zhao <zhaojianxiong.zjx@alibaba-inc.com>
+Reviewed-by: Joao Martins <joao.m.martins@oracle.com>
+Cc: Dan Williams <dan.j.williams@intel.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/dax/device.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dax/device.c b/drivers/dax/device.c
+index 5494d745ced5..b10761b8c35a 100644
+--- a/drivers/dax/device.c
++++ b/drivers/dax/device.c
+@@ -86,7 +86,7 @@ static void dax_set_mapping(struct vm_fault *vmf, pfn_t pfn,
+ 		nr_pages = 1;
+ 
+ 	pgoff = linear_page_index(vmf->vma,
+-			ALIGN(vmf->address, fault_size));
++			ALIGN_DOWN(vmf->address, fault_size));
+ 
+ 	for (i = 0; i < nr_pages; i++) {
+ 		struct page *page = pfn_to_page(pfn_t_to_pfn(pfn) + i);
+-- 
+2.25.1
+

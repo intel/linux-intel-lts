@@ -1,0 +1,46 @@
+From 202d0ccd4ac7b388130e21ae565b806a4880ba3f Mon Sep 17 00:00:00 2001
+From: Daniel Palmer <daniel@0x0f.com>
+Date: Thu, 3 Oct 2024 13:29:47 +1000
+Subject: [PATCH] scsi: wd33c93: Don't use stale scsi_pointer value
+
+commit 9023ed8d91eb1fcc93e64dc4962f7412b1c4cbec upstream.
+
+A regression was introduced with commit dbb2da557a6a ("scsi: wd33c93:
+Move the SCSI pointer to private command data") which results in an oops
+in wd33c93_intr(). That commit added the scsi_pointer variable and
+initialized it from hostdata->connected. However, during selection,
+hostdata->connected is not yet valid. Fix this by getting the current
+scsi_pointer from hostdata->selecting.
+
+Cc: Daniel Palmer <daniel@0x0f.com>
+Cc: Michael Schmitz <schmitzmic@gmail.com>
+Cc: stable@kernel.org
+Fixes: dbb2da557a6a ("scsi: wd33c93: Move the SCSI pointer to private command data")
+Signed-off-by: Daniel Palmer <daniel@0x0f.com>
+Co-developed-by: Finn Thain <fthain@linux-m68k.org>
+Signed-off-by: Finn Thain <fthain@linux-m68k.org>
+Link: https://lore.kernel.org/r/09e11a0a54e6aa2a88bd214526d305aaf018f523.1727926187.git.fthain@linux-m68k.org
+Reviewed-by: Michael Schmitz <schmitzmic@gmail.com>
+Reviewed-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/scsi/wd33c93.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/scsi/wd33c93.c b/drivers/scsi/wd33c93.c
+index e4fafc77bd20..bbf6327b9e5a 100644
+--- a/drivers/scsi/wd33c93.c
++++ b/drivers/scsi/wd33c93.c
+@@ -831,7 +831,7 @@ wd33c93_intr(struct Scsi_Host *instance)
+ 		/* construct an IDENTIFY message with correct disconnect bit */
+ 
+ 		hostdata->outgoing_msg[0] = IDENTIFY(0, cmd->device->lun);
+-		if (scsi_pointer->phase)
++		if (WD33C93_scsi_pointer(cmd)->phase)
+ 			hostdata->outgoing_msg[0] |= 0x40;
+ 
+ 		if (hostdata->sync_stat[cmd->device->id] == SS_FIRST) {
+-- 
+2.25.1
+

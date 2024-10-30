@@ -1,0 +1,54 @@
+From bb3c9c0d23b6fc5d87f4a7388f70db02c47a4372 Mon Sep 17 00:00:00 2001
+From: Zheng Wang <zyytlz.wz@163.com>
+Date: Tue, 18 Jun 2024 14:55:59 +0530
+Subject: [PATCH] media: venus: fix use after free bug in venus_remove due to
+ race condition
+
+commit c5a85ed88e043474161bbfe54002c89c1cb50ee2 upstream.
+
+in venus_probe, core->work is bound with venus_sys_error_handler, which is
+used to handle error. The code use core->sys_err_done to make sync work.
+The core->work is started in venus_event_notify.
+
+If we call venus_remove, there might be an unfished work. The possible
+sequence is as follows:
+
+CPU0                  CPU1
+
+                     |venus_sys_error_handler
+venus_remove         |
+hfi_destroy	 		 |
+venus_hfi_destroy	 |
+kfree(hdev);	     |
+                     |hfi_reinit
+					 |venus_hfi_queues_reinit
+                     |//use hdev
+
+Fix it by canceling the work in venus_remove.
+
+Cc: stable@vger.kernel.org
+Fixes: af2c3834c8ca ("[media] media: venus: adding core part and helper functions")
+Signed-off-by: Zheng Wang <zyytlz.wz@163.com>
+Signed-off-by: Dikshita Agarwal <quic_dikshita@quicinc.com>
+Signed-off-by: Stanimir Varbanov <stanimir.k.varbanov@gmail.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/media/platform/qcom/venus/core.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/media/platform/qcom/venus/core.c b/drivers/media/platform/qcom/venus/core.c
+index 990a1519f968..6f7ce4f53c90 100644
+--- a/drivers/media/platform/qcom/venus/core.c
++++ b/drivers/media/platform/qcom/venus/core.c
+@@ -423,6 +423,7 @@ static int venus_remove(struct platform_device *pdev)
+ 	struct device *dev = core->dev;
+ 	int ret;
+ 
++	cancel_delayed_work_sync(&core->work);
+ 	ret = pm_runtime_get_sync(dev);
+ 	WARN_ON(ret < 0);
+ 
+-- 
+2.25.1
+

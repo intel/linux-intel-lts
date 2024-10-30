@@ -1,0 +1,59 @@
+From 142672c928bb35bea8274d29ea8944d53112a6cc Mon Sep 17 00:00:00 2001
+From: "Alexey Gladkov (Intel)" <legion@kernel.org>
+Date: Fri, 13 Sep 2024 19:05:56 +0200
+Subject: [PATCH] x86/tdx: Fix "in-kernel MMIO" check
+
+commit d4fc4d01471528da8a9797a065982e05090e1d81 upstream.
+
+TDX only supports kernel-initiated MMIO operations. The handle_mmio()
+function checks if the #VE exception occurred in the kernel and rejects
+the operation if it did not.
+
+However, userspace can deceive the kernel into performing MMIO on its
+behalf. For example, if userspace can point a syscall to an MMIO address,
+syscall does get_user() or put_user() on it, triggering MMIO #VE. The
+kernel will treat the #VE as in-kernel MMIO.
+
+Ensure that the target MMIO address is within the kernel before decoding
+instruction.
+
+Fixes: 31d58c4e557d ("x86/tdx: Handle in-kernel MMIO")
+Signed-off-by: Alexey Gladkov (Intel) <legion@kernel.org>
+Signed-off-by: Dave Hansen <dave.hansen@linux.intel.com>
+Reviewed-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+Acked-by: Dave Hansen <dave.hansen@linux.intel.com>
+Cc:stable@vger.kernel.org
+Link: https://lore.kernel.org/all/565a804b80387970460a4ebc67c88d1380f61ad1.1726237595.git.legion%40kernel.org
+Signed-off-by: Alexey Gladkov (Intel) <legion@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/x86/coco/tdx/tdx.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/x86/coco/tdx/tdx.c b/arch/x86/coco/tdx/tdx.c
+index 4692450aeb4d..7449e4fce05e 100644
+--- a/arch/x86/coco/tdx/tdx.c
++++ b/arch/x86/coco/tdx/tdx.c
+@@ -12,6 +12,7 @@
+ #include <asm/insn.h>
+ #include <asm/insn-eval.h>
+ #include <asm/pgtable.h>
++#include <asm/traps.h>
+ 
+ /* TDX module Call Leaf IDs */
+ #define TDX_GET_INFO			1
+@@ -372,6 +373,11 @@ static int handle_mmio(struct pt_regs *regs, struct ve_info *ve)
+ 			return -EINVAL;
+ 	}
+ 
++	if (!fault_in_kernel_space(ve->gla)) {
++		WARN_ONCE(1, "Access to userspace address is not supported");
++		return -EINVAL;
++	}
++
+ 	/*
+ 	 * Reject EPT violation #VEs that split pages.
+ 	 *
+-- 
+2.25.1
+

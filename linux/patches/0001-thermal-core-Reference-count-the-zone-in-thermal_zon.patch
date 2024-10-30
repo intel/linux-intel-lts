@@ -1,0 +1,110 @@
+From aff4f09fb662082686c0fae04db80ba8c3447c80 Mon Sep 17 00:00:00 2001
+From: "Rafael J. Wysocki" <rafael.j.wysocki@intel.com>
+Date: Thu, 3 Oct 2024 14:25:58 +0200
+Subject: [PATCH] thermal: core: Reference count the zone in
+ thermal_zone_get_by_id()
+
+There are places in the thermal netlink code where nothing prevents
+the thermal zone object from going away while being accessed after it
+has been returned by thermal_zone_get_by_id().
+
+To address this, make thermal_zone_get_by_id() get a reference on the
+thermal zone device object to be returned with the help of get_device(),
+under thermal_list_lock, and adjust all of its callers to this change
+with the help of the cleanup.h infrastructure.
+
+Fixes: 1ce50e7d408e ("thermal: core: genetlink support for events/cmd/sampling")
+Cc: 6.8+ <stable@vger.kernel.org> # 6.8+
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Reviewed-by: Lukasz Luba <lukasz.luba@arm.com>
+Link: https://patch.msgid.link/6112242.lOV4Wx5bFT@rjwysocki.net
+---
+ drivers/thermal/thermal_core.c    | 1 +
+ drivers/thermal/thermal_core.h    | 3 +++
+ drivers/thermal/thermal_netlink.c | 9 +++------
+ 3 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/thermal/thermal_core.c b/drivers/thermal/thermal_core.c
+index ebb36b2c72d5..2f39943d456e 100644
+--- a/drivers/thermal/thermal_core.c
++++ b/drivers/thermal/thermal_core.c
+@@ -552,6 +552,7 @@ struct thermal_zone_device *thermal_zone_get_by_id(int id)
+ 	mutex_lock(&thermal_list_lock);
+ 	list_for_each_entry(tz, &thermal_tz_list, node) {
+ 		if (tz->id == id) {
++			get_device(&tz->device);
+ 			match = tz;
+ 			break;
+ 		}
+diff --git a/drivers/thermal/thermal_core.h b/drivers/thermal/thermal_core.h
+index 1571917bd3c8..ffc49496c90a 100644
+--- a/drivers/thermal/thermal_core.h
++++ b/drivers/thermal/thermal_core.h
+@@ -59,6 +59,9 @@ struct thermal_attr {
+ 	char name[THERMAL_NAME_LENGTH];
+ };
+ 
++DEFINE_CLASS(thermal_zone_get_by_id, struct thermal_zone_device *,
++	     if (_T) put_device(&_T->device), thermal_zone_get_by_id(id), int id)
++
+ static inline bool cdev_is_power_actor(struct thermal_cooling_device *cdev)
+ {
+ 	return cdev->ops->get_requested_power && cdev->ops->state2power &&
+diff --git a/drivers/thermal/thermal_netlink.c b/drivers/thermal/thermal_netlink.c
+index e2d78a996b5f..5783cb6aaff0 100644
+--- a/drivers/thermal/thermal_netlink.c
++++ b/drivers/thermal/thermal_netlink.c
+@@ -450,7 +450,6 @@ static int thermal_genl_cmd_tz_get_id(struct param *p)
+ static int thermal_genl_cmd_tz_get_trip(struct param *p)
+ {
+ 	struct sk_buff *msg = p->msg;
+-	struct thermal_zone_device *tz;
+ 	struct nlattr *start_trip;
+ 	int i, id;
+ 
+@@ -459,7 +458,7 @@ static int thermal_genl_cmd_tz_get_trip(struct param *p)
+ 
+ 	id = nla_get_u32(p->attrs[THERMAL_GENL_ATTR_TZ_ID]);
+ 
+-	tz = thermal_zone_get_by_id(id);
++	CLASS(thermal_zone_get_by_id, tz)(id);
+ 	if (!tz)
+ 		return -EINVAL;
+ 
+@@ -501,7 +500,6 @@ static int thermal_genl_cmd_tz_get_trip(struct param *p)
+ static int thermal_genl_cmd_tz_get_temp(struct param *p)
+ {
+ 	struct sk_buff *msg = p->msg;
+-	struct thermal_zone_device *tz;
+ 	int temp, ret, id;
+ 
+ 	if (!p->attrs[THERMAL_GENL_ATTR_TZ_ID])
+@@ -509,7 +507,7 @@ static int thermal_genl_cmd_tz_get_temp(struct param *p)
+ 
+ 	id = nla_get_u32(p->attrs[THERMAL_GENL_ATTR_TZ_ID]);
+ 
+-	tz = thermal_zone_get_by_id(id);
++	CLASS(thermal_zone_get_by_id, tz)(id);
+ 	if (!tz)
+ 		return -EINVAL;
+ 
+@@ -527,7 +525,6 @@ static int thermal_genl_cmd_tz_get_temp(struct param *p)
+ static int thermal_genl_cmd_tz_get_gov(struct param *p)
+ {
+ 	struct sk_buff *msg = p->msg;
+-	struct thermal_zone_device *tz;
+ 	int id, ret = 0;
+ 
+ 	if (!p->attrs[THERMAL_GENL_ATTR_TZ_ID])
+@@ -535,7 +532,7 @@ static int thermal_genl_cmd_tz_get_gov(struct param *p)
+ 
+ 	id = nla_get_u32(p->attrs[THERMAL_GENL_ATTR_TZ_ID]);
+ 
+-	tz = thermal_zone_get_by_id(id);
++	CLASS(thermal_zone_get_by_id, tz)(id);
+ 	if (!tz)
+ 		return -EINVAL;
+ 
+-- 
+2.25.1
+
