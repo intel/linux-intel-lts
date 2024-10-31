@@ -27,7 +27,7 @@
 0001-Revert-USB-core-Don-t-hold-device-lock-while-reading.patch
 
 # CVE-2023-31083
-0001-Bluetooth-hci_ldisc-check-HCI_UART_PROTO_READY-flag-.patch
+#0001-Bluetooth-hci_ldisc-check-HCI_UART_PROTO_READY-flag-.patch
 
 # CVE-2022-45885
 0001-media-dvb-core-Fix-use-after-free-due-to-race-condit.patch
@@ -91,9 +91,9 @@
 0001-fbdev-sis-Error-out-if-pixclock-equals-zero.patch
 
 #CVE-2024-27018
-0002-netfilter-nf_tables-add-rescheduling-points-during-l.patch
-0007-netfilter-nf_tables-fix-scheduling-while-atomic-spla.patch
-0008-netfilter-nf_tables-can-t-schedule-in-nft_chain_vali.patch
+#0002-netfilter-nf_tables-add-rescheduling-points-during-l.patch
+#0007-netfilter-nf_tables-fix-scheduling-while-atomic-spla.patch
+#0008-netfilter-nf_tables-can-t-schedule-in-nft_chain_vali.patch
 0017-netfilter-nft_set_pipapo-release-elements-in-clone-o.patch
 0019-netfilter-nf_tables-disallow-anonymous-set-with-time.patch
 0020-netfilter-nf_tables-reject-constant-set-with-timeout.patch
@@ -108,59 +108,59 @@
 0001-ipv4-check-for-NULL-idev-in-ip_route_use_hint.patch
 
 # CVE-2024-36901
-0001-ipv6-prevent-NULL-dereference-in-ip6_output.patch
+#0001-ipv6-prevent-NULL-dereference-in-ip6_output.patch
 
 #CVE-2024-39482
-0001-bcache-fix-variable-length-array-abuse-in-btree_iter.patch
+#0001-bcache-fix-variable-length-array-abuse-in-btree_iter.patch
 
 #CVE-2024-39484
 0001-mmc-davinci-Don-t-strip-remove-function-when-driver-.patch
 
 #CVE-2024-40902
-0001-jfs-xattr-fix-buffer-overflow-for-invalid-xattr.patch
+#0001-jfs-xattr-fix-buffer-overflow-for-invalid-xattr.patch
 
 #CVE-2024-39495
-0001-greybus-Fix-use-after-free-bug-in-gb_interface_relea.patch
+#0001-greybus-Fix-use-after-free-bug-in-gb_interface_relea.patch
 
 #CVE-2024-41007
-0001-tcp-use-signed-arithmetic-in-tcp_rtx_probe0_timed_ou.patch
-0002-tcp-avoid-too-many-retransmit-packets.patch
+#0001-tcp-use-signed-arithmetic-in-tcp_rtx_probe0_timed_ou.patch
+#0002-tcp-avoid-too-many-retransmit-packets.patch
 
 #CVE-2024-41009
-0001-bpf-Fix-overrunning-reservations-in-ringbuf.patch
+#0001-bpf-Fix-overrunning-reservations-in-ringbuf.patch
 
 #CVE-2024-40932
-0001-drm-exynos-vidi-fix-memory-leak-in-.get_modes.patch
+#0001-drm-exynos-vidi-fix-memory-leak-in-.get_modes.patch
 
 #CVE-2024-40956
-0001-dmaengine-idxd-Fix-possible-Use-After-Free-in-irq_pr.patch
+#0001-dmaengine-idxd-Fix-possible-Use-After-Free-in-irq_pr.patch
 
 #CVE-2024-40934
-0001-HID-logitech-dj-Fix-memory-leak-in-logi_dj_recv_swit.patch
+#0001-HID-logitech-dj-Fix-memory-leak-in-logi_dj_recv_swit.patch
 
 #CVE-2024-39506
-0001-liquidio-Adjust-a-NULL-pointer-handling-path-in-lio_.patch
+#0001-liquidio-Adjust-a-NULL-pointer-handling-path-in-lio_.patch
 
 #CVE-2024-40911
-0001-wifi-cfg80211-Lock-wiphy-in-cfg80211_get_station.patch
+#0001-wifi-cfg80211-Lock-wiphy-in-cfg80211_get_station.patch
 
 #CVE-2024-40912
-0001-wifi-mac80211-Fix-deadlock-in-ieee80211_sta_ps_deliv.patch
+#0001-wifi-mac80211-Fix-deadlock-in-ieee80211_sta_ps_deliv.patch
 
 #CVE-2024-40954
 0001-net-do-not-leave-a-dangling-sk-pointer-when-socket-c.patch
 
 #CVE-2024-40957
-0001-seg6-fix-parameter-passing-when-calling-NF_HOOK-in-E.patch
+#0001-seg6-fix-parameter-passing-when-calling-NF_HOOK-in-E.patch
 
 #CVE-2024-40958
-0001-netns-Make-get_net_ns-handle-zero-refcount-net.patch
+#0001-netns-Make-get_net_ns-handle-zero-refcount-net.patch
 
 #CVE-2024-40959
-0001-xfrm6-check-ip6_dst_idev-return-value-in-xfrm6_get_s.patch
+#0001-xfrm6-check-ip6_dst_idev-return-value-in-xfrm6_get_s.patch
 
 #CVE-2024-36978
-0001-net-sched-sch_multiq-fix-possible-OOB-write-in-multi.patch
+#0001-net-sched-sch_multiq-fix-possible-OOB-write-in-multi.patch
 
 #CVE-2024-38547
 0001-media-atomisp-ssh_css-Fix-a-null-pointer-dereference.patch
@@ -187,250 +187,250 @@
 0001-thermal-drivers-qcom-lmh-Check-for-SCM-availability-.patch
 
 #CVE-2024-39487
-0001-bonding-Fix-out-of-bounds-read-in-bond_option_arp_ip.patch
+#0001-bonding-Fix-out-of-bounds-read-in-bond_option_arp_ip.patch
 
 #CVE-2024-40960
-0001-ipv6-prevent-possible-NULL-dereference-in-rt6_probe.patch
+#0001-ipv6-prevent-possible-NULL-dereference-in-rt6_probe.patch
 
 #CVE-2024-40961
-0001-ipv6-prevent-possible-NULL-deref-in-fib6_nh_init.patch
+#0001-ipv6-prevent-possible-NULL-deref-in-fib6_nh_init.patch
 
 #CVE-2024-40995
-0001-net-sched-act_api-rely-on-rcu-in-tcf_idr_check_alloc.patch
-0002-net-sched-act_api-fix-possible-infinite-loop-in-tcf_.patch
+#0001-net-sched-act_api-rely-on-rcu-in-tcf_idr_check_alloc.patch
+#0002-net-sched-act_api-fix-possible-infinite-loop-in-tcf_.patch
 
 #CVE-2024-41000
-0001-block-ioctl-prefer-different-overflow-check.patch
+#0001-block-ioctl-prefer-different-overflow-check.patch
 
 #CVE-2024-41002
-0001-crypto-hisilicon-sec-Fix-memory-leak-for-sec-resourc.patch
+#0001-crypto-hisilicon-sec-Fix-memory-leak-for-sec-resourc.patch
 
 #CVE-2024-41006
-0001-netrom-Fix-a-memory-leak-in-nr_heartbeat_expiry.patch
+#0001-netrom-Fix-a-memory-leak-in-nr_heartbeat_expiry.patch
 
 #CVE-2024-40994
-0001-ptp-fix-integer-overflow-in-max_vclocks_store.patch
+#0001-ptp-fix-integer-overflow-in-max_vclocks_store.patch
 
 #CVE-2024-41055
 0001-mm-prevent-derefencing-NULL-ptr-in-pfn_section_valid.patch
 
 #CVE-2024-41064
-0001-powerpc-eeh-avoid-possible-crash-when-edev-pdev-chan.patch
+#0001-powerpc-eeh-avoid-possible-crash-when-edev-pdev-chan.patch
 
 #CVE-2024-41046
-0001-net-ethernet-lantiq_etop-fix-double-free-in-detach.patch
+#0001-net-ethernet-lantiq_etop-fix-double-free-in-detach.patch
 
 #CVE-2024-41049
-0001-filelock-fix-potential-use-after-free-in-posix_lock_.patch
+#0001-filelock-fix-potential-use-after-free-in-posix_lock_.patch
 
 #CVE-2024-42109
-0001-netfilter-nf_tables-unconditionally-flush-pending-wo.patch
+#0001-netfilter-nf_tables-unconditionally-flush-pending-wo.patch
 
 #CVE-2024-42114
-0001-wifi-cfg80211-restrict-NL80211_ATTR_TXQ_QUANTUM-valu.patch
+#0001-wifi-cfg80211-restrict-NL80211_ATTR_TXQ_QUANTUM-valu.patch
 
 #CVE-2024-41070
-0001-KVM-PPC-Book3S-HV-Prevent-UAF-in-kvm_spapr_tce_attac.patch
+#0001-KVM-PPC-Book3S-HV-Prevent-UAF-in-kvm_spapr_tce_attac.patch
 
 #CVE-2024-41073
-0001-nvme-avoid-double-free-special-payload.patch
+#0001-nvme-avoid-double-free-special-payload.patch
 
 #CVE-2024-42140
-0001-riscv-kexec-Avoid-deadlock-in-kexec-crash-path.patch
+#0001-riscv-kexec-Avoid-deadlock-in-kexec-crash-path.patch
 
 #CVE-2024-42082
-0001-xdp-Remove-WARN-from-__xdp_reg_mem_model.patch
+#0001-xdp-Remove-WARN-from-__xdp_reg_mem_model.patch
 
 #CVE-2024-42085
-0001-usb-dwc3-core-remove-lock-of-otg-mode-during-gadget-.patch
+#0001-usb-dwc3-core-remove-lock-of-otg-mode-during-gadget-.patch
 
 #CVE-2024-42090
-0001-pinctrl-fix-deadlock-in-create_pinctrl-when-handling.patch
+#0001-pinctrl-fix-deadlock-in-create_pinctrl-when-handling.patch
 
 #CVE-2024-42093
-0001-net-dpaa2-Avoid-explicit-cpumask-var-allocation-on-s.patch
+#0001-net-dpaa2-Avoid-explicit-cpumask-var-allocation-on-s.patch
 
 #CVE-2024-42094
-0001-net-iucv-Avoid-explicit-cpumask-var-allocation-on-st.patch
+#0001-net-iucv-Avoid-explicit-cpumask-var-allocation-on-st.patch
 
 #CVE-2024-42152
 0001-nvmet-fix-a-possible-leak-when-destroy-a-ctrl-during.patch
 
 #CVE-2024-42153
-0001-i2c-pnx-Fix-potential-deadlock-warning-from-del_time.patch
+#0001-i2c-pnx-Fix-potential-deadlock-warning-from-del_time.patch
 
 #CVE-2024-42154
-0001-tcp_metrics-validate-source-addr-length.patch
+#0001-tcp_metrics-validate-source-addr-length.patch
 
 #CVE-2024-42155
 0001-s390-pkey-Wipe-copies-of-protected-and-secure-keys.patch
 
 #CVE-2024-42157
-0001-s390-pkey-Wipe-sensitive-data-on-failure.patch
+#0001-s390-pkey-Wipe-sensitive-data-on-failure.patch
 
 #CVE-2024-42101
-0001-drm-nouveau-fix-null-pointer-dereference-in-nouveau_.patch
+#0001-drm-nouveau-fix-null-pointer-dereference-in-nouveau_.patch
 
 #CVE-2024-42102
-0001-Revert-mm-writeback-fix-possible-divide-by-zero-in-w.patch
+#0001-Revert-mm-writeback-fix-possible-divide-by-zero-in-w.patch
 
 #CVE-2024-42104
-0001-nilfs2-add-missing-check-for-inode-numbers-on-direct.patch
+#0001-nilfs2-add-missing-check-for-inode-numbers-on-direct.patch
 
 #CVE-2024-42161
-0001-bpf-Avoid-uninitialized-value-in-BPF_CORE_READ_BITFI.patch
+#0001-bpf-Avoid-uninitialized-value-in-BPF_CORE_READ_BITFI.patch
 
 #CVE-2024-42223
-0001-media-dvb-frontends-tda10048-Fix-integer-overflow.patch
+#0001-media-dvb-frontends-tda10048-Fix-integer-overflow.patch
 
 #CVE-2024-42224
-0001-net-dsa-mv88e6xxx-Correct-check-for-empty-list.patch
+#0001-net-dsa-mv88e6xxx-Correct-check-for-empty-list.patch
 
 #CVE-2024-42225
-0001-wifi-mt76-replace-skb_put-with-skb_put_zero.patch
+#0001-wifi-mt76-replace-skb_put-with-skb_put_zero.patch
 
 #CVE-2024-42229
-0001-crypto-aead-cipher-zeroize-key-buffer-after-use.patch
+#0001-crypto-aead-cipher-zeroize-key-buffer-after-use.patch
 
 #CVE-2024-42230
 0001-powerpc-pseries-Fix-scv-instruction-crash-with-kexec.patch
 
 #CVE-2024-41087
-0001-ata-libata-core-Fix-double-free-on-error.patch
+#0001-ata-libata-core-Fix-double-free-on-error.patch
 
 #CVE-2024-41092
-0001-drm-i915-gt-Fix-potential-UAF-by-revoke-of-fence-reg.patch
+#0001-drm-i915-gt-Fix-potential-UAF-by-revoke-of-fence-reg.patch
 
 #CVE-2024-41093
-0001-drm-amdgpu-avoid-using-null-object-of-framebuffer.patch
+#0001-drm-amdgpu-avoid-using-null-object-of-framebuffer.patch
 
 #CVE-2024-41097
-0001-usb-atm-cxacru-fix-endpoint-checking-in-cxacru_bind.patch
+#0001-usb-atm-cxacru-fix-endpoint-checking-in-cxacru_bind.patch
 
 #CVE-2024-41098
 0001-ata-libata-core-Fix-null-pointer-dereference-on-erro.patch
 
 #CVE-2024-42068
-0001-bpf-Take-return-from-set_memory_ro-into-account-with.patch
+#0001-bpf-Take-return-from-set_memory_ro-into-account-with.patch
 
 #CVE-2024-42070
-0001-netfilter-nf_tables-fully-validate-NFT_DATA_VALUE-on.patch
+#0001-netfilter-nf_tables-fully-validate-NFT_DATA_VALUE-on.patch
 
 #CVE-2024-42076
-0001-net-can-j1939-Initialize-unused-data-in-j1939_send_o.patch
+#0001-net-can-j1939-Initialize-unused-data-in-j1939_send_o.patch
 
 #CVE-2024-42077
-0001-ocfs2-fix-DIO-failure-due-to-insufficient-transactio.patch
+#0001-ocfs2-fix-DIO-failure-due-to-insufficient-transactio.patch
 
 #CVE-2024-42080
-0001-RDMA-restrack-Fix-potential-invalid-address-access.patch
+#0001-RDMA-restrack-Fix-potential-invalid-address-access.patch
 
 #CVE-2024-42232
-0001-libceph-fix-race-between-delayed_work-and-ceph_monc_.patch
+#0001-libceph-fix-race-between-delayed_work-and-ceph_monc_.patch
 
 #CVE-2024-42236
-0001-usb-gadget-configfs-Prevent-OOB-read-write-in-usb_st.patch
+#0001-usb-gadget-configfs-Prevent-OOB-read-write-in-usb_st.patch
 
 #CVE-2024-42239
 0001-bpf-Fail-bpf_timer_cancel-when-callback-is-being-can.patch
 
 #CVE-2024-42244
-0001-USB-serial-mos7840-fix-crash-on-resume.patch
+#0001-USB-serial-mos7840-fix-crash-on-resume.patch
 
 #CVE-2024-42246
-0001-net-sunrpc-Remap-EPERM-in-case-of-connection-failure.patch
+#0001-net-sunrpc-Remap-EPERM-in-case-of-connection-failure.patch
 
 #CVE-2024-42247
-0001-wireguard-allowedips-avoid-unaligned-64-bit-memory-a.patch
+#0001-wireguard-allowedips-avoid-unaligned-64-bit-memory-a.patch
 
 #CVE-2023-52889
 0001-apparmor-Fix-null-pointer-deref-when-receiving-skb-d.patch
 
 #CVE-2024-42269
-0001-netfilter-iptables-Fix-potential-null-ptr-deref-in-i.patch
+#0001-netfilter-iptables-Fix-potential-null-ptr-deref-in-i.patch
 
 #CVE-2024-42270
-0001-netfilter-iptables-Fix-null-ptr-deref-in-iptable_nat.patch
+#0001-netfilter-iptables-Fix-null-ptr-deref-in-iptable_nat.patch
 
 #CVE-2024-42271
-0001-net-iucv-fix-use-after-free-in-iucv_sock_close.patch
+#0001-net-iucv-fix-use-after-free-in-iucv_sock_close.patch
 
 #CVE-2024-42283
-0001-net-nexthop-Initialize-all-fields-in-dumped-nexthops.patch
+#0001-net-nexthop-Initialize-all-fields-in-dumped-nexthops.patch
 
 #CVE-2024-42284
-0001-tipc-Return-non-zero-value-from-tipc_udp_addr2str-on.patch
+#0001-tipc-Return-non-zero-value-from-tipc_udp_addr2str-on.patch
 
 #CVE-2024-42285
-0001-RDMA-iwcm-Fix-a-use-after-free-related-to-destroying.patch
+#0001-RDMA-iwcm-Fix-a-use-after-free-related-to-destroying.patch
 
 #CVE-2024-42301
-0001-dev-parport-fix-the-array-out-of-bounds-risk.patch
+#0001-dev-parport-fix-the-array-out-of-bounds-risk.patch
 
 #CVE-2024-42302
-0001-PCI-DPC-Fix-use-after-free-on-concurrent-DPC-and-hot.patch
+#0001-PCI-DPC-Fix-use-after-free-on-concurrent-DPC-and-hot.patch
 
 #CVE-2024-42310
-0001-drm-gma500-fix-null-pointer-dereference-in-cdv_intel.patch
+#0001-drm-gma500-fix-null-pointer-dereference-in-cdv_intel.patch
 
 #CVE-2024-42309
-0001-drm-gma500-fix-null-pointer-dereference-in-psb_intel.patch
+#0001-drm-gma500-fix-null-pointer-dereference-in-psb_intel.patch
 
 #CVE-2024-42313
-0001-media-venus-fix-use-after-free-in-vdec_close.patch
+#0001-media-venus-fix-use-after-free-in-vdec_close.patch
 
 #CVE-2024-43828
-0001-ext4-fix-infinite-loop-when-replaying-fast_commit.patch
+#0001-ext4-fix-infinite-loop-when-replaying-fast_commit.patch
 
 #CVE-2024-43853
-0001-cgroup-cpuset-Prevent-UAF-in-proc_cpuset_show.patch
+#0001-cgroup-cpuset-Prevent-UAF-in-proc_cpuset_show.patch
 
 #CVE-2024-43854
-0001-block-refactor-to-use-helper.patch
-0002-block-cleanup-bio_integrity_prep.patch
-0003-block-initialize-integrity-buffer-to-zero-before-wri.patch
+#0001-block-refactor-to-use-helper.patch
+#0002-block-cleanup-bio_integrity_prep.patch
+#0003-block-initialize-integrity-buffer-to-zero-before-wri.patch
 
 #CVE-2024-43856
-0001-dma-fix-call-order-in-dmam_free_coherent.patch
+#0001-dma-fix-call-order-in-dmam_free_coherent.patch
 
 #CVE-2024-43858
-0001-jfs-Fix-array-index-out-of-bounds-in-diFree.patch
+#0001-jfs-Fix-array-index-out-of-bounds-in-diFree.patch
 
 #CVE-2024-43860
-0001-remoteproc-imx_rproc-Skip-over-memory-region-when-no.patch
+#0001-remoteproc-imx_rproc-Skip-over-memory-region-when-no.patch
 
 #CVE-2024-43884
-0001-Bluetooth-MGMT-Add-error-handling-to-pair_device.patch
+#0001-Bluetooth-MGMT-Add-error-handling-to-pair_device.patch
 
 #CVE-2024-43907
-0001-drm-amdgpu-pm-Fix-the-null-pointer-dereference-in-ap.patch
+#0001-drm-amdgpu-pm-Fix-the-null-pointer-dereference-in-ap.patch
 
 #CVE-2024-43908
-0001-drm-amdgpu-Fix-the-null-pointer-dereference-to-ras_m.patch
+#0001-drm-amdgpu-Fix-the-null-pointer-dereference-to-ras_m.patch
 
 #CVE-2024-43909
-0001-drm-amdgpu-pm-Fix-the-null-pointer-dereference-for-s.patch
+#0001-drm-amdgpu-pm-Fix-the-null-pointer-dereference-for-s.patch
 
 #CVE-2024-43902
-0001-drm-amd-display-Add-null-checker-before-passing-vari.patch
+#0001-drm-amd-display-Add-null-checker-before-passing-vari.patch
 
 #CVE-2024-44934
-0001-net-bridge-mcast-wait-for-previous-gc-cycles-when-re.patch
+#0001-net-bridge-mcast-wait-for-previous-gc-cycles-when-re.patch
 
 #CVE-2024-44935
-0001-sctp-Fix-null-ptr-deref-in-reuseport_add_sock.patch
+#0001-sctp-Fix-null-ptr-deref-in-reuseport_add_sock.patch
 
 #CVE-2022-48772
 0001-media-lgdt3306a-Add-a-check-against-null-pointer-def.patch
 
 #CVE-2024-39468
-0001-smb-client-fix-deadlock-in-smb2_find_smb_tcon.patch
+#0001-smb-client-fix-deadlock-in-smb2_find_smb_tcon.patch
 
 #CVE-2024-42308
-0001-drm-amd-display-Check-for-NULL-pointer.patch
+#0001-drm-amd-display-Check-for-NULL-pointer.patch
 
 #CVE-2024-42311
-0001-hfs-fix-to-initialize-fields-of-hfs_inode_info-after.patch
+#0001-hfs-fix-to-initialize-fields-of-hfs_inode_info-after.patch
 
 #CVE-2024-43817
 0001-net-missing-check-virtio.patch
@@ -439,94 +439,94 @@
 0001-PCI-endpoint-pci-epf-test-Make-use-of-cached-epc_fea.patch
 
 #CVE-2024-43861
-0001-net-usb-qmi_wwan-fix-memory-leak-for-not-ip-packets.patch
+#0001-net-usb-qmi_wwan-fix-memory-leak-for-not-ip-packets.patch
 
 #CVE-2024-43863
-0001-drm-vmwgfx-Fix-a-deadlock-in-dma-buf-fence-polling.patch
+#0001-drm-vmwgfx-Fix-a-deadlock-in-dma-buf-fence-polling.patch
 
 #CVE-2024-43871
-0001-devres-Fix-memory-leakage-caused-by-driver-API-devm_.patch
+#0001-devres-Fix-memory-leakage-caused-by-driver-API-devm_.patch
 
 #CVE-2024-43873
-0001-vhost-vsock-always-initialize-seqpacket_allow.patch
+#0001-vhost-vsock-always-initialize-seqpacket_allow.patch
 
 #CVE-2024-43882
-0001-exec-Fix-ToCToU-between-perm-check-and-set-uid-gid-u.patch
+#0001-exec-Fix-ToCToU-between-perm-check-and-set-uid-gid-u.patch
 
 #CVE-2024-44944
-0001-netfilter-ctnetlink-use-helper-function-to-calculate.patch
+#0001-netfilter-ctnetlink-use-helper-function-to-calculate.patch
 
 #CVE-2024-38588
-0001-ftrace-Fix-possible-use-after-free-issue-in-ftrace_l.patch
+#0001-ftrace-Fix-possible-use-after-free-issue-in-ftrace_l.patch
 
 #CVE-2024-38630
 0004-watchdog-cpu5wdt.c-Fix-use-after-free-bug-caused-by-.patch
 
 #CVE-2024-40967
-0001-serial-imx-Introduce-timeout-when-waiting-on-transmi.patch
+#0001-serial-imx-Introduce-timeout-when-waiting-on-transmi.patch
 
 #CVE-2024-40904
-0001-USB-class-cdc-wdm-Fix-CPU-lockup-caused-by-excessive.patch
+#0001-USB-class-cdc-wdm-Fix-CPU-lockup-caused-by-excessive.patch
 
 #CVE-2024-40905
-0001-ipv6-fix-possible-race-in-__fib6_drop_pcpu_from.patch
+#0001-ipv6-fix-possible-race-in-__fib6_drop_pcpu_from.patch
 
 #CVE-2024-40981
 0001-batman-adv-bypass-empty-buckets-in-batadv_purge_orig.patch
 
 #CVE-2024-40980
-0001-drop_monitor-replace-spin_lock-by-raw_spin_lock.patch
+#0001-drop_monitor-replace-spin_lock-by-raw_spin_lock.patch
 
 #CVE-2024-40970
-0001-Avoid-hw_desc-array-overrun-in-dw-axi-dmac.patch
+#0001-Avoid-hw_desc-array-overrun-in-dw-axi-dmac.patch
 
 #CVE-2024-41011
-0001-drm-amdkfd-don-t-allow-mapping-the-MMIO-HDP-page-wit.patch
+#0001-drm-amdkfd-don-t-allow-mapping-the-MMIO-HDP-page-wit.patch
 
 #CVE-2024-41012
-0001-filelock-Remove-locks-reliably-when-fcntl-close-race.patch
+#0001-filelock-Remove-locks-reliably-when-fcntl-close-race.patch
 
 #CVE-2024-41059
-0001-hfsplus-fix-uninit-value-in-copy_name.patch
+#0001-hfsplus-fix-uninit-value-in-copy_name.patch
 
 #CVE-2024-41060
-0001-drm-radeon-check-bo_va-bo-is-non-NULL-before-using-i.patch
+#0001-drm-radeon-check-bo_va-bo-is-non-NULL-before-using-i.patch
 
 #CVE-2024-41063
-0001-Bluetooth-hci_core-cancel-all-works-upon-hci_unregis.patch
+#0001-Bluetooth-hci_core-cancel-all-works-upon-hci_unregis.patch
 
 #CVE-2024-41040
-0001-net-sched-Fix-UAF-when-resolving-a-clash.patch
+#0001-net-sched-Fix-UAF-when-resolving-a-clash.patch
 
 #CVE-2024-42131
-0001-mm-avoid-overflows-in-dirty-throttling-logic.patch
+#0001-mm-avoid-overflows-in-dirty-throttling-logic.patch
 
 #CVE-2024-42137
-0001-Bluetooth-qca-Fix-BT-enable-failure-again-for-QCA639.patch
+#0001-Bluetooth-qca-Fix-BT-enable-failure-again-for-QCA639.patch
 
 #CVE-2024-42148
-0001-bnx2x-Fix-multiple-UBSAN-array-index-out-of-bounds.patch
+#0001-bnx2x-Fix-multiple-UBSAN-array-index-out-of-bounds.patch
 
 #CVE-2024-42259
-0001-drm-i915-gem-Fix-Virtual-Memory-mapping-boundaries-c.patch
+#0001-drm-i915-gem-Fix-Virtual-Memory-mapping-boundaries-c.patch
 
 #CVE-2024-42277
-0001-iommu-sprd-Avoid-NULL-deref-in-sprd_iommu_hw_en.patch
+#0001-iommu-sprd-Avoid-NULL-deref-in-sprd_iommu_hw_en.patch
 
 #CVE-2024-42280
-0001-mISDN-Fix-a-use-after-free-in-hfcmulti_tx.patch
+#0001-mISDN-Fix-a-use-after-free-in-hfcmulti_tx.patch
 
 #CVE-2024-42286
-0001-scsi-qla2xxx-validate-nvme_local_port-correctly.patch
+#0001-scsi-qla2xxx-validate-nvme_local_port-correctly.patch
 
 #CVE-2024-42287
-0001-scsi-qla2xxx-Complete-command-early-within-lock.patch
+#0001-scsi-qla2xxx-Complete-command-early-within-lock.patch
 
 #CVE-2024-42288
-0001-scsi-qla2xxx-Fix-for-possible-memory-corruption.patch
+#0001-scsi-qla2xxx-Fix-for-possible-memory-corruption.patch
 
 #CVE-2024-42289
-0001-scsi-qla2xxx-During-vport-delete-send-async-logout-e.patch
+#0001-scsi-qla2xxx-During-vport-delete-send-async-logout-e.patch
 
 #CVE-2023-52905
 0001-octeontx2-pf-Fix-resource-leakage-in-VF-driver-unbin.patch
@@ -535,254 +535,254 @@
 0001-drm-i915-Fix-potential-context-UAFs.patch
 
 #CVE-2024-43890
-0001-tracing-Fix-overflow-in-get_free_elt.patch
+#0001-tracing-Fix-overflow-in-get_free_elt.patch
 
 #CVE-2024-43914
-0001-md-raid5-avoid-BUG_ON-while-continue-reshape-after-r.patch
+#0001-md-raid5-avoid-BUG_ON-while-continue-reshape-after-r.patch
 
 #CVE-2024-43893
-0001-serial-core-check-uartclk-for-zero-to-avoid-divide-b.patch
+#0001-serial-core-check-uartclk-for-zero-to-avoid-divide-b.patch
 
 #CVE-2024-43894
-0001-drm-client-fix-null-pointer-dereference-in-drm_clien.patch
+#0001-drm-client-fix-null-pointer-dereference-in-drm_clien.patch
 
 #CVE-2024-44946
-0001-kcm-Serialise-kcm_sendmsg-for-the-same-socket.patch
+#0001-kcm-Serialise-kcm_sendmsg-for-the-same-socket.patch
 
 #CVE-2024-44947
-0001-fuse-Initialize-beyond-EOF-page-contents-before-sett.patch
+#0001-fuse-Initialize-beyond-EOF-page-contents-before-sett.patch
 
 #CVE-2024-44985
-0001-ipv6-prevent-possible-UAF-in-ip6_xmit.patch
+#0001-ipv6-prevent-possible-UAF-in-ip6_xmit.patch
 
 #CVE-2024-44971
-0001-net-dsa-bcm_sf2-Fix-a-possible-memory-leak-in-bcm_sf.patch
+#0001-net-dsa-bcm_sf2-Fix-a-possible-memory-leak-in-bcm_sf.patch
 
 #CVE-2024-44986
-0001-ipv6-fix-possible-UAF-in-ip6_finish_output2.patch
+#0001-ipv6-fix-possible-UAF-in-ip6_finish_output2.patch
 
 #CVE-2024-44987
-0001-ipv6-prevent-UAF-in-ip6_send_skb.patch
+#0001-ipv6-prevent-UAF-in-ip6_send_skb.patch
 
 #CVE-2024-44998
-0001-atm-idt77252-prevent-use-after-free-in-dequeue_rx.patch
+#0001-atm-idt77252-prevent-use-after-free-in-dequeue_rx.patch
 
 #CVE-2024-44995
 0001-net-hns3-fix-a-deadlock-problem-when-config-TC-durin.patch
 
 #CVE-2024-44983
-0001-netfilter-flowtable-validate-vlan-header.patch
+#0001-netfilter-flowtable-validate-vlan-header.patch
 
 #CVE-2024-44989
-0001-bonding-fix-xfrm-real_dev-null-pointer-dereference.patch
+#0001-bonding-fix-xfrm-real_dev-null-pointer-dereference.patch
 
 #CVE-2024-44990
-0001-bonding-fix-null-pointer-deref-in-bond_ipsec_offload.patch
+#0001-bonding-fix-null-pointer-deref-in-bond_ipsec_offload.patch
 
 #CVE-2024-44999
 0001-gtp-pull-network-headers-in-gtp_dev_xmit.patch
 
 #CVE-2024-45006
-0001-xhci-Fix-Panther-point-NULL-pointer-deref-at-full-sp.patch
+#0001-xhci-Fix-Panther-point-NULL-pointer-deref-at-full-sp.patch
 
 #CVE-2024-45011
-0001-char-xillybus-Check-USB-endpoints-when-probing-devic.patch
+#0001-char-xillybus-Check-USB-endpoints-when-probing-devic.patch
 
 #CVE-2024-45015
 0001-drm-msm-dpu-move-dpu_encoder-s-connector-assignment-.patch
 
 #CVE-2024-45009
-0001-mptcp-pm-only-decrement-add_addr_accepted-for-MPJ-re.patch
+#0001-mptcp-pm-only-decrement-add_addr_accepted-for-MPJ-re.patch
 
 #CVE-2024-45028
-0001-mmc-mmc_test-Fix-NULL-dereference-on-allocation-fail.patch
+#0001-mmc-mmc_test-Fix-NULL-dereference-on-allocation-fail.patch
 
 #CVE-2024-45016
-0001-netem-fix-return-value-if-duplicate-enqueue-fails.patch
+#0001-netem-fix-return-value-if-duplicate-enqueue-fails.patch
 
 #CVE-2024-45018
-0001-netfilter-flowtable-initialise-extack-before-use.patch
+#0001-netfilter-flowtable-initialise-extack-before-use.patch
 
 #CVE-2024-45026
-0001-s390-dasd-fix-error-recovery-leading-to-data-corrupt.patch
+#0001-s390-dasd-fix-error-recovery-leading-to-data-corrupt.patch
 
 #CVE-2024-45025
-0001-fs-ntfs3-add-prefix-to-bitmap_size-and-use-BITS_TO_U.patch
+#0001-fs-ntfs3-add-prefix-to-bitmap_size-and-use-BITS_TO_U.patch
 
 #CVE-2024-45021
-0001-memcg_write_event_control-fix-a-user-triggerable-oop.patch
+#0001-memcg_write_event_control-fix-a-user-triggerable-oop.patch
 
 #CVE-2024-46685
-0001-pinctrl-single-fix-potential-NULL-dereference-in-pcs.patch
+#0001-pinctrl-single-fix-potential-NULL-dereference-in-pcs.patch
 
 #CVE-2024-46673
-0001-scsi-aacraid-Fix-double-free-on-probe-failure.patch
+#0001-scsi-aacraid-Fix-double-free-on-probe-failure.patch
 
 #CVE-2024-46674
-0001-usb-dwc3-st-fix-probed-platform-device-ref-count-on-.patch
+#0001-usb-dwc3-st-fix-probed-platform-device-ref-count-on-.patch
 
 #CVE-2024-46707
-0001-KVM-arm64-Make-ICC_-SGI-_EL1-undef-in-the-absence-of.patch
+#0001-KVM-arm64-Make-ICC_-SGI-_EL1-undef-in-the-absence-of.patch
 
 #CVE-2024-46675
 0001-usb-dwc3-core-Prevent-USB-core-invalid-event-buffer-.patch
 
 #CVE-2024-46677
-0001-gtp-fix-a-potential-NULL-pointer-dereference.patch
+#0001-gtp-fix-a-potential-NULL-pointer-dereference.patch
 
 #CVE-2024-46681
 0001-pktgen-use-cpus_read_lock-in-pg_net_init.patch
 
 #CVE-2024-46689
-0001-soc-qcom-cmd-db-Map-shared-memory-as-WC-not-WB.patch
+#0001-soc-qcom-cmd-db-Map-shared-memory-as-WC-not-WB.patch
 
 #CVE-2024-46702
-0001-thunderbolt-Mark-XDomain-as-unplugged-when-router-is.patch
+#0001-thunderbolt-Mark-XDomain-as-unplugged-when-router-is.patch
 
 #CVE-2024-46719
-0001-usb-typec-ucsi-Fix-null-pointer-dereference-in-trace.patch
+#0001-usb-typec-ucsi-Fix-null-pointer-dereference-in-trace.patch
 
 #CVE-2024-46737
-0001-nvmet-tcp-fix-kernel-crash-if-commands-allocation-fa.patch
+#0001-nvmet-tcp-fix-kernel-crash-if-commands-allocation-fa.patch
 
 #CVE-2024-46721
-0001-apparmor-fix-possible-NULL-pointer-dereference.patch
+#0001-apparmor-fix-possible-NULL-pointer-dereference.patch
 
 #CVE-2024-46722
-0001-drm-amdgpu-fix-mc_data-out-of-bounds-read-warning.patch
+#0001-drm-amdgpu-fix-mc_data-out-of-bounds-read-warning.patch
 
 #CVE-2024-46723
-0001-drm-amdgpu-fix-ucode-out-of-bounds-read-warning.patch
+#0001-drm-amdgpu-fix-ucode-out-of-bounds-read-warning.patch
 
 #CVE-2024-46724
-0001-drm-amdgpu-Fix-out-of-bounds-read-of-df_v1_7_channel.patch
+#0001-drm-amdgpu-Fix-out-of-bounds-read-of-df_v1_7_channel.patch
 
 #CVE-2024-46725
-0001-drm-amdgpu-Fix-out-of-bounds-write-warning.patch
+#0001-drm-amdgpu-Fix-out-of-bounds-write-warning.patch
 
 #CVE-2024-46739
-0001-uio_hv_generic-Fix-kernel-NULL-pointer-dereference-i.patch
+#0001-uio_hv_generic-Fix-kernel-NULL-pointer-dereference-i.patch
 
 #CVE-2024-46738
-0001-VMCI-Fix-use-after-free-when-removing-resource-in-vm.patch
+#0001-VMCI-Fix-use-after-free-when-removing-resource-in-vm.patch
 
 #CVE-2024-46740
-0001-binder-fix-UAF-caused-by-offsets-overwrite.patch
+#0001-binder-fix-UAF-caused-by-offsets-overwrite.patch
 
 #CVE-2024-46743
-0001-of-irq-Prevent-device-address-out-of-bounds-read-in-.patch
+#0001-of-irq-Prevent-device-address-out-of-bounds-read-in-.patch
 
 #CVE-2024-46747
-0001-HID-cougar-fix-slab-out-of-bounds-Read-in-cougar_rep.patch
+#0001-HID-cougar-fix-slab-out-of-bounds-Read-in-cougar_rep.patch
 
 #CVE-2024-46791
-0001-can-mcp251x-fix-deadlock-if-an-interrupt-occurs-duri.patch
+#0001-can-mcp251x-fix-deadlock-if-an-interrupt-occurs-duri.patch
 
 #CVE-2024-46795
-0001-ksmbd-unset-the-binding-mark-of-a-reused-connection.patch
+#0001-ksmbd-unset-the-binding-mark-of-a-reused-connection.patch
 
 #CVE-2024-46798
-0001-ASoC-dapm-Fix-UAF-for-snd_soc_pcm_runtime-object.patch
+#0001-ASoC-dapm-Fix-UAF-for-snd_soc_pcm_runtime-object.patch
 
 #CVE-2024-46800
-0001-sch-netem-fix-use-after-free-in-netem_dequeue.patch
+#0001-sch-netem-fix-use-after-free-in-netem_dequeue.patch
 
 #CVE-2024-46676
-0001-nfc-pn533-Add-poll-mod-list-filling-check.patch
+#0001-nfc-pn533-Add-poll-mod-list-filling-check.patch
 
 #CVE-2024-46679
-0001-ethtool-check-device-is-present-when-getting-link-se.patch
+#0001-ethtool-check-device-is-present-when-getting-link-se.patch
 
 #CVE-2024-46758
-0001-hwmon-lm95234-Fix-underflows-seen-when-writing-limit.patch
+#0001-hwmon-lm95234-Fix-underflows-seen-when-writing-limit.patch
 
 #CVE-2024-46759
-0001-hwmon-adc128d818-Fix-underflows-seen-when-writing-li.patch
+#0001-hwmon-adc128d818-Fix-underflows-seen-when-writing-li.patch
 
 #CVE-2024-46757
-0001-hwmon-nct6775-core-Fix-underflows-seen-when-writing-.patch
+#0001-hwmon-nct6775-core-Fix-underflows-seen-when-writing-.patch
 
 #CVE-2024-46731
-0001-drm-amd-pm-fix-the-Out-of-bounds-read-warning.patch
+#0001-drm-amd-pm-fix-the-Out-of-bounds-read-warning.patch
 
 #CVE-2024-46732
-0001-drm-amd-display-Assign-linear_pitch_alignment-even-f.patch
+#0001-drm-amd-display-Assign-linear_pitch_alignment-even-f.patch
 
 #CVE-2024-46781
-0001-nilfs2-fix-missing-cleanup-on-rollforward-recovery-e.patch
+#0001-nilfs2-fix-missing-cleanup-on-rollforward-recovery-e.patch
 
 #CVE-2024-46782
-0001-ila-call-nf_unregister_net_hooks-sooner.patch
+#0001-ila-call-nf_unregister_net_hooks-sooner.patch
 
 #CVE-2024-46746
-0001-HID-amd_sfh-free-driver_data-after-destroying-hid-de.patch
+#0001-HID-amd_sfh-free-driver_data-after-destroying-hid-de.patch
 
 #CVE-2024-46755
-0001-wifi-mwifiex-Do-not-return-unused-priv-in-mwifiex_ge.patch
+#0001-wifi-mwifiex-Do-not-return-unused-priv-in-mwifiex_ge.patch
 
 #CVE-2024-46756
-0001-hwmon-w83627ehf-Fix-underflows-seen-when-writing-lim.patch
+#0001-hwmon-w83627ehf-Fix-underflows-seen-when-writing-lim.patch
 
 #CVE-2024-46761
-0001-pci-hotplug-pnv_php-Fix-hotplug-driver-crash-on-Powe.patch
+#0001-pci-hotplug-pnv_php-Fix-hotplug-driver-crash-on-Powe.patch
 
 #CVE-2024-43829
-0001-drm-qxl-Add-check-for-drm_cvt_mode.patch
+#0001-drm-qxl-Add-check-for-drm_cvt_mode.patch
 
 #CVE-2024-44969
-0001-s390-sclp-Prevent-release-of-buffer-in-I-O.patch
+#0001-s390-sclp-Prevent-release-of-buffer-in-I-O.patch
 
 #CVE-2024-44960
-0001-usb-gadget-core-Check-for-unset-descriptor.patch
+#0001-usb-gadget-core-Check-for-unset-descriptor.patch
 
 #CVE-2024-44965
-0001-x86-mm-Fix-pti_clone_pgtable-alignment-assumption.patch
+#0001-x86-mm-Fix-pti_clone_pgtable-alignment-assumption.patch
 
 #CVE-2024-44966
-0001-binfmt_flat-Fix-corruption-when-not-offsetting-data-.patch
+#0001-binfmt_flat-Fix-corruption-when-not-offsetting-data-.patch
 
 #CVE-2024-46714
 0001-drm-amd-display-Skip-wbscl_set_scaler_filter-if-filt.patch
 
 #CVE-2024-46744
-0001-Squashfs-sanity-check-symbolic-link-size.patch
+#0001-Squashfs-sanity-check-symbolic-link-size.patch
 
 #CVE-2024-46750
-0001-PCI-Add-missing-bridge-lock-to-pci_bus_lock.patch
+#0001-PCI-Add-missing-bridge-lock-to-pci_bus_lock.patch
 
 #CVE-2024-46855
 0001-netfilter-nft_socket-fix-sk-refcount-leaks.patch
 
 #CVE-2024-46804
-0001-drm-amd-display-Add-array-index-check-for-hdcp-ddc-a.patch
+#0001-drm-amd-display-Add-array-index-check-for-hdcp-ddc-a.patch
 
 #CVE-2024-46805
-0001-drm-amdgpu-fix-the-waring-dereferencing-hive.patch
+#0001-drm-amdgpu-fix-the-waring-dereferencing-hive.patch
 
 #CVE-2024-46807
-0001-drm-amd-amdgpu-Check-tbo-resource-pointer.patch
+#0001-drm-amd-amdgpu-Check-tbo-resource-pointer.patch
 
 #CVE-2024-46810
-0001-drm-bridge-tc358767-Check-if-fully-initialized-befor.patch
+#0001-drm-bridge-tc358767-Check-if-fully-initialized-befor.patch
 
 #CVE-2024-46814
-0001-drm-amd-display-Check-msg_id-before-processing-trans.patch
+#0001-drm-amd-display-Check-msg_id-before-processing-trans.patch
 
 #CVE-2024-46818
-0001-drm-amd-display-Check-gpio_id-before-used-as-array-i.patch
+#0001-drm-amd-display-Check-gpio_id-before-used-as-array-i.patch
 
 #CVE-2024-46819
-0001-drm-amdgpu-the-warning-dereferencing-obj-for-nbio_v7.patch
+#0001-drm-amdgpu-the-warning-dereferencing-obj-for-nbio_v7.patch
 
 #CVE-2024-46822
-0001-arm64-acpi-Move-get_cpu_for_acpi_id-to-a-header.patch
-0002-arm64-acpi-Harden-get_cpu_for_acpi_id-against-missin.patch
+#0001-arm64-acpi-Move-get_cpu_for_acpi_id-to-a-header.patch
+#0002-arm64-acpi-Harden-get_cpu_for_acpi_id-against-missin.patch
 
 #CVE-2024-46829
-0001-rtmutex-Drop-rt_mutex-wait_lock-before-scheduling.patch
+#0001-rtmutex-Drop-rt_mutex-wait_lock-before-scheduling.patch
 
 #CVE-2024-46844
-0001-um-line-always-fill-error_out-in-setup_one_line.patch
+#0001-um-line-always-fill-error_out-in-setup_one_line.patch
 
 #CVE-2024-46848
 0001-perf-x86-intel-Limit-the-period-on-Haswell.patch
@@ -806,25 +806,25 @@
 0001-platform-x86-panasonic-laptop-Fix-SINF-array-out-of-.patch
 
 #CVE-2024-44988
-0001-net-dsa-mv88e6xxx-read-FID-when-handling-ATU-violati.patch
-0002-net-dsa-mv88e6xxx-replace-ATU-violation-prints-with-.patch
-0003-net-dsa-mv88e6xxx-Fix-out-of-bound-access.patch
+#0001-net-dsa-mv88e6xxx-read-FID-when-handling-ATU-violati.patch
+#0002-net-dsa-mv88e6xxx-replace-ATU-violation-prints-with-.patch
+#0003-net-dsa-mv88e6xxx-Fix-out-of-bound-access.patch
 
 #CVE-2024-44954
-0001-ALSA-line6-Fix-racy-access-to-midibuf.patch
+#0001-ALSA-line6-Fix-racy-access-to-midibuf.patch
 
 #CVE-2024-44958
-0001-sched-smt-Introduce-sched_smt_present_inc-dec-helper.patch
-0002-sched-smt-Fix-unbalance-sched_smt_present-dec-inc.patch
+#0001-sched-smt-Introduce-sched_smt_present_inc-dec-helper.patch
+#0002-sched-smt-Fix-unbalance-sched_smt_present-dec-inc.patch
 
 #CVE-2024-44982
-0001-drm-msm-dpu-cleanup-FB-if-dpu_format_populate_layout.patch
+#0001-drm-msm-dpu-cleanup-FB-if-dpu_format_populate_layout.patch
 
 #CVE-2024-45003
-0001-vfs-Don-t-evict-inode-under-the-inode-lru-traversing.patch
+#0001-vfs-Don-t-evict-inode-under-the-inode-lru-traversing.patch
 
 #CVE-2024-46840
-0001-btrfs-clean-up-our-handling-of-refs-0-in-snapshot-de.patch
+#0001-btrfs-clean-up-our-handling-of-refs-0-in-snapshot-de.patch
 
 #CVE-2024-46832
-0001-MIPS-cevt-r4k-Don-t-call-get_c0_compare_int-if-timer.patch
+#0001-MIPS-cevt-r4k-Don-t-call-get_c0_compare_int-if-timer.patch
