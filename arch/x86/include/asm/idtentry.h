@@ -810,15 +810,15 @@ DECLARE_IDTENTRY_SYSVEC_PIPELINED(POSTED_INTR_VECTOR,		sysvec_kvm_posted_intr_ip
 DECLARE_IDTENTRY_SYSVEC_PIPELINED(POSTED_INTR_WAKEUP_VECTOR,	sysvec_kvm_posted_intr_wakeup_ipi);
 DECLARE_IDTENTRY_SYSVEC_PIPELINED(POSTED_INTR_NESTED_VECTOR,	sysvec_kvm_posted_intr_nested_ipi);
 #else
-# define fred_sysvec_kvm_posted_intr_ipi                NULL
-# define fred_sysvec_kvm_posted_intr_wakeup_ipi         NULL
-# define fred_sysvec_kvm_posted_intr_nested_ipi         NULL
+# define fred_sysvec_kvm_posted_intr_ipi		NULL
+# define fred_sysvec_kvm_posted_intr_wakeup_ipi		NULL
+# define fred_sysvec_kvm_posted_intr_nested_ipi		NULL
 #endif
 
 #if IS_ENABLED(CONFIG_HYPERV)
-DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR,		sysvec_hyperv_callback);
-DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERV_REENLIGHTENMENT_VECTOR,	sysvec_hyperv_reenlightenment);
-DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERV_STIMER0_VECTOR,		sysvec_hyperv_stimer0);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR, sysvec_hyperv_callback);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERV_REENLIGHTENMENT_VECTOR, sysvec_hyperv_reenlightenment);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERV_STIMER0_VECTOR, sysvec_hyperv_stimer0);
 #endif
 
 #if IS_ENABLED(CONFIG_ACRN_GUEST)

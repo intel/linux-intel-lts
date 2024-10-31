@@ -4342,6 +4342,11 @@ void netif_device_attach(struct net_device *dev);
 
 #ifdef CONFIG_NET_OOB
 
+static inline void netdev_set_oob_capable(struct net_device *dev)
+{
+	dev->priv_flags |= IFF_OOB_CAPABLE;
+}
+
 static inline bool netdev_is_oob_capable(struct net_device *dev)
 {
 	return !!(dev->priv_flags & IFF_OOB_CAPABLE);
@@ -4353,8 +4358,8 @@ bool netif_receive_oob(struct sk_buff *skb);
  *	netif_oob_diversion - is the ingress traffic diverted for out-of-band handling?
  *	@dev: network device
  *
- * Check if the RX packets are currently diverted to a companion
- * kernel for out-of-band handling.
+ * Check if the RX packets to this (real) device are currently
+ * diverted to a companion kernel for out-of-band handling.
  */
 static inline bool netif_oob_diversion(const struct net_device *dev)
 {
@@ -4428,6 +4433,11 @@ static inline bool netif_oob_diversion(const struct net_device *dev)
 static inline bool netif_oob_port(struct net_device *dev)
 {
 	return false;
+}
+
+static inline void netdev_set_oob_capable(struct net_device *dev)
+{
+	dev->priv_flags |= IFF_OOB_CAPABLE;
 }
 
 static inline bool netdev_is_oob_capable(struct net_device *dev)
