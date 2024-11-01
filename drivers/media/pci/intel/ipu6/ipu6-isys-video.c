@@ -530,7 +530,7 @@ static int ipu6_isys_fw_pin_cfg(struct ipu6_isys_video *av,
 	output_pin->csi_be_soc_pixel_remapping =
 		CSI_BE_SOC_PIXEL_REMAPPING_FLAG_NO_REMAPPING;
 
-	output_pin->snoopable = true;
+	output_pin->snoopable = false;
 	output_pin->error_handling_enable = false;
 	output_pin->sensor_type = isys->sensor_type++;
 	if (isys->sensor_type > isys->pdata->ipdata->sensor_type_end)
