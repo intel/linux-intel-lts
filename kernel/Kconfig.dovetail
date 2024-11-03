@@ -23,8 +23,8 @@ config DOVETAIL_LEGACY_SYSCALL_RANGE
        def_bool y
 
 # The nickname of the guest companion core using Dovetail to attach to
-# the main kernel. Advertise IRQ pipelining only if none.
+# the main kernel. Advertise mere dovetailing only if none.
 config DOVETAIL_GUEST
        string
        depends on DOVETAIL
-       default "$(shell,$(srctree)/scripts/dovetail-guest.sh 2>/dev/null || echo IRQ_PIPELINE)"
+       default "$(shell,$(srctree)/scripts/dovetail-guest.sh 2>/dev/null || echo DOVETAIL)"
