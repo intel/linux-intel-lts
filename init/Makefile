@@ -27,7 +27,7 @@ smp-flag-$(CONFIG_SMP)			:= SMP
 preempt-flag-$(CONFIG_PREEMPT_BUILD)	:= PREEMPT
 preempt-flag-$(CONFIG_PREEMPT_DYNAMIC)	:= PREEMPT_DYNAMIC
 preempt-flag-$(CONFIG_PREEMPT_RT)	:= PREEMPT_RT
-dovetail-flag-$(CONFIG_DOVETAIL)	:= $(CONFIG_DOVETAIL_GUEST)
+dovetail-flag-$(CONFIG_IRQ_PIPELINE)	:= $(or $(CONFIG_DOVETAIL_GUEST),IRQ_PIPELINE)
 
 build-version = $(or $(KBUILD_BUILD_VERSION), $(build-version-auto))
 build-timestamp = $(or $(KBUILD_BUILD_TIMESTAMP), $(build-timestamp-auto))
