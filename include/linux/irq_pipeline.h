@@ -144,6 +144,11 @@ static inline bool irq_pipeline_can_idle(void)
 
 static inline void irq_pipeline_idling_checks(void) { }
 
+static inline int handle_irq_pipelined(struct pt_regs *regs)
+{
+	return 1;
+}
+
 #endif /* !CONFIG_IRQ_PIPELINE */
 
 #endif /* _LINUX_IRQ_PIPELINE_H */
