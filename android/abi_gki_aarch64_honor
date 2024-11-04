@@ -30,3 +30,11 @@
   next_arg
   netdev_get_name
   tcp_send_active_reset
+  sock_from_file
+  sock_i_ino
+  in6addr_any
+  sock_gen_put
+  udp6_lib_lookup
+  udp4_lib_lookup
+  tcp_done
+  dev_get_flags
