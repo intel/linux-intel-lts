@@ -721,6 +721,7 @@
   extcon_set_property_capability
   extcon_set_state
   extcon_set_state_sync
+  extcon_sync
   fasync_helper
   __fdget
   fd_install
