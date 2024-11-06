@@ -106,9 +106,6 @@
 # CVE-2023-2177
 0001-sctp-leave-the-err-path-free-in-sctp_stream_init-to-.patch
 
-# CVE-2023-52435
-0001-net-prevent-mss-overflow-in-skb_segment.patch
-
 # CVE-2021-47063
 0001-drm-bridge-panel-Cleanup-connector-on-bridge-detach.patch
 
@@ -171,75 +168,3 @@
 
 #CVE-2024-42244
 0001-USB-serial-mos7840-fix-crash-on-resume.patch
-
-#CVE-2024-42271
-0001-net-iucv-fix-use-after-free-in-iucv_sock_close.patch
-
-#CVE-2024-42284
-0001-tipc-Return-non-zero-value-from-tipc_udp_addr2str-on.patch
-
-#CVE-2024-42285
-0001-RDMA-iwcm-Fix-a-use-after-free-related-to-destroying.patch
-
-#CVE-2024-42310
-0001-drm-gma500-fix-null-pointer-dereference-in-cdv_intel.patch
-
-#CVE-2024-42309
-0001-drm-gma500-fix-null-pointer-dereference-in-psb_intel.patch
-
-#CVE-2024-42311
-0001-hfs-fix-to-initialize-fields-of-hfs_inode_info-after.patch
-
-#CVE-2024-42313
-0001-media-venus-fix-use-after-free-in-vdec_close.patch
-
-#CVE-2024-43860
-0001-remoteproc-imx_rproc-Skip-over-memory-region-when-no.patch
-
-#CVE-2024-43861
-0001-net-usb-qmi_wwan-fix-memory-leak-for-not-ip-packets.patch
-
-#CVE-2024-43863
-0001-drm-vmwgfx-Fix-a-deadlock-in-dma-buf-fence-polling.patch
-
-#CVE-2024-43871
-0001-devres-Fix-memory-leakage-caused-by-driver-API-devm_.patch
-
-#CVE-2024-43882
-0001-exec-Fix-ToCToU-between-perm-check-and-set-uid-gid-u.patch
-
-#CVE-2024-43856
-0001-dma-fix-call-order-in-dmam_free_coherent.patch
-
-#CVE-2024-43858
-0001-jfs-Fix-array-index-out-of-bounds-in-diFree.patch
-
-#CVE-2024-43884
-0001-Bluetooth-MGMT-Add-error-handling-to-pair_device.patch
-
-#CVE-2024-42289
-0001-scsi-qla2xxx-During-vport-delete-send-async-logout-e.patch
-
-#CVE-2024-43890
-0001-tracing-Fix-overflow-in-get_free_elt.patch
-
-#CVE-2024-43914
-0001-md-raid5-avoid-BUG_ON-while-continue-reshape-after-r.patch
-
-#CVE-2024-44946
-0001-kcm-Serialise-kcm_sendmsg-for-the-same-socket.patch
-
-#CVE-2024-44987
-0001-ipv6-prevent-UAF-in-ip6_send_skb.patch
-
-#CVE-2024-44998
-0001-atm-idt77252-prevent-use-after-free-in-dequeue_rx.patch
-
-#CVE-2024-44952
-0001-driver-core-Fix-uevent_show-vs-driver-detach-race.patch
-
-#CVE-2024-44999
-0001-gtp-pull-network-headers-in-gtp_dev_xmit.patch
-
-#CVE-2024-45006
-0001-xhci-Fix-Panther-point-NULL-pointer-deref-at-full-sp.patch
