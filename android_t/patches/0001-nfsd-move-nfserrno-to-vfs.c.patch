@@ -1,0 +1,192 @@
+From a2321d879d53b176b26cb828a30830d5097e29c8 Mon Sep 17 00:00:00 2001
+From: Jeff Layton <jlayton@kernel.org>
+Date: Tue, 18 Oct 2022 07:47:55 -0400
+Subject: [PATCH 1/2] nfsd: move nfserrno() to vfs.c
+
+[ Upstream commit cb12fae1c34b1fa7eaae92c5aadc72d86d7fae19 ]
+
+nfserrno() is common to all nfs versions, but nfsproc.c is specifically
+for NFSv2. Move it to vfs.c, and the prototype to vfs.h.
+
+While we're in here, remove the #ifdef EDQUOT check in this function.
+It's apparently a holdover from the initial merge of the nfsd code in
+1997. No other place in the kernel checks that that symbol is defined
+before using it, so I think we can dispense with it here.
+
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+---
+ fs/nfsd/blocklayout.c    |  1 +
+ fs/nfsd/blocklayoutxdr.c |  1 +
+ fs/nfsd/export.h         |  1 -
+ fs/nfsd/flexfilelayout.c |  1 +
+ fs/nfsd/nfs4idmap.c      |  1 +
+ fs/nfsd/vfs.c            | 63 ++++++++++++++++++++++++++++++++++++++++
+ fs/nfsd/vfs.h            | 17 +++++++++++
+ 7 files changed, 84 insertions(+), 1 deletion(-)
+
+diff --git a/fs/nfsd/blocklayout.c b/fs/nfsd/blocklayout.c
+index c99dee99a3c1..0ddd20cb6806 100644
+--- a/fs/nfsd/blocklayout.c
++++ b/fs/nfsd/blocklayout.c
+@@ -16,6 +16,7 @@
+ #include "blocklayoutxdr.h"
+ #include "pnfs.h"
+ #include "filecache.h"
++#include "vfs.h"
+ 
+ #define NFSDDBG_FACILITY	NFSDDBG_PNFS
+ 
+diff --git a/fs/nfsd/blocklayoutxdr.c b/fs/nfsd/blocklayoutxdr.c
+index 2455dc8be18a..1ed2f691ebb9 100644
+--- a/fs/nfsd/blocklayoutxdr.c
++++ b/fs/nfsd/blocklayoutxdr.c
+@@ -9,6 +9,7 @@
+ 
+ #include "nfsd.h"
+ #include "blocklayoutxdr.h"
++#include "vfs.h"
+ 
+ #define NFSDDBG_FACILITY	NFSDDBG_PNFS
+ 
+diff --git a/fs/nfsd/export.h b/fs/nfsd/export.h
+index ee0e3aba4a6e..d03f7f6a8642 100644
+--- a/fs/nfsd/export.h
++++ b/fs/nfsd/export.h
+@@ -115,7 +115,6 @@ struct svc_export *	rqst_find_fsidzero_export(struct svc_rqst *);
+ int			exp_rootfh(struct net *, struct auth_domain *,
+ 					char *path, struct knfsd_fh *, int maxsize);
+ __be32			exp_pseudoroot(struct svc_rqst *, struct svc_fh *);
+-__be32			nfserrno(int errno);
+ 
+ static inline void exp_put(struct svc_export *exp)
+ {
+diff --git a/fs/nfsd/flexfilelayout.c b/fs/nfsd/flexfilelayout.c
+index db7ef07ae50c..d5c3e4deec11 100644
+--- a/fs/nfsd/flexfilelayout.c
++++ b/fs/nfsd/flexfilelayout.c
+@@ -15,6 +15,7 @@
+ 
+ #include "flexfilelayoutxdr.h"
+ #include "pnfs.h"
++#include "vfs.h"
+ 
+ #define NFSDDBG_FACILITY	NFSDDBG_PNFS
+ 
+diff --git a/fs/nfsd/nfs4idmap.c b/fs/nfsd/nfs4idmap.c
+index f92161ce1f97..36ee6d83372d 100644
+--- a/fs/nfsd/nfs4idmap.c
++++ b/fs/nfsd/nfs4idmap.c
+@@ -41,6 +41,7 @@
+ #include "idmap.h"
+ #include "nfsd.h"
+ #include "netns.h"
++#include "vfs.h"
+ 
+ /*
+  * Turn off idmapping when using AUTH_SYS.
+diff --git a/fs/nfsd/vfs.c b/fs/nfsd/vfs.c
+index c39b8a653804..54d24f87dd53 100644
+--- a/fs/nfsd/vfs.c
++++ b/fs/nfsd/vfs.c
+@@ -49,6 +49,69 @@
+ 
+ #define NFSDDBG_FACILITY		NFSDDBG_FILEOP
+ 
++/**
++ * nfserrno - Map Linux errnos to NFS errnos
++ * @errno: POSIX(-ish) error code to be mapped
++ *
++ * Returns the appropriate (net-endian) nfserr_* (or nfs_ok if errno is 0). If
++ * it's an error we don't expect, log it once and return nfserr_io.
++ */
++__be32
++nfserrno (int errno)
++{
++	static struct {
++		__be32	nfserr;
++		int	syserr;
++	} nfs_errtbl[] = {
++		{ nfs_ok, 0 },
++		{ nfserr_perm, -EPERM },
++		{ nfserr_noent, -ENOENT },
++		{ nfserr_io, -EIO },
++		{ nfserr_nxio, -ENXIO },
++		{ nfserr_fbig, -E2BIG },
++		{ nfserr_stale, -EBADF },
++		{ nfserr_acces, -EACCES },
++		{ nfserr_exist, -EEXIST },
++		{ nfserr_xdev, -EXDEV },
++		{ nfserr_mlink, -EMLINK },
++		{ nfserr_nodev, -ENODEV },
++		{ nfserr_notdir, -ENOTDIR },
++		{ nfserr_isdir, -EISDIR },
++		{ nfserr_inval, -EINVAL },
++		{ nfserr_fbig, -EFBIG },
++		{ nfserr_nospc, -ENOSPC },
++		{ nfserr_rofs, -EROFS },
++		{ nfserr_mlink, -EMLINK },
++		{ nfserr_nametoolong, -ENAMETOOLONG },
++		{ nfserr_notempty, -ENOTEMPTY },
++		{ nfserr_dquot, -EDQUOT },
++		{ nfserr_stale, -ESTALE },
++		{ nfserr_jukebox, -ETIMEDOUT },
++		{ nfserr_jukebox, -ERESTARTSYS },
++		{ nfserr_jukebox, -EAGAIN },
++		{ nfserr_jukebox, -EWOULDBLOCK },
++		{ nfserr_jukebox, -ENOMEM },
++		{ nfserr_io, -ETXTBSY },
++		{ nfserr_notsupp, -EOPNOTSUPP },
++		{ nfserr_toosmall, -ETOOSMALL },
++		{ nfserr_serverfault, -ESERVERFAULT },
++		{ nfserr_serverfault, -ENFILE },
++		{ nfserr_io, -EREMOTEIO },
++		{ nfserr_stale, -EOPENSTALE },
++		{ nfserr_io, -EUCLEAN },
++		{ nfserr_perm, -ENOKEY },
++		{ nfserr_no_grace, -ENOGRACE},
++	};
++	int	i;
++
++	for (i = 0; i < ARRAY_SIZE(nfs_errtbl); i++) {
++		if (nfs_errtbl[i].syserr == errno)
++			return nfs_errtbl[i].nfserr;
++	}
++	WARN_ONCE(1, "nfsd: non-standard errno: %d\n", errno);
++	return nfserr_io;
++}
++
+ /* 
+  * Called from nfsd_lookup and encode_dirent. Check if we have crossed 
+  * a mount point.
+diff --git a/fs/nfsd/vfs.h b/fs/nfsd/vfs.h
+index 3cf5a8a13da5..e375f53230be 100644
+--- a/fs/nfsd/vfs.h
++++ b/fs/nfsd/vfs.h
+@@ -42,6 +42,23 @@ struct nfsd_file;
+ typedef int (*nfsd_filldir_t)(void *, const char *, int, loff_t, u64, unsigned);
+ 
+ /* nfsd/vfs.c */
++struct nfsd_attrs {
++	struct iattr		*na_iattr;	/* input */
++	struct xdr_netobj	*na_seclabel;	/* input */
++	struct posix_acl	*na_pacl;	/* input */
++	struct posix_acl	*na_dpacl;	/* input */
++
++	int			na_labelerr;	/* output */
++	int			na_aclerr;	/* output */
++};
++
++static inline void nfsd_attrs_free(struct nfsd_attrs *attrs)
++{
++	posix_acl_release(attrs->na_pacl);
++	posix_acl_release(attrs->na_dpacl);
++}
++
++__be32		nfserrno (int errno);
+ int		nfsd_cross_mnt(struct svc_rqst *rqstp, struct dentry **dpp,
+ 		                struct svc_export **expp);
+ __be32		nfsd_lookup(struct svc_rqst *, struct svc_fh *,
+-- 
+2.25.1
+

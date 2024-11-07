@@ -1,0 +1,39 @@
+From 5e28874384690c04e4b8198a8e2c5a954f711e35 Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Fri, 6 Sep 2024 15:44:49 +0000
+Subject: [PATCH] sock_map: Add a cond_resched() in sock_hash_free()
+
+[ Upstream commit b1339be951ad31947ae19bc25cb08769bf255100 ]
+
+Several syzbot soft lockup reports all have in common sock_hash_free()
+
+If a map with a large number of buckets is destroyed, we need to yield
+the cpu when needed.
+
+Fixes: 75e68e5bf2c7 ("bpf, sockhash: Synchronize delete from bucket list on map free")
+Reported-by: syzbot <syzkaller@googlegroups.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Martin KaFai Lau <martin.lau@kernel.org>
+Acked-by: John Fastabend <john.fastabend@gmail.com>
+Link: https://lore.kernel.org/bpf/20240906154449.3742932-1-edumazet@google.com
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/core/sock_map.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/core/sock_map.c b/net/core/sock_map.c
+index 057c01e27f61..e5644b344b0b 100644
+--- a/net/core/sock_map.c
++++ b/net/core/sock_map.c
+@@ -1177,6 +1177,7 @@ static void sock_hash_free(struct bpf_map *map)
+ 			sock_put(elem->sk);
+ 			sock_hash_free_elem(htab, elem);
+ 		}
++		cond_resched();
+ 	}
+ 
+ 	/* wait for psock readers accessing its map link */
+-- 
+2.25.1
+
