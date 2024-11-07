@@ -1,0 +1,41 @@
+From 132db0c2efd8944a62cac30b0d66099662ffcdbc Mon Sep 17 00:00:00 2001
+From: Baokun Li <libaokun1@huawei.com>
+Date: Thu, 22 Aug 2024 10:35:30 +0800
+Subject: [PATCH 4/9] ext4: propagate errors from ext4_find_extent() in
+ ext4_insert_range()
+
+commit 369c944ed1d7c3fb7b35f24e4735761153afe7b3 upstream.
+
+Even though ext4_find_extent() returns an error, ext4_insert_range() still
+returns 0. This may confuse the user as to why fallocate returns success,
+but the contents of the file are not as expected. So propagate the error
+returned by ext4_find_extent() to avoid inconsistencies.
+
+Fixes: 331573febb6a ("ext4: Add support FALLOC_FL_INSERT_RANGE for fallocate")
+Cc: stable@kernel.org
+Signed-off-by: Baokun Li <libaokun1@huawei.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Reviewed-by: Ojaswin Mujoo <ojaswin@linux.ibm.com>
+Tested-by: Ojaswin Mujoo <ojaswin@linux.ibm.com>
+Link: https://patch.msgid.link/20240822023545.1994557-11-libaokun@huaweicloud.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/ext4/extents.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
+index a63bd2c7482b..3d2e8f4f494b 100644
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -5573,6 +5573,7 @@ static int ext4_insert_range(struct file *file, loff_t offset, loff_t len)
+ 	path = ext4_find_extent(inode, offset_lblk, NULL, 0);
+ 	if (IS_ERR(path)) {
+ 		up_write(&EXT4_I(inode)->i_data_sem);
++		ret = PTR_ERR(path);
+ 		goto out_stop;
+ 	}
+ 
+-- 
+2.34.1
+

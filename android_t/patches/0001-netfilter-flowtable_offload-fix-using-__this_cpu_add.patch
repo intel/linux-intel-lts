@@ -1,0 +1,64 @@
+From 0228078f6a5b09dc26176c54dfa2b597f07018b3 Mon Sep 17 00:00:00 2001
+From: Xin Long <lucien.xin@gmail.com>
+Date: Thu, 24 Nov 2022 12:54:10 -0500
+Subject: [PATCH] netfilter: flowtable_offload: fix using __this_cpu_add in
+ preemptible
+
+flow_offload_queue_work() can be called in workqueue without
+bh disabled, like the call trace showed in my act_ct testing,
+calling NF_FLOW_TABLE_STAT_INC() there would cause a call
+trace:
+
+  BUG: using __this_cpu_add() in preemptible [00000000] code: kworker/u4:0/138560
+  caller is flow_offload_queue_work+0xec/0x1b0 [nf_flow_table]
+  Workqueue: act_ct_workqueue tcf_ct_flow_table_cleanup_work [act_ct]
+  Call Trace:
+   <TASK>
+   dump_stack_lvl+0x33/0x46
+   check_preemption_disabled+0xc3/0xf0
+   flow_offload_queue_work+0xec/0x1b0 [nf_flow_table]
+   nf_flow_table_iterate+0x138/0x170 [nf_flow_table]
+   nf_flow_table_free+0x140/0x1a0 [nf_flow_table]
+   tcf_ct_flow_table_cleanup_work+0x2f/0x2b0 [act_ct]
+   process_one_work+0x6a3/0x1030
+   worker_thread+0x8a/0xdf0
+
+This patch fixes it by using NF_FLOW_TABLE_STAT_INC_ATOMIC()
+instead in flow_offload_queue_work().
+
+Note that for FLOW_CLS_REPLACE branch in flow_offload_queue_work(),
+it may not be called in preemptible path, but it's good to use
+NF_FLOW_TABLE_STAT_INC_ATOMIC() for all cases in
+flow_offload_queue_work().
+
+Fixes: b038177636f8 ("netfilter: nf_flow_table: count pending offload workqueue tasks")
+Signed-off-by: Xin Long <lucien.xin@gmail.com>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ net/netfilter/nf_flow_table_offload.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/net/netfilter/nf_flow_table_offload.c b/net/netfilter/nf_flow_table_offload.c
+index 6ac1ebe17456..6aa6d2894063 100644
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -983,13 +983,13 @@ static void flow_offload_queue_work(struct flow_offload_work *offload)
+ 	struct net *net = read_pnet(&offload->flowtable->net);
+ 
+ 	if (offload->cmd == FLOW_CLS_REPLACE) {
+-		NF_FLOW_TABLE_STAT_INC(net, count_wq_add);
++		NF_FLOW_TABLE_STAT_INC_ATOMIC(net, count_wq_add);
+ 		queue_work(nf_flow_offload_add_wq, &offload->work);
+ 	} else if (offload->cmd == FLOW_CLS_DESTROY) {
+-		NF_FLOW_TABLE_STAT_INC(net, count_wq_del);
++		NF_FLOW_TABLE_STAT_INC_ATOMIC(net, count_wq_del);
+ 		queue_work(nf_flow_offload_del_wq, &offload->work);
+ 	} else {
+-		NF_FLOW_TABLE_STAT_INC(net, count_wq_stats);
++		NF_FLOW_TABLE_STAT_INC_ATOMIC(net, count_wq_stats);
+ 		queue_work(nf_flow_offload_stats_wq, &offload->work);
+ 	}
+ }
+-- 
+2.34.1
+

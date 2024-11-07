@@ -1,0 +1,39 @@
+From b2b65d5bc4b309abe34af5edc315a2de3919035c Mon Sep 17 00:00:00 2001
+From: Alex Hung <alex.hung@amd.com>
+Date: Thu, 27 Jun 2024 20:05:14 -0600
+Subject: [PATCH] drm/amd/display: Check stream before comparing them
+
+[ Upstream commit 35ff747c86767937ee1e0ca987545b7eed7a0810 ]
+
+[WHAT & HOW]
+amdgpu_dm can pass a null stream to dc_is_stream_unchanged. It is
+necessary to check for null before dereferencing them.
+
+This fixes 1 FORWARD_NULL issue reported by Coverity.
+
+Reviewed-by: Rodrigo Siqueira <rodrigo.siqueira@amd.com>
+Signed-off-by: Jerry Zuo <jerry.zuo@amd.com>
+Signed-off-by: Alex Hung <alex.hung@amd.com>
+Tested-by: Daniel Wheeler <daniel.wheeler@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/gpu/drm/amd/display/dc/core/dc_resource.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
+index fa4d671b5b2c..bcf15389d619 100644
+--- a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
++++ b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
+@@ -1623,6 +1623,8 @@ static bool are_stream_backends_same(
+ bool dc_is_stream_unchanged(
+ 	struct dc_stream_state *old_stream, struct dc_stream_state *stream)
+ {
++	if (!old_stream || !stream)
++		return false;
+ 
+ 	if (!are_stream_backends_same(old_stream, stream))
+ 		return false;
+-- 
+2.34.1
+
