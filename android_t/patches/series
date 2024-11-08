@@ -232,9 +232,6 @@
 0008-ext4-fix-double-brelse-the-buffer-of-the-extents-pat.patch
 0009-ext4-update-orig_path-in-ext4_find_extent.patch
 
-#CVE-2024-49883
-0001-ext4-aovid-use-after-free-in-ext4_ext_insert_extent.patch
-
 #CVE-2024-49884
 0001-ext4-fix-slab-use-after-free-in-ext4_split_extent_at.patch
 
@@ -246,9 +243,6 @@
 
 #CVE-2024-49892
 0001-drm-amd-display-Initialize-get_bytes_per_element-s-d.patch
-
-#CVE-2024-49894
-0001-drm-amd-display-Fix-index-out-of-bounds-in-degamma-h.patch
 
 #CVE-2024-49895
 0001-drm-amd-display-Fix-index-out-of-bounds-in-DCN30-deg.patch
@@ -307,17 +301,8 @@
 #CVE-2024-50062
 0001-RDMA-rtrs-srv-Avoid-null-pointer-deref-during-path-e.patch
 
-#CVE-2024-42240
-0001-x86-bhi-Avoid-warning-in-DB-handler-due-to-BHI-mitig.patch
-
-#CVE-2024-43841
-0001-wifi-virt_wifi-avoid-reporting-connection-success-wi.patch
-
 #CVE-2024-43846
 0001-lib-objagg-Fix-general-protection-fault.patch
-
-#CVE-2024-43849
-0001-soc-qcom-pdr-protect-locator_addr-with-the-main-mute.patch
 
 #CVE-2024-47672
 0001-wifi-iwlwifi-mvm-don-t-wait-for-tx-queues-if-firmwar.patch
@@ -508,9 +493,6 @@
 
 #CVE-2024-49982
 0001-aoe-fix-the-potential-use-after-free-problem-in-more.patch
-
-#CVE-2024-49983
-0001-ext4-drop-ppath-from-ext4_ext_replay_update_ex-to-av.patch
 
 #CVE-2024-49877
 0001-ocfs2-fix-possible-null-ptr-deref-in-ocfs2_set_buffe.patch

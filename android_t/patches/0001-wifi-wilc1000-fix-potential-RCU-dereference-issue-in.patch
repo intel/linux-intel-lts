@@ -33,19 +33,19 @@ Signed-off-by: Sasha Levin <sashal@kernel.org>
  drivers/net/wireless/microchip/wilc1000/hif.c | 4 +++-
  1 file changed, 3 insertions(+), 1 deletion(-)
 
-diff --git a/drivers/net/wireless/microchip/wilc1000/hif.c b/drivers/net/wireless/microchip/wilc1000/hif.c
-index b3beeb8339b2..a5425f530bfe 100644
+Index: b/drivers/net/wireless/microchip/wilc1000/hif.c
+===================================================================
 --- a/drivers/net/wireless/microchip/wilc1000/hif.c
 +++ b/drivers/net/wireless/microchip/wilc1000/hif.c
-@@ -365,6 +365,7 @@ void *wilc_parse_join_bss_param(struct cfg80211_bss *bss,
- 	const struct cfg80211_bss_ies *ies;
+@@ -366,6 +366,7 @@ void *wilc_parse_join_bss_param(struct c
  	struct wilc_join_bss_param *param;
- 	u8 rates_len = 0, ies_len;
+ 	u8 rates_len = 0;
+ 	int ies_len;
 +	u64 ies_tsf;
  	int ret;
  
  	param = kzalloc(sizeof(*param), GFP_KERNEL);
-@@ -380,6 +381,7 @@ void *wilc_parse_join_bss_param(struct cfg80211_bss *bss,
+@@ -381,6 +382,7 @@ void *wilc_parse_join_bss_param(struct c
  		return NULL;
  	}
  	ies_len = ies->len;
@@ -53,7 +53,7 @@ index b3beeb8339b2..a5425f530bfe 100644
  	rcu_read_unlock();
  
  	param->beacon_period = cpu_to_le16(bss->beacon_interval);
-@@ -435,7 +437,7 @@ void *wilc_parse_join_bss_param(struct cfg80211_bss *bss,
+@@ -436,7 +438,7 @@ void *wilc_parse_join_bss_param(struct c
  				    IEEE80211_P2P_ATTR_ABSENCE_NOTICE,
  				    (u8 *)&noa_attr, sizeof(noa_attr));
  	if (ret > 0) {
@@ -62,6 +62,3 @@ index b3beeb8339b2..a5425f530bfe 100644
  		param->noa_enabled = 1;
  		param->idx = noa_attr.index;
  		if (noa_attr.oppps_ctwindow & IEEE80211_P2P_OPPPS_ENABLE_BIT) {
--- 
-2.25.1
-
