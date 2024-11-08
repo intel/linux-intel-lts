@@ -520,3 +520,7 @@
 
 #CVE-2024-49995
 0001-tipc-guard-against-string-buffer-overrun.patch
+
+#CVE-2024-47678
+0001-icmp-Add-counters-for-rate-limits.patch
+0002-icmp-change-the-order-of-rate-limits.patch

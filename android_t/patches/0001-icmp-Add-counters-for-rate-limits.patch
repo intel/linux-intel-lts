@@ -1,0 +1,147 @@
+From ccacdc76157235f23c29f6e90a547be03296cf5e Mon Sep 17 00:00:00 2001
+From: Jamie Bainbridge <jamie.bainbridge@gmail.com>
+Date: Tue, 1 Oct 2024 15:04:03 +0000
+Subject: [PATCH 1/2] icmp: Add counters for rate limits
+
+commit d0941130c93515411c8d66fc22bdae407b509a6d upstream.
+
+There are multiple ICMP rate limiting mechanisms:
+
+* Global limits: net.ipv4.icmp_msgs_burst/icmp_msgs_per_sec
+* v4 per-host limits: net.ipv4.icmp_ratelimit/ratemask
+* v6 per-host limits: net.ipv6.icmp_ratelimit/ratemask
+
+However, when ICMP output is limited, there is no way to tell
+which limit has been hit or even if the limits are responsible
+for the lack of ICMP output.
+
+Add counters for each of the cases above. As we are within
+local_bh_disable(), use the __INC stats variant.
+
+Example output:
+
+ # nstat -sz "*RateLimit*"
+ IcmpOutRateLimitGlobal          134                0.0
+ IcmpOutRateLimitHost            770                0.0
+ Icmp6OutRateLimitHost           84                 0.0
+
+Signed-off-by: Jamie Bainbridge <jamie.bainbridge@gmail.com>
+Suggested-by: Abhishek Rawal <rawal.abhishek92@gmail.com>
+Link: https://lore.kernel.org/r/273b32241e6b7fdc5c609e6f5ebc68caf3994342.1674605770.git.jamie.bainbridge@gmail.com
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ include/uapi/linux/snmp.h | 3 +++
+ net/ipv4/icmp.c           | 3 +++
+ net/ipv4/proc.c           | 8 +++++---
+ net/ipv6/icmp.c           | 4 ++++
+ net/ipv6/proc.c           | 1 +
+ 5 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/include/uapi/linux/snmp.h b/include/uapi/linux/snmp.h
+index 904909d020e2..47491811946e 100644
+--- a/include/uapi/linux/snmp.h
++++ b/include/uapi/linux/snmp.h
+@@ -95,6 +95,8 @@ enum
+ 	ICMP_MIB_OUTADDRMASKS,			/* OutAddrMasks */
+ 	ICMP_MIB_OUTADDRMASKREPS,		/* OutAddrMaskReps */
+ 	ICMP_MIB_CSUMERRORS,			/* InCsumErrors */
++	ICMP_MIB_RATELIMITGLOBAL,		/* OutRateLimitGlobal */
++	ICMP_MIB_RATELIMITHOST,			/* OutRateLimitHost */
+ 	__ICMP_MIB_MAX
+ };
+ 
+@@ -112,6 +114,7 @@ enum
+ 	ICMP6_MIB_OUTMSGS,			/* OutMsgs */
+ 	ICMP6_MIB_OUTERRORS,			/* OutErrors */
+ 	ICMP6_MIB_CSUMERRORS,			/* InCsumErrors */
++	ICMP6_MIB_RATELIMITHOST,		/* OutRateLimitHost */
+ 	__ICMP6_MIB_MAX
+ };
+ 
+diff --git a/net/ipv4/icmp.c b/net/ipv4/icmp.c
+index 38b30f679029..6fc6357b3dc3 100644
+--- a/net/ipv4/icmp.c
++++ b/net/ipv4/icmp.c
+@@ -305,6 +305,7 @@ static bool icmpv4_global_allow(struct net *net, int type, int code)
+ 	if (icmp_global_allow())
+ 		return true;
+ 
++	__ICMP_INC_STATS(net, ICMP_MIB_RATELIMITGLOBAL);
+ 	return false;
+ }
+ 
+@@ -334,6 +335,8 @@ static bool icmpv4_xrlim_allow(struct net *net, struct rtable *rt,
+ 	if (peer)
+ 		inet_putpeer(peer);
+ out:
++	if (!rc)
++		__ICMP_INC_STATS(net, ICMP_MIB_RATELIMITHOST);
+ 	return rc;
+ }
+ 
+diff --git a/net/ipv4/proc.c b/net/ipv4/proc.c
+index 4b9280a3b673..da9fef157387 100644
+--- a/net/ipv4/proc.c
++++ b/net/ipv4/proc.c
+@@ -352,7 +352,7 @@ static void icmp_put(struct seq_file *seq)
+ 	seq_puts(seq, "\nIcmp: InMsgs InErrors InCsumErrors");
+ 	for (i = 0; icmpmibmap[i].name; i++)
+ 		seq_printf(seq, " In%s", icmpmibmap[i].name);
+-	seq_puts(seq, " OutMsgs OutErrors");
++	seq_puts(seq, " OutMsgs OutErrors OutRateLimitGlobal OutRateLimitHost");
+ 	for (i = 0; icmpmibmap[i].name; i++)
+ 		seq_printf(seq, " Out%s", icmpmibmap[i].name);
+ 	seq_printf(seq, "\nIcmp: %lu %lu %lu",
+@@ -362,9 +362,11 @@ static void icmp_put(struct seq_file *seq)
+ 	for (i = 0; icmpmibmap[i].name; i++)
+ 		seq_printf(seq, " %lu",
+ 			   atomic_long_read(ptr + icmpmibmap[i].index));
+-	seq_printf(seq, " %lu %lu",
++	seq_printf(seq, " %lu %lu %lu %lu",
+ 		snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_OUTMSGS),
+-		snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_OUTERRORS));
++		snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_OUTERRORS),
++		snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_RATELIMITGLOBAL),
++		snmp_fold_field(net->mib.icmp_statistics, ICMP_MIB_RATELIMITHOST));
+ 	for (i = 0; icmpmibmap[i].name; i++)
+ 		seq_printf(seq, " %lu",
+ 			   atomic_long_read(ptr + (icmpmibmap[i].index | 0x100)));
+diff --git a/net/ipv6/icmp.c b/net/ipv6/icmp.c
+index 71a69166a6bd..4c7fe3107625 100644
+--- a/net/ipv6/icmp.c
++++ b/net/ipv6/icmp.c
+@@ -191,6 +191,7 @@ static bool icmpv6_global_allow(struct net *net, int type)
+ 	if (icmp_global_allow())
+ 		return true;
+ 
++	__ICMP_INC_STATS(net, ICMP_MIB_RATELIMITGLOBAL);
+ 	return false;
+ }
+ 
+@@ -232,6 +233,9 @@ static bool icmpv6_xrlim_allow(struct sock *sk, u8 type,
+ 		if (peer)
+ 			inet_putpeer(peer);
+ 	}
++	if (!res)
++		__ICMP6_INC_STATS(net, ip6_dst_idev(dst),
++				  ICMP6_MIB_RATELIMITHOST);
+ 	dst_release(dst);
+ 	return res;
+ }
+diff --git a/net/ipv6/proc.c b/net/ipv6/proc.c
+index d6306aa46bb1..e20b3705c2d2 100644
+--- a/net/ipv6/proc.c
++++ b/net/ipv6/proc.c
+@@ -94,6 +94,7 @@ static const struct snmp_mib snmp6_icmp6_list[] = {
+ 	SNMP_MIB_ITEM("Icmp6OutMsgs", ICMP6_MIB_OUTMSGS),
+ 	SNMP_MIB_ITEM("Icmp6OutErrors", ICMP6_MIB_OUTERRORS),
+ 	SNMP_MIB_ITEM("Icmp6InCsumErrors", ICMP6_MIB_CSUMERRORS),
++	SNMP_MIB_ITEM("Icmp6OutRateLimitHost", ICMP6_MIB_RATELIMITHOST),
+ 	SNMP_MIB_SENTINEL
+ };
+ 
+-- 
+2.34.1
+
