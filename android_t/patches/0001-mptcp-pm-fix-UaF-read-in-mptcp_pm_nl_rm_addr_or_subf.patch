@@ -244,11 +244,11 @@ Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
  net/mptcp/pm_netlink.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/net/mptcp/pm_netlink.c b/net/mptcp/pm_netlink.c
-index 651f2c158637..ff2a96a55845 100644
+Index: b/net/mptcp/pm_netlink.c
+===================================================================
 --- a/net/mptcp/pm_netlink.c
 +++ b/net/mptcp/pm_netlink.c
-@@ -752,10 +752,10 @@ static void mptcp_pm_nl_rm_addr_or_subflow(struct mptcp_sock *msk,
+@@ -792,10 +792,10 @@ static void mptcp_pm_nl_rm_addr_or_subfl
  				 i, rm_list->ids[i], subflow->local_id, subflow->remote_id);
  			spin_unlock_bh(&msk->pm.lock);
  			mptcp_subflow_shutdown(sk, ssk, how);
@@ -256,10 +256,7 @@ index 651f2c158637..ff2a96a55845 100644
  			mptcp_close_ssk(sk, ssk, subflow);
  			spin_lock_bh(&msk->pm.lock);
  
--			removed = true;
+-			removed |= subflow->request_join;
  			msk->pm.subflows--;
- 			__MPTCP_INC_STATS(sock_net(sk), rm_type);
- 		}
--- 
-2.25.1
-
+ 			if (rm_type == MPTCP_MIB_RMSUBFLOW)
+ 				__MPTCP_INC_STATS(sock_net(sk), rm_type);

@@ -507,15 +507,6 @@
 0001-icmp-Add-counters-for-rate-limits.patch
 0002-icmp-change-the-order-of-rate-limits.patch
 
-#CVE-2024-43834
-0001-xdp-fix-invalid-wait-context-of-page_pool_destroy.patch
-
-#CVE-2024-43835
-0001-virtio_net-Fix-napi_skb_cache_put-warning.patch
-
-#CVE-2024-43839
-0001-bna-adjust-name-buf-size-of-bna_tcb-and-bna_ccb-stru.patch
-
 #CVE-2024-49967(Already fix in CVE-2024-49881)
 #0001-ext4-no-need-to-continue-when-the-number-of-entries-.patch
 
@@ -524,9 +515,6 @@
 
 #CVE-2024-50007
 0001-ALSA-asihpi-Fix-potential-OOB-array-access.patch
-
-#CVE-2024-49882
-0001-ext4-fix-double-brelse-the-buffer-of-the-extents-pat.patch
 
 #CVE-2024-49973
 0001-r8169-add-tally-counter-fields-added-with-RTL8125.patch
@@ -542,9 +530,6 @@
 
 #CVE-2024-50006
 0001-ext4-fix-i_data_sem-unlock-order-in-ext4_ind_migrate.patch
-
-#CVE-2024-50074
-0001-dev-parport-fix-the-array-out-of-bounds-risk.patch
 
 #CVE-2024-50082
 0001-blk-rq-qos-fix-crash-on-rq_qos_wait-vs.-rq_qos_wake_.patch
