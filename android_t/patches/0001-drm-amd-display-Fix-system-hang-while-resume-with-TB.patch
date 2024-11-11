@@ -1,0 +1,54 @@
+From dc1d91d8e9c79eae0880ae1ae03ecf7f71763f88 Mon Sep 17 00:00:00 2001
+From: Tom Chung <chiahsuan.chung@amd.com>
+Date: Fri, 13 Sep 2024 15:44:40 +0800
+Subject: [PATCH] drm/amd/display: Fix system hang while resume with TBT
+ monitor
+
+commit 52d4e3fb3d340447dcdac0e14ff21a764f326907 upstream.
+
+[Why]
+Connected with a Thunderbolt monitor and do the suspend and the system
+may hang while resume.
+
+The TBT monitor HPD will be triggered during the resume procedure
+and call the drm_client_modeset_probe() while
+struct drm_connector connector->dev->master is NULL.
+
+It will mess up the pipe topology after resume.
+
+[How]
+Skip the TBT monitor HPD during the resume procedure because we
+currently will probe the connectors after resume by default.
+
+Reviewed-by: Wayne Lin <wayne.lin@amd.com>
+Signed-off-by: Tom Chung <chiahsuan.chung@amd.com>
+Signed-off-by: Fangzhi Zuo <jerry.zuo@amd.com>
+Tested-by: Daniel Wheeler <daniel.wheeler@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+(cherry picked from commit 453f86a26945207a16b8f66aaed5962dc2b95b85)
+Cc: stable@vger.kernel.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
+index b821abb56ac3..97430212ef4c 100644
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
+@@ -697,6 +697,12 @@ void dmub_hpd_callback(struct amdgpu_device *adev, struct dmub_notification *not
+ 		return;
+ 	}
+ 
++	/* Skip DMUB HPD IRQ in suspend/resume. We will probe them later. */
++	if (notify->type == DMUB_NOTIFICATION_HPD && adev->in_suspend) {
++		DRM_INFO("Skip DMUB HPD IRQ callback in suspend/resume\n");
++		return;
++	}
++
+ 	link_index = notify->link_index;
+ 	link = adev->dm.dc->links[link_index];
+ 	dev = adev->dm.ddev;
+-- 
+2.25.1
+
