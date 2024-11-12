@@ -1,0 +1,166 @@
+From 8d2d815cca9de56cd26a6f6067f014e74cb9c7d0 Mon Sep 17 00:00:00 2001
+From: Andrii Nakryiko <andrii@kernel.org>
+Date: Sat, 2 Dec 2023 09:56:58 -0800
+Subject: [PATCH 3/8] bpf: enforce exact retval range on subprog/callback exit
+
+Instead of relying on potentially imprecise tnum representation of
+expected return value range for callbacks and subprogs, validate that
+smin/smax range satisfy exact expected range of return values.
+
+E.g., if callback would need to return [0, 2] range, tnum can't
+represent this precisely and instead will allow [0, 3] range. By
+checking smin/smax range, we can make sure that subprog/callback indeed
+returns only valid [0, 2] range.
+
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Acked-by: Shung-Hsi Yu <shung-hsi.yu@suse.com>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Link: https://lore.kernel.org/r/20231202175705.885270-5-andrii@kernel.org
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ include/linux/bpf_verifier.h |  7 ++++++-
+ kernel/bpf/verifier.c        | 33 ++++++++++++++++++++++-----------
+ 2 files changed, 28 insertions(+), 12 deletions(-)
+
+diff --git a/include/linux/bpf_verifier.h b/include/linux/bpf_verifier.h
+index 5276e7ca586a..22401143fd04 100644
+--- a/include/linux/bpf_verifier.h
++++ b/include/linux/bpf_verifier.h
+@@ -275,6 +275,11 @@ struct bpf_reference_state {
+ 	int callback_ref;
+ };
+ 
++struct bpf_retval_range {
++	s32 minval;
++	s32 maxval;
++};
++
+ /* state of the program:
+  * type of all registers and stack info
+  */
+@@ -297,7 +302,7 @@ struct bpf_func_state {
+ 	 * void foo(void) { bpf_timer_set_callback(,foo); }
+ 	 */
+ 	u32 async_entry_cnt;
+-	struct tnum callback_ret_range;
++	struct bpf_retval_range callback_ret_range;
+ 	bool in_callback_fn;
+ 	bool in_async_callback_fn;
+ 	/* For callback calling functions that limit number of possible
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 380a8d971736..af5a8fb19255 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -2563,6 +2563,11 @@ static void init_reg_state(struct bpf_verifier_env *env,
+ 	regs[BPF_REG_FP].frameno = state->frameno;
+ }
+ 
++static struct bpf_retval_range retval_range(s32 minval, s32 maxval)
++{
++	return (struct bpf_retval_range){ minval, maxval };
++}
++
+ #define BPF_MAIN_FUNC (-1)
+ static void init_func_state(struct bpf_verifier_env *env,
+ 			    struct bpf_func_state *state,
+@@ -2571,7 +2576,7 @@ static void init_func_state(struct bpf_verifier_env *env,
+ 	state->callsite = callsite;
+ 	state->frameno = frameno;
+ 	state->subprogno = subprogno;
+-	state->callback_ret_range = tnum_range(0, 0);
++	state->callback_ret_range = retval_range(0, 0);
+ 	init_reg_state(env, state);
+ 	mark_verifier_state_scratched(env);
+ }
+@@ -9441,7 +9446,7 @@ static int set_map_elem_callback_state(struct bpf_verifier_env *env,
+ 		return err;
+ 
+ 	callee->in_callback_fn = true;
+-	callee->callback_ret_range = tnum_range(0, 1);
++	callee->callback_ret_range = retval_range(0, 1);
+ 	return 0;
+ }
+ 
+@@ -9463,7 +9468,7 @@ static int set_loop_callback_state(struct bpf_verifier_env *env,
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
+ 
+ 	callee->in_callback_fn = true;
+-	callee->callback_ret_range = tnum_range(0, 1);
++	callee->callback_ret_range = retval_range(0, 1);
+ 	return 0;
+ }
+ 
+@@ -9493,7 +9498,7 @@ static int set_timer_callback_state(struct bpf_verifier_env *env,
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
+ 	callee->in_async_callback_fn = true;
+-	callee->callback_ret_range = tnum_range(0, 1);
++	callee->callback_ret_range = retval_range(0, 1);
+ 	return 0;
+ }
+ 
+@@ -9521,7 +9526,7 @@ static int set_find_vma_callback_state(struct bpf_verifier_env *env,
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
+ 	callee->in_callback_fn = true;
+-	callee->callback_ret_range = tnum_range(0, 1);
++	callee->callback_ret_range = retval_range(0, 1);
+ 	return 0;
+ }
+ 
+@@ -9544,7 +9549,7 @@ static int set_user_ringbuf_callback_state(struct bpf_verifier_env *env,
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
+ 
+ 	callee->in_callback_fn = true;
+-	callee->callback_ret_range = tnum_range(0, 1);
++	callee->callback_ret_range = retval_range(0, 1);
+ 	return 0;
+ }
+ 
+@@ -9576,7 +9581,7 @@ static int set_rbtree_add_callback_state(struct bpf_verifier_env *env,
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
+ 	callee->in_callback_fn = true;
+-	callee->callback_ret_range = tnum_range(0, 1);
++	callee->callback_ret_range = retval_range(0, 1);
+ 	return 0;
+ }
+ 
+@@ -9605,6 +9610,11 @@ static bool in_rbtree_lock_required_cb(struct bpf_verifier_env *env)
+ 	return is_rbtree_lock_required_kfunc(kfunc_btf_id);
+ }
+ 
++static bool retval_range_within(struct bpf_retval_range range, const struct bpf_reg_state *reg)
++{
++	return range.minval <= reg->smin_value && reg->smax_value <= range.maxval;
++}
++
+ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
+ {
+ 	struct bpf_verifier_state *state = env->cur_state, *prev_st;
+@@ -9628,9 +9638,6 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
+ 
+ 	caller = state->frame[state->curframe - 1];
+ 	if (callee->in_callback_fn) {
+-		/* enforce R0 return value range [0, 1]. */
+-		struct tnum range = callee->callback_ret_range;
+-
+ 		if (r0->type != SCALAR_VALUE) {
+ 			verbose(env, "R0 not a scalar value\n");
+ 			return -EACCES;
+@@ -9642,7 +9649,11 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
+ 		if (err)
+ 			return err;
+ 
+-		if (!tnum_in(range, r0->var_off)) {
++		/* enforce R0 return value range */
++		if (!retval_range_within(callee->callback_ret_range, r0)) {
++			struct tnum range = tnum_range(callee->callback_ret_range.minval,
++						       callee->callback_ret_range.maxval);
++
+ 			verbose_invalid_scalar(env, r0, &range, "callback return", "R0");
+ 			return -EINVAL;
+ 		}
+-- 
+2.34.1
+

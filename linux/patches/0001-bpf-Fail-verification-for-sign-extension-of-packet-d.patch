@@ -1,0 +1,174 @@
+From e7b5e0ce077213974dd0f8150936809ce8dda021 Mon Sep 17 00:00:00 2001
+From: Yonghong Song <yonghong.song@linux.dev>
+Date: Tue, 23 Jul 2024 08:34:39 -0700
+Subject: [PATCH] bpf: Fail verification for sign-extension of packet
+ data/data_end/data_meta
+
+syzbot reported a kernel crash due to
+  commit 1f1e864b6555 ("bpf: Handle sign-extenstin ctx member accesses").
+The reason is due to sign-extension of 32-bit load for
+packet data/data_end/data_meta uapi field.
+
+The original code looks like:
+        r2 = *(s32 *)(r1 + 76) /* load __sk_buff->data */
+        r3 = *(u32 *)(r1 + 80) /* load __sk_buff->data_end */
+        r0 = r2
+        r0 += 8
+        if r3 > r0 goto +1
+        ...
+Note that __sk_buff->data load has 32-bit sign extension.
+
+After verification and convert_ctx_accesses(), the final asm code looks like:
+        r2 = *(u64 *)(r1 +208)
+        r2 = (s32)r2
+        r3 = *(u64 *)(r1 +80)
+        r0 = r2
+        r0 += 8
+        if r3 > r0 goto pc+1
+        ...
+Note that 'r2 = (s32)r2' may make the kernel __sk_buff->data address invalid
+which may cause runtime failure.
+
+Currently, in C code, typically we have
+        void *data = (void *)(long)skb->data;
+        void *data_end = (void *)(long)skb->data_end;
+        ...
+and it will generate
+        r2 = *(u64 *)(r1 +208)
+        r3 = *(u64 *)(r1 +80)
+        r0 = r2
+        r0 += 8
+        if r3 > r0 goto pc+1
+
+If we allow sign-extension,
+        void *data = (void *)(long)(int)skb->data;
+        void *data_end = (void *)(long)skb->data_end;
+        ...
+the generated code looks like
+        r2 = *(u64 *)(r1 +208)
+        r2 <<= 32
+        r2 s>>= 32
+        r3 = *(u64 *)(r1 +80)
+        r0 = r2
+        r0 += 8
+        if r3 > r0 goto pc+1
+and this will cause verification failure since "r2 <<= 32" is not allowed
+as "r2" is a packet pointer.
+
+To fix this issue for case
+  r2 = *(s32 *)(r1 + 76) /* load __sk_buff->data */
+this patch added additional checking in is_valid_access() callback
+function for packet data/data_end/data_meta access. If those accesses
+are with sign-extenstion, the verification will fail.
+
+  [1] https://lore.kernel.org/bpf/000000000000c90eee061d236d37@google.com/
+
+Reported-by: syzbot+ad9ec60c8eaf69e6f99c@syzkaller.appspotmail.com
+Fixes: 1f1e864b6555 ("bpf: Handle sign-extenstin ctx member accesses")
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Signed-off-by: Yonghong Song <yonghong.song@linux.dev>
+Link: https://lore.kernel.org/r/20240723153439.2429035-1-yonghong.song@linux.dev
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+---
+ include/linux/bpf.h   |  1 +
+ kernel/bpf/verifier.c |  5 +++--
+ net/core/filter.c     | 21 ++++++++++++++++-----
+ 3 files changed, 20 insertions(+), 7 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 1e05cc80e048..93408249f526 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -902,6 +902,7 @@ static_assert(__BPF_REG_TYPE_MAX <= BPF_BASE_TYPE_LIMIT);
+  */
+ struct bpf_insn_access_aux {
+ 	enum bpf_reg_type reg_type;
++	bool is_ldsx;
+ 	union {
+ 		int ctx_field_size;
+ 		struct {
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 3032a464d31b..14d3a46da63d 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -5545,11 +5545,12 @@ static int check_packet_access(struct bpf_verifier_env *env, u32 regno, int off,
+ /* check access to 'struct bpf_context' fields.  Supports fixed offsets only */
+ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off, int size,
+ 			    enum bpf_access_type t, enum bpf_reg_type *reg_type,
+-			    struct btf **btf, u32 *btf_id)
++			    struct btf **btf, u32 *btf_id, bool is_ldsx)
+ {
+ 	struct bpf_insn_access_aux info = {
+ 		.reg_type = *reg_type,
+ 		.log = &env->log,
++		.is_ldsx = is_ldsx,
+ 	};
+ 
+ 	if (env->ops->is_valid_access &&
+@@ -6798,7 +6799,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+ 			return err;
+ 
+ 		err = check_ctx_access(env, insn_idx, off, size, t, &reg_type, &btf,
+-				       &btf_id);
++				       &btf_id, is_ldsx);
+ 		if (err)
+ 			verbose_linfo(env, insn_idx, "; ");
+ 		if (!err && t == BPF_READ && value_regno >= 0) {
+diff --git a/net/core/filter.c b/net/core/filter.c
+index 8bfd46a070c1..5d3778163bde 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -8535,13 +8535,16 @@ static bool bpf_skb_is_valid_access(int off, int size, enum bpf_access_type type
+ 		if (off + size > offsetofend(struct __sk_buff, cb[4]))
+ 			return false;
+ 		break;
++	case bpf_ctx_range(struct __sk_buff, data):
++	case bpf_ctx_range(struct __sk_buff, data_meta):
++	case bpf_ctx_range(struct __sk_buff, data_end):
++		if (info->is_ldsx || size != size_default)
++			return false;
++		break;
+ 	case bpf_ctx_range_till(struct __sk_buff, remote_ip6[0], remote_ip6[3]):
+ 	case bpf_ctx_range_till(struct __sk_buff, local_ip6[0], local_ip6[3]):
+ 	case bpf_ctx_range_till(struct __sk_buff, remote_ip4, remote_ip4):
+ 	case bpf_ctx_range_till(struct __sk_buff, local_ip4, local_ip4):
+-	case bpf_ctx_range(struct __sk_buff, data):
+-	case bpf_ctx_range(struct __sk_buff, data_meta):
+-	case bpf_ctx_range(struct __sk_buff, data_end):
+ 		if (size != size_default)
+ 			return false;
+ 		break;
+@@ -8985,6 +8988,14 @@ static bool xdp_is_valid_access(int off, int size,
+ 			}
+ 		}
+ 		return false;
++	} else {
++		switch (off) {
++		case offsetof(struct xdp_md, data_meta):
++		case offsetof(struct xdp_md, data):
++		case offsetof(struct xdp_md, data_end):
++			if (info->is_ldsx)
++				return false;
++		}
+ 	}
+ 
+ 	switch (off) {
+@@ -9310,12 +9321,12 @@ static bool flow_dissector_is_valid_access(int off, int size,
+ 
+ 	switch (off) {
+ 	case bpf_ctx_range(struct __sk_buff, data):
+-		if (size != size_default)
++		if (info->is_ldsx || size != size_default)
+ 			return false;
+ 		info->reg_type = PTR_TO_PACKET;
+ 		return true;
+ 	case bpf_ctx_range(struct __sk_buff, data_end):
+-		if (size != size_default)
++		if (info->is_ldsx || size != size_default)
+ 			return false;
+ 		info->reg_type = PTR_TO_PACKET_END;
+ 		return true;
+-- 
+2.34.1
+

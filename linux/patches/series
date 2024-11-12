@@ -43,3 +43,27 @@
 
 #CVE-2024-44950
 0001-serial-sc16is7xx-fix-invalid-FIFO-access-with-specia.patch
+
+#CVE-2024-43840
+0001-bpf-arm64-Fix-trampoline-for-BPF_TRAMP_F_CALL_ORIG.patch
+
+#CVE-2024-47702
+0001-bpf-Fail-verification-for-sign-extension-of-packet-d.patch
+
+#CVE-2024-47703
+0001-bpf-rearrange-bpf_func_state-fields-to-save-a-bit-of.patch
+0002-bpf-provide-correct-register-name-for-exception-call.patch
+0003-bpf-enforce-exact-retval-range-on-subprog-callback-e.patch
+0004-selftests-bpf-add-selftest-validating-callback-resul.patch
+0005-bpf-enforce-precise-retval-range-on-program-exit.patch
+0006-bpf-unify-async-callback-and-program-retval-checks.patch
+0007-bpf-enforce-precision-of-R0-on-program-async-callbac.patch
+#0008-bpf-lsm-Add-check-for-BPF-LSM-return-value.patch
+0001-bpf-lsm-Add-check-for-BPF-LSM-return-value.patch
+
+#CVE-2024-50027
+0001-thermal-core-Free-tzp-copy-along-with-the-thermal-zo.patch
+
+#CVE-2024-50028
+0001-thermal-core-Reference-count-the-zone-in-thermal_zon.patch
+

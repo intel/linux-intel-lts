@@ -1,0 +1,69 @@
+From 2d3f016b51ced08f9a915928d3c51fb2358d97ee Mon Sep 17 00:00:00 2001
+From: Andrii Nakryiko <andrii@kernel.org>
+Date: Sat, 2 Dec 2023 09:56:56 -0800
+Subject: [PATCH 2/8] bpf: provide correct register name for exception callback
+ retval check
+
+bpf_throw() is checking R1, so let's report R1 in the log.
+
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Acked-by: Shung-Hsi Yu <shung-hsi.yu@suse.com>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Link: https://lore.kernel.org/r/20231202175705.885270-3-andrii@kernel.org
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/verifier.c | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 3032a464d31b..380a8d971736 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -11710,6 +11710,8 @@ static int fetch_kfunc_meta(struct bpf_verifier_env *env,
+ 	return 0;
+ }
+ 
++static int check_return_code(struct bpf_verifier_env *env, int regno, const char *reg_name);
++
+ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
+ 			    int *insn_idx_p)
+ {
+@@ -14924,7 +14926,7 @@ static int check_ld_abs(struct bpf_verifier_env *env, struct bpf_insn *insn)
+ 	return 0;
+ }
+ 
+-static int check_return_code(struct bpf_verifier_env *env)
++static int check_return_code(struct bpf_verifier_env *env, int regno, const char *reg_name)
+ {
+ 	struct tnum enforce_attach_type_range = tnum_unknown;
+ 	const struct bpf_prog *prog = env->prog;
+@@ -14978,7 +14980,7 @@ static int check_return_code(struct bpf_verifier_env *env)
+ 		}
+ 
+ 		if (!tnum_in(const_0, reg->var_off)) {
+-			verbose_invalid_scalar(env, reg, &const_0, "async callback", "R0");
++			verbose_invalid_scalar(env, reg, &const_0, "async callback", reg_name);
+ 			return -EINVAL;
+ 		}
+ 		return 0;
+@@ -15075,7 +15077,7 @@ static int check_return_code(struct bpf_verifier_env *env)
+ 	}
+ 
+ 	if (!tnum_in(range, reg->var_off)) {
+-		verbose_invalid_scalar(env, reg, &range, "program exit", "R0");
++		verbose_invalid_scalar(env, reg, &range, "program exit", reg_name);
+ 		if (prog->expected_attach_type == BPF_LSM_CGROUP &&
+ 		    prog_type == BPF_PROG_TYPE_LSM &&
+ 		    !prog->aux->attach_func_proto->type)
+@@ -17270,7 +17272,7 @@ static int do_check(struct bpf_verifier_env *env)
+ 					continue;
+ 				}
+ 
+-				err = check_return_code(env);
++				err = check_return_code(env, BPF_REG_0, "R0");
+ 				if (err)
+ 					return err;
+ process_bpf_exit:
+-- 
+2.34.1
+
