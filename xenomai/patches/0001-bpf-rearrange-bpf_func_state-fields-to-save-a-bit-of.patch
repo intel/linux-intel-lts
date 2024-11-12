@@ -1,0 +1,108 @@
+From 7af625f060f1bf15f3d027e1082e067d9b85d4a6 Mon Sep 17 00:00:00 2001
+From: Andrii Nakryiko <andrii@kernel.org>
+Date: Sat, 2 Dec 2023 09:56:55 -0800
+Subject: [PATCH 1/8] bpf: rearrange bpf_func_state fields to save a bit of
+ memory
+
+It's a trivial rearrangement saving 8 bytes. We have 4 bytes of padding
+at the end which can be filled with another field without increasing
+struct bpf_func_state.
+
+copy_func_state() logic remains correct without any further changes.
+
+BEFORE
+======
+struct bpf_func_state {
+        struct bpf_reg_state       regs[11];             /*     0  1320 */
+        /* --- cacheline 20 boundary (1280 bytes) was 40 bytes ago --- */
+        int                        callsite;             /*  1320     4 */
+        u32                        frameno;              /*  1324     4 */
+        u32                        subprogno;            /*  1328     4 */
+        u32                        async_entry_cnt;      /*  1332     4 */
+        bool                       in_callback_fn;       /*  1336     1 */
+
+        /* XXX 7 bytes hole, try to pack */
+
+        /* --- cacheline 21 boundary (1344 bytes) --- */
+        struct tnum                callback_ret_range;   /*  1344    16 */
+        bool                       in_async_callback_fn; /*  1360     1 */
+        bool                       in_exception_callback_fn; /*  1361     1 */
+
+        /* XXX 2 bytes hole, try to pack */
+
+        int                        acquired_refs;        /*  1364     4 */
+        struct bpf_reference_state * refs;               /*  1368     8 */
+        int                        allocated_stack;      /*  1376     4 */
+
+        /* XXX 4 bytes hole, try to pack */
+
+        struct bpf_stack_state *   stack;                /*  1384     8 */
+
+        /* size: 1392, cachelines: 22, members: 13 */
+        /* sum members: 1379, holes: 3, sum holes: 13 */
+        /* last cacheline: 48 bytes */
+};
+
+AFTER
+=====
+struct bpf_func_state {
+        struct bpf_reg_state       regs[11];             /*     0  1320 */
+        /* --- cacheline 20 boundary (1280 bytes) was 40 bytes ago --- */
+        int                        callsite;             /*  1320     4 */
+        u32                        frameno;              /*  1324     4 */
+        u32                        subprogno;            /*  1328     4 */
+        u32                        async_entry_cnt;      /*  1332     4 */
+        struct tnum                callback_ret_range;   /*  1336    16 */
+        /* --- cacheline 21 boundary (1344 bytes) was 8 bytes ago --- */
+        bool                       in_callback_fn;       /*  1352     1 */
+        bool                       in_async_callback_fn; /*  1353     1 */
+        bool                       in_exception_callback_fn; /*  1354     1 */
+
+        /* XXX 1 byte hole, try to pack */
+
+        int                        acquired_refs;        /*  1356     4 */
+        struct bpf_reference_state * refs;               /*  1360     8 */
+        struct bpf_stack_state *   stack;                /*  1368     8 */
+        int                        allocated_stack;      /*  1376     4 */
+
+        /* size: 1384, cachelines: 22, members: 13 */
+        /* sum members: 1379, holes: 1, sum holes: 1 */
+        /* padding: 4 */
+        /* last cacheline: 40 bytes */
+};
+
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Link: https://lore.kernel.org/r/20231202175705.885270-2-andrii@kernel.org
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ include/linux/bpf_verifier.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/bpf_verifier.h b/include/linux/bpf_verifier.h
+index 2d84d820a7ba..e585929a8fb9 100644
+--- a/include/linux/bpf_verifier.h
++++ b/include/linux/bpf_verifier.h
+@@ -297,8 +297,8 @@ struct bpf_func_state {
+ 	 * void foo(void) { bpf_timer_set_callback(,foo); }
+ 	 */
+ 	u32 async_entry_cnt;
+-	bool in_callback_fn;
+ 	struct tnum callback_ret_range;
++	bool in_callback_fn;
+ 	bool in_async_callback_fn;
+ 	/* For callback calling functions that limit number of possible
+ 	 * callback executions (e.g. bpf_loop) keeps track of current
+@@ -315,8 +315,8 @@ struct bpf_func_state {
+ 	/* The following fields should be last. See copy_func_state() */
+ 	int acquired_refs;
+ 	struct bpf_reference_state *refs;
+-	int allocated_stack;
+ 	struct bpf_stack_state *stack;
++	int allocated_stack;
+ };
+ 
+ struct bpf_idx_pair {
+-- 
+2.34.1
+

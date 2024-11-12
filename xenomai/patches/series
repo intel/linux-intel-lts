@@ -14,17 +14,57 @@
 0001-fs-proc-do_task_stat-use-__for_each_thread.patch
 0002-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
 
-# CVE-2024-27017
-0001-netfilter-nft_set_pipapo-walk-over-current-view-on-n.patch
-
-# CVE-2024-27012
-0001-netfilter-nf_tables-restore-set-elements-when-delete.patch
-
-# CVE-2024-42226
-0001-usb-xhci-prevent-potential-failure-in-handle_tx_even.patch
-
-# CVE-2024-42158
-0002-s390-pkey-Use-kfree_sensitive-to-fix-Coccinelle-warn.patch
-
-# CVE-2024-42156
+#CVE-2024-42156
 0001-s390-pkey-Wipe-copies-of-clear-key-structures-on-fai.patch
+
+#CVE-2024-42158
+0001-s390-pkey-Use-kfree_sensitive-to-fix-Coccinelle-warn.patch
+
+#CVE-2024-42162
+0001-gve-Account-for-stopped-queues-when-reading-NIC-stat.patch
+
+#CVE-2024-41085
+0001-cxl-mem-Fix-no-cxl_nvd-during-pmem-region-auto-assem.patch
+
+#CVE-2024-43857
+0001-f2fs-fix-null-reference-error-when-checking-end-of-z.patch
+
+#CVE-2024-43903
+0001-drm-amd-display-Add-NULL-check-for-afb-before-derefe.patch
+
+#CVE-2024-44942
+0001-f2fs-fix-to-do-sanity-check-on-F2FS_INLINE_DATA-flag.patch
+
+#CVE-2024-43824
+0001-PCI-endpoint-pci-epf-test-Make-use-of-cached-epc_fea.patch
+
+#CVE-2024-46681
+0001-pktgen-use-cpus_read_lock-in-pg_net_init.patch
+
+#CVE-2024-44950
+0001-serial-sc16is7xx-fix-invalid-FIFO-access-with-specia.patch
+
+#CVE-2024-43840
+0001-bpf-arm64-Fix-trampoline-for-BPF_TRAMP_F_CALL_ORIG.patch
+
+#CVE-2024-44950
+0001-serial-sc16is7xx-fix-invalid-FIFO-access-with-specia.patch
+
+#CVE-2024-47702
+0001-bpf-Fail-verification-for-sign-extension-of-packet-d.patch
+
+#CVE-2024-47703
+0001-bpf-rearrange-bpf_func_state-fields-to-save-a-bit-of.patch
+0002-bpf-provide-correct-register-name-for-exception-call.patch
+0003-bpf-enforce-exact-retval-range-on-subprog-callback-e.patch
+0004-selftests-bpf-add-selftest-validating-callback-resul.patch
+0005-bpf-enforce-precise-retval-range-on-program-exit.patch
+0006-bpf-unify-async-callback-and-program-retval-checks.patch
+0007-bpf-enforce-precision-of-R0-on-program-async-callbac.patch
+0001-bpf-lsm-Add-check-for-BPF-LSM-return-value.patch
+
+#CVE-2024-50027
+0001-thermal-core-Free-tzp-copy-along-with-the-thermal-zo.patch
+
+#CVE-2024-50028
+0001-thermal-core-Reference-count-the-zone-in-thermal_zon.patch

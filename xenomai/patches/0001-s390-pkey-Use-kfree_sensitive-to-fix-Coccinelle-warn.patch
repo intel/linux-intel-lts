@@ -1,8 +1,7 @@
-From 7afdcae9abe64b861c4779662666d8c44eaed091 Mon Sep 17 00:00:00 2001
+From 79dee726c2929eec6507df343f241235e578a48e Mon Sep 17 00:00:00 2001
 From: Jules Irenge <jbi.octave@gmail.com>
 Date: Tue, 7 May 2024 22:13:52 +0100
-Subject: [PATCH 2/3] s390/pkey: Use kfree_sensitive() to fix Coccinelle
- warnings
+Subject: [PATCH] s390/pkey: Use kfree_sensitive() to fix Coccinelle warnings
 
 Replace memzero_explicit() and kfree() with kfree_sensitive() to fix
 warnings reported by Coccinelle:
@@ -21,7 +20,7 @@ Signed-off-by: Alexander Gordeev <agordeev@linux.ibm.com>
  1 file changed, 3 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/s390/crypto/pkey_api.c b/drivers/s390/crypto/pkey_api.c
-index 6cfb6b2340c9..7a2bd0a5b6ac 100644
+index d2ffdf2491da..69bb4db78b69 100644
 --- a/drivers/s390/crypto/pkey_api.c
 +++ b/drivers/s390/crypto/pkey_api.c
 @@ -1495,8 +1495,7 @@ static long pkey_unlocked_ioctl(struct file *filp, unsigned int cmd,
@@ -55,5 +54,5 @@ index 6cfb6b2340c9..7a2bd0a5b6ac 100644
  			kfree(protkey);
  			break;
 -- 
-2.34.1
+2.25.1
 

@@ -1,0 +1,54 @@
+From 00b1e55762f6fcae053a6bcc2868bcb36843449a Mon Sep 17 00:00:00 2001
+From: Puranjay Mohan <puranjay@kernel.org>
+Date: Thu, 11 Jul 2024 15:18:38 +0000
+Subject: [PATCH] bpf, arm64: Fix trampoline for BPF_TRAMP_F_CALL_ORIG
+
+When BPF_TRAMP_F_CALL_ORIG is set, the trampoline calls
+__bpf_tramp_enter() and __bpf_tramp_exit() functions, passing them
+the struct bpf_tramp_image *im pointer as an argument in R0.
+
+The trampoline generation code uses emit_addr_mov_i64() to emit
+instructions for moving the bpf_tramp_image address into R0, but
+emit_addr_mov_i64() assumes the address to be in the vmalloc() space
+and uses only 48 bits. Because bpf_tramp_image is allocated using
+kzalloc(), its address can use more than 48-bits, in this case the
+trampoline will pass an invalid address to __bpf_tramp_enter/exit()
+causing a kernel crash.
+
+Fix this by using emit_a64_mov_i64() in place of emit_addr_mov_i64()
+as it can work with addresses that are greater than 48-bits.
+
+Fixes: efc9909fdce0 ("bpf, arm64: Add bpf trampoline for arm64")
+Signed-off-by: Puranjay Mohan <puranjay@kernel.org>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Closes: https://lore.kernel.org/all/SJ0PR15MB461564D3F7E7A763498CA6A8CBDB2@SJ0PR15MB4615.namprd15.prod.outlook.com/
+Link: https://lore.kernel.org/bpf/20240711151838.43469-1-puranjay@kernel.org
+---
+ arch/arm64/net/bpf_jit_comp.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/net/bpf_jit_comp.c b/arch/arm64/net/bpf_jit_comp.c
+index 166619348b98..0618c95af103 100644
+--- a/arch/arm64/net/bpf_jit_comp.c
++++ b/arch/arm64/net/bpf_jit_comp.c
+@@ -1942,7 +1942,7 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
+ 	emit(A64_STR64I(A64_R(20), A64_SP, regs_off + 8), ctx);
+ 
+ 	if (flags & BPF_TRAMP_F_CALL_ORIG) {
+-		emit_addr_mov_i64(A64_R(0), (const u64)im, ctx);
++		emit_a64_mov_i64(A64_R(0), (const u64)im, ctx);
+ 		emit_call((const u64)__bpf_tramp_enter, ctx);
+ 	}
+ 
+@@ -1986,7 +1986,7 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
+ 
+ 	if (flags & BPF_TRAMP_F_CALL_ORIG) {
+ 		im->ip_epilogue = ctx->image + ctx->idx;
+-		emit_addr_mov_i64(A64_R(0), (const u64)im, ctx);
++		emit_a64_mov_i64(A64_R(0), (const u64)im, ctx);
+ 		emit_call((const u64)__bpf_tramp_exit, ctx);
+ 	}
+ 
+-- 
+2.34.1
+
