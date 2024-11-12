@@ -115,6 +115,9 @@ int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp)
 	const struct tcp_timewait_sock *tcptw = tcp_twsk(sktw);
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	if (tw->tw_substate == TCP_FIN_WAIT2)
+		reuse = 0;
+
 	if (reuse == 2) {
 		/* Still does not detect *everything* that goes through
 		 * lo, since we require a loopback src or dst address
@@ -556,7 +559,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		icsk->icsk_rto = inet_csk_rto_backoff(icsk, TCP_RTO_MAX);
 
 		tcp_mstamp_refresh(tp);
-		delta_us = (u32)(tp->tcp_mstamp - skb->skb_mstamp);
+		delta_us = (u32)(tp->tcp_mstamp - tcp_skb_timestamp_us(skb));
 		remaining = icsk->icsk_rto -
 			    usecs_to_jiffies(delta_us);
 
