@@ -1,0 +1,200 @@
+From f6c9f5045f033173292e622f495635b1fd87a40b Mon Sep 17 00:00:00 2001
+From: Zhengchao Shao <shaozhengchao@huawei.com>
+Date: Sat, 26 Nov 2022 11:17:20 +0800
+Subject: [PATCH] sctp: fix memory leak in sctp_stream_outq_migrate()
+
+[ Upstream commit 9ed7bfc79542119ac0a9e1ce8a2a5285e43433e9 ]
+
+When sctp_stream_outq_migrate() is called to release stream out resources,
+the memory pointed to by prio_head in stream out is not released.
+
+The memory leak information is as follows:
+ unreferenced object 0xffff88801fe79f80 (size 64):
+   comm "sctp_repo", pid 7957, jiffies 4294951704 (age 36.480s)
+   hex dump (first 32 bytes):
+     80 9f e7 1f 80 88 ff ff 80 9f e7 1f 80 88 ff ff  ................
+     90 9f e7 1f 80 88 ff ff 90 9f e7 1f 80 88 ff ff  ................
+   backtrace:
+     [<ffffffff81b215c6>] kmalloc_trace+0x26/0x60
+     [<ffffffff88ae517c>] sctp_sched_prio_set+0x4cc/0x770
+     [<ffffffff88ad64f2>] sctp_stream_init_ext+0xd2/0x1b0
+     [<ffffffff88aa2604>] sctp_sendmsg_to_asoc+0x1614/0x1a30
+     [<ffffffff88ab7ff1>] sctp_sendmsg+0xda1/0x1ef0
+     [<ffffffff87f765ed>] inet_sendmsg+0x9d/0xe0
+     [<ffffffff8754b5b3>] sock_sendmsg+0xd3/0x120
+     [<ffffffff8755446a>] __sys_sendto+0x23a/0x340
+     [<ffffffff87554651>] __x64_sys_sendto+0xe1/0x1b0
+     [<ffffffff89978b49>] do_syscall_64+0x39/0xb0
+     [<ffffffff89a0008b>] entry_SYSCALL_64_after_hwframe+0x63/0xcd
+
+Link: https://syzkaller.appspot.com/bug?exrid=29c402e56c4760763cc0
+Fixes: 637784ade221 ("sctp: introduce priority based stream scheduler")
+Reported-by: syzbot+29c402e56c4760763cc0@syzkaller.appspotmail.com
+Signed-off-by: Zhengchao Shao <shaozhengchao@huawei.com>
+Reviewed-by: Xin Long <lucien.xin@gmail.com>
+Link: https://lore.kernel.org/r/20221126031720.378562-1-shaozhengchao@huawei.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ include/net/sctp/stream_sched.h |  2 ++
+ net/sctp/stream.c               | 25 ++++++++++++++++++-------
+ net/sctp/stream_sched.c         |  5 +++++
+ net/sctp/stream_sched_prio.c    | 19 +++++++++++++++++++
+ net/sctp/stream_sched_rr.c      |  5 +++++
+ 5 files changed, 49 insertions(+), 7 deletions(-)
+
+diff --git a/include/net/sctp/stream_sched.h b/include/net/sctp/stream_sched.h
+index 5c5da48f65e7..1eedd5402d8a 100644
+--- a/include/net/sctp/stream_sched.h
++++ b/include/net/sctp/stream_sched.h
+@@ -41,6 +41,8 @@ struct sctp_sched_ops {
+ 	int (*init)(struct sctp_stream *stream);
+ 	/* Init a stream */
+ 	int (*init_sid)(struct sctp_stream *stream, __u16 sid, gfp_t gfp);
++	/* free a stream */
++	void (*free_sid)(struct sctp_stream *stream, __u16 sid);
+ 	/* Frees the entire thing */
+ 	void (*free)(struct sctp_stream *stream);
+ 
+diff --git a/net/sctp/stream.c b/net/sctp/stream.c
+index 516bc48be5bc..d4f85fe0cdbb 100644
+--- a/net/sctp/stream.c
++++ b/net/sctp/stream.c
+@@ -127,6 +127,19 @@ static void sctp_stream_shrink_out(struct sctp_stream *stream, __u16 outcnt)
+ 	}
+ }
+ 
++static void sctp_stream_free_ext(struct sctp_stream *stream, __u16 sid)
++{
++	struct sctp_sched_ops *sched;
++
++	if (!SCTP_SO(stream, sid)->ext)
++		return;
++
++	sched = sctp_sched_ops_from_stream(stream);
++	sched->free_sid(stream, sid);
++	kfree(SCTP_SO(stream, sid)->ext);
++	SCTP_SO(stream, sid)->ext = NULL;
++}
++
+ /* Migrates chunks from stream queues to new stream queues if needed,
+  * but not across associations. Also, removes those chunks to streams
+  * higher than the new max.
+@@ -145,16 +158,14 @@ static void sctp_stream_outq_migrate(struct sctp_stream *stream,
+ 		 * sctp_stream_update will swap ->out pointers.
+ 		 */
+ 		for (i = 0; i < outcnt; i++) {
+-			kfree(SCTP_SO(new, i)->ext);
++			sctp_stream_free_ext(new, i);
+ 			SCTP_SO(new, i)->ext = SCTP_SO(stream, i)->ext;
+ 			SCTP_SO(stream, i)->ext = NULL;
+ 		}
+ 	}
+ 
+-	for (i = outcnt; i < stream->outcnt; i++) {
+-		kfree(SCTP_SO(stream, i)->ext);
+-		SCTP_SO(stream, i)->ext = NULL;
+-	}
++	for (i = outcnt; i < stream->outcnt; i++)
++		sctp_stream_free_ext(stream, i);
+ }
+ 
+ static int sctp_stream_alloc_out(struct sctp_stream *stream, __u16 outcnt,
+@@ -281,9 +292,9 @@ void sctp_stream_free(struct sctp_stream *stream)
+ 	struct sctp_sched_ops *sched = sctp_sched_ops_from_stream(stream);
+ 	int i;
+ 
+-	sched->free(stream);
++	sched->unsched_all(stream);
+ 	for (i = 0; i < stream->outcnt; i++)
+-		kfree(SCTP_SO(stream, i)->ext);
++		sctp_stream_free_ext(stream, i);
+ 	fa_free(stream->out);
+ 	fa_free(stream->in);
+ }
+diff --git a/net/sctp/stream_sched.c b/net/sctp/stream_sched.c
+index 3a5c0d00e96c..74429c221ee9 100644
+--- a/net/sctp/stream_sched.c
++++ b/net/sctp/stream_sched.c
+@@ -61,6 +61,10 @@ static int sctp_sched_fcfs_init_sid(struct sctp_stream *stream, __u16 sid,
+ 	return 0;
+ }
+ 
++static void sctp_sched_fcfs_free_sid(struct sctp_stream *stream, __u16 sid)
++{
++}
++
+ static void sctp_sched_fcfs_free(struct sctp_stream *stream)
+ {
+ }
+@@ -111,6 +115,7 @@ static struct sctp_sched_ops sctp_sched_fcfs = {
+ 	.get = sctp_sched_fcfs_get,
+ 	.init = sctp_sched_fcfs_init,
+ 	.init_sid = sctp_sched_fcfs_init_sid,
++	.free_sid = sctp_sched_fcfs_free_sid,
+ 	.free = sctp_sched_fcfs_free,
+ 	.enqueue = sctp_sched_fcfs_enqueue,
+ 	.dequeue = sctp_sched_fcfs_dequeue,
+diff --git a/net/sctp/stream_sched_prio.c b/net/sctp/stream_sched_prio.c
+index 2245083a98f2..84fe07ee1d86 100644
+--- a/net/sctp/stream_sched_prio.c
++++ b/net/sctp/stream_sched_prio.c
+@@ -219,6 +219,24 @@ static int sctp_sched_prio_init_sid(struct sctp_stream *stream, __u16 sid,
+ 	return sctp_sched_prio_set(stream, sid, 0, gfp);
+ }
+ 
++static void sctp_sched_prio_free_sid(struct sctp_stream *stream, __u16 sid)
++{
++	struct sctp_stream_priorities *prio = SCTP_SO(stream, sid)->ext->prio_head;
++	int i;
++
++	if (!prio)
++		return;
++
++	SCTP_SO(stream, sid)->ext->prio_head = NULL;
++	for (i = 0; i < stream->outcnt; i++) {
++		if (SCTP_SO(stream, i)->ext &&
++		    SCTP_SO(stream, i)->ext->prio_head == prio)
++			return;
++	}
++
++	kfree(prio);
++}
++
+ static void sctp_sched_prio_free(struct sctp_stream *stream)
+ {
+ 	struct sctp_stream_priorities *prio, *n;
+@@ -338,6 +356,7 @@ static struct sctp_sched_ops sctp_sched_prio = {
+ 	.get = sctp_sched_prio_get,
+ 	.init = sctp_sched_prio_init,
+ 	.init_sid = sctp_sched_prio_init_sid,
++	.free_sid = sctp_sched_prio_free_sid,
+ 	.free = sctp_sched_prio_free,
+ 	.enqueue = sctp_sched_prio_enqueue,
+ 	.dequeue = sctp_sched_prio_dequeue,
+diff --git a/net/sctp/stream_sched_rr.c b/net/sctp/stream_sched_rr.c
+index 52ba743fa7a7..7e8334dadc58 100644
+--- a/net/sctp/stream_sched_rr.c
++++ b/net/sctp/stream_sched_rr.c
+@@ -105,6 +105,10 @@ static int sctp_sched_rr_init_sid(struct sctp_stream *stream, __u16 sid,
+ 	return 0;
+ }
+ 
++static void sctp_sched_rr_free_sid(struct sctp_stream *stream, __u16 sid)
++{
++}
++
+ static void sctp_sched_rr_free(struct sctp_stream *stream)
+ {
+ 	sctp_sched_rr_unsched_all(stream);
+@@ -192,6 +196,7 @@ static struct sctp_sched_ops sctp_sched_rr = {
+ 	.get = sctp_sched_rr_get,
+ 	.init = sctp_sched_rr_init,
+ 	.init_sid = sctp_sched_rr_init_sid,
++	.free_sid = sctp_sched_rr_free_sid,
+ 	.free = sctp_sched_rr_free,
+ 	.enqueue = sctp_sched_rr_enqueue,
+ 	.dequeue = sctp_sched_rr_dequeue,
+-- 
+2.34.1
+

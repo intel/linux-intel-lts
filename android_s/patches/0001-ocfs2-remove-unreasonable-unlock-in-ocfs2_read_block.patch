@@ -1,0 +1,57 @@
+From 65beccff5c930734e3d96219b3e7eaac4b22571d Mon Sep 17 00:00:00 2001
+From: Lizhi Xu <lizhi.xu@windriver.com>
+Date: Mon, 2 Sep 2024 10:36:35 +0800
+Subject: [PATCH] ocfs2: remove unreasonable unlock in ocfs2_read_blocks
+
+commit c03a82b4a0c935774afa01fd6d128b444fd930a1 upstream.
+
+Patch series "Misc fixes for ocfs2_read_blocks", v5.
+
+This series contains 2 fixes for ocfs2_read_blocks().  The first patch fix
+the issue reported by syzbot, which detects bad unlock balance in
+ocfs2_read_blocks().  The second patch fixes an issue reported by Heming
+Zhao when reviewing above fix.
+
+
+This patch (of 2):
+
+There was a lock release before exiting, so remove the unreasonable unlock.
+
+Link: https://lkml.kernel.org/r/20240902023636.1843422-1-joseph.qi@linux.alibaba.com
+Link: https://lkml.kernel.org/r/20240902023636.1843422-2-joseph.qi@linux.alibaba.com
+Fixes: cf76c78595ca ("ocfs2: don't put and assigning null to bh allocated outside")
+Signed-off-by: Lizhi Xu <lizhi.xu@windriver.com>
+Signed-off-by: Joseph Qi <joseph.qi@linux.alibaba.com>
+Reviewed-by: Heming Zhao <heming.zhao@suse.com>
+Reviewed-by: Joseph Qi <joseph.qi@linux.alibaba.com>
+Reported-by: syzbot+ab134185af9ef88dfed5@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=ab134185af9ef88dfed5
+Tested-by: syzbot+ab134185af9ef88dfed5@syzkaller.appspotmail.com
+Cc: Mark Fasheh <mark@fasheh.com>
+Cc: Joel Becker <jlbec@evilplan.org>
+Cc: Junxiao Bi <junxiao.bi@oracle.com>
+Cc: Changwei Ge <gechangwei@live.cn>
+Cc: Gang He <ghe@suse.com>
+Cc: Jun Piao <piaojun@huawei.com>
+Cc: <stable@vger.kernel.org>	[4.20+]
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/ocfs2/buffer_head_io.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/ocfs2/buffer_head_io.c b/fs/ocfs2/buffer_head_io.c
+index f9b84f7a3e4b..d23a265f7e14 100644
+--- a/fs/ocfs2/buffer_head_io.c
++++ b/fs/ocfs2/buffer_head_io.c
+@@ -251,7 +251,6 @@ int ocfs2_read_blocks(struct ocfs2_caching_info *ci, u64 block, int nr,
+ 		if (bhs[i] == NULL) {
+ 			bhs[i] = sb_getblk(sb, block++);
+ 			if (bhs[i] == NULL) {
+-				ocfs2_metadata_cache_io_unlock(ci);
+ 				status = -ENOMEM;
+ 				mlog_errno(status);
+ 				/* Don't forget to put previous bh! */
+-- 
+2.34.1
+

@@ -1,0 +1,43 @@
+From eacbe0ba683030a84c00cfa33fb45bf9a2a68b6a Mon Sep 17 00:00:00 2001
+From: Wang Hai <wanghai38@huawei.com>
+Date: Wed, 16 Nov 2022 01:24:07 +0800
+Subject: [PATCH] e100: Fix possible use after free in e100_xmit_prepare
+
+[ Upstream commit 45605c75c52c7ae7bfe902214343aabcfe5ba0ff ]
+
+In e100_xmit_prepare(), if we can't map the skb, then return -ENOMEM, so
+e100_xmit_frame() will return NETDEV_TX_BUSY and the upper layer will
+resend the skb. But the skb is already freed, which will cause UAF bug
+when the upper layer resends the skb.
+
+Remove the harmful free.
+
+Fixes: 5e5d49422dfb ("e100: Release skb when DMA mapping is failed in e100_xmit_prepare")
+Signed-off-by: Wang Hai <wanghai38@huawei.com>
+Reviewed-by: Alexander Duyck <alexanderduyck@fb.com>
+Signed-off-by: Tony Nguyen <anthony.l.nguyen@intel.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/ethernet/intel/e100.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/intel/e100.c b/drivers/net/ethernet/intel/e100.c
+index ba5b515c86e2..714a523ddf96 100644
+--- a/drivers/net/ethernet/intel/e100.c
++++ b/drivers/net/ethernet/intel/e100.c
+@@ -1745,11 +1745,8 @@ static int e100_xmit_prepare(struct nic *nic, struct cb *cb,
+ 	dma_addr = pci_map_single(nic->pdev,
+ 				  skb->data, skb->len, PCI_DMA_TODEVICE);
+ 	/* If we can't map the skb, have the upper layer try later */
+-	if (pci_dma_mapping_error(nic->pdev, dma_addr)) {
+-		dev_kfree_skb_any(skb);
+-		skb = NULL;
++	if (dma_mapping_error(&nic->pdev->dev, dma_addr))
+ 		return -ENOMEM;
+-	}
+ 
+ 	/*
+ 	 * Use the last 4 bytes of the SKB payload packet as the CRC, used for
+-- 
+2.34.1
+

@@ -1,0 +1,36 @@
+From 23a83845ec4bfb9a047dca201896ee933e512b56 Mon Sep 17 00:00:00 2001
+From: Eddie James <eajames@linux.ibm.com>
+Date: Wed, 25 Sep 2024 10:55:23 -0500
+Subject: [PATCH] net/ncsi: Disable the ncsi work before freeing the associated
+ structure
+
+[ Upstream commit a0ffa68c70b367358b2672cdab6fa5bc4c40de2c ]
+
+The work function can run after the ncsi device is freed, resulting
+in use-after-free bugs or kernel panic.
+
+Fixes: 2d283bdd079c ("net/ncsi: Resource management")
+Signed-off-by: Eddie James <eajames@linux.ibm.com>
+Link: https://patch.msgid.link/20240925155523.1017097-1-eajames@linux.ibm.com
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ net/ncsi/ncsi-manage.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/net/ncsi/ncsi-manage.c b/net/ncsi/ncsi-manage.c
+index 9fd20fa90000..5900501e0e15 100644
+--- a/net/ncsi/ncsi-manage.c
++++ b/net/ncsi/ncsi-manage.c
+@@ -1569,6 +1569,8 @@ void ncsi_unregister_dev(struct ncsi_dev *nd)
+ #endif
+ 	spin_unlock_irqrestore(&ncsi_dev_lock, flags);
+ 
++	disable_work_sync(&ndp->work);
++
+ 	kfree(ndp);
+ }
+ EXPORT_SYMBOL_GPL(ncsi_unregister_dev);
+-- 
+2.34.1
+

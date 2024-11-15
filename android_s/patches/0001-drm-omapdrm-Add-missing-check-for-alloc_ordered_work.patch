@@ -1,0 +1,51 @@
+From 4b5e6194ba4ea060546b10b37b833e749534bbf0 Mon Sep 17 00:00:00 2001
+From: Ma Ke <make24@iscas.ac.cn>
+Date: Thu, 8 Aug 2024 14:13:36 +0800
+Subject: [PATCH] drm: omapdrm: Add missing check for alloc_ordered_workqueue
+
+commit e794b7b9b92977365c693760a259f8eef940c536 upstream.
+
+As it may return NULL pointer and cause NULL pointer dereference. Add check
+for the return value of alloc_ordered_workqueue.
+
+Cc: stable@vger.kernel.org
+Fixes: 2f95bc6d324a ("drm: omapdrm: Perform initialization/cleanup at probe/remove time")
+Signed-off-by: Ma Ke <make24@iscas.ac.cn>
+Signed-off-by: Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240808061336.2796729-1-make24@iscas.ac.cn
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/gpu/drm/omapdrm/omap_drv.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/omapdrm/omap_drv.c b/drivers/gpu/drm/omapdrm/omap_drv.c
+index 1b6601e9b107..a14a5f96b5ea 100644
+--- a/drivers/gpu/drm/omapdrm/omap_drv.c
++++ b/drivers/gpu/drm/omapdrm/omap_drv.c
+@@ -539,6 +539,10 @@ static int omapdrm_init(struct omap_drm_private *priv, struct device *dev)
+ 	soc = soc_device_match(omapdrm_soc_devices);
+ 	priv->omaprev = soc ? (unsigned int)soc->data : 0;
+ 	priv->wq = alloc_ordered_workqueue("omapdrm", 0);
++	if (!priv->wq) {
++		ret = -ENOMEM;
++		goto err_alloc_workqueue;
++	}
+ 
+ 	mutex_init(&priv->list_lock);
+ 	INIT_LIST_HEAD(&priv->obj_list);
+@@ -604,9 +608,9 @@ static int omapdrm_init(struct omap_drm_private *priv, struct device *dev)
+ 	drm_dev_unref(ddev);
+ err_destroy_wq:
+ 	destroy_workqueue(priv->wq);
+-	omap_disconnect_dssdevs();
+-err_crtc_uninit:
+-	omap_crtc_pre_uninit();
++err_alloc_workqueue:
++	omap_disconnect_pipelines(ddev);
++	drm_dev_put(ddev);
+ 	return ret;
+ }
+ 
+-- 
+2.34.1
+
