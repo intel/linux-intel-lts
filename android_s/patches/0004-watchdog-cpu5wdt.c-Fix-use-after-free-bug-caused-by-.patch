@@ -1,0 +1,45 @@
+From f85296e0549d14d2ee5eabb5c06e4c7a356e2805 Mon Sep 17 00:00:00 2001
+From: Duoming Zhou <duoming@zju.edu.cn>
+Date: Sun, 24 Mar 2024 22:04:44 +0800
+Subject: [PATCH 4/6] watchdog: cpu5wdt.c: Fix use-after-free bug caused by
+ cpu5wdt_trigger
+
+[ Upstream commit 573601521277119f2e2ba5f28ae6e87fc594f4d4 ]
+
+When the cpu5wdt module is removing, the origin code uses del_timer() to
+de-activate the timer. If the timer handler is running, del_timer() could
+not stop it and will return directly. If the port region is released by
+release_region() and then the timer handler cpu5wdt_trigger() calls outb()
+to write into the region that is released, the use-after-free bug will
+happen.
+
+Change del_timer() to timer_shutdown_sync() in order that the timer handler
+could be finished before the port region is released.
+
+Fixes: e09d9c3e9f85 ("watchdog: cpu5wdt.c: add missing del_timer call")
+Signed-off-by: Duoming Zhou <duoming@zju.edu.cn>
+Reviewed-by: Guenter Roeck <linux@roeck-us.net>
+Link: https://lore.kernel.org/r/20240324140444.119584-1-duoming@zju.edu.cn
+Signed-off-by: Guenter Roeck <linux@roeck-us.net>
+Signed-off-by: Wim Van Sebroeck <wim@linux-watchdog.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/watchdog/cpu5wdt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/watchdog/cpu5wdt.c b/drivers/watchdog/cpu5wdt.c
+index 6cfb102c397c..6756a8e3eaed 100644
+--- a/drivers/watchdog/cpu5wdt.c
++++ b/drivers/watchdog/cpu5wdt.c
+@@ -265,7 +265,7 @@ static void cpu5wdt_exit(void)
+ 	if (cpu5wdt_device.queue) {
+ 		cpu5wdt_device.queue = 0;
+ 		wait_for_completion(&cpu5wdt_device.stop);
+-		del_timer(&cpu5wdt_device.timer);
++		timer_shutdown_sync(&cpu5wdt_device.timer);
+ 	}
+ 
+ 	misc_deregister(&cpu5wdt_misc);
+-- 
+2.25.1
+

@@ -1,0 +1,62 @@
+From 9ad95af2bd4b6a42bbe482ac697d68808fbad39c Mon Sep 17 00:00:00 2001
+From: jiahuamx <jiahuax.man@intel.com>
+Date: Tue, 12 Nov 2024 14:22:48 +0800
+Subject: [PATCH] nfc: pn533: Add poll mod list filling check
+
+[ Upstream commit febccb39255f9df35527b88c953b2e0deae50e53 ]
+
+In case of im_protocols value is 1 and tm_protocols value is 0 this
+combination successfully passes the check
+'if (!im_protocols && !tm_protocols)' in the nfc_start_poll().
+But then after pn533_poll_create_mod_list() call in pn533_start_poll()
+poll mod list will remain empty and dev->poll_mod_count will remain 0
+which lead to division by zero.
+
+Normally no im protocol has value 1 in the mask, so this combination is
+not expected by driver. But these protocol values actually come from
+userspace via Netlink interface (NFC_CMD_START_POLL operation). So a
+broken or malicious program may pass a message containing a "bad"
+combination of protocol parameter values so that dev->poll_mod_count
+is not incremented inside pn533_poll_create_mod_list(), thus leading
+to division by zero.
+Call trace looks like:
+nfc_genl_start_poll()
+  nfc_start_poll()
+    ->start_poll()
+    pn533_start_poll()
+
+Add poll mod list filling check.
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+Fixes: dfccd0f58044 ("NFC: pn533: Add some polling entropy")
+Signed-off-by: Aleksandr Mishin <amishin@t-argos.ru>
+Acked-by: Krzysztof Kozlowski <krzysztof.kozlowski@linaro.org>
+Link: https://patch.msgid.link/20240827084822.18785-1-amishin@t-argos.ru
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/nfc/pn533/pn533.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/nfc/pn533/pn533.c b/drivers/nfc/pn533/pn533.c
+index b7f5db3a6aa0..a6fa35eafce4 100644
+--- a/drivers/nfc/pn533/pn533.c
++++ b/drivers/nfc/pn533/pn533.c
+@@ -1575,8 +1575,11 @@ static int pn533_start_poll(struct nfc_dev *nfc_dev,
+ 	}
+ 
+ 	pn533_poll_create_mod_list(dev, im_protocols, tm_protocols);
+-	dev->poll_protocols = im_protocols;
+-	dev->listen_protocols = tm_protocols;
++	if (!dev->poll_mod_count) {
++		nfc_err(dev->dev,
++			"Poll mod list is empty\n");
++		return -EINVAL;
++	}
+ 
+ 	/* Do not always start polling from the same modulation */
+ 	get_random_bytes(&rand_mod, sizeof(rand_mod));
+-- 
+2.25.1
+

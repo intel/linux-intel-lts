@@ -1,0 +1,46 @@
+From ee5e14b899a787602c7013fafe13ab0096abbd75 Mon Sep 17 00:00:00 2001
+From: Aleksandr Mishin <amishin@t-argos.ru>
+Date: Wed, 3 Jul 2024 18:45:06 +0300
+Subject: [PATCH] staging: iio: frequency: ad9834: Validate frequency parameter
+ value
+
+commit b48aa991758999d4e8f9296c5bbe388f293ef465 upstream.
+
+In ad9834_write_frequency() clk_get_rate() can return 0. In such case
+ad9834_calc_freqreg() call will lead to division by zero. Checking
+'if (fout > (clk_freq / 2))' doesn't protect in case of 'fout' is 0.
+ad9834_write_frequency() is called from ad9834_write(), where fout is
+taken from text buffer, which can contain any value.
+
+Modify parameters checking.
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+Fixes: 12b9d5bf76bf ("Staging: IIO: DDS: AD9833 / AD9834 driver")
+Suggested-by: Dan Carpenter <dan.carpenter@linaro.org>
+Signed-off-by: Aleksandr Mishin <amishin@t-argos.ru>
+Reviewed-by: Dan Carpenter <dan.carpenter@linaro.org>
+Link: https://patch.msgid.link/20240703154506.25584-1-amishin@t-argos.ru
+Cc: <Stable@vger.kernel.org>
+Signed-off-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/iio/frequency/ad9834.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/staging/iio/frequency/ad9834.c b/drivers/staging/iio/frequency/ad9834.c
+index 4c6d4043903e..7e034713ac7a 100644
+--- a/drivers/staging/iio/frequency/ad9834.c
++++ b/drivers/staging/iio/frequency/ad9834.c
+@@ -112,7 +112,7 @@ static int ad9834_write_frequency(struct ad9834_state *st,
+ {
+ 	unsigned long regval;
+ 
+-	if (fout > (st->mclk / 2))
++	if (!clk_freq || fout > (clk_freq / 2))
+ 		return -EINVAL;
+ 
+ 	regval = ad9834_calc_freqreg(st->mclk, fout);
+-- 
+2.25.1
+

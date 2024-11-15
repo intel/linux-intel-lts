@@ -1,0 +1,86 @@
+From 4dc76290063a43929dbf99b35815911f165c75b5 Mon Sep 17 00:00:00 2001
+From: jiahuamx <jiahuax.man@intel.com>
+Date: Tue, 12 Nov 2024 11:07:22 +0800
+Subject: [PATCH] net: ipv6: ensure we call ipv6_mc_down() at most once
+
+commit 9995b408f17ff8c7f11bc725c8aa225ba3a63b1c upstream.
+
+There are two reasons for addrconf_notify() to be called with NETDEV_DOWN:
+either the network device is actually going down, or IPv6 was disabled
+on the interface.
+
+If either of them stays down while the other is toggled, we repeatedly
+call the code for NETDEV_DOWN, including ipv6_mc_down(), while never
+calling the corresponding ipv6_mc_up() in between. This will cause a
+new entry in idev->mc_tomb to be allocated for each multicast group
+the interface is subscribed to, which in turn leaks one struct ifmcaddr6
+per nontrivial multicast group the interface is subscribed to.
+
+The following reproducer will leak at least $n objects:
+
+ip addr add ff2e::4242/32 dev eth0 autojoin
+sysctl -w net.ipv6.conf.eth0.disable_ipv6=1
+for i in $(seq 1 $n); do
+	ip link set up eth0; ip link set down eth0
+done
+
+Joining groups with IPV6_ADD_MEMBERSHIP (unprivileged) or setting the
+sysctl net.ipv6.conf.eth0.forwarding to 1 (=> subscribing to ff02::2)
+can also be used to create a nontrivial idev->mc_list, which will the
+leak objects with the right up-down-sequence.
+
+Based on both sources for NETDEV_DOWN events the interface IPv6 state
+should be considered:
+
+ - not ready if the network interface is not ready OR IPv6 is disabled
+   for it
+ - ready if the network interface is ready AND IPv6 is enabled for it
+
+The functions ipv6_mc_up() and ipv6_down() should only be run when this
+state changes.
+
+Implement this by remembering when the IPv6 state is ready, and only
+run ipv6_mc_down() if it actually changed from ready to not ready.
+
+The other direction (not ready -> ready) already works correctly, as:
+
+ - the interface notification triggered codepath for NETDEV_UP /
+   NETDEV_CHANGE returns early if ipv6 is disabled, and
+ - the disable_ipv6=0 triggered codepath skips fully initializing the
+   interface as long as addrconf_link_ready(dev) returns false
+ - calling ipv6_mc_up() repeatedly does not leak anything
+
+Fixes: 3ce62a84d53c ("ipv6: exit early in addrconf_notify() if IPv6 is disabled")
+Signed-off-by: Johannes Nixdorf <j.nixdorf@avm.de>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ net/ipv6/addrconf.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/net/ipv6/addrconf.c b/net/ipv6/addrconf.c
+index 37f89b33a44a..2e6827ab4efc 100644
+--- a/net/ipv6/addrconf.c
++++ b/net/ipv6/addrconf.c
+@@ -3700,6 +3700,7 @@ static int addrconf_ifdown(struct net_device *dev, int how)
+ 	struct inet6_ifaddr *ifa;
+ 	LIST_HEAD(tmp_addr_list);
+ 	bool keep_addr = false;
++	bool was_ready;
+ 	int state, i;
+ 
+ 	ASSERT_RTNL();
+@@ -3766,6 +3767,10 @@ static int addrconf_ifdown(struct net_device *dev, int how)
+ 	addrconf_del_rs_timer(idev);
+ 
+ 	/* Step 2: clear flags for stateless addrconf */
++	/* Step 2: clear flags for stateless addrconf, repeated down
++	 *         detection
++	 */
++	was_ready = idev->if_flags & IF_READY;
+ 	if (!how)
+ 		idev->if_flags &= ~(IF_RS_SENT|IF_RA_RCVD|IF_READY);
+ 
+-- 
+2.25.1
+

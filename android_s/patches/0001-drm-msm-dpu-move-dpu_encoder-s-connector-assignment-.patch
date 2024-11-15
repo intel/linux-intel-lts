@@ -1,0 +1,53 @@
+From a58a26781e6f169909b91c3a4ad7b83f11d069f2 Mon Sep 17 00:00:00 2001
+From: Abhinav Kumar <quic_abhinavk@quicinc.com>
+Date: Wed, 31 Jul 2024 12:17:22 -0700
+Subject: [PATCH] drm/msm/dpu: move dpu_encoder's connector assignment to
+ atomic_enable()
+
+[ Upstream commit aedf02e46eb549dac8db4821a6b9f0c6bf6e3990 ]
+
+For cases where the crtc's connectors_changed was set without enable/active
+getting toggled , there is an atomic_enable() call followed by an
+atomic_disable() but without an atomic_mode_set().
+
+This results in a NULL ptr access for the dpu_encoder_get_drm_fmt() call in
+the atomic_enable() as the dpu_encoder's connector was cleared in the
+atomic_disable() but not re-assigned as there was no atomic_mode_set() call.
+
+Fix the NULL ptr access by moving the assignment for atomic_enable() and also
+use drm_atomic_get_new_connector_for_encoder() to get the connector from
+the atomic_state.
+
+Fixes: 25fdd5933e4c ("drm/msm: Add SDM845 DPU support")
+Reported-by: Dmitry Baryshkov <dmitry.baryshkov@linaro.org>
+Closes: https://gitlab.freedesktop.org/drm/msm/-/issues/59
+Suggested-by: Dmitry Baryshkov <dmitry.baryshkov@linaro.org>
+Reviewed-by: Dmitry Baryshkov <dmitry.baryshkov@linaro.org>
+Tested-by: Dmitry Baryshkov <dmitry.baryshkov@linaro.org> # SM8350-HDK
+Patchwork: https://patchwork.freedesktop.org/patch/606729/
+Link: https://lore.kernel.org/r/20240731191723.3050932-1-quic_abhinavk@quicinc.com
+Signed-off-by: Abhinav Kumar <quic_abhinavk@quicinc.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+index a411cfe76998..04df565f8880 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -1162,6 +1162,11 @@ static void dpu_encoder_virt_enable(struct drm_encoder *drm_enc)
+ 		return;
+ 	}
+ 	dpu_enc = to_dpu_encoder_virt(drm_enc);
++
++	dpu_enc->commit_done_timedout = false;
++
++	dpu_enc->connector = drm_atomic_get_new_connector_for_encoder(state, drm_enc);
++
+ 	cur_mode = &dpu_enc->base.crtc->state->adjusted_mode;
+ 
+ 	trace_dpu_enc_enable(DRMID(drm_enc), cur_mode->hdisplay,
+-- 
+2.25.1
+
