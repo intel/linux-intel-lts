@@ -1068,6 +1068,8 @@ static int tc_taprio_configure(struct stmmac_priv *priv,
 	if (ret)
 		goto disable;
 
+	netdev_info(priv->dev, "configured EST\n");
+
 	return 0;
 
 disable:
@@ -1085,6 +1087,8 @@ disable:
 	}
 
 	stmmac_fpe_map_preemption_class(priv, priv->dev, extack, 0);
+
+	netdev_info(priv->dev, "disabled FPE\n");
 
 	return ret;
 }
