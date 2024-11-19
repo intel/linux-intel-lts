@@ -274,9 +274,6 @@
 #CVE-2024-50035
 0001-ppp-fix-ppp_async_encode-illegal-access.patch
 
-#CVE-2024-50038
-0001-netfilter-xtables-avoid-NFPROTO_UNSPEC-where-needed.patch
-
 #CVE-2024-50039
 0001-net-sched-accept-TCA_STAB-only-for-root-qdisc.patch
 
