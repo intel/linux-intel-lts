@@ -144,7 +144,7 @@ static irqreturn_t ttc_clock_event_interrupt(int irq, void *dev_id)
 	/* Acknowledge the interrupt and call event handler */
 	readl_relaxed(timer->base_addr + TTC_ISR_OFFSET);
 
-	ttce->ce.event_handler(&ttce->ce);
+	clockevents_handle_event(&ttce->ce);
 
 	return IRQ_HANDLED;
 }
@@ -432,7 +432,8 @@ static int __init ttc_setup_clockevent(struct clk *clk,
 
 	ttcce->ttc.base_addr = base;
 	ttcce->ce.name = "ttc_clockevent";
-	ttcce->ce.features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT;
+	ttcce->ce.features = CLOCK_EVT_FEAT_PERIODIC | \
+		CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PIPELINE;
 	ttcce->ce.set_next_event = ttc_set_next_event;
 	ttcce->ce.set_state_shutdown = ttc_shutdown;
 	ttcce->ce.set_state_periodic = ttc_set_periodic;
