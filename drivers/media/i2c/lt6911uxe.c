@@ -3,7 +3,6 @@
 
 #include <linux/acpi.h>
 #include <linux/delay.h>
-#include <linux/gpio.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
@@ -17,8 +16,7 @@
 #include <media/v4l2-fwnode.h>
 
 #define LT6911UXE_CHIP_ID		0x2102
-#define REG_CHIP_ID_H			CCI_REG8(0xe100)
-#define REG_CHIP_ID_L			CCI_REG8(0xe101)
+#define REG_CHIP_ID			CCI_REG16(0xe100)
 
 #define REG_ENABLE_I2C			CCI_REG8(0xe0ee)
 #define REG_PIX_CLK			CCI_REG24(0xe085)
@@ -27,26 +25,21 @@
 #define REG_V_TOTAL			CCI_REG16(0xe08a)
 #define REG_HALF_H_ACTIVE		CCI_REG16(0xe08c)
 #define REG_V_ACTIVE			CCI_REG16(0xe08e)
+#define REG_MIPI_FORMAT			CCI_REG8(0xe096)
 #define REG_MIPI_TX_CTRL		CCI_REG8(0xe0b0)
-#define REG_MIPI_LANES			CCI_REG8(0xe095)
 
 /* Interrupts */
 #define REG_INT_HDMI			CCI_REG8(0xe084)
-#define INT_HDMI_DISCONNECT		0x0
-#define INT_HDMI_STABLE			0x1
-#define REG_INT_AUDIO			CCI_REG8(0x86a5)
-#define REG_AUDIO_FS_H			CCI_REG8(0xe090)
-#define REG_AUDIO_FS_L			CCI_REG8(0xe091)
-#define AUDIO_SR_HIGH			0x55
-#define AUDIO_SR_LOW			0xaa
-#define INT_AUDIO_DISCONNECT		0x3
+#define INT_VIDEO_DISAPPEAR		0x0
+#define INT_VIDEO_READY			0x1
 
 #define LT6911UXE_DEFAULT_WIDTH		3840
 #define LT6911UXE_DEFAULT_HEIGHT	2160
+#define LT6911UXE_DEFAULT_LANES		4
+#define LT6911UXE_DEFAULT_FPS		30
+#define LT6911UXE_MAX_LINK_FREQ		297000000
 #define LT9611_PAGE_CONTROL		0xff
-
-#define LT6911UXE_CID_AUDIO_SAMPLING_RATE	(V4L2_CID_USER_BASE | 0x1001)
-#define LT6911UXE_CID_AUDIO_PRESENT		(V4L2_CID_USER_BASE | 0x1002)
+#define YUV422_8_BIT			0x7
 
 static const struct regmap_range_cfg lt9611uxe_ranges[] = {
 	{
@@ -73,11 +66,9 @@ struct lt6911uxe_mode {
 	u32 width;
 	u32 height;
 	u32 code;
-	s32 lanes;
 	u32 fps;
+	u32 lanes;
 	s64 link_freq;
-	/* Audio sample rate*/
-	u32 sample_rate;
 };
 
 struct lt6911uxe {
@@ -86,15 +77,11 @@ struct lt6911uxe {
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_ctrl *link_freq;
-	struct v4l2_ctrl *sampling_rate;
-	struct v4l2_ctrl *audio_present;
 
-	struct lt6911uxe_mode *cur_mode;
+	struct lt6911uxe_mode cur_mode;
 	struct regmap *regmap;
-	unsigned int irq_pin_flags;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *irq_gpio;
-	struct gpio_desc *detect_gpio;
 };
 
 static const struct v4l2_event lt6911uxe_ev_source_change = {
@@ -111,145 +98,123 @@ static inline struct lt6911uxe *to_lt6911uxe(struct v4l2_subdev *sd)
 	return container_of(sd, struct lt6911uxe, sd);
 }
 
-static const struct v4l2_ctrl_config lt6911uxe_audio_sampling_rate = {
-	.id = LT6911UXE_CID_AUDIO_SAMPLING_RATE,
-	.name = "Audio Sampling Rate",
-	.type = V4L2_CTRL_TYPE_INTEGER,
-	.min = 32000,
-	.max = 192000,
-	.step = 100,
-	.def = 48000,
-	.flags = V4L2_CTRL_FLAG_READ_ONLY,
+static const struct lt6911uxe_mode default_mode = {
+	.width = LT6911UXE_DEFAULT_WIDTH,
+	.height = LT6911UXE_DEFAULT_HEIGHT,
+	.code = MEDIA_BUS_FMT_UYVY8_1X16,
+	.fps = LT6911UXE_DEFAULT_FPS,
+	.lanes = LT6911UXE_DEFAULT_LANES,
+	.link_freq = LT6911UXE_MAX_LINK_FREQ,
 };
 
-static const struct v4l2_ctrl_config lt6911uxe_audio_present = {
-	.id = LT6911UXE_CID_AUDIO_PRESENT,
-	.name = "Audio Present",
-	.type = V4L2_CTRL_TYPE_BOOLEAN,
-	.min = 0,
-	.max = 1,
-	.step = 1,
-	.def = 0,
-	.flags = V4L2_CTRL_FLAG_READ_ONLY,
-};
-
-static u64 get_pixel_rate(struct lt6911uxe *lt6911uxe)
+static s64 get_pixel_rate(struct lt6911uxe *lt6911uxe)
 {
-	u64 pixel_rate;
+	s64 pixel_rate;
 
-	if (!lt6911uxe->cur_mode->width)
-		return 0;
-
-	pixel_rate = (u64)lt6911uxe->cur_mode->width *
-		     lt6911uxe->cur_mode->height *
-		     lt6911uxe->cur_mode->fps * 16;
-	do_div(pixel_rate, lt6911uxe->cur_mode->lanes);
+	pixel_rate = (s64)lt6911uxe->cur_mode.width *
+		     lt6911uxe->cur_mode.height *
+		     lt6911uxe->cur_mode.fps * 16;
+	do_div(pixel_rate, lt6911uxe->cur_mode.lanes);
 
 	return pixel_rate;
 }
 
-static int lt6911uxe_get_audio_sampling_rate(struct lt6911uxe *lt6911uxe)
+static int lt6911uxe_status_update(struct lt6911uxe *lt6911uxe)
 {
-	int audio_fs, idx;
-	u64 fs_h, fs_l;
-	static const int eps = 1500;
-	static const int rates_default[] = {
-		32000, 44100, 48000, 88200, 96000, 176400, 192000
-	};
-
-	cci_read(lt6911uxe->regmap, REG_AUDIO_FS_H, &fs_h, NULL);
-	cci_read(lt6911uxe->regmap, REG_AUDIO_FS_H, &fs_l, NULL);
-	audio_fs = ((fs_h << 8) | fs_l);
-
-	/* audio_fs is an approximation of sample rate - search nearest */
-	for (idx = 0; idx < ARRAY_SIZE(rates_default); ++idx) {
-		if ((rates_default[idx] - eps < audio_fs) &&
-		    (rates_default[idx] + eps > audio_fs))
-			return rates_default[idx];
-	}
-
-	return 0;
-}
-
-static int lt6911uxe_video_status_update(struct lt6911uxe *lt6911uxe)
-{
+	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxe->sd);
 	u64 int_event;
-	u64 byte_clock, pixel_clk, fps, lanes;
+	u64 byte_clk, pixel_clk, fps, format;
 	u64 htotal, vtotal, half_width, height;
+	int timeout_cnt = 3;
+	int ret = 0;
 
 	/* Read interrupt event */
-	cci_read(lt6911uxe->regmap, REG_INT_HDMI, &int_event, NULL);
+	cci_read(lt6911uxe->regmap, REG_INT_HDMI, &int_event, &ret);
+	while (ret && timeout_cnt--) {
+		ret = cci_read(lt6911uxe->regmap, REG_INT_HDMI,
+				&int_event, NULL);
+	}
+
+	if (ret)
+		return dev_err_probe(&client->dev, ret,
+				     "failed to read interrupt event\n");
+
+	/* TODO: add audio ready and disappear type */
 	switch (int_event) {
-	case INT_HDMI_STABLE:
-		cci_read(lt6911uxe->regmap, REG_BYTE_CLK, &byte_clock, NULL);
-		byte_clock *= 1000;
-		cci_read(lt6911uxe->regmap, REG_PIX_CLK, &pixel_clk, NULL);
+	case INT_VIDEO_READY:
+		cci_read(lt6911uxe->regmap, REG_BYTE_CLK, &byte_clk, &ret);
+		byte_clk *= 1000;
+		cci_read(lt6911uxe->regmap, REG_PIX_CLK, &pixel_clk, &ret);
 		pixel_clk *= 1000;
 
-		cci_read(lt6911uxe->regmap, REG_H_TOTAL, &htotal, NULL);
-		cci_read(lt6911uxe->regmap, REG_V_TOTAL, &vtotal, NULL);
+		if (ret || byte_clk == 0 || pixel_clk == 0) {
+			dev_err(&client->dev,
+				"invalid ByteClock or PixelClock\n");
+			return -EINVAL;
+		}
+
+		cci_read(lt6911uxe->regmap, REG_H_TOTAL, &htotal, &ret);
+		cci_read(lt6911uxe->regmap, REG_V_TOTAL, &vtotal, &ret);
+		if (ret || htotal == 0 || vtotal == 0) {
+			dev_err(&client->dev, "invalid htotal or vtotal\n");
+			return -EINVAL;
+		}
+
+		fps = div_u64(pixel_clk, htotal * vtotal);
+		if (fps > 60) {
+			dev_err(&client->dev,
+				"max fps is 60, current fps: %llu\n", fps);
+			return -EINVAL;
+		}
+
 		cci_read(lt6911uxe->regmap, REG_HALF_H_ACTIVE,
-			 &half_width, NULL);
-		cci_read(lt6911uxe->regmap, REG_V_ACTIVE, &height, NULL);
-		cci_read(lt6911uxe->regmap, REG_MIPI_LANES, &lanes, NULL);
+			 &half_width, &ret);
+		cci_read(lt6911uxe->regmap, REG_V_ACTIVE, &height, &ret);
+		if (ret || half_width == 0 || half_width * 2 > 3840 ||
+		    height == 0 || height > 2160) {
+			dev_err(&client->dev, "invalid width or height\n");
+			return -EINVAL;
+		}
 
-		if (htotal && vtotal)
-			fps = div_u64(pixel_clk, htotal * vtotal);
-
-		lt6911uxe->cur_mode->height = height;
-		lt6911uxe->cur_mode->width = half_width * 2;
-		lt6911uxe->cur_mode->fps = fps;
-		lt6911uxe->cur_mode->code = MEDIA_BUS_FMT_UYVY8_1X16;
-		lt6911uxe->cur_mode->lanes = lanes;
-		/* Mipi Clock Rate = ByteClock × 4, defined in lt6911uxe spec */
-		lt6911uxe->cur_mode->link_freq = byte_clock * 4;
+		/*
+		 * Get MIPI format, YUV422_8_BIT is expected in lt6911uxe
+		 */
+		cci_read(lt6911uxe->regmap, REG_MIPI_FORMAT, &format, &ret);
+		if (format != YUV422_8_BIT) {
+			dev_err(&client->dev, "invalid MIPI format\n");
+			return -EINVAL;
+		}
+		lt6911uxe->cur_mode.height = height;
+		lt6911uxe->cur_mode.width = half_width * 2;
+		lt6911uxe->cur_mode.fps = fps;
+		/* MIPI Clock Rate = ByteClock × 4, defined in lt6911uxe spec */
+		lt6911uxe->cur_mode.link_freq = byte_clk * 4;
 		v4l2_subdev_notify_event(&lt6911uxe->sd,
 					 &lt6911uxe_ev_source_change);
 		break;
-	case INT_HDMI_DISCONNECT:
+
+	case INT_VIDEO_DISAPPEAR:
 		cci_write(lt6911uxe->regmap, REG_MIPI_TX_CTRL, 0x0, NULL);
-		lt6911uxe->cur_mode->height = 0;
-		lt6911uxe->cur_mode->width = 0;
-		lt6911uxe->cur_mode->fps = fps;
-		lt6911uxe->cur_mode->code = MEDIA_BUS_FMT_UYVY8_1X16;
-		lt6911uxe->cur_mode->lanes = 4;
-		lt6911uxe->cur_mode->link_freq = 0;
+		lt6911uxe->cur_mode.height = 0;
+		lt6911uxe->cur_mode.width = 0;
+		lt6911uxe->cur_mode.fps = 0;
+		lt6911uxe->cur_mode.link_freq = 0;
 		v4l2_subdev_notify_event(&lt6911uxe->sd,
 					 &lt6911uxe_ev_stream_end);
 		break;
+
 	default:
 		return  -ENOLINK;
 	}
 
-	return 0;
+	return ret;
 }
 
-static void lt6911uxe_audio_status_update(struct lt6911uxe *lt6911uxe)
-{
-	u64 int_event;
-	int audio_fs;
-
-	/* Read interrupt event */
-	cci_read(lt6911uxe->regmap, REG_INT_AUDIO, &int_event, NULL);
-	switch (int_event) {
-	case AUDIO_SR_HIGH:
-	case AUDIO_SR_LOW:
-		audio_fs = lt6911uxe_get_audio_sampling_rate(lt6911uxe);
-		lt6911uxe->cur_mode->sample_rate = audio_fs;
-		break;
-
-	case INT_AUDIO_DISCONNECT:
-	default:
-		/* use the default value for avoiding problem */
-		lt6911uxe->cur_mode->sample_rate = 0;
-		break;
-	}
-
-}
-
+/* TODO: add audio sampling rate and present control */
 static int lt6911uxe_init_controls(struct lt6911uxe *lt6911uxe)
 {
 	struct v4l2_ctrl_handler *ctrl_hdlr;
+	s64 pixel_rate;
 	int ret;
 
 	ctrl_hdlr = &lt6911uxe->ctrl_handler;
@@ -259,25 +224,14 @@ static int lt6911uxe_init_controls(struct lt6911uxe *lt6911uxe)
 
 	lt6911uxe->link_freq =
 		v4l2_ctrl_new_int_menu(ctrl_hdlr, NULL, V4L2_CID_LINK_FREQ,
-				       sizeof(lt6911uxe->cur_mode->link_freq),
-				       0, &lt6911uxe->cur_mode->link_freq);
+				       sizeof(lt6911uxe->cur_mode.link_freq),
+				       0, &lt6911uxe->cur_mode.link_freq);
 
+	pixel_rate = get_pixel_rate(lt6911uxe);
 	lt6911uxe->pixel_rate = v4l2_ctrl_new_std(ctrl_hdlr, NULL,
 						  V4L2_CID_PIXEL_RATE,
-						  get_pixel_rate(lt6911uxe),
-						  get_pixel_rate(lt6911uxe), 1,
-						  get_pixel_rate(lt6911uxe));
-
-	/* custom v4l2 audio controls */
-	lt6911uxe->sampling_rate =
-		v4l2_ctrl_new_custom(ctrl_hdlr,
-				     &lt6911uxe_audio_sampling_rate,
-				     NULL);
-
-	lt6911uxe->audio_present =
-		v4l2_ctrl_new_custom(ctrl_hdlr,
-				     &lt6911uxe_audio_present,
-				     NULL);
+						  pixel_rate, pixel_rate, 1,
+						  pixel_rate);
 
 	if (ctrl_hdlr->error) {
 		ret = ctrl_hdlr->error;
@@ -286,6 +240,7 @@ static int lt6911uxe_init_controls(struct lt6911uxe *lt6911uxe)
 	lt6911uxe->sd.ctrl_handler = ctrl_hdlr;
 
 	return 0;
+
 hdlr_free:
 	v4l2_ctrl_handler_free(ctrl_hdlr);
 	return ret;
@@ -300,22 +255,21 @@ static void lt6911uxe_update_pad_format(const struct lt6911uxe_mode *mode,
 	fmt->field = V4L2_FIELD_NONE;
 }
 
-static int lt6911uxe_start_streaming(struct lt6911uxe *lt6911uxe)
+static int lt6911uxe_enable_streams(struct v4l2_subdev *sd,
+				    struct v4l2_subdev_state *state,
+				    u32 pad, u64 streams_mask)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxe->sd);
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 	int ret;
 
 	ret = pm_runtime_resume_and_get(&client->dev);
 	if (ret < 0)
 		return ret;
 
-	ret = __v4l2_ctrl_handler_setup(lt6911uxe->sd.ctrl_handler);
-	if (ret)
-		goto err_rpm_put;
-
 	cci_write(lt6911uxe->regmap, REG_MIPI_TX_CTRL, 0x1, &ret);
 	if (ret) {
-		dev_err(&client->dev, "failed to start stream\n");
+		dev_err(&client->dev, "failed to start stream: %d\n", ret);
 		goto err_rpm_put;
 	}
 
@@ -326,21 +280,20 @@ err_rpm_put:
 	return ret;
 }
 
-static int lt6911uxe_s_stream(struct v4l2_subdev *sd, int enable)
+static int lt6911uxe_disable_streams(struct v4l2_subdev *sd,
+				     struct v4l2_subdev_state *state,
+				     u32 pad, u64 streams_mask)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-	struct v4l2_subdev_state *state;
-	int ret = 0;
+	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxe->sd);
+	int ret;
 
-	state = v4l2_subdev_lock_and_get_active_state(sd);
-	if (enable)
-		ret = lt6911uxe_start_streaming(lt6911uxe);
-	else
-		cci_write(lt6911uxe->regmap, REG_MIPI_TX_CTRL, 0x0, NULL);
+	ret = cci_write(lt6911uxe->regmap, REG_MIPI_TX_CTRL, 0x0, NULL);
+	if (ret)
+		dev_err(&client->dev, "failed to stop stream: %d\n", ret);
 
-	v4l2_subdev_unlock_state(state);
-
-	return ret;
+	pm_runtime_put(&client->dev);
+	return 0;
 }
 
 static int lt6911uxe_set_format(struct v4l2_subdev *sd,
@@ -348,11 +301,9 @@ static int lt6911uxe_set_format(struct v4l2_subdev *sd,
 				struct v4l2_subdev_format *fmt)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-	u64 pixel_rate;
+	u64 pixel_rate, link_freq;
 
-	lt6911uxe_video_status_update(lt6911uxe);
-	lt6911uxe_audio_status_update(lt6911uxe);
-	lt6911uxe_update_pad_format(lt6911uxe->cur_mode, &fmt->format);
+	lt6911uxe_update_pad_format(&lt6911uxe->cur_mode, &fmt->format);
 	*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
 		return 0;
@@ -360,12 +311,24 @@ static int lt6911uxe_set_format(struct v4l2_subdev *sd,
 	pixel_rate = get_pixel_rate(lt6911uxe);
 	__v4l2_ctrl_modify_range(lt6911uxe->pixel_rate, pixel_rate,
 				 pixel_rate, 1, pixel_rate);
-	__v4l2_ctrl_s_ctrl(lt6911uxe->audio_present,
-			   (lt6911uxe->cur_mode->sample_rate != 0));
 
-	if (lt6911uxe->cur_mode->sample_rate)
-		__v4l2_ctrl_s_ctrl(lt6911uxe->sampling_rate,
-				   lt6911uxe->cur_mode->sample_rate);
+	link_freq = lt6911uxe->cur_mode.link_freq;
+	__v4l2_ctrl_modify_range(lt6911uxe->link_freq, link_freq,
+				 link_freq, 1, link_freq);
+
+	return 0;
+}
+
+static int lt6911uxe_get_format(struct v4l2_subdev *sd,
+				struct v4l2_subdev_state *sd_state,
+				struct v4l2_subdev_format *fmt)
+{
+	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
+
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
+	else
+		lt6911uxe_update_pad_format(&lt6911uxe->cur_mode, &fmt->format);
 
 	return 0;
 }
@@ -376,7 +339,10 @@ static int lt6911uxe_enum_mbus_code(struct v4l2_subdev *sd,
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 
-	code->code = lt6911uxe->cur_mode->code;
+	if (code->index)
+		return -EINVAL;
+
+	code->code = lt6911uxe->cur_mode.code;
 
 	return 0;
 }
@@ -387,9 +353,15 @@ static int lt6911uxe_enum_frame_size(struct v4l2_subdev *sd,
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 
-	fse->min_width = lt6911uxe->cur_mode->width;
+	if (fse->index != 0)
+		return -EINVAL;
+
+	if (fse->code != MEDIA_BUS_FMT_UYVY8_1X16)
+		return -EINVAL;
+
+	fse->min_width = lt6911uxe->cur_mode.width;
 	fse->max_width = fse->min_width;
-	fse->min_height = lt6911uxe->cur_mode->height;
+	fse->min_height = lt6911uxe->cur_mode.height;
 	fse->max_height = fse->min_height;
 
 	return 0;
@@ -401,8 +373,11 @@ static int lt6911uxe_enum_frame_interval(struct v4l2_subdev *sd,
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 
+	if (fie->index != 0)
+		return -EINVAL;
+
 	fie->interval.numerator = 1;
-	fie->interval.denominator = lt6911uxe->cur_mode->fps;
+	fie->interval.denominator = lt6911uxe->cur_mode.fps;
 
 	return 0;
 }
@@ -411,30 +386,27 @@ static int lt6911uxe_init_state(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state)
 {
 	struct v4l2_subdev_format fmt = {
-		.which = V4L2_SUBDEV_FORMAT_TRY,
-		.pad = 0,
-		.format = {
-			.code = MEDIA_BUS_FMT_UYVY8_1X16,
-			.width = LT6911UXE_DEFAULT_WIDTH,
-			.height = LT6911UXE_DEFAULT_HEIGHT,
-		},
+		.which = sd_state ? V4L2_SUBDEV_FORMAT_TRY
+		: V4L2_SUBDEV_FORMAT_ACTIVE,
 	};
+	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 
-	lt6911uxe_set_format(sd, sd_state, &fmt);
-
-	return 0;
+	return lt6911uxe_set_format(sd, sd_state, &fmt);
 }
 
 static const struct v4l2_subdev_video_ops lt6911uxe_video_ops = {
-	.s_stream = lt6911uxe_s_stream,
+	.s_stream = v4l2_subdev_s_stream_helper,
 };
 
 static const struct v4l2_subdev_pad_ops lt6911uxe_pad_ops = {
 	.set_fmt = lt6911uxe_set_format,
-	.get_fmt = v4l2_subdev_get_fmt,
+	.get_fmt = lt6911uxe_get_format,
+	.enable_streams = lt6911uxe_enable_streams,
+	.disable_streams = lt6911uxe_disable_streams,
 	.enum_mbus_code = lt6911uxe_enum_mbus_code,
 	.enum_frame_size = lt6911uxe_enum_frame_size,
 	.enum_frame_interval = lt6911uxe_enum_frame_interval,
+	.get_frame_interval = v4l2_subdev_get_frame_interval,
 };
 
 static const struct v4l2_subdev_core_ops lt6911uxe_subdev_core_ops = {
@@ -456,44 +428,114 @@ static const struct v4l2_subdev_internal_ops lt6911uxe_internal_ops = {
 	.init_state = lt6911uxe_init_state,
 };
 
-static void lt6911uxe_remove(struct i2c_client *client)
+static int lt6911uxe_fwnode_parse(struct lt6911uxe *lt6911uxe,
+				  struct device *dev)
 {
-	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
+	struct fwnode_handle *endpoint;
+	struct v4l2_fwnode_endpoint bus_cfg = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY,
+	};
+	int ret;
 
-	v4l2_async_unregister_subdev(&lt6911uxe->sd);
-	v4l2_subdev_cleanup(sd);
-	media_entity_cleanup(&lt6911uxe->sd.entity);
-	v4l2_ctrl_handler_free(&lt6911uxe->ctrl_handler);
-	pm_runtime_disable(&client->dev);
-	pm_runtime_set_suspended(&client->dev);
+	endpoint = fwnode_graph_get_endpoint_by_id(dev_fwnode(dev), 0, 0,
+						   FWNODE_GRAPH_ENDPOINT_NEXT);
+	if (!endpoint)
+		return dev_err_probe(dev, -EPROBE_DEFER,
+				     "endpoint node not found\n");
+
+	ret = v4l2_fwnode_endpoint_parse(endpoint, &bus_cfg);
+	fwnode_handle_put(endpoint);
+	if (ret) {
+		dev_err(dev, "failed to parse endpoint node: %d\n", ret);
+		goto out_err;
+	}
+
+	/*
+	 * Check the number of MIPI CSI2 data lanes,
+	 * lt6911uxe only support 4 lanes.
+	 */
+	if (bus_cfg.bus.mipi_csi2.num_data_lanes != LT6911UXE_DEFAULT_LANES) {
+		dev_err(dev, "only 4 data lanes are currently supported\n");
+		goto out_err;
+	}
+
+	return 0;
+
+out_err:
+	v4l2_fwnode_endpoint_free(&bus_cfg);
+	return ret;
 }
 
-static int lt6911uxe_identify_module(struct lt6911uxe *lt6911uxe)
+static int lt6911uxe_identify_module(struct lt6911uxe *lt6911uxe,
+				     struct device *dev)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxe->sd);
-	u64 val_h, val_l;
-	u16 val;
+	u64 val;
+	int ret = 0;
 
 	/* Chip ID should be confirmed when the I2C slave is active */
-	cci_write(lt6911uxe->regmap, REG_ENABLE_I2C, 0x1, NULL);
-	cci_read(lt6911uxe->regmap, REG_CHIP_ID_H, &val_h, NULL);
-	cci_read(lt6911uxe->regmap, REG_CHIP_ID_L, &val_l, NULL);
-	cci_write(lt6911uxe->regmap, REG_ENABLE_I2C, 0x0, NULL);
-
-	val = ((val_h << 8) | val_l);
+	cci_write(lt6911uxe->regmap, REG_ENABLE_I2C, 0x1, &ret);
+	cci_read(lt6911uxe->regmap, REG_CHIP_ID, &val, &ret);
+	cci_write(lt6911uxe->regmap, REG_ENABLE_I2C, 0x0, &ret);
+	if (ret)
+		return dev_err_probe(dev, ret, "fail to read chip id\n");
 
 	if (val != LT6911UXE_CHIP_ID) {
-		dev_err(&client->dev, "chip id mismatch: %x!=%x\n",
-			LT6911UXE_CHIP_ID, val);
-		return -ENXIO;
+		return dev_err_probe(dev, -ENXIO, "chip id mismatch: %x!=%x\n",
+				     LT6911UXE_CHIP_ID, (u16)val);
 	}
 
 	return 0;
 }
 
-static int lt6911uxe_parse_gpio(struct lt6911uxe *lt6911uxe, struct device *dev)
+static irqreturn_t lt6911uxe_threaded_irq_fn(int irq, void *dev_id)
 {
+	struct v4l2_subdev *sd = dev_id;
+	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
+	struct v4l2_subdev_state *state;
+
+	state = v4l2_subdev_lock_and_get_active_state(sd);
+	lt6911uxe_status_update(lt6911uxe);
+	v4l2_subdev_unlock_state(state);
+
+	return IRQ_HANDLED;
+}
+
+static void lt6911uxe_remove(struct i2c_client *client)
+{
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
+
+	free_irq(gpiod_to_irq(lt6911uxe->irq_gpio), lt6911uxe);
+	v4l2_async_unregister_subdev(sd);
+	v4l2_subdev_cleanup(sd);
+	media_entity_cleanup(&sd->entity);
+	v4l2_ctrl_handler_free(&lt6911uxe->ctrl_handler);
+	pm_runtime_disable(&client->dev);
+	pm_runtime_set_suspended(&client->dev);
+}
+
+static int lt6911uxe_probe(struct i2c_client *client)
+{
+	struct lt6911uxe *lt6911uxe;
+	struct device *dev = &client->dev;
+	u64 irq_pin_flags;
+	int ret;
+
+	lt6911uxe = devm_kzalloc(dev, sizeof(*lt6911uxe), GFP_KERNEL);
+	if (!lt6911uxe)
+		return -ENOMEM;
+
+	/* define default mode: 4k@60fps, changed when interrupt occurs. */
+	lt6911uxe->cur_mode = default_mode;
+
+	lt6911uxe->regmap = devm_regmap_init_i2c(client,
+						 &lt9611uxe_regmap_config);
+	if (IS_ERR(lt6911uxe->regmap))
+		return dev_err_probe(dev, PTR_ERR(lt6911uxe->regmap),
+				     "failed to init CCI\n");
+
+	v4l2_i2c_subdev_init(&lt6911uxe->sd, client, &lt6911uxe_subdev_ops);
+
 	lt6911uxe->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_IN);
 	if (IS_ERR(lt6911uxe->reset_gpio))
 		return dev_err_probe(dev, PTR_ERR(lt6911uxe->reset_gpio),
@@ -504,154 +546,86 @@ static int lt6911uxe_parse_gpio(struct lt6911uxe *lt6911uxe, struct device *dev)
 		return dev_err_probe(dev, PTR_ERR(lt6911uxe->irq_gpio),
 				     "failed to get ready_stat gpio\n");
 
-	lt6911uxe->detect_gpio = devm_gpiod_get(dev, "hdmidetect",
-						GPIOD_OUT_HIGH);
-	if (IS_ERR(lt6911uxe->detect_gpio))
-		return dev_err_probe(dev, PTR_ERR(lt6911uxe->detect_gpio),
-				     "failed to get hdmi_detect gpio\n");
-
-	return 0;
-}
-
-static irqreturn_t lt6911uxe_threaded_irq_fn(int irq, void *dev_id)
-{
-	struct v4l2_subdev *sd = dev_id;
-	struct lt6911uxe *lt6911uxe;
-
-	if (!sd)
-		return IRQ_NONE;
-
-	lt6911uxe = to_lt6911uxe(sd);
-	if (!lt6911uxe) {
-		dev_err(sd->dev, "Invalid lt6911uxe state argument!\n");
-		return IRQ_NONE;
-	}
-
-	lt6911uxe_video_status_update(lt6911uxe);
-	lt6911uxe_audio_status_update(lt6911uxe);
-
-	return IRQ_HANDLED;
-}
-
-static void lt6911uxe_reset(struct lt6911uxe *lt6911uxe, int power)
-{
-	if (lt6911uxe->reset_gpio || lt6911uxe->irq_gpio)
-		return;
-
-	gpiod_set_value_cansleep(lt6911uxe->reset_gpio, power);
-	gpiod_set_value_cansleep(lt6911uxe->irq_gpio, power);
-}
-
-static int lt6911uxe_probe(struct i2c_client *client)
-{
-	struct lt6911uxe *lt6911uxe;
-	int ret;
-
-	lt6911uxe = devm_kzalloc(&client->dev, sizeof(struct lt6911uxe),
-				 GFP_KERNEL);
-	if (!lt6911uxe)
-		return -ENOMEM;
-
-	lt6911uxe->cur_mode = devm_kzalloc(&client->dev,
-					   sizeof(struct lt6911uxe_mode),
-					   GFP_KERNEL);
-	if (!lt6911uxe->cur_mode)
-		return -ENOMEM;
-
-	lt6911uxe->regmap = devm_regmap_init_i2c(client,
-						 &lt9611uxe_regmap_config);
-	if (IS_ERR(lt6911uxe->regmap))
-		return dev_err_probe(&client->dev, PTR_ERR(lt6911uxe->regmap),
-				     "failed to init CCI\n");
-
-	v4l2_i2c_subdev_init(&lt6911uxe->sd, client, &lt6911uxe_subdev_ops);
-
-	ret = lt6911uxe_parse_gpio(lt6911uxe, &client->dev);
-	if (ret) {
-		dev_err(&client->dev, "failed to get GPIO control: %d\n", ret);
+	ret = lt6911uxe_fwnode_parse(lt6911uxe, dev);
+	if (ret)
 		return ret;
-	}
 
-	lt6911uxe_reset(lt6911uxe, 1);
 	usleep_range(10000, 10500);
 
-	ret = lt6911uxe_identify_module(lt6911uxe);
-	if (ret) {
-		dev_err(&client->dev, "failed to find chip: %d\n", ret);
-		return ret;
-	}
-
-	/* Setting irq */
-	lt6911uxe->irq_pin_flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
-				   IRQF_ONESHOT;
-
-	ret = devm_request_threaded_irq(&client->dev,
-					gpiod_to_irq(lt6911uxe->irq_gpio),
-					NULL, lt6911uxe_threaded_irq_fn,
-					lt6911uxe->irq_pin_flags,
-					"irq_gpio", lt6911uxe);
-	if (ret) {
-		dev_err(&client->dev, "IRQ request failed! ret: %d\n", ret);
-		goto probe_error_v4l2_ctrl_handler_free;
-	}
+	ret = lt6911uxe_identify_module(lt6911uxe, dev);
+	if (ret)
+		return dev_err_probe(dev, ret, "failed to find chip\n");
 
 	ret = lt6911uxe_init_controls(lt6911uxe);
-	if (ret) {
-		dev_info(&client->dev, "Could not init control %d!\n", ret);
-		goto probe_error_v4l2_ctrl_handler_free;
-	}
+	if (ret)
+		return dev_err_probe(dev, ret, "failed to init control\n");
 
-	lt6911uxe->sd.state_lock = lt6911uxe->ctrl_handler.lock;
-	lt6911uxe->sd.dev = &client->dev;
+	lt6911uxe->sd.dev = dev;
 	lt6911uxe->sd.internal_ops = &lt6911uxe_internal_ops;
 	lt6911uxe->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
 			       V4L2_SUBDEV_FL_HAS_EVENTS;
 	lt6911uxe->sd.entity.ops = &lt6911uxe_subdev_entity_ops;
-	lt6911uxe->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	lt6911uxe->sd.entity.function = MEDIA_ENT_F_VID_IF_BRIDGE;
 	lt6911uxe->pad.flags = MEDIA_PAD_FL_SOURCE;
 	ret = media_entity_pads_init(&lt6911uxe->sd.entity, 1, &lt6911uxe->pad);
 	if (ret) {
-		dev_err(&client->dev, "Init entity pads failed: %d\n", ret);
-		goto probe_error_v4l2_ctrl_handler_free;
-	}
-
-	ret = v4l2_subdev_init_finalize(&lt6911uxe->sd);
-	if (ret < 0) {
-		dev_err(&client->dev, "v4l2 subdev init error: %d\n", ret);
-		goto probe_error_media_entity_cleanup;
+		dev_err(dev, "failed to init entity pads: %d\n", ret);
+		goto err_v4l2_ctrl_handler_free;
 	}
 
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
 	 */
-	pm_runtime_set_active(&client->dev);
-	pm_runtime_enable(&client->dev);
-	pm_runtime_idle(&client->dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+	pm_runtime_idle(dev);
+
+	ret = v4l2_subdev_init_finalize(&lt6911uxe->sd);
+	if (ret) {
+		dev_err(dev, "failed to init v4l2 subdev: %d\n", ret);
+		goto err_media_entity_cleanup;
+	}
+
+	/* Setting irq */
+	irq_pin_flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
+			IRQF_ONESHOT;
+
+	ret = request_threaded_irq(gpiod_to_irq(lt6911uxe->irq_gpio), NULL,
+				   lt6911uxe_threaded_irq_fn,
+				   irq_pin_flags, NULL, lt6911uxe);
+	if (ret) {
+		dev_err(dev, "failed to request IRQ: %d\n", ret);
+		goto err_subdev_cleanup;
+	}
 
 	ret = v4l2_async_register_subdev_sensor(&lt6911uxe->sd);
-	if (ret < 0) {
-		dev_err(&client->dev, "failed to register V4L2 subdev: %d\n",
-			ret);
-		goto rpm;
+	if (ret) {
+		dev_err(dev, "failed to register V4L2 subdev: %d\n", ret);
+		goto err_free_irq;
 	}
 
 	return 0;
 
-rpm:
-	pm_runtime_disable(&client->dev);
+err_free_irq:
+	free_irq(gpiod_to_irq(lt6911uxe->irq_gpio), lt6911uxe);
+
+err_subdev_cleanup:
 	v4l2_subdev_cleanup(&lt6911uxe->sd);
 
-probe_error_media_entity_cleanup:
+err_media_entity_cleanup:
+	pm_runtime_disable(dev);
+	pm_runtime_set_suspended(dev);
 	media_entity_cleanup(&lt6911uxe->sd.entity);
 
-probe_error_v4l2_ctrl_handler_free:
+err_v4l2_ctrl_handler_free:
 	v4l2_ctrl_handler_free(lt6911uxe->sd.ctrl_handler);
+
 	return ret;
 }
 
 static const struct acpi_device_id lt6911uxe_acpi_ids[] = {
-	{"INTC10C5"},
+	{ "INTC10C5" },
 	{}
 };
 MODULE_DEVICE_TABLE(acpi, lt6911uxe_acpi_ids);
