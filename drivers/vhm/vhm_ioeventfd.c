@@ -59,6 +59,7 @@
 #include <linux/slab.h>
 
 #include <linux/vhm/acrn_common.h>
+#include <linux/vhm/vhm_eventfd.h>
 #include <linux/vhm/acrn_vhm_ioreq.h>
 #include <linux/vhm/vhm_ioctl_defs.h>
 #include <linux/vhm/vhm_hypercall.h>
