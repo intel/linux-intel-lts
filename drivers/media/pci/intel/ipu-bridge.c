@@ -87,6 +87,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
 	IPU_SENSOR_CONFIG("INTC10C0", 1, 360000000),
 	/* Lontium lt6911uxe */
 	IPU_SENSOR_CONFIG("INTC10C5", 0),
+	/* Lontium lt6911uxc */
+	IPU_SENSOR_CONFIG("INTC10B1", 0),
 };
 
 static const struct ipu_property_names prop_names = {
