@@ -1,0 +1,68 @@
+From ec11fc31bd1f3b9a8a764f5f6fe31c1d62367143 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ville=20Syrj=C3=A4l=C3=A4?= <ville.syrjala@linux.intel.com>
+Date: Thu, 8 Feb 2024 17:17:15 +0200
+Subject: [PATCH 1/5] drm/i915/hdcp: Use per-device debugs
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Switch to per-device debugs in the hdcp code so we see at least which
+device is involved. Should proably also print the connector/encoder/etc.
+in there, but left that for the future.
+
+Signed-off-by: Ville Syrjälä <ville.syrjala@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240208151720.7866-9-ville.syrjala@linux.intel.com
+Reviewed-by: Jani Nikula <jani.nikula@intel.com>
+(cherry picked from commit 8c9e4f68b861dfe75650b75ac9e57e68f5f1850a)
+---
+ drivers/gpu/drm/i915/display/intel_dp_hdcp.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+index 3a595cd433d4..9dff4bdfeec8 100644
+--- a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
++++ b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+@@ -36,8 +36,10 @@ static u32 transcoder_to_stream_enc_status(enum transcoder cpu_transcoder)
+ 	}
+ }
+ 
+-static void intel_dp_hdcp_wait_for_cp_irq(struct intel_hdcp *hdcp, int timeout)
++static void intel_dp_hdcp_wait_for_cp_irq(struct intel_connector *connector,
++					  int timeout)
+ {
++	struct intel_hdcp *hdcp = &connector->hdcp;
+ 	long ret;
+ 
+ #define C (hdcp->cp_irq_count_cached != atomic_read(&hdcp->cp_irq_count))
+@@ -45,7 +47,8 @@ static void intel_dp_hdcp_wait_for_cp_irq(struct intel_hdcp *hdcp, int timeout)
+ 					       msecs_to_jiffies(timeout));
+ 
+ 	if (!ret)
+-		DRM_DEBUG_KMS("Timedout at waiting for CP_IRQ\n");
++		drm_dbg_kms(connector->base.dev,
++			    "Timedout at waiting for CP_IRQ\n");
+ }
+ 
+ static
+@@ -387,7 +390,8 @@ int hdcp2_detect_msg_availability(struct intel_connector *connector,
+ 			*msg_ready = true;
+ 		break;
+ 	default:
+-		DRM_ERROR("Unidentified msg_id: %d\n", msg_id);
++		drm_err(connector->base.dev,
++			"Unidentified msg_id: %d\n", msg_id);
+ 		return -EINVAL;
+ 	}
+ 
+@@ -421,7 +425,7 @@ intel_dp_hdcp2_wait_for_msg(struct intel_connector *connector,
+ 		 * As we want to check the msg availability at timeout, Ignoring
+ 		 * the timeout at wait for CP_IRQ.
+ 		 */
+-		intel_dp_hdcp_wait_for_cp_irq(hdcp, timeout);
++		intel_dp_hdcp_wait_for_cp_irq(connector, timeout);
+ 		ret = hdcp2_detect_msg_availability(connector, msg_id,
+ 						    &msg_ready);
+ 		if (!msg_ready)
+-- 
+2.34.1
+

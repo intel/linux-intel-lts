@@ -1,0 +1,162 @@
+From 6f81f6ee14ed0ed0442b7af29269568d3305a79f Mon Sep 17 00:00:00 2001
+From: Victor Nogueira <victor@mojatatu.com>
+Date: Sat, 16 Dec 2023 17:44:36 -0300
+Subject: [PATCH 3/4] net: sched: Add initial TC error skb drop reasons
+
+Continue expanding Daniel's patch by adding new skb drop reasons that
+are idiosyncratic to TC.
+
+More specifically:
+
+- SKB_DROP_REASON_TC_COOKIE_ERROR: An error occurred whilst
+  processing a tc ext cookie.
+
+- SKB_DROP_REASON_TC_CHAIN_NOTFOUND: tc chain lookup failed.
+
+- SKB_DROP_REASON_TC_RECLASSIFY_LOOP: tc exceeded max reclassify loop
+  iterations
+
+Signed-off-by: Victor Nogueira <victor@mojatatu.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+(cherry picked from commit 4cf24dc8934074725042c0bd10b91f4d4b5269bb)
+---
+ include/net/dropreason-core.h | 24 +++++++++++++++++++++---
+ net/sched/act_api.c           |  3 ++-
+ net/sched/cls_api.c           | 22 ++++++++++++++--------
+ 3 files changed, 37 insertions(+), 12 deletions(-)
+
+diff --git a/include/net/dropreason-core.h b/include/net/dropreason-core.h
+index 845dce805de7..e88e785d221b 100644
+--- a/include/net/dropreason-core.h
++++ b/include/net/dropreason-core.h
+@@ -80,7 +80,10 @@
+ 	FN(IPV6_NDISC_BAD_OPTIONS)	\
+ 	FN(IPV6_NDISC_NS_OTHERHOST)	\
+ 	FN(QUEUE_PURGE)			\
+-	FN(TC_ERROR)			\
++	FN(TC_COOKIE_ERROR)		\
++	FN(PACKET_SOCK_ERROR)		\
++	FN(TC_CHAIN_NOTFOUND)		\
++	FN(TC_RECLASSIFY_LOOP)		\
+ 	FNe(MAX)
+ 
+ /**
+@@ -346,8 +349,23 @@ enum skb_drop_reason {
+ 	SKB_DROP_REASON_IPV6_NDISC_NS_OTHERHOST,
+ 	/** @SKB_DROP_REASON_QUEUE_PURGE: bulk free. */
+ 	SKB_DROP_REASON_QUEUE_PURGE,
+-	/** @SKB_DROP_REASON_TC_ERROR: generic internal tc error. */
+-	SKB_DROP_REASON_TC_ERROR,
++	/**
++	 * @SKB_DROP_REASON_TC_COOKIE_ERROR: An error occurred whilst
++	 * processing a tc ext cookie.
++	 */
++	SKB_DROP_REASON_TC_COOKIE_ERROR,
++	/**
++	 * @SKB_DROP_REASON_PACKET_SOCK_ERROR: generic packet socket errors
++	 * after its filter matches an incoming packet.
++	 */
++	SKB_DROP_REASON_PACKET_SOCK_ERROR,
++	/** @SKB_DROP_REASON_TC_CHAIN_NOTFOUND: tc chain lookup failed. */
++	SKB_DROP_REASON_TC_CHAIN_NOTFOUND,
++	/**
++	 * @SKB_DROP_REASON_TC_RECLASSIFY_LOOP: tc exceeded max reclassify loop
++	 * iterations.
++	 */
++	SKB_DROP_REASON_TC_RECLASSIFY_LOOP,
+ 	/**
+ 	 * @SKB_DROP_REASON_MAX: the maximum of core drop reasons, which
+ 	 * shouldn't be used as a real 'reason' - only for tracing code gen
+diff --git a/net/sched/act_api.c b/net/sched/act_api.c
+index 2d6d58e1b278..3be6607c9289 100644
+--- a/net/sched/act_api.c
++++ b/net/sched/act_api.c
+@@ -1118,7 +1118,8 @@ int tcf_action_exec(struct sk_buff *skb, struct tc_action **actions,
+ 			}
+ 		} else if (TC_ACT_EXT_CMP(ret, TC_ACT_GOTO_CHAIN)) {
+ 			if (unlikely(!rcu_access_pointer(a->goto_chain))) {
+-				net_warn_ratelimited("can't go to NULL chain!\n");
++				tcf_set_drop_reason(skb,
++						    SKB_DROP_REASON_TC_CHAIN_NOTFOUND);
+ 				return TC_ACT_SHOT;
+ 			}
+ 			tcf_action_goto_chain_exec(a, res);
+diff --git a/net/sched/cls_api.c b/net/sched/cls_api.c
+index a20df746030b..2d6ee933368f 100644
+--- a/net/sched/cls_api.c
++++ b/net/sched/cls_api.c
+@@ -1688,13 +1688,15 @@ static inline int __tcf_classify(struct sk_buff *skb,
+ 			 */
+ 			if (unlikely(n->tp != tp || n->tp->chain != n->chain ||
+ 				     !tp->ops->get_exts)) {
+-				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
++				tcf_set_drop_reason(skb,
++						    SKB_DROP_REASON_TC_COOKIE_ERROR);
+ 				return TC_ACT_SHOT;
+ 			}
+ 
+ 			exts = tp->ops->get_exts(tp, n->handle);
+ 			if (unlikely(!exts || n->exts != exts)) {
+-				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
++				tcf_set_drop_reason(skb,
++						    SKB_DROP_REASON_TC_COOKIE_ERROR);
+ 				return TC_ACT_SHOT;
+ 			}
+ 
+@@ -1723,7 +1725,8 @@ static inline int __tcf_classify(struct sk_buff *skb,
+ 	}
+ 
+ 	if (unlikely(n)) {
+-		tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
++		tcf_set_drop_reason(skb,
++				    SKB_DROP_REASON_TC_COOKIE_ERROR);
+ 		return TC_ACT_SHOT;
+ 	}
+ 
+@@ -1735,7 +1738,8 @@ static inline int __tcf_classify(struct sk_buff *skb,
+ 				       tp->chain->block->index,
+ 				       tp->prio & 0xffff,
+ 				       ntohs(tp->protocol));
+-		tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
++		tcf_set_drop_reason(skb,
++				    SKB_DROP_REASON_TC_RECLASSIFY_LOOP);
+ 		return TC_ACT_SHOT;
+ 	}
+ 
+@@ -1773,7 +1777,8 @@ int tcf_classify(struct sk_buff *skb,
+ 				n = tcf_exts_miss_cookie_lookup(ext->act_miss_cookie,
+ 								&act_index);
+ 				if (!n) {
+-					tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
++					tcf_set_drop_reason(skb,
++							    SKB_DROP_REASON_TC_COOKIE_ERROR);
+ 					return TC_ACT_SHOT;
+ 				}
+ 
+@@ -1784,7 +1789,9 @@ int tcf_classify(struct sk_buff *skb,
+ 
+ 			fchain = tcf_chain_lookup_rcu(block, chain);
+ 			if (!fchain) {
+-				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
++				tcf_set_drop_reason(skb,
++						    SKB_DROP_REASON_TC_CHAIN_NOTFOUND);
++
+ 				return TC_ACT_SHOT;
+ 			}
+ 
+@@ -1806,10 +1813,9 @@ int tcf_classify(struct sk_buff *skb,
+ 
+ 			ext = tc_skb_ext_alloc(skb);
+ 			if (WARN_ON_ONCE(!ext)) {
+-				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
++				tcf_set_drop_reason(skb, SKB_DROP_REASON_NOMEM);
+ 				return TC_ACT_SHOT;
+ 			}
+-
+ 			ext->chain = last_executed_chain;
+ 			ext->mru = cb->mru;
+ 			ext->post_ct = cb->post_ct;
+-- 
+2.34.1
+

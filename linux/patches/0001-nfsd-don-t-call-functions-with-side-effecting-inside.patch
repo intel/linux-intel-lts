@@ -1,0 +1,85 @@
+From f497a72d981b72774e2e6ef6f1a0361561b02a9d Mon Sep 17 00:00:00 2001
+From: NeilBrown <neilb@suse.de>
+Date: Tue, 30 Jan 2024 12:08:23 +1100
+Subject: [PATCH 01/11] nfsd: don't call functions with side-effecting inside
+ WARN_ON()
+
+Code like:
+
+    WARN_ON(foo())
+
+looks like an assertion and might not be expected to have any side
+effects.
+When testing if a function with side-effects fails a construct like
+
+    if (foo())
+       WARN_ON(1);
+
+makes the intent more obvious.
+
+nfsd has several WARN_ON calls where the test has side effects, so it
+would be good to change them.  These cases don't really need the
+WARN_ON.  They have never failed in 8 years of usage so let's just
+remove the WARN_ON wrapper.
+
+Suggested-by: Chuck Lever <chuck.lever@oracle.com>
+Reviewed-by: Jeff Layton <jlayton@kernel.org>
+Signed-off-by: NeilBrown <neilb@suse.de>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+(cherry picked from commit c6540026dfe68b2cc6b6891404f8efa7c40e53e9)
+---
+ fs/nfsd/nfs4state.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/fs/nfsd/nfs4state.c b/fs/nfsd/nfs4state.c
+index f16bbbfcf672..fa060c6b2315 100644
+--- a/fs/nfsd/nfs4state.c
++++ b/fs/nfsd/nfs4state.c
+@@ -1598,7 +1598,7 @@ static void release_open_stateid_locks(struct nfs4_ol_stateid *open_stp,
+ 	while (!list_empty(&open_stp->st_locks)) {
+ 		stp = list_entry(open_stp->st_locks.next,
+ 				struct nfs4_ol_stateid, st_locks);
+-		WARN_ON(!unhash_lock_stateid(stp));
++		unhash_lock_stateid(stp);
+ 		put_ol_stateid_locked(stp, reaplist);
+ 	}
+ }
+@@ -2227,7 +2227,7 @@ __destroy_client(struct nfs4_client *clp)
+ 	spin_lock(&state_lock);
+ 	while (!list_empty(&clp->cl_delegations)) {
+ 		dp = list_entry(clp->cl_delegations.next, struct nfs4_delegation, dl_perclnt);
+-		WARN_ON(!unhash_delegation_locked(dp));
++		unhash_delegation_locked(dp);
+ 		list_add(&dp->dl_recall_lru, &reaplist);
+ 	}
+ 	spin_unlock(&state_lock);
+@@ -6163,7 +6163,7 @@ nfs4_laundromat(struct nfsd_net *nn)
+ 		dp = list_entry (pos, struct nfs4_delegation, dl_recall_lru);
+ 		if (!state_expired(&lt, dp->dl_time))
+ 			break;
+-		WARN_ON(!unhash_delegation_locked(dp));
++		unhash_delegation_locked(dp);
+ 		list_add(&dp->dl_recall_lru, &reaplist);
+ 	}
+ 	spin_unlock(&state_lock);
+@@ -7973,7 +7973,7 @@ nfsd4_release_lockowner(struct svc_rqst *rqstp,
+ 		stp = list_first_entry(&lo->lo_owner.so_stateids,
+ 				       struct nfs4_ol_stateid,
+ 				       st_perstateowner);
+-		WARN_ON(!unhash_lock_stateid(stp));
++		unhash_lock_stateid(stp);
+ 		put_ol_stateid_locked(stp, &reaplist);
+ 	}
+ 	spin_unlock(&clp->cl_lock);
+@@ -8262,7 +8262,7 @@ nfs4_state_shutdown_net(struct net *net)
+ 	spin_lock(&state_lock);
+ 	list_for_each_safe(pos, next, &nn->del_recall_lru) {
+ 		dp = list_entry (pos, struct nfs4_delegation, dl_recall_lru);
+-		WARN_ON(!unhash_delegation_locked(dp));
++		unhash_delegation_locked(dp);
+ 		list_add(&dp->dl_recall_lru, &reaplist);
+ 	}
+ 	spin_unlock(&state_lock);
+-- 
+2.34.1
+

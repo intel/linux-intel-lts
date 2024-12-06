@@ -1,0 +1,64 @@
+From c5e7b22342ba43f51601e500497c677615983bf3 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Sat, 14 Oct 2023 22:53:11 +0200
+Subject: [PATCH 3/3] spi: Export acpi_spi_find_controller_by_adev()
+
+Export acpi_spi_find_controller_by_adev() so that ACPI glue code which
+wants to dynamically create a spi_device using acpi_spi_device_alloc() or
+spi_new_device() on a controller, to which the code does not already have
+a reference, can find the controller.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Link: https://lore.kernel.org/r/20231014205314.59333-2-hdegoede@redhat.com
+Signed-off-by: Mark Brown <broonie@kernel.org>
+(cherry picked from commit a8ecbc54165fca767e75a82372a7be3810c667cf)
+---
+ drivers/spi/spi.c       | 5 ++---
+ include/linux/spi/spi.h | 1 +
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/spi/spi.c b/drivers/spi/spi.c
+index eb0baaecea68..cb6891b0e5cf 100644
+--- a/drivers/spi/spi.c
++++ b/drivers/spi/spi.c
+@@ -2536,8 +2536,6 @@ static void acpi_spi_parse_apple_properties(struct acpi_device *dev,
+ 		lookup->mode |= SPI_CPHA;
+ }
+ 
+-static struct spi_controller *acpi_spi_find_controller_by_adev(struct acpi_device *adev);
+-
+ static int acpi_spi_add_resource(struct acpi_resource *ares, void *data)
+ {
+ 	struct acpi_spi_lookup *lookup = data;
+@@ -4557,7 +4555,7 @@ static int spi_acpi_controller_match(struct device *dev, const void *data)
+ 	return ACPI_COMPANION(dev->parent) == data;
+ }
+ 
+-static struct spi_controller *acpi_spi_find_controller_by_adev(struct acpi_device *adev)
++struct spi_controller *acpi_spi_find_controller_by_adev(struct acpi_device *adev)
+ {
+ 	struct device *dev;
+ 
+@@ -4571,6 +4569,7 @@ static struct spi_controller *acpi_spi_find_controller_by_adev(struct acpi_devic
+ 
+ 	return container_of(dev, struct spi_controller, dev);
+ }
++EXPORT_SYMBOL_GPL(acpi_spi_find_controller_by_adev);
+ 
+ static struct spi_device *acpi_spi_find_device_by_adev(struct acpi_device *adev)
+ {
+diff --git a/include/linux/spi/spi.h b/include/linux/spi/spi.h
+index cda2157d9749..667f19fa5d28 100644
+--- a/include/linux/spi/spi.h
++++ b/include/linux/spi/spi.h
+@@ -870,6 +870,7 @@ extern int devm_spi_register_controller(struct device *dev,
+ extern void spi_unregister_controller(struct spi_controller *ctlr);
+ 
+ #if IS_ENABLED(CONFIG_ACPI)
++extern struct spi_controller *acpi_spi_find_controller_by_adev(struct acpi_device *adev);
+ extern struct spi_device *acpi_spi_device_alloc(struct spi_controller *ctlr,
+ 						struct acpi_device *adev,
+ 						int index);
+-- 
+2.34.1
+

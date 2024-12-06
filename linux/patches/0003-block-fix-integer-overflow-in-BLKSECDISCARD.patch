@@ -1,0 +1,72 @@
+From 5c34f81611daf1669c2d8d8c12b8c70d8d0c6f77 Mon Sep 17 00:00:00 2001
+From: Alexey Dobriyan <adobriyan@gmail.com>
+Date: Tue, 3 Sep 2024 22:48:19 +0300
+Subject: [PATCH 3/3] block: fix integer overflow in BLKSECDISCARD
+
+I independently rediscovered
+
+	commit 22d24a544b0d49bbcbd61c8c0eaf77d3c9297155
+	block: fix overflow in blk_ioctl_discard()
+
+but for secure erase.
+
+Same problem:
+
+	uint64_t r[2] = {512, 18446744073709551104ULL};
+	ioctl(fd, BLKSECDISCARD, r);
+
+will enter near infinite loop inside blkdev_issue_secure_erase():
+
+	a.out: attempt to access beyond end of device
+	loop0: rw=5, sector=3399043073, nr_sectors = 1024 limit=2048
+	bio_check_eod: 3286214 callbacks suppressed
+
+Signed-off-by: Alexey Dobriyan <adobriyan@gmail.com>
+Link: https://lore.kernel.org/r/9e64057f-650a-46d1-b9f7-34af391536ef@p183
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+(cherry picked from commit 697ba0b6ec4ae04afb67d3911799b5e2043b4455)
+---
+ block/ioctl.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/block/ioctl.c b/block/ioctl.c
+index 250de6471724..991ba94ea938 100644
+--- a/block/ioctl.c
++++ b/block/ioctl.c
+@@ -114,7 +114,7 @@ static int blk_ioctl_discard(struct block_device *bdev, blk_mode_t mode,
+ 		return -EINVAL;
+ 
+ 	filemap_invalidate_lock(bdev->bd_mapping);
+-	err = truncate_bdev_range(bdev, mode, start, start + len - 1);
++	err = truncate_bdev_range(bdev, mode, start, end - 1);
+ 	if (err)
+ 		goto fail;
+ 	err = blkdev_issue_discard(bdev, start >> 9, len >> 9, GFP_KERNEL);
+@@ -126,7 +126,7 @@ static int blk_ioctl_discard(struct block_device *bdev, blk_mode_t mode,
+ static int blk_ioctl_secure_erase(struct block_device *bdev, blk_mode_t mode,
+ 		void __user *argp)
+ {
+-	uint64_t start, len;
++	uint64_t start, len, end;
+ 	uint64_t range[2];
+ 	int err;
+ 
+@@ -141,11 +141,12 @@ static int blk_ioctl_secure_erase(struct block_device *bdev, blk_mode_t mode,
+ 	len = range[1];
+ 	if ((start & 511) || (len & 511))
+ 		return -EINVAL;
+-	if (start + len > bdev_nr_bytes(bdev))
++	if (check_add_overflow(start, len, &end) ||
++	    end > bdev_nr_bytes(bdev))
+ 		return -EINVAL;
+ 
+-	filemap_invalidate_lock(bdev->bd_inode->i_mapping);
+-	err = truncate_bdev_range(bdev, mode, start, start + len - 1);
++	filemap_invalidate_lock(bdev->bd_mapping);
++	err = truncate_bdev_range(bdev, mode, start, end - 1);
+ 	if (!err)
+ 		err = blkdev_issue_secure_erase(bdev, start >> 9, len >> 9,
+ 						GFP_KERNEL);
+-- 
+2.34.1
+

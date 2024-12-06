@@ -1,0 +1,76 @@
+From 8dd0993c971165c2d9362cd8170c99e7554c5d3e Mon Sep 17 00:00:00 2001
+From: James Bottomley <James.Bottomley@HansenPartnership.com>
+Date: Mon, 29 Apr 2024 16:27:59 -0400
+Subject: [PATCH 05/11] tpm: add buffer function to point to returned
+ parameters
+
+Replace all instances of &buf.data[TPM_HEADER_SIZE] with a new
+function tpm_buf_parameters() because encryption sessions change
+where the return parameters are located in the buffer since if a
+return session is present they're 4 bytes beyond the header with those
+4 bytes giving the parameter length.  If there is no return session,
+then they're in the usual place immediately after the header.
+
+Signed-off-by: James Bottomley <James.Bottomley@HansenPartnership.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Reviewed-by: Jarkko Sakkinen <jarkko@kernel.org>
+Tested-by: Jarkko Sakkinen <jarkko@kernel.org>
+Signed-off-by: Jarkko Sakkinen <jarkko@kernel.org>
+(cherry picked from commit 11189d6828ba4aa77916fdf4fcaebc304b349b51)
+---
+ drivers/char/tpm/tpm-buf.c | 28 ++++++++++++++++++++++++++++
+ include/linux/tpm.h        |  2 ++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/drivers/char/tpm/tpm-buf.c b/drivers/char/tpm/tpm-buf.c
+index cc14fa3fd8c2..6e4595cc98bc 100644
+--- a/drivers/char/tpm/tpm-buf.c
++++ b/drivers/char/tpm/tpm-buf.c
+@@ -221,3 +221,31 @@ u32 tpm_buf_read_u32(struct tpm_buf *buf, off_t *offset)
+ 	return be32_to_cpu(value);
+ }
+ EXPORT_SYMBOL_GPL(tpm_buf_read_u32);
++
++static u16 tpm_buf_tag(struct tpm_buf *buf)
++{
++	struct tpm_header *head = (struct tpm_header *)buf->data;
++
++	return be16_to_cpu(head->tag);
++}
++
++/**
++ * tpm_buf_parameters - return the TPM response parameters area of the tpm_buf
++ * @buf: tpm_buf to use
++ *
++ * Where the parameters are located depends on the tag of a TPM
++ * command (it's immediately after the header for TPM_ST_NO_SESSIONS
++ * or 4 bytes after for TPM_ST_SESSIONS). Evaluate this and return a
++ * pointer to the first byte of the parameters area.
++ *
++ * @return: pointer to parameters area
++ */
++u8 *tpm_buf_parameters(struct tpm_buf *buf)
++{
++	int offset = TPM_HEADER_SIZE;
++
++	if (tpm_buf_tag(buf) == TPM2_ST_SESSIONS)
++		offset += 4;
++
++	return &buf->data[offset];
++}
+diff --git a/include/linux/tpm.h b/include/linux/tpm.h
+index f554c0d2f171..5652a08089ba 100644
+--- a/include/linux/tpm.h
++++ b/include/linux/tpm.h
+@@ -345,6 +345,8 @@ u8 tpm_buf_read_u8(struct tpm_buf *buf, off_t *offset);
+ u16 tpm_buf_read_u16(struct tpm_buf *buf, off_t *offset);
+ u32 tpm_buf_read_u32(struct tpm_buf *buf, off_t *offset);
+ 
++u8 *tpm_buf_parameters(struct tpm_buf *buf);
++
+ /*
+  * Check if TPM device is in the firmware upgrade mode.
+  */
+-- 
+2.34.1
+

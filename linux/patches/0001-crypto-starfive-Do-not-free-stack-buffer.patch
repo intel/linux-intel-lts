@@ -1,0 +1,30 @@
+From 8ef3838844f675a524b1abf9032ad4b769e04a63 Mon Sep 17 00:00:00 2001
+From: Jia Jie Ho <jiajie.ho@starfivetech.com>
+Date: Mon, 29 Apr 2024 14:06:39 +0800
+Subject: [PATCH] crypto: starfive - Do not free stack buffer
+
+RSA text data uses variable length buffer allocated in software stack.
+Calling kfree on it causes undefined behaviour in subsequent operations.
+
+Cc: <stable@vger.kernel.org> #6.7+
+Signed-off-by: Jia Jie Ho <jiajie.ho@starfivetech.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+---
+ drivers/crypto/starfive/jh7110-rsa.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/crypto/starfive/jh7110-rsa.c b/drivers/crypto/starfive/jh7110-rsa.c
+index 1db9a3d02848..3116828d60a0 100644
+--- a/drivers/crypto/starfive/jh7110-rsa.c
++++ b/drivers/crypto/starfive/jh7110-rsa.c
+@@ -303,7 +303,6 @@ static int starfive_rsa_enc_core(struct starfive_cryp_ctx *ctx, int enc)
+ 
+ err_rsa_crypt:
+ 	writel(STARFIVE_RSA_RESET, cryp->base + STARFIVE_PKA_CACR_OFFSET);
+-	kfree(rctx->rsa_data);
+ 	return ret;
+ }
+ 
+-- 
+2.34.1
+

@@ -1,0 +1,41 @@
+From 584161c7a22ba9264b5d9e4046bc8e55f6e2e6f7 Mon Sep 17 00:00:00 2001
+From: Suraj Kandpal <suraj.kandpal@intel.com>
+Date: Mon, 22 Jul 2024 12:14:50 +0530
+Subject: [PATCH 5/5] drm/i915/hdcp: Add encoder check in hdcp2_get_capability
+
+Add encoder check in intel_hdcp2_get_capability to avoid
+null pointer error.
+
+Signed-off-by: Suraj Kandpal <suraj.kandpal@intel.com>
+Reviewed-by: Dnyaneshwar Bhadane <dnyaneshwar.bhadane@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240722064451.3610512-3-suraj.kandpal@intel.com
+(cherry picked from commit d34f4f058edf1235c103ca9c921dc54820d14d40)
+---
+ drivers/gpu/drm/i915/display/intel_dp_hdcp.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+index 5394391acbe1..40aef471970b 100644
+--- a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
++++ b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+@@ -666,8 +666,15 @@ static
+ int intel_dp_hdcp2_capable(struct intel_connector *connector,
+ 			   bool *capable)
+ {
+-	struct intel_digital_port *dig_port = intel_attached_dig_port(connector);
+-	struct drm_dp_aux *aux = &dig_port->dp.aux;
++	struct intel_digital_port *dig_port;
++	struct drm_dp_aux *aux;
++
++	*capable = false;
++	if (!intel_attached_encoder(connector))
++		return -EINVAL;
++
++	dig_port = intel_attached_dig_port(connector);
++	aux = &dig_port->dp.aux;
+ 
+ 	return _intel_dp_hdcp2_capable(aux, capable);
+ }
+-- 
+2.34.1
+

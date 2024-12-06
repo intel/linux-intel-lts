@@ -1,0 +1,49 @@
+From 0f817df87fdf99464e693fcc066500b3ec559d6b Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Thu, 11 Apr 2024 15:53:36 +0100
+Subject: [PATCH 2/3] block_device: add a pointer to struct address_space (page
+ cache of bdev)
+
+points to ->i_data of coallocated inode.
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Link: https://lore.kernel.org/r/20240411145346.2516848-1-viro@zeniv.linux.org.uk
+Signed-off-by: Christian Brauner <brauner@kernel.org>
+(cherry picked from commit e33aef2c58577f51ec22736843a652576ce0ef7a)
+---
+ block/bdev.c              | 1 +
+ include/linux/blk_types.h | 4 +++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/block/bdev.c b/block/bdev.c
+index 5a54977518ee..87a228726fb4 100644
+--- a/block/bdev.c
++++ b/block/bdev.c
+@@ -401,6 +401,7 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
+ 	mutex_init(&bdev->bd_holder_lock);
+ 	bdev->bd_partno = partno;
+ 	bdev->bd_inode = inode;
++	bdev->bd_mapping = &inode->i_data;
+ 	bdev->bd_queue = disk->queue;
+ 	if (partno)
+ 		bdev->bd_has_submit_bio = disk->part0->bd_has_submit_bio;
+diff --git a/include/linux/blk_types.h b/include/linux/blk_types.h
+index 92c8997b1938..5cb32d3d7734 100644
+--- a/include/linux/blk_types.h
++++ b/include/linux/blk_types.h
+@@ -49,9 +49,11 @@ struct block_device {
+ 	bool			bd_write_holder;
+ 	bool			bd_has_submit_bio;
+ 	dev_t			bd_dev;
++	struct inode		*bd_inode;	/* will die */
++	struct address_space	*bd_mapping;	/* page cache */
++
+ 	atomic_t		bd_openers;
+ 	spinlock_t		bd_size_lock; /* for bd_inode->i_size updates */
+-	struct inode *		bd_inode;	/* will die */
+ 	void *			bd_claiming;
+ 	void *			bd_holder;
+ 	const struct blk_holder_ops *bd_holder_ops;
+-- 
+2.34.1
+

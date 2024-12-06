@@ -1,0 +1,209 @@
+From e0cea6a5009c58d565b9c3a23a6648c08f7847b5 Mon Sep 17 00:00:00 2001
+From: Gabriel Krisman Bertazi <krisman@collabora.com>
+Date: Thu, 6 Jun 2024 10:33:52 +0300
+Subject: [PATCH 1/2] ext4: Move CONFIG_UNICODE defguards into the code flow
+
+Instead of a bunch of ifdefs, make the unicode built checks part of the
+code flow where possible, as requested by Torvalds.
+
+Signed-off-by: Gabriel Krisman Bertazi <krisman@collabora.com>
+[eugen.hristev@collabora.com: port to 6.10-rc1]
+Signed-off-by: Eugen Hristev <eugen.hristev@collabora.com>
+Link: https://lore.kernel.org/r/20240606073353.47130-7-eugen.hristev@collabora.com
+Reviewed-by: Eric Biggers <ebiggers@google.com>
+Reviewed-by: Gabriel Krisman Bertazi <krisman@suse.de>
+Signed-off-by: Christian Brauner <brauner@kernel.org>
+(cherry picked from commit d98c822232f8642960a69caedeb7909471127939)
+---
+ fs/ext4/crypto.c | 10 ++--------
+ fs/ext4/ext4.h   | 33 +++++++++++++++++++++------------
+ fs/ext4/namei.c  | 14 +++++---------
+ fs/ext4/super.c  |  4 +---
+ 4 files changed, 29 insertions(+), 32 deletions(-)
+
+diff --git a/fs/ext4/crypto.c b/fs/ext4/crypto.c
+index 453d4da5de52..6d2655b6139f 100644
+--- a/fs/ext4/crypto.c
++++ b/fs/ext4/crypto.c
+@@ -31,11 +31,10 @@ int ext4_fname_setup_filename(struct inode *dir, const struct qstr *iname,
+ 
+ 	ext4_fname_from_fscrypt_name(fname, &name);
+ 
+-#if IS_ENABLED(CONFIG_UNICODE)
+ 	err = ext4_fname_setup_ci_filename(dir, iname, fname);
+ 	if (err)
+ 		ext4_fname_free_filename(fname);
+-#endif
++
+ 	return err;
+ }
+ 
+@@ -51,11 +50,9 @@ int ext4_fname_prepare_lookup(struct inode *dir, struct dentry *dentry,
+ 
+ 	ext4_fname_from_fscrypt_name(fname, &name);
+ 
+-#if IS_ENABLED(CONFIG_UNICODE)
+ 	err = ext4_fname_setup_ci_filename(dir, &dentry->d_name, fname);
+ 	if (err)
+ 		ext4_fname_free_filename(fname);
+-#endif
+ 	return err;
+ }
+ 
+@@ -70,10 +67,7 @@ void ext4_fname_free_filename(struct ext4_filename *fname)
+ 	fname->usr_fname = NULL;
+ 	fname->disk_name.name = NULL;
+ 
+-#if IS_ENABLED(CONFIG_UNICODE)
+-	kfree(fname->cf_name.name);
+-	fname->cf_name.name = NULL;
+-#endif
++	ext4_fname_free_ci_filename(fname);
+ }
+ 
+ static bool uuid_is_zero(__u8 u[16])
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 7bbf0b9bdff2..901795720cf6 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2729,8 +2729,25 @@ ext4_fsblk_t ext4_inode_to_goal_block(struct inode *);
+ 
+ #if IS_ENABLED(CONFIG_UNICODE)
+ extern int ext4_fname_setup_ci_filename(struct inode *dir,
+-					 const struct qstr *iname,
+-					 struct ext4_filename *fname);
++					const struct qstr *iname,
++					struct ext4_filename *fname);
++
++static inline void ext4_fname_free_ci_filename(struct ext4_filename *fname)
++{
++	kfree(fname->cf_name.name);
++	fname->cf_name.name = NULL;
++}
++#else
++static inline int ext4_fname_setup_ci_filename(struct inode *dir,
++					       const struct qstr *iname,
++					       struct ext4_filename *fname)
++{
++	return 0;
++}
++
++static inline void ext4_fname_free_ci_filename(struct ext4_filename *fname)
++{
++}
+ #endif
+ 
+ /* ext4 encryption related stuff goes here crypto.c */
+@@ -2753,16 +2770,11 @@ static inline int ext4_fname_setup_filename(struct inode *dir,
+ 					    int lookup,
+ 					    struct ext4_filename *fname)
+ {
+-	int err = 0;
+ 	fname->usr_fname = iname;
+ 	fname->disk_name.name = (unsigned char *) iname->name;
+ 	fname->disk_name.len = iname->len;
+ 
+-#if IS_ENABLED(CONFIG_UNICODE)
+-	err = ext4_fname_setup_ci_filename(dir, iname, fname);
+-#endif
+-
+-	return err;
++	return ext4_fname_setup_ci_filename(dir, iname, fname);
+ }
+ 
+ static inline int ext4_fname_prepare_lookup(struct inode *dir,
+@@ -2774,10 +2786,7 @@ static inline int ext4_fname_prepare_lookup(struct inode *dir,
+ 
+ static inline void ext4_fname_free_filename(struct ext4_filename *fname)
+ {
+-#if IS_ENABLED(CONFIG_UNICODE)
+-	kfree(fname->cf_name.name);
+-	fname->cf_name.name = NULL;
+-#endif
++	ext4_fname_free_ci_filename(fname);
+ }
+ 
+ static inline int ext4_ioctl_get_encryption_pwsalt(struct file *filp,
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index 4de1f61bba76..32a153243988 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -1873,8 +1873,7 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
+ 		}
+ 	}
+ 
+-#if IS_ENABLED(CONFIG_UNICODE)
+-	if (!inode && IS_CASEFOLDED(dir)) {
++	if (IS_ENABLED(CONFIG_UNICODE) && !inode && IS_CASEFOLDED(dir)) {
+ 		/* Eventually we want to call d_add_ci(dentry, NULL)
+ 		 * for negative dentries in the encoding case as
+ 		 * well.  For now, prevent the negative dentry
+@@ -1882,7 +1881,7 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
+ 		 */
+ 		return NULL;
+ 	}
+-#endif
++
+ 	return d_splice_alias(inode, dentry);
+ }
+ 
+@@ -3258,16 +3257,14 @@ static int ext4_rmdir(struct inode *dir, struct dentry *dentry)
+ 	ext4_fc_track_unlink(handle, dentry);
+ 	retval = ext4_mark_inode_dirty(handle, dir);
+ 
+-#if IS_ENABLED(CONFIG_UNICODE)
+ 	/* VFS negative dentries are incompatible with Encoding and
+ 	 * Case-insensitiveness. Eventually we'll want avoid
+ 	 * invalidating the dentries here, alongside with returning the
+ 	 * negative dentries at ext4_lookup(), when it is better
+ 	 * supported by the VFS for the CI case.
+ 	 */
+-	if (IS_CASEFOLDED(dir))
++	if (IS_ENABLED(CONFIG_UNICODE) && IS_CASEFOLDED(dir))
+ 		d_invalidate(dentry);
+-#endif
+ 
+ end_rmdir:
+ 	brelse(bh);
+@@ -3369,16 +3366,15 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
+ 		goto out_trace;
+ 
+ 	retval = __ext4_unlink(dir, &dentry->d_name, d_inode(dentry), dentry);
+-#if IS_ENABLED(CONFIG_UNICODE)
++
+ 	/* VFS negative dentries are incompatible with Encoding and
+ 	 * Case-insensitiveness. Eventually we'll want avoid
+ 	 * invalidating the dentries here, alongside with returning the
+ 	 * negative dentries at ext4_lookup(), when it is  better
+ 	 * supported by the VFS for the CI case.
+ 	 */
+-	if (IS_CASEFOLDED(dir))
++	if (IS_ENABLED(CONFIG_UNICODE) && IS_CASEFOLDED(dir))
+ 		d_invalidate(dentry);
+-#endif
+ 
+ out_trace:
+ 	trace_ext4_unlink_exit(dentry, retval);
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 1d14a38017a7..6b85b3da192b 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3611,14 +3611,12 @@ int ext4_feature_set_ok(struct super_block *sb, int readonly)
+ 		return 0;
+ 	}
+ 
+-#if !IS_ENABLED(CONFIG_UNICODE)
+-	if (ext4_has_feature_casefold(sb)) {
++	if (!IS_ENABLED(CONFIG_UNICODE) && ext4_has_feature_casefold(sb)) {
+ 		ext4_msg(sb, KERN_ERR,
+ 			 "Filesystem with casefold feature cannot be "
+ 			 "mounted without CONFIG_UNICODE");
+ 		return 0;
+ 	}
+-#endif
+ 
+ 	if (readonly)
+ 		return 1;
+-- 
+2.34.1
+

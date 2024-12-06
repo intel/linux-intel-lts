@@ -1,0 +1,74 @@
+From 293075c9565fb39d257efcbcd58a2f5414cc6490 Mon Sep 17 00:00:00 2001
+From: Ido Schimmel <idosch@nvidia.com>
+Date: Wed, 23 Oct 2024 15:30:09 +0300
+Subject: [PATCH] ipv4: ip_tunnel: Fix suspicious RCU usage warning in
+ ip_tunnel_find()
+
+The per-netns IP tunnel hash table is protected by the RTNL mutex and
+ip_tunnel_find() is only called from the control path where the mutex is
+taken.
+
+Add a lockdep expression to hlist_for_each_entry_rcu() in
+ip_tunnel_find() in order to validate that the mutex is held and to
+silence the suspicious RCU usage warning [1].
+
+[1]
+WARNING: suspicious RCU usage
+6.12.0-rc3-custom-gd95d9a31aceb #139 Not tainted
+-----------------------------
+net/ipv4/ip_tunnel.c:221 RCU-list traversed in non-reader section!!
+
+other info that might help us debug this:
+
+rcu_scheduler_active = 2, debug_locks = 1
+1 lock held by ip/362:
+ #0: ffffffff86fc7cb0 (rtnl_mutex){+.+.}-{3:3}, at: rtnetlink_rcv_msg+0x377/0xf60
+
+stack backtrace:
+CPU: 12 UID: 0 PID: 362 Comm: ip Not tainted 6.12.0-rc3-custom-gd95d9a31aceb #139
+Hardware name: Bochs Bochs, BIOS Bochs 01/01/2011
+Call Trace:
+ <TASK>
+ dump_stack_lvl+0xba/0x110
+ lockdep_rcu_suspicious.cold+0x4f/0xd6
+ ip_tunnel_find+0x435/0x4d0
+ ip_tunnel_newlink+0x517/0x7a0
+ ipgre_newlink+0x14c/0x170
+ __rtnl_newlink+0x1173/0x19c0
+ rtnl_newlink+0x6c/0xa0
+ rtnetlink_rcv_msg+0x3cc/0xf60
+ netlink_rcv_skb+0x171/0x450
+ netlink_unicast+0x539/0x7f0
+ netlink_sendmsg+0x8c1/0xd80
+ ____sys_sendmsg+0x8f9/0xc20
+ ___sys_sendmsg+0x197/0x1e0
+ __sys_sendmsg+0x122/0x1f0
+ do_syscall_64+0xbb/0x1d0
+ entry_SYSCALL_64_after_hwframe+0x77/0x7f
+
+Fixes: c54419321455 ("GRE: Refactor GRE tunneling code.")
+Suggested-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Ido Schimmel <idosch@nvidia.com>
+Reviewed-by: Eric Dumazet <edumazet@google.com>
+Link: https://patch.msgid.link/20241023123009.749764-1-idosch@nvidia.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/ipv4/ip_tunnel.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/ipv4/ip_tunnel.c b/net/ipv4/ip_tunnel.c
+index acf93f34a821..2081b073bcd7 100644
+--- a/net/ipv4/ip_tunnel.c
++++ b/net/ipv4/ip_tunnel.c
+@@ -218,7 +218,7 @@ static struct ip_tunnel *ip_tunnel_find(struct ip_tunnel_net *itn,
+ 	struct ip_tunnel *t = NULL;
+ 	struct hlist_head *head = ip_bucket(itn, parms);
+ 
+-	hlist_for_each_entry_rcu(t, head, hash_node) {
++	hlist_for_each_entry_rcu(t, head, hash_node, lockdep_rtnl_is_held()) {
+ 		if (local == t->parms.iph.saddr &&
+ 		    remote == t->parms.iph.daddr &&
+ 		    link == t->parms.link &&
+-- 
+2.34.1
+

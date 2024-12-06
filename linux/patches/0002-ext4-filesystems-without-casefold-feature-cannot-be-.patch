@@ -1,0 +1,39 @@
+From b63d255a257d55f2947219d1e73a99fc74fd3e30 Mon Sep 17 00:00:00 2001
+From: Lizhi Xu <lizhi.xu@windriver.com>
+Date: Wed, 5 Jun 2024 09:23:35 +0800
+Subject: [PATCH 2/2] ext4: filesystems without casefold feature cannot be
+ mounted with siphash
+
+When mounting the ext4 filesystem, if the default hash version is set to
+DX_HASH_SIPHASH but the casefold feature is not set, exit the mounting.
+
+Reported-by: syzbot+340581ba9dceb7e06fb3@syzkaller.appspotmail.com
+Signed-off-by: Lizhi Xu <lizhi.xu@windriver.com>
+Link: https://patch.msgid.link/20240605012335.44086-1-lizhi.xu@windriver.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+(cherry picked from commit 985b67cd86392310d9e9326de941c22fc9340eec)
+---
+ fs/ext4/super.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 6b85b3da192b..74b9933be4b2 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -3617,6 +3617,13 @@ int ext4_feature_set_ok(struct super_block *sb, int readonly)
+ 			 "mounted without CONFIG_UNICODE");
+ 		return 0;
+ 	}
++	if (EXT4_SB(sb)->s_es->s_def_hash_version == DX_HASH_SIPHASH &&
++	    !ext4_has_feature_casefold(sb)) {
++		ext4_msg(sb, KERN_ERR,
++			 "Filesystem without casefold feature cannot be "
++			 "mounted with siphash");
++		return 0;
++	}
+ 
+ 	if (readonly)
+ 		return 1;
+-- 
+2.34.1
+

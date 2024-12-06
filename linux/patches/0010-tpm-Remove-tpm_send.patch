@@ -1,0 +1,110 @@
+From 6d035777254c47aca640ebb0c5f42f4d6fa76326 Mon Sep 17 00:00:00 2001
+From: Jarkko Sakkinen <jarkko@kernel.org>
+Date: Mon, 29 Apr 2024 16:27:51 -0400
+Subject: [PATCH 10/11] tpm: Remove tpm_send()
+
+Open code the last remaining call site for tpm_send().
+
+Signed-off-by: James Bottomley <James.Bottomley@HansenPartnership.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Reviewed-by: Jarkko Sakkinen <jarkko@kernel.org>
+Tested-by: Jarkko Sakkinen <jarkko@kernel.org>
+Signed-off-by: Jarkko Sakkinen <jarkko@kernel.org>
+(cherry picked from commit 4f0feb5463cc6783c9145e707f93c54e7bb1112e)
+---
+ drivers/char/tpm/tpm-interface.c          | 25 -----------------------
+ include/linux/tpm.h                       |  5 -----
+ security/keys/trusted-keys/trusted_tpm1.c |  8 ++++++--
+ 3 files changed, 6 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-interface.c b/drivers/char/tpm/tpm-interface.c
+index 7bc035e79b7c..6e9084afcd3a 100644
+--- a/drivers/char/tpm/tpm-interface.c
++++ b/drivers/char/tpm/tpm-interface.c
+@@ -343,31 +343,6 @@ int tpm_pcr_extend(struct tpm_chip *chip, u32 pcr_idx,
+ }
+ EXPORT_SYMBOL_GPL(tpm_pcr_extend);
+ 
+-/**
+- * tpm_send - send a TPM command
+- * @chip:	a &struct tpm_chip instance, %NULL for the default chip
+- * @cmd:	a TPM command buffer
+- * @buflen:	the length of the TPM command buffer
+- *
+- * Return: same as with tpm_transmit_cmd()
+- */
+-int tpm_send(struct tpm_chip *chip, void *cmd, size_t buflen)
+-{
+-	struct tpm_buf buf;
+-	int rc;
+-
+-	chip = tpm_find_get_ops(chip);
+-	if (!chip)
+-		return -ENODEV;
+-
+-	buf.data = cmd;
+-	rc = tpm_transmit_cmd(chip, &buf, 0, "attempting to a send a command");
+-
+-	tpm_put_ops(chip);
+-	return rc;
+-}
+-EXPORT_SYMBOL_GPL(tpm_send);
+-
+ int tpm_auto_startup(struct tpm_chip *chip)
+ {
+ 	int rc;
+diff --git a/include/linux/tpm.h b/include/linux/tpm.h
+index 022cb7005bb5..ee5edb2d3e9c 100644
+--- a/include/linux/tpm.h
++++ b/include/linux/tpm.h
+@@ -446,7 +446,6 @@ extern int tpm_pcr_read(struct tpm_chip *chip, u32 pcr_idx,
+ 			struct tpm_digest *digest);
+ extern int tpm_pcr_extend(struct tpm_chip *chip, u32 pcr_idx,
+ 			  struct tpm_digest *digests);
+-extern int tpm_send(struct tpm_chip *chip, void *cmd, size_t buflen);
+ extern int tpm_get_random(struct tpm_chip *chip, u8 *data, size_t max);
+ extern struct tpm_chip *tpm_default_chip(void);
+ void tpm2_flush_context(struct tpm_chip *chip, u32 handle);
+@@ -477,10 +476,6 @@ static inline int tpm_pcr_extend(struct tpm_chip *chip, u32 pcr_idx,
+ 	return -ENODEV;
+ }
+ 
+-static inline int tpm_send(struct tpm_chip *chip, void *cmd, size_t buflen)
+-{
+-	return -ENODEV;
+-}
+ static inline int tpm_get_random(struct tpm_chip *chip, u8 *data, size_t max)
+ {
+ 	return -ENODEV;
+diff --git a/security/keys/trusted-keys/trusted_tpm1.c b/security/keys/trusted-keys/trusted_tpm1.c
+index e2538b1bd811..89c9798d1800 100644
+--- a/security/keys/trusted-keys/trusted_tpm1.c
++++ b/security/keys/trusted-keys/trusted_tpm1.c
+@@ -356,6 +356,7 @@ static int TSS_checkhmac2(unsigned char *buffer,
+  */
+ int trusted_tpm_send(unsigned char *cmd, size_t buflen)
+ {
++	struct tpm_buf buf;
+ 	int rc;
+ 
+ 	if (!chip)
+@@ -369,11 +370,14 @@ int trusted_tpm_send(unsigned char *cmd, size_t buflen)
+ 	buf.length = buflen;
+ 	buf.data = cmd;
+ 	dump_tpm_buf(cmd);
+-	rc = tpm_send(chip, cmd, buflen);
++	rc = tpm_transmit_cmd(chip, &buf, 4, "sending data");
+ 	dump_tpm_buf(cmd);
++
+ 	if (rc > 0)
+-		/* Can't return positive return codes values to keyctl */
++		/* TPM error */
+ 		rc = -EPERM;
++
++	tpm_put_ops(chip);
+ 	return rc;
+ }
+ EXPORT_SYMBOL_GPL(trusted_tpm_send);
+-- 
+2.34.1
+

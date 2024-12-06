@@ -1,0 +1,41 @@
+From d5f04d1ce032a1ed109e1513adf244063af12c58 Mon Sep 17 00:00:00 2001
+From: Suraj Kandpal <suraj.kandpal@intel.com>
+Date: Mon, 22 Jul 2024 12:14:49 +0530
+Subject: [PATCH] drm/i915/hdcp: Add encoder check in intel_hdcp_get_capability
+
+Sometimes during hotplug scenario or suspend/resume scenario encoder is
+not always initialized when intel_hdcp_get_capability add
+a check to avoid kernel null pointer dereference.
+
+Signed-off-by: Suraj Kandpal <suraj.kandpal@intel.com>
+Reviewed-by: Dnyaneshwar Bhadane <dnyaneshwar.bhadane@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240722064451.3610512-2-suraj.kandpal@intel.com
+---
+ drivers/gpu/drm/i915/display/intel_hdcp.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/display/intel_hdcp.c b/drivers/gpu/drm/i915/display/intel_hdcp.c
+index 4b711165fd7b..bfcee6f15960 100644
+--- a/drivers/gpu/drm/i915/display/intel_hdcp.c
++++ b/drivers/gpu/drm/i915/display/intel_hdcp.c
+@@ -142,11 +142,16 @@ int intel_hdcp_read_valid_bksv(struct intel_digital_port *dig_port,
+ /* Is HDCP1.4 capable on Platform and Sink */
+ bool intel_hdcp_capable(struct intel_connector *connector)
+ {
+-	struct intel_digital_port *dig_port = intel_attached_dig_port(connector);
++	struct intel_digital_port *dig_port;
+ 	const struct intel_hdcp_shim *shim = connector->hdcp.shim;
+ 	bool capable = false;
+ 	u8 bksv[5];
+ 
++	if (!intel_attached_encoder(connector))
++		return capable;
++
++	dig_port = intel_attached_dig_port(connector);
++
+ 	if (!shim)
+ 		return capable;
+ 
+-- 
+2.34.1
+

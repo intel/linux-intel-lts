@@ -1,0 +1,78 @@
+From c3624e0a375eeeff3bfed243fb118c61f4ffa9c8 Mon Sep 17 00:00:00 2001
+From: Steve Wahl <steve.wahl@hpe.com>
+Date: Wed, 17 Jul 2024 16:31:21 -0500
+Subject: [PATCH] x86/mm/ident_map: Use gbpages only where full GB page should
+ be mapped.
+
+When ident_pud_init() uses only GB pages to create identity maps, large
+ranges of addresses not actually requested can be included in the resulting
+table; a 4K request will map a full GB.  This can include a lot of extra
+address space past that requested, including areas marked reserved by the
+BIOS.  That allows processor speculation into reserved regions, that on UV
+systems can cause system halts.
+
+Only use GB pages when map creation requests include the full GB page of
+space.  Fall back to using smaller 2M pages when only portions of a GB page
+are included in the request.
+
+No attempt is made to coalesce mapping requests. If a request requires a
+map entry at the 2M (pmd) level, subsequent mapping requests within the
+same 1G region will also be at the pmd level, even if adjacent or
+overlapping such requests could have been combined to map a full GB page.
+Existing usage starts with larger regions and then adds smaller regions, so
+this should not have any great consequence.
+
+Signed-off-by: Steve Wahl <steve.wahl@hpe.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Tested-by: Pavin Joseph <me@pavinjoseph.com>
+Tested-by: Sarah Brofeldt <srhb@dbc.dk>
+Tested-by: Eric Hagberg <ehagberg@gmail.com>
+Link: https://lore.kernel.org/all/20240717213121.3064030-3-steve.wahl@hpe.com
+---
+ arch/x86/mm/ident_map.c | 23 ++++++++++++++++++-----
+ 1 file changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/arch/x86/mm/ident_map.c b/arch/x86/mm/ident_map.c
+index 968d7005f4a7..a204a332c71f 100644
+--- a/arch/x86/mm/ident_map.c
++++ b/arch/x86/mm/ident_map.c
+@@ -26,18 +26,31 @@ static int ident_pud_init(struct x86_mapping_info *info, pud_t *pud_page,
+ 	for (; addr < end; addr = next) {
+ 		pud_t *pud = pud_page + pud_index(addr);
+ 		pmd_t *pmd;
++		bool use_gbpage;
+ 
+ 		next = (addr & PUD_MASK) + PUD_SIZE;
+ 		if (next > end)
+ 			next = end;
+ 
+-		if (info->direct_gbpages) {
+-			pud_t pudval;
++		/* if this is already a gbpage, this portion is already mapped */
++		if (pud_leaf(*pud))
++			continue;
++
++		/* Is using a gbpage allowed? */
++		use_gbpage = info->direct_gbpages;
+ 
+-			if (pud_present(*pud))
+-				continue;
++		/* Don't use gbpage if it maps more than the requested region. */
++		/* at the begining: */
++		use_gbpage &= ((addr & ~PUD_MASK) == 0);
++		/* ... or at the end: */
++		use_gbpage &= ((next & ~PUD_MASK) == 0);
++
++		/* Never overwrite existing mappings */
++		use_gbpage &= !pud_present(*pud);
++
++		if (use_gbpage) {
++			pud_t pudval;
+ 
+-			addr &= PUD_MASK;
+ 			pudval = __pud((addr - info->offset) | info->page_flag);
+ 			set_pud(pud, pudval);
+ 			continue;
+-- 
+2.34.1
+
