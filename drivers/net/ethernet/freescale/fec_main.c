@@ -4650,7 +4650,7 @@ fec_probe(struct platform_device *pdev)
 	INIT_WORK(&fep->tx_timeout_work, fec_enet_timeout_work);
 
 	if (IS_ENABLED(CONFIG_FEC_OOB)) {
-		ndev->priv_flags |= IFF_OOB_CAPABLE;
+		netdev_set_oob_capable(ndev);
 		netdev_info(ndev, "FEC device is oob-capable\n");
 	}
 

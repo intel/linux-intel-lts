@@ -85,11 +85,11 @@ struct ttc_timer_clocksource {
 	u32			scale_clk_ctrl_reg_old;
 	u32			scale_clk_ctrl_reg_new;
 	struct ttc_timer	ttc;
-	struct clocksource	cs;
+	struct clocksource_user_mmio	cs;
 };
 
 #define to_ttc_timer_clksrc(x) \
-		container_of(x, struct ttc_timer_clocksource, cs)
+		container_of(x, struct ttc_timer_clocksource, cs.mmio.clksrc)
 
 struct ttc_timer_clockevent {
 	struct ttc_timer		ttc;
@@ -144,22 +144,9 @@ static irqreturn_t ttc_clock_event_interrupt(int irq, void *dev_id)
 	/* Acknowledge the interrupt and call event handler */
 	readl_relaxed(timer->base_addr + TTC_ISR_OFFSET);
 
-	ttce->ce.event_handler(&ttce->ce);
+	clockevents_handle_event(&ttce->ce);
 
 	return IRQ_HANDLED;
-}
-
-/**
- * __ttc_clocksource_read - Reads the timer counter register
- *
- * returns: Current timer counter register value
- **/
-static u64 __ttc_clocksource_read(struct clocksource *cs)
-{
-	struct ttc_timer *timer = &to_ttc_timer_clksrc(cs)->ttc;
-
-	return (u64)readl_relaxed(timer->base_addr +
-				TTC_COUNT_VAL_OFFSET);
 }
 
 static u64 notrace ttc_sched_clock_read(void)
@@ -321,6 +308,7 @@ static int ttc_rate_change_clocksource_cb(struct notifier_block *nb,
 static int __init ttc_setup_clocksource(struct clk *clk, void __iomem *base,
 					 u32 timer_width)
 {
+	struct clocksource_mmio_regs mmr = { 0 };
 	struct ttc_timer_clocksource *ttccs;
 	int err;
 
@@ -348,11 +336,11 @@ static int __init ttc_setup_clocksource(struct clk *clk, void __iomem *base,
 		pr_warn("Unable to register clock notifier.\n");
 
 	ttccs->ttc.base_addr = base;
-	ttccs->cs.name = "ttc_clocksource";
-	ttccs->cs.rating = 200;
-	ttccs->cs.read = __ttc_clocksource_read;
-	ttccs->cs.mask = CLOCKSOURCE_MASK(timer_width);
-	ttccs->cs.flags = CLOCK_SOURCE_IS_CONTINUOUS;
+	ttccs->cs.mmio.clksrc.name = "ttc_clocksource";
+	ttccs->cs.mmio.clksrc.rating = 200;
+	ttccs->cs.mmio.clksrc.read = clocksource_mmio_readl_up,
+	ttccs->cs.mmio.clksrc.mask = CLOCKSOURCE_MASK(timer_width);
+	ttccs->cs.mmio.clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
 
 	/*
 	 * Setup the clock source counter to be an incrementing counter
@@ -365,7 +353,10 @@ static int __init ttc_setup_clocksource(struct clk *clk, void __iomem *base,
 	writel_relaxed(CNT_CNTRL_RESET,
 		     ttccs->ttc.base_addr + TTC_CNT_CNTRL_OFFSET);
 
-	err = clocksource_register_hz(&ttccs->cs, ttccs->ttc.freq / PRESCALE);
+	mmr.reg_lower = ttccs->ttc.base_addr + TTC_COUNT_VAL_OFFSET;
+	mmr.bits_lower = 32;
+
+	err = clocksource_user_mmio_init(&ttccs->cs, &mmr, ttccs->ttc.freq / PRESCALE);
 	if (err) {
 		kfree(ttccs);
 		return err;
@@ -432,7 +423,8 @@ static int __init ttc_setup_clockevent(struct clk *clk,
 
 	ttcce->ttc.base_addr = base;
 	ttcce->ce.name = "ttc_clockevent";
-	ttcce->ce.features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT;
+	ttcce->ce.features = CLOCK_EVT_FEAT_PERIODIC | \
+		CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PIPELINE;
 	ttcce->ce.set_next_event = ttc_set_next_event;
 	ttcce->ce.set_state_shutdown = ttc_shutdown;
 	ttcce->ce.set_state_periodic = ttc_set_periodic;

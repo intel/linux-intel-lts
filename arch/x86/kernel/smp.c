@@ -276,7 +276,7 @@ DEFINE_IDTENTRY_SYSVEC_PIPELINED(CALL_FUNCTION_SINGLE_VECTOR,
 void irq_send_oob_ipi(unsigned int ipi,
 		const struct cpumask *cpumask)
 {
-	apic_send_IPI_allbutself(apicm_irq_vector(ipi));
+	__apic_send_IPI_mask(cpumask, apicm_irq_vector(ipi));
 }
 EXPORT_SYMBOL_GPL(irq_send_oob_ipi);
 

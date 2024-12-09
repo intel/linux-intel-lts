@@ -181,7 +181,7 @@ static irqreturn_t twd_handler(int irq, void *dev_id)
 {
 	struct clock_event_device *evt = dev_id;
 
-	if (twd_timer_ack()) {
+	if ((running_inband() && clockevent_is_oob(evt)) || twd_timer_ack()) {
 		clockevents_handle_event(evt);
 		return IRQ_HANDLED;
 	}
