@@ -267,7 +267,7 @@ void fpsimd_restore_current_oob(void)
  * previously called, with no call to put_cpu_fpsimd_context() in the
  * meantime.
  */
-#define get_cpu_fpsimd_context(__flags)			\
+#define put_cpu_fpsimd_context(__flags)			\
 	do {						\
 		if (!IS_ENABLED(CONFIG_PREEMPT_RT))	\
 			local_bh_enable();		\
