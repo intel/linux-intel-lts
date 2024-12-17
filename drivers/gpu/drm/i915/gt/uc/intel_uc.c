@@ -46,12 +46,6 @@ static void uc_expand_default_options(struct intel_uc *uc)
 		return;
 	}
 
-	/* Intermediate platforms are HuC authentication only */
-	if (IS_ALDERLAKE_S(i915) && !IS_RAPTORLAKE_S(i915)) {
-		i915->params.enable_guc = ENABLE_GUC_LOAD_HUC;
-		return;
-	}
-
 	/* Default: enable HuC authentication and GuC submission */
 	i915->params.enable_guc = ENABLE_GUC_LOAD_HUC | ENABLE_GUC_SUBMISSION;
 }
