@@ -1101,9 +1101,6 @@ static void nbcon_irq_work(struct irq_work *irq_work)
 
 static inline bool rcuwait_has_sleeper(struct rcuwait *w)
 {
-	bool has_sleeper;
-
-	rcu_read_lock();
 	/*
 	 * Guarantee any new records can be seen by tasks preparing to wait
 	 * before this context checks if the rcuwait is empty.
@@ -1116,10 +1113,7 @@ static inline bool rcuwait_has_sleeper(struct rcuwait *w)
 	 * This pairs with nbcon_kthread_func:A.
 	 */
 	smp_mb(); /* LMM(rcuwait_has_sleeper:A) */
-	has_sleeper = !!rcu_dereference(w->task);
-	rcu_read_unlock();
-
-	return has_sleeper;
+       return rcuwait_active(w);
 }
 
 /**
