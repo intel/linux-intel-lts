@@ -10,13 +10,6 @@
 # CVE-2023-6238
 0001-nvme-fix-corruption-for-passthrough-meta-data.patch
 
-# CVE-2024-26686
-0001-fs-proc-do_task_stat-use-__for_each_thread.patch
-0002-fs-proc-do_task_stat-use-sig-stats_lock-to-gather-th.patch
-
-#CVE-2024-42156
-0001-s390-pkey-Wipe-copies-of-clear-key-structures-on-fai.patch
-
 #CVE-2024-42158
 0001-s390-pkey-Use-kfree_sensitive-to-fix-Coccinelle-warn.patch
 
@@ -25,9 +18,6 @@
 
 #CVE-2024-41085
 0001-cxl-mem-Fix-no-cxl_nvd-during-pmem-region-auto-assem.patch
-
-#CVE-2024-43857
-0001-f2fs-fix-null-reference-error-when-checking-end-of-z.patch
 
 #CVE-2024-43903
 0001-drm-amd-display-Add-NULL-check-for-afb-before-derefe.patch
@@ -77,8 +67,6 @@
 0001-crypto-starfive-Do-not-free-stack-buffer.patch
 
 #CVE-2024-40975
-0001-platform-x86-x86-android-tablets-Add-support-for-SPI.patch
-0002-platform-x86-x86-android-tablets-Unregister-devices-.patch
 0003-spi-Export-acpi_spi_find_controller_by_adev.patch
 
 #CVE-2024-41023
@@ -113,9 +101,6 @@
 #CVE-2024-50017
 0001-x86-mm-ident_map-Use-gbpages-only-where-full-GB-page.patch
 
-#CVE-2023-52920
-0001-bpf-support-non-r10-register-spill-fill-to-from-stac.patch
-
 #CVE-2024-50146
 0001-net-mlx5e-Don-t-call-cleanup-on-profile-rollback-fai.patch
 
@@ -144,7 +129,6 @@
 0006-tpm-Add-NULL-primary-creation.patch
 0007-tpm-Add-TCG-mandated-Key-Derivation-Functions-KDFs.patch
 0008-tpm-Add-HMAC-session-start-and-end-functions.patch
-0009-tpm-Lock-TPM-chip-in-tpm_pm_suspend-first.patch
 0010-tpm-Remove-tpm_send.patch
 0011-tpm-export-the-context-save-and-load-commands.patch
 
@@ -172,3 +156,9 @@
 #CVE-2024-50289
 0001-media-av7110-fix-a-spectre-vulnerability.patch
 0002-uaccess-always-export-_copy_-from-to-_user-with-CONF.patch
+
+#CVE-2024-49888
+0001-bpf-Fix-a-sdiv-overflow-issue.patch
+
+#CVE-2024-53090
+0001-afs-Fix-lock-recursion.patch
