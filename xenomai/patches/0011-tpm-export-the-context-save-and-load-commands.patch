@@ -1,0 +1,64 @@
+From 5ea4de87ddfcafd906be461e6de2cc1e857b4c74 Mon Sep 17 00:00:00 2001
+From: James Bottomley <James.Bottomley@HansenPartnership.com>
+Date: Mon, 29 Apr 2024 16:28:00 -0400
+Subject: [PATCH 11/11] tpm: export the context save and load commands
+
+The TPM2 session HMAC and encryption handling code needs to save and
+restore a single volatile context for the elliptic curve version of
+the NULL seed, so export the APIs which do this for internal use.
+
+Signed-off-by: James Bottomley <James.Bottomley@HansenPartnership.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Reviewed-by: Jarkko Sakkinen <jarkko@kernel.org>
+Tested-by: Jarkko Sakkinen <jarkko@kernel.org>
+Signed-off-by: Jarkko Sakkinen <jarkko@kernel.org>
+(cherry picked from commit fefb9f12726bebce74be7b95e259594696d0c423)
+---
+ drivers/char/tpm/tpm.h        | 4 ++++
+ drivers/char/tpm/tpm2-space.c | 8 ++++----
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm.h b/drivers/char/tpm/tpm.h
+index 0ff9d66255e0..6b8b9956ba69 100644
+--- a/drivers/char/tpm/tpm.h
++++ b/drivers/char/tpm/tpm.h
+@@ -312,6 +312,10 @@ int tpm2_commit_space(struct tpm_chip *chip, struct tpm_space *space, void *buf,
+ 		      size_t *bufsiz);
+ int tpm_devs_add(struct tpm_chip *chip);
+ void tpm_devs_remove(struct tpm_chip *chip);
++int tpm2_save_context(struct tpm_chip *chip, u32 handle, u8 *buf,
++		      unsigned int buf_size, unsigned int *offset);
++int tpm2_load_context(struct tpm_chip *chip, u8 *buf,
++		      unsigned int *offset, u32 *handle);
+ 
+ void tpm_bios_log_setup(struct tpm_chip *chip);
+ void tpm_bios_log_teardown(struct tpm_chip *chip);
+diff --git a/drivers/char/tpm/tpm2-space.c b/drivers/char/tpm/tpm2-space.c
+index d4d1007fe811..471afecbd621 100644
+--- a/drivers/char/tpm/tpm2-space.c
++++ b/drivers/char/tpm/tpm2-space.c
+@@ -68,8 +68,8 @@ void tpm2_del_space(struct tpm_chip *chip, struct tpm_space *space)
+ 	kfree(space->session_buf);
+ }
+ 
+-static int tpm2_load_context(struct tpm_chip *chip, u8 *buf,
+-			     unsigned int *offset, u32 *handle)
++int tpm2_load_context(struct tpm_chip *chip, u8 *buf,
++		      unsigned int *offset, u32 *handle)
+ {
+ 	struct tpm_buf tbuf;
+ 	struct tpm2_context *ctx;
+@@ -119,8 +119,8 @@ static int tpm2_load_context(struct tpm_chip *chip, u8 *buf,
+ 	return 0;
+ }
+ 
+-static int tpm2_save_context(struct tpm_chip *chip, u32 handle, u8 *buf,
+-			     unsigned int buf_size, unsigned int *offset)
++int tpm2_save_context(struct tpm_chip *chip, u32 handle, u8 *buf,
++		      unsigned int buf_size, unsigned int *offset)
+ {
+ 	struct tpm_buf tbuf;
+ 	unsigned int body_size;
+-- 
+2.25.1
+

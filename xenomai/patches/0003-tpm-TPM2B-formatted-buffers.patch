@@ -1,0 +1,108 @@
+From 941c36494b2db8450d36b410e5e2870913dab515 Mon Sep 17 00:00:00 2001
+From: Jarkko Sakkinen <jarkko@kernel.org>
+Date: Mon, 29 Apr 2024 16:27:55 -0400
+Subject: [PATCH 03/11] tpm: TPM2B formatted buffers
+
+Declare tpm_buf_init_sized() and tpm_buf_reset_sized() for creating TPM2B
+formatted buffers. These buffers are also known as sized buffers in the
+specifications and literature.
+
+Signed-off-by: James Bottomley <James.Bottomley@HansenPartnership.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Reviewed-by: Jarkko Sakkinen <jarkko@kernel.org>
+Tested-by: Jarkko Sakkinen <jarkko@kernel.org>
+Signed-off-by: Jarkko Sakkinen <jarkko@kernel.org>
+(cherry picked from commit d926ee92e84146ff85877b15d9ac0c7cd7c422c6)
+---
+ drivers/char/tpm/tpm-buf.c | 38 +++++++++++++++++++++++++++++++++++---
+ include/linux/tpm.h        |  4 ++++
+ 2 files changed, 39 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm-buf.c b/drivers/char/tpm/tpm-buf.c
+index 2f2710ca6f6d..d679dc1cecc7 100644
+--- a/drivers/char/tpm/tpm-buf.c
++++ b/drivers/char/tpm/tpm-buf.c
+@@ -47,6 +47,36 @@ void tpm_buf_reset(struct tpm_buf *buf, u16 tag, u32 ordinal)
+ }
+ EXPORT_SYMBOL_GPL(tpm_buf_reset);
+ 
++/**
++ * tpm_buf_init_sized() - Allocate and initialize a sized (TPM2B) buffer
++ * @buf:	A @tpm_buf
++ *
++ * Return: 0 or -ENOMEM
++ */
++int tpm_buf_init_sized(struct tpm_buf *buf)
++{
++	buf->data = (u8 *)__get_free_page(GFP_KERNEL);
++	if (!buf->data)
++		return -ENOMEM;
++
++	tpm_buf_reset_sized(buf);
++	return 0;
++}
++EXPORT_SYMBOL_GPL(tpm_buf_init_sized);
++
++/**
++ * tpm_buf_reset_sized() - Initialize a sized buffer
++ * @buf:	A &tpm_buf
++ */
++void tpm_buf_reset_sized(struct tpm_buf *buf)
++{
++	buf->flags = TPM_BUF_TPM2B;
++	buf->length = 2;
++	buf->data[0] = 0;
++	buf->data[1] = 0;
++}
++EXPORT_SYMBOL_GPL(tpm_buf_reset_sized);
++
+ void tpm_buf_destroy(struct tpm_buf *buf)
+ {
+ 	free_page((unsigned long)buf->data);
+@@ -73,8 +103,6 @@ EXPORT_SYMBOL_GPL(tpm_buf_length);
+  */
+ void tpm_buf_append(struct tpm_buf *buf, const u8 *new_data, u16 new_length)
+ {
+-	struct tpm_header *head = (struct tpm_header *)buf->data;
+-
+ 	/* Return silently if overflow has already happened. */
+ 	if (buf->flags & TPM_BUF_OVERFLOW)
+ 		return;
+@@ -87,7 +115,11 @@ void tpm_buf_append(struct tpm_buf *buf, const u8 *new_data, u16 new_length)
+ 
+ 	memcpy(&buf->data[buf->length], new_data, new_length);
+ 	buf->length += new_length;
+-	head->length = cpu_to_be32(buf->length);
++
++	if (buf->flags & TPM_BUF_TPM2B)
++		((__be16 *)buf->data)[0] = cpu_to_be16(buf->length - 2);
++	else
++		((struct tpm_header *)buf->data)->length = cpu_to_be32(buf->length);
+ }
+ EXPORT_SYMBOL_GPL(tpm_buf_append);
+ 
+diff --git a/include/linux/tpm.h b/include/linux/tpm.h
+index f3f7a038e1bb..00d8e52e4eb0 100644
+--- a/include/linux/tpm.h
++++ b/include/linux/tpm.h
+@@ -304,6 +304,8 @@ struct tpm_header {
+ 
+ enum tpm_buf_flags {
+ 	TPM_BUF_OVERFLOW	= BIT(0),
++	/* TPM2B format: */
++	TPM_BUF_TPM2B		= BIT(1),
+ };
+ 
+ struct tpm_buf {
+@@ -329,6 +331,8 @@ struct tpm2_hash {
+ 
+ int tpm_buf_init(struct tpm_buf *buf, u16 tag, u32 ordinal);
+ void tpm_buf_reset(struct tpm_buf *buf, u16 tag, u32 ordinal);
++int tpm_buf_init_sized(struct tpm_buf *buf);
++void tpm_buf_reset_sized(struct tpm_buf *buf);
+ void tpm_buf_destroy(struct tpm_buf *buf);
+ u32 tpm_buf_length(struct tpm_buf *buf);
+ void tpm_buf_append(struct tpm_buf *buf, const u8 *new_data, u16 new_length);
+-- 
+2.25.1
+

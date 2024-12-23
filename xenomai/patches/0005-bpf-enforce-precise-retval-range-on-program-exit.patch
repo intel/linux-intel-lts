@@ -1,4 +1,4 @@
-From 3890d40af7b9a00dbb49e7477d514b114924ebce Mon Sep 17 00:00:00 2001
+From 39026db627dab1ccaea8cf04776bfc4a53b9153b Mon Sep 17 00:00:00 2001
 From: Andrii Nakryiko <andrii@kernel.org>
 Date: Sat, 2 Dec 2023 09:57:00 -0800
 Subject: [PATCH 5/8] bpf: enforce precise retval range on program exit
@@ -25,7 +25,7 @@ Signed-off-by: Alexei Starovoitov <ast@kernel.org>
  7 files changed, 38 insertions(+), 36 deletions(-)
 
 diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
-index 04c6602cbdfe..c4d4a462ff75 100644
+index af5a8fb19255..05abc351a1c9 100644
 --- a/kernel/bpf/verifier.c
 +++ b/kernel/bpf/verifier.c
 @@ -409,20 +409,23 @@ __printf(3, 4) static void verbose_linfo(struct bpf_verifier_env *env,
@@ -62,7 +62,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  }
  
  static bool type_is_pkt_pointer(enum bpf_reg_type type)
-@@ -9667,10 +9670,8 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
+@@ -9651,10 +9654,8 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
  
  		/* enforce R0 return value range */
  		if (!retval_range_within(callee->callback_ret_range, r0)) {
@@ -75,7 +75,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  			return -EINVAL;
  		}
  		if (!calls_callback(env, callee->callsite)) {
-@@ -14947,7 +14948,8 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -14942,7 +14943,8 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  	struct tnum enforce_attach_type_range = tnum_unknown;
  	const struct bpf_prog *prog = env->prog;
  	struct bpf_reg_state *reg;
@@ -85,7 +85,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  	enum bpf_prog_type prog_type = resolve_prog_type(env->prog);
  	int err;
  	struct bpf_func_state *frame = env->cur_state->frame[0];
-@@ -14995,8 +14997,8 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -14990,8 +14992,8 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  			return -EINVAL;
  		}
  
@@ -96,7 +96,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  			return -EINVAL;
  		}
  		return 0;
-@@ -15019,14 +15021,14 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -15014,14 +15016,14 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  		    env->prog->expected_attach_type == BPF_CGROUP_INET6_GETPEERNAME ||
  		    env->prog->expected_attach_type == BPF_CGROUP_INET4_GETSOCKNAME ||
  		    env->prog->expected_attach_type == BPF_CGROUP_INET6_GETSOCKNAME)
@@ -114,7 +114,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  			enforce_attach_type_range = tnum_range(2, 3);
  		}
  		break;
-@@ -15039,13 +15041,13 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -15034,13 +15036,13 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  	case BPF_PROG_TYPE_RAW_TRACEPOINT:
  		if (!env->prog->aux->attach_btf_id)
  			return 0;
@@ -130,7 +130,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  			break;
  		case BPF_TRACE_RAW_TP:
  		case BPF_MODIFY_RETURN:
-@@ -15057,7 +15059,7 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -15052,7 +15054,7 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  		}
  		break;
  	case BPF_PROG_TYPE_SK_LOOKUP:
@@ -139,7 +139,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  		break;
  
  	case BPF_PROG_TYPE_LSM:
-@@ -15071,12 +15073,12 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -15066,12 +15068,12 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  			/* Make sure programs that attach to void
  			 * hooks don't try to modify return value.
  			 */
@@ -154,7 +154,7 @@ index 04c6602cbdfe..c4d4a462ff75 100644
  		break;
  	case BPF_PROG_TYPE_EXT:
  		/* freplace program can return anything as its return value
-@@ -15092,8 +15094,8 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -15087,8 +15089,8 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  		return -EINVAL;
  	}
  

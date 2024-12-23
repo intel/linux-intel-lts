@@ -1,4 +1,4 @@
-From 9e3659d8a6cce2f32bc6cb27cb80ffaa7076589f Mon Sep 17 00:00:00 2001
+From 2d3f016b51ced08f9a915928d3c51fb2358d97ee Mon Sep 17 00:00:00 2001
 From: Andrii Nakryiko <andrii@kernel.org>
 Date: Sat, 2 Dec 2023 09:56:56 -0800
 Subject: [PATCH 2/8] bpf: provide correct register name for exception callback
@@ -16,10 +16,10 @@ Signed-off-by: Alexei Starovoitov <ast@kernel.org>
  1 file changed, 6 insertions(+), 4 deletions(-)
 
 diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
-index 171045b6956d..8699f26918df 100644
+index 3032a464d31b..380a8d971736 100644
 --- a/kernel/bpf/verifier.c
 +++ b/kernel/bpf/verifier.c
-@@ -11726,6 +11726,8 @@ static int fetch_kfunc_meta(struct bpf_verifier_env *env,
+@@ -11710,6 +11710,8 @@ static int fetch_kfunc_meta(struct bpf_verifier_env *env,
  	return 0;
  }
  
@@ -28,7 +28,7 @@ index 171045b6956d..8699f26918df 100644
  static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
  			    int *insn_idx_p)
  {
-@@ -14929,7 +14931,7 @@ static int check_ld_abs(struct bpf_verifier_env *env, struct bpf_insn *insn)
+@@ -14924,7 +14926,7 @@ static int check_ld_abs(struct bpf_verifier_env *env, struct bpf_insn *insn)
  	return 0;
  }
  
@@ -37,7 +37,7 @@ index 171045b6956d..8699f26918df 100644
  {
  	struct tnum enforce_attach_type_range = tnum_unknown;
  	const struct bpf_prog *prog = env->prog;
-@@ -14983,7 +14985,7 @@ static int check_return_code(struct bpf_verifier_env *env)
+@@ -14978,7 +14980,7 @@ static int check_return_code(struct bpf_verifier_env *env)
  		}
  
  		if (!tnum_in(const_0, reg->var_off)) {
@@ -46,7 +46,7 @@ index 171045b6956d..8699f26918df 100644
  			return -EINVAL;
  		}
  		return 0;
-@@ -15080,7 +15082,7 @@ static int check_return_code(struct bpf_verifier_env *env)
+@@ -15075,7 +15077,7 @@ static int check_return_code(struct bpf_verifier_env *env)
  	}
  
  	if (!tnum_in(range, reg->var_off)) {
@@ -55,7 +55,7 @@ index 171045b6956d..8699f26918df 100644
  		if (prog->expected_attach_type == BPF_LSM_CGROUP &&
  		    prog_type == BPF_PROG_TYPE_LSM &&
  		    !prog->aux->attach_func_proto->type)
-@@ -17274,7 +17276,7 @@ static int do_check(struct bpf_verifier_env *env)
+@@ -17270,7 +17272,7 @@ static int do_check(struct bpf_verifier_env *env)
  					continue;
  				}
  

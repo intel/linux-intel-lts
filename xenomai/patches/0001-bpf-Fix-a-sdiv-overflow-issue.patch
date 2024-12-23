@@ -1,0 +1,200 @@
+From 2e478bb3bcae3d115611d9ba597e0342793caf06 Mon Sep 17 00:00:00 2001
+From: Yonghong Song <yonghong.song@linux.dev>
+Date: Fri, 13 Sep 2024 08:03:26 -0700
+Subject: [PATCH] bpf: Fix a sdiv overflow issue
+
+[ Upstream commit 7dd34d7b7dcf9309fc6224caf4dd5b35bedddcb7 ]
+
+Zac Ecob reported a problem where a bpf program may cause kernel crash due
+to the following error:
+  Oops: divide error: 0000 [#1] PREEMPT SMP KASAN PTI
+
+The failure is due to the below signed divide:
+  LLONG_MIN/-1 where LLONG_MIN equals to -9,223,372,036,854,775,808.
+LLONG_MIN/-1 is supposed to give a positive number 9,223,372,036,854,775,808,
+but it is impossible since for 64-bit system, the maximum positive
+number is 9,223,372,036,854,775,807. On x86_64, LLONG_MIN/-1 will
+cause a kernel exception. On arm64, the result for LLONG_MIN/-1 is
+LLONG_MIN.
+
+Further investigation found all the following sdiv/smod cases may trigger
+an exception when bpf program is running on x86_64 platform:
+  - LLONG_MIN/-1 for 64bit operation
+  - INT_MIN/-1 for 32bit operation
+  - LLONG_MIN%-1 for 64bit operation
+  - INT_MIN%-1 for 32bit operation
+where -1 can be an immediate or in a register.
+
+On arm64, there are no exceptions:
+  - LLONG_MIN/-1 = LLONG_MIN
+  - INT_MIN/-1 = INT_MIN
+  - LLONG_MIN%-1 = 0
+  - INT_MIN%-1 = 0
+where -1 can be an immediate or in a register.
+
+Insn patching is needed to handle the above cases and the patched codes
+produced results aligned with above arm64 result. The below are pseudo
+codes to handle sdiv/smod exceptions including both divisor -1 and divisor 0
+and the divisor is stored in a register.
+
+sdiv:
+      tmp = rX
+      tmp += 1 /* [-1, 0] -> [0, 1]
+      if tmp >(unsigned) 1 goto L2
+      if tmp == 0 goto L1
+      rY = 0
+  L1:
+      rY = -rY;
+      goto L3
+  L2:
+      rY /= rX
+  L3:
+
+smod:
+      tmp = rX
+      tmp += 1 /* [-1, 0] -> [0, 1]
+      if tmp >(unsigned) 1 goto L1
+      if tmp == 1 (is64 ? goto L2 : goto L3)
+      rY = 0;
+      goto L2
+  L1:
+      rY %= rX
+  L2:
+      goto L4  // only when !is64
+  L3:
+      wY = wY  // only when !is64
+  L4:
+
+  [1] https://lore.kernel.org/bpf/tPJLTEh7S_DxFEqAI2Ji5MBSoZVg7_G-Py2iaZpAaWtM961fFTWtsnlzwvTbzBzaUzwQAoNATXKUlt0LZOFgnDcIyKCswAnAGdUF3LBrhGQ=@protonmail.com/
+
+Reported-by: Zac Ecob <zacecob@protonmail.com>
+Signed-off-by: Yonghong Song <yonghong.song@linux.dev>
+Acked-by: Andrii Nakryiko <andrii@kernel.org>
+Link: https://lore.kernel.org/r/20240913150326.1187788-1-yonghong.song@linux.dev
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+---
+ kernel/bpf/verifier.c | 91 +++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 88 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 4f19a091571b..49ece7f2db07 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -18894,6 +18894,37 @@ static int do_misc_fixups(struct bpf_verifier_env *env)
+ 	int i, ret, cnt, delta = 0;
+ 
+ 	for (i = 0; i < insn_cnt; i++, insn++) {
++		/* Make sdiv/smod divide-by-minus-one exceptions impossible. */
++		if ((insn->code == (BPF_ALU64 | BPF_MOD | BPF_K) ||
++		     insn->code == (BPF_ALU64 | BPF_DIV | BPF_K) ||
++		     insn->code == (BPF_ALU | BPF_MOD | BPF_K) ||
++		     insn->code == (BPF_ALU | BPF_DIV | BPF_K)) &&
++		    insn->off == 1 && insn->imm == -1) {
++			bool is64 = BPF_CLASS(insn->code) == BPF_ALU64;
++			bool isdiv = BPF_OP(insn->code) == BPF_DIV;
++			struct bpf_insn *patchlet;
++			struct bpf_insn chk_and_sdiv[] = {
++				BPF_RAW_INSN((is64 ? BPF_ALU64 : BPF_ALU) |
++					     BPF_NEG | BPF_K, insn->dst_reg,
++					     0, 0, 0),
++			};
++			struct bpf_insn chk_and_smod[] = {
++				BPF_MOV32_IMM(insn->dst_reg, 0),
++			};
++
++			patchlet = isdiv ? chk_and_sdiv : chk_and_smod;
++			cnt = isdiv ? ARRAY_SIZE(chk_and_sdiv) : ARRAY_SIZE(chk_and_smod);
++
++			new_prog = bpf_patch_insn_data(env, i + delta, patchlet, cnt);
++			if (!new_prog)
++				return -ENOMEM;
++
++			delta    += cnt - 1;
++			env->prog = prog = new_prog;
++			insn      = new_prog->insnsi + i + delta;
++			continue;
++		}
++
+ 		/* Make divide-by-zero exceptions impossible. */
+ 		if (insn->code == (BPF_ALU64 | BPF_MOD | BPF_X) ||
+ 		    insn->code == (BPF_ALU64 | BPF_DIV | BPF_X) ||
+@@ -18901,6 +18932,8 @@ static int do_misc_fixups(struct bpf_verifier_env *env)
+ 		    insn->code == (BPF_ALU | BPF_DIV | BPF_X)) {
+ 			bool is64 = BPF_CLASS(insn->code) == BPF_ALU64;
+ 			bool isdiv = BPF_OP(insn->code) == BPF_DIV;
++			bool is_sdiv = isdiv && insn->off == 1;
++			bool is_smod = !isdiv && insn->off == 1;
+ 			struct bpf_insn *patchlet;
+ 			struct bpf_insn chk_and_div[] = {
+ 				/* [R,W]x div 0 -> 0 */
+@@ -18920,10 +18953,62 @@ static int do_misc_fixups(struct bpf_verifier_env *env)
+ 				BPF_JMP_IMM(BPF_JA, 0, 0, 1),
+ 				BPF_MOV32_REG(insn->dst_reg, insn->dst_reg),
+ 			};
++			struct bpf_insn chk_and_sdiv[] = {
++				/* [R,W]x sdiv 0 -> 0
++				 * LLONG_MIN sdiv -1 -> LLONG_MIN
++				 * INT_MIN sdiv -1 -> INT_MIN
++				 */
++				BPF_MOV64_REG(BPF_REG_AX, insn->src_reg),
++				BPF_RAW_INSN((is64 ? BPF_ALU64 : BPF_ALU) |
++					     BPF_ADD | BPF_K, BPF_REG_AX,
++					     0, 0, 1),
++				BPF_RAW_INSN((is64 ? BPF_JMP : BPF_JMP32) |
++					     BPF_JGT | BPF_K, BPF_REG_AX,
++					     0, 4, 1),
++				BPF_RAW_INSN((is64 ? BPF_JMP : BPF_JMP32) |
++					     BPF_JEQ | BPF_K, BPF_REG_AX,
++					     0, 1, 0),
++				BPF_RAW_INSN((is64 ? BPF_ALU64 : BPF_ALU) |
++					     BPF_MOV | BPF_K, insn->dst_reg,
++					     0, 0, 0),
++				/* BPF_NEG(LLONG_MIN) == -LLONG_MIN == LLONG_MIN */
++				BPF_RAW_INSN((is64 ? BPF_ALU64 : BPF_ALU) |
++					     BPF_NEG | BPF_K, insn->dst_reg,
++					     0, 0, 0),
++				BPF_JMP_IMM(BPF_JA, 0, 0, 1),
++				*insn,
++			};
++			struct bpf_insn chk_and_smod[] = {
++				/* [R,W]x mod 0 -> [R,W]x */
++				/* [R,W]x mod -1 -> 0 */
++				BPF_MOV64_REG(BPF_REG_AX, insn->src_reg),
++				BPF_RAW_INSN((is64 ? BPF_ALU64 : BPF_ALU) |
++					     BPF_ADD | BPF_K, BPF_REG_AX,
++					     0, 0, 1),
++				BPF_RAW_INSN((is64 ? BPF_JMP : BPF_JMP32) |
++					     BPF_JGT | BPF_K, BPF_REG_AX,
++					     0, 3, 1),
++				BPF_RAW_INSN((is64 ? BPF_JMP : BPF_JMP32) |
++					     BPF_JEQ | BPF_K, BPF_REG_AX,
++					     0, 3 + (is64 ? 0 : 1), 1),
++				BPF_MOV32_IMM(insn->dst_reg, 0),
++				BPF_JMP_IMM(BPF_JA, 0, 0, 1),
++				*insn,
++				BPF_JMP_IMM(BPF_JA, 0, 0, 1),
++				BPF_MOV32_REG(insn->dst_reg, insn->dst_reg),
++			};
+ 
+-			patchlet = isdiv ? chk_and_div : chk_and_mod;
+-			cnt = isdiv ? ARRAY_SIZE(chk_and_div) :
+-				      ARRAY_SIZE(chk_and_mod) - (is64 ? 2 : 0);
++			if (is_sdiv) {
++				patchlet = chk_and_sdiv;
++				cnt = ARRAY_SIZE(chk_and_sdiv);
++			} else if (is_smod) {
++				patchlet = chk_and_smod;
++				cnt = ARRAY_SIZE(chk_and_smod) - (is64 ? 2 : 0);
++			} else {
++				patchlet = isdiv ? chk_and_div : chk_and_mod;
++				cnt = isdiv ? ARRAY_SIZE(chk_and_div) :
++					      ARRAY_SIZE(chk_and_mod) - (is64 ? 2 : 0);
++			}
+ 
+ 			new_prog = bpf_patch_insn_data(env, i + delta, patchlet, cnt);
+ 			if (!new_prog)
+-- 
+2.25.1
+

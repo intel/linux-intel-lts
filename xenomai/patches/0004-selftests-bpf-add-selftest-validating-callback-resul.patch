@@ -1,4 +1,4 @@
-From 58006a4e0453d7ea3e18ace73facd5c827c35227 Mon Sep 17 00:00:00 2001
+From b4c6386f65e8c7d03246d781720e3a84772272c6 Mon Sep 17 00:00:00 2001
 From: Andrii Nakryiko <andrii@kernel.org>
 Date: Sat, 2 Dec 2023 09:56:59 -0800
 Subject: [PATCH 4/8] selftests/bpf: add selftest validating callback result is

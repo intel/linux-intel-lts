@@ -1,0 +1,174 @@
+From a2f66968ea286e2b81105e5984891e19a5801e0d Mon Sep 17 00:00:00 2001
+From: Kees Cook <keescook@chromium.org>
+Date: Wed, 20 Sep 2023 12:38:14 -0700
+Subject: [PATCH 2/2] string: Allow 2-argument strscpy()
+
+Using sizeof(dst) for the "size" argument in strscpy() is the
+overwhelmingly common case. Instead of requiring this everywhere, allow a
+2-argument version to be used that will use the sizeof() internally. There
+are other functions in the kernel with optional arguments[1], so this
+isn't unprecedented, and improves readability. Update and relocate the
+kern-doc for strscpy() too, and drop __HAVE_ARCH_STRSCPY as it is unused.
+
+Adjust ARCH=um build to notice the changed export name, as it doesn't
+do full header includes for the string helpers.
+
+This could additionally let us save a few hundred lines of code:
+ 1177 files changed, 2455 insertions(+), 3026 deletions(-)
+with a treewide cleanup using Coccinelle:
+
+@needless_arg@
+expression DST, SRC;
+@@
+
+        strscpy(DST, SRC
+-, sizeof(DST)
+        )
+
+Link: https://elixir.bootlin.com/linux/v6.7/source/include/linux/pci.h#L1517 [1]
+Reviewed-by: Justin Stitt <justinstitt@google.com>
+Cc: Andy Shevchenko <andy@kernel.org>
+Cc: linux-hardening@vger.kernel.org
+Signed-off-by: Kees Cook <keescook@chromium.org>
+(cherry picked from commit e6584c3964f2ff76a9fb5a701e4a59997b35e547)
+---
+ arch/um/include/shared/user.h  |  3 ++-
+ include/linux/fortify-string.h | 28 ++-----------------------
+ include/linux/string.h         | 38 +++++++++++++++++++++++++++++++---
+ lib/string.c                   |  4 +---
+ 4 files changed, 40 insertions(+), 33 deletions(-)
+
+diff --git a/arch/um/include/shared/user.h b/arch/um/include/shared/user.h
+index 981e11d8e025..9568cc04cbb7 100644
+--- a/arch/um/include/shared/user.h
++++ b/arch/um/include/shared/user.h
+@@ -51,7 +51,8 @@ static inline int printk(const char *fmt, ...)
+ 
+ extern int in_aton(char *str);
+ extern size_t strlcat(char *, const char *, size_t);
+-extern size_t strscpy(char *, const char *, size_t);
++extern size_t sized_strscpy(char *, const char *, size_t);
++#define strscpy(dst, src, size)	sized_strscpy(dst, src, size)
+ 
+ /* Copied from linux/compiler-gcc.h since we can't include it directly */
+ #define barrier() __asm__ __volatile__("": : :"memory")
+diff --git a/include/linux/fortify-string.h b/include/linux/fortify-string.h
+index f7e1895367fa..dd16cf17263e 100644
+--- a/include/linux/fortify-string.h
++++ b/include/linux/fortify-string.h
+@@ -278,32 +278,8 @@ __FORTIFY_INLINE size_t strlcpy(char * const POS p, const char * const POS q, si
+ }
+ 
+ /* Defined after fortified strnlen() to reuse it. */
+-extern ssize_t __real_strscpy(char *, const char *, size_t) __RENAME(strscpy);
+-/**
+- * strscpy - Copy a C-string into a sized buffer
+- *
+- * @p: Where to copy the string to
+- * @q: Where to copy the string from
+- * @size: Size of destination buffer
+- *
+- * Copy the source string @q, or as much of it as fits, into the destination
+- * @p buffer. The behavior is undefined if the string buffers overlap. The
+- * destination @p buffer is always NUL terminated, unless it's zero-sized.
+- *
+- * Preferred to strlcpy() since the API doesn't require reading memory
+- * from the source @q string beyond the specified @size bytes, and since
+- * the return value is easier to error-check than strlcpy()'s.
+- * In addition, the implementation is robust to the string changing out
+- * from underneath it, unlike the current strlcpy() implementation.
+- *
+- * Preferred to strncpy() since it always returns a valid string, and
+- * doesn't unnecessarily force the tail of the destination buffer to be
+- * zero padded. If padding is desired please use strscpy_pad().
+- *
+- * Returns the number of characters copied in @p (not including the
+- * trailing %NUL) or -E2BIG if @size is 0 or the copy of @q was truncated.
+- */
+-__FORTIFY_INLINE ssize_t strscpy(char * const POS p, const char * const POS q, size_t size)
++extern ssize_t __real_strscpy(char *, const char *, size_t) __RENAME(sized_strscpy);
++__FORTIFY_INLINE ssize_t sized_strscpy(char * const POS p, const char * const POS q, size_t size)
+ {
+ 	/* Use string size rather than possible enclosing struct size. */
+ 	const size_t p_size = __member_size(p);
+diff --git a/include/linux/string.h b/include/linux/string.h
+index 5077776e995e..5a243ba580e2 100644
+--- a/include/linux/string.h
++++ b/include/linux/string.h
+@@ -2,6 +2,7 @@
+ #ifndef _LINUX_STRING_H_
+ #define _LINUX_STRING_H_
+ 
++#include <linux/args.h>
+ #include <linux/compiler.h>	/* for inline */
+ #include <linux/types.h>	/* for size_t */
+ #include <linux/stddef.h>	/* for NULL */
+@@ -68,9 +69,40 @@ extern char * strncpy(char *,const char *, __kernel_size_t);
+ #ifndef __HAVE_ARCH_STRLCPY
+ size_t strlcpy(char *, const char *, size_t);
+ #endif
+-#ifndef __HAVE_ARCH_STRSCPY
+-ssize_t strscpy(char *, const char *, size_t);
+-#endif
++ssize_t sized_strscpy(char *, const char *, size_t);
++
++/*
++ * The 2 argument style can only be used when dst is an array with a
++ * known size.
++ */
++#define __strscpy0(dst, src, ...)	\
++	sized_strscpy(dst, src, sizeof(dst) + __must_be_array(dst))
++#define __strscpy1(dst, src, size)	sized_strscpy(dst, src, size)
++
++/**
++ * strscpy - Copy a C-string into a sized buffer
++ * @dst: Where to copy the string to
++ * @src: Where to copy the string from
++ * @...: Size of destination buffer (optional)
++ *
++ * Copy the source string @src, or as much of it as fits, into the
++ * destination @dst buffer. The behavior is undefined if the string
++ * buffers overlap. The destination @dst buffer is always NUL terminated,
++ * unless it's zero-sized.
++ *
++ * The size argument @... is only required when @dst is not an array, or
++ * when the copy needs to be smaller than sizeof(@dst).
++ *
++ * Preferred to strncpy() since it always returns a valid string, and
++ * doesn't unnecessarily force the tail of the destination buffer to be
++ * zero padded. If padding is desired please use strscpy_pad().
++ *
++ * Returns the number of characters copied in @dst (not including the
++ * trailing %NUL) or -E2BIG if @size is 0 or the copy from @src was
++ * truncated.
++ */
++#define strscpy(dst, src, ...)	\
++	CONCATENATE(__strscpy, COUNT_ARGS(__VA_ARGS__))(dst, src, __VA_ARGS__)
+ 
+ /* Wraps calls to strscpy()/memset(), no arch specific code required */
+ ssize_t strscpy_pad(char *dest, const char *src, size_t count);
+diff --git a/lib/string.c b/lib/string.c
+index be26623953d2..08dc56fb74d4 100644
+--- a/lib/string.c
++++ b/lib/string.c
+@@ -118,7 +118,6 @@ size_t strlcpy(char *dest, const char *src, size_t size)
+ EXPORT_SYMBOL(strlcpy);
+ #endif
+ 
+-#ifndef __HAVE_ARCH_STRSCPY
+ ssize_t strscpy(char *dest, const char *src, size_t count)
+ {
+ 	const struct word_at_a_time constants = WORD_AT_A_TIME_CONSTANTS;
+@@ -185,8 +184,7 @@ ssize_t strscpy(char *dest, const char *src, size_t count)
+ 
+ 	return -E2BIG;
+ }
+-EXPORT_SYMBOL(strscpy);
+-#endif
++EXPORT_SYMBOL(sized_strscpy);
+ 
+ /**
+  * stpcpy - copy a string from src to dest returning a pointer to the new end
+-- 
+2.25.1
+

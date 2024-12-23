@@ -1,0 +1,364 @@
+From d8ab02d50c1e7309919fdf6cac70b6171a6dc87c Mon Sep 17 00:00:00 2001
+From: Xu Kuohai <xukuohai@huawei.com>
+Date: Fri, 19 Jul 2024 19:00:52 +0800
+Subject: [PATCH 8/8] bpf, lsm: Add check for BPF LSM return value
+
+A bpf prog returning a positive number attached to file_alloc_security
+hook makes kernel panic.
+
+This happens because file system can not filter out the positive number
+returned by the LSM prog using IS_ERR, and misinterprets this positive
+number as a file pointer.
+
+Given that hook file_alloc_security never returned positive number
+before the introduction of BPF LSM, and other BPF LSM hooks may
+encounter similar issues, this patch adds LSM return value check
+in verifier, to ensure no unexpected value is returned.
+
+Fixes: 520b7aa00d8c ("bpf: lsm: Initialize the BPF LSM hooks")
+Reported-by: Xin Liu <liuxin350@huawei.com>
+Signed-off-by: Xu Kuohai <xukuohai@huawei.com>
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20240719110059.797546-3-xukuohai@huaweicloud.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+---
+ include/linux/bpf.h          |   1 +
+ include/linux/bpf_lsm.h      |   8 +++
+ include/linux/bpf_verifier.h |   1 +
+ include/uapi/linux/bpf.h     |   3 +
+ kernel/bpf/bpf_lsm.c         |  34 ++++++++++-
+ kernel/bpf/btf.c             |   5 +-
+ kernel/bpf/verifier.c        | 111 ++++++++++++++++++++++++++++++++---
+ 7 files changed, 152 insertions(+), 11 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 1e05cc80e048..7835dda66d70 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -910,6 +910,7 @@ struct bpf_insn_access_aux {
+ 		};
+ 	};
+ 	struct bpf_verifier_log *log; /* for verbose logs */
++	bool is_retval; /* is accessing function return value ? */
+ };
+ 
+ static inline void
+diff --git a/include/linux/bpf_lsm.h b/include/linux/bpf_lsm.h
+index 1de7ece5d36d..aefcd6564251 100644
+--- a/include/linux/bpf_lsm.h
++++ b/include/linux/bpf_lsm.h
+@@ -9,6 +9,7 @@
+ 
+ #include <linux/sched.h>
+ #include <linux/bpf.h>
++#include <linux/bpf_verifier.h>
+ #include <linux/lsm_hooks.h>
+ 
+ #ifdef CONFIG_BPF_LSM
+@@ -45,6 +46,8 @@ void bpf_inode_storage_free(struct inode *inode);
+ 
+ void bpf_lsm_find_cgroup_shim(const struct bpf_prog *prog, bpf_func_t *bpf_func);
+ 
++int bpf_lsm_get_retval_range(const struct bpf_prog *prog,
++			     struct bpf_retval_range *range);
+ #else /* !CONFIG_BPF_LSM */
+ 
+ static inline bool bpf_lsm_is_sleepable_hook(u32 btf_id)
+@@ -78,6 +81,11 @@ static inline void bpf_lsm_find_cgroup_shim(const struct bpf_prog *prog,
+ {
+ }
+ 
++static inline int bpf_lsm_get_retval_range(const struct bpf_prog *prog,
++					   struct bpf_retval_range *range)
++{
++	return -EOPNOTSUPP;
++}
+ #endif /* CONFIG_BPF_LSM */
+ 
+ #endif /* _LINUX_BPF_LSM_H */
+diff --git a/include/linux/bpf_verifier.h b/include/linux/bpf_verifier.h
+index 22401143fd04..bc113f9157cc 100644
+--- a/include/linux/bpf_verifier.h
++++ b/include/linux/bpf_verifier.h
+@@ -616,6 +616,7 @@ struct bpf_verifier_env {
+ 	int stack_size;			/* number of states to be processed */
+ 	bool strict_alignment;		/* perform strict pointer alignment checks */
+ 	bool test_state_freq;		/* test verifier with different pruning frequency */
++	bool test_sanity_strict;        /* fail verification on sanity violations */
+ 	struct bpf_verifier_state *cur_state; /* current verifier state */
+ 	struct bpf_verifier_state_list **explored_states; /* search pruning optimization */
+ 	struct bpf_verifier_state_list *free_list;
+diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
+index ba6e346c8d66..5810a694fcbf 100644
+--- a/include/uapi/linux/bpf.h
++++ b/include/uapi/linux/bpf.h
+@@ -1202,6 +1202,9 @@ enum bpf_perf_event_type {
+  */
+ #define BPF_F_XDP_DEV_BOUND_ONLY	(1U << 6)
+ 
++/* The verifier internal test flag. Behavior is undefined */
++#define BPF_F_TEST_SANITY_STRICT       (1U << 7)
++
+ /* link_create.kprobe_multi.flags used in LINK_CREATE command for
+  * BPF_TRACE_KPROBE_MULTI attach type to create return probe.
+  */
+diff --git a/kernel/bpf/bpf_lsm.c b/kernel/bpf/bpf_lsm.c
+index e14c822f8911..00d7b8c03937 100644
+--- a/kernel/bpf/bpf_lsm.c
++++ b/kernel/bpf/bpf_lsm.c
+@@ -11,7 +11,6 @@
+ #include <linux/lsm_hooks.h>
+ #include <linux/bpf_lsm.h>
+ #include <linux/kallsyms.h>
+-#include <linux/bpf_verifier.h>
+ #include <net/bpf_sk_storage.h>
+ #include <linux/bpf_local_storage.h>
+ #include <linux/btf_ids.h>
+@@ -374,3 +373,36 @@ const struct bpf_verifier_ops lsm_verifier_ops = {
+ 	.get_func_proto = bpf_lsm_func_proto,
+ 	.is_valid_access = btf_ctx_access,
+ };
++
++/* hooks return 0 or 1 */
++BTF_SET_START(bool_lsm_hooks)
++#ifdef CONFIG_SECURITY_NETWORK_XFRM
++BTF_ID(func, bpf_lsm_xfrm_state_pol_flow_match)
++#endif
++#ifdef CONFIG_AUDIT
++BTF_ID(func, bpf_lsm_audit_rule_known)
++#endif
++BTF_ID(func, bpf_lsm_inode_xattr_skipcap)
++BTF_SET_END(bool_lsm_hooks)
++
++int bpf_lsm_get_retval_range(const struct bpf_prog *prog,
++			     struct bpf_retval_range *retval_range)
++{
++	/* no return value range for void hooks */
++	if (!prog->aux->attach_func_proto->type)
++		return -EINVAL;
++
++	if (btf_id_set_contains(&bool_lsm_hooks, prog->aux->attach_btf_id)) {
++		retval_range->minval = 0;
++		retval_range->maxval = 1;
++	} else {
++		/* All other available LSM hooks, except task_prctl, return 0
++		 * on success and negative error code on failure.
++		 * To keep things simple, we only allow bpf progs to return 0
++		 * or negative errno for task_prctl too.
++		 */
++		retval_range->minval = -MAX_ERRNO;
++		retval_range->maxval = 0;
++	}
++	return 0;
++}
+diff --git a/kernel/bpf/btf.c b/kernel/bpf/btf.c
+index e2309065f8aa..2db114252d83 100644
+--- a/kernel/bpf/btf.c
++++ b/kernel/bpf/btf.c
+@@ -6051,8 +6051,11 @@ bool btf_ctx_access(int off, int size, enum bpf_access_type type,
+ 
+ 	if (arg == nr_args) {
+ 		switch (prog->expected_attach_type) {
+-		case BPF_LSM_CGROUP:
+ 		case BPF_LSM_MAC:
++			/* mark we are accessing the return value */
++			info->is_retval = true;
++			fallthrough;
++		case BPF_LSM_CGROUP:
+ 		case BPF_TRACE_FEXIT:
+ 			/* When LSM programs are attached to void LSM hooks
+ 			 * they use FEXIT trampolines and when attached to
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 5014e7415bce..420de3e7725e 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -2408,6 +2408,56 @@ static void reg_bounds_sync(struct bpf_reg_state *reg)
+ 	__update_reg_bounds(reg);
+ }
+ 
++static int reg_bounds_sanity_check(struct bpf_verifier_env *env,
++                                   struct bpf_reg_state *reg, const char *ctx)
++{
++        const char *msg;
++
++        if (reg->umin_value > reg->umax_value ||
++            reg->smin_value > reg->smax_value ||
++            reg->u32_min_value > reg->u32_max_value ||
++            reg->s32_min_value > reg->s32_max_value) {
++                    msg = "range bounds violation";
++                    goto out;
++        }
++
++        if (tnum_is_const(reg->var_off)) {
++                u64 uval = reg->var_off.value;
++                s64 sval = (s64)uval;
++
++                if (reg->umin_value != uval || reg->umax_value != uval ||
++                    reg->smin_value != sval || reg->smax_value != sval) {
++                        msg = "const tnum out of sync with range bounds";
++                        goto out;
++                }
++        }
++
++        if (tnum_subreg_is_const(reg->var_off)) {
++                u32 uval32 = tnum_subreg(reg->var_off).value;
++                s32 sval32 = (s32)uval32;
++
++                if (reg->u32_min_value != uval32 || reg->u32_max_value != uval32 ||
++                    reg->s32_min_value != sval32 || reg->s32_max_value != sval32) {
++                        msg = "const subreg tnum out of sync with range bounds";
++                        goto out;
++                }
++        }
++
++        return 0;
++out:
++        verbose(env, "REG SANITY VIOLATION (%s): %s u64=[%#llx, %#llx] "
++                "s64=[%#llx, %#llx] u32=[%#x, %#x] s32=[%#x, %#x] var_off=(%#llx, %#llx)\n",
++                ctx, msg, reg->umin_value, reg->umax_value,
++                reg->smin_value, reg->smax_value,
++                reg->u32_min_value, reg->u32_max_value,
++                reg->s32_min_value, reg->s32_max_value,
++                reg->var_off.value, reg->var_off.mask);
++        if (env->test_sanity_strict)
++                return -EFAULT;
++        __mark_reg_unbounded(reg);
++        return 0;
++}
++
+ static bool __reg32_bound_s64(s32 a)
+ {
+ 	return a >= 0 && a <= S32_MAX;
+@@ -2508,6 +2558,25 @@ static void mark_reg_unknown(struct bpf_verifier_env *env,
+ 	__mark_reg_unknown(env, regs + regno);
+ }
+ 
++static int __mark_reg_s32_range(struct bpf_verifier_env *env,
++				struct bpf_reg_state *regs,
++				u32 regno,
++				s32 s32_min,
++				s32 s32_max)
++{
++	struct bpf_reg_state *reg = regs + regno;
++
++	reg->s32_min_value = max_t(s32, reg->s32_min_value, s32_min);
++	reg->s32_max_value = min_t(s32, reg->s32_max_value, s32_max);
++
++	reg->smin_value = max_t(s64, reg->smin_value, s32_min);
++	reg->smax_value = min_t(s64, reg->smax_value, s32_max);
++
++	reg_bounds_sync(reg);
++
++	return reg_bounds_sanity_check(env, reg, "s32_range");
++}
++
+ static void __mark_reg_not_init(const struct bpf_verifier_env *env,
+ 				struct bpf_reg_state *reg)
+ {
+@@ -5553,11 +5622,12 @@ static int check_packet_access(struct bpf_verifier_env *env, u32 regno, int off,
+ /* check access to 'struct bpf_context' fields.  Supports fixed offsets only */
+ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off, int size,
+ 			    enum bpf_access_type t, enum bpf_reg_type *reg_type,
+-			    struct btf **btf, u32 *btf_id)
++			    struct btf **btf, u32 *btf_id, bool *is_retval)
+ {
+ 	struct bpf_insn_access_aux info = {
+ 		.reg_type = *reg_type,
+ 		.log = &env->log,
++		.is_retval = false,
+ 	};
+ 
+ 	if (env->ops->is_valid_access &&
+@@ -5570,6 +5640,7 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
+ 		 * type of narrower access.
+ 		 */
+ 		*reg_type = info.reg_type;
++		*is_retval = info.is_retval;
+ 
+ 		if (base_type(*reg_type) == PTR_TO_BTF_ID) {
+ 			*btf = info.btf;
+@@ -6687,6 +6758,17 @@ static int check_stack_access_within_bounds(
+ 	return grow_stack_state(env, state, round_up(-min_off, BPF_REG_SIZE));
+ }
+ 
++static bool get_func_retval_range(struct bpf_prog *prog,
++				  struct bpf_retval_range *range)
++{
++	if (prog->type == BPF_PROG_TYPE_LSM &&
++		prog->expected_attach_type == BPF_LSM_MAC &&
++		!bpf_lsm_get_retval_range(prog, range)) {
++		return true;
++	}
++	return false;
++}
++
+ /* check whether memory at (regno + off) is accessible for t = (read | write)
+  * if t==write, value_regno is a register which value is stored into memory
+  * if t==read, value_regno is a register which will receive the value from memory
+@@ -6791,6 +6873,8 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+ 		if (!err && value_regno >= 0 && (t == BPF_READ || rdonly_mem))
+ 			mark_reg_unknown(env, regs, value_regno);
+ 	} else if (reg->type == PTR_TO_CTX) {
++		bool is_retval = false;
++		struct bpf_retval_range range;
+ 		enum bpf_reg_type reg_type = SCALAR_VALUE;
+ 		struct btf *btf = NULL;
+ 		u32 btf_id = 0;
+@@ -6806,7 +6890,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+ 			return err;
+ 
+ 		err = check_ctx_access(env, insn_idx, off, size, t, &reg_type, &btf,
+-				       &btf_id);
++				       &btf_id, &is_retval);
+ 		if (err)
+ 			verbose_linfo(env, insn_idx, "; ");
+ 		if (!err && t == BPF_READ && value_regno >= 0) {
+@@ -6815,7 +6899,14 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+ 			 * case, we know the offset is zero.
+ 			 */
+ 			if (reg_type == SCALAR_VALUE) {
+-				mark_reg_unknown(env, regs, value_regno);
++				if (is_retval && get_func_retval_range(env->prog, &range)) {
++					err = __mark_reg_s32_range(env, regs, value_regno,
++								   range.minval, range.maxval);
++					if (err)
++						return err;
++				} else {
++					mark_reg_unknown(env, regs, value_regno);
++				}
+ 			} else {
+ 				mark_reg_known_zero(env, regs,
+ 						    value_regno);
+@@ -15051,12 +15142,13 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+ 
+ 	case BPF_PROG_TYPE_LSM:
+ 		if (env->prog->expected_attach_type != BPF_LSM_CGROUP) {
+-			/* Regular BPF_PROG_TYPE_LSM programs can return
+-			 * any value.
+-			 */
+-			return 0;
+-		}
+-		if (!env->prog->aux->attach_func_proto->type) {
++			/* no range found, any return value is allowed */
++			if (!get_func_retval_range(env->prog, &range))
++				return 0;
++			/* no restricted range, any return value is allowed */
++			if (range.minval == S32_MIN && range.maxval == S32_MAX)
++				return 0;
++		} else if (!env->prog->aux->attach_func_proto->type) {
+ 			/* Make sure programs that attach to void
+ 			 * hooks don't try to modify return value.
+ 			 */
+@@ -20263,6 +20355,7 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr, bpfptr_t uattr, __u3
+ 	/* grab the mutex to protect few globals used by verifier */
+ 	if (!is_priv)
+ 		mutex_lock(&bpf_verifier_lock);
++	env->test_sanity_strict = attr->prog_flags & BPF_F_TEST_SANITY_STRICT;
+ 
+ 	/* user could have requested verbose verifier output
+ 	 * and supplied buffer to store the verification trace
+-- 
+2.34.1
+

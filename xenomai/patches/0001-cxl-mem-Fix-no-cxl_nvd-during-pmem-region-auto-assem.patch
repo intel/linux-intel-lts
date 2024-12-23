@@ -1,0 +1,175 @@
+From 8d0c92afde2c6a074a937374f5c111bcfc650b74 Mon Sep 17 00:00:00 2001
+From: Li Ming <ming4.li@intel.com>
+Date: Wed, 12 Jun 2024 14:44:23 +0800
+Subject: [PATCH] cxl/mem: Fix no cxl_nvd during pmem region auto-assembling
+
+When CXL subsystem is auto-assembling a pmem region during cxl
+endpoint port probing, always hit below calltrace.
+
+ BUG: kernel NULL pointer dereference, address: 0000000000000078
+ #PF: supervisor read access in kernel mode
+ #PF: error_code(0x0000) - not-present page
+ RIP: 0010:cxl_pmem_region_probe+0x22e/0x360 [cxl_pmem]
+ Call Trace:
+  <TASK>
+  ? __die+0x24/0x70
+  ? page_fault_oops+0x82/0x160
+  ? do_user_addr_fault+0x65/0x6b0
+  ? exc_page_fault+0x7d/0x170
+  ? asm_exc_page_fault+0x26/0x30
+  ? cxl_pmem_region_probe+0x22e/0x360 [cxl_pmem]
+  ? cxl_pmem_region_probe+0x1ac/0x360 [cxl_pmem]
+  cxl_bus_probe+0x1b/0x60 [cxl_core]
+  really_probe+0x173/0x410
+  ? __pfx___device_attach_driver+0x10/0x10
+  __driver_probe_device+0x80/0x170
+  driver_probe_device+0x1e/0x90
+  __device_attach_driver+0x90/0x120
+  bus_for_each_drv+0x84/0xe0
+  __device_attach+0xbc/0x1f0
+  bus_probe_device+0x90/0xa0
+  device_add+0x51c/0x710
+  devm_cxl_add_pmem_region+0x1b5/0x380 [cxl_core]
+  cxl_bus_probe+0x1b/0x60 [cxl_core]
+
+The cxl_nvd of the memdev needs to be available during the pmem region
+probe. Currently the cxl_nvd is registered after the endpoint port probe.
+The endpoint probe, in the case of autoassembly of regions, can cause a
+pmem region probe requiring the not yet available cxl_nvd. Adjust the
+sequence so this dependency is met.
+
+This requires adding a port parameter to cxl_find_nvdimm_bridge() that
+can be used to query the ancestor root port. The endpoint port is not
+yet available, but will share a common ancestor with its parent, so
+start the query from there instead.
+
+Fixes: f17b558d6663 ("cxl/pmem: Refactor nvdimm device registration, delete the workqueue")
+Co-developed-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: Li Ming <ming4.li@intel.com>
+Tested-by: Alison Schofield <alison.schofield@intel.com>
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Reviewed-by: Alison Schofield <alison.schofield@intel.com>
+Link: https://patch.msgid.link/20240612064423.2567625-1-ming4.li@intel.com
+Signed-off-by: Dave Jiang <dave.jiang@intel.com>
+---
+ drivers/cxl/core/pmem.c   | 17 ++++++++++++-----
+ drivers/cxl/core/region.c |  2 +-
+ drivers/cxl/cxl.h         |  4 ++--
+ drivers/cxl/mem.c         | 17 +++++++++--------
+ 4 files changed, 24 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/cxl/core/pmem.c b/drivers/cxl/core/pmem.c
+index fc94f5240327..ea306648fb28 100644
+--- a/drivers/cxl/core/pmem.c
++++ b/drivers/cxl/core/pmem.c
+@@ -62,12 +62,17 @@ static int match_nvdimm_bridge(struct device *dev, void *data)
+ 	return is_cxl_nvdimm_bridge(dev);
+ }
+ 
+-struct cxl_nvdimm_bridge *cxl_find_nvdimm_bridge(struct cxl_memdev *cxlmd)
++/**
++ * cxl_find_nvdimm_bridge() - find a bridge device relative to a port
++ * @port: any descendant port of an nvdimm-bridge associated
++ *        root-cxl-port
++ */
++struct cxl_nvdimm_bridge *cxl_find_nvdimm_bridge(struct cxl_port *port)
+ {
+-	struct cxl_port *port = find_cxl_root(cxlmd->endpoint);
++	struct cxl_port *cxl_port = find_cxl_root(port);
+ 	struct device *dev;
+ 
+-	if (!port)
++	if (!cxl_port)
+ 		return NULL;
+ 
+ 	dev = device_find_child(&port->dev, NULL, match_nvdimm_bridge);
+@@ -242,18 +247,20 @@ static void cxlmd_release_nvdimm(void *_cxlmd)
+ 
+ /**
+  * devm_cxl_add_nvdimm() - add a bridge between a cxl_memdev and an nvdimm
++ * @parent_port: parent port for the (to be added) @cxlmd endpoint port
+  * @cxlmd: cxl_memdev instance that will perform LIBNVDIMM operations
+  *
+  * Return: 0 on success negative error code on failure.
+  */
+-int devm_cxl_add_nvdimm(struct cxl_memdev *cxlmd)
++int devm_cxl_add_nvdimm(struct cxl_port *parent_port,
++			struct cxl_memdev *cxlmd)
+ {
+ 	struct cxl_nvdimm_bridge *cxl_nvb;
+ 	struct cxl_nvdimm *cxl_nvd;
+ 	struct device *dev;
+ 	int rc;
+ 
+-	cxl_nvb = cxl_find_nvdimm_bridge(cxlmd);
++	cxl_nvb = cxl_find_nvdimm_bridge(parent_port);
+ 	if (!cxl_nvb)
+ 		return -ENODEV;
+ 
+diff --git a/drivers/cxl/core/region.c b/drivers/cxl/core/region.c
+index bc5a43897d57..2d683232f1a9 100644
+--- a/drivers/cxl/core/region.c
++++ b/drivers/cxl/core/region.c
+@@ -2684,7 +2684,7 @@ static struct cxl_pmem_region *cxl_pmem_region_alloc(struct cxl_region *cxlr)
+ 		 * bridge for one device is the same for all.
+ 		 */
+ 		if (i == 0) {
+-			cxl_nvb = cxl_find_nvdimm_bridge(cxlmd);
++			cxl_nvb = cxl_find_nvdimm_bridge(cxlmd->endpoint);
+ 			if (!cxl_nvb) {
+ 				kfree(cxlr_pmem);
+ 				cxlr_pmem = ERR_PTR(-ENODEV);
+diff --git a/drivers/cxl/cxl.h b/drivers/cxl/cxl.h
+index bb3ad219b6b3..0222c782879c 100644
+--- a/drivers/cxl/cxl.h
++++ b/drivers/cxl/cxl.h
+@@ -793,8 +793,8 @@ struct cxl_nvdimm_bridge *devm_cxl_add_nvdimm_bridge(struct device *host,
+ struct cxl_nvdimm *to_cxl_nvdimm(struct device *dev);
+ bool is_cxl_nvdimm(struct device *dev);
+ bool is_cxl_nvdimm_bridge(struct device *dev);
+-int devm_cxl_add_nvdimm(struct cxl_memdev *cxlmd);
+-struct cxl_nvdimm_bridge *cxl_find_nvdimm_bridge(struct cxl_memdev *cxlmd);
++int devm_cxl_add_nvdimm(struct cxl_port *parent_port, struct cxl_memdev *cxlmd);
++struct cxl_nvdimm_bridge *cxl_find_nvdimm_bridge(struct cxl_port *port);
+ 
+ #ifdef CONFIG_CXL_REGION
+ bool is_cxl_pmem_region(struct device *dev);
+diff --git a/drivers/cxl/mem.c b/drivers/cxl/mem.c
+index 317c7548e4e9..e4e10995a100 100644
+--- a/drivers/cxl/mem.c
++++ b/drivers/cxl/mem.c
+@@ -153,6 +153,15 @@ static int cxl_mem_probe(struct device *dev)
+ 		return -ENXIO;
+ 	}
+ 
++	if (resource_size(&cxlds->pmem_res) && IS_ENABLED(CONFIG_CXL_PMEM)) {
++		rc = devm_cxl_add_nvdimm(parent_port, cxlmd);
++		if (rc) {
++			if (rc == -ENODEV)
++				dev_info(dev, "PMEM disabled by platform\n");
++			return rc;
++		}
++	}
++
+ 	if (dport->rch)
+ 		endpoint_parent = parent_port->uport_dev;
+ 	else
+@@ -173,14 +182,6 @@ static int cxl_mem_probe(struct device *dev)
+ 	if (rc)
+ 		return rc;
+ 
+-	if (resource_size(&cxlds->pmem_res) && IS_ENABLED(CONFIG_CXL_PMEM)) {
+-		rc = devm_cxl_add_nvdimm(cxlmd);
+-		if (rc == -ENODEV)
+-			dev_info(dev, "PMEM disabled by platform\n");
+-		else
+-			return rc;
+-	}
+-
+ 	/*
+ 	 * The kernel may be operating out of CXL memory on this device,
+ 	 * there is no spec defined way to determine whether this device
+-- 
+2.25.1
+

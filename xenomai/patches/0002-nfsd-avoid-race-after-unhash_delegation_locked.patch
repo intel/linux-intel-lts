@@ -1,0 +1,122 @@
+From 4e99a3a0fec632f6178f6d813e00e8009d162bbc Mon Sep 17 00:00:00 2001
+From: NeilBrown <neilb@suse.de>
+Date: Tue, 30 Jan 2024 12:08:24 +1100
+Subject: [PATCH 02/11] nfsd: avoid race after unhash_delegation_locked()
+
+NFS4_CLOSED_DELEG_STID and NFS4_REVOKED_DELEG_STID are similar in
+purpose.
+REVOKED is used for NFSv4.1 states which have been revoked because the
+lease has expired.  CLOSED is used in other cases.
+The difference has two practical effects.
+1/ REVOKED states are on the ->cl_revoked list
+2/ REVOKED states result in nfserr_deleg_revoked from
+   nfsd4_verify_open_stid() and nfsd4_validate_stateid while
+   CLOSED states result in nfserr_bad_stid.
+
+Currently a state that is being revoked is first set to "CLOSED" in
+unhash_delegation_locked(), then possibly to "REVOKED" in
+revoke_delegation(), at which point it is added to the cl_revoked list.
+
+It is possible that a stateid test could see the CLOSED state
+which really should be REVOKED, and so return the wrong error code.  So
+it is safest to remove this window of inconsistency.
+
+With this patch, unhash_delegation_locked() always sets the state
+correctly, and revoke_delegation() no longer changes the state.
+
+Also remove a redundant test on minorversion when
+NFS4_REVOKED_DELEG_STID is seen - it can only be seen when minorversion
+is non-zero.
+
+Reviewed-by: Jeff Layton <jlayton@kernel.org>
+Signed-off-by: NeilBrown <neilb@suse.de>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+(cherry picked from commit 83e733161fde43e2f99cefa68e369944460fce39)
+---
+ fs/nfsd/nfs4state.c | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/fs/nfsd/nfs4state.c b/fs/nfsd/nfs4state.c
+index fa060c6b2315..55612d8fe6dc 100644
+--- a/fs/nfsd/nfs4state.c
++++ b/fs/nfsd/nfs4state.c
+@@ -1327,7 +1327,7 @@ static bool delegation_hashed(struct nfs4_delegation *dp)
+ }
+ 
+ static bool
+-unhash_delegation_locked(struct nfs4_delegation *dp)
++unhash_delegation_locked(struct nfs4_delegation *dp, unsigned char type)
+ {
+ 	struct nfs4_file *fp = dp->dl_stid.sc_file;
+ 
+@@ -1336,7 +1336,9 @@ unhash_delegation_locked(struct nfs4_delegation *dp)
+ 	if (!delegation_hashed(dp))
+ 		return false;
+ 
+-	dp->dl_stid.sc_type = NFS4_CLOSED_DELEG_STID;
++	if (dp->dl_stid.sc_client->cl_minorversion == 0)
++		type = NFS4_CLOSED_DELEG_STID;
++	dp->dl_stid.sc_type = type;
+ 	/* Ensure that deleg break won't try to requeue it */
+ 	++dp->dl_time;
+ 	spin_lock(&fp->fi_lock);
+@@ -1352,7 +1354,7 @@ static void destroy_delegation(struct nfs4_delegation *dp)
+ 	bool unhashed;
+ 
+ 	spin_lock(&state_lock);
+-	unhashed = unhash_delegation_locked(dp);
++	unhashed = unhash_delegation_locked(dp, NFS4_CLOSED_DELEG_STID);
+ 	spin_unlock(&state_lock);
+ 	if (unhashed)
+ 		destroy_unhashed_deleg(dp);
+@@ -1366,9 +1368,8 @@ static void revoke_delegation(struct nfs4_delegation *dp)
+ 
+ 	trace_nfsd_stid_revoke(&dp->dl_stid);
+ 
+-	if (clp->cl_minorversion) {
++	if (dp->dl_stid.sc_type == NFS4_REVOKED_DELEG_STID) {
+ 		spin_lock(&clp->cl_lock);
+-		dp->dl_stid.sc_type = NFS4_REVOKED_DELEG_STID;
+ 		refcount_inc(&dp->dl_stid.sc_count);
+ 		list_add(&dp->dl_recall_lru, &clp->cl_revoked);
+ 		spin_unlock(&clp->cl_lock);
+@@ -2227,7 +2228,7 @@ __destroy_client(struct nfs4_client *clp)
+ 	spin_lock(&state_lock);
+ 	while (!list_empty(&clp->cl_delegations)) {
+ 		dp = list_entry(clp->cl_delegations.next, struct nfs4_delegation, dl_perclnt);
+-		unhash_delegation_locked(dp);
++		unhash_delegation_locked(dp, NFS4_CLOSED_DELEG_STID);
+ 		list_add(&dp->dl_recall_lru, &reaplist);
+ 	}
+ 	spin_unlock(&state_lock);
+@@ -5140,8 +5141,7 @@ nfs4_check_deleg(struct nfs4_client *cl, struct nfsd4_open *open,
+ 		goto out;
+ 	if (deleg->dl_stid.sc_type == NFS4_REVOKED_DELEG_STID) {
+ 		nfs4_put_stid(&deleg->dl_stid);
+-		if (cl->cl_minorversion)
+-			status = nfserr_deleg_revoked;
++		status = nfserr_deleg_revoked;
+ 		goto out;
+ 	}
+ 	flags = share_access_to_flags(open->op_share_access);
+@@ -6163,7 +6163,7 @@ nfs4_laundromat(struct nfsd_net *nn)
+ 		dp = list_entry (pos, struct nfs4_delegation, dl_recall_lru);
+ 		if (!state_expired(&lt, dp->dl_time))
+ 			break;
+-		unhash_delegation_locked(dp);
++		unhash_delegation_locked(dp, NFS4_REVOKED_DELEG_STID);
+ 		list_add(&dp->dl_recall_lru, &reaplist);
+ 	}
+ 	spin_unlock(&state_lock);
+@@ -8262,7 +8262,7 @@ nfs4_state_shutdown_net(struct net *net)
+ 	spin_lock(&state_lock);
+ 	list_for_each_safe(pos, next, &nn->del_recall_lru) {
+ 		dp = list_entry (pos, struct nfs4_delegation, dl_recall_lru);
+-		unhash_delegation_locked(dp);
++		unhash_delegation_locked(dp, NFS4_CLOSED_DELEG_STID);
+ 		list_add(&dp->dl_recall_lru, &reaplist);
+ 	}
+ 	spin_unlock(&state_lock);
+-- 
+2.25.1
+

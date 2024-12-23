@@ -1,0 +1,48 @@
+From 1e5f359ca3e3c4681b9af27ca05258d7985074c2 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Tue, 5 Nov 2024 10:02:34 -0600
+Subject: [PATCH] x86/CPU/AMD: Clear virtualized VMLOAD/VMSAVE on Zen4 client
+
+A number of Zen4 client SoCs advertise the ability to use virtualized
+VMLOAD/VMSAVE, but using these instructions is reported to be a cause
+of a random host reboot.
+
+These instructions aren't intended to be advertised on Zen4 client
+so clear the capability.
+
+Signed-off-by: Mario Limonciello <mario.limonciello@amd.com>
+Signed-off-by: Borislav Petkov (AMD) <bp@alien8.de>
+Cc: stable@vger.kernel.org
+Link: https://bugzilla.kernel.org/show_bug.cgi?id=219009
+(cherry picked with conflict fix from commit a5ca1dc46a6b610dd4627d8b633d6c84f9724ef0)
+---
+ arch/x86/kernel/cpu/amd.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/x86/kernel/cpu/amd.c b/arch/x86/kernel/cpu/amd.c
+index 145c81c68394..7eadc3a10a0f 100644
+--- a/arch/x86/kernel/cpu/amd.c
++++ b/arch/x86/kernel/cpu/amd.c
+@@ -1091,6 +1091,19 @@ static void init_amd_zen3(struct cpuinfo_x86 *c)
+ 
+ static void init_amd_zen4(struct cpuinfo_x86 *c)
+ {
++	if (!cpu_has(c, X86_FEATURE_HYPERVISOR))
++		msr_set_bit(MSR_ZEN4_BP_CFG, MSR_ZEN4_BP_CFG_SHARED_BTB_FIX_BIT);
++
++	/*
++	 * These Zen4 SoCs advertise support for virtualized VMLOAD/VMSAVE
++	 * in some BIOS versions but they can lead to random host reboots.
++	 */
++	switch (c->x86_model) {
++	case 0x18 ... 0x1f:
++	case 0x60 ... 0x7f:
++		clear_cpu_cap(c, X86_FEATURE_V_VMSAVE_VMLOAD);
++		break;
++	}
+ }
+ 
+ static void init_amd(struct cpuinfo_x86 *c)
+-- 
+2.25.1
+

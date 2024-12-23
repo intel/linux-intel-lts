@@ -1,0 +1,236 @@
+From 30f7a407f17b82336bbe2b75d243617f41bd466a Mon Sep 17 00:00:00 2001
+From: NeilBrown <neilb@suse.de>
+Date: Tue, 30 Jan 2024 12:08:33 +1100
+Subject: [PATCH 09/11] nfsd: allow layout state to be admin-revoked.
+
+When there is layout state on a filesystem that is being "unlocked" that
+is now revoked, which involves closing the nfsd_file and releasing the
+vfs lease.
+
+To avoid races, ->ls_file can now be accessed either:
+ - under ->fi_lock for the state's sc_file or
+ - under rcu_read_lock() if nfsd_file_get() is used.
+To support this, ->fence_client and nfsd4_cb_layout_fail() now take a
+second argument being the nfsd_file.
+
+Reviewed-by: Jeff Layton <jlayton@kernel.org>
+Signed-off-by: NeilBrown <neilb@suse.de>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+(cherry picked from commit 1e33e1414bec54a4feafa9e67e2617031be0afe2)
+---
+ fs/nfsd/blocklayout.c |  4 ++--
+ fs/nfsd/nfs4layouts.c | 43 ++++++++++++++++++++++++++++++++-----------
+ fs/nfsd/nfs4state.c   | 24 ++++++++++++++++++------
+ fs/nfsd/pnfs.h        |  8 +++++++-
+ 4 files changed, 59 insertions(+), 20 deletions(-)
+
+diff --git a/fs/nfsd/blocklayout.c b/fs/nfsd/blocklayout.c
+index 01d7fd108cf3..a24dc98c8a34 100644
+--- a/fs/nfsd/blocklayout.c
++++ b/fs/nfsd/blocklayout.c
+@@ -327,10 +327,10 @@ nfsd4_scsi_proc_layoutcommit(struct inode *inode,
+ }
+ 
+ static void
+-nfsd4_scsi_fence_client(struct nfs4_layout_stateid *ls)
++nfsd4_scsi_fence_client(struct nfs4_layout_stateid *ls, struct nfsd_file *file)
+ {
+ 	struct nfs4_client *clp = ls->ls_stid.sc_client;
+-	struct block_device *bdev = ls->ls_file->nf_file->f_path.mnt->mnt_sb->s_bdev;
++	struct block_device *bdev = file->nf_file->f_path.mnt->mnt_sb->s_bdev;
+ 
+ 	bdev->bd_disk->fops->pr_ops->pr_preempt(bdev, NFSD_MDS_PR_KEY,
+ 			nfsd4_scsi_pr_key(clp), 0, true);
+diff --git a/fs/nfsd/nfs4layouts.c b/fs/nfsd/nfs4layouts.c
+index 5a81121a9901..1d5e2046d2d4 100644
+--- a/fs/nfsd/nfs4layouts.c
++++ b/fs/nfsd/nfs4layouts.c
+@@ -152,6 +152,23 @@ void nfsd4_setup_layout_type(struct svc_export *exp)
+ #endif
+ }
+ 
++void nfsd4_close_layout(struct nfs4_layout_stateid *ls)
++{
++	struct nfsd_file *fl;
++
++	spin_lock(&ls->ls_stid.sc_file->fi_lock);
++	fl = ls->ls_file;
++	ls->ls_file = NULL;
++	spin_unlock(&ls->ls_stid.sc_file->fi_lock);
++
++	if (fl) {
++		if (!nfsd4_layout_ops[ls->ls_layout_type]->disable_recalls)
++			vfs_setlease(fl->nf_file, F_UNLCK, NULL,
++				     (void **)&ls);
++		nfsd_file_put(fl);
++	}
++}
++
+ static void
+ nfsd4_free_layout_stateid(struct nfs4_stid *stid)
+ {
+@@ -169,9 +186,7 @@ nfsd4_free_layout_stateid(struct nfs4_stid *stid)
+ 	list_del_init(&ls->ls_perfile);
+ 	spin_unlock(&fp->fi_lock);
+ 
+-	if (!nfsd4_layout_ops[ls->ls_layout_type]->disable_recalls)
+-		vfs_setlease(ls->ls_file->nf_file, F_UNLCK, NULL, (void **)&ls);
+-	nfsd_file_put(ls->ls_file);
++	nfsd4_close_layout(ls);
+ 
+ 	if (ls->ls_recalled)
+ 		atomic_dec(&ls->ls_stid.sc_file->fi_lo_recalls);
+@@ -605,7 +620,7 @@ nfsd4_return_all_file_layouts(struct nfs4_client *clp, struct nfs4_file *fp)
+ }
+ 
+ static void
+-nfsd4_cb_layout_fail(struct nfs4_layout_stateid *ls)
++nfsd4_cb_layout_fail(struct nfs4_layout_stateid *ls, struct nfsd_file *file)
+ {
+ 	struct nfs4_client *clp = ls->ls_stid.sc_client;
+ 	char addr_str[INET6_ADDRSTRLEN];
+@@ -627,7 +642,7 @@ nfsd4_cb_layout_fail(struct nfs4_layout_stateid *ls)
+ 
+ 	argv[0] = (char *)nfsd_recall_failed;
+ 	argv[1] = addr_str;
+-	argv[2] = ls->ls_file->nf_file->f_path.mnt->mnt_sb->s_id;
++	argv[2] = file->nf_file->f_path.mnt->mnt_sb->s_id;
+ 	argv[3] = NULL;
+ 
+ 	error = call_usermodehelper(nfsd_recall_failed, argv, envp,
+@@ -657,6 +672,7 @@ nfsd4_cb_layout_done(struct nfsd4_callback *cb, struct rpc_task *task)
+ 	struct nfsd_net *nn;
+ 	ktime_t now, cutoff;
+ 	const struct nfsd4_layout_ops *ops;
++	struct nfsd_file *fl;
+ 
+ 	trace_nfsd_cb_layout_done(&ls->ls_stid.sc_stateid, task);
+ 	switch (task->tk_status) {
+@@ -688,12 +704,17 @@ nfsd4_cb_layout_done(struct nfsd4_callback *cb, struct rpc_task *task)
+ 		 * Unknown error or non-responding client, we'll need to fence.
+ 		 */
+ 		trace_nfsd_layout_recall_fail(&ls->ls_stid.sc_stateid);
+-
+-		ops = nfsd4_layout_ops[ls->ls_layout_type];
+-		if (ops->fence_client)
+-			ops->fence_client(ls);
+-		else
+-			nfsd4_cb_layout_fail(ls);
++		rcu_read_lock();
++		fl = nfsd_file_get(ls->ls_file);
++		rcu_read_unlock();
++		if (fl) {
++			ops = nfsd4_layout_ops[ls->ls_layout_type];
++			if (ops->fence_client)
++				ops->fence_client(ls, fl);
++			else
++				nfsd4_cb_layout_fail(ls, fl);
++			nfsd_file_put(fl);
++		}
+ 		return 1;
+ 	case -NFS4ERR_NOMATCHING_LAYOUT:
+ 		trace_nfsd_layout_recall_done(&ls->ls_stid.sc_stateid);
+diff --git a/fs/nfsd/nfs4state.c b/fs/nfsd/nfs4state.c
+index 6b59ad047418..71ad7ff42992 100644
+--- a/fs/nfsd/nfs4state.c
++++ b/fs/nfsd/nfs4state.c
+@@ -1719,7 +1719,7 @@ void nfsd4_revoke_states(struct net *net, struct super_block *sb)
+ 	unsigned int idhashval;
+ 	unsigned int sc_types;
+ 
+-	sc_types = SC_TYPE_OPEN | SC_TYPE_LOCK | SC_TYPE_DELEG;
++	sc_types = SC_TYPE_OPEN | SC_TYPE_LOCK | SC_TYPE_DELEG | SC_TYPE_LAYOUT;
+ 
+ 	spin_lock(&nn->client_lock);
+ 	for (idhashval = 0; idhashval < CLIENT_HASH_MASK; idhashval++) {
+@@ -1732,6 +1732,7 @@ void nfsd4_revoke_states(struct net *net, struct super_block *sb)
+ 			if (stid) {
+ 				struct nfs4_ol_stateid *stp;
+ 				struct nfs4_delegation *dp;
++				struct nfs4_layout_stateid *ls;
+ 
+ 				spin_unlock(&nn->client_lock);
+ 				switch (stid->sc_type) {
+@@ -1787,6 +1788,10 @@ void nfsd4_revoke_states(struct net *net, struct super_block *sb)
+ 					if (dp)
+ 						revoke_delegation(dp);
+ 					break;
++				case SC_TYPE_LAYOUT:
++					ls = layoutstateid(stid);
++					nfsd4_close_layout(ls);
++					break;
+ 				}
+ 				nfs4_put_stid(stid);
+ 				spin_lock(&nn->client_lock);
+@@ -2866,7 +2871,6 @@ static int nfs4_show_layout(struct seq_file *s, struct nfs4_stid *st)
+ 	struct nfsd_file *file;
+ 
+ 	ls = container_of(st, struct nfs4_layout_stateid, ls_stid);
+-	file = ls->ls_file;
+ 
+ 	seq_printf(s, "- ");
+ 	nfs4_show_stateid(s, &st->sc_stateid);
+@@ -2874,10 +2878,18 @@ static int nfs4_show_layout(struct seq_file *s, struct nfs4_stid *st)
+ 
+ 	/* XXX: What else would be useful? */
+ 
+-	nfs4_show_superblock(s, file);
+-	seq_printf(s, ", ");
+-	nfs4_show_fname(s, file);
+-	seq_printf(s, " }\n");
++	spin_lock(&ls->ls_stid.sc_file->fi_lock);
++	file = ls->ls_file;
++	if (file) {
++		seq_puts(s, ", ");
++		nfs4_show_superblock(s, file);
++		seq_puts(s, ", ");
++		nfs4_show_fname(s, file);
++	}
++	spin_unlock(&ls->ls_stid.sc_file->fi_lock);
++	if (st->sc_status & SC_STATUS_ADMIN_REVOKED)
++		seq_puts(s, ", admin-revoked");
++	seq_puts(s, " }\n");
+ 
+ 	return 0;
+ }
+diff --git a/fs/nfsd/pnfs.h b/fs/nfsd/pnfs.h
+index 4f4282d4eeca..6d3b1cab4da3 100644
+--- a/fs/nfsd/pnfs.h
++++ b/fs/nfsd/pnfs.h
+@@ -37,7 +37,8 @@ struct nfsd4_layout_ops {
+ 	__be32 (*proc_layoutcommit)(struct inode *inode,
+ 			struct nfsd4_layoutcommit *lcp);
+ 
+-	void (*fence_client)(struct nfs4_layout_stateid *ls);
++	void (*fence_client)(struct nfs4_layout_stateid *ls,
++			     struct nfsd_file *file);
+ };
+ 
+ extern const struct nfsd4_layout_ops *nfsd4_layout_ops[];
+@@ -72,11 +73,13 @@ void nfsd4_setup_layout_type(struct svc_export *exp);
+ void nfsd4_return_all_client_layouts(struct nfs4_client *);
+ void nfsd4_return_all_file_layouts(struct nfs4_client *clp,
+ 		struct nfs4_file *fp);
++void nfsd4_close_layout(struct nfs4_layout_stateid *ls);
+ int nfsd4_init_pnfs(void);
+ void nfsd4_exit_pnfs(void);
+ #else
+ struct nfs4_client;
+ struct nfs4_file;
++struct nfs4_layout_stateid;
+ 
+ static inline void nfsd4_setup_layout_type(struct svc_export *exp)
+ {
+@@ -89,6 +92,9 @@ static inline void nfsd4_return_all_file_layouts(struct nfs4_client *clp,
+ 		struct nfs4_file *fp)
+ {
+ }
++static inline void nfsd4_close_layout(struct nfs4_layout_stateid *ls)
++{
++}
+ static inline void nfsd4_exit_pnfs(void)
+ {
+ }
+-- 
+2.25.1
+

@@ -1,0 +1,84 @@
+From d659a2239084cb4a7ce78119ead52d9adf40d5b3 Mon Sep 17 00:00:00 2001
+From: Manivannan Sadhasivam <manivannan.sadhasivam@linaro.org>
+Date: Thu, 18 Apr 2024 13:29:58 +0530
+Subject: [PATCH] PCI: endpoint: pci-epf-test: Make use of cached
+ 'epc_features' in pci_epf_test_core_init()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Instead of getting the epc_features from pci_epc_get_features() API, use
+the cached pci_epf_test::epc_features value to avoid the NULL check. Since
+the NULL check is already performed in pci_epf_test_bind(), having one more
+check in pci_epf_test_core_init() is redundant and it is not possible to
+hit the NULL pointer dereference.
+
+Also with commit a01e7214bef9 ("PCI: endpoint: Remove "core_init_notifier"
+flag"), 'epc_features' got dereferenced without the NULL check, leading to
+the following false positive Smatch warning:
+
+  drivers/pci/endpoint/functions/pci-epf-test.c:784 pci_epf_test_core_init() error: we previously assumed 'epc_features' could be null (see line 747)
+
+Thus, remove the redundant NULL check and also use the epc_features::
+{msix_capable/msi_capable} flags directly to avoid local variables.
+
+[kwilczynski: commit log]
+Fixes: 5e50ee27d4a5 ("PCI: pci-epf-test: Add support to defer core initialization")
+Closes: https://lore.kernel.org/linux-pci/024b5826-7180-4076-ae08-57d2584cca3f@moroto.mountain
+Link: https://lore.kernel.org/linux-pci/20240418-pci-epf-test-fix-v2-1-eacd54831444@linaro.org
+Reported-by: Dan Carpenter <dan.carpenter@linaro.org>
+Signed-off-by: Manivannan Sadhasivam <manivannan.sadhasivam@linaro.org>
+Signed-off-by: Krzysztof Wilczyński <kwilczynski@kernel.org>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Reviewed-by: Frank Li <Frank.Li@nxp.com>
+Reviewed-by: Niklas Cassel <cassel@kernel.org>
+---
+ drivers/pci/endpoint/functions/pci-epf-test.c | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/pci/endpoint/functions/pci-epf-test.c b/drivers/pci/endpoint/functions/pci-epf-test.c
+index 1f0d2b84296a..0411b5d605f4 100644
+--- a/drivers/pci/endpoint/functions/pci-epf-test.c
++++ b/drivers/pci/endpoint/functions/pci-epf-test.c
+@@ -750,19 +750,11 @@ static int pci_epf_test_core_init(struct pci_epf *epf)
+ {
+ 	struct pci_epf_test *epf_test = epf_get_drvdata(epf);
+ 	struct pci_epf_header *header = epf->header;
+-	const struct pci_epc_features *epc_features;
++	const struct pci_epc_features *epc_features = epf_test->epc_features;
+ 	struct pci_epc *epc = epf->epc;
+ 	struct device *dev = &epf->dev;
+-	bool msix_capable = false;
+-	bool msi_capable = true;
+ 	int ret;
+ 
+-	epc_features = pci_epc_get_features(epc, epf->func_no, epf->vfunc_no);
+-	if (epc_features) {
+-		msix_capable = epc_features->msix_capable;
+-		msi_capable = epc_features->msi_capable;
+-	}
+-
+ 	if (epf->vfunc_no <= 1) {
+ 		ret = pci_epc_write_header(epc, epf->func_no, epf->vfunc_no, header);
+ 		if (ret) {
+@@ -775,7 +767,7 @@ static int pci_epf_test_core_init(struct pci_epf *epf)
+ 	if (ret)
+ 		return ret;
+ 
+-	if (msi_capable) {
++	if (epc_features->msi_capable) {
+ 		ret = pci_epc_set_msi(epc, epf->func_no, epf->vfunc_no,
+ 				      epf->msi_interrupts);
+ 		if (ret) {
+@@ -784,7 +776,7 @@ static int pci_epf_test_core_init(struct pci_epf *epf)
+ 		}
+ 	}
+ 
+-	if (msix_capable) {
++	if (epc_features->msix_capable) {
+ 		ret = pci_epc_set_msix(epc, epf->func_no, epf->vfunc_no,
+ 				       epf->msix_interrupts,
+ 				       epf_test->test_reg_bar,
+-- 
+2.25.1
+

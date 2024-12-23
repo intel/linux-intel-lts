@@ -1,4 +1,4 @@
-From a00411274c2cc24f2282653877467c9a64a324f7 Mon Sep 17 00:00:00 2001
+From 1865b3bcade04c254b298278e8679a607206182b Mon Sep 17 00:00:00 2001
 From: "Rafael J. Wysocki" <rafael.j.wysocki@intel.com>
 Date: Thu, 3 Oct 2024 14:25:58 +0200
 Subject: [PATCH] thermal: core: Reference count the zone in

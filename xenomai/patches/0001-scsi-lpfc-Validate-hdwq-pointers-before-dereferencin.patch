@@ -1,0 +1,90 @@
+From aef22e4c230fa7a1e143a3048a36b6d2a7a67956 Mon Sep 17 00:00:00 2001
+From: Justin Tee <justin.tee@broadcom.com>
+Date: Fri, 26 Jul 2024 16:15:07 -0700
+Subject: [PATCH] scsi: lpfc: Validate hdwq pointers before dereferencing in
+ reset/errata paths
+
+When the HBA is undergoing a reset or is handling an errata event, NULL ptr
+dereference crashes may occur in routines such as
+lpfc_sli_flush_io_rings(), lpfc_dev_loss_tmo_callbk(), or
+lpfc_abort_handler().
+
+Add NULL ptr checks before dereferencing hdwq pointers that may have been
+freed due to operations colliding with a reset or errata event handler.
+
+Signed-off-by: Justin Tee <justin.tee@broadcom.com>
+Link: https://lore.kernel.org/r/20240726231512.92867-4-justintee8345@gmail.com
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+(cherry picked with modification from commit 2be1d4f11944cd6283cb97268b3e17c4424945ca)
+---
+ drivers/scsi/lpfc/lpfc_hbadisc.c |  3 ++-
+ drivers/scsi/lpfc/lpfc_scsi.c    | 13 +++++++++++--
+ drivers/scsi/lpfc/lpfc_sli.c     | 11 +++++++++++
+ 3 files changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_hbadisc.c b/drivers/scsi/lpfc/lpfc_hbadisc.c
+index 0a01575ab06d..ac911c081bb5 100644
+--- a/drivers/scsi/lpfc/lpfc_hbadisc.c
++++ b/drivers/scsi/lpfc/lpfc_hbadisc.c
+@@ -175,7 +175,8 @@ lpfc_dev_loss_tmo_callbk(struct fc_rport *rport)
+ 			 ndlp->nlp_state, ndlp->fc4_xpt_flags);
+ 
+ 	/* Don't schedule a worker thread event if the vport is going down. */
+-	if (vport->load_flag & FC_UNLOADING) {
++	if (test_bit(FC_UNLOADING, (const unsigned long *)&vport->load_flag) ||
++	    !test_bit(HBA_SETUP, (const unsigned long *)&phba->hba_flag)) {
+ 		spin_lock_irqsave(&ndlp->lock, iflags);
+ 		ndlp->rport = NULL;
+ 
+diff --git a/drivers/scsi/lpfc/lpfc_scsi.c b/drivers/scsi/lpfc/lpfc_scsi.c
+index cf506556f3b0..0fc9cfdeac2e 100644
+--- a/drivers/scsi/lpfc/lpfc_scsi.c
++++ b/drivers/scsi/lpfc/lpfc_scsi.c
+@@ -5546,11 +5546,20 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
+ 
+ 	iocb = &lpfc_cmd->cur_iocbq;
+ 	if (phba->sli_rev == LPFC_SLI_REV4) {
+-		pring_s4 = phba->sli4_hba.hdwq[iocb->hba_wqidx].io_wq->pring;
+-		if (!pring_s4) {
++		/* if the io_wq & pring are gone, the port was reset. */
++		if (!phba->sli4_hba.hdwq[iocb->hba_wqidx].io_wq ||
++		    !phba->sli4_hba.hdwq[iocb->hba_wqidx].io_wq->pring) {
++			lpfc_printf_vlog(vport, KERN_WARNING, LOG_FCP,
++					 "2877 SCSI Layer I/O Abort Request "
++					 "IO CMPL Status x%x ID %d LUN %llu "
++					 "HBA_SETUP %d\n", FAILED,
++					 cmnd->device->id,
++					 (u64)cmnd->device->lun,
++					 test_bit(HBA_SETUP, (const unsigned long *)&phba->hba_flag));
+ 			ret = FAILED;
+ 			goto out_unlock_hba;
+ 		}
++		pring_s4 = phba->sli4_hba.hdwq[iocb->hba_wqidx].io_wq->pring;
+ 		spin_lock(&pring_s4->ring_lock);
+ 	}
+ 	/* the command is in process of being cancelled */
+diff --git a/drivers/scsi/lpfc/lpfc_sli.c b/drivers/scsi/lpfc/lpfc_sli.c
+index 9cd22588c8eb..2fa11521100c 100644
+--- a/drivers/scsi/lpfc/lpfc_sli.c
++++ b/drivers/scsi/lpfc/lpfc_sli.c
+@@ -4684,6 +4684,17 @@ lpfc_sli_flush_io_rings(struct lpfc_hba *phba)
+ 	/* Look on all the FCP Rings for the iotag */
+ 	if (phba->sli_rev >= LPFC_SLI_REV4) {
+ 		for (i = 0; i < phba->cfg_hdw_queue; i++) {
++			if (!phba->sli4_hba.hdwq ||
++			    !phba->sli4_hba.hdwq[i].io_wq) {
++				lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
++						"7777 hdwq's deleted %x "
++						"%x %x %x\n",
++						phba->pport->load_flag,
++						phba->hba_flag,
++						phba->link_state,
++						phba->sli.sli_flag);
++				return;
++			}
+ 			pring = phba->sli4_hba.hdwq[i].io_wq->pring;
+ 
+ 			spin_lock_irq(&pring->ring_lock);
+-- 
+2.25.1
+

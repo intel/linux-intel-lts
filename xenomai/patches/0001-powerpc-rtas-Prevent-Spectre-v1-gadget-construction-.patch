@@ -1,0 +1,54 @@
+From 9c1f2ec061bfc209427d9763fbece8f1929d7a40 Mon Sep 17 00:00:00 2001
+From: Nathan Lynch <nathanl@linux.ibm.com>
+Date: Thu, 30 May 2024 19:44:12 -0500
+Subject: [PATCH] powerpc/rtas: Prevent Spectre v1 gadget construction in
+ sys_rtas()
+
+Smatch warns:
+
+  arch/powerpc/kernel/rtas.c:1932 __do_sys_rtas() warn: potential
+  spectre issue 'args.args' [r] (local cap)
+
+The 'nargs' and 'nret' locals come directly from a user-supplied
+buffer and are used as indexes into a small stack-based array and as
+inputs to copy_to_user() after they are subject to bounds checks.
+
+Use array_index_nospec() after the bounds checks to clamp these values
+for speculative execution.
+
+Signed-off-by: Nathan Lynch <nathanl@linux.ibm.com>
+Reported-by: Breno Leitao <leitao@debian.org>
+Reviewed-by: Breno Leitao <leitao@debian.org>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Link: https://msgid.link/20240530-sys_rtas-nargs-nret-v1-1-129acddd4d89@linux.ibm.com
+
+(cherry picked from commit 0974d03eb479384466d828d65637814bee6b26d7)
+---
+ arch/powerpc/kernel/rtas.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/powerpc/kernel/rtas.c b/arch/powerpc/kernel/rtas.c
+index 46b9476d7582..dc294c95da21 100644
+--- a/arch/powerpc/kernel/rtas.c
++++ b/arch/powerpc/kernel/rtas.c
+@@ -18,6 +18,7 @@
+ #include <linux/kernel.h>
+ #include <linux/lockdep.h>
+ #include <linux/memblock.h>
++#include <linux/nospec.h>
+ #include <linux/of.h>
+ #include <linux/of_fdt.h>
+ #include <linux/reboot.h>
+@@ -1839,6 +1840,9 @@ SYSCALL_DEFINE1(rtas, struct rtas_args __user *, uargs)
+ 	    || nargs + nret > ARRAY_SIZE(args.args))
+ 		return -EINVAL;
+ 
++	nargs = array_index_nospec(nargs, ARRAY_SIZE(args.args));
++	nret = array_index_nospec(nret, ARRAY_SIZE(args.args) - nargs);
++
+ 	/* Copy in args. */
+ 	if (copy_from_user(args.args, uargs->args,
+ 			   nargs * sizeof(rtas_arg_t)) != 0)
+-- 
+2.25.1
+

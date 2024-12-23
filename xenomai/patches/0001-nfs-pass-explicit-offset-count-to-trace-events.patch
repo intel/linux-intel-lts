@@ -1,0 +1,230 @@
+From 35540b0b937deea21a3d7779bbab506c283c69ba Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Thu, 11 Jul 2024 09:17:02 +0200
+Subject: [PATCH] nfs: pass explicit offset/count to trace events
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+nfs_folio_length is unsafe to use without having the folio locked and a
+check for a NULL ->f_mapping that protects against truncations and can
+lead to kernel crashes.  E.g. when running xfstests generic/065 with
+all nfs trace points enabled.
+
+Follow the model of the XFS trace points and pass in an explіcit offset
+and length.  This has the additional benefit that these values can
+be more accurate as some of the users touch partial folio ranges.
+
+Fixes: eb5654b3b89d ("NFS: Enable tracing of nfs_invalidate_folio() and nfs_launder_folio()")
+Reported-by: Chuck Lever <chuck.lever@oracle.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Anna Schumaker <Anna.Schumaker@Netapp.com>
+---
+ fs/nfs/file.c     |  5 +++--
+ fs/nfs/nfstrace.h | 36 ++++++++++++++++++++----------------
+ fs/nfs/read.c     |  8 +++++---
+ fs/nfs/write.c    | 10 +++++-----
+ 4 files changed, 33 insertions(+), 26 deletions(-)
+
+diff --git a/fs/nfs/file.c b/fs/nfs/file.c
+index 3f9768810427..9342f8074801 100644
+--- a/fs/nfs/file.c
++++ b/fs/nfs/file.c
+@@ -434,7 +434,7 @@ static void nfs_invalidate_folio(struct folio *folio, size_t offset,
+ 	/* Cancel any unstarted writes on this page */
+ 	nfs_wb_folio_cancel(inode, folio);
+ 	folio_wait_fscache(folio);
+-	trace_nfs_invalidate_folio(inode, folio);
++	trace_nfs_invalidate_folio(inode, folio_pos(folio) + offset, length);
+ }
+ 
+ /*
+@@ -502,7 +502,8 @@ static int nfs_launder_folio(struct folio *folio)
+ 
+ 	folio_wait_fscache(folio);
+ 	ret = nfs_wb_folio(inode, folio);
+-	trace_nfs_launder_folio_done(inode, folio, ret);
++	trace_nfs_launder_folio_done(inode, folio_pos(folio),
++			folio_size(folio), ret);
+ 	return ret;
+ }
+ 
+diff --git a/fs/nfs/nfstrace.h b/fs/nfs/nfstrace.h
+index 4e90ca531176..004c25f0782b 100644
+--- a/fs/nfs/nfstrace.h
++++ b/fs/nfs/nfstrace.h
+@@ -933,10 +933,11 @@ TRACE_EVENT(nfs_sillyrename_unlink,
+ DECLARE_EVENT_CLASS(nfs_folio_event,
+ 		TP_PROTO(
+ 			const struct inode *inode,
+-			struct folio *folio
++			loff_t offset,
++			size_t count
+ 		),
+ 
+-		TP_ARGS(inode, folio),
++		TP_ARGS(inode, offset, count),
+ 
+ 		TP_STRUCT__entry(
+ 			__field(dev_t, dev)
+@@ -944,7 +945,7 @@ DECLARE_EVENT_CLASS(nfs_folio_event,
+ 			__field(u64, fileid)
+ 			__field(u64, version)
+ 			__field(loff_t, offset)
+-			__field(u32, count)
++			__field(size_t, count)
+ 		),
+ 
+ 		TP_fast_assign(
+@@ -954,13 +955,13 @@ DECLARE_EVENT_CLASS(nfs_folio_event,
+ 			__entry->fileid = nfsi->fileid;
+ 			__entry->fhandle = nfs_fhandle_hash(&nfsi->fh);
+ 			__entry->version = inode_peek_iversion_raw(inode);
+-			__entry->offset = folio_file_pos(folio);
+-			__entry->count = nfs_folio_length(folio);
++			__entry->offset = offset,
++			__entry->count = count;
+ 		),
+ 
+ 		TP_printk(
+ 			"fileid=%02x:%02x:%llu fhandle=0x%08x version=%llu "
+-			"offset=%lld count=%u",
++			"offset=%lld count=%zu",
+ 			MAJOR(__entry->dev), MINOR(__entry->dev),
+ 			(unsigned long long)__entry->fileid,
+ 			__entry->fhandle, __entry->version,
+@@ -972,18 +973,20 @@ DECLARE_EVENT_CLASS(nfs_folio_event,
+ 	DEFINE_EVENT(nfs_folio_event, name, \
+ 			TP_PROTO( \
+ 				const struct inode *inode, \
+-				struct folio *folio \
++				loff_t offset, \
++				size_t count \
+ 			), \
+-			TP_ARGS(inode, folio))
++			TP_ARGS(inode, offset, count))
+ 
+ DECLARE_EVENT_CLASS(nfs_folio_event_done,
+ 		TP_PROTO(
+ 			const struct inode *inode,
+-			struct folio *folio,
++			loff_t offset,
++			size_t count,
+ 			int ret
+ 		),
+ 
+-		TP_ARGS(inode, folio, ret),
++		TP_ARGS(inode, offset, count, ret),
+ 
+ 		TP_STRUCT__entry(
+ 			__field(dev_t, dev)
+@@ -992,7 +995,7 @@ DECLARE_EVENT_CLASS(nfs_folio_event_done,
+ 			__field(u64, fileid)
+ 			__field(u64, version)
+ 			__field(loff_t, offset)
+-			__field(u32, count)
++			__field(size_t, count)
+ 		),
+ 
+ 		TP_fast_assign(
+@@ -1002,14 +1005,14 @@ DECLARE_EVENT_CLASS(nfs_folio_event_done,
+ 			__entry->fileid = nfsi->fileid;
+ 			__entry->fhandle = nfs_fhandle_hash(&nfsi->fh);
+ 			__entry->version = inode_peek_iversion_raw(inode);
+-			__entry->offset = folio_file_pos(folio);
+-			__entry->count = nfs_folio_length(folio);
++			__entry->offset = offset,
++			__entry->count = count,
+ 			__entry->ret = ret;
+ 		),
+ 
+ 		TP_printk(
+ 			"fileid=%02x:%02x:%llu fhandle=0x%08x version=%llu "
+-			"offset=%lld count=%u ret=%d",
++			"offset=%lld count=%zu ret=%d",
+ 			MAJOR(__entry->dev), MINOR(__entry->dev),
+ 			(unsigned long long)__entry->fileid,
+ 			__entry->fhandle, __entry->version,
+@@ -1021,10 +1024,11 @@ DECLARE_EVENT_CLASS(nfs_folio_event_done,
+ 	DEFINE_EVENT(nfs_folio_event_done, name, \
+ 			TP_PROTO( \
+ 				const struct inode *inode, \
+-				struct folio *folio, \
++				loff_t offset, \
++				size_t count, \
+ 				int ret \
+ 			), \
+-			TP_ARGS(inode, folio, ret))
++			TP_ARGS(inode, offset, count, ret))
+ 
+ DEFINE_NFS_FOLIO_EVENT(nfs_aop_readpage);
+ DEFINE_NFS_FOLIO_EVENT_DONE(nfs_aop_readpage_done);
+diff --git a/fs/nfs/read.c b/fs/nfs/read.c
+index a142287d86f6..88e6a78d37fb 100644
+--- a/fs/nfs/read.c
++++ b/fs/nfs/read.c
+@@ -332,13 +332,15 @@ int nfs_read_add_folio(struct nfs_pageio_descriptor *pgio,
+ int nfs_read_folio(struct file *file, struct folio *folio)
+ {
+ 	struct inode *inode = file_inode(file);
++	loff_t pos = folio_pos(folio);
++	size_t len = folio_size(folio);
+ 	struct nfs_pageio_descriptor pgio;
+ 	struct nfs_open_context *ctx;
+ 	int ret;
+ 
+-	trace_nfs_aop_readpage(inode, folio);
++	trace_nfs_aop_readpage(inode, pos, len);
+ 	nfs_inc_stats(inode, NFSIOS_VFSREADPAGE);
+-	task_io_account_read(folio_size(folio));
++	task_io_account_read(len);
+ 
+ 	/*
+ 	 * Try to flush any pending writes to the file..
+@@ -381,7 +383,7 @@ int nfs_read_folio(struct file *file, struct folio *folio)
+ out_put:
+ 	put_nfs_open_context(ctx);
+ out:
+-	trace_nfs_aop_readpage_done(inode, folio, ret);
++	trace_nfs_aop_readpage_done(inode, pos, len, ret);
+ 	return ret;
+ out_unlock:
+ 	folio_unlock(folio);
+diff --git a/fs/nfs/write.c b/fs/nfs/write.c
+index 7d03811f44a4..6bc36cef14cd 100644
+--- a/fs/nfs/write.c
++++ b/fs/nfs/write.c
+@@ -2088,17 +2088,17 @@ int nfs_wb_folio_cancel(struct inode *inode, struct folio *folio)
+  */
+ int nfs_wb_folio(struct inode *inode, struct folio *folio)
+ {
+-	loff_t range_start = folio_file_pos(folio);
+-	loff_t range_end = range_start + (loff_t)folio_size(folio) - 1;
++	loff_t range_start = folio_pos(folio);
++	size_t len = folio_size(folio);
+ 	struct writeback_control wbc = {
+ 		.sync_mode = WB_SYNC_ALL,
+ 		.nr_to_write = 0,
+ 		.range_start = range_start,
+-		.range_end = range_end,
++		.range_end = range_start + len - 1,
+ 	};
+ 	int ret;
+ 
+-	trace_nfs_writeback_folio(inode, folio);
++	trace_nfs_writeback_folio(inode, range_start, len);
+ 
+ 	for (;;) {
+ 		folio_wait_writeback(folio);
+@@ -2116,7 +2116,7 @@ int nfs_wb_folio(struct inode *inode, struct folio *folio)
+ 			goto out_error;
+ 	}
+ out_error:
+-	trace_nfs_writeback_folio_done(inode, folio, ret);
++	trace_nfs_writeback_folio_done(inode, range_start, len, ret);
+ 	return ret;
+ }
+ 
+-- 
+2.25.1
+

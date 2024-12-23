@@ -1,0 +1,63 @@
+From 479ad0826b32fb16f727012ec1bea65e2d9f699e Mon Sep 17 00:00:00 2001
+From: Chunguang Xu <chunguang.xu@shopee.com>
+Date: Fri, 31 May 2024 17:24:21 +0800
+Subject: [PATCH 3/3] nvme-fabrics: use reserved tag for reg read/write command
+
+In some scenarios, if too many commands are issued by nvme command in
+the same time by user tasks, this may exhaust all tags of admin_q. If
+a reset (nvme reset or IO timeout) occurs before these commands finish,
+reconnect routine may fail to update nvme regs due to insufficient tags,
+which will cause kernel hang forever. In order to workaround this issue,
+maybe we can let reg_read32()/reg_read64()/reg_write32() use reserved
+tags. This maybe safe for nvmf:
+
+1. For the disable ctrl path,  we will not issue connect command
+2. For the enable ctrl / fw activate path, since connect and reg_xx()
+   are called serially.
+
+So the reserved tags may still be enough while reg_xx() use reserved tags.
+
+Signed-off-by: Chunguang Xu <chunguang.xu@shopee.com>
+Reviewed-by: Sagi Grimberg <sagi@grimberg.me>
+Reviewed-by: Chaitanya Kulkarni <kch@nvidia.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+(cherry picked from commit 7dc3bfcb4c9cc58970fff6aaa48172cb224d85aa)
+---
+ drivers/nvme/host/fabrics.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/nvme/host/fabrics.c b/drivers/nvme/host/fabrics.c
+index 3538e5786bf9..4d1d949780f8 100644
+--- a/drivers/nvme/host/fabrics.c
++++ b/drivers/nvme/host/fabrics.c
+@@ -179,7 +179,7 @@ int nvmf_reg_read32(struct nvme_ctrl *ctrl, u32 off, u32 *val)
+ 	cmd.prop_get.offset = cpu_to_le32(off);
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->fabrics_q, &cmd, &res, NULL, 0,
+-			NVME_QID_ANY, 0);
++			NVME_QID_ANY, NVME_SUBMIT_RESERVED);
+ 
+ 	if (ret >= 0)
+ 		*val = le64_to_cpu(res.u64);
+@@ -225,7 +225,7 @@ int nvmf_reg_read64(struct nvme_ctrl *ctrl, u32 off, u64 *val)
+ 	cmd.prop_get.offset = cpu_to_le32(off);
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->fabrics_q, &cmd, &res, NULL, 0,
+-			NVME_QID_ANY, 0);
++			NVME_QID_ANY, NVME_SUBMIT_RESERVED);
+ 
+ 	if (ret >= 0)
+ 		*val = le64_to_cpu(res.u64);
+@@ -270,7 +270,7 @@ int nvmf_reg_write32(struct nvme_ctrl *ctrl, u32 off, u32 val)
+ 	cmd.prop_set.value = cpu_to_le64(val);
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->fabrics_q, &cmd, NULL, NULL, 0,
+-			NVME_QID_ANY, 0);
++			NVME_QID_ANY, NVME_SUBMIT_RESERVED);
+ 	if (unlikely(ret))
+ 		dev_err(ctrl->device,
+ 			"Property Set error: %d, offset %#x\n",
+-- 
+2.25.1
+

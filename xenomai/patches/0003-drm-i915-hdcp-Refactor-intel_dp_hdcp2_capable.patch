@@ -1,0 +1,55 @@
+From 0cc78fea8120e30485239a727debd58e4c6d5f17 Mon Sep 17 00:00:00 2001
+From: Suraj Kandpal <suraj.kandpal@intel.com>
+Date: Fri, 23 Feb 2024 13:44:44 +0530
+Subject: [PATCH 3/5] drm/i915/hdcp: Refactor intel_dp_hdcp2_capable
+
+Break intel_dp_hdcp2_capable so that the common the code can be
+reused for the remote capability check.
+
+Signed-off-by: Suraj Kandpal <suraj.kandpal@intel.com>
+Reviewed-by: Ankit Nautiyal <ankit.k.nautiyal@intel.com>
+Signed-off-by: Ankit Nautiyal <ankit.k.nautiyal@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240223081453.1576918-5-suraj.kandpal@intel.com
+(cherry picked from commit 55d9b2b8e44033f6ba6069de2b44d1cfbc2e0081)
+---
+ drivers/gpu/drm/i915/display/intel_dp_hdcp.c | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+index 92642e8d82db..6767b5338ae7 100644
+--- a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
++++ b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+@@ -640,11 +640,9 @@ int intel_dp_hdcp2_check_link(struct intel_digital_port *dig_port,
+ }
+ 
+ static
+-int intel_dp_hdcp2_capable(struct intel_connector *connector,
+-			   bool *capable)
++int _intel_dp_hdcp2_capable(struct drm_dp_aux *aux,
++			    bool *capable)
+ {
+-	struct intel_digital_port *dig_port = intel_attached_dig_port(connector);
+-	struct drm_dp_aux *aux = &dig_port->dp.aux;
+ 	u8 rx_caps[3];
+ 	int ret;
+ 
+@@ -662,6 +660,16 @@ int intel_dp_hdcp2_capable(struct intel_connector *connector,
+ 	return 0;
+ }
+ 
++static
++int intel_dp_hdcp2_capable(struct intel_connector *connector,
++			   bool *capable)
++{
++	struct intel_digital_port *dig_port = intel_attached_dig_port(connector);
++	struct drm_dp_aux *aux = &dig_port->dp.aux;
++
++	return _intel_dp_hdcp2_capable(aux, capable);
++}
++
+ static const struct intel_hdcp_shim intel_dp_hdcp_shim = {
+ 	.write_an_aksv = intel_dp_hdcp_write_an_aksv,
+ 	.read_bksv = intel_dp_hdcp_read_bksv,
+-- 
+2.25.1
+

@@ -1,4 +1,4 @@
-From d2ce87f6736108782792df3280b3a9131f88bb67 Mon Sep 17 00:00:00 2001
+From c953e82b9dc6e84fb6891f0bbd9fde50d92dd5a8 Mon Sep 17 00:00:00 2001
 From: Andrii Nakryiko <andrii@kernel.org>
 Date: Sat, 2 Dec 2023 09:57:01 -0800
 Subject: [PATCH 6/8] bpf: unify async callback and program retval checks
@@ -18,7 +18,7 @@ Signed-off-by: Alexei Starovoitov <ast@kernel.org>
  1 file changed, 12 insertions(+), 18 deletions(-)
 
 diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
-index c4d4a462ff75..0bb130967c2f 100644
+index 05abc351a1c9..bf7d7d1c6b14 100644
 --- a/kernel/bpf/verifier.c
 +++ b/kernel/bpf/verifier.c
 @@ -414,7 +414,7 @@ static void verbose_invalid_scalar(struct bpf_verifier_env *env,
@@ -30,7 +30,7 @@ index c4d4a462ff75..0bb130967c2f 100644
  	if (reg->smin_value > S64_MIN) {
  		verbose(env, " smin=%lld", reg->smin_value);
  		unknown = false;
-@@ -9671,7 +9671,7 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
+@@ -9655,7 +9655,7 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
  		/* enforce R0 return value range */
  		if (!retval_range_within(callee->callback_ret_range, r0)) {
  			verbose_invalid_scalar(env, r0, callee->callback_ret_range,
@@ -39,7 +39,7 @@ index c4d4a462ff75..0bb130967c2f 100644
  			return -EINVAL;
  		}
  		if (!calls_callback(env, callee->callsite)) {
-@@ -14945,11 +14945,11 @@ static int check_ld_abs(struct bpf_verifier_env *env, struct bpf_insn *insn)
+@@ -14940,11 +14940,11 @@ static int check_ld_abs(struct bpf_verifier_env *env, struct bpf_insn *insn)
  
  static int check_return_code(struct bpf_verifier_env *env, int regno, const char *reg_name)
  {
@@ -52,7 +52,7 @@ index c4d4a462ff75..0bb130967c2f 100644
  	enum bpf_prog_type prog_type = resolve_prog_type(env->prog);
  	int err;
  	struct bpf_func_state *frame = env->cur_state->frame[0];
-@@ -14991,17 +14991,9 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -14986,17 +14986,9 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  
  	if (frame->in_async_callback_fn) {
  		/* enforce return zero from async callbacks like timer */
@@ -73,7 +73,7 @@ index c4d4a462ff75..0bb130967c2f 100644
  	}
  
  	if (is_subprog) {
-@@ -15088,15 +15080,17 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -15083,15 +15075,17 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  		return 0;
  	}
  

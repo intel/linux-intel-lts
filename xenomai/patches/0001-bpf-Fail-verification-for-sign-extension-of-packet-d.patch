@@ -1,4 +1,4 @@
-From 5cb7faf2888de0f7230b001848d689b30e5cc6dc Mon Sep 17 00:00:00 2001
+From e7b5e0ce077213974dd0f8150936809ce8dda021 Mon Sep 17 00:00:00 2001
 From: Yonghong Song <yonghong.song@linux.dev>
 Date: Tue, 23 Jul 2024 08:34:39 -0700
 Subject: [PATCH] bpf: Fail verification for sign-extension of packet
@@ -77,10 +77,10 @@ Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
  3 files changed, 20 insertions(+), 7 deletions(-)
 
 diff --git a/include/linux/bpf.h b/include/linux/bpf.h
-index e4cd28c38b82..bd7452a91030 100644
+index 1e05cc80e048..93408249f526 100644
 --- a/include/linux/bpf.h
 +++ b/include/linux/bpf.h
-@@ -898,6 +898,7 @@ static_assert(__BPF_REG_TYPE_MAX <= BPF_BASE_TYPE_LIMIT);
+@@ -902,6 +902,7 @@ static_assert(__BPF_REG_TYPE_MAX <= BPF_BASE_TYPE_LIMIT);
   */
  struct bpf_insn_access_aux {
  	enum bpf_reg_type reg_type;
@@ -89,10 +89,10 @@ index e4cd28c38b82..bd7452a91030 100644
  		int ctx_field_size;
  		struct {
 diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
-index 171045b6956d..3b4c64597231 100644
+index 3032a464d31b..14d3a46da63d 100644
 --- a/kernel/bpf/verifier.c
 +++ b/kernel/bpf/verifier.c
-@@ -5543,11 +5543,12 @@ static int check_packet_access(struct bpf_verifier_env *env, u32 regno, int off,
+@@ -5545,11 +5545,12 @@ static int check_packet_access(struct bpf_verifier_env *env, u32 regno, int off,
  /* check access to 'struct bpf_context' fields.  Supports fixed offsets only */
  static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off, int size,
  			    enum bpf_access_type t, enum bpf_reg_type *reg_type,
@@ -106,7 +106,7 @@ index 171045b6956d..3b4c64597231 100644
  	};
  
  	if (env->ops->is_valid_access &&
-@@ -6796,7 +6797,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
+@@ -6798,7 +6799,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
  			return err;
  
  		err = check_ctx_access(env, insn_idx, off, size, t, &reg_type, &btf,
@@ -116,10 +116,10 @@ index 171045b6956d..3b4c64597231 100644
  			verbose_linfo(env, insn_idx, "; ");
  		if (!err && t == BPF_READ && value_regno >= 0) {
 diff --git a/net/core/filter.c b/net/core/filter.c
-index afe38b8dee02..fa52c8b3a05a 100644
+index 8bfd46a070c1..5d3778163bde 100644
 --- a/net/core/filter.c
 +++ b/net/core/filter.c
-@@ -8524,13 +8524,16 @@ static bool bpf_skb_is_valid_access(int off, int size, enum bpf_access_type type
+@@ -8535,13 +8535,16 @@ static bool bpf_skb_is_valid_access(int off, int size, enum bpf_access_type type
  		if (off + size > offsetofend(struct __sk_buff, cb[4]))
  			return false;
  		break;
@@ -139,7 +139,7 @@ index afe38b8dee02..fa52c8b3a05a 100644
  		if (size != size_default)
  			return false;
  		break;
-@@ -8974,6 +8977,14 @@ static bool xdp_is_valid_access(int off, int size,
+@@ -8985,6 +8988,14 @@ static bool xdp_is_valid_access(int off, int size,
  			}
  		}
  		return false;
@@ -154,7 +154,7 @@ index afe38b8dee02..fa52c8b3a05a 100644
  	}
  
  	switch (off) {
-@@ -9299,12 +9310,12 @@ static bool flow_dissector_is_valid_access(int off, int size,
+@@ -9310,12 +9321,12 @@ static bool flow_dissector_is_valid_access(int off, int size,
  
  	switch (off) {
  	case bpf_ctx_range(struct __sk_buff, data):

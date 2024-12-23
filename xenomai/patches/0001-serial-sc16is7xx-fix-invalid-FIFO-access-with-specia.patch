@@ -1,4 +1,4 @@
-From babdaeebab70a67e4df177d52be002fa1f588bc5 Mon Sep 17 00:00:00 2001
+From b84f23b710213408c9a56fda14ba95b3c371407a Mon Sep 17 00:00:00 2001
 From: jiahuamx <jiahuax.man@intel.com>
 Date: Fri, 11 Oct 2024 16:06:24 +0800
 Subject: [PATCH] serial: sc16is7xx: fix invalid FIFO access with special
@@ -55,5 +55,5 @@ index 7a9924d9b294..f290fbe21d63 100644
  }
  
 -- 
-2.34.1
+2.25.1
 

@@ -1,4 +1,4 @@
-From 984f18608daa670fdabd2f81f77190791738214e Mon Sep 17 00:00:00 2001
+From b3e94706317c5ac89c357edb40ff71533c3527b2 Mon Sep 17 00:00:00 2001
 From: Andrii Nakryiko <andrii@kernel.org>
 Date: Sat, 2 Dec 2023 09:57:02 -0800
 Subject: [PATCH 7/8] bpf: enforce precision of R0 on program/async callback
@@ -17,10 +17,10 @@ Signed-off-by: Alexei Starovoitov <ast@kernel.org>
  1 file changed, 4 insertions(+)
 
 diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
-index 0bb130967c2f..350c697be018 100644
+index bf7d7d1c6b14..5014e7415bce 100644
 --- a/kernel/bpf/verifier.c
 +++ b/kernel/bpf/verifier.c
-@@ -15087,6 +15087,10 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
+@@ -15082,6 +15082,10 @@ static int check_return_code(struct bpf_verifier_env *env, int regno, const char
  		return -EINVAL;
  	}
  

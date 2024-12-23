@@ -1,4 +1,4 @@
-From d83b3d2753d2325ba59ac152fdcaa95ee1e28a19 Mon Sep 17 00:00:00 2001
+From 8d2d815cca9de56cd26a6f6067f014e74cb9c7d0 Mon Sep 17 00:00:00 2001
 From: Andrii Nakryiko <andrii@kernel.org>
 Date: Sat, 2 Dec 2023 09:56:58 -0800
 Subject: [PATCH 3/8] bpf: enforce exact retval range on subprog/callback exit
@@ -23,7 +23,7 @@ Signed-off-by: Alexei Starovoitov <ast@kernel.org>
  2 files changed, 28 insertions(+), 12 deletions(-)
 
 diff --git a/include/linux/bpf_verifier.h b/include/linux/bpf_verifier.h
-index e585929a8fb9..053ea7b2cb91 100644
+index 5276e7ca586a..22401143fd04 100644
 --- a/include/linux/bpf_verifier.h
 +++ b/include/linux/bpf_verifier.h
 @@ -275,6 +275,11 @@ struct bpf_reference_state {
@@ -48,7 +48,7 @@ index e585929a8fb9..053ea7b2cb91 100644
  	bool in_async_callback_fn;
  	/* For callback calling functions that limit number of possible
 diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
-index 8699f26918df..04c6602cbdfe 100644
+index 380a8d971736..af5a8fb19255 100644
 --- a/kernel/bpf/verifier.c
 +++ b/kernel/bpf/verifier.c
 @@ -2563,6 +2563,11 @@ static void init_reg_state(struct bpf_verifier_env *env,
@@ -72,7 +72,7 @@ index 8699f26918df..04c6602cbdfe 100644
  	init_reg_state(env, state);
  	mark_verifier_state_scratched(env);
  }
-@@ -9457,7 +9462,7 @@ static int set_map_elem_callback_state(struct bpf_verifier_env *env,
+@@ -9441,7 +9446,7 @@ static int set_map_elem_callback_state(struct bpf_verifier_env *env,
  		return err;
  
  	callee->in_callback_fn = true;
@@ -81,7 +81,7 @@ index 8699f26918df..04c6602cbdfe 100644
  	return 0;
  }
  
-@@ -9479,7 +9484,7 @@ static int set_loop_callback_state(struct bpf_verifier_env *env,
+@@ -9463,7 +9468,7 @@ static int set_loop_callback_state(struct bpf_verifier_env *env,
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
  
  	callee->in_callback_fn = true;
@@ -90,7 +90,7 @@ index 8699f26918df..04c6602cbdfe 100644
  	return 0;
  }
  
-@@ -9509,7 +9514,7 @@ static int set_timer_callback_state(struct bpf_verifier_env *env,
+@@ -9493,7 +9498,7 @@ static int set_timer_callback_state(struct bpf_verifier_env *env,
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
  	callee->in_async_callback_fn = true;
@@ -99,7 +99,7 @@ index 8699f26918df..04c6602cbdfe 100644
  	return 0;
  }
  
-@@ -9537,7 +9542,7 @@ static int set_find_vma_callback_state(struct bpf_verifier_env *env,
+@@ -9521,7 +9526,7 @@ static int set_find_vma_callback_state(struct bpf_verifier_env *env,
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
  	callee->in_callback_fn = true;
@@ -108,7 +108,7 @@ index 8699f26918df..04c6602cbdfe 100644
  	return 0;
  }
  
-@@ -9560,7 +9565,7 @@ static int set_user_ringbuf_callback_state(struct bpf_verifier_env *env,
+@@ -9544,7 +9549,7 @@ static int set_user_ringbuf_callback_state(struct bpf_verifier_env *env,
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
  
  	callee->in_callback_fn = true;
@@ -117,7 +117,7 @@ index 8699f26918df..04c6602cbdfe 100644
  	return 0;
  }
  
-@@ -9592,7 +9597,7 @@ static int set_rbtree_add_callback_state(struct bpf_verifier_env *env,
+@@ -9576,7 +9581,7 @@ static int set_rbtree_add_callback_state(struct bpf_verifier_env *env,
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
  	__mark_reg_not_init(env, &callee->regs[BPF_REG_5]);
  	callee->in_callback_fn = true;
@@ -126,7 +126,7 @@ index 8699f26918df..04c6602cbdfe 100644
  	return 0;
  }
  
-@@ -9621,6 +9626,11 @@ static bool in_rbtree_lock_required_cb(struct bpf_verifier_env *env)
+@@ -9605,6 +9610,11 @@ static bool in_rbtree_lock_required_cb(struct bpf_verifier_env *env)
  	return is_rbtree_lock_required_kfunc(kfunc_btf_id);
  }
  
@@ -138,7 +138,7 @@ index 8699f26918df..04c6602cbdfe 100644
  static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
  {
  	struct bpf_verifier_state *state = env->cur_state, *prev_st;
-@@ -9644,9 +9654,6 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
+@@ -9628,9 +9638,6 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
  
  	caller = state->frame[state->curframe - 1];
  	if (callee->in_callback_fn) {
@@ -148,7 +148,7 @@ index 8699f26918df..04c6602cbdfe 100644
  		if (r0->type != SCALAR_VALUE) {
  			verbose(env, "R0 not a scalar value\n");
  			return -EACCES;
-@@ -9658,7 +9665,11 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
+@@ -9642,7 +9649,11 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
  		if (err)
  			return err;
  

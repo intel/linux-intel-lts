@@ -1,0 +1,79 @@
+From 7b1dfd30d69d33c20d6d9a49621ece2394b57c44 Mon Sep 17 00:00:00 2001
+From: Justin Tee <justin.tee@broadcom.com>
+Date: Fri, 28 Jun 2024 10:20:08 -0700
+Subject: [PATCH] scsi: lpfc: Handle mailbox timeouts in lpfc_get_sfp_info
+
+The MBX_TIMEOUT return code is not handled in lpfc_get_sfp_info and the
+routine unconditionally frees submitted mailbox commands regardless of
+return status.  The issue is that for MBX_TIMEOUT cases, when firmware
+returns SFP information at a later time, that same mailbox memory region
+references previously freed memory in its cmpl routine.
+
+Fix by adding checks for the MBX_TIMEOUT return code.  During mailbox
+resource cleanup, check the mbox flag to make sure that the wait did not
+timeout.  If the MBOX_WAKE flag is not set, then do not free the resources
+because it will be freed when firmware completes the mailbox at a later
+time in its cmpl routine.
+
+Also, increase the timeout from 30 to 60 seconds to accommodate boot
+scripts requiring longer timeouts.
+
+Signed-off-by: Justin Tee <justin.tee@broadcom.com>
+Link: https://lore.kernel.org/r/20240628172011.25921-6-justintee8345@gmail.com
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+(cherry picked from commit ede596b1434b57c0b3fd5c02b326efe5c54f6e48)
+---
+ drivers/scsi/lpfc/lpfc_els.c | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/scsi/lpfc/lpfc_els.c b/drivers/scsi/lpfc/lpfc_els.c
+index ebe84bb7bb3d..172a5ac22bed 100644
+--- a/drivers/scsi/lpfc/lpfc_els.c
++++ b/drivers/scsi/lpfc/lpfc_els.c
+@@ -7308,14 +7308,13 @@ int lpfc_get_sfp_info_wait(struct lpfc_hba *phba,
+ 		mbox->u.mqe.un.mem_dump_type3.addr_hi = putPaddrHigh(mp->phys);
+ 	}
+ 	mbox->vport = phba->pport;
+-	mbox->ctx_ndlp = (struct lpfc_rdp_context *)rdp_context;
+-
+-	rc = lpfc_sli_issue_mbox_wait(phba, mbox, 30);
++	rc = lpfc_sli_issue_mbox_wait(phba, mbox, LPFC_MBOX_SLI4_CONFIG_TMO);
+ 	if (rc == MBX_NOT_FINISHED) {
+ 		rc = 1;
+ 		goto error;
+ 	}
+-
++	if (rc == MBX_TIMEOUT)
++		goto error;
+ 	if (phba->sli_rev == LPFC_SLI_REV4)
+ 		mp = (struct lpfc_dmabuf *)(mbox->ctx_buf);
+ 	else
+@@ -7368,8 +7367,10 @@ int lpfc_get_sfp_info_wait(struct lpfc_hba *phba,
+ 		mbox->u.mqe.un.mem_dump_type3.addr_hi = putPaddrHigh(mp->phys);
+ 	}
+ 
+-	mbox->ctx_ndlp = (struct lpfc_rdp_context *)rdp_context;
+-	rc = lpfc_sli_issue_mbox_wait(phba, mbox, 30);
++	rc = lpfc_sli_issue_mbox_wait(phba, mbox, LPFC_MBOX_SLI4_CONFIG_TMO);
++
++	if (rc == MBX_TIMEOUT)
++		goto error;
+ 	if (bf_get(lpfc_mqe_status, &mbox->u.mqe)) {
+ 		rc = 1;
+ 		goto error;
+@@ -7380,8 +7381,10 @@ int lpfc_get_sfp_info_wait(struct lpfc_hba *phba,
+ 			     DMP_SFF_PAGE_A2_SIZE);
+ 
+ error:
+-	mbox->ctx_buf = mpsave;
+-	lpfc_mbox_rsrc_cleanup(phba, mbox, MBOX_THD_UNLOCKED);
++	if (mbox->mbox_flag & LPFC_MBX_WAKE) {
++		mbox->ctx_buf = mpsave;
++		lpfc_mbox_rsrc_cleanup(phba, mbox, MBOX_THD_UNLOCKED);
++	}
+ 
+ 	return rc;
+ 
+-- 
+2.25.1
+

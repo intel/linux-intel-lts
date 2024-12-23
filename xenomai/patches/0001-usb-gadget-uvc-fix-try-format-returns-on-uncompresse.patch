@@ -1,0 +1,57 @@
+From f62d035d00de10c0ad84680494d91bf309743fcc Mon Sep 17 00:00:00 2001
+From: Michael Grzeschik <m.grzeschik@pengutronix.de>
+Date: Wed, 21 Feb 2024 23:08:31 +0100
+Subject: [PATCH 1/2] usb: gadget: uvc: fix try format returns on uncompressed
+ formats
+
+When setting uncompressed formats, the values of bytesperline and
+sizeimage can already be determined by using the v4l2_fill_pixfmt helper
+function. We change the try_fmt function to use the helper instead.
+
+Signed-off-by: Michael Grzeschik <m.grzeschik@pengutronix.de>
+Link: https://lore.kernel.org/r/20240221-uvc-gadget-uncompressed-v1-1-f55e97287cae@pengutronix.de
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+(cherry picked from commit 7a700d8f2431b681f2dae1118d62177719912f5d)
+---
+ drivers/usb/gadget/function/uvc_v4l2.c | 24 +++++++++++++++++++-----
+ 1 file changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/uvc_v4l2.c b/drivers/usb/gadget/function/uvc_v4l2.c
+index 3f0a9795c0d4..ed42485ebb2a 100644
+--- a/drivers/usb/gadget/function/uvc_v4l2.c
++++ b/drivers/usb/gadget/function/uvc_v4l2.c
+@@ -260,12 +260,26 @@ uvc_v4l2_try_format(struct file *file, void *fh, struct v4l2_format *fmt)
+ 	if (!uframe)
+ 		return -EINVAL;
+ 
+-	fmt->fmt.pix.width = uframe->frame.w_width;
+-	fmt->fmt.pix.height = uframe->frame.w_height;
++	if (uformat->type == UVCG_UNCOMPRESSED) {
++		struct uvcg_uncompressed *u =
++			to_uvcg_uncompressed(&uformat->group.cg_item);
++		if (!u)
++			return 0;
++
++		v4l2_fill_pixfmt(&fmt->fmt.pix, fmt->fmt.pix.pixelformat,
++				 uframe->frame.w_width, uframe->frame.w_height);
++
++		if (fmt->fmt.pix.sizeimage != (uvc_v4l2_get_bytesperline(uformat, uframe) *
++						uframe->frame.w_height))
++			return -EINVAL;
++	} else {
++		fmt->fmt.pix.width = uframe->frame.w_width;
++		fmt->fmt.pix.height = uframe->frame.w_height;
++		fmt->fmt.pix.bytesperline = uvc_v4l2_get_bytesperline(uformat, uframe);
++		fmt->fmt.pix.sizeimage = uvc_get_frame_size(uformat, uframe);
++		fmt->fmt.pix.pixelformat = to_uvc_format(uformat)->fcc;
++	}
+ 	fmt->fmt.pix.field = V4L2_FIELD_NONE;
+-	fmt->fmt.pix.bytesperline = uvc_v4l2_get_bytesperline(uformat, uframe);
+-	fmt->fmt.pix.sizeimage = uvc_get_frame_size(uformat, uframe);
+-	fmt->fmt.pix.pixelformat = to_uvc_format(uformat)->fcc;
+ 	fmt->fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;
+ 	fmt->fmt.pix.priv = 0;
+ 
+-- 
+2.25.1
+

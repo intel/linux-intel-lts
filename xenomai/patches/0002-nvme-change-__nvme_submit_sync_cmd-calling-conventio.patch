@@ -1,0 +1,207 @@
+From 7b48f066afea21e1391c4fe8534afa46243bb2b1 Mon Sep 17 00:00:00 2001
+From: Hannes Reinecke <hare@suse.de>
+Date: Mon, 29 Jan 2024 07:39:46 +0100
+Subject: [PATCH 2/3] nvme: change __nvme_submit_sync_cmd() calling conventions
+
+Combine the two arguments 'flags' and 'at_head' from __nvme_submit_sync_cmd()
+into a single 'flags' argument and use function-specific values to indicate
+what should be set within the function.
+
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Chaitanya Kulkarni <kch@nvidia.com>
+Reviewed-by: Sagi Grimberg <sagi@grimberg.me>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+(cherry picked from commit bd2687f2e5940f6ee14bfae787b3c1f5f0574907)
+---
+ drivers/nvme/host/auth.c    |  7 +++----
+ drivers/nvme/host/core.c    | 19 ++++++++++++-------
+ drivers/nvme/host/fabrics.c | 18 +++++++++++-------
+ drivers/nvme/host/nvme.h    | 17 +++++++++++++++--
+ 4 files changed, 41 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/nvme/host/auth.c b/drivers/nvme/host/auth.c
+index f9fcf6f5e0fb..20fcb098f223 100644
+--- a/drivers/nvme/host/auth.c
++++ b/drivers/nvme/host/auth.c
+@@ -57,12 +57,12 @@ static int nvme_auth_submit(struct nvme_ctrl *ctrl, int qid,
+ 			    void *data, size_t data_len, bool auth_send)
+ {
+ 	struct nvme_command cmd = {};
+-	blk_mq_req_flags_t flags = 0;
++	nvme_submit_flags_t flags = 0;
+ 	struct request_queue *q = ctrl->fabrics_q;
+ 	int ret;
+ 
+ 	if (qid != 0) {
+-		flags |= BLK_MQ_REQ_NOWAIT | BLK_MQ_REQ_RESERVED;
++		flags |= NVME_SUBMIT_NOWAIT | NVME_SUBMIT_RESERVED;
+ 		q = ctrl->connect_q;
+ 	}
+ 
+@@ -79,8 +79,7 @@ static int nvme_auth_submit(struct nvme_ctrl *ctrl, int qid,
+ 	}
+ 
+ 	ret = __nvme_submit_sync_cmd(q, &cmd, NULL, data, data_len,
+-				     qid == 0 ? NVME_QID_ANY : qid,
+-				     0, flags);
++				     qid == 0 ? NVME_QID_ANY : qid, flags);
+ 	if (ret > 0)
+ 		dev_warn(ctrl->device,
+ 			"qid %d auth_send failed with status %d\n", qid, ret);
+diff --git a/drivers/nvme/host/core.c b/drivers/nvme/host/core.c
+index 965ca7d7a3de..872f778c0842 100644
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -1023,15 +1023,20 @@ EXPORT_SYMBOL_NS_GPL(nvme_execute_rq, NVME_TARGET_PASSTHRU);
+  */
+ int __nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
+ 		union nvme_result *result, void *buffer, unsigned bufflen,
+-		int qid, int at_head, blk_mq_req_flags_t flags)
++		int qid, nvme_submit_flags_t flags)
+ {
+ 	struct request *req;
+ 	int ret;
++	blk_mq_req_flags_t blk_flags = 0;
+ 
++	if (flags & NVME_SUBMIT_NOWAIT)
++		blk_flags |= BLK_MQ_REQ_NOWAIT;
++	if (flags & NVME_SUBMIT_RESERVED)
++		blk_flags |= BLK_MQ_REQ_RESERVED;
+ 	if (qid == NVME_QID_ANY)
+-		req = blk_mq_alloc_request(q, nvme_req_op(cmd), flags);
++		req = blk_mq_alloc_request(q, nvme_req_op(cmd), blk_flags);
+ 	else
+-		req = blk_mq_alloc_request_hctx(q, nvme_req_op(cmd), flags,
++		req = blk_mq_alloc_request_hctx(q, nvme_req_op(cmd), blk_flags,
+ 						qid - 1);
+ 
+ 	if (IS_ERR(req))
+@@ -1044,7 +1049,7 @@ int __nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
+ 			goto out;
+ 	}
+ 
+-	ret = nvme_execute_rq(req, at_head);
++	ret = nvme_execute_rq(req, flags & NVME_SUBMIT_AT_HEAD);
+ 	if (result && ret >= 0)
+ 		*result = nvme_req(req)->result;
+  out:
+@@ -1057,7 +1062,7 @@ int nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
+ 		void *buffer, unsigned bufflen)
+ {
+ 	return __nvme_submit_sync_cmd(q, cmd, NULL, buffer, bufflen,
+-			NVME_QID_ANY, 0, 0);
++			NVME_QID_ANY, 0);
+ }
+ EXPORT_SYMBOL_GPL(nvme_submit_sync_cmd);
+ 
+@@ -1524,7 +1529,7 @@ static int nvme_features(struct nvme_ctrl *dev, u8 op, unsigned int fid,
+ 	c.features.dword11 = cpu_to_le32(dword11);
+ 
+ 	ret = __nvme_submit_sync_cmd(dev->admin_q, &c, &res,
+-			buffer, buflen, NVME_QID_ANY, 0, 0);
++			buffer, buflen, NVME_QID_ANY, 0);
+ 	if (ret >= 0 && result)
+ 		*result = le32_to_cpu(res.u32);
+ 	return ret;
+@@ -2126,7 +2131,7 @@ static int nvme_sec_submit(void *data, u16 spsp, u8 secp, void *buffer, size_t l
+ 	cmd.common.cdw11 = cpu_to_le32(len);
+ 
+ 	return __nvme_submit_sync_cmd(ctrl->admin_q, &cmd, NULL, buffer, len,
+-			NVME_QID_ANY, 1, 0);
++			NVME_QID_ANY, NVME_SUBMIT_AT_HEAD);
+ }
+ 
+ static void nvme_configure_opal(struct nvme_ctrl *ctrl, bool was_suspended)
+diff --git a/drivers/nvme/host/fabrics.c b/drivers/nvme/host/fabrics.c
+index 92ba315cfe19..3538e5786bf9 100644
+--- a/drivers/nvme/host/fabrics.c
++++ b/drivers/nvme/host/fabrics.c
+@@ -179,7 +179,7 @@ int nvmf_reg_read32(struct nvme_ctrl *ctrl, u32 off, u32 *val)
+ 	cmd.prop_get.offset = cpu_to_le32(off);
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->fabrics_q, &cmd, &res, NULL, 0,
+-			NVME_QID_ANY, 0, 0);
++			NVME_QID_ANY, 0);
+ 
+ 	if (ret >= 0)
+ 		*val = le64_to_cpu(res.u64);
+@@ -225,7 +225,7 @@ int nvmf_reg_read64(struct nvme_ctrl *ctrl, u32 off, u64 *val)
+ 	cmd.prop_get.offset = cpu_to_le32(off);
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->fabrics_q, &cmd, &res, NULL, 0,
+-			NVME_QID_ANY, 0, 0);
++			NVME_QID_ANY, 0);
+ 
+ 	if (ret >= 0)
+ 		*val = le64_to_cpu(res.u64);
+@@ -270,7 +270,7 @@ int nvmf_reg_write32(struct nvme_ctrl *ctrl, u32 off, u32 val)
+ 	cmd.prop_set.value = cpu_to_le64(val);
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->fabrics_q, &cmd, NULL, NULL, 0,
+-			NVME_QID_ANY, 0, 0);
++			NVME_QID_ANY, 0);
+ 	if (unlikely(ret))
+ 		dev_err(ctrl->device,
+ 			"Property Set error: %d, offset %#x\n",
+@@ -449,8 +449,10 @@ int nvmf_connect_admin_queue(struct nvme_ctrl *ctrl)
+ 		return -ENOMEM;
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->fabrics_q, &cmd, &res,
+-			data, sizeof(*data), NVME_QID_ANY, 1,
+-			BLK_MQ_REQ_RESERVED | BLK_MQ_REQ_NOWAIT);
++			data, sizeof(*data), NVME_QID_ANY,
++			NVME_SUBMIT_AT_HEAD |
++			NVME_SUBMIT_NOWAIT |
++			NVME_SUBMIT_RESERVED);
+ 	if (ret) {
+ 		nvmf_log_connect_error(ctrl, ret, le32_to_cpu(res.u32),
+ 				       &cmd, data);
+@@ -524,8 +526,10 @@ int nvmf_connect_io_queue(struct nvme_ctrl *ctrl, u16 qid)
+ 		return -ENOMEM;
+ 
+ 	ret = __nvme_submit_sync_cmd(ctrl->connect_q, &cmd, &res,
+-			data, sizeof(*data), qid, 1,
+-			BLK_MQ_REQ_RESERVED | BLK_MQ_REQ_NOWAIT);
++			data, sizeof(*data), qid,
++			NVME_SUBMIT_AT_HEAD |
++			NVME_SUBMIT_RESERVED |
++			NVME_SUBMIT_NOWAIT);
+ 	if (ret) {
+ 		nvmf_log_connect_error(ctrl, ret, le32_to_cpu(res.u32),
+ 				       &cmd, data);
+diff --git a/drivers/nvme/host/nvme.h b/drivers/nvme/host/nvme.h
+index 14a867245c29..a95ba47e39e2 100644
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -866,12 +866,25 @@ static inline bool nvme_is_unique_nsid(struct nvme_ctrl *ctrl,
+ 		(ctrl->ctratt & NVME_CTRL_CTRATT_NVM_SETS);
+ }
+ 
++/*
++ * Flags for __nvme_submit_sync_cmd()
++ */
++typedef __u32 __bitwise nvme_submit_flags_t;
++
++enum {
++	/* Insert request at the head of the queue */
++	NVME_SUBMIT_AT_HEAD  = (__force nvme_submit_flags_t)(1 << 0),
++	/* Set BLK_MQ_REQ_NOWAIT when allocating request */
++	NVME_SUBMIT_NOWAIT = (__force nvme_submit_flags_t)(1 << 1),
++	/* Set BLK_MQ_REQ_RESERVED when allocating request */
++	NVME_SUBMIT_RESERVED = (__force nvme_submit_flags_t)(1 << 2),
++};
++
+ int nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
+ 		void *buf, unsigned bufflen);
+ int __nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
+ 		union nvme_result *result, void *buffer, unsigned bufflen,
+-		int qid, int at_head,
+-		blk_mq_req_flags_t flags);
++		int qid, nvme_submit_flags_t flags);
+ int nvme_set_features(struct nvme_ctrl *dev, unsigned int fid,
+ 		      unsigned int dword11, void *buffer, size_t buflen,
+ 		      u32 *result);
+-- 
+2.25.1
+

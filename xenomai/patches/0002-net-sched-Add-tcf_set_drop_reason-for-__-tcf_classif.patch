@@ -1,0 +1,128 @@
+From acf4fd7b0425d517bb635109dd11ec411bd1d37f Mon Sep 17 00:00:00 2001
+From: Daniel Borkmann <daniel@iogearbox.net>
+Date: Mon, 9 Oct 2023 11:26:55 +0200
+Subject: [PATCH 2/4] net, sched: Add tcf_set_drop_reason for {__,}tcf_classify
+
+Add an initial user for the newly added tcf_set_drop_reason() helper to set the
+drop reason for internal errors leading to TC_ACT_SHOT inside {__,}tcf_classify().
+
+Right now this only adds a very basic SKB_DROP_REASON_TC_ERROR as a generic
+fallback indicator to mark drop locations. Where needed, such locations can be
+converted to more specific codes, for example, when hitting the reclassification
+limit, etc.
+
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Cc: Jamal Hadi Salim <jhs@mojatatu.com>
+Cc: Victor Nogueira <victor@mojatatu.com>
+Link: https://lore.kernel.org/r/20231009092655.22025-2-daniel@iogearbox.net
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+(cherry picked from commit 39d08b91646d83e87f7cbcd846b3ef33b1a53b79)
+---
+ include/net/dropreason-core.h |  3 +++
+ net/sched/cls_api.c           | 26 ++++++++++++++++++++------
+ 2 files changed, 23 insertions(+), 6 deletions(-)
+
+diff --git a/include/net/dropreason-core.h b/include/net/dropreason-core.h
+index a587e83fc169..845dce805de7 100644
+--- a/include/net/dropreason-core.h
++++ b/include/net/dropreason-core.h
+@@ -80,6 +80,7 @@
+ 	FN(IPV6_NDISC_BAD_OPTIONS)	\
+ 	FN(IPV6_NDISC_NS_OTHERHOST)	\
+ 	FN(QUEUE_PURGE)			\
++	FN(TC_ERROR)			\
+ 	FNe(MAX)
+ 
+ /**
+@@ -345,6 +346,8 @@ enum skb_drop_reason {
+ 	SKB_DROP_REASON_IPV6_NDISC_NS_OTHERHOST,
+ 	/** @SKB_DROP_REASON_QUEUE_PURGE: bulk free. */
+ 	SKB_DROP_REASON_QUEUE_PURGE,
++	/** @SKB_DROP_REASON_TC_ERROR: generic internal tc error. */
++	SKB_DROP_REASON_TC_ERROR,
+ 	/**
+ 	 * @SKB_DROP_REASON_MAX: the maximum of core drop reasons, which
+ 	 * shouldn't be used as a real 'reason' - only for tracing code gen
+diff --git a/net/sched/cls_api.c b/net/sched/cls_api.c
+index 84e18b5f72a3..a20df746030b 100644
+--- a/net/sched/cls_api.c
++++ b/net/sched/cls_api.c
+@@ -1687,12 +1687,16 @@ static inline int __tcf_classify(struct sk_buff *skb,
+ 			 * time we got here with a cookie from hardware.
+ 			 */
+ 			if (unlikely(n->tp != tp || n->tp->chain != n->chain ||
+-				     !tp->ops->get_exts))
++				     !tp->ops->get_exts)) {
++				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+ 				return TC_ACT_SHOT;
++			}
+ 
+ 			exts = tp->ops->get_exts(tp, n->handle);
+-			if (unlikely(!exts || n->exts != exts))
++			if (unlikely(!exts || n->exts != exts)) {
++				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+ 				return TC_ACT_SHOT;
++			}
+ 
+ 			n = NULL;
+ 			err = tcf_exts_exec_ex(skb, exts, act_index, res);
+@@ -1718,8 +1722,10 @@ static inline int __tcf_classify(struct sk_buff *skb,
+ 			return err;
+ 	}
+ 
+-	if (unlikely(n))
++	if (unlikely(n)) {
++		tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+ 		return TC_ACT_SHOT;
++	}
+ 
+ 	return TC_ACT_UNSPEC; /* signal: continue lookup */
+ #ifdef CONFIG_NET_CLS_ACT
+@@ -1729,6 +1735,7 @@ static inline int __tcf_classify(struct sk_buff *skb,
+ 				       tp->chain->block->index,
+ 				       tp->prio & 0xffff,
+ 				       ntohs(tp->protocol));
++		tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+ 		return TC_ACT_SHOT;
+ 	}
+ 
+@@ -1765,8 +1772,10 @@ int tcf_classify(struct sk_buff *skb,
+ 			if (ext->act_miss) {
+ 				n = tcf_exts_miss_cookie_lookup(ext->act_miss_cookie,
+ 								&act_index);
+-				if (!n)
++				if (!n) {
++					tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+ 					return TC_ACT_SHOT;
++				}
+ 
+ 				chain = n->chain_index;
+ 			} else {
+@@ -1774,8 +1783,10 @@ int tcf_classify(struct sk_buff *skb,
+ 			}
+ 
+ 			fchain = tcf_chain_lookup_rcu(block, chain);
+-			if (!fchain)
++			if (!fchain) {
++				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+ 				return TC_ACT_SHOT;
++			}
+ 
+ 			/* Consume, so cloned/redirect skbs won't inherit ext */
+ 			skb_ext_del(skb, TC_SKB_EXT);
+@@ -1794,8 +1805,11 @@ int tcf_classify(struct sk_buff *skb,
+ 			struct tc_skb_cb *cb = tc_skb_cb(skb);
+ 
+ 			ext = tc_skb_ext_alloc(skb);
+-			if (WARN_ON_ONCE(!ext))
++			if (WARN_ON_ONCE(!ext)) {
++				tcf_set_drop_reason(res, SKB_DROP_REASON_TC_ERROR);
+ 				return TC_ACT_SHOT;
++			}
++
+ 			ext->chain = last_executed_chain;
+ 			ext->mru = cb->mru;
+ 			ext->post_ct = cb->post_ct;
+-- 
+2.25.1
+

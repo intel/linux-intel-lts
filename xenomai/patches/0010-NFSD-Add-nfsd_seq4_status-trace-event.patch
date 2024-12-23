@@ -1,0 +1,93 @@
+From 688c9ecebf77ff39f68bd34f10a422f03000cc6e Mon Sep 17 00:00:00 2001
+From: Chuck Lever <chuck.lever@oracle.com>
+Date: Fri, 26 Jan 2024 12:45:42 -0500
+Subject: [PATCH 10/11] NFSD: Add nfsd_seq4_status trace event
+
+Add a trace point that records SEQ4_STATUS flags returned in an
+NFSv4.1 SEQUENCE response. SEQ4_STATUS flags report backchannel
+issues and changes to lease state to clients. Knowing what the
+server is reporting to clients is useful for debugging both
+configuration and operational issues in real time.
+
+For example, upcoming patches will enable server administrators to
+revoke parts of a client's lease; that revocation is indicated to
+the client when a subsequent SEQUENCE operation has one or more
+SEQ4_STATUS flags that are set.
+
+Sample trace records:
+
+nfsd-927   [006]   615.581821: nfsd_seq4_status:     xid=0x095ded07 sessionid=65a032c3:b7845faf:00000001:00000000 status_flags=BACKCHANNEL_FAULT
+nfsd-927   [006]   615.588043: nfsd_seq4_status:     xid=0x0a5ded07 sessionid=65a032c3:b7845faf:00000001:00000000 status_flags=BACKCHANNEL_FAULT
+nfsd-928   [003]   615.588448: nfsd_seq4_status:     xid=0x0b5ded07 sessionid=65a032c3:b7845faf:00000001:00000000 status_flags=BACKCHANNEL_FAULT
+
+Reviewed-by: Jeff Layton <jlayton@kernel.org>
+Reviewed-by: Benjamin Coddington <bcodding@redhat.com>
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+(cherry picked from commit f52f1975b1716909123da42462a8ce1e64c8ae5d)
+---
+ fs/nfsd/nfs4state.c |  2 --
+ fs/nfsd/trace.h     | 35 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/fs/nfsd/nfs4state.c b/fs/nfsd/nfs4state.c
+index 71ad7ff42992..7233d0163820 100644
+--- a/fs/nfsd/nfs4state.c
++++ b/fs/nfsd/nfs4state.c
+@@ -4201,8 +4201,6 @@ nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
+ 	}
+ 	if (!list_empty(&clp->cl_revoked))
+ 		seq->status_flags |= SEQ4_STATUS_RECALLABLE_STATE_REVOKED;
+-	if (atomic_read(&clp->cl_admin_revoked))
+-		seq->status_flags |= SEQ4_STATUS_ADMIN_STATE_REVOKED;
+ 	trace_nfsd_seq4_status(rqstp, seq);
+ out_no_session:
+ 	if (conn)
+diff --git a/fs/nfsd/trace.h b/fs/nfsd/trace.h
+index d1ca6f531433..c143714f3081 100644
+--- a/fs/nfsd/trace.h
++++ b/fs/nfsd/trace.h
+@@ -694,6 +694,41 @@ DEFINE_EVENT(nfsd_stid_class, nfsd_stid_##name,			\
+ 
+ DEFINE_STID_EVENT(revoke);
+ 
++TRACE_EVENT_CONDITION(nfsd_seq4_status,
++	TP_PROTO(
++		const struct svc_rqst *rqstp,
++		const struct nfsd4_sequence *sequence
++	),
++	TP_ARGS(rqstp, sequence),
++	TP_CONDITION(sequence->status_flags),
++	TP_STRUCT__entry(
++		__field(unsigned int, netns_ino)
++		__field(u32, xid)
++		__field(u32, cl_boot)
++		__field(u32, cl_id)
++		__field(u32, seqno)
++		__field(u32, reserved)
++		__field(unsigned long, status_flags)
++	),
++	TP_fast_assign(
++		const struct nfsd4_sessionid *sid =
++			(struct nfsd4_sessionid *)&sequence->sessionid;
++
++		__entry->netns_ino = SVC_NET(rqstp)->ns.inum;
++		__entry->xid = be32_to_cpu(rqstp->rq_xid);
++		__entry->cl_boot = sid->clientid.cl_boot;
++		__entry->cl_id = sid->clientid.cl_id;
++		__entry->seqno = sid->sequence;
++		__entry->reserved = sid->reserved;
++		__entry->status_flags = sequence->status_flags;
++	),
++	TP_printk("xid=0x%08x sessionid=%08x:%08x:%08x:%08x status_flags=%s",
++		__entry->xid, __entry->cl_boot, __entry->cl_id,
++		__entry->seqno, __entry->reserved,
++		show_nfs4_seq4_status(__entry->status_flags)
++	)
++);
++
+ DECLARE_EVENT_CLASS(nfsd_clientid_class,
+ 	TP_PROTO(const clientid_t *clid),
+ 	TP_ARGS(clid),
+-- 
+2.25.1
+

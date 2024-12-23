@@ -1,0 +1,177 @@
+From 0c1fa1df75b3aa324f1396b74ddfea7d9bf4217d Mon Sep 17 00:00:00 2001
+From: David Arinzon <darinzon@amazon.com>
+Date: Tue, 30 Jan 2024 09:53:49 +0000
+Subject: [PATCH 1/2] net: ena: Add more information on TX timeouts
+
+The function responsible for polling TX completions might not receive
+the CPU resources it needs due to higher priority tasks running on the
+requested core.
+
+The driver might not be able to recognize such cases, but it can use its
+state to suspect that they happened. If both conditions are met:
+
+- napi hasn't been executed more than the TX completion timeout value
+- napi is scheduled (meaning that we've received an interrupt)
+
+Then it's more likely that the napi handler isn't scheduled because of
+an overloaded CPU.
+It was decided that for this case, the driver would wait twice as long
+as the regular timeout before scheduling a reset.
+The driver uses ENA_REGS_RESET_SUSPECTED_POLL_STARVATION reset reason to
+indicate this case to the device.
+
+This patch also adds more information to the ena_tx_timeout() callback.
+This function is called by the kernel when it detects that a specific TX
+queue has been closed for too long.
+
+Signed-off-by: Shay Agroskin <shayagr@amazon.com>
+Signed-off-by: David Arinzon <darinzon@amazon.com>
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+---
+ drivers/net/ethernet/amazon/ena/ena_netdev.c  | 77 +++++++++++++++----
+ .../net/ethernet/amazon/ena/ena_regs_defs.h   |  1 +
+ 2 files changed, 64 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/net/ethernet/amazon/ena/ena_netdev.c b/drivers/net/ethernet/amazon/ena/ena_netdev.c
+index 0d201a57d7e2..e7258fbf72b0 100644
+--- a/drivers/net/ethernet/amazon/ena/ena_netdev.c
++++ b/drivers/net/ethernet/amazon/ena/ena_netdev.c
+@@ -47,19 +47,44 @@ static int ena_restore_device(struct ena_adapter *adapter);
+ 
+ static void ena_tx_timeout(struct net_device *dev, unsigned int txqueue)
+ {
++	enum ena_regs_reset_reason_types reset_reason = ENA_REGS_RESET_OS_NETDEV_WD;
+ 	struct ena_adapter *adapter = netdev_priv(dev);
++	unsigned int time_since_last_napi, threshold;
++	struct ena_ring *tx_ring;
++	int napi_scheduled;
++
++	if (txqueue >= adapter->num_io_queues) {
++		netdev_err(dev, "TX timeout on invalid queue %u\n", txqueue);
++		goto schedule_reset;
++	}
++
++	threshold = jiffies_to_usecs(dev->watchdog_timeo);
++	tx_ring = &adapter->tx_ring[txqueue];
++
++	time_since_last_napi = jiffies_to_usecs(jiffies - tx_ring->tx_stats.last_napi_jiffies);
++	napi_scheduled = !!(tx_ring->napi->state & NAPIF_STATE_SCHED);
+ 
++	netdev_err(dev,
++		   "TX q %d is paused for too long (threshold %u). Time since last napi %u usec. napi scheduled: %d\n",
++		   txqueue,
++		   threshold,
++		   time_since_last_napi,
++		   napi_scheduled);
++
++	if (threshold < time_since_last_napi && napi_scheduled) {
++		netdev_err(dev,
++			   "napi handler hasn't been called for a long time but is scheduled\n");
++			   reset_reason = ENA_REGS_RESET_SUSPECTED_POLL_STARVATION;
++	}
++schedule_reset:
+ 	/* Change the state of the device to trigger reset
+ 	 * Check that we are not in the middle or a trigger already
+ 	 */
+-
+ 	if (test_and_set_bit(ENA_FLAG_TRIGGER_RESET, &adapter->flags))
+ 		return;
+ 
+-	ena_reset_device(adapter, ENA_REGS_RESET_OS_NETDEV_WD);
++	ena_reset_device(adapter, reset_reason);
+ 	ena_increase_stat(&adapter->dev_stats.tx_timeout, 1, &adapter->syncp);
+-
+-	netif_err(adapter, tx_err, dev, "Transmit time out\n");
+ }
+ 
+ static void update_rx_ring_mtu(struct ena_adapter *adapter, int mtu)
+@@ -3333,14 +3358,18 @@ static int check_missing_comp_in_tx_queue(struct ena_adapter *adapter,
+ 					  struct ena_ring *tx_ring)
+ {
+ 	struct ena_napi *ena_napi = container_of(tx_ring->napi, struct ena_napi, napi);
++	enum ena_regs_reset_reason_types reset_reason = ENA_REGS_RESET_MISS_TX_CMPL;
+ 	unsigned int time_since_last_napi;
+ 	unsigned int missing_tx_comp_to;
+ 	bool is_tx_comp_time_expired;
+ 	struct ena_tx_buffer *tx_buf;
+ 	unsigned long last_jiffies;
++	int napi_scheduled;
+ 	u32 missed_tx = 0;
+ 	int i, rc = 0;
+ 
++	missing_tx_comp_to = jiffies_to_msecs(adapter->missing_tx_completion_to);
++
+ 	for (i = 0; i < tx_ring->ring_size; i++) {
+ 		tx_buf = &tx_ring->tx_buffer_info[i];
+ 		last_jiffies = tx_buf->last_jiffies;
+@@ -3367,25 +3396,45 @@ static int check_missing_comp_in_tx_queue(struct ena_adapter *adapter,
+ 			adapter->missing_tx_completion_to);
+ 
+ 		if (unlikely(is_tx_comp_time_expired)) {
+-			if (!tx_buf->print_once) {
+-				time_since_last_napi = jiffies_to_usecs(jiffies - tx_ring->tx_stats.last_napi_jiffies);
+-				missing_tx_comp_to = jiffies_to_msecs(adapter->missing_tx_completion_to);
+-				netif_notice(adapter, tx_err, adapter->netdev,
+-					     "Found a Tx that wasn't completed on time, qid %d, index %d. %u usecs have passed since last napi execution. Missing Tx timeout value %u msecs\n",
+-					     tx_ring->qid, i, time_since_last_napi, missing_tx_comp_to);
++			time_since_last_napi =
++				jiffies_to_usecs(jiffies - tx_ring->tx_stats.last_napi_jiffies);
++			napi_scheduled = !!(ena_napi->napi.state & NAPIF_STATE_SCHED);
++
++			if (missing_tx_comp_to < time_since_last_napi && napi_scheduled) {
++				/* We suspect napi isn't called because the
++				 * bottom half is not run. Require a bigger
++				 * timeout for these cases
++				 */
++				if (!time_is_before_jiffies(last_jiffies +
++					2 * adapter->missing_tx_completion_to))
++					continue;
++
++				reset_reason = ENA_REGS_RESET_SUSPECTED_POLL_STARVATION;
+ 			}
+ 
+-			tx_buf->print_once = 1;
+ 			missed_tx++;
++
++			if (tx_buf->print_once)
++				continue;
++
++			netif_notice(adapter, tx_err, adapter->netdev,
++				     "TX hasn't completed, qid %d, index %d. %u usecs from last napi execution, napi scheduled: %d\n",
++				     tx_ring->qid, i, time_since_last_napi, napi_scheduled);
++
++			tx_buf->print_once = 1;
+ 		}
+ 	}
+ 
+ 	if (unlikely(missed_tx > adapter->missing_tx_completion_threshold)) {
+ 		netif_err(adapter, tx_err, adapter->netdev,
+-			  "The number of lost tx completions is above the threshold (%d > %d). Reset the device\n",
++			  "Lost TX completions are above the threshold (%d > %d). Completion transmission timeout: %u.\n",
+ 			  missed_tx,
+-			  adapter->missing_tx_completion_threshold);
+-		ena_reset_device(adapter, ENA_REGS_RESET_MISS_TX_CMPL);
++			  adapter->missing_tx_completion_threshold,
++			  missing_tx_comp_to);
++		netif_err(adapter, tx_err, adapter->netdev,
++			  "Resetting the device\n");
++
++		ena_reset_device(adapter, reset_reason);
+ 		rc = -EIO;
+ 	}
+ 
+diff --git a/drivers/net/ethernet/amazon/ena/ena_regs_defs.h b/drivers/net/ethernet/amazon/ena/ena_regs_defs.h
+index 1e007a41a525..2c3d6a77ea79 100644
+--- a/drivers/net/ethernet/amazon/ena/ena_regs_defs.h
++++ b/drivers/net/ethernet/amazon/ena/ena_regs_defs.h
+@@ -21,6 +21,7 @@ enum ena_regs_reset_reason_types {
+ 	ENA_REGS_RESET_USER_TRIGGER                 = 12,
+ 	ENA_REGS_RESET_GENERIC                      = 13,
+ 	ENA_REGS_RESET_MISS_INTERRUPT               = 14,
++	ENA_REGS_RESET_SUSPECTED_POLL_STARVATION    = 15,
+ };
+ 
+ /* ena_registers offsets */
+-- 
+2.25.1
+

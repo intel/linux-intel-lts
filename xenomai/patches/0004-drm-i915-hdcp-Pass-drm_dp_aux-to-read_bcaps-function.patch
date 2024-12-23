@@ -1,0 +1,68 @@
+From a7552144fad1f2f6c642e8bc345bab0754193554 Mon Sep 17 00:00:00 2001
+From: Suraj Kandpal <suraj.kandpal@intel.com>
+Date: Fri, 23 Feb 2024 13:44:45 +0530
+Subject: [PATCH 4/5] drm/i915/hdcp: Pass drm_dp_aux to read_bcaps function
+
+Pass drm_dp_aux to intel_dp_hdcp_read_bcaps function
+so as to aid in reading the bcaps for the remote monitor
+later on.
+
+Signed-off-by: Suraj Kandpal <suraj.kandpal@intel.com>
+Reviewed-by: Ankit Nautiyal <ankit.k.nautiyal@intel.com>
+Signed-off-by: Ankit Nautiyal <ankit.k.nautiyal@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240223081453.1576918-6-suraj.kandpal@intel.com
+(cherry picked from commit 4ae5a09779017a95d573a3a55ae5ee39cc409791)
+---
+ drivers/gpu/drm/i915/display/intel_dp_hdcp.c | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+index 6767b5338ae7..5394391acbe1 100644
+--- a/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
++++ b/drivers/gpu/drm/i915/display/intel_dp_hdcp.c
+@@ -125,13 +125,13 @@ static int intel_dp_hdcp_read_bstatus(struct intel_digital_port *dig_port,
+ }
+ 
+ static
+-int intel_dp_hdcp_read_bcaps(struct intel_digital_port *dig_port,
++int intel_dp_hdcp_read_bcaps(struct drm_dp_aux *aux,
++			     struct drm_i915_private *i915,
+ 			     u8 *bcaps)
+ {
+-	struct drm_i915_private *i915 = to_i915(dig_port->base.base.dev);
+ 	ssize_t ret;
+ 
+-	ret = drm_dp_dpcd_read(&dig_port->dp.aux, DP_AUX_HDCP_BCAPS,
++	ret = drm_dp_dpcd_read(aux, DP_AUX_HDCP_BCAPS,
+ 			       bcaps, 1);
+ 	if (ret != 1) {
+ 		drm_dbg_kms(&i915->drm,
+@@ -146,10 +146,11 @@ static
+ int intel_dp_hdcp_repeater_present(struct intel_digital_port *dig_port,
+ 				   bool *repeater_present)
+ {
++	struct drm_i915_private *i915 = to_i915(dig_port->base.base.dev);
+ 	ssize_t ret;
+ 	u8 bcaps;
+ 
+-	ret = intel_dp_hdcp_read_bcaps(dig_port, &bcaps);
++	ret = intel_dp_hdcp_read_bcaps(&dig_port->dp.aux, i915,  &bcaps);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -271,10 +272,11 @@ static
+ int intel_dp_hdcp_capable(struct intel_digital_port *dig_port,
+ 			  bool *hdcp_capable)
+ {
++	struct drm_i915_private *i915 = to_i915(dig_port->base.base.dev);
+ 	ssize_t ret;
+ 	u8 bcaps;
+ 
+-	ret = intel_dp_hdcp_read_bcaps(dig_port, &bcaps);
++	ret = intel_dp_hdcp_read_bcaps(&dig_port->dp.aux, i915, &bcaps);
+ 	if (ret)
+ 		return ret;
+ 
+-- 
+2.25.1
+
