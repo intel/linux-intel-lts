@@ -201,9 +201,6 @@
 #CVE-2024-43846
 0001-lib-objagg-Fix-general-protection-fault.patch
 
-#CVE-2024-47674
-0001-mm-avoid-leaving-partial-pfn-mappings-around-in-erro.patch
-
 #CVE-2024-47707
 0001-ipv6-avoid-possible-NULL-deref-in-rt6_uncached_list_.patch
 
