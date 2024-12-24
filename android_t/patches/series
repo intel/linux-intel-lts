@@ -387,9 +387,6 @@
 #CVE-2024-53061
 0001-media-s5p-jpeg-prevent-buffer-overflows.patch
 
-#CVE-2024-53097
-0001-mm-krealloc-Fix-MTE-false-alarm-in-__do_krealloc.patch
-
 #CVE-2024-53099
 0001-bpf-Check-validity-of-link-type-in-bpf_link_show_fdi.patch
 
