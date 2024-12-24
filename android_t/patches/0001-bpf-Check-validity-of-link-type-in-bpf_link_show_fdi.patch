@@ -1,0 +1,63 @@
+From 736195a97ca9cfb0e937cdb8bfd16a483ca91196 Mon Sep 17 00:00:00 2001
+From: Hou Tao <houtao1@huawei.com>
+Date: Thu, 24 Oct 2024 09:35:58 +0800
+Subject: [PATCH] bpf: Check validity of link->type in bpf_link_show_fdinfo()
+
+If a newly-added link type doesn't invoke BPF_LINK_TYPE(), accessing
+bpf_link_type_strs[link->type] may result in an out-of-bounds access.
+
+To spot such missed invocations early in the future, checking the
+validity of link->type in bpf_link_show_fdinfo() and emitting a warning
+when such invocations are missed.
+
+Signed-off-by: Hou Tao <houtao1@huawei.com>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Link: https://lore.kernel.org/bpf/20241024013558.1135167-3-houtao@huaweicloud.com
+(cherry picked with conflict fix from commit 8421d4c8762bd022cb491f2f0f7019ef51b4f0a7)
+---
+ kernel/bpf/syscall.c | 27 +++++++++++++++++----------
+ 1 file changed, 17 insertions(+), 10 deletions(-)
+
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index 590f8da07cb9..0df9523df7f6 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -2502,18 +2502,25 @@ static void bpf_link_show_fdinfo(struct seq_file *m, struct file *filp)
+ {
+ 	const struct bpf_link *link = filp->private_data;
+ 	const struct bpf_prog *prog = link->prog;
++	enum bpf_link_type type = link->type;
+ 	char prog_tag[sizeof(prog->tag) * 2 + 1] = { };
+ 
+-	bin2hex(prog_tag, prog->tag, sizeof(prog->tag));
+-	seq_printf(m,
+-		   "link_type:\t%s\n"
+-		   "link_id:\t%u\n"
+-		   "prog_tag:\t%s\n"
+-		   "prog_id:\t%u\n",
+-		   bpf_link_type_strs[link->type],
+-		   link->id,
+-		   prog_tag,
+-		   prog->aux->id);
++	if (type < ARRAY_SIZE(bpf_link_type_strs) && bpf_link_type_strs[type]) {
++		seq_printf(m, "link_type:\t%s\n", bpf_link_type_strs[type]);
++	} else {
++		WARN_ONCE(1, "missing BPF_LINK_TYPE(...) for link type %u\n", type);
++		seq_printf(m, "link_type:\t<%u>\n", type);
++	}
++	seq_printf(m, "link_id:\t%u\n", link->id);
++
++	if (prog) {
++		bin2hex(prog_tag, prog->tag, sizeof(prog->tag));
++		seq_printf(m,
++			   "prog_tag:\t%s\n"
++			   "prog_id:\t%u\n",
++			   prog_tag,
++			   prog->aux->id);
++	}
+ 	if (link->ops->show_fdinfo)
+ 		link->ops->show_fdinfo(link, m);
+ }
+-- 
+2.25.1
+

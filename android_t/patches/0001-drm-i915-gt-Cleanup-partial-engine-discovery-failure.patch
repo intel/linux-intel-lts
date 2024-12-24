@@ -1,0 +1,48 @@
+From d1624767d7f4c86ea9616b07568974a45843c6ab Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris.p.wilson@intel.com>
+Date: Thu, 15 Sep 2022 16:26:51 -0700
+Subject: [PATCH] drm/i915/gt: Cleanup partial engine discovery failures
+
+[ Upstream commit 78a033433a5ae4fee85511ee075bc9a48312c79e ]
+
+If we abort driver initialisation in the middle of gt/engine discovery,
+some engines will be fully setup and some not. Those incompletely setup
+engines only have 'engine->release == NULL' and so will leak any of the
+common objects allocated.
+
+v2:
+ - Drop the destroy_pinned_context() helper for now.  It's not really
+   worth it with just a single callsite at the moment.  (Janusz)
+
+Signed-off-by: Chris Wilson <chris.p.wilson@intel.com>
+Cc: Janusz Krzysztofik <janusz.krzysztofik@linux.intel.com>
+Signed-off-by: Matt Roper <matthew.d.roper@intel.com>
+Reviewed-by: Janusz Krzysztofik <janusz.krzysztofik@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20220915232654.3283095-2-matthew.d.roper@intel.com
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/gpu/drm/i915/gt/intel_engine_cs.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gt/intel_engine_cs.c b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
+index eb99441e0ada..42cb3ad04d89 100644
+--- a/drivers/gpu/drm/i915/gt/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
+@@ -983,8 +983,13 @@ int intel_engines_init(struct intel_gt *gt)
+ 			return err;
+ 
+ 		err = setup(engine);
+-		if (err)
++		if (err) {
++			intel_engine_cleanup_common(engine);
+ 			return err;
++		}
++
++		/* The backend should now be responsible for cleanup */
++		GEM_BUG_ON(engine->release == NULL);
+ 
+ 		err = engine_init_common(engine);
+ 		if (err)
+-- 
+2.25.1
+

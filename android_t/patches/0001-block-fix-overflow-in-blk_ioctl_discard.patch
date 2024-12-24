@@ -1,0 +1,44 @@
+From c18abbaeea5a066f6289cbd77cdb07952aac3457 Mon Sep 17 00:00:00 2001
+From: Li Nan <linan122@huawei.com>
+Date: Fri, 29 Mar 2024 09:23:19 +0800
+Subject: [PATCH] block: fix overflow in blk_ioctl_discard()
+
+There is no check for overflow of 'start + len' in blk_ioctl_discard().
+Hung task occurs if submit an discard ioctl with the following param:
+  start = 0x80000000000ff000, len = 0x8000000000fff000;
+Add the overflow validation now.
+
+Signed-off-by: Li Nan <linan122@huawei.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Link: https://lore.kernel.org/r/20240329012319.2034550-1-linan666@huaweicloud.com
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ block/ioctl.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/block/ioctl.c b/block/ioctl.c
+index a260e39e56a4..32bc4425cd58 100644
+--- a/block/ioctl.c
++++ b/block/ioctl.c
+@@ -114,7 +114,7 @@ static int blk_ioctl_discard(struct block_device *bdev, fmode_t mode,
+ 		unsigned long arg, unsigned long flags)
+ {
+ 	uint64_t range[2];
+-	uint64_t start, len;
++	uint64_t start, len, end;
+ 	struct request_queue *q = bdev_get_queue(bdev);
+ 	struct inode *inode = bdev->bd_inode;
+ 	int err;
+@@ -136,7 +136,8 @@ static int blk_ioctl_discard(struct block_device *bdev, fmode_t mode,
+ 	if (len & 511)
+ 		return -EINVAL;
+ 
+-	if (start + len > i_size_read(bdev->bd_inode))
++	if (check_add_overflow(start, len, &end) ||
++	    end > i_size_read(bdev->bd_inode))
+ 		return -EINVAL;
+ 
+ 	filemap_invalidate_lock(inode->i_mapping);
+-- 
+2.25.1
+

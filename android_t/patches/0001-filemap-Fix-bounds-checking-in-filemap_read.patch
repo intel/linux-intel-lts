@@ -1,0 +1,40 @@
+From 9287d6ce39d83f9ccbd987b1c9fb29c89c179f91 Mon Sep 17 00:00:00 2001
+From: Trond Myklebust <trond.myklebust@hammerspace.com>
+Date: Fri, 13 Sep 2024 13:57:04 -0400
+Subject: [PATCH] filemap: Fix bounds checking in filemap_read()
+
+commit ace149e0830c380ddfce7e466fe860ca502fe4ee upstream.
+
+If the caller supplies an iocb->ki_pos value that is close to the
+filesystem upper limit, and an iterator with a count that causes us to
+overflow that limit, then filemap_read() enters an infinite loop.
+
+This behaviour was discovered when testing xfstests generic/525 with the
+"localio" optimisation for loopback NFS mounts.
+
+Reported-by: Mike Snitzer <snitzer@kernel.org>
+Fixes: c2a9737f45e2 ("vfs,mm: fix a dead loop in truncate_inode_pages_range()")
+Tested-by: Mike Snitzer <snitzer@kernel.org>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ mm/filemap.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mm/filemap.c b/mm/filemap.c
+index d35648df12bd..3d4452624c0b 100644
+--- a/mm/filemap.c
++++ b/mm/filemap.c
+@@ -2627,7 +2627,7 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
+ 	if (unlikely(!iov_iter_count(iter)))
+ 		return 0;
+ 
+-	iov_iter_truncate(iter, inode->i_sb->s_maxbytes);
++	iov_iter_truncate(iter, inode->i_sb->s_maxbytes - iocb->ki_pos);
+ 	pagevec_init(&pvec);
+ 
+ 	do {
+-- 
+2.25.1
+

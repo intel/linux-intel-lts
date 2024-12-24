@@ -1,0 +1,68 @@
+From 13d5b01d942dafdb0f6e0084b88648378547aa38 Mon Sep 17 00:00:00 2001
+From: "Lee, Chun-Yi" <joeyli.kernel@gmail.com>
+Date: Mon, 8 Aug 2022 21:21:58 +0800
+Subject: [PATCH] thermal/int340x_thermal: handle data_vault when the value is
+ ZERO_SIZE_PTR
+
+In some case, the GDDV returns a package with a buffer which has
+zero length. It causes that kmemdup() returns ZERO_SIZE_PTR (0x10).
+
+Then the data_vault_read() got NULL point dereference problem when
+accessing the 0x10 value in data_vault.
+
+[   71.024560] BUG: kernel NULL pointer dereference, address:
+0000000000000010
+
+This patch uses ZERO_OR_NULL_PTR() for checking ZERO_SIZE_PTR or
+NULL value in data_vault.
+
+Signed-off-by: "Lee, Chun-Yi" <jlee@suse.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+---
+ drivers/thermal/intel/int340x_thermal/int3400_thermal.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/thermal/intel/int340x_thermal/int3400_thermal.c b/drivers/thermal/intel/int340x_thermal/int3400_thermal.c
+index 6aa5fe973613..1c479c72b7d2 100644
+--- a/drivers/thermal/intel/int340x_thermal/int3400_thermal.c
++++ b/drivers/thermal/intel/int340x_thermal/int3400_thermal.c
+@@ -469,7 +469,7 @@ static void int3400_setup_gddv(struct int3400_thermal_priv *priv)
+ 	priv->data_vault = kmemdup(obj->package.elements[0].buffer.pointer,
+ 				   obj->package.elements[0].buffer.length,
+ 				   GFP_KERNEL);
+-	if (!priv->data_vault) {
++	if (ZERO_OR_NULL_PTR(priv->data_vault)) {
+ 		kfree(buffer.pointer);
+ 		return;
+ 	}
+@@ -540,7 +540,7 @@ static int int3400_thermal_probe(struct platform_device *pdev)
+ 			goto free_imok;
+ 	}
+ 
+-	if (priv->data_vault) {
++	if (!ZERO_OR_NULL_PTR(priv->data_vault)) {
+ 		result = sysfs_create_group(&pdev->dev.kobj,
+ 					    &data_attribute_group);
+ 		if (result)
+@@ -558,7 +558,8 @@ static int int3400_thermal_probe(struct platform_device *pdev)
+ free_sysfs:
+ 	cleanup_odvp(priv);
+ 	if (priv->data_vault) {
+-		sysfs_remove_group(&pdev->dev.kobj, &data_attribute_group);
++		if (!ZERO_OR_NULL_PTR(priv->data_vault))
++			sysfs_remove_group(&pdev->dev.kobj, &data_attribute_group);
+ 		kfree(priv->data_vault);
+ 	}
+ free_uuid:
+@@ -590,7 +591,7 @@ static int int3400_thermal_remove(struct platform_device *pdev)
+ 	if (!priv->rel_misc_dev_res)
+ 		acpi_thermal_rel_misc_device_remove(priv->adev->handle);
+ 
+-	if (priv->data_vault)
++	if (!ZERO_OR_NULL_PTR(priv->data_vault))
+ 		sysfs_remove_group(&pdev->dev.kobj, &data_attribute_group);
+ 	sysfs_remove_group(&pdev->dev.kobj, &uuid_attribute_group);
+ 	sysfs_remove_group(&pdev->dev.kobj, &imok_attribute_group);
+-- 
+2.25.1
+

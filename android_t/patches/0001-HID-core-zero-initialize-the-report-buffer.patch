@@ -1,0 +1,39 @@
+From facd6fecb9bea069c34181078e2c5eab34de28a5 Mon Sep 17 00:00:00 2001
+From: Jiri Kosina <jkosina@suse.com>
+Date: Tue, 29 Oct 2024 15:44:35 +0100
+Subject: [PATCH] HID: core: zero-initialize the report buffer
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[ Upstream commit 177f25d1292c7e16e1199b39c85480f7f8815552 ]
+
+Since the report buffer is used by all kinds of drivers in various ways, let's
+zero-initialize it during allocation to make sure that it can't be ever used
+to leak kernel memory via specially-crafted report.
+
+Fixes: 27ce405039bf ("HID: fix data access in implement()")
+Reported-by: Benoît Sevens <bsevens@google.com>
+Acked-by: Benjamin Tissoires <bentiss@kernel.org>
+Signed-off-by: Jiri Kosina <jkosina@suse.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/hid/hid-core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hid/hid-core.c b/drivers/hid/hid-core.c
+index 7bd79545d634..878e19c6d2a3 100644
+--- a/drivers/hid/hid-core.c
++++ b/drivers/hid/hid-core.c
+@@ -1658,7 +1658,7 @@ u8 *hid_alloc_report_buf(struct hid_report *report, gfp_t flags)
+ 
+ 	u32 len = hid_report_len(report) + 7;
+ 
+-	return kmalloc(len, flags);
++	return kzalloc(len, flags);
+ }
+ EXPORT_SYMBOL_GPL(hid_alloc_report_buf);
+ 
+-- 
+2.25.1
+

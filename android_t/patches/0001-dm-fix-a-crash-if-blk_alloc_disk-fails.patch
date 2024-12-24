@@ -1,0 +1,38 @@
+From 6fcd331549cfc0b5236590a22185bdaf24aa3463 Mon Sep 17 00:00:00 2001
+From: Mikulas Patocka <mpatocka@redhat.com>
+Date: Mon, 7 Oct 2024 13:38:12 +0200
+Subject: [PATCH] dm: fix a crash if blk_alloc_disk fails
+
+If blk_alloc_disk fails, the variable md->disk is set to an error value.
+cleanup_mapped_device will see that md->disk is non-NULL and it will
+attempt to access it, causing a crash on this statement
+"md->disk->private_data = NULL;".
+
+Signed-off-by: Mikulas Patocka <mpatocka@redhat.com>
+Reported-by: Chenyuan Yang <chenyuan0y@gmail.com>
+Closes: https://marc.info/?l=dm-devel&m=172824125004329&w=2
+Cc: stable@vger.kernel.org
+Reviewed-by: Nitesh Shetty <nj.shetty@samsung.com>
+---
+ drivers/md/dm.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/md/dm.c b/drivers/md/dm.c
+index 63539378da49..61ffa4f57a2e 100644
+--- a/drivers/md/dm.c
++++ b/drivers/md/dm.c
+@@ -1779,8 +1779,10 @@ static struct mapped_device *alloc_dev(int minor)
+ 	 * override accordingly.
+ 	 */
+ 	md->disk = blk_alloc_disk(md->numa_node_id);
+-	if (!md->disk)
++	if (IS_ERR(md->disk)) {
++		md->disk = NULL;
+ 		goto bad;
++	}
+ 	md->queue = md->disk->queue;
+ 
+ 	init_waitqueue_head(&md->wait);
+-- 
+2.25.1
+

@@ -1,0 +1,71 @@
+From 4c635094fd8104d596c26f09ae8defd238187ad3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Amadeusz=20S=C5=82awi=C5=84ski?=
+ <amadeuszx.slawinski@linux.intel.com>
+Date: Mon, 3 Jun 2024 12:28:15 +0200
+Subject: [PATCH 2/2] ASoC: topology: Fix references to freed memory
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[ Upstream commit 97ab304ecd95c0b1703ff8c8c3956dc6e2afe8e1 ]
+
+Most users after parsing a topology file, release memory used by it, so
+having pointer references directly into topology file contents is wrong.
+Use devm_kmemdup(), to allocate memory as needed.
+
+Reported-by: Jason Montleon <jmontleo@redhat.com>
+Link: https://github.com/thesofproject/avs-topology-xml/issues/22#issuecomment-2127892605
+Reviewed-by: Cezary Rojewski <cezary.rojewski@intel.com>
+Signed-off-by: Amadeusz Sławiński <amadeuszx.slawinski@linux.intel.com>
+Link: https://lore.kernel.org/r/20240603102818.36165-2-amadeuszx.slawinski@linux.intel.com
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ sound/soc/soc-topology.c | 27 ++++++++++++++++++++++-----
+ 1 file changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/soc-topology.c b/sound/soc/soc-topology.c
+index e6cd7fa3f61a..0aeec822a237 100644
+--- a/sound/soc/soc-topology.c
++++ b/sound/soc/soc-topology.c
+@@ -1147,15 +1147,32 @@ static int soc_tplg_dapm_graph_elems_load(struct soc_tplg *tplg,
+ 			break;
+ 		}
+ 
+-		route->source = elem->source;
+-		route->sink = elem->sink;
++		route->source = devm_kmemdup(tplg->dev, elem->source,
++					     min(strlen(elem->source),
++						 SNDRV_CTL_ELEM_ID_NAME_MAXLEN),
++					     GFP_KERNEL);
++		route->sink = devm_kmemdup(tplg->dev, elem->sink,
++					   min(strlen(elem->sink), SNDRV_CTL_ELEM_ID_NAME_MAXLEN),
++					   GFP_KERNEL);
++		if (!route->source || !route->sink) {
++			ret = -ENOMEM;
++			break;
++		}
+ 
+ 		/* set to NULL atm for tplg users */
+ 		route->connected = NULL;
+-		if (strnlen(elem->control, SNDRV_CTL_ELEM_ID_NAME_MAXLEN) == 0)
++		if (strnlen(elem->control, SNDRV_CTL_ELEM_ID_NAME_MAXLEN) == 0) {
+ 			route->control = NULL;
+-		else
+-			route->control = elem->control;
++		} else {
++			route->control = devm_kmemdup(tplg->dev, elem->control,
++						      min(strlen(elem->control),
++							  SNDRV_CTL_ELEM_ID_NAME_MAXLEN),
++						      GFP_KERNEL);
++			if (!route->control) {
++				ret = -ENOMEM;
++				break;
++			}
++		}
+ 
+ 		/* add route dobj to dobj_list */
+ 		route->dobj.type = SND_SOC_DOBJ_GRAPH;
+-- 
+2.25.1
+

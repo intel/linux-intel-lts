@@ -1,0 +1,73 @@
+From 880d98bfff08dd61baa0d62bba8a2b1634aa890b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Christian=20G=C3=B6ttsche?= <cgzones@googlemail.com>
+Date: Thu, 28 Mar 2024 20:16:58 +0100
+Subject: [PATCH] selinux: avoid dereference of garbage after mount failure
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 37801a36b4d68892ce807264f784d818f8d0d39b upstream.
+
+In case kern_mount() fails and returns an error pointer return in the
+error branch instead of continuing and dereferencing the error pointer.
+
+While on it drop the never read static variable selinuxfs_mount.
+
+Cc: stable@vger.kernel.org
+Fixes: 0619f0f5e36f ("selinux: wrap selinuxfs state")
+Signed-off-by: Christian Göttsche <cgzones@googlemail.com>
+Signed-off-by: Paul Moore <paul@paul-moore.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ security/selinux/selinuxfs.c | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+index 13be7826ae80..c4515d6d9d1d 100644
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -2209,7 +2209,6 @@ static struct file_system_type sel_fs_type = {
+ 	.kill_sb	= sel_kill_sb,
+ };
+ 
+-static struct vfsmount *selinuxfs_mount __ro_after_init;
+ struct path selinux_null __ro_after_init;
+ 
+ static int __init init_sel_fs(void)
+@@ -2231,18 +2230,21 @@ static int __init init_sel_fs(void)
+ 		return err;
+ 	}
+ 
+-	selinux_null.mnt = selinuxfs_mount = kern_mount(&sel_fs_type);
+-	if (IS_ERR(selinuxfs_mount)) {
++	selinux_null.mnt = kern_mount(&sel_fs_type);
++	if (IS_ERR(selinux_null.mnt)) {
+ 		pr_err("selinuxfs:  could not mount!\n");
+-		err = PTR_ERR(selinuxfs_mount);
+-		selinuxfs_mount = NULL;
++		err = PTR_ERR(selinux_null.mnt);
++		selinux_null.mnt = NULL;
++		return err;
+ 	}
++
+ 	selinux_null.dentry = d_hash_and_lookup(selinux_null.mnt->mnt_root,
+ 						&null_name);
+ 	if (IS_ERR(selinux_null.dentry)) {
+ 		pr_err("selinuxfs:  could not lookup null!\n");
+ 		err = PTR_ERR(selinux_null.dentry);
+ 		selinux_null.dentry = NULL;
++		return err;
+ 	}
+ 
+ 	return err;
+@@ -2255,7 +2257,6 @@ void exit_sel_fs(void)
+ {
+ 	sysfs_remove_mount_point(fs_kobj, "selinux");
+ 	dput(selinux_null.dentry);
+-	kern_unmount(selinuxfs_mount);
+ 	unregister_filesystem(&sel_fs_type);
+ }
+ #endif
+-- 
+2.25.1
+

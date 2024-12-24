@@ -1,0 +1,59 @@
+From 8b2dfe34de1ae23e395782c8075d1330a4139a73 Mon Sep 17 00:00:00 2001
+From: "Christian A. Ehrhardt" <lk@c--e.de>
+Date: Sun, 21 Jan 2024 21:26:34 +0100
+Subject: [PATCH] block: Fix WARNING in _copy_from_iter
+
+Syzkaller reports a warning in _copy_from_iter because an
+iov_iter is supposedly used in the wrong direction. The reason
+is that syzcaller managed to generate a request with
+a transfer direction of SG_DXFER_TO_FROM_DEV. This instructs
+the kernel to copy user buffers into the kernel, read into
+the copied buffers and then copy the data back to user space.
+
+Thus the iovec is used in both directions.
+
+Detect this situation in the block layer and construct a new
+iterator with the correct direction for the copy-in.
+
+Reported-by: syzbot+a532b03fdfee2c137666@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/lkml/0000000000009b92c10604d7a5e9@google.com/t/
+Reported-by: syzbot+63dec323ac56c28e644f@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/lkml/0000000000003faaa105f6e7c658@google.com/T/
+Signed-off-by: Christian A. Ehrhardt <lk@c--e.de>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Link: https://lore.kernel.org/r/20240121202634.275068-1-lk@c--e.de
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ block/blk-map.c | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/block/blk-map.c b/block/blk-map.c
+index c7f71d83eff1..e6afaed941dc 100644
+--- a/block/blk-map.c
++++ b/block/blk-map.c
+@@ -203,12 +203,19 @@ static int bio_copy_user_iov(struct request *rq, struct rq_map_data *map_data,
+ 	/*
+ 	 * success
+ 	 */
+-	if ((iov_iter_rw(iter) == WRITE &&
+-	     (!map_data || !map_data->null_mapped)) ||
+-	    (map_data && map_data->from_user)) {
++	if (iov_iter_rw(iter) == WRITE &&
++	     (!map_data || !map_data->null_mapped)) {
+ 		ret = bio_copy_from_iter(bio, iter);
+ 		if (ret)
+ 			goto cleanup;
++	} else if (map_data && map_data->from_user) {
++		struct iov_iter iter2 = *iter;
++
++		/* This is the copy-in part of SG_DXFER_TO_FROM_DEV. */
++		iter2.data_source = WRITE;
++		ret = bio_copy_from_iter(bio, &iter2);
++		if (ret)
++			goto cleanup;
+ 	} else {
+ 		if (bmd->is_our_pages)
+ 			zero_fill_bio(bio);
+-- 
+2.25.1
+

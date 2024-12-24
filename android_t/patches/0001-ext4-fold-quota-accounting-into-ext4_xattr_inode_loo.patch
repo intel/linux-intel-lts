@@ -1,0 +1,120 @@
+From 77e02958081644a1df0a4a27693c8878030d3200 Mon Sep 17 00:00:00 2001
+From: Jan Kara <jack@suse.cz>
+Date: Fri, 9 Feb 2024 12:20:59 +0100
+Subject: [PATCH 1/2] ext4: fold quota accounting into
+ ext4_xattr_inode_lookup_create()
+
+[ Upstream commit 8208c41c43ad5e9b63dce6c45a73e326109ca658 ]
+
+When allocating EA inode, quota accounting is done just before
+ext4_xattr_inode_lookup_create(). Logically these two operations belong
+together so just fold quota accounting into
+ext4_xattr_inode_lookup_create(). We also make
+ext4_xattr_inode_lookup_create() return the looked up / created inode to
+convert the function to a more standard calling convention.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Link: https://lore.kernel.org/r/20240209112107.10585-1-jack@suse.cz
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Stable-dep-of: 0a46ef234756 ("ext4: do not create EA inode under buffer lock")
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ fs/ext4/xattr.c | 53 ++++++++++++++++++++++++-------------------------
+ 1 file changed, 26 insertions(+), 27 deletions(-)
+
+diff --git a/fs/ext4/xattr.c b/fs/ext4/xattr.c
+index a22c85bf8ae9..ea616e7edd2a 100644
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -1522,45 +1522,49 @@ ext4_xattr_inode_cache_find(struct inode *inode, const void *value,
+ /*
+  * Add value of the EA in an inode.
+  */
+-static int ext4_xattr_inode_lookup_create(handle_t *handle, struct inode *inode,
+-					  const void *value, size_t value_len,
+-					  struct inode **ret_inode)
++static struct inode *ext4_xattr_inode_lookup_create(handle_t *handle,
++		struct inode *inode, const void *value, size_t value_len)
+ {
+ 	struct inode *ea_inode;
+ 	u32 hash;
+ 	int err;
+ 
++	/* Account inode & space to quota even if sharing... */
++	err = ext4_xattr_inode_alloc_quota(inode, value_len);
++	if (err)
++		return ERR_PTR(err);
++
+ 	hash = ext4_xattr_inode_hash(EXT4_SB(inode->i_sb), value, value_len);
+ 	ea_inode = ext4_xattr_inode_cache_find(inode, value, value_len, hash);
+ 	if (ea_inode) {
+ 		err = ext4_xattr_inode_inc_ref(handle, ea_inode);
+-		if (err) {
+-			iput(ea_inode);
+-			return err;
+-		}
+-
+-		*ret_inode = ea_inode;
+-		return 0;
++		if (err)
++			goto out_err;
++		return ea_inode;
+ 	}
+ 
+ 	/* Create an inode for the EA value */
+ 	ea_inode = ext4_xattr_inode_create(handle, inode, hash);
+-	if (IS_ERR(ea_inode))
+-		return PTR_ERR(ea_inode);
++	if (IS_ERR(ea_inode)) {
++		ext4_xattr_inode_free_quota(inode, NULL, value_len);
++		return ea_inode;
++	}
+ 
+ 	err = ext4_xattr_inode_write(handle, ea_inode, value, value_len);
+ 	if (err) {
+-		ext4_xattr_inode_dec_ref(handle, ea_inode);
+-		iput(ea_inode);
+-		return err;
++		if (ext4_xattr_inode_dec_ref(handle, ea_inode))
++			ext4_warning_inode(ea_inode, "cleanup dec ref error %d", err);
++		goto out_err;
+ 	}
+ 
+ 	if (EA_INODE_CACHE(inode))
+ 		mb_cache_entry_create(EA_INODE_CACHE(inode), GFP_NOFS, hash,
+ 				      ea_inode->i_ino, true /* reusable */);
+-
+-	*ret_inode = ea_inode;
+-	return 0;
++	return ea_inode;
++out_err:
++	iput(ea_inode);
++	ext4_xattr_inode_free_quota(inode, NULL, value_len);
++	return ERR_PTR(err);
+ }
+ 
+ /*
+@@ -1668,16 +1672,11 @@ static int ext4_xattr_set_entry(struct ext4_xattr_info *i,
+ 	if (i->value && in_inode) {
+ 		WARN_ON_ONCE(!i->value_len);
+ 
+-		ret = ext4_xattr_inode_alloc_quota(inode, i->value_len);
+-		if (ret)
+-			goto out;
+-
+-		ret = ext4_xattr_inode_lookup_create(handle, inode, i->value,
+-						     i->value_len,
+-						     &new_ea_inode);
+-		if (ret) {
++		new_ea_inode = ext4_xattr_inode_lookup_create(handle, inode,
++					i->value, i->value_len);
++		if (IS_ERR(new_ea_inode)) {
++			ret = PTR_ERR(new_ea_inode);
+ 			new_ea_inode = NULL;
+-			ext4_xattr_inode_free_quota(inode, NULL, i->value_len);
+ 			goto out;
+ 		}
+ 	}
+-- 
+2.25.1
+

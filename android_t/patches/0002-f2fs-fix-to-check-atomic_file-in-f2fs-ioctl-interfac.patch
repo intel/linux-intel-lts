@@ -1,0 +1,61 @@
+From 9894dab1e9d841a98d3c30f5b6b09db5bf041377 Mon Sep 17 00:00:00 2001
+From: Chao Yu <chao@kernel.org>
+Date: Wed, 4 Sep 2024 11:20:47 +0800
+Subject: [PATCH 2/2] f2fs: fix to check atomic_file in f2fs ioctl interfaces
+
+commit bfe5c02654261bfb8bd9cb174a67f3279ea99e58 upstream.
+
+Some f2fs ioctl interfaces like f2fs_ioc_set_pin_file(),
+f2fs_move_file_range(), and f2fs_defragment_range() missed to
+check atomic_write status, which may cause potential race issue,
+fix it.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/f2fs/file.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 09da72794c37..ccc8648d2d03 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -2551,7 +2551,8 @@ static int f2fs_defragment_range(struct f2fs_sb_info *sbi,
+ 
+ 	inode_lock(inode);
+ 
+-	if (is_inode_flag_set(inode, FI_COMPRESS_RELEASED)) {
++	if (is_inode_flag_set(inode, FI_COMPRESS_RELEASED) ||
++		f2fs_is_atomic_file(inode)) {
+ 		err = -EINVAL;
+ 		goto unlock_out;
+ 	}
+@@ -2781,6 +2782,11 @@ static int f2fs_move_file_range(struct file *file_in, loff_t pos_in,
+ 		goto out_unlock;
+ 	}
+ 
++	if (f2fs_is_atomic_file(src) || f2fs_is_atomic_file(dst)) {
++		ret = -EINVAL;
++		goto out_unlock;
++	}
++
+ 	ret = -EINVAL;
+ 	if (pos_in + len > src->i_size || pos_in + len < pos_in)
+ 		goto out_unlock;
+@@ -3145,6 +3151,11 @@ static int f2fs_ioc_set_pin_file(struct file *filp, unsigned long arg)
+ 
+ 	inode_lock(inode);
+ 
++	if (f2fs_is_atomic_file(inode)) {
++		ret = -EINVAL;
++		goto out;
++	}
++
+ 	if (!pin) {
+ 		clear_inode_flag(inode, FI_PIN_FILE);
+ 		f2fs_i_gc_failures_write(inode, 0);
+-- 
+2.25.1
+

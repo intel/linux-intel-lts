@@ -1,0 +1,142 @@
+From f9ee92265df71da0c6ff19a9d85515cbca52acbf Mon Sep 17 00:00:00 2001
+From: Baokun Li <libaokun1@huawei.com>
+Date: Tue, 2 Jan 2024 21:37:30 +0800
+Subject: [PATCH] ext4: fix uninitialized ratelimit_state->lock access in
+ __ext4_fill_super()
+
+[ Upstream commit b4b4fda34e535756f9e774fb2d09c4537b7dfd1c ]
+
+In the following concurrency we will access the uninitialized rs->lock:
+
+ext4_fill_super
+  ext4_register_sysfs
+   // sysfs registered msg_ratelimit_interval_ms
+                             // Other processes modify rs->interval to
+                             // non-zero via msg_ratelimit_interval_ms
+  ext4_orphan_cleanup
+    ext4_msg(sb, KERN_INFO, "Errors on filesystem, "
+      __ext4_msg
+        ___ratelimit(&(EXT4_SB(sb)->s_msg_ratelimit_state)
+          if (!rs->interval)  // do nothing if interval is 0
+            return 1;
+          raw_spin_trylock_irqsave(&rs->lock, flags)
+            raw_spin_trylock(lock)
+              _raw_spin_trylock
+                __raw_spin_trylock
+                  spin_acquire(&lock->dep_map, 0, 1, _RET_IP_)
+                    lock_acquire
+                      __lock_acquire
+                        register_lock_class
+                          assign_lock_key
+                            dump_stack();
+  ratelimit_state_init(&sbi->s_msg_ratelimit_state, 5 * HZ, 10);
+    raw_spin_lock_init(&rs->lock);
+    // init rs->lock here
+
+and get the following dump_stack:
+
+=========================================================
+INFO: trying to register non-static key.
+The code is fine but needs lockdep annotation, or maybe
+you didn't initialize this object before use?
+turning off the locking correctness validator.
+CPU: 12 PID: 753 Comm: mount Tainted: G E 6.7.0-rc6-next-20231222 #504
+[...]
+Call Trace:
+ dump_stack_lvl+0xc5/0x170
+ dump_stack+0x18/0x30
+ register_lock_class+0x740/0x7c0
+ __lock_acquire+0x69/0x13a0
+ lock_acquire+0x120/0x450
+ _raw_spin_trylock+0x98/0xd0
+ ___ratelimit+0xf6/0x220
+ __ext4_msg+0x7f/0x160 [ext4]
+ ext4_orphan_cleanup+0x665/0x740 [ext4]
+ __ext4_fill_super+0x21ea/0x2b10 [ext4]
+ ext4_fill_super+0x14d/0x360 [ext4]
+[...]
+=========================================================
+
+Normally interval is 0 until s_msg_ratelimit_state is initialized, so
+___ratelimit() does nothing. But registering sysfs precedes initializing
+rs->lock, so it is possible to change rs->interval to a non-zero value
+via the msg_ratelimit_interval_ms interface of sysfs while rs->lock is
+uninitialized, and then a call to ext4_msg triggers the problem by
+accessing an uninitialized rs->lock. Therefore register sysfs after all
+initializations are complete to avoid such problems.
+
+Signed-off-by: Baokun Li <libaokun1@huawei.com>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Link: https://lore.kernel.org/r/20240102133730.1098120-1-libaokun1@huawei.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ fs/ext4/super.c | 22 ++++++++++------------
+ 1 file changed, 10 insertions(+), 12 deletions(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index edfcb991bc46..5c43e2e218f0 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -4938,19 +4938,15 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	if (err)
+ 		goto failed_mount6;
+ 
+-	err = ext4_register_sysfs(sb);
+-	if (err)
+-		goto failed_mount7;
+-
+ 	err = ext4_init_orphan_info(sb);
+ 	if (err)
+-		goto failed_mount8;
++		goto failed_mount7;
+ #ifdef CONFIG_QUOTA
+ 	/* Enable quota usage during mount. */
+ 	if (ext4_has_feature_quota(sb) && !sb_rdonly(sb)) {
+ 		err = ext4_enable_quotas(sb);
+ 		if (err)
+-			goto failed_mount9;
++			goto failed_mount8;
+ 	}
+ #endif  /* CONFIG_QUOTA */
+ 
+@@ -4977,7 +4973,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		ext4_msg(sb, KERN_INFO, "recovery complete");
+ 		err = ext4_mark_recovery_complete(sb, es);
+ 		if (err)
+-			goto failed_mount10;
++			goto failed_mount9;
+ 	}
+ 	if (EXT4_SB(sb)->s_journal) {
+ 		if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
+@@ -5015,6 +5011,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 	atomic_set(&sbi->s_warning_count, 0);
+ 	atomic_set(&sbi->s_msg_count, 0);
+ 
++	/* Register sysfs after all initializations are complete. */
++	err = ext4_register_sysfs(sb);
++	if (err)
++		goto failed_mount9;
++
+ 	kfree(orig_data);
+ 	return 0;
+ 
+@@ -5023,13 +5024,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
+ 		ext4_msg(sb, KERN_ERR, "VFS: Can't find ext4 filesystem");
+ 	goto failed_mount;
+ 
+-failed_mount10:
++failed_mount9:
+ 	ext4_quota_off_umount(sb);
+-failed_mount9: __maybe_unused
++failed_mount8: __maybe_unused
+ 	ext4_release_orphan_info(sb);
+-failed_mount8:
+-	ext4_unregister_sysfs(sb);
+-	kobject_put(&sbi->s_kobj);
+ failed_mount7:
+ 	ext4_unregister_li_request(sb);
+ failed_mount6:
+-- 
+2.25.1
+

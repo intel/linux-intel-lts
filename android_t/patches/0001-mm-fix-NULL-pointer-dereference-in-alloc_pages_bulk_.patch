@@ -1,0 +1,62 @@
+From 657a6ed33546ce3485979b42780aca60fa722324 Mon Sep 17 00:00:00 2001
+From: Jinjiang Tu <tujinjiang@huawei.com>
+Date: Wed, 13 Nov 2024 16:32:35 +0800
+Subject: [PATCH] mm: fix NULL pointer dereference in alloc_pages_bulk_noprof
+
+commit 8ce41b0f9d77cca074df25afd39b86e2ee3aa68e upstream.
+
+We triggered a NULL pointer dereference for ac.preferred_zoneref->zone in
+alloc_pages_bulk_noprof() when the task is migrated between cpusets.
+
+When cpuset is enabled, in prepare_alloc_pages(), ac->nodemask may be
+&current->mems_allowed.  when first_zones_zonelist() is called to find
+preferred_zoneref, the ac->nodemask may be modified concurrently if the
+task is migrated between different cpusets.  Assuming we have 2 NUMA Node,
+when traversing Node1 in ac->zonelist, the nodemask is 2, and when
+traversing Node2 in ac->zonelist, the nodemask is 1.  As a result, the
+ac->preferred_zoneref points to NULL zone.
+
+In alloc_pages_bulk_noprof(), for_each_zone_zonelist_nodemask() finds a
+allowable zone and calls zonelist_node_idx(ac.preferred_zoneref), leading
+to NULL pointer dereference.
+
+__alloc_pages_noprof() fixes this issue by checking NULL pointer in commit
+ea57485af8f4 ("mm, page_alloc: fix check for NULL preferred_zone") and
+commit df76cee6bbeb ("mm, page_alloc: remove redundant checks from alloc
+fastpath").
+
+To fix it, check NULL pointer for preferred_zoneref->zone.
+
+Link: https://lkml.kernel.org/r/20241113083235.166798-1-tujinjiang@huawei.com
+Fixes: 387ba26fb1cb ("mm/page_alloc: add a bulk page allocator")
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Reviewed-by: Vlastimil Babka <vbabka@suse.cz>
+Cc: Alexander Lobakin <alobakin@pm.me>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Kefeng Wang <wangkefeng.wang@huawei.com>
+Cc: Mel Gorman <mgorman@techsingularity.net>
+Cc: Nanyong Sun <sunnanyong@huawei.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ mm/page_alloc.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 06f70e6bdf98..c95323c8c0dd 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -5649,7 +5649,8 @@ unsigned long __alloc_pages_bulk(gfp_t gfp, int preferred_nid,
+ 	gfp = alloc_gfp;
+ 
+ 	/* Find an allowed local zone that meets the low watermark. */
+-	for_each_zone_zonelist_nodemask(zone, z, ac.zonelist, ac.highest_zoneidx, ac.nodemask) {
++	z = ac.preferred_zoneref;
++	for_next_zone_zonelist_nodemask(zone, z, ac.highest_zoneidx, ac.nodemask) {
+ 		unsigned long mark;
+ 
+ 		if (cpusets_enabled() && (alloc_flags & ALLOC_CPUSET) &&
+-- 
+2.25.1
+

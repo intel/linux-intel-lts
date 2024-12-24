@@ -1,0 +1,60 @@
+From 742e8f1633e36166949e2dac1867a093345d3eaf Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <linkinjeon@kernel.org>
+Date: Sat, 2 Nov 2024 18:46:38 +0900
+Subject: [PATCH] ksmbd: fix slab-use-after-free in ksmbd_smb2_session_create
+
+commit 0a77715db22611df50b178374c51e2ba0d58866e upstream.
+
+There is a race condition between ksmbd_smb2_session_create and
+ksmbd_expire_session. This patch add missing sessions_table_lock
+while adding/deleting session from global session table.
+
+Cc: stable@vger.kernel.org # v5.15+
+Reported-by: Norbert Szetei <norbert@doyensec.com>
+Tested-by: Norbert Szetei <norbert@doyensec.com>
+Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/ksmbd/mgmt/user_session.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ksmbd/mgmt/user_session.c b/fs/ksmbd/mgmt/user_session.c
+index 15f68ee05089..79a94afcd778 100644
+--- a/fs/ksmbd/mgmt/user_session.c
++++ b/fs/ksmbd/mgmt/user_session.c
+@@ -174,6 +174,7 @@ static void ksmbd_expire_session(struct ksmbd_conn *conn)
+ 	unsigned long id;
+ 	struct ksmbd_session *sess;
+ 
++	down_write(&sessions_table_lock);
+ 	down_write(&conn->session_lock);
+ 	xa_for_each(&conn->sessions, id, sess) {
+ 		if (sess->state != SMB2_SESSION_VALID ||
+@@ -186,6 +187,7 @@ static void ksmbd_expire_session(struct ksmbd_conn *conn)
+ 		}
+ 	}
+ 	up_write(&conn->session_lock);
++	up_write(&sessions_table_lock);
+ }
+ 
+ int ksmbd_session_register(struct ksmbd_conn *conn,
+@@ -227,7 +229,6 @@ void ksmbd_sessions_deregister(struct ksmbd_conn *conn)
+ 			}
+ 		}
+ 	}
+-	up_write(&sessions_table_lock);
+ 
+ 	down_write(&conn->session_lock);
+ 	xa_for_each(&conn->sessions, id, sess) {
+@@ -247,6 +248,7 @@ void ksmbd_sessions_deregister(struct ksmbd_conn *conn)
+ 		}
+ 	}
+ 	up_write(&conn->session_lock);
++	up_write(&sessions_table_lock);
+ }
+ 
+ struct ksmbd_session *ksmbd_session_lookup(struct ksmbd_conn *conn,
+-- 
+2.25.1
+

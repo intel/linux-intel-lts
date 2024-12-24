@@ -1,0 +1,45 @@
+From fa5017044efbe94fd792937a35324b93370bf561 Mon Sep 17 00:00:00 2001
+From: Yangtao Li <frank.li@vivo.com>
+Date: Wed, 26 Apr 2023 00:47:11 +0800
+Subject: [PATCH 1/2] f2fs: do not allow to defragment files have
+ FI_COMPRESS_RELEASED
+
+If a file has FI_COMPRESS_RELEASED, all writes for it should not be
+allowed.
+
+Fixes: 5fdb322ff2c2 ("f2fs: add F2FS_IOC_DECOMPRESS_FILE and F2FS_IOC_COMPRESS_FILE")
+Signed-off-by: Qi Han <hanqi@vivo.com>
+Signed-off-by: Yangtao Li <frank.li@vivo.com>
+Reviewed-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/file.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index e0e101ec0548..09da72794c37 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -2551,6 +2551,11 @@ static int f2fs_defragment_range(struct f2fs_sb_info *sbi,
+ 
+ 	inode_lock(inode);
+ 
++	if (is_inode_flag_set(inode, FI_COMPRESS_RELEASED)) {
++		err = -EINVAL;
++		goto unlock_out;
++	}
++
+ 	/* if in-place-update policy is enabled, don't waste time here */
+ 	set_inode_flag(inode, FI_OPU_WRITE);
+ 	if (f2fs_should_update_inplace(inode, NULL)) {
+@@ -2677,6 +2682,7 @@ static int f2fs_defragment_range(struct f2fs_sb_info *sbi,
+ 	clear_inode_flag(inode, FI_SKIP_WRITES);
+ out:
+ 	clear_inode_flag(inode, FI_OPU_WRITE);
++unlock_out:
+ 	inode_unlock(inode);
+ 	if (!err)
+ 		range->len = (u64)total << PAGE_SHIFT;
+-- 
+2.25.1
+

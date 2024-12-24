@@ -1,0 +1,98 @@
+From 7f1768c8270bc29223b66e84d60751fe1d911684 Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <roman.gushchin@linux.dev>
+Date: Mon, 4 Nov 2024 19:54:19 +0000
+Subject: [PATCH] signal: restore the override_rlimit logic
+
+commit 9e05e5c7ee8758141d2db7e8fea2cab34500c6ed upstream.
+
+Prior to commit d64696905554 ("Reimplement RLIMIT_SIGPENDING on top of
+ucounts") UCOUNT_RLIMIT_SIGPENDING rlimit was not enforced for a class of
+signals.  However now it's enforced unconditionally, even if
+override_rlimit is set.  This behavior change caused production issues.
+
+For example, if the limit is reached and a process receives a SIGSEGV
+signal, sigqueue_alloc fails to allocate the necessary resources for the
+signal delivery, preventing the signal from being delivered with siginfo.
+This prevents the process from correctly identifying the fault address and
+handling the error.  From the user-space perspective, applications are
+unaware that the limit has been reached and that the siginfo is
+effectively 'corrupted'.  This can lead to unpredictable behavior and
+crashes, as we observed with java applications.
+
+Fix this by passing override_rlimit into inc_rlimit_get_ucounts() and skip
+the comparison to max there if override_rlimit is set.  This effectively
+restores the old behavior.
+
+Link: https://lkml.kernel.org/r/20241104195419.3962584-1-roman.gushchin@linux.dev
+Fixes: d64696905554 ("Reimplement RLIMIT_SIGPENDING on top of ucounts")
+Signed-off-by: Roman Gushchin <roman.gushchin@linux.dev>
+Co-developed-by: Andrei Vagin <avagin@google.com>
+Signed-off-by: Andrei Vagin <avagin@google.com>
+Acked-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Alexey Gladkov <legion@kernel.org>
+Cc: Kees Cook <kees@kernel.org>
+Cc: "Eric W. Biederman" <ebiederm@xmission.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ include/linux/user_namespace.h | 3 ++-
+ kernel/signal.c                | 3 ++-
+ kernel/ucount.c                | 6 ++++--
+ 3 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/include/linux/user_namespace.h b/include/linux/user_namespace.h
+index bd1c6f3542be..4c80d7d238d2 100644
+--- a/include/linux/user_namespace.h
++++ b/include/linux/user_namespace.h
+@@ -131,7 +131,8 @@ static inline long get_ucounts_value(struct ucounts *ucounts, enum ucount_type t
+ 
+ long inc_rlimit_ucounts(struct ucounts *ucounts, enum ucount_type type, long v);
+ bool dec_rlimit_ucounts(struct ucounts *ucounts, enum ucount_type type, long v);
+-long inc_rlimit_get_ucounts(struct ucounts *ucounts, enum ucount_type type);
++long inc_rlimit_get_ucounts(struct ucounts *ucounts, enum ucount_type type,
++				bool override_rlimit);
+ void dec_rlimit_put_ucounts(struct ucounts *ucounts, enum ucount_type type);
+ bool is_ucounts_overlimit(struct ucounts *ucounts, enum ucount_type type, unsigned long max);
+ 
+diff --git a/kernel/signal.c b/kernel/signal.c
+index 81c0bea9bfe0..a8d4de1d7ac5 100644
+--- a/kernel/signal.c
++++ b/kernel/signal.c
+@@ -430,7 +430,8 @@ __sigqueue_alloc(int sig, struct task_struct *t, gfp_t gfp_flags,
+ 	 */
+ 	rcu_read_lock();
+ 	ucounts = task_ucounts(t);
+-	sigpending = inc_rlimit_get_ucounts(ucounts, UCOUNT_RLIMIT_SIGPENDING);
++	sigpending = inc_rlimit_get_ucounts(ucounts, UCOUNT_RLIMIT_SIGPENDING,
++					    override_rlimit);
+ 	rcu_read_unlock();
+ 	if (!sigpending)
+ 		return NULL;
+diff --git a/kernel/ucount.c b/kernel/ucount.c
+index a1d67261501a..c195dca2ace5 100644
+--- a/kernel/ucount.c
++++ b/kernel/ucount.c
+@@ -305,7 +305,8 @@ void dec_rlimit_put_ucounts(struct ucounts *ucounts, enum ucount_type type)
+ 	do_dec_rlimit_put_ucounts(ucounts, NULL, type);
+ }
+ 
+-long inc_rlimit_get_ucounts(struct ucounts *ucounts, enum ucount_type type)
++long inc_rlimit_get_ucounts(struct ucounts *ucounts, enum ucount_type type,
++			   bool override_rlimit)
+ {
+ 	/* Caller must hold a reference to ucounts */
+ 	struct ucounts *iter;
+@@ -318,7 +319,8 @@ long inc_rlimit_get_ucounts(struct ucounts *ucounts, enum ucount_type type)
+ 			goto unwind;
+ 		if (iter == ucounts)
+ 			ret = new;
+-		max = READ_ONCE(iter->ns->ucount_max[type]);
++		if (!override_rlimit)
++			max = READ_ONCE(iter->ns->ucount_max[type]);
+ 		/*
+ 		 * Grab an extra ucount reference for the caller when
+ 		 * the rlimit count was previously 0.
+-- 
+2.25.1
+
