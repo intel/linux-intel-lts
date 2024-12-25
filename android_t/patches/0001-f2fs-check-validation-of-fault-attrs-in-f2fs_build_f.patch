@@ -1,4 +1,4 @@
-From 1e05f9af069f1450943ba74ebd0402875621abae Mon Sep 17 00:00:00 2001
+From 0d57d2c4c03f1afa9771fc9c6cb04d6be0beff73 Mon Sep 17 00:00:00 2001
 From: Chao Yu <chao@kernel.org>
 Date: Tue, 7 May 2024 11:38:47 +0800
 Subject: [PATCH] f2fs: check validation of fault attrs in
@@ -17,7 +17,7 @@ Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
  3 files changed, 38 insertions(+), 15 deletions(-)
 
 diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
-index e296d9ea6455..975f9823c345 100644
+index e296d9ea64558..e5cb89ef1cff2 100644
 --- a/fs/f2fs/f2fs.h
 +++ b/fs/f2fs/f2fs.h
 @@ -65,7 +65,7 @@ enum {
@@ -39,7 +39,7 @@ index e296d9ea6455..975f9823c345 100644
 +							unsigned long type);
  #else
 -#define f2fs_build_fault_attr(sbi, rate, type)		do { } while (0)
-+static int f2fs_build_fault_attr(struct f2fs_sb_info *sbi, unsigned long rate,
++static int __attribute__((unused)) f2fs_build_fault_attr(struct f2fs_sb_info *sbi, unsigned long rate,
 +							unsigned long type)
 +{
 +	return 0;
@@ -48,7 +48,7 @@ index e296d9ea6455..975f9823c345 100644
  
  static inline bool is_journalled_quota(struct f2fs_sb_info *sbi)
 diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
-index e0fae9f117a0..ad6d53f5f0fc 100644
+index e0fae9f117a0d..ad6d53f5f0fcc 100644
 --- a/fs/f2fs/super.c
 +++ b/fs/f2fs/super.c
 @@ -62,21 +62,31 @@ const char *f2fs_fault_name[FAULT_MAX] = {
@@ -109,7 +109,7 @@ index e0fae9f117a0..ad6d53f5f0fc 100644
  			break;
  #else
 diff --git a/fs/f2fs/sysfs.c b/fs/f2fs/sysfs.c
-index 32c071afdadb..2658d0621ad4 100644
+index 32c071afdadb5..2658d0621ad4a 100644
 --- a/fs/f2fs/sysfs.c
 +++ b/fs/f2fs/sysfs.c
 @@ -446,10 +446,16 @@ static ssize_t __sbi_store(struct f2fs_attr *a,

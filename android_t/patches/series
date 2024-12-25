@@ -195,9 +195,6 @@
 #CVE-2022-48976
 0001-netfilter-flowtable_offload-fix-using-__this_cpu_add.patch
 
-#CVE-2024-50019
-0001-kthread-unpark-only-parked-kthread.patch
-
 #CVE-2024-43846
 0001-lib-objagg-Fix-general-protection-fault.patch
 
