@@ -105,6 +105,7 @@ static int isys_isr_one(struct ipu6_bus_device *adev);
 static int
 isys_complete_ext_device_registration(struct ipu6_isys *isys,
 				      struct v4l2_subdev *sd,
+				      s16 src_pad,
 				      struct ipu6_isys_csi2_config *csi2)
 {
 	struct device *dev = &isys->adev->auxdev.dev;
@@ -118,6 +119,17 @@ isys_complete_ext_device_registration(struct ipu6_isys *isys,
 
 	if (i == sd->entity.num_pads) {
 		dev_warn(dev, "no src pad in external entity\n");
+		ret = -ENOENT;
+		goto unregister_subdev;
+	}
+
+	if (src_pad >= 0)
+		i = (unsigned int)src_pad;
+
+	if (sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE) {
+		dev_info(dev, "src pad %d\n", src_pad);
+	} else {
+		dev_warn(dev, "src pad %d not for src\n", src_pad);
 		ret = -ENOENT;
 		goto unregister_subdev;
 	}
@@ -693,7 +705,9 @@ static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
 
 	dev_dbg(&isys->adev->auxdev.dev, "bind %s nlanes is %d port is %d\n",
 		sd->name, s_asd->csi2.nlanes, s_asd->csi2.port);
-	ret = isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
+	ret = isys_complete_ext_device_registration(isys, sd,
+						    asc->match.src_pad,
+						    &s_asd->csi2);
 	if (ret)
 		return ret;
 

@@ -123,6 +123,18 @@ match_fwnode_one(struct v4l2_async_notifier *notifier,
 		"v4l2-async: device--endpoint match %sfound\n",
 		ret ? "" : "not ");
 
+	if (ret) {
+		struct fwnode_endpoint fwnode_ep = { 0 };
+		int ret_ep;
+		ret_ep = fwnode_graph_parse_endpoint(match->fwnode, &fwnode_ep);
+		if (ret_ep >= 0) {
+			match->src_pad = fwnode_ep.port;
+		} else {
+			match->src_pad = -1;
+		}
+
+	}
+
 	return ret;
 }
 
@@ -200,8 +212,10 @@ v4l2_async_find_match(struct v4l2_async_notifier *notifier,
 		}
 
 		/* match cannot be NULL here */
-		if (match(notifier, sd, &asc->match))
+		if (match(notifier, sd, &asc->match)) {
+			asc->src_pad = asc->match.src_pad;
 			return asc;
+		}
 	}
 
 	return NULL;

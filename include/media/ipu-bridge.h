@@ -91,7 +91,12 @@ struct ipu_sensor_ssdb {
 	u8 controllogicid;
 	u8 reserved1[3];
 	u8 mclkport;
-	u8 reserved2[13];
+	u8 pmicpos;
+	u8 voltagerail;
+	u8 pprval;
+	u8 pprunit;
+	u8 flashid;
+	u8 reserved2[8];
 } __packed;
 
 struct ipu_property_names {
@@ -134,6 +139,7 @@ struct ipu_sensor {
 	struct ipu_node_names node_names;
 
 	u8 link;
+	u8 pprval;
 	u8 lanes;
 	u32 mclkspeed;
 	u32 rotation;

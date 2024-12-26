@@ -95,7 +95,7 @@ struct lt6911uxc_mode {
 
 struct lt6911uxc {
 	struct v4l2_subdev sd;
-	struct media_pad pad;
+	struct media_pad pad[2];
 	struct v4l2_ctrl_handler ctrl_handler;
 
 	struct v4l2_ctrl *pixel_rate;
@@ -635,8 +635,9 @@ static int lt6911uxc_probe(struct i2c_client *client)
 			       V4L2_SUBDEV_FL_HAS_EVENTS;
 	lt6911uxc->sd.entity.ops = &lt6911uxc_subdev_entity_ops;
 	lt6911uxc->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
-	lt6911uxc->pad.flags = MEDIA_PAD_FL_SOURCE;
-	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 1, &lt6911uxc->pad);
+	lt6911uxc->pad[0].flags = MEDIA_PAD_FL_SOURCE;
+	lt6911uxc->pad[1].flags = MEDIA_PAD_FL_SOURCE;
+	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 2, lt6911uxc->pad);
 	if (ret) {
 		dev_err(&client->dev, "Init entity pads failed:%d\n", ret);
 		goto err_v4l2_ctrl_handler_free;
