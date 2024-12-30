@@ -2328,13 +2328,6 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
 
 	clk_enable(uap->clk);
 
-	/*
-	 * local_irq_save(flags);
-	 *
-	 * This local_irq_save() is nonsense. If we come in via sysrq
-	 * handling then interrupts are already disabled. Aside of
-	 * that the port.sysrq check is racy on SMP regardless.
-	*/
 	if (uap->port.sysrq)
 		locked = 0;
 	else if (oops_in_progress)
