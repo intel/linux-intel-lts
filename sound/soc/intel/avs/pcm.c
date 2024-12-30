@@ -603,7 +603,7 @@ static int avs_dai_fe_hw_free(struct snd_pcm_substream *substream, struct snd_so
 	ret = __avs_dai_fe_hw_free(substream, dai);
 	snd_pcm_lib_free_pages(substream);
 
-	return ret;
+	return 0;
 }
 
 static int avs_dai_fe_prepare(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
