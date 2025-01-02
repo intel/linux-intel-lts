@@ -1765,7 +1765,7 @@ void sock_pfree(struct sk_buff *skb);
 
 static inline bool sock_oob_capable(struct socket *sock)
 {
-	return sock && sock->sk && sock->file && sock->file->oob_data;
+	return sock && sock->sk && sock->sk->oob_data;
 }
 
 int sock_oob_attach(struct socket *sock);
