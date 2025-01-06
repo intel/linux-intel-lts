@@ -326,11 +326,6 @@ int mhi_destroy_device(struct device *dev, void *data)
 	dev_dbg(&mhi_cntrl->mhi_dev->dev, "destroy device for chan:%s\n",
 		 mhi_dev->name);
 
-	if (!strcmp(mhi_dev->name, "IP_CTRL")) {
-		dev_dbg(dev, "destroying IP_CTRL\n");
-		mhi_cntrl->mhi_dev_ip_ctrl = NULL;
-	}
-
 	/* Notify the client and remove the device from MHI bus */
 	device_del(dev);
 	put_device(dev);
@@ -431,12 +426,6 @@ void mhi_create_devices(struct mhi_controller *mhi_cntrl)
 		ret = device_add(&mhi_dev->dev);
 		if (ret)
 			put_device(&mhi_dev->dev);
-		else {
-			if (!strcmp(mhi_dev->name, "IP_CTRL")) {
-				dev_dbg(dev, "IP_CTRL supported\n");
-				mhi_cntrl->mhi_dev_ip_ctrl = mhi_dev;
-			}
-		}
 	}
 }
 
