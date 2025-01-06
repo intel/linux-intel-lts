@@ -334,10 +334,6 @@ static const struct {
 		.name = "FASTBOOT",
 		.devsuf = "fastboot",
 	},
-	[WWAN_PORT_SAHARA] = {
-		.name = "SAHARA",
-		.devsuf = "sahara",
-	},
 };
 
 static ssize_t type_show(struct device *dev, struct device_attribute *attr,
