@@ -733,6 +733,10 @@ static int __init igb_init_module(void)
 	misc_register(&igb_miscdev);
 #endif /* CONFIG_IGB_AVB */
 	ret = pci_register_driver(&igb_driver);
+#ifdef CONFIG_IGB_DCA
+	if (ret)
+		dca_unregister_notify(&dca_notifier);
+#endif
 	return ret;
 }
 
