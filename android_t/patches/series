@@ -158,9 +158,6 @@
 #CVE-2023-52905
 0001-octeontx2-pf-Fix-resource-leakage-in-VF-driver-unbin.patch
 
-#CVE-2023-52913
-0001-drm-i915-Fix-potential-context-UAFs.patch
-
 #CVE-2024-44995
 0001-net-hns3-fix-a-deadlock-problem-when-config-TC-durin.patch
 
@@ -229,9 +226,6 @@
 
 #CVE-2024-50003
 0001-drm-amd-display-Fix-system-hang-while-resume-with-TB.patch
-
-#CVE-2024-49950
-0001-Bluetooth-L2CAP-Fix-uaf-in-l2cap_connect.patch
 
 #CVE-2024-26844
 0001-block-Fix-WARNING-in-_copy_from_iter.patch
@@ -314,9 +308,6 @@
 #CVE-2024-49968
 0001-ext4-filesystems-without-casefold-feature-cannot-be-.patch
 
-#CVE-2024-50055
-0001-driver-core-bus-Fix-double-free-in-driver-API-bus_re.patch
-
 #CVE-2024-50056
 0001-usb-gadget-uvc-fix-try-format-returns-on-uncompresse.patch
 0002-usb-gadget-uvc-Fix-ERR_PTR-dereference-in-uvc_v4l2.c.patch
@@ -336,17 +327,11 @@
 #CVE-2024-50138
 0001-bpf-Use-raw_spinlock_t-in-ringbuf.patch
 
-#CVE-2024-50141
-0001-ACPI-PRM-Find-EFI_MEMORY_RUNTIME-block-for-PRM-handl.patch
-
 #CVE-2024-50256
 0001-netfilter-nf_reject_ipv6-fix-potential-crash-in-nf_s.patch
 
 #CVE-2024-50258
 0001-net-fix-crash-when-config-small-gso_max_size-gso_ipv.patch
-
-#CVE-2024-50269
-0001-usb-musb-sunxi-Fix-accessing-an-released-usb-phy.patch
 
 #CVE-2024-50272
 0001-filemap-Fix-bounds-checking-in-filemap_read.patch
@@ -360,45 +345,15 @@
 #CVE-2024-50286
 0001-ksmbd-fix-slab-use-after-free-in-ksmbd_smb2_session_.patch
 
-#CVE-2024-50299
-0001-sctp-properly-validate-chunk-size-in-sctp_sf_ootb.patch
-
-#CVE-2024-50301
-0001-security-keys-fix-slab-out-of-bounds-in-key_task_per.patch
-
-#CVE-2024-50302
-0001-HID-core-zero-initialize-the-report-buffer.patch
-
 #CVE-2024-50304
 0001-ipv4-ip_tunnel-Fix-suspicious-RCU-usage-warning-in-i.patch
 
 #CVE-2024-53051
 0001-drm-i915-hdcp-Add-encoder-check-in-intel_hdcp_get_ca.patch
 
-#CVE-2024-53055
-0001-wifi-iwlwifi-mvm-fix-6-GHz-scan-construction.patch
-
-#CVE-2024-53061
-0001-media-s5p-jpeg-prevent-buffer-overflows.patch
-
 #CVE-2024-53099
 0001-bpf-Check-validity-of-link-type-in-bpf_link_show_fdi.patch
-
-#CVE-2024-53122
-0001-mptcp-cope-racing-subflow-creation-in-mptcp_rcv_spac.patch
-
-#CVE-2024-53113
-0001-mm-fix-NULL-pointer-dereference-in-alloc_pages_bulk_.patch
-
-#CVE-2024-53120
-0001-net-mlx5e-CT-Fix-null-ptr-deref-in-add-rule-err-flow.patch
 
 #CVE-2024-53128
 0001-task_stack.h-add-missing-include.patch
 0002-sched-task_stack-fix-object_is_on_stack-for-KASAN-ta.patch
-
-#CVE-2024-53138
-0001-net-mlx5e-kTLS-Fix-incorrect-page-refcounting.patch
-
-#CVE-2024-53142
-0001-initramfs-avoid-filename-buffer-overrun.patch
