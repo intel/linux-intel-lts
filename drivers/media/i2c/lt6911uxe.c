@@ -389,7 +389,6 @@ static int lt6911uxe_init_state(struct v4l2_subdev *sd,
 		.which = sd_state ? V4L2_SUBDEV_FORMAT_TRY
 		: V4L2_SUBDEV_FORMAT_ACTIVE,
 	};
-	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 
 	return lt6911uxe_set_format(sd, sd_state, &fmt);
 }

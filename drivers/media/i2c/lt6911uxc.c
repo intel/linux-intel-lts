@@ -163,28 +163,6 @@ static u64 get_pixel_rate(struct lt6911uxc *lt6911uxc)
 	return pixel_rate;
 }
 
-static int lt6911uxc_get_audio_sampling_rate(struct lt6911uxc *lt6911uxc)
-{
-	int audio_fs, idx;
-	u64 fs;
-	static const int eps = 1500;
-	static const int rates_default[] = {
-		32000, 44100, 48000, 88200, 96000, 176400, 192000
-	};
-
-	cci_read(lt6911uxc->regmap, REG_AUDIO_SR, &fs, NULL);
-	audio_fs = fs * 1000;
-
-	/* audio_fs is an approximation of sample rate - search nearest */
-	for (idx = 0; idx < ARRAY_SIZE(rates_default); ++idx) {
-		if ((rates_default[idx] - eps < audio_fs) &&
-		    (rates_default[idx] + eps > audio_fs))
-			return rates_default[idx];
-	}
-
-	return 0;
-}
-
 static int lt6911uxc_status_update(struct lt6911uxc *lt6911uxc)
 {
 	u64 int_event;
