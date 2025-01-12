@@ -173,7 +173,8 @@ static inline void lockdep_init_map(struct lockdep_map *lock, const char *name,
 			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
 #define lockdep_set_subclass(lock, sub)					\
-	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #lock,		\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock),			\
+			LOCKDEP_ALT_DEPMAP(lock)->name,			\
 			LOCKDEP_ALT_DEPMAP(lock)->key, sub,		\
 			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
 			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\

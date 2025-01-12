@@ -2435,13 +2435,7 @@ static inline void inband_exit_guest(void)
 static inline void inband_set_vcpu_release_state(struct kvm_vcpu *vcpu,
 						bool pending)
 { }
-#endif
-
-typedef int (*kvm_vm_thread_fn_t)(struct kvm *kvm, uintptr_t data);
-
-int kvm_vm_create_worker_thread(struct kvm *kvm, kvm_vm_thread_fn_t thread_fn,
-				uintptr_t data, const char *name,
-				struct task_struct **thread_ptr);
+#endif	/* !(CONFIG_DOVETAIL && CONFIG_KVM) */
 
 #ifdef CONFIG_KVM_XFER_TO_GUEST_WORK
 static inline void kvm_handle_signal_exit(struct kvm_vcpu *vcpu)
