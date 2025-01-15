@@ -576,3 +576,13 @@ config SERIAL_OF_PLATFORM
 	  are probed through devicetree, including Open Firmware based
 	  PowerPC systems and embedded systems on architectures using the
 	  flattened device tree format.
+
+config SERIAL_8250_LEGACY_CONSOLE
+	tristate "Enable original console instead of nbcon console"
+	default SERIAL_8250
+	depends on SERIAL_8250 && PCI && !PREEMPT_RT
+	help
+	  This option is to enable original 8250 console instead of nb
+	  console. With RT kernel, this option should be disabled.
+	  For nbconsole, it is designed for async linux console, it could
+	  improve kernel schedule performance.
