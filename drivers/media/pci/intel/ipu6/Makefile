@@ -21,3 +21,4 @@ intel-ipu6-isys-y		:= ipu6-isys.o \
 				ipu6-isys-dwc-phy.o
 
 obj-$(CONFIG_VIDEO_INTEL_IPU6)	+= intel-ipu6-isys.o
+obj-$(CONFIG_VIDEO_INTEL_IPU6)  += psys/
