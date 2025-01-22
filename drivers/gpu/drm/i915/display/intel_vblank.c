@@ -309,6 +309,7 @@ static void intel_vblank_section_exit(struct intel_display *display)
 	spin_unlock(&i915->uncore.lock);
 }
 
+#ifdef CONFIG_PREEMPT_RT
 static void intel_vblank_section_enter_irqf(struct intel_display *display, unsigned long *flags)
 	__acquires(i915->uncore.lock)
 {
@@ -322,6 +323,7 @@ static void intel_vblank_section_exit_irqf(struct intel_display *display, unsign
 	struct drm_i915_private *i915 = to_i915(display->drm);
 	spin_unlock_irqrestore(&i915->uncore.lock, flags);
 }
+#endif // CONFIG_PREEMPT_RT
 #else
 static void intel_vblank_section_enter(struct intel_display *display)
 {
@@ -331,6 +333,7 @@ static void intel_vblank_section_exit(struct intel_display *display)
 {
 }
 
+#ifdef CONFIG_PREEMPT_RT
 static void intel_vblank_section_enter_irqf(struct intel_display *display, unsigned long *flags)
 {
 	*flags = 0;
@@ -341,6 +344,7 @@ static void intel_vblank_section_exit_irqf(struct intel_display *display, unsign
 	if (flags)
 		return;
 }
+#endif // CONFIG_PREEMPT_RT
 #endif
 
 static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
