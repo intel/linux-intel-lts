@@ -91,6 +91,7 @@ asm_offsets.h
 autoconf.h*
 av_permissions.h
 bbootsect
+bin2c
 binkernel.spec
 bootsect
 bounds.h
