@@ -191,8 +191,7 @@ enum trace_flag_type {
 	TRACE_FLAG_SOFTIRQ		= 0x10,
 	TRACE_FLAG_PREEMPT_RESCHED	= 0x20,
 	TRACE_FLAG_NMI			= 0x40, /* Dovetail: hw NMI or oob */
-	TRACE_FLAG_BH_OFF		= 0x80,
-	TRACE_FLAG_IRQS_HARDOFF		= TRACE_FLAG_IRQS_NOSUPPORT,
+	TRACE_FLAG_BH_OFF		= 0x80
 };
 
 static inline unsigned int tracing_gen_ctx_flags(unsigned long irqflags)

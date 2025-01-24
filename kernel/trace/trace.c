@@ -2561,7 +2561,7 @@ unsigned int tracing_gen_ctx_irq_test(unsigned int irqs_status)
 	if (softirq_count() >> (SOFTIRQ_SHIFT + 1))
 		trace_flags |= TRACE_FLAG_BH_OFF;
 	if (irqs_pipelined() && hard_irqs_disabled())
-		trace_flags |= TRACE_FLAG_IRQS_HARDOFF;
+		trace_flags |= TRACE_FLAG_IRQS_OFF;
 
 	if (tif_need_resched())
 		trace_flags |= TRACE_FLAG_NEED_RESCHED;
