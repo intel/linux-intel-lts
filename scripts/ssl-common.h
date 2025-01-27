@@ -3,7 +3,7 @@
  * SSL helper functions shared by sign-file and extract-cert.
  */
 
-static void drain_openssl_errors(int l, int silent)
+static void display_openssl_errors(int l)
 {
 	const char *file;
 	char buf[120];
@@ -11,21 +11,28 @@ static void drain_openssl_errors(int l, int silent)
 
 	if (ERR_peek_error() == 0)
 		return;
-	if (!silent)
-		fprintf(stderr, "At main.c:%d:\n", l);
+	fprintf(stderr, "At main.c:%d:\n", l);
 
-	while ((e = ERR_peek_error_line(&file, &line))) {
+	while ((e = ERR_get_error_line(&file, &line))) {
 		ERR_error_string(e, buf);
-		if (!silent)
-			fprintf(stderr, "- SSL %s: %s:%d\n", buf, file, line);
-		ERR_get_error();
+		fprintf(stderr, "- SSL %s: %s:%d\n", buf, file, line);
 	}
+}
+
+static void drain_openssl_errors(void)
+{
+	const char *file;
+	int line;
+
+	if (ERR_peek_error() == 0)
+		return;
+	while (ERR_get_error_line(&file, &line)) {}
 }
 
 #define ERR(cond, fmt, ...)				\
 	do {						\
 		bool __cond = (cond);			\
-		drain_openssl_errors(__LINE__, 0);	\
+		display_openssl_errors(__LINE__);	\
 		if (__cond) {				\
 			errx(1, fmt, ## __VA_ARGS__);	\
 		}					\
