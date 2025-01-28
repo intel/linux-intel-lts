@@ -315,7 +315,7 @@ replay_again:
 							  SMB2_O_INFO_FILE, 0,
 							  sizeof(struct smb311_posix_qinfo *) +
 							  (PATH_MAX * 2) +
-							  (sizeof(struct cifs_sid) * 2), 0, NULL);
+							  (sizeof(struct smb_sid) * 2), 0, NULL);
 			} else {
 				rc = SMB2_query_info_init(tcon, server,
 							  &rqst[num_rqst],
@@ -325,7 +325,7 @@ replay_again:
 							  SMB2_O_INFO_FILE, 0,
 							  sizeof(struct smb311_posix_qinfo *) +
 							  (PATH_MAX * 2) +
-							  (sizeof(struct cifs_sid) * 2), 0, NULL);
+							  (sizeof(struct smb_sid) * 2), 0, NULL);
 			}
 			if (!rc && (!cfile || num_rqst > 1)) {
 				smb2_set_next_command(tcon, &rqst[num_rqst]);
@@ -943,7 +943,8 @@ int smb2_query_path_info(const unsigned int xid,
 		if (rc || !data->reparse_point)
 			goto out;
 
-		cmds[num_cmds++] = SMB2_OP_QUERY_WSL_EA;
+		if (!tcon->posix_extensions)
+			cmds[num_cmds++] = SMB2_OP_QUERY_WSL_EA;
 		/*
 		 * Skip SMB2_OP_GET_REPARSE if symlink already parsed in create
 		 * response.
