@@ -1209,7 +1209,7 @@ s64 update_curr_common(struct rq *rq)
 /*
  * Update the current task's runtime statistics.
  */
-static void update_curr(struct cfs_rq *cfs_rq)
+static void __update_curr(struct cfs_rq *cfs_rq, bool tick)
 {
 	struct sched_entity *curr = cfs_rq->curr;
 	s64 delta_exec;
