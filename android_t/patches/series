@@ -351,9 +351,6 @@
 #CVE-2024-53051
 0001-drm-i915-hdcp-Add-encoder-check-in-intel_hdcp_get_ca.patch
 
-#CVE-2024-53099
-0001-bpf-Check-validity-of-link-type-in-bpf_link_show_fdi.patch
-
 #CVE-2024-53128
 0001-task_stack.h-add-missing-include.patch
 0002-sched-task_stack-fix-object_is_on_stack-for-KASAN-ta.patch
