@@ -81,6 +81,7 @@ enum sock_type {
 #ifndef SOCK_NONBLOCK
 #define SOCK_NONBLOCK	O_NONBLOCK
 #endif
+#define SOCK_OOB	O_OOB
 
 #endif /* ARCH_HAS_SOCKET_TYPES */
 
@@ -339,6 +340,16 @@ static inline bool sendpages_ok(struct page *page, size_t len, size_t offset)
 	}
 
 	return true;
+}
+
+static inline bool net_running_oob(void)
+{
+	/*
+	 * Ensure depending code blocks are compiled out if
+	 * CONFIG_NET_OOB is disabled even if CONFIG_DOVETAIL is
+	 * enabled.
+	 */
+	return IS_ENABLED(CONFIG_NET_OOB) && running_oob();
 }
 
 int kernel_sendmsg(struct socket *sock, struct msghdr *msg, struct kvec *vec,

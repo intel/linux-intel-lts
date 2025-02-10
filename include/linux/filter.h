@@ -693,10 +693,16 @@ static __always_inline u32 __bpf_prog_run(const struct bpf_prog *prog,
 
 		duration = sched_clock() - start;
 		stats = this_cpu_ptr(prog->stats);
-		flags = u64_stats_update_begin_irqsave(&stats->syncp);
+		if (IS_ENABLED(CONFIG_BPF_OOB))
+			flags = u64_stats_update_begin_hard_irqsave(&stats->syncp);
+		else
+			flags = u64_stats_update_begin_irqsave(&stats->syncp);
 		u64_stats_inc(&stats->cnt);
 		u64_stats_add(&stats->nsecs, duration);
-		u64_stats_update_end_irqrestore(&stats->syncp, flags);
+		if (IS_ENABLED(CONFIG_BPF_OOB))
+			u64_stats_update_end_hard_irqrestore(&stats->syncp, flags);
+		else
+			u64_stats_update_end_irqrestore(&stats->syncp, flags);
 	} else {
 		ret = dfunc(ctx, prog->insnsi, prog->bpf_func);
 	}

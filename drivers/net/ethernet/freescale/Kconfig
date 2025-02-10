@@ -35,6 +35,15 @@ config FEC
 	  Say Y here if you want to use the built-in 10/100 Fast ethernet
 	  controller on some Motorola ColdFire and Freescale i.MX/S32 processors.
 
+config FEC_OOB
+	bool "Out-of-band support for FEC"
+	depends on NET_OOB
+	help
+	  Enable out-of-band I/O. Say Y if a companion kernel may divert
+	  the network traffic going through FEC devices for real-time delivery.
+	  Enabling this option makes sense only in a dual kernel configuration.
+	  If unsure, disable it.
+
 config FEC_MPC52xx
 	tristate "FEC MPC52xx driver"
 	depends on PPC_MPC52xx && PPC_BESTCOMM

@@ -701,6 +701,36 @@ struct fec_enet_private {
 	u64 ethtool_stats[];
 };
 
+/*
+ * Check whether oob support is compiled in for the FEC driver. This
+ * tells nothing about the current execution stage, or whether oob
+ * diversion is ongoing for any FEC device.
+ */
+static inline bool fec_net_oob(void)
+{
+	return IS_ENABLED(CONFIG_FEC_OOB);
+}
+
+/*
+ * Check whether the caller is running on the out-of-band stage, with
+ * the precondition that oob support is compiled in for the FEC driver.
+ */
+static inline bool fec_running_oob(void)
+{
+	return fec_net_oob() && running_oob();
+}
+
+/*
+ * Check whether a FEC device is currently diverting packet to the
+ * out-of-band netstack. The compiler is given the opportunity to
+ * compile the whole thing out if either NET_OOB or FEC_OOB which
+ * depends on it are disabled.
+ */
+static inline bool fec_oob_enabled(struct fec_enet_private *fep)
+{
+	return IS_ENABLED(CONFIG_FEC_OOB) && netif_oob_diversion(fep->netdev);
+}
+
 void fec_ptp_init(struct platform_device *pdev, int irq_idx);
 void fec_ptp_restore_state(struct fec_enet_private *fep);
 void fec_ptp_save_state(struct fec_enet_private *fep);

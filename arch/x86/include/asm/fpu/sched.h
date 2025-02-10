@@ -3,6 +3,7 @@
 #define _ASM_X86_FPU_SCHED_H
 
 #include <linux/sched.h>
+#include <linux/dovetail.h>
 
 #include <asm/cpufeature.h>
 #include <asm/fpu/types.h>
@@ -14,6 +15,32 @@ extern void fpu__drop(struct fpu *fpu);
 extern int  fpu_clone(struct task_struct *dst, unsigned long clone_flags, bool minimal,
 		      unsigned long shstk_addr);
 extern void fpu_flush_thread(void);
+
+#ifdef CONFIG_DOVETAIL
+
+static inline void oob_fpu_set_preempt(struct fpu *fpu)
+{
+	fpu->preempted = true;
+}
+
+static inline void oob_fpu_clear_preempt(struct fpu *fpu)
+{
+	fpu->preempted = false;
+}
+
+static inline bool oob_fpu_preempted(struct fpu *old_fpu)
+{
+	return old_fpu->preempted;
+}
+
+#else
+
+static inline bool oob_fpu_preempted(struct fpu *old_fpu)
+{
+	return false;
+}
+
+#endif	/* !CONFIG_DOVETAIL */
 
 /*
  * FPU state switching for scheduling.
@@ -39,22 +66,24 @@ extern void fpu_flush_thread(void);
  */
 static inline void switch_fpu_prepare(struct task_struct *old, int cpu)
 {
-	if (cpu_feature_enabled(X86_FEATURE_FPU) &&
-	    !(old->flags & (PF_KTHREAD | PF_USER_WORKER))) {
+	if (cpu_feature_enabled(X86_FEATURE_FPU)) {
 		struct fpu *old_fpu = &old->thread.fpu;
 
-		save_fpregs_to_fpstate(old_fpu);
-		/*
-		 * The save operation preserved register state, so the
-		 * fpu_fpregs_owner_ctx is still @old_fpu. Store the
-		 * current CPU number in @old_fpu, so the next return
-		 * to user space can avoid the FPU register restore
-		 * when is returns on the same CPU and still owns the
-		 * context.
-		 */
-		old_fpu->last_cpu = cpu;
+		if (!(old->flags & (PF_KTHREAD | PF_USER_WORKER)) &&
+			!oob_fpu_preempted(old_fpu)) {
+			save_fpregs_to_fpstate(old_fpu);
+			/*
+			 * The save operation preserved register state, so the
+			 * fpu_fpregs_owner_ctx is still @old_fpu. Store the
+			 * current CPU number in @old_fpu, so the next return
+			 * to user space can avoid the FPU register restore
+			 * when is returns on the same CPU and still owns the
+			 * context.
+			 */
+			old_fpu->last_cpu = cpu;
 
-		trace_x86_fpu_regs_deactivated(old_fpu);
+			trace_x86_fpu_regs_deactivated(old_fpu);
+		}
 	}
 }
 

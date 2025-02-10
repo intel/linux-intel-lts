@@ -538,6 +538,9 @@ struct sock {
 						  struct sk_buff *skb);
 	void                    (*sk_destruct)(struct sock *sk);
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
+#ifdef CONFIG_NET_OOB
+	void			*sk_oob_ctx;
+#endif
 #ifdef CONFIG_BPF_SYSCALL
 	struct bpf_local_storage __rcu	*sk_bpf_storage;
 #endif
@@ -1762,6 +1765,73 @@ void sock_edemux(struct sk_buff *skb);
 void sock_pfree(struct sk_buff *skb);
 #else
 #define sock_edemux sock_efree
+#endif
+
+#ifdef CONFIG_NET_OOB
+
+static inline bool sock_oob_capable(struct socket *sock)
+{
+	return sock && sock->sk && sock->sk->sk_oob_ctx;
+}
+
+int sock_oob_attach(struct socket *sock);
+
+void sock_oob_release(struct socket *sock);
+
+void sock_oob_destroy(struct sock *sk);
+
+int sock_oob_bind(struct sock *sk,
+		struct sockaddr *addr, int len);
+
+int sock_oob_shutdown(struct sock *sk, int how);
+
+int sock_oob_connect(struct sock *sk,
+		struct sockaddr *addr, int len, int flags);
+
+long sock_inband_ioctl_redirect(struct sock *sk,
+				unsigned int cmd, unsigned long arg);
+
+long sock_oob_ioctl(struct file *file,
+		unsigned int cmd, unsigned long arg);
+
+void sock_oob_release(struct socket *sock);
+
+ssize_t sock_oob_write(struct file *filp,
+		const char __user *u_buf, size_t count);
+
+ssize_t sock_oob_read(struct file *filp,
+		char __user *u_buf, size_t count);
+
+__poll_t sock_oob_poll(struct file *filp,
+		struct oob_poll_wait *wait);
+
+static inline void sock_oob_destruct(struct sock *sk)
+{
+	void sock_oob_destroy(struct sock *sk);
+	if (sk->sk_oob_ctx)
+		sock_oob_destroy(sk);
+}
+
+#else
+
+static inline bool sock_oob_capable(struct socket *sock)
+{
+	return false;
+}
+
+static inline int sock_oob_bind(struct sock *sk,
+				struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+static inline int sock_oob_shutdown(struct sock *sk, int how)
+{
+	return 0;
+}
+
+static inline void sock_oob_destruct(struct sock *sk) { }
+
 #endif
 
 int sk_setsockopt(struct sock *sk, int level, int optname,

@@ -75,6 +75,8 @@ static int __wake_up_common(struct wait_queue_head *wq_head, unsigned int mode,
 {
 	wait_queue_entry_t *curr, *next;
 
+	check_inband_stage();
+
 	lockdep_assert_held(&wq_head->lock);
 
 	curr = list_first_entry(&wq_head->head, wait_queue_entry_t, entry);

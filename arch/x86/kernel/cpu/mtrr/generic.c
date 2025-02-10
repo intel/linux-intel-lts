@@ -962,9 +962,14 @@ void mtrr_enable(void)
 void mtrr_generic_set_state(void)
 {
 	unsigned long mask, count;
+	unsigned long flags;
+
+	flags = hard_local_irq_save();
 
 	/* Actually set the state */
 	mask = set_mtrr_state();
+
+	hard_local_irq_restore(flags);
 
 	/* Use the atomic bitops to update the global mask */
 	for (count = 0; count < sizeof(mask) * 8; ++count) {
@@ -992,7 +997,7 @@ static void generic_set_mtrr(unsigned int reg, unsigned long base,
 
 	vr = &mtrr_state.var_ranges[reg];
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	cache_disable();
 
 	if (size == 0) {
@@ -1013,7 +1018,7 @@ static void generic_set_mtrr(unsigned int reg, unsigned long base,
 	}
 
 	cache_enable();
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 int generic_validate_add_page(unsigned long base, unsigned long size,

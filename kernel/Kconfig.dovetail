@@ -1,0 +1,30 @@
+
+# DOVETAIL dual-kernel interface
+config HAVE_DOVETAIL
+	bool
+
+# Selecting ARCH_WANT_IRQS_OFF_ACTIVATE_MM in this generic Kconfig
+# portion is ugly, but the whole ARCH_WANT_IRQS_OFF_ACTIVATE_MM logic
+# is a temporary kludge which is meant to disappear anyway. See
+# the related comments in exec_mmap() for details.
+config DOVETAIL
+	bool "Dovetail interface"
+	depends on HAVE_DOVETAIL
+	select IRQ_PIPELINE
+	select ARCH_WANT_IRQS_OFF_ACTIVATE_MM
+	default n
+	help
+	  Activate this option if you want to enable the interface for
+	  running a high-priority software core on the out-of-band
+	  pipeline stage (aka "dual kernel" configuration).
+
+config DOVETAIL_LEGACY_SYSCALL_RANGE
+       depends on DOVETAIL
+       def_bool y
+
+# The nickname of the guest companion core using Dovetail to attach to
+# the main kernel. Advertise mere dovetailing only if none.
+config DOVETAIL_GUEST
+       string
+       depends on DOVETAIL
+       default "$(shell,$(srctree)/scripts/dovetail-guest.sh 2>/dev/null || echo DOVETAIL)"

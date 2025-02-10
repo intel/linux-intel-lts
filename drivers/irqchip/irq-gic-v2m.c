@@ -107,6 +107,7 @@ static struct irq_chip gicv2m_irq_chip = {
 	.irq_eoi		= irq_chip_eoi_parent,
 	.irq_set_affinity	= irq_chip_set_affinity_parent,
 	.irq_compose_msi_msg	= gicv2m_compose_msi_msg,
+	.flags			= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int gicv2m_irq_gic_domain_alloc(struct irq_domain *domain,

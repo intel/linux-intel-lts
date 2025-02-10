@@ -66,6 +66,11 @@ config SKB_DECRYPTED
 config SKB_EXTENSIONS
 	bool
 
+config NET_OOB
+	bool
+	depends on DOVETAIL
+	select PAGE_POOL_OOB
+
 config NET_DEVMEM
 	def_bool y
 	depends on DMA_SHARED_BUFFER
@@ -485,6 +490,10 @@ config NET_DEVLINK
 
 config PAGE_POOL
 	bool
+
+config PAGE_POOL_OOB
+	def_bool n
+	select PAGE_POOL
 
 config PAGE_POOL_STATS
 	default n

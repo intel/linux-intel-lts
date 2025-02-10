@@ -528,6 +528,10 @@ static int do_set_tsc_mode(unsigned int val)
 	else
 		return -EINVAL;
 
+	/*
+	 * Dovetail: we do not compete with oob on updating this
+	 * register, so inband disable is enough.
+	 */
 	preempt_disable();
 	update_thread_flag(TIF_TSC_SIGSEGV, tsc_sigsegv);
 	update_cntkctl_el1(current);

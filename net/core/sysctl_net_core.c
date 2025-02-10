@@ -629,6 +629,17 @@ static struct ctl_table net_core_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
 	},
+#ifdef CONFIG_NET_OOB
+	{
+		.procname	= "max_oob_skb",
+		.data		= &sysctl_max_oob_skb,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ONE_HUNDRED,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+#endif
 };
 
 static struct ctl_table netns_core_table[] = {

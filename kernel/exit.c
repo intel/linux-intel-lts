@@ -14,6 +14,7 @@
 #include <linux/sched/task_stack.h>
 #include <linux/sched/cputime.h>
 #include <linux/interrupt.h>
+#include <linux/irq_pipeline.h>
 #include <linux/module.h>
 #include <linux/capability.h>
 #include <linux/completion.h>
@@ -894,6 +895,7 @@ void __noreturn do_exit(long code)
 
 	io_uring_files_cancel();
 	exit_signals(tsk);  /* sets PF_EXITING */
+	inband_exit_notify();
 
 	seccomp_filter_release(tsk);
 

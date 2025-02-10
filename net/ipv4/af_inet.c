@@ -558,6 +558,8 @@ int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
 	inet->inet_dport = 0;
 	sk_dst_reset(sk);
 	err = 0;
+	if (sock_oob_capable(sk->sk_socket))
+		err = sock_oob_bind(sk, uaddr, addr_len);
 out_release_sock:
 	if (flags & BIND_WITH_LOCK)
 		release_sock(sk);
@@ -936,6 +938,9 @@ int inet_shutdown(struct socket *sock, int how)
 		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
 		break;
 	}
+
+	if (!err && sock_oob_capable(sock))
+		err = sock_oob_shutdown(sk, how);
 
 	/* Wake up anyone sleeping in poll. */
 	sk->sk_state_change(sk);

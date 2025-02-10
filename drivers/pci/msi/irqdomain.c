@@ -197,7 +197,7 @@ static const struct msi_domain_template pci_msi_template = {
 		.irq_mask		= pci_irq_mask_msi,
 		.irq_unmask		= pci_irq_unmask_msi,
 		.irq_write_msi_msg	= pci_msi_domain_write_msg,
-		.flags			= IRQCHIP_ONESHOT_SAFE,
+		.flags			= IRQCHIP_ONESHOT_SAFE | IRQCHIP_PIPELINE_SAFE,
 	},
 
 	.ops = {
@@ -236,7 +236,7 @@ static const struct msi_domain_template pci_msix_template = {
 		.irq_mask		= pci_irq_mask_msix,
 		.irq_unmask		= pci_irq_unmask_msix,
 		.irq_write_msi_msg	= pci_msi_domain_write_msg,
-		.flags			= IRQCHIP_ONESHOT_SAFE,
+		.flags			= IRQCHIP_ONESHOT_SAFE | IRQCHIP_PIPELINE_SAFE,
 	},
 
 	.ops = {
