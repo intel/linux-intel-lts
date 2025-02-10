@@ -32,7 +32,7 @@ config GENERIC_VDSO_TIME_NS
 
 config GENERIC_CLOCKSOURCE_VDSO
         select CLKSRC_MMIO
-        depends on ARM || ARM64
+        depends on ARM
 	bool
 	help
 	   Enables access to clocksources via the vDSO based on
