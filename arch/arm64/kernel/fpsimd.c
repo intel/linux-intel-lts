@@ -258,7 +258,6 @@ void fpsimd_restore_current_oob(void)
 			preempt_disable();		\
 		(void)(__flags);			\
 	} while (0)
-}
 
 /*
  * Release the CPU FPSIMD context.
