@@ -1,0 +1,392 @@
+From 90a76ec5287839494bcefa2ee294edf172cd5f54 Mon Sep 17 00:00:00 2001
+From: Jan Cincera <hcincera@gmail.com>
+Date: Mon, 30 Oct 2023 20:53:18 +0900
+Subject: [PATCH 1/3] exfat: add ioctls for accessing attributes
+
+Add GET and SET attributes ioctls to enable attribute modification.
+We already do this in FAT and a few userspace utils made for it would
+benefit from this also working on exFAT, namely fatattr.
+
+Signed-off-by: Jan Cincera <hcincera@gmail.com>
+Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
+---
+ fs/exfat/dir.c       |  8 ++--
+ fs/exfat/exfat_fs.h  | 13 +++---
+ fs/exfat/exfat_raw.h | 19 +++++----
+ fs/exfat/file.c      | 97 +++++++++++++++++++++++++++++++++++++++++++-
+ fs/exfat/inode.c     |  8 ++--
+ fs/exfat/misc.c      |  8 ++++
+ fs/exfat/namei.c     | 16 ++++----
+ fs/exfat/super.c     |  8 ++--
+ 8 files changed, 141 insertions(+), 36 deletions(-)
+
+diff --git a/fs/exfat/dir.c b/fs/exfat/dir.c
+index f4f81e349cef..a5f0596cf217 100644
+--- a/fs/exfat/dir.c
++++ b/fs/exfat/dir.c
+@@ -288,7 +288,7 @@ static int exfat_iterate(struct file *file, struct dir_context *ctx)
+ 
+ 	mutex_unlock(&EXFAT_SB(sb)->s_lock);
+ 	if (!dir_emit(ctx, nb->lfn, strlen(nb->lfn), inum,
+-			(de.attr & ATTR_SUBDIR) ? DT_DIR : DT_REG))
++			(de.attr & EXFAT_ATTR_SUBDIR) ? DT_DIR : DT_REG))
+ 		goto out;
+ 	ctx->pos = cpos;
+ 	goto get_new;
+@@ -360,7 +360,7 @@ unsigned int exfat_get_entry_type(struct exfat_dentry *ep)
+ 		if (ep->type == EXFAT_VOLUME)
+ 			return TYPE_VOLUME;
+ 		if (ep->type == EXFAT_FILE) {
+-			if (le16_to_cpu(ep->dentry.file.attr) & ATTR_SUBDIR)
++			if (le16_to_cpu(ep->dentry.file.attr) & EXFAT_ATTR_SUBDIR)
+ 				return TYPE_DIR;
+ 			return TYPE_FILE;
+ 		}
+@@ -411,10 +411,10 @@ static void exfat_set_entry_type(struct exfat_dentry *ep, unsigned int type)
+ 		ep->type = EXFAT_VOLUME;
+ 	} else if (type == TYPE_DIR) {
+ 		ep->type = EXFAT_FILE;
+-		ep->dentry.file.attr = cpu_to_le16(ATTR_SUBDIR);
++		ep->dentry.file.attr = cpu_to_le16(EXFAT_ATTR_SUBDIR);
+ 	} else if (type == TYPE_FILE) {
+ 		ep->type = EXFAT_FILE;
+-		ep->dentry.file.attr = cpu_to_le16(ATTR_ARCHIVE);
++		ep->dentry.file.attr = cpu_to_le16(EXFAT_ATTR_ARCHIVE);
+ 	}
+ }
+ 
+diff --git a/fs/exfat/exfat_fs.h b/fs/exfat/exfat_fs.h
+index f55498e5c23d..99208902883b 100644
+--- a/fs/exfat/exfat_fs.h
++++ b/fs/exfat/exfat_fs.h
+@@ -357,10 +357,10 @@ static inline int exfat_mode_can_hold_ro(struct inode *inode)
+ static inline mode_t exfat_make_mode(struct exfat_sb_info *sbi,
+ 		unsigned short attr, mode_t mode)
+ {
+-	if ((attr & ATTR_READONLY) && !(attr & ATTR_SUBDIR))
++	if ((attr & EXFAT_ATTR_READONLY) && !(attr & EXFAT_ATTR_SUBDIR))
+ 		mode &= ~0222;
+ 
+-	if (attr & ATTR_SUBDIR)
++	if (attr & EXFAT_ATTR_SUBDIR)
+ 		return (mode & ~sbi->options.fs_dmask) | S_IFDIR;
+ 
+ 	return (mode & ~sbi->options.fs_fmask) | S_IFREG;
+@@ -372,18 +372,18 @@ static inline unsigned short exfat_make_attr(struct inode *inode)
+ 	unsigned short attr = EXFAT_I(inode)->attr;
+ 
+ 	if (S_ISDIR(inode->i_mode))
+-		attr |= ATTR_SUBDIR;
++		attr |= EXFAT_ATTR_SUBDIR;
+ 	if (exfat_mode_can_hold_ro(inode) && !(inode->i_mode & 0222))
+-		attr |= ATTR_READONLY;
++		attr |= EXFAT_ATTR_READONLY;
+ 	return attr;
+ }
+ 
+ static inline void exfat_save_attr(struct inode *inode, unsigned short attr)
+ {
+ 	if (exfat_mode_can_hold_ro(inode))
+-		EXFAT_I(inode)->attr = attr & (ATTR_RWMASK | ATTR_READONLY);
++		EXFAT_I(inode)->attr = attr & (EXFAT_ATTR_RWMASK | EXFAT_ATTR_READONLY);
+ 	else
+-		EXFAT_I(inode)->attr = attr & ATTR_RWMASK;
++		EXFAT_I(inode)->attr = attr & EXFAT_ATTR_RWMASK;
+ }
+ 
+ static inline bool exfat_is_last_sector_in_cluster(struct exfat_sb_info *sbi,
+@@ -549,6 +549,7 @@ void __exfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
+ void exfat_get_entry_time(struct exfat_sb_info *sbi, struct timespec64 *ts,
+ 		u8 tz, __le16 time, __le16 date, u8 time_cs);
+ void exfat_truncate_atime(struct timespec64 *ts);
++void exfat_truncate_inode_atime(struct inode *inode);
+ void exfat_set_entry_time(struct exfat_sb_info *sbi, struct timespec64 *ts,
+ 		u8 *tz, __le16 *time, __le16 *date, u8 *time_cs);
+ u16 exfat_calc_chksum16(void *data, int len, u16 chksum, int type);
+diff --git a/fs/exfat/exfat_raw.h b/fs/exfat/exfat_raw.h
+index 0ece2e43cf49..971a1ccd0e89 100644
+--- a/fs/exfat/exfat_raw.h
++++ b/fs/exfat/exfat_raw.h
+@@ -64,15 +64,16 @@
+ #define CS_DEFAULT		2
+ 
+ /* file attributes */
+-#define ATTR_READONLY		0x0001
+-#define ATTR_HIDDEN		0x0002
+-#define ATTR_SYSTEM		0x0004
+-#define ATTR_VOLUME		0x0008
+-#define ATTR_SUBDIR		0x0010
+-#define ATTR_ARCHIVE		0x0020
+-
+-#define ATTR_RWMASK		(ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME | \
+-				 ATTR_SUBDIR | ATTR_ARCHIVE)
++#define EXFAT_ATTR_READONLY	0x0001
++#define EXFAT_ATTR_HIDDEN	0x0002
++#define EXFAT_ATTR_SYSTEM	0x0004
++#define EXFAT_ATTR_VOLUME	0x0008
++#define EXFAT_ATTR_SUBDIR	0x0010
++#define EXFAT_ATTR_ARCHIVE	0x0020
++
++#define EXFAT_ATTR_RWMASK	(EXFAT_ATTR_HIDDEN | EXFAT_ATTR_SYSTEM | \
++				 EXFAT_ATTR_VOLUME | EXFAT_ATTR_SUBDIR | \
++				 EXFAT_ATTR_ARCHIVE)
+ 
+ #define BOOTSEC_JUMP_BOOT_LEN		3
+ #define BOOTSEC_FS_NAME_LEN		8
+diff --git a/fs/exfat/file.c b/fs/exfat/file.c
+index 32395ef686a2..1c2ee5c67d13 100644
+--- a/fs/exfat/file.c
++++ b/fs/exfat/file.c
+@@ -8,6 +8,9 @@
+ #include <linux/cred.h>
+ #include <linux/buffer_head.h>
+ #include <linux/blkdev.h>
++#include <linux/fsnotify.h>
++#include <linux/security.h>
++#include <linux/msdos_fs.h>
+ 
+ #include "exfat_raw.h"
+ #include "exfat_fs.h"
+@@ -144,7 +147,7 @@ int __exfat_truncate(struct inode *inode)
+ 	}
+ 
+ 	if (ei->type == TYPE_FILE)
+-		ei->attr |= ATTR_ARCHIVE;
++		ei->attr |= EXFAT_ATTR_ARCHIVE;
+ 
+ 	/*
+ 	 * update the directory entry
+@@ -316,6 +319,93 @@ int exfat_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+ 	return error;
+ }
+ 
++/*
++ * modified ioctls from fat/file.c by Welmer Almesberger
++ */
++static int exfat_ioctl_get_attributes(struct inode *inode, u32 __user *user_attr)
++{
++	u32 attr;
++
++	inode_lock_shared(inode);
++	attr = exfat_make_attr(inode);
++	inode_unlock_shared(inode);
++
++	return put_user(attr, user_attr);
++}
++
++static int exfat_ioctl_set_attributes(struct file *file, u32 __user *user_attr)
++{
++	struct inode *inode = file_inode(file);
++	struct exfat_sb_info *sbi = EXFAT_SB(inode->i_sb);
++	int is_dir = S_ISDIR(inode->i_mode);
++	u32 attr, oldattr;
++	struct iattr ia;
++	int err;
++
++	err = get_user(attr, user_attr);
++	if (err)
++		goto out;
++
++	err = mnt_want_write_file(file);
++	if (err)
++		goto out;
++	inode_lock(inode);
++
++	oldattr = exfat_make_attr(inode);
++
++	/*
++	 * Mask attributes so we don't set reserved fields.
++	 */
++	attr &= (EXFAT_ATTR_READONLY | EXFAT_ATTR_HIDDEN | EXFAT_ATTR_SYSTEM |
++		 EXFAT_ATTR_ARCHIVE);
++	attr |= (is_dir ? EXFAT_ATTR_SUBDIR : 0);
++
++	/* Equivalent to a chmod() */
++	ia.ia_valid = ATTR_MODE | ATTR_CTIME;
++	ia.ia_ctime = current_time(inode);
++	if (is_dir)
++		ia.ia_mode = exfat_make_mode(sbi, attr, 0777);
++	else
++		ia.ia_mode = exfat_make_mode(sbi, attr, 0666 | (inode->i_mode & 0111));
++
++	/* The root directory has no attributes */
++	if (inode->i_ino == EXFAT_ROOT_INO && attr != EXFAT_ATTR_SUBDIR) {
++		err = -EINVAL;
++		goto out_unlock_inode;
++	}
++
++	if (((attr | oldattr) & EXFAT_ATTR_SYSTEM) &&
++	    !capable(CAP_LINUX_IMMUTABLE)) {
++		err = -EPERM;
++		goto out_unlock_inode;
++	}
++
++	/*
++	 * The security check is questionable...  We single
++	 * out the RO attribute for checking by the security
++	 * module, just because it maps to a file mode.
++	 */
++	err = security_inode_setattr(file_mnt_idmap(file),
++				     file->f_path.dentry, &ia);
++	if (err)
++		goto out_unlock_inode;
++
++	/* This MUST be done before doing anything irreversible... */
++	err = exfat_setattr(file_mnt_idmap(file), file->f_path.dentry, &ia);
++	if (err)
++		goto out_unlock_inode;
++
++	fsnotify_change(file->f_path.dentry, ia.ia_valid);
++
++	exfat_save_attr(inode, attr);
++	mark_inode_dirty(inode);
++out_unlock_inode:
++	inode_unlock(inode);
++	mnt_drop_write_file(file);
++out:
++	return err;
++}
++
+ static int exfat_ioctl_fitrim(struct inode *inode, unsigned long arg)
+ {
+ 	struct fstrim_range range;
+@@ -346,8 +436,13 @@ static int exfat_ioctl_fitrim(struct inode *inode, unsigned long arg)
+ long exfat_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ {
+ 	struct inode *inode = file_inode(filp);
++	u32 __user *user_attr = (u32 __user *)arg;
+ 
+ 	switch (cmd) {
++	case FAT_IOCTL_GET_ATTRIBUTES:
++		return exfat_ioctl_get_attributes(inode, user_attr);
++	case FAT_IOCTL_SET_ATTRIBUTES:
++		return exfat_ioctl_set_attributes(filp, user_attr);
+ 	case FITRIM:
+ 		return exfat_ioctl_fitrim(inode, arg);
+ 	default:
+diff --git a/fs/exfat/inode.c b/fs/exfat/inode.c
+index 13329baeafbc..7a42db26a8cc 100644
+--- a/fs/exfat/inode.c
++++ b/fs/exfat/inode.c
+@@ -397,9 +397,9 @@ static int exfat_write_end(struct file *file, struct address_space *mapping,
+ 	if (err < len)
+ 		exfat_write_failed(mapping, pos+len);
+ 
+-	if (!(err < 0) && !(ei->attr & ATTR_ARCHIVE)) {
+-		inode->i_mtime = inode_set_ctime_current(inode);
+-		ei->attr |= ATTR_ARCHIVE;
++	if (!(err < 0) && !(ei->attr & EXFAT_ATTR_ARCHIVE)) {
++		inode_set_mtime_to_ts(inode, inode_set_ctime_current(inode));
++		ei->attr |= EXFAT_ATTR_ARCHIVE;
+ 		mark_inode_dirty(inode);
+ 	}
+ 
+@@ -547,7 +547,7 @@ static int exfat_fill_inode(struct inode *inode, struct exfat_dir_entry *info)
+ 	inode_inc_iversion(inode);
+ 	inode->i_generation = get_random_u32();
+ 
+-	if (info->attr & ATTR_SUBDIR) { /* directory */
++	if (info->attr & EXFAT_ATTR_SUBDIR) { /* directory */
+ 		inode->i_generation &= ~1;
+ 		inode->i_mode = exfat_make_mode(sbi, info->attr, 0777);
+ 		inode->i_op = &exfat_dir_inode_operations;
+diff --git a/fs/exfat/misc.c b/fs/exfat/misc.c
+index 2e1a1a6b1021..fa8459828046 100644
+--- a/fs/exfat/misc.c
++++ b/fs/exfat/misc.c
+@@ -126,6 +126,14 @@ void exfat_truncate_atime(struct timespec64 *ts)
+ 	ts->tv_nsec = 0;
+ }
+ 
++void exfat_truncate_inode_atime(struct inode *inode)
++{
++	struct timespec64 atime = inode_get_atime(inode);
++
++	exfat_truncate_atime(&atime);
++	inode_set_atime_to_ts(inode, atime);
++}
++
+ u16 exfat_calc_chksum16(void *data, int len, u16 chksum, int type)
+ {
+ 	int i;
+diff --git a/fs/exfat/namei.c b/fs/exfat/namei.c
+index f340e96b499f..ba1b8b9c2a29 100644
+--- a/fs/exfat/namei.c
++++ b/fs/exfat/namei.c
+@@ -546,12 +546,12 @@ static int exfat_add_entry(struct inode *inode, const char *path,
+ 	info->type = type;
+ 
+ 	if (type == TYPE_FILE) {
+-		info->attr = ATTR_ARCHIVE;
++		info->attr = EXFAT_ATTR_ARCHIVE;
+ 		info->start_clu = EXFAT_EOF_CLUSTER;
+ 		info->size = 0;
+ 		info->num_subdirs = 0;
+ 	} else {
+-		info->attr = ATTR_SUBDIR;
++		info->attr = EXFAT_ATTR_SUBDIR;
+ 		info->start_clu = start_clu;
+ 		info->size = clu_size;
+ 		info->num_subdirs = EXFAT_MIN_SUBDIR;
+@@ -1047,8 +1047,8 @@ static int exfat_rename_file(struct inode *inode, struct exfat_chain *p_dir,
+ 
+ 		*epnew = *epold;
+ 		if (exfat_get_entry_type(epnew) == TYPE_FILE) {
+-			epnew->dentry.file.attr |= cpu_to_le16(ATTR_ARCHIVE);
+-			ei->attr |= ATTR_ARCHIVE;
++			epnew->dentry.file.attr |= cpu_to_le16(EXFAT_ATTR_ARCHIVE);
++			ei->attr |= EXFAT_ATTR_ARCHIVE;
+ 		}
+ 		exfat_update_bh(new_bh, sync);
+ 		brelse(old_bh);
+@@ -1079,8 +1079,8 @@ static int exfat_rename_file(struct inode *inode, struct exfat_chain *p_dir,
+ 		ei->entry = newentry;
+ 	} else {
+ 		if (exfat_get_entry_type(epold) == TYPE_FILE) {
+-			epold->dentry.file.attr |= cpu_to_le16(ATTR_ARCHIVE);
+-			ei->attr |= ATTR_ARCHIVE;
++			epold->dentry.file.attr |= cpu_to_le16(EXFAT_ATTR_ARCHIVE);
++			ei->attr |= EXFAT_ATTR_ARCHIVE;
+ 		}
+ 		exfat_update_bh(old_bh, sync);
+ 		brelse(old_bh);
+@@ -1128,8 +1128,8 @@ static int exfat_move_file(struct inode *inode, struct exfat_chain *p_olddir,
+ 
+ 	*epnew = *epmov;
+ 	if (exfat_get_entry_type(epnew) == TYPE_FILE) {
+-		epnew->dentry.file.attr |= cpu_to_le16(ATTR_ARCHIVE);
+-		ei->attr |= ATTR_ARCHIVE;
++		epnew->dentry.file.attr |= cpu_to_le16(EXFAT_ATTR_ARCHIVE);
++		ei->attr |= EXFAT_ATTR_ARCHIVE;
+ 	}
+ 	exfat_update_bh(new_bh, IS_DIRSYNC(inode));
+ 	brelse(mov_bh);
+diff --git a/fs/exfat/super.c b/fs/exfat/super.c
+index 2778bd9b631e..ecee1664ab7f 100644
+--- a/fs/exfat/super.c
++++ b/fs/exfat/super.c
+@@ -360,7 +360,7 @@ static int exfat_read_root(struct inode *inode)
+ 	inode->i_gid = sbi->options.fs_gid;
+ 	inode_inc_iversion(inode);
+ 	inode->i_generation = 0;
+-	inode->i_mode = exfat_make_mode(sbi, ATTR_SUBDIR, 0777);
++	inode->i_mode = exfat_make_mode(sbi, EXFAT_ATTR_SUBDIR, 0777);
+ 	inode->i_op = &exfat_dir_inode_operations;
+ 	inode->i_fop = &exfat_dir_operations;
+ 
+@@ -369,9 +369,9 @@ static int exfat_read_root(struct inode *inode)
+ 	ei->i_size_aligned = i_size_read(inode);
+ 	ei->i_size_ondisk = i_size_read(inode);
+ 
+-	exfat_save_attr(inode, ATTR_SUBDIR);
+-	inode->i_mtime = inode->i_atime = ei->i_crtime = inode_set_ctime_current(inode);
+-	exfat_truncate_atime(&inode->i_atime);
++	exfat_save_attr(inode, EXFAT_ATTR_SUBDIR);
++	ei->i_crtime = simple_inode_init_ts(inode);
++	exfat_truncate_inode_atime(inode);
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

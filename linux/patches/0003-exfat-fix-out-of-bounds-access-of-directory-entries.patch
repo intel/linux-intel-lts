@@ -1,0 +1,61 @@
+From bbc37d0373517f7dbd29a96d8d82b4a7fc17c8d5 Mon Sep 17 00:00:00 2001
+From: Yuezhang Mo <Yuezhang.Mo@sony.com>
+Date: Mon, 28 Oct 2024 11:23:36 +0800
+Subject: [PATCH 3/3] exfat: fix out-of-bounds access of directory entries
+
+In the case of the directory size is greater than or equal to
+the cluster size, if start_clu becomes an EOF cluster(an invalid
+cluster) due to file system corruption, then the directory entry
+where ei->hint_femp.eidx hint is outside the directory, resulting
+in an out-of-bounds access, which may cause further file system
+corruption.
+
+This commit adds a check for start_clu, if it is an invalid cluster,
+the file or directory will be treated as empty.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Yuezhang Mo <Yuezhang.Mo@sony.com>
+Co-developed-by: Namjae Jeon <linkinjeon@kernel.org>
+Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
+---
+ fs/exfat/namei.c | 20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/fs/exfat/namei.c b/fs/exfat/namei.c
+index 51e40b8288df..7a521f73f03f 100644
+--- a/fs/exfat/namei.c
++++ b/fs/exfat/namei.c
+@@ -662,14 +662,26 @@ static int exfat_find(struct inode *dir, struct qstr *qname,
+ 	info->size = le64_to_cpu(ep2->dentry.stream.valid_size);
+ 	info->valid_size = le64_to_cpu(ep2->dentry.stream.valid_size);
+ 	info->size = le64_to_cpu(ep2->dentry.stream.size);
++
++	info->start_clu = le32_to_cpu(ep2->dentry.stream.start_clu);
++	if (!is_valid_cluster(sbi, info->start_clu) && info->size) {
++		exfat_warn(sb, "start_clu is invalid cluster(0x%x)",
++				info->start_clu);
++		info->size = 0;
++		info->valid_size = 0;
++	}
++
++	if (info->valid_size > info->size) {
++		exfat_warn(sb, "valid_size(%lld) is greater than size(%lld)",
++				info->valid_size, info->size);
++		info->valid_size = info->size;
++	}
++
+ 	if (info->size == 0) {
+ 		info->flags = ALLOC_NO_FAT_CHAIN;
+ 		info->start_clu = EXFAT_EOF_CLUSTER;
+-	} else {
++	} else
+ 		info->flags = ep2->dentry.stream.flags;
+-		info->start_clu =
+-			le32_to_cpu(ep2->dentry.stream.start_clu);
+-	}
+ 
+ 	exfat_get_entry_time(sbi, &info->crtime,
+ 			     ep->dentry.file.create_tz,
+-- 
+2.25.1
+

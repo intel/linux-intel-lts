@@ -1,0 +1,292 @@
+From 0137d3e79bdfdd627a919b25dbc3b0fc7dd34ad2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Uwe=20Kleine-K=C3=B6nig?= <u.kleine-koenig@pengutronix.de>
+Date: Sun, 17 Sep 2023 16:57:22 +0200
+Subject: [PATCH 1/7] scsi: ufs: Convert all platform drivers to return void
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The .remove() callback for a platform driver returns an int which makes
+many driver authors wrongly assume it's possible to do error handling by
+returning an error code. However the value returned is ignored (apart from
+emitting a warning) and this typically results in resource leaks.  To
+improve here there is a quest to make the remove callback return void. In
+the first step of this quest all drivers are converted to .remove_new()
+which already returns void. Eventually after all drivers are converted,
+.remove_new() is renamed to .remove().
+
+All platform drivers below drivers/ufs/ unconditionally return zero in
+their remove callback and so can be converted trivially to the variant
+returning void.
+
+Signed-off-by: Uwe Kleine-König <u.kleine-koenig@pengutronix.de>
+Link: https://lore.kernel.org/r/20230917145722.1131557-1-u.kleine-koenig@pengutronix.de
+Reviewed-by: Bean Huo <beanhuo@micron.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+---
+ drivers/ufs/host/cdns-pltfrm.c        | 5 ++---
+ drivers/ufs/host/tc-dwc-g210-pltfrm.c | 6 ++----
+ drivers/ufs/host/ti-j721e-ufs.c       | 6 ++----
+ drivers/ufs/host/ufs-exynos.c         | 6 ++----
+ drivers/ufs/host/ufs-hisi.c           | 5 ++---
+ drivers/ufs/host/ufs-mediatek.c       | 5 ++---
+ drivers/ufs/host/ufs-qcom.c           | 5 ++---
+ drivers/ufs/host/ufs-renesas.c        | 6 ++----
+ drivers/ufs/host/ufs-sprd.c           | 5 ++---
+ 9 files changed, 18 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/ufs/host/cdns-pltfrm.c b/drivers/ufs/host/cdns-pltfrm.c
+index 56014ef302b4..66811d8d1929 100644
+--- a/drivers/ufs/host/cdns-pltfrm.c
++++ b/drivers/ufs/host/cdns-pltfrm.c
+@@ -305,12 +305,11 @@ static int cdns_ufs_pltfrm_probe(struct platform_device *pdev)
+  *
+  * Return: 0 (success).
+  */
+-static int cdns_ufs_pltfrm_remove(struct platform_device *pdev)
++static void cdns_ufs_pltfrm_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+ 
+ 	ufshcd_remove(hba);
+-	return 0;
+ }
+ 
+ static const struct dev_pm_ops cdns_ufs_dev_pm_ops = {
+@@ -322,7 +321,7 @@ static const struct dev_pm_ops cdns_ufs_dev_pm_ops = {
+ 
+ static struct platform_driver cdns_ufs_pltfrm_driver = {
+ 	.probe	= cdns_ufs_pltfrm_probe,
+-	.remove	= cdns_ufs_pltfrm_remove,
++	.remove_new = cdns_ufs_pltfrm_remove,
+ 	.driver	= {
+ 		.name   = "cdns-ufshcd",
+ 		.pm     = &cdns_ufs_dev_pm_ops,
+diff --git a/drivers/ufs/host/tc-dwc-g210-pltfrm.c b/drivers/ufs/host/tc-dwc-g210-pltfrm.c
+index 4d5389dd9585..a3877592604d 100644
+--- a/drivers/ufs/host/tc-dwc-g210-pltfrm.c
++++ b/drivers/ufs/host/tc-dwc-g210-pltfrm.c
+@@ -74,14 +74,12 @@ static int tc_dwc_g210_pltfm_probe(struct platform_device *pdev)
+  * @pdev: pointer to platform device structure
+  *
+  */
+-static int tc_dwc_g210_pltfm_remove(struct platform_device *pdev)
++static void tc_dwc_g210_pltfm_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+ 
+ 	pm_runtime_get_sync(&(pdev)->dev);
+ 	ufshcd_remove(hba);
+-
+-	return 0;
+ }
+ 
+ static const struct dev_pm_ops tc_dwc_g210_pltfm_pm_ops = {
+@@ -91,7 +89,7 @@ static const struct dev_pm_ops tc_dwc_g210_pltfm_pm_ops = {
+ 
+ static struct platform_driver tc_dwc_g210_pltfm_driver = {
+ 	.probe		= tc_dwc_g210_pltfm_probe,
+-	.remove		= tc_dwc_g210_pltfm_remove,
++	.remove_new	= tc_dwc_g210_pltfm_remove,
+ 	.driver		= {
+ 		.name	= "tc-dwc-g210-pltfm",
+ 		.pm	= &tc_dwc_g210_pltfm_pm_ops,
+diff --git a/drivers/ufs/host/ti-j721e-ufs.c b/drivers/ufs/host/ti-j721e-ufs.c
+index 117eb7da92ac..250c22df000d 100644
+--- a/drivers/ufs/host/ti-j721e-ufs.c
++++ b/drivers/ufs/host/ti-j721e-ufs.c
+@@ -65,13 +65,11 @@ static int ti_j721e_ufs_probe(struct platform_device *pdev)
+ 	return ret;
+ }
+ 
+-static int ti_j721e_ufs_remove(struct platform_device *pdev)
++static void ti_j721e_ufs_remove(struct platform_device *pdev)
+ {
+ 	of_platform_depopulate(&pdev->dev);
+ 	pm_runtime_put_sync(&pdev->dev);
+ 	pm_runtime_disable(&pdev->dev);
+-
+-	return 0;
+ }
+ 
+ static const struct of_device_id ti_j721e_ufs_of_match[] = {
+@@ -85,7 +83,7 @@ MODULE_DEVICE_TABLE(of, ti_j721e_ufs_of_match);
+ 
+ static struct platform_driver ti_j721e_ufs_driver = {
+ 	.probe	= ti_j721e_ufs_probe,
+-	.remove	= ti_j721e_ufs_remove,
++	.remove_new = ti_j721e_ufs_remove,
+ 	.driver	= {
+ 		.name   = "ti-j721e-ufs",
+ 		.of_match_table = ti_j721e_ufs_of_match,
+diff --git a/drivers/ufs/host/ufs-exynos.c b/drivers/ufs/host/ufs-exynos.c
+index 268189f01e15..25bc11811b4c 100644
+--- a/drivers/ufs/host/ufs-exynos.c
++++ b/drivers/ufs/host/ufs-exynos.c
+@@ -1605,7 +1605,7 @@ static int exynos_ufs_probe(struct platform_device *pdev)
+ 	return err;
+ }
+ 
+-static int exynos_ufs_remove(struct platform_device *pdev)
++static void exynos_ufs_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+ 	struct exynos_ufs *ufs = ufshcd_get_variant(hba);
+@@ -1615,8 +1615,6 @@ static int exynos_ufs_remove(struct platform_device *pdev)
+ 
+ 	phy_power_off(ufs->phy);
+ 	phy_exit(ufs->phy);
+-
+-	return 0;
+ }
+ 
+ static struct exynos_ufs_uic_attr exynos7_uic_attr = {
+@@ -1756,7 +1754,7 @@ static const struct dev_pm_ops exynos_ufs_pm_ops = {
+ 
+ static struct platform_driver exynos_ufs_pltform = {
+ 	.probe	= exynos_ufs_probe,
+-	.remove	= exynos_ufs_remove,
++	.remove_new = exynos_ufs_remove,
+ 	.driver	= {
+ 		.name	= "exynos-ufshc",
+ 		.pm	= &exynos_ufs_pm_ops,
+diff --git a/drivers/ufs/host/ufs-hisi.c b/drivers/ufs/host/ufs-hisi.c
+index 5b3060cd0ab8..0229ac0a8dbe 100644
+--- a/drivers/ufs/host/ufs-hisi.c
++++ b/drivers/ufs/host/ufs-hisi.c
+@@ -575,12 +575,11 @@ static int ufs_hisi_probe(struct platform_device *pdev)
+ 	return ufshcd_pltfrm_init(pdev, of_id->data);
+ }
+ 
+-static int ufs_hisi_remove(struct platform_device *pdev)
++static void ufs_hisi_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+ 
+ 	ufshcd_remove(hba);
+-	return 0;
+ }
+ 
+ static const struct dev_pm_ops ufs_hisi_pm_ops = {
+@@ -592,7 +591,7 @@ static const struct dev_pm_ops ufs_hisi_pm_ops = {
+ 
+ static struct platform_driver ufs_hisi_pltform = {
+ 	.probe	= ufs_hisi_probe,
+-	.remove	= ufs_hisi_remove,
++	.remove_new = ufs_hisi_remove,
+ 	.driver	= {
+ 		.name	= "ufshcd-hisi",
+ 		.pm	= &ufs_hisi_pm_ops,
+diff --git a/drivers/ufs/host/ufs-mediatek.c b/drivers/ufs/host/ufs-mediatek.c
+index 2383ecd88f1c..1238faec3cc6 100644
+--- a/drivers/ufs/host/ufs-mediatek.c
++++ b/drivers/ufs/host/ufs-mediatek.c
+@@ -1748,13 +1748,12 @@ static int ufs_mtk_probe(struct platform_device *pdev)
+  *
+  * Always return 0
+  */
+-static int ufs_mtk_remove(struct platform_device *pdev)
++static void ufs_mtk_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+ 
+ 	pm_runtime_get_sync(&(pdev)->dev);
+ 	ufshcd_remove(hba);
+-	return 0;
+ }
+ 
+ #ifdef CONFIG_PM_SLEEP
+@@ -1818,7 +1817,7 @@ static const struct dev_pm_ops ufs_mtk_pm_ops = {
+ 
+ static struct platform_driver ufs_mtk_pltform = {
+ 	.probe      = ufs_mtk_probe,
+-	.remove     = ufs_mtk_remove,
++	.remove_new = ufs_mtk_remove,
+ 	.driver = {
+ 		.name   = "ufshcd-mtk",
+ 		.pm     = &ufs_mtk_pm_ops,
+diff --git a/drivers/ufs/host/ufs-qcom.c b/drivers/ufs/host/ufs-qcom.c
+index 643157a92c62..0a914fd44494 100644
+--- a/drivers/ufs/host/ufs-qcom.c
++++ b/drivers/ufs/host/ufs-qcom.c
+@@ -1920,14 +1920,13 @@ static int ufs_qcom_probe(struct platform_device *pdev)
+  *
+  * Always returns 0
+  */
+-static int ufs_qcom_remove(struct platform_device *pdev)
++static void ufs_qcom_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+ 
+ 	pm_runtime_get_sync(&(pdev)->dev);
+ 	ufshcd_remove(hba);
+ 	platform_msi_domain_free_irqs(hba->dev);
+-	return 0;
+ }
+ 
+ static const struct of_device_id ufs_qcom_of_match[] __maybe_unused = {
+@@ -1959,7 +1958,7 @@ static const struct dev_pm_ops ufs_qcom_pm_ops = {
+ 
+ static struct platform_driver ufs_qcom_pltform = {
+ 	.probe	= ufs_qcom_probe,
+-	.remove	= ufs_qcom_remove,
++	.remove_new = ufs_qcom_remove,
+ 	.driver	= {
+ 		.name	= "ufshcd-qcom",
+ 		.pm	= &ufs_qcom_pm_ops,
+diff --git a/drivers/ufs/host/ufs-renesas.c b/drivers/ufs/host/ufs-renesas.c
+index ea3da773b1c1..3ff97112e1f6 100644
+--- a/drivers/ufs/host/ufs-renesas.c
++++ b/drivers/ufs/host/ufs-renesas.c
+@@ -395,18 +395,16 @@ static int ufs_renesas_probe(struct platform_device *pdev)
+ 	return ufshcd_pltfrm_init(pdev, &ufs_renesas_vops);
+ }
+ 
+-static int ufs_renesas_remove(struct platform_device *pdev)
++static void ufs_renesas_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba = platform_get_drvdata(pdev);
+ 
+ 	ufshcd_remove(hba);
+-
+-	return 0;
+ }
+ 
+ static struct platform_driver ufs_renesas_platform = {
+ 	.probe	= ufs_renesas_probe,
+-	.remove	= ufs_renesas_remove,
++	.remove_new = ufs_renesas_remove,
+ 	.driver	= {
+ 		.name	= "ufshcd-renesas",
+ 		.of_match_table	= of_match_ptr(ufs_renesas_of_match),
+diff --git a/drivers/ufs/host/ufs-sprd.c b/drivers/ufs/host/ufs-sprd.c
+index 2bad75dd6d58..d8b165908809 100644
+--- a/drivers/ufs/host/ufs-sprd.c
++++ b/drivers/ufs/host/ufs-sprd.c
+@@ -425,13 +425,12 @@ static int ufs_sprd_probe(struct platform_device *pdev)
+ 	return err;
+ }
+ 
+-static int ufs_sprd_remove(struct platform_device *pdev)
++static void ufs_sprd_remove(struct platform_device *pdev)
+ {
+ 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+ 
+ 	pm_runtime_get_sync(&(pdev)->dev);
+ 	ufshcd_remove(hba);
+-	return 0;
+ }
+ 
+ static const struct dev_pm_ops ufs_sprd_pm_ops = {
+@@ -443,7 +442,7 @@ static const struct dev_pm_ops ufs_sprd_pm_ops = {
+ 
+ static struct platform_driver ufs_sprd_pltform = {
+ 	.probe = ufs_sprd_probe,
+-	.remove = ufs_sprd_remove,
++	.remove_new = ufs_sprd_remove,
+ 	.driver = {
+ 		.name = "ufshcd-sprd",
+ 		.pm = &ufs_sprd_pm_ops,
+-- 
+2.25.1
+

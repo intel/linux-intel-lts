@@ -1,0 +1,55 @@
+From d9d986d97446dc92c1493dce930765a2877883cc Mon Sep 17 00:00:00 2001
+From: "Yu, Tao1" <tao1.yu@intel.com>
+Date: Mon, 4 Nov 2024 15:08:21 +0000
+Subject: [PATCH] media: dvb-core: Fix a possible null-pointer dereference due
+ to data race in dvbdmx_write()
+
+The struct field dmx_demux.frontend is often protected by the lock
+dvb_demux.mutex when is accessed. Here is an example in
+dvbdmx_connect_frontend():
+
+  mutex_lock(&dvbdemux->mutex);
+
+  demux->frontend = frontend;
+  mutex_unlock(&dvbdemux->mutex);
+
+However, the variable demux->frontend is accessed without holding the lock
+dvbdemux->mutex in dvbdmx_write():
+
+  if ((!demux->frontend) || (demux->frontend->source != DMX_MEMORY_FE))
+
+In my opinion, this may be a harmful race, because if demux->fontend is set
+to NULL right after the first condition is checked, a null-pointer
+dereference can occur when accessing the field demux->frontend->source.
+
+To fix this possible null-pointer dereference caused by data race, a lock
+and unlock pair is added when accessing the variable demux->frontend.
+
+Reported-by: BassCheck <bass@buaa.edu.cn>
+Signed-off-by: Tuo Li <islituo@gmail.com>
+Signed-off-by: Tao Yu <tao1.yu@intel.com>
+---
+ drivers/media/dvb-core/dvb_demux.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/dvb-core/dvb_demux.c b/drivers/media/dvb-core/dvb_demux.c
+index 7c4d86bfdd6c..154b9b0a7efc 100644
+--- a/drivers/media/dvb-core/dvb_demux.c
++++ b/drivers/media/dvb-core/dvb_demux.c
+@@ -1141,8 +1141,12 @@ static int dvbdmx_write(struct dmx_demux *demux, const char __user *buf, size_t
+ 	struct dvb_demux *dvbdemux = (struct dvb_demux *)demux;
+ 	void *p;
+ 
+-	if ((!demux->frontend) || (demux->frontend->source != DMX_MEMORY_FE))
++	mutex_lock(&dvbdemux->mutex);
++	if ((!demux->frontend) || (demux->frontend->source != DMX_MEMORY_FE)) {
++		mutex_unlock(&dvbdemux->mutex);
+ 		return -EINVAL;
++	}
++	mutex_unlock(&dvbdemux->mutex);
+ 
+ 	p = memdup_user(buf, count);
+ 	if (IS_ERR(p))
+-- 
+2.25.1
+

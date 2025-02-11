@@ -1,0 +1,90 @@
+From bca1a76d6e65d27bc14cb193428615377f8f92c9 Mon Sep 17 00:00:00 2001
+From: Shravya KN <shravya.k-n@broadcom.com>
+Date: Fri, 22 Nov 2024 14:45:44 -0800
+Subject: [PATCH] bnxt_en: Fix receive ring space parameters when XDP is active
+
+The MTU setting at the time an XDP multi-buffer is attached
+determines whether the aggregation ring will be used and the
+rx_skb_func handler.  This is done in bnxt_set_rx_skb_mode().
+
+If the MTU is later changed, the aggregation ring setting may need
+to be changed and it may become out-of-sync with the settings
+initially done in bnxt_set_rx_skb_mode().  This may result in
+random memory corruption and crashes as the HW may DMA data larger
+than the allocated buffer size, such as:
+
+BUG: kernel NULL pointer dereference, address: 00000000000003c0
+PGD 0 P4D 0
+Oops: 0000 [#1] PREEMPT SMP NOPTI
+CPU: 17 PID: 0 Comm: swapper/17 Kdump: loaded Tainted: G S         OE      6.1.0-226bf9805506 #1
+Hardware name: Wiwynn Delta Lake PVT BZA.02601.0150/Delta Lake-Class1, BIOS F0E_3A12 08/26/2021
+RIP: 0010:bnxt_rx_pkt+0xe97/0x1ae0 [bnxt_en]
+Code: 8b 95 70 ff ff ff 4c 8b 9d 48 ff ff ff 66 41 89 87 b4 00 00 00 e9 0b f7 ff ff 0f b7 43 0a 49 8b 95 a8 04 00 00 25 ff 0f 00 00 <0f> b7 14 42 48 c1 e2 06 49 03 95 a0 04 00 00 0f b6 42 33f
+RSP: 0018:ffffa19f40cc0d18 EFLAGS: 00010202
+RAX: 00000000000001e0 RBX: ffff8e2c805c6100 RCX: 00000000000007ff
+RDX: 0000000000000000 RSI: ffff8e2c271ab990 RDI: ffff8e2c84f12380
+RBP: ffffa19f40cc0e48 R08: 000000000001000d R09: 974ea2fcddfa4cbf
+R10: 0000000000000000 R11: ffffa19f40cc0ff8 R12: ffff8e2c94b58980
+R13: ffff8e2c952d6600 R14: 0000000000000016 R15: ffff8e2c271ab990
+FS:  0000000000000000(0000) GS:ffff8e3b3f840000(0000) knlGS:0000000000000000
+CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+CR2: 00000000000003c0 CR3: 0000000e8580a004 CR4: 00000000007706e0
+DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+DR3: 0000000000000000 DR6: 00000000fffe0ff0 DR7: 0000000000000400
+PKRU: 55555554
+Call Trace:
+ <IRQ>
+ __bnxt_poll_work+0x1c2/0x3e0 [bnxt_en]
+
+To address the issue, we now call bnxt_set_rx_skb_mode() within
+bnxt_change_mtu() to properly set the AGG rings configuration and
+update rx_skb_func based on the new MTU value.
+Additionally, BNXT_FLAG_NO_AGG_RINGS is cleared at the beginning of
+bnxt_set_rx_skb_mode() to make sure it gets set or cleared based on
+the current MTU.
+
+Fixes: 08450ea98ae9 ("bnxt_en: Fix max_mtu setting for multi-buf XDP")
+Co-developed-by: Somnath Kotur <somnath.kotur@broadcom.com>
+Signed-off-by: Somnath Kotur <somnath.kotur@broadcom.com>
+Signed-off-by: Shravya KN <shravya.k-n@broadcom.com>
+Signed-off-by: Michael Chan <michael.chan@broadcom.com>
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+
+(cherry picked with conflict fix from commit 3051a77a09dfe3022aa012071346937fdf059033)
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.c b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+index c440f4d8d43a..06248a867d14 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -3986,7 +3986,7 @@ int bnxt_set_rx_skb_mode(struct bnxt *bp, bool page_mode)
+ 	struct net_device *dev = bp->dev;
+ 
+ 	if (page_mode) {
+-		bp->flags &= ~BNXT_FLAG_AGG_RINGS;
++		bp->flags &= ~(BNXT_FLAG_AGG_RINGS | BNXT_FLAG_NO_AGG_RINGS);
+ 		bp->flags |= BNXT_FLAG_RX_PAGE_MODE;
+ 
+ 		if (bp->xdp_prog->aux->xdp_has_frags)
+@@ -12794,7 +12794,15 @@ static int bnxt_change_mtu(struct net_device *dev, int new_mtu)
+ 	if (netif_running(dev))
+ 		bnxt_close_nic(bp, true, false);
+ 
+-	dev->mtu = new_mtu;
++	WRITE_ONCE(dev->mtu, new_mtu);
++
++	/* MTU change may change the AGG ring settings if an XDP multi-buffer
++	 * program is attached.  We need to set the AGG rings settings and
++	 * rx_skb_func accordingly.
++	 */
++	if (READ_ONCE(bp->xdp_prog))
++		bnxt_set_rx_skb_mode(bp, true);
++
+ 	bnxt_set_ring_params(bp);
+ 
+ 	if (netif_running(dev))
+-- 
+2.25.1
+

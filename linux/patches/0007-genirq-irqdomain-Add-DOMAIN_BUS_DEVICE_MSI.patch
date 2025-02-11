@@ -1,0 +1,31 @@
+From 24b74a28051fe1efc26906040ea9e7ae58014c4d Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Sat, 27 Jan 2024 21:47:32 +0530
+Subject: [PATCH 7/7] genirq/irqdomain: Add DOMAIN_BUS_DEVICE_MSI
+
+Add a new domain bus token to prepare for device MSI which aims to replace
+the existing platform MSI maze.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Anup Patel <apatel@ventanamicro.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Link: https://lore.kernel.org/r/20240127161753.114685-5-apatel@ventanamicro.com
+---
+ include/linux/irqdomain_defs.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/linux/irqdomain_defs.h b/include/linux/irqdomain_defs.h
+index c29921fd8cd1..a7dea0c8c5e0 100644
+--- a/include/linux/irqdomain_defs.h
++++ b/include/linux/irqdomain_defs.h
+@@ -26,6 +26,7 @@ enum irq_domain_bus_token {
+ 	DOMAIN_BUS_DMAR,
+ 	DOMAIN_BUS_AMDVI,
+ 	DOMAIN_BUS_PCI_DEVICE_IMS,
++	DOMAIN_BUS_DEVICE_MSI,
+ };
+ 
+ #endif /* _LINUX_IRQDOMAIN_DEFS_H */
+-- 
+2.25.1
+

@@ -1,0 +1,57 @@
+From 4005b5fce02e4bdfc43791ce8779f5994608491c Mon Sep 17 00:00:00 2001
+From: Hyunwoo Kim <v4bel@theori.io>
+Date: Sat, 9 Dec 2023 05:55:18 -0500
+Subject: [PATCH] Bluetooth: af_bluetooth: Fix Use-After-Free in
+ bt_sock_recvmsg
+
+This can cause a race with bt_sock_ioctl() because
+bt_sock_recvmsg() gets the skb from sk->sk_receive_queue
+and then frees it without holding lock_sock.
+A use-after-free for a skb occurs with the following flow.
+```
+bt_sock_recvmsg() -> skb_recv_datagram() -> skb_free_datagram()
+bt_sock_ioctl() -> skb_peek()
+```
+Add lock_sock to bt_sock_recvmsg() to fix this issue.
+
+Cc: stable@vger.kernel.org
+Fixes: 1da177e4c3f4 ("Linux-2.6.12-rc2")
+Signed-off-by: Hyunwoo Kim <v4bel@theori.io>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Signed-off-by: Tao Yu <tao1.yu@intel.com>
+(cherry picked from commit 2e07e8348ea454615e268222ae3fc240421be768)
+---
+ net/bluetooth/af_bluetooth.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/net/bluetooth/af_bluetooth.c b/net/bluetooth/af_bluetooth.c
+index 67604ccec2f4..823a7edd0d0d 100644
+--- a/net/bluetooth/af_bluetooth.c
++++ b/net/bluetooth/af_bluetooth.c
+@@ -309,11 +309,14 @@ int bt_sock_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
+ 	if (flags & MSG_OOB)
+ 		return -EOPNOTSUPP;
+ 
++	lock_sock(sk);
++
+ 	skb = skb_recv_datagram(sk, flags, &err);
+ 	if (!skb) {
+ 		if (sk->sk_shutdown & RCV_SHUTDOWN)
+ 			err = 0;
+ 
++		release_sock(sk);
+ 		return err;
+ 	}
+ 
+@@ -343,6 +346,8 @@ int bt_sock_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
+ 
+ 	skb_free_datagram(sk, skb);
+ 
++	release_sock(sk);
++
+ 	if (flags & MSG_TRUNC)
+ 		copied = skblen;
+ 
+-- 
+2.25.1
+

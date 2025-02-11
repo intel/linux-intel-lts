@@ -1,0 +1,196 @@
+From ba622632d5e912891545e3c212e4a08d953db05a Mon Sep 17 00:00:00 2001
+From: Manivannan Sadhasivam <manivannan.sadhasivam@linaro.org>
+Date: Mon, 11 Nov 2024 23:18:32 +0530
+Subject: [PATCH 4/7] scsi: ufs: pltfrm: Disable runtime PM during removal of
+ glue drivers
+
+When the UFSHCD platform glue drivers are removed, runtime PM should be
+disabled using pm_runtime_disable() to balance the enablement done in
+ufshcd_pltfrm_init(). This is also reported by PM core when the glue driver
+is removed and inserted again:
+
+ufshcd-qcom 1d84000.ufshc: Unbalanced pm_runtime_enable!
+
+So disable runtime PM using a new helper API ufshcd_pltfrm_remove(), that
+also takes care of removing ufshcd. This helper should be called during the
+remove() stage of glue drivers.
+
+Cc: stable@vger.kernel.org # 3.12
+Fixes: 62694735ca95 ("[SCSI] ufs: Add runtime PM support for UFS host controller driver")
+Signed-off-by: Manivannan Sadhasivam <manivannan.sadhasivam@linaro.org>
+Link: https://lore.kernel.org/r/20241111-ufs_bug_fix-v1-3-45ad8b62f02e@linaro.org
+Reviewed-by: Peter Wang <peter.wang@mediatek.com>
+Reviewed-by: Bean Huo <beanhuo@micron.com>
+Reviewed-by: Bart Van Assche <bvanassche@acm.org>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+---
+ drivers/ufs/host/cdns-pltfrm.c        |  4 +---
+ drivers/ufs/host/tc-dwc-g210-pltfrm.c |  4 +---
+ drivers/ufs/host/ufs-exynos.c         |  2 +-
+ drivers/ufs/host/ufs-hisi.c           |  4 +---
+ drivers/ufs/host/ufs-mediatek.c       |  4 +---
+ drivers/ufs/host/ufs-qcom.c           |  2 +-
+ drivers/ufs/host/ufs-renesas.c        |  4 +---
+ drivers/ufs/host/ufs-sprd.c           |  4 +---
+ drivers/ufs/host/ufshcd-pltfrm.c      | 13 +++++++++++++
+ drivers/ufs/host/ufshcd-pltfrm.h      |  1 +
+ 10 files changed, 22 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/ufs/host/cdns-pltfrm.c b/drivers/ufs/host/cdns-pltfrm.c
+index 66811d8d1929..b31aa8411151 100644
+--- a/drivers/ufs/host/cdns-pltfrm.c
++++ b/drivers/ufs/host/cdns-pltfrm.c
+@@ -307,9 +307,7 @@ static int cdns_ufs_pltfrm_probe(struct platform_device *pdev)
+  */
+ static void cdns_ufs_pltfrm_remove(struct platform_device *pdev)
+ {
+-	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+-
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ }
+ 
+ static const struct dev_pm_ops cdns_ufs_dev_pm_ops = {
+diff --git a/drivers/ufs/host/tc-dwc-g210-pltfrm.c b/drivers/ufs/host/tc-dwc-g210-pltfrm.c
+index a3877592604d..113e0ef7b2cf 100644
+--- a/drivers/ufs/host/tc-dwc-g210-pltfrm.c
++++ b/drivers/ufs/host/tc-dwc-g210-pltfrm.c
+@@ -76,10 +76,8 @@ static int tc_dwc_g210_pltfm_probe(struct platform_device *pdev)
+  */
+ static void tc_dwc_g210_pltfm_remove(struct platform_device *pdev)
+ {
+-	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+-
+ 	pm_runtime_get_sync(&(pdev)->dev);
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ }
+ 
+ static const struct dev_pm_ops tc_dwc_g210_pltfm_pm_ops = {
+diff --git a/drivers/ufs/host/ufs-exynos.c b/drivers/ufs/host/ufs-exynos.c
+index 25bc11811b4c..1cca797a00ba 100644
+--- a/drivers/ufs/host/ufs-exynos.c
++++ b/drivers/ufs/host/ufs-exynos.c
+@@ -1611,7 +1611,7 @@ static void exynos_ufs_remove(struct platform_device *pdev)
+ 	struct exynos_ufs *ufs = ufshcd_get_variant(hba);
+ 
+ 	pm_runtime_get_sync(&(pdev)->dev);
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ 
+ 	phy_power_off(ufs->phy);
+ 	phy_exit(ufs->phy);
+diff --git a/drivers/ufs/host/ufs-hisi.c b/drivers/ufs/host/ufs-hisi.c
+index 0229ac0a8dbe..ceae0dd1617e 100644
+--- a/drivers/ufs/host/ufs-hisi.c
++++ b/drivers/ufs/host/ufs-hisi.c
+@@ -577,9 +577,7 @@ static int ufs_hisi_probe(struct platform_device *pdev)
+ 
+ static void ufs_hisi_remove(struct platform_device *pdev)
+ {
+-	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+-
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ }
+ 
+ static const struct dev_pm_ops ufs_hisi_pm_ops = {
+diff --git a/drivers/ufs/host/ufs-mediatek.c b/drivers/ufs/host/ufs-mediatek.c
+index 1238faec3cc6..49f63b13a040 100644
+--- a/drivers/ufs/host/ufs-mediatek.c
++++ b/drivers/ufs/host/ufs-mediatek.c
+@@ -1750,10 +1750,8 @@ static int ufs_mtk_probe(struct platform_device *pdev)
+  */
+ static void ufs_mtk_remove(struct platform_device *pdev)
+ {
+-	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+-
+ 	pm_runtime_get_sync(&(pdev)->dev);
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ }
+ 
+ #ifdef CONFIG_PM_SLEEP
+diff --git a/drivers/ufs/host/ufs-qcom.c b/drivers/ufs/host/ufs-qcom.c
+index 1e75368930d9..762b3aa19f31 100644
+--- a/drivers/ufs/host/ufs-qcom.c
++++ b/drivers/ufs/host/ufs-qcom.c
+@@ -1926,7 +1926,7 @@ static void ufs_qcom_remove(struct platform_device *pdev)
+ 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+ 
+ 	pm_runtime_get_sync(&(pdev)->dev);
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ 	if (host->esi_enabled)
+ 		platform_device_msi_free_irqs_all(hba->dev);
+ }
+diff --git a/drivers/ufs/host/ufs-renesas.c b/drivers/ufs/host/ufs-renesas.c
+index 3ff97112e1f6..21a64b34397d 100644
+--- a/drivers/ufs/host/ufs-renesas.c
++++ b/drivers/ufs/host/ufs-renesas.c
+@@ -397,9 +397,7 @@ static int ufs_renesas_probe(struct platform_device *pdev)
+ 
+ static void ufs_renesas_remove(struct platform_device *pdev)
+ {
+-	struct ufs_hba *hba = platform_get_drvdata(pdev);
+-
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ }
+ 
+ static struct platform_driver ufs_renesas_platform = {
+diff --git a/drivers/ufs/host/ufs-sprd.c b/drivers/ufs/host/ufs-sprd.c
+index d8b165908809..e455890cf7d4 100644
+--- a/drivers/ufs/host/ufs-sprd.c
++++ b/drivers/ufs/host/ufs-sprd.c
+@@ -427,10 +427,8 @@ static int ufs_sprd_probe(struct platform_device *pdev)
+ 
+ static void ufs_sprd_remove(struct platform_device *pdev)
+ {
+-	struct ufs_hba *hba =  platform_get_drvdata(pdev);
+-
+ 	pm_runtime_get_sync(&(pdev)->dev);
+-	ufshcd_remove(hba);
++	ufshcd_pltfrm_remove(pdev);
+ }
+ 
+ static const struct dev_pm_ops ufs_sprd_pm_ops = {
+diff --git a/drivers/ufs/host/ufshcd-pltfrm.c b/drivers/ufs/host/ufshcd-pltfrm.c
+index 797a4dfe45d9..0dc8651eabc2 100644
+--- a/drivers/ufs/host/ufshcd-pltfrm.c
++++ b/drivers/ufs/host/ufshcd-pltfrm.c
+@@ -392,6 +392,19 @@ int ufshcd_pltfrm_init(struct platform_device *pdev,
+ }
+ EXPORT_SYMBOL_GPL(ufshcd_pltfrm_init);
+ 
++/**
++ * ufshcd_pltfrm_remove - Remove ufshcd platform
++ * @pdev: pointer to Platform device handle
++ */
++void ufshcd_pltfrm_remove(struct platform_device *pdev)
++{
++	struct ufs_hba *hba =  platform_get_drvdata(pdev);
++
++	ufshcd_remove(hba);
++	pm_runtime_disable(&pdev->dev);
++}
++EXPORT_SYMBOL_GPL(ufshcd_pltfrm_remove);
++
+ MODULE_AUTHOR("Santosh Yaragnavi <santosh.sy@samsung.com>");
+ MODULE_AUTHOR("Vinayak Holikatti <h.vinayak@samsung.com>");
+ MODULE_DESCRIPTION("UFS host controller Platform bus based glue driver");
+diff --git a/drivers/ufs/host/ufshcd-pltfrm.h b/drivers/ufs/host/ufshcd-pltfrm.h
+index 2df108f4ac13..1cfc4f8ea07e 100644
+--- a/drivers/ufs/host/ufshcd-pltfrm.h
++++ b/drivers/ufs/host/ufshcd-pltfrm.h
+@@ -31,6 +31,7 @@ int ufshcd_get_pwr_dev_param(const struct ufs_dev_params *dev_param,
+ void ufshcd_init_pwr_dev_param(struct ufs_dev_params *dev_param);
+ int ufshcd_pltfrm_init(struct platform_device *pdev,
+ 		       const struct ufs_hba_variant_ops *vops);
++void ufshcd_pltfrm_remove(struct platform_device *pdev);
+ int ufshcd_populate_vreg(struct device *dev, const char *name,
+ 			 struct ufs_vreg **out_vreg);
+ 
+-- 
+2.25.1
+

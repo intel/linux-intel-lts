@@ -1,0 +1,45 @@
+From 7466a81ff9903838a8da6b90ec774502b3aa4084 Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@linaro.org>
+Date: Mon, 11 Nov 2024 14:08:06 +0300
+Subject: [PATCH] usb: typec: fix potential array underflow in
+ ucsi_ccg_sync_control()
+
+The "command" variable can be controlled by the user via debugfs.  The
+worry is that if con_index is zero then "&uc->ucsi->connector[con_index
+- 1]" would be an array underflow.
+
+Fixes: 170a6726d0e2 ("usb: typec: ucsi: add support for separate DP altmode devices")
+Signed-off-by: Dan Carpenter <dan.carpenter@linaro.org>
+Reviewed-by: Heikki Krogerus <heikki.krogerus@linux.intel.com>
+Link: https://lore.kernel.org/r/c69ef0b3-61b0-4dde-98dd-97b97f81d912@stanley.mountain
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/typec/ucsi/ucsi_ccg.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/usb/typec/ucsi/ucsi_ccg.c b/drivers/usb/typec/ucsi/ucsi_ccg.c
+index cf3c8e552def..488d4a032ebb 100644
+--- a/drivers/usb/typec/ucsi/ucsi_ccg.c
++++ b/drivers/usb/typec/ucsi/ucsi_ccg.c
+@@ -585,6 +585,10 @@ static int ucsi_ccg_sync_write(struct ucsi *ucsi, unsigned int offset,
+ 		    uc->has_multiple_dp) {
+ 			con_index = (uc->last_cmd_sent >> 16) &
+ 				    UCSI_CMD_CONNECTOR_MASK;
++			if (con_index == 0) {
++			ret = -EINVAL;
++			goto unlock;
++			}
+ 			con = &uc->ucsi->connector[con_index - 1];
+ 			ucsi_ccg_update_set_new_cam_cmd(uc, con, (u64 *)val);
+ 		}
+@@ -600,6 +604,7 @@ static int ucsi_ccg_sync_write(struct ucsi *ucsi, unsigned int offset,
+ err_clear_bit:
+ 	clear_bit(DEV_CMD_PENDING, &uc->flags);
+ 	pm_runtime_put_sync(uc->dev);
++unlock:
+ 	mutex_unlock(&uc->lock);
+ 
+ 	return ret;
+-- 
+2.25.1
+
