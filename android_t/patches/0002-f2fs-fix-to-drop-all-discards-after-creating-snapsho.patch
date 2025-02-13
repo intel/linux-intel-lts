@@ -1,0 +1,99 @@
+From 419df21cf36fcc6f72b088b89457c1ac59b473f8 Mon Sep 17 00:00:00 2001
+From: Chao Yu <chao@kernel.org>
+Date: Thu, 21 Nov 2024 22:17:16 +0800
+Subject: [PATCH 2/3] f2fs: fix to drop all discards after creating snapshot on
+ lvm device
+
+Piergiorgio reported a bug in bugzilla as below:
+
+------------[ cut here ]------------
+WARNING: CPU: 2 PID: 969 at fs/f2fs/segment.c:1330
+RIP: 0010:__submit_discard_cmd+0x27d/0x400 [f2fs]
+Call Trace:
+ __issue_discard_cmd+0x1ca/0x350 [f2fs]
+ issue_discard_thread+0x191/0x480 [f2fs]
+ kthread+0xcf/0x100
+ ret_from_fork+0x31/0x50
+ ret_from_fork_asm+0x1a/0x30
+
+w/ below testcase, it can reproduce this bug quickly:
+- pvcreate /dev/vdb
+- vgcreate myvg1 /dev/vdb
+- lvcreate -L 1024m -n mylv1 myvg1
+- mount /dev/myvg1/mylv1 /mnt/f2fs
+- dd if=/dev/zero of=/mnt/f2fs/file bs=1M count=20
+- sync
+- rm /mnt/f2fs/file
+- sync
+- lvcreate -L 1024m -s -n mylv1-snapshot /dev/myvg1/mylv1
+- umount /mnt/f2fs
+
+The root cause is: it will update discard_max_bytes of mounted lvm
+device to zero after creating snapshot on this lvm device, then,
+__submit_discard_cmd() will pass parameter @nr_sects w/ zero value
+to __blkdev_issue_discard(), it returns a NULL bio pointer, result
+in panic.
+
+This patch changes as below for fixing:
+1. Let's drop all remained discards in f2fs_unfreeze() if snapshot
+of lvm device is created.
+2. Checking discard_max_bytes before submitting discard during
+__submit_discard_cmd().
+
+Cc: stable@vger.kernel.org
+Fixes: 35ec7d574884 ("f2fs: split discard command in prior to block layer")
+Reported-by: Piergiorgio Sartor <piergiorgio.sartor@nexgo.de>
+Closes: https://bugzilla.kernel.org/show_bug.cgi?id=219484
+Signed-off-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/segment.c |  9 +++++++++
+ fs/f2fs/super.c   | 12 ++++++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index de08e5e11179..bbe3387c5627 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -1129,6 +1129,15 @@ static int __submit_discard_cmd(struct f2fs_sb_info *sbi,
+ 	if (is_sbi_flag_set(sbi, SBI_NEED_FSCK))
+ 		return 0;
+ 
++	/*
++	 * stop issuing discard for any of below cases:
++	 * 1. device is conventional zone, but it doesn't support discard.
++	 * 2. device is regulare device, after snapshot it doesn't support
++	 * discard.
++	 */
++	if (!bdev_max_discard_sectors(bdev))
++		return -EOPNOTSUPP;
++
+ 	trace_f2fs_issue_discard(bdev, dc->start, dc->len);
+ 
+ 	lstart = dc->lstart;
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 814ababfbc4e..89345776f293 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -1718,6 +1718,18 @@ static int f2fs_freeze(struct super_block *sb)
+ 
+ static int f2fs_unfreeze(struct super_block *sb)
+ {
++	struct f2fs_sb_info *sbi = F2FS_SB(sb);
++
++	/*
++	 * It will update discard_max_bytes of mounted lvm device to zero
++	 * after creating snapshot on this lvm device, let's drop all
++	 * remained discards.
++	 * We don't need to disable real-time discard because discard_max_bytes
++	 * will recover after removal of snapshot.
++	 */
++	if (test_opt(sbi, DISCARD) && !f2fs_hw_support_discard(sbi))
++		f2fs_issue_discard_timeout(sbi);
++
+ 	clear_sbi_flag(F2FS_SB(sb), SBI_IS_FREEZING);
+ 	return 0;
+ }
+-- 
+2.25.1
+

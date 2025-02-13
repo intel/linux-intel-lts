@@ -1,0 +1,40 @@
+From c57d74454d99e3782f8ff0601198772eb0155879 Mon Sep 17 00:00:00 2001
+From: Javier Carrasco <javier.carrasco.cruz@gmail.com>
+Date: Mon, 25 Nov 2024 22:16:13 +0100
+Subject: [PATCH] iio: imu: kmx61: fix information leak in triggered buffer
+
+commit 6ae053113f6a226a2303caa4936a4c37f3bfff7b upstream.
+
+The 'buffer' local array is used to push data to user space from a
+triggered buffer, but it does not set values for inactive channels, as
+it only uses iio_for_each_active_channel() to assign new values.
+
+Initialize the array to zero before using it to avoid pushing
+uninitialized information to userspace.
+
+Cc: stable@vger.kernel.org
+Fixes: c3a23ecc0901 ("iio: imu: kmx61: Add support for data ready triggers")
+Signed-off-by: Javier Carrasco <javier.carrasco.cruz@gmail.com>
+Link: https://patch.msgid.link/20241125-iio_memset_scan_holes-v1-5-0cb6e98d895c@gmail.com
+Signed-off-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/iio/imu/kmx61.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/iio/imu/kmx61.c b/drivers/iio/imu/kmx61.c
+index f89724481df9..950570ae2980 100644
+--- a/drivers/iio/imu/kmx61.c
++++ b/drivers/iio/imu/kmx61.c
+@@ -1192,7 +1192,7 @@ static irqreturn_t kmx61_trigger_handler(int irq, void *p)
+ 	struct kmx61_data *data = kmx61_get_data(indio_dev);
+ 	int bit, ret, i = 0;
+ 	u8 base;
+-	s16 buffer[8];
++	s16 buffer[8] = { };
+ 
+ 	if (indio_dev == data->acc_indio_dev)
+ 		base = KMX61_ACC_XOUT_L;
+-- 
+2.25.1
+

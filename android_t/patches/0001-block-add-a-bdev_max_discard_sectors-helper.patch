@@ -1,0 +1,174 @@
+From e2d7c6ce4071d7f0f279fc662c4aa9162cc92f66 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Fri, 15 Apr 2022 06:52:54 +0200
+Subject: [PATCH 1/3] block: add a bdev_max_discard_sectors helper
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add a helper to query the number of sectors support per each discard bio
+based on the block device and use this helper to stop various places from
+poking into the request_queue to see if discard is supported and if so how
+much.  This mirrors what is done e.g. for write zeroes as well.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Martin K. Petersen <martin.petersen@oracle.com>
+Acked-by: Christoph Böhmwalder <christoph.boehmwalder@linbit.com> [drbd]
+Acked-by: Coly Li <colyli@suse.de> [bcache]
+Acked-by: David Sterba <dsterba@suse.com> [btrfs]
+Reviewed-by: Chaitanya Kulkarni <kch@nvidia.com>
+Link: https://lore.kernel.org/r/20220415045258.199825-24-hch@lst.de
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ drivers/block/drbd/drbd_nl.c        | 8 +++++---
+ drivers/block/drbd/drbd_receiver.c  | 2 +-
+ drivers/block/rnbd/rnbd-srv-dev.h   | 3 +--
+ drivers/md/dm-io.c                  | 2 +-
+ drivers/target/target_core_device.c | 7 +++----
+ fs/f2fs/segment.c                   | 6 ++----
+ include/linux/blkdev.h              | 5 +++++
+ 7 files changed, 18 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/block/drbd/drbd_nl.c b/drivers/block/drbd/drbd_nl.c
+index 69184cf17b6a..7c8b03360c9e 100644
+--- a/drivers/block/drbd/drbd_nl.c
++++ b/drivers/block/drbd/drbd_nl.c
+@@ -1505,7 +1505,8 @@ static bool write_ordering_changed(struct disk_conf *a, struct disk_conf *b)
+ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *disk_conf,
+ 			       struct drbd_backing_dev *nbc)
+ {
+-	struct request_queue * const q = nbc->backing_bdev->bd_disk->queue;
++	struct block_device *bdev = nbc->backing_bdev;
++	struct request_queue *q = bdev->bd_disk->queue;
+ 
+ 	if (disk_conf->al_extents < DRBD_AL_EXTENTS_MIN)
+ 		disk_conf->al_extents = DRBD_AL_EXTENTS_MIN;
+@@ -1521,6 +1522,7 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
+ 
+ 	if (disk_conf->rs_discard_granularity) {
+ 		int orig_value = disk_conf->rs_discard_granularity;
++		sector_t discard_size = bdev_max_discard_sectors(bdev) << 9;
+ 		int remainder;
+ 
+ 		if (q->limits.discard_granularity > disk_conf->rs_discard_granularity)
+@@ -1529,8 +1531,8 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
+ 		remainder = disk_conf->rs_discard_granularity % q->limits.discard_granularity;
+ 		disk_conf->rs_discard_granularity += remainder;
+ 
+-		if (disk_conf->rs_discard_granularity > q->limits.max_discard_sectors << 9)
+-			disk_conf->rs_discard_granularity = q->limits.max_discard_sectors << 9;
++		if (disk_conf->rs_discard_granularity > discard_size)
++			disk_conf->rs_discard_granularity = discard_size;
+ 
+ 		if (disk_conf->rs_discard_granularity != orig_value)
+ 			drbd_info(device, "rs_discard_granularity changed to %d\n",
+diff --git a/drivers/block/drbd/drbd_receiver.c b/drivers/block/drbd/drbd_receiver.c
+index 0104e101b0d7..04753c120dd9 100644
+--- a/drivers/block/drbd/drbd_receiver.c
++++ b/drivers/block/drbd/drbd_receiver.c
+@@ -1526,7 +1526,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
+ 	granularity = max(q->limits.discard_granularity >> 9, 1U);
+ 	alignment = (bdev_discard_alignment(bdev) >> 9) % granularity;
+ 
+-	max_discard_sectors = min(q->limits.max_discard_sectors, (1U << 22));
++	max_discard_sectors = min(bdev_max_discard_sectors(bdev), (1U << 22));
+ 	max_discard_sectors -= max_discard_sectors % granularity;
+ 	if (unlikely(!max_discard_sectors))
+ 		goto zero_out;
+diff --git a/drivers/block/rnbd/rnbd-srv-dev.h b/drivers/block/rnbd/rnbd-srv-dev.h
+index 0eb23850afb9..f9eea342e5a9 100644
+--- a/drivers/block/rnbd/rnbd-srv-dev.h
++++ b/drivers/block/rnbd/rnbd-srv-dev.h
+@@ -66,8 +66,7 @@ static inline int rnbd_dev_get_max_discard_sects(const struct rnbd_dev *dev)
+ 	if (!blk_queue_discard(bdev_get_queue(dev->bdev)))
+ 		return 0;
+ 
+-	return blk_queue_get_max_sectors(bdev_get_queue(dev->bdev),
+-					 REQ_OP_DISCARD);
++	return bdev_max_discard_sectors(dev->bdev);
+ }
+ 
+ static inline int rnbd_dev_get_discard_granularity(const struct rnbd_dev *dev)
+diff --git a/drivers/md/dm-io.c b/drivers/md/dm-io.c
+index 3ba92c90152c..489ee985bb31 100644
+--- a/drivers/md/dm-io.c
++++ b/drivers/md/dm-io.c
+@@ -312,7 +312,7 @@ static void do_region(int op, int op_flags, unsigned region,
+ 	 * Reject unsupported discard and write same requests.
+ 	 */
+ 	if (op == REQ_OP_DISCARD)
+-		special_cmd_max_sectors = q->limits.max_discard_sectors;
++		special_cmd_max_sectors = bdev_max_discard_sectors(where->bdev);
+ 	else if (op == REQ_OP_WRITE_ZEROES)
+ 		special_cmd_max_sectors = q->limits.max_write_zeroes_sectors;
+ 	else if (op == REQ_OP_WRITE_SAME)
+diff --git a/drivers/target/target_core_device.c b/drivers/target/target_core_device.c
+index 1fcac654cfaa..d26d43740fec 100644
+--- a/drivers/target/target_core_device.c
++++ b/drivers/target/target_core_device.c
+@@ -825,9 +825,8 @@ struct se_device *target_alloc_device(struct se_hba *hba, const char *name)
+ }
+ 
+ /*
+- * Check if the underlying struct block_device request_queue supports
+- * the QUEUE_FLAG_DISCARD bit for UNMAP/WRITE_SAME in SCSI + TRIM
+- * in ATA and we need to set TPE=1
++ * Check if the underlying struct block_device supports discard and if yes
++ * configure the UNMAP parameters.
+  */
+ bool target_configure_unmap_from_queue(struct se_dev_attrib *attrib,
+ 				       struct request_queue *q)
+@@ -838,7 +837,7 @@ bool target_configure_unmap_from_queue(struct se_dev_attrib *attrib,
+ 		return false;
+ 
+ 	attrib->max_unmap_lba_count =
+-		q->limits.max_discard_sectors >> (ilog2(block_size) - 9);
++		bdev_max_discard_sectors(bdev) >> (ilog2(block_size) - 9);
+ 	/*
+ 	 * Currently hardcoded to 1 in Linux/SCSI code..
+ 	 */
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 8e123537bdee..de08e5e11179 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -1114,9 +1114,8 @@ static int __submit_discard_cmd(struct f2fs_sb_info *sbi,
+ 						unsigned int *issued)
+ {
+ 	struct block_device *bdev = dc->bdev;
+-	struct request_queue *q = bdev_get_queue(bdev);
+ 	unsigned int max_discard_blocks =
+-			SECTOR_TO_BLOCK(q->limits.max_discard_sectors);
++			SECTOR_TO_BLOCK(bdev_max_discard_sectors(bdev));
+ 	struct discard_cmd_control *dcc = SM_I(sbi)->dcc_info;
+ 	struct list_head *wait_list = (dpolicy->type == DPOLICY_FSTRIM) ?
+ 					&(dcc->fstrim_list) : &(dcc->wait_list);
+@@ -1293,9 +1292,8 @@ static void __update_discard_tree_range(struct f2fs_sb_info *sbi,
+ 	struct discard_cmd *dc;
+ 	struct discard_info di = {0};
+ 	struct rb_node **insert_p = NULL, *insert_parent = NULL;
+-	struct request_queue *q = bdev_get_queue(bdev);
+ 	unsigned int max_discard_blocks =
+-			SECTOR_TO_BLOCK(q->limits.max_discard_sectors);
++			SECTOR_TO_BLOCK(bdev_max_discard_sectors(bdev));
+ 	block_t end = lstart + len;
+ 
+ 	dc = (struct discard_cmd *)f2fs_lookup_rb_tree_ret(&dcc->root,
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 4dc77c84ba15..796640bbc443 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -1567,6 +1567,11 @@ static inline unsigned int bdev_write_same(struct block_device *bdev)
+ 	return 0;
+ }
+ 
++static inline unsigned int bdev_max_discard_sectors(struct block_device *bdev)
++{
++	return bdev_get_queue(bdev)->limits.max_discard_sectors;
++}
++
+ static inline unsigned int bdev_write_zeroes_sectors(struct block_device *bdev)
+ {
+ 	struct request_queue *q = bdev_get_queue(bdev);
+-- 
+2.25.1
+

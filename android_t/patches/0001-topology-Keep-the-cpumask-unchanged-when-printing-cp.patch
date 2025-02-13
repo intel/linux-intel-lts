@@ -1,0 +1,103 @@
+From cf61ecd19a730b4c9e57ac01a66beb4a18fd2411 Mon Sep 17 00:00:00 2001
+From: Li Huafei <lihuafei1@huawei.com>
+Date: Thu, 14 Nov 2024 19:01:41 +0800
+Subject: [PATCH] topology: Keep the cpumask unchanged when printing cpumap
+
+commit cbd399f78e23ad4492c174fc5e6b3676dba74a52 upstream.
+
+During fuzz testing, the following warning was discovered:
+
+ different return values (15 and 11) from vsnprintf("%*pbl
+ ", ...)
+
+ test:keyward is WARNING in kvasprintf
+ WARNING: CPU: 55 PID: 1168477 at lib/kasprintf.c:30 kvasprintf+0x121/0x130
+ Call Trace:
+  kvasprintf+0x121/0x130
+  kasprintf+0xa6/0xe0
+  bitmap_print_to_buf+0x89/0x100
+  core_siblings_list_read+0x7e/0xb0
+  kernfs_file_read_iter+0x15b/0x270
+  new_sync_read+0x153/0x260
+  vfs_read+0x215/0x290
+  ksys_read+0xb9/0x160
+  do_syscall_64+0x56/0x100
+  entry_SYSCALL_64_after_hwframe+0x78/0xe2
+
+The call trace shows that kvasprintf() reported this warning during the
+printing of core_siblings_list. kvasprintf() has several steps:
+
+ (1) First, calculate the length of the resulting formatted string.
+
+ (2) Allocate a buffer based on the returned length.
+
+ (3) Then, perform the actual string formatting.
+
+ (4) Check whether the lengths of the formatted strings returned in
+     steps (1) and (2) are consistent.
+
+If the core_cpumask is modified between steps (1) and (3), the lengths
+obtained in these two steps may not match. Indeed our test includes cpu
+hotplugging, which should modify core_cpumask while printing.
+
+To fix this issue, cache the cpumask into a temporary variable before
+calling cpumap_print_{list, cpumask}_to_buf(), to keep it unchanged
+during the printing process.
+
+Fixes: bb9ec13d156e ("topology: use bin_attribute to break the size limitation of cpumap ABI")
+Cc: stable <stable@kernel.org>
+Signed-off-by: Li Huafei <lihuafei1@huawei.com>
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Link: https://lore.kernel.org/r/20241114110141.94725-1-lihuafei1@huawei.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/base/topology.c | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/base/topology.c b/drivers/base/topology.c
+index 5df6d861bc21..bdb41e26c464 100644
+--- a/drivers/base/topology.c
++++ b/drivers/base/topology.c
+@@ -27,9 +27,17 @@ static ssize_t name##_read(struct file *file, struct kobject *kobj,		\
+ 			   loff_t off, size_t count)				\
+ {										\
+ 	struct device *dev = kobj_to_dev(kobj);                                 \
++	cpumask_var_t mask;							\
++	ssize_t n;								\
+ 										\
+-	return cpumap_print_bitmask_to_buf(buf, topology_##mask(dev->id),	\
+-					   off, count);                         \
++	if (!alloc_cpumask_var(&mask, GFP_KERNEL))				\
++		return -ENOMEM;							\
++										\
++	cpumask_copy(mask, topology_##mask(dev->id));				\
++	n = cpumap_print_bitmask_to_buf(buf, mask, off, count);			\
++	free_cpumask_var(mask);							\
++										\
++	return n;								\
+ }										\
+ 										\
+ static ssize_t name##_list_read(struct file *file, struct kobject *kobj,	\
+@@ -37,9 +45,17 @@ static ssize_t name##_list_read(struct file *file, struct kobject *kobj,	\
+ 				loff_t off, size_t count)			\
+ {										\
+ 	struct device *dev = kobj_to_dev(kobj);					\
++	cpumask_var_t mask;							\
++	ssize_t n;								\
++										\
++	if (!alloc_cpumask_var(&mask, GFP_KERNEL))				\
++		return -ENOMEM;							\
++										\
++	cpumask_copy(mask, topology_##mask(dev->id));				\
++	n = cpumap_print_list_to_buf(buf, mask, off, count);			\
++	free_cpumask_var(mask);							\
+ 										\
+-	return cpumap_print_list_to_buf(buf, topology_##mask(dev->id),		\
+-					off, count);				\
++	return n;								\
+ }
+ 
+ define_id_show_func(physical_package_id);
+-- 
+2.25.1
+

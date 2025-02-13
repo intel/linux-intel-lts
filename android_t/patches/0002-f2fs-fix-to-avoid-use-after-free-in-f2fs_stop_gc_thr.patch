@@ -1,0 +1,132 @@
+From b8e2166c609532f26be4e64289fa46029caffbd4 Mon Sep 17 00:00:00 2001
+From: Chao Yu <chao@kernel.org>
+Date: Tue, 30 Jul 2024 09:08:55 +0800
+Subject: [PATCH 2/3] f2fs: fix to avoid use-after-free in
+ f2fs_stop_gc_thread()
+
+syzbot reports a f2fs bug as below:
+
+ __dump_stack lib/dump_stack.c:88 [inline]
+ dump_stack_lvl+0x241/0x360 lib/dump_stack.c:114
+ print_report+0xe8/0x550 mm/kasan/report.c:491
+ kasan_report+0x143/0x180 mm/kasan/report.c:601
+ kasan_check_range+0x282/0x290 mm/kasan/generic.c:189
+ instrument_atomic_read_write include/linux/instrumented.h:96 [inline]
+ atomic_fetch_add_relaxed include/linux/atomic/atomic-instrumented.h:252 [inline]
+ __refcount_add include/linux/refcount.h:184 [inline]
+ __refcount_inc include/linux/refcount.h:241 [inline]
+ refcount_inc include/linux/refcount.h:258 [inline]
+ get_task_struct include/linux/sched/task.h:118 [inline]
+ kthread_stop+0xca/0x630 kernel/kthread.c:704
+ f2fs_stop_gc_thread+0x65/0xb0 fs/f2fs/gc.c:210
+ f2fs_do_shutdown+0x192/0x540 fs/f2fs/file.c:2283
+ f2fs_ioc_shutdown fs/f2fs/file.c:2325 [inline]
+ __f2fs_ioctl+0x443a/0xbe60 fs/f2fs/file.c:4325
+ vfs_ioctl fs/ioctl.c:51 [inline]
+ __do_sys_ioctl fs/ioctl.c:907 [inline]
+ __se_sys_ioctl+0xfc/0x170 fs/ioctl.c:893
+ do_syscall_x64 arch/x86/entry/common.c:52 [inline]
+ do_syscall_64+0xf3/0x230 arch/x86/entry/common.c:83
+ entry_SYSCALL_64_after_hwframe+0x77/0x7f
+
+The root cause is below race condition, it may cause use-after-free
+issue in sbi->gc_th pointer.
+
+- remount
+ - f2fs_remount
+  - f2fs_stop_gc_thread
+   - kfree(gc_th)
+				- f2fs_ioc_shutdown
+				 - f2fs_do_shutdown
+				  - f2fs_stop_gc_thread
+				   - kthread_stop(gc_th->f2fs_gc_task)
+   : sbi->gc_thread = NULL;
+
+We will call f2fs_do_shutdown() in two paths:
+- for f2fs_ioc_shutdown() path, we should grab sb->s_umount semaphore
+for fixing.
+- for f2fs_shutdown() path, it's safe since caller has already grabbed
+sb->s_umount semaphore.
+
+Reported-by: syzbot+1a8e2b31f2ac9bd3d148@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/linux-f2fs-devel/0000000000005c7ccb061e032b9b@google.com
+Fixes: 7950e9ac638e ("f2fs: stop gc/discard thread after fs shutdown")
+Signed-off-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/f2fs.h  |  2 +-
+ fs/f2fs/file.c  | 11 +++++++++--
+ fs/f2fs/super.c |  2 +-
+ 3 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index c428372ba924..bea16ab97b8e 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -3452,7 +3452,7 @@ int f2fs_setattr(struct user_namespace *mnt_userns, struct dentry *dentry,
+ int f2fs_truncate_hole(struct inode *inode, pgoff_t pg_start, pgoff_t pg_end);
+ void f2fs_truncate_data_blocks_range(struct dnode_of_data *dn, int count);
+ int f2fs_do_shutdown(struct f2fs_sb_info *sbi, unsigned int flag,
+-							bool readonly);
++						bool readonly, bool need_lock);
+ int f2fs_precache_extents(struct inode *inode);
+ int f2fs_fileattr_get(struct dentry *dentry, struct fileattr *fa);
+ int f2fs_fileattr_set(struct user_namespace *mnt_userns,
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 682ec6eb627d..012215b6ab4c 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -2187,7 +2187,7 @@ static int f2fs_ioc_abort_atomic_write(struct file *filp)
+ }
+ 
+ int f2fs_do_shutdown(struct f2fs_sb_info *sbi, unsigned int flag,
+-							bool readonly)
++						bool readonly, bool need_lock)
+ {
+ 	struct super_block *sb = sbi->sb;
+ 	int ret = 0;
+@@ -2238,12 +2238,19 @@ int f2fs_do_shutdown(struct f2fs_sb_info *sbi, unsigned int flag,
+ 	if (readonly)
+ 		goto out;
+ 
++	/* grab sb->s_umount to avoid racing w/ remount() */
++	if (need_lock)
++		down_read(&sbi->sb->s_umount);
++
+ 	f2fs_stop_gc_thread(sbi);
+ 	f2fs_stop_discard_thread(sbi);
+ 
+ 	f2fs_drop_discard_cmd(sbi);
+ 	clear_opt(sbi, DISCARD);
+ 
++	if (need_lock)
++		up_read(&sbi->sb->s_umount);
++
+ 	f2fs_update_time(sbi, REQ_TIME);
+ out:
+ 
+@@ -2280,7 +2287,7 @@ static int f2fs_ioc_shutdown(struct file *filp, unsigned long arg)
+ 		}
+ 	}
+ 
+-	ret = f2fs_do_shutdown(sbi, in, readonly);
++	ret = f2fs_do_shutdown(sbi, in, readonly, true);
+ 
+ 	if (need_drop)
+ 		mnt_drop_write_file(filp);
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 8879051148a3..69b5a87a8227 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -2492,7 +2492,7 @@ static int f2fs_remount(struct super_block *sb, int *flags, char *data)
+ 
+ static void f2fs_shutdown(struct super_block *sb)
+ {
+-	f2fs_do_shutdown(F2FS_SB(sb), F2FS_GOING_DOWN_NOSYNC, false);
++	f2fs_do_shutdown(F2FS_SB(sb), F2FS_GOING_DOWN_NOSYNC, false, false);
+ }
+ 
+ #ifdef CONFIG_QUOTA
+-- 
+2.25.1
+

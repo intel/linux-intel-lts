@@ -1,0 +1,170 @@
+From d22d4b879ff0c05c650beba7640433781720f1fd Mon Sep 17 00:00:00 2001
+From: Chao Yu <chao@kernel.org>
+Date: Thu, 29 Feb 2024 22:38:38 +0800
+Subject: [PATCH 1/3] f2fs: support .shutdown in f2fs_sops
+
+Support .shutdown callback in f2fs_sops, then, it can be called to
+shut down the file system when underlying block device is marked dead.
+
+Signed-off-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/f2fs.h     |  2 ++
+ fs/f2fs/file.c     | 71 ++++++++++++++++++++++++++++------------------
+ fs/f2fs/super.c    |  6 ++++
+ include/linux/fs.h |  1 +
+ 4 files changed, 52 insertions(+), 28 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index f1db2e6d9cce..c428372ba924 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -3451,6 +3451,8 @@ int f2fs_setattr(struct user_namespace *mnt_userns, struct dentry *dentry,
+ 		 struct iattr *attr);
+ int f2fs_truncate_hole(struct inode *inode, pgoff_t pg_start, pgoff_t pg_end);
+ void f2fs_truncate_data_blocks_range(struct dnode_of_data *dn, int count);
++int f2fs_do_shutdown(struct f2fs_sb_info *sbi, unsigned int flag,
++							bool readonly);
+ int f2fs_precache_extents(struct inode *inode);
+ int f2fs_fileattr_get(struct dentry *dentry, struct fileattr *fa);
+ int f2fs_fileattr_set(struct user_namespace *mnt_userns,
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index b559b6fc089e..682ec6eb627d 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -2186,35 +2186,13 @@ static int f2fs_ioc_abort_atomic_write(struct file *filp)
+ 	return ret;
+ }
+ 
+-static int f2fs_ioc_shutdown(struct file *filp, unsigned long arg)
++int f2fs_do_shutdown(struct f2fs_sb_info *sbi, unsigned int flag,
++							bool readonly)
+ {
+-	struct inode *inode = file_inode(filp);
+-	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+ 	struct super_block *sb = sbi->sb;
+-	__u32 in;
+ 	int ret = 0;
+ 
+-	if (!capable(CAP_SYS_ADMIN))
+-		return -EPERM;
+-
+-	if (get_user(in, (__u32 __user *)arg))
+-		return -EFAULT;
+-
+-	if (in != F2FS_GOING_DOWN_FULLSYNC) {
+-		ret = mnt_want_write_file(filp);
+-		if (ret) {
+-			if (ret == -EROFS) {
+-				ret = 0;
+-				f2fs_stop_checkpoint(sbi, false,
+-						STOP_CP_REASON_SHUTDOWN);
+-				set_sbi_flag(sbi, SBI_IS_SHUTDOWN);
+-				trace_f2fs_shutdown(sbi, in, ret);
+-			}
+-			return ret;
+-		}
+-	}
+-
+-	switch (in) {
++	switch (flag) {
+ 	case F2FS_GOING_DOWN_FULLSYNC:
+ 		ret = freeze_bdev(sb->s_bdev);
+ 		if (ret)
+@@ -2257,6 +2235,9 @@ static int f2fs_ioc_shutdown(struct file *filp, unsigned long arg)
+ 		goto out;
+ 	}
+ 
++	if (readonly)
++		goto out;
++
+ 	f2fs_stop_gc_thread(sbi);
+ 	f2fs_stop_discard_thread(sbi);
+ 
+@@ -2265,10 +2246,44 @@ static int f2fs_ioc_shutdown(struct file *filp, unsigned long arg)
+ 
+ 	f2fs_update_time(sbi, REQ_TIME);
+ out:
+-	if (in != F2FS_GOING_DOWN_FULLSYNC)
+-		mnt_drop_write_file(filp);
+ 
+-	trace_f2fs_shutdown(sbi, in, ret);
++	trace_f2fs_shutdown(sbi, flag, ret);
++
++	return ret;
++}
++
++static int f2fs_ioc_shutdown(struct file *filp, unsigned long arg)
++{
++	struct inode *inode = file_inode(filp);
++	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
++	__u32 in;
++	int ret;
++	bool need_drop = false, readonly = false;
++
++	if (!capable(CAP_SYS_ADMIN))
++		return -EPERM;
++
++	if (get_user(in, (__u32 __user *)arg))
++		return -EFAULT;
++
++	if (in != F2FS_GOING_DOWN_FULLSYNC) {
++		ret = mnt_want_write_file(filp);
++		if (ret) {
++			if (ret != -EROFS)
++				return ret;
++
++			/* fallback to nosync shutdown for readonly fs */
++			in = F2FS_GOING_DOWN_NOSYNC;
++			readonly = true;
++		} else {
++			need_drop = true;
++		}
++	}
++
++	ret = f2fs_do_shutdown(sbi, in, readonly);
++
++	if (need_drop)
++		mnt_drop_write_file(filp);
+ 
+ 	return ret;
+ }
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 814ababfbc4e..8879051148a3 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -2490,6 +2490,11 @@ static int f2fs_remount(struct super_block *sb, int *flags, char *data)
+ 	return err;
+ }
+ 
++static void f2fs_shutdown(struct super_block *sb)
++{
++	f2fs_do_shutdown(F2FS_SB(sb), F2FS_GOING_DOWN_NOSYNC, false);
++}
++
+ #ifdef CONFIG_QUOTA
+ /* Read data from quotafile */
+ static ssize_t f2fs_quota_read(struct super_block *sb, int type, char *data,
+@@ -3024,6 +3029,7 @@ static const struct super_operations f2fs_sops = {
+ 	.unfreeze_fs	= f2fs_unfreeze,
+ 	.statfs		= f2fs_statfs,
+ 	.remount_fs	= f2fs_remount,
++	.shutdown	= f2fs_shutdown,
+ };
+ 
+ #ifdef CONFIG_FS_ENCRYPTION
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index cccf1f585c2a..0b77696ba6fa 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -2267,6 +2267,7 @@ struct super_operations {
+ 				  struct shrink_control *);
+ 	long (*free_cached_objects)(struct super_block *,
+ 				    struct shrink_control *);
++	void (*shutdown)(struct super_block *sb);
+ 
+ 	ANDROID_KABI_RESERVE(1);
+ 	ANDROID_KABI_RESERVE(2);
+-- 
+2.25.1
+

@@ -1,0 +1,85 @@
+From ab3a37d8afbb1838e94060aa3094f530b696f0fb Mon Sep 17 00:00:00 2001
+From: Amir Goldstein <amir73il@gmail.com>
+Date: Thu, 19 Dec 2024 12:53:01 +0100
+Subject: [PATCH] fs: relax assertions on failure to encode file handles
+
+commit 974e3fe0ac61de85015bbe5a4990cf4127b304b2 upstream.
+
+Encoding file handles is usually performed by a filesystem >encode_fh()
+method that may fail for various reasons.
+
+The legacy users of exportfs_encode_fh(), namely, nfsd and
+name_to_handle_at(2) syscall are ready to cope with the possibility
+of failure to encode a file handle.
+
+There are a few other users of exportfs_encode_{fh,fid}() that
+currently have a WARN_ON() assertion when ->encode_fh() fails.
+Relax those assertions because they are wrong.
+
+The second linked bug report states commit 16aac5ad1fa9 ("ovl: support
+encoding non-decodable file handles") in v6.6 as the regressing commit,
+but this is not accurate.
+
+The aforementioned commit only increases the chances of the assertion
+and allows triggering the assertion with the reproducer using overlayfs,
+inotify and drop_caches.
+
+Triggering this assertion was always possible with other filesystems and
+other reasons of ->encode_fh() failures and more particularly, it was
+also possible with the exact same reproducer using overlayfs that is
+mounted with options index=on,nfs_export=on also on kernels < v6.6.
+Therefore, I am not listing the aforementioned commit as a Fixes commit.
+
+Backport hint: this patch will have a trivial conflict applying to
+v6.6.y, and other trivial conflicts applying to stable kernels < v6.6.
+
+Reported-by: syzbot+ec07f6f5ce62b858579f@syzkaller.appspotmail.com
+Tested-by: syzbot+ec07f6f5ce62b858579f@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/linux-unionfs/671fd40c.050a0220.4735a.024f.GAE@google.com/
+Reported-by: Dmitry Safonov <dima@arista.com>
+Closes: https://lore.kernel.org/linux-fsdevel/CAGrbwDTLt6drB9eaUagnQVgdPBmhLfqqxAf3F+Juqy_o6oP8uw@mail.gmail.com/
+Cc: stable@vger.kernel.org
+Signed-off-by: Amir Goldstein <amir73il@gmail.com>
+Link: https://lore.kernel.org/r/20241219115301.465396-1-amir73il@gmail.com
+Signed-off-by: Christian Brauner <brauner@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/notify/fdinfo.c     | 4 +---
+ fs/overlayfs/copy_up.c | 5 ++---
+ 2 files changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/fs/notify/fdinfo.c b/fs/notify/fdinfo.c
+index 3451708fd035..1ff166c25e2c 100644
+--- a/fs/notify/fdinfo.c
++++ b/fs/notify/fdinfo.c
+@@ -50,10 +50,8 @@ static void show_mark_fhandle(struct seq_file *m, struct inode *inode)
+ 	size = f.handle.handle_bytes >> 2;
+ 
+ 	ret = exportfs_encode_inode_fh(inode, (struct fid *)f.handle.f_handle, &size, NULL);
+-	if ((ret == FILEID_INVALID) || (ret < 0)) {
+-		WARN_ONCE(1, "Can't encode file handler for inotify: %d\n", ret);
++	if ((ret == FILEID_INVALID) || (ret < 0))
+ 		return;
+-	}
+ 
+ 	f.handle.handle_type = ret;
+ 	f.handle.handle_bytes = size * sizeof(u32);
+diff --git a/fs/overlayfs/copy_up.c b/fs/overlayfs/copy_up.c
+index 610a39010fde..a841ec9cdf13 100644
+--- a/fs/overlayfs/copy_up.c
++++ b/fs/overlayfs/copy_up.c
+@@ -366,9 +366,8 @@ struct ovl_fh *ovl_encode_real_fh(struct ovl_fs *ofs, struct dentry *real,
+ 	buflen = (dwords << 2);
+ 
+ 	err = -EIO;
+-	if (WARN_ON(fh_type < 0) ||
+-	    WARN_ON(buflen > MAX_HANDLE_SZ) ||
+-	    WARN_ON(fh_type == FILEID_INVALID))
++	if (fh_type < 0 || fh_type == FILEID_INVALID ||
++	    WARN_ON(buflen > MAX_HANDLE_SZ))
+ 		goto out_err;
+ 
+ 	fh->fb.version = OVL_FH_VERSION;
+-- 
+2.25.1
+

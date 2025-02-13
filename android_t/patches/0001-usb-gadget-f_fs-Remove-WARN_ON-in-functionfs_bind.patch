@@ -1,0 +1,78 @@
+From 2b7e9bf153f3514860c6273b8766870057702510 Mon Sep 17 00:00:00 2001
+From: Akash M <akash.m5@samsung.com>
+Date: Thu, 19 Dec 2024 18:22:19 +0530
+Subject: [PATCH] usb: gadget: f_fs: Remove WARN_ON in functionfs_bind
+
+commit dfc51e48bca475bbee984e90f33fdc537ce09699 upstream.
+
+This commit addresses an issue related to below kernel panic where
+panic_on_warn is enabled. It is caused by the unnecessary use of WARN_ON
+in functionsfs_bind, which easily leads to the following scenarios.
+
+1.adb_write in adbd               2. UDC write via configfs
+  =================	             =====================
+
+->usb_ffs_open_thread()           ->UDC write
+ ->open_functionfs()               ->configfs_write_iter()
+  ->adb_open()                      ->gadget_dev_desc_UDC_store()
+   ->adb_write()                     ->usb_gadget_register_driver_owner
+                                      ->driver_register()
+->StartMonitor()                       ->bus_add_driver()
+ ->adb_read()                           ->gadget_bind_driver()
+<times-out without BIND event>           ->configfs_composite_bind()
+                                          ->usb_add_function()
+->open_functionfs()                        ->ffs_func_bind()
+ ->adb_open()                               ->functionfs_bind()
+                                       <ffs->state !=FFS_ACTIVE>
+
+The adb_open, adb_read, and adb_write operations are invoked from the
+daemon, but trying to bind the function is a process that is invoked by
+UDC write through configfs, which opens up the possibility of a race
+condition between the two paths. In this race scenario, the kernel panic
+occurs due to the WARN_ON from functionfs_bind when panic_on_warn is
+enabled. This commit fixes the kernel panic by removing the unnecessary
+WARN_ON.
+
+Kernel panic - not syncing: kernel: panic_on_warn set ...
+[   14.542395] Call trace:
+[   14.542464]  ffs_func_bind+0x1c8/0x14a8
+[   14.542468]  usb_add_function+0xcc/0x1f0
+[   14.542473]  configfs_composite_bind+0x468/0x588
+[   14.542478]  gadget_bind_driver+0x108/0x27c
+[   14.542483]  really_probe+0x190/0x374
+[   14.542488]  __driver_probe_device+0xa0/0x12c
+[   14.542492]  driver_probe_device+0x3c/0x220
+[   14.542498]  __driver_attach+0x11c/0x1fc
+[   14.542502]  bus_for_each_dev+0x104/0x160
+[   14.542506]  driver_attach+0x24/0x34
+[   14.542510]  bus_add_driver+0x154/0x270
+[   14.542514]  driver_register+0x68/0x104
+[   14.542518]  usb_gadget_register_driver_owner+0x48/0xf4
+[   14.542523]  gadget_dev_desc_UDC_store+0xf8/0x144
+[   14.542526]  configfs_write_iter+0xf0/0x138
+
+Fixes: ddf8abd25994 ("USB: f_fs: the FunctionFS driver")
+Cc: stable <stable@kernel.org>
+Signed-off-by: Akash M <akash.m5@samsung.com>
+Link: https://lore.kernel.org/r/20241219125221.1679-1-akash.m5@samsung.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/gadget/function/f_fs.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/function/f_fs.c b/drivers/usb/gadget/function/f_fs.c
+index a4bca800f417..cf4106e96ecd 100644
+--- a/drivers/usb/gadget/function/f_fs.c
++++ b/drivers/usb/gadget/function/f_fs.c
+@@ -1868,7 +1868,7 @@ static int functionfs_bind(struct ffs_data *ffs, struct usb_composite_dev *cdev)
+ 
+ 	ENTER();
+ 
+-	if (WARN_ON(ffs->state != FFS_ACTIVE
++	if ((ffs->state != FFS_ACTIVE
+ 		 || test_and_set_bit(FFS_FL_BOUND, &ffs->flags)))
+ 		return -EBADFD;
+ 
+-- 
+2.25.1
+
