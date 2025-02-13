@@ -1355,12 +1355,6 @@ struct drm_connector {
 	struct drm_object_properties properties;
 
 	/**
-	 * @hdcp_topology_blob_ptr: DRM BLOB pointer for hdcp downstream
-	 * topology information.
-	 */
-	struct drm_property_blob *hdcp_topology_blob_ptr;
-
-	/**
 	 * @scaling_mode_property: Optional atomic property to control the
 	 * upscaling. See drm_connector_attach_content_protection_property().
 	 */
