@@ -340,6 +340,10 @@ static void gen9_ctx_workarounds_init(struct intel_engine_cs *engine,
 		     FLOW_CONTROL_ENABLE |
 		     PARTIAL_INSTRUCTION_SHOOTDOWN_DISABLE);
 
+	//register from kernel 4.19
+	wa_masked_en(wal, HALF_SLICE_CHICKEN3,
+		     GEN9_DISABLE_OCL_OOB_SUPPRESS_LOGIC);
+
 	/* WaEnableYV12BugFixInHalfSliceChicken7:skl,bxt,kbl,glk,cfl */
 	/* WaEnableSamplerGPGPUPreemptionSupport:skl,bxt,kbl,cfl */
 	wa_masked_en(wal, GEN9_HALF_SLICE_CHICKEN7,
