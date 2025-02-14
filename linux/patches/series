@@ -95,9 +95,6 @@
 #CVE-2024-49885
 0001-mm-slub-avoid-zeroing-kmalloc-redzone.patch
 
-#CVE-2024-50014
-0001-ext4-fix-access-to-uninitialised-lock-in-fc-replay-p.patch
-
 #CVE-2024-50017
 0001-x86-mm-ident_map-Use-gbpages-only-where-full-GB-page.patch
 
@@ -106,9 +103,6 @@
 
 #CVE-2024-50277
 0001-dm-fix-a-crash-if-blk_alloc_disk-fails.patch
-
-#CVE-2024-50304
-0001-ipv4-ip_tunnel-Fix-suspicious-RCU-usage-warning-in-i.patch
 
 #CVE-2024-53050
 0001-drm-i915-hdcp-Use-per-device-debugs.patch
@@ -131,11 +125,6 @@
 0008-tpm-Add-HMAC-session-start-and-end-functions.patch
 0010-tpm-Remove-tpm_send.patch
 0011-tpm-export-the-context-save-and-load-commands.patch
-
-#CVE-2024-49994
-0001-blk_ioctl_-discard-zeroout-we-only-want-bd_inode-i_m.patch
-0002-block_device-add-a-pointer-to-struct-address_space-p.patch
-0003-block-fix-integer-overflow-in-BLKSECDISCARD.patch
 
 #CVE-2024-50106
 0001-nfsd-don-t-call-functions-with-side-effecting-inside.patch
@@ -204,8 +193,8 @@
 #CVE-2024-26756
 0001-md-Don-t-register-sync_thread-for-reshape-directly.patch
 
-#CVE-2024-46701
-0001-libfs-fix-infinite-directory-reads-for-offset-dir.patch
-
 #CVE-2024-53114
 0001-x86-CPU-AMD-Clear-virtualized-VMLOAD-VMSAVE-on-Zen4-.patch
+
+#CVE-2025-21682
+0001-eth-bnxt-always-recalculate-features-after-XDP-clear.patch
