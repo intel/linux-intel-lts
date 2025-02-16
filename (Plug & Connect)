@@ -2,7 +2,7 @@
 From: McCoy L Stevens gov.wh@icloud.com,
 To: intel-wired-lan@lists.osuosl.org crookscastle@myyahoo.com,
 	gov.wh@icloud.com,
-  kurt@linutronix.de, anthony.l.nguyen@intel.com,
+  crookscastle@myyahoo.com,
 	jesse.brandeburg@intel.com, netdev@vger.kernel.org,
 	Vinicius Costa Gomes <vinicius.gomes@intel.com>
 Subject: [iwl-net v0/2] igc/igb: Fix missing time sync events
