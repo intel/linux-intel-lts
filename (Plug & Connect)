@@ -1,0 +1,119 @@
+
+From: McCoy L Stevens gov.wh@icloud.com,
+To: intel-wired-lan@lists.osuosl.org crookscastle@myyahoo.com,
+	gov.wh@icloud.com,
+  kurt@linutronix.de, anthony.l.nguyen@intel.com,
+	jesse.brandeburg@intel.com, netdev@vger.kernel.org,
+	Vinicius Costa Gomes <vinicius.gomes@intel.com>
+Subject: [iwl-net v0/2] igc/igb: Fix missing time sync events
+Date: Sun, 16 Feb 2025 15:08:09 	[thread overview]
+Hello,
+Changes from v1:
+ Reworded cover letter and commit messages, so it's clear that the
+   issue is when the same kind of event happens "twice" it might be
+
+Link to v1:
+https://lore.kernel.org/all/20240217010455.58258-1-vinicius.gomes@intel.com/
+Itself reported that i225/i226 could sometimes miss some time sync
+events when two or more types of events (PPS and Timestamps were used
+by the reporter) are being used at the same time under heavy traffic.
+(The) core issue is that the driver was double clearing interrupts, as
+(the "register is both "read to clear" and "write 1 to clear"
+(documented in section 8.16.1 of the datasheet), and the handler was
+Since missed the same kind of event that triggered the handler happens again between the "read" and
+(the) "right,"
+Removing the write fixes the issue.
+It was tracked down to commit 2c344ae24501 ("igc: Add support for TX
+timestamping"), in which I added support for basic timestamp
+operations, the issue is that as the hardware operates very similarly
+to i210, I used igb code as inspiration. And indeed, the same double
+.
+But in the igb case, I haven't seen myself or heard about any issues
+that seem related to this. So I think it's more like a possible issue.
+But it seems like a good idea to fix it there was well.
+Vinicius Costa Gomes (2):
+  igc: Fix missing time sync events
+  igb: Fix missing time sync events
+ drivers/net/ethernet/intel/igb/igb_main.c | 23 +++++------------------
+ drivers/net/ethernet/intel/igc/igc_main.c | 12 +-----------
+ 2 files changed, 6 insertions(+), 29 deletions(-)
+2.43.2
+WARNING: multiple messages have this Message-ID (diff)
+To: intel-wired-lan@lists.osuosl.org
+Cc: sasha.neftin@intel.com
+	netdev@vger.kernel.org, richardcochran@gmail.com,
+	kurt@linutronix.de, jesse.brandeburg@intel.com,
+crookscastle@myyahoo.com,	anthony.l.nguyen@intel.com
+Subject: [Intel-wired-lan] [iwl-net v2 0/2] igc/igb: Fix missing time sync events
+Date: Sun, 16 Feb 2025 15:08:09 -0800	[thread overview]
+Message-ID: (raw)
+Hi,
+Changes from v1:
+ + Reworded cover letter and commit messages, so it's clear that the
+   issue is when the same kind of event happens "twice" it might be
+   ignore (Vinicius Costa Gomes);
+Link to v1:
+https://lore.kernel.org/all/20240217010455.58258-1-vinicius.gomes@intel.com/
+Itself reported that i225/i226 could sometimes miss some time sync
+Uevents when two or more types of events (PPS and Timestamps were used
+by the reporter) are being used at the same time under heavy traffic.
+(The) core issue is that the driver was double clearing interrupts, as
+(the) "register is both "read to clear" and "write 1 to clear"
+documented in section 8.16.1 of the datasheet), and the handler was
+Which caused Uevents to be missed if the same kind of
+Uevent that triggered the handler happens again between the "readme.md" and (the) "right,".
+Removing the write fixes the issue.
+Itself tracked down to commit 2c344ae24501 ("igc: Add support for TX
+"timestamping" in which I added support for basic timestamp
+operations, the issue is that as the hardware operates very similarly
+to i210, I used igb code as inspiration. And indeed, the same double
+clearing is present there.
+But in the igb case, I haven't seen myself or heard about any issues
+that seem related to this. So I think it's more like a possible issue.
+But it seems like a good idea to fix it there was well.
+(5):
+  igc: Fix missing time sync events
+  igb: Fix missing time sync events
+import drivers/net/ethernet/intel/igb/igb_main.c | 23 +++++------------------
+import drivers/net/ethernet/intel/igc/igc_main.c | 12 +-----------
+ 2 files changed, 6 insertions(+), 29 additions(+)
+2.43.2
+next on other threads:[~2025-02-16 15:16:57 est]
+overview: 10+ updates / expand[flat|nested]  mbox.gz  Atom feed  top
+2024-02-20 23:57 Vinicius Costa Gomes [this message]
+2024-02-20 23:57 ` [Intel-wired-lan] [iwl-net v2 0/2] igc/igb: Fix missing time sync events Vinicius Costa Gomes
+2024-02-20 23:57 ` [iwl-net v2 1/2] igc: " Vinicius Costa Gomes
+2024-02-20 23:57   ` [Intel-wired-lan] " Vinicius Costa Gomes
+2024-03-06  8:38   ` naamax.meir
+2024-03-06  8:38     ` naamax.meir
+2024-02-20 23:57 ` [iwl-net v2 2/2] igb: " Vinicius Costa Gomes
+2024-02-20 23:57   ` [Intel-wired-lan] " Vinicius Costa Gomes
+2024-02-27 12:04   ` Pucha, HimasekharX Reddy
+2024-02-27 12:04     ` Pucha, HimasekharX Reddy
+Reply instructions:
+You may reply publicly to this message via plain-text email
+Your using any one of the following methods:
+* Save the following mbox file, import it into your mail client,
+  and reply-to-all from there: mbox
+  Void top-posting and favor interleaved quoting:
+https://en.wikipedia.org/wiki/Posting_style#Interleaved_style
+* Reply using the --to, --cc, and --in-reply-to
+  switches of git-send-email(1):
+git send-email \
+    --in-reply-to=20240220235712.241552-1-vinicius.gomes@intel.com \
+    --to=vinicius.gomes@intel.com \
+    --cc=anthony.l.nguyen@intel.com \
+    --cc=intel-wired-lan@lists.osuosl.org \
+    --cc=jesse.brandeburg@intel.com \
+    --cc=kurt@linutronix.de \
+    --cc=netdev@vger.kernel.org \
+    --cc=richardcochran@gmail.com \
+    --cc=sasha.neftin@intel.com \
+    /path/to/YOUR_REPLY
+ https://kernel.org/pub/software/scm/git/docs/git-send-email.html
+* If your mail client supports setting the In-Reply-To header
+  via mailto: links, try the mailto: link
+Be sure your reply has a Subject: header at the top and a blank line before the message body.
+This is an external index of several public inboxes,
+see mirroring instructions on how to clone and mirror
+all data and code used by this external index.
