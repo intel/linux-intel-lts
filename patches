@@ -1,0 +1,719 @@
+linux/patches/0001-blk_ioctl_-discard-zeroout-we-only-want-bd_inode-i_m.patch
+Original file line number	Diff line number	Diff line change
+@@ -1,71 +0,0 @@
+From f3a6633a197dcea9df770ed6eaf475620b90240b Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Thu, 11 Apr 2024 15:53:41 +0100
+Subject: [PATCH 1/3] blk_ioctl_{discard,zeroout}(): we only want
+ ->bd_inode->i_mapping here...
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Link: https://lore.kernel.org/r/20240411145346.2516848-6-viro@zeniv.linux.org.uk
+Signed-off-by: Christian Brauner <brauner@kernel.org>
+(cherry picked from commit 881494ed031f60d48041549368989a37405a7e50)
+---
+ block/ioctl.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/block/ioctl.c b/block/ioctl.c
+index 378603334284..250de6471724 100644
+--- a/block/ioctl.c
++++ b/block/ioctl.c
+@@ -90,7 +90,6 @@ static int blk_ioctl_discard(struct block_device *bdev, blk_mode_t mode,
+ {
+ 	uint64_t range[2];
+ 	uint64_t start, len, end;
+-	struct inode *inode = bdev->bd_inode;
+ 	int err;
+
+ 	if (!(mode & BLK_OPEN_WRITE))
+@@ -114,13 +113,13 @@ static int blk_ioctl_discard(struct block_device *bdev, blk_mode_t mode,
+ 	    end > bdev_nr_bytes(bdev))
+ 		return -EINVAL;
+
+-	filemap_invalidate_lock(inode->i_mapping);
++	filemap_invalidate_lock(bdev->bd_mapping);
+ 	err = truncate_bdev_range(bdev, mode, start, start + len - 1);
+ 	if (err)
+ 		goto fail;
+ 	err = blkdev_issue_discard(bdev, start >> 9, len >> 9, GFP_KERNEL);
+ fail:
+-	filemap_invalidate_unlock(inode->i_mapping);
++	filemap_invalidate_unlock(bdev->bd_mapping);
+ 	return err;
+ }
+
+@@ -160,7 +159,6 @@ static int blk_ioctl_zeroout(struct block_device *bdev, blk_mode_t mode,
+ {
+ 	uint64_t range[2];
+ 	uint64_t start, end, len;
+-	struct inode *inode = bdev->bd_inode;
+ 	int err;
+
+ 	if (!(mode & BLK_OPEN_WRITE))
+@@ -183,7 +181,7 @@ static int blk_ioctl_zeroout(struct block_device *bdev, blk_mode_t mode,
+ 		return -EINVAL;
+
+ 	/* Invalidate the page cache, including dirty pages */
+-	filemap_invalidate_lock(inode->i_mapping);
++	filemap_invalidate_lock(bdev->bd_mapping);
+ 	err = truncate_bdev_range(bdev, mode, start, end);
+ 	if (err)
+ 		goto fail;
+@@ -192,7 +190,7 @@ static int blk_ioctl_zeroout(struct block_device *bdev, blk_mode_t mode,
+ 				   BLKDEV_ZERO_NOUNMAP);
+
+ fail:
+-	filemap_invalidate_unlock(inode->i_mapping);
++	filemap_invalidate_unlock(bdev->bd_mapping);
+ 	return err;
+ }
+
+-- 
+2.34.1
+
+ 162 changes: 162 additions & 0 deletions162  
+linux/patches/0001-eth-bnxt-always-recalculate-features-after-XDP-clear.patch
+Original file line number	Diff line number	Diff line change
+@@ -0,0 +1,162 @@
+From c28b0a44b47977b88a54ddc16ee3f508a89c28e2 Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <kuba@kernel.org>
+Date: Wed, 8 Jan 2025 20:30:57 -0800
+Subject: [PATCH] eth: bnxt: always recalculate features after XDP clearing,
+ fix null-deref
+
+[ Upstream commit f0aa6a37a3dbb40b272df5fc6db93c114688adcd ]
+
+Recalculate features when XDP is detached.
+
+Before:
+  # ip li set dev eth0 xdp obj xdp_dummy.bpf.o sec xdp
+  # ip li set dev eth0 xdp off
+  # ethtool -k eth0 | grep gro
+  rx-gro-hw: off [requested on]
+
+After:
+  # ip li set dev eth0 xdp obj xdp_dummy.bpf.o sec xdp
+  # ip li set dev eth0 xdp off
+  # ethtool -k eth0 | grep gro
+  rx-gro-hw: on
+
+The fact that HW-GRO doesn't get re-enabled automatically is just
+a minor annoyance. The real issue is that the features will randomly
+come back during another reconfiguration which just happens to invoke
+netdev_update_features(). The driver doesn't handle reconfiguring
+two things at a time very robustly.
+
+Starting with commit 98ba1d931f61 ("bnxt_en: Fix RSS logic in
+__bnxt_reserve_rings()") we only reconfigure the RSS hash table
+if the "effective" number of Rx rings has changed. If HW-GRO is
+enabled "effective" number of rings is 2x what user sees.
+So if we are in the bad state, with HW-GRO re-enablement "pending"
+after XDP off, and we lower the rings by / 2 - the HW-GRO rings
+doing 2x and the ethtool -L doing / 2 may cancel each other out,
+and the:
+
+  if (old_rx_rings != bp->hw_resc.resv_rx_rings &&
+
+condition in __bnxt_reserve_rings() will be false.
+The RSS map won't get updated, and we'll crash with:
+
+  BUG: kernel NULL pointer dereference, address: 0000000000000168
+  RIP: 0010:__bnxt_hwrm_vnic_set_rss+0x13a/0x1a0
+    bnxt_hwrm_vnic_rss_cfg_p5+0x47/0x180
+    __bnxt_setup_vnic_p5+0x58/0x110
+    bnxt_init_nic+0xb72/0xf50
+    __bnxt_open_nic+0x40d/0xab0
+    bnxt_open_nic+0x2b/0x60
+    ethtool_set_channels+0x18c/0x1d0
+
+As we try to access a freed ring.
+
+The issue is present since XDP support was added, really, but
+prior to commit 98ba1d931f61 ("bnxt_en: Fix RSS logic in
+__bnxt_reserve_rings()") it wasn't causing major issues.
+
+Fixes: 1054aee82321 ("bnxt_en: Use NETIF_F_GRO_HW.")
+Fixes: 98ba1d931f61 ("bnxt_en: Fix RSS logic in __bnxt_reserve_rings()")
+Reviewed-by: Michael Chan <michael.chan@broadcom.com>
+Reviewed-by: Somnath Kotur <somnath.kotur@broadcom.com>
+Link: https://patch.msgid.link/20250109043057.2888953-1-kuba@kernel.org
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c     | 25 +++++++++++++++----
+ drivers/net/ethernet/broadcom/bnxt/bnxt.h     |  2 +-
+ drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c |  7 ------
+ 3 files changed, 21 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.c b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+index c440f4d8d43a..be67a1b6d656 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -3981,7 +3981,7 @@ void bnxt_set_ring_params(struct bnxt *bp)
+ /* Changing allocation mode of RX rings.
+  * TODO: Update when extending xdp_rxq_info to support allocation modes.
+  */
+-int bnxt_set_rx_skb_mode(struct bnxt *bp, bool page_mode)
++static void __bnxt_set_rx_skb_mode(struct bnxt *bp, bool page_mode)
+ {
+ 	struct net_device *dev = bp->dev;
+
+@@ -4002,15 +4002,30 @@ int bnxt_set_rx_skb_mode(struct bnxt *bp, bool page_mode)
+ 			bp->rx_skb_func = bnxt_rx_page_skb;
+ 		}
+ 		bp->rx_dir = DMA_BIDIRECTIONAL;
+-		/* Disable LRO or GRO_HW */
+-		netdev_update_features(dev);
+ 	} else {
+ 		dev->max_mtu = bp->max_mtu;
+ 		bp->flags &= ~BNXT_FLAG_RX_PAGE_MODE;
+ 		bp->rx_dir = DMA_FROM_DEVICE;
+ 		bp->rx_skb_func = bnxt_rx_skb;
+ 	}
+-	return 0;
++}
++
++void bnxt_set_rx_skb_mode(struct bnxt *bp, bool page_mode)
++{
++	__bnxt_set_rx_skb_mode(bp, page_mode);
++
++	if (!page_mode) {
++		int rx, tx;
++
++		bnxt_get_max_rings(bp, &rx, &tx, true);
++		if (rx > 1) {
++			bp->flags &= ~BNXT_FLAG_NO_AGG_RINGS;
++			bp->dev->hw_features |= NETIF_F_LRO;
++		}
++	}
++
++	/* Update LRO and GRO_HW availability */
++	netdev_update_features(bp->dev);
+ }
+
+ static void bnxt_free_vnic_attributes(struct bnxt *bp)
+@@ -13750,7 +13765,7 @@ static int bnxt_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	if (rc)
+ 		goto init_err_pci_clean;
+
+-	bnxt_set_rx_skb_mode(bp, false);
++	__bnxt_set_rx_skb_mode(bp, false);
+ 	bnxt_set_tpa_flags(bp);
+ 	bnxt_set_ring_params(bp);
+ 	rc = bnxt_set_dflt_rings(bp, true);
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.h b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+index 0116f67593e3..6d42908a374e 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.h
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+@@ -2334,7 +2334,7 @@ void bnxt_reuse_rx_data(struct bnxt_rx_ring_info *rxr, u16 cons, void *data);
+ u32 bnxt_fw_health_readl(struct bnxt *bp, int reg_idx);
+ void bnxt_set_tpa_flags(struct bnxt *bp);
+ void bnxt_set_ring_params(struct bnxt *);
+-int bnxt_set_rx_skb_mode(struct bnxt *bp, bool page_mode);
++void bnxt_set_rx_skb_mode(struct bnxt *bp, bool page_mode);
+ int bnxt_hwrm_func_drv_rgtr(struct bnxt *bp, unsigned long *bmap,
+ 			    int bmap_size, bool async_only);
+ int bnxt_hwrm_func_drv_unrgtr(struct bnxt *bp);
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
+index 2845796f782c..5eb8c244fedd 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
+@@ -422,15 +422,8 @@ static int bnxt_xdp_set(struct bnxt *bp, struct bpf_prog *prog)
+ 		bnxt_set_rx_skb_mode(bp, true);
+ 		xdp_features_set_redirect_target(dev, true);
+ 	} else {
+-		int rx, tx;
+-
+ 		xdp_features_clear_redirect_target(dev);
+ 		bnxt_set_rx_skb_mode(bp, false);
+-		bnxt_get_max_rings(bp, &rx, &tx, true);
+-		if (rx > 1) {
+-			bp->flags &= ~BNXT_FLAG_NO_AGG_RINGS;
+-			bp->dev->hw_features |= NETIF_F_LRO;
+-		}
+ 	}
+ 	bp->tx_nr_rings_xdp = tx_xdp;
+ 	bp->tx_nr_rings = bp->tx_nr_rings_per_tc * tc + tx_xdp;
+-- 
+2.25.1
+
+ 76 changes: 0 additions & 76 deletions76  
+linux/patches/0001-ext4-fix-access-to-uninitialised-lock-in-fc-replay-p.patch
+Original file line number	Diff line number	Diff line change
+@@ -1,76 +0,0 @@
+From 86209918661252f599bed99930febbe1443973b4 Mon Sep 17 00:00:00 2001
+From: "Luis Henriques (SUSE)" <luis.henriques@linux.dev>
+Date: Thu, 18 Jul 2024 10:43:56 +0100
+Subject: [PATCH] ext4: fix access to uninitialised lock in fc replay path
+
+The following kernel trace can be triggered with fstest generic/629 when
+executed against a filesystem with fast-commit feature enabled:
+
+INFO: trying to register non-static key.
+The code is fine but needs lockdep annotation, or maybe
+you didn't initialize this object before use?
+turning off the locking correctness validator.
+CPU: 0 PID: 866 Comm: mount Not tainted 6.10.0+ #11
+Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS rel-1.16.2-3-gd478f380-prebuilt.qemu.org 04/01/2014
+Call Trace:
+ <TASK>
+ dump_stack_lvl+0x66/0x90
+ register_lock_class+0x759/0x7d0
+ __lock_acquire+0x85/0x2630
+ ? __find_get_block+0xb4/0x380
+ lock_acquire+0xd1/0x2d0
+ ? __ext4_journal_get_write_access+0xd5/0x160
+ _raw_spin_lock+0x33/0x40
+ ? __ext4_journal_get_write_access+0xd5/0x160
+ __ext4_journal_get_write_access+0xd5/0x160
+ ext4_reserve_inode_write+0x61/0xb0
+ __ext4_mark_inode_dirty+0x79/0x270
+ ? ext4_ext_replay_set_iblocks+0x2f8/0x450
+ ext4_ext_replay_set_iblocks+0x330/0x450
+ ext4_fc_replay+0x14c8/0x1540
+ ? jread+0x88/0x2e0
+ ? rcu_is_watching+0x11/0x40
+ do_one_pass+0x447/0xd00
+ jbd2_journal_recover+0x139/0x1b0
+ jbd2_journal_load+0x96/0x390
+ ext4_load_and_init_journal+0x253/0xd40
+ ext4_fill_super+0x2cc6/0x3180
+...
+
+In the replay path there's an attempt to lock sbi->s_bdev_wb_lock in
+function ext4_check_bdev_write_error().  Unfortunately, at this point this
+spinlock has not been initialized yet.  Moving it's initialization to an
+earlier point in __ext4_fill_super() fixes this splat.
+
+Signed-off-by: Luis Henriques (SUSE) <luis.henriques@linux.dev>
+Link: https://patch.msgid.link/20240718094356.7863-1-luis.henriques@linux.dev
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Cc: stable@kernel.org
+---
+ fs/ext4/super.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 1d14a38017a7..36fe7a54d3f0 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -5359,6 +5359,8 @@ static int __ext4_fill_super(struct fs_context *fc, struct super_block *sb)
+ 	INIT_LIST_HEAD(&sbi->s_orphan); /* unlinked but open files */
+ 	mutex_init(&sbi->s_orphan_lock);
+
++	spin_lock_init(&sbi->s_bdev_wb_lock);
++
+ 	ext4_fast_commit_init(sb);
+
+ 	sb->s_root = NULL;
+@@ -5579,7 +5581,6 @@ static int __ext4_fill_super(struct fs_context *fc, struct super_block *sb)
+ 	 * Save the original bdev mapping's wb_err value which could be
+ 	 * used to detect the metadata async write error.
+ 	 */
+-	spin_lock_init(&sbi->s_bdev_wb_lock);
+ 	errseq_check_and_advance(&sb->s_bdev->bd_inode->i_mapping->wb_err,
+ 				 &sbi->s_bdev_wb_err);
+ 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
+-- 
+2.34.1
+
+ 74 changes: 0 additions & 74 deletions74  
+linux/patches/0001-ipv4-ip_tunnel-Fix-suspicious-RCU-usage-warning-in-i.patch
+Original file line number	Diff line number	Diff line change
+@@ -1,74 +0,0 @@
+From 293075c9565fb39d257efcbcd58a2f5414cc6490 Mon Sep 17 00:00:00 2001
+From: Ido Schimmel <idosch@nvidia.com>
+Date: Wed, 23 Oct 2024 15:30:09 +0300
+Subject: [PATCH] ipv4: ip_tunnel: Fix suspicious RCU usage warning in
+ ip_tunnel_find()
+
+The per-netns IP tunnel hash table is protected by the RTNL mutex and
+ip_tunnel_find() is only called from the control path where the mutex is
+taken.
+
+Add a lockdep expression to hlist_for_each_entry_rcu() in
+ip_tunnel_find() in order to validate that the mutex is held and to
+silence the suspicious RCU usage warning [1].
+
+[1]
+WARNING: suspicious RCU usage
+6.12.0-rc3-custom-gd95d9a31aceb #139 Not tainted
+-----------------------------
+net/ipv4/ip_tunnel.c:221 RCU-list traversed in non-reader section!!
+
+other info that might help us debug this:
+
+rcu_scheduler_active = 2, debug_locks = 1
+1 lock held by ip/362:
+ #0: ffffffff86fc7cb0 (rtnl_mutex){+.+.}-{3:3}, at: rtnetlink_rcv_msg+0x377/0xf60
+
+stack backtrace:
+CPU: 12 UID: 0 PID: 362 Comm: ip Not tainted 6.12.0-rc3-custom-gd95d9a31aceb #139
+Hardware name: Bochs Bochs, BIOS Bochs 01/01/2011
+Call Trace:
+ <TASK>
+ dump_stack_lvl+0xba/0x110
+ lockdep_rcu_suspicious.cold+0x4f/0xd6
+ ip_tunnel_find+0x435/0x4d0
+ ip_tunnel_newlink+0x517/0x7a0
+ ipgre_newlink+0x14c/0x170
+ __rtnl_newlink+0x1173/0x19c0
+ rtnl_newlink+0x6c/0xa0
+ rtnetlink_rcv_msg+0x3cc/0xf60
+ netlink_rcv_skb+0x171/0x450
+ netlink_unicast+0x539/0x7f0
+ netlink_sendmsg+0x8c1/0xd80
+ ____sys_sendmsg+0x8f9/0xc20
+ ___sys_sendmsg+0x197/0x1e0
+ __sys_sendmsg+0x122/0x1f0
+ do_syscall_64+0xbb/0x1d0
+ entry_SYSCALL_64_after_hwframe+0x77/0x7f
+
+Fixes: c54419321455 ("GRE: Refactor GRE tunneling code.")
+Suggested-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Ido Schimmel <idosch@nvidia.com>
+Reviewed-by: Eric Dumazet <edumazet@google.com>
+Link: https://patch.msgid.link/20241023123009.749764-1-idosch@nvidia.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/ipv4/ip_tunnel.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/ipv4/ip_tunnel.c b/net/ipv4/ip_tunnel.c
+index acf93f34a821..2081b073bcd7 100644
+--- a/net/ipv4/ip_tunnel.c
++++ b/net/ipv4/ip_tunnel.c
+@@ -218,7 +218,7 @@ static struct ip_tunnel *ip_tunnel_find(struct ip_tunnel_net *itn,
+ 	struct ip_tunnel *t = NULL;
+ 	struct hlist_head *head = ip_bucket(itn, parms);
+
+-	hlist_for_each_entry_rcu(t, head, hash_node) {
++	hlist_for_each_entry_rcu(t, head, hash_node, lockdep_rtnl_is_held()) {
+ 		if (local == t->parms.iph.saddr &&
+ 		    remote == t->parms.iph.daddr &&
+ 		    link == t->parms.link &&
+-- 
+2.34.1
+
+ 140 changes: 0 additions & 140 deletions140  
+linux/patches/0001-libfs-fix-infinite-directory-reads-for-offset-dir.patch
+Original file line number	Diff line number	Diff line change
+@@ -1,140 +0,0 @@
+From c2e255ffa2317a1f86fba21826f99011c2be0dc6 Mon Sep 17 00:00:00 2001
+From: yangerkun <yangerkun@huawei.com>
+Date: Wed, 31 Jul 2024 12:38:35 +0800
+Subject: [PATCH] libfs: fix infinite directory reads for offset dir
+
+After we switch tmpfs dir operations from simple_dir_operations to
+simple_offset_dir_operations, every rename happened will fill new dentry
+to dest dir's maple tree(&SHMEM_I(inode)->dir_offsets->mt) with a free
+key starting with octx->newx_offset, and then set newx_offset equals to
+free key + 1. This will lead to infinite readdir combine with rename
+happened at the same time, which fail generic/736 in xfstests(detail show
+as below).
+
+1. create 5000 files(1 2 3...) under one dir
+2. call readdir(man 3 readdir) once, and get one entry
+3. rename(entry, "TEMPFILE"), then rename("TEMPFILE", entry)
+4. loop 2~3, until readdir return nothing or we loop too many
+   times(tmpfs break test with the second condition)
+
+We choose the same logic what commit 9b378f6ad48cf ("btrfs: fix infinite
+directory reads") to fix it, record the last_index when we open dir, and
+do not emit the entry which index >= last_index. The file->private_data
+now used in offset dir can use directly to do this, and we also update
+the last_index when we llseek the dir file.
+
+Fixes: a2e459555c5f ("shmem: stable directory offsets")
+Signed-off-by: yangerkun <yangerkun@huawei.com>
+Link: https://lore.kernel.org/r/20240731043835.1828697-1-yangerkun@huawei.com
+Reviewed-by: Chuck Lever <chuck.lever@oracle.com>
+[brauner: only update last_index after seek when offset is zero like Jan suggested]
+Signed-off-by: Christian Brauner <brauner@kernel.org>
+(cherry picked with modification from commit 64a7ce76fb901bf9f9c36cf5d681328fc0fd4b5a)
+---
+ fs/libfs.c | 37 +++++++++++++++++++++++++------------
+ 1 file changed, 25 insertions(+), 12 deletions(-)
+
+diff --git a/fs/libfs.c b/fs/libfs.c
+index dc0f7519045f..8ec7a4c67ad7 100644
+--- a/fs/libfs.c
++++ b/fs/libfs.c
+@@ -371,6 +371,14 @@ void simple_offset_destroy(struct offset_ctx *octx)
+ 	xa_destroy(&octx->xa);
+ }
+
++static int offset_dir_open(struct inode *inode, struct file *file)
++{
++	struct offset_ctx *ctx = inode->i_op->get_offset_ctx(inode);
++
++	file->private_data = (void *)((unsigned long)ctx->next_offset);
++	return 0;
++}
++
+ /**
+  * offset_dir_llseek - Advance the read position of a directory descriptor
+  * @file: an open directory whose position is to be updated
+@@ -384,6 +392,9 @@ void simple_offset_destroy(struct offset_ctx *octx)
+  */
+ static loff_t offset_dir_llseek(struct file *file, loff_t offset, int whence)
+ {
++	struct inode *inode = file->f_inode;
++	struct offset_ctx *ctx = inode->i_op->get_offset_ctx(inode);
++
+ 	switch (whence) {
+ 	case SEEK_CUR:
+ 		offset += file->f_pos;
+@@ -397,8 +408,9 @@ static loff_t offset_dir_llseek(struct file *file, loff_t offset, int whence)
+ 	}
+
+ 	/* In this case, ->private_data is protected by f_pos_lock */
+-	file->private_data = NULL;
+-	return vfs_setpos(file, offset, U32_MAX);
++	if (!offset)
++		file->private_data = (void *)((unsigned long)ctx->next_offset);
++	return vfs_setpos(file, offset, LONG_MAX);
+ }
+
+ static struct dentry *offset_find_next(struct xa_state *xas)
+@@ -427,7 +439,7 @@ static bool offset_dir_emit(struct dir_context *ctx, struct dentry *dentry)
+ 			  inode->i_ino, fs_umode_to_dtype(inode->i_mode));
+ }
+
+-static void *offset_iterate_dir(struct inode *inode, struct dir_context *ctx)
++static void offset_iterate_dir(struct inode *inode, struct dir_context *ctx, long last_index)
+ {
+ 	struct offset_ctx *so_ctx = inode->i_op->get_offset_ctx(inode);
+ 	XA_STATE(xas, &so_ctx->xa, ctx->pos);
+@@ -436,17 +448,21 @@ static void *offset_iterate_dir(struct inode *inode, struct dir_context *ctx)
+ 	while (true) {
+ 		dentry = offset_find_next(&xas);
+ 		if (!dentry)
+-			return ERR_PTR(-ENOENT);
++			return;
++
++		if (dentry2offset(dentry) >= last_index) {
++			dput(dentry);
++			return;
++		}
+
+ 		if (!offset_dir_emit(ctx, dentry)) {
+ 			dput(dentry);
+-			break;
++			return;
+ 		}
+
+ 		dput(dentry);
+ 		ctx->pos = xas.xa_index + 1;
+ 	}
+-	return NULL;
+ }
+
+ /**
+@@ -473,22 +489,19 @@ static void *offset_iterate_dir(struct inode *inode, struct dir_context *ctx)
+ static int offset_readdir(struct file *file, struct dir_context *ctx)
+ {
+ 	struct dentry *dir = file->f_path.dentry;
++	long last_index = (long)file->private_data;
+
+ 	lockdep_assert_held(&d_inode(dir)->i_rwsem);
+
+ 	if (!dir_emit_dots(file, ctx))
+ 		return 0;
+
+-	/* In this case, ->private_data is protected by f_pos_lock */
+-	if (ctx->pos == 2)
+-		file->private_data = NULL;
+-	else if (file->private_data == ERR_PTR(-ENOENT))
+-		return 0;
+-	file->private_data = offset_iterate_dir(d_inode(dir), ctx);
++	offset_iterate_dir(d_inode(dir), ctx, last_index);
+ 	return 0;
+ }
+
+ const struct file_operations simple_offset_dir_operations = {
++	.open		= offset_dir_open,
+ 	.llseek		= offset_dir_llseek,
+ 	.iterate_shared	= offset_readdir,
+ 	.read		= generic_read_dir,
+-- 
+2.25.1
+
+ 49 changes: 0 additions & 49 deletions49  
+linux/patches/0002-block_device-add-a-pointer-to-struct-address_space-p.patch
+Original file line number	Diff line number	Diff line change
+@@ -1,49 +0,0 @@
+From 0f817df87fdf99464e693fcc066500b3ec559d6b Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Thu, 11 Apr 2024 15:53:36 +0100
+Subject: [PATCH 2/3] block_device: add a pointer to struct address_space (page
+ cache of bdev)
+
+points to ->i_data of coallocated inode.
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Link: https://lore.kernel.org/r/20240411145346.2516848-1-viro@zeniv.linux.org.uk
+Signed-off-by: Christian Brauner <brauner@kernel.org>
+(cherry picked from commit e33aef2c58577f51ec22736843a652576ce0ef7a)
+---
+ block/bdev.c              | 1 +
+ include/linux/blk_types.h | 4 +++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/block/bdev.c b/block/bdev.c
+index 5a54977518ee..87a228726fb4 100644
+--- a/block/bdev.c
++++ b/block/bdev.c
+@@ -401,6 +401,7 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
+ 	mutex_init(&bdev->bd_holder_lock);
+ 	bdev->bd_partno = partno;
+ 	bdev->bd_inode = inode;
++	bdev->bd_mapping = &inode->i_data;
+ 	bdev->bd_queue = disk->queue;
+ 	if (partno)
+ 		bdev->bd_has_submit_bio = disk->part0->bd_has_submit_bio;
+diff --git a/include/linux/blk_types.h b/include/linux/blk_types.h
+index 92c8997b1938..5cb32d3d7734 100644
+--- a/include/linux/blk_types.h
++++ b/include/linux/blk_types.h
+@@ -49,9 +49,11 @@ struct block_device {
+ 	bool			bd_write_holder;
+ 	bool			bd_has_submit_bio;
+ 	dev_t			bd_dev;
++	struct inode		*bd_inode;	/* will die */
++	struct address_space	*bd_mapping;	/* page cache */
++
+ 	atomic_t		bd_openers;
+ 	spinlock_t		bd_size_lock; /* for bd_inode->i_size updates */
+-	struct inode *		bd_inode;	/* will die */
+ 	void *			bd_claiming;
+ 	void *			bd_holder;
+ 	const struct blk_holder_ops *bd_holder_ops;
+-- 
+2.34.1
+
+ 72 changes: 0 additions & 72 deletions72  
+linux/patches/0003-block-fix-integer-overflow-in-BLKSECDISCARD.patch
+Original file line number	Diff line number	Diff line change
+@@ -1,72 +0,0 @@
+From 5c34f81611daf1669c2d8d8c12b8c70d8d0c6f77 Mon Sep 17 00:00:00 2001
+From: Alexey Dobriyan <adobriyan@gmail.com>
+Date: Tue, 3 Sep 2024 22:48:19 +0300
+Subject: [PATCH 3/3] block: fix integer overflow in BLKSECDISCARD
+
+I independently rediscovered
+
+	commit 22d24a544b0d49bbcbd61c8c0eaf77d3c9297155
+	block: fix overflow in blk_ioctl_discard()
+
+but for secure erase.
+
+Same problem:
+
+	uint64_t r[2] = {512, 18446744073709551104ULL};
+	ioctl(fd, BLKSECDISCARD, r);
+
+will enter near infinite loop inside blkdev_issue_secure_erase():
+
+	a.out: attempt to access beyond end of device
+	loop0: rw=5, sector=3399043073, nr_sectors = 1024 limit=2048
+	bio_check_eod: 3286214 callbacks suppressed
+
+Signed-off-by: Alexey Dobriyan <adobriyan@gmail.com>
+Link: https://lore.kernel.org/r/9e64057f-650a-46d1-b9f7-34af391536ef@p183
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+(cherry picked from commit 697ba0b6ec4ae04afb67d3911799b5e2043b4455)
+---
+ block/ioctl.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/block/ioctl.c b/block/ioctl.c
+index 250de6471724..991ba94ea938 100644
+--- a/block/ioctl.c
++++ b/block/ioctl.c
+@@ -114,7 +114,7 @@ static int blk_ioctl_discard(struct block_device *bdev, blk_mode_t mode,
+ 		return -EINVAL;
+
+ 	filemap_invalidate_lock(bdev->bd_mapping);
+-	err = truncate_bdev_range(bdev, mode, start, start + len - 1);
++	err = truncate_bdev_range(bdev, mode, start, end - 1);
+ 	if (err)
+ 		goto fail;
+ 	err = blkdev_issue_discard(bdev, start >> 9, len >> 9, GFP_KERNEL);
+@@ -126,7 +126,7 @@ static int blk_ioctl_discard(struct block_device *bdev, blk_mode_t mode,
+ static int blk_ioctl_secure_erase(struct block_device *bdev, blk_mode_t mode,
+ 		void __user *argp)
+ {
+-	uint64_t start, len;
++	uint64_t start, len, end;
+ 	uint64_t range[2];
+ 	int err;
+
+@@ -141,11 +141,12 @@ static int blk_ioctl_secure_erase(struct block_device *bdev, blk_mode_t mode,
+ 	len = range[1];
+ 	if ((start & 511) || (len & 511))
+ 		return -EINVAL;
+-	if (start + len > bdev_nr_bytes(bdev))
++	if (check_add_overflow(start, len, &end) ||
++	    end > bdev_nr_bytes(bdev))
+ 		return -EINVAL;
+
+-	filemap_invalidate_lock(bdev->bd_inode->i_mapping);
+-	err = truncate_bdev_range(bdev, mode, start, start + len - 1);
++	filemap_invalidate_lock(bdev->bd_mapping);
++	err = truncate_bdev_range(bdev, mode, start, end - 1);
+ 	if (!err)
+ 		err = blkdev_issue_secure_erase(bdev, start >> 9, len >> 9,
+ 						GFP_KERNEL);
+-- 
+2.34.1
+
+  17 changes: 3 additions & 14 deletions17  
+linux/patches/series
+Original file line number	Diff line number	Diff line change
+@@ -95,9 +95,6 @@
+#CVE-2024-49885
+0001-mm-slub-avoid-zeroing-kmalloc-redzone.patch
+
+#CVE-2024-50014
+0001-ext4-fix-access-to-uninitialised-lock-in-fc-replay-p.patch
+
+#CVE-2024-50017
+0001-x86-mm-ident_map-Use-gbpages-only-where-full-GB-page.patch
+
+@@ -107,9 +104,6 @@
+#CVE-2024-50277
+0001-dm-fix-a-crash-if-blk_alloc_disk-fails.patch
+
+#CVE-2024-50304
+0001-ipv4-ip_tunnel-Fix-suspicious-RCU-usage-warning-in-i.patch
+
+#CVE-2024-53050
+0001-drm-i915-hdcp-Use-per-device-debugs.patch
+0002-drm-i915-hdcp-Move-to-direct-reads-for-HDCP.patch
+@@ -132,11 +126,6 @@
+0010-tpm-Remove-tpm_send.patch
+0011-tpm-export-the-context-save-and-load-commands.patch
+
+#CVE-2024-49994
+0001-blk_ioctl_-discard-zeroout-we-only-want-bd_inode-i_m.patch
+0002-block_device-add-a-pointer-to-struct-address_space-p.patch
+0003-block-fix-integer-overflow-in-BLKSECDISCARD.patch
+
+#CVE-2024-50106
+0001-nfsd-don-t-call-functions-with-side-effecting-inside.patch
+0002-nfsd-avoid-race-after-unhash_delegation_locked.patch
+@@ -204,8 +193,8 @@
+#CVE-2024-26756
+0001-md-Don-t-register-sync_thread-for-reshape-directly.patch
+
+#CVE-2024-46701
+0001-libfs-fix-infinite-directory-reads-for-offset-dir.patch
+
+#CVE-2024-53114
+0001-x86-CPU-AMD-Clear-virtualized-VMLOAD-VMSAVE-on-Zen4-.patch
+
+#CVE-2025-21682
+0001-eth-bnxt-always-recalculate-features-after-XDP-clear.patch
+Footer
