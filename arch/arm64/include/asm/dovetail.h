@@ -26,11 +26,17 @@ static inline void arch_dovetail_exec_prepare(void)
 { }
 
 static inline void arch_dovetail_switch_prepare(bool leave_inband)
-{ }
+{
+	if (leave_inband)
+		fpsimd_suspend_inband();
+}
 
 static inline void arch_dovetail_switch_finish(bool enter_inband)
 {
-	fpsimd_restore_current_oob();
+	if (enter_inband)
+		fpsimd_resume_inband();
+	else
+		fpsimd_restore_current_oob();
 }
 
 /*
