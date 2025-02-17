@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2023 - 2024 Intel Corporation.
+// Copyright (c) 2023 - 2025 Intel Corporation.
 
 #include <linux/acpi.h>
 #include <linux/delay.h>
@@ -37,34 +37,28 @@
 #define INT_VIDEO_READY			0x1
 
 #define LT6911UXE_DEFAULT_LANES		4
-#define LT9611_PAGE_CONTROL		0xff
+#define LT6911_PAGE_CONTROL		0xff
 #define YUV422_8_BIT			0x7
-
-/*
- * lt6911uxe provides editable EDID for customers, but only can be edited like
- * updating flash. Due to this limitation, it is not possible to implement
- * EDID support.
- */
 
 static const struct v4l2_dv_timings_cap lt6911uxe_timings_cap_4kp30 = {
 	.type = V4L2_DV_BT_656_1120,
 	/* Pixel clock from REF_01 p. 20. Min/max height/width are unknown */
-	V4L2_INIT_BT_TIMINGS(
-		160, 3840,				/* min/max width */
-		120, 2160,				/* min/max height */
-		50000000, 594000000,			/* min/max pixelclock */
-		V4L2_DV_BT_STD_CEA861 | V4L2_DV_BT_STD_DMT |
-		V4L2_DV_BT_STD_CVT,
-		V4L2_DV_BT_CAP_PROGRESSIVE | V4L2_DV_BT_CAP_CUSTOM |
-		V4L2_DV_BT_CAP_REDUCED_BLANKING)
+	V4L2_INIT_BT_TIMINGS(160, 3840,			/* min/max width */
+			     120, 2160,			/* min/max height */
+			     50000000, 594000000,	/* min/max pixelclock */
+			     V4L2_DV_BT_STD_CEA861 | V4L2_DV_BT_STD_DMT |
+			     V4L2_DV_BT_STD_CVT,
+			     V4L2_DV_BT_CAP_PROGRESSIVE |
+			     V4L2_DV_BT_CAP_CUSTOM |
+			     V4L2_DV_BT_CAP_REDUCED_BLANKING)
 };
 
-static const struct regmap_range_cfg lt9611uxe_ranges[] = {
+static const struct regmap_range_cfg lt6911uxe_ranges[] = {
 	{
 		.name = "register_range",
 		.range_min =  0,
 		.range_max = 0xffff,
-		.selector_reg = LT9611_PAGE_CONTROL,
+		.selector_reg = LT6911_PAGE_CONTROL,
 		.selector_mask = 0xff,
 		.selector_shift = 0,
 		.window_start = 0,
@@ -72,12 +66,12 @@ static const struct regmap_range_cfg lt9611uxe_ranges[] = {
 	},
 };
 
-static const struct regmap_config lt9611uxe_regmap_config = {
+static const struct regmap_config lt6911uxe_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 	.max_register = 0xffff,
-	.ranges = lt9611uxe_ranges,
-	.num_ranges = ARRAY_SIZE(lt9611uxe_ranges),
+	.ranges = lt6911uxe_ranges,
+	.num_ranges = ARRAY_SIZE(lt6911uxe_ranges),
 };
 
 struct lt6911uxe_mode {
@@ -96,8 +90,8 @@ struct lt6911uxe {
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_ctrl_handler ctrl_handler;
-	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_ctrl *link_freq;
+	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_dv_timings timings;
 	struct lt6911uxe_mode cur_mode;
 	struct regmap *regmap;
@@ -201,7 +195,6 @@ static int lt6911uxe_query_dv_timings(struct v4l2_subdev *sd, unsigned int pad,
 
 	if (!v4l2_valid_dv_timings(timings, &lt6911uxe_timings_cap_4kp30,
 				   NULL, NULL)) {
-		v4l2_warn(sd, "timings out of range\n");
 		v4l2_subdev_unlock_state(state);
 		return -ERANGE;
 	}
@@ -249,7 +242,7 @@ static int lt6911uxe_status_update(struct lt6911uxe *lt6911uxe)
 		half_pix_clk *= 1000;
 
 		if (ret || byte_clk == 0 || half_pix_clk == 0) {
-			dev_err(&client->dev,
+			dev_dbg(&client->dev,
 				"invalid ByteClock or PixelClock\n");
 			return -EINVAL;
 		}
@@ -258,13 +251,13 @@ static int lt6911uxe_status_update(struct lt6911uxe *lt6911uxe)
 			 &half_htotal, &ret);
 		cci_read(lt6911uxe->regmap, REG_V_TOTAL, &vtotal, &ret);
 		if (ret || half_htotal == 0 || vtotal == 0) {
-			dev_err(&client->dev, "invalid htotal or vtotal\n");
+			dev_dbg(&client->dev, "invalid htotal or vtotal\n");
 			return -EINVAL;
 		}
 
 		fps = div_u64(half_pix_clk, half_htotal * vtotal);
 		if (fps > 60) {
-			dev_err(&client->dev,
+			dev_dbg(&client->dev,
 				"max fps is 60, current fps: %llu\n", fps);
 			return -EINVAL;
 		}
@@ -274,7 +267,7 @@ static int lt6911uxe_status_update(struct lt6911uxe *lt6911uxe)
 		cci_read(lt6911uxe->regmap, REG_V_ACTIVE, &height, &ret);
 		if (ret || half_width == 0 || half_width * 2 > 3840 ||
 		    height == 0 || height > 2160) {
-			dev_err(&client->dev, "invalid width or height\n");
+			dev_dbg(&client->dev, "invalid width or height\n");
 			return -EINVAL;
 		}
 
@@ -283,7 +276,7 @@ static int lt6911uxe_status_update(struct lt6911uxe *lt6911uxe)
 		 */
 		cci_read(lt6911uxe->regmap, REG_MIPI_FORMAT, &format, &ret);
 		if (format != YUV422_8_BIT) {
-			dev_err(&client->dev, "invalid MIPI format\n");
+			dev_dbg(&client->dev, "invalid MIPI format\n");
 			return -EINVAL;
 		}
 
@@ -295,23 +288,20 @@ static int lt6911uxe_status_update(struct lt6911uxe *lt6911uxe)
 		lt6911uxe->cur_mode.pixel_clk = half_pix_clk * 2;
 		lt6911uxe->cur_mode.vtotal = vtotal;
 		lt6911uxe->cur_mode.htotal = half_htotal * 2;
-		v4l2_subdev_notify_event(&lt6911uxe->sd,
-					 &lt6911uxe_ev_source_change);
 		break;
 
 	case INT_VIDEO_DISAPPEAR:
-		cci_write(lt6911uxe->regmap, REG_MIPI_TX_CTRL, 0x0, NULL);
+		cci_write(lt6911uxe->regmap, REG_MIPI_TX_CTRL, 0x0, &ret);
 		lt6911uxe->cur_mode.height = 0;
 		lt6911uxe->cur_mode.width = 0;
 		lt6911uxe->cur_mode.fps = 0;
 		lt6911uxe->cur_mode.link_freq = 0;
-		v4l2_subdev_notify_event(&lt6911uxe->sd,
-					 &lt6911uxe_ev_stream_end);
 		break;
 
 	default:
-		return  -ENOLINK;
+		ret = -ENOLINK;
 	}
+	v4l2_subdev_notify_event(&lt6911uxe->sd, &lt6911uxe_ev_source_change);
 
 	return ret;
 }
@@ -452,41 +442,6 @@ static int lt6911uxe_enum_mbus_code(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int lt6911uxe_enum_frame_size(struct v4l2_subdev *sd,
-				     struct v4l2_subdev_state *sd_state,
-				     struct v4l2_subdev_frame_size_enum *fse)
-{
-	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-
-	if (fse->index != 0)
-		return -EINVAL;
-
-	if (fse->code != MEDIA_BUS_FMT_UYVY8_1X16)
-		return -EINVAL;
-
-	fse->min_width = lt6911uxe->cur_mode.width;
-	fse->max_width = fse->min_width;
-	fse->min_height = lt6911uxe->cur_mode.height;
-	fse->max_height = fse->min_height;
-
-	return 0;
-}
-
-static int lt6911uxe_enum_frame_interval(struct v4l2_subdev *sd,
-				struct v4l2_subdev_state *sd_state,
-				struct v4l2_subdev_frame_interval_enum *fie)
-{
-	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-
-	if (fie->index != 0)
-		return -EINVAL;
-
-	fie->interval.numerator = 1;
-	fie->interval.denominator = lt6911uxe->cur_mode.fps;
-
-	return 0;
-}
-
 static int lt6911uxe_init_state(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state)
 {
@@ -502,14 +457,17 @@ static const struct v4l2_subdev_video_ops lt6911uxe_video_ops = {
 	.s_stream = v4l2_subdev_s_stream_helper,
 };
 
+/*
+ * lt6911uxe provides editable EDID for customers, but only can be edited like
+ * updating flash. Due to this limitation, it is not possible to implement
+ * EDID support.
+ */
 static const struct v4l2_subdev_pad_ops lt6911uxe_pad_ops = {
 	.set_fmt = lt6911uxe_set_format,
 	.get_fmt = lt6911uxe_get_format,
 	.enable_streams = lt6911uxe_enable_streams,
 	.disable_streams = lt6911uxe_disable_streams,
 	.enum_mbus_code = lt6911uxe_enum_mbus_code,
-	.enum_frame_size = lt6911uxe_enum_frame_size,
-	.enum_frame_interval = lt6911uxe_enum_frame_interval,
 	.get_frame_interval = v4l2_subdev_get_frame_interval,
 	.s_dv_timings = lt6911uxe_s_dv_timings,
 	.g_dv_timings = lt6911uxe_g_dv_timings,
@@ -637,7 +595,7 @@ static int lt6911uxe_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	lt6911uxe->regmap = devm_regmap_init_i2c(client,
-						 &lt9611uxe_regmap_config);
+						 &lt6911uxe_regmap_config);
 	if (IS_ERR(lt6911uxe->regmap))
 		return dev_err_probe(dev, PTR_ERR(lt6911uxe->regmap),
 				     "failed to init CCI\n");
