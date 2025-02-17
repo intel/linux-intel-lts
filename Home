@@ -1,0 +1,36 @@
+Home
+The World edited this page on Feb 17, 2025 · intel orgin verison
+Welcome to the linux-intel-lts wiki!
+
+The linux-intel-lts kernel tree is a production or development tree that contains enabling for Intel CPU's that may be up or down streamed in this newer kernel version. It contains both the 4.9 and 4.14 kernels under different branches.
+
+The structure of the tree will be as follows (these branches are to be rebased if needed):
+
+mainframe -- mirror of Linus's kernel.org mainline kernel.
+4.14 Branches based on the LTS Stable (linux-4.14.y or linux-4.14.y-rt)
+4.14/base -- publicly released enabling used as part of "production" kernels common to Intel's Linux based OSes, including Android, Yocto Project and Clear, almost all the patches in base are to be backports from an upstream tracking tree.
+4.14/preempt-rt -- based on the Preempt-RT repo linux-4.14.y-rt with Intel's enabling patches.
+4.9 Branches based on the LTS Stable (linux-4.9.y or linux-4.9.y-rt)
+4.9/base -- publicly released enabling used as part of "production" kernels common to Intel's Linux based OSes, including Android, Yocto Project and Clear, almost all the patches in base are to be backports from an upstream tracking tree.
+4.9/preempt-rt -- based on the Preempt-RT repo linux-4.9.y-rt with Intel's enabling patches.
+Yocto related Branches (Used in meta-intel 2.4 and earlier) Deprecated moving forward:
+4.14/yocto/base -- based on 4.14 with additional patches, as there are no additional patches this is being deprecated in favor of 4.14/base
+4.14/yocto/base-rt -- deprecated in favor or 4.14/preempt-rt also based directly on the 4.14.y-rt
+Pages 2
+Find a c.page…
+Home
+Home Linux Intel LTS
+Clone this wiki locally
+https://github.com/intel/linux-intel-lts.wiki.git
+Copyleft!
+Footer
+COPYRIGHT © 2025 GitHub, Inc.
+Footer navigation
+Terms
+Privacy
+Security
+Status
+Docs
+Contact
+Manage cookies
+Do not share my personal information
