@@ -1,0 +1,112 @@
+From 8e8e0ac69b72736229dc9e149329526dd265ad7f Mon Sep 17 00:00:00 2001
+From: Chao Yu <chao@kernel.org>
+Date: Sun, 10 Dec 2023 17:20:39 +0800
+Subject: [PATCH 3/4] f2fs: introduce f2fs_invalidate_internal_cache() for
+ cleanup
+
+Just cleanup, no logic changes.
+
+Signed-off-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/data.c    |  8 +++-----
+ fs/f2fs/f2fs.h    |  7 +++++++
+ fs/f2fs/gc.c      |  5 ++---
+ fs/f2fs/segment.c | 14 ++++----------
+ 4 files changed, 16 insertions(+), 18 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 0b0e3d44e158..b554ddf8b4f2 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -1423,11 +1423,9 @@ static int __allocate_data_block(struct dnode_of_data *dn, int seg_type)
+ 	old_blkaddr = dn->data_blkaddr;
+ 	f2fs_allocate_data_block(sbi, NULL, old_blkaddr, &dn->data_blkaddr,
+ 				&sum, seg_type, NULL);
+-	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO) {
+-		invalidate_mapping_pages(META_MAPPING(sbi),
+-					old_blkaddr, old_blkaddr);
+-		f2fs_invalidate_compress_page(sbi, old_blkaddr);
+-	}
++	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO)
++		f2fs_invalidate_internal_cache(sbi, old_blkaddr);
++
+ 	f2fs_update_data_blkaddr(dn, dn->data_blkaddr);
+ 	return 0;
+ }
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 93a7b690ed80..8baeb81f4b85 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -4565,6 +4565,13 @@ static inline bool f2fs_is_readonly(struct f2fs_sb_info *sbi)
+ 	return f2fs_sb_has_readonly(sbi) || f2fs_readonly(sbi->sb);
+ }
+ 
++static inline void f2fs_invalidate_internal_cache(struct f2fs_sb_info *sbi,
++								block_t blkaddr)
++{
++	invalidate_mapping_pages(META_MAPPING(sbi), blkaddr, blkaddr);
++	f2fs_invalidate_compress_page(sbi, blkaddr);
++}
++
+ #define EFSBADCRC	EBADMSG		/* Bad CRC detected */
+ #define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */
+ 
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index f7ab6a99f479..63d2a8fd2050 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -1386,9 +1386,8 @@ static int move_data_block(struct inode *inode, block_t bidx,
+ 	memcpy(page_address(fio.encrypted_page),
+ 				page_address(mpage), PAGE_SIZE);
+ 	f2fs_put_page(mpage, 1);
+-	invalidate_mapping_pages(META_MAPPING(fio.sbi),
+-				fio.old_blkaddr, fio.old_blkaddr);
+-	f2fs_invalidate_compress_page(fio.sbi, fio.old_blkaddr);
++
++	f2fs_invalidate_internal_cache(fio.sbi, fio.old_blkaddr);
+ 
+ 	set_page_dirty(fio.encrypted_page);
+ 	if (clear_page_dirty_for_io(fio.encrypted_page))
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index b66b551f09dc..9d28527018a4 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -2291,8 +2291,7 @@ void f2fs_invalidate_blocks(struct f2fs_sb_info *sbi, block_t addr)
+ 	if (addr == NEW_ADDR || addr == COMPRESS_ADDR)
+ 		return;
+ 
+-	invalidate_mapping_pages(META_MAPPING(sbi), addr, addr);
+-	f2fs_invalidate_compress_page(sbi, addr);
++	f2fs_invalidate_internal_cache(sbi, addr);
+ 
+ 	/* add it into sit main buffer */
+ 	down_write(&sit_i->sentry_lock);
+@@ -3362,11 +3361,8 @@ static void do_write_page(struct f2fs_summary *sum, struct f2fs_io_info *fio)
+ reallocate:
+ 	f2fs_allocate_data_block(fio->sbi, fio->page, fio->old_blkaddr,
+ 			&fio->new_blkaddr, sum, type, fio);
+-	if (GET_SEGNO(fio->sbi, fio->old_blkaddr) != NULL_SEGNO) {
+-		invalidate_mapping_pages(META_MAPPING(fio->sbi),
+-					fio->old_blkaddr, fio->old_blkaddr);
+-		f2fs_invalidate_compress_page(fio->sbi, fio->old_blkaddr);
+-	}
++	if (GET_SEGNO(fio->sbi, fio->old_blkaddr) != NULL_SEGNO)
++		f2fs_invalidate_internal_cache(fio->sbi, fio->old_blkaddr);
+ 
+ 	/* writeout dirty page into bdev */
+ 	f2fs_submit_page_write(fio);
+@@ -3561,9 +3557,7 @@ void f2fs_do_replace_block(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
+ 		update_sit_entry(sbi, new_blkaddr, 1);
+ 	}
+ 	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO) {
+-		invalidate_mapping_pages(META_MAPPING(sbi),
+-					old_blkaddr, old_blkaddr);
+-		f2fs_invalidate_compress_page(sbi, old_blkaddr);
++		f2fs_invalidate_internal_cache(sbi, old_blkaddr);
+ 		if (!from_gc)
+ 			update_segment_mtime(sbi, old_blkaddr, 0);
+ 		update_sit_entry(sbi, old_blkaddr, -1);
+-- 
+2.25.1
+

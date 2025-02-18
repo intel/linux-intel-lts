@@ -1,0 +1,45 @@
+From 8530bd4a4626e9f84912b73a76236868397a539f Mon Sep 17 00:00:00 2001
+From: Paulo Alcantara <pc@manguebit.com>
+Date: Tue, 2 Apr 2024 16:33:54 -0300
+Subject: [PATCH] osmb: client: fix potential UAF in cifs_dump_full_key()
+
+Skip sessions that are being teared down (status == SES_EXITING) to
+avoid UAF.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Paulo Alcantara (Red Hat) <pc@manguebit.com>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+---
+ fs/smb/client/ioctl.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/fs/smb/client/ioctl.c b/fs/smb/client/ioctl.c
+index ae9905e2b9d4..7402070b7a06 100644
+--- a/fs/smb/client/ioctl.c
++++ b/fs/smb/client/ioctl.c
+@@ -246,7 +246,9 @@ static int cifs_dump_full_key(struct cifs_tcon *tcon, struct smb3_full_key_debug
+ 		spin_lock(&cifs_tcp_ses_lock);
+ 		list_for_each_entry(server_it, &cifs_tcp_ses_list, tcp_ses_list) {
+ 			list_for_each_entry(ses_it, &server_it->smb_ses_list, smb_ses_list) {
+-				if (ses_it->Suid == out.session_id) {
++				spin_lock(&ses_it->ses_lock);
++				if (ses_it->ses_status != SES_EXITING &&
++				    ses_it->Suid == out.session_id) {
+ 					ses = ses_it;
+ 					/*
+ 					 * since we are using the session outside the crit
+@@ -254,9 +256,11 @@ static int cifs_dump_full_key(struct cifs_tcon *tcon, struct smb3_full_key_debug
+ 					 * so increment its refcount
+ 					 */
+ 					ses->ses_count++;
++					spin_unlock(&ses_it->ses_lock);
+ 					found = true;
+ 					goto search_end;
+ 				}
++				spin_unlock(&ses_it->ses_lock);
+ 			}
+ 		}
+ search_end:
+-- 
+2.25.1
+

@@ -1,0 +1,65 @@
+From 9d0ed84bdaad424d4a4df5e4e6ef4a36d8000f00 Mon Sep 17 00:00:00 2001
+From: Rick Edgecombe <rick.p.edgecombe@intel.com>
+Date: Mon, 11 Mar 2024 09:15:54 -0700
+Subject: [PATCH] Drivers: hv: vmbus: Leak pages if set_memory_encrypted()
+ fails
+
+[ Upstream commit 03f5a999adba062456c8c818a683beb1b498983a ]
+
+In CoCo VMs it is possible for the untrusted host to cause
+set_memory_encrypted() or set_memory_decrypted() to fail such that an
+error is returned and the resulting memory is shared. Callers need to
+take care to handle these errors to avoid returning decrypted (shared)
+memory to the page allocator, which could lead to functional or security
+issues.
+
+VMBus code could free decrypted pages if set_memory_encrypted()/decrypted()
+fails. Leak the pages if this happens.
+
+Signed-off-by: Rick Edgecombe <rick.p.edgecombe@intel.com>
+Signed-off-by: Michael Kelley <mhklinux@outlook.com>
+Reviewed-by: Kuppuswamy Sathyanarayanan <sathyanarayanan.kuppuswamy@linux.intel.com>
+Acked-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+Link: https://lore.kernel.org/r/20240311161558.1310-2-mhklinux@outlook.com
+Signed-off-by: Wei Liu <wei.liu@kernel.org>
+Message-ID: <20240311161558.1310-2-mhklinux@outlook.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+---
+ drivers/hv/connection.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/hv/connection.c b/drivers/hv/connection.c
+index da51b50787df..9fce1d7d6d1e 100644
+--- a/drivers/hv/connection.c
++++ b/drivers/hv/connection.c
+@@ -243,8 +243,17 @@ int vmbus_connect(void)
+ 		ret |= set_memory_decrypted((unsigned long)
+ 					    vmbus_connection.monitor_pages[1],
+ 					    1);
+-		if (ret)
++		if (ret) {
++			/*
++			 * If set_memory_decrypted() fails, the encryption state
++			 * of the memory is unknown. So leak the memory instead
++			 * of risking returning decrypted memory to the free list.
++			 * For simplicity, always handle both pages the same.
++			 */
++			vmbus_connection.monitor_pages[0] = NULL;
++			vmbus_connection.monitor_pages[1] = NULL;
+ 			goto cleanup;
++		}
+ 
+ 		/*
+ 		 * Isolation VM with AMD SNP needs to access monitor page via
+@@ -388,6 +397,7 @@ void vmbus_disconnect(void)
+ 		set_memory_encrypted((unsigned long)
+ 			vmbus_connection.monitor_pages_original[0],
+ 			1);
++
+ 		set_memory_encrypted((unsigned long)
+ 			vmbus_connection.monitor_pages_original[1],
+ 			1);
+-- 
+2.25.1
+

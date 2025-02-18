@@ -1,0 +1,122 @@
+From 656aed38cc8ae643ddb3b9cd62ce5bf377c7ae73 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <linkinjeon@kernel.org>
+Date: Sun, 10 Mar 2024 19:30:51 +0900
+Subject: [PATCH 1/3] ksmbd: mark SMB2_SESSION_EXPIRED to session when
+ destroying previous session
+
+[ Upstream commit fa9415d4024fd0c58d24a4ad4f1826fb8bfcc4aa ]
+
+Currently ksmbd exit connection as well destroying previous session.
+When testing durable handle feaure, I found that
+destroy_previous_session() should destroy only session, i.e. the
+connection should be still alive. This patch mark SMB2_SESSION_EXPIRED
+on the previous session to be destroyed later and not used anymore.
+
+Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
+Signed-off-by: Steve French <stfrench@microsoft.com>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ fs/smb/server/mgmt/user_session.c | 27 ++++++++++++++++++++++++++-
+ fs/smb/server/mgmt/user_session.h |  3 +++
+ fs/smb/server/smb2pdu.c           | 24 ------------------------
+ 3 files changed, 29 insertions(+), 25 deletions(-)
+
+diff --git a/fs/smb/server/mgmt/user_session.c b/fs/smb/server/mgmt/user_session.c
+index 710ac7b976fa..2f735e5af171 100644
+--- a/fs/smb/server/mgmt/user_session.c
++++ b/fs/smb/server/mgmt/user_session.c
+@@ -159,7 +159,7 @@ void ksmbd_session_destroy(struct ksmbd_session *sess)
+ 	kfree(sess);
+ }
+ 
+-static struct ksmbd_session *__session_lookup(unsigned long long id)
++struct ksmbd_session *__session_lookup(unsigned long long id)
+ {
+ 	struct ksmbd_session *sess;
+ 
+@@ -325,6 +325,31 @@ struct preauth_session *ksmbd_preauth_session_alloc(struct ksmbd_conn *conn,
+ 	return sess;
+ }
+ 
++void destroy_previous_session(struct ksmbd_conn *conn,
++			      struct ksmbd_user *user, u64 id)
++{
++	struct ksmbd_session *prev_sess;
++	struct ksmbd_user *prev_user;
++
++	down_write(&sessions_table_lock);
++	down_write(&conn->session_lock);
++	prev_sess = __session_lookup(id);
++	if (!prev_sess || prev_sess->state == SMB2_SESSION_EXPIRED)
++		goto out;
++
++	prev_user = prev_sess->user;
++	if (!prev_user ||
++	    strcmp(user->name, prev_user->name) ||
++	    user->passkey_sz != prev_user->passkey_sz ||
++	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz))
++		goto out;
++
++	prev_sess->state = SMB2_SESSION_EXPIRED;
++out:
++	up_write(&conn->session_lock);
++	up_write(&sessions_table_lock);
++}
++
+ static bool ksmbd_preauth_session_id_match(struct preauth_session *sess,
+ 					   unsigned long long id)
+ {
+diff --git a/fs/smb/server/mgmt/user_session.h b/fs/smb/server/mgmt/user_session.h
+index ce91b1d698e7..c1c4b20bd5c6 100644
+--- a/fs/smb/server/mgmt/user_session.h
++++ b/fs/smb/server/mgmt/user_session.h
+@@ -90,8 +90,11 @@ struct ksmbd_session *ksmbd_session_lookup(struct ksmbd_conn *conn,
+ int ksmbd_session_register(struct ksmbd_conn *conn,
+ 			   struct ksmbd_session *sess);
+ void ksmbd_sessions_deregister(struct ksmbd_conn *conn);
++struct ksmbd_session *__session_lookup(unsigned long long id);
+ struct ksmbd_session *ksmbd_session_lookup_all(struct ksmbd_conn *conn,
+ 					       unsigned long long id);
++void destroy_previous_session(struct ksmbd_conn *conn,
++			      struct ksmbd_user *user, u64 id);
+ struct preauth_session *ksmbd_preauth_session_alloc(struct ksmbd_conn *conn,
+ 						    u64 sess_id);
+ struct preauth_session *ksmbd_preauth_session_lookup(struct ksmbd_conn *conn,
+diff --git a/fs/smb/server/smb2pdu.c b/fs/smb/server/smb2pdu.c
+index cb7756469621..97a6997c412b 100644
+--- a/fs/smb/server/smb2pdu.c
++++ b/fs/smb/server/smb2pdu.c
+@@ -612,30 +612,6 @@ int smb2_check_user_session(struct ksmbd_work *work)
+ 	return -ENOENT;
+ }
+ 
+-static void destroy_previous_session(struct ksmbd_conn *conn,
+-				     struct ksmbd_user *user, u64 id)
+-{
+-	struct ksmbd_session *prev_sess = ksmbd_session_lookup_slowpath(id);
+-	struct ksmbd_user *prev_user;
+-	struct channel *chann;
+-	long index;
+-
+-	if (!prev_sess)
+-		return;
+-
+-	prev_user = prev_sess->user;
+-
+-	if (!prev_user ||
+-	    strcmp(user->name, prev_user->name) ||
+-	    user->passkey_sz != prev_user->passkey_sz ||
+-	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz))
+-		return;
+-
+-	prev_sess->state = SMB2_SESSION_EXPIRED;
+-	xa_for_each(&prev_sess->ksmbd_chann_list, index, chann)
+-		ksmbd_conn_set_exiting(chann->conn);
+-}
+-
+ /**
+  * smb2_get_name() - get filename string from on the wire smb format
+  * @src:	source buffer
+-- 
+2.25.1
+

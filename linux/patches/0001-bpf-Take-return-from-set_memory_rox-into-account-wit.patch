@@ -1,0 +1,201 @@
+From f0227c352626fa42d0d04622e1dd7477bad10fd4 Mon Sep 17 00:00:00 2001
+From: Christophe Leroy <christophe.leroy@csgroup.eu>
+Date: Fri, 8 Mar 2024 06:38:08 +0100
+Subject: [PATCH] bpf: Take return from set_memory_rox() into account with
+ bpf_jit_binary_lock_ro()
+
+set_memory_rox() can fail, leaving memory unprotected.
+
+Check return and bail out when bpf_jit_binary_lock_ro() returns
+an error.
+
+Link: https://github.com/KSPP/linux/issues/7
+Signed-off-by: Christophe Leroy <christophe.leroy@csgroup.eu>
+Cc: linux-hardening@vger.kernel.org <linux-hardening@vger.kernel.org>
+Reviewed-by: Kees Cook <keescook@chromium.org>
+Reviewed-by: Puranjay Mohan <puranjay12@gmail.com>
+Reviewed-by: Ilya Leoshkevich <iii@linux.ibm.com>  # s390x
+Acked-by: Tiezhu Yang <yangtiezhu@loongson.cn>  # LoongArch
+Reviewed-by: Johan Almbladh <johan.almbladh@anyfinetworks.com> # MIPS Part
+Message-ID: <036b6393f23a2032ce75a1c92220b2afcb798d5d.1709850515.git.christophe.leroy@csgroup.eu>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ arch/arm/net/bpf_jit_32.c        | 25 ++++++++++++-------------
+ arch/loongarch/net/bpf_jit.c     | 22 ++++++++++++++++------
+ arch/mips/net/bpf_jit_comp.c     |  3 ++-
+ arch/s390/net/bpf_jit_comp.c     |  6 +++++-
+ arch/sparc/net/bpf_jit_comp_64.c |  6 +++++-
+ arch/x86/net/bpf_jit_comp32.c    |  3 +--
+ include/linux/filter.h           |  1 -
+ 7 files changed, 41 insertions(+), 25 deletions(-)
+
+diff --git a/arch/arm/net/bpf_jit_32.c b/arch/arm/net/bpf_jit_32.c
+index 6a1c9fca5260..ac8e4d9bf954 100644
+--- a/arch/arm/net/bpf_jit_32.c
++++ b/arch/arm/net/bpf_jit_32.c
+@@ -1982,28 +1982,21 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+ 	/* If building the body of the JITed code fails somehow,
+ 	 * we fall back to the interpretation.
+ 	 */
+-	if (build_body(&ctx) < 0) {
+-		image_ptr = NULL;
+-		bpf_jit_binary_free(header);
+-		prog = orig_prog;
+-		goto out_imms;
+-	}
++	if (build_body(&ctx) < 0)
++		goto out_free;
+ 	build_epilogue(&ctx);
+ 
+ 	/* 3.) Extra pass to validate JITed Code */
+-	if (validate_code(&ctx)) {
+-		image_ptr = NULL;
+-		bpf_jit_binary_free(header);
+-		prog = orig_prog;
+-		goto out_imms;
+-	}
++	if (validate_code(&ctx))
++		goto out_free;
+ 	flush_icache_range((u32)header, (u32)(ctx.target + ctx.idx));
+ 
+ 	if (bpf_jit_enable > 1)
+ 		/* there are 2 passes here */
+ 		bpf_jit_dump(prog->len, image_size, 2, ctx.target);
+ 
+-	bpf_jit_binary_lock_ro(header);
++	if (bpf_jit_binary_lock_ro(header))
++		goto out_free;
+ 	prog->bpf_func = (void *)ctx.target;
+ 	prog->jited = 1;
+ 	prog->jited_len = image_size;
+@@ -2020,5 +2013,11 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+ 		bpf_jit_prog_release_other(prog, prog == orig_prog ?
+ 					   tmp : orig_prog);
+ 	return prog;
++
++out_free:
++	image_ptr = NULL;
++	bpf_jit_binary_free(header);
++	prog = orig_prog;
++	goto out_imms;
+ }
+ 
+diff --git a/arch/loongarch/net/bpf_jit.c b/arch/loongarch/net/bpf_jit.c
+index 2567916370b4..7cf79da8948f 100644
+--- a/arch/loongarch/net/bpf_jit.c
++++ b/arch/loongarch/net/bpf_jit.c
+@@ -1130,16 +1130,19 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+ 	flush_icache_range((unsigned long)header, (unsigned long)(ctx.image + ctx.idx));
+ 
+ 	if (!prog->is_func || extra_pass) {
++		int err;
++
+ 		if (extra_pass && ctx.idx != jit_data->ctx.idx) {
+ 			pr_err_once("multi-func JIT bug %d != %d\n",
+ 				    ctx.idx, jit_data->ctx.idx);
+-			bpf_jit_binary_free(header);
+-			prog->bpf_func = NULL;
+-			prog->jited = 0;
+-			prog->jited_len = 0;
+-			goto out_offset;
++			goto out_free;
++		}
++		err = bpf_jit_binary_lock_ro(header);
++		if (err) {
++			pr_err_once("bpf_jit_binary_lock_ro() returned %d\n",
++				    err);
++			goto out_free;
+ 		}
+-		bpf_jit_binary_lock_ro(header);
+ 	} else {
+ 		jit_data->ctx = ctx;
+ 		jit_data->image = image_ptr;
+@@ -1170,4 +1173,11 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+ 	out_offset = -1;
+ 
+ 	return prog;
++
++out_free:
++       bpf_jit_binary_free(header);
++       prog->bpf_func = NULL;
++       prog->jited = 0;
++       prog->jited_len = 0;
++       goto out_offset;
+ }
+diff --git a/arch/mips/net/bpf_jit_comp.c b/arch/mips/net/bpf_jit_comp.c
+index b17130d510d4..bfc15e4315c1 100644
+--- a/arch/mips/net/bpf_jit_comp.c
++++ b/arch/mips/net/bpf_jit_comp.c
+@@ -1008,7 +1008,8 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+ 	bpf_prog_fill_jited_linfo(prog, &ctx.descriptors[1]);
+ 
+ 	/* Set as read-only exec and flush instruction cache */
+-	bpf_jit_binary_lock_ro(header);
++	if (bpf_jit_binary_lock_ro(header))
++		goto out_err;
+ 	flush_icache_range((unsigned long)header,
+ 			   (unsigned long)&ctx.target[ctx.jit_index]);
+ 
+diff --git a/arch/s390/net/bpf_jit_comp.c b/arch/s390/net/bpf_jit_comp.c
+index 862386393557..d646d204b98e 100644
+--- a/arch/s390/net/bpf_jit_comp.c
++++ b/arch/s390/net/bpf_jit_comp.c
+@@ -1848,7 +1848,11 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *fp)
+ 		print_fn_code(jit.prg_buf, jit.size_prg);
+ 	}
+ 	if (!fp->is_func || extra_pass) {
+-		bpf_jit_binary_lock_ro(header);
++		if (bpf_jit_binary_lock_ro(header)) {
++			bpf_jit_binary_free(header);
++			fp = orig_fp;
++			goto free_addrs;
++		}
+ 	} else {
+ 		jit_data->header = header;
+ 		jit_data->ctx = jit;
+diff --git a/arch/sparc/net/bpf_jit_comp_64.c b/arch/sparc/net/bpf_jit_comp_64.c
+index fa0759bfe498..73bf0aea8baf 100644
+--- a/arch/sparc/net/bpf_jit_comp_64.c
++++ b/arch/sparc/net/bpf_jit_comp_64.c
+@@ -1602,7 +1602,11 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+ 	bpf_flush_icache(header, (u8 *)header + header->size);
+ 
+ 	if (!prog->is_func || extra_pass) {
+-		bpf_jit_binary_lock_ro(header);
++		if (bpf_jit_binary_lock_ro(header)) {
++			bpf_jit_binary_free(header);
++			prog = orig_prog;
++			goto out_off;
++		}
+ 	} else {
+ 		jit_data->ctx = ctx;
+ 		jit_data->image = image_ptr;
+diff --git a/arch/x86/net/bpf_jit_comp32.c b/arch/x86/net/bpf_jit_comp32.c
+index 429a89c5468b..f2fc8c38629b 100644
+--- a/arch/x86/net/bpf_jit_comp32.c
++++ b/arch/x86/net/bpf_jit_comp32.c
+@@ -2600,8 +2600,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
+ 	if (bpf_jit_enable > 1)
+ 		bpf_jit_dump(prog->len, proglen, pass + 1, image);
+ 
+-	if (image) {
+-		bpf_jit_binary_lock_ro(header);
++	if (image && !bpf_jit_binary_lock_ro(header)) {
+ 		prog->bpf_func = (void *)image;
+ 		prog->jited = 1;
+ 		prog->jited_len = proglen;
+diff --git a/include/linux/filter.h b/include/linux/filter.h
+index 01f97956572c..797584218be6 100644
+--- a/include/linux/filter.h
++++ b/include/linux/filter.h
+@@ -865,7 +865,6 @@ static inline void bpf_jit_binary_lock_ro(struct bpf_binary_header *hdr)
+ {
+ 	set_vm_flush_reset_perms(hdr);
+ 	set_memory_ro((unsigned long)hdr, hdr->size >> PAGE_SHIFT);
+-	set_memory_x((unsigned long)hdr, hdr->size >> PAGE_SHIFT);
+ }
+ 
+ int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap);
+-- 
+2.25.1
+

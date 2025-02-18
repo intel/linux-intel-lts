@@ -1,0 +1,107 @@
+From 39202de418cd57ed176808ec6e9f04ab1cf170f9 Mon Sep 17 00:00:00 2001
+From: Alexandre Ghiti <alexghiti@rivosinc.com>
+Date: Fri, 6 Oct 2023 10:20:10 +0200
+Subject: [PATCH 5/6] drivers: perf: Fix panic in riscv SBI mmap support
+
+The following panic can happen when mmap is called before the pmu add
+callback which sets the hardware counter index: this happens for example
+with the following command `perf record --no-bpf-event -n kill`.
+
+[   99.461486] CPU: 1 PID: 1259 Comm: perf Tainted: G            E      6.6.0-rc4ubuntu-defconfig #2
+[   99.461669] Hardware name: riscv-virtio,qemu (DT)
+[   99.461748] epc : pmu_sbi_set_scounteren+0x42/0x44
+[   99.462337]  ra : smp_call_function_many_cond+0x126/0x5b0
+[   99.462369] epc : ffffffff809f9d24 ra : ffffffff800f93e0 sp : ff60000082153aa0
+[   99.462407]  gp : ffffffff82395c98 tp : ff6000009a218040 t0 : ff6000009ab3a4f0
+[   99.462425]  t1 : 0000000000000004 t2 : 0000000000000100 s0 : ff60000082153ab0
+[   99.462459]  s1 : 0000000000000000 a0 : ff60000098869528 a1 : 0000000000000000
+[   99.462473]  a2 : 000000000000001f a3 : 0000000000f00000 a4 : fffffffffffffff8
+[   99.462488]  a5 : 00000000000000cc a6 : 0000000000000000 a7 : 0000000000735049
+[   99.462502]  s2 : 0000000000000001 s3 : ffffffff809f9ce2 s4 : ff60000098869528
+[   99.462516]  s5 : 0000000000000002 s6 : 0000000000000004 s7 : 0000000000000001
+[   99.462530]  s8 : ff600003fec98bc0 s9 : ffffffff826c5890 s10: ff600003fecfcde0
+[   99.462544]  s11: ff600003fec98bc0 t3 : ffffffff819e2558 t4 : ff1c000004623840
+[   99.462557]  t5 : 0000000000000901 t6 : ff6000008feeb890
+[   99.462570] status: 0000000200000100 badaddr: 0000000000000000 cause: 0000000000000003
+[   99.462658] [<ffffffff809f9d24>] pmu_sbi_set_scounteren+0x42/0x44
+[   99.462979] Code: 1060 4785 97bb 00d7 8fd9 9073 1067 6422 0141 8082 (9002) 0013
+[   99.463335] Kernel BUG [#2]
+
+To circumvent this, try to enable userspace access to the hardware counter
+when it is selected in addition to when the event is mapped. And vice-versa
+when the event is stopped/unmapped.
+
+Fixes: cc4c07c89aad ("drivers: perf: Implement perf event mmap support in the SBI backend")
+Signed-off-by: Alexandre Ghiti <alexghiti@rivosinc.com>
+Link: https://lore.kernel.org/r/20231006082010.11963-1-alexghiti@rivosinc.com
+Cc: stable@vger.kernel.org
+Signed-off-by: Palmer Dabbelt <palmer@rivosinc.com>
+---
+ drivers/perf/riscv_pmu.c     |  3 ++-
+ drivers/perf/riscv_pmu_sbi.c | 16 ++++++++++------
+ 2 files changed, 12 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/perf/riscv_pmu.c b/drivers/perf/riscv_pmu.c
+index 4b31d427fc05..6aa36d5a3b81 100644
+--- a/drivers/perf/riscv_pmu.c
++++ b/drivers/perf/riscv_pmu.c
+@@ -23,7 +23,8 @@ static bool riscv_perf_user_access(struct perf_event *event)
+ 	return ((event->attr.type == PERF_TYPE_HARDWARE) ||
+ 		(event->attr.type == PERF_TYPE_HW_CACHE) ||
+ 		(event->attr.type == PERF_TYPE_RAW)) &&
+-		!!(event->hw.flags & PERF_EVENT_FLAG_USER_READ_CNT);
++		!!(event->hw.flags & PERF_EVENT_FLAG_USER_READ_CNT) &&
++		(event->hw.idx != -1);
+ }
+ 
+ void arch_perf_update_userpage(struct perf_event *event,
+diff --git a/drivers/perf/riscv_pmu_sbi.c b/drivers/perf/riscv_pmu_sbi.c
+index 7bb5d6f44942..8ade2861c896 100644
+--- a/drivers/perf/riscv_pmu_sbi.c
++++ b/drivers/perf/riscv_pmu_sbi.c
+@@ -510,16 +510,18 @@ static void pmu_sbi_set_scounteren(void *arg)
+ {
+ 	struct perf_event *event = (struct perf_event *)arg;
+ 
+-	csr_write(CSR_SCOUNTEREN,
+-		  csr_read(CSR_SCOUNTEREN) | (1 << pmu_sbi_csr_index(event)));
++	if (event->hw.idx != -1)
++		csr_write(CSR_SCOUNTEREN,
++			  csr_read(CSR_SCOUNTEREN) | (1 << pmu_sbi_csr_index(event)));
+ }
+ 
+ static void pmu_sbi_reset_scounteren(void *arg)
+ {
+ 	struct perf_event *event = (struct perf_event *)arg;
+ 
+-	csr_write(CSR_SCOUNTEREN,
+-		  csr_read(CSR_SCOUNTEREN) & ~(1 << pmu_sbi_csr_index(event)));
++	if (event->hw.idx != -1)
++		csr_write(CSR_SCOUNTEREN,
++			  csr_read(CSR_SCOUNTEREN) & ~(1 << pmu_sbi_csr_index(event)));
+ }
+ 
+ static void pmu_sbi_ctr_start(struct perf_event *event, u64 ival)
+@@ -541,7 +543,8 @@ static void pmu_sbi_ctr_start(struct perf_event *event, u64 ival)
+ 
+ 	if ((hwc->flags & PERF_EVENT_FLAG_USER_ACCESS) &&
+ 	    (hwc->flags & PERF_EVENT_FLAG_USER_READ_CNT))
+-		pmu_sbi_set_scounteren((void *)event);
++		on_each_cpu_mask(mm_cpumask(event->owner->mm),
++				 pmu_sbi_set_scounteren, (void *)event, 1);
+ }
+ 
+ static void pmu_sbi_ctr_stop(struct perf_event *event, unsigned long flag)
+@@ -551,7 +554,8 @@ static void pmu_sbi_ctr_stop(struct perf_event *event, unsigned long flag)
+ 
+ 	if ((hwc->flags & PERF_EVENT_FLAG_USER_ACCESS) &&
+ 	    (hwc->flags & PERF_EVENT_FLAG_USER_READ_CNT))
+-		pmu_sbi_reset_scounteren((void *)event);
++		on_each_cpu_mask(mm_cpumask(event->owner->mm),
++				 pmu_sbi_reset_scounteren, (void *)event, 1);
+ 
+ 	ret = sbi_ecall(SBI_EXT_PMU, SBI_EXT_PMU_COUNTER_STOP, hwc->idx, 1, flag, 0, 0, 0);
+ 	if (ret.error && (ret.error != SBI_ERR_ALREADY_STOPPED) &&
+-- 
+2.25.1
+

@@ -1,0 +1,161 @@
+From 7cb129f2b910ac80993fd4aa592da16bfd61a5b9 Mon Sep 17 00:00:00 2001
+From: Andrii Nakryiko <andrii@kernel.org>
+Date: Wed, 27 Mar 2024 22:24:26 -0700
+Subject: [PATCH] bpf: support deferring bpf_link dealloc to after RCU grace
+ period
+
+commit 1a80dbcb2dbaf6e4c216e62e30fa7d3daa8001ce upstream.
+
+BPF link for some program types is passed as a "context" which can be
+used by those BPF programs to look up additional information. E.g., for
+multi-kprobes and multi-uprobes, link is used to fetch BPF cookie values.
+
+Because of this runtime dependency, when bpf_link refcnt drops to zero
+there could still be active BPF programs running accessing link data.
+
+This patch adds generic support to defer bpf_link dealloc callback to
+after RCU GP, if requested. This is done by exposing two different
+deallocation callbacks, one synchronous and one deferred. If deferred
+one is provided, bpf_link_free() will schedule dealloc_deferred()
+callback to happen after RCU GP.
+
+BPF is using two flavors of RCU: "classic" non-sleepable one and RCU
+tasks trace one. The latter is used when sleepable BPF programs are
+used. bpf_link_free() accommodates that by checking underlying BPF
+program's sleepable flag, and goes either through normal RCU GP only for
+non-sleepable, or through RCU tasks trace GP *and* then normal RCU GP
+(taking into account rcu_trace_implies_rcu_gp() optimization), if BPF
+program is sleepable.
+
+We use this for multi-kprobe and multi-uprobe links, which dereference
+link during program run. We also preventively switch raw_tp link to use
+deferred dealloc callback, as upcoming changes in bpf-next tree expose
+raw_tp link data (specifically, cookie value) to BPF program at runtime
+as well.
+
+Fixes: 0dcac2725406 ("bpf: Add multi kprobe link")
+Fixes: 89ae89f53d20 ("bpf: Add multi uprobe link")
+Reported-by: syzbot+981935d9485a560bfbcb@syzkaller.appspotmail.com
+Reported-by: syzbot+2cb5a6c573e98db598cc@syzkaller.appspotmail.com
+Reported-by: syzbot+62d8b26793e8a2bd0516@syzkaller.appspotmail.com
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Acked-by: Jiri Olsa <jolsa@kernel.org>
+Link: https://lore.kernel.org/r/20240328052426.3042617-2-andrii@kernel.org
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ include/linux/bpf.h      | 16 +++++++++++++++-
+ kernel/bpf/syscall.c     | 35 ++++++++++++++++++++++++++++++++---
+ kernel/trace/bpf_trace.c |  2 +-
+ 3 files changed, 48 insertions(+), 5 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 7f4ce183dcb0..19ea3b0f305d 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -1284,12 +1284,26 @@ struct bpf_link {
+ 	enum bpf_link_type type;
+ 	const struct bpf_link_ops *ops;
+ 	struct bpf_prog *prog;
+-	struct work_struct work;
++	/* rcu is used before freeing, work can be used to schedule that
++	 * RCU-based freeing before that, so they never overlap
++	 */
++	union {
++		struct rcu_head rcu;
++		struct work_struct work;
++	};
+ };
+ 
+ struct bpf_link_ops {
+ 	void (*release)(struct bpf_link *link);
++	/* deallocate link resources callback, called without RCU grace period
++	 * waiting
++	 */
+ 	void (*dealloc)(struct bpf_link *link);
++	/* deallocate link resources callback, called after RCU grace period;
++	 * if underlying BPF program is sleepable we go through tasks trace
++	 * RCU GP and then "classic" RCU GP
++	 */
++	void (*dealloc_deferred)(struct bpf_link *link);
+ 	int (*detach)(struct bpf_link *link);
+ 	int (*update_prog)(struct bpf_link *link, struct bpf_prog *new_prog,
+ 			   struct bpf_prog *old_prog);
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index f9906e5ad2e5..e4f4e54954ec 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -2755,17 +2755,46 @@ void bpf_link_inc(struct bpf_link *link)
+ 	atomic64_inc(&link->refcnt);
+ }
+ 
++static void bpf_link_defer_dealloc_rcu_gp(struct rcu_head *rcu)
++{
++	struct bpf_link *link = container_of(rcu, struct bpf_link, rcu);
++
++	/* free bpf_link and its containing memory */
++	link->ops->dealloc_deferred(link);
++}
++
++static void bpf_link_defer_dealloc_mult_rcu_gp(struct rcu_head *rcu)
++{
++	if (rcu_trace_implies_rcu_gp())
++		bpf_link_defer_dealloc_rcu_gp(rcu);
++	else
++		call_rcu(rcu, bpf_link_defer_dealloc_rcu_gp);
++}
++
+ /* bpf_link_free is guaranteed to be called from process context */
+ static void bpf_link_free(struct bpf_link *link)
+ {
++	bool sleepable = false;
++
+ 	bpf_link_free_id(link->id);
+ 	if (link->prog) {
++		sleepable = link->prog->aux->sleepable;
+ 		/* detach BPF program, clean up used resources */
+ 		link->ops->release(link);
+ 		bpf_prog_put(link->prog);
+ 	}
+-	/* free bpf_link and its containing memory */
+-	link->ops->dealloc(link);
++	if (link->ops->dealloc_deferred) {
++		/* schedule BPF link deallocation; if underlying BPF program
++		 * is sleepable, we need to first wait for RCU tasks trace
++		 * sync, then go through "classic" RCU grace period
++		 */
++		if (sleepable)
++			call_rcu_tasks_trace(&link->rcu, bpf_link_defer_dealloc_mult_rcu_gp);
++		else
++			call_rcu(&link->rcu, bpf_link_defer_dealloc_rcu_gp);
++	}
++	if (link->ops->dealloc)
++		link->ops->dealloc(link);
+ }
+ 
+ static void bpf_link_put_deferred(struct work_struct *work)
+@@ -3246,7 +3275,7 @@ static int bpf_raw_tp_link_fill_link_info(const struct bpf_link *link,
+ 
+ static const struct bpf_link_ops bpf_raw_tp_link_lops = {
+ 	.release = bpf_raw_tp_link_release,
+-	.dealloc = bpf_raw_tp_link_dealloc,
++	.dealloc_deferred = bpf_raw_tp_link_dealloc,
+ 	.show_fdinfo = bpf_raw_tp_link_show_fdinfo,
+ 	.fill_link_info = bpf_raw_tp_link_fill_link_info,
+ };
+diff --git a/kernel/trace/bpf_trace.c b/kernel/trace/bpf_trace.c
+index d8212fea1e99..1970e7f4390d 100644
+--- a/kernel/trace/bpf_trace.c
++++ b/kernel/trace/bpf_trace.c
+@@ -2552,7 +2552,7 @@ static void bpf_kprobe_multi_link_dealloc(struct bpf_link *link)
+ 
+ static const struct bpf_link_ops bpf_kprobe_multi_link_lops = {
+ 	.release = bpf_kprobe_multi_link_release,
+-	.dealloc = bpf_kprobe_multi_link_dealloc,
++	.dealloc_deferred = bpf_kprobe_multi_link_dealloc,
+ };
+ 
+ static void bpf_kprobe_multi_cookie_swap(void *a, void *b, int size, const void *priv)
+-- 
+2.25.1
+

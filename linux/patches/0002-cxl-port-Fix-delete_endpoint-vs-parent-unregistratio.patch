@@ -1,0 +1,116 @@
+From c7acc9b2f90438606d88cc745b8adc69258c7d31 Mon Sep 17 00:00:00 2001
+From: Dan Williams <dan.j.williams@intel.com>
+Date: Fri, 27 Oct 2023 20:13:23 -0700
+Subject: [PATCH 2/2] cxl/port: Fix delete_endpoint() vs parent unregistration
+ race
+
+The CXL subsystem, at cxl_mem ->probe() time, establishes a lineage of
+ports (struct cxl_port objects) between an endpoint and the root of a
+CXL topology. Each port including the endpoint port is attached to the
+cxl_port driver.
+
+Given that setup, it follows that when either any port in that lineage
+goes through a cxl_port ->remove() event, or the memdev goes through a
+cxl_mem ->remove() event. The hierarchy below the removed port, or the
+entire hierarchy if the memdev is removed needs to come down.
+
+The delete_endpoint() callback is careful to check whether it is being
+called to tear down the hierarchy, or if it is only being called to
+teardown the memdev because an ancestor port is going through
+->remove().
+
+That care needs to take the device_lock() of the endpoint's parent.
+Which requires 2 bugs to be fixed:
+
+1/ A reference on the parent is needed to prevent use-after-free
+   scenarios like this signature:
+
+    BUG: spinlock bad magic on CPU#0, kworker/u56:0/11
+    Hardware name: QEMU Standard PC (Q35 + ICH9, 2009), BIOS edk2-20230524-3.fc38 05/24/2023
+    Workqueue: cxl_port detach_memdev [cxl_core]
+    RIP: 0010:spin_bug+0x65/0xa0
+    Call Trace:
+      do_raw_spin_lock+0x69/0xa0
+     __mutex_lock+0x695/0xb80
+     delete_endpoint+0xad/0x150 [cxl_core]
+     devres_release_all+0xb8/0x110
+     device_unbind_cleanup+0xe/0x70
+     device_release_driver_internal+0x1d2/0x210
+     detach_memdev+0x15/0x20 [cxl_core]
+     process_one_work+0x1e3/0x4c0
+     worker_thread+0x1dd/0x3d0
+
+2/ In the case of RCH topologies, the parent device that needs to be
+   locked is not always @port->dev as returned by cxl_mem_find_port(), use
+   endpoint->dev.parent instead.
+
+Fixes: 8dd2bc0f8e02 ("cxl/mem: Add the cxl_mem driver")
+Cc: <stable@vger.kernel.org>
+Reported-by: Robert Richter <rrichter@amd.com>
+Closes: http://lore.kernel.org/r/20231018171713.1883517-2-rrichter@amd.com
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+---
+ drivers/cxl/core/port.c | 34 +++++++++++++++++++---------------
+ 1 file changed, 19 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/cxl/core/port.c b/drivers/cxl/core/port.c
+index b2833570e4e6..ba1a43af17b5 100644
+--- a/drivers/cxl/core/port.c
++++ b/drivers/cxl/core/port.c
+@@ -1117,34 +1117,38 @@ static struct device *grandparent(struct device *dev)
+ 	return NULL;
+ }
+ 
++static struct device *endpoint_host(struct cxl_port *endpoint)
++{
++	struct cxl_port *port = to_cxl_port(endpoint->dev.parent);
++
++	if (is_cxl_root(port))
++		return port->uport;
++	return &port->dev;
++}
++
+ static void delete_endpoint(void *data)
+ {
+ 	struct cxl_memdev *cxlmd = data;
+ 	struct cxl_port *endpoint = dev_get_drvdata(&cxlmd->dev);
+-	struct cxl_port *parent_port;
+-	struct device *parent;
+-
+-	parent_port = cxl_mem_find_port(cxlmd, NULL);
+-	if (!parent_port)
+-		goto out;
+-	parent = &parent_port->dev;
++	struct device *host = endpoint_host(endpoint);
+ 
+-	device_lock(parent);
+-	if (parent->driver && !endpoint->dead) {
+-		devm_release_action(parent, cxl_unlink_parent_dport, endpoint);
+-		devm_release_action(parent, cxl_unlink_uport, endpoint);
+-		devm_release_action(parent, unregister_port, endpoint);
++	device_lock(host);
++	if (host->driver && !endpoint->dead) {
++		devm_release_action(host, cxl_unlink_parent_dport, endpoint);
++		devm_release_action(host, cxl_unlink_uport, endpoint);
++		devm_release_action(host, unregister_port, endpoint);
+ 	}
+-	device_unlock(parent);
+-	put_device(parent);
+-out:
++	device_unlock(host);
+ 	put_device(&endpoint->dev);
++	put_device(host);
+ }
+ 
+ int cxl_endpoint_autoremove(struct cxl_memdev *cxlmd, struct cxl_port *endpoint)
+ {
++	struct device *host = endpoint_host(endpoint);
+ 	struct device *dev = &cxlmd->dev;
+ 
++	get_device(host);
+ 	get_device(&endpoint->dev);
+ 	dev_set_drvdata(dev, endpoint);
+ 	return devm_add_action_or_reset(dev, delete_endpoint, cxlmd);
+-- 
+2.25.1
+

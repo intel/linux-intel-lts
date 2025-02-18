@@ -1,0 +1,67 @@
+From b5b41772ba799fe4ef15d497a289a8e3f43b6d0b Mon Sep 17 00:00:00 2001
+From: Eduard Zingerman <eddyz87@gmail.com>
+Date: Tue, 24 Sep 2024 14:08:43 -0700
+Subject: [PATCH] bpf: sync_linked_regs() must preserve subreg_def
+
+Range propagation must not affect subreg_def marks, otherwise the
+following example is rewritten by verifier incorrectly when
+BPF_F_TEST_RND_HI32 flag is set:
+
+  0: call bpf_ktime_get_ns                   call bpf_ktime_get_ns
+  1: r0 &= 0x7fffffff       after verifier   r0 &= 0x7fffffff
+  2: w1 = w0                rewrites         w1 = w0
+  3: if w0 < 10 goto +0     -------------->  r11 = 0x2f5674a6     (r)
+  4: r1 >>= 32                               r11 <<= 32           (r)
+  5: r0 = r1                                 r1 |= r11            (r)
+  6: exit;                                   if w0 < 0xa goto pc+0
+                                             r1 >>= 32
+                                             r0 = r1
+                                             exit
+
+(or zero extension of w1 at (2) is missing for architectures that
+ require zero extension for upper register half).
+
+The following happens w/o this patch:
+- r0 is marked as not a subreg at (0);
+- w1 is marked as subreg at (2);
+- w1 subreg_def is overridden at (3) by copy_register_state();
+- w1 is read at (5) but mark_insn_zext() does not mark (2)
+  for zero extension, because w1 subreg_def is not set;
+- because of BPF_F_TEST_RND_HI32 flag verifier inserts random
+  value for hi32 bits of (2) (marked (r));
+- this random value is read at (5).
+
+Fixes: 75748837b7e5 ("bpf: Propagate scalar ranges through register assignments.")
+Reported-by: Lonial Con <kongln9170@gmail.com>
+Signed-off-by: Lonial Con <kongln9170@gmail.com>
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Closes: https://lore.kernel.org/bpf/7e2aa30a62d740db182c170fdd8f81c596df280d.camel@gmail.com
+Link: https://lore.kernel.org/bpf/20240924210844.1758441-1-eddyz87@gmail.com
+(cherry picked with modification from commit e9bd9c498cb0f5843996dbe5cbce7a1836a83c70)
+---
+ kernel/bpf/verifier.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index b68572c41e96..bdd5105337dc 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -10350,8 +10350,11 @@ static void find_equal_scalars(struct bpf_verifier_state *vstate,
+ 	struct bpf_reg_state *reg;
+ 
+ 	bpf_for_each_reg_in_vstate(vstate, state, reg, ({
+-		if (reg->type == SCALAR_VALUE && reg->id == known_reg->id)
++		if (reg->type == SCALAR_VALUE && reg->id == known_reg->id) {
++			s32 saved_subreg_def = reg->subreg_def;
+ 			copy_register_state(reg, known_reg);
++			reg->subreg_def = saved_subreg_def;
++		}
+ 	}));
+ }
+ 
+-- 
+2.25.1
+

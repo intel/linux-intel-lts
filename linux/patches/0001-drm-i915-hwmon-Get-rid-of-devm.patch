@@ -1,0 +1,135 @@
+From 42ae647e9075e530f0b4eda2b50278369f6009a7 Mon Sep 17 00:00:00 2001
+From: Ashutosh Dixit <ashutosh.dixit@intel.com>
+Date: Wed, 17 Apr 2024 07:56:46 -0700
+Subject: [PATCH] drm/i915/hwmon: Get rid of devm
+
+When both hwmon and hwmon drvdata (on which hwmon depends) are device
+managed resources, the expectation, on device unbind, is that hwmon will be
+released before drvdata. However, in i915 there are two separate code
+paths, which both release either drvdata or hwmon and either can be
+released before the other. These code paths (for device unbind) are as
+follows (see also the bug referenced below):
+
+Call Trace:
+release_nodes+0x11/0x70
+devres_release_group+0xb2/0x110
+component_unbind_all+0x8d/0xa0
+component_del+0xa5/0x140
+intel_pxp_tee_component_fini+0x29/0x40 [i915]
+intel_pxp_fini+0x33/0x80 [i915]
+i915_driver_remove+0x4c/0x120 [i915]
+i915_pci_remove+0x19/0x30 [i915]
+pci_device_remove+0x32/0xa0
+device_release_driver_internal+0x19c/0x200
+unbind_store+0x9c/0xb0
+
+and
+
+Call Trace:
+release_nodes+0x11/0x70
+devres_release_all+0x8a/0xc0
+device_unbind_cleanup+0x9/0x70
+device_release_driver_internal+0x1c1/0x200
+unbind_store+0x9c/0xb0
+
+This means that in i915, if use devm, we cannot gurantee that hwmon will
+always be released before drvdata. Which means that we have a uaf if hwmon
+sysfs is accessed when drvdata has been released but hwmon hasn't.
+
+The only way out of this seems to be do get rid of devm_ and release/free
+everything explicitly during device unbind.
+
+v2: Change commit message and other minor code changes
+v3: Cleanup from i915_hwmon_register on error (Armin Wolf)
+v4: Eliminate potential static analyzer warning (Rodrigo)
+    Eliminate fetch_and_zero (Jani)
+v5: Restore previous logic for ddat_gt->hwmon_dev error return (Andi)
+
+Closes: https://gitlab.freedesktop.org/drm/intel/-/issues/10366
+Reviewed-by: Rodrigo Vivi <rodrigo.vivi@intel.com>
+Signed-off-by: Ashutosh Dixit <ashutosh.dixit@intel.com>
+Reviewed-by: Andi Shyti <andi.shyti@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20240417145646.793223-1-ashutosh.dixit@intel.com
+---
+ drivers/gpu/drm/i915/i915_hwmon.c | 46 +++++++++++++++++++++----------
+ 1 file changed, 32 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_hwmon.c b/drivers/gpu/drm/i915/i915_hwmon.c
+index a3bdd9f68a45..d3097c8a1c62 100644
+--- a/drivers/gpu/drm/i915/i915_hwmon.c
++++ b/drivers/gpu/drm/i915/i915_hwmon.c
+@@ -792,7 +792,7 @@ void i915_hwmon_register(struct drm_i915_private *i915)
+ 	if (!IS_DGFX(i915))
+ 		return;
+ 
+-	hwmon = devm_kzalloc(dev, sizeof(*hwmon), GFP_KERNEL);
++	hwmon = kzalloc(sizeof(*hwmon), GFP_KERNEL);
+ 	if (!hwmon)
+ 		return;
+ 
+@@ -818,14 +818,12 @@ void i915_hwmon_register(struct drm_i915_private *i915)
+ 	hwm_get_preregistration_info(i915);
+ 
+ 	/*  hwmon_dev points to device hwmon<i> */
+-	hwmon_dev = devm_hwmon_device_register_with_info(dev, ddat->name,
+-							 ddat,
+-							 &hwm_chip_info,
+-							 hwm_groups);
+-	if (IS_ERR(hwmon_dev)) {
+-		i915->hwmon = NULL;
+-		return;
+-	}
++	hwmon_dev = hwmon_device_register_with_info(dev, ddat->name,
++						    ddat,
++						    &hwm_chip_info,
++						    hwm_groups);
++	if (IS_ERR(hwmon_dev))
++		goto err;
+ 
+ 	ddat->hwmon_dev = hwmon_dev;
+ 
+@@ -838,16 +836,36 @@ void i915_hwmon_register(struct drm_i915_private *i915)
+ 		if (!hwm_gt_is_visible(ddat_gt, hwmon_energy, hwmon_energy_input, 0))
+ 			continue;
+ 
+-		hwmon_dev = devm_hwmon_device_register_with_info(dev, ddat_gt->name,
+-								 ddat_gt,
+-								 &hwm_gt_chip_info,
+-								 NULL);
++		hwmon_dev = hwmon_device_register_with_info(dev, ddat_gt->name,
++							    ddat_gt,
++							    &hwm_gt_chip_info,
++							    NULL);
+ 		if (!IS_ERR(hwmon_dev))
+ 			ddat_gt->hwmon_dev = hwmon_dev;
+ 	}
++	return;
++err:
++	i915_hwmon_unregister(i915);
+ }
+ 
+ void i915_hwmon_unregister(struct drm_i915_private *i915)
+ {
+-	fetch_and_zero(&i915->hwmon);
++	struct i915_hwmon *hwmon = i915->hwmon;
++	struct intel_gt *gt;
++	int i;
++
++	if (!hwmon)
++		return;
++
++	for_each_gt(gt, i915, i)
++		if (hwmon->ddat_gt[i].hwmon_dev)
++			hwmon_device_unregister(hwmon->ddat_gt[i].hwmon_dev);
++
++	if (hwmon->ddat.hwmon_dev)
++		hwmon_device_unregister(hwmon->ddat.hwmon_dev);
++
++	mutex_destroy(&hwmon->hwmon_lock);
++
++	kfree(i915->hwmon);
++	i915->hwmon = NULL;
+ }
+-- 
+2.25.1
+

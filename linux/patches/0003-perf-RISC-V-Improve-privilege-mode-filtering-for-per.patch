@@ -1,0 +1,83 @@
+From b907f28e161d736734098e6cade692f58c7f3754 Mon Sep 17 00:00:00 2001
+From: Atish Patra <atishp@rivosinc.com>
+Date: Sat, 4 Feb 2023 17:15:03 -0800
+Subject: [PATCH 3/6] perf: RISC-V: Improve privilege mode filtering for perf
+
+Currently, the host driver doesn't have any method to identify if the
+requested perf event is from kvm or bare metal. As KVM runs in HS
+mode, there are no separate hypervisor privilege mode to distinguish
+between the attributes for guest/host.
+
+Improve the privilege mode filtering by using the event specific
+config1 field.
+
+Reviewed-by: Andrew Jones <ajones@ventanamicro.com>
+Reviewed-by: Anup Patel <anup@brainfault.org>
+Signed-off-by: Atish Patra <atishp@rivosinc.com>
+Signed-off-by: Anup Patel <anup@brainfault.org>
+---
+ drivers/perf/riscv_pmu_sbi.c   | 27 ++++++++++++++++++++++-----
+ include/linux/perf/riscv_pmu.h |  2 ++
+ 2 files changed, 24 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/perf/riscv_pmu_sbi.c b/drivers/perf/riscv_pmu_sbi.c
+index 622fe7c98250..3a7d527b91fc 100644
+--- a/drivers/perf/riscv_pmu_sbi.c
++++ b/drivers/perf/riscv_pmu_sbi.c
+@@ -298,6 +298,27 @@ int riscv_pmu_get_hpm_info(u32 *hw_ctr_width, u32 *num_hw_ctr)
+ }
+ EXPORT_SYMBOL_GPL(riscv_pmu_get_hpm_info);
+ 
++static unsigned long pmu_sbi_get_filter_flags(struct perf_event *event)
++{
++	unsigned long cflags = 0;
++	bool guest_events = false;
++
++	if (event->attr.config1 & RISCV_PMU_CONFIG1_GUEST_EVENTS)
++		guest_events = true;
++	if (event->attr.exclude_kernel)
++		cflags |= guest_events ? SBI_PMU_CFG_FLAG_SET_VSINH : SBI_PMU_CFG_FLAG_SET_SINH;
++	if (event->attr.exclude_user)
++		cflags |= guest_events ? SBI_PMU_CFG_FLAG_SET_VUINH : SBI_PMU_CFG_FLAG_SET_UINH;
++	if (guest_events && event->attr.exclude_hv)
++		cflags |= SBI_PMU_CFG_FLAG_SET_SINH;
++	if (event->attr.exclude_host)
++		cflags |= SBI_PMU_CFG_FLAG_SET_UINH | SBI_PMU_CFG_FLAG_SET_SINH;
++	if (event->attr.exclude_guest)
++		cflags |= SBI_PMU_CFG_FLAG_SET_VSINH | SBI_PMU_CFG_FLAG_SET_VUINH;
++
++	return cflags;
++}
++
+ static int pmu_sbi_ctr_get_idx(struct perf_event *event)
+ {
+ 	struct hw_perf_event *hwc = &event->hw;
+@@ -308,11 +329,7 @@ static int pmu_sbi_ctr_get_idx(struct perf_event *event)
+ 	uint64_t cbase = 0;
+ 	unsigned long cflags = 0;
+ 
+-	if (event->attr.exclude_kernel)
+-		cflags |= SBI_PMU_CFG_FLAG_SET_SINH;
+-	if (event->attr.exclude_user)
+-		cflags |= SBI_PMU_CFG_FLAG_SET_UINH;
+-
++	cflags = pmu_sbi_get_filter_flags(event);
+ 	/* retrieve the available counter index */
+ #if defined(CONFIG_32BIT)
+ 	ret = sbi_ecall(SBI_EXT_PMU, SBI_EXT_PMU_COUNTER_CFG_MATCH, cbase,
+diff --git a/include/linux/perf/riscv_pmu.h b/include/linux/perf/riscv_pmu.h
+index 8eaf118a9c9e..43a5649e3cba 100644
+--- a/include/linux/perf/riscv_pmu.h
++++ b/include/linux/perf/riscv_pmu.h
+@@ -26,6 +26,8 @@
+ 
+ #define RISCV_PMU_STOP_FLAG_RESET 1
+ 
++#define RISCV_PMU_CONFIG1_GUEST_EVENTS 0x1
++
+ struct cpu_hw_events {
+ 	/* currently enabled events */
+ 	int			n_events;
+-- 
+2.25.1
+

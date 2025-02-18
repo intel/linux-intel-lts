@@ -1,0 +1,107 @@
+From 00186f58badf14732eadf16ba9d5d0ebe7c98742 Mon Sep 17 00:00:00 2001
+From: Abhishek Pandit-Subedi <abhishekpandit@chromium.org>
+Date: Fri, 9 Feb 2024 14:37:30 -0800
+Subject: [PATCH] usb: typec: ucsi: Limit read size on v1.2
+
+[ Upstream commit b3db266fb031fba88c423d4bb8983a73a3db6527 ]
+
+Between UCSI 1.2 and UCSI 2.0, the size of the MESSAGE_IN region was
+increased from 16 to 256. In order to avoid overflowing reads for older
+systems, add a mechanism to use the read UCSI version to truncate read
+sizes on UCSI v1.2.
+
+Tested-by: Neil Armstrong <neil.armstrong@linaro.org>
+Reviewed-by: Prashant Malani <pmalani@chromium.org>
+Reviewed-by: Heikki Krogerus <heikki.krogerus@linux.intel.com>
+Signed-off-by: Abhishek Pandit-Subedi <abhishekpandit@chromium.org>
+Link: https://lore.kernel.org/r/20240209143723.v5.1.Iacf5570a66b82b73ef03daa6557e2fc0db10266a@changeid
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ drivers/usb/typec/ucsi/ucsi.c | 26 ++++++++++++++++++++++++--
+ drivers/usb/typec/ucsi/ucsi.h | 11 +++++++++++
+ 2 files changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/typec/ucsi/ucsi.c b/drivers/usb/typec/ucsi/ucsi.c
+index 1e4059521eb0..e6d90cc5f877 100644
+--- a/drivers/usb/typec/ucsi/ucsi.c
++++ b/drivers/usb/typec/ucsi/ucsi.c
+@@ -36,6 +36,19 @@
+  */
+ #define UCSI_SWAP_TIMEOUT_MS	5000
+ 
++static int ucsi_read_message_in(struct ucsi *ucsi, void *buf,
++					  size_t buf_size)
++{
++	/*
++	 * Below UCSI 2.0, MESSAGE_IN was limited to 16 bytes. Truncate the
++	 * reads here.
++	 */
++	if (ucsi->version <= UCSI_VERSION_1_2)
++		buf_size = clamp(buf_size, 0, 16);
++
++	return ucsi->ops->read(ucsi, UCSI_MESSAGE_IN, buf, buf_size);
++}
++
+ static int ucsi_acknowledge(struct ucsi *ucsi, bool conn_ack)
+ {
+ 	u64 ctrl;
+@@ -66,7 +79,7 @@ static int ucsi_read_error(struct ucsi *ucsi)
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	ret = ucsi->ops->read(ucsi, UCSI_MESSAGE_IN, &error, sizeof(error));
++	ret = ucsi_read_message_in(ucsi, &error, sizeof(error));
+ 	if (ret)
+ 		return ret;
+ 
+@@ -173,7 +186,7 @@ static int ucsi_send_command_common(struct ucsi *ucsi, u64 command,
+ 	length = ret;
+ 
+ 	if (data) {
+-		ret = ucsi->ops->read(ucsi, UCSI_MESSAGE_IN, data, size);
++		ret = ucsi_read_message_in(ucsi, data, size);
+ 		if (ret)
+ 			goto out;
+ 	}
+@@ -1450,6 +1463,15 @@ int ucsi_register(struct ucsi *ucsi)
+ 	if (!ucsi->version)
+ 		return -ENODEV;
+ 
++	/*
++	 * Version format is JJ.M.N (JJ = Major version, M = Minor version,
++	 * N = sub-minor version).
++	 */
++	dev_dbg(ucsi->dev, "Registered UCSI interface with version %x.%x.%x",
++		UCSI_BCD_GET_MAJOR(ucsi->version),
++		UCSI_BCD_GET_MINOR(ucsi->version),
++		UCSI_BCD_GET_SUBMINOR(ucsi->version));
++
+ 	queue_delayed_work(system_long_wq, &ucsi->work, 0);
+ 
+ 	return 0;
+diff --git a/drivers/usb/typec/ucsi/ucsi.h b/drivers/usb/typec/ucsi/ucsi.h
+index 4a1a86e37fd5..f71dedcf95de 100644
+--- a/drivers/usb/typec/ucsi/ucsi.h
++++ b/drivers/usb/typec/ucsi/ucsi.h
+@@ -22,6 +22,17 @@ struct ucsi_altmode;
+ #define UCSI_CONTROL			8
+ #define UCSI_MESSAGE_IN			16
+ #define UCSI_MESSAGE_OUT		32
++#define UCSIv2_MESSAGE_OUT		272
++
++/* UCSI versions */
++#define UCSI_VERSION_1_2	0x0120
++#define UCSI_VERSION_2_0	0x0200
++#define UCSI_VERSION_2_1	0x0210
++#define UCSI_VERSION_3_0	0x0300
++
++#define UCSI_BCD_GET_MAJOR(_v_)		(((_v_) >> 8) & 0xFF)
++#define UCSI_BCD_GET_MINOR(_v_)		(((_v_) >> 4) & 0x0F)
++#define UCSI_BCD_GET_SUBMINOR(_v_)	((_v_) & 0x0F)
+ 
+ /* Command Status and Connector Change Indication (CCI) bits */
+ #define UCSI_CCI_CONNECTOR(_c_)		(((_c_) & GENMASK(7, 1)) >> 1)
+-- 
+2.25.1
+

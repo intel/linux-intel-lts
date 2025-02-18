@@ -1,0 +1,50 @@
+From da12859cb052f0e94173fdacc6aabc4c01424432 Mon Sep 17 00:00:00 2001
+From: Chao Yu <chao@kernel.org>
+Date: Thu, 27 Jun 2024 15:17:11 +0800
+Subject: [PATCH] f2fs: fix to wait dio completion
+
+It should wait all existing dio write IOs before block removal,
+otherwise, previous direct write IO may overwrite data in the
+block which may be reused by other inode.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/file.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 3bab52d33e80..5e2a0cb8d24d 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -1048,6 +1048,13 @@ int f2fs_setattr(struct user_namespace *mnt_userns, struct dentry *dentry,
+ 				return err;
+ 		}
+ 
++		/*
++		 * wait for inflight dio, blocks should be removed after
++		 * IO completion.
++		 */
++		if (attr->ia_size < old_size)
++			inode_dio_wait(inode);
++
+ 		f2fs_down_write(&F2FS_I(inode)->i_gc_rwsem[WRITE]);
+ 		filemap_invalidate_lock(inode->i_mapping);
+ 
+@@ -1880,6 +1887,12 @@ static long f2fs_fallocate(struct file *file, int mode,
+ 	if (ret)
+ 		goto out;
+ 
++	/*
++	 * wait for inflight dio, blocks should be removed after IO
++	 * completion.
++	 */
++	inode_dio_wait(inode);
++
+ 	if (mode & FALLOC_FL_PUNCH_HOLE) {
+ 		if (offset >= inode->i_size)
+ 			goto out;
+-- 
+2.25.1
+

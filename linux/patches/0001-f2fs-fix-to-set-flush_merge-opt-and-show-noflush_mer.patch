@@ -1,0 +1,60 @@
+From c8e5b5a41c8be003898a4ec9027a19ae37d4ce3f Mon Sep 17 00:00:00 2001
+From: Yangtao Li <frank.li@vivo.com>
+Date: Thu, 10 Nov 2022 17:15:01 +0800
+Subject: [PATCH 1/4] f2fs: fix to set flush_merge opt and show noflush_merge
+
+Some minor modifications to flush_merge and related parameters:
+
+  1.The FLUSH_MERGE opt is set by default only in non-ro mode.
+  2.When ro and merge are set at the same time, an error is reported.
+  3.Display noflush_merge mount opt.
+
+Suggested-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Yangtao Li <frank.li@vivo.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/super.c | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 72160b906f4b..1690042ebe58 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -1400,6 +1400,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
+ 		return -EINVAL;
+ 	}
+ 
++	if ((f2fs_sb_has_readonly(sbi) || f2fs_readonly(sbi->sb)) &&
++		test_opt(sbi, FLUSH_MERGE)) {
++		f2fs_err(sbi, "FLUSH_MERGE not compatible with readonly mode");
++		return -EINVAL;
++	}
++
+ 	if (f2fs_sb_has_readonly(sbi) && !f2fs_readonly(sbi->sb)) {
+ 		f2fs_err(sbi, "Allow to mount readonly mode only");
+ 		return -EROFS;
+@@ -1986,8 +1992,10 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
+ 		seq_puts(seq, ",inline_dentry");
+ 	else
+ 		seq_puts(seq, ",noinline_dentry");
+-	if (!f2fs_readonly(sbi->sb) && test_opt(sbi, FLUSH_MERGE))
++	if (test_opt(sbi, FLUSH_MERGE))
+ 		seq_puts(seq, ",flush_merge");
++	else
++		seq_puts(seq, ",noflush_merge");
+ 	if (test_opt(sbi, NOBARRIER))
+ 		seq_puts(seq, ",nobarrier");
+ 	if (test_opt(sbi, FASTBOOT))
+@@ -2114,7 +2122,8 @@ static void default_options(struct f2fs_sb_info *sbi)
+ 	set_opt(sbi, MERGE_CHECKPOINT);
+ 	F2FS_OPTION(sbi).unusable_cap = 0;
+ 	sbi->sb->s_flags |= SB_LAZYTIME;
+-	set_opt(sbi, FLUSH_MERGE);
++	if (!f2fs_sb_has_readonly(sbi) && !f2fs_readonly(sbi->sb))
++		set_opt(sbi, FLUSH_MERGE);
+ 	if (f2fs_hw_support_discard(sbi) || f2fs_hw_should_discard(sbi))
+ 		set_opt(sbi, DISCARD);
+ 	if (f2fs_sb_has_blkzoned(sbi)) {
+-- 
+2.25.1
+

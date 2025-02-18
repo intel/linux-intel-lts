@@ -1,0 +1,56 @@
+From 04ea34962334ad3e9431ad396b1f3f6ca2e7dca2 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Mon, 22 Apr 2024 09:33:11 -0400
+Subject: [PATCH] mm/userfaultfd: reset ptes when close() for wr-protected ones
+
+Userfaultfd unregister includes a step to remove wr-protect bits from all
+the relevant pgtable entries, but that only covered an explicit
+UFFDIO_UNREGISTER ioctl, not a close() on the userfaultfd itself.  Cover
+that too.  This fixes a WARN trace.
+
+The only user visible side effect is the user can observe leftover
+wr-protect bits even if the user close()ed on an userfaultfd when
+releasing the last reference of it.  However hopefully that should be
+harmless, and nothing bad should happen even if so.
+
+This change is now more important after the recent page-table-check
+patch we merged in mm-unstable (446dd9ad37d0 ("mm/page_table_check:
+support userfault wr-protect entries")), as we'll do sanity check on
+uffd-wp bits without vma context.  So it's better if we can 100%
+guarantee no uffd-wp bit leftovers, to make sure each report will be
+valid.
+
+Link: https://lore.kernel.org/all/000000000000ca4df20616a0fe16@google.com/
+Fixes: f369b07c8614 ("mm/uffd: reset write protection when unregister with wp-mode")
+Analyzed-by: David Hildenbrand <david@redhat.com>
+Link: https://lkml.kernel.org/r/20240422133311.2987675-1-peterx@redhat.com
+Reported-by: syzbot+d8426b591c36b21c750e@syzkaller.appspotmail.com
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Cc: Nadav Amit <nadav.amit@gmail.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+---
+ fs/userfaultfd.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/fs/userfaultfd.c b/fs/userfaultfd.c
+index 82101a2cf933..065b862d1b73 100644
+--- a/fs/userfaultfd.c
++++ b/fs/userfaultfd.c
+@@ -898,6 +898,11 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
+ 			prev = vma;
+ 			continue;
+ 		}
++		/* Reset ptes for the whole vma range if wr-protected */
++		if (userfaultfd_wp(vma))
++			uffd_wp_range(mm, vma, vma->vm_start,
++				      vma->vm_end - vma->vm_start, false);
++
+ 		new_flags = vma->vm_flags & ~__VM_UFFD_FLAGS;
+ 		prev = vma_merge(mm, prev, vma->vm_start, vma->vm_end,
+ 				 new_flags, vma->anon_vma,
+-- 
+2.25.1
+

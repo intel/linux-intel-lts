@@ -1,0 +1,93 @@
+From ad84dcf2980a8f43dc754665de42c1e8bfff3e57 Mon Sep 17 00:00:00 2001
+From: RD Babiera <rdbabiera@google.com>
+Date: Thu, 29 Feb 2024 00:11:02 +0000
+Subject: [PATCH 2/2] usb: typec: altmodes/displayport: create sysfs nodes as
+ driver's default device attribute group
+
+The DisplayPort driver's sysfs nodes may be present to the userspace before
+typec_altmode_set_drvdata() completes in dp_altmode_probe. This means that
+a sysfs read can trigger a NULL pointer error by deferencing dp->hpd in
+hpd_show or dp->lock in pin_assignment_show, as dev_get_drvdata() returns
+NULL in those cases.
+
+Remove manual sysfs node creation in favor of adding attribute group as
+default for devices bound to the driver. The ATTRIBUTE_GROUPS() macro is
+not used here otherwise the path to the sysfs nodes is no longer compliant
+with the ABI.
+
+Fixes: 0e3bb7d6894d ("usb: typec: Add driver for DisplayPort alternate mode")
+Cc: stable@vger.kernel.org
+Signed-off-by: RD Babiera <rdbabiera@google.com>
+Link: https://lore.kernel.org/r/20240229001101.3889432-2-rdbabiera@google.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/typec/altmodes/displayport.c | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/usb/typec/altmodes/displayport.c b/drivers/usb/typec/altmodes/displayport.c
+index 1d225b02e90a..6d94c291fb5e 100644
+--- a/drivers/usb/typec/altmodes/displayport.c
++++ b/drivers/usb/typec/altmodes/displayport.c
+@@ -552,16 +552,21 @@ static ssize_t hpd_show(struct device *dev, struct device_attribute *attr, char
+ }
+ static DEVICE_ATTR_RO(hpd);
+ 
+-static struct attribute *dp_altmode_attrs[] = {
++static struct attribute *displayport_attrs[] = {
+ 	&dev_attr_configuration.attr,
+ 	&dev_attr_pin_assignment.attr,
+ 	&dev_attr_hpd.attr,
+ 	NULL
+ };
+ 
+-static const struct attribute_group dp_altmode_group = {
++static const struct attribute_group displayport_group = {
+ 	.name = "displayport",
+-	.attrs = dp_altmode_attrs,
++	.attrs = displayport_attrs,
++};
++
++static const struct attribute_group *displayport_groups[] = {
++	&displayport_group,
++	NULL,
+ };
+ 
+ int dp_altmode_probe(struct typec_altmode *alt)
+@@ -569,7 +574,6 @@ int dp_altmode_probe(struct typec_altmode *alt)
+ 	const struct typec_altmode *port = typec_altmode_get_partner(alt);
+ 	struct fwnode_handle *fwnode;
+ 	struct dp_altmode *dp;
+-	int ret;
+ 
+ 	/* FIXME: Port can only be DFP_U. */
+ 
+@@ -580,10 +584,6 @@ int dp_altmode_probe(struct typec_altmode *alt)
+ 	      DP_CAP_PIN_ASSIGN_DFP_D(alt->vdo)))
+ 		return -ENODEV;
+ 
+-	ret = sysfs_create_group(&alt->dev.kobj, &dp_altmode_group);
+-	if (ret)
+-		return ret;
+-
+ 	dp = devm_kzalloc(&alt->dev, sizeof(*dp), GFP_KERNEL);
+ 	if (!dp)
+ 		return -ENOMEM;
+@@ -614,7 +614,6 @@ void dp_altmode_remove(struct typec_altmode *alt)
+ {
+ 	struct dp_altmode *dp = typec_altmode_get_drvdata(alt);
+ 
+-	sysfs_remove_group(&alt->dev.kobj, &dp_altmode_group);
+ 	cancel_work_sync(&dp->work);
+ 
+ 	if (dp->connector_fwnode) {
+@@ -639,6 +638,7 @@ static struct typec_altmode_driver dp_altmode_driver = {
+ 	.driver = {
+ 		.name = "typec_displayport",
+ 		.owner = THIS_MODULE,
++		.dev_groups = displayport_groups,
+ 	},
+ };
+ module_typec_altmode_driver(dp_altmode_driver);
+-- 
+2.25.1
+

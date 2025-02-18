@@ -1,0 +1,93 @@
+From e3deb0796bcf423d364625744484327cad1097c8 Mon Sep 17 00:00:00 2001
+From: Badhri Jagan Sridharan <badhri@google.com>
+Date: Sun, 11 Dec 2022 11:37:55 -0800
+Subject: [PATCH 1/2] usb: typec: altmodes/displayport: Add hpd sysfs attribute
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Exporsing HotPlugDetect(HPD) helps userspace to infer HPD
+state as defined by VESA DisplayPort Alt Mode on USB Type-C Standard.
+This allows userspace to notify users for self help, for instance,
+to hint user that the display port cable is probably detached (or)
+the display port sink (viz., monitors ect.,) is un-powered.
+Also helps to debug issues reported from field.
+
+This change adds an additional attribute "hpd" to the existing
+"displayport" attributes.
+
+VESA DisplayPort Alt Mode on USB Type-C Standard defines how
+HotPlugDetect(HPD) shall be supported on the USB-C connector
+when operating in DisplayPort Alt Mode. This is a read only
+node which reflects the current state of HPD.
+
+Valid values:
+ - 1 when HPD’s logical state is high (HPD_High)
+ - 0 when HPD’s logical state is low (HPD_Low)
+
+Signed-off-by: Badhri Jagan Sridharan <badhri@google.com>
+Reviewed-by: Heikki Krogerus <heikki.krogerus@linux.intel.com>
+Link: https://lore.kernel.org/r/20221211193755.1392128-1-badhri@google.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ .../ABI/testing/sysfs-driver-typec-displayport    | 15 +++++++++++++++
+ drivers/usb/typec/altmodes/displayport.c          | 10 ++++++++++
+ 2 files changed, 25 insertions(+)
+
+diff --git a/Documentation/ABI/testing/sysfs-driver-typec-displayport b/Documentation/ABI/testing/sysfs-driver-typec-displayport
+index 231471ad0d4b..256c87c5219a 100644
+--- a/Documentation/ABI/testing/sysfs-driver-typec-displayport
++++ b/Documentation/ABI/testing/sysfs-driver-typec-displayport
+@@ -47,3 +47,18 @@ Description:
+ 		USB SuperSpeed protocol. From user perspective pin assignments C
+ 		and E are equal, where all channels on the connector are used
+ 		for carrying DisplayPort protocol (allowing higher resolutions).
++
++What:		/sys/bus/typec/devices/.../displayport/hpd
++Date:		Dec 2022
++Contact:	Badhri Jagan Sridharan <badhri@google.com>
++Description:
++		VESA DisplayPort Alt Mode on USB Type-C Standard defines how
++		HotPlugDetect(HPD) shall be supported on the USB-C connector when
++		operating in DisplayPort Alt Mode. This is a read only node which
++		reflects the current state of HPD.
++
++		Valid values:
++			- 1: when HPD’s logical state is high (HPD_High) as defined
++			     by VESA DisplayPort Alt Mode on USB Type-C Standard.
++			- 0 when HPD’s logical state is low (HPD_Low) as defined by
++			     VESA DisplayPort Alt Mode on USB Type-C Standard.
+diff --git a/drivers/usb/typec/altmodes/displayport.c b/drivers/usb/typec/altmodes/displayport.c
+index f564d0d471bb..1d225b02e90a 100644
+--- a/drivers/usb/typec/altmodes/displayport.c
++++ b/drivers/usb/typec/altmodes/displayport.c
+@@ -156,6 +156,7 @@ static int dp_altmode_status_update(struct dp_altmode *dp)
+ 		if (dp->hpd != hpd) {
+ 			drm_connector_oob_hotplug_event(dp->connector_fwnode);
+ 			dp->hpd = hpd;
++			sysfs_notify(&dp->alt->dev.kobj, "displayport", "hpd");
+ 		}
+ 	}
+ 
+@@ -543,9 +544,18 @@ static ssize_t pin_assignment_show(struct device *dev,
+ }
+ static DEVICE_ATTR_RW(pin_assignment);
+ 
++static ssize_t hpd_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct dp_altmode *dp = dev_get_drvdata(dev);
++
++	return sysfs_emit(buf, "%d\n", dp->hpd);
++}
++static DEVICE_ATTR_RO(hpd);
++
+ static struct attribute *dp_altmode_attrs[] = {
+ 	&dev_attr_configuration.attr,
+ 	&dev_attr_pin_assignment.attr,
++	&dev_attr_hpd.attr,
+ 	NULL
+ };
+ 
+-- 
+2.25.1
+

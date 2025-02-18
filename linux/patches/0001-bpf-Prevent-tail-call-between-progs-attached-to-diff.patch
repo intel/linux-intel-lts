@@ -1,0 +1,111 @@
+From c2863d47c3eacea979c90c8c91ff4e53d542df3a Mon Sep 17 00:00:00 2001
+From: Xu Kuohai <xukuohai@huawei.com>
+Date: Fri, 19 Jul 2024 19:00:53 +0800
+Subject: [PATCH] bpf: Prevent tail call between progs attached to different
+ hooks
+
+bpf progs can be attached to kernel functions, and the attached functions
+can take different parameters or return different return values. If
+prog attached to one kernel function tail calls prog attached to another
+kernel function, the ctx access or return value verification could be
+bypassed.
+
+For example, if prog1 is attached to func1 which takes only 1 parameter
+and prog2 is attached to func2 which takes two parameters. Since verifier
+assumes the bpf ctx passed to prog2 is constructed based on func2's
+prototype, verifier allows prog2 to access the second parameter from
+the bpf ctx passed to it. The problem is that verifier does not prevent
+prog1 from passing its bpf ctx to prog2 via tail call. In this case,
+the bpf ctx passed to prog2 is constructed from func1 instead of func2,
+that is, the assumption for ctx access verification is bypassed.
+
+Another example, if BPF LSM prog1 is attached to hook file_alloc_security,
+and BPF LSM prog2 is attached to hook bpf_lsm_audit_rule_known. Verifier
+knows the return value rules for these two hooks, e.g. it is legal for
+bpf_lsm_audit_rule_known to return positive number 1, and it is illegal
+for file_alloc_security to return positive number. So verifier allows
+prog2 to return positive number 1, but does not allow prog1 to return
+positive number. The problem is that verifier does not prevent prog1
+from calling prog2 via tail call. In this case, prog2's return value 1
+will be used as the return value for prog1's hook file_alloc_security.
+That is, the return value rule is bypassed.
+
+This patch adds restriction for tail call to prevent such bypasses.
+
+Signed-off-by: Xu Kuohai <xukuohai@huawei.com>
+Link: https://lore.kernel.org/r/20240719110059.797546-4-xukuohai@huaweicloud.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+---
+ include/linux/bpf.h |  1 +
+ kernel/bpf/core.c   | 27 +++++++++++++++++++++++++--
+ 2 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 7f4ce183dcb0..39291ec48374 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -250,6 +250,7 @@ struct bpf_map {
+ 	 * same prog type, JITed flag and xdp_has_frags flag.
+ 	 */
+ 	struct {
++		const struct btf_type *attach_func_proto;
+ 		spinlock_t lock;
+ 		enum bpf_prog_type type;
+ 		bool jited;
+diff --git a/kernel/bpf/core.c b/kernel/bpf/core.c
+index ec45d8c40cf5..40c62742d7d3 100644
+--- a/kernel/bpf/core.c
++++ b/kernel/bpf/core.c
+@@ -2117,10 +2117,19 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
+ {
+ 	enum bpf_prog_type prog_type = resolve_prog_type(fp);
+ 	bool ret;
++	struct bpf_prog_aux *aux = fp->aux;
+ 
+ 	if (fp->kprobe_override)
+ 		return false;
+ 
++	/* XDP programs inserted into maps are not guaranteed to run on
++	 * a particular netdev (and can run outside driver context entirely
++	 * in the case of devmap and cpumap). Until device checks
++	 * are implemented, prohibit adding dev-bound programs to program maps.
++	 */
++	if (bpf_prog_is_dev_bound(aux))
++		return false;
++
+ 	spin_lock(&map->owner.lock);
+ 	if (!map->owner.type) {
+ 		/* There's no owner yet where we could check for
+@@ -2128,12 +2137,26 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
+ 		 */
+ 		map->owner.type  = prog_type;
+ 		map->owner.jited = fp->jited;
+-		map->owner.xdp_has_frags = fp->aux->xdp_has_frags;
++		map->owner.xdp_has_frags = aux->xdp_has_frags;
++		map->owner.attach_func_proto = aux->attach_func_proto;
+ 		ret = true;
+ 	} else {
+ 		ret = map->owner.type  == prog_type &&
+ 		      map->owner.jited == fp->jited &&
+-		      map->owner.xdp_has_frags == fp->aux->xdp_has_frags;
++		      map->owner.xdp_has_frags == aux->xdp_has_frags;
++		if (ret &&
++		    map->owner.attach_func_proto != aux->attach_func_proto) {
++			switch (prog_type) {
++			case BPF_PROG_TYPE_TRACING:
++			case BPF_PROG_TYPE_LSM:
++			case BPF_PROG_TYPE_EXT:
++			case BPF_PROG_TYPE_STRUCT_OPS:
++				ret = false;
++				break;
++			default:
++				break;
++			}
++		}
+ 	}
+ 	spin_unlock(&map->owner.lock);
+ 
+-- 
+2.25.1
+

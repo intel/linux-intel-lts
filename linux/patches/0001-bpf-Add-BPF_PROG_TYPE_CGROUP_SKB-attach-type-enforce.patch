@@ -1,0 +1,110 @@
+From dd07de963b4abd33e37e79efb913b8ca13c383b0 Mon Sep 17 00:00:00 2001
+From: Stanislav Fomichev <sdf@google.com>
+Date: Fri, 26 Apr 2024 16:16:18 -0700
+Subject: [PATCH] bpf: Add BPF_PROG_TYPE_CGROUP_SKB attach type enforcement in
+ BPF_LINK_CREATE
+
+bpf_prog_attach uses attach_type_to_prog_type to enforce proper
+attach type for BPF_PROG_TYPE_CGROUP_SKB. link_create uses
+bpf_prog_get and relies on bpf_prog_attach_check_attach_type
+to properly verify prog_type <> attach_type association.
+
+Add missing attach_type enforcement for the link_create case.
+Otherwise, it's currently possible to attach cgroup_skb prog
+types to other cgroup hooks.
+
+Fixes: af6eea57437a ("bpf: Implement bpf_link-based cgroup BPF program attachment")
+Link: https://lore.kernel.org/bpf/0000000000004792a90615a1dde0@google.com/
+Reported-by: syzbot+838346b979830606c854@syzkaller.appspotmail.com
+Signed-off-by: Stanislav Fomichev <sdf@google.com>
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20240426231621.2716876-2-sdf@google.com
+Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
+---
+ kernel/bpf/syscall.c | 63 ++++++++++++++++++++++++--------------------
+ 1 file changed, 35 insertions(+), 28 deletions(-)
+
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index f9906e5ad2e5..8140e46d6b28 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -3417,34 +3417,6 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
+ 	return fd;
+ }
+ 
+-static int bpf_prog_attach_check_attach_type(const struct bpf_prog *prog,
+-					     enum bpf_attach_type attach_type)
+-{
+-	switch (prog->type) {
+-	case BPF_PROG_TYPE_CGROUP_SOCK:
+-	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
+-	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
+-	case BPF_PROG_TYPE_SK_LOOKUP:
+-		return attach_type == prog->expected_attach_type ? 0 : -EINVAL;
+-	case BPF_PROG_TYPE_CGROUP_SKB:
+-		if (!capable(CAP_NET_ADMIN))
+-			/* cg-skb progs can be loaded by unpriv user.
+-			 * check permissions at attach time.
+-			 */
+-			return -EPERM;
+-		return prog->enforce_expected_attach_type &&
+-			prog->expected_attach_type != attach_type ?
+-			-EINVAL : 0;
+-	case BPF_PROG_TYPE_KPROBE:
+-		if (prog->expected_attach_type == BPF_TRACE_KPROBE_MULTI &&
+-		    attach_type != BPF_TRACE_KPROBE_MULTI)
+-			return -EINVAL;
+-		return 0;
+-	default:
+-		return 0;
+-	}
+-}
+-
+ static enum bpf_prog_type
+ attach_type_to_prog_type(enum bpf_attach_type attach_type)
+ {
+@@ -3508,6 +3480,41 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
+ 	}
+ }
+ 
++static int bpf_prog_attach_check_attach_type(const struct bpf_prog *prog,
++					     enum bpf_attach_type attach_type)
++{
++	enum bpf_prog_type ptype;
++
++	switch (prog->type) {
++	case BPF_PROG_TYPE_CGROUP_SOCK:
++	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
++	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
++	case BPF_PROG_TYPE_SK_LOOKUP:
++		return attach_type == prog->expected_attach_type ? 0 : -EINVAL;
++	case BPF_PROG_TYPE_CGROUP_SKB:
++		if (!capable(CAP_NET_ADMIN))
++			/* cg-skb progs can be loaded by unpriv user.
++			 * check permissions at attach time.
++			 */
++			return -EPERM;
++
++		ptype = attach_type_to_prog_type(attach_type);
++		if (prog->type != ptype)
++			return -EINVAL;
++
++		return prog->enforce_expected_attach_type &&
++			prog->expected_attach_type != attach_type ?
++			-EINVAL : 0;
++	case BPF_PROG_TYPE_KPROBE:
++		if (prog->expected_attach_type == BPF_TRACE_KPROBE_MULTI &&
++		    attach_type != BPF_TRACE_KPROBE_MULTI)
++			return -EINVAL;
++		return 0;
++	default:
++		return 0;
++	}
++}
++
+ #define BPF_PROG_ATTACH_LAST_FIELD replace_bpf_fd
+ 
+ #define BPF_F_ATTACH_MASK \
+-- 
+2.25.1
+

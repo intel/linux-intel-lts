@@ -1,0 +1,114 @@
+From a6fd2132daa5b51f7ab22c8c29a1988deb4214ee Mon Sep 17 00:00:00 2001
+From: Dan Williams <dan.j.williams@intel.com>
+Date: Wed, 25 Jan 2023 15:32:57 -0800
+Subject: [PATCH 1/2] cxl/port: Link the 'parent_dport' in portX/ and
+ endpointX/ sysfs
+
+Similar to the justification in:
+
+commit 1b58b4cac6fc ("cxl/port: Record parent dport when adding ports")
+
+...userspace wants to know the routing information for ports for
+calculating the memdev order for region creation among other things.
+Cache the information the kernel discovers at enumeration time in a
+'parent_dport' attribute to save userspace the time of trawling sysfs
+to recover the same information.
+
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Link: https://lore.kernel.org/r/167124082375.1626103.6047000000121298560.stgit@dwillia2-xfh.jf.intel.com
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+---
+ Documentation/ABI/testing/sysfs-bus-cxl | 15 +++++++++++++
+ drivers/cxl/core/port.c                 | 29 +++++++++++++++++++++++++
+ 2 files changed, 44 insertions(+)
+
+diff --git a/Documentation/ABI/testing/sysfs-bus-cxl b/Documentation/ABI/testing/sysfs-bus-cxl
+index 8494ef27e8d2..329a7e46c805 100644
+--- a/Documentation/ABI/testing/sysfs-bus-cxl
++++ b/Documentation/ABI/testing/sysfs-bus-cxl
+@@ -90,6 +90,21 @@ Description:
+ 		capability.
+ 
+ 
++What:		/sys/bus/cxl/devices/{port,endpoint}X/parent_dport
++Date:		January, 2023
++KernelVersion:	v6.3
++Contact:	linux-cxl@vger.kernel.org
++Description:
++		(RO) CXL port objects are instantiated for each upstream port in
++		a CXL/PCIe switch, and for each endpoint to map the
++		corresponding memory device into the CXL port hierarchy. When a
++		descendant CXL port (switch or endpoint) is enumerated it is
++		useful to know which 'dport' object in the parent CXL port
++		routes to this descendant. The 'parent_dport' symlink points to
++		the device representing the downstream port of a CXL switch that
++		routes to {port,endpoint}X.
++
++
+ What:		/sys/bus/cxl/devices/portX/dportY
+ Date:		June, 2021
+ KernelVersion:	v5.14
+diff --git a/drivers/cxl/core/port.c b/drivers/cxl/core/port.c
+index 1d7fbd30b548..b2833570e4e6 100644
+--- a/drivers/cxl/core/port.c
++++ b/drivers/cxl/core/port.c
+@@ -585,6 +585,29 @@ static int devm_cxl_link_uport(struct device *host, struct cxl_port *port)
+ 	return devm_add_action_or_reset(host, cxl_unlink_uport, port);
+ }
+ 
++static void cxl_unlink_parent_dport(void *_port)
++{
++	struct cxl_port *port = _port;
++
++	sysfs_remove_link(&port->dev.kobj, "parent_dport");
++}
++
++static int devm_cxl_link_parent_dport(struct device *host,
++				      struct cxl_port *port,
++				      struct cxl_dport *parent_dport)
++{
++	int rc;
++
++	if (!parent_dport)
++		return 0;
++
++	rc = sysfs_create_link(&port->dev.kobj, &parent_dport->dport->kobj,
++			       "parent_dport");
++	if (rc)
++		return rc;
++	return devm_add_action_or_reset(host, cxl_unlink_parent_dport, port);
++}
++
+ static struct lock_class_key cxl_port_key;
+ 
+ static struct cxl_port *cxl_port_alloc(struct device *uport,
+@@ -692,6 +715,10 @@ static struct cxl_port *__devm_cxl_add_port(struct device *host,
+ 	if (rc)
+ 		return ERR_PTR(rc);
+ 
++	rc = devm_cxl_link_parent_dport(host, port, parent_dport);
++	if (rc)
++		return ERR_PTR(rc);
++
+ 	return port;
+ 
+ err:
+@@ -1104,6 +1131,7 @@ static void delete_endpoint(void *data)
+ 
+ 	device_lock(parent);
+ 	if (parent->driver && !endpoint->dead) {
++		devm_release_action(parent, cxl_unlink_parent_dport, endpoint);
+ 		devm_release_action(parent, cxl_unlink_uport, endpoint);
+ 		devm_release_action(parent, unregister_port, endpoint);
+ 	}
+@@ -1134,6 +1162,7 @@ EXPORT_SYMBOL_NS_GPL(cxl_endpoint_autoremove, CXL);
+  */
+ static void delete_switch_port(struct cxl_port *port)
+ {
++	devm_release_action(port->dev.parent, cxl_unlink_parent_dport, port);
+ 	devm_release_action(port->dev.parent, cxl_unlink_uport, port);
+ 	devm_release_action(port->dev.parent, unregister_port, port);
+ }
+-- 
+2.25.1
+

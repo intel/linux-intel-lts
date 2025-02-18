@@ -1,0 +1,105 @@
+From b79d5e0c6e2c4b4f8a1fbc6e35dff29f382d69f0 Mon Sep 17 00:00:00 2001
+From: Sungwoo Kim <iam@sung-woo.kim>
+Date: Tue, 30 Apr 2024 02:32:10 -0400
+Subject: [PATCH] Bluetooth: L2CAP: Fix slab-use-after-free in l2cap_connect()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Extend a critical section to prevent chan from early freeing. Also make the l2cap_connect() return type void.
+Nothing is using the returned value but it is ugly to return a potentially freed pointer. Making it void will
+help with backports because earlier kernels did use the return value. Now the compile will break for kernels
+where this patch is not a complete fix.
+
+Call stack summary:
+
+[use] l2cap_bredr_sig_cmd
+  l2cap_connect ┌ mutex_lock(&conn->chan_lock); │ chan = pchan->ops->new_connection(pchan); <- alloc chan │
+  __l2cap_chan_add(conn, chan); │ l2cap_chan_hold(chan); │ list_add(&chan->list, &conn->chan_l); ... (1) └
+  mutex_unlock(&conn->chan_lock);
+    chan->conf_state ... (4) <- use after free
+
+[free] l2cap_conn_del ┌ mutex_lock(&conn->chan_lock); │ foreach chan in conn->chan_l: ... (2) │
+l2cap_chan_put(chan); │ l2cap_chan_destroy │ kfree(chan) ... (3) <- chan freed └
+mutex_unlock(&conn->chan_lock);
+
+================================================================== BUG: KASAN: slab-use-after-free in
+instrument_atomic_read include/linux/instrumented.h:68 [inline] BUG: KASAN: slab-use-after-free in _test_bit
+include/asm-generic/bitops/instrumented-non-atomic.h:141 [inline] BUG: KASAN: slab-use-after-free in
+l2cap_connect+0xa67/0x11a0 net/bluetooth/l2cap_core.c:4260 Read of size 8 at addr ffff88810bf040a0 by task
+kworker/u3:1/311
+
+Fixes: 73ffa904b782 ("Bluetooth: Move conf_{req,rsp} stuff to struct l2cap_chan")
+
+Signed-off-by: Sungwoo Kim <iam@sung-woo.kim>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+---
+ net/bluetooth/l2cap_core.c | 21 +++++++++++----------
+ 1 file changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+index 187c91843876..95ad4f39cdd8 100644
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -4154,13 +4154,12 @@ static inline int l2cap_command_rej(struct l2cap_conn *conn,
+ 	return 0;
+ }
+ 
+-static struct l2cap_chan *l2cap_connect(struct l2cap_conn *conn,
+-					struct l2cap_cmd_hdr *cmd,
+-					u8 *data, u8 rsp_code, u8 amp_id)
++static struct l2cap_chan *l2cap_connect(struct l2cap_conn *conn, struct l2cap_cmd_hdr *cmd,
++			  u8 *data, u8 rsp_code, u8 amp_id)
+ {
+ 	struct l2cap_conn_req *req = (struct l2cap_conn_req *) data;
+ 	struct l2cap_conn_rsp rsp;
+-	struct l2cap_chan *chan = NULL, *pchan;
++	struct l2cap_chan *chan = NULL, *pchan = NULL;
+ 	int result, status = L2CAP_CS_NO_INFO;
+ 
+ 	u16 dcid = 0, scid = __le16_to_cpu(req->scid);
+@@ -4173,7 +4172,7 @@ static struct l2cap_chan *l2cap_connect(struct l2cap_conn *conn,
+ 					 &conn->hcon->dst, ACL_LINK);
+ 	if (!pchan) {
+ 		result = L2CAP_CR_BAD_PSM;
+-		goto sendresp;
++		goto response;
+ 	}
+ 
+ 	mutex_lock(&conn->chan_lock);
+@@ -4261,17 +4260,15 @@ static struct l2cap_chan *l2cap_connect(struct l2cap_conn *conn,
+ 	}
+ 
+ response:
+-	l2cap_chan_unlock(pchan);
+-	mutex_unlock(&conn->chan_lock);
+-	l2cap_chan_put(pchan);
+-
+-sendresp:
+ 	rsp.scid   = cpu_to_le16(scid);
+ 	rsp.dcid   = cpu_to_le16(dcid);
+ 	rsp.result = cpu_to_le16(result);
+ 	rsp.status = cpu_to_le16(status);
+ 	l2cap_send_cmd(conn, cmd->ident, rsp_code, sizeof(rsp), &rsp);
+ 
++	if (!pchan)
++		return NULL;
++
+ 	if (result == L2CAP_CR_PEND && status == L2CAP_CS_NO_INFO) {
+ 		struct l2cap_info_req info;
+ 		info.type = cpu_to_le16(L2CAP_IT_FEAT_MASK);
+@@ -4294,6 +4291,10 @@ static struct l2cap_chan *l2cap_connect(struct l2cap_conn *conn,
+ 		chan->num_conf_req++;
+ 	}
+ 
++	l2cap_chan_unlock(pchan);
++	mutex_unlock(&conn->chan_lock);
++	l2cap_chan_put(pchan);
++
+ 	return chan;
+ }
+ 
+-- 
+2.25.1
+
