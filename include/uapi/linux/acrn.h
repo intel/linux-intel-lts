@@ -441,6 +441,22 @@ struct acrn_mmiodev {
 };
 
 /**
+ * struct acrn_piodev - Info for assigning or de-assigning a PIO device
+ * @name:			Name of the PIO device.
+ * @res[].port_address:		Physical address of PIO device region.
+ * @res[].size:	Size of the PIO region for the PIO device.
+ *
+ * This structure will be passed to hypervisor directly.
+ */
+struct acrn_piodev {
+	__u8	name[8];
+	struct {
+		__u16 port_address;
+		__u16 size;
+	} res;
+};
+
+/**
  * struct acrn_vdev - Info for creating or destroying a virtual device
  * @id:				Union of identifier of the virtual device
  * @id.value:			Raw data of the identifier
@@ -637,6 +653,10 @@ struct acrn_irqfd {
 	_IOW(ACRN_IOCTL_TYPE, 0x59, struct acrn_vdev)
 #define ACRN_IOCTL_DESTROY_VDEV	\
 	_IOW(ACRN_IOCTL_TYPE, 0x5A, struct acrn_vdev)
+#define ACRN_IOCTL_ASSIGN_PIODEV	\
+	_IOW(ACRN_IOCTL_TYPE, 0x5B, struct acrn_piodev)
+#define ACRN_IOCTL_DEASSIGN_PIODEV	\
+	_IOW(ACRN_IOCTL_TYPE, 0x5C, struct acrn_piodev)
 
 #define ACRN_IOCTL_PM_GET_CPU_STATE	\
 	_IOWR(ACRN_IOCTL_TYPE, 0x60, __u64)
