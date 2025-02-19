@@ -47,6 +47,7 @@
 #define HC_DESTROY_VDEV			_HC_ID(HC_ID, HC_ID_PCI_BASE + 0x0A)
 #define HC_ASSIGN_PIODEV		_HC_ID(HC_ID, HC_ID_PCI_BASE + 0x0B)
 #define HC_DEASSIGN_PIODEV		_HC_ID(HC_ID, HC_ID_PCI_BASE + 0x0C)
+#define HC_MSR_ACCESS			_HC_ID(HC_ID, HC_ID_PCI_BASE + 0x0D)
 
 #define HC_ID_PM_BASE			0x80UL
 #define HC_PM_GET_CPU_STATE		_HC_ID(HC_ID, HC_ID_PM_BASE + 0x00)
@@ -318,6 +319,18 @@ static inline long hcall_assign_piodev(u64 vmid, u64 addr)
 static inline long hcall_deassign_piodev(u64 vmid, u64 addr)
 {
 	return acrn_hypercall2(HC_DEASSIGN_PIODEV, vmid, addr);
+}
+
+/**
+ * hcall_msr_access() - Access single/multiple MSR registers through hypervisor
+ * @entry_num   The number of MSR registers to be accessed
+ * @entry_addr	The address of data structure of entry list
+ *
+ * Return: 0 on success, <0 on failure
+ */
+static inline long hcall_msr_access(u64 entry_num, u64 entry_addr)
+{
+	return acrn_hypercall2(HC_MSR_ACCESS, entry_num, entry_addr);
 }
 
 /*
