@@ -973,6 +973,13 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		(struct intel_device_info *) ent->driver_data;
 	int err;
 
+#ifdef CONFIG_PREEMPT_RT
+	if (intel_info->is_dgfx) {
+		dev_info(&pdev->dev, "dGPU is not supported with RT kernel\n");
+		return -ENODEV;
+	}
+#endif
+
 	if (intel_info->require_force_probe && !id_forced(pdev->device)) {
 		dev_info(&pdev->dev,
 			 "Your graphics device %04x is not properly supported by i915 in this\n"
