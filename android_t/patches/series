@@ -195,8 +195,6 @@
 #CVE-2024-43846
 0001-lib-objagg-Fix-general-protection-fault.patch
 
-#CVE-2024-47707
-0001-ipv6-avoid-possible-NULL-deref-in-rt6_uncached_list_.patch
 
 #CVE-2024-47679
 0001-vfs-fix-race-between-evice_inodes-and-find_inode-ipu.patch
@@ -345,9 +343,6 @@
 #CVE-2024-50286
 0001-ksmbd-fix-slab-use-after-free-in-ksmbd_smb2_session_.patch
 
-#CVE-2024-50304
-0001-ipv4-ip_tunnel-Fix-suspicious-RCU-usage-warning-in-i.patch
-
 #CVE-2024-53051
 0001-drm-i915-hdcp-Add-encoder-check-in-intel_hdcp_get_ca.patch
 
@@ -386,26 +381,11 @@
 #CVE-2024-53687
 0001-riscv-Fix-IPIs-usage-in-kfence_protect_page.patch
 
-#CVE-2024-57908
-0001-iio-imu-kmx61-fix-information-leak-in-triggered-buff.patch
-
 #CVE-2025-21634
 0001-cgroup-cpuset-remove-kernfs-active-break.patch
-
-#CVE-2024-57917
-0001-topology-Keep-the-cpumask-unchanged-when-printing-cp.patch
 
 #CVE-2024-57924
 0001-fs-relax-assertions-on-failure-to-encode-file-handle.patch
 
-#CVE-2024-57913
-0001-usb-gadget-f_fs-Remove-WARN_ON-in-functionfs_bind.patch
-
 #CVE-2024-57915
 0001-usb-gadget-u_serial-Disable-ep-before-setting-port-t.patch
-
-#CVE-2025-21665
-0001-filemap-avoid-truncating-64-bit-offset-to-32-bits.patch
-
-#CVE-2024-56631
-0001-scsi-sg-Fix-slab-use-after-free-read-in-sg_release.patch
