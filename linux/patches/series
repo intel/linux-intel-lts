@@ -198,3 +198,14 @@
 
 #CVE-2025-21682
 0001-eth-bnxt-always-recalculate-features-after-XDP-clear.patch
+
+#CVE-2025-21696
+0001-mm-clear-uffd-wp-PTE-PMD-state-on-mremap.patch
+0002-userfaultfd-move-userfaultfd_ctx-struct-to-header-fi.patch
+
+#CVE-2025-21693
+0003-mm-zswap-change-per-cpu-mutex-and-buffer-to-per-acom.patch
+0004-mm-zswap-properly-synchronize-freeing-resources-duri.patch
+
+#CVE-2024-57898
+0005-wifi-cfg80211-clear-link-ID-from-bitmap-during-link-.patch

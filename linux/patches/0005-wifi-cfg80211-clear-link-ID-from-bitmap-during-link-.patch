@@ -1,0 +1,73 @@
+From 369fd5acef45db9185f2daacb3ae240d32e1ee65 Mon Sep 17 00:00:00 2001
+From: Aditya Kumar Singh <quic_adisi@quicinc.com>
+Date: Thu, 21 Nov 2024 09:45:30 +0530
+Subject: [PATCH 5/5] wifi: cfg80211: clear link ID from bitmap during link
+ delete after clean up
+
+Currently, during link deletion, the link ID is first removed from the
+valid_links bitmap before performing any clean-up operations. However, some
+functions require the link ID to remain in the valid_links bitmap. One
+such example is cfg80211_cac_event(). The flow is -
+
+nl80211_remove_link()
+    cfg80211_remove_link()
+        ieee80211_del_intf_link()
+            ieee80211_vif_set_links()
+                ieee80211_vif_update_links()
+                    ieee80211_link_stop()
+                        cfg80211_cac_event()
+
+cfg80211_cac_event() requires link ID to be present but it is cleared
+already in cfg80211_remove_link(). Ultimately, WARN_ON() is hit.
+
+Therefore, clear the link ID from the bitmap only after completing the link
+clean-up.
+
+Signed-off-by: Aditya Kumar Singh <quic_adisi@quicinc.com>
+Link: https://patch.msgid.link/20241121-mlo_dfs_fix-v2-1-92c3bf7ab551@quicinc.com
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+---
+ net/mac80211/cfg.c  | 8 +++++++-
+ net/wireless/util.c | 3 +--
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/net/mac80211/cfg.c b/net/mac80211/cfg.c
+index a3c5d4d995db..df86b5eb195d 100644
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -4898,9 +4898,15 @@ static void ieee80211_del_intf_link(struct wiphy *wiphy,
+ 				    unsigned int link_id)
+ {
+ 	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
++	u16 new_links = wdev->valid_links & ~BIT(link_id);
+ 
+ 	mutex_lock(&sdata->local->mtx);
+-	ieee80211_vif_set_links(sdata, wdev->valid_links, 0);
++	/* During the link teardown process, certain functions require the
++	 * link_id to remain in the valid_links bitmap. Therefore, instead
++	 * of removing the link_id from the bitmap, pass a masked value to
++	 * simulate as if link_id does not exist anymore.
++	 */
++	ieee80211_vif_set_links(sdata, new_links, 0);
+ 	mutex_unlock(&sdata->local->mtx);
+ }
+ 
+diff --git a/net/wireless/util.c b/net/wireless/util.c
+index 7acd8d0db61a..da17d6653f9e 100644
+--- a/net/wireless/util.c
++++ b/net/wireless/util.c
+@@ -2672,10 +2672,9 @@ void cfg80211_remove_link(struct wireless_dev *wdev, unsigned int link_id)
+ 		break;
+ 	}
+ 
+-	wdev->valid_links &= ~BIT(link_id);
+-
+ 	rdev_del_intf_link(rdev, wdev, link_id);
+ 
++	wdev->valid_links &= ~BIT(link_id);
+ 	eth_zero_addr(wdev->links[link_id].addr);
+ }
+ 
+-- 
+2.25.1
+

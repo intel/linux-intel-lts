@@ -1,0 +1,210 @@
+From 4935c788248424c0cef5fd6309536bfc33f93aef Mon Sep 17 00:00:00 2001
+From: Ryan Roberts <ryan.roberts@arm.com>
+Date: Tue, 7 Jan 2025 14:47:52 +0000
+Subject: [PATCH 1/5] mm: clear uffd-wp PTE/PMD state on mremap()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When mremap()ing a memory region previously registered with userfaultfd as
+write-protected but without UFFD_FEATURE_EVENT_REMAP, an inconsistency in
+flag clearing leads to a mismatch between the vma flags (which have
+uffd-wp cleared) and the pte/pmd flags (which do not have uffd-wp
+cleared).  This mismatch causes a subsequent mprotect(PROT_WRITE) to
+trigger a warning in page_table_check_pte_flags() due to setting the pte
+to writable while uffd-wp is still set.
+
+Fix this by always explicitly clearing the uffd-wp pte/pmd flags on any
+such mremap() so that the values are consistent with the existing clearing
+of VM_UFFD_WP.  Be careful to clear the logical flag regardless of its
+physical form; a PTE bit, a swap PTE bit, or a PTE marker.  Cover PTE,
+huge PMD and hugetlb paths.
+
+Link: https://lkml.kernel.org/r/20250107144755.1871363-2-ryan.roberts@arm.com
+Co-developed-by: Mikołaj Lenczewski <miko.lenczewski@arm.com>
+Signed-off-by: Mikołaj Lenczewski <miko.lenczewski@arm.com>
+Signed-off-by: Ryan Roberts <ryan.roberts@arm.com>
+Closes: https://lore.kernel.org/linux-mm/810b44a8-d2ae-4107-b665-5a42eae2d948@arm.com/
+Fixes: 63b2d4174c4a ("userfaultfd: wp: add the writeprotect API to userfaultfd ioctl")
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Jann Horn <jannh@google.com>
+Cc: Liam R. Howlett <Liam.Howlett@Oracle.com>
+Cc: Lorenzo Stoakes <lorenzo.stoakes@oracle.com>
+Cc: Mark Rutland <mark.rutland@arm.com>
+Cc: Muchun Song <muchun.song@linux.dev>
+Cc: Peter Xu <peterx@redhat.com>
+Cc: Shuah Khan <shuah@kernel.org>
+Cc: Vlastimil Babka <vbabka@suse.cz>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+ include/linux/userfaultfd_k.h | 17 +++++++++++++++++
+ mm/huge_memory.c              | 12 ++++++++++++
+ mm/hugetlb.c                  | 14 +++++++++++++-
+ mm/mremap.c                   | 32 +++++++++++++++++++++++++++++++-
+ 4 files changed, 73 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/userfaultfd_k.h b/include/linux/userfaultfd_k.h
+index ac8c6854097c..2839a8d53b55 100644
+--- a/include/linux/userfaultfd_k.h
++++ b/include/linux/userfaultfd_k.h
+@@ -179,6 +179,13 @@ static inline bool vma_can_userfault(struct vm_area_struct *vma,
+ 	    vma_is_shmem(vma);
+ }
+ 
++static inline bool vma_has_uffd_without_event_remap(struct vm_area_struct *vma)
++{
++	struct userfaultfd_ctx *uffd_ctx = vma->vm_userfaultfd_ctx.ctx;
++
++	return uffd_ctx && (uffd_ctx->features & UFFD_FEATURE_EVENT_REMAP) == 0;
++}
++
+ extern int dup_userfaultfd(struct vm_area_struct *, struct list_head *);
+ extern void dup_userfaultfd_complete(struct list_head *);
+ 
+@@ -297,6 +304,16 @@ static inline bool userfaultfd_wp_unpopulated(struct vm_area_struct *vma)
+ 	return false;
+ }
+ 
++static inline bool userfaultfd_wp_async(struct vm_area_struct *vma)
++{
++	return false;
++}
++
++static inline bool vma_has_uffd_without_event_remap(struct vm_area_struct *vma)
++{
++	return false;
++}
++
+ #endif /* CONFIG_USERFAULTFD */
+ 
+ static inline bool userfaultfd_wp_use_markers(struct vm_area_struct *vma)
+diff --git a/mm/huge_memory.c b/mm/huge_memory.c
+index 635f0f0f6860..a7428b281c79 100644
+--- a/mm/huge_memory.c
++++ b/mm/huge_memory.c
+@@ -1734,6 +1734,16 @@ static pmd_t move_soft_dirty_pmd(pmd_t pmd)
+ 	return pmd;
+ }
+ 
++static pmd_t clear_uffd_wp_pmd(pmd_t pmd)
++{
++	if (pmd_present(pmd))
++		pmd = pmd_clear_uffd_wp(pmd);
++	else if (is_swap_pmd(pmd))
++		pmd = pmd_swp_clear_uffd_wp(pmd);
++
++	return pmd;
++}
++
+ bool move_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
+ 		  unsigned long new_addr, pmd_t *old_pmd, pmd_t *new_pmd)
+ {
+@@ -1772,6 +1782,8 @@ bool move_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
+ 			pgtable_trans_huge_deposit(mm, new_pmd, pgtable);
+ 		}
+ 		pmd = move_soft_dirty_pmd(pmd);
++		if (vma_has_uffd_without_event_remap(vma))
++			pmd = clear_uffd_wp_pmd(pmd);
+ 		set_pmd_at(mm, new_addr, new_pmd, pmd);
+ 		if (force_flush)
+ 			flush_pmd_tlb_range(vma, old_addr, old_addr + PMD_SIZE);
+diff --git a/mm/hugetlb.c b/mm/hugetlb.c
+index 21c12519a7ef..ff8566c29215 100644
+--- a/mm/hugetlb.c
++++ b/mm/hugetlb.c
+@@ -5221,6 +5221,7 @@ static void move_huge_pte(struct vm_area_struct *vma, unsigned long old_addr,
+ 			  unsigned long new_addr, pte_t *src_pte, pte_t *dst_pte,
+ 			  unsigned long sz)
+ {
++	bool need_clear_uffd_wp = vma_has_uffd_without_event_remap(vma);
+ 	struct hstate *h = hstate_vma(vma);
+ 	struct mm_struct *mm = vma->vm_mm;
+ 	spinlock_t *src_ptl, *dst_ptl;
+@@ -5237,7 +5238,18 @@ static void move_huge_pte(struct vm_area_struct *vma, unsigned long old_addr,
+ 		spin_lock_nested(src_ptl, SINGLE_DEPTH_NESTING);
+ 
+ 	pte = huge_ptep_get_and_clear(mm, old_addr, src_pte);
+-	set_huge_pte_at(mm, new_addr, dst_pte, pte, sz);
++
++	if (need_clear_uffd_wp && pte_marker_uffd_wp(pte))
++		huge_pte_clear(mm, new_addr, dst_pte, sz);
++	else {
++		if (need_clear_uffd_wp) {
++			if (pte_present(pte))
++				pte = huge_pte_clear_uffd_wp(pte);
++			else if (is_swap_pte(pte))
++				pte = pte_swp_clear_uffd_wp(pte);
++		}
++		set_huge_pte_at(mm, new_addr, dst_pte, pte, sz);
++	}
+ 
+ 	if (src_ptl != dst_ptl)
+ 		spin_unlock(src_ptl);
+diff --git a/mm/mremap.c b/mm/mremap.c
+index df71010baabe..5d1c6fbfcbcf 100644
+--- a/mm/mremap.c
++++ b/mm/mremap.c
+@@ -138,6 +138,7 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
+ 		struct vm_area_struct *new_vma, pmd_t *new_pmd,
+ 		unsigned long new_addr, bool need_rmap_locks)
+ {
++	bool need_clear_uffd_wp = vma_has_uffd_without_event_remap(vma);
+ 	struct mm_struct *mm = vma->vm_mm;
+ 	pte_t *old_pte, *new_pte, pte;
+ 	spinlock_t *old_ptl, *new_ptl;
+@@ -207,7 +208,18 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
+ 			force_flush = true;
+ 		pte = move_pte(pte, new_vma->vm_page_prot, old_addr, new_addr);
+ 		pte = move_soft_dirty_pte(pte);
+-		set_pte_at(mm, new_addr, new_pte, pte);
++
++		if (need_clear_uffd_wp && pte_marker_uffd_wp(pte))
++			pte_clear(mm, new_addr, new_pte);
++		else {
++			if (need_clear_uffd_wp) {
++				if (pte_present(pte))
++					pte = pte_clear_uffd_wp(pte);
++				else if (is_swap_pte(pte))
++					pte = pte_swp_clear_uffd_wp(pte);
++			}
++			set_pte_at(mm, new_addr, new_pte, pte);
++		}
+ 	}
+ 
+ 	arch_leave_lazy_mmu_mode();
+@@ -269,6 +281,15 @@ static bool move_normal_pmd(struct vm_area_struct *vma, unsigned long old_addr,
+ 	if (WARN_ON_ONCE(!pmd_none(*new_pmd)))
+ 		return false;
+ 
++	/* If this pmd belongs to a uffd vma with remap events disabled, we need
++	 * to ensure that the uffd-wp state is cleared from all pgtables. This
++	 * means recursing into lower page tables in move_page_tables(), and we
++	 * can reuse the existing code if we simply treat the entry as "not
++	 * moved".
++	 */
++	if (vma_has_uffd_without_event_remap(vma))
++		return false;
++
+ 	/*
+ 	 * We don't have to worry about the ordering of src and dst
+ 	 * ptlocks because exclusive mmap_lock prevents deadlock.
+@@ -324,6 +345,15 @@ static bool move_normal_pud(struct vm_area_struct *vma, unsigned long old_addr,
+ 	if (WARN_ON_ONCE(!pud_none(*new_pud)))
+ 		return false;
+ 
++	/* If this pud belongs to a uffd vma with remap events disabled, we need
++	 * to ensure that the uffd-wp state is cleared from all pgtables. This
++	 * means recursing into lower page tables in move_page_tables(), and we
++	 * can reuse the existing code if we simply treat the entry as "not
++	 * moved".
++	 */
++	if (vma_has_uffd_without_event_remap(vma))
++		return false;
++
+ 	/*
+ 	 * We don't have to worry about the ordering of src and dst
+ 	 * ptlocks because exclusive mmap_lock prevents deadlock.
+-- 
+2.25.1
+
