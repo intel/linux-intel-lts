@@ -2159,6 +2159,12 @@ skl_universal_plane_create(struct drm_i915_private *dev_priv,
 					   DRM_MODE_ROTATE_0,
 					   supported_rotations);
 
+	if (plane_id == PLANE_PRIMARY ||
+	   (plane_id >= PLANE_SPRITE0 && plane_id <= PLANE_SPRITE5)) {
+		if (drm_plane_create_decryption_property(&plane->base))
+			DRM_ERROR("[hongfu drm]Failed to create decryption property\n");
+	}
+
 	supported_csc = BIT(DRM_COLOR_YCBCR_BT601) | BIT(DRM_COLOR_YCBCR_BT709);
 
 	if (DISPLAY_VER(dev_priv) >= 10)
