@@ -2848,7 +2848,6 @@ static struct sk_buff *igc_construct_skb_zc(struct igc_ring *ring,
 	}
 
 	if (ctx->rx_ts) {
-		skb_shinfo(skb)->tx_flags |= SKBTX_HW_TSTAMP_NETDEV;
 		skb_hwtstamps(skb)->hwtstamp = ctx->rx_ts;
 	}
 
