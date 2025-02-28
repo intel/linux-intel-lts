@@ -48,7 +48,6 @@
 0005-bpf-enforce-precise-retval-range-on-program-exit.patch
 0006-bpf-unify-async-callback-and-program-retval-checks.patch
 0007-bpf-enforce-precision-of-R0-on-program-async-callbac.patch
-#0008-bpf-lsm-Add-check-for-BPF-LSM-return-value.patch
 0001-bpf-lsm-Add-check-for-BPF-LSM-return-value.patch
 
 #CVE-2024-50028
@@ -209,3 +208,17 @@
 
 #CVE-2024-57898
 0005-wifi-cfg80211-clear-link-ID-from-bitmap-during-link-.patch
+
+#CVE-2025-21702
+0001-net_sched-sch_fifo-implement-lockless-__fifo_dump.patch
+0002-pfifo_tail_enqueue-Drop-new-packet-when-sch-limit-0.patch
+
+#CVE-2025-21696
+0003-userfaultfd-UFFD_FEATURE_WP_ASYNC.patch
+0006-fs-proc-task_mmu-implement-IOCTL-to-get-and-optional.patch
+
+#CVE-2025-21704
+0007-usb-cdc-acm-Check-control-transfer-buffer-size-befor.patch
+
+#CVE-2024-27397
+0008-netfilter-nf_tables-use-timestamp-to-check-for-set-e.patch

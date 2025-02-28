@@ -1,0 +1,67 @@
+From e55904ccee60f1c2ff3df6db763bb7a18936e18e Mon Sep 17 00:00:00 2001
+From: Quang Le <quanglex97@gmail.com>
+Date: Mon, 3 Feb 2025 16:58:38 -0800
+Subject: [PATCH 2/8] pfifo_tail_enqueue: Drop new packet when sch->limit == 0
+
+Expected behaviour:
+In case we reach scheduler's limit, pfifo_tail_enqueue() will drop a
+packet in scheduler's queue and decrease scheduler's qlen by one.
+Then, pfifo_tail_enqueue() enqueue new packet and increase
+scheduler's qlen by one. Finally, pfifo_tail_enqueue() return
+`NET_XMIT_CN` status code.
+
+Weird behaviour:
+In case we set `sch->limit == 0` and trigger pfifo_tail_enqueue() on a
+scheduler that has no packet, the 'drop a packet' step will do nothing.
+This means the scheduler's qlen still has value equal 0.
+Then, we continue to enqueue new packet and increase scheduler's qlen by
+one. In summary, we can leverage pfifo_tail_enqueue() to increase qlen by
+one and return `NET_XMIT_CN` status code.
+
+The problem is:
+Let's say we have two qdiscs: Qdisc_A and Qdisc_B.
+ - Qdisc_A's type must have '->graft()' function to create parent/child relationship.
+   Let's say Qdisc_A's type is `hfsc`. Enqueue packet to this qdisc will trigger `hfsc_enqueue`.
+ - Qdisc_B's type is pfifo_head_drop. Enqueue packet to this qdisc will trigger `pfifo_tail_enqueue`.
+ - Qdisc_B is configured to have `sch->limit == 0`.
+ - Qdisc_A is configured to route the enqueued's packet to Qdisc_B.
+
+Enqueue packet through Qdisc_A will lead to:
+ - hfsc_enqueue(Qdisc_A) -> pfifo_tail_enqueue(Qdisc_B)
+ - Qdisc_B->q.qlen += 1
+ - pfifo_tail_enqueue() return `NET_XMIT_CN`
+ - hfsc_enqueue() check for `NET_XMIT_SUCCESS` and see `NET_XMIT_CN` => hfsc_enqueue() don't increase qlen of Qdisc_A.
+
+The whole process lead to a situation where Qdisc_A->q.qlen == 0 and Qdisc_B->q.qlen == 1.
+Replace 'hfsc' with other type (for example: 'drr') still lead to the same problem.
+This violate the design where parent's qlen should equal to the sum of its childrens'qlen.
+
+Bug impact: This issue can be used for user->kernel privilege escalation when it is reachable.
+
+Fixes: 57dbb2d83d10 ("sched: add head drop fifo queue")
+Reported-by: Quang Le <quanglex97@gmail.com>
+Signed-off-by: Quang Le <quanglex97@gmail.com>
+Signed-off-by: Cong Wang <cong.wang@bytedance.com>
+Link: https://patch.msgid.link/20250204005841.223511-2-xiyou.wangcong@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/sched/sch_fifo.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/net/sched/sch_fifo.c b/net/sched/sch_fifo.c
+index 558fafbf1eba..739432c4d8d3 100644
+--- a/net/sched/sch_fifo.c
++++ b/net/sched/sch_fifo.c
+@@ -40,6 +40,9 @@ static int pfifo_tail_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+ {
+ 	unsigned int prev_backlog;
+ 
++	if (unlikely(READ_ONCE(sch->limit) == 0))
++		return qdisc_drop(skb, sch, to_free);
++
+ 	if (likely(sch->q.qlen < READ_ONCE(sch->limit)))
+ 		return qdisc_enqueue_tail(skb, sch);
+ 
+-- 
+2.25.1
+

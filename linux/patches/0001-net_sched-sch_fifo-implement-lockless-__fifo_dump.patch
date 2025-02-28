@@ -1,0 +1,79 @@
+From 18bb660ab0a32673adfdb67ffd32c8f7c99a04c0 Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Thu, 18 Apr 2024 07:32:42 +0000
+Subject: [PATCH 1/8] net_sched: sch_fifo: implement lockless __fifo_dump()
+
+Instead of relying on RTNL, __fifo_dump() can use READ_ONCE()
+annotations, paired with WRITE_ONCE() ones in __fifo_init().
+
+Also add missing READ_ONCE(sh->limit) in bfifo_enqueue(),
+pfifo_enqueue() and pfifo_tail_enqueue().
+
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/sched/sch_fifo.c | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/net/sched/sch_fifo.c b/net/sched/sch_fifo.c
+index e1040421b797..558fafbf1eba 100644
+--- a/net/sched/sch_fifo.c
++++ b/net/sched/sch_fifo.c
+@@ -19,7 +19,8 @@
+ static int bfifo_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+ 			 struct sk_buff **to_free)
+ {
+-	if (likely(sch->qstats.backlog + qdisc_pkt_len(skb) <= sch->limit))
++	if (likely(sch->qstats.backlog + qdisc_pkt_len(skb) <=
++		   READ_ONCE(sch->limit)))
+ 		return qdisc_enqueue_tail(skb, sch);
+ 
+ 	return qdisc_drop(skb, sch, to_free);
+@@ -28,7 +29,7 @@ static int bfifo_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+ static int pfifo_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+ 			 struct sk_buff **to_free)
+ {
+-	if (likely(sch->q.qlen < sch->limit))
++	if (likely(sch->q.qlen < READ_ONCE(sch->limit)))
+ 		return qdisc_enqueue_tail(skb, sch);
+ 
+ 	return qdisc_drop(skb, sch, to_free);
+@@ -39,7 +40,7 @@ static int pfifo_tail_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+ {
+ 	unsigned int prev_backlog;
+ 
+-	if (likely(sch->q.qlen < sch->limit))
++	if (likely(sch->q.qlen < READ_ONCE(sch->limit)))
+ 		return qdisc_enqueue_tail(skb, sch);
+ 
+ 	prev_backlog = sch->qstats.backlog;
+@@ -105,14 +106,14 @@ static int __fifo_init(struct Qdisc *sch, struct nlattr *opt,
+ 		if (is_bfifo)
+ 			limit *= psched_mtu(qdisc_dev(sch));
+ 
+-		sch->limit = limit;
++		WRITE_ONCE(sch->limit, limit);
+ 	} else {
+ 		struct tc_fifo_qopt *ctl = nla_data(opt);
+ 
+ 		if (nla_len(opt) < sizeof(*ctl))
+ 			return -EINVAL;
+ 
+-		sch->limit = ctl->limit;
++		WRITE_ONCE(sch->limit, ctl->limit);
+ 	}
+ 
+ 	if (is_bfifo)
+@@ -154,7 +155,7 @@ static void fifo_destroy(struct Qdisc *sch)
+ 
+ static int __fifo_dump(struct Qdisc *sch, struct sk_buff *skb)
+ {
+-	struct tc_fifo_qopt opt = { .limit = sch->limit };
++	struct tc_fifo_qopt opt = { .limit = READ_ONCE(sch->limit) };
+ 
+ 	if (nla_put(skb, TCA_OPTIONS, sizeof(opt), &opt))
+ 		goto nla_put_failure;
+-- 
+2.25.1
+
