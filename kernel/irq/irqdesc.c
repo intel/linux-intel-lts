@@ -684,7 +684,7 @@ static inline bool is_hardirq(struct irq_desc *desc)
 	if (!irqs_pipelined())
 		return in_hardirq();
 
-	if (in_pipeline() || !(desc->istate & IRQS_DEFERRED))
+	if (in_pipeline() || (desc->istate & IRQS_DEFERRED))
 		return true;
 
 	return false;
