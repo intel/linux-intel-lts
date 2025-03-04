@@ -306,9 +306,8 @@ ipu_fw_psys_ppg_buffer_set_vaddress(struct ipu_fw_psys_buffer_set *buf_set,
 	return 0;
 }
 
-int ipu_fw_psys_ppg_buffer_set_set_kernel_enable_bitmap(
-		struct ipu_fw_psys_buffer_set *buf_set,
-		u32 *kernel_enable_bitmap)
+int ipu_fw_psys_ppg_buffer_set_set_keb(struct ipu_fw_psys_buffer_set *buf_set,
+				       u32 *kernel_enable_bitmap)
 {
 	memcpy(buf_set->kernel_enable_bitmap, (u8 *)kernel_enable_bitmap,
 	       sizeof(buf_set->kernel_enable_bitmap));

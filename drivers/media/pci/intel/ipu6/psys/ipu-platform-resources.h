@@ -92,9 +92,9 @@ int ipu_fw_psys_set_proc_dfm_bitmap(struct ipu_fw_psys_process *ptr,
 				    u16 id, u32 bitmap,
 				    u32 active_bitmap);
 
-int ipu_psys_allocate_cmd_queue_resource(struct ipu_psys_resource_pool *pool);
-void ipu_psys_free_cmd_queue_resource(struct ipu_psys_resource_pool *pool,
-				      u8 queue_id);
+int ipu_psys_allocate_cmd_queue_res(struct ipu_psys_resource_pool *pool);
+void ipu_psys_free_cmd_queue_res(struct ipu_psys_resource_pool *pool,
+				 u8 queue_id);
 
 extern const struct ipu_fw_resource_definitions *ipu6_res_defs;
 extern const struct ipu_fw_resource_definitions *ipu6se_res_defs;

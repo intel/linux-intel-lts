@@ -481,7 +481,7 @@ int ipu6_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
 }
 
 static struct ipu_fw_psys_program_manifest *
-get_program_manifest(const struct ipu_fw_psys_program_group_manifest *manifest,
+get_program_manifest(const struct ipu_fw_psys_pgm *manifest,
 		     const unsigned int program_index)
 {
 	struct ipu_fw_psys_program_manifest *prg_manifest_base;
@@ -504,10 +504,10 @@ get_program_manifest(const struct ipu_fw_psys_program_group_manifest *manifest,
 	return (struct ipu_fw_psys_program_manifest *)program_manifest;
 }
 
-int ipu6_fw_psys_get_program_manifest_by_process(
-	struct ipu_fw_generic_program_manifest *gen_pm,
-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
-	struct ipu_fw_psys_process *process)
+int
+ipu6_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
+				const struct ipu_fw_psys_pgm *pg_manifest,
+				struct ipu_fw_psys_process *process)
 {
 	u32 program_id = process->program_idx;
 	struct ipu_fw_psys_program_manifest *pm;

@@ -10,6 +10,7 @@
 #include <linux/version.h>
 #include "ipu6.h"
 #include "ipu6-bus.h"
+#include "ipu6-dma.h"
 #include "ipu-fw-psys.h"
 #include "ipu-platform-psys.h"
 
@@ -200,7 +201,7 @@ struct ipu_psys {
 	atomic_t wakeup_count;  /* Psys schedule thread wakeup count */
 
 	/* Resources needed to be managed for process groups */
-	struct ipu_psys_resource_pool resource_pool_running;
+	struct ipu_psys_resource_pool res_pool_running;
 
 	const struct firmware *fw;
 	struct sg_table fw_sgt;
@@ -217,7 +218,7 @@ struct ipu_psys {
 
 struct ipu_psys_fh {
 	struct ipu_psys *psys;
-	struct mutex mutex;	/* Protects bufs_list & kcmds fields */
+	struct mutex mutex;/* Protects bufs_list & kcmds fields */
 	struct list_head list;
 	/* Holds all buffers that this fh owns */
 	struct list_head bufs_list;
@@ -273,7 +274,7 @@ struct ipu_psys_kcmd {
 struct ipu_dma_buf_attach {
 	struct device *dev;
 	u64 len;
-	void *userptr;
+	unsigned long userptr;
 	struct sg_table *sgt;
 	struct page **pages;
 	size_t npages;
@@ -281,7 +282,7 @@ struct ipu_dma_buf_attach {
 
 struct ipu_psys_kbuffer {
 	u64 len;
-	void *userptr;
+	unsigned long userptr;
 	void *kaddr;
 	struct list_head list;
 	dma_addr_t dma_addr;
@@ -289,15 +290,14 @@ struct ipu_psys_kbuffer {
 	struct dma_buf_attachment *db_attach;
 	struct dma_buf *dbuf;
 	u32 flags;
-	/* The number of times this buffer is mapped */
-	atomic_t map_count;
+	atomic_t map_count; /* The number of times this buffer is mapped */
 	bool valid;	/* True when buffer is usable */
 };
 
 struct ipu_psys_desc {
-	struct ipu_psys_kbuffer	*kbuf;
-	struct list_head	list;
-	u32			fd;
+	struct ipu_psys_kbuffer *kbuf;
+	struct list_head list;
+	u32 fd;
 };
 
 #define inode_to_ipu_psys(inode) \
@@ -315,8 +315,8 @@ struct ipu_psys_kbuffer *
 ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh);
 struct ipu_psys_kbuffer *
 ipu_psys_lookup_kbuffer_by_kaddr(struct ipu_psys_fh *fh, void *kaddr);
-int ipu_psys_resource_pool_init(struct ipu_psys_resource_pool *pool);
-void ipu_psys_resource_pool_cleanup(struct ipu_psys_resource_pool *pool);
+int ipu_psys_res_pool_init(struct ipu_psys_resource_pool *pool);
+void ipu_psys_res_pool_cleanup(struct ipu_psys_resource_pool *pool);
 struct ipu_psys_kcmd *ipu_get_completed_kcmd(struct ipu_psys_fh *fh);
 long ipu_ioctl_dqevent(struct ipu_psys_event *event,
 		       struct ipu_psys_fh *fh, unsigned int f_flags);
