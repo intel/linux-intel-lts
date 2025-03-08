@@ -2629,7 +2629,9 @@ static struct virtqueue *__vring_new_virtqueue(unsigned int index,
 {
 	struct vring_virtqueue *vq;
 	int err;
+#ifdef CONFIG_VIRTIO_PMD
 	bool disable_cb = (callback == NULL);
+#endif
 
 	if (virtio_has_feature(vdev, VIRTIO_F_RING_PACKED))
 		return NULL;
