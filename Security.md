@@ -1,5 +1,848 @@
 Security Policy
 Intel is committed to rapidly addressing security vulnerabilities affecting our customers and providing clear guidance on the solution, impact, severity and mitigation.
+rom a9f3a5c887be14174a31d1977883c68663cb4ec0 Mon Sep 17 00:00:00 2001
+From: sharedbankcoding <gov.wh@icloud.com>
+Date: Sat, 8 Mar 2025 01:03:33 +0100
+Subject: [PATCH] Create SSL
 
+---
+ SSL | 828 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 828 insertions(+)
+ create mode 100644 SSL
+
+diff --git a/SSL b/SSL
+new file mode 100644
+index 0000000000000..100193a8f5ac8
+--- /dev/null
++++ b/SSL
+@@ -0,0 +1,828 @@
++Copyright © 2012-2025 Apple Inc. All rights reserved. Apple and the Apple logo are trademarks of Apple Inc., registered in the US and other countries.
++
++The traffic incidents feature in Apple Maps uses incidents data from TomTom (along with other data). The TomTom data is proprietary and subject to copyright protection, database right protection, and intellectual property rights owned by TomTom or its suppliers. TomTom data © 2025 TomTom.
++
++Business listings data © Actonia Inc.
++
++Business listings data © 2015 Acxiom
++
++Map data © 2025 Ambita, Norwegian Mapping Authority, Geovekst and municipalities
++
++Business listings data © Ancestry.com Operations Inc.
++
++Map data © 2025 Andes
++
++Business listings data © 2025 Apontador
++
++Map data © 2025 Australia Government
++
++Map data © Australian Government Department of Agriculture, Water and the Environment (CC BY 3.0 AU)
++
++Business listings data © 2025 Autopass Inc.
++
++Map data © 2025 Başarsoft
++
++Business listings data © 2025 Bookatable by Michelin
++
++Business listings data © 2025 Booking.com
++
++Business listings data © Boston Children’s Hospital, VaccineFinder.org. All rights reserved.
++
++Air quality and fire polygons data provided by Breezometer
++
++Contains information licensed under the Open Government Licence – British Columbia
++
++Fire advisories data © 2025 State of California
++
++Map data © California State Parks
++
++Fire Source Data from © Fogos.pt
++For current information go to: https://fogos.pt
++
++Contains information licensed under the Open Government License – Canada
++
++Map data © Canadian Forest Service. 2025. Canadian Wildland Fire Information System (CWFIS), Natural Resources Canada, Canadian Forest Service, Northern Forestry Centre, Edmonton, Alberta. http://cwfis.cfs.nrcan.gc.ca
++
++Charging station data © 2025 CarCharging, Inc.
++
++Charging station data © 2025 ChargePoint, Inc.
++
++Business listings data © 2025 Chatmeter
++
++Charging station data © 2025 CIRRANTiC
++
++Map data © City of Gold Coast
++
++Business listings data © Clinia Health Inc.
++
++City of Yokohama takeout/delivery available restaurants data under Creative Commons Attribution 4.0 (CC BY 4.0)
++
++Map data © Closca Design S.L.
++
++Map data © Commonwealth of Australia (CC BY 4.0)
++
++Map data provided by ConcreteDisciples.com
++
++Business listings data © 2025 Consistently
++
++Property parcel data for USA © 2025 CoreLogic
++
++Business listings data © 2025 DAC Group
++
++Business listings data © 2025 Das Örtliche
++
++Map data © 2025 DataCentric
++
++(CanVec)
++© Department of Natural Resources Canada. All rights reserved.
++http://www.geogratis.gc.ca/geogratis/en/index.html
++
++(CGIAR-CSI SRTM)
++CGIAR Consortium for Spatial Information, http://srtm.csi.cgiar.org
++
++Business listings data © 2025 Dianping
++
++Business listings data © 2025 Digital Advantage Corp.
++
++Business Listings Data © 2025 Digitale Medier 1881 AS
++
++Business listings data © Digital Maas Pty Ltd.
++
++Map data © 2025 Direção-Geral da Saúde
++
++© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2017
++Source: Airbus Defence and Space GmbH
++
++Map and postal data © 2017 DMTI. This software contains Postal Code OM Data copied by Apple under a sub-license from DMTI Spatial Inc., a party directly licensed by Canada Post Corporation. The Canada Post Corporation file from which this data was copied is dated 2017.
++
++Business listings data © 2025 DTG BV
++
++Business listings data © Easy.co.il Ltd.
++
++Map data © E-Mapping Solutions Sdn Bhd
++
++(GlobCover)
++© ESA 2010 and UCLouvain, http://www.esa.int/esaEO/index.html
++
++Map data © European Environment Agency (EEA); Estonian Environmental Register 01.01.2021; Land Burgenland, Land Kärnten, Land Niederösterreich, Land Oberösterreich, Land Salzburg, Land Steiermark, Land Tirol, Land Vorarlberg, Stadt Wien aggregated by Austrian Environment Agency
++
++Map data © European Union EFFIS (CC BY 4.0), for current information go to effis.jrc.ec.europa.eu. Note the data has been modified.
++
++Business listings data © 2025 Evermaps
++
++Business listings data © Experian Australia Pty Ltd
++
++Business listings data © 2025 Factual
++
++Flickr Shapefiles Public Dataset, Version 1.0, http://www.flickr.com
++
++Business listings data © 2025 Foursquare
++
++© 2025 GasBuddy/OpenStore, LLC. All rights reserved.
++
++Map data provided by GEBCO Compilation Group (2019) GEBCO 2019 Grid
++
++Map data © G.E. GEOMETRIKI LTD
++
++Map data © GeoJunxion
++
++(GeoNames)
++GeoNames and contributors, http://www.geonames.org
++
++Geoscape data products © Geoscape Australia 2025 Copyright and Disclaimer Notice
++
++Map data © Geospatial Information Authority of Japan
++
++Map data © GeoTechnologies, Inc.
++
++Map data © 2025 GeoX, Ofek and Systematics
++
++Map data © Globetech Co., Ltd.
++
++Business listings data © 2025 Golden Pages (Ireland)
++
++Map data © 2025 Good Shepherd Engineering
++
++Map data © Government of Ireland (CC BY 40)
++
++Map data © The Government of South Australia, Country Fire Service Warnings and Incidents, sourced on December 3, 2021 and daily thereafter (CC BY 4.0)
++
++Map data © Government of Western Australia (Department of Fire and Emergency Services). For current information go to www.emergency.wa.gov.au (CC BY 4.0)
++
++Data © 2025 GreatSchools, Inc.
++
++Business listings data © 2025 Herold.at
++
++Roadway alerts provided by Haas Alert
++
++Map data © 2025 Hexagon
++
++Business listings data © 2025 iFoodie
++
++Map data © Instituto Nacional de Estadística y Geografía
++
++Map data © 2025 IGN - INSTITUT NATIONAL DE L'INFORMATION GEOGRAPHIQUE ET FORESTIERE, www.ign.fr
++
++Map data © Instituto Nacional De Pesquisas Espaci
++
++Map data © 2012 Intermap
++
++Business listings data © 2025 Italiaonline
++
++Business listings data © Just Dial Ltd.
++
++Business listings data © 2025 Lastmile Retail
++
++Business listings data © 2025 LinkMercado S.A. (TeleListas.net)
++
++Map data © LINZ – Land Information New Zealand, LINZ Data Service. Licensed under Creative Commons Attribution 3.0 New Zealand (CC BY 3.0 NZ). http://data.linz.govt.nz
++
++Business listings data © 2025 Localeze
++
++Business listings data © 2025 Localistico
++
++Business listings data © Local Knowledge
++
++Business listings data © 2025 Location3
++
++Map Data Israel © Mapa GISrael
++
++Map data © 2025 MapCity from Equifax
++
++Mapping data for New Zealand. © 2025 MapData Services Pty Ltd., PSMA http://www.nowwhere.com.au/lic/NowWhereLic.htm
++
++Map data © 2025 MapKing
++
++Business Listings Data © Maplebear Inc. d/b/a Instacart
++
++Map Data © 2025 MapMyIndia by CE Info Systems Pvt. Ltd.
++
++Neighborhood data © 2025 Maponics LLC
++
++Map data © Maxar Technologies, Inc.
++
++Map data © MDA Information Systems, Inc.
++
++Business listings data © Menufy.com, LLC
++
++Map data © 2025 Metria
++
++Business listings data © Milestone Inc.
++
++Map data © Ministère des Solidarités et de la Santé
++
++Data provided by Ministério da Saúde, Portugal
++
++Business listings data © 2025 Mobilosoft SPRL
++
++Business listings data © 2025 MomentFeed
++
++Map data © Nancy Milholland (CC BY 4.0)
++
++National Aeronautics and Space Administration, http://www.nasa.gov; NASA Earth Observatory http://earthobservatory.nasa.gov; NOAA National Geophysical Data Center http://www.ngdc.noaa.gov
++
++(VMAP0)
++National Geospatial-intelligence Agency, http://www.nga.mil
++This product was developed using materials from the United States National Imagery and Mapping Agency and are reproduced with permission. This product has neither been endorsed nor authorized by the United States National Imagery and Mapping Agency or the United States Department of Defense.
++
++NLS - National Land Survey of Finland Topographic Database, 2014. License can be found here. http://www.maanmittauslaitos.fi/en/kartat
++
++Charging station data © 2025 NRG EV Services LLC
++
++Map data © NTT Data Corporation
++
++Business listings data © The Oddle Company Pte. Ltd.
++
++Map data © 2025 Oi S.A.
++
++Contains public sector information licensed under the Open Government License v3.0
++
++Contains Ordnance Survey data © Crown copyright and database right 2017. Contains Royal Mail data © Royal Mail copyright and database right 2017. http://www.ordnancesurvey.co.uk/oswebsite/
++
++(OSDM)
++© Commonwealth of Australia, 2012. This data has been used with the permission of the Commonwealth. The Commonwealth has not evaluated the data as altered and incorporated within this software, and therefore gives no warranty regarding its accuracy, completeness, currency or suitability for any particular purpose.
++
++Business listings data © 2025 PagesJaunes S.A.
++
++Map data © 2025 Parkopedia Ltd.
++
++Business listings data © 2025 Partoo
++
++Business listings data © 2025 PinMeTo
++
++Business listings data © 2025 Pitchup.com
++
++Business listings data © 2025 Placeable
++
++Business listings data © 2025 PositionTech
++
++Map Data © Poste Italiane S.p.A.
++
++Business listings data by Geolancer™ by Quadrant
++
++Business listings data © 2025 Quandoo GmbH
++
++Weather Models from National Weather Service/National Oceanic and Atmospheric Administration (NOAA)
++
++Weather Models from Environment and Climate Change Canada
++
++Weather Models from Deutscher Wetterdienst
++
++Weather Models from The Met Office/European Centre for Medium-range Weather Forecasts (ECMWF)
++
++Weather Models from Japan Meteorological Agency
++
++Weather Station Data from National Weather Service/National Oceanic and Atmospheric Administration (NOAA)
++
++Weather Station Data from Japan Meteorological Agency
++
++Radar from National Weather Service/National Oceanic and Atmospheric Administration (NOAA)
++
++Radar from The Met Office
++
++Severe Weather Alerts from National Weather Service
++
++Severe Weather Alerts from Environment and Climate Change Canada
++
++Severe Weather Alerts from EUMETNET – Meteoalarm
++
++Severe Weather Alerts from Australian Government Bureau of Meteorology
++
++Severe Weather Alerts from Japan Meteorological Agency
++
++Severe Weather Alerts from QWeather
++
++Severe Weather Alerts from Instituto Nacional de Meteorologia
++
++Severe Weather Alerts from Thai Meteorological Department
++
++Severe Weather Alerts from India Meteorological Department
++
++Severe Weather Alerts from Servicio Meteorológico Nacional
++
++Air Quality Information from QWeather
++
++Air Quality Information from BreezoMeter
++
++Map data © rcdb.com
++
++Business listings data © Recargo, Inc.
++
++Map data © Regio Ltd
++
++Business listings data © 2025 RenderSEO
++
++Business listings data © Reputation.com
++
++Business listings data © 2025 Rio SEO
++
++Business listings data © 2025 Rocketdata
++
++Copyright and license Sadler Consultants Europe GmbH, www.urbanaccessregulations.eu
++
++Charging station data © 2025 SemaConnect
++
++Business listings data © 2020 Sensis
++
++Map data © Shobunsha Publications, Inc.
++
++Business listings data © 2025 Sim Partners
++
++Business Listings Data © Slice Solutions, Inc. dba Slice
++
++Business listings data © SolvHealth
++
++Business listings data © SpotHero, Inc.
++
++Map data © SPPIF-CONAFOR, CONABIO
++
++Map data © State of New South Wales (NSW Rural Fire Service). For current information go to www.rfs.nsw.gov.au (CC BY 4.0)
++
++Map data © State of Queensland (Queensland Fire and Emergency Services) (CC BY 4.0)
++
++(StatCan)
++Statistics Canada, http://www.statcan.gc.ca
++
++Map Data © StudioSit SA
++
++Business listings data © 2025 SweetIQ
++
++Business listings data © 2025 Swisscom Directories AG
++
++Maps data © swisstopo
++
++Business listings data © 2025 Tabelog
++
++Map data © Terra Mapping The Globe S.A.
++
++Map data © Texas Parks and Wildlife Department-State Parks Division
++
++Business listings data © Top Local Manager
++
++Business listings data © 2025 Tripadvisor
++
++This map was produced using data, in whole or in part, provided by the Trust for Public Land
++
++Business listings data © 2025 Uberall
++
++Map data © UNAVCO, EarthScope Consortium
++
++(TIGER/Line® files)
++U.S. Census Bureau, http://www.census.gov
++
++U.S. Department of State, http://www.state.gov
++
++U.S. Geological Survey, http://www.usgs.gov
++
++Map data © Victoria Department of Environment, Land, Water & Planning (CC BY 4.0)
++
++Map data © 2012 Waze
++
++Business listings data © 2025 Where 2 Get It (Brandify)
++
++Business listings data @ 2025 Yell
++
++Business listings data © 2025 Yellow Pages Group Corp
++
++Business listings data © 2025 Yellow Pages Turkey
++
++“Reviews from Yelp” © Yelp
++
++Business listings data © 2025 Yext, Inc.
++
++Business listings data © 2025 Zomato
++
++Data Delivered by Zonda
++
++Transit data providers:
++
++San Francisco – Bay Area transit data provided by MTC's 511.org
++
++AirTrain JFK data from 511 NY
++
++Westchester County, New York transit data from 511 NY
++
++Transit scheduling, geographic, and real-time data provided by permission of AAATA/TheRide
++
++Alameda County, California transit data © AC Transit/Disclaimer/CCBY 3.0
++
++Canberra transit data provided by ACT Government
++
++Venice transit data provided by ACTV
++
++Adelaide transit data provided by Adelaide Metro (CC BY 4.0)
++
++Barcelona transit data provided by AMB Barcelona
++
++Montargis, France transit data provided by Amelys
++
++Amiens, France transit data provided by Ametis
++
++Anchorage, Alaska transit data provided by the Municipality of Anchorage
++
++Arvin, California transit data provided by Arvin Transit (CC BY 4.0)
++
++Rouen, France transit data provided by Astuce
++
++Auckland, New Zealand transit data provided by Auckland Transport
++
++Naples, Italy transit data provided by Azienda Napoletana Mobilita
++
++Basque Country transit data provided by the Basque Government
++
++New Zealand transit data provided by baybus
++
++British Columbia transit data provided by BC Transit
++
++Brest, France transit data provided by Bibus
++
++Indiana transit data provided by Bloomington Transit
++
++Châteauroux, France transit data provided by Châteauroux Métropole
++
++Data provided by Chicago Transit Authority
++
++Brampton, Ontario transit data provided by City of Brampton (CC BY 4.0)
++
++Brandon, Manitoba transit data provided by the City of Brandon
++
++Burlington, Ontario transit data provide by the City of Burlington
++
++Calgary transit information provided by the City of Calgary under Open Government License
++
++Edmonton transit data provided by City of Edmonton
++
++Grand Prairie, Alberta transit data provided by the City of Grand Prairie under licence
++
++Guelph, Ontario transit data provided by the City of Guelph
++
++Hamilton Street Railways public sector data made available under the City of Hamilton’s open data license
++
++Spain transit data provided by City of Las Palmas de Gran Canaria
++
++City of Mississauga, Ontario (MiWay) transit data from the City of Mississauga
++
++Moncton, New Brunswick transit data provided by the City of Moncton
++
++Phoenix, Arizona transit data provided by City of Phoenix
++
++Regina, Saskatchewan transit data provided by the City of Regina
++
++St. Albert, Alberta transit data provided by the City of St. Albert
++
++Saint John, New Brunswick transit data licensed under the Open Government License - City of Saint John
++
++San Francisco Municipal Transportation Agency data reproduced with permission granted by the City and County of San Francisco. The information has been provided by means of a nonexclusive, limited, and revocable license granted by the City and County of San Francisco.
++
++Transit data provided by the City of Santa Monica, licensed under ODC Attribution License
++
++Vienna, Austria transit data provided by City of Vienna
++
++Clermont, France transit data provided by Clermont Auvergne Métropole
++
++Corsica, France transit data provided by Collectivité de Corse
++
++Nevers, France transit data provided by Communauté d'Agglomération de Nevers
++
++Pays Ajaccien, France transit data provided by Communauté d'Agglomération du Pays Ajaccien
++
++Royan Atlantique, France transit data provided by Communauté d'Agglomération Royan Atlantique
++
++Arras, France transit data provided by Communauté Urbaine d'Arras
++
++Lower Saxony and Bremen transit data provided by Connect-Fahrplanauskunft GmbH
++
++Ibiza transit data provided by Consell Insular d’Eivissa
++
++Menorca transit data provided by Consell Insular de Menorca
++
++Mallorca transit data provided by Consorci Transports Mallorca
++
++Corpus Christi, Texas transit data provided by CRTA
++
++Madrid transit data provided by CRTM
++
++Italy transit data provided by CTM SpA
++
++Strasbourg, France transit data provided by CTS
++
++Vancouver, Washington transit data provided by permission of C-TRAN
++
++University of South Florida transit data provided by CUTR-at-USF under Apache License 2.0
++
++Public Transport Data © De Lijn — reused under license
++
++Finland transit data provided by Digitransit
++
++Dijon, France transit data provided by DiviaMobilités
++
++Transit data provided by EasyWay
++
++Madrid transit data provided by EMT
++
++Norway transit data provided by Entur
++
++France transit data provided by Envia
++
++Canterbury transit data provided by Environment Canterbury, licensed under Creative Commons Attribution 4.0 (CC BY 4.0)
++
++Estonia transit data provided by the Estonian Road Administration
++
++Côte d’Azure, France transit data provided by Estérel Côte d'Azur Agglomération
++
++Metz, France transit data provided by Eurométropole de Metz
++
++Eurostar transit data provided by Eurostar International Ltd.
++
++Fairfax, Virginia transit data provided in part by Fairfax Connector
++
++Barcelona transit data provided by Ferrocarrils de la Generalitat de Catalunya, checked daily
++
++Rio de Janeiro transit data provided in part by Fetranspor under license
++
++Tours, France transit data provided by Fil Bleu
++
++Chartres, France transit data provided by Filibus
++
++Valencia transit data provided by FGV
++
++Grand Est, France transit data provided by Fluo Grand Est
++
++Fort Worth, Texas transit data provided by Fort Worth Transportation Authority (The T)
++
++Navarra transit data provided by Gobierno de Navarra
++
++Catalonia transit data provided the Government of Catalonia
++
++Grand Avignon, France transit data provided by Grand Avignon
++
++Grand Besançon, France transit data provided by Grand Besançon Metropole
++
++Ohio transit data provided by the Greater Cleveland Regional Transit Authority
++
++Sudbury, Ontario transit data provided by Greater Sudbury Transit
++
++New Zealand transit data provided by Greater Wellington Region Council
++
++Turin, Italy transit data provided by GTT
++
++Halifax, Nova Scotia transit data licensed under the Open Government License – Halifax
++
++Tampa, Florida transit data provided by Hillsborough Area Regional Transit Authority
++
++Helsinki transit data provided by HSL
++
++Hamburg transit data provided by HVV
++
++Lille, France transit data provided by Ilévia
++
++Information provided by ITO World, in partnership with Arriva UK Bus. Contains information provided by Go Ahead Group.
++
++Great Britain transit data © 2015-2025 ITO World Ltd. All rights reserved. Contains public sector information licensed under the Open Government Licence v2.0.
++
++Ireland transit data © ITO World Ltd. All rights reserved. Contains Irish Public Sector Data provided by the National Transport Authority and licensed under a Creative Commons Attribution 4.0 International (CC BY 4.0) license.
++
++Lorient, France transit data provided by IZILO
++
++Transit data provided by Jakdojade
++
++Japan transit data © Jorudan
++
++JTB Acknowledged: 03-01
++Contents of the railroad time schedule (except JR lines and railways by joint public-private sector funding) is based on the February 2025 issue of “JTB Timetable”. Unauthorized use of these materials in violation of the applicable license terms, is strictly prohibited.
++
++Greater Seattle transit data provided by permission of King County
++
++Kingston, Ontario transit data provided by Kingston Transit
++
++France transit data processed by Hove from sources including Transport.data.gouv.fr, SNCF, and others. Transport.data.gouv.fr data made available under the Open Database License (ODbL). Modifications to the data available here.
++
++LADOT transit data provided by the Los Angeles Department of Transportation
++
++Finland transit data provided by Liikennevirasto
++
++Nice, France transit data provided by Lignes d’Azur
++
++Lisbon Transit data provided by the Lisbon Open Data Portal
++
++Data provided by Lothian and Edinburgh Trams
++
++France transit data provided by Lyneo
++
++Boston, Massachusetts area transit data provided by the Massachusetts Department of Transportation (MassDOT)
++
++Milwaukee, Wisconsin transit data provided by MCTS
++
++Germany timetable data provided by MDV GmbH/NASA GmbH. Resulting information offered without guarantee.
++
++Chicago Metro Rail transit data provided by METRA
++
++Christchurch, Canterbury transit data provided by Metro
++
++Timaru, Canterbury transit data provided by Metro
++
++Washington Metropolitan Area Transit Authority transit data provided by Metro
++
++Ontario transit data provided with permission of Metrolinx. Metrolinx makes no representations or warranties of any kind, express or implied, and assumes no responsibility for the accuracy or currency of the data used herein.
++
++Houston, Texas route and arrival transit data provided by permission of METRO
++
++MTA and the MTA logo are trademarks of the Metropolitan Transportation Authority and used with permission of the Metropolitan Transportation Authority
++
++Aix-Marseille-Provence and Bouches-du-Rhône, France transit data provided by La Métropole Mobilité
++
++Indiana transit data provided by Michiana Area Council of Governments
++
++Contains transit information licensed under the Open Government Licence – Milton
++
++Contains data provided by Ministry of Transportation of Israel
++
++Transit data provided by Moovit
++
++Granada transit data provided by Movilidad Granada
++
++Lecce, Italy transit data provided by the Municipality of Lecce
++
++Palermo transit data provided by the Municipality of Palermo
++
++Santander transit data provided by the Municipality of Santander
++
++Germany transit data provided by MVV
++
++Contains information of Network Rail Infrastructure Limited. Powered by National Rail Enquiries.
++
++New Jersey Transit data provided by NJ Transit
++
++Staten Island Ferry transit data provided by the New York City Department of Transportation (DOT); the information may subsequently have been modified other than by DOT. The public is advised to observe posted signage for compliance with applicable laws and regulations.
++
++Contains information licensed under the Open Government Licence - Niagara Region http://www.niagararegion.ca/government/opendata/terms-of-use.aspx
++
++Baden-Württemberg transit data provided by NVBW. Certain map data (c) OpenStreetMap contributors under the Open Database License (ODbL).
++
++Germany transit data provided by NWL
++
++Oahu, Hawaii (TheBus) transit data provided by Oahu Transit Services, Inc.
++
++Oise, France transit data provided by Oise Mobilité
++
++Ottawa, Ontario data provided under Open Government License – City of Ottawa
++
++Aix-les-Bains and Lac du Bourget, France transit data provided by Ondéa CTLB
++
++Tuscany transit data provided by Open Toscana
++
++North Carolina transit data provided by PART
++
++Pau Béarn Pyrénées, France transit data provided by Pau Béarn Pyrénées Mobilités
++
++Piemonte transit data provided by the Piemonte Region Government
++
++Pittsburgh transit data provided by Port Authority of Allegheny County
++
++Japan transit data provided by the Public Transportation Open Data Center (PTODC). PTODC does not guarantee the accuracy or integrity of the information used herein.
++
++Queensland, Australia transit data provided by Queensland Government (CC BY 4.0)
++
++Pays de la Loire, France transit data provided by Région des Pays de la Loire
++
++Italy transit data provided by Regione Autònoma de Sardegna
++
++Calabrian transit data provided by Regione Calabria
++
++Denmark transit data provided by Rejseplanen
++
++Rhein-Neckar transit data provided by Rhein-Neckar-Verkehr (RNV) GmbH
++
++Concord and Kannapolis transit data provided by Rider Transit (CC BY 3.0)
++
++La Roche-sur-Yon, France transit data provided by La Roche-sur-Yon Agglomération
++
++Rome transit data provided by Roma Mobilita
++
++St. Petersburg, Florida transit data provided by PSTA
++
++Grand River Transit data provided by the Regional Municipality of Waterloo under licence
++
++Greater Montreal transit data provided by permission of Réseau de transport métropolitain (RMT)
++
++Banff Transit data provided by Roam Transit
++
++Maryland transit data provided by the Center for Mobility Equity (CME)
++
++Québec City, Québec transit data provided by RTC
++
++Dubai transit data provided by RTA Dubai
++
++Saint-Etienne, France transit data provided by Saint-Etienne Métropole
++
++Transit data © Santa Cruz Metropolitan Transit District (CC BY 4.0)
++
++San Joaquin RTD transit data licensed under Creative Commons Attribution 3.0 Unported (CC BY 3.0)
++
++Salem, Oregon transit data provided by SAMTD under the SAMTD Data License Agreement
++
++Switzerland transit data provided by SBB
++
++Mexico City transit data provided by the Government of Mexico City
++
++Le Mans, France transit data provided by SETRAM
++
++Lévis, Québec transit data provided by Société de Transport de Lévis
++
++Romagna, Italy transit data provided by Start Romagna
++
++Brussels transit data provided by STIB
++
++Montreal, Québec transit data provided by permission of Societe de transport de Montreal (STM)
++
++Gatineau, Québec transit data provided by STO
++
++Iceland transit data provided by Strætó BS
++
++Quebec, Canada transit data provided by STTR (CC BY 4.0)
++
++Sherbrooke, Québec transit data provided by STS
++
++Transit data provided by Swiftly, Inc
++
++Nîmes, France transit data provided by Tango
++
++Orleans, France transit data provided by TAO
++
++Bordeaux, France transit data provided by TBM
++
++Wallonia transit data provided by TEC
++
++Powered by TfL Open Data. Contains OS data © Crown copyright and database rights 2016 and Geomni UK Map data © and database rights 2025.
++
++Barcelona, Spain transit data provided by TMB, checked daily
++
++Oakville, Ontario transit data licensed under the Open Government Licence – Town of Oakville
++
++Bologna transit data provided by TPER
++
++Transit data provided by Trafi
++
++Sweden transit data provided by Trafiklab.se
++
++Windsor, Ontario transit data provided by Transit Windsor
++
++Queensland transit data provided by TransLink
++
++Perth, Western Australia transit data provided by Transperth
++
++Greater Sydney transit data provided by Transport for NSW
++
++KOSHO No. 154 in 2015. The content of JR data is based on February 2025 edition of “JR Timetable” published by Transportation News Co., Ltd. This timetable may not be reprinted, duplicated or processed for paper, electromagnetic or any other media without permission.
++
++Tenerife transit data provided by Transportes Interurbanos de Tenerife
++
++Italy transit data provided by Trenitalia
++
++Italy transit data provided by Trentino Transporti SpA
++
++Laon, France transit data provided by TUL
++
++Soissons, France transit data provided by TUS
++
++Utah Transit data provided by Utah Transit Authority
++
++Freiburg transit data provided by VAG
++
++Valencia transit data provided by the Valencia City Council
++
++Valencia, Spain transit data provided by Ayuntamiento de València (CC BY 4.0)
++
++Cáceres transit data provided by Vectalia Movilidad Cáceres
++
++Berlin transit data © VBB Verkehrsverbund Berlin-Brandenburg GmbH/CC BY 3.0 DE/Adapted for use in Apple Maps/Alle Angaben ohne Gewähr (All information without guarantee)
++
++Nürnberg, Germany transit data provided by Verkehrsverbund Großraum Nürnberg GmbH (VGN)
++
++San Antonio, Texas transit data provided by VIA Metropolitan Transit
++
++Victoria transit data licensed under Creative Commons Attribution 4.0 Australia (CC 4.0)
++
++Grand Poitiers, France transit data provided by Vitalis
++
++Frankfurt, Germany transit data licensed under Creative Commons 4.0
++
++Germany transit data provided by VMT GmbH
++
++Germany transit data provided by VRN
++
++Rhine-Ruhr, Germany transit data provided by MLS A/B
++Germany transit data provided by (unknown.unknown)
++Germany transit data provided by McCoy L Stevens
++
++Oberelbe transit data provided by Verkehrsverbund Oberelbe (VVO)
++
++Stuttgart, Germany transit data provided by VVS
++
++Finland transit data provided by Waltti
++
++Région Sud, France transit data provided by ZOU!
++
++Unless specifically identified as such, Apple Maps' use of any third party trademarks does not indicate any relationship, sponsorship, or endorsement between Apple Maps and the owners of such trademarks.
++
++No protection
 Reporting a Vulnerability
 Please report any security vulnerabilities in this project utilizing the guidelines here(https://www.intel.com/content/www/us/en/security-center/vulnerability-handling-guidelines.html).
