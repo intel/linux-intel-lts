@@ -1,0 +1,56 @@
+From 061fe7eb5f919afe8fb59280d46dec4fc084bfcd Mon Sep 17 00:00:00 2001
+From: Jan Kara <jack@suse.cz>
+Date: Thu, 12 Oct 2023 23:14:21 +0200
+Subject: [PATCH 02/25] ocfs2: Avoid touching renamed directory if parent does
+ not change
+
+[ Upstream commit 9d618d19b29c2943527e3a43da0a35aea91062fc ]
+
+The VFS will not be locking moved directory if its parent does not
+change. Change ocfs2 rename code to avoid touching renamed directory if
+its parent does not change as without locking that can corrupt the
+filesystem.
+
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ fs/ocfs2/namei.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ocfs2/namei.c b/fs/ocfs2/namei.c
+index 4e6d8a3f727d..6f985dc9d6f8 100644
+--- a/fs/ocfs2/namei.c
++++ b/fs/ocfs2/namei.c
+@@ -1340,7 +1340,7 @@ static int ocfs2_rename(struct mnt_idmap *idmap,
+ 		goto bail;
+ 	}
+ 
+-	if (S_ISDIR(old_inode->i_mode)) {
++	if (S_ISDIR(old_inode->i_mode) && new_dir != old_dir) {
+ 		u64 old_inode_parent;
+ 
+ 		update_dot_dot = 1;
+@@ -1357,8 +1357,7 @@ static int ocfs2_rename(struct mnt_idmap *idmap,
+ 			goto bail;
+ 		}
+ 
+-		if (!new_inode && new_dir != old_dir &&
+-		    new_dir->i_nlink >= ocfs2_link_max(osb)) {
++		if (!new_inode && new_dir->i_nlink >= ocfs2_link_max(osb)) {
+ 			status = -EMLINK;
+ 			goto bail;
+ 		}
+@@ -1601,6 +1600,9 @@ static int ocfs2_rename(struct mnt_idmap *idmap,
+ 	if (update_dot_dot) {
+ 		status = ocfs2_update_entry(old_inode, handle,
+ 					    &old_inode_dot_dot_res, new_dir);
++	}
++
++	if (S_ISDIR(old_inode->i_mode)) {
+ 		drop_nlink(old_dir);
+ 		if (new_inode) {
+ 			drop_nlink(new_inode);
+-- 
+2.25.1
+

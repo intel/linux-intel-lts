@@ -1,0 +1,82 @@
+From 41982b225609e9628182b77125bb257f951dfb6c Mon Sep 17 00:00:00 2001
+From: Yu Kuai <yukuai3@huawei.com>
+Date: Tue, 5 Mar 2024 15:22:59 +0800
+Subject: [PATCH 06/25] md: export helpers to stop sync_thread
+
+Add new helpers:
+
+  void md_idle_sync_thread(struct mddev *mddev);
+  void md_frozen_sync_thread(struct mddev *mddev);
+  void md_unfrozen_sync_thread(struct mddev *mddev);
+
+The helpers will be used in dm-raid in later patches to fix regressions
+and prevent calling md_reap_sync_thread() directly.
+
+Cc: stable@vger.kernel.org # v6.7+
+Signed-off-by: Yu Kuai <yukuai3@huawei.com>
+Signed-off-by: Xiao Ni <xni@redhat.com>
+Acked-by: Mike Snitzer <snitzer@kernel.org>
+Signed-off-by: Song Liu <song@kernel.org>
+Link: https://lore.kernel.org/r/20240305072306.2562024-3-yukuai1@huaweicloud.com
+---
+ drivers/md/md.c | 29 +++++++++++++++++++++++++++++
+ drivers/md/md.h |  3 +++
+ 2 files changed, 32 insertions(+)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index d1f6770c5cc0..9c295d06c458 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -4841,6 +4841,35 @@ static void stop_sync_thread(struct mddev *mddev)
+ 	mddev_unlock(mddev);
+ }
+ 
++void md_idle_sync_thread(struct mddev *mddev)
++{
++	lockdep_assert_held(&mddev->reconfig_mutex);
++
++	clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
++	stop_sync_thread(mddev);
++}
++EXPORT_SYMBOL_GPL(md_idle_sync_thread);
++
++void md_frozen_sync_thread(struct mddev *mddev)
++{
++	lockdep_assert_held(&mddev->reconfig_mutex);
++
++	set_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
++	stop_sync_thread(mddev);
++}
++EXPORT_SYMBOL_GPL(md_frozen_sync_thread);
++
++void md_unfrozen_sync_thread(struct mddev *mddev)
++{
++	lockdep_assert_held(&mddev->reconfig_mutex);
++
++	clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
++	set_bit(MD_RECOVERY_NEEDED, &mddev->recovery);
++	md_wakeup_thread(mddev->thread);
++	sysfs_notify_dirent_safe(mddev->sysfs_action);
++}
++EXPORT_SYMBOL_GPL(md_unfrozen_sync_thread);
++
+ static void idle_sync_thread(struct mddev *mddev)
+ {
+ 	int sync_seq = atomic_read(&mddev->sync_seq);
+diff --git a/drivers/md/md.h b/drivers/md/md.h
+index 7c9c13abd7ca..eb5c629467d3 100644
+--- a/drivers/md/md.h
++++ b/drivers/md/md.h
+@@ -808,6 +808,9 @@ extern void md_rdev_clear(struct md_rdev *rdev);
+ extern void md_handle_request(struct mddev *mddev, struct bio *bio);
+ extern void mddev_suspend(struct mddev *mddev);
+ extern void mddev_resume(struct mddev *mddev);
++extern void md_idle_sync_thread(struct mddev *mddev);
++extern void md_frozen_sync_thread(struct mddev *mddev);
++extern void md_unfrozen_sync_thread(struct mddev *mddev);
+ 
+ extern void md_reload_sb(struct mddev *mddev, int raid_disk);
+ extern void md_update_sb(struct mddev *mddev, int force);
+-- 
+2.25.1
+

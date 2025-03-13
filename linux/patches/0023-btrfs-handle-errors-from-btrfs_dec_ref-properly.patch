@@ -1,0 +1,35 @@
+From b8525f8e88316a2d53b380f52ab92c22a023b4de Mon Sep 17 00:00:00 2001
+From: Josef Bacik <josef@toxicpanda.com>
+Date: Tue, 7 May 2024 14:12:15 -0400
+Subject: [PATCH 23/25] btrfs: handle errors from btrfs_dec_ref() properly
+
+In walk_up_proc() we BUG_ON(ret) from btrfs_dec_ref().  This is
+incorrect, we have proper error handling here, return the error.
+
+Signed-off-by: Josef Bacik <josef@toxicpanda.com>
+Reviewed-by: David Sterba <dsterba@suse.com>
+Signed-off-by: David Sterba <dsterba@suse.com>
+(cherry picked with conflict fix from commit 5eb178f373b4f16f3b42d55ff88fc94dd95b93b1)
+---
+ fs/btrfs/extent-tree.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/fs/btrfs/extent-tree.c b/fs/btrfs/extent-tree.c
+index 021cf468274b..af03a1c6ba76 100644
+--- a/fs/btrfs/extent-tree.c
++++ b/fs/btrfs/extent-tree.c
+@@ -5540,7 +5540,10 @@ static noinline int walk_up_proc(struct btrfs_trans_handle *trans,
+ 				ret = btrfs_dec_ref(trans, root, eb, 1);
+ 			else
+ 				ret = btrfs_dec_ref(trans, root, eb, 0);
+-			BUG_ON(ret); /* -ENOMEM */
++			if (ret) {
++				btrfs_abort_transaction(trans, ret);
++				return ret;
++			}
+ 			if (is_fstree(root->root_key.objectid)) {
+ 				ret = btrfs_qgroup_trace_leaf_items(trans, eb);
+ 				if (ret) {
+-- 
+2.25.1
+

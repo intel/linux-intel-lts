@@ -1,0 +1,103 @@
+From 1b225e810a6a56239e20a0062e187bc81c1e7c65 Mon Sep 17 00:00:00 2001
+From: Boris Burkov <boris@bur.io>
+Date: Fri, 13 Dec 2024 12:22:32 -0800
+Subject: [PATCH 05/25] btrfs: check folio mapping after unlock in
+ relocate_one_folio()
+
+When we call btrfs_read_folio() to bring a folio uptodate, we unlock the
+folio. The result of that is that a different thread can modify the
+mapping (like remove it with invalidate) before we call folio_lock().
+This results in an invalid page and we need to try again.
+
+In particular, if we are relocating concurrently with aborting a
+transaction, this can result in a crash like the following:
+
+  BUG: kernel NULL pointer dereference, address: 0000000000000000
+  PGD 0 P4D 0
+  Oops: 0000 [#1] SMP
+  CPU: 76 PID: 1411631 Comm: kworker/u322:5
+  Workqueue: events_unbound btrfs_reclaim_bgs_work
+  RIP: 0010:set_page_extent_mapped+0x20/0xb0
+  RSP: 0018:ffffc900516a7be8 EFLAGS: 00010246
+  RAX: ffffea009e851d08 RBX: ffffea009e0b1880 RCX: 0000000000000000
+  RDX: 0000000000000000 RSI: ffffc900516a7b90 RDI: ffffea009e0b1880
+  RBP: 0000000003573000 R08: 0000000000000001 R09: ffff88c07fd2f3f0
+  R10: 0000000000000000 R11: 0000194754b575be R12: 0000000003572000
+  R13: 0000000003572fff R14: 0000000000100cca R15: 0000000005582fff
+  FS:  0000000000000000(0000) GS:ffff88c07fd00000(0000) knlGS:0000000000000000
+  CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+  CR2: 0000000000000000 CR3: 000000407d00f002 CR4: 00000000007706f0
+  DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+  DR3: 0000000000000000 DR6: 00000000fffe0ff0 DR7: 0000000000000400
+  PKRU: 55555554
+  Call Trace:
+  <TASK>
+  ? __die+0x78/0xc0
+  ? page_fault_oops+0x2a8/0x3a0
+  ? __switch_to+0x133/0x530
+  ? wq_worker_running+0xa/0x40
+  ? exc_page_fault+0x63/0x130
+  ? asm_exc_page_fault+0x22/0x30
+  ? set_page_extent_mapped+0x20/0xb0
+  relocate_file_extent_cluster+0x1a7/0x940
+  relocate_data_extent+0xaf/0x120
+  relocate_block_group+0x20f/0x480
+  btrfs_relocate_block_group+0x152/0x320
+  btrfs_relocate_chunk+0x3d/0x120
+  btrfs_reclaim_bgs_work+0x2ae/0x4e0
+  process_scheduled_works+0x184/0x370
+  worker_thread+0xc6/0x3e0
+  ? blk_add_timer+0xb0/0xb0
+  kthread+0xae/0xe0
+  ? flush_tlb_kernel_range+0x90/0x90
+  ret_from_fork+0x2f/0x40
+  ? flush_tlb_kernel_range+0x90/0x90
+  ret_from_fork_asm+0x11/0x20
+  </TASK>
+
+This occurs because cleanup_one_transaction() calls
+destroy_delalloc_inodes() which calls invalidate_inode_pages2() which
+takes the folio_lock before setting mapping to NULL. We fail to check
+this, and subsequently call set_extent_mapping(), which assumes that
+mapping != NULL (in fact it asserts that in debug mode)
+
+Note that the "fixes" patch here is not the one that introduced the
+race (the very first iteration of this code from 2009) but a more recent
+change that made this particular crash happen in practice.
+
+Fixes: e7f1326cc24e ("btrfs: set page extent mapped after read_folio in relocate_one_page")
+CC: stable@vger.kernel.org # 6.1+
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Boris Burkov <boris@bur.io>
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ fs/btrfs/relocation.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/fs/btrfs/relocation.c b/fs/btrfs/relocation.c
+index 537e184b4b1d..474758c878fc 100644
+--- a/fs/btrfs/relocation.c
++++ b/fs/btrfs/relocation.c
+@@ -2931,6 +2931,7 @@ static int relocate_one_page(struct inode *inode, struct file_ra_state *ra,
+ 	int ret;
+ 
+ 	ASSERT(page_index <= last_index);
++again:
+ 	page = find_lock_page(inode->i_mapping, page_index);
+ 	if (!page) {
+ 		page_cache_sync_readahead(inode->i_mapping, ra, NULL,
+@@ -2952,6 +2953,11 @@ static int relocate_one_page(struct inode *inode, struct file_ra_state *ra,
+ 			ret = -EIO;
+ 			goto release_page;
+ 		}
++		if (page->mapping != inode->i_mapping) {
++			unlock_page(page);
++			put_page(page);
++			goto again;
++		}
+ 	}
+ 
+ 	/*
+-- 
+2.25.1
+

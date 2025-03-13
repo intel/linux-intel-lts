@@ -1,0 +1,36 @@
+From 6414458eb8d5fc0701b5cee43d77ed57fdfd64f4 Mon Sep 17 00:00:00 2001
+From: Hannes Reinecke <hare@suse.de>
+Date: Tue, 24 Oct 2023 08:13:35 +0200
+Subject: [PATCH 16/25] nvme-tcp: avoid open-coding
+ nvme_tcp_teardown_admin_queue()
+
+nvme_tcp_setup_ctrl() has an open-coded version of
+nvme_tcp_teardown_admin_queue().
+
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+Tested-by: Mark O'Donovan <shiftee@posteo.net>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+---
+ drivers/nvme/host/tcp.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/drivers/nvme/host/tcp.c b/drivers/nvme/host/tcp.c
+index be04c5f3856d..29c177e92f2e 100644
+--- a/drivers/nvme/host/tcp.c
++++ b/drivers/nvme/host/tcp.c
+@@ -2078,11 +2078,7 @@ static int nvme_tcp_setup_ctrl(struct nvme_ctrl *ctrl, bool new)
+ 		nvme_tcp_destroy_io_queues(ctrl, new);
+ 	}
+ destroy_admin:
+-	nvme_quiesce_admin_queue(ctrl);
+-	blk_sync_queue(ctrl->admin_q);
+-	nvme_tcp_stop_queue(ctrl, 0);
+-	nvme_cancel_admin_tagset(ctrl);
+-	nvme_tcp_destroy_admin_queue(ctrl, new);
++	nvme_tcp_teardown_admin_queue(ctrl, false);
+ 	return ret;
+ }
+ 
+-- 
+2.25.1
+

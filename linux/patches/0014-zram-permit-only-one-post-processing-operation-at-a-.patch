@@ -1,0 +1,141 @@
+From 908aaf6b39f37ff6ea8de4e5f66fd9c0cb6bb096 Mon Sep 17 00:00:00 2001
+From: Sergey Senozhatsky <senozhatsky@chromium.org>
+Date: Tue, 17 Sep 2024 11:09:07 +0900
+Subject: [PATCH 14/25] zram: permit only one post-processing operation at a
+ time
+
+Both recompress and writeback soon will unlock slots during processing,
+which makes things too complex wrt possible race-conditions.  We still
+want to clear PP_SLOT in slot_free, because this is how we figure out that
+slot that was selected for post-processing has been released under us and
+when we start post-processing we check if slot still has PP_SLOT set.  At
+the same time, theoretically, we can have something like this:
+
+CPU0			    CPU1
+
+recompress
+scan slots
+set PP_SLOT
+unlock slot
+			slot_free
+			clear PP_SLOT
+
+			allocate PP_SLOT
+			writeback
+			scan slots
+			set PP_SLOT
+			unlock slot
+select PP-slot
+test PP_SLOT
+
+So recompress will not detect that slot has been re-used and re-selected
+for concurrent writeback post-processing.
+
+Make sure that we only permit on post-processing operation at a time.  So
+now recompress and writeback post-processing don't race against each
+other, we only need to handle slot re-use (slot_free and write), which is
+handled individually by each pp operation.
+
+Having recompress and writeback competing for the same slots is not
+exactly good anyway (can't imagine anyone doing that).
+
+Link: https://lkml.kernel.org/r/20240917021020.883356-3-senozhatsky@chromium.org
+Signed-off-by: Sergey Senozhatsky <senozhatsky@chromium.org>
+Cc: Minchan Kim <minchan@kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+(cherry picked from commit 58652f2b6d21f2874c9f060165ec7e03e8b1fc71)
+---
+ Documentation/admin-guide/blockdev/zram.rst |  2 ++
+ drivers/block/zram/zram_drv.c               | 16 ++++++++++++++++
+ drivers/block/zram/zram_drv.h               |  1 +
+ 3 files changed, 19 insertions(+)
+
+diff --git a/Documentation/admin-guide/blockdev/zram.rst b/Documentation/admin-guide/blockdev/zram.rst
+index ee2b0030d416..3ffec800434d 100644
+--- a/Documentation/admin-guide/blockdev/zram.rst
++++ b/Documentation/admin-guide/blockdev/zram.rst
+@@ -47,6 +47,8 @@ The list of possible return codes:
+ -ENOMEM	  zram was not able to allocate enough memory to fulfil your
+ 	  needs.
+ -EINVAL	  invalid input has been provided.
++-EAGAIN	  re-try operation later (e.g. when attempting to run recompress
++	  and writeback simultaneously).
+ ========  =============================================================
+ 
+ If you use 'echo', the returned value is set by the 'echo' utility,
+diff --git a/drivers/block/zram/zram_drv.c b/drivers/block/zram/zram_drv.c
+index b73038ad86f7..468e499d5093 100644
+--- a/drivers/block/zram/zram_drv.c
++++ b/drivers/block/zram/zram_drv.c
+@@ -662,6 +662,12 @@ static ssize_t writeback_store(struct device *dev,
+ 		goto release_init_lock;
+ 	}
+ 
++	/* Do not permit concurrent post-processing actions. */
++	if (atomic_xchg(&zram->pp_in_progress, 1)) {
++		up_read(&zram->init_lock);
++		return -EAGAIN;
++	}
++
+ 	if (!zram->backing_dev) {
+ 		ret = -ENODEV;
+ 		goto release_init_lock;
+@@ -788,6 +794,7 @@ static ssize_t writeback_store(struct device *dev,
+ 		free_block_bdev(zram, blk_idx);
+ 	__free_page(page);
+ release_init_lock:
++	atomic_set(&zram->pp_in_progress, 0);
+ 	up_read(&zram->init_lock);
+ 
+ 	return ret;
+@@ -1792,6 +1799,12 @@ static ssize_t recompress_store(struct device *dev,
+ 		goto release_init_lock;
+ 	}
+ 
++	/* Do not permit concurrent post-processing actions. */
++	if (atomic_xchg(&zram->pp_in_progress, 1)) {
++		up_read(&zram->init_lock);
++		return -EAGAIN;
++	}
++
+ 	if (algo) {
+ 		bool found = false;
+ 
+@@ -1856,6 +1869,7 @@ static ssize_t recompress_store(struct device *dev,
+ 	__free_page(page);
+ 
+ release_init_lock:
++	atomic_set(&zram->pp_in_progress, 0);
+ 	up_read(&zram->init_lock);
+ 	return ret;
+ }
+@@ -2036,6 +2050,7 @@ static void zram_reset_device(struct zram *zram)
+ 	zram->disksize = 0;
+ 	zram_destroy_comps(zram);
+ 	memset(&zram->stats, 0, sizeof(zram->stats));
++	atomic_set(&zram->pp_in_progress, 0);
+ 	reset_bdev(zram);
+ 
+ 	comp_algorithm_set(zram, ZRAM_PRIMARY_COMP, default_compressor);
+@@ -2246,6 +2261,7 @@ static int zram_add(void)
+ 	zram->disk->fops = &zram_devops;
+ 	zram->disk->private_data = zram;
+ 	snprintf(zram->disk->disk_name, 16, "zram%d", device_id);
++	atomic_set(&zram->pp_in_progress, 0);
+ 
+ 	/* Actual capacity set using sysfs (/sys/block/zram<id>/disksize */
+ 	set_capacity(zram->disk, 0);
+diff --git a/drivers/block/zram/zram_drv.h b/drivers/block/zram/zram_drv.h
+index 35e322144629..6464a07d29ee 100644
+--- a/drivers/block/zram/zram_drv.h
++++ b/drivers/block/zram/zram_drv.h
+@@ -139,5 +139,6 @@ struct zram {
+ #ifdef CONFIG_ZRAM_MEMORY_TRACKING
+ 	struct dentry *debugfs_dir;
+ #endif
++	atomic_t pp_in_progress;
+ };
+ #endif
+-- 
+2.25.1
+

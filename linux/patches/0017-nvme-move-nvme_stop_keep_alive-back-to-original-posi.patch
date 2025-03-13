@@ -1,0 +1,99 @@
+From ec72b381bdbfee9caa7856d2ae0eb581cf35ce6c Mon Sep 17 00:00:00 2001
+From: Hannes Reinecke <hare@suse.de>
+Date: Tue, 21 Nov 2023 09:01:03 +0100
+Subject: [PATCH 17/25] nvme: move nvme_stop_keep_alive() back to original
+ position
+
+Stopping keep-alive not only stops the keep-alive workqueue,
+but also needs to be synchronized with I/O termination as we
+must not send a keep-alive command after all I/O had been
+terminated.
+So to avoid any regressions move the call to stop_keep_alive()
+back to its original position and ensure that keep-alive is
+correctly stopped failing to setup the admin queue.
+
+Fixes: 4733b65d82bd ("nvme: start keep-alive after admin queue setup")
+Suggested-by: Sagi Grimberg <sagi@grimberg.me>
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+Reviewed-by: Sagi Grimberg <sagi@grimberg.me>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+---
+ drivers/nvme/host/fc.c   | 13 ++++++++-----
+ drivers/nvme/host/rdma.c |  1 +
+ drivers/nvme/host/tcp.c  |  1 +
+ 3 files changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/nvme/host/fc.c b/drivers/nvme/host/fc.c
+index 91324791a5b6..0863deb7be02 100644
+--- a/drivers/nvme/host/fc.c
++++ b/drivers/nvme/host/fc.c
+@@ -3121,11 +3121,12 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
+ 	nvme_unquiesce_admin_queue(&ctrl->ctrl);
+ 
+ 	ret = nvme_init_ctrl_finish(&ctrl->ctrl, false);
+-	if (!ret && test_bit(ASSOC_FAILED, &ctrl->flags))
+-		ret = -EIO;
+ 	if (ret)
+ 		goto out_disconnect_admin_queue;
+-
++	if (test_bit(ASSOC_FAILED, &ctrl->flags)) {
++		ret = -EIO;
++		goto out_stop_keep_alive;
++	}
+ 	/* sanity checks */
+ 
+ 	/* FC-NVME does not have other data in the capsule */
+@@ -3133,7 +3134,7 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
+ 		dev_err(ctrl->ctrl.device, "icdoff %d is not supported!\n",
+ 				ctrl->ctrl.icdoff);
+ 		ret = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
+-		goto out_disconnect_admin_queue;
++		goto out_stop_keep_alive;
+ 	}
+ 
+ 	/* FC-NVME supports normal SGL Data Block Descriptors */
+@@ -3141,7 +3142,7 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
+ 		dev_err(ctrl->ctrl.device,
+ 			"Mandatory sgls are not supported!\n");
+ 		ret = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
+-		goto out_disconnect_admin_queue;
++		goto out_stop_keep_alive;
+ 	}
+ 
+ 	if (opts->queue_size > ctrl->ctrl.maxcmd) {
+@@ -3184,6 +3185,8 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
+ 
+ out_term_aen_ops:
+ 	nvme_fc_term_aen_ops(ctrl);
++out_stop_keep_alive:
++	nvme_stop_keep_alive(&ctrl->ctrl);
+ out_disconnect_admin_queue:
+ 	dev_warn(ctrl->ctrl.device,
+ 		"NVME-FC{%d}: create_assoc failed, assoc_id %llx ret %d\n",
+diff --git a/drivers/nvme/host/rdma.c b/drivers/nvme/host/rdma.c
+index c04317a966b3..81e2621169e5 100644
+--- a/drivers/nvme/host/rdma.c
++++ b/drivers/nvme/host/rdma.c
+@@ -1083,6 +1083,7 @@ static int nvme_rdma_setup_ctrl(struct nvme_rdma_ctrl *ctrl, bool new)
+ 		nvme_rdma_free_io_queues(ctrl);
+ 	}
+ destroy_admin:
++	nvme_stop_keep_alive(&ctrl->ctrl);
+ 	nvme_quiesce_admin_queue(&ctrl->ctrl);
+ 	blk_sync_queue(ctrl->ctrl.admin_q);
+ 	nvme_rdma_stop_queue(&ctrl->queues[0]);
+diff --git a/drivers/nvme/host/tcp.c b/drivers/nvme/host/tcp.c
+index 29c177e92f2e..75d795fb5e10 100644
+--- a/drivers/nvme/host/tcp.c
++++ b/drivers/nvme/host/tcp.c
+@@ -2078,6 +2078,7 @@ static int nvme_tcp_setup_ctrl(struct nvme_ctrl *ctrl, bool new)
+ 		nvme_tcp_destroy_io_queues(ctrl, new);
+ 	}
+ destroy_admin:
++	nvme_stop_keep_alive(ctrl);
+ 	nvme_tcp_teardown_admin_queue(ctrl, false);
+ 	return ret;
+ }
+-- 
+2.25.1
+

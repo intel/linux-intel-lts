@@ -1,0 +1,118 @@
+From a588b6149b7bcdf819043aab156075b56bfe1b2f Mon Sep 17 00:00:00 2001
+From: "Matthieu Baerts (NGI0)" <matttbe@kernel.org>
+Date: Wed, 8 Jan 2025 16:34:37 +0100
+Subject: [PATCH 24/25] rds: sysctl: rds_tcp_{rcv,snd}buf: avoid using
+ current->nsproxy
+
+As mentioned in a previous commit of this series, using the 'net'
+structure via 'current' is not recommended for different reasons:
+
+- Inconsistency: getting info from the reader's/writer's netns vs only
+  from the opener's netns.
+
+- current->nsproxy can be NULL in some cases, resulting in an 'Oops'
+  (null-ptr-deref), e.g. when the current task is exiting, as spotted by
+  syzbot [1] using acct(2).
+
+The per-netns structure can be obtained from the table->data using
+container_of(), then the 'net' one can be retrieved from the listen
+socket (if available).
+
+Fixes: c6a58ffed536 ("RDS: TCP: Add sysctl tunables for sndbuf/rcvbuf on rds-tcp socket")
+Cc: stable@vger.kernel.org
+Link: https://lore.kernel.org/67769ecb.050a0220.3a8527.003f.GAE@google.com [1]
+Suggested-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Matthieu Baerts (NGI0) <matttbe@kernel.org>
+Link: https://patch.msgid.link/20250108-net-sysctl-current-nsproxy-v1-9-5df34b2083e8@kernel.org
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/rds/tcp.c | 39 ++++++++++++++++++++++++++++++++-------
+ 1 file changed, 32 insertions(+), 7 deletions(-)
+
+diff --git a/net/rds/tcp.c b/net/rds/tcp.c
+index 2dba7505b414..fb6eaea36014 100644
+--- a/net/rds/tcp.c
++++ b/net/rds/tcp.c
+@@ -61,8 +61,10 @@ static atomic_t rds_tcp_unloading = ATOMIC_INIT(0);
+ 
+ static struct kmem_cache *rds_tcp_conn_slab;
+ 
+-static int rds_tcp_skbuf_handler(struct ctl_table *ctl, int write,
+-				 void *buffer, size_t *lenp, loff_t *fpos);
++static int rds_tcp_sndbuf_handler(struct ctl_table *ctl, int write,
++				  void *buffer, size_t *lenp, loff_t *fpos);
++static int rds_tcp_rcvbuf_handler(struct ctl_table *ctl, int write,
++				  void *buffer, size_t *lenp, loff_t *fpos);
+ 
+ static int rds_tcp_min_sndbuf = SOCK_MIN_SNDBUF;
+ static int rds_tcp_min_rcvbuf = SOCK_MIN_RCVBUF;
+@@ -74,7 +76,7 @@ static struct ctl_table rds_tcp_sysctl_table[] = {
+ 		/* data is per-net pointer */
+ 		.maxlen         = sizeof(int),
+ 		.mode           = 0644,
+-		.proc_handler   = rds_tcp_skbuf_handler,
++		.proc_handler   = rds_tcp_sndbuf_handler,
+ 		.extra1		= &rds_tcp_min_sndbuf,
+ 	},
+ #define	RDS_TCP_RCVBUF	1
+@@ -83,7 +85,7 @@ static struct ctl_table rds_tcp_sysctl_table[] = {
+ 		/* data is per-net pointer */
+ 		.maxlen         = sizeof(int),
+ 		.mode           = 0644,
+-		.proc_handler   = rds_tcp_skbuf_handler,
++		.proc_handler   = rds_tcp_rcvbuf_handler,
+ 		.extra1		= &rds_tcp_min_rcvbuf,
+ 	},
+ 	{ }
+@@ -683,10 +685,10 @@ static void rds_tcp_sysctl_reset(struct net *net)
+ 	spin_unlock_irq(&rds_tcp_conn_lock);
+ }
+ 
+-static int rds_tcp_skbuf_handler(struct ctl_table *ctl, int write,
++static int rds_tcp_skbuf_handler(struct rds_tcp_net *rtn,
++				 struct ctl_table *ctl, int write,
+ 				 void *buffer, size_t *lenp, loff_t *fpos)
+ {
+-	struct net *net = current->nsproxy->net_ns;
+ 	int err;
+ 
+ 	err = proc_dointvec_minmax(ctl, write, buffer, lenp, fpos);
+@@ -695,11 +697,34 @@ static int rds_tcp_skbuf_handler(struct ctl_table *ctl, int write,
+ 			*(int *)(ctl->extra1));
+ 		return err;
+ 	}
+-	if (write)
++
++	if (write && rtn->rds_tcp_listen_sock && rtn->rds_tcp_listen_sock->sk) {
++		struct net *net = sock_net(rtn->rds_tcp_listen_sock->sk);
++
+ 		rds_tcp_sysctl_reset(net);
++	}
++
+ 	return 0;
+ }
+ 
++static int rds_tcp_sndbuf_handler(struct ctl_table *ctl, int write,
++				  void *buffer, size_t *lenp, loff_t *fpos)
++{
++	struct rds_tcp_net *rtn = container_of(ctl->data, struct rds_tcp_net,
++					       sndbuf_size);
++
++	return rds_tcp_skbuf_handler(rtn, ctl, write, buffer, lenp, fpos);
++}
++
++static int rds_tcp_rcvbuf_handler(struct ctl_table *ctl, int write,
++				  void *buffer, size_t *lenp, loff_t *fpos)
++{
++	struct rds_tcp_net *rtn = container_of(ctl->data, struct rds_tcp_net,
++					       rcvbuf_size);
++
++	return rds_tcp_skbuf_handler(rtn, ctl, write, buffer, lenp, fpos);
++}
++
+ static void rds_tcp_exit(void)
+ {
+ 	rds_tcp_set_unloading();
+-- 
+2.25.1
+

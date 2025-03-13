@@ -1,0 +1,78 @@
+From f05c9edfa4e74d925326eeec76f74cef5c064efe Mon Sep 17 00:00:00 2001
+From: Yu Kuai <yukuai3@huawei.com>
+Date: Tue, 5 Mar 2024 15:23:03 +0800
+Subject: [PATCH 07/25] md/dm-raid: don't call md_reap_sync_thread() directly
+
+Currently md_reap_sync_thread() is called from raid_message() directly
+without holding 'reconfig_mutex', this is definitely unsafe because
+md_reap_sync_thread() can change many fields that is protected by
+'reconfig_mutex'.
+
+However, hold 'reconfig_mutex' here is still problematic because this
+will cause deadlock, for example, commit 130443d60b1b ("md: refactor
+idle/frozen_sync_thread() to fix deadlock").
+
+Fix this problem by using stop_sync_thread() to unregister sync_thread,
+like md/raid did.
+
+Fixes: be83651f0050 ("DM RAID: Add message/status support for changing sync action")
+Cc: stable@vger.kernel.org # v6.7+
+Signed-off-by: Yu Kuai <yukuai3@huawei.com>
+Signed-off-by: Xiao Ni <xni@redhat.com>
+Acked-by: Mike Snitzer <snitzer@kernel.org>
+Signed-off-by: Song Liu <song@kernel.org>
+Link: https://lore.kernel.org/r/20240305072306.2562024-7-yukuai1@huaweicloud.com
+---
+ drivers/md/dm-raid.c | 31 +++++++++++++++++++++----------
+ 1 file changed, 21 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/md/dm-raid.c b/drivers/md/dm-raid.c
+index 385e24f55ec0..b75bb0e2a19d 100644
+--- a/drivers/md/dm-raid.c
++++ b/drivers/md/dm-raid.c
+@@ -3711,21 +3711,32 @@ static int raid_message(struct dm_target *ti, unsigned int argc, char **argv,
+ {
+ 	struct raid_set *rs = ti->private;
+ 	struct mddev *mddev = &rs->md;
++	int ret = 0;
+ 
+ 	if (!mddev->pers || !mddev->pers->sync_request)
+ 		return -EINVAL;
+ 
+-	if (!strcasecmp(argv[0], "frozen"))
+-		set_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
+-	else
+-		clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
++	if (test_bit(RT_FLAG_RS_SUSPENDED, &rs->runtime_flags))
++		return -EBUSY;
+ 
+-	if (!strcasecmp(argv[0], "idle") || !strcasecmp(argv[0], "frozen")) {
+-		if (mddev->sync_thread) {
+-			set_bit(MD_RECOVERY_INTR, &mddev->recovery);
+-			md_reap_sync_thread(mddev);
+-		}
+-	} else if (decipher_sync_action(mddev, mddev->recovery) != st_idle)
++	if (!strcasecmp(argv[0], "frozen")) {
++		ret = mddev_lock(mddev);
++		if (ret)
++			return ret;
++
++		md_frozen_sync_thread(mddev);
++		mddev_unlock(mddev);
++	} else if (!strcasecmp(argv[0], "idle")) {
++		ret = mddev_lock(mddev);
++		if (ret)
++			return ret;
++
++		md_idle_sync_thread(mddev);
++		mddev_unlock(mddev);
++	}
++
++	clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
++	if (decipher_sync_action(mddev, mddev->recovery) != st_idle)
+ 		return -EBUSY;
+ 	else if (!strcasecmp(argv[0], "resync"))
+ 		; /* MD_RECOVERY_NEEDED set below */
+-- 
+2.25.1
+

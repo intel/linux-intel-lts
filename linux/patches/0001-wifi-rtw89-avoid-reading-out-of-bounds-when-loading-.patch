@@ -1,0 +1,128 @@
+From a7bb94321595048751ce5b9c87004822a5e23d16 Mon Sep 17 00:00:00 2001
+From: Zong-Zhe Yang <kevin_yang@realtek.com>
+Date: Mon, 2 Sep 2024 09:58:03 +0800
+Subject: [PATCH 01/25] wifi: rtw89: avoid reading out of bounds when loading
+ TX power FW elements
+
+Because the loop-expression will do one more time before getting false from
+cond-expression, the original code copied one more entry size beyond valid
+region.
+
+Fix it by moving the entry copy to loop-body.
+
+Signed-off-by: Zong-Zhe Yang <kevin_yang@realtek.com>
+Signed-off-by: Ping-Ke Shih <pkshih@realtek.com>
+Link: https://patch.msgid.link/20240902015803.20420-1-pkshih@realtek.com
+---
+ drivers/net/wireless/realtek/rtw89/core.h | 95 +++++++++++++++++++++++
+ 1 file changed, 95 insertions(+)
+
+diff --git a/drivers/net/wireless/realtek/rtw89/core.h b/drivers/net/wireless/realtek/rtw89/core.h
+index ee6ae2a0c798..321634cefedc 100644
+--- a/drivers/net/wireless/realtek/rtw89/core.h
++++ b/drivers/net/wireless/realtek/rtw89/core.h
+@@ -3299,6 +3299,101 @@ struct rtw89_rfe_parms_conf {
+ 	u8 rfe_type;
+ };
+ 
++#define RTW89_TXPWR_CONF_DFLT_RFE_TYPE 0x0
++
++struct rtw89_txpwr_conf {
++	u8 rfe_type;
++	u8 ent_sz;
++	u32 num_ents;
++	const void *data;
++};
++
++static inline bool rtw89_txpwr_entcpy(void *entry, const void *cursor, u8 size,
++				      const struct rtw89_txpwr_conf *conf)
++{
++	u8 valid_size = min(size, conf->ent_sz);
++
++	memcpy(entry, cursor, valid_size);
++	return true;
++}
++
++#define rtw89_txpwr_conf_valid(conf) (!!(conf)->data)
++
++#define rtw89_for_each_in_txpwr_conf(entry, cursor, conf) \
++	for (typecheck(const void *, cursor), (cursor) = (conf)->data; \
++	     (cursor) < (conf)->data + (conf)->num_ents * (conf)->ent_sz; \
++	     (cursor) += (conf)->ent_sz) \
++		if (rtw89_txpwr_entcpy(&(entry), cursor, sizeof(entry), conf))
++
++struct rtw89_txpwr_byrate_data {
++	struct rtw89_txpwr_conf conf;
++	struct rtw89_txpwr_table tbl;
++};
++
++struct rtw89_txpwr_lmt_2ghz_data {
++	struct rtw89_txpwr_conf conf;
++	s8 v[RTW89_2G_BW_NUM][RTW89_NTX_NUM]
++	    [RTW89_RS_LMT_NUM][RTW89_BF_NUM]
++	    [RTW89_REGD_NUM][RTW89_2G_CH_NUM];
++};
++
++struct rtw89_txpwr_lmt_5ghz_data {
++	struct rtw89_txpwr_conf conf;
++	s8 v[RTW89_5G_BW_NUM][RTW89_NTX_NUM]
++	    [RTW89_RS_LMT_NUM][RTW89_BF_NUM]
++	    [RTW89_REGD_NUM][RTW89_5G_CH_NUM];
++};
++
++struct rtw89_txpwr_lmt_6ghz_data {
++	struct rtw89_txpwr_conf conf;
++	s8 v[RTW89_6G_BW_NUM][RTW89_NTX_NUM]
++	    [RTW89_RS_LMT_NUM][RTW89_BF_NUM]
++	    [RTW89_REGD_NUM][NUM_OF_RTW89_REG_6GHZ_POWER]
++	    [RTW89_6G_CH_NUM];
++};
++
++struct rtw89_txpwr_lmt_ru_2ghz_data {
++	struct rtw89_txpwr_conf conf;
++	s8 v[RTW89_RU_NUM][RTW89_NTX_NUM]
++	    [RTW89_REGD_NUM][RTW89_2G_CH_NUM];
++};
++
++struct rtw89_txpwr_lmt_ru_5ghz_data {
++	struct rtw89_txpwr_conf conf;
++	s8 v[RTW89_RU_NUM][RTW89_NTX_NUM]
++	    [RTW89_REGD_NUM][RTW89_5G_CH_NUM];
++};
++
++struct rtw89_txpwr_lmt_ru_6ghz_data {
++	struct rtw89_txpwr_conf conf;
++	s8 v[RTW89_RU_NUM][RTW89_NTX_NUM]
++	    [RTW89_REGD_NUM][NUM_OF_RTW89_REG_6GHZ_POWER]
++	    [RTW89_6G_CH_NUM];
++};
++
++struct rtw89_tx_shape_lmt_data {
++	struct rtw89_txpwr_conf conf;
++	u8 v[RTW89_BAND_NUM][RTW89_RS_TX_SHAPE_NUM][RTW89_REGD_NUM];
++};
++
++struct rtw89_tx_shape_lmt_ru_data {
++	struct rtw89_txpwr_conf conf;
++	u8 v[RTW89_BAND_NUM][RTW89_REGD_NUM];
++};
++
++struct rtw89_rfe_data {
++	struct rtw89_txpwr_byrate_data byrate;
++	struct rtw89_txpwr_lmt_2ghz_data lmt_2ghz;
++	struct rtw89_txpwr_lmt_5ghz_data lmt_5ghz;
++	struct rtw89_txpwr_lmt_6ghz_data lmt_6ghz;
++	struct rtw89_txpwr_lmt_ru_2ghz_data lmt_ru_2ghz;
++	struct rtw89_txpwr_lmt_ru_5ghz_data lmt_ru_5ghz;
++	struct rtw89_txpwr_lmt_ru_6ghz_data lmt_ru_6ghz;
++	struct rtw89_tx_shape_lmt_data tx_shape_lmt;
++	struct rtw89_tx_shape_lmt_ru_data tx_shape_lmt_ru;
++	struct rtw89_rfe_parms rfe_parms;
++};
++
+ struct rtw89_page_regs {
+ 	u32 hci_fc_ctrl;
+ 	u32 ch_page_ctrl;
+-- 
+2.25.1
+
