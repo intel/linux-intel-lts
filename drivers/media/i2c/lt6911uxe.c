@@ -42,6 +42,8 @@
 
 static const struct v4l2_dv_timings_cap lt6911uxe_timings_cap_4kp30 = {
 	.type = V4L2_DV_BT_656_1120,
+	/* keep this initialization for compatibility with CLANG */
+	.reserved = { 0 },
 	/* Pixel clock from REF_01 p. 20. Min/max height/width are unknown */
 	V4L2_INIT_BT_TIMINGS(160, 3840,			/* min/max width */
 			     120, 2160,			/* min/max height */
@@ -407,20 +409,6 @@ static int lt6911uxe_set_format(struct v4l2_subdev *sd,
 	link_freq = lt6911uxe->cur_mode.link_freq;
 	__v4l2_ctrl_modify_range(lt6911uxe->link_freq, link_freq,
 				 link_freq, 1, link_freq);
-
-	return 0;
-}
-
-static int lt6911uxe_get_format(struct v4l2_subdev *sd,
-				struct v4l2_subdev_state *sd_state,
-				struct v4l2_subdev_format *fmt)
-{
-	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-
-	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
-		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
-	else
-		lt6911uxe_update_pad_format(&lt6911uxe->cur_mode, &fmt->format);
 
 	return 0;
 }
