@@ -1,0 +1,54 @@
+From 92aedf319705d653a536442cadf8ee7ccd20e3aa Mon Sep 17 00:00:00 2001
+From: Aditya Kumar Singh <quic_adisi@quicinc.com>
+Date: Tue, 10 Dec 2024 10:56:33 +0530
+Subject: [PATCH 01/18] wifi: ath12k: fix read pointer after free in
+ ath12k_mac_assign_vif_to_vdev()
+
+In ath12k_mac_assign_vif_to_vdev(), if arvif is created on a different
+radio, it gets deleted from that radio through a call to
+ath12k_mac_unassign_link_vif(). This action frees the arvif pointer.
+Subsequently, there is a check involving arvif, which will result in a
+read-after-free scenario.
+
+Fix this by moving this check after arvif is again assigned via call to
+ath12k_mac_assign_link_vif().
+
+Tested-on: QCN9274 hw2.0 PCI WLAN.WBE.1.3.1-00173-QCAHKSWPL_SILICONZ-1
+
+Closes: https://scan5.scan.coverity.com/#/project-view/63541/10063?selectedIssue=1636423
+Fixes: b5068bc9180d ("wifi: ath12k: Cache vdev configs before vdev create")
+Signed-off-by: Aditya Kumar Singh <quic_adisi@quicinc.com>
+Acked-by: Jeff Johnson <jeff.johnson@oss.qualcomm.com>
+Acked-by: Kalle Valo <kvalo@kernel.org>
+Link: https://patch.msgid.link/20241210-read_after_free-v1-1-969f69c7d66c@quicinc.com
+Signed-off-by: Jeff Johnson <jeff.johnson@oss.qualcomm.com>
+---
+ drivers/net/wireless/ath/ath12k/mac.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/mac.c b/drivers/net/wireless/ath/ath12k/mac.c
+index fbf5d5728357..d85d2aa75c6e 100644
+--- a/drivers/net/wireless/ath/ath12k/mac.c
++++ b/drivers/net/wireless/ath/ath12k/mac.c
+@@ -6729,15 +6729,15 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
+ 
+ 	mutex_lock(&ar->conf_mutex);
+ 
+-	if (arvif->is_created)
+-		goto flush;
+-
+ 	if (vif->type == NL80211_IFTYPE_AP &&
+ 	    ar->num_peers > (ar->max_num_peers - 1)) {
+ 		ath12k_warn(ab, "failed to create vdev due to insufficient peer entry resource in firmware\n");
+ 		goto unlock;
+ 	}
+ 
++	if (arvif->is_created)
++		goto flush;
++
+ 	if (ar->num_created_vdevs > (TARGET_NUM_VDEVS - 1)) {
+ 		ath12k_warn(ab, "failed to create vdev, reached max vdev limit %d\n",
+ 			    TARGET_NUM_VDEVS);
+-- 
+2.25.1
+

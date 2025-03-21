@@ -1,0 +1,109 @@
+From 0bd87fd46c2600a94ef0881cdaf47da6bcf1d9d0 Mon Sep 17 00:00:00 2001
+From: "Liam R. Howlett" <Liam.Howlett@Oracle.com>
+Date: Mon, 27 Jan 2025 12:02:21 -0500
+Subject: [PATCH 10/18] kernel: be more careful about dup_mmap() failures and
+ uprobe registering
+
+If a memory allocation fails during dup_mmap(), the maple tree can be left
+in an unsafe state for other iterators besides the exit path.  All the
+locks are dropped before the exit_mmap() call (in mm/mmap.c), but the
+incomplete mm_struct can be reached through (at least) the rmap finding
+the vmas which have a pointer back to the mm_struct.
+
+Up to this point, there have been no issues with being able to find an
+mm_struct that was only partially initialised.  Syzbot was able to make
+the incomplete mm_struct fail with recent forking changes, so it has been
+proven unsafe to use the mm_struct that hasn't been initialised, as
+referenced in the link below.
+
+Although 8ac662f5da19f ("fork: avoid inappropriate uprobe access to
+invalid mm") fixed the uprobe access, it does not completely remove the
+race.
+
+This patch sets the MMF_OOM_SKIP to avoid the iteration of the vmas on the
+oom side (even though this is extremely unlikely to be selected as an oom
+victim in the race window), and sets MMF_UNSTABLE to avoid other potential
+users from using a partially initialised mm_struct.
+
+When registering vmas for uprobe, skip the vmas in an mm that is marked
+unstable.  Modifying a vma in an unstable mm may cause issues if the mm
+isn't fully initialised.
+
+Link: https://lore.kernel.org/all/6756d273.050a0220.2477f.003d.GAE@google.com/
+Link: https://lkml.kernel.org/r/20250127170221.1761366-1-Liam.Howlett@oracle.com
+Fixes: d24062914837 ("fork: use __mt_dup() to duplicate maple tree in dup_mmap()")
+Signed-off-by: Liam R. Howlett <Liam.Howlett@Oracle.com>
+Reviewed-by: Lorenzo Stoakes <lorenzo.stoakes@oracle.com>
+Cc: Oleg Nesterov <oleg@redhat.com>
+Cc: Masami Hiramatsu <mhiramat@kernel.org>
+Cc: Jann Horn <jannh@google.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Michal Hocko <mhocko@suse.com>
+Cc: Peng Zhang <zhangpeng.00@bytedance.com>
+Cc: Matthew Wilcox <willy@infradead.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+ kernel/events/uprobes.c |  4 ++++
+ kernel/fork.c           | 17 ++++++++++++++---
+ 2 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index 4fdc08ca0f3c..2d2cb15ab66c 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -26,6 +26,7 @@
+ #include <linux/task_work.h>
+ #include <linux/shmem_fs.h>
+ #include <linux/khugepaged.h>
++#include <linux/oom.h>          /* check_stable_address_space */
+ 
+ #include <linux/uprobes.h>
+ 
+@@ -1097,6 +1098,9 @@ register_for_each_vma(struct uprobe *uprobe, struct uprobe_consumer *new)
+ 		 * returns NULL in find_active_uprobe_rcu().
+ 		 */
+ 		mmap_write_lock(mm);
++		if (check_stable_address_space(mm))
++			goto unlock;
++
+ 		vma = find_vma(mm, info->vaddr);
+ 		if (!vma || !valid_vma(vma, is_register) ||
+ 		    file_inode(vma->vm_file) != uprobe->inode)
+diff --git a/kernel/fork.c b/kernel/fork.c
+index e192bdbc9ade..34904de63f47 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -761,7 +761,8 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
+ 		mt_set_in_rcu(vmi.mas.tree);
+ 		ksm_fork(mm, oldmm);
+ 		khugepaged_fork(mm, oldmm);
+-	} else if (mpnt) {
++	} else {
++
+ 		/*
+ 		 * The entire maple tree has already been duplicated. If the
+ 		 * mmap duplication fails, mark the failure point with
+@@ -769,8 +770,18 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
+ 		 * stop releasing VMAs that have not been duplicated after this
+ 		 * point.
+ 		 */
+-		mas_set_range(&vmi.mas, mpnt->vm_start, mpnt->vm_end - 1);
+-		mas_store(&vmi.mas, XA_ZERO_ENTRY);
++		if (mpnt) {
++			mas_set_range(&vmi.mas, mpnt->vm_start, mpnt->vm_end - 1);
++			mas_store(&vmi.mas, XA_ZERO_ENTRY);
++			/* Avoid OOM iterating a broken tree */
++			set_bit(MMF_OOM_SKIP, &mm->flags);
++		}
++		/*
++		 * The mm_struct is going to exit, but the locks will be dropped
++		 * first.  Set the mm_struct as unstable is advisable as it is
++		 * not fully initialised.
++		 */
++		set_bit(MMF_UNSTABLE, &mm->flags);
+ 	}
+ out:
+ 	mmap_write_unlock(mm);
+-- 
+2.25.1
+

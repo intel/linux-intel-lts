@@ -1,0 +1,169 @@
+From 52e6f9b86f71f43dddb2d1947269a47c64ee99ca Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Fri, 10 Jan 2025 06:47:14 +0100
+Subject: [PATCH 18/18] block: fix queue freeze vs limits lock order in sysfs
+ store methods
+
+queue_attr_store() always freezes a device queue before calling the
+attribute store operation. For attributes that control queue limits, the
+store operation will also lock the queue limits with a call to
+queue_limits_start_update(). However, some drivers (e.g. SCSI sd) may
+need to issue commands to a device to obtain limit values from the
+hardware with the queue limits locked. This creates a potential ABBA
+deadlock situation if a user attempts to modify a limit (thus freezing
+the device queue) while the device driver starts a revalidation of the
+device queue limits.
+
+Avoid such deadlock by not freezing the queue before calling the
+->store_limit() method in struct queue_sysfs_entry and instead use the
+queue_limits_commit_update_frozen helper to freeze the queue after taking
+the limits lock.
+
+This also removes taking the sysfs lock for the store_limit method as
+it doesn't protect anything here, but creates even more nesting.
+Hopefully it will go away from the actual sysfs methods entirely soon.
+
+(commit log adapted from a similar patch from  Damien Le Moal)
+
+Fixes: ff956a3be95b ("block: use queue_limits_commit_update in queue_discard_max_store")
+Fixes: 0327ca9d53bf ("block: use queue_limits_commit_update in queue_max_sectors_store")
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Ming Lei <ming.lei@redhat.com>
+Reviewed-by: Damien Le Moal <dlemoal@kernel.org>
+Reviewed-by: Martin K. Petersen <martin.petersen@oracle.com>
+Reviewed-by: Nilay Shroff <nilay@linux.ibm.com>
+Reviewed-by: Johannes Thumshirn <johannes.thumshirn@wdc.com>
+Link: https://lore.kernel.org/r/20250110054726.1499538-7-hch@lst.de
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ block/blk-settings.c   | 24 ++++++++++++++++++++++++
+ block/blk-sysfs.c      | 33 +++++++++++++++++++++++++++------
+ include/linux/blkdev.h |  2 ++
+ 3 files changed, 53 insertions(+), 6 deletions(-)
+
+diff --git a/block/blk-settings.c b/block/blk-settings.c
+index 7abf034089cd..0ab4fe9565cf 100644
+--- a/block/blk-settings.c
++++ b/block/blk-settings.c
+@@ -426,6 +426,30 @@ int queue_limits_commit_update(struct request_queue *q,
+ }
+ EXPORT_SYMBOL_GPL(queue_limits_commit_update);
+ 
++/**
++ * queue_limits_commit_update_frozen - commit an atomic update of queue limits
++ * @q:		queue to update
++ * @lim:	limits to apply
++ *
++ * Apply the limits in @lim that were obtained from queue_limits_start_update()
++ * and updated with the new values by the caller to @q.  Freezes the queue
++ * before the update and unfreezes it after.
++ *
++ * Returns 0 if successful, else a negative error code.
++ */
++int queue_limits_commit_update_frozen(struct request_queue *q,
++		struct queue_limits *lim)
++{
++	int ret;
++
++	blk_mq_freeze_queue(q);
++	ret = queue_limits_commit_update(q, lim);
++	blk_mq_unfreeze_queue(q);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(queue_limits_commit_update_frozen);
++
+ /**
+  * queue_limits_set - apply queue limits to queue
+  * @q:		queue to update
+diff --git a/block/blk-sysfs.c b/block/blk-sysfs.c
+index fc6b970ee062..496564485bad 100644
+--- a/block/blk-sysfs.c
++++ b/block/blk-sysfs.c
+@@ -23,8 +23,10 @@
+ struct queue_sysfs_entry {
+ 	struct attribute attr;
+ 	ssize_t (*show)(struct gendisk *disk, char *page);
+-	int (*load_module)(struct gendisk *disk, const char *page, size_t count);
+ 	ssize_t (*store)(struct gendisk *disk, const char *page, size_t count);
++	int (*store_limit)(struct gendisk *disk, const char *page,
++			size_t count, struct queue_limits *lim);
++	int (*load_module)(struct gendisk *disk, const char *page, size_t count);
+ };
+ 
+ static ssize_t
+@@ -421,6 +423,13 @@ static struct queue_sysfs_entry _prefix##_entry = {	\
+ 	.store	= _prefix##_store,			\
+ };
+ 
++#define QUEUE_LIM_RW_ENTRY(_prefix, _name)			\
++static struct queue_sysfs_entry _prefix##_entry = {	\
++	.attr		= { .name = _name, .mode = 0644 },	\
++	.show		= _prefix##_show,			\
++	.store_limit	= _prefix##_store,			\
++}
++
+ #define QUEUE_RW_LOAD_MODULE_ENTRY(_prefix, _name)		\
+ static struct queue_sysfs_entry _prefix##_entry = {		\
+ 	.attr		= { .name = _name, .mode = 0644 },	\
+@@ -684,7 +693,7 @@ queue_attr_store(struct kobject *kobj, struct attribute *attr,
+ 	unsigned int noio_flag;
+ 	ssize_t res;
+ 
+-	if (!entry->store)
++	if (!entry->store_limit && !entry->store)
+ 		return -EIO;
+ 
+ 	/*
+@@ -692,19 +701,31 @@ queue_attr_store(struct kobject *kobj, struct attribute *attr,
+ 	 * queue to ensure that the module file can be read when the request
+ 	 * queue is the one for the device storing the module file.
+ 	 */
+-	if (entry->load_module) {
+-		res = entry->load_module(disk, page, length);
++	if (entry->load_module)
++		entry->load_module(disk, page, length);
++
++	if (entry->store_limit) {
++		struct queue_limits lim = queue_limits_start_update(q);
++
++		res = entry->store_limit(disk, page, length, &lim);
++		if (res < 0) {
++			queue_limits_cancel_update(q);
++			return res;
++		}
++
++		res = queue_limits_commit_update_frozen(q, &lim);
+ 		if (res)
+ 			return res;
++		return length;
+ 	}
+ 
+-	blk_mq_freeze_queue(q);
+ 	mutex_lock(&q->sysfs_lock);
++	blk_mq_freeze_queue(q);
+ 	noio_flag = memalloc_noio_save();
+ 	res = entry->store(disk, page, length);
+ 	memalloc_noio_restore(noio_flag);
+-	mutex_unlock(&q->sysfs_lock);
+ 	blk_mq_unfreeze_queue(q);
++	mutex_unlock(&q->sysfs_lock);
+ 	return res;
+ }
+ 
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 8f37c5dd52b2..69737a1551fe 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -935,6 +935,8 @@ queue_limits_start_update(struct request_queue *q)
+ 	mutex_lock(&q->limits_lock);
+ 	return q->limits;
+ }
++int queue_limits_commit_update_frozen(struct request_queue *q,
++		struct queue_limits *lim);
+ int queue_limits_commit_update(struct request_queue *q,
+ 		struct queue_limits *lim);
+ int queue_limits_set(struct request_queue *q, struct queue_limits *lim);
+-- 
+2.25.1
+

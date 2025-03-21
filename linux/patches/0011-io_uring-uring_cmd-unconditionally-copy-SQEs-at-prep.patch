@@ -1,0 +1,76 @@
+From 0d7072bcc4716d81a5e76f78be2c98cb5aa648c5 Mon Sep 17 00:00:00 2001
+From: Jens Axboe <axboe@kernel.dk>
+Date: Thu, 13 Feb 2025 08:24:23 -0700
+Subject: [PATCH 11/18] io_uring/uring_cmd: unconditionally copy SQEs at prep
+ time
+
+This isn't generally necessary, but conditions have been observed where
+SQE data is accessed from the original SQE after prep has been done and
+outside of the initial issue. Opcode prep handlers must ensure that any
+SQE related data is stable beyond the prep phase, but uring_cmd is a bit
+special in how it handles the SQE which makes it susceptible to reading
+stale data. If the application has reused the SQE before the original
+completes, then that can lead to data corruption.
+
+Down the line we can relax this again once uring_cmd has been sanitized
+a bit, and avoid unnecessarily copying the SQE.
+
+Fixes: 5eff57fa9f3a ("io_uring/uring_cmd: defer SQE copying until it's needed")
+Reported-by: Caleb Sander Mateos <csander@purestorage.com>
+Reviewed-by: Caleb Sander Mateos <csander@purestorage.com>
+Reviewed-by: Li Zetao <lizetao1@huawei.com>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ io_uring/uring_cmd.c | 29 +++++++++++------------------
+ 1 file changed, 11 insertions(+), 18 deletions(-)
+
+diff --git a/io_uring/uring_cmd.c b/io_uring/uring_cmd.c
+index b2ce4b561002..4cc83d3ac0c6 100644
+--- a/io_uring/uring_cmd.c
++++ b/io_uring/uring_cmd.c
+@@ -182,14 +182,15 @@ static int io_uring_cmd_prep_setup(struct io_kiocb *req,
+ 	if (unlikely(!cache))
+ 		return -ENOMEM;
+ 
+-	if (!(req->flags & REQ_F_FORCE_ASYNC)) {
+-		/* defer memcpy until we need it */
+-		ioucmd->sqe = sqe;
+-		return 0;
+-	}
+-
+-	memcpy(req->async_data, sqe, uring_sqe_size(req->ctx));
+-	ioucmd->sqe = req->async_data;
++	/*
++	 * Unconditionally cache the SQE for now - this is only needed for
++	 * requests that go async, but prep handlers must ensure that any
++	 * sqe data is stable beyond prep. Since uring_cmd is special in
++	 * that it doesn't read in per-op data, play it safe and ensure that
++	 * any SQE data is stable beyond prep. This can later get relaxed.
++	 */
++	memcpy(cache->sqes, sqe, uring_sqe_size(req->ctx));
++	ioucmd->sqe = cache->sqes;
+ 	return 0;
+ }
+ 
+@@ -248,16 +249,8 @@ int io_uring_cmd(struct io_kiocb *req, unsigned int issue_flags)
+ 	}
+ 
+ 	ret = file->f_op->uring_cmd(ioucmd, issue_flags);
+-	if (ret == -EAGAIN) {
+-		struct uring_cache *cache = req->async_data;
+-
+-		if (ioucmd->sqe != (void *) cache)
+-			memcpy(cache, ioucmd->sqe, uring_sqe_size(req->ctx));
+-		return -EAGAIN;
+-	} else if (ret == -EIOCBQUEUED) {
+-		return -EIOCBQUEUED;
+-	}
+-
++	if (ret == -EAGAIN || ret == -EIOCBQUEUED)
++		return ret;
+ 	if (ret < 0)
+ 		req_set_fail(req);
+ 	io_req_uring_cleanup(req, issue_flags);
+-- 
+2.25.1
+

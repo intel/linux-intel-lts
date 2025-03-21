@@ -1,0 +1,77 @@
+From 49e666f33570a41ec0920bbd72ba5ab690cdc16e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ville=20Syrj=C3=A4l=C3=A4?= <ville.syrjala@linux.intel.com>
+Date: Thu, 7 Nov 2024 18:11:14 +0200
+Subject: [PATCH 17/18] drm/i915: Grab intel_display from the encoder to avoid
+ potential oopsies
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Grab the intel_display from 'encoder' rather than 'state'
+in the encoder hooks to avoid the massive footgun that is
+intel_sanitize_encoder(), which passes NULL as the 'state'
+argument to encoder .disable() and .post_disable().
+
+TODO: figure out how to actually fix intel_sanitize_encoder()...
+
+Fixes: 40eb34c3f491 ("drm/i915/crt: convert to struct intel_display")
+Fixes: ab0b0eb5c85c ("drm/i915/tv: convert to struct intel_display")
+Signed-off-by: Ville Syrjälä <ville.syrjala@linux.intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20241107161123.16269-2-ville.syrjala@linux.intel.com
+Reviewed-by: Jani Nikula <jani.nikula@intel.com>
+---
+ drivers/gpu/drm/i915/display/intel_crt.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/display/intel_crt.c b/drivers/gpu/drm/i915/display/intel_crt.c
+index 74c1983fe07e..1be55bdb48b9 100644
+--- a/drivers/gpu/drm/i915/display/intel_crt.c
++++ b/drivers/gpu/drm/i915/display/intel_crt.c
+@@ -244,7 +244,7 @@ static void hsw_disable_crt(struct intel_atomic_state *state,
+ 			    const struct intel_crtc_state *old_crtc_state,
+ 			    const struct drm_connector_state *old_conn_state)
+ {
+-	struct intel_display *display = to_intel_display(state);
++	struct intel_display *display = to_intel_display(encoder);
+ 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+ 
+ 	drm_WARN_ON(display->drm, !old_crtc_state->has_pch_encoder);
+@@ -257,7 +257,7 @@ static void hsw_post_disable_crt(struct intel_atomic_state *state,
+ 				 const struct intel_crtc_state *old_crtc_state,
+ 				 const struct drm_connector_state *old_conn_state)
+ {
+-	struct intel_display *display = to_intel_display(state);
++	struct intel_display *display = to_intel_display(encoder);
+ 	struct intel_crtc *crtc = to_intel_crtc(old_crtc_state->uapi.crtc);
+ 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+ 
+@@ -287,7 +287,7 @@ static void hsw_pre_pll_enable_crt(struct intel_atomic_state *state,
+ 				   const struct intel_crtc_state *crtc_state,
+ 				   const struct drm_connector_state *conn_state)
+ {
+-	struct intel_display *display = to_intel_display(state);
++	struct intel_display *display = to_intel_display(encoder);
+ 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+ 
+ 	drm_WARN_ON(display->drm, !crtc_state->has_pch_encoder);
+@@ -300,7 +300,7 @@ static void hsw_pre_enable_crt(struct intel_atomic_state *state,
+ 			       const struct intel_crtc_state *crtc_state,
+ 			       const struct drm_connector_state *conn_state)
+ {
+-	struct intel_display *display = to_intel_display(state);
++	struct intel_display *display = to_intel_display(encoder);
+ 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+ 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+ 	enum pipe pipe = crtc->pipe;
+@@ -319,7 +319,7 @@ static void hsw_enable_crt(struct intel_atomic_state *state,
+ 			   const struct intel_crtc_state *crtc_state,
+ 			   const struct drm_connector_state *conn_state)
+ {
+-	struct intel_display *display = to_intel_display(state);
++	struct intel_display *display = to_intel_display(encoder);
+ 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+ 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+ 	enum pipe pipe = crtc->pipe;
+-- 
+2.25.1
+

@@ -1,0 +1,63 @@
+From e4fbb727b79607d1bbfa998456895eecc404c50d Mon Sep 17 00:00:00 2001
+From: Konstantin Komarov <almaz.alexandrovich@paragon-software.com>
+Date: Mon, 21 Oct 2024 14:49:01 +0300
+Subject: [PATCH 04/18] fs/ntfs3: Add more checks in mi_enum_attr (part 2)
+
+Add offset check before access to attr->non_res field as mentioned in [1].
+
+[1] https://lore.kernel.org/ntfs3/20241010110005.42792-1-llfamsec@gmail.com/
+
+Suggested-by: lei lu <llfamsec@gmail.com>
+Signed-off-by: Konstantin Komarov <almaz.alexandrovich@paragon-software.com>
+---
+ fs/ntfs3/record.c | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ntfs3/record.c b/fs/ntfs3/record.c
+index f810f0419d25..61d53d39f3b9 100644
+--- a/fs/ntfs3/record.c
++++ b/fs/ntfs3/record.c
+@@ -212,7 +212,7 @@ struct ATTRIB *mi_enum_attr(struct mft_inode *mi, struct ATTRIB *attr)
+ 			return NULL;
+ 
+ 		if (off >= used || off < MFTRECORD_FIXUP_OFFSET_1 ||
+-		    !IS_ALIGNED(off, 4)) {
++		    !IS_ALIGNED(off, 8)) {
+ 			return NULL;
+ 		}
+ 
+@@ -236,8 +236,11 @@ struct ATTRIB *mi_enum_attr(struct mft_inode *mi, struct ATTRIB *attr)
+ 		off += asize;
+ 	}
+ 
+-	/* Can we use the first field (attr->type). */
+-	/* NOTE: this code also checks attr->size availability. */
++	/*
++	 * Can we use the first fields:
++	 * attr->type,
++	 * attr->size
++	 */
+ 	if (off + 8 > used) {
+ 		static_assert(ALIGN(sizeof(enum ATTR_TYPE), 8) == 8);
+ 		return NULL;
+@@ -259,10 +262,17 @@ struct ATTRIB *mi_enum_attr(struct mft_inode *mi, struct ATTRIB *attr)
+ 
+ 	asize = le32_to_cpu(attr->size);
+ 
++	if (!IS_ALIGNED(asize, 8))
++		return NULL;
++
+ 	/* Check overflow and boundary. */
+ 	if (off + asize < off || off + asize > used)
+ 		return NULL;
+ 
++	/* Can we use the field attr->non_res. */
++	if (off + 9 > used)
++		return NULL;
++
+ 	/* Check size of attribute. */
+ 	if (!attr->non_res) {
+ 		/* Check resident fields. */
+-- 
+2.25.1
+
