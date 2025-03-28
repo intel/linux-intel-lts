@@ -532,14 +532,6 @@
 #CVE-2024-52559
 0072-drm-msm-gem-prevent-integer-overflow-in-msm_ioctl_ge.patch
 
-#CVE-2024-35839
-0073-net-neigh-Extend-neigh-flags-to-32-bit-to-allow-for-.patch
-0074-net-neigh-Add-NTF_MANAGED-flag-for-managed-neighbor-.patch
-0075-net-neigh-Do-not-trigger-immediate-probes-on-NUD_FAI.patch
-0076-neighbour-annotate-lockless-accesses-to-n-nud_state.patch
-0077-netfilter-propagate-net-to-nf_bridge_get_physindev.patch
-0078-netfilter-bridge-replace-physindev-with-physinif-in-.patch
-
 #CVE-2022-49728
 0079-ipv6-pass-full-cork-into-__ip6_append_data.patch
 0080-udp6-pass-flow-in-ip6_make_skb-together-with-cork.patch
