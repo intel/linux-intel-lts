@@ -1,0 +1,88 @@
+From e2c81c6a83956901a5febe949e19c3dfab7aa9b5 Mon Sep 17 00:00:00 2001
+From: Alan Stern <stern@rowland.harvard.edu>
+Date: Sat, 23 Apr 2022 21:33:29 -0400
+Subject: [PATCH 002/105] USB: gadget: Register udc before gadget
+
+In preparation for adding a "gadget" bus, this patch reverses the
+order of registration of udc and gadget devices in usb_add_gadget().
+
+The current code adds the gadget device first, probably because that
+was more convenient at the time and the order didn't really matter.
+But with the upcoming change, adding the gadget will cause driver
+probing to occur.  Unwinding that on the error pathway will become
+much more obtrusive, not to mention the fact that a gadget driver
+might not work properly before the udc is registered.  It's better to
+register the udc device first, particularly since that doesn't involve
+a bus or driver binding and therefore is simpler to unwind.
+
+For symmetry, the order of unregistration in usb_del_gadget() is
+likewise reversed.
+
+Signed-off-by: Alan Stern <stern@rowland.harvard.edu>
+Link: https://lore.kernel.org/r/YmSo6fU1FlNq8cOZ@rowland.harvard.edu
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/gadget/udc/core.c | 17 +++++++++--------
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/usb/gadget/udc/core.c b/drivers/usb/gadget/udc/core.c
+index 4c27f8da1682..77ba44ba88a6 100644
+--- a/drivers/usb/gadget/udc/core.c
++++ b/drivers/usb/gadget/udc/core.c
+@@ -1312,10 +1312,6 @@ int usb_add_gadget(struct usb_gadget *gadget)
+ 	if (ret)
+ 		goto err_put_udc;
+ 
+-	ret = device_add(&gadget->dev);
+-	if (ret)
+-		goto err_put_udc;
+-
+ 	udc->gadget = gadget;
+ 	gadget->udc = udc;
+ 
+@@ -1331,15 +1327,22 @@ int usb_add_gadget(struct usb_gadget *gadget)
+ 	usb_gadget_set_state(gadget, USB_STATE_NOTATTACHED);
+ 	udc->vbus = true;
+ 
++	ret = device_add(&gadget->dev);
++	if (ret)
++		goto err_del_udc;
++
+ 	/* pick up one of pending gadget drivers */
+ 	ret = check_pending_gadget_drivers(udc);
+ 	if (ret)
+-		goto err_del_udc;
++		goto err_del_gadget;
+ 
+ 	mutex_unlock(&udc_lock);
+ 
+ 	return 0;
+ 
++ err_del_gadget:
++	device_del(&gadget->dev);
++
+  err_del_udc:
+ 	flush_work(&gadget->work);
+ 	device_del(&udc->dev);
+@@ -1348,8 +1351,6 @@ int usb_add_gadget(struct usb_gadget *gadget)
+ 	list_del(&udc->list);
+ 	mutex_unlock(&udc_lock);
+ 
+-	device_del(&gadget->dev);
+-
+  err_put_udc:
+ 	put_device(&udc->dev);
+ 
+@@ -1473,8 +1474,8 @@ void usb_del_gadget(struct usb_gadget *gadget)
+ 
+ 	kobject_uevent(&udc->dev.kobj, KOBJ_REMOVE);
+ 	flush_work(&gadget->work);
+-	device_unregister(&udc->dev);
+ 	device_del(&gadget->dev);
++	device_unregister(&udc->dev);
+ }
+ EXPORT_SYMBOL_GPL(usb_del_gadget);
+ 
+-- 
+2.25.1
+

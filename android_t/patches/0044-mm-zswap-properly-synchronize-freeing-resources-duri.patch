@@ -1,0 +1,139 @@
+From c63ebe4dab8b268f59defec5bfa88f55df36f671 Mon Sep 17 00:00:00 2001
+From: Yosry Ahmed <yosryahmed@google.com>
+Date: Wed, 8 Jan 2025 22:24:41 +0000
+Subject: [PATCH 044/105] mm: zswap: properly synchronize freeing resources
+ during CPU hotunplug
+
+In zswap_compress() and zswap_decompress(), the per-CPU acomp_ctx of the
+current CPU at the beginning of the operation is retrieved and used
+throughout.  However, since neither preemption nor migration are disabled,
+it is possible that the operation continues on a different CPU.
+
+If the original CPU is hotunplugged while the acomp_ctx is still in use,
+we run into a UAF bug as some of the resources attached to the acomp_ctx
+are freed during hotunplug in zswap_cpu_comp_dead() (i.e.
+acomp_ctx.buffer, acomp_ctx.req, or acomp_ctx.acomp).
+
+The problem was introduced in commit 1ec3b5fe6eec ("mm/zswap: move to use
+crypto_acomp API for hardware acceleration") when the switch to the
+crypto_acomp API was made.  Prior to that, the per-CPU crypto_comp was
+retrieved using get_cpu_ptr() which disables preemption and makes sure the
+CPU cannot go away from under us.  Preemption cannot be disabled with the
+crypto_acomp API as a sleepable context is needed.
+
+Use the acomp_ctx.mutex to synchronize CPU hotplug callbacks allocating
+and freeing resources with compression/decompression paths.  Make sure
+that acomp_ctx.req is NULL when the resources are freed.  In the
+compression/decompression paths, check if acomp_ctx.req is NULL after
+acquiring the mutex (meaning the CPU was offlined) and retry on the new
+CPU.
+
+The initialization of acomp_ctx.mutex is moved from the CPU hotplug
+callback to the pool initialization where it belongs (where the mutex is
+allocated).  In addition to adding clarity, this makes sure that CPU
+hotplug cannot reinitialize a mutex that is already locked by
+compression/decompression.
+
+Previously a fix was attempted by holding cpus_read_lock() [1].  This
+would have caused a potential deadlock as it is possible for code already
+holding the lock to fall into reclaim and enter zswap (causing a
+deadlock).  A fix was also attempted using SRCU for synchronization, but
+Johannes pointed out that synchronize_srcu() cannot be used in CPU hotplug
+notifiers [2].
+
+Alternative fixes that were considered/attempted and could have worked:
+- Refcounting the per-CPU acomp_ctx. This involves complexity in
+  handling the race between the refcount dropping to zero in
+  zswap_[de]compress() and the refcount being re-initialized when the
+  CPU is onlined.
+- Disabling migration before getting the per-CPU acomp_ctx [3], but
+  that's discouraged and is a much bigger hammer than needed, and could
+  result in subtle performance issues.
+
+[1]https://lkml.kernel.org/20241219212437.2714151-1-yosryahmed@google.com/
+[2]https://lkml.kernel.org/20250107074724.1756696-2-yosryahmed@google.com/
+[3]https://lkml.kernel.org/20250107222236.2715883-2-yosryahmed@google.com/
+
+[yosryahmed@google.com: remove comment]
+  Link: https://lkml.kernel.org/r/CAJD7tkaxS1wjn+swugt8QCvQ-rVF5RZnjxwPGX17k8x9zSManA@mail.gmail.com
+Link: https://lkml.kernel.org/r/20250108222441.3622031-1-yosryahmed@google.com
+Fixes: 1ec3b5fe6eec ("mm/zswap: move to use crypto_acomp API for hardware acceleration")
+Signed-off-by: Yosry Ahmed <yosryahmed@google.com>
+Reported-by: Johannes Weiner <hannes@cmpxchg.org>
+Closes: https://lore.kernel.org/lkml/20241113213007.GB1564047@cmpxchg.org/
+Reported-by: Sam Sun <samsun1006219@gmail.com>
+Closes: https://lore.kernel.org/lkml/CAEkJfYMtSdM5HceNsXUDf5haghD5+o2e7Qv4OcuruL4tPg6OaQ@mail.gmail.com/
+Cc: Barry Song <baohua@kernel.org>
+Cc: Chengming Zhou <chengming.zhou@linux.dev>
+Cc: Kanchana P Sridhar <kanchana.p.sridhar@intel.com>
+Cc: Nhat Pham <nphamcs@gmail.com>
+Cc: Vitaly Wool <vitalywool@gmail.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+ mm/zswap.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/mm/zswap.c b/mm/zswap.c
+index 7944e3e57e78..784cf4e82d35 100644
+--- a/mm/zswap.c
++++ b/mm/zswap.c
+@@ -449,10 +449,12 @@ static int zswap_cpu_comp_prepare(unsigned int cpu, struct hlist_node *node)
+ 	struct crypto_acomp *acomp;
+ 	struct acomp_req *req;
+ 
++	mutex_lock(acomp_ctx->mutex);
+ 	acomp = crypto_alloc_acomp_node(pool->tfm_name, 0, 0, cpu_to_node(cpu));
+ 	if (IS_ERR(acomp)) {
+ 		pr_err("could not alloc crypto acomp %s : %ld\n",
+ 				pool->tfm_name, PTR_ERR(acomp));
++		mutex_unlock(acomp_ctx->mutex);
+ 		return PTR_ERR(acomp);
+ 	}
+ 	acomp_ctx->acomp = acomp;
+@@ -478,6 +480,7 @@ static int zswap_cpu_comp_prepare(unsigned int cpu, struct hlist_node *node)
+ 	acomp_ctx->mutex = per_cpu(zswap_mutex, cpu);
+ 	acomp_ctx->dstmem = per_cpu(zswap_dstmem, cpu);
+ 
++	mutex_unlock(acomp_ctx->mutex);
+ 	return 0;
+ }
+ 
+@@ -486,12 +489,15 @@ static int zswap_cpu_comp_dead(unsigned int cpu, struct hlist_node *node)
+ 	struct zswap_pool *pool = hlist_entry(node, struct zswap_pool, node);
+ 	struct crypto_acomp_ctx *acomp_ctx = per_cpu_ptr(pool->acomp_ctx, cpu);
+ 
++	mutex_lock(acomp_ctx->mutex);
+ 	if (!IS_ERR_OR_NULL(acomp_ctx)) {
+ 		if (!IS_ERR_OR_NULL(acomp_ctx->req))
+ 			acomp_request_free(acomp_ctx->req);
++		acomp_ctx->req = NULL;
+ 		if (!IS_ERR_OR_NULL(acomp_ctx->acomp))
+ 			crypto_free_acomp(acomp_ctx->acomp);
+ 	}
++	mutex_unlock(acomp_ctx->mutex);
+ 
+ 	return 0;
+ }
+@@ -587,7 +593,7 @@ static struct zswap_pool *zswap_pool_create(char *type, char *compressor)
+ 	struct zswap_pool *pool;
+ 	char name[38]; /* 'zswap' + 32 char (max) num + \0 */
+ 	gfp_t gfp = __GFP_NORETRY | __GFP_NOWARN | __GFP_KSWAPD_RECLAIM;
+-	int ret;
++	int ret, cpu;
+ 
+ 	if (!zswap_has_pool) {
+ 		/* if either are unset, pool initialization failed, and we
+@@ -622,6 +628,9 @@ static struct zswap_pool *zswap_pool_create(char *type, char *compressor)
+ 		goto error;
+ 	}
+ 
++	for_each_possible_cpu(cpu)
++		mutex_init(per_cpu_ptr(pool->acomp_ctx, cpu)->mutex);
++
+ 	ret = cpuhp_state_add_instance(CPUHP_MM_ZSWP_POOL_PREPARE,
+ 				       &pool->node);
+ 	if (ret)
+-- 
+2.25.1
+

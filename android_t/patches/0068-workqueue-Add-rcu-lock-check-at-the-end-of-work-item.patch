@@ -1,0 +1,57 @@
+From 6e2403fb8cc1f1455713982aeec00c6f9dcef9ba Mon Sep 17 00:00:00 2001
+From: Xuewen Yan <xuewen.yan@unisoc.com>
+Date: Wed, 10 Jan 2024 11:27:24 +0800
+Subject: [PATCH 068/105] workqueue: Add rcu lock check at the end of work item
+ execution
+
+[ Upstream commit 1a65a6d17cbc58e1aeffb2be962acce49efbef9c ]
+
+Currently the workqueue just checks the atomic and locking states after work
+execution ends. However, sometimes, a work item may not unlock rcu after
+acquiring rcu_read_lock(). And as a result, it would cause rcu stall, but
+the rcu stall warning can not dump the work func, because the work has
+finished.
+
+In order to quickly discover those works that do not call rcu_read_unlock()
+after rcu_read_lock(), add the rcu lock check.
+
+Use rcu_preempt_depth() to check the work's rcu status. Normally, this value
+is 0. If this value is bigger than 0, it means the work are still holding
+rcu lock. If so, print err info and the work func.
+
+tj: Reworded the description for clarity. Minor formatting tweak.
+
+Signed-off-by: Xuewen Yan <xuewen.yan@unisoc.com>
+Reviewed-by: Lai Jiangshan <jiangshanlai@gmail.com>
+Reviewed-by: Waiman Long <longman@redhat.com>
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Stable-dep-of: de35994ecd2d ("workqueue: Do not warn when cancelling WQ_MEM_RECLAIM work from !WQ_MEM_RECLAIM worker")
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ kernel/workqueue.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/workqueue.c b/kernel/workqueue.c
+index 7f025ab3b9bc..d83d0bc400ea 100644
+--- a/kernel/workqueue.c
++++ b/kernel/workqueue.c
+@@ -2331,11 +2331,12 @@ __acquires(&pool->lock)
+ 	lock_map_release(&lockdep_map);
+ 	lock_map_release(&pwq->wq->lockdep_map);
+ 
+-	if (unlikely(in_atomic() || lockdep_depth(current) > 0)) {
+-		pr_err("BUG: workqueue leaked lock or atomic: %s/0x%08x/%d\n"
++	if (unlikely(in_atomic() || lockdep_depth(current) > 0 ||
++		     rcu_preempt_depth() > 0)) {
++		pr_err("BUG: workqueue leaked lock or atomic: %s/0x%08x/%d/%d\n"
+ 		       "     last function: %ps\n",
+-		       current->comm, preempt_count(), task_pid_nr(current),
+-		       worker->current_func);
++		       current->comm, preempt_count(), rcu_preempt_depth(),
++		       task_pid_nr(current), worker->current_func);
+ 		debug_show_held_locks(current);
+ 		dump_stack();
+ 	}
+-- 
+2.25.1
+

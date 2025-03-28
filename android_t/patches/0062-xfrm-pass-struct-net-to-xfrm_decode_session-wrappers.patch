@@ -1,0 +1,213 @@
+From 2c1025063125afd850f6632f2522a2544ed4d92d Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Wed, 4 Oct 2023 18:09:51 +0200
+Subject: [PATCH 062/105] xfrm: pass struct net to xfrm_decode_session wrappers
+
+Preparation patch, extra arg is not used.
+No functional changes intended.
+
+This is needed to replace the xfrm session decode functions with
+the flow dissector.
+
+skb_flow_dissect() cannot be used as-is, because it attempts to deduce the
+'struct net' to use for bpf program fetch from skb->sk or skb->dev, but
+xfrm code path can see skbs that have neither sk or dev filled in.
+
+So either flow dissector needs to try harder, e.g. by also trying
+skb->dst->dev, or we have to pass the struct net explicitly.
+
+Passing the struct net doesn't look too bad to me, most places
+already have it available or can derive it from the output device.
+
+Reported-by: kernel test robot <oliver.sang@intel.com>
+Link: https://lore.kernel.org/netdev/202309271628.27fd2187-oliver.sang@intel.com/
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Signed-off-by: Steffen Klassert <steffen.klassert@secunet.com>
+---
+ net/ipv4/icmp.c                |  2 +-
+ net/ipv4/ip_vti.c              |  4 ++--
+ net/ipv4/netfilter.c           |  2 +-
+ net/ipv6/icmp.c                |  2 +-
+ net/ipv6/ip6_vti.c             |  4 ++--
+ net/ipv6/netfilter.c           |  2 +-
+ net/netfilter/nf_nat_proto.c   |  2 +-
+ net/xfrm/xfrm_interface_core.c |  4 ++--
+ net/xfrm/xfrm_policy.c         | 10 +++++-----
+ 9 files changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/net/ipv4/icmp.c b/net/ipv4/icmp.c
+index 38b30f679029..0f9544bc15ee 100644
+--- a/net/ipv4/icmp.c
++++ b/net/ipv4/icmp.c
+@@ -524,7 +524,7 @@ static struct rtable *icmp_route_lookup(struct net *net,
+ 	} else
+ 		return rt;
+ 
+-	err = xfrm_decode_session_reverse(skb_in, flowi4_to_flowi(&fl4_dec), AF_INET);
++	err = xfrm_decode_session_reverse(net, skb_in, flowi4_to_flowi(&fl4_dec), AF_INET);
+ 	if (err)
+ 		goto relookup_failed;
+ 
+diff --git a/net/ipv4/ip_vti.c b/net/ipv4/ip_vti.c
+index df23319adc80..4275510e449c 100644
+--- a/net/ipv4/ip_vti.c
++++ b/net/ipv4/ip_vti.c
+@@ -288,11 +288,11 @@ static netdev_tx_t vti_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	switch (skb->protocol) {
+ 	case htons(ETH_P_IP):
+ 		memset(IPCB(skb), 0, sizeof(*IPCB(skb)));
+-		xfrm_decode_session(skb, &fl, AF_INET);
++		xfrm_decode_session(dev_net(dev), skb, &fl, AF_INET);
+ 		break;
+ 	case htons(ETH_P_IPV6):
+ 		memset(IP6CB(skb), 0, sizeof(*IP6CB(skb)));
+-		xfrm_decode_session(skb, &fl, AF_INET6);
++		xfrm_decode_session(dev_net(dev), skb, &fl, AF_INET6);
+ 		break;
+ 	default:
+ 		goto tx_err;
+diff --git a/net/ipv4/netfilter.c b/net/ipv4/netfilter.c
+index aff707988e23..04a895a4dd0b 100644
+--- a/net/ipv4/netfilter.c
++++ b/net/ipv4/netfilter.c
+@@ -63,7 +63,7 @@ int ip_route_me_harder(struct net *net, struct sock *sk, struct sk_buff *skb, un
+ 
+ #ifdef CONFIG_XFRM
+ 	if (!(IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED) &&
+-	    xfrm_decode_session(skb, flowi4_to_flowi(&fl4), AF_INET) == 0) {
++	    xfrm_decode_session(net, skb, flowi4_to_flowi(&fl4), AF_INET) == 0) {
+ 		struct dst_entry *dst = skb_dst(skb);
+ 		skb_dst_set(skb, NULL);
+ 		dst = xfrm_lookup(net, dst, flowi4_to_flowi(&fl4), sk, 0);
+diff --git a/net/ipv6/icmp.c b/net/ipv6/icmp.c
+index 71a69166a6bd..ad72ae4d08ab 100644
+--- a/net/ipv6/icmp.c
++++ b/net/ipv6/icmp.c
+@@ -391,7 +391,7 @@ static struct dst_entry *icmpv6_route_lookup(struct net *net,
+ 			return dst;
+ 	}
+ 
+-	err = xfrm_decode_session_reverse(skb, flowi6_to_flowi(&fl2), AF_INET6);
++	err = xfrm_decode_session_reverse(net, skb, flowi6_to_flowi(&fl2), AF_INET6);
+ 	if (err)
+ 		goto relookup_failed;
+ 
+diff --git a/net/ipv6/ip6_vti.c b/net/ipv6/ip6_vti.c
+index 190aa3b19591..b00b5a43f06e 100644
+--- a/net/ipv6/ip6_vti.c
++++ b/net/ipv6/ip6_vti.c
+@@ -571,11 +571,11 @@ vti6_tnl_xmit(struct sk_buff *skb, struct net_device *dev)
+ 			goto tx_err;
+ 
+ 		memset(IP6CB(skb), 0, sizeof(*IP6CB(skb)));
+-		xfrm_decode_session(skb, &fl, AF_INET6);
++		xfrm_decode_session(dev_net(dev), skb, &fl, AF_INET6);
+ 		break;
+ 	case htons(ETH_P_IP):
+ 		memset(IPCB(skb), 0, sizeof(*IPCB(skb)));
+-		xfrm_decode_session(skb, &fl, AF_INET);
++		xfrm_decode_session(dev_net(dev), skb, &fl, AF_INET);
+ 		break;
+ 	default:
+ 		goto tx_err;
+diff --git a/net/ipv6/netfilter.c b/net/ipv6/netfilter.c
+index 118e834e9190..7824e2284e91 100644
+--- a/net/ipv6/netfilter.c
++++ b/net/ipv6/netfilter.c
+@@ -62,7 +62,7 @@ int ip6_route_me_harder(struct net *net, struct sock *sk_partial, struct sk_buff
+ 
+ #ifdef CONFIG_XFRM
+ 	if (!(IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) &&
+-	    xfrm_decode_session(skb, flowi6_to_flowi(&fl6), AF_INET6) == 0) {
++	    xfrm_decode_session(net, skb, flowi6_to_flowi(&fl6), AF_INET6) == 0) {
+ 		skb_dst_set(skb, NULL);
+ 		dst = xfrm_lookup(net, dst, flowi6_to_flowi(&fl6), sk, 0);
+ 		if (IS_ERR(dst))
+diff --git a/net/netfilter/nf_nat_proto.c b/net/netfilter/nf_nat_proto.c
+index 48cc60084d28..c77963517bf8 100644
+--- a/net/netfilter/nf_nat_proto.c
++++ b/net/netfilter/nf_nat_proto.c
+@@ -668,7 +668,7 @@ static int nf_xfrm_me_harder(struct net *net, struct sk_buff *skb, unsigned int
+ 	struct flowi fl;
+ 	int err;
+ 
+-	err = xfrm_decode_session(skb, &fl, family);
++	err = xfrm_decode_session(net, skb, &fl, family);
+ 	if (err < 0)
+ 		return err;
+ 
+diff --git a/net/xfrm/xfrm_interface_core.c b/net/xfrm/xfrm_interface_core.c
+index b610dfd74a65..2092425738de 100644
+--- a/net/xfrm/xfrm_interface_core.c
++++ b/net/xfrm/xfrm_interface_core.c
+@@ -354,7 +354,7 @@ static netdev_tx_t xfrmi_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	switch (skb->protocol) {
+ 	case htons(ETH_P_IPV6):
+ 		memset(IP6CB(skb), 0, sizeof(*IP6CB(skb)));
+-		xfrm_decode_session(skb, &fl, AF_INET6);
++		xfrm_decode_session(dev_net(dev), skb, &fl, AF_INET6);
+ 		if (!dst) {
+ 			fl.u.ip6.flowi6_oif = dev->ifindex;
+ 			fl.u.ip6.flowi6_flags |= FLOWI_FLAG_ANYSRC;
+@@ -369,7 +369,7 @@ static netdev_tx_t xfrmi_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		break;
+ 	case htons(ETH_P_IP):
+ 		memset(IPCB(skb), 0, sizeof(*IPCB(skb)));
+-		xfrm_decode_session(skb, &fl, AF_INET);
++		xfrm_decode_session(dev_net(dev), skb, &fl, AF_INET);
+ 		if (!dst) {
+ 			struct rtable *rt;
+ 
+diff --git a/net/xfrm/xfrm_policy.c b/net/xfrm/xfrm_policy.c
+index ece3ca35cf9a..4f37ddb459b3 100644
+--- a/net/xfrm/xfrm_policy.c
++++ b/net/xfrm/xfrm_policy.c
+@@ -2777,7 +2777,7 @@ static void xfrm_policy_queue_process(struct timer_list *t)
+ 	/* Fixup the mark to support VTI. */
+ 	skb_mark = skb->mark;
+ 	skb->mark = pol->mark.v;
+-	xfrm_decode_session(skb, &fl, dst->ops->family);
++	xfrm_decode_session(net, skb, &fl, dst->ops->family);
+ 	skb->mark = skb_mark;
+ 	spin_unlock(&pq->hold_queue.lock);
+ 
+@@ -2813,7 +2813,7 @@ static void xfrm_policy_queue_process(struct timer_list *t)
+ 		/* Fixup the mark to support VTI. */
+ 		skb_mark = skb->mark;
+ 		skb->mark = pol->mark.v;
+-		xfrm_decode_session(skb, &fl, skb_dst(skb)->ops->family);
++		xfrm_decode_session(net, skb, &fl, skb_dst(skb)->ops->family);
+ 		skb->mark = skb_mark;
+ 
+ 		dst_hold(xfrm_dst_path(skb_dst(skb)));
+@@ -3479,7 +3479,7 @@ decode_session6(struct sk_buff *skb, struct flowi *fl, bool reverse)
+ }
+ #endif
+ 
+-int __xfrm_decode_session(struct sk_buff *skb, struct flowi *fl,
++int __xfrm_decode_session(struct net *net, struct sk_buff *skb, struct flowi *fl,
+ 			  unsigned int family, int reverse)
+ {
+ 	switch (family) {
+@@ -3543,7 +3543,7 @@ int __xfrm_policy_check(struct sock *sk, int dir, struct sk_buff *skb,
+ 	reverse = dir & ~XFRM_POLICY_MASK;
+ 	dir &= XFRM_POLICY_MASK;
+ 
+-	if (__xfrm_decode_session(skb, &fl, family, reverse) < 0) {
++	if (__xfrm_decode_session(net, skb, &fl, family, reverse) < 0) {
+ 		XFRM_INC_STATS(net, LINUX_MIB_XFRMINHDRERROR);
+ 		return 0;
+ 	}
+@@ -3696,7 +3696,7 @@ int __xfrm_route_forward(struct sk_buff *skb, unsigned short family)
+ 	struct dst_entry *dst;
+ 	int res = 1;
+ 
+-	if (xfrm_decode_session(skb, &fl, family) < 0) {
++	if (xfrm_decode_session(net, skb, &fl, family) < 0) {
+ 		XFRM_INC_STATS(net, LINUX_MIB_XFRMFWDHDRERROR);
+ 		return 0;
+ 	}
+-- 
+2.25.1
+

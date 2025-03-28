@@ -1,0 +1,60 @@
+From 907cfba571a18df155c2159cc6357e18deec9818 Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Fri, 31 May 2024 13:26:32 +0000
+Subject: [PATCH 018/105] ipv6: ioam: block BH from ioam6_output()
+
+As explained in commit 1378817486d6 ("tipc: block BH
+before using dst_cache"), net/core/dst_cache.c
+helpers need to be called with BH disabled.
+
+Disabling preemption in ioam6_output() is not good enough,
+because ioam6_output() is called from process context,
+lwtunnel_output() only uses rcu_read_lock().
+
+We might be interrupted by a softirq, re-enter ioam6_output()
+and corrupt dst_cache data structures.
+
+Fix the race by using local_bh_disable() instead of
+preempt_disable().
+
+Fixes: 8cb3bf8bff3c ("ipv6: ioam: Add support for the ip6ip6 encapsulation")
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Cc: Justin Iurman <justin.iurman@uliege.be>
+Acked-by: Paolo Abeni <pabeni@redhat.com>
+Link: https://lore.kernel.org/r/20240531132636.2637995-2-edumazet@google.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/ipv6/ioam6_iptunnel.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/net/ipv6/ioam6_iptunnel.c b/net/ipv6/ioam6_iptunnel.c
+index bcc268a4de75..66fafba7d215 100644
+--- a/net/ipv6/ioam6_iptunnel.c
++++ b/net/ipv6/ioam6_iptunnel.c
+@@ -385,9 +385,9 @@ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 		goto drop;
+ 
+ 	if (!ipv6_addr_equal(&orig_daddr, &ipv6_hdr(skb)->daddr)) {
+-		preempt_disable();
++		local_bh_disable();
+ 		dst = dst_cache_get(&ilwt->cache);
+-		preempt_enable();
++		local_bh_enable();
+ 
+ 		if (unlikely(!dst)) {
+ 			struct ipv6hdr *hdr = ipv6_hdr(skb);
+@@ -407,9 +407,9 @@ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 				goto drop;
+ 			}
+ 
+-			preempt_disable();
++			local_bh_disable();
+ 			dst_cache_set_ip6(&ilwt->cache, dst, &fl6.saddr);
+-			preempt_enable();
++			local_bh_enable();
+ 		}
+ 
+ 		skb_dst_drop(skb);
+-- 
+2.25.1
+

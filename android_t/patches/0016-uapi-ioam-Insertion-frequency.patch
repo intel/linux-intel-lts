@@ -1,0 +1,36 @@
+From 09056c3e3aa1bd009bb39cab5aa76603c72258cb Mon Sep 17 00:00:00 2001
+From: Justin Iurman <justin.iurman@uliege.be>
+Date: Wed, 2 Feb 2022 15:25:53 +0100
+Subject: [PATCH 016/105] uapi: ioam: Insertion frequency
+
+Add the insertion frequency uapi for IOAM lwtunnels.
+
+Signed-off-by: Justin Iurman <justin.iurman@uliege.be>
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ include/uapi/linux/ioam6_iptunnel.h | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/include/uapi/linux/ioam6_iptunnel.h b/include/uapi/linux/ioam6_iptunnel.h
+index 829ffdfcacca..38f6a8fdfd34 100644
+--- a/include/uapi/linux/ioam6_iptunnel.h
++++ b/include/uapi/linux/ioam6_iptunnel.h
+@@ -41,6 +41,15 @@ enum {
+ 	/* IOAM Trace Header */
+ 	IOAM6_IPTUNNEL_TRACE,		/* struct ioam6_trace_hdr */
+ 
++	/* Insertion frequency:
++	 * "k over n" packets (0 < k <= n)
++	 * [0.0001% ... 100%]
++	 */
++#define IOAM6_IPTUNNEL_FREQ_MIN 1
++#define IOAM6_IPTUNNEL_FREQ_MAX 1000000
++	IOAM6_IPTUNNEL_FREQ_K,		/* u32 */
++	IOAM6_IPTUNNEL_FREQ_N,		/* u32 */
++
+ 	__IOAM6_IPTUNNEL_MAX,
+ };
+ 
+-- 
+2.25.1
+

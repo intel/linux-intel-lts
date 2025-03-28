@@ -1,0 +1,182 @@
+From 5d259d1b42f95ee8a5051f21603c2af6d7aa4015 Mon Sep 17 00:00:00 2001
+From: Liu Shixin <liushixin2@huawei.com>
+Date: Tue, 25 Mar 2025 15:46:25 +0800
+Subject: [PATCH 071/105] mm: hugetlb: independent PMD page table shared count
+ The folio refcount may be increased unexpectly through try_get_folio() by
+ caller such as split_huge_pages.  In huge_pmd_unshare(), we use refcount to
+ check whether a pmd page table is shared.  The check is incorrect if the
+ refcount is increased by the above caller, and this can cause the page table
+ leaked:
+
+ BUG: Bad page state in process sh  pfn:109324
+ page: refcount:0 mapcount:0 mapping:0000000000000000 index:0x66 pfn:0x109324
+ flags: 0x17ffff800000000(node=0|zone=2|lastcpupid=0xfffff)
+ page_type: f2(table)
+ raw: 017ffff800000000 0000000000000000 0000000000000000 0000000000000000
+ raw: 0000000000000066 0000000000000000 00000000f2000000 0000000000000000
+ page dumped because: nonzero mapcount
+ ...
+ CPU: 31 UID: 0 PID: 7515 Comm: sh Kdump: loaded Tainted: G    B              6.13.0-rc2master+ #7
+ Tainted: [B]=BAD_PAGE
+ Hardware name: QEMU KVM Virtual Machine, BIOS 0.0.0 02/06/2015
+ Call trace:
+  show_stack+0x20/0x38 (C)
+  dump_stack_lvl+0x80/0xf8
+  dump_stack+0x18/0x28
+  bad_page+0x8c/0x130
+  free_page_is_bad_report+0xa4/0xb0
+  free_unref_page+0x3cc/0x620
+  __folio_put+0xf4/0x158
+  split_huge_pages_all+0x1e0/0x3e8
+  split_huge_pages_write+0x25c/0x2d8
+  full_proxy_write+0x64/0xd8
+  vfs_write+0xcc/0x280
+  ksys_write+0x70/0x110
+  __arm64_sys_write+0x24/0x38
+  invoke_syscall+0x50/0x120
+  el0_svc_common.constprop.0+0xc8/0xf0
+  do_el0_svc+0x24/0x38
+  el0_svc+0x34/0x128
+  el0t_64_sync_handler+0xc8/0xd0
+  el0t_64_sync+0x190/0x198
+
+The issue may be triggered by damon, offline_page, page_idle, etc, which
+will increase the refcount of page table.
+
+1. The page table itself will be discarded after reporting the
+   "nonzero mapcount".
+
+2. The HugeTLB page mapped by the page table miss freeing since we
+   treat the page table as shared and a shared page table will not be
+   unmapped.
+
+Fix it by introducing independent PMD page table shared count.  As
+described by comment, pt_index/pt_mm/pt_frag_refcount are used for s390
+gmap, x86 pgds and powerpc, pt_share_count is used for x86/arm64/riscv
+pmds, so we can reuse the field as pt_share_count.
+
+Link: https://lkml.kernel.org/r/20241216071147.3984217-1-liushixin2@huawei.com
+Fixes: 39dde65c9940 ("[PATCH] shared page table for hugetlb page")
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+Cc: Kefeng Wang <wangkefeng.wang@huawei.com>
+Cc: Ken Chen <kenneth.w.chen@intel.com>
+Cc: Muchun Song <muchun.song@linux.dev>
+Cc: Nanyong Sun <sunnanyong@huawei.com>
+Cc: Jane Chu <jane.chu@oracle.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Baoli.Zhang <baoli.zhang@intel.com>
+---
+ include/linux/mm.h       |  1 +
+ include/linux/mm_types.h | 30 ++++++++++++++++++++++++++++++
+ mm/hugetlb.c             | 11 +++++++----
+ 3 files changed, 38 insertions(+), 4 deletions(-)
+
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index 7563ca8d1569..0ab0721ffcfd 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -2412,6 +2412,7 @@ static inline bool pgtable_pmd_page_ctor(struct page *page)
+ 	if (!pmd_ptlock_init(page))
+ 		return false;
+ 	__SetPageTable(page);
++	pg_pmd_pts_init(page);
+ 	inc_lruvec_page_state(page, NR_PAGETABLE);
+ 	return true;
+ }
+diff --git a/include/linux/mm_types.h b/include/linux/mm_types.h
+index 90bd50363625..b29833372947 100644
+--- a/include/linux/mm_types.h
++++ b/include/linux/mm_types.h
+@@ -172,6 +172,9 @@ struct page {
+ 			union {
+ 				struct mm_struct *pt_mm; /* x86 pgds only */
+ 				atomic_t pt_frag_refcount; /* powerpc */
++#ifdef CONFIG_ARCH_WANT_HUGE_PMD_SHARE
++				atomic_t pt_share_count;
++#endif
+ 			};
+ #if ALLOC_SPLIT_PTLOCKS
+ 			spinlock_t *ptl;
+@@ -245,6 +248,33 @@ struct page {
+ #endif
+ } _struct_page_alignment;
+ 
++
++#ifdef CONFIG_ARCH_WANT_HUGE_PMD_SHARE
++static inline void pg_pmd_pts_init(struct page *pg)
++{
++	atomic_set(&pg->pt_share_count, 0);
++}
++
++static inline void pg_pmd_pts_inc(struct page *pg)
++{
++	atomic_inc(&pg->pt_share_count);
++}
++
++static inline void pg_pmd_pts_dec(struct page *pg)
++{
++	atomic_dec(&pg->pt_share_count);
++}
++
++static inline int pg_pmd_pts_count(struct page *pg)
++{
++	return atomic_read(&pg->pt_share_count);
++}
++#else
++static inline void pg_pmd_pts_init(struct page *pg)
++{
++}
++#endif
++
+ static inline atomic_t *compound_mapcount_ptr(struct page *page)
+ {
+ 	return &page[1].compound_mapcount;
+diff --git a/mm/hugetlb.c b/mm/hugetlb.c
+index 01a685963a99..1db8a8482e71 100644
+--- a/mm/hugetlb.c
++++ b/mm/hugetlb.c
+@@ -6032,7 +6032,7 @@ pte_t *huge_pmd_share(struct mm_struct *mm, struct vm_area_struct *vma,
+ 			spte = huge_pte_offset(svma->vm_mm, saddr,
+ 					       vma_mmu_pagesize(svma));
+ 			if (spte) {
+-				get_page(virt_to_page(spte));
++				pg_pmd_pts_inc(virt_to_page(spte));
+ 				break;
+ 			}
+ 		}
+@@ -6047,7 +6047,7 @@ pte_t *huge_pmd_share(struct mm_struct *mm, struct vm_area_struct *vma,
+ 				(pmd_t *)((unsigned long)spte & PAGE_MASK));
+ 		mm_inc_nr_pmds(mm);
+ 	} else {
+-		put_page(virt_to_page(spte));
++		pg_pmd_pts_dec(virt_to_page(spte));
+ 	}
+ 	spin_unlock(ptl);
+ out:
+@@ -6070,17 +6070,20 @@ pte_t *huge_pmd_share(struct mm_struct *mm, struct vm_area_struct *vma,
+ int huge_pmd_unshare(struct mm_struct *mm, struct vm_area_struct *vma,
+ 					unsigned long *addr, pte_t *ptep)
+ {
++	unsigned long sz = huge_page_size(hstate_vma(vma));
+ 	pgd_t *pgd = pgd_offset(mm, *addr);
+ 	p4d_t *p4d = p4d_offset(pgd, *addr);
+ 	pud_t *pud = pud_offset(p4d, *addr);
+ 
+ 	i_mmap_assert_write_locked(vma->vm_file->f_mapping);
+-	BUG_ON(page_count(virt_to_page(ptep)) == 0);
+-	if (page_count(virt_to_page(ptep)) == 1)
++	if (sz != PMD_SIZE)
++		return 0;
++	if (!pg_pmd_pts_count(virt_to_page(ptep)))
+ 		return 0;
+ 
+ 	pud_clear(pud);
+ 	put_page(virt_to_page(ptep));
++	pg_pmd_pts_dec(virt_to_page(ptep));
+ 	mm_dec_nr_pmds(mm);
+ 	/*
+ 	 * This update of passed address optimizes loops sequentially
+-- 
+2.25.1
+

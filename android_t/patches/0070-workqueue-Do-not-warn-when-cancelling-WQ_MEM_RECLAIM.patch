@@ -1,0 +1,122 @@
+From 577f67ab490825ed8eb804bc80f78a3284b3a388 Mon Sep 17 00:00:00 2001
+From: Tvrtko Ursulin <tvrtko.ursulin@igalia.com>
+Date: Thu, 19 Dec 2024 09:30:30 +0000
+Subject: [PATCH 070/105] workqueue: Do not warn when cancelling WQ_MEM_RECLAIM
+ work from !WQ_MEM_RECLAIM worker
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[ Upstream commit de35994ecd2dd6148ab5a6c5050a1670a04dec77 ]
+
+After commit
+746ae46c1113 ("drm/sched: Mark scheduler work queues with WQ_MEM_RECLAIM")
+amdgpu started seeing the following warning:
+
+ [ ] workqueue: WQ_MEM_RECLAIM sdma0:drm_sched_run_job_work [gpu_sched] is flushing !WQ_MEM_RECLAIM events:amdgpu_device_delay_enable_gfx_off [amdgpu]
+...
+ [ ] Workqueue: sdma0 drm_sched_run_job_work [gpu_sched]
+...
+ [ ] Call Trace:
+ [ ]  <TASK>
+...
+ [ ]  ? check_flush_dependency+0xf5/0x110
+...
+ [ ]  cancel_delayed_work_sync+0x6e/0x80
+ [ ]  amdgpu_gfx_off_ctrl+0xab/0x140 [amdgpu]
+ [ ]  amdgpu_ring_alloc+0x40/0x50 [amdgpu]
+ [ ]  amdgpu_ib_schedule+0xf4/0x810 [amdgpu]
+ [ ]  ? drm_sched_run_job_work+0x22c/0x430 [gpu_sched]
+ [ ]  amdgpu_job_run+0xaa/0x1f0 [amdgpu]
+ [ ]  drm_sched_run_job_work+0x257/0x430 [gpu_sched]
+ [ ]  process_one_work+0x217/0x720
+...
+ [ ]  </TASK>
+
+The intent of the verifcation done in check_flush_depedency is to ensure
+forward progress during memory reclaim, by flagging cases when either a
+memory reclaim process, or a memory reclaim work item is flushed from a
+context not marked as memory reclaim safe.
+
+This is correct when flushing, but when called from the
+cancel(_delayed)_work_sync() paths it is a false positive because work is
+either already running, or will not be running at all. Therefore
+cancelling it is safe and we can relax the warning criteria by letting the
+helper know of the calling context.
+
+Signed-off-by: Tvrtko Ursulin <tvrtko.ursulin@igalia.com>
+Fixes: fca839c00a12 ("workqueue: warn if memory reclaim tries to flush !WQ_MEM_RECLAIM workqueue")
+References: 746ae46c1113 ("drm/sched: Mark scheduler work queues with WQ_MEM_RECLAIM")
+Cc: Tejun Heo <tj@kernel.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Lai Jiangshan <jiangshanlai@gmail.com>
+Cc: Alex Deucher <alexander.deucher@amd.com>
+Cc: Christian König <christian.koenig@amd.com
+Cc: Matthew Brost <matthew.brost@intel.com>
+Cc: <stable@vger.kernel.org> # v4.5+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+---
+ kernel/workqueue.c | 22 +++++++++++++---------
+ 1 file changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/kernel/workqueue.c b/kernel/workqueue.c
+index f3a8c4bf1b3e..ae92b01c9190 100644
+--- a/kernel/workqueue.c
++++ b/kernel/workqueue.c
+@@ -2647,23 +2647,27 @@ static int rescuer_thread(void *__rescuer)
+  * check_flush_dependency - check for flush dependency sanity
+  * @target_wq: workqueue being flushed
+  * @target_work: work item being flushed (NULL for workqueue flushes)
++ * @from_cancel: are we called from the work cancel path
+  *
+  * %current is trying to flush the whole @target_wq or @target_work on it.
+- * If @target_wq doesn't have %WQ_MEM_RECLAIM, verify that %current is not
+- * reclaiming memory or running on a workqueue which doesn't have
+- * %WQ_MEM_RECLAIM as that can break forward-progress guarantee leading to
+- * a deadlock.
++ * If this is not the cancel path (which implies work being flushed is either
++ * already running, or will not be at all), check if @target_wq doesn't have
++ * %WQ_MEM_RECLAIM and verify that %current is not reclaiming memory or running
++ * on a workqueue which doesn't have %WQ_MEM_RECLAIM as that can break forward-
++ * progress guarantee leading to a deadlock.
+  */
+ static void check_flush_dependency(struct workqueue_struct *target_wq,
+-				   struct work_struct *target_work)
++				   struct work_struct *target_work,
++				   bool from_cancel)
+ {
+-	work_func_t target_func = target_work ? target_work->func : NULL;
++	work_func_t target_func;
+ 	struct worker *worker;
+ 
+-	if (target_wq->flags & WQ_MEM_RECLAIM)
++	if (from_cancel || target_wq->flags & WQ_MEM_RECLAIM)
+ 		return;
+ 
+ 	worker = current_wq_worker();
++	target_func = target_work ? target_work->func : NULL;
+ 
+ 	WARN_ONCE(current->flags & PF_MEMALLOC,
+ 		  "workqueue: PF_MEMALLOC task %d(%s) is flushing !WQ_MEM_RECLAIM %s:%ps",
+@@ -2909,7 +2913,7 @@ void flush_workqueue(struct workqueue_struct *wq)
+ 		list_add_tail(&this_flusher.list, &wq->flusher_overflow);
+ 	}
+ 
+-	check_flush_dependency(wq, NULL);
++	check_flush_dependency(wq, NULL, false);
+ 
+ 	mutex_unlock(&wq->mutex);
+ 
+@@ -3086,7 +3090,7 @@ static bool start_flush_work(struct work_struct *work, struct wq_barrier *barr,
+ 	}
+ 
+ 	wq = pwq->wq;
+-	check_flush_dependency(wq, work);
++	check_flush_dependency(wq, work, from_cancel);
+ 
+ 	insert_wq_barrier(pwq, barr, work, worker);
+ 	raw_spin_unlock_irq(&pool->lock);
+-- 
+2.25.1
+

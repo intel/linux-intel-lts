@@ -1,0 +1,120 @@
+From 030b5a211ac2df9f98027d00e31bc6cd256b97ac Mon Sep 17 00:00:00 2001
+From: Leon Romanovsky <leonro@nvidia.com>
+Date: Thu, 5 May 2022 13:06:40 +0300
+Subject: [PATCH 060/105] xfrm: rename xfrm_state_offload struct to allow reuse
+
+The struct xfrm_state_offload has all fields needed to hold information
+for offloaded policies too. In order to do not create new struct with
+same fields, let's rename existing one and reuse it later.
+
+Reviewed-by: Raed Salem <raeds@nvidia.com>
+Signed-off-by: Leon Romanovsky <leonro@nvidia.com>
+Acked-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Steffen Klassert <steffen.klassert@secunet.com>
+---
+ include/net/xfrm.h     | 10 +++++-----
+ net/xfrm/xfrm_device.c |  2 +-
+ net/xfrm/xfrm_state.c  |  4 ++--
+ net/xfrm/xfrm_user.c   |  2 +-
+ 4 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/include/net/xfrm.h b/include/net/xfrm.h
+index c3fa1cafe44c..664af36bead7 100644
+--- a/include/net/xfrm.h
++++ b/include/net/xfrm.h
+@@ -126,7 +126,7 @@ struct xfrm_state_walk {
+ 	struct xfrm_address_filter *filter;
+ };
+ 
+-struct xfrm_state_offload {
++struct xfrm_dev_offload {
+ 	struct net_device	*dev;
+ 	struct net_device	*real_dev;
+ 	unsigned long		offload_handle;
+@@ -246,7 +246,7 @@ struct xfrm_state {
+ 	struct xfrm_lifetime_cur curlft;
+ 	struct hrtimer		mtimer;
+ 
+-	struct xfrm_state_offload xso;
++	struct xfrm_dev_offload xso;
+ 
+ 	/* used to fix curlft->add_time when changing date */
+ 	long		saved_tmo;
+@@ -1881,7 +1881,7 @@ bool xfrm_dev_offload_ok(struct sk_buff *skb, struct xfrm_state *x);
+ 
+ static inline void xfrm_dev_state_advance_esn(struct xfrm_state *x)
+ {
+-	struct xfrm_state_offload *xso = &x->xso;
++	struct xfrm_dev_offload *xso = &x->xso;
+ 
+ 	if (xso->dev && xso->dev->xfrmdev_ops->xdo_dev_state_advance_esn)
+ 		xso->dev->xfrmdev_ops->xdo_dev_state_advance_esn(x);
+@@ -1907,7 +1907,7 @@ static inline bool xfrm_dst_offload_ok(struct dst_entry *dst)
+ 
+ static inline void xfrm_dev_state_delete(struct xfrm_state *x)
+ {
+-	struct xfrm_state_offload *xso = &x->xso;
++	struct xfrm_dev_offload *xso = &x->xso;
+ 
+ 	if (xso->dev)
+ 		xso->dev->xfrmdev_ops->xdo_dev_state_delete(x);
+@@ -1915,7 +1915,7 @@ static inline void xfrm_dev_state_delete(struct xfrm_state *x)
+ 
+ static inline void xfrm_dev_state_free(struct xfrm_state *x)
+ {
+-	struct xfrm_state_offload *xso = &x->xso;
++	struct xfrm_dev_offload *xso = &x->xso;
+ 	struct net_device *dev = xso->dev;
+ 
+ 	if (dev && dev->xfrmdev_ops) {
+diff --git a/net/xfrm/xfrm_device.c b/net/xfrm/xfrm_device.c
+index 6725b1fde5e4..fa0a84ed09db 100644
+--- a/net/xfrm/xfrm_device.c
++++ b/net/xfrm/xfrm_device.c
+@@ -235,7 +235,7 @@ int xfrm_dev_state_add(struct net *net, struct xfrm_state *x,
+ 	int err;
+ 	struct dst_entry *dst;
+ 	struct net_device *dev;
+-	struct xfrm_state_offload *xso = &x->xso;
++	struct xfrm_dev_offload *xso = &x->xso;
+ 	xfrm_address_t *saddr;
+ 	xfrm_address_t *daddr;
+ 
+diff --git a/net/xfrm/xfrm_state.c b/net/xfrm/xfrm_state.c
+index 5ff44ac56c3b..97364f060eec 100644
+--- a/net/xfrm/xfrm_state.c
++++ b/net/xfrm/xfrm_state.c
+@@ -760,7 +760,7 @@ xfrm_dev_state_flush_secctx_check(struct net *net, struct net_device *dev, bool
+ 
+ 	for (i = 0; i <= net->xfrm.state_hmask; i++) {
+ 		struct xfrm_state *x;
+-		struct xfrm_state_offload *xso;
++		struct xfrm_dev_offload *xso;
+ 
+ 		hlist_for_each_entry(x, net->xfrm.state_bydst+i, bydst) {
+ 			xso = &x->xso;
+@@ -844,7 +844,7 @@ int xfrm_dev_state_flush(struct net *net, struct net_device *dev, bool task_vali
+ 	err = -ESRCH;
+ 	for (i = 0; i <= net->xfrm.state_hmask; i++) {
+ 		struct xfrm_state *x;
+-		struct xfrm_state_offload *xso;
++		struct xfrm_dev_offload *xso;
+ restart:
+ 		hlist_for_each_entry(x, net->xfrm.state_bydst+i, bydst) {
+ 			xso = &x->xso;
+diff --git a/net/xfrm/xfrm_user.c b/net/xfrm/xfrm_user.c
+index 8d18babd79f1..f3749ff6c322 100644
+--- a/net/xfrm/xfrm_user.c
++++ b/net/xfrm/xfrm_user.c
+@@ -843,7 +843,7 @@ static int copy_sec_ctx(struct xfrm_sec_ctx *s, struct sk_buff *skb)
+ 	return 0;
+ }
+ 
+-static int copy_user_offload(struct xfrm_state_offload *xso, struct sk_buff *skb)
++static int copy_user_offload(struct xfrm_dev_offload *xso, struct sk_buff *skb)
+ {
+ 	struct xfrm_user_offload *xuo;
+ 	struct nlattr *attr;
+-- 
+2.25.1
+

@@ -1,0 +1,82 @@
+From 63e605b69a78b194583d7c8804fe0461af077449 Mon Sep 17 00:00:00 2001
+From: Niklas Cassel <cassel@kernel.org>
+Date: Mon, 27 Jan 2025 16:43:04 +0100
+Subject: [PATCH 033/105] ata: libata-sff: Ensure that we cannot write outside
+ the allocated buffer
+
+reveliofuzzing reported that a SCSI_IOCTL_SEND_COMMAND ioctl with out_len
+set to 0xd42, SCSI command set to ATA_16 PASS-THROUGH, ATA command set to
+ATA_NOP, and protocol set to ATA_PROT_PIO, can cause ata_pio_sector() to
+write outside the allocated buffer, overwriting random memory.
+
+While a ATA device is supposed to abort a ATA_NOP command, there does seem
+to be a bug either in libata-sff or QEMU, where either this status is not
+set, or the status is cleared before read by ata_sff_hsm_move().
+Anyway, that is most likely a separate bug.
+
+Looking at __atapi_pio_bytes(), it already has a safety check to ensure
+that __atapi_pio_bytes() cannot write outside the allocated buffer.
+
+Add a similar check to ata_pio_sector(), such that also ata_pio_sector()
+cannot write outside the allocated buffer.
+
+Cc: stable@vger.kernel.org
+Reported-by: reveliofuzzing <reveliofuzzing@gmail.com>
+Closes: https://lore.kernel.org/linux-ide/CA+-ZZ_jTgxh3bS7m+KX07_EWckSnW3N2adX3KV63y4g7M4CZ2A@mail.gmail.com/
+Link: https://lore.kernel.org/r/20250127154303.15567-2-cassel@kernel.org
+Signed-off-by: Niklas Cassel <cassel@kernel.org>
+---
+ drivers/ata/libata-sff.c | 18 ++++++++++--------
+ 1 file changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/ata/libata-sff.c b/drivers/ata/libata-sff.c
+index 0b79a11558ff..23a5313dd438 100644
+--- a/drivers/ata/libata-sff.c
++++ b/drivers/ata/libata-sff.c
+@@ -652,7 +652,7 @@ static void ata_pio_sector(struct ata_queued_cmd *qc)
+ {
+ 	struct ata_port *ap = qc->ap;
+ 	struct page *page;
+-	unsigned int offset;
++	unsigned int offset, count;
+ 
+ 	if (!qc->cursg) {
+ 		qc->curbytes = qc->nbytes;
+@@ -668,25 +668,27 @@ static void ata_pio_sector(struct ata_queued_cmd *qc)
+ 	page = nth_page(page, (offset >> PAGE_SHIFT));
+ 	offset %= PAGE_SIZE;
+ 
+-	trace_ata_sff_pio_transfer_data(qc, offset, qc->sect_size);
++	/* don't overrun current sg */
++	count = min(qc->cursg->length - qc->cursg_ofs, qc->sect_size);
++
++	trace_ata_sff_pio_transfer_data(qc, offset, count);
+ 
+ 	/*
+ 	 * Split the transfer when it splits a page boundary.  Note that the
+ 	 * split still has to be dword aligned like all ATA data transfers.
+ 	 */
+ 	WARN_ON_ONCE(offset % 4);
+-	if (offset + qc->sect_size > PAGE_SIZE) {
++	if (offset + count > PAGE_SIZE) {
+ 		unsigned int split_len = PAGE_SIZE - offset;
+ 
+ 		ata_pio_xfer(qc, page, offset, split_len);
+-		ata_pio_xfer(qc, nth_page(page, 1), 0,
+-			     qc->sect_size - split_len);
++		ata_pio_xfer(qc, nth_page(page, 1), 0, count - split_len);
+ 	} else {
+-		ata_pio_xfer(qc, page, offset, qc->sect_size);
++		ata_pio_xfer(qc, page, offset, count);
+ 	}
+ 
+-	qc->curbytes += qc->sect_size;
+-	qc->cursg_ofs += qc->sect_size;
++	qc->curbytes += count;
++	qc->cursg_ofs += count;
+ 
+ 	if (qc->cursg_ofs == qc->cursg->length) {
+ 		qc->cursg = sg_next(qc->cursg);
+-- 
+2.25.1
+

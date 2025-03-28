@@ -1,0 +1,522 @@
+From a4e00b207102d02b7655cb2ece6fc6249752cb69 Mon Sep 17 00:00:00 2001
+From: Hannes Reinecke <hare@suse.de>
+Date: Tue, 21 Dec 2021 08:20:29 +0100
+Subject: [PATCH 030/105] ata: libata: add reset tracepoints
+
+To follow the flow of control we should be using tracepoints, as
+they will tie in with the actual I/O flow and deliver a better
+overview about what it happening.
+This patch adds tracepoints for hard reset, soft reset, and postreset
+and adds them in the libata-eh control flow.
+With that we can drop the reset DPRINTK calls in the various drivers.
+
+Signed-off-by: Hannes Reinecke <hare@suse.de>
+Signed-off-by: Damien Le Moal <damien.lemoal@opensource.wdc.com>
+---
+ drivers/ata/ahci.c            |  7 ---
+ drivers/ata/ahci_qoriq.c      |  4 --
+ drivers/ata/libahci.c         | 10 ----
+ drivers/ata/libata-core.c     |  4 --
+ drivers/ata/libata-eh.c       | 21 ++++++--
+ drivers/ata/libata-sff.c      | 11 +---
+ drivers/ata/pata_octeon_cf.c  |  2 -
+ drivers/ata/sata_fsl.c        | 10 ----
+ drivers/ata/sata_rcar.c       |  4 --
+ drivers/ata/sata_sil24.c      |  3 --
+ include/trace/events/libata.h | 96 +++++++++++++++++++++++++++++++++++
+ 11 files changed, 115 insertions(+), 57 deletions(-)
+
+diff --git a/drivers/ata/ahci.c b/drivers/ata/ahci.c
+index ff5f83c5af00..7638daf84112 100644
+--- a/drivers/ata/ahci.c
++++ b/drivers/ata/ahci.c
+@@ -742,8 +742,6 @@ static int ahci_vt8251_hardreset(struct ata_link *link, unsigned int *class,
+ 	bool online;
+ 	int rc;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	hpriv->stop_engine(ap);
+ 
+ 	rc = sata_link_hardreset(link, sata_ehc_deb_timing(&link->eh_context),
+@@ -751,8 +749,6 @@ static int ahci_vt8251_hardreset(struct ata_link *link, unsigned int *class,
+ 
+ 	hpriv->start_engine(ap);
+ 
+-	DPRINTK("EXIT, rc=%d, class=%u\n", rc, *class);
+-
+ 	/* vt8251 doesn't clear BSY on signature FIS reception,
+ 	 * request follow-up softreset.
+ 	 */
+@@ -832,8 +828,6 @@ static int ahci_avn_hardreset(struct ata_link *link, unsigned int *class,
+ 	bool online;
+ 	int rc, i;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	hpriv->stop_engine(ap);
+ 
+ 	for (i = 0; i < 2; i++) {
+@@ -871,7 +865,6 @@ static int ahci_avn_hardreset(struct ata_link *link, unsigned int *class,
+ 	if (online)
+ 		*class = ahci_dev_classify(ap);
+ 
+-	DPRINTK("EXIT, rc=%d, class=%u\n", rc, *class);
+ 	return rc;
+ }
+ 
+diff --git a/drivers/ata/ahci_qoriq.c b/drivers/ata/ahci_qoriq.c
+index e5ac3d1c214c..cca78e25b173 100644
+--- a/drivers/ata/ahci_qoriq.c
++++ b/drivers/ata/ahci_qoriq.c
+@@ -103,8 +103,6 @@ static int ahci_qoriq_hardreset(struct ata_link *link, unsigned int *class,
+ 	int rc;
+ 	bool ls1021a_workaround = (qoriq_priv->type == AHCI_LS1021A);
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	hpriv->stop_engine(ap);
+ 
+ 	/*
+@@ -146,8 +144,6 @@ static int ahci_qoriq_hardreset(struct ata_link *link, unsigned int *class,
+ 
+ 	if (online)
+ 		*class = ahci_dev_classify(ap);
+-
+-	DPRINTK("EXIT, rc=%d, class=%u\n", rc, *class);
+ 	return rc;
+ }
+ 
+diff --git a/drivers/ata/libahci.c b/drivers/ata/libahci.c
+index e22d45fb8ebd..9e4d0b031691 100644
+--- a/drivers/ata/libahci.c
++++ b/drivers/ata/libahci.c
+@@ -1406,8 +1406,6 @@ int ahci_do_softreset(struct ata_link *link, unsigned int *class,
+ 	bool fbs_disabled = false;
+ 	int rc;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	/* prepare for SRST (AHCI-1.1 10.4.1) */
+ 	rc = ahci_kick_engine(ap);
+ 	if (rc && rc != -EOPNOTSUPP)
+@@ -1467,7 +1465,6 @@ int ahci_do_softreset(struct ata_link *link, unsigned int *class,
+ 	if (fbs_disabled)
+ 		ahci_enable_fbs(ap);
+ 
+-	DPRINTK("EXIT, class=%u\n", *class);
+ 	return 0;
+ 
+  fail:
+@@ -1489,8 +1486,6 @@ static int ahci_softreset(struct ata_link *link, unsigned int *class,
+ {
+ 	int pmp = sata_srst_pmp(link);
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	return ahci_do_softreset(link, class, pmp, deadline, ahci_check_ready);
+ }
+ EXPORT_SYMBOL_GPL(ahci_do_softreset);
+@@ -1520,8 +1515,6 @@ static int ahci_pmp_retry_softreset(struct ata_link *link, unsigned int *class,
+ 	int rc;
+ 	u32 irq_sts;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	rc = ahci_do_softreset(link, class, pmp, deadline,
+ 			       ahci_bad_pmp_check_ready);
+ 
+@@ -1555,8 +1548,6 @@ int ahci_do_hardreset(struct ata_link *link, unsigned int *class,
+ 	struct ata_taskfile tf;
+ 	int rc;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	hpriv->stop_engine(ap);
+ 
+ 	/* clear D2H reception area to properly wait for D2H FIS */
+@@ -1574,7 +1565,6 @@ int ahci_do_hardreset(struct ata_link *link, unsigned int *class,
+ 	if (*online)
+ 		*class = ahci_dev_classify(ap);
+ 
+-	DPRINTK("EXIT, rc=%d, class=%u\n", rc, *class);
+ 	return rc;
+ }
+ EXPORT_SYMBOL_GPL(ahci_do_hardreset);
+diff --git a/drivers/ata/libata-core.c b/drivers/ata/libata-core.c
+index 3df057d381a7..c90029b87437 100644
+--- a/drivers/ata/libata-core.c
++++ b/drivers/ata/libata-core.c
+@@ -3624,16 +3624,12 @@ void ata_std_postreset(struct ata_link *link, unsigned int *classes)
+ {
+ 	u32 serror;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	/* reset complete, clear SError */
+ 	if (!sata_scr_read(link, SCR_ERROR, &serror))
+ 		sata_scr_write(link, SCR_ERROR, serror);
+ 
+ 	/* print link status */
+ 	sata_print_link_status(link);
+-
+-	DPRINTK("EXIT\n");
+ }
+ EXPORT_SYMBOL_GPL(ata_std_postreset);
+ 
+diff --git a/drivers/ata/libata-eh.c b/drivers/ata/libata-eh.c
+index 10742d72f44f..ae01ef233f97 100644
+--- a/drivers/ata/libata-eh.c
++++ b/drivers/ata/libata-eh.c
+@@ -2597,12 +2597,19 @@ int ata_eh_reset(struct ata_link *link, int classify,
+ 
+ 		/* mark that this EH session started with reset */
+ 		ehc->last_reset = jiffies;
+-		if (reset == hardreset)
++		if (reset == hardreset) {
+ 			ehc->i.flags |= ATA_EHI_DID_HARDRESET;
+-		else
++			trace_ata_link_hardreset_begin(link, classes, deadline);
++		} else {
+ 			ehc->i.flags |= ATA_EHI_DID_SOFTRESET;
++			trace_ata_link_softreset_begin(link, classes, deadline);
++		}
+ 
+ 		rc = ata_do_reset(link, reset, classes, deadline, true);
++		if (reset == hardreset)
++			trace_ata_link_hardreset_end(link, classes, rc);
++		else
++			trace_ata_link_softreset_end(link, classes, rc);
+ 		if (rc && rc != -EAGAIN) {
+ 			failed_link = link;
+ 			goto fail;
+@@ -2616,8 +2623,11 @@ int ata_eh_reset(struct ata_link *link, int classify,
+ 				ata_link_info(slave, "hard resetting link\n");
+ 
+ 			ata_eh_about_to_do(slave, NULL, ATA_EH_RESET);
++			trace_ata_slave_hardreset_begin(slave, classes,
++							deadline);
+ 			tmp = ata_do_reset(slave, reset, classes, deadline,
+ 					   false);
++			trace_ata_slave_hardreset_end(slave, classes, tmp);
+ 			switch (tmp) {
+ 			case -EAGAIN:
+ 				rc = -EAGAIN;
+@@ -2645,7 +2655,9 @@ int ata_eh_reset(struct ata_link *link, int classify,
+ 			}
+ 
+ 			ata_eh_about_to_do(link, NULL, ATA_EH_RESET);
++			trace_ata_link_softreset_begin(link, classes, deadline);
+ 			rc = ata_do_reset(link, reset, classes, deadline, true);
++			trace_ata_link_softreset_end(link, classes, rc);
+ 			if (rc) {
+ 				failed_link = link;
+ 				goto fail;
+@@ -2699,8 +2711,11 @@ int ata_eh_reset(struct ata_link *link, int classify,
+ 	 */
+ 	if (postreset) {
+ 		postreset(link, classes);
+-		if (slave)
++		trace_ata_link_postreset(link, classes, rc);
++		if (slave) {
+ 			postreset(slave, classes);
++			trace_ata_slave_postreset(slave, classes, rc);
++		}
+ 	}
+ 
+ 	/* clear cached SError */
+diff --git a/drivers/ata/libata-sff.c b/drivers/ata/libata-sff.c
+index 8409e53b7b7a..9f87b2f856d4 100644
+--- a/drivers/ata/libata-sff.c
++++ b/drivers/ata/libata-sff.c
+@@ -1956,8 +1956,6 @@ static int ata_bus_softreset(struct ata_port *ap, unsigned int devmask,
+ {
+ 	struct ata_ioports *ioaddr = &ap->ioaddr;
+ 
+-	DPRINTK("ata%u: bus reset via SRST\n", ap->print_id);
+-
+ 	if (ap->ioaddr.ctl_addr) {
+ 		/* software reset.  causes dev0 to be selected */
+ 		iowrite8(ap->ctl, ioaddr->ctl_addr);
+@@ -1995,8 +1993,6 @@ int ata_sff_softreset(struct ata_link *link, unsigned int *classes,
+ 	int rc;
+ 	u8 err;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	/* determine if device 0/1 are present */
+ 	if (ata_devchk(ap, 0))
+ 		devmask |= (1 << 0);
+@@ -2007,7 +2003,6 @@ int ata_sff_softreset(struct ata_link *link, unsigned int *classes,
+ 	ap->ops->sff_dev_select(ap, 0);
+ 
+ 	/* issue bus reset */
+-	DPRINTK("about to softreset, devmask=%x\n", devmask);
+ 	rc = ata_bus_softreset(ap, devmask, deadline);
+ 	/* if link is occupied, -ENODEV too is an error */
+ 	if (rc && (rc != -ENODEV || sata_scr_valid(link))) {
+@@ -2022,7 +2017,6 @@ int ata_sff_softreset(struct ata_link *link, unsigned int *classes,
+ 		classes[1] = ata_sff_dev_classify(&link->device[1],
+ 						  devmask & (1 << 1), &err);
+ 
+-	DPRINTK("EXIT, classes[0]=%u [1]=%u\n", classes[0], classes[1]);
+ 	return 0;
+ }
+ EXPORT_SYMBOL_GPL(ata_sff_softreset);
+@@ -2055,7 +2049,6 @@ int sata_sff_hardreset(struct ata_link *link, unsigned int *class,
+ 	if (online)
+ 		*class = ata_sff_dev_classify(link->device, 1, NULL);
+ 
+-	DPRINTK("EXIT, class=%u\n", *class);
+ 	return rc;
+ }
+ EXPORT_SYMBOL_GPL(sata_sff_hardreset);
+@@ -2085,10 +2078,8 @@ void ata_sff_postreset(struct ata_link *link, unsigned int *classes)
+ 		ap->ops->sff_dev_select(ap, 0);
+ 
+ 	/* bail out if no device is present */
+-	if (classes[0] == ATA_DEV_NONE && classes[1] == ATA_DEV_NONE) {
+-		DPRINTK("EXIT, no device\n");
++	if (classes[0] == ATA_DEV_NONE && classes[1] == ATA_DEV_NONE)
+ 		return;
+-	}
+ 
+ 	/* set up device control */
+ 	if (ap->ops->sff_set_devctl || ap->ioaddr.ctl_addr) {
+diff --git a/drivers/ata/pata_octeon_cf.c b/drivers/ata/pata_octeon_cf.c
+index 6c9f2efcedc1..d2682c3a0901 100644
+--- a/drivers/ata/pata_octeon_cf.c
++++ b/drivers/ata/pata_octeon_cf.c
+@@ -440,7 +440,6 @@ static int octeon_cf_softreset16(struct ata_link *link, unsigned int *classes,
+ 	int rc;
+ 	u8 err;
+ 
+-	DPRINTK("about to softreset\n");
+ 	__raw_writew(ap->ctl, base + 0xe);
+ 	udelay(20);
+ 	__raw_writew(ap->ctl | ATA_SRST, base + 0xe);
+@@ -455,7 +454,6 @@ static int octeon_cf_softreset16(struct ata_link *link, unsigned int *classes,
+ 
+ 	/* determine by signature whether we have ATA or ATAPI devices */
+ 	classes[0] = ata_sff_dev_classify(&link->device[0], 1, &err);
+-	DPRINTK("EXIT, classes[0]=%u [1]=%u\n", classes[0], classes[1]);
+ 	return 0;
+ }
+ 
+diff --git a/drivers/ata/sata_fsl.c b/drivers/ata/sata_fsl.c
+index 3b31a4f596d8..9ff8e72c66cd 100644
+--- a/drivers/ata/sata_fsl.c
++++ b/drivers/ata/sata_fsl.c
+@@ -825,8 +825,6 @@ static int sata_fsl_hardreset(struct ata_link *link, unsigned int *class,
+ 	int i = 0;
+ 	unsigned long start_jiffies;
+ 
+-	DPRINTK("in xx_hardreset\n");
+-
+ try_offline_again:
+ 	/*
+ 	 * Force host controller to go off-line, aborting current operations
+@@ -941,10 +939,7 @@ static int sata_fsl_softreset(struct ata_link *link, unsigned int *class,
+ 	u8 *cfis;
+ 	u32 Serror;
+ 
+-	DPRINTK("in xx_softreset\n");
+-
+ 	if (ata_link_offline(link)) {
+-		DPRINTK("PHY reports no device\n");
+ 		*class = ATA_DEV_NONE;
+ 		return 0;
+ 	}
+@@ -957,8 +952,6 @@ static int sata_fsl_softreset(struct ata_link *link, unsigned int *class,
+ 	 * reached here, we can send a command to the target device
+ 	 */
+ 
+-	DPRINTK("Sending SRST/device reset\n");
+-
+ 	ata_tf_init(link->device, &tf);
+ 	cfis = (u8 *) &pp->cmdentry->cfis;
+ 
+@@ -1030,8 +1023,6 @@ static int sata_fsl_softreset(struct ata_link *link, unsigned int *class,
+ 	 */
+ 	iowrite32(0x01, CC + hcr_base);	/* We know it will be cmd#0 always */
+ 
+-	DPRINTK("SATA FSL : Now checking device signature\n");
+-
+ 	*class = ATA_DEV_NONE;
+ 
+ 	/* Verify if SStatus indicates device presence */
+@@ -1045,7 +1036,6 @@ static int sata_fsl_softreset(struct ata_link *link, unsigned int *class,
+ 
+ 		*class = sata_fsl_dev_classify(ap);
+ 
+-		DPRINTK("class = %d\n", *class);
+ 		VPRINTK("ccreg = 0x%x\n", ioread32(hcr_base + CC));
+ 		VPRINTK("cereg = 0x%x\n", ioread32(hcr_base + CE));
+ 	}
+diff --git a/drivers/ata/sata_rcar.c b/drivers/ata/sata_rcar.c
+index 9759e24f718f..174c894b7e23 100644
+--- a/drivers/ata/sata_rcar.c
++++ b/drivers/ata/sata_rcar.c
+@@ -323,8 +323,6 @@ static int sata_rcar_bus_softreset(struct ata_port *ap, unsigned long deadline)
+ {
+ 	struct ata_ioports *ioaddr = &ap->ioaddr;
+ 
+-	DPRINTK("ata%u: bus reset via SRST\n", ap->print_id);
+-
+ 	/* software reset.  causes dev0 to be selected */
+ 	iowrite32(ap->ctl, ioaddr->ctl_addr);
+ 	udelay(20);
+@@ -350,7 +348,6 @@ static int sata_rcar_softreset(struct ata_link *link, unsigned int *classes,
+ 		devmask |= 1 << 0;
+ 
+ 	/* issue bus reset */
+-	DPRINTK("about to softreset, devmask=%x\n", devmask);
+ 	rc = sata_rcar_bus_softreset(ap, deadline);
+ 	/* if link is occupied, -ENODEV too is an error */
+ 	if (rc && (rc != -ENODEV || sata_scr_valid(link))) {
+@@ -361,7 +358,6 @@ static int sata_rcar_softreset(struct ata_link *link, unsigned int *classes,
+ 	/* determine by signature whether we have ATA or ATAPI devices */
+ 	classes[0] = ata_sff_dev_classify(&link->device[0], devmask, &err);
+ 
+-	DPRINTK("classes[0]=%u\n", classes[0]);
+ 	return 0;
+ }
+ 
+diff --git a/drivers/ata/sata_sil24.c b/drivers/ata/sata_sil24.c
+index 06a1e27c4f84..aac4ea366e79 100644
+--- a/drivers/ata/sata_sil24.c
++++ b/drivers/ata/sata_sil24.c
+@@ -656,8 +656,6 @@ static int sil24_softreset(struct ata_link *link, unsigned int *class,
+ 	const char *reason;
+ 	int rc;
+ 
+-	DPRINTK("ENTER\n");
+-
+ 	/* put the port into known state */
+ 	if (sil24_init_port(ap)) {
+ 		reason = "port not ready";
+@@ -682,7 +680,6 @@ static int sil24_softreset(struct ata_link *link, unsigned int *class,
+ 	sil24_read_tf(ap, 0, &tf);
+ 	*class = ata_dev_classify(&tf);
+ 
+-	DPRINTK("EXIT, class=%u\n", *class);
+ 	return 0;
+ 
+  err:
+diff --git a/include/trace/events/libata.h b/include/trace/events/libata.h
+index 72e785a903b6..e43ed680cd7e 100644
+--- a/include/trace/events/libata.h
++++ b/include/trace/events/libata.h
+@@ -132,6 +132,22 @@
+ 		ata_protocol_name(ATAPI_PROT_PIO),	\
+ 		ata_protocol_name(ATAPI_PROT_DMA))
+ 
++#define ata_class_name(class)	{ class, #class }
++#define show_class_name(val)				\
++	__print_symbolic(val,				\
++		ata_class_name(ATA_DEV_UNKNOWN),	\
++		ata_class_name(ATA_DEV_ATA),		\
++		ata_class_name(ATA_DEV_ATA_UNSUP),	\
++		ata_class_name(ATA_DEV_ATAPI),		\
++		ata_class_name(ATA_DEV_ATAPI_UNSUP),	\
++		ata_class_name(ATA_DEV_PMP),		\
++		ata_class_name(ATA_DEV_PMP_UNSUP),	\
++		ata_class_name(ATA_DEV_SEMB),		\
++		ata_class_name(ATA_DEV_SEMB_UNSUP),	\
++		ata_class_name(ATA_DEV_ZAC),		\
++		ata_class_name(ATA_DEV_ZAC_UNSUP),	\
++		ata_class_name(ATA_DEV_NONE))
++
+ const char *libata_trace_parse_status(struct trace_seq*, unsigned char);
+ #define __parse_status(s) libata_trace_parse_status(p, s)
+ 
+@@ -330,6 +346,86 @@ TRACE_EVENT(ata_eh_link_autopsy_qc,
+ 		  __parse_eh_err_mask(__entry->eh_err_mask))
+ );
+ 
++DECLARE_EVENT_CLASS(ata_link_reset_begin_template,
++
++	TP_PROTO(struct ata_link *link, unsigned int *class, unsigned long deadline),
++
++	TP_ARGS(link, class, deadline),
++
++	TP_STRUCT__entry(
++		__field( unsigned int,	ata_port )
++		__array( unsigned int,	class, 2 )
++		__field( unsigned long,	deadline )
++	),
++
++	TP_fast_assign(
++		__entry->ata_port	= link->ap->print_id;
++		memcpy(__entry->class, class, 2);
++		__entry->deadline	= deadline;
++	),
++
++	TP_printk("ata_port=%u deadline=%lu classes=[%s,%s]",
++		  __entry->ata_port, __entry->deadline,
++		  show_class_name(__entry->class[0]),
++		  show_class_name(__entry->class[1]))
++);
++
++DEFINE_EVENT(ata_link_reset_begin_template, ata_link_hardreset_begin,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, unsigned long deadline),
++	     TP_ARGS(link, class, deadline));
++
++DEFINE_EVENT(ata_link_reset_begin_template, ata_slave_hardreset_begin,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, unsigned long deadline),
++	     TP_ARGS(link, class, deadline));
++
++DEFINE_EVENT(ata_link_reset_begin_template, ata_link_softreset_begin,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, unsigned long deadline),
++	     TP_ARGS(link, class, deadline));
++
++DECLARE_EVENT_CLASS(ata_link_reset_end_template,
++
++	TP_PROTO(struct ata_link *link, unsigned int *class, int rc),
++
++	TP_ARGS(link, class, rc),
++
++	TP_STRUCT__entry(
++		__field( unsigned int,	ata_port )
++		__array( unsigned int,	class, 2 )
++		__field( int,		rc	)
++	),
++
++	TP_fast_assign(
++		__entry->ata_port	= link->ap->print_id;
++		memcpy(__entry->class, class, 2);
++		__entry->rc		= rc;
++	),
++
++	TP_printk("ata_port=%u rc=%d class=[%s,%s]",
++		  __entry->ata_port, __entry->rc,
++		  show_class_name(__entry->class[0]),
++		  show_class_name(__entry->class[1]))
++);
++
++DEFINE_EVENT(ata_link_reset_end_template, ata_link_hardreset_end,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, int rc),
++	     TP_ARGS(link, class, rc));
++
++DEFINE_EVENT(ata_link_reset_end_template, ata_slave_hardreset_end,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, int rc),
++	     TP_ARGS(link, class, rc));
++
++DEFINE_EVENT(ata_link_reset_end_template, ata_link_softreset_end,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, int rc),
++	     TP_ARGS(link, class, rc));
++
++DEFINE_EVENT(ata_link_reset_end_template, ata_link_postreset,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, int rc),
++	     TP_ARGS(link, class, rc));
++
++DEFINE_EVENT(ata_link_reset_end_template, ata_slave_postreset,
++	     TP_PROTO(struct ata_link *link, unsigned int *class, int rc),
++	     TP_ARGS(link, class, rc));
++
+ #endif /*  _TRACE_LIBATA_H */
+ 
+ /* This part must be outside protection */
+-- 
+2.25.1
+

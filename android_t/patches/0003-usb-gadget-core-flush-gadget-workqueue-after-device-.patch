@@ -1,0 +1,48 @@
+From 5cd483a2351dd3d13249c4f7162c8b04d1f8e820 Mon Sep 17 00:00:00 2001
+From: Roy Luo <royluo@google.com>
+Date: Tue, 4 Feb 2025 23:36:42 +0000
+Subject: [PATCH 003/105] usb: gadget: core: flush gadget workqueue after
+ device removal
+
+device_del() can lead to new work being scheduled in gadget->work
+workqueue. This is observed, for example, with the dwc3 driver with the
+following call stack:
+  device_del()
+    gadget_unbind_driver()
+      usb_gadget_disconnect_locked()
+        dwc3_gadget_pullup()
+	  dwc3_gadget_soft_disconnect()
+	    usb_gadget_set_state()
+	      schedule_work(&gadget->work)
+
+Move flush_work() after device_del() to ensure the workqueue is cleaned
+up.
+
+Fixes: 5702f75375aa9 ("usb: gadget: udc-core: move sysfs_notify() to a workqueue")
+Cc: stable <stable@kernel.org>
+Signed-off-by: Roy Luo <royluo@google.com>
+Reviewed-by: Alan Stern <stern@rowland.harvard.edu>
+Reviewed-by: Thinh Nguyen <Thinh.Nguyen@synopsys.com>
+Link: https://lore.kernel.org/r/20250204233642.666991-1-royluo@google.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/gadget/udc/core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/core.c b/drivers/usb/gadget/udc/core.c
+index 77ba44ba88a6..645835a3d9e7 100644
+--- a/drivers/usb/gadget/udc/core.c
++++ b/drivers/usb/gadget/udc/core.c
+@@ -1473,8 +1473,8 @@ void usb_del_gadget(struct usb_gadget *gadget)
+ 	mutex_unlock(&udc_lock);
+ 
+ 	kobject_uevent(&udc->dev.kobj, KOBJ_REMOVE);
+-	flush_work(&gadget->work);
+ 	device_del(&gadget->dev);
++	flush_work(&gadget->work);
+ 	device_unregister(&udc->dev);
+ }
+ EXPORT_SYMBOL_GPL(usb_del_gadget);
+-- 
+2.25.1
+

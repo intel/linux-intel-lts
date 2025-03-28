@@ -1,0 +1,166 @@
+From b8d473f9a6790da87c1803fc8d80df34b7b3501d Mon Sep 17 00:00:00 2001
+From: "Lim, Poh Keng" <sean@127.0.0.1localhost>
+Date: Sat, 22 Mar 2025 21:03:03 +0800
+Subject: [PATCH 065/105] Revert "xfrm: add TX datapath support for IPsec
+ packet offload mode"
+
+This reverts commit d2c10651fca4bdaf5c5f3a7d851e2bd9ab50a5fd and
+reverting xfrm_dev_state_delete and xfrm_dev_state_add
+---
+ net/xfrm/xfrm_device.c | 17 ++--------------
+ net/xfrm/xfrm_output.c | 12 +-----------
+ net/xfrm/xfrm_state.c  | 44 ++++++++++++++++++++++++------------------
+ 3 files changed, 28 insertions(+), 45 deletions(-)
+
+diff --git a/net/xfrm/xfrm_device.c b/net/xfrm/xfrm_device.c
+index 07b2828e0eff..63affc3bc212 100644
+--- a/net/xfrm/xfrm_device.c
++++ b/net/xfrm/xfrm_device.c
+@@ -132,18 +132,6 @@ struct sk_buff *validate_xmit_xfrm(struct sk_buff *skb, netdev_features_t featur
+ 	if (xo->flags & XFRM_GRO || x->xso.flags & XFRM_OFFLOAD_INBOUND)
+ 		return skb;
+ 
+-#ifdef CONFIG_XFRM_OFFLOAD
+-	/* The packet was sent to HW IPsec packet offload engine,
+-	 * but to wrong device. Drop the packet, so it won't skip
+-	 * XFRM stack.
+-	 */
+-	if (x->xso.type == XFRM_DEV_OFFLOAD_PACKET && x->xso.dev != dev) {
+-		kfree_skb(skb);
+-		dev_core_stats_tx_dropped_inc(dev);
+-		return NULL;
+-	}
+-#endif
+-
+ 	/* This skb was already validated on the upper/virtual dev */
+ 	if ((x->xso.dev != dev) && (x->xso.real_dev == dev))
+ 		return skb;
+@@ -316,9 +304,8 @@ bool xfrm_dev_offload_ok(struct sk_buff *skb, struct xfrm_state *x)
+ 	if (!x->type_offload || x->encap)
+ 		return false;
+ 
+-	if (x->xso.type == XFRM_DEV_OFFLOAD_PACKET ||
+-	    ((!dev || (dev == xfrm_dst_path(dst)->dev)) &&
+-	     !xdst->child->xfrm)) {
++	if ((!dev || (dev == xfrm_dst_path(dst)->dev)) &&
++	    (!xdst->child->xfrm)) {
+ 		mtu = xfrm_state_mtu(x, xdst->child_mtu_cached);
+ 		if (skb->len <= mtu)
+ 			goto ok;
+diff --git a/net/xfrm/xfrm_output.c b/net/xfrm/xfrm_output.c
+index 81769a03e3c5..e46afab0939e 100644
+--- a/net/xfrm/xfrm_output.c
++++ b/net/xfrm/xfrm_output.c
+@@ -492,7 +492,7 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
+ 	struct xfrm_state *x = dst->xfrm;
+ 	struct net *net = xs_net(x);
+ 
+-	if (err <= 0 || x->xso.type == XFRM_DEV_OFFLOAD_PACKET)
++	if (err <= 0)
+ 		goto resume;
+ 
+ 	do {
+@@ -716,16 +716,6 @@ int xfrm_output(struct sock *sk, struct sk_buff *skb)
+ 		break;
+ 	}
+ 
+-	if (x->xso.type == XFRM_DEV_OFFLOAD_PACKET) {
+-		if (!xfrm_dev_offload_ok(skb, x)) {
+-			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTERROR);
+-			kfree_skb(skb);
+-			return -EHOSTUNREACH;
+-		}
+-
+-		return xfrm_output_resume(skb, 0);
+-	}
+-
+ 	secpath_reset(skb);
+ 
+ 	if (xfrm_dev_offload_ok(skb, x)) {
+diff --git a/net/xfrm/xfrm_state.c b/net/xfrm/xfrm_state.c
+index 6b4caa11eb31..49bd6ceb26e6 100644
+--- a/net/xfrm/xfrm_state.c
++++ b/net/xfrm/xfrm_state.c
+@@ -578,7 +578,6 @@ static enum hrtimer_restart xfrm_timer_handler(struct hrtimer *me)
+ 	int err = 0;
+ 
+ 	spin_lock(&x->lock);
+-
+ 	if (x->km.state == XFRM_STATE_DEAD)
+ 		goto out;
+ 	if (x->km.state == XFRM_STATE_EXPIRED)
+@@ -753,6 +752,31 @@ int xfrm_state_delete(struct xfrm_state *x)
+ }
+ EXPORT_SYMBOL(xfrm_state_delete);
+ 
++#ifdef CONFIG_XFRM_OFFLOAD
++void xfrm_dev_state_delete(struct xfrm_state *x)
++{
++       struct xfrm_dev_offload *xso = &x->xso;
++
++       if (xso->dev)
++               xso->dev->xfrmdev_ops->xdo_dev_state_delete(x);
++}
++EXPORT_SYMBOL(xfrm_dev_state_delete);
++
++void xfrm_dev_state_free(struct xfrm_state *x)
++{
++       struct xfrm_dev_offload *xso = &x->xso;
++       struct net_device *dev = xso->dev;
++
++       if (dev && dev->xfrmdev_ops) {
++              if (dev->xfrmdev_ops->xdo_dev_state_free)
++                       dev->xfrmdev_ops->xdo_dev_state_free(x);
++               xso->dev = NULL;
++               dev_put(dev);
++       }
++}
++EXPORT_SYMBOL(xfrm_dev_state_free);
++#endif
++
+ #ifdef CONFIG_SECURITY_NETWORK_XFRM
+ static inline int
+ xfrm_state_flush_secctx_check(struct net *net, u8 proto, bool task_valid)
+@@ -1013,23 +1037,7 @@ static struct xfrm_state *__xfrm_state_lookup_all(const struct xfrm_hash_state_p
+ 	struct xfrm_state *x;
+ 
+ 	hlist_for_each_entry_rcu(x, state_ptrs->byspi + h, byspi) {
+-#ifdef CONFIG_XFRM_OFFLOAD
+-		if (xdo->type == XFRM_DEV_OFFLOAD_PACKET) {
+-			if (x->xso.type != XFRM_DEV_OFFLOAD_PACKET)
+-				/* HW states are in the head of list, there is
+-				 * no need to iterate further.
+-				 */
+-				break;
+ 
+-			/* Packet offload: both policy and SA should
+-			 * have same device.
+-			 */
+-			if (xdo->dev != x->xso.dev)
+-				continue;
+-		} else if (x->xso.type == XFRM_DEV_OFFLOAD_PACKET)
+-			/* Skip HW policy for SW lookups */
+-			continue;
+-#endif
+ 		if (x->props.family != family ||
+ 		    x->id.spi       != spi ||
+ 		    x->id.proto     != proto ||
+@@ -1216,7 +1224,6 @@ static void xfrm_state_look_at(struct xfrm_policy *pol, struct xfrm_state *x,
+ 	}
+ }
+ 
+-
+ struct xfrm_state *
+ xfrm_state_find(const xfrm_address_t *daddr, const xfrm_address_t *saddr,
+ 		const struct flowi *fl, struct xfrm_tmpl *tmpl,
+@@ -2158,7 +2165,6 @@ static struct xfrm_state *__xfrm_find_acq_byseq(struct net *net, u32 mark, u32 s
+ 	return NULL;
+ }
+ 
+-
+ struct xfrm_state *xfrm_find_acq_byseq(struct net *net, u32 mark, u32 seq)
+ {
+ 	struct xfrm_state *x;
+-- 
+2.25.1
+

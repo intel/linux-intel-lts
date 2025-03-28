@@ -1,0 +1,41 @@
+From d46232436e5e186457b4903f7282ebab0911fb2e Mon Sep 17 00:00:00 2001
+From: Borislav Petkov <bp@suse.de>
+Date: Mon, 1 Nov 2021 15:34:48 +0100
+Subject: [PATCH 093/105] x86/mce: Do not use memset to clear the banks bitmaps
+
+The bitmap is a single unsigned long so no need for the function call.
+
+No functional changes.
+
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Link: https://lore.kernel.org/r/20211208111343.8130-2-bp@alien8.de
+---
+ arch/x86/kernel/cpu/mce/core.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kernel/cpu/mce/core.c b/arch/x86/kernel/cpu/mce/core.c
+index de7c77c4e940..feb0f8405d9d 100644
+--- a/arch/x86/kernel/cpu/mce/core.c
++++ b/arch/x86/kernel/cpu/mce/core.c
+@@ -1373,8 +1373,8 @@ static noinstr void unexpected_machine_check(struct pt_regs *regs)
+ noinstr void do_machine_check(struct pt_regs *regs)
+ {
+ 	int worst = 0, order, no_way_out, kill_current_task, lmce;
+-	DECLARE_BITMAP(valid_banks, MAX_NR_BANKS);
+-	DECLARE_BITMAP(toclear, MAX_NR_BANKS);
++	DECLARE_BITMAP(valid_banks, MAX_NR_BANKS) = { 0 };
++	DECLARE_BITMAP(toclear, MAX_NR_BANKS) = { 0 };
+ 	struct mca_config *cfg = &mca_cfg;
+ 	struct mce m, *final;
+ 	char *msg = NULL;
+@@ -1418,7 +1418,6 @@ noinstr void do_machine_check(struct pt_regs *regs)
+ 	final = this_cpu_ptr(&mces_seen);
+ 	*final = m;
+ 
+-	memset(valid_banks, 0, sizeof(valid_banks));
+ 	no_way_out = mce_no_way_out(&m, &msg, valid_banks, regs);
+ 
+ 	barrier();
+-- 
+2.25.1
+

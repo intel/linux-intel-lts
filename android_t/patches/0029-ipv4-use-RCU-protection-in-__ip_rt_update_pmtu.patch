@@ -1,0 +1,63 @@
+From 4c3c410edf59ea9688889a6c7c2a99888875bfc5 Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Wed, 5 Feb 2025 15:51:15 +0000
+Subject: [PATCH 029/105] ipv4: use RCU protection in __ip_rt_update_pmtu()
+
+__ip_rt_update_pmtu() must use RCU protection to make
+sure the net structure it reads does not disappear.
+
+Fixes: 2fbc6e89b2f1 ("ipv4: Update exception handling for multipath routes via same device")
+Fixes: 1de6b15a434c ("Namespaceify min_pmtu sysctl")
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Link: https://patch.msgid.link/20250205155120.1676781-8-edumazet@google.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/ipv4/route.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/net/ipv4/route.c b/net/ipv4/route.c
+index 113e19f84afd..1d7f1f1ae0e8 100644
+--- a/net/ipv4/route.c
++++ b/net/ipv4/route.c
+@@ -1016,9 +1016,9 @@ out:	kfree_skb(skb);
+ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
+ {
+ 	struct dst_entry *dst = &rt->dst;
+-	struct net *net = dev_net(dst->dev);
+ 	struct fib_result res;
+ 	bool lock = false;
++	struct net *net;
+ 	u32 old_mtu;
+ 
+ 	if (ip_mtu_locked(dst))
+@@ -1028,6 +1028,8 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
+ 	if (old_mtu < mtu)
+ 		return;
+ 
++	rcu_read_lock();
++	net = dev_net_rcu(dst->dev);
+ 	if (mtu < ip_rt_min_pmtu) {
+ 		lock = true;
+ 		mtu = min(old_mtu, ip_rt_min_pmtu);
+@@ -1035,9 +1037,8 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
+ 
+ 	if (rt->rt_pmtu == mtu && !lock &&
+ 	    time_before(jiffies, dst->expires - ip_rt_mtu_expires / 2))
+-		return;
++		goto out;
+ 
+-	rcu_read_lock();
+ 	if (fib_lookup(net, fl4, &res, 0) == 0) {
+ 		struct fib_nh_common *nhc;
+ 
+@@ -1046,6 +1047,7 @@ static void __ip_rt_update_pmtu(struct rtable *rt, struct flowi4 *fl4, u32 mtu)
+ 		update_or_create_fnhe(nhc, fl4->daddr, 0, mtu, lock,
+ 				      jiffies + ip_rt_mtu_expires);
+ 	}
++out:
+ 	rcu_read_unlock();
+ }
+ 
+-- 
+2.25.1
+

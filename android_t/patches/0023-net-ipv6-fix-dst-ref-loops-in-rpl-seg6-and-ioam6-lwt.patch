@@ -1,0 +1,90 @@
+From 12c01b0959ad8fc26a90beb2d1e13df109aedc31 Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <kuba@kernel.org>
+Date: Wed, 29 Jan 2025 19:15:19 -0800
+Subject: [PATCH 023/105] net: ipv6: fix dst ref loops in rpl, seg6 and ioam6
+ lwtunnels
+
+Some lwtunnels have a dst cache for post-transformation dst.
+If the packet destination did not change we may end up recording
+a reference to the lwtunnel in its own cache, and the lwtunnel
+state will never be freed.
+
+Discovered by the ioam6.sh test, kmemleak was recently fixed
+to catch per-cpu memory leaks. I'm not sure if rpl and seg6
+can actually hit this, but in principle I don't see why not.
+
+Fixes: 8cb3bf8bff3c ("ipv6: ioam: Add support for the ip6ip6 encapsulation")
+Fixes: 6c8702c60b88 ("ipv6: sr: add support for SRH encapsulation and injection with lwtunnels")
+Fixes: a7a29f9c361f ("net: ipv6: add rpl sr tunnel")
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20250130031519.2716843-2-kuba@kernel.org
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/ipv6/ioam6_iptunnel.c | 9 ++++++---
+ net/ipv6/rpl_iptunnel.c   | 9 ++++++---
+ net/ipv6/seg6_iptunnel.c  | 9 ++++++---
+ 3 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/net/ipv6/ioam6_iptunnel.c b/net/ipv6/ioam6_iptunnel.c
+index a596ee973bb3..7f03cd08654a 100644
+--- a/net/ipv6/ioam6_iptunnel.c
++++ b/net/ipv6/ioam6_iptunnel.c
+@@ -404,9 +404,12 @@ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 			goto drop;
+ 		}
+ 
+-		local_bh_disable();
+-		dst_cache_set_ip6(&ilwt->cache, cache_dst, &fl6.saddr);
+-		local_bh_enable();
++		/* cache only if we don't create a dst reference loop */
++		if (dst->lwtstate != cache_dst->lwtstate) {
++			local_bh_disable();
++			dst_cache_set_ip6(&ilwt->cache, cache_dst, &fl6.saddr);
++			local_bh_enable();
++		}
+ 
+ 		err = skb_cow_head(skb, LL_RESERVED_SPACE(cache_dst->dev));
+ 		if (unlikely(err))
+diff --git a/net/ipv6/rpl_iptunnel.c b/net/ipv6/rpl_iptunnel.c
+index 69b9bd90140d..4c03248c9062 100644
+--- a/net/ipv6/rpl_iptunnel.c
++++ b/net/ipv6/rpl_iptunnel.c
+@@ -236,9 +236,12 @@ static int rpl_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 			goto drop;
+ 		}
+ 
+-		local_bh_disable();
+-		dst_cache_set_ip6(&rlwt->cache, dst, &fl6.saddr);
+-		local_bh_enable();
++		/* cache only if we don't create a dst reference loop */
++		if (orig_dst->lwtstate != dst->lwtstate) {
++			local_bh_disable();
++			dst_cache_set_ip6(&rlwt->cache, dst, &fl6.saddr);
++			local_bh_enable();
++		}
+ 
+ 		err = skb_cow_head(skb, LL_RESERVED_SPACE(dst->dev));
+ 		if (unlikely(err))
+diff --git a/net/ipv6/seg6_iptunnel.c b/net/ipv6/seg6_iptunnel.c
+index c161298c8b33..4c92741f5941 100644
+--- a/net/ipv6/seg6_iptunnel.c
++++ b/net/ipv6/seg6_iptunnel.c
+@@ -576,9 +576,12 @@ static int seg6_output_core(struct net *net, struct sock *sk,
+ 			goto drop;
+ 		}
+ 
+-		local_bh_disable();
+-		dst_cache_set_ip6(&slwt->cache, dst, &fl6.saddr);
+-		local_bh_enable();
++		/* cache only if we don't create a dst reference loop */
++		if (orig_dst->lwtstate != dst->lwtstate) {
++			local_bh_disable();
++			dst_cache_set_ip6(&slwt->cache, dst, &fl6.saddr);
++			local_bh_enable();
++		}
+ 
+ 		err = skb_cow_head(skb, LL_RESERVED_SPACE(dst->dev));
+ 		if (unlikely(err))
+-- 
+2.25.1
+

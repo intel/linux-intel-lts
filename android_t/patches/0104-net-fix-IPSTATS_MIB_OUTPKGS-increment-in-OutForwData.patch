@@ -1,0 +1,278 @@
+From 9a9f7547b9d3aecf4f288d0352779fa9f4301607 Mon Sep 17 00:00:00 2001
+From: Heng Guo <heng.guo@windriver.com>
+Date: Thu, 19 Oct 2023 09:20:53 +0800
+Subject: [PATCH 104/105] net: fix IPSTATS_MIB_OUTPKGS increment in
+ OutForwDatagrams.
+
+Reproduce environment:
+network with 3 VM linuxs is connected as below:
+VM1<---->VM2(latest kernel 6.5.0-rc7)<---->VM3
+VM1: eth0 ip: 192.168.122.207 MTU 1500
+VM2: eth0 ip: 192.168.122.208, eth1 ip: 192.168.123.224 MTU 1500
+VM3: eth0 ip: 192.168.123.240 MTU 1500
+
+Reproduce:
+VM1 send 1400 bytes UDP data to VM3 using tools scapy with flags=0.
+scapy command:
+send(IP(dst="192.168.123.240",flags=0)/UDP()/str('0'*1400),count=1,
+inter=1.000000)
+
+Result:
+Before IP data is sent.
+----------------------------------------------------------------------
+root@qemux86-64:~# cat /proc/net/snmp
+Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors
+  ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests
+  OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails
+  FragOKs FragFails FragCreates
+Ip: 1 64 11 0 3 4 0 0 4 7 0 0 0 0 0 0 0 0 0
+......
+----------------------------------------------------------------------
+After IP data is sent.
+----------------------------------------------------------------------
+root@qemux86-64:~# cat /proc/net/snmp
+Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors
+  ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests
+  OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails
+  FragOKs FragFails FragCreates
+Ip: 1 64 12 0 3 5 0 0 4 8 0 0 0 0 0 0 0 0 0
+......
+----------------------------------------------------------------------
+"ForwDatagrams" increase from 4 to 5 and "OutRequests" also increase
+from 7 to 8.
+
+Issue description and patch:
+IPSTATS_MIB_OUTPKTS("OutRequests") is counted with IPSTATS_MIB_OUTOCTETS
+("OutOctets") in ip_finish_output2().
+According to RFC 4293, it is "OutOctets" counted with "OutTransmits" but
+not "OutRequests". "OutRequests" does not include any datagrams counted
+in "ForwDatagrams".
+ipSystemStatsOutOctets OBJECT-TYPE
+    DESCRIPTION
+           "The total number of octets in IP datagrams delivered to the
+            lower layers for transmission.  Octets from datagrams
+            counted in ipIfStatsOutTransmits MUST be counted here.
+ipSystemStatsOutRequests OBJECT-TYPE
+    DESCRIPTION
+           "The total number of IP datagrams that local IP user-
+            protocols (including ICMP) supplied to IP in requests for
+            transmission.  Note that this counter does not include any
+            datagrams counted in ipSystemStatsOutForwDatagrams.
+So do patch to define IPSTATS_MIB_OUTPKTS to "OutTransmits" and add
+IPSTATS_MIB_OUTREQUESTS for "OutRequests".
+Add IPSTATS_MIB_OUTREQUESTS counter in __ip_local_out() for ipv4 and add
+IPSTATS_MIB_OUT counter in ip6_finish_output2() for ipv6.
+
+Test result with patch:
+Before IP data is sent.
+----------------------------------------------------------------------
+root@qemux86-64:~# cat /proc/net/snmp
+Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors
+  ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests
+  OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails
+  FragOKs FragFails FragCreates OutTransmits
+Ip: 1 64 9 0 5 1 0 0 3 3 0 0 0 0 0 0 0 0 0 4
+......
+root@qemux86-64:~# cat /proc/net/netstat
+......
+IpExt: InNoRoutes InTruncatedPkts InMcastPkts OutMcastPkts InBcastPkts
+  OutBcastPkts InOctets OutOctets InMcastOctets OutMcastOctets
+  InBcastOctets OutBcastOctets InCsumErrors InNoECTPkts InECT1Pkts
+  InECT0Pkts InCEPkts ReasmOverlaps
+IpExt: 0 0 0 0 0 0 2976 1896 0 0 0 0 0 9 0 0 0 0
+----------------------------------------------------------------------
+After IP data is sent.
+----------------------------------------------------------------------
+root@qemux86-64:~# cat /proc/net/snmp
+Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors
+  ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests
+  OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails
+  FragOKs FragFails FragCreates OutTransmits
+Ip: 1 64 10 0 5 2 0 0 3 3 0 0 0 0 0 0 0 0 0 5
+......
+root@qemux86-64:~# cat /proc/net/netstat
+......
+IpExt: InNoRoutes InTruncatedPkts InMcastPkts OutMcastPkts InBcastPkts
+  OutBcastPkts InOctets OutOctets InMcastOctets OutMcastOctets
+  InBcastOctets OutBcastOctets InCsumErrors InNoECTPkts InECT1Pkts
+  InECT0Pkts InCEPkts ReasmOverlaps
+IpExt: 0 0 0 0 0 0 4404 3324 0 0 0 0 0 10 0 0 0 0
+----------------------------------------------------------------------
+"ForwDatagrams" increase from 1 to 2 and "OutRequests" is keeping 3.
+"OutTransmits" increase from 4 to 5 and "OutOctets" increase 1428.
+
+Signed-off-by: Heng Guo <heng.guo@windriver.com>
+Reviewed-by: Kun Song <Kun.Song@windriver.com>
+Reviewed-by: Filip Pudak <filip.pudak@windriver.com>
+Reviewed-by: David Ahern <dsahern@kernel.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ include/uapi/linux/snmp.h | 3 ++-
+ net/ipv4/ip_output.c      | 2 ++
+ net/ipv4/proc.c           | 3 ++-
+ net/ipv6/ip6_output.c     | 6 ++++--
+ net/ipv6/mcast.c          | 5 ++---
+ net/ipv6/ndisc.c          | 2 +-
+ net/ipv6/proc.c           | 3 ++-
+ net/ipv6/raw.c            | 2 +-
+ 8 files changed, 16 insertions(+), 10 deletions(-)
+
+diff --git a/include/uapi/linux/snmp.h b/include/uapi/linux/snmp.h
+index 904909d020e2..8eed40173f76 100644
+--- a/include/uapi/linux/snmp.h
++++ b/include/uapi/linux/snmp.h
+@@ -24,7 +24,7 @@ enum
+ 	IPSTATS_MIB_INOCTETS,			/* InOctets */
+ 	IPSTATS_MIB_INDELIVERS,			/* InDelivers */
+ 	IPSTATS_MIB_OUTFORWDATAGRAMS,		/* OutForwDatagrams */
+-	IPSTATS_MIB_OUTPKTS,			/* OutRequests */
++	IPSTATS_MIB_OUTREQUESTS,		/* OutRequests */
+ 	IPSTATS_MIB_OUTOCTETS,			/* OutOctets */
+ /* other fields */
+ 	IPSTATS_MIB_INHDRERRORS,		/* InHdrErrors */
+@@ -57,6 +57,7 @@ enum
+ 	IPSTATS_MIB_ECT0PKTS,			/* InECT0Pkts */
+ 	IPSTATS_MIB_CEPKTS,			/* InCEPkts */
+ 	IPSTATS_MIB_REASM_OVERLAPS,		/* ReasmOverlaps */
++	IPSTATS_MIB_OUTPKTS,			/* OutTransmits */
+ 	__IPSTATS_MIB_MAX
+ };
+ 
+diff --git a/net/ipv4/ip_output.c b/net/ipv4/ip_output.c
+index ee4e7e7a0992..9e71ebf654ee 100644
+--- a/net/ipv4/ip_output.c
++++ b/net/ipv4/ip_output.c
+@@ -100,6 +100,8 @@ int __ip_local_out(struct net *net, struct sock *sk, struct sk_buff *skb)
+ {
+ 	struct iphdr *iph = ip_hdr(skb);
+ 
++	IP_INC_STATS(net, IPSTATS_MIB_OUTREQUESTS);
++
+ 	iph->tot_len = htons(skb->len);
+ 	ip_send_check(iph);
+ 
+diff --git a/net/ipv4/proc.c b/net/ipv4/proc.c
+index 4b9280a3b673..12a9e9f94f59 100644
+--- a/net/ipv4/proc.c
++++ b/net/ipv4/proc.c
+@@ -83,7 +83,7 @@ static const struct snmp_mib snmp4_ipstats_list[] = {
+ 	SNMP_MIB_ITEM("InUnknownProtos", IPSTATS_MIB_INUNKNOWNPROTOS),
+ 	SNMP_MIB_ITEM("InDiscards", IPSTATS_MIB_INDISCARDS),
+ 	SNMP_MIB_ITEM("InDelivers", IPSTATS_MIB_INDELIVERS),
+-	SNMP_MIB_ITEM("OutRequests", IPSTATS_MIB_OUTPKTS),
++	SNMP_MIB_ITEM("OutRequests", IPSTATS_MIB_OUTREQUESTS),
+ 	SNMP_MIB_ITEM("OutDiscards", IPSTATS_MIB_OUTDISCARDS),
+ 	SNMP_MIB_ITEM("OutNoRoutes", IPSTATS_MIB_OUTNOROUTES),
+ 	SNMP_MIB_ITEM("ReasmTimeout", IPSTATS_MIB_REASMTIMEOUT),
+@@ -93,6 +93,7 @@ static const struct snmp_mib snmp4_ipstats_list[] = {
+ 	SNMP_MIB_ITEM("FragOKs", IPSTATS_MIB_FRAGOKS),
+ 	SNMP_MIB_ITEM("FragFails", IPSTATS_MIB_FRAGFAILS),
+ 	SNMP_MIB_ITEM("FragCreates", IPSTATS_MIB_FRAGCREATES),
++	SNMP_MIB_ITEM("OutTransmits", IPSTATS_MIB_OUTPKTS),
+ 	SNMP_MIB_SENTINEL
+ };
+ 
+diff --git a/net/ipv6/ip6_output.c b/net/ipv6/ip6_output.c
+index cd656637e1b4..747199fce824 100644
+--- a/net/ipv6/ip6_output.c
++++ b/net/ipv6/ip6_output.c
+@@ -120,6 +120,8 @@ static int ip6_finish_output2(struct net *net, struct sock *sk, struct sk_buff *
+ 			return res;
+ 	}
+ 
++	IP6_UPD_PO_STATS(net, idev, IPSTATS_MIB_OUT, skb->len);
++
+ 	rcu_read_lock_bh();
+ 	nexthop = rt6_nexthop((struct rt6_info *)dst, daddr);
+ 	neigh = __ipv6_neigh_lookup_noref(dev, nexthop);
+@@ -323,7 +325,7 @@ int ip6_xmit(const struct sock *sk, struct sk_buff *skb, struct flowi6 *fl6,
+ 
+ 	mtu = dst_mtu(dst);
+ 	if ((skb->len <= mtu) || skb->ignore_df || skb_is_gso(skb)) {
+-		IP6_UPD_PO_STATS(net, idev, IPSTATS_MIB_OUT, skb->len);
++		IP6_INC_STATS(net, idev, IPSTATS_MIB_OUTREQUESTS);
+ 
+ 		/* if egress device is enslaved to an L3 master device pass the
+ 		 * skb to its handler for processing
+@@ -1933,7 +1935,7 @@ struct sk_buff *__ip6_make_skb(struct sock *sk,
+ 	skb->tstamp = cork->base.transmit_time;
+ 
+ 	ip6_cork_steal_dst(skb, cork);
+-	IP6_UPD_PO_STATS(net, rt->rt6i_idev, IPSTATS_MIB_OUT, skb->len);
++	IP6_INC_STATS(net, rt->rt6i_idev, IPSTATS_MIB_OUTREQUESTS);
+ 	if (proto == IPPROTO_ICMPV6) {
+ 		struct inet6_dev *idev = ip6_dst_idev(skb_dst(skb));
+ 		u8 icmp6_type;
+diff --git a/net/ipv6/mcast.c b/net/ipv6/mcast.c
+index 1d038a084099..c00a826e82e8 100644
+--- a/net/ipv6/mcast.c
++++ b/net/ipv6/mcast.c
+@@ -1797,7 +1797,7 @@ static void mld_sendpack(struct sk_buff *skb)
+ 
+ 	rcu_read_lock();
+ 	idev = __in6_dev_get(skb->dev);
+-	IP6_UPD_PO_STATS(net, idev, IPSTATS_MIB_OUT, skb->len);
++	IP6_INC_STATS(net, idev, IPSTATS_MIB_OUTREQUESTS);
+ 
+ 	payload_len = (skb_tail_pointer(skb) - skb_network_header(skb)) -
+ 		sizeof(*pip6);
+@@ -2155,8 +2155,7 @@ static void igmp6_send(struct in6_addr *addr, struct net_device *dev, int type)
+ 	full_len = sizeof(struct ipv6hdr) + payload_len;
+ 
+ 	rcu_read_lock();
+-	IP6_UPD_PO_STATS(net, __in6_dev_get(dev),
+-		      IPSTATS_MIB_OUT, full_len);
++	IP6_INC_STATS(net, __in6_dev_get(dev), IPSTATS_MIB_OUTREQUESTS);
+ 	rcu_read_unlock();
+ 
+ 	skb = sock_alloc_send_skb(sk, hlen + tlen + full_len, 1, &err);
+diff --git a/net/ipv6/ndisc.c b/net/ipv6/ndisc.c
+index 9fdf236af22e..d8c607833b94 100644
+--- a/net/ipv6/ndisc.c
++++ b/net/ipv6/ndisc.c
+@@ -508,7 +508,7 @@ static void ndisc_send_skb(struct sk_buff *skb,
+ 	ip6_nd_hdr(skb, saddr, daddr, inet6_sk(sk)->hop_limit, skb->len);
+ 
+ 	idev = __in6_dev_get(dst->dev);
+-	IP6_UPD_PO_STATS(net, idev, IPSTATS_MIB_OUT, skb->len);
++	IP6_INC_STATS(net, idev, IPSTATS_MIB_OUTREQUESTS);
+ 
+ 	err = NF_HOOK(NFPROTO_IPV6, NF_INET_LOCAL_OUT,
+ 		      net, sk, skb, NULL, dst->dev,
+diff --git a/net/ipv6/proc.c b/net/ipv6/proc.c
+index d6306aa46bb1..e6476d20c67c 100644
+--- a/net/ipv6/proc.c
++++ b/net/ipv6/proc.c
+@@ -61,7 +61,7 @@ static const struct snmp_mib snmp6_ipstats_list[] = {
+ 	SNMP_MIB_ITEM("Ip6InDiscards", IPSTATS_MIB_INDISCARDS),
+ 	SNMP_MIB_ITEM("Ip6InDelivers", IPSTATS_MIB_INDELIVERS),
+ 	SNMP_MIB_ITEM("Ip6OutForwDatagrams", IPSTATS_MIB_OUTFORWDATAGRAMS),
+-	SNMP_MIB_ITEM("Ip6OutRequests", IPSTATS_MIB_OUTPKTS),
++	SNMP_MIB_ITEM("Ip6OutRequests", IPSTATS_MIB_OUTREQUESTS),
+ 	SNMP_MIB_ITEM("Ip6OutDiscards", IPSTATS_MIB_OUTDISCARDS),
+ 	SNMP_MIB_ITEM("Ip6OutNoRoutes", IPSTATS_MIB_OUTNOROUTES),
+ 	SNMP_MIB_ITEM("Ip6ReasmTimeout", IPSTATS_MIB_REASMTIMEOUT),
+@@ -84,6 +84,7 @@ static const struct snmp_mib snmp6_ipstats_list[] = {
+ 	SNMP_MIB_ITEM("Ip6InECT1Pkts", IPSTATS_MIB_ECT1PKTS),
+ 	SNMP_MIB_ITEM("Ip6InECT0Pkts", IPSTATS_MIB_ECT0PKTS),
+ 	SNMP_MIB_ITEM("Ip6InCEPkts", IPSTATS_MIB_CEPKTS),
++	SNMP_MIB_ITEM("Ip6OutTransmits", IPSTATS_MIB_OUTPKTS),
+ 	SNMP_MIB_SENTINEL
+ };
+ 
+diff --git a/net/ipv6/raw.c b/net/ipv6/raw.c
+index 6ff25c3e9d5a..e8f210bb76b3 100644
+--- a/net/ipv6/raw.c
++++ b/net/ipv6/raw.c
+@@ -687,7 +687,7 @@ static int rawv6_send_hdrinc(struct sock *sk, struct msghdr *msg, int length,
+ 	 * have been queued for deletion.
+ 	 */
+ 	rcu_read_lock();
+-	IP6_UPD_PO_STATS(net, rt->rt6i_idev, IPSTATS_MIB_OUT, skb->len);
++	IP6_INC_STATS(net, rt->rt6i_idev, IPSTATS_MIB_OUTREQUESTS);
+ 	err = NF_HOOK(NFPROTO_IPV6, NF_INET_LOCAL_OUT, net, sk, skb,
+ 		      NULL, rt->dst.dev, dst_output);
+ 	if (err > 0)
+-- 
+2.25.1
+

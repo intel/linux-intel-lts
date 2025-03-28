@@ -1,0 +1,53 @@
+From 6d1e95681af775c6dc1916f1992241699176e08b Mon Sep 17 00:00:00 2001
+From: Karol Przybylski <karprzy7@gmail.com>
+Date: Thu, 5 Dec 2024 23:22:21 +0100
+Subject: [PATCH 056/105] HID: hid-thrustmaster: Fix warning in
+ thrustmaster_probe by adding endpoint check
+
+syzbot has found a type mismatch between a USB pipe and the transfer
+endpoint, which is triggered by the hid-thrustmaster driver[1].
+There is a number of similar, already fixed issues [2].
+In this case as in others, implementing check for endpoint type fixes the issue.
+
+[1] https://syzkaller.appspot.com/bug?extid=040e8b3db6a96908d470
+[2] https://syzkaller.appspot.com/bug?extid=348331f63b034f89b622
+
+Fixes: c49c33637802 ("HID: support for initialization of some Thrustmaster wheels")
+Reported-by: syzbot+040e8b3db6a96908d470@syzkaller.appspotmail.com
+Tested-by: syzbot+040e8b3db6a96908d470@syzkaller.appspotmail.com
+Signed-off-by: Karol Przybylski <karprzy7@gmail.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.com>
+---
+ drivers/hid/hid-thrustmaster.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/hid/hid-thrustmaster.c b/drivers/hid/hid-thrustmaster.c
+index 2221bc26e611..7a5fa7e3f2dd 100644
+--- a/drivers/hid/hid-thrustmaster.c
++++ b/drivers/hid/hid-thrustmaster.c
+@@ -151,6 +151,7 @@ static void thrustmaster_interrupts(struct hid_device *hdev)
+ {
+ 	int ret, trans, i, b_ep;
+ 	u8 *send_buf = kmalloc(256, GFP_KERNEL);
++	u8 ep_addr[1];
+ 	struct usb_host_endpoint *ep;
+ 	struct device *dev = &hdev->dev;
+ 	struct usb_interface *usbif = to_usb_interface(dev->parent);
+@@ -170,6 +171,14 @@ static void thrustmaster_interrupts(struct hid_device *hdev)
+ 	ep = &usbif->cur_altsetting->endpoint[1];
+ 	b_ep = ep->desc.bEndpointAddress;
+ 
++	/* Are the expected endpoints present? */
++	ep_addr[1] = b_ep;
++
++	if (!usb_check_int_endpoints(usbif, ep_addr)) {
++		hid_err(hdev, "Unexpected non-int endpoint\n");
++		return;
++	}
++
+ 	for (i = 0; i < ARRAY_SIZE(setup_arr); ++i) {
+ 		memcpy(send_buf, setup_arr[i], setup_arr_sizes[i]);
+ 
+-- 
+2.25.1
+

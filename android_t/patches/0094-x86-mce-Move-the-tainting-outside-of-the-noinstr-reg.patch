@@ -1,0 +1,140 @@
+From f4203e1955c07137fef6e231bb6b8f44156d7e85 Mon Sep 17 00:00:00 2001
+From: Borislav Petkov <bp@suse.de>
+Date: Tue, 2 Nov 2021 08:14:44 +0100
+Subject: [PATCH 094/105] x86/mce: Move the tainting outside of the noinstr
+ region
+
+add_taint() is yet another external facility which the #MC handler
+calls. Move that tainting call into the instrumentation-allowed part of
+the handler.
+
+Fixes
+
+  vmlinux.o: warning: objtool: do_machine_check()+0x617: call to add_taint() leaves .noinstr.text section
+
+While at it, allow instrumentation around the mce_log() call.
+
+Fixes
+
+  vmlinux.o: warning: objtool: do_machine_check()+0x690: call to mce_log() leaves .noinstr.text section
+
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Link: https://lore.kernel.org/r/20211208111343.8130-11-bp@alien8.de
+---
+ arch/x86/kernel/cpu/mce/core.c | 41 +++++++++++++++++++++-------------
+ 1 file changed, 26 insertions(+), 15 deletions(-)
+
+diff --git a/arch/x86/kernel/cpu/mce/core.c b/arch/x86/kernel/cpu/mce/core.c
+index feb0f8405d9d..ab2ae5110f0e 100644
+--- a/arch/x86/kernel/cpu/mce/core.c
++++ b/arch/x86/kernel/cpu/mce/core.c
+@@ -1198,13 +1198,14 @@ static noinstr bool mce_check_crashing_cpu(void)
+ 	return false;
+ }
+ 
+-static void __mc_scan_banks(struct mce *m, struct pt_regs *regs, struct mce *final,
+-			    unsigned long *toclear, unsigned long *valid_banks,
+-			    int no_way_out, int *worst)
++static __always_inline int
++__mc_scan_banks(struct mce *m, struct pt_regs *regs, struct mce *final,
++		unsigned long *toclear, unsigned long *valid_banks, int no_way_out,
++		int *worst)
+ {
+ 	struct mce_bank *mce_banks = this_cpu_ptr(mce_banks_array);
+ 	struct mca_config *cfg = &mca_cfg;
+-	int severity, i;
++	int severity, i, taint = 0;
+ 
+ 	for (i = 0; i < this_cpu_read(mce_num_banks); i++) {
+ 		__clear_bit(i, toclear);
+@@ -1231,7 +1232,7 @@ static void __mc_scan_banks(struct mce *m, struct pt_regs *regs, struct mce *fin
+ 			continue;
+ 
+ 		/* Set taint even when machine check was not enabled. */
+-		add_taint(TAINT_MACHINE_CHECK, LOCKDEP_NOW_UNRELIABLE);
++		taint++;
+ 
+ 		severity = mce_severity(m, regs, cfg->tolerant, NULL, true);
+ 
+@@ -1254,7 +1255,13 @@ static void __mc_scan_banks(struct mce *m, struct pt_regs *regs, struct mce *fin
+ 		/* assuming valid severity level != 0 */
+ 		m->severity = severity;
+ 
++		/*
++		 * Enable instrumentation around the mce_log() call which is
++		 * done in #MC context, where instrumentation is disabled.
++		 */
++		instrumentation_begin();
+ 		mce_log(m);
++		instrumentation_end();
+ 
+ 		if (severity > *worst) {
+ 			*final = *m;
+@@ -1264,6 +1271,8 @@ static void __mc_scan_banks(struct mce *m, struct pt_regs *regs, struct mce *fin
+ 
+ 	/* mce_clear_state will clear *final, save locally for use later */
+ 	*m = *final;
++
++	return taint;
+ }
+ 
+ static void kill_me_now(struct callback_head *ch)
+@@ -1372,7 +1381,7 @@ static noinstr void unexpected_machine_check(struct pt_regs *regs)
+  */
+ noinstr void do_machine_check(struct pt_regs *regs)
+ {
+-	int worst = 0, order, no_way_out, kill_current_task, lmce;
++	int worst = 0, order, no_way_out, kill_current_task, lmce, taint = 0;
+ 	DECLARE_BITMAP(valid_banks, MAX_NR_BANKS) = { 0 };
+ 	DECLARE_BITMAP(toclear, MAX_NR_BANKS) = { 0 };
+ 	struct mca_config *cfg = &mca_cfg;
+@@ -1451,7 +1460,7 @@ noinstr void do_machine_check(struct pt_regs *regs)
+ 		order = mce_start(&no_way_out);
+ 	}
+ 
+-	__mc_scan_banks(&m, regs, final, toclear, valid_banks, no_way_out, &worst);
++	taint = __mc_scan_banks(&m, regs, final, toclear, valid_banks, no_way_out, &worst);
+ 
+ 	if (!no_way_out)
+ 		mce_clear_state(toclear);
+@@ -1483,17 +1492,19 @@ noinstr void do_machine_check(struct pt_regs *regs)
+ 		}
+ 	}
+ 
+-	if (worst != MCE_AR_SEVERITY && !kill_current_task)
+-		goto out;
+-
+ 	/*
+-	 * Enable instrumentation around the external facilities like
+-	 * task_work_add() (via queue_task_work()), fixup_exception() etc.
+-	 * For now, that is. Fixing this properly would need a lot more involved
+-	 * reorganization.
++	 * Enable instrumentation around the external facilities like task_work_add()
++	 * (via queue_task_work()), fixup_exception() etc. For now, that is. Fixing this
++	 * properly would need a lot more involved reorganization.
+ 	 */
+ 	instrumentation_begin();
+ 
++	if (taint)
++		add_taint(TAINT_MACHINE_CHECK, LOCKDEP_NOW_UNRELIABLE);
++
++	if (worst != MCE_AR_SEVERITY && !kill_current_task)
++		goto out;
++
+ 	/* Fault was in user mode and we need to take some action */
+ 	if ((m.cs & 3) == 3) {
+ 		/* If this triggers there is no way to recover. Die hard. */
+@@ -1520,9 +1531,9 @@ noinstr void do_machine_check(struct pt_regs *regs)
+ 			queue_task_work(&m, msg, kill_current_task);
+ 	}
+ 
++out:
+ 	instrumentation_end();
+ 
+-out:
+ 	mce_wrmsrl(MSR_IA32_MCG_STATUS, 0);
+ }
+ EXPORT_SYMBOL_GPL(do_machine_check);
+-- 
+2.25.1
+

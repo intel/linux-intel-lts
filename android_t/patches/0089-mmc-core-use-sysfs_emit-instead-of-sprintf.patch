@@ -1,0 +1,231 @@
+From 638cf3925930574373ab4848b732fa129f74deb1 Mon Sep 17 00:00:00 2001
+From: Sergey Shtylyov <s.shtylyov@omp.ru>
+Date: Tue, 8 Feb 2022 15:02:15 +0300
+Subject: [PATCH 089/105] mmc: core: use sysfs_emit() instead of sprintf()
+
+sprintf() (still used in the MMC core for the sysfs output) is vulnerable
+to the buffer overflow.  Use the new-fangled sysfs_emit() instead.
+
+Found by Linux Verification Center (linuxtesting.org) with the SVACE static
+analysis tool.
+
+Signed-off-by: Sergey Shtylyov <s.shtylyov@omp.ru>
+Cc: stable@vger.kernel.org
+Link: https://lore.kernel.org/r/717729b2-d65b-c72e-9fac-471d28d00b5a@omp.ru
+Signed-off-by: Ulf Hansson <ulf.hansson@linaro.org>
+---
+ drivers/mmc/core/bus.c      |  9 +++++----
+ drivers/mmc/core/bus.h      |  3 ++-
+ drivers/mmc/core/mmc.c      | 16 ++++++++--------
+ drivers/mmc/core/sd.c       | 26 +++++++++++++-------------
+ drivers/mmc/core/sdio.c     |  5 +++--
+ drivers/mmc/core/sdio_bus.c |  7 ++++---
+ 6 files changed, 35 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/mmc/core/bus.c b/drivers/mmc/core/bus.c
+index c25c58473a91..c80d61780ea9 100644
+--- a/drivers/mmc/core/bus.c
++++ b/drivers/mmc/core/bus.c
+@@ -15,6 +15,7 @@
+ #include <linux/stat.h>
+ #include <linux/of.h>
+ #include <linux/pm_runtime.h>
++#include <linux/sysfs.h>
+ 
+ #include <linux/mmc/card.h>
+ #include <linux/mmc/host.h>
+@@ -34,13 +35,13 @@ static ssize_t type_show(struct device *dev,
+ 
+ 	switch (card->type) {
+ 	case MMC_TYPE_MMC:
+-		return sprintf(buf, "MMC\n");
++		return sysfs_emit(buf, "MMC\n");
+ 	case MMC_TYPE_SD:
+-		return sprintf(buf, "SD\n");
++		return sysfs_emit(buf, "SD\n");
+ 	case MMC_TYPE_SDIO:
+-		return sprintf(buf, "SDIO\n");
++		return sysfs_emit(buf, "SDIO\n");
+ 	case MMC_TYPE_SD_COMBO:
+-		return sprintf(buf, "SDcombo\n");
++		return sysfs_emit(buf, "SDcombo\n");
+ 	default:
+ 		return -EFAULT;
+ 	}
+diff --git a/drivers/mmc/core/bus.h b/drivers/mmc/core/bus.h
+index 8105852c4b62..3996b191b68d 100644
+--- a/drivers/mmc/core/bus.h
++++ b/drivers/mmc/core/bus.h
+@@ -9,6 +9,7 @@
+ #define _MMC_CORE_BUS_H
+ 
+ #include <linux/device.h>
++#include <linux/sysfs.h>
+ 
+ struct mmc_host;
+ struct mmc_card;
+@@ -17,7 +18,7 @@ struct mmc_card;
+ static ssize_t mmc_##name##_show (struct device *dev, struct device_attribute *attr, char *buf)	\
+ {										\
+ 	struct mmc_card *card = mmc_dev_to_card(dev);				\
+-	return sprintf(buf, fmt, args);						\
++	return sysfs_emit(buf, fmt, args);					\
+ }										\
+ static DEVICE_ATTR(name, S_IRUGO, mmc_##name##_show, NULL)
+ 
+diff --git a/drivers/mmc/core/mmc.c b/drivers/mmc/core/mmc.c
+index 448a30ad9916..f80408ae264f 100644
+--- a/drivers/mmc/core/mmc.c
++++ b/drivers/mmc/core/mmc.c
+@@ -12,6 +12,7 @@
+ #include <linux/slab.h>
+ #include <linux/stat.h>
+ #include <linux/pm_runtime.h>
++#include <linux/sysfs.h>
+ 
+ #include <linux/mmc/host.h>
+ #include <linux/mmc/card.h>
+@@ -813,12 +814,11 @@ static ssize_t mmc_fwrev_show(struct device *dev,
+ {
+ 	struct mmc_card *card = mmc_dev_to_card(dev);
+ 
+-	if (card->ext_csd.rev < 7) {
+-		return sprintf(buf, "0x%x\n", card->cid.fwrev);
+-	} else {
+-		return sprintf(buf, "0x%*phN\n", MMC_FIRMWARE_LEN,
+-			       card->ext_csd.fwrev);
+-	}
++	if (card->ext_csd.rev < 7)
++		return sysfs_emit(buf, "0x%x\n", card->cid.fwrev);
++	else
++		return sysfs_emit(buf, "0x%*phN\n", MMC_FIRMWARE_LEN,
++				  card->ext_csd.fwrev);
+ }
+ 
+ static DEVICE_ATTR(fwrev, S_IRUGO, mmc_fwrev_show, NULL);
+@@ -831,10 +831,10 @@ static ssize_t mmc_dsr_show(struct device *dev,
+ 	struct mmc_host *host = card->host;
+ 
+ 	if (card->csd.dsr_imp && host->dsr_req)
+-		return sprintf(buf, "0x%x\n", host->dsr);
++		return sysfs_emit(buf, "0x%x\n", host->dsr);
+ 	else
+ 		/* return default DSR value */
+-		return sprintf(buf, "0x%x\n", 0x404);
++		return sysfs_emit(buf, "0x%x\n", 0x404);
+ }
+ 
+ static DEVICE_ATTR(dsr, S_IRUGO, mmc_dsr_show, NULL);
+diff --git a/drivers/mmc/core/sd.c b/drivers/mmc/core/sd.c
+index ce07f707b0c0..6914396c2485 100644
+--- a/drivers/mmc/core/sd.c
++++ b/drivers/mmc/core/sd.c
+@@ -12,6 +12,8 @@
+ #include <linux/slab.h>
+ #include <linux/stat.h>
+ #include <linux/pm_runtime.h>
++#include <linux/scatterlist.h>
++#include <linux/sysfs.h>
+ 
+ #include <linux/mmc/host.h>
+ #include <linux/mmc/card.h>
+@@ -711,18 +713,16 @@ MMC_DEV_ATTR(ocr, "0x%08x\n", card->ocr);
+ MMC_DEV_ATTR(rca, "0x%04x\n", card->rca);
+ 
+ 
+-static ssize_t mmc_dsr_show(struct device *dev,
+-                           struct device_attribute *attr,
+-                           char *buf)
++static ssize_t mmc_dsr_show(struct device *dev, struct device_attribute *attr,
++			    char *buf)
+ {
+-       struct mmc_card *card = mmc_dev_to_card(dev);
+-       struct mmc_host *host = card->host;
+-
+-       if (card->csd.dsr_imp && host->dsr_req)
+-               return sprintf(buf, "0x%x\n", host->dsr);
+-       else
+-               /* return default DSR value */
+-               return sprintf(buf, "0x%x\n", 0x404);
++	struct mmc_card *card = mmc_dev_to_card(dev);
++	struct mmc_host *host = card->host;
++
++	if (card->csd.dsr_imp && host->dsr_req)
++		return sysfs_emit(buf, "0x%x\n", host->dsr);
++	/* return default DSR value */
++	return sysfs_emit(buf, "0x%x\n", 0x404);
+ }
+ 
+ static DEVICE_ATTR(dsr, S_IRUGO, mmc_dsr_show, NULL);
+@@ -738,9 +738,9 @@ static ssize_t info##num##_show(struct device *dev, struct device_attribute *att
+ 												\
+ 	if (num > card->num_info)								\
+ 		return -ENODATA;								\
+-	if (!card->info[num-1][0])								\
++	if (!card->info[num - 1][0])								\
+ 		return 0;									\
+-	return sprintf(buf, "%s\n", card->info[num-1]);						\
++	return sysfs_emit(buf, "%s\n", card->info[num - 1]);					\
+ }												\
+ static DEVICE_ATTR_RO(info##num)
+ 
+diff --git a/drivers/mmc/core/sdio.c b/drivers/mmc/core/sdio.c
+index b1f1a0831157..fe8b5b8d6d1b 100644
+--- a/drivers/mmc/core/sdio.c
++++ b/drivers/mmc/core/sdio.c
+@@ -7,6 +7,7 @@
+ 
+ #include <linux/err.h>
+ #include <linux/pm_runtime.h>
++#include <linux/sysfs.h>
+ 
+ #include <linux/mmc/host.h>
+ #include <linux/mmc/card.h>
+@@ -42,9 +43,9 @@ static ssize_t info##num##_show(struct device *dev, struct device_attribute *att
+ 												\
+ 	if (num > card->num_info)								\
+ 		return -ENODATA;								\
+-	if (!card->info[num-1][0])								\
++	if (!card->info[num - 1][0])								\
+ 		return 0;									\
+-	return sprintf(buf, "%s\n", card->info[num-1]);						\
++	return sysfs_emit(buf, "%s\n", card->info[num - 1]);					\
+ }												\
+ static DEVICE_ATTR_RO(info##num)
+ 
+diff --git a/drivers/mmc/core/sdio_bus.c b/drivers/mmc/core/sdio_bus.c
+index f6cdec00e97e..f191a2a76f3b 100644
+--- a/drivers/mmc/core/sdio_bus.c
++++ b/drivers/mmc/core/sdio_bus.c
+@@ -14,6 +14,7 @@
+ #include <linux/pm_runtime.h>
+ #include <linux/pm_domain.h>
+ #include <linux/acpi.h>
++#include <linux/sysfs.h>
+ 
+ #include <linux/mmc/card.h>
+ #include <linux/mmc/host.h>
+@@ -35,7 +36,7 @@ field##_show(struct device *dev, struct device_attribute *attr, char *buf)				\
+ 	struct sdio_func *func;						\
+ 									\
+ 	func = dev_to_sdio_func (dev);					\
+-	return sprintf(buf, format_string, args);			\
++	return sysfs_emit(buf, format_string, args);			\
+ }									\
+ static DEVICE_ATTR_RO(field)
+ 
+@@ -52,9 +53,9 @@ static ssize_t info##num##_show(struct device *dev, struct device_attribute *att
+ 												\
+ 	if (num > func->num_info)								\
+ 		return -ENODATA;								\
+-	if (!func->info[num-1][0])								\
++	if (!func->info[num - 1][0])								\
+ 		return 0;									\
+-	return sprintf(buf, "%s\n", func->info[num-1]);						\
++	return sysfs_emit(buf, "%s\n", func->info[num - 1]);					\
+ }												\
+ static DEVICE_ATTR_RO(info##num)
+ 
+-- 
+2.25.1
+

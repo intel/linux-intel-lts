@@ -1,0 +1,80 @@
+From 57aefe01f0635bf09296dd7fc9234f2ff633ea01 Mon Sep 17 00:00:00 2001
+From: Christoph Hellwig <hch@lst.de>
+Date: Wed, 30 Mar 2022 07:29:13 +0200
+Subject: [PATCH 087/105] loop: implement ->free_disk
+
+Ensure that the lo_device which is stored in the gendisk private
+data is valid until the gendisk is freed.  Currently the loop driver
+uses a lot of effort to make sure a device is not freed when it is
+still in use, but to to fix a potential deadlock this will be relaxed
+a bit soon.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Link: https://lore.kernel.org/r/20220330052917.2566582-12-hch@lst.de
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ drivers/block/loop.c   | 16 ++++++++++++----
+ include/linux/blkdev.h |  1 +
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index 18394c3b0176..625861992809 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -2098,6 +2098,14 @@ static void lo_release(struct gendisk *disk, fmode_t mode)
+ 	mutex_unlock(&lo->lo_mutex);
+ }
+ 
++static void lo_free_disk(struct gendisk *disk)
++{
++	struct loop_device *lo = disk->private_data;
++
++	mutex_destroy(&lo->lo_mutex);
++	kfree(lo);
++}
++
+ static const struct block_device_operations lo_fops = {
+ 	.owner =	THIS_MODULE,
+ 	.open =		lo_open,
+@@ -2106,6 +2114,7 @@ static const struct block_device_operations lo_fops = {
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl =	lo_compat_ioctl,
+ #endif
++	.free_disk =	lo_free_disk,
+ };
+ 
+ /*
+@@ -2454,14 +2463,13 @@ static void loop_remove(struct loop_device *lo)
+ {
+ 	/* Make this loop device unreachable from pathname. */
+ 	del_gendisk(lo->lo_disk);
+-	blk_cleanup_disk(lo->lo_disk);
++	blk_cleanup_queue(lo->lo_disk->queue);
+ 	blk_mq_free_tag_set(&lo->tag_set);
+ 	mutex_lock(&loop_ctl_mutex);
+ 	idr_remove(&loop_index_idr, lo->lo_number);
+ 	mutex_unlock(&loop_ctl_mutex);
+-	/* There is no route which can find this loop device. */
+-	mutex_destroy(&lo->lo_mutex);
+-	kfree(lo);
++
++	put_disk(lo->lo_disk);
+ }
+ 
+ static void loop_probe(dev_t dev)
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 4dc77c84ba15..4f7fd68b0330 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -1874,6 +1874,7 @@ struct block_device_operations {
+ 	void (*unlock_native_capacity) (struct gendisk *);
+ 	int (*getgeo)(struct block_device *, struct hd_geometry *);
+ 	int (*set_read_only)(struct block_device *bdev, bool ro);
++	void (*free_disk)(struct gendisk *disk);
+ 	/* this callback is with swap_lock and sometimes page table lock held */
+ 	void (*swap_slot_free_notify) (struct block_device *, unsigned long);
+ 	int (*report_zones)(struct gendisk *, sector_t sector,
+-- 
+2.25.1
+

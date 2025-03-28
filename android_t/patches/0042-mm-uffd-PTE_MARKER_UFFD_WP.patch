@@ -1,0 +1,223 @@
+From a79b284b88b205c7ac8c275f063b8cf889168ca8 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Thu, 12 May 2022 20:22:52 -0700
+Subject: [PATCH 042/105] mm/uffd: PTE_MARKER_UFFD_WP
+
+This patch introduces the 1st user of pte marker: the uffd-wp marker.
+
+When the pte marker is installed with the uffd-wp bit set, it means this
+pte was wr-protected by uffd.
+
+We will use this special pte to arm the ptes that got either unmapped or
+swapped out for a file-backed region that was previously wr-protected.
+This special pte could trigger a page fault just like swap entries.
+
+This idea is greatly inspired by Hugh and Andrea in the discussion, which
+is referenced in the links below.
+
+Some helpers are introduced to detect whether a swap pte is uffd
+wr-protected.  After the pte marker introduced, one swap pte can be
+wr-protected in two forms: either it is a normal swap pte and it has
+_PAGE_SWP_UFFD_WP set, or it's a pte marker that has PTE_MARKER_UFFD_WP
+set.
+
+[peterx@redhat.com: fixup]
+  Link: https://lkml.kernel.org/r/YkzKiM8tI4+qOfXF@xz-m1.local
+Link: https://lore.kernel.org/lkml/20201126222359.8120-1-peterx@redhat.com/
+Link: https://lore.kernel.org/lkml/20201130230603.46187-1-peterx@redhat.com/
+Link: https://lkml.kernel.org/r/20220405014838.14131-1-peterx@redhat.com
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Suggested-by: Andrea Arcangeli <aarcange@redhat.com>
+Suggested-by: Hugh Dickins <hughd@google.com>
+Cc: Alistair Popple <apopple@nvidia.com>
+Cc: Axel Rasmussen <axelrasmussen@google.com>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Jerome Glisse <jglisse@redhat.com>
+Cc: "Kirill A . Shutemov" <kirill@shutemov.name>
+Cc: Matthew Wilcox <willy@infradead.org>
+Cc: Mike Kravetz <mike.kravetz@oracle.com>
+Cc: Mike Rapoport <rppt@linux.vnet.ibm.com>
+Cc: Nadav Amit <nadav.amit@gmail.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+ include/linux/swapops.h       | 79 +++++++++++++++++++++++++++++++++++
+ include/linux/userfaultfd_k.h | 47 +++++++++++++++++++++
+ mm/Kconfig                    |  9 ++++
+ 3 files changed, 135 insertions(+)
+
+diff --git a/include/linux/swapops.h b/include/linux/swapops.h
+index d356ab4047f7..2cec3ef355a7 100644
+--- a/include/linux/swapops.h
++++ b/include/linux/swapops.h
+@@ -247,6 +247,85 @@ static inline int is_writable_migration_entry(swp_entry_t entry)
+ 
+ #endif
+ 
++typedef unsigned long pte_marker;
++
++#define  PTE_MARKER_UFFD_WP  BIT(0)
++#define  PTE_MARKER_MASK     (PTE_MARKER_UFFD_WP)
++
++#ifdef CONFIG_PTE_MARKER
++
++static inline swp_entry_t make_pte_marker_entry(pte_marker marker)
++{
++	return swp_entry(SWP_PTE_MARKER, marker);
++}
++
++static inline bool is_pte_marker_entry(swp_entry_t entry)
++{
++	return swp_type(entry) == SWP_PTE_MARKER;
++}
++
++static inline pte_marker pte_marker_get(swp_entry_t entry)
++{
++	return swp_offset(entry) & PTE_MARKER_MASK;
++}
++
++static inline bool is_pte_marker(pte_t pte)
++{
++	return is_swap_pte(pte) && is_pte_marker_entry(pte_to_swp_entry(pte));
++}
++
++#else /* CONFIG_PTE_MARKER */
++
++static inline swp_entry_t make_pte_marker_entry(pte_marker marker)
++{
++	/* This should never be called if !CONFIG_PTE_MARKER */
++	WARN_ON_ONCE(1);
++	return swp_entry(0, 0);
++}
++
++static inline bool is_pte_marker_entry(swp_entry_t entry)
++{
++	return false;
++}
++
++static inline pte_marker pte_marker_get(swp_entry_t entry)
++{
++	return 0;
++}
++
++static inline bool is_pte_marker(pte_t pte)
++{
++	return false;
++}
++
++#endif /* CONFIG_PTE_MARKER */
++
++static inline pte_t make_pte_marker(pte_marker marker)
++{
++	return swp_entry_to_pte(make_pte_marker_entry(marker));
++}
++
++/*
++ * This is a special version to check pte_none() just to cover the case when
++ * the pte is a pte marker.  It existed because in many cases the pte marker
++ * should be seen as a none pte; it's just that we have stored some information
++ * onto the none pte so it becomes not-none any more.
++ *
++ * It should be used when the pte is file-backed, ram-based and backing
++ * userspace pages, like shmem.  It is not needed upon pgtables that do not
++ * support pte markers at all.  For example, it's not needed on anonymous
++ * memory, kernel-only memory (including when the system is during-boot),
++ * non-ram based generic file-system.  It's fine to be used even there, but the
++ * extra pte marker check will be pure overhead.
++ *
++ * For systems configured with !CONFIG_PTE_MARKER this will be automatically
++ * optimized to pte_none().
++ */
++static inline int pte_none_mostly(pte_t pte)
++{
++	return pte_none(pte) || is_pte_marker(pte);
++}
++
+ static inline struct page *pfn_swap_entry_to_page(swp_entry_t entry)
+ {
+ 	struct page *p = pfn_to_page(swp_offset(entry));
+diff --git a/include/linux/userfaultfd_k.h b/include/linux/userfaultfd_k.h
+index 797cf4b10435..815e631f7b63 100644
+--- a/include/linux/userfaultfd_k.h
++++ b/include/linux/userfaultfd_k.h
+@@ -15,6 +15,8 @@
+ 
+ #include <linux/fcntl.h>
+ #include <linux/mm.h>
++#include <linux/swap.h>
++#include <linux/swapops.h>
+ #include <asm-generic/pgtable_uffd.h>
+ 
+ /* The set of all possible UFFD-related VM flags. */
+@@ -280,4 +282,49 @@ static inline void userfaultfd_unmap_complete(struct mm_struct *mm,
+ 
+ #endif /* CONFIG_USERFAULTFD */
+ 
++static inline bool pte_marker_entry_uffd_wp(swp_entry_t entry)
++{
++#ifdef CONFIG_PTE_MARKER_UFFD_WP
++	return is_pte_marker_entry(entry) &&
++	    (pte_marker_get(entry) & PTE_MARKER_UFFD_WP);
++#else
++	return false;
++#endif
++}
++
++static inline bool pte_marker_uffd_wp(pte_t pte)
++{
++#ifdef CONFIG_PTE_MARKER_UFFD_WP
++	swp_entry_t entry;
++
++	if (!is_swap_pte(pte))
++		return false;
++
++	entry = pte_to_swp_entry(pte);
++
++	return pte_marker_entry_uffd_wp(entry);
++#else
++	return false;
++#endif
++}
++
++/*
++ * Returns true if this is a swap pte and was uffd-wp wr-protected in either
++ * forms (pte marker or a normal swap pte), false otherwise.
++ */
++static inline bool pte_swp_uffd_wp_any(pte_t pte)
++{
++#ifdef CONFIG_PTE_MARKER_UFFD_WP
++	if (!is_swap_pte(pte))
++		return false;
++
++	if (pte_swp_uffd_wp(pte))
++		return true;
++
++	if (pte_marker_uffd_wp(pte))
++		return true;
++#endif
++	return false;
++}
++
+ #endif /* _LINUX_USERFAULTFD_K_H */
+diff --git a/mm/Kconfig b/mm/Kconfig
+index b2a0e43b8a8a..207f2760be60 100644
+--- a/mm/Kconfig
++++ b/mm/Kconfig
+@@ -948,6 +948,15 @@ config LRU_GEN_STATS
+ 	  This option has a per-memcg and per-node memory overhead.
+ # }
+ 
++config PTE_MARKER_UFFD_WP
++	bool "Marker PTEs support for userfaultfd write protection"
++	depends on PTE_MARKER && HAVE_ARCH_USERFAULTFD_WP
++
++	help
++	  Allows to create marker PTEs for userfaultfd write protection
++	  purposes.  It is required to enable userfaultfd write protection on
++	  file-backed memory types like shmem and hugetlbfs.
++
+ source "mm/damon/Kconfig"
+ 
+ config ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
+-- 
+2.25.1
+

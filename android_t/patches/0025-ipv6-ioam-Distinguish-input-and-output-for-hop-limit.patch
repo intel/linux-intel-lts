@@ -1,0 +1,104 @@
+From 4088d79339d8698182d5f8f55b4d89fba0e1352e Mon Sep 17 00:00:00 2001
+From: Justin Iurman <justin.iurman@uliege.be>
+Date: Sun, 3 Oct 2021 20:45:36 +0200
+Subject: [PATCH 025/105] ipv6: ioam: Distinguish input and output for
+ hop-limit
+
+This patch anticipates the support for the IOAM insertion inside in-transit
+packets, by making a difference between input and output in order to determine
+the right value for its hop-limit (inherited from the IPv6 hop-limit).
+
+Input case: happens before ip6_forward, the IPv6 hop-limit is not decremented
+yet -> decrement the IOAM hop-limit to reflect the new hop inside the trace.
+
+Output case: happens after ip6_forward, the IPv6 hop-limit has already been
+decremented -> keep the same value for the IOAM hop-limit.
+
+Signed-off-by: Justin Iurman <justin.iurman@uliege.be>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ include/net/ioam6.h |  3 ++-
+ net/ipv6/exthdrs.c  |  2 +-
+ net/ipv6/ioam6.c    | 11 ++++++-----
+ 3 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/include/net/ioam6.h b/include/net/ioam6.h
+index 3c2993bc48c8..3f45ba37a2c6 100644
+--- a/include/net/ioam6.h
++++ b/include/net/ioam6.h
+@@ -56,7 +56,8 @@ static inline struct ioam6_pernet_data *ioam6_pernet(struct net *net)
+ struct ioam6_namespace *ioam6_namespace(struct net *net, __be16 id);
+ void ioam6_fill_trace_data(struct sk_buff *skb,
+ 			   struct ioam6_namespace *ns,
+-			   struct ioam6_trace_hdr *trace);
++			   struct ioam6_trace_hdr *trace,
++			   bool is_input);
+ 
+ int ioam6_init(void);
+ void ioam6_exit(void);
+diff --git a/net/ipv6/exthdrs.c b/net/ipv6/exthdrs.c
+index d273f6fe19c2..00df7c6594a2 100644
+--- a/net/ipv6/exthdrs.c
++++ b/net/ipv6/exthdrs.c
+@@ -972,7 +972,7 @@ static bool ipv6_hop_ioam(struct sk_buff *skb, int optoff)
+ 		if (!skb_valid_dst(skb))
+ 			ip6_route_input(skb);
+ 
+-		ioam6_fill_trace_data(skb, ns, trace);
++		ioam6_fill_trace_data(skb, ns, trace, true);
+ 		break;
+ 	default:
+ 		break;
+diff --git a/net/ipv6/ioam6.c b/net/ipv6/ioam6.c
+index d128172bb549..122a3d47424c 100644
+--- a/net/ipv6/ioam6.c
++++ b/net/ipv6/ioam6.c
+@@ -631,7 +631,7 @@ static void __ioam6_fill_trace_data(struct sk_buff *skb,
+ 				    struct ioam6_namespace *ns,
+ 				    struct ioam6_trace_hdr *trace,
+ 				    struct ioam6_schema *sc,
+-				    u8 sclen)
++				    u8 sclen, bool is_input)
+ {
+ 	struct __kernel_sock_timeval ts;
+ 	u64 raw64;
+@@ -645,7 +645,7 @@ static void __ioam6_fill_trace_data(struct sk_buff *skb,
+ 	/* hop_lim and node_id */
+ 	if (trace->type.bit0) {
+ 		byte = ipv6_hdr(skb)->hop_limit;
+-		if (skb->dev)
++		if (is_input)
+ 			byte--;
+ 
+ 		raw32 = dev_net(skb_dst(skb)->dev)->ipv6.sysctl.ioam6_id;
+@@ -730,7 +730,7 @@ static void __ioam6_fill_trace_data(struct sk_buff *skb,
+ 	/* hop_lim and node_id (wide) */
+ 	if (trace->type.bit8) {
+ 		byte = ipv6_hdr(skb)->hop_limit;
+-		if (skb->dev)
++		if (is_input)
+ 			byte--;
+ 
+ 		raw64 = dev_net(skb_dst(skb)->dev)->ipv6.sysctl.ioam6_id_wide;
+@@ -846,7 +846,8 @@ static void __ioam6_fill_trace_data(struct sk_buff *skb,
+ /* called with rcu_read_lock() */
+ void ioam6_fill_trace_data(struct sk_buff *skb,
+ 			   struct ioam6_namespace *ns,
+-			   struct ioam6_trace_hdr *trace)
++			   struct ioam6_trace_hdr *trace,
++			   bool is_input)
+ {
+ 	struct ioam6_schema *sc;
+ 	u8 sclen = 0;
+@@ -876,7 +877,7 @@ void ioam6_fill_trace_data(struct sk_buff *skb,
+ 		return;
+ 	}
+ 
+-	__ioam6_fill_trace_data(skb, ns, trace, sc, sclen);
++	__ioam6_fill_trace_data(skb, ns, trace, sc, sclen, is_input);
+ 	trace->remlen -= trace->nodelen + sclen;
+ }
+ 
+-- 
+2.25.1
+

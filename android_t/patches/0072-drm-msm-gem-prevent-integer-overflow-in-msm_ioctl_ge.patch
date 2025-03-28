@@ -1,0 +1,37 @@
+From d7d374840b769ac2016398671e852665101a63dd Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@linaro.org>
+Date: Fri, 15 Nov 2024 17:50:08 +0300
+Subject: [PATCH 072/105] drm/msm/gem: prevent integer overflow in
+ msm_ioctl_gem_submit()
+
+The "submit->cmd[i].size" and "submit->cmd[i].offset" variables are u32
+values that come from the user via the submit_lookup_cmds() function.
+This addition could lead to an integer wrapping bug so use size_add()
+to prevent that.
+
+Fixes: 198725337ef1 ("drm/msm: fix cmdstream size check")
+Cc: stable@vger.kernel.org
+Signed-off-by: Dan Carpenter <dan.carpenter@linaro.org>
+Patchwork: https://patchwork.freedesktop.org/patch/624696/
+Signed-off-by: Rob Clark <robdclark@chromium.org>
+---
+ drivers/gpu/drm/msm/msm_gem_submit.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/msm_gem_submit.c b/drivers/gpu/drm/msm/msm_gem_submit.c
+index fc2fb1019ea1..24b903628d59 100644
+--- a/drivers/gpu/drm/msm/msm_gem_submit.c
++++ b/drivers/gpu/drm/msm/msm_gem_submit.c
+@@ -863,8 +863,7 @@ int msm_ioctl_gem_submit(struct drm_device *dev, void *data,
+ 			goto out;
+ 
+ 		if (!submit->cmd[i].size ||
+-			((submit->cmd[i].size + submit->cmd[i].offset) >
+-				msm_obj->base.size / 4)) {
++		    (size_add(submit->cmd[i].size, submit->cmd[i].offset) > msm_obj->base.size / 4)) {
+ 			DRM_ERROR("invalid cmdstream size: %u\n", submit->cmd[i].size * 4);
+ 			ret = -EINVAL;
+ 			goto out;
+-- 
+2.25.1
+

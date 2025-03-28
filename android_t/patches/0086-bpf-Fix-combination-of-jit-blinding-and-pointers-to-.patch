@@ -1,0 +1,63 @@
+From 5591b8405956a79ca000b4154d0a8a797eb2de29 Mon Sep 17 00:00:00 2001
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Thu, 12 May 2022 18:10:24 -0700
+Subject: [PATCH 086/105] bpf: Fix combination of jit blinding and pointers to
+ bpf subprogs.
+
+The combination of jit blinding and pointers to bpf subprogs causes:
+[   36.989548] BUG: unable to handle page fault for address: 0000000100000001
+[   36.990342] #PF: supervisor instruction fetch in kernel mode
+[   36.990968] #PF: error_code(0x0010) - not-present page
+[   36.994859] RIP: 0010:0x100000001
+[   36.995209] Code: Unable to access opcode bytes at RIP 0xffffffd7.
+[   37.004091] Call Trace:
+[   37.004351]  <TASK>
+[   37.004576]  ? bpf_loop+0x4d/0x70
+[   37.004932]  ? bpf_prog_3899083f75e4c5de_F+0xe3/0x13b
+
+The jit blinding logic didn't recognize that ld_imm64 with an address
+of bpf subprogram is a special instruction and proceeded to randomize it.
+By itself it wouldn't have been an issue, but jit_subprogs() logic
+relies on two step process to JIT all subprogs and then JIT them
+again when addresses of all subprogs are known.
+Blinding process in the first JIT phase caused second JIT to miss
+adjustment of special ld_imm64.
+
+Fix this issue by ignoring special ld_imm64 instructions that don't have
+user controlled constants and shouldn't be blinded.
+
+Fixes: 69c087ba6225 ("bpf: Add bpf_for_each_map_elem() helper")
+Reported-by: Andrii Nakryiko <andrii@kernel.org>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Andrii Nakryiko <andrii@kernel.org>
+Acked-by: Martin KaFai Lau <kafai@fb.com>
+Link: https://lore.kernel.org/bpf/20220513011025.13344-1-alexei.starovoitov@gmail.com
+---
+ kernel/bpf/core.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/kernel/bpf/core.c b/kernel/bpf/core.c
+index d7dbca573df3..7c9ac88b4f2f 100644
+--- a/kernel/bpf/core.c
++++ b/kernel/bpf/core.c
+@@ -1167,6 +1167,16 @@ struct bpf_prog *bpf_jit_blind_constants(struct bpf_prog *prog)
+ 	insn = clone->insnsi;
+ 
+ 	for (i = 0; i < insn_cnt; i++, insn++) {
++		if (bpf_pseudo_func(insn)) {
++			/* ld_imm64 with an address of bpf subprog is not
++			 * a user controlled constant. Don't randomize it,
++			 * since it will conflict with jit_subprogs() logic.
++			 */
++			insn++;
++			i++;
++			continue;
++		}
++
+ 		/* We temporarily need to hold the original ld64 insn
+ 		 * so that we can still access the first part in the
+ 		 * second blinding run.
+-- 
+2.25.1
+

@@ -1,0 +1,37 @@
+From 00f4ef507feb86355c09f8295815323330f5cbdd Mon Sep 17 00:00:00 2001
+From: Leo Stone <leocstone@gmail.com>
+Date: Tue, 17 Dec 2024 10:26:57 -0800
+Subject: [PATCH 047/105] safesetid: check size of policy writes
+
+syzbot attempts to write a buffer with a large size to a sysfs entry
+with writes handled by handle_policy_update(), triggering a warning
+in kmalloc.
+
+Check the size specified for write buffers before allocating.
+
+Reported-by: syzbot+4eb7a741b3216020043a@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=4eb7a741b3216020043a
+Signed-off-by: Leo Stone <leocstone@gmail.com>
+[PM: subject tweak]
+Signed-off-by: Paul Moore <paul@paul-moore.com>
+---
+ security/safesetid/securityfs.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/security/safesetid/securityfs.c b/security/safesetid/securityfs.c
+index 25310468bcdd..8e1ffd70b18a 100644
+--- a/security/safesetid/securityfs.c
++++ b/security/safesetid/securityfs.c
+@@ -143,6 +143,9 @@ static ssize_t handle_policy_update(struct file *file,
+ 	char *buf, *p, *end;
+ 	int err;
+ 
++	if (len >= KMALLOC_MAX_SIZE)
++		return -EINVAL;
++
+ 	pol = kmalloc(sizeof(struct setid_ruleset), GFP_KERNEL);
+ 	if (!pol)
+ 		return -ENOMEM;
+-- 
+2.25.1
+

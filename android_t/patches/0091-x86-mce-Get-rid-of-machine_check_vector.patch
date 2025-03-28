@@ -1,0 +1,299 @@
+From f81d960ccd12fb9f414df058991f16c6b338b8e3 Mon Sep 17 00:00:00 2001
+From: Borislav Petkov <bp@suse.de>
+Date: Wed, 1 Sep 2021 21:40:14 +0200
+Subject: [PATCH 091/105] x86/mce: Get rid of machine_check_vector
+
+Get rid of the indirect function pointer and use flags settings instead
+to steer execution.
+
+Now that it is not an indirect call any longer, drop the instrumentation
+annotation for objtool too.
+
+No functional changes.
+
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Reviewed-by: Tony Luck <tony.luck@intel.com>
+Link: https://lkml.kernel.org/r/20210922165101.18951-3-bp@alien8.de
+---
+ arch/x86/include/asm/mce.h         | 10 ------
+ arch/x86/kernel/cpu/mce/core.c     | 57 ++++++++++++++----------------
+ arch/x86/kernel/cpu/mce/internal.h | 29 ++++++++++++---
+ arch/x86/kernel/cpu/mce/p5.c       |  6 +---
+ arch/x86/kernel/cpu/mce/winchip.c  |  6 +---
+ 5 files changed, 53 insertions(+), 55 deletions(-)
+
+diff --git a/arch/x86/include/asm/mce.h b/arch/x86/include/asm/mce.h
+index da9321548f6f..9e25d5247c51 100644
+--- a/arch/x86/include/asm/mce.h
++++ b/arch/x86/include/asm/mce.h
+@@ -217,16 +217,6 @@ static inline int apei_smca_report_x86_error(struct cper_ia_proc_ctx *ctx_info,
+ 					     u64 lapic_id) { return -EINVAL; }
+ #endif
+ 
+-#ifdef CONFIG_X86_ANCIENT_MCE
+-void intel_p5_mcheck_init(struct cpuinfo_x86 *c);
+-void winchip_mcheck_init(struct cpuinfo_x86 *c);
+-static inline void enable_p5_mce(void) { mce_p5_enabled = 1; }
+-#else
+-static inline void intel_p5_mcheck_init(struct cpuinfo_x86 *c) {}
+-static inline void winchip_mcheck_init(struct cpuinfo_x86 *c) {}
+-static inline void enable_p5_mce(void) {}
+-#endif
+-
+ void mce_setup(struct mce *m);
+ void mce_log(struct mce *m);
+ DECLARE_PER_CPU(struct device *, mce_device);
+diff --git a/arch/x86/kernel/cpu/mce/core.c b/arch/x86/kernel/cpu/mce/core.c
+index 30d822c2e5c0..9b6df682fd07 100644
+--- a/arch/x86/kernel/cpu/mce/core.c
++++ b/arch/x86/kernel/cpu/mce/core.c
+@@ -1317,6 +1317,15 @@ static void queue_task_work(struct mce *m, char *msg, int kill_current_task)
+ 	task_work_add(current, &current->mce_kill_me, TWA_RESUME);
+ }
+ 
++/* Handle unconfigured int18 (should never happen) */
++static noinstr void unexpected_machine_check(struct pt_regs *regs)
++{
++	instrumentation_begin();
++	pr_err("CPU#%d: Unexpected int18 (Machine Check)\n",
++	       smp_processor_id());
++	instrumentation_end();
++}
++
+ /*
+  * The actual machine check handler. This only handles real
+  * exceptions when something got corrupted coming in through int 18.
+@@ -1337,36 +1346,43 @@ static void queue_task_work(struct mce *m, char *msg, int kill_current_task)
+  */
+ noinstr void do_machine_check(struct pt_regs *regs)
+ {
++	int worst = 0, order, no_way_out, kill_current_task, lmce;
+ 	DECLARE_BITMAP(valid_banks, MAX_NR_BANKS);
+ 	DECLARE_BITMAP(toclear, MAX_NR_BANKS);
+ 	struct mca_config *cfg = &mca_cfg;
+ 	struct mce m, *final;
+ 	char *msg = NULL;
+-	int worst = 0;
++
++	if (unlikely(mce_flags.p5))
++		return pentium_machine_check(regs);
++	else if (unlikely(mce_flags.winchip))
++		return winchip_machine_check(regs);
++	else if (unlikely(!mca_cfg.initialized))
++		return unexpected_machine_check(regs);
+ 
+ 	/*
+ 	 * Establish sequential order between the CPUs entering the machine
+ 	 * check handler.
+ 	 */
+-	int order = -1;
++	order = -1;
+ 
+ 	/*
+ 	 * If no_way_out gets set, there is no safe way to recover from this
+ 	 * MCE.  If mca_cfg.tolerant is cranked up, we'll try anyway.
+ 	 */
+-	int no_way_out = 0;
++	no_way_out = 0;
+ 
+ 	/*
+ 	 * If kill_current_task is not set, there might be a way to recover from this
+ 	 * error.
+ 	 */
+-	int kill_current_task = 0;
++	kill_current_task = 0;
+ 
+ 	/*
+ 	 * MCEs are always local on AMD. Same is determined by MCG_STATUS_LMCES
+ 	 * on Intel.
+ 	 */
+-	int lmce = 1;
++	lmce = 1;
+ 
+ 	this_cpu_inc(mce_exception_count);
+ 
+@@ -1852,9 +1868,11 @@ static int __mcheck_cpu_ancient_init(struct cpuinfo_x86 *c)
+ 	switch (c->x86_vendor) {
+ 	case X86_VENDOR_INTEL:
+ 		intel_p5_mcheck_init(c);
++		mce_flags.p5 = 1;
+ 		return 1;
+ 	case X86_VENDOR_CENTAUR:
+ 		winchip_mcheck_init(c);
++		mce_flags.winchip = 1;
+ 		return 1;
+ 	default:
+ 		return 0;
+@@ -2002,18 +2020,6 @@ bool filter_mce(struct mce *m)
+ 	return false;
+ }
+ 
+-/* Handle unconfigured int18 (should never happen) */
+-static noinstr void unexpected_machine_check(struct pt_regs *regs)
+-{
+-	instrumentation_begin();
+-	pr_err("CPU#%d: Unexpected int18 (Machine Check)\n",
+-	       smp_processor_id());
+-	instrumentation_end();
+-}
+-
+-/* Call the installed machine check handler for this CPU setup. */
+-void (*machine_check_vector)(struct pt_regs *) = unexpected_machine_check;
+-
+ static __always_inline void exc_machine_check_kernel(struct pt_regs *regs)
+ {
+ 	irqentry_state_t irq_state;
+@@ -2024,31 +2030,22 @@ static __always_inline void exc_machine_check_kernel(struct pt_regs *regs)
+ 	 * Only required when from kernel mode. See
+ 	 * mce_check_crashing_cpu() for details.
+ 	 */
+-	if (machine_check_vector == do_machine_check &&
+-	    mce_check_crashing_cpu())
++	if (mca_cfg.initialized && mce_check_crashing_cpu())
+ 		return;
+ 
+ 	irq_state = irqentry_nmi_enter(regs);
+-	/*
+-	 * The call targets are marked noinstr, but objtool can't figure
+-	 * that out because it's an indirect call. Annotate it.
+-	 */
+-	instrumentation_begin();
+ 
+-	machine_check_vector(regs);
++	do_machine_check(regs);
+ 
+-	instrumentation_end();
+ 	irqentry_nmi_exit(regs, irq_state);
+ }
+ 
+ static __always_inline void exc_machine_check_user(struct pt_regs *regs)
+ {
+ 	irqentry_enter_from_user_mode(regs);
+-	instrumentation_begin();
+ 
+-	machine_check_vector(regs);
++	do_machine_check(regs);
+ 
+-	instrumentation_end();
+ 	irqentry_exit_to_user_mode(regs);
+ }
+ 
+@@ -2115,7 +2112,7 @@ void mcheck_cpu_init(struct cpuinfo_x86 *c)
+ 		return;
+ 	}
+ 
+-	machine_check_vector = do_machine_check;
++	mca_cfg.initialized = 1;
+ 
+ 	__mcheck_cpu_init_early(c);
+ 	__mcheck_cpu_init_generic();
+diff --git a/arch/x86/kernel/cpu/mce/internal.h b/arch/x86/kernel/cpu/mce/internal.h
+index 760b57814760..736c1970fcc2 100644
+--- a/arch/x86/kernel/cpu/mce/internal.h
++++ b/arch/x86/kernel/cpu/mce/internal.h
+@@ -8,9 +8,6 @@
+ #include <linux/device.h>
+ #include <asm/mce.h>
+ 
+-/* Pointer to the installed machine check handler for this CPU setup. */
+-extern void (*machine_check_vector)(struct pt_regs *);
+-
+ enum severity_level {
+ 	MCE_NO_SEVERITY,
+ 	MCE_DEFERRED_SEVERITY,
+@@ -127,7 +124,9 @@ struct mca_config {
+ 	      ser			: 1,
+ 	      recovery			: 1,
+ 	      bios_cmci_threshold	: 1,
+-	      __reserved		: 59;
++	      /* Proper #MC exception handler is set */
++	      initialized		: 1,
++	      __reserved		: 58;
+ 
+ 	s8 bootlog;
+ 	int tolerant;
+@@ -163,7 +162,13 @@ struct mce_vendor_flags {
+ 	/* AMD-style error thresholding banks present. */
+ 	amd_threshold		: 1,
+ 
+-	__reserved_0		: 60;
++	/* Pentium, family 5-style MCA */
++	p5			: 1,
++
++	/* Centaur Winchip C6-style MCA */
++	winchip			: 1,
++
++	__reserved_0		: 58;
+ };
+ 
+ extern struct mce_vendor_flags mce_flags;
+@@ -186,4 +191,18 @@ extern bool amd_filter_mce(struct mce *m);
+ static inline bool amd_filter_mce(struct mce *m)			{ return false; };
+ #endif
+ 
++#ifdef CONFIG_X86_ANCIENT_MCE
++void intel_p5_mcheck_init(struct cpuinfo_x86 *c);
++void winchip_mcheck_init(struct cpuinfo_x86 *c);
++noinstr void pentium_machine_check(struct pt_regs *regs);
++noinstr void winchip_machine_check(struct pt_regs *regs);
++static inline void enable_p5_mce(void) { mce_p5_enabled = 1; }
++#else
++static inline void intel_p5_mcheck_init(struct cpuinfo_x86 *c) {}
++static inline void winchip_mcheck_init(struct cpuinfo_x86 *c) {}
++static inline void enable_p5_mce(void) {}
++static inline void pentium_machine_check(struct pt_regs *regs) {}
++static inline void winchip_machine_check(struct pt_regs *regs) {}
++#endif
++
+ #endif /* __X86_MCE_INTERNAL_H__ */
+diff --git a/arch/x86/kernel/cpu/mce/p5.c b/arch/x86/kernel/cpu/mce/p5.c
+index 19e90cae8e97..2272ad53fc33 100644
+--- a/arch/x86/kernel/cpu/mce/p5.c
++++ b/arch/x86/kernel/cpu/mce/p5.c
+@@ -21,7 +21,7 @@
+ int mce_p5_enabled __read_mostly;
+ 
+ /* Machine check handler for Pentium class Intel CPUs: */
+-static noinstr void pentium_machine_check(struct pt_regs *regs)
++noinstr void pentium_machine_check(struct pt_regs *regs)
+ {
+ 	u32 loaddr, hi, lotype;
+ 
+@@ -54,10 +54,6 @@ void intel_p5_mcheck_init(struct cpuinfo_x86 *c)
+ 	if (!cpu_has(c, X86_FEATURE_MCE))
+ 		return;
+ 
+-	machine_check_vector = pentium_machine_check;
+-	/* Make sure the vector pointer is visible before we enable MCEs: */
+-	wmb();
+-
+ 	/* Read registers before enabling: */
+ 	rdmsr(MSR_IA32_P5_MC_ADDR, l, h);
+ 	rdmsr(MSR_IA32_P5_MC_TYPE, l, h);
+diff --git a/arch/x86/kernel/cpu/mce/winchip.c b/arch/x86/kernel/cpu/mce/winchip.c
+index 9c9f0abd2d7f..6c99f2941909 100644
+--- a/arch/x86/kernel/cpu/mce/winchip.c
++++ b/arch/x86/kernel/cpu/mce/winchip.c
+@@ -17,7 +17,7 @@
+ #include "internal.h"
+ 
+ /* Machine check handler for WinChip C6: */
+-static noinstr void winchip_machine_check(struct pt_regs *regs)
++noinstr void winchip_machine_check(struct pt_regs *regs)
+ {
+ 	instrumentation_begin();
+ 	pr_emerg("CPU0: Machine Check Exception.\n");
+@@ -30,10 +30,6 @@ void winchip_mcheck_init(struct cpuinfo_x86 *c)
+ {
+ 	u32 lo, hi;
+ 
+-	machine_check_vector = winchip_machine_check;
+-	/* Make sure the vector pointer is visible before we enable MCEs: */
+-	wmb();
+-
+ 	rdmsr(MSR_IDT_FCR1, lo, hi);
+ 	lo |= (1<<2);	/* Enable EIERRINT (int 18 MCE) */
+ 	lo &= ~(1<<4);	/* Enable MCE */
+-- 
+2.25.1
+

@@ -1,0 +1,184 @@
+From ae9b0307e3e694fc7fa59ff3039ab50564349f70 Mon Sep 17 00:00:00 2001
+From: Justin Iurman <justin.iurman@uliege.be>
+Date: Tue, 3 Dec 2024 13:49:43 +0100
+Subject: [PATCH 019/105] net: ipv6: ioam6_iptunnel: mitigate 2-realloc issue
+
+This patch mitigates the two-reallocations issue with ioam6_iptunnel by
+providing the dst_entry (in the cache) to the first call to
+skb_cow_head(). As a result, the very first iteration may still trigger
+two reallocations (i.e., empty cache), while next iterations would only
+trigger a single reallocation.
+
+Performance tests before/after applying this patch, which clearly shows
+the improvement:
+- inline mode:
+  - before: https://ibb.co/LhQ8V63
+  - after: https://ibb.co/x5YT2bS
+- encap mode:
+  - before: https://ibb.co/3Cjm5m0
+  - after: https://ibb.co/TwpsxTC
+- encap mode with tunsrc:
+  - before: https://ibb.co/Gpy9QPg
+  - after: https://ibb.co/PW1bZFT
+
+This patch also fixes an incorrect behavior: after the insertion, the
+second call to skb_cow_head() makes sure that the dev has enough
+headroom in the skb for layer 2 and stuff. In that case, the "old"
+dst_entry was used, which is now fixed. After discussing with Paolo, it
+appears that both patches can be merged into a single one -this one-
+(for the sake of readability) and target net-next.
+
+Signed-off-by: Justin Iurman <justin.iurman@uliege.be>
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+---
+ net/ipv6/ioam6_iptunnel.c | 73 ++++++++++++++++++++-------------------
+ 1 file changed, 37 insertions(+), 36 deletions(-)
+
+diff --git a/net/ipv6/ioam6_iptunnel.c b/net/ipv6/ioam6_iptunnel.c
+index 66fafba7d215..a596ee973bb3 100644
+--- a/net/ipv6/ioam6_iptunnel.c
++++ b/net/ipv6/ioam6_iptunnel.c
+@@ -246,14 +246,15 @@ static int ioam6_do_fill(struct net *net, struct sk_buff *skb)
+ }
+ 
+ static int ioam6_do_inline(struct net *net, struct sk_buff *skb,
+-			   struct ioam6_lwt_encap *tuninfo)
++			   struct ioam6_lwt_encap *tuninfo,
++			   struct dst_entry *cache_dst)
+ {
+ 	struct ipv6hdr *oldhdr, *hdr;
+ 	int hdrlen, err;
+ 
+ 	hdrlen = (tuninfo->eh.hdrlen + 1) << 3;
+ 
+-	err = skb_cow_head(skb, hdrlen + skb->mac_len);
++	err = skb_cow_head(skb, hdrlen + dst_dev_overhead(cache_dst, skb));
+ 	if (unlikely(err))
+ 		return err;
+ 
+@@ -284,7 +285,8 @@ static int ioam6_do_encap(struct net *net, struct sk_buff *skb,
+ 			  struct ioam6_lwt_encap *tuninfo,
+ 			  bool has_tunsrc,
+ 			  struct in6_addr *tunsrc,
+-			  struct in6_addr *tundst)
++			  struct in6_addr *tundst,
++			  struct dst_entry *cache_dst)
+ {
+ 	struct dst_entry *dst = skb_dst(skb);
+ 	struct ipv6hdr *hdr, *inner_hdr;
+@@ -293,7 +295,7 @@ static int ioam6_do_encap(struct net *net, struct sk_buff *skb,
+ 	hdrlen = (tuninfo->eh.hdrlen + 1) << 3;
+ 	len = sizeof(*hdr) + hdrlen;
+ 
+-	err = skb_cow_head(skb, len + skb->mac_len);
++	err = skb_cow_head(skb, len + dst_dev_overhead(cache_dst, skb));
+ 	if (unlikely(err))
+ 		return err;
+ 
+@@ -327,7 +329,7 @@ static int ioam6_do_encap(struct net *net, struct sk_buff *skb,
+ 
+ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ {
+-	struct dst_entry *dst = skb_dst(skb);
++	struct dst_entry *dst = skb_dst(skb), *cache_dst;
+ 	struct in6_addr orig_daddr;
+ 	struct ioam6_lwt *ilwt;
+ 	int err = -EINVAL;
+@@ -345,6 +347,10 @@ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 
+ 	orig_daddr = ipv6_hdr(skb)->daddr;
+ 
++	local_bh_disable();
++	cache_dst = dst_cache_get(&ilwt->cache);
++	local_bh_enable();
++
+ 	switch (ilwt->mode) {
+ 	case IOAM6_IPTUNNEL_MODE_INLINE:
+ do_inline:
+@@ -352,7 +358,7 @@ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 		if (ipv6_hdr(skb)->nexthdr == NEXTHDR_HOP)
+ 			goto out;
+ 
+-		err = ioam6_do_inline(net, skb, &ilwt->tuninfo);
++		err = ioam6_do_inline(net, skb, &ilwt->tuninfo, cache_dst);
+ 		if (unlikely(err))
+ 			goto drop;
+ 
+@@ -362,7 +368,7 @@ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 		/* Encapsulation (ip6ip6) */
+ 		err = ioam6_do_encap(net, skb, &ilwt->tuninfo,
+ 				     ilwt->has_tunsrc, &ilwt->tunsrc,
+-				     &ilwt->tundst);
++				     &ilwt->tundst, cache_dst);
+ 		if (unlikely(err))
+ 			goto drop;
+ 
+@@ -380,41 +386,36 @@ static int ioam6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+ 		goto drop;
+ 	}
+ 
+-	err = skb_cow_head(skb, LL_RESERVED_SPACE(dst->dev));
+-	if (unlikely(err))
+-		goto drop;
++	if (unlikely(!cache_dst)) {
++		struct ipv6hdr *hdr = ipv6_hdr(skb);
++		struct flowi6 fl6;
++
++		memset(&fl6, 0, sizeof(fl6));
++		fl6.daddr = hdr->daddr;
++		fl6.saddr = hdr->saddr;
++		fl6.flowlabel = ip6_flowinfo(hdr);
++		fl6.flowi6_mark = skb->mark;
++		fl6.flowi6_proto = hdr->nexthdr;
++
++		cache_dst = ip6_route_output(net, NULL, &fl6);
++		if (cache_dst->error) {
++			err = cache_dst->error;
++			dst_release(cache_dst);
++			goto drop;
++		}
+ 
+-	if (!ipv6_addr_equal(&orig_daddr, &ipv6_hdr(skb)->daddr)) {
+ 		local_bh_disable();
+-		dst = dst_cache_get(&ilwt->cache);
++		dst_cache_set_ip6(&ilwt->cache, cache_dst, &fl6.saddr);
+ 		local_bh_enable();
+ 
+-		if (unlikely(!dst)) {
+-			struct ipv6hdr *hdr = ipv6_hdr(skb);
+-			struct flowi6 fl6;
+-
+-			memset(&fl6, 0, sizeof(fl6));
+-			fl6.daddr = hdr->daddr;
+-			fl6.saddr = hdr->saddr;
+-			fl6.flowlabel = ip6_flowinfo(hdr);
+-			fl6.flowi6_mark = skb->mark;
+-			fl6.flowi6_proto = hdr->nexthdr;
+-
+-			dst = ip6_route_output(net, NULL, &fl6);
+-			if (dst->error) {
+-				err = dst->error;
+-				dst_release(dst);
+-				goto drop;
+-			}
+-
+-			local_bh_disable();
+-			dst_cache_set_ip6(&ilwt->cache, dst, &fl6.saddr);
+-			local_bh_enable();
+-		}
++		err = skb_cow_head(skb, LL_RESERVED_SPACE(cache_dst->dev));
++		if (unlikely(err))
++			goto drop;
++	}
+ 
++	if (!ipv6_addr_equal(&orig_daddr, &ipv6_hdr(skb)->daddr)) {
+ 		skb_dst_drop(skb);
+-		skb_dst_set(skb, dst);
+-
++		skb_dst_set(skb, cache_dst);
+ 		return dst_output(net, sk, skb);
+ 	}
+ out:
+-- 
+2.25.1
+
