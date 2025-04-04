@@ -51,9 +51,9 @@ int tsc_clocksource_reliable;
 
 static int __read_mostly tsc_force_recalibrate;
 
-static struct clocksource_base art_base_clk = {
-	.id    = CSID_X86_ART,
-};
+static u32 art_to_tsc_numerator;
+static u32 art_to_tsc_denominator;
+static u64 art_to_tsc_offset;
 static bool have_art;
 
 struct cyc2ns {
@@ -1075,7 +1075,7 @@ core_initcall(cpufreq_register_tsc_scaling);
  */
 static void __init detect_art(void)
 {
-	unsigned int unused;
+	unsigned int unused[2];
 
 	if (boot_cpu_data.cpuid_level < ART_CPUID_LEAF)
 		return;
@@ -1090,14 +1090,13 @@ static void __init detect_art(void)
 	    tsc_async_resets)
 		return;
 
-	cpuid(ART_CPUID_LEAF, &art_base_clk.denominator,
-	      &art_base_clk.numerator, &art_base_clk.freq_khz, &unused);
+	cpuid(ART_CPUID_LEAF, &art_to_tsc_denominator,
+	      &art_to_tsc_numerator, unused, unused+1);
 
-	art_base_clk.freq_khz /= KHZ;
-	if (art_base_clk.denominator < ART_MIN_DENOMINATOR)
+	if (art_to_tsc_denominator < ART_MIN_DENOMINATOR)
 		return;
 
-	rdmsrl(MSR_IA32_TSC_ADJUST, art_base_clk.offset);
+	rdmsrl(MSR_IA32_TSC_ADJUST, art_to_tsc_offset);
 
 	/* Make this sticky over multiple CPU init calls */
 	setup_force_cpu_cap(X86_FEATURE_ART);
@@ -1302,13 +1301,13 @@ struct system_counterval_t convert_art_to_tsc(u64 art)
 {
 	u64 tmp, res, rem;
 
-	rem = do_div(art, art_base_clk.denominator);
+	rem = do_div(art, art_to_tsc_denominator);
 
-	res = art * art_base_clk.numerator;
-	tmp = rem * art_base_clk.numerator;
+	res = art * art_to_tsc_numerator;
+	tmp = rem * art_to_tsc_numerator;
 
-	do_div(tmp, art_base_clk.denominator);
-	res += tmp + art_base_clk.offset;
+	do_div(tmp, art_to_tsc_denominator);
+	res += tmp + art_to_tsc_offset;
 
 	return (struct system_counterval_t) {
 		.cs_id	= have_art ? CSID_X86_TSC : CSID_GENERIC,
@@ -1354,6 +1353,7 @@ struct system_counterval_t convert_art_ns_to_tsc(u64 art_ns)
 	};
 }
 EXPORT_SYMBOL(convert_art_ns_to_tsc);
+
 
 static void tsc_refine_calibration_work(struct work_struct *work);
 static DECLARE_DELAYED_WORK(tsc_irqwork, tsc_refine_calibration_work);
@@ -1456,10 +1456,8 @@ out:
 	if (tsc_unstable)
 		goto unreg;
 
-	if (boot_cpu_has(X86_FEATURE_ART)) {
+	if (boot_cpu_has(X86_FEATURE_ART))
 		have_art = true;
-		clocksource_tsc.base = &art_base_clk;
-	}
 	clocksource_register_khz(&clocksource_tsc, tsc_khz);
 unreg:
 	clocksource_unregister(&clocksource_tsc_early);
@@ -1484,10 +1482,8 @@ static int __init init_tsc_clocksource(void)
 	 * the refined calibration and directly register it as a clocksource.
 	 */
 	if (boot_cpu_has(X86_FEATURE_TSC_KNOWN_FREQ)) {
-		if (boot_cpu_has(X86_FEATURE_ART)) {
+		if (boot_cpu_has(X86_FEATURE_ART))
 			have_art = true;
-			clocksource_tsc.base = &art_base_clk;
-		}
 		clocksource_register_khz(&clocksource_tsc, tsc_khz);
 		clocksource_unregister(&clocksource_tsc_early);
 
@@ -1511,12 +1507,10 @@ static bool __init determine_cpu_tsc_frequencies(bool early)
 
 	if (early) {
 		cpu_khz = x86_platform.calibrate_cpu();
-		if (tsc_early_khz) {
+		if (tsc_early_khz)
 			tsc_khz = tsc_early_khz;
-		} else {
+		else
 			tsc_khz = x86_platform.calibrate_tsc();
-			clocksource_tsc.freq_khz = tsc_khz;
-		}
 	} else {
 		/* We should not be here with non-native cpu calibration */
 		WARN_ON(x86_platform.calibrate_cpu != native_calibrate_cpu);

@@ -199,11 +199,7 @@ static int mlx5_mtctr_syncdevicetime(ktime_t *device_time,
 		return -EINVAL;
 
 	host = MLX5_GET64(mtctr_reg, out, first_clock_timestamp);
-	*sys_counterval = (struct system_counterval_t) {
-			.cycles = host,
-			.cs_id = CSID_X86_ART,
-			.use_nsecs = true,
-	};
+	*sys_counterval = convert_art_ns_to_tsc(host);
 
 	device = MLX5_GET64(mtctr_reg, out, second_clock_timestamp);
 	if (real_time_mode)
