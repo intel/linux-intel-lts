@@ -76,6 +76,7 @@ void arch_setup_new_exec(void);
 #define TIF_SECCOMP		11	/* syscall secure computing */
 #define TIF_SYSCALL_EMU		12	/* syscall emulation active */
 #define TIF_MAYDAY		13	/* Emergency trap pending */
+#define TIF_KERNEL_FP_PREEMPTED	14	/* Dovetail: kernel mode FPSIMD section preempted by OOB */
 #define TIF_MEMDIE		18	/* is terminating due to OOM killer */
 #define TIF_FREEZE		19
 #define TIF_RESTORE_SIGMASK	20

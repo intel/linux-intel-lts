@@ -2240,6 +2240,39 @@ void cpu_enable_fpsimd(const struct arm64_cpu_capabilities *__always_unused p)
 	isb();
 }
 
+#ifdef CONFIG_DOVETAIL
+
+/*
+ * Holds the in-kernel fpu state when preempted by a task running on the
+ * out-of-band stage.
+ */
+static DEFINE_PER_CPU(struct user_fpsimd_state, in_kernel_fpstate);
+
+void fpsimd_suspend_inband(void)
+{
+	struct user_fpsimd_state *kfpu = this_cpu_ptr(&in_kernel_fpstate);
+
+	/*
+	 * If TIF_KERNEL_FPSTATE is set, we are dealing with the preemption of an
+	 * inband kernel context currently using the fpu by a thread which resumes
+	 * on the oob stage.
+	 */
+	if (test_thread_flag(TIF_KERNEL_FPSTATE)) {
+		fpsimd_save_state(kfpu);
+		set_thread_flag(TIF_KERNEL_FP_PREEMPTED);
+	}
+}
+
+void fpsimd_resume_inband(void)
+{
+	struct user_fpsimd_state *kfpu = this_cpu_ptr(&in_kernel_fpstate);
+
+	if (test_and_clear_thread_flag(TIF_KERNEL_FP_PREEMPTED))
+		fpsimd_load_state(kfpu);
+}
+
+#endif
+
 /*
  * FP/SIMD support code initialisation.
  */

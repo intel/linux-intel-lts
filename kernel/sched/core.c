@@ -7356,7 +7356,7 @@ int __sched __cond_resched(void)
 {
 	check_inband_stage();
 
-	if (should_resched(0)) {
+	if (should_resched(0) && !irqs_disabled()) {
 		preempt_schedule_common();
 		return 1;
 	}

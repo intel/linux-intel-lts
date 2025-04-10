@@ -628,6 +628,7 @@ int hibernation_platform_enter(void)
  Power_up:
 	syscore_resume();
  Enable_irqs:
+	hard_cond_local_irq_enable();
 	system_state = SYSTEM_RUNNING;
 	local_irq_enable();
 
