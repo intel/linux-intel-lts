@@ -131,19 +131,19 @@ static int ipu_psys_detect_resource_contention(struct ipu_psys_ppg *kppg)
 	    state == PPG_STATE_RESUMED)
 		goto exit;
 
-	ret = ipu_psys_resource_pool_init(try_res_pool);
+	ret = ipu_psys_res_pool_init(try_res_pool);
 	if (ret < 0) {
 		dev_err(dev, "unable to alloc pg resources\n");
 		WARN_ON(1);
 		goto exit;
 	}
 
-	ipu_psys_resource_copy(&psys->resource_pool_running, try_res_pool);
+	ipu_psys_resource_copy(&psys->res_pool_running, try_res_pool);
 	ret = ipu_psys_try_allocate_resources(dev, kppg->kpg->pg,
 					      kppg->manifest,
 					      try_res_pool);
 
-	ipu_psys_resource_pool_cleanup(try_res_pool);
+	ipu_psys_res_pool_cleanup(try_res_pool);
 exit:
 	kfree(try_res_pool);
 
@@ -231,7 +231,7 @@ static bool ipu_psys_scheduler_switch_ppg(struct ipu_psys *psys)
 }
 
 /*
- * search all kppgs and sort them into start_list and stop_list, alway start
+ * search all kppgs and sort them into start_list and stop_list, always start
  * first kppg(high priority) in start_list;
  * if there is resource contention, it would switch kppgs in stop_list
  * to suspend state one by one
@@ -348,7 +348,8 @@ static bool ipu_psys_scheduler_ppg_halt(struct ipu_psys *psys)
 				ipu_psys_ppg_stop(kppg);
 				ipu_psys_scheduler_remove_kppg(kppg,
 							       SCHED_STOP_LIST);
-			} else if (kppg->state == PPG_STATE_SUSPEND) {
+			} else if (kppg->state == PPG_STATE_SUSPEND &&
+				   list_empty(&kppg->kcmds_processing_list)) {
 				ipu_psys_ppg_suspend(kppg);
 				ipu_psys_scheduler_remove_kppg(kppg,
 							       SCHED_STOP_LIST);
@@ -393,11 +394,11 @@ static void ipu_psys_update_ppg_state_by_kcmd(struct ipu_psys *psys,
 		else if (kcmd->state == KCMD_STATE_PPG_ENQUEUE)
 			kppg->state = PPG_STATE_RESUME;
 	} else if (kppg->state == PPG_STATE_STOPPED) {
-		if (kcmd->state == KCMD_STATE_PPG_START)
+		if (kcmd->state == KCMD_STATE_PPG_START) {
 			kppg->state = PPG_STATE_START;
-		else if (kcmd->state == KCMD_STATE_PPG_STOP)
+		} else if (kcmd->state == KCMD_STATE_PPG_STOP) {
 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
-		else if (kcmd->state == KCMD_STATE_PPG_ENQUEUE) {
+		} else if (kcmd->state == KCMD_STATE_PPG_ENQUEUE) {
 			dev_err(dev, "ppg %p stopped!\n", kppg);
 			ipu_psys_kcmd_complete(kppg, kcmd, -EIO);
 		}

@@ -241,7 +241,7 @@ struct ipu_fw_psys_buffer_set {
 	u8 padding[IPU_FW_PSYS_N_PADDING_UINT8_IN_BUFFER_SET_STRUCT];
 };
 
-struct ipu_fw_psys_program_group_manifest {
+struct ipu_fw_psys_pgm {
 	u32 kernel_bitmap[IPU_FW_PSYS_KERNEL_BITMAP_NOF_ELEMS];
 	u32 ID;
 	u16 program_manifest_offset;
@@ -298,10 +298,10 @@ struct ipu6_psys_hw_res_variant {
 	int (*set_proc_ext_mem)(struct ipu_fw_psys_process *ptr,
 				u16 type_id, u16 mem_id, u16 offset);
 	int (*get_pgm_by_proc)(struct ipu_fw_generic_program_manifest *gen_pm,
-			       const struct ipu_fw_psys_program_group_manifest
-			       *pg_manifest,
+			       const struct ipu_fw_psys_pgm *pg_manifest,
 			       struct ipu_fw_psys_process *process);
 };
+
 struct ipu_psys_kcmd;
 struct ipu_psys;
 int ipu_fw_psys_pg_start(struct ipu_psys_kcmd *kcmd);
@@ -340,8 +340,8 @@ size_t ipu_fw_psys_ppg_get_buffer_set_size(struct ipu_psys_kcmd *kcmd);
 int
 ipu_fw_psys_ppg_buffer_set_vaddress(struct ipu_fw_psys_buffer_set *buf_set,
 				    u32 vaddress);
-int ipu_fw_psys_ppg_buffer_set_set_kernel_enable_bitmap(
-	struct ipu_fw_psys_buffer_set *buf_set, u32 *kernel_enable_bitmap);
+int ipu_fw_psys_ppg_buffer_set_set_keb(struct ipu_fw_psys_buffer_set *buf_set,
+				       u32 *kernel_enable_bitmap);
 struct ipu_fw_psys_buffer_set *
 ipu_fw_psys_ppg_create_buffer_set(struct ipu_psys_kcmd *kcmd,
 				  void *kaddr, u32 frame_counter);
@@ -361,10 +361,10 @@ int ipu_fw_psys_set_proc_dev_chn(struct ipu_fw_psys_process *ptr, u16 offset,
 				 u16 value);
 int ipu_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
 				    u16 type_id, u16 mem_id, u16 offset);
-int ipu_fw_psys_get_program_manifest_by_process(
-	struct ipu_fw_generic_program_manifest *gen_pm,
-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
-	struct ipu_fw_psys_process *process);
+int
+ipu_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
+			       const struct ipu_fw_psys_pgm *pg_manifest,
+			       struct ipu_fw_psys_process *process);
 int ipu6_fw_psys_set_proc_dev_chn(struct ipu_fw_psys_process *ptr, u16 offset,
 				  u16 value);
 int ipu6_fw_psys_set_proc_dfm_bitmap(struct ipu_fw_psys_process *ptr,
@@ -372,10 +372,10 @@ int ipu6_fw_psys_set_proc_dfm_bitmap(struct ipu_fw_psys_process *ptr,
 				     u32 active_bitmap);
 int ipu6_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
 				     u16 type_id, u16 mem_id, u16 offset);
-int ipu6_fw_psys_get_program_manifest_by_process(
-	struct ipu_fw_generic_program_manifest *gen_pm,
-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
-	struct ipu_fw_psys_process *process);
+int
+ipu6_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
+				const struct ipu_fw_psys_pgm *pg_manifest,
+				struct ipu_fw_psys_process *process);
 void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
 			  struct ipu_psys_kcmd *kcmd, const char *note);
 void ipu6_psys_hw_res_variant_init(void);

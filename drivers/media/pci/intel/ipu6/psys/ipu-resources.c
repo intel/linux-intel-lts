@@ -31,8 +31,7 @@ void ipu6_psys_hw_res_variant_init(void)
 	hw_var.set_proc_dev_chn = ipu6_fw_psys_set_proc_dev_chn;
 	hw_var.set_proc_dfm_bitmap = ipu6_fw_psys_set_proc_dfm_bitmap;
 	hw_var.set_proc_ext_mem = ipu6_fw_psys_set_process_ext_mem;
-	hw_var.get_pgm_by_proc =
-		ipu6_fw_psys_get_program_manifest_by_process;
+	hw_var.get_pgm_by_proc = ipu6_fw_psys_get_pgm_by_process;
 }
 
 static const struct ipu_fw_resource_definitions *get_res(void)
@@ -140,7 +139,7 @@ static void ipu_resource_cleanup(struct ipu_resource *res)
 }
 
 /********** IPU PSYS-specific resource handling **********/
-int ipu_psys_resource_pool_init(struct ipu_psys_resource_pool *pool)
+int ipu_psys_res_pool_init(struct ipu_psys_resource_pool *pool)
 {
 	int i, j, k, ret;
 	const struct ipu_fw_resource_definitions *res_defs;
@@ -214,8 +213,7 @@ void ipu_psys_resource_copy(struct ipu_psys_resource_pool *src,
 		*dest->dfms[i].bitmap = *src->dfms[i].bitmap;
 }
 
-void ipu_psys_resource_pool_cleanup(struct ipu_psys_resource_pool
-				    *pool)
+void ipu_psys_res_pool_cleanup(struct ipu_psys_resource_pool *pool)
 {
 	u32 i;
 	const struct ipu_fw_resource_definitions *res_defs;
@@ -372,7 +370,7 @@ static int __alloc_mem_resrc(const struct device *dev,
 	return 0;
 }
 
-int ipu_psys_allocate_cmd_queue_resource(struct ipu_psys_resource_pool *pool)
+int ipu_psys_allocate_cmd_queue_res(struct ipu_psys_resource_pool *pool)
 {
 	unsigned long p;
 	int size, start;
@@ -400,8 +398,8 @@ int ipu_psys_allocate_cmd_queue_resource(struct ipu_psys_resource_pool *pool)
 	return p;
 }
 
-void ipu_psys_free_cmd_queue_resource(struct ipu_psys_resource_pool *pool,
-				      u8 queue_id)
+void ipu_psys_free_cmd_queue_res(struct ipu_psys_resource_pool *pool,
+				 u8 queue_id)
 {
 	spin_lock(&pool->queues_lock);
 	bitmap_clear(pool->cmd_queues, queue_id, 1);
@@ -447,8 +445,7 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 			goto free_out;
 		}
 
-		ret = ipu_fw_psys_get_program_manifest_by_process
-			(&pm, pg_manifest, process);
+		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
 		if (ret < 0) {
 			dev_err(dev, "can not get manifest\n");
 			goto free_out;
@@ -556,9 +553,8 @@ free_out:
 int ipu_psys_allocate_resources(const struct device *dev,
 				struct ipu_fw_psys_process_group *pg,
 				void *pg_manifest,
-				struct ipu_psys_resource_alloc
-				*alloc, struct ipu_psys_resource_pool
-				*pool)
+				struct ipu_psys_resource_alloc *alloc,
+				struct ipu_psys_resource_pool *pool)
 {
 	u32 id;
 	u32 mem_type_id;
@@ -591,8 +587,7 @@ int ipu_psys_allocate_resources(const struct device *dev,
 			goto free_out;
 		}
 
-		ret = ipu_fw_psys_get_program_manifest_by_process
-		    (&pm, pg_manifest, process);
+		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
 		if (ret < 0) {
 			dev_err(dev, "can not get manifest\n");
 			goto free_out;
@@ -836,9 +831,7 @@ void ipu_psys_reset_process_cell(const struct device *dev,
 		if (!process)
 			break;
 
-		ret = ipu_fw_psys_get_program_manifest_by_process(&pm,
-								  pg_manifest,
-								  process);
+		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
 		if (ret < 0) {
 			dev_err(dev, "can not get manifest\n");
 			break;

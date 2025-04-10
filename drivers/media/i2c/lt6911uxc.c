@@ -95,7 +95,7 @@ struct lt6911uxc_mode {
 
 struct lt6911uxc {
 	struct v4l2_subdev sd;
-	struct media_pad pad;
+	struct media_pad pad[2];
 	struct v4l2_ctrl_handler ctrl_handler;
 
 	struct v4l2_ctrl *pixel_rate;
@@ -170,35 +170,64 @@ static int lt6911uxc_status_update(struct lt6911uxc *lt6911uxc)
 	u64 tmds_clk;
 	u64 pixel_clk, is_hdmi_2_0, fps, lanes;
 	u64 htotal, vtotal, half_width, height;
+	int ret = 0;
 
 	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
-
-	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, NULL);
-	cci_write(lt6911uxc->regmap, REG_DISABLE_WD, 0x0, NULL);
+	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, &ret);
+	cci_write(lt6911uxc->regmap, REG_DISABLE_WD, 0x0, &ret);
 	/* Read interrupt event */
-	cci_read(lt6911uxc->regmap, REG_INT_HDMI, &int_event, NULL);
+	cci_read(lt6911uxc->regmap, REG_INT_HDMI, &int_event, &ret);
+	if (ret)
+		return dev_err_probe(&client->dev, ret,
+							"failed to read interrupt event\n");
 	switch (int_event) {
 	case INT_HDMI_STABLE:
 		dev_info(&client->dev, "Video signal stable\n");
 
-		cci_write(lt6911uxc->regmap, REG_AD_HALF_PCLK, 0x1B, NULL);
+		cci_write(lt6911uxc->regmap, REG_AD_HALF_PCLK, 0x1B, &ret);
+		if (ret) {
+			dev_err(&client->dev,
+				"failed to write half pclk\n");
+			return -EINVAL;
+		}
 		usleep_range(10000, 10100);
 
-		cci_read(lt6911uxc->regmap, REG_BYTE_CLK, &byte_clock, NULL);
+		cci_read(lt6911uxc->regmap, REG_BYTE_CLK, &byte_clock, &ret);
 		byte_clock = (byte_clock & MASK_FMI_FREQ2) * 1000;
 
-		cci_read(lt6911uxc->regmap, REG_PIX_CLK, &tmds_clk, NULL);
+		cci_read(lt6911uxc->regmap, REG_PIX_CLK, &tmds_clk, &ret);
 		tmds_clk = tmds_clk & MASK_FMI_FREQ2;
 
-		cci_read(lt6911uxc->regmap, REG_BKB0_A2_REG, &is_hdmi_2_0, NULL);
+		cci_read(lt6911uxc->regmap, REG_BKB0_A2_REG, &is_hdmi_2_0, &ret);
+		if (ret || byte_clock == 0 || tmds_clk == 0 || is_hdmi_2_0 == 0) {
+			dev_err(&client->dev,
+				"invalid byte_clock or tmds_clk or is_hdmi_2_0\n");
+			return -EINVAL;
+		}
 		is_hdmi_2_0 = is_hdmi_2_0 & (1<<0) ? !0 : !!0;
 		pixel_clk = (is_hdmi_2_0 ? 4 * tmds_clk : tmds_clk) * 1000;
 
-		cci_read(lt6911uxc->regmap, REG_H_TOTAL, &htotal, NULL);
-		cci_read(lt6911uxc->regmap, REG_V_TOTAL, &vtotal, NULL);
-		cci_read(lt6911uxc->regmap, REG_H_ACTIVE, &half_width, NULL);
-		cci_read(lt6911uxc->regmap, REG_V_ACTIVE, &height, NULL);
-		cci_read(lt6911uxc->regmap, REG_MIPI_LANES, &lanes, NULL);
+		cci_read(lt6911uxc->regmap, REG_H_TOTAL, &htotal, &ret);
+		cci_read(lt6911uxc->regmap, REG_V_TOTAL, &vtotal, &ret);
+		if (ret || htotal == 0 || vtotal == 0) {
+			dev_err(&client->dev,
+				"invalid htotal or vtotal\n");
+			return -EINVAL;
+		}
+
+		cci_read(lt6911uxc->regmap, REG_H_ACTIVE, &half_width, &ret);
+		cci_read(lt6911uxc->regmap, REG_V_ACTIVE, &height, &ret);
+		if (ret || half_width == 0 || half_width * 2 > 3840 ||
+		    height == 0 || height > 2160) {
+			dev_err(&client->dev, "invalid width or height\n");
+			return -EINVAL;
+		}
+
+		cci_read(lt6911uxc->regmap, REG_MIPI_LANES, &lanes, &ret);
+		if (ret || lanes == 0) {
+			dev_err(&client->dev, "invalid lanes\n");
+			return -EINVAL;
+		}
 
 		if (htotal && vtotal)
 			fps = div_u64(pixel_clk, htotal * 2 * vtotal);
@@ -232,7 +261,7 @@ static int lt6911uxc_status_update(struct lt6911uxc *lt6911uxc)
 			lt6911uxc->cur_mode->lanes);
 		break;
 	case INT_HDMI_DISCONNECT:
-		cci_write(lt6911uxc->regmap, REG_MIPI_TX_CTRL, 0x0, NULL);
+		cci_write(lt6911uxc->regmap, REG_MIPI_TX_CTRL, 0x0, &ret);
 		lt6911uxc->cur_mode->height = 0;
 		lt6911uxc->cur_mode->width = 0;
 		lt6911uxc->cur_mode->fps = fps;
@@ -248,11 +277,11 @@ static int lt6911uxc_status_update(struct lt6911uxc *lt6911uxc)
 		break;
 	default:
 		dev_dbg(&client->dev, "Unhandled video= 0x%02llX\n", int_event);
-		cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, NULL);
+		cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, &ret);
 		return  -ENOLINK;
 	}
-	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, NULL);
-	return 0;
+	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, &ret);
+	return ret;
 }
 
 static int lt6911uxc_init_controls(struct lt6911uxc *lt6911uxc)
@@ -322,10 +351,10 @@ static int lt6911uxc_start_streaming(struct lt6911uxc *lt6911uxc)
 	ret = __v4l2_ctrl_handler_setup(lt6911uxc->sd.ctrl_handler);
 	if (ret)
 		goto err_rpm_put;
-	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, NULL);
-	cci_write(lt6911uxc->regmap, REG_DISABLE_WD, 0x00, NULL);
-	cci_write(lt6911uxc->regmap, REG_MIPI_TX_CTRL, 0xFB, NULL);
-	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, NULL);
+	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, &ret);
+	cci_write(lt6911uxc->regmap, REG_DISABLE_WD, 0x00, &ret);
+	cci_write(lt6911uxc->regmap, REG_MIPI_TX_CTRL, 0xFB, &ret);
+	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, &ret);
 
 	if (ret) {
 		dev_err(&client->dev, "failed to start stream\n");
@@ -342,6 +371,7 @@ err_rpm_put:
 static int lt6911uxc_s_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct lt6911uxc *lt6911uxc = to_lt6911uxc(sd);
+	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
 	struct v4l2_subdev_state *state;
 	int ret = 0;
 
@@ -355,10 +385,13 @@ static int lt6911uxc_s_stream(struct v4l2_subdev *sd, int enable)
 
 	} else {
 		dev_dbg(sd->dev, "[%s()], stop streaming.\n", __func__);
-		cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, NULL);
-		cci_write(lt6911uxc->regmap, REG_DISABLE_WD, 0x00, NULL);
-		cci_write(lt6911uxc->regmap, REG_MIPI_TX_CTRL, 0x0, NULL);
-		cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, NULL);
+		cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, &ret);
+		cci_write(lt6911uxc->regmap, REG_DISABLE_WD, 0x00, &ret);
+		cci_write(lt6911uxc->regmap, REG_MIPI_TX_CTRL, 0x0, &ret);
+		cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, &ret);
+		if (ret)
+			dev_err(&client->dev, "failed to stop stream\n");
+
 	}
 	v4l2_subdev_unlock_state(state);
 
@@ -397,7 +430,6 @@ static int lt6911uxc_get_format(struct v4l2_subdev *sd,
 				struct v4l2_subdev_format *fmt)
 {
 	struct lt6911uxc *lt6911uxc = to_lt6911uxc(sd);
-
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
 		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
 	else
@@ -505,9 +537,9 @@ static int lt6911uxc_identify_module(struct lt6911uxc *lt6911uxc,
 	u64 val;
 	int ret = 0;
 
-	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, NULL);
-	cci_read(lt6911uxc->regmap, LT6911UXC_REG_CHIP_ID, &val, NULL);
-	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, NULL);
+	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x1, &ret);
+	cci_read(lt6911uxc->regmap, LT6911UXC_REG_CHIP_ID, &val, &ret);
+	cci_write(lt6911uxc->regmap, REG_ENABLE_I2C, 0x0, &ret);
 	if (ret)
 		return dev_err_probe(dev, ret, "fail to read chip id\n");
 
@@ -603,8 +635,9 @@ static int lt6911uxc_probe(struct i2c_client *client)
 			       V4L2_SUBDEV_FL_HAS_EVENTS;
 	lt6911uxc->sd.entity.ops = &lt6911uxc_subdev_entity_ops;
 	lt6911uxc->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
-	lt6911uxc->pad.flags = MEDIA_PAD_FL_SOURCE;
-	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 1, &lt6911uxc->pad);
+	lt6911uxc->pad[0].flags = MEDIA_PAD_FL_SOURCE;
+	lt6911uxc->pad[1].flags = MEDIA_PAD_FL_SOURCE;
+	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 2, lt6911uxc->pad);
 	if (ret) {
 		dev_err(&client->dev, "Init entity pads failed:%d\n", ret);
 		goto err_v4l2_ctrl_handler_free;
@@ -680,6 +713,6 @@ static struct i2c_driver lt6911uxc_i2c_driver = {
 
 module_i2c_driver(lt6911uxc_i2c_driver);
 
-MODULE_AUTHOR("Zou, Xiaohong.zou@intel.com");
+MODULE_AUTHOR("Zou, Xiaohong xiaohong.zou@intel.com");
 MODULE_DESCRIPTION("lt6911uxc HDMI to MIPI Bridge Driver");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

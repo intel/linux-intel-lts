@@ -16,7 +16,7 @@
  * use those offsets to update fields. Without extension lib access
  * structures directly.
  */
-const struct ipu6_psys_hw_res_variant *var = &hw_var;
+static const struct ipu6_psys_hw_res_variant *var = &hw_var;
 
 int ipu_fw_psys_set_process_cell_id(struct ipu_fw_psys_process *ptr, u8 index,
 				    u8 value)
@@ -89,10 +89,10 @@ int ipu_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
 	return 0;
 }
 
-int ipu_fw_psys_get_program_manifest_by_process(
-	struct ipu_fw_generic_program_manifest *gen_pm,
-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
-	struct ipu_fw_psys_process *process)
+int
+ipu_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
+			       const struct ipu_fw_psys_pgm *pg_manifest,
+			       struct ipu_fw_psys_process *process)
 {
 	if (var->get_pgm_by_proc)
 		return var->get_pgm_by_proc(gen_pm, pg_manifest, process);

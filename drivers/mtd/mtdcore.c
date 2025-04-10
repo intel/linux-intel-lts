@@ -1057,8 +1057,14 @@ int mtd_device_parse_register(struct mtd_info *mtd, const char * const *types,
 
 	mtd_set_dev_defaults(mtd);
 
+	/*
+	 * Don't abort MTD init if OTP functionality is unsupported. The
+	 * cleanup of the OTP init is contained within mtd_otp_nvmem_add().
+	 * Omitting goto out here is safe since the cleanup code there
+	 * should be no-ops.
+	 */
 	ret = mtd_otp_nvmem_add(mtd);
-	if (ret)
+	if (ret && ret != -EOPNOTSUPP)
 		goto out;
 
 	if (IS_ENABLED(CONFIG_MTD_PARTITIONED_MASTER)) {

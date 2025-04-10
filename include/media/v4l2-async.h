@@ -59,6 +59,7 @@ struct v4l2_async_match_desc {
 			unsigned short address;
 		} i2c;
 	};
+	s16 src_pad;
 };
 
 /**
@@ -82,6 +83,7 @@ struct v4l2_async_connection {
 	struct list_head asc_entry;
 	struct list_head asc_subdev_entry;
 	struct v4l2_subdev *sd;
+	s16 src_pad;
 };
 
 /**

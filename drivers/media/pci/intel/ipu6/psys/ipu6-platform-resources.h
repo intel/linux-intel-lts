@@ -4,8 +4,6 @@
 #ifndef IPU6_PLATFORM_RESOURCES_H
 #define IPU6_PLATFORM_RESOURCES_H
 
-#include <linux/kernel.h>
-#include <linux/device.h>
 #include "ipu-platform-resources.h"
 
 #define	IPU6_FW_PSYS_N_PADDING_UINT8_IN_PROCESS_EXT_STRUCT		0

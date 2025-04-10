@@ -3012,7 +3012,6 @@ void phy_support_eee(struct phy_device *phydev)
 {
 	linkmode_copy(phydev->advertising_eee, phydev->supported_eee);
 	phydev->eee_cfg.tx_lpi_enabled = true;
-	phydev->eee_cfg.eee_enabled = true;
 }
 EXPORT_SYMBOL(phy_support_eee);
 
@@ -3776,6 +3775,8 @@ static const struct ethtool_phy_ops phy_ethtool_phy_ops = {
 static const struct phylib_stubs __phylib_stubs = {
 	.hwtstamp_get = __phy_hwtstamp_get,
 	.hwtstamp_set = __phy_hwtstamp_set,
+	.get_phy_stats = __phy_ethtool_get_phy_stats,
+	.get_link_ext_stats = __phy_ethtool_get_link_ext_stats,
 };
 
 static void phylib_register_stubs(void)

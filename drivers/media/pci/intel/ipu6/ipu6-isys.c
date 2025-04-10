@@ -34,6 +34,7 @@
 
 #include "ipu6-bus.h"
 #include "ipu6-cpd.h"
+#include "ipu6-dma.h"
 #include "ipu6-isys.h"
 #include "ipu6-isys-csi2.h"
 #include "ipu6-mmu.h"
@@ -104,6 +105,7 @@ static int isys_isr_one(struct ipu6_bus_device *adev);
 static int
 isys_complete_ext_device_registration(struct ipu6_isys *isys,
 				      struct v4l2_subdev *sd,
+				      s16 src_pad,
 				      struct ipu6_isys_csi2_config *csi2)
 {
 	struct device *dev = &isys->adev->auxdev.dev;
@@ -117,6 +119,17 @@ isys_complete_ext_device_registration(struct ipu6_isys *isys,
 
 	if (i == sd->entity.num_pads) {
 		dev_warn(dev, "no src pad in external entity\n");
+		ret = -ENOENT;
+		goto unregister_subdev;
+	}
+
+	if (src_pad >= 0)
+		i = (unsigned int)src_pad;
+
+	if (sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE) {
+		dev_info(dev, "src pad %d\n", src_pad);
+	} else {
+		dev_warn(dev, "src pad %d not for src\n", src_pad);
 		ret = -ENOENT;
 		goto unregister_subdev;
 	}
@@ -692,7 +705,9 @@ static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
 
 	dev_dbg(&isys->adev->auxdev.dev, "bind %s nlanes is %d port is %d\n",
 		sd->name, s_asd->csi2.nlanes, s_asd->csi2.port);
-	ret = isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
+	ret = isys_complete_ext_device_registration(isys, sd,
+						    asc->match.src_pad,
+						    &s_asd->csi2);
 	if (ret)
 		return ret;
 
@@ -933,29 +948,27 @@ static const struct dev_pm_ops isys_pm_ops = {
 
 static void free_fw_msg_bufs(struct ipu6_isys *isys)
 {
-	struct device *dev = &isys->adev->auxdev.dev;
 	struct isys_fw_msgs *fwmsg, *safe;
 
 	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist, head)
-		dma_free_attrs(dev, sizeof(struct isys_fw_msgs), fwmsg,
-			       fwmsg->dma_addr, 0);
+		ipu6_dma_free(isys->adev, sizeof(struct isys_fw_msgs), fwmsg,
+			      fwmsg->dma_addr, 0);
 
 	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist_fw, head)
-		dma_free_attrs(dev, sizeof(struct isys_fw_msgs), fwmsg,
-			       fwmsg->dma_addr, 0);
+		ipu6_dma_free(isys->adev, sizeof(struct isys_fw_msgs), fwmsg,
+			      fwmsg->dma_addr, 0);
 }
 
 static int alloc_fw_msg_bufs(struct ipu6_isys *isys, int amount)
 {
-	struct device *dev = &isys->adev->auxdev.dev;
 	struct isys_fw_msgs *addr;
 	dma_addr_t dma_addr;
 	unsigned long flags;
 	unsigned int i;
 
 	for (i = 0; i < amount; i++) {
-		addr = dma_alloc_attrs(dev, sizeof(struct isys_fw_msgs),
-				       &dma_addr, GFP_KERNEL, 0);
+		addr = ipu6_dma_alloc(isys->adev, sizeof(*addr),
+				      &dma_addr, GFP_KERNEL, 0);
 		if (!addr)
 			break;
 		addr->dma_addr = dma_addr;
@@ -974,8 +987,8 @@ static int alloc_fw_msg_bufs(struct ipu6_isys *isys, int amount)
 					struct isys_fw_msgs, head);
 		list_del(&addr->head);
 		spin_unlock_irqrestore(&isys->listlock, flags);
-		dma_free_attrs(dev, sizeof(struct isys_fw_msgs), addr,
-			       addr->dma_addr, 0);
+		ipu6_dma_free(isys->adev, sizeof(struct isys_fw_msgs), addr,
+			      addr->dma_addr, 0);
 		spin_lock_irqsave(&isys->listlock, flags);
 	}
 	spin_unlock_irqrestore(&isys->listlock, flags);

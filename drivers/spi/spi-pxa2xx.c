@@ -1055,6 +1055,8 @@ static int pxa2xx_spi_transfer_one(struct spi_controller *controller,
 	if (!pxa25x_ssp_comp(drv_data))
 		pxa2xx_spi_write(drv_data, SSTO, TIMOUT_DFLT);
 
+	spi_set_cs(spi, false, false);
+
 	/* First set CR1 without interrupt and service enables */
 	pxa2xx_spi_update(drv_data, SSCR1, change_mask, cr1);
 
@@ -1063,6 +1065,8 @@ static int pxa2xx_spi_transfer_one(struct spi_controller *controller,
 
 	/* Restart the SSP */
 	pxa_ssp_enable(drv_data->ssp);
+
+	spi_set_cs(spi, true, false);
 
 	if (is_mmp2_ssp(drv_data)) {
 		u8 tx_level = read_SSSR_bits(drv_data, SSSR_TFL_MASK) >> 8;
