@@ -35,3 +35,7 @@
 
 #CVE-2025-21807
 0018-block-fix-queue-freeze-vs-limits-lock-order-in-sysfs.patch
+
+#CVE-2025-21884
+0001-net-Add-net_passive_inc-and-net_passive_dec.patch
+0002-net-better-track-kernel-sockets-lifetime.patch
