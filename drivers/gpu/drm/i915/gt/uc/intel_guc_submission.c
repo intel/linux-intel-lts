@@ -3116,7 +3116,7 @@ int intel_guc_process_set_engine_sched_done(struct intel_guc *guc, const u32 *ms
 	if (len != GUC2HOST_SET_ENGINE_SCHED_DONE_MSG_LEN)
 		return -EPROTO;
 
-	if (FIELD_GET(GUC2HOST_SET_ENGINE_SCHED_DONE_MSG_0_MBZ, msg[0] != 0))
+	if (FIELD_GET(GUC2HOST_SET_ENGINE_SCHED_DONE_MSG_0_MBZ, msg[0]) != 0)
 		return -EPROTO;
 
 	decr_outstanding_submission_g2h(guc);
