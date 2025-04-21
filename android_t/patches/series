@@ -78,9 +78,6 @@
 #CVE-2024-26747
 0001-usb-roles-fix-NULL-pointer-issue-when-put-module-s-r.patch
 
-#CVE-2024-26763
-0001-dm-crypt-don-t-modify-the-data-when-using-authentica.patch
-
 #CVE-2024-26777
 0001-fbdev-sis-Error-out-if-pixclock-equals-zero.patch
 
@@ -219,17 +216,11 @@
 0001-icmp-Add-counters-for-rate-limits.patch
 0002-icmp-change-the-order-of-rate-limits.patch
 
-#CVE-2024-49967(Already fix in CVE-2024-49881)
-#0001-ext4-no-need-to-continue-when-the-number-of-entries-.patch
-
 #CVE-2024-50003
 0001-drm-amd-display-Fix-system-hang-while-resume-with-TB.patch
 
 #CVE-2024-26844
 0001-block-Fix-WARNING-in-_copy_from_iter.patch
-
-#CVE-2024-26982
-0001-Squashfs-check-the-inode-number-is-not-the-invalid-v.patch
 
 #CVE-2024-27389
 0001-pstore-inode-Only-d_invalidate-is-needed.patch
@@ -369,9 +360,6 @@
 #CVE-2024-56658
 0001-net-defer-final-struct-net-free-in-netns-dismantle.patch
 
-#CVE-2024-56664
-0001-bpf-sockmap-Fix-race-between-element-replace-and-clo.patch
-
 #CVE-2024-56703
 0001-ipv6-Fix-soft-lockups-in-fib6_select_path-under-high.patch
 
@@ -390,39 +378,17 @@
 #CVE-2024-57915
 0001-usb-gadget-u_serial-Disable-ep-before-setting-port-t.patch
 
-#CVE-2024-58083
-0001-KVM-Explicitly-verify-target-vCPU-is-online-in-kvm_g.patch
-
 #CVE-2025-21838
 0002-USB-gadget-Register-udc-before-gadget.patch
 0003-usb-gadget-core-flush-gadget-workqueue-after-device-.patch
 
-#CVE-2025-21835
-0004-usb-gadget-f_midi-fix-MIDI-Streaming-descriptor-leng.patch
-
-#CVE-2025-21830
-0005-landlock-Handle-weird-files.patch
-
 #CVE-2025-21817
 0006-block-mark-GFP_NOIO-around-sysfs-store.patch
-
-#CVE-2025-21806
-0007-net-let-net.core.dev_weight-always-be-non-zero.patch
-
-#CVE-2025-21806
-0008-vrf-use-RCU-protection-in-l3mdev_l3_out.patch
-
-#CVE-2025-21785
-0009-arm64-cacheinfo-Avoid-out-of-bounds-write-to-cachein.patch
 
 #CVE-2025-21776
 0010-USB-hub-Ignore-non-compliant-devices-with-too-many-c.patch
 
-#CVE-2025-21772
-0011-partitions-mac-fix-handling-of-bogus-partition-table.patch
-
 #CVE-2025-21768
-0012-net-ipv6-rpl_iptunnel-mitigate-2-realloc-issue.patch
 0013-ipv6-ioam-Prerequisite-patch-for-ioam6_iptunnel.patch
 0014-ipv6-ioam-Add-support-for-the-ip6ip6-encapsulation.patch
 0015-ipv6-ioam-Insertion-frequency-in-lwtunnel-output.patch
@@ -430,19 +396,11 @@
 0017-net-ipv6-ioam6-new-feature-tunsrc.patch
 0018-ipv6-ioam-block-BH-from-ioam6_output.patch
 0019-net-ipv6-ioam6_iptunnel-mitigate-2-realloc-issue.patch
-0020-seg6-add-support-for-SRv6-H.Encaps.Red-behavior.patch
-0021-seg6-add-support-for-SRv6-H.L2Encaps.Red-behavior.patch
-0022-net-ipv6-seg6_iptunnel-mitigate-2-realloc-issue.patch
 0023-net-ipv6-fix-dst-ref-loops-in-rpl-seg6-and-ioam6-lwt.patch
-0024-include-net-add-static-inline-dst_dev_overhead-to-ds.patch
 0025-ipv6-ioam-Distinguish-input-and-output-for-hop-limit.patch
 
-#CVE-2025-21767
-0026-clocksource-Use-migrate_disable-to-avoid-calling-get.patch
 
 #CVE-2025-21766
-0027-net-treat-possible_net_t-net-pointer-as-an-RCU-one-a.patch
-0028-net-add-dev_net_rcu-helper.patch
 0029-ipv4-use-RCU-protection-in-__ip_rt_update_pmtu.patch
 
 #CVE-2025-21738
@@ -451,24 +409,8 @@
 0032-ata-libata-sff-tracepoints-for-HSM-state-machine.patch
 0033-ata-libata-sff-Ensure-that-we-cannot-write-outside-t.patch
 
-#CVE-2025-21728
-0034-bpf-Send-signals-asynchronously-if-preemptible.patch
-
 #CVE-2025-21727
 0035-padata-fix-UAF-in-padata_reorder.patch
-
-#CVE-2025-21726
-0036-padata-avoid-UAF-for-reorder_work.patch
-0037-padata-add-pd-get-put-refcnt-helper.patch
-
-#CVE-2025-21708
-0038-net-usb-rtl8150-enable-basic-endpoint-checking.patch
-
-#CVE-2025-21707
-0039-mptcp-consolidate-suboption-status.patch
-
-#CVE-2025-21704
-0040-usb-cdc-acm-Check-control-transfer-buffer-size-befor.patch
 
 #CVE-2025-21696
 0041-userfaultfd-move-userfaultfd_ctx-struct-to-header-fi.patch
@@ -478,32 +420,11 @@
 #CVE-2025-21693
 0044-mm-zswap-properly-synchronize-freeing-resources-duri.patch
 
-#CVE-2024-58085
-0045-tomoyo-don-t-emit-warning-in-tomoyo_write_control.patch
-
-#CVE-2024-58017
-0046-printk-Fix-signed-integer-overflow-when-defining-LOG.patch
-
 #CVE-2024-58016
 0047-safesetid-check-size-of-policy-writes.patch
 
-#CVE-2024-58005
-0048-tpm-Use-managed-allocation-for-bios-event-log.patch
-0049-tpm-Change-to-kvalloc-in-eventlog-acpi.c.patch
-
-#CVE-2024-58002
-0050-media-uvcvideo-Set-error_idx-during-ctrl_commit-erro.patch
-0051-media-uvcvideo-Refactor-iterators.patch
-0052-media-uvcvideo-Only-save-async-fh-if-success.patch
-0053-media-uvcvideo-Remove-dangling-pointers.patch
-0054-dmaengine-ioat-Free-up-__cleanup-name.patch
-0055-locking-Introduce-__cleanup-based-infrastructure.patch
-
 #CVE-2024-57993
 0056-HID-hid-thrustmaster-Fix-warning-in-thrustmaster_pro.patch
-
-#CVE-2024-57986
-0057-HID-core-Fix-assumption-that-Resolution-Multipliers-.patch
 
 #CVE-2024-57982
 0058-xfrm-add-TX-datapath-support-for-IPsec-packet-offloa.patch
@@ -515,12 +436,6 @@
 0064-xfrm-delete-not-used-number-of-external-headers.patch
 0065-Revert-xfrm-add-TX-datapath-support-for-IPsec-packet.patch
 
-#CVE-2024-57980
-0066-media-uvcvideo-Fix-double-free-in-error-path.patch
-
-#CVE-2024-57977
-0067-memcg-fix-soft-lockup-in-the-OOM-process.patch
-
 #CVE-2024-57888
 0068-workqueue-Add-rcu-lock-check-at-the-end-of-work-item.patch
 0069-workqueue-Update-lock-debugging-code.patch
@@ -531,11 +446,6 @@
 
 #CVE-2024-52559
 0072-drm-msm-gem-prevent-integer-overflow-in-msm_ioctl_ge.patch
-
-#CVE-2022-49728
-0079-ipv6-pass-full-cork-into-__ip6_append_data.patch
-0080-udp6-pass-flow-in-ip6_make_skb-together-with-cork.patch
-0081-ipv6-Fix-signed-integer-overflow-in-__ip6_append_dat.patch
 
 #CVE-2022-49699
 0082-filemap-Handle-sibling-entries-in-filemap_get_read_b.patch
@@ -570,25 +480,6 @@
 0093-x86-mce-Do-not-use-memset-to-clear-the-banks-bitmaps.patch
 0094-x86-mce-Move-the-tainting-outside-of-the-noinstr-reg.patch
 0095-x86-mce-Work-around-an-erratum-on-fast-string-copy-i.patch
-
-##CVE-2025-21762
-0096-arp-use-RCU-protection-in-arp_xmit.patch
-
-#CVE-2025-21765
-0097-ipv6-use-RCU-protection-in-ip6_default_advmss.patch
-
-#CVE-2025-21764
-0098-ndisc-use-RCU-protection-in-ndisc_alloc_skb.patch
-
-#CVE-2025-21763
-0099-neighbour-delete-redundant-judgment-statements.patch
-0100-neighbour-use-RCU-protection-in-__neigh_notify.patch
-
-#CVE-2025-21760
-0101-ndisc-extend-RCU-protection-in-ndisc_send_skb.patch
-
-#CVE-2025-21758
-0102-ipv6-mcast-add-RCU-protection-to-mld_newpack.patch
 
 #CVE-2025-21759
 0103-ipv6-optimise-dst-refcounting-on-skb-init.patch
