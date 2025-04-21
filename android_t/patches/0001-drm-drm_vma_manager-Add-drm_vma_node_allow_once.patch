@@ -1,0 +1,148 @@
+From a22f5868f3a639639a6f976aad363a09afba0feb Mon Sep 17 00:00:00 2001
+From: Nirmoy Das <nirmoy.das@intel.com>
+Date: Tue, 17 Jan 2023 18:52:35 +0100
+Subject: [PATCH] drm/drm_vma_manager: Add drm_vma_node_allow_once()
+
+Currently there is no easy way for a drm driver to safely check and allow
+drm_vma_offset_node for a drm file just once. Allow drm drivers to call
+non-refcounted version of drm_vma_node_allow() so that a driver doesn't
+need to keep track of each drm_vma_node_allow() to call subsequent
+drm_vma_node_revoke() to prevent memory leak.
+
+Cc: Maarten Lankhorst <maarten.lankhorst@linux.intel.com>
+Cc: Maxime Ripard <mripard@kernel.org>
+Cc: Thomas Zimmermann <tzimmermann@suse.de>
+Cc: David Airlie <airlied@gmail.com>
+Cc: Daniel Vetter <daniel@ffwll.ch>
+Cc: Tvrtko Ursulin <tvrtko.ursulin@linux.intel.com>
+Cc: Andi Shyti <andi.shyti@linux.intel.com>
+
+Suggested-by: Chris Wilson <chris.p.wilson@intel.com>
+Signed-off-by: Nirmoy Das <nirmoy.das@intel.com>
+Reviewed-by: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Reviewed-by: Andi Shyti <andi.shyti@linux.intel.com>
+Link: https://lore.kernel.org/r/20230117175236.22317-1-nirmoy.das@intel.com
+Signed-off-by: Maxime Ripard <maxime@cerno.tech>
+---
+ drivers/gpu/drm/drm_vma_manager.c | 76 ++++++++++++++++++++++---------
+ include/drm/drm_vma_manager.h     |  1 +
+ 2 files changed, 55 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_vma_manager.c b/drivers/gpu/drm/drm_vma_manager.c
+index 7de37f8c68fd..83229a031af0 100644
+--- a/drivers/gpu/drm/drm_vma_manager.c
++++ b/drivers/gpu/drm/drm_vma_manager.c
+@@ -240,27 +240,8 @@ void drm_vma_offset_remove(struct drm_vma_offset_manager *mgr,
+ }
+ EXPORT_SYMBOL(drm_vma_offset_remove);
+ 
+-/**
+- * drm_vma_node_allow - Add open-file to list of allowed users
+- * @node: Node to modify
+- * @tag: Tag of file to remove
+- *
+- * Add @tag to the list of allowed open-files for this node. If @tag is
+- * already on this list, the ref-count is incremented.
+- *
+- * The list of allowed-users is preserved across drm_vma_offset_add() and
+- * drm_vma_offset_remove() calls. You may even call it if the node is currently
+- * not added to any offset-manager.
+- *
+- * You must remove all open-files the same number of times as you added them
+- * before destroying the node. Otherwise, you will leak memory.
+- *
+- * This is locked against concurrent access internally.
+- *
+- * RETURNS:
+- * 0 on success, negative error code on internal failure (out-of-mem)
+- */
+-int drm_vma_node_allow(struct drm_vma_offset_node *node, struct drm_file *tag)
++static int vma_node_allow(struct drm_vma_offset_node *node,
++			  struct drm_file *tag, bool ref_counted)
+ {
+ 	struct rb_node **iter;
+ 	struct rb_node *parent = NULL;
+@@ -282,7 +263,8 @@ int drm_vma_node_allow(struct drm_vma_offset_node *node, struct drm_file *tag)
+ 		entry = rb_entry(*iter, struct drm_vma_offset_file, vm_rb);
+ 
+ 		if (tag == entry->vm_tag) {
+-			entry->vm_count++;
++			if (ref_counted)
++				entry->vm_count++;
+ 			goto unlock;
+ 		} else if (tag > entry->vm_tag) {
+ 			iter = &(*iter)->rb_right;
+@@ -307,8 +289,58 @@ int drm_vma_node_allow(struct drm_vma_offset_node *node, struct drm_file *tag)
+ 	kfree(new);
+ 	return ret;
+ }
++
++/**
++ * drm_vma_node_allow - Add open-file to list of allowed users
++ * @node: Node to modify
++ * @tag: Tag of file to remove
++ *
++ * Add @tag to the list of allowed open-files for this node. If @tag is
++ * already on this list, the ref-count is incremented.
++ *
++ * The list of allowed-users is preserved across drm_vma_offset_add() and
++ * drm_vma_offset_remove() calls. You may even call it if the node is currently
++ * not added to any offset-manager.
++ *
++ * You must remove all open-files the same number of times as you added them
++ * before destroying the node. Otherwise, you will leak memory.
++ *
++ * This is locked against concurrent access internally.
++ *
++ * RETURNS:
++ * 0 on success, negative error code on internal failure (out-of-mem)
++ */
++int drm_vma_node_allow(struct drm_vma_offset_node *node, struct drm_file *tag)
++{
++	return vma_node_allow(node, tag, true);
++}
+ EXPORT_SYMBOL(drm_vma_node_allow);
+ 
++/**
++ * drm_vma_node_allow_once - Add open-file to list of allowed users
++ * @node: Node to modify
++ * @tag: Tag of file to remove
++ *
++ * Add @tag to the list of allowed open-files for this node.
++ *
++ * The list of allowed-users is preserved across drm_vma_offset_add() and
++ * drm_vma_offset_remove() calls. You may even call it if the node is currently
++ * not added to any offset-manager.
++ *
++ * This is not ref-counted unlike drm_vma_node_allow() hence drm_vma_node_revoke()
++ * should only be called once after this.
++ *
++ * This is locked against concurrent access internally.
++ *
++ * RETURNS:
++ * 0 on success, negative error code on internal failure (out-of-mem)
++ */
++int drm_vma_node_allow_once(struct drm_vma_offset_node *node, struct drm_file *tag)
++{
++	return vma_node_allow(node, tag, false);
++}
++EXPORT_SYMBOL(drm_vma_node_allow_once);
++
+ /**
+  * drm_vma_node_revoke - Remove open-file from list of allowed users
+  * @node: Node to modify
+diff --git a/include/drm/drm_vma_manager.h b/include/drm/drm_vma_manager.h
+index 4f8c35206f7c..6c2a2f21dbf0 100644
+--- a/include/drm/drm_vma_manager.h
++++ b/include/drm/drm_vma_manager.h
+@@ -74,6 +74,7 @@ void drm_vma_offset_remove(struct drm_vma_offset_manager *mgr,
+ 			   struct drm_vma_offset_node *node);
+ 
+ int drm_vma_node_allow(struct drm_vma_offset_node *node, struct drm_file *tag);
++int drm_vma_node_allow_once(struct drm_vma_offset_node *node, struct drm_file *tag);
+ void drm_vma_node_revoke(struct drm_vma_offset_node *node,
+ 			 struct drm_file *tag);
+ bool drm_vma_node_is_allowed(struct drm_vma_offset_node *node,
+-- 
+2.25.1
+

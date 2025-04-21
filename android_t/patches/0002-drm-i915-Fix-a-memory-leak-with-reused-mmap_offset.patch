@@ -1,0 +1,44 @@
+From 65f7aa71110cf5c4db2f003865a6651e5ee2874d Mon Sep 17 00:00:00 2001
+From: Nirmoy Das <nirmoy.das@intel.com>
+Date: Tue, 17 Jan 2023 18:52:36 +0100
+Subject: [PATCH 2/2] drm/i915: Fix a memory leak with reused mmap_offset
+
+drm_vma_node_allow() and drm_vma_node_revoke() should be called in
+balanced pairs. We call drm_vma_node_allow() once per-file everytime a
+user calls mmap_offset, but only call drm_vma_node_revoke once per-file
+on each mmap_offset. As the mmap_offset is reused by the client, the
+per-file vm_count may remain non-zero and the rbtree leaked.
+
+Call drm_vma_node_allow_once() instead to prevent that memory leak.
+
+Cc: Tvrtko Ursulin <tvrtko.ursulin@linux.intel.com>
+Cc: Andi Shyti <andi.shyti@linux.intel.com>
+
+Signed-off-by: Nirmoy Das <nirmoy.das@intel.com>
+Fixes: 786555987207 ("drm/i915/gem: Store mmap_offsets in an rbtree rather than a plain list")
+Reported-by: Chuansheng Liu <chuansheng.liu@intel.com>
+Reported-by: Mirsad Todorovac <mirsad.todorovac@alu.unizg.hr>
+Reviewed-by: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Reviewed-by: Andi Shyti <andi.shyti@linux.intel.com>
+Link: https://lore.kernel.org/r/20230117175236.22317-2-nirmoy.das@intel.com
+Signed-off-by: Maxime Ripard <maxime@cerno.tech>
+---
+ drivers/gpu/drm/i915/gem/i915_gem_mman.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/i915/gem/i915_gem_mman.c b/drivers/gpu/drm/i915/gem/i915_gem_mman.c
+index 691ad3965541..d83b86d82ae1 100644
+--- a/drivers/gpu/drm/i915/gem/i915_gem_mman.c
++++ b/drivers/gpu/drm/i915/gem/i915_gem_mman.c
+@@ -715,7 +715,7 @@ mmap_offset_attach(struct drm_i915_gem_object *obj,
+ 	GEM_BUG_ON(lookup_mmo(obj, mmap_type) != mmo);
+ out:
+ 	if (file)
+-		drm_vma_node_allow(&mmo->vma_node, file);
++		drm_vma_node_allow_once(&mmo->vma_node, file);
+ 	return mmo;
+ 
+ err:
+-- 
+2.25.1
+

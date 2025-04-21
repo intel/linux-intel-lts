@@ -1,0 +1,54 @@
+From 6e64dc22197846d92d45944b20632a7b82767ade Mon Sep 17 00:00:00 2001
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Sun, 29 Jan 2023 12:09:45 +0800
+Subject: [PATCH] mm: memcg: fix NULL pointer in
+ mem_cgroup_track_foreign_dirty_slowpath()
+
+As commit 18365225f044 ("hwpoison, memcg: forcibly uncharge LRU pages"),
+hwpoison will forcibly uncharg a LRU hwpoisoned page, the folio_memcg
+could be NULl, then, mem_cgroup_track_foreign_dirty_slowpath() could
+occurs a NULL pointer dereference, let's do not record the foreign
+writebacks for folio memcg is null in mem_cgroup_track_foreign_dirty() to
+fix it.
+
+Link: https://lkml.kernel.org/r/20230129040945.180629-1-wangkefeng.wang@huawei.com
+Fixes: 97b27821b485 ("writeback, memcg: Implement foreign dirty flushing")
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Reported-by: Ma Wupeng <mawupeng1@huawei.com>
+Tested-by: Miko Larsson <mikoxyzzz@gmail.com>
+Acked-by: Michal Hocko <mhocko@suse.com>
+Cc: Jan Kara <jack@suse.cz>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Kefeng Wang <wangkefeng.wang@huawei.com>
+Cc: Ma Wupeng <mawupeng1@huawei.com>
+Cc: Naoya Horiguchi <naoya.horiguchi@nec.com>
+Cc: Shakeel Butt <shakeelb@google.com>
+Cc: Tejun Heo <tj@kernel.org>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+ include/linux/memcontrol.h | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/memcontrol.h b/include/linux/memcontrol.h
+index 2fc3bff48f75..1d447056c559 100644
+--- a/include/linux/memcontrol.h
++++ b/include/linux/memcontrol.h
+@@ -1639,10 +1639,13 @@ void mem_cgroup_track_foreign_dirty_slowpath(struct page *page,
+ static inline void mem_cgroup_track_foreign_dirty(struct page *page,
+ 						  struct bdi_writeback *wb)
+ {
++	struct mem_cgroup *memcg;
++
+ 	if (mem_cgroup_disabled())
+ 		return;
+ 
+-	if (unlikely(&page_memcg(page)->css != wb->memcg_css))
++	memcg = page_memcg(page);
++	if (unlikely(memcg && &memcg->css != wb->memcg_css))
+ 		mem_cgroup_track_foreign_dirty_slowpath(page, wb);
+ }
+ 
+-- 
+2.25.1
+

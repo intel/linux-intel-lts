@@ -1,0 +1,185 @@
+From 015b09949cd09740569304535a5c32c199b36805 Mon Sep 17 00:00:00 2001
+From: John Harrison <John.C.Harrison@Intel.com>
+Date: Thu, 26 Jan 2023 16:28:36 -0800
+Subject: [PATCH] drm/i915: Fix request ref counting during error capture &
+ debugfs dump
+
+When GuC support was added to error capture, the reference counting
+around the request object was broken. Fix it up.
+
+The context based search manages the spinlocking around the search
+internally. So it needs to grab the reference count internally as
+well. The execlist only request based search relies on external
+locking, so it needs an external reference count but within the
+spinlock not outside it.
+
+The only other caller of the context based search is the code for
+dumping engine state to debugfs. That code wasn't previously getting
+an explicit reference at all as it does everything while holding the
+execlist specific spinlock. So, that needs updaing as well as that
+spinlock doesn't help when using GuC submission. Rather than trying to
+conditionally get/put depending on submission model, just change it to
+always do the get/put.
+
+v2: Explicitly document adding an extra blank line in some dense code
+(Andy Shevchenko). Fix multiple potential null pointer derefs in case
+of no request found (some spotted by Tvrtko, but there was more!).
+Also fix a leaked request in case of !started and another in
+__guc_reset_context now that intel_context_find_active_request is
+actually reference counting the returned request.
+v3: Add a _get suffix to intel_context_find_active_request now that it
+grabs a reference (Daniele).
+v4: Split the intel_guc_find_hung_context change to a separate patch
+and rename intel_context_find_active_request_get to
+intel_context_get_active_request (Tvrtko).
+v5: s/locking/reference counting/ in commit message (Tvrtko)
+
+Fixes: dc0dad365c5e ("drm/i915/guc: Fix for error capture after full GPU reset with GuC")
+Fixes: 573ba126aef3 ("drm/i915/guc: Capture error state on context reset")
+Signed-off-by: John Harrison <John.C.Harrison@Intel.com>
+Reviewed-by: Daniele Ceraolo Spurio <daniele.ceraolospurio@intel.com>
+Acked-by: Tvrtko Ursulin <tvrtko.ursulin@intel.com>
+Cc: Matthew Brost <matthew.brost@intel.com>
+Cc: Jani Nikula <jani.nikula@linux.intel.com>
+Cc: Joonas Lahtinen <joonas.lahtinen@linux.intel.com>
+Cc: Rodrigo Vivi <rodrigo.vivi@intel.com>
+Cc: Andrzej Hajda <andrzej.hajda@intel.com>
+Cc: Matthew Auld <matthew.auld@intel.com>
+Cc: Matt Roper <matthew.d.roper@intel.com>
+Cc: Umesh Nerlige Ramappa <umesh.nerlige.ramappa@intel.com>
+Cc: Michael Cheng <michael.cheng@intel.com>
+Cc: Lucas De Marchi <lucas.demarchi@intel.com>
+Cc: Tejas Upadhyay <tejaskumarx.surendrakumar.upadhyay@intel.com>
+Cc: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Cc: Aravind Iddamsetty <aravind.iddamsetty@intel.com>
+Cc: Alan Previn <alan.previn.teres.alexis@intel.com>
+Cc: Bruce Chang <yu.bruce.chang@intel.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20230127002842.3169194-3-John.C.Harrison@Intel.com
+(cherry picked from commit 3700e353781e27f1bc7222f51f2cc36cbeb9b4ec)
+Signed-off-by: Rodrigo Vivi <rodrigo.vivi@intel.com>
+---
+ drivers/gpu/drm/i915/gt/intel_context.c           | 4 +++-
+ drivers/gpu/drm/i915/gt/intel_context.h           | 3 +--
+ drivers/gpu/drm/i915/gt/intel_engine_cs.c         | 6 +++++-
+ drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c | 4 ++--
+ drivers/gpu/drm/i915/i915_gpu_error.c             | 6 +++++-
+ 5 files changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/gt/intel_context.c b/drivers/gpu/drm/i915/gt/intel_context.c
+index 17ca4dc4d0cb..b4c7b878d06c 100644
+--- a/drivers/gpu/drm/i915/gt/intel_context.c
++++ b/drivers/gpu/drm/i915/gt/intel_context.c
+@@ -515,7 +515,7 @@ struct i915_request *intel_context_create_request(struct intel_context *ce)
+ 	return rq;
+ }
+ 
+-struct i915_request *intel_context_find_active_request(struct intel_context *ce)
++struct i915_request *intel_context_get_active_request(struct intel_context *ce)
+ {
+ 	struct i915_request *rq, *active = NULL;
+ 	unsigned long flags;
+@@ -530,6 +530,8 @@ struct i915_request *intel_context_find_active_request(struct intel_context *ce)
+ 
+ 		active = rq;
+ 	}
++	if (active)
++		active = i915_request_get_rcu(active);
+ 	spin_unlock_irqrestore(&ce->guc_active.lock, flags);
+ 
+ 	return active;
+diff --git a/drivers/gpu/drm/i915/gt/intel_context.h b/drivers/gpu/drm/i915/gt/intel_context.h
+index c41098950746..87e5fb81ff5e 100644
+--- a/drivers/gpu/drm/i915/gt/intel_context.h
++++ b/drivers/gpu/drm/i915/gt/intel_context.h
+@@ -211,8 +211,7 @@ int intel_context_prepare_remote_request(struct intel_context *ce,
+ 
+ struct i915_request *intel_context_create_request(struct intel_context *ce);
+ 
+-struct i915_request *
+-intel_context_find_active_request(struct intel_context *ce);
++struct i915_request *intel_context_get_active_request(struct intel_context *ce);
+ 
+ static inline bool intel_context_is_barrier(const struct intel_context *ce)
+ {
+diff --git a/drivers/gpu/drm/i915/gt/intel_engine_cs.c b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
+index eb99441e0ada..44688e9fb8fe 100644
+--- a/drivers/gpu/drm/i915/gt/intel_engine_cs.c
++++ b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
+@@ -1762,9 +1762,11 @@ static void engine_dump_active_requests(struct intel_engine_cs *engine, struct d
+ 	if (guc) {
+ 		ce = intel_engine_get_hung_context(engine);
+ 		if (ce)
+-			hung_rq = intel_context_find_active_request(ce);
++			hung_rq = intel_context_get_active_request(ce);
+ 	} else {
+ 		hung_rq = intel_engine_execlist_find_hung_request(engine);
++		if (hung_rq)
++			hung_rq = i915_request_get_rcu(hung_rq);
+ 	}
+ 
+ 	if (hung_rq)
+@@ -1775,6 +1777,8 @@ static void engine_dump_active_requests(struct intel_engine_cs *engine, struct d
+ 	else
+ 		intel_engine_dump_active_requests(&engine->sched_engine->requests,
+ 						  hung_rq, m);
++	if (hung_rq)
++		i915_request_put(hung_rq);
+ }
+ 
+ void intel_engine_dump(struct intel_engine_cs *engine,
+diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c b/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c
+index 97b5ba2fc834..ca2cb5b29974 100644
+--- a/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c
++++ b/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c
+@@ -862,7 +862,7 @@ static void __guc_reset_context(struct intel_context *ce, bool stalled)
+ 	if (unlikely(skip))
+ 		goto out_put;
+ 
+-	rq = intel_context_find_active_request(ce);
++	rq = intel_context_get_active_request(ce);
+ 	if (!rq) {
+ 		head = ce->ring->tail;
+ 		stalled = false;
+@@ -875,7 +875,7 @@ static void __guc_reset_context(struct intel_context *ce, bool stalled)
+ 	GEM_BUG_ON(i915_active_is_idle(&ce->active));
+ 	head = intel_ring_wrap(ce->ring, rq->head);
+ 	__i915_request_reset(rq, stalled);
+-
++	i915_request_put(rq);
+ out_replay:
+ 	guc_reset_state(ce, head, stalled);
+ 	__unwind_incomplete_requests(ce);
+diff --git a/drivers/gpu/drm/i915/i915_gpu_error.c b/drivers/gpu/drm/i915/i915_gpu_error.c
+index d420565061df..d6f2583c11c3 100644
+--- a/drivers/gpu/drm/i915/i915_gpu_error.c
++++ b/drivers/gpu/drm/i915/i915_gpu_error.c
+@@ -1502,7 +1502,7 @@ capture_engine(struct intel_engine_cs *engine,
+ 	ce = intel_engine_get_hung_context(engine);
+ 	if (ce) {
+ 		intel_engine_clear_hung_context(engine);
+-		rq = intel_context_find_active_request(ce);
++		rq = intel_context_get_active_request(ce);
+ 		if (!rq || !i915_request_started(rq))
+ 			goto no_request_capture;
+ 	} else {
+@@ -1513,6 +1513,8 @@ capture_engine(struct intel_engine_cs *engine,
+ 		if (!intel_uc_uses_guc_submission(&engine->gt->uc)) {
+ 			spin_lock_irqsave(&engine->sched_engine->lock, flags);
+ 			rq = intel_engine_execlist_find_hung_request(engine);
++			if (rq)
++				rq = i915_request_get_rcu(rq);
+ 			spin_unlock_irqrestore(&engine->sched_engine->lock,
+ 					       flags);
+ 		}
+@@ -1522,6 +1524,8 @@ capture_engine(struct intel_engine_cs *engine,
+ 							    ATOMIC_MAYFAIL);
+ 	if (!capture) {
+ no_request_capture:
++		if (rq)
++			i915_request_put(rq);
+ 		kfree(ee);
+ 		return NULL;
+ 	}
+-- 
+2.25.1
+

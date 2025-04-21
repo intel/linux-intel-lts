@@ -1,0 +1,113 @@
+From 69026ad882f4d8d75a52070bc6777a64f130fdc3 Mon Sep 17 00:00:00 2001
+From: Yufen Yu <yuyufen@huawei.com>
+Date: Wed, 25 May 2022 17:43:36 +0800
+Subject: [PATCH 1/2] f2fs: add f2fs_init_write_merge_io function
+
+Almost all other initialization of variables in f2fs_fill_super are
+extraced to a single function. Also do it for write_io[], which can
+make code more clean.
+
+This patch just refactors the code, theres no functional change.
+
+Signed-off-by: Yufen Yu <yuyufen@huawei.com>
+Reviewed-by: Chao Yu <chao@kernel.org>
+[Jaegeuk Kim: clean up]
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/data.c  | 28 ++++++++++++++++++++++++++++
+ fs/f2fs/f2fs.h  |  1 +
+ fs/f2fs/super.c | 27 +++------------------------
+ 3 files changed, 32 insertions(+), 24 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 3cb4b773b382..98f1c2f8cc31 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -607,6 +607,34 @@ static bool __has_merged_page(struct bio *bio, struct inode *inode,
+ 	return false;
+ }
+ 
++int f2fs_init_write_merge_io(struct f2fs_sb_info *sbi)
++{
++	int i;
++
++	for (i = 0; i < NR_PAGE_TYPE; i++) {
++		int n = (i == META) ? 1 : NR_TEMP_TYPE;
++		int j;
++
++		sbi->write_io[i] = f2fs_kmalloc(sbi,
++				array_size(n, sizeof(struct f2fs_bio_info)),
++				GFP_KERNEL);
++		if (!sbi->write_io[i])
++			return -ENOMEM;
++
++		for (j = HOT; j < n; j++) {
++			init_f2fs_rwsem(&sbi->write_io[i][j].io_rwsem);
++			sbi->write_io[i][j].sbi = sbi;
++			sbi->write_io[i][j].bio = NULL;
++			spin_lock_init(&sbi->write_io[i][j].io_lock);
++			INIT_LIST_HEAD(&sbi->write_io[i][j].io_list);
++			INIT_LIST_HEAD(&sbi->write_io[i][j].bio_list);
++			init_f2fs_rwsem(&sbi->write_io[i][j].bio_list_lock);
++		}
++	}
++
++	return 0;
++}
++
+ static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
+ 				enum page_type type, enum temp_type temp)
+ {
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 3990d7ba179d..73ab4c2107f3 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -3770,6 +3770,7 @@ int f2fs_init_bio_entry_cache(void);
+ void f2fs_destroy_bio_entry_cache(void);
+ void f2fs_submit_bio(struct f2fs_sb_info *sbi,
+ 				struct bio *bio, enum page_type type);
++int f2fs_init_write_merge_io(struct f2fs_sb_info *sbi);
+ void f2fs_submit_merged_write(struct f2fs_sb_info *sbi, enum page_type type);
+ void f2fs_submit_merged_write_cond(struct f2fs_sb_info *sbi,
+ 				struct inode *inode, struct page *page,
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 098944ab6383..216255f18918 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -4199,30 +4199,9 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 	set_sbi_flag(sbi, SBI_POR_DOING);
+ 	spin_lock_init(&sbi->stat_lock);
+ 
+-	for (i = 0; i < NR_PAGE_TYPE; i++) {
+-		int n = (i == META) ? 1 : NR_TEMP_TYPE;
+-		int j;
+-
+-		sbi->write_io[i] =
+-			f2fs_kmalloc(sbi,
+-				     array_size(n,
+-						sizeof(struct f2fs_bio_info)),
+-				     GFP_KERNEL);
+-		if (!sbi->write_io[i]) {
+-			err = -ENOMEM;
+-			goto free_bio_info;
+-		}
+-
+-		for (j = HOT; j < n; j++) {
+-			init_f2fs_rwsem(&sbi->write_io[i][j].io_rwsem);
+-			sbi->write_io[i][j].sbi = sbi;
+-			sbi->write_io[i][j].bio = NULL;
+-			spin_lock_init(&sbi->write_io[i][j].io_lock);
+-			INIT_LIST_HEAD(&sbi->write_io[i][j].io_list);
+-			INIT_LIST_HEAD(&sbi->write_io[i][j].bio_list);
+-			init_f2fs_rwsem(&sbi->write_io[i][j].bio_list_lock);
+-		}
+-	}
++	err = f2fs_init_write_merge_io(sbi);
++	if (err)
++		goto free_bio_info;
+ 
+ 	init_f2fs_rwsem(&sbi->cp_rwsem);
+ 	init_f2fs_rwsem(&sbi->quota_sem);
+-- 
+2.25.1
+
