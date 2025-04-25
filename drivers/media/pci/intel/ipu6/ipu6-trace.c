@@ -891,6 +891,12 @@ int ipu_trace_buffer_dma_handle(struct device *dev, dma_addr_t *dma_handle)
 }
 EXPORT_SYMBOL_GPL(ipu_trace_buffer_dma_handle);
 
+bool is_ipu_trace_enable(void)
+{
+	return ipu_trace_enable;
+}
+EXPORT_SYMBOL_GPL(is_ipu_trace_enable);
+
 MODULE_AUTHOR("Samu Onkalo <samu.onkalo@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel ipu trace support");

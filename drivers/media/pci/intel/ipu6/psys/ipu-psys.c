@@ -52,6 +52,7 @@
 #include "ipu-psys.h"
 #include "ipu6-platform-regs.h"
 #include "ipu6-fw-com.h"
+#include "ipu6-trace.h"
 #endif
 
 static bool async_fw_init;
@@ -1998,7 +1999,7 @@ static void start_sp(struct ipu6_bus_device *adev)
 	val |= IPU6_PSYS_SPC_STATUS_START |
 	    IPU6_PSYS_SPC_STATUS_RUN |
 	    IPU6_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
-	val |= psys->icache_prefetch_sp ?
+	val |= (psys->icache_prefetch_sp || is_ipu_trace_enable()) ?
 	    IPU6_PSYS_SPC_STATUS_ICACHE_PREFETCH : 0;
 	writel(val, spc_regs_base + IPU6_PSYS_REG_SPC_STATUS_CTRL);
 }
@@ -2343,6 +2344,40 @@ out_unlock:
 	return rval;
 }
 #else
+struct ipu_trace_block psys_trace_blocks[] = {
+	{
+		.offset = IPU_TRACE_REG_PS_TRACE_UNIT_BASE,
+		.type = IPU_TRACE_BLOCK_TUN,
+	},
+	{
+		.offset = IPU_TRACE_REG_PS_SPC_EVQ_BASE,
+		.type = IPU_TRACE_BLOCK_TM,
+	},
+	{
+		.offset = IPU_TRACE_REG_PS_SPP0_EVQ_BASE,
+		.type = IPU_TRACE_BLOCK_TM,
+	},
+	{
+		.offset = IPU_TRACE_REG_PS_SPC_GPC_BASE,
+		.type = IPU_TRACE_BLOCK_GPC,
+	},
+	{
+		.offset = IPU_TRACE_REG_PS_SPP0_GPC_BASE,
+		.type = IPU_TRACE_BLOCK_GPC,
+	},
+	{
+		.offset = IPU_TRACE_REG_PS_MMU_GPC_BASE,
+		.type = IPU_TRACE_BLOCK_GPC,
+	},
+	{
+		.offset = IPU_TRACE_REG_PS_GPREG_TRACE_TIMER_RST_N,
+		.type = IPU_TRACE_TIMER_RST,
+	},
+	{
+		.type = IPU_TRACE_BLOCK_END,
+	}
+};
+
 static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 			   const struct auxiliary_device_id *auxdev_id)
 {
@@ -2487,6 +2522,9 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 	strscpy(psys->caps.dev_model, IPU6_MEDIA_DEV_MODEL_NAME,
 		sizeof(psys->caps.dev_model));
 
+	ipu_trace_init(adev->isp, psys->pdata->base, &auxdev->dev,
+		psys_trace_blocks);
+
 	mutex_unlock(&ipu_psys_mutex);
 
 	dev_info(dev, "psys probe minor: %d\n", minor);
@@ -2583,6 +2621,10 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
 	cdev_device_del(&psys->cdev, &psys->dev);
 
 	clear_bit(MINOR(psys->cdev.dev), ipu_psys_devices);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	ipu_trace_uninit(&auxdev->dev);
+#endif
 
 	mutex_unlock(&ipu_psys_mutex);
 

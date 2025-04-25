@@ -144,4 +144,5 @@ void ipu_trace_restore(struct device *dev);
 void ipu_trace_uninit(struct device *dev);
 void ipu_trace_stop(struct device *dev);
 int ipu_trace_buffer_dma_handle(struct device *dev, dma_addr_t *dma_handle);
+bool is_ipu_trace_enable(void);
 #endif
