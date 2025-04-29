@@ -1,0 +1,42 @@
+From 418697f05141ae3aaf825d45c28965019f84bf1f Mon Sep 17 00:00:00 2001
+From: Thadeu Lima de Souza Cascardo <cascardo@igalia.com>
+Date: Mon, 10 Feb 2025 13:16:22 -0600
+Subject: [PATCH 08/40] dlm: prevent NPD when writing a positive value to
+ event_done
+
+do_uevent returns the value written to event_done. In case it is a
+positive value, new_lockspace would undo all the work, and lockspace
+would not be set. __dlm_new_lockspace, however, would treat that
+positive value as a success due to commit 8511a2728ab8 ("dlm: fix use
+count with multiple joins").
+
+Down the line, device_create_lockspace would pass that NULL lockspace to
+dlm_find_lockspace_local, leading to a NULL pointer dereference.
+
+Treating such positive values as successes prevents the problem. Given
+this has been broken for so long, this is unlikely to break userspace
+expectations.
+
+Fixes: 8511a2728ab8 ("dlm: fix use count with multiple joins")
+Signed-off-by: Thadeu Lima de Souza Cascardo <cascardo@igalia.com>
+Signed-off-by: David Teigland <teigland@redhat.com>
+---
+ fs/dlm/lockspace.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/dlm/lockspace.c b/fs/dlm/lockspace.c
+index 8afac6e2dff0..1929327ffbe1 100644
+--- a/fs/dlm/lockspace.c
++++ b/fs/dlm/lockspace.c
+@@ -576,7 +576,7 @@ static int new_lockspace(const char *name, const char *cluster,
+ 	   lockspace to start running (via sysfs) in dlm_ls_start(). */
+ 
+ 	error = do_uevent(ls, 1);
+-	if (error)
++	if (error < 0)
+ 		goto out_recoverd;
+ 
+ 	/* wait until recovery is successful or failed */
+-- 
+2.25.1
+

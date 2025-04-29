@@ -1,0 +1,108 @@
+From 1cb42376c3bb339074fd4d72232156af50dbd0a8 Mon Sep 17 00:00:00 2001
+From: Ojaswin Mujoo <ojaswin@linux.ibm.com>
+Date: Tue, 18 Mar 2025 13:22:55 +0530
+Subject: [PATCH 31/40] ext4: define ext4_journal_destroy wrapper
+
+Define an ext4 wrapper over jbd2_journal_destroy to make sure we
+have consistent behavior during journal destruction. This will also
+come useful in the next patch where we add some ext4 specific logic
+in the destroy path.
+
+Reviewed-by: Jan Kara <jack@suse.cz>
+Reviewed-by: Baokun Li <libaokun1@huawei.com>
+Signed-off-by: Ojaswin Mujoo <ojaswin@linux.ibm.com>
+Link: https://patch.msgid.link/c3ba78c5c419757e6d5f2d8ebb4a8ce9d21da86a.1742279837.git.ojaswin@linux.ibm.com
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/ext4_jbd2.h | 14 ++++++++++++++
+ fs/ext4/super.c     | 16 ++++++----------
+ 2 files changed, 20 insertions(+), 10 deletions(-)
+
+diff --git a/fs/ext4/ext4_jbd2.h b/fs/ext4/ext4_jbd2.h
+index 0c77697d5e90..930778e507cc 100644
+--- a/fs/ext4/ext4_jbd2.h
++++ b/fs/ext4/ext4_jbd2.h
+@@ -513,4 +513,18 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
+ 	return 1;
+ }
+ 
++/*
++ * Pass journal explicitly as it may not be cached in the sbi->s_journal in some
++ * cases
++ */
++static inline int ext4_journal_destroy(struct ext4_sb_info *sbi, journal_t *journal)
++{
++	int err = 0;
++
++	err = jbd2_journal_destroy(journal);
++	sbi->s_journal = NULL;
++
++	return err;
++}
++
+ #endif	/* _EXT4_JBD2_H */
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 4291ab3c20be..f26816854dd5 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1312,8 +1312,7 @@ static void ext4_put_super(struct super_block *sb)
+ 
+ 	if (sbi->s_journal) {
+ 		aborted = is_journal_aborted(sbi->s_journal);
+-		err = jbd2_journal_destroy(sbi->s_journal);
+-		sbi->s_journal = NULL;
++		err = ext4_journal_destroy(sbi, sbi->s_journal);
+ 		if ((err < 0) && !aborted) {
+ 			ext4_abort(sb, -err, "Couldn't clean up the journal");
+ 		}
+@@ -4947,8 +4946,7 @@ static int ext4_load_and_init_journal(struct super_block *sb,
+ out:
+ 	/* flush s_sb_upd_work before destroying the journal. */
+ 	flush_work(&sbi->s_sb_upd_work);
+-	jbd2_journal_destroy(sbi->s_journal);
+-	sbi->s_journal = NULL;
++	ext4_journal_destroy(sbi, sbi->s_journal);
+ 	return -EINVAL;
+ }
+ 
+@@ -5635,8 +5633,7 @@ failed_mount8: __maybe_unused
+ 	if (sbi->s_journal) {
+ 		/* flush s_sb_upd_work before journal destroy. */
+ 		flush_work(&sbi->s_sb_upd_work);
+-		jbd2_journal_destroy(sbi->s_journal);
+-		sbi->s_journal = NULL;
++		ext4_journal_destroy(sbi, sbi->s_journal);
+ 	}
+ failed_mount3a:
+ 	ext4_es_unregister_shrinker(sbi);
+@@ -5944,7 +5941,7 @@ static journal_t *ext4_open_dev_journal(struct super_block *sb,
+ 	return journal;
+ 
+ out_journal:
+-	jbd2_journal_destroy(journal);
++	ext4_journal_destroy(EXT4_SB(sb), journal);
+ out_bdev:
+ 	bdev_fput(bdev_file);
+ 	return ERR_PTR(errno);
+@@ -6061,8 +6058,7 @@ static int ext4_load_journal(struct super_block *sb,
+ 	EXT4_SB(sb)->s_journal = journal;
+ 	err = ext4_clear_journal_err(sb, es);
+ 	if (err) {
+-		EXT4_SB(sb)->s_journal = NULL;
+-		jbd2_journal_destroy(journal);
++		ext4_journal_destroy(EXT4_SB(sb), journal);
+ 		return err;
+ 	}
+ 
+@@ -6080,7 +6076,7 @@ static int ext4_load_journal(struct super_block *sb,
+ 	return 0;
+ 
+ err_out:
+-	jbd2_journal_destroy(journal);
++	ext4_journal_destroy(EXT4_SB(sb), journal);
+ 	return err;
+ }
+ 
+-- 
+2.25.1
+

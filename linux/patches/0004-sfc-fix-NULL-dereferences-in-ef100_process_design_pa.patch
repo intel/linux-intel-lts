@@ -1,0 +1,153 @@
+From 214946d3303ec684642d5be63b66b953c68dcc1b Mon Sep 17 00:00:00 2001
+From: Edward Cree <ecree.xilinx@gmail.com>
+Date: Tue, 1 Apr 2025 23:54:39 +0100
+Subject: [PATCH 04/40] sfc: fix NULL dereferences in
+ ef100_process_design_param()
+
+Since cited commit, ef100_probe_main() and hence also
+ ef100_check_design_params() run before efx->net_dev is created;
+ consequently, we cannot netif_set_tso_max_size() or _segs() at this
+ point.
+Move those netif calls to ef100_probe_netdev(), and also replace
+ netif_err within the design params code with pci_err.
+
+Reported-by: Kyungwook Boo <bookyungwook@gmail.com>
+Fixes: 98ff4c7c8ac7 ("sfc: Separate netdev probe/remove from PCI probe/remove")
+Signed-off-by: Edward Cree <ecree.xilinx@gmail.com>
+Reviewed-by: Michal Swiatkowski <michal.swiatkowski@linux.intel.com>
+Link: https://patch.msgid.link/20250401225439.2401047-1-edward.cree@amd.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/ethernet/sfc/ef100_netdev.c |  6 ++--
+ drivers/net/ethernet/sfc/ef100_nic.c    | 47 +++++++++++--------------
+ 2 files changed, 24 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/net/ethernet/sfc/ef100_netdev.c b/drivers/net/ethernet/sfc/ef100_netdev.c
+index d941f073f1eb..3a06e3b1bd6b 100644
+--- a/drivers/net/ethernet/sfc/ef100_netdev.c
++++ b/drivers/net/ethernet/sfc/ef100_netdev.c
+@@ -450,8 +450,9 @@ int ef100_probe_netdev(struct efx_probe_data *probe_data)
+ 	net_dev->hw_enc_features |= efx->type->offload_features;
+ 	net_dev->vlan_features |= NETIF_F_HW_CSUM | NETIF_F_SG |
+ 				  NETIF_F_HIGHDMA | NETIF_F_ALL_TSO;
+-	netif_set_tso_max_segs(net_dev,
+-			       ESE_EF100_DP_GZ_TSO_MAX_HDR_NUM_SEGS_DEFAULT);
++	nic_data = efx->nic_data;
++	netif_set_tso_max_size(efx->net_dev, nic_data->tso_max_payload_len);
++	netif_set_tso_max_segs(efx->net_dev, nic_data->tso_max_payload_num_segs);
+ 
+ 	rc = efx_ef100_init_datapath_caps(efx);
+ 	if (rc < 0)
+@@ -477,7 +478,6 @@ int ef100_probe_netdev(struct efx_probe_data *probe_data)
+ 	/* Don't fail init if RSS setup doesn't work. */
+ 	efx_mcdi_push_default_indir_table(efx, efx->n_rx_channels);
+ 
+-	nic_data = efx->nic_data;
+ 	rc = ef100_get_mac_address(efx, net_dev->perm_addr, CLIENT_HANDLE_SELF,
+ 				   efx->type->is_vf);
+ 	if (rc)
+diff --git a/drivers/net/ethernet/sfc/ef100_nic.c b/drivers/net/ethernet/sfc/ef100_nic.c
+index 6da06931187d..5b1bdcac81d9 100644
+--- a/drivers/net/ethernet/sfc/ef100_nic.c
++++ b/drivers/net/ethernet/sfc/ef100_nic.c
+@@ -887,8 +887,7 @@ static int ef100_process_design_param(struct efx_nic *efx,
+ 	case ESE_EF100_DP_GZ_TSO_MAX_HDR_NUM_SEGS:
+ 		/* We always put HDR_NUM_SEGS=1 in our TSO descriptors */
+ 		if (!reader->value) {
+-			netif_err(efx, probe, efx->net_dev,
+-				  "TSO_MAX_HDR_NUM_SEGS < 1\n");
++			pci_err(efx->pci_dev, "TSO_MAX_HDR_NUM_SEGS < 1\n");
+ 			return -EOPNOTSUPP;
+ 		}
+ 		return 0;
+@@ -901,32 +900,28 @@ static int ef100_process_design_param(struct efx_nic *efx,
+ 		 */
+ 		if (!reader->value || reader->value > EFX_MIN_DMAQ_SIZE ||
+ 		    EFX_MIN_DMAQ_SIZE % (u32)reader->value) {
+-			netif_err(efx, probe, efx->net_dev,
+-				  "%s size granularity is %llu, can't guarantee safety\n",
+-				  reader->type == ESE_EF100_DP_GZ_RXQ_SIZE_GRANULARITY ? "RXQ" : "TXQ",
+-				  reader->value);
++			pci_err(efx->pci_dev,
++				"%s size granularity is %llu, can't guarantee safety\n",
++				reader->type == ESE_EF100_DP_GZ_RXQ_SIZE_GRANULARITY ? "RXQ" : "TXQ",
++				reader->value);
+ 			return -EOPNOTSUPP;
+ 		}
+ 		return 0;
+ 	case ESE_EF100_DP_GZ_TSO_MAX_PAYLOAD_LEN:
+ 		nic_data->tso_max_payload_len = min_t(u64, reader->value,
+ 						      GSO_LEGACY_MAX_SIZE);
+-		netif_set_tso_max_size(efx->net_dev,
+-				       nic_data->tso_max_payload_len);
+ 		return 0;
+ 	case ESE_EF100_DP_GZ_TSO_MAX_PAYLOAD_NUM_SEGS:
+ 		nic_data->tso_max_payload_num_segs = min_t(u64, reader->value, 0xffff);
+-		netif_set_tso_max_segs(efx->net_dev,
+-				       nic_data->tso_max_payload_num_segs);
+ 		return 0;
+ 	case ESE_EF100_DP_GZ_TSO_MAX_NUM_FRAMES:
+ 		nic_data->tso_max_frames = min_t(u64, reader->value, 0xffff);
+ 		return 0;
+ 	case ESE_EF100_DP_GZ_COMPAT:
+ 		if (reader->value) {
+-			netif_err(efx, probe, efx->net_dev,
+-				  "DP_COMPAT has unknown bits %#llx, driver not compatible with this hw\n",
+-				  reader->value);
++			pci_err(efx->pci_dev,
++				"DP_COMPAT has unknown bits %#llx, driver not compatible with this hw\n",
++				reader->value);
+ 			return -EOPNOTSUPP;
+ 		}
+ 		return 0;
+@@ -946,10 +941,10 @@ static int ef100_process_design_param(struct efx_nic *efx,
+ 		 * So the value of this shouldn't matter.
+ 		 */
+ 		if (reader->value != ESE_EF100_DP_GZ_VI_STRIDES_DEFAULT)
+-			netif_dbg(efx, probe, efx->net_dev,
+-				  "NIC has other than default VI_STRIDES (mask "
+-				  "%#llx), early probing might use wrong one\n",
+-				  reader->value);
++			pci_dbg(efx->pci_dev,
++				"NIC has other than default VI_STRIDES (mask "
++				"%#llx), early probing might use wrong one\n",
++				reader->value);
+ 		return 0;
+ 	case ESE_EF100_DP_GZ_RX_MAX_RUNT:
+ 		/* Driver doesn't look at L2_STATUS:LEN_ERR bit, so we don't
+@@ -961,9 +956,9 @@ static int ef100_process_design_param(struct efx_nic *efx,
+ 		/* Host interface says "Drivers should ignore design parameters
+ 		 * that they do not recognise."
+ 		 */
+-		netif_dbg(efx, probe, efx->net_dev,
+-			  "Ignoring unrecognised design parameter %u\n",
+-			  reader->type);
++		pci_dbg(efx->pci_dev,
++			"Ignoring unrecognised design parameter %u\n",
++			reader->type);
+ 		return 0;
+ 	}
+ }
+@@ -999,13 +994,13 @@ static int ef100_check_design_params(struct efx_nic *efx)
+ 	 */
+ 	if (reader.state != EF100_TLV_TYPE) {
+ 		if (reader.state == EF100_TLV_TYPE_CONT)
+-			netif_err(efx, probe, efx->net_dev,
+-				  "truncated design parameter (incomplete type %u)\n",
+-				  reader.type);
++			pci_err(efx->pci_dev,
++				"truncated design parameter (incomplete type %u)\n",
++				reader.type);
+ 		else
+-			netif_err(efx, probe, efx->net_dev,
+-				  "truncated design parameter %u\n",
+-				  reader.type);
++			pci_err(efx->pci_dev,
++				"truncated design parameter %u\n",
++				reader.type);
+ 		rc = -EIO;
+ 	}
+ out:
+-- 
+2.25.1
+

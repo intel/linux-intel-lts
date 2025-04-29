@@ -1,0 +1,61 @@
+From a7feb0e9dda0ebb66c810ad9bd0bbeb2823bd89f Mon Sep 17 00:00:00 2001
+From: Wang Liang <wangliang74@huawei.com>
+Date: Fri, 21 Mar 2025 17:03:53 +0800
+Subject: [PATCH 21/40] net: fix NULL pointer dereference in l3mdev_l3_rcv
+
+When delete l3s ipvlan:
+
+    ip link del link eth0 ipvlan1 type ipvlan mode l3s
+
+This may cause a null pointer dereference:
+
+    Call trace:
+     ip_rcv_finish+0x48/0xd0
+     ip_rcv+0x5c/0x100
+     __netif_receive_skb_one_core+0x64/0xb0
+     __netif_receive_skb+0x20/0x80
+     process_backlog+0xb4/0x204
+     napi_poll+0xe8/0x294
+     net_rx_action+0xd8/0x22c
+     __do_softirq+0x12c/0x354
+
+This is because l3mdev_l3_rcv() visit dev->l3mdev_ops after
+ipvlan_l3s_unregister() assign the dev->l3mdev_ops to NULL. The process
+like this:
+
+    (CPU1)                     | (CPU2)
+    l3mdev_l3_rcv()            |
+      check dev->priv_flags:   |
+        master = skb->dev;     |
+                               |
+                               | ipvlan_l3s_unregister()
+                               |   set dev->priv_flags
+                               |   dev->l3mdev_ops = NULL;
+                               |
+      visit master->l3mdev_ops |
+
+To avoid this by do not set dev->l3mdev_ops when unregister l3s ipvlan.
+
+Suggested-by: David Ahern <dsahern@kernel.org>
+Fixes: c675e06a98a4 ("ipvlan: decouple l3s mode dependencies from other modes")
+Signed-off-by: Wang Liang <wangliang74@huawei.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20250321090353.1170545-1-wangliang74@huawei.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/ipvlan/ipvlan_l3s.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/net/ipvlan/ipvlan_l3s.c b/drivers/net/ipvlan/ipvlan_l3s.c
+index d5b05e803219..ca35a50bb640 100644
+--- a/drivers/net/ipvlan/ipvlan_l3s.c
++++ b/drivers/net/ipvlan/ipvlan_l3s.c
+@@ -224,5 +224,4 @@ void ipvlan_l3s_unregister(struct ipvl_port *port)
+ 
+ 	dev->priv_flags &= ~IFF_L3MDEV_RX_HANDLER;
+ 	ipvlan_unregister_nf_hook(read_pnet(&port->pnet));
+-	dev->l3mdev_ops = NULL;
+ }
+-- 
+2.25.1
+

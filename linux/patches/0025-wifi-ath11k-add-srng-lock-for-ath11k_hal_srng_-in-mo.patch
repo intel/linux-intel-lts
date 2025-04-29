@@ -1,0 +1,102 @@
+From c83d55b475cf25357f6fdc5bc1a08ad42ebf5017 Mon Sep 17 00:00:00 2001
+From: Kang Yang <quic_kangyang@quicinc.com>
+Date: Thu, 19 Dec 2024 19:05:31 +0800
+Subject: [PATCH 25/40] wifi: ath11k: add srng->lock for ath11k_hal_srng_* in
+ monitor mode
+
+ath11k_hal_srng_* should be used with srng->lock to protect srng data.
+
+For ath11k_dp_rx_mon_dest_process() and ath11k_dp_full_mon_process_rx(),
+they use ath11k_hal_srng_* for many times but never call srng->lock.
+
+So when running (full) monitor mode, warning will occur:
+RIP: 0010:ath11k_hal_srng_dst_peek+0x18/0x30 [ath11k]
+Call Trace:
+ ? ath11k_hal_srng_dst_peek+0x18/0x30 [ath11k]
+ ath11k_dp_rx_process_mon_status+0xc45/0x1190 [ath11k]
+ ? idr_alloc_u32+0x97/0xd0
+ ath11k_dp_rx_process_mon_rings+0x32a/0x550 [ath11k]
+ ath11k_dp_service_srng+0x289/0x5a0 [ath11k]
+ ath11k_pcic_ext_grp_napi_poll+0x30/0xd0 [ath11k]
+ __napi_poll+0x30/0x1f0
+ net_rx_action+0x198/0x320
+ __do_softirq+0xdd/0x319
+
+So add srng->lock for them to avoid such warnings.
+
+Inorder to fetch the srng->lock, should change srng's definition from
+'void' to 'struct hal_srng'. And initialize them elsewhere to prevent
+one line of code from being too long. This is consistent with other ring
+process functions, such as ath11k_dp_process_rx().
+
+Tested-on: WCN6855 hw2.0 PCI WLAN.HSP.1.1-03125-QCAHSPSWPL_V1_V2_SILICONZ_LITE-3.6510.30
+Tested-on: QCN9074 hw1.0 PCI WLAN.HK.2.7.0.1-01744-QCAHKSWPL_SILICONZ-1
+
+Fixes: d5c65159f289 ("ath11k: driver for Qualcomm IEEE 802.11ax devices")
+Signed-off-by: Kang Yang <quic_kangyang@quicinc.com>
+Acked-by: Jeff Johnson <quic_jjohnson@quicinc.com>
+Link: https://patch.msgid.link/20241219110531.2096-3-quic_kangyang@quicinc.com
+Signed-off-by: Jeff Johnson <jeff.johnson@oss.qualcomm.com>
+---
+ drivers/net/wireless/ath/ath11k/dp_rx.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath11k/dp_rx.c b/drivers/net/wireless/ath/ath11k/dp_rx.c
+index c1a00d772263..03f7580cdf98 100644
+--- a/drivers/net/wireless/ath/ath11k/dp_rx.c
++++ b/drivers/net/wireless/ath/ath11k/dp_rx.c
+@@ -5147,7 +5147,7 @@ static void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id,
+ 	struct ath11k_mon_data *pmon = (struct ath11k_mon_data *)&dp->mon_data;
+ 	const struct ath11k_hw_hal_params *hal_params;
+ 	void *ring_entry;
+-	void *mon_dst_srng;
++	struct hal_srng *mon_dst_srng;
+ 	u32 ppdu_id;
+ 	u32 rx_bufs_used;
+ 	u32 ring_id;
+@@ -5164,6 +5164,7 @@ static void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id,
+ 
+ 	spin_lock_bh(&pmon->mon_lock);
+ 
++	spin_lock_bh(&mon_dst_srng->lock);
+ 	ath11k_hal_srng_access_begin(ar->ab, mon_dst_srng);
+ 
+ 	ppdu_id = pmon->mon_ppdu_info.ppdu_id;
+@@ -5222,6 +5223,7 @@ static void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id,
+ 								mon_dst_srng);
+ 	}
+ 	ath11k_hal_srng_access_end(ar->ab, mon_dst_srng);
++	spin_unlock_bh(&mon_dst_srng->lock);
+ 
+ 	spin_unlock_bh(&pmon->mon_lock);
+ 
+@@ -5611,7 +5613,7 @@ static int ath11k_dp_full_mon_process_rx(struct ath11k_base *ab, int mac_id,
+ 	struct hal_sw_mon_ring_entries *sw_mon_entries;
+ 	struct ath11k_pdev_mon_stats *rx_mon_stats;
+ 	struct sk_buff *head_msdu, *tail_msdu;
+-	void *mon_dst_srng = &ar->ab->hal.srng_list[dp->rxdma_mon_dst_ring.ring_id];
++	struct hal_srng *mon_dst_srng;
+ 	void *ring_entry;
+ 	u32 rx_bufs_used = 0, mpdu_rx_bufs_used;
+ 	int quota = 0, ret;
+@@ -5627,6 +5629,9 @@ static int ath11k_dp_full_mon_process_rx(struct ath11k_base *ab, int mac_id,
+ 		goto reap_status_ring;
+ 	}
+ 
++	mon_dst_srng = &ar->ab->hal.srng_list[dp->rxdma_mon_dst_ring.ring_id];
++	spin_lock_bh(&mon_dst_srng->lock);
++
+ 	ath11k_hal_srng_access_begin(ar->ab, mon_dst_srng);
+ 	while ((ring_entry = ath11k_hal_srng_dst_peek(ar->ab, mon_dst_srng))) {
+ 		head_msdu = NULL;
+@@ -5670,6 +5675,7 @@ static int ath11k_dp_full_mon_process_rx(struct ath11k_base *ab, int mac_id,
+ 	}
+ 
+ 	ath11k_hal_srng_access_end(ar->ab, mon_dst_srng);
++	spin_unlock_bh(&mon_dst_srng->lock);
+ 	spin_unlock_bh(&pmon->mon_lock);
+ 
+ 	if (rx_bufs_used) {
+-- 
+2.25.1
+

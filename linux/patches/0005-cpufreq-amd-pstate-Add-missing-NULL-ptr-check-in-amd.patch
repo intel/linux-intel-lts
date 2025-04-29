@@ -1,0 +1,35 @@
+From c83893acd97a48717723f7c174fcfbb9d4ac2637 Mon Sep 17 00:00:00 2001
+From: Dhananjay Ugwekar <dhananjay.ugwekar@amd.com>
+Date: Wed, 5 Feb 2025 11:25:21 +0000
+Subject: [PATCH 05/40] cpufreq/amd-pstate: Add missing NULL ptr check in
+ amd_pstate_update
+
+Check if policy is NULL before dereferencing it in amd_pstate_update.
+
+Fixes: e8f555daacd3 ("cpufreq/amd-pstate: fix setting policy current frequency value")
+Signed-off-by: Dhananjay Ugwekar <dhananjay.ugwekar@amd.com>
+Reviewed-by: Mario Limonciello <mario.limonciello@amd.com>
+Reviewed-by: Gautham R. Shenoy <gautham.shenoy@amd.com>
+Link: https://lore.kernel.org/r/20250205112523.201101-11-dhananjay.ugwekar@amd.com
+Signed-off-by: Mario Limonciello <mario.limonciello@amd.com>
+---
+ drivers/cpufreq/amd-pstate.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/cpufreq/amd-pstate.c b/drivers/cpufreq/amd-pstate.c
+index 9db5354fdb02..8df063df0d3e 100644
+--- a/drivers/cpufreq/amd-pstate.c
++++ b/drivers/cpufreq/amd-pstate.c
+@@ -482,6 +482,9 @@ static void amd_pstate_update(struct amd_cpudata *cpudata, u32 min_perf,
+ 	u32 nominal_perf = READ_ONCE(cpudata->nominal_perf);
+ 	u64 value = prev;
+ 
++	if (!policy)
++		return;
++
+ 	min_perf = clamp_t(unsigned long, min_perf, cpudata->min_limit_perf,
+ 			cpudata->max_limit_perf);
+ 	max_perf = clamp_t(unsigned long, max_perf, cpudata->min_limit_perf,
+-- 
+2.25.1
+

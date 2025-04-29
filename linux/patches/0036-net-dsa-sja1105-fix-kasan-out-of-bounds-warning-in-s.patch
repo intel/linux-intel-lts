@@ -1,0 +1,46 @@
+From 9d198745278258d5606afe84a20e6222baf5e62b Mon Sep 17 00:00:00 2001
+From: Vladimir Oltean <vladimir.oltean@nxp.com>
+Date: Tue, 18 Mar 2025 13:57:16 +0200
+Subject: [PATCH 36/40] net: dsa: sja1105: fix kasan out-of-bounds warning in
+ sja1105_table_delete_entry()
+
+There are actually 2 problems:
+- deleting the last element doesn't require the memmove of elements
+  [i + 1, end) over it. Actually, element i+1 is out of bounds.
+- The memmove itself should move size - i - 1 elements, because the last
+  element is out of bounds.
+
+The out-of-bounds element still remains out of bounds after being
+accessed, so the problem is only that we touch it, not that it becomes
+in active use. But I suppose it can lead to issues if the out-of-bounds
+element is part of an unmapped page.
+
+Fixes: 6666cebc5e30 ("net: dsa: sja1105: Add support for VLAN operations")
+Signed-off-by: Vladimir Oltean <vladimir.oltean@nxp.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20250318115716.2124395-4-vladimir.oltean@nxp.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/dsa/sja1105/sja1105_static_config.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/dsa/sja1105/sja1105_static_config.c b/drivers/net/dsa/sja1105/sja1105_static_config.c
+index baba204ad62f..2ac91fe2a79b 100644
+--- a/drivers/net/dsa/sja1105/sja1105_static_config.c
++++ b/drivers/net/dsa/sja1105/sja1105_static_config.c
+@@ -1921,8 +1921,10 @@ int sja1105_table_delete_entry(struct sja1105_table *table, int i)
+ 	if (i > table->entry_count)
+ 		return -ERANGE;
+ 
+-	memmove(entries + i * entry_size, entries + (i + 1) * entry_size,
+-		(table->entry_count - i) * entry_size);
++	if (i + 1 < table->entry_count) {
++		memmove(entries + i * entry_size, entries + (i + 1) * entry_size,
++			(table->entry_count - i - 1) * entry_size);
++	}
+ 
+ 	table->entry_count--;
+ 
+-- 
+2.25.1
+

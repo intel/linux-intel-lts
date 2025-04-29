@@ -1,0 +1,85 @@
+From 34ee69183ed798dd00d73545dcfaec19c511f022 Mon Sep 17 00:00:00 2001
+From: Michael Chan <michael.chan@broadcom.com>
+Date: Fri, 21 Mar 2025 14:16:38 -0700
+Subject: [PATCH 35/40] bnxt_en: Mask the bd_cnt field in the TX BD properly
+
+The bd_cnt field in the TX BD specifies the total number of BDs for
+the TX packet.  The bd_cnt field has 5 bits and the maximum number
+supported is 32 with the value 0.
+
+CONFIG_MAX_SKB_FRAGS can be modified and the total number of SKB
+fragments can approach or exceed the maximum supported by the chip.
+Add a macro to properly mask the bd_cnt field so that the value 32
+will be properly masked and set to 0 in the bd_cnd field.
+
+Without this patch, the out-of-range bd_cnt value will corrupt the
+TX BD and may cause TX timeout.
+
+The next patch will check for values exceeding 32.
+
+Fixes: 3948b05950fd ("net: introduce a config option to tweak MAX_SKB_FRAGS")
+Reviewed-by: Kalesh AP <kalesh-anakkur.purayil@broadcom.com>
+Reviewed-by: Somnath Kotur <somnath.kotur@broadcom.com>
+Reviewed-by: Andy Gospodarek <andrew.gospodarek@broadcom.com>
+Signed-off-by: Michael Chan <michael.chan@broadcom.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20250321211639.3812992-2-michael.chan@broadcom.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c     | 4 ++--
+ drivers/net/ethernet/broadcom/bnxt/bnxt.h     | 2 ++
+ drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c | 3 +--
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.c b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+index e7580df13229..329d656115f9 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -550,7 +550,7 @@ static netdev_tx_t bnxt_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 					TX_BD_FLAGS_LHINT_512_AND_SMALLER |
+ 					TX_BD_FLAGS_COAL_NOW |
+ 					TX_BD_FLAGS_PACKET_END |
+-					(2 << TX_BD_FLAGS_BD_CNT_SHIFT));
++					TX_BD_CNT(2));
+ 
+ 		if (skb->ip_summed == CHECKSUM_PARTIAL)
+ 			tx_push1->tx_bd_hsize_lflags =
+@@ -625,7 +625,7 @@ static netdev_tx_t bnxt_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 
+ 	dma_unmap_addr_set(tx_buf, mapping, mapping);
+ 	flags = (len << TX_BD_LEN_SHIFT) | TX_BD_TYPE_LONG_TX_BD |
+-		((last_frag + 2) << TX_BD_FLAGS_BD_CNT_SHIFT);
++		TX_BD_CNT(last_frag + 2);
+ 
+ 	txbd->tx_bd_haddr = cpu_to_le64(mapping);
+ 	txbd->tx_bd_opaque = SET_TX_OPAQUE(bp, txr, prod, 2 + last_frag);
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.h b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+index 1758edcd1db4..bd636c344a93 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.h
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+@@ -79,6 +79,8 @@ struct tx_bd {
+ #define TX_OPAQUE_PROD(bp, opq)	((TX_OPAQUE_IDX(opq) + TX_OPAQUE_BDS(opq)) &\
+ 				 (bp)->tx_ring_mask)
+ 
++#define TX_BD_CNT(n)	(((n) << TX_BD_FLAGS_BD_CNT_SHIFT) & TX_BD_FLAGS_BD_CNT)
++
+ struct tx_bd_ext {
+ 	__le32 tx_bd_hsize_lflags;
+ 	#define TX_BD_FLAGS_TCP_UDP_CHKSUM			(1 << 0)
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
+index 8726657f5cb9..33a33198b073 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
+@@ -48,8 +48,7 @@ struct bnxt_sw_tx_bd *bnxt_xmit_bd(struct bnxt *bp,
+ 		tx_buf->page = virt_to_head_page(xdp->data);
+ 
+ 	txbd = &txr->tx_desc_ring[TX_RING(bp, prod)][TX_IDX(prod)];
+-	flags = (len << TX_BD_LEN_SHIFT) |
+-		((num_frags + 1) << TX_BD_FLAGS_BD_CNT_SHIFT) |
++	flags = (len << TX_BD_LEN_SHIFT) | TX_BD_CNT(num_frags + 1) |
+ 		bnxt_lhint_arr[len >> 9];
+ 	txbd->tx_bd_len_flags_type = cpu_to_le32(flags);
+ 	txbd->tx_bd_opaque = SET_TX_OPAQUE(bp, txr, prod, 1 + num_frags);
+-- 
+2.25.1
+

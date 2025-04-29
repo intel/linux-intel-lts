@@ -1,0 +1,61 @@
+From 42fb51f8616c2a1f36ee195f323265226a4aa017 Mon Sep 17 00:00:00 2001
+From: Daeho Jeong <daehojeong@google.com>
+Date: Tue, 15 Oct 2024 09:54:27 -0700
+Subject: [PATCH 09/40] f2fs: decrease spare area for pinned files for zoned
+ devices
+
+Now we reclaim too much space before allocating pinned space for zoned
+devices.
+
+Signed-off-by: Daeho Jeong <daehojeong@google.com>
+Reviewed-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/file.c    | 3 ++-
+ fs/f2fs/gc.h      | 1 +
+ fs/f2fs/segment.c | 3 ++-
+ 3 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 71ddecaf771f..6b4d6edd6fe5 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -1794,7 +1794,8 @@ static int f2fs_expand_inode_data(struct inode *inode, loff_t offset,
+ 
+ 		map.m_len = sec_blks;
+ next_alloc:
+-		if (has_not_enough_free_secs(sbi, 0,
++		if (has_not_enough_free_secs(sbi, 0, f2fs_sb_has_blkzoned(sbi) ?
++			ZONED_PIN_SEC_REQUIRED_COUNT :
+ 			GET_SEC_FROM_SEG(sbi, overprovision_segments(sbi)))) {
+ 			f2fs_down_write(&sbi->gc_lock);
+ 			stat_inc_gc_call_count(sbi, FOREGROUND);
+diff --git a/fs/f2fs/gc.h b/fs/f2fs/gc.h
+index 2914b678bf8f..5c1eaf55e127 100644
+--- a/fs/f2fs/gc.h
++++ b/fs/f2fs/gc.h
+@@ -35,6 +35,7 @@
+ #define LIMIT_BOOST_ZONED_GC	25 /* percentage over total user space of boosted gc for zoned devices */
+ #define DEF_MIGRATION_WINDOW_GRANULARITY_ZONED	3
+ #define BOOST_GC_MULTIPLE	5
++#define ZONED_PIN_SEC_REQUIRED_COUNT	1
+ 
+ #define DEF_GC_FAILED_PINNED_FILES	2048
+ #define MAX_GC_FAILED_PINNED_FILES	USHRT_MAX
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index b9ffb2ee9548..f644b7521a9e 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -3240,7 +3240,8 @@ int f2fs_allocate_pinning_section(struct f2fs_sb_info *sbi)
+ 
+ 	if (f2fs_sb_has_blkzoned(sbi) && err == -EAGAIN && gc_required) {
+ 		f2fs_down_write(&sbi->gc_lock);
+-		err = f2fs_gc_range(sbi, 0, GET_SEGNO(sbi, FDEV(0).end_blk), true, 1);
++		err = f2fs_gc_range(sbi, 0, GET_SEGNO(sbi, FDEV(0).end_blk),
++				true, ZONED_PIN_SEC_REQUIRED_COUNT);
+ 		f2fs_up_write(&sbi->gc_lock);
+ 
+ 		gc_required = false;
+-- 
+2.25.1
+

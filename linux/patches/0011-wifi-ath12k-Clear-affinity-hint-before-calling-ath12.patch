@@ -1,0 +1,50 @@
+From 1cc7e83f83a16cf3a2641c7a4f0ff3b97bd4f779 Mon Sep 17 00:00:00 2001
+From: Manivannan Sadhasivam <manivannan.sadhasivam@linaro.org>
+Date: Tue, 25 Feb 2025 11:04:46 +0530
+Subject: [PATCH 11/40] wifi: ath12k: Clear affinity hint before calling
+ ath12k_pci_free_irq() in error path
+
+If a shared IRQ is used by the driver due to platform limitation, then the
+IRQ affinity hint is set right after the allocation of IRQ vectors in
+ath12k_pci_msi_alloc(). This does no harm unless one of the functions
+requesting the IRQ fails and attempt to free the IRQ.
+
+This may end up with a warning from the IRQ core that is expecting the
+affinity hint to be cleared before freeing the IRQ:
+
+kernel/irq/manage.c:
+
+	/* make sure affinity_hint is cleaned up */
+	if (WARN_ON_ONCE(desc->affinity_hint))
+		desc->affinity_hint = NULL;
+
+So to fix this issue, clear the IRQ affinity hint before calling
+ath12k_pci_free_irq() in the error path. The affinity will be cleared once
+again further down the error path due to code organization, but that does
+no harm.
+
+Fixes: a3012f206d07 ("wifi: ath12k: set IRQ affinity to CPU0 in case of one MSI vector")
+Signed-off-by: Manivannan Sadhasivam <manivannan.sadhasivam@linaro.org>
+Reviewed-by: Baochen Qiang <quic_bqiang@quicinc.com>
+Link: https://patch.msgid.link/20250225053447.16824-3-manivannan.sadhasivam@linaro.org
+Signed-off-by: Jeff Johnson <jeff.johnson@oss.qualcomm.com>
+---
+ drivers/net/wireless/ath/ath12k/pci.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index 2ff866e1d7d5..126d4815d014 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1496,6 +1496,8 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
+ 	return 0;
+ 
+ err_free_irq:
++	/* __free_irq() expects the caller to have cleared the affinity hint */
++	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
+ 	ath12k_pci_free_irq(ab);
+ 
+ err_ce_free:
+-- 
+2.25.1
+

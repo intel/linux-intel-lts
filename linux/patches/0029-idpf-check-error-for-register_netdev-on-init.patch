@@ -1,0 +1,97 @@
+From 89a26ecc6f7fa37ab80e9438df915c40028c923f Mon Sep 17 00:00:00 2001
+From: Emil Tantilov <emil.s.tantilov@intel.com>
+Date: Fri, 14 Feb 2025 09:18:16 -0800
+Subject: [PATCH 29/40] idpf: check error for register_netdev() on init
+
+Current init logic ignores the error code from register_netdev(),
+which will cause WARN_ON() on attempt to unregister it, if there was one,
+and there is no info for the user that the creation of the netdev failed.
+
+WARNING: CPU: 89 PID: 6902 at net/core/dev.c:11512 unregister_netdevice_many_notify+0x211/0x1a10
+...
+[ 3707.563641]  unregister_netdev+0x1c/0x30
+[ 3707.563656]  idpf_vport_dealloc+0x5cf/0xce0 [idpf]
+[ 3707.563684]  idpf_deinit_task+0xef/0x160 [idpf]
+[ 3707.563712]  idpf_vc_core_deinit+0x84/0x320 [idpf]
+[ 3707.563739]  idpf_remove+0xbf/0x780 [idpf]
+[ 3707.563769]  pci_device_remove+0xab/0x1e0
+[ 3707.563786]  device_release_driver_internal+0x371/0x530
+[ 3707.563803]  driver_detach+0xbf/0x180
+[ 3707.563816]  bus_remove_driver+0x11b/0x2a0
+[ 3707.563829]  pci_unregister_driver+0x2a/0x250
+
+Introduce an error check and log the vport number and error code.
+On removal make sure to check VPORT_REG_NETDEV flag prior to calling
+unregister and free on the netdev.
+
+Add local variables for idx, vport_config and netdev for readability.
+
+Fixes: 0fe45467a104 ("idpf: add create vport and netdev configuration")
+Suggested-by: Tony Nguyen <anthony.l.nguyen@intel.com>
+Signed-off-by: Emil Tantilov <emil.s.tantilov@intel.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Tested-by: Samuel Salin <Samuel.salin@intel.com>
+Signed-off-by: Tony Nguyen <anthony.l.nguyen@intel.com>
+---
+ drivers/net/ethernet/intel/idpf/idpf_lib.c | 31 +++++++++++++++-------
+ 1 file changed, 22 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/ethernet/intel/idpf/idpf_lib.c b/drivers/net/ethernet/intel/idpf/idpf_lib.c
+index a3d6b8f198a8..a055a47449f1 100644
+--- a/drivers/net/ethernet/intel/idpf/idpf_lib.c
++++ b/drivers/net/ethernet/intel/idpf/idpf_lib.c
+@@ -927,15 +927,19 @@ static int idpf_stop(struct net_device *netdev)
+ static void idpf_decfg_netdev(struct idpf_vport *vport)
+ {
+ 	struct idpf_adapter *adapter = vport->adapter;
++	u16 idx = vport->idx;
+ 
+ 	kfree(vport->rx_ptype_lkup);
+ 	vport->rx_ptype_lkup = NULL;
+ 
+-	unregister_netdev(vport->netdev);
+-	free_netdev(vport->netdev);
++	if (test_and_clear_bit(IDPF_VPORT_REG_NETDEV,
++			       adapter->vport_config[idx]->flags)) {
++		unregister_netdev(vport->netdev);
++		free_netdev(vport->netdev);
++	}
+ 	vport->netdev = NULL;
+ 
+-	adapter->netdevs[vport->idx] = NULL;
++	adapter->netdevs[idx] = NULL;
+ }
+ 
+ /**
+@@ -1536,13 +1540,22 @@ void idpf_init_task(struct work_struct *work)
+ 	}
+ 
+ 	for (index = 0; index < adapter->max_vports; index++) {
+-		if (adapter->netdevs[index] &&
+-		    !test_bit(IDPF_VPORT_REG_NETDEV,
+-			      adapter->vport_config[index]->flags)) {
+-			register_netdev(adapter->netdevs[index]);
+-			set_bit(IDPF_VPORT_REG_NETDEV,
+-				adapter->vport_config[index]->flags);
++		struct net_device *netdev = adapter->netdevs[index];
++		struct idpf_vport_config *vport_config;
++
++		vport_config = adapter->vport_config[index];
++
++		if (!netdev ||
++		    test_bit(IDPF_VPORT_REG_NETDEV, vport_config->flags))
++			continue;
++
++		err = register_netdev(netdev);
++		if (err) {
++			dev_err(&pdev->dev, "failed to register netdev for vport %d: %pe\n",
++				index, ERR_PTR(err));
++			continue;
+ 		}
++		set_bit(IDPF_VPORT_REG_NETDEV, vport_config->flags);
+ 	}
+ 
+ 	/* As all the required vports are created, clear the reset flag
+-- 
+2.25.1
+

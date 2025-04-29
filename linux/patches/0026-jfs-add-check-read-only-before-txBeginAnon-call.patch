@@ -1,0 +1,58 @@
+From 7b9ed6c111a8d25facfddf11419c33820f4d39c0 Mon Sep 17 00:00:00 2001
+From: Vasiliy Kovalev <kovalev@altlinux.org>
+Date: Tue, 24 Dec 2024 17:49:13 +0300
+Subject: [PATCH 26/40] jfs: add check read-only before txBeginAnon() call
+
+Added a read-only check before calling `txBeginAnon` in `extAlloc`
+and `extRecord`. This prevents modification attempts on a read-only
+mounted filesystem, avoiding potential errors or crashes.
+
+Call trace:
+ txBeginAnon+0xac/0x154
+ extAlloc+0xe8/0xdec fs/jfs/jfs_extent.c:78
+ jfs_get_block+0x340/0xb98 fs/jfs/inode.c:248
+ __block_write_begin_int+0x580/0x166c fs/buffer.c:2128
+ __block_write_begin fs/buffer.c:2177 [inline]
+ block_write_begin+0x98/0x11c fs/buffer.c:2236
+ jfs_write_begin+0x44/0x88 fs/jfs/inode.c:299
+
+Fixes: 1da177e4c3f4 ("Linux-2.6.12-rc2")
+Reported-by: syzbot+4e89b5368baba8324e07@syzkaller.appspotmail.com
+Link: https://syzkaller.appspot.com/bug?extid=4e89b5368baba8324e07
+Signed-off-by: Vasiliy Kovalev <kovalev@altlinux.org>
+Signed-off-by: Dave Kleikamp <dave.kleikamp@oracle.com>
+---
+ fs/jfs/jfs_extent.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/fs/jfs/jfs_extent.c b/fs/jfs/jfs_extent.c
+index 63d21822d309..46529bcc8297 100644
+--- a/fs/jfs/jfs_extent.c
++++ b/fs/jfs/jfs_extent.c
+@@ -74,6 +74,11 @@ extAlloc(struct inode *ip, s64 xlen, s64 pno, xad_t * xp, bool abnr)
+ 	int rc;
+ 	int xflag;
+ 
++	if (isReadOnly(ip)) {
++		jfs_error(ip->i_sb, "read-only filesystem\n");
++		return -EIO;
++	}
++
+ 	/* This blocks if we are low on resources */
+ 	txBeginAnon(ip->i_sb);
+ 
+@@ -253,6 +258,11 @@ int extRecord(struct inode *ip, xad_t * xp)
+ {
+ 	int rc;
+ 
++	if (isReadOnly(ip)) {
++		jfs_error(ip->i_sb, "read-only filesystem\n");
++		return -EIO;
++	}
++
+ 	txBeginAnon(ip->i_sb);
+ 
+ 	mutex_lock(&JFS_IP(ip)->commit_mutex);
+-- 
+2.25.1
+

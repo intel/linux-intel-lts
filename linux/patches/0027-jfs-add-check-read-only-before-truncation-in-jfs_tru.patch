@@ -1,0 +1,52 @@
+From 478fceb2b7ae0d241d83c56a727d8de14a99ade8 Mon Sep 17 00:00:00 2001
+From: Vasiliy Kovalev <kovalev@altlinux.org>
+Date: Tue, 24 Dec 2024 17:49:14 +0300
+Subject: [PATCH 27/40] jfs: add check read-only before truncation in
+ jfs_truncate_nolock()
+
+Added a check for "read-only" mode in the `jfs_truncate_nolock`
+function to avoid errors related to writing to a read-only
+filesystem.
+
+Call stack:
+
+block_write_begin() {
+  jfs_write_failed() {
+    jfs_truncate() {
+      jfs_truncate_nolock() {
+        txEnd() {
+          ...
+          log = JFS_SBI(tblk->sb)->log;
+          // (log == NULL)
+
+If the `isReadOnly(ip)` condition is triggered in
+`jfs_truncate_nolock`, the function execution will stop, and no
+further data modification will occur. Instead, the `xtTruncate`
+function will be called with the "COMMIT_WMAP" flag, preventing
+modifications in "read-only" mode.
+
+Fixes: 1da177e4c3f4 ("Linux-2.6.12-rc2")
+Reported-by: syzbot+4e89b5368baba8324e07@syzkaller.appspotmail.com
+Link: https://syzkaller.appspot.com/bug?extid=4e89b5368baba8324e07
+Signed-off-by: Vasiliy Kovalev <kovalev@altlinux.org>
+Signed-off-by: Dave Kleikamp <dave.kleikamp@oracle.com>
+---
+ fs/jfs/inode.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/jfs/inode.c b/fs/jfs/inode.c
+index 07cfdc440596..60fc92dee24d 100644
+--- a/fs/jfs/inode.c
++++ b/fs/jfs/inode.c
+@@ -369,7 +369,7 @@ void jfs_truncate_nolock(struct inode *ip, loff_t length)
+ 
+ 	ASSERT(length >= 0);
+ 
+-	if (test_cflag(COMMIT_Nolink, ip)) {
++	if (test_cflag(COMMIT_Nolink, ip) || isReadOnly(ip)) {
+ 		xtTruncate(0, ip, length, COMMIT_WMAP);
+ 		return;
+ 	}
+-- 
+2.25.1
+

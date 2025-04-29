@@ -1,0 +1,111 @@
+From 7de1104b8aa8e776fcc46a58397ce836a12f0772 Mon Sep 17 00:00:00 2001
+From: Dmitry Antipov <dmantipov@yandex.ru>
+Date: Thu, 7 Nov 2024 08:42:28 +0300
+Subject: [PATCH 02/40] jfs: reject on-disk inodes of an unsupported type
+
+Syzbot has reported the following BUG:
+
+kernel BUG at fs/inode.c:668!
+Oops: invalid opcode: 0000 [#1] PREEMPT SMP KASAN PTI
+CPU: 3 UID: 0 PID: 139 Comm: jfsCommit Not tainted 6.12.0-rc4-syzkaller-00085-g4e46774408d9 #0
+Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.3-3.fc41 04/01/2014
+RIP: 0010:clear_inode+0x168/0x190
+Code: 4c 89 f7 e8 ba fe e5 ff e9 61 ff ff ff 44 89 f1 80 e1 07 80 c1 03 38 c1 7c c1 4c 89 f7 e8 90 ff e5 ff eb b7
+ 0b e8 01 5d 7f ff 90 0f 0b e8 f9 5c 7f ff 90 0f 0b e8 f1 5c 7f
+RSP: 0018:ffffc900027dfae8 EFLAGS: 00010093
+RAX: ffffffff82157a87 RBX: 0000000000000001 RCX: ffff888104d4b980
+RDX: 0000000000000000 RSI: 0000000000000001 RDI: 0000000000000000
+RBP: ffffc900027dfc90 R08: ffffffff82157977 R09: fffff520004fbf38
+R10: dffffc0000000000 R11: fffff520004fbf38 R12: dffffc0000000000
+R13: ffff88811315bc00 R14: ffff88811315bda8 R15: ffff88811315bb80
+FS:  0000000000000000(0000) GS:ffff888135f00000(0000) knlGS:0000000000000000
+CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+CR2: 00005565222e0578 CR3: 0000000026ef0000 CR4: 00000000000006f0
+Call Trace:
+ <TASK>
+ ? __die_body+0x5f/0xb0
+ ? die+0x9e/0xc0
+ ? do_trap+0x15a/0x3a0
+ ? clear_inode+0x168/0x190
+ ? do_error_trap+0x1dc/0x2c0
+ ? clear_inode+0x168/0x190
+ ? __pfx_do_error_trap+0x10/0x10
+ ? report_bug+0x3cd/0x500
+ ? handle_invalid_op+0x34/0x40
+ ? clear_inode+0x168/0x190
+ ? exc_invalid_op+0x38/0x50
+ ? asm_exc_invalid_op+0x1a/0x20
+ ? clear_inode+0x57/0x190
+ ? clear_inode+0x167/0x190
+ ? clear_inode+0x168/0x190
+ ? clear_inode+0x167/0x190
+ jfs_evict_inode+0xb5/0x440
+ ? __pfx_jfs_evict_inode+0x10/0x10
+ evict+0x4ea/0x9b0
+ ? __pfx_evict+0x10/0x10
+ ? iput+0x713/0xa50
+ txUpdateMap+0x931/0xb10
+ ? __pfx_txUpdateMap+0x10/0x10
+ jfs_lazycommit+0x49a/0xb80
+ ? _raw_spin_unlock_irqrestore+0x8f/0x140
+ ? lockdep_hardirqs_on+0x99/0x150
+ ? __pfx_jfs_lazycommit+0x10/0x10
+ ? __pfx_default_wake_function+0x10/0x10
+ ? __kthread_parkme+0x169/0x1d0
+ ? __pfx_jfs_lazycommit+0x10/0x10
+ kthread+0x2f2/0x390
+ ? __pfx_jfs_lazycommit+0x10/0x10
+ ? __pfx_kthread+0x10/0x10
+ ret_from_fork+0x4d/0x80
+ ? __pfx_kthread+0x10/0x10
+ ret_from_fork_asm+0x1a/0x30
+ </TASK>
+
+This happens when 'clear_inode()' makes an attempt to finalize an underlying
+JFS inode of unknown type. According to JFS layout description from
+https://jfs.sourceforge.net/project/pub/jfslayout.pdf, inode types from 5 to
+15 are reserved for future extensions and should not be encountered on a valid
+filesystem. So add an extra check for valid inode type in 'copy_from_dinode()'.
+
+Reported-by: syzbot+ac2116e48989e84a2893@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=ac2116e48989e84a2893
+Fixes: 79ac5a46c5c1 ("jfs_lookup(): don't bother with . or ..")
+Signed-off-by: Dmitry Antipov <dmantipov@yandex.ru>
+Signed-off-by: Dave Kleikamp <dave.kleikamp@oracle.com>
+---
+ fs/jfs/jfs_imap.c | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jfs/jfs_imap.c b/fs/jfs/jfs_imap.c
+index 8ddc14c56501..ecb8e05b8b84 100644
+--- a/fs/jfs/jfs_imap.c
++++ b/fs/jfs/jfs_imap.c
+@@ -3029,14 +3029,23 @@ static void duplicateIXtree(struct super_block *sb, s64 blkno,
+  *
+  * RETURN VALUES:
+  *	0	- success
+- *	-ENOMEM	- insufficient memory
++ *	-EINVAL	- unexpected inode type
+  */
+ static int copy_from_dinode(struct dinode * dip, struct inode *ip)
+ {
+ 	struct jfs_inode_info *jfs_ip = JFS_IP(ip);
+ 	struct jfs_sb_info *sbi = JFS_SBI(ip->i_sb);
++	int fileset = le32_to_cpu(dip->di_fileset);
++
++	switch (fileset) {
++	case AGGR_RESERVED_I: case AGGREGATE_I: case BMAP_I:
++	case LOG_I: case BADBLOCK_I: case FILESYSTEM_I:
++		break;
++	default:
++		return -EINVAL;
++	}
+ 
+-	jfs_ip->fileset = le32_to_cpu(dip->di_fileset);
++	jfs_ip->fileset = fileset;
+ 	jfs_ip->mode2 = le32_to_cpu(dip->di_mode);
+ 	jfs_set_inode_flags(ip);
+ 
+-- 
+2.25.1
+

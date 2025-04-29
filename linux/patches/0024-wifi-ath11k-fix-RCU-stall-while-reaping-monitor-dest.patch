@@ -1,0 +1,61 @@
+From 83e66d8cc95d21f6e4873c2fb96ba06a2e17fe86 Mon Sep 17 00:00:00 2001
+From: P Praneesh <quic_ppranees@quicinc.com>
+Date: Thu, 19 Dec 2024 19:05:30 +0800
+Subject: [PATCH 24/40] wifi: ath11k: fix RCU stall while reaping monitor
+ destination ring
+
+While processing the monitor destination ring, MSDUs are reaped from the
+link descriptor based on the corresponding buf_id.
+
+However, sometimes the driver cannot obtain a valid buffer corresponding
+to the buf_id received from the hardware. This causes an infinite loop
+in the destination processing, resulting in a kernel crash.
+
+kernel log:
+ath11k_pci 0000:58:00.0: data msdu_pop: invalid buf_id 309
+ath11k_pci 0000:58:00.0: data dp_rx_monitor_link_desc_return failed
+ath11k_pci 0000:58:00.0: data msdu_pop: invalid buf_id 309
+ath11k_pci 0000:58:00.0: data dp_rx_monitor_link_desc_return failed
+
+Fix this by skipping the problematic buf_id and reaping the next entry,
+replacing the break with the next MSDU processing.
+
+Tested-on: WCN6855 hw2.0 PCI WLAN.HSP.1.1-03125-QCAHSPSWPL_V1_V2_SILICONZ_LITE-3.6510.30
+Tested-on: QCN9074 hw1.0 PCI WLAN.HK.2.7.0.1-01744-QCAHKSWPL_SILICONZ-1
+
+Fixes: d5c65159f289 ("ath11k: driver for Qualcomm IEEE 802.11ax devices")
+Signed-off-by: P Praneesh <quic_ppranees@quicinc.com>
+Signed-off-by: Kang Yang <quic_kangyang@quicinc.com>
+Acked-by: Kalle Valo <kvalo@kernel.org>
+Acked-by: Jeff Johnson <quic_jjohnson@quicinc.com>
+Link: https://patch.msgid.link/20241219110531.2096-2-quic_kangyang@quicinc.com
+Signed-off-by: Jeff Johnson <jeff.johnson@oss.qualcomm.com>
+---
+ drivers/net/wireless/ath/ath11k/dp_rx.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath11k/dp_rx.c b/drivers/net/wireless/ath/ath11k/dp_rx.c
+index 40b52d12b432..c1a00d772263 100644
+--- a/drivers/net/wireless/ath/ath11k/dp_rx.c
++++ b/drivers/net/wireless/ath/ath11k/dp_rx.c
+@@ -4782,7 +4782,7 @@ ath11k_dp_rx_mon_mpdu_pop(struct ath11k *ar, int mac_id,
+ 			if (!msdu) {
+ 				ath11k_dbg(ar->ab, ATH11K_DBG_DATA,
+ 					   "msdu_pop: invalid buf_id %d\n", buf_id);
+-				break;
++				goto next_msdu;
+ 			}
+ 			rxcb = ATH11K_SKB_RXCB(msdu);
+ 			if (!rxcb->unmapped) {
+@@ -5409,7 +5409,7 @@ ath11k_dp_rx_full_mon_mpdu_pop(struct ath11k *ar,
+ 					   "full mon msdu_pop: invalid buf_id %d\n",
+ 					    buf_id);
+ 				spin_unlock_bh(&rx_ring->idr_lock);
+-				break;
++				goto next_msdu;
+ 			}
+ 			idr_remove(&rx_ring->bufs_idr, buf_id);
+ 			spin_unlock_bh(&rx_ring->idr_lock);
+-- 
+2.25.1
+

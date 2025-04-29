@@ -1,0 +1,62 @@
+From 31ea5fb2dc95a5ddc9ad67d53b5d1f151775f194 Mon Sep 17 00:00:00 2001
+From: Su Yue <glass.su@suse.com>
+Date: Mon, 3 Mar 2025 11:39:18 +0800
+Subject: [PATCH 15/40] md/md-bitmap: fix wrong bitmap_limit for clustermd when
+ write sb
+
+In clustermd, separate write-intent-bitmaps are used for each cluster
+node:
+
+0                    4k                     8k                    12k
+-------------------------------------------------------------------
+| idle                | md super            | bm super [0] + bits |
+| bm bits[0, contd]   | bm super[1] + bits  | bm bits[1, contd]   |
+| bm super[2] + bits  | bm bits [2, contd]  | bm super[3] + bits  |
+| bm bits [3, contd]  |                     |                     |
+
+So in node 1, pg_index in __write_sb_page() could equal to
+bitmap->storage.file_pages. Then bitmap_limit will be calculated to
+0. md_super_write() will be called with 0 size.
+That means the first 4k sb area of node 1 will never be updated
+through filemap_write_page().
+This bug causes hang of mdadm/clustermd_tests/01r1_Grow_resize.
+
+Here use (pg_index % bitmap->storage.file_pages) to make calculation
+of bitmap_limit correct.
+
+Fixes: ab99a87542f1 ("md/md-bitmap: fix writing non bitmap pages")
+Signed-off-by: Su Yue <glass.su@suse.com>
+Reviewed-by: Heming Zhao <heming.zhao@suse.com>
+Link: https://lore.kernel.org/linux-raid/20250303033918.32136-1-glass.su@suse.com
+Signed-off-by: Yu Kuai <yukuai3@huawei.com>
+---
+ drivers/md/md-bitmap.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/md/md-bitmap.c b/drivers/md/md-bitmap.c
+index 2e3087556adb..4ab69fd1745a 100644
+--- a/drivers/md/md-bitmap.c
++++ b/drivers/md/md-bitmap.c
+@@ -426,8 +426,8 @@ static int __write_sb_page(struct md_rdev *rdev, struct bitmap *bitmap,
+ 	struct block_device *bdev;
+ 	struct mddev *mddev = bitmap->mddev;
+ 	struct bitmap_storage *store = &bitmap->storage;
+-	unsigned int bitmap_limit = (bitmap->storage.file_pages - pg_index) <<
+-		PAGE_SHIFT;
++	unsigned long num_pages = bitmap->storage.file_pages;
++	unsigned int bitmap_limit = (num_pages - pg_index % num_pages) << PAGE_SHIFT;
+ 	loff_t sboff, offset = mddev->bitmap_info.offset;
+ 	sector_t ps = pg_index * PAGE_SIZE / SECTOR_SIZE;
+ 	unsigned int size = PAGE_SIZE;
+@@ -436,7 +436,7 @@ static int __write_sb_page(struct md_rdev *rdev, struct bitmap *bitmap,
+ 
+ 	bdev = (rdev->meta_bdev) ? rdev->meta_bdev : rdev->bdev;
+ 	/* we compare length (page numbers), not page offset. */
+-	if ((pg_index - store->sb_index) == store->file_pages - 1) {
++	if ((pg_index - store->sb_index) == num_pages - 1) {
+ 		unsigned int last_page_size = store->bytes & (PAGE_SIZE - 1);
+ 
+ 		if (last_page_size == 0)
+-- 
+2.25.1
+

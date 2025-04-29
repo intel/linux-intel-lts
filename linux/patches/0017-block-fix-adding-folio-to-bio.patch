@@ -1,0 +1,60 @@
+From 48f663bd853954402f6dc0cf575df6ea4afedaa4 Mon Sep 17 00:00:00 2001
+From: Ming Lei <ming.lei@redhat.com>
+Date: Wed, 12 Mar 2025 22:51:36 +0800
+Subject: [PATCH 17/40] block: fix adding folio to bio
+
+>4GB folio is possible on some ARCHs, such as aarch64, 16GB hugepage
+is supported, then 'offset' of folio can't be held in 'unsigned int',
+cause warning in bio_add_folio_nofail() and IO failure.
+
+Fix it by adjusting 'page' & trimming 'offset' so that `->bi_offset` won't
+be overflow, and folio can be added to bio successfully.
+
+Fixes: ed9832bc08db ("block: introduce folio awareness and add a bigger size from folio")
+Cc: Kundan Kumar <kundan.kumar@samsung.com>
+Cc: Matthew Wilcox (Oracle) <willy@infradead.org>
+Cc: Christoph Hellwig <hch@lst.de>
+Cc: Luis Chamberlain <mcgrof@kernel.org>
+Cc: Gavin Shan <gshan@redhat.com>
+Signed-off-by: Ming Lei <ming.lei@redhat.com>
+Reviewed-by: Matthew Wilcox (Oracle) <willy@infradead.org>
+Link: https://lore.kernel.org/r/20250312145136.2891229-1-ming.lei@redhat.com
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ block/bio.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/block/bio.c b/block/bio.c
+index 43d4ae26f475..4e2b7849e619 100644
+--- a/block/bio.c
++++ b/block/bio.c
+@@ -1156,9 +1156,10 @@ EXPORT_SYMBOL(bio_add_page);
+ void bio_add_folio_nofail(struct bio *bio, struct folio *folio, size_t len,
+ 			  size_t off)
+ {
++	unsigned long nr = off / PAGE_SIZE;
++
+ 	WARN_ON_ONCE(len > UINT_MAX);
+-	WARN_ON_ONCE(off > UINT_MAX);
+-	__bio_add_page(bio, &folio->page, len, off);
++	__bio_add_page(bio, folio_page(folio, nr), len, off % PAGE_SIZE);
+ }
+ EXPORT_SYMBOL_GPL(bio_add_folio_nofail);
+ 
+@@ -1179,9 +1180,11 @@ EXPORT_SYMBOL_GPL(bio_add_folio_nofail);
+ bool bio_add_folio(struct bio *bio, struct folio *folio, size_t len,
+ 		   size_t off)
+ {
+-	if (len > UINT_MAX || off > UINT_MAX)
++	unsigned long nr = off / PAGE_SIZE;
++
++	if (len > UINT_MAX)
+ 		return false;
+-	return bio_add_page(bio, &folio->page, len, off) > 0;
++	return bio_add_page(bio, folio_page(folio, nr), len, off % PAGE_SIZE) > 0;
+ }
+ EXPORT_SYMBOL(bio_add_folio);
+ 
+-- 
+2.25.1
+
