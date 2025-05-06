@@ -1694,7 +1694,28 @@ static const struct dmi_system_id dmi_quirk_table[] = {
 		.callback = edp0_on_dp1_callback,
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "HP"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "HP EliteBook 645 14 inch G11 Notebook PC"),
+		},
+	},
+	{
+		.callback = edp0_on_dp1_callback,
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HP"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "HP EliteBook 665 16 inch G11 Notebook PC"),
+		},
+	},
+	{
+		.callback = edp0_on_dp1_callback,
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HP"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "HP ProBook 445 14 inch G11 Notebook PC"),
+		},
+	},
+	{
+		.callback = edp0_on_dp1_callback,
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HP"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "HP ProBook 465 16 inch G11 Notebook PC"),
 		},
 	},
 	{}
@@ -3195,16 +3216,16 @@ static void dm_gpureset_commit_state(struct dc_state *dc_state,
 	for (k = 0; k < dc_state->stream_count; k++) {
 		bundle->stream_update.stream = dc_state->streams[k];
 
-		for (m = 0; m < dc_state->stream_status->plane_count; m++) {
+		for (m = 0; m < dc_state->stream_status[k].plane_count; m++) {
 			bundle->surface_updates[m].surface =
-				dc_state->stream_status->plane_states[m];
+				dc_state->stream_status[k].plane_states[m];
 			bundle->surface_updates[m].surface->force_full_update =
 				true;
 		}
 
 		update_planes_and_stream_adapter(dm->dc,
 					 UPDATE_TYPE_FULL,
-					 dc_state->stream_status->plane_count,
+					 dc_state->stream_status[k].plane_count,
 					 dc_state->streams[k],
 					 &bundle->stream_update,
 					 bundle->surface_updates);
@@ -8458,14 +8479,39 @@ static void manage_dm_interrupts(struct amdgpu_device *adev,
 	int offdelay;
 
 	if (acrtc_state) {
-		if (amdgpu_ip_version(adev, DCE_HWIP, 0) <
-		    IP_VERSION(3, 5, 0) ||
-		    acrtc_state->stream->link->psr_settings.psr_version <
-		    DC_PSR_VERSION_UNSUPPORTED ||
-		    !(adev->flags & AMD_IS_APU)) {
-			timing = &acrtc_state->stream->timing;
+		timing = &acrtc_state->stream->timing;
 
-			/* at least 2 frames */
+		/*
+		 * Depending on when the HW latching event of double-buffered
+		 * registers happen relative to the PSR SDP deadline, and how
+		 * bad the Panel clock has drifted since the last ALPM off
+		 * event, there can be up to 3 frames of delay between sending
+		 * the PSR exit cmd to DMUB fw, and when the panel starts
+		 * displaying live frames.
+		 *
+		 * We can set:
+		 *
+		 * 20/100 * offdelay_ms = 3_frames_ms
+		 * => offdelay_ms = 5 * 3_frames_ms
+		 *
+		 * This ensures that `3_frames_ms` will only be experienced as a
+		 * 20% delay on top how long the display has been static, and
+		 * thus make the delay less perceivable.
+		 */
+		if (acrtc_state->stream->link->psr_settings.psr_version <
+		    DC_PSR_VERSION_UNSUPPORTED) {
+			offdelay = DIV64_U64_ROUND_UP((u64)5 * 3 * 10 *
+						      timing->v_total *
+						      timing->h_total,
+						      timing->pix_clk_100hz);
+			config.offdelay_ms = offdelay ?: 30;
+		} else if (amdgpu_ip_version(adev, DCE_HWIP, 0) <
+			   IP_VERSION(3, 5, 0) ||
+			   !(adev->flags & AMD_IS_APU)) {
+			/*
+			 * Older HW and DGPU have issues with instant off;
+			 * use a 2 frame offdelay.
+			 */
 			offdelay = DIV64_U64_ROUND_UP((u64)20 *
 						      timing->v_total *
 						      timing->h_total,
@@ -8473,6 +8519,8 @@ static void manage_dm_interrupts(struct amdgpu_device *adev,
 
 			config.offdelay_ms = offdelay ?: 30;
 		} else {
+			/* offdelay_ms = 0 will never disable vblank */
+			config.offdelay_ms = 1;
 			config.disable_immediate = true;
 		}
 
@@ -10725,6 +10773,9 @@ static bool should_reset_plane(struct drm_atomic_state *state,
 	 */
 	if (amdgpu_ip_version(adev, DCE_HWIP, 0) < IP_VERSION(3, 2, 0) &&
 	    state->allow_modeset)
+		return true;
+
+	if (amdgpu_in_reset(adev) && state->allow_modeset)
 		return true;
 
 	/* Exit early if we know that we're adding or removing the plane. */
