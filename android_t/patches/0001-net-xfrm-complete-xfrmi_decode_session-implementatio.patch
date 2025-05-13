@@ -1,0 +1,59 @@
+From 8745aaf118d62f2b936cffeae3ac37d69bf38895 Mon Sep 17 00:00:00 2001
+From: "Pan, Kris" <kris.pan@intel.com>
+Date: Thu, 8 May 2025 08:35:42 +0000
+Subject: [PATCH] net: xfrm: complete xfrmi_decode_session implementation
+
+Signed-off-by: Pan, Kris <kris.pan@intel.com>
+---
+ net/xfrm/xfrm_interface_core.c | 20 ++++++++++++++------
+ 1 file changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/net/xfrm/xfrm_interface_core.c b/net/xfrm/xfrm_interface_core.c
+index 240bfc65b4f73..403957fa33893 100644
+--- a/net/xfrm/xfrm_interface_core.c
++++ b/net/xfrm/xfrm_interface_core.c
+@@ -81,14 +81,15 @@ static struct xfrm_if *xfrmi_lookup(struct net *net, struct xfrm_state *x)
+ }
+ 
+ static bool xfrmi_decode_session(struct sk_buff *skb,
+-	                              unsigned short family,
+-                                struct xfrm_if_decode_session_result *res)
++				 unsigned short family,
++				 struct xfrm_if_decode_session_result *res)
+ {
+ 	struct net_device *dev;
++	struct xfrm_if *xi;
+ 	int ifindex = 0;
+ 
+ 	if (!secpath_exists(skb) || !skb->dev)
+-		return NULL;
++		return false;
+ 
+ 	switch (family) {
+ 	case AF_INET6:
+@@ -108,11 +109,18 @@ static bool xfrmi_decode_session(struct sk_buff *skb,
+ 	}
+ 
+ 	if (!dev || !(dev->flags & IFF_UP))
+-		return NULL;
++		return false;
+ 	if (dev->netdev_ops != &xfrmi_netdev_ops)
+-		return NULL;
++		return false;
++
++	xi = netdev_priv(dev);
++	res->net = xi->net;
+ 
+-	return netdev_priv(dev);
++	if (xi->p.collect_md)
++		res->if_id = xfrm_input_state(skb)->if_id;
++	else
++		res->if_id = xi->p.if_id;
++	return true;
+ }
+ 
+ static void xfrmi_link(struct xfrmi_net *xfrmn, struct xfrm_if *xi)
+-- 
+2.47.1
+
+

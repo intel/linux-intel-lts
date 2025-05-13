@@ -435,6 +435,7 @@
 0063-Fixing-CVE-backport-issue.patch
 0064-xfrm-delete-not-used-number-of-external-headers.patch
 0065-Revert-xfrm-add-TX-datapath-support-for-IPsec-packet.patch
+0001-net-xfrm-complete-xfrmi_decode_session-implementatio.patch
 
 #CVE-2024-57888
 0068-workqueue-Add-rcu-lock-check-at-the-end-of-work-item.patch
