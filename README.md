@@ -1,7 +1,14 @@
-This repository contains Intel's Linux LTS releases.
+# Linux Intel LTS Kernel
 
-Branch information
--------------------
+## Description
+
+This repository contains Intel's Linux LTS releases include Intel LTS source code releases, Preempt-rt kernel releases and CVE patch series releases.
+
+Note: This should only be used for Intel platform feature evaluation and not for production or deployment with commercial Linux distribution.
+
+## Branch information
+
+### Basic branch type
 
 [1]  Master ==> follows kernel.org master. updated periodically
 
@@ -21,18 +28,19 @@ Branch information
      lts-v4.19.44-base-190524T175309Z or lts-v4.19.44-android_q-190524T175309Z
 
      Please note: for CVE patches with config changes make sure that you regenerate kernel config using "make oldconfig"
+
 [8]  x.xxx/linux ==> upstream x.xxx LTS kernel + Intel patches, example: 6.12/linux
+
 [9]  x.xxx/linux-cve ==> CVE patches in quilt form, example: 6.12/linux-cve
-[10] x.xxx/preempt-rt ==> linux-stable-rt x.xxx-rtxxx + Intel patches, example: 6.12/preempt-rt
 
-Active branch list - Monthly update
-------------------------------------
+[10] x.xxx/preempt-rt ==> [linux-stable-rt](https://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-stable-rt.git/) x.xxx-rtxxx + Intel patches, example: 6.12/preempt-rt
+
+### Active branch list - Monthly update
 
 
-GPG Signed Releases
--------------------
+## GPG Signed Releases
 
-i) Check if a release tag is GPG-signed or not
+### Check if a release tag is GPG-signed or not
 
 if a tag is not signed, when you run ‘git tag -v <tag>’ command, you get the result as:
 
@@ -49,7 +57,7 @@ You can see ‘error: no signature found’ if the tag is not signed
 
 If the tag is signed - please follow the below steps to get the public key and verify the tag -
 
-ii) Download public key
+### Download public key
 
 Open https://keys.openpgp.org/, input Full Key ID (i.e., EB4D99E5113E284368955757F18D9D84E60D69E7), or,
 short Key ID (i.e., F18D9D84E60D69E7, the Last 16 digitals). or, the tagger email address(i.e., sys_oak@intel.com),
@@ -60,7 +68,7 @@ $ md5sum EB4D99E5113E284368955757F18D9D84E60D69E7.asc
 
 Once your checksum is correct, please do next step.
 
-iii) Configure your Linux Environment and verify the GPG signature of a tag ( one time setup)
+### Configure your Linux Environment and verify the GPG signature of a tag ( one time setup)
 
 After you get the right pub key, please import it:
 $ gpg --import EB4D99E5113E284368955757F18D9D84E60D69E7.asc
