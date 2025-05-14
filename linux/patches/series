@@ -72,9 +72,6 @@
 #CVE-2025-22127
 0012-f2fs-fix-potential-deadloop-in-prepare_compress_over.patch
 
-#CVE-2025-22126
-0013-md-fix-mddev-uaf-while-iterating-all_mddevs-list.patch
-
 #CVE-2025-22125
 0014-md-raid1-raid10-don-t-ignore-IO-flags.patch
 
@@ -149,3 +146,13 @@
 
 #CVE-2025-23129
 0040-wifi-ath11k-Clear-affinity-hint-before-calling-ath11.patch
+
+#CVE-2025-37746
+0001-perf-dwc_pcie-Qualify-RAS-DES-VSEC-Capability-by-Ven.patch
+0002-perf-dwc_pcie-fix-duplicate-pci_dev-devices.patch
+
+#CVE-2025-37743
+0003-wifi-ath12k-Avoid-memory-leak-while-enabling-statist.patch
+
+#CVE-2025-23155
+0004-net-stmmac-Fix-accessing-freed-irq-affinity_hint.patch

@@ -1,0 +1,58 @@
+From bac746ce085d3f94b4b25b3773ed34d7b71d24f4 Mon Sep 17 00:00:00 2001
+From: Qingfang Deng <dqfext@gmail.com>
+Date: Tue, 18 Mar 2025 11:24:23 +0800
+Subject: [PATCH 4/4] net: stmmac: Fix accessing freed irq affinity_hint
+
+The cpumask should not be a local variable, since its pointer is saved
+to irq_desc and may be accessed from procfs.
+To fix it, use the persistent mask cpumask_of(cpu#).
+
+Cc: stable@vger.kernel.org
+Fixes: 8deec94c6040 ("net: stmmac: set IRQ affinity hint for multi MSI vectors")
+Signed-off-by: Qingfang Deng <dqfext@gmail.com>
+Reviewed-by: Jacob Keller <jacob.e.keller@intel.com>
+Link: https://patch.msgid.link/20250318032424.112067-1-dqfext@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 11 ++++-------
+ 1 file changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index ade47f398e36..a1c1505271e0 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -3676,7 +3676,6 @@ static int stmmac_request_irq_multi_msi(struct net_device *dev)
+ {
+ 	struct stmmac_priv *priv = netdev_priv(dev);
+ 	enum request_irq_err irq_err;
+-	cpumask_t cpu_mask;
+ 	int irq_idx = 0;
+ 	char *int_name;
+ 	int ret;
+@@ -3805,9 +3804,8 @@ static int stmmac_request_irq_multi_msi(struct net_device *dev)
+ 			irq_idx = i;
+ 			goto irq_error;
+ 		}
+-		cpumask_clear(&cpu_mask);
+-		cpumask_set_cpu(i % num_online_cpus(), &cpu_mask);
+-		irq_set_affinity_hint(priv->rx_irq[i], &cpu_mask);
++		irq_set_affinity_hint(priv->rx_irq[i],
++				      cpumask_of(i % num_online_cpus()));
+ 	}
+ 
+ 	/* Request Tx MSI irq */
+@@ -3830,9 +3828,8 @@ static int stmmac_request_irq_multi_msi(struct net_device *dev)
+ 			irq_idx = i;
+ 			goto irq_error;
+ 		}
+-		cpumask_clear(&cpu_mask);
+-		cpumask_set_cpu(i % num_online_cpus(), &cpu_mask);
+-		irq_set_affinity_hint(priv->tx_irq[i], &cpu_mask);
++		irq_set_affinity_hint(priv->tx_irq[i],
++				      cpumask_of(i % num_online_cpus()));
+ 	}
+ 
+ 	return 0;
+-- 
+2.25.1
+

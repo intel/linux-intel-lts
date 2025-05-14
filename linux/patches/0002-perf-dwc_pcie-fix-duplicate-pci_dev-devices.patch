@@ -1,0 +1,74 @@
+From dd1f89d32da51dc2ba59c1cbc4b992334d13e9fe Mon Sep 17 00:00:00 2001
+From: Yunhui Cui <cuiyunhui@bytedance.com>
+Date: Thu, 20 Feb 2025 20:17:16 +0800
+Subject: [PATCH 2/4] perf/dwc_pcie: fix duplicate pci_dev devices
+
+During platform_device_register, wrongly using struct device
+pci_dev as platform_data caused a kmemdup copy of pci_dev. Worse
+still, accessing the duplicated device leads to list corruption as its
+mutex content (e.g., list, magic) remains the same as the original.
+
+Signed-off-by: Yunhui Cui <cuiyunhui@bytedance.com>
+Reviewed-by: Shuai Xue <xueshuai@linux.alibaba.com>
+Link: https://lore.kernel.org/r/20250220121716.50324-3-cuiyunhui@bytedance.com
+Signed-off-by: Will Deacon <will@kernel.org>
+---
+ drivers/perf/dwc_pcie_pmu.c | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/perf/dwc_pcie_pmu.c b/drivers/perf/dwc_pcie_pmu.c
+index 9687083c42fb..bde0a0a06cff 100644
+--- a/drivers/perf/dwc_pcie_pmu.c
++++ b/drivers/perf/dwc_pcie_pmu.c
+@@ -564,9 +564,7 @@ static int dwc_pcie_register_dev(struct pci_dev *pdev)
+ 	u32 sbdf;
+ 
+ 	sbdf = (pci_domain_nr(pdev->bus) << 16) | PCI_DEVID(pdev->bus->number, pdev->devfn);
+-	plat_dev = platform_device_register_data(NULL, "dwc_pcie_pmu", sbdf,
+-						 pdev, sizeof(*pdev));
+-
++	plat_dev = platform_device_register_simple("dwc_pcie_pmu", sbdf, NULL, 0);
+ 	if (IS_ERR(plat_dev))
+ 		return PTR_ERR(plat_dev);
+ 
+@@ -615,18 +613,26 @@ static struct notifier_block dwc_pcie_pmu_nb = {
+ 
+ static int dwc_pcie_pmu_probe(struct platform_device *plat_dev)
+ {
+-	struct pci_dev *pdev = plat_dev->dev.platform_data;
++	struct pci_dev *pdev;
+ 	struct dwc_pcie_pmu *pcie_pmu;
+ 	char *name;
+ 	u32 sbdf;
+ 	u16 vsec;
+ 	int ret;
+ 
++	sbdf = plat_dev->id;
++	pdev = pci_get_domain_bus_and_slot(sbdf >> 16, PCI_BUS_NUM(sbdf & 0xffff),
++					   sbdf & 0xff);
++	if (!pdev) {
++		pr_err("No pdev found for the sbdf 0x%x\n", sbdf);
++		return -ENODEV;
++	}
++
+ 	vsec = dwc_pcie_des_cap(pdev);
+ 	if (!vsec)
+ 		return -ENODEV;
+ 
+-	sbdf = plat_dev->id;
++	pci_dev_put(pdev);
+ 	name = devm_kasprintf(&plat_dev->dev, GFP_KERNEL, "dwc_rootport_%x", sbdf);
+ 	if (!name)
+ 		return -ENOMEM;
+@@ -641,7 +647,7 @@ static int dwc_pcie_pmu_probe(struct platform_device *plat_dev)
+ 	pcie_pmu->on_cpu = -1;
+ 	pcie_pmu->pmu = (struct pmu){
+ 		.name		= name,
+-		.parent		= &pdev->dev,
++		.parent		= &plat_dev->dev,
+ 		.module		= THIS_MODULE,
+ 		.attr_groups	= dwc_pcie_attr_groups,
+ 		.capabilities	= PERF_PMU_CAP_NO_EXCLUDE,
+-- 
+2.25.1
+
