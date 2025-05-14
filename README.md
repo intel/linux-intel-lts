@@ -8,35 +8,35 @@ Note: This should only be used for Intel platform feature evaluation and not for
 
 ## Branch information
 
-### Basic branch type
+### Basic branch naming rule
 
-[1]  Master ==> follows kernel.org master. updated periodically
+[1] main ==> Default branch, contains README.md and other documentations.
 
-[2]  4.x/base ==> upstream 4.x LTS kernel + Intel patches (bug fixes/ optimizations)
+[2] x.xx/linux ==> upstream x.xx LTS kernel + Intel patches, example: 6.12/linux
 
-[3]  4.x/android ==> upstream 4.x LTS kernel + Intel patches + Android P Dessert specific patches
+[3] x.xx/linux-cve ==> CVE patches in quilt form, example: 6.12/linux-cve
 
-[4]  4.x/android_q ==> upstream 4.x LTS kernel + Intel patches + Android Q Dessert specific patches
+    Please note: for CVE patches with config changes make sure that you regenerate kernel config using "make oldconfig"
 
-[5]  4.x/yocto ==> upstream 4.x LTS kernel with yocto specific patches
+[4] x.xx/preempt-rt ==> [linux-stable-rt](https://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-stable-rt.git/) kernel + Intel patches, example: 6.6/preempt-rt. There is no separate preempt-rt kernel branch starting from 6.12.
 
-[6]  4.x/preempt-rt ==> upstream 4.x preempt rt kernel + Intel patches
+[5] x.xx/android_t ==> upstream x.xx LTS kernel + Intel patches + Android T Dessert specific patches, example: 5.15/android_t. Same naming rule also apply to other LTS kernel version and other Android dessert.
 
-[7]  4.x/base-cve, 4.x/android-cve, 4.x/android_q-cve ==> fixes for CVEs detected on 4.x stable. The patches are released in quilt form.
-     Use "git quiltimport" to apply the patches. The CVE patches are matched to kernel source using tags
-     for ex. CVE patches tagged with lts-v4.19.44-base-cve-190524T175309Z or lts-v4.19.44-android_q-cve-190524T175309Z are applied on kernel source tagged with
-     lts-v4.19.44-base-190524T175309Z or lts-v4.19.44-android_q-190524T175309Z
+[6] x.xx/andoird_t-cve ==> Fix CVE patches detected on x.xx/android_t branch. Same naming rule also apply to other LTS kernel version and other Android dessert.
 
-     Please note: for CVE patches with config changes make sure that you regenerate kernel config using "make oldconfig"
+### Active branch list - Monthly update ** 2025 May **
 
-[8]  x.xxx/linux ==> upstream x.xxx LTS kernel + Intel patches, example: 6.12/linux
-
-[9]  x.xxx/linux-cve ==> CVE patches in quilt form, example: 6.12/linux-cve
-
-[10] x.xxx/preempt-rt ==> [linux-stable-rt](https://git.kernel.org/pub/scm/linux/kernel/git/rt/linux-stable-rt.git/) x.xxx-rtxxx + Intel patches, example: 6.12/preempt-rt
-
-### Active branch list - Monthly update
-
+| Kernel Version | Active Branches |
+|---------------:|-----------------|
+| v6.12          | [6.12/linux](https://github.com/intel/linux-intel-lts/tree/6.12/linux) |
+| v6.12          | [6.12/linux-cve](https://github.com/intel/linux-intel-lts/tree/6.12/linux-cve) |
+| v6.12          | [6.12/emt](https://github.com/intel/linux-intel-lts/tree/6.12/emt) |
+| v6.12          | [6.12/emt-cve](https://github.com/intel/linux-intel-lts/tree/6.12/emt-cve) |
+| v6.12          | [6.12/dovetail-xenomai](https://github.com/intel/linux-intel-lts/tree/6.12/dovetail-xenomai) |
+| v5.15          | [5.15/android_t](https://github.com/intel/linux-intel-lts/tree/5.15/android_t) |
+| v5.15          | [5.15/android_t-cve](https://github.com/intel/linux-intel-lts/tree/5.15/android_t-cve) |
+| v5.15          | [5.15/android_u](https://github.com/intel/linux-intel-lts/tree/5.15/android_u) |
+| v5.15          | [5.15/android_u-cve](https://github.com/intel/linux-intel-lts/tree/5.15/android_u-cve) |
 
 ## GPG Signed Releases
 
