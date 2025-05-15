@@ -44,14 +44,14 @@ Note: This should only be used for Intel platform feature evaluation and not for
 
 if a tag is not signed, when you run ‘git tag -v <tag>’ command, you get the result as:
 
-$ git tag -v lts-v4.19.272-android_t-230316T041640Z
-object 7150c8b4efa2baf0bef3a3da3850d29715c6fcbb
-type commit
-tag lts-v4.19.272-android_t-230316T041640Z
-tagger sys_oak sys_oak@intel.com 1679296599 -0700
+$ git tag -v lts-v4.19.272-android_t-230316T041640Z<br>
+object 7150c8b4efa2baf0bef3a3da3850d29715c6fcbb<br>
+type commit<br>
+tag lts-v4.19.272-android_t-230316T041640Z<br>
+tagger sys_oak sys_oak@intel.com 1679296599 -0700<br>
 
-release Kernel 4.19 for android T Dessert
-error: no signature found
+release Kernel 4.19 for android T Dessert<br>
+error: no signature found<br>
 
 You can see ‘error: no signature found’ if the tag is not signed
 
@@ -62,47 +62,48 @@ If the tag is signed - please follow the below steps to get the public key and v
 Open https://keys.openpgp.org/, input Full Key ID (i.e., EB4D99E5113E284368955757F18D9D84E60D69E7), or,
 short Key ID (i.e., F18D9D84E60D69E7, the Last 16 digitals). or, the tagger email address(i.e., sys_oak@intel.com),
 Click ‘Search’, then you can download the pub key file (i.e., EB4D99E5113E284368955757F18D9D84E60D69E7.asc).
-The md5sum checksum is 40b0222665a5f6c70ca9d990b4014f43 for the pub key file:
-$ md5sum EB4D99E5113E284368955757F18D9D84E60D69E7.asc
+The md5sum checksum is 40b0222665a5f6c70ca9d990b4014f43 for the pub key file:<br>
+$ md5sum EB4D99E5113E284368955757F18D9D84E60D69E7.asc<br>
 40b0222665a5f6c70ca9d990b4014f43  EB4D99E5113E284368955757F18D9D84E60D69E7.asc
 
 Once your checksum is correct, please do next step.
 
 ### Configure your Linux Environment and verify the GPG signature of a tag ( one time setup)
 
-After you get the right pub key, please import it:
+After you get the right pub key, please import it:<br>
 $ gpg --import EB4D99E5113E284368955757F18D9D84E60D69E7.asc
 
-Now, when you check the tag GPG signature, you can see ‘Good signature’ with a WARNING:
-$ git tag -v lts-v4.19.282-android_t-230509T073627Z
-object 180df1199944ebd8928f320a1bd16c8a87dba2ed
-type commit
-tag lts-v4.19.282-android_t-230509T073627Z
+Now, when you check the tag GPG signature, you can see ‘Good signature’ with a WARNING:<br>
+$ git tag -v lts-v4.19.282-android_t-230509T073627Z<br>
+object 180df1199944ebd8928f320a1bd16c8a87dba2ed<br>
+type commit<br>
+tag lts-v4.19.282-android_t-230509T073627Z<br>
 tagger sys_oak sys_oak@intel.com 1683864457 -0700
 
-release Kernel 4.19 for android T Dessert
-gpg: Signature made Fri 12 May 2023 12:07:37 AM EDT
-gpg:                using RSA key EB4D99E5113E284368955757F18D9D84E60D69E7
-gpg: Good signature from "sys_oak (NSWE) sys_oak@intel.com" [unknown]
-gpg: WARNING: This key is not certified with a trusted signature!
-gpg:          There is no indication that the signature belongs to the owner.
+release Kernel 4.19 for android T Dessert<br>
+gpg: Signature made Fri 12 May 2023 12:07:37 AM EDT<br>
+gpg:                using RSA key EB4D99E5113E284368955757F18D9D84E60D69E7<br>
+gpg: Good signature from "sys_oak (NSWE) sys_oak@intel.com" [unknown]<br>
+gpg: WARNING: This key is not certified with a trusted signature!<br>
+gpg:          There is no indication that the signature belongs to the owner.<br>
 Primary key fingerprint: EB4D 99E5 113E 2843 6895  5757 F18D 9D84 E60D 69E7
 
-To deal with the WARNING, let the pub key be trusted, run ‘gpg --edit-key <key>’ to edit it ( one time setup)
+To deal with the WARNING, let the pub key be trusted, run ‘gpg --edit-key <key>’ to edit it ( one time setup)<br>
 $ gpg --edit-key F18D9D84E60D69E7  
-input trust
-input 5
-input y
+input trust<br>
+input 5<br>
+input y<br>
 input quit
 
-Now, when you check the tag GPG signature again , you can see ‘Good signature’ without warnings:
-$ git tag -v lts-v4.19.282-android_t-230509T073627Z
-object 180df1199944ebd8928f320a1bd16c8a87dba2ed
-type commit
-tag lts-v4.19.282-android_t-230509T073627Z
+Now, when you check the tag GPG signature again, you can see ‘Good signature’ without warnings:<br>
+$ git tag -v lts-v4.19.282-android_t-230509T073627Z<br>
+object 180df1199944ebd8928f320a1bd16c8a87dba2ed<br>
+type commit<br>
+tag lts-v4.19.282-android_t-230509T073627Z<br>
 tagger sys_oak sys_oak@intel.com 1683864457 -0700
 
-release Kernel 4.19 for android T Dessert
-gpg: Signature made Fri 12 May 2023 12:07:37 AM EDT
-gpg:                using RSA key EB4D99E5113E284368955757F18D9D84E60D69E7
-gpg: Good signature from "sys_oak (NSWE) sys_oak@intel.com" [ultimate]
+release Kernel 4.19 for android T Dessert<br>
+gpg: Signature made Fri 12 May 2023 12:07:37 AM EDT<br>
+gpg:                using RSA key EB4D99E5113E284368955757F18D9D84E60D69E7<br>
+gpg: Good signature from "sys_oak (NSWE) sys_oak@intel.com" [ultimate]<br>
+
