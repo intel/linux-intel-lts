@@ -269,9 +269,6 @@
 0001-ASoC-topology-Optimize-soc_tplg_dapm_graph_elems_loa.patch
 0002-ASoC-topology-Fix-references-to-freed-memory.patch
 
-#CVE-2024-42063
-0001-bpf-Mark-bpf-prog-stack-with-kmsan_unposion_memory-i.patch
-
 #CVE-2024-42160
 0001-f2fs-check-validation-of-fault-attrs-in-f2fs_build_f.patch
 
