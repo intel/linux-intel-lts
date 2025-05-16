@@ -156,3 +156,6 @@
 
 #CVE-2025-23155
 0004-net-stmmac-Fix-accessing-freed-irq-affinity_hint.patch
+
+#CVE-2025-37821
+0001-sched-eevdf-Fix-se-slice-being-set-to-U64_MAX-and-re.patch
