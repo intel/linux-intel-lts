@@ -53,9 +53,6 @@
 # CVE-2022-39188
 0001-mmu_gather-Force-tlb-flush-VM_PFNMAP-vmas.patch
 
-# CVE-2023-23000
-0001-phy-tegra-xusb-Fix-return-value-of-tegra_xusb_find_p.patch
-
 # CVE-2023-2176
 0001-RDMA-core-Refactor-rdma_bind_addr.patch
 
@@ -269,12 +266,6 @@
 0001-ASoC-topology-Optimize-soc_tplg_dapm_graph_elems_loa.patch
 0002-ASoC-topology-Fix-references-to-freed-memory.patch
 
-#CVE-2024-42160
-0001-f2fs-check-validation-of-fault-attrs-in-f2fs_build_f.patch
-
-#CVE-2022-48893
-0001-drm-i915-gt-Cleanup-partial-engine-discovery-failure.patch
-
 #CVE-2024-44942
 0001-f2fs-fix-to-do-sanity-check-on-F2FS_INLINE_DATA-flag.patch
 
@@ -298,9 +289,6 @@
 0001-usb-gadget-uvc-fix-try-format-returns-on-uncompresse.patch
 0002-usb-gadget-uvc-Fix-ERR_PTR-dereference-in-uvc_v4l2.c.patch
 
-#CVE-2024-49960
-0001-ext4-fix-timer-use-after-free-on-failed-mount.patch
-
 #CVE-2024-50014
 0001-ext4-fix-access-to-uninitialised-lock-in-fc-replay-p.patch
 
@@ -316,12 +304,6 @@
 #CVE-2024-50256
 0001-netfilter-nf_reject_ipv6-fix-potential-crash-in-nf_s.patch
 
-#CVE-2024-50258
-0001-net-fix-crash-when-config-small-gso_max_size-gso_ipv.patch
-
-#CVE-2024-50272
-0001-filemap-Fix-bounds-checking-in-filemap_read.patch
-
 #CVE-2024-50271
 0001-signal-restore-the-override_rlimit-logic.patch
 
@@ -333,10 +315,6 @@
 
 #CVE-2024-53051
 0001-drm-i915-hdcp-Add-encoder-check-in-intel_hdcp_get_ca.patch
-
-#CVE-2024-53128
-0001-task_stack.h-add-missing-include.patch
-0002-sched-task_stack-fix-object_is_on_stack-for-KASAN-ta.patch
 
 #CVE-2024-53218
 0001-f2fs-support-.shutdown-in-f2fs_sops.patch
@@ -359,9 +337,6 @@
 
 #CVE-2024-56703
 0001-ipv6-Fix-soft-lockups-in-fib6_select_path-under-high.patch
-
-#CVE-2024-56751
-0001-ipv6-release-nexthop-on-device-removal.patch
 
 #CVE-2024-53687
 0001-riscv-Fix-IPIs-usage-in-kfence_protect_page.patch
@@ -489,9 +464,6 @@
 
 #CVE-2025-21861
 0001-mm-migrate_device-don-t-add-folio-to-be-freed-to-LRU.patch
-
-#CVE-2025-21853
-0001-bpf-avoid-holding-freeze_mutex-during-mmap-operation.patch
 
 #CVE-2023-53001
 0001-drm-drm_vma_manager-Add-drm_vma_node_allow_once.patch
