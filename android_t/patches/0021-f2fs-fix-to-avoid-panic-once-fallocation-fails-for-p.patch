@@ -1,0 +1,105 @@
+From 286cde2f004dfea16721839841d896e11fa24ddc Mon Sep 17 00:00:00 2001
+From: Chao Yu <chao@kernel.org>
+Date: Tue, 11 Feb 2025 14:36:57 +0800
+Subject: [PATCH 21/26] f2fs: fix to avoid panic once fallocation fails for
+ pinfile
+
+syzbot reports a f2fs bug as below:
+
+------------[ cut here ]------------
+kernel BUG at fs/f2fs/segment.c:2746!
+CPU: 0 UID: 0 PID: 5323 Comm: syz.0.0 Not tainted 6.13.0-rc2-syzkaller-00018-g7cb1b4663150 #0
+RIP: 0010:get_new_segment fs/f2fs/segment.c:2746 [inline]
+RIP: 0010:new_curseg+0x1f52/0x1f70 fs/f2fs/segment.c:2876
+Call Trace:
+ <TASK>
+ __allocate_new_segment+0x1ce/0x940 fs/f2fs/segment.c:3210
+ f2fs_allocate_new_section fs/f2fs/segment.c:3224 [inline]
+ f2fs_allocate_pinning_section+0xfa/0x4e0 fs/f2fs/segment.c:3238
+ f2fs_expand_inode_data+0x696/0xca0 fs/f2fs/file.c:1830
+ f2fs_fallocate+0x537/0xa10 fs/f2fs/file.c:1940
+ vfs_fallocate+0x569/0x6e0 fs/open.c:327
+ do_vfs_ioctl+0x258c/0x2e40 fs/ioctl.c:885
+ __do_sys_ioctl fs/ioctl.c:904 [inline]
+ __se_sys_ioctl+0x80/0x170 fs/ioctl.c:892
+ do_syscall_x64 arch/x86/entry/common.c:52 [inline]
+ do_syscall_64+0xf3/0x230 arch/x86/entry/common.c:83
+ entry_SYSCALL_64_after_hwframe+0x77/0x7f
+
+Concurrent pinfile allocation may run out of free section, result in
+panic in get_new_segment(), let's expand pin_sem lock coverage to
+include f2fs_gc(), so that we can make sure to reclaim enough free
+space for following allocation.
+
+In addition, do below changes to enhance error path handling:
+- call f2fs_bug_on() only in non-pinfile allocation path in
+get_new_segment().
+- call reset_curseg_fields() to reset all fields of curseg in
+new_curseg()
+
+Fixes: f5a53edcf01e ("f2fs: support aligned pinned file")
+Reported-by: syzbot+15669ec8c35ddf6c3d43@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/linux-f2fs-devel/675cd64e.050a0220.37aaf.00bb.GAE@google.com
+Signed-off-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+---
+ fs/f2fs/file.c    | 8 +++++---
+ fs/f2fs/segment.c | 9 ++++++++-
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 141a0378fd96..4bce5e9a15f6 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -1717,16 +1717,18 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
+ 
+ 		map.m_len = sec_blks;
+ next_alloc:
++		f2fs_down_write(&sbi->pin_sem);
++
+ 		if (has_not_enough_free_secs(sbi, 0,
+ 			GET_SEC_FROM_SEG(sbi, overprovision_segments(sbi)))) {
+ 			f2fs_down_write(&sbi->gc_lock);
+ 			err = f2fs_gc(sbi, true, false, false, NULL_SEGNO);
+-			if (err && err != -ENODATA && err != -EAGAIN)
++			if (err && err != -ENODATA && err != -EAGAIN) {
++				f2fs_up_write(&sbi->pin_sem);
+ 				goto out_err;
++			}
+ 		}
+ 
+-		f2fs_down_write(&sbi->pin_sem);
+-
+ 		f2fs_lock_op(sbi);
+ 		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false);
+ 		f2fs_unlock_op(sbi);
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 0f74ce1288f8..57050a78ac5a 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -2632,6 +2632,13 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
+ 	return curseg->segno;
+ }
+ 
++static void reset_curseg_fields(struct curseg_info *curseg)
++{
++	curseg->inited = false;
++	curseg->segno = NULL_SEGNO;
++	curseg->next_segno = 0;
++}
++
+ /*
+  * Allocate a current working segment.
+  * This function always allocates a free segment in LFS manner.
+@@ -2654,7 +2661,7 @@ static int new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec)
+ 
+ 	segno = __get_next_segno(sbi, type);
+ 	if (get_new_segment(sbi, &segno, new_sec, dir)) {
+-		curseg->segno = NULL_SEGNO;
++		reset_curseg_fields(curseg);
+ 		return -ENOSPC;
+ 	}
+ 
+-- 
+2.25.1
+

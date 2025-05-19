@@ -1,0 +1,86 @@
+From e205cb68fcb030e983b8edf1a03682bce9bfc45a Mon Sep 17 00:00:00 2001
+From: Gabriel Shahrouzi <gshahrouzi@gmail.com>
+Date: Sat, 5 Apr 2025 16:30:36 -0400
+Subject: [PATCH 04/26] perf/core: Fix WARN_ON(!ctx) in __free_event() for
+ partial init
+
+Move the get_ctx(child_ctx) call and the child_event->ctx assignment to
+occur immediately after the child event is allocated. Ensure that
+child_event->ctx is non-NULL before any subsequent error path within
+inherit_event calls free_event(), satisfying the assumptions of the
+cleanup code.
+
+Details:
+
+There's no clear Fixes tag, because this bug is a side-effect of
+multiple interacting commits over time (up to 15 years old), not
+a single regression.
+
+The code initially incremented refcount then assigned context
+immediately after the child_event was created. Later, an early
+validity check for child_event was added before the
+refcount/assignment. Even later, a WARN_ON_ONCE() cleanup check was
+added, assuming event->ctx is valid if the pmu_ctx is valid.
+The problem is that the WARN_ON_ONCE() could trigger after the initial
+check passed but before child_event->ctx was assigned, violating its
+precondition. The solution is to assign child_event->ctx right after
+its initial validation. This ensures the context exists for any
+subsequent checks or cleanup routines, resolving the WARN_ON_ONCE().
+
+To resolve it, defer the refcount update and child_event->ctx assignment
+directly after child_event->pmu_ctx is set but before checking if the
+parent event is orphaned. The cleanup routine depends on
+event->pmu_ctx being non-NULL before it verifies event->ctx is
+non-NULL. This also maintains the author's original intent of passing
+in child_ctx to find_get_pmu_context before its refcount/assignment.
+
+[ mingo: Expanded the changelog from another email by Gabriel Shahrouzi. ]
+
+Reported-by: syzbot+ff3aa851d46ab82953a3@syzkaller.appspotmail.com
+Signed-off-by: Gabriel Shahrouzi <gshahrouzi@gmail.com>
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Ravi Bangoria <ravi.bangoria@amd.com>
+Cc: Kan Liang <kan.liang@linux.intel.com>
+Cc: Oleg Nesterov <oleg@redhat.com>
+Cc: Alexander Shishkin <alexander.shishkin@linux.intel.com>
+Link: https://lore.kernel.org/r/20250405203036.582721-1-gshahrouzi@gmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=ff3aa851d46ab82953a3
+---
+ kernel/events/core.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/events/core.c b/kernel/events/core.c
+index 64f7bb2b66f4..b4a3a3dcb241 100644
+--- a/kernel/events/core.c
++++ b/kernel/events/core.c
+@@ -13127,6 +13127,9 @@ inherit_event(struct perf_event *parent_event,
+ 	if (IS_ERR(child_event))
+ 		return child_event;
+ 
++	get_ctx(child_ctx);
++	child_event->ctx = child_ctx;
++
+ 
+ 	if ((child_event->attach_state & PERF_ATTACH_TASK_DATA) &&
+ 	    !child_ctx->task_ctx_data) {
+@@ -13154,8 +13157,6 @@ inherit_event(struct perf_event *parent_event,
+ 		return NULL;
+ 	}
+ 
+-	get_ctx(child_ctx);
+-
+ 	/*
+ 	 * Make the child state follow the state of the parent event,
+ 	 * not its attr.disabled bit.  We hold the parent's mutex,
+@@ -13176,7 +13177,6 @@ inherit_event(struct perf_event *parent_event,
+ 		local64_set(&hwc->period_left, sample_period);
+ 	}
+ 
+-	child_event->ctx = child_ctx;
+ 	child_event->overflow_handler = parent_event->overflow_handler;
+ 	child_event->overflow_handler_context
+ 		= parent_event->overflow_handler_context;
+-- 
+2.25.1
+

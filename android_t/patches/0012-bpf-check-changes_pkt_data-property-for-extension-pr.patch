@@ -1,0 +1,124 @@
+From 8d57d7d70dc92d0f400689f4247e910e1d215fb1 Mon Sep 17 00:00:00 2001
+From: Eduard Zingerman <eddyz87@gmail.com>
+Date: Mon, 9 Dec 2024 20:10:57 -0800
+Subject: [PATCH 12/26] bpf: check changes_pkt_data property for extension
+ programs
+
+When processing calls to global sub-programs, verifier decides whether
+to invalidate all packet pointers in current state depending on the
+changes_pkt_data property of the global sub-program.
+
+Because of this, an extension program replacing a global sub-program
+must be compatible with changes_pkt_data property of the sub-program
+being replaced.
+
+This commit:
+- adds changes_pkt_data flag to struct bpf_prog_aux:
+  - this flag is set in check_cfg() for main sub-program;
+  - in jit_subprogs() for other sub-programs;
+- modifies bpf_check_attach_btf_id() to check changes_pkt_data flag;
+- moves call to check_attach_btf_id() after the call to check_cfg(),
+  because it needs changes_pkt_data flag to be set:
+
+    bpf_check:
+      ...                             ...
+    - check_attach_btf_id             resolve_pseudo_ldimm64
+      resolve_pseudo_ldimm64   -->    bpf_prog_is_offloaded
+      bpf_prog_is_offloaded           check_cfg
+      check_cfg                     + check_attach_btf_id
+      ...                             ...
+
+The following fields are set by check_attach_btf_id():
+- env->ops
+- prog->aux->attach_btf_trace
+- prog->aux->attach_func_name
+- prog->aux->attach_func_proto
+- prog->aux->dst_trampoline
+- prog->aux->mod
+- prog->aux->saved_dst_attach_type
+- prog->aux->saved_dst_prog_type
+- prog->expected_attach_type
+
+Neither of these fields are used by resolve_pseudo_ldimm64() or
+bpf_prog_offload_verifier_prep() (for netronome and netdevsim
+drivers), so the reordering is safe.
+
+Suggested-by: Alexei Starovoitov <alexei.starovoitov@gmail.com>
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20241210041100.1898468-6-eddyz87@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ include/linux/bpf.h   |  1 +
+ kernel/bpf/verifier.c | 16 ++++++++++++----
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 5ca5d9104f8c..c12e01a6e051 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -934,6 +934,7 @@ struct bpf_prog_aux {
+ 	bool func_proto_unreliable;
+ 	bool sleepable;
+ 	bool tail_call_reachable;
++	bool changes_pkt_data;
+ 	struct hlist_node tramp_hlist;
+ 	/* BTF_KIND_FUNC_PROTO for valid attach_btf_id */
+ 	const struct btf_type *attach_func_proto;
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 68e6f5f27329..3c1aab60a2dd 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -10085,6 +10085,7 @@ static int check_cfg(struct bpf_verifier_env *env)
+ 		}
+ 	}
+ 	ret = 0; /* cfg looks good */
++	env->prog->aux->changes_pkt_data = env->subprog_info[0].changes_pkt_data;
+ 
+ err_free:
+ 	kvfree(insn_state);
+@@ -12825,6 +12826,7 @@ static int jit_subprogs(struct bpf_verifier_env *env)
+ 		}
+ 		func[i]->aux->num_exentries = num_exentries;
+ 		func[i]->aux->tail_call_reachable = env->subprog_info[i].tail_call_reachable;
++		func[i]->aux->changes_pkt_data = env->subprog_info[i].changes_pkt_data;
+ 		func[i] = bpf_int_jit_compile(func[i]);
+ 		if (!func[i]->jited) {
+ 			err = -ENOTSUPP;
+@@ -13778,6 +13780,12 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
+ 					"Extension programs should be JITed\n");
+ 				return -EINVAL;
+ 			}
++			if (prog->aux->changes_pkt_data &&
++			    !aux->func[subprog]->aux->changes_pkt_data) {
++				bpf_log(log,
++					"Extension program changes packet data, while original does not\n");
++				return -EINVAL;
++			}
+ 		}
+ 		if (!tgt_prog->jited) {
+ 			bpf_log(log, "Can attach to only JITed progs\n");
+@@ -14156,10 +14164,6 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr, bpfptr_t uattr)
+ 	if (ret < 0)
+ 		goto skip_full_check;
+ 
+-	ret = check_attach_btf_id(env);
+-	if (ret)
+-		goto skip_full_check;
+-
+ 	ret = resolve_pseudo_ldimm64(env);
+ 	if (ret < 0)
+ 		goto skip_full_check;
+@@ -14174,6 +14178,10 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr, bpfptr_t uattr)
+ 	if (ret < 0)
+ 		goto skip_full_check;
+ 
++	ret = check_attach_btf_id(env);
++	if (ret)
++		goto skip_full_check;
++
+ 	ret = do_check_subprogs(env);
+ 	ret = ret ?: do_check_main(env);
+ 
+-- 
+2.25.1
+

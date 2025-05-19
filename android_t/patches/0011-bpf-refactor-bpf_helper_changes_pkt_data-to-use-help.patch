@@ -1,0 +1,139 @@
+From 20a00d454d02f4eb44d6a5743a4f4e30783a9daf Mon Sep 17 00:00:00 2001
+From: Eduard Zingerman <eddyz87@gmail.com>
+Date: Mon, 9 Dec 2024 20:10:54 -0800
+Subject: [PATCH 11/26] bpf: refactor bpf_helper_changes_pkt_data to use helper
+ number
+
+Use BPF helper number instead of function pointer in
+bpf_helper_changes_pkt_data(). This would simplify usage of this
+function in verifier.c:check_cfg() (in a follow-up patch),
+where only helper number is easily available and there is no real need
+to lookup helper proto.
+
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20241210041100.1898468-3-eddyz87@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ include/linux/filter.h |  2 +-
+ kernel/bpf/core.c      |  2 +-
+ kernel/bpf/verifier.c  |  2 +-
+ net/core/filter.c      | 63 +++++++++++++++++++-----------------------
+ 4 files changed, 31 insertions(+), 38 deletions(-)
+
+diff --git a/include/linux/filter.h b/include/linux/filter.h
+index 7d8294d0d717..0e2c65b9c83d 100644
+--- a/include/linux/filter.h
++++ b/include/linux/filter.h
+@@ -965,7 +965,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog);
+ void bpf_jit_compile(struct bpf_prog *prog);
+ bool bpf_jit_needs_zext(void);
+ bool bpf_jit_supports_kfunc_call(void);
+-bool bpf_helper_changes_pkt_data(void *func);
++bool bpf_helper_changes_pkt_data(enum bpf_func_id func_id);
+ 
+ static inline bool bpf_dump_raw_ok(const struct cred *cred)
+ {
+diff --git a/kernel/bpf/core.c b/kernel/bpf/core.c
+index d7dbca573df3..7511ff3046f9 100644
+--- a/kernel/bpf/core.c
++++ b/kernel/bpf/core.c
+@@ -2413,7 +2413,7 @@ void __weak bpf_jit_compile(struct bpf_prog *prog)
+ {
+ }
+ 
+-bool __weak bpf_helper_changes_pkt_data(void *func)
++bool __weak bpf_helper_changes_pkt_data(enum bpf_func_id func_id)
+ {
+ 	return false;
+ }
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index d4e258f3a6ff..68e6f5f27329 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -6564,7 +6564,7 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
+ 	}
+ 
+ 	/* With LD_ABS/IND some JITs save/restore skb from r1. */
+-	changes_data = bpf_helper_changes_pkt_data(fn->func);
++	changes_data = bpf_helper_changes_pkt_data(func_id);
+ 	if (changes_data && fn->arg1_type != ARG_PTR_TO_CTX) {
+ 		verbose(env, "kernel subsystem misconfigured func %s#%d: r1 != ctx\n",
+ 			func_id_name(func_id), func_id);
+diff --git a/net/core/filter.c b/net/core/filter.c
+index 9d358fb865e2..10516d352ca6 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -7387,42 +7387,35 @@ static const struct bpf_func_proto bpf_sock_ops_reserve_hdr_opt_proto = {
+ 
+ #endif /* CONFIG_INET */
+ 
+-bool bpf_helper_changes_pkt_data(void *func)
+-{
+-	if (func == bpf_skb_vlan_push ||
+-	    func == bpf_skb_vlan_pop ||
+-	    func == bpf_skb_store_bytes ||
+-	    func == bpf_skb_change_proto ||
+-	    func == bpf_skb_change_head ||
+-	    func == sk_skb_change_head ||
+-	    func == bpf_skb_change_tail ||
+-	    func == sk_skb_change_tail ||
+-	    func == bpf_skb_adjust_room ||
+-	    func == sk_skb_adjust_room ||
+-	    func == bpf_skb_pull_data ||
+-	    func == sk_skb_pull_data ||
+-	    func == bpf_clone_redirect ||
+-	    func == bpf_l3_csum_replace ||
+-	    func == bpf_l4_csum_replace ||
+-	    func == bpf_xdp_adjust_head ||
+-	    func == bpf_xdp_adjust_meta ||
+-	    func == bpf_msg_pull_data ||
+-	    func == bpf_msg_push_data ||
+-	    func == bpf_msg_pop_data ||
+-	    func == bpf_xdp_adjust_tail ||
+-#if IS_ENABLED(CONFIG_IPV6_SEG6_BPF)
+-	    func == bpf_lwt_seg6_store_bytes ||
+-	    func == bpf_lwt_seg6_adjust_srh ||
+-	    func == bpf_lwt_seg6_action ||
+-#endif
+-#ifdef CONFIG_INET
+-	    func == bpf_sock_ops_store_hdr_opt ||
+-#endif
+-	    func == bpf_lwt_in_push_encap ||
+-	    func == bpf_lwt_xmit_push_encap)
++bool bpf_helper_changes_pkt_data(enum bpf_func_id func_id)
++{
++	switch (func_id) {
++	case BPF_FUNC_clone_redirect:
++	case BPF_FUNC_l3_csum_replace:
++	case BPF_FUNC_l4_csum_replace:
++	case BPF_FUNC_lwt_push_encap:
++	case BPF_FUNC_lwt_seg6_action:
++	case BPF_FUNC_lwt_seg6_adjust_srh:
++	case BPF_FUNC_lwt_seg6_store_bytes:
++	case BPF_FUNC_msg_pop_data:
++	case BPF_FUNC_msg_pull_data:
++	case BPF_FUNC_msg_push_data:
++	case BPF_FUNC_skb_adjust_room:
++	case BPF_FUNC_skb_change_head:
++	case BPF_FUNC_skb_change_proto:
++	case BPF_FUNC_skb_change_tail:
++	case BPF_FUNC_skb_pull_data:
++	case BPF_FUNC_skb_store_bytes:
++	case BPF_FUNC_skb_vlan_pop:
++	case BPF_FUNC_skb_vlan_push:
++	case BPF_FUNC_store_hdr_opt:
++	case BPF_FUNC_xdp_adjust_head:
++	case BPF_FUNC_xdp_adjust_meta:
++	case BPF_FUNC_xdp_adjust_tail:
+ 		return true;
+-
+-	return false;
++	default:
++		return false;
++	}
+ }
+ 
+ const struct bpf_func_proto bpf_event_output_data_proto __weak;
+-- 
+2.25.1
+

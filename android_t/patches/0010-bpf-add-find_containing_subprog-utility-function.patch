@@ -1,0 +1,94 @@
+From f8c1ff0508c5d4d9d35d1f530c6de06622ce15c6 Mon Sep 17 00:00:00 2001
+From: Eduard Zingerman <eddyz87@gmail.com>
+Date: Mon, 9 Dec 2024 20:10:53 -0800
+Subject: [PATCH 10/26] bpf: add find_containing_subprog() utility function
+
+Add a utility function, looking for a subprogram containing a given
+instruction index, rewrite find_subprog() to use this function.
+
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20241210041100.1898468-2-eddyz87@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/verifier.c | 38 ++++++++++++++++++++++++++++++++------
+ 1 file changed, 32 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index f21ce1e44d08..d4e258f3a6ff 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -228,6 +228,12 @@ static void bpf_map_key_store(struct bpf_insn_aux_data *aux, u64 state)
+ 			     (poisoned ? BPF_MAP_KEY_POISON : 0ULL);
+ }
+ 
++static bool bpf_helper_call(const struct bpf_insn *insn)
++{
++	return insn->code == (BPF_JMP | BPF_CALL) &&
++	       insn->src_reg == 0;
++}
++
+ static bool bpf_pseudo_call(const struct bpf_insn *insn)
+ {
+ 	return insn->code == (BPF_JMP | BPF_CALL) &&
+@@ -1591,16 +1597,36 @@ static int cmp_subprogs(const void *a, const void *b)
+ 	       ((struct bpf_subprog_info *)b)->start;
+ }
+ 
++/* Find subprogram that contains instruction at 'off' */
++static struct bpf_subprog_info *find_containing_subprog(struct bpf_verifier_env *env, int off)
++{
++	struct bpf_subprog_info *vals = env->subprog_info;
++	int l, r, m;
++
++	if (off >= env->prog->len || off < 0 || env->subprog_cnt == 0)
++		return NULL;
++
++	l = 0;
++	r = env->subprog_cnt - 1;
++	while (l < r) {
++		m = l + (r - l + 1) / 2;
++		if (vals[m].start <= off)
++			l = m;
++		else
++			r = m - 1;
++	}
++	return &vals[l];
++}
++
++/* Find subprogram that starts exactly at 'off' */
+ static int find_subprog(struct bpf_verifier_env *env, int off)
+ {
+ 	struct bpf_subprog_info *p;
+ 
+-	p = bsearch(&off, env->subprog_info, env->subprog_cnt,
+-		    sizeof(env->subprog_info[0]), cmp_subprogs);
+-	if (!p)
++	p = find_containing_subprog(env, off);
++	if (!p || p->start != off)
+ 		return -ENOENT;
+ 	return p - env->subprog_info;
+-
+ }
+ 
+ static int add_subprog(struct bpf_verifier_env *env, int off)
+@@ -9932,7 +9958,7 @@ static int visit_func_call_insn(int t, int insn_cnt,
+  */
+ static int visit_insn(int t, int insn_cnt, struct bpf_verifier_env *env)
+ {
+-	struct bpf_insn *insns = env->prog->insnsi;
++	struct bpf_insn *insns = env->prog->insnsi, *insn = &insns[t];
+ 	int ret;
+ 
+ 	if (bpf_pseudo_func(insns + t))
+@@ -9958,7 +9984,7 @@ static int visit_insn(int t, int insn_cnt, struct bpf_verifier_env *env)
+ 			mark_jmp_point(env, t);
+ 		}
+ 		if (bpf_helper_call(insn) && bpf_helper_changes_pkt_data(insn->imm))
+-		mark_subprog_changes_pkt_data(env, t);
++			mark_subprog_changes_pkt_data(env, t);
+ 
+ 		return visit_func_call_insn(t, insn_cnt, insns, env,
+ 					    insns[t].src_reg == BPF_PSEUDO_CALL);
+-- 
+2.25.1
+
