@@ -39,7 +39,7 @@ Note: This should only be used for Intel platform feature evaluation and not for
 | v5.15          | [5.15/android_u-cve](https://github.com/intel/linux-intel-lts/tree/5.15/android_u-cve) |
 
 ### Reference kernel overlay repository
-You can find reference kernel configuration, kernel patch series and build scripts from this [linux kernel overlay release repository](https://github.com/intel-innersource/os.linux.kernel.iot-kernel-overlay).
+You can find reference kernel configuration, kernel patch series and build scripts from this [linux kernel overlay release repository](https://github.com/intel/linux-kernel-overlay).
 
 ## GPG Signed Releases
 
