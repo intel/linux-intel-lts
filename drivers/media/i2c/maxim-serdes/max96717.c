@@ -1692,6 +1692,12 @@ static const struct max96717_chip_info max96717_info = {
 	.phy_hw_ids = { 1 },
 };
 
+static const struct acpi_device_id max9295a_acpi_ids[] = {
+	{ "INTC1138", (kernel_ulong_t)&max9295a_info},
+	{}
+};
+MODULE_DEVICE_TABLE(acpi, max9295a_acpi_ids);
+
 static const struct of_device_id max96717_of_ids[] = {
 	{ .compatible = "maxim,max9295a", .data = &max9295a_info },
 	{ .compatible = "maxim,max96717", .data = &max96717_info },
@@ -1705,6 +1711,7 @@ static struct i2c_driver max96717_i2c_driver = {
 	.driver	= {
 		.name = MAX96717_NAME,
 		.of_match_table = max96717_of_ids,
+		.acpi_match_table = max9295a_acpi_ids,
 	},
 	.probe = max96717_probe,
 	.remove = max96717_remove,
