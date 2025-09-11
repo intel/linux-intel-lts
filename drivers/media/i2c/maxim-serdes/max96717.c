@@ -1341,8 +1341,10 @@ static const struct pinctrl_ops max96717_ctrl_ops = {
 	.get_groups_count = max96717_ctrl_get_groups_count,
 	.get_group_name = max96717_ctrl_get_group_name,
 	.get_group_pins = max96717_ctrl_get_group_pins,
+#ifdef CONFIG_OF
 	.dt_node_to_map = pinconf_generic_dt_node_to_map_pin,
 	.dt_free_map = pinconf_generic_dt_free_map,
+#endif
 };
 
 static const struct pinconf_ops max96717_conf_ops = {
