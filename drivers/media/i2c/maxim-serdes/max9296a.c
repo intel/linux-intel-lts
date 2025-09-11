@@ -549,7 +549,7 @@ static int max9296a_init_phy(struct max_des *des, struct max_des_phy *phy)
 		return ret;
 
 	/* Set DPLL frequency. */
-	ret = regmap_update_bits(priv->regmap, MAX9296A_BACKTOP22(index),
+	ret = regmap_update_bits(priv->regmap, MAX9296A_BACKTOP22(hw_index),
 				 MAX9296A_BACKTOP22_PHY_CSI_TX_DPLL,
 				 FIELD_PREP(MAX9296A_BACKTOP22_PHY_CSI_TX_DPLL,
 					    div_u64(dpll_freq, 100000000)));
@@ -557,7 +557,7 @@ static int max9296a_init_phy(struct max_des *des, struct max_des_phy *phy)
 		return ret;
 
 	/* Enable DPLL frequency. */
-	ret = regmap_set_bits(priv->regmap, MAX9296A_BACKTOP22(index),
+	ret = regmap_set_bits(priv->regmap, MAX9296A_BACKTOP22(hw_index),
 			      MAX9296A_BACKTOP22_PHY_CSI_TX_DPLL_EN);
 	if (ret)
 		return ret;
@@ -727,7 +727,7 @@ static int max9296a_set_pipe_stream_id(struct max_des *des, struct max_des_pipe 
 	unsigned int index = max9296a_pipe_id(priv, pipe);
 
 	return regmap_update_bits(priv->regmap, MAX9296A_RX50(index), MAX9296A_RX50_STR_SEL,
-				  FIELD_PREP(MAX9296A_RX50_STR_SEL, pipe->stream_id));
+				  FIELD_PREP(MAX9296A_RX50_STR_SEL, stream_id));
 }
 
 static int max96714_set_pipe_stream_id(struct max_des *des, struct max_des_pipe *pipe,
