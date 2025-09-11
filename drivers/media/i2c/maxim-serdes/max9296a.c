@@ -1169,12 +1169,12 @@ static const struct max_des_ops max9296a_ops = {
 	.num_pipes = 4,
 	.num_phys = 2,
 	.num_links = 2,
+	.use_atr = true,
 };
 
 static const struct max9296a_chip_info max9296a_info = {
 	.ops = &max9296a_ops,
 	.max_register = 0x1f00,
-	.use_atr = true,
 	.phy0_lanes_0_1_on_second_phy = true,
 	.pipe_hw_ids = { 0, 1, 2, 3 },
 	.phy_hw_ids = { 1, 2 },
