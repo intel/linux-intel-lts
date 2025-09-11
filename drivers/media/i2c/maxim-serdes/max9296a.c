@@ -61,7 +61,7 @@
 #define MAX9296A_VIDEO_PIPE_SEL_STREAM(p)	(GENMASK(1, 0) << ((p) * 3))
 #define MAX9296A_VIDEO_PIPE_SEL_LINK(p)		BIT(2 + (p) * 3)
 
-#define MAX9296A_VPRBS(p)			(0x1fc + (p) * 0x20)
+#define MAX9296A_VPRBS(p)			(0x1dc + (p) * 0x20)
 #define MAX9296A_VPRBS_VIDEO_LOCK		BIT(0)
 #define MAX9296A_VPRBS_PATGEN_CLK_SRC		BIT(7)
 #define MAX9296A_VPRBS_PATGEN_CLK_SRC_150MHZ	0b0
