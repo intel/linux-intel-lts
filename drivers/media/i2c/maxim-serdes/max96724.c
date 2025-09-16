@@ -1158,6 +1158,12 @@ static void max96724_remove(struct i2c_client *client)
 	gpiod_set_value_cansleep(priv->gpiod_enable, 0);
 }
 
+static const struct acpi_device_id max96724_acpi_ids[] = {
+	{ "INTC1139", (kernel_ulong_t) &max96724_info },
+	{}
+};
+MODULE_DEVICE_TABLE(acpi, max96724_acpi_ids);
+
 static const struct of_device_id max96724_of_table[] = {
 	{ .compatible = "maxim,max96712", .data = &max96712_info },
 	{ .compatible = "maxim,max96724", .data = &max96724_info },
@@ -1171,6 +1177,7 @@ static struct i2c_driver max96724_i2c_driver = {
 	.driver	= {
 		.name = "max96724",
 		.of_match_table	= max96724_of_table,
+		.acpi_match_table = max96724_acpi_ids,
 	},
 	.probe = max96724_probe,
 	.remove = max96724_remove,
