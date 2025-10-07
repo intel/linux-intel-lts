@@ -1,0 +1,11 @@
+config BT_SCOHCI
+	tristate "BT HCI USB driver"
+	depends on BT
+	help
+	  Bluetooth SCO USB driver.
+	  This driver is required if you want to use Bluetooth devices with
+	  USB interface to support SCO.
+
+	  Say Y here to compile support for Bluetooth USB devices into the
+	  kernel or say M to compile it as module (btusb)
+
