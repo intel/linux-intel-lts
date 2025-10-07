@@ -14,6 +14,7 @@
 #include <linux/poll.h>
 #include <linux/mm.h>
 #include <linux/bitops.h>
+#include <linux/string.h>
 #include <linux/pm_qos.h>
 #include <linux/refcount.h>
 #include <linux/uio.h>
