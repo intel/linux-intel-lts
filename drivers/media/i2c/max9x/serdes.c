@@ -1656,12 +1656,15 @@ static int max9x_registered(struct v4l2_subdev *sd)
 						.table = {
 							GPIO_LOOKUP("", 0, "reset",
 								    GPIO_ACTIVE_HIGH),
+							GPIO_LOOKUP("", 7, "fsin",
+									GPIO_ACTIVE_HIGH),
 							{}
 						},
 					};
 
 					sensor_gpios.dev_id = dev_id;
 					sensor_gpios.table[0].key = common->gpio_chip.label;
+					sensor_gpios.table[1].key = common->gpio_chip.label;
 
 					gpiod_add_lookup_table(&sensor_gpios);
 
