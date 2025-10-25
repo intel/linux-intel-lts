@@ -307,15 +307,6 @@ config VIDEO_ISX031
 	help
 		This is a Video4Linux2 sensor-level driver for ISX031 camera.
 
-config VIDEO_MAX9X
-	tristate "MAX9X serdes support"
-	depends on VIDEO_DEV && I2C
-	select VIDEO_V4L2_SUBDEV_API
-	select I2C_ATR
-	depends on MEDIA_CAMERA_SUPPORT
-	help
-		This is a Video4Linux2 sensor-level driver for MAX9X serdes.
-
 config VIDEO_MAX9271_LIB
 	tristate
 
@@ -1247,18 +1238,6 @@ config VIDEO_ISL7998X
 	help
 	  Support for Intersil ISL7998x analog to MIPI-CSI2 or
 	  BT.656 decoder.
-
-config VIDEO_ISX031
-    tristate "ISX031 sensor support"
-	depends on VIDEO_DEV && I2C
-	select VIDEO_V4L2_SUBDEV_API
-	depends on MEDIA_CAMERA_SUPPORT
-	help
-		This is a Video4Linux2 sensor-level driver for
-		Sony ISX031 camera with a MIPI CSI-2 interface.
-
-		To compile this driver as a module, choose M here: the
-		module will be called isx031.
 
 config VIDEO_D4XX
 	tristate "Intel RealSense D4XX support"
