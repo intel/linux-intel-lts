@@ -2,6 +2,9 @@
 #
 # Makefile for the V4L2 core
 #
+# dkms appendix
+CC := ${CC} -I ${M}/../../../include-overrides -I ${M}/../tuners -I ${M}/../dvb-core -I ${M}/../dvb-frontends
+ccflags-y := -DDRIVER_VERSION_SUFFIX=\"${DRIVER_VERSION_SUFFIX}\"
 
 ccflags-y += -I$(srctree)/drivers/media/dvb-frontends
 ccflags-y += -I$(srctree)/drivers/media/tuners
