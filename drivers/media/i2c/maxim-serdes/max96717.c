@@ -14,6 +14,7 @@
 #include <linux/pinctrl/pinconf.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/regmap.h>
+#include <linux/version.h>
 
 #include "max_ser.h"
 
@@ -400,7 +401,11 @@ static int max96717_get_pin_config_reg(unsigned int offset, u32 param,
 		*mask = MAX96717_GPIO_A_GPIO_IN;
 		*val = 0b1;
 		return 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	case PIN_CONFIG_LEVEL:
+#else
+	case PIN_CONFIG_OUTPUT:
+#endif
 		*mask = MAX96717_GPIO_A_GPIO_OUT;
 		*val = 0b1;
 		return 0;
@@ -514,7 +519,11 @@ static int max96717_conf_pin_config_get(struct pinctrl_dev *pctldev,
 		break;
 	case MAX96717_PINCTRL_PULL_STRENGTH_HIGH:
 	case MAX96717_PINCTRL_INPUT_VALUE:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	case PIN_CONFIG_LEVEL:
+#else
+	case PIN_CONFIG_OUTPUT:
+#endif
 		ret = regmap_read(priv->regmap, reg, &val);
 		if (ret)
 			return ret;
@@ -604,8 +613,12 @@ static int max96717_conf_pin_config_set_one(struct max96717_priv *priv,
 	case MAX96717_PINCTRL_RX_EN:
 	case PIN_CONFIG_OUTPUT_ENABLE:
 	case PIN_CONFIG_INPUT_ENABLE:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	case PIN_CONFIG_LEVEL:
-		val = field_prep(mask, arg ? en_val : ~en_val);
+#else
+	case PIN_CONFIG_OUTPUT:
+#endif
+	val = field_prep(mask, arg ? en_val : ~en_val);
 
 		ret = regmap_update_bits(priv->regmap, reg, mask, val);
 		break;
@@ -629,7 +642,11 @@ static int max96717_conf_pin_config_set_one(struct max96717_priv *priv,
 		arg = arg >= MAX96717_BIAS_PULL_STRENGTH_1000000_OHM;
 		config = pinconf_to_config_packed(MAX96717_PINCTRL_PULL_STRENGTH_HIGH, arg);
 		return max96717_conf_pin_config_set_one(priv, offset, config);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	case PIN_CONFIG_LEVEL:
+#else
+	case PIN_CONFIG_OUTPUT:
+#endif
 		config = pinconf_to_config_packed(PIN_CONFIG_OUTPUT_ENABLE, 1);
 		return max96717_conf_pin_config_set_one(priv, offset, config);
 	case PIN_CONFIG_OUTPUT_ENABLE:
@@ -722,7 +739,11 @@ static int max96717_mux_set(struct pinctrl_dev *pctldev, unsigned int selector,
 
 static int max96717_gpio_get_direction(struct gpio_chip *gc, unsigned int offset)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	unsigned long config = pinconf_to_config_packed(PIN_CONFIG_OUTPUT_ENABLE, 0);
+#else
+	unsigned long config = pinconf_to_config_packed(PIN_CONFIG_OUTPUT, 0);
+#endif
 	struct max96717_priv *priv = gpiochip_get_data(gc);
 	int ret;
 
@@ -745,7 +766,11 @@ static int max96717_gpio_direction_input(struct gpio_chip *gc, unsigned int offs
 static int max96717_gpio_direction_output(struct gpio_chip *gc, unsigned int offset,
 					  int value)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	unsigned long config = pinconf_to_config_packed(PIN_CONFIG_LEVEL, value);
+#else
+	unsigned long config = pinconf_to_config_packed(PIN_CONFIG_OUTPUT, value);
+#endif
 	struct max96717_priv *priv = gpiochip_get_data(gc);
 
 	return max96717_conf_pin_config_set_one(priv, offset, config);
@@ -766,7 +791,11 @@ static int max96717_gpio_get(struct gpio_chip *gc, unsigned int offset)
 
 static int max96717_gpio_set(struct gpio_chip *gc, unsigned int offset, int value)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	unsigned long config = pinconf_to_config_packed(PIN_CONFIG_LEVEL, value);
+#else
+	unsigned long config = pinconf_to_config_packed(PIN_CONFIG_OUTPUT, value);
+#endif
 	struct max96717_priv *priv = gpiochip_get_data(gc);
 
 	return max96717_conf_pin_config_set_one(priv, offset, config);
