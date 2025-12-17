@@ -327,9 +327,18 @@ static int isys_notifier_complete(struct v4l2_async_notifier *notifier)
 	return v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
 }
 
+static void isys_notifier_destroy(struct v4l2_async_connection *asc)
+{
+	struct sensor_async_sd *s_asd =
+		container_of(asc, struct sensor_async_sd, asc);
+
+	fwnode_handle_put(s_asd->csi2.ep);
+}
+
 static const struct v4l2_async_notifier_operations isys_async_ops = {
 	.bound = isys_notifier_bound,
 	.complete = isys_notifier_complete,
+	.destroy = isys_notifier_destroy,
 };
 
 static int isys_notifier_init(struct ipu7_isys *isys)
