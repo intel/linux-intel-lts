@@ -179,5 +179,6 @@ int max_serdes_get_tpg_timings(const struct max_serdes_tpg_entry *entry,
 			       struct max_serdes_tpg_timings *timings);
 
 int max_serdes_validate_tpg_routing(struct v4l2_subdev_krouting *routing);
-
+int max_serdes_get_fwnode_pad_1_to_1(struct media_entity *entity,
+				      struct fwnode_endpoint *endpoint);
 #endif // MAX_SERDES_H

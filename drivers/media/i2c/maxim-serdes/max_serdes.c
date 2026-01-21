@@ -408,6 +408,30 @@ int max_serdes_validate_tpg_routing(struct v4l2_subdev_krouting *routing)
 	return 0;
 }
 
+int max_serdes_get_fwnode_pad_1_to_1(struct media_entity *entity,
+				      struct fwnode_endpoint *endpoint)
+{
+	struct fwnode_handle *fwnode;
+	struct v4l2_subdev *sd;
+
+	if (!is_media_entity_v4l2_subdev(entity))
+		return -EINVAL;
+
+	sd = media_entity_to_v4l2_subdev(entity);
+
+	fwnode = fwnode_graph_get_port_parent(endpoint->local_fwnode);
+	fwnode_handle_put(fwnode);
+
+	if (device_match_fwnode(sd->dev, fwnode))
+		return endpoint->port;
+
+	if (sd->fwnode->secondary == endpoint->local_fwnode || sd->fwnode->secondary == fwnode)
+		return endpoint->port;
+
+	return -ENXIO;
+}
+EXPORT_SYMBOL_NS_GPL(max_serdes_get_fwnode_pad_1_to_1, "MAX_SERDES");
+
 MODULE_DESCRIPTION("Maxim GMSL2 Serializer/Deserializer Driver");
 MODULE_AUTHOR("Cosmin Tanislav <cosmin.tanislav@analog.com>");
 MODULE_LICENSE("GPL");

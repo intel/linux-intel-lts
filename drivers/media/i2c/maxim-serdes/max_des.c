@@ -2574,7 +2574,7 @@ static const struct v4l2_subdev_internal_ops max_des_internal_ops = {
 };
 
 static const struct media_entity_operations max_des_media_ops = {
-	.get_fwnode_pad = v4l2_subdev_get_fwnode_pad_1_to_1,
+	.get_fwnode_pad = max_serdes_get_fwnode_pad_1_to_1,
 	.has_pad_interdep = v4l2_subdev_has_pad_interdep,
 	.link_validate = v4l2_subdev_link_validate,
 };
