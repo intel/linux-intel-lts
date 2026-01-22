@@ -159,6 +159,7 @@ struct ipu7_isys_csi2_config {
 	unsigned int nlanes;
 	unsigned int port;
 	enum v4l2_mbus_type bus_type;
+	struct fwnode_handle *ep;
 };
 
 struct ipu7_isys_subdev_i2c_info {

@@ -60,23 +60,49 @@ isys_complete_ext_device_registration(struct ipu7_isys *isys,
 				      struct ipu7_isys_csi2_config *csi2)
 {
 	struct device *dev = &isys->adev->auxdev.dev;
-	unsigned int i;
+	int source_pad;
 	int ret;
 
 	v4l2_set_subdev_hostdata(sd, csi2);
 
-	for (i = 0; i < sd->entity.num_pads; i++) {
-		if (sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE)
-			break;
+	if (csi2->ep) {
+		struct fwnode_handle *ep_source;
+
+		ep_source = fwnode_graph_get_remote_endpoint(csi2->ep);
+		if (!ep_source) {
+			dev_warn(dev, "no remote endpoint for subdev\n");
+			ret = -ENOENT;
+			goto skip_unregister_subdev;
+		}
+
+		source_pad = media_entity_get_fwnode_pad(&sd->entity, ep_source,
+						MEDIA_PAD_FL_SOURCE);
+		fwnode_handle_put(ep_source);
+
+		if (source_pad < 0) {
+			dev_warn(dev, "error in no acquire source pad in external entity\n");
+			ret = -ENOENT;
+			goto skip_unregister_subdev;
+		}
+
+		dev_dbg(&isys->adev->auxdev.dev, "%s: CSI2 ep %pfw\n", __func__,
+			csi2->ep);
+		dev_dbg(&isys->adev->auxdev.dev,
+			"%s: source pad %d for subdev %s\n", __func__, source_pad,
+			sd->name);
+	} else {
+		for (source_pad = 0; source_pad < sd->entity.num_pads; source_pad++) {
+			if (sd->entity.pads[source_pad].flags & MEDIA_PAD_FL_SOURCE)
+				break;
+		}
+		if (source_pad == sd->entity.num_pads) {
+			dev_warn(dev, "no source pad in external entity\n");
+			ret = -ENOENT;
+			goto skip_unregister_subdev;
+		}
 	}
 
-	if (i == sd->entity.num_pads) {
-		dev_warn(dev, "no source pad in external entity\n");
-		ret = -ENOENT;
-		goto skip_unregister_subdev;
-	}
-
-	ret = media_create_pad_link(&sd->entity, i,
+	ret = media_create_pad_link(&sd->entity, source_pad,
 				    &isys->csi2[csi2->port].asd.sd.entity,
 				    0, MEDIA_LNK_FL_ENABLED |
 				    MEDIA_LNK_FL_IMMUTABLE);
@@ -352,8 +378,7 @@ static int isys_notifier_init(struct ipu7_isys *isys)
 		s_asd->csi2.port = vep.base.port;
 		s_asd->csi2.nlanes = vep.bus.mipi_csi2.num_data_lanes;
 		s_asd->csi2.bus_type = vep.bus_type;
-
-		fwnode_handle_put(ep);
+		s_asd->csi2.ep = ep;
 
 		continue;
 
