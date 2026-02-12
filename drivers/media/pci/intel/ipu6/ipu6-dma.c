@@ -131,10 +131,10 @@ void ipu6_dma_sync_single(struct ipu6_bus_device *sys, dma_addr_t dma_handle,
 	vaddr = info->vaddr + offset;
 	clflush_cache_range(vaddr, size);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_single, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_single, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_single, "INTEL_IPU6");
 #endif
 
 void ipu6_dma_sync_sg(struct ipu6_bus_device *sys, struct scatterlist *sglist,
@@ -146,20 +146,20 @@ void ipu6_dma_sync_sg(struct ipu6_bus_device *sys, struct scatterlist *sglist,
 	for_each_sg(sglist, sg, nents, i)
 		clflush_cache_range(page_to_virt(sg_page(sg)), sg->length);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_sg, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_sg, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_sg, "INTEL_IPU6");
 #endif
 
 void ipu6_dma_sync_sgtable(struct ipu6_bus_device *sys, struct sg_table *sgt)
 {
 	ipu6_dma_sync_sg(sys, sgt->sgl, sgt->orig_nents);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_sgtable, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_sgtable, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_sync_sgtable, "INTEL_IPU6");
 #endif
 
 void *ipu6_dma_alloc(struct ipu6_bus_device *sys, size_t size,
@@ -254,10 +254,10 @@ out_kfree:
 
 	return NULL;
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_alloc, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_alloc, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_alloc, "INTEL_IPU6");
 #endif
 
 void ipu6_dma_free(struct ipu6_bus_device *sys, size_t size, void *vaddr,
@@ -311,10 +311,10 @@ void ipu6_dma_free(struct ipu6_bus_device *sys, size_t size, void *vaddr,
 
 	kfree(info);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_free, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_free, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_free, "INTEL_IPU6");
 #endif
 
 int ipu6_dma_mmap(struct ipu6_bus_device *sys, struct vm_area_struct *vma,
@@ -392,10 +392,10 @@ void ipu6_dma_unmap_sg(struct ipu6_bus_device *sys, struct scatterlist *sglist,
 	mmu->tlb_invalidate(mmu);
 	__free_iova(&mmu->dmap->iovad, iova);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_unmap_sg, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_unmap_sg, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_unmap_sg, "INTEL_IPU6");
 #endif
 
 int ipu6_dma_map_sg(struct ipu6_bus_device *sys, struct scatterlist *sglist,
@@ -461,10 +461,10 @@ out_fail:
 
 	return 0;
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_map_sg, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_map_sg, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_map_sg, "INTEL_IPU6");
 #endif
 
 int ipu6_dma_map_sgtable(struct ipu6_bus_device *sys, struct sg_table *sgt,
@@ -480,10 +480,10 @@ int ipu6_dma_map_sgtable(struct ipu6_bus_device *sys, struct sg_table *sgt,
 
 	return 0;
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_map_sgtable, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_map_sgtable, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_map_sgtable, "INTEL_IPU6");
 #endif
 
 void ipu6_dma_unmap_sgtable(struct ipu6_bus_device *sys, struct sg_table *sgt,
@@ -491,10 +491,10 @@ void ipu6_dma_unmap_sgtable(struct ipu6_bus_device *sys, struct sg_table *sgt,
 {
 	ipu6_dma_unmap_sg(sys, sgt->sgl, sgt->nents, dir, attrs);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_dma_unmap_sgtable, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_dma_unmap_sgtable, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_dma_unmap_sgtable, "INTEL_IPU6");
 #endif
 
 /*

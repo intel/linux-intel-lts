@@ -303,10 +303,10 @@ void ipu6_configure_spc(struct ipu6_device *isp,
 		ipu6_pkg_dir_configure_spc(isp, hw_variant, pkg_dir_idx, base,
 					   pkg_dir, pkg_dir_dma_addr);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_configure_spc, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_configure_spc, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_configure_spc, "INTEL_IPU6");
 #endif
 
 #define IPU6_ISYS_CSI2_NPORTS		4
@@ -954,7 +954,7 @@ static struct pci_driver ipu6_pci_driver = {
 
 module_pci_driver(ipu6_pci_driver);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
 #else
 MODULE_IMPORT_NS("INTEL_IPU_BRIDGE");

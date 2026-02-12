@@ -7,6 +7,7 @@
 #include <linux/list.h>
 #include <linux/pci.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 #include "ipu6-buttress.h"
 

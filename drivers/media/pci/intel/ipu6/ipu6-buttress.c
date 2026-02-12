@@ -509,10 +509,10 @@ bool ipu6_buttress_auth_done(struct ipu6_device *isp)
 
 	return val == BUTTRESS_SECURITY_CTL_AUTH_DONE;
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_buttress_auth_done, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_auth_done, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_auth_done, "INTEL_IPU6");
 #endif
 
 int ipu6_buttress_reset_authentication(struct ipu6_device *isp)
@@ -605,10 +605,10 @@ out:
 
 	return ret;
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_buttress_map_fw_image, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_map_fw_image, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_map_fw_image, "INTEL_IPU6");
 #endif
 
 void ipu6_buttress_unmap_fw_image(struct ipu6_bus_device *sys,
@@ -620,10 +620,10 @@ void ipu6_buttress_unmap_fw_image(struct ipu6_bus_device *sys,
 	dma_unmap_sgtable(&pdev->dev, sgt, DMA_TO_DEVICE, 0);
 	sg_free_table(sgt);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_buttress_unmap_fw_image, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_unmap_fw_image, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_unmap_fw_image, "INTEL_IPU6");
 #endif
 
 int ipu6_buttress_authenticate(struct ipu6_device *isp)
@@ -789,10 +789,10 @@ int ipu6_buttress_start_tsc_sync(struct ipu6_device *isp)
 
 	return -ETIMEDOUT;
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_buttress_start_tsc_sync, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_start_tsc_sync, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_start_tsc_sync, "INTEL_IPU6");
 #endif
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
 /*
@@ -834,10 +834,10 @@ int ipu6_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len)
 	WARN_ON_ONCE(1);
 	return -1;
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_get_i2c_bus_id, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_get_i2c_bus_id, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_get_i2c_bus_id, "INTEL_IPU6");
 #endif
 #endif
 void ipu6_buttress_tsc_read(struct ipu6_device *isp, u64 *val)
@@ -860,10 +860,10 @@ void ipu6_buttress_tsc_read(struct ipu6_device *isp, u64 *val)
 	}
 	local_irq_restore(flags);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_read, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_read, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_read, "INTEL_IPU6");
 #endif
 
 u64 ipu6_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu6_device *isp)
@@ -879,10 +879,10 @@ u64 ipu6_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu6_device *isp)
 	 */
 	return div_u64(ns, isp->buttress.ref_clk);
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
-EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_ticks_to_ns, "INTEL_IPU6");
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_ticks_to_ns, INTEL_IPU6);
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_ticks_to_ns, "INTEL_IPU6");
 #endif
 
 void ipu6_buttress_restore(struct ipu6_device *isp)
