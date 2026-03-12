@@ -6,6 +6,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/acpi.h>
 #include <linux/i2c-atr.h>
 #include <linux/i2c-mux.h>
 #include <linux/module.h>
@@ -3156,6 +3157,11 @@ int max_des_probe(struct i2c_client *client, struct max_des *des)
 	ret = max_des_i2c_adapter_init(priv);
 	if (ret)
 		goto err_disable_pocs;
+
+#ifdef CONFIG_ACPI
+	if (!acpi_disabled)
+		acpi_dev_clear_dependencies(ACPI_COMPANION(dev));
+#endif
 
 	ret = max_des_v4l2_register(priv);
 	if (ret)
