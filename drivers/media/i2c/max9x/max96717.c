@@ -163,7 +163,7 @@ static int max96717_setup_gpio(struct max9x_common *common)
 {
 	struct device *dev = common->dev;
 	int ret;
-	struct max9x_gpio_pdata *gpio_pdata;
+	struct max9x_gpio_pdata *gpio_pdata = NULL;
 
 	if (common->dev->platform_data) {
 		struct max9x_pdata *pdata = common->dev->platform_data;
