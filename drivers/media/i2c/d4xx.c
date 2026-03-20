@@ -5624,6 +5624,13 @@ static const struct dev_pm_ops ds5_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(ds5_suspend, ds5_resume)
 };
 #endif
+static const struct acpi_device_id ds5_acpi_ids[] = {
+	{ "INTC10CD" },
+	{}
+};
+
+MODULE_DEVICE_TABLE(acpi, ds5_acpi_ids);
+
 static const struct i2c_device_id ds5_id_table[] = {
 	{ "d4xx", 0 },
 	{ /* sentinel */ },
@@ -5633,6 +5640,7 @@ MODULE_DEVICE_TABLE(i2c, ds5_id_table);
 static struct i2c_driver ds5_i2c_driver = {
 	.driver = {
 		.name = "d4xx",
+		.acpi_match_table = ACPI_PTR(ds5_acpi_ids),
 		//.pm = &ds5_pm_ops,
 	},
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
