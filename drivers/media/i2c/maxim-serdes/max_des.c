@@ -46,6 +46,8 @@ struct max_des_priv {
 	struct v4l2_subdev sd;
 	struct v4l2_async_notifier nf;
 	struct v4l2_ctrl_handler ctrl_handler;
+	struct v4l2_ctrl *link_freq_ctrl;
+	s64 link_freq_menu[1];
 
 	struct max_des_phy *unused_phy;
 };
@@ -2731,10 +2733,28 @@ static int max_des_v4l2_register(struct max_des_priv *priv)
 
 	v4l2_set_subdevdata(sd, priv);
 
-	if (des->ops->tpg_patterns) {
-		v4l2_ctrl_handler_init(&priv->ctrl_handler, 1);
-		priv->sd.ctrl_handler = &priv->ctrl_handler;
+	/* Initialize control handler - always create for link_freq */
+	v4l2_ctrl_handler_init(&priv->ctrl_handler, 2);
+	priv->sd.ctrl_handler = &priv->ctrl_handler;
 
+	/* Add link frequency control from first enabled phy */
+	/* This is needed by IPU7 CSI2 driver to configure the PHY */
+	for (i = 0; i < des->ops->num_phys; i++) {
+		if (des->phys[i].enabled) {
+			priv->link_freq_menu[0] = des->phys[i].link_frequency;
+
+			priv->link_freq_ctrl = v4l2_ctrl_new_int_menu(&priv->ctrl_handler,
+								       &max_des_ctrl_ops,
+								       V4L2_CID_LINK_FREQ,
+								       0, 0,
+								       priv->link_freq_menu);
+			if (priv->link_freq_ctrl)
+				priv->link_freq_ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+			break;
+		}
+	}
+
+	if (des->ops->tpg_patterns) {
 		v4l2_ctrl_new_std_menu_items(&priv->ctrl_handler,
 					     &max_des_ctrl_ops,
 					     V4L2_CID_TEST_PATTERN,
@@ -2742,10 +2762,11 @@ static int max_des_v4l2_register(struct max_des_priv *priv)
 					     ~des->ops->tpg_patterns,
 					     __ffs(des->ops->tpg_patterns),
 					     max_serdes_tpg_patterns);
-		if (priv->ctrl_handler.error) {
-			ret = priv->ctrl_handler.error;
-			goto err_free_ctrl;
-		}
+	}
+
+	if (priv->ctrl_handler.error) {
+		ret = priv->ctrl_handler.error;
+		goto err_free_ctrl;
 	}
 
 	ret = media_entity_pads_init(&sd->entity, num_pads, priv->pads);
