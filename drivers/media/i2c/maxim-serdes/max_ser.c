@@ -387,6 +387,7 @@ static int max_ser_i2c_atr_init(struct max_ser_priv *priv)
 {
 	struct i2c_atr_adap_desc desc = {
 		.chan_id = 0,
+		.bus_handle = dev_fwnode(priv->dev),
 	};
 
 	if (!i2c_check_functionality(priv->client->adapter,
