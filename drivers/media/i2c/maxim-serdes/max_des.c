@@ -1643,6 +1643,7 @@ static int max_des_i2c_atr_init(struct max_des_priv *priv)
 
 	for (i = 0; i < des->ops->num_links; i++) {
 		struct max_des_link *link = &des->links[i];
+		struct fwnode_handle *child, *chan_fwnode = NULL;
 		struct i2c_atr_adap_desc desc = {
 			.chan_id = i,
 		};
@@ -1650,9 +1651,25 @@ static int max_des_i2c_atr_init(struct max_des_priv *priv)
 		if (!link->enabled)
 			continue;
 
+		/* Find the channel fwnode child matching this link index */
+		fwnode_for_each_child_node(dev_fwnode(priv->dev), child) {
+			u32 reg;
+
+			if (fwnode_property_read_u32(child, "reg", &reg))
+				continue;
+			if (reg == i) {
+				chan_fwnode = child;
+				break;
+			}
+		}
+
+		desc.bus_handle = chan_fwnode;
+
 		ret = i2c_atr_add_adapter(priv->atr, &desc);
-		if (ret)
+		if (ret) {
+			fwnode_handle_put(chan_fwnode);
 			goto err_add_adapters;
+		}
 	}
 
 	for (i = 0; i < des->ops->num_links; i++) {
