@@ -136,6 +136,9 @@
 #define MAX96717_MEM_DT_SEL			GENMASK(5, 0)
 #define MAX96717_MEM_DT_EN			BIT(6)
 
+#define MAX96717_FRONTTOP_13_VS_IND 0x315
+#define MAX96717_FRONTTOP_13_VS_IND_EN	BIT(7)
+
 #define MAX96717_FRONTTOP_20(p)			(0x31c + (p) * 0x1)
 #define MAX96717_FRONTTOP_20_SOFT_BPP_EN	BIT(5)
 #define MAX96717_FRONTTOP_20_SOFT_BPP		GENMASK(4, 0)
@@ -230,6 +233,7 @@ struct max96717_chip_info {
 	unsigned int pipe_hw_ids[MAX96717_PIPES_NUM];
 	unsigned int num_phys;
 	unsigned int phy_hw_ids[MAX96717_PHYS_NUM];
+	bool vs_independent;
 };
 
 #define ser_to_priv(_ser) \
@@ -1095,6 +1099,16 @@ static int max96717_set_pipe_phy(struct max_ser *ser, struct max_ser_pipe *pipe,
 				  phy_id == 1);
 }
 
+static int max96717_set_vs_independent(struct max_ser *ser)
+{
+	struct max96717_priv *priv = ser_to_priv(ser);
+	if (!priv->info->vs_independent)
+		return 0;
+
+	return regmap_assign_bits(priv->regmap, MAX96717_FRONTTOP_13_VS_IND,
+				  MAX96717_FRONTTOP_13_VS_IND_EN, priv->info->vs_independent);
+}
+
 static int max96717_set_pipe_mode(struct max_ser *ser,
 				  struct max_ser_pipe *pipe,
 				  struct max_ser_pipe_mode *mode)
@@ -1398,6 +1412,7 @@ static const struct max_ser_ops max96717_ops = {
 	.set_pipe_mode = max96717_set_pipe_mode,
 	.set_pipe_stream_id = max96717_set_pipe_stream_id,
 	.set_pipe_phy = max96717_set_pipe_phy,
+	.set_vs_independent = max96717_set_vs_independent,
 };
 
 struct max96717_pll_predef_freq {
@@ -1648,6 +1663,7 @@ static int max96717_probe(struct i2c_client *client)
 	ops->num_pipes = priv->info->num_pipes;
 	ops->num_dts_per_pipe = priv->info->num_dts_per_pipe;
 	ops->num_phys = priv->info->num_phys;
+	ops->vs_independent = priv->info->vs_independent;
 	priv->ser.ops = ops;
 
 	ret = max96717_wait_for_device(priv);
@@ -1679,6 +1695,7 @@ static const struct max96717_chip_info max9295a_info = {
 	.pipe_hw_ids = { 0, 1, 2, 3 },
 	.num_phys = 1,
 	.phy_hw_ids = { 1 },
+	.vs_independent = true,
 };
 
 static const struct max96717_chip_info max96717_info = {

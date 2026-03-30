@@ -60,6 +60,7 @@ struct max_ser_ops {
 	unsigned int num_phys;
 	unsigned int num_i2c_xlates;
 	unsigned int num_vc_remaps;
+	bool vs_independent;
 
 	struct max_serdes_phys_configs phys_configs;
 	struct max_serdes_tpg_entries tpg_entries;
@@ -99,6 +100,7 @@ struct max_ser_ops {
 	unsigned int (*get_pipe_stream_id)(struct max_ser *ser, struct max_ser_pipe *pipe);
 	int (*set_pipe_phy)(struct max_ser *ser, struct max_ser_pipe *pipe,
 			    struct max_ser_phy *phy);
+	int (*set_vs_independent)(struct max_ser *ser);
 };
 
 struct max_ser_priv;

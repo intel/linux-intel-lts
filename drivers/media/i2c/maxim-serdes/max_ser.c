@@ -1057,6 +1057,12 @@ static int max_ser_update_pipe(struct max_ser_priv *priv,
 	if (ret)
 		goto err_revert_mode;
 
+	if (ser->ops->vs_independent) {
+		ret = ser->ops->set_vs_independent(ser);
+		if (ret)
+			goto err_revert_mode;
+	}
+
 	pipe->vcs = vcs;
 	pipe->mode = mode;
 
