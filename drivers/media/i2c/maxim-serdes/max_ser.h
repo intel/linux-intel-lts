@@ -49,6 +49,9 @@ struct max_ser_pipe {
 	unsigned int vcs;
 	struct max_ser_pipe_mode mode;
 	bool enabled;
+
+	/* Preset config from firmware */
+	unsigned int preset_vcs;
 };
 
 struct max_ser;

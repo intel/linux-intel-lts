@@ -104,9 +104,25 @@ static struct max_ser_phy *max_ser_pad_to_phy(struct max_ser *ser, u32 pad)
 }
 
 static struct max_ser_pipe *
-max_ser_find_phy_pipe(struct max_ser *ser, struct max_ser_phy *phy)
+max_ser_find_phy_pipe(struct max_ser *ser, struct max_ser_phy *phy,
+		      u64 streams_mask)
 {
 	unsigned int i;
+
+	for (i = 0; i < ser->ops->num_pipes; i++) {
+		struct max_ser_pipe *pipe = &ser->pipes[i];
+
+		if (pipe->phy_id != phy->index)
+			continue;
+
+		if (streams_mask && pipe->preset_vcs &&
+		    !(pipe->preset_vcs & streams_mask))
+			continue;
+
+		return pipe;
+	}
+
+	// If stream_masks does not match any preset vc, return the first pipe with matching phy_id.
 
 	for (i = 0; i < ser->ops->num_pipes; i++) {
 		struct max_ser_pipe *pipe = &ser->pipes[i];
@@ -229,7 +245,7 @@ static int max_ser_route_to_hw(struct max_ser_priv *priv,
 	if (!phy)
 		return -ENOENT;
 
-	hw->pipe = max_ser_find_phy_pipe(ser, phy);
+	hw->pipe = max_ser_find_phy_pipe(ser, phy, BIT_ULL(route->sink_stream));
 	if (!hw->pipe)
 		return -ENOENT;
 
@@ -1098,7 +1114,7 @@ static int max_ser_update_phy(struct max_ser_priv *priv,
 	struct max_ser_pipe *pipe;
 	int ret;
 
-	pipe = max_ser_find_phy_pipe(ser, phy);
+	pipe = max_ser_find_phy_pipe(ser, phy, streams_masks[pad]);
 	if (!pipe)
 		return -ENOENT;
 
@@ -1721,6 +1737,58 @@ static int max_ser_parse_sink_dt_endpoint(struct max_ser_priv *priv,
 
 	return 0;
 }
+static int max_ser_parse_pipe_config(struct max_ser_priv *priv, struct fwnode_handle *fwnode)
+{
+	struct max_ser *ser = priv->ser;
+	struct fwnode_handle *child;
+	unsigned int i;
+
+	fwnode_for_each_child_node(fwnode, child) {
+		const char *name = fwnode_get_name(child);
+		struct max_ser_pipe *pipe;
+		unsigned int pipe_idx;
+		u32 enable;
+		int count;
+
+		if (!name)
+			continue;
+
+		if (!strcasecmp(name, "Pipe-X"))
+			pipe_idx = 0;
+		else if (!strcasecmp(name, "Pipe-Y"))
+			pipe_idx = 1;
+		else if (!strcasecmp(name, "Pipe-Z"))
+			pipe_idx = 2;
+		else if (!strcasecmp(name, "Pipe-U"))
+			pipe_idx = 3;
+		else
+			continue;
+
+		if (pipe_idx >= ser->ops->num_pipes) {
+			dev_warn(priv->dev, "%s: pipe index %u >= num_pipes %u\n",
+				 name, pipe_idx, ser->ops->num_pipes);
+			continue;
+		}
+
+		pipe = &ser->pipes[pipe_idx];
+
+		count = fwnode_property_count_u32(child, "vc-id");
+		if (count > 0) {
+			u32 vcs[count];
+			int j;
+
+			if (!fwnode_property_read_u32_array(child, "vc-id",
+							    vcs, count)) {
+				for (j = 0; j < count; j++)
+					pipe->preset_vcs |= BIT(vcs[j]);
+			}
+		}
+		dev_info(priv->dev, "%s: vcs=0x%x\n",
+			 name, pipe->preset_vcs);
+	}
+
+	return 0;
+}
 
 static int max_ser_find_phys_config(struct max_ser_priv *priv)
 {
@@ -1796,6 +1864,10 @@ static int max_ser_parse_dt(struct max_ser_priv *priv)
 		if (ret)
 			return ret;
 	}
+
+	ret = max_ser_parse_pipe_config(priv, fwnode);
+	if (ret)
+		return ret;
 
 	return max_ser_find_phys_config(priv);
 }
