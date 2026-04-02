@@ -157,15 +157,49 @@ static struct max_des_link *max_des_pad_to_link(struct max_des *des, u32 pad)
 }
 
 static struct max_des_pipe *
-max_des_find_link_pipe(struct max_des *des, struct max_des_link *link)
+max_des_find_link_pipe(struct max_des *des, struct max_des_link *link,
+		       int stream_idx)
 {
 	unsigned int i;
+	int count = 0;
 
+	/* Look for pipes already assigned to this link. */
 	for (i = 0; i < des->ops->num_pipes; i++) {
 		struct max_des_pipe *pipe = &des->pipes[i];
 
-		if (pipe->link_id == link->index)
+		if (pipe->link_id != link->index)
+			continue;
+
+		if (stream_idx < 0 || count == stream_idx)
 			return pipe;
+
+		count++;
+	}
+
+	/*
+	 * Not enough pipes for this link. Steal a free pipe from a
+	 * disabled link and reassign it.
+	 */
+	if (stream_idx >= 0) {
+		for (i = 0; i < des->ops->num_pipes; i++) {
+			struct max_des_pipe *pipe = &des->pipes[i];
+
+			if (pipe->link_id == link->index)
+				continue;
+
+			if (des->links[pipe->link_id].enabled)
+				continue;
+
+			if (pipe->enabled)
+				continue;
+
+			pipe->link_id = link->index;
+
+			if (count == stream_idx)
+				return pipe;
+
+			count++;
+		}
 	}
 
 	return NULL;
@@ -291,7 +325,7 @@ static int max_des_route_to_hw(struct max_des_priv *priv,
 	if (!hw->phy)
 		return -ENOENT;
 
-	hw->pipe = max_des_find_link_pipe(des, link);
+	hw->pipe = max_des_find_link_pipe(des, link, route->sink_stream);
 	if (!hw->pipe)
 		return -ENOENT;
 
@@ -326,9 +360,12 @@ static int max_des_link_to_hw(struct max_des_priv *priv,
 
 	hw->link = link;
 
-	hw->pipe = max_des_find_link_pipe(des, hw->link);
-	if (!hw->pipe)
+	hw->pipe = max_des_find_link_pipe(des, hw->link, -1);
+	if (!hw->pipe) {
+		if (!link->enabled)
+			return 0;
 		return -ENOENT;
+	}
 
 	hw->source = max_des_get_link_source(priv, hw->link);
 
@@ -882,6 +919,7 @@ static int max_des_set_modes(struct max_des_priv *priv,
 	for (i = 0; i < des->ops->num_links; i++) {
 		struct max_des_link_hw hw;
 		u32 pipe_double_bpps = 0;
+		unsigned int j;
 
 		ret = max_des_link_index_to_hw(priv, i, &hw);
 		if (ret)
@@ -893,7 +931,11 @@ static int max_des_set_modes(struct max_des_priv *priv,
 		if (!hw.source->sd)
 			continue;
 
-		pipe_double_bpps = context->pipes_double_bpps[hw.pipe->index];
+		/* Gather double_bpps from all pipes assigned to this link. */
+		for (j = 0; j < des->ops->num_pipes; j++) {
+			if (des->pipes[j].link_id == i)
+				pipe_double_bpps |= context->pipes_double_bpps[j];
+		}
 
 		ret = max_ser_set_double_bpps(hw.source->sd, pipe_double_bpps);
 		if (ret)
@@ -1332,6 +1374,30 @@ static int max_des_update_pipe_enable(struct max_des_priv *priv,
 
 	if (enable == pipe->enabled)
 		return 0;
+
+	/*
+	 * When enabling a pipe, ensure the hardware link and stream_id
+	 * registers match the software state. This is needed when a pipe
+	 * has been dynamically reassigned to a different link, and to set
+	 * the correct stream_id matching the serializer pipe.
+	 */
+	if (enable) {
+		struct max_des_link *link = &des->links[pipe->link_id];
+
+		if (des->ops->set_pipe_link) {
+			ret = des->ops->set_pipe_link(des, pipe, link);
+			if (ret)
+				return ret;
+		}
+
+		if (des->ops->set_pipe_stream_id) {
+			pipe->stream_id = route->sink_stream;
+			ret = des->ops->set_pipe_stream_id(des, pipe,
+							   pipe->stream_id);
+			if (ret)
+				return ret;
+		}
+	}
 
 	ret = des->ops->set_pipe_enable(des, pipe, enable);
 	if (ret)
@@ -2225,19 +2291,20 @@ static int max_des_update_link(struct max_des_priv *priv,
 			       u64 *streams_masks, bool enable)
 {
 	struct max_des *des = priv->des;
-	struct max_des_pipe *pipe;
+	unsigned int i;
 	int ret;
 
-	pipe = max_des_find_link_pipe(des, link);
-	if (!pipe)
-		return -ENOENT;
+	for (i = 0; i < des->ops->num_pipes; i++) {
+		struct max_des_pipe *pipe = &des->pipes[i];
 
-	if (pipe->enabled == enable)
-		return 0;
+		if (pipe->link_id != link->index)
+			continue;
 
-	ret = max_des_update_pipe(priv, context, pipe, state, streams_masks);
-	if (ret)
-		return ret;
+		ret = max_des_update_pipe(priv, context, pipe, state,
+					  streams_masks);
+		if (ret)
+			return ret;
+	}
 
 	return 0;
 }
