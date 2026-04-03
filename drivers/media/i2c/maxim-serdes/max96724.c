@@ -456,10 +456,19 @@ static int max96724_init(struct max_des *des)
 		}
 	}
 
-	if (priv->info->supports_pipe_stream_autoselect) {
+	if (des->pipe_stream_autoselect) {
 		/* Enable stream autoselect. */
 		ret = regmap_set_bits(priv->regmap, MAX96724_VIDEO_PIPE_EN,
 				      MAX96724_VIDEO_PIPE_EN_STREAM_SEL_ALL);
+		if (ret)
+			return ret;
+	} else {
+		/*
+		 * Disable stream autoselect so each pipe only receives
+		 * the stream matching its configured stream_id.
+		 */
+		ret = regmap_clear_bits(priv->regmap, MAX96724_VIDEO_PIPE_EN,
+					MAX96724_VIDEO_PIPE_EN_STREAM_SEL_ALL);
 		if (ret)
 			return ret;
 	}
@@ -1141,6 +1150,8 @@ static int max96724_probe(struct i2c_client *client)
 	ops->set_pipe_phy = priv->info->set_pipe_phy;
 	ops->set_pipe_tunnel_phy = priv->info->set_pipe_tunnel_phy;
 	priv->des.ops = ops;
+
+	priv->des.pipe_stream_autoselect = priv->info->supports_pipe_stream_autoselect;
 
 	ret = max96724_reset(priv);
 	if (ret)

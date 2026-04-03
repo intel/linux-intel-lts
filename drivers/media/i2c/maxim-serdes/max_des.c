@@ -3090,6 +3090,10 @@ static int max_des_parse_dt(struct max_des_priv *priv)
 	struct max_des_phy *phy;
 	unsigned int i;
 	int ret;
+	u32 val;
+
+	if (!fwnode_property_read_u32(fwnode, "pipe-stream-autoselect", &val))
+		des->pipe_stream_autoselect = !!val;
 
 	for (i = 0; i < des->ops->num_phys; i++) {
 		phy = &des->phys[i];
