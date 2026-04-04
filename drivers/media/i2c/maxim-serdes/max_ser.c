@@ -2232,6 +2232,56 @@ int max_ser_remove(struct max_ser *ser)
 }
 EXPORT_SYMBOL_NS_GPL(max_ser_remove, "MAX_SERDES");
 
+int max_ser_suspend(struct max_ser *ser)
+{
+	struct max_ser_priv *priv = ser->priv;
+	unsigned int i;
+
+	for (i = 0; i < ser->ops->num_phys; i++) {
+		struct max_ser_phy *phy = &ser->phys[i];
+
+		if (ser->ops->set_phy_active && phy->active) {
+			ser->ops->set_phy_active(ser, phy, false);
+			/*
+			 * Keep the active flag so that resume knows
+			 * which PHYs to re-enable.
+			 */
+		}
+	}
+
+	for (i = 0; i < ser->ops->num_pipes; i++) {
+		struct max_ser_pipe *pipe = &ser->pipes[i];
+
+		if (pipe->enabled)
+			ser->ops->set_pipe_enable(ser, pipe, false);
+	}
+
+	if (ser->ops->set_tunnel_enable)
+		ser->ops->set_tunnel_enable(ser, false);
+
+	dev_dbg(priv->dev, "Serializer suspended\n");
+
+	return 0;
+}
+EXPORT_SYMBOL_NS_GPL(max_ser_suspend, "MAX_SERDES");
+
+int max_ser_resume(struct max_ser *ser)
+{
+	struct max_ser_priv *priv = ser->priv;
+	int ret;
+
+	ret = max_ser_init(priv);
+	if (ret) {
+		dev_err(priv->dev, "Failed to re-initialize serializer: %d\n", ret);
+		return ret;
+	}
+
+	dev_dbg(priv->dev, "Serializer resumed\n");
+
+	return 0;
+}
+EXPORT_SYMBOL_NS_GPL(max_ser_resume, "MAX_SERDES");
+
 int max_ser_set_double_bpps(struct v4l2_subdev *sd, u32 double_bpps)
 {
 	struct max_ser_priv *priv = sd_to_priv(sd);

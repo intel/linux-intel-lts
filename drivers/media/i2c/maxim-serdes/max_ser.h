@@ -143,6 +143,10 @@ int max_ser_probe(struct i2c_client *client, struct max_ser *ser);
 
 int max_ser_remove(struct max_ser *ser);
 
+int max_ser_suspend(struct max_ser *ser);
+
+int max_ser_resume(struct max_ser *ser);
+
 int max_ser_set_double_bpps(struct v4l2_subdev *sd, u32 double_bpps);
 unsigned int max_ser_get_supported_modes(struct v4l2_subdev *sd);
 int max_ser_set_mode(struct v4l2_subdev *sd, enum max_serdes_gmsl_mode mode);

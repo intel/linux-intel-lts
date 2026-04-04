@@ -1169,6 +1169,28 @@ static void max96724_remove(struct i2c_client *client)
 	gpiod_set_value_cansleep(priv->gpiod_enable, 0);
 }
 
+static int max96724_suspend(struct device *dev)
+{
+	struct max96724_priv *priv = dev_get_drvdata(dev);
+
+	return max_des_suspend(&priv->des);
+}
+
+static int max96724_resume(struct device *dev)
+{
+	struct max96724_priv *priv = dev_get_drvdata(dev);
+	int ret;
+
+	ret = max96724_reset(priv);
+	if (ret)
+		return ret;
+
+	return max_des_resume(&priv->des);
+}
+
+static DEFINE_SIMPLE_DEV_PM_OPS(max96724_pm_ops,
+				max96724_suspend, max96724_resume);
+
 static const struct acpi_device_id max96724_acpi_ids[] = {
 	{ "INTC1139", (kernel_ulong_t) &max96724_info },
 	{}
@@ -1189,6 +1211,7 @@ static struct i2c_driver max96724_i2c_driver = {
 		.name = "max96724",
 		.of_match_table	= max96724_of_table,
 		.acpi_match_table = max96724_acpi_ids,
+		.pm = pm_sleep_ptr(&max96724_pm_ops),
 	},
 	.probe = max96724_probe,
 	.remove = max96724_remove,

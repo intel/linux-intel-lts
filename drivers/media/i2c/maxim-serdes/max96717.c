@@ -268,7 +268,7 @@ static const struct regmap_config max96717_i2c_regmap = {
 static int max96717_wait_for_device(struct max96717_priv *priv)
 {
 	unsigned int i;
-	int ret;
+	int ret = 0;
 
 	for (i = 0; i < 10; i++) {
 		unsigned int val;
@@ -276,6 +276,9 @@ static int max96717_wait_for_device(struct max96717_priv *priv)
 		ret = regmap_read(priv->regmap, MAX96717_REG0, &val);
 		if (!ret && val)
 			return 0;
+
+		if (!ret)
+			ret = -ETIMEDOUT;
 
 		msleep(100);
 
@@ -1810,6 +1813,28 @@ static void max96717_remove(struct i2c_client *client)
 	max_ser_remove(&priv->ser);
 }
 
+static int max96717_suspend(struct device *dev)
+{
+	struct max96717_priv *priv = dev_get_drvdata(dev);
+
+	return max_ser_suspend(&priv->ser);
+}
+
+static int max96717_resume(struct device *dev)
+{
+	struct max96717_priv *priv = dev_get_drvdata(dev);
+	int ret;
+
+	ret = max96717_wait_for_device(priv);
+	if (ret)
+		return ret;
+
+	return max_ser_resume(&priv->ser);
+}
+
+static DEFINE_SIMPLE_DEV_PM_OPS(max96717_pm_ops,
+				max96717_suspend, max96717_resume);
+
 static const struct max96717_chip_info max9295a_info = {
 	.ops = &max96717_common_ops,
 	.modes = BIT(MAX_SERDES_GMSL_PIXEL_MODE),
@@ -1876,6 +1901,7 @@ static struct i2c_driver max96717_i2c_driver = {
 		.name = MAX96717_NAME,
 		.of_match_table = max96717_of_ids,
 		.acpi_match_table = max96717_acpi_ids,
+		.pm = pm_sleep_ptr(&max96717_pm_ops),
 	},
 	.probe = max96717_probe,
 	.remove = max96717_remove,

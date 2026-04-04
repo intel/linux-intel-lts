@@ -3473,5 +3473,42 @@ int max_des_remove(struct max_des *des)
 }
 EXPORT_SYMBOL_NS_GPL(max_des_remove, "MAX_SERDES");
 
+int max_des_suspend(struct max_des *des)
+{
+	struct max_des_priv *priv = des->priv;
+
+	if (des->ops->set_enable)
+		des->ops->set_enable(des, false);
+
+	max_des_update_pocs(priv, false);
+
+	return 0;
+}
+EXPORT_SYMBOL_NS_GPL(max_des_suspend, "MAX_SERDES");
+
+int max_des_resume(struct max_des *des)
+{
+	struct max_des_priv *priv = des->priv;
+	int ret;
+
+	ret = max_des_update_pocs(priv, true);
+	if (ret)
+		return ret;
+
+	ret = max_des_init(priv);
+	if (ret) {
+		dev_err(priv->dev, "Failed to re-initialize deserializer: %d\n", ret);
+		goto err_disable_pocs;
+	}
+
+	return 0;
+
+err_disable_pocs:
+	max_des_update_pocs(priv, false);
+
+	return ret;
+}
+EXPORT_SYMBOL_NS_GPL(max_des_resume, "MAX_SERDES");
+
 MODULE_LICENSE("GPL");
 MODULE_IMPORT_NS("I2C_ATR");
