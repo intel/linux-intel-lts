@@ -161,45 +161,57 @@ max_des_find_link_pipe(struct max_des *des, struct max_des_link *link,
 		       int stream_idx)
 {
 	unsigned int i;
-	int count = 0;
 
-	/* Look for pipes already assigned to this link. */
+	if (stream_idx < 0) {
+		/* Return any pipe assigned to this link. */
+		for (i = 0; i < des->ops->num_pipes; i++) {
+			struct max_des_pipe *pipe = &des->pipes[i];
+
+			if (pipe->link_id == link->index)
+				return pipe;
+		}
+		return NULL;
+	}
+
+	/* Look for a pipe already assigned to this link and stream. */
 	for (i = 0; i < des->ops->num_pipes; i++) {
 		struct max_des_pipe *pipe = &des->pipes[i];
 
-		if (pipe->link_id != link->index)
-			continue;
-
-		if (stream_idx < 0 || count == stream_idx)
+		if (pipe->link_id == link->index &&
+		    pipe->assigned_stream == stream_idx)
 			return pipe;
+	}
 
-		count++;
+	/* Look for an unassigned pipe already belonging to this link. */
+	for (i = 0; i < des->ops->num_pipes; i++) {
+		struct max_des_pipe *pipe = &des->pipes[i];
+
+		if (pipe->link_id == link->index &&
+		    pipe->assigned_stream < 0) {
+			pipe->assigned_stream = stream_idx;
+			return pipe;
+		}
 	}
 
 	/*
 	 * Not enough pipes for this link. Steal a free pipe from a
 	 * disabled link and reassign it.
 	 */
-	if (stream_idx >= 0) {
-		for (i = 0; i < des->ops->num_pipes; i++) {
-			struct max_des_pipe *pipe = &des->pipes[i];
+	for (i = 0; i < des->ops->num_pipes; i++) {
+		struct max_des_pipe *pipe = &des->pipes[i];
 
-			if (pipe->link_id == link->index)
-				continue;
+		if (pipe->link_id == link->index)
+			continue;
 
-			if (des->links[pipe->link_id].enabled)
-				continue;
+		if (des->links[pipe->link_id].enabled)
+			continue;
 
-			if (pipe->enabled)
-				continue;
+		if (pipe->enabled)
+			continue;
 
-			pipe->link_id = link->index;
-
-			if (count == stream_idx)
-				return pipe;
-
-			count++;
-		}
+		pipe->link_id = link->index;
+		pipe->assigned_stream = stream_idx;
+		return pipe;
 	}
 
 	return NULL;
@@ -2242,7 +2254,14 @@ static int __max_des_set_routing(struct v4l2_subdev *sd,
 	struct max_des *des = priv->des;
 	struct v4l2_subdev_route *route;
 	bool is_tpg = false;
+	unsigned int i;
 	int ret;
+
+	/* Reset pipe stream assignments for clean reassignment. */
+	for (i = 0; i < des->ops->num_pipes; i++) {
+		des->pipes[i].assigned_stream = -1;
+		des->pipes[i].link_id = i % des->ops->num_links;
+	}
 
 	ret = v4l2_subdev_routing_validate(sd, routing,
 					   V4L2_SUBDEV_ROUTING_ONLY_1_TO_1 |
@@ -3142,6 +3161,7 @@ static int max_des_parse_dt(struct max_des_priv *priv)
 		 * don't even support receiving pipe data from a different link.
 		 */
 		pipe->link_id = i % des->ops->num_links;
+		pipe->assigned_stream = -1;
 	}
 
 	for (i = 0; i < des->ops->num_links; i++) {
