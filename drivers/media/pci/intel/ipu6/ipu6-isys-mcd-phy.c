@@ -631,9 +631,6 @@ static int ipu6_isys_driver_port_to_phy_port(struct ipu6_isys_csi2_config *cfg)
 	/* check validity per lane configuration */
 	if (cfg->nlanes == 4 && !(phy_port == 0 || phy_port == 2))
 		ret = -EINVAL;
-	else if ((cfg->nlanes == 2 || cfg->nlanes == 1) &&
-		 !(phy_port >= 0 && phy_port <= 3))
-		ret = -EINVAL;
 
 	return ret;
 }
