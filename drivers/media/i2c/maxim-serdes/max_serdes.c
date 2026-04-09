@@ -118,10 +118,10 @@ int max_serdes_process_bpps(struct device *dev, u32 bpps,
 	unsigned int max_bpp;
 	bool doubled = false;
 
+	*doubled_bpp = 0;
+
 	if (!bpps)
 		return 0;
-
-	*doubled_bpp = 0;
 
 	/*
 	 * Hardware can double bpps 8, 10, 12, and it can pad bpps < 16
