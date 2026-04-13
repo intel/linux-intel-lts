@@ -515,7 +515,6 @@ static void return_buffers(struct ipu6_isys_queue *aq,
 {
 	struct ipu6_isys_video *av = ipu6_isys_queue_to_video(aq);
 	struct ipu6_isys_buffer *ib;
-	bool need_reset = false;
 	unsigned long flags;
 
 	spin_lock_irqsave(&aq->lock, flags);
@@ -538,7 +537,6 @@ static void return_buffers(struct ipu6_isys_queue *aq,
 		vb2_buffer_done(vb, state);
 
 		spin_lock_irqsave(&aq->lock, flags);
-		need_reset = true;
 	}
 
 	while (!list_empty(&aq->incoming)) {
@@ -556,12 +554,6 @@ static void return_buffers(struct ipu6_isys_queue *aq,
 	}
 
 	spin_unlock_irqrestore(&aq->lock, flags);
-
-	if (need_reset) {
-		mutex_lock(&av->isys->mutex);
-		av->isys->need_reset = true;
-		mutex_unlock(&av->isys->mutex);
-	}
 }
 
 static void ipu6_isys_stream_cleanup(struct ipu6_isys_video *av)
@@ -832,6 +824,7 @@ static void stop_streaming(struct vb2_queue *q)
 	struct ipu6_isys_stream *stream = av->stream;
 
 #ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	bool need_reset;
 	struct device *dev = &av->isys->adev->auxdev.dev;
 
 	dev_dbg(dev, "stop: %s: enter\n", av->vdev.name);
@@ -890,13 +883,17 @@ static void stop_streaming(struct vb2_queue *q)
 	av->start_streaming = 0;
 	mutex_lock(&av->isys->reset_mutex);
 	av->isys->in_stop_streaming = false;
+	need_reset = av->isys->need_reset;
 	mutex_unlock(&av->isys->reset_mutex);
 
-	if (av->isys->need_reset) {
+	if (need_reset) {
 		if (!stream->nr_streaming && !is_support_vc(av))
 			ipu_isys_reset(av, stream);
-		else
-			av->isys->need_reset = 0;
+		else {
+			mutex_lock(&av->isys->reset_mutex);
+			av->isys->need_reset = false;
+			mutex_unlock(&av->isys->reset_mutex);
+		}
 	}
 
 	dev_dbg(dev, "stop: %s: exit\n", av->vdev.name);

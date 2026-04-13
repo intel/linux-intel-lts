@@ -101,17 +101,19 @@ const struct ipu6_isys_pixelformat ipu6_isys_pfmts[] = {
 
 static int video_open(struct file *file)
 {
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
 	struct ipu6_isys_video *av = video_drvdata(file);
 	struct ipu6_isys *isys = av->isys;
 	struct ipu6_bus_device *adev = isys->adev;
 
-	mutex_lock(&isys->mutex);
+	mutex_lock(&isys->reset_mutex);
 	if (isys->need_reset) {
-		mutex_unlock(&isys->mutex);
+		mutex_unlock(&isys->reset_mutex);
 		dev_warn(&adev->auxdev.dev, "isys power cycle required\n");
 		return -EIO;
 	}
-	mutex_unlock(&isys->mutex);
+	mutex_unlock(&isys->reset_mutex);
+#endif
 
 	return v4l2_fh_open(file);
 }
@@ -1250,21 +1252,19 @@ void ipu6_isys_fw_close(struct ipu6_isys *isys)
 	mutex_lock(&isys->mutex);
 
 	isys->ref_count--;
-	if (!isys->ref_count) {
+	if (!isys->ref_count)
 		ipu6_fw_isys_close(isys);
-		if (isys->fwcom) {
-			isys->need_reset = true;
-			dev_warn(&isys->adev->auxdev.dev,
-				 "failed to close fw isys\n");
-		}
-	}
 
 	mutex_unlock(&isys->mutex);
 
-	if (isys->need_reset)
+	mutex_lock(&isys->reset_mutex);
+	if (isys->need_reset) {
+		mutex_unlock(&isys->reset_mutex);
 		pm_runtime_put_sync(&isys->adev->auxdev.dev);
-	else
+	} else {
+		mutex_unlock(&isys->reset_mutex);
 		pm_runtime_put(&isys->adev->auxdev.dev);
+	}
 }
 
 int ipu6_isys_setup_video(struct ipu6_isys_video *av,

@@ -151,7 +151,6 @@ struct ipu6_isys {
 	void *fwcom;
 	unsigned int line_align;
 	u32 phy_termcal_val;
-	bool need_reset;
 	bool icache_prefetch;
 	bool csi2_cse_ipc_not_supported;
 	unsigned int ref_count;
@@ -180,6 +179,7 @@ struct ipu6_isys {
 	struct mutex reset_mutex;
 	bool in_reset;
 	bool in_stop_streaming;
+	bool need_reset;
 #endif
 };
 

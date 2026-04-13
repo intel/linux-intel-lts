@@ -1114,6 +1114,41 @@ static void isys_notifier_cleanup(struct ipu6_isys *isys)
 	v4l2_async_nf_cleanup(&isys->notifier);
 }
 
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+static void isys_v4l2_notify(struct v4l2_subdev *sd, unsigned int notification,
+			     void *arg)
+{
+	struct ipu6_isys *isys =
+		container_of(sd->v4l2_dev, struct ipu6_isys, v4l2_dev);
+	struct device *dev = &isys->adev->auxdev.dev;
+	struct v4l2_event *ev = arg;
+	unsigned long flags;
+
+	spin_lock_irqsave(&isys->power_lock, flags);
+	if (!isys->power) {
+		spin_unlock_irqrestore(&isys->power_lock, flags);
+		dev_dbg(dev, "%s: isys powered off, ignore notify %u\n",
+			sd->name, notification);
+		return;
+	}
+	spin_unlock_irqrestore(&isys->power_lock, flags);
+
+	if (notification == V4L2_DEVICE_NOTIFY_EVENT) {
+		if ((ev->type == V4L2_EVENT_SOURCE_CHANGE ||
+		     ev->type == V4L2_EVENT_EOS) &&
+		    isys->stream_opened > 1) {
+			dev_dbg(dev, "%s: isys need reset due to notify %u, stream opened %d\n",
+				sd->name, ev->type, isys->stream_opened);
+			mutex_lock(&isys->reset_mutex);
+			isys->need_reset = true;
+			mutex_unlock(&isys->reset_mutex);
+		}
+	} else {
+		dev_warn(dev, "%s: unknown notification %u\n",
+			 sd->name, notification);
+	}
+}
+#endif
 static int isys_register_devices(struct ipu6_isys *isys)
 {
 	struct device *dev = &isys->adev->auxdev.dev;
@@ -1127,6 +1162,9 @@ static int isys_register_devices(struct ipu6_isys *isys)
 	strscpy(isys->v4l2_dev.name, isys->media_dev.model,
 		sizeof(isys->v4l2_dev.name));
 
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	isys->v4l2_dev.notify = isys_v4l2_notify;
+#endif
 	ret = media_device_register(&isys->media_dev);
 	if (ret < 0)
 		goto out_media_device_unregister;
@@ -1246,9 +1284,9 @@ static int isys_runtime_pm_suspend(struct device *dev)
 	isys->power = 0;
 	spin_unlock_irqrestore(&isys->power_lock, flags);
 
-	mutex_lock(&isys->mutex);
+	mutex_lock(&isys->reset_mutex);
 	isys->need_reset = false;
-	mutex_unlock(&isys->mutex);
+	mutex_unlock(&isys->reset_mutex);
 
 	isys->phy_termcal_val = 0;
 	cpu_latency_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
