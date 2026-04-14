@@ -198,8 +198,6 @@ struct ipu6_isys_subdev_i2c_info {
 	int i2c_adapter_id;
 	char i2c_adapter_bdf[32];
 };
-#define IPU_SPDATA_GPIO_NUM 	4
-#define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
 #endif
 
 struct ipu_isys_subdev_info {
