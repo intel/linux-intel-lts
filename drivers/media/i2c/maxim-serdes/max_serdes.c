@@ -260,6 +260,14 @@ int max_serdes_get_streams_masks(struct device *dev,
 	if (!streams_masks)
 		return -ENOMEM;
 
+	/*
+	 * Carry forward old state for all pads, then update only the pads
+	 * affected by this stream enable/disable. Without this, pads
+	 * unrelated to the current update lose their active streams state,
+	 * causing pipes on other links to be incorrectly disabled.
+	 */
+	memcpy(streams_masks, old_streams_masks, num_pads * sizeof(*streams_masks));
+
 	for (i = 0; i < num_pads; i++) {
 		u64 matched_streams_mask = updated_streams_mask;
 		u64 updated_sink_streams_mask;
@@ -270,7 +278,6 @@ int max_serdes_get_streams_masks(struct device *dev,
 		if (!updated_sink_streams_mask)
 			continue;
 
-		streams_masks[i] = old_streams_masks[i];
 		if (enable)
 			streams_masks[i] |= updated_sink_streams_mask;
 		else
