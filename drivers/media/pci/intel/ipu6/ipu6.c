@@ -394,9 +394,9 @@ static void ipu6_internal_pdata_init(struct ipu6_device *isp)
 static struct ipu6_bus_device *
 ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
 	       struct ipu6_buttress_ctrl *ctrl, void __iomem *base,
-	       const struct ipu6_isys_internal_pdata *ipdata,
+	       const struct ipu6_isys_internal_pdata *ipdata
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
-	       struct ipu_isys_subdev_pdata *spdata
+	       , struct ipu_isys_subdev_pdata *spdata
 #endif
 			)
 {
@@ -455,6 +455,7 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
 	if (ret)
 		return ERR_PTR(ret);
 #endif
+
 	isys_adev->mmu = ipu6_mmu_init(dev, base, ISYS_MMID,
 				       &ipdata->hw_variant);
 	if (IS_ERR(isys_adev->mmu)) {
@@ -704,9 +705,9 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	isp->isys = ipu6_isys_init(pdev, dev, isys_ctrl, isys_base,
-				   &isys_ipdata,
+				   &isys_ipdata
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
-				  pdev->dev.platform_data
+				  , pdev->dev.platform_data
 #endif
 					);
 	if (IS_ERR(isp->isys)) {
