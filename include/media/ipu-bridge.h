@@ -97,7 +97,7 @@ struct ipu_sensor_ssdb {
 	u8 pprunit;
 	u8 flashid;
 	u8 phyconfig;
-	u8 reserved3[7];
+	u8 reserved2[7];
 } __packed;
 
 struct ipu_property_names {
