@@ -81,6 +81,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
 	IPU_SENSOR_CONFIG("INTC10C5", 0),
 	/* Lontium LT6911UXC */
 	IPU_SENSOR_CONFIG("INTC10B1", 0),
+	/* Lontium lt6911gxd */
+	IPU_SENSOR_CONFIG("INTC1124", 0),
 	/* Omnivision OV01A10 / OV01A1S */
 	IPU_SENSOR_CONFIG("OVTI01A0", 1, 400000000),
 	IPU_SENSOR_CONFIG("OVTI01AS", 1, 400000000),
@@ -103,8 +105,6 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
 	IPU_SENSOR_CONFIG("XMCC0003", 1, 321468000),
 	/* OnSemiconductor AR0234 */
 	IPU_SENSOR_CONFIG("INTC10C0", 1, 360000000),
-	/* Lontium lt6911gxd */
-	IPU_SENSOR_CONFIG("INTC1124", 0),
 	/* D3 Embedded ISX031 */
 	IPU_SENSOR_CONFIG("INTC113C", 1, 300000000),
 	/* LI AR0830 */
