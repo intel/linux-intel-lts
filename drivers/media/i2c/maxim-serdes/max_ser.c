@@ -21,7 +21,7 @@
 #include "max_serdes.h"
 
 #define MAX_SER_NUM_LINKS	1
-#define MAX_SER_NUM_PHYS	1
+#define MAX_SER_NUM_PHYS	2
 
 struct max_ser_priv {
 	struct max_ser *ser;
