@@ -267,7 +267,6 @@ static void __ipu_isys_vidioc_try_fmt_vid_cap(struct ipu7_isys_video *av,
 			      &f->fmt.pix.bytesperline, &f->fmt.pix.sizeimage);
 
 	f->fmt.pix.field = V4L2_FIELD_NONE;
-	f->fmt.pix.colorspace = V4L2_COLORSPACE_RAW;
 	f->fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
 	f->fmt.pix.quantization = V4L2_QUANTIZATION_DEFAULT;
 	f->fmt.pix.xfer_func = V4L2_XFER_FUNC_DEFAULT;
