@@ -1723,7 +1723,7 @@ static int max_des_i2c_atr_init(struct max_des_priv *priv)
 
 	for (i = 0; i < des->ops->num_links; i++) {
 		struct max_des_link *link = &des->links[i];
-		struct fwnode_handle *child, *chan_fwnode = NULL;
+		struct fwnode_handle *child = NULL, *chan_fwnode = NULL;
 		struct i2c_atr_adap_desc desc = {
 			.chan_id = i,
 		};
@@ -2307,7 +2307,7 @@ static int max_des_update_link(struct max_des_priv *priv,
 			       struct max_des_remap_context *context,
 			       struct max_des_link *link,
 			       struct v4l2_subdev_state *state,
-			       u64 *streams_masks, bool enable)
+			       u64 *streams_masks)
 {
 	struct max_des *des = priv->des;
 	unsigned int i;
@@ -2401,7 +2401,7 @@ static int max_des_update_active(struct max_des_priv *priv, u64 *streams_masks,
 static int max_des_update_links(struct max_des_priv *priv,
 				struct max_des_remap_context *context,
 				struct v4l2_subdev_state *state,
-				u64 *streams_masks, bool enable)
+				u64 *streams_masks)
 {
 	struct max_des *des = priv->des;
 	unsigned int failed_update_link_id = des->ops->num_links;
@@ -2412,7 +2412,7 @@ static int max_des_update_links(struct max_des_priv *priv,
 		struct max_des_link *link = &des->links[i];
 
 		ret = max_des_update_link(priv, context, link, state,
-					  streams_masks, enable);
+					  streams_masks);
 		if (ret) {
 			failed_update_link_id = i;
 			goto err;
@@ -2426,7 +2426,7 @@ err:
 		struct max_des_link *link = &des->links[i];
 
 		max_des_update_link(priv, context, link, state,
-				    priv->streams_masks, enable);
+				    priv->streams_masks);
 	}
 
 	return ret;
@@ -2501,7 +2501,7 @@ static int max_des_update_streams(struct v4l2_subdev *sd,
 	if (ret)
 		goto err_revert_streams_disable;
 
-	ret = max_des_update_links(priv, &context, state, streams_masks, enable);
+	ret = max_des_update_links(priv, &context, state, streams_masks);
 	if (ret)
 		goto err_revert_active_disable;
 
@@ -2532,7 +2532,7 @@ err_revert_tpg_update:
 	max_des_update_tpg(priv, state, priv->streams_masks);
 
 err_revert_links_update:
-	max_des_update_links(priv, &context, state, priv->streams_masks, false);
+	max_des_update_links(priv, &context, state, priv->streams_masks);
 
 err_revert_active_disable:
 	max_des_update_active(priv, priv->streams_masks, true);

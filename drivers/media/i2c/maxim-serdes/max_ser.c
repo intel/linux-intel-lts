@@ -1741,7 +1741,6 @@ static int max_ser_parse_pipe_config(struct max_ser_priv *priv, struct fwnode_ha
 {
 	struct max_ser *ser = priv->ser;
 	struct fwnode_handle *child;
-	unsigned int i;
 
 	fwnode_for_each_child_node(fwnode, child) {
 		const char *name = fwnode_get_name(child);
