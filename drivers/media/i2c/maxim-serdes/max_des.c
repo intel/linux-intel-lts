@@ -194,8 +194,19 @@ max_des_find_link_pipe(struct max_des *des, struct max_des_link *link,
 	}
 
 	/*
-	 * Not enough pipes for this link. Steal a free pipe from a
-	 * disabled link and reassign it.
+	 * Not enough pipes for this link. Steal a free pipe from another
+	 * link and reassign it.
+	 *
+	 * A pipe is considered stealable when it has not yet been claimed
+	 * by the current routing (assigned_stream < 0) and is not currently
+	 * streaming in hardware (!pipe->enabled). The original owner link's
+	 * "enabled" flag (set from ACPI/DT enumeration) is intentionally not
+	 * consulted here: a link may be enumerated but have no active routes
+	 * in the current configuration, in which case its default pipe is
+	 * free to be reused. This is required to support topologies such as
+	 * max96724 (4 pipes / 4 links) where a subset of the enumerated links
+	 * carries more than one stream (e.g. depth+rgb) and the unused links'
+	 * pipes must be reassigned.
 	 */
 	for (i = 0; i < des->ops->num_pipes; i++) {
 		struct max_des_pipe *pipe = &des->pipes[i];
@@ -203,7 +214,7 @@ max_des_find_link_pipe(struct max_des *des, struct max_des_link *link,
 		if (pipe->link_id == link->index)
 			continue;
 
-		if (des->links[pipe->link_id].enabled)
+		if (pipe->assigned_stream >= 0)
 			continue;
 
 		if (pipe->enabled)
@@ -330,16 +341,26 @@ static int max_des_route_to_hw(struct max_des_priv *priv,
 		return max_des_tpg_route_to_hw(priv, state, route, hw);
 
 	link = max_des_pad_to_link(des, route->sink_pad);
-	if (!link)
+	if (!link) {
+		dev_err(priv->dev, "route_to_hw: pad_to_link(%u) failed\n",
+			route->sink_pad);
 		return -ENOENT;
+	}
 
 	hw->phy = max_des_pad_to_phy(des, route->source_pad);
-	if (!hw->phy)
+	if (!hw->phy) {
+		dev_err(priv->dev, "route_to_hw: pad_to_phy(%u) failed\n",
+			route->source_pad);
 		return -ENOENT;
+	}
 
 	hw->pipe = max_des_find_link_pipe(des, link, route->sink_stream);
-	if (!hw->pipe)
+	if (!hw->pipe) {
+		dev_err(priv->dev,
+			"route_to_hw: no pipe for link %u stream %u\n",
+			link->index, route->sink_stream);
 		return -ENOENT;
+	}
 
 	hw->source = max_des_get_link_source(priv, link);
 	if (!hw->source->sd)
@@ -347,15 +368,23 @@ static int max_des_route_to_hw(struct max_des_priv *priv,
 
 	ret = v4l2_subdev_call(hw->source->sd, pad, get_frame_desc,
 			       hw->source->pad, &fd);
-	if (ret)
+	if (ret) {
+		dev_err(priv->dev,
+			"route_to_hw: source get_frame_desc(link %u pad %u) ret %d\n",
+			link->index, hw->source->pad, ret);
 		return ret;
+	}
 
 	for (i = 0; i < fd.num_entries; i++)
 		if (fd.entry[i].stream == route->sink_stream)
 			break;
 
-	if (i == fd.num_entries)
+	if (i == fd.num_entries) {
+		dev_err(priv->dev,
+			"route_to_hw: source has no stream %u (link %u, %u entries)\n",
+			route->sink_stream, link->index, fd.num_entries);
 		return -ENOENT;
+	}
 
 	hw->entry = fd.entry[i];
 
@@ -374,9 +403,14 @@ static int max_des_link_to_hw(struct max_des_priv *priv,
 
 	hw->pipe = max_des_find_link_pipe(des, hw->link, -1);
 	if (!hw->pipe) {
-		if (!link->enabled)
-			return 0;
-		return -ENOENT;
+		/*
+		 * No pipe is currently assigned to this link. This is normal
+		 * for links that are not enabled, and also for enabled links
+		 * whose default pipe was stolen by another link in the current
+		 * routing (see max_des_find_link_pipe()). Either way, return
+		 * success with hw->pipe == NULL; callers must skip such links.
+		 */
+		return 0;
 	}
 
 	hw->source = max_des_get_link_source(priv, hw->link);
@@ -522,6 +556,9 @@ static int max_des_get_supported_modes(struct max_des_priv *priv,
 		if (ret)
 			return ret;
 
+		if (!hw.pipe)
+			continue;
+
 		if (!hw.link->enabled)
 			continue;
 
@@ -567,6 +604,9 @@ static int max_des_populate_remap_context_mode(struct max_des_priv *priv,
 		ret = max_des_link_index_to_hw(priv, i, &hw);
 		if (ret)
 			return ret;
+
+		if (!hw.pipe)
+			continue;
 
 		if (!hw.link->enabled)
 			continue;
@@ -937,6 +977,9 @@ static int max_des_set_modes(struct max_des_priv *priv,
 		if (ret)
 			return ret;
 
+		if (!hw.pipe)
+			continue;
+
 		if (!hw.link->enabled)
 			continue;
 
@@ -982,6 +1025,9 @@ static int max_des_set_tunnel(struct max_des_priv *priv,
 		if (ret)
 			return ret;
 
+		if (!hw.pipe)
+			continue;
+
 		if (!hw.link->enabled)
 			continue;
 
@@ -1022,6 +1068,9 @@ static int max_des_set_vc_remaps(struct max_des_priv *priv,
 		if (ret)
 			return ret;
 
+		if (!hw.pipe)
+			continue;
+
 		if (!hw.link->enabled)
 			continue;
 
@@ -1059,6 +1108,9 @@ static int max_des_set_pipes_stream_id(struct max_des_priv *priv)
 		ret = max_des_link_index_to_hw(priv, i, &hw);
 		if (ret)
 			return ret;
+
+		if (!hw.pipe)
+			continue;
 
 		if (!hw.link->enabled)
 			continue;
@@ -2206,6 +2258,10 @@ static int max_des_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	ret = max_des_get_frame_desc_state(sd, state, fd, pad);
 
 	v4l2_subdev_unlock_state(state);
+
+	dev_dbg(priv->dev,
+		 "get_frame_desc(pad %u) ret %d num_entries %u\n",
+		 pad, ret, ret ? 0 : fd->num_entries);
 
 	return ret;
 }
