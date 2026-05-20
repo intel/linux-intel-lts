@@ -1669,6 +1669,7 @@ static int max_des_ser_attach_addr(struct max_des_priv *priv, u32 chan_id,
 	return 0;
 }
 
+#if IS_REACHABLE(CONFIG_I2C_ATR)
 static int max_des_ser_atr_attach_addr(struct i2c_atr *atr, u32 chan_id,
 				       u16 addr, u16 alias)
 {
@@ -1768,6 +1769,7 @@ err_add_adapters:
 
 	return ret;
 }
+#endif
 
 static void max_des_i2c_mux_deinit(struct max_des_priv *priv)
 {
@@ -1863,24 +1865,27 @@ err_add_adapters:
 
 static void max_des_i2c_adapter_deinit(struct max_des_priv *priv)
 {
+#if IS_REACHABLE(CONFIG_I2C_ATR)
 	struct max_des *des = priv->des;
 
-	if (des->ops->use_atr)
-		return max_des_i2c_atr_deinit(priv);
-	else
-		return max_des_i2c_mux_deinit(priv);
+	if (des->ops->use_atr) {
+		max_des_i2c_atr_deinit(priv);
+		return;
+	}
+#endif
+	max_des_i2c_mux_deinit(priv);
+
 }
 
 static int max_des_i2c_adapter_init(struct max_des_priv *priv)
 {
+#if IS_REACHABLE(CONFIG_I2C_ATR)
 	struct max_des *des = priv->des;
 
 	if (des->ops->use_atr)
 		return max_des_i2c_atr_init(priv);
-	else
-		return max_des_i2c_mux_init(priv);
-
-	return 0;
+#endif
+	return max_des_i2c_mux_init(priv);
 }
 
 static int max_des_set_tpg_fmt(struct v4l2_subdev *sd,

@@ -7,6 +7,7 @@
 
 #include <linux/delay.h>
 #include <linux/acpi.h>
+#include <linux/bitfield.h>
 #include <linux/i2c-atr.h>
 #include <linux/i2c-mux.h>
 #include <linux/module.h>
@@ -336,6 +337,7 @@ static int max_ser_set_pipe_mode(struct max_ser_priv *priv, struct max_ser_pipe 
 	return ser->ops->set_pipe_mode(ser, pipe, mode);
 }
 
+#if IS_REACHABLE(CONFIG_I2C_ATR)
 static int max_ser_i2c_atr_attach_addr(struct i2c_atr *atr, u32 chan_id,
 				       u16 addr, u16 alias)
 {
@@ -419,7 +421,7 @@ static int max_ser_i2c_atr_init(struct max_ser_priv *priv)
 
 	return i2c_atr_add_adapter(priv->atr, &desc);
 }
-
+#endif
 static int max_ser_i2c_mux_select(struct i2c_mux_core *mux, u32 chan)
 {
 	return 0;
@@ -445,16 +447,25 @@ static int max_ser_i2c_adapter_init(struct max_ser_priv *priv)
 {
 	if (device_get_named_child_node(priv->dev, "i2c-gate"))
 		return max_ser_i2c_mux_init(priv);
-	else
-		return max_ser_i2c_atr_init(priv);
+#if IS_REACHABLE(CONFIG_I2C_ATR)
+	return max_ser_i2c_atr_init(priv);
+#else
+	return max_ser_i2c_mux_init(priv);
+#endif
 }
 
 static void max_ser_i2c_adapter_deinit(struct max_ser_priv *priv)
 {
-	if (device_get_named_child_node(priv->dev, "i2c-gate"))
+	if (device_get_named_child_node(priv->dev, "i2c-gate")) {
 		max_ser_i2c_mux_deinit(priv);
-	else
-		max_ser_i2c_atr_deinit(priv);
+		return;
+	}
+
+#if IS_REACHABLE(CONFIG_I2C_ATR)
+	max_ser_i2c_atr_deinit(priv);
+#else
+	max_ser_i2c_mux_deinit(priv);
+#endif
 }
 
 static int max_ser_set_tpg_fmt(struct v4l2_subdev *sd,

@@ -22,6 +22,7 @@
 #define _SERDES_H_
 
 #include <linux/acpi.h>
+#include <linux/bitfield.h>
 #include <linux/bitops.h>
 #include <linux/types.h>
 #include <linux/module.h>
