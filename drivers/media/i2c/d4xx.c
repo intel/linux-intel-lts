@@ -24,11 +24,11 @@
 #endif
 
 /* DS5 device usage */
-#define DS5_DRIVER_NAME 		"d4xx"
-#define DS5_DRIVER_NAME_AWG 	"d4xx-awg"
-#define DS5_DRIVER_NAME_ASR 	"d4xx-asr"
-#define DS5_DRIVER_NAME_CLASS 	"d4xx-class"
-#define DS5_DRIVER_NAME_DFU 	"d4xx-dfu"
+#define DS5_DRIVER_NAME "d4xx"
+#define DS5_DRIVER_NAME_AWG "d4xx-awg"
+#define DS5_DRIVER_NAME_ASR "d4xx-asr"
+#define DS5_DRIVER_NAME_CLASS "d4xx-class"
+#define DS5_DRIVER_NAME_DFU "d4xx-dfu"
 #define DS5_FW_VERSION			0x030C
 #define DS5_FW_BUILD			0x030E
 #define DS5_DEVICE_TYPE			0x0310
@@ -1708,6 +1708,8 @@ static int _mux_set_routing(struct v4l2_subdev *sd,
 
 	ds5->routing_initialized = 1;
 	return 0;
+
+	// TODO: Check if we can remove below blocks
 
 	/* get format from sink pads*/
     for (unsigned int i = 0; i < routing->num_routes; i++) {
