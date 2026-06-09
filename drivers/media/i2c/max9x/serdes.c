@@ -216,6 +216,9 @@ static struct max9x_pdata *pdata_ser(struct device *dev, struct max9x_subdev_pda
 {
 	struct max9x_pdata *pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 
+	if (!pdata)
+		return NULL;
+
 	dev_info(dev, "ser %s phys %02x virt %02x\n", name, phys_addr, virt_addr);
 
 	sdinfo->board_info.platform_data = pdata;
@@ -248,11 +251,16 @@ static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_n
 	struct max9x_serial_link_pdata *ser_serial_link;
 	struct max9x_video_pipe_pdata *ser_video_pipe;
 
+	if (!ser_pdata)
+		return NULL;
+
 	snprintf(ser_pdata->suffix, sizeof(ser_pdata->suffix), "%s", suffix);
 
 	ser_pdata->num_serial_links = 1;
 	ser_pdata->serial_links = devm_kzalloc(dev, ser_pdata->num_serial_links * sizeof(*ser_pdata->serial_links),
 					       GFP_KERNEL);
+	if (!ser_pdata->serial_links)
+		return NULL;
 
 	ser_serial_link = &ser_pdata->serial_links[0];
 	ser_serial_link->link_id = 0;
@@ -263,6 +271,8 @@ static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_n
 	ser_pdata->num_video_pipes = 1;
 	ser_pdata->video_pipes = devm_kzalloc(dev,
 				ser_pdata->num_video_pipes * sizeof(*ser_pdata->video_pipes), GFP_KERNEL);
+	if (!ser_pdata->video_pipes)
+		return NULL;
 
 	ser_video_pipe = &ser_pdata->video_pipes[0];
 	ser_video_pipe->serial_link_id = 0;
@@ -272,10 +282,14 @@ static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_n
 	ser_video_pipe->num_data_types = 1;
 	ser_video_pipe->data_types = devm_kzalloc(dev,
 				ser_video_pipe->num_data_types * sizeof(*ser_video_pipe->data_types), GFP_KERNEL);
+	if (!ser_video_pipe->data_types)
+		return NULL;
 	ser_video_pipe->data_types[0] = sensor_dt;
 
 	ser_pdata->num_csi_links = 1;
 	ser_pdata->csi_links = devm_kzalloc(dev, ser_pdata->num_csi_links * sizeof(*ser_pdata->csi_links), GFP_KERNEL);
+	if (!ser_pdata->csi_links)
+		return NULL;
 
 	struct max9x_csi_link_pdata *csi_link = &ser_pdata->csi_links[0];
 
@@ -285,12 +299,14 @@ static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_n
 	return ser_pdata;
 }
 
-static void parse_sensor_pdata(struct device *dev, const char *sensor_name, char *suffix, unsigned int ser_nlanes,
+static int parse_sensor_pdata(struct device *dev, const char *sensor_name, char *suffix, unsigned int ser_nlanes,
 			       unsigned int phys_addr, unsigned int virt_addr, struct max9x_subdev_pdata *ser_sdinfo,
 			       struct max9x_pdata *ser_pdata)
 {
 	ser_pdata->num_subdevs = 1;
 	ser_pdata->subdevs = devm_kzalloc(dev, ser_pdata->num_subdevs * sizeof(*ser_pdata->subdevs), GFP_KERNEL);
+	if (!ser_pdata->subdevs)
+		return -ENOMEM;
 	pdata_sensor(dev, &ser_pdata->subdevs[0], sensor_name, phys_addr, virt_addr);
 
 	/* Copy GPIO configuration from serializer to sensor subdev */
@@ -299,18 +315,23 @@ static void parse_sensor_pdata(struct device *dev, const char *sensor_name, char
 	/* NOTE: i2c_dev_set_name() will prepend "i2c-" to this name */
 	char *dev_name = devm_kzalloc(dev, I2C_NAME_SIZE, GFP_KERNEL);
 
+	if (!dev_name)
+		return -ENOMEM;
+
 	snprintf(dev_name, I2C_NAME_SIZE, "%s %s", sensor_name, suffix);
 	ser_pdata->subdevs[0].board_info.dev_name = dev_name;
 
 	struct sensor_platform_data *sen_pdata = devm_kzalloc(dev, sizeof(*sen_pdata), GFP_KERNEL);
 
 	if (!sen_pdata)
-		return;
+		return -ENOMEM;
 
 	ser_pdata->subdevs[0].board_info.platform_data = sen_pdata;
 	sen_pdata->lanes = ser_nlanes;
 	sen_pdata->irq_pin_flags = 1;	//workaround for identify D3.
 	snprintf(sen_pdata->suffix, sizeof(sen_pdata->suffix), "%s", suffix);
+
+	return 0;
 }
 
 static void *parse_serdes_pdata(struct device *dev)
@@ -326,17 +347,26 @@ static void *parse_serdes_pdata(struct device *dev)
 	unsigned int csi_port = serdes_pdata->des_port / 90;
 	struct max9x_pdata *des_pdata = devm_kzalloc(dev, sizeof(*des_pdata), GFP_KERNEL);
 
+	if (!des_pdata)
+		return NULL;
+
 	snprintf(des_pdata->suffix, sizeof(des_pdata->suffix), "%c", serdes_pdata->suffix);
 	des_pdata->num_serial_links = num_ports;
 	des_pdata->serial_links = devm_kzalloc(dev,
 				des_pdata->num_serial_links * sizeof(*des_pdata->serial_links), GFP_KERNEL);
+	if (!des_pdata->serial_links)
+		return NULL;
 
 	des_pdata->num_subdevs = num_ports;
 	des_pdata->subdevs = devm_kzalloc(dev, des_pdata->num_subdevs * sizeof(*des_pdata->subdevs), GFP_KERNEL);
+	if (!des_pdata->subdevs)
+		return NULL;
 
 	des_pdata->num_video_pipes = num_ports;
 	des_pdata->video_pipes = devm_kzalloc(dev,
 				des_pdata->num_video_pipes * sizeof(*des_pdata->video_pipes), GFP_KERNEL);
+	if (!des_pdata->video_pipes)
+		return NULL;
 
 	for (unsigned int serial_link_id = 0; serial_link_id < des_pdata->num_serial_links; serial_link_id++) {
 		struct max9x_serial_link_pdata *serial_link = &des_pdata->serial_links[serial_link_id];
@@ -365,6 +395,8 @@ static void *parse_serdes_pdata(struct device *dev)
 		des_video_pipe->num_maps = 3;
 		des_video_pipe->maps = devm_kzalloc(dev,
 					des_video_pipe->num_maps * sizeof(*des_video_pipe->maps), GFP_KERNEL);
+		if (!des_video_pipe->maps)
+			return NULL;
 
 		ser_sdinfo->serial_link_id = serial_link_id;
 
@@ -375,13 +407,19 @@ static void *parse_serdes_pdata(struct device *dev)
 		struct max9x_pdata *ser_pdata = parse_ser_pdata(dev, ser_name, serdes_sdinfo->suffix, lanes,
 								ser_phys_addr, ser_alias, ser_sdinfo, dt, ser_gpio);
 
-		parse_sensor_pdata(dev, sensor_name, serdes_sdinfo->suffix, lanes, sensor_phys_addr, sensor_alias,
-				   ser_sdinfo, ser_pdata);
+		if (!ser_pdata)
+			return NULL;
+
+		if (parse_sensor_pdata(dev, sensor_name, serdes_sdinfo->suffix, lanes, sensor_phys_addr, sensor_alias,
+				   ser_sdinfo, ser_pdata))
+			return NULL;
 
 	}
 
 	des_pdata->num_csi_links = 1;
 	des_pdata->csi_links = devm_kzalloc(dev, des_pdata->num_csi_links * sizeof(*des_pdata->csi_links), GFP_KERNEL);
+	if (!des_pdata->csi_links)
+		return NULL;
 
 	do {
 		struct max9x_csi_link_pdata *csi_link = &des_pdata->csi_links[0];
@@ -395,6 +433,8 @@ static void *parse_serdes_pdata(struct device *dev)
 		csi_link->auto_start = false;
 		csi_link->num_maps = serdes_pdata->deser_nlanes;
 		csi_link->maps = devm_kzalloc(dev, csi_link->num_maps * sizeof(*csi_link->maps), GFP_KERNEL);
+		if (!csi_link->maps)
+			return NULL;
 		if (csi_port == 1) {
 			SET_PHY_MAP(csi_link->maps, 0, 0, 1, 0); /* 0 (DA0) -> PHY1.0 */
 			SET_PHY_MAP(csi_link->maps, 1, 1, 1, 1); /* 1 (DA1) -> PHY1.1 */
@@ -2005,6 +2045,8 @@ static int max9x_register_v4l_subdev(struct max9x_common *common)
 	v4l->num_pads = common->num_csi_links + common->num_serial_links;
 	v4l->pads = devm_kzalloc(dev, v4l->num_pads * sizeof(*v4l->pads), GFP_KERNEL);
 	v4l->ffmts = devm_kzalloc(dev, v4l->num_pads * sizeof(*v4l->ffmts), GFP_KERNEL);
+	if (!v4l->pads || !v4l->ffmts)
+		return -ENOMEM;
 
 	/* change sink/source turn */
 	for (unsigned int p = 0; p < v4l->num_pads; p++) {
@@ -2421,6 +2463,8 @@ static int max9x_parse_csi_link_pdata(struct max9x_common *common,
 		devm_kzalloc(common->dev,
 			     csi_link->config.num_maps * sizeof(*csi_link->config.map),
 			     GFP_KERNEL);
+	if (!csi_link->config.map)
+		return -ENOMEM;
 	memcpy(csi_link->config.map, csi_link_pdata->maps,
 		   csi_link->config.num_maps * sizeof(*csi_link->config.map));
 	csi_link->config.bus_type = csi_link_pdata->bus_type;
