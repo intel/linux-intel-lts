@@ -1831,25 +1831,28 @@ static int max9x_registered(struct v4l2_subdev *sd)
 					dev_dbg(dev, "Registering sensor %s (%s)...",
 						subdev_pdata->board_info.type, dev_id);
 
-					struct gpiod_lookup_table *sensor_gpios = NULL;
+					struct gpiod_lookup_table *sensor_gpios;
 
 					sensor_gpios =
 						devm_kzalloc(dev,
 							     struct_size(sensor_gpios, table,
 									 MAX_SER_GPIO_NUM + 1),
 							     GFP_KERNEL);
+					if (!sensor_gpios)
+						return -ENOMEM;
 
 					sensor_gpios->dev_id = dev_id;
 
-					for (int line = 0; line < MAX_SER_GPIO_NUM; line++) {
+					int line = 0;
+					for (int i = 0; i < MAX_SER_GPIO_NUM; i++) {
 						if (subdev_pdata->gpio &&
-						    subdev_pdata->gpio[line].con_id != NULL) {
+						    subdev_pdata->gpio[i].con_id != NULL) {
 							sensor_gpios->table[line] =
-								subdev_pdata->gpio[line];
-							sensor_gpios->table[line].key =
+								subdev_pdata->gpio[i];
+							sensor_gpios->table[line++].key =
 								common->gpio_chip.label;
-							dev_dbg(dev, " Adding line %d as %s", line,
-								subdev_pdata->gpio[line].con_id);
+							dev_dbg(dev, " Adding line %d as %s", i,
+								subdev_pdata->gpio[i].con_id);
 						}
 					}
 
