@@ -502,7 +502,7 @@ static int max9296_set_csi_link_enabled(struct max9x_common *common, unsigned in
 	struct max9x_serdes_csi_link *csi_link;
 	int ret = 0;
 
-	if (csi_id > common->num_csi_links)
+	if (csi_id >= common->num_csi_links)
 		return -EINVAL;
 
 	csi_link = &common->csi_link[csi_id];
