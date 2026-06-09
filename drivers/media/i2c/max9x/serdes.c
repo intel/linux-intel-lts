@@ -476,7 +476,7 @@ static int max9x_remap_serializers_resume(struct max9x_common *common, unsigned 
 
 	dev_info(dev, "Remap serializer from 0x%02x to 0x%02x", phys_addr, virt_addr);
 
-	phys_client = i2c_new_dummy_device(serial_link->remote.client->adapter, phys_addr);
+	phys_client = i2c_new_dummy_device(common->client->adapter, phys_addr);
 	if (IS_ERR_OR_NULL(phys_client)) {
 		dev_err(dev, "Failed to create dummy client for phys_addr 0x%x", phys_addr);
 		ret = PTR_ERR(phys_client);
@@ -1596,7 +1596,7 @@ static int max9x_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 			&common->v4l.pads[route->sink_pad]);
 		if (!remote_pad)
 			continue;
-		struct v4l2_mbus_frame_desc source_desc;
+		struct v4l2_mbus_frame_desc source_desc = { 0 };
 
 		ret = v4l2_subdev_call(
 			media_entity_to_v4l2_subdev(remote_pad->entity), pad,
@@ -1608,7 +1608,7 @@ static int max9x_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 			goto out_unlock;
 		}
 
-		struct v4l2_mbus_frame_desc_entry *source_desc_entry;
+		struct v4l2_mbus_frame_desc_entry *source_desc_entry = NULL;
 
 		for (int i = 0; i < source_desc.num_entries; i++) {
 			if (source_desc.entry[i].stream == route->sink_stream) {
