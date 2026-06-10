@@ -2647,7 +2647,7 @@ static int ds5_sensor_set_stream(struct v4l2_subdev *sd, u64 streams_mask, int e
 					streaming == DS5_STREAM_STREAMING)
 				break;
 
-			msleep_range(DS5_START_POLL_TIME, DS5_START_POLL_TIME + 10);
+			msleep_range(DS5_START_POLL_TIME);
 		}
 
 		if (i == DS5_START_MAX_COUNT) {
@@ -5158,57 +5158,13 @@ static void ds5_update_pad_format(const struct ds5_resolution *resolutions,
 
 static int __maybe_unused ds5_suspend(struct device *dev)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-	struct ds5 *ds5 = to_ds5(sd);
-
-	mutex_lock(&ds5->mutex);
-	if (ds5->streaming)
-		ds5_stop_streaming(ds5);
-
-	mutex_unlock(&ds5->mutex);
-
+	//TODO: add resume handling in future
 	return 0;
 }
 
 static int __maybe_unused ds5_resume(struct device *dev)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-	struct ds5 *ds5 = to_ds5(sd);
-	const struct ds5_reg_list *reg_list;
-	int ret;
-	u16 rval;
-
-	if (ds5->reset_gpio != NULL)
-		ds5_reset(ds5->reset_gpio);
-
-	ret = ds5_get_state(ds5, &rval);
-	if (ret == 0) {
-		reg_list = &ds5->cur_mode->reg_list;
-		ret = ds5_write_reg_list(ds5, reg_list);
-		if (ret) {
-			dev_err(&client->dev, "resume: failed to apply cur mode");
-			return ret;
-		}
-	} else {
-		dev_err(&client->dev, "ds5 resume failed");
-		return ret;
-	}
-
-	mutex_lock(&ds5->mutex);
-	if (ds5->streaming) {
-		ret = ds5_start_streaming(ds5);
-		if (ret) {
-			ds5->streaming = false;
-			ds5_stop_streaming(ds5);
-			mutex_unlock(&ds5->mutex);
-			return ret;
-		}
-	}
-
-	mutex_unlock(&ds5->mutex);
-
+	//TODO: add resume handling in future
 	return 0;
 }
 
