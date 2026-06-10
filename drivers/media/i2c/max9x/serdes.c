@@ -1911,6 +1911,7 @@ static int max9x_registered(struct v4l2_subdev *sd)
 									  &subdev_pdata->board_info, NULL);
 
 					gpiod_remove_lookup_table(sensor_gpios);
+					devm_kfree(dev, sensor_gpios);
 
 					if (IS_ERR_OR_NULL(subdev)) {
 						dev_err(dev,
