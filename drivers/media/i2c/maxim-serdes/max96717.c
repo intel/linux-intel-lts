@@ -140,8 +140,12 @@
 #define MAX96717_FRONTTOP_13_VS_IND_EN	BIT(7)
 
 #define MAX96717_FRONTTOP_20(p)			(0x31c + (p) * 0x1)
+#define MAX96717_FRONTTOP_20_SOFT_VC_EN		BIT(6)
 #define MAX96717_FRONTTOP_20_SOFT_BPP_EN	BIT(5)
 #define MAX96717_FRONTTOP_20_SOFT_BPP		GENMASK(4, 0)
+
+#define MAX96717_FRONTTOP_24			0x320
+#define MAX96717_FRONTTOP_24_SOFT_VC(x)		(GENMASK(1, 0) << ((x) * 2))
 
 #define MAX96717_MIPI_RX0			0x330
 #define MAX96717_MIPI_RX0_NONCONTCLK_EN		BIT(6)
@@ -924,6 +928,51 @@ static int max96717_log_status(struct max_ser *ser)
 	return 0;
 }
 
+/*
+ * Program the soft VC override value for one pipe (remap entry index == pipe
+ * index for MAX9295D).  The actual enable is deferred to
+ * max96717_set_vc_remaps_enable() so all pipes can be armed atomically.
+ */
+static int max96717_set_vc_remap(struct max_ser *ser, unsigned int i,
+				 struct max_serdes_vc_remap *vc_remap)
+{
+	struct max96717_priv *priv = ser_to_priv(ser);
+	unsigned int index;
+	unsigned int mask;
+
+	if (i >= ser->ops->num_pipes)
+		return -EINVAL;
+
+	index = max96717_pipe_id(priv, &ser->pipes[i]);
+	mask = MAX96717_FRONTTOP_24_SOFT_VC(index);
+
+	return regmap_update_bits(priv->regmap, MAX96717_FRONTTOP_24,
+				 mask, field_prep(mask, vc_remap->dst));
+}
+
+/*
+ * Enable or disable soft VC override for each pipe.  Bits in @enable_mask
+ * correspond to pipe indices (not hardware pipe IDs).
+ */
+static int max96717_set_vc_remaps_enable(struct max_ser *ser, unsigned int enable_mask)
+{
+	struct max96717_priv *priv = ser_to_priv(ser);
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < ser->ops->num_pipes; i++) {
+		unsigned int index = max96717_pipe_id(priv, &ser->pipes[i]);
+		bool enable = !!(enable_mask & BIT(i));
+
+		ret = regmap_assign_bits(priv->regmap, MAX96717_FRONTTOP_20(index),
+					 MAX96717_FRONTTOP_20_SOFT_VC_EN, enable);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int max96717_log_pipe_status(struct max_ser *ser,
 				    struct max_ser_pipe *pipe)
 {
@@ -1436,6 +1485,9 @@ static const struct max_serdes_tpg_entry max96717_tpg_entries[] = {
 };
 
 static const struct max_ser_ops max9295d_ops = {
+	.num_vc_remaps = MAX_SERDES_VC_ID_NUM,
+	.set_vc_remap = max96717_set_vc_remap,
+	.set_vc_remaps_enable = max96717_set_vc_remaps_enable,
 	.phys_configs = {
 		.num_configs = ARRAY_SIZE(max9295d_phys_configs),
 		.configs = max9295d_phys_configs,
@@ -1727,6 +1779,13 @@ static int max96717_probe(struct i2c_client *client)
 	ops->num_phys = priv->info->num_phys;
 	ops->phys_configs = priv->info->ops->phys_configs;
 	ops->vs_independent = priv->info->vs_independent;
+
+	if (priv->info->ops->set_vc_remap) {
+		ops->set_vc_remap = priv->info->ops->set_vc_remap;
+		ops->set_vc_remaps_enable = priv->info->ops->set_vc_remaps_enable;
+		ops->num_vc_remaps = priv->info->ops->num_vc_remaps;
+	}
+
 	priv->ser.ops = ops;
 
 	ret = max96717_wait_for_device(priv);
@@ -1770,7 +1829,15 @@ static const struct max96717_chip_info max9295d_info = {
 	.pipe_hw_ids = { 0, 1, 2, 3 },
 	.num_phys = 2,
 	.phy_hw_ids = { 0, 1 },
-	.vs_independent = true,
+	/*
+	 * Independent-VS mode (FRONTTOP_13.VS_IND) must stay disabled. When it
+	 * is enabled together with the soft-VC override used to give a second
+	 * sensor a distinct virtual channel, the frame-sync (FS/VSYNC) short
+	 * packets are not forwarded on the remapped VC, so the deserializer
+	 * pipe sees data (de_det) but never locks VSYNC (vs_det), and no frames
+	 * are delivered. Keeping it off lets both pipes stream in parallel.
+	 */
+	.vs_independent = false,
 };
 
 static const struct max96717_chip_info max96717_info = {

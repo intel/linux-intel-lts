@@ -765,6 +765,16 @@ static int max_ser_get_frame_desc_state(struct v4l2_subdev *sd,
 
 		hw.entry.stream = route->source_stream;
 
+		/*
+		 * Apply soft VC remap: sensors may report the same VC on every
+		 * stream, so the serializer remaps the outgoing VC per pipe.
+		 * Reflect the remapped VC in fd->entry so the downstream
+		 * deserializer builds its remap table against the correct value.
+		 */
+		if (hw.pipe && (ser->vc_remap_pipe_mask & BIT(hw.pipe->index)) &&
+		    hw.pipe->index < ser->ops->num_vc_remaps)
+			hw.entry.bus.csi2.vc = ser->vc_remaps[hw.pipe->index].dst;
+
 		fd->entry[fd->num_entries++] = hw.entry;
 	}
 
@@ -810,6 +820,10 @@ static int max_ser_set_tpg_routing(struct v4l2_subdev *sd,
 	return v4l2_subdev_set_routing_with_fmt(sd, state, routing, &fmt);
 }
 
+/* Forward declaration — defined later, called at routing time. */
+static int max_ser_assign_vc_remaps(struct max_ser_priv *priv,
+				    struct v4l2_subdev_state *state);
+
 static int __max_ser_set_routing(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_krouting *routing)
@@ -843,7 +857,22 @@ static int __max_ser_set_routing(struct v4l2_subdev *sd,
 			.height = 480,
 		};
 
-	return v4l2_subdev_set_routing_with_fmt(sd, state, routing, &format);
+	ret = v4l2_subdev_set_routing_with_fmt(sd, state, routing, &format);
+	if (ret)
+		return ret;
+
+	/*
+	 * Pre-compute VC remaps at routing time so that get_frame_desc()
+	 * returns the correct post-remap VC even before enable_streams() is
+	 * called.  The deserializer calls get_frame_desc() during its own
+	 * remap-context population, which happens before it calls
+	 * enable_streams() on the serializer.
+	 */
+	ret = max_ser_assign_vc_remaps(priv, state);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static int max_ser_set_routing(struct v4l2_subdev *sd,
@@ -1228,6 +1257,195 @@ static int max_ser_enable_disable_streams(struct max_ser_priv *priv,
 						       ser->ops->num_phys, enable);
 }
 
+/*
+ * Assign destination VCs for all active routes, independent of which streams
+ * are currently enabled.  This populates ser->vc_remaps[] and
+ * ser->vc_remap_pipe_mask so that get_frame_desc() can reflect the correct
+ * post-remap VC to callers even before enable_streams() is invoked.
+ *
+ * The algorithm walks the active routes using max_ser_route_to_hw() to obtain
+ * the real VC reported by each sensor.  It assigns destination VCs greedily:
+ * the first pipe keeps its original VC; any_pipe_set subsequent pipe that would produce
+ * a duplicate VC is assigned the lowest free VC instead.
+ */
+static int max_ser_assign_vc_remaps(struct max_ser_priv *priv,
+				    struct v4l2_subdev_state *state)
+{
+	const unsigned int MAX_VC = MAX_SERDES_VC_ID_NUM;
+	struct max_ser *ser = priv->ser;
+	struct v4l2_subdev_route *route;
+	struct max_serdes_vc_remap local_remaps[ser->ops->num_pipes];
+	bool pipe_set[ser->ops->num_pipes];
+	unsigned int highest_pipe = 0;
+	u32 vc_used = 0;
+	u32 pipe_mask = 0;
+	bool any_pipe_set = false;
+	unsigned int i;
+	int ret;
+
+	if (!ser->ops->set_vc_remap || !ser->ops->set_vc_remaps_enable)
+		return 0;
+
+	for (i = 0; i < ser->ops->num_pipes; i++)
+		pipe_set[i] = false;
+
+	/*
+	 * Fix F: carry forward the previously committed assignment. Seed the
+	 * working state from ser->vc_remaps[]/vc_remap_pipe_mask so that pipes
+	 * already resolved in an earlier pass are preserved even if some route
+	 * cannot be resolved this time. Without this, a transiently
+	 * unresolvable route (e.g. a sensor not yet reporting its frame
+	 * descriptor) would shrink the assignment and tear down the remap that
+	 * a concurrently-streaming pipe relies on, breaking parallel capture.
+	 */
+	for (i = 0; i < ser->ops->num_pipes && i < ser->ops->num_vc_remaps; i++) {
+		if (!(ser->vc_remap_pipe_mask & BIT(i)))
+			continue;
+
+		local_remaps[i] = ser->vc_remaps[i];
+		pipe_set[i] = true;
+		pipe_mask |= BIT(i);
+		vc_used |= BIT(ser->vc_remaps[i].dst);
+		if (i > highest_pipe)
+			highest_pipe = i;
+		any_pipe_set = true;
+	}
+
+	for_each_active_route(&state->routing, route) {
+		struct max_ser_route_hw hw;
+		unsigned int src_vc, dst_vc;
+		unsigned int pipe_idx;
+
+		ret = max_ser_route_to_hw(priv, state, route, &hw);
+		if (ret)
+			/*
+			 * A sensor may not be ready to report its frame
+			 * descriptor yet (e.g. not streaming). Rather than
+			 * abort and shrink the assignment - which would tear
+			 * down a remap a concurrently-streaming pipe relies
+			 * on - keep the previously committed assignment.
+			 */
+			return 0;
+
+		if (hw.is_tpg || !hw.pipe)
+			continue;
+
+		pipe_idx = hw.pipe->index;
+		if (pipe_idx >= ser->ops->num_vc_remaps) {
+			dev_warn(priv->dev,
+				 "vc_remap: pipe %u out of vc_remaps range %u\n",
+				 pipe_idx, ser->ops->num_vc_remaps);
+			continue;
+		}
+
+		/* Process each pipe only once even if it carries multiple streams. */
+		if (pipe_set[pipe_idx])
+			continue;
+
+		src_vc = hw.entry.bus.csi2.vc;
+
+		if (vc_used & BIT(src_vc)) {
+			/* VC conflict: find the lowest free destination VC. */
+			unsigned int free_vc = ffz(vc_used);
+
+			if (free_vc >= MAX_VC) {
+				dev_warn(priv->dev,
+					 "No free VC ID for pipe %u (src vc=%u), skipping remap\n",
+					 pipe_idx, src_vc);
+				continue;
+			}
+
+			dst_vc = free_vc;
+		} else {
+			dst_vc = src_vc;
+		}
+
+		if (dst_vc != src_vc)
+			dev_dbg(priv->dev,
+				"vc_remap: pipe %u sink_pad=%u sink_stream=%u src_vc=%u dst_vc=%u [REMAPPED]\n",
+				pipe_idx, route->sink_pad, route->sink_stream,
+				src_vc, dst_vc);
+
+		vc_used |= BIT(dst_vc);
+		local_remaps[pipe_idx].src = src_vc;
+		local_remaps[pipe_idx].dst = dst_vc;
+		pipe_set[pipe_idx] = true;
+		pipe_mask |= BIT(pipe_idx);
+		if (pipe_idx > highest_pipe)
+			highest_pipe = pipe_idx;
+		any_pipe_set = true;
+	}
+
+	/*
+	 * Commit the freshly resolved assignment atomically. ser->vc_remaps[]
+	 * is indexed by pipe, matching the hardware remap slot numbering, so
+	 * num_vc_remaps must cover the highest used pipe index.
+	 */
+	for (i = 0; i < ser->ops->num_pipes; i++) {
+		if (pipe_set[i]) {
+			ser->vc_remaps[i] = local_remaps[i];
+		} else {
+			ser->vc_remaps[i].src = 0;
+			ser->vc_remaps[i].dst = 0;
+		}
+	}
+
+	ser->vc_remap_pipe_mask = pipe_mask;
+	ser->num_vc_remaps = any_pipe_set ? highest_pipe + 1 : 0;
+
+	return 0;
+}
+
+/*
+ * Apply VC remaps to hardware for the streams that are currently being
+ * enabled.  max_ser_assign_vc_remaps() must have been called first (e.g. at
+ * set_routing time) so that ser->vc_remaps[] is already up to date.
+ */
+static int max_ser_update_vc_remaps(struct max_ser_priv *priv,
+				    struct v4l2_subdev_state *state,
+				    u64 *streams_masks)
+{
+	struct max_ser *ser = priv->ser;
+	unsigned int enable_mask = 0;
+	unsigned int i;
+	int ret;
+
+	if (!ser->ops->set_vc_remap || !ser->ops->set_vc_remaps_enable)
+		return 0;
+
+	/* Refresh vc_remaps[] from the current routing. */
+	ret = max_ser_assign_vc_remaps(priv, state);
+	if (ret)
+		return ret;
+
+	/*
+	 * Program the complete assigned remap set, independent of which
+	 * streams_masks are currently being enabled. The VC remap is a static
+	 * property of the routing topology - it resolves VC collisions between
+	 * pipes that share a GMSL link. Filtering by the per-enable
+	 * streams_masks would let enabling, disabling or reverting one stream
+	 * tear down the remap that another concurrently-streaming pipe relies
+	 * on, which previously broke parallel multi-stream capture.
+	 */
+	for (i = 0; i < ser->ops->num_pipes && i < ser->ops->num_vc_remaps; i++) {
+		if (!(ser->vc_remap_pipe_mask & BIT(i)))
+			continue;
+
+		if (ser->vc_remaps[i].dst == ser->vc_remaps[i].src)
+			continue;
+
+		ret = ser->ops->set_vc_remap(ser, i, &ser->vc_remaps[i]);
+		if (ret)
+			return ret;
+
+		enable_mask |= BIT(i);
+	}
+
+	dev_dbg(priv->dev, "vc_remap: enable_mask=0x%x\n", enable_mask);
+
+	return ser->ops->set_vc_remaps_enable(ser, enable_mask);
+}
+
 static bool max_ser_is_tpg_routed(struct max_ser_priv *priv,
 				  struct v4l2_subdev_state *state)
 {
@@ -1317,11 +1535,15 @@ static int max_ser_update_streams(struct v4l2_subdev *sd,
 	if (ret)
 		goto err_revert_update_tpg;
 
+	ret = max_ser_update_vc_remaps(priv, state, streams_masks);
+	if (ret)
+		goto err_revert_phys_update;
+
 	if (enable) {
 		ret = max_ser_enable_disable_streams(priv, state, pad,
 						     updated_streams_mask, enable);
 		if (ret)
-			goto err_revert_phys_update;
+			goto err_revert_vc_remaps;
 	}
 
 	devm_kfree(priv->dev, priv->streams_masks);
@@ -1329,6 +1551,9 @@ static int max_ser_update_streams(struct v4l2_subdev *sd,
 	ser->active = !!streams_masks[pad];
 
 	return 0;
+
+err_revert_vc_remaps:
+	max_ser_update_vc_remaps(priv, state, priv->streams_masks);
 
 err_revert_phys_update:
 	max_ser_update_phys(priv, state, priv->streams_masks);
@@ -2016,11 +2241,17 @@ int max_ser_set_double_bpps(struct v4l2_subdev *sd, u32 double_bpps)
 	return 0;
 }
 
-int max_ser_set_stream_id(struct v4l2_subdev *sd, unsigned int stream_id)
+int max_ser_set_stream_id(struct v4l2_subdev *sd, unsigned int pipe_id,
+			  unsigned int stream_id)
 {
 	struct max_ser_priv *priv = sd_to_priv(sd);
 	struct max_ser *ser = priv->ser;
-	struct max_ser_pipe *pipe = &ser->pipes[0];
+	struct max_ser_pipe *pipe;
+
+	if (pipe_id >= ser->ops->num_pipes)
+		return -EINVAL;
+
+	pipe = &ser->pipes[pipe_id];
 
 	if (!ser->ops->set_pipe_stream_id)
 		return -EOPNOTSUPP;
@@ -2028,11 +2259,17 @@ int max_ser_set_stream_id(struct v4l2_subdev *sd, unsigned int stream_id)
 	return ser->ops->set_pipe_stream_id(ser, pipe, stream_id);
 }
 
-int max_ser_get_stream_id(struct v4l2_subdev *sd, unsigned int *stream_id)
+int max_ser_get_stream_id(struct v4l2_subdev *sd, unsigned int pipe_id,
+			  unsigned int *stream_id)
 {
 	struct max_ser_priv *priv = sd_to_priv(sd);
 	struct max_ser *ser = priv->ser;
-	struct max_ser_pipe *pipe = &ser->pipes[0];
+	struct max_ser_pipe *pipe;
+
+	if (pipe_id >= ser->ops->num_pipes)
+		return -EINVAL;
+
+	pipe = &ser->pipes[pipe_id];
 
 	if (!ser->ops->get_pipe_stream_id)
 		return -EOPNOTSUPP;
@@ -2124,6 +2361,7 @@ int max_ser_set_vc_remaps(struct v4l2_subdev *sd,
 		ser->vc_remaps[i] = vc_remaps[i];
 
 	ser->num_vc_remaps = num_vc_remaps;
+	ser->vc_remap_pipe_mask = mask;
 
 	return 0;
 }

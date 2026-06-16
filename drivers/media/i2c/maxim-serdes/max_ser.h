@@ -122,6 +122,17 @@ struct max_ser {
 
 	struct max_serdes_vc_remap *vc_remaps;
 	unsigned int num_vc_remaps;
+	u32 vc_remap_pipe_mask;
+
+	/*
+	 * Snapshot of the VC remap state last written to hardware, used to
+	 * skip redundant register writes. Rewriting a pipe's SOFT_VC / enable
+	 * register while a sibling pipe streams on the shared GMSL link
+	 * glitches its VC and produces CSI2 packet errors.
+	 */
+	struct max_serdes_vc_remap *vc_remaps_applied;
+	u32 vc_remaps_applied_mask;
+	bool vc_remaps_applied_valid;
 
 	unsigned int phys_config;
 	unsigned int active;
@@ -136,8 +147,10 @@ int max_ser_set_double_bpps(struct v4l2_subdev *sd, u32 double_bpps);
 unsigned int max_ser_get_supported_modes(struct v4l2_subdev *sd);
 int max_ser_set_mode(struct v4l2_subdev *sd, enum max_serdes_gmsl_mode mode);
 bool max_ser_supports_vc_remap(struct v4l2_subdev *sd);
-int max_ser_set_stream_id(struct v4l2_subdev *sd, unsigned int stream_id);
-int max_ser_get_stream_id(struct v4l2_subdev *sd, unsigned int *stream_id);
+int max_ser_set_stream_id(struct v4l2_subdev *sd, unsigned int pipe_id,
+			  unsigned int stream_id);
+int max_ser_get_stream_id(struct v4l2_subdev *sd, unsigned int pipe_id,
+			  unsigned int *stream_id);
 int max_ser_set_vc_remaps(struct v4l2_subdev *sd, struct max_serdes_vc_remap *vc_remaps,
 			  int num_vc_remaps);
 
