@@ -85,6 +85,8 @@
 #define MAX96724_MIPI_PHY0_PHY_2X4		BIT(2)
 #define MAX96724_MIPI_PHY0_PHY_1X4A_2X2		BIT(3)
 #define MAX96724_MIPI_PHY0_PHY_1X4B_2X2		BIT(4)
+#define MAX96724_MIPI_PHY0_CLK_PHY0			BIT(5)
+#define MAX96724_MIPI_PHY0_CLK_PHY3			BIT(6)
 #define MAX96724_MIPI_PHY0_FORCE_CSI_OUT_EN	BIT(7)
 
 #define MAX96724_MIPI_PHY2			0x8a2
@@ -508,6 +510,24 @@ static int max96724_init_phy(struct max_des *des, struct max_des_phy *phy)
 
 	ret = regmap_assign_bits(priv->regmap, MAX96724_MIPI_TX10(index),
 				 MAX96724_MIPI_TX10_CSI2_CPHY_EN, is_cphy);
+	if (ret)
+		return ret;
+
+	switch (phy->mipi.clock_lane) {
+	case 0:
+		val = MAX96724_MIPI_PHY0_CLK_PHY3;
+		break;
+	case 5:
+		val = MAX96724_MIPI_PHY0_CLK_PHY0;
+		break;
+	default:
+		dev_err(priv->dev, "Invalid clock lane %u for PHY %u\n",
+			phy->mipi.clock_lane, phy->index);
+		return -EINVAL;
+	}
+
+	ret = regmap_assign_bits(priv->regmap, MAX96724_MIPI_PHY0,
+		MAX96724_MIPI_PHY0_CLK_PHY0 | MAX96724_MIPI_PHY0_CLK_PHY3, val);
 	if (ret)
 		return ret;
 
