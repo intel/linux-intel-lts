@@ -194,19 +194,17 @@ max_des_find_link_pipe(struct max_des *des, struct max_des_link *link,
 	}
 
 	/*
-	 * Not enough pipes for this link. Steal a free pipe from another
-	 * link and reassign it.
+	 * Not enough pipes for this link. Steal a free pipe from a
+	 * disabled link and reassign it.
 	 *
-	 * A pipe is considered stealable when it has not yet been claimed
-	 * by the current routing (assigned_stream < 0) and is not currently
-	 * streaming in hardware (!pipe->enabled). The original owner link's
-	 * "enabled" flag (set from ACPI/DT enumeration) is intentionally not
-	 * consulted here: a link may be enumerated but have no active routes
-	 * in the current configuration, in which case its default pipe is
-	 * free to be reused. This is required to support topologies such as
-	 * max96724 (4 pipes / 4 links) where a subset of the enumerated links
-	 * carries more than one stream (e.g. depth+rgb) and the unused links'
-	 * pipes must be reassigned.
+	 * Do not gate this on pipe->enabled: max_des_reset_pipe_assignments()
+	 * rebuilds link_id/assigned_stream from scratch on every update cycle
+	 * while pipe->enabled still reflects the previous session's hardware
+	 * state. A pipe whose (post-reset) home link is disabled is a valid
+	 * steal target even if it is still flagged enabled; max_des_update_pipe()
+	 * reconciles the hardware enable afterward. Honouring the stale enabled
+	 * flag here depletes the steal pool on stop/restart and makes
+	 * find_link_pipe() fail for the second stream of a link.
 	 */
 	for (i = 0; i < des->ops->num_pipes; i++) {
 		struct max_des_pipe *pipe = &des->pipes[i];
@@ -215,9 +213,6 @@ max_des_find_link_pipe(struct max_des *des, struct max_des_link *link,
 			continue;
 
 		if (pipe->assigned_stream >= 0)
-			continue;
-
-		if (pipe->enabled)
 			continue;
 
 		pipe->link_id = link->index;
@@ -1089,6 +1084,20 @@ static int max_des_set_vc_remaps(struct max_des_priv *priv,
 		if (ret)
 			return ret;
 
+		/*
+		 * In pixel mode the serializer auto-manages its own VC remaps
+		 * from its routing configuration, and the deserializer performs
+		 * the output remap via set_pipe_remap. Pushing an empty remap
+		 * set here would disable the serializer's HW remap and reset its
+		 * vc_remap_pipe_mask, which in turn makes the serializer's
+		 * get_frame_desc report the unremapped VC. That desyncs the
+		 * deserializer's populate vs. lookup passes and breaks streaming.
+		 * Only push to the serializer when we actually have remaps
+		 * (tunnel mode).
+		 */
+		if (!num_vc_remaps)
+			continue;
+
 		ret = max_ser_set_vc_remaps(hw.source->sd, vc_remaps, num_vc_remaps);
 		if (ret)
 			return ret;
@@ -1104,32 +1113,55 @@ static int max_des_set_pipes_stream_id(struct max_des_priv *priv)
 	unsigned int i;
 	int ret;
 
-	for (i = 0; i < des->ops->num_links; i++) {
-		struct max_des_link_hw hw;
+	/*
+	 * Assign a GMSL stream id to every active pipe. A single serializer
+	 * (hence a single GMSL link) can carry several pipes/streams when more
+	 * than one sensor is attached to the same serializer. Iterate per pipe
+	 * (not per link) so each serializer pipe gets its own stream id, and
+	 * push it to the matching serializer pipe identified by the stream's
+	 * sink index (== serializer source stream == serializer pipe index).
+	 */
+	for (i = 0; i < des->ops->num_pipes; i++) {
+		struct max_des_pipe *pipe = &des->pipes[i];
+		struct max_serdes_source *source;
+		struct max_des_link *link;
 		unsigned int stream_id;
+		unsigned int ser_pipe_id;
 
-		ret = max_des_link_index_to_hw(priv, i, &hw);
-		if (ret)
-			return ret;
-
-		if (!hw.pipe)
+		/* Skip pipes not assigned to a stream this cycle. */
+		if (pipe->assigned_stream < 0)
 			continue;
 
-		if (!hw.link->enabled)
+		link = &des->links[pipe->link_id];
+		if (!link->enabled)
 			continue;
 
-		if (!hw.source->sd)
+		source = max_des_get_link_source(priv, link);
+		if (!source->sd)
 			continue;
 
-		stream_id = hw.pipe->stream_id;
+		ser_pipe_id = pipe->assigned_stream;
 
-		ret = max_ser_set_stream_id(hw.source->sd, stream_id);
+		/*
+		 * Keep the serializer stream id consistent with the value the
+		 * deserializer programs into this pipe when the stream is enabled
+		 * (see max_des_update_pipe_enable), which uses the stream's sink
+		 * index. Deserializers that require globally unique stream ids
+		 * keep their pre-assigned (per-pipe-index) id instead.
+		 */
+		if (des->ops->needs_unique_stream_id)
+			stream_id = pipe->stream_id;
+		else
+			stream_id = pipe->assigned_stream;
+
+		ret = max_ser_set_stream_id(source->sd, ser_pipe_id, stream_id);
 		if (ret == -EOPNOTSUPP) {
 			/*
 			 * Serializer does not support setting the stream id,
 			 * retrieve its hardcoded stream id.
 			 */
-			ret = max_ser_get_stream_id(hw.source->sd, &stream_id);
+			ret = max_ser_get_stream_id(source->sd, ser_pipe_id,
+						    &stream_id);
 		}
 
 		if (ret)
@@ -1140,12 +1172,12 @@ static int max_des_set_pipes_stream_id(struct max_des_priv *priv)
 			return -EINVAL;
 		}
 
-		ret = des->ops->set_pipe_stream_id(des, hw.pipe, stream_id);
+		ret = des->ops->set_pipe_stream_id(des, pipe, stream_id);
 		if (ret)
 			return ret;
 
 		stream_id_usage[stream_id] = true;
-		hw.pipe->stream_id = stream_id;
+		pipe->stream_id = stream_id;
 	}
 
 	return 0;
@@ -1177,14 +1209,30 @@ static int max_des_set_pipes_phy(struct max_des_priv *priv,
 		if (phy_id != des->ops->num_phys) {
 			phy = &des->phys[phy_id];
 
-			if (context->mode == MAX_SERDES_GMSL_PIXEL_MODE &&
-			    des->ops->set_pipe_phy)
-				ret = des->ops->set_pipe_phy(des, pipe, phy);
-			else if (context->mode == MAX_SERDES_GMSL_TUNNEL_MODE &&
-				 des->ops->set_pipe_tunnel_phy)
-				ret = des->ops->set_pipe_tunnel_phy(des, pipe, phy);
-			else
+			/*
+			 * Skip rewriting the pipe->PHY routing register when it is
+			 * already programmed to this PHY. set_pipes_phy() runs on
+			 * every stream enable/disable of any pipe; rewriting the
+			 * routing register of a pipe whose sibling is streaming on
+			 * the same shared CSI2 output PHY momentarily disturbs the
+			 * output and surfaces as CSI2 short/long packet errors that
+			 * can intermittently wedge the concurrent capture.
+			 */
+			if (pipe->phy_programmed && pipe->phy_id == phy_id) {
 				ret = 0;
+			} else if (context->mode == MAX_SERDES_GMSL_PIXEL_MODE &&
+				   des->ops->set_pipe_phy) {
+				ret = des->ops->set_pipe_phy(des, pipe, phy);
+				if (!ret)
+					pipe->phy_programmed = true;
+			} else if (context->mode == MAX_SERDES_GMSL_TUNNEL_MODE &&
+				   des->ops->set_pipe_tunnel_phy) {
+				ret = des->ops->set_pipe_tunnel_phy(des, pipe, phy);
+				if (!ret)
+					pipe->phy_programmed = true;
+			} else {
+				ret = 0;
+			}
 
 			if (ret)
 				return ret;
@@ -1394,6 +1442,22 @@ static int max_des_update_pipe_remaps(struct max_des_priv *priv,
 	if (ret)
 		goto err_free_new_remaps;
 
+	/*
+	 * Avoid touching the hardware when the remap table is unchanged. Every
+	 * pipe sharing a link is walked on every stream update, so stopping or
+	 * restarting one stream would otherwise rewrite - and momentarily
+	 * disable, via set_pipe_remaps_enable() - the remap table of a sibling
+	 * pipe that is actively streaming on the same shared CSI-2 output. That
+	 * glitch corrupts the sibling's in-flight packets (CSI-2 short/long
+	 * packet errors) and can wedge the capture. Only reprogram on a real
+	 * change.
+	 */
+	if (pipe->remaps && pipe->num_remaps == num_remaps &&
+	    !memcmp(pipe->remaps, remaps, num_remaps * sizeof(*remaps))) {
+		devm_kfree(priv->dev, remaps);
+		return 0;
+	}
+
 	ret = max_des_set_pipe_remaps(priv, pipe, remaps, num_remaps);
 	if (ret)
 		goto err_free_new_remaps;
@@ -1577,6 +1641,14 @@ static int max_des_init(struct max_des_priv *priv)
 	struct max_des *des = priv->des;
 	unsigned int i;
 	int ret;
+
+	/*
+	 * The pipe->PHY routing registers are (re)set during HW init; drop the
+	 * programmed snapshot so set_pipes_phy() re-applies instead of skipping
+	 * on a stale match after a power cycle / resume.
+	 */
+	for (i = 0; i < des->ops->num_pipes; i++)
+		des->pipes[i].phy_programmed = false;
 
 	if (des->ops->init) {
 		ret = des->ops->init(des);
@@ -2310,6 +2382,16 @@ static int max_des_set_tpg_routing(struct v4l2_subdev *sd,
 	return v4l2_subdev_set_routing_with_fmt(sd, state, routing, &fmt);
 }
 
+static void max_des_reset_pipe_assignments(struct max_des *des)
+{
+	unsigned int i;
+
+	for (i = 0; i < des->ops->num_pipes; i++) {
+		des->pipes[i].assigned_stream = -1;
+		des->pipes[i].link_id = i % des->ops->num_links;
+	}
+}
+
 static int __max_des_set_routing(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_krouting *routing)
@@ -2318,14 +2400,7 @@ static int __max_des_set_routing(struct v4l2_subdev *sd,
 	struct max_des *des = priv->des;
 	struct v4l2_subdev_route *route;
 	bool is_tpg = false;
-	unsigned int i;
 	int ret;
-
-	/* Reset pipe stream assignments for clean reassignment. */
-	for (i = 0; i < des->ops->num_pipes; i++) {
-		des->pipes[i].assigned_stream = -1;
-		des->pipes[i].link_id = i % des->ops->num_links;
-	}
 
 	ret = v4l2_subdev_routing_validate(sd, routing,
 					   V4L2_SUBDEV_ROUTING_ONLY_1_TO_1 |
@@ -2519,6 +2594,13 @@ static int max_des_update_streams(struct v4l2_subdev *sd,
 	unsigned int num_pads = max_des_num_pads(des);
 	u64 *streams_masks;
 	int ret;
+
+	/*
+	 * Rebuild per-link stream-to-pipe assignments for this update cycle.
+	 * Keep this out of set_routing() so route negotiation does not mutate
+	 * live runtime state while streams are active.
+	 */
+	max_des_reset_pipe_assignments(des);
 
 	ret = max_des_populate_remap_context(priv, &context, state);
 	if (ret)
