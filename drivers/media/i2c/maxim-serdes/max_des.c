@@ -458,6 +458,9 @@ static int max_des_set_pipe_vc_remaps(struct max_des_priv *priv,
 	unsigned int i;
 	int ret;
 
+	if (!des->ops->set_pipe_vc_remap)
+		return 0;
+
 	for (i = 0; i < num_vc_remaps; i++) {
 		ret = des->ops->set_pipe_vc_remap(des, pipe, i, &vc_remaps[i]);
 		if (ret)
