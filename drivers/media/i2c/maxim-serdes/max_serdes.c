@@ -203,8 +203,6 @@ int max_serdes_xlate_enable_disable_streams(struct max_serdes_source *sources,
 			continue;
 
 		source = &sources[i + source_sink_pad_offset];
-		if (!source)
-			continue;
 
 		if (enable)
 			ret = v4l2_subdev_enable_streams(source->sd, source->pad,
@@ -233,8 +231,6 @@ err:
 			continue;
 
 		source = &sources[i + source_sink_pad_offset];
-		if (!source)
-			continue;
 
 		if (!enable)
 			v4l2_subdev_enable_streams(source->sd, source->pad,
