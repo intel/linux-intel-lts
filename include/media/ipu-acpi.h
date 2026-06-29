@@ -24,10 +24,13 @@
 
 #include <media/v4l2-mediabus.h>
 
+struct fwnode_handle;
+
 struct ipu_isys_csi2_config {
 	unsigned int nlanes;
 	unsigned int port;
 	enum v4l2_mbus_type bus_type;
+	struct fwnode_handle *ep;
 };
 
 struct ipu_isys_subdev_i2c_info {
