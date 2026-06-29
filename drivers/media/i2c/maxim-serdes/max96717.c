@@ -1388,12 +1388,14 @@ static int max96717_init(struct max_ser *ser)
 	if (ret)
 		return ret;
 
-	ret = regmap_update_bits(priv->regmap, MAX96717_MIPI_RX0,
-				MAX96717_MIPI_RX0_PHY_CFG,
-				FIELD_PREP(MAX96717_MIPI_RX0_PHY_CFG,
-						MAX96717_MIPI_RX0_PHY_CFG_A_AND_B));
-	if (ret)
-		return ret;
+	if (priv->info->num_phys > 1) {
+		ret = regmap_update_bits(priv->regmap, MAX96717_MIPI_RX0,
+					MAX96717_MIPI_RX0_PHY_CFG,
+					FIELD_PREP(MAX96717_MIPI_RX0_PHY_CFG,
+							MAX96717_MIPI_RX0_PHY_CFG_A_AND_B));
+		if (ret)
+			return ret;
+	}
 
 	if (ser->ops->set_tunnel_enable) {
 		ret = ser->ops->set_tunnel_enable(ser, false);
