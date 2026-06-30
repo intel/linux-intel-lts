@@ -516,7 +516,7 @@ static int max9x_remap_serializers_resume(struct max9x_common *common, unsigned 
 
 	dev_info(dev, "Remap serializer from 0x%02x to 0x%02x", phys_addr, virt_addr);
 
-	phys_client = i2c_new_dummy_device(common->client->adapter, phys_addr);
+	phys_client = i2c_new_dummy_device(serial_link->remote.client->adapter, phys_addr);
 	if (IS_ERR_OR_NULL(phys_client)) {
 		dev_err(dev, "Failed to create dummy client for phys_addr 0x%x", phys_addr);
 		ret = PTR_ERR(phys_client);
