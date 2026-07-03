@@ -167,14 +167,14 @@
 #define MAX96717_MIPI_RX3_PHY2_LANE_MAP		GENMASK(3, 0)
 
 #define MAX96717_MIPI_RX4			0x334
-#define MAX96717_MIPI_RX4_PHY1_POL_MAP		GENMASK(5, 4)
 #define MAX96717_MIPI_RX4_PHY1_POL_MAP_CLK	BIT(6)
+#define MAX96717_MIPI_RX4_PHY1_POL_MAP		GENMASK(5, 4)
 #define MAX96717_MIPI_RX4_PHY0_POL_MAP		GENMASK(2, 0)
 
 #define MAX96717_MIPI_RX5			0x335
 #define MAX96717_MIPI_RX5_PHY3_POL_MAP		GENMASK(6, 4)
-#define MAX96717_MIPI_RX5_PHY2_POL_MAP		GENMASK(1, 0)
 #define MAX96717_MIPI_RX5_PHY2_POL_MAP_CLK	BIT(2)
+#define MAX96717_MIPI_RX5_PHY2_POL_MAP		GENMASK(1, 0)
 
 #define MAX96717_EXTA(x)			(0x3dc + (x))
 
@@ -1070,7 +1070,7 @@ static int max96717_init_phy(struct max_ser *ser,
 	switch (phy_id) {
 	case 0:
 			reg = MAX96717_MIPI_RX2;
-			mask = MAX96717_MIPI_RX2_PHY1_LANE_MAP;
+			mask = MAX96717_MIPI_RX2_PHY0_LANE_MAP;
 			break;
 
 	case 1:
@@ -1095,7 +1095,7 @@ static int max96717_init_phy(struct max_ser *ser,
 
 	case 1:
 			reg = MAX96717_MIPI_RX2;
-			mask = MAX96717_MIPI_RX2_PHY0_LANE_MAP;
+			mask = MAX96717_MIPI_RX2_PHY1_LANE_MAP;
 			break;
 
 	default:
@@ -1127,7 +1127,7 @@ static int max96717_init_phy(struct max_ser *ser,
 	reg = (phy_id == 1) ? MAX96717_MIPI_RX5 : MAX96717_MIPI_RX4;
 	mask = (phy_id == 1) ? MAX96717_MIPI_RX5_PHY2_POL_MAP_CLK : MAX96717_MIPI_RX4_PHY1_POL_MAP_CLK;
 	ret = regmap_assign_bits(priv->regmap, reg,
-				 mask, phy->mipi.lane_polarities[phy->index]);
+				 mask, phy->mipi.lane_polarities[0]);
 	if (ret)
 		return ret;
 
