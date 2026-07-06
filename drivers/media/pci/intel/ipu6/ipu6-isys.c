@@ -163,32 +163,40 @@ isys_complete_ext_device_registration(struct ipu6_isys *isys,
 				      struct ipu6_isys_csi2_config *csi2)
 {
 	struct device *dev = &isys->adev->auxdev.dev;
-	unsigned int i;
+	int source_pad;
 	int ret;
 
-	for (i = 0; i < sd->entity.num_pads; i++) {
-		if (sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE)
-			break;
-	}
+	if (src_pad >= 0) {
+		source_pad = src_pad;
+	} else if (csi2->ep) {
+		struct fwnode_handle *ep_source;
 
-	if (i == sd->entity.num_pads) {
-		dev_warn(dev, "no src pad in external entity\n");
-		ret = -ENOENT;
-		goto unregister_subdev;
-	}
+		ep_source = fwnode_graph_get_remote_endpoint(csi2->ep);
+		if (!ep_source) {
+			dev_warn(dev, "no remote endpoint for subdev\n");
+			ret = -ENOENT;
+			goto unregister_subdev;
+		}
 
-	if (src_pad >= 0)
-		i = (unsigned int)src_pad;
-
-	if (sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE) {
-		dev_info(dev, "src pad %d\n", src_pad);
+		source_pad = media_entity_get_fwnode_pad(&sd->entity, ep_source,
+							 MEDIA_PAD_FL_SOURCE);
+		fwnode_handle_put(ep_source);
 	} else {
-		dev_warn(dev, "src pad %d not for src\n", src_pad);
+		for (source_pad = 0; source_pad < sd->entity.num_pads;
+		     source_pad++) {
+			if (sd->entity.pads[source_pad].flags & MEDIA_PAD_FL_SOURCE)
+				break;
+		}
+	}
+
+	if (source_pad < 0 || source_pad >= sd->entity.num_pads ||
+	    !(sd->entity.pads[source_pad].flags & MEDIA_PAD_FL_SOURCE)) {
+		dev_warn(dev, "invalid source pad %d\n", source_pad);
 		ret = -ENOENT;
 		goto unregister_subdev;
 	}
 
-	ret = media_create_pad_link(&sd->entity, i,
+	ret = media_create_pad_link(&sd->entity, source_pad,
 				    &isys->csi2[csi2->port].asd.sd.entity,
 				    0, MEDIA_LNK_FL_ENABLED |
 				       MEDIA_LNK_FL_IMMUTABLE);
@@ -1070,10 +1078,8 @@ static int isys_notifier_init(struct ipu6_isys *isys)
 		s_asd->csi2.port = vep.base.port;
 		s_asd->csi2.nlanes = vep.bus.mipi_csi2.num_data_lanes;
 
-		dev_dbg(dev, "remote endpoint port %d with %d lanes added\n",
-			s_asd->csi2.port, s_asd->csi2.nlanes);
+		s_asd->csi2.ep = ep;
 
-		fwnode_handle_put(ep);
 
 		continue;
 

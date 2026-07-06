@@ -104,6 +104,8 @@ struct isys_iwake_watermark {
 struct ipu6_isys_csi2_config {
 	u32 nlanes;
 	u32 port;
+	enum v4l2_mbus_type bus_type;
+	struct fwnode_handle *ep;
 };
 
 struct sensor_async_sd {
