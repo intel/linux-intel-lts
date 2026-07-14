@@ -1022,10 +1022,12 @@ static int isx031_probe(struct i2c_client *client)
 	isx031->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
 							 GPIOD_OUT_LOW);
 	if (IS_ERR(isx031->reset_gpio))
-		return -EPROBE_DEFER;
-	if (isx031->reset_gpio)
+		return PTR_ERR(isx031->reset_gpio);
+	if (isx031->reset_gpio) {
 		dev_info(&client->dev, "Reset gpio found\n");
-	else
+		/* Allow reset GPIO line/config to settle before reading sensor ID */
+		msleep(ISX031_REG_SLEEP_200MS);
+	} else
 		dev_warn(&client->dev, "Reset gpio not found\n");
 
 	isx031->fsin_gpio = devm_gpiod_get_optional(&client->dev, "fsin",
