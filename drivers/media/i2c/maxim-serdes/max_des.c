@@ -1522,7 +1522,12 @@ static int max_des_update_pipe_enable(struct max_des_priv *priv,
 		}
 
 		if (des->ops->set_pipe_stream_id) {
-			pipe->stream_id = route->sink_stream;
+			/* Use sink stream from routing if deserializer does not
+			 * need unique stream id, i.e. max96724
+			 */
+			if (!des->ops->needs_unique_stream_id)
+				pipe->stream_id = route->sink_stream;
+
 			ret = des->ops->set_pipe_stream_id(des, pipe,
 							   pipe->stream_id);
 			if (ret)
