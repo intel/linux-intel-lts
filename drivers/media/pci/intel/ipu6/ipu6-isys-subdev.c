@@ -25,6 +25,7 @@ unsigned int ipu6_isys_mbus_code_to_bpp(u32 code)
 	case MEDIA_BUS_FMT_RGB565_1X16:
 	case MEDIA_BUS_FMT_UYVY8_1X16:
 	case MEDIA_BUS_FMT_YUYV8_1X16:
+	case MEDIA_BUS_FMT_VYUY8_1X16:
 	case MEDIA_BUS_FMT_META_16:
 		return 16;
 	case MEDIA_BUS_FMT_SBGGR12_1X12:
@@ -43,6 +44,7 @@ unsigned int ipu6_isys_mbus_code_to_bpp(u32 code)
 	case MEDIA_BUS_FMT_SGBRG8_1X8:
 	case MEDIA_BUS_FMT_SGRBG8_1X8:
 	case MEDIA_BUS_FMT_SRGGB8_1X8:
+	case MEDIA_BUS_FMT_Y8_1X8:
 	case MEDIA_BUS_FMT_META_8:
 		return 8;
 	default:
@@ -60,6 +62,7 @@ unsigned int ipu6_isys_mbus_code_to_mipi(u32 code)
 		return MIPI_CSI2_DT_RGB888;
 	case MEDIA_BUS_FMT_UYVY8_1X16:
 	case MEDIA_BUS_FMT_YUYV8_1X16:
+	case MEDIA_BUS_FMT_VYUY8_1X16:
 		return MIPI_CSI2_DT_YUV422_8B;
 	case MEDIA_BUS_FMT_SBGGR16_1X16:
 	case MEDIA_BUS_FMT_SGBRG16_1X16:
@@ -80,6 +83,7 @@ unsigned int ipu6_isys_mbus_code_to_mipi(u32 code)
 	case MEDIA_BUS_FMT_SGBRG8_1X8:
 	case MEDIA_BUS_FMT_SGRBG8_1X8:
 	case MEDIA_BUS_FMT_SRGGB8_1X8:
+	case MEDIA_BUS_FMT_Y8_1X8:
 		return MIPI_CSI2_DT_RAW8;
 	default:
 		/* return unavailable MIPI data type - 0x3f */
