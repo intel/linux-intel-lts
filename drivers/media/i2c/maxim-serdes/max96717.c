@@ -268,7 +268,7 @@ static const struct regmap_config max96717_i2c_regmap = {
 static int max96717_wait_for_device(struct max96717_priv *priv)
 {
 	unsigned int i;
-	int ret = 0;
+	int ret;
 
 	for (i = 0; i < 10; i++) {
 		unsigned int val;
@@ -276,9 +276,6 @@ static int max96717_wait_for_device(struct max96717_priv *priv)
 		ret = regmap_read(priv->regmap, MAX96717_REG0, &val);
 		if (!ret && val)
 			return 0;
-
-		if (!ret)
-			ret = -ETIMEDOUT;
 
 		msleep(100);
 

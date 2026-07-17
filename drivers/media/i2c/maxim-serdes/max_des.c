@@ -50,6 +50,9 @@ struct max_des_priv {
 	s64 link_freq_menu[1];
 
 	struct max_des_phy *unused_phy;
+
+	/* Force a full hardware reprogram on first post-resume stream update. */
+	bool resume_reconfigure_pending;
 };
 
 struct max_des_remap_context {
@@ -929,7 +932,8 @@ static int max_des_set_modes(struct max_des_priv *priv,
 
 		max_des_get_phy_mode(context, phy, &mode);
 
-		if (phy->mode.alt_mem_map8 == mode.alt_mem_map8 &&
+		if (!priv->resume_reconfigure_pending &&
+		    phy->mode.alt_mem_map8 == mode.alt_mem_map8 &&
 		    phy->mode.alt_mem_map10 == mode.alt_mem_map10 &&
 		    phy->mode.alt_mem_map12 == mode.alt_mem_map12 &&
 		    phy->mode.alt2_mem_map8 == mode.alt2_mem_map8)
@@ -950,7 +954,8 @@ static int max_des_set_modes(struct max_des_priv *priv,
 
 		max_des_get_pipe_mode(context, pipe, &mode);
 
-		if (pipe->mode.dbl8 == mode.dbl8 &&
+		if (!priv->resume_reconfigure_pending &&
+		    pipe->mode.dbl8 == mode.dbl8 &&
 		    pipe->mode.dbl10 == mode.dbl10 &&
 		    pipe->mode.dbl12 == mode.dbl12 &&
 		    pipe->mode.dbl8mode == mode.dbl8mode &&
@@ -1452,7 +1457,8 @@ static int max_des_update_pipe_remaps(struct max_des_priv *priv,
 	 * packet errors) and can wedge the capture. Only reprogram on a real
 	 * change.
 	 */
-	if (pipe->remaps && pipe->num_remaps == num_remaps &&
+	if (!priv->resume_reconfigure_pending &&
+	    pipe->remaps && pipe->num_remaps == num_remaps &&
 	    !memcmp(pipe->remaps, remaps, num_remaps * sizeof(*remaps))) {
 		devm_kfree(priv->dev, remaps);
 		return 0;
@@ -1503,7 +1509,7 @@ static int max_des_update_pipe_enable(struct max_des_priv *priv,
 		break;
 	}
 
-	if (enable == pipe->enabled)
+	if (!priv->resume_reconfigure_pending && enable == pipe->enabled)
 		return 0;
 
 	/*
@@ -2528,7 +2534,8 @@ static int max_des_update_active(struct max_des_priv *priv, u64 *streams_masks,
 		}
 	}
 
-	if (active != expected_active || des->active == active)
+	if (active != expected_active ||
+	    (!priv->resume_reconfigure_pending && des->active == active))
 		return 0;
 
 	if (des->ops->set_enable) {
@@ -2673,6 +2680,7 @@ static int max_des_update_streams(struct v4l2_subdev *sd,
 
 	devm_kfree(priv->dev, priv->streams_masks);
 	priv->streams_masks = streams_masks;
+	priv->resume_reconfigure_pending = false;
 
 	return 0;
 
@@ -3476,30 +3484,100 @@ EXPORT_SYMBOL_NS_GPL(max_des_remove, "MAX_SERDES");
 int max_des_suspend(struct max_des *des)
 {
 	struct max_des_priv *priv = des->priv;
+	int ret;
 
-	if (des->ops->set_enable)
-		des->ops->set_enable(des, false);
+	if (des->ops->set_enable) {
+		ret = des->ops->set_enable(des, false);
+		if (ret)
+			dev_warn(priv->dev, "suspend: set_enable(false) failed: %d\n", ret);
+	}
 
-	max_des_update_pocs(priv, false);
+	ret = max_des_update_pocs(priv, false);
+	if (ret) {
+		dev_err(priv->dev, "suspend: failed to disable POCs: %d\n", ret);
+		return ret;
+	}
 
 	return 0;
 }
 EXPORT_SYMBOL_NS_GPL(max_des_suspend, "MAX_SERDES");
 
+static void max_des_resume_restore_serializer_aliases(struct max_des_priv *priv)
+{
+	struct max_des *des = priv->des;
+	unsigned int i;
+
+	if (!des->ops->select_links)
+		return;
+
+	for (i = 0; i < des->ops->num_links; i++) {
+		struct max_des_link *link = &des->links[i];
+		int ret;
+
+		if (!link->enabled || !link->ser_xlate.en)
+			continue;
+
+		ret = max_des_init_link_ser_xlate(priv, link,
+						  priv->client->adapter,
+						  link->ser_xlate.dst,
+						  link->ser_xlate.src);
+		if (ret) {
+			/* Retry once after link stabilizes */
+			msleep(100);
+			ret = max_des_init_link_ser_xlate(priv, link,
+							  priv->client->adapter,
+							  link->ser_xlate.dst,
+							  link->ser_xlate.src);
+			if (ret)
+				dev_err(priv->dev,
+					"resume: failed to restore serializer alias on link %u: %d\n",
+					link->index, ret);
+		}
+	}
+}
+
 int max_des_resume(struct max_des *des)
 {
 	struct max_des_priv *priv = des->priv;
+	unsigned int mask = 0;
+	unsigned int i;
 	int ret;
 
 	ret = max_des_update_pocs(priv, true);
-	if (ret)
+	if (ret) {
+		dev_err(priv->dev,
+			"resume: failed to enable POC supplies: %d\n", ret);
 		return ret;
+	}
 
 	ret = max_des_init(priv);
 	if (ret) {
 		dev_err(priv->dev, "Failed to re-initialize deserializer: %d\n", ret);
 		goto err_disable_pocs;
 	}
+
+	/* S4: serializer resets to power-up address; restore I2C translations */
+	max_des_resume_restore_serializer_aliases(priv);
+
+	/* Restore link mask and issue RESET_ONESHOT for forwarding pipeline */
+	if (des->ops->select_links) {
+		for (i = 0; i < des->ops->num_links; i++) {
+			if (des->links[i].enabled)
+				mask |= BIT(i);
+		}
+		if (mask) {
+			ret = des->ops->select_links(des, mask);
+			if (ret) {
+				dev_err(priv->dev,
+					"resume: failed to select links (mask=0x%x): %d\n",
+					mask, ret);
+				goto err_disable_pocs;
+			}
+		}
+	}
+
+	/* Force full reprogram on next stream start (HW reset, SW cache stale) */
+	priv->resume_reconfigure_pending = true;
 
 	return 0;
 

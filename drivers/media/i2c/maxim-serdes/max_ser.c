@@ -1770,6 +1770,42 @@ static int max_ser_init(struct max_ser_priv *priv)
 	return 0;
 }
 
+static int max_ser_restore_i2c_xlates(struct max_ser_priv *priv)
+{
+	struct max_ser *ser = priv->ser;
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < ser->ops->num_i2c_xlates; i++) {
+		struct max_serdes_i2c_xlate *xlate = &ser->i2c_xlates[i];
+
+		if (!xlate->en)
+			continue;
+
+		ret = ser->ops->set_i2c_xlate(ser, i, xlate);
+		if (ret) {
+			dev_err(priv->dev,
+				"resume: failed to restore i2c xlate[%u] 0x%02x->0x%02x: %d\n",
+				i, xlate->src, xlate->dst, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int max_ser_restore_runtime_state(struct max_ser_priv *priv)
+{
+	struct max_ser *ser = priv->ser;
+
+	/* Restore tunnel mode; other state reprogrammed by enable_streams() */
+	if (ser->ops->set_tunnel_enable &&
+	    ser->mode == MAX_SERDES_GMSL_TUNNEL_MODE)
+		return ser->ops->set_tunnel_enable(ser, true);
+
+	return 0;
+}
+
 static int max_ser_notify_bound(struct v4l2_async_notifier *nf,
 				struct v4l2_subdev *subdev,
 				struct v4l2_async_connection *base_asc)
@@ -2240,24 +2276,16 @@ int max_ser_suspend(struct max_ser *ser)
 	for (i = 0; i < ser->ops->num_phys; i++) {
 		struct max_ser_phy *phy = &ser->phys[i];
 
-		if (ser->ops->set_phy_active && phy->active) {
+		if (ser->ops->set_phy_active && phy->active)
 			ser->ops->set_phy_active(ser, phy, false);
-			/*
-			 * Keep the active flag so that resume knows
-			 * which PHYs to re-enable.
-			 */
-		}
 	}
 
 	for (i = 0; i < ser->ops->num_pipes; i++) {
 		struct max_ser_pipe *pipe = &ser->pipes[i];
 
-		if (pipe->enabled)
+		if (ser->ops->set_pipe_enable && pipe->enabled)
 			ser->ops->set_pipe_enable(ser, pipe, false);
 	}
-
-	if (ser->ops->set_tunnel_enable)
-		ser->ops->set_tunnel_enable(ser, false);
 
 	dev_dbg(priv->dev, "Serializer suspended\n");
 
@@ -2275,6 +2303,14 @@ int max_ser_resume(struct max_ser *ser)
 		dev_err(priv->dev, "Failed to re-initialize serializer: %d\n", ret);
 		return ret;
 	}
+
+	ret = max_ser_restore_i2c_xlates(priv);
+	if (ret)
+		return ret;
+
+	ret = max_ser_restore_runtime_state(priv);
+	if (ret)
+		return ret;
 
 	dev_dbg(priv->dev, "Serializer resumed\n");
 
