@@ -22,6 +22,11 @@
 
 #define MAX_SER_NUM_LINKS	1
 #define MAX_SER_NUM_PHYS	2
+/*
+ * Maximum number of pipes supported across current serializer hardware
+ * implementations in this driver.
+ */
+#define MAX_SER_NUM_PIPES	4
 
 struct max_ser_priv {
 	struct max_ser *ser;
@@ -1274,8 +1279,8 @@ static int max_ser_assign_vc_remaps(struct max_ser_priv *priv,
 	const unsigned int MAX_VC = MAX_SERDES_VC_ID_NUM;
 	struct max_ser *ser = priv->ser;
 	struct v4l2_subdev_route *route;
-	struct max_serdes_vc_remap local_remaps[ser->ops->num_pipes];
-	bool pipe_set[ser->ops->num_pipes];
+	struct max_serdes_vc_remap local_remaps[MAX_SER_NUM_PIPES];
+	bool pipe_set[MAX_SER_NUM_PIPES];
 	unsigned int highest_pipe = 0;
 	u32 vc_used = 0;
 	u32 pipe_mask = 0;
@@ -2003,7 +2008,6 @@ static int max_ser_parse_pipe_config(struct max_ser_priv *priv, struct fwnode_ha
 		const char *name = fwnode_get_name(child);
 		struct max_ser_pipe *pipe;
 		unsigned int pipe_idx;
-		u32 enable;
 		int count;
 
 		if (!name)
@@ -2030,13 +2034,27 @@ static int max_ser_parse_pipe_config(struct max_ser_priv *priv, struct fwnode_ha
 
 		count = fwnode_property_count_u32(child, "vc-id");
 		if (count > 0) {
-			u32 vcs[count];
+			u32 vcs[MAX_SERDES_VC_ID_NUM];
 			int j;
 
+			if (count > ARRAY_SIZE(vcs)) {
+				dev_warn(priv->dev,
+					 "%s: vc-id count %d exceeds maximum %zu, ignoring\n",
+					 name, count, ARRAY_SIZE(vcs));
+				continue;
+			}
+
 			if (!fwnode_property_read_u32_array(child, "vc-id",
-							    vcs, count)) {
-				for (j = 0; j < count; j++)
+							     vcs, count)) {
+				for (j = 0; j < count; j++) {
+					if (vcs[j] >= ARRAY_SIZE(vcs)) {
+						dev_warn(priv->dev,
+							 "%s: vc-id %u >= max %zu, ignoring\n",
+							 name, vcs[j], ARRAY_SIZE(vcs));
+						continue;
+					}
 					pipe->preset_vcs |= BIT(vcs[j]);
+				}
 			}
 		}
 		dev_info(priv->dev, "%s: vcs=0x%x\n",
@@ -2172,6 +2190,12 @@ int max_ser_probe(struct i2c_client *client, struct max_ser *ser)
 	struct device *dev = &client->dev;
 	struct max_ser_priv *priv;
 	int ret;
+
+	if (ser->ops->num_pipes > MAX_SER_NUM_PIPES) {
+		dev_err(dev, "num_pipes %u exceeds maximum %u\n",
+			ser->ops->num_pipes, MAX_SER_NUM_PIPES);
+		return -E2BIG;
+	}
 
 	if (ser->ops->num_phys > MAX_SER_NUM_PHYS)
 		return -E2BIG;
