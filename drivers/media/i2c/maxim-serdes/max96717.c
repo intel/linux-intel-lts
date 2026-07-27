@@ -820,6 +820,30 @@ static int max96717_gpio_set(struct gpio_chip *gc, unsigned int offset, int valu
 	return max96717_conf_pin_config_set_one(priv, offset, config);
 }
 
+static int max96717_gpio_set_config(struct gpio_chip *gc, unsigned int offset,
+				    unsigned long config)
+{
+	struct max96717_priv *priv = gpiochip_get_data(gc);
+	unsigned int mask, val;
+
+	switch (pinconf_to_config_param(config)) {
+	case PIN_CONFIG_DRIVE_OPEN_DRAIN:
+		/* OUT_TYPE = 0 -> open-drain; leave pull resistor config unchanged */
+		mask = MAX96717_GPIO_B_OUT_TYPE;
+		val = 0;
+		break;
+	case PIN_CONFIG_DRIVE_PUSH_PULL:
+		/* OUT_TYPE = 1 -> push-pull */
+		mask = MAX96717_GPIO_B_OUT_TYPE;
+		val = field_prep(MAX96717_GPIO_B_OUT_TYPE, 1);
+		break;
+	default:
+		return max96717_conf_pin_config_set_one(priv, offset, config);
+	}
+
+	return regmap_update_bits(priv->regmap, MAX96717_GPIO_B(offset), mask, val);
+}
+
 static unsigned int max96717_pipe_id(struct max96717_priv *priv,
 				     struct max_ser_pipe *pipe)
 {
@@ -1728,7 +1752,7 @@ static int max96717_gpiochip_probe(struct max96717_priv *priv)
 		.can_sleep = true,
 		.request = gpiochip_generic_request,
 		.free = gpiochip_generic_free,
-		.set_config = gpiochip_generic_config,
+		.set_config = max96717_gpio_set_config,
 		.get_direction = max96717_gpio_get_direction,
 		.direction_input = max96717_gpio_direction_input,
 		.direction_output = max96717_gpio_direction_output,
