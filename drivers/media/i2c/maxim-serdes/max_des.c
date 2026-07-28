@@ -1766,15 +1766,22 @@ static int max_des_ser_attach_addr(struct max_des_priv *priv, u32 chan_id,
 {
 	struct max_des *des = priv->des;
 	struct max_des_link *link = &des->links[chan_id];
+	bool reattach = link->ser_xlate.en;
 	int i, min, max;
 	int ret = 0;
 
-	max_des_ser_find_version_range(des, &min, &max);
+	if (reattach) {
+		/* Resume: reuse negotiated version, reprogram alias after HW reset. */
+		min = max = link->version;
+	} else {
+		if (link->ser_xlate.en) {
+			dev_err(priv->dev,
+				"Serializer for link %u already bound\n",
+				link->index);
+			return -EINVAL;
+		}
 
-	if (link->ser_xlate.en) {
-		dev_err(priv->dev, "Serializer for link %u already bound\n",
-			link->index);
-		return -EINVAL;
+		max_des_ser_find_version_range(des, &min, &max);
 	}
 
 	for (i = max; i >= min; i--) {
@@ -1791,6 +1798,16 @@ static int max_des_ser_attach_addr(struct max_des_priv *priv, u32 chan_id,
 						  addr, alias);
 		if (!ret)
 			break;
+
+		if (reattach) {
+			/* Retry once after link stabilizes on resume. */
+			msleep(100);
+			ret = max_des_init_link_ser_xlate(priv, link,
+							  priv->client->adapter,
+							  addr, alias);
+			if (!ret)
+				break;
+		}
 	}
 
 	if (ret) {
@@ -3502,40 +3519,6 @@ int max_des_suspend(struct max_des *des)
 }
 EXPORT_SYMBOL_NS_GPL(max_des_suspend, "MAX_SERDES");
 
-static void max_des_resume_restore_serializer_aliases(struct max_des_priv *priv)
-{
-	struct max_des *des = priv->des;
-	unsigned int i;
-
-	if (!des->ops->select_links)
-		return;
-
-	for (i = 0; i < des->ops->num_links; i++) {
-		struct max_des_link *link = &des->links[i];
-		int ret;
-
-		if (!link->enabled || !link->ser_xlate.en)
-			continue;
-
-		ret = max_des_init_link_ser_xlate(priv, link,
-						  priv->client->adapter,
-						  link->ser_xlate.dst,
-						  link->ser_xlate.src);
-		if (ret) {
-			/* Retry once after link stabilizes */
-			msleep(100);
-			ret = max_des_init_link_ser_xlate(priv, link,
-							  priv->client->adapter,
-							  link->ser_xlate.dst,
-							  link->ser_xlate.src);
-			if (ret)
-				dev_err(priv->dev,
-					"resume: failed to restore serializer alias on link %u: %d\n",
-					link->index, ret);
-		}
-	}
-}
-
 int max_des_resume(struct max_des *des)
 {
 	struct max_des_priv *priv = des->priv;
@@ -3556,15 +3539,28 @@ int max_des_resume(struct max_des *des)
 		goto err_disable_pocs;
 	}
 
-	/* S4: serializer resets to power-up address; restore I2C translations */
-	max_des_resume_restore_serializer_aliases(priv);
-
-	/* Restore link mask and issue RESET_ONESHOT for forwarding pipeline */
+	/* Resume: re-negotiate serializer addresses and restore link mask. */
 	if (des->ops->select_links) {
 		for (i = 0; i < des->ops->num_links; i++) {
-			if (des->links[i].enabled)
-				mask |= BIT(i);
+			struct max_des_link *link = &des->links[i];
+
+			if (!link->enabled)
+				continue;
+
+			mask |= BIT(i);
+
+			if (!link->ser_xlate.en)
+				continue;
+
+			ret = max_des_ser_attach_addr(priv, link->index,
+						      link->ser_xlate.dst,
+						      link->ser_xlate.src);
+			if (ret)
+				dev_err(priv->dev,
+					"resume: failed to restore serializer alias on link %u: %d\n",
+					link->index, ret);
 		}
+
 		if (mask) {
 			ret = des->ops->select_links(des, mask);
 			if (ret) {
