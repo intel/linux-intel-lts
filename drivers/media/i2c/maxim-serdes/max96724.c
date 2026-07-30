@@ -80,7 +80,7 @@
 #define MAX96724_BACKTOP32_BPP10DBL1_MODE	BIT(7)
 
 #define MAX96724_MIPI_PHY0			0x8a0
-#define MAX96724_MIPI_PHY0_PHY_CONFIG		GENMASK(4, 0)
+#define MAX96724_MIPI_PHY0_PHY_CONFIG		GENMASK(6, 0)
 #define MAX96724_MIPI_PHY0_PHY_4X2		BIT(0)
 #define MAX96724_MIPI_PHY0_PHY_2X4		BIT(2)
 #define MAX96724_MIPI_PHY0_PHY_1X4A_2X2		BIT(3)
@@ -124,11 +124,12 @@
 #define MAX96724_MIPI_PHY27_PHY_PKT_CNT(x)	(GENMASK(3, 0) << (4 * ((x) % 2)))
 
 #define MAX96724_MIPI_TX3(x)			(0x903 + (x) * 0x40)
-#define MAX96724_MIPI_TX3_DESKEW_INIT_8X32K	FIELD_PREP(GENMASK(2, 0), 0b001)
+#define MAX96724_MIPI_TX3_DESKEW_INIT_8X32K	FIELD_PREP(GENMASK(2, 0), 0b111)
 #define MAX96724_MIPI_TX3_DESKEW_INIT_AUTO	BIT(7)
 
 #define MAX96724_MIPI_TX4(x)			(0x904 + (x) * 0x40)
-#define MAX96724_MIPI_TX4_DESKEW_PER_2K		FIELD_PREP(GENMASK(2, 0), 0b001)
+#define MAX96724_MIPI_TX4_DESKEW_PER_8	FIELD_PREP(GENMASK(2, 0), 0b111)
+#define MAX96724_MIPI_TX4_DESKEW_PER_INT_1FRAME	FIELD_PREP(GENMASK(5, 3), 0b000)
 #define MAX96724_MIPI_TX4_DESKEW_PER_AUTO	BIT(7)
 
 #define MAX96724_MIPI_TX10(x)			(0x90a + (x) * 0x40)
@@ -403,6 +404,7 @@ static const unsigned int max96724_phys_configs_reg_val[] = {
 	MAX96724_MIPI_PHY0_PHY_1X4A_2X2,
 	MAX96724_MIPI_PHY0_PHY_1X4B_2X2,
 	MAX96724_MIPI_PHY0_PHY_2X4,
+	MAX96724_MIPI_PHY0_PHY_1X4A_2X2 | MAX96724_MIPI_PHY0_CLK_PHY0,
 };
 
 static const struct max_serdes_phys_config max96724_phys_configs[] = {
@@ -424,6 +426,7 @@ static const struct max_serdes_phys_config max96724_phys_configs[] = {
 	{ { 4, 0, 2, 2 } },
 	{ { 2, 2, 4, 0 } },
 	{ { 4, 0, 4, 0 } },
+	{ { 0, 4, 2, 2 }, { 0, MAX96724_PHY1_ALT_CLOCK, 0, 0 } },
 };
 
 static int max96724_init_tpg(struct max_des *des)
@@ -512,25 +515,6 @@ static int max96724_init_phy(struct max_des *des, struct max_des_phy *phy)
 				 MAX96724_MIPI_TX10_CSI2_CPHY_EN, is_cphy);
 	if (ret)
 		return ret;
-
-	switch (phy->mipi.clock_lane) {
-	case 0:
-		val = MAX96724_MIPI_PHY0_CLK_PHY3;
-		break;
-	case 5:
-		val = MAX96724_MIPI_PHY0_CLK_PHY0;
-		break;
-	default:
-		dev_err(priv->dev, "Invalid clock lane %u for PHY %u\n",
-			phy->mipi.clock_lane, phy->index);
-		return -EINVAL;
-	}
-
-	ret = regmap_assign_bits(priv->regmap, MAX96724_MIPI_PHY0,
-		MAX96724_MIPI_PHY0_CLK_PHY0 | MAX96724_MIPI_PHY0_CLK_PHY3, val);
-	if (ret)
-		return ret;
-
 	/* Configure lane mapping. */
 	val = 0;
 	for (i = 0; i < num_hw_data_lanes ; i++) {
@@ -591,17 +575,18 @@ static int max96724_init_phy(struct max_des *des, struct max_des_phy *phy)
 	}
 
 	if (!is_cphy && dpll_freq > 1500000000ull) {
-		/* Enable initial deskew with 2 x 32k UI. */
+		/* Enable initial deskew with 8 x 32k UI. */
 		ret = regmap_write(priv->regmap, MAX96724_MIPI_TX3(index),
 				   MAX96724_MIPI_TX3_DESKEW_INIT_AUTO |
 				   MAX96724_MIPI_TX3_DESKEW_INIT_8X32K);
 		if (ret)
 			return ret;
 
-		/* Enable periodic deskew with 2 x 1k UI.. */
+		/* Enable periodic deskew with 8 x 1k UI. */
 		ret = regmap_write(priv->regmap, MAX96724_MIPI_TX4(index),
 				   MAX96724_MIPI_TX4_DESKEW_PER_AUTO |
-				   MAX96724_MIPI_TX4_DESKEW_PER_2K);
+				   MAX96724_MIPI_TX4_DESKEW_PER_INT_1FRAME |
+				   MAX96724_MIPI_TX4_DESKEW_PER_8);
 		if (ret)
 			return ret;
 	} else {
@@ -712,10 +697,47 @@ static int max96724_set_pipe_remap(struct max_des *des,
 				   struct max_des_remap *remap)
 {
 	struct max96724_priv *priv = des_to_priv(des);
-	struct max_des_phy *phy = &des->phys[remap->phy];
-	unsigned int phy_id = max96724_phy_id(des, phy);
+	struct max_des_phy *phy = NULL;
+	unsigned int phy_id;
 	unsigned int index = pipe->index;
+	unsigned int j;
 	int ret;
+
+	/*
+	 * Route MAP_DPHY_DEST to the output PHY selected by the core for this
+	 * route (remap->phy), but only when that PHY is a valid active output
+	 * (enabled and with non-zero hw data lanes). This keeps multiple
+	 * simultaneous output PHYs (e.g. 2x4/4x2) routed correctly.
+	 */
+	if (remap->phy < des->ops->num_phys &&
+	    des->phys[remap->phy].enabled &&
+	    max_des_phy_hw_data_lanes(des, &des->phys[remap->phy]))
+		phy = &des->phys[remap->phy];
+
+	/*
+	 * Otherwise fall back to the first enabled PHY with non-zero hw data
+	 * lanes. In 1x4A mode this is PHY1 (the master that carries the clock
+	 * lane); the routing-context PHY can point at an inactive PHY (e.g.
+	 * PHY0 with 0 lanes), which must not be programmed as the destination.
+	 */
+	if (!phy) {
+		for (j = 0; j < des->ops->num_phys; j++) {
+			if (des->phys[j].enabled &&
+			    max_des_phy_hw_data_lanes(des, &des->phys[j])) {
+				phy = &des->phys[j];
+				break;
+			}
+		}
+	}
+
+	if (!phy) {
+		dev_err(priv->dev,
+			"No active output PHY for pipe %u remap %u\n", index, i);
+		return -EINVAL;
+	}
+
+	/* Translate logical PHY index to the physical MIPI controller id. */
+	phy_id = max96724_phy_id(des, phy);
 
 	/* Set source Data Type and Virtual Channel. */
 	/* TODO: implement extended Virtual Channel. */
