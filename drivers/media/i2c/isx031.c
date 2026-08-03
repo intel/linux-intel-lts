@@ -14,9 +14,7 @@
 #else
 #include <linux/unaligned.h>
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #include <media/mipi-csi2.h>
-#endif
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
@@ -51,6 +49,7 @@
 #define ISX031_PM_RETRY_TIMEOUT		10
 #define ISX031_REG_SLEEP_10000US	10000	/* 10ms */
 #define ISX031_REG_SLEEP_20MS		20	/* 20ms */
+#define ISX031_REG_SLEEP_50MS		50	/* 50ms */
 #define ISX031_REG_SLEEP_200MS		200	/* 200ms */
 
 /* To serialize asynchronous callbacks */
@@ -92,9 +91,7 @@ struct isx031_mode {
 	u32 width;	/* Frame width in pixels */
 	u32 height;	/* Frame height in pixels */
 	u32 code;	/* MEDIA_BUS_FMT */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 	u8 datatype;	/* CSI-2 data type ID */
-#endif
 	u32 fps;	/* MODE_FPS */
 
 	/* Sensor register settings for a specific resolution */
@@ -120,7 +117,7 @@ struct isx031 {
 };
 
 static const s64 isx031_link_frequencies[] = {
-	300000000ULL,
+	288000000ULL,	/* 4 lanes x 576 Mbps/lane DDR -> 288 MHz clock */
 };
 
 static const struct isx031_reg isx031_init_reg[] = {
@@ -140,11 +137,16 @@ static const struct isx031_reg isx031_framesync_reg[] = {
 	{}
 };
 
-static const struct isx031_reg isx031_1920_1536_30fps_reg[] = {
+/*
+ * Crop settings are frame-rate independent: the 30 and 60 fps variants of a
+ * resolution share one register list. The frame rate is selected separately
+ * through the drive-mode register (ISX031_REG_MODE_SELECT).
+ */
+static const struct isx031_reg isx031_1920_1536_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0x8AA8, 0x01}, /* Crop enable */
 	{ISX031_REG_LEN_08BIT, 0x8AAA, 0x80}, /* H size = 1920 */
 	{ISX031_REG_LEN_08BIT, 0x8AAB, 0x07},
-	{ISX031_REG_LEN_08BIT, 0x8AAC, 0x00}, /* H croped 0 */
+	{ISX031_REG_LEN_08BIT, 0x8AAC, 0x00}, /* H cropped 0 */
 	{ISX031_REG_LEN_08BIT, 0x8AAD, 0x00},
 	{ISX031_REG_LEN_08BIT, 0x8AAE, 0x00}, /* V size 1536 */
 	{ISX031_REG_LEN_08BIT, 0x8AAF, 0x06},
@@ -163,11 +165,11 @@ static const struct isx031_reg isx031_1920_1536_30fps_reg[] = {
 	{}
 };
 
-static const struct isx031_reg isx031_1920_1080_30fps_reg[] = {
+static const struct isx031_reg isx031_1920_1080_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0x8AA8, 0x01}, /* Crop enable */
 	{ISX031_REG_LEN_08BIT, 0x8AAA, 0x80}, /* H size = 1920 */
 	{ISX031_REG_LEN_08BIT, 0x8AAB, 0x07},
-	{ISX031_REG_LEN_08BIT, 0x8AAC, 0x00}, /* H croped 0 */
+	{ISX031_REG_LEN_08BIT, 0x8AAC, 0x00}, /* H cropped 0 */
 	{ISX031_REG_LEN_08BIT, 0x8AAD, 0x00},
 	{ISX031_REG_LEN_08BIT, 0x8AAE, 0x38}, /* V size 1080 */
 	{ISX031_REG_LEN_08BIT, 0x8AAF, 0x04},
@@ -219,14 +221,14 @@ static const struct isx031_reg_list isx031_framesync_reg_list = {
 	.regs = isx031_framesync_reg,
 };
 
-static const struct isx031_reg_list isx031_1920_1536_30fps_reg_list = {
-	.num_of_regs = ARRAY_SIZE(isx031_1920_1536_30fps_reg),
-	.regs = isx031_1920_1536_30fps_reg,
+static const struct isx031_reg_list isx031_1920_1536_reg_list = {
+	.num_of_regs = ARRAY_SIZE(isx031_1920_1536_reg),
+	.regs = isx031_1920_1536_reg,
 };
 
-static const struct isx031_reg_list isx031_1920_1080_30fps_reg_list = {
-	.num_of_regs = ARRAY_SIZE(isx031_1920_1080_30fps_reg),
-	.regs = isx031_1920_1080_30fps_reg,
+static const struct isx031_reg_list isx031_1920_1080_reg_list = {
+	.num_of_regs = ARRAY_SIZE(isx031_1920_1080_reg),
+	.regs = isx031_1920_1080_reg,
 };
 
 static const struct isx031_reg_list isx031_1280_720_30fps_reg_list = {
@@ -239,29 +241,39 @@ static const struct isx031_mode supported_modes[] = {
 		.width		= 1920,
 		.height		= 1536,
 		.code		= MEDIA_BUS_FMT_UYVY8_1X16,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 		.datatype	= MIPI_CSI2_DT_YUV422_8B,
-#endif
 		.fps		= 30,
-		.reg_list	= isx031_1920_1536_30fps_reg_list,
+		.reg_list	= isx031_1920_1536_reg_list,
+	},
+	{
+		.width		= 1920,
+		.height		= 1536,
+		.code		= MEDIA_BUS_FMT_UYVY8_1X16,
+		.datatype	= MIPI_CSI2_DT_YUV422_8B,
+		.fps		= 60,
+		.reg_list	= isx031_1920_1536_reg_list,
 	},
 	{
 		.width		= 1920,
 		.height		= 1080,
 		.code		= MEDIA_BUS_FMT_UYVY8_1X16,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 		.datatype	= MIPI_CSI2_DT_YUV422_8B,
-#endif
 		.fps		= 30,
-		.reg_list	= isx031_1920_1080_30fps_reg_list,
+		.reg_list	= isx031_1920_1080_reg_list,
+	},
+	{
+		.width		= 1920,
+		.height		= 1080,
+		.code		= MEDIA_BUS_FMT_UYVY8_1X16,
+		.datatype	= MIPI_CSI2_DT_YUV422_8B,
+		.fps		= 60,
+		.reg_list	= isx031_1920_1080_reg_list,
 	},
 	{
 		.width		= 1280,
 		.height		= 720,
 		.code		= MEDIA_BUS_FMT_UYVY8_1X16,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 		.datatype	= MIPI_CSI2_DT_YUV422_8B,
-#endif
 		.fps		= 30,
 		.reg_list	= isx031_1280_720_30fps_reg_list,
 	},
@@ -602,6 +614,27 @@ static int isx031_start_streaming(struct isx031 *isx031)
 
 	/* Apply mode registers only if mode changed */
 	if (isx031->cur_mode != isx031->pre_mode) {
+		/*
+		 * Vendor mode-change sequence: switch to standby, wait 50ms,
+		 * then reprogram the mode registers while in standby before
+		 * transiting to streaming.
+		 * MODE_SET_F is lock protected, so unlock it before the write.
+		 */
+		ret = isx031_write_reg(client, ISX031_REG_MODE_SET_F_LOCK, 1,
+				       ISX031_MODE_UNLOCK);
+		if (ret) {
+			dev_err(&client->dev, "Failed to unlock mode\n");
+			return ret;
+		}
+
+		ret = isx031_write_reg(client, ISX031_REG_MODE_SET_F, 1,
+				       ISX031_MODE_STANDBY);
+		if (ret) {
+			dev_err(&client->dev, "Failed to enter standby\n");
+			return ret;
+		}
+		msleep(ISX031_REG_SLEEP_50MS);
+
 		reg_list = &isx031->cur_mode->reg_list;
 		ret = isx031_write_reg_list(client, reg_list, true);
 		if (ret) {
@@ -778,6 +811,13 @@ static int __maybe_unused isx031_resume(struct device *dev)
 		goto unlock;
 	}
 
+	/*
+	 * pre_mode caches the mode currently programmed in the sensor. The
+	 * mode registers were just reapplied above, so record that here as
+	 * probe() does, and isx031_start_streaming() will not reapply them.
+	 */
+	isx031->pre_mode = isx031->cur_mode;
+
 	if (isx031->streaming) {
 		ret = isx031_start_streaming(isx031);
 		if (ret) {
@@ -830,6 +870,48 @@ static int isx031_get_frame_desc(struct v4l2_subdev *sd,
 }
 #endif
 
+/*
+ * Find the supported mode matching @code/@width/@height whose frame rate is
+ * the closest to @fps. Frame rates the configured lane count cannot drive are
+ * skipped. Returns NULL when no mode matches the requested resolution.
+ */
+static const struct isx031_mode *isx031_find_mode(struct isx031 *isx031,
+						  u32 code, u32 width,
+						  u32 height, u32 fps)
+{
+	const struct isx031_mode *mode = NULL;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
+		if (supported_modes[i].code != code ||
+		    supported_modes[i].width != width ||
+		    supported_modes[i].height != height)
+			continue;
+
+		/* Skip frame rates the current lane count cannot drive */
+		if (isx031_find_drive_mode(isx031->lanes,
+					   supported_modes[i].fps) < 0)
+			continue;
+
+		if (!mode ||
+		    abs((int)supported_modes[i].fps - (int)fps) <
+		    abs((int)mode->fps - (int)fps))
+			mode = &supported_modes[i];
+	}
+
+	return mode;
+}
+
+/* Make @mode current. All cur_mode updates funnel through here */
+static void isx031_set_cur_mode(struct isx031 *isx031,
+				const struct isx031_mode *mode)
+{
+	isx031->cur_mode = mode;
+
+	dev_dbg(&isx031->client->dev, "cur mode: %ux%u@%ufps code 0x%x\n",
+		mode->width, mode->height, mode->fps, mode->code);
+}
+
 static int isx031_set_format(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			     struct v4l2_subdev_pad_config *cfg,
@@ -839,20 +921,17 @@ static int isx031_set_format(struct v4l2_subdev *sd,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct isx031 *isx031 = to_isx031(sd);
-	const struct isx031_mode *mode = NULL;
-	unsigned int i;
+	const struct isx031_mode *mode;
 
 	mutex_lock(&isx031_mutex);
 
-	/* Find the best matching mode */
-	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
-		if (supported_modes[i].code == fmt->format.code &&
-			supported_modes[i].width == fmt->format.width &&
-			supported_modes[i].height == fmt->format.height) {
-			mode = &supported_modes[i];
-			break;
-		}
-	}
+	/*
+	 * Match resolution first; when several modes share it, keep the fps
+	 * currently selected so re-applying the same format does not drop a
+	 * chosen rate (e.g. 60fps) back to the first (30fps) entry.
+	 */
+	mode = isx031_find_mode(isx031, fmt->format.code, fmt->format.width,
+				fmt->format.height, isx031->cur_mode->fps);
 
 	/* If no exact match, use the default mode */
 	if (!mode)
@@ -869,7 +948,7 @@ static int isx031_set_format(struct v4l2_subdev *sd,
 		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 #endif
 	else
-		isx031->cur_mode = mode;
+		isx031_set_cur_mode(isx031, mode);
 
 	mutex_unlock(&isx031_mutex);
 
@@ -926,6 +1005,157 @@ static int isx031_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	return 0;
 }
 
+static int isx031_enum_mbus_code(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_mbus_code_enum *code)
+{
+	struct isx031 *isx031 = to_isx031(sd);
+
+	/* All modes share a single media-bus code */
+	if (code->index > 0) {
+		dev_dbg(&isx031->client->dev,
+			"enum mbus code: index %u out of range\n", code->index);
+		return -EINVAL;
+	}
+
+	code->code = supported_modes[0].code;
+
+	dev_dbg(&isx031->client->dev, "enum mbus code: index %u -> code 0x%x\n",
+		code->index, code->code);
+
+	return 0;
+}
+
+static int isx031_enum_frame_size(struct v4l2_subdev *sd,
+				  struct v4l2_subdev_state *sd_state,
+				  struct v4l2_subdev_frame_size_enum *fse)
+{
+	struct isx031 *isx031 = to_isx031(sd);
+	unsigned int i, count = 0;
+
+	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
+		if (supported_modes[i].code != fse->code)
+			continue;
+
+		/* Skip fps variants that repeat an already-listed resolution */
+		if (i > 0 &&
+		    supported_modes[i].code == supported_modes[i - 1].code &&
+		    supported_modes[i].width == supported_modes[i - 1].width &&
+		    supported_modes[i].height == supported_modes[i - 1].height)
+			continue;
+
+		if (count == fse->index) {
+			fse->min_width = supported_modes[i].width;
+			fse->max_width = supported_modes[i].width;
+			fse->min_height = supported_modes[i].height;
+			fse->max_height = supported_modes[i].height;
+
+			dev_dbg(&isx031->client->dev,
+				"enum frame size: index %u code 0x%x -> %ux%u\n",
+				fse->index, fse->code, fse->max_width,
+				fse->max_height);
+
+			return 0;
+		}
+		count++;
+	}
+
+	dev_dbg(&isx031->client->dev,
+		"enum frame size: no size at index %u for code 0x%x\n",
+		fse->index, fse->code);
+
+	return -EINVAL;
+}
+
+static int isx031_enum_frame_interval(struct v4l2_subdev *sd,
+				      struct v4l2_subdev_state *sd_state,
+				      struct v4l2_subdev_frame_interval_enum *fie)
+{
+	struct isx031 *isx031 = to_isx031(sd);
+	unsigned int i, count = 0;
+
+	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
+		if (supported_modes[i].code != fie->code ||
+		    supported_modes[i].width != fie->width ||
+		    supported_modes[i].height != fie->height)
+			continue;
+
+		/* Skip frame rates the current lane count cannot drive */
+		if (isx031_find_drive_mode(isx031->lanes,
+					   supported_modes[i].fps) < 0)
+			continue;
+
+		if (count == fie->index) {
+			fie->interval.numerator = 1;
+			fie->interval.denominator = supported_modes[i].fps;
+
+			dev_dbg(&isx031->client->dev,
+				"enum frame interval: index %u %ux%u -> %ufps\n",
+				fie->index, fie->width, fie->height,
+				fie->interval.denominator);
+
+			return 0;
+		}
+		count++;
+	}
+
+	dev_dbg(&isx031->client->dev,
+		"enum frame interval: no interval at index %u for %ux%u code 0x%x with %u lanes\n",
+		fie->index, fie->width, fie->height, fie->code, isx031->lanes);
+
+	return -EINVAL;
+}
+
+static int isx031_get_frame_interval(struct v4l2_subdev *sd,
+				     struct v4l2_subdev_state *sd_state,
+				     struct v4l2_subdev_frame_interval *fi)
+{
+	struct isx031 *isx031 = to_isx031(sd);
+
+	mutex_lock(&isx031_mutex);
+	fi->interval.numerator = 1;
+	fi->interval.denominator = isx031->cur_mode->fps;
+	mutex_unlock(&isx031_mutex);
+
+	return 0;
+}
+
+static int isx031_set_frame_interval(struct v4l2_subdev *sd,
+				     struct v4l2_subdev_state *sd_state,
+				     struct v4l2_subdev_frame_interval *fi)
+{
+	struct isx031 *isx031 = to_isx031(sd);
+	const struct isx031_mode *mode;
+	u32 req_fps;
+
+	if (fi->interval.numerator == 0 || fi->interval.denominator == 0)
+		return -EINVAL;
+
+	req_fps = fi->interval.denominator / fi->interval.numerator;
+
+	mutex_lock(&isx031_mutex);
+
+	/* Drive mode is applied at stream start; reject changes mid-stream */
+	if (isx031->streaming) {
+		mutex_unlock(&isx031_mutex);
+		return -EBUSY;
+	}
+
+	/* Pick the mode with the current resolution and the closest fps */
+	mode = isx031_find_mode(isx031, isx031->cur_mode->code,
+				isx031->cur_mode->width,
+				isx031->cur_mode->height, req_fps);
+	if (mode)
+		isx031_set_cur_mode(isx031, mode);
+
+	fi->interval.numerator = 1;
+	fi->interval.denominator = isx031->cur_mode->fps;
+
+	mutex_unlock(&isx031_mutex);
+
+	return 0;
+}
+
 static const struct v4l2_subdev_video_ops isx031_video_ops = {
 	.s_stream = isx031_set_stream,
 };
@@ -936,6 +1166,11 @@ static const struct v4l2_subdev_pad_ops isx031_pad_ops = {
 	.get_frame_desc = isx031_get_frame_desc,
 	.enable_streams = isx031_enable_streams,
 	.disable_streams = isx031_disable_streams,
+	.enum_mbus_code = isx031_enum_mbus_code,
+	.enum_frame_size = isx031_enum_frame_size,
+	.enum_frame_interval = isx031_enum_frame_interval,
+	.get_frame_interval = isx031_get_frame_interval,
+	.set_frame_interval = isx031_set_frame_interval,
 };
 
 static const struct v4l2_subdev_ops isx031_subdev_ops = {
@@ -1094,7 +1329,7 @@ static int isx031_probe(struct i2c_client *client)
 
 	/* 1920x1536 default */
 	isx031->pre_mode = NULL;
-	isx031->cur_mode = &supported_modes[0];
+	isx031_set_cur_mode(isx031, &supported_modes[0]);
 	ret = isx031_initialize_module(isx031);
 	if (ret) {
 		dev_err(&client->dev, "Failed to initialize sensor: %d\n", ret);
