@@ -1145,6 +1145,34 @@ static void max9296a_remove(struct i2c_client *client)
 	gpiod_set_value_cansleep(priv->gpiod_pwdn, 1);
 }
 
+static int max9296a_suspend(struct device *dev)
+{
+	struct max9296a_priv *priv = dev_get_drvdata(dev);
+
+	if (!priv)
+		return 0;
+
+	return max_des_suspend(&priv->des);
+}
+
+static int max9296a_resume(struct device *dev)
+{
+	struct max9296a_priv *priv = dev_get_drvdata(dev);
+	int ret;
+
+	if (!priv)
+		return 0;
+
+	ret = max9296a_reset(priv);
+	if (ret)
+		return ret;
+
+	return max_des_resume(&priv->des);
+}
+
+static DEFINE_SIMPLE_DEV_PM_OPS(max9296a_pm_ops,
+				max9296a_suspend, max9296a_resume);
+
 static const struct max_serdes_phys_config max9296a_phys_configs[] = {
 	{ { 4, 4 } },
 };
@@ -1339,6 +1367,7 @@ static struct i2c_driver max9296a_i2c_driver = {
 		.name = "max9296a",
 		.of_match_table	= max9296a_of_table,
 		.acpi_match_table = max9296a_acpi_ids,
+		.pm = pm_sleep_ptr(&max9296a_pm_ops),
 	},
 	.probe = max9296a_probe,
 	.remove = max9296a_remove,
