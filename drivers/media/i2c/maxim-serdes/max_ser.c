@@ -543,6 +543,8 @@ static int max_ser_set_fmt(struct v4l2_subdev *sd,
 	if (!fmt)
 		return -EINVAL;
 
+	format->format.field = V4L2_FIELD_NONE;
+
 	*fmt = format->format;
 
 	fmt = v4l2_subdev_state_get_opposite_stream_format(state, format->pad,
