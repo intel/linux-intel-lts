@@ -3292,6 +3292,15 @@ static int max_des_parse_dt(struct max_des_priv *priv)
 	if (!fwnode_property_read_u32(fwnode, "pipe-stream-autoselect", &val))
 		des->pipe_stream_autoselect = !!val;
 
+	/*
+	 * External GMSL frame sync is opt-in via the ACPI _DSD property
+	 * "gmsl-frame-sync-enable" (defaults to disabled when absent or 0).
+	 * It also requires the "des-fsin" GPIO resource to be present,
+	 * as declared by the ACPI GpioIo()/"des-fsin-gpios" resource.
+	 */
+	if (!fwnode_property_read_u32(fwnode, "gmsl-frame-sync-enable", &val))
+		des->frame_sync_enable = !!val;
+
 	for (i = 0; i < des->ops->num_phys; i++) {
 		phy = &des->phys[i];
 		phy->index = i;

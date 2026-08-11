@@ -8,9 +8,11 @@
 #include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
+#include <linux/gpio/driver.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/of_graph.h>
+#include <linux/pinctrl/pinconf-generic.h>
 #include <linux/regmap.h>
 
 #include "max_des.h"
@@ -210,6 +212,47 @@
 
 #define MAX96724_PHY1_ALT_CLOCK			5
 
+/* Native frame sync registers */
+#define MAX96724_FSYNC_0			0x4a0
+#define MAX96724_FSYNC_0_MODE		GENMASK(3, 2)
+#define MAX96724_FSYNC_15			0x4af
+
+/* External frame sync GPIO registers, indexed by MFP number (0-7). */
+#define MAX96724_GPIO_REG(n)				(0x300 + 3 * (n))
+#define MAX96724_GPIO_A_REG(n)		(MAX96724_GPIO_REG(n) + 1)
+#define MAX96724_GPIO_A_OUTDRV_DISABLE		BIT(0)
+#define MAX96724_GPIO_A_TX_ENABLE			BIT(1)
+#define MAX96724_GPIO_A_GPIO_IN				BIT(3)
+#define MAX96724_FS_GPIO_TYPE				BIT(7)
+
+/* Custom pinconf param, mirroring MAX96717_PINCTRL_INPUT_VALUE. */
+#define MAX96724_PINCTRL_X(x)			(PIN_CONFIG_END + (x))
+#define MAX96724_PINCTRL_INPUT_VALUE		MAX96724_PINCTRL_X(1)
+
+/* Register map has gaps between MFP groups, so use a lookup table instead of arithmetic. */
+#define MAX96724_GPIO_B_REG(n)		(max96724_fsync_gpio_b_reg[(n)])
+#define MAX96724_GPIO_C_REG(n)		(max96724_fsync_gpio_c_reg[(n)])
+#define MAX96724_GPIO_D_REG(n)		(max96724_fsync_gpio_d_reg[(n)])
+/* Cross-link virtual GPIO ID; this design always assigns id == own MFP number. */
+#define MAX96724_GPIO_BCD_ID		GENMASK(4, 0)
+#define MAX96724_GPIO_BCD_EN		BIT(5)
+
+#define MAX96724_GPIOCHIP_NAME			"max96724-gpiochip"
+/* MFP0..MFP7, matching the ACPI GpioIo() pin numbering. */
+#define MAX96724_GPIO_NUM			8
+
+static const u16 max96724_fsync_gpio_b_reg[MAX96724_GPIO_NUM] = {
+	0x337, 0x33a, 0x33d, 0x341, 0x344, 0x347, 0x34a, 0x34d,
+};
+
+static const u16 max96724_fsync_gpio_c_reg[MAX96724_GPIO_NUM] = {
+	0x36d, 0x371, 0x374, 0x377, 0x37a, 0x37d, 0x381, 0x384,
+};
+
+static const u16 max96724_fsync_gpio_d_reg[MAX96724_GPIO_NUM] = {
+	0x3a4, 0x3a7, 0x3aa, 0x3ad, 0x3b1, 0x3b4, 0x3b7, 0x3ba,
+};
+
 static const struct regmap_config max96724_i2c_regmap = {
 	.reg_bits = 16,
 	.val_bits = 8,
@@ -225,6 +268,9 @@ struct max96724_priv {
 	struct regmap *regmap;
 
 	struct gpio_desc *gpiod_enable;
+	struct gpio_desc *fsin_gpio;
+	unsigned int fsin_gpio_pin;
+	struct gpio_chip gc;
 };
 
 struct max96724_chip_info {
@@ -446,6 +492,167 @@ static int max96724_init_tpg(struct max_des *des)
 	return regmap_multi_reg_write(priv->regmap, regs, ARRAY_SIZE(regs));
 }
 
+/* Mirrors max96717_get_pin_config_reg(): resolve a param to its GPIO_A register bits. */
+static int max96724_get_pin_config_reg(unsigned int offset, u32 param,
+					unsigned int *reg, unsigned int *mask,
+					unsigned int *val)
+{
+	*reg = MAX96724_GPIO_A_REG(offset);
+
+	switch (param) {
+	case PIN_CONFIG_INPUT_ENABLE:
+		/* tri-state the output driver */
+		*mask = MAX96724_GPIO_A_OUTDRV_DISABLE;
+		*val = *mask;
+		return 0;
+	case MAX96724_PINCTRL_INPUT_VALUE:
+		*mask = MAX96724_GPIO_A_GPIO_IN;
+		*val = *mask;
+		return 0;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+/*
+ * Update specific bits of a pin's GPIO_A control register, mirroring
+ * max96717_conf_pin_config_set_one()'s masked register update so unrelated
+ * bits (e.g. those written by max96724_configure_frame_sync()) are preserved.
+ */
+static int max96724_conf_pin_config_set_one(struct max96724_priv *priv,
+					     unsigned int offset,
+					     unsigned long config)
+{
+	u32 param = pinconf_to_config_param(config);
+	unsigned int reg, mask, val;
+	int ret;
+
+	ret = max96724_get_pin_config_reg(offset, param, &reg, &mask, &val);
+	if (ret)
+		return ret;
+
+	return regmap_update_bits(priv->regmap, reg, mask, val);
+}
+
+static int max96724_gpio_direction_input(struct gpio_chip *gc, unsigned int offset)
+{
+	unsigned long config = pinconf_to_config_packed(PIN_CONFIG_INPUT_ENABLE, 1);
+	struct max96724_priv *priv = gpiochip_get_data(gc);
+
+	/* Tri-state the pin's output driver so it can sense an external signal. */
+	return max96724_conf_pin_config_set_one(priv, offset, config);
+}
+
+static int max96724_gpio_get_direction(struct gpio_chip *gc, unsigned int offset)
+{
+	struct max96724_priv *priv = gpiochip_get_data(gc);
+	unsigned int reg, mask, en_val, val;
+	int ret;
+
+	ret = max96724_get_pin_config_reg(offset, PIN_CONFIG_INPUT_ENABLE,
+					   &reg, &mask, &en_val);
+	if (ret)
+		return ret;
+
+	ret = regmap_read(priv->regmap, reg, &val);
+	if (ret)
+		return ret;
+
+	return (val & mask) == en_val ? GPIO_LINE_DIRECTION_IN : GPIO_LINE_DIRECTION_OUT;
+}
+
+static int max96724_gpio_get(struct gpio_chip *gc, unsigned int offset)
+{
+	struct max96724_priv *priv = gpiochip_get_data(gc);
+	unsigned int reg, mask, en_val, val;
+	int ret;
+
+	ret = max96724_get_pin_config_reg(offset, MAX96724_PINCTRL_INPUT_VALUE,
+					   &reg, &mask, &en_val);
+	if (ret)
+		return ret;
+
+	ret = regmap_read(priv->regmap, reg, &val);
+	if (ret)
+		return ret;
+
+	return (val & mask) == en_val;
+}
+
+static int max96724_gpiochip_probe(struct max96724_priv *priv)
+{
+	priv->gc = (struct gpio_chip) {
+		.parent = priv->dev,
+		.fwnode = dev_fwnode(priv->dev),
+		.owner = THIS_MODULE,
+		.label = MAX96724_GPIOCHIP_NAME,
+		.base = -1,
+		.ngpio = MAX96724_GPIO_NUM,
+		.can_sleep = true,
+		.get_direction = max96724_gpio_get_direction,
+		.direction_input = max96724_gpio_direction_input,
+		.get = max96724_gpio_get,
+	};
+	return devm_gpiochip_add_data(priv->dev, &priv->gc, priv);
+}
+
+static int max96724_configure_frame_sync(struct max96724_priv *priv)
+{
+	unsigned int pin = priv->fsin_gpio_pin;
+	unsigned int val = FIELD_PREP(MAX96724_GPIO_BCD_ID, pin) |
+			    MAX96724_GPIO_BCD_EN;
+	int ret;
+
+	/* Ensure the pin is tri-stated regardless of how fsin_gpio was requested. */
+	ret = max96724_gpio_direction_input(&priv->gc, pin);
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure fsin pin %u as input\n", pin);
+		return ret;
+	}
+
+	ret = regmap_update_bits(priv->regmap, MAX96724_FSYNC_0,
+			MAX96724_FSYNC_0_MODE, FIELD_PREP(MAX96724_FSYNC_0_MODE, 2)); /* mode 10 */
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure MAX96724_FSYNC_0: %d\n", ret);
+		return ret;
+	}
+	/* This GPIO source enabled for GMSL2 transmission */
+	ret = regmap_set_bits(priv->regmap, MAX96724_GPIO_A_REG(pin),
+			      MAX96724_GPIO_A_TX_ENABLE);
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure MAX96724_GPIO_A\n");
+		return ret;
+	}
+
+	ret = regmap_set_bits(priv->regmap, MAX96724_FSYNC_15, MAX96724_FS_GPIO_TYPE);
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure MAX96724_FSYNC_15\n");
+		return ret;
+	}
+
+	/* MFP's [pin] GPIO ID for pin while transmitting. */
+	ret = regmap_write(priv->regmap, MAX96724_GPIO_B_REG(pin), val);
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure MAX96724_GPIO_B\n");
+		return ret;
+	}
+
+	ret = regmap_write(priv->regmap, MAX96724_GPIO_C_REG(pin), val);
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure MAX96724_GPIO_C\n");
+		return ret;
+	}
+
+	ret = regmap_write(priv->regmap, MAX96724_GPIO_D_REG(pin), val);
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure MAX96724_GPIO_D\n");
+		return ret;
+	}
+
+	dev_info(priv->dev, "max96724 frame_sync configured successfully\n");
+	return 0;
+}
+
 static int max96724_init(struct max_des *des)
 {
 	struct max96724_priv *priv = des_to_priv(des);
@@ -485,7 +692,31 @@ static int max96724_init(struct max_des *des)
 	if (ret)
 		return ret;
 
-	return max96724_init_tpg(des);
+	ret = max96724_init_tpg(des);
+	if (ret)
+		return ret;
+
+	/*
+	 * External GMSL frame sync requires the "des-fsin" GPIO (MFPx) resource
+	 * to be present, as declared by the ACPI GpioIo()/"des-fsin-gpios"
+	 * resource.
+	 */
+	if (des->frame_sync_enable) {
+		if (!priv->fsin_gpio) {
+			dev_err(priv->dev,
+				"External GMSL frame_sync requested but no fsin GPIO resource found\n");
+			return -EINVAL;
+		}
+
+		dev_info(priv->dev, "Enabling external GMSL frame_sync\n");
+		ret = max96724_configure_frame_sync(priv);
+		if (ret)
+			return ret;
+	} else {
+		dev_info(priv->dev, "External GMSL frame_sync is disabled\n");
+	}
+
+	return 0;
 }
 
 static int max96724_init_phy(struct max_des *des, struct max_des_phy *phy)
@@ -1173,6 +1404,43 @@ static int max96724_probe(struct i2c_client *client)
 						     GPIOD_OUT_LOW);
 	if (IS_ERR(priv->gpiod_enable))
 		return PTR_ERR(priv->gpiod_enable);
+
+	/*
+	 * Register a gpiochip for MAX96724's own MFP pins so the
+	 * self-referencing ACPI "des-fsin-gpios" GpioIo() resource (MFP7) can
+	 * be resolved below.
+	 */
+	ret = max96724_gpiochip_probe(priv);
+	if (ret) {
+		dev_err(dev, "frame_sync Failed to register gpiochip: %d\n", ret);
+		return ret;
+	}
+
+	/*
+	 * Optional external GMSL frame sync trigger input pin, declared
+	 * via the ACPI "des-fsin-gpios" resource. Requested as GPIOD_ASIS so
+	 * probe doesn't change pin state; max96724_configure_frame_sync()
+	 * switches it to input only when frame sync is actually enabled.
+	 */
+	priv->fsin_gpio = devm_gpiod_get_optional(&client->dev, "des-fsin", GPIOD_ASIS);
+	if (IS_ERR(priv->fsin_gpio)) {
+		dev_err(dev, "frame_sync Failed to get fsin GPIO: %ld\n", PTR_ERR(priv->fsin_gpio));
+		return PTR_ERR(priv->fsin_gpio);
+	}
+
+	/* Identify which MFP this is, independent of other lines the gpiochip may serve. */
+	if (priv->fsin_gpio) {
+		int gpio_num = desc_to_gpio(priv->fsin_gpio);
+		int pin = gpio_num - priv->gc.base;
+
+		if (gpio_num < 0 || pin < 0 || pin >= MAX96724_GPIO_NUM) {
+			dev_err(dev, "frame_sync Invalid fsin GPIO (gpio %d, base %d)\n",
+				gpio_num, priv->gc.base);
+			return -EINVAL;
+		}
+
+		priv->fsin_gpio_pin = pin;
+	}
 
 	if (priv->gpiod_enable) {
 		/* PWDN must be held for 1us for reset */

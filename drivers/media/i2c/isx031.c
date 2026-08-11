@@ -114,6 +114,7 @@ struct isx031 {
 
 	u8 lanes;
 	bool streaming;	/* Streaming on/off */
+	bool frame_sync_enable; /* External GMSL frame sync (ACPI _DSD) */
 };
 
 static const s64 isx031_link_frequencies[] = {
@@ -124,6 +125,8 @@ static const struct isx031_reg isx031_init_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0xFFFF, 0x00}, /* Select mode */
 	{ISX031_REG_LEN_08BIT, 0x0171, 0x00}, /* Close F_EBD */
 	{ISX031_REG_LEN_08BIT, 0x0172, 0x00}, /* Close R_EBD */
+	{ISX031_REG_LEN_08BIT, 0xBF14, 0x00}, /* SG_MODE_APL */
+	{ISX031_REG_LEN_08BIT, 0x8AF0, 0x00}, /* Internal sync */
 	{}
 };
 
@@ -134,6 +137,15 @@ static const struct isx031_reg isx031_framesync_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0x8AF0, 0x01}, /* External pulse-based sync */
 	{ISX031_REG_LEN_08BIT, 0x0144, 0x00},
 	{ISX031_REG_LEN_08BIT, 0x8AF1, 0x00},
+	{}
+};
+
+static const struct isx031_reg isx031_framesync_stream_reg[] = {
+	{ISX031_REG_LEN_08BIT, 0x8AF0, 0x02}, /* External pulse-based sync */
+	{ISX031_REG_LEN_08BIT, 0x8AF1, 0x00},
+	{ISX031_REG_LEN_08BIT, 0x8AFE, 0x00},
+	{ISX031_REG_LEN_08BIT, 0x8AFF, 0x0C},
+	{ISX031_REG_LEN_08BIT, 0xBF14, 0x02}, /* SG_MODE_APL */
 	{}
 };
 
@@ -224,6 +236,10 @@ static const struct isx031_reg_list isx031_framesync_reg_list = {
 static const struct isx031_reg_list isx031_1920_1536_reg_list = {
 	.num_of_regs = ARRAY_SIZE(isx031_1920_1536_reg),
 	.regs = isx031_1920_1536_reg,
+
+static const struct isx031_reg_list isx031_framesync_stream_reg_list = {
+	.num_of_regs = ARRAY_SIZE(isx031_framesync_stream_reg),
+	.regs = isx031_framesync_stream_reg,
 };
 
 static const struct isx031_reg_list isx031_1920_1080_reg_list = {
@@ -642,6 +658,16 @@ static int isx031_start_streaming(struct isx031 *isx031)
 			return ret;
 		}
 		isx031->pre_mode = isx031->cur_mode;
+	}
+
+	if (isx031->frame_sync_enable) {
+		dev_dbg(&client->dev, "isx031_frame_sync: send isx031_framesync_stream_reg_list\n");
+
+		ret = isx031_write_reg_list(client, &isx031_framesync_stream_reg_list, true);
+		if (ret) {
+			dev_err(&client->dev, "Failed to set framesync reg: %d\n", ret);
+			return ret;
+		}
 	}
 
 	ret = __v4l2_ctrl_handler_setup(&isx031->ctrls);
@@ -1244,6 +1270,7 @@ static int isx031_probe(struct i2c_client *client)
 	struct isx031 *isx031;
 	const struct isx031_reg_list *reg_list;
 	int ret;
+	u32 val = 0;
 
 	isx031 = devm_kzalloc(&client->dev, sizeof(*isx031), GFP_KERNEL);
 	if (!isx031)
@@ -1253,6 +1280,19 @@ static int isx031_probe(struct i2c_client *client)
 	isx031->platform_data = client->dev.platform_data;
 	if (!isx031->platform_data)
 		dev_warn(&client->dev, "No platform data provided\n");
+
+	/*
+	 * External GMSL frame sync is opt-in via the ACPI _DSD property
+	 * "gmsl-frame-sync-enable". It defaults to disabled when the property
+	 * is absent or set to 0.
+	 */
+	isx031->frame_sync_enable = false;
+
+	if (!fwnode_property_read_u32(dev_fwnode(&client->dev), "gmsl-frame-sync-enable", &val))
+		isx031->frame_sync_enable = !!val;
+
+	dev_info(&client->dev, "External GMSL frame_sync %s\n",
+		 isx031->frame_sync_enable ? "enabled" : "disabled");
 
 	isx031->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
 							 GPIOD_OUT_LOW);
@@ -1265,12 +1305,19 @@ static int isx031_probe(struct i2c_client *client)
 	} else
 		dev_warn(&client->dev, "Reset gpio not found\n");
 
-	isx031->fsin_gpio = devm_gpiod_get_optional(&client->dev, "fsin",
-						    GPIOD_OUT_LOW);
-	if (isx031->fsin_gpio)
-		dev_info(&client->dev, "Fsin gpio found\n");
-	else
-		dev_warn(&client->dev, "Fsin gpio not found\n");
+	/*
+	 * When external frame sync is enabled, FSIN is received over GMSL2 and
+	 * should not be requested as a local GPIO. Requesting it as a GPIOD_IN can
+	 * disable serializer video output as GPIO_OUT_DIS will be set to 1.
+	 */
+	if (!isx031->frame_sync_enable) {
+		isx031->fsin_gpio = devm_gpiod_get_optional(&client->dev, "fsin",
+								GPIOD_OUT_LOW);
+		if (isx031->fsin_gpio)
+			dev_info(&client->dev, "Fsin gpio found\n");
+		else
+			dev_warn(&client->dev, "Fsin gpio not found\n");
+	}
 
 	/* Initialize subdevice */
 	sd = &isx031->sd;

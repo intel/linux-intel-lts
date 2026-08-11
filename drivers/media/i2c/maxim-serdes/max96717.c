@@ -227,6 +227,7 @@ struct max96717_priv {
 	struct pinctrl_desc pctldesc;
 	struct gpio_chip gc;
 	const struct max96717_chip_info *info;
+	unsigned int frame_sync_gpio_pin;
 
 	struct device *dev;
 	struct i2c_client *client;
@@ -1445,9 +1446,33 @@ static int max96717_init_tpg(struct max_ser *ser)
 	return regmap_multi_reg_write(priv->regmap, regs, ARRAY_SIZE(regs));
 }
 
+static int max96717_configure_frame_sync(struct max96717_priv *priv)
+{
+	unsigned int pin = priv->frame_sync_gpio_pin;
+	int ret;
+
+	ret = regmap_write(priv->regmap, MAX96717_GPIO_C(pin),
+			   FIELD_PREP(MAX96717_GPIO_C_GPIO_RX_ID, pin));
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure GPIO_C(%u) for frame sync: %d\n", pin, ret);
+		return ret;
+	}
+
+	ret = regmap_write(priv->regmap, MAX96717_GPIO_A(pin),
+			   MAX96717_GPIO_A_RES_CFG | MAX96717_GPIO_A_GPIO_RX_EN);
+	if (ret) {
+		dev_err(priv->dev, "Failed to configure GPIO_A(%u) for frame sync: %d\n", pin, ret);
+		return ret;
+	}
+
+	dev_info(priv->dev, "max96717 frame_sync configured successfully\n");
+	return 0;
+}
+
 static int max96717_init(struct max_ser *ser)
 {
 	struct max96717_priv *priv = ser_to_priv(ser);
+	u32 frame_sync_enable = 0;
 	int ret;
 
 	/*
@@ -1476,7 +1501,40 @@ static int max96717_init(struct max_ser *ser)
 			return ret;
 	}
 
-	return max96717_init_tpg(ser);
+	ret = max96717_init_tpg(ser);
+	if (ret)
+		return ret;
+
+	/*
+	 * External GMSL frame sync is opt-in via the ACPI _DSD property
+	 * "gmsl-frame-sync-enable" (defaults to disabled when absent or 0).
+	 */
+	fwnode_property_read_u32(dev_fwnode(priv->dev), "gmsl-frame-sync-enable",
+				 &frame_sync_enable);
+	if (frame_sync_enable) {
+		/* MFP number is board-specific; ASL's DESCH_SER_EXTRA_GPIO_PIN. */
+		ret = fwnode_property_read_u32(dev_fwnode(priv->dev),
+					       "gmsl-frame-sync-gpio-pin",
+					       &priv->frame_sync_gpio_pin);
+		if (ret) {
+			dev_err(priv->dev,
+				"External GMSL frame_sync requested but no gpio pin defined\n");
+			return ret;
+		}
+
+		if (priv->frame_sync_gpio_pin >= MAX96717_GPIO_NUM) {
+			dev_err(priv->dev,
+				"Invalid gmsl-frame-sync-gpio-pin %u\n",
+				priv->frame_sync_gpio_pin);
+			return -EINVAL;
+		}
+		dev_info(priv->dev, "Enabling external GMSL frame_sync\n");
+		ret = max96717_configure_frame_sync(priv);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 
 static const struct pinctrl_ops max96717_ctrl_ops = {

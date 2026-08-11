@@ -145,6 +145,7 @@ struct max_des {
 	enum max_serdes_gmsl_mode mode;
 	bool active;
 	bool pipe_stream_autoselect;
+	bool frame_sync_enable;
 };
 
 int max_des_probe(struct i2c_client *client, struct max_des *des);
