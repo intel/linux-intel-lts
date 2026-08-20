@@ -45,7 +45,7 @@ struct dentry;
 #define IPU_ISYS_NUM_RECV_QUEUE		1U
 
 #define IPU_ISYS_MIN_WIDTH		2U
-#define IPU_ISYS_MIN_HEIGHT		2U
+#define IPU_ISYS_MIN_HEIGHT		1U  /* D4XX specific */
 #define IPU_ISYS_MAX_WIDTH		8160U
 #define IPU_ISYS_MAX_HEIGHT		8190U
 

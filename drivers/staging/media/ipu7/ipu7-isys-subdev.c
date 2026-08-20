@@ -28,6 +28,8 @@ unsigned int ipu7_isys_mbus_code_to_mipi(u32 code)
 		return MIPI_CSI2_DT_RGB888;
 	case MEDIA_BUS_FMT_YUYV10_1X20:
 		return MIPI_CSI2_DT_YUV422_10B;
+	case MEDIA_BUS_FMT_VYUY8_1X16:  /* D4XX specific */
+		return MIPI_CSI2_DT_YUV422_8B;
 	case MEDIA_BUS_FMT_UYVY8_1X16:
 	case MEDIA_BUS_FMT_YUYV8_1X16:
 		return MIPI_CSI2_DT_YUV422_8B;
@@ -46,6 +48,7 @@ unsigned int ipu7_isys_mbus_code_to_mipi(u32 code)
 	case MEDIA_BUS_FMT_SGBRG8_1X8:
 	case MEDIA_BUS_FMT_SGRBG8_1X8:
 	case MEDIA_BUS_FMT_SRGGB8_1X8:
+	case MEDIA_BUS_FMT_Y8_1X8:  /* D4XX specific */
 		return MIPI_CSI2_DT_RAW8;
 	default:
 		WARN_ON(1);

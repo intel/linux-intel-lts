@@ -20,7 +20,7 @@ struct ipu7_isys_stream;
 #define INVALID_VC_ID			-1
 #define IPU7_NR_OF_CSI2_SINK_PADS	1U
 #define IPU7_CSI2_PAD_SINK		0U
-#define IPU7_NR_OF_CSI2_SRC_PADS	8U
+#define IPU7_NR_OF_CSI2_SRC_PADS	8U  /* D4XX specific; can increase to support more VC */
 #define IPU7_CSI2_PAD_SRC		1U
 #define IPU7_NR_OF_CSI2_PADS		(IPU7_NR_OF_CSI2_SINK_PADS + \
 					 IPU7_NR_OF_CSI2_SRC_PADS)
