@@ -799,9 +799,6 @@
 # CVE-2026-46266
 0003-inet-RAW-sockets-using-IPPROTO_RAW-MUST-drop-incomin.patch
 
-# CVE-2026-43048
-0004-HID-core-Mitigate-potential-OOB-by-removing-bogus-me.patch
-
 # CVE-2026-53185
 0005-zram-fix-use-after-free-in-zram_bvec_write_partial.patch
 
