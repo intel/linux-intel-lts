@@ -105,6 +105,16 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
 	IPU_SENSOR_CONFIG("INTC10C0", 1, 360000000),
 	/* Lontium lt6911gxd */
 	IPU_SENSOR_CONFIG("INTC1124", 0),
+	/* D3 Embedded ISX031 */
+	IPU_SENSOR_CONFIG("INTC113C", 1, 300000000),
+	/* LI AR0830 */
+	IPU_SENSOR_CONFIG("LIAR0830", 1, 600000000),
+	/* Innodisk AR0822 */
+	IPU_SENSOR_CONFIG("EV8MOOM1", 1, 600000000),
+	/* LI IMX415 */
+	IPU_SENSOR_CONFIG("IMXSN415", 1, 445500000),
+	/* LI IMX586 */
+	IPU_SENSOR_CONFIG("IMXSN586", 1, 1000000000),
 };
 
 static const struct ipu_property_names prop_names = {
