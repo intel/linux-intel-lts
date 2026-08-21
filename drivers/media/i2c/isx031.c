@@ -236,6 +236,7 @@ static const struct isx031_reg_list isx031_framesync_reg_list = {
 static const struct isx031_reg_list isx031_1920_1536_reg_list = {
 	.num_of_regs = ARRAY_SIZE(isx031_1920_1536_reg),
 	.regs = isx031_1920_1536_reg,
+};
 
 static const struct isx031_reg_list isx031_framesync_stream_reg_list = {
 	.num_of_regs = ARRAY_SIZE(isx031_framesync_stream_reg),

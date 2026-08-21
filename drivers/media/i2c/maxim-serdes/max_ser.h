@@ -137,6 +137,11 @@ struct max_ser {
 	unsigned int phys_config;
 	unsigned int active;
 	enum max_serdes_gmsl_mode mode;
+
+	/* Parsed from the ACPI "fsync" child node by max_ser_parse_dt(). */
+	bool frame_sync_enable;
+	unsigned int frame_sync_gpio_pin;
+	unsigned int frame_sync_rx_id;
 };
 
 int max_ser_probe(struct i2c_client *client, struct max_ser *ser);

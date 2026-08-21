@@ -2126,6 +2126,50 @@ static int max_ser_find_phys_config(struct max_ser_priv *priv)
 	return 0;
 }
 
+static int max_ser_parse_frame_sync(struct max_ser_priv *priv, struct fwnode_handle *fwnode)
+{
+	struct max_ser *ser = priv->ser;
+	struct fwnode_handle *fsync;
+	u32 val;
+	int ret;
+
+	/*
+	 * External GMSL frame sync is opt-in via the ACPI _DSD property
+	 * "gmsl-frame-sync-enable" (defaults to disabled when absent or 0).
+	 */
+	if (!fwnode_property_read_u32(fwnode, "gmsl-frame-sync-enable", &val))
+		ser->frame_sync_enable = !!val;
+
+	if (!ser->frame_sync_enable)
+		return 0;
+
+	/* gmsl-frame-sync-gpio-pin / maxim,rx-id live under the ASL "fsync" child node. */
+	fsync = fwnode_get_named_child_node(fwnode, "fsync");
+	if (!fsync) {
+		dev_err(priv->dev,
+			"External GMSL frame_sync requested but no fsync node found\n");
+		return -EINVAL;
+	}
+
+	ret = fwnode_property_read_u32(fsync, "gmsl-frame-sync-gpio-pin",
+				       &ser->frame_sync_gpio_pin);
+	if (ret) {
+		dev_err(priv->dev,
+			"External GMSL frame_sync requested but no gpio pin defined\n");
+		fwnode_handle_put(fsync);
+		return ret;
+	}
+
+	ret = fwnode_property_read_u32(fsync, "maxim,rx-id", &ser->frame_sync_rx_id);
+	if (ret)
+		dev_err(priv->dev,
+			"External GMSL frame_sync requested but no rx-id defined\n");
+
+	fwnode_handle_put(fsync);
+
+	return ret;
+}
+
 static int max_ser_parse_dt(struct max_ser_priv *priv)
 {
 	struct fwnode_handle *fwnode = dev_fwnode(priv->dev);
@@ -2134,6 +2178,10 @@ static int max_ser_parse_dt(struct max_ser_priv *priv)
 	struct max_ser_phy *phy;
 	unsigned int i;
 	int ret;
+
+	ret = max_ser_parse_frame_sync(priv, fwnode);
+	if (ret)
+		return ret;
 
 	for (i = 0; i < ser->ops->num_phys; i++) {
 		phy = &ser->phys[i];
