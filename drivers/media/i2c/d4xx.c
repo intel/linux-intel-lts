@@ -2681,11 +2681,11 @@ static int ds5_sensor_set_stream(struct v4l2_subdev *sd, u64 streams_mask, int e
 	ds5_read(state, config_status_base, &status);
 	ds5_read(state, stream_status_base, &streaming);
 	dev_dbg(&state->client->dev,
-			"%s: %s %s, stream_status 0x%x:%x, config_status 0x%x:%x ret=%d\n",
-			__func__, ds5_get_sensor_name(state),
-			(enable)?"START":"STOP",
-			stream_status_base, streaming,
-			config_status_base, status, ret);
+		"%s: %s %s, stream_status 0x%x:%x, config_status 0x%x:%x ret=%d\n",
+		__func__, ds5_get_sensor_name(state),
+		(enable) ? "START" : "STOP",
+		stream_status_base, streaming,
+		config_status_base, status, ret);
 
 	return 0;
 
@@ -2709,13 +2709,12 @@ static int ds5_enable_streams(struct v4l2_subdev *subdev,
 
 	return 0;
 }
+
 static int ds5_disable_streams(struct v4l2_subdev *subdev,
 	 struct v4l2_subdev_state *state,
 	 u32 pad, u64 streams_mask)
 {
-	ds5_sensor_set_stream(subdev, streams_mask, false);
-
-	return 0;
+	return ds5_sensor_set_stream(subdev, streams_mask, false);
 }
 
 // v4l2 ops for all
@@ -5142,13 +5141,29 @@ static void ds5_update_pad_format(const struct ds5_resolution *resolutions,
 
 static int __maybe_unused ds5_suspend(struct device *dev)
 {
-	//TODO: add resume handling in future
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ds5 *ds5 = container_of(sd, struct ds5, mux.sd.subdev);
+
+	ds5->depth.sensor.streaming = false;
+	ds5->rgb.sensor.streaming = false;
+	ds5->ir.sensor.streaming = false;
+	ds5->imu.sensor.streaming = false;
+
 	return 0;
 }
 
 static int __maybe_unused ds5_resume(struct device *dev)
 {
-	//TODO: add resume handling in future
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ds5 *ds5 = container_of(sd, struct ds5, mux.sd.subdev);
+	int ret;
+
+	ret = ds5_hw_init(client, ds5);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 

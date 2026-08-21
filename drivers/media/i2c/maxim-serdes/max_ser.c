@@ -2346,6 +2346,8 @@ EXPORT_SYMBOL_NS_GPL(max_ser_suspend, "MAX_SERDES");
 int max_ser_resume(struct max_ser *ser)
 {
 	struct max_ser_priv *priv = ser->priv;
+	unsigned int num_pads = max_ser_num_pads(ser);
+	unsigned int i;
 	int ret;
 
 	ret = max_ser_init(priv);
@@ -2361,6 +2363,17 @@ int max_ser_resume(struct max_ser *ser)
 	ret = max_ser_restore_runtime_state(priv);
 	if (ret)
 		return ret;
+
+	/* HW was reset; clear cached state so enable_streams() reprograms. */
+	for (i = 0; i < ser->ops->num_pipes; i++)
+		ser->pipes[i].enabled = false;
+
+	for (i = 0; i < ser->ops->num_phys; i++)
+		ser->phys[i].active = false;
+
+	ser->active = false;
+	ser->tpg_entry = NULL;
+	memset(priv->streams_masks, 0, num_pads * sizeof(*priv->streams_masks));
 
 	dev_dbg(priv->dev, "Serializer resumed\n");
 
