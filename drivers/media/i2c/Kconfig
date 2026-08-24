@@ -1260,6 +1260,20 @@ config VIDEO_ISX031
 		To compile this driver as a module, choose M here: the
 		module will be called isx031.
 
+config VIDEO_D4XX
+	tristate "Intel RealSense D4XX support"
+	depends on VIDEO_DEV && I2C
+	depends on MEDIA_CAMERA_SUPPORT
+	select MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	select VIDEO_V4L2_SUBDEV_API
+	help
+	  This is a Video4Linux2 sensor-level driver for Intel RealSense
+	  D4XX depth cameras with a MIPI CSI-2 interface.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called d4xx.
+
 config VIDEO_MAX9X
 	tristate "MAX9X serdes support"
 	depends on VIDEO_DEV && I2C
