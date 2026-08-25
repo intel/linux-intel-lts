@@ -31,6 +31,8 @@
 #define DS5_DRIVER_NAME_DFU "d4xx-dfu"
 #define DS5_FW_VERSION			0x030C
 #define DS5_FW_BUILD			0x030E
+#define DS5_FRAME_SYNC_MIN_FW_VERSION	0x0511
+#define DS5_FRAME_SYNC_MIN_FW_BUILD	0x030A
 #define DS5_DEVICE_TYPE			0x0310
 #define DS5_DEVICE_TYPE_D45X		6
 #define DS5_DEVICE_TYPE_D43X		5
@@ -86,6 +88,7 @@
 #define DS5_EXPOSURE_ROI_RIGHT		0x001C
 #define DS5_MANUAL_LASER_POWER		0x0024
 #define DS5_PWM_FREQUENCY		0x0028
+#define DS5_CAMERA_SYNC_MODE		0x002C
 
 #define DS5_CONFIG_STATUS			0x4800
 #define DS5_DEPTH_CONFIG_STATUS		0x4800
@@ -196,6 +199,8 @@
 #define DS5_MAX_LOG_SLEEP 10
 #define DS5_MAX_LOG_POLL (DS5_MAX_LOG_WAIT / DS5_MAX_LOG_SLEEP)
 #define DS5_N_CONTROLS			8
+
+#define DS5_EXTERNAL_SYNC_MODE 0x3
 
 /* helper function */
 #define to_ds5(_sd)			container_of(_sd, struct ds5, sd)
@@ -416,6 +421,8 @@ struct ds5 {
 
 	struct ds5_platform_data *platform_data;
 	struct gpio_desc *reset_gpio;
+
+	bool frame_sync_enable;
 
 	struct regmap *regmap;
 	struct mutex mutex;
@@ -2976,6 +2983,44 @@ static int ds5_hw_init(struct i2c_client *client, struct ds5 *ds5)
 
 	return ret;
 }
+static int ds5_fs_init(struct i2c_client *client, struct ds5 *ds5)
+{
+	int ret = 0;
+	u32 val = 0;
+
+	dev_dbg(&client->dev, "Initialising Frame Sync\n");
+
+	ds5->frame_sync_enable = false;
+
+	if (!fwnode_property_read_u32(dev_fwnode(&client->dev), "gmsl-frame-sync-enable", &val))
+		ds5->frame_sync_enable = !!val;
+
+	if (ds5->frame_sync_enable &&
+	    (ds5->fw_version < DS5_FRAME_SYNC_MIN_FW_VERSION ||
+	     (ds5->fw_version == DS5_FRAME_SYNC_MIN_FW_VERSION &&
+	      ds5->fw_build < DS5_FRAME_SYNC_MIN_FW_BUILD))) {
+		dev_warn(&client->dev,
+			 "External GMSL frame_sync requires firmware 5.17.3.10 or newer\n");
+		ds5->frame_sync_enable = false;
+	}
+
+	if (ds5->frame_sync_enable) {
+		// Sync Mode = 3 is Independent Sync to Depth Stream and RGB Stream
+
+		ret = ds5_write(ds5, DS5_DEPTH_CONTROL_BASE | DS5_CAMERA_SYNC_MODE,
+						DS5_EXTERNAL_SYNC_MODE);
+		if (ret) {
+			dev_err(&client->dev, "%s: failed to set frame sync mode: %d\n",
+					__func__, ret);
+			return ret;
+		}
+	}
+
+	dev_info(&client->dev, "External GMSL frame_sync %s\n",
+		 ds5->frame_sync_enable ? "enabled" : "disabled");
+
+	return 0;
+}
 
 static int ds5_hw_set_auto_exposure(struct ds5 *state, u32 base, s32 val)
 {
@@ -5314,6 +5359,12 @@ static int ds5_probe(struct i2c_client *client)
 	ret = ds5_hw_init(client, ds5);
 	if (ret) {
 		dev_err(&client->dev, "failed to init hw: %d", ret);
+		goto probe_error_media_entity_cleanup;
+	}
+
+	ret = ds5_fs_init(client, ds5);
+	if (ret) {
+		dev_err(&client->dev, "failed to init fs: %d", ret);
 		goto probe_error_media_entity_cleanup;
 	}
 
