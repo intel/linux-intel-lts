@@ -41,6 +41,15 @@
 
 #define ISX031_REG_MODE_SELECT		0x8A00
 #define ISX031_MODE_4LANES_60FPS	0x01
+
+#define ISX031_REG_AEMODE		0xABC0
+#define ISX031_AEMODE_AUTO		0x00
+#define ISX031_AEMODE_FULL_ME		0x03
+#define ISX031_REG_FME_SHTVAL		0xABEC
+#define ISX031_REG_FME_SHTVAL_UNIT	0xABF0
+#define ISX031_REG_FME_SHTVAL_S1	0xABF4
+#define ISX031_REG_FME_SHTVAL_S1_UNIT	0xABF8
+#define ISX031_FME_SHTVAL_UNIT_USEC	0x03
 #define ISX031_MODE_4LANES_30FPS	0x17
 #define ISX031_MODE_2LANES_30FPS	0x18
 
@@ -51,6 +60,12 @@
 #define ISX031_REG_SLEEP_20MS		20	/* 20ms */
 #define ISX031_REG_SLEEP_50MS		50	/* 50ms */
 #define ISX031_REG_SLEEP_200MS		200	/* 200ms */
+
+/* Exposure is expressed directly in microseconds. */
+#define ISX031_EXPOSURE_MIN		1200
+#define ISX031_EXPOSURE_MAX		266547
+#define ISX031_EXPOSURE_STEP		1
+#define ISX031_EXPOSURE_DEF		ISX031_EXPOSURE_MIN
 
 /* To serialize asynchronous callbacks */
 static DEFINE_MUTEX(isx031_mutex);
@@ -101,6 +116,8 @@ struct isx031_mode {
 struct isx031 {
 	struct v4l2_subdev sd;
 	struct v4l2_ctrl_handler ctrls;
+	struct v4l2_ctrl *ctrl_exposure_auto;
+	struct v4l2_ctrl *ctrl_exposure;
 
 	isx031_platform_data *platform_data;
 	struct i2c_client *client;
@@ -671,15 +688,27 @@ static int isx031_start_streaming(struct isx031 *isx031)
 		}
 	}
 
-	ret = __v4l2_ctrl_handler_setup(&isx031->ctrls);
-	if (ret) {
-		dev_err(&client->dev, "Failed to setup controls\n");
-		return ret;
-	}
-
 	ret = isx031_mode_transit(isx031, ISX031_STATE_STREAMING);
 	if (ret) {
 		dev_err(&client->dev, "Failed to start streaming\n");
+		return ret;
+	}
+
+	/*
+	 * Mark streaming before handler_setup so s_ctrl sees the sensor as
+	 * streaming (e.g. rejects AEMODE changes with -EBUSY).
+	 */
+	isx031->streaming = true;
+
+	/*
+	 * Apply cached V4L2 controls after the STREAMING transition; the
+	 * MODE_SELECT/MODE_SET_F=STREAMING sequence resets AE registers
+	 * (e.g. FME_SHTVAL) to defaults, wiping any pre-stream writes.
+	 */
+	ret = __v4l2_ctrl_handler_setup(&isx031->ctrls);
+	if (ret) {
+		dev_err(&client->dev, "Failed to setup controls\n");
+		isx031->streaming = false;
 		return ret;
 	}
 
@@ -719,7 +748,7 @@ static int isx031_set_stream(struct v4l2_subdev *sd, int enable)
 			goto unlock;
 		}
 
-		isx031->streaming = true;
+		/* isx031->streaming set by isx031_start_streaming() */
 
 	} else {
 		isx031_stop_streaming(isx031);
@@ -1213,35 +1242,230 @@ static const struct v4l2_subdev_internal_ops isx031_internal_ops = {
 	.open = isx031_open,
 };
 
+static const struct v4l2_ctrl_ops isx031_ctrl_ops;
+
+static int isx031_set_exposure_value(struct i2c_client *client, u32 val)
+{
+	int ret;
+
+	ret = isx031_write_reg_retry(client, ISX031_REG_FME_SHTVAL_UNIT,
+				     ISX031_REG_LEN_08BIT,
+				     ISX031_FME_SHTVAL_UNIT_USEC);
+	if (ret)
+		return ret;
+
+	ret = isx031_write_reg_retry(client, ISX031_REG_FME_SHTVAL,
+				     4, val);
+	if (ret)
+		return ret;
+
+	ret = isx031_write_reg_retry(client, ISX031_REG_FME_SHTVAL_S1_UNIT,
+				     ISX031_REG_LEN_08BIT,
+				     ISX031_FME_SHTVAL_UNIT_USEC);
+	if (ret)
+		return ret;
+
+	return isx031_write_reg_retry(client, ISX031_REG_FME_SHTVAL_S1,
+				      4, val);
+}
+
 static int isx031_set_ctrl(struct v4l2_ctrl *ctrl)
 {
-	return 0;
-};
+	struct isx031 *isx031 = container_of(ctrl->handler,
+					    struct isx031, ctrls);
+	struct i2c_client *client = isx031->client;
+	u32 val;
+	int ret = 0;
+
+	/* No HW access needed if exposure is inactive (AE-auto). */
+	if (ctrl->id == V4L2_CID_EXPOSURE &&
+	    (!isx031->ctrl_exposure_auto ||
+	     isx031->ctrl_exposure_auto->val != V4L2_EXPOSURE_MANUAL))
+		return 0;
+
+	/* AEMODE must not be changed while streaming. */
+	if (ctrl->id == V4L2_CID_EXPOSURE_AUTO &&
+	    isx031->streaming && ctrl->cur.val != ctrl->val)
+		return -EBUSY;
+
+	if (ctrl->id == V4L2_CID_EXPOSURE_AUTO) {
+		if (ctrl->val != V4L2_EXPOSURE_AUTO &&
+		    ctrl->val != V4L2_EXPOSURE_MANUAL) {
+			dev_err(&client->dev,
+				"Invalid exposure_auto value: %d\n", ctrl->val);
+			return -EINVAL;
+		}
+
+		if (isx031->ctrl_exposure)
+			v4l2_ctrl_activate(isx031->ctrl_exposure,
+					   ctrl->val == V4L2_EXPOSURE_MANUAL);
+	}
+
+	/*
+	 * If not powered up, cache the value in v4l2 core; s_ctrl will be
+	 * re-invoked by __v4l2_ctrl_handler_setup() at stream start.
+	 */
+	ret = pm_runtime_get_if_in_use(&client->dev);
+	if (!ret)
+		return 0;
+	if (ret < 0)
+		return ret;
+	ret = 0;
+
+	switch (ctrl->id) {
+	case V4L2_CID_EXPOSURE_AUTO:
+		val = ctrl->val == V4L2_EXPOSURE_MANUAL ?
+			ISX031_AEMODE_FULL_ME : ISX031_AEMODE_AUTO;
+
+		ret = isx031_write_reg_retry(client, ISX031_REG_AEMODE,
+					     ISX031_REG_LEN_08BIT, val);
+		if (ret) {
+			dev_err(&client->dev,
+				"Failed to write AEMODE=0x%02x: %d\n",
+				val, ret);
+			break;
+		}
+
+		if (ctrl->val == V4L2_EXPOSURE_MANUAL && isx031->ctrl_exposure) {
+			ret = isx031_set_exposure_value(client,
+							isx031->ctrl_exposure->val);
+			if (ret)
+				break;
+		} else {
+			/*
+			 * AE-auto: force UNIT to us so sensor AE writes and
+			 * status readbacks match the ctrl's uSec range.
+			 */
+			ret = isx031_write_reg_retry(client,
+						     ISX031_REG_FME_SHTVAL_UNIT,
+						     ISX031_REG_LEN_08BIT,
+						     ISX031_FME_SHTVAL_UNIT_USEC);
+			if (ret) {
+				dev_err(&client->dev,
+					"Failed to set SHTVAL unit: %d\n", ret);
+				break;
+			}
+			ret = isx031_write_reg_retry(client,
+						     ISX031_REG_FME_SHTVAL_S1_UNIT,
+						     ISX031_REG_LEN_08BIT,
+						     ISX031_FME_SHTVAL_UNIT_USEC);
+			if (ret) {
+				dev_err(&client->dev,
+					"Failed to set SHTVAL_S1 unit: %d\n", ret);
+				break;
+			}
+		}
+
+		dev_dbg(&client->dev, "AEMODE set to 0x%02x (v4l2=%d)\n",
+			val, ctrl->val);
+		break;
+
+	case V4L2_CID_EXPOSURE:
+		ret = isx031_set_exposure_value(client, ctrl->val);
+		if (ret) {
+			dev_err(&client->dev,
+				"Failed to set exposure=%d: %d\n",
+				ctrl->val, ret);
+			break;
+		}
+		dev_dbg(&client->dev,
+			"Exposure set to %d us (SP1+SP2)\n", ctrl->val);
+		break;
+
+	default:
+		break;
+	}
+
+	pm_runtime_put(&client->dev);
+
+	return ret;
+}
+
+static int isx031_get_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct isx031 *isx031 = container_of(ctrl->handler,
+					    struct isx031, ctrls);
+	struct i2c_client *client = isx031->client;
+	u32 reg;
+	int ret = 0;
+
+	/* If not powered up, leave ctrl->val untouched (framework uses cur.val). */
+	ret = pm_runtime_get_if_in_use(&client->dev);
+	if (!ret)
+		return 0;
+	if (ret < 0)
+		return ret;
+	ret = 0;
+
+	switch (ctrl->id) {
+	case V4L2_CID_EXPOSURE:
+		ret = isx031_read_reg(client, ISX031_REG_FME_SHTVAL, 4, &reg);
+		if (ret) {
+			dev_err(&client->dev,
+				"Failed to read SHTVAL: %d\n", ret);
+			break;
+		}
+
+		ctrl->val = reg;
+		dev_dbg(&client->dev, "SHTVAL read %u us\n", reg);
+		break;
+	default:
+		break;
+	}
+
+	pm_runtime_put(&client->dev);
+
+	return ret;
+}
 
 static const struct v4l2_ctrl_ops isx031_ctrl_ops = {
 	.s_ctrl = isx031_set_ctrl,
+	.g_volatile_ctrl = isx031_get_ctrl,
 };
 
 static int isx031_ctrls_init(struct isx031 *sensor)
 {
 	struct v4l2_ctrl *ctrl;
+	struct v4l2_ctrl *link_freq;
 	struct v4l2_ctrl_handler *hdl = &sensor->ctrls;
 
-	v4l2_ctrl_handler_init(hdl, 10);
+	v4l2_ctrl_handler_init(hdl, 16);
 
 	/* There's a need to set the link frequency because IPU6 dictates it. */
-	ctrl = v4l2_ctrl_new_int_menu(hdl, &isx031_ctrl_ops,
-				      V4L2_CID_LINK_FREQ,
-				      ARRAY_SIZE(isx031_link_frequencies) - 1, 0,
-				      isx031_link_frequencies);
+	link_freq = v4l2_ctrl_new_int_menu(hdl, &isx031_ctrl_ops,
+					   V4L2_CID_LINK_FREQ,
+					   ARRAY_SIZE(isx031_link_frequencies) - 1, 0,
+					   isx031_link_frequencies);
+
+	ctrl = v4l2_ctrl_new_std_menu(hdl, &isx031_ctrl_ops,
+				      V4L2_CID_EXPOSURE_AUTO,
+				      V4L2_EXPOSURE_MANUAL,
+				      0,
+				      V4L2_EXPOSURE_AUTO);
+	if (ctrl) {
+		sensor->ctrl_exposure_auto = ctrl;
+		ctrl->flags |= V4L2_CTRL_FLAG_UPDATE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
+	}
+
+	ctrl = v4l2_ctrl_new_std(hdl, &isx031_ctrl_ops,
+			 V4L2_CID_EXPOSURE,
+			 ISX031_EXPOSURE_MIN,
+			 ISX031_EXPOSURE_MAX,
+			 ISX031_EXPOSURE_STEP,
+			 ISX031_EXPOSURE_DEF);
+	if (ctrl) {
+		sensor->ctrl_exposure = ctrl;
+		v4l2_ctrl_activate(ctrl, false);
+		ctrl->flags |= V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
+	}
 
 	if (hdl->error) {
 		v4l2_ctrl_handler_free(hdl);
 		return hdl->error;
 	}
 
-	if (ctrl)
-		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+	if (link_freq)
+		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	sensor->sd.ctrl_handler = hdl;
 
