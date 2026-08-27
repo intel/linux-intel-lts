@@ -5145,10 +5145,35 @@ static int __maybe_unused ds5_suspend(struct device *dev)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ds5 *ds5 = container_of(sd, struct ds5, mux.sd.subdev);
 
-	ds5->depth.sensor.streaming = false;
-	ds5->rgb.sensor.streaming = false;
-	ds5->ir.sensor.streaming = false;
-	ds5->imu.sensor.streaming = false;
+	mutex_lock(&ds5->mutex);
+
+	/* Stop streaming for all active sensors */
+	if (ds5->depth.sensor.streaming) {
+		if (!ds5_write(ds5, DS5_START_STOP_STREAM,
+			       DS5_STREAM_STOP | DS5_STREAM_DEPTH))
+			ds5->depth.sensor.streaming = false;
+	}
+	if (ds5->rgb.sensor.streaming) {
+		if (!ds5_write(ds5, DS5_START_STOP_STREAM,
+			       DS5_STREAM_STOP | DS5_STREAM_RGB))
+			ds5->rgb.sensor.streaming = false;
+	}
+	if (ds5->ir.sensor.streaming) {
+		if (!ds5_write(ds5, DS5_START_STOP_STREAM,
+			       DS5_STREAM_STOP | DS5_STREAM_IR))
+			ds5->ir.sensor.streaming = false;
+	}
+	if (ds5->imu.sensor.streaming) {
+		if (!ds5_write(ds5, DS5_START_STOP_STREAM,
+			       DS5_STREAM_STOP | DS5_STREAM_IMU))
+			ds5->imu.sensor.streaming = false;
+	}
+
+	mutex_unlock(&ds5->mutex);
+
+	/* Set reset GPIO low to power off sensor */
+	if (!IS_ERR_OR_NULL(ds5->reset_gpio))
+		gpiod_set_value_cansleep(ds5->reset_gpio, 0);
 
 	return 0;
 }
@@ -5160,9 +5185,23 @@ static int __maybe_unused ds5_resume(struct device *dev)
 	struct ds5 *ds5 = container_of(sd, struct ds5, mux.sd.subdev);
 	int ret;
 
+	/* Set reset GPIO high to power on sensor */
+	if (!IS_ERR_OR_NULL(ds5->reset_gpio)) {
+		gpiod_set_value_cansleep(ds5->reset_gpio, 1);
+		/* Wait for sensor to power up and be ready for I2C */
+		msleep(200);
+	}
+
+	mutex_lock(&ds5->mutex);
+
 	ret = ds5_hw_init(client, ds5);
-	if (ret)
+	if (ret) {
+		dev_err(&client->dev, "Failed to reinitialize sensor: %d\n", ret);
+		mutex_unlock(&ds5->mutex);
 		return ret;
+	}
+
+	mutex_unlock(&ds5->mutex);
 
 	return 0;
 }
