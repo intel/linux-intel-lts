@@ -933,7 +933,6 @@ static int ds5_sub_configure(struct ds5 *state, u16 vc_id)
 	struct ds5_sensor *sensor;
 	struct ds5_stream_config *stream_cfg;
 	u16 fmt, md_fmt;
-	u16 data_type1, data_type2;
 	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
 	int ret;
 
@@ -969,7 +968,7 @@ static int ds5_sub_configure(struct ds5 *state, u16 vc_id)
 		ret = ds5_write(state, dt_addr, fmt);
 	}
 	if (ret < 0) {
-		dev_err(&state->client->dev, "Configuring ds5 DT failed\n", __func__);
+		dev_err(&state->client->dev, "Configuring ds5 DT failed\n");
 		return ret;
 	}
 
@@ -1410,8 +1409,6 @@ static int __ds5_sensor_set_fmt(struct ds5 *state, struct ds5_sensor *sensor,
 {
 	struct v4l2_mbus_framefmt *mf;
 
-	int substream = -1;
-
 	dev_dbg(sensor->sd.dev, "%s(): state %p, sensor %p, fmt %p, fmt->format %p\n",
 		__func__, state, sensor, fmt,  &fmt->format);
 
@@ -1561,7 +1558,7 @@ static int ds5_state_to_pad(struct ds5 *state)
 	return pad;
 }
 
-static int ds5_mux_set_stream(struct v4l2_subdev *sd, int on)
+static int __maybe_unused ds5_mux_set_stream(struct v4l2_subdev *sd, int on)
 {
 	struct ds5 *state = container_of(sd, struct ds5, mux.sd.subdev);
 	u16 streaming, status;
@@ -1852,7 +1849,7 @@ static int ds5_mux_enum_mbus_code(struct v4l2_subdev *sd,
 	return ret;
 }
 /* No locking needed */
-static int ds5_mux_enum_frame_size(struct v4l2_subdev *sd,
+static int __maybe_unused ds5_mux_enum_frame_size(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 10)
 				     struct v4l2_subdev_pad_config *cfg,
 #else
@@ -1912,7 +1909,7 @@ static int ds5_mux_enum_frame_size(struct v4l2_subdev *sd,
 }
 
 /* No locking needed */
-static int ds5_mux_enum_frame_interval(struct v4l2_subdev *sd,
+static int __maybe_unused ds5_mux_enum_frame_interval(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 10)
 				     struct v4l2_subdev_pad_config *cfg,
 #else
@@ -1989,8 +1986,6 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	struct ds5_sensor *sensor = state->mux.last_set;
 	u32 pad = sensor->mux_pad;
 	int ret = 0;
-
-	int substream = -1;
 
 	dev_dbg(sd->dev, "%s: fmt->pad:%d, sensor->mux_pad: %d, for sensor: %s\n",
 			__func__, fmt->pad, pad, sensor->sd.name);
@@ -2154,7 +2149,7 @@ unlock:
 
 	return 0;
 }
-static unsigned int ds5_mbus_code_to_mipi(u32 code)
+static unsigned int __maybe_unused ds5_mbus_code_to_mipi(u32 code)
 {
 	switch (code) {
 	case MEDIA_BUS_FMT_RGB565_1X16:
@@ -2322,7 +2317,7 @@ static int ds5_mux_get_frame_desc(struct v4l2_subdev *sd,
     return ret;
 }
 
-static int ds5_mux_get_frame_interval(struct v4l2_subdev *sd,
+static int __maybe_unused ds5_mux_get_frame_interval(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 /* pad ops */
 		struct v4l2_subdev_state *sd_state,
@@ -2349,7 +2344,7 @@ static int ds5_mux_get_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int ds5_mux_set_frame_interval(struct v4l2_subdev *sd,
+static int __maybe_unused ds5_mux_set_frame_interval(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 /* pad ops */
 		struct v4l2_subdev_state *sd_state,
@@ -2715,8 +2710,6 @@ static int ds5_enable_streams(struct v4l2_subdev *subdev,
 	struct v4l2_subdev_state *state,
 	u32 pad, u64 streams_mask)
 {
-	struct ds5 *ds5 = container_of(subdev, struct ds5, mux.sd.subdev);
-
 	ds5_sensor_set_stream(subdev, streams_mask, true);
 
 	return 0;
@@ -3622,10 +3615,7 @@ static int ds5_get_state(struct ds5 *ds5, u16 *rval)
 static int ds5_get_fw_info(struct ds5 *ds5, u16 *fw_version, u16 *fw_build)
 {
 	struct i2c_client *client = ds5->client;
-	int ret;
-	int retry = 5;
 	u16 version, build;
-
 
 	ds5_read_with_check(ds5, DS5_FW_VERSION, &version);
 	ds5_read_with_check(ds5, DS5_FW_BUILD, &build);
@@ -4456,7 +4446,6 @@ static int ds5_mux_init(struct i2c_client *client, struct ds5 *ds5)
 	struct media_pad *pads = ds5->mux.pads, *pad;
 	unsigned int i;
 	int ret;
-	char suffix[5];
 
 	v4l2_i2c_subdev_init(sd, client, &ds5_mux_subdev_ops);
 	// Set owner to NULL so we can unload the driver module
@@ -4874,7 +4863,7 @@ static int ds5_dfu_device_release(struct inode *inode, struct file *file)
 {
 	struct ds5 *ds5 = container_of(inode->i_cdev, struct ds5, dfu_dev.ds5_cdev);
 
-	int ret = 0, retry = 10;
+	int ret = 0;
 	u16 rval;
 
 	ds5->dfu_dev.device_open_count--;
@@ -4914,7 +4903,6 @@ static int ds5_chrdev_init(struct i2c_client *client, struct ds5 *ds5)
 {
 	struct cdev *ds5_cdev = &ds5->dfu_dev.ds5_cdev;
 	struct class **ds5_class = &ds5->dfu_dev.ds5_class;
-	char suffix[5];
 	struct device *chr_dev;
 	char dev_name[sizeof(DS5_DRIVER_NAME_DFU) + 8];
 	dev_t *dev_num = &client->dev.devt;
@@ -4953,7 +4941,7 @@ static int ds5_chrdev_init(struct i2c_client *client, struct ds5 *ds5)
 #ifndef CONFIG_OF
 	bool proceed = false;
 	int count = 0;
-
+	char suffix[5];
 	do {
 		char temp_name[sizeof(DS5_DRIVER_NAME_DFU) + 8];
 		snprintf (dev_name, sizeof(dev_name), "%s-%d-%04x",
@@ -5147,7 +5135,7 @@ static int ds5_reset(struct gpio_desc *reset_gpio)
 
 // v4l2 ops
 
-static void ds5_update_pad_format(const struct ds5_resolution *resolutions,
+static void __maybe_unused ds5_update_pad_format(const struct ds5_resolution *resolutions,
 				     struct v4l2_mbus_framefmt *fmt)
 {
 	fmt->width = resolutions->width;
@@ -5187,9 +5175,7 @@ static void ds5_remove(struct i2c_client *client)
 
 static int ds5_probe(struct i2c_client *client)
 {
-	struct v4l2_subdev *sd;
 	struct ds5 *ds5;
-	const struct ds5_reg_list *reg_list;
 	int ret;
 	u16 rval;
 
@@ -5253,7 +5239,7 @@ static int ds5_probe(struct i2c_client *client)
 	}
 
 	if (rval == DFU_STATE_RECOVERY) {
-		dev_info(&client->dev, "D4XX recovery state\n", __func__);
+		dev_info(&client->dev, "D4XX recovery state\n");
 		ds5->dfu_dev.dfu_state_flag = DS5_DFU_RECOVERY;
 		return 0;
 	}
@@ -5284,7 +5270,7 @@ static int ds5_probe(struct i2c_client *client)
 #ifdef CONFIG_SYSFS
 	/* Custom sysfs attributes */
 	/* create the sysfs file group */
-	int err = sysfs_create_group(&ds5->client->dev.kobj, &ds5_attr_group);
+	int err __maybe_unused = sysfs_create_group(&ds5->client->dev.kobj, &ds5_attr_group);
 #endif
 
 	/*
