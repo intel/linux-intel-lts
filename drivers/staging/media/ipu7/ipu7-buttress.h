@@ -67,6 +67,7 @@ u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu7_device *isp);
 
 irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr);
 irqreturn_t ipu_buttress_isr_threaded(int irq, void *isp_ptr);
+void ipu_buttress_disable_irq(struct ipu7_device *isp, u32 irq_mask);
 int ipu_buttress_init(struct ipu7_device *isp);
 void ipu_buttress_exit(struct ipu7_device *isp);
 void ipu_buttress_csi_port_config(struct ipu7_device *isp,

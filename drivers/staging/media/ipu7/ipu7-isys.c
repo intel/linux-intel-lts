@@ -17,6 +17,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/firmware.h>
+#include <linux/interrupt.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -818,6 +819,10 @@ static void isys_remove(struct auxiliary_device *auxdev)
 	struct isys_fw_msgs *fwmsg, *safe;
 	struct ipu7_bus_device *adev = auxdev_to_adev(auxdev);
 
+	ipu_buttress_disable_irq(adev->isp, BUTTRESS_IRQ_IS_IRQ);
+	adev->auxdrv_data = NULL;
+	adev->auxdrv = NULL;
+	synchronize_irq(adev->isp->pdev->irq);
 #ifdef CONFIG_DEBUG_FS
 	if (adev->isp->ipu7_dir)
 		debugfs_remove_recursive(isys->debugfsdir);
@@ -852,6 +857,10 @@ static void isys_remove(struct auxiliary_device *auxdev)
 	struct isys_fw_msgs *fwmsg, *safe;
 	struct ipu7_bus_device *adev = auxdev_to_adev(auxdev);
 
+	ipu_buttress_disable_irq(adev->isp, BUTTRESS_IRQ_IS_IRQ);
+	adev->auxdrv_data = NULL;
+	adev->auxdrv = NULL;
+	synchronize_irq(adev->isp->pdev->irq);
 #ifdef CONFIG_DEBUG_FS
 	if (adev->isp->ipu7_dir)
 		debugfs_remove_recursive(isys->debugfsdir);

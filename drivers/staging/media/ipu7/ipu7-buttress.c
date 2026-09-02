@@ -461,6 +461,15 @@ irqreturn_t ipu_buttress_isr_threaded(int irq, void *isp_ptr)
 	return ret;
 }
 
+void ipu_buttress_disable_irq(struct ipu7_device *isp, u32 irq_mask)
+{
+	u32 val = readl(isp->base + BUTTRESS_REG_IRQ_ENABLE);
+
+	val &= ~irq_mask;
+	writel(val, isp->base + BUTTRESS_REG_IRQ_ENABLE);
+}
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_disable_irq, "INTEL_IPU7");
+
 static int isys_d2d_power(struct device *dev, bool on)
 {
 	struct ipu7_device *isp = to_ipu7_bus_device(dev)->isp;

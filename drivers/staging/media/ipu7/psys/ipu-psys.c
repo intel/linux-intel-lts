@@ -8,6 +8,7 @@
 #include <linux/firmware.h>
 #include <linux/fs.h>
 #include <linux/highmem.h>
+#include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/init_task.h>
 #include <linux/kthread.h>
@@ -27,6 +28,7 @@
 #include "ipu7-mmu.h"
 #include "ipu7-bus.h"
 #include "ipu7-buttress.h"
+#include "ipu7-buttress-regs.h"
 #include "ipu7-cpd.h"
 #include "ipu7-dma.h"
 #include "ipu7-fw-psys.h"
@@ -1456,6 +1458,12 @@ static void ipu7_psys_remove(struct auxiliary_device *auxdev)
 {
 	struct ipu7_psys *psys = dev_get_drvdata(&auxdev->dev);
 	struct device *dev = &auxdev->dev;
+	struct ipu7_bus_device *adev = auxdev_to_adev(auxdev);
+
+	ipu_buttress_disable_irq(adev->isp, BUTTRESS_IRQ_PS_IRQ);
+	adev->auxdrv_data = NULL;
+	adev->auxdrv = NULL;
+	synchronize_irq(adev->isp->pdev->irq);
 #ifdef CONFIG_DEBUG_FS
 	struct ipu7_device *isp = psys->adev->isp;
 
