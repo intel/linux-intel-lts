@@ -828,6 +828,8 @@ config VIDEO_THP7312
 
 endmenu
 
+source "drivers/media/i2c/maxim-serdes/Kconfig"
+
 menuconfig VIDEO_CAMERA_LENS
 	bool "Lens drivers"
 	depends on MEDIA_CAMERA_SUPPORT && I2C
@@ -1765,8 +1767,6 @@ config VIDEO_MAX96714
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called max96714.
-
-source "drivers/media/i2c/maxim-serdes/Kconfig"
 
 endmenu
 
