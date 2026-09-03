@@ -7,7 +7,6 @@
 #CVE-2026-43042
 0001-mpls-add-seqcount-to-protect-the-platform_label-s-pa.patch
 
-
 #CVE-2026-43009
 0003-bpf-Fix-incorrect-pruning-due-to-atomic-fetch-precis.patch
 
@@ -31,7 +30,6 @@
 #CVE-2026-43115
 0003-irqwork-Move-data-struct-to-a-types-header.patch
 0004-srcu-Use-irq_work-to-start-GP-in-tiny-SRCU.patch
-
 
 #CVE-2026-43299
 0006-btrfs-do-not-ASSERT-when-the-fs-flips-RO-inside-btrf.patch
@@ -59,12 +57,8 @@
 0002-8021q-use-RCU-for-egress-QoS-mappings.patch
 0003-8021q-delete-cleared-egress-QoS-mappings.patch
 
-
 #CVE-2026-45961
 0002-gfs2-fix-memory-leaks-in-gfs2_fill_super-error-path.patch
-
-#CVE-2026-45963
-0003-ASoC-nau8821-Cancel-delayed-work-on-component-remove.patch
 
 #CVE-2026-46008
 0004-mm-damon-core-fix-damos_walk-vs-kdamond_fn-exit-race.patch
@@ -75,9 +69,6 @@
 #CVE-2025-71306
 0001-ima-Access-decompressed-kernel-module-to-verify-appe.patch
 0002-ima-Fix-stack-out-of-bounds-in-is_bprm_creds_for_exe.patch
-
-
-
 
 #CVE-2026-46302
 0001-selinux-allow-multiple-opens-of-sys-fs-selinux-polic.patch
@@ -92,7 +83,6 @@
 #CVE-2026-53257
 0005-wifi-cfg80211-enforce-HE-EHT-cap-oper-consistency.patch
 
-
 #CVE-2026-53292
 0007-net-phonet-do-not-BUG_ON-in-pn_socket_autobind-on-fa.patch
 
@@ -100,7 +90,6 @@
 0008-workqueue-devres-Add-device-managed-allocate-workque.patch
 0009-power-supply-max77705_charger-implement-aicl-feature.patch
 0010-power-supply-max77705-Free-allocated-workqueue-and-f.patch
-
 
 #CVE-2026-52965
 0001-drm-ttm-Fix-ttm_bo_swapout-infinite-LRU-walk-on-swap.patch
@@ -118,13 +107,11 @@
 0005-rculist-add-list_splice_rcu-for-private-lists.patch
 0006-netfilter-nf_tables-join-hook-list-via-splice_list_r.patch
 
-
 #CVE-2026-53008
 0008-ice-fix-race-condition-in-TX-timestamp-ring-cleanup.patch
-#
+
 #CVE-2026-53007
 0009-ice-fix-potential-NULL-pointer-deref-in-error-path-o.patch
-
 
 #CVE-2026-53009
 0010-ice-fix-double-free-of-tx_buf-skb.patch
@@ -141,18 +128,11 @@
 #CVE-2026-53027
 0014-fs-ntfs3-fix-missing-run-load-for-vcn0-in-attr_data_.patch
 
-
-#CVE-2026-53089
-0002-bpf-Fix-use-after-free-in-offloaded-map-prog-info-fi.patch
-
-
-
 #CVE-2026-53106
 0005-bpf-Do-not-allow-deleting-local-storage-in-NMI.patch
 
 #CVE-2026-53113
 0006-wifi-ath11k-fix-memory-leaks-in-beacon-template-setu.patch
-
 
 #CVE-2026-53401
 0008-fbdev-omap2-fix-inconsistent-lock-returns-in-omapfb_.patch
@@ -177,14 +157,8 @@
 0007-dpll-export-__dpll_device_change_ntf-for-use-under-d.patch
 0008-dpll-zl3073x-use-__dpll_device_change_ntf-and-remove.patch
 
-
-
-
 #CVE-2026-64013
 0016-ACPI-button-Fix-ACPI-GPE-handler-leak-during-removal.patch
-
-#CVE-2026-64017
-0017-blk-mq-pop-cached-request-if-it-is-usable.patch
 
 #CVE-2026-64019
 0018-block-dma-properly-take-MMIO-path.patch
@@ -235,12 +209,3 @@
 
 #CVE-2026-64578
 0053-ksmbd-validate-compound-request-size-before-reading-.patch
-
-#CVE-2026-64581
-0056-xfrm-fix-sk_dst_cache-double-free-in-xfrm_user_polic.patch
-
-
-
-
-
-
