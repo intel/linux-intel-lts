@@ -14,6 +14,7 @@
 
 #include <media/mipi-csi2.h>
 #include <media/v4l2-ctrls.h>
+#include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
@@ -2896,7 +2897,13 @@ static int max_des_notify_bound(struct v4l2_async_notifier *nf,
 		return ret;
 	}
 
-	return 0;
+	ret = v4l2_device_register_subdev_nodes(subdev->v4l2_dev);
+	if (ret) {
+		dev_err(priv->dev, "Failed to register subdev nodes for %s, ret = %d\n",
+			subdev->name, ret);
+		return ret;
+	}
+	return ret;
 }
 
 static void max_des_notify_unbind(struct v4l2_async_notifier *nf,
