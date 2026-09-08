@@ -141,6 +141,7 @@ struct max_ser {
 	/* Parsed from the ACPI "fsync" child node by max_ser_parse_dt(). */
 	bool frame_sync_enable;
 	unsigned int frame_sync_gpio_pin;
+	int frame_sync_gpio_pin_2;
 	unsigned int frame_sync_rx_id;
 };
 

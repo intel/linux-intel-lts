@@ -2137,7 +2137,7 @@ static int max_ser_parse_frame_sync(struct max_ser_priv *priv, struct fwnode_han
 {
 	struct max_ser *ser = priv->ser;
 	struct fwnode_handle *fsync;
-	u32 val;
+	u32 val, pin2;
 	int ret;
 
 	/*
@@ -2165,6 +2165,22 @@ static int max_ser_parse_frame_sync(struct max_ser_priv *priv, struct fwnode_han
 			"External GMSL frame_sync requested but no gpio pin defined\n");
 		fwnode_handle_put(fsync);
 		return ret;
+	}
+	ret = fwnode_property_read_u32(fsync, "gmsl-frame-sync-gpio-pin-2",
+				       &pin2);
+	if (ret) {
+		dev_dbg(priv->dev, "Second FSIN GPIO pin not defined\n");
+		ser->frame_sync_gpio_pin_2 = -1;
+	} else {
+		ser->frame_sync_gpio_pin_2 = (int) pin2;
+
+		// cast pin2 > INT_MAX will result in negative
+		if (ser->frame_sync_gpio_pin_2 < 0) {
+			dev_err(priv->dev,
+				"Invalid gmsl-frame-sync-gpio-pin-2 %u\n", pin2);
+			fwnode_handle_put(fsync);
+			return -ERANGE;
+		}
 	}
 
 	ret = fwnode_property_read_u32(fsync, "maxim,rx-id", &ser->frame_sync_rx_id);

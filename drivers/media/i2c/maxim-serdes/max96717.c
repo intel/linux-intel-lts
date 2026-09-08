@@ -1445,9 +1445,8 @@ static int max96717_init_tpg(struct max_ser *ser)
 	return regmap_multi_reg_write(priv->regmap, regs, ARRAY_SIZE(regs));
 }
 
-static int max96717_configure_frame_sync(struct max96717_priv *priv)
+static int max96717_configure_frame_sync(struct max96717_priv *priv, unsigned int pin)
 {
-	unsigned int pin = priv->ser.frame_sync_gpio_pin;
 	int ret;
 
 	ret = regmap_update_bits(priv->regmap, MAX96717_GPIO_C(pin),
@@ -1517,11 +1516,29 @@ static int max96717_init(struct max_ser *ser)
 				"Invalid gmsl-frame-sync-gpio-pin %u\n",
 				ser->frame_sync_gpio_pin);
 			return -EINVAL;
+		} else {
+			dev_info(priv->dev, "Enabling external GMSL frame_sync\n");
+			ret = max96717_configure_frame_sync(priv, ser->frame_sync_gpio_pin);
+
+			if (ret)
+				return ret;
 		}
-		dev_info(priv->dev, "Enabling external GMSL frame_sync\n");
-		ret = max96717_configure_frame_sync(priv);
-		if (ret)
-			return ret;
+
+		if (ser->frame_sync_gpio_pin_2 >= 0) {
+			if (ser->frame_sync_gpio_pin_2 >= MAX96717_GPIO_NUM) {
+				dev_err(priv->dev,
+					"Invalid gmsl-frame-sync-gpio-pin-2 %d\n",
+					ser->frame_sync_gpio_pin_2);
+				return -EINVAL;
+			}
+			dev_info(priv->dev,
+				"Enabling external GMSL frame_sync on GPIO pin 2\n");
+			ret = max96717_configure_frame_sync(priv,
+				(unsigned int) ser->frame_sync_gpio_pin_2);
+
+			if (ret)
+				return ret;
+		}
 	}
 
 	return 0;
