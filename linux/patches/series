@@ -1,14 +1,8 @@
 #CVE-2026-23374
 0003-blktrace-fix-__this_cpu_read-write-in-preemptible-co.patch
 
-#CVE-2026-23459
-0009-ip_tunnel-adapt-iptunnel_xmit_stats-to-NETDEV_PCPU_S.patch
-
 #CVE-2026-43042
 0001-mpls-add-seqcount-to-protect-the-platform_label-s-pa.patch
-
-#CVE-2026-43009
-0003-bpf-Fix-incorrect-pruning-due-to-atomic-fetch-precis.patch
 
 #CVE-2026-31777
 0004-ALSA-ctxfi-Check-the-error-for-index-mapping.patch
@@ -39,9 +33,6 @@
 
 #CVE-2026-43344
 0008-ASoC-amd-acp-mach-common-Add-missing-error-check-for.patch
-
-#CVE-2026-43391
-0009-nsfs-tighten-permission-checks-for-handle-opening.patch
 
 #CVE-2026-43414
 0010-scsi-qla2xxx-Completely-fix-fcport-double-free.patch
@@ -131,18 +122,12 @@
 #CVE-2026-53106
 0005-bpf-Do-not-allow-deleting-local-storage-in-NMI.patch
 
-#CVE-2026-53113
-0006-wifi-ath11k-fix-memory-leaks-in-beacon-template-setu.patch
-
 #CVE-2026-53401
 0008-fbdev-omap2-fix-inconsistent-lock-returns-in-omapfb_.patch
 0009-fbdev-omap2-fix-use-after-free-in-omapfb_mmap.patch
 
 #CVE-2026-63811
 0001-f2fs-read-COW-data-with-the-original-inode-during-at.patch
-
-#CVE-2026-63839
-0002-platform-x86-lenovo-wmi-helpers-Fix-memory-leak-in-l.patch
 
 #CVE-2026-63858
 # NOTE: 0003 and 0004 are already satisfied by baseline CVE-2026-52988
@@ -175,9 +160,6 @@
 
 #CVE-2026-64067
 0023-netfs-Fix-missing-barriers-when-accessing-stream-sub.patch
-
-#CVE-2026-64068
-0024-netfs-Fix-missing-locking-around-retry-adding-new-su.patch
 
 #CVE-2026-64079
 0025-netfilter-x_tables-allow-initial-table-replace-witho.patch
