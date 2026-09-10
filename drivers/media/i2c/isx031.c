@@ -333,13 +333,14 @@ static int isx031_read_reg(struct i2c_client *client, u16 reg, u16 len, u32 *val
 	msgs[1].addr = client->addr;
 	msgs[1].flags = I2C_M_RD;
 	msgs[1].len = len;
-	msgs[1].buf = &data_buf[4 - len];
+	/* Sensor is little-endian for multi-byte fields (see D3 regmap). */
+	msgs[1].buf = data_buf;
 
 	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
 	if (ret != ARRAY_SIZE(msgs))
 		return -EIO;
 
-	*val = get_unaligned_be32(data_buf);
+	*val = get_unaligned_le32(data_buf);
 
 	return 0;
 }
@@ -388,7 +389,8 @@ static int isx031_write_reg(struct i2c_client *client, u16 reg, u16 len, u32 val
 		return -EINVAL;
 
 	put_unaligned_be16(reg, buf);
-	put_unaligned_be32(val << (8 * (4 - len)), buf + 2);
+	/* Sensor is little-endian for multi-byte fields (see D3 regmap). */
+	put_unaligned_le32(val, buf + 2);
 
 	ret = i2c_master_send(client, buf, len + 2);
 	if (ret != len + 2)
