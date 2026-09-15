@@ -728,7 +728,6 @@ static void ipu7_isys_dphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 				  bool aggregation, u64 mbps)
 {
-	u8 trios = 2;
 	u16 coarse_target;
 	u16 deass_thresh;
 	u16 delay_thresh;
@@ -746,18 +745,18 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 		val = 0x155;
 
 	if (is_ipu7(isys->adev->isp->hw_ver))
-		trios = 3;
+		lanes = 3;
 
 	dwc_phy_write_mask(isys, id, CORE_DIG_RW_COMMON_7, val, 0, 9);
 	dwc_phy_write_mask(isys, id, PPI_STARTUP_RW_COMMON_DPHY_7, 104, 0, 7);
 	dwc_phy_write_mask(isys, id, PPI_STARTUP_RW_COMMON_DPHY_8, 16, 0, 7);
 
 	reg = CORE_DIG_CLANE_0_RW_LP_0;
-	for (i = 0; i < trios; i++)
+	for (i = 0; i < lanes; i++)
 		dwc_phy_write_mask(isys, id, reg + (i * 0x400), 6, 8, 11);
 
 	val = (mbps > 900U) ? 1U : 0U;
-	for (i = 0; i < trios; i++) {
+	for (i = 0; i < lanes; i++) {
 		reg = CORE_DIG_CLANE_0_RW_HS_RX_0;
 		dwc_phy_write_mask(isys, id, reg + (i * 0x400), 1, 0, 0);
 		dwc_phy_write_mask(isys, id, reg + (i * 0x400), val, 1, 1);
@@ -782,7 +781,7 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 	else
 		coarse_target = 56;
 
-	for (i = 0; i < trios; i++) {
+	for (i = 0; i < lanes; i++) {
 		reg = CORE_DIG_CLANE_0_RW_HS_RX_2 + i * 0x400;
 		dwc_phy_write_mask(isys, id, reg, coarse_target, 0, 15);
 	}
@@ -794,7 +793,7 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 	dwc_phy_write_mask(isys, id,
 			   CORE_DIG_IOCTRL_RW_AFE_LANE2_CTRL_2_2, 1, 0, 0);
 
-	if (!is_ipu7p5(isys->adev->isp->hw_ver) && lanes == 4) {
+	if (!is_ipu7p5(isys->adev->isp->hw_ver) && lanes > 2) {
 		dwc_phy_write_mask(isys, id,
 				   CORE_DIG_IOCTRL_RW_AFE_LANE3_CTRL_2_2,
 				   1, 0, 0);
@@ -803,7 +802,7 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 				   0, 0, 0);
 	}
 
-	for (i = 0; i < trios; i++) {
+	for (i = 0; i < lanes; i++) {
 		reg = CORE_DIG_RW_TRIO0_0 + i * 0x400;
 		dwc_phy_write_mask(isys, id, reg, 1, 6, 8);
 		dwc_phy_write_mask(isys, id, reg, 1, 3, 5);
@@ -815,7 +814,7 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 		deass_thresh++;
 
 	reg = CORE_DIG_RW_TRIO0_2;
-	for (i = 0; i < trios; i++)
+	for (i = 0; i < lanes; i++)
 		dwc_phy_write_mask(isys, id, reg + 0x400 * i,
 				   deass_thresh, 0, 7);
 
@@ -825,7 +824,7 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 		delay_thresh = 1;
 
 	reg = CORE_DIG_RW_TRIO0_1;
-	for (i = 0; i < trios; i++)
+	for (i = 0; i < lanes; i++)
 		dwc_phy_write_mask(isys, id, reg + 0x400 * i,
 				   delay_thresh, 0, 15);
 
@@ -837,21 +836,21 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 		reset_thresh = 1;
 
 	reg = CORE_DIG_RW_TRIO0_0;
-	for (i = 0; i < trios; i++)
+	for (i = 0; i < lanes; i++)
 		dwc_phy_write_mask(isys, id, reg + 0x400 * i,
 				   reset_thresh, 9, 11);
 
 	/* Tuning ITMINRX to 2 for CPHY */
 	reg = CORE_DIG_CLANE_0_RW_LP_0;
-	for (i = 0; i < trios; i++)
+	for (i = 0; i < lanes; i++)
 		dwc_phy_write_mask(isys, id, reg + 0x400 * i, 2, 12, 15);
 
 	reg = CORE_DIG_CLANE_0_RW_LP_2;
-	for (i = 0; i < trios; i++)
+	for (i = 0; i < lanes; i++)
 		dwc_phy_write_mask(isys, id, reg + 0x400 * i, 0, 0, 0);
 
 	reg = CORE_DIG_CLANE_0_RW_HS_RX_0;
-	for (i = 0; i < trios; i++)
+	for (i = 0; i < lanes; i++)
 		dwc_phy_write_mask(isys, id, reg + 0x400 * i, 12, 2, 6);
 
 	for (i = 0; i < ARRAY_SIZE(table7); i++) {
@@ -872,6 +871,27 @@ static void ipu7_isys_cphy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 
 		reg = CORE_DIG_IOCTRL_RW_AFE_LANE0_CTRL_2_7 + 0x400 * i;
 		dwc_phy_write_mask(isys, id, reg, cap_prog, 10, 12);
+	}
+
+	if (aggregation) {
+		dwc_phy_write_mask(isys, id, CORE_DIG_RW_COMMON_0, 1, 1, 1);
+
+		/*
+		 * C-PHY has no clock lane, so unlike D-PHY no AFE lane is the
+		 * shared clock that has to follow port A.
+		 */
+		for (i = 0; i < (lanes + 1); i++) {
+			reg = CORE_DIG_IOCTRL_RW_AFE_LANE0_CTRL_2_15 + 0x400 * i;
+			dwc_phy_write_mask(isys, id, reg, 3, 3, 4);
+		}
+	}
+
+	/* Only port A runs rext calibration; other ports reuse its result. */
+	if (isys->phy_rext_cal && id) {
+		dwc_phy_write_mask(isys, id, CORE_DIG_IOCTRL_RW_AFE_CB_CTRL_2_8,
+				   isys->phy_rext_cal, 0, 3);
+		dwc_phy_write_mask(isys, id, CORE_DIG_IOCTRL_RW_AFE_CB_CTRL_2_7,
+				   1, 11, 11);
 	}
 }
 
@@ -962,21 +982,23 @@ static int ipu7_isys_phy_config(struct ipu7_isys *isys, u8 id, u8 lanes,
 int ipu7_isys_csi_phy_powerup(struct ipu7_isys_csi2 *csi2)
 {
 	struct ipu7_isys *isys = csi2->isys;
-	u32 lanes = csi2->nlanes;
+	u32 total_lanes = csi2->nlanes;
+	u32 active_lanes = total_lanes;
 	bool aggregation = false;
 	u32 id = csi2->port;
 	int ret;
 
 	/* lanes remapping for aggregation (port AB) mode */
-	if (!is_ipu7(isys->adev->isp->hw_ver) && lanes > 2 && id == PORT_A) {
+	if (!is_ipu7(isys->adev->isp->hw_ver) && active_lanes > 2 &&
+	    id == PORT_A) {
 		aggregation = true;
-		lanes = 2;
+		active_lanes = 2;
 	}
 
 	ipu7_isys_csi_phy_reset(isys, id);
 	gpreg_write(isys, id, PHY_CLK_LANE_CONTROL, 0x1);
 	gpreg_write(isys, id, PHY_CLK_LANE_FORCE_CONTROL, 0x2);
-	gpreg_write(isys, id, PHY_LANE_CONTROL_EN, (1U << lanes) - 1U);
+	gpreg_write(isys, id, PHY_LANE_CONTROL_EN, (1U << active_lanes) - 1U);
 	gpreg_write(isys, id, PHY_LANE_FORCE_CONTROL, 0xf);
 	gpreg_write(isys, id, PHY_MODE, csi2->phy_mode);
 
@@ -993,7 +1015,7 @@ int ipu7_isys_csi_phy_powerup(struct ipu7_isys_csi2 *csi2)
 	ipu7_isys_csi_ctrl_cfg(csi2);
 	ipu7_isys_csi_ctrl_dids_config(csi2, id);
 
-	ret = ipu7_isys_phy_config(isys, id, lanes, aggregation);
+	ret = ipu7_isys_phy_config(isys, id, active_lanes, aggregation);
 	if (ret < 0)
 		return ret;
 
@@ -1012,7 +1034,8 @@ int ipu7_isys_csi_phy_powerup(struct ipu7_isys_csi2 *csi2)
 
 	/* config PORT_B if aggregation mode */
 	if (aggregation) {
-		ret = ipu7_isys_phy_config(isys, PORT_B, 2, aggregation);
+		ret = ipu7_isys_phy_config(isys, PORT_B,
+					   total_lanes - active_lanes, aggregation);
 		if (ret < 0)
 			return ret;
 

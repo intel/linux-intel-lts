@@ -177,6 +177,11 @@ static void ipu7_isys_csi2_disable_stream(struct ipu7_isys_csi2 *csi2)
 
 	ipu7_isys_csi_phy_powerdown(csi2);
 
+	if (csi2->port == 0U && csi2->nlanes > 2U &&
+	    !is_ipu7(isys->adev->isp->hw_ver))
+		writel(0x0, isys_base + IS_IO_GPREGS_BASE +
+		       CSI_PORTAB_AGGREGATION);
+
 	writel(0x4, isys_base + IS_IO_GPREGS_BASE + CLK_DIV_FACTOR_APB_CLK);
 	csi2_irq_disable(csi2);
 }
@@ -197,7 +202,7 @@ static int ipu7_isys_csi2_enable_stream(struct ipu7_isys_csi2 *csi2)
 	dev_dbg(dev, "port %u CLK_GATE = 0x%04x DIV_FACTOR_APB_CLK=0x%04x\n",
 		port, readl(isys_base + offset + CSI_PORT_CLK_GATE),
 		readl(isys_base + offset + CLK_DIV_FACTOR_APB_CLK));
-	if (port == 0U && nlanes == 4U && !is_ipu7(isys->adev->isp->hw_ver)) {
+	if (port == 0U && nlanes > 2U && !is_ipu7(isys->adev->isp->hw_ver)) {
 		dev_dbg(dev, "CSI port %u in aggregation mode\n", port);
 		writel(0x1, isys_base + offset + CSI_PORTAB_AGGREGATION);
 	}
