@@ -1,9 +1,7 @@
-From fc4d5d066cc48968c431a2c7d38a4fac8ce0428c Mon Sep 17 00:00:00 2001
+From d2a4fb2c3ce2d19b5ecdfbc7b8e6bd26053fd846 Mon Sep 17 00:00:00 2001
 From: Lance Yang <lance.yang@linux.dev>
 Date: Wed, 1 Apr 2026 21:10:32 +0800
-Subject: [PATCH 5/5] mm: fix deferred split queue races during migration
-
-commit 3bac01168982ec3e3bf87efdc1807c7933590a85 upstream.
+Subject: [PATCH] mm: fix deferred split queue races during migration
 
 migrate_folio_move() records the deferred split queue state from src and
 replays it on dst.  Replaying it after remove_migration_ptes(src, dst, 0)
@@ -52,18 +50,16 @@ Cc: Ying Huang <ying.huang@linux.alibaba.com>
 Cc: Usama Arif <usama.arif@linux.dev>
 Cc: <stable@vger.kernel.org>
 Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
-Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
-(cherry picked from commit cbf75cf212ee6e499abc1757fb4b5ae6d70ed0aa)
 ---
- mm/huge_memory.c | 38 +++++++++++++++++++-------------------
+ mm/huge_memory.c | 15 ++++++++++-----
  mm/migrate.c     | 18 +++++++++---------
- 2 files changed, 28 insertions(+), 28 deletions(-)
+ 2 files changed, 19 insertions(+), 14 deletions(-)
 
 diff --git a/mm/huge_memory.c b/mm/huge_memory.c
-index 8218e9d1887b7..2c27070538763 100644
+index bedd9ba223fbb..36f3645bf9575 100644
 --- a/mm/huge_memory.c
 +++ b/mm/huge_memory.c
-@@ -4190,7 +4190,7 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
+@@ -4298,7 +4298,7 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
  				goto next;
  		}
  		if (!folio_trylock(folio))
@@ -72,56 +68,34 @@ index 8218e9d1887b7..2c27070538763 100644
  		if (!split_folio(folio)) {
  			did_split = true;
  			if (underused)
-@@ -4200,26 +4200,26 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
+@@ -4307,13 +4307,18 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
+ 		}
  		folio_unlock(folio);
  next:
- 		/*
--		 * split_folio() removes folio from list on success.
--		 * Only add back to the queue if folio is partially mapped.
--		 * If thp_underused returns false, or if split_folio fails
--		 * in the case it was underused, then consider it used and
--		 * don't add it back to split_queue.
++		/*
 +		 * If thp_underused() returns false, or if split_folio()
 +		 * succeeds, or if split_folio() fails in the case it was
 +		 * underused, then consider it used and don't add it back to
 +		 * split_queue.
- 		 */
--		if (did_split) {
--			; /* folio already removed from list */
--		} else if (!folio_test_partially_mapped(folio)) {
--			list_del_init(&folio->_deferred_list);
--			removed++;
--		} else {
--			/*
--			 * That unlocked list_del_init() above would be unsafe,
--			 * unless its folio is separated from any earlier folios
--			 * left on the list (which may be concurrently unqueued)
--			 * by one safe folio with refcount still raised.
--			 */
--			swap(folio, prev);
-+		if (did_split || !folio_test_partially_mapped(folio)) {
-+			if (!did_split) {
-+				list_del_init(&folio->_deferred_list);
-+				removed++;
-+			}
-+			if (folio)
-+				folio_put(folio);
-+			continue;
- 		}
++		 */
+ 		if (did_split || !folio_test_partially_mapped(folio))
+ 			continue;
 +requeue:
-+		/*
+ 		/*
+-		 * Only add back to the queue if folio is partially mapped.
+-		 * If thp_underused returns false, or if split_folio fails
+-		 * in the case it was underused, then consider it used and
+-		 * don't add it back to split_queue.
 +		 * Add back partially mapped folios, or underused folios that
 +		 * we could not lock this round.
-+		 */
-+		swap(folio, prev);
- 		if (folio)
- 			folio_put(folio);
- 	}
+ 		 */
+ 		fqueue = folio_split_queue_lock_irqsave(folio, &flags);
+ 		if (list_empty(&folio->_deferred_list)) {
 diff --git a/mm/migrate.c b/mm/migrate.c
-index ad7af66a4450a..b3e21bf021de9 100644
+index 3159be53a00d3..ba1d4e00f2de5 100644
 --- a/mm/migrate.c
 +++ b/mm/migrate.c
-@@ -1374,6 +1374,15 @@ static int migrate_folio_move(free_folio_t put_new_folio, unsigned long private,
+@@ -1375,6 +1375,15 @@ static int migrate_folio_move(free_folio_t put_new_folio, unsigned long private,
  	if (rc)
  		goto out;
  
@@ -137,7 +111,7 @@ index ad7af66a4450a..b3e21bf021de9 100644
  	/*
  	 * When successful, push dst to LRU immediately: so that if it
  	 * turns out to be an mlocked page, remove_migration_ptes() will
-@@ -1390,15 +1399,6 @@ static int migrate_folio_move(free_folio_t put_new_folio, unsigned long private,
+@@ -1391,15 +1400,6 @@ static int migrate_folio_move(free_folio_t put_new_folio, unsigned long private,
  	if (old_page_state & PAGE_WAS_MAPPED)
  		remove_migration_ptes(src, dst, 0);
  
@@ -154,5 +128,5 @@ index ad7af66a4450a..b3e21bf021de9 100644
  	folio_unlock(dst);
  	folio_set_owner_migrate_reason(dst, reason);
 -- 
-2.43.0
+2.34.1
 

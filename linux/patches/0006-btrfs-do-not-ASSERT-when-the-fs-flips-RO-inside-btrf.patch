@@ -1,7 +1,7 @@
-From 353ba83c3a41d8f4fb6faac14626d9070de5515c Mon Sep 17 00:00:00 2001
+From ee4ae574d478611e9f57684d4b34bd2d33c22dc6 Mon Sep 17 00:00:00 2001
 From: Qu Wenruo <wqu@suse.com>
 Date: Tue, 27 Jan 2026 15:46:55 +1030
-Subject: [PATCH 06/10] btrfs: do not ASSERT() when the fs flips RO inside
+Subject: [PATCH] btrfs: do not ASSERT() when the fs flips RO inside
  btrfs_repair_io_failure()
 
 [BUG]
@@ -74,15 +74,20 @@ Signed-off-by: David Sterba <dsterba@suse.com>
  1 file changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/fs/btrfs/bio.c b/fs/btrfs/bio.c
-index 7d8aaa019c8ce..94dfbe1f87e9d 100644
+index afe022a3b8fc3..d13a143149225 100644
 --- a/fs/btrfs/bio.c
 +++ b/fs/btrfs/bio.c
-@@ -874,9 +874,15 @@ int btrfs_repair_io_failure(struct btrfs_fs_info *fs_info, u64 ino, u64 start,
- 	struct bio bio;
+@@ -902,7 +902,6 @@ int btrfs_repair_io_failure(struct btrfs_fs_info *fs_info, u64 ino, u64 fileoff,
+ 	struct bio *bio = NULL;
  	int ret = 0;
  
 -	ASSERT(!(fs_info->sb->s_flags & SB_RDONLY));
  	BUG_ON(!mirror_num);
+ 
+ 	/* Basic alignment checks. */
+@@ -914,6 +913,13 @@ int btrfs_repair_io_failure(struct btrfs_fs_info *fs_info, u64 ino, u64 fileoff,
+ 	ASSERT(step <= length);
+ 	ASSERT(is_power_of_2(step));
  
 +	/*
 +	 * The fs either mounted RO or hit critical errors, no need
@@ -95,5 +100,5 @@ index 7d8aaa019c8ce..94dfbe1f87e9d 100644
  		return 0;
  
 -- 
-2.43.0
+2.34.1
 
