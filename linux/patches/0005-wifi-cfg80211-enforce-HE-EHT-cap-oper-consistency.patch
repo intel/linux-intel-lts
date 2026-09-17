@@ -1,7 +1,7 @@
-From d6f322705e171b0d32a0c9efa46ad385d0a96f1e Mon Sep 17 00:00:00 2001
+From 32a6a66c78dc07fa84e3e02722e9c3a017cde509 Mon Sep 17 00:00:00 2001
 From: Johannes Berg <johannes.berg@intel.com>
 Date: Wed, 3 Jun 2026 11:18:11 +0200
-Subject: [PATCH 05/10] wifi: cfg80211: enforce HE/EHT cap/oper consistency
+Subject: [PATCH] wifi: cfg80211: enforce HE/EHT cap/oper consistency
 
 [ Upstream commit cb9959ab5f99611d27a06586add84811fe8102dc ]
 
@@ -15,18 +15,17 @@ Link: https://patch.msgid.link/20260603091812.101894-2-johannes@sipsolutions.net
 Signed-off-by: Johannes Berg <johannes.berg@intel.com>
 Signed-off-by: Sasha Levin <sashal@kernel.org>
 ---
- net/wireless/nl80211.c | 7 +++++++
- 1 file changed, 7 insertions(+)
+ net/wireless/nl80211.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
 
 diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
-index 54a4585eb3a2d..632b661fb08c7 100644
+index 232218818ed7f..3157e1f160b51 100644
 --- a/net/wireless/nl80211.c
 +++ b/net/wireless/nl80211.c
-@@ -6426,6 +6426,13 @@ static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params)
- 						cap->datalen - 1))
+@@ -6527,6 +6527,12 @@ static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params)
  			return -EINVAL;
  	}
-+
+ 
 +	if (!!params->he_cap != !!params->he_oper)
 +		return -EINVAL;
 +
@@ -37,5 +36,5 @@ index 54a4585eb3a2d..632b661fb08c7 100644
  }
  
 -- 
-2.43.0
+2.34.1
 
