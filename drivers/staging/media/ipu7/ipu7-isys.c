@@ -65,6 +65,9 @@ isys_complete_ext_device_registration(struct ipu7_isys *isys,
 	v4l2_set_subdev_hostdata(sd, csi2);
 
 	if (csi2->ep) {
+		struct v4l2_fwnode_endpoint vep_source = {
+			.bus_type = V4L2_MBUS_UNKNOWN
+		};
 		struct fwnode_handle *ep_source;
 
 		ep_source = fwnode_graph_get_remote_endpoint(csi2->ep);
@@ -75,7 +78,9 @@ isys_complete_ext_device_registration(struct ipu7_isys *isys,
 		}
 
 		source_pad = media_entity_get_fwnode_pad(&sd->entity, ep_source,
-						MEDIA_PAD_FL_SOURCE);
+							 MEDIA_PAD_FL_SOURCE);
+
+		ret = v4l2_fwnode_endpoint_parse(ep_source, &vep_source);
 		fwnode_handle_put(ep_source);
 
 		if (source_pad < 0) {
@@ -87,8 +92,14 @@ isys_complete_ext_device_registration(struct ipu7_isys *isys,
 		dev_dbg(&isys->adev->auxdev.dev, "%s: CSI2 ep %pfw\n", __func__,
 			csi2->ep);
 		dev_dbg(&isys->adev->auxdev.dev,
-			"%s: source pad %d for subdev %s\n", __func__, source_pad,
-			sd->name);
+			"%s: source pad %d for subdev %s\n", __func__,
+			source_pad, sd->name);
+
+		if (ret)
+			goto skip_unregister_subdev;
+
+		csi2->nlanes = vep_source.bus.mipi_csi2.num_data_lanes;
+		csi2->bus_type = vep_source.bus_type;
 	} else {
 		for (source_pad = 0; source_pad < sd->entity.num_pads; source_pad++) {
 			if (sd->entity.pads[source_pad].flags & MEDIA_PAD_FL_SOURCE)
