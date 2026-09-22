@@ -409,11 +409,8 @@ static int pps_tio_probe(struct platform_device *pdev)
 	}
 
 	pdata->sh_res_base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(pdata->sh_res_base)) {
-		kfree(pdata);
-		kfree(pps_tio);
+	if (IS_ERR(pdata->sh_res_base))
 		return PTR_ERR(pdata->sh_res_base);
-	}
 
 	ret = ida_alloc(&tio_ida, GFP_KERNEL);
 	if (ret < 0) {
