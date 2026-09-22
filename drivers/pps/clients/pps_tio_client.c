@@ -53,8 +53,8 @@ static int pps_tio_get_time(ktime_t *device,
 static int pps_tio_convert_cs(struct pps_tio_client *tio_cli, u64 art_cycles,
 			      struct system_time_snapshot snap)
 {
-	struct system_device_crosststamp xts;
-	struct pps_event_time ets;
+	struct system_device_crosststamp xts = { };
+	struct pps_event_time ets = { };
 	int ret;
 
 	ret = get_device_system_crosststamp(pps_tio_get_time,
