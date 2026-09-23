@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2022-2025 Intel Corporation.
+// Copyright (c) 2022-2026 Intel Corporation.
 
 #include <linux/acpi.h>
 #include <linux/delay.h>
@@ -44,7 +44,6 @@
 #define REG_INT_HDMI			CCI_REG8(0x86A3)
 #define INT_HDMI_DISCONNECT		0x88
 #define INT_HDMI_STABLE		0x55
-
 
 #define REG_INT_AUDIO		CCI_REG8(0x86A5)
 #define INT_AUDIO_SR_HIGH	CCI_REG8(0x55)
@@ -107,7 +106,6 @@ struct lt6911uxc {
 	unsigned int irq_pin_flags;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *irq_gpio;
-	struct gpio_desc *detect_gpio;
 
 	bool auxiliary_port;
 };
@@ -238,7 +236,6 @@ static int lt6911uxc_status_update(struct lt6911uxc *lt6911uxc)
 		lt6911uxc->cur_mode->code = MEDIA_BUS_FMT_UYVY8_1X16;
 		lt6911uxc->cur_mode->lanes = lanes;
 		lt6911uxc->cur_mode->link_freq = byte_clock;
-
 
 		if (lt6911uxc->cur_mode->lanes == 8) {
 			/* 4K60fps with 2 MIPI ports*/
@@ -560,16 +557,10 @@ static int lt6911uxc_parse_gpio(struct lt6911uxc *lt6911uxc, struct device *dev)
 				     "failed to get reset gpio\n");
 	}
 
-	lt6911uxc->irq_gpio = devm_gpiod_get(dev, "readystat", GPIOD_IN);
+	lt6911uxc->irq_gpio = devm_gpiod_get(dev, "hpd", GPIOD_IN);
 	if (IS_ERR(lt6911uxc->irq_gpio))
 		return dev_err_probe(dev, PTR_ERR(lt6911uxc->irq_gpio),
-				     "failed to get ready_stat gpio\n");
-
-	lt6911uxc->detect_gpio = devm_gpiod_get(dev, "hdmidetect",
-						GPIOD_OUT_HIGH);
-	if (IS_ERR(lt6911uxc->detect_gpio))
-		return dev_err_probe(dev, PTR_ERR(lt6911uxc->detect_gpio),
-				     "failed to get hdmi_detect gpio\n");
+				     "failed to get hpd gpio\n");
 
 	return 0;
 }
