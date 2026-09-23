@@ -25,6 +25,9 @@
 #define MAX_SER_CFGL_IIC_X_TR3			0xa3
 #define MAX_SER_CFGL_IIC_Y_TR3			0xab
 
+/* Largest number of video pipes implemented by any supported serializer. */
+#define MAX_SER_PIPES_NUM			4
+
 struct max_ser_phy {
 	unsigned int index;
 	struct v4l2_mbus_config_mipi_csi2 mipi;
