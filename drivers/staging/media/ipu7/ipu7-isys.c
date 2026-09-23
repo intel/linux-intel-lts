@@ -84,7 +84,9 @@ isys_complete_ext_device_registration(struct ipu7_isys *isys,
 		fwnode_handle_put(ep_source);
 
 		if (source_pad < 0) {
-			dev_warn(dev, "error in no acquire source pad in external entity\n");
+			dev_warn(
+				dev,
+				"error in no acquire source pad in external entity\n");
 			ret = -ENOENT;
 			goto skip_unregister_subdev;
 		}
@@ -101,8 +103,10 @@ isys_complete_ext_device_registration(struct ipu7_isys *isys,
 		csi2->nlanes = vep_source.bus.mipi_csi2.num_data_lanes;
 		csi2->bus_type = vep_source.bus_type;
 	} else {
-		for (source_pad = 0; source_pad < sd->entity.num_pads; source_pad++) {
-			if (sd->entity.pads[source_pad].flags & MEDIA_PAD_FL_SOURCE)
+		for (source_pad = 0; source_pad < sd->entity.num_pads;
+		     source_pad++) {
+			if (sd->entity.pads[source_pad].flags &
+			    MEDIA_PAD_FL_SOURCE)
 				break;
 		}
 		if (source_pad == sd->entity.num_pads) {

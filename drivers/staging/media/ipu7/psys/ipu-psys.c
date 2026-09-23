@@ -836,7 +836,7 @@ static long ipu_psys_graph_open(struct ipu_psys_graph_info *graph,
 				struct ipu7_psys_fh *fh)
 {
 	struct ipu7_psys *psys = fh->psys;
-	int ret = 0;
+	int ret;
 
 	if (fh->ip->graph_state != IPU_MSG_GRAPH_STATE_CLOSED) {
 		dev_err(&psys->dev, "Wrong state %d to open graph %d\n",
@@ -855,13 +855,16 @@ static long ipu_psys_graph_open(struct ipu_psys_graph_info *graph,
 		return -EINVAL;
 	}
 
+	/* Publish the node count once the input is valid; clear it on failure. */
+	fh->ip->num_nodes = graph->num_nodes;
+
 	reinit_completion(&fh->ip->graph_open);
 
 	ret = ipu7_fw_psys_graph_open(graph, psys, fh->ip);
 	if (ret) {
 		dev_err(&psys->dev, "Failed to open graph %d\n",
 			fh->ip->graph_id);
-		return ret;
+		goto err_clear_nodes;
 	}
 
 	fh->ip->graph_state = IPU_MSG_GRAPH_STATE_OPEN_WAIT;
@@ -871,19 +874,26 @@ static long ipu_psys_graph_open(struct ipu_psys_graph_info *graph,
 	if (!ret) {
 		dev_err(&psys->dev, "Open graph %d timeout\n",
 			fh->ip->graph_id);
-		fh->ip->graph_state = IPU_MSG_GRAPH_STATE_CLOSED;
-		return -ETIMEDOUT;
+		ret = -ETIMEDOUT;
+		goto err_set_closed;
 	}
 
 	if (fh->ip->graph_state != IPU_MSG_GRAPH_STATE_OPEN) {
 		dev_err(&psys->dev, "Failed to set graph\n");
-		fh->ip->graph_state = IPU_MSG_GRAPH_STATE_CLOSED;
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_set_closed;
 	}
 
 	graph->graph_id = fh->ip->graph_id;
 
 	return 0;
+
+err_set_closed:
+	fh->ip->graph_state = IPU_MSG_GRAPH_STATE_CLOSED;
+err_clear_nodes:
+	fh->ip->num_nodes = 0;
+
+	return ret;
 }
 
 static void ipu_psys_cleanup_running_task_queue(struct ipu7_psys_fh *fh)
@@ -921,6 +931,7 @@ static long ipu_psys_graph_close(int graph_id, struct ipu7_psys_fh *fh)
 	}
 
 	fh->ip->graph_state = IPU_MSG_GRAPH_STATE_CLOSE_WAIT;
+	fh->ip->num_nodes = 0;
 
 	ret = wait_for_completion_timeout(&fh->ip->graph_close,
 					  IPU_FW_CALL_TIMEOUT_JIFFIES);
@@ -1350,11 +1361,8 @@ static int ipu7_psys_init_debugfs(struct ipu7_psys *psys)
 {
 	struct dentry *file;
 	struct dentry *dir;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
+
 	dir = debugfs_create_dir("psys", psys->adev->isp->ipu7_dir);
-#else
-	dir = debugfs_create_dir("ipu7-psys", NULL);
-#endif
 	if (IS_ERR(dir))
 		return -ENOMEM;
 
@@ -1505,7 +1513,9 @@ static void ipu7_psys_remove(struct auxiliary_device *auxdev)
 
 	psys->adev->get_running_fw_task_count = NULL;
 #ifdef CONFIG_DEBUG_FS
-	if (psys->debugfsdir)
+	struct ipu7_device *isp = psys->adev->isp;
+
+	if (isp->ipu7_dir)
 		debugfs_remove_recursive(psys->debugfsdir);
 #endif
 
@@ -1585,7 +1595,7 @@ static struct auxiliary_driver ipu7_psys_driver = {
 	},
 };
 
-static int __init ipu7_psys_init(void)
+static int __init ipu7_psys_driver_init(void)
 {
 	int ret;
 
@@ -1599,14 +1609,15 @@ static int __init ipu7_psys_init(void)
 
 	return ret;
 }
-module_init(ipu7_psys_init);
 
-static void __exit ipu7_psys_exit(void)
+static void __exit ipu7_psys_driver_exit(void)
 {
 	auxiliary_driver_unregister(&ipu7_psys_driver);
 	bus_unregister(&ipu7_psys_bus);
 }
-module_exit(ipu7_psys_exit);
+
+module_init(ipu7_psys_driver_init);
+module_exit(ipu7_psys_driver_exit);
 
 MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");
 MODULE_AUTHOR("Qingwu Zhang <qingwu.zhang@intel.com>");

@@ -474,11 +474,20 @@ int ipu7_fw_psys_task_request(const struct ipu_psys_task_request *task,
 	struct ipu7_syscom_context *ctx = psys->adev->syscom;
 	struct ipu7_msg_task *msg = tq->msg_task;
 	struct ia_gofo_msg_indirect *ind;
-	u32 node_q_id = ip->q_id[task->node_ctx_id];
+	u8 node_ctx_id = task->node_ctx_id;
+	u32 node_q_id;
 	u32 teb_hi, teb_lo;
 	u64 teb;
 	u8 i, term_id;
 	u8 num_terms;
+	u8 max_terms;
+
+	if (node_ctx_id >= ip->num_nodes ||
+	    node_ctx_id >= ARRAY_SIZE(ip->nodes) ||
+	    node_ctx_id >= ARRAY_SIZE(ip->q_id))
+		return -EINVAL;
+
+	node_q_id = ip->q_id[node_ctx_id];
 
 	ind = ipu7_syscom_get_token(ctx, node_q_id);
 	if (!ind)
@@ -486,7 +495,7 @@ int ipu7_fw_psys_task_request(const struct ipu_psys_task_request *task,
 
 	memset(msg, 0, sizeof(*msg));
 	msg->graph_id = task->graph_id;
-	msg->node_ctx_id = task->node_ctx_id;
+	msg->node_ctx_id = node_ctx_id;
 	msg->profile_idx = 0U; /* Only one profile on HKR */
 	msg->frame_id = task->frame_id;
 	msg->frag_id = 0U; /* No frag, set to 0 */
@@ -500,14 +509,16 @@ int ipu7_fw_psys_task_request(const struct ipu_psys_task_request *task,
 	memcpy(msg->payload_reuse_bm, task->payload_reuse_bm,
 	       sizeof(task->payload_reuse_bm));
 
-	teb_hi = ip->nodes[msg->node_ctx_id].profiles[0].teb[1];
-	teb_lo = ip->nodes[msg->node_ctx_id].profiles[0].teb[0];
+	teb_hi = ip->nodes[node_ctx_id].profiles[0].teb[1];
+	teb_lo = ip->nodes[node_ctx_id].profiles[0].teb[0];
 	teb = (teb_lo | (((u64)teb_hi) << 32));
 
-	num_terms = ip->nodes[msg->node_ctx_id].num_terms;
-	for (i = 0U; i < num_terms; i++) {
+	num_terms = ip->nodes[node_ctx_id].num_terms;
+	max_terms = min_t(u8, num_terms, (u8)ARRAY_SIZE(tq->task_buffers));
+	for (i = 0U; i < max_terms; i++) {
 		term_id = tq->task_buffers[i].term_id;
-		if ((1U << term_id) & teb)
+		if (term_id < ARRAY_SIZE(msg->term_buffers) &&
+		    (teb & BIT_ULL(term_id)))
 			msg->term_buffers[term_id] = tq->ipu7_addr[i];
 	}
 
