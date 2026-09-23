@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2025-2026 Intel Corporation.
+// Copyright (c) 2025 Intel Corporation.
 
 #include <linux/delay.h>
 #include <linux/init.h>
@@ -352,12 +352,9 @@ static int max96724_configure_csi_dphy(struct max9x_common *common)
 		if (ret)
 			return ret;
 
-		ret = max96724_set_periodic_deskew(
-				 common, csi_id,
-				 common->csi_link[csi_id]
-					 .config.auto_init_deskew_enabled,
-				 MAX96724_PERIODIC_DESKEW_8x1KUI,
-				 MAX96724_PERIODIC_DESKEW_1FRAME);
+		ret = max96724_set_periodic_deskew(common, csi_id,
+						  common->csi_link[csi_id].config.auto_init_deskew_enabled,
+						  MAX96724_PERIODIC_DESKEW_8x1KUI, MAX96724_PERIODIC_DESKEW_1FRAME);
 		if (ret)
 			return ret;
 

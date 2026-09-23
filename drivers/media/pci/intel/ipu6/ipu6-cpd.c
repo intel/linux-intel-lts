@@ -11,6 +11,7 @@
 #include <linux/math64.h>
 #include <linux/sizes.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 #include "ipu6.h"
 #include "ipu6-bus.h"
@@ -44,9 +45,9 @@
  * 63:56        55      54:48   47:32   31:24   23:0
  * Rsvd         Rsvd    Type    Version Rsvd    Size
  */
-#define PKG_DIR_SIZE_MASK	GENMASK_ULL(23, 0)
-#define PKG_DIR_VERSION_MASK	GENMASK_ULL(47, 32)
-#define PKG_DIR_TYPE_MASK	GENMASK_ULL(54, 48)
+#define PKG_DIR_SIZE_MASK	GENMASK(23, 0)
+#define PKG_DIR_VERSION_MASK	GENMASK(47, 32)
+#define PKG_DIR_TYPE_MASK	GENMASK(54, 48)
 
 static inline const struct ipu6_cpd_ent *ipu6_cpd_get_entry(const void *cpd,
 							    u8 idx)
@@ -216,14 +217,22 @@ int ipu6_cpd_create_pkg_dir(struct ipu6_bus_device *adev, const void *src)
 
 	return 0;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_cpd_create_pkg_dir, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_cpd_create_pkg_dir, INTEL_IPU6);
+#endif
 
 void ipu6_cpd_free_pkg_dir(struct ipu6_bus_device *adev)
 {
 	ipu6_dma_free(adev, adev->pkg_dir_size, adev->pkg_dir,
 		      adev->pkg_dir_dma_addr, 0);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_cpd_free_pkg_dir, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_cpd_free_pkg_dir, INTEL_IPU6);
+#endif
 
 static int ipu6_cpd_validate_cpd(struct ipu6_device *isp, const void *cpd,
 				 unsigned long cpd_size,
@@ -275,7 +284,7 @@ static int ipu6_cpd_validate_moduledata(struct ipu6_device *isp,
 		return -EINVAL;
 	}
 
-	dev_dbg(&isp->pdev->dev, "FW version: %x\n", mod_hdr->fw_pkg_date);
+	dev_info(&isp->pdev->dev, "FW version: %x\n", mod_hdr->fw_pkg_date);
 	ret = ipu6_cpd_validate_cpd(isp, moduledata + mod_hdr->hdr_len,
 				    moduledata_size - mod_hdr->hdr_len,
 				    moduledata_size);

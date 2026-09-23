@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2025-2026 Intel Corporation
+// Copyright (C) 2025 Intel Corporation
 
 #include <linux/kernel.h>
 #include <linux/i2c.h>
@@ -29,12 +29,11 @@
 #include <linux/slab.h>
 #include <linux/pm.h>
 #include <linux/of_gpio.h>
-#include <linux/overflow.h>
 
 #include "serdes.h"
 #include "regmap-retry.h"
 
-#include <media/ipu-acpi-pdata.h>
+#include "media/ipu-acpi-pdata.h"
 
 static const s64 max9x_op_sys_clock[] =  {
 	MAX9X_LINK_FREQ_MBPS_TO_HZ(2500),
@@ -211,8 +210,7 @@ static int max9x_disable_translations(struct max9x_common *common);
 })
 
 static struct max9x_pdata *pdata_ser(struct device *dev, struct max9x_subdev_pdata *sdinfo, const char *name,
-					unsigned int phys_addr, unsigned int virt_addr,
-					struct gpiod_lookup *ser_gpio)
+				     unsigned int phys_addr, unsigned int virt_addr, struct gpiod_lookup *ser_gpio)
 {
 	struct max9x_pdata *pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 
@@ -243,9 +241,9 @@ static struct max9x_pdata *pdata_sensor(struct device *dev, struct max9x_subdev_
 }
 
 static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_name, char *suffix,
-						unsigned int ser_nlanes, unsigned int phys_addr,
-						unsigned int virt_addr, struct max9x_subdev_pdata *ser_sdinfo,
-						unsigned int sensor_dt, struct gpiod_lookup *ser_gpio)
+					   unsigned int ser_nlanes, unsigned int phys_addr,
+					   unsigned int virt_addr, struct max9x_subdev_pdata *ser_sdinfo,
+					   unsigned int sensor_dt, struct gpiod_lookup *ser_gpio)
 {
 	struct max9x_pdata *ser_pdata = pdata_ser(dev, ser_sdinfo, ser_name, phys_addr, virt_addr, ser_gpio);
 	struct max9x_serial_link_pdata *ser_serial_link;
@@ -1089,16 +1087,17 @@ int max9x_disable(struct max9x_common *common)
 	return 0;
 }
 
-static int max9x_find_chip_index(unsigned int dev_id)
+static int max9x_get_chip_type(unsigned int dev_id)
 {
-	unsigned int i;
+	unsigned int des_num = sizeof(max9x_chips) / sizeof(struct max9x_desc);
+	unsigned int i = 0;
 
-	for (i = 0; i < ARRAY_SIZE(max9x_chips); i++) {
+	for (i = 0; i < des_num; i++) {
 		if (dev_id == max9x_chips[i].dev_id)
 			return i;
 	}
 
-	return -ENODEV;
+	return -1;
 }
 
 int max9x_verify_devid(struct max9x_common *common)
@@ -1107,8 +1106,7 @@ int max9x_verify_devid(struct max9x_common *common)
 	struct regmap *map = common->map;
 	struct regmap *phys_map = common->phys_map;
 	unsigned int dev_id, dev_rev;
-	int chip_type;
-	int ret;
+	int chip_type, ret;
 
 	/*
 	 * Fetch and output chip name + revision
@@ -1127,10 +1125,10 @@ int max9x_verify_devid(struct max9x_common *common)
 			return ret;
 	}
 
-	chip_type = max9x_find_chip_index(dev_id);
+	chip_type = max9x_get_chip_type(dev_id);
 	if (chip_type < 0) {
 		dev_warn(dev, "Unknown chip ID 0x%x", dev_id);
-		return -ENODEV;
+		return -EINVAL;
 	}
 	common->des = &max9x_chips[chip_type];
 	common->type = common->des->serdes_type;
@@ -1892,14 +1890,10 @@ static int max9x_registered(struct v4l2_subdev *sd)
 
 					int line = 0;
 					for (int i = 0; i < MAX_SER_GPIO_NUM; i++) {
-						if (subdev_pdata->gpio &&
-						    subdev_pdata->gpio[i].con_id != NULL) {
-							sensor_gpios->table[line] =
-								subdev_pdata->gpio[i];
-							sensor_gpios->table[line++].key =
-								common->gpio_chip.label;
-							dev_dbg(dev, " Adding line %d as %s", i,
-								subdev_pdata->gpio[i].con_id);
+						if (subdev_pdata->gpio && subdev_pdata->gpio[i].con_id != NULL) {
+							sensor_gpios->table[line] = subdev_pdata->gpio[i];
+							sensor_gpios->table[line++].key = common->gpio_chip.label;
+							dev_dbg(dev, " Adding line %d as %s", i, subdev_pdata->gpio[i].con_id);
 						}
 					}
 
@@ -2799,3 +2793,8 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Josh Watts <jwatts@d3embedded.com>");
 MODULE_AUTHOR("Yan, Dongcheng <dongcheng.yan@intel.com>");
 MODULE_DESCRIPTION("Common logic for Maxim GMSL serializers & deserializers");
+/* DRIVER_VERSION_SUFFIX is injected by the vendor DKMS build; not set in-tree */
+#ifndef DRIVER_VERSION_SUFFIX
+#define DRIVER_VERSION_SUFFIX ""
+#endif
+MODULE_VERSION(DRIVER_VERSION_SUFFIX);

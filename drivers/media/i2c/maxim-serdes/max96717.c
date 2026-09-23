@@ -1069,17 +1069,17 @@ static int max96717_init_phy(struct max_ser *ser,
 
 	switch (phy_id) {
 	case 0:
-			reg = MAX96717_MIPI_RX2;
-			mask = MAX96717_MIPI_RX2_PHY0_LANE_MAP;
-			break;
+		reg = MAX96717_MIPI_RX2;
+		mask = MAX96717_MIPI_RX2_PHY0_LANE_MAP;
+		break;
 
 	case 1:
-			reg = MAX96717_MIPI_RX3;
-			mask = MAX96717_MIPI_RX3_PHY2_LANE_MAP;
-			break;
+		reg = MAX96717_MIPI_RX3;
+		mask = MAX96717_MIPI_RX3_PHY2_LANE_MAP;
+		break;
 
 	default:
-			return -EINVAL;
+		return -EINVAL;
 	}
 
 	ret = regmap_update_bits(priv->regmap, reg,
@@ -1089,17 +1089,17 @@ static int max96717_init_phy(struct max_ser *ser,
 
 	switch (phy_id) {
 	case 0:
-			reg = MAX96717_MIPI_RX3;
-			mask = MAX96717_MIPI_RX3_PHY3_LANE_MAP;
-			break;
+		reg = MAX96717_MIPI_RX3;
+		mask = MAX96717_MIPI_RX3_PHY3_LANE_MAP;
+		break;
 
 	case 1:
-			reg = MAX96717_MIPI_RX2;
-			mask = MAX96717_MIPI_RX2_PHY1_LANE_MAP;
-			break;
+		reg = MAX96717_MIPI_RX2;
+		mask = MAX96717_MIPI_RX2_PHY1_LANE_MAP;
+		break;
 
 	default:
-			return -EINVAL;
+		return -EINVAL;
 	}
 
 	ret = regmap_update_bits(priv->regmap, reg,

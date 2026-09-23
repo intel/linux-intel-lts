@@ -8,7 +8,6 @@
 #include <linux/firmware.h>
 #include <linux/fs.h>
 #include <linux/highmem.h>
-#include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/init_task.h>
 #include <linux/kthread.h>
@@ -28,7 +27,6 @@
 #include "ipu7-mmu.h"
 #include "ipu7-bus.h"
 #include "ipu7-buttress.h"
-#include "ipu7-buttress-regs.h"
 #include "ipu7-cpd.h"
 #include "ipu7-dma.h"
 #include "ipu7-fw-psys.h"
@@ -86,8 +84,10 @@ static int ipu7_psys_get_userpages(struct ipu7_dma_buf_attach *attach)
 	flags = FOLL_WRITE | FOLL_FORCE | FOLL_LONGTERM;
 	nr = pin_user_pages_fast(start & PAGE_MASK, npages,
 				 flags, pages);
-	if (nr < npages)
+	if (nr < npages) {
+		ret = nr < 0 ? nr : -EFAULT;
 		goto error;
+	}
 
 	attach->pages = pages;
 	attach->npages = npages;
@@ -105,7 +105,7 @@ static int ipu7_psys_get_userpages(struct ipu7_dma_buf_attach *attach)
 error_up_read:
 	mmap_read_unlock(current->mm);
 error:
-	if (nr)
+	if (nr > 0)
 		unpin_user_pages(pages, nr);
 
 	kvfree(pages);
@@ -243,7 +243,7 @@ static int ipu7_dma_buf_vmap(struct dma_buf *dmabuf, struct iosys_map *map)
 		return -EINVAL;
 
 	attach = list_last_entry(&dmabuf->attachments,
-					struct dma_buf_attachment, node);
+				 struct dma_buf_attachment, node);
 	ipu7_attach = attach->priv;
 
 	if (!ipu7_attach || !ipu7_attach->pages || !ipu7_attach->npages)
@@ -886,6 +886,20 @@ static long ipu_psys_graph_open(struct ipu_psys_graph_info *graph,
 	return 0;
 }
 
+static void ipu_psys_cleanup_running_task_queue(struct ipu7_psys_fh *fh)
+{
+	struct ipu7_psys_stream *ip = fh->ip;
+	struct ipu_psys_task_queue *tq;
+	struct ipu_psys_task_queue *tmp;
+
+	mutex_lock(&ip->task_mutex);
+	list_for_each_entry_safe(tq, tmp, &ip->tq_running_list, list) {
+		tq->task_state = IPU_MSG_TASK_STATE_DONE;
+		list_move_tail(&tq->list, &ip->tq_list);
+	}
+	mutex_unlock(&ip->task_mutex);
+}
+
 static long ipu_psys_graph_close(int graph_id, struct ipu7_psys_fh *fh)
 {
 	struct ipu7_psys *psys = fh->psys;
@@ -921,6 +935,8 @@ static long ipu_psys_graph_close(int graph_id, struct ipu7_psys_fh *fh)
 		fh->ip->graph_state = IPU_MSG_GRAPH_STATE_CLOSED;
 		return -EINVAL;
 	}
+
+	ipu_psys_cleanup_running_task_queue(fh);
 
 	return 0;
 }
@@ -989,6 +1005,27 @@ unlock:
 	return NULL;
 }
 
+static unsigned int ipu7_psys_get_running_fw_task_count(
+					      struct ipu7_bus_device *adev)
+{
+	struct ipu7_psys *psys = ipu7_bus_get_drvdata(adev);
+	struct ipu7_psys_fh *fh;
+	unsigned int count = 0;
+
+	if (!psys)
+		return 0;
+
+	mutex_lock(&psys->mutex);
+	list_for_each_entry(fh, &psys->fhs, list) {
+		mutex_lock(&fh->ip->task_mutex);
+		count += list_count_nodes(&fh->ip->tq_running_list);
+		mutex_unlock(&fh->ip->task_mutex);
+	}
+	mutex_unlock(&psys->mutex);
+
+	return count;
+}
+
 static long ipu_psys_task_request(struct ipu_psys_task_request *task,
 				  struct ipu7_psys_fh *fh)
 {
@@ -1001,7 +1038,9 @@ static long ipu_psys_task_request(struct ipu_psys_task_request *task,
 		return -EINVAL;
 	}
 
+	mutex_lock(&psys->adev->acquire_fw_task_buffer_lock);
 	tq = ipu7_psys_get_task_queue(fh->ip, task);
+	mutex_unlock(&psys->adev->acquire_fw_task_buffer_lock);
 	if (!tq) {
 		dev_err(&psys->dev, "Failed to get task queue\n");
 		return -EINVAL;
@@ -1311,8 +1350,11 @@ static int ipu7_psys_init_debugfs(struct ipu7_psys *psys)
 {
 	struct dentry *file;
 	struct dentry *dir;
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 	dir = debugfs_create_dir("psys", psys->adev->isp->ipu7_dir);
+#else
+	dir = debugfs_create_dir("ipu7-psys", NULL);
+#endif
 	if (IS_ERR(dir))
 		return -ENOMEM;
 
@@ -1424,6 +1466,8 @@ static int ipu7_psys_probe(struct auxiliary_device *auxdev,
 	}
 
 	dev_set_drvdata(dev, psys);
+	adev->get_running_fw_task_count =
+		ipu7_psys_get_running_fw_task_count;
 	mutex_unlock(&ipu7_psys_mutex);
 #ifdef CONFIG_DEBUG_FS
 	psys_fw_log_init(psys);
@@ -1458,16 +1502,10 @@ static void ipu7_psys_remove(struct auxiliary_device *auxdev)
 {
 	struct ipu7_psys *psys = dev_get_drvdata(&auxdev->dev);
 	struct device *dev = &auxdev->dev;
-	struct ipu7_bus_device *adev = auxdev_to_adev(auxdev);
 
-	ipu_buttress_disable_irq(adev->isp, BUTTRESS_IRQ_PS_IRQ);
-	adev->auxdrv_data = NULL;
-	adev->auxdrv = NULL;
-	synchronize_irq(adev->isp->pdev->irq);
+	psys->adev->get_running_fw_task_count = NULL;
 #ifdef CONFIG_DEBUG_FS
-	struct ipu7_device *isp = psys->adev->isp;
-
-	if (isp->ipu7_dir)
+	if (psys->debugfsdir)
 		debugfs_remove_recursive(psys->debugfsdir);
 #endif
 
@@ -1549,23 +1587,17 @@ static struct auxiliary_driver ipu7_psys_driver = {
 
 static int __init ipu7_psys_init(void)
 {
-	int rval;
+	int ret;
 
-	rval = bus_register(&ipu7_psys_bus);
-	if (rval) {
-		pr_err("can't register ipu7 psys bus (%d)\n", rval);
-		return rval;
-	}
+	ret = bus_register(&ipu7_psys_bus);
+	if (ret)
+		return ret;
 
-	rval = auxiliary_driver_register(&ipu7_psys_driver);
-	if (rval) {
-		pr_err("failed to register ipu7 psys auxiliary driver (%d)\n",
-		       rval);
+	ret = auxiliary_driver_register(&ipu7_psys_driver);
+	if (ret)
 		bus_unregister(&ipu7_psys_bus);
-		return rval;
-	}
 
-	return 0;
+	return ret;
 }
 module_init(ipu7_psys_init);
 

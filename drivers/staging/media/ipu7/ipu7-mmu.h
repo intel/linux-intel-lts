@@ -20,6 +20,12 @@ struct ipu7_mmu_info;
 #define ISYS_MMID 0x1
 #define PSYS_MMID 0x0
 
+#define IPU_IS_MMU_FW_RD 0
+#define IPU_IS_MMU_FW_WR 1
+#define IPU_IS_MMU_M0 2
+#define IPU_IS_MMU_M1 3
+#define IPU_IS_MMU_UPIPE 4
+
 /* IPU7 for LNL */
 /* IS MMU Cmd RD */
 #define IPU7_IS_MMU_FW_RD_OFFSET		0x274000
@@ -396,7 +402,7 @@ struct ipu7_mmu {
 	bool ready;
 	spinlock_t ready_lock;	/* Serialize access to bool ready */
 
-	void (*tlb_invalidate)(struct ipu7_mmu *mmu);
+	void (*tlb_invalidate)(struct ipu7_mmu *mmu, int mmu_id);
 };
 
 struct ipu7_mmu *ipu7_mmu_init(struct device *dev,

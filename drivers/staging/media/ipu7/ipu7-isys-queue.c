@@ -247,7 +247,6 @@ static int buffer_list_get(struct ipu7_isys_stream *stream,
 			atomic_set(&ib->skipframe_flag, 0);
 		}
 #endif
-
 		dev_dbg(dev, "buffer: %s: buffer %u\n",
 			ipu7_isys_queue_to_video(aq)->vdev.name,
 			ipu7_isys_buffer_to_vb2_buffer(ib)->index);
@@ -338,6 +337,8 @@ static int ipu7_isys_stream_start(struct ipu7_isys_video *av,
 		if (!msg)
 			return -ENOMEM;
 
+		msg->stream_id = stream->stream_handle;
+
 		buf = &msg->fw_msg.frame;
 
 		ipu7_isys_buffer_to_fw_frame_buff(buf, stream, bl);
@@ -415,7 +416,6 @@ static void buf_queue(struct vb2_buffer *vb)
 	/* ip may be cleared in ipu reset */
 	stream = av->stream;
 #endif
-
 	mutex_lock(&stream->mutex);
 
 	if (stream->nr_streaming != stream->nr_queues) {
@@ -439,6 +439,7 @@ static void buf_queue(struct vb2_buffer *vb)
 		ret = -ENOMEM;
 		goto out;
 	}
+	msg->stream_id = stream->stream_handle;
 
 	buf = &msg->fw_msg.frame;
 
@@ -657,11 +658,13 @@ out_return_buffers:
 static void reset_stop_streaming(struct ipu7_isys_video *av)
 {
 	struct ipu7_isys_queue *aq = &av->aq;
+	struct device *dev = &av->isys->adev->auxdev.dev;
 	struct ipu7_isys_stream *stream = av->stream;
 	struct ipu7_isys_buffer *ib;
 	struct vb2_buffer *vb;
 	unsigned long flags;
 
+	dev_dbg(dev, "reset stop streams: %s\n", av->vdev.name);
 	mutex_lock(&av->isys->stream_mutex);
 	if (stream->nr_streaming == stream->nr_queues && stream->streaming)
 		ipu7_isys_video_set_streaming(av, 0, NULL);
@@ -742,9 +745,7 @@ static int reset_start_streaming(struct ipu7_isys_video *av)
 		goto out;
 
 	bl = &__bl;
-
 	int retry = 5;
-
 	while (retry--) {
 		ret = buffer_list_get(stream, bl);
 		if (ret < 0) {
@@ -834,7 +835,6 @@ static int ipu_isys_reset(struct ipu7_isys_video *self_av,
 
 	mutex_unlock(&isys->reset_mutex);
 
-	dev_dbg(dev, "reset stop streams\n");
 	for (i = 0; i < csi2_pdata->nports; i++) {
 		for (j = 0; j < IPU7_NR_OF_CSI2_SRC_PADS; j++) {
 			av = &isys->csi2[i].av[j];
@@ -858,8 +858,6 @@ static int ipu_isys_reset(struct ipu7_isys_video *self_av,
 		goto end_of_reset;
 
 	ipu7_cleanup_fw_msg_bufs(isys);
-
-	dev_dbg(dev, "reset start streams\n");
 
 	for (j = 0; j < csi2_pdata->nports; j++) {
 		for (i = 0; i < IPU7_NR_OF_CSI2_SRC_PADS; i++) {
@@ -951,7 +949,7 @@ static void stop_streaming(struct vb2_queue *q)
 	mutex_unlock(&av->isys->reset_mutex);
 
 	if (need_reset) {
-		if (!stream->nr_streaming) {
+		if (av->isys->stream_opened > 0) {
 			ipu_isys_reset(av, stream);
 		} else {
 			mutex_lock(&av->isys->reset_mutex);

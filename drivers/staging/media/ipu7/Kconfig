@@ -23,6 +23,17 @@ config VIDEO_INTEL_IPU7
 	  To compile this driver, say Y here! It contains 3 modules -
 	  intel_ipu7, intel_ipu7_isys and intel_ipu7_psys.
 
+config VIDEO_INTEL_IPU7_MGC
+	bool "Compile for IPU7 MGC driver"
+	depends on VIDEO_INTEL_IPU7
+	help
+	  If selected, MGC device nodes would be created.
+
+	  Recommended for driver developers only.
+
+	  If you want to the MGC devices exposed to user as media entity,
+	  you must select this option, otherwise no.
+
 config VIDEO_INTEL_IPU7_ISYS_RESET
 	bool "IPU7 ISYS RESET"
 	depends on VIDEO_INTEL_IPU7

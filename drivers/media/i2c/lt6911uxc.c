@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2022-2024 Intel Corporation.
+// Copyright (c) 2022-2025 Intel Corporation.
 
 #include <linux/acpi.h>
 #include <linux/delay.h>
@@ -107,6 +107,7 @@ struct lt6911uxc {
 	unsigned int irq_pin_flags;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *irq_gpio;
+	struct gpio_desc *detect_gpio;
 
 	bool auxiliary_port;
 };
@@ -552,17 +553,23 @@ static int lt6911uxc_identify_module(struct lt6911uxc *lt6911uxc,
 
 static int lt6911uxc_parse_gpio(struct lt6911uxc *lt6911uxc, struct device *dev)
 {
-	lt6911uxc->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_IN);
+	lt6911uxc->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(lt6911uxc->reset_gpio)) {
 		lt6911uxc->auxiliary_port = true;
 		return dev_err_probe(dev, PTR_ERR(lt6911uxc->reset_gpio),
 				     "failed to get reset gpio\n");
 	}
 
-	lt6911uxc->irq_gpio = devm_gpiod_get(dev, "hpd", GPIOD_IN);
+	lt6911uxc->irq_gpio = devm_gpiod_get(dev, "readystat", GPIOD_IN);
 	if (IS_ERR(lt6911uxc->irq_gpio))
 		return dev_err_probe(dev, PTR_ERR(lt6911uxc->irq_gpio),
-				     "failed to get hpd gpio\n");
+				     "failed to get ready_stat gpio\n");
+
+	lt6911uxc->detect_gpio = devm_gpiod_get(dev, "hdmidetect",
+						GPIOD_OUT_HIGH);
+	if (IS_ERR(lt6911uxc->detect_gpio))
+		return dev_err_probe(dev, PTR_ERR(lt6911uxc->detect_gpio),
+				     "failed to get hdmi_detect gpio\n");
 
 	return 0;
 }

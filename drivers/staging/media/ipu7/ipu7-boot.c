@@ -11,6 +11,7 @@
 #include <linux/iopoll.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 #include "abi/ipu7_fw_boot_abi.h"
 
@@ -285,7 +286,11 @@ int ipu7_boot_init_boot_config(struct ipu7_bus_device *adev,
 
 	return 0;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_boot_init_boot_config, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_boot_init_boot_config, INTEL_IPU7);
+#endif
 
 void ipu7_boot_release_boot_config(struct ipu7_bus_device *adev)
 {
@@ -307,7 +312,11 @@ void ipu7_boot_release_boot_config(struct ipu7_bus_device *adev)
 		adev->boot_config_dma_addr = 0;
 	}
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_boot_release_boot_config, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_boot_release_boot_config, INTEL_IPU7);
+#endif
 
 int ipu7_boot_start_fw(const struct ipu7_bus_device *adev)
 {
@@ -378,7 +387,11 @@ int ipu7_boot_start_fw(const struct ipu7_bus_device *adev)
 
 	return 0;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_boot_start_fw, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_boot_start_fw, INTEL_IPU7);
+#endif
 
 int ipu7_boot_stop_fw(const struct ipu7_bus_device *adev)
 {
@@ -421,10 +434,18 @@ int ipu7_boot_stop_fw(const struct ipu7_bus_device *adev)
 
 	return 0;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_boot_stop_fw, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_boot_stop_fw, INTEL_IPU7);
+#endif
 
 u32 ipu7_boot_get_boot_state(const struct ipu7_bus_device *adev)
 {
 	return read_fw_boot_param(adev, IA_GOFO_FW_BOOT_STATE_ID);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_boot_get_boot_state, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_boot_get_boot_state, INTEL_IPU7);
+#endif

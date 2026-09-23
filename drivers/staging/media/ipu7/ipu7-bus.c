@@ -75,6 +75,7 @@ static void ipu7_bus_release(struct device *dev)
 {
 	struct ipu7_bus_device *adev = to_ipu7_bus_device(dev);
 
+	mutex_destroy(&adev->acquire_fw_task_buffer_lock);
 	kfree(adev->pdata);
 	kfree(adev);
 }
@@ -96,6 +97,7 @@ ipu7_bus_initialize_device(struct pci_dev *pdev, struct device *parent,
 	adev->isp = isp;
 	adev->ctrl = ctrl;
 	adev->pdata = pdata;
+	mutex_init(&adev->acquire_fw_task_buffer_lock);
 	auxdev = &adev->auxdev;
 	auxdev->name = name;
 	auxdev->id = (pci_domain_nr(pdev->bus) << 16) |

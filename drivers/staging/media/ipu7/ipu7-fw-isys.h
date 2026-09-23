@@ -36,4 +36,7 @@ int ipu7_fw_isys_complex_cmd(struct ipu7_isys *isys,
 			     size_t size, u16 send_type);
 struct ipu7_insys_resp *ipu7_fw_isys_get_resp(struct ipu7_isys *isys);
 void ipu7_fw_isys_put_resp(struct ipu7_isys *isys);
+#ifdef ENABLE_FW_OFFLINE_LOGGER
+int ipu7_fw_isys_get_log(struct ipu7_isys *isys);
+#endif
 #endif

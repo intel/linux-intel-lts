@@ -12,6 +12,7 @@
 #include <linux/io.h>
 #include <linux/minmax.h>
 #include <linux/sprintf.h>
+#include <linux/version.h>
 
 #include <media/media-entity.h>
 #include <media/v4l2-ctrls.h>
@@ -80,19 +81,29 @@ static const struct ipu6_csi2_error dphy_rx_errors[] = {
 s64 ipu6_isys_csi2_get_link_freq(struct ipu6_isys_csi2 *csi2)
 {
 	struct media_pad *src_pad;
+	struct v4l2_subdev *ext_sd;
+	struct device *dev;
 
 	if (!csi2)
 		return -EINVAL;
 
+	dev = &csi2->isys->adev->auxdev.dev;
 	src_pad = media_entity_remote_source_pad_unique(&csi2->asd.sd.entity);
 	if (IS_ERR(src_pad)) {
-		dev_err(&csi2->isys->adev->auxdev.dev,
-			"can't get source pad of %s (%ld)\n",
+		dev_err(dev, "can't get source pad of %s (%ld)\n",
 			csi2->asd.sd.name, PTR_ERR(src_pad));
 		return PTR_ERR(src_pad);
 	}
 
+	ext_sd = media_entity_to_v4l2_subdev(src_pad->entity);
+	if (WARN(!ext_sd, "Failed to get subdev for %s\n", csi2->asd.sd.name))
+		return -ENODEV;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	return v4l2_get_link_freq(src_pad, 0, 0);
+#else
+	return v4l2_get_link_freq(ext_sd->ctrl_handler, 0, 0);
+#endif
 }
 
 static int csi2_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
@@ -109,7 +120,7 @@ static int csi2_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 	case V4L2_EVENT_FRAME_SYNC:
 		return v4l2_event_subscribe(fh, sub, 10, NULL);
 	case V4L2_EVENT_CTRL:
-		return v4l2_ctrl_subdev_subscribe_event(sd, fh, sub);
+		return v4l2_ctrl_subscribe_event(fh, sub);
 	default:
 		return -EINVAL;
 	}

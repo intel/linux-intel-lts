@@ -67,7 +67,7 @@ static void dwc_dphy_write(struct ipu6_isys *isys, u32 phy_id, u32 addr,
 	void __iomem *isys_base = isys->pdata->base;
 	void __iomem *base = isys_base + IPU6_DWC_DPHY_BASE(phy_id);
 
-	dev_dbg(dev, "write: reg 0x%zx = data 0x%x", base + addr - isys_base,
+	dev_dbg(dev, "write: reg 0x%lx = data 0x%x", base + addr - isys_base,
 		data);
 	writel(data, base + addr);
 }
@@ -80,7 +80,7 @@ static u32 dwc_dphy_read(struct ipu6_isys *isys, u32 phy_id, u32 addr)
 	u32 data;
 
 	data = readl(base + addr);
-	dev_dbg(dev, "read: reg 0x%zx = data 0x%x", base + addr - isys_base,
+	dev_dbg(dev, "read: reg 0x%lx = data 0x%x", base + addr - isys_base,
 		data);
 
 	return data;
@@ -288,27 +288,15 @@ static const struct dwc_dphy_freq_range freqranges[DPHY_FREQ_RANGE_NUM] = {
 
 static u16 get_hsfreq_by_mbps(u32 mbps)
 {
-	u16 best = DPHY_FREQ_RANGE_INVALID_INDEX;
-	unsigned int i;
+	unsigned int i = DPHY_FREQ_RANGE_NUM;
 
-	for (i = 0; i < DPHY_FREQ_RANGE_NUM; i++) {
-		if (mbps > freqranges[i].max)
-			continue;
-
-		if (mbps < freqranges[i].min)
-			break;
-
-		if (best == DPHY_FREQ_RANGE_INVALID_INDEX ||
-		    freqranges[i].osc_freq_target >
-		    freqranges[best].osc_freq_target ||
-		    (freqranges[i].osc_freq_target ==
-		     freqranges[best].osc_freq_target &&
-		     abs((int)mbps - (int)freqranges[i].default_mbps) <
-		     abs((int)mbps - (int)freqranges[best].default_mbps)))
-			best = i;
+	while (i--) {
+		if (freqranges[i].default_mbps == mbps ||
+		    (mbps >= freqranges[i].min && mbps <= freqranges[i].max))
+			return i;
 	}
 
-	return best;
+	return DPHY_FREQ_RANGE_INVALID_INDEX;
 }
 
 static int ipu6_isys_dwc_phy_config(struct ipu6_isys *isys,

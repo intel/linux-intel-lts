@@ -167,11 +167,9 @@ static void dwc_csi_write(struct ipu7_isys *isys, u32 id, u32 addr, u32 data)
 static void gpreg_write(struct ipu7_isys *isys, u32 id, u32 addr, u32 data)
 {
 	void __iomem *isys_base = isys->pdata->base;
-		u32 gpreg = isys->pdata->ipdata->csi2.gpreg;
-
+	u32 gpreg = isys->pdata->ipdata->csi2.gpreg;
 	void __iomem *base = isys_base + gpreg +
-		isys->pdata->ipdata->csi2.gpreg_stride * id;
-
+			     isys->pdata->ipdata->csi2.gpreg_stride * id;
 	struct device *dev = &isys->adev->auxdev.dev;
 
 	dev_dbg(dev, "gpreg write: reg 0x%zx = data 0x%08x",
@@ -347,13 +345,10 @@ static int ipu7_isys_csi_ctrl_dids_config(struct ipu7_isys_csi2 *csi2, u32 id)
 static int ipu7_isys_phy_ready(struct ipu7_isys *isys, u32 id)
 {
 	void __iomem *isys_base = isys->pdata->base;
-		u32 gpreg_offset = isys->pdata->ipdata->csi2.gpreg;
-
+	u32 gpreg_offset = isys->pdata->ipdata->csi2.gpreg;
 	void __iomem *gpreg = isys_base + gpreg_offset +
-		isys->pdata->ipdata->csi2.gpreg_stride * id;
-
+			      isys->pdata->ipdata->csi2.gpreg_stride * id;
 	struct device *dev = &isys->adev->auxdev.dev;
-
 	unsigned int i;
 	u32 phy_ready;
 	u32 reg, rext;
@@ -361,8 +356,8 @@ static int ipu7_isys_phy_ready(struct ipu7_isys *isys, u32 id)
 
 	dev_dbg(dev, "waiting phy ready...\n");
 	ret = readl_poll_timeout(gpreg + PHY_READY, phy_ready,
-					phy_ready & BIT(0) && phy_ready != ~0U,
-					100, CDPHY_TIMEOUT);
+				 phy_ready & BIT(0) && phy_ready != ~0U,
+				 100, CDPHY_TIMEOUT);
 	dev_dbg(dev, "phy %u ready = 0x%08x\n", id, readl(gpreg + PHY_READY));
 	dev_dbg(dev, "csi %u PHY_RX = 0x%08x\n", id,
 		dwc_csi_read(isys, id, PHY_RX));

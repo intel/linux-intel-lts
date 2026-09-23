@@ -20,6 +20,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/scatterlist.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 #include "ipu7.h"
 #include "ipu7-bus.h"
@@ -378,12 +379,6 @@ irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr)
 		return IRQ_NONE;
 	}
 
-	if (irq_status == 0xffffffff) {
-		dev_warn_once(dev, "invalid irq status 0x%08x\n", irq_status);
-		pm_runtime_put_noidle(dev);
-		return IRQ_NONE;
-	}
-
 	do {
 		writel(irq_status, isp->base + BUTTRESS_REG_IRQ_CLEAR);
 
@@ -460,15 +455,6 @@ irqreturn_t ipu_buttress_isr_threaded(int irq, void *isp_ptr)
 
 	return ret;
 }
-
-void ipu_buttress_disable_irq(struct ipu7_device *isp, u32 irq_mask)
-{
-	u32 val = readl(isp->base + BUTTRESS_REG_IRQ_ENABLE);
-
-	val &= ~irq_mask;
-	writel(val, isp->base + BUTTRESS_REG_IRQ_ENABLE);
-}
-EXPORT_SYMBOL_NS_GPL(ipu_buttress_disable_irq, "INTEL_IPU7");
 
 static int isys_d2d_power(struct device *dev, bool on)
 {
@@ -768,7 +754,11 @@ bool ipu_buttress_auth_done(struct ipu7_device *isp)
 
 	return val == BUTTRESS_SECURITY_CTL_AUTH_DONE;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_auth_done, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_auth_done, INTEL_IPU7);
+#endif
 
 int ipu_buttress_get_isys_freq(struct ipu7_device *isp, u32 *freq)
 {
@@ -793,7 +783,11 @@ int ipu_buttress_get_isys_freq(struct ipu7_device *isp, u32 *freq)
 
 	return 0;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_get_isys_freq, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_get_isys_freq, INTEL_IPU7);
+#endif
 
 int ipu_buttress_get_psys_freq(struct ipu7_device *isp, u32 *freq)
 {
@@ -816,7 +810,11 @@ int ipu_buttress_get_psys_freq(struct ipu7_device *isp, u32 *freq)
 
 	return 0;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_get_psys_freq, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_get_psys_freq, INTEL_IPU7);
+#endif
 
 int ipu_buttress_reset_authentication(struct ipu7_device *isp)
 {
@@ -1034,7 +1032,11 @@ int ipu_buttress_start_tsc_sync(struct ipu7_device *isp)
 
 	return -ETIMEDOUT;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_start_tsc_sync, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_start_tsc_sync, INTEL_IPU7);
+#endif
 
 void ipu_buttress_tsc_read(struct ipu7_device *isp, u64 *val)
 {
@@ -1052,7 +1054,11 @@ void ipu_buttress_tsc_read(struct ipu7_device *isp, u64 *val)
 	*val = (u64)tsc_hi << 32 | tsc_lo;
 	local_irq_restore(flags);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_tsc_read, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_tsc_read, INTEL_IPU7);
+#endif
 
 u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu7_device *isp)
 {
@@ -1067,7 +1073,11 @@ u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu7_device *isp)
 	 */
 	return div_u64(ns, isp->buttress.ref_clk);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_tsc_ticks_to_ns, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_tsc_ticks_to_ns, INTEL_IPU7);
+#endif
 
 /* trigger uc control to wakeup fw */
 void ipu_buttress_wakeup_is_uc(const struct ipu7_device *isp)
@@ -1078,7 +1088,11 @@ void ipu_buttress_wakeup_is_uc(const struct ipu7_device *isp)
 	val |= UCX_CTL_WAKEUP;
 	writel(val, isp->base + BUTTRESS_REG_DRV_IS_UCX_CONTROL_STATUS);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_wakeup_is_uc, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_wakeup_is_uc, INTEL_IPU7);
+#endif
 
 void ipu_buttress_wakeup_ps_uc(const struct ipu7_device *isp)
 {
@@ -1088,10 +1102,21 @@ void ipu_buttress_wakeup_ps_uc(const struct ipu7_device *isp)
 	val |= UCX_CTL_WAKEUP;
 	writel(val, isp->base + BUTTRESS_REG_DRV_PS_UCX_CONTROL_STATUS);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu_buttress_wakeup_ps_uc, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu_buttress_wakeup_ps_uc, INTEL_IPU7);
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+#define INTEL_PANTHERLAKE_L IFM(6, 0xCC)
+#endif
 static const struct x86_cpu_id ipu_misc_cfg_exclusion[] = {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 14, 0)
 	X86_MATCH_VFM_STEPS(INTEL_PANTHERLAKE_L, 0x1, 0x1, 0),
+#else
+	X86_MATCH_VFM_STEPPINGS(INTEL_PANTHERLAKE_L, 0x1, 0),
+#endif
 	{},
 };
 

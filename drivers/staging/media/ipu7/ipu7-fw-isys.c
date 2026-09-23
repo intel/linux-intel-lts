@@ -32,7 +32,7 @@ static const char * const send_msg_types[N_IPU_INSYS_SEND_TYPE] = {
 };
 
 static void isys_stream_cfg_to_v1(struct ipu7_insys_stream_cfg_v1 *dst,
-								const struct ipu7_insys_stream_cfg *src)
+				  const struct ipu7_insys_stream_cfg *src)
 {
 	unsigned int i;
 
@@ -119,7 +119,7 @@ static size_t isys_prepare_fw_payload(void *cpu_mapped_buf,
 	}
 }
 
-static void isys_decode_resp_v1(struct ipu7_insys_resp *dst, const void *token)
+static __maybe_unused void isys_decode_resp_v1(struct ipu7_insys_resp *dst, const void *token)
 {
 	const struct ipu7_insys_resp_v1 *src = token;
 
@@ -166,7 +166,7 @@ int ipu7_fw_isys_complex_cmd(struct ipu7_isys *isys,
 		size = isys->abi_ops.prepare_payload(cpu_mapped_buf,
 						     send_type, size);
 		clflush_cache_range(cpu_mapped_buf, size);
-}
+	}
 
 	token = ipu7_syscom_get_token(ctx, stream_handle +
 				      IPU_INSYS_INPUT_MSG_QUEUE);
@@ -212,17 +212,14 @@ int ipu7_fw_isys_init(struct ipu7_isys *isys)
 	if (!syscom)
 		return -ENOMEM;
 
-	if (is_ipu8(adev->isp->hw_ver)) {
+	if (is_ipu8(adev->isp->hw_ver))
 		isys->abi_ops.prepare_payload = isys_prepare_fw_payload;
-		isys->abi_ops.decode_resp = isys_decode_resp;
-		isys->abi_ops.resp_queue_token_size =
-			sizeof(struct ipu7_insys_resp);
-	} else {
+	else
 		isys->abi_ops.prepare_payload = isys_prepare_fw_payload_v1;
-		isys->abi_ops.decode_resp = isys_decode_resp_v1;
-		isys->abi_ops.resp_queue_token_size =
-			sizeof(struct ipu7_insys_resp_v1);
-	}
+
+	isys->abi_ops.decode_resp = isys_decode_resp;
+	isys->abi_ops.resp_queue_token_size =
+		sizeof(struct ipu7_insys_resp);
 
 	adev->syscom = syscom;
 	syscom->num_input_queues = IPU_INSYS_MAX_INPUT_QUEUES;
@@ -338,6 +335,65 @@ void ipu7_fw_isys_put_resp(struct ipu7_isys *isys)
 	ipu7_syscom_put_token(isys->adev->syscom, IPU_INSYS_OUTPUT_MSG_QUEUE);
 }
 
+#ifdef ENABLE_FW_OFFLINE_LOGGER
+int ipu7_fw_isys_get_log(struct ipu7_isys *isys)
+{
+	u32 log_size = sizeof(struct ia_gofo_msg_log_info_ts);
+	struct device *dev = &isys->adev->auxdev.dev;
+	struct isys_fw_log *fw_log = isys->fw_log;
+	struct ia_gofo_msg_log *log_msg;
+	u8 msg_type, msg_len;
+	u32 count, fmt_id;
+	void *token;
+
+	token = ipu7_syscom_get_token(isys->adev->syscom,
+				      IPU_INSYS_OUTPUT_LOG_QUEUE);
+	if (!token)
+		return -ENODATA;
+
+	while (token) {
+		log_msg = (struct ia_gofo_msg_log *)token;
+
+		msg_type = log_msg->header.tlv_header.tlv_type;
+		msg_len = log_msg->header.tlv_header.tlv_len32;
+		if (msg_type != IPU_MSG_TYPE_DEV_LOG || !msg_len)
+			dev_warn(dev, "Invalid msg data from Log queue!\n");
+
+		count = log_msg->log_info_ts.log_info.log_counter;
+		fmt_id = log_msg->log_info_ts.log_info.fmt_id;
+		if (count > fw_log->count + 1)
+			dev_warn(dev, "log msg lost, count %u+1 != %u!\n",
+				 count, fw_log->count);
+
+		if (fmt_id == IA_GOFO_MSG_LOG_FMT_ID_INVALID) {
+			dev_err(dev, "invalid log msg fmt_id 0x%x!\n", fmt_id);
+			ipu7_syscom_put_token(isys->adev->syscom,
+					      IPU_INSYS_OUTPUT_LOG_QUEUE);
+			return -EIO;
+		}
+
+		if (log_size + fw_log->head - fw_log->addr >
+		    FW_LOG_BUF_SIZE)
+			fw_log->head = fw_log->addr;
+
+		memcpy(fw_log->head, (void *)&log_msg->log_info_ts,
+		       sizeof(struct ia_gofo_msg_log_info_ts));
+
+		fw_log->count = count;
+		fw_log->head += log_size;
+		fw_log->size += log_size;
+
+		ipu7_syscom_put_token(isys->adev->syscom,
+				      IPU_INSYS_OUTPUT_LOG_QUEUE);
+
+		token = ipu7_syscom_get_token(isys->adev->syscom,
+					      IPU_INSYS_OUTPUT_LOG_QUEUE);
+	};
+
+	return 0;
+}
+
+#endif
 void ipu7_fw_isys_dump_stream_cfg(struct device *dev,
 				  struct ipu7_insys_stream_cfg *cfg)
 {

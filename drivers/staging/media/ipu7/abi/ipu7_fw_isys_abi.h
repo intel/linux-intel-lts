@@ -399,13 +399,13 @@ struct ipu7_insys_resp {
 	struct ipu7_insys_capture_output_pin_payload pin;
 	struct ia_gofo_msg_err error_info;
 	u32 timestamp[2];
-	u16 mipi_fn;
 	u8 type;
 	u8 msg_link_streaming_mode;
 	u8 stream_id;
 	u8 pin_id;
 	u8 frame_id;
 	u8 skip_frame;
+	u16 mipi_fn;
 };
 
 struct ipu7_insys_resp_queue_token {

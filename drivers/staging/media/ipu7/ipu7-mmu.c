@@ -25,8 +25,10 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
 
 #include "ipu7.h"
+#include "ipu7-bus.h"
 #include "ipu7-dma.h"
 #include "ipu7-mmu.h"
 #include "ipu7-platform-regs.h"
@@ -52,6 +54,8 @@
 #define TBL_PHYS_ADDR(a)	((phys_addr_t)(a) << ISP_PADDR_SHIFT)
 
 #define MMU_TLB_INVALIDATE_TIMEOUT	2000
+#define WAIT_FW_MSG_BUFS_CLEAR_TIME_MS	17
+#define WAIT_FW_MSG_BUFS_CLEAR_TIMES	5
 
 static __maybe_unused void mmu_irq_handler(struct ipu7_mmu *mmu)
 {
@@ -66,12 +70,40 @@ static __maybe_unused void mmu_irq_handler(struct ipu7_mmu *mmu)
 	}
 }
 
-static void tlb_invalidate(struct ipu7_mmu *mmu)
+static void tlb_invalidate(struct ipu7_mmu *mmu, int mmu_id)
 {
 	unsigned long flags;
+	unsigned int start, end;
 	unsigned int i;
 	int ret;
 	u32 val;
+	unsigned int prev_task_cnt = UINT_MAX;
+	unsigned int curr_task_cnt;
+	unsigned int not_decreasing_count = 0;
+	struct ipu7_bus_device *adev = to_ipu7_bus_device(mmu->dev);
+
+	if (adev->get_running_fw_task_count) {
+		while (1) {
+			curr_task_cnt = adev->get_running_fw_task_count(adev);
+			if (curr_task_cnt == 0)
+				break;
+
+			if (curr_task_cnt >= prev_task_cnt)
+				not_decreasing_count++;
+			else
+				not_decreasing_count = 0;
+			prev_task_cnt = curr_task_cnt;
+
+			if (not_decreasing_count >
+			    WAIT_FW_MSG_BUFS_CLEAR_TIMES) {
+				dev_warn(mmu->dev,
+					 "wait running fw tasks clear timeout\n");
+				break;
+			}
+
+			msleep(WAIT_FW_MSG_BUFS_CLEAR_TIME_MS);
+		}
+	}
 
 	spin_lock_irqsave(&mmu->ready_lock, flags);
 	if (!mmu->ready) {
@@ -79,7 +111,23 @@ static void tlb_invalidate(struct ipu7_mmu *mmu)
 		return;
 	}
 
-	for (i = 0; i < mmu->nr_mmus; i++) {
+	/* mmu_id < 0: all MMUs, otherwise one MMU. */
+	if (mmu_id < 0) {
+		start = 0;
+		end = mmu->nr_mmus;
+	} else if (mmu_id >= mmu->nr_mmus) {
+		dev_warn(mmu->dev, "invalid mmu_id %d, nr_mmus %u\n",
+			 mmu_id, mmu->nr_mmus);
+		spin_unlock_irqrestore(&mmu->ready_lock, flags);
+		return;
+	}
+
+	if (mmu_id >= 0) {
+		start = mmu_id;
+		end = mmu_id + 1;
+	}
+
+	for (i = start; i < end; i++) {
 		writel(0xffffffffU, mmu->mmu_hw[i].base +
 		       MMU_REG_INVALIDATE_0);
 
@@ -231,7 +279,7 @@ static u32 *alloc_l2_pt(struct ipu7_mmu_info *mmu_info)
 
 	dev_dbg(mmu_info->dev, "alloc_l2: get_zeroed_page() = %p\n", pt);
 
-	for (i = 0; i < ISP_L2PT_PTES; i++)
+	for (i = 0; i < ISP_L1PT_PTES; i++)
 		pt[i] = mmu_info->dummy_page_pteval;
 
 	return pt;
@@ -577,7 +625,11 @@ int ipu7_mmu_hw_init(struct ipu7_mmu *mmu)
 
 	return 0;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_mmu_hw_init, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_mmu_hw_init, INTEL_IPU7);
+#endif
 
 static struct ipu7_mmu_info *ipu7_mmu_alloc(struct ipu7_device *isp)
 {
@@ -647,7 +699,11 @@ void ipu7_mmu_hw_cleanup(struct ipu7_mmu *mmu)
 	mmu->ready = false;
 	spin_unlock_irqrestore(&mmu->ready_lock, flags);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_mmu_hw_cleanup, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_mmu_hw_cleanup, INTEL_IPU7);
+#endif
 
 static struct ipu7_dma_mapping *alloc_dma_mapping(struct ipu7_device *isp)
 {

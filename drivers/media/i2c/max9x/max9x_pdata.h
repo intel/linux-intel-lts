@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2025-2026 Intel Corporation.
+// Copyright (c) 2025 Intel Corporation.
 
 #ifndef _MAX9X_PDATA_H_
 #define _MAX9X_PDATA_H_
@@ -20,7 +20,7 @@ struct max9x_subdev_pdata {
 	struct i2c_board_info board_info;
 	unsigned short phys_addr; // Remap or translate subdev
 
-	struct gpiod_lookup *gpio; /* SER only */
+	struct gpiod_lookup *gpio; // SER only
 };
 
 struct max9x_serial_link_pdata {

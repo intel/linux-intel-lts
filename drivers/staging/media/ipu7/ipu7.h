@@ -13,9 +13,6 @@
 #include "ipu7-buttress.h"
 
 struct ipu7_bus_device;
-#ifdef CONFIG_DEBUG_FS
-struct dentry;
-#endif
 struct pci_dev;
 struct firmware;
 
@@ -77,9 +74,6 @@ struct ipu7_device {
 	struct ipu7_bus_device *psys;
 	struct ipu_buttress buttress;
 
-#ifdef CONFIG_DEBUG_FS
-	struct dentry *ipu7_dir;
-#endif
 	const struct firmware *cpd_fw;
 	const char *cpd_fw_name;
 	/* Only for non-secure mode. */
@@ -91,6 +85,9 @@ struct ipu7_device {
 	bool ipc_reinit;
 	bool secure_mode;
 	bool ipu7_bus_ready_to_probe;
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *ipu7_dir;
+#endif
 };
 
 #define IPU_DMA_MASK			39

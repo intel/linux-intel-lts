@@ -92,6 +92,7 @@ struct lt6911uxe {
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_ctrl_handler ctrl_handler;
+	struct v4l2_ctrl *link_freq;
 	struct v4l2_ctrl *pixel_rate;
 	struct v4l2_dv_timings timings;
 	struct lt6911uxe_mode cur_mode;
@@ -300,6 +301,7 @@ static int lt6911uxe_status_update(struct lt6911uxe *lt6911uxe)
 		ret = -ENOLINK;
 	}
 	v4l2_subdev_notify_event(&lt6911uxe->sd, &lt6911uxe_ev_source_change);
+
 	return ret;
 }
 
@@ -313,6 +315,11 @@ static int lt6911uxe_init_controls(struct lt6911uxe *lt6911uxe)
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
 	if (ret)
 		return ret;
+
+	lt6911uxe->link_freq =
+		v4l2_ctrl_new_int_menu(ctrl_hdlr, NULL, V4L2_CID_LINK_FREQ,
+				       sizeof(lt6911uxe->cur_mode.link_freq),
+				       0, &lt6911uxe->cur_mode.link_freq);
 
 	pixel_rate = get_pixel_rate(lt6911uxe);
 	lt6911uxe->pixel_rate = v4l2_ctrl_new_std(ctrl_hdlr, NULL,
@@ -388,7 +395,7 @@ static int lt6911uxe_set_format(struct v4l2_subdev *sd,
 				struct v4l2_subdev_format *fmt)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-	u64 pixel_rate;
+	u64 pixel_rate, link_freq;
 
 	lt6911uxe_update_pad_format(&lt6911uxe->cur_mode, &fmt->format);
 	*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
@@ -398,6 +405,10 @@ static int lt6911uxe_set_format(struct v4l2_subdev *sd,
 	pixel_rate = get_pixel_rate(lt6911uxe);
 	__v4l2_ctrl_modify_range(lt6911uxe->pixel_rate, pixel_rate,
 				 pixel_rate, 1, pixel_rate);
+
+	link_freq = lt6911uxe->cur_mode.link_freq;
+	__v4l2_ctrl_modify_range(lt6911uxe->link_freq, link_freq,
+				 link_freq, 1, link_freq);
 
 	return 0;
 }
@@ -412,21 +423,6 @@ static int lt6911uxe_enum_mbus_code(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	code->code = lt6911uxe->cur_mode.code;
-
-	return 0;
-}
-
-static int lt6911uxe_get_mbus_config(struct v4l2_subdev *sd,
-				     unsigned int pad,
-				     struct v4l2_mbus_config *cfg)
-{
-	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-	struct v4l2_subdev_state *state;
-
-	state = v4l2_subdev_lock_and_get_active_state(sd);
-	cfg->type = V4L2_MBUS_CSI2_DPHY;
-	cfg->link_freq = lt6911uxe->cur_mode.link_freq;
-	v4l2_subdev_unlock_state(state);
 
 	return 0;
 }
@@ -463,7 +459,6 @@ static const struct v4l2_subdev_pad_ops lt6911uxe_pad_ops = {
 	.query_dv_timings = lt6911uxe_query_dv_timings,
 	.enum_dv_timings = lt6911uxe_enum_dv_timings,
 	.dv_timings_cap = lt6911uxe_dv_timings_cap,
-	.get_mbus_config = lt6911uxe_get_mbus_config,
 };
 
 static const struct v4l2_subdev_core_ops lt6911uxe_subdev_core_ops = {
@@ -513,7 +508,6 @@ static int lt6911uxe_fwnode_parse(struct lt6911uxe *lt6911uxe,
 	 */
 	if (bus_cfg.bus.mipi_csi2.num_data_lanes != LT6911UXE_DEFAULT_LANES) {
 		dev_err(dev, "only 4 data lanes are currently supported\n");
-		ret = -EINVAL;
 		goto out_err;
 	}
 	lt6911uxe->cur_mode.lanes = bus_cfg.bus.mipi_csi2.num_data_lanes;
@@ -586,6 +580,7 @@ static int lt6911uxe_probe(struct i2c_client *client)
 {
 	struct lt6911uxe *lt6911uxe;
 	struct device *dev = &client->dev;
+	u64 irq_pin_flags;
 	int ret;
 
 	lt6911uxe = devm_kzalloc(dev, sizeof(*lt6911uxe), GFP_KERNEL);
@@ -605,10 +600,10 @@ static int lt6911uxe_probe(struct i2c_client *client)
 		return dev_err_probe(dev, PTR_ERR(lt6911uxe->reset_gpio),
 				     "failed to get reset gpio\n");
 
-	lt6911uxe->irq_gpio = devm_gpiod_get(dev, "hpd", GPIOD_IN);
+	lt6911uxe->irq_gpio = devm_gpiod_get(dev, "readystat", GPIOD_IN);
 	if (IS_ERR(lt6911uxe->irq_gpio))
 		return dev_err_probe(dev, PTR_ERR(lt6911uxe->irq_gpio),
-				     "failed to get hpd gpio\n");
+				     "failed to get ready_stat gpio\n");
 
 	ret = lt6911uxe_fwnode_parse(lt6911uxe, dev);
 	if (ret)
@@ -651,10 +646,12 @@ static int lt6911uxe_probe(struct i2c_client *client)
 	}
 
 	/* Setting irq */
+	irq_pin_flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
+			IRQF_ONESHOT;
+
 	ret = request_threaded_irq(gpiod_to_irq(lt6911uxe->irq_gpio), NULL,
 				   lt6911uxe_threaded_irq_fn,
-				   IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
-				   IRQF_ONESHOT, NULL, lt6911uxe);
+				   irq_pin_flags, NULL, lt6911uxe);
 	if (ret) {
 		dev_err(dev, "failed to request IRQ: %d\n", ret);
 		goto subdev_cleanup;

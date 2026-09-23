@@ -176,4 +176,44 @@ enum nci_ab_access_mode {
 #define IPU6_PSYS_GPDEV_IRQ_FWIRQ(n)		BIT(n)
 #define IPU6_REG_PSYS_GPDEV_FWIRQ(n)		(4 * (n) + 0x1aa100)
 
+/* Trace unit related register definitions */
+#define TRACE_REG_MAX_ISYS_OFFSET       0xfffff
+#define TRACE_REG_MAX_PSYS_OFFSET       0xfffff
+#define IPU_ISYS_OFFSET                 IPU6_ISYS_DMEM_OFFSET
+#define IPU_PSYS_OFFSET                 IPU6_PSYS_DMEM_OFFSET
+/* ISYS trace unit registers */
+/* Trace unit base offset */
+#define IPU_TRACE_REG_IS_TRACE_UNIT_BASE                0x27d000
+/* Trace monitors */
+#define IPU_TRACE_REG_IS_SP_EVQ_BASE            0x211000
+/* GPC blocks */
+#define IPU_TRACE_REG_IS_SP_GPC_BASE            0x210800
+#define IPU_TRACE_REG_IS_ISL_GPC_BASE           0x2b0a00
+#define IPU_TRACE_REG_IS_MMU_GPC_BASE           0x2e0f00
+/* each CSI2 port has a dedicated trace monitor, index 0..7 */
+#define IPU_TRACE_REG_CSI2_TM_BASE(port)        (0x220400 + 0x1000 * (port))
+
+/* Trace timers */
+#define IPU_TRACE_REG_IS_GPREG_TRACE_TIMER_RST_N                0x27c410
+#define TRACE_REG_GPREG_TRACE_TIMER_RST_OFF             BIT(0)
+
+/* SIG2CIO */
+#define IPU_TRACE_REG_CSI2_PORT_SIG2SIO_GR_BASE(port)           \
+				(0x220e00 + (port) * 0x1000)
+
+/* PSYS trace unit registers */
+/* Trace unit base offset */
+#define IPU_TRACE_REG_PS_TRACE_UNIT_BASE                0x1b4000
+/* Trace monitors */
+#define IPU_TRACE_REG_PS_SPC_EVQ_BASE                   0x119000
+#define IPU_TRACE_REG_PS_SPP0_EVQ_BASE                  0x139000
+
+/* GPC blocks */
+#define IPU_TRACE_REG_PS_SPC_GPC_BASE                   0x118800
+#define IPU_TRACE_REG_PS_SPP0_GPC_BASE                  0x138800
+#define IPU_TRACE_REG_PS_MMU_GPC_BASE                   0x1b1b00
+
+/* Trace timers */
+#define IPU_TRACE_REG_PS_GPREG_TRACE_TIMER_RST_N        0x1aa714
+
 #endif /* IPU6_PLATFORM_REGS_H */

@@ -18,6 +18,7 @@
 #include <linux/pci.h>
 #include <linux/pfn.h>
 #include <linux/pm_runtime.h>
+#include <linux/version.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/time64.h>
@@ -445,8 +446,8 @@ irqreturn_t ipu6_buttress_isr_threaded(int irq, void *isp_ptr)
 	return ret;
 }
 
-int ipu6_buttress_power(struct device *dev,
-			const struct ipu6_buttress_ctrl *ctrl, bool on)
+int ipu6_buttress_power(struct device *dev, struct ipu6_buttress_ctrl *ctrl,
+			bool on)
 {
 	struct ipu6_device *isp = to_ipu6_bus_device(dev)->isp;
 	u32 pwr_sts, val;
@@ -480,6 +481,8 @@ int ipu6_buttress_power(struct device *dev,
 		dev_err(&isp->pdev->dev,
 			"Change power status timeout with 0x%x\n", val);
 
+	ctrl->started = !ret && on;
+
 	mutex_unlock(&isp->buttress.power_mutex);
 
 	return ret;
@@ -506,7 +509,11 @@ bool ipu6_buttress_auth_done(struct ipu6_device *isp)
 
 	return val == BUTTRESS_SECURITY_CTL_AUTH_DONE;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_auth_done, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_auth_done, INTEL_IPU6);
+#endif
 
 int ipu6_buttress_reset_authentication(struct ipu6_device *isp)
 {
@@ -552,7 +559,7 @@ int ipu6_buttress_map_fw_image(struct ipu6_bus_device *sys,
 	if (!is_vmalloc && !virt_addr_valid(fw->data))
 		return -EDOM;
 
-	n_pages = PFN_UP(fw->size);
+	n_pages = PHYS_PFN(PAGE_ALIGN(fw->size));
 
 	pages = kmalloc_array(n_pages, sizeof(*pages), GFP_KERNEL);
 	if (!pages)
@@ -598,7 +605,11 @@ out:
 
 	return ret;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_map_fw_image, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_map_fw_image, INTEL_IPU6);
+#endif
 
 void ipu6_buttress_unmap_fw_image(struct ipu6_bus_device *sys,
 				  struct sg_table *sgt)
@@ -609,7 +620,11 @@ void ipu6_buttress_unmap_fw_image(struct ipu6_bus_device *sys,
 	dma_unmap_sgtable(&pdev->dev, sgt, DMA_TO_DEVICE, 0);
 	sg_free_table(sgt);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_unmap_fw_image, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_unmap_fw_image, INTEL_IPU6);
+#endif
 
 int ipu6_buttress_authenticate(struct ipu6_device *isp)
 {
@@ -774,8 +789,11 @@ int ipu6_buttress_start_tsc_sync(struct ipu6_device *isp)
 
 	return -ETIMEDOUT;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_start_tsc_sync, "INTEL_IPU6");
-
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_start_tsc_sync, INTEL_IPU6);
+#endif
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
 /*
  * The dev_id was hard code in platform data, as i2c bus number
@@ -816,9 +834,12 @@ int ipu6_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len)
 	WARN_ON_ONCE(1);
 	return -1;
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_get_i2c_bus_id, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_get_i2c_bus_id, INTEL_IPU6);
 #endif
-
+#endif
 void ipu6_buttress_tsc_read(struct ipu6_device *isp, u64 *val)
 {
 	u32 tsc_hi_1, tsc_hi_2, tsc_lo;
@@ -839,7 +860,11 @@ void ipu6_buttress_tsc_read(struct ipu6_device *isp, u64 *val)
 	}
 	local_irq_restore(flags);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_read, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_read, INTEL_IPU6);
+#endif
 
 u64 ipu6_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu6_device *isp)
 {
@@ -854,7 +879,11 @@ u64 ipu6_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu6_device *isp)
 	 */
 	return div_u64(ns, isp->buttress.ref_clk);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_ticks_to_ns, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_buttress_tsc_ticks_to_ns, INTEL_IPU6);
+#endif
 
 void ipu6_buttress_restore(struct ipu6_device *isp)
 {
@@ -890,10 +919,10 @@ int ipu6_buttress_init(struct ipu6_device *isp)
 	INIT_LIST_HEAD(&b->constraints);
 
 	isp->secure_mode = ipu6_buttress_get_secure_mode(isp);
-	dev_dbg(&isp->pdev->dev, "IPU6 in %s mode touch 0x%x mask 0x%x\n",
-		isp->secure_mode ? "secure" : "non-secure",
-		readl(isp->base + BUTTRESS_REG_SECURITY_TOUCH),
-		readl(isp->base + BUTTRESS_REG_CAMERA_MASK));
+	dev_info(&isp->pdev->dev, "IPU6 in %s mode touch 0x%x mask 0x%x\n",
+		 isp->secure_mode ? "secure" : "non-secure",
+		 readl(isp->base + BUTTRESS_REG_SECURITY_TOUCH),
+		 readl(isp->base + BUTTRESS_REG_CAMERA_MASK));
 
 	b->wdt_cached_value = readl(isp->base + BUTTRESS_REG_WDT);
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);

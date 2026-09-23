@@ -5,7 +5,6 @@
 
 #include <linux/bitfield.h>
 #include <linux/bits.h>
-#include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/firmware.h>
@@ -20,6 +19,7 @@
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 #include <media/ipu-bridge.h>
 #include <media/ipu6-pci-table.h>
@@ -33,6 +33,7 @@
 #include "ipu6-platform-buttress-regs.h"
 #include "ipu6-platform-isys-csi2-reg.h"
 #include "ipu6-platform-regs.h"
+#include "ipu6-trace.h"
 
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
 #include <media/ipu-get-acpi.h>
@@ -269,8 +270,7 @@ ipu6_pkg_dir_configure_spc(struct ipu6_device *isp,
 		dma_addr = sg_dma_address(isp->psys->fw_sgt.sgl);
 
 	pg_offset = server_fw_addr - dma_addr;
-	prog = (struct ipu6_cell_program *)((uintptr_t)isp->cpd_fw->data +
-					    pg_offset);
+	prog = (struct ipu6_cell_program *)((u64)isp->cpd_fw->data + pg_offset);
 	spc_base = base + prog->regs_addr;
 	if (spc_base != (base + hw_variant->spc_offset))
 		dev_warn(&isp->pdev->dev,
@@ -303,7 +303,11 @@ void ipu6_configure_spc(struct ipu6_device *isp,
 		ipu6_pkg_dir_configure_spc(isp, hw_variant, pkg_dir_idx, base,
 					   pkg_dir, pkg_dir_dma_addr);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu6_configure_spc, "INTEL_IPU6");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu6_configure_spc, INTEL_IPU6);
+#endif
 
 #define IPU6_ISYS_CSI2_NPORTS		4
 #define IPU6SE_ISYS_CSI2_NPORTS		4
@@ -390,9 +394,9 @@ static void ipu6_internal_pdata_init(struct ipu6_device *isp)
 static struct ipu6_bus_device *
 ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
 	       struct ipu6_buttress_ctrl *ctrl, void __iomem *base,
-	       const struct ipu6_isys_internal_pdata *ipdata
+	       const struct ipu6_isys_internal_pdata *ipdata,
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
-	       , struct ipu_isys_subdev_pdata *spdata
+	       struct ipu_isys_subdev_pdata *spdata
 #endif
 			)
 {
@@ -522,6 +526,11 @@ static int ipu6_pci_config_setup(struct pci_dev *dev, u8 hw_ver)
 {
 	int ret;
 
+	/* disable IPU6 PCI ATS on mtl ES2 */
+	if (is_ipu6ep_mtl(hw_ver) && boot_cpu_data.x86_stepping == 0x2 &&
+	    pci_ats_supported(dev))
+		pci_disable_ats(dev);
+
 	/* No PCI msi capability for IPU6EP */
 	if (is_ipu6ep(hw_ver) || is_ipu6ep_mtl(hw_ver)) {
 		/* likely do nothing as msi not enabled by default */
@@ -535,6 +544,37 @@ static int ipu6_pci_config_setup(struct pci_dev *dev, u8 hw_ver)
 
 	return 0;
 }
+
+#ifdef CONFIG_DEBUG_FS
+static int ipu_init_debugfs(struct ipu6_device *isp)
+{
+	struct dentry *dir;
+
+	dir = debugfs_create_dir(IPU6_NAME, NULL);
+	if (!dir)
+		return -ENOMEM;
+
+	if (ipu_trace_debugfs_add(isp, dir))
+		goto err;
+
+	isp->ipu_dir = dir;
+
+	return 0;
+err:
+	debugfs_remove_recursive(dir);
+	return -ENOMEM;
+}
+
+static void ipu_remove_debugfs(struct ipu6_device *isp)
+{
+	/*
+	 * Since isys and psys debugfs dir will be created under ipu root dir,
+	 * mark its dentry to NULL to avoid duplicate removal.
+	 */
+	debugfs_remove_recursive(isp->ipu_dir);
+	isp->ipu_dir = NULL;
+}
+#endif /* CONFIG_DEBUG_FS */
 
 static void ipu6_configure_vc_mechanism(struct ipu6_device *isp)
 {
@@ -578,19 +618,14 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	phys = pci_resource_start(pdev, IPU6_PCI_BAR);
 	dev_dbg(dev, "IPU6 PCI bar[%u] = %pa\n", IPU6_PCI_BAR, &phys);
 
-	isp->base = pcim_iomap_region(pdev, IPU6_PCI_BAR, IPU6_NAME);
-	if (IS_ERR(isp->base))
-		return dev_err_probe(dev, PTR_ERR(isp->base),
-				     "Failed to I/O mem remapping\n");
+	ret = pcim_iomap_regions(pdev, 1 << IPU6_PCI_BAR, pci_name(pdev));
+	if (ret)
+		return dev_err_probe(dev, ret, "Failed to I/O mem remapping\n");
 
+	isp->base = pcim_iomap_table(pdev)[IPU6_PCI_BAR];
 	pci_set_drvdata(pdev, isp);
 	pci_set_master(pdev);
 
-#ifdef CONFIG_DEBUG_FS
-	isp->ipu_dir = debugfs_create_dir(dev_name(dev), NULL);
-	if (IS_ERR(isp->ipu_dir))
-		isp->ipu_dir = NULL;
-#endif
 	isp->cpd_metadata_cmpnt_size = sizeof(struct ipu6_cpd_metadata_cmpnt);
 	switch (id->device) {
 	case PCI_DEVICE_ID_INTEL_IPU6:
@@ -649,6 +684,10 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto buttress_exit;
 	}
 
+	ret = ipu_trace_add(isp);
+	if (ret)
+		dev_err(&isp->pdev->dev, "Trace support not available\n");
+
 	ret = ipu6_cpd_validate_cpd_file(isp, isp->cpd_fw->data,
 					 isp->cpd_fw->size);
 	if (ret) {
@@ -665,9 +704,9 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	isp->isys = ipu6_isys_init(pdev, dev, isys_ctrl, isys_base,
-				   &isys_ipdata
+				   &isys_ipdata,
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
-				   , pdev->dev.platform_data
+				  pdev->dev.platform_data
 #endif
 					);
 	if (IS_ERR(isp->isys)) {
@@ -697,21 +736,21 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret) {
 		dev_err_probe(&isp->pdev->dev, ret,
 			      "Failed to set MMU hardware\n");
-		goto out_ipu6_rpm_put;
+		goto out_ipu6_bus_del_devices;
 	}
 
 	ret = ipu6_buttress_map_fw_image(isp->psys, isp->cpd_fw,
 					 &isp->psys->fw_sgt);
 	if (ret) {
 		dev_err_probe(&isp->pdev->dev, ret, "failed to map fw image\n");
-		goto out_ipu6_rpm_put;
+		goto out_ipu6_bus_del_devices;
 	}
 
 	ret = ipu6_cpd_create_pkg_dir(isp->psys, isp->cpd_fw->data);
 	if (ret) {
 		dev_err_probe(&isp->pdev->dev, ret,
 			      "failed to create pkg dir\n");
-		goto out_ipu6_rpm_put;
+		goto out_ipu6_bus_del_devices;
 	}
 
 	ret = devm_request_threaded_irq(dev, pdev->irq, ipu6_buttress_isr,
@@ -719,7 +758,7 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 					IRQF_SHARED, IPU6_NAME, isp);
 	if (ret) {
 		dev_err_probe(dev, ret, "Requesting irq failed\n");
-		goto out_ipu6_rpm_put;
+		goto out_ipu6_bus_del_devices;
 	}
 
 	ret = ipu6_buttress_authenticate(isp);
@@ -731,6 +770,13 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	ipu6_mmu_hw_cleanup(isp->psys->mmu);
 	pm_runtime_put(&isp->psys->auxdev.dev);
+
+#ifdef CONFIG_DEBUG_FS
+	ret = ipu_init_debugfs(isp);
+	if (ret) {
+		dev_err(&isp->pdev->dev, "Failed to initialize debugfs");
+	}
+#endif
 
 	/* Configure the arbitration mechanisms for VC requests */
 	ipu6_configure_vc_mechanism(isp);
@@ -750,10 +796,8 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 out_free_irq:
 	devm_free_irq(dev, pdev->irq, isp);
-out_ipu6_rpm_put:
-	pm_runtime_put_sync(&isp->psys->auxdev.dev);
 out_ipu6_bus_del_devices:
-	if (!IS_ERR_OR_NULL(isp->psys)) {
+	if (isp->psys) {
 		ipu6_cpd_free_pkg_dir(isp->psys);
 		ipu6_buttress_unmap_fw_image(isp->psys, &isp->psys->fw_sgt);
 	}
@@ -762,7 +806,6 @@ out_ipu6_bus_del_devices:
 	if (!IS_ERR_OR_NULL(isp->isys) && !IS_ERR_OR_NULL(isp->isys->mmu))
 		ipu6_mmu_cleanup(isp->isys->mmu);
 	ipu6_bus_del_devices(pdev);
-	debugfs_remove_recursive(isp->ipu_dir);
 	release_firmware(isp->cpd_fw);
 buttress_exit:
 	ipu6_buttress_exit(isp);
@@ -776,6 +819,11 @@ static void ipu6_pci_remove(struct pci_dev *pdev)
 	struct ipu6_mmu *isys_mmu = isp->isys->mmu;
 	struct ipu6_mmu *psys_mmu = isp->psys->mmu;
 
+#ifdef CONFIG_DEBUG_FS
+	ipu_remove_debugfs(isp);
+#endif
+	ipu_trace_release(isp);
+
 	devm_free_irq(&pdev->dev, pdev->irq, isp);
 	ipu6_cpd_free_pkg_dir(isp->psys);
 
@@ -783,7 +831,6 @@ static void ipu6_pci_remove(struct pci_dev *pdev)
 	ipu6_buttress_exit(isp);
 
 	ipu6_bus_del_devices(pdev);
-	debugfs_remove_recursive(isp->ipu_dir);
 
 	pm_runtime_forbid(&pdev->dev);
 	pm_runtime_get_noresume(&pdev->dev);
@@ -906,7 +953,11 @@ static struct pci_driver ipu6_pci_driver = {
 
 module_pci_driver(ipu6_pci_driver);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
+MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+#else
 MODULE_IMPORT_NS("INTEL_IPU_BRIDGE");
+#endif
 MODULE_AUTHOR("Sakari Ailus <sakari.ailus@linux.intel.com>");
 MODULE_AUTHOR("Tianshu Qiu <tian.shu.qiu@intel.com>");
 MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");

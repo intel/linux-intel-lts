@@ -234,7 +234,7 @@ static int ipu7_psys_handle_task_done(struct ipu7_psys *psys,
 	mutex_lock(&ip->event_mutex);
 	if (!list_empty(&ip->event_list)) {
 		event = list_first_entry(&ip->event_list,
-						struct ipu_psys_task_ack, list);
+				       struct ipu_psys_task_ack, list);
 		event->graph_id = ack_msg->graph_id;
 		event->node_ctx_id = ack_msg->node_ctx_id;
 		event->frame_id = ack_msg->frame_id;

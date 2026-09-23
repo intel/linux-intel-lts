@@ -15,7 +15,10 @@
 struct firmware;
 struct pci_dev;
 
+#define IPU6_BUS_NAME	IPU6_NAME "-bus"
+
 struct ipu6_buttress_ctrl;
+struct ipu_subsystem_trace_config;
 
 struct ipu6_bus_device {
 	struct auxiliary_device auxdev;
@@ -25,7 +28,9 @@ struct ipu6_bus_device {
 	void *pdata;
 	struct ipu6_mmu *mmu;
 	struct ipu6_device *isp;
+	struct ipu_subsystem_trace_config *trace_cfg;
 	struct ipu6_buttress_ctrl *ctrl;
+	u64 dma_mask;
 	const struct firmware *fw;
 	struct sg_table fw_sgt;
 	u64 *pkg_dir;

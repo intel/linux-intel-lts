@@ -7,7 +7,9 @@
 #include <linux/bitfield.h>
 #include <linux/bits.h>
 #include <linux/bug.h>
+#ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
+#endif
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/firmware.h>
@@ -22,6 +24,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
 
 #include <media/ipu-bridge.h>
 
@@ -36,11 +39,11 @@
 #include "ipu7-isys-csi2-regs.h"
 #include "ipu7-mmu.h"
 #include "ipu7-platform-regs.h"
+
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
 #include <media/ipu-get-acpi.h>
 
 #endif
-
 #define IPU_PCI_BAR		0
 #define IPU_PCI_PBBAR		4
 
@@ -2133,10 +2136,10 @@ static int ipu7_isys_check_fwnode_graph(struct fwnode_handle *fwnode)
 
 static struct ipu7_bus_device *
 ipu7_isys_init(struct pci_dev *pdev, struct device *parent,
-		const struct ipu_buttress_ctrl *ctrl, void __iomem *base,
-		struct ipu7_isys_subdev_pdata *spdata,
-		const struct ipu_isys_internal_pdata *ipdata,
-		unsigned int nr)
+	       const struct ipu_buttress_ctrl *ctrl, void __iomem *base,
+	       struct ipu7_isys_subdev_pdata *spdata,
+	       const struct ipu_isys_internal_pdata *ipdata,
+	       unsigned int nr)
 {
 	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 	struct ipu7_bus_device *isys_adev;
@@ -2179,18 +2182,21 @@ ipu7_isys_init(struct pci_dev *pdev, struct device *parent,
 	isys_adev->mmu = ipu7_mmu_init(dev, base, ISYS_MMID,
 				       &ipdata->hw_variant);
 	if (IS_ERR(isys_adev->mmu)) {
-		ret = dev_err_probe(dev, PTR_ERR(isys_adev->mmu),
-				    "ipu7_mmu_init(isys_adev->mmu) failed\n");
+		dev_err_probe(dev, PTR_ERR(isys_adev->mmu),
+			      "ipu7_mmu_init(isys_adev->mmu) failed\n");
 		put_device(&isys_adev->auxdev.dev);
-		return ERR_PTR(ret);
+		kfree(pdata);
+		return ERR_CAST(isys_adev->mmu);
 	}
 
 	isys_adev->mmu->dev = &isys_adev->auxdev.dev;
 	isys_adev->subsys = IPU_IS;
 
 	ret = ipu7_bus_add_device(isys_adev);
-	if (ret)
+	if (ret) {
+		kfree(pdata);
 		return ERR_PTR(ret);
+	}
 
 	return isys_adev;
 }
@@ -2223,18 +2229,21 @@ ipu7_psys_init(struct pci_dev *pdev, struct device *parent,
 	psys_adev->mmu = ipu7_mmu_init(&pdev->dev, base, PSYS_MMID,
 				       &ipdata->hw_variant);
 	if (IS_ERR(psys_adev->mmu)) {
-		ret = dev_err_probe(&pdev->dev, PTR_ERR(psys_adev->mmu),
-				    "ipu7_mmu_init(psys_adev->mmu) failed\n");
+		dev_err_probe(&pdev->dev, PTR_ERR(psys_adev->mmu),
+			      "ipu7_mmu_init(psys_adev->mmu) failed\n");
 		put_device(&psys_adev->auxdev.dev);
-		return ERR_PTR(ret);
+		kfree(pdata);
+		return ERR_CAST(psys_adev->mmu);
 	}
 
 	psys_adev->mmu->dev = &psys_adev->auxdev.dev;
 	psys_adev->subsys = IPU_PS;
 
 	ret = ipu7_bus_add_device(psys_adev);
-	if (ret)
+	if (ret) {
+		kfree(pdata);
 		return ERR_PTR(ret);
+	}
 
 	return psys_adev;
 }
@@ -2249,7 +2258,54 @@ void ipu7_dump_fw_error_log(const struct ipu7_bus_device *adev)
 	memcpy_fromio(&fw_error_log[adev->subsys], reg,
 		      sizeof(fw_error_log[adev->subsys]));
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 EXPORT_SYMBOL_NS_GPL(ipu7_dump_fw_error_log, "INTEL_IPU7");
+#else
+EXPORT_SYMBOL_NS_GPL(ipu7_dump_fw_error_log, INTEL_IPU7);
+#endif
+
+#ifdef CONFIG_DEBUG_FS
+static struct debugfs_blob_wrapper isys_fw_error;
+static struct debugfs_blob_wrapper psys_fw_error;
+
+static int ipu7_init_debugfs(struct ipu7_device *isp)
+{
+	struct dentry *file;
+	struct dentry *dir;
+
+	dir = debugfs_create_dir(pci_name(isp->pdev), NULL);
+	if (!dir)
+		return -ENOMEM;
+
+	isys_fw_error.data = &fw_error_log[IPU_IS];
+	isys_fw_error.size = sizeof(fw_error_log[IPU_IS]);
+	file = debugfs_create_blob("is_fw_error", 0400, dir, &isys_fw_error);
+	if (!file)
+		goto err;
+	psys_fw_error.data = &fw_error_log[IPU_PS];
+	psys_fw_error.size = sizeof(fw_error_log[IPU_PS]);
+	file = debugfs_create_blob("ps_fw_error", 0400, dir, &psys_fw_error);
+	if (!file)
+		goto err;
+
+	isp->ipu7_dir = dir;
+
+	return 0;
+err:
+	debugfs_remove_recursive(dir);
+	return -ENOMEM;
+}
+
+static void ipu7_remove_debugfs(struct ipu7_device *isp)
+{
+	/*
+	 * Since isys and psys debugfs dir will be created under ipu root dir,
+	 * mark its dentry to NULL to avoid duplicate removal.
+	 */
+	debugfs_remove_recursive(isp->ipu7_dir);
+	isp->ipu7_dir = NULL;
+}
+#endif /* CONFIG_DEBUG_FS */
 
 static void ipu7_pci_config_setup(struct pci_dev *dev)
 {
@@ -2419,6 +2475,9 @@ static int ipu7_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	struct device *dev = &pdev->dev;
 	void __iomem *isys_base = NULL;
 	void __iomem *psys_base = NULL;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+	void __iomem *const *iomap;
+#endif
 	phys_addr_t phys, pb_phys;
 	struct ipu7_device *isp;
 	u32 is_es;
@@ -2446,6 +2505,23 @@ static int ipu7_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	dev_info(dev, "IPU7 PCI BAR0 base %pap BAR2 base %pap\n",
 		 &phys, &pb_phys);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+	ret = pcim_iomap_regions(pdev, BIT(IPU_PCI_BAR) | BIT(IPU_PCI_PBBAR),
+				 pci_name(pdev));
+	if (ret)
+		return dev_err_probe(dev, ret,
+				     "Failed to I/O memory remapping (%d)\n",
+				     ret);
+
+	iomap = pcim_iomap_table(pdev);
+	if (!iomap)
+		return dev_err_probe(dev, -ENODEV, "Failed to iomap table\n");
+
+	isp->base = iomap[IPU_PCI_BAR];
+	isp->pb_base = iomap[IPU_PCI_PBBAR];
+	dev_info(dev, "IPU7 PCI BAR0 mapped at %p\n BAR2 mapped at %p\n",
+		 isp->base, isp->pb_base);
+#else
 	isp->base = pcim_iomap_region(pdev, IPU_PCI_BAR, IPU_NAME);
 	if (IS_ERR(isp->base))
 		return dev_err_probe(dev, PTR_ERR(isp->base),
@@ -2460,15 +2536,11 @@ static int ipu7_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	dev_info(dev, "IPU7 PCI BAR0 mapped at %p\n BAR2 mapped at %p\n",
 		 isp->base, isp->pb_base);
+#endif
 
 	pci_set_drvdata(pdev, isp);
 	pci_set_master(pdev);
 
-#ifdef CONFIG_DEBUG_FS
-	isp->ipu7_dir = debugfs_create_dir(dev_name(dev), NULL);
-	if (IS_ERR(isp->ipu7_dir))
-		isp->ipu7_dir = NULL;
-#endif
 	switch (id->device) {
 	case IPU7_PCI_ID:
 		isp->hw_ver = IPU_VER_7;
@@ -2547,10 +2619,9 @@ static int ipu7_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
 	ipu_get_acpi_devices_new(&dev->platform_data);
 #endif
-
 	isp->isys = ipu7_isys_init(pdev, dev, isys_ctrl, isys_base,
-					dev->platform_data,
-					isys_ipdata, 0);
+				   dev->platform_data,
+				   isys_ipdata, 0);
 	if (IS_ERR(isp->isys)) {
 		ret = PTR_ERR(isp->isys);
 		goto out_ipu_bus_del_devices;
@@ -2617,6 +2688,13 @@ static int ipu7_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		pm_runtime_put(&isp->psys->auxdev.dev);
 	}
 
+#ifdef CONFIG_DEBUG_FS
+	ret = ipu7_init_debugfs(isp);
+	if (ret) {
+		dev_err_probe(dev, ret, "Failed to initialize debugfs\n");
+		goto out_ipu_bus_del_devices;
+	}
+#endif
 	pm_runtime_put_noidle(dev);
 	pm_runtime_allow(dev);
 
@@ -2629,6 +2707,10 @@ out_ipu_bus_del_devices:
 		ipu7_unmap_fw_code_region(isp->isys);
 	if (!IS_ERR_OR_NULL(isp->psys) && isp->psys->fw_sgt.nents)
 		ipu7_unmap_fw_code_region(isp->psys);
+#ifdef CONFIG_DEBUG_FS
+	if (!IS_ERR_OR_NULL(isp->fw_code_region))
+		vfree(isp->fw_code_region);
+#endif
 	if (!IS_ERR_OR_NULL(isp->psys) && !IS_ERR_OR_NULL(isp->psys->mmu))
 		ipu7_mmu_cleanup(isp->psys->mmu);
 	if (!IS_ERR_OR_NULL(isp->isys) && !IS_ERR_OR_NULL(isp->isys->mmu))
@@ -2636,7 +2718,6 @@ out_ipu_bus_del_devices:
 	if (!IS_ERR_OR_NULL(isp->psys))
 		pm_runtime_put_sync(&isp->psys->auxdev.dev);
 	ipu7_bus_del_devices(pdev);
-	debugfs_remove_recursive(isp->ipu7_dir);
 	release_firmware(isp->cpd_fw);
 buttress_exit:
 	ipu_buttress_exit(isp);
@@ -2650,6 +2731,9 @@ static void ipu7_pci_remove(struct pci_dev *pdev)
 {
 	struct ipu7_device *isp = pci_get_drvdata(pdev);
 
+#ifdef CONFIG_DEBUG_FS
+	ipu7_remove_debugfs(isp);
+#endif
 	if (!IS_ERR_OR_NULL(isp->isys) && isp->isys->fw_sgt.nents)
 		ipu7_unmap_fw_code_region(isp->isys);
 	if (!IS_ERR_OR_NULL(isp->psys) && isp->psys->fw_sgt.nents)
@@ -2662,7 +2746,6 @@ static void ipu7_pci_remove(struct pci_dev *pdev)
 	ipu7_mmu_cleanup(isp->psys->mmu);
 
 	ipu7_bus_del_devices(pdev);
-	debugfs_remove_recursive(isp->ipu7_dir);
 
 	pm_runtime_forbid(&pdev->dev);
 	pm_runtime_get_noresume(&pdev->dev);
@@ -2700,10 +2783,6 @@ static void ipu7_pci_reset_done(struct pci_dev *pdev)
  */
 static int ipu7_suspend(struct device *dev)
 {
-	struct pci_dev *pdev = to_pci_dev(dev);
-
-	synchronize_irq(pdev->irq);
-
 	return 0;
 }
 
@@ -2790,7 +2869,11 @@ static struct pci_driver ipu7_pci_driver = {
 
 module_pci_driver(ipu7_pci_driver);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 MODULE_IMPORT_NS("INTEL_IPU_BRIDGE");
+#else
+MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+#endif
 MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");
 MODULE_AUTHOR("Tianshu Qiu <tian.shu.qiu@intel.com>");
 MODULE_AUTHOR("Qingwu Zhang <qingwu.zhang@intel.com>");

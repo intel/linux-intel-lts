@@ -24,6 +24,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
+#include <linux/version.h>
 
 #include <media/ipu-bridge.h>
 #include <media/media-device.h>
@@ -44,6 +45,7 @@
 #include "ipu6-platform-buttress-regs.h"
 #include "ipu6-platform-isys-csi2-reg.h"
 #include "ipu6-platform-regs.h"
+#include "ipu6-trace.h"
 
 #define IPU6_BUTTRESS_FABIC_CONTROL		0x68
 #define GDA_ENABLE_IWAKE_INDEX			2
@@ -659,9 +661,11 @@ irqreturn_t isys_isr(struct ipu6_bus_device *adev)
 	u32 status_sw, status_csi;
 	u32 ctrl0_status, ctrl0_clear;
 
+	dev_dbg(&adev->auxdev.dev, "%s enter", __func__);
 	spin_lock(&isys->power_lock);
 	if (!isys->power) {
 		spin_unlock(&isys->power_lock);
+		dev_dbg(&adev->auxdev.dev, "%s exit, no power", __func__);
 		return IRQ_NONE;
 	}
 
@@ -710,6 +714,7 @@ irqreturn_t isys_isr(struct ipu6_bus_device *adev)
 
 	spin_unlock(&isys->power_lock);
 
+	dev_dbg(&adev->auxdev.dev, "%s exit", __func__);
 	return IRQ_HANDLED;
 }
 
@@ -888,7 +893,7 @@ void update_watermark_setting(struct ipu6_isys *isys)
 	}
 
 	enable_iwake(isys, true);
-	calc_fill_time_us = div64_u64(max_sram_size, isys_pb_datarate_mbs);
+	calc_fill_time_us = max_sram_size / isys_pb_datarate_mbs;
 
 	if (isys->pdata->ipdata->enhanced_iwake) {
 		ltr = isys->pdata->ipdata->ltr;
@@ -1356,11 +1361,11 @@ void ipu6_cleanup_fw_msg_bufs(struct ipu6_isys *isys)
 	spin_unlock_irqrestore(&isys->listlock, flags);
 }
 
-void ipu6_put_fw_msg_buf(struct ipu6_isys *isys, uintptr_t data)
+void ipu6_put_fw_msg_buf(struct ipu6_isys *isys, u64 data)
 {
 	struct isys_fw_msgs *msg;
 	unsigned long flags;
-	void *ptr = (void *)data;
+	u64 *ptr = (u64 *)data;
 
 	if (!ptr)
 		return;
@@ -1370,6 +1375,46 @@ void ipu6_put_fw_msg_buf(struct ipu6_isys *isys, uintptr_t data)
 	list_move(&msg->head, &isys->framebuflist);
 	spin_unlock_irqrestore(&isys->listlock, flags);
 }
+
+struct ipu_trace_block isys_trace_blocks[] = {
+	{
+		.offset = IPU_TRACE_REG_IS_TRACE_UNIT_BASE,
+		.type = IPU_TRACE_BLOCK_TUN,
+	},
+	{
+		.offset = IPU_TRACE_REG_IS_SP_EVQ_BASE,
+		.type = IPU_TRACE_BLOCK_TM,
+	},
+	{
+		.offset = IPU_TRACE_REG_IS_SP_GPC_BASE,
+		.type = IPU_TRACE_BLOCK_GPC,
+	},
+	{
+		.offset = IPU_TRACE_REG_IS_ISL_GPC_BASE,
+		.type = IPU_TRACE_BLOCK_GPC,
+	},
+	{
+		.offset = IPU_TRACE_REG_IS_MMU_GPC_BASE,
+		.type = IPU_TRACE_BLOCK_GPC,
+	},
+	{
+		/* Note! this covers all 8 blocks */
+		.offset = IPU_TRACE_REG_CSI2_TM_BASE(0),
+		.type = IPU_TRACE_CSI2,
+	},
+	{
+		/* Note! this covers all 11 blocks */
+		.offset = IPU_TRACE_REG_CSI2_PORT_SIG2SIO_GR_BASE(0),
+		.type = IPU_TRACE_SIG2CIOS,
+	},
+	{
+		.offset = IPU_TRACE_REG_IS_GPREG_TRACE_TIMER_RST_N,
+		.type = IPU_TRACE_TIMER_RST,
+	},
+	{
+		.type = IPU_TRACE_BLOCK_END,
+	}
+};
 
 static int isys_probe(struct auxiliary_device *auxdev,
 		      const struct auxiliary_device_id *auxdev_id)
@@ -1424,6 +1469,7 @@ static int isys_probe(struct auxiliary_device *auxdev,
 	INIT_LIST_HEAD(&isys->framebuflist);
 	INIT_LIST_HEAD(&isys->framebuflist_fw);
 
+	isys->line_align = IPU6_ISYS_2600_MEM_LINE_ALIGN;
 	isys->icache_prefetch = 0;
 
 	dev_set_drvdata(&auxdev->dev, isys);
@@ -1441,6 +1487,8 @@ static int isys_probe(struct auxiliary_device *auxdev,
 			goto remove_shared_buffer;
 	}
 
+	ipu_trace_init(adev->isp, isys->pdata->base, &auxdev->dev,
+		       isys_trace_blocks);
 	cpu_latency_qos_add_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
 
 	ret = alloc_fw_msg_bufs(isys, 20);
@@ -1470,6 +1518,7 @@ static int isys_probe(struct auxiliary_device *auxdev,
 free_fw_msg_bufs:
 	free_fw_msg_bufs(isys);
 out_remove_pkg_dir_shared_buffer:
+	ipu_trace_uninit(&auxdev->dev);
 	cpu_latency_qos_remove_request(&isys->pm_qos);
 	if (!isp->secure_mode)
 		ipu6_cpd_free_pkg_dir(adev);
@@ -1515,6 +1564,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
 		mutex_destroy(&isys->streams[i].mutex);
 
 	isys_iwake_watermark_cleanup(isys);
+	ipu_trace_uninit(&auxdev->dev);
 	mutex_destroy(&isys->stream_mutex);
 	mutex_destroy(&isys->mutex);
 #ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
@@ -1567,12 +1617,17 @@ static int isys_isr_one(struct ipu6_bus_device *adev)
 	u32 index;
 	u64 ts;
 
-	if (!isys->fwcom)
+	dev_dbg(&adev->auxdev.dev, "%s enter", __func__);
+	if (!isys->fwcom) {
+		dev_dbg(&adev->auxdev.dev, "%s exit, fwcom is null", __func__);
 		return 1;
+	}
 
 	resp = ipu6_fw_isys_get_resp(isys->fwcom, IPU6_BASE_MSG_RECV_QUEUES);
-	if (!resp)
+	if (!resp) {
+		dev_dbg(&adev->auxdev.dev, "%s exit, resp is null", __func__);
 		return 1;
+	}
 
 	ts = (u64)resp->timestamp[1] << 32 | resp->timestamp[0];
 
@@ -1634,11 +1689,12 @@ static int isys_isr_one(struct ipu6_bus_device *adev)
 		 */
 		ipu6_put_fw_msg_buf(ipu6_bus_get_drvdata(adev), resp->buf_id);
 		if (resp->pin_id < IPU6_ISYS_OUTPUT_PINS &&
-		    stream->output_pins_queue[resp->pin_id])
-			ipu6_isys_queue_buf_ready(stream, resp);
+		    stream->output_pins[resp->pin_id].pin_ready)
+			stream->output_pins[resp->pin_id].pin_ready(stream,
+								    resp);
 		else
 			dev_warn(&adev->auxdev.dev,
-				 "%d:No queue for pin id %d\n",
+				 "%d:No data pin ready handler for pin id %d\n",
 				 resp->stream_handle, resp->pin_id);
 		if (csi2)
 			ipu6_isys_csi2_error(csi2);
@@ -1680,6 +1736,7 @@ static int isys_isr_one(struct ipu6_bus_device *adev)
 	ipu6_isys_put_stream(stream);
 leave:
 	ipu6_fw_isys_put_resp(isys->fwcom, IPU6_BASE_MSG_RECV_QUEUES);
+	dev_dbg(&adev->auxdev.dev, "%s exit", __func__);
 	return 0;
 }
 
@@ -1717,5 +1774,10 @@ MODULE_AUTHOR("Yunliang Ding <yunliang.ding@intel.com>");
 MODULE_AUTHOR("Hongju Wang <hongju.wang@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel IPU6 input system driver");
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
+MODULE_IMPORT_NS(INTEL_IPU6);
+MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+#else
 MODULE_IMPORT_NS("INTEL_IPU6");
 MODULE_IMPORT_NS("INTEL_IPU_BRIDGE");
+#endif
