@@ -141,7 +141,7 @@
 #define MAX9296A_MIPI_PHY20(x)			(0x344 + (x))
 
 #define MAX9296A_MIPI_TX3(x)			(0x403 + (x) * 0x40)
-#define MAX9296A_MIPI_TX3_DESKEW_INIT_8X32K	FIELD_PREP(GENMASK(2, 0), 0b001)
+#define MAX9296A_MIPI_TX3_DESKEW_INIT_8X32K	FIELD_PREP(GENMASK(2, 0), 0b111)
 #define MAX9296A_MIPI_TX3_DESKEW_INIT_AUTO	BIT(7)
 
 #define MAX9296A_MIPI_TX4(x)			(0x404 + (x) * 0x40)
@@ -569,19 +569,25 @@ static int max9296a_init_phy(struct max_des *des, struct max_des_phy *phy)
 		return ret;
 
 	if (dpll_freq > 1500000000ull) {
-		/* Enable initial deskew with 2 x 32k UI. */
+		/* Enable initial deskew with 8 x 32k UI. */
 		ret = regmap_write(priv->regmap, MAX9296A_MIPI_TX3(hw_index),
 				   MAX9296A_MIPI_TX3_DESKEW_INIT_AUTO |
 				   MAX9296A_MIPI_TX3_DESKEW_INIT_8X32K);
 		if (ret)
 			return ret;
 
-		/* Enable periodic deskew with 2 x 1k UI.. */
+		/* Disable periodic deskew.*/
+		ret = regmap_write(priv->regmap, MAX9296A_MIPI_TX4(hw_index), 0x0);
+		if (ret)
+			return ret;
+
+		/*
 		ret = regmap_write(priv->regmap, MAX9296A_MIPI_TX4(hw_index),
 				   MAX9296A_MIPI_TX4_DESKEW_PER_AUTO |
 				   MAX9296A_MIPI_TX4_DESKEW_PER_2K);
 		if (ret)
 			return ret;
+		*/
 	} else {
 		/* Disable initial deskew. */
 		ret = regmap_write(priv->regmap, MAX9296A_MIPI_TX3(hw_index), 0x0);
