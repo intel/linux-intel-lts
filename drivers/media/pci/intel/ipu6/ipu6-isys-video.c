@@ -1266,14 +1266,16 @@ void ipu6_isys_fw_close(struct ipu6_isys *isys)
 
 	mutex_unlock(&isys->mutex);
 
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
 	mutex_lock(&isys->reset_mutex);
 	if (isys->need_reset) {
 		mutex_unlock(&isys->reset_mutex);
 		pm_runtime_put_sync(&isys->adev->auxdev.dev);
-	} else {
-		mutex_unlock(&isys->reset_mutex);
-		pm_runtime_put(&isys->adev->auxdev.dev);
+		return;
 	}
+	mutex_unlock(&isys->reset_mutex);
+#endif
+	pm_runtime_put(&isys->adev->auxdev.dev);
 }
 
 int ipu6_isys_setup_video(struct ipu6_isys_video *av,

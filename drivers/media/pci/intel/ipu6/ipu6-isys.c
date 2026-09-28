@@ -1284,9 +1284,11 @@ static int isys_runtime_pm_suspend(struct device *dev)
 	isys->power = 0;
 	spin_unlock_irqrestore(&isys->power_lock, flags);
 
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
 	mutex_lock(&isys->reset_mutex);
 	isys->need_reset = false;
 	mutex_unlock(&isys->reset_mutex);
+#endif
 
 	isys->phy_termcal_val = 0;
 	cpu_latency_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);

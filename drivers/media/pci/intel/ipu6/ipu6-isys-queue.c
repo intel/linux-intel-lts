@@ -513,7 +513,6 @@ static int ipu6_isys_link_fmt_validate(struct ipu6_isys_queue *aq)
 static void return_buffers(struct ipu6_isys_queue *aq,
 			   enum vb2_buffer_state state)
 {
-	struct ipu6_isys_video *av = ipu6_isys_queue_to_video(aq);
 	struct ipu6_isys_buffer *ib;
 	unsigned long flags;
 
