@@ -1,13 +1,11 @@
-From c4cbd7425484eaea5481429ea79e91b90df2fe2a Mon Sep 17 00:00:00 2001
+From f80281d1d572d2d68e55bb5632ac02d05a86f710 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Thomas=20Hellstr=C3=B6m?= <thomas.hellstrom@linux.intel.com>
 Date: Mon, 11 May 2026 18:24:43 +0200
-Subject: [PATCH 02/14] drm/ttm: Fix ttm_bo_shrink() infinite LRU walk on
- backup failure
+Subject: [PATCH] drm/ttm: Fix ttm_bo_shrink() infinite LRU walk on backup
+ failure
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
-commit 1d59f36e95f7f7134db0e313c9d787cb0adb2153 upstream.
 
 Apply the same fix as b2ed01e7ad ("drm/ttm: Fix ttm_bo_swapout()
 infinite LRU walk on swapout failure") to the ttm_bo_shrink() path.
@@ -28,39 +26,37 @@ Assisted-by: GitHub_Copilot:claude-opus-4.6
 Reviewed-by: Matthew Auld <matthew.auld@intel.com>
 Link: https://patch.msgid.link/20260511162443.24352-1-thomas.hellstrom@linux.intel.com
 Signed-off-by: Thomas Hellström <thomas.hellstrom@linux.intel.com>
-Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
-(cherry picked from commit 9402ad98a047dd9894ec868a7df5ad9bd03327d3)
 ---
  drivers/gpu/drm/ttm/ttm_bo_util.c | 11 +++--------
  1 file changed, 3 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/gpu/drm/ttm/ttm_bo_util.c b/drivers/gpu/drm/ttm/ttm_bo_util.c
-index acbbca9d5c92f..82c9415cd01a5 100644
+index 85bb9f9f1f616..7aa35899e33ce 100644
 --- a/drivers/gpu/drm/ttm/ttm_bo_util.c
 +++ b/drivers/gpu/drm/ttm/ttm_bo_util.c
-@@ -1095,19 +1095,14 @@ long ttm_bo_shrink(struct ttm_operation_ctx *ctx, struct ttm_buffer_object *bo,
+@@ -1094,19 +1094,14 @@ long ttm_bo_shrink(struct ttm_operation_ctx *ctx, struct ttm_buffer_object *bo,
  	if (lret < 0)
  		return lret;
  
 -	if (bo->bulk_move) {
--		spin_lock(&bo->bdev->lru_lock);
+-		spin_lock(&bdev->lru_lock);
 -		ttm_resource_del_bulk_move(bo->resource, bo);
--		spin_unlock(&bo->bdev->lru_lock);
+-		spin_unlock(&bdev->lru_lock);
 -	}
 -
- 	lret = ttm_tt_backup(bo->bdev, tt, (struct ttm_backup_flags)
+ 	lret = ttm_tt_backup(bdev, bo->ttm, (struct ttm_backup_flags)
  			     {.purge = flags.purge,
  			      .writeback = flags.writeback});
  
 -	if (lret <= 0 && bo->bulk_move) {
 +	if (lret > 0) {
- 		spin_lock(&bo->bdev->lru_lock);
+ 		spin_lock(&bdev->lru_lock);
 -		ttm_resource_add_bulk_move(bo->resource, bo);
 +		ttm_resource_del_bulk_move_unevictable(bo->resource, bo);
 +		ttm_resource_move_to_lru_tail(bo->resource);
- 		spin_unlock(&bo->bdev->lru_lock);
+ 		spin_unlock(&bdev->lru_lock);
  	}
  
 -- 
-2.43.0
+2.34.1
 
