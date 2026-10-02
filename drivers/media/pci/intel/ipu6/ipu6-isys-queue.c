@@ -513,6 +513,10 @@ static int ipu6_isys_link_fmt_validate(struct ipu6_isys_queue *aq)
 static void return_buffers(struct ipu6_isys_queue *aq,
 			   enum vb2_buffer_state state)
 {
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	struct ipu6_isys_video *av = ipu6_isys_queue_to_video(aq);
+	bool need_reset = false;
+#endif
 	struct ipu6_isys_buffer *ib;
 	unsigned long flags;
 
@@ -536,6 +540,9 @@ static void return_buffers(struct ipu6_isys_queue *aq,
 		vb2_buffer_done(vb, state);
 
 		spin_lock_irqsave(&aq->lock, flags);
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+		need_reset = true;
+#endif
 	}
 
 	while (!list_empty(&aq->incoming)) {
@@ -553,6 +560,14 @@ static void return_buffers(struct ipu6_isys_queue *aq,
 	}
 
 	spin_unlock_irqrestore(&aq->lock, flags);
+
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+	if (need_reset) {
+		mutex_lock(&av->isys->reset_mutex);
+		av->isys->need_reset = true;
+		mutex_unlock(&av->isys->reset_mutex);
+	}
+#endif
 }
 
 static void ipu6_isys_stream_cleanup(struct ipu6_isys_video *av)

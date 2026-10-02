@@ -1261,8 +1261,18 @@ void ipu6_isys_fw_close(struct ipu6_isys *isys)
 	mutex_lock(&isys->mutex);
 
 	isys->ref_count--;
-	if (!isys->ref_count)
+	if (!isys->ref_count) {
 		ipu6_fw_isys_close(isys);
+#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+		if (isys->fwcom) {
+			mutex_lock(&isys->reset_mutex);
+			isys->need_reset = true;
+			mutex_unlock(&isys->reset_mutex);
+			dev_warn(&isys->adev->auxdev.dev,
+				 "failed to close fw isys\n");
+		}
+#endif
+	}
 
 	mutex_unlock(&isys->mutex);
 
