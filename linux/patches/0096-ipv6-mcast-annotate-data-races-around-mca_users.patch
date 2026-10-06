@@ -1,0 +1,65 @@
+From 8e2b9fd50c5778beea14e5cd22157d4d3a939268 Mon Sep 17 00:00:00 2001
+From: Yuyang Huang <sigefriedhyy@gmail.com>
+Date: Sun, 24 May 2026 11:24:56 +0900
+Subject: [PATCH 096/143] ipv6: mcast: annotate data-races around mca_users
+
+/proc/net/igmp6 walks IPv6 multicast memberships under RCU and prints
+mca_users without holding idev->mc_lock, while multicast join and leave
+paths update the field while holding idev->mc_lock. Annotate this
+intentional lockless snapshot with READ_ONCE() and the matching writers
+with WRITE_ONCE().
+
+Signed-off-by: Yuyang Huang <sigefriedhyy@gmail.com>
+Reviewed-by: Ido Schimmel <idosch@nvidia.com>
+Link: https://patch.msgid.link/20260524022456.20689-1-sigefriedhyy@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/ipv6/mcast.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/net/ipv6/mcast.c b/net/ipv6/mcast.c
+index c560f3e3b11fa..6d1653da17c4c 100644
+--- a/net/ipv6/mcast.c
++++ b/net/ipv6/mcast.c
+@@ -890,7 +890,7 @@ static struct ifmcaddr6 *mca_alloc(struct inet6_dev *idev,
+ 
+ 	mc->mca_addr = *addr;
+ 	mc->idev = idev; /* reference taken by caller */
+-	mc->mca_users = 1;
++	WRITE_ONCE(mc->mca_users, 1);
+ 	/* mca_stamp should be updated upon changes */
+ 	mc->mca_cstamp = mc->mca_tstamp = jiffies;
+ 	refcount_set(&mc->mca_refcnt, 1);
+@@ -964,7 +964,7 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
+ 
+ 	for_each_mc_mclock(idev, mc) {
+ 		if (ipv6_addr_equal(&mc->mca_addr, addr)) {
+-			mc->mca_users++;
++			WRITE_ONCE(mc->mca_users, mc->mca_users + 1);
+ 			ip6_mc_add_src(idev, &mc->mca_addr, mode, 0, NULL, 0);
+ 			mutex_unlock(&idev->mc_lock);
+ 			in6_dev_put(idev);
+@@ -1009,7 +1009,10 @@ int __ipv6_dev_mc_dec(struct inet6_dev *idev, const struct in6_addr *addr)
+ 	     (ma = mc_dereference(*map, idev));
+ 	     map = &ma->next) {
+ 		if (ipv6_addr_equal(&ma->mca_addr, addr)) {
+-			if (--ma->mca_users == 0) {
++			int new_users = ma->mca_users - 1;
++
++			WRITE_ONCE(ma->mca_users, new_users);
++			if (new_users == 0) {
+ 				*map = ma->next;
+ 
+ 				igmp6_group_dropped(ma);
+@@ -3021,7 +3024,7 @@ static int igmp6_mc_seq_show(struct seq_file *seq, void *v)
+ 		   "%-4d %-15s %pi6 %5d %08X %ld\n",
+ 		   state->dev->ifindex, state->dev->name,
+ 		   &im->mca_addr,
+-		   im->mca_users, im->mca_flags,
++		   READ_ONCE(im->mca_users), im->mca_flags,
+ 		   (im->mca_flags & MAF_TIMER_RUNNING) ?
+ 		   jiffies_to_clock_t(im->mca_work.timer.expires - jiffies) : 0);
+ 	return 0;
+-- 
+2.34.1
+

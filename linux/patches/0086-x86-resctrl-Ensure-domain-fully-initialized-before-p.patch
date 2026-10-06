@@ -1,0 +1,112 @@
+From b4c5a1705bc4fc350f0f0e4a27607e9cae08a42c Mon Sep 17 00:00:00 2001
+From: Reinette Chatre <reinette.chatre@intel.com>
+Date: Mon, 13 Jul 2026 10:39:42 -0700
+Subject: [PATCH 086/143] x86/resctrl: Ensure domain fully initialized before
+ placed on RCU list
+
+A resctrl domain consists of the domain structure self that includes
+pointers to dynamically allocated filesystem as well as architecture
+specific data. For example, the L3 monitoring domain structure consists
+of the architecture specific struct rdt_hw_l3_mon_domain that contains
+the dynamically allocated rdt_hw_l3_mon_domain::arch_mbm_states
+architectural state and the embedded struct rdt_l3_mon_domain contains
+the dynamically allocated rdt_l3_mon_domain::mbm_states resctrl fs state.
+
+The domains are added to and removed from an RCU protected list while
+cpus_write_lock() is held so that readers could access domains via
+cpus_read_lock() or from an RCU read-side critical section.  A reader
+accessing a domain via the RCU list expects that the domain and all its
+dynamically allocated data is accessible.
+
+Only place the domain on the RCU list when all its dynamically allocated
+data is ready, similarly unlink it from RCU list (again with cpus_write_lock()
+held) before removing any of its dynamically allocated data.
+
+Calling resctrl_online_mon_domain() before adding the domain to the RCU
+list creates the kernfs files that expose the domain's monitoring data to
+user space before adding the domain to the RCU list. This is safe because
+rdtgroup_mondata_show() acquires cpus_read_lock() before it traverses the
+RCU list and will thus block until the domain is added to the RCU list.
+
+There are no readers accessing a domain via RCU list. Ensure safety of
+access when such a reader arrives.
+
+Signed-off-by: Reinette Chatre <reinette.chatre@intel.com>
+Signed-off-by: Borislav Petkov (AMD) <bp@alien8.de>
+Reviewed-by: Tony Luck <tony.luck@intel.com>
+Reviewed-by: Chen Yu <yu.c.chen@intel.com>
+Link: https://patch.msgid.link/31ae67084c983e8cb8c5ef2c65e1096de5e8f9b0.1783963505.git.reinette.chatre@intel.com
+[ Backport note: 6.18 has no intel_aet.c (perf_pkg/AET telemetry domains) and no
+  l3_mon_domain_setup() helper, so the intel_aet.c hunk is dropped and the
+  L3 mon domain reorder is applied inline in domain_add_cpu_mon(). The
+  remove paths still take the rdt_l3_mon_domain/rdt_ctrl_domain pointer
+  (no struct rdt_domain_hdr refactor) and keep the existing
+  cpumask_empty() block structure. ]
+(cherry picked from commit 25afd838fb2aae6325ae13937e7db06362a05673)
+---
+ arch/x86/kernel/cpu/resctrl/core.c | 16 ++++++----------
+ 1 file changed, 6 insertions(+), 10 deletions(-)
+
+diff --git a/arch/x86/kernel/cpu/resctrl/core.c b/arch/x86/kernel/cpu/resctrl/core.c
+index f9025779292a8..2b63f087cab48 100644
+--- a/arch/x86/kernel/cpu/resctrl/core.c
++++ b/arch/x86/kernel/cpu/resctrl/core.c
+@@ -487,14 +487,12 @@ static void domain_add_cpu_ctrl(int cpu, struct rdt_resource *r)
+ 		return;
+ 	}
+ 
+-	list_add_tail_rcu(&d->hdr.list, add_pos);
+-
+ 	err = resctrl_online_ctrl_domain(r, d);
+ 	if (err) {
+-		list_del_rcu(&d->hdr.list);
+-		synchronize_rcu();
+ 		ctrl_domain_free(hw_dom);
++		return;
+ 	}
++	list_add_tail_rcu(&d->hdr.list, add_pos);
+ }
+ 
+ static void domain_add_cpu_mon(int cpu, struct rdt_resource *r)
+@@ -555,14 +553,12 @@ static void domain_add_cpu_mon(int cpu, struct rdt_resource *r)
+ 		return;
+ 	}
+ 
+-	list_add_tail_rcu(&d->hdr.list, add_pos);
+-
+ 	err = resctrl_online_mon_domain(r, d);
+ 	if (err) {
+-		list_del_rcu(&d->hdr.list);
+-		synchronize_rcu();
+ 		l3_mon_domain_free(hw_dom);
++		return;
+ 	}
++	list_add_tail_rcu(&d->hdr.list, add_pos);
+ }
+ 
+ static void domain_add_cpu(int cpu, struct rdt_resource *r)
+@@ -603,9 +599,9 @@ static void domain_remove_cpu_ctrl(int cpu, struct rdt_resource *r)
+ 
+ 	cpumask_clear_cpu(cpu, &d->hdr.cpu_mask);
+ 	if (cpumask_empty(&d->hdr.cpu_mask)) {
+-		resctrl_offline_ctrl_domain(r, d);
+ 		list_del_rcu(&d->hdr.list);
+ 		synchronize_rcu();
++		resctrl_offline_ctrl_domain(r, d);
+ 
+ 		/*
+ 		 * rdt_ctrl_domain "d" is going to be freed below, so clear
+@@ -649,9 +645,9 @@ static void domain_remove_cpu_mon(int cpu, struct rdt_resource *r)
+ 
+ 	cpumask_clear_cpu(cpu, &d->hdr.cpu_mask);
+ 	if (cpumask_empty(&d->hdr.cpu_mask)) {
+-		resctrl_offline_mon_domain(r, d);
+ 		list_del_rcu(&d->hdr.list);
+ 		synchronize_rcu();
++		resctrl_offline_mon_domain(r, d);
+ 		l3_mon_domain_free(hw_dom);
+ 
+ 		return;
+-- 
+2.34.1
+

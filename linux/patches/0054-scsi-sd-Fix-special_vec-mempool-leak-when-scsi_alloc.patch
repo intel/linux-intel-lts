@@ -1,0 +1,131 @@
+From fb37151a618338e21c724d4a01f8f5760f5cc144 Mon Sep 17 00:00:00 2001
+From: Yang Xiuwei <yangxiuwei@kylinos.cn>
+Date: Tue, 7 Jul 2026 11:03:32 +0800
+Subject: [PATCH 054/143] scsi: sd: Fix special_vec mempool leak when
+ scsi_alloc_sgtables() fails
+
+sd_set_special_bvec() allocates a special payload page for UNMAP and
+WRITE SAME commands. If scsi_alloc_sgtables() fails afterward in
+sd_setup_unmap_cmnd() or sd_setup_write_same{10,16}_cmnd(), the SCSI
+midlayer does not call uninit_command() because RQF_DONTPREP is not set
+yet, leaking the page.
+
+Call sd_uninit_command() on error, and clear RQF_SPECIAL_PAYLOAD after
+freeing the page.
+
+Fixes: 81d926e8b552 ("sd: split sd_setup_discard_cmnd")
+Reviewed-by: Damien Le Moal <dlemoal@kernel.org>
+Signed-off-by: Yang Xiuwei <yangxiuwei@kylinos.cn>
+Reviewed-by: John Garry <john.g.garry@oracle.com>
+Link: https://patch.msgid.link/20260707030333.22245-3-yangxiuwei@kylinos.cn
+Signed-off-by: Martin K. Petersen (Oracle) <mkp@kernel.org>
+[ Backport note: 6.18 lacks sd_large_page_pool (added by 7179e626b76e
+  "scsi: sd: Enable sector size > PAGE_SIZE", not backported), so the
+  moved sd_uninit_command() frees only to sd_page_pool; placed before
+  sd_set_special_bvec(), which in 6.18 takes a struct request * (context
+  only). ]
+(cherry picked from commit bb31844d88b77138b67aa20c3600203baff40140)
+---
+ drivers/scsi/sd.c | 37 ++++++++++++++++++++++++++-----------
+ 1 file changed, 26 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/scsi/sd.c b/drivers/scsi/sd.c
+index 41ad0e9101b8b..7167404069d77 100644
+--- a/drivers/scsi/sd.c
++++ b/drivers/scsi/sd.c
+@@ -892,6 +892,17 @@ static void sd_config_discard(struct scsi_disk *sdkp, struct queue_limits *lim,
+ 		(logical_block_size >> SECTOR_SHIFT);
+ }
+ 
++static void sd_uninit_command(struct scsi_cmnd *cmd)
++{
++	struct request *rq = scsi_cmd_to_rq(cmd);
++
++	if (!(rq->rq_flags & RQF_SPECIAL_PAYLOAD))
++		return;
++
++	mempool_free(rq->special_vec.bv_page, sd_page_pool);
++	rq->rq_flags &= ~RQF_SPECIAL_PAYLOAD;
++}
++
+ static void *sd_set_special_bvec(struct request *rq, unsigned int data_len)
+ {
+ 	struct page *page;
+@@ -914,6 +925,7 @@ static blk_status_t sd_setup_unmap_cmnd(struct scsi_cmnd *cmd)
+ 	u32 nr_blocks = sectors_to_logical(sdp, blk_rq_sectors(rq));
+ 	unsigned int data_len = 24;
+ 	char *buf;
++	blk_status_t ret;
+ 
+ 	buf = sd_set_special_bvec(rq, data_len);
+ 	if (!buf)
+@@ -932,7 +944,10 @@ static blk_status_t sd_setup_unmap_cmnd(struct scsi_cmnd *cmd)
+ 	cmd->transfersize = data_len;
+ 	rq->timeout = SD_TIMEOUT;
+ 
+-	return scsi_alloc_sgtables(cmd);
++	ret = scsi_alloc_sgtables(cmd);
++	if (ret != BLK_STS_OK)
++		sd_uninit_command(cmd);
++	return ret;
+ }
+ 
+ static void sd_config_atomic(struct scsi_disk *sdkp, struct queue_limits *lim)
+@@ -1003,6 +1018,7 @@ static blk_status_t sd_setup_write_same16_cmnd(struct scsi_cmnd *cmd,
+ 	u64 lba = sectors_to_logical(sdp, blk_rq_pos(rq));
+ 	u32 nr_blocks = sectors_to_logical(sdp, blk_rq_sectors(rq));
+ 	u32 data_len = sdp->sector_size;
++	blk_status_t ret;
+ 
+ 	if (!sd_set_special_bvec(rq, data_len))
+ 		return BLK_STS_RESOURCE;
+@@ -1018,7 +1034,10 @@ static blk_status_t sd_setup_write_same16_cmnd(struct scsi_cmnd *cmd,
+ 	cmd->transfersize = data_len;
+ 	rq->timeout = unmap ? SD_TIMEOUT : SD_WRITE_SAME_TIMEOUT;
+ 
+-	return scsi_alloc_sgtables(cmd);
++	ret = scsi_alloc_sgtables(cmd);
++	if (ret != BLK_STS_OK)
++		sd_uninit_command(cmd);
++	return ret;
+ }
+ 
+ static blk_status_t sd_setup_write_same10_cmnd(struct scsi_cmnd *cmd,
+@@ -1030,6 +1049,7 @@ static blk_status_t sd_setup_write_same10_cmnd(struct scsi_cmnd *cmd,
+ 	u64 lba = sectors_to_logical(sdp, blk_rq_pos(rq));
+ 	u32 nr_blocks = sectors_to_logical(sdp, blk_rq_sectors(rq));
+ 	u32 data_len = sdp->sector_size;
++	blk_status_t ret;
+ 
+ 	if (!sd_set_special_bvec(rq, data_len))
+ 		return BLK_STS_RESOURCE;
+@@ -1045,7 +1065,10 @@ static blk_status_t sd_setup_write_same10_cmnd(struct scsi_cmnd *cmd,
+ 	cmd->transfersize = data_len;
+ 	rq->timeout = unmap ? SD_TIMEOUT : SD_WRITE_SAME_TIMEOUT;
+ 
+-	return scsi_alloc_sgtables(cmd);
++	ret = scsi_alloc_sgtables(cmd);
++	if (ret != BLK_STS_OK)
++		sd_uninit_command(cmd);
++	return ret;
+ }
+ 
+ static blk_status_t sd_setup_write_zeroes_cmnd(struct scsi_cmnd *cmd)
+@@ -1474,14 +1497,6 @@ static blk_status_t sd_init_command(struct scsi_cmnd *cmd)
+ 	}
+ }
+ 
+-static void sd_uninit_command(struct scsi_cmnd *SCpnt)
+-{
+-	struct request *rq = scsi_cmd_to_rq(SCpnt);
+-
+-	if (rq->rq_flags & RQF_SPECIAL_PAYLOAD)
+-		mempool_free(rq->special_vec.bv_page, sd_page_pool);
+-}
+-
+ static bool sd_need_revalidate(struct gendisk *disk, struct scsi_disk *sdkp)
+ {
+ 	if (sdkp->device->removable || sdkp->write_prot) {
+-- 
+2.34.1
+

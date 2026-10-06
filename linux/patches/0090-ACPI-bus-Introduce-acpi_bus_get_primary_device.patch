@@ -1,0 +1,135 @@
+From d5fae82e5c030b708a005690b557adf4db08449e Mon Sep 17 00:00:00 2001
+From: "Rafael J. Wysocki" <rafael.j.wysocki@intel.com>
+Date: Wed, 12 Aug 2026 14:41:44 +0200
+Subject: [PATCH 090/143] ACPI: bus: Introduce acpi_bus_get_primary_device()
+
+The function used for obtaining the first "physical" device for which
+the given ACPI one is the ACPI companion, acpi_get_first_physical_node(),
+may return a stale device pointer (mostly in theory) because
+acpi_unbind_one() may run as a whole after dropping the ACPI device's
+physical_node_lock in acpi_get_first_physical_node() and before it
+returns.  The last reference to the "physical" device may be dropped
+then before the pointer to it is returned to the caller.
+
+If that happens and the acpi_get_first_physical_node() caller invokes
+get_device() on the pointer obtained from it, which is done by the
+majority of its callers, a use-after-free will occur.
+
+To prepare for addressing this problem, introduce a new function for
+getting the first "physical" device associated with the given ACPI one
+(the "primary physical device") that will also reference count the
+device in question before returning a pointer to it.
+
+Make that new function and acpi_get_first_physical_node() share the
+physical node list lookup code.
+
+No intentional functional impact.
+
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Link: https://patch.msgid.link/2843318.mvXUDI8C0e@rafael.j.wysocki
+---
+ drivers/acpi/bus.c      | 54 +++++++++++++++++++++++++++++------------
+ include/acpi/acpi_bus.h |  6 +++++
+ 2 files changed, 44 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/acpi/bus.c b/drivers/acpi/bus.c
+index 222a6bc616448..16bd24125a23d 100644
+--- a/drivers/acpi/bus.c
++++ b/drivers/acpi/bus.c
+@@ -747,30 +747,52 @@ static int __init acpi_setup_sb_notify_handler(void)
+                              Device Matching
+    -------------------------------------------------------------------------- */
+ 
++
++static struct device *primary_physical_device(struct acpi_device *adev)
++{
++	struct acpi_device_physical_node *pn;
++
++	pn = list_first_entry_or_null(&adev->physical_node_list,
++				      struct acpi_device_physical_node, node);
++	if (pn)
++		return pn->dev;
++
++	return NULL;
++}
++
+ /**
+- * acpi_get_first_physical_node - Get first physical node of an ACPI device
++ * acpi_bus_get_primary_device - Get first physical device for a given ACPI one
++ * @adev: ACPI device to get the first physical device for.
++ *
++ * Find the first physical device for which @adev is the ACPI companion and
++ * reference count it if present.
++ *
++ * Return: Pointer to the first physical counterpart of @adev or NULL if there
++ * are none.  Callers are responsible for invoking put_device() on the returned
++ * device.
++ */
++struct device *acpi_bus_get_primary_device(struct acpi_device *adev)
++{
++	if (!adev)
++		return NULL;
++
++	guard(mutex)(&adev->physical_node_lock);
++
++	return get_device(primary_physical_device(adev));
++}
++EXPORT_SYMBOL_GPL(acpi_bus_get_primary_device);
++
++/**
++ * acpi_get_first_physical_node - Find first physical node of an ACPI device
+  * @adev:	ACPI device in question
+  *
+  * Return: First physical node of ACPI device @adev
+  */
+ struct device *acpi_get_first_physical_node(struct acpi_device *adev)
+ {
+-	struct mutex *physical_node_lock = &adev->physical_node_lock;
+-	struct device *phys_dev;
+-
+-	mutex_lock(physical_node_lock);
+-	if (list_empty(&adev->physical_node_list)) {
+-		phys_dev = NULL;
+-	} else {
+-		const struct acpi_device_physical_node *node;
++	guard(mutex)(&adev->physical_node_lock);
+ 
+-		node = list_first_entry(&adev->physical_node_list,
+-					struct acpi_device_physical_node, node);
+-
+-		phys_dev = node->dev;
+-	}
+-	mutex_unlock(physical_node_lock);
+-	return phys_dev;
++	return primary_physical_device(adev);
+ }
+ EXPORT_SYMBOL_GPL(acpi_get_first_physical_node);
+ 
+diff --git a/include/acpi/acpi_bus.h b/include/acpi/acpi_bus.h
+index 9a8a796a870d1..66fc14f869cb9 100644
+--- a/include/acpi/acpi_bus.h
++++ b/include/acpi/acpi_bus.h
+@@ -677,6 +677,7 @@ void acpi_bus_unregister_driver(struct acpi_driver *driver);
+ int acpi_bus_scan(acpi_handle handle);
+ void acpi_bus_trim(struct acpi_device *start);
+ acpi_status acpi_bus_get_ejd(acpi_handle handle, acpi_handle * ejd);
++struct device *acpi_bus_get_primary_device(struct acpi_device *adev);
+ int acpi_match_device_ids(struct acpi_device *device,
+ 			  const struct acpi_device_id *ids);
+ void acpi_set_modalias(struct acpi_device *adev, const char *default_id,
+@@ -1000,6 +1001,11 @@ int acpi_scan_add_dep(acpi_handle handle, struct acpi_handle_list *dep_devices);
+ u32 arch_acpi_add_auto_dep(acpi_handle handle);
+ #else	/* CONFIG_ACPI */
+ 
++static inline struct device *acpi_bus_get_primary_device(struct acpi_device *adev)
++{
++	return NULL;
++}
++
+ static inline int register_acpi_bus_type(void *bus) { return 0; }
+ static inline int unregister_acpi_bus_type(void *bus) { return 0; }
+ 
+-- 
+2.34.1
+

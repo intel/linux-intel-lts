@@ -1,0 +1,343 @@
+From cc3cca88a08718dd7edd45ec74a05c17c9f6ca5e Mon Sep 17 00:00:00 2001
+From: Kris Pan <kris.pan@intel.com>
+Date: Wed, 30 Sep 2026 12:14:54 +0800
+Subject: [PATCH 055/143] netfilter: nft_ct: defer expectation creation to
+ confirm (CVE-2026-90237 backport)
+
+Move custom ct expectation creation out of nft_ct_expect_obj_eval()
+(packet path on an unconfirmed conntrack) into an internal
+nf_conntrack_helper help callback that runs at confirmation time,
+where the conntrack extension area is stable.  Creating expectations
+for unconfirmed conntracks leaves stale hlist .pprev pointers when the
+ct extension area is reallocated, a slab use-after-free.
+
+This is a 6.18 adaptation of upstream 3679da4ad8be8 that keeps the
+6.18 helper lifetime model intact instead of pulling in the 7.x
+helper refactor:
+
+- struct nf_conntrack_helper gains struct rcu_head rcu and an
+  NF_CT_HELPER_F_DYNAMIC flag; the internal helper is dynamically
+  allocated (with its expect_policy embedded) and freed via
+  kfree_rcu() once the object and all conntracks drop their refs.
+- nf_conntrack_helper_release() drops the object's reference.
+- nf_ct_help_put() (called from nf_conntrack_free) releases the
+  per-conntrack reference for NF_CT_HELPER_F_DYNAMIC helpers only, so
+  registered static helpers are untouched.
+- nf_conntrack_proto.c now tolerates helper->help becoming NULL.
+---
+ include/net/netfilter/nf_conntrack_helper.h |  18 +++
+ net/netfilter/nf_conntrack_core.c           |   1 +
+ net/netfilter/nf_conntrack_helper.c         |   9 ++
+ net/netfilter/nf_conntrack_proto.c          |  17 ++-
+ net/netfilter/nft_ct.c                      | 138 ++++++++++++++++----
+ 5 files changed, 153 insertions(+), 30 deletions(-)
+
+diff --git a/include/net/netfilter/nf_conntrack_helper.h b/include/net/netfilter/nf_conntrack_helper.h
+index 24cf3d2d97450..8108d2ab649d4 100644
+--- a/include/net/netfilter/nf_conntrack_helper.h
++++ b/include/net/netfilter/nf_conntrack_helper.h
+@@ -25,6 +25,7 @@ struct module;
+ enum nf_ct_helper_flags {
+ 	NF_CT_HELPER_F_USERSPACE	= (1 << 0),
+ 	NF_CT_HELPER_F_CONFIGURED	= (1 << 1),
++	NF_CT_HELPER_F_DYNAMIC		= (1 << 2),
+ };
+ 
+ #define NF_CT_HELPER_NAME_LEN	16
+@@ -32,6 +33,8 @@ enum nf_ct_helper_flags {
+ struct nf_conntrack_helper {
+ 	struct hlist_node hnode;	/* Internal use. */
+ 
++	struct rcu_head rcu;
++
+ 	char name[NF_CT_HELPER_NAME_LEN]; /* name of the module */
+ 	refcount_t refcnt;
+ 	struct module *me;		/* pointer to self */
+@@ -105,6 +108,7 @@ void nf_ct_helper_init(struct nf_conntrack_helper *helper,
+ 
+ int nf_conntrack_helper_register(struct nf_conntrack_helper *);
+ void nf_conntrack_helper_unregister(struct nf_conntrack_helper *);
++void nf_conntrack_helper_release(struct nf_conntrack_helper *);
+ 
+ int nf_conntrack_helpers_register(struct nf_conntrack_helper *, unsigned int);
+ void nf_conntrack_helpers_unregister(struct nf_conntrack_helper *,
+@@ -136,6 +140,20 @@ static inline void *nfct_help_data(const struct nf_conn *ct)
+ 	return (void *)help->data;
+ }
+ 
++static inline void nf_ct_help_put(struct nf_conn *ct)
++{
++	struct nf_conn_help *help = nfct_help(ct);
++	struct nf_conntrack_helper *helper;
++
++	if (!help)
++		return;
++
++	helper = rcu_dereference(help->helper);
++	if (helper && (READ_ONCE(helper->flags) & NF_CT_HELPER_F_DYNAMIC) &&
++	    refcount_dec_and_test(&helper->refcnt))
++		kfree_rcu(helper, rcu);
++}
++
+ int nf_conntrack_helper_init(void);
+ void nf_conntrack_helper_fini(void);
+ 
+diff --git a/net/netfilter/nf_conntrack_core.c b/net/netfilter/nf_conntrack_core.c
+index 201d2ef8a6f02..b9fc2d58bfb02 100644
+--- a/net/netfilter/nf_conntrack_core.c
++++ b/net/netfilter/nf_conntrack_core.c
+@@ -1700,6 +1700,7 @@ void nf_conntrack_free(struct nf_conn *ct)
+ 	}
+ 
+ 	nf_ct_timeout_put(ct);
++	nf_ct_help_put(ct);
+ 	rcu_read_unlock();
+ 
+ 	kfree(ct->ext);
+diff --git a/net/netfilter/nf_conntrack_helper.c b/net/netfilter/nf_conntrack_helper.c
+index ea0cdb7ec9151..106ad4ab0f53c 100644
+--- a/net/netfilter/nf_conntrack_helper.c
++++ b/net/netfilter/nf_conntrack_helper.c
+@@ -449,6 +449,15 @@ void nf_conntrack_helper_unregister(struct nf_conntrack_helper *me)
+ }
+ EXPORT_SYMBOL_GPL(nf_conntrack_helper_unregister);
+ 
++void nf_conntrack_helper_release(struct nf_conntrack_helper *me)
++{
++	nf_ct_expect_iterate_destroy(expect_iter_me, me);
++
++	if (refcount_dec_and_test(&me->refcnt))
++		kfree_rcu(me, rcu);
++}
++EXPORT_SYMBOL_GPL(nf_conntrack_helper_release);
++
+ void nf_ct_helper_init(struct nf_conntrack_helper *helper,
+ 		       u16 l3num, u16 protonum, const char *name,
+ 		       u16 default_port, u16 spec_port, u32 id,
+diff --git a/net/netfilter/nf_conntrack_proto.c b/net/netfilter/nf_conntrack_proto.c
+index 554a661e56b36..96315708e3f6e 100644
+--- a/net/netfilter/nf_conntrack_proto.c
++++ b/net/netfilter/nf_conntrack_proto.c
+@@ -184,11 +184,18 @@ unsigned int nf_confirm(void *priv,
+ 		/* rcu_read_lock()ed by nf_hook */
+ 		helper = rcu_dereference(help->helper);
+ 		if (helper) {
+-			ret = helper->help(skb,
+-					   protoff,
+-					   ct, ctinfo);
+-			if (ret != NF_ACCEPT)
+-				return ret;
++			int (*helper_cb)(struct sk_buff *, unsigned int,
++					 struct nf_conn *,
++					 enum ip_conntrack_info);
++
++			helper_cb = READ_ONCE(helper->help);
++			if (helper_cb) {
++				ret = helper_cb(skb,
++						protoff,
++						ct, ctinfo);
++				if (ret != NF_ACCEPT)
++					return ret;
++			}
+ 		}
+ 	}
+ 
+diff --git a/net/netfilter/nft_ct.c b/net/netfilter/nft_ct.c
+index fa32bbb313065..e4e322f13b7b3 100644
+--- a/net/netfilter/nft_ct.c
++++ b/net/netfilter/nft_ct.c
+@@ -1216,13 +1216,92 @@ struct nft_ct_expect_obj {
+ 	u8		l4proto;
+ 	u8		size;
+ 	u32		timeout;
++
++	struct nf_conntrack_helper *helper;
++};
++
++struct nft_ct_expect_data {
++	struct nft_ct_expect_obj	obj;
++	enum ip_conntrack_dir		dir;
+ };
+ 
++static int ct_expect_help(struct sk_buff *skb, unsigned int protoff,
++			  struct nf_conn *ct, enum ip_conntrack_info ctinfo)
++{
++	enum ip_conntrack_dir dir = CTINFO2DIR(ctinfo);
++	struct nft_ct_expect_data *expect_data;
++	struct nf_conntrack_expect *exp;
++	int ret = NF_ACCEPT;
++	u16 l3num;
++
++	if (nf_ct_is_confirmed(ct))
++		return NF_ACCEPT;
++
++	expect_data = nfct_help_data(ct);
++	if (!expect_data)
++		return NF_ACCEPT;
++
++	if (expect_data->dir != dir)
++		return NF_ACCEPT;
++
++	exp = nf_ct_expect_alloc(ct);
++	if (!exp)
++		return NF_DROP;
++
++	if (expect_data->obj.l3num == NFPROTO_INET)
++		l3num = nf_ct_l3num(ct);
++	else
++		l3num = expect_data->obj.l3num;
++
++	nf_ct_expect_init(exp, NF_CT_EXPECT_CLASS_DEFAULT, l3num,
++			  &ct->tuplehash[!dir].tuple.src.u3,
++			  &ct->tuplehash[!dir].tuple.dst.u3,
++			  expect_data->obj.l4proto, NULL, &expect_data->obj.dport);
++
++	if (nf_ct_expect_related(exp, 0) != 0)
++		ret = NF_ACCEPT;
++
++	nf_ct_expect_put(exp);
++
++	return ret;
++}
++
++static int nft_ct_expect_helper_alloc(struct nft_ct_expect_obj *priv)
++{
++	struct nf_conntrack_helper *ct_expect_helper;
++	struct nf_conntrack_expect_policy *policy;
++
++	ct_expect_helper = kzalloc(sizeof(*ct_expect_helper) + sizeof(*policy),
++				   GFP_KERNEL_ACCOUNT);
++	if (!ct_expect_helper)
++		return -ENOMEM;
++
++	policy = (void *)ct_expect_helper + sizeof(*ct_expect_helper);
++
++	snprintf(ct_expect_helper->name, sizeof(ct_expect_helper->name), "%s",
++		 "nft_ct_expect");
++	ct_expect_helper->me = THIS_MODULE;
++	ct_expect_helper->expect_policy = policy;
++	policy->max_expected = priv->size;
++	policy->timeout = priv->timeout;
++	WRITE_ONCE(ct_expect_helper->help, ct_expect_help);
++	refcount_set(&ct_expect_helper->refcnt, 1);
++	ct_expect_helper->flags = NF_CT_HELPER_F_DYNAMIC;
++
++	/* No need to register this helper, this is internal. */
++	priv->helper = ct_expect_helper;
++
++	return 0;
++}
++
+ static int nft_ct_expect_obj_init(const struct nft_ctx *ctx,
+ 				  const struct nlattr * const tb[],
+ 				  struct nft_object *obj)
+ {
+ 	struct nft_ct_expect_obj *priv = nft_obj_data(obj);
++	int err;
++
++	NF_CT_HELPER_BUILD_BUG_ON(sizeof(struct nft_ct_expect_data));
+ 
+ 	if (!tb[NFTA_CT_EXPECT_L4PROTO] ||
+ 	    !tb[NFTA_CT_EXPECT_DPORT] ||
+@@ -1261,13 +1340,32 @@ static int nft_ct_expect_obj_init(const struct nft_ctx *ctx,
+ 	priv->dport = nla_get_be16(tb[NFTA_CT_EXPECT_DPORT]);
+ 	priv->timeout = nla_get_u32(tb[NFTA_CT_EXPECT_TIMEOUT]);
+ 	priv->size = nla_get_u8(tb[NFTA_CT_EXPECT_SIZE]);
++	if (!priv->size)
++		priv->size = NF_CT_EXPECT_MAX_CNT;
++
++	err = nf_ct_netns_get(ctx->net, ctx->family);
++	if (err < 0)
++		return err;
++
++	err = nft_ct_expect_helper_alloc(priv);
++	if (err < 0) {
++		nf_ct_netns_put(ctx->net, ctx->family);
++		return err;
++	}
+ 
+-	return nf_ct_netns_get(ctx->net, ctx->family);
++	return err;
+ }
+ 
+ static void nft_ct_expect_obj_destroy(const struct nft_ctx *ctx,
+ 				       struct nft_object *obj)
+ {
++	const struct nft_ct_expect_obj *priv = nft_obj_data(obj);
++	struct nf_conntrack_helper *me = priv->helper;
++
++	/* This helper is going away, disable it. */
++	WRITE_ONCE(me->help, NULL);
++
++	nf_conntrack_helper_release(me);
+ 	nf_ct_netns_put(ctx->net, ctx->family);
+ }
+ 
+@@ -1291,11 +1389,9 @@ static void nft_ct_expect_obj_eval(struct nft_object *obj,
+ 				   const struct nft_pktinfo *pkt)
+ {
+ 	const struct nft_ct_expect_obj *priv = nft_obj_data(obj);
+-	struct nf_conntrack_expect *exp;
++	struct nft_ct_expect_data *expect_data;
+ 	enum ip_conntrack_info ctinfo;
+ 	struct nf_conn_help *help;
+-	enum ip_conntrack_dir dir;
+-	u16 l3num = priv->l3num;
+ 	struct nf_conn *ct;
+ 
+ 	ct = nf_ct_get(pkt->skb, &ctinfo);
+@@ -1303,38 +1399,30 @@ static void nft_ct_expect_obj_eval(struct nft_object *obj,
+ 		regs->verdict.code = NFT_BREAK;
+ 		return;
+ 	}
+-	dir = CTINFO2DIR(ctinfo);
+ 
+ 	help = nfct_help(ct);
+-	if (!help)
+-		help = nf_ct_helper_ext_add(ct, GFP_ATOMIC);
+-	if (!help) {
+-		regs->verdict.code = NF_DROP;
+-		return;
+-	}
+-
+-	if (help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] >= priv->size) {
++	if (help) {
+ 		regs->verdict.code = NFT_BREAK;
+ 		return;
+ 	}
+-	if (l3num == NFPROTO_INET)
+-		l3num = nf_ct_l3num(ct);
+ 
+-	exp = nf_ct_expect_alloc(ct);
+-	if (exp == NULL) {
++	help = nf_ct_helper_ext_add(ct, GFP_ATOMIC);
++	if (!help) {
+ 		regs->verdict.code = NF_DROP;
+ 		return;
+ 	}
+-	nf_ct_expect_init(exp, NF_CT_EXPECT_CLASS_DEFAULT, l3num,
+-		          &ct->tuplehash[!dir].tuple.src.u3,
+-		          &ct->tuplehash[!dir].tuple.dst.u3,
+-		          priv->l4proto, NULL, &priv->dport);
+-	exp->timeout.expires = jiffies + priv->timeout * HZ;
+ 
+-	if (nf_ct_expect_related(exp, 0) != 0)
+-		regs->verdict.code = NF_DROP;
++	expect_data = nfct_help_data(ct);
++	if (!expect_data) {
++		regs->verdict.code = NFT_BREAK;
++		return;
++	}
++	expect_data->obj = *priv;
++	expect_data->obj.helper = NULL;
++	expect_data->dir = CTINFO2DIR(ctinfo);
+ 
+-	nf_ct_expect_put(exp);
++	if (help && refcount_inc_not_zero(&priv->helper->refcnt))
++		rcu_assign_pointer(help->helper, priv->helper);
+ }
+ 
+ static const struct nla_policy nft_ct_expect_policy[NFTA_CT_EXPECT_MAX + 1] = {
+-- 
+2.34.1
+

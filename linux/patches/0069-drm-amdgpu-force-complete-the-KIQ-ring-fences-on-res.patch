@@ -1,0 +1,52 @@
+From 434fc25c0cfcf047f855cd95e54b1ef04a38d421 Mon Sep 17 00:00:00 2001
+From: Jesse Zhang <Jesse.Zhang@amd.com>
+Date: Thu, 13 Aug 2026 12:28:04 +0800
+Subject: [PATCH 069/143] drm/amdgpu: force complete the KIQ ring fences on
+ reset
+
+Like the MES scheduler ring, the KIQ ring sets no_scheduler = true and uses a
+polling fence, so it is skipped by the force-completion loop in
+amdgpu_device_pre_asic_reset(). Its hw fence value lives in wb (GTT) memory and
+survives a MODE1 reset while fence_drv.sync_seq keeps advancing, so after a
+reset the first KIQ submission can poll forever on a seq that is never written
+back.
+
+Force complete the KIQ ring fences too so their hw fence is realigned to
+sync_seq.
+
+Cc: stable@vger.kernel.org
+Reviewed-by: Alex Deucher <alexander.deucher@amd.com>
+Suggested-by: Alex Deucher <alexander.deucher@amd.com>
+Signed-off-by: Jesse Zhang <Jesse.Zhang@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+(cherry picked from commit fd65d1742992361fc2201ecb4e43411e6e417fcb)
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu_device.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
+index 7ad6b1a1947bd..08aacb070f7b1 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
+@@ -5933,6 +5933,18 @@ int amdgpu_device_pre_asic_reset(struct amdgpu_device *adev,
+ 			amdgpu_fence_driver_force_completion(mes_ring, fence);
+ 	}
+ 
++	/*
++	 * KIQ rings are polling-fence/no_scheduler like MES, so realign their
++	 * fence too (one ring per XCC), otherwise the first post-reset KIQ
++	 * submission polls forever on a stale seq.
++	 */
++	for (i = 0; i < AMDGPU_MAX_GC_INSTANCES; i++) {
++		struct amdgpu_ring *kiq_ring = &adev->gfx.kiq[i].ring;
++
++		if (kiq_ring->fence_drv.initialized && kiq_ring->sched.ready)
++			amdgpu_fence_driver_force_completion(kiq_ring, fence);
++	}
++
+ 	amdgpu_fence_driver_isr_toggle(adev, false);
+ 
+ 	if (job && job->vm)
+-- 
+2.34.1
+

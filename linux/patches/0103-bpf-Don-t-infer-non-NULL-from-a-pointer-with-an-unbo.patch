@@ -1,0 +1,55 @@
+From 89d594d91089bcae9e4479cd577c34ee91bc8477 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Wed, 30 Sep 2026 00:30:20 +0800
+Subject: [PATCH 103/143] bpf: Don't infer non-NULL from a pointer with an
+ unbounded offset
+
+reg_not_null() decides that a register holds a non-NULL value by
+looking at its type alone. For pointer types that allow arithmetic the
+type only guarantees a non-NULL base, in case of an unbound offset
+the runtime offset value might still add up to NULL.
+Consider the followng program:
+
+  r6 = bpf_map_lookup_elem(map, &0);  /* present */
+  if (r6 == 0) return 0;
+  r7 = bpf_map_lookup_elem(map, &1);  /* absent, NULL at runtime */
+  r8 = r7;
+  r8 -= r6;     /* pointer - pointer: unknown scalar, -r6 */
+  r8 <<= 1;
+  r8 >>= 1;     /* any non-negative offset is accepted by */
+                /* check_reg_sane_offset_ptr() */
+  r6 += r8;     /* verifier: map value;    runtime: zero  */
+  if (r7 != r6) return 0;
+  *(u8 *)(r7 + 0);  /* r7 is inferred non-NULL, both are zero */
+
+At runtime both registers are zero, the comparison is true and the
+load faults with NULL pointer dereference.
+
+Require the offset to be within +-BPF_MAX_VAR_OFF in reg_not_null().
+
+Fixes: cac616db39c2 ("bpf: Verifier track null pointer branch_taken with JNE and JEQ")
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/bpf/20260904083325.2083493-1-eddyz87@gmail.com
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+---
+ kernel/bpf/verifier.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index e3f6ce1a6ae11..39e988651949d 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -410,7 +410,8 @@ static bool reg_not_null(const struct bpf_reg_state *reg)
+ 	 * The types below guarantee a non-NULL base, an unbounded offset can
+ 	 * still wrap base + offset to zero.
+ 	 */
+-	if (reg_smin(reg) <= -BPF_MAX_VAR_OFF || reg_smax(reg) >= BPF_MAX_VAR_OFF)
++	if (reg->smin_value <= -BPF_MAX_VAR_OFF ||
++	    reg->smax_value >= BPF_MAX_VAR_OFF)
+ 		return false;
+ 
+ 	type = base_type(type);
+-- 
+2.34.1
+

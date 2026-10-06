@@ -1,0 +1,193 @@
+From 31e37a6644ffc59fc8bce15b561217088ffc2e82 Mon Sep 17 00:00:00 2001
+From: Yang Xiuwei <yangxiuwei@kylinos.cn>
+Date: Thu, 30 Jul 2026 09:09:09 +0800
+Subject: [PATCH 127/143] ublk: validate auto buf reg before taking uring_cmd
+
+With UBLK_F_AUTO_BUF_REG, invalid sqe->addr can fail after
+ublk_fill_io_cmd() has set UBLK_IO_FLAG_ACTIVE. The uring_cmd is
+completed while the tag stays active, which can hang teardown.
+
+Split validation from buffer apply so the check has no side effects,
+then take the uring_cmd and store the already-validated buffer. Apply
+the same order in FETCH so io->buf is not written before __ublk_fetch()
+state checks.
+
+Fixes: 52460dda3a77 ("ublk: move auto buffer register handling into one dedicated helper")
+Suggested-by: Caleb Sander Mateos <csander@purestorage.com>
+Signed-off-by: Yang Xiuwei <yangxiuwei@kylinos.cn>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+[ Backport note: 6.18 predates the batch-IO rework (28d7a371f021 "ublk: add
+  helper of __ublk_fetch()", 1e500e106d5a), so there is no __ublk_fetch() or
+  ublk_clear_auto_buf_reg(). ublk_fetch() is open-coded here: call
+  ublk_validate_io_buf() right after taking ub->mutex, before the
+  ready/ACTIVE checks and ublk_fill_io_cmd(), and replace
+  ublk_config_io_buf() with ublk_apply_io_buf(). The clearing half of
+  ublk_handle_auto_buf_reg() is renamed ublk_clear_auto_buf_reg() (with the
+  upstream buf_idx NULL check) and ublk_set_auto_buf_reg() becomes
+  ublk_validate_io_buf(). __ublk_complete_rq() keeps its 3-argument 6.18
+  signature. The batch-IO prerequisites are not pulled. ]
+(cherry picked from commit ca5a01eee34c7cbe0f531a613b0292a3ad1a419b)
+---
+ drivers/block/ublk_drv.c | 74 ++++++++++++++++++++++------------------
+ 1 file changed, 41 insertions(+), 33 deletions(-)
+
+diff --git a/drivers/block/ublk_drv.c b/drivers/block/ublk_drv.c
+index a11805b29b630..d0c6a02aa7064 100644
+--- a/drivers/block/ublk_drv.c
++++ b/drivers/block/ublk_drv.c
+@@ -2190,22 +2190,23 @@ static inline int ublk_check_cmd_op(u32 cmd_op)
+ 	return 0;
+ }
+ 
+-static inline int ublk_set_auto_buf_reg(struct ublk_io *io, struct io_uring_cmd *cmd)
++/* Must run before ublk_fill_io_cmd(). */
++static inline int ublk_validate_io_buf(const struct ublk_device *ub,
++				       struct io_uring_cmd *cmd,
++				       struct ublk_auto_buf_reg *buf)
+ {
+-	struct ublk_auto_buf_reg buf;
+-
+-	buf = ublk_sqe_addr_to_auto_buf_reg(READ_ONCE(cmd->sqe->addr));
++	if (!ublk_dev_support_auto_buf_reg(ub))
++		return 0;
+ 
+-	if (buf.reserved0 || buf.reserved1)
++	*buf = ublk_sqe_addr_to_auto_buf_reg(READ_ONCE(cmd->sqe->addr));
++	if (buf->reserved0 || buf->reserved1)
+ 		return -EINVAL;
+-
+-	if (buf.flags & ~UBLK_AUTO_BUF_REG_F_MASK)
++	if (buf->flags & ~UBLK_AUTO_BUF_REG_F_MASK)
+ 		return -EINVAL;
+-	io->buf.auto_reg = buf;
+ 	return 0;
+ }
+ 
+-static int ublk_handle_auto_buf_reg(struct ublk_io *io,
++static void ublk_clear_auto_buf_reg(struct ublk_io *io,
+ 				    struct io_uring_cmd *cmd,
+ 				    u16 *buf_idx)
+ {
+@@ -2222,11 +2223,25 @@ static int ublk_handle_auto_buf_reg(struct ublk_io *io,
+ 		 * responsibility for unregistering the buffer, otherwise
+ 		 * this ublk request gets stuck.
+ 		 */
+-		if (io->buf_ctx_handle == io_uring_cmd_ctx_handle(cmd))
++		if (buf_idx &&
++		    io->buf_ctx_handle == io_uring_cmd_ctx_handle(cmd))
+ 			*buf_idx = io->buf.auto_reg.index;
+ 	}
++}
+ 
+-	return ublk_set_auto_buf_reg(io, cmd);
++static inline void ublk_apply_io_buf(const struct ublk_device *ub,
++				     struct ublk_io *io,
++				     struct io_uring_cmd *cmd,
++				     unsigned long buf_addr,
++				     const struct ublk_auto_buf_reg *auto_buf,
++				     u16 *buf_idx)
++{
++	if (ublk_dev_support_auto_buf_reg(ub)) {
++		ublk_clear_auto_buf_reg(io, cmd, buf_idx);
++		io->buf.auto_reg = *auto_buf;
++	} else {
++		io->buf.addr = buf_addr;
++	}
+ }
+ 
+ /* Once we return, `io->req` can't be used any more */
+@@ -2243,18 +2258,6 @@ ublk_fill_io_cmd(struct ublk_io *io, struct io_uring_cmd *cmd)
+ 	return req;
+ }
+ 
+-static inline int
+-ublk_config_io_buf(const struct ublk_device *ub, struct ublk_io *io,
+-		   struct io_uring_cmd *cmd, unsigned long buf_addr,
+-		   u16 *buf_idx)
+-{
+-	if (ublk_dev_support_auto_buf_reg(ub))
+-		return ublk_handle_auto_buf_reg(io, cmd, buf_idx);
+-
+-	io->buf.addr = buf_addr;
+-	return 0;
+-}
+-
+ static inline void ublk_prep_cancel(struct io_uring_cmd *cmd,
+ 				    unsigned int issue_flags,
+ 				    struct ublk_queue *ubq, unsigned int tag)
+@@ -2372,6 +2375,7 @@ static int ublk_check_fetch_buf(const struct ublk_device *ub, __u64 buf_addr)
+ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_device *ub,
+ 		      struct ublk_io *io, __u64 buf_addr)
+ {
++	struct ublk_auto_buf_reg auto_buf;
+ 	int ret = 0;
+ 
+ 	/*
+@@ -2380,6 +2384,10 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_device *ub,
+ 	 * FETCH, so it is fine even for IO_URING_F_NONBLOCK.
+ 	 */
+ 	mutex_lock(&ub->mutex);
++	ret = ublk_validate_io_buf(ub, cmd, &auto_buf);
++	if (ret)
++		goto out;
++
+ 	/* UBLK_IO_FETCH_REQ is only allowed before dev is setup */
+ 	if (ublk_dev_ready(ub)) {
+ 		ret = -EBUSY;
+@@ -2395,9 +2403,7 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_device *ub,
+ 	WARN_ON_ONCE(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV);
+ 
+ 	ublk_fill_io_cmd(io, cmd);
+-	ret = ublk_config_io_buf(ub, io, cmd, buf_addr, NULL);
+-	if (ret)
+-		goto out;
++	ublk_apply_io_buf(ub, io, cmd, buf_addr, &auto_buf, NULL);
+ 
+ 	WRITE_ONCE(io->task, get_task_struct(current));
+ 	ublk_mark_io_ready(ub);
+@@ -2543,13 +2549,18 @@ static int ublk_ch_uring_cmd_local(struct io_uring_cmd *cmd,
+ 	case UBLK_IO_REGISTER_IO_BUF:
+ 		return ublk_daemon_register_io_buf(cmd, ub, q_id, tag, io, addr,
+ 						   issue_flags);
+-	case UBLK_IO_COMMIT_AND_FETCH_REQ:
++	case UBLK_IO_COMMIT_AND_FETCH_REQ: {
++		struct ublk_auto_buf_reg auto_buf;
++
+ 		ret = ublk_check_commit_and_fetch(ub, io, addr);
++		if (ret)
++			goto out;
++		ret = ublk_validate_io_buf(ub, cmd, &auto_buf);
+ 		if (ret)
+ 			goto out;
+ 		io->res = result;
+ 		req = ublk_fill_io_cmd(io, cmd);
+-		ret = ublk_config_io_buf(ub, io, cmd, addr, &buf_idx);
++		ublk_apply_io_buf(ub, io, cmd, addr, &auto_buf, &buf_idx);
+ 		if (buf_idx != UBLK_INVALID_BUF_IDX)
+ 			io_buffer_unregister_bvec(cmd, buf_idx, issue_flags);
+ 		compl = ublk_need_complete_req(ub, io);
+@@ -2559,10 +2570,8 @@ static int ublk_ch_uring_cmd_local(struct io_uring_cmd *cmd,
+ 			req->__sector = addr;
+ 		if (compl)
+ 			__ublk_complete_rq(req, io, ublk_dev_need_map_io(ub));
+-
+-		if (ret)
+-			goto out;
+ 		break;
++	}
+ 	case UBLK_IO_NEED_GET_DATA:
+ 		/*
+ 		 * ublk_get_data() may fail and fallback to requeue, so keep
+@@ -2570,8 +2579,7 @@ static int ublk_ch_uring_cmd_local(struct io_uring_cmd *cmd,
+ 		 * request
+ 		 */
+ 		req = ublk_fill_io_cmd(io, cmd);
+-		ret = ublk_config_io_buf(ub, io, cmd, addr, NULL);
+-		WARN_ON_ONCE(ret);
++		io->buf.addr = addr;
+ 		if (likely(ublk_get_data(ubq, io, req))) {
+ 			__ublk_prep_compl_io_cmd(io, req);
+ 			return UBLK_IO_RES_OK;
+-- 
+2.34.1
+

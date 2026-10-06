@@ -1,0 +1,243 @@
+From 1b62e083e6e46859f02c4fa14e30781a73b75b8e Mon Sep 17 00:00:00 2001
+From: Cen Zhang <zzzccc427@gmail.com>
+Date: Sun, 5 Jul 2026 10:53:10 +0800
+Subject: [PATCH 062/143] ocfs2: validate inline xattrs during inode block
+ validation
+
+Patch series "ocfs2: validate xattr entry bounds", v7.
+
+This series validates OCFS2 xattr entry name/value bounds when xattr
+metadata is read and validated, before getxattr() or listxattr() can walk
+out-of-range entry arrays or offsets from corrupted metadata.
+
+This patch (of 2):
+
+ocfs2_validate_inode_block() verifies a dinode before OCFS2 users walk
+metadata from it, but inline xattr metadata is still checked only in
+operation-specific consumers.  The existing ibody lookup helper validates
+inline header placement and entry count, but inode block validation does
+not reject entry name/value bounds.
+
+Add a flat xattr entry validator and call it from inode block validation
+for inline xattrs.  Keep the operation paths on their existing
+header/count lookup checks; the full entry bounds check now runs when the
+inode block is validated at read time.
+
+Reject corrupted inline xattr metadata before ocfs2_xattr_ibody_get() or
+listxattr() can walk past the inline storage.
+
+Validation reproduced this kernel report:
+BUG: KASAN: use-after-free in ocfs2_xattr_find_entry+0x5a/0x170
+Read of size 2 at addr ffff8881242a2000 by task python3/529
+Call Trace:
+  dump_stack_lvl+0x66/0xa0
+  print_report+0xce/0x630
+  kasan_report+0xe0/0x110
+  ocfs2_xattr_find_entry+0x5a/0x170
+  ocfs2_xattr_get_nolock+0x20a/0x820
+  ocfs2_xattr_get+0x10c/0x1e0
+  __vfs_getxattr+0xe2/0x130
+  vfs_getxattr+0x185/0x1b0
+
+Link: https://lore.kernel.org/20260705025311.3429854-1-zzzccc427@gmail.com
+Link: https://lore.kernel.org/20260705025311.3429854-2-zzzccc427@gmail.com
+Fixes: cf1d6c763fbc ("ocfs2: Add extended attribute support")
+Signed-off-by: Cen Zhang <zzzccc427@gmail.com>
+Assisted-by: Codex:gpt-5.5
+Reviewed-by: Joseph Qi <joseph.qi@linux.alibaba.com>
+Cc: Changwei Ge <gechangwei@live.cn>
+Cc: Heming Zhao <heming.zhao@suse.com>
+Cc: Joel Becker <jlbec@evilplan.org>
+Cc: Jun Piao <piaojun@huawei.com>
+Cc: Junxiao Bi <junxiao.bi@oracle.com>
+Cc: Mark Fasheh <mark@fasheh.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+(cherry picked from commit 8914a3330b72378136c2c02d6328a826f6abdad7)
+---
+ fs/ocfs2/inode.c |   4 ++
+ fs/ocfs2/xattr.c | 118 +++++++++++++++++++++++++++++++++++++++++------
+ fs/ocfs2/xattr.h |   2 +
+ 3 files changed, 111 insertions(+), 13 deletions(-)
+
+diff --git a/fs/ocfs2/inode.c b/fs/ocfs2/inode.c
+index 9ec3a7657b5b6..66c9e85e49e51 100644
+--- a/fs/ocfs2/inode.c
++++ b/fs/ocfs2/inode.c
+@@ -1634,6 +1634,10 @@ int ocfs2_validate_inode_block(struct super_block *sb,
+ 		goto bail;
+ 	}
+ 
++	rc = ocfs2_validate_inode_xattr(sb, bh->b_blocknr, di);
++	if (rc)
++		goto bail;
++
+ 	if (le16_to_cpu(di->i_dyn_features) & OCFS2_INLINE_DATA_FL) {
+ 		struct ocfs2_inline_data *data = &di->id2.i_data;
+ 
+diff --git a/fs/ocfs2/xattr.c b/fs/ocfs2/xattr.c
+index 59c87e698c89c..45da37d3e1a81 100644
+--- a/fs/ocfs2/xattr.c
++++ b/fs/ocfs2/xattr.c
+@@ -956,41 +956,133 @@ static int ocfs2_xattr_list_entries(struct inode *inode,
+ 	return result;
+ }
+ 
+-static int ocfs2_xattr_ibody_lookup_header(struct inode *inode,
+-					   struct ocfs2_dinode *di,
+-					   struct ocfs2_xattr_header **header)
++static int ocfs2_validate_xattr_entries_flat(struct super_block *sb, u64 blkno,
++					     struct ocfs2_xattr_header *xh,
++					     size_t region_size)
++{
++	u16 xattr_count = le16_to_cpu(xh->xh_count);
++	size_t entries_limit = region_size;
++	size_t nv_limit = region_size;
++	size_t max_entries;
++	int i;
++
++	if (region_size < sizeof(*xh))
++		return ocfs2_error(sb,
++				   "Invalid xattr in block %llu: region size %zu is too small\n",
++				   (unsigned long long)blkno, region_size);
++
++	max_entries = (entries_limit - sizeof(*xh)) /
++		      sizeof(struct ocfs2_xattr_entry);
++
++	if (xattr_count > max_entries)
++		return ocfs2_error(sb,
++				   "Invalid xattr in block %llu: entry count %u exceeds maximum %zu\n",
++				   (unsigned long long)blkno,
++				   xattr_count, max_entries);
++
++	for (i = 0; i < xattr_count; i++) {
++		struct ocfs2_xattr_entry *xe = &xh->xh_entries[i];
++		size_t name_offset = le16_to_cpu(xe->xe_name_offset);
++		size_t value_offset;
++
++		if (name_offset > nv_limit ||
++		    xe->xe_name_len > nv_limit - name_offset)
++			return ocfs2_error(sb,
++					   "Invalid xattr in block %llu: entry %d name is out of bounds\n",
++					   (unsigned long long)blkno, i);
++
++		value_offset = name_offset + OCFS2_XATTR_SIZE(xe->xe_name_len);
++		if (value_offset > nv_limit)
++			return ocfs2_error(sb,
++					   "Invalid xattr in block %llu: entry %d value starts out of bounds\n",
++					   (unsigned long long)blkno, i);
++
++		if (ocfs2_xattr_is_local(xe)) {
++			if (le64_to_cpu(xe->xe_value_size) >
++			    nv_limit - value_offset)
++				return ocfs2_error(sb,
++						   "Invalid xattr in block %llu: entry %d value is out of bounds\n",
++						   (unsigned long long)blkno,
++						   i);
++		} else if (sizeof(struct ocfs2_xattr_value_root) >
++			   nv_limit - value_offset) {
++			return ocfs2_error(sb,
++					   "Invalid xattr in block %llu: entry %d value root is out of bounds\n",
++					   (unsigned long long)blkno, i);
++		}
++	}
++
++	return 0;
++}
++
++static int ocfs2_xattr_ibody_lookup_header_raw(struct super_block *sb,
++					       u64 blkno,
++					       struct ocfs2_dinode *di,
++					       struct ocfs2_xattr_header **header,
++					       u16 *inline_size_ret)
+ {
++	struct ocfs2_xattr_header *xh;
+ 	u16 xattr_count;
+ 	size_t max_entries;
+ 	u16 inline_size = le16_to_cpu(di->i_xattr_inline_size);
+ 
+-	if (inline_size > inode->i_sb->s_blocksize ||
++	if (inline_size > sb->s_blocksize ||
+ 	    inline_size < sizeof(struct ocfs2_xattr_header)) {
+-		ocfs2_error(inode->i_sb,
+-			    "Invalid xattr inline size %u in inode %llu\n",
+-			    inline_size,
+-			    (unsigned long long)OCFS2_I(inode)->ip_blkno);
++		ocfs2_error(sb,
++			    "Invalid inode %llu: xattr inline size %u\n",
++			    (unsigned long long)blkno, inline_size);
+ 		return -EFSCORRUPTED;
+ 	}
+ 
+-	*header = (struct ocfs2_xattr_header *)
+-		((void *)di + inode->i_sb->s_blocksize - inline_size);
++	xh = (struct ocfs2_xattr_header *)
++		((void *)di + sb->s_blocksize - inline_size);
+ 
+-	xattr_count = le16_to_cpu((*header)->xh_count);
++	xattr_count = le16_to_cpu(xh->xh_count);
+ 	max_entries = (inline_size - sizeof(struct ocfs2_xattr_header)) /
+ 		      sizeof(struct ocfs2_xattr_entry);
+ 
+ 	if (xattr_count > max_entries) {
+-		ocfs2_error(inode->i_sb,
++		ocfs2_error(sb,
+ 			    "xattr entry count %u exceeds maximum %zu in inode %llu\n",
+ 			    xattr_count, max_entries,
+-			    (unsigned long long)OCFS2_I(inode)->ip_blkno);
++			    (unsigned long long)blkno);
+ 		return -EFSCORRUPTED;
+ 	}
+ 
++	*header = xh;
++	if (inline_size_ret)
++		*inline_size_ret = inline_size;
++
+ 	return 0;
+ }
+ 
++int ocfs2_validate_inode_xattr(struct super_block *sb, u64 blkno,
++			       struct ocfs2_dinode *di)
++{
++	struct ocfs2_xattr_header *xh;
++	u16 inline_size;
++	int ret;
++
++	if (!(le16_to_cpu(di->i_dyn_features) & OCFS2_INLINE_XATTR_FL))
++		return 0;
++
++	ret = ocfs2_xattr_ibody_lookup_header_raw(sb, blkno, di, &xh,
++						  &inline_size);
++	if (ret)
++		return ret;
++
++	return ocfs2_validate_xattr_entries_flat(sb, blkno, xh, inline_size);
++}
++
++static int ocfs2_xattr_ibody_lookup_header(struct inode *inode,
++					   struct ocfs2_dinode *di,
++					   struct ocfs2_xattr_header **header)
++{
++	return ocfs2_xattr_ibody_lookup_header_raw(inode->i_sb,
++						   OCFS2_I(inode)->ip_blkno,
++						   di, header, NULL);
++}
++
+ int ocfs2_has_inline_xattr_value_outside(struct inode *inode,
+ 					 struct ocfs2_dinode *di)
+ {
+diff --git a/fs/ocfs2/xattr.h b/fs/ocfs2/xattr.h
+index 5cdd6c6b40064..5e18513277f18 100644
+--- a/fs/ocfs2/xattr.h
++++ b/fs/ocfs2/xattr.h
+@@ -43,6 +43,8 @@ int ocfs2_xattr_set_handle(handle_t *, struct inode *, struct buffer_head *,
+ 			   struct ocfs2_alloc_context *);
+ int ocfs2_has_inline_xattr_value_outside(struct inode *inode,
+ 					 struct ocfs2_dinode *di);
++int ocfs2_validate_inode_xattr(struct super_block *sb, u64 blkno,
++			       struct ocfs2_dinode *di);
+ int ocfs2_xattr_remove(struct inode *, struct buffer_head *);
+ int ocfs2_init_security_get(struct inode *, struct inode *,
+ 			    const struct qstr *,
+-- 
+2.34.1
+

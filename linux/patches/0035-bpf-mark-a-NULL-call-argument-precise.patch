@@ -1,0 +1,103 @@
+From 0a93890ad6d36cfdd7e82fad9e0e2b4d99390779 Mon Sep 17 00:00:00 2001
+From: Eduard Zingerman <eddyz87@gmail.com>
+Date: Fri, 4 Sep 2026 17:05:52 -0700
+Subject: [PATCH 035/143] bpf: mark a NULL call argument precise
+
+check_func_arg() allows bpf_register_is_null() for nullable arguments
+w/o marking the underlying scalar register precise. Hence a checkpoint
+created on such a path would prune against arbitrary scalar value.
+
+check_helper_call() enforces second parameter of the
+bpf_get_local_storage() to be zero, w/o marking the underlying scalar
+register precise. Hence a checkpoint created on such a path would
+prune against arbitrary scalar value.
+
+Grouping these two into one patch, as they share the same fixes tag.
+
+Fixes: b5dc0163d8fd ("bpf: precise scalar_value tracking")
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20260904-register-is-null-precise-fixes-v1-1-0f5a360ff15d@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+
+[ Backport note: register_is_null() is not yet renamed to bpf_register_is_null() in this tree; the base name is used. ]
+
+(cherry picked from commit 1a3a10b030c96ea88868ccc060a16827c01eaa5a)
+---
+ kernel/bpf/verifier.c                                |  9 ++++++++-
+ .../selftests/bpf/progs/verifier_subprog_precision.c | 12 ++++++------
+ 2 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 15c34e7d00d93..c3fa278a4ef4d 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -9856,11 +9856,15 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
+ 			return err;
+ 	}
+ 
+-	if (register_is_null(reg) && type_may_be_null(arg_type))
++	if (register_is_null(reg) && type_may_be_null(arg_type)) {
+ 		/* A NULL register has a SCALAR_VALUE type, so skip
+ 		 * type checking.
+ 		 */
++		err = mark_chain_precision(env, regno);
++		if (err)
++			return err;
+ 		goto skip_type_check;
++	}
+ 
+ 	/* arg_btf_id and arg_size are in a union. */
+ 	if (base_type(arg_type) == ARG_PTR_TO_BTF_ID ||
+@@ -11820,6 +11824,9 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
+ 			verbose(env, "get_local_storage() doesn't support non-zero flags\n");
+ 			return -EINVAL;
+ 		}
++		err = mark_chain_precision(env, BPF_REG_2);
++		if (err)
++			return err;
+ 		break;
+ 	case BPF_FUNC_for_each_map_elem:
+ 		err = push_callback_call(env, insn, insn_idx, meta.subprogno,
+diff --git a/tools/testing/selftests/bpf/progs/verifier_subprog_precision.c b/tools/testing/selftests/bpf/progs/verifier_subprog_precision.c
+index ac3e418c2a961..d55fd063dc59e 100644
+--- a/tools/testing/selftests/bpf/progs/verifier_subprog_precision.c
++++ b/tools/testing/selftests/bpf/progs/verifier_subprog_precision.c
+@@ -287,9 +287,9 @@ __msg("17: (b7) r0 = 0")
+ __msg("18: (95) exit")
+ __msg("returning from callee:")
+ __msg("to caller at 9:")
+-__msg("frame 0: propagating r1,r4")
++__msg("frame 0: propagating r1,r3,r4")
+ __msg("mark_precise: frame0: last_idx 9 first_idx 9 subseq_idx -1")
+-__msg("mark_precise: frame0: regs=r1,r4 stack= before 18: (95) exit")
++__msg("mark_precise: frame0: regs=r1,r3,r4 stack= before 18: (95) exit")
+ __msg("from 18 to 9: safe")
+ __naked int callback_result_precise(void)
+ {
+@@ -419,9 +419,9 @@ __msg("to caller at 9:")
+ /* r1, r4 are always precise for bpf_loop(),
+  * r6 was marked before backtracking to callback body.
+  */
+-__msg("frame 0: propagating r1,r4,r6")
++__msg("frame 0: propagating r1,r3,r4,r6")
+ __msg("mark_precise: frame0: last_idx 9 first_idx 9 subseq_idx -1")
+-__msg("mark_precise: frame0: regs=r1,r4,r6 stack= before 16: (95) exit")
++__msg("mark_precise: frame0: regs=r1,r3,r4,r6 stack= before 16: (95) exit")
+ __msg("mark_precise: frame1: regs= stack= before 15: (b7) r0 = 0")
+ __msg("mark_precise: frame1: regs= stack= before 9: (85) call bpf_loop")
+ __msg("mark_precise: frame0: parent state regs= stack=:")
+@@ -575,9 +575,9 @@ __msg("to caller at 10:")
+ /* r1, r4 are always precise for bpf_loop(),
+  * fp-8 was marked before backtracking to callback body.
+  */
+-__msg("frame 0: propagating r1,r4,fp-8")
++__msg("frame 0: propagating r1,r3,r4,fp-8")
+ __msg("mark_precise: frame0: last_idx 10 first_idx 10 subseq_idx -1")
+-__msg("mark_precise: frame0: regs=r1,r4 stack=-8 before 18: (95) exit")
++__msg("mark_precise: frame0: regs=r1,r3,r4 stack=-8 before 18: (95) exit")
+ __msg("mark_precise: frame1: regs= stack= before 17: (b7) r0 = 0")
+ __msg("mark_precise: frame1: regs= stack= before 10: (85) call bpf_loop#181")
+ __msg("mark_precise: frame0: parent state regs= stack=:")
+-- 
+2.34.1
+

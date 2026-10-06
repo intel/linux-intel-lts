@@ -1,0 +1,75 @@
+From 6ad16739f14fb651a25e9141b30485ac8fec3cb0 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Mon, 28 Sep 2026 20:07:50 +0800
+Subject: [PATCH 098/143] bpf: backtrack_insn(): Handle ld_{abs,ind} subprog
+ exit edge
+
+Nicholas Carlini reported a bug in precision backtracking mechanism
+for BPF_LD | BPF_{IND,ABS} instructions. These instructions are
+modelled as two branches:
+- fallthrough;
+- implicit exit from current subprogram.
+
+The implicit exit case was not handled by the backtrack_insn()
+function. When backtracking such a path backtrack_insn() did not
+call bt_subprog_enter(), which meant that backtracking continued
+manipulating precision marks in a caller frame, while looking at
+instructions in a callee frame.
+
+This lead to segmentation faults during verification (see the
+selftest), or unsound state pruning.
+
+Fixes: ee861486e377 ("bpf: Fix ld_{abs,ind} failure path analysis in subprogs")
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Suggested-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Link: https://lore.kernel.org/bpf/20260901-bug-016-backtrack-ld-abs-v1-1-59368f1be435@gmail.com
+---
+ kernel/bpf/verifier.c | 25 +++++++++++++++++++------
+ 1 file changed, 19 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 5da775d7102d8..0453367fb22a3 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -4552,16 +4552,29 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx, int subseq_idx,
+ 			  */
+ 		}
+ 	} else if (class == BPF_LD) {
+-		if (!bt_is_reg_set(bt, dreg))
+-			return 0;
+-		bt_clear_reg(bt, dreg);
+ 		/* It's ld_imm64 or ld_abs or ld_ind.
+ 		 * For ld_imm64 no further tracking of precision
+ 		 * into parent is necessary
+ 		 */
+-		if (mode == BPF_IND || mode == BPF_ABS)
+-			/* to be analyzed */
+-			return -ENOTSUPP;
++		if (mode == BPF_IMM) {
++			bt_clear_reg(bt, dreg);
++			return 0;
++		}
++		/*
++		 * BPF_{IND,ABS} are modelled as two branches:
++		 * - fallthrough;
++		 * - implicit subprogram exit.
++		 * It is necessary to switch current frame if
++		 * implicit subprogram exit branch is backtracked.
++		 */
++		 if (mode == BPF_IND || mode == BPF_ABS) {
++			if (bt_is_reg_set(bt, dreg))
++				return -ENOTSUPP;
++			if (subseq_idx != idx + 1)
++				if (bt_subprog_enter(bt))
++					return -EFAULT;
++			return 0;
++		}
+ 	}
+ 	/* Propagate precision marks to linked registers, to account for
+ 	 * registers marked as precise in this function.
+-- 
+2.34.1
+

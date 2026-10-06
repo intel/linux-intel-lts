@@ -1,0 +1,162 @@
+From 024fe8ce6fc8be8ee9f3dd65bada5dc1ee1a4e0e Mon Sep 17 00:00:00 2001
+From: Jiri Olsa <jolsa@kernel.org>
+Date: Fri, 3 Jul 2026 13:49:09 +0200
+Subject: [PATCH 140/143] uprobes/x86: Move optimized uprobe from nop5 to nop10
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Andrii reported an issue with optimized uprobes [1] that can clobber
+redzone area with call instruction storing return address on stack
+where user code may keep temporary data without adjusting rsp.
+
+Fixing this by moving the optimized uprobes on top of 10-bytes nop
+instruction, so we can squeeze another instruction to escape the
+redzone area before doing the call, like:
+
+  lea -0x80(%rsp), %rsp
+  call tramp
+
+Note the lea instruction is used to adjust the rsp register without
+changing the flags.
+
+We use nop10 and following transformation to optimized instructions
+above and back as suggested by Peterz [2].
+
+Optimize path (int3_update_optimize):
+
+  1) Initial state after set_swbp() installed the uprobe:
+      cc 2e 0f 1f 84 00 00 00 00 00
+
+     From offset 0 this is INT3 followed by the tail of the original
+     10-byte NOP.
+
+     After a previous unoptimization bytes 5..9 may still contain the
+     old call instruction, which remains valid for threads already there.
+
+  2) Rewrite the LEA tail and call displacement:
+      cc [8d 64 24 80 e8 d0 d1 d2 d3]
+
+     From offset 0 this traps on the uprobe INT3.  Bytes 1..9 are not
+     executable entry points while byte 0 is trapped.
+
+  3) Publish the first LEA byte:
+      [48] 8d 64 24 80 e8 d0 d1 d2 d3
+
+     From offset 0 this is:
+        lea -0x80(%rsp), %rsp
+        call <uprobe-trampoline>
+
+Unoptimize path (int3_update_unoptimize):
+
+  1) Initial optimized state:
+      48 8d 64 24 80 e8 d0 d1 d2 d3
+     Same as 3) above.
+
+  2) Trap new entries before restoring the NOP bytes:
+      [cc] 8d 64 24 80 e8 d0 d1 d2 d3
+
+     From offset 0 this traps. A thread that had already executed the
+     LEA can still reach the intact CALL at offset 5.
+
+  3) Restore bytes 1..4 of the original NOP while keeping byte 0 trapped
+     and byte 5 as CALL.
+      cc [2e 0f 1f 84] e8 d0 d1 d2 d3
+
+     From offset 0 this still traps. Offset 5 is still the CALL for any
+     thread that was already past the first LEA byte.
+
+  4) Publish the first byte of the original NOP:
+      [66] 2e 0f 1f 84 e8 d0 d1 d2 d3
+
+     From offset 0 this is the restored 10-byte NOP; the CALL opcode and
+     displacement are now only NOP operands.  Offset 5 still decodes as
+     CALL for a thread that was already there.
+
+     Tthere is only a single target uprobe-trampoline for the given nop10
+     instruction address, so the CALL instruction will not be changed across
+     unoptimization/optimization cycles.
+     Therefore, any task that is preempted at the CALL instruction is guaranteed
+     to observe that CALL and not anything else.
+
+Note as explained in [2] we need to use following nop10:
+       PF1   PF2   ESC   NOPL  MOD   SIB   DISP32
+NOP10: 0x66, 0x2e, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00 -- cs nopw 0x00000000(%rax,%rax,1)
+
+which means we need to allow 0x2e prefix which maps to INAT_PFX_CS
+attribute in is_prefix_bad function.
+
+Also changing the uprobe syscall error when called out of uprobe
+trampoline to -EPROTO, so we are able to detect the fixed kernel.
+
+The optimized uprobe performance stays the same:
+
+        uprobe-nop     :    3.129 ± 0.013M/s
+        uprobe-push    :    3.045 ± 0.006M/s
+        uprobe-ret     :    1.095 ± 0.004M/s
+  -->   uprobe-nop10   :    7.170 ± 0.020M/s
+        uretprobe-nop  :    2.143 ± 0.021M/s
+        uretprobe-push :    2.090 ± 0.000M/s
+        uretprobe-ret  :    0.942 ± 0.000M/s
+  -->   uretprobe-nop10:    3.381 ± 0.003M/s
+        usdt-nop       :    3.245 ± 0.004M/s
+  -->   usdt-nop10     :    7.256 ± 0.023M/s
+
+[1] https://lore.kernel.org/bpf/20260509003146.976844-1-andrii@kernel.org/
+[2] https://lore.kernel.org/bpf/20260518104306.GU3102624@noisy.programming.kicks-ass.net/#t
+
+Closes: https://lore.kernel.org/bpf/20260509003146.976844-1-andrii@kernel.org/
+Fixes: ba2bfc97b462 ("uprobes/x86: Add support to optimize uprobes")
+Reported-by: Andrii Nakryiko <andrii@kernel.org>
+Assisted-by: Codex:GPT-5.5
+Signed-off-by: Jiri Olsa <jolsa@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Oleg Nesterov <oleg@redhat.com>
+Link: https://patch.msgid.link/20260703114917.238144-6-jolsa@kernel.org
+
+[ Backport note: this is a reduced 6.18-only mitigation, NOT the upstream
+  code. The upstream change reworks the optimized-uprobe text patching to
+  use a nop10 ("lea -0x80(%rsp),%rsp; call tramp"), splits int3_update()
+  into optimize/unoptimize state machines, relaxes is_prefix_bad() for the
+  0x2e prefix and changes the sys_uprobe errno from -ENXIO to -EPROTO. It
+  does not apply to 6.18 without 38af0dd6a266, 07c308eb2bcf, d9a48e77f6fe
+  and 8a5c6cbfe4a3 (all conflicting here), changes userspace-visible ABI,
+  and needs libbpf 8cae54c58608/ee2862439e5c plus nop10-built binaries to
+  get any benefit.
+  Instead, make the x86-64 can_optimize() return false, the same as the
+  32-bit variant. ARCH_UPROBE_FLAG_CAN_OPTIMIZE is then never set, so no
+  CALL is ever written over a probed nop5 and no uprobe trampoline is
+  created; all probes use the regular int3 path, which closes the red
+  zone clobbering. sys_uprobe keeps returning -ENXIO (no ABI change).
+  Cost: nop5 uprobes/USDTs lose the ~2x optimized-probe speedup that
+  6.18 introduced. The original checks are left in place (unreachable)
+  to keep the helpers referenced and to ease future stable backports. ]
+(cherry picked from commit 554ba38456dad8053a1a80afe6ae6da9eff745cc)
+---
+ arch/x86/kernel/uprobes.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/arch/x86/kernel/uprobes.c b/arch/x86/kernel/uprobes.c
+index ae347e3837851..4cbc77e78e696 100644
+--- a/arch/x86/kernel/uprobes.c
++++ b/arch/x86/kernel/uprobes.c
+@@ -1183,6 +1183,16 @@ static bool insn_is_nopl(struct insn *insn)
+ 
+ static bool can_optimize(struct insn *insn, unsigned long vaddr)
+ {
++	/*
++	 * Optimizing a nop5 into "call <uprobe-trampoline>" is unsafe: the
++	 * CALL stores its return address below %rsp and clobbers the red
++	 * zone, where leaf functions may keep live data without adjusting
++	 * %rsp. Upstream fixed this by moving the optimization to a nop10
++	 * ("lea -0x80(%rsp),%rsp; call"), which is too invasive for this
++	 * branch, so never optimize and keep every probe on the int3 path.
++	 */
++	return false;
++
+ 	if (!insn->x86_64 || insn->length != 5)
+ 		return false;
+ 
+-- 
+2.34.1
+

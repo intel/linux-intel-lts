@@ -1,0 +1,91 @@
+From 6f44adcaa800de58d76b75701f016ee4d3afdc9a Mon Sep 17 00:00:00 2001
+From: Dave Jiang <dave.jiang@intel.com>
+Date: Thu, 9 Jul 2026 08:58:41 -0700
+Subject: [PATCH 011/143] cxl/features: Serialize multi-part Get/Set Feature
+ transfers
+
+A Get or Set Feature payload larger than the mailbox payload size is
+split into several mailbox commands. mbox_mutex only serializes
+individual mailbox commands and is dropped between iterations of these
+loops. Nothing serializes the multi-part transfer as a whole.
+cxl_get_feature() and cxl_set_feature() are reachable concurrently
+from fwctl (per-fd RPCs run under a read-held registration lock) and
+from the EDAC scrub/ECS/repair paths, so two transfers to the same
+mailbox can interleave their parts and corrupt the device's transfer
+context.
+
+Add a per-mailbox feat_mutex and hold it across the whole transfer in
+both functions. It nests outside mbox_mutex (which is taken inside
+cxl_internal_send_cmd()), and is taken nowhere else, so no lock-ordering
+inversion is introduced.
+
+Link: https://sashiko.dev/#/patchset/20260702090849.47501-1-icheng@nvidia.com?part=1
+Fixes: 5e5ac21f629d ("cxl/mbox: Add GET_FEATURE mailbox command")
+Fixes: 14d502cc2718 ("cxl/mbox: Add SET_FEATURE mailbox command")
+Assisted-by: Claude:claude-opus-4-8
+Reviewed-by: Richard Cheng <icheng@nvidia.com>
+Link: https://patch.msgid.link/20260709155841.1895915-1-dave.jiang@intel.com
+Signed-off-by: Dave Jiang <dave.jiang@intel.com>
+(cherry picked from commit 77b814c1832fde018c30357b4ec3fcdaa91a1c10)
+---
+ drivers/cxl/core/features.c | 3 +++
+ drivers/cxl/core/mbox.c     | 1 +
+ include/cxl/mailbox.h       | 2 ++
+ 3 files changed, 6 insertions(+)
+
+diff --git a/drivers/cxl/core/features.c b/drivers/cxl/core/features.c
+index 6e25223d3409b..bb73f205f16cf 100644
+--- a/drivers/cxl/core/features.c
++++ b/drivers/cxl/core/features.c
+@@ -239,6 +239,8 @@ size_t cxl_get_feature(struct cxl_mailbox *cxl_mbox, const uuid_t *feat_uuid,
+ 
+ 	uuid_copy(&pi.uuid, feat_uuid);
+ 	pi.selection = selection;
++
++	guard(mutex)(&cxl_mbox->feat_mutex);
+ 	do {
+ 		data_to_rd_size = min(feat_out_size - data_rcvd_size,
+ 				      cxl_mbox->payload_size);
+@@ -313,6 +315,7 @@ int cxl_set_feature(struct cxl_mailbox *cxl_mbox,
+ 		data_in_size = cxl_mbox->payload_size - hdr_size;
+ 	}
+ 
++	guard(mutex)(&cxl_mbox->feat_mutex);
+ 	do {
+ 		int rc;
+ 
+diff --git a/drivers/cxl/core/mbox.c b/drivers/cxl/core/mbox.c
+index e1c23aae2a2ed..76731576ebfcc 100644
+--- a/drivers/cxl/core/mbox.c
++++ b/drivers/cxl/core/mbox.c
+@@ -1515,6 +1515,7 @@ int cxl_mailbox_init(struct cxl_mailbox *cxl_mbox, struct device *host)
+ 
+ 	cxl_mbox->host = host;
+ 	mutex_init(&cxl_mbox->mbox_mutex);
++	mutex_init(&cxl_mbox->feat_mutex);
+ 	rcuwait_init(&cxl_mbox->mbox_wait);
+ 
+ 	return 0;
+diff --git a/include/cxl/mailbox.h b/include/cxl/mailbox.h
+index c4e99e2e3a9d4..d008b9db07aa6 100644
+--- a/include/cxl/mailbox.h
++++ b/include/cxl/mailbox.h
+@@ -50,6 +50,7 @@ struct cxl_mbox_cmd {
+  * @payload_size: Size of space for payload
+  *                (CXL 3.1 8.2.8.4.3 Mailbox Capabilities Register)
+  * @mbox_mutex: mutex protects device mailbox and firmware
++ * @feat_mutex: serializes multi-part Get/Set Feature transfers
+  * @mbox_wait: rcuwait for mailbox
+  * @mbox_send: @dev specific transport for transmitting mailbox commands
+  * @feat_cap: Features capability
+@@ -60,6 +61,7 @@ struct cxl_mailbox {
+ 	DECLARE_BITMAP(exclusive_cmds, CXL_MEM_COMMAND_ID_MAX);
+ 	size_t payload_size;
+ 	struct mutex mbox_mutex; /* lock to protect mailbox context */
++	struct mutex feat_mutex;
+ 	struct rcuwait mbox_wait;
+ 	int (*mbox_send)(struct cxl_mailbox *cxl_mbox, struct cxl_mbox_cmd *cmd);
+ 	enum cxl_features_capability feat_cap;
+-- 
+2.34.1
+

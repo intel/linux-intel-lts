@@ -1,0 +1,51 @@
+From 0a3db060aee40685e5b966cac3d15741d2add12c Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Wed, 30 Sep 2026 00:37:34 +0800
+Subject: [PATCH 104/143] bpf: Keep refcount_acquire nullable for borrowed RCU
+ kptrs
+
+bpf_refcount_acquire() is fallible for a borrowed reference because the
+object may have reached a zero refcount. The verifier therefore keeps
+KF_RET_NULL on the return value unless the argument is an owning reference.
+
+An RCU-protected load of a local kptr is marked MEM_ALLOC, but it only
+receives NON_OWN_REF when the pointee contains a graph node. A refcounted
+object without a graph node consequently looks like an owning reference
+even though the loaded register has no acquired reference state. If the
+program drops the last real reference while remaining in the RCU critical
+section, refcount_inc_not_zero() returns NULL while the verifier treats the
+result as non-NULL.
+
+Only classify the argument as owning when it is backed by a verifier-tracked
+reference. This retains the non-NULL return for pointers from bpf_obj_new(),
+bpf_kptr_xchg(), or an earlier successful acquisition, while requiring a
+NULL check for borrowed RCU kptrs.
+
+Fixes: 1b12171533a9 ("bpf: Mark direct ld of stashed bpf_{rb,list}_node as non-owning ref")
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Suggested-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Ning Ding <dingning04@gmail.com>
+[ kkd: Rewrote commit log ]
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Link: https://lore.kernel.org/r/20260904084325.52250-4-memxor@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/verifier.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 39e988651949d..ecb1edf1356c8 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -13834,7 +13834,7 @@ static int check_kfunc_args(struct bpf_verifier_env *env, struct bpf_kfunc_call_
+ 				verbose(env, "arg#%d is neither owning or non-owning ref\n", i);
+ 				return -EINVAL;
+ 			}
+-			if (!type_is_non_owning_ref(reg->type))
++			if (!type_is_non_owning_ref(reg->type) && reg->ref_obj_id)
+ 				meta->arg_owning_ref = true;
+ 
+ 			rec = reg_btf_record(reg);
+-- 
+2.34.1
+

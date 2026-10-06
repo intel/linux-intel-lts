@@ -1,0 +1,46 @@
+From b3cd3c6236725f8eed9a5065302f47c451788609 Mon Sep 17 00:00:00 2001
+From: Jan Kara <jack@suse.cz>
+Date: Wed, 5 Aug 2026 17:35:48 +0200
+Subject: [PATCH 092/143] ext4: fix transaction overflow during writeback
+
+Commit 95ad8ee45cdb ("ext4: correct the reserved credits for extent
+conversion") was correct to note that we need to reserve enough credits
+for all extents possibly underlying a large folio. However it was too
+eager to reduce the number of reserved credits. Extent conversion may
+not only need to touch several leaf extent blocks, it may also need to
+split extents - for example a single large unwritten extent may need to
+be split into many small written ones in case of sparse folio dirtying.
+This can thus result not only in extent leaf modifications but also in a
+need to allocate new extent tree nodes. As a result the reserved
+transaction credits were not sufficient in some corner cases. Use
+ext4_meta_trans_blocks() for correct upper bound credit estimate.
+
+Fixes: 95ad8ee45cdb ("ext4: correct the reserved credits for extent conversion")
+Signed-off-by: Jan Kara <jack@suse.cz>
+Link: https://patch.msgid.link/20260805153605.166545-5-jack@suse.cz
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+---
+ fs/ext4/inode.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 3b2891f185409..c06e7ac24d0c8 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -2860,10 +2860,10 @@ static int ext4_do_writepages(struct mpage_da_data *mpd)
+ 	if (ext4_should_dioread_nolock(inode)) {
+ 		int bpf = ext4_journal_blocks_per_folio(inode);
+ 		/*
+-		 * We may need to convert up to one extent per block in
+-		 * the folio and we may dirty the inode.
++		 * We may need to convert up to one extent per block in the
++		 * folio.
+ 		 */
+-		rsv_blocks = 1 + ext4_ext_index_trans_blocks(inode, bpf);
++		rsv_blocks = ext4_meta_trans_blocks(inode, bpf, bpf);
+ 	}
+ 
+ 	if (wbc->range_start == 0 && wbc->range_end == LLONG_MAX)
+-- 
+2.34.1
+

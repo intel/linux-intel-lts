@@ -1,0 +1,268 @@
+From adeeabeca47e04a1f70bcad33e56532681db0f76 Mon Sep 17 00:00:00 2001
+From: Jeff Layton <jlayton@kernel.org>
+Date: Thu, 11 Jun 2026 16:00:59 -0400
+Subject: [PATCH 043/143] lockd, nfsd: RCU-protect nlmsvc_ops dispatch
+
+nlmsvc_ops is published by nfsd_lockd_init() and cleared by
+nfsd_lockd_shutdown() with plain stores, while lockd dereferences
+it unguarded from dispatch sites in fs/lockd/svcsubs.c. The pointer
+targets nfsd's .rodata and the fopen/fclose callbacks live in nfsd's
+.text, so a stale load after rmmod nfsd results in either a NULL
+deref or a module-text use-after-free.
+
+Declare nlmsvc_ops as __rcu, publish via rcu_assign_pointer(), clear
+via RCU_INIT_POINTER() + synchronize_rcu(). Add a struct module
+*owner field to nlmsvc_binding and pin the module across indirect
+calls with try_module_get/module_put. When the binding is torn down,
+fall back to fput() to avoid leaking struct file references.
+
+Fixes: 1da177e4c3f4 ("Linux-2.6.12-rc2")
+Cc: stable@vger.kernel.org
+Assisted-by: Claude:claude-opus-4-8
+Signed-off-by: Jeff Layton <jlayton@kernel.org>
+Link: https://patch.msgid.link/20260611-nfsd-testing-v2-16-5b90e276f2d9@kernel.org
+Signed-off-by: Chuck Lever <cel@kernel.org>
+
+[ Backport note: 6.18 lockd predates the xdrgen conversion and
+  7db001e03d7a ("lockd: Have nlm_fopen() return errno values"): the
+  nlmsvc_binding ->fopen callback still returns __be32 nlm status and
+  nlm_do_fopen() defaults to nlm_lck_denied_nolocks. Hand-applied:
+  nlm_do_fopen() returns nlm_lck_denied_nolocks (instead of upstream's
+  nlm__int__failed) when the binding is gone or the module ref can't be
+  taken, and drops the module ref on every exit path; ->owner is added to
+  the existing __be32 fopen prototype in bind.h. The svc4proc.c/svcproc.c
+  "!nlmsvc_ops" checks live in nlm{,4}svc_retrieve_args() and
+  nlm{,4}svc_proc_granted_res() here (no *_lookup_host() helpers) and were
+  converted to rcu_access_pointer(). svc.c, fs/nfsd/lockd.c and
+  nlm_release_files() are as upstream. ]
+(cherry picked from commit 641e5e20852359b8c31149be4598884e30652f60)
+---
+ fs/lockd/svc.c             |  4 +--
+ fs/lockd/svc4proc.c        |  4 +--
+ fs/lockd/svcproc.c         |  4 +--
+ fs/lockd/svcsubs.c         | 52 +++++++++++++++++++++++++++++++++-----
+ fs/nfsd/lockd.c            |  6 +++--
+ include/linux/lockd/bind.h | 12 ++++++---
+ 6 files changed, 64 insertions(+), 18 deletions(-)
+
+diff --git a/fs/lockd/svc.c b/fs/lockd/svc.c
+index d68afa196535a..28b9886394c8f 100644
+--- a/fs/lockd/svc.c
++++ b/fs/lockd/svc.c
+@@ -48,7 +48,7 @@
+ 
+ static struct svc_program	nlmsvc_program;
+ 
+-const struct nlmsvc_binding	*nlmsvc_ops;
++const struct nlmsvc_binding __rcu *nlmsvc_ops;
+ EXPORT_SYMBOL_GPL(nlmsvc_ops);
+ 
+ static DEFINE_MUTEX(nlmsvc_mutex);
+@@ -143,7 +143,7 @@ lockd(void *vrqstp)
+ 		nlmsvc_retry_blocked(rqstp);
+ 		svc_recv(rqstp);
+ 	}
+-	if (nlmsvc_ops)
++	if (rcu_access_pointer(nlmsvc_ops))
+ 		nlmsvc_invalidate_all();
+ 	nlm_shutdown_hosts();
+ 	cancel_delayed_work_sync(&ln->grace_period_end);
+diff --git a/fs/lockd/svc4proc.c b/fs/lockd/svc4proc.c
+index 75e020a8bfd07..a1adfd66dd230 100644
+--- a/fs/lockd/svc4proc.c
++++ b/fs/lockd/svc4proc.c
+@@ -31,7 +31,7 @@ nlm4svc_retrieve_args(struct svc_rqst *rqstp, struct nlm_args *argp,
+ 	__be32			error = 0;
+ 
+ 	/* nfsd callbacks must have been installed for this procedure */
+-	if (!nlmsvc_ops)
++	if (!rcu_access_pointer(nlmsvc_ops))
+ 		return nlm_lck_denied_nolocks;
+ 
+ 	if (lock->lock_start > OFFSET_MAX ||
+@@ -484,7 +484,7 @@ nlm4svc_proc_granted_res(struct svc_rqst *rqstp)
+ {
+ 	struct nlm_res *argp = rqstp->rq_argp;
+ 
+-        if (!nlmsvc_ops)
++        if (!rcu_access_pointer(nlmsvc_ops))
+                 return rpc_success;
+ 
+         dprintk("lockd: GRANTED_RES   called\n");
+diff --git a/fs/lockd/svcproc.c b/fs/lockd/svcproc.c
+index d98e8d684376b..49d20df3b8ae3 100644
+--- a/fs/lockd/svcproc.c
++++ b/fs/lockd/svcproc.c
+@@ -61,7 +61,7 @@ nlmsvc_retrieve_args(struct svc_rqst *rqstp, struct nlm_args *argp,
+ 	__be32			error = 0;
+ 
+ 	/* nfsd callbacks must have been installed for this procedure */
+-	if (!nlmsvc_ops)
++	if (!rcu_access_pointer(nlmsvc_ops))
+ 		return nlm_lck_denied_nolocks;
+ 
+ 	/* Obtain host handle */
+@@ -519,7 +519,7 @@ nlmsvc_proc_granted_res(struct svc_rqst *rqstp)
+ {
+ 	struct nlm_res *argp = rqstp->rq_argp;
+ 
+-	if (!nlmsvc_ops)
++	if (!rcu_access_pointer(nlmsvc_ops))
+ 		return rpc_success;
+ 
+ 	dprintk("lockd: GRANTED_RES   called\n");
+diff --git a/fs/lockd/svcsubs.c b/fs/lockd/svcsubs.c
+index 4075d0eab263f..405debfdf3ee0 100644
+--- a/fs/lockd/svcsubs.c
++++ b/fs/lockd/svcsubs.c
+@@ -90,24 +90,38 @@ int lock_to_openmode(struct file_lock *lock)
+ static __be32 nlm_do_fopen(struct svc_rqst *rqstp,
+ 			   struct nlm_file *file, int mode)
+ {
++	const struct nlmsvc_binding *ops;
+ 	__be32 nfserr = nlm_lck_denied_nolocks;
+ 	__be32 deferred = 0;
+ 	struct file **fp;
+ 	int m;
+ 
++	rcu_read_lock();
++	ops = rcu_dereference(nlmsvc_ops);
++	if (!ops || !try_module_get(ops->owner)) {
++		rcu_read_unlock();
++		return nlm_lck_denied_nolocks;
++	}
++	rcu_read_unlock();
++
+ 	for (m = O_RDONLY ; m <= O_WRONLY ; m++) {
+ 		if (mode != O_RDWR && mode != m)
+ 			continue;
+ 
+ 		fp = &file->f_file[m];
+-		if (*fp)
++		if (*fp) {
++			module_put(ops->owner);
+ 			return 0;
+-		nfserr = nlmsvc_ops->fopen(rqstp, &file->f_handle, fp, m);
+-		if (!nfserr)
++		}
++		nfserr = ops->fopen(rqstp, &file->f_handle, fp, m);
++		if (!nfserr) {
++			module_put(ops->owner);
+ 			return 0;
++		}
+ 		if (nfserr == nlm_drop_reply)
+ 			deferred = nfserr;
+ 	}
++	module_put(ops->owner);
+ 	if (deferred)
+ 		return deferred;
+ 	dprintk("lockd: open failed (error %d)\n", ntohl(nfserr));
+@@ -174,6 +188,33 @@ nlm_lookup_file(struct svc_rqst *rqstp, struct nlm_file **result,
+ 	goto out_unlock;
+ }
+ 
++/*
++ * Release the struct file references held by a nlm_file.
++ */
++static void nlm_release_files(struct nlm_file *file)
++{
++	const struct nlmsvc_binding *ops;
++	bool have_ops;
++
++	rcu_read_lock();
++	ops = rcu_dereference(nlmsvc_ops);
++	have_ops = ops && try_module_get(ops->owner);
++	rcu_read_unlock();
++
++	if (have_ops) {
++		if (file->f_file[O_RDONLY])
++			ops->fclose(file->f_file[O_RDONLY]);
++		if (file->f_file[O_WRONLY])
++			ops->fclose(file->f_file[O_WRONLY]);
++		module_put(ops->owner);
++	} else {
++		if (file->f_file[O_RDONLY])
++			fput(file->f_file[O_RDONLY]);
++		if (file->f_file[O_WRONLY])
++			fput(file->f_file[O_WRONLY]);
++	}
++}
++
+ /*
+  * Delete a file after having released all locks, blocks and shares
+  */
+@@ -183,10 +224,7 @@ nlm_delete_file(struct nlm_file *file)
+ 	nlm_debug_print_file("closing file", file);
+ 	if (!hlist_unhashed(&file->f_list)) {
+ 		hlist_del(&file->f_list);
+-		if (file->f_file[O_RDONLY])
+-			nlmsvc_ops->fclose(file->f_file[O_RDONLY]);
+-		if (file->f_file[O_WRONLY])
+-			nlmsvc_ops->fclose(file->f_file[O_WRONLY]);
++		nlm_release_files(file);
+ 		kfree(file);
+ 	} else {
+ 		printk(KERN_WARNING "lockd: attempt to release unknown file!\n");
+diff --git a/fs/nfsd/lockd.c b/fs/nfsd/lockd.c
+index c774ce9aa2965..6cd028c142fe3 100644
+--- a/fs/nfsd/lockd.c
++++ b/fs/nfsd/lockd.c
+@@ -86,6 +86,7 @@ nlm_fclose(struct file *filp)
+ }
+ 
+ static const struct nlmsvc_binding nfsd_nlm_ops = {
++	.owner		= THIS_MODULE,
+ 	.fopen		= nlm_fopen,		/* open file for locking */
+ 	.fclose		= nlm_fclose,		/* close file */
+ };
+@@ -94,11 +95,12 @@ void
+ nfsd_lockd_init(void)
+ {
+ 	dprintk("nfsd: initializing lockd\n");
+-	nlmsvc_ops = &nfsd_nlm_ops;
++	rcu_assign_pointer(nlmsvc_ops, &nfsd_nlm_ops);
+ }
+ 
+ void
+ nfsd_lockd_shutdown(void)
+ {
+-	nlmsvc_ops = NULL;
++	RCU_INIT_POINTER(nlmsvc_ops, NULL);
++	synchronize_rcu();
+ }
+diff --git a/include/linux/lockd/bind.h b/include/linux/lockd/bind.h
+index c53c81242e727..e25943e485c5c 100644
+--- a/include/linux/lockd/bind.h
++++ b/include/linux/lockd/bind.h
+@@ -21,11 +21,17 @@
+ struct svc_rqst;
+ struct rpc_task;
+ struct rpc_clnt;
++struct module;
+ 
+-/*
+- * This is the set of functions for lockd->nfsd communication
++/**
++ * struct nlmsvc_binding - lockd -> nfsd callback table
++ * @owner:  module that provides this binding.
++ * @fopen:  open a file by NFS file handle on behalf of an NLM request.
++ * @fclose: close a file that was previously opened via @fopen.
++ *          Implementations MUST be semantically equivalent to fput().
+  */
+ struct nlmsvc_binding {
++	struct module		*owner;
+ 	__be32			(*fopen)(struct svc_rqst *,
+ 						struct nfs_fh *,
+ 						struct file **,
+@@ -33,7 +39,7 @@ struct nlmsvc_binding {
+ 	void			(*fclose)(struct file *);
+ };
+ 
+-extern const struct nlmsvc_binding *nlmsvc_ops;
++extern const struct nlmsvc_binding __rcu *nlmsvc_ops;
+ 
+ /*
+  * Similar to nfs_client_initdata, but without the NFS-specific
+-- 
+2.34.1
+

@@ -1,0 +1,73 @@
+From 51637b5910a9b773df2e9a2147359febe265c2a0 Mon Sep 17 00:00:00 2001
+From: Usama Arif <usama.arif@linux.dev>
+Date: Fri, 14 Aug 2026 09:56:38 -0700
+Subject: [PATCH 024/143] blk-iocost: clear delay state when freeing policy
+ data
+
+iocg_kick_delay() turns sufficiently large debt into an explicit
+block-cgroup delay with blkcg_set_delay(), setting blkg->use_delay to
+-1 and incrementing blkcg->congestion_count.  Clearing it again depends
+on iocg_kick_delay() running from the period timer, the waitq timer or
+the issue path.
+
+ioc_pd_free() removes the iocg from active_iocgs and cancels its waitq
+timer, and no further bios can arrive, so once it has run nothing is
+left which can reduce the debt and clear the delay.  The blkcg stays
+marked congested for the rest of its life.
+
+blk_cgroup_congested() then returns true for every task in that cgroup
+and its descendants: page_cache_sync_ra() cuts readahead to a single
+page, page_cache_async_ra() skips it altogether, and
+__folio_throttle_swaprate() takes swap_avail_lock and schedules a
+throttle on anonymous folio allocation.
+
+Clear it explicitly, after the list removal and the synchronous
+hrtimer_cancel() so that neither timer processing nor an I/O path can
+re-arm it.  The free callback can also see policy data which was never
+attached to a blkg, hence the pd->blkg check.
+
+Fixes: 7caa47151ab2 ("blkcg: implement blk-iocost")
+Signed-off-by: Usama Arif <usama.arif@linux.dev>
+Acked-by: Tejun Heo <tj@kernel.org>
+Link: https://patch.msgid.link/20260814165712.510132-3-usama.arif@linux.dev
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+
+[ Backport note: base still frees the iocg synchronously (free_percpu()+kfree())
+  rather than via call_rcu(&pd->rcu_head, iocg_release) as upstream does. The
+  delay-state reset is inserted immediately before that free; the precondition
+  in the comment holds, as the iocg is already off active_list and waitq_timer
+  has been cancelled at that point. ]
+
+(cherry picked from commit 97cb95d2148835ae86ff916b145aef332d40439d)
+---
+ block/blk-iocost.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/block/blk-iocost.c b/block/blk-iocost.c
+index ecf4969125050..4f88516e81731 100644
+--- a/block/blk-iocost.c
++++ b/block/blk-iocost.c
+@@ -3020,6 +3020,7 @@ static void ioc_pd_init(struct blkg_policy_data *pd)
+ static void ioc_pd_free(struct blkg_policy_data *pd)
+ {
+ 	struct ioc_gq *iocg = pd_to_iocg(pd);
++	struct blkcg_gq *blkg = pd_to_blkg(pd);
+ 	struct ioc *ioc = iocg->ioc;
+ 	unsigned long flags;
+ 
+@@ -3041,6 +3042,12 @@ static void ioc_pd_free(struct blkg_policy_data *pd)
+ 
+ 		hrtimer_cancel(&iocg->waitq_timer);
+ 	}
++	/* off ->active_iocgs and timer gone, so nothing can re-arm the delay */
++	iocg->delay = 0;
++	iocg->indelay_since = 0;
++	if (blkg)
++		blkcg_clear_delay(blkg);
++
+ 	free_percpu(iocg->pcpu_stat);
+ 	kfree(iocg);
+ }
+-- 
+2.34.1
+

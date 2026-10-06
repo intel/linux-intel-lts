@@ -1,0 +1,45 @@
+From 81ffc0093d9a61c556e5f52b34b7bc806a4ca6d4 Mon Sep 17 00:00:00 2001
+From: Leon Hwang <leon.hwang@linux.dev>
+Date: Wed, 15 Jul 2026 22:11:20 +0800
+Subject: [PATCH 023/143] bpf: Disallow interpreter fallback for arena-related
+ insns
+
+Since the interpreter does not support the arena-related insns,
+interpreter fallback should not be allowed for these insns in
+core.c::__bpf_prog_select_runtime().
+
+Currently, when the interpreter executes the arena ST/LDX/STX insns,
+it would hit the BUG_ON() in ___bpf_prog_run() at run time.
+
+[    2.579196] BPF interpreter: unknown opcode a2 (imm: 0x0)
+[    2.579998] ------------[ cut here ]------------
+[    2.580652] kernel BUG at kernel/bpf/core.c:2349!
+[    2.581314] Oops: invalid opcode: 0000 [#1] SMP PTI
+
+Set jit_required as true when arena map is used in the prog to disallow
+interpreter fallback for arena-related insns.
+
+Fixes: 6082b6c328b5 ("bpf: Recognize addr_space_cast instruction in the verifier.")
+Signed-off-by: Leon Hwang <leon.hwang@linux.dev>
+Link: https://lore.kernel.org/bpf/20260715141122.15783-2-leon.hwang@linux.dev
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+(cherry picked from commit 34746b5a84ec37c0ea2bf6808c65c5ed8790eb51)
+---
+ kernel/bpf/verifier.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 03fec1b18b158..15c34e7d00d93 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -21041,6 +21041,7 @@ static int check_map_prog_compatibility(struct bpf_verifier_env *env,
+ 			return -EOPNOTSUPP;
+ 		}
+ 		env->prog->aux->arena = (void *)map;
++		env->prog->jit_required = true;
+ 		if (!bpf_arena_get_user_vm_start(env->prog->aux->arena)) {
+ 			verbose(env, "arena's user address must be set via map_extra or mmap()\n");
+ 			return -EINVAL;
+-- 
+2.34.1
+

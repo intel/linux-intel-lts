@@ -1,0 +1,113 @@
+From 6130a011c114553fe2ec50dd476d9c6510b85ec8 Mon Sep 17 00:00:00 2001
+From: Nikolay Aleksandrov <razor@blackwall.org>
+Date: Tue, 18 Aug 2026 18:07:56 +0300
+Subject: [PATCH 003/143] vxlan: fix reading neigh ha
+
+Currently arp/neigh_reduce read neigh ha directly which can lead to
+partial reads while the neigh is being updated. Use neigh_ha_snapshot to
+take a stable snapshot of the address similar to route_shortcircuit which
+already does the right thing.
+
+Fixes: e4f67addf158 ("add DOVE extensions for VXLAN")
+Fixes: f564f45c4518 ("vxlan: add ipv6 proxy support")
+Signed-off-by: Nikolay Aleksandrov <razor@blackwall.org>
+Reviewed-by: Petr Machata <petrm@nvidia.com>
+Reviewed-by: Ido Schimmel <idosch@nvidia.com>
+Link: https://patch.msgid.link/20260818150756.890025-3-razor@blackwall.org
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+(cherry picked from commit b824059a673b2283e78c7aae2c7d257aad7f0e1d)
+---
+ drivers/net/vxlan/vxlan_core.c | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/vxlan/vxlan_core.c b/drivers/net/vxlan/vxlan_core.c
+index 1e411a57d1fe7..87394dbc692d9 100644
+--- a/drivers/net/vxlan/vxlan_core.c
++++ b/drivers/net/vxlan/vxlan_core.c
+@@ -1894,6 +1894,7 @@ static int arp_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
+ 
+ 	if (n) {
+ 		struct vxlan_rdst *rdst = NULL;
++		u8 ha[ETH_ALEN] __aligned(2);
+ 		struct vxlan_fdb *f;
+ 		struct sk_buff	*reply;
+ 
+@@ -1902,8 +1903,10 @@ static int arp_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
+ 			goto out;
+ 		}
+ 
++		neigh_ha_snapshot(ha, n, n->dev);
++
+ 		rcu_read_lock();
+-		f = vxlan_find_mac_tx(vxlan, n->ha, vni);
++		f = vxlan_find_mac_tx(vxlan, ha, vni);
+ 		if (f)
+ 			rdst = first_remote_rcu(f);
+ 		if (rdst && vxlan_addr_any(&rdst->remote_ip)) {
+@@ -1915,7 +1918,7 @@ static int arp_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
+ 		rcu_read_unlock();
+ 
+ 		reply = arp_create(ARPOP_REPLY, ETH_P_ARP, sip, dev, tip, sha,
+-				n->ha, sha);
++				   ha, sha);
+ 
+ 		neigh_release(n);
+ 
+@@ -1948,7 +1951,8 @@ static int arp_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
+ 
+ #if IS_ENABLED(CONFIG_IPV6)
+ static struct sk_buff *vxlan_na_create(struct sk_buff *request,
+-	struct neighbour *n, bool isrouter)
++				       struct neighbour *n, u8 *ha,
++				       bool isrouter)
+ {
+ 	struct net_device *dev = request->dev;
+ 	struct sk_buff *reply;
+@@ -1994,7 +1998,7 @@ static struct sk_buff *vxlan_na_create(struct sk_buff *request,
+ 
+ 	/* Ethernet header */
+ 	ether_addr_copy(eth_hdr(reply)->h_dest, daddr);
+-	ether_addr_copy(eth_hdr(reply)->h_source, n->ha);
++	ether_addr_copy(eth_hdr(reply)->h_source, ha);
+ 	eth_hdr(reply)->h_proto = htons(ETH_P_IPV6);
+ 	reply->protocol = htons(ETH_P_IPV6);
+ 
+@@ -2023,7 +2027,7 @@ static struct sk_buff *vxlan_na_create(struct sk_buff *request,
+ 	na->icmph.icmp6_override = 1;
+ 	na->icmph.icmp6_solicited = 1;
+ 	na->target = ns->target;
+-	ether_addr_copy(&na->opt[2], n->ha);
++	ether_addr_copy(&na->opt[2], ha);
+ 	na->opt[0] = ND_OPT_TARGET_LL_ADDR;
+ 	na->opt[1] = na_olen >> 3;
+ 
+@@ -2066,6 +2070,7 @@ static int neigh_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
+ 
+ 	if (n) {
+ 		struct vxlan_rdst *rdst = NULL;
++		u8 ha[ETH_ALEN] __aligned(2);
+ 		struct vxlan_fdb *f;
+ 		struct sk_buff *reply;
+ 
+@@ -2074,7 +2079,8 @@ static int neigh_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
+ 			goto out;
+ 		}
+ 
+-		f = vxlan_find_mac_tx(vxlan, n->ha, vni);
++		neigh_ha_snapshot(ha, n, n->dev);
++		f = vxlan_find_mac_tx(vxlan, ha, vni);
+ 		if (f)
+ 			rdst = first_remote_rcu(f);
+ 		if (rdst && vxlan_addr_any(&rdst->remote_ip)) {
+@@ -2083,7 +2089,7 @@ static int neigh_reduce(struct net_device *dev, struct sk_buff *skb, __be32 vni)
+ 			goto out;
+ 		}
+ 
+-		reply = vxlan_na_create(skb, n,
++		reply = vxlan_na_create(skb, n, ha,
+ 					!!(f ? f->flags & NTF_ROUTER : 0));
+ 
+ 		neigh_release(n);
+-- 
+2.34.1
+

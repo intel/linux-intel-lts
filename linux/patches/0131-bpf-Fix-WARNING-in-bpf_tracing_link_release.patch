@@ -1,0 +1,91 @@
+From 2e0974540d28d14338326f8d0dd5f56aa04947a6 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Wed, 30 Sep 2026 01:17:46 +0800
+Subject: [PATCH 131/143] bpf: Fix WARNING in bpf_tracing_link_release
+
+The trampoline could be corrupted by the blindly
+'tr->flags = BPF_TRAMP_F_TAIL_CALL_CTX' in verifier.
+
+1. A fexit attached to a tail_call_reachable prog. 'tr->flags' became
+   'BPF_TRAMP_F_CALL_ORIG | BPF_TRAMP_F_TAIL_CALL_CTX'. And, the
+   trampoline would poke the target prog's nop insn using jmp insn instead
+   of call insn.
+2. Another fexit loaded with the same tail_call_reachable prog target.
+   'tr->flags' became 'BPF_TRAMP_F_TAIL_CALL_CTX'.
+3. Close the first fexit link. Due to no BPF_TRAMP_F_CALL_ORIG in
+   'tr->flags', the trampoline will fail to restore the prog's nop insn
+   using call insn.
+
+[    3.410719] WARNING: kernel/bpf/syscall.c:3551 at bpf_tracing_link_release+0x53/0x60, CPU#1: test_progs/98
+...
+[    3.428793]  bpf_link_free+0x58/0x130
+[    3.429293]  bpf_link_release+0x23/0x30
+
+Fix the warning by updating 'tr->flags' with '|=' and lock.
+
+Fixes: 2b5dcb31a19a ("bpf, x64: Fix tailcall infinite loop")
+Signed-off-by: Leon Hwang <leon.hwang@linux.dev>
+Reviewed-by: Pu Lehui <pulehui@huawei.com>
+Acked-by: Jiri Olsa <jolsa@kernel.org>
+Link: https://lore.kernel.org/bpf/20260722151909.69142-2-leon.hwang@linux.dev
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+---
+ include/linux/bpf.h     | 2 ++
+ kernel/bpf/trampoline.c | 7 +++++++
+ kernel/bpf/verifier.c   | 2 +-
+ 3 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 7d7739530aebc..69dde40d30255 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -1397,6 +1397,7 @@ int bpf_trampoline_unlink_prog(struct bpf_tramp_link *link,
+ struct bpf_trampoline *bpf_trampoline_get(u64 key,
+ 					  struct bpf_attach_target_info *tgt_info);
+ void bpf_trampoline_put(struct bpf_trampoline *tr);
++void bpf_trampoline_set_flags(struct bpf_trampoline *tr, u32 flags);
+ int arch_prepare_bpf_dispatcher(void *image, void *buf, s64 *funcs, int num_funcs);
+ 
+ /*
+@@ -1492,6 +1493,7 @@ static inline struct bpf_trampoline *bpf_trampoline_get(u64 key,
+ 	return NULL;
+ }
+ static inline void bpf_trampoline_put(struct bpf_trampoline *tr) {}
++static inline void bpf_trampoline_set_flags(struct bpf_trampoline *tr, u32 flags) {}
+ #define DEFINE_BPF_DISPATCHER(name)
+ #define DECLARE_BPF_DISPATCHER(name)
+ #define BPF_DISPATCHER_FUNC(name) bpf_dispatcher_nop_func
+diff --git a/kernel/bpf/trampoline.c b/kernel/bpf/trampoline.c
+index 40f19147f227e..261e158ef33e0 100644
+--- a/kernel/bpf/trampoline.c
++++ b/kernel/bpf/trampoline.c
+@@ -503,6 +503,13 @@ static int bpf_trampoline_update(struct bpf_trampoline *tr, bool lock_direct_mut
+ 	goto out;
+ }
+ 
++void bpf_trampoline_set_flags(struct bpf_trampoline *tr, u32 flags)
++{
++	mutex_lock(&tr->mutex);
++	tr->flags |= flags;
++	mutex_unlock(&tr->mutex);
++}
++
+ static enum bpf_tramp_prog_type bpf_attach_type_to_tramp(struct bpf_prog *prog)
+ {
+ 	switch (prog->expected_attach_type) {
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index d5c7fc35f81fb..96fc0aa5e680a 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -24666,7 +24666,7 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
+ 		return -ENOMEM;
+ 
+ 	if (tgt_prog && tgt_prog->aux->tail_call_reachable)
+-		tr->flags = BPF_TRAMP_F_TAIL_CALL_CTX;
++		bpf_trampoline_set_flags(tr, BPF_TRAMP_F_TAIL_CALL_CTX);
+ 
+ 	prog->aux->dst_trampoline = tr;
+ 	return 0;
+-- 
+2.34.1
+

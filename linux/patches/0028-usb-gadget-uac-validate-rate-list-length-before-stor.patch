@@ -1,0 +1,141 @@
+From 39180941fa59b9d1aad32341ab55d1a8d570cd14 Mon Sep 17 00:00:00 2001
+From: Qing Ming <a0yami@mailbox.org>
+Date: Tue, 19 May 2026 22:33:19 +0800
+Subject: [PATCH 028/143] usb: gadget: uac: validate rate list length before
+ storing
+
+UAC1 and UAC2 configfs rate-list attributes parse a comma-separated
+list of sampling rates and store each parsed value in fixed-size arrays.
+The arrays have UAC_MAX_RATES entries, but the store paths do not check
+that the input contains at most that many tokens before writing through
+opts->name##s[i++].
+
+Writing more than ten rates therefore writes past the end of the
+p_srates[] or c_srates[] array in struct f_uac1_opts or struct
+f_uac2_opts.
+
+With CONFIG_UBSAN_BOUNDS enabled, writing an 11-entry rate list to the
+UAC1 p_srate attribute reports:
+
+  UBSAN: array-index-out-of-bounds
+  drivers/usb/gadget/function/f_uac1.c:1669:1
+  index 10 is out of range for type 'int [10]'
+  __ubsan_handle_out_of_bounds.cold
+  f_uac1_opts_p_srate_store
+  configfs_write_iter
+  vfs_write
+  ksys_write
+  do_syscall_64
+
+The same reproducer against the UAC2 p_srate attribute reports:
+
+  UBSAN: array-index-out-of-bounds
+  drivers/usb/gadget/function/f_uac2.c:2087:1
+  index 10 is out of range for type 'int [10]'
+  __ubsan_handle_out_of_bounds.cold
+  f_uac2_opts_p_srate_store
+  configfs_write_iter
+  vfs_write
+  ksys_write
+  do_syscall_64
+
+Reject additional tokens once UAC_MAX_RATES entries have been parsed.
+Also keep the original kstrdup() pointer for kfree(), because strsep()
+advances the parsing cursor. Freeing the advanced cursor leaks the
+original buffer on successful parses and can free an interior pointer on
+some error paths.
+
+Fixes: 695d39ffc2b5 ("usb: gadget: f_uac1: Support multiple sampling rates")
+Fixes: a7339e4f5788 ("usb: gadget: f_uac2: Support multiple sampling rates")
+Signed-off-by: Qing Ming <a0yami@mailbox.org>
+Link: https://patch.msgid.link/20260519143319.147494-1-a0yami@mailbox.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+(cherry picked from commit 844d83d5964b87919b958ff48405188c6ddae9cc)
+---
+ drivers/usb/gadget/function/f_uac1.c | 13 +++++++++----
+ drivers/usb/gadget/function/f_uac2.c | 13 +++++++++----
+ 2 files changed, 18 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/f_uac1.c b/drivers/usb/gadget/function/f_uac1.c
+index 9da9fb4e12395..92d23a294f6d1 100644
+--- a/drivers/usb/gadget/function/f_uac1.c
++++ b/drivers/usb/gadget/function/f_uac1.c
+@@ -1594,7 +1594,8 @@ static ssize_t f_uac1_opts_##name##_store(struct config_item *item,	\
+ 					  const char *page, size_t len)	\
+ {									\
+ 	struct f_uac1_opts *opts = to_f_uac1_opts(item);		\
+-	char *split_page = NULL;					\
++	char *buf = NULL;						\
++	char *split_page;						\
+ 	int ret = -EINVAL;						\
+ 	char *token;							\
+ 	u32 num;							\
+@@ -1608,18 +1609,22 @@ static ssize_t f_uac1_opts_##name##_store(struct config_item *item,	\
+ 									\
+ 	i = 0;								\
+ 	memset(opts->name##s, 0x00, sizeof(opts->name##s));		\
+-	split_page = kstrdup(page, GFP_KERNEL);				\
++	buf = kstrdup(page, GFP_KERNEL);				\
++	split_page = buf;						\
+ 	while ((token = strsep(&split_page, ",")) != NULL) {		\
+ 		ret = kstrtou32(token, 0, &num);			\
+ 		if (ret)						\
+ 			goto end;					\
+-									\
++		if (i >= UAC_MAX_RATES) {				\
++			ret = -EINVAL;					\
++			goto end;					\
++		}							\
+ 		opts->name##s[i++] = num;				\
+ 		ret = len;						\
+ 	};								\
+ 									\
+ end:									\
+-	kfree(split_page);						\
++	kfree(buf);							\
+ 	mutex_unlock(&opts->lock);					\
+ 	return ret;							\
+ }									\
+diff --git a/drivers/usb/gadget/function/f_uac2.c b/drivers/usb/gadget/function/f_uac2.c
+index dd252ff2fb4e3..cec51a47c4783 100644
+--- a/drivers/usb/gadget/function/f_uac2.c
++++ b/drivers/usb/gadget/function/f_uac2.c
+@@ -2012,7 +2012,8 @@ static ssize_t f_uac2_opts_##name##_store(struct config_item *item,	\
+ 					  const char *page, size_t len)	\
+ {									\
+ 	struct f_uac2_opts *opts = to_f_uac2_opts(item);		\
+-	char *split_page = NULL;					\
++	char *buf = NULL;						\
++	char *split_page;						\
+ 	int ret = -EINVAL;						\
+ 	char *token;							\
+ 	u32 num;							\
+@@ -2026,18 +2027,22 @@ static ssize_t f_uac2_opts_##name##_store(struct config_item *item,	\
+ 									\
+ 	i = 0;								\
+ 	memset(opts->name##s, 0x00, sizeof(opts->name##s));		\
+-	split_page = kstrdup(page, GFP_KERNEL);				\
++	buf = kstrdup(page, GFP_KERNEL);				\
++	split_page = buf;						\
+ 	while ((token = strsep(&split_page, ",")) != NULL) {		\
+ 		ret = kstrtou32(token, 0, &num);			\
+ 		if (ret)						\
+ 			goto end;					\
+-									\
++		if (i >= UAC_MAX_RATES) {				\
++			ret = -EINVAL;					\
++			goto end;					\
++		}							\
+ 		opts->name##s[i++] = num;				\
+ 		ret = len;						\
+ 	};								\
+ 									\
+ end:									\
+-	kfree(split_page);						\
++	kfree(buf);							\
+ 	mutex_unlock(&opts->lock);					\
+ 	return ret;							\
+ }									\
+-- 
+2.34.1
+

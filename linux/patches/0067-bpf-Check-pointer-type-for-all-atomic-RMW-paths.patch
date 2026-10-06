@@ -1,0 +1,63 @@
+From 91751e6b5ae2d8155a3c3bd4a88a813a1c72d19d Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Tue, 29 Sep 2026 13:21:20 +0800
+Subject: [PATCH 067/143] bpf: Check pointer type for all atomic RMW paths
+
+Atomic RMW verification records an instruction pointer type only when the
+current destination is PTR_TO_ARENA. A second path can therefore reach the
+same instruction with an ordinary pointer without comparing it against the
+saved arena type.
+
+The post-verification fixup uses the saved type to rewrite the instruction
+to BPF_PROBE_ATOMIC for every path. Record the actual destination type for
+all atomic RMW paths so the existing mismatch check rejects incompatible
+uses of one instruction.
+
+Fixes: d503a04f8bc0 ("bpf: Add support for certain atomics in bpf_arena to x86 JIT")
+Signed-off-by: Yiyang Chen <chenyy23@mails.tsinghua.edu.cn>
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://patch.msgid.link/20260816-bpf-next-038-mixed-atomic-v1-v2-1-4644c1886dbc@mails.tsinghua.edu.cn
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+---
+ kernel/bpf/verifier.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 6e7a34402802a..2f60f6e4f1c57 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -7965,6 +7965,7 @@ static int check_store_reg(struct bpf_verifier_env *env, struct bpf_insn *insn,
+ static int check_atomic_rmw(struct bpf_verifier_env *env,
+ 			    struct bpf_insn *insn)
+ {
++	enum bpf_reg_type dst_reg_type;
+ 	int load_reg;
+ 	int err;
+ 
+@@ -7983,6 +7984,8 @@ static int check_atomic_rmw(struct bpf_verifier_env *env,
+ 	if (err)
+ 		return err;
+ 
++	dst_reg_type = reg_state(env, insn->dst_reg)->type;
++
+ 	if (insn->imm == BPF_CMPXCHG) {
+ 		/* Check comparison of R0 with memory location */
+ 		const u32 aux_reg = BPF_REG_0;
+@@ -8038,11 +8041,9 @@ static int check_atomic_rmw(struct bpf_verifier_env *env,
+ 	if (err)
+ 		return err;
+ 
+-	if (is_arena_reg(env, insn->dst_reg)) {
+-		err = save_aux_ptr_type(env, PTR_TO_ARENA, false);
+-		if (err)
+-			return err;
+-	}
++	err = save_aux_ptr_type(env, dst_reg_type, false);
++	if (err)
++		return err;
+ 	/* Check whether we can write into the same memory. */
+ 	err = check_mem_access(env, env->insn_idx, insn->dst_reg, insn->off,
+ 			       BPF_SIZE(insn->code), BPF_WRITE, -1, true, false);
+-- 
+2.34.1
+

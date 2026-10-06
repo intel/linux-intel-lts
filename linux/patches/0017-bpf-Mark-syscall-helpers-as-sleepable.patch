@@ -1,0 +1,60 @@
+From fe157d7390d9927fcd75382d509a8b7021a02362 Mon Sep 17 00:00:00 2001
+From: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Date: Thu, 3 Sep 2026 16:44:27 +0200
+Subject: [PATCH 017/143] bpf: Mark syscall helpers as sleepable
+
+bpf_sys_bpf() executes the bpf(2) syscall body, which can take mutexes,
+allocate with GFP_KERNEL, and wait for an RCU grace period.
+bpf_sys_close() reaches close_fd() and filp_close(), which can sleep as
+well.
+
+Both helpers are limited to BPF_PROG_TYPE_SYSCALL, whose main program is
+sleepable. That does not make every callback sleepable: a syscall program
+can register a bpf_timer callback, and the verifier checks that callback
+in a non-sleepable context while retaining the syscall helper set.
+
+Without .might_sleep on the prototypes, such a callback can invoke
+bpf_sys_bpf() from hrtimer softirq context and trigger a
+scheduling-while-atomic failure. bpf_sys_close() is exposed through the
+same missing context check.
+
+Set .might_sleep on both prototypes so the existing helper-context check
+rejects them from timer callbacks and other atomic regions. Calls from the
+sleepable main body remain valid.
+
+Fixes: 79a7f8bdb159 ("bpf: Introduce bpf_sys_bpf() helper and program type.")
+Fixes: 3abea089246f ("bpf: Add bpf_sys_close() helper.")
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Suggested-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Link: https://lore.kernel.org/r/20260903144433.1716731-10-memxor@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+
+(cherry picked from commit d05524794240b52fdc3b6c1220dd05505715824d)
+---
+ kernel/bpf/syscall.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index bab472152d64d..8ff97e10012d8 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -6393,6 +6393,7 @@ EXPORT_SYMBOL_NS(kern_sys_bpf, "BPF_INTERNAL");
+ static const struct bpf_func_proto bpf_sys_bpf_proto = {
+ 	.func		= bpf_sys_bpf,
+ 	.gpl_only	= false,
++	.might_sleep	= true,
+ 	.ret_type	= RET_INTEGER,
+ 	.arg1_type	= ARG_ANYTHING,
+ 	.arg2_type	= ARG_PTR_TO_MEM | MEM_RDONLY,
+@@ -6418,6 +6419,7 @@ BPF_CALL_1(bpf_sys_close, u32, fd)
+ static const struct bpf_func_proto bpf_sys_close_proto = {
+ 	.func		= bpf_sys_close,
+ 	.gpl_only	= false,
++	.might_sleep	= true,
+ 	.ret_type	= RET_INTEGER,
+ 	.arg1_type	= ARG_ANYTHING,
+ };
+-- 
+2.34.1
+

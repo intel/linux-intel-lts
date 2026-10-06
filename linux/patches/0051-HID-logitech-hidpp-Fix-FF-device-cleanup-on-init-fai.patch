@@ -1,0 +1,77 @@
+From 6532ccab457867afe412b04d7970366eefac1829 Mon Sep 17 00:00:00 2001
+From: Haoxiang Li <haoxiang_li2024@163.com>
+Date: Tue, 23 Jun 2026 14:52:00 +0800
+Subject: [PATCH 051/143] HID: logitech-hidpp: Fix FF device cleanup on init
+ failure
+
+hidpp_ff_init() creates the input force-feedback device with
+input_ff_create(), then allocates the HID++ FF private data,
+effect ID array, and workqueue.
+
+If any of those allocations fail after input_ff_create() succeeds,
+the function returns an error without destroying the FF device.
+Add an unwind path that frees the private allocations made by
+hidpp_ff_init() and calls input_ff_destroy() for failures after
+input_ff_create() succeeds.
+
+Fixes: ff21a635dd1a ("HID: logitech-hidpp: Force feedback support for the Logitech G920")
+Signed-off-by: Haoxiang Li <haoxiang_li2024@163.com>
+Reviewed-by: Bastien Nocera <hadess@hadess.net>
+Signed-off-by: Jiri Kosina <jkosina@suse.com>
+
+[ Backport note: kzalloc_objs() does not exist in this tree; the existing kcalloc() is kept. ]
+
+(cherry picked from commit dd5be4d9ce2dfc4d4a4527ef7d31d21a78e3cdac)
+---
+ drivers/hid/hid-logitech-hidpp.c | 23 ++++++++++++++++-------
+ 1 file changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/hid/hid-logitech-hidpp.c b/drivers/hid/hid-logitech-hidpp.c
+index 94ffda22ef41d..a2bb7d8b15b69 100644
+--- a/drivers/hid/hid-logitech-hidpp.c
++++ b/drivers/hid/hid-logitech-hidpp.c
+@@ -2854,18 +2854,19 @@ static int hidpp_ff_init(struct hidpp_device *hidpp,
+ 	 * ownership to FF core
+ 	 */
+ 	data = kmemdup(data, sizeof(*data), GFP_KERNEL);
+-	if (!data)
+-		return -ENOMEM;
++	if (!data) {
++		error = -ENOMEM;
++		goto err_destroy_ff;
++	}
+ 	data->effect_ids = kcalloc(num_slots, sizeof(int), GFP_KERNEL);
+ 	if (!data->effect_ids) {
+-		kfree(data);
+-		return -ENOMEM;
++		error = -ENOMEM;
++		goto err_free_data;
+ 	}
+ 	data->wq = create_singlethread_workqueue("hidpp-ff-sendqueue");
+ 	if (!data->wq) {
+-		kfree(data->effect_ids);
+-		kfree(data);
+-		return -ENOMEM;
++		error = -ENOMEM;
++		goto err_free_effect_ids;
+ 	}
+ 
+ 	data->hidpp = hidpp;
+@@ -2895,6 +2896,14 @@ static int hidpp_ff_init(struct hidpp_device *hidpp,
+ 		 version);
+ 
+ 	return 0;
++
++err_free_effect_ids:
++	kfree(data->effect_ids);
++err_free_data:
++	kfree(data);
++err_destroy_ff:
++	input_ff_destroy(dev);
++	return error;
+ }
+ 
+ /* ************************************************************************** */
+-- 
+2.34.1
+

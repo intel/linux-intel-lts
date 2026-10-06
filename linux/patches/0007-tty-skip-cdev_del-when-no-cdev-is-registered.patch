@@ -1,0 +1,39 @@
+From 475969913f359c2d36d44164f75b02bcad00db50 Mon Sep 17 00:00:00 2001
+From: Karl Mehltretter <kmehltretter@gmail.com>
+Date: Fri, 31 Jul 2026 20:18:42 +0200
+Subject: [PATCH 007/143] tty: skip cdev_del() when no cdev is registered
+
+TTY device registration can fail before a cdev is allocated.
+Serial core keeps the port so setserial can still use it, and later
+removal passes the NULL cdev slot to cdev_del(), causing a NULL-pointer
+dereference.
+
+Only delete the cdev when the slot is not NULL.
+
+Fixes: a3a10ce3429e ("Avoid usb reset crashes by making tty_io cdevs truly dynamic")
+Fixes: da4c279942b0 ("serial: enable serdev support")
+Assisted-by: Claude:claude-fable-5
+Signed-off-by: Karl Mehltretter <kmehltretter@gmail.com>
+Link: https://patch.msgid.link/20260731181844.11330-4-kmehltretter@gmail.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+(cherry picked from commit c3b5623fd97648f2747444aa8932ae604662df93)
+---
+ drivers/tty/tty_io.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/tty/tty_io.c b/drivers/tty/tty_io.c
+index f779f8fb138e8..e75361809cc3f 100644
+--- a/drivers/tty/tty_io.c
++++ b/drivers/tty/tty_io.c
+@@ -3307,7 +3307,7 @@ EXPORT_SYMBOL_GPL(tty_register_device_attr);
+ void tty_unregister_device(struct tty_driver *driver, unsigned index)
+ {
+ 	device_destroy(&tty_class, MKDEV(driver->major, driver->minor_start) + index);
+-	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)) {
++	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC) && driver->cdevs[index]) {
+ 		cdev_del(driver->cdevs[index]);
+ 		driver->cdevs[index] = NULL;
+ 	}
+-- 
+2.34.1
+

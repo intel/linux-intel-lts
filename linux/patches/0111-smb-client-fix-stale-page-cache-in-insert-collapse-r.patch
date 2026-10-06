@@ -1,0 +1,118 @@
+From 13dc9e1dd99e53d610b20c897ae428d69b2df9d9 Mon Sep 17 00:00:00 2001
+From: Huiwen He <hehuiwen@kylinos.cn>
+Date: Fri, 28 Aug 2026 15:19:34 +0800
+Subject: [PATCH 111/143] smb/client: fix stale page cache in insert/collapse
+ range
+
+smb3_insert_range() and smb3_collapse_range() use
+truncate_pagecache_range() to invalidate the affected page cache.
+However, if off or old_eof is not page-aligned, the boundary pages are
+only partially zeroed and remain uptodate. As a result, the client may
+return stale data after a successful insert/collapse range operation.
+
+For example, with 4K pages:
+
+    page 0          page 1          page 2
+    0------4K       4K------8K      8K------12K
+       ^                                ^
+    off=2K                       old_eof=10K
+
+Page 1 is removed from the page cache, while the boundary pages are
+only partially zeroed. After COPYCHUNK moves the data on the server,
+these cached pages may still return stale data.
+
+This can be reproduced on a CIFS mount:
+
+    bash -c '
+            FILE=/mnt/scratch/repro
+
+            # Use a 6 KiB file so EOF is not page-aligned.
+            dd if=/dev/urandom of=/tmp/src bs=1K count=6 status=none
+
+            # Expected: a 4 KiB hole followed by the original data.
+            rm -f /tmp/expected
+            truncate -s 4K /tmp/expected
+            cat /tmp/src >> /tmp/expected
+
+            cp /tmp/src "$FILE"
+
+            # Prime the page cache before moving data on the server.
+            cat "$FILE" > /dev/null
+
+            fallocate --insert-range -o 0 -l 4K "$FILE"
+
+            if cmp -s /tmp/expected "$FILE"; then
+                    echo "readback: OK"
+            else
+                    echo "readback: STALE DATA"
+            fi
+    '
+
+Fix this by writing back dirty data and discarding the page cache from
+the start of the page containing off to EOF before moving data on the
+server.
+
+Fixes: 9c8b7a293f50 ("smb3: fix temporary data corruption in insert range")
+Fixes: fa30a81f255a ("smb3: fix temporary data corruption in collapse range")
+Signed-off-by: Huiwen He <hehuiwen@kylinos.cn>
+Reviewed-by: ChenXiaoSong <chenxiaosong@kylinos.cn>
+Reviewed-by: Namjae Jeon <linkinjeon@kernel.org>
+Signed-off-by: Paulo Alcantara <pc@manguebit.org>
+(cherry picked from commit 01261a6fa48b62f5ead8e88aaca1e27cb9ab9032)
+---
+ fs/smb/client/smb2ops.c | 23 ++++++++++++++++++-----
+ 1 file changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/fs/smb/client/smb2ops.c b/fs/smb/client/smb2ops.c
+index 49f25daf40440..e7a93e56df2b5 100644
+--- a/fs/smb/client/smb2ops.c
++++ b/fs/smb/client/smb2ops.c
+@@ -3959,15 +3959,22 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
+ 	}
+ 
+ 	filemap_invalidate_lock(inode->i_mapping);
+-	rc = filemap_write_and_wait_range(inode->i_mapping, off, old_eof - 1);
++	rc = filemap_write_and_wait_range(inode->i_mapping,
++					  round_down(off, PAGE_SIZE),
++					  old_eof - 1);
+ 	if (rc < 0)
+ 		goto out_2;
+ 
+-	truncate_pagecache_range(inode, off, old_eof);
++	netfs_wait_for_outstanding_io(inode);
++	/*
++	 * Invalidate cached folios from the page containing off to EOF before
++	 * moving data on the server, so subsequent reads do not see stale data.
++	 */
++	truncate_pagecache_range(inode, round_down(off, PAGE_SIZE), -1);
++
+ 	spin_lock(&inode->i_lock);
+ 	netfs_write_zero_point(inode, old_eof);
+ 	spin_unlock(&inode->i_lock);
+-	netfs_wait_for_outstanding_io(inode);
+ 
+ 	rc = __smb2_copychunk_range(xid, cfile, cfile, off + len,
+ 				    old_eof - off - len, off);
+@@ -4027,11 +4034,17 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
+ 		goto out;
+ 
+ 	filemap_invalidate_lock(inode->i_mapping);
+-	rc = filemap_write_and_wait_range(inode->i_mapping, off, new_eof - 1);
++	rc = filemap_write_and_wait_range(inode->i_mapping,
++					  round_down(off, PAGE_SIZE),
++					  old_eof - 1);
+ 	if (rc < 0)
+ 		goto out_2;
+-	truncate_pagecache_range(inode, off, old_eof);
+ 	netfs_wait_for_outstanding_io(inode);
++	/*
++	 * Invalidate cached folios from the page containing off to EOF before
++	 * moving data on the server, so subsequent reads do not see stale data.
++	 */
++	truncate_pagecache_range(inode, round_down(off, PAGE_SIZE), -1);
+ 
+ 	rc = SMB2_set_eof(xid, tcon, cfile->fid.persistent_fid,
+ 			  cfile->fid.volatile_fid, cfile->pid, new_eof);
+-- 
+2.34.1
+

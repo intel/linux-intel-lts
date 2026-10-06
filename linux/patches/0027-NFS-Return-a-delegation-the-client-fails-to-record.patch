@@ -1,0 +1,98 @@
+From d7aa64a34e186d6b0f035d678ac7264a110eb5be Mon Sep 17 00:00:00 2001
+From: Chuck Lever <cel@kernel.org>
+Date: Wed, 17 Jun 2026 08:52:57 -0400
+Subject: [PATCH 027/143] NFS: Return a delegation the client fails to record
+
+When an NFS server grants a delegation in an OPEN reply,
+nfs_inode_set_delegation() records it on the client. However, three
+of its error flows return without sending DELEGRETURN.
+
+A delegation can be relinquished only by DELEGRETURN (RFC 8881
+Section 20.2.4), so dropping one silently leaves the server believing
+the client still holds it. If the server happens to recall that
+delegation, the client answers CB_RECALL with NFS4ERR_BADHANDLE
+because it has no record of the stateid. The server revokes the
+delegation and moves it onto its cl_revoked list, because the client
+never sends the FREE_STATEID that would drain it. Every subsequent
+SEQUENCE reply then carries SEQ4_STATUS_RECALLABLE_STATE_REVOKED,
+and the client's state manager loops issuing TEST_STATEID across its
+delegations without ever clearing the condition.
+
+The window is easy to reach now that a server offers a write
+delegation on any write OPEN: a delegation recalled for one opener
+races a re-open that the server answers with a fresh write
+delegation.
+
+Instead of dropping it, hand the delegation back during these error
+flows.
+
+Fixes: ade04647dd56 ("NFSv4: Ensure we honour NFS_DELEGATION_RETURNING in nfs_inode_set_delegation()")
+Signed-off-by: Chuck Lever <cel@kernel.org>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+
+[ Backport note: adapted to two API differences in this tree. The allocation
+  stays kmalloc(sizeof(*delegation), ...) (no kmalloc_obj() here), and
+  nfs_detach_delegation_locked() returns the detached delegation or NULL rather
+  than a bool, so orphaned is set on its NULL return and freeme keeps the
+  returned pointer. Logic is otherwise identical to upstream. ]
+
+(cherry picked from commit 220af23d863995091f0edeb1e6aa0945b3db8b37)
+---
+ fs/nfs/delegation.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/fs/nfs/delegation.c b/fs/nfs/delegation.c
+index f95707fc0edff..50b002377b8c0 100644
+--- a/fs/nfs/delegation.c
++++ b/fs/nfs/delegation.c
+@@ -468,11 +468,14 @@ int nfs_inode_set_delegation(struct inode *inode, const struct cred *cred,
+ 	struct nfs_inode *nfsi = NFS_I(inode);
+ 	struct nfs_delegation *delegation, *old_delegation;
+ 	struct nfs_delegation *freeme = NULL;
++	bool orphaned = false;
+ 	int status = 0;
+ 
+ 	delegation = kmalloc(sizeof(*delegation), GFP_KERNEL_ACCOUNT);
+-	if (delegation == NULL)
++	if (delegation == NULL) {
++		nfs4_proc_delegreturn(inode, cred, stateid, NULL, 0);
+ 		return -ENOMEM;
++	}
+ 	nfs4_stateid_copy(&delegation->stateid, stateid);
+ 	refcount_set(&delegation->refcount, 1);
+ 	delegation->type = type;
+@@ -520,12 +523,16 @@ int nfs_inode_set_delegation(struct inode *inode, const struct cred *cred,
+ 			goto out;
+ 		}
+ 		if (test_and_set_bit(NFS_DELEGATION_RETURNING,
+-					&old_delegation->flags))
++					&old_delegation->flags)) {
++			orphaned = true;
+ 			goto out;
++		}
+ 	}
+ 	freeme = nfs_detach_delegation_locked(nfsi, old_delegation, clp);
+-	if (freeme == NULL)
++	if (freeme == NULL) {
++		orphaned = true;
+ 		goto out;
++	}
+ add_new:
+ 	/*
+ 	 * If we didn't revalidate the change attribute before setting
+@@ -559,8 +566,11 @@ int nfs_inode_set_delegation(struct inode *inode, const struct cred *cred,
+ 		nfs_update_delegated_mtime(inode);
+ out:
+ 	spin_unlock(&clp->cl_lock);
+-	if (delegation != NULL)
++	if (delegation != NULL) {
++		if (orphaned)
++			nfs_do_return_delegation(inode, delegation, 0);
+ 		__nfs_free_delegation(delegation);
++	}
+ 	if (freeme != NULL) {
+ 		nfs_do_return_delegation(inode, freeme, 0);
+ 		nfs_free_delegation(server, freeme);
+-- 
+2.34.1
+

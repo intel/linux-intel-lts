@@ -1,0 +1,87 @@
+From 6e619081fa8e97783271627c6c9fb542a121d532 Mon Sep 17 00:00:00 2001
+From: Zide Chen <zide.chen@intel.com>
+Date: Thu, 11 Jun 2026 09:00:30 -0700
+Subject: [PATCH 135/143] perf/x86/intel/uncore: Factor out box setup code
+
+The PCI uncore PMU path already implements a lazy registration model:
+the PMU is registered when the first active box appears and
+unregistered when the last active box is removed.
+
+Factor this registration management into a shared helper, so the same
+code can be reused by the MSR and MMIO paths in later changes.
+
+No functional change intended.
+
+Signed-off-by: Zide Chen <zide.chen@intel.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Ian Rogers <irogers@google.com>
+Reviewed-by: Dapeng Mi <dapeng1.mi@linux.intel.com>
+Link: https://patch.msgid.link/20260611160033.66760-6-zide.chen@intel.com
+(cherry picked from commit ae7ca8796ddac708db592c5a68555414c451afcc)
+---
+ arch/x86/events/intel/uncore.c | 40 ++++++++++++++++++++++++----------
+ 1 file changed, 28 insertions(+), 12 deletions(-)
+
+diff --git a/arch/x86/events/intel/uncore.c b/arch/x86/events/intel/uncore.c
+index 96072b60a4efc..b8845fd309ec8 100644
+--- a/arch/x86/events/intel/uncore.c
++++ b/arch/x86/events/intel/uncore.c
+@@ -1130,6 +1130,29 @@ uncore_pci_find_dev_pmu(struct pci_dev *pdev, const struct pci_device_id *ids)
+ 	return pmu;
+ }
+ 
++static int uncore_box_setup(struct intel_uncore_pmu *pmu,
++			    struct intel_uncore_box *box)
++{
++	int ret;
++
++	uncore_box_init(box);
++
++	/* First active box registers the pmu. */
++	if (atomic_inc_return(&pmu->activeboxes) > 1)
++		return 0;
++
++	ret = uncore_pmu_register(pmu);
++	if (ret) {
++		atomic_dec(&pmu->activeboxes);
++		goto err;
++	}
++
++	return 0;
++err:
++	uncore_box_exit(box);
++	return ret;
++}
++
+ /*
+  * Register the PMU for a PCI device
+  * @pdev: The PCI device.
+@@ -1156,20 +1179,13 @@ static int uncore_pci_pmu_register(struct pci_dev *pdev,
+ 	box->dieid = die;
+ 	box->pci_dev = pdev;
+ 	box->pmu = pmu;
+-	uncore_box_init(box);
+ 
+-	pmu->boxes[die] = box;
+-	if (atomic_inc_return(&pmu->activeboxes) > 1)
+-		return 0;
+-
+-	/* First active box registers the pmu */
+-	ret = uncore_pmu_register(pmu);
+-	if (ret) {
+-		atomic_dec(&pmu->activeboxes);
+-		pmu->boxes[die] = NULL;
+-		uncore_box_exit(box);
++	ret = uncore_box_setup(pmu, box);
++	if (!ret)
++		pmu->boxes[die] = box;
++	else
+ 		kfree(box);
+-	}
++
+ 	return ret;
+ }
+ 
+-- 
+2.34.1
+

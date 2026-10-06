@@ -1,0 +1,124 @@
+From 0c7ece57c99c465270143c63cd873cb2e4f7bbd2 Mon Sep 17 00:00:00 2001
+From: Kanchan Joshi <joshi.k@samsung.com>
+Date: Tue, 18 Aug 2026 11:32:53 +0530
+Subject: [PATCH 030/143] nvme: fix racy access to FDP placement id array
+
+nvme_query_fdp_info() is called per-path and therefore prone to races.
+
+It populates head->nr_plids/head->plids for fdp registration.
+But nothing protects that pair from concurrent access - two paths scanning
+the same namespace can race to populate it.
+
+Avoid the race by moving this initialization work to nvme_alloc_ns_head()
+which is called once per shared namespace.
+
+Fixes: 30b5f20bb2dd ("nvme: register fdp parameters with the block layer")
+Reported-by: Hari Mishal <harimishal1@gmail.com>
+Link: https://lore.kernel.org/linux-nvme/20260725135111.14041-2-harimishal1@gmail.com/
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Kanchan Joshi <joshi.k@samsung.com>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+
+[ Backport note: the removed per-path FDP query in nvme_update_ns_info_block()
+  sits next to the nvme_invalid_lba_sz() check upstream (c8cdecdb47d3), which is
+  not in this tree; only the FDP block is removed and the LBA check is not
+  imported. Requires the preceding "nvme: set ns->head in nvme_alloc_ns_head". ]
+
+(cherry picked from commit 56e1c6bbe4bb084d7ecf61698afdf70be23dd35f)
+---
+ drivers/nvme/host/core.c | 30 +++++++++++-------------------
+ drivers/nvme/host/nvme.h |  1 +
+ 2 files changed, 12 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/nvme/host/core.c b/drivers/nvme/host/core.c
+index 26a0f463284c6..21db8ed2454e3 100644
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -2272,14 +2272,6 @@ static int nvme_query_fdp_info(struct nvme_ns *ns, struct nvme_ns_info *info)
+ 	size_t size;
+ 	int i, ret;
+ 
+-	/*
+-	 * The FDP configuration is static for the lifetime of the namespace,
+-	 * so return immediately if we've already registered this namespace's
+-	 * streams.
+-	 */
+-	if (head->nr_plids)
+-		return 0;
+-
+ 	ret = nvme_get_features(ctrl, NVME_FEAT_FDP, info->endgid, NULL, 0,
+ 				&fdp);
+ 	if (ret) {
+@@ -2326,6 +2318,7 @@ static int nvme_query_fdp_info(struct nvme_ns *ns, struct nvme_ns_info *info)
+ 
+ 	for (i = 0; i < head->nr_plids; i++)
+ 		head->plids[i] = le16_to_cpu(ruhs->ruhsd[i].pid);
++	head->write_stream_granularity = min(info->runs, U32_MAX);
+ free:
+ 	kfree(ruhs);
+ 	return ret;
+@@ -2368,12 +2361,6 @@ static int nvme_update_ns_info_block(struct nvme_ns *ns,
+ 			goto out;
+ 	}
+ 
+-	if (ns->ctrl->ctratt & NVME_CTRL_ATTR_FDPS) {
+-		ret = nvme_query_fdp_info(ns, info);
+-		if (ret < 0)
+-			goto out;
+-	}
+-
+ 	lim = queue_limits_start_update(ns->disk->queue);
+ 
+ 	memflags = blk_mq_freeze_queue(ns->disk->queue);
+@@ -2425,10 +2412,7 @@ static int nvme_update_ns_info_block(struct nvme_ns *ns,
+ 		capacity = 0;
+ 
+ 	lim.max_write_streams = ns->head->nr_plids;
+-	if (lim.max_write_streams)
+-		lim.write_stream_granularity = min(info->runs, U32_MAX);
+-	else
+-		lim.write_stream_granularity = 0;
++	lim.write_stream_granularity = ns->head->write_stream_granularity;
+ 
+ 	/*
+ 	 * Only set the DEAC bit if the device guarantees that reads from
+@@ -3947,15 +3931,23 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_ns *ns,
+ 	} else
+ 		head->effects = ctrl->effects;
+ 
++	if (ctrl->ctratt & NVME_CTRL_ATTR_FDPS) {
++		ret = nvme_query_fdp_info(ns, info);
++		if (ret < 0)
++			goto out_cleanup_srcu;
++	}
++
+ 	ret = nvme_mpath_alloc_disk(ctrl, head);
+ 	if (ret)
+-		goto out_cleanup_srcu;
++		goto out_cleanup_fdp;
+ 
+ 	list_add_tail(&head->entry, &ctrl->subsys->nsheads);
+ 
+ 	kref_get(&ctrl->subsys->ref);
+ 
+ 	return head;
++out_cleanup_fdp:
++	kfree(head->plids);
+ out_cleanup_srcu:
+ 	cleanup_srcu_struct(&head->srcu);
+ out_ida_remove:
+diff --git a/drivers/nvme/host/nvme.h b/drivers/nvme/host/nvme.h
+index ec03a07617af1..273addc70ab6b 100644
+--- a/drivers/nvme/host/nvme.h
++++ b/drivers/nvme/host/nvme.h
+@@ -560,6 +560,7 @@ struct nvme_ns_head {
+ 
+ 	u16			nr_plids;
+ 	u16			*plids;
++	u32			write_stream_granularity;
+ #ifdef CONFIG_NVME_MULTIPATH
+ 	struct bio_list		requeue_list;
+ 	spinlock_t		requeue_lock;
+-- 
+2.34.1
+

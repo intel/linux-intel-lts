@@ -1,0 +1,52 @@
+From e892ff8be79ce341db54fd8a297c2c7f8cb16818 Mon Sep 17 00:00:00 2001
+From: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Date: Tue, 4 Aug 2026 22:52:19 +0900
+Subject: [PATCH 005/143] printk: Don't WARN on kthread_run failure.
+
+Since __kthread_create_on_node() returns -EINTR upon SIGKILL,
+we should not use WARN_ON() in order to catch kthread_run() failure.
+
+Reported-by: syzbot+1ebbc20f223b99446034@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=1ebbc20f223b99446034
+Fixes: 5f53ca3ff83b ("printk: Implement legacy printer kthread for PREEMPT_RT")
+Fixes: 76f258bf3f2a ("printk: nbcon: Introduce printer kthreads")
+Signed-off-by: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Reviewed-by: John Ogness <john.ogness@linutronix.de>
+Reviewed-by: Petr Mladek <pmladek@suse.com>
+Link: https://patch.msgid.link/76bb4c1c-5d85-4635-b3bb-fc06f292c59e@I-love.SAKURA.ne.jp
+Signed-off-by: Petr Mladek <pmladek@suse.com>
+(cherry picked from commit 72dd0ec09e7cc98ed58ddeac26575e5d1ab8a93d)
+---
+ kernel/printk/nbcon.c  | 2 +-
+ kernel/printk/printk.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/printk/nbcon.c b/kernel/printk/nbcon.c
+index 9c1e8ec04c556..5ee30dffa8104 100644
+--- a/kernel/printk/nbcon.c
++++ b/kernel/printk/nbcon.c
+@@ -1340,7 +1340,7 @@ bool nbcon_kthread_create(struct console *con)
+ 		return true;
+ 
+ 	kt = kthread_run(nbcon_kthread_func, con, "pr/%s%d", con->name, con->index);
+-	if (WARN_ON(IS_ERR(kt))) {
++	if (IS_ERR(kt)) {
+ 		con_printk(KERN_ERR, con, "failed to start printing thread\n");
+ 		return false;
+ 	}
+diff --git a/kernel/printk/printk.c b/kernel/printk/printk.c
+index cc3d57be447d1..dffdbbfa4a005 100644
+--- a/kernel/printk/printk.c
++++ b/kernel/printk/printk.c
+@@ -3689,7 +3689,7 @@ static bool legacy_kthread_create(void)
+ 	lockdep_assert_console_list_lock_held();
+ 
+ 	kt = kthread_run(legacy_kthread_func, NULL, "pr/legacy");
+-	if (WARN_ON(IS_ERR(kt))) {
++	if (IS_ERR(kt)) {
+ 		pr_err("failed to start legacy printing thread\n");
+ 		return false;
+ 	}
+-- 
+2.34.1
+

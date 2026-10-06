@@ -1,0 +1,114 @@
+From f7ace4e74b3af843635ade120a5614d3e36ba198 Mon Sep 17 00:00:00 2001
+From: Bernd Schubert <bernd@bsbernd.com>
+Date: Fri, 21 Aug 2026 18:19:09 +0200
+Subject: [PATCH 122/143] fuse: Fix the condition to enable over-io-uring
+
+The existing condition in fuse_uring_cmd() is there only to avoid
+disabling io-uring for connections that already run with it, missing
+was a condition to refuse any IORING_OP_URING_CMD if the
+connection/channel didn't get enabled because of missing FUSE_INIT
+reply flag FUSE_OVER_IO_URING. Without the reply flag the barrier in
+fuse_uring_ready() doesn't work and IO could already be going on and
+cause deadlock states (at a minimum one between fch->bg_lock and
+queue->lock).
+
+The change itself is trivial, but brings behavior change,
+FUSE_OVER_IO_URING has to be set in the FUSE_INIT_REPLY by fuse servers
+to accept any IORING_OP_URING_CMD. Libfuse does that and the only
+non-libfuse implementation I found (fractal-fuse) also does it.
+Qemu patches for fuse-io-uring are not merged yet, as far as I know.
+
+Moved up is the smp_load_acquire(&fch->initialized) check, as a
+fuse-server implementation might try to setup io-uring before FUSE_INIT
+is processed and might have gotten -EOPNOTSUPP instead of -EAGAIN.
+
+Also fixed is a stale comment that explains the handling of the
+FUSE_OVER_IO_URING flag in early RFC versions.
+
+If there should be a report from any library or application we
+probably need to revert this commit.
+
+Fixes: 3393ff964e0f ("fuse: block request allocation until io-uring init is complete")
+Signed-off-by: Bernd Schubert <bernd@bsbernd.com>
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+
+[ Backport note: 6.18 predates the fuse_chan split (994d80794355) and the
+  release/acquire conversion of ->initialized (4ef7c8cc9894), so the checks
+  operate on struct fuse_conn: fch->abort_with_err -> fc->aborted,
+  fch->connected/io_uring -> fc->connected/io_uring, and
+  smp_load_acquire(&fch->initialized) -> a plain fc->initialized test
+  followed by smp_rmb() pairing with the smp_wmb() in fuse_set_initialized()
+  (same pattern as fuse_block_alloc()), so fc->io_uring set by the INIT
+  reply is observed once ->initialized is seen. Check order and error codes
+  match upstream. ]
+(cherry picked from commit 1f59015e958174e89be58cc8db16d70a60d17255)
+---
+ fs/fuse/dev_uring.c | 30 +++++++++++++++++++-----------
+ fs/fuse/inode.c     |  4 ----
+ 2 files changed, 19 insertions(+), 15 deletions(-)
+
+diff --git a/fs/fuse/dev_uring.c b/fs/fuse/dev_uring.c
+index 9b57544935b50..db6dcf4439662 100644
+--- a/fs/fuse/dev_uring.c
++++ b/fs/fuse/dev_uring.c
+@@ -1253,23 +1253,31 @@ int fuse_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
+ 	}
+ 	fc = fud->fc;
+ 
+-	/* Once a connection has io-uring enabled on it, it can't be disabled */
+-	if (!enable_uring && !fc->io_uring) {
+-		pr_info_ratelimited("fuse-io-uring is disabled\n");
+-		return -EOPNOTSUPP;
+-	}
++	/*
++	 * The ring is sized from values negotiated by FUSE_INIT
++	 */
++	if (!fc->initialized)
++		return -EAGAIN;
++
++	/* Pairs with smp_wmb() in fuse_set_initialized() */
++	smp_rmb();
+ 
+ 	if (fc->aborted)
+ 		return -ECONNABORTED;
+ 	if (!fc->connected)
+ 		return -ENOTCONN;
+ 
+-	/*
+-	 * fuse_uring_register() needs the ring to be initialized,
+-	 * we need to know the max payload size
+-	 */
+-	if (!fc->initialized)
+-		return -EAGAIN;
++	/* Once a connection has io-uring enabled on it, it can't be disabled */
++	if (!enable_uring && !fc->io_uring) {
++		pr_info_ratelimited("fuse-io-uring is disabled by module parameter\n");
++		return -EOPNOTSUPP;
++	}
++
++	if (!fc->io_uring) {
++		pr_info_ratelimited(
++			"fuse-io-uring not enabled on this connection\n");
++		return -EOPNOTSUPP;
++	}
+ 
+ 	switch (cmd_op) {
+ 	case FUSE_IO_URING_CMD_REGISTER:
+diff --git a/fs/fuse/inode.c b/fs/fuse/inode.c
+index a0a64dfffb759..091a375c32a8d 100644
+--- a/fs/fuse/inode.c
++++ b/fs/fuse/inode.c
+@@ -1517,10 +1517,6 @@ static struct fuse_init_args *fuse_new_init(struct fuse_mount *fm)
+ 	if (IS_ENABLED(CONFIG_FUSE_PASSTHROUGH))
+ 		flags |= FUSE_PASSTHROUGH;
+ 
+-	/*
+-	 * This is just an information flag for fuse server. No need to check
+-	 * the reply - server is either sending IORING_OP_URING_CMD or not.
+-	 */
+ 	if (fuse_uring_enabled())
+ 		flags |= FUSE_OVER_IO_URING;
+ 
+-- 
+2.34.1
+

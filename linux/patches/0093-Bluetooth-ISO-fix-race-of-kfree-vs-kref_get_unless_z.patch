@@ -1,0 +1,229 @@
+From cf7e0a8dde0588cb28e438f03218a84000339a6c Mon Sep 17 00:00:00 2001
+From: Pauli Virtanen <pav@iki.fi>
+Date: Fri, 24 Jul 2026 23:20:34 +0300
+Subject: [PATCH 093/143] Bluetooth: ISO: fix race of kfree vs
+ kref_get_unless_zero
+
+hci_conn::iso_data is accessed and modified without lock or RCU.
+This leads to a race
+
+    [Task hdev->workqueue]                 	[Task 2]
+    iso_recv                                    iso_conn_put(conn)
+      conn = LOAD hcon->iso_data                  iso_conn_free(conn)
+      iso_conn_hold_unless_zero(conn)               hcon->iso_data = NULL
+                                                    kfree(conn)
+        kref_get_unless_zero(&conn->ref) /* UAF */
+
+and also to races in iso_conn_add() vs. iso_conn_free().
+
+Fix by adding spinlock hci_conn::proto_lock and using it to guard
+hci_conn::iso_data.
+
+Fixes: dc26097bdb86 ("Bluetooth: ISO: Use kref to track lifetime of iso_conn")
+Signed-off-by: Pauli Virtanen <pav@iki.fi>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+[ Backport note: 6.18 lacks the kmalloc_obj conversion and the __guarded_by
+  context-analysis annotation; kzalloc_obj(*conn, GFP_ATOMIC) was written as
+  kzalloc(sizeof(*conn), GFP_ATOMIC) in iso_conn_add() and the
+  __guarded_by(&proto_lock) annotation on hci_conn::iso_data was dropped. ]
+(cherry picked from commit af24e338bf5dafb80f42baa9a0b9e9b57b1c5d9c)
+---
+ include/net/bluetooth/hci_core.h |  2 +
+ net/bluetooth/hci_conn.c         |  2 +
+ net/bluetooth/iso.c              | 64 ++++++++++++++++++++++++++------
+ 3 files changed, 57 insertions(+), 11 deletions(-)
+
+diff --git a/include/net/bluetooth/hci_core.h b/include/net/bluetooth/hci_core.h
+index 9dea729fd2325..4c6aa7168c19b 100644
+--- a/include/net/bluetooth/hci_core.h
++++ b/include/net/bluetooth/hci_core.h
+@@ -766,6 +766,8 @@ struct hci_conn {
+ 	struct dentry	*debugfs;
+ 
+ 	struct hci_dev	*hdev;
++
++	spinlock_t	proto_lock; /* lock guarding protocol data */
+ 	void		*l2cap_data;
+ 	void		*sco_data;
+ 	void		*iso_data;
+diff --git a/net/bluetooth/hci_conn.c b/net/bluetooth/hci_conn.c
+index 6edc26fe6d2d9..85bcea9ad9724 100644
+--- a/net/bluetooth/hci_conn.c
++++ b/net/bluetooth/hci_conn.c
+@@ -1052,6 +1052,8 @@ static struct hci_conn *__hci_conn_add(struct hci_dev *hdev, int type, bdaddr_t
+ 	INIT_DELAYED_WORK(&conn->idle_work, hci_conn_idle);
+ 	INIT_DELAYED_WORK(&conn->le_conn_timeout, le_conn_timeout);
+ 
++	spin_lock_init(&conn->proto_lock);
++
+ 	atomic_set(&conn->refcnt, 0);
+ 
+ 	hci_dev_hold(hdev);
+diff --git a/net/bluetooth/iso.c b/net/bluetooth/iso.c
+index 14f821aa8ac41..e52103302e713 100644
+--- a/net/bluetooth/iso.c
++++ b/net/bluetooth/iso.c
+@@ -108,9 +108,16 @@ static void iso_conn_free(struct kref *ref)
+ 	BT_DBG("conn %p", conn);
+ 
+ 	if (conn->hcon) {
+-		conn->hcon->iso_data = NULL;
+-		if (!test_and_set_bit(ISO_CONN_DROPPED, conn->flags))
+-			hci_conn_drop(conn->hcon);
++		spin_lock(&conn->hcon->proto_lock);
++
++		/* Check we are not racing with iso_conn_add */
++		if (conn->hcon->iso_data == conn) {
++			conn->hcon->iso_data = NULL;
++			if (!test_and_set_bit(ISO_CONN_DROPPED, conn->flags))
++				hci_conn_drop(conn->hcon);
++		}
++
++		spin_unlock(&conn->hcon->proto_lock);
+ 	}
+ 
+ 	kfree_skb(conn->rx_skb);
+@@ -125,7 +132,21 @@ static void iso_conn_put(struct iso_conn *conn)
+ 
+ 	BT_DBG("conn %p refcnt %d", conn, kref_read(&conn->ref));
+ 
++	/* The following race vs. iso_conn_del() is possible:
++	 *
++	 * 1. conn->hcon != NULL here
++	 * 2. kref_put puts the last reference
++	 * 3. concurrent iso_conn_del() gets iso_conn_hold_unless_zero() -> NULL
++	 *    and returns immediately, so conn->hcon is not cleared
++	 * 4. iso_conn_free() dereferences conn->hcon
++	 *
++	 * To avoid UAF in step 4, take RCU before decrementing the refcount.
++	 */
++	rcu_read_lock();
++
+ 	kref_put(&conn->ref, iso_conn_free);
++
++	rcu_read_unlock();
+ }
+ 
+ static struct iso_conn *iso_conn_hold_unless_zero(struct iso_conn *conn)
+@@ -204,22 +225,28 @@ static void iso_sock_disable_timer(struct sock *sk)
+ 
+ /* ---- ISO connections ---- */
+ static struct iso_conn *iso_conn_add(struct hci_conn *hcon)
++	__must_hold(&hcon->hdev->lock)
+ {
+-	struct iso_conn *conn = hcon->iso_data;
++	struct iso_conn *conn;
++
++	spin_lock(&hcon->proto_lock);
+ 
+-	conn = iso_conn_hold_unless_zero(conn);
++	conn = iso_conn_hold_unless_zero(hcon->iso_data);
+ 	if (conn) {
+ 		if (!conn->hcon) {
+ 			iso_conn_lock(conn);
+ 			conn->hcon = hcon;
+ 			iso_conn_unlock(conn);
+ 		}
++		spin_unlock(&hcon->proto_lock);
+ 		return conn;
+ 	}
+ 
+-	conn = kzalloc(sizeof(*conn), GFP_KERNEL);
+-	if (!conn)
++	conn = kzalloc(sizeof(*conn), GFP_ATOMIC);
++	if (!conn) {
++		spin_unlock(&hcon->proto_lock);
+ 		return NULL;
++	}
+ 
+ 	kref_init(&conn->ref);
+ 	spin_lock_init(&conn->lock);
+@@ -228,6 +255,8 @@ static struct iso_conn *iso_conn_add(struct hci_conn *hcon)
+ 	conn->hcon = hcon;
+ 	conn->tx_sn = 0;
+ 
++	spin_unlock(&hcon->proto_lock);
++
+ 	BT_DBG("hcon %p conn %p", hcon, conn);
+ 
+ 	return conn;
+@@ -268,10 +297,12 @@ static void iso_chan_del(struct sock *sk, int err)
+ static void iso_conn_del(struct hci_conn *hcon, int err)
+ 	__must_hold(&hcon->hdev->lock)
+ {
+-	struct iso_conn *conn = hcon->iso_data;
++	struct iso_conn *conn;
+ 	struct sock *sk;
+ 
+-	conn = iso_conn_hold_unless_zero(conn);
++	spin_lock(&hcon->proto_lock);
++	conn = iso_conn_hold_unless_zero(hcon->iso_data);
++	spin_unlock(&hcon->proto_lock);
+ 	if (!conn)
+ 		return;
+ 
+@@ -295,10 +326,12 @@ static void iso_conn_del(struct hci_conn *hcon, int err)
+ 
+ done:
+ 	/* No sk access to conn->hcon any more (lock_sock + hdev->lock) */
++	spin_lock(&hcon->proto_lock);
+ 	iso_conn_lock(conn);
+ 	conn->hcon = NULL;
+ 	hcon->iso_data = NULL;
+ 	iso_conn_unlock(conn);
++	spin_unlock(&hcon->proto_lock);
+ 
+ 	iso_conn_put(conn);
+ }
+@@ -420,6 +453,8 @@ static int iso_connect_bis(struct sock *sk)
+ 			iso_pi(sk)->bc_sid = hcon->sid;
+ 	}
+ 
++	lockdep_assert_held(&hcon->hdev->lock);
++
+ 	conn = iso_conn_add(hcon);
+ 	if (!conn) {
+ 		hci_conn_drop(hcon);
+@@ -523,6 +558,8 @@ static int iso_connect_cis(struct sock *sk)
+ 		}
+ 	}
+ 
++	lockdep_assert_held(&hcon->hdev->lock);
++
+ 	conn = iso_conn_add(hcon);
+ 	if (!conn) {
+ 		hci_conn_drop(hcon);
+@@ -842,8 +879,8 @@ static void iso_sock_disconn(struct sock *sk)
+ 		 */
+ 		if (bis_sk) {
+ 			hcon->state = BT_OPEN;
+-			hcon->iso_data = NULL;
+-			iso_pi(sk)->conn->hcon = NULL;
++			set_bit(ISO_CONN_DROPPED, iso_pi(sk)->conn->flags);
++
+ 			iso_sock_clear_timer(sk);
+ 			iso_chan_del(sk, bt_to_errno(hcon->abort_reason));
+ 			sock_put(bis_sk);
+@@ -1229,6 +1266,8 @@ static int iso_listen_bis(struct sock *sk)
+ 		goto unlock;
+ 	}
+ 
++	lockdep_assert_held(&hcon->hdev->lock);
++
+ 	conn = iso_conn_add(hcon);
+ 	if (!conn) {
+ 		hci_conn_drop(hcon);
+@@ -2556,7 +2595,10 @@ int iso_recv(struct hci_dev *hdev, u16 handle, struct sk_buff *skb, u16 flags)
+ 		return -ENOENT;
+ 	}
+ 
++	spin_lock(&hcon->proto_lock);
+ 	conn = iso_conn_hold_unless_zero(hcon->iso_data);
++	spin_unlock(&hcon->proto_lock);
++
+ 	hcon = NULL;
+ 
+ 	hci_dev_unlock(hdev);
+-- 
+2.34.1
+

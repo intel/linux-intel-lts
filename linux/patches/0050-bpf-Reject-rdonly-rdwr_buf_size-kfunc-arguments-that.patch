@@ -1,0 +1,56 @@
+From e70d06c52a7c23feab030dc7c047e021ac033d0a Mon Sep 17 00:00:00 2001
+From: Nicholas Dudar <main.kalliope@gmail.com>
+Date: Thu, 9 Jul 2026 11:58:36 -0400
+Subject: [PATCH 050/143] bpf: Reject rdonly/rdwr_buf_size kfunc arguments that
+ exceed u32 max
+
+check_kfunc_args() detects a kfunc argument named rdonly_buf_size or
+rdwr_buf_size and stores reg->var_off.value into meta->r0_size, a u64,
+and does not bound it. check_kfunc_call() later copies that value into
+the returned register's mem_size field:
+
+  meta->r0_size = reg->var_off.value;
+  ...
+  regs[BPF_REG_0].mem_size = meta.r0_size;
+
+regs[BPF_REG_0].mem_size is u32. A constant whose upper 32 bits are set
+gets truncated instead of causing a load-time rejection, so the verifier
+records a PTR_TO_MEM register with an approximately 4 GiB mem_size for
+whatever allocation the kfunc returned. A later access check against
+that register uses the truncated, wrong bound.
+
+Reject rdonly_buf_size/rdwr_buf_size values that exceed U32_MAX at the
+point meta->r0_size is set.
+
+Fixes: eb1f7f71c126 ("bpf/verifier: allow kfunc to return an allocated mem")
+Signed-off-by: Nicholas Dudar <main.kalliope@gmail.com>
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/bpf/20260709155837.1879230-2-main.kalliope@gmail.com
+Assisted-by: Claude:claude-opus-4-8
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+
+[ Backport note: reg_arg_name() and stack-argument precision tracking do not exist in this tree; the new r0_size bound check reports the register as "R%d" like the neighbouring messages, and the existing mark_chain_precision(env, regno) call is kept. ]
+
+(cherry picked from commit 2aaf67f0516fde29620d0edfc29c01b9ea7ad430)
+---
+ kernel/bpf/verifier.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 9530df02fd9a4..0bae3abee1f7f 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -13436,6 +13436,10 @@ static int check_kfunc_args(struct bpf_verifier_env *env, struct bpf_kfunc_call_
+ 				}
+ 
+ 				meta->r0_size = reg->var_off.value;
++				if (meta->r0_size > U32_MAX) {
++					verbose(env, "R%d rdonly/rdwr_buf_size exceeds u32 max\n", regno);
++					return -EINVAL;
++				}
+ 				ret = mark_chain_precision(env, regno);
+ 				if (ret)
+ 					return ret;
+-- 
+2.34.1
+

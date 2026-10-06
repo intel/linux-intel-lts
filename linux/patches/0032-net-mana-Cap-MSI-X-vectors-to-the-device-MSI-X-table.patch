@@ -1,0 +1,82 @@
+From 57aa9cce0ac4cdecf21dc10379f6eca31b3c886a Mon Sep 17 00:00:00 2001
+From: Long Li <longli@microsoft.com>
+Date: Fri, 21 Aug 2026 11:37:36 -0700
+Subject: [PATCH 032/143] net: mana: Cap MSI-X vectors to the device MSI-X
+ table size
+
+mana_gd_query_max_resources() sizes gc->num_msix_usable from resp.max_msix
+and the CPU count, but never from the device MSI-X table. On a 1792 vCPU
+M-series VM that yields 1793 while the table has 1024 entries, and
+mana_gd_setup_remaining_irqs() then walks indices 1..1792, running off the
+end of the region mapped by msix_map_region():
+
+  BUG: unable to handle page fault for address: ff8e347f8b99800c
+  RIP: 0010:msix_prepare_msi_desc+0x7a/0x90
+  RAX: 0000000000004000 RBX: ff4330cb164ea780 RCX: ff8e347f8b998000
+  Call Trace:
+   <TASK>
+   __msi_domain_alloc_irqs+0x13a/0x440
+   msi_domain_alloc_irq_at+0x149/0x1b0
+   mana_gd_setup+0x351/0x890
+   mana_gd_probe+0x274/0x390
+   </TASK>
+
+RAX is index 1024 * PCI_MSIX_ENTRY_SIZE, one entry past the table.
+
+msi_insert_desc() does range check the index, but only against the MSI
+domain hwsize, which matches the table only for devices on an MSI parent
+domain. With a global PCI/MSI domain hwsize is MSI_XA_DOMAIN_SIZE, so
+nothing bounds the request.
+
+Cap num_msix_usable with pci_msix_vec_count().
+
+Fixes: 755391121038 ("net: mana: Allocate MSI-X vectors dynamically")
+Signed-off-by: Long Li <longli@microsoft.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20260821183736.733296-1-longli@microsoft.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+(cherry picked from commit 2c7493f980140a5c40eb4f98f97c557193a2c330)
+---
+ .../net/ethernet/microsoft/mana/gdma_main.c   | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/drivers/net/ethernet/microsoft/mana/gdma_main.c b/drivers/net/ethernet/microsoft/mana/gdma_main.c
+index 81cbc47de0c62..29bbaebf3e571 100644
+--- a/drivers/net/ethernet/microsoft/mana/gdma_main.c
++++ b/drivers/net/ethernet/microsoft/mana/gdma_main.c
+@@ -107,6 +107,7 @@ static int mana_gd_query_max_resources(struct pci_dev *pdev)
+ 	struct gdma_context *gc = pci_get_drvdata(pdev);
+ 	struct gdma_query_max_resources_resp resp = {};
+ 	struct gdma_general_req req = {};
++	unsigned int msix_vec_count;
+ 	int err;
+ 
+ 	mana_gd_init_req_hdr(&req.hdr, GDMA_QUERY_MAX_RESOURCES,
+@@ -131,6 +132,24 @@ static int mana_gd_query_max_resources(struct pci_dev *pdev)
+ 		gc->num_msix_usable = min(resp.max_msix, num_online_cpus() + 1);
+ 	}
+ 
++	/* MSI-X vectors are allocated by index into the device MSI-X table, so
++	 * never ask for more than the table holds. It can be smaller than both
++	 * resp.max_msix and the CPU count.
++	 */
++	err = pci_msix_vec_count(pdev);
++	if (err <= 0) {
++		dev_err(gc->dev, "Failed to query MSI-X table size: %d\n", err);
++		return err < 0 ? err : -ENOSPC;
++	}
++	msix_vec_count = err;
++
++	if (gc->num_msix_usable > msix_vec_count) {
++		dev_info(gc->dev,
++			 "Limiting MSI-X vectors from %u to table size %u\n",
++			 gc->num_msix_usable, msix_vec_count);
++		gc->num_msix_usable = msix_vec_count;
++	}
++
+ 	if (gc->num_msix_usable <= 1)
+ 		return -ENOSPC;
+ 
+-- 
+2.34.1
+

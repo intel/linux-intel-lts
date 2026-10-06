@@ -1,0 +1,54 @@
+From 5118039549e966c4fa6bb2972c893003f41162ae Mon Sep 17 00:00:00 2001
+From: Jiri Olsa <jolsa@kernel.org>
+Date: Mon, 3 Aug 2026 23:01:46 +0200
+Subject: [PATCH 107/143] bpf: Clear buf on error in __bpf_get_task_stack
+
+Both bpf_get_task_stack and bpf_get_task_stack_sleepable helpers that
+use __bpf_get_task_stack have buf defined as ARG_PTR_TO_UNINIT_MEM
+argument and we should initialize the buf on every return path.
+
+Adding missing buf memset for __bpf_get_task_stack fail paths. This
+provides deterministic buffer contents, which is useful when the buffer
+is used directly as a map key.
+
+Fixes: 06ab134ce8ec ("bpf: Refcount task stack in bpf_get_task_stack")
+Fixes: b992f01e6615 ("bpf: Guard against accessing NULL pt_regs in bpf_get_task_stack()")
+Reported-by: Sashiko <sashiko-bot@kernel.org>
+Signed-off-by: Jiri Olsa <jolsa@kernel.org>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Link: https://lore.kernel.org/bpf/20260803210149.296496-10-jolsa@kernel.org
+
+[ Backport note: __bpf_get_stack() in this tree still takes the extra trace_in argument, passed as NULL here as before. ]
+
+(cherry picked from commit f5d242825ca417bb6afe35fde6e8880f97ca43fb)
+---
+ kernel/bpf/stackmap.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/bpf/stackmap.c b/kernel/bpf/stackmap.c
+index c479f649596f9..770c4a68b77ef 100644
+--- a/kernel/bpf/stackmap.c
++++ b/kernel/bpf/stackmap.c
+@@ -752,14 +752,17 @@ static long __bpf_get_task_stack(struct task_struct *task, void *buf, u32 size,
+ 	struct pt_regs *regs;
+ 	long res = -EINVAL;
+ 
+-	if (!try_get_task_stack(task))
++	if (!try_get_task_stack(task)) {
++		memset(buf, 0, size);
+ 		return -EFAULT;
++	}
+ 
+ 	regs = task_pt_regs(task);
+ 	if (regs)
+ 		res = __bpf_get_stack(regs, task, NULL, buf, size, flags, may_fault);
++	else
++		memset(buf, 0, size);
+ 	put_task_stack(task);
+-
+ 	return res;
+ }
+ 
+-- 
+2.34.1
+

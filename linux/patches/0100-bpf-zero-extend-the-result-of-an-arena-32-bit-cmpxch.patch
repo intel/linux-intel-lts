@@ -1,0 +1,55 @@
+From cb526897c810ca2bfac6e470da713ffce8543f15 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Mon, 28 Sep 2026 20:13:41 +0800
+Subject: [PATCH 100/143] bpf: zero extend the result of an arena 32-bit
+ cmpxchg
+
+bpf_convert_ctx_accesses() rewrites an atomic on an arena pointer from
+BPF_STX | BPF_ATOMIC to BPF_STX | BPF_PROBE_ATOMIC, and it runs before
+bpf_opt_subreg_zext_lo32_rnd_hi32().
+
+That pass emits an explicit zero extension for a 32-bit cmpxchg even
+when bpf_jit_needs_zext() is false. This is done because on some
+architectures 32-bit cmpxchg requires explicit zero extension for the
+dst register. E.g. on x86-64 'lock cmpxchg' does not change the %eax
+if comparison is successful, while BPF semantics declare that each
+operation on a 32-bit register zero extends it's upper half.
+
+is_cmpxchg_insn() matches BPF_MODE == BPF_ATOMIC only, so an arena
+cmpxchg misses said zero extension adjustment. This patch adjusts
+is_cmpxchg_insn() to match BPF_PROBE_ATOMIC alongside BPF_ATOMIC.
+
+Fixes: d503a04f8bc0 ("bpf: Add support for certain atomics in bpf_arena to x86 JIT")
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Suggested-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20260903171542.1438050-1-eddyz87@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/verifier.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 626c362d9e1b3..91ff32aefd245 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -598,10 +598,15 @@ static bool helper_multiple_ref_obj_use(enum bpf_func_id func_id,
+ 	return ref_obj_uses > 1;
+ }
+ 
++/*
++ * Matches BPF_PROBE_ATOMIC too: bpf_convert_ctx_accesses() rewrites arena
++ * atomics before bpf_opt_subreg_zext_lo32_rnd_hi32() runs.
++ */
+ static bool is_cmpxchg_insn(const struct bpf_insn *insn)
+ {
+ 	return BPF_CLASS(insn->code) == BPF_STX &&
+-	       BPF_MODE(insn->code) == BPF_ATOMIC &&
++	       (BPF_MODE(insn->code) == BPF_ATOMIC ||
++	       BPF_MODE(insn->code) == BPF_PROBE_ATOMIC) &&
+ 	       insn->imm == BPF_CMPXCHG;
+ }
+ 
+-- 
+2.34.1
+

@@ -1,0 +1,110 @@
+From 62330868a5355efb1ee526837adc250d260c247a Mon Sep 17 00:00:00 2001
+From: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Date: Fri, 4 Sep 2026 12:41:58 +0200
+Subject: [PATCH 016/143] bpf: Preserve inner map identity in callback frames
+
+Callback frame constructors initialize map-typed argument registers with
+__mark_reg_known_zero() and then restore map_ptr. This clears map_uid,
+which is the only field distinguishing inner maps that share an
+inner_map_meta template.
+
+When a timer callback invokes bpf_for_each_map_elem() on a second inner
+map, both the saved first map and the second map value can reach the nested
+callback as the same template with map_uid zero. bpf_timer_init() then
+accepts pairing the timer from the second map with the first map.
+
+The runtime records the first map in the timer without taking a reference.
+Freeing that map does not find the timer stored in the second map, so a
+later timer callback dereferences the freed map.
+
+Copy map_uid from the same caller register as map_ptr when constructing
+for-each, timer/workqueue, and task-work callback arguments. The existing
+identity check can then reject mismatched inner maps while allowing a
+callback value to be paired with its actual map.
+
+Fixes: 3e8ce29850f1 ("bpf: Prevent pointer mismatch in bpf_timer_init.")
+Fixes: 69c087ba6225 ("bpf: Add bpf_for_each_map_elem() helper")
+Fixes: 5c8fd7e2b5b0 ("bpf: bpf task work plumbing")
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Suggested-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Link: https://lore.kernel.org/r/20260904104203.345917-8-memxor@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+
+(cherry picked from commit b90c5d770dad910fb89e6c1b15052a8a1e8db752)
+---
+ kernel/bpf/verifier.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 11843ea3a05f2..b61a9f83e3f69 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -10933,10 +10933,12 @@ int map_set_for_each_callback_args(struct bpf_verifier_env *env,
+ 	callee->regs[BPF_REG_2].type = PTR_TO_MAP_KEY;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_2]);
+ 	callee->regs[BPF_REG_2].map_ptr = caller->regs[BPF_REG_1].map_ptr;
++	callee->regs[BPF_REG_2].map_uid = caller->regs[BPF_REG_1].map_uid;
+ 
+ 	callee->regs[BPF_REG_3].type = PTR_TO_MAP_VALUE;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_3]);
+ 	callee->regs[BPF_REG_3].map_ptr = caller->regs[BPF_REG_1].map_ptr;
++	callee->regs[BPF_REG_3].map_uid = caller->regs[BPF_REG_1].map_uid;
+ 
+ 	/* pointer to stack or null */
+ 	callee->regs[BPF_REG_4] = caller->regs[BPF_REG_3];
+@@ -11014,6 +11016,7 @@ static int set_timer_callback_state(struct bpf_verifier_env *env,
+ 				    int insn_idx)
+ {
+ 	struct bpf_map *map_ptr = caller->regs[BPF_REG_1].map_ptr;
++	u32 map_uid = caller->regs[BPF_REG_1].map_uid;
+ 
+ 	/* bpf_timer_set_callback(struct bpf_timer *timer, void *callback_fn);
+ 	 * callback_fn(struct bpf_map *map, void *key, void *value);
+@@ -11021,14 +11024,17 @@ static int set_timer_callback_state(struct bpf_verifier_env *env,
+ 	callee->regs[BPF_REG_1].type = CONST_PTR_TO_MAP;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_1]);
+ 	callee->regs[BPF_REG_1].map_ptr = map_ptr;
++	callee->regs[BPF_REG_1].map_uid = map_uid;
+ 
+ 	callee->regs[BPF_REG_2].type = PTR_TO_MAP_KEY;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_2]);
+ 	callee->regs[BPF_REG_2].map_ptr = map_ptr;
++	callee->regs[BPF_REG_2].map_uid = map_uid;
+ 
+ 	callee->regs[BPF_REG_3].type = PTR_TO_MAP_VALUE;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_3]);
+ 	callee->regs[BPF_REG_3].map_ptr = map_ptr;
++	callee->regs[BPF_REG_3].map_uid = map_uid;
+ 
+ 	/* unused */
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
+@@ -11127,6 +11133,7 @@ static int set_task_work_schedule_callback_state(struct bpf_verifier_env *env,
+ 						 int insn_idx)
+ {
+ 	struct bpf_map *map_ptr = caller->regs[BPF_REG_3].map_ptr;
++	u32 map_uid = caller->regs[BPF_REG_3].map_uid;
+ 
+ 	/*
+ 	 * callback_fn(struct bpf_map *map, void *key, void *value);
+@@ -11134,14 +11141,17 @@ static int set_task_work_schedule_callback_state(struct bpf_verifier_env *env,
+ 	callee->regs[BPF_REG_1].type = CONST_PTR_TO_MAP;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_1]);
+ 	callee->regs[BPF_REG_1].map_ptr = map_ptr;
++	callee->regs[BPF_REG_1].map_uid = map_uid;
+ 
+ 	callee->regs[BPF_REG_2].type = PTR_TO_MAP_KEY;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_2]);
+ 	callee->regs[BPF_REG_2].map_ptr = map_ptr;
++	callee->regs[BPF_REG_2].map_uid = map_uid;
+ 
+ 	callee->regs[BPF_REG_3].type = PTR_TO_MAP_VALUE;
+ 	__mark_reg_known_zero(&callee->regs[BPF_REG_3]);
+ 	callee->regs[BPF_REG_3].map_ptr = map_ptr;
++	callee->regs[BPF_REG_3].map_uid = map_uid;
+ 
+ 	/* unused */
+ 	__mark_reg_not_init(env, &callee->regs[BPF_REG_4]);
+-- 
+2.34.1
+

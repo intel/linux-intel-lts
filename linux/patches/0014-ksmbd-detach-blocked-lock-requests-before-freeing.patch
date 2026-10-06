@@ -1,0 +1,119 @@
+From 003bde552b998d7cf04575cfd170d4e842ab40e9 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <linkinjeon@kernel.org>
+Date: Fri, 14 Aug 2026 11:18:38 +0900
+Subject: [PATCH 014/143] ksmbd: detach blocked lock requests before freeing
+
+A file_lock retained by ksmbd for byte-range lock bookkeeping can still
+be part of the VFS blocked-request graph. In particular, the VFS can
+chain a new waiter below an already blocked request through
+flc_blocked_requests. The ksmbd_file reference count does not cover that
+graph.
+
+Both __ksmbd_close_fd() and the cross-request unlock path free these
+retained file_lock objects directly. If a dependent waiter is still
+attached, locks_release_private() hits
+BUG_ON(!list_empty(&flc->flc_blocked_requests)). The same lifetime
+mismatch can leave a freed ksmbd_lock reachable through its request-local
+llist.
+
+Detach the file_lock from the blocked-request graph before freeing it in
+the close, cross-request unlock, and rollback paths. locks_delete_block()
+also wakes requests chained below the object. Remove llist when a
+completed lock is published so a globally visible ksmbd_lock no longer
+points into the submitting worker's stack.
+
+Fixes: d63528eb0d43 ("ksmbd: free ksmbd_lock when file is closed")
+Reported-by: Kyenghwan Hwang <obnred@gmail.com>
+Tested-by: Kyenghwan Hwang <obnred@gmail.com>
+Tested-by: ChenXiaoSong <chenxiaosong@kylinos.cn>
+Reviewed-by: ChenXiaoSong <chenxiaosong@kylinos.cn>
+Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
+(cherry picked from commit 215e8816b1ac25176d911abb8704390413ccee4b)
+---
+ fs/smb/server/smb2pdu.c   | 17 ++++++++++++-----
+ fs/smb/server/vfs_cache.c |  8 +++++---
+ 2 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/fs/smb/server/smb2pdu.c b/fs/smb/server/smb2pdu.c
+index 2de2253af4fc6..c48ee48fee488 100644
+--- a/fs/smb/server/smb2pdu.c
++++ b/fs/smb/server/smb2pdu.c
+@@ -7558,6 +7558,12 @@ static void smb2_remove_blocked_lock(void **argv)
+ 	locks_wake_up(flock);
+ }
+ 
++static void smb2_free_lock(struct file_lock *flock)
++{
++	ksmbd_vfs_posix_lock_unblock(flock);
++	locks_free_lock(flock);
++}
++
+ static void smb2_free_blocked_lock(struct file_lock *flock)
+ {
+ 	ksmbd_vfs_posix_lock_unblock(flock);
+@@ -7718,14 +7724,14 @@ int smb2_lock(struct ksmbd_work *work)
+ 					    cmp_lock->end == smb_lock->end &&
+ 					    !lock_defer_pending(cmp_lock->fl)) {
+ 						nolock = 0;
+-						list_del(&cmp_lock->flist);
+-						list_del(&cmp_lock->clist);
++						list_del_init(&cmp_lock->flist);
++						list_del_init(&cmp_lock->clist);
+ 						cmp_lock->conn = NULL;
+ 						spin_unlock(&conn->llist_lock);
+ 						up_read(&conn_list_lock);
+ 
+ 						ksmbd_conn_put(conn);
+-						locks_free_lock(cmp_lock->fl);
++						smb2_free_lock(cmp_lock->fl);
+ 						kfree(cmp_lock);
+ 						goto out_check_cl;
+ 					}
+@@ -7888,7 +7894,8 @@ int smb2_lock(struct ksmbd_work *work)
+ 	/* publish only once the whole batch has committed */
+ 	if (!list_empty(&rollback_list)) {
+ 		spin_lock(&work->conn->llist_lock);
+-		list_for_each_entry(smb_lock, &rollback_list, llist) {
++		list_for_each_entry_safe(smb_lock, tmp, &rollback_list, llist) {
++			list_del_init(&smb_lock->llist);
+ 			smb_lock->conn = ksmbd_conn_get(work->conn);
+ 			list_add_tail(&smb_lock->clist,
+ 				      &work->conn->lock_list);
+@@ -7925,7 +7932,7 @@ int smb2_lock(struct ksmbd_work *work)
+ 		}
+ 
+ 		list_del(&smb_lock->llist);
+-		locks_free_lock(smb_lock->fl);
++		smb2_free_lock(smb_lock->fl);
+ 		if (rlock)
+ 			locks_free_lock(rlock);
+ 		kfree(smb_lock);
+diff --git a/fs/smb/server/vfs_cache.c b/fs/smb/server/vfs_cache.c
+index ce6e9886df8be..970b8f185aacd 100644
+--- a/fs/smb/server/vfs_cache.c
++++ b/fs/smb/server/vfs_cache.c
+@@ -388,8 +388,9 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
+ 	if (!IS_ERR_OR_NULL(filp))
+ 		fput(filp);
+ 
+-	/* because the reference count of fp is 0, it is guaranteed that
+-	 * there are not accesses to fp->lock_list.
++	/*
++	 * The zero fp reference count serializes access to fp->lock_list, but
++	 * the VFS may still have blocked requests chained below these locks.
+ 	 */
+ 	list_for_each_entry_safe(smb_lock, tmp_lock, &fp->lock_list, flist) {
+ 		struct ksmbd_conn *conn = smb_lock->conn;
+@@ -402,7 +403,8 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
+ 			ksmbd_conn_put(conn);
+ 		}
+ 
+-		list_del(&smb_lock->flist);
++		list_del_init(&smb_lock->flist);
++		ksmbd_vfs_posix_lock_unblock(smb_lock->fl);
+ 		locks_free_lock(smb_lock->fl);
+ 		kfree(smb_lock);
+ 	}
+-- 
+2.34.1
+

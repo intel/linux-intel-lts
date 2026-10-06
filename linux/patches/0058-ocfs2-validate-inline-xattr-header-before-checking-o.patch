@@ -1,0 +1,62 @@
+From 0700ee25fe190337af275e7c897b0e5cc1f7fd3f Mon Sep 17 00:00:00 2001
+From: ZhengYuan Huang <gality369@gmail.com>
+Date: Fri, 8 May 2026 16:59:11 +0800
+Subject: [PATCH 058/143] ocfs2: validate inline xattr header before checking
+ outside values
+
+[BUG]
+A corrupt inline xattr header can make
+ocfs2_has_inline_xattr_value_outside() walk xh_count from an unchecked
+header while refcount-tree teardown decides whether inline xattrs still
+point outside the inode body.
+
+[CAUSE]
+ocfs2_has_inline_xattr_value_outside() still computed the inline header
+directly from di->i_xattr_inline_size and immediately iterated xh_count.
+That is the same unchecked metadata boundary as the ibody lookup bug.
+
+[FIX]
+Reuse the shared inline-header helper before iterating xh_count. Because
+this helper returns a boolean-style answer to its caller, treat a corrupt
+header conservatively as "has outside values" instead of walking it.
+
+Link: https://lore.kernel.org/20260508085914.61647-3-gality369@gmail.com
+Signed-off-by: ZhengYuan Huang <gality369@gmail.com>
+Reviewed-by: Joseph Qi <joseph.qi@linux.alibaba.com>
+Cc: Changwei Ge <gechangwei@live.cn>
+Cc: Heming Zhao <heming.zhao@suse.com>
+Cc: Jia-Ju Bai <baijiaju1990@gmail.com>
+Cc: Joel Becker <jlbec@evilplan.org>
+Cc: Jun Piao <piaojun@huawei.com>
+Cc: Junxiao Bi <junxiao.bi@oracle.com>
+Cc: Mark Fasheh <mark@fasheh.com>
+Cc: Zixuan Fu <r33s3n6@gmail.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+(cherry picked from commit a61b83dd83ed44e937de7aead2b4ddd3ad32e3f8)
+---
+ fs/ocfs2/xattr.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/fs/ocfs2/xattr.c b/fs/ocfs2/xattr.c
+index b972dd39f4996..9664fcda59b2a 100644
+--- a/fs/ocfs2/xattr.c
++++ b/fs/ocfs2/xattr.c
+@@ -995,11 +995,12 @@ int ocfs2_has_inline_xattr_value_outside(struct inode *inode,
+ 					 struct ocfs2_dinode *di)
+ {
+ 	struct ocfs2_xattr_header *xh;
++	int ret;
+ 	int i;
+ 
+-	xh = (struct ocfs2_xattr_header *)
+-		 ((void *)di + inode->i_sb->s_blocksize -
+-		 le16_to_cpu(di->i_xattr_inline_size));
++	ret = ocfs2_xattr_ibody_lookup_header(inode, di, &xh);
++	if (ret)
++		return 1;
+ 
+ 	for (i = 0; i < le16_to_cpu(xh->xh_count); i++)
+ 		if (!ocfs2_xattr_is_local(&xh->xh_entries[i]))
+-- 
+2.34.1
+

@@ -1,8 +1,8 @@
-From 06d17c2bfcef0111c6660f9a2e4a60c3aa421c75 Mon Sep 17 00:00:00 2001
+From 076b439a7248266315cc2cdfbc9c91857cb3ed82 Mon Sep 17 00:00:00 2001
 From: David Howells <dhowells@redhat.com>
 Date: Tue, 12 May 2026 13:33:42 +0100
-Subject: [PATCH 2/2] netfs: Fix potential for tearing in ->remote_i_size and
- ->zero_point
+Subject: [PATCH 109/143] netfs: Fix potential for tearing in ->remote_i_size
+ and ->zero_point
 
 [ Upstream commit 2c8f4742bb76117d735f92a3932d85239b16c494 ]
 
@@ -25,8 +25,18 @@ cc: linux-fsdevel@vger.kernel.org
 Signed-off-by: Christian Brauner <brauner@kernel.org>
 Signed-off-by: Sasha Levin <sashal@kernel.org>
 (cherry picked from commit 55970f238d495517edc961d55c44c772594d0969)
+(cherry picked from commit ee7b01359feab3b098aba7bdcfb013cbc2733f30)
+
+[ Backport note (6.18.54): this tree also carries the stable backport of
+  "9p: Fix v9fs_issue_write() to update i_size and remote_i_size"
+  (88871ab548c1d), which accesses ictx->remote_i_size directly and so fails
+  to build once the field is renamed here. fs/9p/vfs_addr.c is converted to
+  the form that upstream c60ae98c5aa6 has on top of this change:
+  _remote_i_size/_zero_point read under i_lock and written back through
+  netfs_write_sizes(). ]
 ---
  fs/9p/v9fs_vfs.h          |  13 --
+ fs/9p/vfs_addr.c          |  11 +-
  fs/9p/vfs_inode.c         |   6 +-
  fs/9p/vfs_inode_dotl.c    |  12 +-
  fs/afs/file.c             |  24 +++-
@@ -46,7 +56,7 @@ Signed-off-by: Sasha Levin <sashal@kernel.org>
  fs/smb/client/smb2ops.c   |  42 +++---
  fs/smb/client/smb2pdu.c   |   3 +-
  include/linux/netfs.h     | 293 ++++++++++++++++++++++++++++++++++++--
- 20 files changed, 450 insertions(+), 113 deletions(-)
+ 21 files changed, 455 insertions(+), 119 deletions(-)
 
 diff --git a/fs/9p/v9fs_vfs.h b/fs/9p/v9fs_vfs.h
 index d3aefbec4de6e..34c115d7c2502 100644
@@ -70,6 +80,41 @@ index d3aefbec4de6e..34c115d7c2502 100644
 -		spin_unlock(&inode->i_lock);
 -}
  #endif
+diff --git a/fs/9p/vfs_addr.c b/fs/9p/vfs_addr.c
+index 6bf5973445b66..bd36398c6a1b7 100644
+--- a/fs/9p/vfs_addr.c
++++ b/fs/9p/vfs_addr.c
+@@ -60,14 +60,15 @@ static void v9fs_issue_write(struct netfs_io_subrequest *subreq)
+ 
+ 	len = p9_client_write(fid, subreq->start, &subreq->io_iter, &err);
+ 	if (len > 0) {
+-		unsigned long long end = subreq->start + len, i_size, remote;
++		unsigned long long end = subreq->start + len, i_size, remote, zp;
+ 		bool set = false;
+ 
+ 		spin_lock(&inode->i_lock);
+ 
+ 		/* We can read the sizes directly as we hold i_lock. */
+ 		i_size = inode->i_size;
+-		remote = ictx->remote_i_size;
++		remote = ictx->_remote_i_size;
++		zp = ictx->_zero_point;
+ 
+ 		if (end > i_size) {
+ 			i_size = end;
+@@ -78,10 +79,8 @@ static void v9fs_issue_write(struct netfs_io_subrequest *subreq)
+ 			set = true;
+ 		}
+ 
+-		if (set) {
+-			i_size_write(inode, i_size);
+-			ictx->remote_i_size = remote;
+-		}
++		if (set)
++			netfs_write_sizes(inode, i_size, remote, zp);
+ 		spin_unlock(&inode->i_lock);
+ 
+ 		__set_bit(NETFS_SREQ_MADE_PROGRESS, &subreq->flags);
 diff --git a/fs/9p/vfs_inode.c b/fs/9p/vfs_inode.c
 index b2368334f6eea..346baf2fc4b3c 100644
 --- a/fs/9p/vfs_inode.c
@@ -297,18 +342,18 @@ index 93ad86ff33453..e2ef19a73bbfc 100644
  
  	afs_wait_for_operation(op);
 diff --git a/fs/netfs/buffered_read.c b/fs/netfs/buffered_read.c
-index cccc860893f0a..11991ff985825 100644
+index a9ed282797dc2..ad8206a09a32f 100644
 --- a/fs/netfs/buffered_read.c
 +++ b/fs/netfs/buffered_read.c
-@@ -210,7 +210,6 @@ static void netfs_issue_read(struct netfs_io_request *rreq,
- static void netfs_read_to_pagecache(struct netfs_io_request *rreq,
- 				    struct readahead_control *ractl)
+@@ -217,7 +217,6 @@ static void netfs_issue_read(struct netfs_io_request *rreq,
+  */
+ static void netfs_read_to_pagecache(struct netfs_io_request *rreq)
  {
 -	struct netfs_inode *ictx = netfs_inode(rreq->inode);
  	unsigned long long start = rreq->start;
  	ssize_t size = rreq->len;
  	int ret = 0;
-@@ -234,7 +233,8 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq,
+@@ -241,7 +240,8 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq)
  		source = netfs_cache_prepare_read(rreq, subreq, rreq->i_size);
  		subreq->source = source;
  		if (source == NETFS_DOWNLOAD_FROM_SERVER) {
@@ -318,7 +363,7 @@ index cccc860893f0a..11991ff985825 100644
  			size_t len = subreq->len;
  
  			if (unlikely(rreq->origin == NETFS_READ_SINGLE))
-@@ -250,7 +250,7 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq,
+@@ -257,7 +257,7 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq)
  				pr_err("ZERO-LEN READ: R=%08x[%x] l=%zx/%zx s=%llx z=%llx i=%llx",
  				       rreq->debug_id, subreq->debug_index,
  				       subreq->len, size,
@@ -358,7 +403,7 @@ index e05f69eb56a6c..6b1bbd9e07bc9 100644
  	fscache_invalidate(netfs_i_cookie(ictx), NULL, i_size_read(inode),
  			   FSCACHE_INVAL_DIO_WRITE);
 diff --git a/fs/netfs/misc.c b/fs/netfs/misc.c
-index 1109ac3791281..5fcf3fadcfca8 100644
+index 679cfd39460af..5bc6a5cfc5fd0 100644
 --- a/fs/netfs/misc.c
 +++ b/fs/netfs/misc.c
 @@ -211,18 +211,25 @@ EXPORT_SYMBOL(netfs_clear_inode_writeback);
@@ -596,7 +641,7 @@ index 1e557601804f3..29b8b749fc681 100644
  
  	netfs_write_subrequest_terminated(&wdata->subreq, result);
 diff --git a/fs/smb/client/inode.c b/fs/smb/client/inode.c
-index 7f8d2edb828ee..eb09f8e8775d9 100644
+index c9fab338e7774..45f6e6a23d593 100644
 --- a/fs/smb/client/inode.c
 +++ b/fs/smb/client/inode.c
 @@ -135,7 +135,7 @@ cifs_revalidate_cache(struct inode *inode, struct cifs_fattr *fattr)
@@ -633,7 +678,7 @@ index 7f8d2edb828ee..eb09f8e8775d9 100644
  	/*
  	 * Can't safely change the file size here if the client is writing to
  	 * it due to potential races.
-@@ -2794,7 +2794,9 @@ cifs_revalidate_mapping(struct inode *inode)
+@@ -2799,7 +2799,9 @@ cifs_revalidate_mapping(struct inode *inode)
  		if (cifs_sb_flags(cifs_sb) & CIFS_MOUNT_RW_CACHE)
  			goto skip_invalidate;
  
@@ -645,7 +690,7 @@ index 7f8d2edb828ee..eb09f8e8775d9 100644
  		if (rc) {
  			cifs_dbg(VFS, "%s: invalidate inode %p failed with rc %d\n",
 diff --git a/fs/smb/client/readdir.c b/fs/smb/client/readdir.c
-index 9ca859a2451ea..6940809fc4a12 100644
+index 0cc5ed56571a6..cbd4beae616cb 100644
 --- a/fs/smb/client/readdir.c
 +++ b/fs/smb/client/readdir.c
 @@ -144,7 +144,8 @@ cifs_prime_dcache(struct dentry *parent, struct qstr *name,
@@ -803,7 +848,7 @@ index c07c5bb321407..89db099f6a179 100644
  			rdata->result = 0;
  		}
 diff --git a/include/linux/netfs.h b/include/linux/netfs.h
-index 62a528f90666b..243c0f7379388 100644
+index 3f8f58e0c65a2..890a50db1a083 100644
 --- a/include/linux/netfs.h
 +++ b/include/linux/netfs.h
 @@ -62,8 +62,8 @@ struct netfs_inode {
@@ -817,7 +862,7 @@ index 62a528f90666b..243c0f7379388 100644
  						 * on the server */
  	atomic_t		io_count;	/* Number of outstanding reqs */
  	unsigned long		flags;
-@@ -474,6 +474,254 @@ static inline struct netfs_inode *netfs_inode(struct inode *inode)
+@@ -475,6 +475,254 @@ static inline struct netfs_inode *netfs_inode(struct inode *inode)
  	return container_of(inode, struct netfs_inode, inode);
  }
  
@@ -1072,7 +1117,7 @@ index 62a528f90666b..243c0f7379388 100644
  /**
   * netfs_inode_init - Initialise a netfslib inode context
   * @ctx: The netfs inode to initialise
-@@ -488,8 +736,8 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+@@ -489,8 +737,8 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
  				    bool use_zero_point)
  {
  	ctx->ops = ops;
@@ -1083,7 +1128,7 @@ index 62a528f90666b..243c0f7379388 100644
  	ctx->flags = 0;
  	atomic_set(&ctx->io_count, 0);
  #if IS_ENABLED(CONFIG_FSCACHE)
-@@ -498,7 +746,7 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+@@ -499,7 +747,7 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
  	mutex_init(&ctx->wb_lock);
  	/* ->releasepage() drives zero_point */
  	if (use_zero_point) {
@@ -1092,7 +1137,7 @@ index 62a528f90666b..243c0f7379388 100644
  		mapping_set_release_always(ctx->inode.i_mapping);
  	}
  }
-@@ -511,13 +759,40 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+@@ -512,13 +760,40 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
   *
   * Inform the netfs lib that a file got resized so that it can adjust its state.
   */

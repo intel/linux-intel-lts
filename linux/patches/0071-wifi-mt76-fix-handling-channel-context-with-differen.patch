@@ -1,0 +1,152 @@
+From e0452059faf8d8b331f4812790c3d35163bcd6d8 Mon Sep 17 00:00:00 2001
+From: Shayne Chen <shayne.chen@mediatek.com>
+Date: Mon, 20 Jul 2026 17:01:02 +0800
+Subject: [PATCH 071/143] wifi: mt76: fix handling channel context with
+ different bands in mt76_switch_vif_chanctx()
+
+When performing channel switches on different radios within a short
+timeframe, channel contexts with different bands can be carried for
+each struct ieee80211_vif_chanctx_switch.
+
+Rework mt76_switch_vif_chanctx() to properly handle this scenario.
+
+Fixes: 82334623af0c ("wifi: mt76: add chanctx functions for multi-channel phy support")
+Co-developed-by: Rex Lu <rex.lu@mediatek.com>
+Signed-off-by: Rex Lu <rex.lu@mediatek.com>
+Signed-off-by: Shayne Chen <shayne.chen@mediatek.com>
+Link: https://patch.msgid.link/20260720090102.190729-1-shayne.chen@mediatek.com
+Signed-off-by: Felix Fietkau <nbd@nbd.name>
+[ Backport note: 6.18 lacks 4df75606ece5 ("wifi: mt76: add per-link beacon
+  monitoring for MLO"), so the mlink->beacon_mon_interval/beacon_mon_last
+  context lines after mlink->ctx = v->new_ctx were dropped when resolving the
+  conflict; the changed lines are otherwise identical to upstream. ]
+(cherry picked from commit 70869cc429fffc77de51e7777c0ecb651e8fca07)
+---
+ drivers/net/wireless/mediatek/mt76/channel.c | 92 +++++++++++---------
+ 1 file changed, 49 insertions(+), 43 deletions(-)
+
+diff --git a/drivers/net/wireless/mediatek/mt76/channel.c b/drivers/net/wireless/mediatek/mt76/channel.c
+index 6adaeaf63e46a..065e613289e02 100644
+--- a/drivers/net/wireless/mediatek/mt76/channel.c
++++ b/drivers/net/wireless/mediatek/mt76/channel.c
+@@ -192,68 +192,74 @@ int mt76_switch_vif_chanctx(struct ieee80211_hw *hw,
+ 			    int n_vifs,
+ 			    enum ieee80211_chanctx_switch_mode mode)
+ {
+-	struct mt76_chanctx *old_ctx = (struct mt76_chanctx *)vifs->old_ctx->drv_priv;
+-	struct mt76_chanctx *new_ctx = (struct mt76_chanctx *)vifs->new_ctx->drv_priv;
+-	struct ieee80211_chanctx_conf *conf = vifs->new_ctx;
+-	struct mt76_phy *old_phy = old_ctx->phy;
+-	struct mt76_phy *phy = hw->priv;
++	struct ieee80211_vif_chanctx_switch *v;
++	struct mt76_chanctx *old_ctx, *new_ctx;
++	struct mt76_phy *old_phy, *phy = hw->priv;
+ 	struct mt76_dev *dev = phy->dev;
+ 	struct mt76_vif_link *mlink;
+-	bool update_chan;
++	bool need_update[__MT_MAX_BAND] = {};
+ 	int i, ret = 0;
+ 
+-	if (mode == CHANCTX_SWMODE_SWAP_CONTEXTS)
+-		phy = new_ctx->phy = dev->band_phys[conf->def.chan->band];
+-	else
+-		phy = new_ctx->phy;
+-	if (!phy)
+-		return -EINVAL;
++	for (i = 0; i < n_vifs; i++) {
++		v = &vifs[i];
++		new_ctx = (struct mt76_chanctx *)v->new_ctx->drv_priv;
++		if (mode == CHANCTX_SWMODE_SWAP_CONTEXTS)
++			phy = new_ctx->phy = dev->band_phys[v->new_ctx->def.chan->band];
++		else
++			phy = new_ctx->phy;
+ 
+-	update_chan = phy->chanctx != new_ctx;
+-	if (update_chan) {
+-		if (dev->scan.phy == phy)
+-			mt76_abort_scan(dev);
++		if (!phy)
++			return -EINVAL;
+ 
+-		cancel_delayed_work_sync(&phy->mac_work);
++		if (need_update[phy->band_idx])
++			continue;
++
++		if (phy->chanctx != new_ctx) {
++			if (dev->scan.phy == phy)
++				mt76_abort_scan(dev);
++
++			cancel_delayed_work_sync(&phy->mac_work);
++			need_update[phy->band_idx] = true;
++		}
+ 	}
+ 
+ 	mutex_lock(&dev->mutex);
+ 
+-	if (mode == CHANCTX_SWMODE_SWAP_CONTEXTS &&
+-	    phy != old_phy && old_phy->chanctx == old_ctx)
+-		old_phy->chanctx = NULL;
++	for (i = 0; i < n_vifs; i++) {
++		v = &vifs[i];
++		old_ctx = (struct mt76_chanctx *)v->old_ctx->drv_priv;
++		old_phy = old_ctx->phy;
++
++		new_ctx = (struct mt76_chanctx *)v->new_ctx->drv_priv;
++		phy = new_ctx->phy;
+ 
+-	if (update_chan)
+-		ret = mt76_phy_update_channel(phy, vifs->new_ctx);
++		if (mode == CHANCTX_SWMODE_SWAP_CONTEXTS && old_phy->chanctx &&
++		    old_phy->chanctx == old_ctx && phy != old_phy)
++			old_phy->chanctx = NULL;
+ 
+-	if (ret)
+-		goto out;
++		if (need_update[phy->band_idx]) {
++			ret = mt76_phy_update_channel(phy, v->new_ctx);
++			if (ret)
++				goto out;
+ 
+-	if (old_phy == phy)
+-		goto skip_link_replace;
++			need_update[phy->band_idx] = false;
++		}
+ 
+-	for (i = 0; i < n_vifs; i++) {
+-		mlink = mt76_vif_conf_link(dev, vifs[i].vif, vifs[i].link_conf);
++		mlink = mt76_vif_conf_link(dev, v->vif, v->link_conf);
+ 		if (!mlink)
+ 			continue;
+ 
+-		dev->drv->vif_link_remove(old_phy, vifs[i].vif,
+-					  vifs[i].link_conf, mlink);
+-
+-		ret = dev->drv->vif_link_add(phy, vifs[i].vif,
+-					     vifs[i].link_conf, mlink);
+-		if (ret)
+-			goto out;
+-
+-	}
++		if (old_phy != phy) {
++			dev->drv->vif_link_remove(old_phy, v->vif, v->link_conf,
++						  mlink);
+ 
+-skip_link_replace:
+-	for (i = 0; i < n_vifs; i++) {
+-		mlink = mt76_vif_conf_link(dev, vifs[i].vif, vifs[i].link_conf);
+-		if (!mlink)
+-			continue;
++			ret = dev->drv->vif_link_add(phy, v->vif, v->link_conf,
++						     mlink);
++			if (ret)
++				goto out;
++		}
+ 
+-		mlink->ctx = vifs->new_ctx;
++		mlink->ctx = v->new_ctx;
+ 	}
+ 
+ out:
+-- 
+2.34.1
+

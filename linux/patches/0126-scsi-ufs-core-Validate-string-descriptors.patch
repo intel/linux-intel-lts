@@ -1,0 +1,98 @@
+From f9e3e0da08a41bd835abe26c6be5af484824eed3 Mon Sep 17 00:00:00 2001
+From: Li Qiang <liqiang01@kylinos.cn>
+Date: Fri, 17 Jul 2026 23:39:08 +0800
+Subject: [PATCH 126/143] scsi: ufs: core: Validate string descriptors
+
+The string descriptor length includes a two-byte header while the UTF-16
+payload starts after it. utf16s_to_utf8s() expects a count of UTF-16 code
+units, not bytes. Passing the payload byte count can make it read beyond
+the descriptor buffer.
+
+Validate that the payload has an even byte count, pass a code-unit count to
+the converter, and allocate sufficient UTF-8 output space.
+
+The raw string buffer starts after the descriptor header but its size is
+bLength. Copying bLength bytes from that pointer can read beyond the
+response buffer.
+
+Allocate a zeroed bLength-sized buffer and copy only the UTF-16
+payload. This preserves the raw buffer size consumed by the RPMB device-ID
+ABI while avoiding the overread.
+
+Fixes: 4b828fe156a6 ("scsi: ufs: revamp string descriptor reading")
+Fixes: d794b499f948 ("scsi: ufs: core: fix incorrect buffer duplication in ufshcd_read_string_desc()")
+Signed-off-by: Li Qiang <liqiang01@kylinos.cn>
+Reviewed-by: Peter Wang <peter.wang@mediatek.com>
+Reviewed-by: Bart Van Assche <bvanassche@acm.org>
+Link: https://patch.msgid.link/20260717153914.26321-2-liqiang01@kylinos.cn
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+---
+ drivers/ufs/core/ufshcd.c | 24 +++++++++++++++++++-----
+ 1 file changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/ufs/core/ufshcd.c b/drivers/ufs/core/ufshcd.c
+index 87578e8824d2d..b8d413c5f98af 100644
+--- a/drivers/ufs/core/ufshcd.c
++++ b/drivers/ufs/core/ufshcd.c
+@@ -3787,7 +3787,7 @@ int ufshcd_read_string_desc(struct ufs_hba *hba, u8 desc_index,
+ {
+ 	struct uc_string_id *uc_str;
+ 	u8 *str;
+-	int ret;
++	int ret, uc_len;
+ 
+ 	if (!buf)
+ 		return -EINVAL;
+@@ -3812,11 +3812,19 @@ int ufshcd_read_string_desc(struct ufs_hba *hba, u8 desc_index,
+ 		goto out;
+ 	}
+ 
++	uc_len = uc_str->len - QUERY_DESC_HDR_SIZE;
++	if (uc_len % sizeof(*uc_str->uc)) {
++		dev_err(hba->dev, "String Desc has an odd UTF-16 payload length\n");
++		str = NULL;
++		ret = -EINVAL;
++		goto out;
++	}
++
+ 	if (ascii) {
+ 		ssize_t ascii_len;
+ 		int i;
+-		/* remove header and divide by 2 to move from UTF16 to UTF8 */
+-		ascii_len = (uc_str->len - QUERY_DESC_HDR_SIZE) / 2 + 1;
++		/* Allow up to three UTF-8 bytes per UTF-16 code unit plus a NUL. */
++		ascii_len = uc_len / sizeof(*uc_str->uc) * 3 + 1;
+ 		str = kzalloc(ascii_len, GFP_KERNEL);
+ 		if (!str) {
+ 			ret = -ENOMEM;
+@@ -3828,7 +3836,7 @@ int ufshcd_read_string_desc(struct ufs_hba *hba, u8 desc_index,
+ 		 * we need to convert to utf-8 so it can be displayed
+ 		 */
+ 		ret = utf16s_to_utf8s(uc_str->uc,
+-				      uc_str->len - QUERY_DESC_HDR_SIZE,
++				      uc_len / sizeof(*uc_str->uc),
+ 				      UTF16_BIG_ENDIAN, str, ascii_len - 1);
+ 
+ 		/* replace non-printable or non-ASCII characters with spaces */
+@@ -3838,11 +3846,17 @@ int ufshcd_read_string_desc(struct ufs_hba *hba, u8 desc_index,
+ 		str[ret++] = '\0';
+ 
+ 	} else {
+-		str = kmemdup(uc_str->uc, uc_str->len, GFP_KERNEL);
++		/*
++		 * Keep the bLength-sized raw output for the RPMB device ID ABI.
++		 * The two bytes beyond the UTF-16 payload are explicitly zeroed
++		 * instead of being read past the descriptor buffer.
++		 */
++		str = kzalloc(uc_str->len, GFP_KERNEL);
+ 		if (!str) {
+ 			ret = -ENOMEM;
+ 			goto out;
+ 		}
++		memcpy(str, uc_str->uc, uc_len);
+ 		ret = uc_str->len;
+ 	}
+ out:
+-- 
+2.34.1
+

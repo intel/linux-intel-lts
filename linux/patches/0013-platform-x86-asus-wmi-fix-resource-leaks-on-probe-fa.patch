@@ -1,0 +1,69 @@
+From e939b6a6b0a1e5e5034c90b0855c0b33130a9288 Mon Sep 17 00:00:00 2001
+From: Marco Scardovi <scardracs@disroot.org>
+Date: Wed, 17 Jun 2026 17:51:04 +0200
+Subject: [PATCH 013/143] platform/x86: asus-wmi: fix resource leaks on probe
+ failure
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+During driver initialization in asus_wmi_add(), various subsystems are
+registered sequentially. However, the error path labels are out of order
+relative to the registration sequence.
+
+Specifically:
+1. If asus_wmi_custom_fan_curve_init() fails, the driver jumps to
+   fail_custom_fan_curve. Because this label is placed below fail_sysfs,
+   it bypasses the cleanup calls for the input device and sysfs groups,
+   which were successfully registered before, leaking those resources.
+2. If asus_screenpad_init() fails, the driver jumps to fail_screenpad.
+   Because fail_screenpad is placed below fail_backlight, it bypasses the
+   cleanup calls for backlight and rfkill, leaking those resources.
+
+Fix these resource leaks by reordering the error path labels in
+asus_wmi_add() to match the exact reverse order of the resource
+allocations.
+
+Fixes: 0f0ac158d28f ("platform/x86: asus-wmi: Add support for custom fan curves")
+Fixes: 2c97d3e55b70 ("platform/x86: asus-wmi: add support for ASUS screenpad")
+Assisted-by: Antigravity:gemini-3.5-flash
+Signed-off-by: Marco Scardovi <scardracs@disroot.org>
+Link: https://patch.msgid.link/20260617155104.10111-1-scardracs@disroot.org
+Reviewed-by: Ilpo Järvinen <ilpo.jarvinen@linux.intel.com>
+Signed-off-by: Ilpo Järvinen <ilpo.jarvinen@linux.intel.com>
+(cherry picked from commit ef3daa2b84a2b8499ce9e2ce1c865dca36d39f95)
+---
+ drivers/platform/x86/asus-wmi.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/platform/x86/asus-wmi.c b/drivers/platform/x86/asus-wmi.c
+index 9026744d72267..9f0f79030b5b8 100644
+--- a/drivers/platform/x86/asus-wmi.c
++++ b/drivers/platform/x86/asus-wmi.c
+@@ -4877,20 +4877,20 @@ static int asus_wmi_add(struct platform_device *pdev)
+ 	return 0;
+ 
+ fail_wmi_handler:
++	asus_screenpad_exit(asus);
++fail_screenpad:
+ 	asus_wmi_backlight_exit(asus);
+ fail_backlight:
+ 	asus_wmi_rfkill_exit(asus);
+-fail_screenpad:
+-	asus_screenpad_exit(asus);
+ fail_rfkill:
+ 	asus_wmi_led_exit(asus);
+ fail_leds:
++fail_custom_fan_curve:
+ fail_hwmon:
+ 	asus_wmi_input_exit(asus);
+ fail_input:
+ 	asus_wmi_sysfs_exit(asus->platform_device);
+ fail_sysfs:
+-fail_custom_fan_curve:
+ fail_platform_profile_setup:
+ fail_fan_boost_mode:
+ fail_platform:
+-- 
+2.34.1
+

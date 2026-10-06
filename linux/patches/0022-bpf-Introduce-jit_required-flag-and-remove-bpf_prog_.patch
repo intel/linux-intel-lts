@@ -1,0 +1,148 @@
+From e7e1e96dd96ddefa43b082d29a3c63d4e44f1cf4 Mon Sep 17 00:00:00 2001
+From: Tiezhu Yang <yangtiezhu@loongson.cn>
+Date: Wed, 8 Jul 2026 18:18:05 +0800
+Subject: [PATCH 022/143] bpf: Introduce jit_required flag and remove
+ bpf_prog_has_kfunc_call()
+
+Introduce a 'jit_required' bitfield flag in struct bpf_prog to track
+whether a BPF program strictly requires the JIT compiler to run. This
+prevents a dangerous runtime fallback to the interpreter for features
+that are only implemented in the JIT compiler.
+
+Currently, bpf_prog_has_kfunc_call() is used only for kernel function
+calls, replace the kfunc-specific helper with the new 'jit_required'
+flag. This makes it easy to support other JIT-only BPF features, such
+as inlined helpers.
+
+Suggested-by: Alexei Starovoitov <ast@kernel.org>
+Suggested-by: KaFai Wan <kafai.wan@linux.dev>
+Suggested-by: Leon Hwang <leon.hwang@linux.dev>
+Acked-by: Leon Hwang <leon.hwang@linux.dev>
+Signed-off-by: Tiezhu Yang <yangtiezhu@loongson.cn>
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+
+[ Backport note: required by the CVE-2026-93044 fix (34746b5a84ec), which sets
+  prog->jit_required. Upstream edits bpf_fixup_call_args() in kernel/bpf/fixups.c;
+  that file does not exist in this tree, so the two hunks were applied to the
+  same function in kernel/bpf/verifier.c instead. bpf_prog_has_kfunc_call() is
+  removed as upstream; its only other caller (kernel/bpf/core.c) is converted
+  by this same commit. No other users exist in this tree. ]
+
+(cherry picked from commit 9a6df65d5c6a9947ddab4e563e329720f44b8747)
+---
+ include/linux/bpf.h   |  9 ++-------
+ kernel/bpf/core.c     |  7 ++-----
+ kernel/bpf/verifier.c | 12 ++++--------
+ 3 files changed, 8 insertions(+), 20 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 862d6e0d5a287..9904651ecc983 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -1701,8 +1701,9 @@ struct bpf_prog_aux {
+ 
+ struct bpf_prog {
+ 	u16			pages;		/* Number of allocated pages */
+-	u16			jited:1,	/* Is our filter JIT'ed? */
++	u32			jited:1,	/* Is our filter JIT'ed? */
+ 				jit_requested:1,/* archs need to JIT the prog */
++				jit_required:1,	/* program strictly requires JIT compiler */
+ 				gpl_compatible:1, /* Is filter GPL compatible? */
+ 				cb_access:1,	/* Is control block accessed? */
+ 				dst_needed:1,	/* Do we need dst entry? */
+@@ -2851,7 +2852,6 @@ const struct bpf_func_proto *bpf_base_func_proto(enum bpf_func_id func_id,
+ 						 const struct bpf_prog *prog);
+ void bpf_task_storage_free(struct task_struct *task);
+ void bpf_cgrp_storage_free(struct cgroup *cgroup);
+-bool bpf_prog_has_kfunc_call(const struct bpf_prog *prog);
+ const struct btf_func_model *
+ bpf_jit_find_kfunc_model(const struct bpf_prog *prog,
+ 			 const struct bpf_insn *insn);
+@@ -3134,11 +3134,6 @@ static inline void bpf_task_storage_free(struct task_struct *task)
+ {
+ }
+ 
+-static inline bool bpf_prog_has_kfunc_call(const struct bpf_prog *prog)
+-{
+-	return false;
+-}
+-
+ static inline const struct btf_func_model *
+ bpf_jit_find_kfunc_model(const struct bpf_prog *prog,
+ 			 const struct bpf_insn *insn)
+diff --git a/kernel/bpf/core.c b/kernel/bpf/core.c
+index c99d3f396fdc0..dfdcb30ea5cac 100644
+--- a/kernel/bpf/core.c
++++ b/kernel/bpf/core.c
+@@ -125,6 +125,7 @@ struct bpf_prog *bpf_prog_alloc_no_stats(unsigned int size, gfp_t gfp_extra_flag
+ 	fp->aux->main_prog_aux = aux;
+ 	fp->aux->prog = fp;
+ 	fp->jit_requested = ebpf_jit_enabled();
++	fp->jit_required = IS_ENABLED(CONFIG_BPF_JIT_ALWAYS_ON);
+ 	fp->blinding_requested = bpf_jit_blinding_enabled(fp);
+ #ifdef CONFIG_CGROUP_BPF
+ 	aux->cgroup_atype = CGROUP_BPF_ATTACH_TYPE_INVALID;
+@@ -2564,15 +2565,11 @@ struct bpf_prog *bpf_prog_select_runtime(struct bpf_prog *fp, int *err)
+ 	/* In case of BPF to BPF calls, verifier did all the prep
+ 	 * work with regards to JITing, etc.
+ 	 */
+-	bool jit_needed = false;
++	bool jit_needed = fp->jit_required;
+ 
+ 	if (fp->bpf_func)
+ 		goto finalize;
+ 
+-	if (IS_ENABLED(CONFIG_BPF_JIT_ALWAYS_ON) ||
+-	    bpf_prog_has_kfunc_call(fp))
+-		jit_needed = true;
+-
+ 	if (!bpf_prog_select_interpreter(fp))
+ 		jit_needed = true;
+ 
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index b61a9f83e3f69..03fec1b18b158 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -3357,6 +3357,8 @@ static int add_kfunc_call(struct bpf_verifier_env *env, u32 func_id, s16 offset)
+ 		prog_aux->kfunc_tab = tab;
+ 	}
+ 
++	env->prog->jit_required = 1;
++
+ 	/* func_id == 0 is always invalid, but instead of returning an error, be
+ 	 * conservative and wait until the code elimination pass before returning
+ 	 * error, so that invalid calls that get pruned out can be in BPF programs
+@@ -3465,11 +3467,6 @@ static void sort_kfunc_descs_by_imm_off(struct bpf_prog *prog)
+ 	     kfunc_desc_cmp_by_imm_off, NULL);
+ }
+ 
+-bool bpf_prog_has_kfunc_call(const struct bpf_prog *prog)
+-{
+-	return !!prog->aux->kfunc_tab;
+-}
+-
+ const struct btf_func_model *
+ bpf_jit_find_kfunc_model(const struct bpf_prog *prog,
+ 			 const struct bpf_insn *insn)
+@@ -22355,7 +22352,6 @@ static int fixup_call_args(struct bpf_verifier_env *env)
+ #ifndef CONFIG_BPF_JIT_ALWAYS_ON
+ 	struct bpf_prog *prog = env->prog;
+ 	struct bpf_insn *insn = prog->insnsi;
+-	bool has_kfunc_call = bpf_prog_has_kfunc_call(prog);
+ 	int i, depth;
+ #endif
+ 	int err = 0;
+@@ -22369,8 +22365,8 @@ static int fixup_call_args(struct bpf_verifier_env *env)
+ 			return err;
+ 	}
+ #ifndef CONFIG_BPF_JIT_ALWAYS_ON
+-	if (has_kfunc_call) {
+-		verbose(env, "calling kernel functions are not allowed in non-JITed programs\n");
++	if (prog->jit_required) {
++		verbose(env, "program requires BPF JIT compiler but it is not available\n");
+ 		return -EINVAL;
+ 	}
+ 	if (env->subprog_cnt > 1 && env->prog->aux->tail_call_reachable) {
+-- 
+2.34.1
+

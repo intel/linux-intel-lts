@@ -1,0 +1,110 @@
+From da103038065a23411fe04e25234182797086eef0 Mon Sep 17 00:00:00 2001
+From: Yonghong Song <yonghong.song@linux.dev>
+Date: Tue, 28 Jul 2026 22:01:59 -0700
+Subject: [PATCH 077/143] bpf: Reject >8 byte return values on return-reading
+ trampoline paths
+
+btf_distill_func_proto() builds the function model used for the
+fentry/fexit/fmod_ret/fsession trampolines and struct_ops. It has
+accepted a 16-byte __int128 return value since the trampoline was
+introduced: __get_type_size() returns the integer's type size, and the
+return-type check only rejected ret < 0.
+
+But the BPF trampoline preserves only 8 bytes of the return value (RAX on
+x86, i.e. R0). For an attach type that reads the target's return value the
+second half (RDX / R3) is neither saved nor restored, so a program
+attached to a function returning a 16-byte value corrupts the value seen
+by the real caller and itself observes only half of it. struct_ops
+trampolines have the same limitation.
+
+This affects the attach types that read the target's return value: fexit,
+fmod_ret and fsession (plus the _multi variants of fexit and fsession),
+and struct_ops. fentry/fentry_multi run before the target returns and are
+unaffected.
+
+Reject a >8 byte return value for these attach types in
+bpf_check_attach_target() and bpf_check_attach_btf_id_multi(), and for
+struct_ops in bpf_struct_ops_desc_init().
+
+Fixes: fec56f5890d9 ("bpf: Introduce BPF trampoline")
+Signed-off-by: Yonghong Song <yonghong.song@linux.dev>
+Reviewed-by: Eduard Zingerman <eddyz87@gmail.com>
+Acked-by: Leon Hwang <leon.hwang@linux.dev>
+Link: https://lore.kernel.org/bpf/20260729050159.2585809-1-yonghong.song@linux.dev
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+
+[ Backport note: 6.18 lacks BPF_TRACE_FEXIT_MULTI, BPF_TRACE_FSESSION,
+  BPF_TRACE_FSESSION_MULTI and bpf_check_attach_btf_id_multi(), so drop
+  those case labels and the bpf_check_attach_btf_id_multi() hunk. The
+  verifier.c hunks were applied by hand due to context drift (no
+  is_tracing_multi_id() block in 6.18); the check is placed right after
+  btf_distill_func_proto() in bpf_check_attach_target() as upstream. ]
+(cherry picked from commit c48796aa6c392cde93946e5d5a9a1f1b1cf72feb)
+---
+ kernel/bpf/bpf_struct_ops.c | 12 ++++++++++++
+ kernel/bpf/verifier.c       | 19 +++++++++++++++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/kernel/bpf/bpf_struct_ops.c b/kernel/bpf/bpf_struct_ops.c
+index a41e6730edcf3..472c93b3ff1b6 100644
+--- a/kernel/bpf/bpf_struct_ops.c
++++ b/kernel/bpf/bpf_struct_ops.c
+@@ -446,6 +446,18 @@ int bpf_struct_ops_desc_init(struct bpf_struct_ops_desc *st_ops_desc,
+ 			goto errout;
+ 		}
+ 
++		/*
++		 * A >8 byte return value is passed back in a register pair,
++		 * which the struct_ops trampoline does not preserve (only
++		 * 8 bytes of the return value are saved and restored).
++		 */
++		if (st_ops->func_models[i].ret_size > 8) {
++			pr_warn("func ptr %s in struct %s has a >8 byte return value, which is not supported\n",
++				mname, st_ops->name);
++			err = -EOPNOTSUPP;
++			goto errout;
++		}
++
+ 		stub_func_addr = *(void **)(st_ops->cfi_stubs + moff);
+ 		err = prepare_arg_info(btf, st_ops->name, mname,
+ 				       func_proto, stub_func_addr,
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 9f8675802e801..5da775d7102d8 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -24135,6 +24135,17 @@ static int check_non_sleepable_error_inject(u32 btf_id)
+ 	return btf_id_set_contains(&btf_non_sleepable_error_inject, btf_id);
+ }
+ 
++static bool attach_uses_trampoline_retval(enum bpf_attach_type type)
++{
++	switch (type) {
++	case BPF_MODIFY_RETURN:
++	case BPF_TRACE_FEXIT:
++		return true;
++	default:
++		return false;
++	}
++}
++
+ int bpf_check_attach_target(struct bpf_verifier_log *log,
+ 			    const struct bpf_prog *prog,
+ 			    const struct bpf_prog *tgt_prog,
+@@ -24379,6 +24390,14 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
+ 		if (ret < 0)
+ 			return ret;
+ 
++		if (tgt_info->fmodel.ret_size > 8 &&
++		    attach_uses_trampoline_retval(prog->expected_attach_type)) {
++			bpf_log(log,
++				"Attach to function %s with a >8 byte return value is not supported for this attach type\n",
++				tname);
++			return -EOPNOTSUPP;
++		}
++
+ 		if (tgt_prog) {
+ 			if (subprog == 0)
+ 				addr = (long) tgt_prog->bpf_func;
+-- 
+2.34.1
+

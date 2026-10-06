@@ -1,0 +1,44 @@
+From b91d4efaba92be78c51975eda1e28add1ee67267 Mon Sep 17 00:00:00 2001
+From: Leon Romanovsky <leonro@nvidia.com>
+Date: Mon, 13 Jul 2026 07:41:23 -0400
+Subject: [PATCH 138/143] RDMA/rvt: Return NULL after port allocation failure
+
+rvt_alloc_device() deallocates the IB device when its port array cannot
+be allocated but then returns the pointer to the released allocation.
+Callers treat any non-NULL value as valid and dereference it, resulting
+in a use-after-free.
+
+Return NULL immediately after deallocation so callers can propagate the
+allocation failure.
+
+Fixes: ff6acd69518e ("IB/rdmavt: Add device structure allocation")
+Link: https://patch.msgid.link/20260708-clean-init-one-hfi1-v1-1-b9e9641268a5@nvidia.com
+Reviewed-by: Kalesh AP <kalesh-anakkur.purayil@broadcom.com>
+Signed-off-by: Leon Romanovsky <leonro@nvidia.com>
+
+[ Backport note: kzalloc_objs() does not exist in this tree; the existing kcalloc() is kept. ]
+
+(cherry picked from commit 2982eaf3b9d2d953318c74cd6f1b7576ea6d7b1f)
+---
+ drivers/infiniband/sw/rdmavt/vt.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/sw/rdmavt/vt.c b/drivers/infiniband/sw/rdmavt/vt.c
+index d22d610c26963..4f73e643b9e50 100644
+--- a/drivers/infiniband/sw/rdmavt/vt.c
++++ b/drivers/infiniband/sw/rdmavt/vt.c
+@@ -54,8 +54,10 @@ struct rvt_dev_info *rvt_alloc_device(size_t size, int nports)
+ 		return rdi;
+ 
+ 	rdi->ports = kcalloc(nports, sizeof(*rdi->ports), GFP_KERNEL);
+-	if (!rdi->ports)
++	if (!rdi->ports) {
+ 		ib_dealloc_device(&rdi->ibdev);
++		return NULL;
++	}
+ 
+ 	return rdi;
+ }
+-- 
+2.34.1
+

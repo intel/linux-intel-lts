@@ -1,7 +1,7 @@
-From 4f12bb574b2d8dde794ff27989eb57b79fc82aed Mon Sep 17 00:00:00 2001
+From 4c2c826b069d5795ecace1dc1170386230e41d31 Mon Sep 17 00:00:00 2001
 From: "Matthew Wilcox (Oracle)" <willy@infradead.org>
 Date: Fri, 24 Oct 2025 18:08:09 +0100
-Subject: [PATCH 1/2] filemap: Add folio_next_pos()
+Subject: [PATCH 108/143] filemap: Add folio_next_pos()
 
 Replace the open-coded implementation in ocfs2 (which loses the top
 32 bits on 32-bit architectures) with a helper in pagemap.h.
@@ -17,6 +17,7 @@ Cc: Joseph Qi <joseph.qi@linux.alibaba.com>
 Cc: ocfs2-devel@lists.linux.dev
 Signed-off-by: Christian Brauner <brauner@kernel.org>
 (cherry picked from commit 4511fd86db6f8f94f8aff01044f5c69aa38f81f4)
+(cherry picked from commit 45f6fa5bcb2c6d319a412caaf5fb8e3feba17476)
 ---
  fs/ocfs2/alloc.c        |  2 +-
  include/linux/pagemap.h | 11 +++++++++++

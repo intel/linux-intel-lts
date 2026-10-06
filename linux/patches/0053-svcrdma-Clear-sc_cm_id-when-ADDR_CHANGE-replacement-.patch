@@ -1,0 +1,64 @@
+From 8cdc71c1eb084f7fb993670dc6a1fe0633dfa059 Mon Sep 17 00:00:00 2001
+From: Chuck Lever <chuck.lever@oracle.com>
+Date: Wed, 27 May 2026 11:00:15 -0400
+Subject: [PATCH 053/143] svcrdma: Clear sc_cm_id when ADDR_CHANGE replacement
+ fails
+
+When svc_rdma_listen_handler() handles RDMA_CM_EVENT_ADDR_CHANGE,
+it creates a replacement listener cm_id and returns 1, telling
+the CM core to destroy the old one. If the replacement allocation
+fails, sc_cm_id still points at the old cm_id that the CM core is
+about to destroy. Any subsequent dereference of sc_cm_id --
+such as svc_rdma_detach()'s rdma_disconnect() call -- is a
+use-after-free.
+
+NULL sc_cm_id on the failure path and guard svc_rdma_detach()'s
+rdma_disconnect() call against NULL so that the listener can
+be torn down safely when the server shuts down.
+
+Fixes: d1b586e75ec6 ("svcrdma: Handle ADDR_CHANGE CM event properly")
+Cc: stable@vger.kernel.org
+Acked-by: Jeff Layton <jlayton@kernel.org>
+Link: https://patch.msgid.link/20260527-rdma-follow-on-v1-5-1b09bd87b6cd@oracle.com
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+
+[ Backport note: sc_sq_ticket_wait does not exist in this tree (it belongs to the newer SQ ticket scheme); only the sc_send_wait wake-up is added. The sc_cm_id NULL check is as upstream. ]
+
+(cherry picked from commit 01500306e1d50de7ca7a2cdcdfa28ac0523eb747)
+---
+ net/sunrpc/xprtrdma/svc_rdma_transport.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/net/sunrpc/xprtrdma/svc_rdma_transport.c b/net/sunrpc/xprtrdma/svc_rdma_transport.c
+index 55f810a22c6aa..839eb7aaeb0a7 100644
+--- a/net/sunrpc/xprtrdma/svc_rdma_transport.c
++++ b/net/sunrpc/xprtrdma/svc_rdma_transport.c
+@@ -311,6 +311,7 @@ static int svc_rdma_listen_handler(struct rdma_cm_id *cma_id,
+ 		if (IS_ERR(listen_id)) {
+ 			pr_err("Listener dead, address change failed for device %s\n",
+ 				cma_id->device->name);
++			cma_xprt->sc_cm_id = NULL;
+ 		} else
+ 			cma_xprt->sc_cm_id = listen_id;
+ 		return 1;
+@@ -610,7 +611,16 @@ static void svc_rdma_detach(struct svc_xprt *xprt)
+ 	struct svcxprt_rdma *rdma =
+ 		container_of(xprt, struct svcxprt_rdma, sc_xprt);
+ 
+-	rdma_disconnect(rdma->sc_cm_id);
++	if (rdma->sc_cm_id)
++		rdma_disconnect(rdma->sc_cm_id);
++
++	/*
++	 * Most close paths go through svc_rdma_xprt_deferred_close(),
++	 * which wakes the SQ waitqueues. svc_xprt_close() reaches
++	 * detach without that helper, so wake any threads parked in
++	 * svc_rdma_sq_wait() here as well.
++	 */
++	wake_up_all(&rdma->sc_send_wait);
+ }
+ 
+ /**
+-- 
+2.34.1
+

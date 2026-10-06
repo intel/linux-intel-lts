@@ -1,0 +1,187 @@
+From 1eb6aaebdf78c66304b42bf86e875546522a6538 Mon Sep 17 00:00:00 2001
+From: Kris Pan <kris.pan@intel.com>
+Date: Tue, 29 Sep 2026 16:33:55 +0800
+Subject: [PATCH 079/143] block: validate user space vectors during extraction
+
+Backport of CVE-2026-89584 (Keith Busch).
+
+The bio-based drivers don't necessarily check the alignment split, and
+stacking block drivers don't always handle a misalignment detected after
+submitting the bio. Validate user vectors against the device's dma_alignment
+as the bio is built from the iov_iter, rejecting misaligned early with -EINVAL.
+
+[Adapted to v6.18: 6.18 uses iov_iter_extract_pages() in
+ __bio_iov_iter_get_pages(), so the mem_align_mask validation is added
+ there directly instead of inside iov_iter_extract_bvecs().]
+
+Cc: stable@vger.kernel.org
+Fixes: 5ff3f74e145a ("block: simplify direct io validity check")
+Fixes: 7eac33186957 ("iomap: simplify direct io validity check")
+Link: https://patch.msgid.link/20260720201057.1862857-6-kbusch@meta.com
+---
+ block/bio.c          | 59 +++++++++++++++++++++++++++++++++++++++++---
+ block/blk-map.c      |  2 +-
+ block/fops.c         |  2 +-
+ fs/iomap/direct-io.c |  1 +
+ include/linux/bio.h  |  2 +-
+ 5 files changed, 60 insertions(+), 6 deletions(-)
+
+diff --git a/block/bio.c b/block/bio.c
+index 63994b8cd8e1f..5a42e526bd7b6 100644
+--- a/block/bio.c
++++ b/block/bio.c
+@@ -1210,7 +1210,8 @@ static unsigned int get_contig_folio_len(unsigned int *num_pages,
+  * For a multi-segment *iter, this function only adds pages from the next
+  * non-empty segment of the iov iterator.
+  */
+-static int __bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter)
++static int __bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter,
++				    unsigned mem_align_mask)
+ {
+ 	iov_iter_extraction_t extraction_flags = 0;
+ 	unsigned short nr_pages = bio->bi_max_vecs - bio->bi_vcnt;
+@@ -1222,6 +1223,10 @@ static int __bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter)
+ 	size_t offset, folio_offset, left, len;
+ 	int ret = 0;
+ 
++	if (((unsigned long)iter_iov_addr(iter) | iter_iov_len(iter)) &
++	    mem_align_mask)
++		return -EINVAL;
++
+ 	/*
+ 	 * Move page array up in the allocated memory for the bio vecs as far as
+ 	 * possible so that we can start filling biovecs from the beginning
+@@ -1317,6 +1322,39 @@ static int bio_iov_iter_align_down(struct bio *bio, struct iov_iter *iter,
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_DEBUG_KERNEL
++static inline bool bio_iov_bvec_aligned(const struct bio *bio,
++					unsigned mem_align_mask)
++{
++	struct bvec_iter iter;
++	struct bio_vec bv;
++
++	/*
++	 * Correct callers never break the alignment requirements, so this
++	 * exhaustive check is only paid for in debug builds.
++	 */
++	for_each_mp_bvec(bv, bio->bi_io_vec, iter, bio->bi_iter)
++		if ((bv.bv_offset | bv.bv_len) & mem_align_mask)
++			return false;
++	return true;
++}
++#else
++static inline bool bio_iov_bvec_aligned(const struct bio *bio,
++					unsigned mem_align_mask)
++{
++	/*
++	 * We forward the bio_vec as-is, so ITER_BVEC callers must provide
++	 * segments already aligned to the device's DMA alignment. The only
++	 * unchecked user-controllable offset that reaches here is an io_uring
++	 * registered buffer where just the first segment can be unaligned
++	 * (the rest is virtually contiguous), so checking only that one is
++	 * sufficient to know if the entire vector is valid.
++	 */
++	return !(mp_bvec_iter_offset(bio->bi_io_vec, bio->bi_iter) &
++							mem_align_mask);
++}
++#endif
++
+ /**
+  * bio_iov_iter_get_pages - add user or kernel pages to a bio
+  * @bio: bio to add pages to
+@@ -1339,7 +1377,7 @@ static int bio_iov_iter_align_down(struct bio *bio, struct iov_iter *iter,
+  * is returned only if 0 pages could be pinned.
+  */
+ int bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter,
+-			   unsigned len_align_mask)
++			   unsigned mem_align_mask, unsigned len_align_mask)
+ {
+ 	int ret = 0;
+ 
+@@ -1348,6 +1386,10 @@ int bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter,
+ 
+ 	if (iov_iter_is_bvec(iter)) {
+ 		bio_iov_bvec_set(bio, iter);
++
++		if (!bio_iov_bvec_aligned(bio, mem_align_mask))
++			return -EINVAL;
++
+ 		iov_iter_advance(iter, bio->bi_iter.bi_size);
+ 		return 0;
+ 	}
+@@ -1355,7 +1397,18 @@ int bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter,
+ 	if (iov_iter_extract_will_pin(iter))
+ 		bio_set_flag(bio, BIO_PAGE_PINNED);
+ 	do {
+-		ret = __bio_iov_iter_get_pages(bio, iter);
++		ret = __bio_iov_iter_get_pages(bio, iter, mem_align_mask);
++		if (ret == -EINVAL) {
++			/*
++			 * A misaligned vector fails the whole I/O.  Release any
++			 * pages pinned by earlier iterations before returning
++			 * since this bio won't be submitted to release them.
++			 */
++			bio_release_pages(bio, false);
++			bio_clear_flag(bio, BIO_PAGE_PINNED);
++			bio->bi_vcnt = 0;
++			return ret;
++		}
+ 	} while (!ret && iov_iter_count(iter) && !bio_full(bio, 0));
+ 
+ 	if (bio->bi_vcnt)
+diff --git a/block/blk-map.c b/block/blk-map.c
+index 17a1dc2886786..9fe420c36c517 100644
+--- a/block/blk-map.c
++++ b/block/blk-map.c
+@@ -287,7 +287,7 @@ static int bio_map_user_iov(struct request *rq, struct iov_iter *iter,
+ 	 * No alignment requirements on our part to support arbitrary
+ 	 * passthrough commands.
+ 	 */
+-	ret = bio_iov_iter_get_pages(bio, iter, 0);
++	ret = bio_iov_iter_get_pages(bio, iter, 0, 0);
+ 	if (ret)
+ 		goto out_put;
+ 	ret = blk_rq_append_bio(rq, bio);
+diff --git a/block/fops.c b/block/fops.c
+index bbc89773e07f8..77f1082f8e74a 100644
+--- a/block/fops.c
++++ b/block/fops.c
+@@ -46,7 +46,7 @@ static bool blkdev_dio_invalid(struct block_device *bdev, struct kiocb *iocb,
+ static inline int blkdev_iov_iter_get_pages(struct bio *bio,
+ 		struct iov_iter *iter, struct block_device *bdev)
+ {
+-	return bio_iov_iter_get_pages(bio, iter,
++	return bio_iov_iter_get_pages(bio, iter, bdev_dma_alignment(bdev),
+ 			bdev_logical_block_size(bdev) - 1);
+ }
+ 
+diff --git a/fs/iomap/direct-io.c b/fs/iomap/direct-io.c
+index 92f32e02f77f4..1e9e77a9e101c 100644
+--- a/fs/iomap/direct-io.c
++++ b/fs/iomap/direct-io.c
+@@ -449,6 +449,7 @@ static int iomap_dio_bio_iter(struct iomap_iter *iter, struct iomap_dio *dio)
+ 		bio->bi_end_io = iomap_dio_bio_end_io;
+ 
+ 		ret = bio_iov_iter_get_pages(bio, dio->submit.iter,
++				bdev_dma_alignment(iomap->bdev),
+ 				bdev_logical_block_size(iomap->bdev) - 1);
+ 		if (unlikely(ret)) {
+ 			/*
+diff --git a/include/linux/bio.h b/include/linux/bio.h
+index fb747b053b98c..a3d1872afeaf8 100644
+--- a/include/linux/bio.h
++++ b/include/linux/bio.h
+@@ -459,7 +459,7 @@ int bdev_rw_virt(struct block_device *bdev, sector_t sector, void *data,
+ 		size_t len, enum req_op op);
+ 
+ int bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter,
+-		unsigned len_align_mask);
++		unsigned mem_align_mask, unsigned len_align_mask);
+ 
+ void bio_iov_bvec_set(struct bio *bio, const struct iov_iter *iter);
+ void __bio_release_pages(struct bio *bio, bool mark_dirty);
+-- 
+2.34.1
+

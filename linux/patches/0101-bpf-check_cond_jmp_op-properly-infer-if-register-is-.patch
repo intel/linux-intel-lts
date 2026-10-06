@@ -1,0 +1,95 @@
+From e500fb8221fc08eb911de344b39d39e99685da80 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Wed, 30 Sep 2026 00:05:49 +0800
+Subject: [PATCH 101/143] bpf: check_cond_jmp_op(): properly infer if register
+ is null
+
+Nicholas Carlini reported a bug when verifier can incorrectly infer
+that a pointer is non-null. The bug occurs when two pointers are
+compared and one of them has a type w/o PTR_MAYBE_NULL flag,
+but which allows a value to be NULL at runtime.
+Here is an example:
+
+  // `a` is PTR_TO_MEM | MEM_RDONLY | PTR_UNTRUSTED
+  // `a` is 0 at runtime.
+  // `b` is PTR_TO_MAP_VALUE | PTR_MAYBE_NULL
+  void *a = bpf_rdonly_cast(0, 0);
+  int  *b = bpf_map_lookup_elem(...);
+
+  if (a == b)
+    *b = 42;  // verifier does not catch null pointer dereference
+
+This happens because of a special case in check_cond_jmp_op(),
+which attempts to strip PTR_MAYBE_NULL flags from pointer types,
+when processing comparisons like `rA == rB`, if either rA or rB can't
+be null.
+
+The non-null property is derived based on the absence of
+PTR_MAYBE_NULL flag on rA's or rB's type. But that is not sufficient
+for types like PTR_TO_MEM, as in the example.
+
+This patch replaces type_may_be_null() call with reg_not_null(),
+which contains an allowlist of types for which absence of
+PTR_MAYBE_NULL actually means that the value can't be NULL at runtime.
+
+At the moment, the list in the reg_not_null() omits two types for
+which PTR_MAYBE_NULL is applicable: PTR_TO_XDP_SOCK and PTR_TO_BUF.
+In order to remain backward compatible, and assuming that only
+comparison between pointers of the same type makes sense,
+this commit extends reg_not_null(). W/o such an extension e.g.
+verifier_jeq_infer_not_null/null_ptr_to_map_value fails.
+
+reg_not_null() can be extended further, but I deem that out of scope
+for the fix at hand. Explicit base_type(...) != PTR_TO_BTF_ID
+checks in the check_cond_jmp_op() can be removed with migration to
+reg_not_null(), but that is a behavioural change, as the special case
+would start matching for PTR_TO_BTF_ID that is also is_trusted_reg().
+I omit the behavioural change from this commit.
+
+Fixes: befae75856ab ("bpf: propagate nullness information for reg to reg comparisons")
+Suggested-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20260826-bug-029-bad-non-null-inference-v2-1-136789ace9e9@localhost
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/verifier.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index 91ff32aefd245..0137396cd130b 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -409,6 +409,8 @@ static bool reg_not_null(const struct bpf_reg_state *reg)
+ 	type = base_type(type);
+ 	return type == PTR_TO_SOCKET ||
+ 		type == PTR_TO_TCP_SOCK ||
++		type == PTR_TO_XDP_SOCK ||
++		type == PTR_TO_BUF ||
+ 		type == PTR_TO_MAP_VALUE ||
+ 		type == PTR_TO_MAP_KEY ||
+ 		type == PTR_TO_SOCK_COMMON ||
+@@ -17408,7 +17410,6 @@ static int check_cond_jmp_op(struct bpf_verifier_env *env,
+ 	 */
+ 	if (!is_jmp32 && BPF_SRC(insn->code) == BPF_X &&
+ 	    __is_pointer_value(false, src_reg) && __is_pointer_value(false, dst_reg) &&
+-	    type_may_be_null(src_reg->type) != type_may_be_null(dst_reg->type) &&
+ 	    base_type(src_reg->type) != PTR_TO_BTF_ID &&
+ 	    base_type(dst_reg->type) != PTR_TO_BTF_ID) {
+ 		eq_branch_regs = NULL;
+@@ -17424,9 +17425,11 @@ static int check_cond_jmp_op(struct bpf_verifier_env *env,
+ 			break;
+ 		}
+ 		if (eq_branch_regs) {
+-			if (type_may_be_null(src_reg->type))
++			/* src == dst && dst != NULL => src != NULL */
++			if (reg_not_null(dst_reg) && type_may_be_null(src_reg->type))
+ 				mark_ptr_not_null_reg(&eq_branch_regs[insn->src_reg]);
+-			else
++			/* src == dst && src != NULL => dst != NULL */
++			if (reg_not_null(src_reg) && type_may_be_null(dst_reg->type))
+ 				mark_ptr_not_null_reg(&eq_branch_regs[insn->dst_reg]);
+ 		}
+ 	}
+-- 
+2.34.1
+

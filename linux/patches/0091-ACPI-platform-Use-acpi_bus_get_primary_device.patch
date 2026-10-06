@@ -1,0 +1,84 @@
+From acc47ec57c0bec0e51a3cdc7b7729963ebe4a653 Mon Sep 17 00:00:00 2001
+From: "Rafael J. Wysocki" <rafael.j.wysocki@intel.com>
+Date: Mon, 10 Aug 2026 13:38:08 +0200
+Subject: [PATCH 091/143] ACPI: platform: Use acpi_bus_get_primary_device()
+
+The acpi_get_first_physical_node() usage in acpi_platform_fill_resource()
+and acpi_create_platform_device() is generally unsafe because in theory
+the device returned by it may be freed at any time [1].
+
+It is also inefficient because acpi_get_first_physical_node() is called
+multiple times for the same argument which can be avoided.
+
+Address these issues by using acpi_bus_get_primary_device() instead of
+acpi_get_first_physical_node() and adjusting the code to call it just
+once at the beginning of and acpi_create_platform_device() and drop
+the device reference acquired by it upon the return from that function.
+
+Fixes: 3b95bd160547 ("ACPI: introduce a function to find the first physical device")
+Fixes: a252d881c558 ("ACPI / platform: Pay attention to parent device's resources")
+Link: https://sashiko.dev/#/patchset/12955541.O9o76ZdvQC%40rafael.j.wysocki [1]
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Reviewed-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Link: https://patch.msgid.link/3436112.aeNJFYEL58@rafael.j.wysocki
+---
+ drivers/acpi/acpi_platform.c | 16 +++++++---------
+ 1 file changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/acpi/acpi_platform.c b/drivers/acpi/acpi_platform.c
+index abdd8893eb9e5..0546216aae75f 100644
+--- a/drivers/acpi/acpi_platform.c
++++ b/drivers/acpi/acpi_platform.c
+@@ -102,18 +102,15 @@ static unsigned int acpi_platform_adjust_resources(struct acpi_device *adev,
+ 	return count;
+ }
+ 
+-static void acpi_platform_fill_resource(struct acpi_device *adev,
+-	const struct resource *src, struct resource *dest)
++static void acpi_platform_fill_resource(struct device *parent,
++					const struct resource *src,
++					struct resource *dest)
+ {
+-	struct device *parent;
+-
+ 	*dest = *src;
+-
+ 	/*
+ 	 * If the device has parent we need to take its resources into
+ 	 * account as well because this device might consume part of those.
+ 	 */
+-	parent = acpi_get_first_physical_node(acpi_dev_parent(adev));
+ 	if (parent && dev_is_pci(parent))
+ 		dest->parent = pci_find_resource(to_pci_dev(parent), dest);
+ }
+@@ -141,7 +138,8 @@ static unsigned int acpi_platform_resource_count(struct acpi_resource *ares, voi
+ struct platform_device *acpi_create_platform_device(struct acpi_device *adev,
+ 						    const struct property_entry *properties)
+ {
+-	struct acpi_device *parent = acpi_dev_parent(adev);
++	struct acpi_device *p = acpi_dev_parent(adev);
++	struct device *parent __free(put_device) = acpi_bus_get_primary_device(p);
+ 	struct platform_device *pdev = NULL;
+ 	struct platform_device_info pdevinfo;
+ 	const struct acpi_device_id *match;
+@@ -187,7 +185,7 @@ struct platform_device *acpi_create_platform_device(struct acpi_device *adev,
+ 								       rentry->res,
+ 								       resources,
+ 								       count);
+-				acpi_platform_fill_resource(adev, rentry->res,
++				acpi_platform_fill_resource(parent, rentry->res,
+ 							    &resources[count++]);
+ 			}
+ 			acpi_dev_free_resource_list(&resource_list);
+@@ -200,7 +198,7 @@ struct platform_device *acpi_create_platform_device(struct acpi_device *adev,
+ 	 * attached to it, that physical device should be the parent of the
+ 	 * platform device we are about to create.
+ 	 */
+-	pdevinfo.parent = parent ? acpi_get_first_physical_node(parent) : NULL;
++	pdevinfo.parent = parent;
+ 	pdevinfo.name = dev_name(&adev->dev);
+ 	pdevinfo.id = PLATFORM_DEVID_NONE;
+ 	pdevinfo.res = resources;
+-- 
+2.34.1
+

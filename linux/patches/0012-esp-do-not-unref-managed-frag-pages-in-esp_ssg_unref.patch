@@ -1,0 +1,77 @@
+From 7210428d2e812543fd59177ca24817955c1e21e6 Mon Sep 17 00:00:00 2001
+From: Maher Azzouzi <maherazz04@gmail.com>
+Date: Sun, 12 Jul 2026 18:05:30 +0100
+Subject: [PATCH 012/143] esp: do not unref managed frag pages in
+ esp_ssg_unref()
+
+esp_ssg_unref() releases the page references held on the source
+scatterlist after the AEAD operation completes.  It calls
+skb_page_unref() on every frag page for an out-of-place transform
+(req->src != req->dst), and in the error path of esp_output_tail()
+(already_unref == true) on the request's own scatterlist.
+
+This is wrong when the skb carries managed frags
+(SKBFL_MANAGED_FRAG_REFS).  Managed frags are owned by a zerocopy ubuf
+and the skb does not hold a per-frag page reference; io_uring SEND_ZC
+with a registered buffer attaches the bvec pages this way via
+io_sg_from_iter().  The rest of the stack honours this invariant:
+skb_release_data() skips the per-frag unref when SKBFL_MANAGED_FRAG_REFS
+is set, and skb_zcopy_managed() is the guard used at the other unref
+sites.
+
+esp_ssg_unref() is missing that guard, so for a managed-frag skb it
+drops a page reference the skb never acquired.  This can underflow the
+page reference count and free a page that is still in use.
+
+Guard the function with skb_zcopy_managed() so both unref paths are
+skipped for managed-frag skbs, matching skb_release_data().
+
+Fixes: cac2661c53f3 ("esp4: Avoid skb_cow_data whenever possible")
+Fixes: 03e2a30f6a27 ("esp6: Avoid skb_cow_data whenever possible")
+Signed-off-by: Maher Azzouzi <maherazz04@gmail.com>
+Signed-off-by: Steffen Klassert <steffen.klassert@secunet.com>
+(cherry picked from commit 21697720ff43b8dfa25b8e8d9ca7f56f4597fc80)
+---
+ net/ipv4/esp4.c | 7 +++++++
+ net/ipv6/esp6.c | 7 +++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/net/ipv4/esp4.c b/net/ipv4/esp4.c
+index 346e78c23af00..53284524cf4f4 100644
+--- a/net/ipv4/esp4.c
++++ b/net/ipv4/esp4.c
+@@ -104,6 +104,13 @@ static void esp_ssg_unref(struct xfrm_state *x, void *tmp, struct sk_buff *skb)
+ 	struct aead_request *req;
+ 	struct scatterlist *sg;
+ 
++	/* Managed frags are owned by the zerocopy ubuf; the skb holds no
++	 * per-frag page reference, so we must not drop one here.  Mirrors
++	 * the SKBFL_MANAGED_FRAG_REFS handling in skb_release_data().
++	 */
++	if (skb_zcopy_managed(skb))
++		return;
++
+ 	if (x->props.flags & XFRM_STATE_ESN)
+ 		extralen += sizeof(struct esp_output_extra);
+ 
+diff --git a/net/ipv6/esp6.c b/net/ipv6/esp6.c
+index b26b85afb92ed..2f19ff51ab3df 100644
+--- a/net/ipv6/esp6.c
++++ b/net/ipv6/esp6.c
+@@ -121,6 +121,13 @@ static void esp_ssg_unref(struct xfrm_state *x, void *tmp, struct sk_buff *skb)
+ 	struct aead_request *req;
+ 	struct scatterlist *sg;
+ 
++	/* Managed frags are owned by the zerocopy ubuf; the skb holds no
++	 * per-frag page reference, so we must not drop one here.  Mirrors
++	 * the SKBFL_MANAGED_FRAG_REFS handling in skb_release_data().
++	 */
++	if (skb_zcopy_managed(skb))
++		return;
++
+ 	if (x->props.flags & XFRM_STATE_ESN)
+ 		extralen += sizeof(struct esp_output_extra);
+ 
+-- 
+2.34.1
+

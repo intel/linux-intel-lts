@@ -1,0 +1,55 @@
+From d2910f40e407f5f85506b47791d6ae70b6c21ed5 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Mon, 28 Sep 2026 21:18:48 +0800
+Subject: [PATCH 105/143] bpf: Mark NULL kptr stores precise
+
+check_map_kptr_access() permits a scalar store into an untrusted kptr
+field only when the register is known to contain zero. Unlike other
+verifier checks whose outcome depends on a scalar value, it does not mark
+that register precise.
+
+A state checkpoint reached with an imprecise zero can therefore prune a
+second path that reaches the store with an arbitrary nonzero scalar. The
+program can write attacker-controlled bits into the kptr field and load
+them back as a PTR_TO_BTF_ID.
+
+Call mark_chain_precision() before accepting a known-zero register. This
+forces state equivalence to compare its scalar range and makes the verifier
+visit and reject a path carrying a nonzero value.
+
+Fixes: 61df10c7799e ("bpf: Allow storing unreferenced kptr in map")
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Suggested-by: Nicholas Carlini <npc@anthropic.com>
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20260904104203.345917-6-memxor@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/verifier.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index ecb1edf1356c8..d5c7fc35f81fb 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -6120,8 +6120,15 @@ static int check_map_kptr_access(struct bpf_verifier_env *env, u32 regno,
+ 			return ret;
+ 	} else if (class == BPF_STX) {
+ 		val_reg = reg_state(env, value_regno);
+-		if (!register_is_null(val_reg) &&
+-		    map_kptr_match_type(env, kptr_field, val_reg, value_regno))
++		if (register_is_null(val_reg)) {
++			/*
++			 * This store is valid only because the scalar is known to be
++			 * zero. Mark it precise so another scalar cannot be pruned
++			 * against this state.
++			 */
++			return mark_chain_precision(env, value_regno);
++		}
++		if (map_kptr_match_type(env, kptr_field, val_reg, value_regno))
+ 			return -EACCES;
+ 	} else if (class == BPF_ST) {
+ 		if (insn->imm) {
+-- 
+2.34.1
+

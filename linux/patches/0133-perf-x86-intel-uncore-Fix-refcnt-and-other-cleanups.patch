@@ -1,0 +1,121 @@
+From b77af7e104c949f7089fdf63960616616dfa7bae Mon Sep 17 00:00:00 2001
+From: Zide Chen <zide.chen@intel.com>
+Date: Thu, 11 Jun 2026 09:00:27 -0700
+Subject: [PATCH 133/143] perf/x86/intel/uncore: Fix refcnt and other cleanups
+
+Fix typo UNCORE_BOX_FLAG_INITIATED to UNCORE_BOX_FLAG_INITIALIZED.
+
+Rename the 'id' parameter in uncore_box_{ref,unref}() to 'die' to
+reflect its actual meaning and be consistent with other functions.
+
+box->refcnt is incremented in the PCI PMU register path but has never
+been checked or decremented. Although for PCI PMUs box->refcnt
+effectively tracks only a single user, add atomic_dec_return() in the
+PCI PMU unregister path to make the reference counting complete and
+consistent.
+
+Signed-off-by: Zide Chen <zide.chen@intel.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Dapeng Mi <dapeng1.mi@linux.intel.com>
+Link: https://patch.msgid.link/20260611160033.66760-3-zide.chen@intel.com
+(cherry picked from commit 7d3a9ff98898b3521eb5d7a3daf703b383f7935a)
+---
+ arch/x86/events/intel/uncore.c | 16 +++++++++-------
+ arch/x86/events/intel/uncore.h |  6 +++---
+ 2 files changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/arch/x86/events/intel/uncore.c b/arch/x86/events/intel/uncore.c
+index 292f06e7d611a..96072b60a4efc 100644
+--- a/arch/x86/events/intel/uncore.c
++++ b/arch/x86/events/intel/uncore.c
+@@ -1237,8 +1237,10 @@ static void uncore_pci_pmu_unregister(struct intel_uncore_pmu *pmu, int die)
+ 	pmu->boxes[die] = NULL;
+ 	if (atomic_dec_return(&pmu->activeboxes) == 0)
+ 		uncore_pmu_unregister(pmu);
+-	uncore_box_exit(box);
+-	kfree(box);
++	if (atomic_dec_return(&box->refcnt) == 0) {
++		uncore_box_exit(box);
++		kfree(box);
++	}
+ }
+ 
+ static void uncore_pci_remove(struct pci_dev *pdev)
+@@ -1500,7 +1502,7 @@ static void uncore_change_context(struct intel_uncore_type **uncores,
+ 		uncore_change_type_ctx(*uncores, old_cpu, new_cpu);
+ }
+ 
+-static void uncore_box_unref(struct intel_uncore_type **types, int id)
++static void uncore_box_unref(struct intel_uncore_type **types, int die)
+ {
+ 	struct intel_uncore_type *type;
+ 	struct intel_uncore_pmu *pmu;
+@@ -1511,7 +1513,7 @@ static void uncore_box_unref(struct intel_uncore_type **types, int id)
+ 		type = *types;
+ 		pmu = type->pmus;
+ 		for (i = 0; i < type->num_boxes; i++, pmu++) {
+-			box = pmu->boxes[id];
++			box = pmu->boxes[die];
+ 			if (box && box->cpu >= 0 && atomic_dec_return(&box->refcnt) == 0)
+ 				uncore_box_exit(box);
+ 		}
+@@ -1586,14 +1588,14 @@ static int allocate_boxes(struct intel_uncore_type **types,
+ }
+ 
+ static int uncore_box_ref(struct intel_uncore_type **types,
+-			  int id, unsigned int cpu)
++			  int die, unsigned int cpu)
+ {
+ 	struct intel_uncore_type *type;
+ 	struct intel_uncore_pmu *pmu;
+ 	struct intel_uncore_box *box;
+ 	int i, ret;
+ 
+-	ret = allocate_boxes(types, id, cpu);
++	ret = allocate_boxes(types, die, cpu);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -1601,7 +1603,7 @@ static int uncore_box_ref(struct intel_uncore_type **types,
+ 		type = *types;
+ 		pmu = type->pmus;
+ 		for (i = 0; i < type->num_boxes; i++, pmu++) {
+-			box = pmu->boxes[id];
++			box = pmu->boxes[die];
+ 			if (box && box->cpu >= 0 && atomic_inc_return(&box->refcnt) == 1)
+ 				uncore_box_init(box);
+ 		}
+diff --git a/arch/x86/events/intel/uncore.h b/arch/x86/events/intel/uncore.h
+index 564cb26c44680..4c806238f89b3 100644
+--- a/arch/x86/events/intel/uncore.h
++++ b/arch/x86/events/intel/uncore.h
+@@ -185,7 +185,7 @@ struct intel_uncore_box {
+ #define CFL_UNC_CBO_7_PERFEVTSEL0		0xf70
+ #define CFL_UNC_CBO_7_PER_CTR0			0xf76
+ 
+-#define UNCORE_BOX_FLAG_INITIATED		0
++#define UNCORE_BOX_FLAG_INITIALIZED		0
+ /* event config registers are 8-byte apart */
+ #define UNCORE_BOX_FLAG_CTL_OFFS8		1
+ /* CFL 8th CBOX has different MSR space */
+@@ -558,7 +558,7 @@ static inline u64 uncore_read_counter(struct intel_uncore_box *box,
+ 
+ static inline void uncore_box_init(struct intel_uncore_box *box)
+ {
+-	if (!test_and_set_bit(UNCORE_BOX_FLAG_INITIATED, &box->flags)) {
++	if (!test_and_set_bit(UNCORE_BOX_FLAG_INITIALIZED, &box->flags)) {
+ 		if (box->pmu->type->ops->init_box)
+ 			box->pmu->type->ops->init_box(box);
+ 	}
+@@ -566,7 +566,7 @@ static inline void uncore_box_init(struct intel_uncore_box *box)
+ 
+ static inline void uncore_box_exit(struct intel_uncore_box *box)
+ {
+-	if (test_and_clear_bit(UNCORE_BOX_FLAG_INITIATED, &box->flags)) {
++	if (test_and_clear_bit(UNCORE_BOX_FLAG_INITIALIZED, &box->flags)) {
+ 		if (box->pmu->type->ops->exit_box)
+ 			box->pmu->type->ops->exit_box(box);
+ 	}
+-- 
+2.34.1
+

@@ -1,0 +1,51 @@
+From b8942d1eede944fbfaae34440a191902437a6444 Mon Sep 17 00:00:00 2001
+From: Jason Huang <jason.huang2@infineon.com>
+Date: Wed, 22 Jul 2026 16:26:08 +0800
+Subject: [PATCH 008/143] wifi: brcmfmac: fix P2P action frame handling without
+ device vif
+
+Some P2P action frame paths assume the P2P device vif is always
+available. That is not true when userspace sends non-P2P public action
+frames through the primary interface, or when action-frame abort runs
+after the P2P device vif has not been created.
+
+Fall back to the primary vif when aborting an action frame without a P2P
+device vif, and guard P2P device saved IE access before using it for
+peer channel search.
+
+Fixes: 30fb1b272909 ("brcmfmac: use actframe_abort to cancel ongoing action frame")
+Fixes: 6eda4e2c5425 ("brcmfmac: Add tx p2p off-channel support.")
+Signed-off-by: Jason Huang <jason.huang2@infineon.com>
+Acked-by: Arend van Spriel <arend.vanspriel@broadcom.com>
+Link: https://patch.msgid.link/20260722082608.412472-1-Jason.Huang2@infineon.com
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+(cherry picked from commit 1b1edb9ebed49099bdc924cef49a9aea8b552199)
+---
+ drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c
+index e1752a513c733..c2511a5a11a49 100644
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c
+@@ -1281,6 +1281,9 @@ static s32 brcmf_p2p_abort_action_frame(struct brcmf_cfg80211_info *cfg)
+ 	brcmf_dbg(TRACE, "Enter\n");
+ 
+ 	vif = p2p->bss_idx[P2PAPI_BSSCFG_DEVICE].vif;
++	if (!vif)
++		vif = p2p->bss_idx[P2PAPI_BSSCFG_PRIMARY].vif;
++
+ 	err = brcmf_fil_bsscfg_data_set(vif->ifp, "actframe_abort", &int_val,
+ 					sizeof(s32));
+ 	if (err)
+@@ -1817,6 +1820,7 @@ bool brcmf_p2p_send_action_frame(struct brcmf_if *ifp,
+ 	/* validate channel and p2p ies */
+ 	if (config_af_params.search_channel &&
+ 	    IS_P2P_SOCIAL_CHANNEL(le32_to_cpu(af_params->channel)) &&
++	    p2p->bss_idx[P2PAPI_BSSCFG_DEVICE].vif &&
+ 	    p2p->bss_idx[P2PAPI_BSSCFG_DEVICE].vif->saved_ie.probe_req_ie_len) {
+ 		afx_hdl = &p2p->afx_hdl;
+ 		afx_hdl->peer_listen_chan = le32_to_cpu(af_params->channel);
+-- 
+2.34.1
+

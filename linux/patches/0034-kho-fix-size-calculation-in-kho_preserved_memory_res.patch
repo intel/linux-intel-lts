@@ -1,0 +1,54 @@
+From 295607b964b49701ac2bf3faf643c8524c2f1ccd Mon Sep 17 00:00:00 2001
+From: "Pratyush Yadav (Google)" <pratyush@kernel.org>
+Date: Mon, 27 Jul 2026 17:02:39 +0200
+Subject: [PATCH 034/143] kho: fix size calculation in
+ kho_preserved_memory_reserve()
+
+kho_preserved_memory_reserve() calculates the size of a preservation by
+doing 1 << (order + PAGE_SHIFT). Since the '1' is a 32-bit integer, it
+can only be shifted by 31. That is, it will only work for preservations
+up to 2 GiB. Larger preservations will trigger undefined behaviour.
+
+While preservations larger than 2 GiB can't be obtained via folios
+currently, they can be obtained via kho_preserve_pages().
+
+For example, memblock reserve_mem uses kho_preserve_pages().
+Reservations larger than 2 GiB are valid and will trigger this bug if
+properly aligned.
+
+Fix it by using 1UL for shifting.
+
+Fixes: fc33e4b44b27 ("kexec: enable KHO support for memory preservation")
+Reported-by: Sashiko <sashiko-bot@kernel.org>
+Cc: stable@vger.kernel.org
+Signed-off-by: Pratyush Yadav (Google) <pratyush@kernel.org>
+Link: https://patch.msgid.link/20260727150240.889555-1-pratyush@kernel.org
+Signed-off-by: Mike Rapoport (Microsoft) <rppt@kernel.org>
+
+[ Backport note: in this tree KHO lives in kernel/kexec_handover.c (not
+  kernel/liveupdate/) and the reservation is done inline in deserialize_bitmap()
+  rather than in kho_preserved_memory_reserve(). The same overflowing
+  "1 << (order + PAGE_SHIFT)" is fixed there; sz is also widened from int to u64
+  to match upstream, as an int would still truncate the 1UL result. ]
+
+(cherry picked from commit 3a0b8fa2eb36afc88b62a95f33f0c77c71fa5ded)
+---
+ kernel/kexec_handover.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/kexec_handover.c b/kernel/kexec_handover.c
+index e1a06b4fc17fc..ac9fa7727b5ff 100644
+--- a/kernel/kexec_handover.c
++++ b/kernel/kexec_handover.c
+@@ -425,7 +425,7 @@ static void __init deserialize_bitmap(unsigned int order,
+ 	unsigned long bit;
+ 
+ 	for_each_set_bit(bit, bitmap->preserve, PRESERVE_BITS) {
+-		int sz = 1 << (order + PAGE_SHIFT);
++		u64 sz = 1UL << (order + PAGE_SHIFT);
+ 		phys_addr_t phys =
+ 			elm->phys_start + (bit << (order + PAGE_SHIFT));
+ 		struct page *page = phys_to_page(phys);
+-- 
+2.34.1
+

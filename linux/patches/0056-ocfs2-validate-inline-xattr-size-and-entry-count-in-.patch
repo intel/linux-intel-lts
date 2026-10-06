@@ -1,0 +1,108 @@
+From 66834b7c599c91402532e8348dbfda0f2da88dba Mon Sep 17 00:00:00 2001
+From: Deepanshu Kartikey <kartikey406@gmail.com>
+Date: Thu, 20 Nov 2025 09:41:45 +0530
+Subject: [PATCH 056/143] ocfs2: validate inline xattr size and entry count in
+ ocfs2_xattr_ibody_list
+
+Add comprehensive validation of inline xattr metadata in
+ocfs2_xattr_ibody_list() to prevent out-of-bounds access and
+use-after-free bugs when processing corrupted inline xattrs.
+
+The patch adds two critical validations:
+
+1. Validates i_xattr_inline_size before use:
+   - Ensures it does not exceed block size
+   - Ensures it is at least large enough for xattr header
+   - Prevents pointer arithmetic with corrupted size values that could
+     point outside the inode block
+
+2. Validates xattr entry count (xh_count):
+   - Calculates maximum entries that can fit in the inline space
+   - Rejects counts that exceed this limit
+   - Prevents out-of-bounds array access in subsequent code
+
+Without these checks, a corrupted filesystem with invalid inline xattr
+metadata can cause the code to access memory beyond the allocated space.
+For example:
+- A corrupted i_xattr_inline_size of 0 would cause header pointer
+  calculation to point past the end of the block
+- A corrupted xh_count of 22 with inline_size of 256 would cause
+  array access 7 entries beyond the 15 that actually fit (the syzbot
+  reproducer used xh_count of 20041), leading to use-after-free when
+  accessing freed memory pages
+
+The validation uses the correct inline_size (from di->i_xattr_inline_size)
+rather than block size, ensuring accurate bounds checking for inline
+xattrs specifically.
+
+Link: https://lkml.kernel.org/r/20251120041145.33176-1-kartikey406@gmail.com
+Link: https://lore.kernel.org/all/20251111073831.2027072-1-kartikey406@gmail.com/ [v1]
+Link: https://lore.kernel.org/all/20251117063217.5690-1-kartikey406@gmail.com/ [v2]
+Link: https://lore.kernel.org/all/20251117114224.12948-1-kartikey406@gmail.com/ [v3]
+Signed-off-by: Deepanshu Kartikey <kartikey406@gmail.com>
+Reported-by: syzbot+ab0ad25088673470d2d9@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=ab0ad25088673470d2d9
+Tested-by: syzbot+ab0ad25088673470d2d9@syzkaller.appspotmail.com
+Suggested-by: Heming Zhao <heming.zhao@suse.com>
+Reviewed-by: Heming Zhao <heming.zhao@suse.com>
+Acked-by: Joseph Qi <joseph.qi@linux.alibaba.com>
+Cc: Mark Fasheh <mark@fasheh.com>
+Cc: Joel Becker <jlbec@evilplan.org>
+Cc: Junxiao Bi <junxiao.bi@oracle.com>
+Cc: Changwei Ge <gechangwei@live.cn>
+Cc: Jun Piao <piaojun@huawei.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+(cherry picked from commit 2a4f33430e96d0bebfa37b1d586098f61f030b06)
+---
+ fs/ocfs2/xattr.c | 30 ++++++++++++++++++++++++++++--
+ 1 file changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ocfs2/xattr.c b/fs/ocfs2/xattr.c
+index 3a796d9159d8e..a90c2e772edd4 100644
+--- a/fs/ocfs2/xattr.c
++++ b/fs/ocfs2/xattr.c
+@@ -981,13 +981,39 @@ static int ocfs2_xattr_ibody_list(struct inode *inode,
+ 	struct ocfs2_xattr_header *header = NULL;
+ 	struct ocfs2_inode_info *oi = OCFS2_I(inode);
+ 	int ret = 0;
++	u16 xattr_count;
++	size_t max_entries;
++	u16 inline_size;
+ 
+ 	if (!(oi->ip_dyn_features & OCFS2_INLINE_XATTR_FL))
+ 		return ret;
+ 
++	inline_size = le16_to_cpu(di->i_xattr_inline_size);
++
++	/* Validate inline size is reasonable */
++	if (inline_size > inode->i_sb->s_blocksize ||
++	    inline_size < sizeof(struct ocfs2_xattr_header)) {
++		ocfs2_error(inode->i_sb,
++			    "Invalid xattr inline size %u in inode %llu\n",
++			    inline_size,
++			    (unsigned long long)OCFS2_I(inode)->ip_blkno);
++		return -EFSCORRUPTED;
++	}
++
+ 	header = (struct ocfs2_xattr_header *)
+-		 ((void *)di + inode->i_sb->s_blocksize -
+-		 le16_to_cpu(di->i_xattr_inline_size));
++		 ((void *)di + inode->i_sb->s_blocksize - inline_size);
++
++	xattr_count = le16_to_cpu(header->xh_count);
++	max_entries = (inline_size - sizeof(struct ocfs2_xattr_header)) /
++		       sizeof(struct ocfs2_xattr_entry);
++
++	if (xattr_count > max_entries) {
++		ocfs2_error(inode->i_sb,
++			    "xattr entry count %u exceeds maximum %zu in inode %llu\n",
++			    xattr_count, max_entries,
++			    (unsigned long long)OCFS2_I(inode)->ip_blkno);
++		return -EFSCORRUPTED;
++	}
+ 
+ 	ret = ocfs2_xattr_list_entries(inode, header, buffer, buffer_size);
+ 
+-- 
+2.34.1
+

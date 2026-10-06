@@ -1,0 +1,60 @@
+From 1a9f04c083581c3ab5795b64e12fc5a6e21e0c6f Mon Sep 17 00:00:00 2001
+From: Evgenii Burenchev <evg28bur@yandex.ru>
+Date: Mon, 29 Jun 2026 15:58:50 -0500
+Subject: [PATCH 046/143] drm/amd/display: Fix dangling pointer in plane reset
+ function
+
+amdgpu_dm_plane_drm_plane_reset() frees the old state before allocating
+a new one. If kzalloc() fails, the function returns without updating
+the state pointer, leaving a dangling pointer to already freed memory.
+
+Fix this by allocating the new state first. On allocation failure, the
+old state remains untouched and the function safely returns.
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+Fixes: 5d945cbcd4b1 ("drm/amd/display: Create a file dedicated to planes")
+Signed-off-by: Evgenii Burenchev <evg28bur@yandex.ru>
+Reviewed-by: Mario Limonciello (AMD) <superm1@kernel.org>
+Link: https://patch.msgid.link/20260629090435.9729-3-evg28bur@yandex.ru
+[adjust for movement around current amd-staging-drm-next]
+Signed-off-by: Mario Limonciello <mario.limonciello@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+
+[ Backport note: kzalloc_obj() does not exist in this tree; the allocation uses the
+  equivalent kzalloc(sizeof(...), GFP_KERNEL). The reordering is as upstream. ]
+
+(cherry picked from commit 98cad4bd1443975d972f4c7f705980da03722a22)
+---
+ .../gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c    | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c
+index 2ecebf9a00fa4..1c8e4bb8d82ee 100644
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c
+@@ -1464,17 +1464,15 @@ static const struct drm_plane_helper_funcs dm_primary_plane_helper_funcs = {
+ 
+ static void amdgpu_dm_plane_drm_plane_reset(struct drm_plane *plane)
+ {
+-	struct dm_plane_state *amdgpu_state = NULL;
+-
+-	if (plane->state)
+-		plane->funcs->atomic_destroy_state(plane, plane->state);
++	struct dm_plane_state *amdgpu_state;
+ 
+ 	amdgpu_state = kzalloc(sizeof(*amdgpu_state), GFP_KERNEL);
+-	WARN_ON(amdgpu_state == NULL);
+-
+ 	if (!amdgpu_state)
+ 		return;
+ 
++	if (plane->state)
++		plane->funcs->atomic_destroy_state(plane, plane->state);
++
+ 	__drm_atomic_helper_plane_reset(plane, &amdgpu_state->base);
+ 	amdgpu_state->degamma_tf = AMDGPU_TRANSFER_FUNCTION_DEFAULT;
+ 	amdgpu_state->hdr_mult = AMDGPU_HDR_MULT_DEFAULT;
+-- 
+2.34.1
+

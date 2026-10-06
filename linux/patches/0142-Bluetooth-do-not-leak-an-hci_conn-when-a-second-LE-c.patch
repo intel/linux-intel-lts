@@ -1,0 +1,81 @@
+From 47b712da9bed77d001d7c8485d1203138b9bcd9b Mon Sep 17 00:00:00 2001
+From: Radek Podgorny <radek@podgorny.cz>
+Date: Mon, 24 Aug 2026 13:00:20 +0200
+Subject: [PATCH 142/143] Bluetooth: do not leak an hci_conn when a second LE
+ connect is rejected
+
+create_le_conn_complete() decides whether the failed connection is
+still pending by comparing it against hci_lookup_le_connect(), which
+returns the first LE connection in BT_CONNECT. That is the same
+connection only while at most one is pending.
+
+Two can be pending. Connections created on the passive scan path sit
+in BT_CONNECT with HCI_CONN_SCANNING set and are invisible to
+hci_lookup_le_connect() until hci_le_create_conn_sync() clears the
+flag when their command is issued, so the -EBUSY guard in
+hci_connect_le() does not prevent a second connection from being
+queued while the first is still on the scan path. Whenever two
+connections are in BT_CONNECT at once, the lookup may return one
+connection while create_le_conn_complete() is reporting the failure
+of the other; the early exit then drops the error and hci_conn_failed()
+never runs on the connection that failed.
+
+The controller also rejects a second HCI_OP_LE_CREATE_CONN issued
+while another connection creation is still outstanding, per Core Spec
+Vol 4, Part E. The spec calls for Command Disallowed there; the
+bcm43438 observed here answers with an LMP/LL error code instead,
+which bt_to_errno() maps to the -EPROTO (-71) in the log below.
+
+The leaked connection stays in BT_CONNECT forever, and because
+hci_connect_le() refuses to dial while hci_lookup_le_connect() finds
+anything, every subsequent attempt to reach any peer fails with
+-EBUSY and no command reaches the controller at all.
+
+Seen on a bcm43438 with two BLE peers polled on the same interval
+(state 5 is BT_CONNECT; both handles are UNSET ones, allocated from
+the ida above HCI_CONN_HANDLE_MAX):
+
+  Bluetooth: hci1: Opcode 0x2013 failed: -71
+
+  # hcitool con
+          < LE 14:9C:EF:03:68:81 handle 3840 state 5 lm CENTRAL
+          < LE C4:D3:6A:8C:B5:38 handle 3841 state 5 lm CENTRAL
+
+A btmon capture across the next ten minutes of connect attempts
+contains no HCI_OP_LE_CREATE_CONN at all; outgoing LE connections
+do not recover until the adapter is reset. With this change the same
+scenario fails the rejected connection cleanly and further connects
+to both peers go through.
+
+Ask about the connection itself instead of about the device.
+
+Fixes: c9f73a2178c1 ("Bluetooth: hci_conn: Fix hci_connect_le_sync")
+Signed-off-by: Radek Podgorny <radek@podgorny.cz>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+---
+ net/bluetooth/hci_sync.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/net/bluetooth/hci_sync.c b/net/bluetooth/hci_sync.c
+index 969ad4317d4b5..42e9fa8aa65e7 100644
+--- a/net/bluetooth/hci_sync.c
++++ b/net/bluetooth/hci_sync.c
+@@ -7139,8 +7139,13 @@ static void create_le_conn_complete(struct hci_dev *hdev, void *data, int err)
+ 		goto done;
+ 	}
+ 
+-	/* Check if connection is still pending */
+-	if (conn != hci_lookup_le_connect(hdev))
++	/* Check if this connection is still pending.
++	 *
++	 * hci_lookup_le_connect() returns only the first LE connection
++	 * in BT_CONNECT, which is not necessarily this one when two are
++	 * pending at once, so ask the connection itself.
++	 */
++	if (conn->state != BT_CONNECT)
+ 		goto done;
+ 
+ 	/* Flush to make sure we send create conn cancel command if needed */
+-- 
+2.34.1
+

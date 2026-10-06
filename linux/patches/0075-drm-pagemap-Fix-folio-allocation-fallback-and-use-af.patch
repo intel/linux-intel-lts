@@ -1,0 +1,80 @@
+From 088ff1819d773fd17cb7ef3a3fe0854982ebb047 Mon Sep 17 00:00:00 2001
+From: Matthew Brost <matthew.brost@intel.com>
+Date: Tue, 1 Sep 2026 23:35:04 -0700
+Subject: [PATCH 075/143] drm/pagemap: Fix folio allocation fallback and
+ use-after-put
+
+drm_pagemap_migrate_populate_ram_pfn() had two issues when populating
+RAM PFNs with higher-order folios:
+
+1. The higher-order vma_alloc_folio()/folio_alloc() calls did not pass
+   __GFP_NOWARN, so a THP allocation failure under memory pressure
+   would spam the kernel log, and there was no fallback path despite a
+   TODO comment stating one was needed. Add __GFP_NOWARN to the
+   higher-order allocation and, on failure, fall back to order-0
+   allocations for the entire range originally covered by the failed
+   higher-order allocation, leaving MIGRATE_PFN_COMPOUND unset for
+   those PFNs.
+
+2. In the free_pages error path, order was computed via
+   folio_order(page_folio(page)) *after* put_page(page) had already
+   dropped the reference, resulting in a use-after-free/put when that
+   was the last reference on the page. Compute order before releasing
+   the page.
+
+Introducing the fallback in 1. also requires the source page array
+handed to ->copy_to_ram() to be built differently. Both callers only
+populated the entry at the head of each source folio, relying on the
+copy callback to derive the rest of the folio from the order recorded
+in the matching drm_pagemap_addr. Once the destination has been demoted
+to order-0 folios the drm_pagemap_addr entries are per-page, so a source
+page is needed for every one of them; leaving them NULL makes the copy
+callback stop after the first page and the remainder of the range is
+never copied.
+
+The source folio is only split later, by migrate_vma_pages() /
+migrate_device_pages(), so its order cannot be used to detect the
+demotion - test the destination for MIGRATE_PFN_COMPOUND instead. Factor
+the array population out into drm_pagemap_migrate_populate_src_pages()
+and use it from both drm_pagemap_evict_to_ram() and
+__drm_pagemap_migrate_to_ram().
+
+Fixes: ddeda6136038 ("drm/pagemap: Allocate folios when possible")
+Cc: stable@vger.kernel.org
+Assisted-by: GitHub_Copilot:claude-opus-5
+Signed-off-by: Matthew Brost <matthew.brost@intel.com>
+Reviewed-by: Himal Prasad Ghimiray <himal.prasad.ghimiray@intel.com>
+Link: https://patch.msgid.link/20260902063504.3024362-2-matthew.brost@intel.com
+[ Backport note: partial port. 6.18 lacks MIGRATE_PFN_COMPOUND and THP
+  device-private migration (a30b48bf1b24 and the drm_pagemap THP series),
+  so device-private source folios are always order-0 and every src page is
+  already populated by the callers; the higher-order allocation fallback
+  and drm_pagemap_migrate_populate_src_pages() parts do not apply and were
+  dropped. Only the free_pages use-after-put fix (compute folio_order()
+  before put_page()) is taken. ]
+(cherry picked from commit df72e55e754c8d449321ddddad19a8bd3cb8d032)
+---
+ drivers/gpu/drm/drm_pagemap.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_pagemap.c b/drivers/gpu/drm/drm_pagemap.c
+index 4cd5182f82051..59459adf84cc3 100644
+--- a/drivers/gpu/drm/drm_pagemap.c
++++ b/drivers/gpu/drm/drm_pagemap.c
+@@ -532,11 +532,11 @@ static int drm_pagemap_migrate_populate_ram_pfn(struct vm_area_struct *vas,
+ 		if (!page)
+ 			goto next_put;
+ 
++		order = folio_order(page_folio(page));
++
+ 		put_page(page);
+ 		mpfn[i] = 0;
+ 
+-		order = folio_order(page_folio(page));
+-
+ next_put:
+ 		i += NR_PAGES(order);
+ 	}
+-- 
+2.34.1
+

@@ -1,0 +1,62 @@
+From 718c9972a3900e8e4a6ca032fc9dc223119278e3 Mon Sep 17 00:00:00 2001
+From: Jia Jia <physicalmtea@gmail.com>
+Date: Sun, 30 Aug 2026 10:33:54 +0800
+Subject: [PATCH 114/143] vduse: validate virtqueue alignment
+
+vduse_validate_config() only checks the upper bound of vq_align. Invalid
+values can therefore reach vring_create_virtqueue_map(). The split-ring
+helpers use align - 1 as a bit mask, so the alignment must be a non-zero
+power of two. A zero value makes vring_size() drop the descriptor and
+available-ring part and vring_init() leave the used ring pointer NULL.
+
+The VIRTIO spec requires the used ring to start at an address
+aligned to at least 4 bytes. Reject values below VRING_USED_ALIGN_SIZE as
+well as non-power-of-two values before they reach the virtio ring helpers.
+
+Opening a virtio-net device created with vq_align=0 triggered:
+
+BUG: KASAN: null-ptr-deref in virtqueue_kick_prepare_split+0xe3/0x100
+Read of size 2 at addr 0000000000000000 by task systemd-network/1062
+
+Call Trace (relevant frames):
+ dump_stack_lvl
+ print_report
+ kasan_report
+ __asan_load2
+ virtqueue_kick_prepare_split+0xe3/0x100
+ virtqueue_kick_prepare+0x40/0x60
+ try_fill_recv+0x857/0x1250
+ virtnet_open+0x189/0x460
+ __dev_open+0x225/0x390
+ __dev_change_flags+0x368/0x3b0
+ netif_change_flags+0x56/0xc0
+ do_setlink.isra.0+0x68c/0x1e30
+
+Validate the value before it reaches the virtio ring helpers.
+
+Fixes: c8a6153b6c59 ("vduse: Introduce VDUSE - vDPA Device in Userspace")
+Signed-off-by: Jia Jia <physicalmtea@gmail.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Message-ID: <20260830023354.115333-1-physicalmtea@gmail.com>
+---
+ drivers/vdpa/vdpa_user/vduse_dev.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/vdpa/vdpa_user/vduse_dev.c b/drivers/vdpa/vdpa_user/vduse_dev.c
+index 1cc826742ac9c..3c89e1b4b3b32 100644
+--- a/drivers/vdpa/vdpa_user/vduse_dev.c
++++ b/drivers/vdpa/vdpa_user/vduse_dev.c
+@@ -1837,7 +1837,9 @@ static bool vduse_validate_config(struct vduse_dev_config *config)
+ 			 sizeof(config->reserved)))
+ 		return false;
+ 
+-	if (config->vq_align > PAGE_SIZE)
++	if (config->vq_align < VRING_USED_ALIGN_SIZE ||
++		!is_power_of_2(config->vq_align) ||
++		config->vq_align > PAGE_SIZE)
+ 		return false;
+ 
+ 	if (config->config_size > PAGE_SIZE)
+-- 
+2.34.1
+

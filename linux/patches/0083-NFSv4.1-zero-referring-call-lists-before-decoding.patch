@@ -1,0 +1,44 @@
+From 0f3c83cba0c906398d7ac78ba191f72a78f5da3d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9my=20Jean?= <Jeremy.Jean@oss.cyber.gouv.fr>
+Date: Thu, 20 Aug 2026 20:53:29 +0000
+Subject: [PATCH 083/143] NFSv4.1: zero referring call lists before decoding
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+decode_cb_sequence_args() allocates csa_rclists with kmalloc_objs(), so
+each referring_call_list starts uninitialized. decode_rc_list() assigns
+rcl_refcalls only when rcl_nrefcalls is nonzero. A valid list with zero
+referring calls therefore leaves the pointer uninitialized, and
+nfs4_callback_sequence() later passes stale slab contents to kfree().
+
+Allocate csa_rclists with kzalloc_objs() so every rcl_refcalls member is
+NULL from the beginning, including valid empty referring call lists.
+
+Fixes: 4aece6a19cf7 ("nfs41: cb_sequence xdr implementation")
+Assisted-by: Codex:gpt-5
+Signed-off-by: Jérémy Jean <Jeremy.Jean@oss.cyber.gouv.fr>
+Signed-off-by: Trond Myklebust <trond.myklebust@hammerspace.com>
+---
+ fs/nfs/callback_xdr.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/nfs/callback_xdr.c b/fs/nfs/callback_xdr.c
+index 4254ba3ee7c57..e576d209fd717 100644
+--- a/fs/nfs/callback_xdr.c
++++ b/fs/nfs/callback_xdr.c
+@@ -422,9 +422,8 @@ static __be32 decode_cb_sequence_args(struct svc_rqst *rqstp,
+ 	args->csa_nrclists = ntohl(*p++);
+ 	args->csa_rclists = NULL;
+ 	if (args->csa_nrclists) {
+-		args->csa_rclists = kmalloc_array(args->csa_nrclists,
+-						  sizeof(*args->csa_rclists),
+-						  GFP_KERNEL);
++		args->csa_rclists = kzalloc_objs(*args->csa_rclists,
++						 args->csa_nrclists);
+ 		if (unlikely(args->csa_rclists == NULL))
+ 			return htonl(NFS4ERR_RESOURCE);
+ 
+-- 
+2.34.1
+

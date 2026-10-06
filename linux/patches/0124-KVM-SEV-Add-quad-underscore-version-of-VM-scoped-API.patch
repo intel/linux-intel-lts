@@ -1,0 +1,76 @@
+From 0f797b3a954d2a3380feb809e9f972aeb0b365b8 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Tue, 10 Mar 2026 16:48:16 -0700
+Subject: [PATCH 124/143] KVM: SEV: Add quad-underscore version of VM-scoped
+ APIs to detect SEV+ guests
+
+Add "unsafe" quad-underscore versions of the SEV+ guest detectors in
+anticipation of hardening the APIs via lockdep assertions.  This will allow
+adding exceptions for usage that is known to be safe in advance of the
+lockdep assertions.
+
+Use a pile of underscores to try and communicate that use of the "unsafe"
+shouldn't be done lightly.
+
+No functional change intended.
+
+Link: https://patch.msgid.link/20260310234829.2608037-9-seanjc@google.com
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+[ Backport note: 6.18 has no vCPU-scoped is_sev_guest()/is_sev_es_guest()/
+  is_sev_snp_guest() helpers, so the hunk converting them to the
+  quad-underscore variants was dropped. The VM-scoped ____sev_*_guest()
+  helpers and sev_*_guest() wrappers are added as upstream. ]
+(cherry picked from commit 138e5f6a3e1172fee8665bc8b1bbe695ba6b2adf)
+---
+ arch/x86/kvm/svm/svm.h | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index 85f64d9ebe59a..8093742128708 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -375,23 +375,37 @@ static __always_inline struct kvm_sev_info *to_kvm_sev_info(struct kvm *kvm)
+ }
+ 
+ #ifdef CONFIG_KVM_AMD_SEV
+-static __always_inline bool sev_guest(struct kvm *kvm)
++static __always_inline bool ____sev_guest(struct kvm *kvm)
+ {
+ 	return to_kvm_sev_info(kvm)->active;
+ }
+-static __always_inline bool sev_es_guest(struct kvm *kvm)
++static __always_inline bool ____sev_es_guest(struct kvm *kvm)
+ {
+ 	struct kvm_sev_info *sev = to_kvm_sev_info(kvm);
+ 
+ 	return sev->es_active && !WARN_ON_ONCE(!sev->active);
+ }
+ 
+-static __always_inline bool sev_snp_guest(struct kvm *kvm)
++static __always_inline bool ____sev_snp_guest(struct kvm *kvm)
+ {
+ 	struct kvm_sev_info *sev = to_kvm_sev_info(kvm);
+ 
+ 	return (sev->vmsa_features & SVM_SEV_FEAT_SNP_ACTIVE) &&
+-	       !WARN_ON_ONCE(!sev_es_guest(kvm));
++	       !WARN_ON_ONCE(!____sev_es_guest(kvm));
++}
++
++static __always_inline bool sev_guest(struct kvm *kvm)
++{
++	return ____sev_guest(kvm);
++}
++static __always_inline bool sev_es_guest(struct kvm *kvm)
++{
++	return ____sev_es_guest(kvm);
++}
++
++static __always_inline bool sev_snp_guest(struct kvm *kvm)
++{
++	return ____sev_snp_guest(kvm);
+ }
+ #else
+ #define sev_guest(kvm) false
+-- 
+2.34.1
+

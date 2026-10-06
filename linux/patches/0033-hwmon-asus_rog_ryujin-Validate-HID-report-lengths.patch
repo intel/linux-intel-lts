@@ -1,0 +1,88 @@
+From 600c52b0e304ae921f81287d8fb531b0518b1a72 Mon Sep 17 00:00:00 2001
+From: Arie Miller <renari@arimil.com>
+Date: Thu, 3 Sep 2026 22:21:28 -0400
+Subject: [PATCH 033/143] hwmon: (asus_rog_ryujin) Validate HID report lengths
+
+rog_ryujin_raw_event() parses response headers and payload fields without
+first checking that they are present in the received report. A short report
+can therefore make the driver consume uninitialized bytes from the HID
+transport buffer and expose them as sensor values through sysfs.
+
+Validate the response header and the fields used by each response type
+before parsing them.
+
+Fixes: ed3e03790c5c ("hwmon: Add driver for ASUS ROG RYUJIN II 360 AIO cooler")
+Reported-by: Sashiko <sashiko-bot@kernel.org>
+Closes: https://lore.kernel.org/linux-hwmon/20260812104617.858D01F000E9@smtp.kernel.org/
+Cc: stable@vger.kernel.org
+Assisted-by: Codex:gpt-5.6-sol sparse
+Signed-off-by: Arie Miller <renari@arimil.com>
+Link: https://patch.msgid.link/20260904022129.97896-2-renari@arimil.com
+Signed-off-by: Guenter Roeck <linux@roeck-us.net>
+
+[ Backport note: this tree predates "hwmon: (asus_rog_ryujin) Add per-device
+  configuration" (b20ee9aee877) and supports only the RYUJIN II 360, using fixed
+  offsets. The priv->info->{temp,pump_speed,fan_speed}_offset bounds are therefore
+  written with the equivalent RYUJIN_TEMP_SENSOR_1 / RYUJIN_PUMP_SPEED /
+  RYUJIN_INTERNAL_FAN_SPEED constants (3/5/7, the same values upstream uses for
+  that device). All other checks are as upstream. ]
+
+(cherry picked from commit 8042312e73c50de82634ce63eae7cf219464b481)
+---
+ drivers/hwmon/asus_rog_ryujin.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/asus_rog_ryujin.c b/drivers/hwmon/asus_rog_ryujin.c
+index e5e93a20723c4..4d7abb369d0ae 100644
+--- a/drivers/hwmon/asus_rog_ryujin.c
++++ b/drivers/hwmon/asus_rog_ryujin.c
+@@ -417,10 +417,15 @@ static int rog_ryujin_raw_event(struct hid_device *hdev, struct hid_report *repo
+ {
+ 	struct rog_ryujin_data *priv = hid_get_drvdata(hdev);
+ 
+-	if (data[0] != RYUJIN_CMD_PREFIX)
++	if (size < 2 || data[0] != RYUJIN_CMD_PREFIX)
+ 		return 0;
+ 
+ 	if (data[1] == RYUJIN_GET_COOLER_STATUS_CMD_RESPONSE) {
++		if (size <= RYUJIN_TEMP_SENSOR_1 + 1 ||
++		    size <= RYUJIN_PUMP_SPEED + 1 ||
++		    size <= RYUJIN_INTERNAL_FAN_SPEED + 1)
++			return 0;
++
+ 		/* Received coolant temp and speeds of pump and internal fan */
+ 		priv->temp_input[0] =
+ 		    data[RYUJIN_TEMP_SENSOR_1] * 1000 + data[RYUJIN_TEMP_SENSOR_2] * 100;
+@@ -430,6 +435,9 @@ static int rog_ryujin_raw_event(struct hid_device *hdev, struct hid_report *repo
+ 		if (!completion_done(&priv->cooler_status_received))
+ 			complete_all(&priv->cooler_status_received);
+ 	} else if (data[1] == RYUJIN_GET_CONTROLLER_SPEED_CMD_RESPONSE) {
++		if (size <= RYUJIN_CONTROLLER_SPEED_3 + 1)
++			return 0;
++
+ 		/* Received speeds of four fans attached to the controller */
+ 		priv->speed_input[2] = get_unaligned_le16(data + RYUJIN_CONTROLLER_SPEED_1);
+ 		priv->speed_input[3] = get_unaligned_le16(data + RYUJIN_CONTROLLER_SPEED_2);
+@@ -439,6 +447,9 @@ static int rog_ryujin_raw_event(struct hid_device *hdev, struct hid_report *repo
+ 		if (!completion_done(&priv->controller_status_received))
+ 			complete_all(&priv->controller_status_received);
+ 	} else if (data[1] == RYUJIN_GET_COOLER_DUTY_CMD_RESPONSE) {
++		if (size <= RYUJIN_INTERNAL_FAN_DUTY)
++			return 0;
++
+ 		/* Received report for pump and internal fan duties (in %) */
+ 		if (data[RYUJIN_PUMP_DUTY] == 0 && data[RYUJIN_INTERNAL_FAN_DUTY] == 0) {
+ 			/*
+@@ -465,6 +476,9 @@ static int rog_ryujin_raw_event(struct hid_device *hdev, struct hid_report *repo
+ 		if (!completion_done(&priv->cooler_duty_received))
+ 			complete_all(&priv->cooler_duty_received);
+ 	} else if (data[1] == RYUJIN_GET_CONTROLLER_DUTY_CMD_RESPONSE) {
++		if (size <= RYUJIN_CONTROLLER_DUTY)
++			return 0;
++
+ 		/* Received report for controller duty for fans (in PWM) */
+ 		if (data[RYUJIN_CONTROLLER_DUTY] == 0) {
+ 			/*
+-- 
+2.34.1
+

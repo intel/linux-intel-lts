@@ -1,0 +1,62 @@
+From 13f030850d3bf3b34cb040b249c8a991c0a4aeb4 Mon Sep 17 00:00:00 2001
+From: Zide Chen <zide.chen@intel.com>
+Date: Thu, 11 Jun 2026 09:00:26 -0700
+Subject: [PATCH 132/143] perf/x86/intel/uncore: Fix PCI PMU cleanup on setup
+ failure
+
+When uncore_pci_pmu_register() fails, pmu->boxes[die] is set to NULL
+before returning.  In the uncore_pci_remove() path, this causes
+uncore_pci_pmu_unregister() to be skipped entirely, leaking
+pmu->activeboxes.  In the uncore_bus_notify() path,
+uncore_pci_pmu_unregister() may still be called and must exit early
+when pmu->boxes[die] is NULL to avoid a NULL pointer dereference, and
+to ensure activeboxes is only decremented for a previously active box.
+
+Additionally, since pci_get_drvdata() returns NULL on registration
+failure, uncore_pci_remove() can no longer treat NULL drvdata as an
+indicator of an auxiliary PCI device.  Remove the associated
+WARN_ON_ONCE().
+
+Signed-off-by: Zide Chen <zide.chen@intel.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Dapeng Mi <dapeng1.mi@linux.intel.com>
+Link: https://sashiko.dev/#/patchset/20260512233048.9577-1-zide.chen@intel.com?part=1
+Link: https://patch.msgid.link/20260611160033.66760-2-zide.chen@intel.com
+(cherry picked from commit 003267cb94e21d762eb72d6977d84f44f1705bb7)
+---
+ arch/x86/events/intel/uncore.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/events/intel/uncore.c b/arch/x86/events/intel/uncore.c
+index 5c7dcf1eaebfe..292f06e7d611a 100644
+--- a/arch/x86/events/intel/uncore.c
++++ b/arch/x86/events/intel/uncore.c
+@@ -1165,6 +1165,7 @@ static int uncore_pci_pmu_register(struct pci_dev *pdev,
+ 	/* First active box registers the pmu */
+ 	ret = uncore_pmu_register(pmu);
+ 	if (ret) {
++		atomic_dec(&pmu->activeboxes);
+ 		pmu->boxes[die] = NULL;
+ 		uncore_box_exit(box);
+ 		kfree(box);
+@@ -1230,6 +1231,9 @@ static void uncore_pci_pmu_unregister(struct intel_uncore_pmu *pmu, int die)
+ {
+ 	struct intel_uncore_box *box = pmu->boxes[die];
+ 
++	if (!box)
++		return;
++
+ 	pmu->boxes[die] = NULL;
+ 	if (atomic_dec_return(&pmu->activeboxes) == 0)
+ 		uncore_pmu_unregister(pmu);
+@@ -1254,7 +1258,6 @@ static void uncore_pci_remove(struct pci_dev *pdev)
+ 				break;
+ 			}
+ 		}
+-		WARN_ON_ONCE(i >= UNCORE_EXTRA_PCI_DEV_MAX);
+ 		return;
+ 	}
+ 
+-- 
+2.34.1
+

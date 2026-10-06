@@ -1,0 +1,259 @@
+From 54dd2cd401b4f657705f6b3ca650e99bfd83b719 Mon Sep 17 00:00:00 2001
+From: Boris Burkov <boris@bur.io>
+Date: Tue, 14 Jul 2026 17:21:02 -0700
+Subject: [PATCH 118/143] btrfs: write-protect folios during data writeback
+
+commit 095be159f3eb ("btrfs: unify folio dirty flag clearing") replaced
+the folio_clear_dirty_for_io() call in extent_write_cache_pages() with a
+plain folio_test_dirty() check. Besides clearing the dirty flag,
+folio_clear_dirty_for_io() also calls folio_mkclean(), which write-protects
+the shared mmap PTEs mapping the folio. Note that we still do call
+folio_clear_dirty_for_io() later in submit_one_sector() when we clear
+dirty on the last sector of the folio (the only sector for non-subpage
+cases). But we lost this early call in extent_write_cache_pages().
+
+Without the extra write-protection, a process with the file mmap-ed can
+modify a sector while it is being used by writeback in a way that
+expects a stable folio (checksumming, compressing, copying, etc...)
+without faulting, which manifests as a handful of concrete bugs.
+
+1. For large folios or subpage sectorsize, it is possible to submit a bio
+which does not cover the whole folio. When this happens, we will have a
+bio in flight for a folio that we have *not* called
+folio_clear_dirty_for_io() on. If a task with an existing mmap-ed PTE
+writes (without faulting..) in this window, it can result in
+corruptions. If the write arrives while the checksumming or writing itself
+is underway, this can result in an invalid checksum and later corruption
+reports on read. If the write arrives after checksumming/writing is done
+but before the last sector dirty is cleared, then the write is present
+in page cache but doesn't affect the dirty tracking and will be lost
+when the folio is fully finished being submitted and the dirty bit
+is cleared. This results in losing the write even if fsync() is called.
+
+2. For zoned submissions which are done in batch separate from the main
+extent_writepage() loop, we also risk csum violations for those
+submissions. Zoned writes are clamped to max_zone_append_size and are
+not aligned with folios, so a submission can span two folios. The first
+folio being processed in extent_write_cache_pages() will call
+extent_write_locked_range() which will submit the partial range of the
+next folio, while the rest of that folio could still be dirty. So
+clearing dirty on the submitted sectors doesn't call
+folio_clear_dirty_for_io() and we have the same issue. Since
+extent_write_cache_pages() skips these batch submitted folios (they are
+already marked for writeback from submission by the preceding folio), we
+must add the extra write protection in lock_delalloc_folios().
+
+3. For inline extents this will subtly risk losing writes that happen
+after/while we copy the inline extent but before we clear dirty on
+the folio.
+
+4. For folios spanning EOF, mmap could tamper with the zeroed bytes past
+EOF and cause them to be persisted where future faults would improperly
+see them instead of zeros.
+
+5. Finally, for compressed extents, we risk modifying the folios while we
+work on compressing them which will result in corrupted compressed data.
+Specifically, in run_delalloc_compressed() we queue up work to do
+compress_file_range() in BTRFS_COMPRESSION_CHUNK_SIZE (512K) chunks which
+will call btrfs_folio_clamp_clear_dirty() on the range. For non-subpage,
+this will always clear the whole folio, safely. For subpage, we risk a
+partial clear here as well. In particular, imagine a 2M folio broken up
+into 512K chunks of work which might start compression work on one chunk
+before all the chunks compress_file_range() workers have gotten far
+enough to finish clearing all the dirty bitmaps of the folio and getting
+to folio_clear_dirty_for_io(). Large folios on the edges of submission
+ranges are similarly at risk to be only partly cleared.
+This particular gap was introduced by a second patch in the same series:
+commit a4ef54dbb576 ("btrfs: make extent_range_clear_dirty_for_io() to handle sector size < page size cases")
+
+We cannot simply restore the call to folio_clear_dirty_for_io() because
+that also drops the dirty flag off the folio which violates invariants
+introduced for large folios by
+commit 334509ce9d07 ("btrfs: use dirty flag to check if an ordered extent needs to be truncated")
+and results in failing to invalidate clean folios past i_size, resulting
+in deadlocks.
+
+Therefore, to fix it, leave the existing semantics w.r.t. the folio's
+dirty flag (to preserve the correct invalidate behavior) but ensure that
+the other aspect of folio_clear_dirty_for_io(), folio_mkclean(), is run
+on the folio when we lock it for writeback.
+
+Finally, to help prevent similar regressions in the future, add a debug
+warning that triggers at the known corruption sites if we have failed to
+write protect the folio.
+
+Assisted-by: LLM (debug, reproduce, research fix, review patch)
+Fixes: 095be159f3eb ("btrfs: unify folio dirty flag clearing")
+Fixes: a4ef54dbb576 ("btrfs: make extent_range_clear_dirty_for_io() to handle sector size < page size cases")
+Reviewed-by: Qu Wenruo <wqu@suse.com>
+Signed-off-by: Boris Burkov <boris@bur.io>
+Signed-off-by: David Sterba <dsterba@suse.com>
+[ Backport note: 6.18 has no folio_next_pos() (4511fd86db6f, not pulled);
+  the lock_delalloc_folios() context already uses btrfs' folio_end(), so the
+  mkclean hunk applied unchanged against it. 6.18 extent_writepage_io() still
+  runs btrfs_writepage_cow_fixup() and builds the submit bitmap with
+  bitmap_set()/bitmap_and(); the write-protect check is placed after the
+  cow fixup, before the bitmap is trimmed. 6.18 has no run_delalloc_inline();
+  the inline-extent check is placed in cow_file_range_inline() after
+  can_cow_file_range_inline() succeeds, for a non-NULL locked_folio. 6.18
+  extent_write_cache_pages() still calls folio_clear_dirty_for_io()
+  (095be159f3eb is not in 6.18), so the folio_mkclean() added there does
+  nothing extra but is kept to match upstream. ]
+(cherry picked from commit 5376c9db45368eb210b4d71104ac00a59dc8b6e0)
+---
+ fs/btrfs/extent_io.c | 31 +++++++++++++++++++++++++++++++
+ fs/btrfs/extent_io.h |  5 +++++
+ fs/btrfs/inode.c     | 25 +++++++++++++++++++------
+ 3 files changed, 55 insertions(+), 6 deletions(-)
+
+diff --git a/fs/btrfs/extent_io.c b/fs/btrfs/extent_io.c
+index ffe875b9f8a03..3b91b65037bc9 100644
+--- a/fs/btrfs/extent_io.c
++++ b/fs/btrfs/extent_io.c
+@@ -6,6 +6,7 @@
+ #include <linux/mm.h>
+ #include <linux/pagemap.h>
+ #include <linux/page-flags.h>
++#include <linux/rmap.h>
+ #include <linux/sched/mm.h>
+ #include <linux/spinlock.h>
+ #include <linux/blkdev.h>
+@@ -299,6 +300,25 @@ static noinline void unlock_delalloc_folio(const struct inode *inode,
+ 				PAGE_UNLOCK);
+ }
+ 
++#ifdef CONFIG_BTRFS_DEBUG
++/*
++ * Writeback must write-protect a folio when locking it for IO, before
++ * anything consumes its data (zeroing, inline copy, compression,
++ * checksumming). If this fails, then an mmap writer would be able to
++ * modify the data concurrently while we need it to be stable.
++ */
++void btrfs_check_folio_write_protected(struct folio *folio)
++{
++	if (folio_mkclean(folio)) {
++		const struct btrfs_inode *inode = BTRFS_I(folio->mapping->host);
++
++		DEBUG_WARN("writable mmap PTEs, root %llu ino %llu pos %llu order %u",
++			   btrfs_root_id(inode->root), btrfs_ino(inode), folio_pos(folio),
++			   folio_order(folio));
++	}
++}
++#endif
++
+ static noinline int lock_delalloc_folios(struct inode *inode,
+ 					 struct folio *locked_folio,
+ 					 u64 start, u64 end)
+@@ -332,6 +352,8 @@ static noinline int lock_delalloc_folios(struct inode *inode,
+ 				folio_unlock(folio);
+ 				goto out;
+ 			}
++			/* Locked for writeback; revoke writable mmap PTEs before using the data. */
++			folio_mkclean(folio);
+ 			range_start = max_t(u64, folio_pos(folio), start);
+ 			range_len = min_t(u64, folio_end(folio), end + 1) - range_start;
+ 			btrfs_folio_set_lock(fs_info, folio, range_start, range_len);
+@@ -1739,6 +1761,13 @@ static noinline_for_stack int extent_writepage_io(struct btrfs_inode *inode,
+ 		return ret;
+ 	}
+ 
++	/*
++	 * We are about to checksum and write out the data, so it must not be
++	 * mmap writeable, or we could corrupt the data and end up with invalid
++	 * checksums.
++	 */
++	btrfs_check_folio_write_protected(folio);
++
+ 	bitmap_set(&range_bitmap, (start - folio_pos(folio)) >> fs_info->sectorsize_bits,
+ 		   len >> fs_info->sectorsize_bits);
+ 	bitmap_and(&bio_ctrl->submit_bitmap, &bio_ctrl->submit_bitmap, &range_bitmap,
+@@ -2652,6 +2681,8 @@ static int extent_write_cache_pages(struct address_space *mapping,
+ 				continue;
+ 			}
+ 
++			/* Locked for writeback; revoke writable mmap PTEs before using the data. */
++			folio_mkclean(folio);
+ 			ret = extent_writepage(folio, bio_ctrl);
+ 			if (ret < 0) {
+ 				done = 1;
+diff --git a/fs/btrfs/extent_io.h b/fs/btrfs/extent_io.h
+index 65d1ed3fcd5bf..d4e6d5b284a74 100644
+--- a/fs/btrfs/extent_io.h
++++ b/fs/btrfs/extent_io.h
+@@ -254,6 +254,11 @@ bool try_release_extent_mapping(struct folio *folio, gfp_t mask);
+ int try_release_extent_buffer(struct folio *folio);
+ 
+ int btrfs_read_folio(struct file *file, struct folio *folio);
++#ifdef CONFIG_BTRFS_DEBUG
++void btrfs_check_folio_write_protected(struct folio *folio);
++#else
++static inline void btrfs_check_folio_write_protected(struct folio *folio) { }
++#endif
+ void extent_write_locked_range(struct inode *inode, const struct folio *locked_folio,
+ 			       u64 start, u64 end, struct writeback_control *wbc,
+ 			       bool pages_dirty);
+diff --git a/fs/btrfs/inode.c b/fs/btrfs/inode.c
+index c63b2f5edae9e..8da463d4a1c8e 100644
+--- a/fs/btrfs/inode.c
++++ b/fs/btrfs/inode.c
+@@ -703,6 +703,15 @@ static noinline int cow_file_range_inline(struct btrfs_inode *inode,
+ 	if (!can_cow_file_range_inline(inode, offset, size, compressed_size))
+ 		return 1;
+ 
++	/*
++	 * If an mmap writer could modify the folio while we copy it into an
++	 * inline extent we might see only part of their modification then
++	 * wrongly mark it clean again after copying, losing that write. So the
++	 * folio must be write protected here.
++	 */
++	if (locked_folio)
++		btrfs_check_folio_write_protected(locked_folio);
++
+ 	btrfs_lock_extent(&inode->io_tree, offset, end, &cached);
+ 	ret = __cow_file_range_inline(inode, size, compressed_size,
+ 				      compress_type, compressed_folio,
+@@ -828,19 +837,28 @@ static inline void inode_should_defrag(struct btrfs_inode *inode,
+ 
+ static int extent_range_clear_dirty_for_io(struct btrfs_inode *inode, u64 start, u64 end)
+ {
++	pgoff_t index = start >> PAGE_SHIFT;
+ 	const pgoff_t end_index = end >> PAGE_SHIFT;
+ 	struct folio *folio;
+ 	int ret = 0;
+ 
+-	for (pgoff_t index = start >> PAGE_SHIFT; index <= end_index; index++) {
++	while (index <= end_index) {
+ 		folio = filemap_get_folio(inode->vfs_inode.i_mapping, index);
+ 		if (IS_ERR(folio)) {
+ 			if (!ret)
+ 				ret = PTR_ERR(folio);
++			index++;
+ 			continue;
+ 		}
++		/*
++		 * We are about to compress the folio, so it must not be mmap
++		 * writeable or we could corrupt the data as we attempt to
++		 * compress it.
++		 */
++		btrfs_check_folio_write_protected(folio);
+ 		btrfs_folio_clamp_clear_dirty(inode->root->fs_info, folio, start,
+ 					      end + 1 - start);
++		index = folio_next_index(folio);
+ 		folio_put(folio);
+ 	}
+ 	return ret;
+@@ -885,11 +903,6 @@ static void compress_file_range(struct btrfs_work *work)
+ 
+ 	inode_should_defrag(inode, start, end, end - start + 1, SZ_16K);
+ 
+-	/*
+-	 * We need to call clear_page_dirty_for_io on each page in the range.
+-	 * Otherwise applications with the file mmap'd can wander in and change
+-	 * the page contents while we are compressing them.
+-	 */
+ 	ret = extent_range_clear_dirty_for_io(inode, start, end);
+ 
+ 	/*
+-- 
+2.34.1
+

@@ -1,0 +1,89 @@
+From 81c47dbd95c662a4d2a543de143f957abe195a80 Mon Sep 17 00:00:00 2001
+From: Pauli Virtanen <pav@iki.fi>
+Date: Sat, 1 Aug 2026 21:37:23 +0300
+Subject: [PATCH 094/143] Bluetooth: L2CAP: use proto_lock for l2cap_data to
+ fix l2cap_disconn_ind
+
+hci_conn::l2cap_data is accessed without locks in l2cap_disconn_ind via
+hci_conn_timeout (disc_work) -> hci_proto_disconn_ind ->
+l2cap_disconn_ind.  This is UAF if the l2cap_conn is deleted
+concurrently.
+
+disc_work is disabled sync in hci_conn_del(), so we cannot take
+hci_dev_lock in disc_work.
+
+Fix by using proto_lock to guard l2cap_data, in addition to hdev->lock
+which is held in other access paths.
+
+Fixes: ab4eedb790ca ("Bluetooth: L2CAP: Fix corrupted list in hci_chan_del")
+Reported-by: syzbot+9c40ad7c6ed7165e46e8@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=9c40ad7c6ed7165e46e8
+Signed-off-by: Pauli Virtanen <pav@iki.fi>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+(cherry picked from commit 2b66c83ff1751d6bd3201b3017206262ab46dc05)
+---
+ net/bluetooth/l2cap_core.c | 23 +++++++++++++++++------
+ 1 file changed, 17 insertions(+), 6 deletions(-)
+
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+index 9365a98107f2d..a0fc27cf103f0 100644
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -1843,7 +1843,10 @@ static void l2cap_conn_del(struct hci_conn *hcon, int err)
+ 	hci_chan_del(conn->hchan);
+ 	conn->hchan = NULL;
+ 
++	spin_lock(&hcon->proto_lock);
+ 	hcon->l2cap_data = NULL;
++	spin_unlock(&hcon->proto_lock);
++
+ 	mutex_unlock(&conn->lock);
+ 	l2cap_conn_put(conn);
+ }
+@@ -7187,8 +7190,6 @@ static struct l2cap_conn *l2cap_conn_add(struct hci_conn *hcon)
+ 	}
+ 
+ 	kref_init(&conn->ref);
+-	hcon->l2cap_data = conn;
+-	conn->hcon = hci_conn_get(hcon);
+ 	conn->hchan = hchan;
+ 
+ 	BT_DBG("hcon %p conn %p hchan %p", hcon, conn, hchan);
+@@ -7217,6 +7218,11 @@ static struct l2cap_conn *l2cap_conn_add(struct hci_conn *hcon)
+ 
+ 	conn->disc_reason = HCI_ERROR_REMOTE_USER_TERM;
+ 
++	spin_lock(&hcon->proto_lock);
++	conn->hcon = hci_conn_get(hcon);
++	hcon->l2cap_data = conn;
++	spin_unlock(&hcon->proto_lock);
++
+ 	return conn;
+ }
+ 
+@@ -7605,13 +7611,18 @@ static void l2cap_connect_cfm(struct hci_conn *hcon, u8 status)
+ 
+ int l2cap_disconn_ind(struct hci_conn *hcon)
+ {
+-	struct l2cap_conn *conn = hcon->l2cap_data;
++	struct l2cap_conn *conn;
++	int ret = HCI_ERROR_REMOTE_USER_TERM;
+ 
+ 	BT_DBG("hcon %p", hcon);
+ 
+-	if (!conn)
+-		return HCI_ERROR_REMOTE_USER_TERM;
+-	return conn->disc_reason;
++	spin_lock(&hcon->proto_lock);
++	conn = hcon->l2cap_data;
++	if (conn)
++		ret = conn->disc_reason;
++	spin_unlock(&hcon->proto_lock);
++
++	return ret;
+ }
+ 
+ static void l2cap_disconn_cfm(struct hci_conn *hcon, u8 reason)
+-- 
+2.34.1
+

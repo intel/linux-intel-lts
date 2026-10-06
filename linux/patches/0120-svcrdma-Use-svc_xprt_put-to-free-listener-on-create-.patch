@@ -1,0 +1,56 @@
+From 4cd00ef3ec7f2373cfd22af2d84e4c7930bb0d0a Mon Sep 17 00:00:00 2001
+From: Chuck Lever <chuck.lever@oracle.com>
+Date: Wed, 27 May 2026 11:00:13 -0400
+Subject: [PATCH 120/143] svcrdma: Use svc_xprt_put to free listener on create
+ failure
+
+svc_rdma_create() calls kfree(cma_xprt) when
+svc_rdma_create_listen_id() fails. svc_xprt_init() has already
+acquired a net namespace reference via get_net_track(); kfree
+bypasses svc_xprt_free() which releases it.
+
+Replace the kfree() with svc_xprt_put() so the kref_init birth
+reference drops to zero and svc_xprt_free() dispatches
+svc_rdma_free() to clean up properly. sc_cm_id is still NULL
+at that point; the preceding patch added the necessary NULL
+guard in svc_rdma_free().
+
+svc_xprt_free() also drops the module reference via
+module_put(), but the caller _svc_xprt_create() does the same
+on xpo_create failure, double-putting the single
+try_module_get() it acquired. Take a compensating
+__module_get() before the svc_xprt_put() to keep the count
+balanced, matching the convention in svc_rdma_accept()'s error
+path.
+
+Fixes: 4fb8518bdac8 ("sunrpc: Tag svc_xprt with net")
+Cc: stable@vger.kernel.org
+Acked-by: Jeff Layton <jlayton@kernel.org>
+Link: https://patch.msgid.link/20260527-rdma-follow-on-v1-3-1b09bd87b6cd@oracle.com
+Signed-off-by: Chuck Lever <chuck.lever@oracle.com>
+---
+ net/sunrpc/xprtrdma/svc_rdma_transport.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/net/sunrpc/xprtrdma/svc_rdma_transport.c b/net/sunrpc/xprtrdma/svc_rdma_transport.c
+index 839eb7aaeb0a7..a0bb5e76a243e 100644
+--- a/net/sunrpc/xprtrdma/svc_rdma_transport.c
++++ b/net/sunrpc/xprtrdma/svc_rdma_transport.c
+@@ -374,7 +374,13 @@ static struct svc_xprt *svc_rdma_create(struct svc_serv *serv,
+ 
+ 	listen_id = svc_rdma_create_listen_id(net, sa, cma_xprt);
+ 	if (IS_ERR(listen_id)) {
+-		kfree(cma_xprt);
++		/* _svc_xprt_create() acquired one module reference and
++		 * puts it on xpo_create failure.  svc_xprt_free() puts
++		 * a second one when the kref drops to zero.  Take a
++		 * compensating reference so both puts are balanced.
++		 */
++		__module_get(cma_xprt->sc_xprt.xpt_class->xcl_owner);
++		svc_xprt_put(&cma_xprt->sc_xprt);
+ 		return ERR_CAST(listen_id);
+ 	}
+ 	cma_xprt->sc_cm_id = listen_id;
+-- 
+2.34.1
+
