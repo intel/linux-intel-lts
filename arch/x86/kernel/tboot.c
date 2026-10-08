@@ -18,7 +18,6 @@
 #include <linux/mm.h>
 #include <linux/tboot.h>
 #include <linux/debugfs.h>
-#include <linux/printk.h>
 
 #include <asm/realmode.h>
 #include <asm/processor.h>
@@ -454,14 +453,8 @@ struct sha1_hash {
 	u8 hash[SHA1_SIZE];
 };
 
-struct heap_ext_data_elt {
-	u32 type;
-	u32 size;
-	u8  data[];
-} __packed;
-
 struct sinit_mle_data {
-	u32               version;             /* currently 9 */
+	u32               version;             /* currently 6 */
 	struct sha1_hash  bios_acm_id;
 	u32               edx_senter_flags;
 	u64               mseg_valid;
@@ -476,17 +469,7 @@ struct sinit_mle_data {
 	u32               mdrs_off;
 	u32               num_vtd_dmars;
 	u32               vtd_dmars_off;
-	u32               proc_scrtm_status; /* version 8 or later only*/
-	struct heap_ext_data_elt ext_data_elts[];
 } __packed;
-
-#define HEAP_EXTDATA_TYPE_DTPR 14
-
-struct acpi_dtpr_serialize_req {
-	u64 sts    : 1;
-	u64 ctrl   : 1;
-	u64 unused : 62;
-};
 
 struct acpi_table_header *tboot_get_dmar_table(struct acpi_table_header *dmar_tbl)
 {
@@ -530,94 +513,4 @@ struct acpi_table_header *tboot_get_dmar_table(struct acpi_table_header *dmar_tb
 	/* don't unmap heap because dmar.c needs access to this */
 
 	return dmar_tbl;
-}
-
-struct acpi_table_dtpr *tboot_get_dtpr_table(void)
-{
-	void *heap_base, *heap_ptr, *config;
-	struct sinit_mle_data *sinit_mle;
-	struct heap_ext_data_elt *elt;
-	u64 sinit_mle_size;
-
-	if (!tboot_enabled())
-		return NULL;
-	/*
-	 * ACPI tables may not be DMA protected by tboot, so use DMAR copy
-	 * SINIT saved in SinitMleData in TXT heap (which is DMA protected)
-	 */
-
-	/* map config space in order to get heap addr */
-	config = ioremap(TXT_PUB_CONFIG_REGS_BASE, NR_TXT_CONFIG_PAGES *
-			 PAGE_SIZE);
-	if (!config)
-		return NULL;
-
-	/* now map TXT heap */
-	heap_base = ioremap(*(u64 *)(config + TXTCR_HEAP_BASE),
-			    *(u64 *)(config + TXTCR_HEAP_SIZE));
-	iounmap(config);
-	if (!heap_base)
-		return NULL;
-
-	/* walk heap to SinitMleData */
-	/* skip BiosData */
-	heap_ptr = heap_base + *(u64 *)heap_base;
-	/* skip OsMleData */
-	heap_ptr += *(u64 *)heap_ptr;
-	/* skip OsSinitData */
-	heap_ptr += *(u64 *)heap_ptr;
-	/* now points to SinitMleDataSize; set to SinitMleData */
-	sinit_mle_size = *(u64 *)heap_ptr;
-	heap_ptr += sizeof(u64);
-
-	sinit_mle = (struct sinit_mle_data *)heap_ptr;
-	if (sinit_mle->version < 9)
-		return NULL;
-
-	elt = sinit_mle->ext_data_elts;
-	while (elt->type != HEAP_EXTDATA_TYPE_DTPR) {
-		elt = (void *)elt + elt->size;
-		if ((u64)elt > (u64)sinit_mle + sinit_mle_size)
-			return NULL;
-	}
-	return (struct acpi_table_dtpr *)elt->data;
-}
-
-static bool tboot_tpr_enabled;
-void tboot_parse_dtpr_table(void)
-{
-	struct acpi_table_dtpr *dtpr;
-	struct acpi_dtpr_instance *tpr_inst;
-	u32 *instance_cnt;
-	u32 i, j;
-
-	if (!tboot_enabled())
-		return;
-	dtpr = tboot_get_dtpr_table();
-	if (dtpr == NULL)
-		return;
-	tboot_tpr_enabled = 1;
-	instance_cnt = (u32 *)(dtpr + 1);
-	tpr_inst = (struct acpi_dtpr_instance *)(instance_cnt + 1);
-	for (i = 0; i < *instance_cnt; ++i) {
-		for (j = 0; j < tpr_inst->tpr_cnt; ++j) {
-			uint64_t *base = ioremap(tpr_inst->tpr_array[j].base, 16);
-
-			if (base != NULL) {
-				pr_info("TPR instance %d, TPR %d:base %llx limit %llx\n",
-					   i, j, readq(base), readq(base + 1));
-				*base |= (1 << 4);
-				iounmap(base);
-			}
-		}
-		tpr_inst = (struct acpi_dtpr_instance *)((u8 *)tpr_inst
-		 + sizeof(*tpr_inst) + j*sizeof(*(tpr_inst->tpr_array)));
-	}
-	if (tboot_tpr_enabled)
-		pr_debug("TPR protection detected, PMR will be disabled\n");
-}
-
-bool tboot_is_tpr_enabled(void)
-{
-	return tboot_tpr_enabled;
 }
