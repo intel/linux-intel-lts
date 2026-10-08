@@ -2268,18 +2268,6 @@ static int init_iommu_hw(void)
 	struct intel_iommu *iommu = NULL;
 	int ret;
 
-	/*
-	* After S3 resume via GETSEC[SENTER], the SINIT ACM re-enables
-	* TXT Protected Ranges (TPR) for DMA protection. The kernel's
-	* iommu_disable_protect_mem_regions() only clears PMR (PLMR/PHMR),
-	* not TPR. On platforms where TPR replaces PMR (e.g. PTL),
-	* device DMA (xHCI, NVMe) is blocked after resume unless TPR
-	* is explicitly disabled. Use cached boot-time mappings to
-	* avoid ioremap() in syscore_resume context.
-	*/
-	if (tboot_enabled() && tboot_is_tpr_enabled())
-		tboot_disable_tpr();
-
 	for_each_active_iommu(iommu, drhd) {
 		if (iommu->qi) {
 			ret = dmar_reenable_qi(iommu);

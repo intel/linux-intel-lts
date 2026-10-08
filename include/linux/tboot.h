@@ -128,7 +128,6 @@ extern struct acpi_table_header *tboot_get_dmar_table(
 				      struct acpi_table_header *dmar_tbl);
 extern struct acpi_table_dtpr *tboot_get_dtpr_table(void);
 extern void tboot_parse_dtpr_table(void);
-extern void tboot_disable_tpr(void);
 extern bool tboot_is_tpr_enabled(void);
 
 #else
@@ -141,7 +140,6 @@ extern bool tboot_is_tpr_enabled(void);
 #define tboot_get_dmar_table(dmar_tbl)	(dmar_tbl)
 #define tboot_get_dtpr_table() 0
 #define tboot_parse_dtpr_table() do { } while (0)
-#define tboot_disable_tpr() do { } while (0)
 #define tboot_is_tpr_enabled() 0
 
 #endif /* !CONFIG_INTEL_TXT */
