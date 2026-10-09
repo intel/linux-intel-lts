@@ -189,6 +189,7 @@ static void usage(char *progname)
 		" -H val     set output phase to 'val' nanoseconds (requires -p)\n"
 		" -w val     set output pulse width to 'val' nanoseconds (requires -p)\n"
 		" -P val     enable or disable (val=1|0) the system clock PPS\n"
+		" -r         open the ptp clock in readonly mode\n"
 		" -s         set the ptp clock time from the system time\n"
 		" -S         set the system time from the ptp clock time\n"
 		" -t val     shift the ptp clock time by 'val' seconds\n"
@@ -242,6 +243,7 @@ int main(int argc, char *argv[])
 	int pin_index = -1, pin_func;
 	int pps = -1;
 	int seconds = 0;
+	int readonly = 0;
 	int settime = 0;
 	int poll = 0;
 
@@ -253,7 +255,7 @@ int main(int argc, char *argv[])
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? 1+progname : argv[0];
-	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EGghH:i:k:lL:m:n:o:Op:P:sSt:T:w:x:Xz"))) {
+	while (EOF != (c = getopt(argc, argv, "a:cd:e:f:EGghH:i:k:lL:m:n:o:Op:P:rsSt:T:w:x:Xz"))) {
 		switch (c) {
 		case 'a':
 			new_period = atoi(optarg);
@@ -315,6 +317,9 @@ int main(int argc, char *argv[])
 		case 'P':
 			pps = atoi(optarg);
 			break;
+		case 'r':
+			readonly = 1;
+			break;
 		case 's':
 			settime = 1;
 			break;
@@ -356,7 +361,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	fd = open(device, O_RDWR);
+	fd = open(device, readonly ? O_RDONLY : O_RDWR);
 	if (fd < 0) {
 		fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
 		return -1;
@@ -522,21 +527,23 @@ int main(int argc, char *argv[])
 	}
 
 	if (extts) {
-		memset(&extts_request, 0, sizeof(extts_request));
-		extts_request.index = index;
-		extts_request.flags = PTP_ENABLE_FEATURE;
+		if (!readonly) {
+			memset(&extts_request, 0, sizeof(extts_request));
+			extts_request.index = index;
+			extts_request.flags = PTP_ENABLE_FEATURE;
 
-		if (event_count) {
-			extts_request.flags |= PTP_EVENT_COUNTER_MODE;
-			extts_request.rsv[0] = event_count;
-			/* Input Event Control only supports 1 event for now */
-			extts = 1;
-		}
-		if (ioctl(fd, PTP_EXTTS_REQUEST, &extts_request)) {
-			perror("PTP_EXTTS_REQUEST");
-			extts = 0;
-		} else {
-			puts("external time stamp request okay");
+			if (event_count) {
+				extts_request.flags |= PTP_EVENT_COUNTER_MODE;
+				extts_request.rsv[0] = event_count;
+				/* Input Event Control only supports 1 event for now */
+				extts = 1;
+			}
+			if (ioctl(fd, PTP_EXTTS_REQUEST, &extts_request)) {
+				perror("PTP_EXTTS_REQUEST");
+				extts = 0;
+			} else {
+				puts("external time stamp request okay");
+			}
 		}
 		memset(&desc, 0, sizeof(desc));
 		desc.index = index;
@@ -553,10 +560,12 @@ int main(int argc, char *argv[])
 				       event.t.sec, event.t.nsec);
 				fflush(stdout);
 			}
-			/* Disable the feature again. */
-			extts_request.flags = 0;
-			if (ioctl(fd, PTP_EXTTS_REQUEST, &extts_request))
-				perror("PTP_EXTTS_REQUEST");
+			if (!readonly) {
+				/* Disable the feature again. */
+				extts_request.flags = 0;
+				if (ioctl(fd, PTP_EXTTS_REQUEST, &extts_request))
+					perror("PTP_EXTTS_REQUEST");
+			}
 		}
 	}
 

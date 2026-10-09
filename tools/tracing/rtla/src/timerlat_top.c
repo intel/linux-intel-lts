@@ -684,7 +684,7 @@ timerlat_top_apply_config(struct osnoise_tool *top, struct timerlat_top_params *
 	* On kernels without support, user threads will have already failed
 	* on missing timerlat_fd, and kernel threads do not need it.
 	*/
-	retval = osnoise_set_workload(top->context, params->kernel_workload);
+	retval = osnoise_set_workload(top->context, !params->user_top);
 	if (retval < -1) {
 		err_msg("Failed to set OSNOISE_WORKLOAD option\n");
 		goto out_err;
@@ -731,6 +731,14 @@ static int stop_tracing;
 static struct trace_instance *top_inst = NULL;
 static void stop_top(int sig)
 {
+	if (stop_tracing) {
+		/*
+		 * Stop requested twice in a row; abort event processing and
+		 * exit immediately
+		 */
+		tracefs_iterate_stop(top_inst->inst);
+		return;
+	}
 	stop_tracing = 1;
 	if (top_inst)
 		trace_instance_stop(top_inst);
