@@ -28,21 +28,17 @@ Signed-off-by: CVE Backport Agent
  drivers/nvme/host/pci.c | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/nvme/host/pci.c b/drivers/nvme/host/pci.c
-index 42231a36a7ed6..5f5ff9576833d 100644
+Index: b/drivers/nvme/host/pci.c
+===================================================================
 --- a/drivers/nvme/host/pci.c
 +++ b/drivers/nvme/host/pci.c
-@@ -814,8 +814,8 @@ static bool nvme_pci_prp_save_mapping(struct request *req,
+@@ -827,7 +827,8 @@ static bool nvme_pci_prp_save_mapping(st
  {
  	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
  
 -	if (dma_use_iova(&iod->dma_state) || !dma_need_unmap(dma_dev))
--		return true;
 +	if (dma_use_iova(&iod->dma_state) || !dma_need_unmap(dma_dev) ||
 +            (iod->flags & IOD_DATA_P2P))
+ 		return true;
  
  	if (!iod->nr_dma_vecs) {
- 		struct nvme_queue *nvmeq = req->mq_hctx->driver_data;
--- 
-2.43.0
-
