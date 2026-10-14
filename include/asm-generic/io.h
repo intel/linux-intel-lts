@@ -8,6 +8,7 @@
 #define __ASM_GENERIC_IO_H
 
 #include <asm/page.h> /* I/O is all done through memory accesses */
+#include <linux/kernel.h> /* for _THIS_IP */
 #include <linux/string.h> /* for memset() and memcpy() */
 #include <linux/types.h>
 

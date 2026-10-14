@@ -590,21 +590,46 @@ static int handle_rx_uart(struct uart_port *uport, u32 bytes, bool drop)
 	return ret;
 }
 
+static bool qcom_geni_serial_main_active(struct uart_port *uport)
+{
+	u32 status = readl(uport->membase + SE_GENI_STATUS);
+
+	return !!(status & M_GENI_CMD_ACTIVE);
+}
+
+static int uart_fifo_out(struct uart_port *uport, unsigned char *c, int count)
+{
+	struct circ_buf *xmit = &uport->state->xmit;
+
+	if (uart_circ_empty(xmit) || count < 1)
+		return 0;
+
+	*c = xmit->buf[xmit->tail];
+	xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+	return 1;
+}
+
 static void qcom_geni_serial_start_tx(struct uart_port *uport)
 {
 	u32 irq_en;
-	u32 status;
+	unsigned char c;
 
-	status = readl(uport->membase + SE_GENI_STATUS);
-	if (status & M_GENI_CMD_ACTIVE)
-		return;
-
-	if (!qcom_geni_serial_tx_empty(uport))
-		return;
+	/*
+	 * Start a new transfer in case the previous command was cancelled and
+	 * left data in the FIFO which may prevent the watermark interrupt
+	 * from triggering. Note that the stale data is discarded.
+	 */
+	if (!qcom_geni_serial_main_active(uport) &&
+	    !qcom_geni_serial_tx_empty(uport)) {
+		if (uart_fifo_out(uport, &c, 1) == 1) {
+			writel(M_CMD_DONE_EN, uport->membase + SE_GENI_M_IRQ_CLEAR);
+			qcom_geni_serial_setup_tx(uport, 1);
+			writel(c, uport->membase + SE_GENI_TX_FIFOn);
+		}
+	}
 
 	irq_en = readl(uport->membase +	SE_GENI_M_IRQ_EN);
 	irq_en |= M_TX_FIFO_WATERMARK_EN | M_CMD_DONE_EN;
-
 	writel(DEF_TX_WM, uport->membase + SE_GENI_TX_WATERMARK_REG);
 	writel(irq_en, uport->membase +	SE_GENI_M_IRQ_EN);
 }
@@ -612,17 +637,28 @@ static void qcom_geni_serial_start_tx(struct uart_port *uport)
 static void qcom_geni_serial_stop_tx(struct uart_port *uport)
 {
 	u32 irq_en;
-	u32 status;
-	struct qcom_geni_serial_port *port = to_dev_port(uport, uport);
 
 	irq_en = readl(uport->membase + SE_GENI_M_IRQ_EN);
 	irq_en &= ~(M_CMD_DONE_EN | M_TX_FIFO_WATERMARK_EN);
 	writel(0, uport->membase + SE_GENI_TX_WATERMARK_REG);
 	writel(irq_en, uport->membase + SE_GENI_M_IRQ_EN);
+}
+
+static void qcom_geni_serial_cancel_tx_cmd(struct uart_port *uport)
+{
+	struct qcom_geni_serial_port *port = to_dev_port(uport, uport);
+	u32 status;
+
 	status = readl(uport->membase + SE_GENI_STATUS);
-	/* Possible stop tx is called multiple times. */
-	if (!(status & M_GENI_CMD_ACTIVE))
+	if (!(status & M_GENI_CMD_ACTIVE)) {
+		/*
+		 * When stopping TX, reset tx_remaining to ensure clean state.
+		 * This prevents issues after suspend/resume where stale
+		 * tx_remaining values can block new TX operations.
+		 */
+		port->tx_remaining = 0;
 		return;
+	}
 
 	geni_se_cancel_m_cmd(&port->se);
 	if (!qcom_geni_serial_poll_bit(uport, SE_GENI_M_IRQ_STATUS,
@@ -633,6 +669,8 @@ static void qcom_geni_serial_stop_tx(struct uart_port *uport)
 		writel(M_CMD_ABORT_EN, uport->membase + SE_GENI_M_IRQ_CLEAR);
 	}
 	writel(M_CMD_CANCEL_EN, uport->membase + SE_GENI_M_IRQ_CLEAR);
+
+	port->tx_remaining = 0;
 }
 
 static void qcom_geni_serial_start_rx(struct uart_port *uport)
@@ -891,6 +929,8 @@ static int setup_fifos(struct qcom_geni_serial_port *port)
 static void qcom_geni_serial_shutdown(struct uart_port *uport)
 {
 	disable_irq(uport->irq);
+
+	qcom_geni_serial_cancel_tx_cmd(uport);
 }
 
 static int qcom_geni_serial_port_setup(struct uart_port *uport)
