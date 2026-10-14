@@ -1200,6 +1200,66 @@ static struct binder_ref *binder_get_ref_olocked(struct binder_proc *proc,
 	return NULL;
 }
 
+/* Find the smallest unused descriptor the "slow way" */
+static u32 slow_desc_lookup_olocked(struct binder_proc *proc)
+{
+	struct binder_ref *ref;
+	struct rb_node *n;
+	u32 desc;
+
+	desc = 1;
+	for (n = rb_first(&proc->refs_by_desc); n; n = rb_next(n)) {
+		ref = rb_entry(n, struct binder_ref, rb_node_desc);
+		if (ref->data.desc > desc)
+			break;
+		desc = ref->data.desc + 1;
+	}
+
+	return desc;
+}
+
+/*
+ * Find an available reference descriptor ID. The proc->outer_lock might
+ * be released in the process, in which case -EAGAIN is returned and the
+ * @desc should be considered invalid.
+ */
+static int get_ref_desc_olocked(struct binder_proc *proc,
+				struct binder_node *node,
+				u32 *desc)
+{
+	struct dbitmap *dmap = &proc_wrapper(proc)->dmap;
+	unsigned long *new, bit;
+	unsigned int nbits;
+
+	/* 0 is reserved for the context manager */
+	if (node == proc->context->binder_context_mgr_node) {
+		*desc = 0;
+		return 0;
+	}
+
+	if (!dbitmap_enabled(dmap)) {
+		*desc = slow_desc_lookup_olocked(proc);
+		return 0;
+	}
+
+	if (dbitmap_acquire_first_zero_bit(dmap, &bit) == 0) {
+		*desc = bit;
+		return 0;
+	}
+
+	/*
+	 * The dbitmap is full and needs to grow. The proc->outer_lock
+	 * is briefly released to allocate the new bitmap safely.
+	 */
+	nbits = dbitmap_grow_nbits(dmap);
+	binder_proc_unlock(proc);
+	new = bitmap_zalloc(nbits, GFP_KERNEL);
+	binder_proc_lock(proc);
+	dbitmap_grow(dmap, new, nbits);
+
+	return -EAGAIN;
+}
+
 /**
  * binder_get_ref_for_node_olocked() - get the ref associated with given node
  * @proc:	binder_proc that owns the ref
@@ -1223,12 +1283,14 @@ static struct binder_ref *binder_get_ref_for_node_olocked(
 					struct binder_node *node,
 					struct binder_ref *new_ref)
 {
-	struct binder_context *context = proc->context;
-	struct rb_node **p = &proc->refs_by_node.rb_node;
-	struct rb_node *parent = NULL;
 	struct binder_ref *ref;
-	struct rb_node *n;
+	struct rb_node *parent;
+	struct rb_node **p;
+	u32 desc;
 
+retry:
+	p = &proc->refs_by_node.rb_node;
+	parent = NULL;
 	while (*p) {
 		parent = *p;
 		ref = rb_entry(parent, struct binder_ref, rb_node_node);
@@ -1243,6 +1305,10 @@ static struct binder_ref *binder_get_ref_for_node_olocked(
 	if (!new_ref)
 		return NULL;
 
+	/* might release the proc->outer_lock */
+	if (get_ref_desc_olocked(proc, node, &desc) == -EAGAIN)
+		goto retry;
+
 	binder_stats_created(BINDER_STAT_REF);
 	new_ref->data.debug_id = atomic_inc_return(&binder_last_id);
 	new_ref->proc = proc;
@@ -1250,14 +1316,7 @@ static struct binder_ref *binder_get_ref_for_node_olocked(
 	rb_link_node(&new_ref->rb_node_node, parent, p);
 	rb_insert_color(&new_ref->rb_node_node, &proc->refs_by_node);
 
-	new_ref->data.desc = (node == context->binder_context_mgr_node) ? 0 : 1;
-	for (n = rb_first(&proc->refs_by_desc); n != NULL; n = rb_next(n)) {
-		ref = rb_entry(n, struct binder_ref, rb_node_desc);
-		if (ref->data.desc > new_ref->data.desc)
-			break;
-		new_ref->data.desc = ref->data.desc + 1;
-	}
-
+	new_ref->data.desc = desc;
 	p = &proc->refs_by_desc.rb_node;
 	while (*p) {
 		parent = *p;
@@ -1287,6 +1346,7 @@ static struct binder_ref *binder_get_ref_for_node_olocked(
 
 static void binder_cleanup_ref_olocked(struct binder_ref *ref)
 {
+	struct dbitmap *dmap = &proc_wrapper(ref->proc)->dmap;
 	bool delete_node = false;
 
 	binder_debug(BINDER_DEBUG_INTERNAL_REFS,
@@ -1294,6 +1354,8 @@ static void binder_cleanup_ref_olocked(struct binder_ref *ref)
 		      ref->proc->pid, ref->data.debug_id, ref->data.desc,
 		      ref->node->debug_id);
 
+	if (dbitmap_enabled(dmap))
+		dbitmap_clear_bit(dmap, ref->data.desc);
 	rb_erase(&ref->rb_node_desc, &ref->proc->refs_by_desc);
 	rb_erase(&ref->rb_node_node, &ref->proc->refs_by_node);
 
@@ -1461,6 +1523,26 @@ static void binder_free_ref(struct binder_ref *ref)
 	kfree(ref);
 }
 
+/* shrink descriptor bitmap if needed */
+static void try_shrink_dmap(struct binder_proc *proc)
+{
+	struct dbitmap *dmap = &proc_wrapper(proc)->dmap;
+	unsigned long *new;
+	int nbits;
+
+	binder_proc_lock(proc);
+	nbits = dbitmap_shrink_nbits(dmap);
+	binder_proc_unlock(proc);
+
+	if (!nbits)
+		return;
+
+	new = bitmap_zalloc(nbits, GFP_KERNEL);
+	binder_proc_lock(proc);
+	dbitmap_shrink(dmap, new, nbits);
+	binder_proc_unlock(proc);
+}
+
 /**
  * binder_update_ref_for_handle() - inc/dec the ref for given handle
  * @proc:	proc containing the ref
@@ -1497,8 +1579,10 @@ static int binder_update_ref_for_handle(struct binder_proc *proc,
 		*rdata = ref->data;
 	binder_proc_unlock(proc);
 
-	if (delete_ref)
+	if (delete_ref) {
 		binder_free_ref(ref);
+		try_shrink_dmap(proc);
+	}
 	return ret;
 
 err_no_ref:
@@ -1739,7 +1823,20 @@ static void binder_txn_latency_free(struct binder_transaction *t)
 
 static void binder_free_transaction(struct binder_transaction *t)
 {
-	struct binder_proc *target_proc = t->to_proc;
+	struct binder_thread *target_thread;
+	struct binder_proc *target_proc;
+
+	spin_lock(&t->lock);
+	target_proc = t->to_proc;
+	target_thread = t->to_thread;
+	/*
+	 * Pin target_thread to keep target_proc alive. Undelivered
+	 * transactions with !target_thread are safe, as target_proc
+	 * can only be the current context there.
+	 */
+	if (target_thread)
+		atomic_inc(&target_thread->tmp_ref);
+	spin_unlock(&t->lock);
 
 	trace_android_vh_free_oem_binder_struct(t);
 	if (target_proc) {
@@ -1754,6 +1851,10 @@ static void binder_free_transaction(struct binder_transaction *t)
 			t->buffer->transaction = NULL;
 		binder_inner_proc_unlock(target_proc);
 	}
+
+	if (target_thread)
+		binder_thread_dec_tmpref(target_thread);
+
 	if (trace_binder_txn_latency_free_enabled())
 		binder_txn_latency_free(t);
 	/*
@@ -5320,6 +5421,7 @@ static void binder_free_proc(struct binder_proc *proc)
 	put_task_struct(proc->tsk);
 	put_cred(proc->cred);
 	binder_stats_deleted(BINDER_STAT_PROC);
+	dbitmap_free(&proc_wrapper(proc)->dmap);
 	trace_android_vh_binder_free_proc(proc);
 	kfree(proc_wrapper(proc));
 }
@@ -6076,6 +6178,7 @@ static int binder_open(struct inode *nodp, struct file *filp)
 		return -ENOMEM;
 	proc = &proc_wrap->proc;
 
+	dbitmap_init(&proc_wrapper(proc)->dmap);
 	spin_lock_init(&proc->inner_lock);
 	spin_lock_init(&proc->outer_lock);
 	get_task_struct(current->group_leader);

@@ -457,16 +457,15 @@ struct inode *fuse_iget_backing(struct super_block *sb, u64 nodeid,
 	if (!inode)
 		return NULL;
 
+	fi = get_fuse_inode(inode);
 	if ((inode->i_state & I_NEW)) {
 		inode->i_flags |= S_NOATIME;
 		if (!fc->writeback_cache)
 			inode->i_flags |= S_NOCMTIME;
-		fuse_init_common(inode);
+		fuse_init_inode(inode, &attr);
 		unlock_new_inode(inode);
 	}
 
-	fi = get_fuse_inode(inode);
-	fuse_init_inode(inode, &attr);
 	spin_lock(&fi->lock);
 	fi->nlookup++;
 	spin_unlock(&fi->lock);
@@ -909,11 +908,19 @@ static int fuse_parse_param(struct fs_context *fsc, struct fs_parameter *param)
 		}
 		break;
 
-	case OPT_ROOT_DIR:
-		ctx->root_dir = fget(result.uint_32);
-		if (!ctx->root_dir)
+	case OPT_ROOT_DIR: {
+		struct file *rd = fget(result.uint_32);
+
+		if (!rd)
 			return invalfc(fsc, "Unable to open root directory");
+		if (rd->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC ||
+		    rd->f_inode->i_sb->s_stack_depth >= FILESYSTEM_MAX_STACK_DEPTH) {
+			fput(rd);
+			return invalfc(fsc, "Invalid root directory (FUSE or too deep)");
+		}
+		ctx->root_dir = rd;
 		break;
+	}
 
 	case OPT_NO_DAEMON:
 		ctx->no_daemon = true;
@@ -1792,7 +1799,10 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->no_control = ctx->no_control;
 	fc->no_force_umount = ctx->no_force_umount;
 	fc->no_daemon = ctx->no_daemon;
-
+#ifdef CONFIG_FUSE_BPF
+	if (ctx->root_dir)
+		fm->sb->s_stack_depth = ctx->root_dir->f_inode->i_sb->s_stack_depth + 1;
+#endif
 	err = -ENOMEM;
 	root = fuse_get_root_inode(sb, ctx->rootmode, ctx->root_bpf,
 				   ctx->root_dir);

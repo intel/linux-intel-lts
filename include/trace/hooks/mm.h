@@ -294,6 +294,9 @@ DECLARE_HOOK(android_vh_set_page_migrating,
 DECLARE_HOOK(android_vh_clear_page_migrating,
 	TP_PROTO(struct page *page),
 	TP_ARGS(page));
+DECLARE_HOOK(android_vh_mem_cgroup_handle_over_high,
+	TP_PROTO(bool *record_psi),
+	TP_ARGS(record_psi));
 DECLARE_HOOK(android_vh_cma_alloc_bypass,
 	TP_PROTO(struct cma *cma, unsigned long count, unsigned int align,
 		bool no_warn, struct page **page, bool *bypass),
