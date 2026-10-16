@@ -1,0 +1,109 @@
+From 539532da49b789e67ea25dfc3de868283e09be9d Mon Sep 17 00:00:00 2001
+From: Guannan Wang <wgnbuaa@gmail.com>
+Date: Thu, 14 May 2026 15:44:54 +0800
+Subject: [PATCH 01/12] bpf: Use array_map_meta_equal for percpu array inner
+ map replacement
+
+percpu_array_map_ops.map_meta_equal points to the generic
+bpf_map_meta_equal(), which does not compare max_entries.  When a
+percpu array serves as an inner map, replacing it with one that has
+fewer max_entries bypasses the check.  Since percpu_array_map_gen_lookup()
+inlines the original template's index_mask as a JIT immediate, a lookup
+on the replacement map can access pptrs[] out of bounds.
+
+Point percpu_array_map_ops.map_meta_equal to array_map_meta_equal(),
+which already enforces the max_entries equality check.
+
+Add a selftest to verify that replacing a percpu array inner map with
+a differently-sized one is rejected.
+
+Fixes: db69718b8efa ("bpf: inline bpf_map_lookup_elem() for PERCPU_ARRAY maps")
+Signed-off-by: Guannan Wang <wgnbuaa@gmail.com>
+Acked-by: Mykyta Yatsenko <yatsenko@meta.com>
+Link: https://lore.kernel.org/r/20260514074454.77491-1-wgnbuaa@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/arraymap.c                         |  2 +-
+ .../bpf/prog_tests/percpu_array_inner_map.c   | 57 +++++++++++++++++++
+ 2 files changed, 58 insertions(+), 1 deletion(-)
+ create mode 100644 tools/testing/selftests/bpf/prog_tests/percpu_array_inner_map.c
+
+diff --git a/kernel/bpf/arraymap.c b/kernel/bpf/arraymap.c
+index 248ab6854cf24..c3577b8e24e8c 100644
+--- a/kernel/bpf/arraymap.c
++++ b/kernel/bpf/arraymap.c
+@@ -818,7 +818,7 @@ const struct bpf_map_ops array_map_ops = {
+ };
+ 
+ const struct bpf_map_ops percpu_array_map_ops = {
+-	.map_meta_equal = bpf_map_meta_equal,
++	.map_meta_equal = array_map_meta_equal,
+ 	.map_alloc_check = array_map_alloc_check,
+ 	.map_alloc = array_map_alloc,
+ 	.map_free = array_map_free,
+diff --git a/tools/testing/selftests/bpf/prog_tests/percpu_array_inner_map.c b/tools/testing/selftests/bpf/prog_tests/percpu_array_inner_map.c
+new file mode 100644
+index 0000000000000..2a8b2381306b0
+--- /dev/null
++++ b/tools/testing/selftests/bpf/prog_tests/percpu_array_inner_map.c
+@@ -0,0 +1,57 @@
++// SPDX-License-Identifier: GPL-2.0
++#include <test_progs.h>
++
++/*
++ * Test that replacing an inner percpu array map with one that has different
++ * max_entries is rejected.  percpu_array_map_gen_lookup() inlines the
++ * template's index_mask, so allowing a smaller replacement would cause OOB.
++ */
++void test_percpu_array_inner_map(void)
++{
++	LIBBPF_OPTS(bpf_map_create_opts, opts);
++	int outer_fd, tmpl_fd, good_fd, bad_fd, err;
++	int zero = 0;
++
++	/* Create template: percpu array with 8 entries */
++	tmpl_fd = bpf_map_create(BPF_MAP_TYPE_PERCPU_ARRAY, "tmpl",
++				 sizeof(int), sizeof(long), 8, NULL);
++	if (!ASSERT_OK_FD(tmpl_fd, "create_tmpl"))
++		return;
++
++	/* Create outer array-of-maps using template */
++	opts.inner_map_fd = tmpl_fd;
++	outer_fd = bpf_map_create(BPF_MAP_TYPE_ARRAY_OF_MAPS, "outer",
++				  sizeof(int), sizeof(int), 1, &opts);
++	if (!ASSERT_OK_FD(outer_fd, "create_outer"))
++		goto close_tmpl;
++
++	/* Insert template as initial inner map */
++	err = bpf_map_update_elem(outer_fd, &zero, &tmpl_fd, 0);
++	if (!ASSERT_OK(err, "insert_tmpl"))
++		goto close_outer;
++
++	/* Replacement with same max_entries should succeed */
++	good_fd = bpf_map_create(BPF_MAP_TYPE_PERCPU_ARRAY, "good",
++				 sizeof(int), sizeof(long), 8, NULL);
++	if (!ASSERT_OK_FD(good_fd, "create_good"))
++		goto close_outer;
++
++	err = bpf_map_update_elem(outer_fd, &zero, &good_fd, 0);
++	ASSERT_OK(err, "replace_same_max_entries");
++	close(good_fd);
++
++	/* Replacement with fewer max_entries must fail */
++	bad_fd = bpf_map_create(BPF_MAP_TYPE_PERCPU_ARRAY, "bad",
++				sizeof(int), sizeof(long), 2, NULL);
++	if (!ASSERT_OK_FD(bad_fd, "create_bad"))
++		goto close_outer;
++
++	err = bpf_map_update_elem(outer_fd, &zero, &bad_fd, 0);
++	ASSERT_ERR(err, "replace_smaller_max_entries");
++	close(bad_fd);
++
++close_outer:
++	close(outer_fd);
++close_tmpl:
++	close(tmpl_fd);
++}
+-- 
+2.34.1
+

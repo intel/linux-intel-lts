@@ -1,0 +1,175 @@
+From 0f7cd82ec174285a1a41073d03bae555c73aa244 Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Fri, 11 Sep 2026 16:08:04 +0000
+Subject: [PATCH 10/12] netlink: do not free nlk->groups while lockless readers
+ can use it
+
+netlink_realloc_groups() uses krealloc() under netlink_table_grab().
+Whenever NLGRPSZ(groups) lands in a different kmalloc bucket, the old
+bitmap is freed immediately.
+
+Two readers of nlk->groups / nlk->ngroups do not hold the netlink
+table lock:
+
+1) sk_diag_dump_groups(). Hashed (bound) sockets are dumped from the
+   rhashtable walk in __netlink_diag_dump(), which only holds RCU.
+   Only the mc_list part of the dump takes nl_table_lock.
+
+2) netlink_native_seq_show() (/proc/net/netlink), whose walk has been
+   lockless since commit 21e4902aea80 ("netlink: Lockless lookup with
+   RCU grace period in socket release").
+
+Both can read a freed buffer, and sk_diag_dump_groups() can also read
+past the end of the old (smaller) buffer if it happens to load the old
+@groups pointer together with the new @ngroups value, copying the
+result into a NETLINK_DIAG_GROUPS attribute.
+
+This is the same class of bug that commit f773608026ee ("netlink:
+access nlk groups safely in netlink bind and getname") fixed for bind()
+and getname(); these two readers were missed. Simply grabbing the table
+lock in sk_diag_dump_groups() is not an option, because it is also
+called with nl_table_lock already held from the mc_list section of the
+dump.
+
+Make the lockless readers safe instead:
+
+- Allocate a new bitmap and free the old one after an RCU grace period,
+  instead of relying on the implicit kfree() done by krealloc().
+
+- Publish @groups before @ngroups, both with release semantics, and have
+  the lockless readers load @ngroups first. A reader can then never pair
+  the new (bigger) size with the old (smaller) buffer, and a reader
+  picking up the new pointer while still seeing the old size is
+  guaranteed to see the initialized bitmap.
+
+netlink_realloc_groups() is called from process context (bind() and
+setsockopt()), so kfree_rcu_mightsleep() can be used, once the table
+has been released.
+
+Fixes: 21e4902aea80 ("netlink: Lockless lookup with RCU grace period in socket release")
+Fixes: ad202074320c ("netlink: Use rhashtable walk interface in diag dump")
+Reported-by: James Burton <jamesburton@meta.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Link: https://patch.msgid.link/20260911160804.917099-1-edumazet@google.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/netlink/af_netlink.c | 42 ++++++++++++++++++++++++++++++++--------
+ net/netlink/diag.c       | 20 +++++++++++++++----
+ 2 files changed, 50 insertions(+), 12 deletions(-)
+
+diff --git a/net/netlink/af_netlink.c b/net/netlink/af_netlink.c
+index 1d1b3bd54a916..219e08be83545 100644
+--- a/net/netlink/af_netlink.c
++++ b/net/netlink/af_netlink.c
+@@ -923,9 +923,9 @@ netlink_update_subscriptions(struct sock *sk, unsigned int subscriptions)
+ 
+ static int netlink_realloc_groups(struct sock *sk)
+ {
++	unsigned long *new_groups, *old_groups = NULL;
+ 	struct netlink_sock *nlk = nlk_sk(sk);
+ 	unsigned int groups;
+-	unsigned long *new_groups;
+ 	int err = 0;
+ 
+ 	netlink_table_grab();
+@@ -939,18 +939,37 @@ static int netlink_realloc_groups(struct sock *sk)
+ 	if (nlk->ngroups >= groups)
+ 		goto out_unlock;
+ 
+-	new_groups = krealloc(nlk->groups, NLGRPSZ(groups), GFP_ATOMIC);
+-	if (new_groups == NULL) {
++	/* Can not use krealloc(), because the old buffer might be freed
++	 * immediately, while lockless readers (netlink diag dump and
++	 * /proc/net/netlink) can still be looking at it.
++	 */
++	new_groups = kzalloc(NLGRPSZ(groups), GFP_ATOMIC);
++	if (!new_groups) {
+ 		err = -ENOMEM;
+ 		goto out_unlock;
+ 	}
+-	memset((char *)new_groups + NLGRPSZ(nlk->ngroups), 0,
+-	       NLGRPSZ(groups) - NLGRPSZ(nlk->ngroups));
++	old_groups = nlk->groups;
++	if (old_groups)
++		memcpy(new_groups, old_groups, NLGRPSZ(nlk->ngroups));
++
++	/* Publish the new bitmap and its content: pairs with the address
++	 * dependency in lockless readers, which can pick up the new pointer
++	 * while still seeing the old (smaller) nlk->ngroups.
++	 */
++	smp_store_release(&nlk->groups, new_groups);
++
++	/* Then publish the new size: pairs with smp_load_acquire() from
++	 * lockless readers, so that they can not read NLGRPSZ(new ngroups)
++	 * bytes from the old buffer.
++	 */
++	smp_store_release(&nlk->ngroups, groups);
+ 
+-	nlk->groups = new_groups;
+-	nlk->ngroups = groups;
+  out_unlock:
+ 	netlink_table_ungrab();
++
++	if (old_groups)
++		kfree_rcu_mightsleep(old_groups);
++
+ 	return err;
+ }
+ 
+@@ -2706,12 +2725,19 @@ static int netlink_native_seq_show(struct seq_file *seq, void *v)
+ 	} else {
+ 		struct sock *s = v;
+ 		struct netlink_sock *nlk = nlk_sk(s);
++		const unsigned long *groups;
++
++		/* Lockless read : netlink_realloc_groups() can change
++		 * nlk->groups under us. The old buffer is freed after an
++		 * RCU grace period, and this walk is RCU protected.
++		 */
++		groups = READ_ONCE(nlk->groups);
+ 
+ 		seq_printf(seq, "%pK %-3d %-10u %08x %-8d %-8d %-5d %-8d %-8u %-8lu\n",
+ 			   s,
+ 			   s->sk_protocol,
+ 			   nlk->portid,
+-			   nlk->groups ? (u32)nlk->groups[0] : 0,
++			   groups ? (u32)groups[0] : 0,
+ 			   sk_rmem_alloc_get(s),
+ 			   sk_wmem_alloc_get(s),
+ 			   READ_ONCE(nlk->cb_running),
+diff --git a/net/netlink/diag.c b/net/netlink/diag.c
+index b8e58132e8af1..16de6618e0bea 100644
+--- a/net/netlink/diag.c
++++ b/net/netlink/diag.c
+@@ -12,12 +12,24 @@
+ static int sk_diag_dump_groups(struct sock *sk, struct sk_buff *nlskb)
+ {
+ 	struct netlink_sock *nlk = nlk_sk(sk);
+-
+-	if (nlk->groups == NULL)
++	unsigned long *groups;
++	unsigned int ngroups;
++
++	/* Hashed sockets are dumped from the rhashtable walk, which only
++	 * holds rcu_read_lock(), while netlink_realloc_groups() can replace
++	 * nlk->groups and nlk->ngroups at any time.
++	 *
++	 * Read nlk->ngroups first : this pairs with smp_store_release()
++	 * from netlink_realloc_groups(), so that we can not use the new
++	 * (bigger) size with the old (smaller) buffer. The old buffer is
++	 * freed after an RCU grace period.
++	 */
++	ngroups = smp_load_acquire(&nlk->ngroups);
++	groups = READ_ONCE(nlk->groups);
++	if (!groups)
+ 		return 0;
+ 
+-	return nla_put(nlskb, NETLINK_DIAG_GROUPS, NLGRPSZ(nlk->ngroups),
+-		       nlk->groups);
++	return nla_put(nlskb, NETLINK_DIAG_GROUPS, NLGRPSZ(ngroups), groups);
+ }
+ 
+ static int sk_diag_put_flags(struct sock *sk, struct sk_buff *skb)
+-- 
+2.34.1
+

@@ -1,0 +1,122 @@
+From e778a05643535f5c61e1cfb1ed13feb3973d0607 Mon Sep 17 00:00:00 2001
+From: Nikolay Aleksandrov <razor@blackwall.org>
+Date: Mon, 14 Sep 2026 13:52:58 +0300
+Subject: [PATCH 04/12] net: bridge: vlan: fix bugs caused by switchdev
+ deletion errors
+
+Allowing switchdev to prevent vlan deletion and error out in __vlan_del
+could cause multiple different issues - inconsistent state, memory leaks
+when flushing, NULL pointer dereference on bridge error when flushing.
+It doesn't make sense to allow it to stop __vlan_del, so log the error
+and continue with software vlan deletion. This is also consistent with
+8021q behaviour.
+
+Suggested-by: Ido Schimmel <idosch@nvidia.com>
+Fixes: bf361ad38165 ("net: bridge: check __vlan_vid_del for error")
+Fixes: 5454f5c28eca ("net: bridge: vlan: check for errors from __vlan_del in __vlan_flush")
+Fixes: 2594e9064a57 ("bridge: vlan: add per-vlan struct and move to rhashtables")
+Fixes: 9c86ce2c1ae3 ("net: bridge: Notify about bridge VLANs")
+Signed-off-by: Nikolay Aleksandrov <razor@blackwall.org>
+Reviewed-by: Ido Schimmel <idosch@nvidia.com>
+Link: https://patch.msgid.link/20260914105258.3436918-1-razor@blackwall.org
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/bridge/br_vlan.c | 31 ++++++++++++++-----------------
+ 1 file changed, 14 insertions(+), 17 deletions(-)
+
+diff --git a/net/bridge/br_vlan.c b/net/bridge/br_vlan.c
+index 76da4f580d4c4..00ce237304322 100644
+--- a/net/bridge/br_vlan.c
++++ b/net/bridge/br_vlan.c
+@@ -382,12 +382,12 @@ static int __vlan_add(struct net_bridge_vlan *v, u16 flags,
+ 	goto out;
+ }
+ 
+-static int __vlan_del(struct net_bridge_vlan *v)
++static void __vlan_del(struct net_bridge_vlan *v)
+ {
+ 	struct net_bridge_vlan *masterv = v;
+ 	struct net_bridge_vlan_group *vg;
+ 	struct net_bridge_port *p = NULL;
+-	int err = 0;
++	int err;
+ 
+ 	if (br_vlan_is_master(v)) {
+ 		vg = br_vlan_group(v->br);
+@@ -401,12 +401,16 @@ static int __vlan_del(struct net_bridge_vlan *v)
+ 	if (p) {
+ 		err = __vlan_vid_del(p->dev, p->br, v);
+ 		if (err)
+-			goto out;
++			br_warn(p->br,
++				"port %u(%s) failed to delete vlan %u from switchdev: %pe\n",
++				(unsigned int)p->port_no, p->dev->name,
++				v->vid, ERR_PTR(err));
+ 	} else {
+ 		err = br_switchdev_port_vlan_del(v->br->dev, v->vid);
+ 		if (err && err != -EOPNOTSUPP)
+-			goto out;
+-		err = 0;
++			br_warn(v->br,
++				"failed to delete bridge vlan %u from switchdev: %pe\n",
++				v->vid, ERR_PTR(err));
+ 	}
+ 
+ 	if (br_vlan_should_use(v)) {
+@@ -426,8 +430,6 @@ static int __vlan_del(struct net_bridge_vlan *v)
+ 	}
+ 
+ 	br_vlan_put_master(masterv);
+-out:
+-	return err;
+ }
+ 
+ static void __vlan_group_free(struct net_bridge_vlan_group *vg)
+@@ -444,7 +446,6 @@ static void __vlan_flush(const struct net_bridge *br,
+ {
+ 	struct net_bridge_vlan *vlan, *tmp;
+ 	u16 v_start = 0, v_end = 0;
+-	int err;
+ 
+ 	__vlan_delete_pvid(vg, vg->pvid);
+ 	list_for_each_entry_safe(vlan, tmp, &vg->vlan_list, vlist) {
+@@ -458,13 +459,7 @@ static void __vlan_flush(const struct net_bridge *br,
+ 		}
+ 		v_end = vlan->vid;
+ 
+-		err = __vlan_del(vlan);
+-		if (err) {
+-			br_err(br,
+-			       "port %u(%s) failed to delete vlan %d: %pe\n",
+-			       (unsigned int) p->port_no, p->dev->name,
+-			       vlan->vid, ERR_PTR(err));
+-		}
++		__vlan_del(vlan);
+ 	}
+ 
+ 	/* notify about the last/whole vlan range */
+@@ -832,8 +827,9 @@ int br_vlan_delete(struct net_bridge *br, u16 vid)
+ 	br_fdb_delete_by_port(br, NULL, vid, 0);
+ 
+ 	vlan_tunnel_info_del(vg, v);
++	__vlan_del(v);
+ 
+-	return __vlan_del(v);
++	return 0;
+ }
+ 
+ void br_vlan_flush(struct net_bridge *br)
+@@ -1363,8 +1359,9 @@ int nbp_vlan_delete(struct net_bridge_port *port, u16 vid)
+ 		return -ENOENT;
+ 	br_fdb_find_delete_local(port->br, port, port->dev->dev_addr, vid);
+ 	br_fdb_delete_by_port(port->br, port, vid, 0);
++	__vlan_del(v);
+ 
+-	return __vlan_del(v);
++	return 0;
+ }
+ 
+ void nbp_vlan_flush(struct net_bridge_port *port)
+-- 
+2.34.1
+

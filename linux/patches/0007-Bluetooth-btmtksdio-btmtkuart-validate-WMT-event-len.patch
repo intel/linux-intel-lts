@@ -1,0 +1,111 @@
+From 2674ebb42c965434671646fda597bd8d1a9bcbfe Mon Sep 17 00:00:00 2001
+From: Chris Lu <chris.lu@mediatek.com>
+Date: Mon, 14 Sep 2026 14:56:54 +0800
+Subject: [PATCH 07/12] Bluetooth: btmtksdio, btmtkuart: validate WMT event
+ length before struct access
+
+btmtksdio.c and btmtkuart.c cast a received WMT event straight to
+struct btmtk_hci_wmt_evt and read its op/flag fields without checking
+the event is long enough to contain them, unlike btmtk.c. The
+FUNC_CTRL case then further casts to struct btmtk_hci_wmt_evt_funcc
+and reads its 2-byte status field, again without a length check.
+Firmware that sends a short or malformed WMT event makes both drivers
+read past the end of the received SKB.
+
+Mirror btmtk.c: validate the base WMT header with skb_pull_data()
+before touching any of its fields, and when a FUNC_CTRL event turns
+out to be the short, header-only form (a plain enable/disable ack
+with no status word), decode the result from the header's own flag
+byte instead (0 = success, otherwise failure).
+
+Verified setup on MT7920, MT7921, MT7922 and MT7925: no regression.
+
+Fixes: 9aebfd4a2200 ("Bluetooth: mediatek: add support for MediaTek MT7663S and MT7668S SDIO devices")
+Fixes: e0b67035a90b ("Bluetooth: mediatek: update the common setup between MT7622 and other devices")
+Assisted-by: Claude:claude-opus-5
+Signed-off-by: Chris Lu <chris.lu@mediatek.com>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+---
+ drivers/bluetooth/btmtksdio.c | 20 +++++++++++++++++++-
+ drivers/bluetooth/btmtkuart.c | 20 +++++++++++++++++++-
+ 2 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/bluetooth/btmtksdio.c b/drivers/bluetooth/btmtksdio.c
+index a9ca2d37b8c5a..f56e886419c1a 100644
+--- a/drivers/bluetooth/btmtksdio.c
++++ b/drivers/bluetooth/btmtksdio.c
+@@ -217,7 +217,14 @@ static int mtk_hci_wmt_sync(struct hci_dev *hdev,
+ 	}
+ 
+ 	/* Parse and handle the return WMT event */
+-	wmt_evt = (struct btmtk_hci_wmt_evt *)bdev->evt_skb->data;
++	wmt_evt = skb_pull_data(bdev->evt_skb, sizeof(*wmt_evt));
++	if (!wmt_evt) {
++		bt_dev_err(hdev, "WMT event too short (%u bytes)",
++			   bdev->evt_skb->len);
++		err = -EINVAL;
++		goto err_free_skb;
++	}
++
+ 	if (wmt_evt->whdr.op != hdr->op) {
+ 		bt_dev_err(hdev, "Wrong op received %d expected %d",
+ 			   wmt_evt->whdr.op, hdr->op);
+@@ -233,6 +240,17 @@ static int mtk_hci_wmt_sync(struct hci_dev *hdev,
+ 			status = BTMTK_WMT_PATCH_DONE;
+ 		break;
+ 	case BTMTK_WMT_FUNC_CTRL:
++		if (!skb_pull_data(bdev->evt_skb,
++				   sizeof(wmt_evt_funcc->status))) {
++			/* A plain enable/disable request is acked with just
++			 * the WMT header and no trailing status word; the
++			 * result is carried in the header's own flag byte.
++			 */
++			status = wmt_evt->whdr.flag ? BTMTK_WMT_ON_UNDONE :
++						       BTMTK_WMT_ON_DONE;
++			break;
++		}
++
+ 		wmt_evt_funcc = (struct btmtk_hci_wmt_evt_funcc *)wmt_evt;
+ 		if (be16_to_cpu(wmt_evt_funcc->status) == 0x404)
+ 			status = BTMTK_WMT_ON_DONE;
+diff --git a/drivers/bluetooth/btmtkuart.c b/drivers/bluetooth/btmtkuart.c
+index 27aa48ff3ac2c..4af6fbbbd302a 100644
+--- a/drivers/bluetooth/btmtkuart.c
++++ b/drivers/bluetooth/btmtkuart.c
+@@ -151,7 +151,14 @@ static int mtk_hci_wmt_sync(struct hci_dev *hdev,
+ 	}
+ 
+ 	/* Parse and handle the return WMT event */
+-	wmt_evt = (struct btmtk_hci_wmt_evt *)bdev->evt_skb->data;
++	wmt_evt = skb_pull_data(bdev->evt_skb, sizeof(*wmt_evt));
++	if (!wmt_evt) {
++		bt_dev_err(hdev, "WMT event too short (%u bytes)",
++			   bdev->evt_skb->len);
++		err = -EINVAL;
++		goto err_free_wc;
++	}
++
+ 	if (wmt_evt->whdr.op != hdr->op) {
+ 		bt_dev_err(hdev, "Wrong op received %d expected %d",
+ 			   wmt_evt->whdr.op, hdr->op);
+@@ -167,6 +174,17 @@ static int mtk_hci_wmt_sync(struct hci_dev *hdev,
+ 			status = BTMTK_WMT_PATCH_DONE;
+ 		break;
+ 	case BTMTK_WMT_FUNC_CTRL:
++		if (!skb_pull_data(bdev->evt_skb,
++				   sizeof(wmt_evt_funcc->status))) {
++			/* A plain enable/disable request is acked with just
++			 * the WMT header and no trailing status word; the
++			 * result is carried in the header's own flag byte.
++			 */
++			status = wmt_evt->whdr.flag ? BTMTK_WMT_ON_UNDONE :
++						       BTMTK_WMT_ON_DONE;
++			break;
++		}
++
+ 		wmt_evt_funcc = (struct btmtk_hci_wmt_evt_funcc *)wmt_evt;
+ 		if (be16_to_cpu(wmt_evt_funcc->status) == 0x404)
+ 			status = BTMTK_WMT_ON_DONE;
+-- 
+2.34.1
+

@@ -1,0 +1,165 @@
+From a2809b5908d6d6acd93fda9d06a8a43384c75745 Mon Sep 17 00:00:00 2001
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Fri, 4 Sep 2026 16:55:06 +0200
+Subject: [PATCH 05/12] wifi: cfg80211: ibss: ref BSS entry for joined event
+
+When the IBSS is joined, we only record the BSSID/channel in the event
+and look up the BSS entry when processing it. However, that's racy,
+e.g. a new scan with NL80211_SCAN_FLAG_FLUSH can remove it, causing a
+warning in the event work:
+
+  !bss
+  WARNING: net/wireless/ibss.c:37 at __cfg80211_ibss_joined+0x3d3/0x440
+  Workqueue: cfg80211 cfg80211_event_work
+   cfg80211_process_wdev_events+0x39f/0x5b0 net/wireless/util.c:1144
+   cfg80211_process_rdev_events+0xa1/0x110 net/wireless/util.c:1179
+   cfg80211_event_work+0x2f/0x40 net/wireless/core.c:393
+
+Do the lookup early (the driver is expected to only join an IBSS that
+has a BSS entry) and keep a reference to it.
+
+Assisted-by: LLM
+Fixes: 667503ddcb96 ("cfg80211: fix locking")
+Reported-by: syzbot+7f064ba1704c2466e36d@syzkaller.appspotmail.com
+Closes: https://syzkaller.appspot.com/bug?extid=7f064ba1704c2466e36d
+Link: https://patch.msgid.link/20260904165614.f49a213f0e49.I192bfe738750ebb5f2c4faa3019a428da64cd3ec@changeid
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+(cherry picked from commit 708f9d43d6a2eb9c6b83fe62af628de9dffd9314)
+---
+ net/wireless/core.h |  6 ++----
+ net/wireless/ibss.c | 38 +++++++++++++++++++++-----------------
+ net/wireless/util.c |  3 +--
+ 3 files changed, 24 insertions(+), 23 deletions(-)
+
+diff --git a/net/wireless/core.h b/net/wireless/core.h
+index d7ac3145fd1ae..5e9d72026e959 100644
+--- a/net/wireless/core.h
++++ b/net/wireless/core.h
+@@ -290,8 +290,7 @@ struct cfg80211_event {
+ 			bool locally_generated;
+ 		} dc;
+ 		struct {
+-			u8 bssid[ETH_ALEN];
+-			struct ieee80211_channel *channel;
++			struct cfg80211_bss *bss;
+ 		} ij;
+ 		struct {
+ 			u8 peer_addr[ETH_ALEN];
+@@ -350,8 +349,7 @@ int __cfg80211_join_ibss(struct cfg80211_registered_device *rdev,
+ void cfg80211_clear_ibss(struct net_device *dev, bool nowext);
+ int cfg80211_leave_ibss(struct cfg80211_registered_device *rdev,
+ 			struct net_device *dev, bool nowext);
+-void __cfg80211_ibss_joined(struct net_device *dev, const u8 *bssid,
+-			    struct ieee80211_channel *channel);
++void __cfg80211_ibss_joined(struct net_device *dev, struct cfg80211_bss *bss);
+ int cfg80211_ibss_wext_join(struct cfg80211_registered_device *rdev,
+ 			    struct wireless_dev *wdev);
+ 
+diff --git a/net/wireless/ibss.c b/net/wireless/ibss.c
+index 1e3ed29f7cfc1..2c3cca4d2d155 100644
+--- a/net/wireless/ibss.c
++++ b/net/wireless/ibss.c
+@@ -16,26 +16,18 @@
+ #include "rdev-ops.h"
+ 
+ 
+-void __cfg80211_ibss_joined(struct net_device *dev, const u8 *bssid,
+-			    struct ieee80211_channel *channel)
++void __cfg80211_ibss_joined(struct net_device *dev, struct cfg80211_bss *bss)
+ {
+ 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+-	struct cfg80211_bss *bss;
+ #ifdef CONFIG_CFG80211_WEXT
+ 	union iwreq_data wrqu;
+ #endif
+ 
+ 	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_ADHOC))
+-		return;
++		goto put_bss;
+ 
+ 	if (!wdev->u.ibss.ssid_len)
+-		return;
+-
+-	bss = cfg80211_get_bss(wdev->wiphy, channel, bssid, NULL, 0,
+-			       IEEE80211_BSS_TYPE_IBSS, IEEE80211_PRIVACY_ANY);
+-
+-	if (WARN_ON(!bss))
+-		return;
++		goto put_bss;
+ 
+ 	if (wdev->u.ibss.current_bss) {
+ 		cfg80211_unhold_bss(wdev->u.ibss.current_bss);
+@@ -43,17 +35,22 @@ void __cfg80211_ibss_joined(struct net_device *dev, const u8 *bssid,
+ 	}
+ 
+ 	cfg80211_hold_bss(bss_from_pub(bss));
++	/* the reference from the event is transferred to current_bss */
+ 	wdev->u.ibss.current_bss = bss_from_pub(bss);
+ 
+ 	cfg80211_upload_connect_keys(wdev);
+ 
+-	nl80211_send_ibss_bssid(wiphy_to_rdev(wdev->wiphy), dev, bssid,
++	nl80211_send_ibss_bssid(wiphy_to_rdev(wdev->wiphy), dev, bss->bssid,
+ 				GFP_KERNEL);
+ #ifdef CONFIG_CFG80211_WEXT
+ 	memset(&wrqu, 0, sizeof(wrqu));
+-	memcpy(wrqu.ap_addr.sa_data, bssid, ETH_ALEN);
++	memcpy(wrqu.ap_addr.sa_data, bss->bssid, ETH_ALEN);
+ 	wireless_send_event(dev, SIOCGIWAP, &wrqu, NULL);
+ #endif
++	return;
++
++put_bss:
++	cfg80211_put_bss(wdev->wiphy, bss);
+ }
+ 
+ void cfg80211_ibss_joined(struct net_device *dev, const u8 *bssid,
+@@ -62,6 +59,7 @@ void cfg80211_ibss_joined(struct net_device *dev, const u8 *bssid,
+ 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+ 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
+ 	struct cfg80211_event *ev;
++	struct cfg80211_bss *bss;
+ 	unsigned long flags;
+ 
+ 	trace_cfg80211_ibss_joined(dev, bssid, channel);
+@@ -69,13 +67,19 @@ void cfg80211_ibss_joined(struct net_device *dev, const u8 *bssid,
+ 	if (WARN_ON(!channel))
+ 		return;
+ 
+-	ev = kzalloc(sizeof(*ev), gfp);
+-	if (!ev)
++	bss = cfg80211_get_bss(wdev->wiphy, channel, bssid, NULL, 0,
++			       IEEE80211_BSS_TYPE_IBSS, IEEE80211_PRIVACY_ANY);
++	if (WARN_ON(!bss))
++		return;
++
++	ev = kzalloc_obj(*ev, gfp);
++	if (!ev) {
++		cfg80211_put_bss(wdev->wiphy, bss);
+ 		return;
++	}
+ 
+ 	ev->type = EVENT_IBSS_JOINED;
+-	memcpy(ev->ij.bssid, bssid, ETH_ALEN);
+-	ev->ij.channel = channel;
++	ev->ij.bss = bss;
+ 
+ 	spin_lock_irqsave(&wdev->event_lock, flags);
+ 	list_add_tail(&ev->list, &wdev->event_list);
+diff --git a/net/wireless/util.c b/net/wireless/util.c
+index 0254cd5f89f15..d1846c9da738e 100644
+--- a/net/wireless/util.c
++++ b/net/wireless/util.c
+@@ -1158,8 +1158,7 @@ void cfg80211_process_wdev_events(struct wireless_dev *wdev)
+ 						!ev->dc.locally_generated);
+ 			break;
+ 		case EVENT_IBSS_JOINED:
+-			__cfg80211_ibss_joined(wdev->netdev, ev->ij.bssid,
+-					       ev->ij.channel);
++			__cfg80211_ibss_joined(wdev->netdev, ev->ij.bss);
+ 			break;
+ 		case EVENT_STOPPED:
+ 			cfg80211_leave(wiphy_to_rdev(wdev->wiphy), wdev);
+-- 
+2.34.1
+

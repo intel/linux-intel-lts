@@ -1,0 +1,85 @@
+From 045144e661d76db4c390481ad9d92393e121ab45 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?J=C3=A9r=C3=A9my=20Jean?= <Jeremy.Jean@oss.cyber.gouv.fr>
+Date: Thu, 10 Sep 2026 18:37:43 +0000
+Subject: [PATCH 08/12] smb: client: validate absolute native symlink targets
+ before NT fixups
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+With symlinkroot unset, an absolute target is copied without conversion
+to an NT drive path. Later code still assumes an NT prefix is present
+when modifying the target and calculating the print name length.
+
+For "/ab", this causes two failures: sym[5] and path[5] are written
+past their allocations, and plen -= 2 * poff subtracts an assumed
+8-byte prefix from a 6-byte UTF-16 target, wrapping u16 plen to 65534.
+That underflow causes another overflow: memcpy() copies 65534 bytes
+into a 24-byte buffer. A user with write access to a mounted share
+can trigger these bugs with default settings.
+
+Validate the NT drive prefix, including an ASCII drive letter, before
+accessing fixed offsets or subtracting the prefix length.
+
+Fixes: 3363da82e02f ("smb: client: fix native SMB symlink traversal")
+Assisted-by: Codex:gpt-5
+Signed-off-by: Jérémy Jean <Jeremy.Jean@oss.cyber.gouv.fr>
+Reviewed-by: Namjae Jeon <linkinjeon@kernel.org>
+Signed-off-by: Paulo Alcantara <pc@manguebit.org>
+
+[ Backport to 6.18: create_native_symlink() in 6.18 reads the mount flags
+  with cifs_sb_flags(cifs_sb) instead of a local 'sbflags', and has no
+  POSIX-paths cifs_strndup_to_utf16() branch after this block; only the
+  context differs, the added validation is identical. ]
+(cherry picked from commit 23c240d9509e15f72e4112fc95f0160ab32ec430)
+---
+ fs/smb/client/reparse.c | 24 +++++++++++++++++-------
+ 1 file changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/fs/smb/client/reparse.c b/fs/smb/client/reparse.c
+index 2e773a1a67142..fa8bef32c7102 100644
+--- a/fs/smb/client/reparse.c
++++ b/fs/smb/client/reparse.c
+@@ -3,6 +3,7 @@
+  * Copyright (c) 2024 Paulo Alcantara <pc@manguebit.com>
+  */
+ 
++#include <linux/ctype.h>
+ #include <linux/fs.h>
+ #include <linux/stat.h>
+ #include <linux/slab.h>
+@@ -157,15 +158,24 @@ static int create_native_symlink(const unsigned int xid, struct inode *inode,
+ 		convert_delimiter(sym, sep);
+ 
+ 	/*
+-	 * For absolute NT symlinks it is required to pass also leading
+-	 * backslash and to not mangle NT object prefix "\\??\\" and not to
+-	 * mangle colon in drive letter. But cifs_convert_path_to_utf16()
+-	 * removes leading backslash and replaces '?' and ':'. So temporary
+-	 * mask these characters in NT object prefix by '_' and then change
+-	 * them back.
++	 * Absolute NT symlinks must retain the leading backslash, "\\??\\"
++	 * prefix and drive-letter colon. cifs_convert_path_to_utf16() strips
++	 * the leading backslash and maps '?' and ':', so temporarily mask
++	 * these characters with '_' and restore them after conversion.
++	 *
++	 * When symlinkroot is unset, sym comes directly from the caller.
++	 * Validate the complete "\\??\\X:" prefix before using fixed offsets
++	 * or subtracting the NT prefix length below. Require an ASCII drive
++	 * letter so the prefix occupies six characters in UTF-16 too.
+ 	 */
+-	if (!(cifs_sb_flags(cifs_sb) & CIFS_MOUNT_POSIX_PATHS) && symname[0] == '/')
++	if (!(cifs_sb_flags(cifs_sb) & CIFS_MOUNT_POSIX_PATHS) && symname[0] == '/') {
++		if (!strstarts(sym, "\\??\\") || !isascii(sym[4]) ||
++		    !isalpha(sym[4]) || sym[5] != ':') {
++			rc = -EINVAL;
++			goto out;
++		}
+ 		sym[0] = sym[1] = sym[2] = sym[5] = '_';
++	}
+ 
+ 	path = cifs_convert_path_to_utf16(sym, cifs_sb);
+ 	if (!path) {
+-- 
+2.34.1
+

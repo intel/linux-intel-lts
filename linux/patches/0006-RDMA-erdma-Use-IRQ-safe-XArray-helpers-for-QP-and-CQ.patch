@@ -1,0 +1,98 @@
+From 30ff2f1a8f98246afe6cd41d22e462a3d0526558 Mon Sep 17 00:00:00 2001
+From: Cheng Xu <chengyou@linux.alibaba.com>
+Date: Fri, 28 Aug 2026 11:03:44 +0800
+Subject: [PATCH 06/12] RDMA/erdma: Use IRQ-safe XArray helpers for QP and CQ
+ tables
+
+Locked QP and CQ lookups from EQ interrupts can deadlock with
+create-path XArray updates. If an interrupt arrives while the create
+path holds the plain xa_lock, the lookup spins forever trying to
+acquire the same lock.
+
+Use IRQ-safe XArray helpers for all QP and CQ create-path updates,
+including the GSI QP store and error paths. Initialize both arrays with
+XA_FLAGS_LOCK_IRQ so sleeping allocations preserve interrupt state.
+
+Fixes: 98df2aee1459 ("RDMA/erdma: Hold CQ references when processing EQ events")
+Fixes: a52eeff32024 ("RDMA/erdma: Hold QP references for AE and CM processing")
+Signed-off-by: Cheng Xu <chengyou@linux.alibaba.com>
+Link: https://patch.msgid.link/20260828030344.88021-1-chengyou@linux.alibaba.com
+Signed-off-by: Leon Romanovsky <leon@kernel.org>
+---
+ drivers/infiniband/hw/erdma/erdma_main.c  |  4 ++--
+ drivers/infiniband/hw/erdma/erdma_verbs.c | 18 +++++++++---------
+ 2 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/infiniband/hw/erdma/erdma_main.c b/drivers/infiniband/hw/erdma/erdma_main.c
+index f35b30235018b..f76da01a1d1fe 100644
+--- a/drivers/infiniband/hw/erdma/erdma_main.c
++++ b/drivers/infiniband/hw/erdma/erdma_main.c
+@@ -573,8 +573,8 @@ static int erdma_ib_device_add(struct pci_dev *pdev)
+ 	INIT_LIST_HEAD(&dev->cep_list);
+ 
+ 	spin_lock_init(&dev->lock);
+-	xa_init_flags(&dev->qp_xa, XA_FLAGS_ALLOC1);
+-	xa_init_flags(&dev->cq_xa, XA_FLAGS_ALLOC1);
++	xa_init_flags(&dev->qp_xa, XA_FLAGS_ALLOC1 | XA_FLAGS_LOCK_IRQ);
++	xa_init_flags(&dev->cq_xa, XA_FLAGS_ALLOC1 | XA_FLAGS_LOCK_IRQ);
+ 	dev->next_alloc_cqn = 1;
+ 	dev->next_alloc_qpn = 1;
+ 
+diff --git a/drivers/infiniband/hw/erdma/erdma_verbs.c b/drivers/infiniband/hw/erdma/erdma_verbs.c
+index fdd67756f3bc3..6feac67d84721 100644
+--- a/drivers/infiniband/hw/erdma/erdma_verbs.c
++++ b/drivers/infiniband/hw/erdma/erdma_verbs.c
+@@ -1019,15 +1019,15 @@ int erdma_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *attrs,
+ 	init_completion(&qp->safe_free);
+ 
+ 	if (qp->ibqp.qp_type == IB_QPT_GSI) {
+-		old_entry = xa_store(&dev->qp_xa, 1, qp, GFP_KERNEL);
++		old_entry = xa_store_irq(&dev->qp_xa, 1, qp, GFP_KERNEL);
+ 		if (xa_is_err(old_entry))
+ 			ret = xa_err(old_entry);
+ 		else
+ 			qp->ibqp.qp_num = 1;
+ 	} else {
+-		ret = xa_alloc_cyclic(&dev->qp_xa, &qp->ibqp.qp_num, qp,
+-				      XA_LIMIT(1, dev->attrs.max_qp - 1),
+-				      &dev->next_alloc_qpn, GFP_KERNEL);
++		ret = xa_alloc_cyclic_irq(&dev->qp_xa, &qp->ibqp.qp_num, qp,
++					  XA_LIMIT(1, dev->attrs.max_qp - 1),
++					  &dev->next_alloc_qpn, GFP_KERNEL);
+ 	}
+ 
+ 	if (ret < 0) {
+@@ -1090,7 +1090,7 @@ int erdma_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *attrs,
+ 	else
+ 		free_kernel_qp(qp);
+ err_out_xa:
+-	xa_erase(&dev->qp_xa, QP_ID(qp));
++	xa_erase_irq(&dev->qp_xa, QP_ID(qp));
+ err_out:
+ 	return ret;
+ }
+@@ -1994,9 +1994,9 @@ int erdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
+ 	refcount_set(&cq->refcount, 1);
+ 	init_completion(&cq->free);
+ 
+-	ret = xa_alloc_cyclic(&dev->cq_xa, &cq->cqn, cq,
+-			      XA_LIMIT(1, dev->attrs.max_cq - 1),
+-			      &dev->next_alloc_cqn, GFP_KERNEL);
++	ret = xa_alloc_cyclic_irq(&dev->cq_xa, &cq->cqn, cq,
++				  XA_LIMIT(1, dev->attrs.max_cq - 1),
++				  &dev->next_alloc_cqn, GFP_KERNEL);
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -2044,7 +2044,7 @@ int erdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
+ 	}
+ 
+ err_out_xa:
+-	xa_erase(&dev->cq_xa, cq->cqn);
++	xa_erase_irq(&dev->cq_xa, cq->cqn);
+ 
+ 	return ret;
+ }
+-- 
+2.34.1
+
