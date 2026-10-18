@@ -62,6 +62,9 @@ struct iommu_sva *iommu_sva_bind_device(struct device *dev, struct mm_struct *mm
 	struct iommu_sva *handle;
 	int ret;
 
+	if (IS_ENABLED(CONFIG_X86))
+		return ERR_PTR(-EOPNOTSUPP);
+
 	/* Allocate mm->pasid if necessary. */
 	ret = iommu_sva_alloc_pasid(mm, dev);
 	if (ret)

@@ -29,6 +29,8 @@
 #include <linux/idr.h>
 #include <linux/leds.h>
 #include <linux/rculist.h>
+#include <linux/spinlock.h>
+#include <linux/srcu.h>
 
 #include <net/bluetooth/hci.h>
 #include <net/bluetooth/hci_sync.h>
@@ -94,6 +96,7 @@ struct discovery_state {
 	unsigned long		scan_start;
 	unsigned long		scan_duration;
 	unsigned long		name_resolve_timeout;
+	spinlock_t		lock;
 };
 
 #define SUSPEND_NOTIFIER_TIMEOUT	msecs_to_jiffies(2000) /* 2 seconds */
@@ -239,6 +242,7 @@ struct adv_info {
 	bool	enabled;
 	bool	pending;
 	bool	periodic;
+	bool	periodic_enabled;
 	__u8	mesh;
 	__u8	instance;
 	__u32	flags;
@@ -339,6 +343,7 @@ struct adv_monitor {
 
 struct hci_dev {
 	struct list_head list;
+	struct srcu_struct srcu;
 	struct mutex	lock;
 
 	struct ida	unset_handle_ida;
@@ -542,6 +547,7 @@ struct hci_dev {
 	struct hci_conn_hash	conn_hash;
 
 	struct list_head	mesh_pending;
+	struct mutex		mgmt_pending_lock;
 	struct list_head	mgmt_pending;
 	struct list_head	reject_list;
 	struct list_head	accept_list;
@@ -800,6 +806,7 @@ struct hci_conn_params {
 extern struct list_head hci_dev_list;
 extern struct list_head hci_cb_list;
 extern rwlock_t hci_dev_list_lock;
+extern struct mutex hci_cb_list_lock;
 
 #define hci_dev_set_flag(hdev, nr)             set_bit((nr), (hdev)->dev_flags)
 #define hci_dev_clear_flag(hdev, nr)           clear_bit((nr), (hdev)->dev_flags)
@@ -865,6 +872,7 @@ static inline void iso_recv(struct hci_conn *hcon, struct sk_buff *skb,
 
 static inline void discovery_init(struct hci_dev *hdev)
 {
+	spin_lock_init(&hdev->discovery.lock);
 	hdev->discovery.state = DISCOVERY_STOPPED;
 	INIT_LIST_HEAD(&hdev->discovery.all);
 	INIT_LIST_HEAD(&hdev->discovery.unknown);
@@ -878,9 +886,13 @@ static inline void hci_discovery_filter_clear(struct hci_dev *hdev)
 	hdev->discovery.result_filtering = false;
 	hdev->discovery.report_invalid_rssi = true;
 	hdev->discovery.rssi = HCI_RSSI_INVALID;
+
+	spin_lock(&hdev->discovery.lock);
 	hdev->discovery.uuid_count = 0;
 	kfree(hdev->discovery.uuids);
 	hdev->discovery.uuids = NULL;
+	spin_unlock(&hdev->discovery.lock);
+
 	hdev->discovery.scan_start = 0;
 	hdev->discovery.scan_duration = 0;
 }
@@ -945,6 +957,7 @@ enum {
 	HCI_CONN_AUTH_FAILURE,
 	HCI_CONN_PER_ADV,
 	HCI_CONN_BIG_CREATED,
+	HCI_CONN_CREATE,
 	HCI_CONN_CREATE_CIS,
 	HCI_CONN_BIG_SYNC,
 	HCI_CONN_BIG_SYNC_FAILED,
@@ -983,7 +996,8 @@ static inline void hci_conn_hash_add(struct hci_dev *hdev, struct hci_conn *c)
 	case ESCO_LINK:
 		h->sco_num++;
 		break;
-	case ISO_LINK:
+	case CIS_LINK:
+	case BIS_LINK:
 		h->iso_num++;
 		break;
 	}
@@ -1009,7 +1023,8 @@ static inline void hci_conn_hash_del(struct hci_dev *hdev, struct hci_conn *c)
 	case ESCO_LINK:
 		h->sco_num--;
 		break;
-	case ISO_LINK:
+	case CIS_LINK:
+	case BIS_LINK:
 		h->iso_num--;
 		break;
 	}
@@ -1026,7 +1041,8 @@ static inline unsigned int hci_conn_num(struct hci_dev *hdev, __u8 type)
 	case SCO_LINK:
 	case ESCO_LINK:
 		return h->sco_num;
-	case ISO_LINK:
+	case CIS_LINK:
+	case BIS_LINK:
 		return h->iso_num;
 	default:
 		return 0;
@@ -1087,7 +1103,7 @@ static inline struct hci_conn *hci_conn_hash_lookup_bis(struct hci_dev *hdev,
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (bacmp(&c->dst, ba) || c->type != ISO_LINK)
+		if (bacmp(&c->dst, ba) || c->type != BIS_LINK)
 			continue;
 
 		if (c->iso_qos.bcast.bis == bis) {
@@ -1111,8 +1127,8 @@ hci_conn_hash_lookup_per_adv_bis(struct hci_dev *hdev,
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (bacmp(&c->dst, ba) || c->type != ISO_LINK ||
-			!test_bit(HCI_CONN_PER_ADV, &c->flags))
+		if (bacmp(&c->dst, ba) || c->type != BIS_LINK ||
+		    !test_bit(HCI_CONN_PER_ADV, &c->flags))
 			continue;
 
 		if (c->iso_qos.bcast.big == big &&
@@ -1165,6 +1181,27 @@ static inline struct hci_conn *hci_conn_hash_lookup_ba(struct hci_dev *hdev,
 	return NULL;
 }
 
+static inline struct hci_conn *hci_conn_hash_lookup_role(struct hci_dev *hdev,
+							 __u8 type, __u8 role,
+							 bdaddr_t *ba)
+{
+	struct hci_conn_hash *h = &hdev->conn_hash;
+	struct hci_conn  *c;
+
+	rcu_read_lock();
+
+	list_for_each_entry_rcu(c, &h->list, list) {
+		if (c->type == type && c->role == role && !bacmp(&c->dst, ba)) {
+			rcu_read_unlock();
+			return c;
+		}
+	}
+
+	rcu_read_unlock();
+
+	return NULL;
+}
+
 static inline struct hci_conn *hci_conn_hash_lookup_le(struct hci_dev *hdev,
 						       bdaddr_t *ba,
 						       __u8 ba_type)
@@ -1201,7 +1238,7 @@ static inline struct hci_conn *hci_conn_hash_lookup_cis(struct hci_dev *hdev,
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (c->type != ISO_LINK || !bacmp(&c->dst, BDADDR_ANY))
+		if (c->type != CIS_LINK)
 			continue;
 
 		/* Match CIG ID if set */
@@ -1233,7 +1270,7 @@ static inline struct hci_conn *hci_conn_hash_lookup_cig(struct hci_dev *hdev,
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (c->type != ISO_LINK || !bacmp(&c->dst, BDADDR_ANY))
+		if (c->type != CIS_LINK)
 			continue;
 
 		if (handle == c->iso_qos.ucast.cig) {
@@ -1256,7 +1293,7 @@ static inline struct hci_conn *hci_conn_hash_lookup_big(struct hci_dev *hdev,
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (bacmp(&c->dst, BDADDR_ANY) || c->type != ISO_LINK)
+		if (bacmp(&c->dst, BDADDR_ANY) || c->type != BIS_LINK)
 			continue;
 
 		if (handle == c->iso_qos.bcast.big) {
@@ -1279,7 +1316,7 @@ static inline struct hci_conn *hci_conn_hash_lookup_big_any_dst(struct hci_dev *
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (c->type != ISO_LINK)
+		if (c->type != BIS_LINK)
 			continue;
 
 		if (handle != BT_ISO_QOS_BIG_UNSET && handle == c->iso_qos.bcast.big) {
@@ -1302,8 +1339,7 @@ hci_conn_hash_lookup_big_state(struct hci_dev *hdev, __u8 handle,  __u16 state)
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (bacmp(&c->dst, BDADDR_ANY) || c->type != ISO_LINK ||
-			c->state != state)
+		if (c->type != BIS_LINK || c->state != state)
 			continue;
 
 		if (handle == c->iso_qos.bcast.big) {
@@ -1326,8 +1362,8 @@ hci_conn_hash_lookup_pa_sync_big_handle(struct hci_dev *hdev, __u8 big)
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (c->type != ISO_LINK ||
-			!test_bit(HCI_CONN_PA_SYNC, &c->flags))
+		if (c->type != BIS_LINK ||
+		    !test_bit(HCI_CONN_PA_SYNC, &c->flags))
 			continue;
 
 		if (c->iso_qos.bcast.big == big) {
@@ -1349,8 +1385,8 @@ hci_conn_hash_lookup_pa_sync_handle(struct hci_dev *hdev, __u16 sync_handle)
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
-		if (c->type != ISO_LINK ||
-			!test_bit(HCI_CONN_PA_SYNC, &c->flags))
+		if (c->type != BIS_LINK ||
+		    !test_bit(HCI_CONN_PA_SYNC, &c->flags))
 			continue;
 
 		if (c->sync_handle == sync_handle) {
@@ -1791,6 +1827,7 @@ void hci_conn_del_sysfs(struct hci_conn *conn);
 #define lmp_hold_capable(dev)      ((dev)->features[0][0] & LMP_HOLD)
 #define lmp_sniff_capable(dev)     ((dev)->features[0][0] & LMP_SNIFF)
 #define lmp_park_capable(dev)      ((dev)->features[0][1] & LMP_PARK)
+#define lmp_sco_capable(dev)       ((dev)->features[0][1] & LMP_SCO)
 #define lmp_inq_rssi_capable(dev)  ((dev)->features[0][3] & LMP_RSSI_INQ)
 #define lmp_esco_capable(dev)      ((dev)->features[0][3] & LMP_ESCO)
 #define lmp_bredr_capable(dev)     (!((dev)->features[0][4] & LMP_NO_BREDR))
@@ -1925,7 +1962,8 @@ static inline int hci_proto_connect_ind(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	case ESCO_LINK:
 		return sco_connect_ind(hdev, bdaddr, flags);
 
-	case ISO_LINK:
+	case CIS_LINK:
+	case BIS_LINK:
 		return iso_connect_ind(hdev, bdaddr, flags);
 
 	default:
@@ -1948,47 +1986,24 @@ struct hci_cb {
 
 	char *name;
 
-	bool (*match)		(struct hci_conn *conn);
 	void (*connect_cfm)	(struct hci_conn *conn, __u8 status);
 	void (*disconn_cfm)	(struct hci_conn *conn, __u8 status);
 	void (*security_cfm)	(struct hci_conn *conn, __u8 status,
-				 __u8 encrypt);
+								__u8 encrypt);
 	void (*key_change_cfm)	(struct hci_conn *conn, __u8 status);
 	void (*role_switch_cfm)	(struct hci_conn *conn, __u8 status, __u8 role);
 };
 
-static inline void hci_cb_lookup(struct hci_conn *conn, struct list_head *list)
-{
-	struct hci_cb *cb, *cpy;
-
-	rcu_read_lock();
-	list_for_each_entry_rcu(cb, &hci_cb_list, list) {
-		if (cb->match && cb->match(conn)) {
-			cpy = kmalloc(sizeof(*cpy), GFP_ATOMIC);
-			if (!cpy)
-				break;
-
-			*cpy = *cb;
-			INIT_LIST_HEAD(&cpy->list);
-			list_add_rcu(&cpy->list, list);
-		}
-	}
-	rcu_read_unlock();
-}
-
 static inline void hci_connect_cfm(struct hci_conn *conn, __u8 status)
 {
-	struct list_head list;
-	struct hci_cb *cb, *tmp;
+	struct hci_cb *cb;
 
-	INIT_LIST_HEAD(&list);
-	hci_cb_lookup(conn, &list);
-
-	list_for_each_entry_safe(cb, tmp, &list, list) {
+	mutex_lock(&hci_cb_list_lock);
+	list_for_each_entry(cb, &hci_cb_list, list) {
 		if (cb->connect_cfm)
 			cb->connect_cfm(conn, status);
-		kfree(cb);
 	}
+	mutex_unlock(&hci_cb_list_lock);
 
 	if (conn->connect_cfm_cb)
 		conn->connect_cfm_cb(conn, status);
@@ -1996,43 +2011,22 @@ static inline void hci_connect_cfm(struct hci_conn *conn, __u8 status)
 
 static inline void hci_disconn_cfm(struct hci_conn *conn, __u8 reason)
 {
-	struct list_head list;
-	struct hci_cb *cb, *tmp;
+	struct hci_cb *cb;
 
-	INIT_LIST_HEAD(&list);
-	hci_cb_lookup(conn, &list);
-
-	list_for_each_entry_safe(cb, tmp, &list, list) {
+	mutex_lock(&hci_cb_list_lock);
+	list_for_each_entry(cb, &hci_cb_list, list) {
 		if (cb->disconn_cfm)
 			cb->disconn_cfm(conn, reason);
-		kfree(cb);
 	}
+	mutex_unlock(&hci_cb_list_lock);
 
 	if (conn->disconn_cfm_cb)
 		conn->disconn_cfm_cb(conn, reason);
 }
 
-static inline void hci_security_cfm(struct hci_conn *conn, __u8 status,
-				    __u8 encrypt)
-{
-	struct list_head list;
-	struct hci_cb *cb, *tmp;
-
-	INIT_LIST_HEAD(&list);
-	hci_cb_lookup(conn, &list);
-
-	list_for_each_entry_safe(cb, tmp, &list, list) {
-		if (cb->security_cfm)
-			cb->security_cfm(conn, status, encrypt);
-		kfree(cb);
-	}
-
-	if (conn->security_cfm_cb)
-		conn->security_cfm_cb(conn, status);
-}
-
 static inline void hci_auth_cfm(struct hci_conn *conn, __u8 status)
 {
+	struct hci_cb *cb;
 	__u8 encrypt;
 
 	if (test_bit(HCI_CONN_ENCRYPT_PEND, &conn->flags))
@@ -2040,11 +2034,20 @@ static inline void hci_auth_cfm(struct hci_conn *conn, __u8 status)
 
 	encrypt = test_bit(HCI_CONN_ENCRYPT, &conn->flags) ? 0x01 : 0x00;
 
-	hci_security_cfm(conn, status, encrypt);
+	mutex_lock(&hci_cb_list_lock);
+	list_for_each_entry(cb, &hci_cb_list, list) {
+		if (cb->security_cfm)
+			cb->security_cfm(conn, status, encrypt);
+	}
+	mutex_unlock(&hci_cb_list_lock);
+
+	if (conn->security_cfm_cb)
+		conn->security_cfm_cb(conn, status);
 }
 
 static inline void hci_encrypt_cfm(struct hci_conn *conn, __u8 status)
 {
+	struct hci_cb *cb;
 	__u8 encrypt;
 
 	if (conn->state == BT_CONFIG) {
@@ -2071,38 +2074,40 @@ static inline void hci_encrypt_cfm(struct hci_conn *conn, __u8 status)
 			conn->sec_level = conn->pending_sec_level;
 	}
 
-	hci_security_cfm(conn, status, encrypt);
+	mutex_lock(&hci_cb_list_lock);
+	list_for_each_entry(cb, &hci_cb_list, list) {
+		if (cb->security_cfm)
+			cb->security_cfm(conn, status, encrypt);
+	}
+	mutex_unlock(&hci_cb_list_lock);
+
+	if (conn->security_cfm_cb)
+		conn->security_cfm_cb(conn, status);
 }
 
 static inline void hci_key_change_cfm(struct hci_conn *conn, __u8 status)
 {
-	struct list_head list;
-	struct hci_cb *cb, *tmp;
+	struct hci_cb *cb;
 
-	INIT_LIST_HEAD(&list);
-	hci_cb_lookup(conn, &list);
-
-	list_for_each_entry_safe(cb, tmp, &list, list) {
+	mutex_lock(&hci_cb_list_lock);
+	list_for_each_entry(cb, &hci_cb_list, list) {
 		if (cb->key_change_cfm)
 			cb->key_change_cfm(conn, status);
-		kfree(cb);
 	}
+	mutex_unlock(&hci_cb_list_lock);
 }
 
 static inline void hci_role_switch_cfm(struct hci_conn *conn, __u8 status,
 								__u8 role)
 {
-	struct list_head list;
-	struct hci_cb *cb, *tmp;
+	struct hci_cb *cb;
 
-	INIT_LIST_HEAD(&list);
-	hci_cb_lookup(conn, &list);
-
-	list_for_each_entry_safe(cb, tmp, &list, list) {
+	mutex_lock(&hci_cb_list_lock);
+	list_for_each_entry(cb, &hci_cb_list, list) {
 		if (cb->role_switch_cfm)
 			cb->role_switch_cfm(conn, status, role);
-		kfree(cb);
 	}
+	mutex_unlock(&hci_cb_list_lock);
 }
 
 static inline bool hci_bdaddr_is_rpa(bdaddr_t *bdaddr, u8 addr_type)
@@ -2337,7 +2342,6 @@ void mgmt_advertising_added(struct sock *sk, struct hci_dev *hdev,
 			    u8 instance);
 void mgmt_advertising_removed(struct sock *sk, struct hci_dev *hdev,
 			      u8 instance);
-void mgmt_adv_monitor_removed(struct hci_dev *hdev, u16 handle);
 int mgmt_phy_configuration_changed(struct hci_dev *hdev, struct sock *skip);
 void mgmt_adv_monitor_device_lost(struct hci_dev *hdev, u16 handle,
 				  bdaddr_t *bdaddr, u8 addr_type);

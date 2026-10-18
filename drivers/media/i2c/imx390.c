@@ -66,8 +66,6 @@
 #define IMX390_BLUE_BALANCE_STEP	1
 #define IMX390_BLUE_BALANCE_DEF		0x100
 
-#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
-
 #define IMX390_CID_CSI_PORT         (V4L2_CID_USER_BASE | 0x1001)
 #define IMX390_CID_I2C_BUS         (V4L2_CID_USER_BASE | 0x1002)
 #define IMX390_CID_I2C_ID         (V4L2_CID_USER_BASE | 0x1003)

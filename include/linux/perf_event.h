@@ -1016,7 +1016,13 @@ struct perf_output_handle {
 	struct perf_buffer		*rb;
 	unsigned long			wakeup;
 	unsigned long			size;
-	u64				aux_flags;
+	union {
+		u64			flags;		/* perf_output*() */
+		u64			aux_flags;	/* perf_aux_output*() */
+		struct {
+			u64		skip_read : 1;
+		};
+	};
 	union {
 		void			*addr;
 		unsigned long		head;
@@ -1222,6 +1228,11 @@ static inline void perf_sample_save_callchain(struct perf_sample_data *data,
 					      struct pt_regs *regs)
 {
 	int size = 1;
+
+	if (!(event->attr.sample_type & PERF_SAMPLE_CALLCHAIN))
+		return;
+	if (WARN_ON_ONCE(data->sample_flags & PERF_SAMPLE_CALLCHAIN))
+		return;
 
 	data->callchain = perf_callchain(event, regs);
 	size += data->callchain->nr;

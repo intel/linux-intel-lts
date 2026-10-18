@@ -28,9 +28,19 @@ struct io_rw {
 	rwf_t				flags;
 };
 
-static inline bool io_file_supports_nowait(struct io_kiocb *req)
+static bool io_file_supports_nowait(struct io_kiocb *req, __poll_t mask)
 {
-	return req->flags & REQ_F_SUPPORT_NOWAIT;
+	/* If FMODE_NOWAIT is set for a file, we're golden */
+	if (req->flags & REQ_F_SUPPORT_NOWAIT)
+		return true;
+	/* No FMODE_NOWAIT, if we can poll, check the status */
+	if (io_file_can_poll(req)) {
+		struct poll_table_struct pt = { ._key = mask };
+
+		return vfs_poll(req->file, &pt) & mask;
+	}
+	/* No FMODE_NOWAIT support, and file isn't pollable. Tough luck. */
+	return false;
 }
 
 #ifdef CONFIG_COMPAT
@@ -130,25 +140,35 @@ void io_readv_writev_cleanup(struct io_kiocb *req)
 	kfree(io->free_iovec);
 }
 
-static inline void io_rw_done(struct kiocb *kiocb, ssize_t ret)
+static inline ssize_t io_fixup_restart_res(ssize_t ret)
 {
 	switch (ret) {
-	case -EIOCBQUEUED:
-		break;
 	case -ERESTARTSYS:
 	case -ERESTARTNOINTR:
 	case -ERESTARTNOHAND:
 	case -ERESTART_RESTARTBLOCK:
 		/*
 		 * We can't just restart the syscall, since previously
-		 * submitted sqes may already be in progress. Just fail this
-		 * IO with EINTR.
+		 * submitted sqes may already be in progress. Just fail
+		 * this IO with EINTR.
 		 */
-		ret = -EINTR;
-		fallthrough;
+		return -EINTR;
 	default:
-		kiocb->ki_complete(kiocb, ret);
+		return ret;
 	}
+}
+
+static inline void io_rw_done(struct kiocb *kiocb, ssize_t ret)
+{
+	/* IO was queued async, completion will happen later */
+	if (ret == -EIOCBQUEUED)
+		return;
+
+	/* transform internal restart error codes */
+	if (unlikely(ret < 0))
+		ret = io_fixup_restart_res(ret);
+
+	kiocb->ki_complete(kiocb, ret);
 }
 
 static inline loff_t *io_kiocb_update_pos(struct io_kiocb *req)
@@ -629,7 +649,7 @@ static bool io_rw_should_retry(struct io_kiocb *req)
 	 * just use poll if we can, and don't attempt if the fs doesn't
 	 * support callback based unlocks
 	 */
-	if (file_can_poll(req->file) || !(req->file->f_mode & FMODE_BUF_RASYNC))
+	if (io_file_can_poll(req) || !(req->file->f_mode & FMODE_BUF_RASYNC))
 		return false;
 
 	wait->wait.func = io_async_buf_func;
@@ -685,8 +705,8 @@ static int io_rw_init_file(struct io_kiocb *req, fmode_t mode)
 	 * supports async. Otherwise it's impossible to use O_NONBLOCK files
 	 * reliably. If not, or it IOCB_NOWAIT is set, don't retry.
 	 */
-	if ((kiocb->ki_flags & IOCB_NOWAIT) ||
-	    ((file->f_flags & O_NONBLOCK) && !io_file_supports_nowait(req)))
+	if (kiocb->ki_flags & IOCB_NOWAIT ||
+	    ((file->f_flags & O_NONBLOCK && !(req->flags & REQ_F_SUPPORT_NOWAIT))))
 		req->flags |= REQ_F_NOWAIT;
 
 	if (ctx->flags & IORING_SETUP_IOPOLL) {
@@ -752,7 +772,7 @@ static int __io_read(struct io_kiocb *req, unsigned int issue_flags)
 
 	if (force_nonblock) {
 		/* If the file doesn't support async, just async punt */
-		if (unlikely(!io_file_supports_nowait(req))) {
+		if (unlikely(!io_file_supports_nowait(req, EPOLLIN))) {
 			ret = io_setup_async_rw(req, iovec, s, true);
 			return ret ?: -EAGAIN;
 		}
@@ -783,7 +803,7 @@ static int __io_read(struct io_kiocb *req, unsigned int issue_flags)
 	if (ret == -EAGAIN || (req->flags & REQ_F_REISSUE)) {
 		req->flags &= ~REQ_F_REISSUE;
 		/* if we can poll, just do that */
-		if (req->opcode == IORING_OP_READ && file_can_poll(req->file))
+		if (req->opcode == IORING_OP_READ && io_file_can_poll(req))
 			return -EAGAIN;
 		/* IOPOLL retry should happen for io-wq threads */
 		if (!force_nonblock && !(req->ctx->flags & IORING_SETUP_IOPOLL))
@@ -875,7 +895,7 @@ int io_read(struct io_kiocb *req, unsigned int issue_flags)
 	if (ret >= 0)
 		return kiocb_done(req, ret, issue_flags);
 
-	return ret;
+	return io_fixup_restart_res(ret);
 }
 
 static bool io_kiocb_start_write(struct io_kiocb *req, struct kiocb *kiocb)
@@ -927,7 +947,7 @@ int io_write(struct io_kiocb *req, unsigned int issue_flags)
 
 	if (force_nonblock) {
 		/* If the file doesn't support async, just async punt */
-		if (unlikely(!io_file_supports_nowait(req)))
+		if (unlikely(!io_file_supports_nowait(req, EPOLLOUT)))
 			goto copy_iov;
 
 		/* File path supports NOWAIT for non-direct_IO only for block devices. */

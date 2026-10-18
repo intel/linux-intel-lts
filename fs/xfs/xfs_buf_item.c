@@ -35,16 +35,16 @@ static inline struct xfs_buf_log_item *BUF_ITEM(struct xfs_log_item *lip)
 /* Is this log iovec plausibly large enough to contain the buffer log format? */
 bool
 xfs_buf_log_check_iovec(
-	struct xfs_log_iovec		*iovec)
+	struct kvec			*iovec)
 {
-	struct xfs_buf_log_format	*blfp = iovec->i_addr;
+	struct xfs_buf_log_format	*blfp = iovec->iov_base;
 	char				*bmp_end;
 	char				*item_end;
 
-	if (offsetof(struct xfs_buf_log_format, blf_data_map) > iovec->i_len)
+	if (offsetof(struct xfs_buf_log_format, blf_data_map) > iovec->iov_len)
 		return false;
 
-	item_end = (char *)iovec->i_addr + iovec->i_len;
+	item_end = (char *)iovec->iov_base + iovec->iov_len;
 	bmp_end = (char *)&blfp->blf_data_map[blfp->blf_map_size];
 	return bmp_end <= item_end;
 }
@@ -900,6 +900,7 @@ xfs_buf_item_init(
 		map_size = DIV_ROUND_UP(chunks, NBWORD);
 
 		if (map_size > XFS_BLF_DATAMAP_SIZE) {
+			xfs_buf_item_free_format(bip);
 			kmem_cache_free(xfs_buf_item_cache, bip);
 			xfs_err(mp,
 	"buffer item dirty bitmap (%u uints) too small to reflect %u bytes!",

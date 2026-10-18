@@ -94,8 +94,8 @@ static int afs_compare_fs_alists(const struct afs_server *server_a,
 	lb = rcu_dereference(server_b->addresses);
 
 	while (a < la->nr_addrs && b < lb->nr_addrs) {
-		const struct sockaddr_rxrpc *srx_a = &la->addrs[a];
-		const struct sockaddr_rxrpc *srx_b = &lb->addrs[b];
+		const struct sockaddr_rxrpc *srx_a = &la->addrs[a].srx;
+		const struct sockaddr_rxrpc *srx_b = &lb->addrs[b].srx;
 		int diff = afs_compare_addrs(srx_a, srx_b);
 
 		if (diff < 0) {
@@ -126,7 +126,7 @@ static int afs_compare_volume_slists(const struct afs_volume *vol_a,
 	lb = rcu_dereference(vol_b->servers);
 
 	for (i = 0; i < AFS_MAXTYPES; i++)
-		if (la->vids[i] != lb->vids[i])
+		if (vol_a->vids[i] != vol_b->vids[i])
 			return 0;
 
 	while (a < la->nr_servers && b < lb->nr_servers) {

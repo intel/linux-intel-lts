@@ -70,10 +70,8 @@ nfsd_mode_check(struct svc_rqst *rqstp, struct dentry *dentry,
 	if (requested == 0) /* the caller doesn't care */
 		return nfs_ok;
 	if (mode == requested) {
-		if (mode == S_IFDIR && !d_can_lookup(dentry)) {
-			WARN_ON_ONCE(1);
+		if (mode == S_IFDIR && !d_can_lookup(dentry))
 			return nfserr_notdir;
-		}
 		return nfs_ok;
 	}
 	/*
@@ -371,6 +369,16 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, umode_t type, int access)
 		goto out;
 
 	/*
+	 * NLM is allowed to bypass the xprtsec policy check because lockd
+	 * doesn't support xprtsec.
+	 */
+	if (!(access & NFSD_MAY_LOCK)) {
+		error = check_xprtsec_policy(exp, rqstp);
+		if (error)
+			goto out;
+	}
+
+	/*
 	 * pseudoflavor restrictions are not enforced on NLM,
 	 * which clients virtually always use auth_sys for,
 	 * even while using RPCSEC_GSS for NFS.
@@ -386,7 +394,7 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, umode_t type, int access)
 			&& exp->ex_path.dentry == dentry)
 		goto skip_pseudoflavor_check;
 
-	error = check_nfsd_access(exp, rqstp);
+	error = check_security_flavor(exp, rqstp);
 	if (error)
 		goto out;
 

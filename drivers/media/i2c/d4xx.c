@@ -4394,10 +4394,8 @@ static int ds5_parse_cam(struct i2c_client *client, struct ds5 *state)
 	ds5_sensor_format_init(&state->motion_t.sensor);
 	ds5_sensor_format_init(&state->rgb.sensor);
 	ds5_sensor_format_init(&state->imu.sensor);
-	if ((&(state->depth_b) != NULL) && (&(state->rgb_b) != NULL)) {
-		ds5_sensor_format_init(&state->depth_b.sensor);
-		ds5_sensor_format_init(&state->rgb_b.sensor);
-	}
+	ds5_sensor_format_init(&state->depth_b.sensor);
+	ds5_sensor_format_init(&state->rgb_b.sensor);
 
 	return 0;
 }

@@ -517,7 +517,8 @@ static int smu_sys_set_pp_table(void *handle,
 		return -EIO;
 	}
 
-	if (!smu_table->hardcode_pptable) {
+	if (!smu_table->hardcode_pptable || smu_table->power_play_table_size < size) {
+		kfree(smu_table->hardcode_pptable);
 		smu_table->hardcode_pptable = kzalloc(size, GFP_KERNEL);
 		if (!smu_table->hardcode_pptable)
 			return -ENOMEM;
@@ -1755,6 +1756,12 @@ static int smu_resume(void *handle)
 	smu->disable_uclk_switch = 0;
 
 	adev->pm.dpm_enabled = true;
+
+	if (smu->current_power_limit) {
+		ret = smu_set_power_limit(smu, smu->current_power_limit);
+		if (ret && ret != -EOPNOTSUPP)
+			return ret;
+	}
 
 	dev_info(adev->dev, "SMU is resumed successfully!\n");
 
