@@ -183,7 +183,7 @@ KERNEL_ATTR_RO(crash_elfcorehdr_size);
 static ssize_t realtime_show(struct kobject *kobj,
 			     struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d\n", 1);
+	return sysfs_emit(buf, "%d\n", 1);
 }
 KERNEL_ATTR_RO(realtime);
 #endif

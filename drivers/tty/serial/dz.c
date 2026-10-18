@@ -663,6 +663,26 @@ static void dz_set_termios(struct uart_port *uport, struct ktermios *termios,
 	uart_port_unlock_irqrestore(&dport->port, flags);
 }
 
+/*
+ * Hack alert!
+ * Required solely so that the initial PROM-based console
+ * works undisturbed in parallel with this one.
+ */
+static void dz_pm(struct uart_port *uport, unsigned int state,
+		  unsigned int oldstate)
+{
+	struct dz_port *dport = to_dport(uport);
+	unsigned long flags;
+
+	uart_port_lock_irqsave(&dport->port, &flags);
+	if (state < 3)
+		dz_start_tx(&dport->port);
+	else
+		dz_stop_tx(&dport->port);
+	uart_port_unlock_irqrestore(&dport->port, flags);
+}
+
+
 static const char *dz_type(struct uart_port *uport)
 {
 	return "DZ";
