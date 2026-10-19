@@ -1,7 +1,7 @@
-From 0ed64bf6ecf5754a6e345cbda703de8d7598088a Mon Sep 17 00:00:00 2001
+From 2e468df9ba43ea20b90b4ec1208159fe12fccc76 Mon Sep 17 00:00:00 2001
 From: David Howells <dhowells@redhat.com>
 Date: Mon, 18 May 2026 22:13:09 +0100
-Subject: [PATCH 110/143] cifs: Fix undefined variables
+Subject: [PATCH 3/9] cifs: Fix undefined variables
 
 Fix a couple of undefined variables introduced by the patch to fix tearing
 on ->remote_i_size and ->zero_point.  For some reason, make W=1 with gcc
@@ -20,15 +20,16 @@ cc: netfs@lists.linux.dev
 cc: linux-fsdevel@vger.kernel.org
 Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
 (cherry picked from commit 8cf8b5ae8e093132b0dce0a932af10c9ef077936)
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ---
  fs/smb/client/cifsfs.c | 6 +++---
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/fs/smb/client/cifsfs.c b/fs/smb/client/cifsfs.c
-index b11ee09f5410a..877585ef80089 100644
+index d8e8fb2e0339c..0cf21b2bf4eac 100644
 --- a/fs/smb/client/cifsfs.c
 +++ b/fs/smb/client/cifsfs.c
-@@ -1349,7 +1349,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+@@ -1351,7 +1351,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
  	struct cifsFileInfo *smb_file_src = src_file->private_data;
  	struct cifsFileInfo *smb_file_target = dst_file->private_data;
  	struct cifs_tcon *target_tcon, *src_tcon;
@@ -37,7 +38,7 @@ index b11ee09f5410a..877585ef80089 100644
  	unsigned long long destend, fstart, fend;
  	unsigned int xid;
  	int rc;
-@@ -1428,7 +1428,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+@@ -1430,7 +1430,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
  		goto unlock;
  
  	spin_lock(&target_inode->i_lock);
@@ -46,7 +47,7 @@ index b11ee09f5410a..877585ef80089 100644
  		netfs_write_zero_point(target_inode, fend + 1);
  	i_size = target_inode->i_size;
  	spin_unlock(&target_inode->i_lock);
-@@ -1443,7 +1443,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+@@ -1445,7 +1445,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
  	if (target_tcon->ses->server->ops->duplicate_extents) {
  		rc = target_tcon->ses->server->ops->duplicate_extents(xid,
  			smb_file_src, smb_file_target, off, len, destoff);
@@ -55,6 +56,3 @@ index b11ee09f5410a..877585ef80089 100644
  			truncate_setsize(target_inode, new_size);
  			fscache_resize_cookie(cifs_inode_cookie(target_inode),
  					      new_size);
--- 
-2.34.1
-

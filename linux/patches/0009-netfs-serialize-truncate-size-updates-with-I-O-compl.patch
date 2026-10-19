@@ -1,0 +1,175 @@
+From 3edf397adb31f8d9454b8548f3851d415ae19bfc Mon Sep 17 00:00:00 2001
+From: Copilot <223556219+Copilot@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 15:53:15 +0800
+Subject: [PATCH 9/9] netfs: serialize truncate size updates with I/O
+ completion
+
+The CVE-2026-64160 backport shares i_size_seqcount between local and remote sizes. On this baseline truncate_setsize() writes i_size without i_lock, whereas completion paths now update the same seqcount under i_lock. Concurrent writers can corrupt the sequence on 32-bit SMP.
+
+Provide a netfs-specific truncate helper that serializes only the size update and leaves sleeping pagecache operations outside the spinlock. Convert all eight truncate_setsize callers in the netfs client filesystems. Keep the generic mm helper unchanged.
+
+This is a local compatibility follow-up for base 011a1dce0f67048204659320e23b5f885f8765c4, not an upstream cherry-pick.
+
+Signed-off-by: Copilot <223556219+Copilot@users.noreply.github.com>
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ fs/9p/vfs_inode.c       |  2 +-
+ fs/9p/vfs_inode_dotl.c  |  2 +-
+ fs/afs/inode.c          |  2 +-
+ fs/netfs/misc.c         | 20 ++++++++++++++++++++
+ fs/smb/client/cifsfs.c  |  4 ++--
+ fs/smb/client/smb2ops.c |  6 +++---
+ include/linux/netfs.h   |  5 +++--
+ 7 files changed, 31 insertions(+), 10 deletions(-)
+
+diff --git a/fs/9p/vfs_inode.c b/fs/9p/vfs_inode.c
+index 26bbc38ea4cbb..a6730b9a0aa43 100644
+--- a/fs/9p/vfs_inode.c
++++ b/fs/9p/vfs_inode.c
+@@ -1076,7 +1076,7 @@ static int v9fs_vfs_setattr(struct mnt_idmap *idmap,
+ 
+ 	if ((iattr->ia_valid & ATTR_SIZE) &&
+ 		 iattr->ia_size != i_size_read(inode)) {
+-		truncate_setsize(inode, iattr->ia_size);
++		netfs_truncate_setsize(inode, iattr->ia_size);
+ 		spin_lock(&inode->i_lock);
+ 		netfs_resize_file(netfs_inode(inode), iattr->ia_size, true);
+ 		spin_unlock(&inode->i_lock);
+diff --git a/fs/9p/vfs_inode_dotl.c b/fs/9p/vfs_inode_dotl.c
+index 4025d346a932b..f31e9819b8021 100644
+--- a/fs/9p/vfs_inode_dotl.c
++++ b/fs/9p/vfs_inode_dotl.c
+@@ -576,7 +576,7 @@ int v9fs_vfs_setattr_dotl(struct mnt_idmap *idmap,
+ 
+ 	if ((iattr->ia_valid & ATTR_SIZE) && iattr->ia_size !=
+ 		 i_size_read(inode)) {
+-		truncate_setsize(inode, iattr->ia_size);
++		netfs_truncate_setsize(inode, iattr->ia_size);
+ 		spin_lock(&inode->i_lock);
+ 		netfs_resize_file(netfs_inode(inode), iattr->ia_size, true);
+ 		spin_unlock(&inode->i_lock);
+diff --git a/fs/afs/inode.c b/fs/afs/inode.c
+index 5c242db2c2b15..d81fa38097b86 100644
+--- a/fs/afs/inode.c
++++ b/fs/afs/inode.c
+@@ -817,7 +817,7 @@ int afs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+ 		if (!(attr->ia_valid & (supported & ~ATTR_SIZE & ~ATTR_MTIME)) &&
+ 		    attr->ia_size < i_size &&
+ 		    attr->ia_size > netfs_read_remote_i_size(inode)) {
+-			truncate_setsize(inode, attr->ia_size);
++			netfs_truncate_setsize(inode, attr->ia_size);
+ 			spin_lock(&inode->i_lock);
+ 			netfs_resize_file(&vnode->netfs, size, false);
+ 			spin_unlock(&inode->i_lock);
+diff --git a/fs/netfs/misc.c b/fs/netfs/misc.c
+index f1fa5961a3431..534af4b469405 100644
+--- a/fs/netfs/misc.c
++++ b/fs/netfs/misc.c
+@@ -333,6 +333,26 @@ bool netfs_release_folio(struct folio *folio, gfp_t gfp)
+ }
+ EXPORT_SYMBOL(netfs_release_folio);
+ 
++/*
++ * Like truncate_setsize(), but serialize i_size_seqcount writers with netfs
++ * size updates from I/O completion.  Pagecache operations may sleep and must
++ * remain outside i_lock.
++ */
++void netfs_truncate_setsize(struct inode *inode, loff_t newsize)
++{
++	loff_t oldsize;
++
++	spin_lock(&inode->i_lock);
++	oldsize = inode->i_size;
++	i_size_write(inode, newsize);
++	spin_unlock(&inode->i_lock);
++
++	if (newsize > oldsize)
++		pagecache_isize_extended(inode, oldsize, newsize);
++	truncate_pagecache(inode, newsize);
++}
++EXPORT_SYMBOL(netfs_truncate_setsize);
++
+ /*
+  * Wake the collection work item.
+  */
+diff --git a/fs/smb/client/cifsfs.c b/fs/smb/client/cifsfs.c
+index 0cf21b2bf4eac..7297b005124ac 100644
+--- a/fs/smb/client/cifsfs.c
++++ b/fs/smb/client/cifsfs.c
+@@ -1446,7 +1446,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+ 		rc = target_tcon->ses->server->ops->duplicate_extents(xid,
+ 			smb_file_src, smb_file_target, off, len, destoff);
+ 		if (rc == 0 && new_size > i_size) {
+-			truncate_setsize(target_inode, new_size);
++			netfs_truncate_setsize(target_inode, new_size);
+ 			fscache_resize_cookie(cifs_inode_cookie(target_inode),
+ 					      new_size);
+ 		} else if (rc == -EOPNOTSUPP) {
+@@ -1567,7 +1567,7 @@ ssize_t cifs_file_copychunk_range(unsigned int xid,
+ 		rc = target_tcon->ses->server->ops->copychunk_range(xid,
+ 			smb_file_src, smb_file_target, off, len, destoff);
+ 		if (rc > 0 && destoff + rc > i_size_read(target_inode)) {
+-			truncate_setsize(target_inode, destoff + rc);
++			netfs_truncate_setsize(target_inode, destoff + rc);
+ 			spin_lock(&target_inode->i_lock);
+ 			netfs_resize_file(&target_cifsi->netfs,
+ 					  i_size_read(target_inode), true);
+diff --git a/fs/smb/client/smb2ops.c b/fs/smb/client/smb2ops.c
+index 0eba07674c094..c5731fde85027 100644
+--- a/fs/smb/client/smb2ops.c
++++ b/fs/smb/client/smb2ops.c
+@@ -3539,7 +3539,7 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+ 		rc = SMB2_set_eof(xid, tcon, cfile->fid.persistent_fid,
+ 				  cfile->fid.volatile_fid, cfile->pid, new_size);
+ 		if (rc >= 0) {
+-			truncate_setsize(inode, new_size);
++			netfs_truncate_setsize(inode, new_size);
+ 			spin_lock(&inode->i_lock);
+ 			netfs_resize_file(&cifsi->netfs, new_size, true);
+ 			if (offset < cifsi->netfs._zero_point)
+@@ -4050,7 +4050,7 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
+ 
+ 	rc = 0;
+ 
+-	truncate_setsize(inode, new_eof);
++	netfs_truncate_setsize(inode, new_eof);
+ 	spin_lock(&inode->i_lock);
+ 	netfs_resize_file(&cifsi->netfs, new_eof, true);
+ 	netfs_write_zero_point(inode, new_eof);
+@@ -4113,7 +4113,7 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
+ 	if (rc < 0)
+ 		goto out_2;
+ 
+-	truncate_setsize(inode, new_eof);
++	netfs_truncate_setsize(inode, new_eof);
+ 	spin_lock(&inode->i_lock);
+ 	netfs_resize_file(&cifsi->netfs, i_size_read(inode), true);
+ 	spin_unlock(&inode->i_lock);
+diff --git a/include/linux/netfs.h b/include/linux/netfs.h
+index 3d0fbb3b0e94a..793e3ce0f1c45 100644
+--- a/include/linux/netfs.h
++++ b/include/linux/netfs.h
+@@ -427,6 +427,7 @@ int netfs_unpin_writeback(struct inode *inode, struct writeback_control *wbc);
+ void netfs_clear_inode_writeback(struct inode *inode, const void *aux);
+ void netfs_invalidate_folio(struct folio *folio, size_t offset, size_t length);
+ bool netfs_release_folio(struct folio *folio, gfp_t gfp);
++void netfs_truncate_setsize(struct inode *inode, loff_t newsize);
+ 
+ /* VMA operations API. */
+ vm_fault_t netfs_page_mkwrite(struct vm_fault *vmf, struct netfs_group *netfs_group);
+@@ -756,13 +757,13 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+ 
+ /**
+  * netfs_resize_file - Note that a file got resized
+- * @ctx: The netfs inode being resized
++ * @ictx: The netfs inode being resized
+  * @new_i_size: The new file size
+  * @changed_on_server: The change was applied to the server
+  *
+  * Inform the netfs lib that a file got resized so that it can adjust its state.
+  *
+- * Context: The caller must hold ctx->inode.i_lock.
++ * Context: The caller must hold ictx->inode.i_lock.
+  */
+ static inline void netfs_resize_file(struct netfs_inode *ictx,
+ 				     unsigned long long new_i_size,

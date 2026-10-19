@@ -1,8 +1,7 @@
-From 13dc9e1dd99e53d610b20c897ae428d69b2df9d9 Mon Sep 17 00:00:00 2001
+From 5e7c0c81fe8d84ecd7ddd1b581898d7a4ef789e0 Mon Sep 17 00:00:00 2001
 From: Huiwen He <hehuiwen@kylinos.cn>
 Date: Fri, 28 Aug 2026 15:19:34 +0800
-Subject: [PATCH 111/143] smb/client: fix stale page cache in insert/collapse
- range
+Subject: [PATCH 6/9] smb/client: fix stale page cache in insert/collapse range
 
 smb3_insert_range() and smb3_collapse_range() use
 truncate_pagecache_range() to invalidate the affected page cache.
@@ -59,15 +58,16 @@ Reviewed-by: ChenXiaoSong <chenxiaosong@kylinos.cn>
 Reviewed-by: Namjae Jeon <linkinjeon@kernel.org>
 Signed-off-by: Paulo Alcantara <pc@manguebit.org>
 (cherry picked from commit 01261a6fa48b62f5ead8e88aaca1e27cb9ab9032)
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ---
  fs/smb/client/smb2ops.c | 23 ++++++++++++++++++-----
  1 file changed, 18 insertions(+), 5 deletions(-)
 
 diff --git a/fs/smb/client/smb2ops.c b/fs/smb/client/smb2ops.c
-index 49f25daf40440..e7a93e56df2b5 100644
+index 352fedc8e86df..2f00624de72c6 100644
 --- a/fs/smb/client/smb2ops.c
 +++ b/fs/smb/client/smb2ops.c
-@@ -3959,15 +3959,22 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
+@@ -4014,15 +4014,22 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
  	}
  
  	filemap_invalidate_lock(inode->i_mapping);
@@ -93,7 +93,7 @@ index 49f25daf40440..e7a93e56df2b5 100644
  
  	rc = __smb2_copychunk_range(xid, cfile, cfile, off + len,
  				    old_eof - off - len, off);
-@@ -4027,11 +4034,17 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
+@@ -4082,11 +4089,17 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
  		goto out;
  
  	filemap_invalidate_lock(inode->i_mapping);
@@ -113,6 +113,3 @@ index 49f25daf40440..e7a93e56df2b5 100644
  
  	rc = SMB2_set_eof(xid, tcon, cfile->fid.persistent_fid,
  			  cfile->fid.volatile_fid, cfile->pid, new_eof);
--- 
-2.34.1
-

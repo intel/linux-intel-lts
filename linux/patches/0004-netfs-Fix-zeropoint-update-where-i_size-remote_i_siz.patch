@@ -1,10 +1,7 @@
-From 51cd1854e04dfb9ac4673cdb10f8de030ea277c0 Mon Sep 17 00:00:00 2001
+From 6a5d9d0b2b17228213f9913e42d20915ace776e0 Mon Sep 17 00:00:00 2001
 From: David Howells <dhowells@redhat.com>
 Date: Tue, 12 May 2026 13:33:43 +0100
-Subject: [PATCH 32/60] netfs: Fix zeropoint update where i_size >
- remote_i_size
-
-[ Upstream commit 4543a4d737944134a1394afe797622546fbcc98a ]
+Subject: [PATCH 4/9] netfs: Fix zeropoint update where i_size > remote_i_size
 
 Fix the update of the zero point[*] by netfs_release_folio() when there is
 uncommitted data in the pagecache beyond the folio being released but the
@@ -52,17 +49,17 @@ cc: Matthew Wilcox <willy@infradead.org>
 cc: netfs@lists.linux.dev
 cc: linux-fsdevel@vger.kernel.org
 Signed-off-by: Christian Brauner <brauner@kernel.org>
-Signed-off-by: Sasha Levin <sashal@kernel.org>
-(cherry picked from commit 5cd5207de519ef0c085f4f559adf5eefcb4c5202)
+(cherry picked from commit 4543a4d737944134a1394afe797622546fbcc98a)
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ---
  fs/netfs/misc.c | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/fs/netfs/misc.c b/fs/netfs/misc.c
-index e153f70f579c8..70b2431147dfb 100644
+index 5c8b2cf87c7e7..0f8432055daa7 100644
 --- a/fs/netfs/misc.c
 +++ b/fs/netfs/misc.c
-@@ -311,10 +311,10 @@ bool netfs_release_folio(struct folio *folio, gfp_t gfp)
+@@ -312,10 +312,10 @@ bool netfs_release_folio(struct folio *folio, gfp_t gfp)
  		return false;
  
  	netfs_read_sizes(inode, &i_size, &remote_i_size, &zero_point);
@@ -75,6 +72,3 @@ index e153f70f579c8..70b2431147dfb 100644
  		if (end > ctx->_zero_point)
  			netfs_write_zero_point(inode, end);
  		spin_unlock(&inode->i_lock);
--- 
-2.43.0
-

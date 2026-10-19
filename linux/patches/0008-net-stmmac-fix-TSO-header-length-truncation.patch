@@ -1,7 +1,7 @@
-From 04da6a0dd87c4a7e2a8355107b6a3605b46b2735 Mon Sep 17 00:00:00 2001
+From 8744e3d9c969ad35d8d40a0e06536fca97e42e06 Mon Sep 17 00:00:00 2001
 From: Lorenzo Bianconi <lorenzo.bianconi@oss.qualcomm.com>
 Date: Fri, 11 Sep 2026 11:20:15 +0200
-Subject: [PATCH 12/12] net: stmmac: fix TSO header length truncation
+Subject: [PATCH 8/9] net: stmmac: fix TSO header length truncation
 
 stmmac_tso_xmit() stores the protocol header length returned by
 stmmac_tso_header_size() in a u8. stmmac_tso_valid_packet() admits
@@ -22,27 +22,24 @@ Signed-off-by: Lorenzo Bianconi <lorenzo.bianconi@oss.qualcomm.com>
 Reviewed-by: Maxime Chevallier <maxime.chevallier@bootlin.com>
 Link: https://patch.msgid.link/20260911-stmmac-fix-header-length-v1-1-8fc103334327@oss.qualcomm.com
 Signed-off-by: Jakub Kicinski <kuba@kernel.org>
-
-[ Backport to 6.18: stmmac_tso_xmit() in 6.18 has no 'entry' local and
-  no 'is_last_segment', so only proto_hdr_len moves to the unsigned int
-  declaration and hdr stays u8; the change is otherwise identical. ]
 (cherry picked from commit 15989abd74f16f44bf953d056b95f1d2fda9b0cd)
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ---
  drivers/net/ethernet/stmicro/stmmac/stmmac_main.c | 6 +++---
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
-index ea297a7a468c3..f46fb81a5ba70 100644
+index 15570aeb92214..365d149989aae 100644
 --- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
 +++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
-@@ -4295,16 +4295,16 @@ static int stmmac_tso_get_num_desc(struct stmmac_tx_queue *tx_q,
+@@ -4296,16 +4296,16 @@ static int stmmac_tso_get_num_desc(struct stmmac_tx_queue *tx_q,
   */
  static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
  {
-+	unsigned int first_entry, tx_packets, proto_hdr_len;
++	unsigned int first_entry, entry, tx_packets, proto_hdr_len;
  	struct dma_desc *desc, *first, *mss_desc = NULL;
  	struct stmmac_priv *priv = netdev_priv(dev);
--	unsigned int first_entry, tx_packets;
+-	unsigned int first_entry, entry, tx_packets;
  	struct stmmac_txq_stats *txq_stats;
  	int i, first_tx, nfrags, ndesc;
  	struct stmmac_tx_queue *tx_q;
@@ -54,7 +51,7 @@ index ea297a7a468c3..f46fb81a5ba70 100644
  
  	/* Always insert VLAN tag to SKB payload for TSO frames.
  	 *
-@@ -4365,7 +4365,7 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -4366,7 +4366,7 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
  	}
  
  	if (netif_msg_tx_queued(priv)) {
@@ -63,6 +60,3 @@ index ea297a7a468c3..f46fb81a5ba70 100644
  			__func__, hdr, proto_hdr_len, pay_len, mss);
  		pr_info("\tskb->len %d, skb->data_len %d\n", skb->len,
  			skb->data_len);
--- 
-2.34.1
-

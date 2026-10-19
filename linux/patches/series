@@ -94,10 +94,6 @@
 #CVE-2026-52960
 0004-ceph-put-folios-not-suitable-for-writeback.patch
 
-#CVE-2026-52988
-0005-rculist-add-list_splice_rcu-for-private-lists.patch
-0006-netfilter-nf_tables-join-hook-list-via-splice_list_r.patch
-
 #CVE-2026-53008
 0008-ice-fix-race-condition-in-TX-timestamp-ring-cleanup.patch
 
@@ -245,9 +241,6 @@
 
 #CVE-2026-90061
 0018-netfilter-nf_tables-skip-double-clone-set-expression.patch
-
-#CVE-2026-93179
-0019-drm-amd-powerplay-fix-VoltageObjectInfo-zero-stride-.patch
 
 #CVE-2026-89642
 0020-smb-client-do-not-account-EOF-extension-as-allocatio.patch
@@ -405,9 +398,6 @@
 0078-iov_iter-extract-a-iov_iter_extract_bvecs-helper-fro.patch
 0079-block-validate-user-space-vectors-during-extraction.patch
 
-#CVE-2026-98118
-0080-netfs-Fix-readahead-synchronisation-issues-by-loadin.patch
-
 #CVE-2026-89537
 0081-SUNRPC-Reject-short-RFC-4121-MIC-tokens-in-gss_krb5_.patch
 
@@ -442,9 +432,6 @@
 0093-Bluetooth-ISO-fix-race-of-kfree-vs-kref_get_unless_z.patch
 0094-Bluetooth-L2CAP-use-proto_lock-for-l2cap_data-to-fix.patch
 
-#CVE-2026-80734
-0095-btrfs-initialize-inode-mapping-flags-for-cached-inod.patch
-
 #CVE-2026-98099
 0096-ipv6-mcast-annotate-data-races-around-mca_users.patch
 0097-ipv6-mcast-use-rcu_assign_pointer-for-__rcu-list-upd.patch
@@ -477,15 +464,6 @@
 #CVE-2026-90300
 0107-bpf-Clear-buf-on-error-in-__bpf_get_task_stack.patch
 
-#CVE-2026-98125
-0108-filemap-Add-folio_next_pos.patch
-0109-netfs-Fix-potential-for-tearing-in-remote_i_size-and.patch
-0110-cifs-Fix-undefined-variables.patch
-0111-smb-client-fix-stale-page-cache-in-insert-collapse-r.patch
-
-#CVE-2026-98124
-0112-smb-client-invalidate-fscache-for-fallocate-range-op.patch
-
 #CVE-2026-97997
 0113-virtio_ring-fix-stale-descriptor-flags-after-a-faile.patch
 
@@ -506,9 +484,6 @@
 
 #CVE-2026-97563
 0119-smb-client-reject-out-of-bounds-DataOffset-in-CIFSSM.patch
-
-#CVE-2026-89527
-0120-svcrdma-Use-svc_xprt_put-to-free-listener-on-create-.patch
 
 #CVE-2026-90144
 0121-dpll-fix-NULL-deref-in-dpll_device_ops-during-teardo.patch
@@ -567,10 +542,6 @@
 #CVE-2026-90154
 0143-ksmbd-scope-session-state-changes-to-bound-connectio.patch
 
-#CVE-2026-64159
-# NOTE: moved after the v6.18.54 block; it builds on the netfs tearing fix (0109)
-0032-netfs-Fix-zeropoint-update-where-i_size-remote_i_siz.patch
-
 #CVE-2026-98376
 0001-bpf-Use-array_map_meta_equal-for-percpu-array-inner-.patch
 
@@ -604,5 +575,26 @@
 #CVE-2026-98332
 0011-wifi-mac80211-only-operate-on-TDLS-peers-in-the-TDLS.patch
 
-#CVE-2026-98288
-0012-net-stmmac-fix-TSO-header-length-truncation.patch
+# CVE-2026-64160: helper, primary fix, mandatory CIFS follow-up
+0001-filemap-Add-folio_next_pos.patch
+0002-netfs-Fix-potential-for-tearing-in-remote_i_size-and.patch
+0003-cifs-Fix-undefined-variables.patch
+
+# CVE-2026-64159: uses the preceding size accessors
+0004-netfs-Fix-zeropoint-update-where-i_size-remote_i_siz.patch
+
+# CVE-2026-98118: readahead synchronization
+0005-netfs-Fix-readahead-synchronisation-issues-by-loadin.patch
+
+# CVE-2026-98125: page-cache invalidation before server-side range moves
+0006-smb-client-fix-stale-page-cache-in-insert-collapse-r.patch
+
+# CVE-2026-98124: FS-Cache invalidation; apply after CVE-2026-98125
+0007-smb-client-invalidate-fscache-for-fallocate-range-op.patch
+
+# CVE-2026-98288: preserve the full TSO header length
+0008-net-stmmac-fix-TSO-header-length-truncation.patch
+
+# CVE-2026-64160: mandatory local follow-up for shared i_size_seqcount writers
+# Keep last: its call-site contexts include the preceding SMB range fixes.
+0009-netfs-serialize-truncate-size-updates-with-I-O-compl.patch

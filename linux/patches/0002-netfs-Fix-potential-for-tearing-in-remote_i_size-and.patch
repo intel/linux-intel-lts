@@ -1,8 +1,8 @@
-From 076b439a7248266315cc2cdfbc9c91857cb3ed82 Mon Sep 17 00:00:00 2001
+From 6f2bf5bc25da6bd1e7184f1c807ac70a158bad0c Mon Sep 17 00:00:00 2001
 From: David Howells <dhowells@redhat.com>
 Date: Tue, 12 May 2026 13:33:42 +0100
-Subject: [PATCH 109/143] netfs: Fix potential for tearing in ->remote_i_size
- and ->zero_point
+Subject: [PATCH 2/9] netfs: Fix potential for tearing in ->remote_i_size and
+ ->zero_point
 
 [ Upstream commit 2c8f4742bb76117d735f92a3932d85239b16c494 ]
 
@@ -25,22 +25,21 @@ cc: linux-fsdevel@vger.kernel.org
 Signed-off-by: Christian Brauner <brauner@kernel.org>
 Signed-off-by: Sasha Levin <sashal@kernel.org>
 (cherry picked from commit 55970f238d495517edc961d55c44c772594d0969)
-(cherry picked from commit ee7b01359feab3b098aba7bdcfb013cbc2733f30)
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 
-[ Backport note (6.18.54): this tree also carries the stable backport of
-  "9p: Fix v9fs_issue_write() to update i_size and remote_i_size"
-  (88871ab548c1d), which accesses ictx->remote_i_size directly and so fails
-  to build once the field is renamed here. fs/9p/vfs_addr.c is converted to
-  the form that upstream c60ae98c5aa6 has on top of this change:
-  _remote_i_size/_zero_point read under i_lock and written back through
-  netfs_write_sizes(). ]
+# Conflicts:
+#	fs/netfs/misc.c
+#	fs/smb/client/cifssmb.c
+#	fs/smb/client/inode.c
+#	fs/smb/client/smb2ops.c
+#	fs/smb/client/smb2pdu.c
 ---
  fs/9p/v9fs_vfs.h          |  13 --
- fs/9p/vfs_addr.c          |  11 +-
- fs/9p/vfs_inode.c         |   6 +-
- fs/9p/vfs_inode_dotl.c    |  12 +-
+ fs/9p/vfs_addr.c          |   4 +-
+ fs/9p/vfs_inode.c         |   8 +-
+ fs/9p/vfs_inode_dotl.c    |  14 +-
  fs/afs/file.c             |  24 +++-
- fs/afs/inode.c            |  31 ++--
+ fs/afs/inode.c            |  35 +++--
  fs/afs/internal.h         |  11 +-
  fs/afs/write.c            |   2 +-
  fs/netfs/buffered_read.c  |   6 +-
@@ -48,15 +47,15 @@ Signed-off-by: Sasha Levin <sashal@kernel.org>
  fs/netfs/direct_write.c   |   6 +-
  fs/netfs/misc.c           |  32 +++--
  fs/netfs/write_collect.c  |   9 +-
- fs/smb/client/cifsfs.c    |  38 +++--
+ fs/smb/client/cifsfs.c    |  42 ++++--
  fs/smb/client/cifssmb.c   |   3 +-
- fs/smb/client/file.c      |  13 +-
- fs/smb/client/inode.c     |  14 +-
+ fs/smb/client/file.c      |  15 +-
+ fs/smb/client/inode.c     |  16 ++-
  fs/smb/client/readdir.c   |   3 +-
- fs/smb/client/smb2ops.c   |  42 +++---
+ fs/smb/client/smb2ops.c   |  34 +++--
  fs/smb/client/smb2pdu.c   |   3 +-
- include/linux/netfs.h     | 293 ++++++++++++++++++++++++++++++++++++--
- 21 files changed, 455 insertions(+), 119 deletions(-)
+ include/linux/netfs.h     | 295 ++++++++++++++++++++++++++++++++++++--
+ 21 files changed, 467 insertions(+), 110 deletions(-)
 
 diff --git a/fs/9p/v9fs_vfs.h b/fs/9p/v9fs_vfs.h
 index d3aefbec4de6e..34c115d7c2502 100644
@@ -81,45 +80,42 @@ index d3aefbec4de6e..34c115d7c2502 100644
 -}
  #endif
 diff --git a/fs/9p/vfs_addr.c b/fs/9p/vfs_addr.c
-index 6bf5973445b66..bd36398c6a1b7 100644
+index 6bf5973445b66..65d1b711a1147 100644
 --- a/fs/9p/vfs_addr.c
 +++ b/fs/9p/vfs_addr.c
-@@ -60,14 +60,15 @@ static void v9fs_issue_write(struct netfs_io_subrequest *subreq)
- 
- 	len = p9_client_write(fid, subreq->start, &subreq->io_iter, &err);
- 	if (len > 0) {
--		unsigned long long end = subreq->start + len, i_size, remote;
-+		unsigned long long end = subreq->start + len, i_size, remote, zp;
- 		bool set = false;
- 
- 		spin_lock(&inode->i_lock);
+@@ -67,7 +67,7 @@ static void v9fs_issue_write(struct netfs_io_subrequest *subreq)
  
  		/* We can read the sizes directly as we hold i_lock. */
  		i_size = inode->i_size;
 -		remote = ictx->remote_i_size;
 +		remote = ictx->_remote_i_size;
-+		zp = ictx->_zero_point;
  
  		if (end > i_size) {
  			i_size = end;
-@@ -78,10 +79,8 @@ static void v9fs_issue_write(struct netfs_io_subrequest *subreq)
- 			set = true;
- 		}
+@@ -80,7 +80,7 @@ static void v9fs_issue_write(struct netfs_io_subrequest *subreq)
  
--		if (set) {
--			i_size_write(inode, i_size);
+ 		if (set) {
+ 			i_size_write(inode, i_size);
 -			ictx->remote_i_size = remote;
--		}
-+		if (set)
-+			netfs_write_sizes(inode, i_size, remote, zp);
++			netfs_write_remote_i_size(inode, remote);
+ 		}
  		spin_unlock(&inode->i_lock);
  
- 		__set_bit(NETFS_SREQ_MADE_PROGRESS, &subreq->flags);
 diff --git a/fs/9p/vfs_inode.c b/fs/9p/vfs_inode.c
-index b2368334f6eea..346baf2fc4b3c 100644
+index b2368334f6eea..26bbc38ea4cbb 100644
 --- a/fs/9p/vfs_inode.c
 +++ b/fs/9p/vfs_inode.c
-@@ -1143,11 +1143,13 @@ v9fs_stat2inode(struct p9_wstat *stat, struct inode *inode,
+@@ -1077,7 +1077,9 @@ static int v9fs_vfs_setattr(struct mnt_idmap *idmap,
+ 	if ((iattr->ia_valid & ATTR_SIZE) &&
+ 		 iattr->ia_size != i_size_read(inode)) {
+ 		truncate_setsize(inode, iattr->ia_size);
++		spin_lock(&inode->i_lock);
+ 		netfs_resize_file(netfs_inode(inode), iattr->ia_size, true);
++		spin_unlock(&inode->i_lock);
+ 
+ #ifdef CONFIG_9P_FSCACHE
+ 		if (v9ses->cache & CACHE_FSCACHE) {
+@@ -1143,11 +1145,13 @@ v9fs_stat2inode(struct p9_wstat *stat, struct inode *inode,
  	mode |= inode->i_mode & ~S_IALLUGO;
  	inode->i_mode = mode;
  
@@ -136,10 +132,20 @@ index b2368334f6eea..346baf2fc4b3c 100644
  }
  
 diff --git a/fs/9p/vfs_inode_dotl.c b/fs/9p/vfs_inode_dotl.c
-index cbc72a17b01a8..e8dacaa27f589 100644
+index cbc72a17b01a8..4025d346a932b 100644
 --- a/fs/9p/vfs_inode_dotl.c
 +++ b/fs/9p/vfs_inode_dotl.c
-@@ -634,10 +634,12 @@ v9fs_stat2inode_dotl(struct p9_stat_dotl *stat, struct inode *inode,
+@@ -577,7 +577,9 @@ int v9fs_vfs_setattr_dotl(struct mnt_idmap *idmap,
+ 	if ((iattr->ia_valid & ATTR_SIZE) && iattr->ia_size !=
+ 		 i_size_read(inode)) {
+ 		truncate_setsize(inode, iattr->ia_size);
++		spin_lock(&inode->i_lock);
+ 		netfs_resize_file(netfs_inode(inode), iattr->ia_size, true);
++		spin_unlock(&inode->i_lock);
+ 
+ #ifdef CONFIG_9P_FSCACHE
+ 		if (v9ses->cache & CACHE_FSCACHE)
+@@ -634,10 +636,12 @@ v9fs_stat2inode_dotl(struct p9_stat_dotl *stat, struct inode *inode,
  		mode |= inode->i_mode & ~S_IALLUGO;
  		inode->i_mode = mode;
  
@@ -154,7 +160,7 @@ index cbc72a17b01a8..e8dacaa27f589 100644
  	} else {
  		if (stat->st_result_mask & P9_STATS_ATIME) {
  			inode_set_atime(inode, stat->st_atime_sec,
-@@ -662,13 +664,15 @@ v9fs_stat2inode_dotl(struct p9_stat_dotl *stat, struct inode *inode,
+@@ -662,13 +666,15 @@ v9fs_stat2inode_dotl(struct p9_stat_dotl *stat, struct inode *inode,
  			mode |= inode->i_mode & ~S_IALLUGO;
  			inode->i_mode = mode;
  		}
@@ -218,10 +224,10 @@ index fc15497608c61..1fcf67158d778 100644
  {
  	struct afs_vnode *vnode = AFS_FS_I(wreq->inode);
 diff --git a/fs/afs/inode.c b/fs/afs/inode.c
-index f8d9ceb914cee..23da914e71934 100644
+index e170315f54717..5c242db2c2b15 100644
 --- a/fs/afs/inode.c
 +++ b/fs/afs/inode.c
-@@ -224,7 +224,8 @@ static int afs_inode_init_from_status(struct afs_operation *op,
+@@ -134,7 +134,8 @@ static int afs_inode_init_from_status(struct afs_operation *op,
  		return afs_protocol_error(NULL, afs_eproto_file_type);
  	}
  
@@ -231,7 +237,7 @@ index f8d9ceb914cee..23da914e71934 100644
  	afs_set_netfs_context(vnode);
  
  	vnode->invalid_before	= status->data_version;
-@@ -253,7 +254,8 @@ static void afs_apply_status(struct afs_operation *op,
+@@ -163,7 +164,8 @@ static void afs_apply_status(struct afs_operation *op,
  {
  	struct afs_file_status *status = &vp->scb.status;
  	struct afs_vnode *vnode = vp->vnode;
@@ -241,7 +247,7 @@ index f8d9ceb914cee..23da914e71934 100644
  	struct timespec64 t;
  	umode_t mode;
  	bool unexpected_jump = false;
-@@ -336,6 +338,8 @@ static void afs_apply_status(struct afs_operation *op,
+@@ -246,6 +248,8 @@ static void afs_apply_status(struct afs_operation *op,
  	}
  
  	if (data_changed) {
@@ -250,7 +256,7 @@ index f8d9ceb914cee..23da914e71934 100644
  		inode_set_iversion_raw(inode, status->data_version);
  
  		/* Only update the size if the data version jumped.  If the
-@@ -343,16 +347,25 @@ static void afs_apply_status(struct afs_operation *op,
+@@ -253,16 +257,25 @@ static void afs_apply_status(struct afs_operation *op,
  		 * idea of what the size should be that's not the same as
  		 * what's on the server.
  		 */
@@ -281,7 +287,7 @@ index f8d9ceb914cee..23da914e71934 100644
  	}
  }
  
-@@ -708,7 +721,7 @@ int afs_getattr(struct mnt_idmap *idmap, const struct path *path,
+@@ -618,7 +631,7 @@ int afs_getattr(struct mnt_idmap *idmap, const struct path *path,
  		 * it, but we need to give userspace the server's size.
  		 */
  		if (S_ISDIR(inode->i_mode))
@@ -290,20 +296,34 @@ index f8d9ceb914cee..23da914e71934 100644
  	} while (read_seqretry(&vnode->cb_lock, seq));
  
  	return 0;
-@@ -889,7 +902,7 @@ int afs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+@@ -731,7 +744,9 @@ static void afs_setattr_edit_file(struct afs_operation *op)
+ 
+ 		if (size != old) {
+ 			truncate_pagecache(inode, size);
++			spin_lock(&inode->i_lock);
+ 			netfs_resize_file(&vnode->netfs, size, true);
++			spin_unlock(&inode->i_lock);
+ 			fscache_resize_cookie(afs_vnode_cache(vnode), size);
+ 		}
+ 	}
+@@ -801,9 +816,11 @@ int afs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
  		 */
  		if (!(attr->ia_valid & (supported & ~ATTR_SIZE & ~ATTR_MTIME)) &&
  		    attr->ia_size < i_size &&
 -		    attr->ia_size > vnode->netfs.remote_i_size) {
 +		    attr->ia_size > netfs_read_remote_i_size(inode)) {
  			truncate_setsize(inode, attr->ia_size);
++			spin_lock(&inode->i_lock);
  			netfs_resize_file(&vnode->netfs, size, false);
++			spin_unlock(&inode->i_lock);
  			fscache_resize_cookie(afs_vnode_cache(vnode),
+ 					      attr->ia_size);
+ 			ret = 0;
 diff --git a/fs/afs/internal.h b/fs/afs/internal.h
-index 25b5fb3eda95f..8679fb768f1e3 100644
+index 61cba72f0c40c..697d5037f07a1 100644
 --- a/fs/afs/internal.h
 +++ b/fs/afs/internal.h
-@@ -1167,6 +1167,7 @@ extern int afs_open(struct inode *, struct file *);
+@@ -1174,6 +1174,7 @@ extern int afs_open(struct inode *, struct file *);
  extern int afs_release(struct inode *, struct file *);
  void afs_fetch_data_async_rx(struct work_struct *work);
  void afs_fetch_data_immediate_cancel(struct afs_call *call);
@@ -311,7 +331,7 @@ index 25b5fb3eda95f..8679fb768f1e3 100644
  
  /*
   * flock.c
-@@ -1769,16 +1770,6 @@ static inline void afs_update_dentry_version(struct afs_operation *op,
+@@ -1787,16 +1788,6 @@ static inline void afs_update_dentry_version(struct afs_operation *op,
  			(void *)(unsigned long)dir_vp->scb.status.data_version;
  }
  
@@ -342,18 +362,18 @@ index 93ad86ff33453..e2ef19a73bbfc 100644
  
  	afs_wait_for_operation(op);
 diff --git a/fs/netfs/buffered_read.c b/fs/netfs/buffered_read.c
-index a9ed282797dc2..ad8206a09a32f 100644
+index 506bfbe467a9d..6b95f0c40ae45 100644
 --- a/fs/netfs/buffered_read.c
 +++ b/fs/netfs/buffered_read.c
-@@ -217,7 +217,6 @@ static void netfs_issue_read(struct netfs_io_request *rreq,
-  */
- static void netfs_read_to_pagecache(struct netfs_io_request *rreq)
+@@ -211,7 +211,6 @@ static void netfs_issue_read(struct netfs_io_request *rreq,
+ static void netfs_read_to_pagecache(struct netfs_io_request *rreq,
+ 				    struct readahead_control *ractl)
  {
 -	struct netfs_inode *ictx = netfs_inode(rreq->inode);
  	unsigned long long start = rreq->start;
  	ssize_t size = rreq->len;
  	int ret = 0;
-@@ -241,7 +240,8 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq)
+@@ -235,7 +234,8 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq,
  		source = netfs_cache_prepare_read(rreq, subreq, rreq->i_size);
  		subreq->source = source;
  		if (source == NETFS_DOWNLOAD_FROM_SERVER) {
@@ -363,7 +383,7 @@ index a9ed282797dc2..ad8206a09a32f 100644
  			size_t len = subreq->len;
  
  			if (unlikely(rreq->origin == NETFS_READ_SINGLE))
-@@ -257,7 +257,7 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq)
+@@ -251,7 +251,7 @@ static void netfs_read_to_pagecache(struct netfs_io_request *rreq,
  				pr_err("ZERO-LEN READ: R=%08x[%x] l=%zx/%zx s=%llx z=%llx i=%llx",
  				       rreq->debug_id, subreq->debug_index,
  				       subreq->len, size,
@@ -373,7 +393,7 @@ index a9ed282797dc2..ad8206a09a32f 100644
  				break;
  			}
 diff --git a/fs/netfs/buffered_write.c b/fs/netfs/buffered_write.c
-index 0f61746bee2ac..840062a7988e8 100644
+index 7da07737ced8a..225091c9c36e0 100644
 --- a/fs/netfs/buffered_write.c
 +++ b/fs/netfs/buffered_write.c
 @@ -226,7 +226,7 @@ ssize_t netfs_perform_write(struct kiocb *iocb, struct iov_iter *iter,
@@ -386,10 +406,10 @@ index 0f61746bee2ac..840062a7988e8 100644
  			copied = copy_folio_from_iter_atomic(folio, offset, part, iter);
  			if (unlikely(copied == 0))
 diff --git a/fs/netfs/direct_write.c b/fs/netfs/direct_write.c
-index e05f69eb56a6c..6b1bbd9e07bc9 100644
+index ba0cc6172a67c..75a7ca9b71527 100644
 --- a/fs/netfs/direct_write.c
 +++ b/fs/netfs/direct_write.c
-@@ -385,8 +385,10 @@ ssize_t netfs_unbuffered_write_iter(struct kiocb *iocb, struct iov_iter *from)
+@@ -394,8 +394,10 @@ ssize_t netfs_unbuffered_write_iter(struct kiocb *iocb, struct iov_iter *from)
  	if (ret < 0)
  		goto out;
  	end = iocb->ki_pos + iov_iter_count(from);
@@ -403,10 +423,10 @@ index e05f69eb56a6c..6b1bbd9e07bc9 100644
  	fscache_invalidate(netfs_i_cookie(ictx), NULL, i_size_read(inode),
  			   FSCACHE_INVAL_DIO_WRITE);
 diff --git a/fs/netfs/misc.c b/fs/netfs/misc.c
-index 679cfd39460af..5bc6a5cfc5fd0 100644
+index 02654b5c53fe3..5c8b2cf87c7e7 100644
 --- a/fs/netfs/misc.c
 +++ b/fs/netfs/misc.c
-@@ -211,18 +211,25 @@ EXPORT_SYMBOL(netfs_clear_inode_writeback);
+@@ -212,18 +212,25 @@ EXPORT_SYMBOL(netfs_clear_inode_writeback);
  void netfs_invalidate_folio(struct folio *folio, size_t offset, size_t length)
  {
  	struct netfs_folio *finfo;
@@ -436,7 +456,7 @@ index 679cfd39460af..5bc6a5cfc5fd0 100644
  	}
  
  	folio_wait_private_2(folio); /* [DEPRECATED] */
-@@ -296,15 +303,22 @@ EXPORT_SYMBOL(netfs_invalidate_folio);
+@@ -297,15 +304,22 @@ EXPORT_SYMBOL(netfs_invalidate_folio);
   */
  bool netfs_release_folio(struct folio *folio, gfp_t gfp)
  {
@@ -465,7 +485,7 @@ index 679cfd39460af..5bc6a5cfc5fd0 100644
  	if (folio_test_private(folio))
  		return false;
 diff --git a/fs/netfs/write_collect.c b/fs/netfs/write_collect.c
-index b194447f4b111..8e79aba02d580 100644
+index 7fbf50907a7fc..24fc2bb2f8a47 100644
 --- a/fs/netfs/write_collect.c
 +++ b/fs/netfs/write_collect.c
 @@ -57,7 +57,8 @@ static void netfs_dump_request(const struct netfs_io_request *rreq)
@@ -492,7 +512,7 @@ index b194447f4b111..8e79aba02d580 100644
  		folio_detach_private(folio);
  		group = finfo->netfs_group;
 diff --git a/fs/smb/client/cifsfs.c b/fs/smb/client/cifsfs.c
-index 6d35f38722667..b11ee09f5410a 100644
+index 30daa09ab1b6e..d8e8fb2e0339c 100644
 --- a/fs/smb/client/cifsfs.c
 +++ b/fs/smb/client/cifsfs.c
 @@ -484,7 +484,8 @@ cifs_alloc_inode(struct super_block *sb)
@@ -505,7 +525,17 @@ index 6d35f38722667..b11ee09f5410a 100644
  	cifs_inode->uniqueid = 0;
  	cifs_inode->createtime = 0;
  	cifs_inode->epoch = 0;
-@@ -1348,7 +1349,8 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+@@ -1296,7 +1297,9 @@ static int cifs_precopy_set_eof(struct inode *src_inode, struct cifsInodeInfo *s
+ 	if (rc < 0)
+ 		goto set_failed;
+ 
++	spin_lock(&src_inode->i_lock);
+ 	netfs_resize_file(&src_cifsi->netfs, src_end, true);
++	spin_unlock(&src_inode->i_lock);
+ 	fscache_resize_cookie(cifs_inode_cookie(src_inode), src_end);
+ 	return 0;
+ 
+@@ -1348,7 +1351,8 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
  	struct cifsFileInfo *smb_file_src = src_file->private_data;
  	struct cifsFileInfo *smb_file_target = dst_file->private_data;
  	struct cifs_tcon *target_tcon, *src_tcon;
@@ -515,7 +545,7 @@ index 6d35f38722667..b11ee09f5410a 100644
  	unsigned int xid;
  	int rc;
  
-@@ -1403,7 +1405,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+@@ -1403,7 +1407,7 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
  	 * Advance the EOF marker after the flush above to the end of the range
  	 * if it's short of that.
  	 */
@@ -524,7 +554,7 @@ index 6d35f38722667..b11ee09f5410a 100644
  		rc = cifs_precopy_set_eof(src_inode, src_cifsi, src_tcon, xid, off + len);
  		if (rc < 0)
  			goto unlock;
-@@ -1424,16 +1426,18 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+@@ -1424,16 +1428,18 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
  	rc = cifs_flush_folio(target_inode, destend, &fstart, &fend, false);
  	if (rc)
  		goto unlock;
@@ -548,7 +578,7 @@ index 6d35f38722667..b11ee09f5410a 100644
  
  	rc = -EOPNOTSUPP;
  	if (target_tcon->ses->server->ops->duplicate_extents) {
-@@ -1458,8 +1462,12 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
+@@ -1458,8 +1464,12 @@ static loff_t cifs_remap_file_range(struct file *src_file, loff_t off,
  					rc = -EINVAL;
  			}
  		}
@@ -563,7 +593,7 @@ index 6d35f38722667..b11ee09f5410a 100644
  	}
  
  	/* force revalidate of size and timestamps of target file now
-@@ -1530,7 +1538,7 @@ ssize_t cifs_file_copychunk_range(unsigned int xid,
+@@ -1530,7 +1540,7 @@ ssize_t cifs_file_copychunk_range(unsigned int xid,
  	 * Advance the EOF marker after the flush above to the end of the range
  	 * if it's short of that.
  	 */
@@ -572,7 +602,14 @@ index 6d35f38722667..b11ee09f5410a 100644
  		rc = cifs_precopy_set_eof(src_inode, src_cifsi, src_tcon, xid, off + len);
  		if (rc < 0)
  			goto unlock;
-@@ -1558,8 +1566,12 @@ ssize_t cifs_file_copychunk_range(unsigned int xid,
+@@ -1558,13 +1568,19 @@ ssize_t cifs_file_copychunk_range(unsigned int xid,
+ 			smb_file_src, smb_file_target, off, len, destoff);
+ 		if (rc > 0 && destoff + rc > i_size_read(target_inode)) {
+ 			truncate_setsize(target_inode, destoff + rc);
++			spin_lock(&target_inode->i_lock);
+ 			netfs_resize_file(&target_cifsi->netfs,
+ 					  i_size_read(target_inode), true);
++			spin_unlock(&target_inode->i_lock);
  			fscache_resize_cookie(cifs_inode_cookie(target_inode),
  					      i_size_read(target_inode));
  		}
@@ -588,7 +625,7 @@ index 6d35f38722667..b11ee09f5410a 100644
  
  	file_accessed(src_file);
 diff --git a/fs/smb/client/cifssmb.c b/fs/smb/client/cifssmb.c
-index 0a5b580e52275..d95647d439d63 100644
+index f9317acf22578..6c1cd55f223dc 100644
 --- a/fs/smb/client/cifssmb.c
 +++ b/fs/smb/client/cifssmb.c
 @@ -1449,6 +1449,7 @@ cifs_readv_callback(struct mid_q_entry *mid)
@@ -609,10 +646,20 @@ index 0a5b580e52275..d95647d439d63 100644
  			__set_bit(NETFS_SREQ_HIT_EOF, &rdata->subreq.flags);
  		} else if (rdata->got_bytes > 0) {
 diff --git a/fs/smb/client/file.c b/fs/smb/client/file.c
-index 1e557601804f3..29b8b749fc681 100644
+index 1e557601804f3..51dfc0d074803 100644
 --- a/fs/smb/client/file.c
 +++ b/fs/smb/client/file.c
-@@ -2508,18 +2508,23 @@ int cifs_lock(struct file *file, int cmd, struct file_lock *flock)
+@@ -997,7 +997,9 @@ static int cifs_do_truncate(const unsigned int xid, struct dentry *dentry)
+ 							cfile, 0, false);
+ 		}
+ 		if (!rc) {
++			spin_lock(&inode->i_lock);
+ 			netfs_resize_file(&cinode->netfs, 0, true);
++			spin_unlock(&inode->i_lock);
+ 			cifs_setsize(inode, 0);
+ 			cifs_invalidate_cache(inode, 0);
+ 		}
+@@ -2508,18 +2510,23 @@ int cifs_lock(struct file *file, int cmd, struct file_lock *flock)
  void cifs_write_subrequest_terminated(struct cifs_io_subrequest *wdata, ssize_t result)
  {
  	struct netfs_io_request *wreq = wdata->rreq;
@@ -641,7 +688,7 @@ index 1e557601804f3..29b8b749fc681 100644
  
  	netfs_write_subrequest_terminated(&wdata->subreq, result);
 diff --git a/fs/smb/client/inode.c b/fs/smb/client/inode.c
-index c9fab338e7774..45f6e6a23d593 100644
+index a850883525d82..b788cbcb91539 100644
 --- a/fs/smb/client/inode.c
 +++ b/fs/smb/client/inode.c
 @@ -135,7 +135,7 @@ cifs_revalidate_cache(struct inode *inode, struct cifs_fattr *fattr)
@@ -689,6 +736,16 @@ index c9fab338e7774..45f6e6a23d593 100644
  		rc = filemap_invalidate_inode(inode, true, 0, LLONG_MAX);
  		if (rc) {
  			cifs_dbg(VFS, "%s: invalidate inode %p failed with rc %d\n",
+@@ -3062,7 +3064,9 @@ void cifs_resize_file_locked(struct inode *inode, loff_t offset)
+ 
+ 	lockdep_assert_held_write(&inode->i_rwsem);
+ 
++	spin_lock(&inode->i_lock);
+ 	netfs_resize_file(netfs_inode(inode), offset, true);
++	spin_unlock(&inode->i_lock);
+ 	cifs_setsize(inode, offset);
+ 
+ 	if (!cookie)
 diff --git a/fs/smb/client/readdir.c b/fs/smb/client/readdir.c
 index 0cc5ed56571a6..cbd4beae616cb 100644
 --- a/fs/smb/client/readdir.c
@@ -704,32 +761,10 @@ index 0cc5ed56571a6..cbd4beae616cb 100644
  					} else {
  						CIFS_I(inode)->time = 0;
 diff --git a/fs/smb/client/smb2ops.c b/fs/smb/client/smb2ops.c
-index dcf0a9b9647c7..49f25daf40440 100644
+index 2026e627bc441..352fedc8e86df 100644
 --- a/fs/smb/client/smb2ops.c
 +++ b/fs/smb/client/smb2ops.c
-@@ -3469,8 +3469,7 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
- 	struct inode *inode = file_inode(file);
- 	struct cifsInodeInfo *cifsi = CIFS_I(inode);
- 	struct cifsFileInfo *cfile = file->private_data;
--	struct netfs_inode *ictx = netfs_inode(inode);
--	unsigned long long i_size, new_size, remote_size;
-+	unsigned long long i_size, new_size, remote_i_size, zero_point;
- 	long rc;
- 	unsigned int xid;
- 
-@@ -3488,9 +3487,8 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
- 
- 	filemap_invalidate_lock(inode->i_mapping);
- 
--	i_size = i_size_read(inode);
--	remote_size = ictx->remote_i_size;
--	if (offset + len >= remote_size && offset < i_size) {
-+	netfs_read_sizes(inode, &i_size, &remote_i_size, &zero_point);
-+	if (offset + len >= remote_i_size && offset < i_size) {
- 		unsigned long long top = umin(offset + len, i_size);
- 
- 		rc = filemap_write_and_wait_range(inode->i_mapping, offset, top - 1);
-@@ -3522,9 +3520,11 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
+@@ -3537,9 +3537,11 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
  				  cfile->fid.volatile_fid, cfile->pid, new_size);
  		if (rc >= 0) {
  			truncate_setsize(inode, new_size);
@@ -743,7 +778,7 @@ index dcf0a9b9647c7..49f25daf40440 100644
  			fscache_resize_cookie(cifs_inode_cookie(inode), new_size);
  		}
  	}
-@@ -3548,7 +3548,7 @@ static long smb3_punch_hole(struct file *file, struct cifs_tcon *tcon,
+@@ -3563,7 +3565,7 @@ static long smb3_punch_hole(struct file *file, struct cifs_tcon *tcon,
  	struct inode *inode = file_inode(file);
  	struct cifsFileInfo *cfile = file->private_data;
  	struct file_zero_data_information fsctl_buf;
@@ -752,7 +787,7 @@ index dcf0a9b9647c7..49f25daf40440 100644
  	long rc;
  	unsigned int xid;
  	__u8 set_sparse = 1;
-@@ -3598,14 +3598,17 @@ static long smb3_punch_hole(struct file *file, struct cifs_tcon *tcon,
+@@ -3613,14 +3615,17 @@ static long smb3_punch_hole(struct file *file, struct cifs_tcon *tcon,
  	 * that we locally hole-punch the tail of the dirty data, the proposed
  	 * EOF update will end up in the wrong place.
  	 */
@@ -774,7 +809,7 @@ index dcf0a9b9647c7..49f25daf40440 100644
  	}
  
  unlock:
-@@ -3944,7 +3947,6 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
+@@ -3997,7 +4002,6 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
  	struct inode *inode = file_inode(file);
  	struct cifsInodeInfo *cifsi = CIFS_I(inode);
  	struct cifsFileInfo *cfile = file->private_data;
@@ -782,7 +817,7 @@ index dcf0a9b9647c7..49f25daf40440 100644
  	loff_t old_eof, new_eof;
  
  	xid = get_xid();
-@@ -3962,7 +3964,9 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
+@@ -4015,7 +4019,9 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
  		goto out_2;
  
  	truncate_pagecache_range(inode, off, old_eof);
@@ -793,7 +828,7 @@ index dcf0a9b9647c7..49f25daf40440 100644
  	netfs_wait_for_outstanding_io(inode);
  
  	rc = __smb2_copychunk_range(xid, cfile, cfile, off + len,
-@@ -3979,8 +3983,10 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
+@@ -4032,8 +4038,10 @@ static long smb3_collapse_range(struct file *file, struct cifs_tcon *tcon,
  	rc = 0;
  
  	truncate_setsize(inode, new_eof);
@@ -805,7 +840,7 @@ index dcf0a9b9647c7..49f25daf40440 100644
  	fscache_resize_cookie(cifs_inode_cookie(inode), new_eof);
  out_2:
  	filemap_invalidate_unlock(inode->i_mapping);
-@@ -4033,7 +4039,9 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
+@@ -4086,7 +4094,9 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
  		goto out_2;
  
  	truncate_setsize(inode, new_eof);
@@ -815,7 +850,7 @@ index dcf0a9b9647c7..49f25daf40440 100644
  	fscache_resize_cookie(cifs_inode_cookie(inode), i_size_read(inode));
  
  	/*
-@@ -4044,7 +4052,9 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
+@@ -4097,7 +4107,9 @@ static long smb3_insert_range(struct file *file, struct cifs_tcon *tcon,
  				    off + len);
  	if (rc < 0)
  		goto out_2;
@@ -827,10 +862,10 @@ index dcf0a9b9647c7..49f25daf40440 100644
  	rc = smb3_zero_data(file, tcon, off, len, xid);
  	if (rc < 0)
 diff --git a/fs/smb/client/smb2pdu.c b/fs/smb/client/smb2pdu.c
-index c07c5bb321407..89db099f6a179 100644
+index cb6db40c43589..ad86bfc37cba7 100644
 --- a/fs/smb/client/smb2pdu.c
 +++ b/fs/smb/client/smb2pdu.c
-@@ -4550,6 +4550,7 @@ smb2_readv_callback(struct mid_q_entry *mid)
+@@ -4609,6 +4609,7 @@ smb2_readv_callback(struct mid_q_entry *mid)
  	struct TCP_Server_Info *server = rdata->server;
  	struct smb2_hdr *shdr =
  				(struct smb2_hdr *)rdata->iov[0].iov_base;
@@ -838,17 +873,17 @@ index c07c5bb321407..89db099f6a179 100644
  	struct cifs_credits credits = {
  		.value = 0,
  		.instance = 0,
-@@ -4652,7 +4653,7 @@ smb2_readv_callback(struct mid_q_entry *mid)
+@@ -4714,7 +4715,7 @@ smb2_readv_callback(struct mid_q_entry *mid)
  	} else {
  		size_t trans = rdata->subreq.transferred + rdata->got_bytes;
  		if (trans < rdata->subreq.len &&
 -		    rdata->subreq.start + trans >= ictx->remote_i_size) {
 +		    rdata->subreq.start + trans >= netfs_read_remote_i_size(inode)) {
- 			__set_bit(NETFS_SREQ_HIT_EOF, &rdata->subreq.flags);
  			rdata->result = 0;
- 		}
+ 			if (rdata->subreq.start + trans >= i_size_read(&ictx->inode))
+ 				__set_bit(NETFS_SREQ_HIT_EOF, &rdata->subreq.flags);
 diff --git a/include/linux/netfs.h b/include/linux/netfs.h
-index 3f8f58e0c65a2..890a50db1a083 100644
+index 40eedb7bb06d0..ac5304f9c9ece 100644
 --- a/include/linux/netfs.h
 +++ b/include/linux/netfs.h
 @@ -62,8 +62,8 @@ struct netfs_inode {
@@ -862,7 +897,7 @@ index 3f8f58e0c65a2..890a50db1a083 100644
  						 * on the server */
  	atomic_t		io_count;	/* Number of outstanding reqs */
  	unsigned long		flags;
-@@ -475,6 +475,254 @@ static inline struct netfs_inode *netfs_inode(struct inode *inode)
+@@ -476,6 +476,254 @@ static inline struct netfs_inode *netfs_inode(struct inode *inode)
  	return container_of(inode, struct netfs_inode, inode);
  }
  
@@ -1117,7 +1152,7 @@ index 3f8f58e0c65a2..890a50db1a083 100644
  /**
   * netfs_inode_init - Initialise a netfslib inode context
   * @ctx: The netfs inode to initialise
-@@ -489,8 +737,8 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+@@ -490,8 +738,8 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
  				    bool use_zero_point)
  {
  	ctx->ops = ops;
@@ -1128,7 +1163,7 @@ index 3f8f58e0c65a2..890a50db1a083 100644
  	ctx->flags = 0;
  	atomic_set(&ctx->io_count, 0);
  #if IS_ENABLED(CONFIG_FSCACHE)
-@@ -499,7 +747,7 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+@@ -500,7 +748,7 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
  	mutex_init(&ctx->wb_lock);
  	/* ->releasepage() drives zero_point */
  	if (use_zero_point) {
@@ -1137,9 +1172,12 @@ index 3f8f58e0c65a2..890a50db1a083 100644
  		mapping_set_release_always(ctx->inode.i_mapping);
  	}
  }
-@@ -512,13 +760,40 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+@@ -512,14 +760,43 @@ static inline void netfs_inode_init(struct netfs_inode *ctx,
+  * @changed_on_server: The change was applied to the server
   *
   * Inform the netfs lib that a file got resized so that it can adjust its state.
++ *
++ * Context: The caller must hold ctx->inode.i_lock.
   */
 -static inline void netfs_resize_file(struct netfs_inode *ctx, loff_t new_i_size,
 +static inline void netfs_resize_file(struct netfs_inode *ictx,
@@ -1182,6 +1220,3 @@ index 3f8f58e0c65a2..890a50db1a083 100644
  }
  
  /**
--- 
-2.34.1
-
