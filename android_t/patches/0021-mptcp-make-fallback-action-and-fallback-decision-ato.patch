@@ -1,4 +1,4 @@
-From 0488988b0231f56225e04a56657c983e0088f0f7 Mon Sep 17 00:00:00 2001
+From 17710b2c1c00e3da37763d52593966eeeec0048a Mon Sep 17 00:00:00 2001
 From: Paolo Abeni <pabeni@redhat.com>
 Date: Mon, 28 Jul 2025 15:29:21 +0200
 Subject: [PATCH] mptcp: make fallback action and fallback decision atomic
@@ -133,6 +133,11 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 Signed-off-by: Matthieu Baerts (NGI0) <matttbe@kernel.org>
 Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
 (cherry picked from commit 5586518bec27666c747cd52aabb62d485686d0bf)
+
+[ v5.15.220 refresh: mptcp_finish_join() was reshaped by stable 9d3b531b70d6
+  ("mptcp: cleanup MPJ subflow list handling"); keep the v5.15.211 placement
+  of the fallback_lock check around the allow_infinite_fallback write (only
+  context changed). Upstream/6.1 do the check in __mptcp_finish_join(). ]
 ---
  net/mptcp/options.c  |  3 ++-
  net/mptcp/protocol.c | 45 +++++++++++++++++++++++++++++++-------------
@@ -141,10 +146,10 @@ Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
  4 files changed, 67 insertions(+), 24 deletions(-)
 
 diff --git a/net/mptcp/options.c b/net/mptcp/options.c
-index cd576b40d4db2..a8a5922fc5771 100644
+index c913f1903380b..2df0a54cfe1c5 100644
 --- a/net/mptcp/options.c
 +++ b/net/mptcp/options.c
-@@ -946,8 +946,9 @@ static bool check_fully_established(struct mptcp_sock *msk, struct sock *ssk,
+@@ -1009,8 +1009,9 @@ static bool check_fully_established(struct mptcp_sock *msk, struct sock *ssk,
  		if (subflow->mp_join)
  			goto reset;
  		subflow->mp_capable = 0;
@@ -156,7 +161,7 @@ index cd576b40d4db2..a8a5922fc5771 100644
  	}
  
 diff --git a/net/mptcp/protocol.c b/net/mptcp/protocol.c
-index 42a3e92146a4d..4f9072dd78f8f 100644
+index e10402bebc7b2..c4457b7121a0c 100644
 --- a/net/mptcp/protocol.c
 +++ b/net/mptcp/protocol.c
 @@ -593,19 +593,19 @@ static bool mptcp_check_data_fin(struct sock *sk)
@@ -190,7 +195,7 @@ index 42a3e92146a4d..4f9072dd78f8f 100644
  	} else {
  		MPTCP_INC_STATS(sock_net(ssk), MPTCP_MIB_DSSCORRUPTIONRESET);
  		mptcp_subflow_reset(ssk);
-@@ -2507,8 +2507,8 @@ static void mptcp_check_fastclose(struct mptcp_sock *msk)
+@@ -2496,8 +2496,8 @@ static void mptcp_check_fastclose(struct mptcp_sock *msk)
  
  static void __mptcp_retrans(struct sock *sk)
  {
@@ -200,7 +205,7 @@ index 42a3e92146a4d..4f9072dd78f8f 100644
  	struct mptcp_data_frag *dfrag;
  	size_t copied = 0;
  	struct sock *ssk;
-@@ -2539,6 +2539,15 @@ static void __mptcp_retrans(struct sock *sk)
+@@ -2528,6 +2528,15 @@ static void __mptcp_retrans(struct sock *sk)
  	/* limit retransmission to the bytes already sent on some subflows */
  	info.sent = 0;
  	info.limit = READ_ONCE(msk->csum_enabled) ? dfrag->data_len : dfrag->already_sent;
@@ -216,7 +221,7 @@ index 42a3e92146a4d..4f9072dd78f8f 100644
  	while (info.sent < info.limit) {
  		ret = mptcp_sendmsg_frag(sk, ssk, dfrag, &info);
  		if (ret <= 0)
-@@ -2554,6 +2563,7 @@ static void __mptcp_retrans(struct sock *sk)
+@@ -2543,6 +2552,7 @@ static void __mptcp_retrans(struct sock *sk)
  			 info.size_goal);
  		WRITE_ONCE(msk->allow_infinite_fallback, false);
  	}
@@ -224,7 +229,7 @@ index 42a3e92146a4d..4f9072dd78f8f 100644
  
  	release_sock(ssk);
  
-@@ -2638,6 +2648,7 @@ static int __mptcp_init_sock(struct sock *sk)
+@@ -2623,6 +2633,7 @@ static int __mptcp_init_sock(struct sock *sk)
  	msk->recovery = false;
  
  	mptcp_pm_data_init(msk);
@@ -232,9 +237,9 @@ index 42a3e92146a4d..4f9072dd78f8f 100644
  
  	/* re-use the csk retrans timer for MPTCP-level retrans */
  	timer_setup(&msk->sk.icsk_retransmit_timer, mptcp_retransmit_timer, 0);
-@@ -3378,7 +3389,15 @@ bool mptcp_finish_join(struct sock *ssk)
- 	if (parent_sock && !ssk->sk_socket)
- 		mptcp_sock_graft(ssk, parent_sock);
+@@ -3367,7 +3378,15 @@ bool mptcp_finish_join(struct sock *ssk)
+ 	}
+ 
  	subflow->map_seq = READ_ONCE(msk->ack_seq);
 +
 +	spin_lock_bh(&msk->fallback_lock);
@@ -245,10 +250,10 @@ index 42a3e92146a4d..4f9072dd78f8f 100644
 +	}
  	WRITE_ONCE(msk->allow_infinite_fallback, false);
 +	spin_unlock_bh(&msk->fallback_lock);
+ 
  out:
  	mptcp_event(MPTCP_EVENT_SUB_ESTABLISHED, msk, ssk, GFP_ATOMIC);
- 	return true;
-@@ -3446,7 +3465,7 @@ static void mptcp_subflow_early_fallback(struct mptcp_sock *msk,
+@@ -3436,7 +3455,7 @@ static void mptcp_subflow_early_fallback(struct mptcp_sock *msk,
  					 struct mptcp_subflow_context *subflow)
  {
  	subflow->request_mptcp = 0;
@@ -258,7 +263,7 @@ index 42a3e92146a4d..4f9072dd78f8f 100644
  
  static int mptcp_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 diff --git a/net/mptcp/protocol.h b/net/mptcp/protocol.h
-index 5492c67ecc9a7..5d9b280bb5053 100644
+index 9b2628cd54daa..5765667b69259 100644
 --- a/net/mptcp/protocol.h
 +++ b/net/mptcp/protocol.h
 @@ -277,6 +277,10 @@ struct mptcp_sock {
@@ -272,7 +277,7 @@ index 5492c67ecc9a7..5d9b280bb5053 100644
  };
  
  #define mptcp_lock_sock(___sk, cb) do {					\
-@@ -881,23 +885,29 @@ static inline bool mptcp_check_fallback(const struct sock *sk)
+@@ -885,23 +889,29 @@ static inline bool mptcp_check_fallback(const struct sock *sk)
  	return __mptcp_check_fallback(msk);
  }
  
@@ -309,7 +314,7 @@ index 5492c67ecc9a7..5d9b280bb5053 100644
  
  #define pr_fallback(a) pr_debug("%s:fallback to TCP (msk=%p)\n", __func__, a)
 diff --git a/net/mptcp/subflow.c b/net/mptcp/subflow.c
-index a5a03601c7f92..277047b4daed4 100644
+index af7664db31733..7e528b2afb5cd 100644
 --- a/net/mptcp/subflow.c
 +++ b/net/mptcp/subflow.c
 @@ -425,9 +425,11 @@ static void subflow_finish_connect(struct sock *sk, const struct sk_buff *skb)
@@ -346,7 +351,7 @@ index a5a03601c7f92..277047b4daed4 100644
  	skb = skb_peek(&ssk->sk_receive_queue);
  	subflow->map_valid = 1;
  	subflow->map_seq = READ_ONCE(msk->ack_seq);
-@@ -1499,7 +1513,6 @@ int __mptcp_subflow_connect(struct sock *sk, const struct mptcp_addr_info *loc,
+@@ -1500,7 +1514,6 @@ int __mptcp_subflow_connect(struct sock *sk, const struct mptcp_addr_info *loc,
  	/* discard the subflow socket */
  	mptcp_sock_graft(ssk, sk->sk_socket);
  	iput(SOCK_INODE(sf));
@@ -354,7 +359,7 @@ index a5a03601c7f92..277047b4daed4 100644
  	return err;
  
  failed_unlink:
-@@ -1663,7 +1676,7 @@ static void subflow_state_change(struct sock *sk)
+@@ -1668,7 +1681,7 @@ static void subflow_state_change(struct sock *sk)
  	msk = mptcp_sk(parent);
  	if (subflow_simultaneous_connect(sk)) {
  		mptcp_propagate_sndbuf(parent, sk);
@@ -364,5 +369,5 @@ index a5a03601c7f92..277047b4daed4 100644
  		pr_fallback(msk);
  		subflow->conn_finished = 1;
 -- 
-2.43.0
+2.34.1
 

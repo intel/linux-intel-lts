@@ -1,8 +1,7 @@
-From 9a9f7547b9d3aecf4f288d0352779fa9f4301607 Mon Sep 17 00:00:00 2001
+From cba8981ae043a041d6333269b165a6b5c0da2686 Mon Sep 17 00:00:00 2001
 From: Heng Guo <heng.guo@windriver.com>
 Date: Thu, 19 Oct 2023 09:20:53 +0800
-Subject: [PATCH 104/105] net: fix IPSTATS_MIB_OUTPKGS increment in
- OutForwDatagrams.
+Subject: [PATCH] net: fix IPSTATS_MIB_OUTPKGS increment in OutForwDatagrams.
 
 Reproduce environment:
 network with 3 VM linuxs is connected as below:
@@ -106,6 +105,10 @@ Reviewed-by: Kun Song <Kun.Song@windriver.com>
 Reviewed-by: Filip Pudak <filip.pudak@windriver.com>
 Reviewed-by: David Ahern <dsahern@kernel.org>
 Signed-off-by: David S. Miller <davem@davemloft.net>
+
+[ v5.15.220 refresh: ip6_finish_output2() context changed by stable
+  c95f01b78266 ("ipv6: fix use-after-free in ip6_finish_output2()");
+  no functional change to the fix. ]
 ---
  include/uapi/linux/snmp.h | 3 ++-
  net/ipv4/ip_output.c      | 2 ++
@@ -118,7 +121,7 @@ Signed-off-by: David S. Miller <davem@davemloft.net>
  8 files changed, 16 insertions(+), 10 deletions(-)
 
 diff --git a/include/uapi/linux/snmp.h b/include/uapi/linux/snmp.h
-index 904909d020e2..8eed40173f76 100644
+index 904909d020e2c..8eed40173f765 100644
 --- a/include/uapi/linux/snmp.h
 +++ b/include/uapi/linux/snmp.h
 @@ -24,7 +24,7 @@ enum
@@ -139,7 +142,7 @@ index 904909d020e2..8eed40173f76 100644
  };
  
 diff --git a/net/ipv4/ip_output.c b/net/ipv4/ip_output.c
-index ee4e7e7a0992..9e71ebf654ee 100644
+index fb64f5fcc422f..440985674133c 100644
 --- a/net/ipv4/ip_output.c
 +++ b/net/ipv4/ip_output.c
 @@ -100,6 +100,8 @@ int __ip_local_out(struct net *net, struct sock *sk, struct sk_buff *skb)
@@ -152,7 +155,7 @@ index ee4e7e7a0992..9e71ebf654ee 100644
  	ip_send_check(iph);
  
 diff --git a/net/ipv4/proc.c b/net/ipv4/proc.c
-index 4b9280a3b673..12a9e9f94f59 100644
+index d849f61b75198..fa77433a51726 100644
 --- a/net/ipv4/proc.c
 +++ b/net/ipv4/proc.c
 @@ -83,7 +83,7 @@ static const struct snmp_mib snmp4_ipstats_list[] = {
@@ -173,11 +176,11 @@ index 4b9280a3b673..12a9e9f94f59 100644
  };
  
 diff --git a/net/ipv6/ip6_output.c b/net/ipv6/ip6_output.c
-index cd656637e1b4..747199fce824 100644
+index 5ec0cecffdccf..3f387620fa98c 100644
 --- a/net/ipv6/ip6_output.c
 +++ b/net/ipv6/ip6_output.c
-@@ -120,6 +120,8 @@ static int ip6_finish_output2(struct net *net, struct sock *sk, struct sk_buff *
- 			return res;
+@@ -122,6 +122,8 @@ static int ip6_finish_output2(struct net *net, struct sock *sk, struct sk_buff *
+ 		daddr = &hdr->daddr;
  	}
  
 +	IP6_UPD_PO_STATS(net, idev, IPSTATS_MIB_OUT, skb->len);
@@ -185,7 +188,7 @@ index cd656637e1b4..747199fce824 100644
  	rcu_read_lock_bh();
  	nexthop = rt6_nexthop((struct rt6_info *)dst, daddr);
  	neigh = __ipv6_neigh_lookup_noref(dev, nexthop);
-@@ -323,7 +325,7 @@ int ip6_xmit(const struct sock *sk, struct sk_buff *skb, struct flowi6 *fl6,
+@@ -325,7 +327,7 @@ int ip6_xmit(const struct sock *sk, struct sk_buff *skb, struct flowi6 *fl6,
  
  	mtu = dst_mtu(dst);
  	if ((skb->len <= mtu) || skb->ignore_df || skb_is_gso(skb)) {
@@ -194,7 +197,7 @@ index cd656637e1b4..747199fce824 100644
  
  		/* if egress device is enslaved to an L3 master device pass the
  		 * skb to its handler for processing
-@@ -1933,7 +1935,7 @@ struct sk_buff *__ip6_make_skb(struct sock *sk,
+@@ -1867,7 +1869,7 @@ struct sk_buff *__ip6_make_skb(struct sock *sk,
  	skb->tstamp = cork->base.transmit_time;
  
  	ip6_cork_steal_dst(skb, cork);
@@ -204,10 +207,10 @@ index cd656637e1b4..747199fce824 100644
  		struct inet6_dev *idev = ip6_dst_idev(skb_dst(skb));
  		u8 icmp6_type;
 diff --git a/net/ipv6/mcast.c b/net/ipv6/mcast.c
-index 1d038a084099..c00a826e82e8 100644
+index 4f2030877a0b3..af0de7393603d 100644
 --- a/net/ipv6/mcast.c
 +++ b/net/ipv6/mcast.c
-@@ -1797,7 +1797,7 @@ static void mld_sendpack(struct sk_buff *skb)
+@@ -1824,7 +1824,7 @@ static void mld_sendpack(struct sk_buff *skb)
  
  	rcu_read_lock();
  	idev = __in6_dev_get(skb->dev);
@@ -216,7 +219,7 @@ index 1d038a084099..c00a826e82e8 100644
  
  	payload_len = (skb_tail_pointer(skb) - skb_network_header(skb)) -
  		sizeof(*pip6);
-@@ -2155,8 +2155,7 @@ static void igmp6_send(struct in6_addr *addr, struct net_device *dev, int type)
+@@ -2180,8 +2180,7 @@ static void igmp6_send(struct in6_addr *addr, struct net_device *dev, int type)
  	full_len = sizeof(struct ipv6hdr) + payload_len;
  
  	rcu_read_lock();
@@ -227,7 +230,7 @@ index 1d038a084099..c00a826e82e8 100644
  
  	skb = sock_alloc_send_skb(sk, hlen + tlen + full_len, 1, &err);
 diff --git a/net/ipv6/ndisc.c b/net/ipv6/ndisc.c
-index 9fdf236af22e..d8c607833b94 100644
+index 8e4f32fd6371e..80947216d5b40 100644
 --- a/net/ipv6/ndisc.c
 +++ b/net/ipv6/ndisc.c
 @@ -508,7 +508,7 @@ static void ndisc_send_skb(struct sk_buff *skb,
@@ -240,7 +243,7 @@ index 9fdf236af22e..d8c607833b94 100644
  	err = NF_HOOK(NFPROTO_IPV6, NF_INET_LOCAL_OUT,
  		      net, sk, skb, NULL, dst->dev,
 diff --git a/net/ipv6/proc.c b/net/ipv6/proc.c
-index d6306aa46bb1..e6476d20c67c 100644
+index e07c43bd5cb08..e17847cd09bf6 100644
 --- a/net/ipv6/proc.c
 +++ b/net/ipv6/proc.c
 @@ -61,7 +61,7 @@ static const struct snmp_mib snmp6_ipstats_list[] = {
@@ -261,7 +264,7 @@ index d6306aa46bb1..e6476d20c67c 100644
  };
  
 diff --git a/net/ipv6/raw.c b/net/ipv6/raw.c
-index 6ff25c3e9d5a..e8f210bb76b3 100644
+index 586e972cbcd53..a87d501ee05d8 100644
 --- a/net/ipv6/raw.c
 +++ b/net/ipv6/raw.c
 @@ -687,7 +687,7 @@ static int rawv6_send_hdrinc(struct sock *sk, struct msghdr *msg, int length,
@@ -274,5 +277,5 @@ index 6ff25c3e9d5a..e8f210bb76b3 100644
  		      NULL, rt->dst.dev, dst_output);
  	if (err > 0)
 -- 
-2.25.1
+2.34.1
 

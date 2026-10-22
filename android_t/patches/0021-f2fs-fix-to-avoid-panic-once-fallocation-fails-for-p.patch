@@ -1,8 +1,7 @@
-From 286cde2f004dfea16721839841d896e11fa24ddc Mon Sep 17 00:00:00 2001
+From b54795e14424c811d681a96b78c877a50139f863 Mon Sep 17 00:00:00 2001
 From: Chao Yu <chao@kernel.org>
 Date: Tue, 11 Feb 2025 14:36:57 +0800
-Subject: [PATCH 21/26] f2fs: fix to avoid panic once fallocation fails for
- pinfile
+Subject: [PATCH] f2fs: fix to avoid panic once fallocation fails for pinfile
 
 syzbot reports a f2fs bug as below:
 
@@ -42,17 +41,20 @@ Reported-by: syzbot+15669ec8c35ddf6c3d43@syzkaller.appspotmail.com
 Closes: https://lore.kernel.org/linux-f2fs-devel/675cd64e.050a0220.37aaf.00bb.GAE@google.com
 Signed-off-by: Chao Yu <chao@kernel.org>
 Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+
+[ v5.15.220 refresh: context only (3-way merge onto the v5.15.220 series
+  state); added/removed lines are unchanged. ]
 ---
  fs/f2fs/file.c    | 8 +++++---
  fs/f2fs/segment.c | 9 ++++++++-
  2 files changed, 13 insertions(+), 4 deletions(-)
 
 diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
-index 141a0378fd96..4bce5e9a15f6 100644
+index 7f0abd3f30fae..f39b48ee2881a 100644
 --- a/fs/f2fs/file.c
 +++ b/fs/f2fs/file.c
-@@ -1717,16 +1717,18 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
- 
+@@ -1774,16 +1774,18 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
+ 		sec_len = roundup(map.m_len, sec_blks);
  		map.m_len = sec_blks;
  next_alloc:
 +		f2fs_down_write(&sbi->pin_sem);
@@ -74,10 +76,10 @@ index 141a0378fd96..4bce5e9a15f6 100644
  		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false);
  		f2fs_unlock_op(sbi);
 diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
-index 0f74ce1288f8..57050a78ac5a 100644
+index e79501e3f533d..ac982d7851527 100644
 --- a/fs/f2fs/segment.c
 +++ b/fs/f2fs/segment.c
-@@ -2632,6 +2632,13 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
+@@ -2639,6 +2639,13 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
  	return curseg->segno;
  }
  
@@ -91,7 +93,7 @@ index 0f74ce1288f8..57050a78ac5a 100644
  /*
   * Allocate a current working segment.
   * This function always allocates a free segment in LFS manner.
-@@ -2654,7 +2661,7 @@ static int new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec)
+@@ -2661,7 +2668,7 @@ static int new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec)
  
  	segno = __get_next_segno(sbi, type);
  	if (get_new_segment(sbi, &segno, new_sec, dir)) {
@@ -101,5 +103,5 @@ index 0f74ce1288f8..57050a78ac5a 100644
  	}
  
 -- 
-2.25.1
+2.34.1
 

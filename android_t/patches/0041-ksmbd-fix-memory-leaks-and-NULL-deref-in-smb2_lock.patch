@@ -1,7 +1,7 @@
-From 547ab55847e66000d54d0c729863a895b3173e7a Mon Sep 17 00:00:00 2001
+From be4d75c676c7e068cabc64e889b0919eca7ed943 Mon Sep 17 00:00:00 2001
 From: Werner Kasselman <werner@verivus.com>
 Date: Tue, 17 Mar 2026 07:55:37 +0000
-Subject: [PATCH 42/65] ksmbd: fix memory leaks and NULL deref in smb2_lock()
+Subject: [PATCH] ksmbd: fix memory leaks and NULL deref in smb2_lock()
 
 smb2_lock() has three error handling issues after list_del() detaches
 smb_lock from lock_list at no_check_cl:
@@ -41,15 +41,19 @@ Signed-off-by: Steve French <stfrench@microsoft.com>
 (cherry picked from commit 309b44ed684496ed3f9c5715d10b899338623512)
 CVE: CVE-2026-31477
 (cherry picked from commit 9ad27db72ffd9352eb933218449f46dc78973668)
+
+[ v5.15.220 refresh: rollback loop context changed by stable 22d38cf75b55
+  ("ksmbd: track the connection owning a byte-range lock"); no functional
+  change to the fix. ]
 ---
  fs/ksmbd/smb2pdu.c | 27 ++++++++++++++++++---------
  1 file changed, 18 insertions(+), 9 deletions(-)
 
 diff --git a/fs/ksmbd/smb2pdu.c b/fs/ksmbd/smb2pdu.c
-index 0baac66b34743..d1b24499f0091 100644
+index 13a39f6fcd0c2..79806ea75f24d 100644
 --- a/fs/ksmbd/smb2pdu.c
 +++ b/fs/ksmbd/smb2pdu.c
-@@ -7105,14 +7105,15 @@ int smb2_lock(struct ksmbd_work *work)
+@@ -7151,14 +7151,15 @@ int smb2_lock(struct ksmbd_work *work)
  		rc = vfs_lock_file(filp, smb_lock->cmd, flock, NULL);
  skip:
  		if (flags & SMB2_LOCKFLAG_UNLOCK) {
@@ -67,7 +71,7 @@ index 0baac66b34743..d1b24499f0091 100644
  		} else {
  			if (rc == FILE_LOCK_DEFERRED) {
  				void **argv;
-@@ -7181,6 +7182,9 @@ int smb2_lock(struct ksmbd_work *work)
+@@ -7228,6 +7229,9 @@ int smb2_lock(struct ksmbd_work *work)
  				spin_unlock(&work->conn->llist_lock);
  				ksmbd_debug(SMB, "successful in taking lock\n");
  			} else {
@@ -77,7 +81,7 @@ index 0baac66b34743..d1b24499f0091 100644
  				goto out;
  			}
  		}
-@@ -7211,13 +7215,17 @@ int smb2_lock(struct ksmbd_work *work)
+@@ -7258,13 +7262,17 @@ int smb2_lock(struct ksmbd_work *work)
  		struct file_lock *rlock = NULL;
  
  		rlock = smb_flock_init(filp);
@@ -100,9 +104,9 @@ index 0baac66b34743..d1b24499f0091 100644
 +		}
  
  		list_del(&smb_lock->llist);
- 		spin_lock(&work->conn->llist_lock);
-@@ -7227,7 +7235,8 @@ int smb2_lock(struct ksmbd_work *work)
- 		spin_unlock(&work->conn->llist_lock);
+ 		conn = smb_lock->conn;
+@@ -7277,7 +7285,8 @@ int smb2_lock(struct ksmbd_work *work)
+ 		ksmbd_conn_put(conn);
  
  		locks_free_lock(smb_lock->fl);
 -		locks_free_lock(rlock);
@@ -112,5 +116,5 @@ index 0baac66b34743..d1b24499f0091 100644
  	}
  out2:
 -- 
-2.43.0
+2.34.1
 

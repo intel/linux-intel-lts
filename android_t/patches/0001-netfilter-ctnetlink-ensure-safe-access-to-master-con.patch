@@ -1,4 +1,4 @@
-From 4de1c0bc7dc6f8b518cca4a1a98183128d1f4c21 Mon Sep 17 00:00:00 2001
+From c371a2d3afd282f8f51e5d77f3b564f9da792a55 Mon Sep 17 00:00:00 2001
 From: Pablo Neira Ayuso <pablo@netfilter.org>
 Date: Wed, 25 Mar 2026 14:11:04 +0100
 Subject: [PATCH] netfilter: ctnetlink: ensure safe access to master conntrack
@@ -47,6 +47,11 @@ to grab the spinlock.
 Signed-off-by: Florian Westphal <fw@strlen.de>
 Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
 Signed-off-by: Sasha Levin <sashal@kernel.org>
+
+[ v5.15.220 refresh: in the series, old 0042 (CVE-2023-53635, "netfilter:
+  conntrack: fix wrong ct->timeout value") adds __nf_ct_set_timeout() after
+  the expect lock extern, so this hunk never applied in series order (already
+  on v5.15.211). Place the helper right after the extern; no functional change. ]
 ---
  include/net/netfilter/nf_conntrack_core.h |  5 ++++
  net/netfilter/nf_conntrack_ecache.c       |  2 ++
@@ -55,10 +60,10 @@ Signed-off-by: Sasha Levin <sashal@kernel.org>
  4 files changed, 35 insertions(+), 10 deletions(-)
 
 diff --git a/include/net/netfilter/nf_conntrack_core.h b/include/net/netfilter/nf_conntrack_core.h
-index 2d524782f53b7..a78853582d227 100644
+index 2c8a83f410342..4bf24d7a8df77 100644
 --- a/include/net/netfilter/nf_conntrack_core.h
 +++ b/include/net/netfilter/nf_conntrack_core.h
-@@ -84,4 +84,9 @@ void nf_conntrack_lock(spinlock_t *lock);
+@@ -84,6 +84,11 @@ void nf_conntrack_lock(spinlock_t *lock);
  
  extern spinlock_t nf_conntrack_expect_lock;
  
@@ -67,7 +72,9 @@ index 2d524782f53b7..a78853582d227 100644
 +	lockdep_assert_held(&nf_conntrack_expect_lock);
 +}
 +
- #endif /* _NF_CONNTRACK_CORE_H */
+ /* ctnetlink code shared by both ctnetlink and nf_conntrack_bpf */
+ 
+ static inline void __nf_ct_set_timeout(struct nf_conn *ct, u64 timeout)
 diff --git a/net/netfilter/nf_conntrack_ecache.c b/net/netfilter/nf_conntrack_ecache.c
 index 41768ff19464b..c853cfde151a3 100644
 --- a/net/netfilter/nf_conntrack_ecache.c
@@ -82,7 +89,7 @@ index 41768ff19464b..c853cfde151a3 100644
  	notify = rcu_dereference(net->ct.nf_conntrack_event_cb);
  	if (!notify)
 diff --git a/net/netfilter/nf_conntrack_expect.c b/net/netfilter/nf_conntrack_expect.c
-index 6d056ebba57c6..5ed68b6599d30 100644
+index 10d4dfbdde226..8a395d8eb5a9c 100644
 --- a/net/netfilter/nf_conntrack_expect.c
 +++ b/net/netfilter/nf_conntrack_expect.c
 @@ -51,6 +51,7 @@ void nf_ct_unlink_expect_report(struct nf_conntrack_expect *exp,
@@ -132,10 +139,10 @@ index 6d056ebba57c6..5ed68b6599d30 100644
  out:
  	spin_unlock_bh(&nf_conntrack_expect_lock);
 diff --git a/net/netfilter/nf_conntrack_netlink.c b/net/netfilter/nf_conntrack_netlink.c
-index f57691e675494..bbf3b0561790e 100644
+index 9aed4c667b581..5be5c96321f6a 100644
 --- a/net/netfilter/nf_conntrack_netlink.c
 +++ b/net/netfilter/nf_conntrack_netlink.c
-@@ -3366,31 +3366,37 @@ static int ctnetlink_get_expect(struct sk_buff *skb,
+@@ -3363,31 +3363,37 @@ static int ctnetlink_get_expect(struct sk_buff *skb,
  	if (err < 0)
  		return err;
  
@@ -180,7 +187,7 @@ index f57691e675494..bbf3b0561790e 100644
  	if (err <= 0) {
  		kfree_skb(skb2);
  		return -ENOMEM;
-@@ -3435,22 +3441,26 @@ static int ctnetlink_del_expect(struct sk_buff *skb,
+@@ -3432,22 +3438,26 @@ static int ctnetlink_del_expect(struct sk_buff *skb,
  		if (err < 0)
  			return err;
  
@@ -210,5 +217,5 @@ index f57691e675494..bbf3b0561790e 100644
  			nf_ct_unlink_expect_report(exp, NETLINK_CB(skb).portid,
  						   nlmsg_report(info->nlh));
 -- 
-2.43.0
+2.34.1
 

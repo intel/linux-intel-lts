@@ -1,4 +1,4 @@
-From 95cc4a3477b84b160383798bfbcae2eb8d9aba73 Mon Sep 17 00:00:00 2001
+From b0401c15a94657d6ff82327be636dd138085466e Mon Sep 17 00:00:00 2001
 From: Florian Westphal <fw@strlen.de>
 Date: Thu, 5 Mar 2026 21:32:00 +0100
 Subject: [PATCH] netfilter: nf_tables: always walk all pending catchall
@@ -28,24 +28,27 @@ Reported-by: Yiming Qian <yimingqian591@gmail.com>
 Signed-off-by: Florian Westphal <fw@strlen.de>
 Signed-off-by: Sasha Levin <sashal@kernel.org>
 (cherry picked from commit de47a88c6b807910f05703fb6605f7efdaa11417)
+
+[ v5.15.220 refresh: context only (3-way merge onto the v5.15.220 series
+  state); added/removed lines are unchanged. ]
 ---
  net/netfilter/nf_tables_api.c | 2 --
  1 file changed, 2 deletions(-)
 
 diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
-index c8e9b5656402f..93da76ffb3452 100644
+index 72910d75ce941..e4290d0bd8890 100644
 --- a/net/netfilter/nf_tables_api.c
 +++ b/net/netfilter/nf_tables_api.c
-@@ -620,7 +620,6 @@ static void nft_map_catchall_deactivate(const struct nft_ctx *ctx,
- 
+@@ -650,7 +650,6 @@ static void nft_map_catchall_deactivate(const struct nft_ctx *ctx,
  		elem.priv = catchall->elem;
+ 		nft_set_elem_change_active(ctx->net, set, ext);
  		nft_setelem_data_deactivate(ctx->net, set, &elem);
 -		break;
  	}
  }
  
-@@ -5146,7 +5145,6 @@ static void nft_map_catchall_activate(const struct nft_ctx *ctx,
- 
+@@ -5234,7 +5233,6 @@ static void nft_map_catchall_activate(const struct nft_ctx *ctx,
+ 		nft_clear(ctx->net, ext);
  		elem.priv = catchall->elem;
  		nft_setelem_data_activate(ctx->net, set, &elem);
 -		break;
@@ -53,5 +56,5 @@ index c8e9b5656402f..93da76ffb3452 100644
  }
  
 -- 
-2.43.0
+2.34.1
 

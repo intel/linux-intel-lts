@@ -1,7 +1,7 @@
-From e77625f9f371a5efedc776fb9fedd393f3b4b701 Mon Sep 17 00:00:00 2001
+From 928d4e1fb5a3274a069d9e97a8be4f4d199e8aaa Mon Sep 17 00:00:00 2001
 From: Paolo Abeni <pabeni@redhat.com>
 Date: Tue, 29 Jul 2025 23:37:44 +0800
-Subject: [PATCH 17/23] BACKPORT: mptcp: move subflow cleanup in
+Subject: [PATCH] BACKPORT: mptcp: move subflow cleanup in
  mptcp_destroy_common()
 
 If the mptcp socket creation fails due to a CGROUP_INET_SOCK_CREATE
@@ -29,17 +29,22 @@ Signed-off-by: Nguyen Dinh Phi <phind.uet@gmail.com>
 Signed-off-by: Paolo Abeni <pabeni@redhat.com>
 Signed-off-by: Mat Martineau <mathew.j.martineau@linux.intel.com>
 Signed-off-by: David S. Miller <davem@davemloft.net>
+
+[ v5.15.220 refresh: stable 9d3b531b70d6 ("mptcp: cleanup MPJ subflow list
+  handling", upstream 3e5014909b56) dropped join_list_lock and
+  mptcp_do_flush_join_list(); remove the now simpler splice/loop instead.
+  Added code is unchanged. ]
 ---
- net/mptcp/protocol.c | 49 ++++++++++++++++++++++----------------------
+ net/mptcp/protocol.c | 44 +++++++++++++++++++++++++-------------------
  net/mptcp/protocol.h |  2 +-
  net/mptcp/subflow.c  |  2 +-
- 3 files changed, 26 insertions(+), 27 deletions(-)
+ 3 files changed, 27 insertions(+), 21 deletions(-)
 
 diff --git a/net/mptcp/protocol.c b/net/mptcp/protocol.c
-index bdf14a7bd416..1bcdf1d0a319 100644
+index e6337e56da573..e10402bebc7b2 100644
 --- a/net/mptcp/protocol.c
 +++ b/net/mptcp/protocol.c
-@@ -2742,31 +2742,16 @@ static void __mptcp_wr_shutdown(struct sock *sk)
+@@ -2790,26 +2790,16 @@ static void __mptcp_wr_shutdown(struct sock *sk)
  
  static void __mptcp_destroy_sock(struct sock *sk)
  {
@@ -51,12 +56,7 @@ index bdf14a7bd416..1bcdf1d0a319 100644
  
  	might_sleep();
  
--	/* be sure to always acquire the join list lock, to sync vs
--	 * mptcp_finish_join().
--	 */
--	spin_lock_bh(&msk->join_list_lock);
--	list_splice_tail_init(&msk->join_list, &msk->conn_list);
--	spin_unlock_bh(&msk->join_list_lock);
+-	/* join list will be eventually flushed (with rst) at sock lock release time*/
 -	list_splice_init(&msk->conn_list, &conn_list);
 -
  	sk_stop_timer(sk, &msk->sk.icsk_retransmit_timer);
@@ -71,18 +71,17 @@ index bdf14a7bd416..1bcdf1d0a319 100644
  	sk->sk_prot->destroy(sk);
  
  	WARN_ON_ONCE(msk->wmem_reserved);
-@@ -2861,18 +2846,23 @@ static void mptcp_copy_inaddrs(struct sock *msk, const struct sock *ssk)
+@@ -2904,16 +2894,23 @@ static void mptcp_copy_inaddrs(struct sock *msk, const struct sock *ssk)
  
  static int mptcp_disconnect(struct sock *sk, int flags)
  {
 -	struct mptcp_subflow_context *subflow;
  	struct mptcp_sock *msk = mptcp_sk(sk);
  
--	mptcp_do_flush_join_list(msk);
-+	inet_sk_state_store(sk, TCP_CLOSE);
- 
 -	mptcp_for_each_subflow(msk, subflow) {
 -		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
++	inet_sk_state_store(sk, TCP_CLOSE);
++
 +	sk_stop_timer(sk, &msk->sk.icsk_retransmit_timer);
 +	sk_stop_timer(sk, &sk->sk_timer);
 +
@@ -103,7 +102,7 @@ index bdf14a7bd416..1bcdf1d0a319 100644
  	return 0;
  }
  
-@@ -3051,12 +3041,17 @@ static struct sock *mptcp_accept(struct sock *sk, int flags, int *err,
+@@ -3092,12 +3089,17 @@ static struct sock *mptcp_accept(struct sock *sk, int flags, int *err,
  	return newsk;
  }
  
@@ -122,7 +121,7 @@ index bdf14a7bd416..1bcdf1d0a319 100644
  	/* move to sk_receive_queue, sk_stream_kill_queues will purge it */
  	skb_queue_splice_tail_init(&msk->receive_queue, &sk->sk_receive_queue);
  
-@@ -3069,7 +3064,11 @@ static void mptcp_destroy(struct sock *sk)
+@@ -3110,7 +3112,11 @@ static void mptcp_destroy(struct sock *sk)
  {
  	struct mptcp_sock *msk = mptcp_sk(sk);
  
@@ -136,10 +135,10 @@ index bdf14a7bd416..1bcdf1d0a319 100644
  }
  
 diff --git a/net/mptcp/protocol.h b/net/mptcp/protocol.h
-index 8d05fb205a31..c24239e764e3 100644
+index 609e7768fab31..9b2628cd54daa 100644
 --- a/net/mptcp/protocol.h
 +++ b/net/mptcp/protocol.h
-@@ -708,7 +708,7 @@ static inline void mptcp_write_space(struct sock *sk)
+@@ -700,7 +700,7 @@ static inline void mptcp_write_space(struct sock *sk)
  	}
  }
  
@@ -149,7 +148,7 @@ index 8d05fb205a31..c24239e764e3 100644
  #define MPTCP_TOKEN_MAX_RETRIES	4
  
 diff --git a/net/mptcp/subflow.c b/net/mptcp/subflow.c
-index 2bf7f65b0afe..2655d7406a3b 100644
+index 2ec22660ba7a2..af7664db31733 100644
 --- a/net/mptcp/subflow.c
 +++ b/net/mptcp/subflow.c
 @@ -616,7 +616,7 @@ static void mptcp_sock_destruct(struct sock *sk)
@@ -162,5 +161,5 @@ index 2bf7f65b0afe..2655d7406a3b 100644
  }
  
 -- 
-2.43.0
+2.34.1
 

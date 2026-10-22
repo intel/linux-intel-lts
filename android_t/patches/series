@@ -116,9 +116,6 @@
 0001-block-Fix-WARNING-in-_copy_from_iter.patch
 
 
-#CVE-2023-52676
-0001-bpf-Guard-stack-limits-against-32bit-overflow.patch
-
 #CVE-2024-35904
 0001-selinux-avoid-dereference-of-garbage-after-mount-fai.patch
 
@@ -177,9 +174,6 @@
 
 #CVE-2024-50014
 0001-ext4-fix-access-to-uninitialised-lock-in-fc-replay-p.patch
-
-#CVE-2024-50017
-0001-x86-mm-ident_map-Use-gbpages-only-where-full-GB-page.patch
 
 
 #CVE-2024-50138
@@ -484,9 +478,6 @@
 #CVE-2025-40077
 0009-f2fs-fix-to-avoid-overflow-while-left-shift-operatio.patch
 
-#CVE-2025-40054
-0011-f2fs-fix-UAF-issue-in-f2fs_merge_page_bio.patch
-
 #CVE-2023-53620
 0013-md-Use-enum-for-overloaded-magic-numbers-used-by-mdd.patch
 0014-md-fix-soft-lockup-in-status_resync.patch
@@ -632,9 +623,6 @@
 
 #CVE-2025-68786
 0026-ksmbd-skip-lock-range-check-on-equal-size-to-avoid-s.patch
-
-#CVE-2025-68794
-0027-iomap-adjust-read-range-correctly-for-non-block-alig.patch
 
 #CVE-2025-68809
 0028-ksmbd-vfs-fix-race-on-m_flags-in-vfs_cache.patch
@@ -815,9 +803,6 @@
 0010-cleanup-Provide-retain_and_null_ptr.patch
 0011-usb-gadget-f_ncm-Fix-net_device-lifecycle-with-devic.patch
 
-# CVE-2026-43216
-0012-net-Drop-the-lock-in-skb_may_tx_timestamp.patch
-
 # CVE-2026-45855
 0013-ata-libata-Introduce-ata_port_eh_scheduled.patch
 0014-ata-libata-scsi-avoid-Non-NCQ-command-starvation.patch
@@ -855,9 +840,6 @@
 # CVE-2026-53207
 0029-mm-memory-failure-fix-hugetlb_lock-AA-deadlock-in-ge.patch
 
-# CVE-2026-52977
-0030-futex-Prevent-lockup-in-requeue-PI-during-signal-tim.patch
-
 # CVE-2026-53314
 0031-padata-Remove-cpu-online-check-from-cpu-add-and-remo.patch
 0032-padata-Put-CPU-offline-callback-in-ONLINE-section-to.patch
@@ -887,9 +869,6 @@
 # CVE-2026-31432
 0041-ksmbd-fix-OOB-write-in-QUERY_INFO-for-compound-reque.patch
 
-# CVE-2026-31610
-0042-ksmbd-fix-mechToken-leak-when-SPNEGO-decode-fails-af.patch
-
 # CVE-2026-31611
 0043-ksmbd-require-3-sub-authorities-before-reading-sub_a.patch
 
@@ -910,9 +889,6 @@
 
 # CVE-2026-43490
 0049-ksmbd-validate-inherited-ACE-SID-length.patch
-
-# CVE-2026-52944
-0050-ksmbd-fix-FSCTL-permission-bypass-by-adding-a-permis.patch
 
 # CVE-2026-53198
 0051-ksmbd-fix-use-after-free-of-a-deferred-file_lock-on-.patch
@@ -984,9 +960,6 @@
 # CVE-2026-45905
 0074-xfrm-fix-ip_rt_bug-race-in-icmp_route_lookup-reverse.patch
 
-# CVE-2026-43499
-0075-rtmutex-Use-waiter-task-instead-of-current-in-remove.patch
-
 # CVE-2026-43448
 0076-nvme-pci-Fix-race-bug-in-nvme_poll_irqdisable.patch
 
@@ -998,9 +971,6 @@
 
 # CVE-2026-43167
 0079-xfrm-always-flush-state-and-policy-upon-NETDEV_UNREG.patch
-
-# CVE-2026-43088
-0080-net-af_key-zero-aligned-sockaddr-tail-in-PF_KEY-expo.patch
 
 # CVE-2026-43071
 0081-dcache-Limit-the-minimal-number-of-bucket-to-two.patch
@@ -1060,12 +1030,6 @@
 # CVE-2026-53224
 0100-sctp-validate-embedded-INIT-chunk-and-address-list-l.patch
 
-# CVE-2026-53090
-0001-bpf-Fix-ld_-abs-ind-failure-path-analysis-in-subprog.patch
-
-# CVE-2026-53089
-0002-bpf-Fix-use-after-free-in-offloaded-map-prog-info-fi.patch
-
 # CVE-2026-53106
 0003-bpf-Do-not-allow-deleting-local-storage-in-NMI.patch
 
@@ -1074,9 +1038,6 @@
 
 # CVE-2026-53111
 0005-bpf-test_run-Fix-the-null-pointer-dereference-issue-.patch
-
-# CVE-2026-53078
-0006-bpf-Fix-same-register-dst-src-OOB-read-and-pointer-l.patch
 
 # CVE-2026-53070
 0007-net-ipv6-Make-udp_tunnel6_xmit_skb-void.patch
