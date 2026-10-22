@@ -1,0 +1,85 @@
+From 9fb0f0059e0a64eb5ec3aacc1f0bf5c1f6aaf350 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Wed, 21 Oct 2026 10:00:30 +0800
+Subject: [PATCH 1/2] f2fs: fix fsck inconsistency caused by incorrect
+ nat_entry flag usage
+
+f2fs_need_dentry_mark() reads nat_entry flags without mutual exclusion
+with the checkpoint path, which can result in an incorrect inode block
+marking state. The scenario is as follows:
+
+create & write & fsync 'file A'                 write checkpoint
+- f2fs_do_sync_file // inline inode
+ - f2fs_write_inode // inode folio is dirty
+                                                - f2fs_write_checkpoint
+                                                 - f2fs_flush_merged_writes
+                                                 - f2fs_sync_node_pages
+ - f2fs_fsync_node_pages // no dirty node
+ - f2fs_need_inode_block_update // return true
+ - f2fs_fsync_node_pages // inode dirtied
+  - f2fs_need_dentry_mark //return true
+                                                 - f2fs_flush_nat_entries
+                                                - f2fs_write_checkpoint end
+  - __write_node_folio // inode with DENT_BIT_SHIFT set
+  SPO, "fsck --dry-run" find inode has already checkpointed but still
+  with DENT_BIT_SHIFT set
+
+The state observed by f2fs_need_dentry_mark() can differ from the state
+observed in __write_node_folio() after acquiring sbi->node_write. The
+root cause is that the semantics of IS_CHECKPOINTED and
+HAS_FSYNCED_INODE are only guaranteed after the checkpoint write has
+fully completed.
+
+This patch moves set_dentry_mark() into __write_node_folio() and
+protects it with the sbi->node_write lock.
+
+Cc: stable@kernel.org
+Fixes: 88bd02c9472a ("f2fs: fix conditions to remain recovery information in f2fs_sync_file")
+Signed-off-by: Yongpeng Yang <yangyongpeng@xiaomi.com>
+Reviewed-by: Chao Yu <chao@kernel.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk@kernel.org>
+
+[ kernel-lts-cve series refresh: rebased onto series patch 0008 "f2fs: fix
+  IS_CHECKPOINTED flag inconsistency ..." (CVE-2026-23267), which upstream
+  019f9dda7f66 follows (7633a7387eb4). Keep 0008's flush condition. ]
+---
+ fs/f2fs/node.c | 16 ++++++----------
+ 1 file changed, 6 insertions(+), 10 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index b1e37406cf8d6..4e2d55b6a8c4e 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1654,13 +1654,12 @@ static int __write_node_page(struct page *page, bool atomic, bool *submitted,
+ 		goto redirty_out;
+ 	}
+ 
+-	if (atomic) {
+-		if (!test_opt(sbi, NOBARRIER) && !f2fs_sb_has_blkzoned(sbi))
+-			fio.op_flags |= REQ_PREFLUSH | REQ_FUA;
+-		if (IS_INODE(page))
+-			set_dentry_mark(page,
+-				f2fs_need_dentry_mark(sbi, ino_of_node(page)));
+-	}
++	if (atomic && !test_opt(sbi, NOBARRIER) && !f2fs_sb_has_blkzoned(sbi))
++		fio.op_flags |= REQ_PREFLUSH | REQ_FUA;
++
++	if (IS_INODE(page) && (atomic || is_fsync_dnode(page)))
++		set_dentry_mark(page,
++			f2fs_need_dentry_mark(sbi, ino_of_node(page)));
+ 
+ 	/* should add to global list before clearing PAGECACHE status */
+ 	if (f2fs_in_warm_node_list(sbi, page)) {
+@@ -1815,9 +1814,6 @@ int f2fs_fsync_node_pages(struct f2fs_sb_info *sbi, struct inode *inode,
+ 					if (is_inode_flag_set(inode,
+ 								FI_DIRTY_INODE))
+ 						f2fs_update_inode(inode, page);
+-					if (!atomic)
+-						set_dentry_mark(page,
+-							f2fs_need_dentry_mark(sbi, ino));
+ 				}
+ 				/* may be written by other thread */
+ 				if (!PageDirty(page))
+-- 
+2.34.1
+

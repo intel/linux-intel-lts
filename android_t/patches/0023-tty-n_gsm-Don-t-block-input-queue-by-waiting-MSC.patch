@@ -1,0 +1,174 @@
+From b685873ff1c681414eb8e1e8b915168e169b0033 Mon Sep 17 00:00:00 2001
+From: Seppo Takalo <seppo.takalo@nordicsemi.no>
+Date: Wed, 27 Aug 2025 15:26:56 +0300
+Subject: [PATCH 23/25] tty: n_gsm: Don't block input queue by waiting MSC
+
+[ Upstream commit 3cf0b3c243e56bc43be560617416c1d9f301f44c ]
+
+Currently gsm_queue() processes incoming frames and when opening
+a DLC channel it calls gsm_dlci_open() which calls gsm_modem_update().
+If basic mode is used it calls gsm_modem_upd_via_msc() and it
+cannot block the input queue by waiting the response to come
+into the same input queue.
+
+Instead allow sending Modem Status Command without waiting for remote
+end to respond. Define a new function gsm_modem_send_initial_msc()
+for this purpose. As MSC is only valid for basic encoding, it does
+not do anything for advanced or when convergence layer type 2 is used.
+
+Fixes: 48473802506d ("tty: n_gsm: fix missing update of modem controls after DLCI open")
+Signed-off-by: Seppo Takalo <seppo.takalo@nordicsemi.no>
+Link: https://lore.kernel.org/r/20250827123221.1148666-1-seppo.takalo@nordicsemi.no
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+
+[ Backport to 5.15: fold in upstream 11ea5a63d30ad ("tty: n_gsm: fix missing
+  modem controls after DLCI open in convergence layer type 2") from the start.
+  As originally backported, gsm_modem_send_initial_msc() returned early for
+  dlci->adaption != 1, so convergence-layer-type-2 DLCIs never transmitted
+  their initial V.24 control signals: the peer's CTS/DTR stay unknown and an
+  application waiting on hardware flow control or DLCI presence can stall until
+  the first data frame. The follow-up threads a "wait" flag through
+  gsm_modem_update()/gsm_modem_upd_via_msc() instead and removes the separate
+  helper. 5.15 keeps its own del_timer() and "encoding == 0" spellings. ]
+---
+ drivers/tty/n_gsm.c | 42 ++++++++++++++++++++++++++++++++----------
+ 1 file changed, 32 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/tty/n_gsm.c b/drivers/tty/n_gsm.c
+index 934c57a775223..8e50287bd5f60 100644
+--- a/drivers/tty/n_gsm.c
++++ b/drivers/tty/n_gsm.c
+@@ -388,7 +388,7 @@ static const u8 gsm_fcs8[256] = {
+ #define GOOD_FCS	0xCF
+ 
+ static int gsmld_output(struct gsm_mux *gsm, u8 *data, int len);
+-static int gsm_modem_update(struct gsm_dlci *dlci, u8 brk);
++static int gsm_modem_update(struct gsm_dlci *dlci, u8 brk, bool wait);
+ static struct gsm_msg *gsm_data_alloc(struct gsm_mux *gsm, u8 addr, int len,
+ 								u8 ctrl);
+ static int gsm_send_packet(struct gsm_mux *gsm, struct gsm_msg *msg);
+@@ -1313,6 +1313,24 @@ static void gsm_dlci_data_kick(struct gsm_dlci *dlci)
+  *	Control message processing
+  */
+ 
++static int gsm_control_command(struct gsm_mux *gsm, int cmd, const u8 *data,
++			       int dlen)
++{
++	struct gsm_msg *msg;
++	struct gsm_dlci *dlci = gsm->dlci[0];
++
++	msg = gsm_data_alloc(gsm, 0, dlen + 2, gsm->ftype);
++	if (!msg)
++		return -ENOMEM;
++
++	msg->data[0] = (cmd << 1) | CR | EA;
++	msg->data[1] = (dlen << 1) | EA;
++	memcpy(msg->data + 2, data, dlen);
++	gsm_data_queue(dlci, msg);
++
++	return 0;
++}
++
+ 
+ /**
+  *	gsm_control_reply	-	send a response frame to a control
+@@ -1798,7 +1816,7 @@ static void gsm_dlci_open(struct gsm_dlci *dlci)
+ 		pr_debug("DLCI %d goes open.\n", dlci->addr);
+ 	/* Send current modem state */
+ 	if (dlci->addr)
+-		gsm_modem_update(dlci, 0);
++		gsm_modem_update(dlci, 0, false);
+ 	gsm_dlci_data_kick(dlci);
+ 	wake_up(&dlci->gsm->event);
+ }
+@@ -3452,9 +3470,10 @@ static void gsm_modem_upd_via_data(struct gsm_dlci *dlci, u8 brk)
+  *	gsm_modem_upd_via_msc	-	send modem bits via control frame
+  *	@dlci: channel
+  *	@brk: break signal
++ *	@wait: wait for the MSC command
+  */
+ 
+-static int gsm_modem_upd_via_msc(struct gsm_dlci *dlci, u8 brk)
++static int gsm_modem_upd_via_msc(struct gsm_dlci *dlci, u8 brk, bool wait)
+ {
+ 	u8 modembits[3];
+ 	struct gsm_control *ctrl;
+@@ -3471,6 +3490,8 @@ static int gsm_modem_upd_via_msc(struct gsm_dlci *dlci, u8 brk)
+ 		modembits[2] = (brk << 4) | 2 | EA; /* Length, Break, EA */
+ 		len++;
+ 	}
++	if (!wait)
++		return gsm_control_command(dlci->gsm, CMD_MSC, modembits, len);
+ 	ctrl = gsm_control_send(dlci->gsm, CMD_MSC, modembits, len);
+ 	if (ctrl == NULL)
+ 		return -ENOMEM;
+@@ -3481,9 +3502,10 @@ static int gsm_modem_upd_via_msc(struct gsm_dlci *dlci, u8 brk)
+  *	gsm_modem_update	-	send modem status line state
+  *	@dlci: channel
+  *	@brk: break signal
++ *	@wait: wait for the MSC command
+  */
+ 
+-static int gsm_modem_update(struct gsm_dlci *dlci, u8 brk)
++static int gsm_modem_update(struct gsm_dlci *dlci, u8 brk, bool wait)
+ {
+ 	if (dlci->gsm->dead)
+ 		return -EL2HLT;
+@@ -3493,7 +3515,7 @@ static int gsm_modem_update(struct gsm_dlci *dlci, u8 brk)
+ 		return 0;
+ 	} else if (dlci->gsm->encoding == 0) {
+ 		/* Send as MSC control message. */
+-		return gsm_modem_upd_via_msc(dlci, brk);
++		return gsm_modem_upd_via_msc(dlci, brk, wait);
+ 	}
+ 
+ 	/* Modem status lines are not supported. */
+@@ -3532,7 +3554,7 @@ static void gsm_dtr_rts(struct tty_port *port, int onoff)
+ 		modem_tx &= ~(TIOCM_DTR | TIOCM_RTS);
+ 	if (modem_tx != dlci->modem_tx) {
+ 		dlci->modem_tx = modem_tx;
+-		gsm_modem_update(dlci, 0);
++		gsm_modem_update(dlci, 0, true);
+ 	}
+ }
+ 
+@@ -3725,7 +3747,7 @@ static int gsmtty_tiocmset(struct tty_struct *tty,
+ 
+ 	if (modem_tx != dlci->modem_tx) {
+ 		dlci->modem_tx = modem_tx;
+-		return gsm_modem_update(dlci, 0);
++		return gsm_modem_update(dlci, 0, true);
+ 	}
+ 	return 0;
+ }
+@@ -3786,7 +3808,7 @@ static void gsmtty_throttle(struct tty_struct *tty)
+ 		dlci->modem_tx &= ~TIOCM_RTS;
+ 	dlci->throttled = true;
+ 	/* Send an MSC with RTS cleared */
+-	gsm_modem_update(dlci, 0);
++	gsm_modem_update(dlci, 0, true);
+ }
+ 
+ static void gsmtty_unthrottle(struct tty_struct *tty)
+@@ -3798,7 +3820,7 @@ static void gsmtty_unthrottle(struct tty_struct *tty)
+ 		dlci->modem_tx |= TIOCM_RTS;
+ 	dlci->throttled = false;
+ 	/* Send an MSC with RTS set */
+-	gsm_modem_update(dlci, 0);
++	gsm_modem_update(dlci, 0, true);
+ }
+ 
+ static int gsmtty_break_ctl(struct tty_struct *tty, int state)
+@@ -3816,7 +3838,7 @@ static int gsmtty_break_ctl(struct tty_struct *tty, int state)
+ 		if (encode > 0x0F)
+ 			encode = 0x0F;	/* Best effort */
+ 	}
+-	return gsm_modem_update(dlci, encode);
++	return gsm_modem_update(dlci, encode, true);
+ }
+ 
+ static void gsmtty_cleanup(struct tty_struct *tty)
+-- 
+2.34.1
+

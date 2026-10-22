@@ -1,0 +1,35 @@
+From 62a523c6ba0acd926d29dd31e9b7698d0bcc0886 Mon Sep 17 00:00:00 2001
+From: Ross Lagerwall <ross.lagerwall@citrix.com>
+Date: Wed, 6 Sep 2023 12:08:46 +0100
+Subject: [PATCH 01/25] PCI: Free released resource after coalescing
+
+release_resource() doesn't actually free the resource or resource list
+entry so free the resource list entry to avoid a leak.
+
+Closes: https://lore.kernel.org/r/878r9sga1t.fsf@kernel.org/
+Fixes: e54223275ba1 ("PCI: Release resource invalidated by coalescing")
+Link: https://lore.kernel.org/r/20230906110846.225369-1-ross.lagerwall@citrix.com
+Reported-by: Kalle Valo <kvalo@kernel.org>
+Tested-by: Kalle Valo <kvalo@kernel.org>
+Signed-off-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Cc: stable@vger.kernel.org      # v5.16+
+---
+ drivers/pci/probe.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/pci/probe.c b/drivers/pci/probe.c
+index e53afb986a265..e538d3cd3b05b 100644
+--- a/drivers/pci/probe.c
++++ b/drivers/pci/probe.c
+@@ -1065,6 +1065,7 @@ static int pci_register_host_bridge(struct pci_host_bridge *bridge)
+ 		res = window->res;
+ 		if (!res->flags && !res->start && !res->end) {
+ 			release_resource(res);
++			resource_list_destroy_entry(window);
+ 			continue;
+ 		}
+ 
+-- 
+2.34.1
+

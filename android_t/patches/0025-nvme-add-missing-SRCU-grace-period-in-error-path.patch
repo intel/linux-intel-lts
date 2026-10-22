@@ -1,0 +1,44 @@
+From 74441d33e353ed4b73ec159dad700ff9c664c114 Mon Sep 17 00:00:00 2001
+From: Tristan Madani <tristan@talencesecurity.com>
+Date: Sat, 15 Aug 2026 00:14:27 +0000
+Subject: [PATCH 25/25] nvme: add missing SRCU grace period in error path
+
+nvme_alloc_ns() error path at out_unlink_ns removes ns from the
+namespace head siblings list with list_del_rcu(&ns->siblings) but
+does not wait for SRCU readers before freeing the namespace struct.
+Multipath code iterates the head->list under srcu_read_lock() in
+nvme_find_path() and nvme_mpath_revalidate_paths(), so a concurrent
+reader can still hold a reference to ns when kfree(ns) runs.
+
+The normal removal path in nvme_ns_remove() correctly calls
+synchronize_srcu(&ns->head->srcu) after list_del_rcu() to wait for
+in-progress readers. Add the same grace period in the error path.
+
+Fixes: ed754e5deeb1 ("nvme: track shared namespaces")
+Cc: stable@vger.kernel.org
+Signed-off-by: Tristan Madani <tristan@talencesecurity.com>
+Reviewed-by: Sagi Grimberg <sagi@grimberg.me>
+Reviewed-by: John Garry <john.g.garry@oracle.com>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+---
+ drivers/nvme/host/core.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/nvme/host/core.c b/drivers/nvme/host/core.c
+index 4cd2cbe04d6d0..21f8182e99209 100644
+--- a/drivers/nvme/host/core.c
++++ b/drivers/nvme/host/core.c
+@@ -3982,6 +3982,9 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid,
+ 	if (list_empty(&ns->head->list))
+ 		list_del_init(&ns->head->entry);
+ 	mutex_unlock(&ctrl->subsys->lock);
++
++	/* guarantee not available in head->list */
++	synchronize_srcu(&ns->head->srcu);
+ 	nvme_put_ns_head(ns->head);
+  out_cleanup_disk:
+ 	blk_cleanup_disk(disk);
+-- 
+2.34.1
+

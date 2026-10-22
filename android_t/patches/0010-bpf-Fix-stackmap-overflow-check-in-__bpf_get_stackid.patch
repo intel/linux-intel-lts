@@ -1,0 +1,108 @@
+From 29f84fe2dd04b518f53f65739dd9e372db326bf6 Mon Sep 17 00:00:00 2001
+From: Arnaud Lecomte <contact@arnaud-lcm.com>
+Date: Sat, 25 Oct 2025 19:29:41 +0000
+Subject: [PATCH 10/25] bpf: Fix stackmap overflow check in __bpf_get_stackid()
+
+Syzkaller reported a KASAN slab-out-of-bounds write in __bpf_get_stackid()
+when copying stack trace data. The issue occurs when the perf trace
+ contains more stack entries than the stack map bucket can hold,
+ leading to an out-of-bounds write in the bucket's data array.
+
+Fixes: ee2a098851bf ("bpf: Adjust BPF stack helper functions to accommodate skip > 0")
+Reported-by: syzbot+c9b724fbb41cf2538b7b@syzkaller.appspotmail.com
+Signed-off-by: Arnaud Lecomte <contact@arnaud-lcm.com>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Acked-by: Yonghong Song <yonghong.song@linux.dev>
+Acked-by: Song Liu <song@kernel.org>
+Link: https://lore.kernel.org/bpf/20251025192941.1500-1-contact@arnaud-lcm.com
+
+Closes: https://syzkaller.appspot.com/bug?extid=c9b724fbb41cf2538b7b
+(cherry picked from commit 23f852daa4bab4d579110e034e4d513f7d490846)
+---
+ kernel/bpf/stackmap.c | 30 +++++++++++++++++++++++-------
+ 1 file changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/bpf/stackmap.c b/kernel/bpf/stackmap.c
+index e04571c1833f6..f49da559e4af0 100644
+--- a/kernel/bpf/stackmap.c
++++ b/kernel/bpf/stackmap.c
+@@ -61,6 +61,20 @@ static inline int stack_map_data_size(struct bpf_map *map)
+ 		sizeof(struct bpf_stack_build_id) : sizeof(u64);
+ }
+ 
++static u32 stack_map_calculate_max_depth(u32 size, u32 elem_size, u64 flags)
++{
++	u32 skip = flags & BPF_F_SKIP_FIELD_MASK;
++	u32 max_depth;
++	u32 curr_sysctl_max_stack = READ_ONCE(sysctl_perf_event_max_stack);
++
++	max_depth = size / elem_size;
++	max_depth += skip;
++	if (max_depth > curr_sysctl_max_stack)
++		return curr_sysctl_max_stack;
++
++	return max_depth;
++}
++
+ static int prealloc_elems_and_freelist(struct bpf_stack_map *smap)
+ {
+ 	u64 elem_size = sizeof(struct stack_map_bucket) +
+@@ -262,8 +276,8 @@ static long __bpf_get_stackid(struct bpf_map *map,
+ {
+ 	struct bpf_stack_map *smap = container_of(map, struct bpf_stack_map, map);
+ 	struct stack_map_bucket *bucket, *new_bucket, *old_bucket;
++	u32 hash, id, trace_nr, trace_len, max_depth;
+ 	u32 skip = flags & BPF_F_SKIP_FIELD_MASK;
+-	u32 hash, id, trace_nr, trace_len;
+ 	bool user = flags & BPF_F_USER_STACK;
+ 	u64 *ips;
+ 	bool hash_matches;
+@@ -272,7 +286,8 @@ static long __bpf_get_stackid(struct bpf_map *map,
+ 		/* skipping more than usable stack trace */
+ 		return -EFAULT;
+ 
+-	trace_nr = trace->nr - skip;
++	max_depth = stack_map_calculate_max_depth(map->value_size, stack_map_data_size(map), flags);
++	trace_nr = min_t(u32, trace->nr - skip, max_depth - skip);
+ 	trace_len = trace_nr * sizeof(u64);
+ 	ips = trace->ip + skip;
+ 	hash = jhash2((u32 *)ips, trace_len / sizeof(u32), 0);
+@@ -382,6 +397,7 @@ BPF_CALL_3(bpf_get_stackid_pe, struct bpf_perf_event_data_kern *, ctx,
+ 	struct perf_callchain_entry *trace;
+ 	bool kernel, user;
+ 	__u64 nr_kernel;
++	__u64 nr;
+ 	int ret;
+ 
+ 	/* perf_sample_data doesn't have callchain, use bpf_get_stackid */
+@@ -401,15 +417,11 @@ BPF_CALL_3(bpf_get_stackid_pe, struct bpf_perf_event_data_kern *, ctx,
+ 		return -EFAULT;
+ 
+ 	nr_kernel = count_kernel_ip(trace);
++	nr = trace->nr; /* save original */
+ 
+ 	if (kernel) {
+-		__u64 nr = trace->nr;
+-
+ 		trace->nr = nr_kernel;
+ 		ret = __bpf_get_stackid(map, trace, flags);
+-
+-		/* restore nr */
+-		trace->nr = nr;
+ 	} else { /* user */
+ 		u64 skip = flags & BPF_F_SKIP_FIELD_MASK;
+ 
+@@ -420,6 +432,10 @@ BPF_CALL_3(bpf_get_stackid_pe, struct bpf_perf_event_data_kern *, ctx,
+ 		flags = (flags & ~BPF_F_SKIP_FIELD_MASK) | skip;
+ 		ret = __bpf_get_stackid(map, trace, flags);
+ 	}
++
++	/* restore nr */
++	trace->nr = nr;
++
+ 	return ret;
+ }
+ 
+-- 
+2.34.1
+

@@ -1,0 +1,160 @@
+From 94d031a427d386c21aab60eb62c4ee1fc7c9a2b8 Mon Sep 17 00:00:00 2001
+From: Breno Leitao <leitao@debian.org>
+Date: Thu, 25 Jun 2026 05:03:18 -0700
+Subject: [PATCH 18/25] netpoll: fix a use-after-free on shutdown path
+
+There is a use-after-free error on netpoll, which is clearly detected by
+KASAN.
+
+      BUG: KASAN: slab-use-after-free in _raw_spin_lock_irqsave+0x3b/0x80
+      Read of size 1 at addr ... by task kworker/9:1
+      Workqueue: events queue_process
+      Call Trace:
+       skb_dequeue+0x1e/0xb0
+       queue_process+0x2c/0x600
+       process_scheduled_works+0x4b6/0x850
+       worker_thread+0x414/0x5a0
+      Allocated by task 242:
+       __netpoll_setup+0x201/0x4a0
+       netpoll_setup+0x249/0x550
+       enabled_store+0x32f/0x380
+      Freed by task 0:
+       kfree+0x1b7/0x540
+       rcu_core+0x3f8/0x7a0
+
+The problem happens when there is a pending TX worker running in
+parallel with the cleanup path.
+
+This is what happens on netpoll shutdown path:
+
+1) __netpoll_cleanup() is called
+2) set dev->npinfo to NULL
+3) call_rcu() with rcu_cleanup_netpoll_info()
+  3.1) rcu_cleanup_netpoll_info() tries to cancel all workers with
+       cancel_delayed_work(), but doesn't wait for the worker to finish
+4) and kfree(npinfo);
+
+Because 3.1) doesn't really cancel the work, as the comment says "we
+can't call cancel_delayed_work_sync here, as we are in softirq", the TX
+worker can run after 4).
+
+Tl;DR: queue_process() is not an RCU reader, it reaches npinfo through
+the work item via container_of().
+
+Use disable_delayed_work_sync() to ensure the worker is completely
+stopped and prevent any future re-arming attempts. Once npinfo is set
+to NULL, senders will bail out and not queue new work. The disable flag
+ensures any in-flight re-arming attempts also fail silently.
+
+In the future, we can do the cleanup inline here without needing the
+npinfo->rcu rcu_head, but that is net-next material.
+
+Cc: stable@vger.kernel.org
+Fixes: 38e6bc185d95 ("netpoll: make __netpoll_cleanup non-block")
+Reviewed-by: Pavan Chebbi <pavan.chebbi@broadcom.com>
+Signed-off-by: Breno Leitao <leitao@debian.org>
+Link: https://patch.msgid.link/20260625-netpoll_rcu_fix-v2-1-0748ffac1e98@debian.org
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+(cherry picked from commit 45f1458a85017a023f138b22ac5c76abd477db42)
+
+[ Backport to 5.15: disable_delayed_work_sync() does not exist on this base, so
+  the tx_lock + tx_work_disabled + cancel_delayed_work_sync() sequence is
+  open-coded. tx_work_disabled has to be initialised explicitly: npinfo comes
+  from kmalloc(), so a non-zero leftover value would permanently suppress the
+  deferred TX work and stall netpoll/netconsole output. ]
+---
+ include/linux/netpoll.h |  2 ++
+ net/core/netpoll.c      | 29 +++++++++++++++++++----------
+ 2 files changed, 21 insertions(+), 10 deletions(-)
+
+diff --git a/include/linux/netpoll.h b/include/linux/netpoll.h
+index 533f8a5323a3b..02eb156c60d89 100644
+--- a/include/linux/netpoll.h
++++ b/include/linux/netpoll.h
+@@ -41,6 +41,8 @@ struct netpoll_info {
+ 	struct sk_buff_head txq;
+ 
+ 	struct delayed_work tx_work;
++	spinlock_t tx_lock;
++	bool tx_work_disabled;
+ 
+ 	struct netpoll *netpoll;
+ 	struct rcu_head rcu;
+diff --git a/net/core/netpoll.c b/net/core/netpoll.c
+index 8752a61f0455a..03fd56973edf1 100644
+--- a/net/core/netpoll.c
++++ b/net/core/netpoll.c
+@@ -97,6 +97,17 @@ static netdev_tx_t netpoll_start_xmit(struct sk_buff *skb,
+ 	return status;
+ }
+ 
++static void netpoll_schedule_tx_work(struct netpoll_info *npinfo,
++				     unsigned long delay)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&npinfo->tx_lock, flags);
++	if (!npinfo->tx_work_disabled)
++		schedule_delayed_work(&npinfo->tx_work, delay);
++	spin_unlock_irqrestore(&npinfo->tx_lock, flags);
++}
++
+ static void queue_process(struct work_struct *work)
+ {
+ 	struct netpoll_info *npinfo =
+@@ -129,7 +140,7 @@ static void queue_process(struct work_struct *work)
+ 			HARD_TX_UNLOCK(dev, txq);
+ 			local_irq_restore(flags);
+ 
+-			schedule_delayed_work(&npinfo->tx_work, HZ/10);
++			netpoll_schedule_tx_work(npinfo, HZ/10);
+ 			return;
+ 		}
+ 		HARD_TX_UNLOCK(dev, txq);
+@@ -377,7 +388,7 @@ static netdev_tx_t __netpoll_send_skb(struct netpoll *np, struct sk_buff *skb)
+ 
+ 	if (!dev_xmit_complete(status)) {
+ 		skb_queue_tail(&npinfo->txq, skb);
+-		schedule_delayed_work(&npinfo->tx_work,0);
++		netpoll_schedule_tx_work(npinfo, 0);
+ 	}
+ 	ret = NETDEV_TX_OK;
+ out:
+@@ -653,6 +664,8 @@ int __netpoll_setup(struct netpoll *np, struct net_device *ndev)
+ 		INIT_DELAYED_WORK(&npinfo->tx_work, queue_process);
+ 
+ 		refcount_set(&npinfo->refcnt, 1);
++		spin_lock_init(&npinfo->tx_lock);
++		npinfo->tx_work_disabled = false;
+ 
+ 		ops = np->dev->netdev_ops;
+ 		if (ops->ndo_netpoll_setup) {
+@@ -830,14 +843,6 @@ static void rcu_cleanup_netpoll_info(struct rcu_head *rcu_head)
+ 			container_of(rcu_head, struct netpoll_info, rcu);
+ 
+ 	skb_queue_purge(&npinfo->txq);
+-
+-	/* we can't call cancel_delayed_work_sync here, as we are in softirq */
+-	cancel_delayed_work(&npinfo->tx_work);
+-
+-	/* clean after last, unfinished work */
+-	__skb_queue_purge(&npinfo->txq);
+-	/* now cancel it again */
+-	cancel_delayed_work(&npinfo->tx_work);
+ 	kfree(npinfo);
+ }
+ 
+@@ -863,6 +868,10 @@ void __netpoll_cleanup(struct netpoll *np)
+ 			ops->ndo_netpoll_cleanup(np->dev);
+ 
+ 		RCU_INIT_POINTER(np->dev->npinfo, NULL);
++		spin_lock_bh(&npinfo->tx_lock);
++		npinfo->tx_work_disabled = true;
++		spin_unlock_bh(&npinfo->tx_lock);
++		cancel_delayed_work_sync(&npinfo->tx_work);
+ 		call_rcu(&npinfo->rcu, rcu_cleanup_netpoll_info);
+ 	}
+ }
+-- 
+2.34.1
+

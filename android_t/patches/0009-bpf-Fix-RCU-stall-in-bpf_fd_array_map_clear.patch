@@ -1,0 +1,57 @@
+From 8df315c478b6b72519fec779aa153fc108bf8861 Mon Sep 17 00:00:00 2001
+From: Sechang Lim <rhkrqnwk98@gmail.com>
+Date: Tue, 7 Apr 2026 10:38:23 +0000
+Subject: [PATCH 09/25] bpf: Fix RCU stall in bpf_fd_array_map_clear()
+
+Add a missing cond_resched() in bpf_fd_array_map_clear() loop.
+
+For PROG_ARRAY maps with many entries this loop calls
+prog_array_map_poke_run() per entry which can be expensive, and
+without yielding this can cause RCU stalls under load:
+
+  rcu: Stack dump where RCU GP kthread last ran:
+  CPU: 0 UID: 0 PID: 30932 Comm: kworker/0:2 Not tainted 6.14.0-13195-g967e8def1100 #2 PREEMPT(undef)
+  Workqueue: events prog_array_map_clear_deferred
+  RIP: 0010:write_comp_data+0x38/0x90 kernel/kcov.c:246
+  Call Trace:
+   <TASK>
+   prog_array_map_poke_run+0x77/0x380 kernel/bpf/arraymap.c:1096
+   __fd_array_map_delete_elem+0x197/0x310 kernel/bpf/arraymap.c:925
+   bpf_fd_array_map_clear kernel/bpf/arraymap.c:1000 [inline]
+   prog_array_map_clear_deferred+0x119/0x1b0 kernel/bpf/arraymap.c:1141
+   process_one_work+0x898/0x19d0 kernel/workqueue.c:3238
+   process_scheduled_works kernel/workqueue.c:3319 [inline]
+   worker_thread+0x770/0x10b0 kernel/workqueue.c:3400
+   kthread+0x465/0x880 kernel/kthread.c:464
+   ret_from_fork+0x4d/0x80 arch/x86/kernel/process.c:153
+   ret_from_fork_asm+0x19/0x30 arch/x86/entry/entry_64.S:245
+   </TASK>
+
+Reviewed-by: Sun Jian <sun.jian.kdev@gmail.com>
+Fixes: da765a2f5993 ("bpf: Add poke dependency tracking for prog array maps")
+Signed-off-by: Sechang Lim <rhkrqnwk98@gmail.com>
+Link: https://lore.kernel.org/r/20260407103823.3942156-1-rhkrqnwk98@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/arraymap.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/bpf/arraymap.c b/kernel/bpf/arraymap.c
+index a632526ce826b..fb93c91c42c2f 100644
+--- a/kernel/bpf/arraymap.c
++++ b/kernel/bpf/arraymap.c
+@@ -877,8 +877,10 @@ static void bpf_fd_array_map_clear(struct bpf_map *map)
+ 	struct bpf_array *array = container_of(map, struct bpf_array, map);
+ 	int i;
+ 
+-	for (i = 0; i < array->map.max_entries; i++)
++	for (i = 0; i < array->map.max_entries; i++) {
+ 		fd_array_map_delete_elem(map, &i);
++		cond_resched();
++	}
+ }
+ 
+ static void prog_array_map_seq_show_elem(struct bpf_map *map, void *key,
+-- 
+2.34.1
+

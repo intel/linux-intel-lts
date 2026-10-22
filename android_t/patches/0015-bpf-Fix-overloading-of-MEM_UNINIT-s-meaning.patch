@@ -1,0 +1,193 @@
+From b3082903a3c774f057c4beab915681b0885fbebf Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Wed, 21 Oct 2026 09:04:16 +0800
+Subject: [PATCH 15/25] bpf: Fix overloading of MEM_UNINIT's meaning
+
+Lonial reported an issue in the BPF verifier where check_mem_size_reg()
+has the following code:
+
+    if (!tnum_is_const(reg->var_off))
+        /* For unprivileged variable accesses, disable raw
+         * mode so that the program is required to
+         * initialize all the memory that the helper could
+         * just partially fill up.
+         */
+         meta = NULL;
+
+This means that writes are not checked when the register containing the
+size of the passed buffer has not a fixed size. Through this bug, a BPF
+program can write to a map which is marked as read-only, for example,
+.rodata global maps.
+
+The problem is that MEM_UNINIT's initial meaning that "the passed buffer
+to the BPF helper does not need to be initialized" which was added back
+in commit 435faee1aae9 ("bpf, verifier: add ARG_PTR_TO_RAW_STACK type")
+got overloaded over time with "the passed buffer is being written to".
+
+The problem however is that checks such as the above which were added later
+via 06c1c049721a ("bpf: allow helpers access to variable memory") set meta
+to NULL in order force the user to always initialize the passed buffer to
+the helper. Due to the current double meaning of MEM_UNINIT, this bypasses
+verifier write checks to the memory (not boundary checks though) and only
+assumes the latter memory is read instead.
+
+Fix this by reverting MEM_UNINIT back to its original meaning, and having
+MEM_WRITE as an annotation to BPF helpers in order to then trigger the
+BPF verifier checks for writing to memory.
+
+Some notes: check_arg_pair_ok() ensures that for ARG_CONST_SIZE{,_OR_ZERO}
+we can access fn->arg_type[arg - 1] since it must contain a preceding
+ARG_PTR_TO_MEM. For check_mem_reg() the meta argument can be removed
+altogether since we do check both BPF_READ and BPF_WRITE. Same for the
+equivalent check_kfunc_mem_size_reg().
+
+Fixes: 7b3552d3f9f6 ("bpf: Reject writes for PTR_TO_MAP_KEY in check_helper_mem_access")
+Fixes: 97e6d7dab1ca ("bpf: Check PTR_TO_MEM | MEM_RDONLY in check_helper_mem_access")
+Fixes: 15baa55ff5b0 ("bpf/verifier: allow all functions to read user provided context")
+Reported-by: Lonial Con <kongln9170@gmail.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Link: https://lore.kernel.org/r/20241021152809.33343-2-daniel@iogearbox.net
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/verifier.c | 35 ++++++++++++++++++++++++-----------
+ 1 file changed, 24 insertions(+), 11 deletions(-)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index dd960fdbd26fa..107e0c54e1999 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -243,6 +243,7 @@ static bool bpf_pseudo_kfunc_call(const struct bpf_insn *insn)
+ struct bpf_call_arg_meta {
+ 	struct bpf_map *map_ptr;
+ 	bool raw_mode;
++	enum bpf_access_type access_type;
+ 	bool pkt_access;
+ 	int regno;
+ 	int access_size;
+@@ -4847,7 +4848,8 @@ static int check_stack_range_initialized(
+ }
+ 
+ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
+-				   int access_size, bool zero_size_allowed,
++				   int access_size, enum bpf_access_type access_type,
++				   bool zero_size_allowed,
+ 				   struct bpf_call_arg_meta *meta)
+ {
+ 	struct bpf_reg_state *regs = cur_regs(env), *reg = &regs[regno];
+@@ -4860,7 +4862,7 @@ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
+ 		return check_packet_access(env, regno, reg->off, access_size,
+ 					   zero_size_allowed);
+ 	case PTR_TO_MAP_KEY:
+-		if (meta && meta->raw_mode) {
++		if (access_type == BPF_WRITE) {
+ 			verbose(env, "R%d cannot write into %s\n", regno,
+ 				reg_type_str(env, reg->type));
+ 			return -EACCES;
+@@ -4869,14 +4871,13 @@ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
+ 					       reg->map_ptr->key_size, false);
+ 	case PTR_TO_MAP_VALUE:
+ 		if (check_map_access_type(env, regno, reg->off, access_size,
+-					  meta && meta->raw_mode ? BPF_WRITE :
+-					  BPF_READ))
++					  access_type))
+ 			return -EACCES;
+ 		return check_map_access(env, regno, reg->off, access_size,
+ 					zero_size_allowed);
+ 	case PTR_TO_MEM:
+ 		if (type_is_rdonly_mem(reg->type)) {
+-			if (meta && meta->raw_mode) {
++			if (access_type == BPF_WRITE) {
+ 				verbose(env, "R%d cannot write into %s\n", regno,
+ 					reg_type_str(env, reg->type));
+ 				return -EACCES;
+@@ -4887,7 +4888,7 @@ static int check_helper_mem_access(struct bpf_verifier_env *env, int regno,
+ 					       zero_size_allowed);
+ 	case PTR_TO_BUF:
+ 		if (type_is_rdonly_mem(reg->type)) {
+-			if (meta && meta->raw_mode) {
++			if (access_type == BPF_WRITE) {
+ 				verbose(env, "R%d cannot write into %s\n", regno,
+ 					reg_type_str(env, reg->type));
+ 				return -EACCES;
+@@ -4935,12 +4936,16 @@ int check_mem_reg(struct bpf_verifier_env *env, struct bpf_reg_state *reg,
+ 		int rv;
+ 
+ 		mark_ptr_not_null_reg(reg);
+-		rv = check_helper_mem_access(env, regno, mem_size, true, NULL);
++		rv = check_helper_mem_access(env, regno, mem_size, BPF_READ,
++					     true, NULL);
++		rv = rv ?: check_helper_mem_access(env, regno, mem_size, BPF_WRITE,
++						   true, NULL);
+ 		*reg = saved_reg;
+ 		return rv;
+ 	}
+ 
+-	return check_helper_mem_access(env, regno, mem_size, true, NULL);
++	return check_helper_mem_access(env, regno, mem_size, BPF_READ, true, NULL) ?:
++	       check_helper_mem_access(env, regno, mem_size, BPF_WRITE, true, NULL);
+ }
+ 
+ /* Implementation details:
+@@ -5431,7 +5436,7 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
+ 			return -EACCES;
+ 		}
+ 		err = check_helper_mem_access(env, regno,
+-					      meta->map_ptr->key_size, false,
++					      meta->map_ptr->key_size, BPF_READ, false,
+ 					      NULL);
+ 	} else if (base_type(arg_type) == ARG_PTR_TO_MAP_VALUE ||
+ 		   base_type(arg_type) == ARG_PTR_TO_UNINIT_MAP_VALUE) {
+@@ -5447,8 +5452,10 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
+ 			return -EACCES;
+ 		}
+ 		meta->raw_mode = (arg_type == ARG_PTR_TO_UNINIT_MAP_VALUE);
++		meta->access_type = meta->raw_mode ? BPF_WRITE : BPF_READ;
+ 		err = check_helper_mem_access(env, regno,
+-					      meta->map_ptr->value_size, false,
++					      meta->map_ptr->value_size,
++					      meta->access_type, false,
+ 					      meta);
+ 	} else if (arg_type == ARG_PTR_TO_PERCPU_BTF_ID) {
+ 		if (!reg->btf_id) {
+@@ -5478,8 +5485,10 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
+ 		 * next is_mem_size argument below.
+ 		 */
+ 		meta->raw_mode = (arg_type == ARG_PTR_TO_UNINIT_MEM);
++		meta->access_type = meta->raw_mode ? BPF_WRITE : BPF_READ;
+ 	} else if (arg_type_is_mem_size(arg_type)) {
+ 		bool zero_size_allowed = (arg_type == ARG_CONST_SIZE_OR_ZERO);
++		enum bpf_access_type access_type = meta->access_type;
+ 
+ 		/* This is used to refine r0 return value bounds for helpers
+ 		 * that enforce this value as an upper bound on return values.
+@@ -5510,6 +5519,7 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
+ 
+ 		if (reg->umin_value == 0) {
+ 			err = check_helper_mem_access(env, regno - 1, 0,
++						      access_type,
+ 						      zero_size_allowed,
+ 						      meta);
+ 			if (err)
+@@ -5523,6 +5533,7 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
+ 		}
+ 		err = check_helper_mem_access(env, regno - 1,
+ 					      reg->umax_value,
++					      access_type,
+ 					      zero_size_allowed, meta);
+ 		if (!err)
+ 			err = mark_chain_precision(env, regno);
+@@ -5539,7 +5550,9 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
+ 	} else if (arg_type_is_int_ptr(arg_type)) {
+ 		int size = int_ptr_type_to_size(arg_type);
+ 
+-		err = check_helper_mem_access(env, regno, size, false, meta);
++		err = check_helper_mem_access(env, regno, size,
++					     meta->raw_mode ? BPF_WRITE : BPF_READ,
++					     false, meta);
+ 		if (err)
+ 			return err;
+ 		err = check_ptr_alignment(env, reg, 0, size, true);
+-- 
+2.34.1
+

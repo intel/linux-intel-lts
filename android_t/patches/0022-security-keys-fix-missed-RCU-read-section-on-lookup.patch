@@ -1,0 +1,49 @@
+From fb648931238f258d70da83d55d12448fceac7e45 Mon Sep 17 00:00:00 2001
+From: Linus Torvalds <torvalds@linux-foundation.org>
+Date: Thu, 28 May 2026 11:45:41 -0700
+Subject: [PATCH 22/25] security/keys: fix missed RCU read section on lookup
+
+Nicholas Carlini reports that the keyring code calls assoc_array_find()
+in find_key_to_update() without holding the RCU read lock, while the
+assoc_array_gc() code really is designed around removing the node from
+the tree and then freeing it after an RCU grace-period.
+
+The regular key handling doesn't see this because holding the keyring
+semaphore hides any lifetime issues, but the persistent key handling
+uses a different model.
+
+Instead of extending the keyring locking, just do the simple RCU locking
+that the assoc_array was designed for.
+
+Reported-by: Nicholas Carlini <npc@anthropic.com>
+Cc: David Howells <dhowells@redhat.com>
+Cc: Jarkko Sakkinen <jarkko@kernel.org>
+Cc: Paul Moore <paul@paul-moore.com>
+Cc: James Morris James Morris <jmorris@namei.org>
+Cc: Serge E. Hallyn <serge@hallyn.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+
+[ Backport to 5.15: hoist guard(rcu)() into the declaration block. 5.15 builds
+  with -std=gnu89 and -Wdeclaration-after-statement (CONFIG_WERROR defaults to
+  y), so upstream's statement-position guard does not compile; a bare block
+  suppresses the warning but ends the guard's scope before the lookup, which
+  defeats the fix. ]
+---
+ security/keys/keyring.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/security/keys/keyring.c b/security/keys/keyring.c
+index fc26d339a962b..5b366911aac58 100644
+--- a/security/keys/keyring.c
++++ b/security/keys/keyring.c
+@@ -1105,6 +1105,7 @@ key_ref_t find_key_to_update(key_ref_t keyring_ref,
+ {
+ 	struct key *keyring, *key;
+ 	const void *object;
++	guard(rcu)();
+ 
+ 	keyring = key_ref_to_ptr(keyring_ref);
+ 
+-- 
+2.34.1
+

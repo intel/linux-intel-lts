@@ -1,0 +1,80 @@
+From 55d9ee9baffe554e2d328ad202fd24791cd7b2f3 Mon Sep 17 00:00:00 2001
+From: Tao Yu <tao1.yu@intel.com>
+Date: Wed, 21 Oct 2026 13:51:55 +0800
+Subject: [PATCH 08/25] bpf: Do not allow deleting local storage in NMI
+
+Currently, local storage may deadlock when deferring freeing selem or
+local storage through kfree_rcu(), call_rcu() or call_rcu_tasks_trace()
+in NMI or reentrant. Since deleting selem in NMI is an unlikely use
+case, partially mitigate it by returning error when calling from
+bpf_xxx_storage_delete() helpers in NMI. Note that, it is still possible
+to deadlock through reentrant. A full mitigation requires returning
+error when irqs_disabled() is true, which, however is too heavy-handed
+for bpf_xxx_storage_delete().
+
+The long-term solution requires _nolock versions of call_rcu. Another
+possible solution is to defer the free through irq_work [0], but it
+would grow the size of selem, which is non-ideal.
+
+The check is only needed in bpf_selem_unlink(), which is used by helpers
+and syscalls. bpf_selem_unlink_nofail() is fine as it is called during
+map and owner tear down that never run in NMI or reentrant.
+
+[0] https://lore.kernel.org/bpf/20260205190233.912-1-alexei.starovoitov@gmail.com/
+
+Fixes: a10787e6d58c ("bpf: Enable task local storage for tracing programs")
+Signed-off-by: Amery Hung <ameryhung@gmail.com>
+Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
+Acked-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Link: https://patch.msgid.link/20260319025716.2361065-1-ameryhung@gmail.com
+---
+ kernel/bpf/bpf_inode_storage.c | 3 +++
+ kernel/bpf/bpf_task_storage.c  | 3 +++
+ net/core/bpf_sk_storage.c      | 3 +++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/kernel/bpf/bpf_inode_storage.c b/kernel/bpf/bpf_inode_storage.c
+index ab35f1b660084..8c399c2758a87 100644
+--- a/kernel/bpf/bpf_inode_storage.c
++++ b/kernel/bpf/bpf_inode_storage.c
+@@ -143,6 +143,9 @@ static int inode_storage_delete(struct inode *inode, struct bpf_map *map)
+ {
+ 	struct bpf_local_storage_data *sdata;
+ 
++	if (in_nmi())
++		return -EOPNOTSUPP;
++
+ 	sdata = inode_storage_lookup(inode, map, false);
+ 	if (!sdata)
+ 		return -ENOENT;
+diff --git a/kernel/bpf/bpf_task_storage.c b/kernel/bpf/bpf_task_storage.c
+index 6b7bfce239158..ddefc796fc2aa 100644
+--- a/kernel/bpf/bpf_task_storage.c
++++ b/kernel/bpf/bpf_task_storage.c
+@@ -185,6 +185,9 @@ static int task_storage_delete(struct task_struct *task, struct bpf_map *map)
+ {
+ 	struct bpf_local_storage_data *sdata;
+ 
++	if (in_nmi())
++		return -EOPNOTSUPP;
++
+ 	sdata = task_storage_lookup(task, map, false);
+ 	if (!sdata)
+ 		return -ENOENT;
+diff --git a/net/core/bpf_sk_storage.c b/net/core/bpf_sk_storage.c
+index 4953abee79fea..02c4f60804e8a 100644
+--- a/net/core/bpf_sk_storage.c
++++ b/net/core/bpf_sk_storage.c
+@@ -34,6 +34,9 @@ static int bpf_sk_storage_del(struct sock *sk, struct bpf_map *map)
+ {
+ 	struct bpf_local_storage_data *sdata;
+ 
++	if (in_nmi())
++		return -EOPNOTSUPP;
++
+ 	sdata = bpf_sk_storage_lookup(sk, map, false);
+ 	if (!sdata)
+ 		return -ENOENT;
+-- 
+2.34.1
+

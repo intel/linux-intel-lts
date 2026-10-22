@@ -1,0 +1,67 @@
+From 9bb01de2d56ddb1049bcc5a7a44326601df2b990 Mon Sep 17 00:00:00 2001
+From: Jamal Hadi Salim <jhs@mojatatu.com>
+Date: Mon, 25 May 2026 08:25:51 -0400
+Subject: [PATCH 05/25] net/sched: fix packet loop on netem when duplicate is
+ on
+
+When netem duplicates a packet it re-enqueues the copy at the root qdisc.
+If another netem sits in the tree the copy can be duplicated
+again, recursing until the stack or memory is exhausted.
+
+The original duplication guard temporarily zeroed q->duplicate around
+the re-enqueue, but that does not cover all cases because it is
+per-qdisc state shared across all concurrent enqueue paths
+and is not safe without additional locking.
+
+Use the skb tc_depth field introduced in an earlier patch:
+ - increment it on the duplicate before re-enqueue
+ - skip duplication for any skb whose tc_depth is already non-zero.
+
+This marks the packet itself rather than mutating qdisc state,
+therefore it is safe regardless of tree topology or concurrency.
+
+Fixes: 0afb51e72855 ("[PKT_SCHED]: netem: reinsert for duplication")
+Reported-by: William Liu <will@willsroot.io>
+Reported-by: Savino Dicanosa <savy@syst3mfailure.io>
+Closes: https://lore.kernel.org/netdev/8DuRWwfqjoRDLDmBMlIfbrsZg9Gx50DHJc1ilxsEBNe2D6NMoigR_eIRIG0LOjMc3r10nUUZtArXx4oZBIdUfZQrwjcQhdinnMis_0G7VEk=@willsroot.io/
+Co-developed-by: Victor Nogueira <victor@mojatatu.com>
+Signed-off-by: Victor Nogueira <victor@mojatatu.com>
+Reviewed-by: William Liu <will@willsroot.io>
+Reviewed-by: Stephen Hemminger <stephen@networkplumber.org>
+Signed-off-by: Jamal Hadi Salim <jhs@mojatatu.com>
+Link: https://patch.msgid.link/20260525122556.973584-5-jhs@mojatatu.com
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+---
+ net/sched/sch_netem.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/net/sched/sch_netem.c b/net/sched/sch_netem.c
+index 3e3bced82c564..e783a14a0f988 100644
+--- a/net/sched/sch_netem.c
++++ b/net/sched/sch_netem.c
+@@ -450,7 +450,8 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+ 	skb->prev = NULL;
+ 
+ 	/* Random duplication */
+-	if (q->duplicate && q->duplicate >= get_crandom(&q->dup_cor))
++	if (q->duplicate && skb->tc_depth == 0 &&
++	    q->duplicate >= get_crandom(&q->dup_cor))
+ 		++count;
+ 
+ 	/* Drop packet? */
+@@ -528,11 +529,9 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+ 	 */
+ 	if (skb2) {
+ 		struct Qdisc *rootq = qdisc_root_bh(sch);
+-		u32 dupsave = q->duplicate; /* prevent duplicating a dup... */
+ 
+-		q->duplicate = 0;
++		skb2->tc_depth++; /* prevent duplicating a dup... */
+ 		rootq->enqueue(skb2, rootq, to_free);
+-		q->duplicate = dupsave;
+ 		skb2 = NULL;
+ 	}
+ 
+-- 
+2.34.1
+

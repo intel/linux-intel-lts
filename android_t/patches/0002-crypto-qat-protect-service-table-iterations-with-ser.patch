@@ -1,0 +1,145 @@
+From f0c68ba788e60ff4ba9edb3af5c0f142c8f74b1a Mon Sep 17 00:00:00 2001
+From: Ahsan Atta <ahsan.atta@intel.com>
+Date: Wed, 20 May 2026 13:41:55 +0100
+Subject: [PATCH 02/25] crypto: qat - protect service table iterations with
+ service_lock
+
+The service_table list is protected by service_lock when entries are
+added or removed (in adf_service_add() and adf_service_remove()), but
+several functions iterate over the list without holding this lock.
+
+A concurrent adf_service_register() or adf_service_unregister() call
+could modify the list during traversal, leading to list corruption or
+a use-after-free.
+
+Fix this by holding service_lock across all list_for_each_entry()
+iterations of service_table in adf_dev_init(), adf_dev_start(),
+adf_dev_stop(), adf_dev_shutdown(), adf_dev_restarting_notify(),
+adf_dev_restarted_notify(), and adf_error_notifier().
+
+The lock ordering is safe: callers of the static helpers (adf_dev_up()
+and adf_dev_down()) acquire state_lock before service_lock, and no
+event_hld callback or service_lock holder ever acquires state_lock in
+the reverse order.
+
+Cc: stable@vger.kernel.org
+Fixes: d8cba25d2c68 ("crypto: qat - Intel(R) QAT driver framework")
+Signed-off-by: Ahsan Atta <ahsan.atta@intel.com>
+Co-developed-by: Maksim Lukoshkov <maksim.lukoshkov@intel.com>
+Signed-off-by: Maksim Lukoshkov <maksim.lukoshkov@intel.com>
+Reviewed-by: Giovanni Cabiddu <giovanni.cabiddu@intel.com>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+---
+ drivers/crypto/qat/qat_common/adf_init.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/crypto/qat/qat_common/adf_init.c b/drivers/crypto/qat/qat_common/adf_init.c
+index e3749e5817d94..536954f732cc1 100644
+--- a/drivers/crypto/qat/qat_common/adf_init.c
++++ b/drivers/crypto/qat/qat_common/adf_init.c
+@@ -126,16 +126,19 @@ int adf_dev_init(struct adf_accel_dev *accel_dev)
+ 	 * This is to facilitate any ordering dependencies between services
+ 	 * prior to starting any of the accelerators.
+ 	 */
++	mutex_lock(&service_lock);
+ 	list_for_each(list_itr, &service_table) {
+ 		service = list_entry(list_itr, struct service_hndl, list);
+ 		if (service->event_hld(accel_dev, ADF_EVENT_INIT)) {
+ 			dev_err(&GET_DEV(accel_dev),
+ 				"Failed to initialise service %s\n",
+ 				service->name);
++			mutex_unlock(&service_lock);
+ 			return -EFAULT;
+ 		}
+ 		set_bit(accel_dev->accel_id, service->init_status);
+ 	}
++	mutex_unlock(&service_lock);
+ 
+ 	return 0;
+ }
+@@ -174,16 +177,19 @@ int adf_dev_start(struct adf_accel_dev *accel_dev)
+ 	if (hw_data->set_ssm_wdtimer)
+ 		hw_data->set_ssm_wdtimer(accel_dev);
+ 
++	mutex_lock(&service_lock);
+ 	list_for_each(list_itr, &service_table) {
+ 		service = list_entry(list_itr, struct service_hndl, list);
+ 		if (service->event_hld(accel_dev, ADF_EVENT_START)) {
+ 			dev_err(&GET_DEV(accel_dev),
+ 				"Failed to start service %s\n",
+ 				service->name);
++			mutex_unlock(&service_lock);
+ 			return -EFAULT;
+ 		}
+ 		set_bit(accel_dev->accel_id, service->start_status);
+ 	}
++	mutex_unlock(&service_lock);
+ 
+ 	clear_bit(ADF_STATUS_STARTING, &accel_dev->status);
+ 	set_bit(ADF_STATUS_STARTED, &accel_dev->status);
+@@ -229,6 +235,7 @@ void adf_dev_stop(struct adf_accel_dev *accel_dev)
+ 		qat_asym_algs_unregister();
+ 	}
+ 
++	mutex_lock(&service_lock);
+ 	list_for_each(list_itr, &service_table) {
+ 		service = list_entry(list_itr, struct service_hndl, list);
+ 		if (!test_bit(accel_dev->accel_id, service->start_status))
+@@ -241,6 +248,7 @@ void adf_dev_stop(struct adf_accel_dev *accel_dev)
+ 			clear_bit(accel_dev->accel_id, service->start_status);
+ 		}
+ 	}
++	mutex_unlock(&service_lock);
+ 
+ 	if (wait)
+ 		msleep(100);
+@@ -287,6 +295,7 @@ void adf_dev_shutdown(struct adf_accel_dev *accel_dev)
+ 				  &accel_dev->status);
+ 	}
+ 
++	mutex_lock(&service_lock);
+ 	list_for_each(list_itr, &service_table) {
+ 		service = list_entry(list_itr, struct service_hndl, list);
+ 		if (!test_bit(accel_dev->accel_id, service->init_status))
+@@ -298,6 +307,7 @@ void adf_dev_shutdown(struct adf_accel_dev *accel_dev)
+ 		else
+ 			clear_bit(accel_dev->accel_id, service->init_status);
+ 	}
++	mutex_unlock(&service_lock);
+ 
+ 	hw_data->disable_iov(accel_dev);
+ 
+@@ -326,6 +336,7 @@ int adf_dev_restarting_notify(struct adf_accel_dev *accel_dev)
+ 	struct service_hndl *service;
+ 	struct list_head *list_itr;
+ 
++	mutex_lock(&service_lock);
+ 	list_for_each(list_itr, &service_table) {
+ 		service = list_entry(list_itr, struct service_hndl, list);
+ 		if (service->event_hld(accel_dev, ADF_EVENT_RESTARTING))
+@@ -333,6 +344,7 @@ int adf_dev_restarting_notify(struct adf_accel_dev *accel_dev)
+ 				"Failed to restart service %s.\n",
+ 				service->name);
+ 	}
++	mutex_unlock(&service_lock);
+ 	return 0;
+ }
+ 
+@@ -341,6 +353,7 @@ int adf_dev_restarted_notify(struct adf_accel_dev *accel_dev)
+ 	struct service_hndl *service;
+ 	struct list_head *list_itr;
+ 
++	mutex_lock(&service_lock);
+ 	list_for_each(list_itr, &service_table) {
+ 		service = list_entry(list_itr, struct service_hndl, list);
+ 		if (service->event_hld(accel_dev, ADF_EVENT_RESTARTED))
+@@ -348,5 +361,6 @@ int adf_dev_restarted_notify(struct adf_accel_dev *accel_dev)
+ 				"Failed to restart service %s.\n",
+ 				service->name);
+ 	}
++	mutex_unlock(&service_lock);
+ 	return 0;
+ }
+-- 
+2.34.1
+

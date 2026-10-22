@@ -1,0 +1,176 @@
+From 77a422807aaaa9e1655008a40da94705ff6c653e Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Fri, 3 Apr 2026 22:15:40 +0000
+Subject: [PATCH 24/25] net: pull headers in qdisc_pkt_len_segs_init()
+
+Most ndo_start_xmit() methods expects headers of gso packets
+to be already in skb->head.
+
+net/core/tso.c users are particularly at risk, because tso_build_hdr()
+does a memcpy(hdr, skb->data, hdr_len);
+
+qdisc_pkt_len_segs_init() already does a dissection of gso packets.
+
+Use pskb_may_pull() instead of skb_header_pointer() to make
+sure drivers do not have to reimplement this.
+
+Some malicious packets could be fed, detect them so that we can
+drop them sooner with a new SKB_DROP_REASON_SKB_BAD_GSO drop_reason.
+
+Fixes: e876f208af18 ("net: Add a software TSO helper API")
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Reviewed-by: Joe Damato <joe@dama.to>
+Link: https://patch.msgid.link/20260403221540.3297753-3-edumazet@google.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+(cherry picked from commit 7fb4c19670110f052c04e1ec1d2b953b9f4f57e4)
+---
+ include/linux/skbuff.h |  1 +
+ net/core/dev.c         | 94 ++++++++++++++++++++++++------------------
+ 2 files changed, 56 insertions(+), 39 deletions(-)
+
+diff --git a/include/linux/skbuff.h b/include/linux/skbuff.h
+index 6ebad0f07b081..214b3d7e846fa 100644
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -339,6 +339,7 @@ enum skb_drop_reason {
+ 						  * is multicast, but L3 is
+ 						  * unicast.
+ 						  */
++	SKB_DROP_REASON_SKB_BAD_GSO,	/* malformed GSO packet */
+ 	SKB_DROP_REASON_MAX,
+ };
+ 
+diff --git a/net/core/dev.c b/net/core/dev.c
+index 799398a1cac69..2a3b972cd3c85 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -3819,49 +3819,60 @@ struct sk_buff *validate_xmit_skb_list(struct sk_buff *skb, struct net_device *d
+ }
+ EXPORT_SYMBOL_GPL(validate_xmit_skb_list);
+ 
+-static void qdisc_pkt_len_init(struct sk_buff *skb)
++static enum skb_drop_reason qdisc_pkt_len_segs_init(struct sk_buff *skb)
+ {
+-	const struct skb_shared_info *shinfo = skb_shinfo(skb);
++	struct skb_shared_info *shinfo = skb_shinfo(skb);
++	unsigned int hdr_len, tlen;
++	u16 gso_segs;
+ 
+ 	qdisc_skb_cb(skb)->pkt_len = skb->len;
++	if (!shinfo->gso_size) {
++		return 0;
++	}
+ 
+-	/* To get more precise estimation of bytes sent on wire,
+-	 * we add to pkt_len the headers size of all segments
+-	 */
+-	if (shinfo->gso_size && skb_transport_header_was_set(skb)) {
+-		unsigned int hdr_len;
+-		u16 gso_segs = shinfo->gso_segs;
+-
+-		/* mac layer + network layer */
+-		hdr_len = skb_transport_header(skb) - skb_mac_header(skb);
+-
+-		/* + transport layer */
+-		if (likely(shinfo->gso_type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6))) {
+-			const struct tcphdr *th;
+-			struct tcphdr _tcphdr;
+-
+-			th = skb_header_pointer(skb, skb_transport_offset(skb),
+-						sizeof(_tcphdr), &_tcphdr);
+-			if (likely(th))
+-				hdr_len += __tcp_hdrlen(th);
+-		} else if (shinfo->gso_type & SKB_GSO_UDP_L4) {
+-			struct udphdr _udphdr;
+-
+-			if (skb_header_pointer(skb, skb_transport_offset(skb),
+-					       sizeof(_udphdr), &_udphdr))
+-				hdr_len += sizeof(struct udphdr);
+-		}
+-
+-		if (unlikely(shinfo->gso_type & SKB_GSO_DODGY)) {
+-			int payload = skb->len - hdr_len;
++	gso_segs = shinfo->gso_segs;
+ 
+-			/* Malicious packet. */
+-			if (payload <= 0)
+-				return;
+-			gso_segs = DIV_ROUND_UP(payload, shinfo->gso_size);
+-		}
+-		qdisc_skb_cb(skb)->pkt_len += (gso_segs - 1) * hdr_len;
+-	}
++	/* mac layer + network layer */
++	if (!skb->encapsulation) {
++		if (unlikely(!skb_transport_header_was_set(skb)))
++			return 0;
++		hdr_len = skb_transport_offset(skb);
++	} else {
++		hdr_len = skb_inner_transport_offset(skb);
++	}
++	/* + transport layer */
++	if (likely(shinfo->gso_type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6))) {
++		const struct tcphdr *th;
++
++		if (!pskb_may_pull(skb, hdr_len + sizeof(struct tcphdr)))
++			return SKB_DROP_REASON_SKB_BAD_GSO;
++
++		th = (const struct tcphdr *)(skb->data + hdr_len);
++		tlen = __tcp_hdrlen(th);
++		if (tlen < sizeof(*th))
++			return SKB_DROP_REASON_SKB_BAD_GSO;
++		hdr_len += tlen;
++		if (!pskb_may_pull(skb, hdr_len))
++			return SKB_DROP_REASON_SKB_BAD_GSO;
++	} else if (shinfo->gso_type & SKB_GSO_UDP_L4) {
++		if (!pskb_may_pull(skb, hdr_len + sizeof(struct udphdr)))
++			return SKB_DROP_REASON_SKB_BAD_GSO;
++		hdr_len += sizeof(struct udphdr);
++	}
++
++	/* prior pskb_may_pull() might have changed skb->head. */
++	shinfo = skb_shinfo(skb);
++	if (unlikely(shinfo->gso_type & SKB_GSO_DODGY)) {
++		int payload = skb->len - hdr_len;
++
++		/* Malicious packet. */
++		if (payload <= 0)
++			return SKB_DROP_REASON_SKB_BAD_GSO;
++		gso_segs = DIV_ROUND_UP(payload, shinfo->gso_size);
++		shinfo->gso_segs = gso_segs;
++	}
++	qdisc_skb_cb(skb)->pkt_len += (gso_segs - 1) * hdr_len;
++	return 0;
+ }
+ 
+ static int dev_qdisc_enqueue(struct sk_buff *skb, struct Qdisc *q,
+@@ -4231,6 +4242,7 @@ static int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
+ 	struct net_device *dev = skb->dev;
+ 	struct netdev_queue *txq;
+ 	struct Qdisc *q;
++	enum skb_drop_reason reason;
+ 	int rc = -ENOMEM;
+ 	bool again = false;
+ 
+@@ -4240,6 +4252,11 @@ static int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
+ 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_SCHED_TSTAMP))
+ 		__skb_tstamp_tx(skb, NULL, NULL, skb->sk, SCM_TSTAMP_SCHED);
+ 
++	reason = qdisc_pkt_len_segs_init(skb);
++	if (unlikely(reason)) {
++		kfree_skb_reason(skb, reason);
++		return -EINVAL;
++	}
+ 	/* Disable soft irqs for various locks below. Also
+ 	 * stops preemption for RCU.
+ 	 */
+@@ -4247,7 +4264,6 @@ static int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
+ 
+ 	skb_update_prio(skb);
+ 
+-	qdisc_pkt_len_init(skb);
+ #ifdef CONFIG_NET_CLS_ACT
+ 	skb->tc_at_ingress = 0;
+ # ifdef CONFIG_NET_EGRESS
+-- 
+2.34.1
+

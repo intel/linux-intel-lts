@@ -1,0 +1,50 @@
+From 60eb1d07f4b4230d449fbdd18ddefeecd7d0b58a Mon Sep 17 00:00:00 2001
+From: Lang Xu <xulang@uniontech.com>
+Date: Thu, 2 Apr 2026 15:42:35 +0800
+Subject: [PATCH 12/25] bpf: Fix OOB in pcpu_init_value
+
+An out-of-bounds read occurs when copying element from a
+BPF_MAP_TYPE_CGROUP_STORAGE map to another pcpu map with the
+same value_size that is not rounded up to 8 bytes.
+
+The issue happens when:
+1. A CGROUP_STORAGE map is created with value_size not aligned to
+   8 bytes (e.g., 4 bytes)
+2. A pcpu map is created with the same value_size (e.g., 4 bytes)
+3. Update element in 2 with data in 1
+
+pcpu_init_value assumes that all sources are rounded up to 8 bytes,
+and invokes copy_map_value_long to make a data copy, However, the
+assumption doesn't stand since there are some cases where the source
+may not be rounded up to 8 bytes, e.g., CGROUP_STORAGE, skb->data.
+the verifier verifies exactly the size that the source claims, not
+the size rounded up to 8 bytes by kernel, an OOB happens when the
+source has only 4 bytes while the copy size(4) is rounded up to 8.
+
+Fixes: d3bec0138bfb ("bpf: Zero-fill re-used per-cpu map element")
+Reported-by: Kaiyan Mei <kaiyanm@hust.edu.cn>
+Closes: https://lore.kernel.org/all/14e6c70c.6c121.19c0399d948.Coremail.kaiyanm@hust.edu.cn/
+Link: https://lore.kernel.org/r/420FEEDDC768A4BE+20260402074236.2187154-1-xulang@uniontech.com
+Signed-off-by: Lang Xu <xulang@uniontech.com>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ kernel/bpf/hashtab.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/kernel/bpf/hashtab.c b/kernel/bpf/hashtab.c
+index 91eec11f96a03..384656a063b6f 100644
+--- a/kernel/bpf/hashtab.c
++++ b/kernel/bpf/hashtab.c
+@@ -915,8 +915,7 @@ static void pcpu_init_value(struct bpf_htab *htab, void __percpu *pptr,
+ 
+ 		for_each_possible_cpu(cpu) {
+ 			if (cpu == current_cpu)
+-				bpf_long_memcpy(per_cpu_ptr(pptr, cpu), value,
+-						size);
++				copy_map_value(&htab->map, per_cpu_ptr(pptr, cpu), value);
+ 			else
+ 				memset(per_cpu_ptr(pptr, cpu), 0, size);
+ 		}
+-- 
+2.34.1
+

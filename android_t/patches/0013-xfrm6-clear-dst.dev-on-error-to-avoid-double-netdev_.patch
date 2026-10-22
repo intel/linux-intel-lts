@@ -1,0 +1,55 @@
+From 41ebd982e616b8f66f2a1be17ee7e4b968c4c1ec Mon Sep 17 00:00:00 2001
+From: "Xiang Mei (Microsoft)" <xmei5@asu.edu>
+Date: Thu, 2 Jul 2026 01:05:16 +0000
+Subject: [PATCH 13/25] xfrm6: clear dst.dev on error to avoid double
+ netdev_put in xfrm6_fill_dst()
+
+On the error path where in6_dev_get(dev) returns NULL, xfrm6_fill_dst()
+releases the device reference with netdev_put() but leaves
+xdst->u.dst.dev set. dst_destroy() later calls netdev_put(dst->dev)
+again, so the same net_device reference is released twice, underflowing
+its refcount (ref_tracker WARNING + "unregister_netdevice: waiting for
+<dev> to become free").
+
+Clear xdst->u.dst.dev after the netdev_put(), the same way the XFRM
+device-offload paths xfrm_dev_state_add() and xfrm_dev_policy_add() in
+net/xfrm/xfrm_device.c NULL ->dev when releasing the reference on error.
+
+  ref_tracker: reference already released.
+  ref_tracker: allocated in:
+   xfrm6_fill_dst (net/ipv6/xfrm6_policy.c:86)
+   ...
+   udpv6_sendmsg (net/ipv6/udp.c:1696)
+   ...
+  ref_tracker: freed in:
+   xfrm6_fill_dst (net/ipv6/xfrm6_policy.c:90)
+   ...
+  WARNING: lib/ref_tracker.c:322 at ref_tracker_free+0x58b/0x780
+   dst_destroy (net/core/dst.c:115)
+   rcu_core
+   handle_softirqs
+   ...
+
+Fixes: 84c4a9dfbf43 ("xfrm6: release dev before returning error")
+Reported-by: AutonomousCodeSecurity@microsoft.com
+Signed-off-by: Xiang Mei (Microsoft) <xmei5@asu.edu>
+Signed-off-by: Steffen Klassert <steffen.klassert@secunet.com>
+---
+ net/ipv6/xfrm6_policy.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/ipv6/xfrm6_policy.c b/net/ipv6/xfrm6_policy.c
+index 403d075819ebb..af0544aeb0aba 100644
+--- a/net/ipv6/xfrm6_policy.c
++++ b/net/ipv6/xfrm6_policy.c
+@@ -88,6 +88,7 @@ static int xfrm6_fill_dst(struct xfrm_dst *xdst, struct net_device *dev,
+ 	xdst->u.rt6.rt6i_idev = in6_dev_get(dev);
+ 	if (!xdst->u.rt6.rt6i_idev) {
+ 		dev_put(dev);
++		xdst->u.dst.dev = NULL;
+ 		return -ENODEV;
+ 	}
+ 
+-- 
+2.34.1
+
