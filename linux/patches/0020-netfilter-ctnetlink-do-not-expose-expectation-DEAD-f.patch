@@ -1,0 +1,32 @@
+From a3014a3b68cefa18f0bb45b726f790c4de2ab984 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Wed, 12 Aug 2026 10:03:38 +0200
+Subject: [PATCH 20/20] netfilter: ctnetlink: do not expose expectation DEAD
+ flag
+
+Expose expectation flags included in the NF_CT_EXPECT_MASK bitmask
+only. The DEAD flag is internal, do not expose it.
+
+Fixes: b8b09dc2bf35 ("netfilter: nf_conntrack_expect: use conntrack GC to reap expectations")
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+Signed-off-by: Kris Pan <kris.pan@intel.com>
+---
+ net/netfilter/nf_conntrack_netlink.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nf_conntrack_netlink.c b/net/netfilter/nf_conntrack_netlink.c
+index d7c4f34f1caf0..6ccb23a640d85 100644
+--- a/net/netfilter/nf_conntrack_netlink.c
++++ b/net/netfilter/nf_conntrack_netlink.c
+@@ -3050,7 +3050,7 @@ ctnetlink_exp_dump_expect(struct sk_buff *skb,
+ #endif
+ 	if (nla_put_be32(skb, CTA_EXPECT_TIMEOUT, htonl(timeout)) ||
+ 	    nla_put_be32(skb, CTA_EXPECT_ID, nf_expect_get_id(exp)) ||
+-	    nla_put_be32(skb, CTA_EXPECT_FLAGS, htonl(exp->flags)) ||
++	    nla_put_be32(skb, CTA_EXPECT_FLAGS, htonl(exp->flags & NF_CT_EXPECT_MASK)) ||
+ 	    nla_put_be32(skb, CTA_EXPECT_CLASS, htonl(exp->class)))
+ 		goto nla_put_failure;
+ 
+-- 
+2.34.1
+

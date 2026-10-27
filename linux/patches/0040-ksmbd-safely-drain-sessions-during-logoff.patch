@@ -1,4 +1,4 @@
-From 7db1c33adefebd83c708fe54f46dd3d5e0dee365 Mon Sep 17 00:00:00 2001
+From bf53b412dadd96660e0fc8142065af73f3c9b148 Mon Sep 17 00:00:00 2001
 From: Namjae Jeon <linkinjeon@kernel.org>
 Date: Fri, 28 Aug 2026 10:46:44 +0900
 Subject: [PATCH 040/143] ksmbd: safely drain sessions during logoff
@@ -34,29 +34,35 @@ Signed-off-by: Namjae Jeon <linkinjeon@kernel.org>
   paths and cancel_fn invocation for synchronous CANCEL.
   Adapted: 6.18 has no register_session_channel(), so the tearing_down
   check is done at the two open-coded channel xa_store() sites in
-  ntlm_authenticate() and krb5_authenticate(). ksmbd_conn_wait_idle_sess_id()
-  becomes ksmbd_conn_wait_idle_sess(conn, sess) with the 6.18 connection
-  match (conn->binding || conn->sessions) plus sess->ksmbd_chann_list
-  membership; ksmbd_all_conn_set_status() keeps its 6.18 sess_id form.
+  ntlm_authenticate() and krb5_authenticate().
   Added (not upstream): release_async_work() clears cancel_fn/cancel_argv
   under request_lock, because synchronous CANCEL now calls cancel_fn on
   works found via conn->requests, which release_async_work() does not
   unlink.
   Not taken: the ksmbd_conn_cancel_async_requests() hunk (function absent),
   CHANGE_NOTIFY claim handling and the kerberos_expiry reset in logoff. ]
+[ kernel-lts-cve series refresh for v6.18.58: stable now carries
+  c50e628122ae ("ksmbd: scope session state changes to bound
+  connections", as 1ff0e41afbe7), which upstream applied before this
+  commit. Resolved to the upstream end state: ksmbd_conn_wait_idle_sess()
+  uses ksmbd_session_is_bound_to_conn() (the local
+  ksmbd_conn_has_sess_channel() helper is dropped), and
+  ksmbd_all_conn_set_status() takes the session. smb2_session_logoff(),
+  destroy_previous_session() and ksmbd_conn_wait_idle_sess() now match
+  upstream d12168084c8c except for the kerberos_expiry resets (6.18 has no
+  kerberos_expiry). ]
 (cherry picked from commit d12168084c8c1b6d883c8eca5853929ac5136a9e)
 ---
- fs/smb/server/connection.c        | 21 +++++++++-
- fs/smb/server/connection.h        |  4 +-
- fs/smb/server/mgmt/user_session.c | 15 ++++++-
+ fs/smb/server/connection.c        |  4 ++
+ fs/smb/server/mgmt/user_session.c | 13 ++++++-
  fs/smb/server/mgmt/user_session.h |  1 +
  fs/smb/server/smb2pdu.c           | 65 +++++++++++++++++++++++++++----
  fs/smb/server/vfs_cache.c         | 17 +++++++-
  fs/smb/server/vfs_cache.h         |  1 +
- 7 files changed, 109 insertions(+), 15 deletions(-)
+ 6 files changed, 90 insertions(+), 11 deletions(-)
 
 diff --git a/fs/smb/server/connection.c b/fs/smb/server/connection.c
-index ff6cdd720dd43..b76e5ec7846ff 100644
+index 16fcedf45739f..388e861e12401 100644
 --- a/fs/smb/server/connection.c
 +++ b/fs/smb/server/connection.c
 @@ -13,6 +13,7 @@
@@ -67,28 +73,7 @@ index ff6cdd720dd43..b76e5ec7846ff 100644
  #include "transport_tcp.h"
  #include "transport_rdma.h"
  
-@@ -276,7 +277,19 @@ void ksmbd_conn_wait_idle(struct ksmbd_conn *conn)
- 	wait_event(conn->req_running_q, atomic_read(&conn->req_running) < 2);
- }
- 
--int ksmbd_conn_wait_idle_sess_id(struct ksmbd_conn *curr_conn, u64 sess_id)
-+static bool ksmbd_conn_has_sess_channel(struct ksmbd_session *sess,
-+					struct ksmbd_conn *conn)
-+{
-+	bool found;
-+
-+	down_read(&sess->chann_lock);
-+	found = xa_load(&sess->ksmbd_chann_list, (long)conn);
-+	up_read(&sess->chann_lock);
-+	return found;
-+}
-+
-+int ksmbd_conn_wait_idle_sess(struct ksmbd_conn *curr_conn,
-+			      struct ksmbd_session *sess)
- {
- 	struct ksmbd_conn *conn;
- 	int rc, retry_count = 0, max_timeout = 120;
-@@ -286,9 +299,13 @@ int ksmbd_conn_wait_idle_sess_id(struct ksmbd_conn *curr_conn, u64 sess_id)
+@@ -309,6 +310,9 @@ int ksmbd_conn_wait_idle_sess(struct ksmbd_conn *curr_conn,
  	if (retry_count >= max_timeout)
  		return -EIO;
  
@@ -97,36 +82,9 @@ index ff6cdd720dd43..b76e5ec7846ff 100644
 +
  	down_read(&conn_list_lock);
  	hash_for_each(conn_list, bkt, conn, hlist) {
--		if (conn->binding || xa_load(&conn->sessions, sess_id)) {
-+		if (conn->binding || xa_load(&conn->sessions, sess->id) ||
-+		    ksmbd_conn_has_sess_channel(sess, conn)) {
- 			rcount = (conn == curr_conn) ? 2 : 1;
- 			if (atomic_read(&conn->req_running) >= rcount) {
- 				rc = wait_event_timeout(conn->req_running_q,
-diff --git a/fs/smb/server/connection.h b/fs/smb/server/connection.h
-index ceb1c1aefbf64..c4e64fe4ad336 100644
---- a/fs/smb/server/connection.h
-+++ b/fs/smb/server/connection.h
-@@ -21,6 +21,7 @@
- #include "ksmbd_work.h"
- 
- struct smbdirect_buffer_descriptor_v1;
-+struct ksmbd_session;
- 
- #define KSMBD_SOCKET_BACKLOG		16
- 
-@@ -163,7 +164,8 @@ extern struct rw_semaphore conn_list_lock;
- 
- bool ksmbd_conn_alive(struct ksmbd_conn *conn);
- void ksmbd_conn_wait_idle(struct ksmbd_conn *conn);
--int ksmbd_conn_wait_idle_sess_id(struct ksmbd_conn *curr_conn, u64 sess_id);
-+int ksmbd_conn_wait_idle_sess(struct ksmbd_conn *curr_conn,
-+			      struct ksmbd_session *sess);
- struct ksmbd_conn *ksmbd_conn_alloc(void);
- void ksmbd_conn_free(struct ksmbd_conn *conn);
- struct ksmbd_conn *ksmbd_conn_get(struct ksmbd_conn *conn);
+ 		if (ksmbd_session_is_bound_to_conn(sess, conn)) {
 diff --git a/fs/smb/server/mgmt/user_session.c b/fs/smb/server/mgmt/user_session.c
-index 920eb3963ae9f..b1ef33f6d3fb4 100644
+index 3a2591434b5f8..99eaf6864a863 100644
 --- a/fs/smb/server/mgmt/user_session.c
 +++ b/fs/smb/server/mgmt/user_session.c
 @@ -413,10 +413,21 @@ void destroy_previous_session(struct ksmbd_conn *conn,
@@ -141,20 +99,19 @@ index 920eb3963ae9f..b1ef33f6d3fb4 100644
 +	prev_sess->tearing_down = true;
 +	up_write(&prev_sess->chann_lock);
 +
- 	ksmbd_all_conn_set_status(id, KSMBD_SESS_NEED_RECONNECT);
--	err = ksmbd_conn_wait_idle_sess_id(conn, id);
-+	err = ksmbd_conn_wait_idle_sess(conn, prev_sess);
+ 	ksmbd_all_conn_set_status(prev_sess, KSMBD_SESS_NEED_RECONNECT);
+ 	err = ksmbd_conn_wait_idle_sess(conn, prev_sess);
  	if (err) {
--		ksmbd_all_conn_set_status(id, KSMBD_SESS_NEED_SETUP);
+-		ksmbd_all_conn_set_status(prev_sess, KSMBD_SESS_NEED_SETUP);
 +		down_write(&prev_sess->chann_lock);
 +		prev_sess->tearing_down = false;
 +		up_write(&prev_sess->chann_lock);
-+		ksmbd_all_conn_set_status(id, KSMBD_SESS_GOOD);
++		ksmbd_all_conn_set_status(prev_sess, KSMBD_SESS_GOOD);
  		goto out;
  	}
  
 diff --git a/fs/smb/server/mgmt/user_session.h b/fs/smb/server/mgmt/user_session.h
-index 525650d6876c3..11c296bea7b37 100644
+index 10132a3f1e4af..9895de9b9a87d 100644
 --- a/fs/smb/server/mgmt/user_session.h
 +++ b/fs/smb/server/mgmt/user_session.h
 @@ -42,6 +42,7 @@ struct ksmbd_session {
@@ -166,7 +123,7 @@ index 525650d6876c3..11c296bea7b37 100644
  	int				state;
  	__u8				*Preauth_HashValue;
 diff --git a/fs/smb/server/smb2pdu.c b/fs/smb/server/smb2pdu.c
-index c48ee48fee488..e5e4d83acd94a 100644
+index 27a6e47fe7a90..1a6ee10fe60ee 100644
 --- a/fs/smb/server/smb2pdu.c
 +++ b/fs/smb/server/smb2pdu.c
 @@ -696,15 +696,22 @@ int setup_async_work(struct ksmbd_work *work, void (*fn)(void **), void **arg)
@@ -219,10 +176,10 @@ index c48ee48fee488..e5e4d83acd94a 100644
  			old = xa_store(&sess->ksmbd_chann_list, (long)conn,
  					chann, KSMBD_DEFAULT_GFP);
  			up_write(&sess->chann_lock);
-@@ -2266,17 +2283,41 @@ int smb2_session_logoff(struct ksmbd_work *work)
+@@ -2272,17 +2289,41 @@ int smb2_session_logoff(struct ksmbd_work *work)
+ 		smb2_set_err_rsp(work);
  		return -ENOENT;
  	}
- 	sess_id = le64_to_cpu(req->hdr.SessionId);
 +
 +	down_write(&sess->chann_lock);
 +	if (sess->tearing_down) {
@@ -235,7 +192,7 @@ index c48ee48fee488..e5e4d83acd94a 100644
 +	sess->tearing_down = true;
 +	up_write(&sess->chann_lock);
 +
- 	ksmbd_all_conn_set_status(sess_id, KSMBD_SESS_NEED_RECONNECT);
+ 	ksmbd_all_conn_set_status(sess, KSMBD_SESS_NEED_RECONNECT);
  	ksmbd_conn_unlock(conn);
  
 +	err = ksmbd_conn_wait_idle_sess(conn, sess);
@@ -243,7 +200,7 @@ index c48ee48fee488..e5e4d83acd94a 100644
 +		down_write(&sess->chann_lock);
 +		sess->tearing_down = false;
 +		up_write(&sess->chann_lock);
-+		ksmbd_all_conn_set_status(sess_id, KSMBD_SESS_GOOD);
++		ksmbd_all_conn_set_status(sess, KSMBD_SESS_GOOD);
 +		rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 +		smb2_set_err_rsp(work);
 +		return err;
@@ -263,9 +220,9 @@ index c48ee48fee488..e5e4d83acd94a 100644
  	}
  
  	down_write(&conn->session_lock);
-@@ -2285,6 +2326,9 @@ int smb2_session_logoff(struct ksmbd_work *work)
+@@ -2291,6 +2332,9 @@ int smb2_session_logoff(struct ksmbd_work *work)
  
- 	ksmbd_all_conn_set_status(sess_id, KSMBD_SESS_NEED_SETUP);
+ 	ksmbd_all_conn_set_status(sess, KSMBD_SESS_NEED_SETUP);
  
 +	if (err)
 +		return err;
@@ -273,7 +230,7 @@ index c48ee48fee488..e5e4d83acd94a 100644
  	rsp->StructureSize = cpu_to_le16(4);
  	err = ksmbd_iov_pin_rsp(work, rsp, sizeof(struct smb2_logoff_rsp));
  	if (err) {
-@@ -7425,14 +7469,14 @@ int smb2_cancel(struct ksmbd_work *work)
+@@ -7436,14 +7480,14 @@ int smb2_cancel(struct ksmbd_work *work)
  			 * still on conn->async_requests with a live cancel_fn
  			 * pointing at the freed file_lock.
  			 */
@@ -290,7 +247,7 @@ index c48ee48fee488..e5e4d83acd94a 100644
  			if (iter->cancel_fn)
  				iter->cancel_fn(iter->cancel_argv);
  			break;
-@@ -7449,11 +7493,16 @@ int smb2_cancel(struct ksmbd_work *work)
+@@ -7460,11 +7504,16 @@ int smb2_cancel(struct ksmbd_work *work)
  			    iter == work)
  				continue;
  

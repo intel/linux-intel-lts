@@ -1,0 +1,54 @@
+From cfce78d59b4efe6e98df67d05406aa9ddecfbb96 Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Tue, 31 Mar 2026 10:12:17 +0200
+Subject: [PATCH 01/20] ALSA: ctxfi: Don't enumerate SPDIF1 at DAIO
+ initialization
+
+The recent refactoring of xfi driver changed the assignment of
+atc->daios[] at atc_get_resources(); now it loops over all enum
+DAIOTYP entries while it looped formerly only a part of them.
+The problem is that the last entry, SPDIF1, is a special type that
+is used only for hw20k1 CTSB073X model (as a replacement of SPDIFIO),
+and there is no corresponding definition for hw20k2.  Due to the lack
+of the info, it caused a kernel crash on hw20k2, which was already
+worked around by the commit b045ab3dff97 ("ALSA: ctxfi: Fix missing
+SPDIFI1 index handling").
+
+This patch addresses the root cause of the regression above properly,
+simply by skipping the incorrect SPDIF1 type in the parser loop.
+
+For making the change clearer, the code is slightly arranged, too.
+
+Fixes: a2dbaeb5c61e ("ALSA: ctxfi: Refactor resource alloc for sparse mappings")
+Cc: <stable@vger.kernel.org>
+Link: https://bugzilla.suse.com/show_bug.cgi?id=1259925
+Link: https://patch.msgid.link/20260331081227.216134-1-tiwai@suse.de
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+---
+ sound/pci/ctxfi/ctatc.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/sound/pci/ctxfi/ctatc.c b/sound/pci/ctxfi/ctatc.c
+index 7cb33d7c43d2f..69c80b99ef36f 100644
+--- a/sound/pci/ctxfi/ctatc.c
++++ b/sound/pci/ctxfi/ctatc.c
+@@ -1401,10 +1401,13 @@ static int atc_get_resources(struct ct_atc *atc)
+ 	daio_mgr = (struct daio_mgr *)atc->rsc_mgrs[DAIO];
+ 	da_desc.msr = atc->msr;
+ 	for (i = 0; i < NUM_DAIOTYP; i++) {
+-		if ((i == MIC) && !cap.dedicated_mic)
++		if (((i == MIC) && !cap.dedicated_mic) ||
++		    i == SPDIFI1)
+ 			continue;
+-		da_desc.type = (atc->model != CTSB073X) ? i :
+-			     ((i == SPDIFIO) ? SPDIFI1 : i);
++		if (atc->model == CTSB073X && i == SPDIFIO)
++			da_desc.type = SPDIFI1;
++		else
++			da_desc.type = i;
+ 		da_desc.output = i < LINEIM;
+ 		err = daio_mgr->get_daio(daio_mgr, &da_desc,
+ 					(struct daio **)&atc->daios[i]);
+-- 
+2.34.1
+

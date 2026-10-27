@@ -1,8 +1,8 @@
-From c461d822a756405e1867de9ac8c546fe1802d558 Mon Sep 17 00:00:00 2001
+From 391b72ccb31fce71ddd8aac1e6ddbf4b1a002378 Mon Sep 17 00:00:00 2001
 From: David Howells <dhowells@redhat.com>
 Date: Thu, 27 Aug 2026 14:43:00 +0100
-Subject: [PATCH 5/9] netfs: Fix readahead synchronisation issues by loading
- all folios upfront
+Subject: [PATCH 5/9] netfs: Fix readahead synchronisation issues by loading all
+ folios upfront
 
 There are some synchronisation issues that derive from the app thread
 adding more folios to the rolling buffer whilst the collector thread is
@@ -44,6 +44,13 @@ cc: netfs@lists.linux.dev
 cc: linux-mm@kvack.org
 cc: linux-fsdevel@vger.kernel.org
 Signed-off-by: Christian Brauner (Amutable) <brauner@kernel.org>
+[ kernel-lts-cve series refresh for v6.18.58: Rebased onto stable
+  15ed8a9b7c63 (upstream 1d78d56c43ef "netfs: Fix folio_queue ENOMEM in
+  writeback by adding a mempool", which upstream applied first).
+  rolling_buffer_init()/make_space() keep their gfp argument,
+  rolling_buffer_bulk_load_from_ra() takes rreq_id and gfp, and
+  netfs_readahead() passes rreq->gfp. rolling_buffer_bulk_load_from_ra()
+  and netfs_readahead() are now identical to upstream fed0b33e6c58. ]
 (cherry picked from commit fed0b33e6c584986ba70018ec9f9787a98216e64)
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ---
@@ -59,7 +66,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
  9 files changed, 155 insertions(+), 73 deletions(-)
 
 diff --git a/fs/netfs/buffered_read.c b/fs/netfs/buffered_read.c
-index 6b95f0c40ae45..2d5a3a2212038 100644
+index 7d8a0d4f77799..19e7424d976e0 100644
 --- a/fs/netfs/buffered_read.c
 +++ b/fs/netfs/buffered_read.c
 @@ -54,6 +54,42 @@ static void netfs_rreq_expand(struct netfs_io_request *rreq,
@@ -192,13 +199,13 @@ index 6b95f0c40ae45..2d5a3a2212038 100644
  	netfs_rreq_expand(rreq, ractl);
  
 -	rreq->submitted = rreq->start;
--	if (rolling_buffer_init(&rreq->buffer, rreq->debug_id, ITER_DEST) < 0)
+-	if (rolling_buffer_init(&rreq->buffer, rreq->debug_id, ITER_DEST, rreq->gfp) < 0)
 +	/* Load the folios to be read into a bvecq chain.  Note that this
 +	 * acquires a ref on each folio that we will need to release later -
 +	 * but we don't want to do that until after we've started the I/O.
 +	 */
 +	added = rolling_buffer_bulk_load_from_ra(&rreq->buffer, ractl,
-+						 rreq->debug_id, GFP_NOFS);
++						 rreq->debug_id, rreq->gfp);
 +	if (added < 0) {
 +		ret = added;
  		goto cleanup_free;
@@ -251,10 +258,10 @@ index 6b95f0c40ae45..2d5a3a2212038 100644
  	netfs_put_request(rreq, netfs_rreq_trace_put_return);
  	return ret < 0 ? ret : 0;
 diff --git a/fs/netfs/internal.h b/fs/netfs/internal.h
-index a4a5cec256b04..0ec272121e280 100644
+index 2889df591d949..ec1481195fa79 100644
 --- a/fs/netfs/internal.h
 +++ b/fs/netfs/internal.h
-@@ -79,7 +79,8 @@ ssize_t netfs_wait_for_write(struct netfs_io_request *rreq);
+@@ -80,7 +80,8 @@ ssize_t netfs_wait_for_write(struct netfs_io_request *rreq);
  void netfs_wait_for_paused_read(struct netfs_io_request *rreq);
  void netfs_wait_for_paused_write(struct netfs_io_request *rreq);
  int netfs_clear_stale_pre_isize(struct inode *inode, unsigned long long from,
@@ -292,10 +299,10 @@ index 0f8432055daa7..f1fa5961a3431 100644
 +	finish_wait(&rreq->waitq, &myself);
 +}
 diff --git a/fs/netfs/read_collect.c b/fs/netfs/read_collect.c
-index 23660a5901246..edf7cea7e2f91 100644
+index a2f3f31eb9797..de589299f2100 100644
 --- a/fs/netfs/read_collect.c
 +++ b/fs/netfs/read_collect.c
-@@ -118,6 +118,13 @@ static void netfs_read_unlock_folios(struct netfs_io_request *rreq,
+@@ -134,6 +134,13 @@ static void netfs_read_unlock_folios(struct netfs_io_request *rreq,
  		slot = 0;
  	}
  
@@ -328,10 +335,10 @@ index 2b42758e01ec9..dd463a485139c 100644
  		for (int slot = 0; slot < folioq_count(p); slot++) {
  			struct folio *folio = folioq_folio(p, slot);
 diff --git a/fs/netfs/rolling_buffer.c b/fs/netfs/rolling_buffer.c
-index 207b6a3266512..4b826686fdc25 100644
+index e1342312a2c7f..d30d5ef6d86ec 100644
 --- a/fs/netfs/rolling_buffer.c
 +++ b/fs/netfs/rolling_buffer.c
-@@ -111,42 +111,65 @@ int rolling_buffer_make_space(struct rolling_buffer *roll)
+@@ -115,42 +115,65 @@ int rolling_buffer_make_space(struct rolling_buffer *roll, gfp_t gfp)
  }
  
  /*
@@ -351,7 +358,7 @@ index 207b6a3266512..4b826686fdc25 100644
 -	ssize_t size = 0;
 +	ssize_t loaded = 0;
  
--	if (rolling_buffer_make_space(roll) < 0)
+-	if (rolling_buffer_make_space(roll, GFP_KERNEL) < 0)
 -		return -ENOMEM;
 +	while (ractl->_nr_pages - ractl->_batch_count > 0) {
 +		unsigned int nr;
@@ -427,10 +434,10 @@ index 207b6a3266512..4b826686fdc25 100644
  
  /*
 diff --git a/include/linux/netfs.h b/include/linux/netfs.h
-index ac5304f9c9ece..3d0fbb3b0e94a 100644
+index 880818574e46c..f123e8f697980 100644
 --- a/include/linux/netfs.h
 +++ b/include/linux/netfs.h
-@@ -276,6 +276,7 @@ struct netfs_io_request {
+@@ -277,6 +277,7 @@ struct netfs_io_request {
  #define NETFS_RREQ_FOLIO_COPY_TO_CACHE	10	/* Copy current folio to cache from read */
  #define NETFS_RREQ_UPLOAD_TO_SERVER	11	/* Need to write to the server */
  #define NETFS_RREQ_USE_IO_ITER		12	/* Use ->io_iter rather than ->i_pages */
@@ -439,13 +446,13 @@ index ac5304f9c9ece..3d0fbb3b0e94a 100644
  						 * write to cache on read */
  	const struct netfs_request_ops *netfs_ops;
 diff --git a/include/linux/rolling_buffer.h b/include/linux/rolling_buffer.h
-index ac15b1ffdd831..1504fbce0c8d0 100644
+index 9e5dad29669cf..a97f7cfaacaad 100644
 --- a/include/linux/rolling_buffer.h
 +++ b/include/linux/rolling_buffer.h
 @@ -45,9 +45,9 @@ struct rolling_buffer_snapshot {
  int rolling_buffer_init(struct rolling_buffer *roll, unsigned int rreq_id,
- 			unsigned int direction);
- int rolling_buffer_make_space(struct rolling_buffer *roll);
+ 			unsigned int direction, gfp_t gfp);
+ int rolling_buffer_make_space(struct rolling_buffer *roll, gfp_t gfp);
 -ssize_t rolling_buffer_load_from_ra(struct rolling_buffer *roll,
 -				    struct readahead_control *ractl,
 -				    struct folio_batch *put_batch);
@@ -453,7 +460,7 @@ index ac15b1ffdd831..1504fbce0c8d0 100644
 +					 struct readahead_control *ractl,
 +					 unsigned int rreq_id, gfp_t gfp);
  ssize_t rolling_buffer_append(struct rolling_buffer *roll, struct folio *folio,
- 			      unsigned int flags);
+ 			      unsigned int flags, gfp_t gfp);
  struct folio_queue *rolling_buffer_delete_spent(struct rolling_buffer *roll);
 diff --git a/include/trace/events/netfs.h b/include/trace/events/netfs.h
 index 3fe3980902c24..610cf1e70b6a0 100644
@@ -479,3 +486,6 @@ index 3fe3980902c24..610cf1e70b6a0 100644
  	EM(netfs_rreq_trace_waited_quiesce,	"DONE-QUIESCE")	\
  	EM(netfs_rreq_trace_wake_ip,		"WAKE-IP")	\
  	EM(netfs_rreq_trace_wake_queue,		"WAKE-Q ")	\
+-- 
+2.34.1
+

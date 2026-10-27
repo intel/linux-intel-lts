@@ -1,0 +1,41 @@
+From 83a52ba047bbc833abeb4cf9ca5769068cc9fa56 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 4 Sep 2026 10:06:40 -0700
+Subject: [PATCH 08/20] KVM: SVM: Update control fields on #VMEXIT if and only
+ if VMRUN succeeded
+
+Leave control.erap_ctl and control.clean as-is in the VMCS if VMRUN fails,
+because as per AMD:
+
+  there's no explicit architectural guarantee about the behavior in the
+  presence of VMRUN failures. So the best thing to do would be to assume
+  that if VMRUN fails, the actions requested in the control fields may not
+  have been performed.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-ID: <20260904170642.3291466-3-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit e27fc915c8f575ab5630e27d97465c2077d4b9d1)
+---
+ arch/x86/kvm/svm/svm.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index d43dc1b488ec9..2101c2a861e96 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -4417,8 +4417,9 @@ static __no_kcsan fastpath_t svm_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags)
+ 	if (!svm_is_vmrun_failure(svm->vmcb->control.exit_code)) {
+ 		this_cpu_ptr(&svm_data)->flush_all_asids = false;
+ 		svm->vmcb->control.tlb_ctl = TLB_CONTROL_DO_NOTHING;
++
++		vmcb_mark_all_clean(svm->vmcb);
+ 	}
+-	vmcb_mark_all_clean(svm->vmcb);
+ 
+ 	/* if exit due to PF check for async PF */
+ 	if (svm->vmcb->control.exit_code == SVM_EXIT_EXCP_BASE + PF_VECTOR)
+-- 
+2.34.1
+

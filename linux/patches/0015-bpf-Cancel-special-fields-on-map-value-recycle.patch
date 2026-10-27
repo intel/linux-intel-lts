@@ -1,0 +1,733 @@
+From d903c3533098b82712b256b02f8947a813ec028e Mon Sep 17 00:00:00 2001
+From: Justin Suess <utilityemal77@gmail.com>
+Date: Tue, 9 Jun 2026 22:25:44 +0200
+Subject: [PATCH 15/20] bpf: Cancel special fields on map value recycle
+
+Map update and delete paths currently call bpf_obj_free_fields() when a
+value is being replaced or recycled. That makes field destruction depend
+on the context of the update/delete operation. For tracing programs this
+can include NMI context, where referenced kptr destructors, uptr
+unpinning, and graph root destruction are not generally safe.
+
+Introduce bpf_obj_cancel_fields() for the reusable-value path. It only
+performs NMI-safe cleanup for timer, workqueue, and task_work fields.
+Fields that need full destruction are left attached to the recycled value
+and are destroyed by the final cleanup path instead.
+
+Switch array and hashtab update/delete/recycle paths to this cancel
+helper. Keep bpf_obj_free_fields() for final map destruction and for
+bpf_mem_alloc destructors. Preallocated hashtabs do not have allocator
+destructors, so teardown continues to walk the normal and extra elements
+and fully destroy their fields.
+
+This deliberately relaxes the eager-free semantics of map update/delete
+for special fields. Programs that relied on a recycled map slot becoming
+empty immediately after update/delete were relying on behavior that
+cannot be implemented safely from every BPF execution context without
+offloading arbitrary destructors.
+
+There is a chance this change breaks programs making assumptions
+regarding the eager freeing of fields. If so, we can relax semantics to
+cancellation only when irqs_disabled() is true in the future. However,
+theoretically, map values that get reused eagerly already have weaker
+guarantees as parallel users can recreate freed fields before the new
+element becomes visible again.
+
+Fixes: 14a324f6a67e ("bpf: Wire up freeing of referenced kptr")
+Signed-off-by: Justin Suess <utilityemal77@gmail.com>
+Co-developed-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Signed-off-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Link: https://lore.kernel.org/r/20260609202548.3571690-3-memxor@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+(cherry picked from commit a3a81d247651218e47153f2d2afd7aee236726fd)
+---
+ include/linux/bpf.h                           |  1 +
+ kernel/bpf/arraymap.c                         |  6 +-
+ kernel/bpf/hashtab.c                          | 30 ++++----
+ kernel/bpf/syscall.c                          |  5 ++
+ .../selftests/bpf/prog_tests/htab_update.c    | 54 +++++++++++++
+ .../selftests/bpf/prog_tests/linked_list.c    | 33 ++++----
+ .../selftests/bpf/prog_tests/map_kptr.c       | 10 +--
+ .../bpf/prog_tests/refcounted_kptr.c          | 60 +++++++++++++++
+ .../testing/selftests/bpf/progs/htab_update.c | 12 +++
+ .../testing/selftests/bpf/progs/linked_list.c | 71 +++++++++++++++++
+ .../selftests/bpf/progs/refcounted_kptr.c     | 77 +++++++++++++++++++
+ 11 files changed, 318 insertions(+), 41 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 207cd9f1d6195..c93b0e8976ca5 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -2439,6 +2439,7 @@ bool btf_record_equal(const struct btf_record *rec_a, const struct btf_record *r
+ void bpf_obj_free_timer(const struct btf_record *rec, void *obj);
+ void bpf_obj_free_workqueue(const struct btf_record *rec, void *obj);
+ void bpf_obj_free_task_work(const struct btf_record *rec, void *obj);
++void bpf_obj_cancel_fields(struct bpf_map *map, void *obj);
+ void bpf_obj_free_fields(const struct btf_record *rec, void *obj);
+ void __bpf_obj_drop_impl(void *p, const struct btf_record *rec, bool percpu);
+ 
+diff --git a/kernel/bpf/arraymap.c b/kernel/bpf/arraymap.c
+index aca7a2d65642a..c6997a81df2cb 100644
+--- a/kernel/bpf/arraymap.c
++++ b/kernel/bpf/arraymap.c
+@@ -380,7 +380,7 @@ static long array_map_update_elem(struct bpf_map *map, void *key, void *value,
+ 	if (array->map.map_type == BPF_MAP_TYPE_PERCPU_ARRAY) {
+ 		val = this_cpu_ptr(array->pptrs[index & array->index_mask]);
+ 		copy_map_value(map, val, value);
+-		bpf_obj_free_fields(array->map.record, val);
++		bpf_obj_cancel_fields(map, val);
+ 	} else {
+ 		val = array->value +
+ 			(u64)array->elem_size * (index & array->index_mask);
+@@ -388,7 +388,7 @@ static long array_map_update_elem(struct bpf_map *map, void *key, void *value,
+ 			copy_map_value_locked(map, val, value, false);
+ 		else
+ 			copy_map_value(map, val, value);
+-		bpf_obj_free_fields(array->map.record, val);
++		bpf_obj_cancel_fields(map, val);
+ 	}
+ 	return 0;
+ }
+@@ -425,7 +425,7 @@ int bpf_percpu_array_update(struct bpf_map *map, void *key, void *value,
+ 	pptr = array->pptrs[index & array->index_mask];
+ 	for_each_possible_cpu(cpu) {
+ 		copy_map_value_long(map, per_cpu_ptr(pptr, cpu), value + off);
+-		bpf_obj_free_fields(array->map.record, per_cpu_ptr(pptr, cpu));
++		bpf_obj_cancel_fields(map, per_cpu_ptr(pptr, cpu));
+ 		off += size;
+ 	}
+ 	rcu_read_unlock();
+diff --git a/kernel/bpf/hashtab.c b/kernel/bpf/hashtab.c
+index dd2ce033902d3..88e0fea012dda 100644
+--- a/kernel/bpf/hashtab.c
++++ b/kernel/bpf/hashtab.c
+@@ -246,6 +246,10 @@ static void htab_free_prealloced_fields(struct bpf_htab *htab)
+ 
+ 	if (IS_ERR_OR_NULL(htab->map.record))
+ 		return;
++	/*
++	 * Preallocated maps do not have a bpf_mem_alloc destructor, so fully
++	 * destroy every element, including the extra elements.
++	 */
+ 	if (htab_has_extra_elems(htab))
+ 		num_entries += num_possible_cpus();
+ 	for (i = 0; i < num_entries; i++) {
+@@ -854,8 +858,8 @@ static int htab_lru_map_gen_lookup(struct bpf_map *map,
+ 	return insn - insn_buf;
+ }
+ 
+-static void check_and_free_fields(struct bpf_htab *htab,
+-				  struct htab_elem *elem)
++static void check_and_cancel_fields(struct bpf_htab *htab,
++				    struct htab_elem *elem)
+ {
+ 	if (IS_ERR_OR_NULL(htab->map.record))
+ 		return;
+@@ -865,11 +869,11 @@ static void check_and_free_fields(struct bpf_htab *htab,
+ 		int cpu;
+ 
+ 		for_each_possible_cpu(cpu)
+-			bpf_obj_free_fields(htab->map.record, per_cpu_ptr(pptr, cpu));
++			bpf_obj_cancel_fields(&htab->map, per_cpu_ptr(pptr, cpu));
+ 	} else {
+ 		void *map_value = htab_elem_value(elem, htab->map.key_size);
+ 
+-		bpf_obj_free_fields(htab->map.record, map_value);
++		bpf_obj_cancel_fields(&htab->map, map_value);
+ 	}
+ }
+ 
+@@ -904,7 +908,7 @@ static bool htab_lru_map_delete_node(void *arg, struct bpf_lru_node *node)
+ 	htab_unlock_bucket(b, flags);
+ 
+ 	if (l == tgt_l)
+-		check_and_free_fields(htab, l);
++		check_and_cancel_fields(htab, l);
+ 	return l == tgt_l;
+ }
+ 
+@@ -969,7 +973,7 @@ static int htab_map_get_next_key(struct bpf_map *map, void *key, void *next_key)
+ 
+ static void htab_elem_free(struct bpf_htab *htab, struct htab_elem *l)
+ {
+-	check_and_free_fields(htab, l);
++	check_and_cancel_fields(htab, l);
+ 
+ 	if (htab->map.map_type == BPF_MAP_TYPE_PERCPU_HASH)
+ 		bpf_mem_cache_free(&htab->pcpu_ma, l->ptr_to_pptr);
+@@ -1022,7 +1026,7 @@ static void free_htab_elem(struct bpf_htab *htab, struct htab_elem *l)
+ 
+ 	if (htab_is_prealloc(htab)) {
+ 		bpf_map_dec_elem_count(&htab->map);
+-		check_and_free_fields(htab, l);
++		check_and_cancel_fields(htab, l);
+ 		pcpu_freelist_push(&htab->freelist, &l->fnode);
+ 	} else {
+ 		dec_elem_count(htab);
+@@ -1039,7 +1043,7 @@ static void pcpu_copy_value(struct bpf_htab *htab, void __percpu *pptr,
+ 		/* copy true value_size bytes */
+ 		ptr = this_cpu_ptr(pptr);
+ 		copy_map_value(&htab->map, ptr, value);
+-		bpf_obj_free_fields(htab->map.record, ptr);
++		bpf_obj_cancel_fields(&htab->map, ptr);
+ 	} else {
+ 		u32 size = round_up(htab->map.value_size, 8);
+ 		int off = 0, cpu;
+@@ -1047,7 +1051,7 @@ static void pcpu_copy_value(struct bpf_htab *htab, void __percpu *pptr,
+ 		for_each_possible_cpu(cpu) {
+ 			ptr = per_cpu_ptr(pptr, cpu);
+ 			copy_map_value_long(&htab->map, ptr, value + off);
+-			bpf_obj_free_fields(htab->map.record, ptr);
++			bpf_obj_cancel_fields(&htab->map, ptr);
+ 			off += size;
+ 		}
+ 	}
+@@ -1260,11 +1264,11 @@ static long htab_map_update_elem(struct bpf_map *map, void *key, void *value,
+ 	if (l_old) {
+ 		hlist_nulls_del_rcu(&l_old->hash_node);
+ 
+-		/* l_old has already been stashed in htab->extra_elems, free
+-		 * its special fields before it is available for reuse.
++		/* l_old has already been stashed in htab->extra_elems, cancel
++		 * its reusable special fields before it is available for reuse.
+ 		 */
+ 		if (htab_is_prealloc(htab))
+-			check_and_free_fields(htab, l_old);
++			check_and_cancel_fields(htab, l_old);
+ 	}
+ 	htab_unlock_bucket(b, flags);
+ 	if (l_old && !htab_is_prealloc(htab))
+@@ -1277,7 +1281,7 @@ static long htab_map_update_elem(struct bpf_map *map, void *key, void *value,
+ 
+ static void htab_lru_push_free(struct bpf_htab *htab, struct htab_elem *elem)
+ {
+-	check_and_free_fields(htab, elem);
++	check_and_cancel_fields(htab, elem);
+ 	bpf_map_dec_elem_count(&htab->map);
+ 	bpf_lru_push_free(&htab->lru, &elem->lru_node);
+ }
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index 1aa7db2ea21b0..3c86b1a42d367 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -809,6 +809,11 @@ void bpf_obj_free_task_work(const struct btf_record *rec, void *obj)
+ 	bpf_task_work_cancel_and_free(obj + rec->task_work_off);
+ }
+ 
++void bpf_obj_cancel_fields(struct bpf_map *map, void *obj)
++{
++	bpf_map_free_internal_structs(map, obj);
++}
++
+ void bpf_obj_free_fields(const struct btf_record *rec, void *obj)
+ {
+ 	const struct btf_field *fields;
+diff --git a/tools/testing/selftests/bpf/prog_tests/htab_update.c b/tools/testing/selftests/bpf/prog_tests/htab_update.c
+index 2bc85f4814f4f..38740ad8296f7 100644
+--- a/tools/testing/selftests/bpf/prog_tests/htab_update.c
++++ b/tools/testing/selftests/bpf/prog_tests/htab_update.c
+@@ -45,6 +45,58 @@ static void test_reenter_update(void)
+ 	htab_update__destroy(skel);
+ }
+ 
++static void test_reenter_cancel_fields(void)
++{
++	struct htab_update *skel;
++	void *value = NULL;
++	unsigned int key, value_size;
++	int err;
++
++	skel = htab_update__open();
++	if (!ASSERT_OK_PTR(skel, "htab_update__open"))
++		return;
++
++	bpf_program__set_autoload(skel->progs.bpf_obj_cancel_fields, true);
++	err = htab_update__load(skel);
++	if (!ASSERT_OK(err, "htab_update__load"))
++		goto out;
++
++	skel->bss->pid = getpid();
++	err = htab_update__attach(skel);
++	if (!ASSERT_OK(err, "htab_update__attach"))
++		goto out;
++
++	value_size = bpf_map__value_size(skel->maps.htab);
++	value = calloc(1, value_size);
++	if (!ASSERT_OK_PTR(value, "calloc value"))
++		goto out;
++
++	/*
++	 * First update: plain insert. There is no old element to cancel yet.
++	 */
++	key = 0;
++	err = bpf_map_update_elem(bpf_map__fd(skel->maps.htab), &key, value, BPF_ANY);
++	if (!ASSERT_OK(err, "first update (insert)"))
++		goto out;
++
++	/*
++	 * Second update: replace existing element with same key and trigger
++	 * the reentrancy of bpf_map_update_elem().
++	 * check_and_cancel_fields() calls bpf_obj_cancel_fields() on the old
++	 * value, which is where fentry program runs and performs a nested
++	 * bpf_map_update_elem(), triggering -EDEADLK.
++	 */
++	memset(value, 0, value_size);
++	err = bpf_map_update_elem(bpf_map__fd(skel->maps.htab), &key, value, BPF_ANY);
++	if (!ASSERT_OK(err, "second update (replace)"))
++		goto out;
++
++	ASSERT_EQ(skel->bss->update_err, -EDEADLK, "no reentrancy");
++out:
++	free(value);
++	htab_update__destroy(skel);
++}
++
+ static void *htab_update_thread(void *arg)
+ {
+ 	struct htab_update_ctx *ctx = arg;
+@@ -121,6 +173,8 @@ void test_htab_update(void)
+ {
+ 	if (test__start_subtest("reenter_update"))
+ 		test_reenter_update();
++	if (test__start_subtest("reenter_cancel_fields"))
++		test_reenter_cancel_fields();
+ 	if (test__start_subtest("concurrent_update"))
+ 		test_concurrent_update();
+ }
+diff --git a/tools/testing/selftests/bpf/prog_tests/linked_list.c b/tools/testing/selftests/bpf/prog_tests/linked_list.c
+index 6c3942e6cfaff..9edadc13381f4 100644
+--- a/tools/testing/selftests/bpf/prog_tests/linked_list.c
++++ b/tools/testing/selftests/bpf/prog_tests/linked_list.c
+@@ -131,13 +131,14 @@ static void test_linked_list_fail_prog(const char *prog_name, const char *err_ms
+ 	linked_list_fail__destroy(skel);
+ }
+ 
+-static void clear_fields(struct bpf_map *map)
++static void clear_fields(struct bpf_program *prog)
+ {
+-	char buf[24];
+-	int key = 0;
++	LIBBPF_OPTS(bpf_test_run_opts, opts);
++	int ret;
+ 
+-	memset(buf, 0xff, sizeof(buf));
+-	ASSERT_OK(bpf_map__update_elem(map, &key, sizeof(key), buf, sizeof(buf), 0), "check_and_free_fields");
++	ret = bpf_prog_test_run_opts(bpf_program__fd(prog), &opts);
++	ASSERT_OK(ret, "clear_fields");
++	ASSERT_OK(opts.retval, "clear_fields retval");
+ }
+ 
+ enum {
+@@ -170,31 +171,31 @@ static void test_linked_list_success(int mode, bool leave_in_map)
+ 	ASSERT_OK(ret, "map_list_push_pop");
+ 	ASSERT_OK(opts.retval, "map_list_push_pop retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.array_map);
++		clear_fields(skel->progs.clear_map_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.inner_map_list_push_pop), &opts);
+ 	ASSERT_OK(ret, "inner_map_list_push_pop");
+ 	ASSERT_OK(opts.retval, "inner_map_list_push_pop retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.inner_map);
++		clear_fields(skel->progs.clear_inner_map_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.global_list_push_pop), &opts);
+ 	ASSERT_OK(ret, "global_list_push_pop");
+ 	ASSERT_OK(opts.retval, "global_list_push_pop retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.bss_A);
++		clear_fields(skel->progs.clear_global_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.global_list_push_pop_nested), &opts);
+ 	ASSERT_OK(ret, "global_list_push_pop_nested");
+ 	ASSERT_OK(opts.retval, "global_list_push_pop_nested retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.bss_A);
++		clear_fields(skel->progs.clear_global_nested_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.global_list_array_push_pop), &opts);
+ 	ASSERT_OK(ret, "global_list_array_push_pop");
+ 	ASSERT_OK(opts.retval, "global_list_array_push_pop retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.bss_A);
++		clear_fields(skel->progs.clear_global_array_list);
+ 
+ 	if (mode == PUSH_POP)
+ 		goto end;
+@@ -204,19 +205,19 @@ static void test_linked_list_success(int mode, bool leave_in_map)
+ 	ASSERT_OK(ret, "map_list_push_pop_multiple");
+ 	ASSERT_OK(opts.retval, "map_list_push_pop_multiple retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.array_map);
++		clear_fields(skel->progs.clear_map_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.inner_map_list_push_pop_multiple), &opts);
+ 	ASSERT_OK(ret, "inner_map_list_push_pop_multiple");
+ 	ASSERT_OK(opts.retval, "inner_map_list_push_pop_multiple retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.inner_map);
++		clear_fields(skel->progs.clear_inner_map_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.global_list_push_pop_multiple), &opts);
+ 	ASSERT_OK(ret, "global_list_push_pop_multiple");
+ 	ASSERT_OK(opts.retval, "global_list_push_pop_multiple retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.bss_A);
++		clear_fields(skel->progs.clear_global_list);
+ 
+ 	if (mode == PUSH_POP_MULT)
+ 		goto end;
+@@ -226,19 +227,19 @@ static void test_linked_list_success(int mode, bool leave_in_map)
+ 	ASSERT_OK(ret, "map_list_in_list");
+ 	ASSERT_OK(opts.retval, "map_list_in_list retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.array_map);
++		clear_fields(skel->progs.clear_map_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.inner_map_list_in_list), &opts);
+ 	ASSERT_OK(ret, "inner_map_list_in_list");
+ 	ASSERT_OK(opts.retval, "inner_map_list_in_list retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.inner_map);
++		clear_fields(skel->progs.clear_inner_map_list);
+ 
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.global_list_in_list), &opts);
+ 	ASSERT_OK(ret, "global_list_in_list");
+ 	ASSERT_OK(opts.retval, "global_list_in_list retval");
+ 	if (!leave_in_map)
+-		clear_fields(skel->maps.bss_A);
++		clear_fields(skel->progs.clear_global_list);
+ end:
+ 	linked_list__destroy(skel);
+ }
+diff --git a/tools/testing/selftests/bpf/prog_tests/map_kptr.c b/tools/testing/selftests/bpf/prog_tests/map_kptr.c
+index f372162c0280c..2e05cda9d4b74 100644
+--- a/tools/testing/selftests/bpf/prog_tests/map_kptr.c
++++ b/tools/testing/selftests/bpf/prog_tests/map_kptr.c
+@@ -51,7 +51,6 @@ static void test_map_kptr_success(bool test_run)
+ 	ret = bpf_map__update_elem(skel->maps.array_map,
+ 				   &key, sizeof(key), buf, sizeof(buf), 0);
+ 	ASSERT_OK(ret, "array_map update");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+@@ -59,49 +58,42 @@ static void test_map_kptr_success(bool test_run)
+ 	ret = bpf_map__update_elem(skel->maps.pcpu_array_map,
+ 				   &key, sizeof(key), pbuf, cpu * sizeof(buf), 0);
+ 	ASSERT_OK(ret, "pcpu_array_map update");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+ 
+ 	ret = bpf_map__delete_elem(skel->maps.hash_map, &key, sizeof(key), 0);
+ 	ASSERT_OK(ret, "hash_map delete");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+ 
+ 	ret = bpf_map__delete_elem(skel->maps.pcpu_hash_map, &key, sizeof(key), 0);
+ 	ASSERT_OK(ret, "pcpu_hash_map delete");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+ 
+ 	ret = bpf_map__delete_elem(skel->maps.hash_malloc_map, &key, sizeof(key), 0);
+ 	ASSERT_OK(ret, "hash_malloc_map delete");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+ 
+ 	ret = bpf_map__delete_elem(skel->maps.pcpu_hash_malloc_map, &key, sizeof(key), 0);
+ 	ASSERT_OK(ret, "pcpu_hash_malloc_map delete");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+ 
+ 	ret = bpf_map__delete_elem(skel->maps.lru_hash_map, &key, sizeof(key), 0);
+ 	ASSERT_OK(ret, "lru_hash_map delete");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+ 
+ 	ret = bpf_map__delete_elem(skel->maps.lru_pcpu_hash_map, &key, sizeof(key), 0);
+ 	ASSERT_OK(ret, "lru_pcpu_hash_map delete");
+-	skel->data->ref--;
+ 	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.test_map_kptr_ref3), &opts);
+ 	ASSERT_OK(ret, "test_map_kptr_ref3 refcount");
+ 	ASSERT_OK(opts.retval, "test_map_kptr_ref3 retval");
+@@ -176,7 +168,7 @@ void serial_test_map_kptr(void)
+ 		ASSERT_OK(kern_sync_rcu(), "sync rcu");
+ 		wait_for_map_release();
+ 
+-		/* Observe refcount dropping to 1 on synchronous delete elem */
++		/* Observe refcount dropping to 1 on map release. */
+ 		test_map_kptr_success(true);
+ 	}
+ 
+diff --git a/tools/testing/selftests/bpf/prog_tests/refcounted_kptr.c b/tools/testing/selftests/bpf/prog_tests/refcounted_kptr.c
+index d6bd5e16e6372..1737eba343234 100644
+--- a/tools/testing/selftests/bpf/prog_tests/refcounted_kptr.c
++++ b/tools/testing/selftests/bpf/prog_tests/refcounted_kptr.c
+@@ -44,3 +44,63 @@ void test_refcounted_kptr_wrong_owner(void)
+ 	ASSERT_OK(opts.retval, "rbtree_wrong_owner_remove_fail_a2 retval");
+ 	refcounted_kptr__destroy(skel);
+ }
++
++void test_percpu_hash_refcounted_kptr_refcount_leak(void)
++{
++	struct refcounted_kptr *skel;
++	int cpu_nr, fd, err, key = 0;
++	struct bpf_map *map;
++	size_t values_sz;
++	u64 *values;
++	LIBBPF_OPTS(bpf_test_run_opts, opts,
++		    .data_in = &pkt_v4,
++		    .data_size_in = sizeof(pkt_v4),
++		    .repeat = 1,
++	);
++	LIBBPF_OPTS(bpf_test_run_opts, syscall_opts);
++
++	cpu_nr = libbpf_num_possible_cpus();
++	if (!ASSERT_GT(cpu_nr, 0, "libbpf_num_possible_cpus"))
++		return;
++
++	values = calloc(cpu_nr, sizeof(u64));
++	if (!ASSERT_OK_PTR(values, "calloc values"))
++		return;
++
++	skel = refcounted_kptr__open_and_load();
++	if (!ASSERT_OK_PTR(skel, "refcounted_kptr__open_and_load")) {
++		free(values);
++		return;
++	}
++
++	values_sz = cpu_nr * sizeof(u64);
++	memset(values, 0, values_sz);
++
++	map = skel->maps.percpu_hash;
++	err = bpf_map__update_elem(map, &key, sizeof(key), values, values_sz, 0);
++	if (!ASSERT_OK(err, "bpf_map__update_elem"))
++		goto out;
++
++	fd = bpf_program__fd(skel->progs.percpu_hash_refcount_leak);
++	err = bpf_prog_test_run_opts(fd, &opts);
++	if (!ASSERT_OK(err, "bpf_prog_test_run_opts"))
++		goto out;
++	if (!ASSERT_EQ(opts.retval, 2, "opts.retval"))
++		goto out;
++
++	fd = bpf_program__fd(skel->progs.clear_percpu_hash_kptr);
++	err = bpf_prog_test_run_opts(fd, &syscall_opts);
++	if (!ASSERT_OK(err, "bpf_prog_test_run_opts"))
++		goto out;
++	if (!ASSERT_EQ(syscall_opts.retval, 1, "syscall_opts.retval"))
++		goto out;
++
++	fd = bpf_program__fd(skel->progs.check_percpu_hash_refcount);
++	err = bpf_prog_test_run_opts(fd, &opts);
++	ASSERT_OK(err, "bpf_prog_test_run_opts");
++	ASSERT_EQ(opts.retval, 1, "opts.retval");
++
++out:
++	refcounted_kptr__destroy(skel);
++	free(values);
++}
+diff --git a/tools/testing/selftests/bpf/progs/htab_update.c b/tools/testing/selftests/bpf/progs/htab_update.c
+index 7481bb30b29b3..a7aa9c75ac182 100644
+--- a/tools/testing/selftests/bpf/progs/htab_update.c
++++ b/tools/testing/selftests/bpf/progs/htab_update.c
+@@ -27,3 +27,15 @@ int lookup_elem_raw(void *ctx)
+ 	update_err = bpf_map_update_elem(&htab, &key, &value, 0);
+ 	return 0;
+ }
++
++SEC("?fentry/bpf_obj_cancel_fields")
++int bpf_obj_cancel_fields(void *ctx)
++{
++	__u32 key = 0, value = 1;
++
++	if ((bpf_get_current_pid_tgid() >> 32) != pid)
++		return 0;
++
++	update_err = bpf_map_update_elem(&htab, &key, &value, 0);
++	return 0;
++}
+diff --git a/tools/testing/selftests/bpf/progs/linked_list.c b/tools/testing/selftests/bpf/progs/linked_list.c
+index 421f40835acd7..fa97faa5358bc 100644
+--- a/tools/testing/selftests/bpf/progs/linked_list.c
++++ b/tools/testing/selftests/bpf/progs/linked_list.c
+@@ -290,6 +290,77 @@ int test_list_in_list(struct bpf_spin_lock *lock, struct bpf_list_head *head)
+ 	return list_in_list(lock, head, true);
+ }
+ 
++#define MAX_LIST_CLEAR_NODES 256
++
++static __always_inline
++int clear_list(struct bpf_spin_lock *lock, struct bpf_list_head *head)
++{
++	struct bpf_list_node *n;
++	int i;
++
++	for (i = 0; i < MAX_LIST_CLEAR_NODES; i++) {
++		bpf_spin_lock(lock);
++		n = bpf_list_pop_front(head);
++		bpf_spin_unlock(lock);
++		if (!n)
++			return 0;
++		bpf_obj_drop(container_of(n, struct foo, node2));
++	}
++	return 1;
++}
++
++SEC("syscall")
++int clear_map_list(void *ctx)
++{
++	struct map_value *v;
++
++	v = bpf_map_lookup_elem(&array_map, &(int){0});
++	if (!v)
++		return 1;
++	return clear_list(&v->lock, &v->head);
++}
++
++SEC("syscall")
++int clear_inner_map_list(void *ctx)
++{
++	struct map_value *v;
++	void *map;
++
++	map = bpf_map_lookup_elem(&map_of_maps, &(int){0});
++	if (!map)
++		return 1;
++	v = bpf_map_lookup_elem(map, &(int){0});
++	if (!v)
++		return 1;
++	return clear_list(&v->lock, &v->head);
++}
++
++SEC("syscall")
++int clear_global_list(void *ctx)
++{
++	return clear_list(&glock, &ghead);
++}
++
++SEC("syscall")
++int clear_global_nested_list(void *ctx)
++{
++	return clear_list(&ghead_nested.inner.lock, &ghead_nested.inner.head);
++}
++
++SEC("syscall")
++int clear_global_array_list(void *ctx)
++{
++	int ret;
++
++	ret = clear_list(&glock_c, &ghead_array[0]);
++	if (ret)
++		return ret;
++	ret = clear_list(&glock_c, &ghead_array[1]);
++	if (ret)
++		return ret;
++	return clear_list(&glock_c, &ghead_array_one[0]);
++}
++
+ SEC("tc")
+ int map_list_push_pop(void *ctx)
+ {
+diff --git a/tools/testing/selftests/bpf/progs/refcounted_kptr.c b/tools/testing/selftests/bpf/progs/refcounted_kptr.c
+index 893a4fdb4b6e9..31de45a0a8acb 100644
+--- a/tools/testing/selftests/bpf/progs/refcounted_kptr.c
++++ b/tools/testing/selftests/bpf/progs/refcounted_kptr.c
+@@ -568,4 +568,81 @@ int BPF_PROG(rbtree_sleepable_rcu_no_explicit_rcu_lock,
+ 	return 0;
+ }
+ 
++private(kptr_ref) u64 ref;
++
++static int probe_read_refcount(void)
++{
++	u32 refcount;
++
++	bpf_probe_read_kernel(&refcount, sizeof(refcount), (void *) ref);
++	return refcount;
++}
++
++static int __insert_in_list(struct bpf_list_head *head, struct bpf_spin_lock *lock,
++			    struct node_data __kptr **node)
++{
++	struct node_data *node_new, *node_ref, *node_old;
++
++	node_new = bpf_obj_new(typeof(*node_new));
++	if (!node_new)
++		return -1;
++
++	node_ref = bpf_refcount_acquire(node_new);
++	node_old = bpf_kptr_xchg(node, node_new);
++	if (node_old) {
++		bpf_obj_drop(node_old);
++		bpf_obj_drop(node_ref);
++		return -2;
++	}
++
++	bpf_spin_lock(lock);
++	bpf_list_push_front(head, &node_ref->l);
++	ref = (u64)(void *) &node_ref->ref;
++	bpf_spin_unlock(lock);
++	return probe_read_refcount();
++}
++
++struct {
++	__uint(type, BPF_MAP_TYPE_PERCPU_HASH);
++	__type(key, int);
++	__type(value, struct map_value);
++	__uint(max_entries, 1);
++} percpu_hash SEC(".maps");
++
++SEC("tc")
++int percpu_hash_refcount_leak(void *ctx)
++{
++	struct map_value *v;
++	int key = 0;
++
++	v = bpf_map_lookup_percpu_elem(&percpu_hash, &key, 0);
++	if (!v)
++		return 0;
++
++	return __insert_in_list(&head, &lock, &v->node);
++}
++
++SEC("syscall")
++int clear_percpu_hash_kptr(void *ctx)
++{
++	struct node_data *n;
++	struct map_value *v;
++	int key = 0;
++
++	v = bpf_map_lookup_percpu_elem(&percpu_hash, &key, 0);
++	if (!v)
++		return 0;
++
++	n = bpf_kptr_xchg(&v->node, NULL);
++	if (!n)
++		return 0;
++	bpf_obj_drop(n);
++	return probe_read_refcount();
++}
++
++SEC("tc")
++int check_percpu_hash_refcount(void *ctx)
++{
++	return probe_read_refcount();
++}
+ char _license[] SEC("license") = "GPL";
+-- 
+2.34.1
+

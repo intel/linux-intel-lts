@@ -1,0 +1,172 @@
+From 8972118f3d0e9ccdd05919e81ef496a2317fb85e Mon Sep 17 00:00:00 2001
+From: Mykyta Yatsenko <yatsenko@meta.com>
+Date: Fri, 10 Oct 2025 17:46:06 +0100
+Subject: [PATCH 13/20] bpf: Extract internal structs validation logic into
+ helpers
+
+The arraymap and hashtab duplicate the logic that checks for and frees
+internal structs (timer, workqueue, task_work) based on
+BTF record flags. Centralize this by introducing two helpers:
+
+  * bpf_map_has_internal_structs(map)
+    Returns true if the map value contains any of internal structs:
+    BPF_TIMER | BPF_WORKQUEUE | BPF_TASK_WORK.
+
+  * bpf_map_free_internal_structs(map, obj)
+    Frees the internal structs for a single value object.
+
+Convert arraymap and both the prealloc/malloc hashtab paths to use the
+new generic functions. This keeps the functionality for when/how to free
+these special fields in one place and makes it easier to add support for
+new internal structs in the future without touching every map
+implementation.
+
+Signed-off-by: Mykyta Yatsenko <yatsenko@meta.com>
+Acked-by: Eduard Zingerman <eddyz87@gmail.com>
+Link: https://lore.kernel.org/r/20251010164606.147298-3-mykyta.yatsenko5@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+(cherry picked from commit 4c97c4b149a019a3b318dc6ea3dc96efe0ee1f39)
+---
+ include/linux/bpf.h   |  7 +++++++
+ kernel/bpf/arraymap.c | 19 ++++++-------------
+ kernel/bpf/hashtab.c  | 36 +++++++++++++-----------------------
+ kernel/bpf/helpers.c  | 10 ++++++++++
+ 4 files changed, 36 insertions(+), 36 deletions(-)
+
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 5671b0eeee4a9..207cd9f1d6195 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -664,6 +664,13 @@ int map_check_no_btf(const struct bpf_map *map,
+ bool bpf_map_meta_equal(const struct bpf_map *meta0,
+ 			const struct bpf_map *meta1);
+ 
++static inline bool bpf_map_has_internal_structs(struct bpf_map *map)
++{
++	return btf_record_has_field(map->record, BPF_TIMER | BPF_WORKQUEUE | BPF_TASK_WORK);
++}
++
++void bpf_map_free_internal_structs(struct bpf_map *map, void *obj);
++
+ extern const struct bpf_map_ops bpf_map_offload_ops;
+ 
+ /* bpf_type_flag contains a set of flags that are applicable to the values of
+diff --git a/kernel/bpf/arraymap.c b/kernel/bpf/arraymap.c
+index 248ab6854cf24..aca7a2d65642a 100644
+--- a/kernel/bpf/arraymap.c
++++ b/kernel/bpf/arraymap.c
+@@ -448,19 +448,12 @@ static void array_map_free_internal_structs(struct bpf_map *map)
+ 	struct bpf_array *array = container_of(map, struct bpf_array, map);
+ 	int i;
+ 
+-	/* We don't reset or free fields other than timer and workqueue
+-	 * on uref dropping to zero.
+-	 */
+-	if (btf_record_has_field(map->record, BPF_TIMER | BPF_WORKQUEUE | BPF_TASK_WORK)) {
+-		for (i = 0; i < array->map.max_entries; i++) {
+-			if (btf_record_has_field(map->record, BPF_TIMER))
+-				bpf_obj_free_timer(map->record, array_map_elem_ptr(array, i));
+-			if (btf_record_has_field(map->record, BPF_WORKQUEUE))
+-				bpf_obj_free_workqueue(map->record, array_map_elem_ptr(array, i));
+-			if (btf_record_has_field(map->record, BPF_TASK_WORK))
+-				bpf_obj_free_task_work(map->record, array_map_elem_ptr(array, i));
+-		}
+-	}
++	/* We only free internal structs on uref dropping to zero */
++	if (!bpf_map_has_internal_structs(map))
++		return;
++
++	for (i = 0; i < array->map.max_entries; i++)
++		bpf_map_free_internal_structs(map, array_map_elem_ptr(array, i));
+ }
+ 
+ /* Called when map->refcnt goes to zero, either from workqueue or from syscall */
+diff --git a/kernel/bpf/hashtab.c b/kernel/bpf/hashtab.c
+index 8f68e0afdd25f..dd2ce033902d3 100644
+--- a/kernel/bpf/hashtab.c
++++ b/kernel/bpf/hashtab.c
+@@ -221,19 +221,6 @@ static bool htab_has_extra_elems(struct bpf_htab *htab)
+ 	return !htab_is_percpu(htab) && !htab_is_lru(htab) && !is_fd_htab(htab);
+ }
+ 
+-static void htab_free_internal_structs(struct bpf_htab *htab, struct htab_elem *elem)
+-{
+-	if (btf_record_has_field(htab->map.record, BPF_TIMER))
+-		bpf_obj_free_timer(htab->map.record,
+-				   htab_elem_value(elem, htab->map.key_size));
+-	if (btf_record_has_field(htab->map.record, BPF_WORKQUEUE))
+-		bpf_obj_free_workqueue(htab->map.record,
+-				       htab_elem_value(elem, htab->map.key_size));
+-	if (btf_record_has_field(htab->map.record, BPF_TASK_WORK))
+-		bpf_obj_free_task_work(htab->map.record,
+-				       htab_elem_value(elem, htab->map.key_size));
+-}
+-
+ static void htab_free_prealloced_internal_structs(struct bpf_htab *htab)
+ {
+ 	u32 num_entries = htab->map.max_entries;
+@@ -246,7 +233,8 @@ static void htab_free_prealloced_internal_structs(struct bpf_htab *htab)
+ 		struct htab_elem *elem;
+ 
+ 		elem = get_htab_elem(htab, i);
+-		htab_free_internal_structs(htab, elem);
++		bpf_map_free_internal_structs(&htab->map,
++					      htab_elem_value(elem, htab->map.key_size));
+ 		cond_resched();
+ 	}
+ }
+@@ -1607,8 +1595,9 @@ static void htab_free_malloced_internal_structs(struct bpf_htab *htab)
+ 		struct htab_elem *l;
+ 
+ 		hlist_nulls_for_each_entry(l, n, head, hash_node) {
+-			/* We only free timer on uref dropping to zero */
+-			htab_free_internal_structs(htab, l);
++			/* We only free internal structs on uref dropping to zero */
++			bpf_map_free_internal_structs(&htab->map,
++						      htab_elem_value(l, htab->map.key_size));
+ 		}
+ 		cond_resched_rcu();
+ 	}
+@@ -1619,13 +1608,14 @@ static void htab_map_free_internal_structs(struct bpf_map *map)
+ {
+ 	struct bpf_htab *htab = container_of(map, struct bpf_htab, map);
+ 
+-	/* We only free timer and workqueue on uref dropping to zero */
+-	if (btf_record_has_field(htab->map.record, BPF_TIMER | BPF_WORKQUEUE | BPF_TASK_WORK)) {
+-		if (!htab_is_prealloc(htab))
+-			htab_free_malloced_internal_structs(htab);
+-		else
+-			htab_free_prealloced_internal_structs(htab);
+-	}
++	/* We only free internal structs on uref dropping to zero */
++	if (!bpf_map_has_internal_structs(map))
++		return;
++
++	if (htab_is_prealloc(htab))
++		htab_free_prealloced_internal_structs(htab);
++	else
++		htab_free_malloced_internal_structs(htab);
+ }
+ 
+ /* Called when map->refcnt goes to zero, either from workqueue or from syscall */
+diff --git a/kernel/bpf/helpers.c b/kernel/bpf/helpers.c
+index 72757f7290ec2..689c3ef734085 100644
+--- a/kernel/bpf/helpers.c
++++ b/kernel/bpf/helpers.c
+@@ -4464,3 +4464,13 @@ void *__bpf_dynptr_data_rw(const struct bpf_dynptr_kern *ptr, u32 len)
+ 		return NULL;
+ 	return (void *)__bpf_dynptr_data(ptr, len);
+ }
++
++void bpf_map_free_internal_structs(struct bpf_map *map, void *val)
++{
++	if (btf_record_has_field(map->record, BPF_TIMER))
++		bpf_obj_free_timer(map->record, val);
++	if (btf_record_has_field(map->record, BPF_WORKQUEUE))
++		bpf_obj_free_workqueue(map->record, val);
++	if (btf_record_has_field(map->record, BPF_TASK_WORK))
++		bpf_obj_free_task_work(map->record, val);
++}
+-- 
+2.34.1
+

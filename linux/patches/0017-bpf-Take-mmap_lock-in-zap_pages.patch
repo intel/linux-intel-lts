@@ -1,0 +1,200 @@
+From 5a73fb5faea4188df2972e068940ffb4d2b3519c Mon Sep 17 00:00:00 2001
+From: Alexei Starovoitov <ast@kernel.org>
+Date: Thu, 28 May 2026 15:20:14 -0700
+Subject: [PATCH 17/20] bpf: Take mmap_lock in zap_pages()
+
+zap_vma_range() requires the owning mm's mmap_lock to be held.
+
+Taking mmap_read_lock under arena->lock would AB-BA against
+arena_vm_close() and arena_map_mmap(), both of which run with
+mmap_write_lock held and then acquire arena->lock. Instead drop
+arena->lock, mmget_not_zero() the vma's mm, take mmap_read_lock, and
+re-resolve the vma via find_vma() since it may have been unmapped or
+replaced while waiting.
+
+Track processed vmls with a per-call generation in vml->zap_gen and
+serialize zap_pages() callers with a new arena->zap_mutex so
+concurrent callers on different uaddr ranges do not mark each other's
+vmls processed before the zap is done.
+
+Reported-by: David Hildenbrand <david@kernel.org>
+Fixes: 317460317a02 ("bpf: Introduce bpf_arena.")
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Reviewed-by: Emil Tsalapatis <emil@etsalapatis.com>
+Link: https://lore.kernel.org/r/20260528222014.38980-1-alexei.starovoitov@gmail.com
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+
+[ Backport to 6.18: 6.18 predates b8467290edab ("bpf: arena: make arena
+  kfuncs any context safe"), so arena->lock is a mutex that protects the
+  range tree, the kernel vm area and vma_list, and arena_free_pages()
+  called zap_pages() with it held. Take the zap_pages() hunk as is, using
+  zap_page_range_single(..., NULL) in place of zap_vma_range(). Rework
+  arena_free_pages() to match the upstream ordering: under arena->lock,
+  mark the range free, unmap the pages from the kernel vm area and collect
+  them on a private llist (page->pcp_llist). Then drop the lock, zap the
+  user VMAs and free the pages. User PTEs hold their own page references
+  (vm_insert_page()), so freeing after the zap is safe. bpf_arena_free_pages()
+  is KF_SLEEPABLE in 6.18, so mmap_read_lock() is allowed there. ]
+(cherry picked from commit 80b89d0226a05e8b67969de99c31b51fcd54f76a)
+---
+ kernel/bpf/arena.c | 86 ++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 76 insertions(+), 10 deletions(-)
+
+diff --git a/kernel/bpf/arena.c b/kernel/bpf/arena.c
+index 51227c8d2b1e4..e27a3144e6c34 100644
+--- a/kernel/bpf/arena.c
++++ b/kernel/bpf/arena.c
+@@ -50,6 +50,8 @@ struct bpf_arena {
+ 	struct range_tree rt;
+ 	struct list_head vma_list;
+ 	struct mutex lock;
++	u64 zap_gen;
++	struct mutex zap_mutex;
+ };
+ 
+ u64 bpf_arena_get_kern_vm_start(struct bpf_arena *arena)
+@@ -144,6 +146,7 @@ static struct bpf_map *arena_map_alloc(union bpf_attr *attr)
+ 		goto err;
+ 	}
+ 	mutex_init(&arena->lock);
++	mutex_init(&arena->zap_mutex);
+ 
+ 	return &arena->map;
+ err:
+@@ -223,6 +226,7 @@ struct vma_list {
+ 	struct vm_area_struct *vma;
+ 	struct list_head head;
+ 	refcount_t mmap_count;
++	u64 zap_gen;
+ };
+ 
+ static int remember_vma(struct bpf_arena *arena, struct vm_area_struct *vma)
+@@ -235,6 +239,7 @@ static int remember_vma(struct bpf_arena *arena, struct vm_area_struct *vma)
+ 	refcount_set(&vml->mmap_count, 1);
+ 	vma->vm_private_data = vml;
+ 	vml->vma = vma;
++	vml->zap_gen = 0;
+ 	list_add(&vml->head, &arena->vma_list);
+ 	return 0;
+ }
+@@ -517,16 +522,67 @@ static long arena_alloc_pages(struct bpf_arena *arena, long uaddr, long page_cnt
+  */
+ static void zap_pages(struct bpf_arena *arena, long uaddr, long page_cnt)
+ {
++	unsigned long size = (unsigned long)page_cnt << PAGE_SHIFT;
++	struct vm_area_struct *vma;
++	struct mm_struct *mm;
+ 	struct vma_list *vml;
++	unsigned long vm_start;
++	u64 my_gen;
+ 
+-	list_for_each_entry(vml, &arena->vma_list, head)
+-		zap_page_range_single(vml->vma, uaddr,
+-				      PAGE_SIZE * page_cnt, NULL);
++	/*
++	 * Taking mmap_read_lock() under arena->lock would deadlock against
++	 * arena_vm_close(), which runs with mmap_write_lock held and then
++	 * acquires arena->lock. Drop arena->lock for mmap_read_lock().
++	 *
++	 * Use per-call my_gen, recorded in vml->zap_gen, to remember which
++	 * vmls this invocation has already processed across the lock drop.
++	 * Hold zap_mutex around the whole walk so concurrent zap_pages()
++	 * callers cannot overwrite each other's marks on shared vmls --
++	 * otherwise call B's mark would make call A skip a vml that A has
++	 * not yet zapped for A's uaddr range.
++	 */
++	mutex_lock(&arena->zap_mutex);
++	mutex_lock(&arena->lock);
++	my_gen = ++arena->zap_gen;
++	for (;;) {
++		mm = NULL;
++		list_for_each_entry(vml, &arena->vma_list, head) {
++			if (vml->zap_gen >= my_gen)
++				continue;
++			vml->zap_gen = my_gen;
++			if (!mmget_not_zero(vml->vma->vm_mm))
++				continue;
++			mm = vml->vma->vm_mm;
++			vm_start = vml->vma->vm_start;
++			break;
++		}
++		if (!mm)
++			break;
++		mutex_unlock(&arena->lock);
++
++		mmap_read_lock(mm);
++		/*
++		 * Re-resolve: while we waited the VMA could have been unmapped
++		 * and a different mapping installed at the same address.
++		 */
++		vma = find_vma(mm, vm_start);
++		if (vma && vma->vm_start == vm_start &&
++		    vma->vm_file && vma->vm_file->private_data == &arena->map)
++			zap_page_range_single(vma, uaddr, size, NULL);
++		mmap_read_unlock(mm);
++		mmput(mm);
++
++		mutex_lock(&arena->lock);
++	}
++	mutex_unlock(&arena->lock);
++	mutex_unlock(&arena->zap_mutex);
+ }
+ 
+ static void arena_free_pages(struct bpf_arena *arena, long uaddr, long page_cnt)
+ {
+ 	u64 full_uaddr, uaddr_end;
++	struct llist_head free_pages;
++	struct llist_node *pos, *t;
+ 	long kaddr, pgoff, i;
+ 	struct page *page;
+ 
+@@ -542,21 +598,32 @@ static void arena_free_pages(struct bpf_arena *arena, long uaddr, long page_cnt)
+ 
+ 	page_cnt = (uaddr_end - full_uaddr) >> PAGE_SHIFT;
+ 
+-	guard(mutex)(&arena->lock);
++	init_llist_head(&free_pages);
++	mutex_lock(&arena->lock);
+ 
+ 	pgoff = compute_pgoff(arena, uaddr);
+ 	/* clear range */
+ 	range_tree_set(&arena->rt, pgoff, page_cnt);
+ 
+-	if (page_cnt > 1)
+-		/* bulk zap if multiple pages being freed */
+-		zap_pages(arena, full_uaddr, page_cnt);
+-
++	/* unmap pages from the kernel vm area and collect them */
+ 	kaddr = bpf_arena_get_kern_vm_start(arena) + uaddr;
+-	for (i = 0; i < page_cnt; i++, kaddr += PAGE_SIZE, full_uaddr += PAGE_SIZE) {
++	for (i = 0; i < page_cnt; i++, kaddr += PAGE_SIZE) {
+ 		page = vmalloc_to_page((void *)kaddr);
+ 		if (!page)
+ 			continue;
++		vm_area_unmap_pages(arena->kern_vm, kaddr, kaddr + PAGE_SIZE);
++		__llist_add(&page->pcp_llist, &free_pages);
++	}
++
++	/* zap_pages() takes mmap_lock, which must not nest inside arena->lock */
++	mutex_unlock(&arena->lock);
++
++	if (page_cnt > 1)
++		/* bulk zap if multiple pages being freed */
++		zap_pages(arena, full_uaddr, page_cnt);
++
++	llist_for_each_safe(pos, t, __llist_del_all(&free_pages)) {
++		page = llist_entry(pos, struct page, pcp_llist);
+ 		if (page_cnt == 1 && page_mapped(page)) /* mapped by some user process */
+ 			/* Optimization for the common case of page_cnt==1:
+ 			 * If page wasn't mapped into some user vma there
+@@ -564,7 +631,6 @@ static void arena_free_pages(struct bpf_arena *arena, long uaddr, long page_cnt)
+ 			 * page_cnt is big it's faster to do the batched zap.
+ 			 */
+ 			zap_pages(arena, full_uaddr, 1);
+-		vm_area_unmap_pages(arena->kern_vm, kaddr, kaddr + PAGE_SIZE);
+ 		__free_page(page);
+ 	}
+ }
+-- 
+2.34.1
+

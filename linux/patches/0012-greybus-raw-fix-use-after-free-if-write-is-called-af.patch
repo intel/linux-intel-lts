@@ -1,8 +1,8 @@
-From d78555f850e123602c16f507bac1616d8c34d295 Mon Sep 17 00:00:00 2001
+From dded51bbd38f7ec9a68c3d3009232625b2b57574 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Damien=20Ri=C3=A9gel?= <damien.riegel@silabs.com>
 Date: Tue, 24 Mar 2026 10:00:39 -0400
-Subject: [PATCH 12/14] greybus: raw: fix use-after-free if write is called
- after disconnect
+Subject: [PATCH 12/14] greybus: raw: fix use-after-free if write is called after
+ disconnect
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -46,25 +46,31 @@ Signed-off-by: Damien Riégel <damien.riegel@silabs.com>
 Link: https://patch.msgid.link/20260324140039.40001-2-damien.riegel@silabs.com
 Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
 Signed-off-by: Sasha Levin <sashal@kernel.org>
+[ kernel-lts-cve series refresh for v6.18.58: Resolved onto stable
+  e72ffe59e48a "greybus: raw: fix use-after-free on cdev close"
+  (upstream 983cc2c7efbc, which upstream also applied first). gb_raw now
+  embeds struct device and uses cdev_device_del(), and the dev_t member
+  is gone. The disconnect_lock/disconnected flag is set after
+  cdev_device_del(). The result is identical to mainline 84265cbd96b9. ]
 (cherry picked from commit 48d6c32bc049abd114e8f0836c0e7d7cbfba7827)
 ---
  drivers/staging/greybus/raw.c | 23 +++++++++++++++++++++--
  1 file changed, 21 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/staging/greybus/raw.c b/drivers/staging/greybus/raw.c
-index 71de6776739c2..da450a1bdcffd 100644
+index e668438e1a2c4..d0fd15af22baa 100644
 --- a/drivers/staging/greybus/raw.c
 +++ b/drivers/staging/greybus/raw.c
-@@ -22,6 +22,8 @@ struct gb_raw {
+@@ -21,6 +21,8 @@ struct gb_raw {
+ 	struct list_head list;
  	int list_data;
  	struct mutex list_lock;
- 	dev_t dev;
 +	struct rw_semaphore disconnect_lock;
 +	bool disconnected;
  	struct cdev cdev;
- 	struct device *device;
+ 	struct device dev;
  };
-@@ -177,6 +179,7 @@ static int gb_raw_probe(struct gb_bundle *bundle,
+@@ -200,6 +202,7 @@ static int gb_raw_probe(struct gb_bundle *bundle,
  
  	INIT_LIST_HEAD(&raw->list);
  	mutex_init(&raw->list_lock);
@@ -72,19 +78,19 @@ index 71de6776739c2..da450a1bdcffd 100644
  
  	raw->connection = connection;
  	greybus_set_drvdata(bundle, raw);
-@@ -234,6 +237,11 @@ static void gb_raw_disconnect(struct gb_bundle *bundle)
- 	// FIXME - handle removing a connection when the char device node is open.
- 	device_destroy(&raw_class, raw->dev);
- 	cdev_del(&raw->cdev);
+@@ -235,6 +238,11 @@ static void gb_raw_disconnect(struct gb_bundle *bundle)
+ 	struct raw_data *temp;
+ 
+ 	cdev_device_del(&raw->cdev, &raw->dev);
 +
 +	down_write(&raw->disconnect_lock);
 +	raw->disconnected = true;
 +	up_write(&raw->disconnect_lock);
 +
  	gb_connection_disable(connection);
- 	ida_free(&minors, MINOR(raw->dev));
  	gb_connection_destroy(connection);
-@@ -278,11 +286,22 @@ static ssize_t raw_write(struct file *file, const char __user *buf,
+ 
+@@ -277,11 +285,22 @@ static ssize_t raw_write(struct file *file, const char __user *buf,
  	if (count > MAX_PACKET_SIZE)
  		return -E2BIG;
  
@@ -110,5 +116,5 @@ index 71de6776739c2..da450a1bdcffd 100644
  
  static ssize_t raw_read(struct file *file, char __user *buf, size_t count,
 -- 
-2.43.0
+2.34.1
 

@@ -1,0 +1,56 @@
+From ffe2f86e4229908f95fe0c6e30a8d21bef3008ab Mon Sep 17 00:00:00 2001
+From: Emil Tsalapatis <emil@etsalapatis.com>
+Date: Tue, 22 Sep 2026 17:20:22 +0000
+Subject: [PATCH 04/20] bpf: Reject pkt arguments in mutating subprogs
+
+[ Upstream commit a6c1edfbe240e4377038a0e1d233ad81fde9a21b ]
+
+The verifier tracks changes in how PTR_TO_PACKET registers'
+bounds are modified across subprog boundaries. PTR_TO_PACKET
+registers are actually passed as PTR_TO_MEM, which is assumed
+valid for the entire call. This is not the case with packet memory,
+where a pskb_* call may invalidate its memory region.
+
+Reject BPF code that passes PTR_TO_PACKET pointers to subprogs that
+may mutate a packet. We cannot pass the pointer as a true PTR_TO_PACKET
+because we would also need to somehow pass the PTR_TO_PACKET_META
+or PTR_TO_PACKET_END to the subprog. Since we cannot avoid representing
+the pointer in the subprog as PTR_TO_MEM, only permit it if the
+subprog is guaranteed not to mutate the packet.
+
+Fixes: 80f281664f5a ("bpf: Support pointers in global func args")
+Reported-by: Nicholas Carlini <nicholas@carlini.com>
+Suggested-by: Nicholas Carlini <nicholas@carlini.com>
+Signed-off-by: Emil Tsalapatis <emil@etsalapatis.com>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Link: https://patch.msgid.link/20260922172028.6269-6-emil@etsalapatis.com
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+(cherry picked from commit 0b6b2bb9b90ad1e2d94d18f626258a1dbbdee0ea)
+---
+ kernel/bpf/verifier.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
+index b89a5d717e422..9335557c5ee5c 100644
+--- a/kernel/bpf/verifier.c
++++ b/kernel/bpf/verifier.c
+@@ -10732,6 +10732,16 @@ static int btf_check_func_arg_match(struct bpf_verifier_env *env, int subprog,
+ 				return ret;
+ 			if (check_mem_reg(env, reg, regno, arg->mem_size))
+ 				return -EINVAL;
++			/*
++			 * PTR_TO_PACKET get passed as PTR_TO_MEM, preventing
++			 * us from adjusting bounds tracking info.
++			 */
++			if ((reg_is_pkt_pointer_any(reg) || reg_is_dynptr_slice_pkt(reg)) &&
++			    sub->changes_pkt_data) {
++				bpf_log(log, "arg#%d is a packet pointer, but func#%d may change packet data\n",
++					i, subprog);
++				return -EINVAL;
++			}
+ 			if (!(arg->arg_type & PTR_MAYBE_NULL) && (reg->type & PTR_MAYBE_NULL)) {
+ 				bpf_log(log, "arg#%d is expected to be non-NULL\n", i);
+ 				return -EINVAL;
+-- 
+2.34.1
+

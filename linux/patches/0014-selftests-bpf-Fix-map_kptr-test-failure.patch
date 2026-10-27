@@ -1,0 +1,124 @@
+From 0eb7d470944f63422c68b43bb69a80de3fdaa037 Mon Sep 17 00:00:00 2001
+From: Yonghong Song <yonghong.song@linux.dev>
+Date: Thu, 15 Jan 2026 21:22:45 -0800
+Subject: [PATCH 14/20] selftests/bpf: Fix map_kptr test failure
+
+On my arm64 machine, I get the following failure:
+  ...
+  tester_init:PASS:tester_log_buf 0 nsec
+  process_subtest:PASS:obj_open_mem 0 nsec
+  process_subtest:PASS:specs_alloc 0 nsec
+  serial_test_map_kptr:PASS:rcu_tasks_trace_gp__open_and_load 0 nsec
+  ...
+  test_map_kptr_success:PASS:map_kptr__open_and_load 0 nsec
+  test_map_kptr_success:PASS:test_map_kptr_ref1 refcount 0 nsec
+  test_map_kptr_success:FAIL:test_map_kptr_ref1 retval unexpected error: 2 (errno 2)
+  test_map_kptr_success:PASS:test_map_kptr_ref2 refcount 0 nsec
+  test_map_kptr_success:FAIL:test_map_kptr_ref2 retval unexpected error: 1 (errno 2)
+  ...
+  #201/21  map_kptr/success-map:FAIL
+
+In serial_test_map_kptr(), before test_map_kptr_success(), one
+kern_sync_rcu() is used to have some delay for freeing the map.
+But in my environment, one kern_sync_rcu() seems not enough and
+caused the test failure.
+
+In bpf_map_free_in_work() in syscall.c, the queue time for
+  queue_work(system_dfl_wq, &map->work)
+may be longer than expected. This may cause the test failure
+since test_map_kptr_success() expects all previous maps having been freed.
+
+Since it is not clear how long queue_work() time takes, a bpf prog
+is added to count the reference after bpf_kfunc_call_test_acquire().
+If the number of references is 2 (for initial ref and the one just
+acquired), all previous maps should have been released. This will
+resolve the above 'retval unexpected error' issue.
+
+Signed-off-by: Yonghong Song <yonghong.song@linux.dev>
+Signed-off-by: Andrii Nakryiko <andrii@kernel.org>
+Acked-by: Kumar Kartikeya Dwivedi <memxor@gmail.com>
+Link: https://lore.kernel.org/bpf/20260116052245.3692405-1-yonghong.song@linux.dev
+(cherry picked from commit efad162f5a840ae178e7761c176c49f433c7bb68)
+---
+ .../selftests/bpf/prog_tests/map_kptr.c       | 23 +++++++++++++++++++
+ tools/testing/selftests/bpf/progs/map_kptr.c  | 18 +++++++++++++++
+ 2 files changed, 41 insertions(+)
+
+diff --git a/tools/testing/selftests/bpf/prog_tests/map_kptr.c b/tools/testing/selftests/bpf/prog_tests/map_kptr.c
+index 8743df5995673..f372162c0280c 100644
+--- a/tools/testing/selftests/bpf/prog_tests/map_kptr.c
++++ b/tools/testing/selftests/bpf/prog_tests/map_kptr.c
+@@ -131,6 +131,25 @@ static int kern_sync_rcu_tasks_trace(struct rcu_tasks_trace_gp *rcu)
+ 	return 0;
+ }
+ 
++static void wait_for_map_release(void)
++{
++	LIBBPF_OPTS(bpf_test_run_opts, lopts);
++	struct map_kptr *skel;
++	int ret;
++
++	skel = map_kptr__open_and_load();
++	if (!ASSERT_OK_PTR(skel, "map_kptr__open_and_load"))
++		return;
++
++	do {
++		ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.count_ref), &lopts);
++		ASSERT_OK(ret, "count_ref ret");
++		ASSERT_OK(lopts.retval, "count_ref retval");
++	} while (skel->bss->num_of_refs != 2);
++
++	map_kptr__destroy(skel);
++}
++
+ void serial_test_map_kptr(void)
+ {
+ 	struct rcu_tasks_trace_gp *skel;
+@@ -148,11 +167,15 @@ void serial_test_map_kptr(void)
+ 
+ 		ASSERT_OK(kern_sync_rcu_tasks_trace(skel), "sync rcu_tasks_trace");
+ 		ASSERT_OK(kern_sync_rcu(), "sync rcu");
++		wait_for_map_release();
++
+ 		/* Observe refcount dropping to 1 on bpf_map_free_deferred */
+ 		test_map_kptr_success(false);
+ 
+ 		ASSERT_OK(kern_sync_rcu_tasks_trace(skel), "sync rcu_tasks_trace");
+ 		ASSERT_OK(kern_sync_rcu(), "sync rcu");
++		wait_for_map_release();
++
+ 		/* Observe refcount dropping to 1 on synchronous delete elem */
+ 		test_map_kptr_success(true);
+ 	}
+diff --git a/tools/testing/selftests/bpf/progs/map_kptr.c b/tools/testing/selftests/bpf/progs/map_kptr.c
+index edaba481db9d8..e708ffbe1f610 100644
+--- a/tools/testing/selftests/bpf/progs/map_kptr.c
++++ b/tools/testing/selftests/bpf/progs/map_kptr.c
+@@ -487,6 +487,24 @@ int test_map_kptr_ref3(struct __sk_buff *ctx)
+ 	return 0;
+ }
+ 
++int num_of_refs;
++
++SEC("syscall")
++int count_ref(void *ctx)
++{
++	struct prog_test_ref_kfunc *p;
++	unsigned long arg = 0;
++
++	p = bpf_kfunc_call_test_acquire(&arg);
++	if (!p)
++		return 1;
++
++	num_of_refs = p->cnt.refs.counter;
++
++	bpf_kfunc_call_test_release(p);
++	return 0;
++}
++
+ SEC("syscall")
+ int test_ls_map_kptr_ref1(void *ctx)
+ {
+-- 
+2.34.1
+

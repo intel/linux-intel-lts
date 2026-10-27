@@ -1,8 +1,7 @@
-From 2d4cbe255a0ae11cdcff3e0a1700e4e005a3eb02 Mon Sep 17 00:00:00 2001
+From 2c94695401c045fc95893578d5df28ab778e1412 Mon Sep 17 00:00:00 2001
 From: Huiwen He <hehuiwen@kylinos.cn>
 Date: Wed, 24 Jun 2026 10:15:46 +0800
-Subject: [PATCH 020/143] smb/client: do not account EOF extension as
- allocation
+Subject: [PATCH 020/143] smb/client: do not account EOF extension as allocation
 
 cifs_setsize() updates the local inode size after SetEOF succeeds. It also
 used the new EOF as a local i_blocks estimate, but extending EOF does not
@@ -36,24 +35,29 @@ generic/495 no longer accepts it through the inflated local i_blocks value.
 Signed-off-by: Huiwen He <hehuiwen@kylinos.cn>
 Reviewed-by: ChenXiaoSong <chenxiaosong@kylinos.cn>
 Signed-off-by: Steve French <stfrench@microsoft.com>
+[ kernel-lts-cve series refresh for v6.18.58: Rebased onto stable
+  6.18.58, which picked up c510edb9734a "cifs: call
+  pagecache_isize_extended() in cifs_setsize() when extending" (old
+  0021). That commit already declares and reads old_size in
+  cifs_setsize(), so this patch only adds the blocks local and the
+  clamp-on-shrink i_blocks update. ]
 (cherry picked from commit 99cd0a6eeb6c20fc6b914e7ce192c6b08e1ef906)
 ---
- fs/smb/client/inode.c | 13 ++++++++++---
- 1 file changed, 10 insertions(+), 3 deletions(-)
+ fs/smb/client/inode.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
 
 diff --git a/fs/smb/client/inode.c b/fs/smb/client/inode.c
-index 7f8d2edb828ee..0f5fdad76845a 100644
+index 995d6df9304f4..d6f7f899e37bc 100644
 --- a/fs/smb/client/inode.c
 +++ b/fs/smb/client/inode.c
-@@ -3028,13 +3028,20 @@ int cifs_fiemap(struct inode *inode, struct fiemap_extent_info *fei, u64 start,
- 
+@@ -3036,15 +3036,19 @@ int cifs_fiemap(struct inode *inode, struct fiemap_extent_info *fei, u64 start,
  void cifs_setsize(struct inode *inode, loff_t offset)
  {
-+	loff_t old_size;
+ 	loff_t old_size;
 +	u64 blocks = CIFS_INO_BLOCKS(offset);
-+
+ 
  	spin_lock(&inode->i_lock);
-+	old_size = i_size_read(inode);
+ 	old_size = i_size_read(inode);
  	i_size_write(inode, offset);
 +
  	/*
@@ -68,7 +72,7 @@ index 7f8d2edb828ee..0f5fdad76845a 100644
 +		inode->i_blocks = blocks;
  	spin_unlock(&inode->i_lock);
  	inode_set_mtime_to_ts(inode, inode_set_ctime_current(inode));
- 	truncate_pagecache(inode, offset);
+ 	if (offset > old_size)
 -- 
 2.34.1
 

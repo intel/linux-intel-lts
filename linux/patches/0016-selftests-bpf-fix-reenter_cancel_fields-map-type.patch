@@ -1,0 +1,92 @@
+From fb7255be91f514f656cb713be7c7ca2d64f2ca01 Mon Sep 17 00:00:00 2001
+From: Kris Pan <kris.pan@intel.com>
+Date: Mon, 26 Oct 2026 17:02:46 +0800
+Subject: [PATCH 16/20] selftests/bpf: fix reenter_cancel_fields map type
+
+The reenter_cancel_fields subtest used the legacy __u32 htab map, so
+map->record was NULL and check_and_cancel_fields() returned before
+bpf_obj_cancel_fields() could run. The fentry program therefore never
+executed and update_err stayed 0 instead of -EDEADLK.
+
+Give the subtest its own BTF-typed map with a bpf_timer field, and use
+it from both the fentry program and the userspace test.
+
+Signed-off-by: Kris Pan <kris.pan@intel.com>
+---
+ .../selftests/bpf/prog_tests/htab_update.c     |  6 +++---
+ .../testing/selftests/bpf/progs/htab_update.c  | 18 ++++++++++++++++--
+ 2 files changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/tools/testing/selftests/bpf/prog_tests/htab_update.c b/tools/testing/selftests/bpf/prog_tests/htab_update.c
+index 38740ad8296f7..7bab52deb95c7 100644
+--- a/tools/testing/selftests/bpf/prog_tests/htab_update.c
++++ b/tools/testing/selftests/bpf/prog_tests/htab_update.c
+@@ -66,7 +66,7 @@ static void test_reenter_cancel_fields(void)
+ 	if (!ASSERT_OK(err, "htab_update__attach"))
+ 		goto out;
+ 
+-	value_size = bpf_map__value_size(skel->maps.htab);
++	value_size = bpf_map__value_size(skel->maps.htab_cancel);
+ 	value = calloc(1, value_size);
+ 	if (!ASSERT_OK_PTR(value, "calloc value"))
+ 		goto out;
+@@ -75,7 +75,7 @@ static void test_reenter_cancel_fields(void)
+ 	 * First update: plain insert. There is no old element to cancel yet.
+ 	 */
+ 	key = 0;
+-	err = bpf_map_update_elem(bpf_map__fd(skel->maps.htab), &key, value, BPF_ANY);
++	err = bpf_map_update_elem(bpf_map__fd(skel->maps.htab_cancel), &key, value, BPF_ANY);
+ 	if (!ASSERT_OK(err, "first update (insert)"))
+ 		goto out;
+ 
+@@ -87,7 +87,7 @@ static void test_reenter_cancel_fields(void)
+ 	 * bpf_map_update_elem(), triggering -EDEADLK.
+ 	 */
+ 	memset(value, 0, value_size);
+-	err = bpf_map_update_elem(bpf_map__fd(skel->maps.htab), &key, value, BPF_ANY);
++	err = bpf_map_update_elem(bpf_map__fd(skel->maps.htab_cancel), &key, value, BPF_ANY);
+ 	if (!ASSERT_OK(err, "second update (replace)"))
+ 		goto out;
+ 
+diff --git a/tools/testing/selftests/bpf/progs/htab_update.c b/tools/testing/selftests/bpf/progs/htab_update.c
+index a7aa9c75ac182..32e10dbf9b8ac 100644
+--- a/tools/testing/selftests/bpf/progs/htab_update.c
++++ b/tools/testing/selftests/bpf/progs/htab_update.c
+@@ -13,6 +13,19 @@ struct {
+ 	__uint(value_size, sizeof(__u32));
+ } htab SEC(".maps");
+ 
++/* Value with a BTF-managed field, so that htab_cancel has a BTF record. */
++struct val {
++	struct bpf_timer t;
++	__u64 payload;
++};
++
++struct {
++	__uint(type, BPF_MAP_TYPE_HASH);
++	__uint(max_entries, 1);
++	__type(key, __u32);
++	__type(value, struct val);
++} htab_cancel SEC(".maps");
++
+ int pid = 0;
+ int update_err = 0;
+ 
+@@ -31,11 +44,12 @@ int lookup_elem_raw(void *ctx)
+ SEC("?fentry/bpf_obj_cancel_fields")
+ int bpf_obj_cancel_fields(void *ctx)
+ {
+-	__u32 key = 0, value = 1;
++	__u32 key = 0;
++	struct val value = { .payload = 1 };
+ 
+ 	if ((bpf_get_current_pid_tgid() >> 32) != pid)
+ 		return 0;
+ 
+-	update_err = bpf_map_update_elem(&htab, &key, &value, 0);
++	update_err = bpf_map_update_elem(&htab_cancel, &key, &value, 0);
+ 	return 0;
+ }
+-- 
+2.34.1
+

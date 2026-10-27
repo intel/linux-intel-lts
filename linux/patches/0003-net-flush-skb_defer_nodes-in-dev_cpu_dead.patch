@@ -1,0 +1,194 @@
+From 0adefb2c495a1cb91695d34e43389c59f512597e Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Wed, 23 Sep 2026 13:03:18 +0000
+Subject: [PATCH 03/20] net: flush skb_defer_nodes in dev_cpu_dead()
+
+[ Upstream commit 06e3f54e8b22040ada01a28343badf1990b4dd7d ]
+
+When a CPU goes offline, dev_cpu_dead() drains its softnet queues
+(completion_queue, output_queue, poll_list, process_queue, and
+input_pkt_queue), but leaves net_hotdata.skb_defer_nodes untouched.
+
+If oldcpu goes offline while holding pending skbs in its
+skb_defer_nodes lists (e.g. below the sysctl_skb_defer_max >> 1 IPI
+threshold, or if the IPI races with CPU teardown), those skbs remain
+stranded until oldcpu is brought back online. If any of these skbs
+hold page_pool fragments, page_pool_destroy() will stall indefinitely
+waiting for inflight pages to be returned when a netdev or driver is
+torn down while oldcpu is offline.
+
+Additionally, if smp_call_function_single_async() fails in
+kick_defer_list_purge() because the target CPU went offline, reset
+defer_ipi_scheduled to 0 so future IPI kicks are not blocked when the
+CPU comes back online.
+
+Also, if oldcpu was the last online CPU on its NUMA node, drain that
+node's slot across all CPUs so no skbs deferred from that node remain
+stranded on idle remote CPUs (or if the node itself is subsequently
+offlined).
+
+Finally, in skb_attempt_defer_free(), re-check cpu_online(cpu) and
+whether the caller migrated CPUs after llist_add(), flushing the node
+list if so, to close the preemption TOCTOU race against CPU/node
+teardown.
+
+Fixes: 68822bdf76f1 ("net: generalize skb freeing deferral to per-cpu lists")
+Fixes: 5628f3fe3b16 ("net: add NUMA awareness to skb_attempt_defer_free()")
+Closes: https://lore.kernel.org/netdev/20260916003430.3612956-1-kris.pan@intel.com/
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Cc: Kris Pan <kris.pan@intel.com>
+Link: https://patch.msgid.link/20260923130318.607255-1-edumazet@google.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+Signed-off-by: Sasha Levin <sashal@kernel.org>
+(cherry picked from commit c68f4157463448a76893223e117170be8374d773)
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ net/core/dev.c    | 46 +++++++++++++++++++++++++++++++++++-----------
+ net/core/dev.h    |  2 ++
+ net/core/skbuff.c | 13 ++++++++++---
+ 3 files changed, 47 insertions(+), 14 deletions(-)
+
+diff --git a/net/core/dev.c b/net/core/dev.c
+index da6893ff579b6..06baf587d0c5e 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -5280,7 +5280,8 @@ void kick_defer_list_purge(unsigned int cpu)
+ 		backlog_unlock_irq_restore(sd, flags);
+ 
+ 	} else if (!cmpxchg(&sd->defer_ipi_scheduled, 0, 1)) {
+-		smp_call_function_single_async(cpu, &sd->defer_csd);
++		if (smp_call_function_single_async(cpu, &sd->defer_csd))
++			WRITE_ONCE(sd->defer_ipi_scheduled, 0);
+ 	}
+ }
+ 
+@@ -6810,24 +6811,35 @@ bool napi_complete_done(struct napi_struct *n, int work_done)
+ }
+ EXPORT_SYMBOL(napi_complete_done);
+ 
+-static void skb_defer_free_flush(void)
++static void __skb_defer_free_flush(struct skb_defer_node *sdn, int budget)
+ {
+ 	struct llist_node *free_list;
+ 	struct sk_buff *skb, *next;
++
++	if (llist_empty(&sdn->defer_list))
++		return;
++	atomic_long_set(&sdn->defer_count, 0);
++	free_list = llist_del_all(&sdn->defer_list);
++
++	llist_for_each_entry_safe(skb, next, free_list, ll_node) {
++		prefetch(next);
++		napi_consume_skb(skb, budget);
++	}
++}
++
++void skb_defer_node_flush(struct skb_defer_node *sdn)
++{
++	__skb_defer_free_flush(sdn, 0);
++}
++
++static void skb_defer_free_flush(void)
++{
+ 	struct skb_defer_node *sdn;
+ 	int node;
+ 
+ 	for_each_node(node) {
+ 		sdn = this_cpu_ptr(net_hotdata.skb_defer_nodes) + node;
+-
+-		if (llist_empty(&sdn->defer_list))
+-			continue;
+-		atomic_long_set(&sdn->defer_count, 0);
+-		free_list = llist_del_all(&sdn->defer_list);
+-
+-		llist_for_each_entry_safe(skb, next, free_list, ll_node) {
+-			napi_consume_skb(skb, 1);
+-		}
++		__skb_defer_free_flush(sdn, 1);
+ 	}
+ }
+ 
+@@ -12731,6 +12743,7 @@ static int dev_cpu_dead(unsigned int oldcpu)
+ 	struct sk_buff **list_skb;
+ 	struct sk_buff *skb;
+ 	unsigned int cpu;
++	int node;
+ 	struct softnet_data *sd, *oldsd, *remsd = NULL;
+ 
+ 	local_irq_disable();
+@@ -12791,6 +12804,17 @@ static int dev_cpu_dead(unsigned int oldcpu)
+ 		rps_input_queue_head_incr(oldsd);
+ 	}
+ 
++	for_each_node(node)
++		skb_defer_node_flush(per_cpu_ptr(net_hotdata.skb_defer_nodes,
++						 oldcpu) + node);
++	node = cpu_to_node(oldcpu);
++	if (node_possible(node) &&
++	    !cpumask_intersects(cpumask_of_node(node), cpu_online_mask)) {
++		for_each_possible_cpu(cpu)
++			skb_defer_node_flush(per_cpu_ptr(net_hotdata.skb_defer_nodes,
++							 cpu) + node);
++	}
++
+ 	return 0;
+ }
+ 
+diff --git a/net/core/dev.h b/net/core/dev.h
+index b458e2777725e..6cfa0e4fb17de 100644
+--- a/net/core/dev.h
++++ b/net/core/dev.h
+@@ -356,6 +356,8 @@ static inline void napi_assert_will_not_race(const struct napi_struct *napi)
+ 	WARN_ON(READ_ONCE(napi->list_owner) != -1);
+ }
+ 
++struct skb_defer_node;
++void skb_defer_node_flush(struct skb_defer_node *sdn);
+ void kick_defer_list_purge(unsigned int cpu);
+ 
+ int dev_set_hwtstamp_phylib(struct net_device *dev,
+diff --git a/net/core/skbuff.c b/net/core/skbuff.c
+index cdce2f72fbeaf..61fb05033208c 100644
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -7295,11 +7295,13 @@ void skb_attempt_defer_free(struct sk_buff *skb)
+ {
+ 	struct skb_defer_node *sdn;
+ 	unsigned long defer_count;
+-	int cpu = skb->alloc_cpu;
+ 	unsigned int defer_max;
++	int cpu, my_cpu;
+ 	bool kick;
+ 
+-	if (cpu == raw_smp_processor_id() ||
++	cpu = skb->alloc_cpu;
++	my_cpu = raw_smp_processor_id();
++	if (cpu == my_cpu ||
+ 	    WARN_ON_ONCE(cpu >= nr_cpu_ids) ||
+ 	    !cpu_online(cpu)) {
+ nodefer:	kfree_skb_napi_cache(skb);
+@@ -7310,7 +7312,7 @@ nodefer:	kfree_skb_napi_cache(skb);
+ 	DEBUG_NET_WARN_ON_ONCE(skb->destructor);
+ 	DEBUG_NET_WARN_ON_ONCE(skb_nfct(skb));
+ 
+-	sdn = per_cpu_ptr(net_hotdata.skb_defer_nodes, cpu) + numa_node_id();
++	sdn = per_cpu_ptr(net_hotdata.skb_defer_nodes, cpu) + cpu_to_node(my_cpu);
+ 
+ 	defer_max = READ_ONCE(net_hotdata.sysctl_skb_defer_max);
+ 	defer_count = atomic_long_inc_return(&sdn->defer_count);
+@@ -7320,6 +7322,11 @@ nodefer:	kfree_skb_napi_cache(skb);
+ 
+ 	llist_add(&skb->ll_node, &sdn->defer_list);
+ 
++	if (unlikely(!cpu_online(cpu) || my_cpu != raw_smp_processor_id())) {
++		skb_defer_node_flush(sdn);
++		return;
++	}
++
+ 	/* Send an IPI every time queue reaches half capacity. */
+ 	kick = (defer_count - 1) == (defer_max >> 1);
+ 
+-- 
+2.34.1
+

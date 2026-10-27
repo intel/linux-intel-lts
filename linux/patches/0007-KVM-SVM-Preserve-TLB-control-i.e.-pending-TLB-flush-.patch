@@ -1,0 +1,96 @@
+From 2c51f14d12368ec5746a005ca54daa9f5690e0a8 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 4 Sep 2026 10:06:39 -0700
+Subject: [PATCH 07/20] KVM: SVM: Preserve TLB control (i.e. pending TLB flush)
+ on failed VMRUN
+
+Don't reset the VMCB's TLB control back to "do nothing" on a failed VMRUN,
+as empirical testing shows that the CPU performs the requested TLB flush if
+and only if VMRUN is successful, i.e. clearing TLB control on a failed
+VMRUN effectively drops a TLB flush.
+
+Explicitly track the need to flush all ASIDs on a per-CPU basis, as the
+ASID reuse condition is tied to the pCPU, not to the vCPU.  As a bonus,
+this also obviates the need to avoid clobbering FLUSH_ALL_ASID with
+TLB_CONTROL_FLUSH_ASID, e.g. in svm_flush_tlb_asid().
+
+Deliberately don't bother saving/restoring the "old" tlb_ctl on failure,
+in quotes because it's not exactly the old tlb_ctl, it's the tlb_ctl from
+after pre_svm_run(), but before updating tlb_ctl for flush_all_asids.  If
+VMRUN fails and TLB_CONTROL_FLUSH_ALL_ASID is forced, then the next
+successful run of the VMCB *may* unnecessarily flush all ASIDs, which
+strictly speaking could result in noisy neighbor issues.  However, the
+fact that new_asid() is already guest-triggerable, because of KVM's flawed
+behavior of clearing the ASID on emulated INIT, means that a guest can
+already trigger a flush of all ASIDs at roughly the same rate.  And once
+KVM stops clobbering the ASID on emulated INIT, *or* assigns a static ASID
+to each vCPU, this flaw goes away.
+
+Fixes: 38e5e92fe8c0 ("KVM: SVM: Implement Flush-By-Asid feature")
+Cc: stable@vger.kernel.org
+Reported-by: Stefan Teodorescu <fane@google.com>
+Suggested-by: Yosry Ahmed <yosry@kernel.org>
+Cc: Tom Lendacky <thomas.lendacky@amd.com>
+Cc: Jim Mattson <jmattson@google.com>
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-ID: <20260904170642.3291466-2-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 60d93c27859fb3ec5b5a689e24de303f166477d0)
+---
+ arch/x86/kvm/svm/svm.c | 13 ++++++++++---
+ arch/x86/kvm/svm/svm.h |  1 +
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index ae4c88348c740..d43dc1b488ec9 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -1775,8 +1775,7 @@ static void new_asid(struct vcpu_svm *svm, struct svm_cpu_data *sd)
+ 	if (sd->next_asid > sd->max_asid) {
+ 		++sd->asid_generation;
+ 		sd->next_asid = sd->min_asid;
+-		svm->vmcb->control.tlb_ctl = TLB_CONTROL_FLUSH_ALL_ASID;
+-		vmcb_mark_dirty(svm->vmcb, VMCB_ASID);
++		sd->flush_all_asids = true;
+ 	}
+ 
+ 	svm->current_vmcb->asid_generation = sd->asid_generation;
+@@ -4328,6 +4327,11 @@ static __no_kcsan fastpath_t svm_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags)
+ 		svm->vmcb->control.asid = svm->asid;
+ 		vmcb_mark_dirty(svm->vmcb, VMCB_ASID);
+ 	}
++	if (this_cpu_ptr(&svm_data)->flush_all_asids) {
++		svm->vmcb->control.tlb_ctl = TLB_CONTROL_FLUSH_ALL_ASID;
++		vmcb_mark_dirty(svm->vmcb, VMCB_ASID);
++	}
++
+ 	svm->vmcb->save.cr2 = vcpu->arch.cr2;
+ 
+ 	svm_fixup_nested_rips(vcpu);
+@@ -4410,7 +4414,10 @@ static __no_kcsan fastpath_t svm_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags)
+ 		svm->nested.nested_run_pending = 0;
+ 	}
+ 
+-	svm->vmcb->control.tlb_ctl = TLB_CONTROL_DO_NOTHING;
++	if (!svm_is_vmrun_failure(svm->vmcb->control.exit_code)) {
++		this_cpu_ptr(&svm_data)->flush_all_asids = false;
++		svm->vmcb->control.tlb_ctl = TLB_CONTROL_DO_NOTHING;
++	}
+ 	vmcb_mark_all_clean(svm->vmcb);
+ 
+ 	/* if exit due to PF check for async PF */
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index d0413cfa42f00..eec6726d8ffbb 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -351,6 +351,7 @@ struct svm_cpu_data {
+ 	u32 next_asid;
+ 	u32 min_asid;
+ 
++	bool flush_all_asids;
+ 	bool bp_spec_reduce_set;
+ 
+ 	struct vmcb *save_area;
+-- 
+2.34.1
+
