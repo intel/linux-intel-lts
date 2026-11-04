@@ -91,11 +91,6 @@
 # NOTE: the CVE-2026-93099 fix (0087) is in v6.18.58 stable; 0086 kept (independent upstream fix, applies cleanly)
 0086-x86-resctrl-Ensure-domain-fully-initialized-before-p.patch
 
-#CVE-2026-93251
-# NOTE: the CVE-2026-93251 fix (0090) is in v6.18.58 stable; 0088/0089 kept (upstream fixes, apply cleanly)
-0088-ACPI-scan-Register-platform-devices-for-fixed-event-.patch
-0089-ACPI-scan-Avoid-registering-platform-devices-with-re.patch
-
 #CVE-2026-100072
 0091-ACPI-platform-Use-acpi_bus_get_primary_device.patch
 
@@ -177,9 +172,6 @@
 # Keep last: its call-site contexts include the preceding SMB range fixes.
 0009-netfs-serialize-truncate-size-updates-with-I-O-compl.patch
 
-#CVE-2026-31775
-0001-ALSA-ctxfi-Don-t-enumerate-SPDIF1-at-DAIO-initializa.patch
-
 #CVE-2026-74752
 0002-sctp-validate-cookie-AUTH-state-before-use.patch
 
@@ -224,3 +216,9 @@
 0018-netfilter-nf_conntrack_expect-use-conntrack-GC-to-re.patch
 0019-netfilter-nf_conntrack_expect-add-and-use-nf_ct_expe.patch
 0020-netfilter-ctnetlink-do-not-expose-expectation-DEAD-f.patch
+
+#CVE-2026-98983
+0001-unshare-don-t-drop-active-namespace-references-that-.patch
+
+#CVE-2026-98869
+0002-bpf-Infer-zext_dst-based-on-static-register-liveness.patch
